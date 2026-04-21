@@ -50,8 +50,15 @@ import { installOpenClawConsoleHelpers } from "@/pages/marketing/openclaw-consol
 import "@tencent/tea-sdk-lightclaw/styles";
 
 // Vite 生产构建（Rollup）会 tree-shake 掉 SDK 的自动 i18n.init()，
-// 导致 t() 返回空字符串。显式调用 initI18n() 确保词条注册。
-initI18n();
+// 导致 t() 返回空字符串。根据用户语言动态加载词条。
+if (navigator.language.startsWith("zh")) {
+  initI18n();
+} else {
+  import("@tencent/tea-sdk-lightclaw/i18n/translation/en").then((mod) => {
+    // @ts-expect-error initI18n options 参数在 SDK 1.0.15+ 可用，当前类型声明尚未更新
+    initI18n({ translation: mod.translation });
+  });
+}
 
 /* ─── Types ─── */
 
