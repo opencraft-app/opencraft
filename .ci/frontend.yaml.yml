@@ -54,8 +54,6 @@ jobs:
         shell: bash
         run: |
           test -n "${{ variables.SOURCE_SHA }}"
-          REMOTE_URL="https://oauth2:${{ settings.BOT_GITLAB_TOKEN }}@git.woa.com/wisp/mono2.git" \
+          REMOTE_URL="git@git.woa.com:wisp/mono2.git" \
           GITOPS_BRANCH=gitops \
-          COMMITTER_NAME=gitops-bot \
-          COMMITTER_EMAIL=gitops-bot@lightclaw.tech \
           bash scripts/promote_bundle_image_to_gitops.sh frontend frontend "${{ variables.TARGET_ENV }}" "${{ variables.SOURCE_SHA }}"

@@ -62,18 +62,14 @@ jobs:
         if: ${{ ci.event }} == 'push'
         shell: bash
         run: |
-          REMOTE_URL="https://oauth2:${{ settings.BOT_GITLAB_TOKEN }}@git.woa.com/wisp/mono2.git" \
+          REMOTE_URL="git@git.woa.com:wisp/mono2.git" \
           GITOPS_BRANCH=gitops \
-          COMMITTER_NAME=gitops-bot \
-          COMMITTER_EMAIL=gitops-bot@lightclaw.tech \
           bash scripts/pin_image_to_gitops.sh "gateway-dashboard" "beijing-sandbox" "lightclaw-bj8.tencentcloudcr.com/lightclaw/gateway-dashboard:${{ steps.prepare.outputs.tag }}"
       - name: promote-manual
         if: ${{ ci.event }} == 'manual'
         shell: bash
         run: |
           test -n "${{ variables.SOURCE_SHA }}"
-          REMOTE_URL="https://oauth2:${{ settings.BOT_GITLAB_TOKEN }}@git.woa.com/wisp/mono2.git" \
+          REMOTE_URL="git@git.woa.com:wisp/mono2.git" \
           GITOPS_BRANCH=gitops \
-          COMMITTER_NAME=gitops-bot \
-          COMMITTER_EMAIL=gitops-bot@lightclaw.tech \
           bash scripts/promote_bundle_image_to_gitops.sh gateway-dashboard gateway-dashboard "${{ variables.TARGET_ENV }}" "${{ variables.SOURCE_SHA }}"

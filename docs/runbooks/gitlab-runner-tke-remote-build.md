@@ -67,10 +67,6 @@ push / manual pipeline
   - 内容是标准 Docker config JSON
   - 需要覆盖目标环境对应的 TCR
 
-- `BOT_GITLAB_TOKEN`
-  - 用于回写 GitOps pin
-  - 推荐设为 protected masked variable
-
 ### Optional Pin Variables
 
 - `PIN_GITOPS_REPO_URL`
@@ -192,6 +188,11 @@ concurrent = 4
 ```bash
 bash scripts/pin_image_to_gitops.sh <service> <env> <image>
 ```
+
+如果通过自有构建机直接 SSH 写回 `gitops` 分支，则额外要求：
+
+- 构建机已具备对目标仓库的 SSH 免密推送能力
+- 构建机上的 git committer 身份与该 SSH 票据对应账号一致
 
 ## Environment Mapping
 

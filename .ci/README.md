@@ -44,8 +44,11 @@
   - 北京镜像推送凭据 Key
 - `TCR_SHPROD_TICKET`
   - 上海镜像推送凭据 Key
-- `BOT_GITLAB_TOKEN`
-  - 写回 `gitops` 分支的工蜂 token
+
+另外要求：
+
+- 自有构建池 `env` 上的机器必须已经具备对 `git@git.woa.com:wisp/mono2.git` 的 SSH 免密推送能力
+- 构建机上的 git committer 身份必须与该 SSH 票据对应的工蜂账号匹配
 
 ## Shared Scripts
 
