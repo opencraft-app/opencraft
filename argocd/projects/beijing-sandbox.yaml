@@ -6,10 +6,10 @@ metadata:
 spec:
   description: GitOps project for Beijing test environment.
   sourceRepos:
-    - https://code.lightclaw.tech/root/mono.git
+    - git@git.woa.com:wisp/mono2.git
   destinations:
     - namespace: '*'
-      server: https://lb-f1q4qeld-qn756aupy9e3f41w.clb.bj-tencentclb.com:443
+      server: https://bjtestk8s.lightclaw.tech:443
   clusterResourceWhitelist:
     - group: '*'
       kind: '*'
