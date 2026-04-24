@@ -1,0 +1,144 @@
+.gitops_remote_build_prepare:
+  stage: resolve-build
+  image: python:3.11-alpine
+  tags:
+    - hk
+    - tke
+    - gitops
+  before_script:
+    - python3 -m pip install --quiet pyyaml
+  script:
+    - test -n "${BUILD_SERVICE}"
+    - test -n "${BUILD_ENV}"
+    - test -n "${BUILD_TAG}"
+    - mkdir -p .tmp
+    - |
+      python3 scripts/resolve_release_bundle.py \
+        --service "${BUILD_SERVICE}" \
+        --env "${BUILD_ENV}" \
+        --tag "${BUILD_TAG}" \
+        --format dotenv > .tmp/build.env
+    - cat .tmp/build.env
+  artifacts:
+    reports:
+      dotenv: .tmp/build.env
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $BUILD_SERVICE && $BUILD_ENV && $BUILD_TAG'
+      when: on_success
+    - when: never
+
+gitops-remote-build-prepare:
+  extends: .gitops_remote_build_prepare
+  allow_failure: false
+  environment:
+    name: build/$BUILD_ENV
+
+.gitops_remote_build:
+  stage: build-image
+  image:
+    name: gcr.io/kaniko-project/executor:v1.23.2-debug
+    entrypoint: [""]
+  tags:
+    - hk
+    - tke
+    - kaniko
+    - gitops
+  needs:
+    - job: gitops-remote-build-prepare
+      artifacts: true
+  script:
+    - test -n "${BUILD_IMAGE}"
+    - test -n "${BUILD_CONTEXT}"
+    - test -n "${BUILD_DOCKERFILE}"
+    - test -n "${DOCKER_AUTH_CONFIG}"
+    - mkdir -p .tmp /kaniko/.docker
+    - printf '%s' "${DOCKER_AUTH_CONFIG}" > /kaniko/.docker/config.json
+    - |
+      /kaniko/executor \
+        --context "${CI_PROJECT_DIR}/${BUILD_CONTEXT}" \
+        --dockerfile "${CI_PROJECT_DIR}/${BUILD_DOCKERFILE}" \
+        --destination "${BUILD_IMAGE}" \
+        --digest-file "${CI_PROJECT_DIR}/.tmp/image.digest" \
+        --cache="${KANIKO_CACHE_ENABLED:-true}" \
+        --cache-repo "${KANIKO_CACHE_REPO:-${BUILD_IMAGE_REPO}/cache}" \
+        --snapshot-mode "${KANIKO_SNAPSHOT_MODE:-redo}" \
+        --use-new-run
+    - 'while IFS= read -r line; do echo "$line"; done < .tmp/image.digest'
+  artifacts:
+    when: always
+    paths:
+      - .tmp/image.digest
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $BUILD_SERVICE && $BUILD_ENV && $BUILD_TAG'
+      when: on_success
+    - when: never
+
+gitops-remote-build:
+  extends: .gitops_remote_build
+  allow_failure: false
+  environment:
+    name: build/$BUILD_ENV
+
+.gitops_image_pin:
+  stage: pin-image
+  image: python:3.11-alpine
+  tags:
+    - hk
+    - tke
+    - gitops
+  needs:
+    - job: gitops-remote-build-prepare
+      artifacts: true
+    - job: gitops-remote-build
+      artifacts: true
+  before_script:
+    - apk add --no-cache git curl bash
+    - git config --global user.name "${BOT_GIT_NAME:-gitops-bot}"
+    - git config --global user.email "${BOT_GIT_EMAIL:-gitops-bot@lightclaw.tech}"
+  script:
+    - test -n "${BUILD_SERVICE}"
+    - test -n "${BUILD_ENV}"
+    - test -n "${BOT_GITLAB_TOKEN}"
+    - export PIN_GITOPS_REPO_URL="${PIN_GITOPS_REPO_URL:-https://oauth2:${BOT_GITLAB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git}"
+    - export PIN_GITOPS_BRANCH="${PIN_GITOPS_BRANCH:-${CI_DEFAULT_BRANCH}}"
+    - export PIN_GITOPS_PROJECT_ID="${PIN_GITOPS_PROJECT_ID:-${CI_PROJECT_ID}}"
+    - export PIN_GITOPS_REPO_DIR="${PIN_GITOPS_REPO_DIR:-.tmp/gitops-repo}"
+    - git clone --depth 1 --branch "${PIN_GITOPS_BRANCH}" "${PIN_GITOPS_REPO_URL}" "${PIN_GITOPS_REPO_DIR}"
+    - |
+      python3 scripts/update_image_pin.py \
+        --repo-root "${PIN_GITOPS_REPO_DIR}" \
+        --service "${BUILD_SERVICE}" \
+        --env "${BUILD_ENV}" \
+        --image "${BUILD_IMAGE}" \
+        --deployed-at "${PIN_DEPLOYED_AT:-${CI_JOB_STARTED_AT}}"
+    - cd "${PIN_GITOPS_REPO_DIR}"
+    - git status --short
+    - |
+      if git diff --quiet -- argocd/services/"${BUILD_SERVICE}"/"${BUILD_ENV}"; then
+        echo "No GitOps pin changes."
+        exit 0
+      fi
+    - git checkout -B "${PIN_BRANCH_NAME:-gitops/image-pin/${BUILD_SERVICE}-${BUILD_ENV}-${CI_PIPELINE_ID}}"
+    - git add argocd/services/"${BUILD_SERVICE}"/"${BUILD_ENV}"
+    - 'git commit -m "${PIN_COMMIT_MESSAGE:-chore: pin ${BUILD_SERVICE} ${BUILD_ENV} image to ${BUILD_TAG}}"'
+    - git push -f origin "HEAD:${PIN_BRANCH_NAME:-gitops/image-pin/${BUILD_SERVICE}-${BUILD_ENV}-${CI_PIPELINE_ID}}"
+    - |
+      if [ "${PIN_OPEN_MR:-1}" = "1" ]; then
+        curl --fail --request POST \
+          --header "PRIVATE-TOKEN: ${BOT_GITLAB_TOKEN}" \
+          --form "source_branch=${PIN_BRANCH_NAME:-gitops/image-pin/${BUILD_SERVICE}-${BUILD_ENV}-${CI_PIPELINE_ID}}" \
+          --form "target_branch=${PIN_GITOPS_BRANCH}" \
+          --form "title=${PIN_MR_TITLE:-chore: pin ${BUILD_SERVICE} ${BUILD_ENV} image to ${BUILD_TAG}}" \
+          --form "remove_source_branch=true" \
+          "${CI_API_V4_URL}/projects/${PIN_GITOPS_PROJECT_ID}/merge_requests" || true
+      fi
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $BUILD_SERVICE && $BUILD_ENV && $BUILD_TAG && $BOT_GITLAB_TOKEN'
+      when: on_success
+    - when: never
+
+gitops-image-pin:
+  extends: .gitops_image_pin
+  allow_failure: false
+  environment:
+    name: pin/$BUILD_ENV

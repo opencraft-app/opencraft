@@ -1,0 +1,53 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sandbox-db-recycle-pool-c3-v1
+  namespace: sandbox
+spec:
+  ttlSecondsAfterFinished: 300
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: mysql-recycle-c3
+          image: mysql:8.0
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: sandbox-runtime-config
+            - secretRef:
+                name: sandbox-runtime-secrets
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              mysql \
+                --host="${MYSQL_HOST}" \
+                --port="${MYSQL_PORT}" \
+                --user="${MYSQL_USER}" \
+                --password="${MYSQL_PASSWORD}" <<'SQL'
+              USE `cvm`;
+
+              SELECT COUNT(*) AS sandbox_count
+              FROM sandboxes
+              WHERE pool_id = 'pool-c3';
+
+              SELECT COUNT(*) AS instance_count
+              FROM instances
+              WHERE pool_id = 'pool-c3';
+
+              DELETE FROM sandboxes
+              WHERE pool_id = 'pool-c3';
+
+              DELETE FROM instances
+              WHERE pool_id = 'pool-c3';
+
+              SELECT COUNT(*) AS sandbox_count
+              FROM sandboxes
+              WHERE pool_id = 'pool-c3';
+
+              SELECT COUNT(*) AS instance_count
+              FROM instances
+              WHERE pool_id = 'pool-c3';
+              SQL

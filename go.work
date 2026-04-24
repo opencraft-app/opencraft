@@ -1,0 +1,12 @@
+go 1.26
+
+use (
+	./ai-gateway
+	./ctl
+	./images/envd
+	./nextgen-dashboard
+	./nextgen-dashboard-client
+	./payment
+	./service-gateway
+	./subscription
+)

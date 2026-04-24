@@ -1,0 +1,16 @@
+# Grafana Dashboard 自动加载配置
+# 用于本地开发验证
+
+apiVersion: 1
+
+providers:
+  - name: 'OpenClaw Dashboards'
+    orgId: 1
+    folder: ''
+    folderUid: ''
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards

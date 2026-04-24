@@ -1,0 +1,193 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: user-auth
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: default
+  namespace: user-auth
+imagePullSecrets:
+  - name: tcr.ipsqcloudregistrykey
+  - name: tcr.ipstcr-regcred
+  - name: tcr.ipstcr-lightclaw-secret
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lightclaw-auth-config
+  namespace: user-auth
+data:
+  GIN_MODE: "release"
+  LIGHTCLAW_AUTH_ADDR: ":8081"
+  LIGHTCLAW_COOKIE_SECURE: "true"
+  LIGHTCLAW_COOKIE_SAME_SITE: "none"
+  LIGHTCLAW_LOG_LEVEL: "info"
+  LIGHTCLAW_SEED_DEFAULT_INVITES: "true"
+  LIGHTCLAW_SEED_DEMO_USER: "false"
+  LIGHTCLAW_FRONTEND_BASE_URL: "REPLACE_AUTH_FRONTEND_BASE_URL"
+  LIGHTCLAW_PUBLIC_BASE_URL: "REPLACE_AUTH_PUBLIC_BASE_URL"
+  LIGHTCLAW_QQ_APP_ID: "REPLACE_AUTH_QQ_APP_ID"
+  LIGHTCLAW_QQ_REDIRECT_URI: "REPLACE_AUTH_QQ_REDIRECT_URI"
+  LIGHTCLAW_WECHAT_APP_ID: "REPLACE_AUTH_WECHAT_APP_ID"
+  LIGHTCLAW_WECHAT_REDIRECT_URI: "REPLACE_AUTH_WECHAT_REDIRECT_URI"
+  MYSQL_HOST: "REPLACE_AUTH_MYSQL_HOST"
+  MYSQL_PORT: "REPLACE_AUTH_MYSQL_PORT"
+  MYSQL_ROOT_USER: "root"
+  LIGHTCLAW_AUTH_DB: "lightclaw_auth"
+  LIGHTCLAW_AUTH_DB_USER: "lightclaw_auth"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lightclaw-auth
+  namespace: user-auth
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: lightclaw-auth
+  template:
+    metadata:
+      labels:
+        app: lightclaw-auth
+      annotations:
+        lightclaw-auth.clawhub.dev/redeploy-at: "REPLACE_AUTH_DEPLOYED_AT"
+    spec:
+      nodeSelector:
+        pool: REPLACE_AUTH_NODE_POOL
+      initContainers:
+        - name: wait-db-schema
+          image: mysql:8.0
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: lightclaw-auth-config
+            - secretRef:
+                name: lightclaw-auth-secrets
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              until mysql \
+                --host="${MYSQL_HOST}" \
+                --port="${MYSQL_PORT}" \
+                --user="${LIGHTCLAW_AUTH_DB_USER}" \
+                --password="${LIGHTCLAW_AUTH_DB_PASSWORD}" \
+                -Nse "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA='${LIGHTCLAW_AUTH_DB}' AND TABLE_NAME IN ('users','invites','auth_sessions')" | grep -qx '3'; do
+                echo "waiting for auth schema"
+                sleep 3
+              done
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: lightclaw-auth
+      containers:
+        - name: auth
+          image: REPLACE_AUTH_IMAGE
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: lightclaw-auth-config
+            - secretRef:
+                name: lightclaw-auth-secrets
+          env:
+            - name: LIGHTCLAW_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: lightclaw-auth-secrets
+                  key: LIGHTCLAW_ADMIN_TOKEN
+          ports:
+            - name: http
+              containerPort: 8081
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lightclaw-auth
+  namespace: user-auth
+spec:
+  selector:
+    app: lightclaw-auth
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lightclaw-auth-internal
+  namespace: user-auth
+  annotations:
+    service.kubernetes.io/qcloud-loadbalancer-internal-subnetid: REPLACE_AUTH_INTERNAL_SUBNET_ID
+spec:
+  type: LoadBalancer
+  selector:
+    app: lightclaw-auth
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: lightclaw-auth
+  namespace: user-auth
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: lightclaw-auth
+  minReplicas: 3
+  maxReplicas: 10
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      selectPolicy: Max
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 60
+        - type: Pods
+          value: 3
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      selectPolicy: Max
+      policies:
+        - type: Percent
+          value: 20
+          periodSeconds: 60
+  metrics:
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 75

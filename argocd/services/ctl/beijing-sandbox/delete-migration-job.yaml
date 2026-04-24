@@ -1,0 +1,6 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: REPLACE_CTL_MIGRATION_JOB_NAME
+  namespace: ctl
+$patch: delete

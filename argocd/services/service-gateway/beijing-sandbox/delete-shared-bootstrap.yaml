@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lightclaw-gateway
+$patch: delete
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: default
+  namespace: lightclaw-gateway
+$patch: delete

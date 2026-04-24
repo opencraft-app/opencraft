@@ -1,0 +1,98 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: user-auth
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: default
+  namespace: user-auth
+imagePullSecrets:
+  - name: tcr.ipsqcloudregistrykey
+  - name: tcr.ipstcr-regcred
+  - name: tcr.ipstcr-lightclaw-secret
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: payment-config
+  namespace: user-auth
+data:
+  PAYMENT_ADDR: ":8080"
+  PAYMENT_PROVIDER: "mock"
+  SUBSCRIPTION_INTERNAL_BASE_URL: "http://subscription.user-auth.svc.cluster.local"
+  MYSQL_HOST: "REPLACE_PAYMENT_MYSQL_HOST"
+  MYSQL_PORT: "REPLACE_PAYMENT_MYSQL_PORT"
+  MYSQL_ROOT_USER: "root"
+  PAYMENT_DB: "lightclaw_payment"
+  PAYMENT_DB_USER: "lightclaw_payment"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment
+  namespace: user-auth
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: payment
+  template:
+    metadata:
+      labels:
+        app: payment
+    spec:
+      nodeSelector:
+        pool: REPLACE_PAYMENT_NODE_POOL
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: payment
+      containers:
+        - name: payment
+          image: REPLACE_PAYMENT_IMAGE
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: payment-config
+            - secretRef:
+                name: payment-runtime-secrets
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment
+  namespace: user-auth
+spec:
+  selector:
+    app: payment
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

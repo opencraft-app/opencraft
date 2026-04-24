@@ -1,0 +1,50 @@
+.ssm_sops_export:
+  stage: secret-export
+  image: python:3.11-alpine
+  tags:
+    - hk
+    - tke
+    - gitops
+  before_script:
+    - apk add --no-cache git curl bash age sops jq
+    - python3 -m pip install pyyaml
+    - git config user.name "${BOT_GIT_NAME:-gitops-bot}"
+    - git config user.email "${BOT_GIT_EMAIL:-gitops-bot@lightclaw.tech}"
+  script:
+    - test -n "${SSM_SOPS_MANIFEST}"
+    - test -n "${SOPS_AGE_KEY}"
+    - export DEPLOY_FACING_ROOT="${DEPLOY_FACING_ROOT:-argocd/}"
+    - mkdir -p .tmp
+    - printf '%s' "${SOPS_AGE_KEY}" > .tmp/sops.agekey
+    - chmod 600 .tmp/sops.agekey
+    - export SOPS_AGE_KEY_FILE=.tmp/sops.agekey
+    - python3 scripts/export_ssm_to_sops.py --manifest "${SSM_SOPS_MANIFEST}" --output-dir .
+    - |
+      changed_files="$(git status --porcelain | awk '{print $2}')"
+      if [ -n "${changed_files}" ]; then
+        invalid="$(printf '%s\n' "${changed_files}" | awk 'NF' | grep -v "^${DEPLOY_FACING_ROOT}" || true)"
+        if [ -n "${invalid}" ]; then
+          echo "Secret export tried to modify non deploy-facing paths:"
+          printf '%s\n' "${invalid}"
+          exit 1
+        fi
+      fi
+    - |
+      if [ -z "${changed_files}" ]; then
+        echo "No secret snapshot changes."
+        exit 0
+      fi
+    - git checkout -B "${BOT_BRANCH_NAME:-gitops/secret-export/${CI_ENVIRONMENT_NAME:-default}}"
+    - git add -A
+    - git commit -m "${BOT_COMMIT_MESSAGE:-chore: refresh sops secret snapshots from SSM}"
+    - git push -f "https://oauth2:${BOT_GITLAB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" "HEAD:${BOT_BRANCH_NAME:-gitops/secret-export/${CI_ENVIRONMENT_NAME:-default}}"
+    - |
+      curl --fail --request POST \
+        --header "PRIVATE-TOKEN: ${BOT_GITLAB_TOKEN}" \
+        --form "source_branch=${BOT_BRANCH_NAME:-gitops/secret-export/${CI_ENVIRONMENT_NAME:-default}}" \
+        --form "target_branch=${CI_DEFAULT_BRANCH}" \
+        --form "title=${BOT_MR_TITLE:-chore: refresh sops secret snapshots from SSM}" \
+        --form "remove_source_branch=true" \
+        "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/merge_requests" || true
+  rules:
+    - if: '$SSM_SOPS_MANIFEST'

@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS sandboxes;
+DROP TABLE IF EXISTS instances;
+DROP TABLE IF EXISTS pools;

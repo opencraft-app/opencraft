@@ -1,0 +1,18 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ctl-shprod
+  namespace: argocd
+spec:
+  project: shprod-ctl
+  source:
+    repoURL: https://code.lightclaw.tech/root/mono-source.git
+    targetRevision: master
+    path: argocd/services/ctl/shprod
+  destination:
+    namespace: ctl
+    name: shprod
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

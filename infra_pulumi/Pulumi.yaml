@@ -1,0 +1,4 @@
+name: infra-pulumi
+runtime: go
+main: ./cmd/infra-pulumi
+description: Tencent Cloud landing zone managed by Pulumi in Go

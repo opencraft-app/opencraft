@@ -1,0 +1,143 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: user-auth
+
+resources:
+  - ../../../../user/auth/k8s/base
+
+patches:
+  - path: delete-shared-bootstrap.yaml
+
+generators:
+  - ksops-secret-generator.yaml
+
+generatorOptions:
+  disableNameSuffixHash: true
+
+configMapGenerator:
+  - name: auth-platform-values
+    envs:
+      - auth-platform.env
+
+replacements:
+  - source:
+      kind: ConfigMap
+      name: auth-platform-values
+      fieldPath: data.AUTH_PUBLIC_BASE_URL
+    targets:
+      - select:
+          kind: ConfigMap
+          name: lightclaw-auth-config
+        fieldPaths:
+          - data.LIGHTCLAW_PUBLIC_BASE_URL
+  - source:
+      kind: ConfigMap
+      name: auth-platform-values
+      fieldPath: data.AUTH_FRONTEND_BASE_URL
+    targets:
+      - select:
+          kind: ConfigMap
+          name: lightclaw-auth-config
+        fieldPaths:
+          - data.LIGHTCLAW_FRONTEND_BASE_URL
+  - source:
+      kind: ConfigMap
+      name: auth-platform-values
+      fieldPath: data.AUTH_QQ_APP_ID
+    targets:
+      - select:
+          kind: ConfigMap
+          name: lightclaw-auth-config
+        fieldPaths:
+          - data.LIGHTCLAW_QQ_APP_ID
+  - source:
+      kind: ConfigMap
+      name: auth-platform-values
+      fieldPath: data.AUTH_QQ_REDIRECT_URI
+    targets:
+      - select:
+          kind: ConfigMap
+          name: lightclaw-auth-config
+        fieldPaths:
+          - data.LIGHTCLAW_QQ_REDIRECT_URI
+  - source:
+      kind: ConfigMap
+      name: auth-platform-values
+      fieldPath: data.AUTH_WECHAT_APP_ID
+    targets:
+      - select:
+          kind: ConfigMap
+          name: lightclaw-auth-config
+        fieldPaths:
+          - data.LIGHTCLAW_WECHAT_APP_ID
+  - source:
+      kind: ConfigMap
+      name: auth-platform-values
+      fieldPath: data.AUTH_WECHAT_REDIRECT_URI
+    targets:
+      - select:
+          kind: ConfigMap
+          name: lightclaw-auth-config
+        fieldPaths:
+          - data.LIGHTCLAW_WECHAT_REDIRECT_URI
+  - source:
+      kind: ConfigMap
+      name: auth-platform-values
+      fieldPath: data.AUTH_MYSQL_HOST
+    targets:
+      - select:
+          kind: ConfigMap
+          name: lightclaw-auth-config
+        fieldPaths:
+          - data.MYSQL_HOST
+  - source:
+      kind: ConfigMap
+      name: auth-platform-values
+      fieldPath: data.AUTH_MYSQL_PORT
+    targets:
+      - select:
+          kind: ConfigMap
+          name: lightclaw-auth-config
+        fieldPaths:
+          - data.MYSQL_PORT
+  - source:
+      kind: ConfigMap
+      name: auth-platform-values
+      fieldPath: data.AUTH_NODE_POOL
+    targets:
+      - select:
+          kind: Deployment
+          name: lightclaw-auth
+        fieldPaths:
+          - spec.template.spec.nodeSelector.pool
+  - source:
+      kind: ConfigMap
+      name: auth-platform-values
+      fieldPath: data.AUTH_IMAGE
+    targets:
+      - select:
+          kind: Deployment
+          name: lightclaw-auth
+        fieldPaths:
+          - spec.template.spec.containers.0.image
+  - source:
+      kind: ConfigMap
+      name: auth-platform-values
+      fieldPath: data.AUTH_DEPLOYED_AT
+    targets:
+      - select:
+          kind: Deployment
+          name: lightclaw-auth
+        fieldPaths:
+          - spec.template.metadata.annotations.[lightclaw-auth.clawhub.dev/redeploy-at]
+  - source:
+      kind: ConfigMap
+      name: auth-platform-values
+      fieldPath: data.AUTH_INTERNAL_SUBNET_ID
+    targets:
+      - select:
+          kind: Service
+          name: lightclaw-auth-internal
+        fieldPaths:
+          - metadata.annotations.[service.kubernetes.io/qcloud-loadbalancer-internal-subnetid]

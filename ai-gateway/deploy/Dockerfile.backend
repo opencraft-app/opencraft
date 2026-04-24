@@ -1,0 +1,47 @@
+FROM golang:1.26-alpine AS go-builder
+
+ENV GOPROXY=https://goproxy.cn,direct
+RUN apk add --no-cache git
+
+WORKDIR /src
+
+COPY ai-gateway/go.mod ai-gateway/go.sum ai-gateway/
+
+WORKDIR /src/ai-gateway
+RUN GOWORK=off go mod download
+
+WORKDIR /src
+COPY ai-gateway/ ai-gateway/
+
+WORKDIR /src/ai-gateway
+RUN GOWORK=off CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o /out/ai-gateway ./cmd/server
+RUN GOWORK=off CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o /out/ai-gateway-migrate ./cmd/ai-gateway-migrate
+
+FROM node:20-alpine AS portkey-deps
+
+WORKDIR /portkey
+
+COPY ai-gateway/package.json ai-gateway/package-lock.json ./
+COPY ai-gateway/patches ./patches
+
+RUN set -eu; \
+  npm ci >/tmp/npm-ci.log 2>&1 || { cat /tmp/npm-ci.log; exit 1; }; \
+  cat /tmp/npm-ci.log; \
+  grep -q "Applying patches..." /tmp/npm-ci.log; \
+  grep -q "@portkey-ai/gateway@1.15.2" /tmp/npm-ci.log
+
+FROM node:20-alpine
+
+RUN apk add --no-cache ca-certificates tzdata
+
+WORKDIR /app
+
+COPY --from=go-builder /out/ai-gateway /app/ai-gateway
+COPY --from=go-builder /out/ai-gateway-migrate /usr/local/bin/ai-gateway-migrate
+COPY --from=portkey-deps /portkey/node_modules /app/portkey/node_modules
+COPY ai-gateway/deploy/config.yaml /app/deploy/config.yaml
+COPY ai-gateway/migrations /app/migrations
+
+EXPOSE 18080 8787
+
+ENTRYPOINT ["./ai-gateway"]

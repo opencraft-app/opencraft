@@ -1,0 +1,101 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ai-gateway
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: default
+  namespace: ai-gateway
+imagePullSecrets:
+  - name: tcr.ipsqcloudregistrykey
+  - name: tcr.ipstcr-regcred
+  - name: tcr.ipstcr-lightclaw-secret
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gateway-dashboard-config
+  namespace: ai-gateway
+data:
+  PORT: "13000"
+  HOSTNAME: "0.0.0.0"
+  GATEWAY_API_URL: "REPLACE_GATEWAY_DASHBOARD_GATEWAY_API_URL"
+  AUTH_ADMIN_API_URL: "REPLACE_GATEWAY_DASHBOARD_AUTH_ADMIN_API_URL"
+  SUBSCRIPTION_ADMIN_API_URL: "REPLACE_GATEWAY_DASHBOARD_SUBSCRIPTION_ADMIN_API_URL"
+  SANDBOX_API_URL: "REPLACE_GATEWAY_DASHBOARD_SANDBOX_API_URL"
+  CTL_API_URL: "REPLACE_GATEWAY_DASHBOARD_CTL_API_URL"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway-dashboard
+  namespace: ai-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gateway-dashboard
+  template:
+    metadata:
+      labels:
+        app: gateway-dashboard
+        app.kubernetes.io/name: gateway-dashboard
+      annotations:
+        gateway-dashboard.clawhub.dev/redeploy-at: "REPLACE_GATEWAY_DASHBOARD_DEPLOYED_AT"
+    spec:
+      nodeSelector:
+        pool: REPLACE_GATEWAY_DASHBOARD_NODE_POOL
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: gateway-dashboard
+      containers:
+        - name: dashboard
+          image: REPLACE_GATEWAY_DASHBOARD_IMAGE
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: gateway-dashboard-config
+            - secretRef:
+                name: gateway-dashboard-runtime-secrets
+          ports:
+            - name: http
+              containerPort: 13000
+          readinessProbe:
+            httpGet:
+              path: /admin/gateway/login
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /admin/gateway/login
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway-dashboard-internal
+  namespace: ai-gateway
+spec:
+  type: ClusterIP
+  selector:
+    app: gateway-dashboard
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

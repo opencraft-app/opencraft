@@ -1,0 +1,15 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.node.json" }
+  ],
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"],
+      "@tencent/tea-sdk-lightclaw": ["../../tea-sdk-lightclaw/src/index.ts"],
+      "@tencent/tea-sdk-lightclaw/*": ["../../tea-sdk-lightclaw/src/*"]
+    }
+  }
+}

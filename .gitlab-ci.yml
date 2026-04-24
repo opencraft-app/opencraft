@@ -1,0 +1,12 @@
+stages:
+  - resolve-build
+  - build-image
+  - pin-image
+  - db-job
+  - secret-export
+
+include:
+  - local: .gitlab/ci/gitops-remote-build.yml
+  - local: .gitlab/ci/service-gateway-beijing-sandbox.yml
+  - local: .gitlab/ci/gitops-db-job.yml
+  - local: .gitlab/ci/ssm-sops-export.yml

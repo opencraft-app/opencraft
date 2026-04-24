@@ -1,0 +1,18 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: payment-shprod
+  namespace: argocd
+spec:
+  project: shprod-payment
+  source:
+    repoURL: https://code.lightclaw.tech/root/mono-source.git
+    targetRevision: master
+    path: argocd/services/payment/shprod
+  destination:
+    namespace: user-auth
+    name: shprod
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

@@ -1,0 +1,6 @@
+apiVersion: cloud.tencent.com/v1alpha1
+kind: TkeServiceConfig
+metadata:
+  name: sandbox-ingressproxy-public-config
+  namespace: sandbox
+$patch: delete

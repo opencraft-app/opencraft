@@ -1,0 +1,19 @@
+defaults:
+  region: ap-beijing
+  version_id: SSM_Current
+  age_recipients:
+    - age1q4s9kt3h5n0fgmez4kyp7tsahgjhuxpyeteye8lp46kqkyvardusctl258
+
+items:
+  - id: payment-runtime-secrets
+    secret_name: mono-beijing-sandbox-payment-runtime-secrets
+    namespace: user-auth
+    kubernetes_resource_name: payment-runtime-secrets
+    kubernetes_resource_kind: Secret
+    output_path: argocd/secrets/beijing-sandbox/payment-runtime-secrets.sops.yaml
+    secret_type: Opaque
+    labels:
+      app.kubernetes.io/name: payment
+      app.kubernetes.io/managed-by: argocd
+    annotations:
+      managed-by: export_ssm_to_sops.py

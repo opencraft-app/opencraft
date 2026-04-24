@@ -1,0 +1,86 @@
+auth_service_url: http://lightclaw-auth.user-auth.svc.cluster.local
+allowed_origins:
+  - https://preview.lightclaw.cn
+  - https://api.lightclaw.cn
+  - https://lightvela.tencent.com
+  - https://api.lightvela.tencent.com
+  - https://lightclaw.site
+  - https://api.lightclaw.site
+  - http://localhost:4173
+  - http://localhost:5173
+routes:
+  - name: ai-gateway-admin
+    prefix: /api/admin
+    methods: [GET, POST, PUT, DELETE, OPTIONS]
+    upstream: http://gateway-backend.ai-gateway.svc.cluster.local
+    access: admin
+    upstream_bearer_token_env: SERVICE_GATEWAY_AI_GATEWAY_ADMIN_TOKEN
+  - name: users
+    prefix: /users
+    methods: [GET, OPTIONS]
+    upstream: http://lightclaw-auth.user-auth.svc.cluster.local
+    access: public
+  - name: sandbox
+    prefix: /sandboxes
+    methods: [GET, POST, PUT, DELETE, OPTIONS]
+    upstream: http://sandbox-api.sandbox.svc.cluster.local
+    access: authenticated
+  - name: ctl
+    prefix: /v1/instances
+    methods: [GET, POST, PUT, DELETE, OPTIONS]
+    upstream: http://ctl-api.ctl.svc.cluster.local
+    access: authenticated
+    require_realname: true
+    response_header_timeout: 60s
+  - name: ctl-bundles
+    prefix: /v1/bundles
+    methods: [GET, OPTIONS]
+    upstream: http://ctl-api.ctl.svc.cluster.local
+    access: authenticated
+  - name: ctl-passes
+    prefix: /v1/passes
+    methods: [GET, POST, OPTIONS]
+    upstream: http://ctl-api.ctl.svc.cluster.local
+    access: authenticated
+    require_realname: true
+  - name: subscriptions
+    prefix: /subscriptions
+    methods: [GET, POST, OPTIONS]
+    upstream: http://subscription.user-auth.svc.cluster.local
+    access: authenticated
+  - name: auth
+    prefix: /auth
+    methods: [GET, POST, PUT, DELETE, OPTIONS]
+    upstream: http://lightclaw-auth.user-auth.svc.cluster.local
+    access: authenticated
+    public_allow:
+      - method: POST
+        path: /auth/password/sign-in
+      - method: POST
+        path: /auth/password/sign-up
+      - method: POST
+        path: /auth/password/forgot
+      - method: POST
+        path: /auth/sms/send
+      - method: POST
+        path: /auth/sms/verify
+      - method: POST
+        path: /auth/invite/validate
+      - method: POST
+        path: /auth/invite/prepare
+      - method: GET
+        path: /auth/oauth/qq/start
+      - method: GET
+        path: /auth/oauth/qq/callback
+      - method: GET
+        path: /auth/oauth/wechat/start
+      - method: GET
+        path: /auth/oauth/wechat/callback
+      - method: GET
+        path: /auth/oauth/google/start
+      - method: GET
+        path: /auth/oauth/google/callback
+      - method: GET
+        path: /auth/oauth/github/start
+      - method: GET
+        path: /auth/oauth/github/callback

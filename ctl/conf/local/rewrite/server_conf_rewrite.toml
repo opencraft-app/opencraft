@@ -1,0 +1,16 @@
+# 本地调试 rewrite 覆盖
+#
+# 本地到测试集群联调临时走 kubectl port-forward：
+# KUBECONFIG=/root/code/mono/.secret/cls-8gnhos9p-config \
+#   kubectl port-forward -n sandbox svc/sandbox-api 18081:80
+#
+# 然后 ctl 通过本地 18081 访问测试环境 sandbox-api，绕过当前异常的公网 CLB。
+
+[adapter.sandbox]
+baseUrl = "http://127.0.0.1:18081"
+processBaseUrl = "http://127.0.0.1:18082"
+
+[api.instance]
+default_template_id = "pool-c2"
+candidate_template_ids = ["pool-c0", "pool-c1", "pool-c2", "pool-c3", "pool-c4", "pool-c5"]
+churn_guard_enabled = true

@@ -1,0 +1,7 @@
+CREATE TABLE IF NOT EXISTS subscription_plans (
+    code            VARCHAR(32) PRIMARY KEY,
+    description     TEXT NOT NULL,
+    max_bot_count   INT NOT NULL DEFAULT 0,
+    created_at      DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    updated_at      DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6)
+);

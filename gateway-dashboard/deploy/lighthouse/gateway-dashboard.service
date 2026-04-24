@@ -1,0 +1,17 @@
+[Unit]
+Description=Lightclaw Gateway Dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/lightclaw/gateway-dashboard/current
+EnvironmentFile=/etc/lightclaw/gateway-dashboard.env
+ExecStart=/usr/bin/node server.js
+Restart=always
+RestartSec=5
+TimeoutStartSec=30
+
+[Install]
+WantedBy=multi-user.target

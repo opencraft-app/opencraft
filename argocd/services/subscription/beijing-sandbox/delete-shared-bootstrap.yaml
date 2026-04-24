@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: user-auth
+$patch: delete
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: default
+  namespace: user-auth
+$patch: delete

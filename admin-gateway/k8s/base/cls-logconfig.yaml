@@ -1,0 +1,16 @@
+apiVersion: cls.cloud.tencent.com/v1
+kind: LogConfig
+metadata:
+  name: admin-gateway-access
+spec:
+  clsDetail:
+    topicId: REPLACE_ADMIN_GATEWAY_CLS_TOPIC_ID
+    logType: json_log
+  inputDetail:
+    type: container_stdout
+    containerStdout:
+      workloads:
+        - namespace: lightclaw-gateway
+          name: admin-gateway
+          kind: deployment
+          container: gateway

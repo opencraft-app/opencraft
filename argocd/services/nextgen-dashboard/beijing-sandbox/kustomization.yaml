@@ -1,0 +1,73 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: user-auth
+
+resources:
+  - ../../../../nextgen-dashboard/k8s/base
+
+generators:
+  - ksops-secret-generator.yaml
+
+generatorOptions:
+  disableNameSuffixHash: true
+
+patches:
+  - target:
+      kind: Deployment
+      name: nextgen-dashboard
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/envFrom/1/secretRef/name
+        value: nextgen-dashboard-secrets
+      - op: replace
+        path: /spec/template/spec/containers/1/envFrom
+        value:
+          - configMapRef:
+              name: nextgen-dashboard-config
+      - op: add
+        path: /spec/template/spec/containers/1/env
+        value:
+          - name: NEXTGEN_RUNNER_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: nextgen-dashboard-secrets
+                key: NEXTGEN_DASHBOARD_RUNNER_TOKEN
+
+configMapGenerator:
+  - name: nextgen-dashboard-platform-values
+    envs:
+      - nextgen-dashboard-platform.env
+
+replacements:
+  - source:
+      kind: ConfigMap
+      name: nextgen-dashboard-platform-values
+      fieldPath: data.NEXTGEN_DASHBOARD_NODE_POOL
+    targets:
+      - select:
+          kind: Deployment
+          name: nextgen-dashboard
+        fieldPaths:
+          - spec.template.spec.nodeSelector.pool
+  - source:
+      kind: ConfigMap
+      name: nextgen-dashboard-platform-values
+      fieldPath: data.NEXTGEN_DASHBOARD_IMAGE
+    targets:
+      - select:
+          kind: Deployment
+          name: nextgen-dashboard
+        fieldPaths:
+          - spec.template.spec.containers.0.image
+          - spec.template.spec.containers.1.image
+  - source:
+      kind: ConfigMap
+      name: nextgen-dashboard-platform-values
+      fieldPath: data.NEXTGEN_DASHBOARD_DEPLOYED_AT
+    targets:
+      - select:
+          kind: Deployment
+          name: nextgen-dashboard
+        fieldPaths:
+          - spec.template.metadata.annotations.[nextgen-dashboard.clawhub.dev/redeploy-at]

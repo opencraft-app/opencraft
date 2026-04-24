@@ -1,0 +1,75 @@
+{
+  "name": "agent-platform-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:local": "VITE_LOCAL_SDK=1 vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "deploy:cf": "node scripts/deploy-cloudflare-pages.mjs"
+  },
+  "dependencies": {
+    "@radix-ui/react-dialog": "^1.1.15",
+    "@radix-ui/react-label": "^2.1.7",
+    "@radix-ui/react-scroll-area": "^1.2.10",
+    "@radix-ui/react-select": "^2.2.6",
+    "@radix-ui/react-slot": "^1.2.3",
+    "@radix-ui/react-tabs": "^1.1.13",
+    "@rollup/rollup-darwin-arm64": "^4.60.0",
+    "@tencent/tea-sdk-lightclaw": "^1.0.21",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "bson": "^7.2.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "framer-motion": "^11.0.8",
+    "html2canvas": "^1.4.1",
+    "lucide-react": "^0.554.0",
+    "qrcode.react": "^3.2.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "react-router-dom": "^7.9.4",
+    "tailwind-merge": "^3.3.1"
+  },
+  "devDependencies": {
+    "@rollup/rollup-darwin-x64": "^4.60.0",
+    "@tailwindcss/vite": "^4.1.12",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/node": "^24.6.0",
+    "@types/react": "^19.1.13",
+    "@types/react-dom": "^19.1.9",
+    "@vitejs/plugin-react": "^5.0.2",
+    "jsdom": "^28.1.0",
+    "tailwindcss": "^4.1.12",
+    "typescript": "~5.9.2",
+    "vite": "^7.1.7",
+    "vitest": "^4.1.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ],
+    "overrides": {
+      "@tencent/iaas-common": "file:vendor/tencent/iaas-common-3.8.38.tgz",
+      "@tencent/iaas-component": "file:vendor/tencent/iaas-component-0.2.105.tgz",
+      "@tencent/iaas-workbench-api-client": "file:vendor/tencent/iaas-workbench-api-client-1.0.20.tgz",
+      "@tencent/qcloud-iaas-api": "file:vendor/tencent/qcloud-iaas-api-1.0.1.tgz",
+      "@tencent/tce-sdk": "file:vendor/tencent/tce-sdk-1.1.11.tgz",
+      "@tencent/tea-app": "file:vendor/tencent/tea-app-2.1.25.tgz",
+      "@tencent/tea-chart": "file:vendor/tencent/tea-chart-2.5.1.tgz",
+      "@tencent/tea-component": "file:vendor/tencent/tea-component-2.8.6-beta.35.tgz",
+      "@tencent/tea-icons-react": "file:vendor/tencent/tea-icons-react-1.0.78.tgz",
+      "@tencent/tea-sdk-lightclaw": "file:vendor/tencent/tea-sdk-lightclaw-1.0.21.tgz",
+      "@tencent/tea-style-lighthouse": "file:vendor/tencent/tea-style-lighthouse-1.0.371.tgz",
+      "@tencent/types-tce-sdk-component": "file:vendor/types-tce-sdk-component-1.0.17.tgz",
+      "@tencent/watermarkjs": "file:vendor/tencent/watermarkjs-0.0.8.tgz",
+      "xlsx": "file:vendor/generic/xlsx-0.20.2.tgz"
+    }
+  }
+}

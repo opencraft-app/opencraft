@@ -1,0 +1,62 @@
+gitlabUrl: https://code.lightclaw.tech
+
+concurrent: 4
+checkInterval: 1
+logLevel: debug
+
+rbac:
+  create: true
+
+serviceAccount:
+  create: true
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+strategy:
+  type: Recreate
+
+nodeSelector:
+  workload: gitlab-runner
+
+extraEnv:
+  FF_PRINT_POD_EVENTS: "true"
+
+runners:
+  executor: kubernetes
+  tags: hk,tke,kaniko,gitops
+  runUntagged: false
+  locked: false
+  secret: gitlab-runner-auth
+  config: |
+    [[runners]]
+      name = "hk-tke-kaniko"
+      url = "https://code.lightclaw.tech"
+      executor = "kubernetes"
+      request_concurrency = 4
+      tag_list = ["hk", "tke", "kaniko", "gitops"]
+      run_untagged = false
+      locked = false
+      [runners.kubernetes]
+        namespace = "{{ .Release.Namespace }}"
+        image = "alpine:3.20"
+        poll_timeout = 1800
+        cpu_request = "250m"
+        memory_request = "256Mi"
+        cpu_limit = "1"
+        memory_limit = "1Gi"
+        helper_cpu_request = "100m"
+        helper_memory_request = "128Mi"
+        helper_cpu_limit = "500m"
+        helper_memory_limit = "512Mi"
+        service_cpu_request = "100m"
+        service_memory_request = "128Mi"
+        service_cpu_limit = "500m"
+        service_memory_limit = "512Mi"
+        [runners.kubernetes.node_selector]
+          workload = "gitlab-runner"

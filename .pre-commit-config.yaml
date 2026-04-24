@@ -1,0 +1,99 @@
+# Pre-commit hooks 配置
+# 安装：make setup
+# 手动运行：pre-commit run --all-files
+
+repos:
+  # Go 编译检查 - 确保代码能编译通过
+  - repo: local
+    hooks:
+      - id: go-build-ctl
+        name: "go build (ctl)"
+        entry: bash -c 'cd ctl && go build ./main/api && go build ./main/service && go build ./main/bypass'
+        language: system
+        files: '^ctl/'
+        types: [go]
+        pass_filenames: false
+
+      - id: validate-ctl-cls-logconfig
+        name: "validate ctl cls logconfig"
+        entry: python3 ctl/scripts/validate_cls_logconfig.py
+        language: system
+        files: '^ctl/k8s/base/(manifests|cls-logconfig)\.yaml$'
+        types: [yaml]
+        pass_filenames: false
+
+      - id: validate-sandbox-cls-logconfig
+        name: "validate sandbox cls logconfig"
+        entry: python3 scripts/validate_cls_workloads.py --name sandbox --namespace sandbox --manifest sandbox/k8s/manifests.yaml --manifest sandbox/k8s/ingressproxy-manifests.yaml --logconfig sandbox/k8s/cls-logconfig.yaml
+        language: system
+        files: '^sandbox/k8s/(manifests|ingressproxy-manifests|cls-logconfig)\.yaml$'
+        types: [yaml]
+        pass_filenames: false
+
+      - id: validate-service-gateway-cls-logconfig
+        name: "validate service-gateway cls logconfig"
+        entry: python3 scripts/validate_cls_workloads.py --name service-gateway --namespace user-auth --manifest service-gateway/k8s/manifests.yaml --logconfig service-gateway/k8s/cls-logconfig.yaml
+        language: system
+        files: '^service-gateway/k8s/(manifests|cls-logconfig)\.yaml$'
+        types: [yaml]
+        pass_filenames: false
+
+      - id: validate-ai-gateway-k8s-cls-policy
+        name: "validate ai-gateway k8s cls policy"
+        entry: >-
+          bash -c 'if [ -f ai-gateway/k8s/cls-logconfig.yaml ]; then
+          python3 scripts/validate_cls_workloads.py --name ai-gateway --namespace ai-gateway
+          --manifests-glob "ai-gateway/k8s/*.yaml" --logconfig ai-gateway/k8s/cls-logconfig.yaml;
+          else
+          echo "SKIP ai-gateway/k8s/cls-logconfig.yaml not present";
+          fi'
+        language: system
+        files: '^ai-gateway/k8s/.*\.yaml$'
+        types: [yaml]
+        pass_filenames: false
+
+      - id: go-build-ai-gateway
+        name: "go build (ai-gateway)"
+        entry: bash -c 'cd ai-gateway && go build ./cmd/...'
+        language: system
+        files: '^ai-gateway/'
+        types: [go]
+        pass_filenames: false
+
+      - id: go-build-sandbox
+        name: "go build (sandbox)"
+        entry: bash -c 'cd sandbox && GOWORK=off go build ./...'
+        language: system
+        files: '^sandbox/'
+        types: [go]
+        pass_filenames: false
+
+      - id: go-build-user-auth
+        name: "go build (user/auth)"
+        entry: bash -c 'cd user/auth && GOWORK=off go build ./...'
+        language: system
+        files: '^user/auth/'
+        types: [go]
+        pass_filenames: false
+
+      - id: go-build-service-gateway
+        name: "go build (service-gateway)"
+        entry: bash -c 'cd service-gateway && go build ./...'
+        language: system
+        files: '^service-gateway/'
+        types: [go]
+        pass_filenames: false
+
+      - id: scan-secrets
+        name: "scan secrets"
+        entry: python3 scripts/scan_secrets.py
+        language: system
+        files: '.'
+
+  # 基础文件检查
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: check-merge-conflict
+      - id: check-yaml
+        args: ['--unsafe']

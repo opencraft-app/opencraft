@@ -1,0 +1,26 @@
+# AI Gateway Deploy Agent Guide
+
+`ai-gateway` 的正式发布模型已经改成：
+
+- source-facing:
+  - `ai-gateway/k8s/base/`
+  - `ai-gateway/k8s/overlays/<env>/`
+- deploy-facing:
+  - `argocd/services/ai-gateway/<env>/`
+  - `argocd/apps/<env>/ai-gateway.yaml`
+
+正式发布只认 `Argo CD`。
+
+## 保留能力
+
+- 镜像构建：
+  - `python3 scripts/build-release-image.py --service ai-gateway --env <env> --tag <tag>`
+- DB migration：
+  - `scripts/run_gitops_db_job.py`
+  - `.gitlab/ci/gitops-db-job.yml`
+
+## 约束
+
+- migration Job 当前不属于 service-local 发布主线
+- `gateway-dashboard` 已独立到自己的发布链路
+- `generated/` 一律不提交 Git

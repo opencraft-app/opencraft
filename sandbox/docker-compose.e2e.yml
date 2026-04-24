@@ -1,0 +1,54 @@
+services:
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--requirepass", "${SANDBOX_REDIS_PASSWORD:?set in /root/code/mono/.secret/sandbox/local.env}"]
+    ports:
+      - "6379:6379"
+
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: ${SANDBOX_E2E_MYSQL_DATABASE:?set in /root/code/mono/.secret/sandbox/local.env}
+      MYSQL_USER: ${SANDBOX_E2E_MYSQL_USER:?set in /root/code/mono/.secret/sandbox/local.env}
+      MYSQL_PASSWORD: ${SANDBOX_E2E_MYSQL_PASSWORD:?set in /root/code/mono/.secret/sandbox/local.env}
+      MYSQL_ROOT_PASSWORD: ${SANDBOX_E2E_MYSQL_ROOT_PASSWORD:?set in /root/code/mono/.secret/sandbox/local.env}
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$${MYSQL_ROOT_PASSWORD}\""]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - ./scripts/e2e/mysql-init.sql:/docker-entrypoint-initdb.d/001-init.sql:ro
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    env_file:
+      - ../.secret/sandbox/local.env
+    environment:
+      MYSQL_DSN: ${SANDBOX_E2E_MYSQL_DSN:?set in /root/code/mono/.secret/sandbox/local.env}
+      REDIS_ADDR: redis:6379
+      REDIS_PASSWORD: ${SANDBOX_REDIS_PASSWORD:?set in /root/code/mono/.secret/sandbox/local.env}
+      REDIS_DB: "0"
+      REDIS_ROUTE_PREFIX: "route:sandbox:"
+    ports:
+      - "8080:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    env_file:
+      - ../.secret/sandbox/local.env
+    environment:
+      MYSQL_DSN: ${SANDBOX_E2E_MYSQL_DSN:?set in /root/code/mono/.secret/sandbox/local.env}
+    command: ["worker", "-refill-interval", "1s", "-cleanup-interval", "5s"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+      api:
+        condition: service_started

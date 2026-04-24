@@ -1,0 +1,228 @@
+# ============================================================================
+# OpenSpec 项目上下文配置（由 /feai-init 自动生成 · 2026-04-21）
+# ============================================================================
+#
+# 本文件作为 AI Agent 的全局项目理解上下文，填写越详细 AI 的辅助能力越强。
+# 如需更新，可再次运行 `/feai-init --openspec`。
+# ============================================================================
+
+schema: spec-driven
+
+context: |
+  # 项目概述
+  Lightclaw 是一款面向 C 端的 AI Agent（智能体）SaaS 产品，提供"一分钟搞定、真的不难"
+  的轻量接入体验。用户可以快速创建 AI Bot、订阅付费套餐、绑定 QQ / 微信 / 企业微信等
+  多种通道，并在控制台中管理工作台、设置、终端等。
+
+  本仓库 (`wisp/mono`) 是微服务 Monorepo，包含多个 Go 后端子服务（ai-gateway、ctl、
+  subscription、payment、session、user、admin-gateway 等）和一套前端子目录
+  (`frontend/`)。本文件的 context 聚焦于前端子目录 `frontend/`，这是日常迭代主阵地。
+
+  # 技术栈
+  - 框架: React 19（严格模式 + createRoot）
+  - UI 组件库: @radix-ui/*（Dialog/Label/Select/Tabs/ScrollArea/Slot）+ shadcn/ui 风格自封装；
+                部分页面使用 @tencent/tea-sdk-lightclaw（本地 monorepo 旁路调试）
+  - 样式方案: Tailwind CSS v4 + 设计 token + class-variance-authority + tailwind-merge
+  - 状态管理: 纯 React Context + useReducer（无 Redux/Zustand/MobX 等外部库）
+              · SessionProvider（会话 / 用户 / 订阅）
+              · OpenClawProvider（OpenClaw 配置态）
+              · RepositoryProvider（依赖注入 Repositories，可在 fake / http 间切换）
+  - 路由: react-router-dom v7（createBrowserRouter + 嵌套布局 + Guard 组件）
+  - 语言: TypeScript 5.9（strict + noUncheckedIndexedAccess + noUnusedLocals/Parameters）
+  - HTTP 请求: 基于 `repositories/` 封装的 Repository 模式（自定义 fetch 封装，未用 axios）
+              请求入口: `frontend/src/repositories/http-repositories.ts`
+              所有 API 通过 `AuthRepository` / `PlanRepository` / `BotRepository` 接口访问
+  - 国际化: 当前无 i18n，中文硬编码；未来如需国际站可引入 react-i18next
+  - 测试: Vitest 4 + @testing-library/react + @testing-library/user-event + jsdom
+  - 构建: Vite 7（含 React 19 兼容 polyfill 注入逻辑，适配 tea-component）
+  - 包管理: pnpm（workspace 形式，与 `tea-sdk-lightclaw` monorepo 联动）
+  - 部署: Cloudflare Pages（静态托管）+ shprod（Kubernetes Pod）双形态
+
+  # 入口与初始化流程
+  入口文件: frontend/src/main.tsx
+
+  启动流程:
+    1. 首行 import `@/polyfills/react-dom-compat`（必须最早执行，为 tea-component
+       打补丁 findDOMNode / render / unmountComponentAtNode，兼容 React 19）
+    2. import `@/styles.css`（Tailwind 入口 + 全局样式）
+    3. createRoot(document.getElementById("root")).render(<StrictMode><App/></StrictMode>)
+    4. <App/> 组合 Providers:
+         RepositoryProvider → SessionProvider → OpenClawProvider → ThemeStyleInjector → RouterProvider
+    5. RouterProvider 接管路由，根据 `router/index.tsx` 渲染对应页面
+
+  # 路由结构
+  路由方案: createBrowserRouter（BrowserHistory，非 Hash）
+  路由表文件: frontend/src/router/index.tsx
+  守卫文件: frontend/src/router/guards.tsx
+
+  一级路由（根域，不套 MarketingLayout）:
+  - /                     → LandingPage          官网首页
+  - /changelog            → ChangelogPage        更新日志（不需登录）
+
+  营销域路由（MarketingAuthGuard 已登录校验；挂在 /dashboard/* 命名空间）:
+  - /dashboard/create     → CreateOpenClawPage   创建 OpenClaw 向导
+  - /subscribe            → SubscribePage        套餐订阅/支付（50KB / 1446 行）
+  - /dashboard/setup      → OpenClawSetupPage    创建后初始化设置
+  - /dashboard/success    → OpenClawSuccessPage  创建成功落地页
+  - /dashboard/settings   → OpenClawSettingsPage 控制台主设置页（125KB / 2929 行，业务核心）
+  - /account              → AccountPage          个人中心（41KB / 1084 行，含实名认证入口）
+  - /account/orders       → AccountOrdersPage    订单列表（14KB）
+  - /dashboard（裸路径）  → Navigate             兜底跳 /dashboard/settings
+
+  旧路径兼容重定向（客户端 Navigate，防止老书签/外链 404）:
+  - /create-openclaw      → /dashboard/create
+  - /openclaw/setup       → /dashboard/setup
+  - /openclaw/success     → /dashboard/success
+  - /openclaw/settings    → /dashboard/settings
+  - /console/{create|setup|success|settings} → /dashboard/{...}
+
+  营销域认证路由（套 MarketingLayout + AuthRouteGuard）:
+  - /auth/sign-in         → SignInPage           手机号 + 验证码登录
+  - /auth/sign-up         → SignUpPage           注册（已收敛至 sign-in）
+  - /auth/sign-up-code    → 重定向 /auth/sign-in
+  - /auth/invite          → InvitePage           邀请码校验
+  - /auth/forgot-password → 重定向 /auth/sign-in
+
+  营销域需登录路由（AuthenticatedGuard + PlanGuard）:
+  - /plans/select         → PlanSelectPage       首次登录选择套餐
+
+  控制台 (App Shell) 路由（套 AppAccessGuard + AppShellLayout）:
+  - /settings/account     → AccountProfilePage   账号设置
+  - /bots/:id/workspace   → WorkspacePage        Bot 工作台
+  - /bots/:id/settings    → SettingsPage         Bot 设置（调用 getSettingsSnapshot）
+  - /bots/:id/terminal    → BotTerminalPage      Bot 终端
+  - /*（AppShell 内兜底） → 重定向 /dashboard/settings
+
+  内部调试路由:
+  - /internal/style-lab   → StyleLabPage         设计系统预览
+
+  404 兜底:
+  - /*                    → NotFoundPage
+
+  路由守卫矩阵（src/router/guards.tsx）:
+  - MarketingAuthGuard    营销域 /dashboard/*、/account/*、/subscribe
+  - AuthRouteGuard        /auth/*（已登录跳首页）
+  - AuthenticatedGuard    通用登录校验，供子守卫复用
+  - PlanGuard             /plans/select 首次选套餐时序
+  - AppAccessGuard        AppShell 域；当前等价 AuthenticatedGuard，预留订阅/权限扩展位
+
+  # 状态管理
+  架构: 纯 React Context + useReducer，无外部状态库。
+
+  - SessionProvider (src/contexts/session-context.tsx):
+      reducer 管理 { authReady, stage: anonymous|authenticated, user, currentSubscription,
+                     firstBotId, inviteValidation, verificationCooldownUntil }
+      对外暴露动作：signInWithCode / signUpWithCode / sendVerificationCode /
+                     uploadAvatar / updateProfile / deleteAccount / signOut / refreshSession
+      LocalStorage key: `lightclaw-ui-session-v1`（仅持久化 UI 态，非敏感）
+      监听 AUTH_UNAUTHORIZED_EVENT 自动登出
+
+  - OpenClawProvider (src/contexts/openclaw-context.tsx):
+      管理 OpenClaw 配置状态（创建向导、当前 OpenClaw 实例等）
+
+  - RepositoryProvider (src/contexts/repository-context.tsx):
+      依赖注入层，运行时选择 http-repositories 或 fake-repositories
+      通过 hook `useRepositories()` 暴露给业务层
+
+  # API 请求层
+  核心封装文件: frontend/src/repositories/http-repositories.ts
+
+  设计模式: Repository Pattern（接口隔离）。所有 API 调用都通过 Repositories 接口访问，
+           生产环境注入 http 实现，演示/测试环境注入 fake 实现。
+
+  - 请求基址: 通过 `lib/auth-api-base.ts` 解析（支持构建时烘焙 VITE_AUTH_API_BASE_URL）
+  - 通用封装: 内部实现 apiRequest，统一处理:
+      · 鉴权 Cookie / Session Token
+      · 统一 APIEnvelope<T> 响应解包 (code / message / data)
+      · 401 自动广播 AUTH_UNAUTHORIZED_EVENT 触发登出
+      · 网络/业务错误转换为 Error 抛出
+
+  # 核心 API 列表
+
+  AuthRepository (认证/用户):
+  - signInWithCode({phone, code, inviteCode?})         手机号+验证码登录
+  - sendVerificationCode(request)                      发送短信验证码（含冷却）
+  - signUpWithCode({name, phone, code, inviteCode?})   注册
+  - validateInviteCode(code)                           校验邀请码有效性
+  - prepareInviteCode(code) / activateInviteCode(code) 邀请码准备/激活
+  - getSession() / getProfile() / updateProfile()      会话/资料
+  - uploadAvatar(file)                                 头像上传（客户端压缩到 200KB）
+  - deleteAccount()                                    注销账号
+  - getOAuthStartUrl(provider)                         OAuth 启动 URL（第三方登录）
+  - signInAsGuest() / signOut()                        游客登录 / 登出
+
+  PlanRepository (套餐/订阅):
+  - getCurrentSubscription()                           当前订阅
+  - getPlanPreview()                                   套餐预览（候选+确认标志）
+  - updateSubscription(tier)                           切换套餐
+  - listBundles()                                      GET /v1/bundles（上线套餐）
+  - createPass(bundleId)                               POST /v1/passes（购买套餐）
+  - listMyPasses()                                     GET /v1/passes（我的权益列表）
+
+  BotRepository (Bot 全生命周期):
+  - getDashboardSnapshot / getWorkspaceSnapshot / getSettingsSnapshot
+  - createBot / destroyBot / updateBotProfile
+  - sendWorkspaceMessage                               工作台消息
+  - getTerminalSession / execDebugCommand              终端/调试
+  - getBotBornCard                                     Bot 诞生卡片
+  - configureQQChannel                                 QQ 通道配置
+  - createWeixinLoginSession / getWeixinLoginSession /
+    cancelWeixinLoginSession / subscribeWeixinLoginSessionEvents    微信登录全流程（SSE）
+  - listSoulTemplates                                  灵魂模板列表
+
+  # 公共组件
+
+  ui 层（设计系统原子组件 src/components/ui/）:
+  - button / cta-button            按钮（class-variance-authority 多变体）
+  - card / glass-card              卡片（毛玻璃风格）
+  - dialog                         弹窗（基于 @radix-ui/react-dialog）
+  - tabs                           标签页（基于 @radix-ui/react-tabs）
+  - select                         下拉选择（基于 @radix-ui/react-select）
+  - input / textarea / label       表单控件
+  - scroll-area                    滚动区域（基于 @radix-ui/react-scroll-area）
+  - badge / stat-tile              徽章 / 指标块
+  - ambient-glow                   环境光晕（品牌动效）
+  - display-title / page-header    标题/页头
+  - composer-panel / inset-panel   面板容器
+  - state-panel                    空/异常态面板
+  - chat-bubble                    聊天气泡
+  - control-shell                  控制台外壳样式
+
+  domain 层（业务领域组件 src/components/domain/）:
+  - plan-card                      套餐卡片
+  - alert-card / bot-status-card   告警 / Bot 状态
+  - billing-summary-card           计费摘要
+  - audit-log-table                审计日志
+  - code-input                     验证码输入框
+  - config-section                 配置区块
+  - event-feed                     事件流
+  - invite-status-card             邀请码状态
+  - release-item                   发布项
+  - scenario-switcher              场景切换
+  - setup-step-timeline            初始化步骤时间线
+
+  site 层（站点级组件 src/components/site/）:
+  - brand-mark / homepage-grammar  品牌标识 / 首页文案构件
+  - legal-footer                   页脚（法律/备案）
+  - login-modal                    登录弹窗
+  - marketing-header-actions       营销页头部动作
+  - user-avatar-menu               用户头像菜单
+
+  # 自定义 Hooks
+  - useRepositories()                              注入数据层
+  - useSession() / useSessionActions()             会话/会话动作
+  - useOpenClaw()                                  OpenClaw 配置
+  - useAsyncResource(fetcher, deps)                异步资源加载（loading/error/data）
+  - useGeneratedNickname()                         随机昵称生成
+
+  # 工具函数 (src/lib/)
+  - auth-api-base.ts       解析认证 API base URL（支持构建时烘焙）
+  - oauth.ts               OAuth 提供商定义与跳转
+  - avatar-image.ts        头像图片客户端压缩（压到 200KB 内）
+
+  # 领域模型 (src/domain/)
+  - types.ts               User / Bot / Plan / Pass / Bundle / AuditEvent ... 等核心类型
+  - plan-catalog.ts        套餐目录常量
+
+  # 目录结构
+  # （见 AGENTS.md 第三章）

@@ -1,0 +1,96 @@
+# ─── IDE / 编辑器 ─────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ─── AI 工具 ──────────────────────────────────────────
+.agents/
+.claude/
+.codebuddy/
+.gemini/
+.omx/
+.tmp/
+.serena/
+.cursor/
+.shared/
+
+# ─── Go ───────────────────────────────────────────────
+go.work.sum
+
+# ─── Node.js dependencies ────────────────────────────
+node_modules/
+package-lock.json
+!ai-gateway/package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# ─── Environment variables (security) ────────────────
+.env
+.env.local
+.env.*.local
+secrets.local.sh
+
+# ─── 本地开发运行时 ──────────────────────────────────
+logs/
+.pids/
+*.log
+.gitnexus
+sandbox/.tmp-go-cache/
+service-gateway/service-gateway
+
+# ─── Build outputs ───────────────────────────────────
+dist/
+build/
+.next/
+out/
+_research-output
+
+# ─── Python ──────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+.venv-precommit/
+venv/
+env/
+images/tests/onboard-test.env
+
+# ─── OpenTofu / Terraform local state ───────────────
+.terraform/
+*.tfstate
+*.tfstate.*
+tfplan
+*.tfplan
+
+
+.secret/*
+!.secret/README.md
+sandbox/k8s/overlays/*/generated/
+ai-gateway/k8s/overlays/*/generated/
+user/auth/k8s/overlays/*/generated/
+payment/k8s/overlays/*/generated/
+subscription/k8s/overlays/*/generated/
+service-gateway/k8s/overlays/*/generated/
+admin-gateway/k8s/overlays/*/generated/
+nextgen-dashboard/k8s/overlays/*/generated/
+gateway-dashboard/k8s/overlays/*/generated/
+ctl/k8s/overlays/*/generated/
+frontend/k8s/overlays/*/generated/
+deploy/envs/*/platform.env
+deploy/envs/*/*.kustomize.secret.env
+infra_pulumi/.reconcile/
+/api
+ctl/api
+ctl/api
+ctl/bypass
+ctl/service
+
+# FE-AI 本地项目配置（每个开发者独立，不提交到仓库）
+.codebuddy/project.local.json
+.codebuddy/project.local.json.backup
+
+.omx/*

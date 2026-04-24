@@ -1,0 +1,18 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: frontend-shprod
+  namespace: argocd
+spec:
+  project: shprod-frontend
+  source:
+    repoURL: https://code.lightclaw.tech/root/mono-source.git
+    targetRevision: master
+    path: argocd/services/frontend/shprod
+  destination:
+    namespace: frontend
+    name: shprod
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

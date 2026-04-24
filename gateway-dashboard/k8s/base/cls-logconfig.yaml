@@ -1,0 +1,16 @@
+apiVersion: cls.cloud.tencent.com/v1
+kind: LogConfig
+metadata:
+  name: gateway-dashboard-runtime
+spec:
+  clsDetail:
+    topicId: REPLACE_GATEWAY_DASHBOARD_CLS_TOPIC_ID
+    logType: minimalist_log
+  inputDetail:
+    type: container_stdout
+    containerStdout:
+      workloads:
+        - namespace: ai-gateway
+          name: gateway-dashboard
+          kind: deployment
+          container: dashboard

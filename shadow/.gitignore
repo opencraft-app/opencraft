@@ -1,0 +1,6 @@
+.omx/
+bin/
+*.db
+*.db-shm
+*.db-wal
+.README.md.swo

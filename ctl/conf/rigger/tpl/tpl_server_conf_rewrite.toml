@@ -1,0 +1,95 @@
+[api]
+enable_inner_sign = ${ENABLE_INNER_SIGN}
+
+[log.api]
+formater = "simple"
+enable_color = true
+
+[log.service]
+formater = "simple"
+enable_color = true
+
+[log.bypass]
+formater = "simple"
+enable_color = true
+
+[db]
+host = "${MYSQL_HOST}"
+user = "${MYSQL_USER}"
+password = "${MYSQL_PASS}"
+port = ${MYSQL_PORT}
+
+[redis]
+host = "${REDIS_HOST}"
+pass = "${REDIS_PASS}"
+port = ${REDIS_PORT}
+
+[translate]
+dir = "${TRANSLATE_DIR}"
+
+[adapter.lightpro]
+api_static_url = "${LIGHTPRO_API_STATIC_URL}"
+
+[adapter.lighthouse]
+api_static_url = "${LIGHTHOUSE_API_STATIC_URL}"
+tcloud_url = "${LIGHTHOUSE_TCLOUD_URL}"
+
+[adapter.sts]
+url = "${STS_URL}"
+internal_url = "${STS_INTERNAL_URL}"
+
+[adapter.dnspod]
+url = "${DNSPOD_URL}"
+
+[adapter.domain]
+inner_url = "${DOMAIN_INNER_URL}"
+inner_ip = "${DOMAIN_INNER_IP}"
+inner_secret_id = "${DOMAIN_INNER_SECRET_ID}"
+inner_secret_key = "${DOMAIN_INNER_SECRET_KEY}"
+
+#配置名称：adapter.tcloud
+#配置含义：云API相关配置
+#配置项结构与含义：
+# tcloud_inner_action_partial_host
+# 1. 内部云API接口域名后缀，现网配置，测试环境需要使用：test.tencentcloudapi.com；现网环境需要使用woa域名，完整格式为：service + tc_inner_visit_point + inner_action_partial_host
+# 2. tc_inner_visit_point 为调用云API内部接口的接入点信息。实际表示云API内部接口服务集群所在地域如ap-guangzhou。
+# 3. 因为云API内部接口集群部署地域不全，一个集群会为多个地域的调用者服务。参考文档：https://doc.weixin.qq.com/doc/w3_AJ0AXgbdAFwfhD1pg6ARP0mDJ0rUD?scode=AJEAIQdfAAoMOwrqkEAJ0AXgbdAFw
+# 4. 配置标准为按地域就近配置，举例：部署在广州和重庆的服务，接入点可都配为ap-guangzhou
+[adapter.tcloud]
+tcloud_inner_action_partial_host = "ap-guangzhou.tencentcloudapi.woa.com"
+
+[service_role.dns_ssl]
+secret_id = "${SERVICE_ROLE_DNS_SSL_SECRET_ID}"
+secret_key = "${SERVICE_ROLE_DNS_SSL_SECRET_KEY}"
+credential_duration_seconds = ${SERVICE_ROLE_DNS_SSL_CREDENTIAL_DURATION_SECONDS}
+cache_seconds = ${SERVICE_ROLE_DNS_SSL_CACHE_SECONDS}
+expect_cache_version = "${SERVICE_ROLE_DNS_SSL_EXPECT_CACHE_VERSION}"
+
+[service_role.basic]
+secret_id = "${SERVICE_ROLE_BASIC_SECRET_ID}"
+secret_key = "${SERVICE_ROLE_BASIC_SECRET_KEY}"
+credential_duration_seconds = ${SERVICE_ROLE_BASIC_CREDENTIAL_DURATION_SECONDS}
+cache_seconds = ${SERVICE_ROLE_BASIC_CACHE_SECONDS}
+expect_cache_version = "${SERVICE_ROLE_BASIC_EXPECT_CACHE_VERSION}"
+
+[service_account.base]
+secret_id = "${SERVICE_ACCOUNT_LIGHTHOUSE_SECRET_ID}"
+secret_key = "${SERVICE_ACCOUNT_LIGHTHOUSE_SECRET_KEY}"
+
+[service_account.lighthouse]
+secret_id = "${SERVICE_ACCOUNT_LIGHTHOUSE_SECRET_ID}"
+secret_key = "${SERVICE_ACCOUNT_LIGHTHOUSE_SECRET_KEY}"
+credential_duration_seconds = ${SERVICE_ACCOUNT_LIGHTHOUSE_CREDENTIAL_DURATION_SECONDS}
+cache_seconds = ${SERVICE_ACCOUNT_LIGHTHOUSE_CACHE_SECONDS}
+expect_cache_version = "${SERVICE_ACCOUNT_LIGHTHOUSE_EXPECT_CACHE_VERSION}"
+
+[tracing]
+protocol = "${TRACING_PROTOCOL}"
+async = ${TRACING_ASYNC}
+tenant_id = "${TRACING_TENANT_ID}"
+service_namespace = "${TRACING_SERVICE_NAMESPACE}"
+
+[misc]
+region = "${REGION}"
+object_id_password_suffix = "_lightglobal_${USER}"
+apps_data_dir = "${APPS_DATA_DIR}"

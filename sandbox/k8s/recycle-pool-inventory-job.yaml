@@ -1,0 +1,53 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sandbox-db-recycle-pool-inventory-v1
+  namespace: sandbox
+spec:
+  ttlSecondsAfterFinished: 300
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: mysql-recycle
+          image: mysql:8.0
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: sandbox-runtime-config
+            - secretRef:
+                name: sandbox-runtime-secrets
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              mysql \
+                --host="${MYSQL_HOST}" \
+                --port="${MYSQL_PORT}" \
+                --user="${MYSQL_USER}" \
+                --password="${MYSQL_PASSWORD}" <<'SQL'
+              USE `cvm`;
+
+              SELECT COUNT(*) AS sandbox_count
+              FROM sandboxes
+              WHERE pool_id LIKE 'pool-%';
+
+              SELECT COUNT(*) AS instance_count
+              FROM instances
+              WHERE pool_id LIKE 'pool-%';
+
+              DELETE FROM sandboxes
+              WHERE pool_id LIKE 'pool-%';
+
+              DELETE FROM instances
+              WHERE pool_id LIKE 'pool-%';
+
+              SELECT COUNT(*) AS sandbox_count
+              FROM sandboxes
+              WHERE pool_id LIKE 'pool-%';
+
+              SELECT COUNT(*) AS instance_count
+              FROM instances
+              WHERE pool_id LIKE 'pool-%';
+              SQL

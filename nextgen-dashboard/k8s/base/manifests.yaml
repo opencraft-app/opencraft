@@ -1,0 +1,184 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: user-auth
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: default
+  namespace: user-auth
+imagePullSecrets:
+  - name: tcr.ipsqcloudregistrykey
+  - name: tcr.ipstcr-regcred
+  - name: tcr.ipstcr-lightclaw-secret
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nextgen-dashboard-config
+  namespace: user-auth
+data:
+  NEXTGEN_DASHBOARD_ADDR: ":8084"
+  NEXTGEN_DASHBOARD_PROXY_URL: "http://127.0.0.1:8084/admin/api/commands/proxy"
+  NEXTGEN_DASHBOARD_RUNNER_WS: "ws://127.0.0.1:19091/ws/shell"
+  NEXTGEN_RUNNER_ADDR: ":19091"
+  NEXTGEN_RUNNER_SHELL: "/bin/bash"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nextgen-dashboard
+  namespace: user-auth
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nextgen-dashboard
+  template:
+    metadata:
+      labels:
+        app: nextgen-dashboard
+      annotations:
+        nextgen-dashboard.clawhub.dev/redeploy-at: "REPLACE_NEXTGEN_DASHBOARD_DEPLOYED_AT"
+    spec:
+      nodeSelector:
+        pool: REPLACE_NEXTGEN_DASHBOARD_NODE_POOL
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: nextgen-dashboard
+      containers:
+        - name: admind
+          image: REPLACE_NEXTGEN_DASHBOARD_IMAGE
+          imagePullPolicy: Always
+          command:
+            - /usr/local/bin/admind
+          envFrom:
+            - configMapRef:
+                name: nextgen-dashboard-config
+            - secretRef:
+                name: nextgen-dashboard-runtime-secrets
+          ports:
+            - name: http
+              containerPort: 8084
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+        - name: ops-runner
+          image: REPLACE_NEXTGEN_DASHBOARD_IMAGE
+          imagePullPolicy: Always
+          command:
+            - /usr/local/bin/ops-runner
+          envFrom:
+            - configMapRef:
+                name: nextgen-dashboard-config
+            - secretRef:
+                name: nextgen-dashboard-runtime-secrets
+          ports:
+            - name: runner
+              containerPort: 19091
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: runner
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: runner
+            initialDelaySeconds: 10
+            periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nextgen-dashboard
+  namespace: user-auth
+spec:
+  selector:
+    app: nextgen-dashboard
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nextgen-dashboard-ingress
+  namespace: user-auth
+spec:
+  type: NodePort
+  selector:
+    app: nextgen-dashboard
+  ports:
+    - name: http
+      port: 80
+      nodePort: 32310
+      targetPort: http
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: nextgen-dashboard
+  namespace: user-auth
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: nextgen-dashboard
+  minReplicas: 2
+  maxReplicas: 6
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      selectPolicy: Max
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 60
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      selectPolicy: Max
+      policies:
+        - type: Percent
+          value: 20
+          periodSeconds: 60
+  metrics:
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 75

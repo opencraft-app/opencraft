@@ -1,0 +1,147 @@
+# golangci-lint 配置文件
+# 基于官方参考配置优化
+
+# 定义配置版本
+version: "2"
+
+linters:
+  enable:
+    # 错误处理相关（严重bug检测）
+    - errcheck         # 未检查的错误
+    - errorlint        # 错误包装问题
+    - rowserrcheck     # 数据库rows.Err()检查
+    - nilerr          # nil错误检查逻辑问题
+    - nilnil          # 同时返回nil错误和无效值
+    
+    # 官方和静态分析（高优先级bug检测）
+    - govet           # Go官方vet工具
+    - staticcheck     # 静态分析检测各种bug
+    - ineffassign     # 未使用的变量赋值
+    - unused          # 未使用的代码
+    
+    # 安全性和资源管理
+    - gosec           # 安全漏洞检测
+    - bodyclose       # HTTP响应body未关闭
+    - sqlclosecheck   # SQL连接/语句未关闭
+    
+    # 逻辑bug检测
+    - gocritic        # 综合的bug和性能问题检测
+    - durationcheck   # duration相乘错误
+    - makezero        # slice声明问题
+    - wastedassign    # 浪费的赋值
+    
+    # context相关
+    - contextcheck    # context使用问题
+    - noctx           # 缺少context使用
+    
+    # 保留的代码风格（最小化）
+    - lll             # 行长度（仅保留这一个风格检查）
+    - wrapcheck       # 错误包装（更多是bug预防）
+    - revive          # 基本命名规范（最小配置）
+
+  settings:
+    errcheck:
+      # 检查类型断言中的错误
+      check-type-assertions: true
+      # 检查空白标识符赋值
+      check-blank: true
+    
+    errorlint:
+      # 检查 fmt.Errorf 是否使用 %w 动词
+      errorf: true
+      # 检查普通类型断言和类型开关
+      asserts: true
+      # 检查普通错误比较
+      comparison: true
+    
+    lll:
+      # 最大行长度
+      line-length: 120
+      # 制表符宽度
+      tab-width: 1
+    
+    wrapcheck:
+      # 要忽略的函数签名子字符串列表
+      ignoreSigs:
+        - .Errorf(
+        - errors.New(
+        - errors.Unwrap(
+        - .(*User).Save(
+      # 要忽略的包 glob 模式列表
+      ignorePackageGlobs:
+        - lightpro/internal/exception.*
+    
+    revive:
+      # 设置默认严重性
+      severity: warning
+      # 设置默认置信度
+      confidence: 0.8
+      # 规则配置
+      rules:
+        # 导出标识符规则
+        - name: exported
+          severity: warning
+          disabled: false
+          exclude: [""]
+          arguments: 
+            - "check-private-receivers"
+          # https://github.com/mgechev/revive/blob/HEAD/RULES_DESCRIPTIONS.md#var-naming
+        - name: var-naming
+          severity: warning
+          disabled: false  # Enable the rule since you want it to work
+          exclude: [""]
+          arguments:
+            - [ "ID", "API", "HTTP", "JSON", "XML", "URL", "UUID", "MCP" ] # AllowList - common initialisms
+            - [ ] # DenyList - empty, no blocked initialisms
+            - - skip-initialism-name-checks: true  # This allows xxxId, readJson, etc.
+                upper-case-const: true             # Allow UPPER_CASE constants
+                skip-package-name-checks: true     # Skip package name validation
+                extra-bad-package-names:           # Additional bad package names
+                  - helpers
+                  - models
+
+run:
+  # 跳过的目录
+  skip-dirs:
+    - third_party
+    - builtin
+    - examples
+    - scripts
+  
+  # 跳过的文件模式
+  skip-files:
+    - ".*_mock\\.go$"
+    - ".*_test\\.go$"
+  
+  # 超时设置（5分钟）
+  timeout: 5m
+  
+  # 包含测试文件
+  tests: false
+
+issues:
+  # 每个 linter 的最大问题数（0 表示无限制）
+  max-issues-per-linter: 0
+  
+  # 相同文本的最大问题数（0 表示无限制）
+  max-same-issues: 0
+  
+  # 排除规则
+  exclude-rules:
+    # 测试文件中排除多个linters
+    - path: _test\.go
+      linters:
+        - err113
+        - errcheck
+        - wrapcheck
+    
+    # 排除特定的 wrapcheck 错误
+    - text: "error returned from external package is unwrapped.*exception"
+      linters:
+        - wrapcheck
+    
+    # 测试文件中排除未使用参数警告
+    - path: _test\.go
+      text: "unused-parameter"
+      linters:
+        - revive

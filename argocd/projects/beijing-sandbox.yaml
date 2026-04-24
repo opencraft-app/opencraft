@@ -1,0 +1,40 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: beijing-sandbox
+  namespace: argocd
+spec:
+  description: GitOps project for Beijing test environment.
+  sourceRepos:
+    - https://code.lightclaw.tech/root/mono.git
+  destinations:
+    - namespace: '*'
+      server: https://lb-f1q4qeld-qn756aupy9e3f41w.clb.bj-tencentclb.com:443
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  roles:
+    - name: mono-observe
+      description: Read access for mono leaf apps in Beijing sandbox.
+      groups:
+        - mono-release-groups/mono-beijing-sandbox-release
+        - mono-release-groups/mono-beijing-sandbox-readonly
+      policies:
+        - p, proj:beijing-sandbox:mono-observe, applications, get, beijing-sandbox/*, allow
+        - p, proj:beijing-sandbox:mono-observe, projects, get, beijing-sandbox, allow
+    - name: mono-logs
+      description: Log access for mono leaf apps in Beijing sandbox.
+      groups:
+        - mono-release-groups/mono-beijing-sandbox-release
+        - mono-release-groups/mono-beijing-sandbox-readonly
+      policies:
+        - p, proj:beijing-sandbox:mono-logs, logs, get, beijing-sandbox/*, allow
+    - name: mono-sync
+      description: Sync access for mono leaf apps in Beijing sandbox.
+      groups:
+        - mono-release-groups/mono-beijing-sandbox-release
+      policies:
+        - p, proj:beijing-sandbox:mono-sync, applications, sync, beijing-sandbox/*, allow

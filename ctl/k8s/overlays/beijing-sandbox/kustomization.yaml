@@ -1,0 +1,142 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: ctl
+
+resources:
+  - ../../base
+  - generated/ctl-migrations-configmap.yaml
+
+generatorOptions:
+  disableNameSuffixHash: true
+
+configMapGenerator:
+  - name: ctl-platform-values
+    envs:
+      - generated/platform.env
+  - name: ctl-conf-common
+    files:
+      - server_conf.toml=generated/common/server_conf.toml
+  - name: ctl-conf-rewrite
+    files:
+      - server_conf_rewrite.toml=generated/rewrite/server_conf_rewrite.toml
+  - name: ctl-soul-templates
+    files:
+      - SOUL-gentle.md=../../../assets/souls/SOUL-gentle.md
+      - SOUL-humor.md=../../../assets/souls/SOUL-humor.md
+      - SOUL-pro.md=../../../assets/souls/SOUL-pro.md
+
+secretGenerator:
+  - name: ctl-migrate-runtime-secrets
+    envs:
+      - generated/ctl-migrate-runtime-secrets.env
+  - name: ctl-runtime-secrets
+    envs:
+      - generated/ctl-runtime-secrets.env
+
+replacements:
+  - source:
+      kind: ConfigMap
+      name: ctl-platform-values
+      fieldPath: data.CTL_MIGRATION_JOB_NAME
+    targets:
+      - select:
+          kind: Job
+          name: REPLACE_CTL_MIGRATION_JOB_NAME
+        fieldPaths:
+          - metadata.name
+  - source:
+      kind: ConfigMap
+      name: ctl-platform-values
+      fieldPath: data.CTL_NODE_POOL
+    targets:
+      - select:
+          kind: Job
+          name: REPLACE_CTL_MIGRATION_JOB_NAME
+        fieldPaths:
+          - spec.template.spec.nodeSelector.pool
+      - select:
+          kind: Deployment
+          name: ctl-api
+        fieldPaths:
+          - spec.template.spec.nodeSelector.pool
+      - select:
+          kind: Deployment
+          name: ctl-service
+        fieldPaths:
+          - spec.template.spec.nodeSelector.pool
+      - select:
+          kind: Deployment
+          name: ctl-bypass
+        fieldPaths:
+          - spec.template.spec.nodeSelector.pool
+  - source:
+      kind: ConfigMap
+      name: ctl-platform-values
+      fieldPath: data.CTL_IMAGE
+    targets:
+      - select:
+          kind: Deployment
+          name: ctl-api
+        fieldPaths:
+          - spec.template.spec.containers.0.image
+      - select:
+          kind: Deployment
+          name: ctl-service
+        fieldPaths:
+          - spec.template.spec.containers.0.image
+      - select:
+          kind: Deployment
+          name: ctl-bypass
+        fieldPaths:
+          - spec.template.spec.containers.0.image
+  - source:
+      kind: ConfigMap
+      name: ctl-platform-values
+      fieldPath: data.CTL_DEPLOYED_AT
+    targets:
+      - select:
+          kind: Deployment
+          name: ctl-api
+        fieldPaths:
+          - spec.template.metadata.annotations.[ctl.clawhub.dev/redeploy-at]
+      - select:
+          kind: Deployment
+          name: ctl-service
+        fieldPaths:
+          - spec.template.metadata.annotations.[ctl.clawhub.dev/redeploy-at]
+      - select:
+          kind: Deployment
+          name: ctl-bypass
+        fieldPaths:
+          - spec.template.metadata.annotations.[ctl.clawhub.dev/redeploy-at]
+  - source:
+      kind: ConfigMap
+      name: ctl-platform-values
+      fieldPath: data.CTL_INTERNAL_SUBNET_ID
+    targets:
+      - select:
+          kind: Service
+          name: ctl-api-internal
+        fieldPaths:
+          - metadata.annotations.[service.kubernetes.io/qcloud-loadbalancer-internal-subnetid]
+  - source:
+      kind: ConfigMap
+      name: ctl-platform-values
+      fieldPath: data.CTL_CLS_TOPIC_ID
+    targets:
+      - select:
+          kind: LogConfig
+          name: ctl-runtime
+        fieldPaths:
+          - spec.clsDetail.topicId
+  - source:
+      kind: ConfigMap
+      name: ctl-platform-values
+      fieldPath: data.CTL_TEST_MYSQL_HOST
+    targets:
+      - select:
+          kind: Job
+          name: REPLACE_CTL_MIGRATION_JOB_NAME
+        fieldPaths:
+          - spec.template.spec.initContainers.0.env.0.value

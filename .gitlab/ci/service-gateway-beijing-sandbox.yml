@@ -1,0 +1,50 @@
+service-gateway-beijing-sandbox-prepare:
+  extends: .gitops_remote_build_prepare
+  variables:
+    BUILD_SERVICE: service-gateway
+    BUILD_ENV: beijing-sandbox
+    BUILD_TAG: "bj8-${CI_PIPELINE_IID}-${CI_COMMIT_SHORT_SHA}"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: manual
+    - when: never
+  environment:
+    name: build/beijing-sandbox
+
+service-gateway-beijing-sandbox-build:
+  extends: .gitops_remote_build
+  variables:
+    BUILD_SERVICE: service-gateway
+    BUILD_ENV: beijing-sandbox
+    BUILD_TAG: "bj8-${CI_PIPELINE_IID}-${CI_COMMIT_SHORT_SHA}"
+  needs:
+    - job: service-gateway-beijing-sandbox-prepare
+      artifacts: true
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: manual
+    - when: never
+  environment:
+    name: build/beijing-sandbox
+
+service-gateway-beijing-sandbox-pin:
+  extends: .gitops_image_pin
+  variables:
+    BUILD_SERVICE: service-gateway
+    BUILD_ENV: beijing-sandbox
+    BUILD_TAG: "bj8-${CI_PIPELINE_IID}-${CI_COMMIT_SHORT_SHA}"
+    PIN_GITOPS_BRANCH: master
+    PIN_BRANCH_NAME: "gitops/image-pin/service-gateway-beijing-sandbox-${CI_PIPELINE_ID}"
+    PIN_MR_TITLE: "chore: pin service-gateway beijing-sandbox image to bj8-${CI_PIPELINE_IID}-${CI_COMMIT_SHORT_SHA}"
+    PIN_COMMIT_MESSAGE: "chore: pin service-gateway beijing-sandbox image to bj8-${CI_PIPELINE_IID}-${CI_COMMIT_SHORT_SHA}"
+  needs:
+    - job: service-gateway-beijing-sandbox-prepare
+      artifacts: true
+    - job: service-gateway-beijing-sandbox-build
+      artifacts: true
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $BOT_GITLAB_TOKEN'
+      when: manual
+    - when: never
+  environment:
+    name: pin/beijing-sandbox

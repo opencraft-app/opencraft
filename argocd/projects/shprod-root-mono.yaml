@@ -1,0 +1,16 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: shprod-root-mono
+  namespace: argocd
+spec:
+  description: Root app boundary for Shanghai production on mono-source.
+  sourceRepos:
+    - https://code.lightclaw.tech/root/mono-source.git
+  destinations:
+    - namespace: argocd
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist: []
+  namespaceResourceWhitelist:
+    - group: argoproj.io
+      kind: Application

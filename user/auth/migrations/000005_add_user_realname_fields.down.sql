@@ -1,0 +1,9 @@
+ALTER TABLE users
+  DROP COLUMN realname_id_card_masked,
+  DROP COLUMN realname_name_masked,
+  DROP COLUMN realname_id_card_ciphertext,
+  DROP COLUMN realname_name_ciphertext,
+  DROP COLUMN realname_request_id,
+  DROP COLUMN realname_verify_result,
+  DROP COLUMN realname_verify_provider,
+  DROP COLUMN realname_verified_at;

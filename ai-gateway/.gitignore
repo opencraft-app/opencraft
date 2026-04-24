@@ -1,0 +1,7 @@
+migrate-helper
+bin/
+/server
+*.exe
+.env
+logs/
+.pids/

@@ -1,0 +1,893 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/gin-gonic/gin"
+
+	api "cvm-mock-e2b/api-gin/gen"
+	"cvm-mock-e2b/internal/core"
+	"cvm-mock-e2b/internal/provider"
+	"cvm-mock-e2b/internal/service"
+	"cvm-mock-e2b/internal/store"
+)
+
+const (
+	handlerTestVpcID    = "vpc-test"
+	handlerTestSubnetID = "subnet-test"
+	handlerTestZone     = "ap-beijing-8"
+)
+
+var handlerTestSecurityGroups = []string{"sg-test"}
+
+type stubCommandRunner struct {
+	runResp provider.CommandInvocation
+	runErr  error
+	runReq  struct {
+		region     string
+		instanceID string
+		script     string
+	}
+
+	getResp provider.CommandResult
+	getErr  error
+	getReq  struct {
+		region       string
+		invocationID string
+		instanceID   string
+	}
+
+	sessionResp provider.TerminalSession
+	sessionErr  error
+	sessionReq  struct {
+		region     string
+		instanceID string
+	}
+}
+
+func (s *stubCommandRunner) RunCommand(_ context.Context, region, instanceID, script string) (provider.CommandInvocation, error) {
+	s.runReq.region = region
+	s.runReq.instanceID = instanceID
+	s.runReq.script = script
+	return s.runResp, s.runErr
+}
+
+func (s *stubCommandRunner) GetCommandInvocation(_ context.Context, region, invocationID, instanceID string) (provider.CommandResult, error) {
+	s.getReq.region = region
+	s.getReq.invocationID = invocationID
+	s.getReq.instanceID = instanceID
+	return s.getResp, s.getErr
+}
+
+func (s *stubCommandRunner) StartTerminalSession(_ context.Context, region, instanceID string) (provider.TerminalSession, error) {
+	s.sessionReq.region = region
+	s.sessionReq.instanceID = instanceID
+	return s.sessionResp, s.sessionErr
+}
+
+func newHandlerTestRouter(h *handler) *gin.Engine {
+	return newHandlerTestRouterWithAuth(h, "")
+}
+
+func newHandlerTestRouterWithAuth(h *handler, authServiceURL string) *gin.Engine {
+	r := gin.New()
+	api.RegisterHandlers(r, h)
+	authenticated := r.Group("/")
+	authenticated.Use(userSessionAuth(authServiceURL))
+	registerTATRoutes(authenticated, h)
+	internal := r.Group("/internal")
+	registerPoolRoutes(internal, h)
+	registerTemplateClassRoutes(internal, h)
+	return r
+}
+
+func newAuthIntrospectionServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.TrimSpace(r.Header.Get("Authorization")) != "Bearer session-good" {
+			w.WriteHeader(http.StatusUnauthorized)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"session": map[string]any{
+				"user": map[string]any{
+					"id":    "usr_test",
+					"email": "test@example.com",
+				},
+			},
+		})
+	}))
+}
+
+func createAllocatedSandbox(t *testing.T, svc *service.Service) (core.Pool, core.Instance, core.Sandbox) {
+	t.Helper()
+	ctx := context.Background()
+	verifyOK := func(context.Context, string) error { return nil }
+
+	pool, err := svc.CreatePool(ctx, "target", "", "img-test", 0, handlerTestVpcID, handlerTestSubnetID, handlerTestZone, handlerTestSecurityGroups)
+	if err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+	if _, err := svc.RefillVerified(ctx, pool.ID, 1, []string{"10.0.0.10"}, []string{"ins-test-1"}, verifyOK); err != nil {
+		t.Fatalf("refill pool: %v", err)
+	}
+	inst, err := svc.Allocate(ctx, pool.ID)
+	if err != nil {
+		t.Fatalf("allocate: %v", err)
+	}
+	sb, err := svc.CreateSandbox(ctx, core.Sandbox{
+		ID:             "sb-test-1",
+		InstanceID:     inst.ID,
+		PoolID:         pool.ID,
+		Region:         "ap-beijing",
+		TimeoutSeconds: 300,
+		CreatedAt:      time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("create sandbox: %v", err)
+	}
+	return pool, inst, sb
+}
+
+func TestPostSandboxesWithoutTemplateIDAllocatesFromAnyPool(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	ctx := context.Background()
+	svc := service.NewService(store.NewMemoryStore())
+	verifyOK := func(context.Context, string) error { return nil }
+
+	if _, err := svc.CreatePool(ctx, "empty", "", "img-test", 0, handlerTestVpcID, handlerTestSubnetID, handlerTestZone, handlerTestSecurityGroups); err != nil {
+		t.Fatalf("create empty pool: %v", err)
+	}
+	targetPool, err := svc.CreatePool(ctx, "target", "", "img-test", 0, handlerTestVpcID, handlerTestSubnetID, handlerTestZone, handlerTestSecurityGroups)
+	if err != nil {
+		t.Fatalf("create target pool: %v", err)
+	}
+	if _, err := svc.RefillVerified(ctx, targetPool.ID, 1, []string{"10.0.0.10"}, []string{"cloud-1"}, verifyOK); err != nil {
+		t.Fatalf("refill target pool: %v", err)
+	}
+
+	router := newHandlerTestRouter(&handler{svc: svc})
+
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes", bytes.NewBufferString(`{"metadata":{"owner":"test"}}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp api.Sandbox
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.TemplateID != targetPool.ID {
+		t.Fatalf("expected templateID %s, got %s", targetPool.ID, resp.TemplateID)
+	}
+}
+
+func TestPostSandboxesWithTemplateIDDoesNotFallback(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	ctx := context.Background()
+	svc := service.NewService(store.NewMemoryStore())
+	verifyOK := func(context.Context, string) error { return nil }
+
+	emptyPool, err := svc.CreatePool(ctx, "empty", "", "img-test", 0, handlerTestVpcID, handlerTestSubnetID, handlerTestZone, handlerTestSecurityGroups)
+	if err != nil {
+		t.Fatalf("create empty pool: %v", err)
+	}
+	otherPool, err := svc.CreatePool(ctx, "other", "", "img-test", 0, handlerTestVpcID, handlerTestSubnetID, handlerTestZone, handlerTestSecurityGroups)
+	if err != nil {
+		t.Fatalf("create other pool: %v", err)
+	}
+	if _, err := svc.RefillVerified(ctx, otherPool.ID, 1, []string{"10.0.0.11"}, []string{"cloud-2"}, verifyOK); err != nil {
+		t.Fatalf("refill other pool: %v", err)
+	}
+
+	router := newHandlerTestRouter(&handler{svc: svc})
+
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes", bytes.NewBufferString(`{"templateID":"`+emptyPool.ID+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestPostSandboxesWithTemplateClassIDUsesSandboxBindings(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	ctx := context.Background()
+	svc := service.NewService(store.NewMemoryStore())
+	verifyOK := func(context.Context, string) error { return nil }
+
+	boundPool, err := svc.CreatePool(ctx, "bound", "", "img-test", 0, handlerTestVpcID, handlerTestSubnetID, handlerTestZone, handlerTestSecurityGroups)
+	if err != nil {
+		t.Fatalf("create bound pool: %v", err)
+	}
+	if _, err := svc.RefillVerified(ctx, boundPool.ID, 1, []string{"10.0.0.12"}, []string{"cloud-3"}, verifyOK); err != nil {
+		t.Fatalf("refill bound pool: %v", err)
+	}
+	if _, err := svc.UpsertTemplateClass(ctx, core.TemplateClass{
+		ID:             "openclaw-default",
+		Name:           "OpenClaw Default",
+		ResolutionMode: core.ResolutionModeSandboxPrimary,
+	}); err != nil {
+		t.Fatalf("upsert template class: %v", err)
+	}
+	if _, err := svc.UpsertTemplatePoolBinding(ctx, core.TemplatePoolBinding{
+		TemplateClassID: "openclaw-default",
+		PoolID:          boundPool.ID,
+		Priority:        1,
+		AdmissionState:  core.BindingAdmissionStateActive,
+	}); err != nil {
+		t.Fatalf("upsert template binding: %v", err)
+	}
+
+	router := newHandlerTestRouter(&handler{svc: svc})
+
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes", bytes.NewBufferString(`{"template_class_id":"openclaw-default"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp api.Sandbox
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.TemplateID != boundPool.ID {
+		t.Fatalf("expected resolved templateID %s, got %s", boundPool.ID, resp.TemplateID)
+	}
+	if resp.TemplateClassID == nil || *resp.TemplateClassID != "openclaw-default" {
+		t.Fatalf("expected templateClassID openclaw-default, got %+v", resp.TemplateClassID)
+	}
+	if resp.ResolutionSource == nil || *resp.ResolutionSource != "sandbox_binding" {
+		t.Fatalf("expected sandbox_binding resolution source, got %+v", resp.ResolutionSource)
+	}
+}
+
+func TestPostSandboxesWithSKUIDRestrictsAllocationToRequestedSKU(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	ctx := context.Background()
+	svc := service.NewService(store.NewMemoryStore())
+	verifyOK := func(context.Context, string) error { return nil }
+
+	if _, err := svc.UpsertTemplateClass(ctx, core.TemplateClass{
+		ID:             "hermes",
+		Name:           "Hermes",
+		ResolutionMode: core.ResolutionModeSandboxPrimary,
+	}); err != nil {
+		t.Fatalf("upsert template class: %v", err)
+	}
+
+	for _, sku := range []core.SKU{
+		{
+			ID:              "sku-hermes-2c4g",
+			Name:            "Hermes 2C4G",
+			TemplateClassID: "hermes",
+			BaseImage:       "img-small",
+			DesiredImageID:  "img-small",
+			StableImageID:   "img-small",
+			InstanceType:    "SA9.MEDIUM2",
+		},
+		{
+			ID:              "sku-hermes-4c8g",
+			Name:            "Hermes 4C8G",
+			TemplateClassID: "hermes",
+			BaseImage:       "img-large",
+			DesiredImageID:  "img-large",
+			StableImageID:   "img-large",
+			InstanceType:    "SA5.LARGE8",
+		},
+	} {
+		if _, err := svc.UpsertSKU(ctx, sku); err != nil {
+			t.Fatalf("upsert sku %s: %v", sku.ID, err)
+		}
+	}
+
+	for _, binding := range []core.TemplateSkuBinding{
+		{
+			TemplateClassID:    "hermes",
+			SKUID:              "sku-hermes-2c4g",
+			Priority:           99,
+			Weight:             1,
+			AdmissionState:     string(core.BindingAdmissionStateActive),
+			RolloutEligibility: true,
+		},
+		{
+			TemplateClassID:    "hermes",
+			SKUID:              "sku-hermes-4c8g",
+			Priority:           1,
+			Weight:             1,
+			AdmissionState:     string(core.BindingAdmissionStateActive),
+			RolloutEligibility: true,
+		},
+	} {
+		if _, err := svc.UpsertTemplateSkuBinding(ctx, binding); err != nil {
+			t.Fatalf("upsert template sku binding %s: %v", binding.SKUID, err)
+		}
+	}
+
+	smallPool, err := svc.CreatePool(ctx, "hermes-small", "", "img-small", 0, handlerTestVpcID, handlerTestSubnetID, handlerTestZone, handlerTestSecurityGroups)
+	if err != nil {
+		t.Fatalf("create small pool: %v", err)
+	}
+	smallPool.SKUID = "sku-hermes-2c4g"
+	if _, err := svc.UpdatePool(ctx, smallPool); err != nil {
+		t.Fatalf("update small pool: %v", err)
+	}
+	if _, err := svc.RefillVerified(ctx, smallPool.ID, 1, []string{"10.0.0.21"}, []string{"cloud-small"}, verifyOK); err != nil {
+		t.Fatalf("refill small pool: %v", err)
+	}
+
+	largePool, err := svc.CreatePool(ctx, "hermes-large", "", "img-large", 0, handlerTestVpcID, handlerTestSubnetID, handlerTestZone, handlerTestSecurityGroups)
+	if err != nil {
+		t.Fatalf("create large pool: %v", err)
+	}
+	largePool.SKUID = "sku-hermes-4c8g"
+	if _, err := svc.UpdatePool(ctx, largePool); err != nil {
+		t.Fatalf("update large pool: %v", err)
+	}
+	if _, err := svc.RefillVerified(ctx, largePool.ID, 1, []string{"10.0.0.22"}, []string{"cloud-large"}, verifyOK); err != nil {
+		t.Fatalf("refill large pool: %v", err)
+	}
+
+	router := newHandlerTestRouter(&handler{svc: svc})
+
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes", bytes.NewBufferString(`{"template_class_id":"hermes","sku_id":"sku-hermes-2c4g"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp api.Sandbox
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.TemplateID != smallPool.ID {
+		t.Fatalf("expected requested sku to resolve small pool %s, got %s", smallPool.ID, resp.TemplateID)
+	}
+	if resp.TemplateClassID == nil || *resp.TemplateClassID != "hermes" {
+		t.Fatalf("expected templateClassID hermes, got %+v", resp.TemplateClassID)
+	}
+}
+
+func TestPostSandboxesShadowModeReturnsResolutionDivergence(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	ctx := context.Background()
+	svc := service.NewService(store.NewMemoryStore())
+	verifyOK := func(context.Context, string) error { return nil }
+
+	legacyPool, err := svc.CreatePool(ctx, "legacy", "", "img-test", 0, handlerTestVpcID, handlerTestSubnetID, handlerTestZone, handlerTestSecurityGroups)
+	if err != nil {
+		t.Fatalf("create legacy pool: %v", err)
+	}
+	bindingPool, err := svc.CreatePool(ctx, "binding", "", "img-test", 0, handlerTestVpcID, handlerTestSubnetID, handlerTestZone, handlerTestSecurityGroups)
+	if err != nil {
+		t.Fatalf("create binding pool: %v", err)
+	}
+	if _, err := svc.RefillVerified(ctx, legacyPool.ID, 1, []string{"10.0.0.13"}, []string{"cloud-4"}, verifyOK); err != nil {
+		t.Fatalf("refill legacy pool: %v", err)
+	}
+	if _, err := svc.RefillVerified(ctx, bindingPool.ID, 1, []string{"10.0.0.14"}, []string{"cloud-5"}, verifyOK); err != nil {
+		t.Fatalf("refill binding pool: %v", err)
+	}
+	if _, err := svc.UpsertTemplateClass(ctx, core.TemplateClass{
+		ID:             "openclaw-shadow",
+		Name:           "OpenClaw Shadow",
+		ResolutionMode: core.ResolutionModeShadow,
+	}); err != nil {
+		t.Fatalf("upsert template class: %v", err)
+	}
+	if _, err := svc.UpsertTemplatePoolBinding(ctx, core.TemplatePoolBinding{
+		TemplateClassID: "openclaw-shadow",
+		PoolID:          bindingPool.ID,
+		Priority:        1,
+		AdmissionState:  core.BindingAdmissionStateActive,
+	}); err != nil {
+		t.Fatalf("upsert template binding: %v", err)
+	}
+
+	router := newHandlerTestRouter(&handler{svc: svc})
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes", bytes.NewBufferString(`{"template_class_id":"openclaw-shadow","templateID":"`+legacyPool.ID+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp api.Sandbox
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.ResolutionSource == nil || *resp.ResolutionSource != "shadow_legacy" {
+		t.Fatalf("expected shadow_legacy resolution source, got %+v", resp.ResolutionSource)
+	}
+	if resp.ResolutionDivergence == nil || !strings.Contains(*resp.ResolutionDivergence, legacyPool.ID) {
+		t.Fatalf("expected divergence mentioning %s, got %+v", legacyPool.ID, resp.ResolutionDivergence)
+	}
+}
+
+func TestPatchPoolInternalRouteUpdatesBaseImageAndMarksCleanDry(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	ctx := context.Background()
+	svc := service.NewService(store.NewMemoryStore())
+	verifyOK := func(context.Context, string) error { return nil }
+
+	pool, err := svc.CreatePool(ctx, "target", "", "img-old", 0, handlerTestVpcID, handlerTestSubnetID, handlerTestZone, handlerTestSecurityGroups)
+	if err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+	insts, err := svc.RefillVerified(ctx, pool.ID, 2, []string{"10.0.0.10", "10.0.0.11"}, []string{"cloud-1", "cloud-2"}, verifyOK)
+	if err != nil {
+		t.Fatalf("refill target pool: %v", err)
+	}
+	allocated, err := svc.Allocate(ctx, pool.ID)
+	if err != nil {
+		t.Fatalf("allocate instance: %v", err)
+	}
+
+	router := newHandlerTestRouter(&handler{svc: svc})
+	req := httptest.NewRequest(http.MethodPatch, "/internal/pools/"+pool.ID, bytes.NewBufferString(`{"base_image":"img-new","mark_clean_as_dry":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	gotPool, err := svc.GetPool(ctx, pool.ID)
+	if err != nil {
+		t.Fatalf("get pool: %v", err)
+	}
+	if gotPool.BaseImage != "img-new" {
+		t.Fatalf("expected base image updated, got %q", gotPool.BaseImage)
+	}
+
+	for _, inst := range insts {
+		got, err := svc.GetInstance(ctx, inst.ID)
+		if err != nil {
+			t.Fatalf("get instance %s: %v", inst.ID, err)
+		}
+		if inst.ID == allocated.ID {
+			if got.State != core.StateAllocated {
+				t.Fatalf("expected allocated instance to stay ALLOCATED, got %s", got.State)
+			}
+			continue
+		}
+		if got.State != core.StateDry {
+			t.Fatalf("expected clean instance %s to become DRY, got %s", inst.ID, got.State)
+		}
+	}
+}
+
+func TestPatchPoolInternalRouteUpdatesInstanceTypeAndMarksCleanDry(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	ctx := context.Background()
+	svc := service.NewService(store.NewMemoryStore())
+	verifyOK := func(context.Context, string) error { return nil }
+
+	pool, err := svc.CreatePool(ctx, "target", "", "img-old", 0, handlerTestVpcID, handlerTestSubnetID, handlerTestZone, handlerTestSecurityGroups)
+	if err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+	insts, err := svc.RefillVerified(ctx, pool.ID, 2, []string{"10.0.0.10", "10.0.0.11"}, []string{"cloud-1", "cloud-2"}, verifyOK)
+	if err != nil {
+		t.Fatalf("refill target pool: %v", err)
+	}
+	allocated, err := svc.Allocate(ctx, pool.ID)
+	if err != nil {
+		t.Fatalf("allocate instance: %v", err)
+	}
+
+	router := newHandlerTestRouter(&handler{svc: svc})
+	req := httptest.NewRequest(http.MethodPatch, "/internal/pools/"+pool.ID, bytes.NewBufferString(`{"instance_type":"SA5.MEDIUM4","mark_clean_as_dry":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	gotPool, err := svc.GetPool(ctx, pool.ID)
+	if err != nil {
+		t.Fatalf("get pool: %v", err)
+	}
+	if gotPool.InstanceType != "SA5.MEDIUM4" {
+		t.Fatalf("expected instance type updated, got %q", gotPool.InstanceType)
+	}
+
+	for _, inst := range insts {
+		got, err := svc.GetInstance(ctx, inst.ID)
+		if err != nil {
+			t.Fatalf("get instance %s: %v", inst.ID, err)
+		}
+		if inst.ID == allocated.ID {
+			if got.State != core.StateAllocated {
+				t.Fatalf("expected allocated instance to stay ALLOCATED, got %s", got.State)
+			}
+			continue
+		}
+		if got.State != core.StateDry {
+			t.Fatalf("expected clean instance %s to become DRY, got %s", inst.ID, got.State)
+		}
+	}
+}
+
+func TestPostPoolInternalRouteCreatesPool(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	ctx := context.Background()
+	svc := service.NewService(store.NewMemoryStore())
+	router := newHandlerTestRouter(&handler{svc: svc})
+
+	req := httptest.NewRequest(http.MethodPost, "/internal/pools", bytes.NewBufferString(`{
+		"name":"pool-sh-preview",
+		"description":"preview pool",
+		"base_image":"img-preview",
+		"desired_capacity":3,
+		"instance_type":"SA5.MEDIUM4",
+		"vpc_id":"vpc-preview",
+		"subnet_id":"subnet-preview",
+		"zone":"ap-shanghai-5",
+		"security_groups":["sg-a","sg-b"]
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var pool core.Pool
+	if err := json.Unmarshal(rr.Body.Bytes(), &pool); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if pool.Name != "pool-sh-preview" {
+		t.Fatalf("expected name updated, got %q", pool.Name)
+	}
+	if pool.BaseImage != "img-preview" {
+		t.Fatalf("expected base image img-preview, got %q", pool.BaseImage)
+	}
+	if pool.DesiredCap != 3 {
+		t.Fatalf("expected desired_capacity 3, got %d", pool.DesiredCap)
+	}
+	if pool.InstanceType != "SA5.MEDIUM4" {
+		t.Fatalf("expected instance_type preserved, got %q", pool.InstanceType)
+	}
+	if pool.Status != core.PoolStatusActive {
+		t.Fatalf("expected active status, got %q", pool.Status)
+	}
+	if pool.VpcID != "vpc-preview" || pool.SubnetID != "subnet-preview" || pool.Zone != "ap-shanghai-5" {
+		t.Fatalf("unexpected network config: vpc=%q subnet=%q zone=%q", pool.VpcID, pool.SubnetID, pool.Zone)
+	}
+	if got := len(pool.SecurityGroups); got != 2 {
+		t.Fatalf("expected 2 security groups, got %d", got)
+	}
+
+	stored, err := svc.GetPool(ctx, pool.ID)
+	if err != nil {
+		t.Fatalf("get created pool: %v", err)
+	}
+	if stored.Name != "pool-sh-preview" {
+		t.Fatalf("expected stored pool name, got %q", stored.Name)
+	}
+}
+
+func TestPostSandboxTATCommandRunsAgainstSandboxInstance(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	svc := service.NewService(store.NewMemoryStore())
+	pool, _, sb := createAllocatedSandbox(t, svc)
+	authServer := newAuthIntrospectionServer(t)
+	defer authServer.Close()
+	commands := &stubCommandRunner{
+		runResp: provider.CommandInvocation{
+			CommandID:    "cmd-1",
+			InvocationID: "inv-1",
+			InstanceID:   "ins-test-1",
+			Region:       "ap-beijing",
+			Status:       "PENDING",
+		},
+	}
+
+	router := newHandlerTestRouterWithAuth(&handler{svc: svc, commands: commands}, authServer.URL)
+
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes/"+sb.ID+"/tat/commands", bytes.NewBufferString(`{"bash":"hostname"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer session-good")
+	rr := httptest.NewRecorder()
+
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if commands.runReq.region != "ap-beijing" {
+		t.Fatalf("expected region ap-beijing, got %s", commands.runReq.region)
+	}
+	if commands.runReq.instanceID != "ins-test-1" {
+		t.Fatalf("expected instanceID ins-test-1, got %s", commands.runReq.instanceID)
+	}
+	if commands.runReq.script != "hostname" {
+		t.Fatalf("expected script hostname, got %s", commands.runReq.script)
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got := resp["sandboxID"]; got != sb.ID {
+		t.Fatalf("expected sandboxID %s, got %v", sb.ID, got)
+	}
+	if got := resp["poolID"]; got != pool.ID {
+		t.Fatalf("expected poolID %s, got %v", pool.ID, got)
+	}
+	if got := resp["invocationID"]; got != "inv-1" {
+		t.Fatalf("expected invocationID inv-1, got %v", got)
+	}
+}
+
+func TestPostSandboxTATSessionReturnsTerminalBootstrap(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	svc := service.NewService(store.NewMemoryStore())
+	pool, _, sb := createAllocatedSandbox(t, svc)
+	authServer := newAuthIntrospectionServer(t)
+	defer authServer.Close()
+	commands := &stubCommandRunner{
+		sessionResp: provider.TerminalSession{
+			SessionID:  "sess-1",
+			Region:     "ap-beijing",
+			InstanceID: "ins-test-1",
+			OwnerUin:   "10001",
+			LoginUin:   "10002",
+			AppID:      12345,
+			WsURL:      "wss://ap-beijing.forward.tat-tc.tencent.cn/ws",
+			Cols:       120,
+			Rows:       32,
+		},
+	}
+
+	router := newHandlerTestRouterWithAuth(&handler{svc: svc, terminals: commands}, authServer.URL)
+
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes/"+sb.ID+"/tat/session", nil)
+	req.Header.Set("Authorization", "Bearer session-good")
+	rr := httptest.NewRecorder()
+
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if commands.sessionReq.region != "ap-beijing" {
+		t.Fatalf("expected region ap-beijing, got %s", commands.sessionReq.region)
+	}
+	if commands.sessionReq.instanceID != "ins-test-1" {
+		t.Fatalf("expected instanceID ins-test-1, got %s", commands.sessionReq.instanceID)
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got := resp["sandboxID"]; got != sb.ID {
+		t.Fatalf("expected sandboxID %s, got %v", sb.ID, got)
+	}
+	if got := resp["poolID"]; got != pool.ID {
+		t.Fatalf("expected poolID %s, got %v", pool.ID, got)
+	}
+	if got := resp["sessionId"]; got != "sess-1" {
+		t.Fatalf("expected sessionId sess-1, got %v", got)
+	}
+	if got := resp["wsUrl"]; got != "wss://ap-beijing.forward.tat-tc.tencent.cn/ws" {
+		t.Fatalf("expected wsUrl, got %v", got)
+	}
+}
+
+func TestGetSandboxTATCommandResultReturnsInvocationResult(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	svc := service.NewService(store.NewMemoryStore())
+	pool, _, sb := createAllocatedSandbox(t, svc)
+	authServer := newAuthIntrospectionServer(t)
+	defer authServer.Close()
+	commands := &stubCommandRunner{
+		getResp: provider.CommandResult{
+			CommandInvocation: provider.CommandInvocation{
+				CommandID:    "cmd-1",
+				InvocationID: "inv-1",
+				InstanceID:   "ins-test-1",
+				Region:       "ap-beijing",
+				Status:       "SUCCESS",
+			},
+			ExitCode:  0,
+			Output:    "sandbox-probe-bj8\n",
+			ErrorInfo: "",
+		},
+	}
+
+	router := newHandlerTestRouterWithAuth(&handler{svc: svc, commands: commands}, authServer.URL)
+
+	req := httptest.NewRequest(http.MethodGet, "/sandboxes/"+sb.ID+"/tat/commands/inv-1", nil)
+	req.Header.Set("Authorization", "Bearer session-good")
+	rr := httptest.NewRecorder()
+
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if commands.getReq.region != "ap-beijing" {
+		t.Fatalf("expected region ap-beijing, got %s", commands.getReq.region)
+	}
+	if commands.getReq.instanceID != "ins-test-1" {
+		t.Fatalf("expected instanceID ins-test-1, got %s", commands.getReq.instanceID)
+	}
+	if commands.getReq.invocationID != "inv-1" {
+		t.Fatalf("expected invocationID inv-1, got %s", commands.getReq.invocationID)
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got := resp["poolID"]; got != pool.ID {
+		t.Fatalf("expected poolID %s, got %v", pool.ID, got)
+	}
+	if got := resp["output"]; got != "sandbox-probe-bj8\n" {
+		t.Fatalf("expected output, got %v", got)
+	}
+}
+
+func TestPostSandboxTATSessionRequiresAuthenticatedUser(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	svc := service.NewService(store.NewMemoryStore())
+	_, _, sb := createAllocatedSandbox(t, svc)
+	authServer := newAuthIntrospectionServer(t)
+	defer authServer.Close()
+
+	router := newHandlerTestRouterWithAuth(&handler{svc: svc, terminals: &stubCommandRunner{}}, authServer.URL)
+
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes/"+sb.ID+"/tat/session", nil)
+	rr := httptest.NewRecorder()
+
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestPostSandboxTATSessionRequiresSandboxRegion(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	ctx := context.Background()
+	svc := service.NewService(store.NewMemoryStore())
+	verifyOK := func(context.Context, string) error { return nil }
+
+	pool, err := svc.CreatePool(ctx, "target", "", "img-test", 0, handlerTestVpcID, handlerTestSubnetID, handlerTestZone, handlerTestSecurityGroups)
+	if err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+	if _, err := svc.RefillVerified(ctx, pool.ID, 1, []string{"10.0.0.10"}, []string{"ins-test-1"}, verifyOK); err != nil {
+		t.Fatalf("refill pool: %v", err)
+	}
+	inst, err := svc.Allocate(ctx, pool.ID)
+	if err != nil {
+		t.Fatalf("allocate: %v", err)
+	}
+	sb, err := svc.CreateSandbox(ctx, core.Sandbox{
+		ID:             "sb-test-missing-region",
+		InstanceID:     inst.ID,
+		PoolID:         pool.ID,
+		TimeoutSeconds: 300,
+		CreatedAt:      time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("create sandbox: %v", err)
+	}
+
+	authServer := newAuthIntrospectionServer(t)
+	defer authServer.Close()
+
+	router := newHandlerTestRouterWithAuth(&handler{svc: svc, terminals: &stubCommandRunner{}}, authServer.URL)
+
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes/"+sb.ID+"/tat/session", nil)
+	req.Header.Set("Authorization", "Bearer session-good")
+	rr := httptest.NewRecorder()
+
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), "sandbox region missing") {
+		t.Fatalf("expected sandbox region missing error, got %s", rr.Body.String())
+	}
+}
+
+func TestInternalTemplateClassResolveRouteReturnsActivePools(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	ctx := context.Background()
+	svc := service.NewService(store.NewMemoryStore())
+	pool, err := svc.CreatePool(ctx, "bound", "", "img-test", 0, handlerTestVpcID, handlerTestSubnetID, handlerTestZone, handlerTestSecurityGroups)
+	if err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+	if _, err := svc.UpsertTemplateClass(ctx, core.TemplateClass{
+		ID:             "openclaw-default",
+		Name:           "OpenClaw Default",
+		ResolutionMode: core.ResolutionModeSandboxPrimary,
+	}); err != nil {
+		t.Fatalf("upsert template class: %v", err)
+	}
+	if _, err := svc.UpsertTemplatePoolBinding(ctx, core.TemplatePoolBinding{
+		TemplateClassID: "openclaw-default",
+		PoolID:          pool.ID,
+		Priority:        1,
+		AdmissionState:  core.BindingAdmissionStateActive,
+	}); err != nil {
+		t.Fatalf("upsert template binding: %v", err)
+	}
+
+	router := newHandlerTestRouter(&handler{svc: svc})
+	req := httptest.NewRequest(http.MethodGet, "/internal/template-classes/openclaw-default/resolve", nil)
+	rr := httptest.NewRecorder()
+
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp struct {
+		Pools []core.Pool `json:"pools"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Pools) != 1 || resp.Pools[0].ID != pool.ID {
+		t.Fatalf("expected resolved pool %s, got %+v", pool.ID, resp.Pools)
+	}
+}

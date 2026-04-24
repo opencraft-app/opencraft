@@ -1,0 +1,319 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lightclaw-gateway
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: default
+  namespace: lightclaw-gateway
+imagePullSecrets:
+  - name: tcr.ipsqcloudregistrykey
+  - name: tcr.ipstcr-regcred
+  - name: tcr.ipstcr-lightclaw-secret
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: lightclaw-public
+  namespace: lightclaw-gateway
+  annotations:
+    kubernetes.io/ingress.class: qcloud
+    ingress.cloud.tencent.com/tke-service-config: lightclaw-public-config
+    ingress.cloud.tencent.com/modification-protection: "false"
+spec:
+  ingressClassName: qcloud
+  tls:
+    - hosts:
+        - REPLACE_SERVICE_GATEWAY_PUBLIC_HOST
+      secretName: REPLACE_SERVICE_GATEWAY_TLS_SECRET_NAME
+  rules:
+    - host: REPLACE_SERVICE_GATEWAY_PUBLIC_HOST
+      http:
+        paths:
+          - path: /auth
+            pathType: Prefix
+            backend:
+              service:
+                name: service-gateway-ingress
+                port:
+                  number: 80
+          - path: /sandboxes
+            pathType: Prefix
+            backend:
+              service:
+                name: service-gateway-ingress
+                port:
+                  number: 80
+          - path: /v1/chatclaw/runtime
+            pathType: Prefix
+            backend:
+              service:
+                name: service-gateway-ingress
+                port:
+                  number: 80
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: service-gateway-ingress
+                port:
+                  number: 80
+          - path: /healthz
+            pathType: Exact
+            backend:
+              service:
+                name: service-gateway-ingress
+                port:
+                  number: 80
+---
+apiVersion: cloud.tencent.com/v1alpha1
+kind: TkeServiceConfig
+metadata:
+  name: lightclaw-public-config
+  namespace: lightclaw-gateway
+spec:
+  loadBalancer:
+    l7Listeners:
+      - protocol: HTTP
+        port: 80
+        domains:
+          - domain: REPLACE_SERVICE_GATEWAY_PUBLIC_HOST
+            rules:
+              - url: /auth
+                forwardType: HTTP
+                healthCheck:
+                  enable: true
+                  intervalTime: 10
+                  timeout: 5
+                  healthNum: 2
+                  unHealthNum: 2
+                  httpCheckPath: /healthz
+                  httpCheckDomain: REPLACE_SERVICE_GATEWAY_PUBLIC_HOST
+                  httpCheckMethod: HEAD
+                  httpCode: 2
+              - url: /sandboxes
+                forwardType: HTTP
+                healthCheck:
+                  enable: true
+                  intervalTime: 10
+                  timeout: 5
+                  healthNum: 2
+                  unHealthNum: 2
+                  httpCheckPath: /healthz
+                  httpCheckDomain: REPLACE_SERVICE_GATEWAY_PUBLIC_HOST
+                  httpCheckMethod: HEAD
+                  httpCode: 2
+              - url: /v1/chatclaw/runtime
+                forwardType: HTTP
+                healthCheck:
+                  enable: true
+                  intervalTime: 10
+                  timeout: 5
+                  healthNum: 2
+                  unHealthNum: 2
+                  httpCheckPath: /healthz
+                  httpCheckDomain: REPLACE_SERVICE_GATEWAY_PUBLIC_HOST
+                  httpCheckMethod: HEAD
+                  httpCode: 2
+              - url: /
+                forwardType: HTTP
+                healthCheck:
+                  enable: true
+                  intervalTime: 10
+                  timeout: 5
+                  healthNum: 2
+                  unHealthNum: 2
+                  httpCheckPath: /healthz
+                  httpCheckDomain: REPLACE_SERVICE_GATEWAY_PUBLIC_HOST
+                  httpCheckMethod: HEAD
+                  httpCode: 2
+      - protocol: HTTPS
+        port: 443
+        defaultServer: REPLACE_SERVICE_GATEWAY_PUBLIC_HOST
+        domains:
+          - domain: REPLACE_SERVICE_GATEWAY_PUBLIC_HOST
+            rules:
+              - url: /auth
+                forwardType: HTTP
+                healthCheck:
+                  enable: true
+                  intervalTime: 10
+                  timeout: 5
+                  healthNum: 2
+                  unHealthNum: 2
+                  httpCheckPath: /healthz
+                  httpCheckDomain: REPLACE_SERVICE_GATEWAY_PUBLIC_HOST
+                  httpCheckMethod: HEAD
+                  httpCode: 2
+              - url: /sandboxes
+                forwardType: HTTP
+                healthCheck:
+                  enable: true
+                  intervalTime: 10
+                  timeout: 5
+                  healthNum: 2
+                  unHealthNum: 2
+                  httpCheckPath: /healthz
+                  httpCheckDomain: REPLACE_SERVICE_GATEWAY_PUBLIC_HOST
+                  httpCheckMethod: HEAD
+                  httpCode: 2
+              - url: /v1/chatclaw/runtime
+                forwardType: HTTP
+                healthCheck:
+                  enable: true
+                  intervalTime: 10
+                  timeout: 5
+                  healthNum: 2
+                  unHealthNum: 2
+                  httpCheckPath: /healthz
+                  httpCheckDomain: REPLACE_SERVICE_GATEWAY_PUBLIC_HOST
+                  httpCheckMethod: HEAD
+                  httpCode: 2
+              - url: /
+                forwardType: HTTP
+                healthCheck:
+                  enable: true
+                  intervalTime: 10
+                  timeout: 5
+                  healthNum: 2
+                  unHealthNum: 2
+                  httpCheckPath: /healthz
+                  httpCheckDomain: REPLACE_SERVICE_GATEWAY_PUBLIC_HOST
+                  httpCheckMethod: HEAD
+                  httpCode: 2
+              - url: =/healthz
+                forwardType: HTTP
+                healthCheck:
+                  enable: true
+                  intervalTime: 10
+                  timeout: 5
+                  healthNum: 2
+                  unHealthNum: 2
+                  httpCheckPath: /healthz
+                  httpCheckDomain: REPLACE_SERVICE_GATEWAY_PUBLIC_HOST
+                  httpCheckMethod: HEAD
+                  httpCode: 2
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service-gateway
+  namespace: lightclaw-gateway
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: service-gateway
+  template:
+    metadata:
+      labels:
+        app: service-gateway
+      annotations:
+        service-gateway.clawhub.dev/redeploy-at: REPLACE_SERVICE_GATEWAY_DEPLOYED_AT
+    spec:
+      nodeSelector:
+        pool: REPLACE_SERVICE_GATEWAY_NODE_POOL
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: service-gateway
+      containers:
+        - name: gateway
+          image: REPLACE_SERVICE_GATEWAY_IMAGE
+          imagePullPolicy: Always
+          env:
+            - name: SERVICE_GATEWAY_ADDR
+              value: ":8085"
+            - name: SERVICE_GATEWAY_CONFIG_FILE
+              value: /etc/service-gateway/config.yaml
+            - name: SERVICE_GATEWAY_ADMIN_BASIC_AUTH_USER
+              valueFrom:
+                secretKeyRef:
+                  name: service-gateway-runtime-secrets
+                  key: SERVICE_GATEWAY_ADMIN_BASIC_AUTH_USER
+            - name: SERVICE_GATEWAY_ADMIN_BASIC_AUTH_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: service-gateway-runtime-secrets
+                  key: SERVICE_GATEWAY_ADMIN_BASIC_AUTH_PASSWORD
+          volumeMounts:
+            - name: config
+              mountPath: /etc/service-gateway/config.yaml
+              subPath: config.yaml
+          ports:
+            - name: http
+              containerPort: 8085
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+      volumes:
+        - name: config
+          configMap:
+            name: service-gateway-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: service-gateway
+  namespace: lightclaw-gateway
+  labels:
+    app: service-gateway
+    metrics-target: "true"
+spec:
+  selector:
+    app: service-gateway
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: service-gateway-ingress
+  namespace: lightclaw-gateway
+spec:
+  type: NodePort
+  selector:
+    app: service-gateway
+  ports:
+    - name: http
+      port: 80
+      nodePort: 30671
+      targetPort: http
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: service-gateway
+  namespace: kube-system
+spec:
+  namespaceSelector:
+    matchNames:
+      - lightclaw-gateway
+  selector:
+    matchLabels:
+      metrics-target: "true"
+  endpoints:
+    - port: http

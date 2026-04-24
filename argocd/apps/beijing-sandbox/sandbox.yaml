@@ -1,0 +1,18 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: sandbox-beijing-sandbox
+  namespace: argocd
+spec:
+  project: beijing-sandbox-mono
+  source:
+    repoURL: https://code.lightclaw.tech/root/mono-source.git
+    targetRevision: master
+    path: argocd/services/sandbox/beijing-sandbox
+  destination:
+    name: beijing-sandbox
+    namespace: sandbox
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

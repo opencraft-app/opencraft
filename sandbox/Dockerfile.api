@@ -1,0 +1,20 @@
+# syntax=docker/dockerfile:1.7
+# Using Go 1.22 to match go.mod; bump here and in go.mod together if upgrading.
+FROM golang:1.22-bullseye AS builder
+WORKDIR /app
+ENV GOTOOLCHAIN=go1.24.0
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+# Build gin-based API adapter (api-gin)
+RUN go mod tidy
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/api-gin ./api-gin
+
+FROM alpine:3.19
+RUN adduser -D -u 10001 app
+WORKDIR /home/app
+COPY --from=builder /out/api-gin /usr/local/bin/api-gin
+USER app
+ENV API_ADDR=:8080
+EXPOSE 8080
+CMD ["api-gin"]

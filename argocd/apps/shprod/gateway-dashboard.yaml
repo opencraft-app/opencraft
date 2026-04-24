@@ -1,0 +1,18 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: gateway-dashboard-shprod
+  namespace: argocd
+spec:
+  project: shprod-gateway-dashboard
+  source:
+    repoURL: https://code.lightclaw.tech/root/mono-source.git
+    targetRevision: master
+    path: argocd/services/gateway-dashboard/shprod
+  destination:
+    namespace: ai-gateway
+    name: shprod
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
