@@ -32,8 +32,38 @@
 
 ### 上海正式环境
 
-上海当前仍按原有主链运行，不在这次北京迁移范围内。  
-不要把北京当前的 `mono2` / `runtime` 方案直接套到 `shprod`，除非先完成独立 cutover。
+上海当前也已经切到这套新的 Argo CD 控制面，当前 live 链路是：
+
+- Git repo:
+  - `git@git.woa.com:wisp/mono2.git`
+- root app:
+  - `root-shprod`
+- projects:
+  - `shprod-root`
+  - `shprod-admin-gateway`
+  - `shprod-ai-gateway`
+  - `shprod-ctl`
+  - `shprod-frontend`
+  - `shprod-gateway-dashboard`
+  - `shprod-lightclaw-auth`
+  - `shprod-payment`
+  - `shprod-sandbox`
+  - `shprod-service-gateway`
+  - `shprod-subscription`
+- cluster name:
+  - `shprod`
+
+上海当前的特殊点：
+
+- 还没有收敛成单一 `shprod` leaf project
+- 当前先沿用按服务拆分的 cutover project 模式
+- 旧 Argo 上的 `root-shprod` / shprod leaf apps / shprod projects 已经删除
+
+当前旧 Argo 剩余承载的内容只包括：
+
+- `root-nanjing-test`
+- `skillhub-api-nanjing-test`
+- `gitlab-argocd-sample`
 
 ## 这几个目录分别干什么
 
@@ -97,6 +127,7 @@
    - root app `Synced/Healthy`
    - runtime app `Synced/Healthy`
    - 北京 leaf apps 全部 `Synced/Healthy`
+   - 上海 leaf apps 全部 `Synced/Healthy`
 
 ## `sops-age` 为什么还要 Git 外注入
 
