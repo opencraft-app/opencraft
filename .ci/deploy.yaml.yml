@@ -6,6 +6,10 @@ on:
 variables:
   IMAGE_URL: mirrors.tencent.com/ci/tlinux3_ci
   IMAGE_TAG: latest
+
+runs-on:
+  self-hosted: true
+  pool-name: env
  
 steps:
 - checkout: self
