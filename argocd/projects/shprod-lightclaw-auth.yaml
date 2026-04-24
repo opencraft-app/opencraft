@@ -1,0 +1,18 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: shprod-lightclaw-auth
+  namespace: argocd
+spec:
+  description: Lightclaw auth cutover project for Shanghai migration onto mono2.
+  sourceRepos:
+    - git@git.woa.com:wisp/mono2.git
+  destinations:
+    - namespace: user-auth
+      name: shprod
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'
