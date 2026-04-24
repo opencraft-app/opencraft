@@ -15,6 +15,7 @@ PROJECTS=(
   "${REPO_ROOT}/argocd/projects/shprod-admin-gateway.yaml"
   "${REPO_ROOT}/argocd/projects/shprod-root.yaml"
   "${REPO_ROOT}/argocd/projects/shprod.yaml"
+  "${REPO_ROOT}/argocd/projects/shprod-subscription.yaml"
 )
 
 ROOT_APPS=(
