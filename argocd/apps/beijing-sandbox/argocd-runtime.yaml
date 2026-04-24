@@ -7,7 +7,7 @@ spec:
   project: beijing-argocd-runtime
   source:
     repoURL: git@git.woa.com:wisp/mono2.git
-    targetRevision: master
+    targetRevision: gitops
     path: argocd/runtime/beijing-sandbox
   destination:
     server: https://kubernetes.default.svc

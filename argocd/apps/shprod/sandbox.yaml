@@ -7,7 +7,7 @@ spec:
   project: shprod-sandbox
   source:
     repoURL: git@git.woa.com:wisp/mono2.git
-    targetRevision: master
+    targetRevision: gitops
     path: argocd/services/sandbox/shprod
   destination:
     namespace: sandbox

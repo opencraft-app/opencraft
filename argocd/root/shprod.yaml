@@ -7,7 +7,7 @@ spec:
   project: shprod-root
   source:
     repoURL: git@git.woa.com:wisp/mono2.git
-    targetRevision: master
+    targetRevision: gitops
     path: argocd/apps/shprod
   destination:
     namespace: argocd

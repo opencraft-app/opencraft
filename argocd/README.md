@@ -27,7 +27,7 @@
 
 1. `root-beijing-sandbox` 负责扫描 `argocd/apps/beijing-sandbox/`
 2. `argocd-runtime-beijing-sandbox` 负责把当前这套 Argo CD 自己的 runtime patch 管起来
-3. 北京 leaf apps 全部从 `mono2/master` 拉取 deploy-facing 清单
+3. 北京 leaf apps 全部从 `mono2/gitops` 拉取 deploy-facing 清单
 4. 运行时敏感值仍通过 `sops-age` + `ksops` 解密，不把私钥明文放进 Git
 
 ### 上海正式环境
@@ -36,6 +36,8 @@
 
 - Git repo:
   - `git@git.woa.com:wisp/mono2.git`
+- publish branch:
+  - `gitops`
 - root app:
   - `root-shprod`
 - projects:
@@ -148,6 +150,21 @@
 KUBECONFIG_PATH=/path/to/argocd-control-plane.kubeconfig \
   bash scripts/bootstrap_argocd_sops_age.sh
 ```
+
+## 分支模型
+
+当前 `mono2` 使用：
+
+- `master`
+  - 源码 / CI 构建入口
+- `gitops`
+  - Argo 实际跟踪的发布分支
+
+当前约束：
+
+- CI 只在 `master` 上构建镜像
+- deploy-facing image pin 只允许写回 `gitops`
+- Argo `Application.spec.source.targetRevision` 统一指向 `gitops`
 
 ## 现在改北京时应该改哪里
 

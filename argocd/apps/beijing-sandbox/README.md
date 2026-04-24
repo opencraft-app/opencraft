@@ -9,7 +9,7 @@
 - Git repo:
   - `git@git.woa.com:wisp/mono2.git`
 - revision:
-  - `master`
+  - `gitops`
 
 约束：
 
@@ -69,6 +69,7 @@
 
 - `spec.project` 使用当前项目模型，不再回到 `beijing-root-mono` / `beijing-sandbox-mono`
 - `spec.source.repoURL` 指向 `git@git.woa.com:wisp/mono2.git`
+- `spec.source.targetRevision` 指向 `gitops`
 - 目标 `destination.name` 继续使用 `beijing-sandbox`
 - 对应 deploy-facing 目录已经做到 Argo-ready，而不是依赖本地上下文
 

@@ -7,7 +7,7 @@ spec:
   project: beijing-sandbox
   source:
     repoURL: git@git.woa.com:wisp/mono2.git
-    targetRevision: master
+    targetRevision: gitops
     path: argocd/services/session/beijing-sandbox
   destination:
     name: beijing-sandbox

@@ -76,14 +76,14 @@ push / manual pipeline
 - `PIN_GITOPS_REPO_URL`
   - 默认回写当前项目
 - `PIN_GITOPS_BRANCH`
-  - 默认回写当前项目默认分支
+  - 默认回写 `gitops`
 - `PIN_OPEN_MR`
   - 默认 `1`
 
 建议：
 
-- `beijing-sandbox` 使用 `root/mono-source:master`
-- `shprod` 使用 `root/mono-source:master`
+- `beijing-sandbox` 使用 `mono2:gitops`
+- `shprod` 使用 `mono2:gitops`
 
 ## Recommended Runner Layout
 
@@ -185,7 +185,13 @@ concurrent = 4
 - 更新：
   - `<PREFIX>_IMAGE`
   - `<PREFIX>_DEPLOYED_AT`
-- 提交到目标 GitLab repo
+- 提交到目标 GitLab repo 的 `gitops` 分支
+
+推荐直接调用：
+
+```bash
+bash scripts/pin_image_to_gitops.sh <service> <env> <image>
+```
 
 ## Environment Mapping
 
@@ -193,13 +199,13 @@ concurrent = 4
 
 - `beijing-sandbox`
   - build target repo: env 对应北京 TCR
-  - pin target repo: `root/mono-source`
-  - pin target branch: `master`
+  - pin target repo: `mono2`
+  - pin target branch: `gitops`
 
 - `shprod`
   - build target repo: env 对应上海 TCR
-  - pin target repo: `root/mono-source`
-  - pin target branch: `master`
+  - pin target repo: `mono2`
+  - pin target branch: `gitops`
 
 如果后续某个环境迁移到 deploy-only repo，只调整 pin repo / branch，不改构建协议。
 

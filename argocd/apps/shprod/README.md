@@ -9,7 +9,7 @@
 - Git repo:
   - `git@git.woa.com:wisp/mono2.git`
 - revision:
-  - `master`
+  - `gitops`
 
 额外约束：
 
@@ -52,6 +52,7 @@
 新增/修改上海 leaf app 时，至少要同时确认：
 
 - `spec.source.repoURL` 指向 `git@git.woa.com:wisp/mono2.git`
+- `spec.source.targetRevision` 指向 `gitops`
 - `spec.destination.name` 继续使用 `shprod`
 - `spec.project` 与服务对应的 cutover project 一致
 - 对应 deploy-facing 目录已经在新 Argo 的 `ksops` 运行时下验证通过

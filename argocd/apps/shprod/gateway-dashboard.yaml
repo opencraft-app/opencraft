@@ -7,7 +7,7 @@ spec:
   project: shprod-gateway-dashboard
   source:
     repoURL: git@git.woa.com:wisp/mono2.git
-    targetRevision: master
+    targetRevision: gitops
     path: argocd/services/gateway-dashboard/shprod
   destination:
     namespace: ai-gateway

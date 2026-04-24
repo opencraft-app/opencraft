@@ -7,7 +7,7 @@ spec:
   project: beijing-sandbox
   source:
     repoURL: https://code.lightclaw.tech/<group-or-user>/<repo>.git
-    targetRevision: master
+    targetRevision: gitops
     path: argocd/apps/beijing-sandbox
   destination:
     server: https://kubernetes.default.svc

@@ -7,7 +7,7 @@ spec:
   project: shprod-ctl
   source:
     repoURL: git@git.woa.com:wisp/mono2.git
-    targetRevision: master
+    targetRevision: gitops
     path: argocd/services/ctl/shprod
   destination:
     namespace: ctl
