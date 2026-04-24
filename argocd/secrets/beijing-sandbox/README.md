@@ -2,6 +2,12 @@
 
 这个目录放北京测试环境的 deploy-facing secret / encrypted runtime artifact。
 
+这些密文文件当前由北京新 Argo CD 直接消费，前提是：
+
+- `beijing-sandbox` cluster 已注册到 Argo CD
+- `argocd-runtime-beijing-sandbox` 已经把 repo-server 的 `ksops` 能力接起来
+- `sops-age` 已通过 Git 外 bootstrap 注入到 `argocd` namespace
+
 ## 规则
 
 - 正式 deploy-facing secret 一律以 `*.sops.yaml` 形式进入 Git
@@ -46,3 +52,11 @@
 - 不要把本地 `.secret/*` 直接纳入 `argocd/`
 - 不要把 cluster 当前 Secret 直接当作长期 source of truth
 - 新增/轮转 secret 后，应回到 `SSM -> sops snapshot -> Git merge -> Argo sync` 这条主线
+- `sops-age` 私钥本身不在这个目录里，也不应明文提交到 Git
+
+Bootstrap 入口：
+
+```bash
+KUBECONFIG_PATH=/path/to/argocd-control-plane.kubeconfig \
+  bash scripts/bootstrap_argocd_sops_age.sh
+```

@@ -12,6 +12,7 @@ PROJECTS=(
   "${REPO_ROOT}/argocd/projects/beijing-argocd-runtime.yaml"
   "${REPO_ROOT}/argocd/projects/beijing-root.yaml"
   "${REPO_ROOT}/argocd/projects/beijing-sandbox.yaml"
+  "${REPO_ROOT}/argocd/projects/shprod-admin-gateway.yaml"
   "${REPO_ROOT}/argocd/projects/shprod-root.yaml"
   "${REPO_ROOT}/argocd/projects/shprod.yaml"
 )

@@ -1,6 +1,14 @@
 ## Beijing Argo Runtime
 
-This path manages the runtime patching required for the local Beijing Argo CD control plane.
+This path manages the runtime patching required for the Beijing Argo CD control plane itself.
+
+Current live application:
+
+- `argocd-runtime-beijing-sandbox`
+
+This app is created by `root-beijing-sandbox` from:
+
+- `argocd/apps/beijing-sandbox/argocd-runtime.yaml`
 
 Managed here:
 
@@ -14,8 +22,23 @@ Out of scope:
 Bootstrap prerequisite:
 
 ```bash
-kubectl -n argocd create secret generic sops-age \
-  --from-file=keys.txt=.secret/argocd-beijing-sandbox.agekey
+KUBECONFIG_PATH=/path/to/argocd-control-plane.kubeconfig \
+  bash scripts/bootstrap_argocd_sops_age.sh
 ```
 
-Once the secret exists, `argocd-runtime-beijing-sandbox` can fully reconcile the repo-server runtime.
+Why this exists:
+
+- Beijing deploy-facing services use `ksops`
+- `ksops` requires `sops-age` and an exec-plugin-capable `repo-server`
+- these runtime requirements are now managed declaratively instead of being hand-patched on the cluster
+
+Once `sops-age` exists, `argocd-runtime-beijing-sandbox` can fully reconcile:
+
+- `argocd-cm`
+- `argocd-repo-server`
+
+It should not manage:
+
+- the `sops-age` private key material itself
+- repo credentials
+- target cluster registration

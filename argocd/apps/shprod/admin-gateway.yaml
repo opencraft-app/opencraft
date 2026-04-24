@@ -6,7 +6,7 @@ metadata:
 spec:
   project: shprod-admin-gateway
   source:
-    repoURL: https://code.lightclaw.tech/root/mono-source.git
+    repoURL: git@git.woa.com:wisp/mono2.git
     targetRevision: master
     path: argocd/services/admin-gateway/shprod
   destination:
