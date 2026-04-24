@@ -26,6 +26,8 @@
   - 环境级 root app
 - `apps/<env>/`
   - 该环境下的子 `Application`
+- `runtime/<env>/`
+  - 环境级 Argo CD 控制面运行时补丁（如 repo-server / ksops）
 - `services/<service>/<env>/`
   - 环境级 deploy-facing 组合层
 - `secrets/<env>/`

@@ -9,6 +9,7 @@ KUBECONFIG_PATH="${KUBECONFIG_PATH:-${REPO_ROOT}/hk-cls-mp5b5r0y-extranet.kubeco
 NAMESPACE="argocd"
 
 PROJECTS=(
+  "${REPO_ROOT}/argocd/projects/beijing-argocd-runtime.yaml"
   "${REPO_ROOT}/argocd/projects/beijing-root.yaml"
   "${REPO_ROOT}/argocd/projects/beijing-sandbox.yaml"
   "${REPO_ROOT}/argocd/projects/shprod-root.yaml"
@@ -51,4 +52,3 @@ for file in "${ROOT_APPS[@]}"; do
 done
 
 echo "applied mono argocd projects and root apps"
-
