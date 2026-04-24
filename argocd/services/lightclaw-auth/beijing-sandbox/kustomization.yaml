@@ -7,7 +7,8 @@ resources:
   - ../../../../user/auth/k8s/base
 
 patches:
-  - path: delete-shared-bootstrap.yaml
+  - path: delete-shared-namespace.yaml
+  - path: delete-shared-serviceaccount.yaml
 
 generators:
   - ksops-secret-generator.yaml

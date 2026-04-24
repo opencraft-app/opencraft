@@ -10,7 +10,8 @@ generators:
   - ksops-secret-generator.yaml
 
 patches:
-  - path: delete-shared-bootstrap.yaml
+  - path: delete-shared-namespace.yaml
+  - path: delete-shared-serviceaccount.yaml
 
 generatorOptions:
   disableNameSuffixHash: true
