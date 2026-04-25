@@ -30,8 +30,8 @@ def load_manifest() -> dict:
 
 
 def docker_login(image_repo: str) -> None:
-    username = os.environ.get("REGISTRY_USERNAME", "")
-    password = os.environ.get("REGISTRY_PASSWORD", "")
+    username = os.environ.get("REGISTRY_USERNAME", "").strip()
+    password = os.environ.get("REGISTRY_PASSWORD", "").strip()
     if not username or not password:
         return
 
