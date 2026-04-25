@@ -5,6 +5,8 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEPLOYED_AT="${DEPLOYED_AT:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
 TCR_USERNAME="${TCR_USERNAME:-100045199955}"
+TCR_BEIJING_PASSWORD_FILE="${TCR_BEIJING_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_beijing_password}"
+TCR_SHPROD_PASSWORD_FILE="${TCR_SHPROD_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_shprod_password}"
 
 if [[ $# -ne 4 ]]; then
   echo "usage: $0 <bundle-service> <pin-targets-csv> <build-envs-csv> <auto-pin-env-or-none>" >&2
@@ -30,23 +32,73 @@ IFS=',' read -r -a ENVS <<<"$BUILD_ENVS"
 
 declare -A BUILT_IMAGES=()
 
-set_registry_credentials() {
+read_secret_value() {
+  python3 -c 'import sys; print(sys.stdin.read().strip())'
+}
+
+load_registry_password() {
   local env_name="$1"
-  unset REGISTRY_USERNAME REGISTRY_PASSWORD
+  local password_var=""
+  local password_file=""
+
   case "$env_name" in
     beijing-sandbox)
-      if [[ -n "${TCR_BEIJING_PASSWORD:-}" ]]; then
-        export REGISTRY_USERNAME="$TCR_USERNAME"
-        export REGISTRY_PASSWORD="$TCR_BEIJING_PASSWORD"
-      fi
+      password_var="${TCR_BEIJING_PASSWORD:-}"
+      password_file="$TCR_BEIJING_PASSWORD_FILE"
       ;;
     shprod)
-      if [[ -n "${TCR_SHPROD_PASSWORD:-}" ]]; then
-        export REGISTRY_USERNAME="$TCR_USERNAME"
-        export REGISTRY_PASSWORD="$TCR_SHPROD_PASSWORD"
-      fi
+      password_var="${TCR_SHPROD_PASSWORD:-}"
+      password_file="$TCR_SHPROD_PASSWORD_FILE"
+      ;;
+    *)
+      return 1
       ;;
   esac
+
+  if [[ -r "$password_file" ]]; then
+    printf '%s' "$(read_secret_value < "$password_file")"
+    return 0
+  fi
+
+  if [[ -n "$password_var" ]]; then
+    printf '%s' "$password_var" | read_secret_value
+    return 0
+  fi
+
+  return 1
+}
+
+set_registry_credentials() {
+  local env_name="$1"
+  local password=""
+  local source="none"
+  unset REGISTRY_USERNAME REGISTRY_PASSWORD
+
+  if password="$(load_registry_password "$env_name")"; then
+    case "$env_name" in
+      beijing-sandbox)
+        if [[ -r "$TCR_BEIJING_PASSWORD_FILE" ]]; then
+          source="file:$TCR_BEIJING_PASSWORD_FILE"
+        else
+          source="env:TCR_BEIJING_PASSWORD"
+        fi
+        ;;
+      shprod)
+        if [[ -r "$TCR_SHPROD_PASSWORD_FILE" ]]; then
+          source="file:$TCR_SHPROD_PASSWORD_FILE"
+        else
+          source="env:TCR_SHPROD_PASSWORD"
+        fi
+        ;;
+    esac
+    export REGISTRY_USERNAME="$TCR_USERNAME"
+    export REGISTRY_PASSWORD="$password"
+    echo "registry credentials for $env_name loaded from $source (username=$REGISTRY_USERNAME, password_len=${#REGISTRY_PASSWORD})"
+    return 0
+  fi
+
+  echo "registry credentials for $env_name are not configured; push is expected to fail" >&2
+  return 1
 }
 
 for ENV_NAME in "${ENVS[@]}"; do

@@ -129,7 +129,8 @@
 - CI 直接用 `run` step
 - 调 `scripts/build_and_promote_to_gitops.sh`
 - 底层走 `scripts/build-release-image.py --push`
-- build step 通过 `settings` 传入 TCR token，并在 shell 里显式执行 `docker login`
+- shell 优先从构建机本地文件读取 TCR token，不存在时再回落到 Stream settings
+- `docker login` 在 shell 里显式执行
 
 也就是说，TCR 认证从“蓝盾插件取票据”切成了“shell 自己登录 TCR”。
 
@@ -181,6 +182,8 @@
 
 优先检查：
 
+- `/etc/lightclaw-ci/tcr_beijing_password`
+- `/etc/lightclaw-ci/tcr_shprod_password`
 - `settings.TCR_BEIJING_PASSWORD`
 - `settings.TCR_SHPROD_PASSWORD`
 - token 是否与用户名 `100045199955` 匹配
@@ -222,6 +225,10 @@
 - 自有构建池 `env` 上的机器必须已经具备对 `git@git.woa.com:wisp/mono2.git` 的 SSH 免密推送能力
 - 构建机上的 git committer 身份必须与该 SSH 票据对应的工蜂账号匹配
 - TCR 用户名默认使用 `100045199955`，如需覆盖，可设置环境变量 `TCR_USERNAME`
+- 如果要完全绕开 Stream settings，可在每台 `env` 构建机上预置：
+  - `/etc/lightclaw-ci/tcr_beijing_password`
+  - `/etc/lightclaw-ci/tcr_shprod_password`
+  CI 会优先读取这两个本地文件
 
 ## Shared Scripts
 
