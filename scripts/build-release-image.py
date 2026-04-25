@@ -6,6 +6,7 @@ Build a release image from the central release bundle manifest.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import subprocess
 import sys
@@ -30,17 +31,42 @@ def load_manifest() -> dict:
 
 
 def docker_login(image_repo: str) -> None:
-    username = os.environ.get("REGISTRY_USERNAME", "").strip()
-    password = os.environ.get("REGISTRY_PASSWORD", "").strip()
+    raw_username = os.environ.get("REGISTRY_USERNAME", "")
+    raw_password = os.environ.get("REGISTRY_PASSWORD", "")
+    username = raw_username.strip()
+    password = raw_password.strip()
     if not username or not password:
         return
 
     registry = image_repo.split("/", 1)[0]
-    subprocess.run(
-        ["docker", "login", "-u", username, "--password-stdin", registry],
-        input=password.encode(),
-        check=True,
-    )
+    try:
+        subprocess.run(
+            ["docker", "login", "-u", username, "--password-stdin", registry],
+            input=password.encode(),
+            check=True,
+            capture_output=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        source = os.environ.get("REGISTRY_PASSWORD_SOURCE", "unknown")
+        fingerprint = hashlib.sha256(password.encode()).hexdigest()[:12]
+        print(
+            (
+                "docker login failed: "
+                f"registry={registry} "
+                f"username={username} "
+                f"username_raw_len={len(raw_username)} "
+                f"username_len={len(username)} "
+                f"password_source={source} "
+                f"password_raw_len={len(raw_password)} "
+                f"password_len={len(password)} "
+                f"password_trimmed={'yes' if raw_password != password else 'no'} "
+                f"password_fingerprint={fingerprint}"
+            ),
+            file=sys.stderr,
+        )
+        if exc.stderr:
+            print(exc.stderr.decode(errors="replace"), file=sys.stderr)
+        raise
 
 
 def main() -> int:

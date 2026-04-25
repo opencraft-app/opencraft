@@ -36,6 +36,10 @@ read_secret_value() {
   python3 -c 'import sys; print(sys.stdin.read().strip())'
 }
 
+fingerprint_secret() {
+  python3 -c 'import hashlib, sys; print(hashlib.sha256(sys.stdin.read().encode()).hexdigest()[:12])'
+}
+
 load_registry_password() {
   local env_name="$1"
   local password_var=""
@@ -70,11 +74,14 @@ load_registry_password() {
 
 set_registry_credentials() {
   local env_name="$1"
+  local raw_password=""
   local password=""
   local source="none"
   unset REGISTRY_USERNAME REGISTRY_PASSWORD
+  unset REGISTRY_PASSWORD_SOURCE
 
-  if password="$(load_registry_password "$env_name")"; then
+  if raw_password="$(load_registry_password "$env_name")"; then
+    password="$(printf '%s' "$raw_password" | read_secret_value)"
     case "$env_name" in
       beijing-sandbox)
         if [[ -r "$TCR_BEIJING_PASSWORD_FILE" ]]; then
@@ -93,7 +100,8 @@ set_registry_credentials() {
     esac
     export REGISTRY_USERNAME="$TCR_USERNAME"
     export REGISTRY_PASSWORD="$password"
-    echo "registry credentials for $env_name loaded from $source (username=$REGISTRY_USERNAME, password_len=${#REGISTRY_PASSWORD})"
+    export REGISTRY_PASSWORD_SOURCE="$source"
+    echo "registry credentials for $env_name loaded from $source (username=$REGISTRY_USERNAME, raw_password_len=${#raw_password}, password_len=${#REGISTRY_PASSWORD}, password_trimmed=$([[ \"$raw_password\" == \"$password\" ]] && echo no || echo yes), password_fingerprint=$(printf '%s' \"$password\" | fingerprint_secret))"
     return 0
   fi
 
