@@ -116,21 +116,21 @@
 
 后续若平台事件语义变化，优先看这一步的日志，不要继续猜事件值。
 
-### 7. 不要在 `DockerBuildAndPushImage` 的 `targetTicketId` 里直接引用 `settings.*`
+### 7. `targetTicketId` 直接写凭据 Key，不要绕 `settings.*`
 
-这次已经验证过：
+这次已经验证过，不管是：
 
 - `targetTicketId: ${{ settings.TCR_BEIJING_SANDBOX_TICKET }}`
+- 还是先经 `variables` 再转一层
 
-会被插件当成原字符串传给凭据接口，而不是先展开。
+插件最终都可能拿到未展开的模板串。
 
-当前稳定写法是：
+当前最稳的写法是直接写字面凭据 Key：
 
-- 先在 `variables` 里定义
-  - `TCR_BEIJING_TICKET_ID`
-  - `TCR_SHPROD_TICKET_ID`
-- 由它们的 `value` 去引用 `settings.*`
-- `targetTicketId` 再引用 `variables.*`
+- `targetTicketId: TCR_BEIJING_SANDBOX_TICKET`
+- `targetTicketId: TCR_SHPROD_TICKET`
+
+前提是蓝盾凭据中心里这两个 Key 已经存在。
 
 ## Required Runtime Preconditions
 

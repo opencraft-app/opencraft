@@ -15,9 +15,6 @@ on:
   manual: enabled
 
 variables:
-  TCR_SHPROD_TICKET_ID:
-    value: ${{ settings.TCR_SHPROD_TICKET }}
-    readonly: true
   PIPELINE_MODE:
     value: build
     readonly: false
@@ -59,7 +56,7 @@ jobs:
         if: ${{ variables.PIPELINE_MODE }} != 'promote'
         uses: DockerBuildAndPushImage@3.*
         with:
-          targetTicketId: ${{ variables.TCR_SHPROD_TICKET_ID }}
+          targetTicketId: TCR_SHPROD_TICKET
           targetImage: lightclaw-shprod.tencentcloudcr.com/lightclaw/frontend
           targetImageTag: ${{ steps.prepare.outputs.tag }}
           dockerBuildDir: ./frontend
