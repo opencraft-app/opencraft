@@ -52,31 +52,14 @@ jobs:
           SHORT_SHA="${{ ci.sha }}"
           SHORT_SHA="${SHORT_SHA:0:12}"
           echo "::set-output name=tag::nextgen-dashboard-${SHORT_SHA}"
-      - name: build-beijing
-        if: ${{ variables.PIPELINE_MODE }} != 'promote'
-        uses: DockerBuildAndPushImage@3.*
-        with:
-          targetTicketId: TCR_BEIJING_SANDBOX_TICKET
-          targetImage: lightclaw-bj8.tencentcloudcr.com/lightclaw/nextgen-dashboard
-          targetImageTag: ${{ steps.prepare.outputs.tag }}
-          dockerBuildDir: ./nextgen-dashboard
-          dockerFilePath: ./nextgen-dashboard/Dockerfile
-      - name: build-shprod
-        if: ${{ variables.PIPELINE_MODE }} != 'promote'
-        uses: DockerBuildAndPushImage@3.*
-        with:
-          targetTicketId: TCR_SHPROD_TICKET
-          targetImage: lightclaw-shprod.tencentcloudcr.com/lightclaw/nextgen-dashboard
-          targetImageTag: ${{ steps.prepare.outputs.tag }}
-          dockerBuildDir: ./nextgen-dashboard
-          dockerFilePath: ./nextgen-dashboard/Dockerfile
-      - name: promote-beijing
+      - name: build-and-promote-beijing
         if: ${{ variables.PIPELINE_MODE }} != 'promote'
         shell: bash
         run: |
           REMOTE_URL="git@git.woa.com:wisp/mono2.git" \
           GITOPS_BRANCH=gitops \
-          bash scripts/pin_image_to_gitops.sh "nextgen-dashboard" "beijing-sandbox" "lightclaw-bj8.tencentcloudcr.com/lightclaw/nextgen-dashboard:${{ steps.prepare.outputs.tag }}"
+          BUILD_TAG_OVERRIDE="${{ steps.prepare.outputs.tag }}" \
+          bash scripts/build_and_promote_to_gitops.sh nextgen-dashboard nextgen-dashboard beijing-sandbox,shprod beijing-sandbox
       - name: promote-manual
         if: ${{ variables.PIPELINE_MODE }} == 'promote'
         shell: bash

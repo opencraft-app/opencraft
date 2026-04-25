@@ -54,13 +54,10 @@ jobs:
           echo "::set-output name=tag::frontend-${SHORT_SHA}"
       - name: build-shprod
         if: ${{ variables.PIPELINE_MODE }} != 'promote'
-        uses: DockerBuildAndPushImage@3.*
-        with:
-          targetTicketId: TCR_SHPROD_TICKET
-          targetImage: lightclaw-shprod.tencentcloudcr.com/lightclaw/frontend
-          targetImageTag: ${{ steps.prepare.outputs.tag }}
-          dockerBuildDir: ./frontend
-          dockerFilePath: ./frontend/deploy/Dockerfile
+        shell: bash
+        run: |
+          BUILD_TAG_OVERRIDE="${{ steps.prepare.outputs.tag }}" \
+          bash scripts/build_and_promote_to_gitops.sh frontend frontend shprod none
       - name: promote-manual
         if: ${{ variables.PIPELINE_MODE }} == 'promote'
         shell: bash
