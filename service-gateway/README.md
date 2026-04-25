@@ -76,3 +76,6 @@ Metrics:
   - the `ServiceMonitor` lives in `kube-system`, not in the app namespace
   - the `ServiceMonitor` uses `namespaceSelector.matchNames` to point back to `lightclaw-gateway`
 - if `/metrics` has samples locally but Grafana stays empty, check the `ServiceMonitor` namespace first
+
+CI note:
+- changes under `service-gateway/**` should trigger `.ci/service-gateway.yml` on `master`
