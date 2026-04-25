@@ -116,6 +116,22 @@
 
 后续若平台事件语义变化，优先看这一步的日志，不要继续猜事件值。
 
+### 7. 不要在 `DockerBuildAndPushImage` 的 `targetTicketId` 里直接引用 `settings.*`
+
+这次已经验证过：
+
+- `targetTicketId: ${{ settings.TCR_BEIJING_SANDBOX_TICKET }}`
+
+会被插件当成原字符串传给凭据接口，而不是先展开。
+
+当前稳定写法是：
+
+- 先在 `variables` 里定义
+  - `TCR_BEIJING_TICKET_ID`
+  - `TCR_SHPROD_TICKET_ID`
+- 由它们的 `value` 去引用 `settings.*`
+- `targetTicketId` 再引用 `variables.*`
+
 ## Required Runtime Preconditions
 
 除了 `settings` 变量，还需要下面这些前置满足：
