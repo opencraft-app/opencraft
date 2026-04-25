@@ -13,6 +13,16 @@
 - 北京测试环境自动回写 `gitops`
 - 上海正式环境手动 promote 到 `gitops`
 
+当前 `.ci/*.yml` 不再依赖 `ci.event == 'push' / 'manual'` 来分流。
+已改为：
+
+- 默认 `PIPELINE_MODE=build`
+  - 运行构建
+  - 北京自动 promote
+- 手动把 `PIPELINE_MODE` 改成 `promote`
+  - 只执行 `promote-manual`
+  - 需要同时提供 `SOURCE_SHA`
+
 ## Verified Working Setup
 
 这套模式已经实际验证通过：
@@ -58,7 +68,7 @@
 
 当前实现方式：
 
-- `service-gateway.yaml.yml`
+- `service-gateway.yml`
   - 自动 / 手动 promote 时同时更新：
     - `service-gateway`
     - `admin-gateway`
@@ -86,6 +96,25 @@
 
 - `jobs.release.runs-on.self-hosted: true`
 - `jobs.release.runs-on.pool-name: env`
+- `PIPELINE_MODE`
+  - 默认值 `build`
+  - 手动 promote 时改成 `promote`
+
+### 6. 不要再把 `ci.event` 当作唯一分流依据
+
+这次已经遇到过：
+
+- push 触发时，`if: ${{ ci.event }} == 'push'` 仍然被判 false
+
+因此每条流水线都加了 `debug-context` step，会直接打印：
+
+- `ci.event`
+- `ci.branch`
+- `PIPELINE_MODE`
+- `TARGET_ENV`
+- `SOURCE_SHA`
+
+后续若平台事件语义变化，优先看这一步的日志，不要继续猜事件值。
 
 ## Required Runtime Preconditions
 
@@ -143,19 +172,19 @@
 
 当前已接入 service 级 Stream YAML：
 
-- `ai-gateway.yaml.yml`
-- `ctl.yaml.yml`
-- `frontend.yaml.yml`
-- `gateway-dashboard.yaml.yml`
-- `lightclaw-auth.yaml.yml`
-- `nextgen-dashboard.yaml.yml`
-- `payment.yaml.yml`
-- `service-gateway.yaml.yml`
-- `subscription.yaml.yml`
+- `ai-gateway.yml`
+- `ctl.yml`
+- `frontend.yml`
+- `gateway-dashboard.yml`
+- `lightclaw-auth.yml`
+- `nextgen-dashboard.yml`
+- `payment.yml`
+- `service-gateway.yml`
+- `subscription.yml`
 
 说明：
 
-- `service-gateway.yaml.yml` 会同时更新：
+- `service-gateway.yml` 会同时更新：
   - `service-gateway`
   - `admin-gateway`
 - `lightclaw-auth.yaml.yml` 对应的 build bundle 是：

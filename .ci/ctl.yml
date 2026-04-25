@@ -15,6 +15,10 @@ on:
   manual: enabled
 
 variables:
+  PIPELINE_MODE:
+    value: build
+    readonly: false
+    allow-modify-at-startup: true
   TARGET_ENV:
     value: shprod
     readonly: false
@@ -33,15 +37,23 @@ jobs:
       - checkout: self
         with:
           fetchDepth: 50
+      - name: debug-context
+        shell: bash
+        run: |
+          echo "ci.event=${{ ci.event }}"
+          echo "ci.branch=${{ ci.branch }}"
+          echo "PIPELINE_MODE=${{ variables.PIPELINE_MODE }}"
+          echo "TARGET_ENV=${{ variables.TARGET_ENV }}"
+          echo "SOURCE_SHA=${{ variables.SOURCE_SHA }}"
       - id: prepare
-        if: ${{ ci.event }} == 'push'
+        if: ${{ variables.PIPELINE_MODE }} != 'promote'
         shell: bash
         run: |
           SHORT_SHA="${{ ci.sha }}"
           SHORT_SHA="${SHORT_SHA:0:12}"
           echo "::set-output name=tag::ctl-${SHORT_SHA}"
       - name: build-beijing
-        if: ${{ ci.event }} == 'push'
+        if: ${{ variables.PIPELINE_MODE }} != 'promote'
         uses: DockerBuildAndPushImage@3.*
         with:
           targetTicketId: ${{ settings.TCR_BEIJING_SANDBOX_TICKET }}
@@ -50,7 +62,7 @@ jobs:
           dockerBuildDir: ./ctl
           dockerFilePath: ./ctl/Dockerfile
       - name: build-shprod
-        if: ${{ ci.event }} == 'push'
+        if: ${{ variables.PIPELINE_MODE }} != 'promote'
         uses: DockerBuildAndPushImage@3.*
         with:
           targetTicketId: ${{ settings.TCR_SHPROD_TICKET }}
@@ -59,14 +71,14 @@ jobs:
           dockerBuildDir: ./ctl
           dockerFilePath: ./ctl/Dockerfile
       - name: promote-beijing
-        if: ${{ ci.event }} == 'push'
+        if: ${{ variables.PIPELINE_MODE }} != 'promote'
         shell: bash
         run: |
           REMOTE_URL="git@git.woa.com:wisp/mono2.git" \
           GITOPS_BRANCH=gitops \
           bash scripts/pin_image_to_gitops.sh "ctl" "beijing-sandbox" "lightclaw-bj8.tencentcloudcr.com/lightclaw/ctl:${{ steps.prepare.outputs.tag }}"
       - name: promote-manual
-        if: ${{ ci.event }} == 'manual'
+        if: ${{ variables.PIPELINE_MODE }} == 'promote'
         shell: bash
         run: |
           test -n "${{ variables.SOURCE_SHA }}"
