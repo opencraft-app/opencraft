@@ -22,6 +22,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tag", required=True, help="Image tag to build")
     parser.add_argument("--platform", default="linux/amd64", help="Docker build platform")
     parser.add_argument("--push", action="store_true", help="Push after successful build")
+    parser.add_argument("--image-output-file", help="Optional file path to receive the built image ref")
     return parser.parse_args()
 
 
@@ -101,7 +102,10 @@ def main() -> int:
     if args.push:
         docker_login(image_repo)
         subprocess.run(["docker", "push", image], check=True)
-    print(image)
+    if args.image_output_file:
+        Path(args.image_output_file).write_text(f"{image}\n")
+    else:
+        print(image)
     return 0
 
 

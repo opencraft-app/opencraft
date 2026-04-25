@@ -111,7 +111,15 @@ set_registry_credentials() {
 
 for ENV_NAME in "${ENVS[@]}"; do
   set_registry_credentials "$ENV_NAME"
-  IMAGE="$(python3 "$REPO_ROOT/scripts/build-release-image.py" --service "$BUNDLE_SERVICE" --env "$ENV_NAME" --tag "$TAG" --push | tail -n 1)"
+  image_output_file="$(mktemp)"
+  python3 "$REPO_ROOT/scripts/build-release-image.py" \
+    --service "$BUNDLE_SERVICE" \
+    --env "$ENV_NAME" \
+    --tag "$TAG" \
+    --push \
+    --image-output-file "$image_output_file"
+  IMAGE="$(<"$image_output_file")"
+  rm -f "$image_output_file"
   BUILT_IMAGES["$ENV_NAME"]="$IMAGE"
   echo "built $BUNDLE_SERVICE for $ENV_NAME => $IMAGE"
 done
