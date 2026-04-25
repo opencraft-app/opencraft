@@ -129,9 +129,9 @@
 - CI 直接用 `run` step
 - 调 `scripts/build_and_promote_to_gitops.sh`
 - 底层走 `scripts/build-release-image.py --push`
-- 依赖自有构建池机器本地已经完成对目标 TCR 的 `docker login`
+- build step 通过 `settings` 传入 TCR token，并在 shell 里显式执行 `docker login`
 
-也就是说，TCR 认证从“蓝盾插件取票据”切成了“构建机宿主机 Docker 认证状态”。
+也就是说，TCR 认证从“蓝盾插件取票据”切成了“shell 自己登录 TCR”。
 
 ## Required Runtime Preconditions
 
@@ -181,9 +181,9 @@
 
 优先检查：
 
-- `TCR_BEIJING_SANDBOX_TICKET`
-- `TCR_SHPROD_TICKET`
-- 蓝盾凭据 Key 是否对应正确环境的 TCR 账户
+- `settings.TCR_BEIJING_PASSWORD`
+- `settings.TCR_SHPROD_PASSWORD`
+- token 是否与用户名 `100045199955` 匹配
 
 ## Service Pipelines
 
@@ -212,15 +212,16 @@
 
 这些 Stream settings 需要在平台侧提前配置：
 
-- `TCR_BEIJING_SANDBOX_TICKET`
-  - 北京镜像推送凭据 Key
-- `TCR_SHPROD_TICKET`
-  - 上海镜像推送凭据 Key
+- `TCR_BEIJING_PASSWORD`
+  - 北京镜像推送 token
+- `TCR_SHPROD_PASSWORD`
+  - 上海镜像推送 token
 
 另外要求：
 
 - 自有构建池 `env` 上的机器必须已经具备对 `git@git.woa.com:wisp/mono2.git` 的 SSH 免密推送能力
 - 构建机上的 git committer 身份必须与该 SSH 票据对应的工蜂账号匹配
+- TCR 用户名默认使用 `100045199955`，如需覆盖，可设置环境变量 `TCR_USERNAME`
 
 ## Shared Scripts
 

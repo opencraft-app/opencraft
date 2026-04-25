@@ -55,6 +55,8 @@ jobs:
       - name: build-shprod
         if: ${{ variables.PIPELINE_MODE }} != 'promote'
         shell: bash
+        env:
+          TCR_SHPROD_PASSWORD: ${{ settings.TCR_SHPROD_PASSWORD }}
         run: |
           BUILD_TAG_OVERRIDE="${{ steps.prepare.outputs.tag }}" \
           bash scripts/build_and_promote_to_gitops.sh frontend frontend shprod none

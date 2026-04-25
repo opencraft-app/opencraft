@@ -6,6 +6,7 @@ Build a release image from the central release bundle manifest.
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -26,6 +27,20 @@ def parse_args() -> argparse.Namespace:
 def load_manifest() -> dict:
     path = Path("scripts/release-bundles.yaml")
     return yaml.safe_load(path.read_text()) or {}
+
+
+def docker_login(image_repo: str) -> None:
+    username = os.environ.get("REGISTRY_USERNAME", "")
+    password = os.environ.get("REGISTRY_PASSWORD", "")
+    if not username or not password:
+        return
+
+    registry = image_repo.split("/", 1)[0]
+    subprocess.run(
+        ["docker", "login", "-u", username, "--password-stdin", registry],
+        input=password.encode(),
+        check=True,
+    )
 
 
 def main() -> int:
@@ -58,6 +73,7 @@ def main() -> int:
     ]
     subprocess.run(cmd, check=True)
     if args.push:
+        docker_login(image_repo)
         subprocess.run(["docker", "push", image], check=True)
     print(image)
     return 0

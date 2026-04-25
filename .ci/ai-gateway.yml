@@ -55,6 +55,9 @@ jobs:
       - name: build-and-promote-beijing
         if: ${{ variables.PIPELINE_MODE }} != 'promote'
         shell: bash
+        env:
+          TCR_BEIJING_PASSWORD: ${{ settings.TCR_BEIJING_PASSWORD }}
+          TCR_SHPROD_PASSWORD: ${{ settings.TCR_SHPROD_PASSWORD }}
         run: |
           REMOTE_URL="git@git.woa.com:wisp/mono2.git" \
           GITOPS_BRANCH=gitops \
