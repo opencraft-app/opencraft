@@ -94,3 +94,9 @@ ctl/service
 .codebuddy/project.local.json.backup
 
 .omx/*
+
+# Tencent Cloud EdgeOne
+.env
+.edgeone/*
+.tef_dist/*
+  
