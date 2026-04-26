@@ -11,9 +11,9 @@
 ## Files
 
 - `kustomization.yaml`
-- `delete-migration-job.yaml`
 - `ksops-assets-generator.yaml`
 - `ctl-platform.env`
+- `souls/`
 - `../../../secrets/beijing-sandbox/ctl-conf-common.sops.yaml`
 - `../../../secrets/beijing-sandbox/ctl-conf-rewrite.sops.yaml`
 - `../../../secrets/beijing-sandbox/ctl-runtime-secrets.sops.yaml`
@@ -41,4 +41,5 @@
 
 ## Note
 
-`ctl` 的 steady-state Argo 目录不接 migration job。数据库变更继续走平台级 DB job 入口，而不是常驻 Kustomization。
+北京试点后，这个 deploy-facing 目录只保留环境值、SOUL 模板和 secret/config 输入；
+`delete-migration-job`、`replacements` 等结构性逻辑统一下沉到 `ctl/k8s/overlays/beijing-sandbox/`。
