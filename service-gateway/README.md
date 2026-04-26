@@ -82,3 +82,4 @@ CI note:
 - 2026-04-25 retry trigger: README-only change to re-run Stream after TCR settings update
 - 2026-04-25 retry trigger 2: README-only change to collect the new safe registry diagnostics
 - 2026-04-26 trigger: README-only change to exercise the MR-based gitops promotion flow
+- 2026-04-26 trigger 2: README-only change to rerun after Python compatibility fix on promote checks
