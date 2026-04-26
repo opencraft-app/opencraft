@@ -92,7 +92,7 @@ python3 scripts/build-release-image.py --service <service> --env <env> --tag <ta
 `DB migration / seed` 继续保留，但只保留统一平台级入口：
 
 - [run_gitops_db_job.py](../../scripts/run_gitops_db_job.py)
-- [.gitlab/ci/gitops-db-job.yml](../../.gitlab/ci/gitops-db-job.yml)
+- 旧 GitLab CI 模板已退役
 - [gitops-db-job-runbook.md](gitops-db-job-runbook.md)
 
 禁止：

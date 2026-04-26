@@ -154,7 +154,7 @@
   - success / failure
   - logs pointer
 
-这条 contract 可以由后续 GitLab CI / runbook / 手工命令实现，但语义要统一。
+这条 contract 可以由后续 CI / runbook / 手工命令实现，但语义要统一。
 
 ## Hard Rules
 
@@ -184,7 +184,7 @@
 
 后续仍要补一层具体实现：
 
-- GitLab CI 入口
+- CI 入口
 - runbook 命令
 - job 命名约定
 - 日志归档位置

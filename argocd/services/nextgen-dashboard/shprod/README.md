@@ -17,7 +17,7 @@
 - `nextgen-dashboard-platform.env`
   - image pin、node pool、redeploy timestamp
 - `../../../secrets/shprod/nextgen-dashboard-runtime-secrets.sops.yaml`
-  - 由 `SSM -> GitLab CI -> sops` 导出
+  - 由 `SSM -> CI -> sops` 导出
 
 ## Current Gap To Close
 

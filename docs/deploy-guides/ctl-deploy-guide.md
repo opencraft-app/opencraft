@@ -41,7 +41,7 @@ python3 scripts/build-release-image.py --service ctl --env <env> --tag <tag>
 `ctl` migration 现在走平台级受控入口：
 
 - `scripts/run_gitops_db_job.py --service ctl --operation migration --env <env> --revision <sha>`
-- `.gitlab/ci/gitops-db-job.yml`
+- 旧 `.gitlab/ci/gitops-db-job.yml` 已退役；当前以脚本和 runbook 为准
 
 ## 异步链路与 DB 约束
 

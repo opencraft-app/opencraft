@@ -13,7 +13,7 @@
 当前状态：
 
 - 北京环境的目录骨架已建立
-- 具体服务的 `*.sops.yaml` 需要由 `SSM -> GitLab CI -> export_ssm_to_sops.py` 生成
+- 具体服务的 `*.sops.yaml` 需要由 `SSM -> CI -> export_ssm_to_sops.py` 生成
 
 补充说明：
 
