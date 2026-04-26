@@ -633,3 +633,32 @@ https://<subdomain>.edgeone.cool?eo_token=...&eo_time=...
 - 策略 JSON
 
 这样后续能复盘权限设计，但不会把真正凭据暴露到 Git 历史里。
+
+## 脚本化入口
+
+在完成一次手工验证后，后续继续批量创建同类受限子账号，优先走脚本：
+
+- [scripts/create_edgeone_preview_subusers.py](/Users/skipzhang/code/mono2-clean/scripts/create_edgeone_preview_subusers.py)
+
+脚本设计目标：
+
+- 用最小交互重复执行同一套子账号创建流程
+- 保持和本文一致的默认策略集
+- 把敏感结果写入本地受限权限文件，而不是打印到终端
+
+典型用法：
+
+```bash
+TENCENTCLOUD_SECRET_ID=... \
+TENCENTCLOUD_SECRET_KEY=... \
+scripts/create_edgeone_preview_subusers.py <username1> <username2> ...
+```
+
+脚本当前行为：
+
+- 自动去重用户名
+- 若账号不存在则创建
+- 若账号已存在则复用并补齐策略
+- 若账号已有两把 AccessKey，则拒绝继续创建新 key，避免在拿不到旧 Secret 的前提下破坏现状
+- 默认把结果写到：
+  - `~/.codex/tmp/edgeone-preview-subusers-<random>.json`

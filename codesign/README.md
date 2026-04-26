@@ -180,7 +180,7 @@ ls dist
 然后重新执行部署：
 
 ```bash
-npx edgeone pages deploy dist -n lightvela -e production
+npx edgeone pages deploy dist -n lightvela-preview -e production
 ```
 
 ### 3. 裸 `.edgeone.cool` 返回 `401`
@@ -229,6 +229,40 @@ frontend/.edgeone/*
 - 需要新建更多受限子账号
 - 需要调整 EO Pages / 北京只读权限边界
 - 需要确认是否允许触达生产项目
+
+## 批量创建受限子账号脚本
+
+如果后续需要继续批量创建“EO Pages 测试项目 only + 北京常用基础设施只读”的受限子账号，仓库里已有脚本：
+
+- [scripts/create_edgeone_preview_subusers.py](/Users/skipzhang/code/mono2-clean/scripts/create_edgeone_preview_subusers.py)
+
+脚本能力：
+
+- 自动去重用户名
+- 若账号不存在则创建
+- 若账号已存在则补齐固定策略
+- 为每个账号创建一把新的 CAM AccessKey
+- 将明文结果写入本地 `chmod 600` 的 JSON 文件
+- 不把密码或 AccessKey 明文打印到终端
+
+依赖环境变量：
+
+- `TENCENTCLOUD_SECRET_ID`
+- `TENCENTCLOUD_SECRET_KEY`
+
+示例：
+
+```bash
+TENCENTCLOUD_SECRET_ID=... \
+TENCENTCLOUD_SECRET_KEY=... \
+scripts/create_edgeone_preview_subusers.py jasminzhao boyuan hadezwang keriaxu walkercao
+```
+
+默认输出文件位置类似：
+
+```text
+~/.codex/tmp/edgeone-preview-subusers-<random>.json
+```
 
 ## 一条命令摘要
 

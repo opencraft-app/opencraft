@@ -236,6 +236,8 @@ npx edgeone pages deploy dist -n lightvela-preview -e production -t <EDGEONE_PAG
 如果后续要继续创建更多“测试项目 only”或“只读 only”的受限子账号：
 
 - 优先沿用 provisioning 文档里的流程和策略结构
+- 优先直接使用脚本：
+  - [scripts/create_edgeone_preview_subusers.py](/Users/skipzhang/code/mono2-clean/scripts/create_edgeone_preview_subusers.py)
 - 默认联系 `Skipzhang`
 
 前提：
