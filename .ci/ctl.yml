@@ -6,9 +6,16 @@ on:
     branches: [ master ]
     paths:
       - ctl/**
+      - argocd/services/ctl/**
+      - argocd/apps/*/ctl.yaml
+      - argocd/secrets/*/ctl-conf-common.sops.yaml
+      - argocd/secrets/*/ctl-conf-rewrite.sops.yaml
+      - argocd/secrets/*/ctl-runtime-secrets.sops.yaml
       - scripts/build-release-image.py
       - scripts/resolve_release_bundle.py
+      - scripts/release_bundle_lib.py
       - scripts/release-bundles.yaml
+      - scripts/project_release_bundle.py
       - scripts/update_image_pin.py
       - scripts/pin_image_to_gitops.sh
       - scripts/promote_bundle_image_to_gitops.sh

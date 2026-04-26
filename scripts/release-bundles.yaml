@@ -10,6 +10,12 @@ bundles:
       - admin-gateway/k8s/overlays/beijing-sandbox
       - admin-gateway/k8s/overlays/shprod
     exit_condition: "Can be removed only after the deployable contract moves to an explicit imported package path."
+    publish_paths:
+      - argocd/services/admin-gateway/{env}/**
+      - argocd/apps/{env}/admin-gateway.yaml
+      - argocd/secrets/{env}/admin-gateway-runtime-secrets.sops.yaml
+      - admin-gateway/k8s/base/**
+      - admin-gateway/k8s/overlays/{env}/**
   ai-gateway:
     owner: ai-gateway
     source: ai-gateway
@@ -21,6 +27,12 @@ bundles:
       - ai-gateway/deploy/Dockerfile
       - ai-gateway/openapi.yaml
     exit_condition: "Can be removed only after the deployable contract moves to an explicit imported package path."
+    publish_paths:
+      - argocd/services/ai-gateway/{env}/**
+      - argocd/apps/{env}/ai-gateway.yaml
+      - argocd/secrets/{env}/ai-gateway-runtime-secrets.sops.yaml
+      - ai-gateway/k8s/base/**
+      - ai-gateway/k8s/overlays/{env}/**
     dockerfile: ai-gateway/deploy/Dockerfile
     build_context: ai-gateway
     image_repo:
@@ -36,6 +48,12 @@ bundles:
       - gateway-dashboard/k8s/overlays/shprod
       - gateway-dashboard/Dockerfile
     exit_condition: "Can be removed only after the deployable contract moves to an explicit imported package path."
+    publish_paths:
+      - argocd/services/gateway-dashboard/{env}/**
+      - argocd/apps/{env}/gateway-dashboard.yaml
+      - argocd/secrets/{env}/gateway-dashboard-runtime-secrets.sops.yaml
+      - gateway-dashboard/k8s/base/**
+      - gateway-dashboard/k8s/overlays/{env}/**
     dockerfile: gateway-dashboard/Dockerfile
     build_context: gateway-dashboard
     image_repo:
@@ -51,6 +69,12 @@ bundles:
       - nextgen-dashboard/k8s/overlays/shprod
       - nextgen-dashboard/Dockerfile
     exit_condition: "Can be removed only after the deployable contract moves to an explicit imported package path."
+    publish_paths:
+      - argocd/services/nextgen-dashboard/{env}/**
+      - argocd/apps/{env}/nextgen-dashboard.yaml
+      - argocd/secrets/{env}/nextgen-dashboard-runtime-secrets.sops.yaml
+      - nextgen-dashboard/k8s/base/**
+      - nextgen-dashboard/k8s/overlays/{env}/**
     dockerfile: nextgen-dashboard/Dockerfile
     build_context: nextgen-dashboard
     image_repo:
@@ -67,6 +91,12 @@ bundles:
       - payment/Dockerfile
       - payment/migrations
     exit_condition: "Can be removed only after the deployable contract moves to an explicit imported package path."
+    publish_paths:
+      - argocd/services/payment/{env}/**
+      - argocd/apps/{env}/payment.yaml
+      - argocd/secrets/{env}/payment-runtime-secrets.sops.yaml
+      - payment/k8s/base/**
+      - payment/k8s/overlays/{env}/**
     dockerfile: payment/Dockerfile
     build_context: payment
     image_repo:
@@ -82,6 +112,17 @@ bundles:
       - service-gateway/k8s/overlays/shprod
       - service-gateway/Dockerfile
     exit_condition: "Can be removed only after the deployable contract moves to an explicit imported package path."
+    publish_paths:
+      - argocd/services/service-gateway/{env}/**
+      - argocd/apps/{env}/service-gateway.yaml
+      - argocd/secrets/{env}/service-gateway-runtime-secrets.sops.yaml
+      - service-gateway/k8s/base/**
+      - service-gateway/k8s/overlays/{env}/**
+      - argocd/services/admin-gateway/{env}/**
+      - argocd/apps/{env}/admin-gateway.yaml
+      - argocd/secrets/{env}/admin-gateway-runtime-secrets.sops.yaml
+      - admin-gateway/k8s/base/**
+      - admin-gateway/k8s/overlays/{env}/**
     dockerfile: service-gateway/Dockerfile
     build_context: service-gateway
     image_repo:
@@ -95,6 +136,12 @@ bundles:
       - session/k8s/base
       - session/k8s/overlays/beijing-sandbox
     exit_condition: "Can be removed only after the deployable contract moves to an explicit imported package path."
+    publish_paths:
+      - argocd/services/session/{env}/**
+      - argocd/apps/{env}/session.yaml
+      - argocd/secrets/{env}/session-runtime-secrets.sops.yaml
+      - session/k8s/base/**
+      - session/k8s/overlays/{env}/**
   subscription:
     owner: subscription
     source: subscription
@@ -106,6 +153,12 @@ bundles:
       - subscription/Dockerfile
       - subscription/migrations
     exit_condition: "Can be removed only after the deployable contract moves to an explicit imported package path."
+    publish_paths:
+      - argocd/services/subscription/{env}/**
+      - argocd/apps/{env}/subscription.yaml
+      - argocd/secrets/{env}/subscription-runtime-secrets.sops.yaml
+      - subscription/k8s/base/**
+      - subscription/k8s/overlays/{env}/**
     dockerfile: subscription/Dockerfile
     build_context: subscription
     image_repo:
@@ -122,6 +175,12 @@ bundles:
       - user/auth/Dockerfile
       - user/auth/migrations
     exit_condition: "Can be removed only after the deployable contract moves to an explicit imported package path."
+    publish_paths:
+      - argocd/services/lightclaw-auth/{env}/**
+      - argocd/apps/{env}/lightclaw-auth.yaml
+      - argocd/secrets/{env}/lightclaw-auth-secrets.sops.yaml
+      - user/auth/k8s/base/**
+      - user/auth/k8s/overlays/{env}/**
     dockerfile: user/auth/Dockerfile
     build_context: user/auth
     image_repo:
@@ -137,6 +196,14 @@ bundles:
       - ctl/k8s/overlays/shprod
       - ctl/Dockerfile
     exit_condition: "Can be removed only after the deployable contract moves to an explicit imported package path."
+    publish_paths:
+      - argocd/services/ctl/{env}/**
+      - argocd/apps/{env}/ctl.yaml
+      - argocd/secrets/{env}/ctl-conf-common.sops.yaml
+      - argocd/secrets/{env}/ctl-conf-rewrite.sops.yaml
+      - argocd/secrets/{env}/ctl-runtime-secrets.sops.yaml
+      - ctl/k8s/base/**
+      - ctl/k8s/overlays/{env}/**
     dockerfile: ctl/Dockerfile
     build_context: ctl
     image_repo:
@@ -153,6 +220,12 @@ bundles:
       - sandbox/config
       - sandbox/migrations
     exit_condition: "Can be removed only after the deployable contract moves to an explicit imported package path."
+    publish_paths:
+      - argocd/services/sandbox/{env}/**
+      - argocd/apps/{env}/sandbox.yaml
+      - argocd/secrets/{env}/sandbox-runtime-secrets.sops.yaml
+      - sandbox/k8s/base/**
+      - sandbox/k8s/overlays/{env}/**
   frontend:
     owner: frontend
     source: frontend
@@ -162,6 +235,11 @@ bundles:
       - frontend/k8s/overlays/shprod
       - frontend/deploy/Dockerfile
     exit_condition: "Can be removed only after the deployable contract moves to an explicit imported package path."
+    publish_paths:
+      - argocd/services/frontend/{env}/**
+      - argocd/apps/{env}/frontend.yaml
+      - frontend/k8s/base/**
+      - frontend/k8s/overlays/{env}/**
     dockerfile: frontend/deploy/Dockerfile
     build_context: frontend
     image_repo:
@@ -175,6 +253,11 @@ bundles:
       - frontend-ds/k8s/overlays/shprod
       - frontend-ds/deploy/Dockerfile
     exit_condition: "Can be removed only after the deployable contract moves to an explicit imported package path."
+    publish_paths:
+      - argocd/services/frontend-ds/{env}/**
+      - argocd/apps/{env}/frontend-ds.yaml
+      - frontend-ds/k8s/base/**
+      - frontend-ds/k8s/overlays/{env}/**
     dockerfile: frontend-ds/deploy/Dockerfile
     build_context: frontend-ds
     image_repo:

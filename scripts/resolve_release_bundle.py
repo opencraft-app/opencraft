@@ -8,9 +8,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from pathlib import Path
-
-import yaml
+from release_bundle_lib import load_bundle, load_manifest, require_build_metadata
 
 
 def parse_args() -> argparse.Namespace:
@@ -27,30 +25,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def load_bundle(service: str, env: str) -> dict[str, str]:
-    manifest_path = Path("scripts/release-bundles.yaml")
-    data = yaml.safe_load(manifest_path.read_text()) or {}
-    bundles = data.get("bundles") or {}
-    bundle = bundles.get(service)
-    if not bundle:
-        raise KeyError(f"unknown release bundle: {service}")
-
-    dockerfile = bundle.get("dockerfile")
-    build_context = bundle.get("build_context")
-    image_repo = (bundle.get("image_repo") or {}).get(env)
-    if not dockerfile or not build_context or not image_repo:
-        raise ValueError(f"bundle {service} does not define docker build inputs for env {env}")
-
-    return {
-        "service": service,
-        "env": env,
-        "dockerfile": str(dockerfile),
-        "build_context": str(build_context),
-        "image_repo": str(image_repo),
-    }
-
-
-def emit_dotenv(metadata: dict[str, str], tag: str) -> str:
+def emit_dotenv(metadata: dict[str, object], tag: str) -> str:
     image = f"{metadata['image_repo']}:{tag}"
     lines = [
         f"BUILD_SERVICE={metadata['service']}",
@@ -67,15 +42,21 @@ def emit_dotenv(metadata: dict[str, str], tag: str) -> str:
 def main() -> int:
     args = parse_args()
     try:
-        metadata = load_bundle(args.service, args.env)
+        manifest = load_manifest()
+        bundle = require_build_metadata(load_bundle(manifest, args.service, args.env))
     except (KeyError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 1
 
     result = {
-        **metadata,
+        "service": bundle.service,
+        "env": bundle.env,
+        "dockerfile": bundle.dockerfile,
+        "build_context": bundle.build_context,
+        "image_repo": bundle.image_repo,
+        "publish_paths": bundle.publish_paths,
         "tag": args.tag,
-        "image": f"{metadata['image_repo']}:{args.tag}",
+        "image": f"{bundle.image_repo}:{args.tag}",
     }
     if args.format == "json":
         print(json.dumps(result, indent=2, sort_keys=True))

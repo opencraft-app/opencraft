@@ -28,4 +28,4 @@ eval "$(python3 "$REPO_ROOT/scripts/resolve_release_bundle.py" \
   --tag "$TAG" \
   --format dotenv)"
 
-bash "$REPO_ROOT/scripts/pin_image_to_gitops.sh" "$PIN_TARGETS" "$TARGET_ENV" "$BUILD_IMAGE"
+bash "$REPO_ROOT/scripts/pin_image_to_gitops.sh" "$BUNDLE_SERVICE" "$PIN_TARGETS" "$TARGET_ENV" "$BUILD_IMAGE" "$SOURCE_SHA"

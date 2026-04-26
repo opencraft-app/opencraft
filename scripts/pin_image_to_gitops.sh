@@ -16,19 +16,23 @@ GIT_WOA_PRIVATE_TOKEN_FILE="${GIT_WOA_PRIVATE_TOKEN_FILE:-/etc/lightclaw-ci/git_
 GITOPS_AUTO_MERGE_ENVS="${GITOPS_AUTO_MERGE_ENVS:-beijing-sandbox}"
 BOOTSTRAP_FILES=(
   "scripts/update_image_pin.py"
+  "scripts/release_bundle_lib.py"
+  "scripts/project_release_bundle.py"
   "scripts/gitops_merge_request.py"
   "scripts/gitops_cleanup_source_branch.py"
   ".ci/gitops-promotion.yml"
 )
 
-if [[ $# -ne 3 ]]; then
-  echo "usage: $0 <service[,service2,...]> <env> <image>" >&2
+if [[ $# -ne 5 ]]; then
+  echo "usage: $0 <bundle-service> <service[,service2,...]> <env> <image> <source-ref>" >&2
   exit 1
 fi
 
-SERVICE_ARG="$1"
-ENV_NAME="$2"
-IMAGE="$3"
+BUNDLE_SERVICE="$1"
+SERVICE_ARG="$2"
+ENV_NAME="$3"
+IMAGE="$4"
+SOURCE_REF="$5"
 
 for cmd in git python3; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
@@ -118,6 +122,12 @@ for bootstrap_file in "${BOOTSTRAP_FILES[@]}"; do
   git -C "$REPO_ROOT" add "$bootstrap_file"
 done
 
+python3 "$REPO_ROOT/scripts/project_release_bundle.py" \
+  --repo-root "$REPO_ROOT" \
+  --service "$BUNDLE_SERVICE" \
+  --env "$ENV_NAME" \
+  --source-ref "$SOURCE_REF"
+
 IFS=',' read -r -a SERVICES <<<"$SERVICE_ARG"
 
 for SERVICE in "${SERVICES[@]}"; do
@@ -147,6 +157,7 @@ MR_DESCRIPTION="$(cat <<EOF
 - 环境：$ENV_DISPLAY_NAME ($ENV_NAME)
 - 服务：$SERVICE_ARG
 - 镜像：$IMAGE
+- 源 revision：$SOURCE_REF
 - 发布时间：$DEPLOYED_AT
 - 源分支：$PROMOTE_BRANCH
 - 目标分支：$GITOPS_BRANCH
