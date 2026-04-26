@@ -17,7 +17,8 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Delete a source branch after its GitOps MR is merged.")
     parser.add_argument("--api-base", default="https://git.woa.com/api/v3")
     parser.add_argument("--project-id", type=int, default=1731878)
-    parser.add_argument("--private-token", required=True)
+    parser.add_argument("--private-token")
+    parser.add_argument("--private-token-file", default="/etc/lightclaw-ci/git_woa_private_token")
     parser.add_argument("--source-branch", required=True)
     parser.add_argument("--target-branch", default="gitops")
     parser.add_argument("--wait-seconds", type=int, default=120)
@@ -31,6 +32,20 @@ def api_request(method: str, url: str, private_token: str) -> Any:
     with urllib.request.urlopen(req) as resp:
         payload = resp.read().decode()
     return json.loads(payload) if payload else None
+
+
+def resolve_private_token(args: argparse.Namespace) -> str:
+    if args.private_token:
+        return args.private_token.strip()
+
+    try:
+        with open(args.private_token_file, "r") as fh:
+            return fh.read().strip()
+    except FileNotFoundError:
+        raise RuntimeError(
+            "missing Git WOA token; provide --private-token or ensure %s exists"
+            % args.private_token_file
+        )
 
 
 def list_merged_merge_requests(args: argparse.Namespace) -> List[Dict[str, Any]]:
@@ -90,6 +105,7 @@ def delete_branch(args: argparse.Namespace) -> None:
 
 def main() -> int:
     args = parse_args()
+    args.private_token = resolve_private_token(args)
     deadline = time.time() + args.wait_seconds
     attempt = 0
     while time.time() < deadline:
