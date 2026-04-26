@@ -1,3 +1,4 @@
+## Trigger note: shared bundle manifest touch to exercise repo-wide service pipelines.
 bundles:
   admin-gateway:
     owner: admin-gateway
