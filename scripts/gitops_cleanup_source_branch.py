@@ -45,41 +45,87 @@ def list_merged_merge_requests(args: argparse.Namespace) -> List[Dict[str, Any]]
     return api_request("GET", url, args.private_token)
 
 
-def delete_branch(args: argparse.Namespace) -> None:
+def branch_exists(args: argparse.Namespace) -> bool:
     encoded_branch = urllib.parse.quote(args.source_branch, safe="")
     url = f"{args.api_base}/projects/{args.project_id}/repository/branches/{encoded_branch}"
     try:
+        api_request("GET", url, args.private_token)
+        return True
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return False
+        body = exc.read().decode(errors="replace")
+        raise RuntimeError(
+            "failed to query source branch %s: http=%s body=%s"
+            % (args.source_branch, exc.code, body)
+        )
+
+
+def delete_branch(args: argparse.Namespace) -> None:
+    encoded_branch = urllib.parse.quote(args.source_branch, safe="")
+    url = f"{args.api_base}/projects/{args.project_id}/repository/branches/{encoded_branch}"
+    print(
+        "cleanup delete: source_branch=%s branch_exists_before=%s"
+        % (args.source_branch, str(branch_exists(args)).lower()),
+        file=sys.stderr,
+    )
+    try:
         api_request("DELETE", url, args.private_token)
-        print("source branch deleted: %s" % args.source_branch)
+        print("source branch delete request succeeded: %s" % args.source_branch, file=sys.stderr)
     except urllib.error.HTTPError as exc:
         body = exc.read().decode(errors="replace")
         if exc.code == 404:
-            print("source branch already absent: %s" % args.source_branch)
+            print("source branch already absent at delete time: %s" % args.source_branch, file=sys.stderr)
             return
         raise RuntimeError(
             "failed to delete source branch %s: http=%s body=%s"
             % (args.source_branch, exc.code, body)
         )
+    print(
+        "cleanup delete result: source_branch=%s branch_exists_after=%s"
+        % (args.source_branch, str(branch_exists(args)).lower()),
+        file=sys.stderr,
+    )
 
 
 def main() -> int:
     args = parse_args()
     deadline = time.time() + args.wait_seconds
+    attempt = 0
     while time.time() < deadline:
+        attempt += 1
         merged = list_merged_merge_requests(args)
         if merged:
+            mr = merged[0]
+            print(
+                "cleanup merge detected: attempt=%s source_branch=%s target_branch=%s mr_iid=%s resolved_at=%s merge_commit_sha=%s"
+                % (
+                    attempt,
+                    args.source_branch,
+                    args.target_branch,
+                    mr.get("iid"),
+                    mr.get("resolved_at"),
+                    mr.get("merge_commit_sha"),
+                ),
+                file=sys.stderr,
+            )
             delete_branch(args)
             return 0
         print(
-            "cleanup poll: source_branch=%s target_branch=%s merged_mr_found=false"
-            % (args.source_branch, args.target_branch),
+            "cleanup poll: attempt=%s source_branch=%s target_branch=%s merged_mr_found=false branch_exists=%s"
+            % (
+                attempt,
+                args.source_branch,
+                args.target_branch,
+                str(branch_exists(args)).lower(),
+            ),
             file=sys.stderr,
         )
         time.sleep(args.poll_seconds)
 
     print(
-        "cleanup timeout: source_branch=%s target_branch=%s branch left intact"
-        % (args.source_branch, args.target_branch),
+        "cleanup timeout: source_branch=%s target_branch=%s branch_left_intact=%s"
+        % (args.source_branch, args.target_branch, str(branch_exists(args)).lower()),
         file=sys.stderr,
     )
     return 0
