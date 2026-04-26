@@ -5,6 +5,7 @@ Create or reuse a GitOps merge request, with optional auto-merge polling.
 
 import argparse
 import json
+import os
 import sys
 import time
 import urllib.error
@@ -17,7 +18,8 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Create or reuse a GitOps MR and optionally auto-merge it.")
     parser.add_argument("--api-base", default="https://git.woa.com/api/v3")
     parser.add_argument("--project-id", type=int, default=1731878)
-    parser.add_argument("--private-token", required=True)
+    parser.add_argument("--private-token")
+    parser.add_argument("--private-token-file", default="/etc/lightclaw-ci/git_woa_private_token")
     parser.add_argument("--repo-path", default="wisp/mono2")
     parser.add_argument("--source-branch", required=True)
     parser.add_argument("--target-branch", default="gitops")
@@ -40,6 +42,24 @@ def api_request(method: str, url: str, private_token: str, form_data: Optional[D
     with urllib.request.urlopen(req) as resp:
         payload = resp.read().decode()
     return json.loads(payload) if payload else None
+
+
+def resolve_private_token(args: argparse.Namespace) -> str:
+    if args.private_token:
+        return args.private_token.strip()
+
+    env_token = os.environ.get("GIT_WOA_PRIVATE_TOKEN", "").strip()
+    if env_token:
+        return env_token
+
+    try:
+        with open(args.private_token_file, "r") as fh:
+            return fh.read().strip()
+    except FileNotFoundError:
+        raise RuntimeError(
+            "missing Git WOA token; provide --private-token, set GIT_WOA_PRIVATE_TOKEN, or ensure %s exists"
+            % args.private_token_file
+        )
 
 
 def list_merge_requests(args: argparse.Namespace, state: str) -> List[Dict[str, Any]]:
@@ -169,6 +189,7 @@ def emit(args: argparse.Namespace, mr: Dict[str, Any], merge_result: Optional[Di
 
 def main() -> int:
     args = parse_args()
+    args.private_token = resolve_private_token(args)
     mr = ensure_merge_request(args)
     merge_result = None
     if args.auto_merge:
