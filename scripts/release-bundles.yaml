@@ -1,5 +1,6 @@
 ## Trigger note: shared bundle manifest touch to exercise repo-wide service pipelines.
 ## Trigger note 2: shared bundle manifest touch to test serialized master-side pipeline concurrency.
+## Trigger note 3: shared bundle manifest touch to retrigger all service release pipelines.
 bundles:
   admin-gateway:
     owner: admin-gateway
