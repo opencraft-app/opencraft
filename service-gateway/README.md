@@ -89,3 +89,4 @@ CI note:
 - 2026-04-26 trigger 6: README-only change to test promote branch cleanup after auto-merge
 - 2026-04-26 trigger 7: README-only change to rerun Beijing service-gateway once more
 - 2026-04-26 trigger 8: README-only change to rerun after auto-merge polling fix
+- 2026-04-26 trigger 9: README-only change to verify promote branch cleanup after history cleanup
