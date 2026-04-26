@@ -26,6 +26,7 @@ for cmd in git python3; do
 done
 
 SHORT_SHA="$(git -C "$REPO_ROOT" rev-parse --short=12 HEAD)"
+SOURCE_REF="$(git -C "$REPO_ROOT" rev-parse HEAD)"
 TAG="${BUILD_TAG_OVERRIDE:-${BUNDLE_SERVICE}-${SHORT_SHA}}"
 
 IFS=',' read -r -a ENVS <<<"$BUILD_ENVS"
@@ -134,4 +135,4 @@ if [[ -z "$AUTO_IMAGE" ]]; then
   exit 1
 fi
 
-DEPLOYED_AT="$DEPLOYED_AT" bash "$REPO_ROOT/scripts/pin_image_to_gitops.sh" "$PIN_TARGETS" "$AUTO_PIN_ENV" "$AUTO_IMAGE"
+DEPLOYED_AT="$DEPLOYED_AT" bash "$REPO_ROOT/scripts/pin_image_to_gitops.sh" "$BUNDLE_SERVICE" "$PIN_TARGETS" "$AUTO_PIN_ENV" "$AUTO_IMAGE" "$SOURCE_REF"

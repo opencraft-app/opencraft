@@ -10,7 +10,7 @@
 当前分支模型的目标是：
 
 - `master` 上构建镜像
-- 北京测试环境自动创建到 `gitops` 的 MR，并自动合并
+- 北京测试环境自动把 `master@SHA` 的发布子集投影到 `gitops`，创建 MR 并自动合并
 - 上海正式环境手动 promote 到 `gitops` 的 MR，并人工合并
 
 当前 `.ci/*.yml` 不再依赖 `ci.event == 'push' / 'manual'` 来分流。
@@ -40,7 +40,7 @@
 
 - `targetRevision` 从 `master` 切到 `gitops` 后，北京/上海 live app 仍然 `Synced / Healthy`
 - `env` 自有构建池上的 Linux 机器可以通过 SSH 免密 push `mono2`
-- `scripts/pin_image_to_gitops.sh` / `scripts/promote_bundle_image_to_gitops.sh` 能承载 GitOps pin 写回
+- `scripts/pin_image_to_gitops.sh` / `scripts/promote_bundle_image_to_gitops.sh` 能承载 GitOps 发布子集投影和 image pin 写回
 - `scripts/gitops_merge_request.py` 负责创建 / 复用 MR，并在北京环境轮询后自动合并
 - service 级 YAML 可以继续使用蓝盾 v2.0 的 `jobs.runs-on + steps` 结构
 
@@ -49,7 +49,7 @@
 ### 1. 分支职责必须拆开
 
 - `master` 只负责代码和镜像构建
-- `gitops` 只负责 deploy-facing image pin
+- `gitops` 只负责 deploy-facing 发布视图
 - 不要让 Argo 继续盯 `master`
 
 ### 2. Monorepo 下不要用一个大 YAML 自动决定 service
@@ -65,12 +65,12 @@
 ### 3. 共享镜像要在 promote 阶段一起 pin
 
 `service-gateway` 和 `admin-gateway` 复用同一镜像。  
-这类情况不要复制出两套 build 逻辑，而是在 promote 时一次性更新多个 pin target。
+这类情况不要复制出两套 build 逻辑，而是在 promote 时一次性投影多个 publish target，并更新多个 pin target。
 
 当前实现方式：
 
 - `service-gateway.yml`
-  - 自动 / 手动 promote 时同时更新：
+  - 自动 / 手动 promote 时同时投影并更新：
     - `service-gateway`
     - `admin-gateway`
   - `on.push.paths` 同时监听：
@@ -266,8 +266,12 @@
 
 - `scripts/update_image_pin.py`
   - 只更新 `argocd/services/<service>/<env>/*-platform.env`
+- `scripts/release_bundle_lib.py`
+  - 解析 release bundle 元数据和模式化 `publish_paths`
+- `scripts/project_release_bundle.py`
+  - 把 bundle 在 `master@SHA` 上的发布子集投影到 `gitops` promote 分支
 - `scripts/pin_image_to_gitops.sh`
-  - 把指定镜像 pin 到 promote 分支，并创建 / 复用进入 `gitops` 的 MR
+  - 先把发布子集投影到 promote 分支，再更新镜像 pin，并创建 / 复用进入 `gitops` 的 MR
 - `scripts/gitops_merge_request.py`
   - 创建 / 复用 GitOps MR
   - 北京环境等待 commit check 成功后自动合并
