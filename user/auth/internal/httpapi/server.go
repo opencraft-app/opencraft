@@ -34,7 +34,6 @@ func NewRouter(authService *service.Service, config ServerConfig) *gin.Engine {
 		requestIDMiddleware(),
 		requestLogMiddleware(config.Logger),
 		gin.Recovery(),
-		corsMiddleware(),
 	)
 
 	router.GET("/healthz", func(ctx *gin.Context) {
@@ -159,26 +158,6 @@ func newRequestID() string {
 		return time.Now().UTC().Format("20060102150405.000000000")
 	}
 	return hex.EncodeToString(raw[:])
-}
-
-func corsMiddleware() gin.HandlerFunc {
-	return func(ctx *gin.Context) {
-		origin := strings.TrimSpace(ctx.GetHeader("Origin"))
-		if origin != "" {
-			ctx.Header("Access-Control-Allow-Origin", origin)
-			ctx.Header("Access-Control-Allow-Credentials", "true")
-			ctx.Header("Access-Control-Allow-Headers", "Authorization, Content-Type")
-			ctx.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-			ctx.Header("Vary", "Origin")
-		}
-
-		if ctx.Request.Method == http.MethodOptions {
-			ctx.AbortWithStatus(http.StatusNoContent)
-			return
-		}
-
-		ctx.Next()
-	}
 }
 
 func bearerAdminMiddleware(expectedToken string) gin.HandlerFunc {
