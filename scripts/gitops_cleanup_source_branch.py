@@ -5,6 +5,7 @@ Delete a promote branch after its GitOps MR has been merged.
 
 import argparse
 import json
+import os
 import sys
 import time
 import urllib.error
@@ -38,12 +39,16 @@ def resolve_private_token(args: argparse.Namespace) -> str:
     if args.private_token:
         return args.private_token.strip()
 
+    env_token = os.environ.get("GIT_WOA_PRIVATE_TOKEN", "").strip()
+    if env_token:
+        return env_token
+
     try:
         with open(args.private_token_file, "r") as fh:
             return fh.read().strip()
     except FileNotFoundError:
         raise RuntimeError(
-            "missing Git WOA token; provide --private-token or ensure %s exists"
+            "missing Git WOA token; provide --private-token, set GIT_WOA_PRIVATE_TOKEN, or ensure %s exists"
             % args.private_token_file
         )
 

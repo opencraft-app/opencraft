@@ -59,17 +59,6 @@ sanitize_branch_component() {
   printf '%s' "$1" | tr ',:/' '-' | tr -cs '[:alnum:]._-' '-'
 }
 
-should_auto_merge_env() {
-  local needle="$1"
-  IFS=',' read -r -a envs <<<"$GITOPS_AUTO_MERGE_ENVS"
-  for env in "${envs[@]}"; do
-    if [[ "$env" == "$needle" ]]; then
-      return 0
-    fi
-  done
-  return 1
-}
-
 if ! git -C "$REPO_ROOT" diff --quiet || ! git -C "$REPO_ROOT" diff --cached --quiet; then
   echo "repository has uncommitted changes; refuse to rewrite branch state" >&2
   exit 1
@@ -165,9 +154,5 @@ MR_ARGS=(
   --remove-source-branch
   --format dotenv
 )
-
-if should_auto_merge_env "$ENV_NAME"; then
-  MR_ARGS+=(--auto-merge)
-fi
 
 python3 "$REPO_ROOT/scripts/gitops_merge_request.py" "${MR_ARGS[@]}"

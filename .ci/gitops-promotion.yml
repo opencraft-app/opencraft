@@ -13,7 +13,9 @@ on:
 
 jobs:
   validate:
-    runs-on: docker
+    runs-on:
+      self-hosted: true
+      pool-name: env
     steps:
       - checkout: self
         with:
@@ -27,8 +29,29 @@ jobs:
           python3 scripts/update_image_pin.py --help >/dev/null
           python3 -m py_compile scripts/gitops_merge_request.py
           echo "gitops promotion check passed"
+      - name: auto-merge-beijing-promote-mr
+        shell: bash
+        env:
+          GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}
+        run: |
+          case "${{ ci.branch }}" in
+            promote-beijing-sandbox-*)
+              python3 scripts/gitops_merge_request.py \
+                --source-branch "${{ ci.branch }}" \
+                --target-branch gitops \
+                --title "Auto-merge existing Beijing GitOps MR" \
+                --description "Auto-merge existing Beijing GitOps MR from promote branch tail." \
+                --auto-merge \
+                --remove-source-branch
+              ;;
+            *)
+              echo "skip auto-merge for ${{ ci.branch }}"
+              ;;
+          esac
       - name: cleanup-beijing-promote-branch
         shell: bash
+        env:
+          GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}
         run: |
           case "${{ ci.branch }}" in
             promote-beijing-sandbox-*)
