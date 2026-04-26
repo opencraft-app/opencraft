@@ -187,9 +187,32 @@ AGENTS.md                 # 本文件（monorepo 全局规范）
 
 <service>/AGENTS.md       # 各子服务独立指引（见上方导航表）
 <service>/openspec/       # 各子服务独立规格文档（目前仅 frontend/ 落地）
+codesign/                # EdgeOne / 子账号 / 权限模型 / 测试发布协作文档
 ```
 
 > 📌 **OpenSpec 作用域**：monorepo 下 OpenSpec 文档**下沉到各子服务内部**维护，不集中在根目录。当前仅 `frontend/openspec/` 已落地。
+
+### 协作工作区：`codesign/`
+
+`codesign/` 是一个面向**跨角色协作**的工作区，重点沉淀：
+
+- EdgeOne Pages 测试发布流程
+- 腾讯云子账号 / CAM 策略 / 权限边界设计
+- 实际创建记录、使用说明、排障经验
+
+适合优先阅读它的人包括：
+
+- 新加入的工程 agent
+- 需要理解发布边界和权限模型的运维 / 平台 agent
+- 新加入协作的产品经理 agent
+
+对产品经理 / 协作型 agent 的引导：
+
+- 如果需求涉及 **EdgeOne 测试发布、测试项目协作、权限模型、EO Pages 子账号管理**，
+  先阅读 `codesign/`，再决定是否需要深入到具体服务目录。
+- `codesign/README.md` 是入口；
+  `edgeone-preview-operator.md` 偏“怎么用”，
+  `tencent-cloud-edgeone-preview-account-provisioning.md` 偏“怎么创建与为什么这样设计”。
 
 ---
 
