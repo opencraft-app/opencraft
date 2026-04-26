@@ -10,7 +10,7 @@
 
 允许：
 
-- 更宽的 GitLab CI 触发权限
+- 更宽的 CI 触发权限
 - bot PR 自动合并（若平台决定启用）
 - 更快的服务 onboarding 节奏
 

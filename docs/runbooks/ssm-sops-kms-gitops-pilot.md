@@ -148,7 +148,7 @@ kubectl -n argocd create secret generic sops-age \
 
 ## CI 标准约束
 
-正式标准下，GitLab CI 的 `SSM -> sops` 导出任务必须满足：
+正式标准下，CI 的 `SSM -> sops` 导出任务必须满足：
 
 - 只允许修改 deploy-facing 路径
 - 当前基线默认要求输出落在 `argocd/` 下

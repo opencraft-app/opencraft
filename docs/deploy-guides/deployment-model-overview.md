@@ -86,7 +86,7 @@ release bundle 清单：
 统一走平台级入口：
 
 - [scripts/run_gitops_db_job.py](../../scripts/run_gitops_db_job.py)
-- [.gitlab/ci/gitops-db-job.yml](../../.gitlab/ci/gitops-db-job.yml)
+- 旧 GitLab CI 模板已退役
 - [gitops-db-job-runbook.md](../runbooks/gitops-db-job-runbook.md)
 
 ## Promotion 与 Rollback

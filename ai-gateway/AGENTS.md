@@ -17,7 +17,7 @@
   - `python3 scripts/build-release-image.py --service ai-gateway --env <env> --tag <tag>`
 - DB migration：
   - `scripts/run_gitops_db_job.py`
-  - `.gitlab/ci/gitops-db-job.yml`
+  - 旧 `.gitlab/ci/gitops-db-job.yml` 已退役；当前以脚本和 runbook 为准
 
 ## 约束
 

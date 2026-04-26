@@ -48,35 +48,57 @@
 > - deploy-facing 真源：`argocd/services/<service>/<env>/`
 > - 统一镜像构建命令：`python3 scripts/build-release-image.py --service <service> --env <env> --tag <tag>`
 
-### 当前正式发布真源（P0）
+### 当前发布分支模型（P0）
 
-北京 / 上海当前正式 GitOps 真源已经统一切到：
+当前这份工作区对应的是：
 
-- `https://code.lightclaw.tech/root/mono-source.git`
-- `master`
+- 仓库：`git@git.woa.com:wisp/mono2.git`
+- 源码分支：`master`
+- GitOps 发布分支：`gitops`
 
 执行约束：
 
-- 正式环境发布不能只以 WOA `origin/master` 已提交、镜像已推送为完成标准。
-- 正式发布前先查看 live `Application.spec.source.repoURL` / `targetRevision`，以及对应的
-  `argocd/apps/<env>/<service>.yaml`。
-- 正式发布的 deploy-facing 变更必须提交并推送到：
-  - `origin master`（日常代码协作）
-  - `target master`（Argo 实际监听的 GitOps 真源）
-- 旧 deploy-only 仓 `https://code.lightclaw.tech/root/mono.git` / `code-lightclaw` 已退役，不再作为正式发布目标。
-- 正式发布入口是：
-  - `argocd/root/*.yaml`
-  - `argocd/apps/<env>/`
-  - `argocd/services/<service>/<env>/`
-- `deploy-k8s.sh` 仍可用于本地渲染、手工 apply、迁移阶段排障，但不是北京 / 上海主链正式发版入口。
+- `master`
+  - 只负责源码变更和镜像构建
+  - 不作为 Argo 的 live 发布真源
+- `gitops`
+  - 是 Argo 当前实际跟踪的发布分支
+  - 只承载 deploy-facing 变更
+- `Application.spec.source.targetRevision`
+  - 默认应指向 `gitops`
 
-正式发布后至少确认：
+环境发布策略：
 
-1. live app 的 `repoURL` 等于 `https://code.lightclaw.tech/root/mono-source.git`
-2. live app 的 `targetRevision` 等于 `master`
-3. live app 的 `revision` 等于本次推到 `target master` 的新提交
+- `beijing-sandbox`
+  - `master` push 后自动构建镜像
+  - 自动创建到 `gitops` 的发布 MR
+  - 自动合并 MR
+- `shprod`
+  - 不自动跟随 `master`
+  - 必须手动触发 promote
+  - 创建到 `gitops` 的发布 MR
+  - 由人工合并
+
+当前正式发布入口是：
+
+- `argocd/root/*.yaml`
+- `argocd/apps/<env>/`
+- `argocd/services/<service>/<env>/`
+
+正式发布判定标准：
+
+1. live app 的 `repoURL` 等于 `git@git.woa.com:wisp/mono2.git`
+2. live app 的 `targetRevision` 等于 `gitops`
+3. live app 的 `revision` 等于本次合入 `gitops` 的提交
 4. Kubernetes 实际 workload image 等于目标 tag
 5. live app 达到 `Synced / Healthy`
+
+不要把下面这些当作正式发布完成标准：
+
+- 只看 `master` 已提交
+- 只看镜像已经推送成功
+- 只看 promote 分支已经创建
+- 只看 GitOps MR 已创建但还没合并
 
 前端额外确认：
 

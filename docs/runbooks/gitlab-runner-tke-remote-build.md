@@ -1,5 +1,7 @@
 # GitLab Runner on TKE for Remote Builds
 
+> 说明：这份 runbook 描述的是历史 GitLab Runner / Kaniko 方案。当前默认主链路已迁移到仓库根 `.ci/*.yml` 的 Stream CI + 自有构建机 `env`。
+
 这份 runbook 定义香港控制面上推荐的远程构建形态：
 
 - GitLab Runner 跑在香港 TKE
@@ -34,10 +36,10 @@ push / manual pipeline
 
 ## Current Repo Contract
 
-相关文件：
+历史相关文件：
 
-- `.gitlab-ci.yml`
-- `.gitlab/ci/gitops-remote-build.yml`
+- `.gitlab-ci.yml`（已退役）
+- `.gitlab/ci/gitops-remote-build.yml`（已退役）
 - `scripts/release-bundles.yaml`
 - `scripts/resolve_release_bundle.py`
 - `scripts/update_image_pin.py`
