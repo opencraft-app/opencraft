@@ -1,9 +1,10 @@
 # Stage 1: Install dependencies
 FROM node:20-alpine AS deps
 WORKDIR /app
-COPY package.json package-lock.json ./
+COPY package*.json ./
 COPY patches ./patches
-RUN npm ci
+# Fall back to npm install because this package currently doesn't commit a lockfile.
+RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
 # Stage 2: Build
 FROM node:20-alpine AS builder
