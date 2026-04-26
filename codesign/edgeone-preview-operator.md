@@ -24,6 +24,19 @@
    - 允许只读查看北京常用基础设施
    - 便于测试环境排障
 
+## 这份文档适合谁
+
+适合：
+
+- 需要把 `frontend` 发到 `lightvela-preview` 的新 agent
+- 需要用现有测试子账号做 EO Pages 测试发布的协作型 agent
+- 需要查询北京测试环境现象、但不需要改资源的排障 agent
+
+不适合：
+
+- 默认拿来发布生产 Pages 项目
+- 默认拿来做基础设施变更
+
 ## 权限边界
 
 `pablozhong` 的设计目标是：
@@ -45,6 +58,19 @@
 - 发布生产 Pages 项目 `lightvela`
 - 创建或删除任意其他 Pages 项目
 - 修改北京基础设施
+
+## 仓库外依赖
+
+这份教程依赖几项仓库外材料：
+
+- `pablozhong` 的控制台登录信息
+- `pablozhong` 的 CAM AccessKey
+- 或者由 `pablozhong` 创建出来的 Pages API Token
+
+这些材料不写进仓库。  
+如果需要获取，默认联系人：
+
+- `Skipzhang`
 
 ## 首次登录
 
@@ -126,6 +152,12 @@ npx edgeone pages deploy dist -n lightvela-preview -e production -t <EDGEONE_PAG
 - `-e production`：这里是测试项目自己的 production 环境，不是线网项目
 - `-t`：`pablozhong` 自己创建的 Pages API Token
 
+如果没有现成 token：
+
+- 先完成控制台登录
+- 再在 Pages 控制台创建 token
+- 不要试图在仓库里寻找明文 token
+
 ## 推荐的环境变量写法
 
 本地：
@@ -198,6 +230,23 @@ npx edgeone pages deploy dist -n lightvela-preview -e production -t <EDGEONE_PAG
 - 资源修改
 - 生产发版
 - 基础设施变更
+
+## 需要更多子账号时
+
+如果后续要继续创建更多“测试项目 only”或“只读 only”的受限子账号：
+
+- 优先沿用 provisioning 文档里的流程和策略结构
+- 优先直接使用脚本：
+  - [scripts/create_edgeone_preview_subusers.py](/Users/skipzhang/code/mono2-clean/scripts/create_edgeone_preview_subusers.py)
+- 默认联系 `Skipzhang`
+
+前提：
+
+- 需要一套具备 CAM 管理权限的主账号密钥
+- 按现有文档复制并调整：
+  - 子账号名
+  - 测试项目 ProjectId
+  - 只读资源范围
 
 ## 常见问题
 

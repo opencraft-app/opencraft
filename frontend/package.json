@@ -20,7 +20,7 @@
     "@radix-ui/react-slot": "^1.2.3",
     "@radix-ui/react-tabs": "^1.1.13",
     "@rollup/rollup-darwin-arm64": "^4.60.0",
-    "@tencent/tea-sdk-lightclaw": "^1.0.21",
+    "@tencent/tea-sdk-lightclaw": "^1.0.23",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "bson": "^7.2.0",
@@ -55,21 +55,6 @@
     "onlyBuiltDependencies": [
       "esbuild"
     ],
-    "overrides": {
-      "@tencent/iaas-common": "file:vendor/tencent/iaas-common-3.8.38.tgz",
-      "@tencent/iaas-component": "file:vendor/tencent/iaas-component-0.2.105.tgz",
-      "@tencent/iaas-workbench-api-client": "file:vendor/tencent/iaas-workbench-api-client-1.0.20.tgz",
-      "@tencent/qcloud-iaas-api": "file:vendor/tencent/qcloud-iaas-api-1.0.1.tgz",
-      "@tencent/tce-sdk": "file:vendor/tencent/tce-sdk-1.1.11.tgz",
-      "@tencent/tea-app": "file:vendor/tencent/tea-app-2.1.25.tgz",
-      "@tencent/tea-chart": "file:vendor/tencent/tea-chart-2.5.1.tgz",
-      "@tencent/tea-component": "file:vendor/tencent/tea-component-2.8.6-beta.35.tgz",
-      "@tencent/tea-icons-react": "file:vendor/tencent/tea-icons-react-1.0.78.tgz",
-      "@tencent/tea-sdk-lightclaw": "file:vendor/tencent/tea-sdk-lightclaw-1.0.21.tgz",
-      "@tencent/tea-style-lighthouse": "file:vendor/tencent/tea-style-lighthouse-1.0.371.tgz",
-      "@tencent/types-tce-sdk-component": "file:vendor/types-tce-sdk-component-1.0.17.tgz",
-      "@tencent/watermarkjs": "file:vendor/tencent/watermarkjs-0.0.8.tgz",
-      "xlsx": "file:vendor/generic/xlsx-0.20.2.tgz"
-    }
+    "overrides": {}
   }
 }

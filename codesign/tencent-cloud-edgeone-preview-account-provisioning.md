@@ -29,6 +29,15 @@
    - **SecretId / SecretKey 不写入仓库**
    - 需要通过安全渠道单独交付
 
+## 这份文档的作用
+
+这份文档不是给“只想发一次测试版本”的人看的。  
+它更适合：
+
+- 需要理解权限为什么这么拆的 agent
+- 需要继续创建更多受限子账号的维护者
+- 需要审计或复盘当前 EO / 北京只读权限模型的人
+
 ## 为什么这样设计
 
 ### 1. 为什么不直接给主账号或现有大权限账号
@@ -123,6 +132,22 @@ edgeone pages deploy -n lightvela-preview -e production
 - 不符合“只读 only”的目标
 
 因此没有复用，而是新建了一条真正的只读策略。
+
+### 6. 为什么后续仍然可以继续按文档创建更多子账号
+
+分析结论：
+
+- 当前流程已经把“子账号创建”“EO Pages 最小权限”“北京只读权限”“测试项目隔离”拆成了独立步骤
+- 这些步骤彼此之间耦合不高
+- 只要持有一套**具备 CAM 管理权限的主账号密钥**，就可以按同样方式继续创建新的受限子账号
+
+后续需要调整的变量通常只有：
+
+- 子账号名
+- 目标测试项目名 / ProjectId
+- 需要开放的只读资源集合
+
+因此这份文档本身就是可复制的模板，而不是一次性的操作记录。
 
 ## 实际创建过程
 
@@ -498,6 +523,29 @@ https://<subdomain>.edgeone.cool?eo_token=...&eo_time=...
 
 因此文档里只沉淀模式与处理原则，不把带 token 的完整临时链接长期写进仓库。
 
+## 扩展更多子账号的建议
+
+如果后续还要再创建更多受限子账号，建议继续沿用这套模式：
+
+1. 先拆项目边界
+   - 测试项目 / 生产项目分离
+2. 再拆身份边界
+   - 每个用途一个子账号
+3. 再拆策略边界
+   - EO Pages 最小权限
+   - 只读排障权限
+4. 最后才发 AccessKey / Pages API Token
+
+默认联系人：
+
+- `Skipzhang`
+
+前提条件：
+
+- 持有具备 CAM 管理权限的主账号密钥
+
+如果不满足这个前提，就不能直接复用本文步骤创建新子账号。
+
 ## 实际过程的最终结论
 
 这次完整实操可以总结为：
@@ -585,3 +633,32 @@ https://<subdomain>.edgeone.cool?eo_token=...&eo_time=...
 - 策略 JSON
 
 这样后续能复盘权限设计，但不会把真正凭据暴露到 Git 历史里。
+
+## 脚本化入口
+
+在完成一次手工验证后，后续继续批量创建同类受限子账号，优先走脚本：
+
+- [scripts/create_edgeone_preview_subusers.py](/Users/skipzhang/code/mono2-clean/scripts/create_edgeone_preview_subusers.py)
+
+脚本设计目标：
+
+- 用最小交互重复执行同一套子账号创建流程
+- 保持和本文一致的默认策略集
+- 把敏感结果写入本地受限权限文件，而不是打印到终端
+
+典型用法：
+
+```bash
+TENCENTCLOUD_SECRET_ID=... \
+TENCENTCLOUD_SECRET_KEY=... \
+scripts/create_edgeone_preview_subusers.py <username1> <username2> ...
+```
+
+脚本当前行为：
+
+- 自动去重用户名
+- 若账号不存在则创建
+- 若账号已存在则复用并补齐策略
+- 若账号已有两把 AccessKey，则拒绝继续创建新 key，避免在拿不到旧 Secret 的前提下破坏现状
+- 默认把结果写到：
+  - `~/.codex/tmp/edgeone-preview-subusers-<random>.json`

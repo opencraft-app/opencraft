@@ -335,6 +335,7 @@ export default defineConfig(({ mode }) => {
   const defaultAllowedHosts = [
     "lightclaw.pages.dev",
     ".pages.dev",
+    "lightvela.tencent.com",
     "lightclaw.site",
     ".lightclaw.site",
   ];

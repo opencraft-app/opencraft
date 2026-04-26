@@ -114,7 +114,7 @@ const defaultPlan: OpenClawUser["plan"] = {
   aiCredits: 1000,
   usedCredits: 0,
   totalRequests: 0,
-  maxBots: 2,
+  maxBots: 1,
 };
 
 const defaultUser: OpenClawUser = {

@@ -98,5 +98,6 @@ ctl/service
 # Tencent Cloud EdgeOne
 .env
 .edgeone/*
+frontend/.edgeone/*
 .tef_dist/*
   

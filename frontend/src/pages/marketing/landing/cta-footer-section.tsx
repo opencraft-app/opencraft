@@ -3,6 +3,7 @@ import { ArrowUpRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 import { fadeInUp, staggerContainer, titleReveal, viewportConfig } from "./constants";
+import { BEIAN_URL, ICP_LICENSE } from "@/constants/legal";
 
 export function CTAFooterSection({
   onLoginClick,
@@ -101,8 +102,8 @@ export function CTAFooterSection({
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] leading-[1.6] tracking-[-0.013em] text-black/50 md:gap-[22px] md:text-xs md:leading-[1.5]">
             <span>
               © {new Date().getFullYear()} LightVela. All rights reserved.{" "}
-              <a href="https://beian.miit.gov.cn/" target="_blank" rel="noreferrer" className="transition-colors hover:text-black">
-                粤B2-20090059-1
+              <a href={BEIAN_URL} target="_blank" rel="noreferrer" className="transition-colors hover:text-black">
+                {ICP_LICENSE}
               </a>
             </span>
             <span>

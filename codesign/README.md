@@ -1,6 +1,11 @@
-# EdgeOne Pages 发布流程
+# EdgeOne Pages 教程入口
 
-这份文档沉淀当前仓库 `frontend/` 发布到腾讯云 EdgeOne Pages 的实际可用流程。
+这份文档是 `codesign/` 的入口，目标是让**新加入的 agent** 快速理解：
+
+- 这个仓库里谁负责 EdgeOne 测试发布
+- 默认应该发布到哪个项目
+- 哪些文档是“操作手册”，哪些是“权限与创建记录”
+- 如果流程卡在仓库外，应该联系谁
 
 相关文档：
 
@@ -14,19 +19,40 @@
 - `tencent-cloud-edgeone-preview-account-provisioning.md`
   - 更偏“怎么创建出来、为什么这么设计、实际做了什么”
 
-适用范围：
+## 默认范围
+
+新 agent 默认按下面这个范围工作：
 
 - 目标项目：`frontend/`
-- 目标 Pages 项目：`lightvela`
+- 默认测试 Pages 项目：`lightvela-preview`
+- 生产 Pages 项目：`lightvela`
 - 目标后端：北京 `lightclaw.tech`
+
+说明：
+
+- **默认教程只覆盖测试项目 `lightvela-preview`**
+- 生产项目 `lightvela` 不应被当作新 agent 的默认发布目标
+- 如果用户没有明确要求碰生产项目，优先留在测试项目
+
+## 新 Agent 建议阅读顺序
+
+1. [codesign/AGENTS.md](./AGENTS.md)
+2. [EdgeOne Preview Operator 使用说明](./edgeone-preview-operator.md)
+3. [腾讯云 EdgeOne Preview 子账号创建记录](./tencent-cloud-edgeone-preview-account-provisioning.md)
+
+如果只是要“把 `frontend` 发到测试环境”，通常读完前两份就够了。  
+如果要继续创建子账号、调策略、理解为什么这么设计，再读 provisioning 文档。
 
 ## 当前已验证结论
 
 - EdgeOne CLI 可直接发布静态目录到现有 Pages 项目。
-- 当前已验证的项目名是 `lightvela`。
+- 当前默认测试项目是 `lightvela-preview`。
 - 发布前必须先本地构建出 `frontend/dist/`。
 - 预览链接如果带 `eo_token` / `eo_time`，必须完整保留；去掉参数后可能返回 `401`。
 - `frontend/.edgeone/project.json` 是本地 link 状态，不应提交。
+- 子账号 `pablozhong` 已经完成：
+  - `lightvela-preview` 的 EO Pages 最小权限
+  - 北京常用基础设施只读权限
 
 ## 前置条件
 
@@ -51,7 +77,7 @@ npx edgeone whoami
 
 CLI 会自动跳转腾讯云登录页，登录完成后本机会生成本地状态。
 
-## 标准发布流程
+## 标准测试发布流程
 
 ### 1. 安装前端依赖
 
@@ -75,18 +101,18 @@ VITE_AUTH_API_BASE_URL=https://lightclaw.tech pnpm build
 frontend/dist/
 ```
 
-### 3. 发布到现有 EdgeOne Pages 项目
+### 3. 发布到现有测试 Pages 项目
 
 ```bash
 cd frontend
-npx edgeone pages deploy dist -n lightvela -e production
+npx edgeone pages deploy dist -n lightvela-preview -e production
 ```
 
 说明：
 
 - `dist`：本地构建产物目录
-- `-n lightvela`：现有 Pages 项目名
-- `-e production`：发布到生产环境
+- `-n lightvela-preview`：现有测试 Pages 项目名
+- `-e production`：测试项目自己的 production 环境，不是线网项目
 
 典型成功输出会包含：
 
@@ -101,7 +127,7 @@ npx edgeone pages deploy dist -n lightvela -e production
 
 如果项目已经绑定业务域名，优先通过正式域名访问，而不是只看 `.edgeone.cool` 预览域。
 
-### 2. 如果使用预览链接，必须保留完整参数
+### 2. 如果使用 `.edgeone.cool` 预览链接，必须保留完整参数
 
 EdgeOne 返回的预览链接通常形如：
 
@@ -154,7 +180,7 @@ ls dist
 然后重新执行部署：
 
 ```bash
-npx edgeone pages deploy dist -n lightvela -e production
+npx edgeone pages deploy dist -n lightvela-preview -e production
 ```
 
 ### 3. 裸 `.edgeone.cool` 返回 `401`
@@ -181,10 +207,65 @@ EdgeOne CLI 在本地可能写入这些状态：
 
 ```text
 .edgeone/*
+frontend/.edgeone/*
+```
+
+## 人工依赖
+
+下面这些东西不会放进仓库：
+
+- 子账号初始密码
+- 子账号 AccessKey 明文
+- Pages API Token 明文
+- 带鉴权参数的临时预览链接
+
+如果新 agent 在仓库外卡住，默认联系人：
+
+- `Skipzhang`
+
+适用场景：
+
+- 需要现有受限子账号的登录材料
+- 需要新建更多受限子账号
+- 需要调整 EO Pages / 北京只读权限边界
+- 需要确认是否允许触达生产项目
+
+## 批量创建受限子账号脚本
+
+如果后续需要继续批量创建“EO Pages 测试项目 only + 北京常用基础设施只读”的受限子账号，仓库里已有脚本：
+
+- [scripts/create_edgeone_preview_subusers.py](/Users/skipzhang/code/mono2-clean/scripts/create_edgeone_preview_subusers.py)
+
+脚本能力：
+
+- 自动去重用户名
+- 若账号不存在则创建
+- 若账号已存在则补齐固定策略
+- 为每个账号创建一把新的 CAM AccessKey
+- 将明文结果写入本地 `chmod 600` 的 JSON 文件
+- 不把密码或 AccessKey 明文打印到终端
+
+依赖环境变量：
+
+- `TENCENTCLOUD_SECRET_ID`
+- `TENCENTCLOUD_SECRET_KEY`
+
+示例：
+
+```bash
+TENCENTCLOUD_SECRET_ID=... \
+TENCENTCLOUD_SECRET_KEY=... \
+scripts/create_edgeone_preview_subusers.py jasminzhao boyuan hadezwang keriaxu walkercao
+```
+
+默认输出文件位置类似：
+
+```text
+~/.codex/tmp/edgeone-preview-subusers-<random>.json
 ```
 
 ## 一条命令摘要
 
 ```bash
-cd frontend && pnpm install && VITE_AUTH_API_BASE_URL=https://lightclaw.tech pnpm build && npx edgeone pages deploy dist -n lightvela -e production
+cd frontend && pnpm install && VITE_AUTH_API_BASE_URL=https://lightclaw.tech pnpm build && npx edgeone pages deploy dist -n lightvela-preview -e production
 ```
