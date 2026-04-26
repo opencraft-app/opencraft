@@ -94,3 +94,4 @@ CI note:
 - 2026-04-26 trigger 11: README-only change to rerun after switching cleanup to host-local Git token
 - 2026-04-26 trigger 12: README-only change to rerun with promote follow-up fully on env pool
 - 2026-04-26 trigger 13: README-only change to rerun after GitOps MR token fallback fix
+- 2026-04-26 trigger 14: README-only change to rerun after preferring the host-local Git token file
