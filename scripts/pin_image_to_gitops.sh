@@ -59,6 +59,15 @@ sanitize_branch_component() {
   printf '%s' "$1" | tr ',:/' '-' | tr -cs '[:alnum:]._-' '-'
 }
 
+env_display_name() {
+  case "$1" in
+    beijing-sandbox) printf '北京测试' ;;
+    shprod) printf '上海正式' ;;
+    sgprod) printf '新加坡正式' ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
 if ! git -C "$REPO_ROOT" diff --quiet || ! git -C "$REPO_ROOT" diff --cached --quiet; then
   echo "repository has uncommitted changes; refuse to rewrite branch state" >&2
   exit 1
@@ -126,19 +135,21 @@ if git -C "$REPO_ROOT" diff --cached --quiet; then
   exit 0
 fi
 
-git -C "$REPO_ROOT" commit -m "Promote $SERVICE_ARG to $ENV_NAME via gitops"
+ENV_DISPLAY_NAME="$(env_display_name "$ENV_NAME")"
+
+git -C "$REPO_ROOT" commit -m "发布到${ENV_DISPLAY_NAME}：${SERVICE_ARG}"
 git -C "$REPO_ROOT" push --force-with-lease -u "$REMOTE_NAME" "$PROMOTE_BRANCH"
 
-MR_TITLE="Promote $SERVICE_ARG to $ENV_NAME via gitops"
+MR_TITLE="发布到${ENV_DISPLAY_NAME}：${SERVICE_ARG}"
 MR_DESCRIPTION="$(cat <<EOF
-Automated GitOps promotion.
+自动化 GitOps 发布。
 
-- env: $ENV_NAME
-- services: $SERVICE_ARG
-- image: $IMAGE
-- deployed_at: $DEPLOYED_AT
-- source_branch: $PROMOTE_BRANCH
-- target_branch: $GITOPS_BRANCH
+- 环境：$ENV_DISPLAY_NAME ($ENV_NAME)
+- 服务：$SERVICE_ARG
+- 镜像：$IMAGE
+- 发布时间：$DEPLOYED_AT
+- 源分支：$PROMOTE_BRANCH
+- 目标分支：$GITOPS_BRANCH
 EOF
 )"
 
