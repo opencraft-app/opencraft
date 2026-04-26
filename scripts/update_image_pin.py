@@ -3,8 +3,6 @@
 Update deploy-facing image pin files under argocd/services/<service>/<env>.
 """
 
-from __future__ import annotations
-
 import argparse
 import re
 import sys
@@ -32,8 +30,8 @@ def resolve_platform_env(repo_root: Path, service: str, env: str) -> Path:
 
 
 def key_prefix_from_path(path: Path) -> str:
-    stem = path.name.removesuffix(".env")
-    prefix = stem.removesuffix("-platform")
+    stem = path.name[:-4] if path.name.endswith(".env") else path.name
+    prefix = stem[:-9] if stem.endswith("-platform") else stem
     return prefix.upper().replace("-", "_")
 
 

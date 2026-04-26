@@ -3,15 +3,13 @@
 Create or reuse a GitOps merge request, with optional auto-merge polling.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import sys
 import time
 import urllib.parse
 import urllib.request
-from typing import Any
+from typing import Any, Dict, List, Optional, Tuple
 
 
 def parse_args() -> argparse.Namespace:
@@ -32,7 +30,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def api_request(method: str, url: str, private_token: str, form_data: dict[str, Any] | None = None) -> Any:
+def api_request(method: str, url: str, private_token: str, form_data: Optional[Dict[str, Any]] = None) -> Any:
     headers = {"PRIVATE-TOKEN": private_token}
     data = None
     if form_data is not None:
@@ -43,7 +41,7 @@ def api_request(method: str, url: str, private_token: str, form_data: dict[str, 
     return json.loads(payload) if payload else None
 
 
-def list_open_merge_requests(args: argparse.Namespace) -> list[dict[str, Any]]:
+def list_open_merge_requests(args: argparse.Namespace) -> List[Dict[str, Any]]:
     params = urllib.parse.urlencode(
         {
             "state": "opened",
@@ -55,7 +53,7 @@ def list_open_merge_requests(args: argparse.Namespace) -> list[dict[str, Any]]:
     return api_request("GET", url, args.private_token)
 
 
-def create_merge_request(args: argparse.Namespace) -> dict[str, Any]:
+def create_merge_request(args: argparse.Namespace) -> Dict[str, Any]:
     url = f"{args.api_base}/projects/{args.project_id}/merge_requests"
     return api_request(
         "POST",
@@ -70,29 +68,29 @@ def create_merge_request(args: argparse.Namespace) -> dict[str, Any]:
     )
 
 
-def ensure_merge_request(args: argparse.Namespace) -> dict[str, Any]:
+def ensure_merge_request(args: argparse.Namespace) -> Dict[str, Any]:
     existing = list_open_merge_requests(args)
     if existing:
         return existing[0]
     return create_merge_request(args)
 
 
-def refresh_merge_request(args: argparse.Namespace) -> dict[str, Any]:
+def refresh_merge_request(args: argparse.Namespace) -> Dict[str, Any]:
     current = list_open_merge_requests(args)
     if not current:
         raise RuntimeError("merge request disappeared while waiting for auto-merge")
     return current[0]
 
 
-def merge_merge_request(args: argparse.Namespace, mr: dict[str, Any]) -> dict[str, Any]:
+def merge_merge_request(args: argparse.Namespace, mr: Dict[str, Any]) -> Dict[str, Any]:
     url = f"{args.api_base}/projects/{args.project_id}/merge_request/{mr['id']}/merge"
-    payload: dict[str, Any] = {}
+    payload = {}  # type: Dict[str, Any]
     if args.remove_source_branch:
         payload["should_remove_source_branch"] = "true"
     return api_request("PUT", url, args.private_token, payload or None)
 
 
-def maybe_auto_merge(args: argparse.Namespace, mr: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any] | None]:
+def maybe_auto_merge(args: argparse.Namespace, mr: Dict[str, Any]) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
     if not args.auto_merge:
         return mr, None
 
@@ -126,7 +124,7 @@ def maybe_auto_merge(args: argparse.Namespace, mr: dict[str, Any]) -> tuple[dict
     )
 
 
-def emit(args: argparse.Namespace, mr: dict[str, Any], merge_result: dict[str, Any] | None) -> None:
+def emit(args: argparse.Namespace, mr: Dict[str, Any], merge_result: Optional[Dict[str, Any]]) -> None:
     mr_url = f"https://git.woa.com/{args.repo_path}/-/merge_requests/{mr['iid']}"
     payload = {
         "mr_id": mr["id"],
