@@ -85,3 +85,4 @@ CI note:
 - 2026-04-26 trigger 2: README-only change to rerun after Python compatibility fix on promote checks
 - 2026-04-26 trigger 3: README-only change to rerun after bootstrapping update_image_pin.py into promote branches
 - 2026-04-26 trigger 4: README-only change to rerun Beijing service-gateway after MR-flow bootstrap fixes
+- 2026-04-26 trigger 5: README-only change to rerun Beijing service-gateway build again
