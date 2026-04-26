@@ -56,17 +56,19 @@ def list_open_merge_requests(args: argparse.Namespace) -> List[Dict[str, Any]]:
 
 def create_merge_request(args: argparse.Namespace) -> Dict[str, Any]:
     url = f"{args.api_base}/projects/{args.project_id}/merge_requests"
+    payload = {
+        "source_branch": args.source_branch,
+        "target_branch": args.target_branch,
+        "title": args.title,
+        "description": args.description,
+    }
+    if args.remove_source_branch and not args.auto_merge:
+        payload["remove_source_branch"] = "true"
     return api_request(
         "POST",
         url,
         args.private_token,
-        {
-            "source_branch": args.source_branch,
-            "target_branch": args.target_branch,
-            "title": args.title,
-            "description": args.description,
-            "remove_source_branch": "true" if args.remove_source_branch else "false",
-        },
+        payload,
     )
 
 
@@ -87,25 +89,9 @@ def refresh_merge_request(args: argparse.Namespace) -> Dict[str, Any]:
 def merge_merge_request(args: argparse.Namespace, mr: Dict[str, Any]) -> Dict[str, Any]:
     url = f"{args.api_base}/projects/{args.project_id}/merge_request/{mr['id']}/merge"
     payload = {}  # type: Dict[str, Any]
-    if args.remove_source_branch:
+    if args.remove_source_branch and not args.auto_merge:
         payload["should_remove_source_branch"] = "true"
     return api_request("PUT", url, args.private_token, payload or None)
-
-
-def delete_source_branch(args: argparse.Namespace, branch_name: str) -> None:
-    encoded_branch = urllib.parse.quote(branch_name, safe="")
-    url = f"{args.api_base}/projects/{args.project_id}/repository/branches/{encoded_branch}"
-    try:
-        api_request("DELETE", url, args.private_token)
-        print(f"source branch deleted: {branch_name}", file=sys.stderr)
-    except urllib.error.HTTPError as exc:
-        body = exc.read().decode(errors="replace")
-        if exc.code == 404:
-            print(f"source branch already absent: {branch_name}", file=sys.stderr)
-            return
-        raise RuntimeError(
-            f"failed to delete source branch {branch_name}: http={exc.code} body={body}"
-        )
 
 
 def maybe_auto_merge(args: argparse.Namespace, mr: Dict[str, Any]) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
@@ -126,8 +112,6 @@ def maybe_auto_merge(args: argparse.Namespace, mr: Dict[str, Any]) -> Tuple[Dict
         )
         if commit_state == "success" and not commit_block and merge_status == "can_be_merged":
             merged = merge_merge_request(args, latest)
-            if args.remove_source_branch:
-                delete_source_branch(args, latest["source_branch"])
             return latest, merged
         if commit_state == "failure":
             raise RuntimeError(

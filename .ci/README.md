@@ -249,7 +249,9 @@
 - `scripts/gitops_merge_request.py`
   - 创建 / 复用 GitOps MR
   - 北京环境等待 commit check 成功后自动合并
-  - auto-merge 成功后再显式删除 `promote-*` 源分支
+- `scripts/gitops_cleanup_source_branch.py`
+  - 在 `promote-*` 分支自己的检查流水线结束后轮询 merged MR
+  - 北京 auto-merge 成功后再显式删除 `promote-*` 源分支
 - `scripts/promote_bundle_image_to_gitops.sh`
   - 按 `bundle service + env + source sha` 解析镜像并 promote 到 `gitops`
 

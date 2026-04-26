@@ -27,3 +27,22 @@ jobs:
           python3 scripts/update_image_pin.py --help >/dev/null
           python3 -m py_compile scripts/gitops_merge_request.py
           echo "gitops promotion check passed"
+      - name: cleanup-beijing-promote-branch
+        shell: bash
+        env:
+          GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}
+        run: |
+          case "${{ ci.branch }}" in
+            promote-beijing-sandbox-*)
+              test -n "${GIT_WOA_PRIVATE_TOKEN:-}"
+              python3 scripts/gitops_cleanup_source_branch.py \
+                --private-token "${GIT_WOA_PRIVATE_TOKEN}" \
+                --source-branch "${{ ci.branch }}" \
+                --target-branch gitops \
+                --wait-seconds 120 \
+                --poll-seconds 5
+              ;;
+            *)
+              echo "skip branch cleanup for ${{ ci.branch }}"
+              ;;
+          esac

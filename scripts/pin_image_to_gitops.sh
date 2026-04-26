@@ -17,6 +17,7 @@ GITOPS_AUTO_MERGE_ENVS="${GITOPS_AUTO_MERGE_ENVS:-beijing-sandbox}"
 BOOTSTRAP_FILES=(
   "scripts/update_image_pin.py"
   "scripts/gitops_merge_request.py"
+  "scripts/gitops_cleanup_source_branch.py"
   ".ci/gitops-promotion.yml"
 )
 
