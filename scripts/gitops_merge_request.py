@@ -48,18 +48,20 @@ def resolve_private_token(args: argparse.Namespace) -> str:
     if args.private_token:
         return args.private_token.strip()
 
-    env_token = os.environ.get("GIT_WOA_PRIVATE_TOKEN", "").strip()
-    if env_token:
-        return env_token
-
     try:
         with open(args.private_token_file, "r") as fh:
             return fh.read().strip()
     except FileNotFoundError:
-        raise RuntimeError(
-            "missing Git WOA token; provide --private-token, set GIT_WOA_PRIVATE_TOKEN, or ensure %s exists"
-            % args.private_token_file
-        )
+        pass
+
+    env_token = os.environ.get("GIT_WOA_PRIVATE_TOKEN", "").strip()
+    if env_token:
+        return env_token
+
+    raise RuntimeError(
+        "missing Git WOA token; provide --private-token, ensure %s exists, or set GIT_WOA_PRIVATE_TOKEN"
+        % args.private_token_file
+    )
 
 
 def list_merge_requests(args: argparse.Namespace, state: str) -> List[Dict[str, Any]]:
