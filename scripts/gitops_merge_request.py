@@ -42,10 +42,10 @@ def api_request(method: str, url: str, private_token: str, form_data: Optional[D
     return json.loads(payload) if payload else None
 
 
-def list_open_merge_requests(args: argparse.Namespace) -> List[Dict[str, Any]]:
+def list_merge_requests(args: argparse.Namespace, state: str) -> List[Dict[str, Any]]:
     params = urllib.parse.urlencode(
         {
-            "state": "opened",
+            "state": state,
             "source_branch": args.source_branch,
             "target_branch": args.target_branch,
         }
@@ -73,17 +73,25 @@ def create_merge_request(args: argparse.Namespace) -> Dict[str, Any]:
 
 
 def ensure_merge_request(args: argparse.Namespace) -> Dict[str, Any]:
-    existing = list_open_merge_requests(args)
+    existing = list_merge_requests(args, "opened")
     if existing:
         return existing[0]
     return create_merge_request(args)
 
 
 def refresh_merge_request(args: argparse.Namespace) -> Dict[str, Any]:
-    current = list_open_merge_requests(args)
-    if not current:
-        raise RuntimeError("merge request disappeared while waiting for auto-merge")
-    return current[0]
+    current = list_merge_requests(args, "opened")
+    if current:
+        return current[0]
+
+    merged = list_merge_requests(args, "merged")
+    if merged:
+        return merged[0]
+
+    raise RuntimeError(
+        "merge request disappeared while waiting for auto-merge "
+        "(source_branch=%s target_branch=%s)" % (args.source_branch, args.target_branch)
+    )
 
 
 def merge_merge_request(args: argparse.Namespace, mr: Dict[str, Any]) -> Dict[str, Any]:
@@ -106,10 +114,13 @@ def maybe_auto_merge(args: argparse.Namespace, mr: Dict[str, Any]) -> Tuple[Dict
         commit_block = latest.get("commit_check_block")
         merge_status = latest.get("merge_status")
         print(
-            f"auto-merge poll: mr_iid={latest.get('iid')} commit_check_state={commit_state} "
-            f"commit_check_block={commit_block} merge_status={merge_status}",
+            f"auto-merge poll: mr_iid={latest.get('iid')} state={latest.get('state')} "
+            f"commit_check_state={commit_state} commit_check_block={commit_block} "
+            f"merge_status={merge_status}",
             file=sys.stderr,
         )
+        if latest.get("state") == "merged":
+            return latest, {"merged_by_platform": True}
         if commit_state == "success" and not commit_block and merge_status == "can_be_merged":
             merged = merge_merge_request(args, latest)
             return latest, merged
