@@ -1,3 +1,5 @@
+import { BEIAN_URL, ICP_LICENSE } from "@/constants/legal";
+
 export const LegalFooter = () => {
   const currentYear = new Date().getFullYear();
 
@@ -14,13 +16,13 @@ export const LegalFooter = () => {
         <p className="text-xs" style={{ color: "var(--text-tertiary)" }}>
           © {currentYear} LightVela. All rights reserved.{" "}
           <a
-            href="https://beian.miit.gov.cn/"
+            href={BEIAN_URL}
             target="_blank"
             rel="noreferrer"
             className="hover:underline"
             style={{ color: "var(--text-tertiary)" }}
           >
-            粤B2-20090059-1
+            {ICP_LICENSE}
           </a>
         </p>
 

@@ -12,7 +12,6 @@ import {
   ExternalLink,
   X,
   ScanLine,
-  Plus,
   AlertTriangle,
   Crown,
   TerminalSquare,
@@ -2385,14 +2384,11 @@ export const OpenClawSettingsPage = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const isCreatingFromSubscribe = searchParams.get("creating") === "true";
-  const { user, bots, botsLoading, deleteBot, updateBot } = useOpenClaw();
+  const { bots, botsLoading, deleteBot, updateBot, user } = useOpenClaw();
   const repositories = useRepositories();
 
   /* 创建 loading 状态 */
   const [isCreating, setIsCreating] = useState(isCreatingFromSubscribe);
-
-  const maxBots = user.plan.maxBots;
-  const canCreateMore = bots.length < maxBots;
 
   /* Tab 切换 */
   const [activeTabId, setActiveTabId] = useState(bots[0]?.id ?? "creating");
@@ -2505,9 +2501,9 @@ export const OpenClawSettingsPage = () => {
   }, [navigate, bots]);
 
   const handleCreateNew = () => {
-    if (canCreateMore) {
-      navigate("/subscribe");
-    }
+    // 按钮显示逻辑已保证 bots.length < maxBots 时才可见，此处做二次防御
+    if (bots.length >= user.plan.maxBots) return;
+    navigate("/subscribe");
   };
 
   const avatarUrl = activeBot ? getAvatarForBot(activeBot.id) : "";
@@ -2600,7 +2596,7 @@ export const OpenClawSettingsPage = () => {
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
-            className="mb-6"
+            className="mb-6 flex items-center justify-between gap-4"
           >
             <h1
               className="font-heading font-semibold"
@@ -2613,6 +2609,14 @@ export const OpenClawSettingsPage = () => {
             >
               我的智能体伙伴
             </h1>
+            {!isCreating && bots.length > 0 && bots.length < user.plan.maxBots && (
+              <button
+                onClick={handleCreateNew}
+                className="flex items-center gap-2 rounded-full bg-black/90 px-5 py-2 text-base font-medium leading-normal text-white transition-all hover:opacity-90 active:scale-[0.98]"
+              >
+                立即创建
+              </button>
+            )}
           </motion.div>
 
           {/* ── Tab Bar: 切换不同 Hermes ── */}
@@ -2625,23 +2629,23 @@ export const OpenClawSettingsPage = () => {
               <button
                 className="relative flex items-center gap-2 px-4 py-3 text-sm font-medium"
                 style={{
-                  color: "var(--lw-accent, #e66f62)",
+                  color: "var(--text-primary, #141414)",
                   background: "transparent",
                   border: "none",
                   cursor: "default",
                 }}
               >
-                <Loader2 className="h-4 w-4 animate-spin" style={{ color: "var(--lw-accent, #e66f62)" }} />
+                <Loader2 className="h-4 w-4 animate-spin" style={{ color: "var(--text-primary, #141414)" }} />
                 <span>Hermes Agent</span>
                 <motion.div
                   layoutId="tab-indicator"
                   className="absolute bottom-0 left-0 right-0 h-0.5 rounded-full"
-                  style={{ background: "var(--lw-accent, #e66f62)" }}
+                  style={{ background: "var(--text-primary, #141414)" }}
                   transition={{ type: "spring", stiffness: 400, damping: 30 }}
                 />
               </button>
             )}
-            {/* 创建过程中只展示占位 tab，隐藏其它已有 bot tab，避免出现「两个 tab」 */}
+            {/* 创建过程中只展示占位 tab            {/* 创建过程中只展示占位 tab，隐藏其它已有 bot tab，避免出现「两个 tab」 */}
             {!isCreating && bots.map((bot) => {
               const isActive = bot.id === activeTabId;
               const tabAvatar = getAvatarForBot(bot.id);
@@ -2654,7 +2658,7 @@ export const OpenClawSettingsPage = () => {
                   }}
                   className="relative flex items-center gap-2 px-4 py-3 text-sm font-medium transition-all"
                   style={{
-                    color: isActive ? "var(--lw-accent, #e66f62)" : "#999",
+                    color: isActive ? "var(--text-primary, #141414)" : "#999",
                     background: "transparent",
                     border: "none",
                     cursor: "pointer",
@@ -2666,24 +2670,13 @@ export const OpenClawSettingsPage = () => {
                     <motion.div
                       layoutId="tab-indicator"
                       className="absolute bottom-0 left-0 right-0 h-0.5 rounded-full"
-                      style={{ background: "var(--lw-accent, #e66f62)" }}
+                      style={{ background: "var(--text-primary, #141414)" }}
                       transition={{ type: "spring", stiffness: 400, damping: 30 }}
                     />
                   )}
                 </button>
               );
             })}
-            {/* 创建 Tab */}
-            {!isCreating && canCreateMore && (
-              <button
-                onClick={handleCreateNew}
-                className="flex items-center gap-1 px-3 py-3 text-sm transition-all hover:bg-black/5 rounded-full"
-                style={{ color: "rgba(0,0,0,0.35)", background: "transparent", border: "none", cursor: "pointer" }}
-              >
-                <Plus className="h-4 w-4" />
-                <span>创建</span>
-              </button>
-            )}
           </div>
 
           {/* ── Loading 状态 ── */}
@@ -2909,10 +2902,9 @@ export const OpenClawSettingsPage = () => {
                 <p className="text-sm" style={{ color: "rgba(0,0,0,0.40)" }}>即刻创建你的第一个云端智能体伙伴</p>
                 <button
                   onClick={handleCreateNew}
-                  className="mt-6 inline-flex items-center gap-2 rounded-full px-6 py-2.5 text-sm font-semibold text-white transition-all hover:opacity-90"
-                  style={{ background: "rgba(0,0,0,0.90)", border: "none", cursor: "pointer" }}
+                  className="mt-6 inline-flex items-center gap-2 rounded-full bg-black/90 px-6 py-2.5 text-sm font-semibold text-white transition-all hover:opacity-90"
                 >
-                立即创建
+                  立即创建
                 </button>
               </div>
             )
