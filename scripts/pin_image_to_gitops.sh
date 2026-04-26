@@ -15,6 +15,7 @@ GIT_WOA_API_BASE="${GIT_WOA_API_BASE:-https://git.woa.com/api/v3}"
 GIT_WOA_PRIVATE_TOKEN_FILE="${GIT_WOA_PRIVATE_TOKEN_FILE:-/etc/lightclaw-ci/git_woa_private_token}"
 GITOPS_AUTO_MERGE_ENVS="${GITOPS_AUTO_MERGE_ENVS:-beijing-sandbox}"
 BOOTSTRAP_FILES=(
+  "scripts/update_image_pin.py"
   "scripts/gitops_merge_request.py"
   ".ci/gitops-promotion.yml"
 )
