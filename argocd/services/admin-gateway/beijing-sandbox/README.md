@@ -38,7 +38,5 @@ Secret 键：
 
 这只服务带公网 ingress 和 `TkeServiceConfig`。迁移阶段先保持北京现网 host、TLS secret 和 image 不变，只让 Argo 接管现状。
 
-当前约定：
-
-- `lightclaw-gateway` 的 namespace bootstrap 由 `admin-gateway` 侧继续持有
-- `service-gateway` 不再接管这两个共享资源
+北京试点后，这个 deploy-facing 目录只保留环境值、配置输入和 secret 输入；
+Ingress / `TkeServiceConfig` / `LogConfig` 等结构性逻辑统一留在 `admin-gateway/k8s/overlays/beijing-sandbox/`。

@@ -38,8 +38,5 @@ Secret 键：
 
 这只服务是北京公网主入口。第一阶段只让 Argo 接管现网，不主动改变入口路径、LB、域名或 TLS 证书。
 
-另外，`lightclaw-gateway` namespace 和默认 `ServiceAccount` 当前会被多个 app 共享。
-所以这只 app 会显式删掉：
-
-- `Namespace/lightclaw-gateway`
-- `ServiceAccount/lightclaw-gateway/default`
+北京试点后，这个 deploy-facing 目录只保留环境值、配置输入和 secret 输入；
+共享 namespace / serviceaccount 删除逻辑以及其它结构性 patch 已下沉到 `service-gateway/k8s/overlays/beijing-sandbox/`。

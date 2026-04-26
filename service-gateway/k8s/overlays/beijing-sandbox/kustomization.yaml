@@ -1,21 +1,10 @@
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-namespace: lightclaw-gateway
-resources:
-  - ../../base
-configMapGenerator:
-  - name: service-gateway-config
-    files:
-      - generated/config.yaml
-  - name: service-gateway-platform-values
-    envs:
-      - generated/platform.env
-secretGenerator:
-  - name: service-gateway-runtime-secrets
-    envs:
-      - generated/service-gateway-runtime-secrets.env
-generatorOptions:
-  disableNameSuffixHash: true
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+patches:
+  - path: delete-shared-namespace.yaml
+  - path: delete-shared-serviceaccount.yaml
+
 replacements:
   - source:
       kind: ConfigMap
