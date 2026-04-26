@@ -704,6 +704,48 @@ func TestQQOAuthCallbackPrefersReturnToRedirect(t *testing.T) {
 	}
 }
 
+func TestQQOAuthCallbackPrefersEdgeOneReturnToRedirect(t *testing.T) {
+	t.Parallel()
+
+	client := &stubQQOAuthClient{
+		identity: service.OAuthSignInInput{
+			Provider:        "qq",
+			ProviderSubject: "openid-qq-edgeone-return-to",
+			Name:            "QQ EdgeOne回跳用户",
+		},
+	}
+	router := newAuthTestRouterWithQQ(client)
+
+	start := performJSONRequest(t, router, http.MethodGet, "/auth/oauth/qq/start?return_to="+url.QueryEscape("https://lightvela-preview.edgeone.cool/dashboard/settings?tab=bot#wechat"), nil)
+	startLocation, err := url.Parse(start.Header().Get("Location"))
+	if err != nil {
+		t.Fatalf("parse start location: %v", err)
+	}
+	state := startLocation.Query().Get("state")
+	stateCookie := cookieFromRecorderByName(t, start, qqOAuthStateCookieName)
+	returnToCookie := cookieFromRecorderByName(t, start, qqOAuthReturnToCookieName)
+
+	callback := performJSONRequest(t, router, http.MethodGet, "/auth/oauth/qq/callback?code=qq-code-edgeone-return&state="+url.QueryEscape(state), nil, stateCookie, returnToCookie)
+	if callback.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("expected 307 from qq oauth callback, got %d: %s", callback.Code, callback.Body.String())
+	}
+
+	location, err := url.Parse(callback.Header().Get("Location"))
+	if err != nil {
+		t.Fatalf("parse callback redirect location: %v", err)
+	}
+	if location.Host != "lightvela-preview.edgeone.cool" || location.Path != "/dashboard/settings" || location.RawQuery != "tab=bot" {
+		t.Fatalf("expected qq callback to use edgeone return_to, got %q", callback.Header().Get("Location"))
+	}
+	fragment, err := url.ParseQuery(location.Fragment)
+	if err != nil {
+		t.Fatalf("parse callback redirect fragment: %v", err)
+	}
+	if fragment.Get("session_token") == "" {
+		t.Fatal("expected session_token in qq edgeone return_to redirect fragment")
+	}
+}
+
 func TestWeChatOAuthCallbackRedirectsBackToSiteFrontend(t *testing.T) {
 	t.Parallel()
 

@@ -17,6 +17,15 @@ var oauthReturnToAllowedBaseDomains = []string{
 	"lightvela.com",
 }
 
+type oauthAllowedHostPattern struct {
+	prefix string
+	suffix string
+}
+
+var oauthReturnToAllowedHostPatterns = []oauthAllowedHostPattern{
+	{prefix: "lightvela-", suffix: ".edgeone.cool"},
+}
+
 func readReturnToFromRequest(request *http.Request) string {
 	if request == nil || request.URL == nil {
 		return ""
@@ -104,6 +113,19 @@ func isAllowedReturnToHost(host string) bool {
 		base := strings.ToLower(strings.TrimSpace(baseDomain))
 		if normalized == base || strings.HasSuffix(normalized, "."+base) {
 			return true
+		}
+	}
+	for _, pattern := range oauthReturnToAllowedHostPatterns {
+		prefix := strings.ToLower(strings.TrimSpace(pattern.prefix))
+		suffix := strings.ToLower(strings.TrimSpace(pattern.suffix))
+		if prefix == "" || suffix == "" {
+			continue
+		}
+		if strings.HasPrefix(normalized, prefix) && strings.HasSuffix(normalized, suffix) {
+			middle := strings.TrimSuffix(strings.TrimPrefix(normalized, prefix), suffix)
+			if middle != "" {
+				return true
+			}
 		}
 	}
 	return false
