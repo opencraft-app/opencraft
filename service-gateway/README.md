@@ -87,3 +87,4 @@ CI note:
 - 2026-04-26 trigger 4: README-only change to rerun Beijing service-gateway after MR-flow bootstrap fixes
 - 2026-04-26 trigger 5: README-only change to rerun Beijing service-gateway build again
 - 2026-04-26 trigger 6: README-only change to test promote branch cleanup after auto-merge
+- 2026-04-26 trigger 7: README-only change to rerun Beijing service-gateway once more
