@@ -92,3 +92,4 @@ CI note:
 - 2026-04-26 trigger 9: README-only change to verify promote branch cleanup after history cleanup
 - 2026-04-26 trigger 10: README-only change to capture verbose promote branch cleanup diagnostics
 - 2026-04-26 trigger 11: README-only change to rerun after switching cleanup to host-local Git token
+- 2026-04-26 trigger 12: README-only change to rerun with promote follow-up fully on env pool
