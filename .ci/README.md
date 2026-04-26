@@ -98,9 +98,28 @@
 
 - `jobs.release.runs-on.self-hosted: true`
 - `jobs.release.runs-on.pool-name: env`
+- `concurrency.group: mono2-master-release`
+  - `cancel-in-progress: false`
+  - `queue-length: 20`
 - `PIPELINE_MODE`
   - 默认值 `build`
   - 手动 promote 时改成 `promote`
+
+### 5B. 只限制 master 主链路并发，不锁 promote 检查
+
+当前已经给所有 `master` 上的 service 流水线加了同一个顶层 `concurrency.group`：
+
+- `mono2-master-release`
+
+效果是：
+
+- 同一时间最多只跑一个主构建/发布流水线
+- 其他被触发的 service pipeline 会排队
+
+但 `.ci/gitops-promotion.yml` 没有使用这个 group。原因是：
+
+- 北京主链路会等待 `promote-*` 分支自己的检查结果
+- 如果把 promote 检查也锁进同一个并发组，会和主链路互相等待，形成死锁
 
 ### 6. 不要再把 `ci.event` 当作唯一分流依据
 
