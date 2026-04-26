@@ -3,11 +3,10 @@ package httpapi
 import (
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 )
 
-func TestCORSPreflightAllowsPutProfile(t *testing.T) {
+func TestCORSPreflightDoesNotExposeCORSHeaders(t *testing.T) {
 	t.Parallel()
 
 	router := newAuthTestRouter()
@@ -19,36 +18,32 @@ func TestCORSPreflightAllowsPutProfile(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, req)
 
-	if recorder.Code != http.StatusNoContent {
-		t.Fatalf("expected 204 from preflight, got %d", recorder.Code)
+	if recorder.Code == http.StatusNoContent {
+		t.Fatalf("expected auth service to stop handling CORS preflight directly, got %d", recorder.Code)
 	}
-	if got := recorder.Header().Get("Access-Control-Allow-Origin"); got != "https://lightclaw.pages.dev" {
-		t.Fatalf("expected allow-origin header, got %q", got)
+	if got := recorder.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Fatalf("expected no allow-origin header, got %q", got)
 	}
-	if got := recorder.Header().Get("Access-Control-Allow-Credentials"); got != "true" {
-		t.Fatalf("expected allow-credentials=true, got %q", got)
-	}
-	if got := recorder.Header().Get("Access-Control-Allow-Methods"); !strings.Contains(got, http.MethodPut) {
-		t.Fatalf("expected allow-methods to include PUT, got %q", got)
+	if got := recorder.Header().Get("Access-Control-Allow-Credentials"); got != "" {
+		t.Fatalf("expected no allow-credentials header, got %q", got)
 	}
 }
 
-func TestCORSPreflightReflectsArbitraryOrigin(t *testing.T) {
+func TestHealthResponseDoesNotReflectOrigin(t *testing.T) {
 	t.Parallel()
 
 	router := newAuthTestRouter()
-	req := httptest.NewRequest(http.MethodOptions, "/auth/profile", nil)
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	req.Header.Set("Origin", "https://unknown.example.com")
-	req.Header.Set("Access-Control-Request-Method", http.MethodPut)
 
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, req)
 
-	if recorder.Code != http.StatusNoContent {
-		t.Fatalf("expected 204 from preflight, got %d", recorder.Code)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200 from /healthz, got %d", recorder.Code)
 	}
-	if got := recorder.Header().Get("Access-Control-Allow-Origin"); got != "https://unknown.example.com" {
-		t.Fatalf("expected reflected allow-origin header, got %q", got)
+	if got := recorder.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Fatalf("expected no reflected allow-origin header, got %q", got)
 	}
 }
 
