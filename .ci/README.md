@@ -73,6 +73,9 @@
   - 自动 / 手动 promote 时同时更新：
     - `service-gateway`
     - `admin-gateway`
+  - `on.push.paths` 同时监听：
+    - `service-gateway/**`
+    - `admin-gateway/**`
 
 ### 4. Git push 走 SSH，MR 创建走 API
 

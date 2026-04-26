@@ -5,6 +5,7 @@ on:
   push:
     branches: [ master ]
     paths:
+      - admin-gateway/**
       - service-gateway/**
       - scripts/build-release-image.py
       - scripts/resolve_release_bundle.py
