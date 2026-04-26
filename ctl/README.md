@@ -2,6 +2,10 @@
 
 基于 lightglobal 裁剪而来的 Go 控制面项目脚手架，适用于需要异步编排云资源操作的 SaaS 服务开发。
 
+Trigger note:
+
+- 2026-04-26: README-only change to trigger the Beijing ctl image rebuild and GitOps promotion
+
 ## 架构概览
 
 项目采用三服务分离架构：
