@@ -33,6 +33,8 @@ jobs:
     runs-on:
       self-hosted: true
       pool-name: env
+    env:
+      GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}
     steps:
       - checkout: self
         with:

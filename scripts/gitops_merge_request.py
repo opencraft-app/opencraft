@@ -1,0 +1,168 @@
+#!/usr/bin/env python3
+"""
+Create or reuse a GitOps merge request, with optional auto-merge polling.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+import time
+import urllib.parse
+import urllib.request
+from typing import Any
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Create or reuse a GitOps MR and optionally auto-merge it.")
+    parser.add_argument("--api-base", default="https://git.woa.com/api/v3")
+    parser.add_argument("--project-id", type=int, default=1731878)
+    parser.add_argument("--private-token", required=True)
+    parser.add_argument("--repo-path", default="wisp/mono2")
+    parser.add_argument("--source-branch", required=True)
+    parser.add_argument("--target-branch", default="gitops")
+    parser.add_argument("--title", required=True)
+    parser.add_argument("--description", required=True)
+    parser.add_argument("--auto-merge", action="store_true")
+    parser.add_argument("--auto-merge-timeout-seconds", type=int, default=300)
+    parser.add_argument("--auto-merge-poll-seconds", type=int, default=5)
+    parser.add_argument("--remove-source-branch", action="store_true")
+    parser.add_argument("--format", choices=("json", "dotenv"), default="dotenv")
+    return parser.parse_args()
+
+
+def api_request(method: str, url: str, private_token: str, form_data: dict[str, Any] | None = None) -> Any:
+    headers = {"PRIVATE-TOKEN": private_token}
+    data = None
+    if form_data is not None:
+        data = urllib.parse.urlencode(form_data).encode()
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    with urllib.request.urlopen(req) as resp:
+        payload = resp.read().decode()
+    return json.loads(payload) if payload else None
+
+
+def list_open_merge_requests(args: argparse.Namespace) -> list[dict[str, Any]]:
+    params = urllib.parse.urlencode(
+        {
+            "state": "opened",
+            "source_branch": args.source_branch,
+            "target_branch": args.target_branch,
+        }
+    )
+    url = f"{args.api_base}/projects/{args.project_id}/merge_requests?{params}"
+    return api_request("GET", url, args.private_token)
+
+
+def create_merge_request(args: argparse.Namespace) -> dict[str, Any]:
+    url = f"{args.api_base}/projects/{args.project_id}/merge_requests"
+    return api_request(
+        "POST",
+        url,
+        args.private_token,
+        {
+            "source_branch": args.source_branch,
+            "target_branch": args.target_branch,
+            "title": args.title,
+            "description": args.description,
+        },
+    )
+
+
+def ensure_merge_request(args: argparse.Namespace) -> dict[str, Any]:
+    existing = list_open_merge_requests(args)
+    if existing:
+        return existing[0]
+    return create_merge_request(args)
+
+
+def refresh_merge_request(args: argparse.Namespace) -> dict[str, Any]:
+    current = list_open_merge_requests(args)
+    if not current:
+        raise RuntimeError("merge request disappeared while waiting for auto-merge")
+    return current[0]
+
+
+def merge_merge_request(args: argparse.Namespace, mr: dict[str, Any]) -> dict[str, Any]:
+    url = f"{args.api_base}/projects/{args.project_id}/merge_request/{mr['id']}/merge"
+    payload: dict[str, Any] = {}
+    if args.remove_source_branch:
+        payload["should_remove_source_branch"] = "true"
+    return api_request("PUT", url, args.private_token, payload or None)
+
+
+def maybe_auto_merge(args: argparse.Namespace, mr: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    if not args.auto_merge:
+        return mr, None
+
+    deadline = time.time() + args.auto_merge_timeout_seconds
+    latest = mr
+    while time.time() < deadline:
+        latest = refresh_merge_request(args)
+        commit_state = latest.get("commit_check_state")
+        commit_block = latest.get("commit_check_block")
+        merge_status = latest.get("merge_status")
+        print(
+            f"auto-merge poll: mr_iid={latest.get('iid')} commit_check_state={commit_state} "
+            f"commit_check_block={commit_block} merge_status={merge_status}",
+            file=sys.stderr,
+        )
+        if commit_state == "success" and not commit_block and merge_status == "can_be_merged":
+            merged = merge_merge_request(args, latest)
+            return latest, merged
+        if commit_state == "failure":
+            raise RuntimeError(
+                f"mr {latest.get('iid')} commit check failed before auto-merge "
+                f"(merge_status={merge_status}, commit_check_block={commit_block})"
+            )
+        time.sleep(args.auto_merge_poll_seconds)
+
+    raise RuntimeError(
+        f"timed out waiting for mr {latest.get('iid')} to become auto-mergeable "
+        f"(last_state={latest.get('commit_check_state')}, "
+        f"commit_check_block={latest.get('commit_check_block')}, "
+        f"merge_status={latest.get('merge_status')})"
+    )
+
+
+def emit(args: argparse.Namespace, mr: dict[str, Any], merge_result: dict[str, Any] | None) -> None:
+    mr_url = f"https://git.woa.com/{args.repo_path}/-/merge_requests/{mr['iid']}"
+    payload = {
+        "mr_id": mr["id"],
+        "mr_iid": mr["iid"],
+        "mr_url": mr_url,
+        "source_branch": mr["source_branch"],
+        "target_branch": mr["target_branch"],
+        "merge_status": mr.get("merge_status"),
+        "commit_check_state": mr.get("commit_check_state"),
+        "commit_check_block": mr.get("commit_check_block"),
+        "auto_merge_result": merge_result,
+    }
+    if args.format == "json":
+        print(json.dumps(payload))
+        return
+
+    print(f"MR_ID={mr['id']}")
+    print(f"MR_IID={mr['iid']}")
+    print(f"MR_URL={mr_url}")
+    print(f"MR_SOURCE_BRANCH={mr['source_branch']}")
+    print(f"MR_TARGET_BRANCH={mr['target_branch']}")
+    print(f"MR_MERGE_STATUS={mr.get('merge_status')}")
+    print(f"MR_COMMIT_CHECK_STATE={mr.get('commit_check_state')}")
+    print(f"MR_COMMIT_CHECK_BLOCK={str(bool(mr.get('commit_check_block'))).lower()}")
+    print(f"MR_AUTO_MERGE_APPLIED={str(bool(merge_result)).lower()}")
+
+
+def main() -> int:
+    args = parse_args()
+    mr = ensure_merge_request(args)
+    merge_result = None
+    if args.auto_merge:
+        mr, merge_result = maybe_auto_merge(args, mr)
+    emit(args, mr, merge_result)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

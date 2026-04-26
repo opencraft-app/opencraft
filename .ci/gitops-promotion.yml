@@ -1,0 +1,29 @@
+version: v2.0
+name: gitops-promotion-check
+
+on:
+  push:
+    branches:
+      - promote-*
+    paths:
+      - argocd/services/**
+      - scripts/update_image_pin.py
+      - scripts/pin_image_to_gitops.sh
+      - scripts/gitops_merge_request.py
+
+jobs:
+  validate:
+    runs-on: docker
+    steps:
+      - checkout: self
+        with:
+          fetchDepth: 50
+      - name: verify-gitops-promotion
+        shell: bash
+        run: |
+          echo "ci.event=${{ ci.event }}"
+          echo "ci.branch=${{ ci.branch }}"
+          git diff --name-only HEAD~1..HEAD || true
+          python3 scripts/update_image_pin.py --help >/dev/null
+          python3 -m py_compile scripts/gitops_merge_request.py
+          echo "gitops promotion check passed"

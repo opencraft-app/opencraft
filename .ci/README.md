@@ -10,15 +10,15 @@
 当前分支模型的目标是：
 
 - `master` 上构建镜像
-- 北京测试环境自动回写 `gitops`
-- 上海正式环境手动 promote 到 `gitops`
+- 北京测试环境自动创建到 `gitops` 的 MR，并自动合并
+- 上海正式环境手动 promote 到 `gitops` 的 MR，并人工合并
 
 当前 `.ci/*.yml` 不再依赖 `ci.event == 'push' / 'manual'` 来分流。
 已改为：
 
 - 默认 `PIPELINE_MODE=build`
   - 运行构建
-  - 北京自动 promote
+  - 北京自动 promote MR + auto-merge
 - 手动把 `PIPELINE_MODE` 改成 `promote`
   - 只执行 `promote-manual`
   - 需要同时提供 `SOURCE_SHA`
@@ -33,14 +33,15 @@
   - 作为 Argo CD 的唯一 live 发布分支
 - 北京 / 上海当前 live Argo app 都已经盯住 `gitops`
 - `master` 上新增 service 级 Stream YAML
-- 自动 promote 只改北京目录
-- 手动 promote 只改指定环境目录
+- 自动 promote 为北京创建 MR 并自动合并
+- 手动 promote 为指定环境创建 MR
 
 当前已经验证成功的关键点：
 
 - `targetRevision` 从 `master` 切到 `gitops` 后，北京/上海 live app 仍然 `Synced / Healthy`
 - `env` 自有构建池上的 Linux 机器可以通过 SSH 免密 push `mono2`
 - `scripts/pin_image_to_gitops.sh` / `scripts/promote_bundle_image_to_gitops.sh` 能承载 GitOps pin 写回
+- `scripts/gitops_merge_request.py` 负责创建 / 复用 MR，并在北京环境轮询后自动合并
 - service 级 YAML 可以继续使用蓝盾 v2.0 的 `jobs.runs-on + steps` 结构
 
 ## Successful Experience
@@ -73,17 +74,18 @@
     - `service-gateway`
     - `admin-gateway`
 
-### 4. SSH 写回比 HTTP token 更适合当前环境
+### 4. Git push 走 SSH，MR 创建走 API
 
 当前这套 Stream 运行在自有构建池 `env` 的 Linux 机器上。  
 已验证更适合的方式是：
 
 - 使用构建机已有的 SSH 免密推送能力
-- 直接 push `git@git.woa.com:wisp/mono2.git`
+- push `promote-*` 分支
+- 再用工蜂 API 创建 / 复用到 `gitops` 的 MR
 
 而不是：
 
-- 再引入额外的 Git HTTP token
+- 让发布继续 direct push `gitops`
 
 ### 5. `runs-on` 要放在 job 级
 
@@ -177,6 +179,9 @@
 - 构建机是否能 `ssh` / `git push` 到 `mono2`
 - 构建机 git identity 是否和 SSH 票据账号一致
 - `gitops` 分支是否已存在
+- `/etc/lightclaw-ci/git_woa_private_token`
+- `GIT_WOA_PRIVATE_TOKEN`
+- promote 分支对应的 MR 是否已创建、是否被 commit check 阻塞
 
 ### 镜像推送失败
 
@@ -219,6 +224,8 @@
   - 北京镜像推送 token
 - `TCR_SHPROD_PASSWORD`
   - 上海镜像推送 token
+- `GIT_WOA_PRIVATE_TOKEN`
+  - Git WOA API token，用于创建 / 轮询 / 合并 GitOps MR
 
 另外要求：
 
@@ -229,13 +236,19 @@
   - `/etc/lightclaw-ci/tcr_beijing_password`
   - `/etc/lightclaw-ci/tcr_shprod_password`
   CI 会优先读取这两个本地文件
+- Git WOA API token 同样支持本地文件优先：
+  - `/etc/lightclaw-ci/git_woa_private_token`
+  CI 会优先读取该文件
 
 ## Shared Scripts
 
 - `scripts/update_image_pin.py`
   - 只更新 `argocd/services/<service>/<env>/*-platform.env`
 - `scripts/pin_image_to_gitops.sh`
-  - 把指定镜像 pin 到 `gitops` 分支
+  - 把指定镜像 pin 到 promote 分支，并创建 / 复用进入 `gitops` 的 MR
+- `scripts/gitops_merge_request.py`
+  - 创建 / 复用 GitOps MR
+  - 北京环境等待 commit check 成功后自动合并
 - `scripts/promote_bundle_image_to_gitops.sh`
   - 按 `bundle service + env + source sha` 解析镜像并 promote 到 `gitops`
 
