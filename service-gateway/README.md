@@ -81,3 +81,4 @@ CI note:
 - changes under `service-gateway/**` should trigger `.ci/service-gateway.yml` on `master`
 - 2026-04-25 retry trigger: README-only change to re-run Stream after TCR settings update
 - 2026-04-25 retry trigger 2: README-only change to collect the new safe registry diagnostics
+- 2026-04-26 trigger: README-only change to exercise the MR-based gitops promotion flow
