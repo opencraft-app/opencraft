@@ -238,7 +238,7 @@ export function HeroSection({
               ))}
             </div>
             <span className="px-2 text-center font-heading text-sm font-normal text-black/90 md:px-0 md:text-xl">
-              云端专属&nbsp;Hermes&nbsp;Agent，越聊越懂你的智能伙伴
+              云端专属个人&nbsp;Agent，越聊越懂你的智能伙伴
             </span>
           </motion.div>
 
