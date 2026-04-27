@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "check": "tsc --noEmit",
     "test": "vitest run",
-    "deploy:cf": "node scripts/deploy-cloudflare-pages.mjs"
+    "deploy:cf": "node scripts/deploy-cloudflare-pages.mjs",
+    "deploy:eo": "node scripts/deploy-edgeone-pages.mjs"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.15",

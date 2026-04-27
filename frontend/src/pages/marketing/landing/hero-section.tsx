@@ -107,7 +107,7 @@ export function HeroSection({
     }
   };
 
-  const buttonText = !isLoggedIn || (!hasBots && !isSubscribed) ? "立即创建" : "我的Hermes";
+  const buttonText = !isLoggedIn || (!hasBots && !isSubscribed) ? "立即创建" : "我的 Hermes";
 
   /* ── CTA 按钮磁吸效果 ── */
   const btnRef = useRef<HTMLButtonElement>(null);
