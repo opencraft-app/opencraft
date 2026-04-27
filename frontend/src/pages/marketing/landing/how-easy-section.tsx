@@ -8,13 +8,13 @@ const steps = [
     number: "1",
     title: "点击「立即创建」",
     desc: "选择订阅，点一下按钮，就这样",
-    badgeText: "约 30 秒",
+    badgeText: "约 5 秒",
   },
   {
     number: "2",
     title: "全自动云端创建",
     desc: "喝口水的功夫，云端 Hermes Agent 即创建完成。",
-    badgeText: "约 30 秒",
+    badgeText: "约 5 秒",
   },
   {
     number: "3",
@@ -55,7 +55,7 @@ export function HowEasySection() {
               variants={titleReveal}
               className="font-heading text-[28px] font-semibold leading-[1.5] text-black md:text-[36px] md:leading-[1.78]"
             >
-              <span className="font-bold">一分钟</span>搞定
+              <span className="font-bold">10秒钟</span>搞定
               <br />
               真的不难
             </motion.h2>
