@@ -1,4 +1,0 @@
-interface:
-  display_name: "Deploy Cloudflare Pages"
-  short_description: "Build and update this Lightclaw frontend on Cloudflare Pages."
-  default_prompt: "Use this skill to build and deploy the current Lightclaw frontend to Cloudflare Pages, choosing mock auth or a real auth API as appropriate."
