@@ -35,6 +35,7 @@ func main() {
 		CookieSecure:   envOrDefault("LIGHTCLAW_COOKIE_SECURE", "false") == "true",
 		CookieSameSite: parseSameSite(envOrDefault("LIGHTCLAW_COOKIE_SAME_SITE", "lax")),
 		SessionTTL:     sessionTTL,
+		OAuthReturnToAllowedHosts: parseCSVEnv("LIGHTCLAW_OAUTH_RETURN_TO_ALLOWED_HOSTS"),
 		QQOAuth:        buildQQOAuthConfig(),
 		GoogleOAuth:    buildGoogleOAuthConfig(),
 		GitHubOAuth:    buildGitHubOAuthConfig(),
@@ -89,6 +90,23 @@ func envOrDefault(key string, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func parseCSVEnv(key string) []string {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	values := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		values = append(values, part)
+	}
+	return values
 }
 
 func parseSameSite(value string) http.SameSite {

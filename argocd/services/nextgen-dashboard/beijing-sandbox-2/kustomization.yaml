@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: user-auth
+resources:
+- ../common
+generators:
+- ksops-secret-generator.yaml
+configMapGenerator:
+- name: nextgen-dashboard-platform-values
+  envs:
+  - nextgen-dashboard-platform.env
+patches:
+- target:
+    kind: Deployment
+    name: nextgen-dashboard
+  patch: "- op: replace\n  path: /spec/template/spec/containers/0/envFrom/1/secretRef/name\n\
+    \  value: nextgen-dashboard-secrets\n- op: replace\n  path: /spec/template/spec/containers/1/envFrom\n\
+    \  value:\n    - configMapRef:\n        name: nextgen-dashboard-config\n- op:\
+    \ add\n  path: /spec/template/spec/containers/1/env\n  value:\n    - name: NEXTGEN_RUNNER_TOKEN\n\
+    \      valueFrom:\n        secretKeyRef:\n          name: nextgen-dashboard-secrets\n\
+    \          key: NEXTGEN_DASHBOARD_RUNNER_TOKEN"

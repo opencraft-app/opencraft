@@ -111,7 +111,7 @@ func (h *Handler) StartWeChatOAuth(ctx *gin.Context) {
 		Secure:   h.cookieSecure,
 		MaxAge:   int(h.wechatOAuth.stateTTL / time.Second),
 	})
-	setOAuthReturnToCookie(ctx, wechatOAuthReturnToCookieName, wechatOAuthStateCookiePath, readReturnToFromRequest(ctx.Request), h.cookieSecure, h.wechatOAuth.stateTTL)
+	setOAuthReturnToCookie(ctx, wechatOAuthReturnToCookieName, wechatOAuthStateCookiePath, readReturnToFromRequest(ctx.Request), h.cookieSecure, h.wechatOAuth.stateTTL, h.validatedReturnToURL)
 
 	ctx.Redirect(http.StatusTemporaryRedirect, h.wechatOAuth.authorizeURL(state, h.wechatOAuth.redirectURIForRequest(ctx.Request)))
 }
@@ -185,7 +185,7 @@ func (h *Handler) HandleWeChatOAuthCallback(ctx *gin.Context) {
 	}
 	h.setSessionCookie(ctx, session.Token)
 	redirectURL := h.wechatOAuth.successFrontendURL(ctx.Request, "/", session.Token)
-	if validated := validatedReturnToURL(returnTo); validated != "" {
+	if validated := h.validatedReturnToURL(returnTo); validated != "" {
 		redirectURL = appendSessionTokenToReturnTo(validated, session.Token)
 	}
 	ctx.Redirect(http.StatusTemporaryRedirect, redirectURL)

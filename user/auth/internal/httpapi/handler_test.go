@@ -29,7 +29,7 @@ func TestSetSessionCookieUsesConfiguredCrossSiteAttributes(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
-	handler := NewHandler(nil, true, http.SameSiteNoneMode, 30*24*time.Hour, nil, nil, nil, nil, "https://lightclaw.tech")
+	handler := NewHandler(nil, true, http.SameSiteNoneMode, 30*24*time.Hour, nil, nil, nil, nil, "https://lightclaw.tech", nil)
 
 	handler.setSessionCookie(ctx, "token-123")
 

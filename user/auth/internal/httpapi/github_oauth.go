@@ -113,7 +113,7 @@ func (h *Handler) StartGitHubOAuth(ctx *gin.Context) {
 		Secure:   h.cookieSecure,
 		MaxAge:   int(h.githubOAuth.stateTTL / time.Second),
 	})
-	setOAuthReturnToCookie(ctx, githubOAuthReturnToCookieName, githubOAuthStateCookiePath, readReturnToFromRequest(ctx.Request), h.cookieSecure, h.githubOAuth.stateTTL)
+	setOAuthReturnToCookie(ctx, githubOAuthReturnToCookieName, githubOAuthStateCookiePath, readReturnToFromRequest(ctx.Request), h.cookieSecure, h.githubOAuth.stateTTL, h.validatedReturnToURL)
 
 	ctx.Redirect(http.StatusTemporaryRedirect, h.githubOAuth.authorizeURL(state, h.githubOAuth.redirectURIForRequest(ctx.Request)))
 }
@@ -188,7 +188,7 @@ func (h *Handler) HandleGitHubOAuthCallback(ctx *gin.Context) {
 	}
 	h.setSessionCookie(ctx, session.Token)
 	redirectURL := h.githubOAuth.successFrontendURL(ctx.Request, "/", session.Token)
-	if validated := validatedReturnToURL(returnTo); validated != "" {
+	if validated := h.validatedReturnToURL(returnTo); validated != "" {
 		redirectURL = appendSessionTokenToReturnTo(validated, session.Token)
 	}
 	ctx.Redirect(http.StatusTemporaryRedirect, redirectURL)

@@ -1,0 +1,145 @@
+auth_service_url: http://lightclaw-auth.user-auth.svc.cluster.local
+allowed_origins:
+- https://*.pages.dev
+- https://*.edgeone.cool
+- https://api-bj82.lightclaw.tech
+- http://localhost:4173
+- http://127.0.0.1:4173
+- http://localhost:5173
+- http://127.0.0.1:5173
+routes:
+- name: users
+  prefix: /users
+  methods:
+  - GET
+  - OPTIONS
+  upstream: http://lightclaw-auth.user-auth.svc.cluster.local
+  access: public
+- name: sandbox
+  prefix: /sandboxes
+  methods:
+  - GET
+  - POST
+  - PUT
+  - DELETE
+  - OPTIONS
+  upstream: http://sandbox-api.sandbox.svc.cluster.local
+  access: authenticated
+  auth_strategy: session
+- name: ctl
+  prefix: /v1/instances
+  methods:
+  - GET
+  - POST
+  - PUT
+  - DELETE
+  - OPTIONS
+  upstream: http://ctl-api.ctl.svc.cluster.local
+  access: authenticated
+  require_realname: true
+  auth_strategy: shadow_api_key_or_session
+  response_header_timeout: 60s
+- name: ctl-me
+  prefix: /v1/me
+  methods:
+  - GET
+  - OPTIONS
+  upstream: http://ctl-api.ctl.svc.cluster.local
+  access: authenticated
+  auth_strategy: session
+- name: ctl-soul-templates
+  prefix: /v1/soul-templates
+  methods:
+  - GET
+  - OPTIONS
+  upstream: http://ctl-api.ctl.svc.cluster.local
+  access: authenticated
+  auth_strategy: session
+- name: ctl-bundles
+  prefix: /v1/bundles
+  methods:
+  - GET
+  - OPTIONS
+  upstream: http://ctl-api.ctl.svc.cluster.local
+  access: authenticated
+  auth_strategy: session
+- name: ctl-passes
+  prefix: /v1/passes
+  methods:
+  - GET
+  - POST
+  - OPTIONS
+  upstream: http://ctl-api.ctl.svc.cluster.local
+  access: authenticated
+  require_realname: true
+  auth_strategy: session
+- name: subscriptions
+  prefix: /subscriptions
+  methods:
+  - GET
+  - POST
+  - OPTIONS
+  upstream: http://subscription.user-auth.svc.cluster.local
+  access: authenticated
+  auth_strategy: session
+- name: sessions
+  prefix: /v1/sessions
+  methods:
+  - GET
+  - POST
+  - DELETE
+  - OPTIONS
+  upstream: http://session.user-auth.svc.cluster.local
+  access: authenticated
+  auth_strategy: session
+- name: chatclaw-runtime
+  prefix: /v1/chatclaw/runtime
+  methods:
+  - GET
+  - POST
+  - OPTIONS
+  upstream: http://chatclaw-runtime.chatclaw-runtime.svc.cluster.local
+  access: authenticated
+  auth_strategy: session
+- name: auth
+  prefix: /auth
+  methods:
+  - GET
+  - POST
+  - PUT
+  - DELETE
+  - OPTIONS
+  upstream: http://lightclaw-auth.user-auth.svc.cluster.local
+  access: authenticated
+  auth_strategy: session
+  public_allow:
+  - method: POST
+    path: /auth/password/sign-in
+  - method: POST
+    path: /auth/password/sign-up
+  - method: POST
+    path: /auth/password/forgot
+  - method: POST
+    path: /auth/sms/send
+  - method: POST
+    path: /auth/sms/verify
+  - method: POST
+    path: /auth/invite/validate
+  - method: POST
+    path: /auth/invite/prepare
+  - method: GET
+    path: /auth/oauth/qq/start
+  - method: GET
+    path: /auth/oauth/qq/callback
+  - method: GET
+    path: /auth/oauth/wechat/start
+  - method: GET
+    path: /auth/oauth/wechat/callback
+  - method: GET
+    path: /auth/oauth/google/start
+  - method: GET
+    path: /auth/oauth/google/callback
+  - method: GET
+    path: /auth/oauth/github/start
+  - method: GET
+    path: /auth/oauth/github/callback
