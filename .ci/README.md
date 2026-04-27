@@ -248,6 +248,10 @@
   - 上海镜像推送 token
 - `GIT_WOA_PRIVATE_TOKEN`
   - Git WOA API token，用于创建 / 轮询 / 合并 GitOps MR
+- `CLOUDFLARE_API_TOKEN`
+  - Cloudflare Pages API token，用于 frontend 北京测试静态发布
+- `CLOUDFLARE_ACCOUNT_ID`
+  - Cloudflare account id，用于 frontend 北京测试静态发布
 
 另外要求：
 
@@ -261,6 +265,10 @@
 - Git WOA API token 同样支持本地文件优先：
   - `/etc/lightclaw-ci/git_woa_private_token`
   CI 会优先读取该文件
+- Cloudflare frontend 测试发布同样支持本地文件优先：
+  - `/etc/lightclaw-ci/cloudflare_api_token`
+  - `/etc/lightclaw-ci/cloudflare_account_id`
+  `release-frontend` 会优先读取这两个本地文件，缺失时再回落到 Stream settings
 
 ## Shared Scripts
 

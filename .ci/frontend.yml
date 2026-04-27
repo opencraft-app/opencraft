@@ -64,14 +64,39 @@ jobs:
           SHORT_SHA="${{ ci.sha }}"
           SHORT_SHA="${SHORT_SHA:0:12}"
           echo "::set-output name=tag::frontend-${SHORT_SHA}"
-      - name: build-shprod
+      - name: deploy-beijing-cloudflare
         if: ${{ variables.PIPELINE_MODE }} != 'promote'
         shell: bash
         env:
-          TCR_SHPROD_PASSWORD: ${{ settings.TCR_SHPROD_PASSWORD }}
+          CLOUDFLARE_API_TOKEN: ${{ settings.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ settings.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT_NAME: lightclaw
+          VITE_AUTH_API_BASE_URL: https://lightclaw.tech
+          CLOUDFLARE_PAGES_COMMIT_HASH: ${{ ci.sha }}
         run: |
-          BUILD_TAG_OVERRIDE="${{ steps.prepare.outputs.tag }}" \
-          bash scripts/build_and_promote_to_gitops.sh frontend frontend shprod none
+          CF_API_TOKEN_FILE="${CLOUDFLARE_API_TOKEN_FILE:-/etc/lightclaw-ci/cloudflare_api_token}"
+          CF_ACCOUNT_ID_FILE="${CLOUDFLARE_ACCOUNT_ID_FILE:-/etc/lightclaw-ci/cloudflare_account_id}"
+
+          if [[ -r "$CF_API_TOKEN_FILE" ]]; then
+            export CLOUDFLARE_API_TOKEN="$(tr -d '\r\n' < "$CF_API_TOKEN_FILE")"
+            echo "cloudflare api token loaded from file:$CF_API_TOKEN_FILE"
+          else
+            echo "cloudflare api token loaded from settings"
+          fi
+
+          if [[ -r "$CF_ACCOUNT_ID_FILE" ]]; then
+            export CLOUDFLARE_ACCOUNT_ID="$(tr -d '\r\n' < "$CF_ACCOUNT_ID_FILE")"
+            echo "cloudflare account id loaded from file:$CF_ACCOUNT_ID_FILE"
+          else
+            echo "cloudflare account id loaded from settings"
+          fi
+
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          cd frontend
+          pnpm install --frozen-lockfile
+          pnpm build
+          pnpm deploy:cf
       - name: promote-manual
         if: ${{ variables.PIPELINE_MODE }} == 'promote'
         shell: bash
