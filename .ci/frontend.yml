@@ -106,7 +106,7 @@ jobs:
           fi
 
           pnpm --version
-          pnpm install --frozen-lockfile
+          pnpm install --no-frozen-lockfile
           pnpm build
           pnpm deploy:cf
       - name: promote-manual
