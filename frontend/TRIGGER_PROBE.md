@@ -20,4 +20,8 @@ Trigger note 3:
 
 - 用于在 frontend 发布链改为直接通过 npm 安装 pnpm 后，再次触发 frontend 目录级更新。
 
+Trigger note 4:
+
+- 用于在 frontend 发布链彻底绕开 corepack shim 后，再次触发 frontend 目录级更新。
+
 如果只是为了触发前端发布链路，优先更新本文件，而不是混入真实功能改动。

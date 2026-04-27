@@ -81,6 +81,9 @@ jobs:
           NODE_ARCHIVE="${NODE_DIST}.tar.xz"
           NODE_CACHE_ROOT="${HOME}/.cache/lightclaw-ci/node"
           NODE_INSTALL_DIR="${NODE_CACHE_ROOT}/${NODE_DIST}"
+          PNPM_BOOTSTRAP_ROOT="${HOME}/.cache/lightclaw-ci/pnpm"
+          PNPM_VERSION="${PNPM_VERSION_OVERRIDE:-10.32.1}"
+          PNPM_BIN="${PNPM_BOOTSTRAP_ROOT}/bin/pnpm"
 
           if [[ -r "$CF_API_TOKEN_FILE" ]]; then
             export CLOUDFLARE_API_TOKEN="$(tr -d '\r\n' < "$CF_API_TOKEN_FILE")"
@@ -109,16 +112,17 @@ jobs:
           node --version
           npm --version
 
-          if [[ ! -x "${NODE_INSTALL_DIR}/bin/pnpm" ]]; then
-            npm install -g pnpm@10.32.1
+          mkdir -p "$PNPM_BOOTSTRAP_ROOT"
+          if [[ ! -x "$PNPM_BIN" ]]; then
+            npm install -g "pnpm@${PNPM_VERSION}" --prefix "$PNPM_BOOTSTRAP_ROOT"
           fi
 
           cd frontend
           rm -rf node_modules
-          pnpm --version
-          pnpm install --no-frozen-lockfile
-          pnpm build
-          pnpm deploy:cf
+          "$PNPM_BIN" --version
+          "$PNPM_BIN" install --no-frozen-lockfile
+          "$PNPM_BIN" build
+          "$PNPM_BIN" deploy:cf
       - name: promote-manual
         if: ${{ variables.PIPELINE_MODE }} == 'promote'
         shell: bash
