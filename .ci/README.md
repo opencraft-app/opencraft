@@ -158,22 +158,25 @@
 
 也就是说，TCR 认证从“蓝盾插件取票据”切成了“shell 自己登录 TCR”。
 
-### 8. Shell step 先落到 git repo root
+### 8. 环境依赖统一收口到 `.ci/init.sh`
 
-这次已经实际踩到过：
+当前 CI 的公共执行面约定放在：
 
-- 通用脚本步的当前工作目录不一定就是源码根目录
-- 直接执行 `bash scripts/...` 可能报：
-  - `No such file or directory`
+- `.ci/init.sh`
 
-当前统一约定是：
+它负责这几类公共初始化：
 
-- 在所有 `run` step 里，凡是要访问仓库内脚本或子目录
-- 先执行：
+- repo root 归一化
+- Node 22 自举
+- pnpm 自举
+- kubectl 自举
+- Cloudflare 本地票据读取
+
+当前推荐模式是：
 
 ```bash
-REPO_ROOT="$(git rev-parse --show-toplevel)"
-cd "$REPO_ROOT"
+source .ci/init.sh
+ci_init_repo_root
 ```
 
 再继续：
@@ -181,10 +184,15 @@ cd "$REPO_ROOT"
 - `bash scripts/...`
 - 或 `cd "$REPO_ROOT/frontend"` 这类子目录操作
 
-不要假设：
+如果当前链路还需要前端或集群工具，再补：
 
-- job 一定从仓库根目录启动
-- 或 checkout 后 shell cwd 一定稳定
+```bash
+ci_ensure_node
+ci_ensure_pnpm
+ci_ensure_kubectl
+```
+
+不要把这些环境依赖继续散落到每条 YAML 或 Python 脚本里分别维护；优先加到 `.ci/init.sh`，然后由流水线 source 它。
 
 ## Required Runtime Preconditions
 

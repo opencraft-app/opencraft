@@ -20,8 +20,8 @@ jobs:
         run: |
           echo "ci.event=${{ ci.event }}"
           echo "ci.branch=${{ ci.branch }}"
-          REPO_ROOT="$(git rev-parse --show-toplevel)"
-          cd "$REPO_ROOT"
+          source .ci/init.sh
+          ci_init_repo_root
           git diff --name-only HEAD~1..HEAD || true
           python3 scripts/update_image_pin.py --help >/dev/null
           python3 scripts/project_release_bundle.py --help >/dev/null
@@ -34,8 +34,8 @@ jobs:
         env:
           GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}
         run: |
-          REPO_ROOT="$(git rev-parse --show-toplevel)"
-          cd "$REPO_ROOT"
+          source .ci/init.sh
+          ci_init_repo_root
           case "${{ ci.branch }}" in
             promote-beijing-sandbox-*)
               python3 scripts/gitops_merge_request.py \
@@ -55,10 +55,12 @@ jobs:
         env:
           GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}
         run: |
-          REPO_ROOT="$(git rev-parse --show-toplevel)"
-          cd "$REPO_ROOT"
+          source .ci/init.sh
+          ci_init_repo_root
+          ci_ensure_kubectl
           case "${{ ci.branch }}" in
             promote-beijing-sandbox-*)
+              export KUBECTL_BIN
               python3 scripts/verify_gitops_release.py \
                 --repo-root "$REPO_ROOT" \
                 --source-branch "${{ ci.branch }}" \
@@ -73,8 +75,8 @@ jobs:
         env:
           GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}
         run: |
-          REPO_ROOT="$(git rev-parse --show-toplevel)"
-          cd "$REPO_ROOT"
+          source .ci/init.sh
+          ci_init_repo_root
           case "${{ ci.branch }}" in
             promote-beijing-sandbox-*)
               python3 scripts/gitops_cleanup_source_branch.py \

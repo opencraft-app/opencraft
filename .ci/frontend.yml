@@ -75,49 +75,14 @@ jobs:
           CLOUDFLARE_PAGES_COMMIT_HASH: ${{ ci.sha }}
           CLOUDFLARE_PAGES_COMMIT_MESSAGE: Cloudflare Pages deploy from release-frontend
         run: |
-          CF_API_TOKEN_FILE="${CLOUDFLARE_API_TOKEN_FILE:-/etc/lightclaw-ci/cloudflare_api_token}"
-          CF_ACCOUNT_ID_FILE="${CLOUDFLARE_ACCOUNT_ID_FILE:-/etc/lightclaw-ci/cloudflare_account_id}"
-          NODE_VERSION="${NODE_VERSION_OVERRIDE:-22.12.0}"
-          NODE_DIST="node-v${NODE_VERSION}-linux-x64"
-          NODE_ARCHIVE="${NODE_DIST}.tar.xz"
-          NODE_CACHE_ROOT="${HOME}/.cache/lightclaw-ci/node"
-          NODE_INSTALL_DIR="${NODE_CACHE_ROOT}/${NODE_DIST}"
-          PNPM_BOOTSTRAP_ROOT="${HOME}/.cache/lightclaw-ci/pnpm"
-          PNPM_VERSION="${PNPM_VERSION_OVERRIDE:-10.32.1}"
-          PNPM_BIN="${PNPM_BOOTSTRAP_ROOT}/bin/pnpm"
-          REPO_ROOT="$(git rev-parse --show-toplevel)"
+          source .ci/init.sh
+          ci_init_repo_root
+          ci_load_cloudflare_credentials
+          ci_ensure_node
+          ci_ensure_pnpm
 
-          if [[ -r "$CF_API_TOKEN_FILE" ]]; then
-            export CLOUDFLARE_API_TOKEN="$(tr -d '\r\n' < "$CF_API_TOKEN_FILE")"
-            echo "cloudflare api token loaded from file:$CF_API_TOKEN_FILE"
-          else
-            echo "cloudflare api token loaded from settings"
-          fi
-
-          if [[ -r "$CF_ACCOUNT_ID_FILE" ]]; then
-            export CLOUDFLARE_ACCOUNT_ID="$(tr -d '\r\n' < "$CF_ACCOUNT_ID_FILE")"
-            echo "cloudflare account id loaded from file:$CF_ACCOUNT_ID_FILE"
-          else
-            echo "cloudflare account id loaded from settings"
-          fi
-
-          test -n "$CLOUDFLARE_API_TOKEN"
-          test -n "$CLOUDFLARE_ACCOUNT_ID"
-
-          mkdir -p "$NODE_CACHE_ROOT"
-          if [[ ! -x "${NODE_INSTALL_DIR}/bin/node" ]]; then
-            curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/${NODE_ARCHIVE}" -o "${NODE_CACHE_ROOT}/${NODE_ARCHIVE}"
-            tar -xJf "${NODE_CACHE_ROOT}/${NODE_ARCHIVE}" -C "$NODE_CACHE_ROOT"
-          fi
-          export PATH="${NODE_INSTALL_DIR}/bin:${PATH}"
-
-          node --version
-          npm --version
-
-          mkdir -p "$PNPM_BOOTSTRAP_ROOT"
-          if [[ ! -x "$PNPM_BIN" ]]; then
-            npm install -g "pnpm@${PNPM_VERSION}" --prefix "$PNPM_BOOTSTRAP_ROOT"
-          fi
+          "$NODE_BIN" --version
+          "$NPM_BIN" --version
 
           cd "$REPO_ROOT/frontend"
           rm -rf node_modules
@@ -130,8 +95,8 @@ jobs:
         shell: bash
         run: |
           test -n "${{ variables.SOURCE_SHA }}"
-          REPO_ROOT="$(git rev-parse --show-toplevel)"
-          cd "$REPO_ROOT"
+          source .ci/init.sh
+          ci_init_repo_root
           REMOTE_URL="git@git.woa.com:wisp/mono2.git" \
           GITOPS_BRANCH=gitops \
           bash scripts/promote_bundle_image_to_gitops.sh frontend frontend "${{ variables.TARGET_ENV }}" "${{ variables.SOURCE_SHA }}"

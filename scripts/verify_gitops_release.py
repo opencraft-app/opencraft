@@ -181,6 +181,10 @@ def resolve_kubeconfig(args: argparse.Namespace, repo_root: Path) -> str:
 
 
 def resolve_kubectl_binary() -> str:
+    env_override = os.environ.get("KUBECTL_BIN", "").strip()
+    if env_override and os.access(env_override, os.X_OK):
+        return env_override
+
     existing = shutil.which("kubectl")
     if existing:
         return existing
