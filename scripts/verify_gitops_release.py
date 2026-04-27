@@ -9,6 +9,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -179,10 +180,55 @@ def resolve_kubeconfig(args: argparse.Namespace, repo_root: Path) -> str:
     )
 
 
-def kubectl_get_application(kubeconfig: str, namespace: str, app_name: str) -> Dict[str, Any]:
+def resolve_kubectl_binary() -> str:
+    existing = shutil.which("kubectl")
+    if existing:
+        return existing
+
+    curl_bin = shutil.which("curl")
+    if not curl_bin:
+        raise RuntimeError("missing kubectl and curl; cannot bootstrap kubectl automatically")
+
+    version = os.environ.get("KUBECTL_VERSION_OVERRIDE", "").strip() or "v1.31.2"
+    machine = os.uname().machine
+    arch_map = {
+        "x86_64": "amd64",
+        "amd64": "amd64",
+        "aarch64": "arm64",
+        "arm64": "arm64",
+    }
+    arch = arch_map.get(machine)
+    if not arch:
+        raise RuntimeError(f"unsupported kubectl bootstrap architecture: {machine}")
+
+    system = os.uname().sysname.lower()
+    if system != "linux":
+        raise RuntimeError(f"unsupported kubectl bootstrap operating system: {system}")
+
+    cache_root = Path.home() / ".cache" / "lightclaw-ci" / "kubectl"
+    binary_path = cache_root / version / system / arch / "kubectl"
+    if binary_path.is_file():
+        binary_path.chmod(0o755)
+        return str(binary_path)
+
+    cache_root_for_version = binary_path.parent
+    cache_root_for_version.mkdir(parents=True, exist_ok=True)
+    download_url = f"https://dl.k8s.io/release/{version}/bin/{system}/{arch}/kubectl"
+
+    subprocess.run(
+        [curl_bin, "-fsSL", download_url, "-o", str(binary_path)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    binary_path.chmod(0o755)
+    return str(binary_path)
+
+
+def kubectl_get_application(kubectl_bin: str, kubeconfig: str, namespace: str, app_name: str) -> Dict[str, Any]:
     result = subprocess.run(
         [
-            "kubectl",
+            kubectl_bin,
             f"--kubeconfig={kubeconfig}",
             "-n",
             namespace,
@@ -200,6 +246,7 @@ def kubectl_get_application(kubeconfig: str, namespace: str, app_name: str) -> D
 
 
 def wait_for_application_convergence(
+    kubectl_bin: str,
     kubeconfig: str,
     namespace: str,
     target: ReleaseTarget,
@@ -212,7 +259,7 @@ def wait_for_application_convergence(
     last_snapshot: Dict[str, Any] = {}
 
     while time.time() < deadline:
-        app = kubectl_get_application(kubeconfig, namespace, target.app_name)
+        app = kubectl_get_application(kubectl_bin, kubeconfig, namespace, target.app_name)
         status = app.get("status", {})
         sync = status.get("sync", {})
         health = status.get("health", {})
@@ -322,6 +369,7 @@ def main() -> int:
     repo_root = Path(args.repo_root).resolve()
     private_token = resolve_private_token(args)
     kubeconfig = resolve_kubeconfig(args, repo_root)
+    kubectl_bin = resolve_kubectl_binary()
     merged_mr = resolve_merged_mr(args, private_token)
 
     changed_files = changed_files_from_head(repo_root)
@@ -342,6 +390,7 @@ def main() -> int:
         for target in targets:
             expected_images = expected_images_for_target(repo_root, target)
             snapshot = wait_for_application_convergence(
+                kubectl_bin=kubectl_bin,
                 kubeconfig=kubeconfig,
                 namespace=args.namespace,
                 target=target,
