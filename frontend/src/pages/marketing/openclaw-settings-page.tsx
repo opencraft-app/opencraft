@@ -2438,13 +2438,15 @@ export const OpenClawSettingsPage = () => {
   };
 
   const handleSaveRename = async () => {
-    if (!activeBot || !editName.trim() || editName.trim() === activeBot.name) {
+    const trimmed = editName.trim();
+    // 与后端 maxInstanceDisplayNameRunes = 64 保持一致，按 Unicode 码点计数
+    if (!activeBot || !trimmed || trimmed === activeBot.name || Array.from(trimmed).length > 64) {
       setIsEditing(false);
       return;
     }
     try {
-      await repositories.bots.renameBot(activeBot.id, editName.trim());
-      updateBot(activeBot.id, { name: editName.trim() });
+      await repositories.bots.renameBot(activeBot.id, trimmed);
+      updateBot(activeBot.id, { name: trimmed });
     } catch (err) {
       console.error("rename failed:", err);
     }
@@ -2719,6 +2721,7 @@ export const OpenClawSettingsPage = () => {
                             ref={nameInputRef}
                             type="text"
                             value={editName}
+                            maxLength={64}
                             onChange={(e) => setEditName(e.target.value)}
                             onKeyDown={handleRenameKeyDown}
                             onBlur={handleSaveRename}
