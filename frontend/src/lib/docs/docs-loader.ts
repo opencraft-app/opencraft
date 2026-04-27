@@ -20,7 +20,7 @@ const markdownModules = import.meta.glob("/src/content/docs/**/*.md", {
 }) as Record<string, string>;
 
 // ── docs/images 下的图片资源 URL ─────────────────────────────────
-const imageUrls = import.meta.glob("/src/content/docs/images/*", {
+const imageUrls = import.meta.glob("/src/content/docs/images/*.{png,jpg,jpeg,webp,gif,svg,avif}", {
   eager: true,
   import: "default",
 }) as Record<string, string>;
