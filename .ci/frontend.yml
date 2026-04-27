@@ -109,12 +109,7 @@ jobs:
           node --version
           npm --version
 
-          if command -v corepack >/dev/null 2>&1; then
-            corepack enable
-            corepack prepare pnpm@10.32.1 --activate
-          elif ! command -v pnpm >/dev/null 2>&1; then
-            npm install -g pnpm@10.32.1
-          fi
+          npm install -g pnpm@10.32.1
 
           cd frontend
           rm -rf node_modules
