@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import type { CSSProperties } from "react";
 
+import { useT } from "@/i18n/t";
 import { assetUrl } from "@/lib/asset-url";
 import {
   fadeInUp,
@@ -11,34 +12,40 @@ import {
   viewportConfig,
 } from "./constants";
 
-const columns = [
-  {
-    tag: {
-      icon: assetUrl("/assets/landing/why-trust/icon-easy.svg"),
-      label: "无忧上手",
+/** 三列内容：图标 + 标签等静态资源预置，文案根据当前语言生成。 */
+function buildColumns(t: ReturnType<typeof useT>) {
+  return [
+    {
+      tag: {
+        icon: assetUrl("/assets/landing/why-trust/icon-easy.svg"),
+        label: t("无忧上手"),
+      },
+      headline: t("原版 Hermes Agent，\n 一键即用"),
+      body: t("无需自己部署、配置环境、折腾 API Key。我们帮你把原汁原味的 Hermes Agent 搞上云端，打开即是完整体验。"),
     },
-    headline: "原版 Hermes Agent，\n 一键即用",
-    body: "无需自己部署、配置环境、折腾 API Key。我们帮你把原汁原味的 Hermes Agent 搬上云端，打开即是完整体验。",
-  },
-  {
-    tag: {
-      icon: assetUrl("/assets/landing/why-trust/icon-24h.svg"),
-      label: "7×24H 在线",
+    {
+      tag: {
+        icon: assetUrl("/assets/landing/why-trust/icon-24h.svg"),
+        label: t("7×24H 在线"),
+      },
+      headline: t("随时唤醒， \n不消耗你的任何资源"),
+      body: t("Hermes Agent 运行在专属云端实例上，不消耗你的本地电量和内存。无论你在手机还是电脑，随时呼唤，秒级响应，从不掉线。"),
     },
-    headline: "随时唤醒， \n不消耗你的任何资源",
-    body: "Hermes Agent 运行在专属云端实例上，不消耗你的本地电量和内存。无论你在手机还是电脑，随时呼唤，秒级响应，从不掉线。",
-  },
-  {
-    tag: {
-      icon: assetUrl("/assets/landing/why-trust/icon-data.svg"),
-      label: "数据 100% 归属",
+    {
+      tag: {
+        icon: assetUrl("/assets/landing/why-trust/icon-data.svg"),
+        label: t("数据 100% 归属"),
+      },
+      headline: t("你的对话，\n只存于专属空间"),
+      body: t("你与 Hermes Agent 的所有对话记录均存储在你的专属服务器中，不共享给任何第三方，随时可管理。你说了算。"),
     },
-    headline: "你的对话，\n只存于专属空间",
-    body: "你与 Hermes Agent 的所有对话记录均存储在你的专属服务器中，不共享给任何第三方，随时可管理。你说了算。",
-  },
-];
+  ];
+}
 
 export function WhyTrustSection() {
+  const t = useT();
+  const columns = buildColumns(t);
+
   return (
     <section id='why-trust' className='relative overflow-hidden'>
       {/* 深色全宽区域（移动端自适应高度、桌面保持 656px） */}
@@ -59,7 +66,7 @@ export function WhyTrustSection() {
               className='relative pt-[32px] md:pt-[100px]'
             >
               <h2 className='lw-dark-title text-[26px] leading-[1.45] md:text-inherit md:leading-inherit'>
-                Hermes Agent  云端原生体验随时在线
+                {t("Hermes Agent  云端原生体验随时在线")}
                 {/* 龙虾头像 + 紫粉渐变光晕 */}
                 <span
                   className='relative mx-2 inline-block align-middle'
@@ -71,7 +78,7 @@ export function WhyTrustSection() {
                     className='relative h-full w-full object-cover'
                   />
                 </span>
-                ，数据由你掌控
+                {t("，数据由你掌控")}
               </h2>
             </motion.div>
 
@@ -81,7 +88,7 @@ export function WhyTrustSection() {
               className='lw-dark-body'
               style={{ marginTop: 16, marginBottom: 64 }}
             >
-              我们把 Hermes Agent 搬上云端，让你无需折腾部署，随时唤醒，对话数据永远只属于你。
+              {t("我们把 Hermes Agent 搞上云端，让你无需折腾部署，随时唤醒，对话数据永远只属于你。")}
             </motion.p>
           </motion.div>
 

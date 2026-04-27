@@ -4,6 +4,8 @@ import { useNavigate } from "react-router-dom";
 
 import { fadeInUp, staggerContainer, titleReveal, viewportConfig } from "./constants";
 import { BEIAN_URL, ICP_LICENSE } from "@/constants/legal";
+import { useT } from "@/i18n/t";
+import { isCN } from "@/lib/region";
 
 export function CTAFooterSection({
   onLoginClick,
@@ -17,6 +19,7 @@ export function CTAFooterSection({
   isSubscribed: boolean;
 }) {
   const navigate = useNavigate();
+  const t = useT();
 
   const handleCreateClick = () => {
     if (!isLoggedIn) {
@@ -72,10 +75,10 @@ export function CTAFooterSection({
         <div className="flex flex-col items-start gap-8 md:flex-row md:items-center md:justify-between md:gap-10">
           <motion.div variants={staggerContainer} initial="hidden" whileInView="visible" viewport={viewportConfig} className="flex max-w-[560px] flex-col gap-3 md:gap-4">
             <motion.h2 variants={titleReveal} className="font-heading text-[26px] font-medium leading-[1.4] text-black md:text-[36px] md:leading-[1.56]">
-              准备好开启探索之旅了吗？
+              {t("准备好开启探索之旅了吗？")}
             </motion.h2>
             <motion.p variants={titleReveal} className="font-body text-sm leading-[1.5] text-black md:text-base">
-              你的 AI 在云端等你，随时随地伴你同行。
+              {t("你的 AI 在云端等你，随时随地伴你同行。")}
             </motion.p>
           </motion.div>
 
@@ -87,7 +90,7 @@ export function CTAFooterSection({
             className="flex-shrink-0"
           >
             <button onClick={handleCreateClick} className="lw-cta-btn">
-              <span className="lw-cta-btn__label">立即创建</span>
+              <span className="lw-cta-btn__label">{t("立即创建")}</span>
               <span className="lw-cta-btn__icon">
                 <ArrowUpRight className="h-4 w-4 text-black" strokeWidth={2} />
               </span>
@@ -101,18 +104,22 @@ export function CTAFooterSection({
         <div className="mt-10 border-t border-black/8 pt-5 md:mt-16 md:pt-6">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] leading-[1.6] tracking-[-0.013em] text-black/50 md:gap-[22px] md:text-xs md:leading-[1.5]">
             <span>
-              © {new Date().getFullYear()} LightVela. All rights reserved.{" "}
-              <a href={BEIAN_URL} target="_blank" rel="noreferrer" className="transition-colors hover:text-black">
-                {ICP_LICENSE}
-              </a>
+              {t("© {{year}} LightVela. All rights reserved.", { year: new Date().getFullYear() })}{isCN && (
+                <>
+                  {" "}
+                  <a href={BEIAN_URL} target="_blank" rel="noreferrer" className="transition-colors hover:text-black">
+                    {ICP_LICENSE}
+                  </a>
+                </>
+              )}
             </span>
             <span>
               <a href="https://cloud.tencent.com/document/product/301/11470" target="_blank" rel="noopener noreferrer" className="transition-colors hover:text-black">
-                隐私政策
+                {t("隐私政策")}
               </a>
               ·
               <a href="https://cloud.tencent.com/document/product/301/48034" target="_blank" rel="noopener noreferrer" className="transition-colors hover:text-black">
-                服务条款
+                {t("服务条款")}
               </a>
             </span>
           </div>

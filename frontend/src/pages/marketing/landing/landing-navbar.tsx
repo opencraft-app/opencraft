@@ -5,6 +5,7 @@ import { Link, useLocation } from "react-router-dom";
 
 import { BrandMark } from "@/components/site/brand-mark";
 import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
+import { useT } from "@/i18n/t";
 
 /**
  * 判断当前视口是否 ≥ md 断点（768px，与 Tailwind 保持一致）。
@@ -31,7 +32,8 @@ function useIsDesktop(): boolean {
 }
 
 type NavLink = {
-  label: string;
+  /** 中文原文作为 i18n key，便于代码阅读时搜中文直接定位 */
+  label: "概览" | "更新日志" | "产品文档";
   href: string;
   comingSoon?: boolean;
 };
@@ -41,7 +43,7 @@ const navLinks: NavLink[] = [
   { label: "更新日志", href: "/changelog" },
   { label: "产品文档", href: "#", comingSoon: true },
   /* 养虾博客：暂未开张，先隐藏入口；博客上线后去掉注释即可 */
-  // { label: "养虾博客", href: "#", comingSoon: true },
+  // { label: "博客", href: "#", comingSoon: true },
 ];
 
 /** 根据当前路径判断导航项是否高亮 */
@@ -61,6 +63,7 @@ export function LandingNavbar({
   const [menuOpen, setMenuOpen] = useState(false);
   const location = useLocation();
   const isDesktop = useIsDesktop();
+  const t = useT();
 
   useEffect(() => {
     setMenuOpen(false);
@@ -78,15 +81,16 @@ export function LandingNavbar({
         <nav className="hidden flex-1 items-center justify-center gap-6 md:flex">
           {navLinks.map((link) => {
             const active = isLinkActive(link.href, location.pathname);
+            const label = t(link.label);
             const className = `inline-flex items-center gap-1.5 text-[14px] transition-colors duration-200 hover:text-black/90 ${
               active ? "font-semibold text-black/90" : "font-normal text-black/90"
             }`;
             const content = (
               <>
-                {link.label}
+                {label}
                 {link.comingSoon && (
                   <span className="inline-flex items-center justify-center w-[48px] h-[16px] rounded-tl-[4px] rounded-tr-[4px] rounded-br-[4px] rounded-bl-none bg-[#202020] text-[10px] font-normal text-white leading-none">
-                    即将上线
+                    {t("即将上线")}
                   </span>
                 )}
               </>
@@ -114,13 +118,13 @@ export function LandingNavbar({
               onClick={onLoginClick}
               className="inline-flex items-center justify-center w-[127px] h-[36px] bg-black/90 text-white rounded-[100px] cursor-pointer shadow-[0_2px_0_rgba(187,187,187,0.05)] hover:-translate-y-[1px] hover:shadow-lg transition-all font-heading text-sm font-medium"
             >
-              立即创建
+              {t("立即创建")}
             </button>
             <button
               onClick={onLoginClick}
               className="inline-flex items-center justify-center w-[60px] h-[36px] bg-[#F5F5F5] text-black/90 rounded-[100px] border border-[#E6E9EF] cursor-pointer shadow-[0_2px_0_rgba(187,187,187,0.05)] hover:bg-black/5 transition-colors font-heading text-sm font-medium"
             >
-              登录
+              {t("登录")}
             </button>
           </div>
         )}
@@ -139,13 +143,13 @@ export function LandingNavbar({
               onClick={onLoginClick}
               className="inline-flex items-center justify-center h-[32px] px-3 bg-[#F5F5F5] text-black/90 rounded-[100px] border border-[#E6E9EF] cursor-pointer shadow-[0_2px_0_rgba(187,187,187,0.05)] hover:bg-black/5 transition-colors font-heading text-[13px] font-medium"
             >
-              登录
+              {t("登录")}
             </button>
           )}
           <button
             className="rounded-xl p-2 transition-colors hover:bg-black/5 text-black/90"
             onClick={() => setMenuOpen(!menuOpen)}
-            aria-label={menuOpen ? "关闭菜单" : "打开菜单"}
+            aria-label={menuOpen ? t("关闭菜单") : t("打开菜单")}
           >
             {menuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
           </button>
@@ -164,15 +168,16 @@ export function LandingNavbar({
             <div className="mx-auto flex flex-col gap-2 px-6 py-4 max-w-[1440px]">
               {navLinks.map((link) => {
                 const active = isLinkActive(link.href, location.pathname);
+                const label = t(link.label);
                 const className = `inline-flex items-center gap-2 rounded-full px-4 py-3 text-sm transition-all duration-250 hover:bg-black/5 ${
                   active ? "font-semibold text-black/90" : "font-normal text-black/90"
                 }`;
                 const content = (
                   <>
-                    {link.label}
+                    {label}
                     {link.comingSoon && (
                       <span className="inline-flex items-center justify-center w-[48px] h-[16px] rounded-tl-none rounded-bl-none rounded-tr-[4px] rounded-br-[4px] bg-[#202020] text-[10px] font-normal text-white leading-none pl-[4px]">
-                        即将上线
+                        {t("即将上线")}
                       </span>
                     )}
                   </>
@@ -207,7 +212,7 @@ export function LandingNavbar({
                     onClick={() => { setMenuOpen(false); onLoginClick(); }}
                     className="inline-flex items-center justify-center gap-2 w-full bg-black/90 text-white px-5 py-3 rounded-full font-medium text-[14px] cursor-pointer"
                   >
-                    立即创建
+                    {t("立即创建")}
                     <ArrowRight className="h-4 w-4" />
                   </button>
                 </div>

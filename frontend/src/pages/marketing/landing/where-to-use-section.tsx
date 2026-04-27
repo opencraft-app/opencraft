@@ -1,5 +1,6 @@
 import { useRef, useCallback } from "react";
 import { motion } from "framer-motion";
+import { useT } from "@/i18n/t";
 import { assetUrl } from "@/lib/asset-url";
 import { fadeInUp, staggerContainer, titleReveal, viewportConfig } from "./constants";
 
@@ -64,6 +65,8 @@ function TiltCard({
 }
 
 export function WhereToUseSection() {
+  const t = useT();
+
   return (
     <section
       id="where-to-use"
@@ -92,14 +95,14 @@ export function WhereToUseSection() {
                 alt=""
                 className="h-7 w-7"
               />
-              在哪用
+              {t("在哪用")}
             </span>
           </motion.div>
           <motion.h2
             variants={titleReveal}
             className="font-heading text-[28px] font-semibold leading-[1.5] text-black md:text-[36px] md:leading-[1.78]"
           >
-            你的 App，直接可以用
+            {t("你的 App，直接可以用")}
           </motion.h2>
         </motion.div>
 
@@ -141,10 +144,10 @@ export function WhereToUseSection() {
               </div>
               <div className="flex flex-col gap-4">
                 <h3 className="font-heading text-[24px] font-medium leading-[1.33] text-black/90">
-                  QQ
+                  {t("QQ")}
                 </h3>
                 <p className="text-[16px] font-normal leading-[1.75] text-black/70">
-                  轻松一键连接QQ聊天，享受无缝沟通的乐趣。
+                  {t("轻松一键连接QQ聊天，享受无缝沟通的乐趣。")}
                 </p>
               </div>
             </div>
@@ -174,16 +177,16 @@ export function WhereToUseSection() {
               <div className="h-10 w-10 overflow-hidden">
                 <img
                   src={assetUrl("/assets/landing/where-to-use/wechat-logo-550dda.png")}
-                  alt="微信"
+                  alt="WeChat"
                   className="h-full w-full object-contain"
                 />
               </div>
               <div className="flex flex-col gap-4">
                 <h3 className="font-heading text-[24px] font-medium leading-[1.33] text-black/90">
-                  微信
+                  {t("微信")}
                 </h3>
                 <p className="text-[16px] font-normal leading-[1.75] text-black/70">
-                  迅速连接微信会话，随时随地保持联系。
+                  {t("迅速连接微信会话，随时随地保持联系。")}
                 </p>
               </div>
             </div>
@@ -213,16 +216,16 @@ export function WhereToUseSection() {
               <div className="h-10 w-10 overflow-hidden">
                 <img
                   src={assetUrl("/assets/landing/where-to-use/feishu-logo.png")}
-                  alt="飞书"
+                  alt="Lark"
                   className="h-full w-full object-contain"
                 />
               </div>
               <div className="flex flex-col gap-4">
                 <h3 className="font-heading text-[24px] font-medium leading-[1.33] text-black/90">
-                  飞书
+                  {t("飞书")}
                 </h3>
                 <p className="text-[16px] font-normal leading-[1.75] text-black/70">
-                  文档、会议与聊天深度融合，点燃团队创造力火花。
+                  {t("文档、会议与聊天深度融合，点燃团队创造力火花。")}
                 </p>
               </div>
             </div>
@@ -252,16 +255,16 @@ export function WhereToUseSection() {
               <div className="h-10 w-10 overflow-hidden">
                 <img
                   src={assetUrl("/assets/landing/where-to-use/wecom-logo.png")}
-                  alt="企业微信"
+                  alt="WeCom"
                   className="h-full w-full object-contain"
                 />
               </div>
               <div className="flex flex-col gap-4">
                 <h3 className="font-heading text-[24px] font-medium leading-[1.33] text-black/90">
-                  企业微信（即将支持）
+                  {t("企业微信（即将支持）")}
                 </h3>
                 <p className="text-[16px] font-normal leading-[1.75] text-black/70">
-                  让沟通与工作流深度结合，随时随地开启丝滑协作。
+                  {t("让沟通与工作流深度结合，随时随地开启丝滑协作。")}
                 </p>
               </div>
             </div>
