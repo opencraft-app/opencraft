@@ -1,6 +1,6 @@
 # Beijing Sandbox Apps
 
-这个目录放北京测试环境的子 `Application` 清单。
+这个目录放北京 Argo 控制面的 live app 入口。
 
 当前 live 入口：
 
@@ -16,52 +16,40 @@
 - 每个服务一个清晰入口
 - 只引用已经达到 Argo-ready 条件的 deploy artifact
 - 不允许指向必须依赖本地 `.secret/*`、`generated/*` 或本地脚本上下文的路径
-- 这里的 leaf app 由 `root-beijing-sandbox` 统一扫描和接管
-- `argocd-runtime-beijing-sandbox` 也作为北京 root app 的子应用放在这里
+- 这里由 `root-beijing-sandbox` 统一扫描和接管
+- `argocd-runtime-beijing-sandbox` 继续作为显式子应用保留在这里
+- sandbox 家族的业务 leaf app 现在由 `sandbox-family-appset.yaml` 统一生成
 
-当前已接入的服务：
+当前已接入的入口：
 
 - `argocd-runtime`
   - live Application：`argocd-runtime.yaml`
   - deploy-facing runtime patch：`argocd/runtime/beijing-sandbox/`
-- `nextgen-dashboard`
-  - live Application：`nextgen-dashboard.yaml`
-  - cutover runbook：`docs/runbooks/nextgen-dashboard-argocd-cutover.md`
-- `gateway-dashboard`
-  - live Application：`gateway-dashboard.yaml`
-  - cutover runbook：`docs/runbooks/gateway-dashboard-argocd-cutover.md`
+- `sandbox-family`
+  - live ApplicationSet：`sandbox-family-appset.yaml`
+  - app descriptor catalog：`argocd/catalogs/sandbox/`
+
+sandbox-family 当前统一生成：
+
 - `admin-gateway`
-  - live Application：`admin-gateway.yaml`
-  - cutover runbook：`docs/runbooks/admin-gateway-argocd-cutover.md`
-- `subscription`
-  - live Application：`subscription.yaml`
-  - cutover runbook：`docs/runbooks/subscription-argocd-cutover.md`
-- `service-gateway`
-  - live Application：`service-gateway.yaml`
-  - cutover runbook：`docs/runbooks/service-gateway-argocd-cutover.md`
-- `lightclaw-auth`
-  - live Application：`lightclaw-auth.yaml`
-  - cutover runbook：`docs/runbooks/lightclaw-auth-argocd-cutover.md`
-- `payment`
-  - live Application：`payment.yaml`
-  - cutover runbook：`docs/runbooks/payment-argocd-phase1.md`
 - `ai-gateway`
-  - live Application：`ai-gateway.yaml`
-  - cutover runbook：`docs/runbooks/ai-gateway-argocd-cutover.md`
 - `ctl`
-  - live Application：`ctl.yaml`
+- `gateway-dashboard`
+- `lightclaw-auth`
+- `nextgen-dashboard`
+- `payment`
 - `sandbox`
-  - live Application：`sandbox.yaml`
+- `service-gateway`
 - `session`
-  - live Application：`session.yaml`
-  - cutover runbook：`docs/runbooks/session-argocd-cutover.md`
+- `subscription`
 
 当前北京项目模型：
 
 - root project:
   - `beijing-root`
-- leaf project:
+- leaf projects:
   - `beijing-sandbox`
+  - `beijing-sandbox-2`
 - runtime project:
   - `beijing-argocd-runtime`
 
@@ -75,8 +63,9 @@
 
 注意：
 
-- `apps/beijing-sandbox/` 是 root app 会直接扫描的 live 路径
-- 不要再把 `*.example.yaml` 放回这个目录
+- `apps/beijing-sandbox/` 仍是 root app 会直接扫描的 live 路径
+- 除 runtime 外，不再往这里新增手写 leaf `Application`
+- sandbox 业务 app 应通过 `argocd/catalogs/sandbox/<env>/<service>.yaml` 接入
 - 改这里的同时，通常还要同步看：
   - `argocd/projects/`
   - `argocd/root/beijing-sandbox.yaml`

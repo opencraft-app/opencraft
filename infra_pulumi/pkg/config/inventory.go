@@ -117,8 +117,9 @@ type Inventory struct {
 		} `yaml:"tcr"`
 
 		Storage struct {
-			CAMUserName   string `yaml:"cam_user_name"`
-			CAMPolicyName string `yaml:"cam_policy_name"`
+			ManageCAMAccess *bool  `yaml:"manage_cam_access"`
+			CAMUserName     string `yaml:"cam_user_name"`
+			CAMPolicyName   string `yaml:"cam_policy_name"`
 		} `yaml:"storage"`
 
 		Monitoring struct {

@@ -1,0 +1,35 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: sandbox-family
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions:
+    - missingkey=error
+  generators:
+    - git:
+        repoURL: git@git.woa.com:wisp/mono2.git
+        revision: gitops
+        files:
+          - path: argocd/catalogs/sandbox/*/*.yaml
+  template:
+    metadata:
+      name: '{{ .service }}-{{ .env }}'
+      labels:
+        lightclaw.dev/environment-family: sandbox
+        lightclaw.dev/environment-name: '{{ .env }}'
+        lightclaw.dev/service: '{{ .service }}'
+    spec:
+      project: '{{ .project }}'
+      source:
+        repoURL: git@git.woa.com:wisp/mono2.git
+        targetRevision: gitops
+        path: '{{ .path }}'
+      destination:
+        name: '{{ .destinationName }}'
+        namespace: '{{ .namespace }}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true

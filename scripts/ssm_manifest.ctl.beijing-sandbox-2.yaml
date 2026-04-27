@@ -1,0 +1,45 @@
+defaults:
+  region: ap-beijing
+  version_id: SSM_Current
+  age_recipients:
+    - age1q4s9kt3h5n0fgmez4kyp7tsahgjhuxpyeteye8lp46kqkyvardusctl258
+
+items:
+  - id: ctl-conf-common
+    secret_name: mono-beijing-sandbox-2-ctl-conf-common
+    namespace: ctl
+    kubernetes_resource_name: ctl-conf-common
+    kubernetes_resource_kind: ConfigMap
+    output_path: argocd/secrets/beijing-sandbox-2/ctl-conf-common.sops.yaml
+    string_key: server_conf.toml
+    labels:
+      app.kubernetes.io/name: ctl
+      app.kubernetes.io/managed-by: argocd
+    annotations:
+      managed-by: export_ssm_to_sops.py
+
+  - id: ctl-conf-rewrite
+    secret_name: mono-beijing-sandbox-2-ctl-conf-rewrite
+    namespace: ctl
+    kubernetes_resource_name: ctl-conf-rewrite
+    kubernetes_resource_kind: ConfigMap
+    output_path: argocd/secrets/beijing-sandbox-2/ctl-conf-rewrite.sops.yaml
+    string_key: server_conf_rewrite.toml
+    labels:
+      app.kubernetes.io/name: ctl
+      app.kubernetes.io/managed-by: argocd
+    annotations:
+      managed-by: export_ssm_to_sops.py
+
+  - id: ctl-runtime-secrets
+    secret_name: mono-beijing-sandbox-2-ctl-runtime-secrets
+    namespace: ctl
+    kubernetes_resource_name: ctl-runtime-secrets
+    kubernetes_resource_kind: Secret
+    output_path: argocd/secrets/beijing-sandbox-2/ctl-runtime-secrets.sops.yaml
+    secret_type: Opaque
+    labels:
+      app.kubernetes.io/name: ctl
+      app.kubernetes.io/managed-by: argocd
+    annotations:
+      managed-by: export_ssm_to_sops.py

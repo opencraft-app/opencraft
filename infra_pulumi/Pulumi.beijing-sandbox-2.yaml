@@ -1,0 +1,11 @@
+config:
+  infra-pulumi:environmentName: beijing-sandbox-2
+  infra-pulumi:inventoryPath: envs/tencentcloud/beijing-sandbox-2/inventory.yaml
+  infra-pulumi:enableImport: "false"
+  infra-pulumi:nodePassword:
+    secure: v1:kzukHe/5Cbpgx3hJ:7wgm567vhwD6WcgIbGr37JqWcrmJ9ww3OoJWSXNEYQ==
+  infra-pulumi:dbPassword:
+    secure: v1:yoWRckfQA6h7+9SZ:j4x6JwZ1w/untr2UY0IrU4jpMdjYJhseTHz6f+Zc67+s2w==
+  infra-pulumi:redisPassword:
+    secure: v1:g6FTLqdKjOgAqeZ0:QsxYL4obIdyxROZR2wP6BP2Y3YY9Zhm9Oo/J02pshYLwcNDdlM2LbA==
+encryptionsalt: v1:FmrsfN4Khuc=:v1:C7Oju9ocFEiew+cC:wl9P3/q8dyh4W5a2o3jkIizQF87qPQ==

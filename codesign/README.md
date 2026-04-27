@@ -1,9 +1,9 @@
-# EdgeOne Pages 教程入口
+# Codesign 文档入口
 
 这份文档是 `codesign/` 的入口，目标是让**新加入的 agent** 快速理解：
 
-- 这个仓库里谁负责 EdgeOne 测试发布
-- 默认应该发布到哪个项目
+- 哪些文档覆盖 EdgeOne 测试发布
+- 哪些文档覆盖后端新环境创建
 - 哪些文档是“操作手册”，哪些是“权限与创建记录”
 - 如果流程卡在仓库外，应该联系谁
 
@@ -11,6 +11,7 @@
 
 - [EdgeOne Preview Operator 使用说明](./edgeone-preview-operator.md)
 - [腾讯云 EdgeOne Preview 子账号创建记录](./tencent-cloud-edgeone-preview-account-provisioning.md)
+- [北京新后端测试环境创建记录](./beijing-backend-env-provisioning.md)
 
 其中：
 
@@ -18,6 +19,27 @@
   - 更偏“怎么用”
 - `tencent-cloud-edgeone-preview-account-provisioning.md`
   - 更偏“怎么创建出来、为什么这么设计、实际做了什么”
+- `beijing-backend-env-provisioning.md`
+  - 更偏“这次后台新环境是怎么起出来的、踩了哪些坑、哪些结论可复用”
+
+## 文档分组
+
+### 1. EdgeOne / 前端测试发布
+
+- [EdgeOne Preview Operator 使用说明](./edgeone-preview-operator.md)
+- [腾讯云 EdgeOne Preview 子账号创建记录](./tencent-cloud-edgeone-preview-account-provisioning.md)
+
+### 2. 后端 / 基础设施新环境
+
+- [北京新后端测试环境创建记录](./beijing-backend-env-provisioning.md)
+
+这份新文档记录的是：
+
+- 使用 `infra_pulumi` 新增北京后端测试环境
+- 为什么这次先接受公网 TKE endpoint
+- 为什么新增了 `manage_cam_access=false`
+- 为什么测试环境不该默认照搬老环境的 EIP 规模
+- 为什么 TKE addon 首次 `Upgrading` 不能直接等同于“环境失败”
 
 ## 默认范围
 

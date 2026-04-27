@@ -1,23 +1,14 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: lightclaw-gateway
-
 resources:
-  - ../../../../admin-gateway/k8s/base
-
+- ../common
 generators:
-  - ksops-secret-generator.yaml
-
-components:
-  - ../../../../admin-gateway/k8s/overlays/beijing-sandbox
-
-generatorOptions:
-  disableNameSuffixHash: true
-
+- ksops-secret-generator.yaml
 configMapGenerator:
-  - name: admin-gateway-config
-    files:
-      - config.yaml=config.yaml
-  - name: admin-gateway-platform-values
-    envs:
-      - admin-gateway-platform.env
+- name: admin-gateway-config
+  files:
+  - config.yaml=config.yaml
+- name: admin-gateway-platform-values
+  envs:
+  - admin-gateway-platform.env
