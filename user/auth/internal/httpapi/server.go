@@ -18,6 +18,7 @@ type ServerConfig struct {
 	CookieSecure   bool
 	CookieSameSite http.SameSite
 	SessionTTL     time.Duration
+	OAuthReturnToAllowedHosts []string
 	QQOAuth        *QQOAuthConfig
 	GoogleOAuth    *GoogleOAuthConfig
 	GitHubOAuth    *GitHubOAuthConfig
@@ -40,7 +41,7 @@ func NewRouter(authService *service.Service, config ServerConfig) *gin.Engine {
 		ctx.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
-	handler := NewHandler(authService, config.CookieSecure, config.CookieSameSite, config.SessionTTL, config.QQOAuth, config.GoogleOAuth, config.GitHubOAuth, config.WeChatOAuth, config.PublicBaseURL)
+	handler := NewHandler(authService, config.CookieSecure, config.CookieSameSite, config.SessionTTL, config.QQOAuth, config.GoogleOAuth, config.GitHubOAuth, config.WeChatOAuth, config.PublicBaseURL, config.OAuthReturnToAllowedHosts)
 	handler.avatarStore = config.AvatarStore
 	registerOAuthRoutes(router, handler)
 	router.POST("/auth/invite/prepare", handler.PrepareInvite)

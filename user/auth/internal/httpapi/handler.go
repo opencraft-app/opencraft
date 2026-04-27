@@ -25,6 +25,7 @@ type Handler struct {
 	cookieSecure   bool
 	cookieSameSite http.SameSite
 	sessionTTL     time.Duration
+	returnToAllow  oauthReturnToAllowlist
 	qqOAuth        *qqOAuth
 	googleOAuth    *googleOAuth
 	githubOAuth    *githubOAuth
@@ -37,18 +38,26 @@ type invitePrepareRequest struct {
 	Code string `json:"code"`
 }
 
-func NewHandler(authService *service.Service, cookieSecure bool, cookieSameSite http.SameSite, sessionTTL time.Duration, qqConfig *QQOAuthConfig, googleConfig *GoogleOAuthConfig, githubConfig *GitHubOAuthConfig, wechatConfig *WeChatOAuthConfig, publicBaseURL string) *Handler {
+func NewHandler(authService *service.Service, cookieSecure bool, cookieSameSite http.SameSite, sessionTTL time.Duration, qqConfig *QQOAuthConfig, googleConfig *GoogleOAuthConfig, githubConfig *GitHubOAuthConfig, wechatConfig *WeChatOAuthConfig, publicBaseURL string, oauthReturnToAllowedHosts []string) *Handler {
 	return &Handler{
 		service:        authService,
 		cookieSecure:   cookieSecure,
 		cookieSameSite: cookieSameSite,
 		sessionTTL:     sessionTTL,
+		returnToAllow:  buildOAuthReturnToAllowlist(oauthReturnToAllowedHosts),
 		qqOAuth:        newQQOAuth(qqConfig),
 		googleOAuth:    newGoogleOAuth(googleConfig),
 		githubOAuth:    newGitHubOAuth(githubConfig),
 		wechatOAuth:    newWeChatOAuth(wechatConfig),
 		publicBaseURL:  strings.TrimRight(strings.TrimSpace(publicBaseURL), "/"),
 	}
+}
+
+func (h *Handler) validatedReturnToURL(rawURL string) string {
+	if h == nil {
+		return validatedReturnToURL(rawURL)
+	}
+	return validatedReturnToURLWithAllowlist(rawURL, h.returnToAllow)
 }
 
 func (h *Handler) ValidateInviteCode(ctx context.Context, request api.ValidateInviteCodeRequestObject) (api.ValidateInviteCodeResponseObject, error) {

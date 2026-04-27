@@ -53,6 +53,22 @@ func TestValidatedReturnToURL(t *testing.T) {
 	}
 }
 
+func TestValidatedReturnToURLWithConfiguredPagesWildcard(t *testing.T) {
+	t.Parallel()
+
+	allowlist := buildOAuthReturnToAllowlist([]string{"*.pages.dev"})
+
+	if got := validatedReturnToURLWithAllowlist("https://lightclaw.pages.dev/dashboard", allowlist); got == "" {
+		t.Fatal("expected pages.dev subdomain to be allowed")
+	}
+	if got := validatedReturnToURLWithAllowlist("https://bj82.lightclaw.pages.dev/dashboard", allowlist); got == "" {
+		t.Fatal("expected nested pages.dev subdomain to be allowed")
+	}
+	if got := validatedReturnToURLWithAllowlist("https://pages.dev/dashboard", allowlist); got != "" {
+		t.Fatalf("expected bare pages.dev root to stay blocked, got %q", got)
+	}
+}
+
 func TestAppendSessionTokenToReturnTo(t *testing.T) {
 	t.Parallel()
 

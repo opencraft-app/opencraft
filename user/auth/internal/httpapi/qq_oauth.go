@@ -110,7 +110,7 @@ func (h *Handler) StartQQOAuth(ctx *gin.Context) {
 		Secure:   h.cookieSecure,
 		MaxAge:   int(h.qqOAuth.stateTTL / time.Second),
 	})
-	setOAuthReturnToCookie(ctx, qqOAuthReturnToCookieName, qqOAuthStateCookiePath, readReturnToFromRequest(ctx.Request), h.cookieSecure, h.qqOAuth.stateTTL)
+	setOAuthReturnToCookie(ctx, qqOAuthReturnToCookieName, qqOAuthStateCookiePath, readReturnToFromRequest(ctx.Request), h.cookieSecure, h.qqOAuth.stateTTL, h.validatedReturnToURL)
 
 	ctx.Redirect(http.StatusTemporaryRedirect, h.qqOAuth.authorizeURL(state, h.qqOAuth.redirectURIForRequest(ctx.Request)))
 }
@@ -187,7 +187,7 @@ func (h *Handler) HandleQQOAuthCallback(ctx *gin.Context) {
 	}
 	h.setSessionCookie(ctx, session.Token)
 	redirectURL := h.qqOAuth.successFrontendURL(ctx.Request, "/", session.Token)
-	if validated := validatedReturnToURL(returnTo); validated != "" {
+	if validated := h.validatedReturnToURL(returnTo); validated != "" {
 		redirectURL = appendSessionTokenToReturnTo(validated, session.Token)
 	}
 	ctx.Redirect(http.StatusTemporaryRedirect, redirectURL)

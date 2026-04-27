@@ -1,7 +1,6 @@
 auth_service_url: http://lightclaw-auth.user-auth.svc.cluster.local
 allowed_origins:
-- https://bj82.lightclaw.pages.dev
-- https://*.lightclaw.pages.dev
+- https://*.pages.dev
 - https://*.edgeone.cool
 - https://api-bj82.lightclaw.tech
 - http://localhost:4173

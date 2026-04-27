@@ -26,6 +26,54 @@ var oauthReturnToAllowedHostPatterns = []oauthAllowedHostPattern{
 	{prefix: "lightvela-", suffix: ".edgeone.cool"},
 }
 
+type oauthReturnToAllowlist struct {
+	baseDomains  []string
+	hostPatterns []oauthAllowedHostPattern
+}
+
+func defaultOAuthReturnToAllowlist() oauthReturnToAllowlist {
+	return oauthReturnToAllowlist{
+		baseDomains:  append([]string(nil), oauthReturnToAllowedBaseDomains...),
+		hostPatterns: append([]oauthAllowedHostPattern(nil), oauthReturnToAllowedHostPatterns...),
+	}
+}
+
+func buildOAuthReturnToAllowlist(hosts []string) oauthReturnToAllowlist {
+	if len(hosts) == 0 {
+		return defaultOAuthReturnToAllowlist()
+	}
+
+	allowlist := oauthReturnToAllowlist{
+		baseDomains:  make([]string, 0, len(hosts)),
+		hostPatterns: make([]oauthAllowedHostPattern, 0, len(hosts)),
+	}
+	for _, raw := range hosts {
+		host := strings.ToLower(strings.TrimSpace(raw))
+		if host == "" {
+			continue
+		}
+		if strings.Count(host, "*") == 0 {
+			allowlist.baseDomains = append(allowlist.baseDomains, host)
+			continue
+		}
+		if strings.Count(host, "*") > 1 {
+			continue
+		}
+		prefix, suffix, ok := strings.Cut(host, "*")
+		if !ok || suffix == "" {
+			continue
+		}
+		allowlist.hostPatterns = append(allowlist.hostPatterns, oauthAllowedHostPattern{
+			prefix: prefix,
+			suffix: suffix,
+		})
+	}
+	if len(allowlist.baseDomains) == 0 && len(allowlist.hostPatterns) == 0 {
+		return defaultOAuthReturnToAllowlist()
+	}
+	return allowlist
+}
+
 func readReturnToFromRequest(request *http.Request) string {
 	if request == nil || request.URL == nil {
 		return ""
@@ -33,11 +81,14 @@ func readReturnToFromRequest(request *http.Request) string {
 	return strings.TrimSpace(request.URL.Query().Get("return_to"))
 }
 
-func setOAuthReturnToCookie(ctx *gin.Context, cookieName string, cookiePath string, rawURL string, cookieSecure bool, ttl time.Duration) {
+func setOAuthReturnToCookie(ctx *gin.Context, cookieName string, cookiePath string, rawURL string, cookieSecure bool, ttl time.Duration, validate func(string) string) {
 	if ctx == nil {
 		return
 	}
-	validated := validatedReturnToURL(rawURL)
+	if validate == nil {
+		validate = validatedReturnToURL
+	}
+	validated := validate(rawURL)
 	if validated == "" {
 		clearOAuthReturnToCookie(ctx, cookieName, cookiePath, cookieSecure)
 		return
@@ -80,6 +131,10 @@ func readOAuthReturnToCookie(request *http.Request, cookieName string) string {
 }
 
 func validatedReturnToURL(rawURL string) string {
+	return validatedReturnToURLWithAllowlist(rawURL, defaultOAuthReturnToAllowlist())
+}
+
+func validatedReturnToURLWithAllowlist(rawURL string, allowlist oauthReturnToAllowlist) string {
 	trimmed := strings.TrimSpace(rawURL)
 	if trimmed == "" {
 		return ""
@@ -97,28 +152,28 @@ func validatedReturnToURL(rawURL string) string {
 	}
 
 	host := strings.ToLower(strings.TrimSpace(parsed.Hostname()))
-	if host == "" || !isAllowedReturnToHost(host) {
+	if host == "" || !isAllowedReturnToHost(host, allowlist) {
 		return ""
 	}
 
 	return parsed.String()
 }
 
-func isAllowedReturnToHost(host string) bool {
+func isAllowedReturnToHost(host string, allowlist oauthReturnToAllowlist) bool {
 	normalized := strings.ToLower(strings.TrimSpace(host))
 	if normalized == "" {
 		return false
 	}
-	for _, baseDomain := range oauthReturnToAllowedBaseDomains {
+	for _, baseDomain := range allowlist.baseDomains {
 		base := strings.ToLower(strings.TrimSpace(baseDomain))
 		if normalized == base || strings.HasSuffix(normalized, "."+base) {
 			return true
 		}
 	}
-	for _, pattern := range oauthReturnToAllowedHostPatterns {
+	for _, pattern := range allowlist.hostPatterns {
 		prefix := strings.ToLower(strings.TrimSpace(pattern.prefix))
 		suffix := strings.ToLower(strings.TrimSpace(pattern.suffix))
-		if prefix == "" || suffix == "" {
+		if suffix == "" {
 			continue
 		}
 		if strings.HasPrefix(normalized, prefix) && strings.HasSuffix(normalized, suffix) {
