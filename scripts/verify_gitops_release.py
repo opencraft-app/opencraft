@@ -9,15 +9,16 @@ import argparse
 import json
 import os
 import re
-import shutil
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
+import ssl
 
 
 def parse_args() -> argparse.Namespace:
@@ -31,8 +32,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--source-branch", required=True)
     parser.add_argument("--target-branch", default="gitops")
     parser.add_argument("--repo-root", default=".")
-    parser.add_argument("--namespace", default="argocd")
-    parser.add_argument("--kubeconfig")
+    parser.add_argument("--argocd-base-url")
+    parser.add_argument("--argocd-username")
+    parser.add_argument("--argocd-password")
+    parser.add_argument("--argocd-insecure-skip-verify", action="store_true")
     parser.add_argument("--wait-seconds", type=int, default=600)
     parser.add_argument("--poll-seconds", type=int, default=10)
     return parser.parse_args()
@@ -72,6 +75,80 @@ def resolve_private_token(args: argparse.Namespace) -> str:
     )
 
 
+def resolve_string_setting(
+    cli_value: Optional[str],
+    env_name: str,
+    file_path: str,
+    default: str = "",
+) -> str:
+    if cli_value and cli_value.strip():
+        return cli_value.strip()
+
+    env_value = os.environ.get(env_name, "").strip()
+    if env_value:
+        return env_value
+
+    file_candidate = Path(file_path)
+    if file_candidate.is_file():
+        return read_secret_value(str(file_candidate))
+
+    return default.strip()
+
+
+def resolve_bool_setting(cli_flag: bool, env_name: str, file_path: str, default: bool = False) -> bool:
+    if cli_flag:
+        return True
+
+    env_value = os.environ.get(env_name, "").strip().lower()
+    if env_value in {"1", "true", "yes", "on"}:
+        return True
+    if env_value in {"0", "false", "no", "off"}:
+        return False
+
+    file_candidate = Path(file_path)
+    if file_candidate.is_file():
+        file_value = read_secret_value(str(file_candidate)).strip().lower()
+        if file_value in {"1", "true", "yes", "on"}:
+            return True
+        if file_value in {"0", "false", "no", "off"}:
+            return False
+
+    return default
+
+
+def resolve_argocd_settings(args: argparse.Namespace) -> Tuple[str, str, str, ssl.SSLContext]:
+    base_url = resolve_string_setting(
+        args.argocd_base_url,
+        "ARGOCD_BASE_URL",
+        "/etc/lightclaw-ci/argocd_base_url",
+        "https://argocd.lightclaw.tech",
+    )
+    username = resolve_string_setting(
+        args.argocd_username,
+        "ARGOCD_USERNAME",
+        "/etc/lightclaw-ci/argocd_username",
+    )
+    password = resolve_string_setting(
+        args.argocd_password,
+        "ARGOCD_PASSWORD",
+        "/etc/lightclaw-ci/argocd_password",
+    )
+    insecure_skip_verify = resolve_bool_setting(
+        args.argocd_insecure_skip_verify,
+        "ARGOCD_INSECURE_SKIP_VERIFY",
+        "/etc/lightclaw-ci/argocd_insecure_skip_verify",
+        False,
+    )
+
+    if not username or not password:
+        raise RuntimeError(
+            "missing Argo CD credentials; provide --argocd-username/--argocd-password, set ARGOCD_USERNAME/ARGOCD_PASSWORD, or populate /etc/lightclaw-ci/argocd_username and /etc/lightclaw-ci/argocd_password"
+        )
+
+    ssl_context = ssl._create_unverified_context() if insecure_skip_verify else ssl.create_default_context()
+    return base_url.rstrip("/"), username, password, ssl_context
+
+
 def api_request(method: str, url: str, private_token: str, form_data: Optional[Dict[str, Any]] = None) -> Any:
     headers = {"PRIVATE-TOKEN": private_token}
     data = None
@@ -79,6 +156,24 @@ def api_request(method: str, url: str, private_token: str, form_data: Optional[D
         data = urllib.parse.urlencode(form_data).encode()
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
     with urllib.request.urlopen(req) as resp:
+        payload = resp.read().decode()
+    return json.loads(payload) if payload else None
+
+
+def argocd_api_request(
+    method: str,
+    url: str,
+    ssl_context: ssl.SSLContext,
+    token: str,
+    form_data: Optional[Dict[str, Any]] = None,
+) -> Any:
+    headers = {"Authorization": f"Bearer {token}"}
+    data = None
+    if form_data is not None:
+        data = json.dumps(form_data).encode()
+        headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    with urllib.request.urlopen(req, context=ssl_context) as resp:
         payload = resp.read().decode()
     return json.loads(payload) if payload else None
 
@@ -162,97 +257,52 @@ def expected_images_for_target(repo_root: Path, target: ReleaseTarget) -> List[s
     return unique_images
 
 
-def resolve_kubeconfig(args: argparse.Namespace, repo_root: Path) -> str:
-    explicit = (args.kubeconfig or os.environ.get("ARGOCD_CONTROL_PLANE_KUBECONFIG", "")).strip()
-    if explicit:
-        return explicit
+def login_argocd(base_url: str, username: str, password: str, ssl_context: ssl.SSLContext) -> str:
+    req = urllib.request.Request(
+        f"{base_url}/api/v1/session",
+        data=json.dumps({"username": username, "password": password}).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, context=ssl_context) as resp:
+        payload = json.loads(resp.read().decode())
+    token = payload.get("token", "").strip()
+    if not token:
+        raise RuntimeError("argo cd login succeeded but no token was returned")
+    return token
 
-    default_repo_file = repo_root / "hk-cls-mp5b5r0y-extranet.kubeconfig"
-    if default_repo_file.is_file():
-        return str(default_repo_file)
 
-    inherited = os.environ.get("KUBECONFIG", "").strip()
-    if inherited:
-        return inherited
+def argocd_get_application(
+    base_url: str,
+    ssl_context: ssl.SSLContext,
+    token: str,
+    app_name: str,
+) -> Dict[str, Any]:
+    try:
+        apps_payload = argocd_api_request("GET", f"{base_url}/api/v1/applications", ssl_context, token)
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode(errors="replace")
+        raise RuntimeError(
+            "argo applications list request failed via %s: http=%s body=%s"
+            % (app_name, exc.code, body[:500])
+        ) from exc
 
+    items = apps_payload.get("items", [])
+    for item in items:
+        if item.get("metadata", {}).get("name") == app_name:
+            return item
+
+    visible_apps = sorted(item.get("metadata", {}).get("name", "") for item in items if item.get("metadata"))
     raise RuntimeError(
-        "missing kubeconfig; pass --kubeconfig, set ARGOCD_CONTROL_PLANE_KUBECONFIG, or provide repo root hk-cls-mp5b5r0y-extranet.kubeconfig"
+        "argo application %s not found via %s (visible apps sample: %s)"
+        % (app_name, base_url, ", ".join(visible_apps[:20]))
     )
-
-
-def resolve_kubectl_binary() -> str:
-    env_override = os.environ.get("KUBECTL_BIN", "").strip()
-    if env_override and os.access(env_override, os.X_OK):
-        return env_override
-
-    existing = shutil.which("kubectl")
-    if existing:
-        return existing
-
-    curl_bin = shutil.which("curl")
-    if not curl_bin:
-        raise RuntimeError("missing kubectl and curl; cannot bootstrap kubectl automatically")
-
-    version = os.environ.get("KUBECTL_VERSION_OVERRIDE", "").strip() or "v1.31.2"
-    machine = os.uname().machine
-    arch_map = {
-        "x86_64": "amd64",
-        "amd64": "amd64",
-        "aarch64": "arm64",
-        "arm64": "arm64",
-    }
-    arch = arch_map.get(machine)
-    if not arch:
-        raise RuntimeError(f"unsupported kubectl bootstrap architecture: {machine}")
-
-    system = os.uname().sysname.lower()
-    if system != "linux":
-        raise RuntimeError(f"unsupported kubectl bootstrap operating system: {system}")
-
-    cache_root = Path.home() / ".cache" / "lightclaw-ci" / "kubectl"
-    binary_path = cache_root / version / system / arch / "kubectl"
-    if binary_path.is_file():
-        binary_path.chmod(0o755)
-        return str(binary_path)
-
-    cache_root_for_version = binary_path.parent
-    cache_root_for_version.mkdir(parents=True, exist_ok=True)
-    download_url = f"https://dl.k8s.io/release/{version}/bin/{system}/{arch}/kubectl"
-
-    subprocess.run(
-        [curl_bin, "-fsSL", download_url, "-o", str(binary_path)],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    binary_path.chmod(0o755)
-    return str(binary_path)
-
-
-def kubectl_get_application(kubectl_bin: str, kubeconfig: str, namespace: str, app_name: str) -> Dict[str, Any]:
-    result = subprocess.run(
-        [
-            kubectl_bin,
-            f"--kubeconfig={kubeconfig}",
-            "-n",
-            namespace,
-            "get",
-            "applications.argoproj.io",
-            app_name,
-            "-o",
-            "json",
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return json.loads(result.stdout)
 
 
 def wait_for_application_convergence(
-    kubectl_bin: str,
-    kubeconfig: str,
-    namespace: str,
+    argocd_base_url: str,
+    ssl_context: ssl.SSLContext,
+    token: str,
     target: ReleaseTarget,
     merge_commit_sha: str,
     expected_images: Sequence[str],
@@ -263,7 +313,7 @@ def wait_for_application_convergence(
     last_snapshot: Dict[str, Any] = {}
 
     while time.time() < deadline:
-        app = kubectl_get_application(kubectl_bin, kubeconfig, namespace, target.app_name)
+        app = argocd_get_application(argocd_base_url, ssl_context, token, target.app_name)
         status = app.get("status", {})
         sync = status.get("sync", {})
         health = status.get("health", {})
@@ -362,18 +412,12 @@ def format_waiting_note(mr: Dict[str, Any], targets: Sequence[ReleaseTarget]) ->
     )
 
 
-def ensure_commands(commands: Iterable[str]) -> None:
-    for command in commands:
-        if not shutil.which(command):
-            raise RuntimeError(f"missing required command: {command}")
-
-
 def main() -> int:
     args = parse_args()
     repo_root = Path(args.repo_root).resolve()
     private_token = resolve_private_token(args)
-    kubeconfig = resolve_kubeconfig(args, repo_root)
-    kubectl_bin = resolve_kubectl_binary()
+    argocd_base_url, argocd_username, argocd_password, ssl_context = resolve_argocd_settings(args)
+    argocd_token = login_argocd(argocd_base_url, argocd_username, argocd_password, ssl_context)
     merged_mr = resolve_merged_mr(args, private_token)
 
     changed_files = changed_files_from_head(repo_root)
@@ -394,9 +438,9 @@ def main() -> int:
         for target in targets:
             expected_images = expected_images_for_target(repo_root, target)
             snapshot = wait_for_application_convergence(
-                kubectl_bin=kubectl_bin,
-                kubeconfig=kubeconfig,
-                namespace=args.namespace,
+                argocd_base_url=argocd_base_url,
+                ssl_context=ssl_context,
+                token=argocd_token,
                 target=target,
                 merge_commit_sha=merged_mr["merge_commit_sha"],
                 expected_images=expected_images,
@@ -421,6 +465,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    import shutil
-
     raise SystemExit(main())
