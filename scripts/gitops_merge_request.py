@@ -94,6 +94,11 @@ def create_merge_request(args: argparse.Namespace) -> Dict[str, Any]:
     )
 
 
+def post_merge_request_note(args: argparse.Namespace, mr: Dict[str, Any], body: str) -> Dict[str, Any]:
+    url = f"{args.api_base}/projects/{args.project_id}/merge_requests/{mr['id']}/notes"
+    return api_request("POST", url, args.private_token, {"body": body})
+
+
 def ensure_merge_request(args: argparse.Namespace) -> Dict[str, Any]:
     existing = list_merge_requests(args, "opened")
     if existing:
@@ -128,6 +133,20 @@ def maybe_auto_merge(args: argparse.Namespace, mr: Dict[str, Any]) -> Tuple[Dict
     if not args.auto_merge:
         return mr, None
 
+    post_merge_request_note(
+        args,
+        mr,
+        "\n".join(
+            [
+                "自动发布进度：已进入 GitOps MR 自动合并阶段。",
+                "",
+                f"- source branch: `{args.source_branch}`",
+                f"- target branch: `{args.target_branch}`",
+                "- 状态：等待 commit checks 通过并满足 auto-merge 条件",
+            ]
+        ),
+    )
+
     deadline = time.time() + args.auto_merge_timeout_seconds
     latest = mr
     while time.time() < deadline:
@@ -142,9 +161,35 @@ def maybe_auto_merge(args: argparse.Namespace, mr: Dict[str, Any]) -> Tuple[Dict
             file=sys.stderr,
         )
         if latest.get("state") == "merged":
+            post_merge_request_note(
+                args,
+                latest,
+                "\n".join(
+                    [
+                        "自动发布进度：GitOps MR 已合并。",
+                        "",
+                        f"- source branch: `{args.source_branch}`",
+                        f"- target branch: `{args.target_branch}`",
+                        "- 下一阶段：等待 Argo CD 收敛并校验 live workload image",
+                    ]
+                ),
+            )
             return latest, {"merged_by_platform": True}
         if commit_state == "success" and not commit_block and merge_status == "can_be_merged":
             merged = merge_merge_request(args, latest)
+            post_merge_request_note(
+                args,
+                latest,
+                "\n".join(
+                    [
+                        "自动发布进度：GitOps MR 已执行合并。",
+                        "",
+                        f"- source branch: `{args.source_branch}`",
+                        f"- target branch: `{args.target_branch}`",
+                        "- 下一阶段：等待 Argo CD 收敛并校验 live workload image",
+                    ]
+                ),
+            )
             return latest, merged
         if commit_state == "failure":
             raise RuntimeError(

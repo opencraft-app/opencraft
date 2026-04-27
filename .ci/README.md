@@ -158,6 +158,34 @@
 
 也就是说，TCR 认证从“蓝盾插件取票据”切成了“shell 自己登录 TCR”。
 
+### 8. Shell step 先落到 git repo root
+
+这次已经实际踩到过：
+
+- 通用脚本步的当前工作目录不一定就是源码根目录
+- 直接执行 `bash scripts/...` 可能报：
+  - `No such file or directory`
+
+当前统一约定是：
+
+- 在所有 `run` step 里，凡是要访问仓库内脚本或子目录
+- 先执行：
+
+```bash
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+```
+
+再继续：
+
+- `bash scripts/...`
+- 或 `cd "$REPO_ROOT/frontend"` 这类子目录操作
+
+不要假设：
+
+- job 一定从仓库根目录启动
+- 或 checkout 后 shell cwd 一定稳定
+
 ## Required Runtime Preconditions
 
 除了 `settings` 变量，还需要下面这些前置满足：

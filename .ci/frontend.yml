@@ -85,6 +85,7 @@ jobs:
           PNPM_BOOTSTRAP_ROOT="${HOME}/.cache/lightclaw-ci/pnpm"
           PNPM_VERSION="${PNPM_VERSION_OVERRIDE:-10.32.1}"
           PNPM_BIN="${PNPM_BOOTSTRAP_ROOT}/bin/pnpm"
+          REPO_ROOT="$(git rev-parse --show-toplevel)"
 
           if [[ -r "$CF_API_TOKEN_FILE" ]]; then
             export CLOUDFLARE_API_TOKEN="$(tr -d '\r\n' < "$CF_API_TOKEN_FILE")"
@@ -118,7 +119,7 @@ jobs:
             npm install -g "pnpm@${PNPM_VERSION}" --prefix "$PNPM_BOOTSTRAP_ROOT"
           fi
 
-          cd frontend
+          cd "$REPO_ROOT/frontend"
           rm -rf node_modules
           "$PNPM_BIN" --version
           "$PNPM_BIN" install --no-frozen-lockfile
@@ -129,6 +130,8 @@ jobs:
         shell: bash
         run: |
           test -n "${{ variables.SOURCE_SHA }}"
+          REPO_ROOT="$(git rev-parse --show-toplevel)"
+          cd "$REPO_ROOT"
           REMOTE_URL="git@git.woa.com:wisp/mono2.git" \
           GITOPS_BRANCH=gitops \
           bash scripts/promote_bundle_image_to_gitops.sh frontend frontend "${{ variables.TARGET_ENV }}" "${{ variables.SOURCE_SHA }}"
