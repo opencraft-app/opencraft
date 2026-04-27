@@ -6,6 +6,18 @@ Current live application:
 
 - `argocd-runtime-beijing-sandbox`
 
+Current access:
+
+- HTTP:
+  - `http://9.208.245.238:32059`
+- HTTPS:
+  - `https://9.208.245.238:30547`
+
+Login note:
+
+- initial username: `admin`
+- if login is needed, contact `skipzhang`
+
 This app is created by `root-beijing-sandbox` from:
 
 - `argocd/apps/beijing-sandbox/argocd-runtime.yaml`

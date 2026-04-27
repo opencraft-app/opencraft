@@ -158,10 +158,14 @@ edgeone pages deploy -n lightvela-preview -e production
 - 项目名：`lightvela-preview`
 - ProjectId：`pages-t27yodey8xhp`
 
-这意味着：
+这意味着最初的设计目标是：
 
-- 不需要给子账号 `CreatePagesResources`
-- 只需要让它操作现有测试项目
+- 默认不需要给子账号 `CreatePagesResources`
+- 默认只需要让它操作现有测试项目
+
+后续由于控制台 / 使用场景补充需要，已经额外放开：
+
+- `teo:CreatePagesResources`
 
 ### 步骤 2：创建子账号
 
@@ -208,7 +212,9 @@ PolicyId：
       "action": [
         "teo:CreateCredential",
         "teo:CreateUploadUrl",
-        "teo:DescribeZones"
+        "teo:CreatePagesResources",
+        "teo:DescribeZones",
+        "teo:DescribeOpenEdgeResources"
       ],
       "resource": [
         "*"
@@ -236,8 +242,12 @@ PolicyId：
   - 允许这个子账号创建 EO / Pages API Token
 - `CreateUploadUrl`
   - 允许上传 Pages 部署产物
+- `CreatePagesResources`
+  - 允许创建新的 Pages 项目（这是额外放开的创建类权限）
 - `DescribeZones`
   - 允许控制台/CLI 获取必要的 EO 站点上下文
+- `DescribeOpenEdgeResources`
+  - 允许控制台读取 EO / Pages 相关开放资源概览，避免进入控制台时报缺少只读权限
 - `DescribePagesResources` / `ModifyPagesResources`
   - 只允许查看/修改 `lightvela-preview`
 - `DescribeDeployHistory` / `DescribeEnvironments`
@@ -245,7 +255,6 @@ PolicyId：
 
 没有给：
 
-- `teo:CreatePagesResources`
 - `teo:DeletePagesResources`
 
 ### 步骤 4：创建北京常用基础设施只读策略

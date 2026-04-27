@@ -56,8 +56,15 @@
 它不应该做：
 
 - 发布生产 Pages 项目 `lightvela`
-- 创建或删除任意其他 Pages 项目
 - 修改北京基础设施
+
+补充说明：
+
+- 当前策略已经额外放开 `teo:CreatePagesResources`
+- 所以它**具备创建新 Pages 项目的能力**
+- 但这不改变本教程的默认边界：
+  - 默认仍只用于 `lightvela-preview`
+  - 若要新建其他项目，先与 `Skipzhang` 确认
 
 ## 仓库外依赖
 

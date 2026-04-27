@@ -23,12 +23,27 @@
 - cluster name:
   - `beijing-sandbox`
 
+当前访问入口：
+
+- HTTP:
+  - `http://9.208.245.238:32059`
+- HTTPS:
+  - `https://9.208.245.238:30547`
+
+登录说明：
+
+- 初始用户名：
+  - `admin`
+- 如需登录或获取当前可用凭据：
+  - 联系 `skipzhang`
+
 这条链路的含义是：
 
 1. `root-beijing-sandbox` 负责扫描 `argocd/apps/beijing-sandbox/`
 2. `argocd-runtime-beijing-sandbox` 负责把当前这套 Argo CD 自己的 runtime patch 管起来
-3. 北京 leaf apps 全部从 `mono2/gitops` 拉取 deploy-facing 清单
-4. 运行时敏感值仍通过 `sops-age` + `ksops` 解密，不把私钥明文放进 Git
+3. sandbox 家族业务 leaf apps 由 `sandbox-family-appset.yaml` 统一生成
+4. 北京生成出的 leaf apps 全部从 `mono2/gitops` 拉取 deploy-facing 清单
+5. 运行时敏感值仍通过 `sops-age` + `ksops` 解密，不把私钥明文放进 Git
 
 ### 上海正式环境
 
@@ -74,7 +89,8 @@
 - `root/`
   - 环境级 root app
 - `apps/<env>/`
-  - 该环境下的 leaf `Application`
+  - 该 root app 直接扫描的 live 入口
+  - 可以同时包含显式 `Application` 和 `ApplicationSet`
 - `runtime/<env>/`
   - Argo CD 控制面运行时补丁
   - 当前北京这里主要管理 `argocd-cm` 和 `argocd-repo-server`
@@ -171,7 +187,7 @@ KUBECONFIG_PATH=/path/to/argocd-control-plane.kubeconfig \
 - 改北京 root / project / app 关系：
   - `argocd/root/beijing-sandbox.yaml`
   - `argocd/projects/beijing-*.yaml`
-  - `argocd/apps/beijing-sandbox/*.yaml`
+  - `argocd/apps/beijing-sandbox/`
 - 改北京服务 deploy-facing 资产：
   - `argocd/services/<service>/beijing-sandbox/`
   - `argocd/secrets/beijing-sandbox/*.sops.yaml`
