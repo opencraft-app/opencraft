@@ -109,7 +109,9 @@ jobs:
           node --version
           npm --version
 
-          npm install -g pnpm@10.32.1
+          if [[ ! -x "${NODE_INSTALL_DIR}/bin/pnpm" ]]; then
+            npm install -g pnpm@10.32.1
+          fi
 
           cd frontend
           rm -rf node_modules
