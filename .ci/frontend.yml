@@ -73,6 +73,7 @@ jobs:
           CLOUDFLARE_PAGES_PROJECT_NAME: lightclaw
           VITE_AUTH_API_BASE_URL: https://lightclaw.tech
           CLOUDFLARE_PAGES_COMMIT_HASH: ${{ ci.sha }}
+          CLOUDFLARE_PAGES_COMMIT_MESSAGE: Cloudflare Pages deploy from release-frontend
         run: |
           CF_API_TOKEN_FILE="${CLOUDFLARE_API_TOKEN_FILE:-/etc/lightclaw-ci/cloudflare_api_token}"
           CF_ACCOUNT_ID_FILE="${CLOUDFLARE_ACCOUNT_ID_FILE:-/etc/lightclaw-ci/cloudflare_account_id}"
