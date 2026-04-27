@@ -21,6 +21,7 @@ BOOTSTRAP_FILES=(
   "scripts/gitops_merge_request.py"
   "scripts/gitops_merge_request_note.py"
   "scripts/gitops_cleanup_source_branch.py"
+  "scripts/verify_gitops_release.py"
   ".ci/gitops-promotion.yml"
 )
 
