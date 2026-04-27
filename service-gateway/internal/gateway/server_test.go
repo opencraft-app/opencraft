@@ -1237,6 +1237,83 @@ func TestCorsWildcardEdgeOneOriginAllowed(t *testing.T) {
 	}
 }
 
+func TestCorsWildcardLocalhostAnyPortAllowed(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer upstream.Close()
+
+	handler, err := NewHandler(Config{
+		AuthServiceURL: "http://auth.invalid",
+		AllowedOrigins: []string{"http://localhost:*", "http://127.0.0.1:*"},
+		Routes: []Route{
+			{
+				Name:     "public",
+				Prefix:   "/v1/bundles",
+				Upstream: upstream.URL,
+				Access:   AccessPublic,
+				Methods:  []string{http.MethodGet},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+
+	cases := []string{
+		"http://localhost:3000",
+		"http://localhost:4173",
+		"http://127.0.0.1:5173",
+	}
+
+	for _, origin := range cases {
+		req := httptest.NewRequest(http.MethodGet, "/v1/bundles", nil)
+		req.Header.Set("Origin", origin)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("origin %q: expected 204, got %d body=%s", origin, rec.Code, rec.Body.String())
+		}
+		if got := rec.Header().Get("Access-Control-Allow-Origin"); got != origin {
+			t.Fatalf("origin %q: expected reflected allow-origin, got %q", origin, got)
+		}
+	}
+}
+
+func TestCorsWildcardLocalhostAnyPortDoesNotMatchSiblingHost(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer upstream.Close()
+
+	handler, err := NewHandler(Config{
+		AuthServiceURL: "http://auth.invalid",
+		AllowedOrigins: []string{"http://localhost:*", "http://127.0.0.1:*"},
+		Routes: []Route{
+			{
+				Name:     "public",
+				Prefix:   "/v1/bundles",
+				Upstream: upstream.URL,
+				Access:   AccessPublic,
+				Methods:  []string{http.MethodGet},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/bundles", nil)
+	req.Header.Set("Origin", "http://localhost.evil.test:5173")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Fatalf("expected sibling host to stay blocked, got %q", got)
+	}
+}
+
 func TestCorsExactRootPagesDomainAllowed(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)

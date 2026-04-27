@@ -6,8 +6,6 @@ allowed_origins:
   - https://api.lightvela.tencent.com
   - https://lightclaw.site
   - https://api.lightclaw.site
-  - http://localhost:4173
-  - http://localhost:5173
 routes:
   - name: ai-gateway-admin
     prefix: /api/admin

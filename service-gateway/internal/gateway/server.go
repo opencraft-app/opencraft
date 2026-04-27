@@ -516,9 +516,11 @@ func applyCORSHeaders(allowedOrigins originAllowlist, header http.Header, r *htt
 }
 
 type wildcardOrigin struct {
-	scheme string
-	host   string
-	port   string
+	scheme           string
+	host             string
+	port             string
+	matchSubdomains  bool
+	matchAnyHTTPPort bool
 }
 
 type originAllowlist struct {
@@ -542,13 +544,22 @@ func (a originAllowlist) Allows(origin string) bool {
 	scheme := strings.ToLower(u.Scheme)
 	port := u.Port()
 	for _, item := range a.wildcards {
-		if scheme != item.scheme || port != item.port {
+		if scheme != item.scheme {
+			continue
+		}
+		if !item.matchAnyHTTPPort && port != item.port {
+			continue
+		}
+		if item.matchSubdomains {
+			if host == item.host {
+				continue
+			}
+			if strings.HasSuffix(host, "."+item.host) {
+				return true
+			}
 			continue
 		}
 		if host == item.host {
-			continue
-		}
-		if strings.HasSuffix(host, "."+item.host) {
 			return true
 		}
 	}
@@ -565,6 +576,29 @@ func normalizeAllowedOrigins(origins []string) originAllowlist {
 		if trimmed == "" {
 			continue
 		}
+		if strings.HasSuffix(trimmed, ":*") {
+			base := strings.TrimSuffix(trimmed, ":*")
+			u, err := url.Parse(base)
+			if err != nil {
+				continue
+			}
+			host := strings.ToLower(u.Hostname())
+			scheme := strings.ToLower(u.Scheme)
+			if host == "" || scheme == "" {
+				continue
+			}
+			item := wildcardOrigin{
+				scheme:           scheme,
+				host:             host,
+				matchAnyHTTPPort: true,
+			}
+			if strings.HasPrefix(host, "*.") {
+				item.matchSubdomains = true
+				item.host = strings.TrimPrefix(host, "*.")
+			}
+			allowed.wildcards = append(allowed.wildcards, item)
+			continue
+		}
 		u, err := url.Parse(trimmed)
 		if err != nil {
 			continue
@@ -574,9 +608,10 @@ func normalizeAllowedOrigins(origins []string) originAllowlist {
 		port := u.Port()
 		if strings.HasPrefix(host, "*.") {
 			allowed.wildcards = append(allowed.wildcards, wildcardOrigin{
-				scheme: scheme,
-				host:   strings.TrimPrefix(host, "*."),
-				port:   port,
+				scheme:          scheme,
+				host:            strings.TrimPrefix(host, "*."),
+				port:            port,
+				matchSubdomains: true,
 			})
 			continue
 		}
