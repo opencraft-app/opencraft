@@ -69,6 +69,23 @@ func TestValidatedReturnToURLWithConfiguredPagesWildcard(t *testing.T) {
 	}
 }
 
+func TestValidatedReturnToURLWithConfiguredLocalhostHTTP(t *testing.T) {
+	t.Parallel()
+
+	allowlist := buildOAuthReturnToAllowlist([]string{"localhost", "127.0.0.1", "::1"})
+
+	cases := []string{
+		"http://localhost:5173/auth/sign-in",
+		"http://127.0.0.1:5173/auth/sign-in",
+		"http://[::1]:5173/auth/sign-in",
+	}
+	for _, raw := range cases {
+		if got := validatedReturnToURLWithAllowlist(raw, allowlist); got == "" {
+			t.Fatalf("expected localhost-style http return_to to be allowed for %q", raw)
+		}
+	}
+}
+
 func TestAppendSessionTokenToReturnTo(t *testing.T) {
 	t.Parallel()
 

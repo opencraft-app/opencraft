@@ -147,7 +147,7 @@ func validatedReturnToURLWithAllowlist(rawURL string, allowlist oauthReturnToAll
 	if parsed.User != nil || parsed.Opaque != "" {
 		return ""
 	}
-	if !strings.EqualFold(parsed.Scheme, "https") {
+	if !isAllowedReturnToScheme(parsed.Scheme, parsed.Hostname()) {
 		return ""
 	}
 
@@ -184,6 +184,28 @@ func isAllowedReturnToHost(host string, allowlist oauthReturnToAllowlist) bool {
 		}
 	}
 	return false
+}
+
+func isAllowedReturnToScheme(scheme string, host string) bool {
+	normalizedScheme := strings.ToLower(strings.TrimSpace(scheme))
+	switch normalizedScheme {
+	case "https":
+		return true
+	case "http":
+		return isLoopbackHost(host)
+	default:
+		return false
+	}
+}
+
+func isLoopbackHost(host string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(host))
+	switch normalized {
+	case "localhost", "127.0.0.1", "::1":
+		return true
+	default:
+		return false
+	}
 }
 
 func appendSessionTokenToReturnTo(rawURL string, sessionToken string) string {

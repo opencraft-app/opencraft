@@ -788,6 +788,48 @@ func TestQQOAuthStartSetsReturnToCookieWhenPagesWildcardConfigured(t *testing.T)
 	}
 }
 
+func TestQQOAuthStartSetsReturnToCookieWhenLocalhostAllowed(t *testing.T) {
+	t.Parallel()
+
+	client := &stubQQOAuthClient{}
+	gin.SetMode(gin.TestMode)
+	store := service.NewMemoryStore(service.StoreOptions{
+		Now:                fixedHTTPTestNow,
+		SeedDefaultInvites: true,
+	})
+	svc := service.NewWithStore(store, service.Options{
+		Now:        fixedHTTPTestNow,
+		SessionTTL: 30 * 24 * time.Hour,
+	})
+	router := NewRouter(svc, ServerConfig{
+		CookieSecure:              true,
+		CookieSameSite:            http.SameSiteNoneMode,
+		SessionTTL:                30 * 24 * time.Hour,
+		OAuthReturnToAllowedHosts: []string{"localhost", "127.0.0.1", "::1"},
+		QQOAuth: &QQOAuthConfig{
+			AppID:           "1903611152",
+			AppKey:          "test-app-key",
+			RedirectURI:     "https://lightclaw.tech/auth/oauth/qq/callback",
+			FrontendBaseURL: "https://lightclaw.pages.dev",
+			PublicBaseURL:   "https://lightclaw.tech",
+			Client:          client,
+			StateTTL:        10 * time.Minute,
+		},
+	})
+
+	request := httptest.NewRequest(http.MethodGet, "/auth/oauth/qq/start?return_to="+url.QueryEscape("http://localhost:5173/auth/sign-in"), nil)
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("expected 307 from qq oauth start, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	returnToCookie := cookieFromRecorderByName(t, recorder, qqOAuthReturnToCookieName)
+	if got := returnToCookie.Value; got != "http://localhost:5173/auth/sign-in" {
+		t.Fatalf("expected qq return_to cookie for localhost, got %q", got)
+	}
+}
+
 func TestWeChatOAuthCallbackRedirectsBackToSiteFrontend(t *testing.T) {
 	t.Parallel()
 
