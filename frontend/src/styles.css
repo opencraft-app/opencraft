@@ -980,3 +980,211 @@ code {
     grid-template-columns: 1fr;
   }
 }
+
+/* ==========================================================================
+   产品文档（/docs） · prose-doc 渲染样式
+   --------------------------------------------------------------------------
+   本段样式严格对齐 LightVela-Docs 原 index.css 的渲染规则，颜色适配 mono2
+   的 CSS 变量体系。作用域限定在 `.prose-doc` 下，不影响其他页面。
+   ========================================================================== */
+
+.prose-doc {
+  font-size: 15px;
+  line-height: 1.75;
+  color: var(--text-primary);
+}
+
+.prose-doc h1,
+.prose-doc h2,
+.prose-doc h3,
+.prose-doc h4 {
+  font-family: var(--font-heading);
+  color: var(--text-primary);
+  scroll-margin-top: 5rem;
+}
+.prose-doc h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  margin: 0 0 1rem;
+}
+.prose-doc h2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+  margin: 3rem 0 1.25rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.prose-doc h3 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 2rem 0 0.75rem;
+}
+.prose-doc h4 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 1.5rem 0 0.5rem;
+}
+
+.prose-doc p {
+  margin: 1rem 0;
+}
+
+.prose-doc a {
+  color: var(--text-primary);
+  text-decoration: underline;
+  text-decoration-color: #e5e5e5;
+  text-underline-offset: 4px;
+  transition: text-decoration-color 0.15s;
+}
+.prose-doc a:hover {
+  text-decoration-color: var(--text-primary);
+}
+
+.prose-doc ul,
+.prose-doc ol {
+  margin: 1rem 0;
+  padding-left: 1.5rem;
+}
+.prose-doc ul {
+  list-style: disc;
+}
+.prose-doc ol {
+  list-style: decimal;
+}
+.prose-doc li {
+  margin: 0.375rem 0;
+}
+.prose-doc li::marker {
+  color: #999;
+}
+
+/* GFM 任务列表（contains-task-list 由 remark-gfm 注入） */
+.prose-doc ul.contains-task-list {
+  list-style: none;
+  padding-left: 0;
+}
+.prose-doc li.task-list-item {
+  padding-left: 0;
+}
+.prose-doc input[type="checkbox"] {
+  margin-right: 0.5rem;
+  accent-color: #000;
+}
+
+/* 行内代码 */
+.prose-doc :not(pre) > code {
+  background: #f5f5f7;
+  color: var(--text-primary);
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+  font-size: 0.875em;
+  font-family: var(--font-mono);
+  border: 1px solid #eee;
+}
+
+/* 无语言标注的 fenced code block：外框由 pre 提供，内部 code 只管内容排版 */
+.prose-doc pre {
+  margin: 0;
+  border-radius: 0;
+  overflow: auto;
+}
+.prose-doc pre > code {
+  display: block;
+  padding: 1rem;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  white-space: pre;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+  color: #333;
+}
+
+/* 表格 */
+.prose-doc table {
+  width: 100%;
+  margin: 1.5rem 0;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 14px;
+}
+.prose-doc thead {
+  background: #fafafa;
+}
+.prose-doc th {
+  padding: 0.625rem 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  border-bottom: 1px solid #e5e5e5;
+}
+.prose-doc td {
+  padding: 0.625rem 1rem;
+  border-bottom: 1px solid #eee;
+  vertical-align: top;
+}
+.prose-doc tr:last-child td {
+  border-bottom: 0;
+}
+
+/* 默认 blockquote（未命中 Callout 规则时） */
+.prose-doc blockquote {
+  margin: 1.25rem 0;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  border-left: 3px solid var(--text-primary);
+  background: var(--surface-muted);
+}
+.prose-doc blockquote p {
+  margin: 0.25rem 0;
+}
+.prose-doc blockquote strong:first-child {
+  display: block;
+  margin-bottom: 0.25rem;
+  color: var(--text-primary);
+}
+
+/* 分隔线 */
+.prose-doc hr {
+  margin: 2.5rem 0;
+  border: 0;
+  border-top: 1px solid #eee;
+}
+
+/* 图片：固定最大高度、左对齐，保持与正文列齐 */
+.prose-doc img {
+  display: block;
+  max-width: 100%;
+  max-height: 520px;
+  width: auto;
+  height: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.5rem;
+  background: #fafafa;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.04);
+  margin: 0.5rem 0 1.5rem;
+}
+/* 图片被单独包在 <p> 里时，压掉 <p> 本身的上下边距，消除"视觉上多一行空白" */
+.prose-doc p:has(> img:only-child) {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+.prose-doc p:has(+ p > img:only-child) {
+  margin-bottom: 0.75rem;
+}
+
+/* 内部文档链接（走 react-router <Link>） */
+.prose-doc .prose-link {
+  color: var(--text-primary);
+  text-decoration: underline;
+  text-decoration-color: #e5e5e5;
+  text-underline-offset: 4px;
+}
+.prose-doc .prose-link:hover {
+  text-decoration-color: var(--text-primary);
+}

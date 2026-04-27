@@ -39,7 +39,7 @@ type NavLink = {
 const navLinks: NavLink[] = [
   { label: "概览", href: "/" },
   { label: "更新日志", href: "/changelog" },
-  { label: "产品文档", href: "#", comingSoon: true },
+  { label: "产品文档", href: "/docs" },
   /* 养虾博客：暂未开张，先隐藏入口；博客上线后去掉注释即可 */
   // { label: "养虾博客", href: "#", comingSoon: true },
 ];

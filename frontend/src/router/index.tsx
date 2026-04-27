@@ -1,6 +1,7 @@
 import { Navigate, createBrowserRouter } from "react-router-dom";
 import { AppShellLayout } from "@/layouts/app-shell-layout";
 import { MarketingLayout } from "@/layouts/marketing-layout";
+import { RootLayout } from "@/layouts/root-layout";
 import { InvitePage } from "@/pages/auth/invite-page";
 import { SignInPage } from "@/pages/auth/sign-in-page";
 import { SignUpPage } from "@/pages/auth/sign-up-page";
@@ -19,6 +20,8 @@ import { OpenClawSettingsPage } from "@/pages/marketing/openclaw-settings-page";
 import { AccountPage } from "@/pages/marketing/account-page";
 import { AccountOrdersPage } from "@/pages/marketing/account-orders-page";
 import { ChangelogPage } from "@/pages/marketing/changelog-page";
+import { DocsPage } from "@/pages/docs/docs-page";
+import { DocsLayout } from "@/components/docs/docs-layout";
 import { AppAccessGuard, AuthenticatedGuard, AuthRouteGuard, MarketingAuthGuard, PlanGuard } from "@/router/guards";
 
 const NotFoundPage = () => (
@@ -31,6 +34,7 @@ const NotFoundPage = () => (
 export const router = createBrowserRouter([
   {
     path: "/",
+    element: <RootLayout />,
     children: [
       {
         index: true,
@@ -39,6 +43,27 @@ export const router = createBrowserRouter([
       {
         path: "changelog",
         element: <ChangelogPage />,
+      },
+      /* ── 产品文档（LightVela Docs） ──
+         /docs             → 重定向到 /docs/overview
+         /docs/:slug       → 一级文档，例如 /docs/overview、/docs/faq
+         /docs/:cat/:slug  → 二级文档，例如 /docs/configuration/model */
+      {
+        element: <DocsLayout />,
+        children: [
+          {
+            path: "docs",
+            element: <Navigate to="/docs/overview" replace />,
+          },
+          {
+            path: "docs/:slug",
+            element: <DocsPage />,
+          },
+          {
+            path: "docs/:category/:slug",
+            element: <DocsPage />,
+          },
+        ],
       },
       {
         element: <MarketingAuthGuard />,
