@@ -1237,6 +1237,42 @@ func TestCorsWildcardEdgeOneOriginAllowed(t *testing.T) {
 	}
 }
 
+func TestCorsWildcardEdgeOneRunOriginAllowed(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer upstream.Close()
+
+	handler, err := NewHandler(Config{
+		AuthServiceURL: "http://auth.invalid",
+		AllowedOrigins: []string{"https://*.edgeone.run"},
+		Routes: []Route{
+			{
+				Name:     "public",
+				Prefix:   "/v1/bundles",
+				Upstream: upstream.URL,
+				Access:   AccessPublic,
+				Methods:  []string{http.MethodGet},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/bundles", nil)
+	req.Header.Set("Origin", "https://lightvela-preview.edgeone.run")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if origin := rec.Header().Get("Access-Control-Allow-Origin"); origin != "https://lightvela-preview.edgeone.run" {
+		t.Fatalf("expected edgeone.run wildcard origin to be reflected, got %q", origin)
+	}
+}
+
 func TestCorsWildcardLocalhostAnyPortAllowed(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
