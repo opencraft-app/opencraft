@@ -109,7 +109,7 @@ export function HeroSection({
     }
   };
 
-  const { t } = { t: useT() };
+  const t = useT();
 
   const buttonText = !isLoggedIn || (!hasBots && !isSubscribed)
     ? t("立即创建")

@@ -21,7 +21,7 @@ function buildColumns(t: ReturnType<typeof useT>) {
         label: t("无忧上手"),
       },
       headline: t("原版 Hermes Agent，\n 一键即用"),
-      body: t("无需自己部署、配置环境、折腾 API Key。我们帮你把原汁原味的 Hermes Agent 搞上云端，打开即是完整体验。"),
+      body: t("无需自己部署、配置环境、折腾 API Key。我们帮你把原汁原味的 Hermes Agent 搬上云端，打开即是完整体验。"),
     },
     {
       tag: {
@@ -88,7 +88,7 @@ export function WhyTrustSection() {
               className='lw-dark-body'
               style={{ marginTop: 16, marginBottom: 64 }}
             >
-              {t("我们把 Hermes Agent 搞上云端，让你无需折腾部署，随时唤醒，对话数据永远只属于你。")}
+              {t("我们把 Hermes Agent 搬上云端，让你无需折腾部署，随时唤醒，对话数据永远只属于你。")}
             </motion.p>
           </motion.div>
 

@@ -57,7 +57,27 @@ export function HowEasySection() {
               variants={titleReveal}
               className="font-heading text-[28px] font-semibold leading-[1.5] text-black md:text-[36px] md:leading-[1.78]"
             >
-              <span className="font-bold">{t("一分钟")}</span>{t("搞定")}
+              {/*
+               * 「一分钟搞定」作为整体翻译 key，避免拆成 t("一分钟")+t("搞定")
+               * 在英文环境下被拼成 "One minutesetup" 的语法错误；
+               * 加粗部分用 <bold> 占位符 + 运行时 split 渲染为 <span className="font-bold">。
+               */}
+              {(() => {
+                const raw = t("<bold>一分钟</bold>搞定");
+                const match = raw.match(/^(.*?)<bold>(.*?)<\/bold>(.*)$/);
+                if (!match) {
+                  /* 兜底：字典里没按占位符约定翻译时原样渲染 */
+                  return raw;
+                }
+                const [, prefix, boldText, suffix] = match;
+                return (
+                  <>
+                    {prefix}
+                    <span className="font-bold">{boldText}</span>
+                    {suffix}
+                  </>
+                );
+              })()}
               <br />
               {t("真的不难")}
             </motion.h2>

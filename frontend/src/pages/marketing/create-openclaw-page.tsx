@@ -7,6 +7,7 @@ import { SetupStepTimeline } from "@/components/domain/setup-step-timeline";
 import { cn } from "@/lib/utils";
 import { useOpenClaw } from "@/contexts/openclaw-context";
 import { useRepositories } from "@/contexts/repository-context";
+import { useT } from "@/i18n/t";
 import type { SoulTemplate } from "@/repositories/types";
 import { BrandMark } from "@/components/site/brand-mark";
 import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
@@ -15,12 +16,6 @@ import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
 
 const MAX_NAME_LENGTH = 20;
 const MAX_INTRO_LENGTH = 200;
-
-const fallbackSoulTemplates: SoulTemplate[] = [
-  { id: "gentle", name: "温柔陪伴", description: "温暖细腻，善于倾听与安慰" },
-  { id: "humor", name: "幽默风趣", description: "轻松搞笑，让对话充满欢乐" },
-  { id: "pro", name: "专业干练", description: "高效务实，直击问题核心" },
-];
 
 const soulTemplateEmojis: Record<string, string> = {
   gentle: "🤗",
@@ -43,6 +38,7 @@ const fadeIn = {
 
 const CreateNavbar = () => {
   const { isLoggedIn } = useOpenClaw();
+  const t = useT();
 
   return (
     <header className="lw-setup-navbar">
@@ -60,7 +56,7 @@ const CreateNavbar = () => {
               boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
             }}
           >
-            返回首页
+            {t("返回首页")}
           </Link>
         )}
       </div>
@@ -72,6 +68,7 @@ const CreateNavbar = () => {
 
 export const CreateOpenClawPage = () => {
   const navigate = useNavigate();
+  const t = useT();
   const { isLoggedIn, login, bots, user } = useOpenClaw();
   const repositories = useRepositories();
   const [botName, setBotName] = useState("");
@@ -89,6 +86,13 @@ export const CreateOpenClawPage = () => {
     }
   }, [isLoggedIn, login]);
 
+  /* 回退用的 SOUL 模板——名称/描述包裭 t() 以便国际化 */
+  const fallbackSoulTemplates: SoulTemplate[] = useMemo(() => [
+    { id: "gentle", name: t("温柔陪伴"), description: t("温暖细腻，善于倾听与安慰") },
+    { id: "humor", name: t("幽默风趣"), description: t("轻松搞笑，让对话充满欢乐") },
+    { id: "pro", name: t("专业干练"), description: t("高效务实，直击问题核心") },
+  ], [t]);
+
   /* 拉取后端 SOUL 模板列表，失败时降级到本地回退 */
   useEffect(() => {
     let cancelled = false;
@@ -98,18 +102,18 @@ export const CreateOpenClawPage = () => {
       if (!cancelled) setRemoteSoulTemplates(fallbackSoulTemplates);
     });
     return () => { cancelled = true; };
-  }, [repositories.bots]);
+  }, [repositories.bots, fallbackSoulTemplates]);
 
   /* 构造带"默认模板"选项的完整列表 */
   const soulTemplateOptions = useMemo(() => {
     const remote = remoteSoulTemplates ?? fallbackSoulTemplates;
     return [
-      { id: "", name: "默认模板", description: "由系统自动选择最佳模板" },
+      { id: "", name: t("默认模板"), description: t("由系统自动选择最佳模板") },
       ...remote,
     ];
-  }, [remoteSoulTemplates]);
+  }, [remoteSoulTemplates, fallbackSoulTemplates, t]);
 
-  const displayName = botName.trim() || "Hermes宝宝";
+  const displayName = botName.trim() || t("Hermes宝宝");
 
   const previewIntro = intro.trim() || "";
 
@@ -121,8 +125,8 @@ export const CreateOpenClawPage = () => {
     const finalName = botName.trim();
     const finalIntro = intro.trim() || "";
 
-    const selectedSoul = soulTemplateOptions.find((t) => t.id === soulTemplate);
-    const soulLabel = selectedSoul?.name ?? "默认模板";
+    const selectedSoul = soulTemplateOptions.find((opt) => opt.id === soulTemplate);
+    const soulLabel = selectedSoul?.name ?? t("默认模板");
     const soulEmoji = soulTemplate ? (soulTemplateEmojis[soulTemplate] ?? "📝") : "🌟";
 
     /* 每次创建都走两步：先设置 → 再选套餐 */
@@ -146,12 +150,12 @@ export const CreateOpenClawPage = () => {
             <div className="mb-8 flex h-16 w-16 items-center justify-center rounded-2xl" style={{ background: "rgba(230,111,98,0.06)" }}>
               <Sparkles className="h-8 w-8" style={{ color: "var(--lw-accent)" }} />
             </div>
-            <h2 className="mb-4 text-xl font-bold" style={{ color: "#333" }}>已达创建上限</h2>
-            <p className="mb-10 whitespace-nowrap text-sm leading-relaxed" style={{ color: "#999" }}>当前 {user.plan.name} 套餐最多可创建 {user.plan.maxBots} 个 Hermes，你已达到上限。</p>
+            <h2 className="mb-4 text-xl font-bold" style={{ color: "#333" }}>{t("已达创建上限")}</h2>
+            <p className="mb-10 whitespace-nowrap text-sm leading-relaxed" style={{ color: "#999" }}>{t("当前 {{plan}} 套餐最多可创建 {{max}} 个 Hermes，你已达到上限。", { plan: user.plan.name, max: user.plan.maxBots })}</p>
             <div className="flex gap-3">
-              <Link to="/dashboard/settings" className="lw-btn-primary">管理我的智能体伙伴 <ArrowRight className="h-4 w-4" /></Link>
+              <Link to="/dashboard/settings" className="lw-btn-primary">{t("管理我的智能体伙伴")} <ArrowRight className="h-4 w-4" /></Link>
             </div>
-            <Link to="/" className="lw-back-link mt-6"><ArrowLeft className="h-3.5 w-3.5" /> 返回首页</Link>
+            <Link to="/" className="lw-back-link mt-6"><ArrowLeft className="h-3.5 w-3.5" /> {t("返回首页")}</Link>
           </motion.div>
         </main>
         <LegalFooter />
@@ -180,9 +184,9 @@ export const CreateOpenClawPage = () => {
           >
             <div className="lw-setup-pill mx-auto mb-3">
               <Sparkles className="h-3.5 w-3.5" />
-              第一步
+              {t("第一步")}
             </div>
-            <h2 style={{ fontSize: "clamp(1.375rem, 3vw, 1.75rem)" }}>创建你的 Hermes</h2>
+            <h2 style={{ fontSize: "clamp(1.375rem, 3vw, 1.75rem)" }}>{t("创建你的 Hermes")}</h2>
           </motion.div>
 
           <div className="grid grid-cols-1 gap-8 lg:grid-cols-5">
@@ -196,7 +200,7 @@ export const CreateOpenClawPage = () => {
               {/* Bot Name */}
               <motion.div custom={1} variants={fadeIn} className="mb-6">
                 <label className="lw-label mb-2 flex items-center gap-1">
-                  昵称 <span style={{ color: "#cf3d4c" }}>*</span>
+                  {t("昵称")} <span style={{ color: "#cf3d4c" }}>*</span>
                 </label>
                 <div
                   className={cn(
@@ -214,7 +218,7 @@ export const CreateOpenClawPage = () => {
                         if (nameError) setNameError(false);
                       }
                     }}
-                    placeholder="你希望怎么称呼 TA"
+                    placeholder={t("你希望怎么称呼 TA")}
                     className="flex-1 border-none bg-transparent px-4 py-3 text-sm outline-none placeholder:text-[#999]"
                     style={{ color: "var(--lw-fg)" }}
                   />
@@ -224,22 +228,22 @@ export const CreateOpenClawPage = () => {
                 </div>
                 {nameError && (
                   <div className="mt-3 text-xs font-medium" style={{ color: "var(--lw-accent)" }}>
-                    请输入昵称
+                    {t("请输入昵称")}
                   </div>
                 )}
               </motion.div>
 
               {/* SOUL Template */}
               <motion.div custom={2} variants={fadeIn} className="mb-6">
-                <label className="lw-label mb-2 block">性格设定</label>
+                <label className="lw-label mb-2 block">{t("性格设定")}</label>
                 <div className="grid grid-cols-2 gap-3">
-                  {soulTemplateOptions.map((t) => {
-                    const isActive = soulTemplate === t.id;
-                    const emoji = t.id ? (soulTemplateEmojis[t.id] ?? "📝") : "🌟";
+                  {soulTemplateOptions.map((opt) => {
+                    const isActive = soulTemplate === opt.id;
+                    const emoji = opt.id ? (soulTemplateEmojis[opt.id] ?? "📝") : "🌟";
                     return (
                       <button
-                        key={t.id}
-                        onClick={() => setSoulTemplate(t.id)}
+                        key={opt.id}
+                        onClick={() => setSoulTemplate(opt.id)}
                         className={cn(
                           "lw-setup-card flex flex-col gap-1 px-4 py-3 text-left",
                           isActive && "lw-setup-card--active",
@@ -251,10 +255,10 @@ export const CreateOpenClawPage = () => {
                       >
                         <span className="flex items-center gap-2 text-sm font-medium">
                           <span className="text-lg">{emoji}</span>
-                          <span>{t.name}</span>
+                          <span>{opt.name}</span>
                         </span>
                         <span className="text-xs" style={{ color: isActive ? "var(--lw-accent)" : "#999", opacity: 0.85 }}>
-                          {t.description}
+                          {opt.description}
                         </span>
                       </button>
                     );
@@ -264,7 +268,7 @@ export const CreateOpenClawPage = () => {
 
               {/* Intro */}
               <motion.div custom={3} variants={fadeIn} className="mb-6">
-                <label className="lw-label mb-2 block">简单介绍</label>
+                <label className="lw-label mb-2 block">{t("简单介绍")}</label>
                 <div
                   className="flex items-center overflow-hidden rounded-xl border transition-all focus-within:border-[var(--lw-accent)] focus-within:shadow-[0_0_0_3px_rgba(230,111,98,0.08)]"
                   style={{ borderColor: "rgba(238,238,238,0.5)", background: "rgba(255,255,255,0.7)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", boxShadow: "0 2px 8px rgba(0,0,0,0.02)" }}
@@ -275,7 +279,7 @@ export const CreateOpenClawPage = () => {
                     onChange={(e) => {
                       if (e.target.value.length <= MAX_INTRO_LENGTH) setIntro(e.target.value);
                     }}
-                    placeholder="一句话介绍..."
+                    placeholder={t("一句话介绍...")}
                     className="flex-1 border-none bg-transparent px-4 py-3 text-sm outline-none placeholder:text-[#999]"
                     style={{ color: "var(--lw-fg)" }}
                   />
@@ -295,7 +299,7 @@ export const CreateOpenClawPage = () => {
             >
               <div className="sticky top-24">
                 <div className="lw-label mb-2">
-                  你的 Hermes
+                  {t("你的 Hermes")}
                 </div>
                 <div className="lw-setup-card mb-6 overflow-hidden">
                   {/* Preview Header */}
@@ -329,7 +333,7 @@ export const CreateOpenClawPage = () => {
                           style={{ background: "rgba(230,111,98,0.06)", color: "var(--lw-accent)" }}
                         >
                           {soulTemplate ? (soulTemplateEmojis[soulTemplate] ?? "📝") : "🌟"}{" "}
-                          {soulTemplateOptions.find((t) => t.id === soulTemplate)?.name ?? "默认模板"}
+                          {soulTemplateOptions.find((opt) => opt.id === soulTemplate)?.name ?? t("默认模板")}
                         </motion.span>
                       </AnimatePresence>
                     </div>
@@ -346,8 +350,8 @@ export const CreateOpenClawPage = () => {
                         className="text-sm leading-relaxed"
                         style={{ color: "#555" }}
                       >
-                        从现在开始我叫<span style={{ color: "var(--lw-accent)", fontWeight: 600 }}>{displayName}</span>，
-                        SOUL 模板：<span style={{ color: "var(--lw-accent)", fontWeight: 600 }}>{soulTemplateOptions.find((t) => t.id === soulTemplate)?.name ?? "默认模板"}</span>。
+                        {t("从现在开始我叫")}<span style={{ color: "var(--lw-accent)", fontWeight: 600 }}>{displayName}</span>，
+                        {t("SOUL 模板：")}<span style={{ color: "var(--lw-accent)", fontWeight: 600 }}>{soulTemplateOptions.find((opt) => opt.id === soulTemplate)?.name ?? t("默认模板")}</span>。
                         {previewIntro && (
                           <>
                             <br />
@@ -368,7 +372,7 @@ export const CreateOpenClawPage = () => {
                 >
                   <>
                     <Settings2 className="h-4 w-4" />
-                    下一步：订阅套餐
+                    {t("下一步：订阅套餐")}
                     <ArrowRight className="h-4 w-4" />
                   </>
                 </motion.button>
@@ -376,7 +380,7 @@ export const CreateOpenClawPage = () => {
                   to="/"
                   className="lw-back-link mt-3 flex justify-center"
                 >
-                  <ArrowLeft className="h-3.5 w-3.5" /> 返回首页
+                  <ArrowLeft className="h-3.5 w-3.5" /> {t("返回首页")}
                 </Link>
               </div>
             </motion.div>

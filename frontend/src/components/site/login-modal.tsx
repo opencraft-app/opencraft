@@ -4,12 +4,114 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useRepositories } from "@/contexts/repository-context";
 import { useSession } from "@/contexts/session-context";
+import { useT } from "@/i18n/t";
 import { installShowGitHubLoginHelper, useGitHubLoginVisibility } from "@/lib/github-login-visibility";
-import { redirectToOAuthStart, type OAuthProvider } from "@/lib/oauth";
+import {
+  ALLOW_GITHUB_EASTER_EGG,
+  redirectToOAuthStart,
+  VISIBLE_OAUTH_PROVIDERS,
+  type OAuthProvider,
+} from "@/lib/oauth";
 import { assetUrl } from "@/lib/asset-url";
 
 const qqLogo = assetUrl("/login/qq-logo.png");
 const wechatLogo = assetUrl("/login/wechat-logo.png");
+
+/**
+ * OAuth 按钮在弹窗中的视觉配置
+ * - QQ / WeChat：沿用国内站原有的渐变底 + 品牌 logo 图
+ * - Google / GitHub：沿用同款圆角浅色风格，图标用 SVG 占位（后续可换官方 brand assets）
+ */
+const BUTTON_BASE_CLASS =
+  "group relative flex w-full items-center justify-center gap-2 rounded-full border px-8 py-[10px] text-sm font-medium transition-all duration-200 hover:shadow-sm active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:shadow-none";
+
+type ProviderButtonVisual = {
+  /** i18n key 原文（中文），渲染时由 useT() 转换 */
+  label: string;
+  style: React.CSSProperties;
+  renderIcon: () => React.ReactNode;
+};
+
+const PROVIDER_BUTTON_VISUALS: Record<OAuthProvider, ProviderButtonVisual> = {
+  qq: {
+    label: "QQ账号登录",
+    style: {
+      background: "linear-gradient(171deg, #F8F9FF 0%, #FFFFFF 100%)",
+      borderColor: "#E6E9EF",
+      color: "#202020",
+    },
+    renderIcon: () => (
+      <img
+        src={qqLogo}
+        alt="QQ"
+        className="h-8 w-8 select-none object-contain pointer-events-none"
+      />
+    ),
+  },
+  wechat: {
+    label: "微信账号登录",
+    style: {
+      background: "linear-gradient(172deg, #F8FFF8 0%, #FFFFFF 100%)",
+      borderColor: "#E6E9EF",
+      color: "#202020",
+    },
+    renderIcon: () => (
+      <img
+        src={wechatLogo}
+        alt="微信"
+        className="h-8 w-8 select-none object-contain pointer-events-none"
+      />
+    ),
+  },
+  google: {
+    label: "Google 登录",
+    style: {
+      background: "linear-gradient(171deg, #F8F9FF 0%, #FFFFFF 100%)",
+      borderColor: "#E6E9EF",
+      color: "#202020",
+    },
+    /* Google 官方 Google G logo（多彩）——占位用内联 SVG，资源落地后可替换为 img */
+    renderIcon: () => (
+      <svg viewBox="0 0 48 48" className="h-7 w-7 select-none pointer-events-none" aria-hidden="true">
+        <path fill="#FFC107" d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"/>
+        <path fill="#FF3D00" d="M6.306 14.691l6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 16.318 4 9.656 8.337 6.306 14.691z"/>
+        <path fill="#4CAF50" d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238C29.211 35.091 26.715 36 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"/>
+        <path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303c-0.792 2.237-2.231 4.166-4.087 5.571l6.19 5.238C37.029 36.528 44 31.333 44 24c0-1.341-.138-2.65-.389-3.917z"/>
+      </svg>
+    ),
+  },
+  github: {
+    label: "GitHub 登录",
+    style: {
+      background: "linear-gradient(171deg, #F8F9FF 0%, #FFFFFF 100%)",
+      borderColor: "#E6E9EF",
+      color: "#202020",
+    },
+    renderIcon: () => (
+      <svg
+        viewBox="0 0 24 24"
+        className="h-7 w-7 select-none pointer-events-none"
+        fill="#181717"
+        aria-hidden="true"
+      >
+        <path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.11.82-.26.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/>
+      </svg>
+    ),
+  },
+};
+
+/**
+ * i18n 注册点：PROVIDER_BUTTON_VISUALS 里的 label 是普通字符串字面量，
+ * i18n-extract 脚本只扫 t("...") 调用；这里显式写一遍让字典收录。
+ * 该变量仅用于静态分析，运行时不会被使用（tree-shake 友好）。
+ */
+const _I18N_PROVIDER_LABEL_KEYS = (t: (s: string) => string) => [
+  t("QQ账号登录"),
+  t("微信账号登录"),
+  t("Google 登录"),
+  t("GitHub 登录"),
+];
+void _I18N_PROVIDER_LABEL_KEYS;
 
 /* ─── WeChat icon (保留 inline SVG 以便其他页面复用) ─── */
 
@@ -34,6 +136,7 @@ interface LoginModalProps {
 export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: LoginModalProps) => {
   const repositories = useRepositories();
   const { session } = useSession();
+  const t = useT();
   const showGitHubLogin = useGitHubLoginVisibility();
   const oauthLoginUrls: Record<OAuthProvider, string | null> = {
     qq: repositories.auth.getOAuthStartUrl("qq"),
@@ -108,7 +211,7 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
               onClick={onClose}
               className="absolute right-3 top-3 z-10 flex h-7 w-7 items-center justify-center rounded transition-colors hover:bg-[rgba(0,0,0,0.05)]"
               style={{ color: "rgba(0,0,0,0.5)" }}
-              aria-label="关闭"
+              aria-label={t("关闭")}
             >
               <X className="h-5 w-5" />
             </button>
@@ -119,74 +222,47 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
                 className="text-[28px] font-medium leading-none"
                 style={{ color: "rgba(0,0,0,0.9)" }}
               >
-                登录
+                {t("登录")}
               </h2>
               <p
                 className="mt-4 text-sm"
                 style={{ color: "rgba(0,0,0,0.5)" }}
               >
-                使用社交软件一键登录
+                {t("使用社交软件一键登录")}
               </p>
             </div>
 
-            {/* OAuth Login buttons — 放在 radio 上方 */}
+            {/* OAuth Login buttons — 放在 radio 上方
+             *   - 国际站：Google / GitHub（由 VISIBLE_OAUTH_PROVIDERS 决定）
+             *   - 国内站：QQ / 微信；且支持通过 show_github_login() 彩蛋追加 GitHub 入口 */}
             <div className="flex w-full flex-col gap-4 px-9 pt-8">
-              {oauthLoginUrls.qq && (
-                <button
-                  type="button"
-                  onClick={() => handleOAuthLogin("qq")}
-                  disabled={!agreed}
-                  className="group relative flex w-full items-center justify-center gap-2 rounded-full border px-8 py-[10px] text-sm font-medium transition-all duration-200 hover:shadow-sm active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:shadow-none"
-                  style={{
-                    background: "linear-gradient(171deg, #F8F9FF 0%, #FFFFFF 100%)",
-                    borderColor: "#E6E9EF",
-                    color: "#202020",
-                  }}
-                >
-                  <img
-                    src={qqLogo}
-                    alt="QQ"
-                    className="h-8 w-8 select-none object-contain pointer-events-none"
-                  />
-                  <span>QQ账号登录</span>
-                </button>
-              )}
-              {oauthLoginUrls.wechat && (
-                <button
-                  type="button"
-                  onClick={() => handleOAuthLogin("wechat")}
-                  disabled={!agreed}
-                  className="group relative flex w-full items-center justify-center gap-2 rounded-full border px-8 py-[10px] text-sm font-medium transition-all duration-200 hover:shadow-sm active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:shadow-none"
-                  style={{
-                    background: "linear-gradient(172deg, #F8FFF8 0%, #FFFFFF 100%)",
-                    borderColor: "#E6E9EF",
-                    color: "#202020",
-                  }}
-                >
-                  <img
-                    src={wechatLogo}
-                    alt="微信"
-                    className="h-8 w-8 select-none object-contain pointer-events-none"
-                  />
-                  <span>微信账号登录</span>
-                </button>
-              )}
-              {showGitHubLogin && oauthLoginUrls.github ? (
-                <button
-                  type="button"
-                  onClick={() => handleOAuthLogin("github")}
-                  disabled={!agreed}
-                  className="group relative flex w-full items-center justify-center gap-2 rounded-full border px-8 py-[10px] text-sm font-medium transition-all duration-200 hover:shadow-sm active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:shadow-none"
-                  style={{
-                    background: "linear-gradient(171deg, #F8F9FF 0%, #FFFFFF 100%)",
-                    borderColor: "#E6E9EF",
-                    color: "#202020",
-                  }}
-                >
-                  <span>GitHub 登录</span>
-                </button>
-              ) : null}
-              {/* Google 登录暂不在弹窗展示，如需开启可参考 sign-in-page */}
+              {(() => {
+                const providers: OAuthProvider[] = [...VISIBLE_OAUTH_PROVIDERS];
+                if (
+                  ALLOW_GITHUB_EASTER_EGG &&
+                  showGitHubLogin &&
+                  !providers.includes("github")
+                ) {
+                  providers.push("github");
+                }
+                return providers.map((provider) => {
+                  if (!oauthLoginUrls[provider]) return null;
+                  const visual = PROVIDER_BUTTON_VISUALS[provider];
+                  return (
+                    <button
+                      key={provider}
+                      type="button"
+                      onClick={() => handleOAuthLogin(provider)}
+                      disabled={!agreed}
+                      className={BUTTON_BASE_CLASS}
+                      style={visual.style}
+                    >
+                      {visual.renderIcon()}
+                      <span>{t(visual.label)}</span>
+                    </button>
+                  );
+                });
+              })()}
             </div>
 
             {/* Agreement — 放在登录按钮下方，必须先同意 */}
@@ -216,7 +292,7 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
                   </div>
                 </div>
                 <span className="text-xs leading-relaxed text-[var(--text-tertiary)]">
-                  我已阅读并同意{" "}
+                  {t("我已阅读并同意")}{" "}
                   <a
                     href="https://cloud.tencent.com/document/product/301/48034"
                     target="_blank"
@@ -224,9 +300,9 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
                     className="font-medium hover:underline"
                     style={{ color: "var(--lw-accent)" }}
                   >
-                    《服务协议》
+                    {t("《服务协议》")}
                   </a>{" "}
-                  与{" "}
+                  {t("与")}{" "}
                   <a
                     href="https://cloud.tencent.com/document/product/301/11470"
                     target="_blank"
@@ -234,7 +310,7 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
                     className="font-medium hover:underline"
                     style={{ color: "var(--lw-accent)" }}
                   >
-                    《隐私保护协议》
+                    {t("《隐私保护协议》")}
                   </a>
                 </span>
               </label>
@@ -247,7 +323,7 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
                     exit={{ opacity: 0, y: -4 }}
                     className="mt-2 text-xs font-medium text-[var(--danger)]"
                   >
-                    请先勾选同意服务协议
+                    {t("请先勾选同意服务协议")}
                   </motion.p>
                 )}
               </AnimatePresence>
@@ -290,6 +366,7 @@ interface InviteCodeModalProps {
 export const InviteCodeModal = ({ open, onClose, onSuccess }: InviteCodeModalProps) => {
   const repositories = useRepositories();
   const { session, activateInviteCode } = useSession();
+  const t = useT();
   const [inviteCode, setInviteCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -297,7 +374,7 @@ export const InviteCodeModal = ({ open, onClose, onSuccess }: InviteCodeModalPro
   const handleSubmit = async () => {
     const code = inviteCode.trim().toUpperCase();
     if (!code) {
-      setError("请输入邀请码。");
+      setError(t("请输入邀请码。"));
       return;
     }
     setLoading(true);
@@ -310,7 +387,7 @@ export const InviteCodeModal = ({ open, onClose, onSuccess }: InviteCodeModalPro
       }
       onSuccess();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "邀请码校验失败，请稍后重试。");
+      setError(e instanceof Error ? e.message : t("邀请码校验失败，请稍后重试。"));
     } finally {
       setLoading(false);
     }
@@ -362,10 +439,10 @@ export const InviteCodeModal = ({ open, onClose, onSuccess }: InviteCodeModalPro
                 </svg>
               </div>
               <h2 className="text-lg font-bold text-[var(--text-primary)]">
-                输入邀请码
+                {t("输入邀请码")}
               </h2>
               <p className="mt-1 text-center text-sm text-[var(--text-tertiary)]">
-                创建 Hermes 需要先输入邀请码激活权限
+                {t("创建 Hermes 需要先输入邀请码激活权限")}
               </p>
             </div>
 
@@ -374,7 +451,7 @@ export const InviteCodeModal = ({ open, onClose, onSuccess }: InviteCodeModalPro
               <input
                 type="text"
                 autoComplete="one-time-code"
-                placeholder="请输入邀请码"
+                placeholder={t("请输入邀请码")}
                 value={inviteCode}
                 onChange={(e) => setInviteCode(e.target.value.trim().toUpperCase())}
                 className="w-full rounded-[1rem] border border-[var(--border-subtle)] px-4 py-3 text-center text-base tracking-widest text-[var(--text-primary)] outline-none transition-all duration-250 focus:border-[var(--lw-accent)] focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
@@ -386,7 +463,7 @@ export const InviteCodeModal = ({ open, onClose, onSuccess }: InviteCodeModalPro
                 className="h-auto w-full py-3.5 text-base"
               >
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                {loading ? "验证中..." : "确认"}
+                {loading ? t("验证中...") : t("确认")}
               </Button>
             </div>
 

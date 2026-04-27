@@ -32,8 +32,8 @@ function useIsDesktop(): boolean {
 }
 
 type NavLink = {
-  /** 中文原文作为 i18n key，便于代码阅读时搜中文直接定位 */
-  label: "概览" | "更新日志" | "产品文档";
+  /** 导航文案（中文原文），通过 t() 在渲染时翻译 */
+  label: string;
   href: string;
   comingSoon?: boolean;
 };

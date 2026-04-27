@@ -10,6 +10,7 @@ import { useState } from "react";
 import { LoginModal } from "@/components/site/login-modal";
 import { LegalFooter } from "@/components/site/legal-footer";
 import { useSession } from "@/contexts/session-context";
+import { useT } from "@/i18n/t";
 import { assetUrl } from "@/lib/asset-url";
 
 import { LandingNavbar } from "./landing/landing-navbar";
@@ -48,20 +49,12 @@ type ChangelogEntry = {
   visual: "lobster" | "none";
 };
 
-const changelogData: ChangelogEntry[] = [
-  {
-    date: "2026 年 4 月 21 日",
-    title: "LightVela 正式上线",
-    desc: "支持一键创建云端 Hermes，支持接入 QQ、微信、飞书通道",
-    visual: "lobster",
-  },
-];
-
 /* ═══════════════════════════════════════════════════════════════
    配图卡片 — 还原 Figma 设计稿中的插图卡片
    ═══════════════════════════════════════════════════════════════ */
 
 function VisualCard({ variant: _variant }: { variant: "lobster" }) {
+  const t = useT();
   /* LightVela 正式上线卡片 — 直接使用 Figma 导出的合成图 */
   return (
     <div
@@ -75,7 +68,7 @@ function VisualCard({ variant: _variant }: { variant: "lobster" }) {
     >
       <img
         src={assetUrl("/changelog/lightvela-launch.png")}
-        alt="LightVela 正式上线"
+        alt={t("LightVela 正式上线")}
         className="absolute inset-0 h-full w-full object-cover"
         loading="lazy"
       />
@@ -88,6 +81,17 @@ function VisualCard({ variant: _variant }: { variant: "lobster" }) {
    ═══════════════════════════════════════════════════════════════ */
 
 function ChangelogContent() {
+  const t = useT();
+  /* 数据驱动；每条文案直接通过翻译函数调用字面量，以便被 i18n-extract 扫描 */
+  const changelogData: ChangelogEntry[] = [
+    {
+      date: t("2026 年 4 月 21 日"),
+      title: t("LightVela 正式上线"),
+      desc: t("支持一键创建云端 Hermes，支持接入 QQ、微信、飞书通道"),
+      visual: "lobster",
+    },
+  ];
+
   return (
     <section
       style={{ backgroundColor: "var(--lw-bg)", paddingTop: "8rem", paddingBottom: "6rem" }}
@@ -110,10 +114,10 @@ function ChangelogContent() {
               fontWeight: 600,
               color: "var(--lw-fg)",
               letterSpacing: "-0.02em",
-              lineHeight: 1.33,
+            lineHeight: 1.33,
             }}
           >
-            更新日志
+            {t("更新日志")}
           </motion.h1>
           <motion.p
             variants={fadeInUp}
@@ -124,7 +128,7 @@ function ChangelogContent() {
               maxWidth: "480px",
             }}
           >
-            记录每一个版本的成长，持续迭代，只为给你更好的体验。
+            {t("记录每一个版本的成长，持续迭代，只为给你更好的体验。")}
           </motion.p>
         </motion.div>
 
