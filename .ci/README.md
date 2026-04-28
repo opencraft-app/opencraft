@@ -169,7 +169,6 @@
 - repo root 归一化
 - Node 22 自举
 - pnpm 自举
-- kubectl 自举
 - Cloudflare 本地票据读取
 
 当前推荐模式是：
@@ -184,12 +183,11 @@ ci_init_repo_root
 - `bash scripts/...`
 - 或 `cd "$REPO_ROOT/frontend"` 这类子目录操作
 
-如果当前链路还需要前端或集群工具，再补：
+如果当前链路还需要前端工具，再补：
 
 ```bash
 ci_ensure_node
 ci_ensure_pnpm
-ci_ensure_kubectl
 ```
 
 不要把这些环境依赖继续散落到每条 YAML 或 Python 脚本里分别维护；优先加到 `.ci/init.sh`，然后由流水线 source 它。

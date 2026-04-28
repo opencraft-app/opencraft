@@ -11,6 +11,8 @@ jobs:
     runs-on:
       self-hosted: true
       pool-name: env
+    env:
+      CI_RUNTIME_REF: origin/master
     steps:
       - checkout: self
         with:
@@ -21,13 +23,24 @@ jobs:
           echo "ci.event=${{ ci.event }}"
           echo "ci.branch=${{ ci.branch }}"
           source .ci/init.sh
+          ci_prepare_runtime_ref "${CI_RUNTIME_REF}"
+          CI_RUNTIME_DIR="$(mktemp -d)"
+          ci_materialize_runtime_files "${CI_RUNTIME_DIR}" \
+            ".ci/init.sh" \
+            "scripts/update_image_pin.py" \
+            "scripts/project_release_bundle.py" \
+            "scripts/release_bundle_lib.py" \
+            "scripts/gitops_merge_request.py" \
+            "scripts/verify_gitops_release.py"
+          source "${CI_RUNTIME_DIR}/.ci/init.sh"
           ci_init_repo_root
           git diff --name-only HEAD~1..HEAD || true
-          python3 scripts/update_image_pin.py --help >/dev/null
-          python3 scripts/project_release_bundle.py --help >/dev/null
-          python3 -m py_compile scripts/release_bundle_lib.py
-          python3 -m py_compile scripts/gitops_merge_request.py
-          python3 -m py_compile scripts/verify_gitops_release.py
+          python3 "${CI_RUNTIME_DIR}/scripts/update_image_pin.py" --help >/dev/null
+          python3 "${CI_RUNTIME_DIR}/scripts/project_release_bundle.py" --help >/dev/null
+          python3 -m py_compile \
+            "${CI_RUNTIME_DIR}/scripts/release_bundle_lib.py" \
+            "${CI_RUNTIME_DIR}/scripts/gitops_merge_request.py" \
+            "${CI_RUNTIME_DIR}/scripts/verify_gitops_release.py"
           echo "gitops promotion check passed"
       - name: auto-merge-beijing-promote-mr
         shell: bash
@@ -35,10 +48,16 @@ jobs:
           GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}
         run: |
           source .ci/init.sh
+          ci_prepare_runtime_ref "${CI_RUNTIME_REF}"
+          CI_RUNTIME_DIR="$(mktemp -d)"
+          ci_materialize_runtime_files "${CI_RUNTIME_DIR}" \
+            ".ci/init.sh" \
+            "scripts/gitops_merge_request.py"
+          source "${CI_RUNTIME_DIR}/.ci/init.sh"
           ci_init_repo_root
           case "${{ ci.branch }}" in
             promote-beijing-sandbox-*)
-              python3 scripts/gitops_merge_request.py \
+              python3 "${CI_RUNTIME_DIR}/scripts/gitops_merge_request.py" \
                 --source-branch "${{ ci.branch }}" \
                 --target-branch gitops \
                 --title "Auto-merge existing Beijing GitOps MR" \
@@ -56,12 +75,16 @@ jobs:
           GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}
         run: |
           source .ci/init.sh
+          ci_prepare_runtime_ref "${CI_RUNTIME_REF}"
+          CI_RUNTIME_DIR="$(mktemp -d)"
+          ci_materialize_runtime_files "${CI_RUNTIME_DIR}" \
+            ".ci/init.sh" \
+            "scripts/verify_gitops_release.py"
+          source "${CI_RUNTIME_DIR}/.ci/init.sh"
           ci_init_repo_root
-          ci_ensure_kubectl
           case "${{ ci.branch }}" in
             promote-beijing-sandbox-*)
-              export KUBECTL_BIN
-              python3 scripts/verify_gitops_release.py \
+              python3 "${CI_RUNTIME_DIR}/scripts/verify_gitops_release.py" \
                 --repo-root "$REPO_ROOT" \
                 --source-branch "${{ ci.branch }}" \
                 --target-branch gitops
@@ -76,10 +99,16 @@ jobs:
           GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}
         run: |
           source .ci/init.sh
+          ci_prepare_runtime_ref "${CI_RUNTIME_REF}"
+          CI_RUNTIME_DIR="$(mktemp -d)"
+          ci_materialize_runtime_files "${CI_RUNTIME_DIR}" \
+            ".ci/init.sh" \
+            "scripts/gitops_cleanup_source_branch.py"
+          source "${CI_RUNTIME_DIR}/.ci/init.sh"
           ci_init_repo_root
           case "${{ ci.branch }}" in
             promote-beijing-sandbox-*)
-              python3 scripts/gitops_cleanup_source_branch.py \
+              python3 "${CI_RUNTIME_DIR}/scripts/gitops_cleanup_source_branch.py" \
                 --source-branch "${{ ci.branch }}" \
                 --target-branch gitops \
                 --wait-seconds 120 \

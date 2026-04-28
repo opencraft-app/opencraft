@@ -3,6 +3,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+source "${REPO_ROOT}/.ci/init.sh"
 REMOTE_NAME="${REMOTE_NAME:-origin}"
 REMOTE_URL="${REMOTE_URL:-}"
 GITOPS_BRANCH="${GITOPS_BRANCH:-gitops}"
@@ -12,17 +13,8 @@ COMMITTER_EMAIL="${COMMITTER_EMAIL:-skipzhang@tencent.com}"
 GITOPS_PROJECT_ID="${GITOPS_PROJECT_ID:-1731878}"
 GITOPS_REPO_PATH="${GITOPS_REPO_PATH:-wisp/mono2}"
 GIT_WOA_API_BASE="${GIT_WOA_API_BASE:-https://git.woa.com/api/v3}"
-GIT_WOA_PRIVATE_TOKEN_FILE="${GIT_WOA_PRIVATE_TOKEN_FILE:-/etc/lightclaw-ci/git_woa_private_token}"
 GITOPS_AUTO_MERGE_ENVS="${GITOPS_AUTO_MERGE_ENVS:-beijing-sandbox}"
 BOOTSTRAP_FILES=(
-  ".ci/init.sh"
-  "scripts/update_image_pin.py"
-  "scripts/release_bundle_lib.py"
-  "scripts/project_release_bundle.py"
-  "scripts/gitops_merge_request.py"
-  "scripts/gitops_merge_request_note.py"
-  "scripts/gitops_cleanup_source_branch.py"
-  "scripts/verify_gitops_release.py"
   ".ci/gitops-promotion.yml"
 )
 
@@ -37,30 +29,7 @@ ENV_NAME="$3"
 IMAGE="$4"
 SOURCE_REF="$5"
 
-for cmd in git python3; do
-  if ! command -v "$cmd" >/dev/null 2>&1; then
-    echo "missing required tool: $cmd" >&2
-    exit 1
-  fi
-done
-
-read_secret_value() {
-  python3 -c 'import sys; print(sys.stdin.read().strip())'
-}
-
-load_git_woa_private_token() {
-  if [[ -r "$GIT_WOA_PRIVATE_TOKEN_FILE" ]]; then
-    read_secret_value < "$GIT_WOA_PRIVATE_TOKEN_FILE"
-    return 0
-  fi
-
-  if [[ -n "${GIT_WOA_PRIVATE_TOKEN:-}" ]]; then
-    printf '%s' "$GIT_WOA_PRIVATE_TOKEN" | read_secret_value
-    return 0
-  fi
-
-  return 1
-}
+ci_require_commands git python3
 
 sanitize_branch_component() {
   printf '%s' "$1" | tr ',:/' '-' | tr -cs '[:alnum:]._-' '-'
@@ -80,8 +49,8 @@ if ! git -C "$REPO_ROOT" diff --quiet || ! git -C "$REPO_ROOT" diff --cached --q
   exit 1
 fi
 
-if ! GIT_WOA_PRIVATE_TOKEN_VALUE="$(load_git_woa_private_token)"; then
-  echo "missing Git WOA private token; set GIT_WOA_PRIVATE_TOKEN or provide $GIT_WOA_PRIVATE_TOKEN_FILE" >&2
+if ! GIT_WOA_PRIVATE_TOKEN_VALUE="$(ci_load_git_woa_private_token)"; then
+  echo "missing Git WOA private token; set GIT_WOA_PRIVATE_TOKEN or provide ${GIT_WOA_PRIVATE_TOKEN_FILE:-/etc/lightclaw-ci/git_woa_private_token}" >&2
   exit 1
 fi
 
