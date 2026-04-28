@@ -81,6 +81,21 @@ class SandboxCatalogTests(unittest.TestCase):
             self.assertIn("sourcePath: argocd/services/", content, msg=str(catalog_file))
             self.assertNotIn("\npath: argocd/services/", content, msg=str(catalog_file))
 
+    def test_beijing_service_common_is_component(self) -> None:
+        service_root = REPO_ROOT / "argocd" / "services"
+        common_files = sorted(service_root.glob("*/common/kustomization.yaml"))
+        self.assertGreaterEqual(len(common_files), 1)
+        for common_file in common_files:
+            content = common_file.read_text()
+            self.assertIn("kind: Component", content, msg=str(common_file))
+
+        beijing_files = sorted(service_root.glob("*/beijing-sandbox*/kustomization.yaml"))
+        self.assertGreaterEqual(len(beijing_files), 1)
+        for beijing_file in beijing_files:
+            content = beijing_file.read_text()
+            self.assertIn("- ../common", content, msg=str(beijing_file))
+            self.assertNotIn("resources:\n- ../common", content, msg=str(beijing_file))
+
 
 class ProjectReleaseBundleTests(unittest.TestCase):
     def test_projection_syncs_publish_subset_and_deletes_stale_files(self) -> None:
