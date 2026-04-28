@@ -288,7 +288,7 @@ def parse_args() -> argparse.Namespace:
         "--bundle-manifest",
         type=Path,
         default=None,
-        help="Release bundle manifest. Defaults to <repo-root>/scripts/release-bundles.yaml.",
+        help="Release bundle manifest. Defaults to <repo-root>/.ci/runtime/release-bundles.yaml.",
     )
     return parser.parse_args()
 
@@ -296,7 +296,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     repo_root = args.repo_root.resolve()
-    bundle_manifest = (args.bundle_manifest or repo_root / "scripts/release-bundles.yaml").resolve()
+    bundle_manifest = (args.bundle_manifest or repo_root / ".ci/runtime/release-bundles.yaml").resolve()
     errors = validate(repo_root, args.env, bundle_manifest)
     if errors:
         for error in errors:

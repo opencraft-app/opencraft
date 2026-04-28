@@ -12,7 +12,7 @@ from release_bundle_lib import load_bundle, load_manifest, require_build_metadat
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Resolve a release bundle from scripts/release-bundles.yaml")
+    parser = argparse.ArgumentParser(description="Resolve a release bundle from .ci/runtime/release-bundles.yaml")
     parser.add_argument("--service", required=True, help="Bundle id, e.g. ai-gateway")
     parser.add_argument("--env", required=True, help="Target env, e.g. beijing-sandbox or shprod")
     parser.add_argument("--tag", required=True, help="Image tag to resolve")
@@ -61,7 +61,7 @@ def main() -> int:
     if args.format == "json":
         print(json.dumps(result, indent=2, sort_keys=True))
     else:
-        print(emit_dotenv(metadata, args.tag), end="")
+        print(emit_dotenv(result, args.tag), end="")
     return 0
 
 

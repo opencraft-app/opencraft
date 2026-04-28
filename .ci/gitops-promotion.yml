@@ -33,40 +33,40 @@ stages:
               export CI_RUNTIME_COMMIT
               CI_RUNTIME_COMMIT="$(git rev-parse "${CI_RUNTIME_REF}")"
               CI_RUNTIME_DIR="$(mktemp -d)"
-              mkdir -p "${CI_RUNTIME_DIR}/.ci" "${CI_RUNTIME_DIR}/scripts"
+              mkdir -p "${CI_RUNTIME_DIR}/.ci" "${CI_RUNTIME_DIR}/.ci/runtime"
               git show "${CI_RUNTIME_COMMIT}:.ci/init.sh" > "${CI_RUNTIME_DIR}/.ci/init.sh"
               source "${CI_RUNTIME_DIR}/.ci/init.sh"
               ci_materialize_runtime_files "${CI_RUNTIME_DIR}" \
                 ".ci/init.sh" \
-                "scripts/release-bundles.yaml" \
-                "scripts/update_image_pin.py" \
-                "scripts/project_release_bundle.py" \
-                "scripts/release_bundle_lib.py" \
-                "scripts/gitops_merge_request.py" \
-                "scripts/verify_gitops_release.py" \
-                "scripts/validate_gitops_static.py" \
-                "scripts/validate_gitops_kustomize.py"
+                ".ci/runtime/release-bundles.yaml" \
+                ".ci/runtime/update_image_pin.py" \
+                ".ci/runtime/project_release_bundle.py" \
+                ".ci/runtime/release_bundle_lib.py" \
+                ".ci/runtime/gitops_merge_request.py" \
+                ".ci/runtime/verify_gitops_release.py" \
+                ".ci/runtime/validate_gitops_static.py" \
+                ".ci/runtime/validate_gitops_kustomize.py"
               ci_init_repo_root
               git diff --name-only HEAD~1..HEAD || true
-              python3 "${CI_RUNTIME_DIR}/scripts/update_image_pin.py" --help >/dev/null
-              python3 "${CI_RUNTIME_DIR}/scripts/project_release_bundle.py" --help >/dev/null
-              python3 "${CI_RUNTIME_DIR}/scripts/validate_gitops_static.py" --help >/dev/null
-              python3 "${CI_RUNTIME_DIR}/scripts/validate_gitops_kustomize.py" --help >/dev/null
+              python3 "${CI_RUNTIME_DIR}/.ci/runtime/update_image_pin.py" --help >/dev/null
+              python3 "${CI_RUNTIME_DIR}/.ci/runtime/project_release_bundle.py" --help >/dev/null
+              python3 "${CI_RUNTIME_DIR}/.ci/runtime/validate_gitops_static.py" --help >/dev/null
+              python3 "${CI_RUNTIME_DIR}/.ci/runtime/validate_gitops_kustomize.py" --help >/dev/null
               python3 -m py_compile \
-                "${CI_RUNTIME_DIR}/scripts/release_bundle_lib.py" \
-                "${CI_RUNTIME_DIR}/scripts/gitops_merge_request.py" \
-                "${CI_RUNTIME_DIR}/scripts/verify_gitops_release.py" \
-                "${CI_RUNTIME_DIR}/scripts/validate_gitops_static.py" \
-                "${CI_RUNTIME_DIR}/scripts/validate_gitops_kustomize.py"
+                "${CI_RUNTIME_DIR}/.ci/runtime/release_bundle_lib.py" \
+                "${CI_RUNTIME_DIR}/.ci/runtime/gitops_merge_request.py" \
+                "${CI_RUNTIME_DIR}/.ci/runtime/verify_gitops_release.py" \
+                "${CI_RUNTIME_DIR}/.ci/runtime/validate_gitops_static.py" \
+                "${CI_RUNTIME_DIR}/.ci/runtime/validate_gitops_kustomize.py"
               case "${{ ci.branch }}" in
                 promote-beijing-sandbox-*)
                   ci_require_gitops_validation_tools
                   ci_prepare_sops_age_key
-                  python3 "${CI_RUNTIME_DIR}/scripts/validate_gitops_static.py" \
+                  python3 "${CI_RUNTIME_DIR}/.ci/runtime/validate_gitops_static.py" \
                     --repo-root "$REPO_ROOT" \
                     --env beijing-sandbox \
-                    --bundle-manifest "${CI_RUNTIME_DIR}/scripts/release-bundles.yaml"
-                  python3 "${CI_RUNTIME_DIR}/scripts/validate_gitops_kustomize.py" \
+                    --bundle-manifest "${CI_RUNTIME_DIR}/.ci/runtime/release-bundles.yaml"
+                  python3 "${CI_RUNTIME_DIR}/.ci/runtime/validate_gitops_kustomize.py" \
                     --repo-root "$REPO_ROOT" \
                     --env beijing-sandbox
                   ;;
@@ -98,16 +98,16 @@ stages:
               export CI_RUNTIME_COMMIT
               CI_RUNTIME_COMMIT="$(git rev-parse "${CI_RUNTIME_REF}")"
               CI_RUNTIME_DIR="$(mktemp -d)"
-              mkdir -p "${CI_RUNTIME_DIR}/.ci" "${CI_RUNTIME_DIR}/scripts"
+              mkdir -p "${CI_RUNTIME_DIR}/.ci" "${CI_RUNTIME_DIR}/.ci/runtime"
               git show "${CI_RUNTIME_COMMIT}:.ci/init.sh" > "${CI_RUNTIME_DIR}/.ci/init.sh"
               source "${CI_RUNTIME_DIR}/.ci/init.sh"
               ci_materialize_runtime_files "${CI_RUNTIME_DIR}" \
                 ".ci/init.sh" \
-                "scripts/gitops_merge_request.py"
+                ".ci/runtime/gitops_merge_request.py"
               ci_init_repo_root
               case "${{ ci.branch }}" in
                 promote-beijing-sandbox-*)
-                  python3 "${CI_RUNTIME_DIR}/scripts/gitops_merge_request.py" \
+                  python3 "${CI_RUNTIME_DIR}/.ci/runtime/gitops_merge_request.py" \
                     --source-branch "${{ ci.branch }}" \
                     --target-branch gitops \
                     --title "Auto-merge existing Beijing GitOps MR" \
@@ -142,16 +142,16 @@ stages:
               export CI_RUNTIME_COMMIT
               CI_RUNTIME_COMMIT="$(git rev-parse "${CI_RUNTIME_REF}")"
               CI_RUNTIME_DIR="$(mktemp -d)"
-              mkdir -p "${CI_RUNTIME_DIR}/.ci" "${CI_RUNTIME_DIR}/scripts"
+              mkdir -p "${CI_RUNTIME_DIR}/.ci" "${CI_RUNTIME_DIR}/.ci/runtime"
               git show "${CI_RUNTIME_COMMIT}:.ci/init.sh" > "${CI_RUNTIME_DIR}/.ci/init.sh"
               source "${CI_RUNTIME_DIR}/.ci/init.sh"
               ci_materialize_runtime_files "${CI_RUNTIME_DIR}" \
                 ".ci/init.sh" \
-                "scripts/verify_gitops_release.py"
+                ".ci/runtime/verify_gitops_release.py"
               ci_init_repo_root
               case "${{ ci.branch }}" in
                 promote-beijing-sandbox-*)
-                  python3 "${CI_RUNTIME_DIR}/scripts/verify_gitops_release.py" \
+                  python3 "${CI_RUNTIME_DIR}/.ci/runtime/verify_gitops_release.py" \
                     --repo-root "$REPO_ROOT" \
                     --source-branch "${{ ci.branch }}" \
                     --target-branch gitops
@@ -183,16 +183,16 @@ stages:
               export CI_RUNTIME_COMMIT
               CI_RUNTIME_COMMIT="$(git rev-parse "${CI_RUNTIME_REF}")"
               CI_RUNTIME_DIR="$(mktemp -d)"
-              mkdir -p "${CI_RUNTIME_DIR}/.ci" "${CI_RUNTIME_DIR}/scripts"
+              mkdir -p "${CI_RUNTIME_DIR}/.ci" "${CI_RUNTIME_DIR}/.ci/runtime"
               git show "${CI_RUNTIME_COMMIT}:.ci/init.sh" > "${CI_RUNTIME_DIR}/.ci/init.sh"
               source "${CI_RUNTIME_DIR}/.ci/init.sh"
               ci_materialize_runtime_files "${CI_RUNTIME_DIR}" \
                 ".ci/init.sh" \
-                "scripts/gitops_cleanup_source_branch.py"
+                ".ci/runtime/gitops_cleanup_source_branch.py"
               ci_init_repo_root
               case "${{ ci.branch }}" in
                 promote-beijing-sandbox-*)
-                  python3 "${CI_RUNTIME_DIR}/scripts/gitops_cleanup_source_branch.py" \
+                  python3 "${CI_RUNTIME_DIR}/.ci/runtime/gitops_cleanup_source_branch.py" \
                     --source-branch "${{ ci.branch }}" \
                     --target-branch gitops \
                     --wait-seconds 120 \

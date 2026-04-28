@@ -81,7 +81,7 @@ def sync_publish_subset(repo_root: str, source_ref: str, target_ref: str, patter
 
 def main() -> int:
     args = parse_args()
-    manifest_text = git_output(args.repo_root, "show", f"{args.source_ref}:scripts/release-bundles.yaml")
+    manifest_text = git_output(args.repo_root, "show", f"{args.source_ref}:.ci/runtime/release-bundles.yaml")
     manifest = parse_manifest_text(manifest_text)
     try:
         bundle = load_bundle(manifest, args.service, args.env)

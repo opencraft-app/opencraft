@@ -144,7 +144,7 @@ CLOUDFLARE_PAGES_PROJECT_NAME=lightclaw pnpm deploy:cf
 最常见的正式发版动作示例：
 
 ```bash
-python3 scripts/build-release-image.py --service sandbox --env shprod --tag <tag>
+python3 .ci/runtime/build-release-image.py --service sandbox --env shprod --tag <tag>
 # 更新 argocd/services/sandbox/shprod/sandbox-platform.env
 git add argocd/services/sandbox/shprod/sandbox-platform.env
 git commit -m "<lore message>"
@@ -348,7 +348,7 @@ cd /Users/skipzhang/code/mono/infra_pulumi
 GOWORK=off go run ./cmd/infractl up --stack <env>
 
 cd /Users/skipzhang/code/mono
-python3 scripts/build-release-image.py --service <service> --env <env> --tag <tag>
+python3 .ci/runtime/build-release-image.py --service <service> --env <env> --tag <tag>
 # 更新 argocd/services/<service>/<env>/*
 git add <scoped paths>
 git commit -m "<lore message>"

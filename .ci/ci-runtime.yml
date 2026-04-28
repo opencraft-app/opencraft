@@ -6,10 +6,8 @@ on:
     branches: [ master ]
     paths:
       - .ci/**
-      - scripts/*.py
-      - scripts/*.sh
-      - scripts/release-bundles.yaml
-      - scripts/tests/**
+      - .ci/runtime/**
+      - .ci/runtime/tests/**
   manual: enabled
 
 jobs:
@@ -30,25 +28,25 @@ jobs:
 
           bash -n \
             .ci/init.sh \
-            scripts/build_and_promote_to_gitops.sh \
-            scripts/pin_image_to_gitops.sh \
-            scripts/promote_bundle_image_to_gitops.sh
+            .ci/runtime/build_and_promote_to_gitops.sh \
+            .ci/runtime/pin_image_to_gitops.sh \
+            .ci/runtime/promote_bundle_image_to_gitops.sh
 
           PY_COMPILE_TARGETS=(
-            scripts/build-release-image.py
-            scripts/gitops_cleanup_source_branch.py
-            scripts/gitops_merge_request.py
-            scripts/project_release_bundle.py
-            scripts/release_bundle_lib.py
-            scripts/resolve_release_bundle.py
-            scripts/update_image_pin.py
-            scripts/verify_gitops_release.py
-            scripts/audit_gitops_drift.py
+            .ci/runtime/build-release-image.py
+            .ci/runtime/gitops_cleanup_source_branch.py
+            .ci/runtime/gitops_merge_request.py
+            .ci/runtime/project_release_bundle.py
+            .ci/runtime/release_bundle_lib.py
+            .ci/runtime/resolve_release_bundle.py
+            .ci/runtime/update_image_pin.py
+            .ci/runtime/verify_gitops_release.py
+            .ci/runtime/audit_gitops_drift.py
           )
 
           for optional_target in \
-            scripts/validate_gitops_static.py \
-            scripts/validate_gitops_kustomize.py
+            .ci/runtime/validate_gitops_static.py \
+            .ci/runtime/validate_gitops_kustomize.py
           do
             if [[ -f "$optional_target" ]]; then
               PY_COMPILE_TARGETS+=("$optional_target")
@@ -56,21 +54,4 @@ jobs:
           done
 
           python3 -m py_compile "${PY_COMPILE_TARGETS[@]}"
-          TEST_TARGETS=(
-            scripts.tests.test_gitops_publish_projection \
-            scripts.tests.test_gitops_release_verifier \
-            scripts.tests.test_gitops_drift_audit
-          )
-
-          for optional_test in \
-            scripts/tests/test_gitops_static_validation.py \
-            scripts/tests/test_gitops_kustomize_validation.py
-          do
-            if [[ -f "$optional_test" ]]; then
-              module_name="${optional_test%.py}"
-              module_name="${module_name//\//.}"
-              TEST_TARGETS+=("$module_name")
-            fi
-          done
-
-          python3 -m unittest "${TEST_TARGETS[@]}"
+          python3 -m unittest discover -s .ci/runtime/tests

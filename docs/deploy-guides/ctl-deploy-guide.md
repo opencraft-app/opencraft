@@ -17,7 +17,7 @@
 统一走：
 
 ```bash
-python3 scripts/build-release-image.py --service ctl --env <env> --tag <tag>
+python3 .ci/runtime/build-release-image.py --service ctl --env <env> --tag <tag>
 ```
 
 ## 正式 deploy-facing 真源

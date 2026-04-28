@@ -73,12 +73,12 @@ flowchart TD
 默认统一入口：
 
 ```bash
-python3 scripts/build-release-image.py --service <service> --env <env> --tag <tag>
+python3 .ci/runtime/build-release-image.py --service <service> --env <env> --tag <tag>
 ```
 
 release bundle 清单：
 
-- [scripts/release-bundles.yaml](../../scripts/release-bundles.yaml)
+- [.ci/runtime/release-bundles.yaml](../../.ci/runtime/release-bundles.yaml)
 
 当前显式例外：
 

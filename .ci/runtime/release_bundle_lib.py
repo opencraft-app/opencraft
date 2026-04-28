@@ -12,7 +12,7 @@ from typing import Any
 import yaml
 
 
-DEFAULT_MANIFEST_PATH = Path("scripts/release-bundles.yaml")
+DEFAULT_MANIFEST_PATH = Path(".ci/runtime/release-bundles.yaml")
 
 
 @dataclass(frozen=True)

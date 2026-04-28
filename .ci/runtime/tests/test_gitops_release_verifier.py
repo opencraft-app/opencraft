@@ -2,8 +2,13 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+import sys
 
-from scripts.verify_gitops_release import (
+RUNTIME_DIR = Path(__file__).resolve().parents[1]
+if str(RUNTIME_DIR) not in sys.path:
+    sys.path.insert(0, str(RUNTIME_DIR))
+
+from verify_gitops_release import (
     ReleaseTarget,
     changed_files_from_recent_commits,
     expected_images_for_target,
@@ -16,7 +21,7 @@ class GitopsReleaseVerifierTests(unittest.TestCase):
     def test_infer_release_targets_from_promote_commit_paths(self) -> None:
         targets = infer_release_targets(
             [
-                "scripts/gitops_merge_request.py",
+                ".ci/runtime/gitops_merge_request.py",
                 "argocd/services/ctl/beijing-sandbox/ctl-platform.env",
                 "argocd/services/ctl/beijing-sandbox/kustomization.yaml",
                 "argocd/services/ctl/common/kustomization.yaml",

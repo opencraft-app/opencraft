@@ -40,8 +40,8 @@
 
 - `targetRevision` 从 `master` 切到 `gitops` 后，北京/上海 live app 仍然 `Synced / Healthy`
 - `env` 自有构建池上的 Linux 机器可以通过 SSH 免密 push `mono2`
-- `scripts/pin_image_to_gitops.sh` / `scripts/promote_bundle_image_to_gitops.sh` 能承载 GitOps 发布子集投影和 image pin 写回
-- `scripts/gitops_merge_request.py` 负责创建 / 复用 MR，并在北京环境轮询后自动合并
+- `.ci/runtime/pin_image_to_gitops.sh` / `.ci/runtime/promote_bundle_image_to_gitops.sh` 能承载 GitOps 发布子集投影和 image pin 写回
+- `.ci/runtime/gitops_merge_request.py` 负责创建 / 复用 MR，并在北京环境轮询后自动合并
 - service 级 YAML 可以继续使用蓝盾 v2.0 的 `jobs.runs-on + steps` 结构
 
 ## Successful Experience
@@ -151,8 +151,8 @@
 当前稳定方案是：
 
 - CI 直接用 `run` step
-- 调 `scripts/build_and_promote_to_gitops.sh`
-- 底层走 `scripts/build-release-image.py --push`
+- 调 `.ci/runtime/build_and_promote_to_gitops.sh`
+- 底层走 `.ci/runtime/build-release-image.py --push`
 - shell 优先从构建机本地文件读取 TCR token，不存在时再回落到 Stream settings
 - `docker login` 在 shell 里显式执行
 
@@ -180,7 +180,7 @@ ci_init_repo_root
 
 再继续：
 
-- `bash scripts/...`
+- `bash .ci/runtime/...`
 - 或 `cd "$REPO_ROOT/frontend"` 这类子目录操作
 
 如果当前链路还需要前端工具，再补：
@@ -306,21 +306,21 @@ ci_ensure_pnpm
 
 ## Shared Scripts
 
-- `scripts/update_image_pin.py`
+- `.ci/runtime/update_image_pin.py`
   - 只更新 `argocd/services/<service>/<env>/*-platform.env`
-- `scripts/release_bundle_lib.py`
+- `.ci/runtime/release_bundle_lib.py`
   - 解析 release bundle 元数据和模式化 `publish_paths`
-- `scripts/project_release_bundle.py`
+- `.ci/runtime/project_release_bundle.py`
   - 把 bundle 在 `master@SHA` 上的发布子集投影到 `gitops` promote 分支
-- `scripts/pin_image_to_gitops.sh`
+- `.ci/runtime/pin_image_to_gitops.sh`
   - 先把发布子集投影到 promote 分支，再更新镜像 pin，并创建 / 复用进入 `gitops` 的 MR
-- `scripts/gitops_merge_request.py`
+- `.ci/runtime/gitops_merge_request.py`
   - 创建 / 复用 GitOps MR
   - 北京环境等待 commit check 成功后自动合并
-- `scripts/gitops_cleanup_source_branch.py`
+- `.ci/runtime/gitops_cleanup_source_branch.py`
   - 在 `promote-*` 分支自己的检查流水线结束后轮询 merged MR
   - 北京 auto-merge 成功后再显式删除 `promote-*` 源分支
-- `scripts/promote_bundle_image_to_gitops.sh`
+- `.ci/runtime/promote_bundle_image_to_gitops.sh`
   - 按 `bundle service + env + source sha` 解析镜像并 promote 到 `gitops`
 
 ## Current Gaps

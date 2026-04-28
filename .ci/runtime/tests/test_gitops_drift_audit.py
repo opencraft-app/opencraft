@@ -3,9 +3,15 @@ import os
 import unittest
 from contextlib import contextmanager
 from io import BytesIO
+from pathlib import Path
+import sys
 from typing import Any
 
-from scripts.audit_gitops_drift import (
+RUNTIME_DIR = Path(__file__).resolve().parents[1]
+if str(RUNTIME_DIR) not in sys.path:
+    sys.path.insert(0, str(RUNTIME_DIR))
+
+from audit_gitops_drift import (
     Drift,
     ExpectedApp,
     build_alert_content,

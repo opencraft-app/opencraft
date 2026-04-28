@@ -5,8 +5,13 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
+import sys
 
-from scripts.validate_gitops_kustomize import find_placeholders, main as kustomize_main
+RUNTIME_DIR = Path(__file__).resolve().parents[1]
+if str(RUNTIME_DIR) not in sys.path:
+    sys.path.insert(0, str(RUNTIME_DIR))
+
+from validate_gitops_kustomize import find_placeholders, main as kustomize_main
 
 
 class GitOpsKustomizeValidationTests(unittest.TestCase):

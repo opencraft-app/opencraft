@@ -15,7 +15,7 @@
 ## 构建入口
 
 ```bash
-python3 scripts/build-release-image.py --service ai-gateway --env <env> --tag <tag>
+python3 .ci/runtime/build-release-image.py --service ai-gateway --env <env> --tag <tag>
 ```
 
 ## DB 操作面

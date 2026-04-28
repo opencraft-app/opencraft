@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 source "${REPO_ROOT}/.ci/init.sh"
 REMOTE_NAME="${REMOTE_NAME:-origin}"
 REMOTE_URL="${REMOTE_URL:-}"
@@ -94,7 +94,7 @@ for bootstrap_file in "${BOOTSTRAP_FILES[@]}"; do
   git -C "$REPO_ROOT" add "$bootstrap_file"
 done
 
-python3 "$REPO_ROOT/scripts/project_release_bundle.py" \
+python3 "$REPO_ROOT/.ci/runtime/project_release_bundle.py" \
   --repo-root "$REPO_ROOT" \
   --service "$BUNDLE_SERVICE" \
   --env "$ENV_NAME" \
@@ -103,7 +103,7 @@ python3 "$REPO_ROOT/scripts/project_release_bundle.py" \
 IFS=',' read -r -a SERVICES <<<"$SERVICE_ARG"
 
 for SERVICE in "${SERVICES[@]}"; do
-  python3 "$REPO_ROOT/scripts/update_image_pin.py" \
+  python3 "$REPO_ROOT/.ci/runtime/update_image_pin.py" \
     --repo-root "$REPO_ROOT" \
     --service "$SERVICE" \
     --env "$ENV_NAME" \
@@ -150,7 +150,7 @@ MR_ARGS=(
 )
 
 mr_output="$(
-  python3 "$REPO_ROOT/scripts/gitops_merge_request.py" "${MR_ARGS[@]}"
+  python3 "$REPO_ROOT/.ci/runtime/gitops_merge_request.py" "${MR_ARGS[@]}"
 )"
 printf '%s\n' "$mr_output"
 eval "$mr_output"
@@ -167,7 +167,7 @@ if [[ -n "${MR_ID:-}" ]]; then
 - 下一阶段：等待 GitOps MR 合并
 EOF
 )"
-  python3 "$REPO_ROOT/scripts/gitops_merge_request_note.py" \
+  python3 "$REPO_ROOT/.ci/runtime/gitops_merge_request_note.py" \
     --api-base "$GIT_WOA_API_BASE" \
     --project-id "$GITOPS_PROJECT_ID" \
     --private-token "$GIT_WOA_PRIVATE_TOKEN_VALUE" \

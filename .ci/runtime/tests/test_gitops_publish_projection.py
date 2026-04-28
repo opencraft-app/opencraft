@@ -7,8 +7,8 @@ import unittest
 from pathlib import Path
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-SCRIPTS_DIR = REPO_ROOT / "scripts"
+REPO_ROOT = Path(__file__).resolve().parents[3]
+RUNTIME_DIR = REPO_ROOT / ".ci" / "runtime"
 
 
 class ResolveReleaseBundleTests(unittest.TestCase):
@@ -16,7 +16,7 @@ class ResolveReleaseBundleTests(unittest.TestCase):
         result = subprocess.run(
             [
                 "python3",
-                str(SCRIPTS_DIR / "resolve_release_bundle.py"),
+                str(RUNTIME_DIR / "resolve_release_bundle.py"),
                 "--service",
                 "user-auth",
                 "--env",
@@ -46,7 +46,7 @@ class ResolveReleaseBundleTests(unittest.TestCase):
         result = subprocess.run(
             [
                 "python3",
-                str(SCRIPTS_DIR / "resolve_release_bundle.py"),
+                str(RUNTIME_DIR / "resolve_release_bundle.py"),
                 "--service",
                 "user-auth",
                 "--env",
@@ -105,8 +105,8 @@ class ProjectReleaseBundleTests(unittest.TestCase):
             self._git(repo, "config", "user.email", "ci@example.com")
             self._git(repo, "config", "user.name", "CI")
 
-            (repo / "scripts").mkdir()
-            (repo / "scripts" / "release-bundles.yaml").write_text(
+            (repo / ".ci" / "runtime").mkdir(parents=True)
+            (repo / ".ci" / "runtime" / "release-bundles.yaml").write_text(
                 textwrap.dedent(
                     """\
                     bundles:
@@ -162,7 +162,7 @@ class ProjectReleaseBundleTests(unittest.TestCase):
             result = subprocess.run(
                 [
                     "python3",
-                    str(SCRIPTS_DIR / "project_release_bundle.py"),
+                    str(RUNTIME_DIR / "project_release_bundle.py"),
                     "--repo-root",
                     str(repo),
                     "--service",

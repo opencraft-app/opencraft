@@ -152,7 +152,7 @@ ci_materialize_runtime_files() {
     return 1
   fi
 
-  mkdir -p "${runtime_dir}/.ci" "${runtime_dir}/scripts"
+  mkdir -p "${runtime_dir}/.ci" "${runtime_dir}/.ci/runtime"
 
   local repo_path
   for repo_path in "$@"; do

@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 source "${REPO_ROOT}/.ci/init.sh"
 DEPLOYED_AT="${DEPLOYED_AT:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
 
@@ -29,7 +29,7 @@ declare -A BUILT_IMAGES=()
 for ENV_NAME in "${ENVS[@]}"; do
   ci_set_registry_credentials "$ENV_NAME"
   image_output_file="$(mktemp)"
-  python3 "$REPO_ROOT/scripts/build-release-image.py" \
+  python3 "$REPO_ROOT/.ci/runtime/build-release-image.py" \
     --service "$BUNDLE_SERVICE" \
     --env "$ENV_NAME" \
     --tag "$TAG" \
@@ -51,4 +51,4 @@ if [[ -z "$AUTO_IMAGE" ]]; then
   exit 1
 fi
 
-DEPLOYED_AT="$DEPLOYED_AT" bash "$REPO_ROOT/scripts/pin_image_to_gitops.sh" "$BUNDLE_SERVICE" "$PIN_TARGETS" "$AUTO_PIN_ENV" "$AUTO_IMAGE" "$SOURCE_REF"
+DEPLOYED_AT="$DEPLOYED_AT" bash "$REPO_ROOT/.ci/runtime/pin_image_to_gitops.sh" "$BUNDLE_SERVICE" "$PIN_TARGETS" "$AUTO_PIN_ENV" "$AUTO_IMAGE" "$SOURCE_REF"

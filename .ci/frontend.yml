@@ -34,67 +34,70 @@ variables:
     readonly: false
     allow-modify-at-startup: true
 
-jobs:
-  release:
-    runs-on:
-      self-hosted: true
-      pool-name: env
-    env:
-      GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}
-    steps:
-      - checkout: self
-        with:
-          fetchDepth: 50
-      - name: debug-context
-        shell: bash
-        run: |
-          echo "ci.event=${{ ci.event }}"
-          echo "ci.branch=${{ ci.branch }}"
-          echo "PIPELINE_MODE=${{ variables.PIPELINE_MODE }}"
-          echo "FRONTEND_RELEASE_MATRIX=${{ variables.FRONTEND_RELEASE_MATRIX }}"
-          echo "TARGET_ENV=${{ variables.TARGET_ENV }}"
-          echo "SOURCE_SHA=${{ variables.SOURCE_SHA }}"
-      - id: prepare
-        if: ${{ variables.PIPELINE_MODE }} != 'promote'
-        shell: bash
-        run: |
-          SHORT_SHA="${{ ci.sha }}"
-          SHORT_SHA="${SHORT_SHA:0:12}"
-          echo "::set-output name=tag::frontend-${SHORT_SHA}"
-      - name: deploy-beijing-cloudflare
-        if: ${{ variables.PIPELINE_MODE }} != 'promote'
-        shell: bash
+stages:
+  - name: 服务发布
+    jobs:
+      release:
+        name: 构建并发布前端矩阵
+        runs-on:
+          self-hosted: true
+          pool-name: env
         env:
-          CLOUDFLARE_API_TOKEN: ${{ settings.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ settings.CLOUDFLARE_ACCOUNT_ID }}
-          EDGEONE_API_TOKEN: ${{ settings.EDGEONE_API_TOKEN }}
-          VITE_AUTH_API_BASE_URL: https://lightclaw.tech
-          CLOUDFLARE_PAGES_COMMIT_HASH: ${{ ci.sha }}
-          CLOUDFLARE_PAGES_COMMIT_MESSAGE: Cloudflare Pages deploy from release-frontend
-          FRONTEND_RELEASE_MATRIX: ${{ variables.FRONTEND_RELEASE_MATRIX }}
-        run: |
-          source .ci/init.sh
-          ci_init_repo_root
-          ci_load_cloudflare_credentials
-          ci_load_edgeone_credentials
-          ci_ensure_node
-          ci_ensure_pnpm
+          GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}
+        steps:
+          - checkout: self
+            with:
+              fetchDepth: 50
+          - name: debug-context
+            shell: bash
+            run: |
+              echo "ci.event=${{ ci.event }}"
+              echo "ci.branch=${{ ci.branch }}"
+              echo "PIPELINE_MODE=${{ variables.PIPELINE_MODE }}"
+              echo "FRONTEND_RELEASE_MATRIX=${{ variables.FRONTEND_RELEASE_MATRIX }}"
+              echo "TARGET_ENV=${{ variables.TARGET_ENV }}"
+              echo "SOURCE_SHA=${{ variables.SOURCE_SHA }}"
+          - id: prepare
+            if: ${{ variables.PIPELINE_MODE }} != 'promote'
+            shell: bash
+            run: |
+              SHORT_SHA="${{ ci.sha }}"
+              SHORT_SHA="${SHORT_SHA:0:12}"
+              echo "::set-output name=tag::frontend-${SHORT_SHA}"
+          - name: deploy-beijing-cloudflare
+            if: ${{ variables.PIPELINE_MODE }} != 'promote'
+            shell: bash
+            env:
+              CLOUDFLARE_API_TOKEN: ${{ settings.CLOUDFLARE_API_TOKEN }}
+              CLOUDFLARE_ACCOUNT_ID: ${{ settings.CLOUDFLARE_ACCOUNT_ID }}
+              EDGEONE_API_TOKEN: ${{ settings.EDGEONE_API_TOKEN }}
+              VITE_AUTH_API_BASE_URL: https://lightclaw.tech
+              CLOUDFLARE_PAGES_COMMIT_HASH: ${{ ci.sha }}
+              CLOUDFLARE_PAGES_COMMIT_MESSAGE: Cloudflare Pages deploy from release-frontend
+              FRONTEND_RELEASE_MATRIX: ${{ variables.FRONTEND_RELEASE_MATRIX }}
+            run: |
+              source .ci/init.sh
+              ci_init_repo_root
+              ci_load_cloudflare_credentials
+              ci_load_edgeone_credentials
+              ci_ensure_node
+              ci_ensure_pnpm
 
-          "$NODE_BIN" --version
-          "$NPM_BIN" --version
+              "$NODE_BIN" --version
+              "$NPM_BIN" --version
 
-          cd "$REPO_ROOT/frontend"
-          rm -rf node_modules
-          "$PNPM_BIN" --version
-          "$PNPM_BIN" install --no-frozen-lockfile
-          "$PNPM_BIN" release:matrix
-      - name: promote-manual
-        if: ${{ variables.PIPELINE_MODE }} == 'promote'
-        shell: bash
-        run: |
-          test -n "${{ variables.SOURCE_SHA }}"
-          source .ci/init.sh
-          ci_init_repo_root
-          REMOTE_URL="git@git.woa.com:wisp/mono2.git" \
-          GITOPS_BRANCH=gitops \
-          bash scripts/promote_bundle_image_to_gitops.sh frontend frontend "${{ variables.TARGET_ENV }}" "${{ variables.SOURCE_SHA }}"
+              cd "$REPO_ROOT/frontend"
+              rm -rf node_modules
+              "$PNPM_BIN" --version
+              "$PNPM_BIN" install --no-frozen-lockfile
+              "$PNPM_BIN" release:matrix
+          - name: promote-manual
+            if: ${{ variables.PIPELINE_MODE }} == 'promote'
+            shell: bash
+            run: |
+              test -n "${{ variables.SOURCE_SHA }}"
+              source .ci/init.sh
+              ci_init_repo_root
+              REMOTE_URL="git@git.woa.com:wisp/mono2.git" \
+              GITOPS_BRANCH=gitops \
+              bash .ci/runtime/promote_bundle_image_to_gitops.sh frontend frontend "${{ variables.TARGET_ENV }}" "${{ variables.SOURCE_SHA }}"

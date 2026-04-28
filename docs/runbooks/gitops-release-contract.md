@@ -15,7 +15,7 @@
 
 ## Artifact Ownership Contract
 
-每个正式发布 bundle 必须在 [scripts/release-bundles.yaml](../../scripts/release-bundles.yaml) 中声明：
+每个正式发布 bundle 必须在 [.ci/runtime/release-bundles.yaml](../../.ci/runtime/release-bundles.yaml) 中声明：
 
 - `source`
 - `owner`
@@ -37,13 +37,13 @@
 对具备 `dockerfile/build_context/image_repo` 的 bundle，统一入口：
 
 ```bash
-python3 scripts/build-release-image.py --service <service> --env <env> --tag <tag>
+python3 .ci/runtime/build-release-image.py --service <service> --env <env> --tag <tag>
 ```
 
 需要推镜像时：
 
 ```bash
-python3 scripts/build-release-image.py --service <service> --env <env> --tag <tag> --push
+python3 .ci/runtime/build-release-image.py --service <service> --env <env> --tag <tag> --push
 ```
 
 输出：
@@ -53,7 +53,7 @@ python3 scripts/build-release-image.py --service <service> --env <env> --tag <ta
 例外：
 
 - `sandbox` 当前仍走 `images/build-image.py`
-- 在它被正式 bundle 化之前，不强行纳入 `scripts/build-release-image.py`
+- 在它被正式 bundle 化之前，不强行纳入 `.ci/runtime/build-release-image.py`
 
 ## Image Pin Contract
 

@@ -3,8 +3,13 @@ import tempfile
 import textwrap
 import unittest
 from pathlib import Path
+import sys
 
-from scripts.validate_gitops_static import validate
+RUNTIME_DIR = Path(__file__).resolve().parents[1]
+if str(RUNTIME_DIR) not in sys.path:
+    sys.path.insert(0, str(RUNTIME_DIR))
+
+from validate_gitops_static import validate
 
 
 class GitOpsStaticValidationTests(unittest.TestCase):
@@ -15,7 +20,7 @@ class GitOpsStaticValidationTests(unittest.TestCase):
             errors = validate(
                 repo,
                 "beijing-sandbox",
-                repo / "scripts" / "release-bundles.yaml",
+                repo / ".ci/runtime/release-bundles.yaml",
             )
 
             self.assertEqual(errors, [])
@@ -27,7 +32,7 @@ class GitOpsStaticValidationTests(unittest.TestCase):
                 self.appset_text("{{ .path }}")
             )
 
-            errors = validate(repo, "beijing-sandbox", repo / "scripts/release-bundles.yaml")
+            errors = validate(repo, "beijing-sandbox", repo / ".ci/runtime/release-bundles.yaml")
 
             self.assertTrue(any("must use { .sourcePath }" in error for error in errors))
             self.assertTrue(any("must not use reserved git generator field" in error for error in errors))
@@ -49,7 +54,7 @@ class GitOpsStaticValidationTests(unittest.TestCase):
                 )
             )
 
-            errors = validate(repo, "beijing-sandbox", repo / "scripts/release-bundles.yaml")
+            errors = validate(repo, "beijing-sandbox", repo / ".ci/runtime/release-bundles.yaml")
 
             self.assertTrue(any("must use sourcePath, not path" in error for error in errors))
 
@@ -58,19 +63,19 @@ class GitOpsStaticValidationTests(unittest.TestCase):
             repo = self.write_valid_repo(tmp)
             shutil.rmtree(repo / "argocd/services/demo/beijing-sandbox")
 
-            errors = validate(repo, "beijing-sandbox", repo / "scripts/release-bundles.yaml")
+            errors = validate(repo, "beijing-sandbox", repo / ".ci/runtime/release-bundles.yaml")
 
             self.assertTrue(any("sourcePath does not exist" in error for error in errors))
 
     def test_missing_common_or_profile_publish_path_fails(self) -> None:
         with self.repo() as tmp:
             repo = self.write_valid_repo(tmp)
-            manifest = (repo / "scripts/release-bundles.yaml").read_text()
+            manifest = (repo / ".ci/runtime/release-bundles.yaml").read_text()
             manifest = manifest.replace("      - argocd/services/demo/common/**\n", "")
             manifest = manifest.replace("      - argocd/services/demo/profiles/sandbox/**\n", "")
-            (repo / "scripts/release-bundles.yaml").write_text(manifest)
+            (repo / ".ci/runtime/release-bundles.yaml").write_text(manifest)
 
-            errors = validate(repo, "beijing-sandbox", repo / "scripts/release-bundles.yaml")
+            errors = validate(repo, "beijing-sandbox", repo / ".ci/runtime/release-bundles.yaml")
 
             self.assertTrue(any("argocd/services/demo/common" in error for error in errors))
             self.assertTrue(any("argocd/services/demo/profiles/sandbox" in error for error in errors))
@@ -80,7 +85,7 @@ class GitOpsStaticValidationTests(unittest.TestCase):
             repo = self.write_valid_repo(tmp)
             (repo / "argocd/apps/beijing-sandbox/demo.yaml").write_text("kind: Application\n")
 
-            errors = validate(repo, "beijing-sandbox", repo / "scripts/release-bundles.yaml")
+            errors = validate(repo, "beijing-sandbox", repo / ".ci/runtime/release-bundles.yaml")
 
             self.assertTrue(any("forbids business hand-written leaf apps" in error for error in errors))
 
@@ -89,7 +94,7 @@ class GitOpsStaticValidationTests(unittest.TestCase):
 
     def write_valid_repo(self, raw_repo: str | Path) -> Path:
         repo = Path(raw_repo)
-        (repo / "scripts").mkdir(parents=True)
+        (repo / ".ci/runtime").mkdir(parents=True)
         (repo / "argocd/apps/beijing-sandbox").mkdir(parents=True)
         (repo / "argocd/catalogs/sandbox/beijing-sandbox").mkdir(parents=True)
         (repo / "argocd/services/demo/beijing-sandbox").mkdir(parents=True)
@@ -97,7 +102,7 @@ class GitOpsStaticValidationTests(unittest.TestCase):
         (repo / "argocd/services/demo/profiles/sandbox").mkdir(parents=True)
         (repo / "argocd/secrets/beijing-sandbox").mkdir(parents=True)
 
-        (repo / "scripts/release-bundles.yaml").write_text(
+        (repo / ".ci/runtime/release-bundles.yaml").write_text(
             textwrap.dedent(
                 """\
                 bundles:
