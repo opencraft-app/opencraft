@@ -6,157 +6,199 @@ on:
     branches:
       - promote-*
 
-jobs:
-  validate:
-    runs-on:
-      self-hosted: true
-      pool-name: env
-    env:
-      CI_RUNTIME_REF: origin/master
-    steps:
-      - checkout: self
-        with:
-          fetchDepth: 50
-      - name: verify-gitops-promotion
-        shell: bash
+stages:
+  - name: GitOps MR 前置验收
+    jobs:
+      validate:
+        name: 静态验收与严格 Kustomize 验收
+        runs-on:
+          self-hosted: true
+          pool-name: env
         env:
-          SOPS_AGE_KEY: ${{ settings.SOPS_AGE_KEY }}
-          SOPS_AGE_KEY_FILE: ${{ settings.SOPS_AGE_KEY_FILE }}
-        run: |
-          echo "ci.event=${{ ci.event }}"
-          echo "ci.branch=${{ ci.branch }}"
-          git fetch origin master --tags
-          export CI_RUNTIME_REF="${CI_RUNTIME_REF:-origin/master}"
-          export CI_RUNTIME_COMMIT
-          CI_RUNTIME_COMMIT="$(git rev-parse "${CI_RUNTIME_REF}")"
-          CI_RUNTIME_DIR="$(mktemp -d)"
-          mkdir -p "${CI_RUNTIME_DIR}/.ci" "${CI_RUNTIME_DIR}/scripts"
-          git show "${CI_RUNTIME_COMMIT}:.ci/init.sh" > "${CI_RUNTIME_DIR}/.ci/init.sh"
-          source "${CI_RUNTIME_DIR}/.ci/init.sh"
-          ci_materialize_runtime_files "${CI_RUNTIME_DIR}" \
-            ".ci/init.sh" \
-            "scripts/release-bundles.yaml" \
-            "scripts/update_image_pin.py" \
-            "scripts/project_release_bundle.py" \
-            "scripts/release_bundle_lib.py" \
-            "scripts/gitops_merge_request.py" \
-            "scripts/verify_gitops_release.py" \
-            "scripts/validate_gitops_static.py" \
-            "scripts/validate_gitops_kustomize.py"
-          ci_init_repo_root
-          git diff --name-only HEAD~1..HEAD || true
-          python3 "${CI_RUNTIME_DIR}/scripts/update_image_pin.py" --help >/dev/null
-          python3 "${CI_RUNTIME_DIR}/scripts/project_release_bundle.py" --help >/dev/null
-          python3 "${CI_RUNTIME_DIR}/scripts/validate_gitops_static.py" --help >/dev/null
-          python3 "${CI_RUNTIME_DIR}/scripts/validate_gitops_kustomize.py" --help >/dev/null
-          python3 -m py_compile \
-            "${CI_RUNTIME_DIR}/scripts/release_bundle_lib.py" \
-            "${CI_RUNTIME_DIR}/scripts/gitops_merge_request.py" \
-            "${CI_RUNTIME_DIR}/scripts/verify_gitops_release.py" \
-            "${CI_RUNTIME_DIR}/scripts/validate_gitops_static.py" \
-            "${CI_RUNTIME_DIR}/scripts/validate_gitops_kustomize.py"
-          case "${{ ci.branch }}" in
-            promote-beijing-sandbox-*)
-              ci_require_gitops_validation_tools
-              ci_prepare_sops_age_key
-              python3 "${CI_RUNTIME_DIR}/scripts/validate_gitops_static.py" \
-                --repo-root "$REPO_ROOT" \
-                --env beijing-sandbox \
-                --bundle-manifest "${CI_RUNTIME_DIR}/scripts/release-bundles.yaml"
-              python3 "${CI_RUNTIME_DIR}/scripts/validate_gitops_kustomize.py" \
-                --repo-root "$REPO_ROOT" \
-                --env beijing-sandbox
-              ;;
-            *)
-              echo "skip Beijing AppSet GitOps validation for ${{ ci.branch }}"
-              ;;
-          esac
-          echo "gitops promotion check passed"
-      - name: auto-merge-beijing-promote-mr
-        shell: bash
+          CI_RUNTIME_REF: origin/master
+        steps:
+          - checkout: self
+            with:
+              fetchDepth: 50
+          - name: 校验 promote 分支
+            shell: bash
+            env:
+              SOPS_AGE_KEY: ${{ settings.SOPS_AGE_KEY }}
+              SOPS_AGE_KEY_FILE: ${{ settings.SOPS_AGE_KEY_FILE }}
+            run: |
+              echo "ci.event=${{ ci.event }}"
+              echo "ci.branch=${{ ci.branch }}"
+              git fetch origin master --tags
+              export CI_RUNTIME_REF="${CI_RUNTIME_REF:-origin/master}"
+              export CI_RUNTIME_COMMIT
+              CI_RUNTIME_COMMIT="$(git rev-parse "${CI_RUNTIME_REF}")"
+              CI_RUNTIME_DIR="$(mktemp -d)"
+              mkdir -p "${CI_RUNTIME_DIR}/.ci" "${CI_RUNTIME_DIR}/scripts"
+              git show "${CI_RUNTIME_COMMIT}:.ci/init.sh" > "${CI_RUNTIME_DIR}/.ci/init.sh"
+              source "${CI_RUNTIME_DIR}/.ci/init.sh"
+              ci_materialize_runtime_files "${CI_RUNTIME_DIR}" \
+                ".ci/init.sh" \
+                "scripts/release-bundles.yaml" \
+                "scripts/update_image_pin.py" \
+                "scripts/project_release_bundle.py" \
+                "scripts/release_bundle_lib.py" \
+                "scripts/gitops_merge_request.py" \
+                "scripts/verify_gitops_release.py" \
+                "scripts/validate_gitops_static.py" \
+                "scripts/validate_gitops_kustomize.py"
+              ci_init_repo_root
+              git diff --name-only HEAD~1..HEAD || true
+              python3 "${CI_RUNTIME_DIR}/scripts/update_image_pin.py" --help >/dev/null
+              python3 "${CI_RUNTIME_DIR}/scripts/project_release_bundle.py" --help >/dev/null
+              python3 "${CI_RUNTIME_DIR}/scripts/validate_gitops_static.py" --help >/dev/null
+              python3 "${CI_RUNTIME_DIR}/scripts/validate_gitops_kustomize.py" --help >/dev/null
+              python3 -m py_compile \
+                "${CI_RUNTIME_DIR}/scripts/release_bundle_lib.py" \
+                "${CI_RUNTIME_DIR}/scripts/gitops_merge_request.py" \
+                "${CI_RUNTIME_DIR}/scripts/verify_gitops_release.py" \
+                "${CI_RUNTIME_DIR}/scripts/validate_gitops_static.py" \
+                "${CI_RUNTIME_DIR}/scripts/validate_gitops_kustomize.py"
+              case "${{ ci.branch }}" in
+                promote-beijing-sandbox-*)
+                  ci_require_gitops_validation_tools
+                  ci_prepare_sops_age_key
+                  python3 "${CI_RUNTIME_DIR}/scripts/validate_gitops_static.py" \
+                    --repo-root "$REPO_ROOT" \
+                    --env beijing-sandbox \
+                    --bundle-manifest "${CI_RUNTIME_DIR}/scripts/release-bundles.yaml"
+                  python3 "${CI_RUNTIME_DIR}/scripts/validate_gitops_kustomize.py" \
+                    --repo-root "$REPO_ROOT" \
+                    --env beijing-sandbox
+                  ;;
+                *)
+                  echo "skip Beijing AppSet GitOps validation for ${{ ci.branch }}"
+                  ;;
+              esac
+              echo "gitops promotion check passed"
+
+  - name: 自动合并 GitOps MR
+    jobs:
+      auto_merge:
+        name: 等待检查通过并合并 MR
+        runs-on:
+          self-hosted: true
+          pool-name: env
         env:
+          CI_RUNTIME_REF: origin/master
           GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}
-        run: |
-          git fetch origin master --tags
-          export CI_RUNTIME_REF="${CI_RUNTIME_REF:-origin/master}"
-          export CI_RUNTIME_COMMIT
-          CI_RUNTIME_COMMIT="$(git rev-parse "${CI_RUNTIME_REF}")"
-          CI_RUNTIME_DIR="$(mktemp -d)"
-          mkdir -p "${CI_RUNTIME_DIR}/.ci" "${CI_RUNTIME_DIR}/scripts"
-          git show "${CI_RUNTIME_COMMIT}:.ci/init.sh" > "${CI_RUNTIME_DIR}/.ci/init.sh"
-          source "${CI_RUNTIME_DIR}/.ci/init.sh"
-          ci_materialize_runtime_files "${CI_RUNTIME_DIR}" \
-            ".ci/init.sh" \
-            "scripts/gitops_merge_request.py"
-          ci_init_repo_root
-          case "${{ ci.branch }}" in
-            promote-beijing-sandbox-*)
-              python3 "${CI_RUNTIME_DIR}/scripts/gitops_merge_request.py" \
-                --source-branch "${{ ci.branch }}" \
-                --target-branch gitops \
-                --title "Auto-merge existing Beijing GitOps MR" \
-                --description "Auto-merge existing Beijing GitOps MR from promote branch tail." \
-                --auto-merge \
-                --remove-source-branch
-              ;;
-            *)
-              echo "skip auto-merge for ${{ ci.branch }}"
-              ;;
-          esac
-      - name: verify-argocd-convergence-and-comment-mr
-        shell: bash
+        steps:
+          - checkout: self
+            with:
+              fetchDepth: 50
+          - name: 自动合并北京 promote MR
+            shell: bash
+            run: |
+              git fetch origin master --tags
+              export CI_RUNTIME_REF="${CI_RUNTIME_REF:-origin/master}"
+              export CI_RUNTIME_COMMIT
+              CI_RUNTIME_COMMIT="$(git rev-parse "${CI_RUNTIME_REF}")"
+              CI_RUNTIME_DIR="$(mktemp -d)"
+              mkdir -p "${CI_RUNTIME_DIR}/.ci" "${CI_RUNTIME_DIR}/scripts"
+              git show "${CI_RUNTIME_COMMIT}:.ci/init.sh" > "${CI_RUNTIME_DIR}/.ci/init.sh"
+              source "${CI_RUNTIME_DIR}/.ci/init.sh"
+              ci_materialize_runtime_files "${CI_RUNTIME_DIR}" \
+                ".ci/init.sh" \
+                "scripts/gitops_merge_request.py"
+              ci_init_repo_root
+              case "${{ ci.branch }}" in
+                promote-beijing-sandbox-*)
+                  python3 "${CI_RUNTIME_DIR}/scripts/gitops_merge_request.py" \
+                    --source-branch "${{ ci.branch }}" \
+                    --target-branch gitops \
+                    --title "Auto-merge existing Beijing GitOps MR" \
+                    --description "Auto-merge existing Beijing GitOps MR from promote branch tail." \
+                    --auto-merge \
+                    --remove-source-branch
+                  ;;
+                *)
+                  echo "skip auto-merge for ${{ ci.branch }}"
+                  ;;
+              esac
+
+  - name: Argo 收敛验收
+    jobs:
+      verify_convergence:
+        name: 校验 Synced/Healthy 与 workload image
+        runs-on:
+          self-hosted: true
+          pool-name: env
         env:
+          CI_RUNTIME_REF: origin/master
           GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}
-        run: |
-          git fetch origin master --tags
-          export CI_RUNTIME_REF="${CI_RUNTIME_REF:-origin/master}"
-          export CI_RUNTIME_COMMIT
-          CI_RUNTIME_COMMIT="$(git rev-parse "${CI_RUNTIME_REF}")"
-          CI_RUNTIME_DIR="$(mktemp -d)"
-          mkdir -p "${CI_RUNTIME_DIR}/.ci" "${CI_RUNTIME_DIR}/scripts"
-          git show "${CI_RUNTIME_COMMIT}:.ci/init.sh" > "${CI_RUNTIME_DIR}/.ci/init.sh"
-          source "${CI_RUNTIME_DIR}/.ci/init.sh"
-          ci_materialize_runtime_files "${CI_RUNTIME_DIR}" \
-            ".ci/init.sh" \
-            "scripts/verify_gitops_release.py"
-          ci_init_repo_root
-          case "${{ ci.branch }}" in
-            promote-beijing-sandbox-*)
-              python3 "${CI_RUNTIME_DIR}/scripts/verify_gitops_release.py" \
-                --repo-root "$REPO_ROOT" \
-                --source-branch "${{ ci.branch }}" \
-                --target-branch gitops
-              ;;
-            *)
-              echo "skip Argo convergence verification for ${{ ci.branch }}"
-              ;;
-          esac
-      - name: cleanup-beijing-promote-branch
-        shell: bash
+        steps:
+          - checkout: self
+            with:
+              fetchDepth: 50
+          - name: 校验 Argo 收敛并评论 MR
+            shell: bash
+            run: |
+              git fetch origin master --tags
+              export CI_RUNTIME_REF="${CI_RUNTIME_REF:-origin/master}"
+              export CI_RUNTIME_COMMIT
+              CI_RUNTIME_COMMIT="$(git rev-parse "${CI_RUNTIME_REF}")"
+              CI_RUNTIME_DIR="$(mktemp -d)"
+              mkdir -p "${CI_RUNTIME_DIR}/.ci" "${CI_RUNTIME_DIR}/scripts"
+              git show "${CI_RUNTIME_COMMIT}:.ci/init.sh" > "${CI_RUNTIME_DIR}/.ci/init.sh"
+              source "${CI_RUNTIME_DIR}/.ci/init.sh"
+              ci_materialize_runtime_files "${CI_RUNTIME_DIR}" \
+                ".ci/init.sh" \
+                "scripts/verify_gitops_release.py"
+              ci_init_repo_root
+              case "${{ ci.branch }}" in
+                promote-beijing-sandbox-*)
+                  python3 "${CI_RUNTIME_DIR}/scripts/verify_gitops_release.py" \
+                    --repo-root "$REPO_ROOT" \
+                    --source-branch "${{ ci.branch }}" \
+                    --target-branch gitops
+                  ;;
+                *)
+                  echo "skip Argo convergence verification for ${{ ci.branch }}"
+                  ;;
+              esac
+
+  - name: 清理 promote 分支
+    jobs:
+      cleanup_branch:
+        name: GitOps 合并后清理源分支
+        runs-on:
+          self-hosted: true
+          pool-name: env
         env:
+          CI_RUNTIME_REF: origin/master
           GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}
-        run: |
-          git fetch origin master --tags
-          export CI_RUNTIME_REF="${CI_RUNTIME_REF:-origin/master}"
-          export CI_RUNTIME_COMMIT
-          CI_RUNTIME_COMMIT="$(git rev-parse "${CI_RUNTIME_REF}")"
-          CI_RUNTIME_DIR="$(mktemp -d)"
-          mkdir -p "${CI_RUNTIME_DIR}/.ci" "${CI_RUNTIME_DIR}/scripts"
-          git show "${CI_RUNTIME_COMMIT}:.ci/init.sh" > "${CI_RUNTIME_DIR}/.ci/init.sh"
-          source "${CI_RUNTIME_DIR}/.ci/init.sh"
-          ci_materialize_runtime_files "${CI_RUNTIME_DIR}" \
-            ".ci/init.sh" \
-            "scripts/gitops_cleanup_source_branch.py"
-          ci_init_repo_root
-          case "${{ ci.branch }}" in
-            promote-beijing-sandbox-*)
-              python3 "${CI_RUNTIME_DIR}/scripts/gitops_cleanup_source_branch.py" \
-                --source-branch "${{ ci.branch }}" \
-                --target-branch gitops \
-                --wait-seconds 120 \
-                --poll-seconds 5
-              ;;
-            *)
-              echo "skip branch cleanup for ${{ ci.branch }}"
-              ;;
-          esac
+        steps:
+          - checkout: self
+            with:
+              fetchDepth: 50
+          - name: 清理北京 promote 分支
+            shell: bash
+            run: |
+              git fetch origin master --tags
+              export CI_RUNTIME_REF="${CI_RUNTIME_REF:-origin/master}"
+              export CI_RUNTIME_COMMIT
+              CI_RUNTIME_COMMIT="$(git rev-parse "${CI_RUNTIME_REF}")"
+              CI_RUNTIME_DIR="$(mktemp -d)"
+              mkdir -p "${CI_RUNTIME_DIR}/.ci" "${CI_RUNTIME_DIR}/scripts"
+              git show "${CI_RUNTIME_COMMIT}:.ci/init.sh" > "${CI_RUNTIME_DIR}/.ci/init.sh"
+              source "${CI_RUNTIME_DIR}/.ci/init.sh"
+              ci_materialize_runtime_files "${CI_RUNTIME_DIR}" \
+                ".ci/init.sh" \
+                "scripts/gitops_cleanup_source_branch.py"
+              ci_init_repo_root
+              case "${{ ci.branch }}" in
+                promote-beijing-sandbox-*)
+                  python3 "${CI_RUNTIME_DIR}/scripts/gitops_cleanup_source_branch.py" \
+                    --source-branch "${{ ci.branch }}" \
+                    --target-branch gitops \
+                    --wait-seconds 120 \
+                    --poll-seconds 5
+                  ;;
+                *)
+                  echo "skip branch cleanup for ${{ ci.branch }}"
+                  ;;
+              esac

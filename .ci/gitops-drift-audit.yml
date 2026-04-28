@@ -1,5 +1,5 @@
 version: v2.0
-name: gitops-drift-audit
+name: gitops-drift-audit-beijing-sandbox
 
 on:
   schedules:
@@ -8,26 +8,29 @@ on:
     always: true
   manual: enabled
 
-jobs:
-  audit:
-    runs-on:
-      self-hosted: true
-      pool-name: env
-    env:
-      WEWORK_DRIFT_AUDIT_WEBHOOK: ${{ settings.WEWORK_DRIFT_AUDIT_WEBHOOK }}
-      WEWORK_DRIFT_AUDIT_WEBHOOK_FALLBACK: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=a7c3f30c-7dcc-42e7-9f92-440b26216119"
-    steps:
-      - checkout: self
-        with:
-          fetchDepth: 50
-      - name: audit-beijing-gitops-drift
-        shell: bash
-        run: |
-          source .ci/init.sh
-          ci_init_repo_root
-          ci_require_commands git python3
-          git fetch --tags origin master gitops
-          python3 scripts/audit_gitops_drift.py \
-            --repo-root "$REPO_ROOT" \
-            --env beijing-sandbox \
-            --gitops-ref origin/gitops
+stages:
+  - name: 北京 GitOps 漂移审计
+    jobs:
+      audit:
+        name: 对比 origin/gitops 与 live Argo
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        env:
+          WEWORK_DRIFT_AUDIT_WEBHOOK: ${{ settings.WEWORK_DRIFT_AUDIT_WEBHOOK }}
+          WEWORK_DRIFT_AUDIT_WEBHOOK_FALLBACK: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=a7c3f30c-7dcc-42e7-9f92-440b26216119"
+        steps:
+          - checkout: self
+            with:
+              fetchDepth: 50
+          - name: 执行北京 GitOps 漂移审计
+            shell: bash
+            run: |
+              source .ci/init.sh
+              ci_init_repo_root
+              ci_require_commands git python3
+              git fetch --tags origin master gitops
+              python3 scripts/audit_gitops_drift.py \
+                --repo-root "$REPO_ROOT" \
+                --env beijing-sandbox \
+                --gitops-ref origin/gitops
