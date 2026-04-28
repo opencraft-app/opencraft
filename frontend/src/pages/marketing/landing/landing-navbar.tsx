@@ -4,8 +4,10 @@ import { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 
 import { BrandMark } from "@/components/site/brand-mark";
+import { LanguageSwitcher } from "@/components/site/language-switcher";
 import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
 import { useT } from "@/i18n/t";
+import { isGlobal } from "@/lib/region";
 
 /**
  * 判断当前视口是否 ≥ md 断点（768px，与 Tailwind 保持一致）。
@@ -137,12 +139,16 @@ export function LandingNavbar({
             >
               {t("登录")}
             </button>
+            {/* 语言切换器：仅国际站展示，国内站无需多语言入口 */}
+            {isGlobal && <LanguageSwitcher />}
           </div>
         )}
 
         {/* Avatar — 已登录时只渲染一份，按当前断点决定挂载位置（桌面右侧 / 移动紧邻汉堡） */}
         {isLoggedIn && (
-          <div className={`flex shrink-0 items-center ${isDesktop ? "ml-0" : "ml-auto"}`}>
+          <div className={`flex shrink-0 items-center gap-3 ${isDesktop ? "ml-0" : "ml-auto"}`}>
+            {/* 已登录态下桌面端同样保留语言切换入口 */}
+            {isGlobal && isDesktop && <LanguageSwitcher />}
             <UserAvatarMenu />
           </div>
         )}
@@ -227,6 +233,13 @@ export function LandingNavbar({
                     {t("立即创建")}
                     <ArrowRight className="h-4 w-4" />
                   </button>
+                </div>
+              )}
+
+              {/* 移动端：语言切换器平铺在菜单底部，仅国际站展示 */}
+              {isGlobal && (
+                <div className="border-t border-black/5 pt-3">
+                  <LanguageSwitcher variant="inline" />
                 </div>
               )}
             </div>

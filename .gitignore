@@ -44,6 +44,8 @@ service-gateway/service-gateway
 
 # ─── Build outputs ───────────────────────────────────
 dist/
+dist-cn/
+dist-global/
 build/
 .next/
 out/

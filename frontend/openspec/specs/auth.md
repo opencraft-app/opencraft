@@ -89,7 +89,10 @@ SessionProvider 监听此事件自动 `SIGN_OUT` 并跳转登录。
    - `MarketingAuthGuard`：未登录用户访问营销域业务页时弹出登录弹窗
    - `AuthenticatedGuard` + `PlanGuard`：登录后未选套餐者强制进入 `/plans/select`
    - `AppAccessGuard`：控制台访问权限（需要套餐 + Bot）
-6. **OAuth 降级**：第三方登录仅在对应渠道开放时可用，否则 `getOAuthStartUrl` 返回 `null`。
+6. **OAuth 区域差异（编译期分支）**：登录页 OAuth 入口由 `VISIBLE_OAUTH_PROVIDERS`（`src/lib/oauth.ts`）按 `isGlobal` 选定，**未选中的渠道会被 Tree-shake 不进 bundle**：
+   - 国内站：`["qq", "wechat"]`；GitHub 仅作为彩蛋入口，需通过 `useGitHubLoginVisibility` + `show_github_login()` 控制台命令显式启用，由 `ALLOW_GITHUB_EASTER_EGG = !isGlobal` 看守。
+   - 国际站：`["google", "github"]`；不展示 QQ / 微信。
+   渠道未对接或临时关闭时 `getOAuthStartUrl(provider)` 返回 `null`，UI 隐藏对应按钮。所有 OAuth 错误通过 `oauthErrorMessage()` 统一映射为可读中文文案，禁止把原始 error code 暴露给用户。
 7. **实名认证**：
    - 状态以 `user.realnameVerified` 为**唯一真源**，页面通过 session 派生，不在
      组件本地 state 里再造一份副本。

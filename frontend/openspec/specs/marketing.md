@@ -93,13 +93,13 @@
 | `hero-section.tsx` | 首屏（灯泡动效、"一分钟搞定，真的不难"标语） |
 | `what-it-does-section.tsx` | 产品能做什么 |
 | `how-easy-section.tsx` | 一分钟接入演示 |
-| `where-to-use-section.tsx` | 使用场景 |
+| `where-to-use-section.tsx` | 使用场景；按 `isGlobal` 渲染不同平台卡片：国内站 QQ / 微信 / 飞书 / 企业微信，国际站 Telegram / WhatsApp / Discord / Slack |
 | `why-trust-section.tsx` | 为什么信赖 |
 | `cta-footer-section.tsx` | 页脚 CTA |
-| `landing-navbar.tsx` | 导航栏（含登录入口） |
+| `landing-navbar.tsx` | 导航栏（含登录入口、`<LanguageSwitcher>` 仅国际站挂载） |
 | `particle-grid-canvas.tsx` | 粒子背景 Canvas |
 | `starfield-canvas.tsx` | 星空背景 Canvas |
-| `constants.ts` | Landing 页共享常量（文案、配色、时长） |
+| `constants.ts` | Landing 页共享常量（配色、时长、动效参数；**不再承载中文文案**，文案走 `useT()`） |
 
 ### OpenClaw 向导/设置页
 
@@ -120,7 +120,9 @@
 - `subscribe-page.tsx` — 套餐选择卡片 + 支付流程（50KB / 1446 行，详见 `plan.md`）
 - `account-page.tsx` — 个人资料 / 订阅 / 权益 / 安全中心 / 实名认证入口（41KB / 1084 行）。实名状态以 `user.realnameVerified` 派生，认证弹窗 `VerifyIdentityModal` 调用 `AuthRepository.verifyRealname`；弹窗关闭**仅限右上角 X**（遮罩 / 容器点击不再关闭，避免误触）
 - `account-orders-page.tsx` — 订单列表（筛选、查看支付凭证、14KB）
-- `changelog-page.tsx` — 更新日志（Markdown 渲染）
+- `changelog-page.tsx` — 更新日志（数据驱动列表 + Figma 配图卡片）。文案与配图按 `isGlobal` 分叉：
+  - 国内站：文案描述 QQ / 微信 / 飞书；配图 `assets/changelog/lightvela-launch.png`（中文 + 国内渠道图标）
+  - 国际站：文案描述 Telegram / WhatsApp / Discord / Slack；配图 `lightvela-launch-en.png`（**始终使用英文版**，即使用户切回中文也不变，避免同站点出现国内渠道图标错位）
 
 ## 数据流
 
@@ -166,7 +168,7 @@
 3. **动效规范**：
    - Landing 灯泡入场做旋转上升，**到位后改为纯浮动**（不再使用雪碧图帧动画）
    - 粒子/星空背景 Canvas 组件按需启用，注意性能（低端设备降级）
-4. **文案统一由 `landing/constants.ts` 管理**，不在组件内硬编码大段中文，便于后续 i18n。
+4. **i18n 与文案抽取**：业务文案不再硬编码，统一通过 `useT()`（`src/i18n/t.ts`）以中文原文作为 key 调用，由 `pnpm i18n:extract` 扫描生成 `src/i18n/generated/*.json` 字典；运行时反查 hash → 目标语言。`pnpm i18n:check` 作为 CI 门禁拦截缺失翻译。`landing/constants.ts` 只承载非文案常量（配色 / 时长 / 动效参数），文案出现在组件内 `t("…中文…")` 字面量调用处，便于 extract 脚本扫描。
 5. **SEO**：Landing 使用 BrowserRouter 而非 Hash，需要配合后端/Cloudflare 返回
    index.html 做 SPA 兜底。
 6. **响应式断点**：营销模块统一采用 Tailwind 默认断点
@@ -193,6 +195,15 @@
    - CDN 基址 `CDN_BASE` **硬编码**在源码常量中，**不通过环境变量配置**
    - 所有环境（dev / prod）统一走 CDN；切换 CDN 需修改常量并发版
    - 绝对 URL（`http(s)://` / `//`）与 `data:` URI 直接 passthrough，不二次拼接
+10. **区域化（国内 / 国际站）编译期分支**：
+    - `src/lib/region.ts` 暴露 `REGION` / `isCN` / `isGlobal` / `DEFAULT_LOCALE` 编译期常量，由 `VITE_REGION` 在 Vite 构建期注入；未命中分支会被 Tree-shake，不会进入对侧站点 bundle。
+    - 业务侧的「国内 vs 国际」差异**必须**走 `isCN` / `isGlobal` 编译期分支（如 OAuth 渠道、首页平台卡片、changelog 接入通道文案、法律页脚），**不得**通过运行时语言（locale）判断——否则会出现"国际站切回中文却显示国内渠道"的信息错位。
+    - 双产物：`pnpm build:cn` → `dist-cn/`（国内站，shprod 部署），`pnpm build:global` → `dist-global/`（国际站，Cloudflare Pages，`pnpm deploy:cf`）。两份产物入口 HTML / JS / CSS 内容均不同，**不可共用**。
+11. **语言切换器（`<LanguageSwitcher>`，`src/components/site/language-switcher.tsx`）**：
+    - **仅国际站**（`isGlobal === true`）在 `LandingNavbar` 中挂载；国内站不渲染（编译期消除）。
+    - 桌面端：右上角 `dropdown` 形态；移动端：汉堡面板底部 `inline` 形态。两种形态由 `useIsDesktop()` 按断点二选一挂载，避免重复事件监听。
+    - 切换调用 `i18n.setLocale(locale)`，并持久化到 `localStorage.lw-locale`；下次进入站点优先读取该值，未命中则回落到 `region.DEFAULT_LOCALE`（cn → `zh-CN`，global → `en-US`）。
+    - 切换语言**只影响文案**（`useT()` 的查表结果），**不影响** region 分支选择的图片 / 数据（如国际站 changelog 配图始终是英文版、平台卡片始终是国际四件套）。
 
 ## 测试覆盖
 
@@ -209,9 +220,10 @@
 - `account-page.tsx` 41KB / 1084 行，偏大（含实名认证入口），
   后续应拆分「账号信息 / 订阅 / 权益 / 安全中心 / 实名认证」为独立子组件；
   `VerifyIdentityModal` + 错误码映射函数 `mapErrorMessage` 应优先抽离为独立文件。
-- Landing 页大量中文文案硬编码，未来做国际站时需要集中抽取。
 - `src/lib/asset-url.ts` 的 `isUsingCdn` 恒为 `true`，保留为向后兼容导出，
   可后续批量 grep 清理调用方 import。
+- i18n 字典目前只有 `zh-CN` / `en-US` 两份，`en-US.json` 由翻译流程产出，
+  `pnpm i18n:check` 会列出未补 key；正式发布国际站前必须保证清单为空。
 - 实名认证身份证号仅做正则粗校验（`^\d{17}[\dXx]$`），未实现 ISO 7064 MOD 11-2
   校验位算法；用户输错一位会被后端 `realname_mismatch` 拒回，体验上可优化
   （补 `utils.isValidIdCardNo()`：位数 + 校验位 + 地区码），不影响正确性。

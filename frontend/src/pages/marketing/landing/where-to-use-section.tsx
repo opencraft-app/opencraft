@@ -1,6 +1,5 @@
 import { useRef, useCallback } from "react";
 import { motion } from "framer-motion";
-import { MessageCircle, MessageSquare, Send, Slack as SlackIcon } from "lucide-react";
 import { useT } from "@/i18n/t";
 import { assetUrl } from "@/lib/asset-url";
 import { isGlobal } from "@/lib/region";
@@ -123,47 +122,35 @@ function useCnCards(): UseCaseCard[] {
   ];
 }
 
-/* ── 国际站卡片生成（Telegram / WhatsApp / Discord / Slack，lucide 图标临时占位） ── */
+/* ── 国际站卡片生成（Telegram / WhatsApp / Discord / Slack，真·品牌 Logo） ── */
 function useGlobalCards(): UseCaseCard[] {
   const t = useT();
   return [
     {
       key: "telegram",
       glow: "#229ED9",
-      icon: {
-        kind: "node",
-        render: () => <Send className="h-full w-full" style={{ color: "#229ED9" }} strokeWidth={1.8} />,
-      },
+      icon: { kind: "img", src: assetUrl("/assets/landing/where-to-use/telegram-logo.png"), alt: "Telegram" },
       title: t("Telegram"),
       desc: t("轻松一键连接 Telegram 聊天，畅享安全高效的全球沟通体验。"),
     },
     {
       key: "whatsapp",
       glow: "#25D366",
-      icon: {
-        kind: "node",
-        render: () => <MessageCircle className="h-full w-full" style={{ color: "#25D366" }} strokeWidth={1.8} />,
-      },
+      icon: { kind: "img", src: assetUrl("/assets/landing/where-to-use/whatsapp-logo.png"), alt: "WhatsApp" },
       title: t("WhatsApp（即将支持）"),
       desc: t("快速连接 WhatsApp 聊天，日常联系与消息处理更便捷。"),
     },
     {
       key: "discord",
       glow: "#5865F2",
-      icon: {
-        kind: "node",
-        render: () => <MessageSquare className="h-full w-full" style={{ color: "#5865F2" }} strokeWidth={1.8} />,
-      },
+      icon: { kind: "img", src: assetUrl("/assets/landing/where-to-use/discord-logo.png"), alt: "Discord" },
       title: t("Discord（即将支持）"),
       desc: t("连接 Discord 社群频道，让实时交流与协作更加自由。"),
     },
     {
       key: "slack",
       glow: "#ECB22E",
-      icon: {
-        kind: "node",
-        render: () => <SlackIcon className="h-full w-full" style={{ color: "#ECB22E" }} strokeWidth={1.8} />,
-      },
+      icon: { kind: "img", src: assetUrl("/assets/landing/where-to-use/slack-logo.png"), alt: "Slack" },
       title: t("Slack（即将支持）"),
       desc: t("高效连接 Slack 协作，团队沟通与工作流即将无缝接入。"),
     },
