@@ -61,12 +61,16 @@ Cloudflare Pages（`pnpm deploy:cf` / `https://lightclaw.pages.dev`）是跟 mas
 
 ```bash
 cd frontend
-rm -rf dist                                                       # 必做，防止上一分支残留产物
-VITE_AUTH_API_BASE_URL=https://lightclaw.tech pnpm build
+# 国内站 → dist-cn/（shprod 部署）；国际站 → dist-global/（CF Pages + EdgeOne 预览）
+# EdgeOne 预览只验国际站产物，因此清理 / 构建 / 部署都针对 dist-global
+rm -rf dist-global                                                # 必做，防止上一分支残留产物
+VITE_AUTH_API_BASE_URL=https://lightclaw.tech pnpm build:global   # 产出 dist-global/
 TOKEN=$(tr -d '[:space:]' < ~/.tencentcloud/edgeone_pages_token)  # 末尾空白会让 CLI 误判 "No API token provided"
-npx --yes edgeone pages deploy dist -n lightvela-preview -e production -t "$TOKEN"
+npx --yes edgeone pages deploy dist-global -n lightvela-preview -e production -t "$TOKEN"
 ```
 
+- ⚠️ **国内 / 国际产物目录不共用**：国内站 `dist-cn/`（`pnpm build:cn`），国际站 `dist-global/`（`pnpm build:global`）。切分支 / 切区域前务必 `rm -rf dist-cn dist-global` 清旧，避免把另一侧的残留发出去
+- 若要预览国内站产物，替换为 `rm -rf dist-cn && pnpm build:cn && npx edgeone pages deploy dist-cn ...`
 - Token 位置：`~/.tencentcloud/edgeone_pages_token`（0600，仅 pablozhong 授权范围内）
 - `-e production` 是**测试项目自己的 production**，不是线上 `lightvela` 项目
 - CLI 输出的 `EDGEONE_DEPLOY_URL` 带 `eo_token` 和 `eo_time` 两个 query，**必须完整保留**，缺一个就 401
@@ -75,8 +79,8 @@ npx --yes edgeone pages deploy dist -n lightvela-preview -e production -t "$TOKE
 **发布后 bundle 指纹回验**（踩过坑，务必做）：
 
 1. `curl <预览URL>/index.html` 拿到 `/assets/index-<hash>.js`
-2. 本地 `ls dist/assets/index-*.js` 核对 hash 一致
-3. 对得上再在浏览器肉眼验证；对不上说明 `dist/` 没覆盖或被缓存，硬刷新 / 重发
+2. 本地 `ls dist-global/assets/index-*.js`（国内站则 `dist-cn/`）核对 hash 一致
+3. 对得上再在浏览器肉眼验证；对不上说明产物目录没覆盖或被缓存，硬刷新 / 重发
 
 **实名墙**：`/v1/instances/*` 所有写请求（POST/PUT/DELETE）需要实名账号；未实名账号打开 settings 页时 `POST /v1/instances/{id}/debug/exec` 会在后台静默 403 `realname_required`。不是前端 bug，验证改名等写操作必须换已实名账号。
 
