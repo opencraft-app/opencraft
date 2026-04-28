@@ -3,4 +3,4 @@ env: beijing-sandbox
 project: beijing-sandbox
 destinationName: beijing-sandbox
 namespace: lightclaw-gateway
-path: argocd/services/admin-gateway/beijing-sandbox
+sourcePath: argocd/services/admin-gateway/beijing-sandbox

@@ -3,4 +3,4 @@ env: beijing-sandbox
 project: beijing-sandbox
 destinationName: beijing-sandbox
 namespace: ctl
-path: argocd/services/ctl/beijing-sandbox
+sourcePath: argocd/services/ctl/beijing-sandbox

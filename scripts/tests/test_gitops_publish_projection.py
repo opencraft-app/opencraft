@@ -65,6 +65,21 @@ class ResolveReleaseBundleTests(unittest.TestCase):
         self.assertNotIn("argocd/apps/shprod/sandbox-family-appset.yaml", payload["publish_paths"])
 
 
+class SandboxCatalogTests(unittest.TestCase):
+    def test_appset_uses_non_reserved_catalog_source_path(self) -> None:
+        appset = (REPO_ROOT / "argocd" / "apps" / "beijing-sandbox" / "sandbox-family-appset.yaml").read_text()
+
+        self.assertIn("path: '{{ .sourcePath }}'", appset)
+        self.assertNotIn("path: '{{ .path }}'", appset)
+
+        catalog_files = sorted((REPO_ROOT / "argocd" / "catalogs" / "sandbox").glob("*/*.yaml"))
+        self.assertGreaterEqual(len(catalog_files), 1)
+        for catalog_file in catalog_files:
+            content = catalog_file.read_text()
+            self.assertIn("sourcePath: argocd/services/", content, msg=str(catalog_file))
+            self.assertNotIn("\npath: argocd/services/", content, msg=str(catalog_file))
+
+
 class ProjectReleaseBundleTests(unittest.TestCase):
     def test_projection_syncs_publish_subset_and_deletes_stale_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
