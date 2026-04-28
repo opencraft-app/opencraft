@@ -1,0 +1,315 @@
+#!/usr/bin/env python3
+"""
+Static GitOps invariants for the Beijing sandbox ApplicationSet model.
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Iterable
+
+import yaml
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from release_bundle_lib import load_bundle, load_manifest  # noqa: E402
+
+
+APPSET_REL = "argocd/apps/beijing-sandbox/sandbox-family-appset.yaml"
+APPS_DIR_REL = "argocd/apps/beijing-sandbox"
+CATALOG_DIR_REL = "argocd/catalogs/sandbox/beijing-sandbox"
+ALLOWED_BEIJING_APP_FILES = {"argocd-runtime.yaml", "sandbox-family-appset.yaml"}
+REQUIRED_CATALOG_FIELDS = {
+    "service",
+    "env",
+    "project",
+    "destinationName",
+    "namespace",
+    "sourcePath",
+}
+
+
+@dataclass(frozen=True)
+class CatalogEntry:
+    file: Path
+    rel_file: str
+    service: str
+    env: str
+    source_path: str
+    data: dict[str, Any]
+
+    @property
+    def app_name(self) -> str:
+        return f"{self.service}-{self.env}"
+
+
+def repo_rel(path: Path, repo_root: Path) -> str:
+    return path.relative_to(repo_root).as_posix()
+
+
+def load_yaml(path: Path) -> dict[str, Any]:
+    payload = yaml.safe_load(path.read_text()) or {}
+    if not isinstance(payload, dict):
+        raise ValueError(f"{path} must contain a YAML mapping")
+    return payload
+
+
+def path_is_covered(candidate: str, patterns: Iterable[str]) -> bool:
+    candidate = candidate.strip("/")
+    for raw_pattern in patterns:
+        pattern = raw_pattern.strip("/")
+        if pattern.endswith("/**"):
+            prefix = pattern[:-3].rstrip("/")
+            if candidate == prefix or candidate.startswith(prefix + "/"):
+                return True
+        elif candidate == pattern:
+            return True
+    return False
+
+
+def load_catalogs(repo_root: Path, env: str) -> tuple[list[CatalogEntry], list[str]]:
+    errors: list[str] = []
+    catalog_dir = repo_root / CATALOG_DIR_REL
+    entries: list[CatalogEntry] = []
+    if not catalog_dir.is_dir():
+        return entries, [f"missing catalog directory: {CATALOG_DIR_REL}"]
+
+    for catalog_file in sorted(catalog_dir.glob("*.yaml")):
+        rel_file = repo_rel(catalog_file, repo_root)
+        try:
+            data = load_yaml(catalog_file)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"{rel_file}: failed to parse YAML: {exc}")
+            continue
+
+        missing = sorted(REQUIRED_CATALOG_FIELDS - set(data))
+        if missing:
+            errors.append(f"{rel_file}: missing required fields: {', '.join(missing)}")
+            continue
+        if "path" in data:
+            errors.append(f"{rel_file}: catalog must use sourcePath, not path")
+        if str(data["env"]) != env:
+            errors.append(f"{rel_file}: env is {data['env']!r}, expected {env!r}")
+
+        service = str(data["service"])
+        source_path = str(data["sourcePath"])
+        if source_path.startswith("argocd/services/") is False:
+            errors.append(f"{rel_file}: sourcePath must start with argocd/services/: {source_path}")
+        if source_path.startswith("argocd/services/") and not (repo_root / source_path).is_dir():
+            errors.append(f"{rel_file}: sourcePath does not exist: {source_path}")
+
+        entries.append(
+            CatalogEntry(
+                file=catalog_file,
+                rel_file=rel_file,
+                service=service,
+                env=str(data["env"]),
+                source_path=source_path,
+                data=data,
+            )
+        )
+
+    if not entries:
+        errors.append(f"no catalog files found under {CATALOG_DIR_REL}")
+    return entries, errors
+
+
+def validate_appset(repo_root: Path) -> list[str]:
+    appset = repo_root / APPSET_REL
+    if not appset.is_file():
+        return [f"missing ApplicationSet: {APPSET_REL}"]
+
+    errors: list[str] = []
+    text = appset.read_text()
+    if "path: '{{ .sourcePath }}'" not in text and 'path: "{{ .sourcePath }}"' not in text:
+        errors.append(f"{APPSET_REL}: template source.path must use {{ .sourcePath }}")
+    if "{{ .path }}" in text:
+        errors.append(f"{APPSET_REL}: template must not use reserved git generator field {{ .path }}")
+
+    try:
+        data = load_yaml(appset)
+    except Exception as exc:  # noqa: BLE001
+        return [f"{APPSET_REL}: failed to parse YAML: {exc}"]
+    if data.get("kind") != "ApplicationSet":
+        errors.append(f"{APPSET_REL}: kind must be ApplicationSet")
+    generators = (data.get("spec") or {}).get("generators") or []
+    file_paths = {
+        str(item.get("path", ""))
+        for generator in generators
+        if isinstance(generator, dict)
+        for item in (generator.get("git", {}).get("files", []) or [])
+        if isinstance(item, dict)
+    }
+    if "argocd/catalogs/sandbox/*/*.yaml" not in file_paths:
+        errors.append(f"{APPSET_REL}: git generator must read argocd/catalogs/sandbox/*/*.yaml")
+    return errors
+
+
+def validate_beijing_apps_dir(repo_root: Path) -> list[str]:
+    apps_dir = repo_root / APPS_DIR_REL
+    if not apps_dir.is_dir():
+        return [f"missing apps directory: {APPS_DIR_REL}"]
+
+    errors: list[str] = []
+    for app_file in sorted(apps_dir.glob("*.yaml")):
+        if app_file.name not in ALLOWED_BEIJING_APP_FILES:
+            errors.append(
+                f"{repo_rel(app_file, repo_root)}: Beijing AppSet model forbids business hand-written leaf apps"
+            )
+    return errors
+
+
+def paths_from_kustomization(kustomization: Path, repo_root: Path, seen: set[Path] | None = None) -> list[str]:
+    if not kustomization.is_file():
+        return []
+    seen = seen or set()
+    kustomization = kustomization.resolve()
+    if kustomization in seen:
+        return []
+    seen.add(kustomization)
+
+    data = load_yaml(kustomization)
+    references: list[str] = []
+    for field in ("resources", "components"):
+        for item in data.get(field) or []:
+            item_text = str(item)
+            if item_text.startswith(("http://", "https://")):
+                continue
+            resolved = (kustomization.parent / item_text).resolve()
+            try:
+                references.append(resolved.relative_to(repo_root.resolve()).as_posix())
+            except ValueError:
+                continue
+            if resolved.is_dir():
+                references.extend(paths_from_kustomization(resolved / "kustomization.yaml", repo_root, seen))
+    for item in data.get("generators") or []:
+        item_text = str(item)
+        resolved = (kustomization.parent / item_text).resolve()
+        try:
+            generator_rel = resolved.relative_to(repo_root.resolve()).as_posix()
+        except ValueError:
+            continue
+        references.append(generator_rel)
+        if resolved.is_file():
+            generator = load_yaml(resolved)
+            for secret_file in generator.get("files") or []:
+                secret_resolved = (resolved.parent / str(secret_file)).resolve()
+                try:
+                    references.append(secret_resolved.relative_to(repo_root.resolve()).as_posix())
+                except ValueError:
+                    continue
+    return references
+
+
+def env_publish_paths(manifest: dict[str, Any], env: str) -> dict[str, list[str]]:
+    paths_by_bundle: dict[str, list[str]] = {}
+    for bundle_name, bundle_data in sorted((manifest.get("bundles") or {}).items()):
+        if env not in (bundle_data.get("publish_paths_by_env") or {}):
+            continue
+        paths_by_bundle[bundle_name] = load_bundle(manifest, bundle_name, env).publish_paths
+    return paths_by_bundle
+
+
+def validate_publish_closure(
+    repo_root: Path,
+    manifest_path: Path,
+    catalogs: list[CatalogEntry],
+    env: str,
+) -> list[str]:
+    errors: list[str] = []
+    if not manifest_path.is_file():
+        return [f"missing release bundle manifest: {manifest_path}"]
+
+    manifest = load_manifest(manifest_path)
+    paths_by_bundle = env_publish_paths(manifest, env)
+    catalog_by_rel = {entry.rel_file: entry for entry in catalogs}
+    expected_catalogs = {
+        path
+        for paths in paths_by_bundle.values()
+        for path in paths
+        if path.startswith(f"{CATALOG_DIR_REL}/") and path.endswith(".yaml")
+    }
+
+    actual_catalogs = set(catalog_by_rel)
+    for missing in sorted(expected_catalogs - actual_catalogs):
+        errors.append(f"release bundle references missing catalog: {missing}")
+    for extra in sorted(actual_catalogs - expected_catalogs):
+        errors.append(f"{extra}: catalog is not covered by any {env} release bundle publish_paths_by_env")
+
+    for bundle_name, paths in paths_by_bundle.items():
+        if not path_is_covered(APPSET_REL, paths):
+            errors.append(f"bundle {bundle_name}: missing {APPSET_REL}")
+        for catalog_rel in sorted(path for path in expected_catalogs if path in paths):
+            entry = catalog_by_rel.get(catalog_rel)
+            if not entry:
+                continue
+            if not path_is_covered(catalog_rel, paths):
+                errors.append(f"bundle {bundle_name}: missing catalog path {catalog_rel}")
+            if not path_is_covered(f"{entry.source_path}/kustomization.yaml", paths):
+                errors.append(f"bundle {bundle_name}: missing sourcePath publish closure {entry.source_path}/**")
+
+            kustomization = repo_root / entry.source_path / "kustomization.yaml"
+            try:
+                referenced_paths = paths_from_kustomization(kustomization, repo_root)
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"{entry.source_path}/kustomization.yaml: failed to inspect references: {exc}")
+                continue
+
+            for reference in referenced_paths:
+                if not path_is_covered(reference, paths):
+                    errors.append(f"bundle {bundle_name}: {entry.source_path} references {reference}, not in publish_paths")
+
+    return errors
+
+
+def validate(repo_root: Path, env: str, bundle_manifest: Path) -> list[str]:
+    if env != "beijing-sandbox":
+        return [f"unsupported env for AppSet static validation: {env}"]
+
+    catalogs, catalog_errors = load_catalogs(repo_root, env)
+    errors: list[str] = []
+    errors.extend(validate_appset(repo_root))
+    errors.extend(catalog_errors)
+    errors.extend(validate_beijing_apps_dir(repo_root))
+    errors.extend(validate_publish_closure(repo_root, bundle_manifest, catalogs, env))
+    return errors
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--repo-root", type=Path, default=Path("."))
+    parser.add_argument("--env", default="beijing-sandbox")
+    parser.add_argument(
+        "--bundle-manifest",
+        type=Path,
+        default=None,
+        help="Release bundle manifest. Defaults to <repo-root>/scripts/release-bundles.yaml.",
+    )
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    repo_root = args.repo_root.resolve()
+    bundle_manifest = (args.bundle_manifest or repo_root / "scripts/release-bundles.yaml").resolve()
+    errors = validate(repo_root, args.env, bundle_manifest)
+    if errors:
+        for error in errors:
+            print(f"ERROR: {error}", file=sys.stderr)
+        return 1
+
+    catalogs, _ = load_catalogs(repo_root, args.env)
+    print(
+        f"gitops static validation passed: env={args.env} catalogs={len(catalogs)} "
+        f"bundle_manifest={bundle_manifest}"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

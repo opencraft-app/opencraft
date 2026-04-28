@@ -30,6 +30,53 @@ ci_require_commands() {
   done
 }
 
+ci_require_gitops_validation_tools() {
+  ci_require_commands python3 kustomize sops ksops
+  ci_log "gitops validation tools found: kustomize=$(command -v kustomize) sops=$(command -v sops) ksops=$(command -v ksops)"
+}
+
+ci_prepare_sops_age_key() {
+  local default_key_file="/etc/lightclaw-ci/sops-age.keys.txt"
+  local temp_key_file=""
+
+  if [[ -n "${SOPS_AGE_KEY_FILE:-}" ]]; then
+    if [[ ! -r "$SOPS_AGE_KEY_FILE" ]]; then
+      echo "SOPS_AGE_KEY_FILE is set but not readable: $SOPS_AGE_KEY_FILE" >&2
+      return 1
+    fi
+    export SOPS_AGE_KEY_FILE
+    ci_log "sops age key file selected from env:SOPS_AGE_KEY_FILE path=${SOPS_AGE_KEY_FILE}"
+    return 0
+  fi
+
+  if [[ -r "$default_key_file" ]]; then
+    export SOPS_AGE_KEY_FILE="$default_key_file"
+    ci_log "sops age key file selected from default path=${SOPS_AGE_KEY_FILE}"
+    return 0
+  fi
+
+  if [[ -n "${SOPS_AGE_KEY:-}" ]]; then
+    temp_key_file="$(mktemp "${TMPDIR:-/tmp}/lightclaw-sops-age.XXXXXX")"
+    chmod 600 "$temp_key_file"
+    printf '%s\n' "$SOPS_AGE_KEY" > "$temp_key_file"
+    export SOPS_AGE_KEY_FILE="$temp_key_file"
+    export CI_SOPS_AGE_KEY_TEMP_FILE="$temp_key_file"
+    ci_log "sops age key file created from env:SOPS_AGE_KEY path=${SOPS_AGE_KEY_FILE}"
+    trap ci_cleanup_sops_age_key EXIT
+    return 0
+  fi
+
+  echo "missing SOPS age key; set SOPS_AGE_KEY_FILE, provide ${default_key_file}, or set SOPS_AGE_KEY" >&2
+  return 1
+}
+
+ci_cleanup_sops_age_key() {
+  if [[ -n "${CI_SOPS_AGE_KEY_TEMP_FILE:-}" && -f "$CI_SOPS_AGE_KEY_TEMP_FILE" ]]; then
+    rm -f "$CI_SOPS_AGE_KEY_TEMP_FILE"
+    ci_log "removed temporary sops age key file"
+  fi
+}
+
 ci_read_secret_value() {
   python3 -c 'import sys; print(sys.stdin.read().strip())'
 }
