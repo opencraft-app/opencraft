@@ -221,6 +221,35 @@ def changed_files_from_head(repo_root: Path) -> List[str]:
     return [line.strip() for line in result.stdout.splitlines() if line.strip()]
 
 
+def changed_files_from_recent_commits(repo_root: Path, max_count: int = 20) -> List[str]:
+    commits_result = subprocess.run(
+        ["git", "rev-list", "--max-count", str(max_count), "HEAD"],
+        cwd=repo_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    commits = [line.strip() for line in commits_result.stdout.splitlines() if line.strip()]
+
+    changed_files: List[str] = []
+    seen: Set[str] = set()
+    for commit in commits:
+        result = subprocess.run(
+            ["git", "diff-tree", "--root", "--no-commit-id", "--name-only", "-r", commit],
+            cwd=repo_root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        for line in result.stdout.splitlines():
+            path = line.strip()
+            if not path or path in seen:
+                continue
+            seen.add(path)
+            changed_files.append(path)
+    return changed_files
+
+
 def infer_release_targets(changed_files: Sequence[str]) -> List[ReleaseTarget]:
     pattern = re.compile(r"^argocd/services/([^/]+)/([^/]+)/")
     seen: Set[Tuple[str, str]] = set()
@@ -423,7 +452,10 @@ def main() -> int:
     changed_files = changed_files_from_head(repo_root)
     targets = infer_release_targets(changed_files)
     if not targets:
-        raise RuntimeError("no argocd/services/<service>/<env>/ changes found in promote commit")
+        changed_files = changed_files_from_recent_commits(repo_root)
+        targets = infer_release_targets(changed_files)
+    if not targets:
+        raise RuntimeError("no argocd/services/<service>/<env>/ changes found in promote branch commits")
 
     post_merge_request_note(
         args.api_base,
