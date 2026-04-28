@@ -15,4 +15,4 @@ patches:
 - target:
     kind: Job
     name: sandbox-db-migrate-v2
-  patch: "- op: replace\n  path: /metadata/name\n  value: sandbox-db-migrate-v3"
+  patch: "- op: replace\n  path: /metadata/name\n  value: sandbox-db-migrate-v4"
