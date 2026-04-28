@@ -285,7 +285,7 @@ replacements:
   targets:
   - select:
       kind: Job
-      name: sandbox-db-migrate-v3
+      name: sandbox-db-migrate-v2
     fieldPaths:
     - spec.template.spec.containers.0.image
 - source:
