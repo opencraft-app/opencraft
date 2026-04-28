@@ -21,6 +21,11 @@ func TestValidatedReturnToURL(t *testing.T) {
 			want: "https://lightvela-preview.edgeone.cool/dashboard/settings?tab=1#wechat",
 		},
 		{
+			name: "allowed edgeone run subdomain",
+			raw:  "https://lightvela-preview.edgeone.run/dashboard/settings?tab=1#wechat",
+			want: "https://lightvela-preview.edgeone.run/dashboard/settings?tab=1#wechat",
+		},
+		{
 			name: "allowed exact lightvela root",
 			raw:  "https://lightvela.com/dashboard",
 			want: "https://lightvela.com/dashboard",

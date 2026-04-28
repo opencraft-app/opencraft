@@ -15,11 +15,14 @@ GIT_WOA_API_BASE="${GIT_WOA_API_BASE:-https://git.woa.com/api/v3}"
 GIT_WOA_PRIVATE_TOKEN_FILE="${GIT_WOA_PRIVATE_TOKEN_FILE:-/etc/lightclaw-ci/git_woa_private_token}"
 GITOPS_AUTO_MERGE_ENVS="${GITOPS_AUTO_MERGE_ENVS:-beijing-sandbox}"
 BOOTSTRAP_FILES=(
+  ".ci/init.sh"
   "scripts/update_image_pin.py"
   "scripts/release_bundle_lib.py"
   "scripts/project_release_bundle.py"
   "scripts/gitops_merge_request.py"
+  "scripts/gitops_merge_request_note.py"
   "scripts/gitops_cleanup_source_branch.py"
+  "scripts/verify_gitops_release.py"
   ".ci/gitops-promotion.yml"
 )
 
@@ -177,4 +180,28 @@ MR_ARGS=(
   --format dotenv
 )
 
-python3 "$REPO_ROOT/scripts/gitops_merge_request.py" "${MR_ARGS[@]}"
+mr_output="$(
+  python3 "$REPO_ROOT/scripts/gitops_merge_request.py" "${MR_ARGS[@]}"
+)"
+printf '%s\n' "$mr_output"
+eval "$mr_output"
+
+if [[ -n "${MR_ID:-}" ]]; then
+  MR_NOTE_BODY="$(cat <<EOF
+自动发布进度：镜像构建与 GitOps 投影完成。
+
+- 环境：$ENV_DISPLAY_NAME ($ENV_NAME)
+- 服务：$SERVICE_ARG
+- 镜像：$IMAGE
+- 源 revision：$SOURCE_REF
+- promote 分支：$PROMOTE_BRANCH
+- 下一阶段：等待 GitOps MR 合并
+EOF
+)"
+  python3 "$REPO_ROOT/scripts/gitops_merge_request_note.py" \
+    --api-base "$GIT_WOA_API_BASE" \
+    --project-id "$GITOPS_PROJECT_ID" \
+    --private-token "$GIT_WOA_PRIVATE_TOKEN_VALUE" \
+    --mr-id "$MR_ID" \
+    --body "$MR_NOTE_BODY"
+fi

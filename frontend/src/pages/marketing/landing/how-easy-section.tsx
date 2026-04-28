@@ -1,30 +1,32 @@
 import { motion } from "framer-motion";
 
+import { useT } from "@/i18n/t";
 import { assetUrl } from "@/lib/asset-url";
 import { fadeInUp, staggerContainer, titleReveal, viewportConfig, stepLineGrow } from "./constants";
 
-const steps = [
-  {
-    number: "1",
-    title: "点击「立即创建」",
-    desc: "选择订阅，点一下按钮，就这样",
-    badgeText: "约 30 秒",
-  },
-  {
-    number: "2",
-    title: "全自动云端创建",
-    desc: "喝口水的功夫，云端 Hermes Agent 即创建完成。",
-    badgeText: "约 30 秒",
-  },
-  {
-    number: "3",
-    title: "和智能伙伴开始对话",
-    desc: "创建完成后，绑定聊天通道，即刻开始探索之旅",
-    badgeText: "开始探索！",
-  },
-];
-
 export function HowEasySection() {
+  const t = useT();
+  const steps = [
+    {
+      number: "1",
+      title: t("点击「立即创建」"),
+      desc: t("选择订阅，点一下按钮，就这样"),
+      badgeText: t("约 5 秒"),
+    },
+    {
+      number: "2",
+      title: t("全自动云端创建"),
+      desc: t("喝口水的功夫，云端 Hermes Agent 即创建完成。"),
+      badgeText: t("约 5 秒"),
+    },
+    {
+      number: "3",
+      title: t("和智能伙伴开始对话"),
+      desc: t("创建完成后，绑定聊天通道，即刻开始探索之旅"),
+      badgeText: t("开始探索！"),
+    },
+  ];
+
   return (
     <section id="how-easy" className="bg-white">
       <div className="mx-auto w-full max-w-[1200px] px-6 pb-[64px] pt-[56px] md:px-10 md:pb-[120px] md:pt-[88px]">
@@ -48,16 +50,36 @@ export function HowEasySection() {
                   alt=""
                   className="h-7 w-7"
                 />
-                难不难
+                {t("难不难")}
               </span>
             </motion.div>
             <motion.h2
               variants={titleReveal}
               className="font-heading text-[28px] font-semibold leading-[1.5] text-black md:text-[36px] md:leading-[1.78]"
             >
-              <span className="font-bold">一分钟</span>搞定
+              {/*
+               * 「10秒钟搞定」作为整体翻译 key，避免拆成 t("10秒钟")+t("搞定")
+               * 在英文环境下被拼成 "10 secondssetup" 的语法错误；
+               * 加粗部分用 <bold> 占位符 + 运行时 split 渲染为 <span className="font-bold">。
+               */}
+              {(() => {
+                const raw = t("<bold>10秒钟</bold>搞定");
+                const match = raw.match(/^(.*?)<bold>(.*?)<\/bold>(.*)$/);
+                if (!match) {
+                  /* 兜底：字典里没按占位符约定翻译时原样渲染 */
+                  return raw;
+                }
+                const [, prefix, boldText, suffix] = match;
+                return (
+                  <>
+                    {prefix}
+                    <span className="font-bold">{boldText}</span>
+                    {suffix}
+                  </>
+                );
+              })()}
               <br />
-              真的不难
+              {t("真的不难")}
             </motion.h2>
           </motion.div>
 

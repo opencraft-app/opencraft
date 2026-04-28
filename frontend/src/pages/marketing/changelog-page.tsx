@@ -10,7 +10,9 @@ import { useState } from "react";
 import { LoginModal } from "@/components/site/login-modal";
 import { LegalFooter } from "@/components/site/legal-footer";
 import { useSession } from "@/contexts/session-context";
+import { useT } from "@/i18n/t";
 import { assetUrl } from "@/lib/asset-url";
+import { isGlobal } from "@/lib/region";
 
 import { LandingNavbar } from "./landing/landing-navbar";
 
@@ -48,20 +50,18 @@ type ChangelogEntry = {
   visual: "lobster" | "none";
 };
 
-const changelogData: ChangelogEntry[] = [
-  {
-    date: "2026 年 4 月 21 日",
-    title: "LightVela 正式上线",
-    desc: "支持一键创建云端 Hermes，支持接入 QQ、微信、飞书通道",
-    visual: "lobster",
-  },
-];
-
 /* ═══════════════════════════════════════════════════════════════
    配图卡片 — 还原 Figma 设计稿中的插图卡片
    ═══════════════════════════════════════════════════════════════ */
 
 function VisualCard({ variant: _variant }: { variant: "lobster" }) {
+  const t = useT();
+  /* 国际站（lightvela.com）始终使用英文版截图（含 Telegram/WhatsApp/Discord/Slack 图标），
+     即使用户切换为中文，该配图仍保留英文版——避免同一站点出现国内渠道图标的信息错位；
+     国内站则始终使用中文版（含 QQ/微信/飞书图标）。 */
+  const imgPath = isGlobal
+    ? "/changelog/lightvela-launch-en.png"
+    : "/changelog/lightvela-launch.png";
   /* LightVela 正式上线卡片 — 直接使用 Figma 导出的合成图 */
   return (
     <div
@@ -74,8 +74,8 @@ function VisualCard({ variant: _variant }: { variant: "lobster" }) {
       }}
     >
       <img
-        src={assetUrl("/changelog/lightvela-launch.png")}
-        alt="LightVela 正式上线"
+        src={assetUrl(imgPath)}
+        alt={t("LightVela 正式上线")}
         className="absolute inset-0 h-full w-full object-cover"
         loading="lazy"
       />
@@ -88,6 +88,26 @@ function VisualCard({ variant: _variant }: { variant: "lobster" }) {
    ═══════════════════════════════════════════════════════════════ */
 
 function ChangelogContent() {
+  const t = useT();
+  /* 数据驱动；每条文案直接通过翻译函数调用字面量，以便被 i18n-extract 扫描。
+     国际站与国内站的「接入通道」差异通过两条独立字面量承载——
+       · 国际站：Telegram / WhatsApp / Discord / Slack（中英文均展示国际渠道）
+       · 国内站：QQ / 微信 / 飞书（中文展示国内渠道）
+     isGlobal 是 Vite 编译期常量，未命中的分支会被 tree-shake 掉，
+     不会污染另一侧站点的 bundle。 */
+  const launchDesc = isGlobal
+    ? t("支持一键创建云端 Hermes，支持接入 Telegram、WhatsApp、Discord、Slack 通道")
+    : t("支持一键创建云端 Hermes，支持接入 QQ、微信、飞书通道");
+
+  const changelogData: ChangelogEntry[] = [
+    {
+      date: t("2026 年 4 月 21 日"),
+      title: t("LightVela 正式上线"),
+      desc: launchDesc,
+      visual: "lobster",
+    },
+  ];
+
   return (
     <section
       style={{ backgroundColor: "var(--lw-bg)", paddingTop: "8rem", paddingBottom: "6rem" }}
@@ -110,10 +130,10 @@ function ChangelogContent() {
               fontWeight: 600,
               color: "var(--lw-fg)",
               letterSpacing: "-0.02em",
-              lineHeight: 1.33,
+            lineHeight: 1.33,
             }}
           >
-            更新日志
+            {t("更新日志")}
           </motion.h1>
           <motion.p
             variants={fadeInUp}
@@ -124,7 +144,7 @@ function ChangelogContent() {
               maxWidth: "480px",
             }}
           >
-            记录每一个版本的成长，持续迭代，只为给你更好的体验。
+            {t("记录每一个版本的成长，持续迭代，只为给你更好的体验。")}
           </motion.p>
         </motion.div>
 

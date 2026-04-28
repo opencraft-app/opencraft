@@ -1282,6 +1282,13 @@ const TerminalModal = ({ botId, botName, onClose }: { botId: string; botName: st
 
 /* ─── Bot Card for multi-bot display ─── */
 
+// 实例名称展示最多 20 个 Unicode 码点，超出截断并拼接省略号，由调用方配合 title 属性展示全名
+const BOT_NAME_DISPLAY_MAX = 20;
+const truncateBotName = (name: string) => {
+  const chars = Array.from(name);
+  return chars.length > BOT_NAME_DISPLAY_MAX ? chars.slice(0, BOT_NAME_DISPLAY_MAX).join("") + "…" : name;
+};
+
 // 随机头像列表
 const LIGHTCLAW_AVATARS = [assetUrl('/hermes_logo.png')];
 
@@ -2438,13 +2445,15 @@ export const OpenClawSettingsPage = () => {
   };
 
   const handleSaveRename = async () => {
-    if (!activeBot || !editName.trim() || editName.trim() === activeBot.name) {
+    const trimmed = editName.trim();
+    // 与后端 maxInstanceDisplayNameRunes = 64 保持一致，按 Unicode 码点计数
+    if (!activeBot || !trimmed || trimmed === activeBot.name || Array.from(trimmed).length > 64) {
       setIsEditing(false);
       return;
     }
     try {
-      await repositories.bots.renameBot(activeBot.id, editName.trim());
-      updateBot(activeBot.id, { name: editName.trim() });
+      await repositories.bots.renameBot(activeBot.id, trimmed);
+      updateBot(activeBot.id, { name: trimmed });
     } catch (err) {
       console.error("rename failed:", err);
     }
@@ -2665,7 +2674,7 @@ export const OpenClawSettingsPage = () => {
                   }}
                 >
                   <img src={tabAvatar} alt="" className="h-5 w-5 rounded-full object-contain" />
-                  <span>{bot.name}</span>
+                  <span title={bot.name}>{truncateBotName(bot.name)}</span>
                   {isActive && (
                     <motion.div
                       layoutId="tab-indicator"
@@ -2719,6 +2728,7 @@ export const OpenClawSettingsPage = () => {
                             ref={nameInputRef}
                             type="text"
                             value={editName}
+                            maxLength={64}
                             onChange={(e) => setEditName(e.target.value)}
                             onKeyDown={handleRenameKeyDown}
                             onBlur={handleSaveRename}
@@ -2729,7 +2739,7 @@ export const OpenClawSettingsPage = () => {
                         </div>
                       ) : (
                         <div className="flex items-center gap-2">
-                          <h3 className="text-lg font-bold" style={{ color: "rgba(0,0,0,0.90)" }}>{activeBot.name}</h3>
+                          <h3 className="text-lg font-bold" style={{ color: "rgba(0,0,0,0.90)" }} title={activeBot.name}>{truncateBotName(activeBot.name)}</h3>
                           <button
                             onClick={handleStartRename}
                             className="flex h-7 w-7 items-center justify-center rounded-full transition-all hover:bg-black/5"

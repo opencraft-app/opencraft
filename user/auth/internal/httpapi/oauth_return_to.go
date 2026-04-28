@@ -24,6 +24,7 @@ type oauthAllowedHostPattern struct {
 
 var oauthReturnToAllowedHostPatterns = []oauthAllowedHostPattern{
 	{prefix: "lightvela-", suffix: ".edgeone.cool"},
+	{prefix: "lightvela-", suffix: ".edgeone.run"},
 }
 
 type oauthReturnToAllowlist struct {

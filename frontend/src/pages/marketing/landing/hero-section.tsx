@@ -3,6 +3,8 @@ import { motion } from "framer-motion";
 import { ArrowUpRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
+import { useT } from "@/i18n/t";
+
 import { assetUrl } from "@/lib/asset-url";
 import { fadeInUp, staggerContainer, wordStagger, wordReveal, heroFloatStagger, heroFloatUpLeft, heroFloatUpRight } from "./constants";
 import { StarfieldCanvas } from "./starfield-canvas";
@@ -21,7 +23,7 @@ const BULB_FRAME_COUNT = 6;
 
 /**
  * 电灯泡帧动画组件
- * 入场：从下方淡入上浮（无翻转），期间雪碧图帧动画“亮起来”
+ * 入场：从下方淡入上浮（无翻转），期间雪碧图帧动画"亮起来"
  * 常驻：轻微的上下浮动，雪碧图定格在最后一帧（点亮态），不再循环切帧
  * 使用 CSS background-position 切帧，单图请求 + GPU 合成，性能最佳
  */
@@ -107,7 +109,11 @@ export function HeroSection({
     }
   };
 
-  const buttonText = !isLoggedIn || (!hasBots && !isSubscribed) ? "立即创建" : "我的Hermes";
+  const t = useT();
+
+  const buttonText = !isLoggedIn || (!hasBots && !isSubscribed)
+    ? t("立即创建")
+    : t("我的 Hermes");
 
   /* ── CTA 按钮磁吸效果 ── */
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -125,8 +131,11 @@ export function HeroSection({
     btn.style.transform = "translate(0, 0)";
   }, []);
 
-  /* ── Hero 标题逐词拆分 ── */
-  const titleWords = ["灵感随时发生，", "思考自由流动"];
+  /* ── Hero 标题逐词拆分（中文原文直接作为 key） ── */
+  const titleWords = [
+    t("灵感随时发生，"),
+    t("思考自由流动"),
+  ];
 
   return (
     <section id="hero" className="relative overflow-x-clip bg-white pt-[60px]">
@@ -238,7 +247,7 @@ export function HeroSection({
               ))}
             </div>
             <span className="px-2 text-center font-heading text-sm font-normal text-black/90 md:px-0 md:text-xl">
-              云端专属&nbsp;Hermes&nbsp;Agent，越聊越懂你的智能伙伴
+              {t("云端专属个人 Agent，越聊越懂你的智能伙伴")}
             </span>
           </motion.div>
 

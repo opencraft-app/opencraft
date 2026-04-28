@@ -1,4 +1,20 @@
+import { isGlobal } from "@/lib/region";
+
 export type OAuthProvider = "qq" | "wechat" | "google" | "github";
+
+/**
+ * 当前区域允许展示的 OAuth 登录渠道（编译期常量）。
+ * - 国内站：QQ / 微信（GitHub 彩蛋走 useGitHubLoginVisibility 动态开启）
+ * - 国际站：Google / GitHub
+ *
+ * 数组顺序即登录页渲染顺序，修改前请确认设计稿。
+ */
+export const VISIBLE_OAUTH_PROVIDERS: readonly OAuthProvider[] = isGlobal
+  ? (["google", "github"] as const)
+  : (["qq", "wechat"] as const);
+
+/** GitHub 彩蛋入口是否允许在国内站通过 show_github_login() 显示 */
+export const ALLOW_GITHUB_EASTER_EGG = !isGlobal;
 
 const OAUTH_PROVIDER_LABEL: Record<OAuthProvider, string> = {
   qq: "QQ",

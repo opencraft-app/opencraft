@@ -1,5 +1,8 @@
 # Lightclaw Frontend
 
+> Trigger note: README-only change to retrigger frontend release pipeline after Cloudflare preview path adjustments.
+> Trigger note 2: README-only change to retrigger frontend update after release-frontend path correction.
+
 ## 部署形态
 
 当前 `frontend` 支持两种形态：

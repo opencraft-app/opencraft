@@ -1,6 +1,8 @@
 import { useRef, useCallback } from "react";
 import { motion } from "framer-motion";
+import { useT } from "@/i18n/t";
 import { assetUrl } from "@/lib/asset-url";
+import { isGlobal } from "@/lib/region";
 import { fadeInUp, staggerContainer, titleReveal, viewportConfig } from "./constants";
 
 /* ── 3D 倾斜卡片组件 ── */
@@ -63,7 +65,153 @@ function TiltCard({
   );
 }
 
+/* ── 卡片数据类型 ──
+ * icon 支持两种形态：
+ *  - 形如 "/assets/..." 的静态资源路径（通过 assetUrl 包装）
+ *  - 一个渲染 React 节点的函数，用于 lucide 等组件化图标占位
+ */
+type CardIcon =
+  | { kind: "img"; src: string; alt: string }
+  | { kind: "node"; render: () => React.ReactNode };
+
+interface UseCaseCard {
+  /** React key */
+  key: string;
+  /** 品牌光晕色 */
+  glow: string;
+  /** 图标 */
+  icon: CardIcon;
+  /** 已翻译好的主标题 */
+  title: string;
+  /** 已翻译好的描述 */
+  desc: string;
+}
+
+/* ── 国内站卡片生成（组件内调用以便 t() 走字面量，extract 脚本可扫） ── */
+function useCnCards(): UseCaseCard[] {
+  const t = useT();
+  return [
+    {
+      key: "qq",
+      glow: "#90FFFD",
+      icon: { kind: "img", src: assetUrl("/assets/landing/where-to-use/qq-logo-standard.png"), alt: "QQ" },
+      title: t("QQ"),
+      desc: t("轻松一键连接QQ聊天，享受无缝沟通的乐趣。"),
+    },
+    {
+      key: "wechat",
+      glow: "#10CC42",
+      icon: { kind: "img", src: assetUrl("/assets/landing/where-to-use/wechat-logo-550dda.png"), alt: "WeChat" },
+      title: t("微信"),
+      desc: t("迅速连接微信会话，随时随地保持联系。"),
+    },
+    {
+      key: "feishu",
+      glow: "#7972FF",
+      icon: { kind: "img", src: assetUrl("/assets/landing/where-to-use/feishu-logo.png"), alt: "Lark" },
+      title: t("飞书"),
+      desc: t("文档、会议与聊天深度融合，点燃团队创造力火花。"),
+    },
+    {
+      key: "wecom",
+      glow: "#6BB5FF",
+      icon: { kind: "img", src: assetUrl("/assets/landing/where-to-use/wecom-logo.png"), alt: "WeCom" },
+      title: t("企业微信（即将支持）"),
+      desc: t("让沟通与工作流深度结合，随时随地开启丝滑协作。"),
+    },
+  ];
+}
+
+/* ── 国际站卡片生成（Telegram / WhatsApp / Discord / Slack，真·品牌 Logo） ── */
+function useGlobalCards(): UseCaseCard[] {
+  const t = useT();
+  return [
+    {
+      key: "telegram",
+      glow: "#229ED9",
+      icon: { kind: "img", src: assetUrl("/assets/landing/where-to-use/telegram-logo.png"), alt: "Telegram" },
+      title: t("Telegram"),
+      desc: t("轻松一键连接 Telegram 聊天，畅享安全高效的全球沟通体验。"),
+    },
+    {
+      key: "whatsapp",
+      glow: "#25D366",
+      icon: { kind: "img", src: assetUrl("/assets/landing/where-to-use/whatsapp-logo.png"), alt: "WhatsApp" },
+      title: t("WhatsApp（即将支持）"),
+      desc: t("快速连接 WhatsApp 聊天，日常联系与消息处理更便捷。"),
+    },
+    {
+      key: "discord",
+      glow: "#5865F2",
+      icon: { kind: "img", src: assetUrl("/assets/landing/where-to-use/discord-logo.png"), alt: "Discord" },
+      title: t("Discord（即将支持）"),
+      desc: t("连接 Discord 社群频道，让实时交流与协作更加自由。"),
+    },
+    {
+      key: "slack",
+      glow: "#ECB22E",
+      icon: { kind: "img", src: assetUrl("/assets/landing/where-to-use/slack-logo.png"), alt: "Slack" },
+      title: t("Slack（即将支持）"),
+      desc: t("高效连接 Slack 协作，团队沟通与工作流即将无缝接入。"),
+    },
+  ];
+}
+
+/* ── 单卡片渲染 ── */
+function UseCaseCardView({ card }: { card: UseCaseCard }) {
+  return (
+    <TiltCard
+      variants={fadeInUp}
+      className="relative flex-1 overflow-hidden rounded-2xl bg-white"
+      style={{ border: "1px solid #E9ECF1" }}
+    >
+      {/* 品牌色光晕 */}
+      <div
+        className="pointer-events-none absolute"
+        style={{
+          left: 0,
+          top: -19,
+          width: "100%",
+          height: 38,
+          backgroundColor: card.glow,
+          filter: "blur(100px)",
+          opacity: 0.1,
+        }}
+      />
+      <div className="relative flex flex-col gap-8 px-10 py-8">
+        {/* 图标 */}
+        <div className="h-10 w-10 overflow-hidden">
+          {card.icon.kind === "img" ? (
+            <img
+              src={card.icon.src}
+              alt={card.icon.alt}
+              className="h-full w-full object-contain"
+            />
+          ) : (
+            card.icon.render()
+          )}
+        </div>
+        <div className="flex flex-col gap-4">
+          <h3 className="font-heading text-[24px] font-medium leading-[1.33] text-black/90">
+            {card.title}
+          </h3>
+          <p className="text-[16px] font-normal leading-[1.75] text-black/70">
+            {card.desc}
+          </p>
+        </div>
+      </div>
+    </TiltCard>
+  );
+}
+
 export function WhereToUseSection() {
+  const t = useT();
+  /* 两个 hook 无条件都调用以符合 Rules of Hooks；
+   * isGlobal 是编译期常量，terser 会把未选中的一支在打包时消除为死代码。 */
+  const cnCards = useCnCards();
+  const globalCards = useGlobalCards();
+  const cards = isGlobal ? globalCards : cnCards;
+
   return (
     <section
       id="where-to-use"
@@ -92,18 +240,19 @@ export function WhereToUseSection() {
                 alt=""
                 className="h-7 w-7"
               />
-              在哪用
+              {t("在哪用")}
             </span>
           </motion.div>
           <motion.h2
             variants={titleReveal}
             className="font-heading text-[28px] font-semibold leading-[1.5] text-black md:text-[36px] md:leading-[1.78]"
           >
-            你的 App，直接可以用
+            {t("你的 App，直接可以用")}
           </motion.h2>
         </motion.div>
 
-        {/* 四卡片区域 - QQ / 微信 / 飞书 / 企业微信：移动端 1列 → 平板 2列 → 桌面 4列 */}
+        {/* 四卡片区域：移动端 1列 → 平板 2列 → 桌面 4列
+         * 数据按区域（isGlobal）选择：国内站 QQ/微信/飞书/企微，国际站 Telegram/WhatsApp/Discord/Slack */}
         <motion.div
           variants={staggerContainer}
           initial="hidden"
@@ -111,161 +260,9 @@ export function WhereToUseSection() {
           viewport={viewportConfig}
           className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:gap-6 lg:grid-cols-4"
         >
-          {/* 卡片1 - QQ */}
-          <TiltCard
-            variants={fadeInUp}
-            className="relative flex-1 overflow-hidden rounded-2xl bg-white"
-            style={{ border: "1px solid #E9ECF1" }}
-          >
-            {/* 青色光晕 */}
-            <div
-              className="pointer-events-none absolute"
-              style={{
-                left: 0,
-                top: -19,
-                width: "100%",
-                height: 38,
-                backgroundColor: "#90FFFD",
-                filter: "blur(100px)",
-                opacity: 0.1,
-              }}
-            />
-            <div className="relative flex flex-col gap-8 px-10 py-8">
-              {/* QQ 图标 */}
-              <div className="h-10 w-10 overflow-hidden">
-                <img
-                  src={assetUrl("/assets/landing/where-to-use/qq-logo-standard.png")}
-                  alt="QQ"
-                  className="h-full w-full object-contain"
-                />
-              </div>
-              <div className="flex flex-col gap-4">
-                <h3 className="font-heading text-[24px] font-medium leading-[1.33] text-black/90">
-                  QQ
-                </h3>
-                <p className="text-[16px] font-normal leading-[1.75] text-black/70">
-                  轻松一键连接QQ聊天，享受无缝沟通的乐趣。
-                </p>
-              </div>
-            </div>
-          </TiltCard>
-
-          {/* 卡片2 - 微信 */}
-          <TiltCard
-            variants={fadeInUp}
-            className="relative flex-1 overflow-hidden rounded-2xl bg-white"
-            style={{ border: "1px solid #E9ECF1" }}
-          >
-            {/* 绿色光晕 */}
-            <div
-              className="pointer-events-none absolute"
-              style={{
-                left: 0,
-                top: -19,
-                width: "100%",
-                height: 38,
-                backgroundColor: "#10CC42",
-                filter: "blur(100px)",
-                opacity: 0.1,
-              }}
-            />
-            <div className="relative flex flex-col gap-8 px-10 py-8">
-              {/* 微信图标 */}
-              <div className="h-10 w-10 overflow-hidden">
-                <img
-                  src={assetUrl("/assets/landing/where-to-use/wechat-logo-550dda.png")}
-                  alt="微信"
-                  className="h-full w-full object-contain"
-                />
-              </div>
-              <div className="flex flex-col gap-4">
-                <h3 className="font-heading text-[24px] font-medium leading-[1.33] text-black/90">
-                  微信
-                </h3>
-                <p className="text-[16px] font-normal leading-[1.75] text-black/70">
-                  迅速连接微信会话，随时随地保持联系。
-                </p>
-              </div>
-            </div>
-          </TiltCard>
-
-          {/* 卡片3 - 飞书 */}
-          <TiltCard
-            variants={fadeInUp}
-            className="relative flex-1 overflow-hidden rounded-2xl bg-white"
-            style={{ border: "1px solid #E9ECF1" }}
-          >
-            {/* 紫色光晕 */}
-            <div
-              className="pointer-events-none absolute"
-              style={{
-                left: 0,
-                top: -19,
-                width: "100%",
-                height: 38,
-                backgroundColor: "#7972FF",
-                filter: "blur(100px)",
-                opacity: 0.1,
-              }}
-            />
-            <div className="relative flex flex-col gap-8 px-10 py-8">
-              {/* 飞书图标 */}
-              <div className="h-10 w-10 overflow-hidden">
-                <img
-                  src={assetUrl("/assets/landing/where-to-use/feishu-logo.png")}
-                  alt="飞书"
-                  className="h-full w-full object-contain"
-                />
-              </div>
-              <div className="flex flex-col gap-4">
-                <h3 className="font-heading text-[24px] font-medium leading-[1.33] text-black/90">
-                  飞书
-                </h3>
-                <p className="text-[16px] font-normal leading-[1.75] text-black/70">
-                  文档、会议与聊天深度融合，点燃团队创造力火花。
-                </p>
-              </div>
-            </div>
-          </TiltCard>
-
-          {/* 卡片4 - 企业微信（即将支持） */}
-          <TiltCard
-            variants={fadeInUp}
-            className="relative flex-1 overflow-hidden rounded-2xl bg-white"
-            style={{ border: "1px solid #E9ECF1" }}
-          >
-            {/* 蓝色光晕 */}
-            <div
-              className="pointer-events-none absolute"
-              style={{
-                left: 0,
-                top: -19,
-                width: "100%",
-                height: 38,
-                backgroundColor: "#6BB5FF",
-                filter: "blur(100px)",
-                opacity: 0.1,
-              }}
-            />
-            <div className="relative flex flex-col gap-8 px-10 py-8">
-              {/* 企业微信图标 */}
-              <div className="h-10 w-10 overflow-hidden">
-                <img
-                  src={assetUrl("/assets/landing/where-to-use/wecom-logo.png")}
-                  alt="企业微信"
-                  className="h-full w-full object-contain"
-                />
-              </div>
-              <div className="flex flex-col gap-4">
-                <h3 className="font-heading text-[24px] font-medium leading-[1.33] text-black/90">
-                  企业微信（即将支持）
-                </h3>
-                <p className="text-[16px] font-normal leading-[1.75] text-black/70">
-                  让沟通与工作流深度结合，随时随地开启丝滑协作。
-                </p>
-              </div>
-            </div>
-          </TiltCard>
+          {cards.map((card) => (
+            <UseCaseCardView key={card.key} card={card} />
+          ))}
         </motion.div>
       </div>
     </section>
