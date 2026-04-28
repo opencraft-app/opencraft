@@ -1,6 +1,5 @@
 import { BEIAN_URL, ICP_LICENSE } from "@/constants/legal";
 import { useT } from "@/i18n/t";
-import { isCN } from "@/lib/region";
 
 export const LegalFooter = () => {
   const currentYear = new Date().getFullYear();
@@ -15,23 +14,19 @@ export const LegalFooter = () => {
         className="mx-auto flex flex-col items-center gap-4 px-4 py-6 sm:flex-row sm:justify-between sm:px-6 sm:py-5"
         style={{ maxWidth: "var(--lw-max-content)" }}
       >
-        {/* 左侧：版权 + 备案号（备案号仅国内站显示） */}
+        {/* 左侧：版权 + 备案号 */}
         <p className="text-xs" style={{ color: "var(--text-tertiary)" }}>
           {t("© {{year}} LightVela 版权所有。", { year: currentYear })}
-          {isCN && (
-            <>
-              {" "}
-              <a
-                href={BEIAN_URL}
-                target="_blank"
-                rel="noreferrer"
-                className="hover:underline"
-                style={{ color: "var(--text-tertiary)" }}
-              >
-                {ICP_LICENSE}
-              </a>
-            </>
-          )}
+          {" "}
+          <a
+            href={BEIAN_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:underline"
+            style={{ color: "var(--text-tertiary)" }}
+          >
+            {ICP_LICENSE}
+          </a>
         </p>
 
         {/* 右侧：法律链接 */}
