@@ -1,4 +1,5 @@
 import json
+import os
 import unittest
 from contextlib import contextmanager
 from io import BytesIO
@@ -10,6 +11,7 @@ from scripts.audit_gitops_drift import (
     build_alert_content,
     evaluate_drift,
     notify_if_needed,
+    resolve_wework_webhook,
 )
 
 
@@ -72,6 +74,16 @@ def deep_update(target: dict[str, Any], updates: dict[str, Any]) -> None:
 
 
 class GitOpsDriftAuditTests(unittest.TestCase):
+    def test_unexpanded_ci_setting_uses_wework_fallback(self) -> None:
+        args = type("Args", (), {"wework_webhook": None})()
+        with patched_env(
+            WEWORK_DRIFT_AUDIT_WEBHOOK="${{ settings.WEWORK_DRIFT_AUDIT_WEBHOOK }}",
+            WEWORK_DRIFT_AUDIT_WEBHOOK_FALLBACK="https://example.test/fallback",
+        ):
+            webhook = resolve_wework_webhook(args)
+
+        self.assertEqual(webhook, "https://example.test/fallback")
+
     def test_no_drift_when_live_matches_catalog_expectation(self) -> None:
         drifts = evaluate_drift(
             [expected_app()],
@@ -213,6 +225,20 @@ class GitOpsDriftAuditTests(unittest.TestCase):
         )
 
         self.assertFalse(sent)
+
+
+@contextmanager
+def patched_env(**updates: str) -> Any:
+    previous = {key: os.environ.get(key) for key in updates}
+    try:
+        os.environ.update(updates)
+        yield
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
 
 @contextmanager

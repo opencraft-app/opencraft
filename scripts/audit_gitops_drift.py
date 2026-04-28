@@ -70,24 +70,36 @@ def read_secret_value(path: str) -> str:
         return fh.read().strip()
 
 
+def effective_string_setting(value: str | None) -> str:
+    if not value:
+        return ""
+    value = value.strip()
+    if value.startswith("${{") and value.endswith("}}"):
+        return ""
+    return value
+
+
 def resolve_string_setting(
     cli_value: str | None,
     env_name: str,
     file_path: str,
     default: str = "",
 ) -> str:
-    if cli_value and cli_value.strip():
-        return cli_value.strip()
+    cli_value = effective_string_setting(cli_value)
+    if cli_value:
+        return cli_value
 
-    env_value = os.environ.get(env_name, "").strip()
+    env_value = effective_string_setting(os.environ.get(env_name))
     if env_value:
         return env_value
 
     file_candidate = Path(file_path)
     if file_candidate.is_file():
-        return read_secret_value(str(file_candidate))
+        file_value = effective_string_setting(read_secret_value(str(file_candidate)))
+        if file_value:
+            return file_value
 
-    return default.strip()
+    return effective_string_setting(default)
 
 
 def resolve_bool_setting(cli_flag: bool, env_name: str, file_path: str, default: bool = False) -> bool:
