@@ -1,11 +1,11 @@
 auth_service_url: http://lightclaw-auth.user-auth.svc.cluster.local
 allowed_origins:
-  - https://lightclaw.pages.dev
-  - https://*.lightclaw.pages.dev
+  - https://*.pages.dev
   - https://*.edgeone.cool
+  - https://*.edgeone.run
   - https://lightclaw.tech
-  - http://localhost:4173
-  - http://localhost:5173
+  - http://localhost:*
+  - http://127.0.0.1:*
 routes:
   - name: users
     prefix: /users

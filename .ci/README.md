@@ -158,6 +158,42 @@
 
 也就是说，TCR 认证从“蓝盾插件取票据”切成了“shell 自己登录 TCR”。
 
+### 8. 环境依赖统一收口到 `.ci/init.sh`
+
+当前 CI 的公共执行面约定放在：
+
+- `.ci/init.sh`
+
+它负责这几类公共初始化：
+
+- repo root 归一化
+- Node 22 自举
+- pnpm 自举
+- kubectl 自举
+- Cloudflare 本地票据读取
+
+当前推荐模式是：
+
+```bash
+source .ci/init.sh
+ci_init_repo_root
+```
+
+再继续：
+
+- `bash scripts/...`
+- 或 `cd "$REPO_ROOT/frontend"` 这类子目录操作
+
+如果当前链路还需要前端或集群工具，再补：
+
+```bash
+ci_ensure_node
+ci_ensure_pnpm
+ci_ensure_kubectl
+```
+
+不要把这些环境依赖继续散落到每条 YAML 或 Python 脚本里分别维护；优先加到 `.ci/init.sh`，然后由流水线 source 它。
+
 ## Required Runtime Preconditions
 
 除了 `settings` 变量，还需要下面这些前置满足：
@@ -248,6 +284,10 @@
   - 上海镜像推送 token
 - `GIT_WOA_PRIVATE_TOKEN`
   - Git WOA API token，用于创建 / 轮询 / 合并 GitOps MR
+- `CLOUDFLARE_API_TOKEN`
+  - Cloudflare Pages API token，用于 frontend 北京测试静态发布
+- `CLOUDFLARE_ACCOUNT_ID`
+  - Cloudflare account id，用于 frontend 北京测试静态发布
 
 另外要求：
 
@@ -261,6 +301,10 @@
 - Git WOA API token 同样支持本地文件优先：
   - `/etc/lightclaw-ci/git_woa_private_token`
   CI 会优先读取该文件
+- Cloudflare frontend 测试发布同样支持本地文件优先：
+  - `/etc/lightclaw-ci/cloudflare_api_token`
+  - `/etc/lightclaw-ci/cloudflare_account_id`
+  `release-frontend` 会优先读取这两个本地文件，缺失时再回落到 Stream settings
 
 ## Shared Scripts
 

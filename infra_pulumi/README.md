@@ -202,6 +202,7 @@ GOWORK=off go run ./cmd/infractl validate --stack beijing-sandbox
 
 - COS `account_app_id` 通过 CAM `GetUserAppId` 获取
 - 新环境 bucket 名自动生成为 `lightclawuser-<env_short>-<app_id>`
+- 如当前凭据不允许新增 CAM 用户，可在 inventory 里设置 `stacks.storage.manage_cam_access=false`，仅创建 bucket / policy，跳过 CAM user、policy attachment 和 access key
 - jumpserver 镜像缺省时自动发现当前 region 下的 Ubuntu 24 公共镜像
 - TKE kubeconfig 通过 `DescribeClusterKubeconfig` 拉取，并写入 `.secret/<cluster-id>-config`
 - 安全组引用可以使用 `__TKE_NODE_SECURITY_GROUP_ID__`

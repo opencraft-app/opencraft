@@ -72,6 +72,8 @@ jobs:
           TCR_BEIJING_PASSWORD: ${{ settings.TCR_BEIJING_PASSWORD }}
           TCR_SHPROD_PASSWORD: ${{ settings.TCR_SHPROD_PASSWORD }}
         run: |
+          source .ci/init.sh
+          ci_init_repo_root
           REMOTE_URL="git@git.woa.com:wisp/mono2.git" \
           GITOPS_BRANCH=gitops \
           BUILD_TAG_OVERRIDE="${{ steps.prepare.outputs.tag }}" \
@@ -81,6 +83,8 @@ jobs:
         shell: bash
         run: |
           test -n "${{ variables.SOURCE_SHA }}"
+          source .ci/init.sh
+          ci_init_repo_root
           REMOTE_URL="git@git.woa.com:wisp/mono2.git" \
           GITOPS_BRANCH=gitops \
           bash scripts/promote_bundle_image_to_gitops.sh ai-gateway ai-gateway "${{ variables.TARGET_ENV }}" "${{ variables.SOURCE_SHA }}"

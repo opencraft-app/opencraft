@@ -143,7 +143,10 @@ func Ensure(ctx *stackctx.Context) error {
 		ClusterId:    clusterID,
 		AddonName:    pulumi.String("tke-log-agent"),
 		AddonVersion: pulumi.StringPtr("1.1.23"),
-	}, ctx.ImportOption(ctx.Plan.TKE.AddonID)...); err != nil {
+	}, ctx.OptionsWithImport(ctx.Plan.TKE.AddonID, pulumi.IgnoreChanges([]string{
+		"addonVersion",
+		"rawValues",
+	}))...); err != nil {
 		return err
 	}
 

@@ -23,7 +23,7 @@ const BULB_FRAME_COUNT = 6;
 
 /**
  * 电灯泡帧动画组件
- * 入场：从下方淡入上浮（无翻转），期间雪碧图帧动画“亮起来”
+ * 入场：从下方淡入上浮（无翻转），期间雪碧图帧动画"亮起来"
  * 常驻：轻微的上下浮动，雪碧图定格在最后一帧（点亮态），不再循环切帧
  * 使用 CSS background-position 切帧，单图请求 + GPU 合成，性能最佳
  */
@@ -113,7 +113,7 @@ export function HeroSection({
 
   const buttonText = !isLoggedIn || (!hasBots && !isSubscribed)
     ? t("立即创建")
-    : t("我的Hermes");
+    : t("我的 Hermes");
 
   /* ── CTA 按钮磁吸效果 ── */
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -247,7 +247,7 @@ export function HeroSection({
               ))}
             </div>
             <span className="px-2 text-center font-heading text-sm font-normal text-black/90 md:px-0 md:text-xl">
-              {t("云端专属 Hermes Agent，越聊越懂你的智能伙伴")}
+              {t("云端专属个人 Agent，越聊越懂你的智能伙伴")}
             </span>
           </motion.div>
 

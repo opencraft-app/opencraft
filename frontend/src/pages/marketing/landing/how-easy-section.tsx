@@ -11,13 +11,13 @@ export function HowEasySection() {
       number: "1",
       title: t("点击「立即创建」"),
       desc: t("选择订阅，点一下按钮，就这样"),
-      badgeText: t("约 30 秒"),
+      badgeText: t("约 5 秒"),
     },
     {
       number: "2",
       title: t("全自动云端创建"),
       desc: t("喝口水的功夫，云端 Hermes Agent 即创建完成。"),
-      badgeText: t("约 30 秒"),
+      badgeText: t("约 5 秒"),
     },
     {
       number: "3",
@@ -58,12 +58,12 @@ export function HowEasySection() {
               className="font-heading text-[28px] font-semibold leading-[1.5] text-black md:text-[36px] md:leading-[1.78]"
             >
               {/*
-               * 「一分钟搞定」作为整体翻译 key，避免拆成 t("一分钟")+t("搞定")
-               * 在英文环境下被拼成 "One minutesetup" 的语法错误；
+               * 「10秒钟搞定」作为整体翻译 key，避免拆成 t("10秒钟")+t("搞定")
+               * 在英文环境下被拼成 "10 secondssetup" 的语法错误；
                * 加粗部分用 <bold> 占位符 + 运行时 split 渲染为 <span className="font-bold">。
                */}
               {(() => {
-                const raw = t("<bold>一分钟</bold>搞定");
+                const raw = t("<bold>10秒钟</bold>搞定");
                 const match = raw.match(/^(.*?)<bold>(.*?)<\/bold>(.*)$/);
                 if (!match) {
                   /* 兜底：字典里没按占位符约定翻译时原样渲染 */

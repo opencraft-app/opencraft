@@ -18,7 +18,6 @@ func Ensure(ctx *stackctx.Context) error {
 		return err
 	}
 	bucketName := resolvedBucketName(ctx, accountAppID)
-	camUserName := resolvedCAMUserName(ctx)
 	camPolicyName := resolvedCAMPolicyName(ctx)
 
 	_, err = cos.NewBucket(ctx.Pulumi, naming.StableResource("storage", "bucket"), &cos.BucketArgs{
@@ -29,6 +28,12 @@ func Ensure(ctx *stackctx.Context) error {
 		return err
 	}
 
+	if !camAccessManaged(ctx) {
+		ctx.Pulumi.Export("storageBucketName", pulumi.String(bucketName))
+		return nil
+	}
+
+	camUserName := resolvedCAMUserName(ctx)
 	user, err := cam.NewUser(ctx.Pulumi, naming.StableResource("storage", "cam-user"), &cam.UserArgs{
 		Name:        pulumi.StringPtr(camUserName),
 		Remark:      pulumi.StringPtr("Scoped API user for lightclaw user asset bucket access."),
@@ -66,6 +71,13 @@ func Ensure(ctx *stackctx.Context) error {
 
 	ctx.Pulumi.Export("storageBucketName", pulumi.String(bucketName))
 	return nil
+}
+
+func camAccessManaged(ctx *stackctx.Context) bool {
+	if ctx.Inventory.Stacks.Storage.ManageCAMAccess == nil {
+		return true
+	}
+	return *ctx.Inventory.Stacks.Storage.ManageCAMAccess
 }
 
 func bucketPolicy(ctx *stackctx.Context, accountAppID, bucketName string) string {

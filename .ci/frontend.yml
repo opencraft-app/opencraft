@@ -64,19 +64,39 @@ jobs:
           SHORT_SHA="${{ ci.sha }}"
           SHORT_SHA="${SHORT_SHA:0:12}"
           echo "::set-output name=tag::frontend-${SHORT_SHA}"
-      - name: build-shprod
+      - name: deploy-beijing-cloudflare
         if: ${{ variables.PIPELINE_MODE }} != 'promote'
         shell: bash
         env:
-          TCR_SHPROD_PASSWORD: ${{ settings.TCR_SHPROD_PASSWORD }}
+          CLOUDFLARE_API_TOKEN: ${{ settings.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ settings.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT_NAME: lightclaw
+          VITE_AUTH_API_BASE_URL: https://lightclaw.tech
+          CLOUDFLARE_PAGES_COMMIT_HASH: ${{ ci.sha }}
+          CLOUDFLARE_PAGES_COMMIT_MESSAGE: Cloudflare Pages deploy from release-frontend
         run: |
-          BUILD_TAG_OVERRIDE="${{ steps.prepare.outputs.tag }}" \
-          bash scripts/build_and_promote_to_gitops.sh frontend frontend shprod none
+          source .ci/init.sh
+          ci_init_repo_root
+          ci_load_cloudflare_credentials
+          ci_ensure_node
+          ci_ensure_pnpm
+
+          "$NODE_BIN" --version
+          "$NPM_BIN" --version
+
+          cd "$REPO_ROOT/frontend"
+          rm -rf node_modules
+          "$PNPM_BIN" --version
+          "$PNPM_BIN" install --no-frozen-lockfile
+          "$PNPM_BIN" build
+          "$PNPM_BIN" deploy:cf
       - name: promote-manual
         if: ${{ variables.PIPELINE_MODE }} == 'promote'
         shell: bash
         run: |
           test -n "${{ variables.SOURCE_SHA }}"
+          source .ci/init.sh
+          ci_init_repo_root
           REMOTE_URL="git@git.woa.com:wisp/mono2.git" \
           GITOPS_BRANCH=gitops \
           bash scripts/promote_bundle_image_to_gitops.sh frontend frontend "${{ variables.TARGET_ENV }}" "${{ variables.SOURCE_SHA }}"

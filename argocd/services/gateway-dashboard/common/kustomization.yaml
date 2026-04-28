@@ -1,0 +1,98 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: ai-gateway
+generatorOptions:
+  disableNameSuffixHash: true
+replacements:
+- source:
+    kind: ConfigMap
+    name: gateway-dashboard-platform-values
+    fieldPath: data.GATEWAY_DASHBOARD_GATEWAY_API_URL
+  targets:
+  - select:
+      kind: ConfigMap
+      name: gateway-dashboard-config
+    fieldPaths:
+    - data.GATEWAY_API_URL
+- source:
+    kind: ConfigMap
+    name: gateway-dashboard-platform-values
+    fieldPath: data.GATEWAY_DASHBOARD_AUTH_ADMIN_API_URL
+  targets:
+  - select:
+      kind: ConfigMap
+      name: gateway-dashboard-config
+    fieldPaths:
+    - data.AUTH_ADMIN_API_URL
+- source:
+    kind: ConfigMap
+    name: gateway-dashboard-platform-values
+    fieldPath: data.GATEWAY_DASHBOARD_SUBSCRIPTION_ADMIN_API_URL
+  targets:
+  - select:
+      kind: ConfigMap
+      name: gateway-dashboard-config
+    fieldPaths:
+    - data.SUBSCRIPTION_ADMIN_API_URL
+- source:
+    kind: ConfigMap
+    name: gateway-dashboard-platform-values
+    fieldPath: data.GATEWAY_DASHBOARD_SANDBOX_API_URL
+  targets:
+  - select:
+      kind: ConfigMap
+      name: gateway-dashboard-config
+    fieldPaths:
+    - data.SANDBOX_API_URL
+- source:
+    kind: ConfigMap
+    name: gateway-dashboard-platform-values
+    fieldPath: data.GATEWAY_DASHBOARD_CTL_API_URL
+  targets:
+  - select:
+      kind: ConfigMap
+      name: gateway-dashboard-config
+    fieldPaths:
+    - data.CTL_API_URL
+- source:
+    kind: ConfigMap
+    name: gateway-dashboard-platform-values
+    fieldPath: data.GATEWAY_DASHBOARD_NODE_POOL
+  targets:
+  - select:
+      kind: Deployment
+      name: gateway-dashboard
+    fieldPaths:
+    - spec.template.spec.nodeSelector.pool
+- source:
+    kind: ConfigMap
+    name: gateway-dashboard-platform-values
+    fieldPath: data.GATEWAY_DASHBOARD_IMAGE
+  targets:
+  - select:
+      kind: Deployment
+      name: gateway-dashboard
+    fieldPaths:
+    - spec.template.spec.containers.0.image
+- source:
+    kind: ConfigMap
+    name: gateway-dashboard-platform-values
+    fieldPath: data.GATEWAY_DASHBOARD_DEPLOYED_AT
+  targets:
+  - select:
+      kind: Deployment
+      name: gateway-dashboard
+    fieldPaths:
+    - spec.template.metadata.annotations.[gateway-dashboard.clawhub.dev/redeploy-at]
+- source:
+    kind: ConfigMap
+    name: gateway-dashboard-platform-values
+    fieldPath: data.GATEWAY_DASHBOARD_CLS_TOPIC_ID
+  targets:
+  - select:
+      kind: LogConfig
+      name: gateway-dashboard-runtime
+    fieldPaths:
+    - spec.clsDetail.topicId
+resources:
+- ../../../../gateway-dashboard/k8s/base

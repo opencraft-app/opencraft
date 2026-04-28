@@ -1,0 +1,6 @@
+service: payment
+env: beijing-sandbox-2
+project: beijing-sandbox-2
+destinationName: beijing-sandbox-2
+namespace: user-auth
+path: argocd/services/payment/beijing-sandbox-2
