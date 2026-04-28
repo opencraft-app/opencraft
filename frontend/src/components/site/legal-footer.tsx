@@ -17,7 +17,7 @@ export const LegalFooter = () => {
       >
         {/* 左侧：版权 + 备案号（备案号仅国内站显示） */}
         <p className="text-xs" style={{ color: "var(--text-tertiary)" }}>
-          {t("© {{year}} LightVela. All rights reserved.", { year: currentYear })}
+          {t("© {{year}} LightVela 版权所有。", { year: currentYear })}
           {isCN && (
             <>
               {" "}

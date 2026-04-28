@@ -135,7 +135,7 @@ function useGlobalCards(): UseCaseCard[] {
         render: () => <Send className="h-full w-full" style={{ color: "#229ED9" }} strokeWidth={1.8} />,
       },
       title: t("Telegram"),
-      desc: t("一键接入 Telegram 会话，畅享安全流畅的即时交流体验。"),
+      desc: t("轻松一键连接 Telegram 聊天，畅享安全高效的全球沟通体验。"),
     },
     {
       key: "whatsapp",
@@ -144,8 +144,8 @@ function useGlobalCards(): UseCaseCard[] {
         kind: "node",
         render: () => <MessageCircle className="h-full w-full" style={{ color: "#25D366" }} strokeWidth={1.8} />,
       },
-      title: t("WhatsApp"),
-      desc: t("让你的 Agent 直达 WhatsApp 用户，随时随地保持联络。"),
+      title: t("WhatsApp（即将支持）"),
+      desc: t("快速连接 WhatsApp 聊天，日常联系与消息处理更便捷。"),
     },
     {
       key: "discord",
@@ -154,8 +154,8 @@ function useGlobalCards(): UseCaseCard[] {
         kind: "node",
         render: () => <MessageSquare className="h-full w-full" style={{ color: "#5865F2" }} strokeWidth={1.8} />,
       },
-      title: t("Discord"),
-      desc: t("把 Agent 接入 Discord 服务器，点燃社区的活跃氛围。"),
+      title: t("Discord（即将支持）"),
+      desc: t("连接 Discord 社群频道，让实时交流与协作更加自由。"),
     },
     {
       key: "slack",
@@ -164,8 +164,8 @@ function useGlobalCards(): UseCaseCard[] {
         kind: "node",
         render: () => <SlackIcon className="h-full w-full" style={{ color: "#ECB22E" }} strokeWidth={1.8} />,
       },
-      title: t("Slack"),
-      desc: t("深度融入 Slack 频道，让团队协作效率再上一层。"),
+      title: t("Slack（即将支持）"),
+      desc: t("高效连接 Slack 协作，团队沟通与工作流即将无缝接入。"),
     },
   ];
 }

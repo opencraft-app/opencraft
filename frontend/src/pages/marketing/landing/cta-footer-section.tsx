@@ -104,7 +104,7 @@ export function CTAFooterSection({
         <div className="mt-10 border-t border-black/8 pt-5 md:mt-16 md:pt-6">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] leading-[1.6] tracking-[-0.013em] text-black/50 md:gap-[22px] md:text-xs md:leading-[1.5]">
             <span>
-              {t("© {{year}} LightVela. All rights reserved.", { year: new Date().getFullYear() })}{isCN && (
+              {t("© {{year}} LightVela 版权所有。", { year: new Date().getFullYear() })}{isCN && (
                 <>
                   {" "}
                   <a href={BEIAN_URL} target="_blank" rel="noreferrer" className="transition-colors hover:text-black">

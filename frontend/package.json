@@ -6,10 +6,10 @@
   "scripts": {
     "dev": "vite",
     "dev:cn": "vite --mode cn",
-    "i18n:extract": "node scripts/i18n-extract.mjs",
-    "i18n:check": "node scripts/i18n-extract.mjs --check",
     "dev:global": "vite --mode global",
     "dev:local": "VITE_LOCAL_SDK=1 vite",
+    "i18n:extract": "node scripts/i18n-extract.mjs",
+    "i18n:check": "node scripts/i18n-extract.mjs --check",
     "build": "tsc -b && vite build",
     "build:cn": "tsc -b && vite build --mode cn --outDir dist-cn",
     "build:global": "tsc -b && vite build --mode global --outDir dist-global",
