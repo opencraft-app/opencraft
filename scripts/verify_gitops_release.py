@@ -252,11 +252,14 @@ def changed_files_from_recent_commits(repo_root: Path, max_count: int = 20) -> L
 
 def infer_release_targets(changed_files: Sequence[str]) -> List[ReleaseTarget]:
     pattern = re.compile(r"^argocd/services/([^/]+)/([^/]+)/")
+    ignored_env_dirs = {"common", "profiles"}
     seen: Set[Tuple[str, str]] = set()
     targets: List[ReleaseTarget] = []
     for path in changed_files:
         match = pattern.match(path)
         if not match:
+            continue
+        if match.group(2) in ignored_env_dirs:
             continue
         pair = (match.group(1), match.group(2))
         if pair in seen:

@@ -18,6 +18,8 @@ class GitopsReleaseVerifierTests(unittest.TestCase):
                 "scripts/gitops_merge_request.py",
                 "argocd/services/ctl/beijing-sandbox/ctl-platform.env",
                 "argocd/services/ctl/beijing-sandbox/kustomization.yaml",
+                "argocd/services/ctl/common/kustomization.yaml",
+                "argocd/services/ctl/profiles/sandbox/kustomization.yaml",
                 "argocd/services/admin-gateway/beijing-sandbox/admin-gateway-platform.env",
                 "argocd/apps/beijing-sandbox/ctl.yaml",
             ]
