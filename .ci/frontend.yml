@@ -22,7 +22,7 @@ variables:
     readonly: false
     allow-modify-at-startup: true
   FRONTEND_RELEASE_MATRIX:
-    value: cn-cf
+    value: cn-cf,global-cf
     readonly: false
     allow-modify-at-startup: true
   TARGET_ENV:

@@ -13,6 +13,20 @@
       ],
       "authApiBaseUrl": "https://lightclaw.tech",
       "outputDir": "dist-cn"
+    },
+    {
+      "id": "global-cf",
+      "region": "global",
+      "channel": "cf",
+      "buildCommand": "build:global",
+      "deployCommand": "deploy:cf",
+      "projectName": "lightvela-intl",
+      "requiredSecretEnv": [
+        "CLOUDFLARE_API_TOKEN",
+        "CLOUDFLARE_ACCOUNT_ID"
+      ],
+      "authApiBaseUrl": "https://lightclaw.tech",
+      "outputDir": "dist-global"
     }
   ]
 }

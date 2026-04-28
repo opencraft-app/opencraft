@@ -25,6 +25,16 @@ const cnCfCombo = {
   deployEnv: {},
 };
 
+const globalCfCombo = {
+  ...cnCfCombo,
+  id: "global-cf",
+  region: "global",
+  buildCommand: "build:global",
+  projectName: "lightvela-intl",
+  authApiBaseUrl: "https://lightclaw.tech",
+  outputDir: "dist-global",
+};
+
 describe("release matrix helpers", () => {
   it("parses explicit matrix selections", () => {
     expect(resolveSelectedComboIds("cn-cf, global-cf, cn-cf")).toEqual(["cn-cf", "global-cf"]);
@@ -32,7 +42,7 @@ describe("release matrix helpers", () => {
   });
 
   it("selects configured combos and rejects unknown ids", () => {
-    const combos = [cnCfCombo, { ...cnCfCombo, id: "global-cf", region: "global", buildCommand: "build:global" }];
+    const combos = [cnCfCombo, globalCfCombo];
     expect(selectReleaseCombos(combos, ["global-cf"])).toEqual([combos[1]]);
     expect(() => selectReleaseCombos(combos, ["missing"])).toThrow("unknown frontend release matrix combo id(s): missing");
   });
@@ -60,6 +70,18 @@ describe("release matrix helpers", () => {
     expect(comboEnv.CLOUDFLARE_PAGES_PROJECT_NAME).toBe("lightclaw");
     expect(comboEnv.CLOUDFLARE_PAGES_DIR).toBe("dist-cn");
     expect(formatComboSummary(cnCfCombo, "lightclaw")).toContain("cn-cf");
+  });
+
+  it("creates Cloudflare env for the global intl site", () => {
+    const comboEnv = createComboEnvironment(globalCfCombo, "lightvela-intl", {
+      CLOUDFLARE_API_TOKEN: "token",
+      CLOUDFLARE_ACCOUNT_ID: "account",
+    });
+
+    expect(comboEnv.FRONTEND_RELEASE_REGION).toBe("global");
+    expect(comboEnv.CLOUDFLARE_PAGES_PROJECT_NAME).toBe("lightvela-intl");
+    expect(comboEnv.CLOUDFLARE_PAGES_DIR).toBe("dist-global");
+    expect(comboEnv.VITE_AUTH_API_BASE_URL).toBe("https://lightclaw.tech");
   });
 
   it("carries optional deploy env values for edgeone combos", () => {
