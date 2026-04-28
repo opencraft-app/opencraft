@@ -9,14 +9,6 @@ on:
       - argocd/services/lightclaw-auth/**
       - argocd/apps/*/lightclaw-auth.yaml
       - argocd/secrets/*/lightclaw-auth-secrets.sops.yaml
-      - scripts/build-release-image.py
-      - scripts/resolve_release_bundle.py
-      - scripts/release_bundle_lib.py
-      - scripts/release-bundles.yaml
-      - scripts/project_release_bundle.py
-      - scripts/update_image_pin.py
-      - scripts/pin_image_to_gitops.sh
-      - scripts/promote_bundle_image_to_gitops.sh
   manual: enabled
 
 concurrency:
