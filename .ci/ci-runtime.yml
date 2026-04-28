@@ -43,6 +43,7 @@ jobs:
             scripts/resolve_release_bundle.py
             scripts/update_image_pin.py
             scripts/verify_gitops_release.py
+            scripts/audit_gitops_drift.py
           )
 
           for optional_target in \
@@ -57,7 +58,8 @@ jobs:
           python3 -m py_compile "${PY_COMPILE_TARGETS[@]}"
           TEST_TARGETS=(
             scripts.tests.test_gitops_publish_projection \
-            scripts.tests.test_gitops_release_verifier
+            scripts.tests.test_gitops_release_verifier \
+            scripts.tests.test_gitops_drift_audit
           )
 
           for optional_test in \
