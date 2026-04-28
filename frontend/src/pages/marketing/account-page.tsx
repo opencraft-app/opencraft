@@ -23,6 +23,7 @@ import { BrandMark } from "@/components/site/brand-mark";
 import { LoginModal } from "@/components/site/login-modal";
 import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
 import { avatarImageUrl } from "@/lib/avatar-image";
+import { useT } from "@/i18n/t";
 
 /* ─── animation variants ─── */
 
@@ -40,26 +41,21 @@ const staggerContainer = {
 
 const AccountNavbar = () => {
   const { isAuthenticated: isLoggedIn } = useSession();
+  const t = useT();
 
   return (
     <header className="lw-setup-navbar">
       <div className="mx-auto flex items-center justify-between px-6 md:px-8" style={{ maxWidth: "var(--lw-max-content)" }}>
         <BrandMark to="/" />
-        {isLoggedIn ? (
-          <UserAvatarMenu />
-        ) : (
+        <div className="flex items-center gap-3">
           <Link
             to="/"
-            className="rounded-full px-5 py-2 text-sm font-medium transition-all duration-300 hover:-translate-y-0.5"
-            style={{
-              background: "#fff",
-              color: "#555",
-              boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
-            }}
+            className="inline-flex items-center justify-center h-[36px] px-5 bg-[#F5F5F5] text-black/90 rounded-[100px] border border-[#E6E9EF] shadow-[0_2px_0_rgba(187,187,187,0.05)] hover:bg-black/5 transition-colors font-heading text-sm font-medium"
           >
-            返回首页
+            {t("返回首页")}
           </Link>
-        )}
+          {isLoggedIn && <UserAvatarMenu />}
+        </div>
       </div>
     </header>
   );
@@ -484,6 +480,7 @@ const SubscriptionSection = ({
 }) => {
   const { user } = useOpenClaw();
   const plan = user.plan;
+  const t = useT();
 
   /**
    * 活跃权益的认定：
@@ -600,7 +597,7 @@ const SubscriptionSection = ({
             </div>
           </div>
           <span className="inline-flex items-center gap-1 px-3 py-1 text-xs font-bold" style={{ background: "rgba(230,111,98,0.06)", color: "var(--lw-accent)", borderRadius: "6px" }}>
-            当前方案
+            {t("当前套餐")}
           </span>
         </div>
 
@@ -682,6 +679,7 @@ export const AccountPage = () => {
   const user = session.user;
   const subscription = session.currentSubscription;
   const { activePass } = useOpenClaw();
+  const t = useT();
 
   const [isEditingName, setIsEditingName] = useState(false);
   const [editName, setEditName] = useState(user?.name ?? "");
@@ -864,10 +862,7 @@ export const AccountPage = () => {
             transition={{ duration: 0.6 }}
             className="mb-6 md:mb-8"
           >
-            <h2 style={{ fontSize: "clamp(1.5rem, 3vw, 2rem)", fontWeight: 600, color: "rgba(0,0,0,0.9)", lineHeight: 1.5 }}>账号信息</h2>
-            <p className="mt-1.5 text-sm md:mt-2 md:text-base" style={{ color: "rgba(0,0,0,0.5)", lineHeight: 1.5 }}>
-              管理你的个人账号信息和账号设置
-            </p>
+            <h2 style={{ fontSize: "clamp(1.5rem, 3vw, 2rem)", fontWeight: 600, color: "rgba(0,0,0,0.9)", lineHeight: 1.5 }}>{t("账号管理")}</h2>
           </motion.div>
 
           {/* Sections */}
