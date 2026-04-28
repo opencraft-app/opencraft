@@ -20,6 +20,8 @@ bundles:
     publish_paths_by_env:
       beijing-sandbox:
         - argocd/services/admin-gateway/beijing-sandbox/**
+        - argocd/services/admin-gateway/common/**
+        - argocd/services/admin-gateway/profiles/sandbox/**
         - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
         - argocd/catalogs/sandbox/beijing-sandbox/admin-gateway.yaml
         - argocd/secrets/beijing-sandbox/admin-gateway-runtime-secrets.sops.yaml
@@ -45,6 +47,8 @@ bundles:
     publish_paths_by_env:
       beijing-sandbox:
         - argocd/services/ai-gateway/beijing-sandbox/**
+        - argocd/services/ai-gateway/common/**
+        - argocd/services/ai-gateway/profiles/sandbox/**
         - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
         - argocd/catalogs/sandbox/beijing-sandbox/ai-gateway.yaml
         - argocd/secrets/beijing-sandbox/ai-gateway-runtime-secrets.sops.yaml
@@ -74,6 +78,8 @@ bundles:
     publish_paths_by_env:
       beijing-sandbox:
         - argocd/services/gateway-dashboard/beijing-sandbox/**
+        - argocd/services/gateway-dashboard/common/**
+        - argocd/services/gateway-dashboard/profiles/sandbox/**
         - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
         - argocd/catalogs/sandbox/beijing-sandbox/gateway-dashboard.yaml
         - argocd/secrets/beijing-sandbox/gateway-dashboard-runtime-secrets.sops.yaml
@@ -103,6 +109,8 @@ bundles:
     publish_paths_by_env:
       beijing-sandbox:
         - argocd/services/nextgen-dashboard/beijing-sandbox/**
+        - argocd/services/nextgen-dashboard/common/**
+        - argocd/services/nextgen-dashboard/profiles/sandbox/**
         - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
         - argocd/catalogs/sandbox/beijing-sandbox/nextgen-dashboard.yaml
         - argocd/secrets/beijing-sandbox/nextgen-dashboard-runtime-secrets.sops.yaml
@@ -133,6 +141,8 @@ bundles:
     publish_paths_by_env:
       beijing-sandbox:
         - argocd/services/payment/beijing-sandbox/**
+        - argocd/services/payment/common/**
+        - argocd/services/payment/profiles/sandbox/**
         - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
         - argocd/catalogs/sandbox/beijing-sandbox/payment.yaml
         - argocd/secrets/beijing-sandbox/payment-runtime-secrets.sops.yaml
@@ -167,12 +177,16 @@ bundles:
     publish_paths_by_env:
       beijing-sandbox:
         - argocd/services/service-gateway/beijing-sandbox/**
+        - argocd/services/service-gateway/common/**
+        - argocd/services/service-gateway/profiles/sandbox/**
         - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
         - argocd/catalogs/sandbox/beijing-sandbox/service-gateway.yaml
         - argocd/secrets/beijing-sandbox/service-gateway-runtime-secrets.sops.yaml
         - service-gateway/k8s/base/**
         - service-gateway/k8s/overlays/beijing-sandbox/**
         - argocd/services/admin-gateway/beijing-sandbox/**
+        - argocd/services/admin-gateway/common/**
+        - argocd/services/admin-gateway/profiles/sandbox/**
         - argocd/catalogs/sandbox/beijing-sandbox/admin-gateway.yaml
         - argocd/secrets/beijing-sandbox/admin-gateway-runtime-secrets.sops.yaml
         - admin-gateway/k8s/base/**
@@ -199,6 +213,8 @@ bundles:
     publish_paths_by_env:
       beijing-sandbox:
         - argocd/services/session/beijing-sandbox/**
+        - argocd/services/session/common/**
+        - argocd/services/session/profiles/sandbox/**
         - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
         - argocd/catalogs/sandbox/beijing-sandbox/session.yaml
         - argocd/secrets/beijing-sandbox/session-runtime-secrets.sops.yaml
@@ -224,6 +240,8 @@ bundles:
     publish_paths_by_env:
       beijing-sandbox:
         - argocd/services/subscription/beijing-sandbox/**
+        - argocd/services/subscription/common/**
+        - argocd/services/subscription/profiles/sandbox/**
         - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
         - argocd/catalogs/sandbox/beijing-sandbox/subscription.yaml
         - argocd/secrets/beijing-sandbox/subscription-runtime-secrets.sops.yaml
@@ -254,6 +272,8 @@ bundles:
     publish_paths_by_env:
       beijing-sandbox:
         - argocd/services/lightclaw-auth/beijing-sandbox/**
+        - argocd/services/lightclaw-auth/common/**
+        - argocd/services/lightclaw-auth/profiles/sandbox/**
         - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
         - argocd/catalogs/sandbox/beijing-sandbox/lightclaw-auth.yaml
         - argocd/secrets/beijing-sandbox/lightclaw-auth-secrets.sops.yaml
@@ -285,6 +305,8 @@ bundles:
     publish_paths_by_env:
       beijing-sandbox:
         - argocd/services/ctl/beijing-sandbox/**
+        - argocd/services/ctl/common/**
+        - argocd/services/ctl/profiles/sandbox/**
         - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
         - argocd/catalogs/sandbox/beijing-sandbox/ctl.yaml
         - argocd/secrets/beijing-sandbox/ctl-conf-common.sops.yaml
@@ -317,6 +339,8 @@ bundles:
     publish_paths_by_env:
       beijing-sandbox:
         - argocd/services/sandbox/beijing-sandbox/**
+        - argocd/services/sandbox/common/**
+        - argocd/services/sandbox/profiles/sandbox/**
         - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
         - argocd/catalogs/sandbox/beijing-sandbox/sandbox.yaml
         - argocd/secrets/beijing-sandbox/sandbox-runtime-secrets.sops.yaml
