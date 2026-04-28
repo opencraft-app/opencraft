@@ -6,7 +6,7 @@ metadata:
 spec:
   description: GitOps project for Shanghai production environment.
   sourceRepos:
-    - https://code.lightclaw.tech/root/mono.git
+    - git@git.woa.com:wisp/mono2.git
   destinations:
     - namespace: '*'
       server: https://lb-gc8vs2zx-b5g21pfnmuajzy6x.clb.sh-tencentclb.com:443

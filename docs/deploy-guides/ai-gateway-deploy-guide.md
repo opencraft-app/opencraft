@@ -24,7 +24,7 @@ python3 scripts/build-release-image.py --service ai-gateway --env <env> --tag <t
 统一走平台级 DB job：
 
 - `scripts/run_gitops_db_job.py`
-- 旧 `.gitlab/ci/gitops-db-job.yml` 已退役；当前以脚本和 runbook 为准
+- 历史 DB job 模板已退役；当前以脚本和 runbook 为准
 
 ## 运行时约束
 

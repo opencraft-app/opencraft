@@ -29,8 +29,8 @@
 - `build_context`
 - `image_repo`
 
-服务 repo 是 deployable semantics 的 owner。  
-`root/mono` 不是服务源码仓，只消费 release bundle import。
+服务源码目录是 deployable semantics 的 owner。
+当前 repo 的 `gitops` 分支负责承载 deploy-facing 发布视图。
 
 ## Image Build Contract
 
@@ -59,7 +59,7 @@ python3 scripts/build-release-image.py --service <service> --env <env> --tag <ta
 
 - deploy-facing image pin 只允许写在：
   - `argocd/services/<service>/<env>/*-platform.env`
-- 正式变更通过 `root/mono` 合并进入 Argo
+- 正式变更通过当前 repo 的 `gitops` 分支合入 Argo
 - 禁止在集群里手工 patch image 当作正式路径
 
 ## Promotion Contract
@@ -92,7 +92,7 @@ python3 scripts/build-release-image.py --service <service> --env <env> --tag <ta
 `DB migration / seed` 继续保留，但只保留统一平台级入口：
 
 - [run_gitops_db_job.py](../../scripts/run_gitops_db_job.py)
-- 旧 GitLab CI 模板已退役
+- 历史 DB job 模板已退役
 - [gitops-db-job-runbook.md](gitops-db-job-runbook.md)
 
 禁止：

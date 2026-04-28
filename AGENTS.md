@@ -183,6 +183,11 @@
 │   └── feai-init.md         # 项目初始化
 └── agents.md                # （历史遗留，与本文件同义）
 
+.skills/                  # 项目内团队共享 Skills（AI 按需读取）
+└── gongfeng/
+    ├── SKILL.md             # 工蜂 MCP / MR / 分支 / 评论操作说明
+    └── DEPENDENCIES.md      # mcporter-internal 依赖说明
+
 AGENTS.md                 # 本文件（monorepo 全局规范）
 
 <service>/AGENTS.md       # 各子服务独立指引（见上方导航表）
@@ -394,6 +399,10 @@ AI 生成需求确认文档后，用户可能需要进一步澄清或调整需�
 | ---------------- | ------------------------------------ |
 | **TAPD MCP**     | 需求获取、任务管理、分支关联         |
 | **Gongfeng MCP** | 分支管理、MR 创建、文件操作、CR 评审 |
+
+### 工蜂 Skill 读取约定
+
+当任务需要工蜂能力时（包括但不限于分支管理、MR 创建/查询/合并、MR 评论、代码审查、文件操作），AI 必须先读取 `.skills/gongfeng/SKILL.md`，并按其中的工具调用方式执行。
 
 ---
 

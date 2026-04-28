@@ -7,7 +7,7 @@
 - `infra_pulumi` 负责基础设施和环境事实
 - `deploy/envs/shprod/platform.env` 提供环境运行时事实
 - `argocd/` 是唯一正式 deploy-facing 入口
-- 香港 Argo CD 负责把 `root/mono` 的 GitOps 清单同步到上海正式集群
+- 统一 Argo CD 控制面负责把当前 repo 的 `gitops` 发布视图同步到上海正式集群
 
 ## Files
 
@@ -34,7 +34,7 @@
 1. 在 `infra_pulumi` 刷新环境事实
 2. 按 release bundle 构建并推送镜像
 3. 更新 `argocd/services/<service>/shprod/*-platform.env` 中的 image pin / 平台参数
-4. 合并 Git 变更，让香港 Argo CD 同步上海正式集群
+4. 合并 Git 变更，让统一 Argo CD 控制面同步上海正式集群
 5. 如涉及数据库变更，单独执行平台级 DB job
 
 ## 推荐操作
@@ -86,10 +86,10 @@ release bundle 清单见：
 
 - `argocd/services/<service>/shprod/`
 
-验证与 apply 入口：
+验证入口：
 
-- `scripts/apply_argocd_projects.sh`
-- `scripts/verify_mono_gitlab_argocd_auth.py`
+- GitOps MR 时间线
+- 统一 Argo CD 控制面 API
 
 ### 5. 数据库变更
 
@@ -98,7 +98,7 @@ release bundle 清单见：
 统一走平台级入口：
 
 - `scripts/run_gitops_db_job.py`
-- 旧 `.gitlab/ci/gitops-db-job.yml` 已退役；当前以脚本和 runbook 为准
+- 历史 DB job 模板已退役；当前以脚本和 runbook 为准
 
 ## 约束
 

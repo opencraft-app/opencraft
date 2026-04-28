@@ -466,14 +466,63 @@ func TestRealnameRequiredDoesNotBlockReadOrPreflight(t *testing.T) {
 	}
 }
 
+func TestRealnameRequiredDoesNotBlockDelete(t *testing.T) {
+	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"session": map[string]any{
+				"user": map[string]any{
+					"id":               "usr_unverified",
+					"realnameVerified": false,
+				},
+			},
+		})
+	}))
+	defer auth.Close()
+
+	upstreamCalls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer upstream.Close()
+
+	handler, err := NewHandler(Config{
+		AuthServiceURL: auth.URL,
+		Routes: []Route{{
+			Name:            "ctl",
+			Prefix:          "/v1/instances",
+			Methods:         []string{http.MethodDelete},
+			Upstream:        upstream.URL,
+			Access:          AccessAuthenticated,
+			RequireRealname: true,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodDelete, "/v1/instances/inst_123", nil)
+	req.Header.Set("Authorization", "Bearer tok-123")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected DELETE 204, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if upstreamCalls != 1 {
+		t.Fatalf("expected upstream call for DELETE, got %d", upstreamCalls)
+	}
+}
+
 func TestIsRealnameWriteMethod(t *testing.T) {
-	trueMethods := []string{http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete}
+	trueMethods := []string{http.MethodPost, http.MethodPut, http.MethodPatch}
 	for _, method := range trueMethods {
 		if !isRealnameWriteMethod(method) {
 			t.Fatalf("expected %s to require realname", method)
 		}
 	}
-	falseMethods := []string{http.MethodGet, http.MethodHead, http.MethodOptions, ""}
+	falseMethods := []string{http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodDelete, ""}
 	for _, method := range falseMethods {
 		if isRealnameWriteMethod(method) {
 			t.Fatalf("expected %q not to require realname", method)

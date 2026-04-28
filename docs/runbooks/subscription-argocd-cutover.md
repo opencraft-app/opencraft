@@ -1,6 +1,6 @@
 # Subscription Argo CD Cutover
 
-这份 runbook 只覆盖 `subscription` 北京测试环境接入香港中心 Argo 的步骤。
+这份 runbook 只覆盖 `subscription` 北京测试环境接入统一 Argo CD 控制面 的步骤。
 
 ## Current State
 

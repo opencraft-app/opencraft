@@ -5,7 +5,7 @@
 边界：
 
 - source-facing 内容在 `session/`
-- 香港 Argo 通过这个目录把资源下发到北京 `user-auth` namespace
+- 统一 Argo CD 控制面通过这个目录把资源下发到北京 `user-auth` namespace
 - 第一阶段完全按北京现网 Deployment / Service / ConfigMap / Secret 模板接入
 
 ## Files

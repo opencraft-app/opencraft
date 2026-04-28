@@ -5,7 +5,7 @@
 边界：
 
 - source-facing 内容仍留在 `subscription/`
-- 香港 Argo 通过这个目录把资源下发到北京 `user-auth` namespace
+- 统一 Argo CD 控制面通过这个目录把资源下发到北京 `user-auth` namespace
 - 第一阶段保留当前线上 Deployment 语义，但显式不接 migration job
 
 ## Files

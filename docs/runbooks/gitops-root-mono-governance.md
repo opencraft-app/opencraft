@@ -1,34 +1,34 @@
-# Root Mono Governance
+# GitOps Repo Governance
 
-这份文档定义 `root/mono` deploy-only mirror 和共享 bootstrap ownership 的长期边界。
+这份文档定义当前 GitOps 真源和共享 bootstrap ownership 的长期边界。
 
 ## Repository Boundary
 
-- `git.woa.com/wisp/mono` 是日常开发和长期维护 source repo。
-- `https://code.lightclaw.tech/root/mono.git` 是香港 Argo CD 当前消费的 deploy-only mirror。
-- deploy-only `main` 只作为 Argo 发布消费分支，不作为日常开发分支。
-- 长期配置变更必须先落到 source repo，再同步到 deploy-only mirror。
-- 不允许只在 deploy-only 仓留下长期差异。
+- `git@git.woa.com:wisp/mono2.git` 是当前源码仓。
+- `gitops` 是当前统一 Argo CD 控制面消费的发布分支。
+- `master` 只负责日常开发和构建触发。
+- 长期配置变更必须最终收敛到当前 repo 的 `gitops` 分支。
+- 不允许保留历史 deploy-only 仓差异作为正式真相源。
 
-## `root/mono` Positioning
+## Current GitOps Repo Positioning
 
-`root/mono` 现在的角色不是“完整 mono 镜像”，而是：
+当前 repo 的 `gitops` 分支不是日常开发分支，而是：
 
-- GitOps 发布镜像仓
-- 香港中心 Argo 消费的 deploy-only repo
+- GitOps 发布视图
+- 当前统一 Argo CD 控制面消费的发布分支
 - 只承载：
   - deploy-facing `argocd/`
   - 明确声明的 release bundle imports
 
 也就是说，当前长期默认是：
 
-- **不是完整 mono 镜像**
-- **不是任意 source-facing 子集仓**
-- **是 deploy-facing + 明确声明的 release bundle imports**
+- **不是另一个 deploy-only 镜像仓**
+- **不是任意 source-facing 子集分支**
+- **是当前源码仓中的 deploy-facing 发布分支**
 
 ## Inclusion Rule
 
-只有满足下面任一条件的文件，才应该进入 `root/mono`：
+只有满足下面任一条件的文件，才应该进入当前 repo 的 `gitops` 发布视图：
 
 1. `argocd/` 下的 deploy-facing 文件
 2. 在 [scripts/release-bundles.yaml](../../scripts/release-bundles.yaml) 中明确声明的 release bundle import
@@ -100,9 +100,9 @@
 3. 如果 source-facing base 不包含这些资源，就不要为了“形式统一”再造 delete patch
 4. 共享 bootstrap 的 owner 变更属于平台级治理动作，不属于单服务普通发布动作
 
-## `root/mono` Update Rule
+## GitOps Branch Update Rule
 
-每新增一个被纳管服务，进入 `root/mono` 的最小集合必须同时包含：
+每新增一个被纳管服务，进入 `gitops` 发布视图的最小集合必须同时包含：
 
 - 该服务的 `argocd/apps/<env>/<service>.yaml`
 - 该服务的 `argocd/services/<service>/<env>/...`

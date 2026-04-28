@@ -31,7 +31,7 @@
 `sandbox` migration 现在走平台级受控入口：
 
 - `scripts/run_gitops_db_job.py --service sandbox --operation migration --env <env> --revision <sha>`
-- 旧 `.gitlab/ci/gitops-db-job.yml` 已退役；当前以脚本和 runbook 为准
+- 历史 DB job 模板已退役；当前以脚本和 runbook 为准
 
 ## 不再允许的主线
 
