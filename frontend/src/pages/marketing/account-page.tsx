@@ -20,9 +20,12 @@ import { useRepositories } from "@/contexts/repository-context";
 import { useOpenClaw } from "@/contexts/openclaw-context";
 import { RepositoryError } from "@/repositories/http-repositories";
 import { BrandMark } from "@/components/site/brand-mark";
+import { LanguageSwitcher } from "@/components/site/language-switcher";
 import { LoginModal } from "@/components/site/login-modal";
 import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
+import { useT } from "@/i18n/t";
 import { avatarImageUrl } from "@/lib/avatar-image";
+import { isGlobal } from "@/lib/region";
 
 /* ─── animation variants ─── */
 
@@ -40,26 +43,31 @@ const staggerContainer = {
 
 const AccountNavbar = () => {
   const { isAuthenticated: isLoggedIn } = useSession();
+  const t = useT();
 
   return (
     <header className="lw-setup-navbar">
       <div className="mx-auto flex items-center justify-between px-6 md:px-8" style={{ maxWidth: "var(--lw-max-content)" }}>
         <BrandMark to="/" />
-        {isLoggedIn ? (
-          <UserAvatarMenu />
-        ) : (
-          <Link
-            to="/"
-            className="rounded-full px-5 py-2 text-sm font-medium transition-all duration-300 hover:-translate-y-0.5"
-            style={{
-              background: "#fff",
-              color: "#555",
-              boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
-            }}
-          >
-            返回首页
-          </Link>
-        )}
+        <div className="flex items-center gap-3">
+          {/* 语言切换器：仅国际站展示 */}
+          {isGlobal && <LanguageSwitcher />}
+          {isLoggedIn ? (
+            <UserAvatarMenu />
+          ) : (
+            <Link
+              to="/"
+              className="rounded-full px-5 py-2 text-sm font-medium transition-all duration-300 hover:-translate-y-0.5"
+              style={{
+                background: "#fff",
+                color: "#555",
+                boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+              }}
+            >
+              {t("返回首页")}
+            </Link>
+          )}
+        </div>
       </div>
     </header>
   );
@@ -95,6 +103,7 @@ const VerifyIdentityModal = ({
   /** 调用方负责刷新 session 并关闭弹窗 */
   onSuccess: () => void;
 }) => {
+  const t = useT();
   const { auth } = useRepositories();
   const { refreshProfile } = useSession();
   const [realName, setRealName] = useState("");
@@ -111,24 +120,24 @@ const VerifyIdentityModal = ({
     if (err instanceof RepositoryError) {
       switch (err.code) {
         case "invalid_realname":
-          return "真实姓名格式不正确，请检查后重试。";
+          return t("真实姓名格式不正确，请检查后重试。");
         case "invalid_id_card":
-          return "身份证号格式不正确，请检查后重试。";
+          return t("身份证号格式不正确，请检查后重试。");
         case "realname_mismatch":
-          return "姓名与身份证号不一致，请重新输入。";
+          return t("姓名与身份证号不一致，请重新输入。");
         case "realname_verify_failed":
-          return "实名核验失败，请稍后重试。";
+          return t("实名核验失败，请稍后重试。");
         case "realname_unavailable":
-          return "实名认证服务暂未开放，请稍后再试。";
+          return t("实名认证服务暂未开放，请稍后再试。");
         default:
           break;
       }
       if (err.status === 502 || err.status === 503) {
-        return "认证服务繁忙或暂未开放，请稍后再试。";
+        return t("认证服务繁忙或暂未开放，请稍后再试。");
       }
-      return err.message || "实名认证失败，请稍后重试。";
+      return err.message || t("实名认证失败，请稍后重试。");
     }
-    return "网络异常，请稍后再试。";
+    return t("网络异常，请稍后再试。");
   };
 
   const handleSubmit = async () => {
@@ -190,7 +199,7 @@ const VerifyIdentityModal = ({
                   color: "rgba(0,0,0,0.9)",
                 }}
               >
-                实名认证
+                {t("实名认证")}
               </h3>
               <p
                 className="m-0"
@@ -202,14 +211,14 @@ const VerifyIdentityModal = ({
                   color: "rgba(0,0,0,0.9)",
                 }}
               >
-                完成实名认证后可以发布技能和参与更多社区活动
+                {t("完成实名认证后可以发布技能和参与更多社区活动")}
               </p>
             </div>
             <button
               onClick={onClose}
               className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-md transition-colors hover:bg-[rgba(0,0,0,0.04)]"
               style={{ color: "rgba(0,0,0,0.5)" }}
-              aria-label="关闭"
+              aria-label={t("关闭")}
             >
               <X className="h-5 w-5" />
             </button>
@@ -236,7 +245,7 @@ const VerifyIdentityModal = ({
                 color: "rgba(0,0,0,0.9)",
               }}
             >
-              当前未认证，请完善信息并提交认证。
+              {t("当前未认证，请完善信息并提交认证。")}
             </span>
           </div>
         </div>
@@ -257,7 +266,7 @@ const VerifyIdentityModal = ({
                 color: "rgba(0,0,0,0.9)",
               }}
             >
-              证件类型
+              {t("证件类型")}
             </label>
             <div
               className="flex items-center justify-between"
@@ -278,7 +287,7 @@ const VerifyIdentityModal = ({
                   color: "rgba(0,0,0,0.3)",
                 }}
               >
-                身份证
+                {t("身份证")}
               </span>
               <ChevronRight className="h-4 w-4" style={{ color: "rgba(0,0,0,0.3)", transform: "rotate(90deg)" }} />
             </div>
@@ -295,11 +304,11 @@ const VerifyIdentityModal = ({
                 color: "rgba(0,0,0,0.9)",
               }}
             >
-              真实姓名 <span style={{ color: "#cf3d4c" }}>*</span>
+              {t("真实姓名")} <span style={{ color: "#cf3d4c" }}>*</span>
             </label>
             <input
               type="text"
-              placeholder="请输入真实姓名"
+              placeholder={t("请输入真实姓名")}
               value={realName}
               onChange={(e) => setRealName(e.target.value)}
               maxLength={20}
@@ -329,11 +338,11 @@ const VerifyIdentityModal = ({
                 color: "rgba(0,0,0,0.9)",
               }}
             >
-              身份证号 <span style={{ color: "#cf3d4c" }}>*</span>
+              {t("身份证号")} <span style={{ color: "#cf3d4c" }}>*</span>
             </label>
             <input
               type="text"
-              placeholder="请输入身份证号码"
+              placeholder={t("请输入身份证号码")}
               value={idNumber}
               onChange={(e) => setIdNumber(e.target.value.replace(/[^0-9Xx]/g, "").slice(0, 18))}
               maxLength={18}
@@ -382,10 +391,10 @@ const VerifyIdentityModal = ({
             {submitting ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
-                提交中...
+                {t("提交中...")}
               </>
             ) : (
-              "提交认证"
+              t("提交认证")
             )}
           </button>
           <p
@@ -398,7 +407,7 @@ const VerifyIdentityModal = ({
               color: "rgba(0,0,0,0.3)",
             }}
           >
-            你的姓名和身份证号将加密传输并存储，平台仅保留脱敏信息用于展示。认证信息不会用于其他用途。
+            {t("你的姓名和身份证号将加密传输并存储，平台仅保留脱敏信息用于展示。认证信息不会用于其他用途。")}
           </p>
         </div>
       </motion.div>
@@ -416,7 +425,9 @@ const DeleteAccountModal = ({
   onCancel: () => void;
   onConfirm: () => void;
   submitting: boolean;
-}) => (
+}) => {
+  const t = useT();
+  return (
   <motion.div
     className="fixed inset-0 z-[100] flex items-center justify-center"
     style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(4px)" }}
@@ -443,11 +454,11 @@ const DeleteAccountModal = ({
             <Trash2 className="h-[18px] w-[18px]" style={{ color: "#cf3d4c" }} />
           </div>
           <h3 className="m-0 text-[16px] font-bold tracking-[-0.25px]" style={{ color: "#333" }}>
-            注销账号
+            {t("注销账号")}
           </h3>
         </div>
         <p className="text-sm leading-relaxed" style={{ margin: '12px 0 32px 0', color: "#666" }}>
-          注销后，账号内的订阅、订单、Agent 数据将被永久清除且不可恢复。确定要注销账号吗？
+          {t("注销后，账号内的订阅、订单、Agent 数据将被永久清除且不可恢复。确定要注销账号吗？")}
         </p>
         <div className="flex gap-3">
           <button
@@ -456,7 +467,7 @@ const DeleteAccountModal = ({
             className="flex-1 rounded-lg border px-4 py-2.5 text-sm font-semibold transition-colors hover:bg-[rgba(0,0,0,0.03)] disabled:opacity-50"
             style={{ borderColor: "rgba(0,0,0,0.1)", color: "#333" }}
           >
-            取消
+            {t("取消")}
           </button>
           <button
             onClick={onConfirm}
@@ -465,13 +476,14 @@ const DeleteAccountModal = ({
             style={{ background: "#cf3d4c" }}
           >
             {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-            {submitting ? "处理中..." : "确认注销"}
+            {submitting ? t("处理中...") : t("确认注销")}
           </button>
         </div>
       </div>
     </motion.div>
   </motion.div>
-);
+  );
+};
 
 /* ─── Subscription Section ─── */
 
@@ -482,6 +494,7 @@ const SubscriptionSection = ({
   subscription: { code?: string; status?: string; currentPeriodStart?: string; currentPeriodEnd?: string } | null | undefined;
   pass: import("@/domain/types").Pass | null;
 }) => {
+  const t = useT();
   const { user } = useOpenClaw();
   const plan = user.plan;
 
@@ -548,7 +561,7 @@ const SubscriptionSection = ({
       >
         <div className="px-5 py-5 md:px-8 md:py-8" style={{ borderBottom: "1px solid #E6E9EF" }}>
           <h3 className="text-[18px] md:text-[20px]" style={{ fontWeight: 500, color: "rgba(0,0,0,0.9)", lineHeight: 1.6 }}>
-            订阅套餐
+            {t("订阅套餐")}
           </h3>
         </div>
         <div className="flex flex-col items-center gap-5 px-5 py-8 text-center md:px-8 md:py-10">
@@ -556,9 +569,9 @@ const SubscriptionSection = ({
             <CreditCard className="h-7 w-7" style={{ color: "rgba(0,0,0,0.9)" }} />
           </div>
           <div>
-            <p className="text-base font-bold" style={{ color: "#333" }}>还没有订阅套餐</p>
+            <p className="text-base font-bold" style={{ color: "#333" }}>{t("还没有订阅套餐")}</p>
             <p className="mt-1.5 text-sm leading-relaxed" style={{ color: "#999" }}>
-              即刻创建你的专属云端 Hermes
+              {t("即刻创建你的专属云端 Hermes")}
             </p>
           </div>
           <Link
@@ -567,7 +580,7 @@ const SubscriptionSection = ({
             style={{ color: "#fff" }}
           >
             <Zap className="h-4 w-4" style={{ color: "#fff" }} />
-            <span style={{ color: "#fff" }}>立即创建</span>
+            <span style={{ color: "#fff" }}>{t("立即创建")}</span>
           </Link>
         </div>
       </motion.div>
@@ -584,7 +597,7 @@ const SubscriptionSection = ({
     >
       <div className="px-5 py-5 md:px-8 md:py-8" style={{ borderBottom: "1px solid #E6E9EF" }}>
         <h3 className="text-[18px] md:text-[20px]" style={{ fontWeight: 500, color: "rgba(0,0,0,0.9)", lineHeight: 1.6 }}>
-          订阅套餐
+          {t("订阅套餐")}
         </h3>
       </div>
       <div className="space-y-5 px-5 py-6 md:px-8 md:py-8">
@@ -596,11 +609,11 @@ const SubscriptionSection = ({
             </div> */}
             <div>
               <p className="text-sm font-bold" style={{ color: "#333" }}>{displayName}</p>
-              <p className="text-xs" style={{ color: "#999" }}>当前生效</p>
+              <p className="text-xs" style={{ color: "#999" }}>{t("当前生效")}</p>
             </div>
           </div>
           <span className="inline-flex items-center gap-1 px-3 py-1 text-xs font-bold" style={{ background: "rgba(230,111,98,0.06)", color: "var(--lw-accent)", borderRadius: "6px" }}>
-            当前方案
+            {t("当前方案")}
           </span>
         </div>
 
@@ -610,7 +623,7 @@ const SubscriptionSection = ({
         {/* Validity period */}
         <div>
           <div className="mb-2">
-            <span className="text-sm font-semibold" style={{ color: "#333" }}>订阅有效期</span>
+            <span className="text-sm font-semibold" style={{ color: "#333" }}>{t("订阅有效期")}</span>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm" style={{ color: "#666" }}>
@@ -624,7 +637,7 @@ const SubscriptionSection = ({
                 borderRadius: "6px",
               }}
             >
-              {validityInfo.expired ? "已过期" : `剩余 ${validityInfo.remainDays} 天`}
+              {validityInfo.expired ? t("已过期") : t("剩余 {days} 天").replace("{days}", String(validityInfo.remainDays))}
             </span>
           </div>
         </div>
@@ -637,7 +650,7 @@ const SubscriptionSection = ({
 
             <div>
               <div className="mb-2">
-                <span className="text-sm font-semibold" style={{ color: "#333" }}>已使用积分</span>
+                <span className="text-sm font-semibold" style={{ color: "#333" }}>{t("已使用积分")}</span>
               </div>
               <div className="flex items-center justify-between mb-2">
                 <p className="text-sm font-bold" style={{ color: "var(--lw-accent)" }}>
@@ -668,6 +681,7 @@ const SubscriptionSection = ({
 /* ─── Main Account Page ─── */
 
 export const AccountPage = () => {
+  const t = useT();
   const navigate = useNavigate();
   const {
     session,
@@ -729,7 +743,7 @@ export const AccountPage = () => {
       await uploadAvatar(file);
     } catch (err) {
       console.error("Failed to upload avatar", err);
-      setAvatarUploadError(err instanceof Error ? err.message : "头像上传失败，请稍后重试。");
+      setAvatarUploadError(err instanceof Error ? err.message : t("头像上传失败，请稍后重试。"));
     } finally {
       setAvatarUploading(false);
       e.target.value = "";
@@ -787,10 +801,10 @@ export const AccountPage = () => {
               />
             </div>
             <h2 className="m-0 text-xl font-bold tracking-[-0.3px]" style={{ color: "#333" }}>
-              登录以查看账号信息
+              {t("登录以查看账号信息")}
             </h2>
             <p className="mb-8 mt-2 text-sm leading-relaxed" style={{ color: "#999" }}>
-              登录后可查看和管理你的个人信息、订阅套餐和订单记录。
+              {t("登录后可查看和管理你的个人信息、订阅套餐和订单记录。")}
             </p>
 
             <div className="flex flex-col gap-2.5">
@@ -798,21 +812,21 @@ export const AccountPage = () => {
                 onClick={() => setShowLoginModal(true)}
                 className="lw-btn-primary w-full"
               >
-                登录 / 注册
+                {t("登录 / 注册")}
               </button>
               <button
                 onClick={() => {
                   setGuestLoading(true);
                   setGuestError(null);
                   signInAsGuest()
-                    .catch(() => setGuestError("游客登录失败，请稍后重试。"))
+                    .catch(() => setGuestError(t("游客登录失败，请稍后重试。")))
                     .finally(() => setGuestLoading(false));
                 }}
                 disabled={guestLoading}
                 className="w-full rounded-lg border px-4 py-3 text-[15px] font-semibold transition-colors hover:bg-[rgba(0,0,0,0.03)] disabled:cursor-not-allowed disabled:opacity-60"
                 style={{ borderColor: "rgba(0,0,0,0.1)", color: "#999" }}
               >
-                {guestLoading ? "进入中..." : "游客体验"}
+                {guestLoading ? t("进入中...") : t("游客体验")}
               </button>
             </div>
 
@@ -825,7 +839,7 @@ export const AccountPage = () => {
               className="mt-6 inline-block text-[13px] transition-colors hover:text-[#666]"
               style={{ color: "#bbb" }}
             >
-              ← 返回首页
+              ← {t("返回首页")}
             </Link>
           </motion.div>
 
@@ -843,7 +857,7 @@ export const AccountPage = () => {
       <div className="landing-page lw-setup-bg relative flex min-h-screen flex-col overflow-hidden" style={{ color: "var(--lw-fg)" }}>
         <AccountNavbar />
         <main className="relative z-10 flex flex-grow items-center justify-center">
-          <p className="text-sm" style={{ color: "#bbb" }}>正在恢复会话...</p>
+          <p className="text-sm" style={{ color: "#bbb" }}>{t("正在恢复会话...")}</p>
         </main>
         <LegalFooter />
       </div>
@@ -864,9 +878,9 @@ export const AccountPage = () => {
             transition={{ duration: 0.6 }}
             className="mb-6 md:mb-8"
           >
-            <h2 style={{ fontSize: "clamp(1.5rem, 3vw, 2rem)", fontWeight: 600, color: "rgba(0,0,0,0.9)", lineHeight: 1.5 }}>账号信息</h2>
+            <h2 style={{ fontSize: "clamp(1.5rem, 3vw, 2rem)", fontWeight: 600, color: "rgba(0,0,0,0.9)", lineHeight: 1.5 }}>{t("账号信息")}</h2>
             <p className="mt-1.5 text-sm md:mt-2 md:text-base" style={{ color: "rgba(0,0,0,0.5)", lineHeight: 1.5 }}>
-              管理你的个人账号信息和账号设置
+              {t("管理你的个人账号信息和账号设置")}
             </p>
           </motion.div>
 
@@ -902,7 +916,7 @@ export const AccountPage = () => {
                       onClick={() => fileInputRef.current?.click()}
                       disabled={avatarUploading}
                       className="group relative block"
-                      title={avatarUploadError ?? (avatarUploading ? "头像上传中..." : "点击更换头像")}
+                      title={avatarUploadError ?? (avatarUploading ? t("头像上传中...") : t("点击更换头像"))}
                     >
                       <img
                         src={avatarSrc}
@@ -949,7 +963,7 @@ export const AccountPage = () => {
                             className="rounded-lg px-3 py-2.5 text-sm transition-colors hover:bg-[rgba(0,0,0,0.03)]"
                             style={{ color: "#aaa" }}
                           >
-                            取消
+                            {t("取消")}
                           </button>
                         </div>
                       </div>
@@ -959,7 +973,7 @@ export const AccountPage = () => {
                           className="truncate"
                           style={{ fontSize: 20, fontWeight: 500, color: "rgba(0,0,0,0.9)", lineHeight: 1.6 }}
                         >
-                          {user?.name || "未设置"}
+                          {user?.name || t("未设置")}
                         </p>
                         <button
                           onClick={() => { setEditName(user?.name ?? ""); setIsEditingName(true); }}
@@ -989,7 +1003,7 @@ export const AccountPage = () => {
                       boxShadow: "0px 2px 0px 0px rgba(187, 187, 187, 0.05)",
                     }}
                   >
-                    退出
+                    {t("退出")}
                   </button>
                   {/* <button
                     onClick={() => setShowDeleteModal(true)}
@@ -1026,12 +1040,12 @@ export const AccountPage = () => {
                 */}
 
                 <div className="flex items-center justify-between">
-                  <span className="text-sm" style={{ color: "rgba(0,0,0,0.5)", lineHeight: "24px" }}>实名认证</span>
+                  <span className="text-sm" style={{ color: "rgba(0,0,0,0.5)", lineHeight: "24px" }}>{t("实名认证")}</span>
                   {verified ? (
                     <div className="flex items-center gap-2">
                       <ShieldCheck className="h-5 w-5 flex-shrink-0" style={{ color: "#07C160" }} />
                       <span className="text-sm" style={{ color: "rgba(0,0,0,0.9)" }}>
-                        已认证
+                        {t("已认证")}
                       </span>
                     </div>
                   ) : (
@@ -1040,7 +1054,7 @@ export const AccountPage = () => {
                       className="flex items-center gap-1 text-sm transition-colors hover:opacity-80"
                       style={{ color: "var(--lw-accent)" }}
                     >
-                      去认证
+                      {t("去认证")}
                       <ChevronRight className="h-4 w-4" />
                     </button>
                   )}
