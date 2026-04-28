@@ -1,5 +1,5 @@
 # ============================================================================
-# OpenSpec 项目上下文配置（由 /feai-init 自动生成 · 2026-04-21）
+# OpenSpec 项目上下文配置（drift-fix · 2026-04-28）
 # ============================================================================
 #
 # 本文件作为 AI Agent 的全局项目理解上下文，填写越详细 AI 的辅助能力越强。
@@ -32,11 +32,23 @@ context: |
   - HTTP 请求: 基于 `repositories/` 封装的 Repository 模式（自定义 fetch 封装，未用 axios）
               请求入口: `frontend/src/repositories/http-repositories.ts`
               所有 API 通过 `AuthRepository` / `PlanRepository` / `BotRepository` 接口访问
-  - 国际化: 当前无 i18n，中文硬编码；未来如需国际站可引入 react-i18next
+  - 国际化: react-i18next v15 + 自研「中文即 key」方案（src/i18n/）
+              · 业务侧调用 `useT()`，参数直接写中文原文；运行时通过 generated/zh-to-key.json
+                反查 hash key，再向 i18next 查询 hash → 目标语言
+              · 字典文件由 `pnpm i18n:extract` 扫描生成（src/i18n/generated/zh-CN.json /
+                en-US.json / zh-to-key.json）；`pnpm i18n:check` 作为 CI 门禁
+              · 默认语言由 `src/lib/region.ts::DEFAULT_LOCALE` 根据 VITE_REGION 编译期决定
+                （cn→zh-CN，global→en-US）；用户可通过 `<LanguageSwitcher>` 手动切换
+                并持久化到 localStorage `lw-locale`
+  - 区域化: `src/lib/region.ts` 暴露 `REGION` / `isCN` / `isGlobal` / `DEFAULT_LOCALE`
+              编译期常量（由 `VITE_REGION` 注入，Vite 构建时做常量替换 + Tree-shake）
+              用于国内 / 国际站差异化：OAuth 渠道、首页平台卡片、法律页脚、默认语言等
   - 测试: Vitest 4 + @testing-library/react + @testing-library/user-event + jsdom
   - 构建: Vite 7（含 React 19 兼容 polyfill 注入逻辑，适配 tea-component）
+              双产物：`pnpm build:cn` → `dist-cn/`，`pnpm build:global` → `dist-global/`
   - 包管理: pnpm（workspace 形式，与 `tea-sdk-lightclaw` monorepo 联动）
-  - 部署: Cloudflare Pages（静态托管）+ shprod（Kubernetes Pod）双形态
+  - 部署: Cloudflare Pages（静态托管，`pnpm deploy:cf`）+ shprod（Kubernetes Pod）双形态
+              国内站走 shprod，国际站走 Cloudflare Pages
 
   # 入口与初始化流程
   入口文件: frontend/src/main.tsx
@@ -44,7 +56,8 @@ context: |
   启动流程:
     1. 首行 import `@/polyfills/react-dom-compat`（必须最早执行，为 tea-component
        打补丁 findDOMNode / render / unmountComponentAtNode，兼容 React 19）
-    2. import `@/styles.css`（Tailwind 入口 + 全局样式）
+    2. import `@/app/app`、`@/i18n`（触发 i18next 初始化：加载 zh-CN / en-US 资源，
+       按 region.DEFAULT_LOCALE 与 localStorage.lw-locale 解析初始语言）、`@/styles.css`
     3. createRoot(document.getElementById("root")).render(<StrictMode><App/></StrictMode>)
     4. <App/> 组合 Providers:
          RepositoryProvider → SessionProvider → OpenClawProvider → ThemeStyleInjector → RouterProvider
@@ -207,6 +220,10 @@ context: |
   - login-modal                    登录弹窗
   - marketing-header-actions       营销页头部动作
   - user-avatar-menu               用户头像菜单
+  - language-switcher              语言切换下拉（EN / 中），支持 dropdown / inline 两种形态
+                                   · 仅国际站（isGlobal）在 LandingNavbar 挂载：
+                                     桌面端右上角 dropdown；移动端汉堡面板底部 inline
+                                   · 切换后调用 i18n.setLocale()，持久化到 localStorage.lw-locale
 
   # 自定义 Hooks
   - useRepositories()                              注入数据层
@@ -214,11 +231,29 @@ context: |
   - useOpenClaw()                                  OpenClaw 配置
   - useAsyncResource(fetcher, deps)                异步资源加载（loading/error/data）
   - useGeneratedNickname()                         随机昵称生成
+  - useT()                                         i18n 翻译 hook（`t("中文原文")`）
 
   # 工具函数 (src/lib/)
   - auth-api-base.ts       解析认证 API base URL（支持构建时烘焙）
-  - oauth.ts               OAuth 提供商定义与跳转
+  - asset-url.ts           静态资源 URL 包装（CDN_BASE 硬编码常量，所有环境走 CDN）
+  - oauth.ts               OAuth 提供商定义与跳转；`VISIBLE_OAUTH_PROVIDERS` 按
+                           isGlobal 区分（国内 QQ/微信，国际 Google/GitHub）
   - avatar-image.ts        头像图片客户端压缩（压到 200KB 内）
+  - region.ts              站点区域常量（`REGION` / `isCN` / `isGlobal` / `DEFAULT_LOCALE`），
+                           由 VITE_REGION 编译期注入，未命中分支会被 Tree-shake
+
+  # i18n (src/i18n/)
+  - index.ts               i18next 初始化入口，读取 localStorage.lw-locale 覆盖或 region
+                           默认语言；导出 `setLocale(locale)` 动作
+  - t.ts                   `useT()` hook 与命令式 `t()`；接受中文原文，内部反查 hash key
+  - generated/             脚本自动生成，**禁止手改**
+                           · zh-CN.json / en-US.json / zh-to-key.json
+
+  # 构建与部署脚本（package.json scripts）
+  - dev / dev:cn / dev:global / dev:local          开发
+  - build:cn / build:global                        区域化产物构建（dist-cn / dist-global）
+  - i18n:extract / i18n:check                      文案抽取 / 翻译完整性 CI 门禁
+  - deploy:cf                                      Cloudflare Pages 发布（国际站）
 
   # 领域模型 (src/domain/)
   - types.ts               User / Bot / Plan / Pass / Bundle / AuditEvent ... 等核心类型

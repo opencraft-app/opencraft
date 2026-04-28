@@ -3,11 +3,13 @@ import { Bot, User, LogOut, ChevronDown } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useSession } from "@/contexts/session-context";
+import { useT } from "@/i18n/t";
 import { avatarImageUrl } from "@/lib/avatar-image";
 
 export const UserAvatarMenu = () => {
   const { session, signOut } = useSession();
   const navigate = useNavigate();
+  const t = useT();
   const user = session.user;
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -74,10 +76,10 @@ export const UserAvatarMenu = () => {
                 />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold" style={{ color: "#333" }}>
-                    {user?.name || "用户"}
+                    {user?.name || t("用户")}
                   </p>
                   <p className="text-xs" style={{ color: "#aaa" }}>
-                    {session.currentSubscription?.code ?? "未订阅"}
+                    {session.currentSubscription?.code ?? t("未订阅")}
                   </p>
                 </div>
               </div>
@@ -91,7 +93,7 @@ export const UserAvatarMenu = () => {
                 className="flex items-center gap-2.5 px-4 py-2.5 text-sm font-normal text-[var(--text-secondary)] transition-all duration-250 hover:bg-[var(--surface-muted)] hover:text-[var(--text-primary)]"
               >
                 <Bot className="h-4 w-4 text-[var(--text-tertiary)]" />
-                我的智能体伙伴
+                {t("我的智能体伙伴")}
               </Link>
               <Link
                 to="/account"
@@ -99,7 +101,7 @@ export const UserAvatarMenu = () => {
                 className="flex items-center gap-2.5 px-4 py-2.5 text-sm font-normal text-[var(--text-secondary)] transition-all duration-250 hover:bg-[var(--surface-muted)] hover:text-[var(--text-primary)]"
               >
                 <User className="h-4 w-4 text-[var(--text-tertiary)]" />
-                账号管理
+                {t("账号管理")}
               </Link>
             </div>
 
@@ -114,7 +116,7 @@ export const UserAvatarMenu = () => {
                 style={{ fontSize: "14px" }}
               >
                 <LogOut className="h-4 w-4 text-[var(--text-tertiary)]" />
-                退出登录
+                {t("退出登录")}
               </button>
             </div>
           </motion.div>

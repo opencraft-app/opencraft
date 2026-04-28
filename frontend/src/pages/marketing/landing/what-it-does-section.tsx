@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
 
+import { useT } from "@/i18n/t";
 import { assetUrl } from "@/lib/asset-url";
 import { fadeInUp, staggerContainer, titleReveal, viewportConfig } from "./constants";
 
@@ -8,32 +9,35 @@ type TagItem = { icon: string; label: string };
 
 const TAG_ICON_BASE = "/assets/landing/what-it-does";
 
-const tagRows: TagItem[][] = [
-  [
-    { icon: `${TAG_ICON_BASE}/marketing.png`, label: "市场营销" },
-    { icon: `${TAG_ICON_BASE}/food.png`, label: "营养食谱" },
-    { icon: `${TAG_ICON_BASE}/analysis.png`, label: "行业分析" },
-    { icon: `${TAG_ICON_BASE}/email.png`, label: "处理邮件" },
-    { icon: `${TAG_ICON_BASE}/health.png`, label: "健康追踪" },
-    { icon: `${TAG_ICON_BASE}/timer.png`, label: "定时任务" },
-  ],
-  [
-    { icon: `${TAG_ICON_BASE}/product-compare.png`, label: "选品竞品" },
-    { icon: `${TAG_ICON_BASE}/price-compare.png`, label: "商品比价" },
-    { icon: `${TAG_ICON_BASE}/poster.png`, label: "海报创作" },
-    { icon: `${TAG_ICON_BASE}/document.png`, label: "文档总结" },
-    { icon: `${TAG_ICON_BASE}/game.png`, label: "网页游戏" },
-    { icon: `${TAG_ICON_BASE}/ppt.png`, label: "制作 PPT" },
-  ],
-  [
-    { icon: `${TAG_ICON_BASE}/meeting.png`, label: "会议纪要" },
-    { icon: `${TAG_ICON_BASE}/news.png`, label: "新闻推送" },
-    { icon: `${TAG_ICON_BASE}/water.png`, label: "提醒喝水" },
-    { icon: `${TAG_ICON_BASE}/finance.png`, label: "智能理财" },
-    { icon: `${TAG_ICON_BASE}/website.png`, label: "网站开发" },
-    { icon: `${TAG_ICON_BASE}/private-marketing.png`, label: "私域营销" },
-  ],
-];
+/** 根据当前语言生成 3 行标签；i18n key 只放在 t 函数内部调用时传入。 */
+function buildTagRows(t: ReturnType<typeof useT>): TagItem[][] {
+  return [
+    [
+      { icon: `${TAG_ICON_BASE}/marketing.png`, label: t("市场营销") },
+      { icon: `${TAG_ICON_BASE}/food.png`, label: t("营养食谱") },
+      { icon: `${TAG_ICON_BASE}/analysis.png`, label: t("行业分析") },
+      { icon: `${TAG_ICON_BASE}/email.png`, label: t("处理邮件") },
+      { icon: `${TAG_ICON_BASE}/health.png`, label: t("健康追踪") },
+      { icon: `${TAG_ICON_BASE}/timer.png`, label: t("定时任务") },
+    ],
+    [
+      { icon: `${TAG_ICON_BASE}/product-compare.png`, label: t("选品竞品") },
+      { icon: `${TAG_ICON_BASE}/price-compare.png`, label: t("商品比价") },
+      { icon: `${TAG_ICON_BASE}/poster.png`, label: t("海报创作") },
+      { icon: `${TAG_ICON_BASE}/document.png`, label: t("文档总结") },
+      { icon: `${TAG_ICON_BASE}/game.png`, label: t("网页游戏") },
+      { icon: `${TAG_ICON_BASE}/ppt.png`, label: t("制作 PPT") },
+    ],
+    [
+      { icon: `${TAG_ICON_BASE}/meeting.png`, label: t("会议纪要") },
+      { icon: `${TAG_ICON_BASE}/news.png`, label: t("新闻推送") },
+      { icon: `${TAG_ICON_BASE}/water.png`, label: t("提醒喝水") },
+      { icon: `${TAG_ICON_BASE}/finance.png`, label: t("智能理财") },
+      { icon: `${TAG_ICON_BASE}/website.png`, label: t("网站开发") },
+      { icon: `${TAG_ICON_BASE}/private-marketing.png`, label: t("私域营销") },
+    ],
+  ];
+}
 
 /* 每行对应的背景色（来自 Figma 三色循环） */
 const ROW_COLORS = ["#F7FAFF", "#FFFAEF", "#FFF7F8"] as const;
@@ -142,6 +146,9 @@ function TagRow({
 }
 
 export function WhatItDoesSection() {
+  const t = useT();
+  const tagRows = buildTagRows(t);
+
   return (
     <section
       id="what-it-does"
@@ -167,7 +174,7 @@ export function WhatItDoesSection() {
               }}
             >
               <SparkleIcon />
-              能做什么
+              {t("能做什么")}
             </span>
           </motion.div>
 
@@ -176,7 +183,7 @@ export function WhatItDoesSection() {
             variants={titleReveal}
             className="font-heading text-[28px] font-semibold leading-[1.5] text-black md:text-[36px] md:leading-[1.78]"
           >
-            你只管说，它帮你办
+            {t("你只管说，它帮你办")}
           </motion.h2>
         </motion.div>
 

@@ -6,6 +6,7 @@ import "@/polyfills/react-dom-compat";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "@/app/app";
+import "@/i18n";
 import "@/styles.css";
 
 const rootElement = document.getElementById("root");
