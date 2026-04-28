@@ -31,12 +31,25 @@ ci_load_cloudflare_credentials() {
     export CLOUDFLARE_ACCOUNT_ID
     CLOUDFLARE_ACCOUNT_ID="$(tr -d '\r\n' < "$account_id_file")"
     echo "cloudflare account id loaded from file:$account_id_file"
-  else
+  elif [[ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ]]; then
     echo "cloudflare account id loaded from settings"
+  else
+    echo "cloudflare account id is not configured"
   fi
+}
 
-  test -n "${CLOUDFLARE_API_TOKEN:-}"
-  test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
+ci_load_edgeone_credentials() {
+  local api_token_file="${EDGEONE_API_TOKEN_FILE:-/etc/lightclaw-ci/edgeone_api_token}"
+
+  if [[ -r "$api_token_file" ]]; then
+    export EDGEONE_API_TOKEN
+    EDGEONE_API_TOKEN="$(tr -d '\r\n' < "$api_token_file")"
+    echo "edgeone api token loaded from file:$api_token_file"
+  elif [[ -n "${EDGEONE_API_TOKEN:-}" ]]; then
+    echo "edgeone api token loaded from settings"
+  else
+    echo "edgeone api token is not configured"
+  fi
 }
 
 ci_ensure_node() {

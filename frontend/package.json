@@ -17,7 +17,8 @@
     "check": "tsc --noEmit",
     "test": "vitest run",
     "deploy:cf": "node scripts/deploy-cloudflare-pages.mjs",
-    "deploy:eo": "node scripts/deploy-edgeone-pages.mjs"
+    "deploy:eo": "node scripts/deploy-edgeone-pages.mjs",
+    "release:matrix": "node scripts/release-matrix.mjs"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.15",

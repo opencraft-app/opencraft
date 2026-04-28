@@ -29,6 +29,10 @@ variables:
     value: build
     readonly: false
     allow-modify-at-startup: true
+  FRONTEND_RELEASE_MATRIX:
+    value: cn-cf
+    readonly: false
+    allow-modify-at-startup: true
   TARGET_ENV:
     value: shprod
     readonly: false
@@ -55,6 +59,7 @@ jobs:
           echo "ci.event=${{ ci.event }}"
           echo "ci.branch=${{ ci.branch }}"
           echo "PIPELINE_MODE=${{ variables.PIPELINE_MODE }}"
+          echo "FRONTEND_RELEASE_MATRIX=${{ variables.FRONTEND_RELEASE_MATRIX }}"
           echo "TARGET_ENV=${{ variables.TARGET_ENV }}"
           echo "SOURCE_SHA=${{ variables.SOURCE_SHA }}"
       - id: prepare
@@ -70,14 +75,16 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ settings.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ settings.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_PAGES_PROJECT_NAME: lightclaw
+          EDGEONE_API_TOKEN: ${{ settings.EDGEONE_API_TOKEN }}
           VITE_AUTH_API_BASE_URL: https://lightclaw.tech
           CLOUDFLARE_PAGES_COMMIT_HASH: ${{ ci.sha }}
           CLOUDFLARE_PAGES_COMMIT_MESSAGE: Cloudflare Pages deploy from release-frontend
+          FRONTEND_RELEASE_MATRIX: ${{ variables.FRONTEND_RELEASE_MATRIX }}
         run: |
           source .ci/init.sh
           ci_init_repo_root
           ci_load_cloudflare_credentials
+          ci_load_edgeone_credentials
           ci_ensure_node
           ci_ensure_pnpm
 
@@ -88,8 +95,7 @@ jobs:
           rm -rf node_modules
           "$PNPM_BIN" --version
           "$PNPM_BIN" install --no-frozen-lockfile
-          "$PNPM_BIN" build
-          "$PNPM_BIN" deploy:cf
+          "$PNPM_BIN" release:matrix
       - name: promote-manual
         if: ${{ variables.PIPELINE_MODE }} == 'promote'
         shell: bash

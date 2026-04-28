@@ -1,0 +1,18 @@
+{
+  "combos": [
+    {
+      "id": "cn-cf",
+      "region": "cn",
+      "channel": "cf",
+      "buildCommand": "build:cn",
+      "deployCommand": "deploy:cf",
+      "projectName": "lightclaw",
+      "requiredSecretEnv": [
+        "CLOUDFLARE_API_TOKEN",
+        "CLOUDFLARE_ACCOUNT_ID"
+      ],
+      "authApiBaseUrl": "https://lightclaw.tech",
+      "outputDir": "dist-cn"
+    }
+  ]
+}
