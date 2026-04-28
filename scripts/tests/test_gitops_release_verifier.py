@@ -7,6 +7,7 @@ from scripts.verify_gitops_release import (
     ReleaseTarget,
     changed_files_from_recent_commits,
     expected_images_for_target,
+    format_convergence_log_line,
     infer_release_targets,
 )
 
@@ -75,6 +76,30 @@ class GitopsReleaseVerifierTests(unittest.TestCase):
             targets = infer_release_targets(changed_files_from_recent_commits(repo_root))
 
         self.assertEqual(targets, [ReleaseTarget(service="lightclaw-auth", env="beijing-sandbox")])
+
+    def test_format_convergence_log_line_includes_live_state_and_expectations(self) -> None:
+        line = format_convergence_log_line(
+            {
+                "app_name": "ctl-beijing-sandbox",
+                "revision": "abcdef1234567890",
+                "sync_status": "OutOfSync",
+                "health_status": "Progressing",
+                "images": ["example.com/ctl:v1"],
+            },
+            expected_revision="fedcba9876543210",
+            expected_images=["example.com/ctl:v2"],
+            elapsed_seconds=30,
+            wait_seconds=600,
+        )
+
+        self.assertIn("app=ctl-beijing-sandbox", line)
+        self.assertIn("elapsed=30/600s", line)
+        self.assertIn("revision=abcdef123456", line)
+        self.assertIn("expected_revision=fedcba987654", line)
+        self.assertIn("sync=OutOfSync", line)
+        self.assertIn("health=Progressing", line)
+        self.assertIn("expected_images=example.com/ctl:v2", line)
+        self.assertIn("live_images=example.com/ctl:v1", line)
 
     def _git(self, repo: Path, *args: str) -> None:
         subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True)

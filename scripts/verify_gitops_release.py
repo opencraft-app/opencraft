@@ -331,6 +331,34 @@ def argocd_get_application(
     )
 
 
+def short_revision(revision: str) -> str:
+    return revision[:12] if revision else "-"
+
+
+def join_values(values: Sequence[str]) -> str:
+    return ",".join(values) if values else "-"
+
+
+def format_convergence_log_line(
+    snapshot: Dict[str, Any],
+    expected_revision: str,
+    expected_images: Sequence[str],
+    elapsed_seconds: int,
+    wait_seconds: int,
+) -> str:
+    return (
+        "argo convergence poll: "
+        f"app={snapshot.get('app_name', '-')} "
+        f"elapsed={elapsed_seconds}/{wait_seconds}s "
+        f"revision={short_revision(str(snapshot.get('revision') or ''))} "
+        f"expected_revision={short_revision(expected_revision)} "
+        f"sync={snapshot.get('sync_status') or '-'} "
+        f"health={snapshot.get('health_status') or '-'} "
+        f"expected_images={join_values(expected_images)} "
+        f"live_images={join_values(snapshot.get('images', []))}"
+    )
+
+
 def wait_for_application_convergence(
     argocd_base_url: str,
     ssl_context: ssl.SSLContext,
@@ -341,7 +369,8 @@ def wait_for_application_convergence(
     wait_seconds: int,
     poll_seconds: int,
 ) -> Dict[str, Any]:
-    deadline = time.time() + wait_seconds
+    started_at = time.time()
+    deadline = started_at + wait_seconds
     last_snapshot: Dict[str, Any] = {}
 
     while time.time() < deadline:
@@ -363,6 +392,17 @@ def wait_for_application_convergence(
             "health_status": health_status,
             "images": sorted(images),
         }
+        elapsed_seconds = int(time.time() - started_at)
+        print(
+            format_convergence_log_line(
+                last_snapshot,
+                expected_revision=merge_commit_sha,
+                expected_images=expected_images,
+                elapsed_seconds=elapsed_seconds,
+                wait_seconds=wait_seconds,
+            ),
+            flush=True,
+        )
 
         if (
             revision == merge_commit_sha
@@ -370,6 +410,18 @@ def wait_for_application_convergence(
             and health_status == "Healthy"
             and set(expected_images).issubset(image_set)
         ):
+            print(
+                "argo convergence passed: app=%s elapsed=%s/%ss revision=%s sync=%s health=%s"
+                % (
+                    target.app_name,
+                    elapsed_seconds,
+                    wait_seconds,
+                    short_revision(revision),
+                    sync_status,
+                    health_status,
+                ),
+                flush=True,
+            )
             return last_snapshot
 
         time.sleep(poll_seconds)
