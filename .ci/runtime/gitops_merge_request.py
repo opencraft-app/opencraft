@@ -8,10 +8,18 @@ import json
 import os
 import sys
 import time
-import urllib.error
-import urllib.parse
-import urllib.request
 from typing import Any, Dict, List, Optional, Tuple
+
+from harness_ci.gongfeng import (
+    api_json_request,
+    create_merge_request_url,
+    env_int,
+    merge_request_merge_url,
+    merge_request_note_url,
+    merge_requests_url,
+    require_settings_from_args,
+    resolve_private_token_from_args,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -33,68 +41,27 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def env_int(name: str) -> int | None:
-    value = os.environ.get(name, "").strip()
-    return int(value) if value else None
-
-
 def require_gongfeng_settings(args: argparse.Namespace) -> None:
-    missing = []
-    if not args.api_base:
-        missing.append("GIT_WOA_API_BASE or --api-base")
-    if args.project_id is None:
-        missing.append("GITOPS_PROJECT_ID or --project-id")
-    if not args.repo_path:
-        missing.append("GITOPS_REPO_PATH or --repo-path")
-    if missing:
-        raise RuntimeError("missing Gongfeng settings: " + ", ".join(missing))
-
-
-def api_request(method: str, url: str, private_token: str, form_data: Optional[Dict[str, Any]] = None) -> Any:
-    headers = {"PRIVATE-TOKEN": private_token}
-    data = None
-    if form_data is not None:
-        data = urllib.parse.urlencode(form_data).encode()
-    req = urllib.request.Request(url, data=data, headers=headers, method=method)
-    with urllib.request.urlopen(req) as resp:
-        payload = resp.read().decode()
-    return json.loads(payload) if payload else None
+    require_settings_from_args(args, require_repo_path=True)
 
 
 def resolve_private_token(args: argparse.Namespace) -> str:
-    if args.private_token:
-        return args.private_token.strip()
-
-    try:
-        with open(args.private_token_file, "r") as fh:
-            return fh.read().strip()
-    except FileNotFoundError:
-        pass
-
-    env_token = os.environ.get("GIT_WOA_PRIVATE_TOKEN", "").strip()
-    if env_token:
-        return env_token
-
-    raise RuntimeError(
-        "missing Git WOA token; provide --private-token, ensure %s exists, or set GIT_WOA_PRIVATE_TOKEN"
-        % args.private_token_file
-    )
+    return resolve_private_token_from_args(args)
 
 
 def list_merge_requests(args: argparse.Namespace, state: str) -> List[Dict[str, Any]]:
-    params = urllib.parse.urlencode(
-        {
-            "state": state,
-            "source_branch": args.source_branch,
-            "target_branch": args.target_branch,
-        }
+    url = merge_requests_url(
+        args.api_base,
+        args.project_id,
+        state=state,
+        source_branch=args.source_branch,
+        target_branch=args.target_branch,
     )
-    url = f"{args.api_base}/projects/{args.project_id}/merge_requests?{params}"
-    return api_request("GET", url, args.private_token)
+    return api_json_request("GET", url, args.private_token)
 
 
 def create_merge_request(args: argparse.Namespace) -> Dict[str, Any]:
-    url = f"{args.api_base}/projects/{args.project_id}/merge_requests"
+    url = create_merge_request_url(args.api_base, args.project_id)
     payload = {
         "source_branch": args.source_branch,
         "target_branch": args.target_branch,
@@ -103,7 +70,7 @@ def create_merge_request(args: argparse.Namespace) -> Dict[str, Any]:
     }
     if args.remove_source_branch and not args.auto_merge:
         payload["remove_source_branch"] = "true"
-    return api_request(
+    return api_json_request(
         "POST",
         url,
         args.private_token,
@@ -112,8 +79,8 @@ def create_merge_request(args: argparse.Namespace) -> Dict[str, Any]:
 
 
 def post_merge_request_note(args: argparse.Namespace, mr: Dict[str, Any], body: str) -> Dict[str, Any]:
-    url = f"{args.api_base}/projects/{args.project_id}/merge_requests/{mr['id']}/notes"
-    return api_request("POST", url, args.private_token, {"body": body})
+    url = merge_request_note_url(args.api_base, args.project_id, mr["id"])
+    return api_json_request("POST", url, args.private_token, {"body": body})
 
 
 def ensure_merge_request(args: argparse.Namespace) -> Dict[str, Any]:
@@ -139,11 +106,11 @@ def refresh_merge_request(args: argparse.Namespace) -> Dict[str, Any]:
 
 
 def merge_merge_request(args: argparse.Namespace, mr: Dict[str, Any]) -> Dict[str, Any]:
-    url = f"{args.api_base}/projects/{args.project_id}/merge_request/{mr['id']}/merge"
+    url = merge_request_merge_url(args.api_base, args.project_id, mr["id"])
     payload = {}  # type: Dict[str, Any]
     if args.remove_source_branch and not args.auto_merge:
         payload["should_remove_source_branch"] = "true"
-    return api_request("PUT", url, args.private_token, payload or None)
+    return api_json_request("PUT", url, args.private_token, payload or None)
 
 
 def maybe_auto_merge(args: argparse.Namespace, mr: Dict[str, Any]) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:

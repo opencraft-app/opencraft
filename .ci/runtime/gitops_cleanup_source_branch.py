@@ -4,14 +4,20 @@ Delete a promote branch after its GitOps MR has been merged.
 """
 
 import argparse
-import json
 import os
 import sys
 import time
 import urllib.error
-import urllib.parse
-import urllib.request
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
+
+from harness_ci.gongfeng import (
+    api_json_request,
+    branch_url,
+    env_int,
+    merge_requests_url,
+    require_settings_from_args,
+    resolve_private_token_from_args,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -27,66 +33,29 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def env_int(name: str) -> int | None:
-    value = os.environ.get(name, "").strip()
-    return int(value) if value else None
-
-
 def require_gongfeng_settings(args: argparse.Namespace) -> None:
-    missing = []
-    if not args.api_base:
-        missing.append("GIT_WOA_API_BASE or --api-base")
-    if args.project_id is None:
-        missing.append("GITOPS_PROJECT_ID or --project-id")
-    if missing:
-        raise RuntimeError("missing Gongfeng settings: " + ", ".join(missing))
-
-
-def api_request(method: str, url: str, private_token: str) -> Any:
-    headers = {"PRIVATE-TOKEN": private_token}
-    req = urllib.request.Request(url, headers=headers, method=method)
-    with urllib.request.urlopen(req) as resp:
-        payload = resp.read().decode()
-    return json.loads(payload) if payload else None
+    require_settings_from_args(args)
 
 
 def resolve_private_token(args: argparse.Namespace) -> str:
-    if args.private_token:
-        return args.private_token.strip()
-
-    try:
-        with open(args.private_token_file, "r") as fh:
-            return fh.read().strip()
-    except FileNotFoundError:
-        pass
-
-    env_token = os.environ.get("GIT_WOA_PRIVATE_TOKEN", "").strip()
-    if env_token:
-        return env_token
-
-    raise RuntimeError(
-        "missing Git WOA token; provide --private-token, ensure %s exists, or set GIT_WOA_PRIVATE_TOKEN"
-        % args.private_token_file
-    )
+    return resolve_private_token_from_args(args)
 
 
 def list_merged_merge_requests(args: argparse.Namespace) -> List[Dict[str, Any]]:
-    params = urllib.parse.urlencode(
-        {
-            "state": "merged",
-            "source_branch": args.source_branch,
-            "target_branch": args.target_branch,
-        }
+    url = merge_requests_url(
+        args.api_base,
+        args.project_id,
+        state="merged",
+        source_branch=args.source_branch,
+        target_branch=args.target_branch,
     )
-    url = f"{args.api_base}/projects/{args.project_id}/merge_requests?{params}"
-    return api_request("GET", url, args.private_token)
+    return api_json_request("GET", url, args.private_token)
 
 
 def branch_exists(args: argparse.Namespace) -> bool:
-    encoded_branch = urllib.parse.quote(args.source_branch, safe="")
-    url = f"{args.api_base}/projects/{args.project_id}/repository/branches/{encoded_branch}"
+    url = branch_url(args.api_base, args.project_id, args.source_branch)
     try:
-        api_request("GET", url, args.private_token)
+        api_json_request("GET", url, args.private_token)
         return True
     except urllib.error.HTTPError as exc:
         if exc.code == 404:
@@ -99,15 +68,14 @@ def branch_exists(args: argparse.Namespace) -> bool:
 
 
 def delete_branch(args: argparse.Namespace) -> None:
-    encoded_branch = urllib.parse.quote(args.source_branch, safe="")
-    url = f"{args.api_base}/projects/{args.project_id}/repository/branches/{encoded_branch}"
+    url = branch_url(args.api_base, args.project_id, args.source_branch)
     print(
         "cleanup delete: source_branch=%s branch_exists_before=%s"
         % (args.source_branch, str(branch_exists(args)).lower()),
         file=sys.stderr,
     )
     try:
-        api_request("DELETE", url, args.private_token)
+        api_json_request("DELETE", url, args.private_token)
         print("source branch delete request succeeded: %s" % args.source_branch, file=sys.stderr)
     except urllib.error.HTTPError as exc:
         body = exc.read().decode(errors="replace")
