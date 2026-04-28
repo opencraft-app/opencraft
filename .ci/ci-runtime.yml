@@ -36,6 +36,8 @@ jobs:
             .ci/runtime/build-release-image.py
             .ci/runtime/gitops_cleanup_source_branch.py
             .ci/runtime/gitops_merge_request.py
+            .ci/runtime/harness_ci/__init__.py
+            .ci/runtime/harness_ci/bundles.py
             .ci/runtime/project_release_bundle.py
             .ci/runtime/release_bundle_lib.py
             .ci/runtime/resolve_release_bundle.py

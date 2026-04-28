@@ -11,7 +11,7 @@ import subprocess
 import sys
 from pathlib import PurePosixPath
 
-from release_bundle_lib import load_bundle, parse_manifest_text
+from harness_ci.bundles import load_bundle, parse_manifest_text
 
 
 def parse_args() -> argparse.Namespace:

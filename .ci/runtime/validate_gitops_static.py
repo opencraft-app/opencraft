@@ -17,7 +17,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from release_bundle_lib import load_bundle, load_manifest  # noqa: E402
+from harness_ci.bundles import load_bundle, load_manifest  # noqa: E402
 
 
 APPSET_REL = "argocd/apps/beijing-sandbox/sandbox-family-appset.yaml"

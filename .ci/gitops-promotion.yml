@@ -42,6 +42,8 @@ stages:
                 ".ci/runtime/release-bundles.yaml" \
                 ".ci/runtime/update_image_pin.py" \
                 ".ci/runtime/project_release_bundle.py" \
+                ".ci/runtime/harness_ci/__init__.py" \
+                ".ci/runtime/harness_ci/bundles.py" \
                 ".ci/runtime/release_bundle_lib.py" \
                 ".ci/runtime/gitops_merge_request.py" \
                 ".ci/runtime/verify_gitops_release.py" \
@@ -55,6 +57,8 @@ stages:
               python3 "${CI_RUNTIME_DIR}/.ci/runtime/validate_gitops_kustomize.py" --help >/dev/null
               python3 -m py_compile \
                 "${CI_RUNTIME_DIR}/.ci/runtime/release_bundle_lib.py" \
+                "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/__init__.py" \
+                "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/bundles.py" \
                 "${CI_RUNTIME_DIR}/.ci/runtime/gitops_merge_request.py" \
                 "${CI_RUNTIME_DIR}/.ci/runtime/verify_gitops_release.py" \
                 "${CI_RUNTIME_DIR}/.ci/runtime/validate_gitops_static.py" \
