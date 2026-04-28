@@ -50,14 +50,24 @@ import { installOpenClawConsoleHelpers } from "@/pages/marketing/openclaw-consol
 import "@tencent/tea-sdk-lightclaw/styles";
 
 // Vite 生产构建（Rollup）会 tree-shake 掉 SDK 的自动 i18n.init()，
-// 导致 t() 返回空字符串。根据用户语言动态加载词条。
-if (navigator.language.startsWith("zh")) {
-  initI18n();
-} else {
-  import("@tencent/tea-sdk-lightclaw/i18n/translation/en").then((mod) => {
-    // @ts-expect-error initI18n options 参数在 SDK 1.0.15+ 可用，当前类型声明尚未更新
-    initI18n({ translation: mod.translation });
+// 导致 t() 返回空字符串。
+// Vite 插件已去掉 SDK i18n.ts 中的自动 initI18n() 调用，
+// 由消费方显式控制初始化时机和词条内容。
+//
+// 支持 ?lang=en 手动切换语言（优先级高于 navigator.language）
+const _urlLang = new URLSearchParams(window.location.search).get("lang");
+const _isEnglishEnv =
+  _urlLang === "en" || (!_urlLang && !navigator.language.startsWith("zh"));
+if (_isEnglishEnv) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (window as any).VERSION = "en";
+  import("@tencent/tea-sdk-lightclaw/i18n/translation/en").then((enMod) => {
+    const enTranslation = enMod.translation ?? enMod.default?.translation;
+    // @ts-expect-error translation 参数在 SDK feat/i18n 分支可用
+    initI18n({ translation: enTranslation || {} });
   });
+} else {
+  initI18n();
 }
 
 /* ─── Types ─── */
