@@ -17,6 +17,14 @@ bundles:
       - argocd/secrets/{env}/admin-gateway-runtime-secrets.sops.yaml
       - admin-gateway/k8s/base/**
       - admin-gateway/k8s/overlays/{env}/**
+    publish_paths_by_env:
+      beijing-sandbox:
+        - argocd/services/admin-gateway/beijing-sandbox/**
+        - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
+        - argocd/catalogs/sandbox/beijing-sandbox/admin-gateway.yaml
+        - argocd/secrets/beijing-sandbox/admin-gateway-runtime-secrets.sops.yaml
+        - admin-gateway/k8s/base/**
+        - admin-gateway/k8s/overlays/beijing-sandbox/**
   ai-gateway:
     owner: ai-gateway
     source: ai-gateway
@@ -34,6 +42,14 @@ bundles:
       - argocd/secrets/{env}/ai-gateway-runtime-secrets.sops.yaml
       - ai-gateway/k8s/base/**
       - ai-gateway/k8s/overlays/{env}/**
+    publish_paths_by_env:
+      beijing-sandbox:
+        - argocd/services/ai-gateway/beijing-sandbox/**
+        - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
+        - argocd/catalogs/sandbox/beijing-sandbox/ai-gateway.yaml
+        - argocd/secrets/beijing-sandbox/ai-gateway-runtime-secrets.sops.yaml
+        - ai-gateway/k8s/base/**
+        - ai-gateway/k8s/overlays/beijing-sandbox/**
     dockerfile: ai-gateway/deploy/Dockerfile
     build_context: ai-gateway
     image_repo:
@@ -55,6 +71,14 @@ bundles:
       - argocd/secrets/{env}/gateway-dashboard-runtime-secrets.sops.yaml
       - gateway-dashboard/k8s/base/**
       - gateway-dashboard/k8s/overlays/{env}/**
+    publish_paths_by_env:
+      beijing-sandbox:
+        - argocd/services/gateway-dashboard/beijing-sandbox/**
+        - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
+        - argocd/catalogs/sandbox/beijing-sandbox/gateway-dashboard.yaml
+        - argocd/secrets/beijing-sandbox/gateway-dashboard-runtime-secrets.sops.yaml
+        - gateway-dashboard/k8s/base/**
+        - gateway-dashboard/k8s/overlays/beijing-sandbox/**
     dockerfile: gateway-dashboard/Dockerfile
     build_context: gateway-dashboard
     image_repo:
@@ -76,6 +100,14 @@ bundles:
       - argocd/secrets/{env}/nextgen-dashboard-runtime-secrets.sops.yaml
       - nextgen-dashboard/k8s/base/**
       - nextgen-dashboard/k8s/overlays/{env}/**
+    publish_paths_by_env:
+      beijing-sandbox:
+        - argocd/services/nextgen-dashboard/beijing-sandbox/**
+        - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
+        - argocd/catalogs/sandbox/beijing-sandbox/nextgen-dashboard.yaml
+        - argocd/secrets/beijing-sandbox/nextgen-dashboard-runtime-secrets.sops.yaml
+        - nextgen-dashboard/k8s/base/**
+        - nextgen-dashboard/k8s/overlays/beijing-sandbox/**
     dockerfile: nextgen-dashboard/Dockerfile
     build_context: nextgen-dashboard
     image_repo:
@@ -98,6 +130,14 @@ bundles:
       - argocd/secrets/{env}/payment-runtime-secrets.sops.yaml
       - payment/k8s/base/**
       - payment/k8s/overlays/{env}/**
+    publish_paths_by_env:
+      beijing-sandbox:
+        - argocd/services/payment/beijing-sandbox/**
+        - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
+        - argocd/catalogs/sandbox/beijing-sandbox/payment.yaml
+        - argocd/secrets/beijing-sandbox/payment-runtime-secrets.sops.yaml
+        - payment/k8s/base/**
+        - payment/k8s/overlays/beijing-sandbox/**
     dockerfile: payment/Dockerfile
     build_context: payment
     image_repo:
@@ -124,6 +164,19 @@ bundles:
       - argocd/secrets/{env}/admin-gateway-runtime-secrets.sops.yaml
       - admin-gateway/k8s/base/**
       - admin-gateway/k8s/overlays/{env}/**
+    publish_paths_by_env:
+      beijing-sandbox:
+        - argocd/services/service-gateway/beijing-sandbox/**
+        - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
+        - argocd/catalogs/sandbox/beijing-sandbox/service-gateway.yaml
+        - argocd/secrets/beijing-sandbox/service-gateway-runtime-secrets.sops.yaml
+        - service-gateway/k8s/base/**
+        - service-gateway/k8s/overlays/beijing-sandbox/**
+        - argocd/services/admin-gateway/beijing-sandbox/**
+        - argocd/catalogs/sandbox/beijing-sandbox/admin-gateway.yaml
+        - argocd/secrets/beijing-sandbox/admin-gateway-runtime-secrets.sops.yaml
+        - admin-gateway/k8s/base/**
+        - admin-gateway/k8s/overlays/beijing-sandbox/**
     dockerfile: service-gateway/Dockerfile
     build_context: service-gateway
     image_repo:
@@ -143,6 +196,14 @@ bundles:
       - argocd/secrets/{env}/session-runtime-secrets.sops.yaml
       - session/k8s/base/**
       - session/k8s/overlays/{env}/**
+    publish_paths_by_env:
+      beijing-sandbox:
+        - argocd/services/session/beijing-sandbox/**
+        - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
+        - argocd/catalogs/sandbox/beijing-sandbox/session.yaml
+        - argocd/secrets/beijing-sandbox/session-runtime-secrets.sops.yaml
+        - session/k8s/base/**
+        - session/k8s/overlays/beijing-sandbox/**
   subscription:
     owner: subscription
     source: subscription
@@ -160,6 +221,14 @@ bundles:
       - argocd/secrets/{env}/subscription-runtime-secrets.sops.yaml
       - subscription/k8s/base/**
       - subscription/k8s/overlays/{env}/**
+    publish_paths_by_env:
+      beijing-sandbox:
+        - argocd/services/subscription/beijing-sandbox/**
+        - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
+        - argocd/catalogs/sandbox/beijing-sandbox/subscription.yaml
+        - argocd/secrets/beijing-sandbox/subscription-runtime-secrets.sops.yaml
+        - subscription/k8s/base/**
+        - subscription/k8s/overlays/beijing-sandbox/**
     dockerfile: subscription/Dockerfile
     build_context: subscription
     image_repo:
@@ -182,6 +251,14 @@ bundles:
       - argocd/secrets/{env}/lightclaw-auth-secrets.sops.yaml
       - user/auth/k8s/base/**
       - user/auth/k8s/overlays/{env}/**
+    publish_paths_by_env:
+      beijing-sandbox:
+        - argocd/services/lightclaw-auth/beijing-sandbox/**
+        - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
+        - argocd/catalogs/sandbox/beijing-sandbox/lightclaw-auth.yaml
+        - argocd/secrets/beijing-sandbox/lightclaw-auth-secrets.sops.yaml
+        - user/auth/k8s/base/**
+        - user/auth/k8s/overlays/beijing-sandbox/**
     dockerfile: user/auth/Dockerfile
     build_context: user/auth
     image_repo:
@@ -205,6 +282,16 @@ bundles:
       - argocd/secrets/{env}/ctl-runtime-secrets.sops.yaml
       - ctl/k8s/base/**
       - ctl/k8s/overlays/{env}/**
+    publish_paths_by_env:
+      beijing-sandbox:
+        - argocd/services/ctl/beijing-sandbox/**
+        - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
+        - argocd/catalogs/sandbox/beijing-sandbox/ctl.yaml
+        - argocd/secrets/beijing-sandbox/ctl-conf-common.sops.yaml
+        - argocd/secrets/beijing-sandbox/ctl-conf-rewrite.sops.yaml
+        - argocd/secrets/beijing-sandbox/ctl-runtime-secrets.sops.yaml
+        - ctl/k8s/base/**
+        - ctl/k8s/overlays/beijing-sandbox/**
     dockerfile: ctl/Dockerfile
     build_context: ctl
     image_repo:
@@ -227,6 +314,14 @@ bundles:
       - argocd/secrets/{env}/sandbox-runtime-secrets.sops.yaml
       - sandbox/k8s/base/**
       - sandbox/k8s/overlays/{env}/**
+    publish_paths_by_env:
+      beijing-sandbox:
+        - argocd/services/sandbox/beijing-sandbox/**
+        - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
+        - argocd/catalogs/sandbox/beijing-sandbox/sandbox.yaml
+        - argocd/secrets/beijing-sandbox/sandbox-runtime-secrets.sops.yaml
+        - sandbox/k8s/base/**
+        - sandbox/k8s/overlays/beijing-sandbox/**
   frontend:
     owner: frontend
     source: frontend

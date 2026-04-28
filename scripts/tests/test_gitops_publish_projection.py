@@ -35,8 +35,34 @@ class ResolveReleaseBundleTests(unittest.TestCase):
 
         self.assertIn("publish_paths", payload)
         self.assertIn("argocd/services/lightclaw-auth/beijing-sandbox/**", payload["publish_paths"])
-        self.assertIn("argocd/apps/beijing-sandbox/lightclaw-auth.yaml", payload["publish_paths"])
+        self.assertIn("argocd/apps/beijing-sandbox/sandbox-family-appset.yaml", payload["publish_paths"])
+        self.assertIn("argocd/catalogs/sandbox/beijing-sandbox/lightclaw-auth.yaml", payload["publish_paths"])
+        self.assertNotIn("argocd/apps/beijing-sandbox/lightclaw-auth.yaml", payload["publish_paths"])
         self.assertIn("user/auth/k8s/base/**", payload["publish_paths"])
+
+    def test_resolve_release_bundle_keeps_shprod_leaf_app_path(self) -> None:
+        result = subprocess.run(
+            [
+                "python3",
+                str(SCRIPTS_DIR / "resolve_release_bundle.py"),
+                "--service",
+                "user-auth",
+                "--env",
+                "shprod",
+                "--tag",
+                "test-tag",
+                "--format",
+                "json",
+            ],
+            cwd=REPO_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        payload = json.loads(result.stdout)
+
+        self.assertIn("argocd/apps/shprod/lightclaw-auth.yaml", payload["publish_paths"])
+        self.assertNotIn("argocd/apps/shprod/sandbox-family-appset.yaml", payload["publish_paths"])
 
 
 class ProjectReleaseBundleTests(unittest.TestCase):
@@ -67,6 +93,12 @@ class ProjectReleaseBundleTests(unittest.TestCase):
                           - argocd/services/demo/{env}/**
                           - argocd/apps/{env}/demo.yaml
                           - demo/k8s/base/**
+                        publish_paths_by_env:
+                          beijing-sandbox:
+                            - argocd/services/demo/beijing-sandbox/**
+                            - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
+                            - argocd/catalogs/sandbox/beijing-sandbox/demo.yaml
+                            - demo/k8s/base/**
                     """
                 )
             )
@@ -75,7 +107,9 @@ class ProjectReleaseBundleTests(unittest.TestCase):
             (repo / "argocd" / "services" / "demo" / "beijing-sandbox").mkdir(parents=True)
             (repo / "argocd" / "services" / "demo" / "beijing-sandbox" / "config.yaml").write_text("new-config\n")
             (repo / "argocd" / "apps" / "beijing-sandbox").mkdir(parents=True)
-            (repo / "argocd" / "apps" / "beijing-sandbox" / "demo.yaml").write_text("app: new\n")
+            (repo / "argocd" / "apps" / "beijing-sandbox" / "sandbox-family-appset.yaml").write_text("appset: new\n")
+            (repo / "argocd" / "catalogs" / "sandbox" / "beijing-sandbox").mkdir(parents=True)
+            (repo / "argocd" / "catalogs" / "sandbox" / "beijing-sandbox" / "demo.yaml").write_text("catalog: new\n")
             (repo / "README.md").write_text("source repo\n")
             self._git(repo, "add", ".")
             self._git(repo, "commit", "-m", "source")
@@ -85,6 +119,8 @@ class ProjectReleaseBundleTests(unittest.TestCase):
             (repo / "argocd" / "services" / "demo" / "beijing-sandbox" / "config.yaml").write_text("old-config\n")
             (repo / "argocd" / "services" / "demo" / "beijing-sandbox" / "stale.yaml").write_text("stale\n")
             (repo / "argocd" / "apps" / "beijing-sandbox" / "demo.yaml").write_text("app: old\n")
+            (repo / "argocd" / "apps" / "beijing-sandbox" / "sandbox-family-appset.yaml").write_text("appset: old\n")
+            (repo / "argocd" / "catalogs" / "sandbox" / "beijing-sandbox" / "demo.yaml").write_text("catalog: old\n")
             (repo / "demo" / "k8s" / "base" / "manifests.yaml").write_text("old-manifest\n")
             (repo / "argocd" / "services" / "other" / "beijing-sandbox").mkdir(parents=True)
             (repo / "argocd" / "services" / "other" / "beijing-sandbox" / "keep.yaml").write_text("keep\n")
@@ -115,7 +151,9 @@ class ProjectReleaseBundleTests(unittest.TestCase):
                 "new-config\n",
             )
             self.assertFalse((repo / "argocd" / "services" / "demo" / "beijing-sandbox" / "stale.yaml").exists())
-            self.assertEqual((repo / "argocd" / "apps" / "beijing-sandbox" / "demo.yaml").read_text(), "app: new\n")
+            self.assertEqual((repo / "argocd" / "apps" / "beijing-sandbox" / "demo.yaml").read_text(), "app: old\n")
+            self.assertEqual((repo / "argocd" / "apps" / "beijing-sandbox" / "sandbox-family-appset.yaml").read_text(), "appset: new\n")
+            self.assertEqual((repo / "argocd" / "catalogs" / "sandbox" / "beijing-sandbox" / "demo.yaml").read_text(), "catalog: new\n")
             self.assertEqual((repo / "demo" / "k8s" / "base" / "manifests.yaml").read_text(), "source-manifest\n")
             self.assertTrue((repo / "argocd" / "services" / "other" / "beijing-sandbox" / "keep.yaml").exists())
 

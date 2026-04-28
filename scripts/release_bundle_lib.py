@@ -73,9 +73,12 @@ def _optional_str(value: Any) -> str | None:
 
 
 def _resolve_publish_paths(bundle: dict[str, Any], env: str) -> list[str]:
+    paths_by_env = bundle.get("publish_paths_by_env") or {}
+    raw_paths = paths_by_env[env] if env in paths_by_env else bundle.get("publish_paths")
+
     resolved: list[str] = []
     seen: set[str] = set()
-    for raw in bundle.get("publish_paths") or []:
+    for raw in raw_paths or []:
         path = str(raw).format(env=env)
         if path not in seen:
             seen.add(path)
