@@ -22,9 +22,14 @@ jobs:
         run: |
           echo "ci.event=${{ ci.event }}"
           echo "ci.branch=${{ ci.branch }}"
-          source .ci/init.sh
-          ci_prepare_runtime_ref "${CI_RUNTIME_REF}"
+          git fetch origin master --tags
+          export CI_RUNTIME_REF="${CI_RUNTIME_REF:-origin/master}"
+          export CI_RUNTIME_COMMIT
+          CI_RUNTIME_COMMIT="$(git rev-parse "${CI_RUNTIME_REF}")"
           CI_RUNTIME_DIR="$(mktemp -d)"
+          mkdir -p "${CI_RUNTIME_DIR}/.ci" "${CI_RUNTIME_DIR}/scripts"
+          git show "${CI_RUNTIME_COMMIT}:.ci/init.sh" > "${CI_RUNTIME_DIR}/.ci/init.sh"
+          source "${CI_RUNTIME_DIR}/.ci/init.sh"
           ci_materialize_runtime_files "${CI_RUNTIME_DIR}" \
             ".ci/init.sh" \
             "scripts/update_image_pin.py" \
@@ -32,7 +37,6 @@ jobs:
             "scripts/release_bundle_lib.py" \
             "scripts/gitops_merge_request.py" \
             "scripts/verify_gitops_release.py"
-          source "${CI_RUNTIME_DIR}/.ci/init.sh"
           ci_init_repo_root
           git diff --name-only HEAD~1..HEAD || true
           python3 "${CI_RUNTIME_DIR}/scripts/update_image_pin.py" --help >/dev/null
@@ -47,13 +51,17 @@ jobs:
         env:
           GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}
         run: |
-          source .ci/init.sh
-          ci_prepare_runtime_ref "${CI_RUNTIME_REF}"
+          git fetch origin master --tags
+          export CI_RUNTIME_REF="${CI_RUNTIME_REF:-origin/master}"
+          export CI_RUNTIME_COMMIT
+          CI_RUNTIME_COMMIT="$(git rev-parse "${CI_RUNTIME_REF}")"
           CI_RUNTIME_DIR="$(mktemp -d)"
+          mkdir -p "${CI_RUNTIME_DIR}/.ci" "${CI_RUNTIME_DIR}/scripts"
+          git show "${CI_RUNTIME_COMMIT}:.ci/init.sh" > "${CI_RUNTIME_DIR}/.ci/init.sh"
+          source "${CI_RUNTIME_DIR}/.ci/init.sh"
           ci_materialize_runtime_files "${CI_RUNTIME_DIR}" \
             ".ci/init.sh" \
             "scripts/gitops_merge_request.py"
-          source "${CI_RUNTIME_DIR}/.ci/init.sh"
           ci_init_repo_root
           case "${{ ci.branch }}" in
             promote-beijing-sandbox-*)
@@ -74,13 +82,17 @@ jobs:
         env:
           GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}
         run: |
-          source .ci/init.sh
-          ci_prepare_runtime_ref "${CI_RUNTIME_REF}"
+          git fetch origin master --tags
+          export CI_RUNTIME_REF="${CI_RUNTIME_REF:-origin/master}"
+          export CI_RUNTIME_COMMIT
+          CI_RUNTIME_COMMIT="$(git rev-parse "${CI_RUNTIME_REF}")"
           CI_RUNTIME_DIR="$(mktemp -d)"
+          mkdir -p "${CI_RUNTIME_DIR}/.ci" "${CI_RUNTIME_DIR}/scripts"
+          git show "${CI_RUNTIME_COMMIT}:.ci/init.sh" > "${CI_RUNTIME_DIR}/.ci/init.sh"
+          source "${CI_RUNTIME_DIR}/.ci/init.sh"
           ci_materialize_runtime_files "${CI_RUNTIME_DIR}" \
             ".ci/init.sh" \
             "scripts/verify_gitops_release.py"
-          source "${CI_RUNTIME_DIR}/.ci/init.sh"
           ci_init_repo_root
           case "${{ ci.branch }}" in
             promote-beijing-sandbox-*)
@@ -98,13 +110,17 @@ jobs:
         env:
           GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}
         run: |
-          source .ci/init.sh
-          ci_prepare_runtime_ref "${CI_RUNTIME_REF}"
+          git fetch origin master --tags
+          export CI_RUNTIME_REF="${CI_RUNTIME_REF:-origin/master}"
+          export CI_RUNTIME_COMMIT
+          CI_RUNTIME_COMMIT="$(git rev-parse "${CI_RUNTIME_REF}")"
           CI_RUNTIME_DIR="$(mktemp -d)"
+          mkdir -p "${CI_RUNTIME_DIR}/.ci" "${CI_RUNTIME_DIR}/scripts"
+          git show "${CI_RUNTIME_COMMIT}:.ci/init.sh" > "${CI_RUNTIME_DIR}/.ci/init.sh"
+          source "${CI_RUNTIME_DIR}/.ci/init.sh"
           ci_materialize_runtime_files "${CI_RUNTIME_DIR}" \
             ".ci/init.sh" \
             "scripts/gitops_cleanup_source_branch.py"
-          source "${CI_RUNTIME_DIR}/.ci/init.sh"
           ci_init_repo_root
           case "${{ ci.branch }}" in
             promote-beijing-sandbox-*)
