@@ -15,6 +15,11 @@ from pathlib import Path
 import yaml
 
 
+RUNTIME_DIR = Path(__file__).resolve().parent
+REPO_ROOT = RUNTIME_DIR.parents[1]
+DEFAULT_MANIFEST_PATH = RUNTIME_DIR / "release-bundles.yaml"
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build a release image from .ci/runtime/release-bundles.yaml")
     parser.add_argument("--service", required=True, help="Bundle id, e.g. payment")
@@ -27,8 +32,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def load_manifest() -> dict:
-    path = Path(".ci/runtime/release-bundles.yaml")
-    return yaml.safe_load(path.read_text()) or {}
+    return yaml.safe_load(DEFAULT_MANIFEST_PATH.read_text()) or {}
 
 
 def docker_login(image_repo: str) -> None:
@@ -98,7 +102,7 @@ def main() -> int:
         image,
         build_context,
     ]
-    subprocess.run(cmd, check=True)
+    subprocess.run(cmd, cwd=REPO_ROOT, check=True)
     if args.push:
         docker_login(image_repo)
         subprocess.run(["docker", "push", image], check=True)

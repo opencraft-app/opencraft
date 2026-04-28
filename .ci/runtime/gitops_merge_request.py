@@ -16,11 +16,11 @@ from typing import Any, Dict, List, Optional, Tuple
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Create or reuse a GitOps MR and optionally auto-merge it.")
-    parser.add_argument("--api-base", default="https://git.woa.com/api/v3")
-    parser.add_argument("--project-id", type=int, default=1731878)
+    parser.add_argument("--api-base", default=os.environ.get("GIT_WOA_API_BASE"))
+    parser.add_argument("--project-id", type=int, default=env_int("GITOPS_PROJECT_ID"))
     parser.add_argument("--private-token")
     parser.add_argument("--private-token-file", default="/etc/lightclaw-ci/git_woa_private_token")
-    parser.add_argument("--repo-path", default="wisp/mono2")
+    parser.add_argument("--repo-path", default=os.environ.get("GITOPS_REPO_PATH"))
     parser.add_argument("--source-branch", required=True)
     parser.add_argument("--target-branch", default="gitops")
     parser.add_argument("--title", required=True)
@@ -31,6 +31,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--remove-source-branch", action="store_true")
     parser.add_argument("--format", choices=("json", "dotenv"), default="dotenv")
     return parser.parse_args()
+
+
+def env_int(name: str) -> int | None:
+    value = os.environ.get(name, "").strip()
+    return int(value) if value else None
+
+
+def require_gongfeng_settings(args: argparse.Namespace) -> None:
+    missing = []
+    if not args.api_base:
+        missing.append("GIT_WOA_API_BASE or --api-base")
+    if args.project_id is None:
+        missing.append("GITOPS_PROJECT_ID or --project-id")
+    if not args.repo_path:
+        missing.append("GITOPS_REPO_PATH or --repo-path")
+    if missing:
+        raise RuntimeError("missing Gongfeng settings: " + ", ".join(missing))
 
 
 def api_request(method: str, url: str, private_token: str, form_data: Optional[Dict[str, Any]] = None) -> Any:
@@ -236,6 +253,7 @@ def emit(args: argparse.Namespace, mr: Dict[str, Any], merge_result: Optional[Di
 
 def main() -> int:
     args = parse_args()
+    require_gongfeng_settings(args)
     args.private_token = resolve_private_token(args)
     mr = ensure_merge_request(args)
     merge_result = None

@@ -12,7 +12,8 @@ from typing import Any
 import yaml
 
 
-DEFAULT_MANIFEST_PATH = Path(".ci/runtime/release-bundles.yaml")
+RUNTIME_DIR = Path(__file__).resolve().parent
+DEFAULT_MANIFEST_PATH = RUNTIME_DIR / "release-bundles.yaml"
 
 
 @dataclass(frozen=True)

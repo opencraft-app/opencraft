@@ -192,6 +192,29 @@ ci_ensure_pnpm
 
 不要把这些环境依赖继续散落到每条 YAML 或 Python 脚本里分别维护；优先加到 `.ci/init.sh`，然后由流水线 source 它。
 
+### 9. GitOps promotion runtime ref 必须显式可追溯
+
+`promote-*` 分支自己的检查流水线不会直接相信 promote 分支里的执行脚本。它会先读取 `.ci/init.sh`，
+再通过 `ci_prepare_runtime_ref` 解析本次使用的 CI runtime 来源，并从该来源 materialize `.ci/runtime/**`。
+
+默认值是：
+
+- `CI_RUNTIME_REF=origin/master`
+
+每次 promotion 检查都会打印：
+
+- `CI_RUNTIME_REF`
+- `CI_RUNTIME_COMMIT`
+
+稳定期可以继续使用 `origin/master`，这样 runtime 修复能被后续 promote 检查立即继承。生产关键发布或高风险变更建议把
+`CI_RUNTIME_REF` 固定到明确 tag，例如：
+
+```bash
+CI_RUNTIME_REF=refs/tags/ci-runtime-20260429-1
+```
+
+这样发布使用的是可审计、可回滚的 runtime 版本，而不是浮动的 `master` 头部。
+
 ## Required Runtime Preconditions
 
 除了 `settings` 变量，还需要下面这些前置满足：

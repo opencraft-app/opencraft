@@ -78,6 +78,7 @@ stages:
             run: |
               source .ci/init.sh
               ci_init_repo_root
+              ci_export_gongfeng_defaults
               ci_load_cloudflare_credentials
               ci_load_edgeone_credentials
               ci_ensure_node
@@ -98,6 +99,7 @@ stages:
               test -n "${{ variables.SOURCE_SHA }}"
               source .ci/init.sh
               ci_init_repo_root
-              REMOTE_URL="git@git.woa.com:wisp/mono2.git" \
+              ci_export_gongfeng_defaults
+              REMOTE_URL="$(ci_gitops_remote_url)" \
               GITOPS_BRANCH=gitops \
               bash .ci/runtime/promote_bundle_image_to_gitops.sh frontend frontend "${{ variables.TARGET_ENV }}" "${{ variables.SOURCE_SHA }}"

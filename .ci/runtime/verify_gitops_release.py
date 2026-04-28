@@ -25,8 +25,8 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Wait for Argo CD applications to converge after a merged GitOps MR and comment the result."
     )
-    parser.add_argument("--api-base", default="https://git.woa.com/api/v3")
-    parser.add_argument("--project-id", type=int, default=1731878)
+    parser.add_argument("--api-base", default=os.environ.get("GIT_WOA_API_BASE"))
+    parser.add_argument("--project-id", type=int, default=env_int("GITOPS_PROJECT_ID"))
     parser.add_argument("--private-token")
     parser.add_argument("--private-token-file", default="/etc/lightclaw-ci/git_woa_private_token")
     parser.add_argument("--source-branch", required=True)
@@ -39,6 +39,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--wait-seconds", type=int, default=600)
     parser.add_argument("--poll-seconds", type=int, default=10)
     return parser.parse_args()
+
+
+def env_int(name: str) -> int | None:
+    value = os.environ.get(name, "").strip()
+    return int(value) if value else None
+
+
+def require_gongfeng_settings(args: argparse.Namespace) -> None:
+    missing = []
+    if not args.api_base:
+        missing.append("GIT_WOA_API_BASE or --api-base")
+    if args.project_id is None:
+        missing.append("GITOPS_PROJECT_ID or --project-id")
+    if missing:
+        raise RuntimeError("missing Gongfeng settings: " + ", ".join(missing))
 
 
 @dataclass(frozen=True)
@@ -498,6 +513,7 @@ def format_waiting_note(mr: Dict[str, Any], targets: Sequence[ReleaseTarget]) ->
 
 def main() -> int:
     args = parse_args()
+    require_gongfeng_settings(args)
     repo_root = Path(args.repo_root).resolve()
     private_token = resolve_private_token(args)
     argocd_base_url, argocd_username, argocd_password, ssl_context = resolve_argocd_settings(args)

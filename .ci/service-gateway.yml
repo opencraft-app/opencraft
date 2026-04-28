@@ -73,7 +73,8 @@ stages:
             run: |
               source .ci/init.sh
               ci_init_repo_root
-              REMOTE_URL="git@git.woa.com:wisp/mono2.git" \
+              ci_export_gongfeng_defaults
+              REMOTE_URL="$(ci_gitops_remote_url)" \
               GITOPS_BRANCH=gitops \
               BUILD_TAG_OVERRIDE="${{ steps.prepare.outputs.tag }}" \
               bash .ci/runtime/build_and_promote_to_gitops.sh service-gateway service-gateway,admin-gateway beijing-sandbox,shprod beijing-sandbox
@@ -84,6 +85,7 @@ stages:
               test -n "${{ variables.SOURCE_SHA }}"
               source .ci/init.sh
               ci_init_repo_root
-              REMOTE_URL="git@git.woa.com:wisp/mono2.git" \
+              ci_export_gongfeng_defaults
+              REMOTE_URL="$(ci_gitops_remote_url)" \
               GITOPS_BRANCH=gitops \
               bash .ci/runtime/promote_bundle_image_to_gitops.sh service-gateway service-gateway,admin-gateway "${{ variables.TARGET_ENV }}" "${{ variables.SOURCE_SHA }}"

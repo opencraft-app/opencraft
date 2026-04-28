@@ -28,14 +28,15 @@ stages:
             run: |
               echo "ci.event=${{ ci.event }}"
               echo "ci.branch=${{ ci.branch }}"
-              git fetch origin master --tags
-              export CI_RUNTIME_REF="${CI_RUNTIME_REF:-origin/master}"
-              export CI_RUNTIME_COMMIT
-              CI_RUNTIME_COMMIT="$(git rev-parse "${CI_RUNTIME_REF}")"
               CI_RUNTIME_DIR="$(mktemp -d)"
               mkdir -p "${CI_RUNTIME_DIR}/.ci" "${CI_RUNTIME_DIR}/.ci/runtime"
+              git show HEAD:.ci/init.sh > "${CI_RUNTIME_DIR}/.ci/init.sh"
+              source "${CI_RUNTIME_DIR}/.ci/init.sh"
+              ci_prepare_runtime_ref "${CI_RUNTIME_REF:-origin/master}"
+              ci_export_gongfeng_defaults
               git show "${CI_RUNTIME_COMMIT}:.ci/init.sh" > "${CI_RUNTIME_DIR}/.ci/init.sh"
               source "${CI_RUNTIME_DIR}/.ci/init.sh"
+              ci_export_gongfeng_defaults
               ci_materialize_runtime_files "${CI_RUNTIME_DIR}" \
                 ".ci/init.sh" \
                 ".ci/runtime/release-bundles.yaml" \
@@ -93,14 +94,15 @@ stages:
           - name: 自动合并北京 promote MR
             shell: bash
             run: |
-              git fetch origin master --tags
-              export CI_RUNTIME_REF="${CI_RUNTIME_REF:-origin/master}"
-              export CI_RUNTIME_COMMIT
-              CI_RUNTIME_COMMIT="$(git rev-parse "${CI_RUNTIME_REF}")"
               CI_RUNTIME_DIR="$(mktemp -d)"
               mkdir -p "${CI_RUNTIME_DIR}/.ci" "${CI_RUNTIME_DIR}/.ci/runtime"
+              git show HEAD:.ci/init.sh > "${CI_RUNTIME_DIR}/.ci/init.sh"
+              source "${CI_RUNTIME_DIR}/.ci/init.sh"
+              ci_prepare_runtime_ref "${CI_RUNTIME_REF:-origin/master}"
+              ci_export_gongfeng_defaults
               git show "${CI_RUNTIME_COMMIT}:.ci/init.sh" > "${CI_RUNTIME_DIR}/.ci/init.sh"
               source "${CI_RUNTIME_DIR}/.ci/init.sh"
+              ci_export_gongfeng_defaults
               ci_materialize_runtime_files "${CI_RUNTIME_DIR}" \
                 ".ci/init.sh" \
                 ".ci/runtime/gitops_merge_request.py"
@@ -137,14 +139,15 @@ stages:
           - name: 校验 Argo 收敛并评论 MR
             shell: bash
             run: |
-              git fetch origin master --tags
-              export CI_RUNTIME_REF="${CI_RUNTIME_REF:-origin/master}"
-              export CI_RUNTIME_COMMIT
-              CI_RUNTIME_COMMIT="$(git rev-parse "${CI_RUNTIME_REF}")"
               CI_RUNTIME_DIR="$(mktemp -d)"
               mkdir -p "${CI_RUNTIME_DIR}/.ci" "${CI_RUNTIME_DIR}/.ci/runtime"
+              git show HEAD:.ci/init.sh > "${CI_RUNTIME_DIR}/.ci/init.sh"
+              source "${CI_RUNTIME_DIR}/.ci/init.sh"
+              ci_prepare_runtime_ref "${CI_RUNTIME_REF:-origin/master}"
+              ci_export_gongfeng_defaults
               git show "${CI_RUNTIME_COMMIT}:.ci/init.sh" > "${CI_RUNTIME_DIR}/.ci/init.sh"
               source "${CI_RUNTIME_DIR}/.ci/init.sh"
+              ci_export_gongfeng_defaults
               ci_materialize_runtime_files "${CI_RUNTIME_DIR}" \
                 ".ci/init.sh" \
                 ".ci/runtime/verify_gitops_release.py"
@@ -178,14 +181,15 @@ stages:
           - name: 清理北京 promote 分支
             shell: bash
             run: |
-              git fetch origin master --tags
-              export CI_RUNTIME_REF="${CI_RUNTIME_REF:-origin/master}"
-              export CI_RUNTIME_COMMIT
-              CI_RUNTIME_COMMIT="$(git rev-parse "${CI_RUNTIME_REF}")"
               CI_RUNTIME_DIR="$(mktemp -d)"
               mkdir -p "${CI_RUNTIME_DIR}/.ci" "${CI_RUNTIME_DIR}/.ci/runtime"
+              git show HEAD:.ci/init.sh > "${CI_RUNTIME_DIR}/.ci/init.sh"
+              source "${CI_RUNTIME_DIR}/.ci/init.sh"
+              ci_prepare_runtime_ref "${CI_RUNTIME_REF:-origin/master}"
+              ci_export_gongfeng_defaults
               git show "${CI_RUNTIME_COMMIT}:.ci/init.sh" > "${CI_RUNTIME_DIR}/.ci/init.sh"
               source "${CI_RUNTIME_DIR}/.ci/init.sh"
+              ci_export_gongfeng_defaults
               ci_materialize_runtime_files "${CI_RUNTIME_DIR}" \
                 ".ci/init.sh" \
                 ".ci/runtime/gitops_cleanup_source_branch.py"

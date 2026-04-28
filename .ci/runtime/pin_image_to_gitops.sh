@@ -10,9 +10,7 @@ GITOPS_BRANCH="${GITOPS_BRANCH:-gitops}"
 DEPLOYED_AT="${DEPLOYED_AT:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
 COMMITTER_NAME="${COMMITTER_NAME:-skipzhang}"
 COMMITTER_EMAIL="${COMMITTER_EMAIL:-skipzhang@tencent.com}"
-GITOPS_PROJECT_ID="${GITOPS_PROJECT_ID:-1731878}"
-GITOPS_REPO_PATH="${GITOPS_REPO_PATH:-wisp/mono2}"
-GIT_WOA_API_BASE="${GIT_WOA_API_BASE:-https://git.woa.com/api/v3}"
+ci_export_gongfeng_defaults
 GITOPS_AUTO_MERGE_ENVS="${GITOPS_AUTO_MERGE_ENVS:-beijing-sandbox}"
 BOOTSTRAP_FILES=(
   ".ci/gitops-promotion.yml"

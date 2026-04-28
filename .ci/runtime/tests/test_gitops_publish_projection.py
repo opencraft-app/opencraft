@@ -42,6 +42,30 @@ class ResolveReleaseBundleTests(unittest.TestCase):
         self.assertNotIn("argocd/apps/beijing-sandbox/lightclaw-auth.yaml", payload["publish_paths"])
         self.assertIn("user/auth/k8s/base/**", payload["publish_paths"])
 
+    def test_resolve_release_bundle_is_independent_of_cwd(self) -> None:
+        result = subprocess.run(
+            [
+                "python3",
+                str(RUNTIME_DIR / "resolve_release_bundle.py"),
+                "--service",
+                "frontend",
+                "--env",
+                "shprod",
+                "--tag",
+                "test-tag",
+                "--format",
+                "json",
+            ],
+            cwd=REPO_ROOT / "frontend",
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        payload = json.loads(result.stdout)
+
+        self.assertEqual(payload["service"], "frontend")
+        self.assertEqual(payload["env"], "shprod")
+
     def test_resolve_release_bundle_keeps_shprod_leaf_app_path(self) -> None:
         result = subprocess.run(
             [
@@ -65,6 +89,26 @@ class ResolveReleaseBundleTests(unittest.TestCase):
 
         self.assertIn("argocd/apps/shprod/lightclaw-auth.yaml", payload["publish_paths"])
         self.assertNotIn("argocd/apps/shprod/sandbox-family-appset.yaml", payload["publish_paths"])
+
+    def test_build_release_image_reads_manifest_independent_of_cwd(self) -> None:
+        result = subprocess.run(
+            [
+                "python3",
+                str(RUNTIME_DIR / "build-release-image.py"),
+                "--service",
+                "does-not-exist",
+                "--env",
+                "shprod",
+                "--tag",
+                "test-tag",
+            ],
+            cwd=REPO_ROOT / "frontend",
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("unknown release bundle: does-not-exist", result.stderr)
 
 
 class SandboxCatalogTests(unittest.TestCase):

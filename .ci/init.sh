@@ -30,6 +30,26 @@ ci_require_commands() {
   done
 }
 
+ci_gitops_remote_url() {
+  if [[ -n "${GITOPS_REMOTE_URL:-}" ]]; then
+    printf '%s\n' "$GITOPS_REMOTE_URL"
+    return 0
+  fi
+
+  if git remote get-url origin >/dev/null 2>&1; then
+    git remote get-url origin
+    return 0
+  fi
+
+  printf '%s\n' "git@git.woa.com:wisp/mono2.git"
+}
+
+ci_export_gongfeng_defaults() {
+  export GIT_WOA_API_BASE="${GIT_WOA_API_BASE:-https://git.woa.com/api/v3}"
+  export GITOPS_PROJECT_ID="${GITOPS_PROJECT_ID:-1731878}"
+  export GITOPS_REPO_PATH="${GITOPS_REPO_PATH:-wisp/mono2}"
+}
+
 ci_require_gitops_validation_tools() {
   ci_require_commands python3 kustomize sops ksops
   ci_log "gitops validation tools found: kustomize=$(command -v kustomize) sops=$(command -v sops) ksops=$(command -v ksops)"
