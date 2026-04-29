@@ -107,6 +107,15 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
             self.assertIn("sandbox\tsandbox\tbeijing-sandbox-2\t", pins[1])
             self.assertIn("example.com/beijing-sandbox-2:test-tag", pins[1])
 
+    def test_pin_script_uses_materialized_runtime_after_gitops_checkout(self) -> None:
+        script = (REPO_ROOT / ".ci/runtime/pin_image_to_gitops.sh").read_text()
+
+        self.assertIn('cp -R "$REPO_ROOT/.ci/runtime" "$bootstrap_dir/.ci/runtime"', script)
+        self.assertIn('RUNTIME_COMMAND_DIR="$bootstrap_dir/.ci/runtime/harness_ci/commands"', script)
+        self.assertIn('python3 "$RUNTIME_COMMAND_DIR/project_release_bundle.py"', script)
+        self.assertIn('python3 "$RUNTIME_COMMAND_DIR/update_image_pin.py"', script)
+        self.assertIn("GitOps 发布意图：准备把镜像推进到", script)
+
 
 if __name__ == "__main__":
     unittest.main()

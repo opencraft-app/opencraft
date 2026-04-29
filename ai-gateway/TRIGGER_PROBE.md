@@ -11,3 +11,7 @@
 Trigger note 1:
 
 - 用于在 ai-gateway Docker build context 修复后，再次触发 ai-gateway 发布流水线。
+
+Trigger note 2:
+
+- 用于在 GitOps 投影阶段改为使用临时 runtime 副本后，再次触发 ai-gateway 发布流水线。
