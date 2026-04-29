@@ -1,5 +1,5 @@
 version: v2.0
-name: gitops-promotion-check
+name: GitOps 发布验收与自动合并
 
 on:
   push:
@@ -133,8 +133,8 @@ stages:
                   python3 "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/gitops_merge_request.py" \
                     --source-branch "${{ ci.branch }}" \
                     --target-branch gitops \
-                    --title "Auto-merge existing Beijing GitOps MR" \
-                    --description "Auto-merge existing Beijing GitOps MR from promote branch tail." \
+                    --title "自动合并北京 GitOps 发布 MR" \
+                    --description "promote 分支检查通过后自动合并到 gitops，并进入 Argo 收敛验收。" \
                     --auto-merge \
                     --remove-source-branch
                   ;;
