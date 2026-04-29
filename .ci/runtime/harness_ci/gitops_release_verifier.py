@@ -264,6 +264,51 @@ def changed_files_from_recent_commits(repo_root: Path, max_count: int = 20) -> L
     return changed_files
 
 
+def git_output(repo_root: Path, *args: str) -> str:
+    result = subprocess.run(
+        ["git", *args],
+        cwd=repo_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.strip()
+
+
+def ensure_commit_available(repo_root: Path, revision: str, target_branch: str) -> None:
+    try:
+        git_output(repo_root, "cat-file", "-e", f"{revision}^{{commit}}")
+        return
+    except subprocess.CalledProcessError:
+        pass
+
+    subprocess.run(
+        ["git", "fetch", "origin", target_branch],
+        cwd=repo_root,
+        check=True,
+    )
+    git_output(repo_root, "cat-file", "-e", f"{revision}^{{commit}}")
+
+
+def changed_files_from_merge_commit(repo_root: Path, merge_commit_sha: str, target_branch: str) -> List[str]:
+    ensure_commit_available(repo_root, merge_commit_sha, target_branch)
+    parents_line = git_output(repo_root, "rev-list", "--parents", "-n", "1", merge_commit_sha)
+    revisions = parents_line.split()
+    if len(revisions) >= 2:
+        base_revision = revisions[1]
+    else:
+        base_revision = f"{merge_commit_sha}^"
+
+    result = subprocess.run(
+        ["git", "diff", "--name-only", base_revision, merge_commit_sha],
+        cwd=repo_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
 def infer_release_targets(changed_files: Sequence[str]) -> List[ReleaseTarget]:
     pattern = re.compile(r"^argocd/services/([^/]+)/([^/]+)/")
     ignored_env_dirs = {"common", "profiles"}
@@ -472,6 +517,17 @@ def format_success_note(mr: Dict[str, Any], results: Sequence[Dict[str, Any]]) -
     return "\n".join(lines)
 
 
+def format_noop_note(mr: Dict[str, Any]) -> str:
+    return "\n".join(
+        [
+            "自动验收通过：GitOps MR 已合并，但本次 merge commit 没有 deploy-facing diff，跳过 Argo revision 等待。",
+            "",
+            f"- MR: !{mr.get('iid')}",
+            f"- merge commit: `{mr.get('merge_commit_sha')}`",
+        ]
+    )
+
+
 def format_failure_note(mr: Dict[str, Any], error: str, partial_results: Sequence[Dict[str, Any]]) -> str:
     lines = [
         "自动验收失败：GitOps MR 已合并，但 Argo CD 收敛状态未达到预期。",
@@ -519,13 +575,17 @@ def main() -> int:
     argocd_token = login_argocd(argocd_base_url, argocd_username, argocd_password, ssl_context)
     merged_mr = resolve_merged_mr(args, private_token)
 
-    changed_files = changed_files_from_head(repo_root)
+    changed_files = changed_files_from_merge_commit(
+        repo_root,
+        merged_mr["merge_commit_sha"],
+        args.target_branch,
+    )
     targets = infer_release_targets(changed_files)
     if not targets:
-        changed_files = changed_files_from_recent_commits(repo_root)
-        targets = infer_release_targets(changed_files)
-    if not targets:
-        raise RuntimeError("no argocd/services/<service>/<env>/ changes found in promote branch commits")
+        note = format_noop_note(merged_mr)
+        post_merge_request_note(args.api_base, args.project_id, private_token, merged_mr["id"], note)
+        print(note)
+        return 0
 
     post_merge_request_note(
         args.api_base,

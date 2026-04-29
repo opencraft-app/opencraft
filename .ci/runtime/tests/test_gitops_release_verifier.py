@@ -10,6 +10,7 @@ if str(RUNTIME_DIR) not in sys.path:
 
 from harness_ci.gitops_release_verifier import (
     ReleaseTarget,
+    changed_files_from_merge_commit,
     changed_files_from_recent_commits,
     expected_images_for_target,
     format_convergence_log_line,
@@ -82,6 +83,53 @@ class GitopsReleaseVerifierTests(unittest.TestCase):
 
         self.assertEqual(targets, [ReleaseTarget(service="lightclaw-auth", env="beijing-sandbox")])
 
+    def test_changed_files_from_merge_commit_uses_first_parent_diff(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            self._git(repo_root, "init")
+            self._git(repo_root, "config", "user.email", "ci@example.com")
+            self._git(repo_root, "config", "user.name", "CI")
+            (repo_root / "README.md").write_text("base\n")
+            self._git(repo_root, "add", ".")
+            self._git(repo_root, "commit", "-m", "base")
+            self._git(repo_root, "checkout", "-b", "gitops")
+            self._git(repo_root, "checkout", "-b", "promote")
+
+            service_dir = repo_root / "argocd" / "services" / "lightclaw-auth" / "beijing-sandbox"
+            service_dir.mkdir(parents=True)
+            (service_dir / "auth-platform.env").write_text("AUTH_IMAGE=example.com/auth:v1\n")
+            self._git(repo_root, "add", ".")
+            self._git(repo_root, "commit", "-m", "pin image")
+
+            self._git(repo_root, "checkout", "gitops")
+            self._git(repo_root, "merge", "--no-ff", "promote", "-m", "merge promote")
+            merge_commit = self._git_output(repo_root, "rev-parse", "HEAD")
+
+            changed_files = changed_files_from_merge_commit(repo_root, merge_commit, "gitops")
+
+        self.assertIn("argocd/services/lightclaw-auth/beijing-sandbox/auth-platform.env", changed_files)
+
+    def test_changed_files_from_merge_commit_returns_empty_for_noop_trigger_merge(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            self._git(repo_root, "init")
+            self._git(repo_root, "config", "user.email", "ci@example.com")
+            self._git(repo_root, "config", "user.name", "CI")
+            (repo_root / "README.md").write_text("base\n")
+            self._git(repo_root, "add", ".")
+            self._git(repo_root, "commit", "-m", "base")
+            self._git(repo_root, "checkout", "-b", "gitops")
+            self._git(repo_root, "checkout", "-b", "promote")
+            self._git(repo_root, "commit", "--allow-empty", "-m", "rerun checks")
+
+            self._git(repo_root, "checkout", "gitops")
+            self._git(repo_root, "merge", "--no-ff", "promote", "-m", "merge noop promote")
+            merge_commit = self._git_output(repo_root, "rev-parse", "HEAD")
+
+            changed_files = changed_files_from_merge_commit(repo_root, merge_commit, "gitops")
+
+        self.assertEqual(changed_files, [])
+
     def test_format_convergence_log_line_includes_live_state_and_expectations(self) -> None:
         line = format_convergence_log_line(
             {
@@ -108,6 +156,9 @@ class GitopsReleaseVerifierTests(unittest.TestCase):
 
     def _git(self, repo: Path, *args: str) -> None:
         subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True)
+
+    def _git_output(self, repo: Path, *args: str) -> str:
+        return subprocess.check_output(["git", *args], cwd=repo, text=True).strip()
 
 
 if __name__ == "__main__":
