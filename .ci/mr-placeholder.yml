@@ -6,7 +6,8 @@ on:
     enable: true
   mr:
     enable: true
-    action: [ open, reopen, push-update ]
+    target-branches: [ master ]
+    action: [ open, reopen, push-update, edit ]
     report-commit-check: true
     block-mr: true
   manual: enabled
