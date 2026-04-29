@@ -115,7 +115,7 @@ stages:
               "$PNPM_BIN" --version
               "$PNPM_BIN" install --no-frozen-lockfile
               "$PNPM_BIN" release:matrix
-          - name: 构建并推进 frontend 北京发布
+          - name: 构建 frontend GitOps 镜像
             shell: bash
             env:
               TCR_BEIJING_PASSWORD: ${{ settings.TCR_BEIJING_PASSWORD }}
@@ -134,8 +134,8 @@ stages:
               export REMOTE_URL GITOPS_BRANCH BUILD_TAG_OVERRIDE
               case "${{ ci.branch }}" in
                 master)
-                  BUILD_ENVS="beijing-sandbox,shprod"
-                  AUTO_PIN_ENVS="beijing-sandbox"
+                  BUILD_ENVS="shprod"
+                  AUTO_PIN_ENVS="none"
                   ;;
                 *)
                   echo "unsupported source branch for release: ${{ ci.branch }}" >&2
