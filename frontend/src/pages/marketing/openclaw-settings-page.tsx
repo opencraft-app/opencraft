@@ -211,7 +211,7 @@ export const _DeleteConfirmDialog = ({ botName, onConfirm, onCancel }: { botName
       </div>
       <h3 className="mb-1.5 text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("确认删除")}</h3>
       <p className="mb-6 text-center text-sm leading-relaxed text-[var(--text-secondary)]">
-        {t("确定要删除龙虾 {name} 吗？此操作不可撤销。", { name: `"${botName}"` })}
+        {t("确定要删除龙虾 {{name}} 吗？此操作不可撤销。", { name: `"${botName}"` })}
       </p>
       <div className="flex w-full gap-3">
         <button
@@ -262,7 +262,7 @@ export const _LimitReachedDialog = ({ maxBots, planName, onClose }: { maxBots: n
       </div>
       <h3 className="mb-1.5 text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("已达创建上限")}</h3>
       <p className="mb-2 text-center text-sm leading-relaxed text-[var(--text-secondary)]">
-        {t("当前 {plan} 套餐最多可创建 {max} 只龙虾，你已达到上限。", { plan: planName, max: String(maxBots) })}
+        {t("当前 {{plan}} 套餐最多可创建 {{max}} 只龙虾，你已达到上限。", { plan: planName, max: String(maxBots) })}
       </p>
       <div className="flex w-full gap-3" style={{ marginTop: 25 }}>
         <button
@@ -865,7 +865,7 @@ const SkillSection = () => {
         <div className="text-center">
           <div className="mx-auto mb-4 text-3xl">{selectedPersona.icon}</div>
           <p className="mb-4 text-sm font-semibold" style={{ color: "var(--lw-fg)" }}>
-            {t("正在安装 {name} {nameEn}...", { name: selectedPersona.name, nameEn: selectedPersona.nameEn })}
+            {t("正在安装 {{name}} {{nameEn}}...", { name: selectedPersona.name, nameEn: selectedPersona.nameEn })}
           </p>
           <div className="mb-2 flex items-center justify-between">
             <span className="text-xs font-bold" style={{ color: "var(--lw-fg)" }}>{t("安装进度")}</span>
@@ -2324,9 +2324,9 @@ export const _BotInfoCard = ({ bot, index, onDelete, onTerminal }: { bot: { id: 
             </p>
             {/* 操作引导 */}
             <p style={{ color: "var(--lw-fg)", fontSize: "14px", lineHeight: 1.6, marginBottom: "10px" }}>
-              {t("如确认删除，请输入名称 {name}：", { name: bot.name })}
+              {t("如确认删除，请输入名称 {{name}}：", { name: bot.name })}
             </p>
-            <input type="text" placeholder={t("请输入 {name}", { name: bot.name })} value={deleteInput} onChange={(e) => setDeleteInput(e.target.value)} className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition-all focus:border-[#DC2626]" style={{ borderColor: "var(--lw-border)", color: "var(--lw-fg)", marginBottom: "20px" }} />
+            <input type="text" placeholder={t("请输入 {{name}}", { name: bot.name })} value={deleteInput} onChange={(e) => setDeleteInput(e.target.value)} className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition-all focus:border-[#DC2626]" style={{ borderColor: "var(--lw-border)", color: "var(--lw-fg)", marginBottom: "20px" }} />
             {deleteErr && <p className="text-xs" style={{ color: "#DC2626", marginBottom: "12px" }}>{deleteErr}</p>}
             {/* 按钮组：上下排列 */}
             <div className="flex flex-col gap-2">
@@ -2575,11 +2575,11 @@ export const OpenClawSettingsPage = () => {
               {t("删除后会话将立即断开，数据将无法恢复。")}
             </p>
             <p style={{ color: "var(--lw-fg)", fontSize: "14px", lineHeight: 1.6, marginBottom: "10px" }}>
-              {t("如确认删除，请输入名称 {name}：", { name: activeBot.name })}
+              {t("如确认删除，请输入名称 {{name}}：", { name: activeBot.name })}
             </p>
             <input
               type="text"
-              placeholder={t("请输入 {name}", { name: activeBot.name })}
+              placeholder={t("请输入 {{name}}", { name: activeBot.name })}
               value={deleteInput}
               onChange={(e) => setDeleteInput(e.target.value)}
               className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition-all focus:border-[#DC2626]"

@@ -629,7 +629,7 @@ const SubscriptionSection = ({
                 borderRadius: "6px",
               }}
             >
-              {validityInfo.expired ? t("已过期") : t("剩余 {days} 天").replace("{days}", String(validityInfo.remainDays))}
+              {validityInfo.expired ? t("已过期") : t("剩余 {{days}} 天", { days: validityInfo.remainDays })}
             </span>
           </div>
         </div>
