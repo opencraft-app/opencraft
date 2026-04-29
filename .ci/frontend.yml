@@ -5,6 +5,13 @@ on:
   push:
     branches: [ master ]
     paths:
+      - .ci/frontend.yml
+      - .ci/init.sh
+      - .ci/runtime/build_and_promote_to_gitops.sh
+      - .ci/runtime/promote_bundle_image_to_gitops.sh
+      - .ci/runtime/pin_image_to_gitops.sh
+      - .ci/runtime/release-bundles.yaml
+      - .ci/runtime/harness_ci/**
       - frontend/**
       - argocd/services/frontend/**
       - argocd/apps/*/frontend.yaml
@@ -159,6 +166,7 @@ stages:
               echo "目标环境：${{ variables.TARGET_ENV }}"
               echo "源码提交：$SOURCE_SHA"
               echo "提交来源：SOURCE_SHA 为空时自动回退到本次手动选择的 ci.sha=${{ ci.sha }}"
+              echo "注意：promote 模式只投影已存在镜像到 GitOps，不构建 TCR 镜像"
               echo "下一步：把 frontend 镜像发布内容投影到 gitops 并创建发布 MR"
               echo "============================================================"
               source .ci/init.sh
