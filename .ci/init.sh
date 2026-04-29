@@ -30,6 +30,22 @@ ci_require_commands() {
   done
 }
 
+ci_os_name() {
+  case "$(uname -s)" in
+    Linux) printf 'linux' ;;
+    Darwin) printf 'darwin' ;;
+    *) echo "unsupported os: $(uname -s)" >&2; return 1 ;;
+  esac
+}
+
+ci_arch_name() {
+  case "$(uname -m)" in
+    x86_64 | amd64) printf 'amd64' ;;
+    aarch64 | arm64) printf 'arm64' ;;
+    *) echo "unsupported arch: $(uname -m)" >&2; return 1 ;;
+  esac
+}
+
 ci_gitops_remote_url() {
   if [[ -n "${GITOPS_REMOTE_URL:-}" ]]; then
     printf '%s\n' "$GITOPS_REMOTE_URL"
@@ -51,8 +67,141 @@ ci_export_gongfeng_defaults() {
 }
 
 ci_require_gitops_validation_tools() {
+  ci_ensure_gitops_validation_tools
   ci_require_commands python3 kustomize sops ksops
   ci_log "gitops validation tools found: kustomize=$(command -v kustomize) sops=$(command -v sops) ksops=$(command -v ksops)"
+}
+
+ci_ensure_gitops_validation_tools() {
+  ci_ensure_kustomize
+  ci_ensure_sops
+  ci_ensure_ksops
+}
+
+ci_download_file() {
+  local url="$1"
+  local output="$2"
+
+  ci_require_command curl
+  ci_log "downloading ${url}"
+  curl -fsSL "$url" -o "$output"
+}
+
+ci_ensure_kustomize() {
+  local version="${KUSTOMIZE_VERSION_OVERRIDE:-5.4.3}"
+  local os arch archive cache_root install_dir bin url
+
+  os="$(ci_os_name)"
+  arch="$(ci_arch_name)"
+  archive="kustomize_v${version}_${os}_${arch}.tar.gz"
+  cache_root="${HOME}/.cache/lightclaw-ci/gitops-tools/kustomize"
+  install_dir="${cache_root}/v${version}/${os}/${arch}"
+  bin="${install_dir}/kustomize"
+  url="https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v${version}/${archive}"
+
+  if [[ ! -x "$bin" ]]; then
+    ci_with_lock "kustomize-${version}-${os}-${arch}" ci_install_kustomize "$url" "$archive" "$cache_root" "$install_dir"
+  else
+    ci_log "kustomize ${version} already present at ${bin}"
+  fi
+
+  export PATH="${install_dir}:${PATH}"
+}
+
+ci_install_kustomize() {
+  local url="$1"
+  local archive="$2"
+  local cache_root="$3"
+  local install_dir="$4"
+
+  mkdir -p "$cache_root" "$install_dir"
+  ci_download_file "$url" "${cache_root}/${archive}"
+  tar -xzf "${cache_root}/${archive}" -C "$install_dir" kustomize
+  chmod +x "${install_dir}/kustomize"
+  ci_log "installed kustomize at ${install_dir}/kustomize"
+}
+
+ci_ensure_sops() {
+  local version="${SOPS_VERSION_OVERRIDE:-3.9.1}"
+  local os arch sops_os sops_arch cache_root install_dir bin url
+
+  os="$(ci_os_name)"
+  arch="$(ci_arch_name)"
+  sops_os="$os"
+  sops_arch="$arch"
+  cache_root="${HOME}/.cache/lightclaw-ci/gitops-tools/sops"
+  install_dir="${cache_root}/v${version}/${os}/${arch}"
+  bin="${install_dir}/sops"
+  url="https://github.com/getsops/sops/releases/download/v${version}/sops-v${version}.${sops_os}.${sops_arch}"
+
+  if [[ ! -x "$bin" ]]; then
+    ci_with_lock "sops-${version}-${os}-${arch}" ci_install_sops "$url" "$install_dir"
+  else
+    ci_log "sops ${version} already present at ${bin}"
+  fi
+
+  export PATH="${install_dir}:${PATH}"
+}
+
+ci_install_sops() {
+  local url="$1"
+  local install_dir="$2"
+
+  mkdir -p "$install_dir"
+  ci_download_file "$url" "${install_dir}/sops"
+  chmod +x "${install_dir}/sops"
+  ci_log "installed sops at ${install_dir}/sops"
+}
+
+ci_ensure_ksops() {
+  local version="${KSOPS_VERSION_OVERRIDE:-4.5.1}"
+  local os arch ksops_os ksops_arch archive cache_root install_dir bin plugin_home plugin_bin url
+
+  os="$(ci_os_name)"
+  arch="$(ci_arch_name)"
+  case "$os" in
+    linux) ksops_os="Linux" ;;
+    darwin) ksops_os="Darwin" ;;
+    *) echo "unsupported ksops os: $os" >&2; return 1 ;;
+  esac
+  case "$arch" in
+    amd64) ksops_arch="x86_64" ;;
+    arm64) ksops_arch="arm64" ;;
+    *) echo "unsupported ksops arch: $arch" >&2; return 1 ;;
+  esac
+
+  archive="ksops_${version}_${ksops_os}_${ksops_arch}.tar.gz"
+  cache_root="${HOME}/.cache/lightclaw-ci/gitops-tools/ksops"
+  install_dir="${cache_root}/v${version}/${os}/${arch}"
+  bin="${install_dir}/ksops"
+  plugin_home="${KUSTOMIZE_PLUGIN_HOME:-${HOME}/.config/kustomize/plugin}"
+  plugin_bin="${plugin_home}/viaduct.ai/v1/ksops/ksops"
+  url="https://github.com/viaduct-ai/kustomize-sops/releases/download/v${version}/${archive}"
+
+  if [[ ! -x "$bin" || ! -x "$plugin_bin" ]]; then
+    ci_with_lock "ksops-${version}-${os}-${arch}" ci_install_ksops "$url" "$archive" "$cache_root" "$install_dir" "$plugin_bin"
+  else
+    ci_log "ksops ${version} already present at ${bin} and ${plugin_bin}"
+  fi
+
+  export KUSTOMIZE_PLUGIN_HOME="$plugin_home"
+  export PATH="${install_dir}:${PATH}"
+}
+
+ci_install_ksops() {
+  local url="$1"
+  local archive="$2"
+  local cache_root="$3"
+  local install_dir="$4"
+  local plugin_bin="$5"
+
+  mkdir -p "$cache_root" "$install_dir" "$(dirname "$plugin_bin")"
+  ci_download_file "$url" "${cache_root}/${archive}"
+  tar -xzf "${cache_root}/${archive}" -C "$install_dir" ksops
+  chmod +x "${install_dir}/ksops"
+  cp "${install_dir}/ksops" "$plugin_bin"
+  chmod +x "$plugin_bin"
+  ci_log "installed ksops at ${install_dir}/ksops and ${plugin_bin}"
 }
 
 ci_prepare_sops_age_key() {
@@ -144,13 +293,11 @@ ci_with_lock() {
   printf '%s\n' "$$ $(hostname) $(ci_now)" > "$owner_file"
   ci_log "acquired lock ${lock_name}"
 
-  cleanup_lock() {
-    rm -rf "$lock_dir"
-    ci_log "released lock ${lock_name}"
-  }
-
-  trap cleanup_lock RETURN
-  "$@"
+  local status=0
+  "$@" || status=$?
+  rm -rf "$lock_dir"
+  ci_log "released lock ${lock_name}"
+  return "$status"
 }
 
 ci_prepare_runtime_ref() {
