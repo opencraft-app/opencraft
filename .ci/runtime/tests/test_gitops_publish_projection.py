@@ -308,7 +308,7 @@ class ProjectReleaseBundleTests(unittest.TestCase):
             self._git(repo, "config", "user.name", "CI")
 
             (repo / ".ci" / "runtime").mkdir(parents=True)
-            (repo / ".ci" / "runtime" / "release-bundles.yaml").write_text(
+            (repo / ".ci" / "runtime" / "release-bundles.manifest").write_text(
                 textwrap.dedent(
                     """\
                     bundles:

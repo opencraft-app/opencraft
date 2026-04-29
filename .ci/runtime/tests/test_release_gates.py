@@ -29,7 +29,7 @@ class ReleaseGatePlannerTests(unittest.TestCase):
         with self._repo_with_commit("payment/migrations/202604290001_add_table.up.sql") as (repo_root, source_sha):
             plan = plan_release_gates(
                 repo_root=repo_root,
-                bundle_manifest=REPO_ROOT / ".ci/runtime/release-bundles.yaml",
+                bundle_manifest=REPO_ROOT / ".ci/runtime/release-bundles.manifest",
                 service="payment",
                 env="beijing-sandbox",
                 source_sha=source_sha,
@@ -48,7 +48,7 @@ class ReleaseGatePlannerTests(unittest.TestCase):
         with self._repo_with_commit("payment/migrations/202604290001_add_table.up.sql") as (repo_root, source_sha):
             plan = plan_release_gates(
                 repo_root=repo_root,
-                bundle_manifest=REPO_ROOT / ".ci/runtime/release-bundles.yaml",
+                bundle_manifest=REPO_ROOT / ".ci/runtime/release-bundles.manifest",
                 service="payment",
                 env="beijing-sandbox",
                 source_sha=source_sha,
@@ -64,7 +64,7 @@ class ReleaseGatePlannerTests(unittest.TestCase):
         with self._repo_with_commit("payment/internal/api.go") as (repo_root, source_sha):
             plan = plan_release_gates(
                 repo_root=repo_root,
-                bundle_manifest=REPO_ROOT / ".ci/runtime/release-bundles.yaml",
+                bundle_manifest=REPO_ROOT / ".ci/runtime/release-bundles.manifest",
                 service="payment",
                 env="beijing-sandbox",
                 source_sha=source_sha,
@@ -82,7 +82,7 @@ class ReleaseGatePlannerTests(unittest.TestCase):
         with self._repo_with_commit("sandbox/README.md") as (repo_root, source_sha):
             plan = plan_release_gates(
                 repo_root=repo_root,
-                bundle_manifest=REPO_ROOT / ".ci/runtime/release-bundles.yaml",
+                bundle_manifest=REPO_ROOT / ".ci/runtime/release-bundles.manifest",
                 service="sandbox",
                 env="beijing-sandbox",
                 source_sha=source_sha,
@@ -99,7 +99,7 @@ class ReleaseGatePlannerTests(unittest.TestCase):
         with self._repo_with_commit("ctl/internal/api.go") as (repo_root, source_sha):
             plan = plan_release_gates(
                 repo_root=repo_root,
-                bundle_manifest=REPO_ROOT / ".ci/runtime/release-bundles.yaml",
+                bundle_manifest=REPO_ROOT / ".ci/runtime/release-bundles.manifest",
                 service="ctl",
                 env="beijing-sandbox",
                 source_sha=source_sha,
@@ -118,7 +118,7 @@ class ReleaseGatePlannerTests(unittest.TestCase):
         with self._repo_with_commit("frontend/src/App.tsx") as (repo_root, source_sha):
             plan = plan_release_gates(
                 repo_root=repo_root,
-                bundle_manifest=REPO_ROOT / ".ci/runtime/release-bundles.yaml",
+                bundle_manifest=REPO_ROOT / ".ci/runtime/release-bundles.manifest",
                 service="frontend",
                 env="shprod",
                 source_sha=source_sha,
@@ -135,7 +135,7 @@ class ReleaseGatePlannerTests(unittest.TestCase):
         with self._repo_with_commit("payment/internal/api.go") as (repo_root, source_sha):
             blocked_plan = plan_release_gates(
                 repo_root=repo_root,
-                bundle_manifest=REPO_ROOT / ".ci/runtime/release-bundles.yaml",
+                bundle_manifest=REPO_ROOT / ".ci/runtime/release-bundles.manifest",
                 service="payment",
                 env="shprod",
                 source_sha=source_sha,
@@ -144,7 +144,7 @@ class ReleaseGatePlannerTests(unittest.TestCase):
             )
             passed_plan = plan_release_gates(
                 repo_root=repo_root,
-                bundle_manifest=REPO_ROOT / ".ci/runtime/release-bundles.yaml",
+                bundle_manifest=REPO_ROOT / ".ci/runtime/release-bundles.manifest",
                 service="payment",
                 env="shprod",
                 source_sha=source_sha,
@@ -165,7 +165,7 @@ class ReleaseGatePlannerTests(unittest.TestCase):
         with self._repo_with_commit("payment/internal/api.go") as (repo_root, source_sha):
             plan = plan_release_gates(
                 repo_root=repo_root,
-                bundle_manifest=REPO_ROOT / ".ci/runtime/release-bundles.yaml",
+                bundle_manifest=REPO_ROOT / ".ci/runtime/release-bundles.manifest",
                 service="service-gateway",
                 env="beijing-sandbox",
                 source_sha=source_sha,

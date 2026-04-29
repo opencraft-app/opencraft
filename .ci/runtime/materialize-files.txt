@@ -1,7 +1,7 @@
 # Runtime files required by materialized CI checks.
 # Keep this list free of secrets, kubeconfigs, and environment-local files.
 .ci/runtime/materialize-files.txt
-.ci/runtime/release-bundles.yaml
+.ci/runtime/release-bundles.manifest
 .ci/runtime/commands/__init__.py
 .ci/runtime/commands/audit_gitops_drift.py
 .ci/runtime/commands/build_release_image.py

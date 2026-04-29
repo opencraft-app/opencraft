@@ -12,7 +12,7 @@ from contracts.bundles import ImageTarget, load_bundle, load_manifest, require_b
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Resolve a release bundle from .ci/runtime/release-bundles.yaml")
+    parser = argparse.ArgumentParser(description="Resolve a release bundle from .ci/runtime/release-bundles.manifest")
     parser.add_argument("--service", required=True, help="Bundle id, e.g. ai-gateway")
     parser.add_argument("--env", required=True, help="Target env, e.g. beijing-sandbox or shprod")
     parser.add_argument("--tag", required=True, help="Image tag to resolve")

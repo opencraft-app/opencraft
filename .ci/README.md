@@ -60,7 +60,7 @@
 
 DB contract 的声明位置是：
 
-- `.ci/runtime/release-bundles.yaml`
+- `.ci/runtime/release-bundles.manifest`
 
 已支持的契约类型：
 
@@ -92,7 +92,7 @@ DB job / readiness Job 的 kubeconfig 读取顺序：
 
 发布契约、bundle 元数据和镜像 pin 规则：
 
-- `.ci/runtime/release-bundles.yaml`
+- `.ci/runtime/release-bundles.manifest`
   - bundle owner/source、publish paths、image targets、DB contract、轻量依赖声明
 - `.ci/runtime/contracts/bundles.py`
   - 解析 release bundle manifest

@@ -74,7 +74,7 @@ stages:
                 python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/validate_gitops_static.py" \
                   --repo-root "$REPO_ROOT" \
                   --env "$TARGET_ENV" \
-                  --bundle-manifest "${CI_RUNTIME_DIR}/.ci/runtime/release-bundles.yaml"
+                  --bundle-manifest "${CI_RUNTIME_DIR}/.ci/runtime/release-bundles.manifest"
                 if [[ "$TARGET_ENV" == "shprod" ]]; then
                   python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/validate_gitops_kustomize.py" \
                     --repo-root "$REPO_ROOT" \

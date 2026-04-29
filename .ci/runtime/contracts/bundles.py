@@ -12,7 +12,7 @@ import yaml
 
 
 RUNTIME_DIR = Path(__file__).resolve().parents[1]
-DEFAULT_MANIFEST_PATH = RUNTIME_DIR / "release-bundles.yaml"
+DEFAULT_MANIFEST_PATH = RUNTIME_DIR / "release-bundles.manifest"
 
 
 @dataclass(frozen=True)

@@ -131,7 +131,7 @@ def main() -> int:
     args = build_parser().parse_args()
     repo_root = Path(args.repo_root).resolve()
     runtime_dir = Path(__file__).resolve().parents[1]
-    bundle_manifest = Path(args.bundle_manifest).resolve() if args.bundle_manifest else runtime_dir / "release-bundles.yaml"
+    bundle_manifest = Path(args.bundle_manifest).resolve() if args.bundle_manifest else runtime_dir / "release-bundles.manifest"
 
     if args.source_branch and not args.source_branch.startswith("promote-shprod-"):
         print(f"skip shprod sync preflight for non-shprod branch {args.source_branch}")

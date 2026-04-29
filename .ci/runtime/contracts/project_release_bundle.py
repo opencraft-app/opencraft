@@ -78,9 +78,18 @@ def sync_publish_subset(repo_root: str, source_ref: str, target_ref: str, patter
     return len(to_checkout), len(to_delete)
 
 
+def load_manifest_text_from_source_ref(repo_root: str, source_ref: str) -> str:
+    for path in (".ci/runtime/release-bundles.manifest", ".ci/runtime/release-bundles.yaml"):
+        try:
+            return git_output(repo_root, "show", f"{source_ref}:{path}")
+        except subprocess.CalledProcessError:
+            continue
+    raise FileNotFoundError(f"release bundle manifest not found in {source_ref}")
+
+
 def main() -> int:
     args = parse_args()
-    manifest_text = git_output(args.repo_root, "show", f"{args.source_ref}:.ci/runtime/release-bundles.yaml")
+    manifest_text = load_manifest_text_from_source_ref(args.repo_root, args.source_ref)
     manifest = parse_manifest_text(manifest_text)
     try:
         bundle = load_bundle(manifest, args.service, args.env)

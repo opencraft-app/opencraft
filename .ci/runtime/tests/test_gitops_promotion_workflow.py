@@ -188,7 +188,7 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
         command = build_verify_command(
             runtime_dir=REPO_ROOT / ".ci/runtime",
             repo_root=REPO_ROOT,
-            bundle_manifest=REPO_ROOT / ".ci/runtime/release-bundles.yaml",
+            bundle_manifest=REPO_ROOT / ".ci/runtime/release-bundles.manifest",
             service="payment",
             env="shprod",
             apply=True,
