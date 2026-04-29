@@ -55,7 +55,7 @@ bundles:
         - ai-gateway/k8s/base/**
         - ai-gateway/k8s/overlays/beijing-sandbox/**
     dockerfile: ai-gateway/deploy/Dockerfile
-    build_context: ai-gateway
+    build_context: .
     image_repo:
       beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/ai-gateway
       shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/ai-gateway

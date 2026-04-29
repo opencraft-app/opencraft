@@ -111,6 +111,30 @@ class ResolveReleaseBundleTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("unknown release bundle: does-not-exist", result.stderr)
 
+    def test_ai_gateway_build_context_matches_root_relative_dockerfile(self) -> None:
+        result = subprocess.run(
+            [
+                "python3",
+                str(COMMAND_DIR / "resolve_release_bundle.py"),
+                "--service",
+                "ai-gateway",
+                "--env",
+                "beijing-sandbox",
+                "--tag",
+                "test-tag",
+                "--format",
+                "json",
+            ],
+            cwd=REPO_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        payload = json.loads(result.stdout)
+
+        self.assertEqual(payload["dockerfile"], "ai-gateway/deploy/Dockerfile")
+        self.assertEqual(payload["build_context"], ".")
+
 
 class SandboxCatalogTests(unittest.TestCase):
     def test_appset_uses_non_reserved_catalog_source_path(self) -> None:
