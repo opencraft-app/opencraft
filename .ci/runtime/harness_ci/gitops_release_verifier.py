@@ -35,6 +35,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--argocd-username")
     parser.add_argument("--argocd-password")
     parser.add_argument("--argocd-insecure-skip-verify", action="store_true")
+    parser.add_argument("--merge-wait-seconds", type=int, default=0)
+    parser.add_argument("--merge-poll-seconds", type=int, default=10)
     parser.add_argument("--wait-seconds", type=int, default=600)
     parser.add_argument("--poll-seconds", type=int, default=10)
     return parser.parse_args()
@@ -207,14 +209,25 @@ def list_merge_requests(
 
 
 def resolve_merged_mr(args: argparse.Namespace, private_token: str) -> Dict[str, Any]:
-    merged = list_merge_requests(
-        args.api_base, args.project_id, private_token, "merged", args.source_branch, args.target_branch
-    )
-    if not merged:
-        raise RuntimeError(
-            "no merged GitOps MR found for %s -> %s" % (args.source_branch, args.target_branch)
+    deadline = time.time() + max(args.merge_wait_seconds, 0)
+    attempt = 0
+    while True:
+        attempt += 1
+        merged = list_merge_requests(
+            args.api_base, args.project_id, private_token, "merged", args.source_branch, args.target_branch
         )
-    return merged[0]
+        if merged:
+            return merged[0]
+        if time.time() >= deadline:
+            raise RuntimeError(
+                "no merged GitOps MR found for %s -> %s" % (args.source_branch, args.target_branch)
+            )
+        print(
+            "waiting for GitOps MR merge: attempt=%s source_branch=%s target_branch=%s"
+            % (attempt, args.source_branch, args.target_branch),
+            file=sys.stderr,
+        )
+        time.sleep(max(args.merge_poll_seconds, 1))
 
 
 def post_merge_request_note(

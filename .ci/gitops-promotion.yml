@@ -85,6 +85,9 @@ stages:
                 promote-beijing-sandbox-*)
                   TARGET_ENV=beijing-sandbox
                   ;;
+                promote-shprod-*)
+                  TARGET_ENV=shprod
+                  ;;
                 *)
                   TARGET_ENV=""
                   ;;
@@ -100,7 +103,7 @@ stages:
                   --repo-root "$REPO_ROOT" \
                   --env "$TARGET_ENV"
               else
-                echo "skip Beijing AppSet GitOps validation for ${{ ci.branch }}"
+                echo "skip GitOps static/Kustomize validation for unsupported promote branch ${{ ci.branch }}"
               fi
               echo "gitops promotion check passed"
 
@@ -148,6 +151,9 @@ stages:
                     --auto-merge \
                     --remove-source-branch
                   ;;
+                promote-shprod-*)
+                  echo "skip auto-merge for production promote branch ${{ ci.branch }}; shprod requires manual GitOps MR merge"
+                  ;;
                 *)
                   echo "skip auto-merge for ${{ ci.branch }}"
                   ;;
@@ -193,6 +199,14 @@ stages:
                     --source-branch "${{ ci.branch }}" \
                     --target-branch gitops
                   ;;
+                promote-shprod-*)
+                  python3 "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/verify_gitops_release.py" \
+                    --repo-root "$REPO_ROOT" \
+                    --source-branch "${{ ci.branch }}" \
+                    --target-branch gitops \
+                    --merge-wait-seconds 3600 \
+                    --merge-poll-seconds 15
+                  ;;
                 *)
                   echo "skip Argo convergence verification for ${{ ci.branch }}"
                   ;;
@@ -233,7 +247,7 @@ stages:
                 ".ci/runtime/harness_ci/gitops_cleanup_source_branch.py"
               ci_init_repo_root
               case "${{ ci.branch }}" in
-                promote-beijing-sandbox-2-*|promote-beijing-sandbox-*)
+                promote-beijing-sandbox-2-*|promote-beijing-sandbox-*|promote-shprod-*)
                   python3 "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/gitops_cleanup_source_branch.py" \
                     --source-branch "${{ ci.branch }}" \
                     --target-branch gitops \

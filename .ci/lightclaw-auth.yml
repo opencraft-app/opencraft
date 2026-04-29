@@ -1,5 +1,5 @@
 version: v2.0
-name: 发布 lightclaw-auth
+name: 构建 lightclaw-auth
 
 on:
   push:
@@ -34,10 +34,10 @@ variables:
     allow-modify-at-startup: true
 
 stages:
-  - name: 发布 lightclaw-auth
+  - name: 构建 lightclaw-auth
     jobs:
       release:
-        name: 构建并发布 lightclaw-auth 镜像
+        name: 构建 lightclaw-auth 镜像
         runs-on:
           self-hosted: true
           pool-name: env
@@ -48,7 +48,7 @@ stages:
             name: 拉取代码
             with:
               fetchDepth: 50
-          - name: 打印 lightclaw-auth 发布上下文
+          - name: 打印 lightclaw-auth 构建上下文
             shell: bash
             run: |
               echo "ci.event=${{ ci.event }}"
@@ -57,7 +57,7 @@ stages:
               echo "TARGET_ENV=${{ variables.TARGET_ENV }}"
               echo "SOURCE_SHA=${{ variables.SOURCE_SHA }}"
           - id: prepare
-            name: 准备 lightclaw-auth 发布标签
+            name: 准备 lightclaw-auth 构建标签
             shell: bash
             run: |
               if [[ "${{ variables.PIPELINE_MODE }}" == "promote" ]]; then
@@ -67,7 +67,7 @@ stages:
               SHORT_SHA="${{ ci.sha }}"
               SHORT_SHA="${SHORT_SHA:0:12}"
               echo "::set-output name=tag::user-auth-${SHORT_SHA}"
-          - name: 构建并推进 lightclaw-auth 北京发布
+          - name: 构建并推进 lightclaw-auth 北京测试
             shell: bash
             env:
               TCR_BEIJING_PASSWORD: ${{ settings.TCR_BEIJING_PASSWORD }}

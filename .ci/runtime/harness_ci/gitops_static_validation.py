@@ -1,5 +1,5 @@
 """
-Static GitOps invariants for the Beijing sandbox ApplicationSet model.
+Static GitOps invariants for sandbox ApplicationSet and direct Application models.
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ APPSET_REL = "argocd/apps/beijing-sandbox/sandbox-family-appset.yaml"
 APPS_DIR_REL = "argocd/apps/beijing-sandbox"
 CATALOG_DIR_TEMPLATE = "argocd/catalogs/sandbox/{env}"
 SUPPORTED_SANDBOX_ENVS = {"beijing-sandbox", "beijing-sandbox-2"}
+SUPPORTED_DIRECT_APP_ENVS = {"shprod"}
 ALLOWED_BEIJING_APP_FILES = {"argocd-runtime.yaml", "sandbox-family-appset.yaml"}
 REQUIRED_CATALOG_FIELDS = {
     "service",
@@ -297,6 +298,9 @@ def validate_publish_closure(
 
 
 def validate(repo_root: Path, env: str, bundle_manifest: Path) -> list[str]:
+    if env in SUPPORTED_DIRECT_APP_ENVS:
+        return validate_direct_apps(repo_root, env)
+
     if env not in SUPPORTED_SANDBOX_ENVS:
         return [f"unsupported env for AppSet static validation: {env}"]
 
@@ -306,6 +310,43 @@ def validate(repo_root: Path, env: str, bundle_manifest: Path) -> list[str]:
     errors.extend(catalog_errors)
     errors.extend(validate_beijing_apps_dir(repo_root))
     errors.extend(validate_publish_closure(repo_root, bundle_manifest, catalogs, env))
+    return errors
+
+
+def validate_direct_apps(repo_root: Path, env: str) -> list[str]:
+    apps_dir_rel = f"argocd/apps/{env}"
+    apps_dir = repo_root / apps_dir_rel
+    if not apps_dir.is_dir():
+        return [f"missing apps directory: {apps_dir_rel}"]
+
+    errors: list[str] = []
+    app_files = sorted(apps_dir.glob("*.yaml"))
+    if not app_files:
+        return [f"no Application files found under {apps_dir_rel}"]
+
+    for app_file in app_files:
+        rel_file = repo_rel(app_file, repo_root)
+        try:
+            data = load_yaml(app_file)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"{rel_file}: failed to parse YAML: {exc}")
+            continue
+        if data.get("kind") != "Application":
+            errors.append(f"{rel_file}: kind must be Application")
+        spec = data.get("spec") or {}
+        source = spec.get("source") or {}
+        destination = spec.get("destination") or {}
+        source_path = str(source.get("path") or "").strip()
+        if source.get("repoURL") != "git@git.woa.com:wisp/mono2.git":
+            errors.append(f"{rel_file}: spec.source.repoURL must point at git@git.woa.com:wisp/mono2.git")
+        if source.get("targetRevision") != "gitops":
+            errors.append(f"{rel_file}: spec.source.targetRevision must be gitops")
+        if not source_path.startswith(f"argocd/services/") or f"/{env}" not in source_path:
+            errors.append(f"{rel_file}: spec.source.path must point at argocd/services/<service>/{env}")
+        elif not (repo_root / source_path / "kustomization.yaml").is_file():
+            errors.append(f"{rel_file}: missing kustomization.yaml under {source_path}")
+        if destination.get("name") != env:
+            errors.append(f"{rel_file}: spec.destination.name must be {env}")
     return errors
 
 

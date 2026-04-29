@@ -18,6 +18,7 @@ import yaml
 
 CATALOG_DIR_TEMPLATE = "argocd/catalogs/sandbox/{env}"
 SUPPORTED_SANDBOX_ENVS = {"beijing-sandbox", "beijing-sandbox-2"}
+SUPPORTED_DIRECT_APP_ENVS = {"shprod"}
 PLACEHOLDER_RE = re.compile(r"\bREPLACE_[A-Z0-9_]+\b")
 
 
@@ -35,6 +36,9 @@ def load_yaml(path: Path) -> dict[str, Any]:
 
 
 def load_targets(repo_root: Path, env: str) -> list[KustomizeTarget]:
+    if env in SUPPORTED_DIRECT_APP_ENVS:
+        return load_direct_app_targets(repo_root, env)
+
     if env not in SUPPORTED_SANDBOX_ENVS:
         raise ValueError(f"unsupported env for strict kustomize validation: {env}")
 
@@ -56,6 +60,31 @@ def load_targets(repo_root: Path, env: str) -> list[KustomizeTarget]:
         targets.append(KustomizeTarget(app_name=f"{service}-{env}", source_path=source_path))
     if not targets:
         raise ValueError(f"no catalog files found under {catalog_dir_rel}")
+    return targets
+
+
+def load_direct_app_targets(repo_root: Path, env: str) -> list[KustomizeTarget]:
+    apps_dir_rel = f"argocd/apps/{env}"
+    apps_dir = repo_root / apps_dir_rel
+    if not apps_dir.is_dir():
+        raise ValueError(f"missing apps directory: {apps_dir_rel}")
+
+    targets: list[KustomizeTarget] = []
+    for app_file in sorted(apps_dir.glob("*.yaml")):
+        data = load_yaml(app_file)
+        if data.get("kind") != "Application":
+            raise ValueError(f"{app_file}: kind must be Application")
+        metadata = data.get("metadata") or {}
+        source = (data.get("spec") or {}).get("source") or {}
+        source_path = str(source.get("path") or "").strip()
+        app_name = str(metadata.get("name") or app_file.stem).strip()
+        if not source_path:
+            raise ValueError(f"{app_file}: missing spec.source.path")
+        if not (repo_root / source_path / "kustomization.yaml").is_file():
+            raise ValueError(f"{app_file}: missing kustomization.yaml under {source_path}")
+        targets.append(KustomizeTarget(app_name=app_name, source_path=source_path))
+    if not targets:
+        raise ValueError(f"no Application files found under {apps_dir_rel}")
     return targets
 
 
