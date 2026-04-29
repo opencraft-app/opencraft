@@ -22,6 +22,9 @@ import yaml
 CATALOG_DIRS = {
     "beijing-sandbox": "argocd/catalogs/sandbox/beijing-sandbox",
 }
+DIRECT_APP_DIRS = {
+    "shprod": "argocd/apps/shprod",
+}
 DEFAULT_REPO_URL = "git@git.woa.com:wisp/mono2.git"
 DEFAULT_TARGET_REVISION = "gitops"
 
@@ -208,6 +211,9 @@ def expected_images_from_gitops(repo_root: Path, gitops_ref: str, service: str, 
 
 
 def load_expected_apps(repo_root: Path, env: str, gitops_ref: str) -> list[ExpectedApp]:
+    if env in DIRECT_APP_DIRS:
+        return load_expected_direct_apps(repo_root, env, gitops_ref)
+
     catalog_dir = CATALOG_DIRS.get(env)
     if not catalog_dir:
         raise RuntimeError(f"unsupported env for drift audit: {env}")
@@ -232,6 +238,42 @@ def load_expected_apps(repo_root: Path, env: str, gitops_ref: str) -> list[Expec
                 project=str(data.get("project", "")).strip(),
                 destination_name=str(data.get("destinationName", "")).strip(),
                 namespace=str(data.get("namespace", "")).strip(),
+                source_path=source_path,
+                expected_images=expected_images_from_gitops(repo_root, gitops_ref, service, env),
+            )
+        )
+    return expected
+
+
+def load_expected_direct_apps(repo_root: Path, env: str, gitops_ref: str) -> list[ExpectedApp]:
+    apps_dir = DIRECT_APP_DIRS[env]
+    app_files = sorted(path for path in git_list_files(repo_root, gitops_ref, apps_dir) if path.endswith(".yaml"))
+    if not app_files:
+        raise RuntimeError(f"no Application files found under {apps_dir} at {gitops_ref}")
+
+    expected: list[ExpectedApp] = []
+    for app_file in app_files:
+        data = parse_yaml_text(git_show_text(repo_root, gitops_ref, app_file), app_file)
+        if data.get("kind") != "Application":
+            raise RuntimeError(f"{app_file}: kind must be Application")
+        metadata = data.get("metadata") or {}
+        spec = data.get("spec") or {}
+        source = spec.get("source") or {}
+        destination = spec.get("destination") or {}
+        source_path = str(source.get("path", "")).strip()
+        source_parts = source_path.split("/")
+        if len(source_parts) < 4 or source_parts[:2] != ["argocd", "services"] or source_parts[3] != env:
+            raise RuntimeError(f"{app_file}: spec.source.path must point at argocd/services/<service>/{env}")
+        service = source_parts[2]
+        app_name = str(metadata.get("name", "")).strip() or f"{service}-{env}"
+        expected.append(
+            ExpectedApp(
+                app_name=app_name,
+                service=service,
+                env=env,
+                project=str(spec.get("project", "")).strip(),
+                destination_name=str(destination.get("name", "")).strip(),
+                namespace=str(destination.get("namespace", "")).strip(),
                 source_path=source_path,
                 expected_images=expected_images_from_gitops(repo_root, gitops_ref, service, env),
             )
