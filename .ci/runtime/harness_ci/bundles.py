@@ -38,6 +38,7 @@ class ReleaseBundle:
     image_repo: str | None
     publish_paths: list[str]
     image_targets: list[ImageTarget]
+    db_contract: dict[str, Any]
 
 
 def parse_manifest_text(text: str) -> dict[str, Any]:
@@ -67,6 +68,7 @@ def load_bundle(manifest: dict[str, Any], service: str, env: str) -> ReleaseBund
         image_repo=_optional_str((bundle.get("image_repo") or {}).get(env)),
         publish_paths=_resolve_publish_paths(bundle, env),
         image_targets=_resolve_image_targets(bundle, env),
+        db_contract=_resolve_db_contract(bundle),
     )
 
 
@@ -132,3 +134,16 @@ def _resolve_image_targets(bundle: dict[str, Any], env: str) -> list[ImageTarget
             )
         )
     return targets
+
+
+def _resolve_db_contract(bundle: dict[str, Any]) -> dict[str, Any]:
+    raw = bundle.get("db_contract")
+    if raw is None:
+        return {"mode": "none"}
+    if isinstance(raw, str):
+        return {"mode": raw}
+    if not isinstance(raw, dict):
+        raise ValueError("db_contract must be a string or YAML mapping")
+    contract = dict(raw)
+    contract["mode"] = str(contract.get("mode") or "none")
+    return contract

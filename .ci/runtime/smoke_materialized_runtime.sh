@@ -102,3 +102,15 @@ smoke_command "gitops_merge_request_note" \
   ".ci/runtime/harness_ci/commands/gitops_merge_request_note.py" \
   ".ci/runtime/harness_ci/gitops_merge_request_note.py" \
   ".ci/runtime/harness_ci/gongfeng.py"
+
+smoke_command "plan_release_gates" \
+  "${common_package[@]}" \
+  ".ci/runtime/harness_ci/commands/plan_release_gates.py" \
+  ".ci/runtime/harness_ci/release_gates.py" \
+  ".ci/runtime/harness_ci/bundles.py"
+
+smoke_command "verify_db_contract" \
+  "${common_package[@]}" \
+  ".ci/runtime/harness_ci/commands/verify_db_contract.py" \
+  ".ci/runtime/harness_ci/db_contract_verifier.py" \
+  ".ci/runtime/harness_ci/bundles.py"

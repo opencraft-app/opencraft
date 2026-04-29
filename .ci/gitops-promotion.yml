@@ -52,6 +52,10 @@ stages:
                 ".ci/runtime/harness_ci/gitops_merge_request.py" \
                 ".ci/runtime/harness_ci/commands/verify_gitops_release.py" \
                 ".ci/runtime/harness_ci/gitops_release_verifier.py" \
+                ".ci/runtime/harness_ci/commands/plan_release_gates.py" \
+                ".ci/runtime/harness_ci/release_gates.py" \
+                ".ci/runtime/harness_ci/commands/verify_db_contract.py" \
+                ".ci/runtime/harness_ci/db_contract_verifier.py" \
                 ".ci/runtime/harness_ci/commands/validate_gitops_static.py" \
                 ".ci/runtime/harness_ci/gitops_static_validation.py" \
                 ".ci/runtime/harness_ci/commands/validate_gitops_kustomize.py" \
@@ -60,6 +64,8 @@ stages:
               git diff --name-only HEAD~1..HEAD || true
               python3 "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/update_image_pin.py" --help >/dev/null
               python3 "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/project_release_bundle.py" --help >/dev/null
+              python3 "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/plan_release_gates.py" --help >/dev/null
+              python3 "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/verify_db_contract.py" --help >/dev/null
               python3 "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/validate_gitops_static.py" --help >/dev/null
               python3 "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/validate_gitops_kustomize.py" --help >/dev/null
               python3 -m py_compile \
@@ -74,6 +80,10 @@ stages:
                 "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/gitops_merge_request.py" \
                 "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/verify_gitops_release.py" \
                 "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/gitops_release_verifier.py" \
+                "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/plan_release_gates.py" \
+                "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/release_gates.py" \
+                "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/verify_db_contract.py" \
+                "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/db_contract_verifier.py" \
                 "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/validate_gitops_static.py" \
                 "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/gitops_static_validation.py" \
                 "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/validate_gitops_kustomize.py" \
@@ -148,8 +158,19 @@ stages:
                 ".ci/runtime/harness_ci/commands/gitops_merge_request.py" \
                 ".ci/runtime/harness_ci/gitops_merge_request.py"
               ci_init_repo_root
+              COMMIT_MESSAGE="$(git log -1 --format=%B)"
+              trailer_value() {
+                printf '%s\n' "$COMMIT_MESSAGE" | awk -F': ' -v key="$1" '$1 == key {print $2; exit}'
+              }
+              GATE_AUTO_MERGE_ALLOWED="$(trailer_value Release-gate-auto-merge)"
+              GATE_ARGO_SYNC="$(trailer_value Release-gate-argo-sync)"
               case "${{ ci.branch }}" in
                 promote-beijing-sandbox-2-*|promote-beijing-sandbox-*)
+                  if [[ "$GATE_AUTO_MERGE_ALLOWED" != "true" ]]; then
+                    echo "refuse Beijing GitOps auto-merge because release gate did not allow auto merge"
+                    echo "Release-gate-auto-merge=${GATE_AUTO_MERGE_ALLOWED:-missing}"
+                    exit 1
+                  fi
                   python3 "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/gitops_merge_request.py" \
                     --source-branch "${{ ci.branch }}" \
                     --target-branch gitops \
@@ -159,7 +180,22 @@ stages:
                     --remove-source-branch
                   ;;
                 promote-shprod-*)
-                  echo "skip auto-merge for production promote branch ${{ ci.branch }}; shprod requires manual GitOps MR merge"
+                  if [[ "$GATE_AUTO_MERGE_ALLOWED" != "true" ]]; then
+                    echo "skip shprod GitOps auto-merge because release gate is not satisfied"
+                    echo "Release-gate-auto-merge=${GATE_AUTO_MERGE_ALLOWED:-missing}"
+                    exit 0
+                  fi
+                  if [[ "$GATE_ARGO_SYNC" != "manual" ]]; then
+                    echo "refuse shprod GitOps auto-merge because Argo sync policy is not manual"
+                    echo "Release-gate-argo-sync=${GATE_ARGO_SYNC:-missing}"
+                    exit 1
+                  fi
+                  python3 "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/gitops_merge_request.py" \
+                    --source-branch "${{ ci.branch }}" \
+                    --target-branch gitops \
+                    --title "自动合并上海生产 GitOps 发布 MR" \
+                    --description "promote 分支检查通过后自动合并到 gitops；上海生产仅进入待同步状态，不执行 Argo 自动 sync。" \
+                    --auto-merge
                   ;;
                 *)
                   echo "skip auto-merge for ${{ ci.branch }}"
@@ -211,6 +247,7 @@ stages:
                     --repo-root "$REPO_ROOT" \
                     --source-branch "${{ ci.branch }}" \
                     --target-branch gitops \
+                    --merge-only \
                     --merge-wait-seconds 3600 \
                     --merge-poll-seconds 15
                   ;;

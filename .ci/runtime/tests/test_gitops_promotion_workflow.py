@@ -112,9 +112,12 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
 
         self.assertIn('cp -R "$REPO_ROOT/.ci/runtime" "$bootstrap_dir/.ci/runtime"', script)
         self.assertIn('RUNTIME_COMMAND_DIR="$bootstrap_dir/.ci/runtime/harness_ci/commands"', script)
+        self.assertIn('python3 "$RUNTIME_COMMAND_DIR/plan_release_gates.py"', script)
+        self.assertIn('python3 "$RUNTIME_COMMAND_DIR/verify_db_contract.py"', script)
         self.assertIn('python3 "$RUNTIME_COMMAND_DIR/project_release_bundle.py"', script)
         self.assertIn('python3 "$RUNTIME_COMMAND_DIR/update_image_pin.py"', script)
         self.assertIn("GitOps 发布意图：准备把镜像推进到", script)
+        self.assertIn("Release-gate-auto-merge:", script)
 
     def test_shprod_promote_branches_are_not_removed_by_automation(self) -> None:
         workflow = (REPO_ROOT / ".ci/gitops-promotion.yml").read_text()
@@ -122,6 +125,8 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
 
         self.assertIn("promote-shprod-*)", workflow)
         self.assertIn("skip source branch cleanup for production promote branch", workflow)
+        self.assertIn("上海生产仅进入待同步状态", workflow)
+        self.assertIn("--merge-only", workflow)
         self.assertIn('case "$ENV_NAME" in', pin_script)
         self.assertIn("shprod)", pin_script)
         self.assertIn("MR_ARGS+=(--remove-source-branch)", pin_script)

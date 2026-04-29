@@ -11,7 +11,7 @@
 
 - `master` 上构建镜像
 - 北京测试环境自动把 `master@SHA` 的发布子集投影到 `gitops`，创建 MR 并自动合并
-- 上海正式环境手动 promote 到 `gitops` 的 MR，并人工合并
+- 上海正式环境手动 promote 到 `gitops` 的 MR；门禁通过后可自动合并，但 Argo sync 仍由人工执行
 
 当前 `.ci/*.yml` 不再依赖 `ci.event == 'push' / 'manual'` 来分流。
 已改为：
@@ -34,7 +34,7 @@
 - 北京 / 上海当前 live Argo app 都已经盯住 `gitops`
 - `master` 上新增 service 级 Stream YAML
 - 自动 promote 为北京创建 MR 并自动合并
-- 手动 promote 为指定环境创建 MR
+- 手动 promote 为指定环境创建 MR；上海生产合并后只表示进入待同步状态
 
 当前已经验证成功的关键点：
 
@@ -43,6 +43,46 @@
 - `.ci/runtime/pin_image_to_gitops.sh` / `.ci/runtime/promote_bundle_image_to_gitops.sh` 能承载 GitOps 发布子集投影和 image pin 写回
 - `.ci/runtime/harness_ci/commands/gitops_merge_request.py` 负责创建 / 复用 MR，并在北京环境轮询后自动合并
 - service 级 YAML 可以继续使用蓝盾 v2.0 的 `jobs.runs-on + steps` 结构
+
+## DB-aware GitOps Release Gates
+
+当前 release gate 的分层策略：
+
+- 北京预发布：
+  - `beijing-sandbox` / `beijing-sandbox-2` 保持自动 GitOps MR 合并和 Argo 自动收敛
+  - 如果 source diff 触及服务声明的 `migration_paths`，先执行受控 DB job
+  - DB job 成功后再运行只读 DB readiness Job，确认 `schema_migrations` 非 dirty 且版本达到 repo 期望
+  - readiness 失败时不创建可自动合并的发布 MR
+- 上海生产：
+  - promote MR 允许在 release gate 通过后自动合入 `gitops`
+  - 合入后只表示 desired state 已进入“待同步状态”
+  - `argocd/apps/shprod/**` 必须保持非自动 sync，人工确认 DB readiness 后再 sync
+
+DB contract 的声明位置是：
+
+- `.ci/runtime/release-bundles.yaml`
+
+已支持的契约类型：
+
+- `db_contract: none`
+  - 无 DB 发布门禁
+- `db_contract.mode: migration`
+  - `migration_paths` 决定本次 source diff 是否需要 DB job
+  - `expected_migration_source` 决定 readiness 校验的 repo 期望 schema version
+  - `verifier.baseline_checks` 声明必要业务基线数据
+
+DB job / readiness Job 的 kubeconfig 读取顺序：
+
+1. `DB_JOB_KUBECONFIG_B64`
+2. `DB_JOB_KUBECONFIG_FILE`
+3. `/etc/lightclaw-ci/kubeconfig_<env>`，其中环境名里的 `-` 转成 `_`
+4. `deploy/envs/<env>/platform.env` 里的 `DEPLOY_KUBECONFIG`
+
+当前特殊约定：
+
+- `subscription` 要求 `subscription_plans` 中存在 `free/lite/pro`
+- `sandbox` 的 default pools 属运营态数据，自动发布不 seed；缺 pools 时阻断并提示人工 `sync-default-pools`
+- `service-gateway` 只做轻量依赖发现；如果同批包含 `lightclaw-auth/payment/subscription` 变更，会阻断无序自动 sync
 
 ## Successful Experience
 
@@ -309,6 +349,10 @@ CI_RUNTIME_REF=refs/tags/ci-runtime-20260429-1
   - Cloudflare Pages API token，用于 frontend 北京测试静态发布
 - `CLOUDFLARE_ACCOUNT_ID`
   - Cloudflare account id，用于 frontend 北京测试静态发布
+- `EDGEONE_LIGHTVELA_PROD_TOKEN`
+  - EdgeOne Pages API token，用于 `发布 frontend eo:cn-lightvela-prod`
+- `EDGEONE_LIGHTVELA_INTL_PROD_TOKEN`
+  - EdgeOne Pages API token，用于 `发布 frontend eo:global-lightvela-intl-prod`
 
 另外要求：
 
@@ -326,6 +370,10 @@ CI_RUNTIME_REF=refs/tags/ci-runtime-20260429-1
   - `/etc/lightclaw-ci/cloudflare_api_token`
   - `/etc/lightclaw-ci/cloudflare_account_id`
   `发布 frontend` 会优先读取这两个本地文件，缺失时再回落到 Stream settings
+- EdgeOne frontend 正式发布同样支持本地文件优先：
+  - `/etc/lightclaw-ci/edgeone_lightvela_prod_token`
+  - `/etc/lightclaw-ci/edgeone_lightvela_intl_prod_token`
+  `发布 frontend eo:cn-lightvela-prod` 和 `发布 frontend eo:global-lightvela-intl-prod` 会优先读取对应本地文件，缺失时再回落到 Stream settings
 
 ## Shared Scripts
 

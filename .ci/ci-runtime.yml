@@ -38,6 +38,7 @@ jobs:
             .ci/runtime/harness_ci/__init__.py
             .ci/runtime/harness_ci/build_release_image.py
             .ci/runtime/harness_ci/bundles.py
+            .ci/runtime/harness_ci/db_contract_verifier.py
             .ci/runtime/harness_ci/gitops_cleanup_source_branch.py
             .ci/runtime/harness_ci/gitops_drift_audit.py
             .ci/runtime/harness_ci/gitops_kustomize_validation.py
@@ -49,6 +50,7 @@ jobs:
             .ci/runtime/harness_ci/image_pin.py
             .ci/runtime/harness_ci/project_release_bundle.py
             .ci/runtime/harness_ci/prod_manual_sync_validation.py
+            .ci/runtime/harness_ci/release_gates.py
             .ci/runtime/harness_ci/resolve_release_bundle.py
             .ci/runtime/harness_ci/commands/__init__.py
             .ci/runtime/harness_ci/commands/audit_gitops_drift.py
@@ -56,12 +58,14 @@ jobs:
             .ci/runtime/harness_ci/commands/gitops_cleanup_source_branch.py
             .ci/runtime/harness_ci/commands/gitops_merge_request.py
             .ci/runtime/harness_ci/commands/gitops_merge_request_note.py
+            .ci/runtime/harness_ci/commands/plan_release_gates.py
             .ci/runtime/harness_ci/commands/project_release_bundle.py
             .ci/runtime/harness_ci/commands/resolve_release_bundle.py
             .ci/runtime/harness_ci/commands/update_image_pin.py
             .ci/runtime/harness_ci/commands/validate_gitops_kustomize.py
             .ci/runtime/harness_ci/commands/validate_gitops_static.py
             .ci/runtime/harness_ci/commands/validate_prod_manual_sync.py
+            .ci/runtime/harness_ci/commands/verify_db_contract.py
             .ci/runtime/harness_ci/commands/verify_gitops_release.py
           )
 
