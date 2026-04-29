@@ -2,10 +2,8 @@ version: v2.0
 name: MR 占位检查
 
 on:
-  push:
-    enable: true
+  push: {}
   mr:
-    enable: true
     target-branches: [ master ]
     action: [ open, reopen, push-update ]
     report-commit-check: true
