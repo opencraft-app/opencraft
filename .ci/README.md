@@ -20,7 +20,7 @@
   - 运行构建
   - 北京自动 promote MR + auto-merge
 - 手动把 `PIPELINE_MODE` 改成 `promote`
-  - 只执行 `promote-manual`
+  - 只执行 `手动发布 <service> 到 GitOps` 对应步骤
   - 需要同时提供 `SOURCE_SHA`
 
 ## Verified Working Setup
@@ -130,7 +130,7 @@
 
 - push 触发时，`if: ${{ ci.event }} == 'push'` 仍然被判 false
 
-因此每条流水线都加了 `debug-context` step，会直接打印：
+因此每条流水线都加了 `打印 <service> 发布上下文` step，会直接打印：
 
 - `ci.event`
 - `ci.branch`
@@ -325,7 +325,7 @@ CI_RUNTIME_REF=refs/tags/ci-runtime-20260429-1
 - Cloudflare frontend 测试发布同样支持本地文件优先：
   - `/etc/lightclaw-ci/cloudflare_api_token`
   - `/etc/lightclaw-ci/cloudflare_account_id`
-  `release-frontend` 会优先读取这两个本地文件，缺失时再回落到 Stream settings
+  `发布 frontend` 会优先读取这两个本地文件，缺失时再回落到 Stream settings
 
 ## Shared Scripts
 

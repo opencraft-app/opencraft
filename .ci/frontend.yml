@@ -75,7 +75,7 @@ stages:
               EDGEONE_API_TOKEN: ${{ settings.EDGEONE_API_TOKEN }}
               VITE_AUTH_API_BASE_URL: https://lightclaw.tech
               CLOUDFLARE_PAGES_COMMIT_HASH: ${{ ci.sha }}
-              CLOUDFLARE_PAGES_COMMIT_MESSAGE: Cloudflare Pages deploy from release-frontend
+              CLOUDFLARE_PAGES_COMMIT_MESSAGE: Cloudflare Pages deploy from frontend pipeline
               FRONTEND_RELEASE_MATRIX: ${{ variables.FRONTEND_RELEASE_MATRIX }}
             run: |
               source .ci/init.sh
