@@ -1,22 +1,16 @@
 version: v2.0
-name: release-subscription
+name: 发布 subscription
 
 on:
   push:
-    branches: [ master ]
+    branches:
+      - master
+      - playground/sandbox-bj-2
     paths:
       - subscription/**
       - argocd/services/subscription/**
       - argocd/apps/*/subscription.yaml
       - argocd/secrets/*/subscription-runtime-secrets.sops.yaml
-      - scripts/build-release-image.py
-      - scripts/resolve_release_bundle.py
-      - scripts/release_bundle_lib.py
-      - scripts/release-bundles.yaml
-      - scripts/project_release_bundle.py
-      - scripts/update_image_pin.py
-      - scripts/pin_image_to_gitops.sh
-      - scripts/promote_bundle_image_to_gitops.sh
   manual: enabled
 
 concurrency:
@@ -39,52 +33,75 @@ variables:
     readonly: false
     allow-modify-at-startup: true
 
-jobs:
-  release:
-    runs-on:
-      self-hosted: true
-      pool-name: env
-    env:
-      GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}
-    steps:
-      - checkout: self
-        with:
-          fetchDepth: 50
-      - name: debug-context
-        shell: bash
-        run: |
-          echo "ci.event=${{ ci.event }}"
-          echo "ci.branch=${{ ci.branch }}"
-          echo "PIPELINE_MODE=${{ variables.PIPELINE_MODE }}"
-          echo "TARGET_ENV=${{ variables.TARGET_ENV }}"
-          echo "SOURCE_SHA=${{ variables.SOURCE_SHA }}"
-      - id: prepare
-        if: ${{ variables.PIPELINE_MODE }} != 'promote'
-        shell: bash
-        run: |
-          SHORT_SHA="${{ ci.sha }}"
-          SHORT_SHA="${SHORT_SHA:0:12}"
-          echo "::set-output name=tag::subscription-${SHORT_SHA}"
-      - name: build-and-promote-beijing
-        if: ${{ variables.PIPELINE_MODE }} != 'promote'
-        shell: bash
+stages:
+  - name: 发布 subscription
+    jobs:
+      release:
+        name: 构建并发布 subscription 镜像
+        runs-on:
+          self-hosted: true
+          pool-name: env
         env:
-          TCR_BEIJING_PASSWORD: ${{ settings.TCR_BEIJING_PASSWORD }}
-          TCR_SHPROD_PASSWORD: ${{ settings.TCR_SHPROD_PASSWORD }}
-        run: |
-          source .ci/init.sh
-          ci_init_repo_root
-          REMOTE_URL="git@git.woa.com:wisp/mono2.git" \
-          GITOPS_BRANCH=gitops \
-          BUILD_TAG_OVERRIDE="${{ steps.prepare.outputs.tag }}" \
-          bash scripts/build_and_promote_to_gitops.sh subscription subscription beijing-sandbox,shprod beijing-sandbox
-      - name: promote-manual
-        if: ${{ variables.PIPELINE_MODE }} == 'promote'
-        shell: bash
-        run: |
-          test -n "${{ variables.SOURCE_SHA }}"
-          source .ci/init.sh
-          ci_init_repo_root
-          REMOTE_URL="git@git.woa.com:wisp/mono2.git" \
-          GITOPS_BRANCH=gitops \
-          bash scripts/promote_bundle_image_to_gitops.sh subscription subscription "${{ variables.TARGET_ENV }}" "${{ variables.SOURCE_SHA }}"
+          GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}
+        steps:
+          - checkout: self
+            name: 拉取代码
+            with:
+              fetchDepth: 50
+          - name: 打印 subscription 发布上下文
+            shell: bash
+            run: |
+              echo "ci.event=${{ ci.event }}"
+              echo "ci.branch=${{ ci.branch }}"
+              echo "PIPELINE_MODE=${{ variables.PIPELINE_MODE }}"
+              echo "TARGET_ENV=${{ variables.TARGET_ENV }}"
+              echo "SOURCE_SHA=${{ variables.SOURCE_SHA }}"
+          - id: prepare
+            name: 准备 subscription 发布标签
+            if: ${{ variables.PIPELINE_MODE }} != 'promote'
+            shell: bash
+            run: |
+              SHORT_SHA="${{ ci.sha }}"
+              SHORT_SHA="${SHORT_SHA:0:12}"
+              echo "::set-output name=tag::subscription-${SHORT_SHA}"
+          - name: 构建并推进 subscription 北京发布
+            if: ${{ variables.PIPELINE_MODE }} != 'promote'
+            shell: bash
+            env:
+              TCR_BEIJING_PASSWORD: ${{ settings.TCR_BEIJING_PASSWORD }}
+              TCR_SHPROD_PASSWORD: ${{ settings.TCR_SHPROD_PASSWORD }}
+            run: |
+              source .ci/init.sh
+              ci_init_repo_root
+              ci_export_gongfeng_defaults
+              REMOTE_URL="$(ci_gitops_remote_url)" \
+              GITOPS_BRANCH=gitops \
+              BUILD_TAG_OVERRIDE="${{ steps.prepare.outputs.tag }}" \
+              case "${{ ci.branch }}" in
+                master)
+                  BUILD_ENVS="beijing-sandbox,shprod"
+                  AUTO_PIN_ENVS="beijing-sandbox"
+                  ;;
+                playground/sandbox-bj-2)
+                  BUILD_ENVS="beijing-sandbox-2"
+                  AUTO_PIN_ENVS="beijing-sandbox-2"
+                  ;;
+                *)
+                  echo "unsupported source branch for release: ${{ ci.branch }}" >&2
+                  exit 1
+                  ;;
+              esac
+              echo "BUILD_ENVS=${BUILD_ENVS}"
+              echo "AUTO_PIN_ENVS=${AUTO_PIN_ENVS}"
+              bash .ci/runtime/build_and_promote_to_gitops.sh subscription subscription "${BUILD_ENVS}" "${AUTO_PIN_ENVS}"
+          - name: 手动发布 subscription 到 GitOps
+            if: ${{ variables.PIPELINE_MODE }} == 'promote'
+            shell: bash
+            run: |
+              test -n "${{ variables.SOURCE_SHA }}"
+              source .ci/init.sh
+              ci_init_repo_root
+              ci_export_gongfeng_defaults
+              REMOTE_URL="$(ci_gitops_remote_url)" \
+              GITOPS_BRANCH=gitops \
+              bash .ci/runtime/promote_bundle_image_to_gitops.sh subscription subscription "${{ variables.TARGET_ENV }}" "${{ variables.SOURCE_SHA }}"

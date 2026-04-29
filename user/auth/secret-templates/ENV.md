@@ -16,6 +16,7 @@
 | `LIGHTCLAW_AUTH_ADDR` | `:8081` | 服务监听地址 |
 | `LIGHTCLAW_PUBLIC_BASE_URL` | `https://lightclaw.tech` | 后端 API 对外域名，用于拼接 OAuth Redirect URI |
 | `LIGHTCLAW_FRONTEND_BASE_URL` | `https://lightclaw.pages.dev` | 前端域名，OAuth 回调后重定向到此地址 |
+| `LIGHTCLAW_OAUTH_RETURN_TO_ALLOWED_HOSTS` | 内置 Lightclaw 主域名 | 允许 OAuth `return_to` 回跳的 host 白名单，测试环境可显式加入 `*.pages.dev` |
 
 ---
 

@@ -4,8 +4,9 @@ const projectName = process.env.CLOUDFLARE_PAGES_PROJECT_NAME?.trim() || "lightc
 const branch = process.env.CLOUDFLARE_PAGES_BRANCH?.trim() || "main";
 const commitHash = process.env.CLOUDFLARE_PAGES_COMMIT_HASH?.trim();
 const commitMessage = process.env.CLOUDFLARE_PAGES_COMMIT_MESSAGE?.trim();
+const deployDir = process.env.CLOUDFLARE_PAGES_DIR?.trim() || "dist";
 
-const args = ["wrangler", "pages", "deploy", "dist", "--project-name", projectName];
+const args = ["wrangler", "pages", "deploy", deployDir, "--project-name", projectName];
 
 if (branch) {
   args.push("--branch", branch);

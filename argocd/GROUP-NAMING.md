@@ -1,6 +1,6 @@
-# GitLab Group Naming Contract
+# Release Group Naming Contract
 
-GitLab groups are the v1 source of truth for mono release-group membership.
+当前发布组是 mono release-group membership 的 v1 source of truth。
 
 ## Pattern
 
@@ -27,7 +27,7 @@ Rendered full paths used by Argo:
 
 ## Rules
 
-- One GitLab user may belong to multiple release groups.
+- One user may belong to multiple release groups.
 - Effective permissions are the union of those groups, but only inside each mapped `repo × env` scope.
 - Release rights are granted to leaf applications only in v1.
 - Root environment apps do not inherit release rights from child release groups.
@@ -41,4 +41,3 @@ Rendered full paths used by Argo:
 - `*-release`
   - same read/log visibility
   - plus sync on all leaf apps in the matching environment
-

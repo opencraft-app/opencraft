@@ -17,7 +17,7 @@
   - `python3 scripts/build-release-image.py --service user-auth --env <env> --tag <tag>`
 - DB migration / seed：
   - `scripts/run_gitops_db_job.py`
-  - 旧 `.gitlab/ci/gitops-db-job.yml` 已退役；当前以脚本和 runbook 为准
+  - 历史 DB job 模板已退役；当前以脚本和 runbook 为准
 
 ## 约束
 

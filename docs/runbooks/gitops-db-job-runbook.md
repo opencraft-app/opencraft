@@ -6,8 +6,8 @@
 
 - 脚本：
   - `scripts/run_gitops_db_job.py`
-- 历史 GitLab CI 模板：
-  - `.gitlab/ci/gitops-db-job.yml` 已退役
+- 历史 DB job 模板：
+  - 已退役，不再作为现行入口
 
 ## Supported Matrix
 

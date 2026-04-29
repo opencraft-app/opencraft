@@ -1309,8 +1309,8 @@ const TerminalModal = ({ botId, botName, onClose }: { botId: string; botName: st
 
 /* ─── Bot Card for multi-bot display ─── */
 
-// 实例名称展示最多 16 个 Unicode 码点，超出截断并拼接省略号，由调用方配合 title 属性展示全名
-const BOT_NAME_DISPLAY_MAX = 16;
+// 实例名称展示最多 20 个 Unicode 码点，超出截断并拼接省略号，由调用方配合 title 属性展示全名
+const BOT_NAME_DISPLAY_MAX = 20;
 const truncateBotName = (name: string) => {
   const chars = Array.from(name);
   return chars.length > BOT_NAME_DISPLAY_MAX ? chars.slice(0, BOT_NAME_DISPLAY_MAX).join("") + "…" : name;

@@ -107,7 +107,7 @@ stacks:
     ccn:
       existing_id: ccn-0xyntzux
       name: lightclaw-bj8-control-plane
-      description: "Cross-region private path between Hong Kong Argo and Beijing access VPC"
+      description: "Cross-region private path between the unified Argo control plane and the Beijing access VPC"
       charge_type: PREPAID
       bandwidth_limit_type: INTER_REGION_LIMIT
       qos: AG

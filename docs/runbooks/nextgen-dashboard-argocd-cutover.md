@@ -63,19 +63,19 @@
 
 ## Current Blocker
 
-当前中心 GitLab canonical repo 已存在：
+当前中心 GitOps 真源已切到：
 
-- `https://code.lightclaw.tech/root/mono.git`
+- `git@git.woa.com:wisp/mono2.git`
 
 当前运行形态已经收成：
 
-- 香港 Argo = 中心控制面
+- 统一 Argo CD 控制面 = 中心控制面
 - 北京集群 = 远端 destination cluster
 
 在正式启用前，需要先明确：
 
-- 香港 Argo repo-server 访问该 canonical URL 的内网入口和 DNS/TLS
-- 香港 Argo repo-server 是否已经装好 `ksops` 和北京对应 age 私钥
+- 统一 Argo CD 控制面 repo-server 访问当前 GitOps repo 的内网入口和 DNS/TLS
+- 统一 Argo CD 控制面 repo-server 是否已经装好 `ksops` 和北京对应 age 私钥
 
 ## Open Decision
 

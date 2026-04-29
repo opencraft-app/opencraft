@@ -5,7 +5,7 @@
 边界：
 
 - source-facing 内容仍留在 `service-gateway/`
-- 香港 Argo 通过这个目录把资源下发到上海 `lightclaw-gateway` namespace
+- 统一 Argo CD 控制面通过这个目录把资源下发到上海 `lightclaw-gateway` namespace
 - 当前模板按上海现网 Running 版本对齐，不主动改变公网 host、TLS 或路由
 
 ## Files

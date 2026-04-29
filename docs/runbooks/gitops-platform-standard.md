@@ -4,11 +4,11 @@
 
 ## Topology
 
-- 一个中心 GitLab
-- 一个中心 Argo CD（当前在香港）
-- 北京测试集群先作为远端 cluster 由中心 Argo 纳管
+- 一个中心 Git 仓库
+- 一个统一的 Argo CD 控制面
+- 北京测试集群先作为远端 cluster 由统一 Argo CD 控制面纳管
 - 两个环境都使用同一个 canonical Git URL
-- 中心 Argo 通过 internal ingress + internal DNS/TLS 私网访问 GitLab
+- Argo CD 控制面通过 internal ingress + internal DNS/TLS 私网访问当前 GitOps 真源
 
 ## Repo Boundary
 
@@ -40,7 +40,7 @@
 - Argo 的唯一正式入口定义在 `argocd/`
 - Argo 不允许直接盯任意服务源码树
 - secret 导出产物只能进入 deploy-facing 路径
-- `root/mono` 的长期定位遵守：
+- 当前 `gitops` 发布视图的长期定位遵守：
   - [gitops-root-mono-governance.md](gitops-root-mono-governance.md)
   - [gitops-release-contract.md](gitops-release-contract.md)
 
@@ -48,7 +48,7 @@
 
 统一规则：
 
-- repo URL 使用 canonical GitLab URL
+- repo URL 使用 canonical Git URL
 - 不写集群内 service DNS 到 Argo `repoURL`
 - 每个环境自己保证：
   - internal ingress
@@ -58,7 +58,7 @@
 验证标准：
 
 ```bash
-git ls-remote https://code.lightclaw.tech/<group>/<repo>.git
+git ls-remote git@git.woa.com:wisp/mono2.git
 ```
 
 需要能在 `repo-server` 内成功执行。
@@ -83,7 +83,7 @@ git ls-remote https://code.lightclaw.tech/<group>/<repo>.git
 ## Standard Export Flow
 
 1. 维护者更新 `SSM`
-2. GitLab CI 读取 `SSM`
+2. CI 读取 `SSM`
 3. 渲染 K8s Secret YAML
 4. 加密成 `*.sops.yaml`
 5. bot 开 / 更新 PR
@@ -117,6 +117,6 @@ git ls-remote https://code.lightclaw.tech/<group>/<repo>.git
 
 - [gitops-ingress-governance.md](gitops-ingress-governance.md)
 
-共享 bootstrap ownership 和 `root/mono` 定位单独遵守：
+共享 bootstrap ownership 和当前 `gitops` 发布视图定位单独遵守：
 
 - [gitops-root-mono-governance.md](gitops-root-mono-governance.md)

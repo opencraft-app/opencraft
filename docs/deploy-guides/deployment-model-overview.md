@@ -1,14 +1,18 @@
 # 部署模型总览
 
-> **一句话总结**：`infra_pulumi` 管基础设施与环境事实，source repo 管长期 GitOps 真源，`code.lightclaw.tech/root/mono.git:main` 是 Argo 消费的 deploy-only mirror，`Argo CD` 是唯一正式发布入口。
+> **一句话总结**：`infra_pulumi` 管基础设施与环境事实，`git@git.woa.com:wisp/mono2.git:gitops` 是 Argo 当前消费的 GitOps 真源，`Argo CD` 是唯一正式发布入口。
 
 ## 仓库边界
 
-- `git.woa.com/wisp/mono`：日常开发、代码评审、长期维护的 source repo。
-- `https://code.lightclaw.tech/root/mono.git`：deploy-only GitLab mirror，当前由香港 Argo CD 消费。
-- `root/mono.git:main` 只作为发布消费分支使用，不作为普通开发分支。
-- 修改 `argocd/`、镜像 pin、证书 ID 引用、SOPS artifact 等长期配置时，必须先同步回 source repo，再推送 deploy-only mirror。
-- 不允许只在 deploy-only 仓留下长期差异；否则后续从 source repo 再同步时会覆盖线上修复。
+- `git@git.woa.com:wisp/mono2.git`
+  - 当前源码仓
+  - 也是当前 GitOps 真源
+- `master`
+  - 日常开发与构建触发分支
+- `gitops`
+  - Argo 消费的发布分支
+- 修改 `argocd/`、镜像 pin、证书 ID 引用、SOPS artifact 等长期配置时，必须最终收敛到当前 repo 的 `gitops` 分支。
+- 不允许在任何历史发布镜像仓保留长期差异。
 
 ## 当前正式模型
 
@@ -17,8 +21,8 @@ flowchart TD
     A["infra_pulumi"] --> B["deploy/envs/<env>/platform.env"]
     B --> C["release bundle imports"]
     C --> D["source repo<br/>argocd/"]
-    D --> E["deploy-only mirror<br/>code.lightclaw.tech/root/mono.git:main"]
-    E --> F["HK Argo CD"]
+    D --> E["git@git.woa.com:wisp/mono2.git:gitops"]
+    E --> F["Argo CD control plane"]
     F --> G["beijing-sandbox / shprod clusters"]
 ```
 
@@ -53,8 +57,8 @@ flowchart TD
 ### 3. 正式发布层
 
 - `argocd/`
-- `root/mono`
-- HK Argo CD
+- `git@git.woa.com:wisp/mono2.git:gitops`
+- Argo CD control plane
 
 这里只承载：
 
@@ -69,12 +73,12 @@ flowchart TD
 默认统一入口：
 
 ```bash
-python3 scripts/build-release-image.py --service <service> --env <env> --tag <tag>
+python3 .ci/runtime/harness_ci/commands/build_release_image.py --service <service> --env <env> --tag <tag>
 ```
 
 release bundle 清单：
 
-- [scripts/release-bundles.yaml](../../scripts/release-bundles.yaml)
+- [.ci/runtime/release-bundles.yaml](../../.ci/runtime/release-bundles.yaml)
 
 当前显式例外：
 
@@ -86,7 +90,7 @@ release bundle 清单：
 统一走平台级入口：
 
 - [scripts/run_gitops_db_job.py](../../scripts/run_gitops_db_job.py)
-- 旧 GitLab CI 模板已退役
+- 历史 DB job 模板已退役
 - [gitops-db-job-runbook.md](../runbooks/gitops-db-job-runbook.md)
 
 ## Promotion 与 Rollback
