@@ -81,9 +81,10 @@ stages:
               source .ci/init.sh
               ci_init_repo_root
               ci_export_gongfeng_defaults
-              REMOTE_URL="$(ci_gitops_remote_url)" \
-              GITOPS_BRANCH=gitops \
-              BUILD_TAG_OVERRIDE="${{ steps.prepare.outputs.tag }}" \
+              REMOTE_URL="$(ci_gitops_remote_url)"
+              GITOPS_BRANCH=gitops
+              BUILD_TAG_OVERRIDE="${{ steps.prepare.outputs.tag }}"
+              export REMOTE_URL GITOPS_BRANCH BUILD_TAG_OVERRIDE
               case "${{ ci.branch }}" in
                 master)
                   BUILD_ENVS="beijing-sandbox"
