@@ -1,6 +1,8 @@
 // ⚠️ 必须最先 import：在 tea-app 模块加载前设置 window.VERSION，
 // 否则 tea-app 的 i18next lng 会固定为 "zh"。
-import { isEnglishEnv as _isEnglishEnv } from "@/lib/i18n-env";
+// 纯 side-effect import——只关心 module 顶层 `(window as any).VERSION = "en"` 的赋值，
+// 不使用其导出的 isEnglishEnv 值（SDK initI18n 签名 () => void，不接收词条参数）。
+import "@/lib/i18n-env";
 
 import { LegalFooter } from "@/components/site/legal-footer";
 import { motion, AnimatePresence } from "framer-motion";
@@ -52,19 +54,13 @@ import {
 import { createMonoDebugExecAdapter } from "@/pages/marketing/openclaw-tat-adapter";
 import { installOpenClawConsoleHelpers } from "@/pages/marketing/openclaw-console-helpers";
 import "@tencent/tea-sdk-lightclaw/styles";
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore — translation 子路径类型由 tea-sdk-lightclaw-i18n.d.ts 声明
-import { translation as enTranslation } from "@tencent/tea-sdk-lightclaw/i18n/translation/en";
 
 // Vite 生产构建（Rollup）会 tree-shake 掉 SDK 的自动 i18n.init()，
 // 导致 t() 返回空字符串。
-// SDK feat/i18n 分支已去掉自动 initI18n() 调用，
-// 由消费方显式控制初始化时机和词条内容。
-if (_isEnglishEnv) {
-  initI18n({ translation: enTranslation });
-} else {
-  initI18n();
-}
+// SDK 的 initI18n 签名为 () => void，不接收词条参数；语言切换由
+// @/lib/i18n-env 在 import 时副作用写入 window.VERSION 完成，
+// tea-app 模块加载时读取此值决定 lng，SDK 内部会自己挂载对应词条。
+initI18n();
 
 /* ─── Types ─── */
 
