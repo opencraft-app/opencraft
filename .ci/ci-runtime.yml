@@ -32,7 +32,11 @@ jobs:
             .ci/runtime/build_and_promote_to_gitops.sh \
             .ci/runtime/pin_image_to_gitops.sh \
             .ci/runtime/promote_bundle_image_to_gitops.sh \
-            .ci/runtime/smoke_materialized_runtime.sh
+            .ci/runtime/smoke_materialized_runtime.sh \
+            .ci/checks/guard.sh \
+            admin-gateway/checks/guard.sh \
+            service-gateway/checks/guard.sh \
+            frontend/checks/guard.sh
 
           python3 -m py_compile $(find \
             .ci/runtime/contracts \

@@ -21,6 +21,7 @@ bash -n \
   .ci/runtime/smoke_materialized_runtime.sh \
   .ci/checks/guard.sh \
   service-gateway/checks/guard.sh \
+  admin-gateway/checks/guard.sh \
   frontend/checks/guard.sh
 
 echo "============================================================"

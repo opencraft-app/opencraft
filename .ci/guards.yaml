@@ -7,14 +7,18 @@ guards:
   - name: service-gateway
     paths:
       - service-gateway/**
-      - admin-gateway/**
       - argocd/services/service-gateway/**
-      - argocd/services/admin-gateway/**
       - argocd/apps/*/service-gateway.yaml
-      - argocd/apps/*/admin-gateway.yaml
       - argocd/secrets/*/service-gateway-runtime-secrets.sops.yaml
-      - argocd/secrets/*/admin-gateway-runtime-secrets.sops.yaml
     command: service-gateway/checks/guard.sh
+
+  - name: admin-gateway
+    paths:
+      - admin-gateway/**
+      - argocd/services/admin-gateway/**
+      - argocd/apps/*/admin-gateway.yaml
+      - argocd/secrets/*/admin-gateway-runtime-secrets.sops.yaml
+    command: admin-gateway/checks/guard.sh
 
   - name: frontend
     paths:

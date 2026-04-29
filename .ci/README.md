@@ -43,6 +43,7 @@
 - `.ci/runtime/pin_image_to_gitops.sh` / `.ci/runtime/promote_bundle_image_to_gitops.sh` 能承载 GitOps 发布子集投影和 image pin 写回
 - `.ci/runtime/commands/gitops_merge_request.py` 负责创建 / 复用 MR，并在北京环境轮询后自动合并
 - service 级 YAML 可以继续使用蓝盾 v2.0 的 `jobs.runs-on + steps` 结构
+- `.ci/mr-placeholder.yml` 已从空占位升级为 changed-file guard dispatcher，MR 必须通过对应目录 guard 后才能合并
 
 ## DB-aware GitOps Release Gates
 
@@ -50,7 +51,7 @@
 
 - 北京预发布：
   - `beijing-sandbox` / `beijing-sandbox-2` 保持自动 GitOps MR 合并和 Argo 自动收敛
-  - 如果 source diff 触及服务声明的 `migration_paths`，先执行受控 DB job
+  - 只要服务声明 `db_contract.mode: migration`，promote 时默认执行幂等受控 DB job
   - DB job 成功后再运行只读 DB readiness Job，确认 `schema_migrations` 非 dirty 且版本达到 repo 期望
   - readiness 失败时不创建可自动合并的发布 MR
 - 上海生产：
@@ -67,7 +68,8 @@ DB contract 的声明位置是：
 - `db_contract: none`
   - 无 DB 发布门禁
 - `db_contract.mode: migration`
-  - `migration_paths` 决定本次 source diff 是否需要 DB job
+  - 默认每次 promote 都执行幂等 DB job 和 readiness
+  - `migration_paths` 只用于生成 `migration_changed` 审计字段，不再决定是否执行 DB gate
   - `expected_migration_source` 决定 readiness 校验的 repo 期望 schema version
   - `verifier.baseline_checks` 声明必要业务基线数据
 
@@ -153,7 +155,9 @@ MR / push 变更目录约束派发：
 - `.ci/checks/guard.sh`
   - `.ci/**` 变更的 CI runtime / YAML / materialize 门禁
 - `service-gateway/checks/guard.sh`
-  - service-gateway / admin-gateway 相关变更的发布契约与 Go 单测门禁
+  - service-gateway 相关变更的发布契约与 Go 单测门禁
+- `admin-gateway/checks/guard.sh`
+  - admin-gateway 相关变更的独立发布契约门禁
 - `frontend/checks/guard.sh`
   - frontend 相关变更的 release matrix 门禁
 
@@ -221,20 +225,32 @@ CI 运行环境自举、secret 读取和工具安装：
 - 每个 service 一份 `.ci/*.yml`
 - 用 `on.push.paths` 只监听自己的目录和共用脚本
 
-### 3. 共享镜像要在 promote 阶段一起 pin
+### 3. service-gateway / admin-gateway 发布边界必须拆开
 
-`service-gateway` 和 `admin-gateway` 复用同一镜像。  
-这类情况不要复制出两套 build 逻辑，而是在 promote 时一次性投影多个 publish target，并更新多个 pin target。
+`service-gateway` 和 `admin-gateway` 都运行 gateway 二进制，但发布边界已经拆成两个镜像、两个流水线、两个 release bundle。
 
 当前实现方式：
 
 - `service-gateway.yml`
-  - 自动 / 手动 promote 时同时投影并更新：
+  - 只构建 / pin / promote：
     - `service-gateway`
-    - `admin-gateway`
   - `on.push.paths` 同时监听：
     - `service-gateway/**`
+- `admin-gateway.yml`
+  - 只构建 / pin / promote：
+    - `admin-gateway`
+  - 当前构建实现仍临时复用：
+    - `service-gateway/Dockerfile`
+    - `service-gateway` build context
+  - `on.push.paths` 同时监听：
     - `admin-gateway/**`
+    - `service-gateway/**`
+
+拆分原因：
+
+- shprod 是 direct Argo Application，一个 promote branch 不应夹带多个 direct app
+- admin-gateway 的 placeholder / readiness 问题不应阻塞 service-gateway 发布
+- 后续回滚、审计、MR title、image pin 都按服务独立处理
 
 ### 4. Git push 走 SSH，MR 创建走 API
 
@@ -431,28 +447,57 @@ CI_RUNTIME_REF=refs/tags/ci-runtime-20260429-1
 - `settings.TCR_SHPROD_PASSWORD`
 - token 是否与用户名 `100045199955` 匹配
 
-## Service Pipelines
+## Stream Pipelines
 
-当前已接入 service 级 Stream YAML：
+当前已接入 Stream YAML：
 
+- `admin-gateway.yml`
 - `ai-gateway.yml`
+- `ci-runtime.yml`
 - `ctl.yml`
+- `frontend-edgeone-lightvela.yml`
+- `frontend-edgeone-lightvela-intl.yml`
 - `frontend.yml`
 - `gateway-dashboard.yml`
+- `gitops-drift-audit.yml`
+- `gitops-drift-audit-shprod.yml`
+- `gitops-promotion.yml`
 - `lightclaw-auth.yml`
+- `mr-placeholder.yml`
 - `nextgen-dashboard.yml`
 - `payment.yml`
+- `sandbox.yml`
 - `service-gateway.yml`
 - `subscription.yml`
 
 说明：
 
-- `service-gateway.yml` 会同时更新：
-  - `service-gateway`
-  - `admin-gateway`
-- `lightclaw-auth.yaml.yml` 对应的 build bundle 是：
+- `service-gateway.yml`
+  - 构建 / promote / pin：
+    - `service-gateway`
+- `admin-gateway.yml`
+  - 构建 / promote / pin：
+    - `admin-gateway`
+  - 当前复用 `service-gateway/Dockerfile` 和 `service-gateway` build context，但镜像 repo/tag 独立
+- `frontend.yml`
+  - `build` 模式构建 frontend shprod 镜像，不自动 pin shprod
+  - Pages 矩阵发布与 GitOps 镜像发布在同一入口内分流
+- `frontend-edgeone-lightvela*.yml`
+  - 独立手动发布 EdgeOne 正式项目，不走 GitOps image pin
+- `mr-placeholder.yml`
+  - MR commit check 入口，按 changed files 派发 `.ci/guards.yaml` 注册的 guard
+- `lightclaw-auth.yml` 对应的 build bundle 是：
   - `user-auth`
   - 但 GitOps pin target 是 `lightclaw-auth`
+- `sandbox.yml`
+  - 支持 `beijing-sandbox` / `beijing-sandbox-2` 多镜像构建和自动 pin
+- `gitops-promotion.yml`
+  - 只处理 `promote-*` 分支的 GitOps 验收、自动合并 / 待同步确认和 promote 分支清理
+
+历史注意：
+
+- 不要再假设 `service-gateway.yml` 会更新 `admin-gateway`。
+- `admin-gateway` 已有独立 image repo / tag / pin；需要发布时走 `.ci/admin-gateway.yml`。
 
 ## Required Settings
 
@@ -515,17 +560,22 @@ CI_RUNTIME_REF=refs/tags/ci-runtime-20260429-1
 
 ## Current Gaps
 
-以下服务还没有接入这一版自动化：
+当前主要缺口：
 
-- `sandbox`
-  - 仍使用特殊镜像构建链路，不走 `.ci/runtime/commands/build_release_image.py`
+- `admin-gateway`
+  - 已有独立 CI / 镜像 / release bundle
+  - 仍临时复用 `service-gateway` 构建上下文；后续如果需要彻底隔离二进制，应再拆 Dockerfile / build context
 - `session`
-  - 当前没有完整的 release bundle 定义
+  - 有 release bundle / GitOps deploy-facing 路径，但没有 CI 构建元数据和独立 Stream YAML
 - `frontend-ds`
-  - 当前只保留 skeleton，不在 live app 范围内
+  - 有 shprod release bundle 和镜像构建元数据，但没有独立 Stream YAML，也不在当前 live 发布主链路中
+- `sandbox`
+  - 已接入北京 / 北京 2 自动构建与多镜像 pin
+  - 仍没有 shprod 镜像构建元数据；shprod promote 只能投影已存在发布内容，不能构建新 shprod 镜像
 
 这几类后续要接入，需要先补：
 
 - 明确的构建入口
-- release bundle 元数据
 - 对应环境的 image pin 约定
+- 对应环境的 build metadata / image targets
+- 是否允许自动合并 / 自动 sync 的环境策略

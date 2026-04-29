@@ -3,11 +3,15 @@ bundles:
     owner: admin-gateway
     source: admin-gateway
     db_contract: none
-    reason: Admin gateway deploy-facing bundle reuses the shared gateway binary image.
+    reason: Admin gateway release bundle with an independent image tag and CI
+      pipeline. It currently reuses the service-gateway Dockerfile/build context
+      until the gateway binaries are split.
     allowed_paths:
     - admin-gateway/k8s/base
     - admin-gateway/k8s/overlays/beijing-sandbox
     - admin-gateway/k8s/overlays/shprod
+    - service-gateway
+    - service-gateway/Dockerfile
     exit_condition: Can be removed only after the deployable contract moves to an
       explicit imported package path.
     publish_paths:
@@ -36,6 +40,12 @@ bundles:
       - admin-gateway/k8s/base/**
       - admin-gateway/k8s/overlays/beijing-sandbox-2/**
       - admin-gateway/k8s/overlays/beijing-sandbox/**
+    dockerfile: service-gateway/Dockerfile
+    build_context: service-gateway
+    image_repo:
+      beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/admin-gateway
+      shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/admin-gateway
+      beijing-sandbox-2: lightclaw-bj8.tencentcloudcr.com/lightclaw/admin-gateway
   ai-gateway:
     owner: ai-gateway
     source: ai-gateway
@@ -241,11 +251,6 @@ bundles:
     - argocd/secrets/{env}/service-gateway-runtime-secrets.sops.yaml
     - service-gateway/k8s/base/**
     - service-gateway/k8s/overlays/{env}/**
-    - argocd/services/admin-gateway/{env}/**
-    - argocd/apps/{env}/admin-gateway.yaml
-    - argocd/secrets/{env}/admin-gateway-runtime-secrets.sops.yaml
-    - admin-gateway/k8s/base/**
-    - admin-gateway/k8s/overlays/{env}/**
     publish_paths_by_env:
       shprod:
       - argocd/services/service-gateway/shprod/**
@@ -262,13 +267,6 @@ bundles:
       - argocd/secrets/beijing-sandbox/service-gateway-runtime-secrets.sops.yaml
       - service-gateway/k8s/base/**
       - service-gateway/k8s/overlays/beijing-sandbox/**
-      - argocd/services/admin-gateway/beijing-sandbox/**
-      - argocd/services/admin-gateway/common/**
-      - argocd/services/admin-gateway/profiles/sandbox/**
-      - argocd/catalogs/sandbox/beijing-sandbox/admin-gateway.yaml
-      - argocd/secrets/beijing-sandbox/admin-gateway-runtime-secrets.sops.yaml
-      - admin-gateway/k8s/base/**
-      - admin-gateway/k8s/overlays/beijing-sandbox/**
       beijing-sandbox-2:
       - argocd/services/service-gateway/beijing-sandbox-2/**
       - argocd/services/service-gateway/common/**
@@ -278,15 +276,7 @@ bundles:
       - argocd/secrets/beijing-sandbox-2/service-gateway-runtime-secrets.sops.yaml
       - service-gateway/k8s/base/**
       - service-gateway/k8s/overlays/beijing-sandbox-2/**
-      - argocd/services/admin-gateway/beijing-sandbox-2/**
-      - argocd/services/admin-gateway/common/**
-      - argocd/services/admin-gateway/profiles/sandbox/**
-      - argocd/catalogs/sandbox/beijing-sandbox-2/admin-gateway.yaml
-      - argocd/secrets/beijing-sandbox-2/admin-gateway-runtime-secrets.sops.yaml
-      - admin-gateway/k8s/base/**
-      - admin-gateway/k8s/overlays/beijing-sandbox-2/**
       - service-gateway/k8s/overlays/beijing-sandbox/**
-      - admin-gateway/k8s/overlays/beijing-sandbox/**
     dockerfile: service-gateway/Dockerfile
     build_context: service-gateway
     image_repo:
