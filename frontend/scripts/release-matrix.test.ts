@@ -95,7 +95,7 @@ describe("release matrix helpers", () => {
       requiredSecretEnv: ["EDGEONE_API_TOKEN"],
       outputDir: "dist-cn",
       deployEnv: {
-        EDGEONE_PAGES_AREA: "overseas",
+        EDGEONE_PAGES_AREA: "global",
         EDGEONE_PAGES_ENV: "preview",
       },
     };
@@ -106,7 +106,7 @@ describe("release matrix helpers", () => {
 
     expect(comboEnv.EDGEONE_PAGES_PROJECT_NAME).toBe("lightvela-preview");
     expect(comboEnv.EDGEONE_PAGES_DIR).toBe("dist-cn");
-    expect(comboEnv.EDGEONE_PAGES_AREA).toBe("overseas");
+    expect(comboEnv.EDGEONE_PAGES_AREA).toBe("global");
     expect(comboEnv.EDGEONE_PAGES_ENV).toBe("preview");
   });
 
@@ -123,7 +123,7 @@ describe("release matrix helpers", () => {
       authApiBaseUrl: "https://api.lightvela.tencent.com",
       outputDir: "dist-cn",
       deployEnv: {
-        EDGEONE_PAGES_AREA: "overseas",
+        EDGEONE_PAGES_AREA: "global",
         EDGEONE_PAGES_ENV: "production",
       },
     });
