@@ -284,6 +284,7 @@ type WeixinSessionStatus = "idle" | "creating" | "starting" | "waiting_qr" | "sc
 
 export const ChannelSection = () => {
   if (isGlobal) return null;
+  const t = useT();
   const repositories = useRepositories();
   const { bots, updateBot } = useOpenClaw();
   const [selectedChannel, setSelectedChannel] = useState<Channel>(null);
