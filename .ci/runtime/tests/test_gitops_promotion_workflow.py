@@ -38,7 +38,7 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
         self.assertNotIn("ci_materialize_runtime_files", workflow)
         self.assertEqual(
             workflow.count('ci_materialize_runtime_manifest "${CI_RUNTIME_DIR}" ".ci/runtime/materialize-files.txt"'),
-            5,
+            4,
         )
         self.assertIn("GitOps 合并后验收", workflow)
         self.assertIn("上海生产 GitOps 待同步 MR", workflow)
@@ -153,14 +153,13 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
         self.assertIn("MR_ARGS+=(--remove-source-branch)", pin_script)
         self.assertIn("进入${ENV_DISPLAY_NAME}待同步状态", pin_script)
 
-    def test_shprod_approval_stage_runs_post_approval_readiness_only_for_shprod(self) -> None:
+    def test_shprod_workflow_avoids_unsupported_stage_check_in(self) -> None:
         workflow = (REPO_ROOT / ".ci/gitops-promotion.yml").read_text()
 
-        self.assertIn("上海生产人工 Sync 审批", workflow)
-        self.assertIn("if: startsWith(ci.branch, 'promote-shprod-')", workflow)
-        self.assertIn("check-in:", workflow)
-        self.assertIn("reviewers:\n              - skipzhang", workflow)
-        self.assertIn("verify_shprod_sync_preflight.py", workflow)
+        self.assertNotIn("check-in:", workflow)
+        self.assertNotIn("上海生产人工 Sync 审批", workflow)
+        self.assertNotIn("人工审批后 DB readiness 只读校验", workflow)
+        self.assertNotIn("校验人工 Argo sync 前 DB readiness", workflow)
         self.assertIn("不执行 migration，不执行 Argo sync", (REPO_ROOT / ".ci/runtime/gitops/shprod_sync_preflight.py").read_text())
 
     def test_shprod_preflight_parses_release_context_trailers(self) -> None:
