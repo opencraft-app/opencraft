@@ -93,22 +93,59 @@ class GitOpsKustomizeValidationTests(unittest.TestCase):
             self.assertIn("--enable-alpha-plugins", args)
             self.assertIn("--enable-exec", args)
 
-    def write_repo(self, repo: Path) -> Path:
-        (repo / "argocd/catalogs/sandbox/beijing-sandbox").mkdir(parents=True)
-        (repo / "argocd/services/demo/beijing-sandbox").mkdir(parents=True)
-        (repo / "argocd/catalogs/sandbox/beijing-sandbox/demo.yaml").write_text(
+    def test_kustomize_validator_loads_sandbox2_catalog_targets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self.write_repo(Path(tmp), env="beijing-sandbox-2")
+            args_file = repo / "args.txt"
+            fake_kustomize = repo / "fake-kustomize"
+            fake_kustomize.write_text(
+                textwrap.dedent(
+                    f"""\
+                    #!/usr/bin/env bash
+                    printf '%s\\n' "$@" > {args_file}
+                    cat <<'YAML'
+                    apiVersion: v1
+                    kind: ConfigMap
+                    metadata:
+                      name: demo
+                    YAML
+                    """
+                )
+            )
+            fake_kustomize.chmod(0o755)
+
+            exit_code = self.run_main(
+                [
+                    "validate_gitops_kustomize.py",
+                    "--repo-root",
+                    str(repo),
+                    "--env",
+                    "beijing-sandbox-2",
+                    "--kustomize-bin",
+                    str(fake_kustomize),
+                ]
+            )
+
+            self.assertEqual(exit_code, 0)
+            args = args_file.read_text().splitlines()
+            self.assertIn("argocd/services/demo/beijing-sandbox-2", args)
+
+    def write_repo(self, repo: Path, env: str = "beijing-sandbox") -> Path:
+        (repo / f"argocd/catalogs/sandbox/{env}").mkdir(parents=True)
+        (repo / f"argocd/services/demo/{env}").mkdir(parents=True)
+        (repo / f"argocd/catalogs/sandbox/{env}/demo.yaml").write_text(
             textwrap.dedent(
-                """\
+                f"""\
                 service: demo
-                env: beijing-sandbox
-                project: beijing-sandbox
-                destinationName: beijing-sandbox
+                env: {env}
+                project: {env}
+                destinationName: {env}
                 namespace: demo
-                sourcePath: argocd/services/demo/beijing-sandbox
+                sourcePath: argocd/services/demo/{env}
                 """
             )
         )
-        (repo / "argocd/services/demo/beijing-sandbox/kustomization.yaml").write_text("kind: Kustomization\n")
+        (repo / f"argocd/services/demo/{env}/kustomization.yaml").write_text("kind: Kustomization\n")
         return repo
 
     def run_main(self, argv: list[str]) -> int:

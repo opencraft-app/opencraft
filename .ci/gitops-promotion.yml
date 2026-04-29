@@ -78,21 +78,29 @@ stages:
                 "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/validate_gitops_kustomize.py" \
                 "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/gitops_kustomize_validation.py"
               case "${{ ci.branch }}" in
+                promote-beijing-sandbox-2-*)
+                  TARGET_ENV=beijing-sandbox-2
+                  ;;
                 promote-beijing-sandbox-*)
-                  ci_require_gitops_validation_tools
-                  ci_prepare_sops_age_key
-                  python3 "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/validate_gitops_static.py" \
-                    --repo-root "$REPO_ROOT" \
-                    --env beijing-sandbox \
-                    --bundle-manifest "${CI_RUNTIME_DIR}/.ci/runtime/release-bundles.yaml"
-                  python3 "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/validate_gitops_kustomize.py" \
-                    --repo-root "$REPO_ROOT" \
-                    --env beijing-sandbox
+                  TARGET_ENV=beijing-sandbox
                   ;;
                 *)
-                  echo "skip Beijing AppSet GitOps validation for ${{ ci.branch }}"
+                  TARGET_ENV=""
                   ;;
               esac
+              if [[ -n "$TARGET_ENV" ]]; then
+                ci_require_gitops_validation_tools
+                ci_prepare_sops_age_key
+                python3 "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/validate_gitops_static.py" \
+                  --repo-root "$REPO_ROOT" \
+                  --env "$TARGET_ENV" \
+                  --bundle-manifest "${CI_RUNTIME_DIR}/.ci/runtime/release-bundles.yaml"
+                python3 "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/validate_gitops_kustomize.py" \
+                  --repo-root "$REPO_ROOT" \
+                  --env "$TARGET_ENV"
+              else
+                echo "skip Beijing AppSet GitOps validation for ${{ ci.branch }}"
+              fi
               echo "gitops promotion check passed"
 
   - name: 自动合并 GitOps MR
@@ -129,7 +137,7 @@ stages:
                 ".ci/runtime/harness_ci/gitops_merge_request.py"
               ci_init_repo_root
               case "${{ ci.branch }}" in
-                promote-beijing-sandbox-*)
+                promote-beijing-sandbox-2-*|promote-beijing-sandbox-*)
                   python3 "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/gitops_merge_request.py" \
                     --source-branch "${{ ci.branch }}" \
                     --target-branch gitops \
@@ -176,7 +184,7 @@ stages:
                 ".ci/runtime/harness_ci/gitops_release_verifier.py"
               ci_init_repo_root
               case "${{ ci.branch }}" in
-                promote-beijing-sandbox-*)
+                promote-beijing-sandbox-2-*|promote-beijing-sandbox-*)
                   python3 "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/verify_gitops_release.py" \
                     --repo-root "$REPO_ROOT" \
                     --source-branch "${{ ci.branch }}" \
@@ -221,7 +229,7 @@ stages:
                 ".ci/runtime/harness_ci/gitops_cleanup_source_branch.py"
               ci_init_repo_root
               case "${{ ci.branch }}" in
-                promote-beijing-sandbox-*)
+                promote-beijing-sandbox-2-*|promote-beijing-sandbox-*)
                   python3 "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/gitops_cleanup_source_branch.py" \
                     --source-branch "${{ ci.branch }}" \
                     --target-branch gitops \

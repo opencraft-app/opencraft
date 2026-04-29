@@ -6,8 +6,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import shlex
 import sys
-from harness_ci.bundles import load_bundle, load_manifest, require_build_metadata
+from harness_ci.bundles import ImageTarget, load_bundle, load_manifest, require_build_metadata
 
 
 def parse_args() -> argparse.Namespace:
@@ -24,16 +25,67 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def emit_dotenv(metadata: dict[str, object], tag: str) -> str:
-    image = f"{metadata['image_repo']}:{tag}"
+def shell_line(key: str, value: object) -> str:
+    return f"{key}={shlex.quote(str(value))}"
+
+
+def single_target(service: str, dockerfile: str, build_context: str, image_repo: str) -> ImageTarget:
+    return ImageTarget(
+        name=service,
+        image_key=None,
+        dockerfile=dockerfile,
+        build_context=build_context,
+        image_repo=image_repo,
+    )
+
+
+def target_image_key(service: str, target: ImageTarget) -> str:
+    return target.image_key or f"{service.upper().replace('-', '_')}_IMAGE"
+
+
+def build_metadata(bundle, tag: str) -> dict[str, object]:
+    targets = bundle.image_targets or [
+        single_target(bundle.service, bundle.dockerfile or "", bundle.build_context or "", bundle.image_repo or "")
+    ]
+    image_repos = {target_image_key(bundle.service, target): target.image_repo for target in targets}
+    images = {key: f"{repo}:{tag}" for key, repo in image_repos.items()}
+    first_target = targets[0]
+    first_key = target_image_key(bundle.service, first_target)
+    return {
+        "service": bundle.service,
+        "env": bundle.env,
+        "dockerfile": first_target.dockerfile,
+        "build_context": first_target.build_context,
+        "image_repo": first_target.image_repo,
+        "image_repos": image_repos,
+        "image_targets": [
+            {
+                "name": target.name,
+                "image_key": target_image_key(bundle.service, target),
+                "dockerfile": target.dockerfile,
+                "build_context": target.build_context,
+                "image_repo": target.image_repo,
+                "image": images[target_image_key(bundle.service, target)],
+            }
+            for target in targets
+        ],
+        "publish_paths": bundle.publish_paths,
+        "tag": tag,
+        "image": images[first_key] if len(images) == 1 and not bundle.image_targets else json.dumps({"images": images}, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+        "images": images,
+    }
+
+
+def emit_dotenv(metadata: dict[str, object]) -> str:
     lines = [
-        f"BUILD_SERVICE={metadata['service']}",
-        f"BUILD_ENV={metadata['env']}",
-        f"BUILD_TAG={tag}",
-        f"BUILD_DOCKERFILE={metadata['dockerfile']}",
-        f"BUILD_CONTEXT={metadata['build_context']}",
-        f"BUILD_IMAGE_REPO={metadata['image_repo']}",
-        f"BUILD_IMAGE={image}",
+        shell_line("BUILD_SERVICE", metadata["service"]),
+        shell_line("BUILD_ENV", metadata["env"]),
+        shell_line("BUILD_TAG", metadata["tag"]),
+        shell_line("BUILD_DOCKERFILE", metadata["dockerfile"]),
+        shell_line("BUILD_CONTEXT", metadata["build_context"]),
+        shell_line("BUILD_IMAGE_REPO", metadata["image_repo"]),
+        shell_line("BUILD_IMAGE", metadata["image"]),
+        shell_line("BUILD_IMAGES_JSON", json.dumps({"images": metadata["images"]}, ensure_ascii=False, sort_keys=True, separators=(",", ":"))),
     ]
     return "\n".join(lines) + "\n"
 
@@ -47,18 +99,9 @@ def main() -> int:
         print(str(exc), file=sys.stderr)
         return 1
 
-    result = {
-        "service": bundle.service,
-        "env": bundle.env,
-        "dockerfile": bundle.dockerfile,
-        "build_context": bundle.build_context,
-        "image_repo": bundle.image_repo,
-        "publish_paths": bundle.publish_paths,
-        "tag": args.tag,
-        "image": f"{bundle.image_repo}:{args.tag}",
-    }
+    result = build_metadata(bundle, args.tag)
     if args.format == "json":
         print(json.dumps(result, indent=2, sort_keys=True))
     else:
-        print(emit_dotenv(result, args.tag), end="")
+        print(emit_dotenv(result), end="")
     return 0

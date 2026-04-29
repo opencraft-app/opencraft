@@ -6,17 +6,17 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import subprocess
 import sys
 from pathlib import Path
 
-import yaml
+from harness_ci.bundles import ImageTarget, load_bundle, load_manifest, require_build_metadata
 
 
 RUNTIME_DIR = Path(__file__).resolve().parents[1]
 REPO_ROOT = RUNTIME_DIR.parents[1]
-DEFAULT_MANIFEST_PATH = RUNTIME_DIR / "release-bundles.yaml"
 
 
 def parse_args() -> argparse.Namespace:
@@ -28,10 +28,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--push", action="store_true", help="Push after successful build")
     parser.add_argument("--image-output-file", help="Optional file path to receive the built image ref")
     return parser.parse_args()
-
-
-def load_manifest() -> dict:
-    return yaml.safe_load(DEFAULT_MANIFEST_PATH.read_text()) or {}
 
 
 def docker_login(image_repo: str) -> None:
@@ -73,40 +69,60 @@ def docker_login(image_repo: str) -> None:
         raise
 
 
-def main() -> int:
-    args = parse_args()
-    data = load_manifest()
-    bundles = data.get("bundles") or {}
-    bundle = bundles.get(args.service)
-    if not bundle:
-        print(f"unknown release bundle: {args.service}", file=sys.stderr)
-        return 1
+def single_target_from_bundle(service: str, dockerfile: str, build_context: str, image_repo: str) -> ImageTarget:
+    return ImageTarget(
+        name=service,
+        image_key=None,
+        dockerfile=dockerfile,
+        build_context=build_context,
+        image_repo=image_repo,
+    )
 
-    dockerfile = bundle.get("dockerfile")
-    build_context = bundle.get("build_context")
-    image_repo = (bundle.get("image_repo") or {}).get(args.env)
-    if not dockerfile or not build_context or not image_repo:
-        print(f"bundle {args.service} does not define docker build inputs for env {args.env}", file=sys.stderr)
-        return 1
 
-    image = f"{image_repo}:{args.tag}"
+def build_target(target: ImageTarget, tag: str, platform: str, push: bool) -> str:
+    image = f"{target.image_repo}:{tag}"
     cmd = [
         "docker",
         "build",
         "--platform",
-        args.platform,
+        platform,
         "-f",
-        dockerfile,
+        target.dockerfile,
         "-t",
         image,
-        build_context,
+        target.build_context,
     ]
     subprocess.run(cmd, cwd=REPO_ROOT, check=True)
-    if args.push:
-        docker_login(image_repo)
+    if push:
+        docker_login(target.image_repo)
         subprocess.run(["docker", "push", image], check=True)
+    return image
+
+
+def encode_image_payload(images: dict[str, str]) -> str:
+    return json.dumps({"images": images}, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def main() -> int:
+    args = parse_args()
+    try:
+        bundle = require_build_metadata(load_bundle(load_manifest(), args.service, args.env))
+    except (KeyError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+
+    targets = bundle.image_targets or [
+        single_target_from_bundle(args.service, bundle.dockerfile or "", bundle.build_context or "", bundle.image_repo or "")
+    ]
+
+    built: dict[str, str] = {}
+    for target in targets:
+        image = build_target(target, args.tag, args.platform, args.push)
+        built[target.image_key or f"{args.service.upper().replace('-', '_')}_IMAGE"] = image
+
+    output = next(iter(built.values())) if len(built) == 1 and not bundle.image_targets else encode_image_payload(built)
     if args.image_output_file:
-        Path(args.image_output_file).write_text(f"{image}\n")
+        Path(args.image_output_file).write_text(f"{output}\n")
     else:
-        print(image)
+        print(output)
     return 0

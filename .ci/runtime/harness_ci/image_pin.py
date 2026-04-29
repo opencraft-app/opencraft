@@ -3,9 +3,11 @@ Update deploy-facing image pin files under argocd/services/<service>/<env>.
 """
 
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
+from typing import Any
 
 
 def parse_args() -> argparse.Namespace:
@@ -13,7 +15,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--repo-root", default=".", help="Repository root containing argocd/")
     parser.add_argument("--service", required=True, help="Service directory under argocd/services/")
     parser.add_argument("--env", required=True, help="Target env")
-    parser.add_argument("--image", required=True, help="Pinned image reference")
+    parser.add_argument("--image", required=True, help="Pinned image reference or JSON payload with images mapping")
     parser.add_argument("--deployed-at", required=True, help="Deploy timestamp, typically CI_JOB_STARTED_AT")
     return parser.parse_args()
 
@@ -43,19 +45,39 @@ def upsert_env_line(content: str, key: str, value: str) -> str:
     return f"{content}{suffix}{line}\n"
 
 
+def parse_image_payload(raw_image: str, platform_env: Path) -> dict[str, str]:
+    raw = raw_image.strip()
+    if raw.startswith("{"):
+        payload: Any = json.loads(raw)
+        images = payload.get("images") if isinstance(payload, dict) else None
+        if not isinstance(images, dict) or not images:
+            raise ValueError("image JSON payload must contain a non-empty images object")
+        return {str(key): str(value) for key, value in images.items()}
+
+    prefix = key_prefix_from_path(platform_env)
+    return {f"{prefix}_IMAGE": raw_image}
+
+
+def deployed_at_key_for_image_key(image_key: str) -> str:
+    if image_key.endswith("_IMAGE"):
+        return f"{image_key[:-6]}_DEPLOYED_AT"
+    return f"{image_key}_DEPLOYED_AT"
+
+
 def main() -> int:
     args = parse_args()
     repo_root = Path(args.repo_root).resolve()
     try:
         platform_env = resolve_platform_env(repo_root, args.service, args.env)
-    except FileNotFoundError as exc:
+        images = parse_image_payload(args.image, platform_env)
+    except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
         print(str(exc), file=sys.stderr)
         return 1
 
-    prefix = key_prefix_from_path(platform_env)
     content = platform_env.read_text()
-    content = upsert_env_line(content, f"{prefix}_IMAGE", args.image)
-    content = upsert_env_line(content, f"{prefix}_DEPLOYED_AT", args.deployed_at)
+    for image_key, image in images.items():
+        content = upsert_env_line(content, image_key, image)
+        content = upsert_env_line(content, deployed_at_key_for_image_key(image_key), args.deployed_at)
     platform_env.write_text(content)
     print(platform_env)
     return 0

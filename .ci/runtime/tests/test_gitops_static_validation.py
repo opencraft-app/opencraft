@@ -25,6 +25,67 @@ class GitOpsStaticValidationTests(unittest.TestCase):
 
             self.assertEqual(errors, [])
 
+    def test_valid_beijing_sandbox2_catalog_and_publish_closure_passes(self) -> None:
+        with self.repo() as tmp:
+            repo = self.write_valid_repo(tmp, env="beijing-sandbox-2")
+
+            errors = validate(
+                repo,
+                "beijing-sandbox-2",
+                repo / ".ci/runtime/release-bundles.yaml",
+            )
+
+            self.assertEqual(errors, [])
+
+    def test_explicit_catalog_publish_exemption_passes(self) -> None:
+        with self.repo() as tmp:
+            repo = self.write_valid_repo(tmp, env="beijing-sandbox-2")
+            (repo / ".ci/runtime/release-bundles.yaml").write_text(
+                textwrap.dedent(
+                    """\
+                    bundles:
+                      demo:
+                        owner: demo
+                        source: demo
+                        reason: demo
+                        allowed_paths:
+                          - demo/k8s/base
+                        exit_condition: never
+                        publish_paths_by_env: {}
+                    catalog_publish_exemptions_by_env:
+                      beijing-sandbox-2:
+                        argocd/catalogs/sandbox/beijing-sandbox-2/demo.yaml: demo is deploy-only until its image contract is defined.
+                    """
+                )
+            )
+
+            errors = validate(repo, "beijing-sandbox-2", repo / ".ci/runtime/release-bundles.yaml")
+
+            self.assertEqual(errors, [])
+
+    def test_missing_catalog_publish_exemption_fails(self) -> None:
+        with self.repo() as tmp:
+            repo = self.write_valid_repo(tmp, env="beijing-sandbox-2")
+            (repo / ".ci/runtime/release-bundles.yaml").write_text(
+                textwrap.dedent(
+                    """\
+                    bundles:
+                      demo:
+                        owner: demo
+                        source: demo
+                        reason: demo
+                        allowed_paths:
+                          - demo/k8s/base
+                        exit_condition: never
+                        publish_paths_by_env: {}
+                    """
+                )
+            )
+
+            errors = validate(repo, "beijing-sandbox-2", repo / ".ci/runtime/release-bundles.yaml")
+
+            self.assertTrue(any("catalog is not covered" in error for error in errors))
+
     def test_appset_reserved_path_template_fails(self) -> None:
         with self.repo() as tmp:
             repo = self.write_valid_repo(tmp)
@@ -92,19 +153,19 @@ class GitOpsStaticValidationTests(unittest.TestCase):
     def repo(self) -> tempfile.TemporaryDirectory[str]:
         return tempfile.TemporaryDirectory()
 
-    def write_valid_repo(self, raw_repo: str | Path) -> Path:
+    def write_valid_repo(self, raw_repo: str | Path, env: str = "beijing-sandbox") -> Path:
         repo = Path(raw_repo)
         (repo / ".ci/runtime").mkdir(parents=True)
         (repo / "argocd/apps/beijing-sandbox").mkdir(parents=True)
-        (repo / "argocd/catalogs/sandbox/beijing-sandbox").mkdir(parents=True)
-        (repo / "argocd/services/demo/beijing-sandbox").mkdir(parents=True)
+        (repo / f"argocd/catalogs/sandbox/{env}").mkdir(parents=True)
+        (repo / f"argocd/services/demo/{env}").mkdir(parents=True)
         (repo / "argocd/services/demo/common").mkdir(parents=True)
         (repo / "argocd/services/demo/profiles/sandbox").mkdir(parents=True)
-        (repo / "argocd/secrets/beijing-sandbox").mkdir(parents=True)
+        (repo / f"argocd/secrets/{env}").mkdir(parents=True)
 
         (repo / ".ci/runtime/release-bundles.yaml").write_text(
             textwrap.dedent(
-                """\
+                f"""\
                 bundles:
                   demo:
                     owner: demo
@@ -117,13 +178,13 @@ class GitOpsStaticValidationTests(unittest.TestCase):
                       - argocd/services/demo/{env}/**
                       - argocd/apps/{env}/demo.yaml
                     publish_paths_by_env:
-                      beijing-sandbox:
-                        - argocd/services/demo/beijing-sandbox/**
+                      {env}:
+                        - argocd/services/demo/{env}/**
                         - argocd/services/demo/common/**
                         - argocd/services/demo/profiles/sandbox/**
                         - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
-                        - argocd/catalogs/sandbox/beijing-sandbox/demo.yaml
-                        - argocd/secrets/beijing-sandbox/demo.sops.yaml
+                        - argocd/catalogs/sandbox/{env}/demo.yaml
+                        - argocd/secrets/{env}/demo.sops.yaml
                 """
             )
         )
@@ -131,19 +192,19 @@ class GitOpsStaticValidationTests(unittest.TestCase):
             self.appset_text("{{ .sourcePath }}")
         )
         (repo / "argocd/apps/beijing-sandbox/argocd-runtime.yaml").write_text("kind: Application\n")
-        (repo / "argocd/catalogs/sandbox/beijing-sandbox/demo.yaml").write_text(
+        (repo / f"argocd/catalogs/sandbox/{env}/demo.yaml").write_text(
             textwrap.dedent(
-                """\
+                f"""\
                 service: demo
-                env: beijing-sandbox
-                project: beijing-sandbox
-                destinationName: beijing-sandbox
+                env: {env}
+                project: {env}
+                destinationName: {env}
                 namespace: demo
-                sourcePath: argocd/services/demo/beijing-sandbox
+                sourcePath: argocd/services/demo/{env}
                 """
             )
         )
-        (repo / "argocd/services/demo/beijing-sandbox/kustomization.yaml").write_text(
+        (repo / f"argocd/services/demo/{env}/kustomization.yaml").write_text(
             textwrap.dedent(
                 """\
                 apiVersion: kustomize.config.k8s.io/v1beta1
@@ -156,13 +217,13 @@ class GitOpsStaticValidationTests(unittest.TestCase):
                 """
             )
         )
-        (repo / "argocd/services/demo/beijing-sandbox/ksops-secret-generator.yaml").write_text(
+        (repo / f"argocd/services/demo/{env}/ksops-secret-generator.yaml").write_text(
             textwrap.dedent(
-                """\
+                f"""\
                 apiVersion: viaduct.ai/v1
                 kind: ksops
                 files:
-                  - ../../../secrets/beijing-sandbox/demo.sops.yaml
+                  - ../../../secrets/{env}/demo.sops.yaml
                 """
             )
         )
@@ -172,7 +233,7 @@ class GitOpsStaticValidationTests(unittest.TestCase):
         (repo / "argocd/services/demo/profiles/sandbox/kustomization.yaml").write_text(
             "apiVersion: kustomize.config.k8s.io/v1alpha1\nkind: Component\n"
         )
-        (repo / "argocd/secrets/beijing-sandbox/demo.sops.yaml").write_text("apiVersion: v1\nkind: Secret\n")
+        (repo / f"argocd/secrets/{env}/demo.sops.yaml").write_text("apiVersion: v1\nkind: Secret\n")
         return repo
 
     def appset_text(self, source_path_template: str) -> str:

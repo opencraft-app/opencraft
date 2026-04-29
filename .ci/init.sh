@@ -445,6 +445,7 @@ ci_load_git_woa_private_token() {
 ci_load_registry_password() {
   local env_name="$1"
   local beijing_file="${TCR_BEIJING_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_beijing_password}"
+  local beijing2_file="${TCR_BEIJING_SANDBOX2_PASSWORD_FILE:-${TCR_BEIJING_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_beijing_password}}"
   local shprod_file="${TCR_SHPROD_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_shprod_password}"
   local password_var=""
   local password_file=""
@@ -453,6 +454,10 @@ ci_load_registry_password() {
     beijing-sandbox)
       password_var="${TCR_BEIJING_PASSWORD:-}"
       password_file="$beijing_file"
+      ;;
+    beijing-sandbox-2)
+      password_var="${TCR_BEIJING_SANDBOX2_PASSWORD:-${TCR_BEIJING_PASSWORD:-}}"
+      password_file="$beijing2_file"
       ;;
     shprod)
       password_var="${TCR_SHPROD_PASSWORD:-}"
@@ -479,6 +484,7 @@ ci_load_registry_password() {
 ci_set_registry_credentials() {
   local env_name="$1"
   local beijing_file="${TCR_BEIJING_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_beijing_password}"
+  local beijing2_file="${TCR_BEIJING_SANDBOX2_PASSWORD_FILE:-${TCR_BEIJING_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_beijing_password}}"
   local shprod_file="${TCR_SHPROD_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_shprod_password}"
   local tcr_username="${TCR_USERNAME:-100045199955}"
   local raw_password=""
@@ -493,6 +499,15 @@ ci_set_registry_credentials() {
       beijing-sandbox)
         if [[ -r "$beijing_file" ]]; then
           source="file:$beijing_file"
+        else
+          source="env:TCR_BEIJING_PASSWORD"
+        fi
+        ;;
+      beijing-sandbox-2)
+        if [[ -r "$beijing2_file" ]]; then
+          source="file:$beijing2_file"
+        elif [[ -n "${TCR_BEIJING_SANDBOX2_PASSWORD:-}" ]]; then
+          source="env:TCR_BEIJING_SANDBOX2_PASSWORD"
         else
           source="env:TCR_BEIJING_PASSWORD"
         fi

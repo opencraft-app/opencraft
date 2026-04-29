@@ -21,7 +21,8 @@ from harness_ci.bundles import load_bundle, load_manifest  # noqa: E402
 
 APPSET_REL = "argocd/apps/beijing-sandbox/sandbox-family-appset.yaml"
 APPS_DIR_REL = "argocd/apps/beijing-sandbox"
-CATALOG_DIR_REL = "argocd/catalogs/sandbox/beijing-sandbox"
+CATALOG_DIR_TEMPLATE = "argocd/catalogs/sandbox/{env}"
+SUPPORTED_SANDBOX_ENVS = {"beijing-sandbox", "beijing-sandbox-2"}
 ALLOWED_BEIJING_APP_FILES = {"argocd-runtime.yaml", "sandbox-family-appset.yaml"}
 REQUIRED_CATALOG_FIELDS = {
     "service",
@@ -71,12 +72,17 @@ def path_is_covered(candidate: str, patterns: Iterable[str]) -> bool:
     return False
 
 
+def catalog_dir_rel(env: str) -> str:
+    return CATALOG_DIR_TEMPLATE.format(env=env)
+
+
 def load_catalogs(repo_root: Path, env: str) -> tuple[list[CatalogEntry], list[str]]:
     errors: list[str] = []
-    catalog_dir = repo_root / CATALOG_DIR_REL
+    catalog_rel = catalog_dir_rel(env)
+    catalog_dir = repo_root / catalog_rel
     entries: list[CatalogEntry] = []
     if not catalog_dir.is_dir():
-        return entries, [f"missing catalog directory: {CATALOG_DIR_REL}"]
+        return entries, [f"missing catalog directory: {catalog_rel}"]
 
     for catalog_file in sorted(catalog_dir.glob("*.yaml")):
         rel_file = repo_rel(catalog_file, repo_root)
@@ -114,7 +120,7 @@ def load_catalogs(repo_root: Path, env: str) -> tuple[list[CatalogEntry], list[s
         )
 
     if not entries:
-        errors.append(f"no catalog files found under {CATALOG_DIR_REL}")
+        errors.append(f"no catalog files found under {catalog_rel}")
     return entries, errors
 
 
@@ -214,6 +220,22 @@ def env_publish_paths(manifest: dict[str, Any], env: str) -> dict[str, list[str]
     return paths_by_bundle
 
 
+def env_catalog_exemptions(manifest: dict[str, Any], env: str) -> dict[str, str]:
+    raw_by_env = manifest.get("catalog_publish_exemptions_by_env") or {}
+    raw_exemptions = raw_by_env.get(env) or {}
+    if not isinstance(raw_exemptions, dict):
+        raise ValueError(f"catalog_publish_exemptions_by_env.{env} must be a YAML mapping")
+
+    exemptions: dict[str, str] = {}
+    for raw_path, raw_reason in raw_exemptions.items():
+        catalog_path = str(raw_path).strip().strip("/")
+        reason = str(raw_reason).strip()
+        if not catalog_path or not reason:
+            raise ValueError(f"catalog publish exemption for {env} must define catalog path and reason")
+        exemptions[catalog_path] = reason
+    return exemptions
+
+
 def validate_publish_closure(
     repo_root: Path,
     manifest_path: Path,
@@ -226,18 +248,26 @@ def validate_publish_closure(
 
     manifest = load_manifest(manifest_path)
     paths_by_bundle = env_publish_paths(manifest, env)
+    try:
+        catalog_exemptions = env_catalog_exemptions(manifest, env)
+    except ValueError as exc:
+        return [str(exc)]
+
     catalog_by_rel = {entry.rel_file: entry for entry in catalogs}
     expected_catalogs = {
         path
         for paths in paths_by_bundle.values()
         for path in paths
-        if path.startswith(f"{CATALOG_DIR_REL}/") and path.endswith(".yaml")
+        if path.startswith(f"{catalog_dir_rel(env)}/") and path.endswith(".yaml")
     }
+    exempt_catalogs = set(catalog_exemptions)
 
     actual_catalogs = set(catalog_by_rel)
     for missing in sorted(expected_catalogs - actual_catalogs):
         errors.append(f"release bundle references missing catalog: {missing}")
-    for extra in sorted(actual_catalogs - expected_catalogs):
+    for missing_exemption in sorted(exempt_catalogs - actual_catalogs):
+        errors.append(f"catalog publish exemption references missing catalog: {missing_exemption}")
+    for extra in sorted(actual_catalogs - expected_catalogs - exempt_catalogs):
         errors.append(f"{extra}: catalog is not covered by any {env} release bundle publish_paths_by_env")
 
     for bundle_name, paths in paths_by_bundle.items():
@@ -267,7 +297,7 @@ def validate_publish_closure(
 
 
 def validate(repo_root: Path, env: str, bundle_manifest: Path) -> list[str]:
-    if env != "beijing-sandbox":
+    if env not in SUPPORTED_SANDBOX_ENVS:
         return [f"unsupported env for AppSet static validation: {env}"]
 
     catalogs, catalog_errors = load_catalogs(repo_root, env)

@@ -16,6 +16,15 @@ DEFAULT_MANIFEST_PATH = RUNTIME_DIR / "release-bundles.yaml"
 
 
 @dataclass(frozen=True)
+class ImageTarget:
+    name: str
+    image_key: str | None
+    dockerfile: str
+    build_context: str
+    image_repo: str
+
+
+@dataclass(frozen=True)
 class ReleaseBundle:
     service: str
     env: str
@@ -28,6 +37,7 @@ class ReleaseBundle:
     build_context: str | None
     image_repo: str | None
     publish_paths: list[str]
+    image_targets: list[ImageTarget]
 
 
 def parse_manifest_text(text: str) -> dict[str, Any]:
@@ -56,10 +66,13 @@ def load_bundle(manifest: dict[str, Any], service: str, env: str) -> ReleaseBund
         build_context=_optional_str(bundle.get("build_context")),
         image_repo=_optional_str((bundle.get("image_repo") or {}).get(env)),
         publish_paths=_resolve_publish_paths(bundle, env),
+        image_targets=_resolve_image_targets(bundle, env),
     )
 
 
 def require_build_metadata(bundle: ReleaseBundle) -> ReleaseBundle:
+    if bundle.image_targets:
+        return bundle
     if not bundle.dockerfile or not bundle.build_context or not bundle.image_repo:
         raise ValueError(f"bundle {bundle.service} does not define docker build inputs for env {bundle.env}")
     return bundle
@@ -85,3 +98,37 @@ def _resolve_publish_paths(bundle: dict[str, Any], env: str) -> list[str]:
             resolved.append(path)
     return resolved
 
+
+def _resolve_image_targets(bundle: dict[str, Any], env: str) -> list[ImageTarget]:
+    raw_targets = bundle.get("image_targets") or []
+    targets: list[ImageTarget] = []
+    for raw in raw_targets:
+        if not isinstance(raw, dict):
+            raise ValueError("image_targets entries must be YAML mappings")
+
+        raw_image_repo = raw.get("image_repo") or {}
+        if not isinstance(raw_image_repo, dict):
+            raise ValueError("image target image_repo must be a YAML mapping")
+        if env not in raw_image_repo:
+            continue
+
+        name = str(raw.get("name") or raw.get("image_key") or raw.get("dockerfile") or "")
+        image_key = _optional_str(raw.get("image_key"))
+        image_repo = _optional_str(raw_image_repo.get(env))
+        dockerfile = _optional_str(raw.get("dockerfile"))
+        build_context = _optional_str(raw.get("build_context"))
+        if not image_repo or not dockerfile or not build_context or not image_key:
+            raise ValueError(
+                f"image target {name or '<unnamed>'} does not define image_key, dockerfile, "
+                f"build_context, and image_repo for env {env}"
+            )
+        targets.append(
+            ImageTarget(
+                name=name,
+                image_key=image_key,
+                dockerfile=dockerfile,
+                build_context=build_context,
+                image_repo=image_repo,
+            )
+        )
+    return targets

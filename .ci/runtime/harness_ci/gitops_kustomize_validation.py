@@ -16,7 +16,8 @@ from typing import Any
 import yaml
 
 
-CATALOG_DIR_REL = "argocd/catalogs/sandbox/beijing-sandbox"
+CATALOG_DIR_TEMPLATE = "argocd/catalogs/sandbox/{env}"
+SUPPORTED_SANDBOX_ENVS = {"beijing-sandbox", "beijing-sandbox-2"}
 PLACEHOLDER_RE = re.compile(r"\bREPLACE_[A-Z0-9_]+\b")
 
 
@@ -34,12 +35,13 @@ def load_yaml(path: Path) -> dict[str, Any]:
 
 
 def load_targets(repo_root: Path, env: str) -> list[KustomizeTarget]:
-    if env != "beijing-sandbox":
+    if env not in SUPPORTED_SANDBOX_ENVS:
         raise ValueError(f"unsupported env for strict kustomize validation: {env}")
 
-    catalog_dir = repo_root / CATALOG_DIR_REL
+    catalog_dir_rel = CATALOG_DIR_TEMPLATE.format(env=env)
+    catalog_dir = repo_root / catalog_dir_rel
     if not catalog_dir.is_dir():
-        raise ValueError(f"missing catalog directory: {CATALOG_DIR_REL}")
+        raise ValueError(f"missing catalog directory: {catalog_dir_rel}")
 
     targets: list[KustomizeTarget] = []
     for catalog_file in sorted(catalog_dir.glob("*.yaml")):
@@ -53,7 +55,7 @@ def load_targets(repo_root: Path, env: str) -> list[KustomizeTarget]:
             raise ValueError(f"{catalog_file}: missing kustomization.yaml under {source_path}")
         targets.append(KustomizeTarget(app_name=f"{service}-{env}", source_path=source_path))
     if not targets:
-        raise ValueError(f"no catalog files found under {CATALOG_DIR_REL}")
+        raise ValueError(f"no catalog files found under {catalog_dir_rel}")
     return targets
 
 
