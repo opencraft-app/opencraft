@@ -46,6 +46,10 @@ ci_arch_name() {
   esac
 }
 
+ci_is_unexpanded_setting() {
+  [[ "$1" == *'${{'*'settings.'*'}}'* ]]
+}
+
 ci_gitops_remote_url() {
   if [[ -n "${GITOPS_REMOTE_URL:-}" ]]; then
     printf '%s\n' "$GITOPS_REMOTE_URL"
@@ -207,13 +211,26 @@ ci_install_ksops() {
 ci_prepare_sops_age_key() {
   local default_key_file="/etc/lightclaw-ci/sops-age.keys.txt"
   local temp_key_file=""
+  local env_key_file="${SOPS_AGE_KEY_FILE:-}"
+  local env_key="${SOPS_AGE_KEY:-}"
 
-  if [[ -n "${SOPS_AGE_KEY_FILE:-}" ]]; then
-    if [[ ! -r "$SOPS_AGE_KEY_FILE" ]]; then
-      echo "SOPS_AGE_KEY_FILE is set but not readable: $SOPS_AGE_KEY_FILE" >&2
+  if ci_is_unexpanded_setting "$env_key_file"; then
+    ci_log "SOPS_AGE_KEY_FILE contains an unexpanded CI settings placeholder; ignoring it"
+    env_key_file=""
+    unset SOPS_AGE_KEY_FILE
+  fi
+  if ci_is_unexpanded_setting "$env_key"; then
+    ci_log "SOPS_AGE_KEY contains an unexpanded CI settings placeholder; ignoring it"
+    env_key=""
+    unset SOPS_AGE_KEY
+  fi
+
+  if [[ -n "$env_key_file" ]]; then
+    if [[ ! -r "$env_key_file" ]]; then
+      echo "SOPS_AGE_KEY_FILE is set but not readable: $env_key_file" >&2
       return 1
     fi
-    export SOPS_AGE_KEY_FILE
+    export SOPS_AGE_KEY_FILE="$env_key_file"
     ci_log "sops age key file selected from env:SOPS_AGE_KEY_FILE path=${SOPS_AGE_KEY_FILE}"
     return 0
   fi
@@ -224,10 +241,10 @@ ci_prepare_sops_age_key() {
     return 0
   fi
 
-  if [[ -n "${SOPS_AGE_KEY:-}" ]]; then
+  if [[ -n "$env_key" ]]; then
     temp_key_file="$(mktemp "${TMPDIR:-/tmp}/lightclaw-sops-age.XXXXXX")"
     chmod 600 "$temp_key_file"
-    printf '%s\n' "$SOPS_AGE_KEY" > "$temp_key_file"
+    printf '%s\n' "$env_key" > "$temp_key_file"
     export SOPS_AGE_KEY_FILE="$temp_key_file"
     export CI_SOPS_AGE_KEY_TEMP_FILE="$temp_key_file"
     ci_log "sops age key file created from env:SOPS_AGE_KEY path=${SOPS_AGE_KEY_FILE}"
