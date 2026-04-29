@@ -28,6 +28,25 @@ type ZhToKeyMap = Record<string, string>;
 
 const zhToKeyMap = zhToKey as ZhToKeyMap;
 
+/**
+ * 本地插值：对 "{{name}}" 形式的占位符做简单字符串替换。
+ * 专供「字典未命中」的兜底分支使用，避免把 `{{n}}` 这类占位符
+ * 原样输出到用户界面（i18next.t 不会处理未命中 key 的插值）。
+ *
+ * - 仅支持 {{ 变量名 }} 语法（允许变量名两侧有空格）
+ * - options 中缺失的变量保持原样，方便开发期暴露问题
+ */
+const interpolate = (zh: string, options?: Record<string, unknown>): string => {
+  if (!options) return zh;
+  return zh.replace(/\{\{\s*([\w$]+)\s*\}\}/g, (raw, name: string) => {
+    if (Object.prototype.hasOwnProperty.call(options, name)) {
+      const v = options[name];
+      return v === undefined || v === null ? "" : String(v);
+    }
+    return raw;
+  });
+};
+
 /** 开发期对未收录中文的告警（同一条只告警一次，避免刷屏） */
 const warnedMissing = new Set<string>();
 const warnMissing = (zh: string): void => {
@@ -55,8 +74,8 @@ export const useT = (): ((zh: string, options?: Record<string, unknown>) => stri
     const key = zhToKeyMap[zh];
     if (!key) {
       warnMissing(zh);
-      /* 兜底：没有对应 hash 就直接返回中文，避免白屏 */
-      return zh;
+      /* 兜底：没有对应 hash 就直接返回中文（并做一次本地插值），避免 {{x}} 裸露 */
+      return interpolate(zh, options);
     }
     /* defaultValue 设为中文原文，key 在字典缺失时也能回落中文 */
     return rawT(key, { defaultValue: zh, ...(options ?? {}) });
@@ -74,7 +93,7 @@ export const t = (zh: string, options?: Record<string, unknown>): string => {
   const key = zhToKeyMap[zh];
   if (!key) {
     warnMissing(zh);
-    return zh;
+    return interpolate(zh, options);
   }
   return i18n.t(key, { defaultValue: zh, ...(options ?? {}) });
 };
