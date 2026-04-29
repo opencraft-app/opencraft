@@ -33,6 +33,9 @@ import { useOpenClaw } from "@/contexts/openclaw-context";
 import { useRepositories } from "@/contexts/repository-context";
 import type { BotTerminalSession } from "@/domain/types";
 import { BrandMark } from "@/components/site/brand-mark";
+import { LanguageSwitcher } from "@/components/site/language-switcher";
+import { useT, t as rawT } from "@/i18n/t";
+import { isGlobal } from "@/lib/region";
 import { avatarImageUrl } from "@/lib/avatar-image";
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
 import { readStoredAuthToken } from "@/repositories/http-repositories";
@@ -70,44 +73,50 @@ interface Persona {
 
 /* ─── Data ─── */
 
-const personas: Persona[] = [
-  {
-    id: "jarvis",
-    name: "贾维斯",
-    nameEn: "Jarvis",
-    desc: "冷静理性的全能AI管家，高效精准地完成每一项任务",
-    icon: "🤖",
-    skills: [
-      { name: "Task Schedule", desc: "智能日程管理与任务调度，自动规划每日待办并发送提醒", icon: <Calendar className="h-5 w-5" /> },
-      { name: "Email Assistant", desc: "邮件智能撰写，分类归档与定时发送", icon: <Mail className="h-5 w-5" /> },
-      { name: "Data Pipeline", desc: "ETL 数据管道自动化，多源数据聚合清洗与报表生成", icon: <Database className="h-5 w-5" /> },
-    ],
-  },
-  {
-    id: "luna",
-    name: "露娜",
-    nameEn: "Luna",
-    desc: "温柔体贴的月光精灵，用温柔话语治愈你的每一天",
-    icon: "🌙",
-    skills: [
-      { name: "Task Schedule", desc: "智能日程管理与任务调度，自动规划每日待办并发送提醒", icon: <Calendar className="h-5 w-5" /> },
-      { name: "Email Assistant", desc: "邮件智能撰写，分类归档与定时发送", icon: <Mail className="h-5 w-5" /> },
-      { name: "Data Pipeline", desc: "ETL 数据管道自动化，多源数据聚合清洗与报表生成", icon: <Database className="h-5 w-5" /> },
-    ],
-  },
-  {
-    id: "spark",
-    name: "火花",
-    nameEn: "Spark",
-    desc: "充满激情的创意伙伴，总能带来意想不到的灵感碰撞",
-    icon: "🔥",
-    skills: [
-      { name: "Task Schedule", desc: "智能日程管理与任务调度，自动规划每日待办并发送提醒", icon: <Calendar className="h-5 w-5" /> },
-      { name: "Email Assistant", desc: "邮件智能撰写，分类归档与定时发送", icon: <Mail className="h-5 w-5" /> },
-      { name: "Data Pipeline", desc: "ETL 数据管道自动化，多源数据聚合清洗与报表生成", icon: <Database className="h-5 w-5" /> },
-    ],
-  },
-];
+// 工厂函数：在调用时才读取 i18n 词条，避免模块加载顺序问题
+function makePersonas(): Persona[] {
+  const taskSchedule = {
+    name: "Task Schedule",
+    desc: rawT("智能日程管理与任务调度，自动规划每日待办并发送提醒"),
+    icon: <Calendar className="h-5 w-5" />,
+  };
+  const emailAssistant = {
+    name: "Email Assistant",
+    desc: rawT("邮件智能撰写，分类归档与定时发送"),
+    icon: <Mail className="h-5 w-5" />,
+  };
+  const dataPipeline = {
+    name: "Data Pipeline",
+    desc: rawT("ETL 数据管道自动化，多源数据聚合清洗与报表生成"),
+    icon: <Database className="h-5 w-5" />,
+  };
+  return [
+    {
+      id: "jarvis",
+      name: rawT("贾维斯"),
+      nameEn: "Jarvis",
+      desc: rawT("冷静理性的全能AI管家，高效精准地完成每一项任务"),
+      icon: "🤖",
+      skills: [taskSchedule, emailAssistant, dataPipeline],
+    },
+    {
+      id: "luna",
+      name: rawT("露娜"),
+      nameEn: "Luna",
+      desc: rawT("温柔体贴的月光精灵，用温柔话语治愈你的每一天"),
+      icon: "🌙",
+      skills: [taskSchedule, emailAssistant, dataPipeline],
+    },
+    {
+      id: "spark",
+      name: rawT("火花"),
+      nameEn: "Spark",
+      desc: rawT("充满激情的创意伙伴，总能带来意想不到的灵感碰撞"),
+      icon: "🔥",
+      skills: [taskSchedule, emailAssistant, dataPipeline],
+    },
+  ];
+}
 
 /* ─── animation variants ─── */
 
@@ -125,18 +134,22 @@ void _staggerContainer;
 /* ─── Navbar ─── */
 
 const SettingsNavbar = () => {
+  const t = useT();
   return (
     <header
       className="fixed inset-x-0 top-0 z-50 border-b border-black/5 bg-white/90 backdrop-blur-[20px]"
     >
       <div className="mx-auto flex h-[60px] items-center justify-between max-w-[1440px] px-6 md:px-[80px]">
         <BrandMark to="/" />
-        <Link
-          to="/"
-          className="inline-flex items-center justify-center h-[36px] px-5 bg-[#F5F5F5] text-black/90 rounded-[100px] border border-[#E6E9EF] shadow-[0_2px_0_rgba(187,187,187,0.05)] hover:bg-black/5 transition-colors font-heading text-sm font-medium"
-        >
-          返回首页
-        </Link>
+        <div className="flex items-center gap-3">
+          {isGlobal && <LanguageSwitcher />}
+          <Link
+            to="/"
+            className="inline-flex items-center justify-center h-[36px] px-5 bg-[#F5F5F5] text-black/90 rounded-[100px] border border-[#E6E9EF] shadow-[0_2px_0_rgba(187,187,187,0.05)] hover:bg-black/5 transition-colors font-heading text-sm font-medium"
+          >
+            {t("返回首页")}
+          </Link>
+        </div>
       </div>
     </header>
   );
@@ -144,8 +157,10 @@ const SettingsNavbar = () => {
 
 /* ─── Section Card Wrapper ─── */
 
-export const _SectionCard = ({ title, icon, headerRight, children }: { title: string; icon: React.ReactNode; headerRight?: React.ReactNode; children: React.ReactNode }) => (
-  <motion.div
+export const _SectionCard = ({ title, icon, headerRight, children }: { title: string; icon: React.ReactNode; headerRight?: React.ReactNode; children: React.ReactNode }) => {
+  if (isGlobal) return null;
+  return (
+    <motion.div
     variants={fadeIn}
     className="overflow-hidden rounded-2xl"
     style={{
@@ -165,11 +180,15 @@ export const _SectionCard = ({ title, icon, headerRight, children }: { title: st
       {children}
     </div>
   </motion.div>
-);
+  );
+}
 
 /* ─── Delete Confirm Dialog ─── */
 
-export const _DeleteConfirmDialog = ({ botName, onConfirm, onCancel }: { botName: string; onConfirm: () => void; onCancel: () => void }) => (
+export const _DeleteConfirmDialog = ({ botName, onConfirm, onCancel }: { botName: string; onConfirm: () => void; onCancel: () => void }) => {
+  if (isGlobal) return null;
+  const t = useT();
+  return (
   <motion.div
     initial={{ opacity: 0 }}
     animate={{ opacity: 1 }}
@@ -190,9 +209,9 @@ export const _DeleteConfirmDialog = ({ botName, onConfirm, onCancel }: { botName
       <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl" style={{ background: "rgba(207,61,76,0.08)" }}>
         <AlertTriangle className="h-6 w-6" style={{ color: "#cf3d4c" }} />
       </div>
-      <h3 className="mb-1.5 text-lg font-bold" style={{ color: "var(--lw-fg)" }}>确认删除</h3>
+      <h3 className="mb-1.5 text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("确认删除")}</h3>
       <p className="mb-6 text-center text-sm leading-relaxed text-[var(--text-secondary)]">
-        确定要删除龙虾 <span className="font-semibold text-[var(--text-primary)]">"{botName}"</span> 吗？此操作不可撤销。
+        {t("确定要删除龙虾 {name} 吗？此操作不可撤销。", { name: `"${botName}"` })}
       </p>
       <div className="flex w-full gap-3">
         <button
@@ -200,23 +219,27 @@ export const _DeleteConfirmDialog = ({ botName, onConfirm, onCancel }: { botName
           className="flex-1 rounded-full border px-4 py-2.5 text-sm font-medium transition-colors hover:bg-[var(--surface-muted)]"
           style={{ borderColor: "rgba(0,0,0,0.08)", color: "#666" }}
         >
-          取消
+          {t("取消")}
         </button>
         <button
           onClick={onConfirm}
           className="flex-1 rounded-full px-4 py-2.5 text-sm font-bold text-white transition-colors hover:opacity-90"
           style={{ background: "#cf3d4c" }}
         >
-          确认删除
+          {t("确认删除")}
         </button>
       </div>
     </motion.div>
   </motion.div>
-);
+  );
+};
 
 /* ─── Limit Reached Dialog ─── */
 
-export const _LimitReachedDialog = ({ maxBots, planName, onClose }: { maxBots: number; planName: string; onClose: () => void }) => (
+export const _LimitReachedDialog = ({ maxBots, planName, onClose }: { maxBots: number; planName: string; onClose: () => void }) => {
+  if (isGlobal) return null;
+  const t = useT();
+  return (
   <motion.div
     initial={{ opacity: 0 }}
     animate={{ opacity: 1 }}
@@ -237,9 +260,9 @@ export const _LimitReachedDialog = ({ maxBots, planName, onClose }: { maxBots: n
       <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl" style={{ background: "rgba(230,111,98,0.08)" }}>
         <Crown className="h-6 w-6" style={{ color: "var(--lw-accent)" }} />
       </div>
-      <h3 className="mb-1.5 text-lg font-bold" style={{ color: "var(--lw-fg)" }}>已达创建上限</h3>
+      <h3 className="mb-1.5 text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("已达创建上限")}</h3>
       <p className="mb-2 text-center text-sm leading-relaxed text-[var(--text-secondary)]">
-        当前 <span className="font-semibold text-[var(--text-primary)]">{planName}</span> 套餐最多可创建 <span className="font-bold" style={{ color: "var(--lw-accent)" }}>{maxBots} 只</span>龙虾，你已达到上限。
+        {t("当前 {plan} 套餐最多可创建 {max} 只龙虾，你已达到上限。", { plan: planName, max: String(maxBots) })}
       </p>
       <div className="flex w-full gap-3" style={{ marginTop: 25 }}>
         <button
@@ -247,18 +270,20 @@ export const _LimitReachedDialog = ({ maxBots, planName, onClose }: { maxBots: n
           className="flex-1 rounded-full border px-4 py-2.5 text-sm font-medium transition-colors hover:bg-[var(--surface-muted)]"
           style={{ borderColor: "rgba(0,0,0,0.08)", color: "#666" }}
         >
-          我知道了
+          {t("我知道了")}
         </button>
       </div>
     </motion.div>
   </motion.div>
-);
+  );
+};
 
 /* ─── Channel Section ─── */
 
 type WeixinSessionStatus = "idle" | "creating" | "starting" | "waiting_qr" | "scanned" | "success" | "failed" | "expired" | "cancelled" | "timeout";
 
 export const ChannelSection = () => {
+  if (isGlobal) return null;
   const repositories = useRepositories();
   const { bots, updateBot } = useOpenClaw();
   const [selectedChannel, setSelectedChannel] = useState<Channel>(null);
@@ -318,7 +343,7 @@ export const ChannelSection = () => {
   /* ── 启动微信扫码流程 ── */
   const handleWechatAuth = useCallback(async () => {
     if (!selectedBot) {
-      setChannelNotice("请先创建并选择一个 Hermes，再接入通道。");
+      setChannelNotice(t("请先创建并选择一个 Hermes，再接入通道。"));
       return;
     }
 
@@ -397,7 +422,7 @@ export const ChannelSection = () => {
     } catch (err) {
       if ((err as Error).name !== "AbortError") {
         setWxStatus("failed");
-        setWxError(err instanceof Error ? err.message : "微信登录会话创建失败");
+        setWxError(err instanceof Error ? err.message : t("微信登录会话创建失败"));
       }
     }
   }, [selectedBot, repositories.bots, updateBot]);
@@ -471,9 +496,9 @@ export const ChannelSection = () => {
       setQqAppId("");
       setQqAppSecret("");
       setQqAccount("");
-      setChannelNotice(result.gatewayRestarted ? "QQ channel 已配置，gateway 已重启。" : "QQ channel 已配置，但 gateway 未确认重启。");
+      setChannelNotice(result.gatewayRestarted ? t("QQ channel 已配置，gateway 已重启。") : t("QQ channel 已配置，但 gateway 未确认重启。"));
     } catch (error) {
-      setChannelNotice(error instanceof Error ? error.message : "QQ channel 配置失败");
+      setChannelNotice(error instanceof Error ? error.message : t("QQ channel 配置失败"));
     } finally {
       setSubmitting(false);
     }
@@ -481,15 +506,15 @@ export const ChannelSection = () => {
 
   /* ── 微信扫码状态对应的 UI 文案 ── */
   const wxStatusLabel: Record<string, { text: string; color: string }> = {
-    creating: { text: "正在创建登录会话…", color: "#999" },
-    starting: { text: "正在启动微信登录…", color: "#999" },
-    waiting_qr: { text: "请使用微信扫描二维码", color: "#07C160" },
-    scanned: { text: "已扫码，正在确认登录…", color: "#07C160" },
-    success: { text: "微信通道接入成功！", color: "#07C160" },
-    failed: { text: "登录失败", color: "#cf3d4c" },
-    expired: { text: "二维码已过期", color: "#C67B1E" },
-    cancelled: { text: "已取消", color: "#999" },
-    timeout: { text: "登录超时", color: "#C67B1E" },
+    creating: { text: t("正在创建登录会话…"), color: "#999" },
+    starting: { text: t("正在启动微信登录…"), color: "#999" },
+    waiting_qr: { text: t("请使用微信扫描二维码"), color: "#07C160" },
+    scanned: { text: t("已扫码，正在确认登录…"), color: "#07C160" },
+    success: { text: t("微信通道接入成功！"), color: "#07C160" },
+    failed: { text: t("登录失败"), color: "#cf3d4c" },
+    expired: { text: t("二维码已过期"), color: "#C67B1E" },
+    cancelled: { text: t("已取消"), color: "#999" },
+    timeout: { text: t("登录超时"), color: "#C67B1E" },
   };
 
   return (
@@ -527,11 +552,11 @@ export const ChannelSection = () => {
                   <ScanLine className="h-6 w-6" style={{ color: "#07C160" }} />
                 )}
               </div>
-              <h3 className="mb-1.5 text-lg font-bold" style={{ color: "var(--lw-fg)" }}>微信扫码接入</h3>
+              <h3 className="mb-1.5 text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("微信扫码接入")}</h3>
 
               {/* 状态提示 */}
               <p className="mb-4 text-center text-sm font-medium" style={{ color: wxStatusLabel[wxStatus]?.color ?? "#999" }}>
-                {wxStatusLabel[wxStatus]?.text ?? "准备中…"}
+                {wxStatusLabel[wxStatus]?.text ?? t("准备中…")}
               </p>
 
               {/* 二维码区域 */}
@@ -542,19 +567,19 @@ export const ChannelSection = () => {
                 {wxQrUrl ? (
                   <img
                     src={wxQrUrl}
-                    alt="微信登录二维码"
+                    alt={t("微信登录二维码")}
                     className="h-44 w-44 rounded-lg"
                   />
                 ) : wxStatus === "success" ? (
                   <div className="flex flex-col items-center gap-2">
                     <Check className="h-12 w-12" style={{ color: "#07C160" }} />
-                    <span className="text-sm font-medium" style={{ color: "#07C160" }}>接入成功</span>
+                    <span className="text-sm font-medium" style={{ color: "#07C160" }}>{t("接入成功")}</span>
                   </div>
                 ) : ["failed", "expired", "timeout"].includes(wxStatus) ? (
                   <div className="flex flex-col items-center gap-2">
                     <X className="h-12 w-12" style={{ color: "#cf3d4c" }} />
                     <span className="text-xs text-center leading-relaxed" style={{ color: "#cf3d4c" }}>
-                      {wxError || "请重试"}
+                      {wxError || t("请重试")}
                     </span>
                   </div>
                 ) : (
@@ -569,21 +594,21 @@ export const ChannelSection = () => {
 
               {/* 操作按钮 */}
               {wxStatus === "success" ? (
-                <button onClick={closeQrModal} className="lw-btn-primary w-full">
-                  <Check className="h-4 w-4" /> 完成
-                </button>
+                  <button onClick={closeQrModal} className="lw-btn-primary w-full">
+                    <Check className="h-4 w-4" /> {t("完成")}
+                  </button>
               ) : ["failed", "expired", "timeout"].includes(wxStatus) ? (
                 <div className="flex w-full gap-3">
                   <button onClick={closeQrModal} className="flex-1 rounded-full border px-4 py-2.5 text-sm font-medium transition-colors hover:bg-[var(--surface-muted)]" style={{ borderColor: "rgba(0,0,0,0.08)", color: "#666" }}>
-                    关闭
+                    {t("关闭")}
                   </button>
                   <button onClick={() => void handleWechatAuth()} className="lw-btn-primary flex-1">
-                    重试
+                    {t("重试")}
                   </button>
                 </div>
               ) : (
                 <button onClick={closeQrModal} className="w-full rounded-full border px-4 py-2.5 text-sm font-medium transition-colors hover:bg-[var(--surface-muted)]" style={{ borderColor: "rgba(0,0,0,0.08)", color: "#666" }}>
-                  取消
+                  {t("取消")}
                 </button>
               )}
             </motion.div>
@@ -601,7 +626,7 @@ export const ChannelSection = () => {
                 <img src="https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/aef7d749-cabe-48dc-938b-11f1f50980c8.png" alt="微信" className="h-5 w-5 object-contain" />
                 <span className="flex-1 text-sm font-semibold" style={{ color: "var(--lw-fg)" }}>微信</span>
                 <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold" style={{ background: "rgba(7,193,96,0.1)", color: "#07C160" }}>
-                  <Check className="h-3 w-3" /> 已接入
+                  <Check className="h-3 w-3" /> {t("已接入")}
                 </span>
               </div>
             )}
@@ -768,6 +793,8 @@ export const ChannelSection = () => {
 /* ─── Skill Section ─── */
 
 const SkillSection = () => {
+  const t = useT();
+  const personas = useMemo(() => makePersonas(), []);
   const [selectedPersona, setSelectedPersona] = useState<Persona | null>(null);
   const [installing, setInstalling] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -809,7 +836,7 @@ const SkillSection = () => {
               <p className="text-xs text-[var(--text-secondary)]">{selectedPersona.desc}</p>
             </div>
             <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold" style={{ background: "rgba(230,111,98,0.08)", color: "var(--lw-accent)" }}>
-              <Check className="h-3 w-3" /> 已安装
+              <Check className="h-3 w-3" /> {t("已安装")}
             </span>
           </div>
           <div className="space-y-2">
@@ -829,7 +856,7 @@ const SkillSection = () => {
             onClick={() => { setInstalled(false); setSelectedPersona(null); setProgress(0); }}
             className="lw-back-link mt-3"
           >
-            重新选择技能专家
+            {t("重新选择技能专家")}
           </button>
         </div>
       ) : installing && selectedPersona ? (
@@ -837,10 +864,10 @@ const SkillSection = () => {
         <div className="text-center">
           <div className="mx-auto mb-4 text-3xl">{selectedPersona.icon}</div>
           <p className="mb-4 text-sm font-semibold" style={{ color: "var(--lw-fg)" }}>
-            正在安装 {selectedPersona.name} {selectedPersona.nameEn}...
+            {t("正在安装 {name} {nameEn}...", { name: selectedPersona.name, nameEn: selectedPersona.nameEn })}
           </p>
           <div className="mb-2 flex items-center justify-between">
-            <span className="text-xs font-bold" style={{ color: "var(--lw-fg)" }}>安装进度</span>
+            <span className="text-xs font-bold" style={{ color: "var(--lw-fg)" }}>{t("安装进度")}</span>
             <span className="text-xs font-bold" style={{ color: "var(--lw-accent)" }}>{Math.round(progress)}%</span>
           </div>
           <div className="h-2.5 overflow-hidden rounded-full" style={{ background: "#eee" }}>
@@ -856,7 +883,7 @@ const SkillSection = () => {
       ) : (
         /* Selection state */
         <>
-          <p className="text-sm text-[var(--text-secondary)]">选择一个技能专家，让你的龙虾技能增强</p>
+          <p className="text-sm text-[var(--text-secondary)]">{t("选择一个技能专家，让你的龙虾技能增强")}</p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             {personas.map((persona) => (
               <button
@@ -891,7 +918,7 @@ const SkillSection = () => {
                 className="overflow-hidden"
               >
                 <div className="space-y-2 rounded-xl p-4" style={{ background: "rgba(245,243,239,0.5)" }}>
-                  <p className="mb-3 text-xs font-bold text-[var(--text-tertiary)]">预装 Agent Skills</p>
+                  <p className="mb-3 text-xs font-bold text-[var(--text-tertiary)]">{t("预装 Agent Skills")}</p>
                   {selectedPersona.skills.map((skill, idx) => (
                     <div key={idx} className="flex items-start gap-3">
                       <div className="lw-setup-icon-container flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg">
@@ -906,7 +933,7 @@ const SkillSection = () => {
                 </div>
                 <div className="mt-4 text-center">
                   <button onClick={handleInstall} className="lw-btn-primary">
-                    开始安装 <Sparkles className="h-4 w-4" />
+                    {t("开始安装")} <Sparkles className="h-4 w-4" />
                   </button>
                 </div>
               </motion.div>
@@ -2176,6 +2203,7 @@ const ChannelModal = ({ bot, onClose }: { bot: { id: string; name: string; conne
 };
 
 export const _BotInfoCard = ({ bot, index, onDelete, onTerminal }: { bot: { id: string; name: string; personality: string; personalityEmoji: string; intro: string; status: string; connectedChannels: string[]; installedSkills: string[]; createdAt: string }; index: number; onDelete: (id: string) => void; onTerminal: (id: string) => void }) => {
+  if (isGlobal) return null;
   void onDelete;
   void onTerminal;
   const [showBirthCert, setShowBirthCert] = useState(false);
@@ -2185,6 +2213,7 @@ export const _BotInfoCard = ({ bot, index, onDelete, onTerminal }: { bot: { id: 
   const [deleting, setDeleting] = useState(false);
   const [deleteErr, setDeleteErr] = useState<string | null>(null);
   const { deleteBot } = useOpenClaw();
+  const t = useT();
 
   // 获取该 bot 的固定头像
   const avatarUrl = getAvatarForBot(bot.id);
@@ -2286,25 +2315,25 @@ export const _BotInfoCard = ({ bot, index, onDelete, onTerminal }: { bot: { id: 
               <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "rgba(220,38,38,0.08)" }}>
                 <AlertTriangle className="h-5 w-5" style={{ color: "#DC2626" }} />
               </div>
-              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>确认删除</h3>
+              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("确认删除")}</h3>
             </div>
             {/* 风险说明 */}
             <p style={{ color: "#666", fontSize: "14px", lineHeight: 1.6, marginBottom: "12px" }}>
-              删除后会话将立即断开，数据将无法恢复。
+              {t("删除后会话将立即断开，数据将无法恢复。")}
             </p>
             {/* 操作引导 */}
             <p style={{ color: "var(--lw-fg)", fontSize: "14px", lineHeight: 1.6, marginBottom: "10px" }}>
-              如确认删除，请输入 Hermes 的名称 <strong>{bot.name}</strong>：
+              {t("如确认删除，请输入名称 {name}：", { name: bot.name })}
             </p>
-            <input type="text" placeholder={`请输入 ${bot.name}`} value={deleteInput} onChange={(e) => setDeleteInput(e.target.value)} className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition-all focus:border-[#DC2626]" style={{ borderColor: "var(--lw-border)", color: "var(--lw-fg)", marginBottom: "20px" }} />
+            <input type="text" placeholder={t("请输入 {name}", { name: bot.name })} value={deleteInput} onChange={(e) => setDeleteInput(e.target.value)} className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition-all focus:border-[#DC2626]" style={{ borderColor: "var(--lw-border)", color: "var(--lw-fg)", marginBottom: "20px" }} />
             {deleteErr && <p className="text-xs" style={{ color: "#DC2626", marginBottom: "12px" }}>{deleteErr}</p>}
             {/* 按钮组：上下排列 */}
             <div className="flex flex-col gap-2">
-              <button onClick={async () => { setDeleting(true); setDeleteErr(null); try { await deleteBot(bot.id); setShowDeleteConfirm(false); } catch (e) { setDeleteErr(e instanceof Error ? e.message : "删除失败"); } finally { setDeleting(false); } }} disabled={deleteInput !== bot.name || deleting} className="w-full rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-all" style={{ backgroundColor: deleteInput === bot.name && !deleting ? "#DC2626" : "#E5E7EB", cursor: deleteInput === bot.name && !deleting ? "pointer" : "not-allowed" }}>
-                {deleting ? "删除中..." : "确认删除"}
+              <button onClick={async () => { setDeleting(true); setDeleteErr(null); try { await deleteBot(bot.id); setShowDeleteConfirm(false); } catch (e) { setDeleteErr(e instanceof Error ? e.message : t("删除失败")); } finally { setDeleting(false); } }} disabled={deleteInput !== bot.name || deleting} className="w-full rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-all" style={{ backgroundColor: deleteInput === bot.name && !deleting ? "#DC2626" : "#E5E7EB", cursor: deleteInput === bot.name && !deleting ? "pointer" : "not-allowed" }}>
+                {deleting ? t("删除中...") : t("确认删除")}
               </button>
               <button onClick={() => setShowDeleteConfirm(false)} className="py-2 text-sm transition-colors hover:opacity-70" style={{ color: "#999", background: "none", border: "none", cursor: "pointer" }}>
-                取消
+                {t("取消")}
               </button>
             </div>
           </div>
@@ -2388,6 +2417,7 @@ const CreatingLoadingView = ({ onComplete }: { onComplete: () => void }) => {
 /* ─── Main Settings Page ─── */
 
 export const OpenClawSettingsPage = () => {
+  const t = useT();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const isCreatingFromSubscribe = searchParams.get("creating") === "true";
@@ -2538,17 +2568,17 @@ export const OpenClawSettingsPage = () => {
               <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "rgba(220,38,38,0.08)" }}>
                 <AlertTriangle className="h-5 w-5" style={{ color: "#DC2626" }} />
               </div>
-              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>确认删除</h3>
+              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("确认删除")}</h3>
             </div>
             <p style={{ color: "#666", fontSize: "14px", lineHeight: 1.6, marginBottom: "12px" }}>
-              删除后会话将立即断开，数据将无法恢复。
+              {t("删除后会话将立即断开，数据将无法恢复。")}
             </p>
             <p style={{ color: "var(--lw-fg)", fontSize: "14px", lineHeight: 1.6, marginBottom: "10px" }}>
-              如确认删除，请输入名称 <strong>{activeBot.name}</strong>：
+              {t("如确认删除，请输入名称 {name}：", { name: activeBot.name })}
             </p>
             <input
               type="text"
-              placeholder={`请输入 ${activeBot.name}`}
+              placeholder={t("请输入 {name}", { name: activeBot.name })}
               value={deleteInput}
               onChange={(e) => setDeleteInput(e.target.value)}
               className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition-all focus:border-[#DC2626]"
@@ -2565,10 +2595,10 @@ export const OpenClawSettingsPage = () => {
                   cursor: deleteInput === activeBot.name ? "pointer" : "not-allowed",
                 }}
               >
-                确认删除
+                {t("确认删除")}
               </button>
               <button onClick={() => setShowDeleteConfirm(false)} className="py-2 text-sm transition-colors hover:opacity-70" style={{ color: "#999", background: "none", border: "none", cursor: "pointer" }}>
-                取消
+                {t("取消")}
               </button>
             </div>
           </motion.div>
@@ -2616,14 +2646,14 @@ export const OpenClawSettingsPage = () => {
                 color: "rgba(0,0,0,0.90)",
               }}
             >
-              我的智能体伙伴
+              {t("我的智能体伙伴")}
             </h1>
             {!isCreating && bots.length > 0 && bots.length < user.plan.maxBots && (
               <button
                 onClick={handleCreateNew}
                 className="flex items-center gap-2 rounded-full bg-black/90 px-5 py-2 text-base font-medium leading-normal text-white transition-all hover:opacity-90 active:scale-[0.98]"
               >
-                立即创建
+                {t("立即创建")}
               </button>
             )}
           </motion.div>
@@ -2645,7 +2675,7 @@ export const OpenClawSettingsPage = () => {
                 }}
               >
                 <Loader2 className="h-4 w-4 animate-spin" style={{ color: "var(--text-primary, #141414)" }} />
-                <span>Hermes Agent</span>
+                <span>{t("Hermes Agent")}</span>
                 <motion.div
                   layoutId="tab-indicator"
                   className="absolute bottom-0 left-0 right-0 h-0.5 rounded-full"
@@ -2692,7 +2722,7 @@ export const OpenClawSettingsPage = () => {
           {botsLoading && !isCreating && (
             <div className="flex items-center justify-center py-20">
               <Loader2 className="h-6 w-6 animate-spin" style={{ color: "rgba(55,53,47,0.2)" }} />
-              <span className="ml-3 text-sm" style={{ color: "rgba(0,0,0,0.40)" }}>加载中...</span>
+              <span className="ml-3 text-sm" style={{ color: "rgba(0,0,0,0.40)" }}>{t("加载中...")}</span>
             </div>
           )}
 
@@ -2735,7 +2765,7 @@ export const OpenClawSettingsPage = () => {
                             className="rounded-full border px-3 py-1.5 text-base font-bold outline-none transition-all focus:border-black/30"
                             style={{ color: "rgba(0,0,0,0.90)", borderColor: "rgba(0,0,0,0.10)", maxWidth: 240 }}
                           />
-                          <span className="text-xs" style={{ color: "rgba(0,0,0,0.35)" }}>按 Enter 保存</span>
+                          <span className="text-xs" style={{ color: "rgba(0,0,0,0.35)" }}>{t("按 Enter 保存")}</span>
                         </div>
                       ) : (
                         <div className="flex items-center gap-2">
@@ -2757,7 +2787,7 @@ export const OpenClawSettingsPage = () => {
                             style={{ background: activeBot.status === "running" ? "#34C759" : activeBot.status === "paused" ? "#FF9500" : "#ccc" }}
                           />
                           <span className="text-xs font-medium" style={{ color: "rgba(0,0,0,0.60)" }}>
-                            {activeBot.status === "running" ? "运行中" : activeBot.status === "paused" ? "已暂停" : "未知"}
+                            {activeBot.status === "running" ? t("运行中") : activeBot.status === "paused" ? t("已暂停") : t("未知")}
                           </span>
                         </div>
                         <span className="text-xs" style={{ color: "rgba(0,0,0,0.40)" }}>
@@ -2909,12 +2939,12 @@ export const OpenClawSettingsPage = () => {
           {
             !isCreating && !botsLoading && bots.length === 0 && (
               <div className="flex flex-col items-center justify-center py-20 text-center">
-                <p className="text-sm" style={{ color: "rgba(0,0,0,0.40)" }}>即刻创建你的第一个云端智能体伙伴</p>
+                <p className="text-sm" style={{ color: "rgba(0,0,0,0.40)" }}>{t("即刻创建你的第一个云端智能体伙伴")}</p>
                 <button
                   onClick={handleCreateNew}
                   className="mt-6 inline-flex items-center gap-2 rounded-full bg-black/90 px-6 py-2.5 text-sm font-semibold text-white transition-all hover:opacity-90"
                 >
-                  立即创建
+                  {t("立即创建")}
                 </button>
               </div>
             )

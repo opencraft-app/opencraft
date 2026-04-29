@@ -8,9 +8,12 @@ import { useOpenClaw } from "@/contexts/openclaw-context";
 import { useSession } from "@/contexts/session-context";
 import { useRepositories } from "@/contexts/repository-context";
 import { BrandMark } from "@/components/site/brand-mark";
+import { LanguageSwitcher } from "@/components/site/language-switcher";
 import { InviteCodeModal } from "@/components/site/login-modal";
 import { RepositoryError } from "@/repositories/http-repositories";
 import type { Bundle } from "@/domain/types";
+import { useT, t } from "@/i18n/t";
+import { isGlobal } from "@/lib/region";
 
 /* ─── Notion DESIGN.md Tokens ─── */
 
@@ -114,7 +117,7 @@ const mapBundleToPlan = (bundle: Bundle, index: number): PlanInfo => {
 
   /* agent_quota 打头阵 */
   if (bundle.agent_quota > 0) {
-    features.push({ icon: <User {...iconStyle} />, label: "Agent", value: `${bundle.agent_quota} 个` });
+    features.push({ icon: <User {...iconStyle} />, label: "Agent", value: t("{{n}} 个", { n: bundle.agent_quota }) });
   }
   /* description 里的其他卖点（已出现的 Agent/积分不重复添加）*/
   /* 「独立环境」「专属云端存储」前端统一规格并固定顺序展示，其余项顺延 */
@@ -124,14 +127,14 @@ const mapBundleToPlan = (bundle: Bundle, index: number): PlanInfo => {
   for (const entry of bundle.description ?? []) {
     const k = (entry.Key ?? "").toLowerCase();
     if (k.includes("agent") || k.includes("积分") || k.includes("credit")) continue;
-    /* 「独立环境」统一前端展示规格，避免后端 Value 为空导致卡片露馅 */
+    /* 「独立环境」统一前端展示规格，避免后端 Value 为空导致卡片露馄 */
     if (entry.Key === "独立环境") {
-      envFeature = { icon: iconForKey(entry.Key), label: entry.Key, value: "2核 4G 内存" };
+      envFeature = { icon: iconForKey(entry.Key), label: t("独立环境"), value: t("2核 4G 内存") };
       continue;
     }
     /* 「专属云端存储」前端统一展示容量，避免后端缺值 */
     if (entry.Key === "专属云端存储") {
-      storageFeature = { icon: <HardDrive {...iconStyle} />, label: entry.Key, value: "50G" };
+      storageFeature = { icon: <HardDrive {...iconStyle} />, label: t("专属云端存储"), value: "50G" };
       continue;
     }
     /* 后端 Value 为空时，用右侧勾替代，避免卡片右侧空白 */
@@ -139,8 +142,7 @@ const mapBundleToPlan = (bundle: Bundle, index: number): PlanInfo => {
       otherFeatures.push({ icon: iconForKey(entry.Key), label: entry.Key, hasCheck: true });
       continue;
     }
-    otherFeatures.push({ icon: iconForKey(entry.Key), label: entry.Key, value: entry.Value });
-  }
+    otherFeatures.push({ icon: iconForKey(entry.Key), label: entry.Key, value: entry.Value });  }
   /* 顺序：独立环境 → 专属云端存储 → 模型积分 → 其他描述项 */
   if (envFeature) features.push(envFeature);
   if (storageFeature) features.push(storageFeature);
@@ -148,20 +150,20 @@ const mapBundleToPlan = (bundle: Bundle, index: number): PlanInfo => {
   if (bundle.credit > 0) {
     features.push({
       icon: <Zap {...iconStyle} />,
-      label: "模型积分",
-      value: `${bundle.credit} 体验积分`,
+      label: t("模型积分"),
+      value: `${bundle.credit} ${t("体验积分")}`,
     });
   }
   features.push(...otherFeatures);
   /* 如果 features 比较少，填几个通用卖点（顺序：独立环境 → 专属云端存储 → 7×24 在线）*/
   if (!envFeature) {
-    features.push({ icon: <Monitor {...iconStyle} />, label: "独立环境", value: "2核 4G 内存" });
+    features.push({ icon: <Monitor {...iconStyle} />, label: t("独立环境"), value: t("2核 4G 内存") });
   }
   if (!storageFeature) {
-    features.push({ icon: <HardDrive {...iconStyle} />, label: "专属云端存储", value: "50G" });
+    features.push({ icon: <HardDrive {...iconStyle} />, label: t("专属云端存储"), value: "50G" });
   }
-  if (features.length < 4 && !features.some((f) => f.label === "7×24 在线")) {
-    features.push({ icon: <Clock {...iconStyle} />, label: "7×24 在线", hasCheck: true });
+  if (features.length < 4 && !features.some((f) => f.label === t("7×24 在线"))) {
+    features.push({ icon: <Clock {...iconStyle} />, label: t("7×24 在线"), hasCheck: true });
   }
 
   /* 内测期间：无论后端是否返回 price，前端统一当免费版展示，价格右侧用 promoTag 标出"限时免费"。
@@ -172,15 +174,15 @@ const mapBundleToPlan = (bundle: Bundle, index: number): PlanInfo => {
   return {
     id: bundle.bundle_id,
     name: bundle.bundle_name,
-    badge: soldOut ? "已售罄" : undefined,
+    badge: soldOut ? t("已售罄") : undefined,
     badgeStyle: soldOut ? "tag" : undefined,
     price: "¥49",
-    priceUnit: "/ 月",
+    priceUnit: t("/ 月"),
     /* 价格右侧的促销小徽章：告知用户当前为内测限时免费，避免误会为永久免费 */
-    promoTag: soldOut ? undefined : "限时免费",
-    description: "尝鲜体验，从一个 Agent 开始",
+    promoTag: soldOut ? undefined : t("限时免费"),
+    description: t("尝鲜体验，从一个 Agent 开始"),
     features,
-    ctaLabel: soldOut ? "已售罄" : "立即开通",
+    ctaLabel: soldOut ? t("已售罄") : t("立即开通"),
     ctaStyle: index === 0 ? "primary" : "outline",
     featured: index === 0,
     maxBots: bundle.agent_quota || 1,
@@ -213,47 +215,47 @@ const makePlaceholderBundle = (id: string, name: string, agentQuota: number): Bu
   bundle_sales_state: "SOLD_OUT",
 });
 
-const PLACEHOLDER_PLANS: PlanInfo[] = [
+const makePlaceholderPlans = (): PlanInfo[] => [
   {
     id: "placeholder-starter",
-    name: "巡游 Cruise",
+    name: t("巡游 Cruise"),
     /* 价格尚未确定，前端暂不展示，PlanCard 会根据 price 为空走占位分支 */
     price: "",
-    description: "日常主力，让智能化成为习惯",
+    description: t("日常主力，让智能化成为习惯"),
     features: [
-      { icon: <User {...iconStyle} />, label: "Agent", value: "3 个" },
-      { icon: <Monitor {...iconStyle} />, label: "独立环境", value: "2核 4G 内存" },
-      { icon: <HardDrive {...iconStyle} />, label: "专属云端存储", value: "50G" },
-      { icon: <Clock {...iconStyle} />, label: "7×24 在线", hasCheck: true },
-      { icon: <Settings {...iconStyle} />, label: "极简配置面板", hasCheck: true },
-      { icon: <Zap {...iconStyle} />, label: "新功能优先体验", hasCheck: true },
+      { icon: <User {...iconStyle} />, label: "Agent", value: t("{{n}} 个", { n: 3 }) },
+      { icon: <Monitor {...iconStyle} />, label: t("独立环境"), value: t("2核 4G 内存") },
+      { icon: <HardDrive {...iconStyle} />, label: t("专属云端存储"), value: "50G" },
+      { icon: <Clock {...iconStyle} />, label: t("7×24 在线"), hasCheck: true },
+      { icon: <Settings {...iconStyle} />, label: t("极简配置面板"), hasCheck: true },
+      { icon: <Zap {...iconStyle} />, label: t("新功能优先体验"), hasCheck: true },
     ],
-    ctaLabel: "敬请期待",
+    ctaLabel: t("敬请期待"),
     ctaStyle: "outline-dark",
     maxBots: 3,
     comingSoon: true,
-    raw: makePlaceholderBundle("placeholder-starter", "巡游 Cruise", 3),
+    raw: makePlaceholderBundle("placeholder-starter", t("巡游 Cruise"), 3),
   },
   {
     id: "placeholder-pro",
-    name: "远航 Voyage",
+    name: t("远航 Voyage"),
     /* 价格尚未确定，前端暂不展示 */
     price: "",
-    description: "体验进阶，把效率拉满",
+    description: t("体验进阶，把效率拉满"),
     features: [
-      { icon: <User {...iconStyle} />, label: "Agent", value: "15 个" },
-      { icon: <Monitor {...iconStyle} />, label: "独立环境", value: "2核 4G 内存" },
-      { icon: <HardDrive {...iconStyle} />, label: "专属云端存储", value: "50G" },
-      { icon: <Clock {...iconStyle} />, label: "7×24 在线", hasCheck: true },
-      { icon: <Settings {...iconStyle} />, label: "极简配置面板", hasCheck: true },
-      { icon: <Zap {...iconStyle} />, label: "新功能优先体验", hasCheck: true },
-      { icon: <Headphones {...iconStyle} />, label: "优先技术支持", hasCheck: true },
+      { icon: <User {...iconStyle} />, label: "Agent", value: t("{{n}} 个", { n: 15 }) },
+      { icon: <Monitor {...iconStyle} />, label: t("独立环境"), value: t("2核 4G 内存") },
+      { icon: <HardDrive {...iconStyle} />, label: t("专属云端存储"), value: "50G" },
+      { icon: <Clock {...iconStyle} />, label: t("7×24 在线"), hasCheck: true },
+      { icon: <Settings {...iconStyle} />, label: t("极简配置面板"), hasCheck: true },
+      { icon: <Zap {...iconStyle} />, label: t("新功能优先体验"), hasCheck: true },
+      { icon: <Headphones {...iconStyle} />, label: t("优先技术支持"), hasCheck: true },
     ],
-    ctaLabel: "敬请期待",
+    ctaLabel: t("敬请期待"),
     ctaStyle: "outline-dark",
     maxBots: 15,
     comingSoon: true,
-    raw: makePlaceholderBundle("placeholder-pro", "远航 Voyage", 15),
+    raw: makePlaceholderBundle("placeholder-pro", t("远航 Voyage"), 15),
   },
 ];
 
@@ -263,21 +265,21 @@ const PLACEHOLDER_PLANS: PlanInfo[] = [
 const mapPassErrorToMessage = (code: string | undefined, fallback: string): string => {
   switch (code) {
     case "PASS_INVALID_PARAM":
-      return "请选择套餐";
+      return t("请选择套餐");
     case "BUNDLE_NOT_FOUND":
-      return "套餐已下架";
+      return t("套餐已下架");
     case "PASS_BUNDLE_OFFLINE":
-      return "该套餐已下线";
+      return t("该套餐已下线");
     case "PASS_BUNDLE_SOLD_OUT":
-      return "该套餐暂时售罄";
+      return t("该套餐暂时售罄");
     case "BUNDLE_SALES_QUOTA_EMPTY":
-      return "今日名额已抢完，明天再试";
+      return t("今日名额已抢完，明天再试");
     case "PASS_ALREADY_EXISTS":
-      return "您已拥有权益，无需重复购买";
+      return t("您已拥有权益，无需重复购买");
     case "PASS_QUOTA_EXCEEDED":
-      return "当前使用量超出该套餐限额";
+      return t("当前使用量超出该套餐限额");
     case "realname_required":
-      return "请先完成实名认证后再开通套餐。";
+      return t("请先完成实名认证后再开通套餐。");
     default:
       return fallback;
   }
@@ -286,6 +288,7 @@ const mapPassErrorToMessage = (code: string | undefined, fallback: string): stri
 /* ─── Notion-style Navbar ─── */
 
 const SubscribeNavbar = () => {
+  const t = useT();
   return (
     <header
       style={{
@@ -312,20 +315,24 @@ const SubscribeNavbar = () => {
         }}
       >
         <BrandMark to="/" />
-        <Link
-          to="/"
-          style={{
-            fontSize: 15,
-            fontWeight: 500,
-            color: colors.warmGray500,
-            transition: "color 0.2s",
-            textDecoration: "none",
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.color = colors.primary; }}
-          onMouseLeave={(e) => { e.currentTarget.style.color = colors.warmGray500; }}
-        >
-          返回首页
-        </Link>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          {/* 语言切换器：仅国际站展示 */}
+          {isGlobal && <LanguageSwitcher />}
+          <Link
+            to="/"
+            style={{
+              fontSize: 15,
+              fontWeight: 500,
+              color: colors.warmGray500,
+              transition: "color 0.2s",
+              textDecoration: "none",
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = colors.primary; }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = colors.warmGray500; }}
+          >
+            {t("返回首页")}
+          </Link>
+        </div>
       </div>
     </header>
   );
@@ -346,6 +353,7 @@ const PlanCard = ({
   subscribing: boolean;
   currentBots: number;
 }) => {
+  const t = useT();
   const quotaWouldExceed = currentBots >= plan.maxBots;
   const isFeatured = plan.featured;
   const isSoldOut = plan.soldOut === true;
@@ -462,7 +470,7 @@ const PlanCard = ({
                 color: colors.warmGray500,
               }}
             >
-              敬请期待
+              {t("敬请期待")}
             </span>
           </div>
         ) : isSoldOut ? (
@@ -476,7 +484,7 @@ const PlanCard = ({
                 color: colors.warmGray300,
               }}
             >
-              已售罄
+              {t("已售罄")}
             </span>
           </div>
         ) : plan.price ? (
@@ -531,7 +539,7 @@ const PlanCard = ({
           <div style={{ minHeight: 48, marginBottom: 8 }} />
         )}
         {/* 今日剩余名额提示：只在未售罄且剩余比例较低时显示，避免每张卡都出现 */}
-        {!isSoldOut && typeof plan.availableCount === "number" && typeof plan.totalCount === "number" && plan.totalCount > 0 && plan.availableCount < plan.totalCount && (
+            {typeof plan.availableCount === "number" && typeof plan.totalCount === "number" && plan.totalCount > 0 && plan.availableCount < plan.totalCount && (
           <p
             style={{
               fontSize: 12,
@@ -541,10 +549,9 @@ const PlanCard = ({
               marginBottom: 20,
             }}
           >
-            今日剩余 {plan.availableCount}/{plan.totalCount} 份
+            {t("今日剩余 {{available}}/{{total}} 份", { available: plan.availableCount, total: plan.totalCount })}
           </p>
         )}
-
         {/* Divider */}
         <div style={{ height: 1, background: colors.border, marginBottom: 24 }} />
 
@@ -572,7 +579,7 @@ const PlanCard = ({
                 lineHeight: 1.5,
               }}
             >
-              {isComingSoon ? "即将上线" : isSoldOut ? "当日名额已满" : "暂无详情"}
+              {isComingSoon ? t("即将上线") : isSoldOut ? t("当日名额已满") : t("暂无详情")}
             </p>
             {!isComingSoon && (
               <p
@@ -584,7 +591,7 @@ const PlanCard = ({
                   lineHeight: 1.5,
                 }}
               >
-                {isSoldOut ? "明天 10:00 再来试试" : "稍后再看"}
+                {isSoldOut ? t("明天 10:00 再来试试") : t("稍后再看")}
               </p>
             )}
           </div>
@@ -655,7 +662,7 @@ const PlanCard = ({
                 }
               }}
             >
-              {isSoldOut ? plan.ctaLabel : subscribing ? "正在创建..." : quotaWouldExceed ? `已达上限（${currentBots}/${plan.maxBots}）` : plan.ctaLabel}
+              {isSoldOut ? plan.ctaLabel : subscribing ? t("正在创建...") : quotaWouldExceed ? t("已达上限（{{current}}/{{max}}）", { current: currentBots, max: plan.maxBots }) : plan.ctaLabel}
             </button>
           ) : (
             <button
@@ -692,7 +699,7 @@ const PlanCard = ({
                 }
               }}
             >
-              {isSoldOut ? plan.ctaLabel : subscribing ? "正在创建..." : quotaWouldExceed ? `已达上限（${currentBots}/${plan.maxBots}）` : plan.ctaLabel}
+              {isSoldOut ? plan.ctaLabel : subscribing ? t("正在创建...") : quotaWouldExceed ? t("已达上限（{{current}}/{{max}}）", { current: currentBots, max: plan.maxBots }) : plan.ctaLabel}
             </button>
           )}
         </div>
@@ -753,6 +760,7 @@ const ConfirmOrderModal = ({
   onCancel: () => void;
   onPay: () => void;
 }) => {
+  const t = useT();
   const priceNum = plan.price.replace(/[^0-9.]/g, "");
 
   return (
@@ -783,9 +791,9 @@ const ConfirmOrderModal = ({
 
         <div style={{ padding: "28px 28px 24px" }}>
           <h3 style={{ fontSize: 18, fontWeight: 700, color: colors.black, margin: "0 0 6px", letterSpacing: "-0.25px" }}>
-            确认订单
+            {t("确认订单")}
           </h3>
-          <p style={{ fontSize: 13, color: colors.warmGray500, margin: "0 0 20px" }}>订单详情</p>
+          <p style={{ fontSize: 13, color: colors.warmGray500, margin: "0 0 20px" }}>{t("订单详情")}</p>
 
           <div
             style={{
@@ -796,16 +804,16 @@ const ConfirmOrderModal = ({
             }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, fontSize: 14, color: colors.warmGray500 }}>
-              <span>{plan.name}订阅</span>
+              <span>{t("{{name}} 订阅", { name: plan.name })}</span>
               <span style={{ fontWeight: 600, color: colors.black }}>¥{priceNum}</span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16, fontSize: 14, color: colors.warmGray500 }}>
-              <span>订阅周期</span>
-              <span style={{ fontWeight: 600, color: colors.black }}>1个月</span>
+              <span>{t("订阅周期")}</span>
+              <span style={{ fontWeight: 600, color: colors.black }}>{t("1个月")}</span>
             </div>
             <div style={{ height: 1, background: colors.border, margin: "0 0 16px" }} />
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-              <span style={{ fontSize: 14, color: colors.warmGray500 }}>总计:</span>
+              <span style={{ fontSize: 14, color: colors.warmGray500 }}>{t("总计:")}</span>
               <span style={{ fontSize: 28, fontWeight: 700, color: colors.black, letterSpacing: "-1px" }}>¥{priceNum}</span>
             </div>
           </div>
@@ -840,7 +848,7 @@ const ConfirmOrderModal = ({
               <path d="M17.2 10.8c-.4-2.1-2.5-3.6-5-3.6-2.8 0-5.1 1.9-5.1 4.3 0 1.4.8 2.6 2 3.5l-.5 1.5 1.8-1c.6.2 1.2.3 1.8.3.3 0 .5 0 .8-.1-.2-.4-.2-.8-.2-1.2 0-2.1 2-3.7 4.4-3.7z" fill="#fff" />
               <path d="M19.5 14.5c0-1.7-1.7-3.1-3.8-3.1s-3.8 1.4-3.8 3.1 1.7 3.1 3.8 3.1c.4 0 .9-.1 1.3-.2l1.2.7-.3-1.1c1-0.6 1.6-1.5 1.6-2.5z" fill="#fff" />
             </svg>
-            <span style={{ fontSize: 14, fontWeight: 500, color: colors.black }}>微信支付</span>
+            <span style={{ fontSize: 14, fontWeight: 500, color: colors.black }}>{t("微信支付")}</span>
           </div>
 
           <div style={{ display: "flex", gap: 12 }}>
@@ -861,7 +869,7 @@ const ConfirmOrderModal = ({
               onMouseEnter={(e) => { e.currentTarget.style.background = colors.warmWhite; }}
               onMouseLeave={(e) => { e.currentTarget.style.background = colors.white; }}
             >
-              取消
+              {t("取消")}
             </button>
             <button
               onClick={onPay}
@@ -880,7 +888,7 @@ const ConfirmOrderModal = ({
               onMouseEnter={(e) => { e.currentTarget.style.background = colors.primaryHover; }}
               onMouseLeave={(e) => { e.currentTarget.style.background = colors.primary; }}
             >
-              支付 ¥{priceNum}
+              {t("支付 ¥{{amount}}", { amount: priceNum })}
             </button>
           </div>
         </div>
@@ -900,6 +908,7 @@ const WechatQRModal = ({
   onComplete: () => void;
   submitting: boolean;
 }) => {
+  const t = useT();
   const [refreshKey, setRefreshKey] = useState(0);
   const mockQrValue = `https://lightclaw.tech/pay/mock?t=${Date.now()}&k=${refreshKey}`;
 
@@ -931,7 +940,7 @@ const WechatQRModal = ({
 
         <div style={{ padding: "28px 28px 24px", textAlign: "center" }}>
           <h3 style={{ fontSize: 18, fontWeight: 700, color: colors.black, margin: "0 0 24px", letterSpacing: "-0.25px", textAlign: "left" }}>
-            微信支付
+            {t("微信支付")}
           </h3>
 
           <div
@@ -955,10 +964,10 @@ const WechatQRModal = ({
           </div>
 
           <p style={{ fontSize: 14, fontWeight: 500, color: colors.black, margin: "0 0 4px" }}>
-            请使用微信扫描二维码完成支付
+            {t("请使用微信扫描二维码完成支付")}
           </p>
           <p style={{ fontSize: 13, color: colors.warmGray300, margin: "0 0 24px" }}>
-            扫码后请在手机上完成操作
+            {t("扫码后请在手机上完成操作")}
           </p>
 
           <div style={{ display: "flex", gap: 12 }}>
@@ -984,7 +993,7 @@ const WechatQRModal = ({
               }}
             >
               <RefreshCw style={{ width: 15, height: 15 }} />
-              刷新
+              {t("刷新")}
             </button>
             <button
               onClick={onComplete}
@@ -1003,7 +1012,7 @@ const WechatQRModal = ({
                 transition: "all 0.15s",
               }}
             >
-              {submitting ? "处理中..." : "完成"}
+              {submitting ? t("处理中...") : t("完成")}
             </button>
           </div>
         </div>
@@ -1021,6 +1030,7 @@ type SubscribeError = {
 };
 
 export const SubscribePage = () => {
+  const t = useT();
   const navigate = useNavigate();
   const { isLoggedIn, login, isSubscribed, subscribe, addBot, bots, user, refreshPasses } = useOpenClaw();
   const { session } = useSession();
@@ -1060,7 +1070,7 @@ export const SubscribePage = () => {
         }
       } catch (err) {
         if (!cancelled) {
-          setBundlesError(err instanceof Error ? err.message : "套餐列表加载失败");
+          setBundlesError(err instanceof Error ? err.message : t("套餐列表加载失败"));
         }
       } finally {
         if (!cancelled) {
@@ -1079,7 +1089,7 @@ export const SubscribePage = () => {
     if (!bundles) return [];
     const fromBackend = bundles.map((b, idx) => mapBundleToPlan(b, idx));
     /* 后端目前只上线了免费版，前端补两张「敬请期待」的占位卡，保持三列栅格 */
-    return [...fromBackend, ...PLACEHOLDER_PLANS];
+    return [...fromBackend, ...makePlaceholderPlans()];
   }, [bundles]);
 
   /* 执行真正的购买权益 + 创建实例流程 */
@@ -1104,8 +1114,8 @@ export const SubscribePage = () => {
       }
       /* 2. 调用后端创建实例资源 */
       await addBot({
-        name: "我的Hermes",
-        personality: "默认设定",
+        name: t("我的Hermes"),
+        personality: t("默认设定"),
         personalityEmoji: "✨",
         intro: "",
         soulTemplateId: undefined,
@@ -1117,7 +1127,7 @@ export const SubscribePage = () => {
       /* 3. 跳转到管理页，由管理页展示创建 loading 动画 */
       navigate("/dashboard/settings?creating=true");
     } catch (err) {
-      const fallbackMsg = err instanceof Error ? err.message : "创建失败，请稍后重试。";
+      const fallbackMsg = err instanceof Error ? err.message : t("创建失败，请稍后重试。");
       const code = err instanceof RepositoryError ? err.code : (err as Error & { code?: string })?.code;
       console.error("[subscribe] create bot failed", err instanceof RepositoryError
         ? { status: err.status, code: err.code, message: err.message }
@@ -1148,7 +1158,7 @@ export const SubscribePage = () => {
 
     /* 检查龙虾个数是否已达该套餐上限 */
     if (bots.length >= plan.maxBots) {
-      setError({ message: `当前已有 ${bots.length} 个 Hermes，${plan.name}套餐最多可创建 ${plan.maxBots} 只。` });
+      setError({ message: t("当前已有 {{current}} 个 Hermes，{{planName}}套餐最多可创建 {{max}} 只。", { current: bots.length, planName: plan.name, max: plan.maxBots }) });
       return;
     }
 
@@ -1174,7 +1184,7 @@ export const SubscribePage = () => {
 
     /* 激活后再校验一次配额 */
     if (bots.length >= plan.maxBots) {
-      setError({ message: `当前已有 ${bots.length} 个 Hermes，${plan.name}套餐最多可创建 ${plan.maxBots} 只。` });
+      setError({ message: t("当前已有 {{current}} 个 Hermes，{{planName}}套餐最多可创建 {{max}} 只。", { current: bots.length, planName: plan.name, max: plan.maxBots }) });
       return;
     }
 
@@ -1225,9 +1235,9 @@ export const SubscribePage = () => {
             >
               <Sparkles style={{ width: 32, height: 32, color: colors.warmGray500 }} />
             </div>
-            <h2 style={{ fontSize: 20, fontWeight: 700, color: colors.black, marginBottom: 16 }}>已达创建上限</h2>
+            <h2 style={{ fontSize: 20, fontWeight: 700, color: colors.black, marginBottom: 16 }}>{t("已达创建上限")}</h2>
             <p style={{ fontSize: 14, color: colors.warmGray300, marginBottom: 40, lineHeight: 1.6 }}>
-              当前 {user.plan.name} 套餐最多可创建 {user.plan.maxBots} 个 Hermes，你已达到上限。
+              {t("当前 {{plan}} 套餐最多可创建 {{max}} 个 Hermes，你已达到上限。", { plan: user.plan.name, max: user.plan.maxBots })}
             </p>
             <Link
               to="/dashboard/settings"
@@ -1247,7 +1257,7 @@ export const SubscribePage = () => {
               onMouseEnter={(e) => { e.currentTarget.style.background = colors.primaryHover; }}
               onMouseLeave={(e) => { e.currentTarget.style.background = colors.primary; }}
             >
-              管理我的智能体伙伴 <ArrowRight style={{ width: 16, height: 16 }} />
+              {t("管理我的智能体伙伴")} <ArrowRight style={{ width: 16, height: 16 }} />
             </Link>
             <div style={{ marginTop: 24 }}>
               <Link
@@ -1264,7 +1274,7 @@ export const SubscribePage = () => {
                 onMouseEnter={(e) => { e.currentTarget.style.color = colors.primary; }}
                 onMouseLeave={(e) => { e.currentTarget.style.color = colors.warmGray300; }}
               >
-                <ArrowLeft style={{ width: 14, height: 14 }} /> 返回首页
+                <ArrowLeft style={{ width: 14, height: 14 }} /> {t("返回首页")}
               </Link>
             </div>
           </div>
@@ -1297,7 +1307,7 @@ export const SubscribePage = () => {
                 margin: 0,
               }}
             >
-              选择适合你的套餐
+              {t("选择适合你的套餐")}
             </h1>
             <p
               style={{
@@ -1308,7 +1318,7 @@ export const SubscribePage = () => {
                 marginTop: 8,
               }}
             >
-              一键创建云端 Hermes Agent
+              {t("一键创建云端 Hermes Agent")}
             </p>
             {/* {bots.length > 0 && (
               <p
@@ -1351,14 +1361,14 @@ export const SubscribePage = () => {
               >
                 {error.code === "realname_required" ? (
                   <>
-                    请前往{" "}
+                    {t("请前往")}{" "}
                     <Link
                       to="/account"
                       style={{ color: "#cf3d4c", fontWeight: 700, textDecoration: "underline", textUnderlineOffset: 3 }}
                     >
-                      我的账号
+                      {t("我的账号")}
                     </Link>{" "}
-                    进行实名。
+                    {t("进行实名。")}
                   </>
                 ) : error.message}
               </p>
@@ -1369,7 +1379,7 @@ export const SubscribePage = () => {
           {bundlesLoading && !bundles ? (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "48px 0", gap: 8 }}>
               <Loader2 style={{ width: 20, height: 20, color: colors.warmGray300 }} className="animate-spin" />
-              <span style={{ fontSize: 14, color: colors.warmGray300 }}>加载套餐中...</span>
+              <span style={{ fontSize: 14, color: colors.warmGray300 }}>{t("加载套餐中...")}</span>
             </div>
           ) : bundlesError ? (
             <div style={{ maxWidth: 480, margin: "0 auto", textAlign: "center", padding: "32px 0" }}>
@@ -1378,17 +1388,17 @@ export const SubscribePage = () => {
                 onClick={() => {
                   setBundles(null);
                   setBundlesError(null);
-                  void repositories.plans.listBundles().then(setBundles).catch((err) => setBundlesError(err instanceof Error ? err.message : "套餐列表加载失败"));
+                  void repositories.plans.listBundles().then(setBundles).catch((err) => setBundlesError(err instanceof Error ? err.message : t("套餐列表加载失败")));
                 }}
                 style={{ padding: "8px 20px", borderRadius: 8, border: `1px solid ${colors.border}`, background: colors.white, color: colors.black, fontSize: 14, fontWeight: 600, cursor: "pointer" }}
               >
-                重试
+                {t("重试")}
               </button>
             </div>
           ) : planList.length === 0 ? (
             <div style={{ maxWidth: 480, margin: "0 auto", textAlign: "center", padding: "48px 0" }}>
               <Sparkles style={{ width: 24, height: 24, color: colors.warmGray300, margin: "0 auto 8px" }} />
-              <p style={{ fontSize: 14, color: colors.warmGray300 }}>暂无在售套餐，敬请期待</p>
+              <p style={{ fontSize: 14, color: colors.warmGray300 }}>{t("暂无在售套餐，敬请期待")}</p>
             </div>
           ) : (
             <motion.div
