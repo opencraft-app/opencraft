@@ -32,7 +32,8 @@ stages:
           - name: 发布 frontend 到 EdgeOne lightvela 正式项目
             shell: bash
             env:
-              EDGEONE_API_TOKEN: ${{ settings.EDGEONE_API_TOKEN }}
+              EDGEONE_API_TOKEN_FILE: /etc/lightclaw-ci/edgeone_lightvela_prod_token
+              EDGEONE_API_TOKEN: ${{ settings.EDGEONE_LIGHTVELA_PROD_TOKEN }}
               FRONTEND_RELEASE_MATRIX: ${{ variables.FRONTEND_RELEASE_MATRIX }}
             run: |
               echo "============================================================"
