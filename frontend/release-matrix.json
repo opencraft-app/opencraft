@@ -41,7 +41,7 @@
       "authApiBaseUrl": "https://api.lightvela.tencent.com",
       "outputDir": "dist-cn",
       "deployEnv": {
-        "EDGEONE_PAGES_AREA": "china",
+        "EDGEONE_PAGES_AREA": "overseas",
         "EDGEONE_PAGES_ENV": "production"
       }
     }
