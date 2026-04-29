@@ -112,6 +112,17 @@ def merge_merge_request(args: argparse.Namespace, mr: Dict[str, Any]) -> Dict[st
     return api_json_request("PUT", url, args.private_token, payload or None)
 
 
+def is_auto_mergeable(mr: Dict[str, Any]) -> bool:
+    commit_state = mr.get("commit_check_state")
+    commit_block = mr.get("commit_check_block")
+    merge_status = mr.get("merge_status")
+    if commit_block:
+        return False
+    if merge_status != "can_be_merged":
+        return False
+    return commit_state in (None, "", "success")
+
+
 def maybe_auto_merge(args: argparse.Namespace, mr: Dict[str, Any]) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
     if not args.auto_merge:
         return mr, None
@@ -158,7 +169,7 @@ def maybe_auto_merge(args: argparse.Namespace, mr: Dict[str, Any]) -> Tuple[Dict
                 ),
             )
             return latest, {"merged_by_platform": True}
-        if commit_state == "success" and not commit_block and merge_status == "can_be_merged":
+        if is_auto_mergeable(latest):
             merged = merge_merge_request(args, latest)
             post_merge_request_note(
                 args,
