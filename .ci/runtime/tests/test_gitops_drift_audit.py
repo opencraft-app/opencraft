@@ -11,7 +11,7 @@ RUNTIME_DIR = Path(__file__).resolve().parents[1]
 if str(RUNTIME_DIR) not in sys.path:
     sys.path.insert(0, str(RUNTIME_DIR))
 
-from audit_gitops_drift import (
+from harness_ci.gitops_drift_audit import (
     Drift,
     ExpectedApp,
     build_alert_content,

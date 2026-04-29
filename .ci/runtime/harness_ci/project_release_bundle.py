@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Project the publish-facing subset of a bundle from a source ref onto the current worktree.
 """
@@ -101,7 +100,3 @@ def main() -> int:
     )
     print(f"projected {projected} files, deleted {deleted} stale files")
     return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

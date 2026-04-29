@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Build a release image from the central release bundle manifest.
 """
@@ -15,7 +14,7 @@ from pathlib import Path
 import yaml
 
 
-RUNTIME_DIR = Path(__file__).resolve().parent
+RUNTIME_DIR = Path(__file__).resolve().parents[1]
 REPO_ROOT = RUNTIME_DIR.parents[1]
 DEFAULT_MANIFEST_PATH = RUNTIME_DIR / "release-bundles.yaml"
 
@@ -111,7 +110,3 @@ def main() -> int:
     else:
         print(image)
     return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

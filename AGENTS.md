@@ -46,7 +46,7 @@
 > 全仓库服务（除特殊说明外）均已切换到 **Argo CD** 发布模型：
 > - source-facing 真源：`<service>/k8s/base/` + `<service>/k8s/overlays/<env>/`
 > - deploy-facing 真源：`argocd/services/<service>/<env>/`
-> - 统一镜像构建命令：`python3 .ci/runtime/build-release-image.py --service <service> --env <env> --tag <tag>`
+> - 统一镜像构建命令：`python3 .ci/runtime/harness_ci/commands/build_release_image.py --service <service> --env <env> --tag <tag>`
 
 ### 当前发布分支模型（P0）
 

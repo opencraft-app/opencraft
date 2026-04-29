@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Static GitOps invariants for the Beijing sandbox ApplicationSet model.
 """
@@ -13,9 +12,9 @@ from typing import Any, Iterable
 
 import yaml
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-if str(SCRIPT_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPT_DIR))
+RUNTIME_DIR = Path(__file__).resolve().parents[1]
+if str(RUNTIME_DIR) not in sys.path:
+    sys.path.insert(0, str(RUNTIME_DIR))
 
 from harness_ci.bundles import load_bundle, load_manifest  # noqa: E402
 
@@ -309,7 +308,3 @@ def main() -> int:
         f"bundle_manifest={bundle_manifest}"
     )
     return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

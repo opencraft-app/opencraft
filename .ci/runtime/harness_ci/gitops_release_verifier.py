@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Validate that a merged GitOps MR has converged in Argo CD and annotate the MR.
 """
@@ -565,7 +564,3 @@ def main() -> int:
             print(f"failed to post MR note after verification error: {note_exc}", file=sys.stderr)
         print(note, file=sys.stderr)
         raise
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

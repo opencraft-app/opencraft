@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Delete a promote branch after its GitOps MR has been merged.
 """
@@ -136,7 +135,3 @@ def main() -> int:
         file=sys.stderr,
     )
     return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

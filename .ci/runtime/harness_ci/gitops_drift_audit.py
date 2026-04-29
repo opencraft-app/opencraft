@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Audit whether live Argo CD apps match the GitOps inventory.
 """
@@ -539,7 +538,3 @@ def main() -> int:
     except Exception as exc:  # noqa: BLE001
         notify_if_needed(webhook_url, args.env, args.gitops_ref, gitops_commit_sha, [], error=str(exc))
         raise
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

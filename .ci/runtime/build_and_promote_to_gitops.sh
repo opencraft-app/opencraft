@@ -29,7 +29,7 @@ declare -A BUILT_IMAGES=()
 for ENV_NAME in "${ENVS[@]}"; do
   ci_set_registry_credentials "$ENV_NAME"
   image_output_file="$(mktemp)"
-  python3 "$REPO_ROOT/.ci/runtime/build-release-image.py" \
+  python3 "$REPO_ROOT/.ci/runtime/harness_ci/commands/build_release_image.py" \
     --service "$BUNDLE_SERVICE" \
     --env "$ENV_NAME" \
     --tag "$TAG" \

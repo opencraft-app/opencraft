@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Update deploy-facing image pin files under argocd/services/<service>/<env>.
 """
@@ -60,7 +59,3 @@ def main() -> int:
     platform_env.write_text(content)
     print(platform_env)
     return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

@@ -9,6 +9,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 RUNTIME_DIR = REPO_ROOT / ".ci" / "runtime"
+COMMAND_DIR = RUNTIME_DIR / "harness_ci" / "commands"
 
 
 class ResolveReleaseBundleTests(unittest.TestCase):
@@ -16,7 +17,7 @@ class ResolveReleaseBundleTests(unittest.TestCase):
         result = subprocess.run(
             [
                 "python3",
-                str(RUNTIME_DIR / "resolve_release_bundle.py"),
+                str(COMMAND_DIR / "resolve_release_bundle.py"),
                 "--service",
                 "user-auth",
                 "--env",
@@ -46,7 +47,7 @@ class ResolveReleaseBundleTests(unittest.TestCase):
         result = subprocess.run(
             [
                 "python3",
-                str(RUNTIME_DIR / "resolve_release_bundle.py"),
+                str(COMMAND_DIR / "resolve_release_bundle.py"),
                 "--service",
                 "frontend",
                 "--env",
@@ -70,7 +71,7 @@ class ResolveReleaseBundleTests(unittest.TestCase):
         result = subprocess.run(
             [
                 "python3",
-                str(RUNTIME_DIR / "resolve_release_bundle.py"),
+                str(COMMAND_DIR / "resolve_release_bundle.py"),
                 "--service",
                 "user-auth",
                 "--env",
@@ -94,7 +95,7 @@ class ResolveReleaseBundleTests(unittest.TestCase):
         result = subprocess.run(
             [
                 "python3",
-                str(RUNTIME_DIR / "build-release-image.py"),
+                str(COMMAND_DIR / "build_release_image.py"),
                 "--service",
                 "does-not-exist",
                 "--env",
@@ -206,7 +207,7 @@ class ProjectReleaseBundleTests(unittest.TestCase):
             result = subprocess.run(
                 [
                     "python3",
-                    str(RUNTIME_DIR / "project_release_bundle.py"),
+                    str(COMMAND_DIR / "project_release_bundle.py"),
                     "--repo-root",
                     str(repo),
                     "--service",

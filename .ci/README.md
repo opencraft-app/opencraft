@@ -41,7 +41,7 @@
 - `targetRevision` 从 `master` 切到 `gitops` 后，北京/上海 live app 仍然 `Synced / Healthy`
 - `env` 自有构建池上的 Linux 机器可以通过 SSH 免密 push `mono2`
 - `.ci/runtime/pin_image_to_gitops.sh` / `.ci/runtime/promote_bundle_image_to_gitops.sh` 能承载 GitOps 发布子集投影和 image pin 写回
-- `.ci/runtime/gitops_merge_request.py` 负责创建 / 复用 MR，并在北京环境轮询后自动合并
+- `.ci/runtime/harness_ci/commands/gitops_merge_request.py` 负责创建 / 复用 MR，并在北京环境轮询后自动合并
 - service 级 YAML 可以继续使用蓝盾 v2.0 的 `jobs.runs-on + steps` 结构
 
 ## Successful Experience
@@ -152,7 +152,7 @@
 
 - CI 直接用 `run` step
 - 调 `.ci/runtime/build_and_promote_to_gitops.sh`
-- 底层走 `.ci/runtime/build-release-image.py --push`
+- 底层走 `.ci/runtime/harness_ci/commands/build_release_image.py --push`
 - shell 优先从构建机本地文件读取 TCR token，不存在时再回落到 Stream settings
 - `docker login` 在 shell 里显式执行
 
@@ -329,18 +329,18 @@ CI_RUNTIME_REF=refs/tags/ci-runtime-20260429-1
 
 ## Shared Scripts
 
-- `.ci/runtime/update_image_pin.py`
+- `.ci/runtime/harness_ci/commands/update_image_pin.py`
   - 只更新 `argocd/services/<service>/<env>/*-platform.env`
-- `.ci/runtime/release_bundle_lib.py`
+- `.ci/runtime/harness_ci/bundles.py`
   - 解析 release bundle 元数据和模式化 `publish_paths`
-- `.ci/runtime/project_release_bundle.py`
+- `.ci/runtime/harness_ci/commands/project_release_bundle.py`
   - 把 bundle 在 `master@SHA` 上的发布子集投影到 `gitops` promote 分支
 - `.ci/runtime/pin_image_to_gitops.sh`
   - 先把发布子集投影到 promote 分支，再更新镜像 pin，并创建 / 复用进入 `gitops` 的 MR
-- `.ci/runtime/gitops_merge_request.py`
+- `.ci/runtime/harness_ci/commands/gitops_merge_request.py`
   - 创建 / 复用 GitOps MR
   - 北京环境等待 commit check 成功后自动合并
-- `.ci/runtime/gitops_cleanup_source_branch.py`
+- `.ci/runtime/harness_ci/commands/gitops_cleanup_source_branch.py`
   - 在 `promote-*` 分支自己的检查流水线结束后轮询 merged MR
   - 北京 auto-merge 成功后再显式删除 `promote-*` 源分支
 - `.ci/runtime/promote_bundle_image_to_gitops.sh`
@@ -351,7 +351,7 @@ CI_RUNTIME_REF=refs/tags/ci-runtime-20260429-1
 以下服务还没有接入这一版自动化：
 
 - `sandbox`
-  - 仍使用特殊镜像构建链路，不走 `build-release-image.py`
+  - 仍使用特殊镜像构建链路，不走 `.ci/runtime/harness_ci/commands/build_release_image.py`
 - `session`
   - 当前没有完整的 release bundle 定义
 - `frontend-ds`

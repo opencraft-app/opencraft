@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Create or reuse a GitOps merge request, with optional auto-merge polling.
 """
@@ -228,7 +227,3 @@ def main() -> int:
         mr, merge_result = maybe_auto_merge(args, mr)
     emit(args, mr, merge_result)
     return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

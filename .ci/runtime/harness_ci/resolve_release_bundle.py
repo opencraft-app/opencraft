@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Resolve release bundle metadata for CI and local automation.
 """
@@ -63,7 +62,3 @@ def main() -> int:
     else:
         print(emit_dotenv(result, args.tag), end="")
     return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Post a note to a GitOps merge request.
 """
@@ -43,7 +42,3 @@ def main() -> int:
     url = merge_request_note_url(args.api_base, args.project_id, args.mr_id)
     api_text_request("POST", url, private_token, {"body": args.body})
     return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

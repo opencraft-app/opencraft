@@ -9,7 +9,7 @@ RUNTIME_DIR = Path(__file__).resolve().parents[1]
 if str(RUNTIME_DIR) not in sys.path:
     sys.path.insert(0, str(RUNTIME_DIR))
 
-from validate_gitops_static import validate
+from harness_ci.gitops_static_validation import validate
 
 
 class GitOpsStaticValidationTests(unittest.TestCase):

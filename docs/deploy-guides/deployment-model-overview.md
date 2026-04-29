@@ -73,7 +73,7 @@ flowchart TD
 默认统一入口：
 
 ```bash
-python3 .ci/runtime/build-release-image.py --service <service> --env <env> --tag <tag>
+python3 .ci/runtime/harness_ci/commands/build_release_image.py --service <service> --env <env> --tag <tag>
 ```
 
 release bundle 清单：
