@@ -1,0 +1,58 @@
+version: v2.0
+name: 发布 frontend eo:cn-lightvela-prod
+
+on:
+  manual: enabled
+
+concurrency:
+  group: mono2-frontend-edgeone-lightvela-prod-release
+  cancel-in-progress: false
+  queue-length: 5
+  queue-timeout-minutes: 240
+
+variables:
+  FRONTEND_RELEASE_MATRIX:
+    value: eo:cn-lightvela-prod
+    readonly: true
+    allow-modify-at-startup: false
+
+stages:
+  - name: 发布 frontend eo:cn-lightvela-prod
+    jobs:
+      release:
+        name: 发布 EdgeOne lightvela 正式项目
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - checkout: self
+            name: 拉取代码
+            with:
+              fetchDepth: 50
+          - name: 发布 frontend 到 EdgeOne lightvela 正式项目
+            shell: bash
+            env:
+              EDGEONE_API_TOKEN: ${{ settings.EDGEONE_API_TOKEN }}
+              FRONTEND_RELEASE_MATRIX: ${{ variables.FRONTEND_RELEASE_MATRIX }}
+            run: |
+              echo "============================================================"
+              echo "frontend 发布决策：进入 EdgeOne lightvela 正式项目发布流程"
+              echo "发布矩阵：${FRONTEND_RELEASE_MATRIX}"
+              echo "发布项目：eo:cn-lightvela-prod"
+              echo "发布来源：branch=${{ ci.branch }} sha=${{ ci.sha }}"
+              echo "下一步：安装依赖并执行 pnpm release:matrix"
+              echo "============================================================"
+              source .ci/init.sh
+              ci_init_repo_root
+              ci_load_edgeone_credentials
+              ci_ensure_node
+              ci_ensure_pnpm
+
+              "$NODE_BIN" --version
+              "$NPM_BIN" --version
+
+              cd "$REPO_ROOT/frontend"
+              rm -rf node_modules dist-cn
+              "$PNPM_BIN" --version
+              "$PNPM_BIN" install --no-frozen-lockfile
+              "$PNPM_BIN" release:matrix

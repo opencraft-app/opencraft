@@ -29,19 +29,19 @@
       "outputDir": "dist-global"
     },
     {
-      "id": "eo:lightvela-prod",
-      "region": "global",
+      "id": "eo:cn-lightvela-prod",
+      "region": "cn",
       "channel": "eo",
-      "buildCommand": "build:global",
+      "buildCommand": "build:cn",
       "deployCommand": "deploy:eo",
       "projectName": "lightvela",
       "requiredSecretEnv": [
         "EDGEONE_API_TOKEN"
       ],
-      "authApiBaseUrl": "https://lightclaw.tech",
-      "outputDir": "dist-global",
+      "authApiBaseUrl": "https://api.lightvela.tencent.com",
+      "outputDir": "dist-cn",
       "deployEnv": {
-        "EDGEONE_PAGES_AREA": "global",
+        "EDGEONE_PAGES_AREA": "china",
         "EDGEONE_PAGES_ENV": "production"
       }
     }

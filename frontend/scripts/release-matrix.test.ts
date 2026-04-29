@@ -110,19 +110,20 @@ describe("release matrix helpers", () => {
     expect(comboEnv.EDGEONE_PAGES_ENV).toBe("preview");
   });
 
-  it("includes the production EdgeOne lightvela project in the release matrix", () => {
+  it("includes the production China EdgeOne lightvela project in the release matrix", () => {
     const { combos } = loadReleaseMatrix();
-    const combo = combos.find((item) => item.id === "eo:lightvela-prod");
+    const combo = combos.find((item) => item.id === "eo:cn-lightvela-prod");
 
     expect(combo).toMatchObject({
-      region: "global",
+      region: "cn",
       channel: "eo",
-      buildCommand: "build:global",
+      buildCommand: "build:cn",
       deployCommand: "deploy:eo",
       projectName: "lightvela",
-      outputDir: "dist-global",
+      authApiBaseUrl: "https://api.lightvela.tencent.com",
+      outputDir: "dist-cn",
       deployEnv: {
-        EDGEONE_PAGES_AREA: "global",
+        EDGEONE_PAGES_AREA: "china",
         EDGEONE_PAGES_ENV: "production",
       },
     });
