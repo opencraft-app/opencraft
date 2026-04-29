@@ -18,9 +18,9 @@ cat "${GUARD_CHANGED_FILES_FILE:?}"
 cd "$REPO_ROOT/frontend"
 echo "============================================================"
 echo "frontend 约束：安装/校验 pnpm 依赖"
-echo "说明：使用 --no-frozen-lockfile，保持与现有发布 CI 行为一致"
+echo "说明：MR guard 使用 frozen lockfile，避免 CI 重解依赖导致 Tailwind/Rollup 原生 optional 包版本漂移"
 echo "============================================================"
-"$PNPM_BIN" install --no-frozen-lockfile
+"$PNPM_BIN" install --frozen-lockfile
 
 echo "============================================================"
 echo "frontend 约束：运行 release matrix 单测"

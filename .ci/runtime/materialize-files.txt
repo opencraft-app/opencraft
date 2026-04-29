@@ -18,10 +18,12 @@
 .ci/runtime/commands/validate_prod_manual_sync.py
 .ci/runtime/commands/verify_db_contract.py
 .ci/runtime/commands/verify_gitops_release.py
+.ci/runtime/commands/verify_image_exists.py
 .ci/runtime/commands/verify_shprod_sync_preflight.py
 .ci/runtime/contracts/__init__.py
 .ci/runtime/contracts/build_release_image.py
 .ci/runtime/contracts/bundles.py
+.ci/runtime/contracts/image_existence.py
 .ci/runtime/contracts/image_pin.py
 .ci/runtime/contracts/project_release_bundle.py
 .ci/runtime/contracts/resolve_release_bundle.py

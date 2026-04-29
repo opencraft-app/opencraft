@@ -45,12 +45,13 @@
 - service 级 YAML 可以继续使用蓝盾 v2.0 的 `jobs.runs-on + steps` 结构
 - `.ci/mr-placeholder.yml` 已从空占位升级为 changed-file guard dispatcher，MR 必须通过对应目录 guard 后才能合并
 
-## DB-aware GitOps Release Gates
+## GitOps Release Gates
 
 当前 release gate 的分层策略：
 
 - 北京预发布：
   - `beijing-sandbox` / `beijing-sandbox-2` 保持自动 GitOps MR 合并和 Argo 自动收敛
+  - promote 写 GitOps pin 前先校验目标镜像 tag 已存在于 TCR；缺失时停止，避免 Argo `ImagePullBackOff`
   - 只要服务声明 `db_contract.mode: migration`，promote 时默认执行幂等受控 DB job
   - DB job 成功后再运行只读 DB readiness Job，确认 `schema_migrations` 非 dirty 且版本达到 repo 期望
   - readiness 失败时不创建可自动合并的发布 MR
@@ -58,6 +59,16 @@
   - promote MR 允许在 release gate 通过后自动合入 `gitops`
   - 合入后只表示 desired state 已进入“待同步状态”
   - `argocd/apps/shprod/**` 必须保持非自动 sync，人工确认 DB readiness 后再 sync
+  - 进入待同步前同样必须通过目标镜像存在性校验；Git commit 存在不等于镜像 tag 已构建并推送
+
+镜像存在性门禁：
+
+- `.ci/runtime/commands/verify_image_exists.py`
+  - 支持单镜像 ref 和 `{"images": {...}}` 多镜像 payload
+  - 使用 `docker manifest inspect` 校验 registry 中的 tag 是否存在
+  - 由 `.ci/runtime/pin_image_to_gitops.sh` 在更新 `*-platform.env` 前执行
+- registry 凭据仍通过 `.ci/init.sh` 的 `ci_set_registry_credentials <env>` 读取 `/etc/lightclaw-ci/tcr_*` 或 Stream settings
+- 这个门禁属于 promote runtime gate，不是 MR 静态 guard；它校验的是“发布输入是否真实存在”
 
 DB contract 的声明位置是：
 
@@ -100,6 +111,8 @@ DB job / readiness Job 的 kubeconfig 读取顺序：
   - 解析 release bundle manifest
 - `.ci/runtime/contracts/image_pin.py`
   - 更新 `argocd/services/<service>/<env>/*-platform.env`
+- `.ci/runtime/contracts/image_existence.py`
+  - promote 写 pin 前校验目标镜像 tag 已存在，支持单镜像和多镜像 payload
 - `.ci/runtime/contracts/project_release_bundle.py`
   - 从 `master@SHA` 投影发布子集到 promote 分支
 
@@ -108,7 +121,7 @@ DB job / readiness Job 的 kubeconfig 读取顺序：
 GitOps MR、promote 分支、收敛验收和漂移审计：
 
 - `.ci/runtime/pin_image_to_gitops.sh`
-  - DB gate 后投影 GitOps 子集、更新 image pin、创建 MR
+  - image gate / DB gate 后投影 GitOps 子集、更新 image pin、创建 MR
 - `.ci/runtime/promote_bundle_image_to_gitops.sh`
   - 手动 promote 已存在镜像到 GitOps
 - `.ci/runtime/gitops/gitops_merge_request.py`

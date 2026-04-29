@@ -118,7 +118,7 @@ stages:
               cd "$REPO_ROOT/frontend"
               rm -rf node_modules
               "$PNPM_BIN" --version
-              "$PNPM_BIN" install --no-frozen-lockfile
+              "$PNPM_BIN" install --frozen-lockfile
               "$PNPM_BIN" release:matrix
           - name: 构建 frontend GitOps 镜像
             shell: bash

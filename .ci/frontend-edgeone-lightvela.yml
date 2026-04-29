@@ -56,5 +56,5 @@ stages:
               cd "$REPO_ROOT/frontend"
               rm -rf node_modules dist-cn
               "$PNPM_BIN" --version
-              "$PNPM_BIN" install --no-frozen-lockfile
+              "$PNPM_BIN" install --frozen-lockfile
               "$PNPM_BIN" release:matrix

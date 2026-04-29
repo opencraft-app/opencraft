@@ -26,6 +26,7 @@ SERVICE_ARG="$2"
 ENV_NAME="$3"
 IMAGE="$4"
 SOURCE_REF="$5"
+GATE_IMAGE_STATUS="unknown"
 GATE_DB_STATUS="unknown"
 
 ci_require_commands git python3
@@ -158,6 +159,41 @@ run_release_gate() {
   esac
 }
 
+run_image_gate() {
+  local image_gate_file
+
+  echo "============================================================"
+  echo "GitOps 发布门禁：校验目标镜像是否已存在"
+  echo "目标环境：${ENV_NAME}"
+  echo "目标镜像：${IMAGE}"
+  echo "说明：GitOps pin 只能写入已存在于镜像仓库的 tag；缺失时停止 promote，避免 Argo 拉取 ImagePullBackOff。"
+  echo "============================================================"
+
+  ci_set_registry_credentials "$ENV_NAME"
+  image_gate_file="$(mktemp)"
+  if ! python3 "$RUNTIME_COMMAND_DIR/verify_image_exists.py" \
+    --image "$IMAGE" \
+    --format dotenv > "$image_gate_file"; then
+    rm -f "$image_gate_file"
+    echo "镜像存在性门禁失败；不会写 GitOps pin，也不会创建 promote MR。" >&2
+    exit 1
+  fi
+  # shellcheck disable=SC1090
+  source "$image_gate_file"
+  rm -f "$image_gate_file"
+
+  if [[ "${IMAGE_EXISTS:-false}" != "true" ]]; then
+    echo "镜像存在性门禁失败；verify_image_exists.py 未确认所有镜像存在。" >&2
+    exit 1
+  fi
+  GATE_IMAGE_STATUS="passed"
+
+  echo "============================================================"
+  echo "GitOps 发布门禁：镜像存在性校验通过"
+  echo "镜像清单：${IMAGE_REFS_JSON:-[]}"
+  echo "============================================================"
+}
+
 if ! git -C "$REPO_ROOT" diff --quiet || ! git -C "$REPO_ROOT" diff --cached --quiet; then
   echo "repository has uncommitted changes; refuse to rewrite branch state" >&2
   exit 1
@@ -186,6 +222,7 @@ done
 mkdir -p "$bootstrap_dir/.ci"
 cp -R "$REPO_ROOT/.ci/runtime" "$bootstrap_dir/.ci/runtime"
 RUNTIME_COMMAND_DIR="$bootstrap_dir/.ci/runtime/commands"
+run_image_gate
 run_release_gate
 
 if [[ -n "$REMOTE_URL" ]]; then
@@ -259,6 +296,7 @@ Release-bundle: ${BUNDLE_SERVICE}
 Release-target-env: ${ENV_NAME}
 Release-pin-targets: ${SERVICE_ARG}
 Release-image: ${IMAGE}
+Release-gate-image-status: ${GATE_IMAGE_STATUS}
 Release-gate-db-status: ${GATE_DB_STATUS}
 Release-gate-db-readiness-required: ${GATE_REQUIRES_DB_READINESS}
 Release-gate-auto-merge: ${GATE_AUTO_MERGE_ALLOWED}
@@ -292,6 +330,7 @@ $MR_DESCRIPTION_HEADER
 - 发布时间：$DEPLOYED_AT
 - 源分支：$PROMOTE_BRANCH
 - 目标分支：$GITOPS_BRANCH
+- 镜像存在性：$GATE_IMAGE_STATUS
 - DB readiness：required=$GATE_REQUIRES_DB_READINESS status=$GATE_DB_STATUS
 - 自动合并允许：$GATE_AUTO_MERGE_ALLOWED
 - Argo sync：$GATE_ARGO_SYNC
@@ -345,6 +384,7 @@ $NOTE_HEADLINE
 - 镜像：$IMAGE
 - 源 revision：$SOURCE_REF
 - promote 分支：$PROMOTE_BRANCH
+- 镜像存在性：$GATE_IMAGE_STATUS
 - DB readiness：required=$GATE_REQUIRES_DB_READINESS status=$GATE_DB_STATUS
 - 自动合并允许：$GATE_AUTO_MERGE_ALLOWED
 - Argo sync：$GATE_ARGO_SYNC
