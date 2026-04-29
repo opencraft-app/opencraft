@@ -33,6 +33,7 @@ stages:
             shell: bash
             env:
               EDGEONE_API_TOKEN_FILE: /etc/lightclaw-ci/edgeone_lightvela_prod_token
+              EDGEONE_API_TOKEN_REQUIRED: "1"
               EDGEONE_API_TOKEN: ${{ settings.EDGEONE_LIGHTVELA_PROD_TOKEN }}
               FRONTEND_RELEASE_MATRIX: ${{ variables.FRONTEND_RELEASE_MATRIX }}
             run: |

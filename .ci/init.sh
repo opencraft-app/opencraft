@@ -414,16 +414,40 @@ ci_load_cloudflare_credentials() {
 
 ci_load_edgeone_credentials() {
   local api_token_file="${EDGEONE_API_TOKEN_FILE:-/etc/lightclaw-ci/edgeone_api_token}"
+  local raw_token=""
+  local token=""
+  local source=""
 
   if [[ -r "$api_token_file" ]]; then
-    export EDGEONE_API_TOKEN
-    EDGEONE_API_TOKEN="$(tr -d '\r\n' < "$api_token_file")"
-    echo "edgeone api token loaded from file:$api_token_file"
+    raw_token="$(cat "$api_token_file")"
+    token="$(printf '%s' "$raw_token" | ci_read_secret_value)"
+    source="file:$api_token_file"
   elif [[ -n "${EDGEONE_API_TOKEN:-}" ]]; then
-    echo "edgeone api token loaded from settings"
+    raw_token="$EDGEONE_API_TOKEN"
+    token="$(printf '%s' "$raw_token" | ci_read_secret_value)"
+    source="settings"
   else
+    if [[ "${EDGEONE_API_TOKEN_REQUIRED:-}" == "1" ]]; then
+      echo "edgeone api token is required but not configured" >&2
+      return 1
+    fi
     echo "edgeone api token is not configured"
+    return 0
   fi
+
+  if [[ -z "$token" ]]; then
+    echo "edgeone api token loaded from ${source} but is empty after trimming" >&2
+    return 1
+  fi
+
+  if [[ "$token" == '${{'* ]]; then
+    echo "edgeone api token loaded from ${source} but still looks like an unresolved CI settings expression" >&2
+    return 1
+  fi
+
+  export EDGEONE_API_TOKEN="$token"
+  export EDGEONE_API_TOKEN_SOURCE="$source"
+  ci_log "edgeone api token loaded from ${source} (raw_token_len=${#raw_token}, token_len=${#EDGEONE_API_TOKEN}, token_trimmed=$([[ "$raw_token" == "$token" ]] && echo no || echo yes), token_fingerprint=$(printf '%s' "$EDGEONE_API_TOKEN" | ci_fingerprint_secret))"
 }
 
 ci_load_git_woa_private_token() {
