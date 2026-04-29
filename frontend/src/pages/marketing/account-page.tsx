@@ -86,13 +86,16 @@ const InfoRow = ({
 const VerifyIdentityModal = ({
   onClose,
   onSuccess,
+  verified,
 }: {
   onClose: () => void;
   /** 调用方负责刷新 session 并关闭弹窗 */
   onSuccess: () => void;
+  verified: boolean;
 }) => {
   const { auth } = useRepositories();
   const { refreshProfile } = useSession();
+  const t = useT();
   const [realName, setRealName] = useState("");
   const [idNumber, setIdNumber] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -186,7 +189,7 @@ const VerifyIdentityModal = ({
                   color: "rgba(0,0,0,0.9)",
                 }}
               >
-                实名认证
+                {verified ? t("修改实名认证") : t("实名认证")}
               </h3>
               <p
                 className="m-0"
@@ -198,7 +201,9 @@ const VerifyIdentityModal = ({
                   color: "rgba(0,0,0,0.9)",
                 }}
               >
-                完成实名认证后可以发布技能和参与更多社区活动
+                {verified
+                  ? t("重新提交真实姓名和身份证号，通过核验后将更新当前实名信息。")
+                  : t("完成实名认证后可以发布技能和参与更多社区活动")}
               </p>
             </div>
             <button
@@ -215,13 +220,17 @@ const VerifyIdentityModal = ({
           <div
             className="flex items-center gap-1"
             style={{
-              background: "rgba(255, 161, 0, 0.1)",
+              background: verified ? "rgba(7, 193, 96, 0.1)" : "rgba(255, 161, 0, 0.1)",
               borderRadius: 8,
               padding: "4px 12px",
             }}
           >
             <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center">
-              <Shield className="h-[18px] w-[18px]" style={{ color: "#FFA100" }} />
+              {verified ? (
+                <ShieldCheck className="h-[18px] w-[18px]" style={{ color: "#07C160" }} />
+              ) : (
+                <Shield className="h-[18px] w-[18px]" style={{ color: "#FFA100" }} />
+              )}
             </div>
             <span
               style={{
@@ -232,7 +241,9 @@ const VerifyIdentityModal = ({
                 color: "rgba(0,0,0,0.9)",
               }}
             >
-              当前未认证，请完善信息并提交认证。
+              {verified
+                ? t("当前账号已完成实名。修改后会覆盖当前实名信息，后台保留变更记录。")
+                : t("当前未认证，请完善信息并提交认证。")}
             </span>
           </div>
         </div>
@@ -378,10 +389,10 @@ const VerifyIdentityModal = ({
             {submitting ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
-                提交中...
+                {verified ? t("更新中...") : t("提交中...")}
               </>
             ) : (
-              "提交认证"
+              verified ? t("更新认证") : t("提交认证")
             )}
           </button>
           <p
@@ -1023,11 +1034,21 @@ export const AccountPage = () => {
                 <div className="flex items-center justify-between">
                   <span className="text-sm" style={{ color: "rgba(0,0,0,0.5)", lineHeight: "24px" }}>实名认证</span>
                   {verified ? (
-                    <div className="flex items-center gap-2">
-                      <ShieldCheck className="h-5 w-5 flex-shrink-0" style={{ color: "#07C160" }} />
-                      <span className="text-sm" style={{ color: "rgba(0,0,0,0.9)" }}>
-                        已认证
-                      </span>
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2">
+                        <ShieldCheck className="h-5 w-5 flex-shrink-0" style={{ color: "#07C160" }} />
+                        <span className="text-sm" style={{ color: "rgba(0,0,0,0.9)" }}>
+                          {t("已认证")}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => setShowVerifyModal(true)}
+                        className="flex items-center gap-1 text-sm transition-colors hover:opacity-80"
+                        style={{ color: "var(--lw-accent)" }}
+                      >
+                        {t("修改")}
+                        <ChevronRight className="h-4 w-4" />
+                      </button>
                     </div>
                   ) : (
                     <button
@@ -1035,7 +1056,7 @@ export const AccountPage = () => {
                       className="flex items-center gap-1 text-sm transition-colors hover:opacity-80"
                       style={{ color: "var(--lw-accent)" }}
                     >
-                      去认证
+                      {t("去认证")}
                       <ChevronRight className="h-4 w-4" />
                     </button>
                   )}
@@ -1058,6 +1079,7 @@ export const AccountPage = () => {
             key="verify"
             onClose={() => setShowVerifyModal(false)}
             onSuccess={handleVerifySuccess}
+            verified={verified}
           />
         )}
         {showDeleteModal && (
