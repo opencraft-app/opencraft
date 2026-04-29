@@ -61,7 +61,6 @@ import { translation as enTranslation } from "@tencent/tea-sdk-lightclaw/i18n/tr
 // SDK feat/i18n 分支已去掉自动 initI18n() 调用，
 // 由消费方显式控制初始化时机和词条内容。
 if (_isEnglishEnv) {
-  // @ts-expect-error translation 参数在 SDK feat/i18n 分支可用
   initI18n({ translation: enTranslation });
 } else {
   initI18n();
