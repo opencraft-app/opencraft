@@ -1,5 +1,5 @@
 version: v2.0
-name: release-frontend
+name: 发布 frontend
 
 on:
   push:
@@ -35,10 +35,10 @@ variables:
     allow-modify-at-startup: true
 
 stages:
-  - name: 服务发布
+  - name: 发布 frontend
     jobs:
       release:
-        name: 构建并发布前端矩阵
+        name: 构建并发布 frontend 矩阵
         runs-on:
           self-hosted: true
           pool-name: env
@@ -48,7 +48,7 @@ stages:
           - checkout: self
             with:
               fetchDepth: 50
-          - name: debug-context
+          - name: 打印 frontend 发布上下文
             shell: bash
             run: |
               echo "ci.event=${{ ci.event }}"
@@ -58,13 +58,14 @@ stages:
               echo "TARGET_ENV=${{ variables.TARGET_ENV }}"
               echo "SOURCE_SHA=${{ variables.SOURCE_SHA }}"
           - id: prepare
+            name: 准备 frontend 发布标签
             if: ${{ variables.PIPELINE_MODE }} != 'promote'
             shell: bash
             run: |
               SHORT_SHA="${{ ci.sha }}"
               SHORT_SHA="${SHORT_SHA:0:12}"
               echo "::set-output name=tag::frontend-${SHORT_SHA}"
-          - name: deploy-beijing-cloudflare
+          - name: 发布 frontend Pages 矩阵
             if: ${{ variables.PIPELINE_MODE }} != 'promote'
             shell: bash
             env:
@@ -92,7 +93,7 @@ stages:
               "$PNPM_BIN" --version
               "$PNPM_BIN" install --no-frozen-lockfile
               "$PNPM_BIN" release:matrix
-          - name: promote-manual
+          - name: 手动发布 frontend 到 GitOps
             if: ${{ variables.PIPELINE_MODE }} == 'promote'
             shell: bash
             run: |
