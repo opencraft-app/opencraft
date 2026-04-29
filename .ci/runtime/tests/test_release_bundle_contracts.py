@@ -98,6 +98,27 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertTrue(any(path.startswith("argocd/services/service-gateway/shprod/") for path in bundle.publish_paths))
         self.assertFalse(any("admin-gateway" in path for path in bundle.publish_paths))
 
+    def test_shprod_release_bundles_project_exactly_one_direct_app(self) -> None:
+        manifest = load_manifest()
+
+        for bundle_name in sorted((manifest.get("bundles") or {})):
+            with self.subTest(bundle=bundle_name):
+                bundle = load_bundle(manifest, bundle_name, "shprod")
+                direct_services = {
+                    parts[2]
+                    for path in bundle.publish_paths
+                    if (parts := path.split("/"))
+                    and len(parts) >= 4
+                    and parts[0:2] == ["argocd", "services"]
+                    and parts[3] == "shprod"
+                }
+                if direct_services:
+                    self.assertEqual(
+                        len(direct_services),
+                        1,
+                        f"{bundle_name} shprod bundle must not project unrelated direct apps: {sorted(direct_services)}",
+                    )
+
     def test_service_gateway_shprod_promote_pins_only_service_gateway(self) -> None:
         workflow = (REPO_ROOT / ".ci/service-gateway.yml").read_text()
 
