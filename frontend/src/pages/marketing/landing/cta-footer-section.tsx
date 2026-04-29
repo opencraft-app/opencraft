@@ -3,7 +3,7 @@ import { ArrowUpRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 import { fadeInUp, staggerContainer, titleReveal, viewportConfig } from "./constants";
-import { BEIAN_URL, ICP_LICENSE } from "@/constants/legal";
+import { BEIAN_URL, ICP_LICENSE, shouldShowICP } from "@/constants/legal";
 import { useT } from "@/i18n/t";
 
 export function CTAFooterSection({
@@ -104,10 +104,14 @@ export function CTAFooterSection({
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] leading-[1.6] tracking-[-0.013em] text-black/50 md:gap-[22px] md:text-xs md:leading-[1.5]">
             <span>
               {t("© {{year}} LightVela 版权所有。", { year: new Date().getFullYear() })}
-              {" "}
-              <a href={BEIAN_URL} target="_blank" rel="noopener noreferrer" className="transition-colors hover:text-black">
-                {ICP_LICENSE}
-              </a>
+              {shouldShowICP() && (
+                <>
+                  {" "}
+                  <a href={BEIAN_URL} target="_blank" rel="noopener noreferrer" className="transition-colors hover:text-black">
+                    {ICP_LICENSE}
+                  </a>
+                </>
+              )}
             </span>
             <span>
               <a href="https://cloud.tencent.com/document/product/301/11470" target="_blank" rel="noopener noreferrer" className="transition-colors hover:text-black">
