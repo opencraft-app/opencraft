@@ -213,53 +213,6 @@ stages:
                   ;;
               esac
 
-  - name: 上海生产人工 Sync 审批
-    if: startsWith(ci.branch, 'promote-shprod-')
-    check-in:
-      reviews:
-        flows:
-          - name: 上海生产发布审批
-            reviewers:
-              - skipzhang
-        description: |
-          确认 GitOps MR 已合入、DB readiness 可通过，随后人工执行 Argo sync。
-        content-format: markdown
-        notify-type: [RTX]
-      timeout-hours: 24
-    jobs:
-      shprod_sync_preflight:
-        name: 人工审批后 DB readiness 只读校验
-        runs-on:
-          self-hosted: true
-          pool-name: env
-        env:
-          CI_RUNTIME_REF: origin/master
-        steps:
-          - checkout: self
-            name: 拉取代码
-            with:
-              fetchDepth: 50
-          - name: 校验人工 Argo sync 前 DB readiness
-            shell: bash
-            run: |
-              CI_RUNTIME_DIR="$(mktemp -d)"
-              mkdir -p "${CI_RUNTIME_DIR}/.ci" "${CI_RUNTIME_DIR}/.ci/runtime"
-              git show HEAD:.ci/init.sh > "${CI_RUNTIME_DIR}/.ci/init.sh"
-              source "${CI_RUNTIME_DIR}/.ci/init.sh"
-              ci_prepare_runtime_ref "${CI_RUNTIME_REF:-origin/master}"
-              ci_export_gongfeng_defaults
-              git show "${CI_RUNTIME_COMMIT}:.ci/init.sh" > "${CI_RUNTIME_DIR}/.ci/init.sh"
-              source "${CI_RUNTIME_DIR}/.ci/init.sh"
-              ci_export_gongfeng_defaults
-              ci_materialize_runtime_manifest "${CI_RUNTIME_DIR}" ".ci/runtime/materialize-files.txt"
-              ci_init_repo_root
-              python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/verify_shprod_sync_preflight.py" \
-                --repo-root "$REPO_ROOT" \
-                --source-branch "${{ ci.branch }}" \
-                --apply \
-                --wait
-              echo "上海生产同步前置校验通过；请在发布窗口人工执行 Argo sync。"
-
   - name: 清理 promote 分支
     jobs:
       cleanup_branch:
