@@ -24,6 +24,7 @@ import { LoginModal } from "@/components/site/login-modal";
 import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
 import { avatarImageUrl } from "@/lib/avatar-image";
 import { useT } from "@/i18n/t";
+import { isGlobal } from "@/lib/region";
 
 /* ─── animation variants ─── */
 
@@ -706,6 +707,7 @@ export const AccountPage = () => {
 
   // Verification —— 实名认证：直接以 session 里的 realnameVerified 为准
   const verified = Boolean(user?.realnameVerified);
+  const showRealnameSection = !isGlobal;
   const [showVerifyModal, setShowVerifyModal] = useState(false);
 
   // Delete account
@@ -1013,9 +1015,10 @@ export const AccountPage = () => {
                 </div>
               </div>
 
-              {/* Bottom: info rows —— 暂只放出「实名认证」行，「登录账号」行待能区分多渠道登录方式后再恢复 */}
-              <div className="flex flex-col gap-12 px-8 py-8">
-                {/*
+              {showRealnameSection && (
+                /* Bottom: info rows —— 暂只放出「实名认证」行，「登录账号」行待能区分多渠道登录方式后再恢复 */
+                <div className="flex flex-col gap-12 px-8 py-8">
+                  {/*
                 <div className="flex items-center justify-between">
                   <span className="text-sm" style={{ color: "rgba(0,0,0,0.5)", lineHeight: "24px" }}>
                     登录账号
@@ -1031,37 +1034,38 @@ export const AccountPage = () => {
                 </div>
                 */}
 
-                <div className="flex items-center justify-between">
-                  <span className="text-sm" style={{ color: "rgba(0,0,0,0.5)", lineHeight: "24px" }}>实名认证</span>
-                  {verified ? (
-                    <div className="flex items-center gap-3">
-                      <div className="flex items-center gap-2">
-                        <ShieldCheck className="h-5 w-5 flex-shrink-0" style={{ color: "#07C160" }} />
-                        <span className="text-sm" style={{ color: "rgba(0,0,0,0.9)" }}>
-                          {t("已认证")}
-                        </span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm" style={{ color: "rgba(0,0,0,0.5)", lineHeight: "24px" }}>实名认证</span>
+                    {verified ? (
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2">
+                          <ShieldCheck className="h-5 w-5 flex-shrink-0" style={{ color: "#07C160" }} />
+                          <span className="text-sm" style={{ color: "rgba(0,0,0,0.9)" }}>
+                            {t("已认证")}
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => setShowVerifyModal(true)}
+                          className="flex items-center gap-1 text-sm transition-colors hover:opacity-80"
+                          style={{ color: "var(--lw-accent)" }}
+                        >
+                          {t("修改")}
+                          <ChevronRight className="h-4 w-4" />
+                        </button>
                       </div>
+                    ) : (
                       <button
                         onClick={() => setShowVerifyModal(true)}
                         className="flex items-center gap-1 text-sm transition-colors hover:opacity-80"
                         style={{ color: "var(--lw-accent)" }}
                       >
-                        {t("修改")}
+                        {t("去认证")}
                         <ChevronRight className="h-4 w-4" />
                       </button>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => setShowVerifyModal(true)}
-                      className="flex items-center gap-1 text-sm transition-colors hover:opacity-80"
-                      style={{ color: "var(--lw-accent)" }}
-                    >
-                      {t("去认证")}
-                      <ChevronRight className="h-4 w-4" />
-                    </button>
-                  )}
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
             </motion.div>
 
             {/* ── Section 2: Subscription ── */}
@@ -1074,7 +1078,7 @@ export const AccountPage = () => {
 
       {/* Modals */}
       <AnimatePresence>
-        {showVerifyModal && (
+        {showRealnameSection && showVerifyModal && (
           <VerifyIdentityModal
             key="verify"
             onClose={() => setShowVerifyModal(false)}
