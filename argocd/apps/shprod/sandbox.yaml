@@ -12,7 +12,3 @@ spec:
   destination:
     namespace: sandbox
     name: shprod
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true

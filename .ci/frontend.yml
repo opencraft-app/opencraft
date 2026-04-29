@@ -1,5 +1,5 @@
 version: v2.0
-name: 发布 frontend
+name: 构建 frontend
 
 on:
   push:
@@ -30,7 +30,7 @@ variables:
     readonly: false
     allow-modify-at-startup: true
   FRONTEND_RELEASE_MATRIX:
-    value: cn-cf,global-cf
+    value: cn-cf,global-cf,eo:lightvela-prod
     readonly: false
     allow-modify-at-startup: true
   TARGET_ENV:
@@ -43,10 +43,10 @@ variables:
     allow-modify-at-startup: true
 
 stages:
-  - name: 发布 frontend
+  - name: 构建 frontend
     jobs:
       release:
-        name: 构建并发布 frontend
+        name: 构建 frontend
         runs-on:
           self-hosted: true
           pool-name: env
@@ -57,7 +57,7 @@ stages:
             name: 拉取代码
             with:
               fetchDepth: 50
-          - name: 打印 frontend 发布上下文
+          - name: 打印 frontend 构建上下文
             shell: bash
             run: |
               echo "ci.event=${{ ci.event }}"
@@ -67,7 +67,7 @@ stages:
               echo "TARGET_ENV=${{ variables.TARGET_ENV }}"
               echo "SOURCE_SHA=${{ variables.SOURCE_SHA }}"
           - id: prepare
-            name: 准备 frontend 发布标签
+            name: 准备 frontend 构建标签
             shell: bash
             run: |
               if [[ "${{ variables.PIPELINE_MODE }}" == "promote" ]]; then
@@ -77,7 +77,7 @@ stages:
               SHORT_SHA="${{ ci.sha }}"
               SHORT_SHA="${SHORT_SHA:0:12}"
               echo "::set-output name=tag::frontend-${SHORT_SHA}"
-          - name: 发布 frontend Pages 矩阵
+          - name: 构建 frontend Pages 矩阵
             shell: bash
             env:
               CLOUDFLARE_API_TOKEN: ${{ settings.CLOUDFLARE_API_TOKEN }}

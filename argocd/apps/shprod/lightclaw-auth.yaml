@@ -12,7 +12,3 @@ spec:
   destination:
     namespace: user-auth
     name: shprod
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true

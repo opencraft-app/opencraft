@@ -58,6 +58,11 @@ smoke_command "validate_gitops_kustomize" \
   ".ci/runtime/harness_ci/commands/validate_gitops_kustomize.py" \
   ".ci/runtime/harness_ci/gitops_kustomize_validation.py"
 
+smoke_command "validate_prod_manual_sync" \
+  "${common_package[@]}" \
+  ".ci/runtime/harness_ci/commands/validate_prod_manual_sync.py" \
+  ".ci/runtime/harness_ci/prod_manual_sync_validation.py"
+
 smoke_command "gitops_merge_request" \
   "${common_package[@]}" \
   ".ci/runtime/harness_ci/commands/gitops_merge_request.py" \

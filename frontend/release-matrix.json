@@ -27,6 +27,23 @@
       ],
       "authApiBaseUrl": "https://lightclaw.tech",
       "outputDir": "dist-global"
+    },
+    {
+      "id": "eo:lightvela-prod",
+      "region": "global",
+      "channel": "eo",
+      "buildCommand": "build:global",
+      "deployCommand": "deploy:eo",
+      "projectName": "lightvela",
+      "requiredSecretEnv": [
+        "EDGEONE_API_TOKEN"
+      ],
+      "authApiBaseUrl": "https://lightclaw.tech",
+      "outputDir": "dist-global",
+      "deployEnv": {
+        "EDGEONE_PAGES_AREA": "global",
+        "EDGEONE_PAGES_ENV": "production"
+      }
     }
   ]
 }

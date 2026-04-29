@@ -18,6 +18,8 @@
 - bot PR 不能自动合并，必须有人审批准入
 - 这里的 leaf app 由 `root-shprod` 统一扫描和接管
 - 当前上海先沿用按服务拆分的 cutover project 模式，而不是统一 `shprod` project
+- 上海正式环境不启用 `syncPolicy.automated`
+- GitOps MR 合入 `gitops` 只代表发布批准；实际下发必须由人工或发布系统在发布窗口执行 Argo sync
 
 当前已切 live deploy-facing 入口的服务：
 
@@ -55,6 +57,7 @@
 - `spec.source.targetRevision` 指向 `gitops`
 - `spec.destination.name` 继续使用 `shprod`
 - `spec.project` 与服务对应的 cutover project 一致
+- 不要为 shprod root app 或 leaf app 添加 `syncPolicy.automated`
 - 对应 deploy-facing 目录已经在新 Argo 的 `ksops` 运行时下验证通过
 
 当前仍保持 skeleton / 待后续纳管：
