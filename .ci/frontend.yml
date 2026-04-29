@@ -78,6 +78,14 @@ stages:
               CLOUDFLARE_PAGES_COMMIT_MESSAGE: Cloudflare Pages deploy from frontend pipeline
               FRONTEND_RELEASE_MATRIX: ${{ variables.FRONTEND_RELEASE_MATRIX }}
             run: |
+              echo "============================================================"
+              echo "frontend 发布决策：进入 Pages 矩阵发布流程"
+              echo "触发原因：PIPELINE_MODE=${{ variables.PIPELINE_MODE }}，满足非 promote 构建发布条件"
+              echo "发布矩阵：${FRONTEND_RELEASE_MATRIX}"
+              echo "发布模型：CI 只选择矩阵项，组合定义以 frontend/release-matrix.json 为准"
+              echo "发布来源：branch=${{ ci.branch }} sha=${{ ci.sha }}"
+              echo "下一步：安装依赖并执行 pnpm release:matrix"
+              echo "============================================================"
               source .ci/init.sh
               ci_init_repo_root
               ci_export_gongfeng_defaults
