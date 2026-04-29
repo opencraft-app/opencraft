@@ -3,9 +3,8 @@ import { ArrowUpRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 import { fadeInUp, staggerContainer, titleReveal, viewportConfig } from "./constants";
-import { BEIAN_URL, ICP_LICENSE } from "@/constants/legal";
+import { BEIAN_URL, ICP_LICENSE, shouldShowICP } from "@/constants/legal";
 import { useT } from "@/i18n/t";
-import { isCN } from "@/lib/region";
 
 export function CTAFooterSection({
   onLoginClick,
@@ -104,10 +103,11 @@ export function CTAFooterSection({
         <div className="mt-10 border-t border-black/8 pt-5 md:mt-16 md:pt-6">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] leading-[1.6] tracking-[-0.013em] text-black/50 md:gap-[22px] md:text-xs md:leading-[1.5]">
             <span>
-              {t("© {{year}} LightVela 版权所有。", { year: new Date().getFullYear() })}{isCN && (
+              {t("© {{year}} LightVela 版权所有。", { year: new Date().getFullYear() })}
+              {shouldShowICP() && (
                 <>
                   {" "}
-                  <a href={BEIAN_URL} target="_blank" rel="noreferrer" className="transition-colors hover:text-black">
+                  <a href={BEIAN_URL} target="_blank" rel="noopener noreferrer" className="transition-colors hover:text-black">
                     {ICP_LICENSE}
                   </a>
                 </>
