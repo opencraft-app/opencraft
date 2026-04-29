@@ -106,10 +106,25 @@ stages:
             if: ${{ variables.PIPELINE_MODE }} == 'promote'
             shell: bash
             run: |
-              test -n "${{ variables.SOURCE_SHA }}"
+              SOURCE_SHA="${{ variables.SOURCE_SHA }}"
+              if [ -z "$SOURCE_SHA" ]; then
+                SOURCE_SHA="${{ ci.sha }}"
+              fi
+              if [ -z "$SOURCE_SHA" ]; then
+                echo "SOURCE_SHA 为空，且 ci.sha 不可用；无法手动发布 frontend 到 GitOps。" >&2
+                exit 1
+              fi
+              echo "============================================================"
+              echo "frontend 发布决策：进入 GitOps 手动发布流程"
+              echo "触发原因：PIPELINE_MODE=${{ variables.PIPELINE_MODE }}，满足 promote 发布条件"
+              echo "目标环境：${{ variables.TARGET_ENV }}"
+              echo "源码提交：$SOURCE_SHA"
+              echo "提交来源：SOURCE_SHA 为空时自动回退到本次手动选择的 ci.sha=${{ ci.sha }}"
+              echo "下一步：把 frontend 镜像发布内容投影到 gitops 并创建发布 MR"
+              echo "============================================================"
               source .ci/init.sh
               ci_init_repo_root
               ci_export_gongfeng_defaults
               REMOTE_URL="$(ci_gitops_remote_url)" \
               GITOPS_BRANCH=gitops \
-              bash .ci/runtime/promote_bundle_image_to_gitops.sh frontend frontend "${{ variables.TARGET_ENV }}" "${{ variables.SOURCE_SHA }}"
+              bash .ci/runtime/promote_bundle_image_to_gitops.sh frontend frontend "${{ variables.TARGET_ENV }}" "$SOURCE_SHA"
