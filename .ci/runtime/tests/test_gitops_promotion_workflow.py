@@ -116,6 +116,16 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
         self.assertIn('python3 "$RUNTIME_COMMAND_DIR/update_image_pin.py"', script)
         self.assertIn("GitOps 发布意图：准备把镜像推进到", script)
 
+    def test_shprod_promote_branches_are_not_removed_by_automation(self) -> None:
+        workflow = (REPO_ROOT / ".ci/gitops-promotion.yml").read_text()
+        pin_script = (REPO_ROOT / ".ci/runtime/pin_image_to_gitops.sh").read_text()
+
+        self.assertIn("promote-shprod-*)", workflow)
+        self.assertIn("skip source branch cleanup for production promote branch", workflow)
+        self.assertIn('case "$ENV_NAME" in', pin_script)
+        self.assertIn("shprod)", pin_script)
+        self.assertIn("MR_ARGS+=(--remove-source-branch)", pin_script)
+
 
 if __name__ == "__main__":
     unittest.main()

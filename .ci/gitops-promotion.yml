@@ -254,12 +254,15 @@ stages:
                 ".ci/runtime/harness_ci/gitops_cleanup_source_branch.py"
               ci_init_repo_root
               case "${{ ci.branch }}" in
-                promote-beijing-sandbox-2-*|promote-beijing-sandbox-*|promote-shprod-*)
+                promote-beijing-sandbox-2-*|promote-beijing-sandbox-*)
                   python3 "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/gitops_cleanup_source_branch.py" \
                     --source-branch "${{ ci.branch }}" \
                     --target-branch gitops \
                     --wait-seconds 120 \
                     --poll-seconds 5
+                  ;;
+                promote-shprod-*)
+                  echo "skip source branch cleanup for production promote branch ${{ ci.branch }}; shprod keeps promote branches to avoid delete-event checkout failures"
                   ;;
                 *)
                   echo "skip branch cleanup for ${{ ci.branch }}"

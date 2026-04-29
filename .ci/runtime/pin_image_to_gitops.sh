@@ -160,9 +160,17 @@ MR_ARGS=(
   --target-branch "$GITOPS_BRANCH"
   --title "$MR_TITLE"
   --description "$MR_DESCRIPTION"
-  --remove-source-branch
   --format dotenv
 )
+
+case "$ENV_NAME" in
+  shprod)
+    echo "GitOps 发布策略：${ENV_DISPLAY_NAME} promote 分支不随 MR 合并自动删除，避免分支删除事件触发空 checkout"
+    ;;
+  *)
+    MR_ARGS+=(--remove-source-branch)
+    ;;
+esac
 
 mr_output="$(
   python3 "$RUNTIME_COMMAND_DIR/gitops_merge_request.py" "${MR_ARGS[@]}"
