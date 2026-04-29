@@ -8,7 +8,7 @@ on:
     enable: true
     action: [ open, reopen, push-update ]
     report-commit-check: true
-    block-mr: false
+    block-mr: true
   manual: enabled
 
 stages:
