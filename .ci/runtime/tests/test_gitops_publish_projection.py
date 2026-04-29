@@ -10,10 +10,10 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 RUNTIME_DIR = REPO_ROOT / ".ci" / "runtime"
-COMMAND_DIR = RUNTIME_DIR / "harness_ci" / "commands"
+COMMAND_DIR = RUNTIME_DIR / "commands"
 sys.path.insert(0, str(RUNTIME_DIR))
 
-from harness_ci.bundles import load_bundle  # noqa: E402
+from contracts.bundles import load_bundle  # noqa: E402
 
 
 class ResolveReleaseBundleTests(unittest.TestCase):
@@ -308,7 +308,7 @@ class ProjectReleaseBundleTests(unittest.TestCase):
             self._git(repo, "config", "user.name", "CI")
 
             (repo / ".ci" / "runtime").mkdir(parents=True)
-            (repo / ".ci" / "runtime" / "release-bundles.yaml").write_text(
+            (repo / ".ci" / "runtime" / "release-bundles.manifest").write_text(
                 textwrap.dedent(
                     """\
                     bundles:

@@ -11,8 +11,8 @@ on:
       - .ci/runtime/build_and_promote_to_gitops.sh
       - .ci/runtime/promote_bundle_image_to_gitops.sh
       - .ci/runtime/pin_image_to_gitops.sh
-      - .ci/runtime/release-bundles.yaml
-      - .ci/runtime/harness_ci/**
+      - .ci/runtime/release-bundles.manifest
+      - .ci/runtime/**
       - frontend/**
       - argocd/services/frontend/**
       - argocd/apps/*/frontend.yaml
@@ -104,7 +104,11 @@ stages:
               ci_init_repo_root
               ci_export_gongfeng_defaults
               ci_load_cloudflare_credentials
-              ci_load_edgeone_credentials
+              if ci_frontend_release_matrix_needs_edgeone "$FRONTEND_RELEASE_MATRIX"; then
+                ci_load_edgeone_credentials
+              else
+                echo "edgeone api token not required for FRONTEND_RELEASE_MATRIX=${FRONTEND_RELEASE_MATRIX}"
+              fi
               ci_ensure_node
               ci_ensure_pnpm
 

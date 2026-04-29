@@ -7,13 +7,9 @@ on:
       - master
       - playground/sandbox-bj-2
     paths:
-      - admin-gateway/**
       - service-gateway/**
-      - argocd/services/admin-gateway/**
       - argocd/services/service-gateway/**
-      - argocd/apps/*/admin-gateway.yaml
       - argocd/apps/*/service-gateway.yaml
-      - argocd/secrets/*/admin-gateway-runtime-secrets.sops.yaml
       - argocd/secrets/*/service-gateway-runtime-secrets.sops.yaml
   manual: enabled
 
@@ -104,7 +100,7 @@ stages:
               esac
               echo "BUILD_ENVS=${BUILD_ENVS}"
               echo "AUTO_PIN_ENVS=${AUTO_PIN_ENVS}"
-              bash .ci/runtime/build_and_promote_to_gitops.sh service-gateway service-gateway,admin-gateway "${BUILD_ENVS}" "${AUTO_PIN_ENVS}"
+              bash .ci/runtime/build_and_promote_to_gitops.sh service-gateway service-gateway "${BUILD_ENVS}" "${AUTO_PIN_ENVS}"
           - name: 手动发布 service-gateway 到 GitOps
             shell: bash
             run: |
@@ -123,4 +119,4 @@ stages:
               ci_export_gongfeng_defaults
               REMOTE_URL="$(ci_gitops_remote_url)" \
               GITOPS_BRANCH=gitops \
-              bash .ci/runtime/promote_bundle_image_to_gitops.sh service-gateway service-gateway,admin-gateway "${{ variables.TARGET_ENV }}" "$SOURCE_SHA"
+              bash .ci/runtime/promote_bundle_image_to_gitops.sh service-gateway service-gateway "${{ variables.TARGET_ENV }}" "$SOURCE_SHA"

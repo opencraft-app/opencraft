@@ -12,7 +12,7 @@ RUNTIME_DIR = Path(__file__).resolve().parents[1]
 if str(RUNTIME_DIR) not in sys.path:
     sys.path.insert(0, str(RUNTIME_DIR))
 
-from harness_ci.gitops_kustomize_validation import find_placeholders, main as kustomize_main
+from gitops.gitops_kustomize_validation import find_placeholders, main as kustomize_main
 
 
 class GitOpsKustomizeValidationTests(unittest.TestCase):

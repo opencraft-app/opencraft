@@ -4,6 +4,7 @@ import {
   Camera,
   Check,
   ChevronRight,
+  Copy,
   CreditCard,
   Loader2,
   Pencil,
@@ -228,7 +229,7 @@ const VerifyIdentityModal = ({
           >
             <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center">
               {verified ? (
-                <ShieldCheck className="h-[18px] w-[18px]" style={{ color: "#07C160" }} />
+                <ShieldCheck className="h-[18px] w-[18px]" style={{ color: "var(--color-success)" }} />
               ) : (
                 <Shield className="h-[18px] w-[18px]" style={{ color: "#FFA100" }} />
               )}
@@ -710,6 +711,23 @@ export const AccountPage = () => {
   const showRealnameSection = !isGlobal;
   const [showVerifyModal, setShowVerifyModal] = useState(false);
 
+  // 账号 ID 一键复制：copiedUserId 控制「已复制」瞬态提示；ref 挂 setTimeout 以便重复点击时清理旧 timer
+  const [copiedUserId, setCopiedUserId] = useState(false);
+  const copyResetTimer = useRef<number | null>(null);
+  const handleCopyUserId = async () => {
+    if (!user?.id) return;
+    try {
+      await navigator.clipboard.writeText(user.id);
+      setCopiedUserId(true);
+      if (copyResetTimer.current) {
+        window.clearTimeout(copyResetTimer.current);
+      }
+      copyResetTimer.current = window.setTimeout(() => setCopiedUserId(false), 1500);
+    } catch {
+      /* 浏览器不支持 clipboard API 或拒绝授权，用户可手选文本复制，此处静默 */
+    }
+  };
+
   // Delete account
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -1015,6 +1033,34 @@ export const AccountPage = () => {
                 </div>
               </div>
 
+              {user?.id && (
+                /* 账号 ID 行 —— 国内国际站都展示，独立于实名认证区 */
+                <div className="flex flex-col gap-12 px-8 pt-8">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm" style={{ color: "rgba(0,0,0,0.5)", lineHeight: "24px" }}>{t("账号 ID")}</span>
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span
+                        className="truncate text-sm"
+                        style={{ color: "rgba(0,0,0,0.9)", fontFamily: "JetBrains Mono, monospace", maxWidth: 260 }}
+                        title={user.id}
+                      >
+                        {user.id}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => void handleCopyUserId()}
+                        className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-[rgba(0,0,0,0.04)]"
+                        aria-label={t("复制")}
+                        title={copiedUserId ? t("已复制") : t("复制")}
+                        style={{ color: copiedUserId ? "var(--color-success)" : "var(--text-tertiary)" }}
+                      >
+                        {copiedUserId ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {showRealnameSection && (
                 /* Bottom: info rows —— 暂只放出「实名认证」行，「登录账号」行待能区分多渠道登录方式后再恢复 */
                 <div className="flex flex-col gap-12 px-8 py-8">
@@ -1039,7 +1085,7 @@ export const AccountPage = () => {
                     {verified ? (
                       <div className="flex items-center gap-3">
                         <div className="flex items-center gap-2">
-                          <ShieldCheck className="h-5 w-5 flex-shrink-0" style={{ color: "#07C160" }} />
+                          <ShieldCheck className="h-5 w-5 flex-shrink-0" style={{ color: "var(--color-success)" }} />
                           <span className="text-sm" style={{ color: "rgba(0,0,0,0.9)" }}>
                             {t("已认证")}
                           </span>

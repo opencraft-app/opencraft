@@ -7,6 +7,11 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+RUNTIME_DIR = REPO_ROOT / ".ci/runtime"
+if str(RUNTIME_DIR) not in sys.path:
+    sys.path.insert(0, str(RUNTIME_DIR))
+
+from gitops.shprod_sync_preflight import build_verify_command, parse_trailers  # noqa: E402
 
 
 class GitOpsPromotionWorkflowTests(unittest.TestCase):
@@ -27,6 +32,17 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
         self.assertIn("verify_gitops_release.py", workflow)
         self.assertIn("gitops_cleanup_source_branch.py", workflow)
 
+    def test_promotion_workflow_uses_single_runtime_materialize_manifest(self) -> None:
+        workflow = (REPO_ROOT / ".ci/gitops-promotion.yml").read_text()
+
+        self.assertNotIn("ci_materialize_runtime_files", workflow)
+        self.assertEqual(
+            workflow.count('ci_materialize_runtime_manifest "${CI_RUNTIME_DIR}" ".ci/runtime/materialize-files.txt"'),
+            4,
+        )
+        self.assertIn("GitOps 合并后验收", workflow)
+        self.assertIn("上海生产 GitOps 待同步 MR", workflow)
+
     def test_build_and_promote_fans_out_auto_pin_envs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             fake_bin = Path(tmp)
@@ -37,7 +53,7 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
                 textwrap.dedent(
                     f"""\
                     #!/bin/bash
-                    if [[ "$1" == "{REPO_ROOT}/.ci/runtime/harness_ci/commands/build_release_image.py" ]]; then
+                    if [[ "$1" == "{REPO_ROOT}/.ci/runtime/commands/build_release_image.py" ]]; then
                       env_name=""
                       output_file=""
                       while [[ $# -gt 0 ]]; do
@@ -111,10 +127,17 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
         script = (REPO_ROOT / ".ci/runtime/pin_image_to_gitops.sh").read_text()
 
         self.assertIn('cp -R "$REPO_ROOT/.ci/runtime" "$bootstrap_dir/.ci/runtime"', script)
-        self.assertIn('RUNTIME_COMMAND_DIR="$bootstrap_dir/.ci/runtime/harness_ci/commands"', script)
+        self.assertIn('RUNTIME_COMMAND_DIR="$bootstrap_dir/.ci/runtime/commands"', script)
+        self.assertIn('python3 "$RUNTIME_COMMAND_DIR/plan_release_gates.py"', script)
+        self.assertIn('python3 "$RUNTIME_COMMAND_DIR/verify_db_contract.py"', script)
         self.assertIn('python3 "$RUNTIME_COMMAND_DIR/project_release_bundle.py"', script)
         self.assertIn('python3 "$RUNTIME_COMMAND_DIR/update_image_pin.py"', script)
         self.assertIn("GitOps 发布意图：准备把镜像推进到", script)
+        self.assertIn("Release-gate-auto-merge:", script)
+        self.assertIn("Release-bundle: ${BUNDLE_SERVICE}", script)
+        self.assertIn("Release-target-env: ${ENV_NAME}", script)
+        self.assertIn("Release-pin-targets: ${SERVICE_ARG}", script)
+        self.assertIn("Release-image: ${IMAGE}", script)
 
     def test_shprod_promote_branches_are_not_removed_by_automation(self) -> None:
         workflow = (REPO_ROOT / ".ci/gitops-promotion.yml").read_text()
@@ -122,9 +145,64 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
 
         self.assertIn("promote-shprod-*)", workflow)
         self.assertIn("skip source branch cleanup for production promote branch", workflow)
+        self.assertIn("上海生产仅进入待同步状态", workflow)
+        self.assertIn("北京收敛与上海待同步验收", workflow)
+        self.assertIn("--merge-only", workflow)
         self.assertIn('case "$ENV_NAME" in', pin_script)
         self.assertIn("shprod)", pin_script)
         self.assertIn("MR_ARGS+=(--remove-source-branch)", pin_script)
+        self.assertIn("进入${ENV_DISPLAY_NAME}待同步状态", pin_script)
+
+    def test_shprod_workflow_avoids_unsupported_stage_check_in(self) -> None:
+        workflow = (REPO_ROOT / ".ci/gitops-promotion.yml").read_text()
+
+        self.assertNotIn("check-in:", workflow)
+        self.assertNotIn("上海生产人工 Sync 审批", workflow)
+        self.assertNotIn("人工审批后 DB readiness 只读校验", workflow)
+        self.assertNotIn("校验人工 Argo sync 前 DB readiness", workflow)
+        self.assertIn("不执行 migration，不执行 Argo sync", (REPO_ROOT / ".ci/runtime/gitops/shprod_sync_preflight.py").read_text())
+
+    def test_shprod_preflight_parses_release_context_trailers(self) -> None:
+        trailers = parse_trailers(
+            textwrap.dedent(
+                """\
+                进入上海正式待同步状态：frontend
+
+                Release-bundle: frontend
+                Release-target-env: shprod
+                Release-pin-targets: frontend
+                Release-image: lightclaw-shprod.tencentcloudcr.com/lightclaw/frontend:frontend-abc
+                Release-gate-argo-sync: manual
+                Source-revision: abcdef
+                """
+            )
+        )
+
+        self.assertEqual(trailers["Release-bundle"], "frontend")
+        self.assertEqual(trailers["Release-target-env"], "shprod")
+        self.assertEqual(trailers["Release-pin-targets"], "frontend")
+        self.assertEqual(trailers["Release-gate-argo-sync"], "manual")
+
+    def test_shprod_preflight_builds_readonly_db_verify_command(self) -> None:
+        command = build_verify_command(
+            runtime_dir=REPO_ROOT / ".ci/runtime",
+            repo_root=REPO_ROOT,
+            bundle_manifest=REPO_ROOT / ".ci/runtime/release-bundles.manifest",
+            service="payment",
+            env="shprod",
+            apply=True,
+            wait=True,
+            timeout_seconds=123,
+        )
+
+        self.assertIn(str(REPO_ROOT / ".ci/runtime/commands/verify_db_contract.py"), command)
+        self.assertIn("--service", command)
+        self.assertIn("payment", command)
+        self.assertIn("--env", command)
+        self.assertIn("shprod", command)
+        self.assertIn("--apply", command)
+        self.assertIn("--wait", command)
+        self.assertNotIn("run_gitops_db_job.py", " ".join(command))
 
 
 if __name__ == "__main__":
