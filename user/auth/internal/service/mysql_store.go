@@ -514,6 +514,22 @@ func (s *MySQLStore) UpdateRealname(ctx context.Context, token string, input Upd
 	`, input.VerifiedAt, input.Provider, input.Result, nullableString(input.RequestID), input.NameCiphertext, input.IDCardCiphertext, input.NameMasked, input.IDCardMasked, input.VerifiedAt, userID); err != nil {
 		return fmt.Errorf("update realname: %w", err)
 	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO user_realname_history (
+			user_id,
+			realname_verified_at,
+			realname_verify_provider,
+			realname_verify_result,
+			realname_request_id,
+			realname_name_ciphertext,
+			realname_id_card_ciphertext,
+			realname_name_masked,
+			realname_id_card_masked,
+			created_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, userID, input.VerifiedAt, input.Provider, input.Result, nullableString(input.RequestID), input.NameCiphertext, input.IDCardCiphertext, input.NameMasked, input.IDCardMasked, input.VerifiedAt); err != nil {
+		return fmt.Errorf("insert realname history: %w", err)
+	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit realname update: %w", err)
 	}

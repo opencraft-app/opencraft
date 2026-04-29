@@ -12,19 +12,20 @@ import (
 )
 
 type MemoryStore struct {
-	mu             sync.Mutex
-	now            func() time.Time
-	nextID         int
-	usersByID      map[string]User
-	usersByEmail   map[string]string
-	usersByPhone   map[string]string
-	oauthUsers     map[string]string
-	subscriptions  map[string]PlanSelection
-	passwordHashes map[string][]byte
-	smsChallenges  map[string]smsChallenge
-	sessions       map[string]sessionRecord
-	invites        map[string]memoryInviteRecord
-	realnames      map[string]UpdateRealnameInput
+	mu              sync.Mutex
+	now             func() time.Time
+	nextID          int
+	usersByID       map[string]User
+	usersByEmail    map[string]string
+	usersByPhone    map[string]string
+	oauthUsers      map[string]string
+	subscriptions   map[string]PlanSelection
+	passwordHashes  map[string][]byte
+	smsChallenges   map[string]smsChallenge
+	sessions        map[string]sessionRecord
+	invites         map[string]memoryInviteRecord
+	realnames       map[string]UpdateRealnameInput
+	realnameHistory map[string][]UpdateRealnameInput
 }
 
 type memoryInviteRecord struct {
@@ -45,17 +46,18 @@ func NewMemoryStore(opts StoreOptions) *MemoryStore {
 	}
 
 	store := &MemoryStore{
-		now:            now,
-		usersByID:      make(map[string]User),
-		usersByEmail:   make(map[string]string),
-		usersByPhone:   make(map[string]string),
-		oauthUsers:     make(map[string]string),
-		subscriptions:  make(map[string]PlanSelection),
-		passwordHashes: make(map[string][]byte),
-		smsChallenges:  make(map[string]smsChallenge),
-		sessions:       make(map[string]sessionRecord),
-		invites:        make(map[string]memoryInviteRecord),
-		realnames:      make(map[string]UpdateRealnameInput),
+		now:             now,
+		usersByID:       make(map[string]User),
+		usersByEmail:    make(map[string]string),
+		usersByPhone:    make(map[string]string),
+		oauthUsers:      make(map[string]string),
+		subscriptions:   make(map[string]PlanSelection),
+		passwordHashes:  make(map[string][]byte),
+		smsChallenges:   make(map[string]smsChallenge),
+		sessions:        make(map[string]sessionRecord),
+		invites:         make(map[string]memoryInviteRecord),
+		realnames:       make(map[string]UpdateRealnameInput),
+		realnameHistory: make(map[string][]UpdateRealnameInput),
 	}
 	if opts.SeedDefaultInvites {
 		store.seedDefaultInvites()
@@ -244,6 +246,7 @@ func (s *MemoryStore) UpdateRealname(_ context.Context, token string, input Upda
 	user.RealnameVerified = true
 	s.usersByID[user.ID] = user
 	s.realnames[user.ID] = input
+	s.realnameHistory[user.ID] = append(s.realnameHistory[user.ID], input)
 	return nil
 }
 
@@ -343,6 +346,7 @@ func (s *MemoryStore) DeleteCurrentUser(_ context.Context, token string, now tim
 	delete(s.passwordHashes, user.ID)
 	delete(s.subscriptions, user.ID)
 	delete(s.realnames, user.ID)
+	delete(s.realnameHistory, user.ID)
 
 	for key, mappedUserID := range s.oauthUsers {
 		if mappedUserID == user.ID {
@@ -377,6 +381,7 @@ func (s *MemoryStore) DeleteAdminUser(_ context.Context, userID string, _ time.T
 	delete(s.passwordHashes, user.ID)
 	delete(s.subscriptions, user.ID)
 	delete(s.realnames, user.ID)
+	delete(s.realnameHistory, user.ID)
 
 	for key, mappedUserID := range s.oauthUsers {
 		if mappedUserID == user.ID {
