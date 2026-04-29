@@ -38,7 +38,7 @@ stages:
   - name: 发布 frontend
     jobs:
       release:
-        name: 构建并发布 frontend 矩阵
+        name: 构建并发布 frontend
         runs-on:
           self-hosted: true
           pool-name: env
@@ -108,6 +108,36 @@ stages:
               "$PNPM_BIN" --version
               "$PNPM_BIN" install --no-frozen-lockfile
               "$PNPM_BIN" release:matrix
+          - name: 构建并推进 frontend 北京发布
+            shell: bash
+            env:
+              TCR_BEIJING_PASSWORD: ${{ settings.TCR_BEIJING_PASSWORD }}
+              TCR_SHPROD_PASSWORD: ${{ settings.TCR_SHPROD_PASSWORD }}
+            run: |
+              if [[ "${{ variables.PIPELINE_MODE }}" == "promote" ]]; then
+                echo "skip build step because PIPELINE_MODE=promote"
+                exit 0
+              fi
+              source .ci/init.sh
+              ci_init_repo_root
+              ci_export_gongfeng_defaults
+              REMOTE_URL="$(ci_gitops_remote_url)"
+              GITOPS_BRANCH=gitops
+              BUILD_TAG_OVERRIDE="${{ steps.prepare.outputs.tag }}"
+              export REMOTE_URL GITOPS_BRANCH BUILD_TAG_OVERRIDE
+              case "${{ ci.branch }}" in
+                master)
+                  BUILD_ENVS="beijing-sandbox,shprod"
+                  AUTO_PIN_ENVS="beijing-sandbox"
+                  ;;
+                *)
+                  echo "unsupported source branch for release: ${{ ci.branch }}" >&2
+                  exit 1
+                  ;;
+              esac
+              echo "BUILD_ENVS=${BUILD_ENVS}"
+              echo "AUTO_PIN_ENVS=${AUTO_PIN_ENVS}"
+              bash .ci/runtime/build_and_promote_to_gitops.sh frontend frontend "${BUILD_ENVS}" "${AUTO_PIN_ENVS}"
           - name: 手动发布 frontend 到 GitOps
             shell: bash
             run: |
