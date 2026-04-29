@@ -21,6 +21,7 @@ stages:
           WEWORK_DRIFT_AUDIT_WEBHOOK_FALLBACK: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=a7c3f30c-7dcc-42e7-9f92-440b26216119"
         steps:
           - checkout: self
+            name: 拉取代码
             with:
               fetchDepth: 50
           - name: 执行北京 GitOps 漂移审计

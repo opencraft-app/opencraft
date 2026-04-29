@@ -18,6 +18,7 @@ stages:
           CI_RUNTIME_REF: origin/master
         steps:
           - checkout: self
+            name: 拉取代码
             with:
               fetchDepth: 50
           - name: 校验 promote 分支
@@ -115,6 +116,7 @@ stages:
           GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}
         steps:
           - checkout: self
+            name: 拉取代码
             with:
               fetchDepth: 50
           - name: 自动合并北京发布 MR
@@ -163,6 +165,7 @@ stages:
           GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}
         steps:
           - checkout: self
+            name: 拉取代码
             with:
               fetchDepth: 50
           - name: 校验 Argo 收敛并评论 MR
@@ -207,6 +210,7 @@ stages:
           GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}
         steps:
           - checkout: self
+            name: 拉取代码
             with:
               fetchDepth: 50
           - name: 清理北京发布分支

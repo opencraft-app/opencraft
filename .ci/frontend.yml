@@ -46,6 +46,7 @@ stages:
           GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}
         steps:
           - checkout: self
+            name: 拉取代码
             with:
               fetchDepth: 50
           - name: 打印 frontend 发布上下文

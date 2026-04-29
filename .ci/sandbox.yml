@@ -44,6 +44,7 @@ stages:
           GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}
         steps:
           - checkout: self
+            name: 拉取代码
             with:
               fetchDepth: 50
           - name: 打印 sandbox 发布上下文
@@ -55,6 +56,7 @@ stages:
               echo "TARGET_ENV=${{ variables.TARGET_ENV }}"
               echo "SOURCE_SHA=${{ variables.SOURCE_SHA }}"
           - id: prepare
+            name: 准备 sandbox 发布标签
             if: ${{ variables.PIPELINE_MODE }} != 'promote'
             shell: bash
             run: |

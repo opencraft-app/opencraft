@@ -17,6 +17,7 @@ jobs:
       pool-name: env
     steps:
       - checkout: self
+        name: 拉取代码
         with:
           fetchDepth: 50
       - name: 校验 CI runtime 脚本与测试
