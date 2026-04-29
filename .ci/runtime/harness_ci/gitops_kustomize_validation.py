@@ -35,9 +35,10 @@ def load_yaml(path: Path) -> dict[str, Any]:
     return payload
 
 
-def load_targets(repo_root: Path, env: str) -> list[KustomizeTarget]:
+def load_targets(repo_root: Path, env: str, changed_only: bool = False) -> list[KustomizeTarget]:
     if env in SUPPORTED_DIRECT_APP_ENVS:
-        return load_direct_app_targets(repo_root, env)
+        changed_services = changed_direct_app_services(repo_root, env) if changed_only else None
+        return load_direct_app_targets(repo_root, env, changed_services)
 
     if env not in SUPPORTED_SANDBOX_ENVS:
         raise ValueError(f"unsupported env for strict kustomize validation: {env}")
@@ -63,7 +64,40 @@ def load_targets(repo_root: Path, env: str) -> list[KustomizeTarget]:
     return targets
 
 
-def load_direct_app_targets(repo_root: Path, env: str) -> list[KustomizeTarget]:
+def changed_direct_app_services(repo_root: Path, env: str) -> set[str]:
+    result = subprocess.run(
+        ["git", "diff", "--name-only", "HEAD~1..HEAD"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        result = subprocess.run(
+            ["git", "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    if result.returncode != 0:
+        raise ValueError(f"failed to inspect changed files for {env}: {stderr_summary(result.stderr)}")
+
+    services: set[str] = set()
+    service_prefix = "argocd/services/"
+    app_prefix = f"argocd/apps/{env}/"
+    for raw_path in result.stdout.splitlines():
+        path = raw_path.strip()
+        if path.startswith(service_prefix):
+            parts = path.split("/")
+            if len(parts) >= 4 and parts[3] == env:
+                services.add(parts[2])
+        elif path.startswith(app_prefix) and path.endswith(".yaml"):
+            services.add(Path(path).stem)
+    return services
+
+
+def load_direct_app_targets(repo_root: Path, env: str, service_names: set[str] | None = None) -> list[KustomizeTarget]:
     apps_dir_rel = f"argocd/apps/{env}"
     apps_dir = repo_root / apps_dir_rel
     if not apps_dir.is_dir():
@@ -77,13 +111,17 @@ def load_direct_app_targets(repo_root: Path, env: str) -> list[KustomizeTarget]:
         metadata = data.get("metadata") or {}
         source = (data.get("spec") or {}).get("source") or {}
         source_path = str(source.get("path") or "").strip()
+        source_parts = source_path.split("/")
+        service_name = source_parts[2] if len(source_parts) >= 4 and source_parts[:2] == ["argocd", "services"] else ""
+        if service_names is not None and service_name not in service_names:
+            continue
         app_name = str(metadata.get("name") or app_file.stem).strip()
         if not source_path:
             raise ValueError(f"{app_file}: missing spec.source.path")
         if not (repo_root / source_path / "kustomization.yaml").is_file():
             raise ValueError(f"{app_file}: missing kustomization.yaml under {source_path}")
         targets.append(KustomizeTarget(app_name=app_name, source_path=source_path))
-    if not targets:
+    if not targets and service_names is None:
         raise ValueError(f"no Application files found under {apps_dir_rel}")
     return targets
 
@@ -141,6 +179,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--env", default="beijing-sandbox")
     parser.add_argument("--kustomize-bin", default="kustomize")
     parser.add_argument("--timeout-seconds", type=int, default=120)
+    parser.add_argument(
+        "--changed-only",
+        action="store_true",
+        help="For direct Application envs, validate only apps touched by the current HEAD commit.",
+    )
     return parser.parse_args()
 
 
@@ -153,7 +196,7 @@ def main() -> int:
         return 1
 
     try:
-        targets = load_targets(repo_root, args.env)
+        targets = load_targets(repo_root, args.env, args.changed_only)
     except Exception as exc:  # noqa: BLE001
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1

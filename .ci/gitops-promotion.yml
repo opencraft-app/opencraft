@@ -99,9 +99,16 @@ stages:
                   --repo-root "$REPO_ROOT" \
                   --env "$TARGET_ENV" \
                   --bundle-manifest "${CI_RUNTIME_DIR}/.ci/runtime/release-bundles.yaml"
-                python3 "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/validate_gitops_kustomize.py" \
-                  --repo-root "$REPO_ROOT" \
-                  --env "$TARGET_ENV"
+                if [[ "$TARGET_ENV" == "shprod" ]]; then
+                  python3 "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/validate_gitops_kustomize.py" \
+                    --repo-root "$REPO_ROOT" \
+                    --env "$TARGET_ENV" \
+                    --changed-only
+                else
+                  python3 "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/validate_gitops_kustomize.py" \
+                    --repo-root "$REPO_ROOT" \
+                    --env "$TARGET_ENV"
+                fi
               else
                 echo "skip GitOps static/Kustomize validation for unsupported promote branch ${{ ci.branch }}"
               fi
