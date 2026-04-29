@@ -3,7 +3,9 @@ name: 发布 subscription
 
 on:
   push:
-    branches: [ master ]
+    branches:
+      - master
+      - playground/sandbox-bj-2
     paths:
       - subscription/**
       - argocd/services/subscription/**
@@ -75,7 +77,23 @@ stages:
               REMOTE_URL="$(ci_gitops_remote_url)" \
               GITOPS_BRANCH=gitops \
               BUILD_TAG_OVERRIDE="${{ steps.prepare.outputs.tag }}" \
-              bash .ci/runtime/build_and_promote_to_gitops.sh subscription subscription beijing-sandbox,beijing-sandbox-2,shprod beijing-sandbox,beijing-sandbox-2
+              case "${{ ci.branch }}" in
+                master)
+                  BUILD_ENVS="beijing-sandbox,shprod"
+                  AUTO_PIN_ENVS="beijing-sandbox"
+                  ;;
+                playground/sandbox-bj-2)
+                  BUILD_ENVS="beijing-sandbox-2"
+                  AUTO_PIN_ENVS="beijing-sandbox-2"
+                  ;;
+                *)
+                  echo "unsupported source branch for release: ${{ ci.branch }}" >&2
+                  exit 1
+                  ;;
+              esac
+              echo "BUILD_ENVS=${BUILD_ENVS}"
+              echo "AUTO_PIN_ENVS=${AUTO_PIN_ENVS}"
+              bash .ci/runtime/build_and_promote_to_gitops.sh subscription subscription "${BUILD_ENVS}" "${AUTO_PIN_ENVS}"
           - name: 手动发布 subscription 到 GitOps
             if: ${{ variables.PIPELINE_MODE }} == 'promote'
             shell: bash
