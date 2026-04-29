@@ -15,8 +15,8 @@ TARGET_ENV="$3"
 SOURCE_SHA="$4"
 
 if [[ -z "$SOURCE_SHA" ]]; then
-  echo "missing source sha" >&2
-  exit 1
+  SOURCE_SHA="$(git -C "$REPO_ROOT" rev-parse HEAD)"
+  echo "source sha not provided; default to HEAD=$SOURCE_SHA"
 fi
 
 SHORT_SHA="${SOURCE_SHA:0:12}"

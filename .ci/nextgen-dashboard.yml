@@ -56,19 +56,25 @@ stages:
               echo "SOURCE_SHA=${{ variables.SOURCE_SHA }}"
           - id: prepare
             name: 准备 nextgen-dashboard 发布标签
-            if: ${{ variables.PIPELINE_MODE }} != 'promote'
             shell: bash
             run: |
+              if [[ "${{ variables.PIPELINE_MODE }}" == "promote" ]]; then
+                echo "skip build step because PIPELINE_MODE=promote"
+                exit 0
+              fi
               SHORT_SHA="${{ ci.sha }}"
               SHORT_SHA="${SHORT_SHA:0:12}"
               echo "::set-output name=tag::nextgen-dashboard-${SHORT_SHA}"
           - name: 构建并推进 nextgen-dashboard 北京发布
-            if: ${{ variables.PIPELINE_MODE }} != 'promote'
             shell: bash
             env:
               TCR_BEIJING_PASSWORD: ${{ settings.TCR_BEIJING_PASSWORD }}
               TCR_SHPROD_PASSWORD: ${{ settings.TCR_SHPROD_PASSWORD }}
             run: |
+              if [[ "${{ variables.PIPELINE_MODE }}" == "promote" ]]; then
+                echo "skip build step because PIPELINE_MODE=promote"
+                exit 0
+              fi
               source .ci/init.sh
               ci_init_repo_root
               ci_export_gongfeng_defaults
@@ -77,13 +83,21 @@ stages:
               BUILD_TAG_OVERRIDE="${{ steps.prepare.outputs.tag }}" \
               bash .ci/runtime/build_and_promote_to_gitops.sh nextgen-dashboard nextgen-dashboard beijing-sandbox,shprod beijing-sandbox
           - name: 手动发布 nextgen-dashboard 到 GitOps
-            if: ${{ variables.PIPELINE_MODE }} == 'promote'
             shell: bash
             run: |
-              test -n "${{ variables.SOURCE_SHA }}"
+              if [[ "${{ variables.PIPELINE_MODE }}" != "promote" ]]; then
+                echo "skip promote step because PIPELINE_MODE=${{ variables.PIPELINE_MODE }}"
+                exit 0
+              fi
+              SOURCE_SHA="${{ variables.SOURCE_SHA }}"
+              if [[ -z "$SOURCE_SHA" ]]; then
+                SOURCE_SHA="${{ ci.sha }}"
+                echo "SOURCE_SHA not provided; default to ci.sha=$SOURCE_SHA"
+              fi
+              test -n "$SOURCE_SHA"
               source .ci/init.sh
               ci_init_repo_root
               ci_export_gongfeng_defaults
               REMOTE_URL="$(ci_gitops_remote_url)" \
               GITOPS_BRANCH=gitops \
-              bash .ci/runtime/promote_bundle_image_to_gitops.sh nextgen-dashboard nextgen-dashboard "${{ variables.TARGET_ENV }}" "${{ variables.SOURCE_SHA }}"
+              bash .ci/runtime/promote_bundle_image_to_gitops.sh nextgen-dashboard nextgen-dashboard "${{ variables.TARGET_ENV }}" "$SOURCE_SHA"
