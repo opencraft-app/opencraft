@@ -139,6 +139,33 @@ DB-aware release gate、受控 DB Job 和只读 readiness：
 - `scripts/run_gitops_db_job.py`
   - 实际执行 migration / seed 这类受控 DB Job
 
+### guards
+
+MR / push 变更目录约束派发：
+
+- `.ci/mr-placeholder.yml`
+  - MR commit check 入口，从 `origin/master` materialize trusted runtime 后运行 guard dispatcher
+  - trusted guard 失败且本次 MR 只修改 `.ci/**` 时，允许 fallback 到当前分支的 `.ci/checks/guard.sh`，用于修复坏掉的 `.ci` 自身 guard；业务代码变更不允许 fallback
+- `.ci/guards.yaml`
+  - guard 注册表，声明 changed path pattern 与对应 guard command
+- `.ci/runtime/guards/changed_guards.py`
+  - 计算 changed files，按 `.ci/guards.yaml` 派发匹配的 guard
+- `.ci/checks/guard.sh`
+  - `.ci/**` 变更的 CI runtime / YAML / materialize 门禁
+- `service-gateway/checks/guard.sh`
+  - service-gateway / admin-gateway 相关变更的发布契约与 Go 单测门禁
+- `frontend/checks/guard.sh`
+  - frontend 相关变更的 release matrix 门禁
+
+Guard 自举策略：
+
+- 默认执行 **trusted guard**：MR 流水线从 `origin/master` 读取 `.ci/guards.yaml`、dispatcher runtime 和 guard command，避免 MR 分支通过修改 guard 绕过门禁。
+- 允许 `.ci` 自修复 fallback：如果 trusted guard 失败，且变更文件全部位于 `.ci/**`，则允许执行当前 MR 分支的 `.ci/checks/guard.sh` 作为 candidate guard。
+- fallback 的目的只用于修复 target branch 上已经损坏的 `.ci` 自身 guard，不能用于业务代码变更。
+- 只要变更中包含非 `.ci/**` 文件，例如 `frontend/**`、`service-gateway/**` 或 `argocd/**`，fallback 立即禁止，保持 trusted guard 的失败结果。
+- candidate guard 必须跑完整 `.ci` 门禁，包括 shell 语法、Python compile、prod manual sync、runtime 单测、materialized runtime smoke、YAML parse 和 `git diff --check`。
+- 后续新增目录 guard 时，应把 command 放在对应目录的 `checks/guard.sh`，并在 `.ci/guards.yaml` 注册；不要依赖隐式目录扫描。
+
 ### frontend
 
 前端 Pages / EdgeOne / GitOps 镜像构建发布：
@@ -172,7 +199,7 @@ CI 运行环境自举、secret 读取和工具安装：
 所有 CI 可执行 Python 入口统一放在 `.ci/runtime/commands/`。这些文件只做两件事：
 
 1. 把 `.ci/runtime` 加入 `sys.path`
-2. 从 `contracts` / `gitops` / `db_gates` 导入对应 `main`
+2. 从 `contracts` / `gitops` / `db_gates` / `guards` 导入对应 `main`
 
 不要把业务逻辑写进 command wrapper。
 

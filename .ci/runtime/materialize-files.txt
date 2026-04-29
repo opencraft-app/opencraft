@@ -11,6 +11,7 @@
 .ci/runtime/commands/plan_release_gates.py
 .ci/runtime/commands/project_release_bundle.py
 .ci/runtime/commands/resolve_release_bundle.py
+.ci/runtime/commands/run_changed_guards.py
 .ci/runtime/commands/update_image_pin.py
 .ci/runtime/commands/validate_gitops_kustomize.py
 .ci/runtime/commands/validate_gitops_static.py
@@ -38,3 +39,5 @@
 .ci/runtime/gitops/gongfeng.py
 .ci/runtime/gitops/prod_manual_sync_validation.py
 .ci/runtime/gitops/shprod_sync_preflight.py
+.ci/runtime/guards/__init__.py
+.ci/runtime/guards/changed_guards.py

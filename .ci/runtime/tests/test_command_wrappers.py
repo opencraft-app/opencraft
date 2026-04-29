@@ -5,7 +5,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[3]
 RUNTIME_DIR = REPO_ROOT / ".ci/runtime"
 COMMAND_DIR = RUNTIME_DIR / "commands"
-ALLOWED_MAIN_MODULE_PREFIXES = ("contracts.", "gitops.", "db_gates.")
+ALLOWED_MAIN_MODULE_PREFIXES = ("contracts.", "gitops.", "db_gates.", "guards.")
 
 
 class CommandWrapperTests(unittest.TestCase):
@@ -18,7 +18,7 @@ class CommandWrapperTests(unittest.TestCase):
         }
         expected_python = {
             str(path.relative_to(REPO_ROOT))
-            for package in ("commands", "contracts", "gitops", "db_gates")
+            for package in ("commands", "contracts", "gitops", "db_gates", "guards")
             for path in (RUNTIME_DIR / package).rglob("*.py")
         }
 

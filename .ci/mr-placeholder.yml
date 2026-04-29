@@ -13,16 +13,73 @@ on:
 stages:
   - name: MR 占位检查
     jobs:
-      noop:
-        name: 提交已进入 CI
+      changed_guards:
+        name: 运行变更目录约束
         runs-on:
           self-hosted: true
           pool-name: env
         steps:
-          - name: 通过 MR 占位检查
+          - checkout: self
+            name: 拉取代码
+            with:
+              fetchDepth: 50
+          - name: 派发变更目录约束
             shell: bash
             run: |
-              echo "MR placeholder check passed."
               echo "ci.event=${{ ci.event }}"
               echo "ci.branch=${{ ci.branch }}"
               echo "ci.sha=${{ ci.sha }}"
+              git fetch origin master
+
+              CHANGED_FILES_FILE="$(mktemp)"
+              if git diff --name-only origin/master...HEAD > "$CHANGED_FILES_FILE"; then
+                echo "变更目录约束：使用 origin/master...HEAD 计算 MR 变更文件"
+              elif git diff --name-only origin/master..HEAD > "$CHANGED_FILES_FILE"; then
+                echo "变更目录约束：fallback 使用 origin/master..HEAD 计算 MR 变更文件"
+              else
+                echo "变更目录约束：无法计算 MR 变更文件" >&2
+                exit 1
+              fi
+              echo "变更目录约束：MR 变更文件清单"
+              sed 's/^/  - /' "$CHANGED_FILES_FILE"
+
+              CI_RUNTIME_DIR="$(mktemp -d)"
+              mkdir -p "${CI_RUNTIME_DIR}/.ci"
+              git show origin/master:.ci/init.sh > "${CI_RUNTIME_DIR}/.ci/init.sh"
+              source "${CI_RUNTIME_DIR}/.ci/init.sh"
+              ci_prepare_runtime_ref origin/master
+              git show "${CI_RUNTIME_COMMIT}:.ci/init.sh" > "${CI_RUNTIME_DIR}/.ci/init.sh"
+              source "${CI_RUNTIME_DIR}/.ci/init.sh"
+              ci_materialize_runtime_manifest "${CI_RUNTIME_DIR}" ".ci/runtime/materialize-files.txt"
+
+              python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/run_changed_guards.py" \
+                --repo-root "$PWD" \
+                --base-ref origin/master \
+                --head-ref HEAD \
+                --trusted-ref origin/master \
+                --changed-files-file "$CHANGED_FILES_FILE" || {
+                  TRUSTED_GUARD_EXIT="$?"
+                  echo "============================================================"
+                  echo "变更目录约束：trusted guard 失败，检查是否允许 .ci 自修复 fallback"
+                  echo "trusted guard exit_code=${TRUSTED_GUARD_EXIT}"
+                  echo "fallback 条件：所有变更必须位于 .ci/**，且当前分支存在 .ci/checks/guard.sh"
+                  echo "============================================================"
+
+                  if grep -Ev '^\s*$|^\.ci(/|$)' "$CHANGED_FILES_FILE"; then
+                    echo "变更目录约束：存在非 .ci/** 变更，禁止 fallback，保持失败。" >&2
+                    exit "$TRUSTED_GUARD_EXIT"
+                  fi
+                  if [[ ! -f .ci/checks/guard.sh ]]; then
+                    echo "变更目录约束：当前分支缺少 .ci/checks/guard.sh，禁止 fallback。" >&2
+                    exit "$TRUSTED_GUARD_EXIT"
+                  fi
+
+                  echo "变更目录约束：进入 .ci 自修复 fallback，执行当前分支 .ci/checks/guard.sh"
+                  GUARD_NAME="ci-runtime-candidate" \
+                  GUARD_REPO_ROOT="$PWD" \
+                  GUARD_CHANGED_FILES_FILE="$CHANGED_FILES_FILE" \
+                  GUARD_BASE_REF="origin/master" \
+                  GUARD_HEAD_REF="HEAD" \
+                  bash .ci/checks/guard.sh
+                  echo "变更目录约束：.ci 自修复 fallback 通过"
+                }
