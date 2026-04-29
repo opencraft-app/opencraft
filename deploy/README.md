@@ -52,7 +52,7 @@ python3 scripts/build-release-image.py --service <service> --env <env> --tag <ta
 统一入口：
 
 - `scripts/run_gitops_db_job.py`
-- 旧 `.gitlab/ci/gitops-db-job.yml` 已退役；当前以脚本和 runbook 为准
+- 历史 DB job 模板已退役；当前以脚本和 runbook 为准
 
 ### 环境事实刷新
 
@@ -63,9 +63,9 @@ GOWORK=off go run ./cmd/infractl sync --stack <env>
 
 ## 当前目标
 
-这轮重构的目标不是重做 secret 平台，也不是拆香港单控制面。  
+这轮重构的目标不是重做 secret 平台，也不是拆统一 Argo CD 控制面。
 目标只是把正式发布主线收敛成：
 
 - `infra_pulumi` 产出环境事实
-- `root/mono` 承载 deploy-facing 真源
+- 当前 repo 的 `gitops` 分支承载 deploy-facing 真源
 - `Argo CD` 执行正式发布

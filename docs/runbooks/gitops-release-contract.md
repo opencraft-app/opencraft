@@ -15,7 +15,7 @@
 
 ## Artifact Ownership Contract
 
-每个正式发布 bundle 必须在 [scripts/release-bundles.yaml](../../scripts/release-bundles.yaml) 中声明：
+每个正式发布 bundle 必须在 [.ci/runtime/release-bundles.yaml](../../.ci/runtime/release-bundles.yaml) 中声明：
 
 - `source`
 - `owner`
@@ -29,21 +29,21 @@
 - `build_context`
 - `image_repo`
 
-服务 repo 是 deployable semantics 的 owner。  
-`root/mono` 不是服务源码仓，只消费 release bundle import。
+服务源码目录是 deployable semantics 的 owner。
+当前 repo 的 `gitops` 分支负责承载 deploy-facing 发布视图。
 
 ## Image Build Contract
 
 对具备 `dockerfile/build_context/image_repo` 的 bundle，统一入口：
 
 ```bash
-python3 scripts/build-release-image.py --service <service> --env <env> --tag <tag>
+python3 .ci/runtime/harness_ci/commands/build_release_image.py --service <service> --env <env> --tag <tag>
 ```
 
 需要推镜像时：
 
 ```bash
-python3 scripts/build-release-image.py --service <service> --env <env> --tag <tag> --push
+python3 .ci/runtime/harness_ci/commands/build_release_image.py --service <service> --env <env> --tag <tag> --push
 ```
 
 输出：
@@ -53,13 +53,13 @@ python3 scripts/build-release-image.py --service <service> --env <env> --tag <ta
 例外：
 
 - `sandbox` 当前仍走 `images/build-image.py`
-- 在它被正式 bundle 化之前，不强行纳入 `scripts/build-release-image.py`
+- 在它被正式 bundle 化之前，不强行纳入 `.ci/runtime/harness_ci/commands/build_release_image.py`
 
 ## Image Pin Contract
 
 - deploy-facing image pin 只允许写在：
   - `argocd/services/<service>/<env>/*-platform.env`
-- 正式变更通过 `root/mono` 合并进入 Argo
+- 正式变更通过当前 repo 的 `gitops` 分支合入 Argo
 - 禁止在集群里手工 patch image 当作正式路径
 
 ## Promotion Contract
@@ -92,7 +92,7 @@ python3 scripts/build-release-image.py --service <service> --env <env> --tag <ta
 `DB migration / seed` 继续保留，但只保留统一平台级入口：
 
 - [run_gitops_db_job.py](../../scripts/run_gitops_db_job.py)
-- 旧 GitLab CI 模板已退役
+- 历史 DB job 模板已退役
 - [gitops-db-job-runbook.md](gitops-db-job-runbook.md)
 
 禁止：

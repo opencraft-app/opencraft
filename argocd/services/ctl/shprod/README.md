@@ -5,7 +5,7 @@
 边界：
 
 - source-facing 内容仍留在 `ctl/`
-- 香港 Argo 通过这个目录把资源下发到上海 `ctl` namespace
+- 统一 Argo CD 控制面通过这个目录把资源下发到上海 `ctl` namespace
 - steady-state sync 只接管常驻 workload，不接 migration job
 
 ## Files

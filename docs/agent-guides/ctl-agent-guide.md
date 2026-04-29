@@ -170,7 +170,7 @@ CTL 的公网流量经过 Service Gateway 转发，路由规则现在由 deploy-
     upstream: http://ctl-api.ctl.svc.cluster.local
     access: authenticated
   ```
-- 添加后需通过 `root/mono` 更新 `service-gateway` deploy-facing 配置，并由 Argo 收敛。
+- 添加后需通过当前 repo 的 `gitops` 发布视图更新 `service-gateway` deploy-facing 配置，并由 Argo 收敛。
 
 ### 公网入口排障原则
 
@@ -202,7 +202,7 @@ CTL 的公网流量经过 Service Gateway 转发，路由规则现在由 deploy-
 
 最低要求是：
 
-1. 通过 `root/mono` pin / config 变更完成 rollout
+1. 通过当前 repo 的 `gitops` pin / config 变更完成 rollout
 2. 用 `kubectl port-forward -n ctl svc/ctl-api 19590:80` 暴露测试环境 API
 3. 直接调用测试环境 `ctl-api` 验证至少一条真实业务链路：
    - `GET /health`

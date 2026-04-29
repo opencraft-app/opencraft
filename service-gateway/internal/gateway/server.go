@@ -491,7 +491,7 @@ func methodAllowed(allowed []string, method string) bool {
 
 func isRealnameWriteMethod(method string) bool {
 	switch strings.ToUpper(strings.TrimSpace(method)) {
-	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+	case http.MethodPost, http.MethodPut, http.MethodPatch:
 		return true
 	default:
 		return false

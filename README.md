@@ -49,7 +49,7 @@
 如果是新 agent / 新同学，只记这几条就够了：
 
 1. `infra_pulumi` 只管 infra，不管 workload 正式发布
-2. 北京 / 上海当前正式 workload 发布真源是 `mono-source/master` 上的 `argocd/`
+2. 北京 / 上海当前正式 workload 发布真源是当前 repo 的 `gitops` 分支上的 `argocd/`
 3. `scripts/deploy-k8s.sh` 仍可作为服务级渲染 / 手工 apply / 迁移阶段工具，但不是北京 / 上海主链正式发布入口
 4. `ENV=<env>` 必须显式传，不允许默认北京
 5. `deploy/envs/<env>/platform.env` 是生成物，来自 `infra_pulumi sync/up`，不手改
@@ -67,9 +67,8 @@
 - WOA 远端是：
   - `origin git@git.woa.com:wisp/mono.git`
 - 当前 GitOps 真源远端是：
-  - `target https://code.lightclaw.tech/root/mono-source.git`
-- 旧 deploy-only 远端是：
-  - `code-lightclaw https://code.lightclaw.tech/root/mono.git`
+  - `target git@git.woa.com:wisp/mono2.git`
+- 历史 deploy-only 远端已废弃，不再作为正式发布目标
 - 默认推送分支：
   - `master`
 - 标准代码提交动作：
@@ -96,7 +95,6 @@ git push target master
 
 - `origin`：日常代码协作主远端
 - `target`：北京 / 上海当前 Argo 实际监听的 GitOps 真源
-- `code-lightclaw`：已退役的旧 deploy-only 仓，只保留历史归档意义
 
 不要默认把“push 到 WOA”当成“发布已经完成”。
 
@@ -140,13 +138,13 @@ CLOUDFLARE_PAGES_PROJECT_NAME=lightclaw pnpm deploy:cf
 
 当前北京 / 上海 live app 已统一切到：
 
-- `https://code.lightclaw.tech/root/mono-source.git`
+- `git@git.woa.com:wisp/mono2.git`
 - `master`
 
 最常见的正式发版动作示例：
 
 ```bash
-python3 scripts/build-release-image.py --service sandbox --env shprod --tag <tag>
+python3 .ci/runtime/harness_ci/commands/build_release_image.py --service sandbox --env shprod --tag <tag>
 # 更新 argocd/services/sandbox/shprod/sandbox-platform.env
 git add argocd/services/sandbox/shprod/sandbox-platform.env
 git commit -m "<lore message>"
@@ -350,7 +348,7 @@ cd /Users/skipzhang/code/mono/infra_pulumi
 GOWORK=off go run ./cmd/infractl up --stack <env>
 
 cd /Users/skipzhang/code/mono
-python3 scripts/build-release-image.py --service <service> --env <env> --tag <tag>
+python3 .ci/runtime/harness_ci/commands/build_release_image.py --service <service> --env <env> --tag <tag>
 # 更新 argocd/services/<service>/<env>/*
 git add <scoped paths>
 git commit -m "<lore message>"
@@ -378,7 +376,7 @@ GOWORK=off go run ./cmd/infractl sync --stack <env>
 - `infractl` 只管 infra，不管 workload 正式发布。
 - `deploy/envs/<env>/platform.env` 是部署事实来源，由 `infra_pulumi` 自动回写，不手改、不提交。
 - `platform.env` 现在在 `.gitignore` 里统一忽略；如果某个历史环境文件仍污染工作树，说明它曾被 Git 跟踪过，需要额外 `git rm --cached` 一次。
-- 北京 / 上海当前正式发布以 `mono-source/master` 上的 `argocd/` 为准。
+- 北京 / 上海当前正式发布以当前 repo 的 `gitops` 分支上的 `argocd/` 为准。
 - `sandbox`、`ctl`、`user/auth`、`payment`、`subscription`、`service-gateway`、`admin-gateway`、`gateway-dashboard`、`ai-gateway`、`frontend` 的北京 / 上海主链都已经迁到这套模式。
 - `frontend` 的正式构建仍按 `cd frontend && pnpm install && pnpm build` 执行，再更新 GitOps pin。
 - 各服务的 `deploy-k8s.sh` 现在共用：

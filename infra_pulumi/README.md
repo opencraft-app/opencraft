@@ -147,7 +147,7 @@ GOWORK=off go run ./cmd/infractl validate --stack beijing-sandbox
 ### 控制面接入 VPC
 
 - `stacks.connectivity.enabled=true` 时，会为该环境创建一套额外的 access VPC / subnet / route table，用于承接跨地域控制面接入。
-- 当前设计目标是给香港 Argo 这类外部控制面提供一条私网入口，不直接把控制面 VPC 与北京主业务 VPC 硬连。
+- 当前设计目标是给统一 Argo CD 控制面 这类外部控制面提供一条私网入口，不直接把控制面 VPC 与北京主业务 VPC 硬连。
 - `stacks.connectivity.ccn` 目前只负责：
   - 创建控制面专用 CCN
   - 挂载本地 access VPC

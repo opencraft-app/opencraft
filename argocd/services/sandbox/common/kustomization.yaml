@@ -1,5 +1,5 @@
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
 namespace: sandbox
 generatorOptions:
   disableNameSuffixHash: true
@@ -285,7 +285,7 @@ replacements:
   targets:
   - select:
       kind: Job
-      name: sandbox-db-migrate-v3
+      name: sandbox-db-migrate-v2
     fieldPaths:
     - spec.template.spec.containers.0.image
 - source:

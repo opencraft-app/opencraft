@@ -50,6 +50,7 @@ build/
 .next/
 out/
 _research-output
+*.zip
 
 # ─── Python ──────────────────────────────────────────
 __pycache__/
