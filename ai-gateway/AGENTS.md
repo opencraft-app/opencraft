@@ -14,7 +14,7 @@
 ## 保留能力
 
 - 镜像构建：
-  - `python3 scripts/build-release-image.py --service ai-gateway --env <env> --tag <tag>`
+  - `python3 .ci/runtime/harness_ci/commands/build_release_image.py --service ai-gateway --env <env> --tag <tag>`
 - DB migration：
   - `scripts/run_gitops_db_job.py`
   - 历史 DB job 模板已退役；当前以脚本和 runbook 为准
