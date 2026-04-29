@@ -83,7 +83,8 @@ smoke_command "audit_gitops_drift" \
 smoke_command "build_release_image" \
   "${common_package[@]}" \
   ".ci/runtime/harness_ci/commands/build_release_image.py" \
-  ".ci/runtime/harness_ci/build_release_image.py"
+  ".ci/runtime/harness_ci/build_release_image.py" \
+  ".ci/runtime/harness_ci/bundles.py"
 
 smoke_command "resolve_release_bundle" \
   "${common_package[@]}" \

@@ -210,6 +210,8 @@ ci_install_ksops() {
 
 ci_prepare_sops_age_key() {
   local default_key_file="/etc/lightclaw-ci/sops-age.keys.txt"
+  local user_key_file="${HOME}/.config/sops/age/keys.txt"
+  local root_key_file="/.config/sops/age/keys.txt"
   local temp_key_file=""
   local env_key_file="${SOPS_AGE_KEY_FILE:-}"
   local env_key="${SOPS_AGE_KEY:-}"
@@ -241,6 +243,18 @@ ci_prepare_sops_age_key() {
     return 0
   fi
 
+  if [[ -r "$user_key_file" ]]; then
+    export SOPS_AGE_KEY_FILE="$user_key_file"
+    ci_log "sops age key file selected from user path=${SOPS_AGE_KEY_FILE}"
+    return 0
+  fi
+
+  if [[ -r "$root_key_file" ]]; then
+    export SOPS_AGE_KEY_FILE="$root_key_file"
+    ci_log "sops age key file selected from root path=${SOPS_AGE_KEY_FILE}"
+    return 0
+  fi
+
   if [[ -n "$env_key" ]]; then
     temp_key_file="$(mktemp "${TMPDIR:-/tmp}/lightclaw-sops-age.XXXXXX")"
     chmod 600 "$temp_key_file"
@@ -252,7 +266,7 @@ ci_prepare_sops_age_key() {
     return 0
   fi
 
-  echo "missing SOPS age key; set SOPS_AGE_KEY_FILE, provide ${default_key_file}, or set SOPS_AGE_KEY" >&2
+  echo "missing SOPS age key; set SOPS_AGE_KEY_FILE, provide ${default_key_file}, provide ${user_key_file}, provide ${root_key_file}, or set SOPS_AGE_KEY" >&2
   return 1
 }
 
