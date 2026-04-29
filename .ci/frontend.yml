@@ -148,10 +148,15 @@ stages:
           - name: 手动发布 frontend 到 GitOps
             shell: bash
             run: |
-              if [[ "${{ variables.PIPELINE_MODE }}" != "promote" ]]; then
-                echo "skip promote step because PIPELINE_MODE=${{ variables.PIPELINE_MODE }}"
-                exit 0
-              fi
+              PIPELINE_MODE_VALUE="${{ variables.PIPELINE_MODE }}"
+              case "$PIPELINE_MODE_VALUE" in
+                promote)
+                  ;;
+                *)
+                  echo "skip promote step because PIPELINE_MODE=${PIPELINE_MODE_VALUE}"
+                  exit 0
+                  ;;
+              esac
               SOURCE_SHA="${{ variables.SOURCE_SHA }}"
               if [ -z "$SOURCE_SHA" ]; then
                 SOURCE_SHA="${{ ci.sha }}"
