@@ -126,10 +126,11 @@ def plan_release_gates(
     changed_files = changed_files_for_revision(repo_root, source_sha)
     migration_paths = [str(path) for path in (contract.get("migration_paths") or [])]
     migration_changed = db_mode == "migration" and any(path_matches_any(path, migration_paths) for path in changed_files)
-    always_verify_baseline = bool(contract.get("always_verify_baseline"))
-    readiness_supported = bool(contract.get("readiness_supported", True)) and bool(contract.get("verifier"))
-    requires_db_job = migration_changed and bool(contract.get("migration_operation"))
-    requires_db_readiness = db_mode == "migration" and (migration_changed or always_verify_baseline)
+    has_verifier = bool(contract.get("verifier"))
+    readiness_declared_unsupported = contract.get("readiness_supported") is False
+    readiness_supported = bool(contract.get("readiness_supported", True)) and has_verifier
+    requires_db_job = db_mode == "migration" and bool(contract.get("migration_operation"))
+    requires_db_readiness = db_mode == "migration" and (has_verifier or readiness_declared_unsupported)
     db_job_service = str(contract.get("db_job_service") or service)
     db_job_operation = str(contract.get("migration_operation") or "")
     db_job_image_override = resolve_image_override(image, str(contract.get("migration_image_key") or ""))

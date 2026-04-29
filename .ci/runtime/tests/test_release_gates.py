@@ -60,6 +60,24 @@ class ReleaseGatePlannerTests(unittest.TestCase):
         self.assertTrue(plan.auto_merge_allowed)
         self.assertTrue(plan.auto_sync_allowed)
 
+    def test_payment_non_migration_change_still_requires_idempotent_db_gate(self) -> None:
+        with self._repo_with_commit("payment/internal/api.go") as (repo_root, source_sha):
+            plan = plan_release_gates(
+                repo_root=repo_root,
+                bundle_manifest=REPO_ROOT / ".ci/runtime/release-bundles.yaml",
+                service="payment",
+                env="beijing-sandbox",
+                source_sha=source_sha,
+                image="example.com/payment:test",
+                pin_targets="payment",
+            )
+
+        self.assertFalse(plan.migration_changed)
+        self.assertTrue(plan.requires_db_job)
+        self.assertTrue(plan.requires_db_readiness)
+        self.assertFalse(plan.auto_merge_allowed)
+        self.assertFalse(plan.auto_sync_allowed)
+
     def test_sandbox_baseline_unknown_blocks_auto_sync(self) -> None:
         with self._repo_with_commit("sandbox/README.md") as (repo_root, source_sha):
             plan = plan_release_gates(
@@ -77,6 +95,25 @@ class ReleaseGatePlannerTests(unittest.TestCase):
         self.assertFalse(plan.auto_sync_allowed)
         self.assertIn("sync-default-pools", "\n".join(plan.manual_actions))
 
+    def test_ctl_requires_manual_readiness_confirmation(self) -> None:
+        with self._repo_with_commit("ctl/internal/api.go") as (repo_root, source_sha):
+            plan = plan_release_gates(
+                repo_root=repo_root,
+                bundle_manifest=REPO_ROOT / ".ci/runtime/release-bundles.yaml",
+                service="ctl",
+                env="beijing-sandbox",
+                source_sha=source_sha,
+                image="example.com/ctl:test",
+                pin_targets="ctl",
+            )
+
+        self.assertTrue(plan.requires_db_job)
+        self.assertTrue(plan.requires_db_readiness)
+        self.assertFalse(plan.readiness_supported)
+        self.assertFalse(plan.auto_merge_allowed)
+        self.assertFalse(plan.auto_sync_allowed)
+        self.assertIn("manual DB readiness confirmation required", "\n".join(plan.manual_actions))
+
     def test_shprod_always_uses_manual_argo_sync(self) -> None:
         with self._repo_with_commit("frontend/src/App.tsx") as (repo_root, source_sha):
             plan = plan_release_gates(
@@ -93,6 +130,36 @@ class ReleaseGatePlannerTests(unittest.TestCase):
         self.assertTrue(plan.auto_merge_allowed)
         self.assertFalse(plan.auto_sync_allowed)
         self.assertIn("manual Argo sync required", "\n".join(plan.manual_actions))
+
+    def test_shprod_db_service_requires_readiness_before_pending_sync(self) -> None:
+        with self._repo_with_commit("payment/internal/api.go") as (repo_root, source_sha):
+            blocked_plan = plan_release_gates(
+                repo_root=repo_root,
+                bundle_manifest=REPO_ROOT / ".ci/runtime/release-bundles.yaml",
+                service="payment",
+                env="shprod",
+                source_sha=source_sha,
+                image="example.com/payment:test",
+                pin_targets="payment",
+            )
+            passed_plan = plan_release_gates(
+                repo_root=repo_root,
+                bundle_manifest=REPO_ROOT / ".ci/runtime/release-bundles.yaml",
+                service="payment",
+                env="shprod",
+                source_sha=source_sha,
+                image="example.com/payment:test",
+                pin_targets="payment",
+                db_status="passed",
+            )
+
+        self.assertEqual(blocked_plan.argo_sync, "manual")
+        self.assertTrue(blocked_plan.requires_db_readiness)
+        self.assertFalse(blocked_plan.auto_merge_allowed)
+        self.assertFalse(blocked_plan.auto_sync_allowed)
+        self.assertEqual(passed_plan.argo_sync, "manual")
+        self.assertTrue(passed_plan.auto_merge_allowed)
+        self.assertFalse(passed_plan.auto_sync_allowed)
 
     def test_dependency_change_blocks_unordered_service_gateway_auto_sync(self) -> None:
         with self._repo_with_commit("payment/internal/api.go") as (repo_root, source_sha):
