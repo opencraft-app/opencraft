@@ -1,5 +1,5 @@
 version: v2.0
-name: ci-runtime-validation
+name: 校验 CI runtime
 
 on:
   push:
@@ -19,7 +19,7 @@ jobs:
       - checkout: self
         with:
           fetchDepth: 50
-      - name: validate-ci-runtime
+      - name: 校验 CI runtime 脚本与测试
         shell: bash
         run: |
           source .ci/init.sh

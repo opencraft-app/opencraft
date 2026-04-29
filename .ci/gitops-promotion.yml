@@ -117,7 +117,7 @@ stages:
           - checkout: self
             with:
               fetchDepth: 50
-          - name: 自动合并北京 promote MR
+          - name: 自动合并北京发布 MR
             shell: bash
             run: |
               CI_RUNTIME_DIR="$(mktemp -d)"
@@ -154,7 +154,7 @@ stages:
   - name: Argo 收敛验收
     jobs:
       verify_convergence:
-        name: 校验 Synced/Healthy 与 workload image
+        name: 校验 Argo 同步健康与镜像
         runs-on:
           self-hosted: true
           pool-name: env
@@ -209,7 +209,7 @@ stages:
           - checkout: self
             with:
               fetchDepth: 50
-          - name: 清理北京 promote 分支
+          - name: 清理北京发布分支
             shell: bash
             run: |
               CI_RUNTIME_DIR="$(mktemp -d)"

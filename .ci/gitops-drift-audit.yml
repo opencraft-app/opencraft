@@ -1,5 +1,5 @@
 version: v2.0
-name: gitops-drift-audit-beijing-sandbox
+name: 北京 GitOps 漂移审计
 
 on:
   schedules:
