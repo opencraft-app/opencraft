@@ -92,6 +92,18 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 self.assertEqual(len(image_keys), 5)
                 self.assertTrue(image_keys <= env_keys)
 
+    def test_service_gateway_shprod_bundle_does_not_project_admin_gateway(self) -> None:
+        bundle = load_bundle(load_manifest(), "service-gateway", "shprod")
+
+        self.assertTrue(any(path.startswith("argocd/services/service-gateway/shprod/") for path in bundle.publish_paths))
+        self.assertFalse(any("admin-gateway" in path for path in bundle.publish_paths))
+
+    def test_service_gateway_shprod_promote_pins_only_service_gateway(self) -> None:
+        workflow = (REPO_ROOT / ".ci/service-gateway.yml").read_text()
+
+        self.assertIn('shprod)\n                  PIN_TARGETS="service-gateway"', workflow)
+        self.assertIn('bash .ci/runtime/promote_bundle_image_to_gitops.sh service-gateway "$PIN_TARGETS"', workflow)
+
     def promotable_catalogs(self, manifest: dict) -> set[str]:
         catalogs: set[str] = set()
         for bundle_name, bundle_data in (manifest.get("bundles") or {}).items():

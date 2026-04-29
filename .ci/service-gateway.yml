@@ -121,6 +121,14 @@ stages:
               source .ci/init.sh
               ci_init_repo_root
               ci_export_gongfeng_defaults
+              case "${{ variables.TARGET_ENV }}" in
+                shprod)
+                  PIN_TARGETS="service-gateway"
+                  ;;
+                *)
+                  PIN_TARGETS="service-gateway,admin-gateway"
+                  ;;
+              esac
               REMOTE_URL="$(ci_gitops_remote_url)" \
               GITOPS_BRANCH=gitops \
-              bash .ci/runtime/promote_bundle_image_to_gitops.sh service-gateway service-gateway,admin-gateway "${{ variables.TARGET_ENV }}" "$SOURCE_SHA"
+              bash .ci/runtime/promote_bundle_image_to_gitops.sh service-gateway "$PIN_TARGETS" "${{ variables.TARGET_ENV }}" "$SOURCE_SHA"
