@@ -10,10 +10,10 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 RUNTIME_DIR = REPO_ROOT / ".ci" / "runtime"
-COMMAND_DIR = RUNTIME_DIR / "harness_ci" / "commands"
+COMMAND_DIR = RUNTIME_DIR / "commands"
 sys.path.insert(0, str(RUNTIME_DIR))
 
-from harness_ci.bundles import load_bundle  # noqa: E402
+from contracts.bundles import load_bundle  # noqa: E402
 
 
 class ResolveReleaseBundleTests(unittest.TestCase):

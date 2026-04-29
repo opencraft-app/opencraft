@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Sequence
 
-from harness_ci.bundles import DEFAULT_MANIFEST_PATH, load_bundle, load_manifest
+from contracts.bundles import DEFAULT_MANIFEST_PATH, load_bundle, load_manifest
 
 
 PREPROD_AUTO_SYNC_ENVS = {"beijing-sandbox", "beijing-sandbox-2"}
@@ -164,7 +164,7 @@ def plan_release_gates(
     if requires_db_readiness and db_status != "passed":
         if readiness_supported:
             manual_actions.append(
-                f"python3 .ci/runtime/harness_ci/commands/verify_db_contract.py --service {service} --env {env} --apply --wait"
+                f"python3 .ci/runtime/commands/verify_db_contract.py --service {service} --env {env} --apply --wait"
             )
         else:
             manual_actions.append(f"manual DB readiness confirmation required for {service}/{env}")

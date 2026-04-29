@@ -7,7 +7,7 @@ from __future__ import annotations
 import argparse
 import os
 
-from harness_ci.gongfeng import (
+from gitops.gongfeng import (
     api_text_request,
     env_int,
     merge_request_note_url,

@@ -135,6 +135,22 @@ run_release_gate() {
       ;;
     shprod)
       echo "上海生产策略：GitOps MR 可进入待同步状态；Argo sync 保持人工执行。"
+      if [[ "$GATE_REQUIRES_DB_READINESS" == "true" ]]; then
+        ci_ensure_db_job_tools
+        if [[ "$GATE_READINESS_SUPPORTED" != "true" ]]; then
+          echo "DB readiness contract 不支持自动校验；停止进入上海生产待同步状态。" >&2
+          exit 1
+        fi
+        echo "GitOps 待同步门禁：执行上海生产 DB readiness 只读校验"
+        python3 "$RUNTIME_COMMAND_DIR/verify_db_contract.py" \
+          --repo-root "$REPO_ROOT" \
+          --service "$BUNDLE_SERVICE" \
+          --env "$ENV_NAME" \
+          --apply \
+          --wait
+        GATE_DB_STATUS="passed"
+        load_release_gate_plan "$GATE_DB_STATUS"
+      fi
       ;;
     *)
       echo "非自动环境：只创建 GitOps MR，不自动 Argo sync。"
@@ -169,7 +185,7 @@ done
 
 mkdir -p "$bootstrap_dir/.ci"
 cp -R "$REPO_ROOT/.ci/runtime" "$bootstrap_dir/.ci/runtime"
-RUNTIME_COMMAND_DIR="$bootstrap_dir/.ci/runtime/harness_ci/commands"
+RUNTIME_COMMAND_DIR="$bootstrap_dir/.ci/runtime/commands"
 run_release_gate
 
 if [[ -n "$REMOTE_URL" ]]; then
@@ -189,7 +205,11 @@ PROMOTE_BRANCH="promote-$(sanitize_branch_component "$ENV_NAME")-${SERVICE_SLUG}
 ENV_DISPLAY_NAME="$(env_display_name "$ENV_NAME")"
 
 echo "============================================================"
-echo "GitOps 发布意图：准备把镜像推进到 ${ENV_DISPLAY_NAME}"
+if [[ "$ENV_NAME" == "shprod" ]]; then
+  echo "GitOps 待同步意图：准备把镜像 desired state 推进到 ${ENV_DISPLAY_NAME}"
+else
+  echo "GitOps 发布意图：准备把镜像推进到 ${ENV_DISPLAY_NAME}"
+fi
 echo "发布 bundle：${BUNDLE_SERVICE}"
 echo "目标服务：${SERVICE_ARG}"
 echo "目标环境：${ENV_DISPLAY_NAME} (${ENV_NAME})"
@@ -235,6 +255,10 @@ if git -C "$REPO_ROOT" diff --cached --quiet; then
 fi
 
 COMMIT_BODY="$(cat <<EOF
+Release-bundle: ${BUNDLE_SERVICE}
+Release-target-env: ${ENV_NAME}
+Release-pin-targets: ${SERVICE_ARG}
+Release-image: ${IMAGE}
 Release-gate-db-status: ${GATE_DB_STATUS}
 Release-gate-db-readiness-required: ${GATE_REQUIRES_DB_READINESS}
 Release-gate-auto-merge: ${GATE_AUTO_MERGE_ALLOWED}
@@ -244,13 +268,22 @@ Release-gate-dependency-changed: ${GATE_RELEASE_DEPENDENCY_CHANGED}
 Source-revision: ${SOURCE_REF}
 EOF
 )"
-git -C "$REPO_ROOT" commit -m "发布到${ENV_DISPLAY_NAME}：${SERVICE_ARG}" -m "$COMMIT_BODY"
+if [[ "$ENV_NAME" == "shprod" ]]; then
+  COMMIT_TITLE="进入${ENV_DISPLAY_NAME}待同步状态：${SERVICE_ARG}"
+  MR_TITLE="进入${ENV_DISPLAY_NAME}待同步状态：${SERVICE_ARG}"
+  MR_DESCRIPTION_HEADER="自动化 GitOps 待同步变更。"
+else
+  COMMIT_TITLE="发布到${ENV_DISPLAY_NAME}：${SERVICE_ARG}"
+  MR_TITLE="发布到${ENV_DISPLAY_NAME}：${SERVICE_ARG}"
+  MR_DESCRIPTION_HEADER="自动化 GitOps 发布。"
+fi
+
+git -C "$REPO_ROOT" commit -m "$COMMIT_TITLE" -m "$COMMIT_BODY"
 git -C "$REPO_ROOT" push --force-with-lease -u "$REMOTE_NAME" "$PROMOTE_BRANCH"
 
-MR_TITLE="发布到${ENV_DISPLAY_NAME}：${SERVICE_ARG}"
 MR_GATE_ACTIONS="$(json_array_to_bullets "$GATE_MANUAL_ACTIONS")"
 MR_DESCRIPTION="$(cat <<EOF
-自动化 GitOps 发布。
+$MR_DESCRIPTION_HEADER
 
 - 环境：$ENV_DISPLAY_NAME ($ENV_NAME)
 - 服务：$SERVICE_ARG
@@ -282,7 +315,7 @@ MR_ARGS=(
 
 case "$ENV_NAME" in
   shprod)
-    echo "GitOps 发布策略：${ENV_DISPLAY_NAME} promote 分支不随 MR 合并自动删除，避免分支删除事件触发空 checkout"
+    echo "GitOps 待同步策略：${ENV_DISPLAY_NAME} promote 分支不随 MR 合并自动删除，避免分支删除事件触发空 checkout"
     ;;
   *)
     MR_ARGS+=(--remove-source-branch)
@@ -297,13 +330,15 @@ eval "$mr_output"
 
 if [[ -n "${MR_ID:-}" ]]; then
   NEXT_STAGE="等待 GitOps MR 合并"
+  NOTE_HEADLINE="自动发布进度：镜像构建与 GitOps 投影完成。"
   if [[ "$ENV_NAME" == "shprod" && "$GATE_AUTO_MERGE_ALLOWED" == "true" ]]; then
+    NOTE_HEADLINE="GitOps 进度：镜像构建与 GitOps 投影完成，等待人工 Argo sync。"
     NEXT_STAGE="等待 GitOps MR 自动合并；合并后进入待同步状态，Argo sync 由人工执行"
   elif [[ "$GATE_AUTO_MERGE_ALLOWED" != "true" ]]; then
     NEXT_STAGE="发布门禁未满足；不自动合并，按人工动作处理后重试"
   fi
   MR_NOTE_BODY="$(cat <<EOF
-自动发布进度：镜像构建与 GitOps 投影完成。
+$NOTE_HEADLINE
 
 - 环境：$ENV_DISPLAY_NAME ($ENV_NAME)
 - 服务：$SERVICE_ARG

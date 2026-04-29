@@ -1,5 +1,5 @@
 version: v2.0
-name: GitOps 发布验收与自动合并
+name: GitOps 验收与自动合并
 
 on:
   push:
@@ -38,56 +38,22 @@ stages:
               git show "${CI_RUNTIME_COMMIT}:.ci/init.sh" > "${CI_RUNTIME_DIR}/.ci/init.sh"
               source "${CI_RUNTIME_DIR}/.ci/init.sh"
               ci_export_gongfeng_defaults
-              ci_materialize_runtime_files "${CI_RUNTIME_DIR}" \
-                ".ci/init.sh" \
-                ".ci/runtime/release-bundles.yaml" \
-                ".ci/runtime/harness_ci/commands/update_image_pin.py" \
-                ".ci/runtime/harness_ci/image_pin.py" \
-                ".ci/runtime/harness_ci/commands/project_release_bundle.py" \
-                ".ci/runtime/harness_ci/project_release_bundle.py" \
-                ".ci/runtime/harness_ci/__init__.py" \
-                ".ci/runtime/harness_ci/bundles.py" \
-                ".ci/runtime/harness_ci/gongfeng.py" \
-                ".ci/runtime/harness_ci/commands/gitops_merge_request.py" \
-                ".ci/runtime/harness_ci/gitops_merge_request.py" \
-                ".ci/runtime/harness_ci/commands/verify_gitops_release.py" \
-                ".ci/runtime/harness_ci/gitops_release_verifier.py" \
-                ".ci/runtime/harness_ci/commands/plan_release_gates.py" \
-                ".ci/runtime/harness_ci/release_gates.py" \
-                ".ci/runtime/harness_ci/commands/verify_db_contract.py" \
-                ".ci/runtime/harness_ci/db_contract_verifier.py" \
-                ".ci/runtime/harness_ci/commands/validate_gitops_static.py" \
-                ".ci/runtime/harness_ci/gitops_static_validation.py" \
-                ".ci/runtime/harness_ci/commands/validate_gitops_kustomize.py" \
-                ".ci/runtime/harness_ci/gitops_kustomize_validation.py"
+              ci_materialize_runtime_manifest "${CI_RUNTIME_DIR}" ".ci/runtime/materialize-files.txt"
               ci_init_repo_root
               git diff --name-only HEAD~1..HEAD || true
-              python3 "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/update_image_pin.py" --help >/dev/null
-              python3 "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/project_release_bundle.py" --help >/dev/null
-              python3 "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/plan_release_gates.py" --help >/dev/null
-              python3 "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/verify_db_contract.py" --help >/dev/null
-              python3 "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/validate_gitops_static.py" --help >/dev/null
-              python3 "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/validate_gitops_kustomize.py" --help >/dev/null
-              python3 -m py_compile \
-                "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/__init__.py" \
-                "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/bundles.py" \
-                "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/gongfeng.py" \
-                "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/update_image_pin.py" \
-                "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/image_pin.py" \
-                "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/project_release_bundle.py" \
-                "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/project_release_bundle.py" \
-                "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/gitops_merge_request.py" \
-                "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/gitops_merge_request.py" \
-                "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/verify_gitops_release.py" \
-                "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/gitops_release_verifier.py" \
-                "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/plan_release_gates.py" \
-                "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/release_gates.py" \
-                "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/verify_db_contract.py" \
-                "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/db_contract_verifier.py" \
-                "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/validate_gitops_static.py" \
-                "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/gitops_static_validation.py" \
-                "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/validate_gitops_kustomize.py" \
-                "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/gitops_kustomize_validation.py"
+              python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/update_image_pin.py" --help >/dev/null
+              python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/project_release_bundle.py" --help >/dev/null
+              python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/plan_release_gates.py" --help >/dev/null
+              python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/verify_db_contract.py" --help >/dev/null
+              python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/verify_shprod_sync_preflight.py" --help >/dev/null
+              python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/validate_gitops_static.py" --help >/dev/null
+              python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/validate_gitops_kustomize.py" --help >/dev/null
+              python3 -m py_compile $(find \
+                "${CI_RUNTIME_DIR}/.ci/runtime/contracts" \
+                "${CI_RUNTIME_DIR}/.ci/runtime/gitops" \
+                "${CI_RUNTIME_DIR}/.ci/runtime/db_gates" \
+                "${CI_RUNTIME_DIR}/.ci/runtime/commands" \
+                -name '*.py' | sort)
               case "${{ ci.branch }}" in
                 promote-beijing-sandbox-2-*)
                   TARGET_ENV=beijing-sandbox-2
@@ -105,17 +71,17 @@ stages:
               if [[ -n "$TARGET_ENV" ]]; then
                 ci_require_gitops_validation_tools
                 ci_prepare_sops_age_key
-                python3 "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/validate_gitops_static.py" \
+                python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/validate_gitops_static.py" \
                   --repo-root "$REPO_ROOT" \
                   --env "$TARGET_ENV" \
                   --bundle-manifest "${CI_RUNTIME_DIR}/.ci/runtime/release-bundles.yaml"
                 if [[ "$TARGET_ENV" == "shprod" ]]; then
-                  python3 "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/validate_gitops_kustomize.py" \
+                  python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/validate_gitops_kustomize.py" \
                     --repo-root "$REPO_ROOT" \
                     --env "$TARGET_ENV" \
                     --changed-only
                 else
-                  python3 "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/validate_gitops_kustomize.py" \
+                  python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/validate_gitops_kustomize.py" \
                     --repo-root "$REPO_ROOT" \
                     --env "$TARGET_ENV"
                 fi
@@ -139,7 +105,7 @@ stages:
             name: 拉取代码
             with:
               fetchDepth: 50
-          - name: 自动合并北京发布 MR
+          - name: 按环境策略自动合并 GitOps MR
             shell: bash
             run: |
               CI_RUNTIME_DIR="$(mktemp -d)"
@@ -151,12 +117,7 @@ stages:
               git show "${CI_RUNTIME_COMMIT}:.ci/init.sh" > "${CI_RUNTIME_DIR}/.ci/init.sh"
               source "${CI_RUNTIME_DIR}/.ci/init.sh"
               ci_export_gongfeng_defaults
-              ci_materialize_runtime_files "${CI_RUNTIME_DIR}" \
-                ".ci/init.sh" \
-                ".ci/runtime/harness_ci/__init__.py" \
-                ".ci/runtime/harness_ci/gongfeng.py" \
-                ".ci/runtime/harness_ci/commands/gitops_merge_request.py" \
-                ".ci/runtime/harness_ci/gitops_merge_request.py"
+              ci_materialize_runtime_manifest "${CI_RUNTIME_DIR}" ".ci/runtime/materialize-files.txt"
               ci_init_repo_root
               COMMIT_MESSAGE="$(git log -1 --format=%B)"
               trailer_value() {
@@ -171,7 +132,7 @@ stages:
                     echo "Release-gate-auto-merge=${GATE_AUTO_MERGE_ALLOWED:-missing}"
                     exit 1
                   fi
-                  python3 "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/gitops_merge_request.py" \
+                  python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/gitops_merge_request.py" \
                     --source-branch "${{ ci.branch }}" \
                     --target-branch gitops \
                     --title "自动合并北京 GitOps 发布 MR" \
@@ -190,10 +151,10 @@ stages:
                     echo "Release-gate-argo-sync=${GATE_ARGO_SYNC:-missing}"
                     exit 1
                   fi
-                  python3 "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/gitops_merge_request.py" \
+                  python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/gitops_merge_request.py" \
                     --source-branch "${{ ci.branch }}" \
                     --target-branch gitops \
-                    --title "自动合并上海生产 GitOps 发布 MR" \
+                    --title "自动合并上海生产 GitOps 待同步 MR" \
                     --description "promote 分支检查通过后自动合并到 gitops；上海生产仅进入待同步状态，不执行 Argo 自动 sync。" \
                     --auto-merge
                   ;;
@@ -202,10 +163,10 @@ stages:
                   ;;
               esac
 
-  - name: Argo 收敛验收
+  - name: GitOps 合并后验收
     jobs:
-      verify_convergence:
-        name: 校验 Argo 同步健康与镜像
+      post_merge_verify:
+        name: 北京收敛与上海待同步验收
         runs-on:
           self-hosted: true
           pool-name: env
@@ -217,7 +178,7 @@ stages:
             name: 拉取代码
             with:
               fetchDepth: 50
-          - name: 校验 Argo 收敛并评论 MR
+          - name: 校验 GitOps 合并状态并评论 MR
             shell: bash
             run: |
               CI_RUNTIME_DIR="$(mktemp -d)"
@@ -229,21 +190,17 @@ stages:
               git show "${CI_RUNTIME_COMMIT}:.ci/init.sh" > "${CI_RUNTIME_DIR}/.ci/init.sh"
               source "${CI_RUNTIME_DIR}/.ci/init.sh"
               ci_export_gongfeng_defaults
-              ci_materialize_runtime_files "${CI_RUNTIME_DIR}" \
-                ".ci/init.sh" \
-                ".ci/runtime/harness_ci/__init__.py" \
-                ".ci/runtime/harness_ci/commands/verify_gitops_release.py" \
-                ".ci/runtime/harness_ci/gitops_release_verifier.py"
+              ci_materialize_runtime_manifest "${CI_RUNTIME_DIR}" ".ci/runtime/materialize-files.txt"
               ci_init_repo_root
               case "${{ ci.branch }}" in
                 promote-beijing-sandbox-2-*|promote-beijing-sandbox-*)
-                  python3 "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/verify_gitops_release.py" \
+                  python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/verify_gitops_release.py" \
                     --repo-root "$REPO_ROOT" \
                     --source-branch "${{ ci.branch }}" \
                     --target-branch gitops
                   ;;
                 promote-shprod-*)
-                  python3 "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/verify_gitops_release.py" \
+                  python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/verify_gitops_release.py" \
                     --repo-root "$REPO_ROOT" \
                     --source-branch "${{ ci.branch }}" \
                     --target-branch gitops \
@@ -255,6 +212,53 @@ stages:
                   echo "skip Argo convergence verification for ${{ ci.branch }}"
                   ;;
               esac
+
+  - name: 上海生产人工 Sync 审批
+    if: startsWith(ci.branch, 'promote-shprod-')
+    check-in:
+      reviews:
+        flows:
+          - name: 上海生产发布审批
+            reviewers:
+              - skipzhang
+        description: |
+          确认 GitOps MR 已合入、DB readiness 可通过，随后人工执行 Argo sync。
+        content-format: markdown
+        notify-type: [RTX]
+      timeout-hours: 24
+    jobs:
+      shprod_sync_preflight:
+        name: 人工审批后 DB readiness 只读校验
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        env:
+          CI_RUNTIME_REF: origin/master
+        steps:
+          - checkout: self
+            name: 拉取代码
+            with:
+              fetchDepth: 50
+          - name: 校验人工 Argo sync 前 DB readiness
+            shell: bash
+            run: |
+              CI_RUNTIME_DIR="$(mktemp -d)"
+              mkdir -p "${CI_RUNTIME_DIR}/.ci" "${CI_RUNTIME_DIR}/.ci/runtime"
+              git show HEAD:.ci/init.sh > "${CI_RUNTIME_DIR}/.ci/init.sh"
+              source "${CI_RUNTIME_DIR}/.ci/init.sh"
+              ci_prepare_runtime_ref "${CI_RUNTIME_REF:-origin/master}"
+              ci_export_gongfeng_defaults
+              git show "${CI_RUNTIME_COMMIT}:.ci/init.sh" > "${CI_RUNTIME_DIR}/.ci/init.sh"
+              source "${CI_RUNTIME_DIR}/.ci/init.sh"
+              ci_export_gongfeng_defaults
+              ci_materialize_runtime_manifest "${CI_RUNTIME_DIR}" ".ci/runtime/materialize-files.txt"
+              ci_init_repo_root
+              python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/verify_shprod_sync_preflight.py" \
+                --repo-root "$REPO_ROOT" \
+                --source-branch "${{ ci.branch }}" \
+                --apply \
+                --wait
+              echo "上海生产同步前置校验通过；请在发布窗口人工执行 Argo sync。"
 
   - name: 清理 promote 分支
     jobs:
@@ -283,16 +287,11 @@ stages:
               git show "${CI_RUNTIME_COMMIT}:.ci/init.sh" > "${CI_RUNTIME_DIR}/.ci/init.sh"
               source "${CI_RUNTIME_DIR}/.ci/init.sh"
               ci_export_gongfeng_defaults
-              ci_materialize_runtime_files "${CI_RUNTIME_DIR}" \
-                ".ci/init.sh" \
-                ".ci/runtime/harness_ci/__init__.py" \
-                ".ci/runtime/harness_ci/gongfeng.py" \
-                ".ci/runtime/harness_ci/commands/gitops_cleanup_source_branch.py" \
-                ".ci/runtime/harness_ci/gitops_cleanup_source_branch.py"
+              ci_materialize_runtime_manifest "${CI_RUNTIME_DIR}" ".ci/runtime/materialize-files.txt"
               ci_init_repo_root
               case "${{ ci.branch }}" in
                 promote-beijing-sandbox-2-*|promote-beijing-sandbox-*)
-                  python3 "${CI_RUNTIME_DIR}/.ci/runtime/harness_ci/commands/gitops_cleanup_source_branch.py" \
+                  python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/gitops_cleanup_source_branch.py" \
                     --source-branch "${{ ci.branch }}" \
                     --target-branch gitops \
                     --wait-seconds 120 \

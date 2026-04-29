@@ -9,7 +9,7 @@ import time
 import urllib.error
 from typing import Any, Dict, List
 
-from harness_ci.gongfeng import (
+from gitops.gongfeng import (
     api_json_request,
     branch_url,
     env_int,

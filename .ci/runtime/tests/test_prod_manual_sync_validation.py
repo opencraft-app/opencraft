@@ -8,7 +8,7 @@ RUNTIME_DIR = Path(__file__).resolve().parents[1]
 if str(RUNTIME_DIR) not in sys.path:
     sys.path.insert(0, str(RUNTIME_DIR))
 
-from harness_ci.prod_manual_sync_validation import validate
+from gitops.prod_manual_sync_validation import validate
 
 
 class ProdManualSyncValidationTests(unittest.TestCase):

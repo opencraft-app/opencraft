@@ -16,7 +16,7 @@ RUNTIME_DIR = Path(__file__).resolve().parents[1]
 if str(RUNTIME_DIR) not in sys.path:
     sys.path.insert(0, str(RUNTIME_DIR))
 
-from harness_ci.bundles import load_bundle, load_manifest  # noqa: E402
+from contracts.bundles import load_bundle, load_manifest  # noqa: E402
 
 
 APPSET_REL = "argocd/apps/beijing-sandbox/sandbox-family-appset.yaml"

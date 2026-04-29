@@ -10,7 +10,7 @@ import subprocess
 import sys
 from pathlib import PurePosixPath
 
-from harness_ci.bundles import load_bundle, parse_manifest_text
+from contracts.bundles import load_bundle, parse_manifest_text
 
 
 def parse_args() -> argparse.Namespace:

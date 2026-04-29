@@ -8,7 +8,7 @@ RUNTIME_DIR = Path(__file__).resolve().parents[1]
 if str(RUNTIME_DIR) not in sys.path:
     sys.path.insert(0, str(RUNTIME_DIR))
 
-from harness_ci.gitops_release_verifier import (
+from gitops.gitops_release_verifier import (
     ReleaseTarget,
     changed_files_from_merge_commit,
     changed_files_from_recent_commits,
@@ -23,7 +23,7 @@ class GitopsReleaseVerifierTests(unittest.TestCase):
     def test_infer_release_targets_from_promote_commit_paths(self) -> None:
         targets = infer_release_targets(
             [
-                ".ci/runtime/harness_ci/commands/gitops_merge_request.py",
+                ".ci/runtime/commands/gitops_merge_request.py",
                 "argocd/services/ctl/beijing-sandbox/ctl-platform.env",
                 "argocd/services/ctl/beijing-sandbox/kustomization.yaml",
                 "argocd/services/ctl/common/kustomization.yaml",

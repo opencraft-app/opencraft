@@ -2,115 +2,74 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+MANIFEST_PATH="$REPO_ROOT/.ci/runtime/materialize-files.txt"
+
+read_manifest_files() {
+  local repo_path
+  while IFS= read -r repo_path; do
+    repo_path="${repo_path%%#*}"
+    repo_path="${repo_path#"${repo_path%%[![:space:]]*}"}"
+    repo_path="${repo_path%"${repo_path##*[![:space:]]}"}"
+    [[ -z "$repo_path" ]] && continue
+    case "$repo_path" in
+      .ci/runtime/*) ;;
+      *)
+        echo "runtime materialize manifest may only reference .ci/runtime/* paths: ${repo_path}" >&2
+        return 1
+        ;;
+    esac
+    printf '%s\n' "$repo_path"
+  done < "$MANIFEST_PATH"
+}
+
+assert_manifest_covers_runtime_python() {
+  local expected manifest missing
+  expected="$(mktemp)"
+  manifest="$(mktemp)"
+  missing="$(mktemp)"
+
+  (
+    cd "$REPO_ROOT"
+    find .ci/runtime/commands .ci/runtime/contracts .ci/runtime/gitops .ci/runtime/db_gates \
+      -type f -name '*.py' | sort
+  ) > "$expected"
+  read_manifest_files | sort -u > "$manifest"
+  comm -23 "$expected" "$manifest" > "$missing"
+
+  if [[ -s "$missing" ]]; then
+    echo "runtime materialize manifest is missing Python files:" >&2
+    cat "$missing" >&2
+    rm -f "$expected" "$manifest" "$missing"
+    return 1
+  fi
+
+  rm -f "$expected" "$manifest" "$missing"
+}
 
 materialize_runtime() {
   local runtime_dir="$1"
-  shift
-
   mkdir -p "$runtime_dir"
+
   local path
-  for path in "$@"; do
+  while IFS= read -r path; do
     mkdir -p "$runtime_dir/$(dirname "$path")"
     cp "$REPO_ROOT/$path" "$runtime_dir/$path"
-  done
+  done < <(read_manifest_files)
 }
 
-smoke_command() {
-  local name="$1"
-  shift
-  local runtime_dir
-  runtime_dir="$(mktemp -d)"
+assert_manifest_covers_runtime_python
 
-  if ! materialize_runtime "$runtime_dir" "$@"; then
-    rm -rf "$runtime_dir"
-    return 1
-  fi
-  if ! python3 "$runtime_dir/.ci/runtime/harness_ci/commands/$name.py" --help >/dev/null; then
-    rm -rf "$runtime_dir"
-    return 1
-  fi
-  rm -rf "$runtime_dir"
-}
+runtime_dir="$(mktemp -d)"
+trap 'rm -rf "$runtime_dir"' EXIT
+materialize_runtime "$runtime_dir"
 
-common_package=(
-  ".ci/runtime/harness_ci/__init__.py"
+while IFS= read -r command_path; do
+  command_name="$(basename "$command_path" .py)"
+  if [[ "$command_name" == "__init__" ]]; then
+    continue
+  fi
+  python3 "$runtime_dir/$command_path" --help >/dev/null
+done < <(
+  cd "$REPO_ROOT"
+  find .ci/runtime/commands -maxdepth 1 -type f -name '*.py' | sort
 )
-
-smoke_command "update_image_pin" \
-  "${common_package[@]}" \
-  ".ci/runtime/harness_ci/commands/update_image_pin.py" \
-  ".ci/runtime/harness_ci/image_pin.py"
-
-smoke_command "project_release_bundle" \
-  "${common_package[@]}" \
-  ".ci/runtime/harness_ci/commands/project_release_bundle.py" \
-  ".ci/runtime/harness_ci/project_release_bundle.py" \
-  ".ci/runtime/harness_ci/bundles.py"
-
-smoke_command "validate_gitops_static" \
-  "${common_package[@]}" \
-  ".ci/runtime/harness_ci/commands/validate_gitops_static.py" \
-  ".ci/runtime/harness_ci/gitops_static_validation.py" \
-  ".ci/runtime/harness_ci/bundles.py"
-
-smoke_command "validate_gitops_kustomize" \
-  "${common_package[@]}" \
-  ".ci/runtime/harness_ci/commands/validate_gitops_kustomize.py" \
-  ".ci/runtime/harness_ci/gitops_kustomize_validation.py"
-
-smoke_command "validate_prod_manual_sync" \
-  "${common_package[@]}" \
-  ".ci/runtime/harness_ci/commands/validate_prod_manual_sync.py" \
-  ".ci/runtime/harness_ci/prod_manual_sync_validation.py"
-
-smoke_command "gitops_merge_request" \
-  "${common_package[@]}" \
-  ".ci/runtime/harness_ci/commands/gitops_merge_request.py" \
-  ".ci/runtime/harness_ci/gitops_merge_request.py" \
-  ".ci/runtime/harness_ci/gongfeng.py"
-
-smoke_command "verify_gitops_release" \
-  "${common_package[@]}" \
-  ".ci/runtime/harness_ci/commands/verify_gitops_release.py" \
-  ".ci/runtime/harness_ci/gitops_release_verifier.py"
-
-smoke_command "gitops_cleanup_source_branch" \
-  "${common_package[@]}" \
-  ".ci/runtime/harness_ci/commands/gitops_cleanup_source_branch.py" \
-  ".ci/runtime/harness_ci/gitops_cleanup_source_branch.py" \
-  ".ci/runtime/harness_ci/gongfeng.py"
-
-smoke_command "audit_gitops_drift" \
-  "${common_package[@]}" \
-  ".ci/runtime/harness_ci/commands/audit_gitops_drift.py" \
-  ".ci/runtime/harness_ci/gitops_drift_audit.py"
-
-smoke_command "build_release_image" \
-  "${common_package[@]}" \
-  ".ci/runtime/harness_ci/commands/build_release_image.py" \
-  ".ci/runtime/harness_ci/build_release_image.py" \
-  ".ci/runtime/harness_ci/bundles.py"
-
-smoke_command "resolve_release_bundle" \
-  "${common_package[@]}" \
-  ".ci/runtime/harness_ci/commands/resolve_release_bundle.py" \
-  ".ci/runtime/harness_ci/resolve_release_bundle.py" \
-  ".ci/runtime/harness_ci/bundles.py"
-
-smoke_command "gitops_merge_request_note" \
-  "${common_package[@]}" \
-  ".ci/runtime/harness_ci/commands/gitops_merge_request_note.py" \
-  ".ci/runtime/harness_ci/gitops_merge_request_note.py" \
-  ".ci/runtime/harness_ci/gongfeng.py"
-
-smoke_command "plan_release_gates" \
-  "${common_package[@]}" \
-  ".ci/runtime/harness_ci/commands/plan_release_gates.py" \
-  ".ci/runtime/harness_ci/release_gates.py" \
-  ".ci/runtime/harness_ci/bundles.py"
-
-smoke_command "verify_db_contract" \
-  "${common_package[@]}" \
-  ".ci/runtime/harness_ci/commands/verify_db_contract.py" \
-  ".ci/runtime/harness_ci/db_contract_verifier.py" \
-  ".ci/runtime/harness_ci/bundles.py"

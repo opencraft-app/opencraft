@@ -41,7 +41,7 @@
 - `targetRevision` 从 `master` 切到 `gitops` 后，北京/上海 live app 仍然 `Synced / Healthy`
 - `env` 自有构建池上的 Linux 机器可以通过 SSH 免密 push `mono2`
 - `.ci/runtime/pin_image_to_gitops.sh` / `.ci/runtime/promote_bundle_image_to_gitops.sh` 能承载 GitOps 发布子集投影和 image pin 写回
-- `.ci/runtime/harness_ci/commands/gitops_merge_request.py` 负责创建 / 复用 MR，并在北京环境轮询后自动合并
+- `.ci/runtime/commands/gitops_merge_request.py` 负责创建 / 复用 MR，并在北京环境轮询后自动合并
 - service 级 YAML 可以继续使用蓝盾 v2.0 的 `jobs.runs-on + steps` 结构
 
 ## DB-aware GitOps Release Gates
@@ -83,6 +83,98 @@ DB job / readiness Job 的 kubeconfig 读取顺序：
 - `subscription` 要求 `subscription_plans` 中存在 `free/lite/pro`
 - `sandbox` 的 default pools 属运营态数据，自动发布不 seed；缺 pools 时阻断并提示人工 `sync-default-pools`
 - `service-gateway` 只做轻量依赖发现；如果同批包含 `lightclaw-auth/payment/subscription` 变更，会阻断无序自动 sync
+
+## Runtime Semantic Map
+
+当前 runtime 已按语义拆分到 `.ci/runtime/` 下的多个包。修改时按下面的边界定位，避免把发布契约、GitOps 自动化、DB gate 和工具自举继续混在一起。
+
+### contracts
+
+发布契约、bundle 元数据和镜像 pin 规则：
+
+- `.ci/runtime/release-bundles.yaml`
+  - bundle owner/source、publish paths、image targets、DB contract、轻量依赖声明
+- `.ci/runtime/contracts/bundles.py`
+  - 解析 release bundle manifest
+- `.ci/runtime/contracts/image_pin.py`
+  - 更新 `argocd/services/<service>/<env>/*-platform.env`
+- `.ci/runtime/contracts/project_release_bundle.py`
+  - 从 `master@SHA` 投影发布子集到 promote 分支
+
+### gitops
+
+GitOps MR、promote 分支、收敛验收和漂移审计：
+
+- `.ci/runtime/pin_image_to_gitops.sh`
+  - DB gate 后投影 GitOps 子集、更新 image pin、创建 MR
+- `.ci/runtime/promote_bundle_image_to_gitops.sh`
+  - 手动 promote 已存在镜像到 GitOps
+- `.ci/runtime/gitops/gitops_merge_request.py`
+  - 创建 / 复用 / 自动合并 GitOps MR
+- `.ci/runtime/gitops/gitops_merge_request_note.py`
+  - 写 MR note
+- `.ci/runtime/gitops/gitops_release_verifier.py`
+  - 北京等待 Argo 收敛；上海只确认 merge-only 待同步状态
+- `.ci/runtime/gitops/gitops_cleanup_source_branch.py`
+  - 北京 merged 后清理 promote 分支
+- `.ci/runtime/gitops/gitops_static_validation.py`
+  - GitOps 静态结构校验
+- `.ci/runtime/gitops/gitops_kustomize_validation.py`
+  - Kustomize / SOPS / KSOPS 渲染校验
+- `.ci/runtime/gitops/gitops_drift_audit.py`
+  - GitOps 漂移审计
+
+### db_gates
+
+DB-aware release gate、受控 DB Job 和只读 readiness：
+
+- `.ci/runtime/db_gates/release_gates.py`
+  - 根据 source diff、DB contract、环境策略输出 release gate plan
+- `.ci/runtime/db_gates/db_contract_verifier.py`
+  - 渲染并可执行只读 DB readiness Kubernetes Job
+- `.ci/runtime/commands/plan_release_gates.py`
+  - CI 命令入口
+- `.ci/runtime/commands/verify_db_contract.py`
+  - CI 命令入口
+- `scripts/run_gitops_db_job.py`
+  - 实际执行 migration / seed 这类受控 DB Job
+
+### frontend
+
+前端 Pages / EdgeOne / GitOps 镜像构建发布：
+
+- `.ci/frontend.yml`
+  - 默认构建 Cloudflare Pages 矩阵 + frontend GitOps 镜像；纯 CF 矩阵不加载 EdgeOne token
+- `.ci/frontend-edgeone-lightvela.yml`
+  - 手动发布 `eo:cn-lightvela-prod`
+- `.ci/frontend-edgeone-lightvela-intl.yml`
+  - 手动发布 `eo:global-lightvela-intl-prod`
+- `frontend/release-matrix.json`
+  - Pages 发布矩阵唯一事实来源
+- `frontend/scripts/release-matrix.mjs`
+  - 解析矩阵并执行 build/deploy
+
+### bootstrap
+
+CI 运行环境自举、secret 读取和工具安装：
+
+- `.ci/init.sh`
+  - repo root、Git WOA 默认值、Cloudflare/EdgeOne/TCR token、本地 secret、Node/pnpm、kubectl、Kustomize/SOPS/KSOPS
+- `.ci/AGENTS.md`
+  - CI 机、`/etc/lightclaw-ci/` 本地 secret 和 kubeconfig 运作约定
+- `.ci/runtime/smoke_materialized_runtime.sh`
+  - 验证 materialized runtime 里 command wrapper 的 import/`--help` 可用
+- `.ci/runtime/materialize-files.txt`
+  - CI runtime 临时目录投影的唯一文件清单，promotion workflow 和 smoke 共用
+
+### commands
+
+所有 CI 可执行 Python 入口统一放在 `.ci/runtime/commands/`。这些文件只做两件事：
+
+1. 把 `.ci/runtime` 加入 `sys.path`
+2. 从 `contracts` / `gitops` / `db_gates` 导入对应 `main`
+
+不要把业务逻辑写进 command wrapper。
 
 ## Successful Experience
 
@@ -192,7 +284,7 @@ DB job / readiness Job 的 kubeconfig 读取顺序：
 
 - CI 直接用 `run` step
 - 调 `.ci/runtime/build_and_promote_to_gitops.sh`
-- 底层走 `.ci/runtime/harness_ci/commands/build_release_image.py --push`
+- 底层走 `.ci/runtime/commands/build_release_image.py --push`
 - shell 优先从构建机本地文件读取 TCR token，不存在时再回落到 Stream settings
 - `docker login` 在 shell 里显式执行
 
@@ -377,18 +469,18 @@ CI_RUNTIME_REF=refs/tags/ci-runtime-20260429-1
 
 ## Shared Scripts
 
-- `.ci/runtime/harness_ci/commands/update_image_pin.py`
+- `.ci/runtime/commands/update_image_pin.py`
   - 只更新 `argocd/services/<service>/<env>/*-platform.env`
-- `.ci/runtime/harness_ci/bundles.py`
+- `.ci/runtime/contracts/bundles.py`
   - 解析 release bundle 元数据和模式化 `publish_paths`
-- `.ci/runtime/harness_ci/commands/project_release_bundle.py`
+- `.ci/runtime/commands/project_release_bundle.py`
   - 把 bundle 在 `master@SHA` 上的发布子集投影到 `gitops` promote 分支
 - `.ci/runtime/pin_image_to_gitops.sh`
   - 先把发布子集投影到 promote 分支，再更新镜像 pin，并创建 / 复用进入 `gitops` 的 MR
-- `.ci/runtime/harness_ci/commands/gitops_merge_request.py`
+- `.ci/runtime/commands/gitops_merge_request.py`
   - 创建 / 复用 GitOps MR
   - 北京环境等待 commit check 成功后自动合并
-- `.ci/runtime/harness_ci/commands/gitops_cleanup_source_branch.py`
+- `.ci/runtime/commands/gitops_cleanup_source_branch.py`
   - 在 `promote-*` 分支自己的检查流水线结束后轮询 merged MR
   - 北京 auto-merge 成功后再显式删除 `promote-*` 源分支
 - `.ci/runtime/promote_bundle_image_to_gitops.sh`
@@ -399,7 +491,7 @@ CI_RUNTIME_REF=refs/tags/ci-runtime-20260429-1
 以下服务还没有接入这一版自动化：
 
 - `sandbox`
-  - 仍使用特殊镜像构建链路，不走 `.ci/runtime/harness_ci/commands/build_release_image.py`
+  - 仍使用特殊镜像构建链路，不走 `.ci/runtime/commands/build_release_image.py`
 - `session`
   - 当前没有完整的 release bundle 定义
 - `frontend-ds`

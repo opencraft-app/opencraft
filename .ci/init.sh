@@ -400,6 +400,46 @@ ci_materialize_runtime_files() {
   done
 }
 
+ci_materialize_runtime_manifest() {
+  local runtime_dir="$1"
+  local manifest_path="${2:-.ci/runtime/materialize-files.txt}"
+
+  if [[ -z "${CI_RUNTIME_COMMIT:-}" ]]; then
+    echo "CI_RUNTIME_COMMIT is not set; call ci_prepare_runtime_ref first" >&2
+    return 1
+  fi
+
+  local manifest_content
+  if ! manifest_content="$(git show "${CI_RUNTIME_COMMIT}:${manifest_path}")"; then
+    echo "failed to read runtime materialize manifest: ${manifest_path} at ${CI_RUNTIME_COMMIT}" >&2
+    return 1
+  fi
+
+  local runtime_files=()
+  local repo_path
+  while IFS= read -r repo_path; do
+    repo_path="${repo_path%%#*}"
+    repo_path="${repo_path#"${repo_path%%[![:space:]]*}"}"
+    repo_path="${repo_path%"${repo_path##*[![:space:]]}"}"
+    [[ -z "$repo_path" ]] && continue
+    case "$repo_path" in
+      .ci/runtime/*) ;;
+      *)
+        echo "runtime materialize manifest may only reference .ci/runtime/* paths: ${repo_path}" >&2
+        return 1
+        ;;
+    esac
+    runtime_files+=("$repo_path")
+  done <<< "$manifest_content"
+
+  if [[ "${#runtime_files[@]}" -eq 0 ]]; then
+    echo "runtime materialize manifest is empty: ${manifest_path}" >&2
+    return 1
+  fi
+
+  ci_materialize_runtime_files "$runtime_dir" "${runtime_files[@]}"
+}
+
 ci_bootstrap_node_locked() {
   local node_version="$1"
   local node_archive="$2"

@@ -8,7 +8,7 @@ import argparse
 import json
 import shlex
 import sys
-from harness_ci.bundles import ImageTarget, load_bundle, load_manifest, require_build_metadata
+from contracts.bundles import ImageTarget, load_bundle, load_manifest, require_build_metadata
 
 
 def parse_args() -> argparse.Namespace:

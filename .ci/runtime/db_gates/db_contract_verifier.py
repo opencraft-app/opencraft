@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from harness_ci.bundles import DEFAULT_MANIFEST_PATH, load_bundle, load_manifest
+from contracts.bundles import DEFAULT_MANIFEST_PATH, load_bundle, load_manifest
 
 
 def load_env_file(path: Path) -> dict[str, str]:

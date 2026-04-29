@@ -12,7 +12,7 @@ on:
       - .ci/runtime/promote_bundle_image_to_gitops.sh
       - .ci/runtime/pin_image_to_gitops.sh
       - .ci/runtime/release-bundles.yaml
-      - .ci/runtime/harness_ci/**
+      - .ci/runtime/**
       - frontend/**
       - argocd/services/frontend/**
       - argocd/apps/*/frontend.yaml

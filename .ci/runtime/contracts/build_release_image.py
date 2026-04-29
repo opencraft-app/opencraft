@@ -12,7 +12,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from harness_ci.bundles import ImageTarget, load_bundle, load_manifest, require_build_metadata
+from contracts.bundles import ImageTarget, load_bundle, load_manifest, require_build_metadata
 
 
 RUNTIME_DIR = Path(__file__).resolve().parents[1]

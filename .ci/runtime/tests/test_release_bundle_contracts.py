@@ -11,7 +11,7 @@ RUNTIME_DIR = REPO_ROOT / ".ci" / "runtime"
 if str(RUNTIME_DIR) not in sys.path:
     sys.path.insert(0, str(RUNTIME_DIR))
 
-from harness_ci.bundles import load_bundle, load_manifest, require_build_metadata  # noqa: E402
+from contracts.bundles import load_bundle, load_manifest, require_build_metadata  # noqa: E402
 
 
 SANDBOX_ENV = "beijing-sandbox-2"

@@ -9,8 +9,8 @@ RUNTIME_DIR = REPO_ROOT / ".ci" / "runtime"
 if str(RUNTIME_DIR) not in sys.path:
     sys.path.insert(0, str(RUNTIME_DIR))
 
-from harness_ci.bundles import load_bundle, load_manifest  # noqa: E402
-from harness_ci.release_gates import plan_release_gates  # noqa: E402
+from contracts.bundles import load_bundle, load_manifest  # noqa: E402
+from db_gates.release_gates import plan_release_gates  # noqa: E402
 
 
 class ReleaseGatePlannerTests(unittest.TestCase):

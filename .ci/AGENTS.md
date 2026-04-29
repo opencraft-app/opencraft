@@ -2,6 +2,21 @@
 
 本目录维护 Devcloud / 蓝盾 CI 配置和运行时脚本。修改 `.ci/*.yml`、`.ci/runtime/**` 或相关发布凭据逻辑时，优先遵守本文件。
 
+## 蓝盾 CI 语法来源
+
+本仓库使用 Devcloud / 蓝盾 Stream YAML。遇到不确定的 YAML 语法、stage 审批、插件 step、变量表达式或运行模型时，优先查证
+BK-CI 开源实现：
+
+- https://github.com/TencentBlueKing/bk-ci.git
+
+建议查证路径：
+
+- `src/backend/ci/core/common/common-pipeline-yaml/`：Stream YAML schema、parser、transfer 逻辑。
+- `src/backend/ci/core/common/common-pipeline/`：Pipeline model、stage check-in、人工审核元素。
+- `support-files/sql/5001_init_dml/5001_ci_store-init_dml_mysql.sql`：内置插件 atom code 与输入参数。
+
+不要凭记忆猜蓝盾 YAML 语法；仓库里没有现成示例时，先用 BK-CI 源码或公开文档确认后再改 `.ci/*.yml`。
+
 ## 实际运行机
 
 当前自有构建池 `env` 的 CI/CD 实际执行位置：
