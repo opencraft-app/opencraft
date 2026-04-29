@@ -37,6 +37,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--argocd-insecure-skip-verify", action="store_true")
     parser.add_argument("--merge-wait-seconds", type=int, default=0)
     parser.add_argument("--merge-poll-seconds", type=int, default=10)
+    parser.add_argument(
+        "--merge-only",
+        action="store_true",
+        help="Only verify that the GitOps MR merged; do not wait for Argo sync/convergence.",
+    )
     parser.add_argument("--wait-seconds", type=int, default=600)
     parser.add_argument("--poll-seconds", type=int, default=10)
     return parser.parse_args()
@@ -541,6 +546,23 @@ def format_noop_note(mr: Dict[str, Any]) -> str:
     )
 
 
+def format_merge_only_note(mr: Dict[str, Any], targets: Sequence[ReleaseTarget]) -> str:
+    if targets:
+        target_names = ", ".join(f"`{target.app_name}`" for target in targets)
+    else:
+        target_names = "-"
+    return "\n".join(
+        [
+            "GitOps MR 已合并：上海生产已进入待同步状态。",
+            "",
+            f"- MR: !{mr.get('iid')}",
+            f"- merge commit: `{mr.get('merge_commit_sha')}`",
+            f"- target apps: {target_names}",
+            "- Argo sync 策略：生产环境不自动同步；人工完成 DB readiness 确认后再执行 Argo sync。",
+        ]
+    )
+
+
 def format_failure_note(mr: Dict[str, Any], error: str, partial_results: Sequence[Dict[str, Any]]) -> str:
     lines = [
         "自动验收失败：GitOps MR 已合并，但 Argo CD 收敛状态未达到预期。",
@@ -584,8 +606,6 @@ def main() -> int:
     require_gongfeng_settings(args)
     repo_root = Path(args.repo_root).resolve()
     private_token = resolve_private_token(args)
-    argocd_base_url, argocd_username, argocd_password, ssl_context = resolve_argocd_settings(args)
-    argocd_token = login_argocd(argocd_base_url, argocd_username, argocd_password, ssl_context)
     merged_mr = resolve_merged_mr(args, private_token)
 
     changed_files = changed_files_from_merge_commit(
@@ -594,6 +614,14 @@ def main() -> int:
         args.target_branch,
     )
     targets = infer_release_targets(changed_files)
+    if args.merge_only:
+        note = format_merge_only_note(merged_mr, targets)
+        post_merge_request_note(args.api_base, args.project_id, private_token, merged_mr["id"], note)
+        print(note)
+        return 0
+
+    argocd_base_url, argocd_username, argocd_password, ssl_context = resolve_argocd_settings(args)
+    argocd_token = login_argocd(argocd_base_url, argocd_username, argocd_password, ssl_context)
     if not targets:
         note = format_noop_note(merged_mr)
         post_merge_request_note(args.api_base, args.project_id, private_token, merged_mr["id"], note)

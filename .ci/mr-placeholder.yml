@@ -1,0 +1,30 @@
+version: v2.0
+name: MR 占位检查
+
+on:
+  push:
+    enable: true
+  mr:
+    enable: true
+    target-branches: [ master ]
+    action: [ open, reopen, push-update, edit ]
+    report-commit-check: true
+    block-mr: true
+  manual: enabled
+
+stages:
+  - name: MR 占位检查
+    jobs:
+      noop:
+        name: 提交已进入 CI
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - name: 通过 MR 占位检查
+            shell: bash
+            run: |
+              echo "MR placeholder check passed."
+              echo "ci.event=${{ ci.event }}"
+              echo "ci.branch=${{ ci.branch }}"
+              echo "ci.sha=${{ ci.sha }}"

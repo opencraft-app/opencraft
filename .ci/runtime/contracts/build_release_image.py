@@ -12,7 +12,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from harness_ci.bundles import ImageTarget, load_bundle, load_manifest, require_build_metadata
+from contracts.bundles import ImageTarget, load_bundle, load_manifest, require_build_metadata
 
 
 RUNTIME_DIR = Path(__file__).resolve().parents[1]
@@ -20,7 +20,7 @@ REPO_ROOT = RUNTIME_DIR.parents[1]
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build a release image from .ci/runtime/release-bundles.yaml")
+    parser = argparse.ArgumentParser(description="Build a release image from .ci/runtime/release-bundles.manifest")
     parser.add_argument("--service", required=True, help="Bundle id, e.g. payment")
     parser.add_argument("--env", required=True, help="Target env, e.g. beijing-sandbox or shprod")
     parser.add_argument("--tag", required=True, help="Image tag to build")

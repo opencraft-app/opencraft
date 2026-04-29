@@ -8,12 +8,13 @@ RUNTIME_DIR = Path(__file__).resolve().parents[1]
 if str(RUNTIME_DIR) not in sys.path:
     sys.path.insert(0, str(RUNTIME_DIR))
 
-from harness_ci.gitops_release_verifier import (
+from gitops.gitops_release_verifier import (
     ReleaseTarget,
     changed_files_from_merge_commit,
     changed_files_from_recent_commits,
     expected_images_for_target,
     format_convergence_log_line,
+    format_merge_only_note,
     infer_release_targets,
 )
 
@@ -22,7 +23,7 @@ class GitopsReleaseVerifierTests(unittest.TestCase):
     def test_infer_release_targets_from_promote_commit_paths(self) -> None:
         targets = infer_release_targets(
             [
-                ".ci/runtime/harness_ci/commands/gitops_merge_request.py",
+                ".ci/runtime/commands/gitops_merge_request.py",
                 "argocd/services/ctl/beijing-sandbox/ctl-platform.env",
                 "argocd/services/ctl/beijing-sandbox/kustomization.yaml",
                 "argocd/services/ctl/common/kustomization.yaml",
@@ -153,6 +154,16 @@ class GitopsReleaseVerifierTests(unittest.TestCase):
         self.assertIn("health=Progressing", line)
         self.assertIn("expected_images=example.com/ctl:v2", line)
         self.assertIn("live_images=example.com/ctl:v1", line)
+
+    def test_format_merge_only_note_marks_shprod_as_pending_manual_sync(self) -> None:
+        note = format_merge_only_note(
+            {"iid": 220, "merge_commit_sha": "abcdef123456"},
+            [ReleaseTarget(service="frontend", env="shprod")],
+        )
+
+        self.assertIn("待同步状态", note)
+        self.assertIn("frontend-shprod", note)
+        self.assertIn("生产环境不自动同步", note)
 
     def _git(self, repo: Path, *args: str) -> None:
         subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True)

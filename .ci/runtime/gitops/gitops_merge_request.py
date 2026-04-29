@@ -9,7 +9,7 @@ import sys
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
-from harness_ci.gongfeng import (
+from gitops.gongfeng import (
     api_json_request,
     create_merge_request_url,
     env_int,
@@ -123,6 +123,12 @@ def is_auto_mergeable(mr: Dict[str, Any]) -> bool:
     return commit_state in (None, "", "success")
 
 
+def next_stage_after_merge(source_branch: str) -> str:
+    if source_branch.startswith("promote-shprod-"):
+        return "- 下一阶段：上海生产进入待同步状态；人工确认 DB readiness 后执行 Argo sync"
+    return "- 下一阶段：等待 Argo CD 收敛并校验 live workload image"
+
+
 def maybe_auto_merge(args: argparse.Namespace, mr: Dict[str, Any]) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
     if not args.auto_merge:
         return mr, None
@@ -132,7 +138,7 @@ def maybe_auto_merge(args: argparse.Namespace, mr: Dict[str, Any]) -> Tuple[Dict
         mr,
         "\n".join(
             [
-                "自动发布进度：已进入 GitOps MR 自动合并阶段。",
+                "GitOps 进度：已进入 MR 自动合并阶段。",
                 "",
                 f"- source branch: `{args.source_branch}`",
                 f"- target branch: `{args.target_branch}`",
@@ -160,11 +166,11 @@ def maybe_auto_merge(args: argparse.Namespace, mr: Dict[str, Any]) -> Tuple[Dict
                 latest,
                 "\n".join(
                     [
-                        "自动发布进度：GitOps MR 已合并。",
+                        "GitOps 进度：MR 已合并。",
                         "",
                         f"- source branch: `{args.source_branch}`",
                         f"- target branch: `{args.target_branch}`",
-                        "- 下一阶段：等待 Argo CD 收敛并校验 live workload image",
+                        next_stage_after_merge(args.source_branch),
                     ]
                 ),
             )
@@ -176,11 +182,11 @@ def maybe_auto_merge(args: argparse.Namespace, mr: Dict[str, Any]) -> Tuple[Dict
                 latest,
                 "\n".join(
                     [
-                        "自动发布进度：GitOps MR 已执行合并。",
+                        "GitOps 进度：MR 已执行合并。",
                         "",
                         f"- source branch: `{args.source_branch}`",
                         f"- target branch: `{args.target_branch}`",
-                        "- 下一阶段：等待 Argo CD 收敛并校验 live workload image",
+                        next_stage_after_merge(args.source_branch),
                     ]
                 ),
             )

@@ -22,7 +22,7 @@ fi
 SHORT_SHA="${SOURCE_SHA:0:12}"
 TAG="${BUNDLE_SERVICE}-${SHORT_SHA}"
 
-eval "$(python3 "$REPO_ROOT/.ci/runtime/harness_ci/commands/resolve_release_bundle.py" \
+eval "$(python3 "$REPO_ROOT/.ci/runtime/commands/resolve_release_bundle.py" \
   --service "$BUNDLE_SERVICE" \
   --env "$TARGET_ENV" \
   --tag "$TAG" \

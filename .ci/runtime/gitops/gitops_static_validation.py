@@ -16,7 +16,7 @@ RUNTIME_DIR = Path(__file__).resolve().parents[1]
 if str(RUNTIME_DIR) not in sys.path:
     sys.path.insert(0, str(RUNTIME_DIR))
 
-from harness_ci.bundles import load_bundle, load_manifest  # noqa: E402
+from contracts.bundles import load_bundle, load_manifest  # noqa: E402
 
 
 APPSET_REL = "argocd/apps/beijing-sandbox/sandbox-family-appset.yaml"
@@ -358,7 +358,7 @@ def parse_args() -> argparse.Namespace:
         "--bundle-manifest",
         type=Path,
         default=None,
-        help="Release bundle manifest. Defaults to <repo-root>/.ci/runtime/release-bundles.yaml.",
+        help="Release bundle manifest. Defaults to <repo-root>/.ci/runtime/release-bundles.manifest.",
     )
     return parser.parse_args()
 
@@ -366,7 +366,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     repo_root = args.repo_root.resolve()
-    bundle_manifest = (args.bundle_manifest or repo_root / ".ci/runtime/release-bundles.yaml").resolve()
+    bundle_manifest = (args.bundle_manifest or repo_root / ".ci/runtime/release-bundles.manifest").resolve()
     errors = validate(repo_root, args.env, bundle_manifest)
     if errors:
         for error in errors:

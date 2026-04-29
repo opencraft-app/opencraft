@@ -34,39 +34,13 @@ jobs:
             .ci/runtime/promote_bundle_image_to_gitops.sh \
             .ci/runtime/smoke_materialized_runtime.sh
 
-          PY_COMPILE_TARGETS=(
-            .ci/runtime/harness_ci/__init__.py
-            .ci/runtime/harness_ci/build_release_image.py
-            .ci/runtime/harness_ci/bundles.py
-            .ci/runtime/harness_ci/gitops_cleanup_source_branch.py
-            .ci/runtime/harness_ci/gitops_drift_audit.py
-            .ci/runtime/harness_ci/gitops_kustomize_validation.py
-            .ci/runtime/harness_ci/gitops_merge_request.py
-            .ci/runtime/harness_ci/gitops_merge_request_note.py
-            .ci/runtime/harness_ci/gitops_release_verifier.py
-            .ci/runtime/harness_ci/gitops_static_validation.py
-            .ci/runtime/harness_ci/gongfeng.py
-            .ci/runtime/harness_ci/image_pin.py
-            .ci/runtime/harness_ci/project_release_bundle.py
-            .ci/runtime/harness_ci/prod_manual_sync_validation.py
-            .ci/runtime/harness_ci/resolve_release_bundle.py
-            .ci/runtime/harness_ci/commands/__init__.py
-            .ci/runtime/harness_ci/commands/audit_gitops_drift.py
-            .ci/runtime/harness_ci/commands/build_release_image.py
-            .ci/runtime/harness_ci/commands/gitops_cleanup_source_branch.py
-            .ci/runtime/harness_ci/commands/gitops_merge_request.py
-            .ci/runtime/harness_ci/commands/gitops_merge_request_note.py
-            .ci/runtime/harness_ci/commands/project_release_bundle.py
-            .ci/runtime/harness_ci/commands/resolve_release_bundle.py
-            .ci/runtime/harness_ci/commands/update_image_pin.py
-            .ci/runtime/harness_ci/commands/validate_gitops_kustomize.py
-            .ci/runtime/harness_ci/commands/validate_gitops_static.py
-            .ci/runtime/harness_ci/commands/validate_prod_manual_sync.py
-            .ci/runtime/harness_ci/commands/verify_gitops_release.py
-          )
-
-          python3 -m py_compile "${PY_COMPILE_TARGETS[@]}"
-          python3 .ci/runtime/harness_ci/commands/validate_prod_manual_sync.py --repo-root "$REPO_ROOT"
+          python3 -m py_compile $(find \
+            .ci/runtime/contracts \
+            .ci/runtime/gitops \
+            .ci/runtime/db_gates \
+            .ci/runtime/commands \
+            -name '*.py' | sort)
+          python3 .ci/runtime/commands/validate_prod_manual_sync.py --repo-root "$REPO_ROOT"
           python3 -m unittest discover -s .ci/runtime/tests
           bash .ci/runtime/smoke_materialized_runtime.sh
           python3 -c 'from pathlib import Path; import yaml; [yaml.safe_load(path.open()) for path in sorted(Path(".ci").glob("*.yml"))]; print("parsed .ci yaml files")'
