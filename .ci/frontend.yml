@@ -5,7 +5,7 @@ on:
   push:
     branches: [ master ]
     paths:
-      # Keep the CI contract self-triggering: frontend build behavior changes must run this pipeline.
+      # Keep the CI contract self-triggering: frontend build behavior changes and manual retriggers must run this pipeline.
       - .ci/frontend.yml
       - .ci/init.sh
       - .ci/runtime/build_and_promote_to_gitops.sh
