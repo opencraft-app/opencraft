@@ -130,7 +130,7 @@ const mapBundleToPlan = (bundle: Bundle, index: number, t: (zh: string, opts?: R
 
   /* agent_quota 打头阵 */
   if (bundle.agent_quota > 0) {
-    features.push({ icon: iconMap.user, label: "Agent", value: t("{{n}} 个", { n: bundle.agent_quota }) });
+    features.push({ icon: iconMap.user, label: "Agent", value: `${bundle.agent_quota} ${t("个")}` });
   }
   /* description 里的其他卖点（已出现的 Agent/积分不重复添加）*/
   /* 「独立环境」「专属云端存储」前端统一规格并固定顺序展示，其余项顺延 */
@@ -165,7 +165,7 @@ const mapBundleToPlan = (bundle: Bundle, index: number, t: (zh: string, opts?: R
     features.push({
       icon: iconMap.zap,
       label: t("模型积分"),
-      value: t("{{n}} 体验积分", { n: bundle.credit }),
+      value: `${bundle.credit} ${t("体验积分")}`,
     });
   }
   features.push(...otherFeatures);
@@ -261,7 +261,7 @@ const PLACEHOLDER_PLAN_DEFS: PlaceholderPlanDef[] = [
       { iconKey: "user", label: "Agent", value: "1 个" },
       { iconKey: "monitor", label: "独立环境", value: "4核 8G 内存" },
       { iconKey: "hardDrive", label: "专属云端存储", value: "80G" },
-      { iconKey: "wifi", label: "网络流量", value: "3GB" },
+      { iconKey: "zap", label: "模型积分", value: "-" },
       { iconKey: "clock", label: "7×24 在线", hasCheck: true },
       { iconKey: "settings", label: "极简配置面板", hasCheck: true },
     ],
@@ -281,7 +281,7 @@ const PLACEHOLDER_PLAN_DEFS: PlaceholderPlanDef[] = [
       { iconKey: "user", label: "Agent", value: "3 个" },
       { iconKey: "monitor", label: "独立环境", value: "4核 8G 内存" },
       { iconKey: "hardDrive", label: "专属云端存储", value: "80G" },
-      { iconKey: "wifi", label: "网络流量", value: "3GB" },
+      { iconKey: "zap", label: "模型积分", value: "-" },
       { iconKey: "clock", label: "7×24 在线", hasCheck: true },
       { iconKey: "settings", label: "极简配置面板", hasCheck: true },
       { iconKey: "zap", label: "新功能优先体验", hasCheck: true },
