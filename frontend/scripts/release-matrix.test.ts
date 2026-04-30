@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   createComboEnvironment,
   formatComboSummary,
+  loadReleaseMatrix,
   resolveComboProjectName,
   resolveSelectedComboIds,
   selectReleaseCombos,
@@ -94,7 +95,7 @@ describe("release matrix helpers", () => {
       requiredSecretEnv: ["EDGEONE_API_TOKEN"],
       outputDir: "dist-cn",
       deployEnv: {
-        EDGEONE_PAGES_AREA: "china",
+        EDGEONE_PAGES_AREA: "global",
         EDGEONE_PAGES_ENV: "preview",
       },
     };
@@ -105,7 +106,47 @@ describe("release matrix helpers", () => {
 
     expect(comboEnv.EDGEONE_PAGES_PROJECT_NAME).toBe("lightvela-preview");
     expect(comboEnv.EDGEONE_PAGES_DIR).toBe("dist-cn");
-    expect(comboEnv.EDGEONE_PAGES_AREA).toBe("china");
+    expect(comboEnv.EDGEONE_PAGES_AREA).toBe("global");
     expect(comboEnv.EDGEONE_PAGES_ENV).toBe("preview");
+  });
+
+  it("includes the production China EdgeOne lightvela project in the release matrix", () => {
+    const { combos } = loadReleaseMatrix();
+    const combo = combos.find((item) => item.id === "eo:cn-lightvela-prod");
+
+    expect(combo).toMatchObject({
+      region: "cn",
+      channel: "eo",
+      buildCommand: "build:cn",
+      deployCommand: "deploy:eo",
+      projectName: "lightvela",
+      authApiBaseUrl: "https://api.lightvela.tencent.com",
+      outputDir: "dist-cn",
+      deployEnv: {
+        EDGEONE_PAGES_AREA: "global",
+        EDGEONE_PAGES_ENV: "production",
+      },
+    });
+    expect(combo?.requiredSecretEnv).toContain("EDGEONE_API_TOKEN");
+  });
+
+  it("includes the production global EdgeOne lightvela intl project in the release matrix", () => {
+    const { combos } = loadReleaseMatrix();
+    const combo = combos.find((item) => item.id === "eo:global-lightvela-intl-prod");
+
+    expect(combo).toMatchObject({
+      region: "global",
+      channel: "eo",
+      buildCommand: "build:global",
+      deployCommand: "deploy:eo",
+      projectName: "lightvela-intl",
+      authApiBaseUrl: "https://lightclaw.tech",
+      outputDir: "dist-global",
+      deployEnv: {
+        EDGEONE_PAGES_AREA: "global",
+        EDGEONE_PAGES_ENV: "production",
+      },
+    });
+    expect(combo?.requiredSecretEnv).toContain("EDGEONE_API_TOKEN");
   });
 });

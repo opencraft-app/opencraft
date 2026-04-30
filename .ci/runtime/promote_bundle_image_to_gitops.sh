@@ -15,14 +15,14 @@ TARGET_ENV="$3"
 SOURCE_SHA="$4"
 
 if [[ -z "$SOURCE_SHA" ]]; then
-  echo "missing source sha" >&2
-  exit 1
+  SOURCE_SHA="$(git -C "$REPO_ROOT" rev-parse HEAD)"
+  echo "source sha not provided; default to HEAD=$SOURCE_SHA"
 fi
 
 SHORT_SHA="${SOURCE_SHA:0:12}"
 TAG="${BUNDLE_SERVICE}-${SHORT_SHA}"
 
-eval "$(python3 "$REPO_ROOT/.ci/runtime/harness_ci/commands/resolve_release_bundle.py" \
+eval "$(python3 "$REPO_ROOT/.ci/runtime/commands/resolve_release_bundle.py" \
   --service "$BUNDLE_SERVICE" \
   --env "$TARGET_ENV" \
   --tag "$TAG" \

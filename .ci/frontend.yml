@@ -1,10 +1,18 @@
 version: v2.0
-name: release-frontend
+name: 构建 frontend
 
 on:
   push:
     branches: [ master ]
     paths:
+      # Keep the CI contract self-triggering: frontend build behavior changes and manual retriggers must run this pipeline.
+      - .ci/frontend.yml
+      - .ci/init.sh
+      - .ci/runtime/build_and_promote_to_gitops.sh
+      - .ci/runtime/promote_bundle_image_to_gitops.sh
+      - .ci/runtime/pin_image_to_gitops.sh
+      - .ci/runtime/release-bundles.manifest
+      - .ci/runtime/**
       - frontend/**
       - argocd/services/frontend/**
       - argocd/apps/*/frontend.yaml
@@ -35,10 +43,10 @@ variables:
     allow-modify-at-startup: true
 
 stages:
-  - name: 服务发布
+  - name: 构建 frontend
     jobs:
       release:
-        name: 构建并发布前端矩阵
+        name: 构建 frontend
         runs-on:
           self-hosted: true
           pool-name: env
@@ -46,9 +54,10 @@ stages:
           GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}
         steps:
           - checkout: self
+            name: 拉取代码
             with:
               fetchDepth: 50
-          - name: debug-context
+          - name: 打印 frontend 构建上下文
             shell: bash
             run: |
               echo "ci.event=${{ ci.event }}"
@@ -58,14 +67,17 @@ stages:
               echo "TARGET_ENV=${{ variables.TARGET_ENV }}"
               echo "SOURCE_SHA=${{ variables.SOURCE_SHA }}"
           - id: prepare
-            if: ${{ variables.PIPELINE_MODE }} != 'promote'
+            name: 准备 frontend 构建标签
             shell: bash
             run: |
+              if [[ "${{ variables.PIPELINE_MODE }}" == "promote" ]]; then
+                echo "skip build step because PIPELINE_MODE=promote"
+                exit 0
+              fi
               SHORT_SHA="${{ ci.sha }}"
               SHORT_SHA="${SHORT_SHA:0:12}"
               echo "::set-output name=tag::frontend-${SHORT_SHA}"
-          - name: deploy-beijing-cloudflare
-            if: ${{ variables.PIPELINE_MODE }} != 'promote'
+          - name: 构建 frontend Pages 矩阵
             shell: bash
             env:
               CLOUDFLARE_API_TOKEN: ${{ settings.CLOUDFLARE_API_TOKEN }}
@@ -73,14 +85,30 @@ stages:
               EDGEONE_API_TOKEN: ${{ settings.EDGEONE_API_TOKEN }}
               VITE_AUTH_API_BASE_URL: https://lightclaw.tech
               CLOUDFLARE_PAGES_COMMIT_HASH: ${{ ci.sha }}
-              CLOUDFLARE_PAGES_COMMIT_MESSAGE: Cloudflare Pages deploy from release-frontend
+              CLOUDFLARE_PAGES_COMMIT_MESSAGE: Cloudflare Pages deploy from frontend pipeline
               FRONTEND_RELEASE_MATRIX: ${{ variables.FRONTEND_RELEASE_MATRIX }}
             run: |
+              if [[ "${{ variables.PIPELINE_MODE }}" == "promote" ]]; then
+                echo "skip build step because PIPELINE_MODE=promote"
+                exit 0
+              fi
+              echo "============================================================"
+              echo "frontend 发布决策：进入 Pages 矩阵发布流程"
+              echo "触发原因：PIPELINE_MODE=${{ variables.PIPELINE_MODE }}，满足非 promote 构建发布条件"
+              echo "发布矩阵：${FRONTEND_RELEASE_MATRIX}"
+              echo "发布模型：CI 只选择矩阵项，组合定义以 frontend/release-matrix.json 为准"
+              echo "发布来源：branch=${{ ci.branch }} sha=${{ ci.sha }}"
+              echo "下一步：安装依赖并执行 pnpm release:matrix"
+              echo "============================================================"
               source .ci/init.sh
               ci_init_repo_root
               ci_export_gongfeng_defaults
               ci_load_cloudflare_credentials
-              ci_load_edgeone_credentials
+              if ci_frontend_release_matrix_needs_edgeone "$FRONTEND_RELEASE_MATRIX"; then
+                ci_load_edgeone_credentials
+              else
+                echo "edgeone api token not required for FRONTEND_RELEASE_MATRIX=${FRONTEND_RELEASE_MATRIX}"
+              fi
               ci_ensure_node
               ci_ensure_pnpm
 
@@ -90,16 +118,70 @@ stages:
               cd "$REPO_ROOT/frontend"
               rm -rf node_modules
               "$PNPM_BIN" --version
-              "$PNPM_BIN" install --no-frozen-lockfile
+              "$PNPM_BIN" install --frozen-lockfile
               "$PNPM_BIN" release:matrix
-          - name: promote-manual
-            if: ${{ variables.PIPELINE_MODE }} == 'promote'
+          - name: 构建 frontend GitOps 镜像
+            shell: bash
+            env:
+              TCR_BEIJING_PASSWORD: ${{ settings.TCR_BEIJING_PASSWORD }}
+              TCR_SHPROD_PASSWORD: ${{ settings.TCR_SHPROD_PASSWORD }}
+            run: |
+              if [[ "${{ variables.PIPELINE_MODE }}" == "promote" ]]; then
+                echo "skip build step because PIPELINE_MODE=promote"
+                exit 0
+              fi
+              source .ci/init.sh
+              ci_init_repo_root
+              ci_export_gongfeng_defaults
+              REMOTE_URL="$(ci_gitops_remote_url)"
+              GITOPS_BRANCH=gitops
+              BUILD_TAG_OVERRIDE="${{ steps.prepare.outputs.tag }}"
+              export REMOTE_URL GITOPS_BRANCH BUILD_TAG_OVERRIDE
+              case "${{ ci.branch }}" in
+                master)
+                  BUILD_ENVS="shprod"
+                  AUTO_PIN_ENVS="none"
+                  ;;
+                *)
+                  echo "unsupported source branch for release: ${{ ci.branch }}" >&2
+                  exit 1
+                  ;;
+              esac
+              echo "BUILD_ENVS=${BUILD_ENVS}"
+              echo "AUTO_PIN_ENVS=${AUTO_PIN_ENVS}"
+              bash .ci/runtime/build_and_promote_to_gitops.sh frontend frontend "${BUILD_ENVS}" "${AUTO_PIN_ENVS}"
+          - name: 手动发布 frontend 到 GitOps
             shell: bash
             run: |
-              test -n "${{ variables.SOURCE_SHA }}"
+              PIPELINE_MODE_VALUE="${{ variables.PIPELINE_MODE }}"
+              case "$PIPELINE_MODE_VALUE" in
+                promote)
+                  ;;
+                *)
+                  echo "skip promote step because PIPELINE_MODE=${PIPELINE_MODE_VALUE}"
+                  exit 0
+                  ;;
+              esac
+              SOURCE_SHA="${{ variables.SOURCE_SHA }}"
+              if [ -z "$SOURCE_SHA" ]; then
+                SOURCE_SHA="${{ ci.sha }}"
+              fi
+              if [ -z "$SOURCE_SHA" ]; then
+                echo "SOURCE_SHA 为空，且 ci.sha 不可用；无法手动发布 frontend 到 GitOps。" >&2
+                exit 1
+              fi
+              echo "============================================================"
+              echo "frontend 发布决策：进入 GitOps 手动发布流程"
+              echo "触发原因：PIPELINE_MODE=${{ variables.PIPELINE_MODE }}，满足 promote 发布条件"
+              echo "目标环境：${{ variables.TARGET_ENV }}"
+              echo "源码提交：$SOURCE_SHA"
+              echo "提交来源：SOURCE_SHA 为空时自动回退到本次手动选择的 ci.sha=${{ ci.sha }}"
+              echo "注意：promote 模式只投影已存在镜像到 GitOps，不构建 TCR 镜像"
+              echo "下一步：把 frontend 镜像发布内容投影到 gitops 并创建发布 MR"
+              echo "============================================================"
               source .ci/init.sh
               ci_init_repo_root
               ci_export_gongfeng_defaults
               REMOTE_URL="$(ci_gitops_remote_url)" \
               GITOPS_BRANCH=gitops \
-              bash .ci/runtime/promote_bundle_image_to_gitops.sh frontend frontend "${{ variables.TARGET_ENV }}" "${{ variables.SOURCE_SHA }}"
+              bash .ci/runtime/promote_bundle_image_to_gitops.sh frontend frontend "${{ variables.TARGET_ENV }}" "$SOURCE_SHA"

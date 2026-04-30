@@ -27,6 +27,7 @@ package-lock.json
 !ai-gateway/package-lock.json
 yarn.lock
 pnpm-lock.yaml
+!frontend/pnpm-lock.yaml
 
 # ─── Environment variables (security) ────────────────
 .env

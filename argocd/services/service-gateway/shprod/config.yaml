@@ -4,6 +4,8 @@ allowed_origins:
   - https://api.lightclaw.cn
   - https://lightvela.tencent.com
   - https://api.lightvela.tencent.com
+  - https://lightvela.com
+  - https://www.lightvela.com
   - https://lightclaw.site
   - https://api.lightclaw.site
 routes:

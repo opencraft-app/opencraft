@@ -114,9 +114,26 @@ const findDOMNodePolyfillSnippet = `
 `;
 
 /**
- * esbuild plugin: inject the polyfill during Vite's initial dep pre-bundle.
- * Matches any file path ending in `/react-dom/index.js`.
+ * Vite plugin: transform SDK i18n CJS translation files to ESM on the fly.
+ *
+ * `i18n/translation/en.js` / `zh.js` are CJS (`module.exports = {...}`).
+ * In dev mode Vite serves them as ESM → "module is not defined".
+ * Fix: rewrite `module.exports = { translation }` → `export { translation }`.
  */
+function sdkI18nPlugin() {
+  return {
+    name: "sdk-i18n-plugin",
+    enforce: "pre" as const,
+    transform(code: string, id: string) {
+      if (!/i18n[\\/]translation[\\/](en|zh)\.js$/.test(id)) return null;
+      const transformed = code
+        .replace(/module\.exports\s*=\s*\{\s*translation\s*:\s*translation\s*\}\s*;?/, "export { translation };");
+      if (transformed === code) return null;
+      return { code: transformed, map: null };
+    },
+  };
+}
+
 function reactDomFindDOMNodeEsbuildPlugin() {
   return {
     name: "react-dom-findDOMNode-esbuild",
@@ -359,12 +376,26 @@ export default defineConfig(({ mode }) => {
     : undefined;
 
   return {
-    plugins: [react(), tailwindcss(), reactDomFindDOMNodeVitePlugin(), reactDomPolyfillBuildPlugin()],
+    // tea-app i18n.init() 内部引用了 PRODUCTION / INTL_TRANSLATION_ID 全局变量
+    // （webpack 环境由 DefinePlugin 注入），Vite 需要显式 define。
+    define: {
+      PRODUCTION: JSON.stringify(mode === "production"),
+      INTL_TRANSLATION_ID: JSON.stringify(""),
+    },
+    plugins: [react(), tailwindcss(), sdkI18nPlugin(), reactDomFindDOMNodeVitePlugin(), reactDomPolyfillBuildPlugin()],
     resolve: {
       // Deduplicate React so the locally-linked SDK shares the host app's copy
       dedupe: ["react", "react-dom"],
       alias: {
         "@": path.resolve(rootDir, "./src"),
+        // i18n 词条是 CJS 文件，需精确 alias 到实际路径。
+        // 注意：此条必须在 SDK 主入口 alias 之前，否则会被前缀匹配拦截。
+        "@tencent/tea-sdk-lightclaw/i18n/translation/en": USE_LOCAL_SDK
+          ? path.join(LOCAL_SDK_ROOT, "i18n/translation/en.js")
+          : path.resolve(rootDir, "node_modules/@tencent/tea-sdk-lightclaw/i18n/translation/en.js"),
+        "@tencent/tea-sdk-lightclaw/i18n/translation/zh": USE_LOCAL_SDK
+          ? path.join(LOCAL_SDK_ROOT, "i18n/translation/zh.js")
+          : path.resolve(rootDir, "node_modules/@tencent/tea-sdk-lightclaw/i18n/translation/zh.js"),
         // dev:local 模式：指向 SDK 本地源码，改代码即时 HMR。
         // npm 包模式：不需要 alias，Vite 通过 package.json exports 自动解析。
         ...(USE_LOCAL_SDK
@@ -399,7 +430,13 @@ export default defineConfig(({ mode }) => {
       // 必须纳入预打包让 esbuild 统一处理，否则 Vite 会把深路径 CSS
       // 当成直接文件请求，在非本地环境下解析失败。
       exclude: USE_LOCAL_SDK ? ["@tencent/tea-sdk-lightclaw"] : [],
-      include: USE_LOCAL_SDK ? [] : ["@tencent/tea-sdk-lightclaw"],
+      include: USE_LOCAL_SDK
+        ? []
+        : [
+          "@tencent/tea-sdk-lightclaw",
+          // i18n 词条是 CJS（module.exports），需纳入预打包转 ESM
+          "@tencent/tea-sdk-lightclaw/i18n/translation/en",
+        ],
       esbuildOptions: {
         plugins: [reactDomFindDOMNodeEsbuildPlugin()],
         // tea-style-lighthouse 的 CSS 引用了相对路径的 .svg / .ttf 等资源，

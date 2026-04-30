@@ -9,7 +9,7 @@ from unittest.mock import patch
 RUNTIME_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(RUNTIME_DIR))
 
-from harness_ci.gongfeng import (  # noqa: E402
+from gitops.gongfeng import (  # noqa: E402
     branch_url,
     merge_request_merge_url,
     merge_request_note_url,

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -25,6 +26,7 @@ func main() {
 	adminRealm := getenv("SERVICE_GATEWAY_ADMIN_BASIC_AUTH_REALM", "Lightclaw Admin")
 	adminBridgeCookieSecret := getenv("SERVICE_GATEWAY_ADMIN_BRIDGE_COOKIE_SECRET", "")
 	adminBridgeCookieHosts := splitCSV(getenv("SERVICE_GATEWAY_ADMIN_BRIDGE_COOKIE_HOSTS", "admin.lightclaw.tech"))
+	realnameWallEnabled := getenvBool("SERVICE_GATEWAY_REALNAME_WALL_ENABLED", true)
 
 	cfg, err := gateway.LoadConfigFile(configFile)
 	if err != nil {
@@ -40,6 +42,7 @@ func main() {
 		gateway.WithMetrics(gatewayMetrics),
 		gateway.WithAdminBasicAuth(adminUsername, adminPassword),
 		gateway.WithAdminBasicAuthRealm(adminRealm),
+		gateway.WithRealnameWallEnabled(realnameWallEnabled),
 	}
 	if adminBridgeCookieSecret != "" {
 		opts = append(opts, gateway.WithAdminBridgeCookie(gateway.AdminBridgeCookieConfig{
@@ -78,11 +81,12 @@ func main() {
 	}()
 
 	log.Printf(
-		"service-gateway listening on %s using %s (routes=%d allowed_origins=%d)",
+		"service-gateway listening on %s using %s (routes=%d allowed_origins=%d realname_wall_enabled=%t)",
 		addr,
 		configFile,
 		len(cfg.Routes),
 		len(cfg.AllowedOrigins),
+		realnameWallEnabled,
 	)
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("listen: %v", err)
@@ -94,6 +98,19 @@ func getenv(key string, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func getenvBool(key string, fallback bool) bool {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		log.Printf("invalid boolean env %s=%q; using fallback %t", key, value, fallback)
+		return fallback
+	}
+	return parsed
 }
 
 func splitCSV(raw string) []string {

@@ -1,6 +1,7 @@
 import json
 import shutil
 import subprocess
+import sys
 import tempfile
 import textwrap
 import unittest
@@ -9,7 +10,10 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 RUNTIME_DIR = REPO_ROOT / ".ci" / "runtime"
-COMMAND_DIR = RUNTIME_DIR / "harness_ci" / "commands"
+COMMAND_DIR = RUNTIME_DIR / "commands"
+sys.path.insert(0, str(RUNTIME_DIR))
+
+from contracts.bundles import load_bundle  # noqa: E402
 
 
 class ResolveReleaseBundleTests(unittest.TestCase):
@@ -42,6 +46,92 @@ class ResolveReleaseBundleTests(unittest.TestCase):
         self.assertIn("argocd/catalogs/sandbox/beijing-sandbox/lightclaw-auth.yaml", payload["publish_paths"])
         self.assertNotIn("argocd/apps/beijing-sandbox/lightclaw-auth.yaml", payload["publish_paths"])
         self.assertIn("user/auth/k8s/base/**", payload["publish_paths"])
+
+    def test_resolve_release_bundle_supports_sandbox2_build_metadata(self) -> None:
+        result = subprocess.run(
+            [
+                "python3",
+                str(COMMAND_DIR / "resolve_release_bundle.py"),
+                "--service",
+                "ctl",
+                "--env",
+                "beijing-sandbox-2",
+                "--tag",
+                "test-tag",
+                "--format",
+                "json",
+            ],
+            cwd=REPO_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        payload = json.loads(result.stdout)
+
+        self.assertEqual(payload["image_repo"], "lightclaw-bj8.tencentcloudcr.com/lightclaw/ctl")
+        self.assertIn("argocd/catalogs/sandbox/beijing-sandbox-2/ctl.yaml", payload["publish_paths"])
+        self.assertIn("argocd/apps/beijing-sandbox/sandbox-family-appset.yaml", payload["publish_paths"])
+        self.assertNotIn("argocd/apps/beijing-sandbox-2/sandbox-family-appset.yaml", payload["publish_paths"])
+
+    def test_resolve_release_bundle_supports_sandbox_multi_image_targets(self) -> None:
+        result = subprocess.run(
+            [
+                "python3",
+                str(COMMAND_DIR / "resolve_release_bundle.py"),
+                "--service",
+                "sandbox",
+                "--env",
+                "beijing-sandbox-2",
+                "--tag",
+                "test-tag",
+                "--format",
+                "json",
+            ],
+            cwd=REPO_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        payload = json.loads(result.stdout)
+
+        self.assertEqual(
+            set(payload["images"]),
+            {
+                "SANDBOX_API_IMAGE",
+                "SANDBOX_MIGRATE_IMAGE",
+                "SANDBOX_WORKER_IMAGE",
+                "SANDBOX_INGRESSPROXY_ROUTER_IMAGE",
+                "SANDBOX_INGRESSPROXY_SHARD_IMAGE",
+            },
+        )
+        self.assertEqual(
+            payload["images"]["SANDBOX_API_IMAGE"],
+            "lightclaw-bj8.tencentcloudcr.com/lightclaw/sandbox-api:test-tag",
+        )
+
+    def test_resolve_release_bundle_blocks_non_target_sandbox2_services(self) -> None:
+        for service in ["ai-gateway", "nextgen-dashboard", "session"]:
+            with self.subTest(service=service):
+                result = subprocess.run(
+                    [
+                        "python3",
+                        str(COMMAND_DIR / "resolve_release_bundle.py"),
+                        "--service",
+                        service,
+                        "--env",
+                        "beijing-sandbox-2",
+                        "--tag",
+                        "test-tag",
+                        "--format",
+                        "json",
+                    ],
+                    cwd=REPO_ROOT,
+                    capture_output=True,
+                    text=True,
+                )
+
+                self.assertEqual(result.returncode, 1)
+                self.assertIn("does not define docker build inputs", result.stderr)
 
     def test_resolve_release_bundle_is_independent_of_cwd(self) -> None:
         result = subprocess.run(
@@ -111,6 +201,73 @@ class ResolveReleaseBundleTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("unknown release bundle: does-not-exist", result.stderr)
 
+    def test_ai_gateway_build_context_matches_root_relative_dockerfile(self) -> None:
+        result = subprocess.run(
+            [
+                "python3",
+                str(COMMAND_DIR / "resolve_release_bundle.py"),
+                "--service",
+                "ai-gateway",
+                "--env",
+                "beijing-sandbox",
+                "--tag",
+                "test-tag",
+                "--format",
+                "json",
+            ],
+            cwd=REPO_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        payload = json.loads(result.stdout)
+
+        self.assertEqual(payload["dockerfile"], "ai-gateway/deploy/Dockerfile")
+        self.assertEqual(payload["build_context"], ".")
+
+    def test_load_bundle_rejects_non_mapping_multi_image_repo(self) -> None:
+        manifest = {
+            "bundles": {
+                "sandbox": {
+                    "image_targets": [
+                        {
+                            "name": "api",
+                            "image_key": "SANDBOX_API_IMAGE",
+                            "dockerfile": "sandbox/Dockerfile.api",
+                            "build_context": "sandbox",
+                            "image_repo": "lightclaw-bj8.tencentcloudcr.com/lightclaw/sandbox-api",
+                        }
+                    ]
+                }
+            }
+        }
+
+        with self.assertRaisesRegex(ValueError, "image_repo must be a YAML mapping"):
+            load_bundle(manifest, "sandbox", "beijing-sandbox-2")
+
+    def test_load_bundle_rejects_incomplete_multi_image_target_for_env(self) -> None:
+        manifest = {
+            "bundles": {
+                "sandbox": {
+                    "image_targets": [
+                        {
+                            "name": "api",
+                            "dockerfile": "sandbox/Dockerfile.api",
+                            "build_context": "sandbox",
+                            "image_repo": {
+                                "beijing-sandbox-2": (
+                                    "lightclaw-bj8.tencentcloudcr.com/lightclaw/sandbox-api"
+                                )
+                            },
+                        }
+                    ]
+                }
+            }
+        }
+
+        with self.assertRaisesRegex(ValueError, "does not define image_key"):
+            load_bundle(manifest, "sandbox", "beijing-sandbox-2")
+
 
 class SandboxCatalogTests(unittest.TestCase):
     def test_appset_uses_non_reserved_catalog_source_path(self) -> None:
@@ -151,7 +308,7 @@ class ProjectReleaseBundleTests(unittest.TestCase):
             self._git(repo, "config", "user.name", "CI")
 
             (repo / ".ci" / "runtime").mkdir(parents=True)
-            (repo / ".ci" / "runtime" / "release-bundles.yaml").write_text(
+            (repo / ".ci" / "runtime" / "release-bundles.manifest").write_text(
                 textwrap.dedent(
                     """\
                     bundles:

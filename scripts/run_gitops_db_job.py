@@ -174,6 +174,17 @@ def resolve_kubeconfig(platform_env: dict[str, str], b64_env_name: str) -> tuple
         temp.flush()
         temp.close()
         return temp.name, Path(temp.name)
+    explicit_file = os.environ.get("DB_JOB_KUBECONFIG_FILE", "").strip()
+    if explicit_file:
+        resolved = Path(explicit_file)
+        if not resolved.is_file():
+            raise FileNotFoundError(f"missing DB_JOB_KUBECONFIG_FILE: {resolved}")
+        return str(resolved), None
+    env_name = platform_env.get("PULUMI_ENV_NAME", "").strip()
+    if env_name:
+        ci_file = Path("/etc/lightclaw-ci") / f"kubeconfig_{env_name.replace('-', '_')}"
+        if ci_file.is_file():
+            return str(ci_file), None
     kubeconfig = platform_env.get("DEPLOY_KUBECONFIG", "").strip()
     if not kubeconfig:
         raise ValueError("DEPLOY_KUBECONFIG missing in platform.env and no kubeconfig b64 env provided")

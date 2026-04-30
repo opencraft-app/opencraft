@@ -48,5 +48,12 @@ Kubernetes manifests now live in:
 
 正式发布已经改为 `Argo CD` 主线。
 
-`admin-gateway` 没有独立 Docker build 入口。  
-它复用 `service-gateway` 的共享 gateway 二进制镜像，只保留独立的 deploy-facing config / route / ingress 组合层。
+`admin-gateway` 已拆成独立 CI / 镜像 / release bundle：
+
+- CI 入口：`.ci/admin-gateway.yml`
+- 镜像 repo：`lightclaw-*/lightclaw/admin-gateway`
+- 镜像 tag：`admin-gateway-<short-sha>`
+- GitOps pin：`argocd/services/admin-gateway/<env>/admin-gateway-platform.env`
+
+当前构建实现仍临时复用 `service-gateway/Dockerfile` 和 `service-gateway` build context。
+这是构建实现复用，不再是发布镜像共享；`service-gateway.yml` 不再处理 `admin-gateway` 的构建、promote 或 pin。

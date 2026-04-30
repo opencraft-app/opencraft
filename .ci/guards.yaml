@@ -1,0 +1,28 @@
+guards:
+  - name: ci-runtime
+    paths:
+      - .ci/**
+    command: .ci/checks/guard.sh
+
+  - name: service-gateway
+    paths:
+      - service-gateway/**
+      - argocd/services/service-gateway/**
+      - argocd/apps/*/service-gateway.yaml
+      - argocd/secrets/*/service-gateway-runtime-secrets.sops.yaml
+    command: service-gateway/checks/guard.sh
+
+  - name: admin-gateway
+    paths:
+      - admin-gateway/**
+      - argocd/services/admin-gateway/**
+      - argocd/apps/*/admin-gateway.yaml
+      - argocd/secrets/*/admin-gateway-runtime-secrets.sops.yaml
+    command: admin-gateway/checks/guard.sh
+
+  - name: frontend
+    paths:
+      - frontend/**
+      - argocd/services/frontend/**
+      - argocd/apps/*/frontend.yaml
+    command: frontend/checks/guard.sh

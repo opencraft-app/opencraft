@@ -351,6 +351,58 @@ func TestRealnameRequiredWriteBlocksUnverifiedSession(t *testing.T) {
 	}
 }
 
+func TestRealnameWallDisabledAllowsUnverifiedWrite(t *testing.T) {
+	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"session": map[string]any{
+				"user": map[string]any{
+					"id":               "usr_unverified",
+					"email":            "user@example.com",
+					"realnameVerified": false,
+				},
+			},
+		})
+	}))
+	defer auth.Close()
+
+	upstreamCalls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		if got := r.Header.Get("X-Lightclaw-User-ID"); got != "usr_unverified" {
+			t.Fatalf("expected injected user id, got %q", got)
+		}
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer upstream.Close()
+
+	handler, err := NewHandler(Config{
+		AuthServiceURL: auth.URL,
+		Routes: []Route{{
+			Name:            "ctl",
+			Prefix:          "/v1/instances",
+			Upstream:        upstream.URL,
+			Access:          AccessAuthenticated,
+			RequireRealname: true,
+		}},
+	}, WithRealnameWallEnabled(false))
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/instances", strings.NewReader(`{}`))
+	req.Header.Set("Authorization", "Bearer tok-123")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if upstreamCalls != 1 {
+		t.Fatalf("expected one upstream call, got %d", upstreamCalls)
+	}
+}
+
 func TestRealnameRequiredWriteAllowsVerifiedSession(t *testing.T) {
 	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

@@ -24,4 +24,8 @@ Trigger note 4:
 
 - 用于在 frontend 发布链彻底绕开 corepack shim 后，再次触发 frontend 目录级更新。
 
+Trigger note 5:
+
+- 用于在 CI 展示名中文化后，再次触发 frontend 发布流水线。
+
 如果只是为了触发前端发布链路，优先更新本文件，而不是混入真实功能改动。

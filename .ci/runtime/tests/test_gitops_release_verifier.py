@@ -8,11 +8,13 @@ RUNTIME_DIR = Path(__file__).resolve().parents[1]
 if str(RUNTIME_DIR) not in sys.path:
     sys.path.insert(0, str(RUNTIME_DIR))
 
-from harness_ci.gitops_release_verifier import (
+from gitops.gitops_release_verifier import (
     ReleaseTarget,
+    changed_files_from_merge_commit,
     changed_files_from_recent_commits,
     expected_images_for_target,
     format_convergence_log_line,
+    format_merge_only_note,
     infer_release_targets,
 )
 
@@ -21,7 +23,7 @@ class GitopsReleaseVerifierTests(unittest.TestCase):
     def test_infer_release_targets_from_promote_commit_paths(self) -> None:
         targets = infer_release_targets(
             [
-                ".ci/runtime/harness_ci/commands/gitops_merge_request.py",
+                ".ci/runtime/commands/gitops_merge_request.py",
                 "argocd/services/ctl/beijing-sandbox/ctl-platform.env",
                 "argocd/services/ctl/beijing-sandbox/kustomization.yaml",
                 "argocd/services/ctl/common/kustomization.yaml",
@@ -82,6 +84,53 @@ class GitopsReleaseVerifierTests(unittest.TestCase):
 
         self.assertEqual(targets, [ReleaseTarget(service="lightclaw-auth", env="beijing-sandbox")])
 
+    def test_changed_files_from_merge_commit_uses_first_parent_diff(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            self._git(repo_root, "init")
+            self._git(repo_root, "config", "user.email", "ci@example.com")
+            self._git(repo_root, "config", "user.name", "CI")
+            (repo_root / "README.md").write_text("base\n")
+            self._git(repo_root, "add", ".")
+            self._git(repo_root, "commit", "-m", "base")
+            self._git(repo_root, "checkout", "-b", "gitops")
+            self._git(repo_root, "checkout", "-b", "promote")
+
+            service_dir = repo_root / "argocd" / "services" / "lightclaw-auth" / "beijing-sandbox"
+            service_dir.mkdir(parents=True)
+            (service_dir / "auth-platform.env").write_text("AUTH_IMAGE=example.com/auth:v1\n")
+            self._git(repo_root, "add", ".")
+            self._git(repo_root, "commit", "-m", "pin image")
+
+            self._git(repo_root, "checkout", "gitops")
+            self._git(repo_root, "merge", "--no-ff", "promote", "-m", "merge promote")
+            merge_commit = self._git_output(repo_root, "rev-parse", "HEAD")
+
+            changed_files = changed_files_from_merge_commit(repo_root, merge_commit, "gitops")
+
+        self.assertIn("argocd/services/lightclaw-auth/beijing-sandbox/auth-platform.env", changed_files)
+
+    def test_changed_files_from_merge_commit_returns_empty_for_noop_trigger_merge(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            self._git(repo_root, "init")
+            self._git(repo_root, "config", "user.email", "ci@example.com")
+            self._git(repo_root, "config", "user.name", "CI")
+            (repo_root / "README.md").write_text("base\n")
+            self._git(repo_root, "add", ".")
+            self._git(repo_root, "commit", "-m", "base")
+            self._git(repo_root, "checkout", "-b", "gitops")
+            self._git(repo_root, "checkout", "-b", "promote")
+            self._git(repo_root, "commit", "--allow-empty", "-m", "rerun checks")
+
+            self._git(repo_root, "checkout", "gitops")
+            self._git(repo_root, "merge", "--no-ff", "promote", "-m", "merge noop promote")
+            merge_commit = self._git_output(repo_root, "rev-parse", "HEAD")
+
+            changed_files = changed_files_from_merge_commit(repo_root, merge_commit, "gitops")
+
+        self.assertEqual(changed_files, [])
+
     def test_format_convergence_log_line_includes_live_state_and_expectations(self) -> None:
         line = format_convergence_log_line(
             {
@@ -106,8 +155,21 @@ class GitopsReleaseVerifierTests(unittest.TestCase):
         self.assertIn("expected_images=example.com/ctl:v2", line)
         self.assertIn("live_images=example.com/ctl:v1", line)
 
+    def test_format_merge_only_note_marks_shprod_as_pending_manual_sync(self) -> None:
+        note = format_merge_only_note(
+            {"iid": 220, "merge_commit_sha": "abcdef123456"},
+            [ReleaseTarget(service="frontend", env="shprod")],
+        )
+
+        self.assertIn("待同步状态", note)
+        self.assertIn("frontend-shprod", note)
+        self.assertIn("生产环境不自动同步", note)
+
     def _git(self, repo: Path, *args: str) -> None:
         subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True)
+
+    def _git_output(self, repo: Path, *args: str) -> str:
+        return subprocess.check_output(["git", *args], cwd=repo, text=True).strip()
 
 
 if __name__ == "__main__":

@@ -12,11 +12,8 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
 
 # 说明：
 # - 这是 root app 模板，不是可直接应用的现网入口
 # - 真正启用前，需要把 repoURL 改成实际中心 Git 仓库地址
+# - 上海正式环境默认不启用 syncPolicy.automated；GitOps 合入后由人工或发布系统执行 Argo sync

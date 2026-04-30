@@ -30,6 +30,26 @@ ci_require_commands() {
   done
 }
 
+ci_os_name() {
+  case "$(uname -s)" in
+    Linux) printf 'linux' ;;
+    Darwin) printf 'darwin' ;;
+    *) echo "unsupported os: $(uname -s)" >&2; return 1 ;;
+  esac
+}
+
+ci_arch_name() {
+  case "$(uname -m)" in
+    x86_64 | amd64) printf 'amd64' ;;
+    aarch64 | arm64) printf 'arm64' ;;
+    *) echo "unsupported arch: $(uname -m)" >&2; return 1 ;;
+  esac
+}
+
+ci_is_unexpanded_setting() {
+  [[ "$1" == *'${{'*'settings.'*'}}'* ]]
+}
+
 ci_gitops_remote_url() {
   if [[ -n "${GITOPS_REMOTE_URL:-}" ]]; then
     printf '%s\n' "$GITOPS_REMOTE_URL"
@@ -51,20 +71,209 @@ ci_export_gongfeng_defaults() {
 }
 
 ci_require_gitops_validation_tools() {
+  ci_ensure_gitops_validation_tools
   ci_require_commands python3 kustomize sops ksops
   ci_log "gitops validation tools found: kustomize=$(command -v kustomize) sops=$(command -v sops) ksops=$(command -v ksops)"
 }
 
+ci_ensure_db_job_tools() {
+  ci_ensure_kubectl
+  ci_require_commands python3 kubectl
+  ci_log "db job tools found: kubectl=$(command -v kubectl)"
+}
+
+ci_ensure_gitops_validation_tools() {
+  ci_ensure_kustomize
+  ci_ensure_sops
+  ci_ensure_ksops
+}
+
+ci_download_file() {
+  local url="$1"
+  local output="$2"
+
+  ci_require_command curl
+  ci_log "downloading ${url}"
+  curl -fsSL "$url" -o "$output"
+}
+
+ci_ensure_kustomize() {
+  local version="${KUSTOMIZE_VERSION_OVERRIDE:-5.4.3}"
+  local os arch archive cache_root install_dir bin url
+
+  os="$(ci_os_name)"
+  arch="$(ci_arch_name)"
+  archive="kustomize_v${version}_${os}_${arch}.tar.gz"
+  cache_root="${HOME}/.cache/lightclaw-ci/gitops-tools/kustomize"
+  install_dir="${cache_root}/v${version}/${os}/${arch}"
+  bin="${install_dir}/kustomize"
+  url="https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v${version}/${archive}"
+
+  if [[ ! -x "$bin" ]]; then
+    ci_with_lock "kustomize-${version}-${os}-${arch}" ci_install_kustomize "$url" "$archive" "$cache_root" "$install_dir"
+  else
+    ci_log "kustomize ${version} already present at ${bin}"
+  fi
+
+  export PATH="${install_dir}:${PATH}"
+}
+
+ci_install_kustomize() {
+  local url="$1"
+  local archive="$2"
+  local cache_root="$3"
+  local install_dir="$4"
+
+  mkdir -p "$cache_root" "$install_dir"
+  ci_download_file "$url" "${cache_root}/${archive}"
+  tar -xzf "${cache_root}/${archive}" -C "$install_dir" kustomize
+  chmod +x "${install_dir}/kustomize"
+  ci_log "installed kustomize at ${install_dir}/kustomize"
+}
+
+ci_ensure_kubectl() {
+  if command -v kubectl >/dev/null 2>&1; then
+    ci_log "kubectl already present at $(command -v kubectl)"
+    return 0
+  fi
+
+  local version="${KUBECTL_VERSION_OVERRIDE:-v1.36.0}"
+  local os arch cache_root install_dir bin url
+
+  os="$(ci_os_name)"
+  arch="$(ci_arch_name)"
+  cache_root="${HOME}/.cache/lightclaw-ci/gitops-tools/kubectl"
+  install_dir="${cache_root}/${version}/${os}/${arch}"
+  bin="${install_dir}/kubectl"
+  url="https://dl.k8s.io/release/${version}/bin/${os}/${arch}/kubectl"
+
+  if [[ ! -x "$bin" ]]; then
+    ci_with_lock "kubectl-${version}-${os}-${arch}" ci_install_kubectl "$url" "$install_dir"
+  else
+    ci_log "kubectl ${version} already present at ${bin}"
+  fi
+
+  export PATH="${install_dir}:${PATH}"
+}
+
+ci_install_kubectl() {
+  local url="$1"
+  local install_dir="$2"
+
+  mkdir -p "$install_dir"
+  ci_download_file "$url" "${install_dir}/kubectl"
+  chmod +x "${install_dir}/kubectl"
+  ci_log "installed kubectl at ${install_dir}/kubectl"
+}
+
+ci_ensure_sops() {
+  local version="${SOPS_VERSION_OVERRIDE:-3.9.1}"
+  local os arch sops_os sops_arch cache_root install_dir bin url
+
+  os="$(ci_os_name)"
+  arch="$(ci_arch_name)"
+  sops_os="$os"
+  sops_arch="$arch"
+  cache_root="${HOME}/.cache/lightclaw-ci/gitops-tools/sops"
+  install_dir="${cache_root}/v${version}/${os}/${arch}"
+  bin="${install_dir}/sops"
+  url="https://github.com/getsops/sops/releases/download/v${version}/sops-v${version}.${sops_os}.${sops_arch}"
+
+  if [[ ! -x "$bin" ]]; then
+    ci_with_lock "sops-${version}-${os}-${arch}" ci_install_sops "$url" "$install_dir"
+  else
+    ci_log "sops ${version} already present at ${bin}"
+  fi
+
+  export PATH="${install_dir}:${PATH}"
+}
+
+ci_install_sops() {
+  local url="$1"
+  local install_dir="$2"
+
+  mkdir -p "$install_dir"
+  ci_download_file "$url" "${install_dir}/sops"
+  chmod +x "${install_dir}/sops"
+  ci_log "installed sops at ${install_dir}/sops"
+}
+
+ci_ensure_ksops() {
+  local version="${KSOPS_VERSION_OVERRIDE:-4.5.1}"
+  local os arch ksops_os ksops_arch archive cache_root install_dir bin plugin_home plugin_bin url
+
+  os="$(ci_os_name)"
+  arch="$(ci_arch_name)"
+  case "$os" in
+    linux) ksops_os="Linux" ;;
+    darwin) ksops_os="Darwin" ;;
+    *) echo "unsupported ksops os: $os" >&2; return 1 ;;
+  esac
+  case "$arch" in
+    amd64) ksops_arch="x86_64" ;;
+    arm64) ksops_arch="arm64" ;;
+    *) echo "unsupported ksops arch: $arch" >&2; return 1 ;;
+  esac
+
+  archive="ksops_${version}_${ksops_os}_${ksops_arch}.tar.gz"
+  cache_root="${HOME}/.cache/lightclaw-ci/gitops-tools/ksops"
+  install_dir="${cache_root}/v${version}/${os}/${arch}"
+  bin="${install_dir}/ksops"
+  plugin_home="${KUSTOMIZE_PLUGIN_HOME:-${HOME}/.config/kustomize/plugin}"
+  plugin_bin="${plugin_home}/viaduct.ai/v1/ksops/ksops"
+  url="https://github.com/viaduct-ai/kustomize-sops/releases/download/v${version}/${archive}"
+
+  if [[ ! -x "$bin" || ! -x "$plugin_bin" ]]; then
+    ci_with_lock "ksops-${version}-${os}-${arch}" ci_install_ksops "$url" "$archive" "$cache_root" "$install_dir" "$plugin_bin"
+  else
+    ci_log "ksops ${version} already present at ${bin} and ${plugin_bin}"
+  fi
+
+  export KUSTOMIZE_PLUGIN_HOME="$plugin_home"
+  export PATH="${install_dir}:${PATH}"
+}
+
+ci_install_ksops() {
+  local url="$1"
+  local archive="$2"
+  local cache_root="$3"
+  local install_dir="$4"
+  local plugin_bin="$5"
+
+  mkdir -p "$cache_root" "$install_dir" "$(dirname "$plugin_bin")"
+  ci_download_file "$url" "${cache_root}/${archive}"
+  tar -xzf "${cache_root}/${archive}" -C "$install_dir" ksops
+  chmod +x "${install_dir}/ksops"
+  cp "${install_dir}/ksops" "$plugin_bin"
+  chmod +x "$plugin_bin"
+  ci_log "installed ksops at ${install_dir}/ksops and ${plugin_bin}"
+}
+
 ci_prepare_sops_age_key() {
   local default_key_file="/etc/lightclaw-ci/sops-age.keys.txt"
+  local user_key_file="${HOME}/.config/sops/age/keys.txt"
+  local root_key_file="/.config/sops/age/keys.txt"
   local temp_key_file=""
+  local env_key_file="${SOPS_AGE_KEY_FILE:-}"
+  local env_key="${SOPS_AGE_KEY:-}"
 
-  if [[ -n "${SOPS_AGE_KEY_FILE:-}" ]]; then
-    if [[ ! -r "$SOPS_AGE_KEY_FILE" ]]; then
-      echo "SOPS_AGE_KEY_FILE is set but not readable: $SOPS_AGE_KEY_FILE" >&2
+  if ci_is_unexpanded_setting "$env_key_file"; then
+    ci_log "SOPS_AGE_KEY_FILE contains an unexpanded CI settings placeholder; ignoring it"
+    env_key_file=""
+    unset SOPS_AGE_KEY_FILE
+  fi
+  if ci_is_unexpanded_setting "$env_key"; then
+    ci_log "SOPS_AGE_KEY contains an unexpanded CI settings placeholder; ignoring it"
+    env_key=""
+    unset SOPS_AGE_KEY
+  fi
+
+  if [[ -n "$env_key_file" ]]; then
+    if [[ ! -r "$env_key_file" ]]; then
+      echo "SOPS_AGE_KEY_FILE is set but not readable: $env_key_file" >&2
       return 1
     fi
-    export SOPS_AGE_KEY_FILE
+    export SOPS_AGE_KEY_FILE="$env_key_file"
     ci_log "sops age key file selected from env:SOPS_AGE_KEY_FILE path=${SOPS_AGE_KEY_FILE}"
     return 0
   fi
@@ -75,10 +284,22 @@ ci_prepare_sops_age_key() {
     return 0
   fi
 
-  if [[ -n "${SOPS_AGE_KEY:-}" ]]; then
+  if [[ -r "$user_key_file" ]]; then
+    export SOPS_AGE_KEY_FILE="$user_key_file"
+    ci_log "sops age key file selected from user path=${SOPS_AGE_KEY_FILE}"
+    return 0
+  fi
+
+  if [[ -r "$root_key_file" ]]; then
+    export SOPS_AGE_KEY_FILE="$root_key_file"
+    ci_log "sops age key file selected from root path=${SOPS_AGE_KEY_FILE}"
+    return 0
+  fi
+
+  if [[ -n "$env_key" ]]; then
     temp_key_file="$(mktemp "${TMPDIR:-/tmp}/lightclaw-sops-age.XXXXXX")"
     chmod 600 "$temp_key_file"
-    printf '%s\n' "$SOPS_AGE_KEY" > "$temp_key_file"
+    printf '%s\n' "$env_key" > "$temp_key_file"
     export SOPS_AGE_KEY_FILE="$temp_key_file"
     export CI_SOPS_AGE_KEY_TEMP_FILE="$temp_key_file"
     ci_log "sops age key file created from env:SOPS_AGE_KEY path=${SOPS_AGE_KEY_FILE}"
@@ -86,7 +307,7 @@ ci_prepare_sops_age_key() {
     return 0
   fi
 
-  echo "missing SOPS age key; set SOPS_AGE_KEY_FILE, provide ${default_key_file}, or set SOPS_AGE_KEY" >&2
+  echo "missing SOPS age key; set SOPS_AGE_KEY_FILE, provide ${default_key_file}, provide ${user_key_file}, provide ${root_key_file}, or set SOPS_AGE_KEY" >&2
   return 1
 }
 
@@ -144,13 +365,11 @@ ci_with_lock() {
   printf '%s\n' "$$ $(hostname) $(ci_now)" > "$owner_file"
   ci_log "acquired lock ${lock_name}"
 
-  cleanup_lock() {
-    rm -rf "$lock_dir"
-    ci_log "released lock ${lock_name}"
-  }
-
-  trap cleanup_lock RETURN
-  "$@"
+  local status=0
+  "$@" || status=$?
+  rm -rf "$lock_dir"
+  ci_log "released lock ${lock_name}"
+  return "$status"
 }
 
 ci_prepare_runtime_ref() {
@@ -179,6 +398,46 @@ ci_materialize_runtime_files() {
     mkdir -p "${runtime_dir}/$(dirname "${repo_path}")"
     git show "${CI_RUNTIME_COMMIT}:${repo_path}" > "${runtime_dir}/${repo_path}"
   done
+}
+
+ci_materialize_runtime_manifest() {
+  local runtime_dir="$1"
+  local manifest_path="${2:-.ci/runtime/materialize-files.txt}"
+
+  if [[ -z "${CI_RUNTIME_COMMIT:-}" ]]; then
+    echo "CI_RUNTIME_COMMIT is not set; call ci_prepare_runtime_ref first" >&2
+    return 1
+  fi
+
+  local manifest_content
+  if ! manifest_content="$(git show "${CI_RUNTIME_COMMIT}:${manifest_path}")"; then
+    echo "failed to read runtime materialize manifest: ${manifest_path} at ${CI_RUNTIME_COMMIT}" >&2
+    return 1
+  fi
+
+  local runtime_files=()
+  local repo_path
+  while IFS= read -r repo_path; do
+    repo_path="${repo_path%%#*}"
+    repo_path="${repo_path#"${repo_path%%[![:space:]]*}"}"
+    repo_path="${repo_path%"${repo_path##*[![:space:]]}"}"
+    [[ -z "$repo_path" ]] && continue
+    case "$repo_path" in
+      .ci/runtime/*) ;;
+      *)
+        echo "runtime materialize manifest may only reference .ci/runtime/* paths: ${repo_path}" >&2
+        return 1
+        ;;
+    esac
+    runtime_files+=("$repo_path")
+  done <<< "$manifest_content"
+
+  if [[ "${#runtime_files[@]}" -eq 0 ]]; then
+    echo "runtime materialize manifest is empty: ${manifest_path}" >&2
+    return 1
+  fi
+
+  ci_materialize_runtime_files "$runtime_dir" "${runtime_files[@]}"
 }
 
 ci_bootstrap_node_locked() {
@@ -236,16 +495,49 @@ ci_load_cloudflare_credentials() {
 
 ci_load_edgeone_credentials() {
   local api_token_file="${EDGEONE_API_TOKEN_FILE:-/etc/lightclaw-ci/edgeone_api_token}"
+  local raw_token=""
+  local token=""
+  local source=""
 
   if [[ -r "$api_token_file" ]]; then
-    export EDGEONE_API_TOKEN
-    EDGEONE_API_TOKEN="$(tr -d '\r\n' < "$api_token_file")"
-    echo "edgeone api token loaded from file:$api_token_file"
+    raw_token="$(cat "$api_token_file")"
+    token="$(printf '%s' "$raw_token" | ci_read_secret_value)"
+    source="file:$api_token_file"
   elif [[ -n "${EDGEONE_API_TOKEN:-}" ]]; then
-    echo "edgeone api token loaded from settings"
+    raw_token="$EDGEONE_API_TOKEN"
+    token="$(printf '%s' "$raw_token" | ci_read_secret_value)"
+    source="settings"
   else
+    if [[ "${EDGEONE_API_TOKEN_REQUIRED:-}" == "1" ]]; then
+      echo "edgeone api token is required but not configured" >&2
+      return 1
+    fi
     echo "edgeone api token is not configured"
+    return 0
   fi
+
+  if [[ -z "$token" ]]; then
+    echo "edgeone api token loaded from ${source} but is empty after trimming" >&2
+    return 1
+  fi
+
+  if [[ "$token" == '${{'* ]]; then
+    echo "edgeone api token loaded from ${source} but still looks like an unresolved CI settings expression" >&2
+    return 1
+  fi
+
+  export EDGEONE_API_TOKEN="$token"
+  export EDGEONE_API_TOKEN_SOURCE="$source"
+  ci_log "edgeone api token loaded from ${source} (raw_token_len=${#raw_token}, token_len=${#EDGEONE_API_TOKEN}, token_trimmed=$([[ "$raw_token" == "$token" ]] && echo no || echo yes), token_fingerprint=$(printf '%s' "$EDGEONE_API_TOKEN" | ci_fingerprint_secret))"
+}
+
+ci_frontend_release_matrix_needs_edgeone() {
+  local matrix="${1:-}"
+  matrix="$(printf '%s' "$matrix" | tr -d '[:space:]')"
+  if [[ -z "$matrix" ]]; then
+    return 0
+  fi
+  [[ ",${matrix}," == *",eo:"* ]]
 }
 
 ci_load_git_woa_private_token() {
@@ -267,6 +559,7 @@ ci_load_git_woa_private_token() {
 ci_load_registry_password() {
   local env_name="$1"
   local beijing_file="${TCR_BEIJING_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_beijing_password}"
+  local beijing2_file="${TCR_BEIJING_SANDBOX2_PASSWORD_FILE:-${TCR_BEIJING_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_beijing_password}}"
   local shprod_file="${TCR_SHPROD_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_shprod_password}"
   local password_var=""
   local password_file=""
@@ -275,6 +568,10 @@ ci_load_registry_password() {
     beijing-sandbox)
       password_var="${TCR_BEIJING_PASSWORD:-}"
       password_file="$beijing_file"
+      ;;
+    beijing-sandbox-2)
+      password_var="${TCR_BEIJING_SANDBOX2_PASSWORD:-${TCR_BEIJING_PASSWORD:-}}"
+      password_file="$beijing2_file"
       ;;
     shprod)
       password_var="${TCR_SHPROD_PASSWORD:-}"
@@ -301,6 +598,7 @@ ci_load_registry_password() {
 ci_set_registry_credentials() {
   local env_name="$1"
   local beijing_file="${TCR_BEIJING_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_beijing_password}"
+  local beijing2_file="${TCR_BEIJING_SANDBOX2_PASSWORD_FILE:-${TCR_BEIJING_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_beijing_password}}"
   local shprod_file="${TCR_SHPROD_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_shprod_password}"
   local tcr_username="${TCR_USERNAME:-100045199955}"
   local raw_password=""
@@ -315,6 +613,15 @@ ci_set_registry_credentials() {
       beijing-sandbox)
         if [[ -r "$beijing_file" ]]; then
           source="file:$beijing_file"
+        else
+          source="env:TCR_BEIJING_PASSWORD"
+        fi
+        ;;
+      beijing-sandbox-2)
+        if [[ -r "$beijing2_file" ]]; then
+          source="file:$beijing2_file"
+        elif [[ -n "${TCR_BEIJING_SANDBOX2_PASSWORD:-}" ]]; then
+          source="env:TCR_BEIJING_SANDBOX2_PASSWORD"
         else
           source="env:TCR_BEIJING_PASSWORD"
         fi

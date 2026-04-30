@@ -144,7 +144,7 @@ CLOUDFLARE_PAGES_PROJECT_NAME=lightclaw pnpm deploy:cf
 最常见的正式发版动作示例：
 
 ```bash
-python3 .ci/runtime/harness_ci/commands/build_release_image.py --service sandbox --env shprod --tag <tag>
+python3 .ci/runtime/commands/build_release_image.py --service sandbox --env shprod --tag <tag>
 # 更新 argocd/services/sandbox/shprod/sandbox-platform.env
 git add argocd/services/sandbox/shprod/sandbox-platform.env
 git commit -m "<lore message>"
@@ -348,7 +348,7 @@ cd /Users/skipzhang/code/mono/infra_pulumi
 GOWORK=off go run ./cmd/infractl up --stack <env>
 
 cd /Users/skipzhang/code/mono
-python3 .ci/runtime/harness_ci/commands/build_release_image.py --service <service> --env <env> --tag <tag>
+python3 .ci/runtime/commands/build_release_image.py --service <service> --env <env> --tag <tag>
 # 更新 argocd/services/<service>/<env>/*
 git add <scoped paths>
 git commit -m "<lore message>"
@@ -493,60 +493,6 @@ kubectl kustomize <overlay> | kubectl apply --validate=false -f -
 - 北京沿用当前既有 registry/path 时，可以先兼容现状
 - 新环境应优先收敛到 `lightclaw` namespace
 - 对 `shprod` 这类环境，镜像地址应从 `platform.env` 提供的真实 `REGISTRY_SERVER` 派生，而不是在 yaml 里写死 registry 域名
-
-### 已完成样板
-
-目前已经完成这套迁移、可以直接照着抄结构和脚本模式的服务有：
-
-- [sandbox](/Users/skipzhang/code/mono/sandbox)
-- [ctl](/Users/skipzhang/code/mono/ctl)
-- [user/auth](/Users/skipzhang/code/mono/user/auth)
-- [payment](/Users/skipzhang/code/mono/payment)
-- [subscription](/Users/skipzhang/code/mono/subscription)
-- [service-gateway](/Users/skipzhang/code/mono/service-gateway)
-- [admin-gateway](/Users/skipzhang/code/mono/admin-gateway)
-- [nextgen-dashboard](/Users/skipzhang/code/mono/nextgen-dashboard)
-- [gateway-dashboard](/Users/skipzhang/code/mono/gateway-dashboard)
-- [ai-gateway](/Users/skipzhang/code/mono/ai-gateway)
-- [frontend](/Users/skipzhang/code/mono/frontend)
-
-### 迁移经验
-
-把一个旧服务迁到这套发布模型时，优先按下面的顺序做：
-
-1. 先收敛目录形态
-   - `k8s/base`
-   - `k8s/overlays/<env>`
-   - `scripts/deploy-k8s.sh`
-   - `AGENTS.md`
-2. 再收敛配置来源
-   - 非敏感运行时事实来自 `deploy/envs/<env>/platform.env`
-   - 敏感值来自 `.secret/<service>/test.env`
-   - 不要在模板里写死北京 IP、region、subnet、registry 域名
-3. 再收敛 DB init
-   - 不要再把 “建库 / 跑 schema / 填默认数据” 混成一个黑盒
-   - 统一拆成：
-     - `bootstrap`：`CREATE DATABASE` / `CREATE USER` / `GRANT`
-     - `migration`：只执行 `migrations/*.sql`
-     - `seed`：只写默认业务数据，且必须幂等
-   - 不是每个服务都需要 `seed`，但有 DB 的服务至少应有 `bootstrap + migration`
-   - migration Job 名统一使用时间戳，不再手工维护 `v7/v8/v9`
-4. 再收敛镜像构建
-   - 在 Apple Silicon 机器上，Go 二进制和 `docker build` 都要显式指定 `linux/amd64`
-   - 否则会出现 `exec format error`
-5. 再收敛发布行为
-   - 新 namespace 必须显式声明默认 `ServiceAccount` 并挂标准 pull secret
-   - 对上海集群公网 API 的 `EOF`，发布脚本要支持 `kubectl apply --validate=false` 回退
-6. 最后再删旧入口
-   - 不要长期保留 `manifests.yaml` / `deploy-test.sh` 这类旧入口
-   - 新链路跑通后直接收敛到单一实现
-
-### 常见坑
-
-- 镜像能推上去，不代表节点能跑；先确认镜像架构正确。
-- 服务能启动，不代表配置对；先确认生成后的 `generated/*` 真的是当前环境的地址和密码。
-- migration 成功，不代表应用一定会起；还要确认数据库是否先被创建、用户权限是否足够。
-- `kubectl` 查询偶发 `EOF` 时，不要先怀疑 apply 没生效；先重试读状态，再看 deployment/job/pod 的实际对象是否已经变更。
 
 ### 数据库标准
 

@@ -4,6 +4,7 @@ import {
   Camera,
   Check,
   ChevronRight,
+  Copy,
   CreditCard,
   Loader2,
   Pencil,
@@ -24,6 +25,7 @@ import { LoginModal } from "@/components/site/login-modal";
 import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
 import { avatarImageUrl } from "@/lib/avatar-image";
 import { useT } from "@/i18n/t";
+import { isGlobal } from "@/lib/region";
 
 /* ─── animation variants ─── */
 
@@ -86,13 +88,16 @@ const InfoRow = ({
 const VerifyIdentityModal = ({
   onClose,
   onSuccess,
+  verified,
 }: {
   onClose: () => void;
   /** 调用方负责刷新 session 并关闭弹窗 */
   onSuccess: () => void;
+  verified: boolean;
 }) => {
   const { auth } = useRepositories();
   const { refreshProfile } = useSession();
+  const t = useT();
   const [realName, setRealName] = useState("");
   const [idNumber, setIdNumber] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -186,7 +191,7 @@ const VerifyIdentityModal = ({
                   color: "rgba(0,0,0,0.9)",
                 }}
               >
-                实名认证
+                {verified ? t("修改实名认证") : t("实名认证")}
               </h3>
               <p
                 className="m-0"
@@ -198,7 +203,9 @@ const VerifyIdentityModal = ({
                   color: "rgba(0,0,0,0.9)",
                 }}
               >
-                完成实名认证后可以发布技能和参与更多社区活动
+                {verified
+                  ? t("重新提交真实姓名和身份证号，通过核验后将更新当前实名信息。")
+                  : t("完成实名认证后可以发布技能和参与更多社区活动")}
               </p>
             </div>
             <button
@@ -215,13 +222,17 @@ const VerifyIdentityModal = ({
           <div
             className="flex items-center gap-1"
             style={{
-              background: "rgba(255, 161, 0, 0.1)",
+              background: verified ? "rgba(7, 193, 96, 0.1)" : "rgba(255, 161, 0, 0.1)",
               borderRadius: 8,
               padding: "4px 12px",
             }}
           >
             <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center">
-              <Shield className="h-[18px] w-[18px]" style={{ color: "#FFA100" }} />
+              {verified ? (
+                <ShieldCheck className="h-[18px] w-[18px]" style={{ color: "var(--color-success)" }} />
+              ) : (
+                <Shield className="h-[18px] w-[18px]" style={{ color: "#FFA100" }} />
+              )}
             </div>
             <span
               style={{
@@ -232,7 +243,9 @@ const VerifyIdentityModal = ({
                 color: "rgba(0,0,0,0.9)",
               }}
             >
-              当前未认证，请完善信息并提交认证。
+              {verified
+                ? t("当前账号已完成实名。修改后会覆盖当前实名信息，后台保留变更记录。")
+                : t("当前未认证，请完善信息并提交认证。")}
             </span>
           </div>
         </div>
@@ -378,10 +391,10 @@ const VerifyIdentityModal = ({
             {submitting ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
-                提交中...
+                {verified ? t("更新中...") : t("提交中...")}
               </>
             ) : (
-              "提交认证"
+              verified ? t("更新认证") : t("提交认证")
             )}
           </button>
           <p
@@ -695,7 +708,25 @@ export const AccountPage = () => {
 
   // Verification —— 实名认证：直接以 session 里的 realnameVerified 为准
   const verified = Boolean(user?.realnameVerified);
+  const showRealnameSection = !isGlobal;
   const [showVerifyModal, setShowVerifyModal] = useState(false);
+
+  // 账号 ID 一键复制：copiedUserId 控制「已复制」瞬态提示；ref 挂 setTimeout 以便重复点击时清理旧 timer
+  const [copiedUserId, setCopiedUserId] = useState(false);
+  const copyResetTimer = useRef<number | null>(null);
+  const handleCopyUserId = async () => {
+    if (!user?.id) return;
+    try {
+      await navigator.clipboard.writeText(user.id);
+      setCopiedUserId(true);
+      if (copyResetTimer.current) {
+        window.clearTimeout(copyResetTimer.current);
+      }
+      copyResetTimer.current = window.setTimeout(() => setCopiedUserId(false), 1500);
+    } catch {
+      /* 浏览器不支持 clipboard API 或拒绝授权，用户可手选文本复制，此处静默 */
+    }
+  };
 
   // Delete account
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -1002,9 +1033,38 @@ export const AccountPage = () => {
                 </div>
               </div>
 
-              {/* Bottom: info rows —— 暂只放出「实名认证」行，「登录账号」行待能区分多渠道登录方式后再恢复 */}
-              <div className="flex flex-col gap-12 px-8 py-8">
-                {/*
+              {user?.id && (
+                /* 账号 ID 行 —— 国内国际站都展示，独立于实名认证区 */
+                <div className="flex flex-col gap-12 px-8 pt-8">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm" style={{ color: "rgba(0,0,0,0.5)", lineHeight: "24px" }}>{t("账号 ID")}</span>
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span
+                        className="truncate text-sm"
+                        style={{ color: "rgba(0,0,0,0.9)", fontFamily: "JetBrains Mono, monospace", maxWidth: 260 }}
+                        title={user.id}
+                      >
+                        {user.id}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => void handleCopyUserId()}
+                        className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-[rgba(0,0,0,0.04)]"
+                        aria-label={t("复制")}
+                        title={copiedUserId ? t("已复制") : t("复制")}
+                        style={{ color: copiedUserId ? "var(--color-success)" : "var(--text-tertiary)" }}
+                      >
+                        {copiedUserId ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {showRealnameSection && (
+                /* Bottom: info rows —— 暂只放出「实名认证」行，「登录账号」行待能区分多渠道登录方式后再恢复 */
+                <div className="flex flex-col gap-12 px-8 py-8">
+                  {/*
                 <div className="flex items-center justify-between">
                   <span className="text-sm" style={{ color: "rgba(0,0,0,0.5)", lineHeight: "24px" }}>
                     登录账号
@@ -1020,27 +1080,38 @@ export const AccountPage = () => {
                 </div>
                 */}
 
-                <div className="flex items-center justify-between">
-                  <span className="text-sm" style={{ color: "rgba(0,0,0,0.5)", lineHeight: "24px" }}>实名认证</span>
-                  {verified ? (
-                    <div className="flex items-center gap-2">
-                      <ShieldCheck className="h-5 w-5 flex-shrink-0" style={{ color: "#07C160" }} />
-                      <span className="text-sm" style={{ color: "rgba(0,0,0,0.9)" }}>
-                        已认证
-                      </span>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => setShowVerifyModal(true)}
-                      className="flex items-center gap-1 text-sm transition-colors hover:opacity-80"
-                      style={{ color: "var(--lw-accent)" }}
-                    >
-                      去认证
-                      <ChevronRight className="h-4 w-4" />
-                    </button>
-                  )}
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm" style={{ color: "rgba(0,0,0,0.5)", lineHeight: "24px" }}>实名认证</span>
+                    {verified ? (
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2">
+                          <ShieldCheck className="h-5 w-5 flex-shrink-0" style={{ color: "var(--color-success)" }} />
+                          <span className="text-sm" style={{ color: "rgba(0,0,0,0.9)" }}>
+                            {t("已认证")}
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => setShowVerifyModal(true)}
+                          className="flex items-center gap-1 text-sm transition-colors hover:opacity-80"
+                          style={{ color: "var(--lw-accent)" }}
+                        >
+                          {t("修改")}
+                          <ChevronRight className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setShowVerifyModal(true)}
+                        className="flex items-center gap-1 text-sm transition-colors hover:opacity-80"
+                        style={{ color: "var(--lw-accent)" }}
+                      >
+                        {t("去认证")}
+                        <ChevronRight className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
             </motion.div>
 
             {/* ── Section 2: Subscription ── */}
@@ -1053,11 +1124,12 @@ export const AccountPage = () => {
 
       {/* Modals */}
       <AnimatePresence>
-        {showVerifyModal && (
+        {showRealnameSection && showVerifyModal && (
           <VerifyIdentityModal
             key="verify"
             onClose={() => setShowVerifyModal(false)}
             onSuccess={handleVerifySuccess}
+            verified={verified}
           />
         )}
         {showDeleteModal && (

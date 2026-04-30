@@ -12,7 +12,3 @@ spec:
   destination:
     namespace: frontend
     name: shprod
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true

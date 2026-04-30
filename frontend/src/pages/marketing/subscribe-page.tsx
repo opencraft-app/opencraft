@@ -13,6 +13,7 @@ import { RepositoryError } from "@/repositories/http-repositories";
 import { useT } from "@/i18n/t";
 import { t as staticT } from "@/i18n/t";
 import type { Bundle } from "@/domain/types";
+import { isGlobal } from "@/lib/region";
 
 /* ─── Notion DESIGN.md Tokens ─── */
 
@@ -334,7 +335,7 @@ const mapPassErrorToMessage = (code: string | undefined, fallback: string, t: (z
     case "PASS_QUOTA_EXCEEDED":
       return t("当前使用量超出该套餐限额");
     case "realname_required":
-      return t("请先完成实名认证后再开通套餐。");
+      return isGlobal ? t("创建失败，请稍后重试。") : t("请先完成实名认证后再开通套餐。");
     default:
       return fallback;
   }
@@ -1433,7 +1434,7 @@ export const SubscribePage = () => {
                   color: "#cf3d4c",
                 }}
               >
-                {error.code === "realname_required" ? (
+                {!isGlobal && error.code === "realname_required" ? (
                   <>
                     请前往{" "}
                     <Link
