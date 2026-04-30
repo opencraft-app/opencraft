@@ -101,7 +101,6 @@ const VerifyIdentityModal = ({
   const t = useT();
   const { auth } = useRepositories();
   const { refreshProfile } = useSession();
-  const t = useT();
   const [realName, setRealName] = useState("");
   const [idNumber, setIdNumber] = useState("");
   const [submitting, setSubmitting] = useState(false);
