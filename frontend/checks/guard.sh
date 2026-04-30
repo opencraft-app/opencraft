@@ -16,6 +16,12 @@ echo "frontend guard: changed files"
 cat "${GUARD_CHANGED_FILES_FILE:?}"
 
 cd "$REPO_ROOT/frontend"
+if [[ ! -f pnpm-lock.yaml ]]; then
+  echo "frontend 约束：当前分支缺少 frontend/pnpm-lock.yaml"
+  echo "处理：从 trusted base ref ${GUARD_BASE_REF:-origin/master} materialize 锁文件，再执行 frozen install"
+  git -C "$REPO_ROOT" show "${GUARD_BASE_REF:-origin/master}:frontend/pnpm-lock.yaml" > pnpm-lock.yaml
+fi
+
 echo "============================================================"
 echo "frontend 约束：安装/校验 pnpm 依赖"
 echo "说明：MR guard 使用 frozen lockfile，避免 CI 重解依赖导致 Tailwind/Rollup 原生 optional 包版本漂移"
