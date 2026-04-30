@@ -8,11 +8,10 @@ import { useOpenClaw } from "@/contexts/openclaw-context";
 import { useSession } from "@/contexts/session-context";
 import { useRepositories } from "@/contexts/repository-context";
 import { BrandMark } from "@/components/site/brand-mark";
-import { LanguageSwitcher } from "@/components/site/language-switcher";
 import { InviteCodeModal } from "@/components/site/login-modal";
 import { RepositoryError } from "@/repositories/http-repositories";
 import type { Bundle } from "@/domain/types";
-import { useT, t } from "@/i18n/t";
+import { useT } from "@/i18n/t";
 import { isGlobal } from "@/lib/region";
 
 /* ─── Notion DESIGN.md Tokens ─── */
@@ -383,7 +382,7 @@ const SubscribeNavbar = () => {
           onMouseEnter={(e) => { e.currentTarget.style.color = colors.primary; }}
           onMouseLeave={(e) => { e.currentTarget.style.color = colors.warmGray500; }}
         >
-          {staticT("返回首页")}
+          {t("返回首页")}
         </Link>
       </div>
     </header>
@@ -398,14 +397,12 @@ const PlanCard = ({
   onSubscribe,
   subscribing,
   currentBots,
-  t,
 }: {
   plan: PlanInfo;
   index: number;
   onSubscribe: () => void;
   subscribing: boolean;
   currentBots: number;
-  t: (zh: string, opts?: Record<string, unknown>) => string;
 }) => {
   const t = useT();
   const quotaWouldExceed = currentBots >= plan.maxBots;
@@ -829,12 +826,10 @@ const ConfirmOrderModal = ({
   plan,
   onCancel,
   onPay,
-  t,
 }: {
   plan: PlanInfo;
   onCancel: () => void;
   onPay: () => void;
-  t: (zh: string, opts?: Record<string, unknown>) => string;
 }) => {
   const t = useT();
   const priceNum = plan.price.replace(/[^0-9.]/g, "");
@@ -979,12 +974,10 @@ const WechatQRModal = ({
   onClose,
   onComplete,
   submitting,
-  t,
 }: {
   onClose: () => void;
   onComplete: () => void;
   submitting: boolean;
-  t: (zh: string) => string;
 }) => {
   const t = useT();
   const [refreshKey, setRefreshKey] = useState(0);
@@ -1113,7 +1106,6 @@ export const SubscribePage = () => {
   const { isLoggedIn, login, isSubscribed, subscribe, addBot, bots, user, refreshPasses } = useOpenClaw();
   const { session } = useSession();
   const repositories = useRepositories();
-  const t = useT();
   const [subscribingPlanId, setSubscribingPlanId] = useState<string | null>(null);
   const [error, setError] = useState<SubscribeError | null>(null);
   const [modalStep, setModalStep] = useState<ModalStep>("closed");
@@ -1500,7 +1492,6 @@ export const SubscribePage = () => {
                   onSubscribe={() => void handleSubscribe(plan.id)}
                   subscribing={subscribingPlanId === plan.id}
                   currentBots={bots.length}
-                  t={t}
                 />
               ))}
             </motion.div>
@@ -1518,7 +1509,6 @@ export const SubscribePage = () => {
             plan={selectedPlan}
             onCancel={handleCloseModal}
             onPay={handlePay}
-            t={t}
           />
         )}
         {modalStep === "qrcode" && (
@@ -1527,7 +1517,6 @@ export const SubscribePage = () => {
             onClose={handleCloseModal}
             onComplete={() => void handleComplete()}
             submitting={subscribingPlanId !== null}
-            t={t}
           />
         )}
       </AnimatePresence>
