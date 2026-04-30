@@ -58,7 +58,7 @@
 | `getProfile()` / `updateProfile({name})` | GET/PATCH | 个人资料 |
 | `uploadAvatar(file)` | POST | 头像（客户端压缩 200KB 后上传） |
 | `deleteAccount()` | DELETE | 注销账号 |
-| `verifyRealname({name, idCard})` | POST | 实名认证核验，成功后 `user.realnameVerified` 置为 `true`（`/auth/realname/verify`） |
+| `verifyRealname({name, idCard})` | POST | 实名认证核验；未实名时完成认证，已实名时更新当前实名信息，并由后端保留变更历史（`/auth/realname/verify`） |
 | `getOAuthStartUrl(provider)` | — | 同步返回 OAuth 跳转 URL |
 | `signInAsGuest()` / `signOut()` | POST | 游客登录 / 登出 |
 
@@ -98,6 +98,8 @@ SessionProvider 监听此事件自动 `SIGN_OUT` 并跳转登录。
      组件本地 state 里再造一份副本。
    - 成功后由调用方负责 `refreshProfile()` 刷新 session；`refreshProfile` 失败
      **不阻塞主流程**（下一次进入页面仍会拉到最新状态）。
+   - 已认证用户允许从账号页再次打开实名弹窗；新信息通过核验后覆盖当前实名信息，
+     后端必须保留每次成功核验的变更历史。
    - 错误码与后端 `user/auth` 服务 1:1 对齐：`invalid_realname` / `invalid_id_card`
      / `realname_mismatch` / `realname_verify_failed`（HTTP 502） /
      `realname_unavailable`（HTTP 503）。UI 需将其映射为可读中文文案，

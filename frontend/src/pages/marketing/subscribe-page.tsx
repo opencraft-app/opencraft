@@ -1,6 +1,6 @@
 import { LegalFooter } from "@/components/site/legal-footer";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, ArrowRight, Check, User, Monitor, Clock, HardDrive, Settings, Zap, Headphones, Sparkles, X, RefreshCw, Loader2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, User, Monitor, Clock, HardDrive, Settings, Zap, Sparkles, X, RefreshCw, Loader2, Wifi } from "lucide-react";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { QRCodeSVG } from "qrcode.react";
@@ -95,29 +95,42 @@ interface PlanInfo {
 
 const iconStyle = { width: 16, height: 16, color: colors.warmGray300, strokeWidth: 1.5 };
 
+/* ─── Icon 映射（用于纯数据 → JSX 转换）─── */
+
+type IconKey = "user" | "monitor" | "hardDrive" | "clock" | "settings" | "zap" | "wifi" | "headphones" | "check";
+
+const iconMap: Record<IconKey, React.ReactNode> = {
+  user: <User {...iconStyle} />,
+  monitor: <Monitor {...iconStyle} />,
+  hardDrive: <HardDrive {...iconStyle} />,
+  clock: <Clock {...iconStyle} />,
+  settings: <Settings {...iconStyle} />,
+  zap: <Zap {...iconStyle} />,
+  wifi: <Wifi {...iconStyle} />,
+  headphones: <Sparkles {...iconStyle} />,
+  check: <Check {...iconStyle} />,
+};
+
 /**
  * 将后端 Bundle 映射成前端 PlanInfo。
- * - time_span + time_unit → 周期文案（如 7 天 / 1 个月）
- * - credit 仅用于展示套餐包含的积分数量（credit=0 时不展示积分行）
- * - price 决定是否免费（price 未返回或为 0 时视为免费版）
- * - description[] 以 Key 作为 label、Value 作为 value
+ * 接收 t 函数以确保所有用户可见文案都走 i18n。
  */
 const iconForKey = (key: string): React.ReactNode => {
   const k = key.toLowerCase();
-  if (k.includes("agent")) return <User {...iconStyle} />;
-  if (k.includes("积分") || k.includes("credit")) return <Zap {...iconStyle} />;
-  if (k.includes("存储") || k.includes("storage")) return <HardDrive {...iconStyle} />;
-  if (k.includes("环境") || k.includes("environment")) return <Monitor {...iconStyle} />;
-  if (k.includes("配置") || k.includes("config")) return <Settings {...iconStyle} />;
-  return <Check {...iconStyle} />;
+  if (k.includes("agent")) return iconMap.user;
+  if (k.includes("积分") || k.includes("credit")) return iconMap.zap;
+  if (k.includes("存储") || k.includes("storage")) return iconMap.hardDrive;
+  if (k.includes("环境") || k.includes("environment")) return iconMap.monitor;
+  if (k.includes("配置") || k.includes("config")) return iconMap.settings;
+  return iconMap.check;
 };
 
-const mapBundleToPlan = (bundle: Bundle, index: number): PlanInfo => {
+const mapBundleToPlan = (bundle: Bundle, index: number, t: (zh: string, opts?: Record<string, unknown>) => string): PlanInfo => {
   const features: PlanFeature[] = [];
 
   /* agent_quota 打头阵 */
   if (bundle.agent_quota > 0) {
-    features.push({ icon: <User {...iconStyle} />, label: "Agent", value: t("{{n}} 个", { n: bundle.agent_quota }) });
+    features.push({ icon: iconMap.user, label: "Agent", value: `${bundle.agent_quota} ${t("个")}` });
   }
   /* description 里的其他卖点（已出现的 Agent/积分不重复添加）*/
   /* 「独立环境」「专属云端存储」前端统一规格并固定顺序展示，其余项顺延 */
@@ -134,22 +147,23 @@ const mapBundleToPlan = (bundle: Bundle, index: number): PlanInfo => {
     }
     /* 「专属云端存储」前端统一展示容量，避免后端缺值 */
     if (entry.Key === "专属云端存储") {
-      storageFeature = { icon: <HardDrive {...iconStyle} />, label: t("专属云端存储"), value: "50G" };
+      storageFeature = { icon: iconMap.hardDrive, label: t("专属云端存储"), value: "50G" };
       continue;
     }
     /* 后端 Value 为空时，用右侧勾替代，避免卡片右侧空白 */
     if (!entry.Value) {
-      otherFeatures.push({ icon: iconForKey(entry.Key), label: entry.Key, hasCheck: true });
+      otherFeatures.push({ icon: iconForKey(entry.Key), label: t(entry.Key), hasCheck: true });
       continue;
     }
-    otherFeatures.push({ icon: iconForKey(entry.Key), label: entry.Key, value: entry.Value });  }
+    otherFeatures.push({ icon: iconForKey(entry.Key), label: t(entry.Key), value: entry.Value });
+  }
   /* 顺序：独立环境 → 专属云端存储 → 模型积分 → 其他描述项 */
   if (envFeature) features.push(envFeature);
   if (storageFeature) features.push(storageFeature);
   /* credit > 0 时展示模型积分 */
   if (bundle.credit > 0) {
     features.push({
-      icon: <Zap {...iconStyle} />,
+      icon: iconMap.zap,
       label: t("模型积分"),
       value: `${bundle.credit} ${t("体验积分")}`,
     });
@@ -157,13 +171,13 @@ const mapBundleToPlan = (bundle: Bundle, index: number): PlanInfo => {
   features.push(...otherFeatures);
   /* 如果 features 比较少，填几个通用卖点（顺序：独立环境 → 专属云端存储 → 7×24 在线）*/
   if (!envFeature) {
-    features.push({ icon: <Monitor {...iconStyle} />, label: t("独立环境"), value: t("2核 4G 内存") });
+    features.push({ icon: iconMap.monitor, label: t("独立环境"), value: t("2核 4G 内存") });
   }
   if (!storageFeature) {
-    features.push({ icon: <HardDrive {...iconStyle} />, label: t("专属云端存储"), value: "50G" });
+    features.push({ icon: iconMap.hardDrive, label: t("专属云端存储"), value: "50G" });
   }
   if (features.length < 4 && !features.some((f) => f.label === t("7×24 在线"))) {
-    features.push({ icon: <Clock {...iconStyle} />, label: t("7×24 在线"), hasCheck: true });
+    features.push({ icon: iconMap.clock, label: t("7×24 在线"), hasCheck: true });
   }
 
   /* 内测期间：无论后端是否返回 price，前端统一当免费版展示，价格右侧用 promoTag 标出"限时免费"。
@@ -195,10 +209,7 @@ const mapBundleToPlan = (bundle: Bundle, index: number): PlanInfo => {
 };
 
 /**
- * 占位套餐：后端暂未上线的「进阶型」「专业型」，前端先占位展示，保持三列栅格
- * - soldOut = true：PlanCard 会禁用按钮、不触发下单流程
- * - badge = "敬请期待"：右上角小 tag
- * - raw 用最小化 fake Bundle 填充（因按钮禁用，bundle_id 不会被真实使用）
+ * 占位套餐的最小化 fake Bundle（按钮禁用，bundle_id 不会被真实使用）
  */
 const makePlaceholderBundle = (id: string, name: string, agentQuota: number): Bundle => ({
   bundle_id: id,
@@ -215,54 +226,99 @@ const makePlaceholderBundle = (id: string, name: string, agentQuota: number): Bu
   bundle_sales_state: "SOLD_OUT",
 });
 
-const makePlaceholderPlans = (): PlanInfo[] => [
+/**
+ * 占位套餐纯数据定义（不含 JSX），渲染时通过 buildPlaceholderPlans 转为 PlanInfo。
+ */
+interface PlaceholderFeatureDef {
+  iconKey: IconKey;
+  label: string;
+  value?: string;
+  hasCheck?: boolean;
+}
+
+interface PlaceholderPlanDef {
+  id: string;
+  name: string;
+  price: string;
+  priceUnit: string;
+  description: string;
+  features: PlaceholderFeatureDef[];
+  ctaLabel: string;
+  ctaStyle: "outline" | "primary" | "outline-dark";
+  maxBots: number;
+  comingSoon?: boolean;
+  agentQuota: number;
+}
+
+const PLACEHOLDER_PLAN_DEFS: PlaceholderPlanDef[] = [
   {
     id: "placeholder-starter",
-    name: t("巡游 Cruise"),
-    /* 价格尚未确定，前端暂不展示，PlanCard 会根据 price 为空走占位分支 */
-    price: "",
-    description: t("日常主力，让智能化成为习惯"),
+    name: "巡游 Cruise",
+    price: "¥99",
+    priceUnit: "/ 月",
+    description: "日常主力，让智能化成为习惯",
     features: [
-      { icon: <User {...iconStyle} />, label: "Agent", value: t("{{n}} 个", { n: 3 }) },
-      { icon: <Monitor {...iconStyle} />, label: t("独立环境"), value: t("2核 4G 内存") },
-      { icon: <HardDrive {...iconStyle} />, label: t("专属云端存储"), value: "50G" },
-      { icon: <Clock {...iconStyle} />, label: t("7×24 在线"), hasCheck: true },
-      { icon: <Settings {...iconStyle} />, label: t("极简配置面板"), hasCheck: true },
-      { icon: <Zap {...iconStyle} />, label: t("新功能优先体验"), hasCheck: true },
+      { iconKey: "user", label: "Agent", value: "1 个" },
+      { iconKey: "monitor", label: "独立环境", value: "4核 8G 内存" },
+      { iconKey: "hardDrive", label: "专属云端存储", value: "80G" },
+      { iconKey: "zap", label: "模型积分", value: "-" },
+      { iconKey: "clock", label: "7×24 在线", hasCheck: true },
+      { iconKey: "settings", label: "极简配置面板", hasCheck: true },
     ],
-    ctaLabel: t("敬请期待"),
+    ctaLabel: "即将上线",
     ctaStyle: "outline-dark",
-    maxBots: 3,
+    maxBots: 1,
     comingSoon: true,
-    raw: makePlaceholderBundle("placeholder-starter", t("巡游 Cruise"), 3),
+    agentQuota: 1,
   },
   {
     id: "placeholder-pro",
-    name: t("远航 Voyage"),
-    /* 价格尚未确定，前端暂不展示 */
-    price: "",
-    description: t("体验进阶，把效率拉满"),
+    name: "远航 Voyage",
+    price: "¥279",
+    priceUnit: "/ 月",
+    description: "体验进阶，把效率拉满",
     features: [
-      { icon: <User {...iconStyle} />, label: "Agent", value: t("{{n}} 个", { n: 15 }) },
-      { icon: <Monitor {...iconStyle} />, label: t("独立环境"), value: t("2核 4G 内存") },
-      { icon: <HardDrive {...iconStyle} />, label: t("专属云端存储"), value: "50G" },
-      { icon: <Clock {...iconStyle} />, label: t("7×24 在线"), hasCheck: true },
-      { icon: <Settings {...iconStyle} />, label: t("极简配置面板"), hasCheck: true },
-      { icon: <Zap {...iconStyle} />, label: t("新功能优先体验"), hasCheck: true },
-      { icon: <Headphones {...iconStyle} />, label: t("优先技术支持"), hasCheck: true },
+      { iconKey: "user", label: "Agent", value: "3 个" },
+      { iconKey: "monitor", label: "独立环境", value: "4核 8G 内存" },
+      { iconKey: "hardDrive", label: "专属云端存储", value: "80G" },
+      { iconKey: "zap", label: "模型积分", value: "-" },
+      { iconKey: "clock", label: "7×24 在线", hasCheck: true },
+      { iconKey: "settings", label: "极简配置面板", hasCheck: true },
+      { iconKey: "zap", label: "新功能优先体验", hasCheck: true },
     ],
-    ctaLabel: t("敬请期待"),
+    ctaLabel: "即将上线",
     ctaStyle: "outline-dark",
-    maxBots: 15,
+    maxBots: 3,
     comingSoon: true,
-    raw: makePlaceholderBundle("placeholder-pro", t("远航 Voyage"), 15),
+    agentQuota: 3,
   },
 ];
+
+/** 将纯数据占位套餐转为带 JSX + i18n 的 PlanInfo */
+const buildPlaceholderPlans = (t: (zh: string, opts?: Record<string, unknown>) => string): PlanInfo[] =>
+  PLACEHOLDER_PLAN_DEFS.map((def) => ({
+    id: def.id,
+    name: t(def.name),
+    price: def.price,
+    priceUnit: t(def.priceUnit),
+    description: t(def.description),
+    features: def.features.map((f) => ({
+      icon: iconMap[f.iconKey],
+      label: t(f.label),
+      value: f.value ? t(f.value) : undefined,
+      hasCheck: f.hasCheck,
+    })),
+    ctaLabel: t(def.ctaLabel),
+    ctaStyle: def.ctaStyle,
+    maxBots: def.maxBots,
+    comingSoon: def.comingSoon,
+    raw: makePlaceholderBundle(def.id, def.name, def.agentQuota),
+  }));
 
 /**
  * 后端错误码 → 用户提示文案映射（与 frontend-bundle-pass-integration.md 对齐）
  */
-const mapPassErrorToMessage = (code: string | undefined, fallback: string): string => {
+const mapPassErrorToMessage = (code: string | undefined, fallback: string, t: (zh: string) => string): string => {
   switch (code) {
     case "PASS_INVALID_PARAM":
       return t("请选择套餐");
@@ -279,7 +335,7 @@ const mapPassErrorToMessage = (code: string | undefined, fallback: string): stri
     case "PASS_QUOTA_EXCEEDED":
       return t("当前使用量超出该套餐限额");
     case "realname_required":
-      return t("请先完成实名认证后再开通套餐。");
+      return isGlobal ? t("创建失败，请稍后重试。") : t("请先完成实名认证后再开通套餐。");
     default:
       return fallback;
   }
@@ -315,24 +371,20 @@ const SubscribeNavbar = () => {
         }}
       >
         <BrandMark to="/" />
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          {/* 语言切换器：仅国际站展示 */}
-          {isGlobal && <LanguageSwitcher />}
-          <Link
-            to="/"
-            style={{
-              fontSize: 15,
-              fontWeight: 500,
-              color: colors.warmGray500,
-              transition: "color 0.2s",
-              textDecoration: "none",
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.color = colors.primary; }}
-            onMouseLeave={(e) => { e.currentTarget.style.color = colors.warmGray500; }}
-          >
-            {t("返回首页")}
-          </Link>
-        </div>
+        <Link
+          to="/"
+          style={{
+            fontSize: 15,
+            fontWeight: 500,
+            color: colors.warmGray500,
+            transition: "color 0.2s",
+            textDecoration: "none",
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.color = colors.primary; }}
+          onMouseLeave={(e) => { e.currentTarget.style.color = colors.warmGray500; }}
+        >
+          {staticT("返回首页")}
+        </Link>
       </div>
     </header>
   );
@@ -346,12 +398,14 @@ const PlanCard = ({
   onSubscribe,
   subscribing,
   currentBots,
+  t,
 }: {
   plan: PlanInfo;
   index: number;
   onSubscribe: () => void;
   subscribing: boolean;
   currentBots: number;
+  t: (zh: string, opts?: Record<string, unknown>) => string;
 }) => {
   const t = useT();
   const quotaWouldExceed = currentBots >= plan.maxBots;
@@ -458,8 +512,8 @@ const PlanCard = ({
           </p>
         </div>
 
-        {/* Price - 未上线占位卡优先显示「敬请期待」；售罄套餐用「已售罄」遮盖价格 */}
-        {isComingSoon ? (
+        {/* Price - 未上线占位卡：有价格时正常展示价格，无价格时显示「敬请期待」；售罄套餐用「已售罄」遮盖价格 */}
+        {isComingSoon && !plan.price ? (
           <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8, minHeight: 48 }}>
             <span
               style={{
@@ -555,8 +609,8 @@ const PlanCard = ({
         {/* Divider */}
         <div style={{ height: 1, background: colors.border, marginBottom: 24 }} />
 
-        {/* Features - 售罄 / 未上线 / 无卖点时展示占位文案 */}
-        {isSoldOut || isComingSoon || plan.features.length === 0 ? (
+        {/* Features - 售罄 / （无卖点的）未上线时展示占位文案 */}
+        {isSoldOut || (isComingSoon && plan.features.length === 0) || (!isComingSoon && !isSoldOut && plan.features.length === 0) ? (
           <div
             style={{
               flex: 1,
@@ -626,10 +680,31 @@ const PlanCard = ({
           </ul>
         )}
 
-        {/* CTA Button - 占位（即将上线）卡片不展示按钮 */}
-        {!isComingSoon && (
-          <div style={{ marginTop: 32 }}>
-          {plan.ctaStyle === "primary" ? (
+        {/* CTA Button */}
+        <div style={{ marginTop: 32 }}>
+          {isComingSoon ? (
+            <button
+              disabled
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 6,
+                width: "100%",
+                padding: "12px 16px",
+                borderRadius: 8,
+                border: `1px solid rgba(0,0,0,0.06)`,
+                background: "rgba(0,0,0,0.03)",
+                color: "rgba(0,0,0,0.35)",
+                fontSize: 15,
+                fontWeight: 600,
+                lineHeight: 1.33,
+                cursor: "not-allowed",
+              }}
+            >
+              {plan.ctaLabel}
+            </button>
+          ) : plan.ctaStyle === "primary" ? (
             <button
               onClick={onSubscribe}
               disabled={disabled}
@@ -703,7 +778,6 @@ const PlanCard = ({
             </button>
           )}
         </div>
-        )}
       </div>
     </motion.div>
   );
@@ -755,10 +829,12 @@ const ConfirmOrderModal = ({
   plan,
   onCancel,
   onPay,
+  t,
 }: {
   plan: PlanInfo;
   onCancel: () => void;
   onPay: () => void;
+  t: (zh: string, opts?: Record<string, unknown>) => string;
 }) => {
   const t = useT();
   const priceNum = plan.price.replace(/[^0-9.]/g, "");
@@ -804,7 +880,7 @@ const ConfirmOrderModal = ({
             }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, fontSize: 14, color: colors.warmGray500 }}>
-              <span>{t("{{name}} 订阅", { name: plan.name })}</span>
+              <span>{plan.name}{t("订阅")}</span>
               <span style={{ fontWeight: 600, color: colors.black }}>¥{priceNum}</span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16, fontSize: 14, color: colors.warmGray500 }}>
@@ -888,7 +964,7 @@ const ConfirmOrderModal = ({
               onMouseEnter={(e) => { e.currentTarget.style.background = colors.primaryHover; }}
               onMouseLeave={(e) => { e.currentTarget.style.background = colors.primary; }}
             >
-              {t("支付 ¥{{amount}}", { amount: priceNum })}
+              {t("支付")} ¥{priceNum}
             </button>
           </div>
         </div>
@@ -903,10 +979,12 @@ const WechatQRModal = ({
   onClose,
   onComplete,
   submitting,
+  t,
 }: {
   onClose: () => void;
   onComplete: () => void;
   submitting: boolean;
+  t: (zh: string) => string;
 }) => {
   const t = useT();
   const [refreshKey, setRefreshKey] = useState(0);
@@ -1035,6 +1113,7 @@ export const SubscribePage = () => {
   const { isLoggedIn, login, isSubscribed, subscribe, addBot, bots, user, refreshPasses } = useOpenClaw();
   const { session } = useSession();
   const repositories = useRepositories();
+  const t = useT();
   const [subscribingPlanId, setSubscribingPlanId] = useState<string | null>(null);
   const [error, setError] = useState<SubscribeError | null>(null);
   const [modalStep, setModalStep] = useState<ModalStep>("closed");
@@ -1087,10 +1166,10 @@ export const SubscribePage = () => {
   /* 映射成 PlanInfo，保留原 bundle 用于后续时用 bundle_id 调购买 */
   const planList = useMemo<PlanInfo[]>(() => {
     if (!bundles) return [];
-    const fromBackend = bundles.map((b, idx) => mapBundleToPlan(b, idx));
+    const fromBackend = bundles.map((b, idx) => mapBundleToPlan(b, idx, t));
     /* 后端目前只上线了免费版，前端补两张「敬请期待」的占位卡，保持三列栅格 */
-    return [...fromBackend, ...makePlaceholderPlans()];
-  }, [bundles]);
+    return [...fromBackend, ...buildPlaceholderPlans(t)];
+  }, [bundles, t]);
 
   /* 执行真正的购买权益 + 创建实例流程 */
   const executeCreateBot = useCallback(async (plan: PlanInfo) => {
@@ -1140,7 +1219,7 @@ export const SubscribePage = () => {
         setModalStep("closed");
         setSelectedPlan(null);
       } else {
-        setError({ code, message: mapPassErrorToMessage(code, fallbackMsg) });
+        setError({ code, message: mapPassErrorToMessage(code, fallbackMsg, t) });
         setModalStep("closed");
         setSelectedPlan(null);
       }
@@ -1158,7 +1237,7 @@ export const SubscribePage = () => {
 
     /* 检查龙虾个数是否已达该套餐上限 */
     if (bots.length >= plan.maxBots) {
-      setError({ message: t("当前已有 {{current}} 个 Hermes，{{planName}}套餐最多可创建 {{max}} 只。", { current: bots.length, planName: plan.name, max: plan.maxBots }) });
+      setError({ message: t("当前已有 {{current}} 个 Hermes，{{plan}}套餐最多可创建 {{max}} 只。", { current: bots.length, plan: plan.name, max: plan.maxBots }) });
       return;
     }
 
@@ -1184,7 +1263,7 @@ export const SubscribePage = () => {
 
     /* 激活后再校验一次配额 */
     if (bots.length >= plan.maxBots) {
-      setError({ message: t("当前已有 {{current}} 个 Hermes，{{planName}}套餐最多可创建 {{max}} 只。", { current: bots.length, planName: plan.name, max: plan.maxBots }) });
+      setError({ message: t("当前已有 {{current}} 个 Hermes，{{plan}}套餐最多可创建 {{max}} 只。", { current: bots.length, plan: plan.name, max: plan.maxBots }) });
       return;
     }
 
@@ -1359,7 +1438,7 @@ export const SubscribePage = () => {
                   color: "#cf3d4c",
                 }}
               >
-                {error.code === "realname_required" ? (
+                {!isGlobal && error.code === "realname_required" ? (
                   <>
                     {t("请前往")}{" "}
                     <Link
@@ -1421,6 +1500,7 @@ export const SubscribePage = () => {
                   onSubscribe={() => void handleSubscribe(plan.id)}
                   subscribing={subscribingPlanId === plan.id}
                   currentBots={bots.length}
+                  t={t}
                 />
               ))}
             </motion.div>
@@ -1438,6 +1518,7 @@ export const SubscribePage = () => {
             plan={selectedPlan}
             onCancel={handleCloseModal}
             onPay={handlePay}
+            t={t}
           />
         )}
         {modalStep === "qrcode" && (
@@ -1446,6 +1527,7 @@ export const SubscribePage = () => {
             onClose={handleCloseModal}
             onComplete={() => void handleComplete()}
             submitting={subscribingPlanId !== null}
+            t={t}
           />
         )}
       </AnimatePresence>

@@ -76,6 +76,12 @@ ci_require_gitops_validation_tools() {
   ci_log "gitops validation tools found: kustomize=$(command -v kustomize) sops=$(command -v sops) ksops=$(command -v ksops)"
 }
 
+ci_ensure_db_job_tools() {
+  ci_ensure_kubectl
+  ci_require_commands python3 kubectl
+  ci_log "db job tools found: kubectl=$(command -v kubectl)"
+}
+
 ci_ensure_gitops_validation_tools() {
   ci_ensure_kustomize
   ci_ensure_sops
@@ -123,6 +129,41 @@ ci_install_kustomize() {
   tar -xzf "${cache_root}/${archive}" -C "$install_dir" kustomize
   chmod +x "${install_dir}/kustomize"
   ci_log "installed kustomize at ${install_dir}/kustomize"
+}
+
+ci_ensure_kubectl() {
+  if command -v kubectl >/dev/null 2>&1; then
+    ci_log "kubectl already present at $(command -v kubectl)"
+    return 0
+  fi
+
+  local version="${KUBECTL_VERSION_OVERRIDE:-v1.36.0}"
+  local os arch cache_root install_dir bin url
+
+  os="$(ci_os_name)"
+  arch="$(ci_arch_name)"
+  cache_root="${HOME}/.cache/lightclaw-ci/gitops-tools/kubectl"
+  install_dir="${cache_root}/${version}/${os}/${arch}"
+  bin="${install_dir}/kubectl"
+  url="https://dl.k8s.io/release/${version}/bin/${os}/${arch}/kubectl"
+
+  if [[ ! -x "$bin" ]]; then
+    ci_with_lock "kubectl-${version}-${os}-${arch}" ci_install_kubectl "$url" "$install_dir"
+  else
+    ci_log "kubectl ${version} already present at ${bin}"
+  fi
+
+  export PATH="${install_dir}:${PATH}"
+}
+
+ci_install_kubectl() {
+  local url="$1"
+  local install_dir="$2"
+
+  mkdir -p "$install_dir"
+  ci_download_file "$url" "${install_dir}/kubectl"
+  chmod +x "${install_dir}/kubectl"
+  ci_log "installed kubectl at ${install_dir}/kubectl"
 }
 
 ci_ensure_sops() {
@@ -359,6 +400,46 @@ ci_materialize_runtime_files() {
   done
 }
 
+ci_materialize_runtime_manifest() {
+  local runtime_dir="$1"
+  local manifest_path="${2:-.ci/runtime/materialize-files.txt}"
+
+  if [[ -z "${CI_RUNTIME_COMMIT:-}" ]]; then
+    echo "CI_RUNTIME_COMMIT is not set; call ci_prepare_runtime_ref first" >&2
+    return 1
+  fi
+
+  local manifest_content
+  if ! manifest_content="$(git show "${CI_RUNTIME_COMMIT}:${manifest_path}")"; then
+    echo "failed to read runtime materialize manifest: ${manifest_path} at ${CI_RUNTIME_COMMIT}" >&2
+    return 1
+  fi
+
+  local runtime_files=()
+  local repo_path
+  while IFS= read -r repo_path; do
+    repo_path="${repo_path%%#*}"
+    repo_path="${repo_path#"${repo_path%%[![:space:]]*}"}"
+    repo_path="${repo_path%"${repo_path##*[![:space:]]}"}"
+    [[ -z "$repo_path" ]] && continue
+    case "$repo_path" in
+      .ci/runtime/*) ;;
+      *)
+        echo "runtime materialize manifest may only reference .ci/runtime/* paths: ${repo_path}" >&2
+        return 1
+        ;;
+    esac
+    runtime_files+=("$repo_path")
+  done <<< "$manifest_content"
+
+  if [[ "${#runtime_files[@]}" -eq 0 ]]; then
+    echo "runtime materialize manifest is empty: ${manifest_path}" >&2
+    return 1
+  fi
+
+  ci_materialize_runtime_files "$runtime_dir" "${runtime_files[@]}"
+}
+
 ci_bootstrap_node_locked() {
   local node_version="$1"
   local node_archive="$2"
@@ -414,16 +495,49 @@ ci_load_cloudflare_credentials() {
 
 ci_load_edgeone_credentials() {
   local api_token_file="${EDGEONE_API_TOKEN_FILE:-/etc/lightclaw-ci/edgeone_api_token}"
+  local raw_token=""
+  local token=""
+  local source=""
 
   if [[ -r "$api_token_file" ]]; then
-    export EDGEONE_API_TOKEN
-    EDGEONE_API_TOKEN="$(tr -d '\r\n' < "$api_token_file")"
-    echo "edgeone api token loaded from file:$api_token_file"
+    raw_token="$(cat "$api_token_file")"
+    token="$(printf '%s' "$raw_token" | ci_read_secret_value)"
+    source="file:$api_token_file"
   elif [[ -n "${EDGEONE_API_TOKEN:-}" ]]; then
-    echo "edgeone api token loaded from settings"
+    raw_token="$EDGEONE_API_TOKEN"
+    token="$(printf '%s' "$raw_token" | ci_read_secret_value)"
+    source="settings"
   else
+    if [[ "${EDGEONE_API_TOKEN_REQUIRED:-}" == "1" ]]; then
+      echo "edgeone api token is required but not configured" >&2
+      return 1
+    fi
     echo "edgeone api token is not configured"
+    return 0
   fi
+
+  if [[ -z "$token" ]]; then
+    echo "edgeone api token loaded from ${source} but is empty after trimming" >&2
+    return 1
+  fi
+
+  if [[ "$token" == '${{'* ]]; then
+    echo "edgeone api token loaded from ${source} but still looks like an unresolved CI settings expression" >&2
+    return 1
+  fi
+
+  export EDGEONE_API_TOKEN="$token"
+  export EDGEONE_API_TOKEN_SOURCE="$source"
+  ci_log "edgeone api token loaded from ${source} (raw_token_len=${#raw_token}, token_len=${#EDGEONE_API_TOKEN}, token_trimmed=$([[ "$raw_token" == "$token" ]] && echo no || echo yes), token_fingerprint=$(printf '%s' "$EDGEONE_API_TOKEN" | ci_fingerprint_secret))"
+}
+
+ci_frontend_release_matrix_needs_edgeone() {
+  local matrix="${1:-}"
+  matrix="$(printf '%s' "$matrix" | tr -d '[:space:]')"
+  if [[ -z "$matrix" ]]; then
+    return 0
+  fi
+  [[ ",${matrix}," == *",eo:"* ]]
 }
 
 ci_load_git_woa_private_token() {

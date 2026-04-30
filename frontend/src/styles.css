@@ -13,6 +13,8 @@
   --border-subtle: rgba(0, 0, 0, 0.05);
   --border-strong: rgba(0, 0, 0, 0.08);
 
+  --color-success: #07C160;
+
   --accent-purple: #dcc6ff;
   --accent-purple-bg: rgba(219, 197, 255, 0.16);
   --accent-green-bg: #90fffd;

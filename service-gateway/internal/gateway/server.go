@@ -77,6 +77,7 @@ type Handler struct {
 	adminBridgeHosts       map[string]struct{}
 	adminBridgeSecure      bool
 	adminBridgeConfigured  bool
+	realnameWallEnabled    bool
 }
 
 type accessLogSink interface {
@@ -111,6 +112,12 @@ func WithAdminBasicAuth(username, password string) Option {
 func WithAdminBasicAuthRealm(realm string) Option {
 	return func(h *Handler) {
 		h.adminRealm = strings.TrimSpace(realm)
+	}
+}
+
+func WithRealnameWallEnabled(enabled bool) Option {
+	return func(h *Handler) {
+		h.realnameWallEnabled = enabled
 	}
 }
 
@@ -218,6 +225,7 @@ func NewHandler(cfg Config, opts ...Option) (http.Handler, error) {
 		adminBridgeCookieName: defaultAdminBridgeCookieName,
 		adminBridgeCookieTTL:  defaultAdminBridgeCookieTTL,
 		adminBridgeSecure:     true,
+		realnameWallEnabled:   true,
 	}
 	for _, opt := range opts {
 		opt(handler)
@@ -400,7 +408,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			h.logRequest(start, matched, nil, r, rec.statusCode(), "")
 			return
 		}
-		if matched.route.RequireRealname && isRealnameWriteMethod(r.Method) && !session.Session.User.RealnameVerified {
+		if h.shouldRequireRealname(matched.route, r) && !session.Session.User.RealnameVerified {
 			rec := newStatusRecorder(w)
 			writeJSON(rec, http.StatusForbidden, map[string]string{"error": "realname_required"})
 			h.observeRequest(start, matched.route.Name, r, rec.statusCode())
@@ -496,6 +504,13 @@ func isRealnameWriteMethod(method string) bool {
 	default:
 		return false
 	}
+}
+
+func (h *Handler) shouldRequireRealname(route Route, r *http.Request) bool {
+	if !h.realnameWallEnabled || !route.RequireRealname || !isRealnameWriteMethod(r.Method) {
+		return false
+	}
+	return true
 }
 
 func applyCORSHeaders(allowedOrigins originAllowlist, header http.Header, r *http.Request, allowedMethods []string) {

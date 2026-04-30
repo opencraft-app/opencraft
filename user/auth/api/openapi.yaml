@@ -218,6 +218,7 @@ paths:
     post:
       operationId: verifyRealname
       summary: Verify current user's real-name identity
+      description: Re-submitting after verification updates the current real-name identity and keeps an internal change history.
       security:
         - SessionCookie: []
         - SessionBearer: []

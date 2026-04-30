@@ -1,5 +1,8 @@
 import json
 import os
+import subprocess
+import tempfile
+import textwrap
 import unittest
 from contextlib import contextmanager
 from io import BytesIO
@@ -11,11 +14,12 @@ RUNTIME_DIR = Path(__file__).resolve().parents[1]
 if str(RUNTIME_DIR) not in sys.path:
     sys.path.insert(0, str(RUNTIME_DIR))
 
-from harness_ci.gitops_drift_audit import (
+from gitops.gitops_drift_audit import (
     Drift,
     ExpectedApp,
     build_alert_content,
     evaluate_drift,
+    load_expected_apps,
     notify_if_needed,
     resolve_wework_webhook,
 )
@@ -174,6 +178,48 @@ class GitOpsDriftAuditTests(unittest.TestCase):
 
         self.assertEqual(drifts, [Drift("orphan-beijing-sandbox", "orphan", "absent from live", "present in live")])
 
+    def test_loads_shprod_direct_app_expectations_from_gitops(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "argocd/apps/shprod").mkdir(parents=True)
+            (repo / "argocd/services/frontend/shprod").mkdir(parents=True)
+            (repo / "argocd/apps/shprod/frontend.yaml").write_text(
+                textwrap.dedent(
+                    """\
+                    apiVersion: argoproj.io/v1alpha1
+                    kind: Application
+                    metadata:
+                      name: frontend-shprod
+                    spec:
+                      project: shprod-frontend
+                      source:
+                        path: argocd/services/frontend/shprod
+                      destination:
+                        namespace: frontend
+                        name: shprod
+                    """
+                )
+            )
+            (repo / "argocd/services/frontend/shprod/frontend-platform.env").write_text(
+                "FRONTEND_IMAGE=example.com/frontend:v1\n"
+            )
+            git(repo, "init")
+            git(repo, "config", "user.email", "ci@example.com")
+            git(repo, "config", "user.name", "CI")
+            git(repo, "add", ".")
+            git(repo, "commit", "-m", "gitops")
+
+            apps = load_expected_apps(repo, "shprod", "HEAD")
+
+            self.assertEqual(len(apps), 1)
+            self.assertEqual(apps[0].app_name, "frontend-shprod")
+            self.assertEqual(apps[0].service, "frontend")
+            self.assertEqual(apps[0].project, "shprod-frontend")
+            self.assertEqual(apps[0].destination_name, "shprod")
+            self.assertEqual(apps[0].namespace, "frontend")
+            self.assertEqual(apps[0].source_path, "argocd/services/frontend/shprod")
+            self.assertEqual(apps[0].expected_images, ("example.com/frontend:v1",))
+
     def test_no_drift_does_not_send_wework_alert(self) -> None:
         called = False
 
@@ -254,6 +300,10 @@ def fake_response() -> Any:
             return BytesIO(b"ok").read()
 
     yield Response()
+
+
+def git(repo: Path, *args: str) -> None:
+    subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True)
 
 
 class AlertContentTests(unittest.TestCase):

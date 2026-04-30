@@ -12,7 +12,3 @@ spec:
   destination:
     namespace: ctl
     name: shprod
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true

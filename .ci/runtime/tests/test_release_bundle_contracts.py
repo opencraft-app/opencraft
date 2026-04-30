@@ -11,11 +11,12 @@ RUNTIME_DIR = REPO_ROOT / ".ci" / "runtime"
 if str(RUNTIME_DIR) not in sys.path:
     sys.path.insert(0, str(RUNTIME_DIR))
 
-from harness_ci.bundles import load_bundle, load_manifest, require_build_metadata  # noqa: E402
+from contracts.bundles import load_bundle, load_manifest, require_build_metadata  # noqa: E402
 
 
 SANDBOX_ENV = "beijing-sandbox-2"
 AUTO_RELEASE_WORKFLOWS = {
+    "admin-gateway": (".ci/admin-gateway.yml", "beijing-sandbox,shprod"),
     "ctl": (".ci/ctl.yml", "beijing-sandbox,shprod"),
     "gateway-dashboard": (".ci/gateway-dashboard.yml", "beijing-sandbox,shprod"),
     "payment": (".ci/payment.yml", "beijing-sandbox,shprod"),
@@ -91,6 +92,47 @@ class ReleaseBundleContractTests(unittest.TestCase):
 
                 self.assertEqual(len(image_keys), 5)
                 self.assertTrue(image_keys <= env_keys)
+
+    def test_gateway_release_bundles_are_independent(self) -> None:
+        manifest = load_manifest()
+        service_bundle = require_build_metadata(load_bundle(manifest, "service-gateway", "shprod"))
+        admin_bundle = require_build_metadata(load_bundle(manifest, "admin-gateway", "shprod"))
+
+        self.assertTrue(any(path.startswith("argocd/services/service-gateway/shprod/") for path in service_bundle.publish_paths))
+        self.assertFalse(any("admin-gateway" in path for path in service_bundle.publish_paths))
+        self.assertTrue(any(path.startswith("argocd/services/admin-gateway/shprod/") for path in admin_bundle.publish_paths))
+        self.assertEqual(admin_bundle.image_repo, "lightclaw-shprod.tencentcloudcr.com/lightclaw/admin-gateway")
+
+    def test_shprod_release_bundles_project_exactly_one_direct_app(self) -> None:
+        manifest = load_manifest()
+
+        for bundle_name in sorted((manifest.get("bundles") or {})):
+            with self.subTest(bundle=bundle_name):
+                bundle = load_bundle(manifest, bundle_name, "shprod")
+                direct_services = {
+                    parts[2]
+                    for path in bundle.publish_paths
+                    if (parts := path.split("/"))
+                    and len(parts) >= 4
+                    and parts[0:2] == ["argocd", "services"]
+                    and parts[3] == "shprod"
+                }
+                if direct_services:
+                    self.assertEqual(
+                        len(direct_services),
+                        1,
+                        f"{bundle_name} shprod bundle must not project unrelated direct apps: {sorted(direct_services)}",
+                    )
+
+    def test_gateway_workflows_pin_only_their_own_targets(self) -> None:
+        service_workflow = (REPO_ROOT / ".ci/service-gateway.yml").read_text()
+        admin_workflow = (REPO_ROOT / ".ci/admin-gateway.yml").read_text()
+
+        self.assertIn("build_and_promote_to_gitops.sh service-gateway service-gateway", service_workflow)
+        self.assertIn("promote_bundle_image_to_gitops.sh service-gateway service-gateway", service_workflow)
+        self.assertNotIn("service-gateway,admin-gateway", service_workflow)
+        self.assertIn("build_and_promote_to_gitops.sh admin-gateway admin-gateway", admin_workflow)
+        self.assertIn("promote_bundle_image_to_gitops.sh admin-gateway admin-gateway", admin_workflow)
 
     def promotable_catalogs(self, manifest: dict) -> set[str]:
         catalogs: set[str] = set()

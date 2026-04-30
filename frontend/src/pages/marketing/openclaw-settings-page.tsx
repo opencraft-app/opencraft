@@ -1,3 +1,9 @@
+// ⚠️ 必须最先 import：在 tea-app 模块加载前设置 window.VERSION，
+// 否则 tea-app 的 i18next lng 会固定为 "zh"。
+// 纯 side-effect import——只关心 module 顶层 `(window as any).VERSION = "en"` 的赋值，
+// 不使用其导出的 isEnglishEnv 值（SDK initI18n 签名 () => void，不接收词条参数）。
+import "@/lib/i18n-env";
+
 import { LegalFooter } from "@/components/site/legal-footer";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -53,7 +59,10 @@ import { installOpenClawConsoleHelpers } from "@/pages/marketing/openclaw-consol
 import "@tencent/tea-sdk-lightclaw/styles";
 
 // Vite 生产构建（Rollup）会 tree-shake 掉 SDK 的自动 i18n.init()，
-// 导致 t() 返回空字符串。显式调用 initI18n() 确保词条注册。
+// 导致 t() 返回空字符串。
+// SDK 的 initI18n 签名为 () => void，不接收词条参数；语言切换由
+// @/lib/i18n-env 在 import 时副作用写入 window.VERSION 完成，
+// tea-app 模块加载时读取此值决定 lng，SDK 内部会自己挂载对应词条。
 initI18n();
 
 /* ─── Types ─── */

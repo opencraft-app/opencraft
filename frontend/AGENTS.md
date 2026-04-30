@@ -82,7 +82,7 @@ npx --yes edgeone pages deploy dist-global -n lightvela-preview -e production -t
 2. 本地 `ls dist-global/assets/index-*.js`（国内站则 `dist-cn/`）核对 hash 一致
 3. 对得上再在浏览器肉眼验证；对不上说明产物目录没覆盖或被缓存，硬刷新 / 重发
 
-**实名墙**：`/v1/instances/*` 所有写请求（POST/PUT/DELETE）需要实名账号；未实名账号打开 settings 页时 `POST /v1/instances/{id}/debug/exec` 会在后台静默 403 `realname_required`。不是前端 bug，验证改名等写操作必须换已实名账号。
+**实名墙**：国内站 `/v1/instances/*` 写请求（POST/PUT/PATCH；DELETE 不拦）需要实名账号；未实名账号打开 settings 页时 `POST /v1/instances/{id}/debug/exec` 会在后台静默 403 `realname_required`。国际站 `isGlobal` 不展示实名入口，也不应被该实名墙拦截。
 
 ---
 

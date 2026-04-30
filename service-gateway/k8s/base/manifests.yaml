@@ -231,6 +231,12 @@ spec:
               value: ":8085"
             - name: SERVICE_GATEWAY_CONFIG_FILE
               value: /etc/service-gateway/config.yaml
+            - name: SERVICE_GATEWAY_REALNAME_WALL_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: service-gateway-platform-values
+                  key: SERVICE_GATEWAY_REALNAME_WALL_ENABLED
+                  optional: true
             - name: SERVICE_GATEWAY_ADMIN_BASIC_AUTH_USER
               valueFrom:
                 secretKeyRef:

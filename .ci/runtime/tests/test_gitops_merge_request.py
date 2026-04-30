@@ -6,7 +6,7 @@ from pathlib import Path
 RUNTIME_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(RUNTIME_DIR))
 
-from harness_ci.gitops_merge_request import is_auto_mergeable  # noqa: E402
+from gitops.gitops_merge_request import is_auto_mergeable, next_stage_after_merge  # noqa: E402
 
 
 class GitopsMergeRequestTests(unittest.TestCase):
@@ -62,6 +62,11 @@ class GitopsMergeRequestTests(unittest.TestCase):
                 }
             )
         )
+
+    def test_shprod_auto_merge_note_points_to_manual_sync(self) -> None:
+        self.assertIn("待同步状态", next_stage_after_merge("promote-shprod-frontend-abc"))
+        self.assertIn("人工确认 DB readiness", next_stage_after_merge("promote-shprod-frontend-abc"))
+        self.assertIn("等待 Argo CD 收敛", next_stage_after_merge("promote-beijing-sandbox-frontend-abc"))
 
 
 if __name__ == "__main__":

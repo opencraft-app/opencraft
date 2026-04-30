@@ -12,7 +12,3 @@ spec:
   destination:
     namespace: lightclaw-gateway
     name: shprod
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true

@@ -9,7 +9,7 @@ RUNTIME_DIR = Path(__file__).resolve().parents[1]
 if str(RUNTIME_DIR) not in sys.path:
     sys.path.insert(0, str(RUNTIME_DIR))
 
-from harness_ci.gitops_static_validation import validate
+from gitops.gitops_static_validation import validate
 
 
 class GitOpsStaticValidationTests(unittest.TestCase):
@@ -20,7 +20,7 @@ class GitOpsStaticValidationTests(unittest.TestCase):
             errors = validate(
                 repo,
                 "beijing-sandbox",
-                repo / ".ci/runtime/release-bundles.yaml",
+                repo / ".ci/runtime/release-bundles.manifest",
             )
 
             self.assertEqual(errors, [])
@@ -32,7 +32,7 @@ class GitOpsStaticValidationTests(unittest.TestCase):
             errors = validate(
                 repo,
                 "beijing-sandbox-2",
-                repo / ".ci/runtime/release-bundles.yaml",
+                repo / ".ci/runtime/release-bundles.manifest",
             )
 
             self.assertEqual(errors, [])
@@ -40,7 +40,7 @@ class GitOpsStaticValidationTests(unittest.TestCase):
     def test_explicit_catalog_publish_exemption_passes(self) -> None:
         with self.repo() as tmp:
             repo = self.write_valid_repo(tmp, env="beijing-sandbox-2")
-            (repo / ".ci/runtime/release-bundles.yaml").write_text(
+            (repo / ".ci/runtime/release-bundles.manifest").write_text(
                 textwrap.dedent(
                     """\
                     bundles:
@@ -59,14 +59,14 @@ class GitOpsStaticValidationTests(unittest.TestCase):
                 )
             )
 
-            errors = validate(repo, "beijing-sandbox-2", repo / ".ci/runtime/release-bundles.yaml")
+            errors = validate(repo, "beijing-sandbox-2", repo / ".ci/runtime/release-bundles.manifest")
 
             self.assertEqual(errors, [])
 
     def test_missing_catalog_publish_exemption_fails(self) -> None:
         with self.repo() as tmp:
             repo = self.write_valid_repo(tmp, env="beijing-sandbox-2")
-            (repo / ".ci/runtime/release-bundles.yaml").write_text(
+            (repo / ".ci/runtime/release-bundles.manifest").write_text(
                 textwrap.dedent(
                     """\
                     bundles:
@@ -82,7 +82,7 @@ class GitOpsStaticValidationTests(unittest.TestCase):
                 )
             )
 
-            errors = validate(repo, "beijing-sandbox-2", repo / ".ci/runtime/release-bundles.yaml")
+            errors = validate(repo, "beijing-sandbox-2", repo / ".ci/runtime/release-bundles.manifest")
 
             self.assertTrue(any("catalog is not covered" in error for error in errors))
 
@@ -93,7 +93,7 @@ class GitOpsStaticValidationTests(unittest.TestCase):
                 self.appset_text("{{ .path }}")
             )
 
-            errors = validate(repo, "beijing-sandbox", repo / ".ci/runtime/release-bundles.yaml")
+            errors = validate(repo, "beijing-sandbox", repo / ".ci/runtime/release-bundles.manifest")
 
             self.assertTrue(any("must use { .sourcePath }" in error for error in errors))
             self.assertTrue(any("must not use reserved git generator field" in error for error in errors))
@@ -115,7 +115,7 @@ class GitOpsStaticValidationTests(unittest.TestCase):
                 )
             )
 
-            errors = validate(repo, "beijing-sandbox", repo / ".ci/runtime/release-bundles.yaml")
+            errors = validate(repo, "beijing-sandbox", repo / ".ci/runtime/release-bundles.manifest")
 
             self.assertTrue(any("must use sourcePath, not path" in error for error in errors))
 
@@ -124,19 +124,19 @@ class GitOpsStaticValidationTests(unittest.TestCase):
             repo = self.write_valid_repo(tmp)
             shutil.rmtree(repo / "argocd/services/demo/beijing-sandbox")
 
-            errors = validate(repo, "beijing-sandbox", repo / ".ci/runtime/release-bundles.yaml")
+            errors = validate(repo, "beijing-sandbox", repo / ".ci/runtime/release-bundles.manifest")
 
             self.assertTrue(any("sourcePath does not exist" in error for error in errors))
 
     def test_missing_common_or_profile_publish_path_fails(self) -> None:
         with self.repo() as tmp:
             repo = self.write_valid_repo(tmp)
-            manifest = (repo / ".ci/runtime/release-bundles.yaml").read_text()
+            manifest = (repo / ".ci/runtime/release-bundles.manifest").read_text()
             manifest = manifest.replace("      - argocd/services/demo/common/**\n", "")
             manifest = manifest.replace("      - argocd/services/demo/profiles/sandbox/**\n", "")
-            (repo / ".ci/runtime/release-bundles.yaml").write_text(manifest)
+            (repo / ".ci/runtime/release-bundles.manifest").write_text(manifest)
 
-            errors = validate(repo, "beijing-sandbox", repo / ".ci/runtime/release-bundles.yaml")
+            errors = validate(repo, "beijing-sandbox", repo / ".ci/runtime/release-bundles.manifest")
 
             self.assertTrue(any("argocd/services/demo/common" in error for error in errors))
             self.assertTrue(any("argocd/services/demo/profiles/sandbox" in error for error in errors))
@@ -146,7 +146,7 @@ class GitOpsStaticValidationTests(unittest.TestCase):
             repo = self.write_valid_repo(tmp)
             (repo / "argocd/apps/beijing-sandbox/demo.yaml").write_text("kind: Application\n")
 
-            errors = validate(repo, "beijing-sandbox", repo / ".ci/runtime/release-bundles.yaml")
+            errors = validate(repo, "beijing-sandbox", repo / ".ci/runtime/release-bundles.manifest")
 
             self.assertTrue(any("forbids business hand-written leaf apps" in error for error in errors))
 
@@ -163,7 +163,7 @@ class GitOpsStaticValidationTests(unittest.TestCase):
         (repo / "argocd/services/demo/profiles/sandbox").mkdir(parents=True)
         (repo / f"argocd/secrets/{env}").mkdir(parents=True)
 
-        (repo / ".ci/runtime/release-bundles.yaml").write_text(
+        (repo / ".ci/runtime/release-bundles.manifest").write_text(
             textwrap.dedent(
                 f"""\
                 bundles:

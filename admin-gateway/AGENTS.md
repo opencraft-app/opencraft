@@ -10,4 +10,8 @@
 - `platform.env` 来自 `infra_pulumi`，不手改、不提交
 - `generated/` 是本地生成物，不提交 Git
 - 自己的 runtime secret 由 GitOps secret 主线管理，不再由服务脚本生成正式发布输入
-- `admin-gateway` 不单独负责镜像构建；它复用 `service-gateway` 的共享 gateway 镜像
+- `admin-gateway` 有独立 CI / 镜像 / release bundle：
+  - CI 入口：`.ci/admin-gateway.yml`
+  - 镜像 repo：`lightclaw-*/lightclaw/admin-gateway`
+  - GitOps pin：`argocd/services/admin-gateway/<env>/admin-gateway-platform.env`
+- 当前构建实现仍临时复用 `service-gateway/Dockerfile` 和 `service-gateway` build context；这是构建实现复用，不再是发布镜像共享

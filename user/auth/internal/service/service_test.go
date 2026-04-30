@@ -326,6 +326,13 @@ func TestVerifyRealnameSuccessAndOverwrite(t *testing.T) {
 	if record.NameMasked != "李*" || record.IDCardMasked != "1101**********003X" {
 		t.Fatalf("expected latest realname metadata to be overwritten, got %+v", record)
 	}
+	history := store.realnameHistory[session.User.ID]
+	if len(history) != 2 {
+		t.Fatalf("expected two realname history records, got %d", len(history))
+	}
+	if history[0].NameMasked != "张*" || history[1].NameMasked != "李*" {
+		t.Fatalf("expected realname history to keep every verified value, got %+v", history)
+	}
 }
 
 func TestConfirmedPlanPersistsAcrossPasswordSessions(t *testing.T) {
