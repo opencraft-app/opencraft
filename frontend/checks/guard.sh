@@ -2,15 +2,21 @@
 set -euo pipefail
 
 cd "${GUARD_REPO_ROOT:-$(pwd)}"
-if command -v pnpm >/dev/null 2>&1; then
-  REPO_ROOT="$(pwd)"
-  PNPM_BIN="$(command -v pnpm)"
-else
-  source .ci/init.sh
-  ci_init_repo_root
+source .ci/init.sh
+ci_init_repo_root
+
+if [[ "$(uname -s)" == "Linux" ]]; then
   ci_ensure_node
   ci_ensure_pnpm
+elif command -v node >/dev/null 2>&1 && command -v pnpm >/dev/null 2>&1; then
+  NODE_BIN="$(command -v node)"
+  PNPM_BIN="$(command -v pnpm)"
+else
+  echo "frontend 约束：本地非 Linux 环境缺少 node/pnpm；CI Linux 会通过 .ci/init.sh 安装固定版本。" >&2
+  exit 1
 fi
+
+echo "frontend 约束：Node=$("$NODE_BIN" --version) PNPM=$("$PNPM_BIN" --version)"
 
 echo "frontend guard: changed files"
 cat "${GUARD_CHANGED_FILES_FILE:?}"
