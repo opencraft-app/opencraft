@@ -23,6 +23,29 @@
   - 只执行 `手动发布 <service> 到 GitOps` 对应步骤
   - 需要同时提供 `SOURCE_SHA`
 
+## Service Release Template
+
+标准服务构建发布入口正在从“每个 `.ci/<service>.yml` 复制完整 stages”演进为根级 `extends` 模板模型。
+
+试点入口：
+
+- `.ci/admin-gateway.yml`
+  - 保留 Stream 发现所需的 `name` / `on` / 路径触发声明
+  - 使用 `extends.template.path: .ci/templates/service-release.yml`
+  - 通过 `extends.template.variables` 传入 `SERVICE` / `BUNDLE` / `DISPLAY_NAME`
+
+公共模板：
+
+- `.ci/templates/service-release.yml`
+  - 统一承载 service release 的 `concurrency`、启动变量、checkout、build、北京自动 pin、手动 promote 逻辑
+  - 继续调用 `.ci/runtime/build_and_promote_to_gitops.sh` 与 `.ci/runtime/promote_bundle_image_to_gitops.sh`
+
+约束：
+
+- `on.push.paths` 仍留在每个服务入口 YAML；这是 Stream 触发发现和 MR check 可读性的服务边界。
+- 不使用 `extends.parameters`；当前 BK-CI v2.0 schema / model 更稳的是 `extends.template.variables`。
+- 新服务迁移时先迁一个入口、观察 Stream 实例化结果，再批量推广。
+
 ## Verified Working Setup
 
 这套模式已经实际验证通过：

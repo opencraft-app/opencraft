@@ -54,7 +54,7 @@ bash .ci/runtime/smoke_materialized_runtime.sh
 echo "============================================================"
 echo "CI runtime 约束：解析 Stream YAML 与 guards.yaml"
 echo "============================================================"
-python3 -c 'from pathlib import Path; import yaml; [yaml.safe_load(path.open()) for path in sorted(Path(".ci").glob("*.yml"))]; yaml.safe_load(Path(".ci/guards.yaml").read_text()); print("parsed .ci yaml files")'
+python3 -c 'from pathlib import Path; import yaml; [yaml.safe_load(path.open()) for path in sorted(Path(".ci").glob("**/*.yml"))]; yaml.safe_load(Path(".ci/guards.yaml").read_text()); print("parsed .ci yaml files, including templates")'
 
 echo "============================================================"
 echo "CI runtime 约束：检查 diff 空白与冲突标记"
