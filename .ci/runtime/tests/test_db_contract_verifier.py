@@ -9,7 +9,7 @@ RUNTIME_DIR = Path(__file__).resolve().parents[1]
 if str(RUNTIME_DIR) not in sys.path:
     sys.path.insert(0, str(RUNTIME_DIR))
 
-from db_gates.db_contract_verifier import build_check_script, build_job_manifest, max_migration_version  # noqa: E402
+from gates.db_contract_verifier import build_check_script, build_job_manifest, max_migration_version  # noqa: E402
 
 
 class DbContractVerifierTests(unittest.TestCase):

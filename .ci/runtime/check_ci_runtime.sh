@@ -15,6 +15,7 @@ bash -n \
   .ci/init.sh \
   .ci/runtime/build_and_promote_to_gitops.sh \
   .ci/runtime/check_ci_runtime.sh \
+  .ci/runtime/gitops_promotion_bootstrap.sh \
   .ci/runtime/pin_image_to_gitops.sh \
   .ci/runtime/promote_bundle_image_to_gitops.sh \
   .ci/runtime/smoke_materialized_runtime.sh \
@@ -25,12 +26,11 @@ bash -n \
 
 echo "============================================================"
 echo "CI runtime 约束：开始 Python 编译检查"
-echo "检查对象：contracts / gitops / db_gates / guards / commands"
+echo "检查对象：contracts / gitops / gates / guards / commands"
 echo "============================================================"
 python3 -m py_compile $(find \
   .ci/runtime/contracts \
   .ci/runtime/gitops \
-  .ci/runtime/db_gates \
   .ci/runtime/gates \
   .ci/runtime/guards \
   .ci/runtime/commands \

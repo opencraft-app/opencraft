@@ -5,7 +5,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[3]
 RUNTIME_DIR = REPO_ROOT / ".ci/runtime"
 COMMAND_DIR = RUNTIME_DIR / "commands"
-ALLOWED_MAIN_MODULE_PREFIXES = ("contracts.", "gitops.", "db_gates.", "gates.", "guards.")
+ALLOWED_MAIN_MODULE_PREFIXES = ("contracts.", "gitops.", "gates.", "guards.")
 
 
 class CommandWrapperTests(unittest.TestCase):
@@ -18,13 +18,14 @@ class CommandWrapperTests(unittest.TestCase):
         }
         expected_python = {
             str(path.relative_to(REPO_ROOT))
-            for package in ("commands", "contracts", "gitops", "db_gates", "gates", "guards")
+            for package in ("commands", "contracts", "gitops", "gates", "guards")
             for path in (RUNTIME_DIR / package).rglob("*.py")
         }
 
         self.assertFalse(any(".secret" in entry or "kubeconfig" in entry for entry in manifest_entries))
         self.assertTrue(all(entry.startswith(".ci/runtime/") for entry in manifest_entries))
         self.assertTrue(expected_python.issubset(manifest_entries))
+        self.assertFalse(any("/db_gates/" in entry for entry in manifest_entries))
 
     def test_command_wrappers_only_bootstrap_and_import_main(self) -> None:
         for path in sorted(COMMAND_DIR.glob("*.py")):
@@ -74,11 +75,13 @@ class CommandWrapperTests(unittest.TestCase):
                 self.assertTrue(self._is_sys_path_guard(if_nodes[0]), f"{path.name} first guard must bootstrap sys.path")
                 self.assertTrue(self._is_main_guard(if_nodes[1]), f"{path.name} second guard must call main")
 
-    def test_desired_state_command_wrappers_import_gitops_modules(self) -> None:
+    def test_semantic_command_wrappers_import_expected_modules(self) -> None:
         expected = {
             "project_release_bundle.py": "gitops.projection",
             "update_image_pin.py": "gitops.image_pin",
             "run_release_gates.py": "gates.runner",
+            "plan_release_gates.py": "contracts.release_plan",
+            "verify_db_contract.py": "gates.db_contract_verifier",
         }
         for filename, module_name in expected.items():
             with self.subTest(filename=filename):
@@ -92,7 +95,6 @@ class CommandWrapperTests(unittest.TestCase):
                 ]
                 self.assertEqual(len(main_imports), 1)
                 self.assertEqual(main_imports[0].module, module_name)
-                self.assertFalse(str(main_imports[0].module).startswith("contracts."))
 
     def _is_sys_path_guard(self, node: ast.If) -> bool:
         return (

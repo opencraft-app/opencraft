@@ -14,6 +14,7 @@ ci_export_gongfeng_defaults
 GITOPS_AUTO_MERGE_ENVS="${GITOPS_AUTO_MERGE_ENVS:-beijing-sandbox}"
 BOOTSTRAP_FILES=(
   ".ci/gitops-promotion.yml"
+  ".ci/runtime/gitops_promotion_bootstrap.sh"
 )
 
 if [[ $# -ne 5 ]]; then

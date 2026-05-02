@@ -3,6 +3,7 @@
 .ci/runtime/materialize-files.txt
 .ci/runtime/release-bundles.manifest
 .ci/runtime/check_ci_runtime.sh
+.ci/runtime/gitops_promotion_bootstrap.sh
 .ci/runtime/commands/__init__.py
 .ci/runtime/commands/audit_gitops_drift.py
 .ci/runtime/commands/build_release_image.py
@@ -28,10 +29,8 @@
 .ci/runtime/contracts/image_existence.py
 .ci/runtime/contracts/image_pin.py
 .ci/runtime/contracts/project_release_bundle.py
+.ci/runtime/contracts/release_plan.py
 .ci/runtime/contracts/resolve_release_bundle.py
-.ci/runtime/db_gates/__init__.py
-.ci/runtime/db_gates/db_contract_verifier.py
-.ci/runtime/db_gates/release_gates.py
 .ci/runtime/gitops/__init__.py
 .ci/runtime/gitops/gitops_cleanup_source_branch.py
 .ci/runtime/gitops/gitops_drift_audit.py
@@ -48,6 +47,7 @@
 .ci/runtime/gates/__init__.py
 .ci/runtime/gates/config.py
 .ci/runtime/gates/db.py
+.ci/runtime/gates/db_contract_verifier.py
 .ci/runtime/gates/image.py
 .ci/runtime/gates/result.py
 .ci/runtime/gates/runner.py

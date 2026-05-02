@@ -30,7 +30,7 @@ assert_manifest_covers_runtime_python() {
 
   (
     cd "$REPO_ROOT"
-    find .ci/runtime/commands .ci/runtime/contracts .ci/runtime/gitops .ci/runtime/db_gates .ci/runtime/gates .ci/runtime/guards \
+    find .ci/runtime/commands .ci/runtime/contracts .ci/runtime/gitops .ci/runtime/gates .ci/runtime/guards \
       -type f -name '*.py' | sort
   ) > "$expected"
   read_manifest_files | sort -u > "$manifest"

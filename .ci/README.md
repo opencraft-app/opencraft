@@ -226,6 +226,8 @@ DB job / readiness Job 的 kubeconfig 读取顺序：
   - bundle owner/source、publish paths、image targets、DB contract、轻量依赖声明
 - `.ci/runtime/contracts/bundles.py`
   - 解析 release bundle manifest，并提供默认 `config_contract`
+- `.ci/runtime/contracts/release_plan.py`
+  - 根据 source diff、DB contract、环境策略输出纯 release gate plan
 - `.ci/runtime/contracts/image_pin.py`
   - 兼容 shim；desired-state image pin 语义归属 `.ci/runtime/gitops/image_pin.py`
 - `.ci/runtime/contracts/image_existence.py`
@@ -276,14 +278,7 @@ Release gate 执行层。这里负责证明 image/config/db contract 是否满�
   - 只做 proof 编排，不拥有 projection/image-pin 业务语义
 - `.ci/runtime/gates/db.py`
   - 执行 DB-aware gate：受控 DB job + 只读 readiness，复用纯 planner 的 release policy 结果
-
-### db_gates
-
-DB-aware 纯 planner 与 readiness 渲染器。保留为语义层，不作为 gate runner：
-
-- `.ci/runtime/db_gates/release_gates.py`
-  - 根据 source diff、DB contract、环境策略输出 release gate plan
-- `.ci/runtime/db_gates/db_contract_verifier.py`
+- `.ci/runtime/gates/db_contract_verifier.py`
   - 渲染并可执行只读 DB readiness Kubernetes Job
 - `.ci/runtime/commands/plan_release_gates.py`
   - CI 命令入口
@@ -348,13 +343,15 @@ CI 运行环境自举、secret 读取和工具安装：
   - 验证 materialized runtime 里 command wrapper 的 import/`--help` 可用
 - `.ci/runtime/materialize-files.txt`
   - CI runtime 临时目录投影的唯一文件清单，promotion workflow 和 smoke 共用
+- `.ci/runtime/gitops_promotion_bootstrap.sh`
+  - GitOps promotion 各 stage 共用的 runtime materialize 自举函数，避免 YAML 里重复维护 `CI_RUNTIME_REF` / manifest 投影逻辑
 
 ### commands
 
 所有 CI 可执行 Python 入口统一放在 `.ci/runtime/commands/`。这些文件只做两件事：
 
 1. 把 `.ci/runtime` 加入 `sys.path`
-2. 从 `contracts` / `gitops` / `db_gates` / `guards` 导入对应 `main`
+2. 从 `contracts` / `gitops` / `gates` / `guards` 导入对应 `main`
 
 不要把业务逻辑写进 command wrapper。
 

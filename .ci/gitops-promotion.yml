@@ -30,16 +30,8 @@ stages:
               echo "ci.event=${{ ci.event }}"
               echo "ci.branch=${{ ci.branch }}"
               CI_RUNTIME_DIR="$(mktemp -d)"
-              mkdir -p "${CI_RUNTIME_DIR}/.ci" "${CI_RUNTIME_DIR}/.ci/runtime"
-              git show HEAD:.ci/init.sh > "${CI_RUNTIME_DIR}/.ci/init.sh"
-              source "${CI_RUNTIME_DIR}/.ci/init.sh"
-              ci_prepare_runtime_ref "${CI_RUNTIME_REF:-origin/master}"
-              ci_export_gongfeng_defaults
-              git show "${CI_RUNTIME_COMMIT}:.ci/init.sh" > "${CI_RUNTIME_DIR}/.ci/init.sh"
-              source "${CI_RUNTIME_DIR}/.ci/init.sh"
-              ci_export_gongfeng_defaults
-              ci_materialize_runtime_manifest "${CI_RUNTIME_DIR}" ".ci/runtime/materialize-files.txt"
-              ci_init_repo_root
+              source .ci/runtime/gitops_promotion_bootstrap.sh
+              ci_bootstrap_gitops_promotion_runtime "${CI_RUNTIME_DIR}" "${CI_RUNTIME_REF:-origin/master}"
               git diff --name-only HEAD~1..HEAD || true
               python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/update_image_pin.py" --help >/dev/null
               python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/project_release_bundle.py" --help >/dev/null
@@ -51,7 +43,7 @@ stages:
               python3 -m py_compile $(find \
                 "${CI_RUNTIME_DIR}/.ci/runtime/contracts" \
                 "${CI_RUNTIME_DIR}/.ci/runtime/gitops" \
-                "${CI_RUNTIME_DIR}/.ci/runtime/db_gates" \
+                "${CI_RUNTIME_DIR}/.ci/runtime/gates" \
                 "${CI_RUNTIME_DIR}/.ci/runtime/commands" \
                 -name '*.py' | sort)
               case "${{ ci.branch }}" in
@@ -109,16 +101,8 @@ stages:
             shell: bash
             run: |
               CI_RUNTIME_DIR="$(mktemp -d)"
-              mkdir -p "${CI_RUNTIME_DIR}/.ci" "${CI_RUNTIME_DIR}/.ci/runtime"
-              git show HEAD:.ci/init.sh > "${CI_RUNTIME_DIR}/.ci/init.sh"
-              source "${CI_RUNTIME_DIR}/.ci/init.sh"
-              ci_prepare_runtime_ref "${CI_RUNTIME_REF:-origin/master}"
-              ci_export_gongfeng_defaults
-              git show "${CI_RUNTIME_COMMIT}:.ci/init.sh" > "${CI_RUNTIME_DIR}/.ci/init.sh"
-              source "${CI_RUNTIME_DIR}/.ci/init.sh"
-              ci_export_gongfeng_defaults
-              ci_materialize_runtime_manifest "${CI_RUNTIME_DIR}" ".ci/runtime/materialize-files.txt"
-              ci_init_repo_root
+              source .ci/runtime/gitops_promotion_bootstrap.sh
+              ci_bootstrap_gitops_promotion_runtime "${CI_RUNTIME_DIR}" "${CI_RUNTIME_REF:-origin/master}"
               COMMIT_MESSAGE="$(git log -1 --format=%B)"
               trailer_value() {
                 printf '%s\n' "$COMMIT_MESSAGE" | awk -F': ' -v key="$1" '$1 == key {print $2; exit}'
@@ -182,16 +166,8 @@ stages:
             shell: bash
             run: |
               CI_RUNTIME_DIR="$(mktemp -d)"
-              mkdir -p "${CI_RUNTIME_DIR}/.ci" "${CI_RUNTIME_DIR}/.ci/runtime"
-              git show HEAD:.ci/init.sh > "${CI_RUNTIME_DIR}/.ci/init.sh"
-              source "${CI_RUNTIME_DIR}/.ci/init.sh"
-              ci_prepare_runtime_ref "${CI_RUNTIME_REF:-origin/master}"
-              ci_export_gongfeng_defaults
-              git show "${CI_RUNTIME_COMMIT}:.ci/init.sh" > "${CI_RUNTIME_DIR}/.ci/init.sh"
-              source "${CI_RUNTIME_DIR}/.ci/init.sh"
-              ci_export_gongfeng_defaults
-              ci_materialize_runtime_manifest "${CI_RUNTIME_DIR}" ".ci/runtime/materialize-files.txt"
-              ci_init_repo_root
+              source .ci/runtime/gitops_promotion_bootstrap.sh
+              ci_bootstrap_gitops_promotion_runtime "${CI_RUNTIME_DIR}" "${CI_RUNTIME_REF:-origin/master}"
               case "${{ ci.branch }}" in
                 promote-beijing-sandbox-2-*|promote-beijing-sandbox-*)
                   python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/verify_gitops_release.py" \
@@ -232,16 +208,8 @@ stages:
             shell: bash
             run: |
               CI_RUNTIME_DIR="$(mktemp -d)"
-              mkdir -p "${CI_RUNTIME_DIR}/.ci" "${CI_RUNTIME_DIR}/.ci/runtime"
-              git show HEAD:.ci/init.sh > "${CI_RUNTIME_DIR}/.ci/init.sh"
-              source "${CI_RUNTIME_DIR}/.ci/init.sh"
-              ci_prepare_runtime_ref "${CI_RUNTIME_REF:-origin/master}"
-              ci_export_gongfeng_defaults
-              git show "${CI_RUNTIME_COMMIT}:.ci/init.sh" > "${CI_RUNTIME_DIR}/.ci/init.sh"
-              source "${CI_RUNTIME_DIR}/.ci/init.sh"
-              ci_export_gongfeng_defaults
-              ci_materialize_runtime_manifest "${CI_RUNTIME_DIR}" ".ci/runtime/materialize-files.txt"
-              ci_init_repo_root
+              source .ci/runtime/gitops_promotion_bootstrap.sh
+              ci_bootstrap_gitops_promotion_runtime "${CI_RUNTIME_DIR}" "${CI_RUNTIME_REF:-origin/master}"
               case "${{ ci.branch }}" in
                 promote-beijing-sandbox-2-*|promote-beijing-sandbox-*)
                   python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/gitops_cleanup_source_branch.py" \

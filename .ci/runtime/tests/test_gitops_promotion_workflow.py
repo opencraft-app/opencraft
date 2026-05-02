@@ -45,14 +45,16 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
         self.assertIn("verify_gitops_release.py", workflow)
         self.assertIn("gitops_cleanup_source_branch.py", workflow)
 
-    def test_promotion_workflow_uses_single_runtime_materialize_manifest(self) -> None:
+    def test_promotion_workflow_uses_shared_bootstrap_helper(self) -> None:
         workflow = (REPO_ROOT / ".ci/gitops-promotion.yml").read_text()
+        helper = (REPO_ROOT / ".ci/runtime/gitops_promotion_bootstrap.sh").read_text()
 
         self.assertNotIn("ci_materialize_runtime_files", workflow)
-        self.assertEqual(
-            workflow.count('ci_materialize_runtime_manifest "${CI_RUNTIME_DIR}" ".ci/runtime/materialize-files.txt"'),
-            4,
-        )
+        self.assertNotIn("ci_prepare_runtime_ref", workflow)
+        self.assertNotIn("ci_materialize_runtime_manifest", workflow)
+        self.assertEqual(workflow.count("source .ci/runtime/gitops_promotion_bootstrap.sh"), 4)
+        self.assertEqual(workflow.count("ci_bootstrap_gitops_promotion_runtime"), 4)
+        self.assertIn('ci_materialize_runtime_manifest "${runtime_dir}" ".ci/runtime/materialize-files.txt"', helper)
         self.assertIn("GitOps 合并后验收", workflow)
         self.assertIn("上海生产 GitOps 待同步 MR", workflow)
 
@@ -140,6 +142,7 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
         script = (REPO_ROOT / ".ci/runtime/pin_image_to_gitops.sh").read_text()
 
         self.assertIn('cp -R "$REPO_ROOT/.ci/runtime" "$bootstrap_dir/.ci/runtime"', script)
+        self.assertIn('".ci/runtime/gitops_promotion_bootstrap.sh"', script)
         self.assertIn('RUNTIME_COMMAND_DIR="$bootstrap_dir/.ci/runtime/commands"', script)
         self.assertEqual(script.count('python3 "$RUNTIME_COMMAND_DIR/run_release_gates.py"'), 1)
         self.assertNotIn('python3 "$RUNTIME_COMMAND_DIR/plan_release_gates.py"', script)

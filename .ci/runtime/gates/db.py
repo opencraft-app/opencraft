@@ -6,7 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from db_gates.release_gates import GatePlan, plan_release_gates
+from contracts.release_plan import GatePlan, plan_release_gates
 
 
 def load_plan(
