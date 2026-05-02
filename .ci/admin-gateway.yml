@@ -13,6 +13,9 @@ on:
       - argocd/services/admin-gateway/**
       - argocd/apps/*/admin-gateway.yaml
       - argocd/secrets/*/admin-gateway-runtime-secrets.sops.yaml
+    paths-ignore:
+      - OWNERS
+      - "**/OWNERS"
   manual: enabled
 
 extends:

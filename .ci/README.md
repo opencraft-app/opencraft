@@ -27,12 +27,22 @@
 
 标准服务构建发布入口正在从“每个 `.ci/<service>.yml` 复制完整 stages”演进为根级 `extends` 模板模型。
 
-试点入口：
+已迁移入口：
 
 - `.ci/admin-gateway.yml`
-  - 保留 Stream 发现所需的 `name` / `on` / 路径触发声明
-  - 使用 `extends.template.path: .ci/templates/service-release.yml`
-  - 通过 `extends.template.variables` 传入 `SERVICE` / `BUNDLE` / `DISPLAY_NAME`
+- `.ci/ai-gateway.yml`
+- `.ci/ctl.yml`
+- `.ci/gateway-dashboard.yml`
+- `.ci/lightclaw-auth.yml`
+- `.ci/nextgen-dashboard.yml`
+- `.ci/payment.yml`
+- `.ci/service-gateway.yml`
+- `.ci/subscription.yml`
+
+这些入口保留 Stream 发现所需的 `name` / `on` / 路径触发声明，并通过
+`extends.template.variables` 传入 `SERVICE` / `BUNDLE` / `DISPLAY_NAME`。
+其中 `lightclaw-auth` 的 `SERVICE` 仍是 release bundle id `user-auth`，`BUNDLE`
+仍是 GitOps pin target `lightclaw-auth`。
 
 公共模板：
 
@@ -44,7 +54,7 @@
 
 - `on.push.paths` 仍留在每个服务入口 YAML；这是 Stream 触发发现和 MR check 可读性的服务边界。
 - 不使用 `extends.parameters`；当前 BK-CI v2.0 schema / model 更稳的是 `extends.template.variables`。
-- 新服务迁移时先迁一个入口、观察 Stream 实例化结果，再批量推广。
+- `frontend`、`frontend-edgeone-*`、`sandbox`、`gitops-*`、`ci-runtime`、`mr-placeholder` 不属于这批标准 service release 入口，不使用该模板。
 
 ## Verified Working Setup
 

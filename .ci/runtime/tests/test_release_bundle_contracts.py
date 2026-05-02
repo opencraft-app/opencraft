@@ -16,14 +16,14 @@ from contracts.bundles import load_bundle, load_manifest, require_build_metadata
 
 SANDBOX_ENV = "beijing-sandbox-2"
 AUTO_RELEASE_WORKFLOWS = {
-    "admin-gateway": (".ci/admin-gateway.yml", "beijing-sandbox,shprod"),
-    "ctl": (".ci/ctl.yml", "beijing-sandbox,shprod"),
-    "gateway-dashboard": (".ci/gateway-dashboard.yml", "beijing-sandbox,shprod"),
-    "payment": (".ci/payment.yml", "beijing-sandbox,shprod"),
-    "sandbox": (".ci/sandbox.yml", "beijing-sandbox"),
-    "service-gateway": (".ci/service-gateway.yml", "beijing-sandbox,shprod"),
-    "subscription": (".ci/subscription.yml", "beijing-sandbox,shprod"),
-    "user-auth": (".ci/lightclaw-auth.yml", "beijing-sandbox,shprod"),
+    "admin-gateway": (".ci/admin-gateway.yml", "beijing-sandbox,shprod", "admin-gateway"),
+    "ctl": (".ci/ctl.yml", "beijing-sandbox,shprod", "ctl"),
+    "gateway-dashboard": (".ci/gateway-dashboard.yml", "beijing-sandbox,shprod", "gateway-dashboard"),
+    "payment": (".ci/payment.yml", "beijing-sandbox,shprod", "payment"),
+    "sandbox": (".ci/sandbox.yml", "beijing-sandbox", "sandbox"),
+    "service-gateway": (".ci/service-gateway.yml", "beijing-sandbox,shprod", "service-gateway"),
+    "subscription": (".ci/subscription.yml", "beijing-sandbox,shprod", "subscription"),
+    "user-auth": (".ci/lightclaw-auth.yml", "beijing-sandbox,shprod", "lightclaw-auth"),
 }
 
 
@@ -31,12 +31,19 @@ class ReleaseBundleContractTests(unittest.TestCase):
     def test_sandbox2_auto_release_workflows_match_build_contracts(self) -> None:
         manifest = load_manifest()
 
-        for bundle_name, (workflow_path, master_build_envs) in AUTO_RELEASE_WORKFLOWS.items():
+        for bundle_name, (workflow_path, master_build_envs, pin_targets) in AUTO_RELEASE_WORKFLOWS.items():
             with self.subTest(bundle=bundle_name):
                 require_build_metadata(load_bundle(manifest, bundle_name, SANDBOX_ENV))
-                workflow = (REPO_ROOT / workflow_path).read_text()
-                self.assertIn("- playground/sandbox-bj-2", workflow)
-                self.assertIn(f"build_and_promote_to_gitops.sh {bundle_name}", workflow)
+                workflow = self.load_effective_workflow(workflow_path)
+                workflow_entry = yaml.safe_load((REPO_ROOT / workflow_path).read_text())
+                self.assertIn("- playground/sandbox-bj-2", (REPO_ROOT / workflow_path).read_text())
+                self.assert_release_entry_targets(
+                    workflow_entry,
+                    expected_service=bundle_name,
+                    expected_pin_targets=pin_targets,
+                    workflow_text=(REPO_ROOT / workflow_path).read_text(),
+                )
+                self.assertIn("build_and_promote_to_gitops.sh", workflow)
                 self.assert_branch_route(
                     workflow,
                     "master",
@@ -125,14 +132,19 @@ class ReleaseBundleContractTests(unittest.TestCase):
                     )
 
     def test_gateway_workflows_pin_only_their_own_targets(self) -> None:
-        service_workflow = (REPO_ROOT / ".ci/service-gateway.yml").read_text()
-        admin_workflow = (REPO_ROOT / ".ci/admin-gateway.yml").read_text()
+        service_workflow = yaml.safe_load((REPO_ROOT / ".ci/service-gateway.yml").read_text())
+        admin_workflow = yaml.safe_load((REPO_ROOT / ".ci/admin-gateway.yml").read_text())
 
-        self.assertIn("build_and_promote_to_gitops.sh service-gateway service-gateway", service_workflow)
-        self.assertIn("promote_bundle_image_to_gitops.sh service-gateway service-gateway", service_workflow)
-        self.assertNotIn("service-gateway,admin-gateway", service_workflow)
-        self.assertIn("build_and_promote_to_gitops.sh admin-gateway admin-gateway", admin_workflow)
-        self.assertIn("promote_bundle_image_to_gitops.sh admin-gateway admin-gateway", admin_workflow)
+        self.assert_release_entry_targets(
+            service_workflow,
+            expected_service="service-gateway",
+            expected_pin_targets="service-gateway",
+        )
+        self.assert_release_entry_targets(
+            admin_workflow,
+            expected_service="admin-gateway",
+            expected_pin_targets="admin-gateway",
+        )
 
     def promotable_catalogs(self, manifest: dict) -> set[str]:
         catalogs: set[str] = set()
@@ -150,6 +162,44 @@ class ReleaseBundleContractTests(unittest.TestCase):
         if catalog_service == "lightclaw-auth":
             return "user-auth"
         return catalog_service
+
+    def load_effective_workflow(self, workflow_path: str) -> str:
+        workflow_file = REPO_ROOT / workflow_path
+        workflow_data = yaml.safe_load(workflow_file.read_text())
+        template_path = (
+            (workflow_data.get("extends") or {})
+            .get("template", {})
+            .get("path")
+        )
+        if not template_path:
+            return workflow_file.read_text()
+        return workflow_file.read_text() + "\n" + (REPO_ROOT / template_path).read_text()
+
+    def assert_release_entry_targets(
+        self,
+        workflow_data: dict,
+        *,
+        expected_service: str,
+        expected_pin_targets: str,
+        workflow_text: str | None = None,
+    ) -> None:
+        template = (workflow_data.get("extends") or {}).get("template", {})
+        variables = template.get("variables") or {}
+        if not variables:
+            workflow = workflow_text or yaml.safe_dump(workflow_data, allow_unicode=True, sort_keys=False, width=1000000)
+            self.assertIn(
+                f"build_and_promote_to_gitops.sh {expected_service} {expected_pin_targets}",
+                workflow,
+            )
+            self.assertIn(
+                f"promote_bundle_image_to_gitops.sh {expected_service} {expected_pin_targets}",
+                workflow,
+            )
+            return
+
+        self.assertEqual(template.get("path"), ".ci/templates/service-release.yml")
+        self.assertEqual(variables.get("SERVICE"), expected_service)
+        self.assertEqual(variables.get("BUNDLE"), expected_pin_targets)
 
     def assert_branch_route(
         self,

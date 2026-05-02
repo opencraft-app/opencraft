@@ -12,6 +12,9 @@ on:
       - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
       - argocd/catalogs/sandbox/*/sandbox.yaml
       - argocd/secrets/*/sandbox-runtime-secrets.sops.yaml
+    paths-ignore:
+      - OWNERS
+      - "**/OWNERS"
   manual: enabled
 
 concurrency:

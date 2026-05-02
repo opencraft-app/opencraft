@@ -8,6 +8,9 @@ on:
       - .ci/**
       - .ci/runtime/**
       - .ci/runtime/tests/**
+    paths-ignore:
+      - OWNERS
+      - "**/OWNERS"
   manual: enabled
 
 jobs:
