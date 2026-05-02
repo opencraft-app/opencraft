@@ -38,6 +38,7 @@ class ReleaseBundle:
     image_repo: str | None
     publish_paths: list[str]
     image_targets: list[ImageTarget]
+    config_contract: dict[str, Any]
     db_contract: dict[str, Any]
 
 
@@ -68,6 +69,7 @@ def load_bundle(manifest: dict[str, Any], service: str, env: str) -> ReleaseBund
         image_repo=_optional_str((bundle.get("image_repo") or {}).get(env)),
         publish_paths=_resolve_publish_paths(bundle, env),
         image_targets=_resolve_image_targets(bundle, env),
+        config_contract=_resolve_config_contract(bundle),
         db_contract=_resolve_db_contract(bundle),
     )
 
@@ -146,4 +148,27 @@ def _resolve_db_contract(bundle: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("db_contract must be a string or YAML mapping")
     contract = dict(raw)
     contract["mode"] = str(contract.get("mode") or "none")
+    return contract
+
+
+def _resolve_config_contract(bundle: dict[str, Any]) -> dict[str, Any]:
+    raw = bundle.get("config_contract")
+    if raw is None:
+        return {
+            "mode": "gitops",
+            "static_validation": True,
+            "kustomize": True,
+            "placeholder_scan": True,
+            "requires_mr": True,
+        }
+    if isinstance(raw, str):
+        return {"mode": raw}
+    if not isinstance(raw, dict):
+        raise ValueError("config_contract must be a string or YAML mapping")
+    contract = dict(raw)
+    contract["mode"] = str(contract.get("mode") or "gitops")
+    contract.setdefault("static_validation", True)
+    contract.setdefault("kustomize", True)
+    contract.setdefault("placeholder_scan", True)
+    contract.setdefault("requires_mr", True)
     return contract

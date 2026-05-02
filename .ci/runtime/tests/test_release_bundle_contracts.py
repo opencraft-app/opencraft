@@ -26,6 +26,20 @@ AUTO_RELEASE_WORKFLOWS = {
     "user-auth": (".ci/lightclaw-auth.yml", "beijing-sandbox,shprod", "lightclaw-auth"),
 }
 
+BUSINESS_WORKFLOWS = {
+    ".ci/admin-gateway.yml",
+    ".ci/ai-gateway.yml",
+    ".ci/ctl.yml",
+    ".ci/frontend.yml",
+    ".ci/gateway-dashboard.yml",
+    ".ci/lightclaw-auth.yml",
+    ".ci/nextgen-dashboard.yml",
+    ".ci/payment.yml",
+    ".ci/sandbox.yml",
+    ".ci/service-gateway.yml",
+    ".ci/subscription.yml",
+}
+
 
 class ReleaseBundleContractTests(unittest.TestCase):
     def test_sandbox2_auto_release_workflows_match_build_contracts(self) -> None:
@@ -41,21 +55,13 @@ class ReleaseBundleContractTests(unittest.TestCase):
                     workflow_entry,
                     expected_service=bundle_name,
                     expected_pin_targets=pin_targets,
+                    expected_master_build_envs=master_build_envs,
+                    expected_master_auto_pin_envs="beijing-sandbox",
+                    expected_playground_build_envs=SANDBOX_ENV,
+                    expected_playground_auto_pin_envs=SANDBOX_ENV,
                     workflow_text=(REPO_ROOT / workflow_path).read_text(),
                 )
                 self.assertIn("build_and_promote_to_gitops.sh", workflow)
-                self.assert_branch_route(
-                    workflow,
-                    "master",
-                    expected_build_envs=master_build_envs,
-                    expected_auto_pin_envs="beijing-sandbox",
-                )
-                self.assert_branch_route(
-                    workflow,
-                    "playground/sandbox-bj-2",
-                    expected_build_envs=SANDBOX_ENV,
-                    expected_auto_pin_envs=SANDBOX_ENV,
-                )
 
     def test_sandbox2_catalogs_are_promotable_or_explicitly_exempt(self) -> None:
         manifest = load_manifest()
@@ -139,12 +145,41 @@ class ReleaseBundleContractTests(unittest.TestCase):
             service_workflow,
             expected_service="service-gateway",
             expected_pin_targets="service-gateway",
+            expected_master_build_envs="beijing-sandbox,shprod",
+            expected_master_auto_pin_envs="beijing-sandbox",
+            expected_playground_build_envs=SANDBOX_ENV,
+            expected_playground_auto_pin_envs=SANDBOX_ENV,
         )
         self.assert_release_entry_targets(
             admin_workflow,
             expected_service="admin-gateway",
             expected_pin_targets="admin-gateway",
+            expected_master_build_envs="beijing-sandbox,shprod",
+            expected_master_auto_pin_envs="beijing-sandbox",
+            expected_playground_build_envs=SANDBOX_ENV,
+            expected_playground_auto_pin_envs=SANDBOX_ENV,
         )
+
+    def test_only_ci_runtime_listens_to_ci_file_changes(self) -> None:
+        for workflow_path in sorted(REPO_ROOT.glob(".ci/*.yml")):
+            workflow = yaml.safe_load(workflow_path.read_text())
+            paths = self.push_paths(workflow)
+            ci_paths = [path for path in paths if path == ".ci/**" or path.startswith(".ci/")]
+            if workflow_path.name == "ci-runtime.yml":
+                self.assertIn(".ci/**", ci_paths)
+            else:
+                self.assertFalse(
+                    ci_paths,
+                    f"{workflow_path.relative_to(REPO_ROOT)} must not let CI changes trigger a business pipeline: {ci_paths}",
+                )
+
+    def test_business_workflows_ignore_owners_only_changes(self) -> None:
+        for workflow_path in sorted(BUSINESS_WORKFLOWS):
+            with self.subTest(workflow=workflow_path):
+                workflow = yaml.safe_load((REPO_ROOT / workflow_path).read_text())
+                paths_ignore = self.push_paths_ignore(workflow)
+                self.assertIn("OWNERS", paths_ignore)
+                self.assertIn("**/OWNERS", paths_ignore)
 
     def promotable_catalogs(self, manifest: dict) -> set[str]:
         catalogs: set[str] = set()
@@ -162,6 +197,19 @@ class ReleaseBundleContractTests(unittest.TestCase):
         if catalog_service == "lightclaw-auth":
             return "user-auth"
         return catalog_service
+
+    def push_config(self, workflow_data: dict) -> dict:
+        on_config = workflow_data.get(True) or workflow_data.get("on") or {}
+        push_config = on_config.get("push") or {}
+        return push_config if isinstance(push_config, dict) else {}
+
+    def push_paths(self, workflow_data: dict) -> list[str]:
+        paths = self.push_config(workflow_data).get("paths") or []
+        return [path for path in paths if isinstance(path, str)]
+
+    def push_paths_ignore(self, workflow_data: dict) -> list[str]:
+        paths_ignore = self.push_config(workflow_data).get("paths-ignore") or []
+        return [path for path in paths_ignore if isinstance(path, str)]
 
     def load_effective_workflow(self, workflow_path: str) -> str:
         workflow_file = REPO_ROOT / workflow_path
@@ -181,6 +229,10 @@ class ReleaseBundleContractTests(unittest.TestCase):
         *,
         expected_service: str,
         expected_pin_targets: str,
+        expected_master_build_envs: str | None = None,
+        expected_master_auto_pin_envs: str | None = None,
+        expected_playground_build_envs: str | None = None,
+        expected_playground_auto_pin_envs: str | None = None,
         workflow_text: str | None = None,
     ) -> None:
         template = (workflow_data.get("extends") or {}).get("template", {})
@@ -200,6 +252,14 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(template.get("path"), ".ci/templates/service-release.yml")
         self.assertEqual(variables.get("SERVICE"), expected_service)
         self.assertEqual(variables.get("BUNDLE"), expected_pin_targets)
+        if expected_master_build_envs is not None:
+            self.assertEqual(variables.get("MASTER_BUILD_ENVS"), expected_master_build_envs)
+        if expected_master_auto_pin_envs is not None:
+            self.assertEqual(variables.get("MASTER_AUTO_PIN_ENVS"), expected_master_auto_pin_envs)
+        if expected_playground_build_envs is not None:
+            self.assertEqual(variables.get("PLAYGROUND_BUILD_ENVS"), expected_playground_build_envs)
+        if expected_playground_auto_pin_envs is not None:
+            self.assertEqual(variables.get("PLAYGROUND_AUTO_PIN_ENVS"), expected_playground_auto_pin_envs)
 
     def assert_branch_route(
         self,

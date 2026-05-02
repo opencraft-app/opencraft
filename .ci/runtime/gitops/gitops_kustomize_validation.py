@@ -173,10 +173,22 @@ def validate_target(repo_root: Path, target: KustomizeTarget, kustomize_bin: str
     return []
 
 
+def explicit_source_target(source_path: str) -> KustomizeTarget:
+    parts = source_path.rstrip("/").split("/")
+    app_name = parts[-2] if len(parts) >= 2 else source_path
+    return KustomizeTarget(app_name=app_name, source_path=source_path)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo-root", type=Path, default=Path("."))
     parser.add_argument("--env", default="beijing-sandbox")
+    parser.add_argument(
+        "--source-path",
+        action="append",
+        default=[],
+        help="Validate an explicit GitOps source path. Can be passed multiple times.",
+    )
     parser.add_argument("--kustomize-bin", default="kustomize")
     parser.add_argument("--timeout-seconds", type=int, default=120)
     parser.add_argument(
@@ -196,7 +208,10 @@ def main() -> int:
         return 1
 
     try:
-        targets = load_targets(repo_root, args.env, args.changed_only)
+        if args.source_path:
+            targets = [explicit_source_target(source_path) for source_path in args.source_path]
+        else:
+            targets = load_targets(repo_root, args.env, args.changed_only)
     except Exception as exc:  # noqa: BLE001
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1

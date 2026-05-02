@@ -12,7 +12,7 @@ variables:
     readonly: false
     allow-modify-at-startup: true
   TARGET_ENV:
-    value: shprod
+    value: ${{ variables.DEFAULT_TARGET_ENV }}
     readonly: false
     allow-modify-at-startup: true
   SOURCE_SHA:
@@ -45,6 +45,11 @@ stages:
               echo "SOURCE_SHA=${{ variables.SOURCE_SHA }}"
               echo "SERVICE=${{ variables.SERVICE }}"
               echo "BUNDLE=${{ variables.BUNDLE }}"
+              echo "DEFAULT_TARGET_ENV=${{ variables.DEFAULT_TARGET_ENV }}"
+              echo "MASTER_BUILD_ENVS=${{ variables.MASTER_BUILD_ENVS }}"
+              echo "MASTER_AUTO_PIN_ENVS=${{ variables.MASTER_AUTO_PIN_ENVS }}"
+              echo "PLAYGROUND_BUILD_ENVS=${{ variables.PLAYGROUND_BUILD_ENVS }}"
+              echo "PLAYGROUND_AUTO_PIN_ENVS=${{ variables.PLAYGROUND_AUTO_PIN_ENVS }}"
           - id: prepare
             name: 准备 ${{ variables.DISPLAY_NAME }} 构建标签
             shell: bash
@@ -75,12 +80,12 @@ stages:
               export REMOTE_URL GITOPS_BRANCH BUILD_TAG_OVERRIDE
               case "${{ ci.branch }}" in
                 master)
-                  BUILD_ENVS="beijing-sandbox,shprod"
-                  AUTO_PIN_ENVS="beijing-sandbox"
+                  BUILD_ENVS="${{ variables.MASTER_BUILD_ENVS }}"
+                  AUTO_PIN_ENVS="${{ variables.MASTER_AUTO_PIN_ENVS }}"
                   ;;
                 playground/sandbox-bj-2)
-                  BUILD_ENVS="beijing-sandbox-2"
-                  AUTO_PIN_ENVS="beijing-sandbox-2"
+                  BUILD_ENVS="${{ variables.PLAYGROUND_BUILD_ENVS }}"
+                  AUTO_PIN_ENVS="${{ variables.PLAYGROUND_AUTO_PIN_ENVS }}"
                   ;;
                 *)
                   echo "unsupported source branch for release: ${{ ci.branch }}" >&2

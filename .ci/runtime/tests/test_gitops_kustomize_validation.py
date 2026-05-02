@@ -131,6 +131,44 @@ class GitOpsKustomizeValidationTests(unittest.TestCase):
             args = args_file.read_text().splitlines()
             self.assertIn("argocd/services/demo/beijing-sandbox-2", args)
 
+    def test_kustomize_validator_accepts_explicit_source_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self.write_repo(Path(tmp))
+            args_file = repo / "args.txt"
+            fake_kustomize = repo / "fake-kustomize"
+            fake_kustomize.write_text(
+                textwrap.dedent(
+                    f"""\
+                    #!/usr/bin/env bash
+                    printf '%s\\n' "$2" > {args_file}
+                    cat <<'YAML'
+                    apiVersion: v1
+                    kind: ConfigMap
+                    metadata:
+                      name: demo
+                    YAML
+                    """
+                )
+            )
+            fake_kustomize.chmod(0o755)
+
+            exit_code = self.run_main(
+                [
+                    "validate_gitops_kustomize.py",
+                    "--repo-root",
+                    str(repo),
+                    "--env",
+                    "shprod",
+                    "--source-path",
+                    "argocd/services/demo/beijing-sandbox",
+                    "--kustomize-bin",
+                    str(fake_kustomize),
+                ]
+            )
+
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(args_file.read_text().strip(), "argocd/services/demo/beijing-sandbox")
+
     def test_shprod_changed_only_validates_changed_direct_app(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)

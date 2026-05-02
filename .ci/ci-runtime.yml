@@ -26,30 +26,4 @@ jobs:
       - name: 构建 CI runtime 脚本与测试
         shell: bash
         run: |
-          source .ci/init.sh
-          ci_init_repo_root
-          ci_require_commands bash python3
-
-          bash -n \
-            .ci/init.sh \
-            .ci/runtime/build_and_promote_to_gitops.sh \
-            .ci/runtime/pin_image_to_gitops.sh \
-            .ci/runtime/promote_bundle_image_to_gitops.sh \
-            .ci/runtime/smoke_materialized_runtime.sh \
-            .ci/checks/guard.sh \
-            admin-gateway/checks/guard.sh \
-            service-gateway/checks/guard.sh \
-            frontend/checks/guard.sh
-
-          python3 -m py_compile $(find \
-            .ci/runtime/contracts \
-            .ci/runtime/gitops \
-            .ci/runtime/db_gates \
-            .ci/runtime/guards \
-            .ci/runtime/commands \
-            -name '*.py' | sort)
-          python3 .ci/runtime/commands/validate_prod_manual_sync.py --repo-root "$REPO_ROOT"
-          python3 -m unittest discover -s .ci/runtime/tests
-          bash .ci/runtime/smoke_materialized_runtime.sh
-          python3 -c 'from pathlib import Path; import yaml; [yaml.safe_load(path.open()) for path in sorted(Path(".ci").glob("*.yml"))]; yaml.safe_load(Path(".ci/guards.yaml").read_text()); print("parsed .ci yaml files")'
-          git diff --check
+          bash .ci/runtime/check_ci_runtime.sh

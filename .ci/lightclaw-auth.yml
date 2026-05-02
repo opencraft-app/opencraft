@@ -23,3 +23,8 @@ extends:
       SERVICE: user-auth
       BUNDLE: lightclaw-auth
       DISPLAY_NAME: lightclaw-auth
+      DEFAULT_TARGET_ENV: shprod
+      MASTER_BUILD_ENVS: beijing-sandbox,shprod
+      MASTER_AUTO_PIN_ENVS: beijing-sandbox
+      PLAYGROUND_BUILD_ENVS: beijing-sandbox-2
+      PLAYGROUND_AUTO_PIN_ENVS: beijing-sandbox-2

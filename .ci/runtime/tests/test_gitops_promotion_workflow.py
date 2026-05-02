@@ -1,4 +1,5 @@
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -12,6 +13,18 @@ if str(RUNTIME_DIR) not in sys.path:
     sys.path.insert(0, str(RUNTIME_DIR))
 
 from gitops.shprod_sync_preflight import build_verify_command, parse_trailers  # noqa: E402
+
+APPROVED_GATE_VARS = {
+    "GATE_IMAGE_STATUS",
+    "GATE_CONFIG_STATUS",
+    "GATE_DB_STATUS",
+    "GATE_REQUIRES_DB_READINESS",
+    "GATE_AUTO_MERGE_ALLOWED",
+    "GATE_AUTO_SYNC_ALLOWED",
+    "GATE_ARGO_SYNC",
+    "GATE_RELEASE_DEPENDENCY_CHANGED",
+    "GATE_MANUAL_ACTIONS",
+}
 
 
 class GitOpsPromotionWorkflowTests(unittest.TestCase):
@@ -128,20 +141,36 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
 
         self.assertIn('cp -R "$REPO_ROOT/.ci/runtime" "$bootstrap_dir/.ci/runtime"', script)
         self.assertIn('RUNTIME_COMMAND_DIR="$bootstrap_dir/.ci/runtime/commands"', script)
-        self.assertIn('python3 "$RUNTIME_COMMAND_DIR/plan_release_gates.py"', script)
-        self.assertIn('python3 "$RUNTIME_COMMAND_DIR/verify_image_exists.py"', script)
-        self.assertIn('python3 "$RUNTIME_COMMAND_DIR/verify_db_contract.py"', script)
+        self.assertEqual(script.count('python3 "$RUNTIME_COMMAND_DIR/run_release_gates.py"'), 1)
+        self.assertNotIn('python3 "$RUNTIME_COMMAND_DIR/plan_release_gates.py"', script)
+        self.assertNotIn('python3 "$RUNTIME_COMMAND_DIR/verify_image_exists.py"', script)
+        self.assertNotIn('python3 "$RUNTIME_COMMAND_DIR/verify_db_contract.py"', script)
+        self.assertNotIn('python3 "$RUNTIME_COMMAND_DIR/validate_gitops_static.py"', script)
+        self.assertNotIn('python3 "$RUNTIME_COMMAND_DIR/validate_gitops_kustomize.py"', script)
+        self.assertNotIn("run_image_gate", script)
+        self.assertNotIn("start_config_gate", script)
+        self.assertNotIn("wait_config_gate", script)
         self.assertIn('python3 "$RUNTIME_COMMAND_DIR/project_release_bundle.py"', script)
         self.assertIn('python3 "$RUNTIME_COMMAND_DIR/update_image_pin.py"', script)
-        runtime_index = script.index('RUNTIME_COMMAND_DIR="$bootstrap_dir/.ci/runtime/commands"')
-        self.assertLess(script.index("run_image_gate", runtime_index), script.index("run_release_gate", runtime_index))
         self.assertIn("GitOps 发布意图：准备把镜像推进到", script)
         self.assertIn("Release-gate-image-status:", script)
+        self.assertIn("Release-gate-config-status:", script)
         self.assertIn("Release-gate-auto-merge:", script)
         self.assertIn("Release-bundle: ${BUNDLE_SERVICE}", script)
         self.assertIn("Release-target-env: ${ENV_NAME}", script)
         self.assertIn("Release-pin-targets: ${SERVICE_ARG}", script)
         self.assertIn("Release-image: ${IMAGE}", script)
+
+    def test_pin_script_consumes_only_approved_gate_variables(self) -> None:
+        script = (REPO_ROOT / ".ci/runtime/pin_image_to_gitops.sh").read_text()
+        found_gate_vars = set(re.findall(r"\bGATE_[A-Z_]+\b", script))
+
+        self.assertEqual(found_gate_vars, APPROVED_GATE_VARS)
+        self.assertNotIn("GATE_DB_MODE", found_gate_vars)
+        self.assertNotIn("GATE_REQUIRES_DB_JOB", found_gate_vars)
+        self.assertNotIn("GATE_DB_JOB_SERVICE", found_gate_vars)
+        self.assertNotIn("GATE_READINESS_SUPPORTED", found_gate_vars)
+        self.assertNotIn("GATE_RELEASE_DEPENDENCIES", found_gate_vars)
 
     def test_shprod_promote_branches_are_not_removed_by_automation(self) -> None:
         workflow = (REPO_ROOT / ".ci/gitops-promotion.yml").read_text()

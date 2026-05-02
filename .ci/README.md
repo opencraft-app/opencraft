@@ -36,6 +36,7 @@
 - `.ci/lightclaw-auth.yml`
 - `.ci/nextgen-dashboard.yml`
 - `.ci/payment.yml`
+- `.ci/sandbox.yml`
 - `.ci/service-gateway.yml`
 - `.ci/subscription.yml`
 
@@ -43,6 +44,7 @@
 `extends.template.variables` 传入 `SERVICE` / `BUNDLE` / `DISPLAY_NAME`。
 其中 `lightclaw-auth` 的 `SERVICE` 仍是 release bundle id `user-auth`，`BUNDLE`
 仍是 GitOps pin target `lightclaw-auth`。
+其中 `sandbox` 显式覆盖 env 矩阵，当前只构建和自动 pin 北京沙箱链路，不隐式构建 `shprod`。
 
 公共模板：
 
@@ -55,6 +57,63 @@
 - `on.push.paths` 仍留在每个服务入口 YAML；这是 Stream 触发发现和 MR check 可读性的服务边界。
 - 不使用 `extends.parameters`；当前 BK-CI v2.0 schema / model 更稳的是 `extends.template.variables`。
 - `frontend`、`frontend-edgeone-*`、`sandbox`、`gitops-*`、`ci-runtime`、`mr-placeholder` 不属于这批标准 service release 入口，不使用该模板。
+
+### 新增标准服务流水线
+
+新增一个普通镜像 + GitOps pin 的标准服务时，优先复制已迁移入口的形态：
+
+```yaml
+version: v2.0
+name: 构建 <service>
+
+on:
+  push:
+    branches:
+      - master
+      - playground/sandbox-bj-2
+    paths:
+      - <service>/**
+      - argocd/services/<service>/**
+      - argocd/apps/*/<service>.yaml
+      - argocd/secrets/*/<service>-runtime-secrets.sops.yaml
+    paths-ignore:
+      - OWNERS
+      - "**/OWNERS"
+  manual: enabled
+
+extends:
+  template:
+    path: .ci/templates/service-release.yml
+    variables:
+      SERVICE: <release-bundle-id>
+      BUNDLE: <gitops-pin-target>
+      DISPLAY_NAME: <service>
+      DEFAULT_TARGET_ENV: shprod
+      MASTER_BUILD_ENVS: beijing-sandbox,shprod
+      MASTER_AUTO_PIN_ENVS: beijing-sandbox
+      PLAYGROUND_BUILD_ENVS: beijing-sandbox-2
+      PLAYGROUND_AUTO_PIN_ENVS: beijing-sandbox-2
+```
+
+规则：
+
+- 业务 YAML 只声明 `on.push.paths`、`paths-ignore` 和 `extends`；不要复制 `concurrency`、`variables`、`stages`。
+- 不要把 `.ci/**`、`.ci/runtime/**`、`.ci/templates/**` 放进业务流水线 `paths`，避免 CI 模板变更隐式构建镜像或推进 GitOps。
+- CI 模板、runtime、guard 的变更只触发 `构建 CI runtime`；业务服务是否需要重新构建，应由业务路径变更或手动触发决定。
+- `SERVICE` 是 `.ci/runtime/release-bundles.manifest` 里的 bundle id；`BUNDLE` 是 GitOps pin target。多数服务二者相同，`lightclaw-auth` 是例外：`SERVICE=user-auth`、`BUNDLE=lightclaw-auth`。
+- `MASTER_*` / `PLAYGROUND_*` 是 CSV env set。标准服务默认 master 构建 `beijing-sandbox,shprod` 但只自动 pin `beijing-sandbox`；`sandbox` 当前覆盖为只构建北京沙箱环境。
+
+### 模板变更服务端验收
+
+`.ci/templates/service-release.yml` 或模板调用契约变化后，本地 guard 只能证明仓库内静态逻辑正确，不能完全证明 BK-CI 服务端模板实例化成功。
+
+推荐验收顺序：
+
+1. 推送后确认 `构建 CI runtime` 通过。
+2. 手动触发一个低风险标准服务，例如 `构建 gateway-dashboard` 或 `构建 ai-gateway`。
+3. 在日志中确认模板已正确实例化：`SERVICE`、`BUNDLE`、`PIPELINE_MODE`、`TARGET_ENV` 输出符合预期。
+4. 确认 `PIPELINE_MODE=build` 时只按业务分支规则构建；`PIPELINE_MODE=promote` 时只进入手动 GitOps promote。
+5. 如果只是验证模板实例化，不要通过修改 `.ci/**` 来触发业务流水线。
 
 ## Verified Working Setup
 
@@ -85,6 +144,7 @@
 - 北京预发布：
   - `beijing-sandbox` / `beijing-sandbox-2` 保持自动 GitOps MR 合并和 Argo 自动收敛
   - promote 写 GitOps pin 前先校验目标镜像 tag 已存在于 TCR；缺失时停止，避免 Argo `ImagePullBackOff`
+  - GitOps desired state 变更必须通过 config contract：静态结构、服务级 Kustomize 渲染、未替换占位符
   - 只要服务声明 `db_contract.mode: migration`，promote 时默认执行幂等受控 DB job
   - DB job 成功后再运行只读 DB readiness Job，确认 `schema_migrations` 非 dirty 且版本达到 repo 期望
   - readiness 失败时不创建可自动合并的发布 MR
@@ -93,6 +153,30 @@
   - 合入后只表示 desired state 已进入“待同步状态”
   - `argocd/apps/shprod/**` 必须保持非自动 sync，人工确认 DB readiness 后再 sync
   - 进入待同步前同样必须通过目标镜像存在性校验；Git commit 存在不等于镜像 tag 已构建并推送
+  - 进入待同步前同样必须通过服务级 config contract；生产配置变化通过 GitOps MR 审计，不绕过 MR
+
+三类发布 contract：
+
+- `image_contract`
+  - 目标 TCR tag/digest 必须存在，pin 前校验，失败时不写 GitOps desired state
+  - 这是最先执行的门禁，因为失败时继续跑 DB job 没有意义
+- `config_contract`
+  - 默认适用于所有 GitOps bundle
+  - 由 `.ci/runtime/contracts/bundles.py` 解析为 `mode: gitops`
+  - promote 分支提交前执行 `validate_gitops_static.py` 和服务级 `validate_gitops_kustomize.py --source-path`
+  - 校验范围是本次 pin target 的 `argocd/services/<service>/<env>`，避免 unrelated shprod placeholder 阻塞单服务 promote
+  - 镜像存在性通过后，CI 会在临时 GitOps worktree 中预投影 desired state，并与 DB gate 并行执行
+- `db_contract`
+  - 仅 DB 服务显式声明；`mode: migration` 时每次 promote 都跑幂等 DB job/readiness
+  - 与 config contract 并行执行，但仍依赖 image contract 先通过，避免镜像不存在时推进 DB
+
+执行顺序：
+
+1. `image_contract`
+2. 拉取 GitOps 基线，在临时 worktree 预投影 desired state
+3. 并行执行 `config_contract` 与 `db_contract`
+4. 两个门禁都通过后，主工作区投影 GitOps desired state 并更新 image pin
+5. 创建 / 自动合并 GitOps MR
 
 镜像存在性门禁：
 
@@ -136,27 +220,31 @@ DB job / readiness Job 的 kubeconfig 读取顺序：
 
 ### contracts
 
-发布契约、bundle 元数据和镜像 pin 规则：
+发布契约与 bundle 元数据。这里描述“必须满足什么”，不执行 registry / Kustomize / Kubernetes / GitOps 变更：
 
 - `.ci/runtime/release-bundles.manifest`
   - bundle owner/source、publish paths、image targets、DB contract、轻量依赖声明
 - `.ci/runtime/contracts/bundles.py`
-  - 解析 release bundle manifest
+  - 解析 release bundle manifest，并提供默认 `config_contract`
 - `.ci/runtime/contracts/image_pin.py`
-  - 更新 `argocd/services/<service>/<env>/*-platform.env`
+  - 兼容 shim；desired-state image pin 语义归属 `.ci/runtime/gitops/image_pin.py`
 - `.ci/runtime/contracts/image_existence.py`
-  - promote 写 pin 前校验目标镜像 tag 已存在，支持单镜像和多镜像 payload
+  - 镜像引用解析/存在性辅助；release promote 由 `.ci/runtime/gates/image.py` 执行门禁
 - `.ci/runtime/contracts/project_release_bundle.py`
-  - 从 `master@SHA` 投影发布子集到 promote 分支
+  - 兼容 shim；desired-state projection 语义归属 `.ci/runtime/gitops/projection.py`
 
 ### gitops
 
 GitOps MR、promote 分支、收敛验收和漂移审计：
 
 - `.ci/runtime/pin_image_to_gitops.sh`
-  - image gate / DB gate 后投影 GitOps 子集、更新 image pin、创建 MR
+  - 调用统一 release gate runner；门禁通过后投影 GitOps 子集、更新 image pin、创建 MR
 - `.ci/runtime/promote_bundle_image_to_gitops.sh`
   - 手动 promote 已存在镜像到 GitOps
+- `.ci/runtime/gitops/projection.py`
+  - 从 `master@SHA` 投影发布子集到 promote 分支
+- `.ci/runtime/gitops/image_pin.py`
+  - 更新 `argocd/services/<service>/<env>/*-platform.env`
 - `.ci/runtime/gitops/gitops_merge_request.py`
   - 创建 / 复用 / 自动合并 GitOps MR
 - `.ci/runtime/gitops/gitops_merge_request_note.py`
@@ -168,13 +256,30 @@ GitOps MR、promote 分支、收敛验收和漂移审计：
 - `.ci/runtime/gitops/gitops_static_validation.py`
   - GitOps 静态结构校验
 - `.ci/runtime/gitops/gitops_kustomize_validation.py`
-  - Kustomize / SOPS / KSOPS 渲染校验
+  - Kustomize / SOPS / KSOPS 渲染校验，支持按 env 或显式 `--source-path` 校验单服务
 - `.ci/runtime/gitops/gitops_drift_audit.py`
   - GitOps 漂移审计
 
+### gates
+
+Release gate 执行层。这里负责证明 image/config/db contract 是否满足，并把结果收敛为 shell 可读的 allowlist 字段：
+
+- `.ci/runtime/commands/run_release_gates.py`
+  - CI 命令入口；thin wrapper，只导入 `gates.runner.main`
+- `.ci/runtime/gates/runner.py`
+  - 先执行 image gate；image 通过后并行执行 config gate 与 DB gate；只输出 allowlist `GATE_*` dotenv
+  - runner 独占 gate-run 临时 bootstrap/worktree 生命周期；shell 只拥有后续 GitOps publish/MR 所需资源
+- `.ci/runtime/gates/image.py`
+  - 校验目标镜像 tag 已存在
+- `.ci/runtime/gates/config.py`
+  - 在 runner 提供的临时 GitOps worktree 中预投影 desired state，并调用 GitOps static/Kustomize 校验
+  - 只做 proof 编排，不拥有 projection/image-pin 业务语义
+- `.ci/runtime/gates/db.py`
+  - 执行 DB-aware gate：受控 DB job + 只读 readiness，复用纯 planner 的 release policy 结果
+
 ### db_gates
 
-DB-aware release gate、受控 DB Job 和只读 readiness：
+DB-aware 纯 planner 与 readiness 渲染器。保留为语义层，不作为 gate runner：
 
 - `.ci/runtime/db_gates/release_gates.py`
   - 根据 source diff、DB contract、环境策略输出 release gate plan

@@ -21,6 +21,10 @@ class ReleaseGatePlannerTests(unittest.TestCase):
         frontend = load_bundle(manifest, "frontend", "shprod")
 
         self.assertEqual(payment.db_contract["mode"], "migration")
+        self.assertEqual(payment.config_contract["mode"], "gitops")
+        self.assertTrue(payment.config_contract["kustomize"])
+        self.assertTrue(payment.config_contract["placeholder_scan"])
+        self.assertTrue(payment.config_contract["requires_mr"])
         self.assertEqual(payment.db_contract["db_job_service"], "payment")
         self.assertEqual(subscription.db_contract["verifier"]["baseline_checks"][0]["name"], "subscription-plans-free-lite-pro")
         self.assertEqual(frontend.db_contract["mode"], "none")
