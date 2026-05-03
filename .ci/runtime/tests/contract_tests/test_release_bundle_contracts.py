@@ -1,4 +1,5 @@
 import re
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -46,7 +47,17 @@ class ReleaseBundleContractTests(unittest.TestCase):
     def test_release_bundle_manifest_is_generated_from_split_sources(self) -> None:
         rendered = dump_manifest(merge_bundle_sources(RUNTIME_DIR / "bundles"))
 
-        self.assertEqual((RUNTIME_DIR / "release-bundles.manifest").read_text(), rendered)
+        manifest = yaml.safe_load(rendered) or {}
+        self.assertIn("bundles", manifest)
+        self.assertIn("payment", manifest["bundles"])
+
+        result = subprocess.run(
+            ["git", "ls-files", "--error-unmatch", ".ci/runtime/release-bundles.manifest"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(result.returncode, 0, "release-bundles.manifest must not be tracked")
 
     def test_each_bundle_source_defines_one_bundle(self) -> None:
         for path in sorted((RUNTIME_DIR / "bundles").glob("*.bundle")):

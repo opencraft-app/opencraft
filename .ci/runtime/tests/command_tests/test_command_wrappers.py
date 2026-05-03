@@ -26,6 +26,7 @@ class CommandWrapperTests(unittest.TestCase):
         self.assertTrue(all(entry.startswith(".ci/runtime/") for entry in manifest_entries))
         self.assertTrue(expected_python.issubset(manifest_entries))
         self.assertFalse(any("/db_gates/" in entry for entry in manifest_entries))
+        self.assertNotIn(".ci/runtime/release-bundles.manifest", manifest_entries)
 
     def test_ci_private_configs_do_not_use_yaml_extension(self) -> None:
         self.assertFalse(

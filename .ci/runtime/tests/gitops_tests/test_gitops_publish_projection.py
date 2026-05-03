@@ -308,8 +308,8 @@ class ProjectReleaseBundleTests(unittest.TestCase):
             git(repo, "config", "user.email", "ci@example.com")
             git(repo, "config", "user.name", "CI")
 
-            (repo / ".ci" / "runtime").mkdir(parents=True)
-            (repo / ".ci" / "runtime" / "release-bundles.manifest").write_text(
+            (repo / ".ci" / "runtime" / "bundles").mkdir(parents=True)
+            (repo / ".ci" / "runtime" / "bundles" / "demo.bundle").write_text(
                 textwrap.dedent(
                     """\
                     bundles:
@@ -349,6 +349,7 @@ class ProjectReleaseBundleTests(unittest.TestCase):
             git(repo, "add", ".")
             git(repo, "commit", "-m", "source")
             source_ref = git_output(repo, "rev-parse", "HEAD")
+            self.assertFalse((repo / ".ci" / "runtime" / "release-bundles.manifest").exists())
 
             git(repo, "checkout", "-b", "gitops")
             (repo / "argocd" / "services" / "demo" / "beijing-sandbox" / "config.yaml").write_text("old-config\n")

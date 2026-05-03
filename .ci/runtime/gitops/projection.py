@@ -6,11 +6,11 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
-import subprocess
 import sys
 from pathlib import PurePosixPath
 
 from contracts.bundles import load_bundle, parse_manifest_text
+from contracts.release_bundle_manifest import dump_manifest, merge_bundle_source_documents
 from gitops.git import list_files as git_list_files
 from gitops.git import run as git_run
 from gitops.git import show_text as git_show_text
@@ -77,11 +77,16 @@ def sync_publish_subset(repo_root: str, source_ref: str, target_ref: str, patter
 
 
 def load_manifest_text_from_source_ref(repo_root: str, source_ref: str) -> str:
-    path = ".ci/runtime/release-bundles.manifest"
-    try:
-        return git_show_text(repo_root, source_ref, path)
-    except subprocess.CalledProcessError as exc:
-        raise FileNotFoundError(f"release bundle manifest not found in {source_ref}") from exc
+    source_dir = ".ci/runtime/bundles"
+    bundle_paths = [
+        path
+        for path in git_list_files(repo_root, source_ref, source_dir)
+        if path.startswith(f"{source_dir}/") and path.endswith(".bundle")
+    ]
+    if not bundle_paths:
+        raise FileNotFoundError(f"release bundle sources not found in {source_ref}:{source_dir}")
+    documents = [(path, git_show_text(repo_root, source_ref, path)) for path in sorted(bundle_paths)]
+    return dump_manifest(merge_bundle_source_documents(documents))
 
 
 def main() -> int:

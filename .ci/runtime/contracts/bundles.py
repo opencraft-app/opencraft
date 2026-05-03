@@ -47,6 +47,10 @@ def parse_manifest_text(text: str) -> dict[str, Any]:
 
 
 def load_manifest(path: Path = DEFAULT_MANIFEST_PATH) -> dict[str, Any]:
+    if not path.exists() and (path.parent / "bundles").is_dir():
+        from contracts.release_bundle_manifest import dump_manifest, merge_bundle_sources
+
+        return parse_manifest_text(dump_manifest(merge_bundle_sources(path.parent / "bundles")))
     return parse_manifest_text(path.read_text())
 
 

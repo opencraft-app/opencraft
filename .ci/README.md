@@ -192,7 +192,8 @@ extends:
 
 DB contract 的声明位置是：
 
-- `.ci/runtime/bundles/*.bundle`，CI 会生成合并产物 `.ci/runtime/release-bundles.manifest`
+- `.ci/runtime/bundles/*.bundle` 是唯一人工维护源
+- `.ci/runtime/release-bundles.manifest` 是 CI/runtime 临时生成物，不提交到 Git
 
 已支持的契约类型：
 
@@ -228,9 +229,9 @@ DB job / readiness Job 的 kubeconfig 读取顺序：
 - `.ci/runtime/bundles/*.bundle`
   - bundle owner/source、publish paths、image targets、DB contract、轻量依赖声明的 review 源文件
 - `.ci/runtime/release-bundles.manifest`
-  - CI 生成的合并产物；运行时仍以这个文件作为 bundle manifest 输入
+  - CI/runtime 临时生成的合并产物；运行时仍以这个文件作为 bundle manifest 输入，但不提交到 Git
 - `.ci/runtime/contracts/release_bundle_manifest.py`
-  - 从拆分源生成合并 manifest，并提供 `--check` 防止 tracked 合并产物过期
+  - 从拆分源生成合并 manifest，并提供 `--check` 校验 `.bundle` 源可合并、无重复、可渲染
 - `.ci/runtime/contracts/bundles.py`
   - 解析 release bundle manifest，并提供默认 `config_contract`
 - `.ci/runtime/contracts/release_plan.py`
