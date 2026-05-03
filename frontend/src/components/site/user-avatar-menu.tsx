@@ -2,12 +2,14 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Bot, User, LogOut, ChevronDown } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { useOpenClaw } from "@/contexts/openclaw-context";
 import { useSession } from "@/contexts/session-context";
 import { useT } from "@/i18n/t";
 import { avatarImageUrl } from "@/lib/avatar-image";
 
 export const UserAvatarMenu = () => {
   const { session, signOut } = useSession();
+  const { activePass } = useOpenClaw();
   const navigate = useNavigate();
   const t = useT();
   const user = session.user;
@@ -26,6 +28,8 @@ export const UserAvatarMenu = () => {
   }, []);
 
   const avatarSrc = avatarImageUrl(user?.avatarUrl ?? null);
+  const subscriptionName = activePass?.bundle_name ?? session.currentSubscription?.code ?? null;
+  const subscriptionLabel = subscriptionName ? `${t("套餐")}：${subscriptionName}` : t("未订阅");
 
   return (
     <div ref={containerRef} className="relative">
@@ -79,7 +83,7 @@ export const UserAvatarMenu = () => {
                     {user?.name || t("用户")}
                   </p>
                   <p className="text-xs" style={{ color: "#aaa" }}>
-                    {session.currentSubscription?.code ?? t("未订阅")}
+                    {subscriptionLabel}
                   </p>
                 </div>
               </div>
