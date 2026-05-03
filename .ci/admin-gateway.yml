@@ -1,4 +1,4 @@
-version: v3.0
+version: v2.0
 name: 构建 admin-gateway
 
 on:
@@ -19,14 +19,13 @@ on:
   manual: enabled
 
 extends:
-  template:
-    path: .ci/templates/service-release.yml
-    variables:
-      SERVICE: admin-gateway
-      BUNDLE: admin-gateway
-      DISPLAY_NAME: admin-gateway
-      DEFAULT_TARGET_ENV: shprod
-      MASTER_BUILD_ENVS: beijing-sandbox,shprod
-      MASTER_AUTO_PIN_ENVS: beijing-sandbox
-      PLAYGROUND_BUILD_ENVS: beijing-sandbox-2
-      PLAYGROUND_AUTO_PIN_ENVS: beijing-sandbox-2
+  template: .ci/templates/service-release.yml
+  parameters:
+    SERVICE: admin-gateway
+    BUNDLE: admin-gateway
+    DISPLAY_NAME: admin-gateway
+    DEFAULT_TARGET_ENV: shprod
+    MASTER_BUILD_ENVS: beijing-sandbox,shprod
+    MASTER_AUTO_PIN_ENVS: beijing-sandbox
+    PLAYGROUND_BUILD_ENVS: beijing-sandbox-2
+    PLAYGROUND_AUTO_PIN_ENVS: beijing-sandbox-2

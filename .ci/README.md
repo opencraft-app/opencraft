@@ -45,8 +45,7 @@
 其中 `lightclaw-auth` 的 `SERVICE` 仍是 release bundle id `user-auth`，`BUNDLE`
 仍是 GitOps pin target `lightclaw-auth`。
 其中 `sandbox` 显式覆盖 env 矩阵，当前只构建和自动 pin 北京沙箱链路，不隐式构建 `shprod`。
-当前只有 `.ci/admin-gateway.yml` 作为 `version: v3.0` + `extends.template.variables` 试点；
-其余标准服务继续使用 `version: v2.0` + `extends.parameters`。
+当前标准服务入口统一使用 `version: v2.0` + `extends.parameters`。
 
 公共模板：
 
@@ -58,7 +57,7 @@
 
 - `on.push.paths` 仍留在每个服务入口 YAML；这是 Stream 触发发现和 MR check 可读性的服务边界。
 - `version: v2.0` 入口使用 `extends.template: <path>` + `extends.parameters`；当前平台会拒绝 v2 里的 `extends.template` 对象写法。
-- `version: v3.0` 入口可以使用 `extends.template.path` + `extends.template.variables`；批量切换前必须先完成 admin-gateway 服务端验收。
+- 不要为了 `extends.template.path` 对象写法切到 `version: v3.0`；蓝盾 PAC v3 暂未支持局部模板，`.ci/templates/service-release.yml` 这类本仓库模板应继续走 Stream v2。
 - `frontend`、`frontend-edgeone-*`、`gitops-*`、`ci-runtime`、`mr-placeholder` 不属于这批标准 service release 入口，不使用该模板。
 
 ### 新增标准服务流水线

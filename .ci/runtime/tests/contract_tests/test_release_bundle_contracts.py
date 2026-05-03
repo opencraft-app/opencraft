@@ -176,23 +176,19 @@ class ReleaseBundleContractTests(unittest.TestCase):
             expected_playground_auto_pin_envs=SANDBOX_ENV,
         )
 
-    def test_admin_gateway_is_the_only_v3_extends_trial(self) -> None:
-        admin_workflow = yaml.safe_load((REPO_ROOT / ".ci/admin-gateway.yml").read_text())
-        self.assertEqual(admin_workflow.get("version"), "v3.0")
-        self.assertIsInstance((admin_workflow.get("extends") or {}).get("template"), dict)
-        self.assert_release_entry_targets(
-            admin_workflow,
-            expected_service="admin-gateway",
-            expected_pin_targets="admin-gateway",
-        )
-
-        for workflow_path in sorted(BUSINESS_WORKFLOWS - {".ci/admin-gateway.yml", ".ci/frontend.yml"}):
+    def test_standard_service_extends_stays_on_v2_local_template_contract(self) -> None:
+        for workflow_path in sorted(BUSINESS_WORKFLOWS - {".ci/frontend.yml"}):
             workflow = yaml.safe_load((REPO_ROOT / workflow_path).read_text())
             if "extends" not in workflow:
                 continue
             with self.subTest(workflow=workflow_path):
                 self.assertEqual(workflow.get("version"), "v2.0")
                 self.assertIsInstance((workflow.get("extends") or {}).get("template"), str)
+                self.assert_release_entry_targets(
+                    workflow,
+                    expected_service=(workflow.get("extends") or {}).get("parameters", {}).get("SERVICE"),
+                    expected_pin_targets=(workflow.get("extends") or {}).get("parameters", {}).get("BUNDLE"),
+                )
 
     def test_only_ci_runtime_listens_to_ci_file_changes(self) -> None:
         for workflow_path in sorted(REPO_ROOT.glob(".ci/*.yml")):
