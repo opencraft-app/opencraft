@@ -19,8 +19,10 @@ from contracts.release_bundle_manifest import dump_manifest, merge_bundle_source
 SANDBOX_ENV = "beijing-sandbox-2"
 AUTO_RELEASE_WORKFLOWS = {
     "admin-gateway": (".ci/admin-gateway.yml", "beijing-sandbox,shprod", "admin-gateway"),
+    "ai-gateway": (".ci/ai-gateway.yml", "beijing-sandbox,shprod", "ai-gateway"),
     "ctl": (".ci/ctl.yml", "beijing-sandbox,shprod", "ctl"),
     "gateway-dashboard": (".ci/gateway-dashboard.yml", "beijing-sandbox,shprod", "gateway-dashboard"),
+    "nextgen-dashboard": (".ci/nextgen-dashboard.yml", "beijing-sandbox,shprod", "nextgen-dashboard"),
     "payment": (".ci/payment.yml", "beijing-sandbox,shprod", "payment"),
     "sandbox": (".ci/sandbox.yml", "beijing-sandbox", "sandbox"),
     "service-gateway": (".ci/service-gateway.yml", "beijing-sandbox,shprod", "service-gateway"),
@@ -39,6 +41,7 @@ BUSINESS_WORKFLOWS = {
     ".ci/payment.yml",
     ".ci/sandbox.yml",
     ".ci/service-gateway.yml",
+    ".ci/staticpages.yml",
     ".ci/subscription.yml",
 }
 

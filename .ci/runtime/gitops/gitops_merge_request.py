@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import time
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from gitops.gongfeng import (
@@ -19,6 +20,8 @@ from gitops.gongfeng import (
     require_settings_from_args,
     resolve_private_token_from_args,
 )
+from gitops.release_facts import release_facts_from_mapping, trailers_from_git
+from gitops.release_view import render_merge_waiting_note, render_merged_note
 
 
 def parse_args() -> argparse.Namespace:
@@ -132,19 +135,15 @@ def next_stage_after_merge(source_branch: str) -> str:
 def maybe_auto_merge(args: argparse.Namespace, mr: Dict[str, Any]) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
     if not args.auto_merge:
         return mr, None
+    try:
+        facts = trailers_from_git(Path.cwd())
+    except Exception:  # noqa: BLE001
+        facts = release_facts_from_mapping({})
 
     post_merge_request_note(
         args,
         mr,
-        "\n".join(
-            [
-                "GitOps 进度：已进入 MR 自动合并阶段。",
-                "",
-                f"- source branch: `{args.source_branch}`",
-                f"- target branch: `{args.target_branch}`",
-                "- 状态：等待 commit checks 通过并满足 auto-merge 条件",
-            ]
-        ),
+        render_merge_waiting_note(facts, mr, args.source_branch, args.target_branch),
     )
 
     deadline = time.time() + args.auto_merge_timeout_seconds
@@ -164,15 +163,7 @@ def maybe_auto_merge(args: argparse.Namespace, mr: Dict[str, Any]) -> Tuple[Dict
             post_merge_request_note(
                 args,
                 latest,
-                "\n".join(
-                    [
-                        "GitOps 进度：MR 已合并。",
-                        "",
-                        f"- source branch: `{args.source_branch}`",
-                        f"- target branch: `{args.target_branch}`",
-                        next_stage_after_merge(args.source_branch),
-                    ]
-                ),
+                render_merged_note(facts, latest, args.source_branch, args.target_branch),
             )
             return latest, {"merged_by_platform": True}
         if is_auto_mergeable(latest):
@@ -180,15 +171,7 @@ def maybe_auto_merge(args: argparse.Namespace, mr: Dict[str, Any]) -> Tuple[Dict
             post_merge_request_note(
                 args,
                 latest,
-                "\n".join(
-                    [
-                        "GitOps 进度：MR 已执行合并。",
-                        "",
-                        f"- source branch: `{args.source_branch}`",
-                        f"- target branch: `{args.target_branch}`",
-                        next_stage_after_merge(args.source_branch),
-                    ]
-                ),
+                render_merged_note(facts, latest, args.source_branch, args.target_branch).replace("MR 已合并", "MR 已执行合并"),
             )
             return latest, merged
         if commit_state == "failure":

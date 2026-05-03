@@ -7,6 +7,7 @@ bundles:
     allowed_paths:
     - nextgen-dashboard/k8s/base
     - nextgen-dashboard/k8s/overlays/beijing-sandbox
+    - nextgen-dashboard/k8s/overlays/beijing-sandbox-2
     - nextgen-dashboard/k8s/overlays/shprod
     - nextgen-dashboard/Dockerfile
     exit_condition: Can be removed only after the deployable contract moves to an
@@ -27,8 +28,17 @@ bundles:
       - argocd/secrets/beijing-sandbox/nextgen-dashboard-runtime-secrets.sops.yaml
       - nextgen-dashboard/k8s/base/**
       - nextgen-dashboard/k8s/overlays/beijing-sandbox/**
+      beijing-sandbox-2:
+      - argocd/services/nextgen-dashboard/beijing-sandbox-2/**
+      - argocd/services/nextgen-dashboard/common/**
+      - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
+      - argocd/catalogs/sandbox/beijing-sandbox-2/nextgen-dashboard.yaml
+      - argocd/secrets/beijing-sandbox-2/nextgen-dashboard-runtime-secrets.sops.yaml
+      - nextgen-dashboard/k8s/base/**
+      - nextgen-dashboard/k8s/overlays/beijing-sandbox/**
     dockerfile: nextgen-dashboard/Dockerfile
     build_context: nextgen-dashboard
     image_repo:
       beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/nextgen-dashboard
+      beijing-sandbox-2: lightclaw-bj8.tencentcloudcr.com/lightclaw/nextgen-dashboard
       shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/nextgen-dashboard

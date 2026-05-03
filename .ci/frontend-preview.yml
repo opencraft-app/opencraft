@@ -1,0 +1,77 @@
+version: v2.0
+name: 发布 frontend 分支预览
+
+on:
+  push:
+    branches:
+      - frontsandbox/*
+    paths:
+      - frontend/**
+    paths-ignore:
+      - OWNERS
+      - "**/OWNERS"
+  manual: enabled
+
+concurrency:
+  group: frontend-preview-${{ ci.branch }}
+  cancel-in-progress: true
+  queue-length: 1
+  queue-timeout-minutes: 60
+
+variables:
+  STATICPAGES_API_URL:
+    value: https://staticpages-api.preview.lightclaw.tech/api/upload
+    readonly: false
+    allow-modify-at-startup: true
+
+stages:
+  - name: 发布 frontend 分支预览
+    jobs:
+      upload-preview:
+        name: 构建并上传 frontend 预览站点
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        env:
+          STATICPAGES_UPLOAD_TOKEN: ${{ settings.STATICPAGES_UPLOAD_TOKEN }}
+        steps:
+          - checkout: self
+            name: 拉取代码
+            with:
+              fetchDepth: 50
+          - name: 打印 frontend 预览上下文
+            shell: bash
+            run: |
+              echo "ci.event=${{ ci.event }}"
+              echo "ci.branch=${{ ci.branch }}"
+              echo "ci.sha=${{ ci.sha }}"
+              echo "STATICPAGES_API_URL=${{ variables.STATICPAGES_API_URL }}"
+          - name: 构建并上传 frontend 预览站点
+            shell: bash
+            env:
+              VITE_AUTH_API_BASE_URL: https://lightclaw.tech
+              STATICPAGES_API_URL: ${{ variables.STATICPAGES_API_URL }}
+            run: |
+              echo "============================================================"
+              echo "frontend 预览发布决策：进入 StaticPages 分支预览流程"
+              echo "触发分支：${{ ci.branch }}"
+              echo "目标规则：frontsandbox/<name> -> https://<name>.preview.lightclaw.tech"
+              echo "发布方式：构建 frontend dist-cn 后上传到 StaticPages，不创建 GitOps MR"
+              echo "============================================================"
+              source .ci/init.sh
+              ci_init_repo_root
+              ci_ensure_node
+              ci_ensure_pnpm
+
+              cd "$REPO_ROOT/frontend"
+              rm -rf node_modules dist-cn
+              "$PNPM_BIN" install --frozen-lockfile
+              "$PNPM_BIN" build:cn
+
+              cd "$REPO_ROOT"
+              python3 .ci/runtime/commands/upload_staticpages_preview.py \
+                --artifact-dir frontend/dist-cn \
+                --api-url "$STATICPAGES_API_URL" \
+                --repository wisp/mono2 \
+                --source-branch "${{ ci.branch }}" \
+                --sha "${{ ci.sha }}"

@@ -20,6 +20,7 @@ bundles:
     allowed_paths:
     - ai-gateway/k8s/base
     - ai-gateway/k8s/overlays/beijing-sandbox
+    - ai-gateway/k8s/overlays/beijing-sandbox-2
     - ai-gateway/k8s/overlays/shprod
     - ai-gateway/deploy/Dockerfile
     - ai-gateway/openapi.yaml
@@ -41,8 +42,18 @@ bundles:
       - argocd/secrets/beijing-sandbox/ai-gateway-runtime-secrets.sops.yaml
       - ai-gateway/k8s/base/**
       - ai-gateway/k8s/overlays/beijing-sandbox/**
+      beijing-sandbox-2:
+      - argocd/services/ai-gateway/beijing-sandbox-2/**
+      - argocd/services/ai-gateway/common/**
+      - argocd/services/ai-gateway/profiles/sandbox/**
+      - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
+      - argocd/catalogs/sandbox/beijing-sandbox-2/ai-gateway.yaml
+      - argocd/secrets/beijing-sandbox-2/ai-gateway-runtime-secrets.sops.yaml
+      - ai-gateway/k8s/base/**
+      - ai-gateway/k8s/overlays/beijing-sandbox/**
     dockerfile: ai-gateway/deploy/Dockerfile
     build_context: .
     image_repo:
       beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/ai-gateway
+      beijing-sandbox-2: lightclaw-bj8.tencentcloudcr.com/lightclaw/ai-gateway
       shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/ai-gateway

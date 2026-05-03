@@ -30,6 +30,14 @@ from gitops.gongfeng import (
     require_settings_from_args,
     resolve_private_token_from_args,
 )
+from gitops.release_facts import ReleaseFacts, release_facts_from_mapping, trailers_from_git
+from gitops.release_view import (
+    render_argo_success_note,
+    render_argo_waiting_note,
+    render_failure_note,
+    render_merge_only_note,
+    render_noop_note,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -318,88 +326,45 @@ def wait_for_application_convergence(
     )
 
 
-def format_success_note(mr: Dict[str, Any], results: Sequence[Dict[str, Any]]) -> str:
-    lines = [
-        "自动验收通过：Argo CD 已收敛到目标 revision，且 live workload image 匹配本次 GitOps 发布。",
-        "",
-        f"- MR: !{mr.get('iid')}",
-        f"- merge commit: `{mr.get('merge_commit_sha')}`",
-        "",
-        "| App | Revision | Sync | Health | Expected images |",
-        "| --- | --- | --- | --- | --- |",
-    ]
-    for result in results:
-        expected = "<br/>".join(result["expected_images"])
-        lines.append(
-            f"| `{result['app_name']}` | `{result['revision']}` | `{result['sync_status']}` | `{result['health_status']}` | `{expected}` |"
-        )
-    return "\n".join(lines)
+def _facts_or_empty(facts: ReleaseFacts | None = None) -> ReleaseFacts:
+    return facts or release_facts_from_mapping({})
 
 
-def format_noop_note(mr: Dict[str, Any]) -> str:
-    return "\n".join(
-        [
-            "自动验收通过：GitOps MR 已合并，但本次 merge commit 没有 deploy-facing diff，跳过 Argo revision 等待。",
-            "",
-            f"- MR: !{mr.get('iid')}",
-            f"- merge commit: `{mr.get('merge_commit_sha')}`",
-        ]
-    )
+def format_success_note(
+    mr: Dict[str, Any],
+    results: Sequence[Dict[str, Any]],
+    facts: ReleaseFacts | None = None,
+) -> str:
+    return render_argo_success_note(_facts_or_empty(facts), mr, results)
 
 
-def format_merge_only_note(mr: Dict[str, Any], targets: Sequence[ReleaseTarget]) -> str:
-    if targets:
-        target_names = ", ".join(f"`{target.app_name}`" for target in targets)
-    else:
-        target_names = "-"
-    return "\n".join(
-        [
-            "GitOps MR 已合并：上海生产已进入待同步状态。",
-            "",
-            f"- MR: !{mr.get('iid')}",
-            f"- merge commit: `{mr.get('merge_commit_sha')}`",
-            f"- target apps: {target_names}",
-            "- Argo sync 策略：生产环境不自动同步；人工完成 DB readiness 确认后再执行 Argo sync。",
-        ]
-    )
+def format_noop_note(mr: Dict[str, Any], facts: ReleaseFacts | None = None) -> str:
+    return render_noop_note(_facts_or_empty(facts), mr)
 
 
-def format_failure_note(mr: Dict[str, Any], error: str, partial_results: Sequence[Dict[str, Any]]) -> str:
-    lines = [
-        "自动验收失败：GitOps MR 已合并，但 Argo CD 收敛状态未达到预期。",
-        "",
-        f"- MR: !{mr.get('iid')}",
-        f"- merge commit: `{mr.get('merge_commit_sha')}`",
-        f"- error: `{error}`",
-    ]
-    if partial_results:
-        lines.extend(
-            [
-                "",
-                "| App | Revision | Sync | Health | Expected images |",
-                "| --- | --- | --- | --- | --- |",
-            ]
-        )
-        for result in partial_results:
-            expected = "<br/>".join(result["expected_images"])
-            lines.append(
-                f"| `{result['app_name']}` | `{result['revision']}` | `{result['sync_status']}` | `{result['health_status']}` | `{expected}` |"
-            )
-    return "\n".join(lines)
+def format_merge_only_note(
+    mr: Dict[str, Any],
+    targets: Sequence[ReleaseTarget],
+    facts: ReleaseFacts | None = None,
+) -> str:
+    return render_merge_only_note(_facts_or_empty(facts), mr, targets)
 
 
-def format_waiting_note(mr: Dict[str, Any], targets: Sequence[ReleaseTarget]) -> str:
-    target_names = ", ".join(f"`{target.app_name}`" for target in targets)
-    return "\n".join(
-        [
-            "自动验收进度：已开始等待 Argo CD 收敛。",
-            "",
-            f"- MR: !{mr.get('iid')}",
-            f"- merge commit: `{mr.get('merge_commit_sha')}`",
-            f"- target apps: {target_names}",
-            "- 目标条件：`Synced / Healthy` 且 `status.summary.images` 包含本次发布镜像",
-        ]
-    )
+def format_failure_note(
+    mr: Dict[str, Any],
+    error: str,
+    partial_results: Sequence[Dict[str, Any]],
+    facts: ReleaseFacts | None = None,
+) -> str:
+    return render_failure_note(_facts_or_empty(facts), mr, error, partial_results)
+
+
+def format_waiting_note(
+    mr: Dict[str, Any],
+    targets: Sequence[ReleaseTarget],
+    facts: ReleaseFacts | None = None,
+) -> str:
+    return render_argo_waiting_note(_facts_or_empty(facts), mr, targets)
 
 
 def main() -> int:
@@ -407,6 +372,7 @@ def main() -> int:
     require_settings_from_args(args)
     repo_root = Path(args.repo_root).resolve()
     private_token = resolve_private_token_from_args(args)
+    facts = trailers_from_git(repo_root)
     merged_mr = resolve_merged_mr(args, private_token)
 
     changed_files = changed_files_from_merge_commit(
@@ -416,7 +382,7 @@ def main() -> int:
     )
     targets = infer_release_targets(changed_files)
     if args.merge_only:
-        note = format_merge_only_note(merged_mr, targets)
+        note = format_merge_only_note(merged_mr, targets, facts)
         post_merge_request_note(args.api_base, args.project_id, private_token, merged_mr["id"], note)
         print(note)
         return 0
@@ -424,7 +390,7 @@ def main() -> int:
     argocd_base_url, argocd_username, argocd_password, ssl_context = resolve_argocd_settings(args)
     argocd_token = login_argocd(argocd_base_url, argocd_username, argocd_password, ssl_context)
     if not targets:
-        note = format_noop_note(merged_mr)
+        note = format_noop_note(merged_mr, facts)
         post_merge_request_note(args.api_base, args.project_id, private_token, merged_mr["id"], note)
         print(note)
         return 0
@@ -434,7 +400,7 @@ def main() -> int:
         args.project_id,
         private_token,
         merged_mr["id"],
-        format_waiting_note(merged_mr, targets),
+        format_waiting_note(merged_mr, targets, facts),
     )
 
     partial_results: List[Dict[str, Any]] = []
@@ -454,12 +420,12 @@ def main() -> int:
             snapshot["expected_images"] = expected_images
             partial_results.append(snapshot)
 
-        note = format_success_note(merged_mr, partial_results)
+        note = format_success_note(merged_mr, partial_results, facts)
         post_merge_request_note(args.api_base, args.project_id, private_token, merged_mr["id"], note)
         print(note)
         return 0
     except Exception as exc:  # noqa: BLE001
-        note = format_failure_note(merged_mr, str(exc), partial_results)
+        note = format_failure_note(merged_mr, str(exc), partial_results, facts)
         try:
             post_merge_request_note(args.api_base, args.project_id, private_token, merged_mr["id"], note)
         except Exception as note_exc:  # noqa: BLE001

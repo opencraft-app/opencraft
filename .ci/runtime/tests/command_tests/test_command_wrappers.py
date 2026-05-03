@@ -5,7 +5,7 @@ from pathlib import Path
 REPO_ROOT = next(parent for parent in Path(__file__).resolve().parents if (parent / ".ci/runtime").is_dir())
 RUNTIME_DIR = REPO_ROOT / ".ci/runtime"
 COMMAND_DIR = RUNTIME_DIR / "commands"
-ALLOWED_MAIN_MODULE_PREFIXES = ("contracts.", "gitops.", "gates.", "guards.")
+ALLOWED_MAIN_MODULE_PREFIXES = ("contracts.", "gitops.", "gates.", "guards.", "support.")
 
 
 class CommandWrapperTests(unittest.TestCase):

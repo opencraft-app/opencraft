@@ -8,6 +8,8 @@ import sys
 from pathlib import Path
 
 from gitops.promotion_policy import GateDeniedBehavior, PromotionPolicy, require_policy_for_branch
+from gitops.release_facts import trailers_from_git
+from gitops.release_view import render_console_section
 from support.logging import print_section
 
 
@@ -52,6 +54,24 @@ def _print_policy(source_branch: str, policy: PromotionPolicy, stage: str) -> No
     )
 
 
+def _print_release_view(repo_root: Path, source_branch: str, stage: str) -> None:
+    if (
+        subprocess.run(
+            ["git", "-C", str(repo_root), "rev-parse", "--is-inside-work-tree"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        ).returncode
+        != 0
+    ):
+        return
+    try:
+        facts = trailers_from_git(repo_root)
+    except subprocess.CalledProcessError:
+        return
+    print(render_console_section(title="GitOps release view", facts=facts, source_branch=source_branch, stage=stage))
+
+
 def _base_parser(description: str) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument("--repo-root", default=".")
@@ -93,6 +113,7 @@ def validate_main(argv: list[str] | None = None) -> int:
     repo_root = Path(args.repo_root).resolve()
     policy = require_policy_for_branch(args.source_branch)
     _print_policy(args.source_branch, policy, "前置验收")
+    _print_release_view(repo_root, args.source_branch, "validate")
     _compile_runtime_python()
 
     _run(
@@ -130,6 +151,7 @@ def merge_main(argv: list[str] | None = None) -> int:
     repo_root = Path(args.repo_root).resolve()
     policy = require_policy_for_branch(args.source_branch)
     _print_policy(args.source_branch, policy, "自动合并")
+    _print_release_view(repo_root, args.source_branch, "merge")
     if not policy.auto_merge:
         print(f"skip auto-merge for {args.source_branch}: policy auto_merge=false")
         return 0
@@ -189,6 +211,7 @@ def verify_main(argv: list[str] | None = None) -> int:
     repo_root = Path(args.repo_root).resolve()
     policy = require_policy_for_branch(args.source_branch)
     _print_policy(args.source_branch, policy, "合并后验收")
+    _print_release_view(repo_root, args.source_branch, "verify")
 
     command = [
         sys.executable,
@@ -228,6 +251,7 @@ def cleanup_main(argv: list[str] | None = None) -> int:
     repo_root = Path(args.repo_root).resolve()
     policy = require_policy_for_branch(args.source_branch)
     _print_policy(args.source_branch, policy, "清理分支")
+    _print_release_view(repo_root, args.source_branch, "cleanup")
 
     if not policy.cleanup_source_branch:
         print(

@@ -28,6 +28,7 @@ from gitops.git import show_text as git_show_text
 
 CATALOG_DIRS = {
     "beijing-sandbox": "argocd/catalogs/sandbox/beijing-sandbox",
+    "beijing-sandbox-2": "argocd/catalogs/sandbox/beijing-sandbox-2",
 }
 DIRECT_APP_DIRS = {
     "shprod": "argocd/apps/shprod",

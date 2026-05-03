@@ -195,6 +195,13 @@ GitOps promote 分支策略已收口到 `.ci/runtime/gitops/promotion_policy.py`
 
 `.ci/gitops-promotion.yml` 只负责四个阶段的 Stream 编排和 runtime bootstrap，不再直接写北京/上海策略 `case`。
 
+GitOps promote 的可读发布视图由 `.ci/runtime/gitops/release_facts.py` 与
+`.ci/runtime/gitops/release_view.py` 派生生成：
+
+- 真相源仍是 promote commit trailers、Gongfeng MR、`gitops` merge commit 和 Argo live state
+- MR comment 与 CI console 只作为派生视图，不引入持久 `release-record.json`
+- 手动排障可运行 `.ci/runtime/commands/describe_gitops_promotion.py --source-branch <promote-branch> --target-branch gitops`
+
 镜像存在性门禁：
 
 - `.ci/runtime/commands/verify_image_exists.py`
@@ -778,6 +785,7 @@ CI_RUNTIME_REF=refs/tags/ci-runtime-20260429-1
   - 仍临时复用 `service-gateway` 构建上下文；后续如果需要彻底隔离二进制，应再拆 Dockerfile / build context
 - `session`
   - 有 release bundle / GitOps deploy-facing 路径，但没有 CI 构建元数据和独立 Stream YAML
+  - 北京测试 / 北京测试2 都把它作为 deploy-only catalog 管理；如果要纳入完整自动镜像发布，需要先补源码构建入口和 Dockerfile
 - `frontend-ds`
   - 有 shprod release bundle 和镜像构建元数据，但没有独立 Stream YAML，也不在当前 live 发布主链路中
 - `sandbox`

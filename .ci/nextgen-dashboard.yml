@@ -3,7 +3,9 @@ name: 构建 nextgen-dashboard
 
 on:
   push:
-    branches: [ master ]
+    branches:
+      - master
+      - playground/sandbox-bj-2
     paths:
       - nextgen-dashboard/**
       - argocd/services/nextgen-dashboard/**

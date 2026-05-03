@@ -33,6 +33,8 @@ GATE_IMAGE_DIGESTS_JSON="{}"
 GATE_CONFIG_STATUS="unknown"
 GATE_DB_STATUS="unknown"
 PIN_IMAGE="$IMAGE"
+RELEASE_RUNTIME_REF="${CI_RUNTIME_REF:-$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)}"
+RELEASE_RUNTIME_COMMIT="${CI_RUNTIME_COMMIT:-$(git -C "$REPO_ROOT" rev-parse HEAD)}"
 
 ci_require_commands git python3
 
@@ -162,9 +164,11 @@ git -C "$REPO_ROOT" fetch "$REMOTE_NAME" "$GITOPS_BRANCH"
 run_release_gates
 
 IMAGE_TAG="${IMAGE##*:}"
+SOURCE_SHORT="${SOURCE_REF:0:12}"
 SERVICE_SLUG="$(sanitize_branch_component "$SERVICE_ARG")"
 PROMOTE_BRANCH="promote-$(sanitize_branch_component "$ENV_NAME")-${SERVICE_SLUG}-$(sanitize_branch_component "$IMAGE_TAG")"
 ENV_DISPLAY_NAME="$(env_display_name "$ENV_NAME")"
+RELEASE_ID="${ENV_NAME}/${SERVICE_ARG}/${SOURCE_SHORT}/${IMAGE_TAG}"
 
 echo "============================================================"
 if [[ "$ENV_NAME" == "shprod" ]]; then
@@ -178,6 +182,8 @@ echo "目标环境：${ENV_DISPLAY_NAME} (${ENV_NAME})"
 echo "目标镜像：${IMAGE}"
 echo "GitOps pin 镜像：${PIN_IMAGE}"
 echo "源代码 revision：${SOURCE_REF}"
+echo "Release ID：${RELEASE_ID}"
+echo "Runtime：${RELEASE_RUNTIME_REF} (${RELEASE_RUNTIME_COMMIT})"
 echo "GitOps 目标分支：${GITOPS_BRANCH}"
 echo "promote 分支：${PROMOTE_BRANCH}"
 echo "执行说明：先从 master runtime 临时副本投影发布子集，再更新 image pin 并创建/复用 MR"
@@ -201,6 +207,10 @@ if git -C "$REPO_ROOT" diff --cached --quiet; then
 fi
 
 COMMIT_BODY="$(cat <<EOF
+Release-id: ${RELEASE_ID}
+Release-created-at: ${DEPLOYED_AT}
+Release-runtime-ref: ${RELEASE_RUNTIME_REF}
+Release-runtime-commit: ${RELEASE_RUNTIME_COMMIT}
 Release-bundle: ${BUNDLE_SERVICE}
 Release-target-env: ${ENV_NAME}
 Release-pin-targets: ${SERVICE_ARG}

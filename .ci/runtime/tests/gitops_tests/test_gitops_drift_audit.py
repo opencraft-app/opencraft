@@ -221,6 +221,40 @@ class GitOpsDriftAuditTests(unittest.TestCase):
             self.assertEqual(apps[0].source_path, "argocd/services/frontend/shprod")
             self.assertEqual(apps[0].expected_images, ("example.com/frontend:v1",))
 
+    def test_loads_sandbox2_catalog_expectations_from_gitops(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "argocd/catalogs/sandbox/beijing-sandbox-2").mkdir(parents=True)
+            (repo / "argocd/services/ctl/beijing-sandbox-2").mkdir(parents=True)
+            (repo / "argocd/catalogs/sandbox/beijing-sandbox-2/ctl.yaml").write_text(
+                textwrap.dedent(
+                    """\
+                    service: ctl
+                    env: beijing-sandbox-2
+                    project: beijing-sandbox-2
+                    destinationName: beijing-sandbox-2
+                    namespace: ctl
+                    sourcePath: argocd/services/ctl/beijing-sandbox-2
+                    """
+                )
+            )
+            (repo / "argocd/services/ctl/beijing-sandbox-2/ctl-platform.env").write_text(
+                "CTL_IMAGE=example.com/ctl:sandbox2\n"
+            )
+            git(repo, "init")
+            git(repo, "config", "user.email", "ci@example.com")
+            git(repo, "config", "user.name", "CI")
+            git(repo, "add", ".")
+            git(repo, "commit", "-m", "gitops")
+
+            apps = load_expected_apps(repo, "beijing-sandbox-2", "HEAD")
+
+            self.assertEqual(len(apps), 1)
+            self.assertEqual(apps[0].app_name, "ctl-beijing-sandbox-2")
+            self.assertEqual(apps[0].project, "beijing-sandbox-2")
+            self.assertEqual(apps[0].destination_name, "beijing-sandbox-2")
+            self.assertEqual(apps[0].expected_images, ("example.com/ctl:sandbox2",))
+
     def test_no_drift_does_not_send_wework_alert(self) -> None:
         called = False
 

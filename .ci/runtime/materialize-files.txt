@@ -7,6 +7,7 @@
 .ci/runtime/commands/audit_gitops_drift.py
 .ci/runtime/commands/build_release_image.py
 .ci/runtime/commands/cleanup_gitops_promotion.py
+.ci/runtime/commands/describe_gitops_promotion.py
 .ci/runtime/commands/generate_release_bundle_manifest.py
 .ci/runtime/commands/gitops_cleanup_source_branch.py
 .ci/runtime/commands/gitops_merge_request.py
@@ -18,6 +19,7 @@
 .ci/runtime/commands/run_release_gates.py
 .ci/runtime/commands/run_changed_guards.py
 .ci/runtime/commands/update_image_pin.py
+.ci/runtime/commands/upload_staticpages_preview.py
 .ci/runtime/commands/validate_gitops_promotion.py
 .ci/runtime/commands/validate_gitops_kustomize.py
 .ci/runtime/commands/validate_gitops_static.py
@@ -46,6 +48,7 @@
 .ci/runtime/bundles/sandbox.bundle
 .ci/runtime/bundles/service-gateway.bundle
 .ci/runtime/bundles/session.bundle
+.ci/runtime/bundles/staticpages.bundle
 .ci/runtime/bundles/subscription.bundle
 .ci/runtime/bundles/user-auth.bundle
 .ci/runtime/gitops/__init__.py
@@ -57,6 +60,8 @@
 .ci/runtime/gitops/gitops_merge_request_note.py
 .ci/runtime/gitops/gitops_promotion.py
 .ci/runtime/gitops/gitops_promotion_cleanup.py
+.ci/runtime/gitops/gitops_promotion_describe.py
+.ci/runtime/gitops/gitops_promotion_describe_entry.py
 .ci/runtime/gitops/gitops_promotion_merge.py
 .ci/runtime/gitops/gitops_promotion_validate.py
 .ci/runtime/gitops/gitops_promotion_verify.py
@@ -68,6 +73,8 @@
 .ci/runtime/gitops/promotion_policy.py
 .ci/runtime/gitops/prod_manual_sync_validation.py
 .ci/runtime/gitops/projection.py
+.ci/runtime/gitops/release_facts.py
+.ci/runtime/gitops/release_view.py
 .ci/runtime/gitops/shprod_sync_preflight.py
 .ci/runtime/gates/__init__.py
 .ci/runtime/gates/config.py
@@ -81,4 +88,5 @@
 .ci/runtime/support/__init__.py
 .ci/runtime/support/logging.py
 .ci/runtime/support/process.py
+.ci/runtime/support/staticpages_preview.py
 .ci/runtime/support/yaml.py

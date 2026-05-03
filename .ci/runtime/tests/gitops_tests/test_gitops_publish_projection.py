@@ -110,8 +110,8 @@ class ResolveReleaseBundleTests(unittest.TestCase):
             "lightclaw-bj8.tencentcloudcr.com/lightclaw/sandbox-api:test-tag",
         )
 
-    def test_resolve_release_bundle_blocks_non_target_sandbox2_services(self) -> None:
-        for service in ["ai-gateway", "nextgen-dashboard", "session"]:
+    def test_resolve_release_bundle_blocks_deploy_only_sandbox2_services(self) -> None:
+        for service in ["session"]:
             with self.subTest(service=service):
                 result = subprocess.run(
                     [
@@ -133,6 +133,33 @@ class ResolveReleaseBundleTests(unittest.TestCase):
 
                 self.assertEqual(result.returncode, 1)
                 self.assertIn("does not define docker build inputs", result.stderr)
+
+    def test_resolve_release_bundle_supports_sandbox2_image_services(self) -> None:
+        for service in ["ai-gateway", "nextgen-dashboard"]:
+            with self.subTest(service=service):
+                result = subprocess.run(
+                    [
+                        "python3",
+                        str(COMMAND_DIR / "resolve_release_bundle.py"),
+                        "--service",
+                        service,
+                        "--env",
+                        "beijing-sandbox-2",
+                        "--tag",
+                        "test-tag",
+                        "--format",
+                        "json",
+                    ],
+                    cwd=REPO_ROOT,
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+                payload = json.loads(result.stdout)
+
+                self.assertEqual(payload["service"], service)
+                self.assertEqual(payload["env"], "beijing-sandbox-2")
+                self.assertIn("lightclaw-bj8.tencentcloudcr.com/lightclaw/", payload["image"])
 
     def test_resolve_release_bundle_is_independent_of_cwd(self) -> None:
         result = subprocess.run(

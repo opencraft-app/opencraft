@@ -3,7 +3,9 @@ name: 构建 ai-gateway
 
 on:
   push:
-    branches: [ master ]
+    branches:
+      - master
+      - playground/sandbox-bj-2
     paths:
       - ai-gateway/**
       - argocd/services/ai-gateway/**
