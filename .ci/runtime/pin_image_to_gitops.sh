@@ -148,6 +148,7 @@ for bootstrap_file in "${BOOTSTRAP_FILES[@]}"; do
 done
 
 mkdir -p "$bootstrap_dir/.ci"
+rm -rf "$bootstrap_dir/.ci/runtime"
 cp -R "$REPO_ROOT/.ci/runtime" "$bootstrap_dir/.ci/runtime"
 RUNTIME_COMMAND_DIR="$bootstrap_dir/.ci/runtime/commands"
 
