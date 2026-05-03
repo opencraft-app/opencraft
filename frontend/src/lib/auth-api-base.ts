@@ -1,3 +1,5 @@
+import { isGlobal } from "@/lib/region";
+
 export const resolveConfiguredAuthApiBaseUrl = () => {
   const configured = import.meta.env.VITE_AUTH_API_BASE_URL?.trim();
 
@@ -33,6 +35,9 @@ export const resolveConfiguredAuthApiBaseUrl = () => {
     }
     if (hostname === "lightvela.tencent.com" || hostname === "www.lightvela.tencent.com") {
       return "https://api.lightvela.tencent.com";
+    }
+    if (hostname.endsWith(".edgeone.cool") || hostname === "edgeone.cool") {
+      return isGlobal ? "https://lightclaw.tech" : "https://api.lightvela.tencent.com";
     }
   }
 
