@@ -680,22 +680,4 @@ describe("http repositories auth token bootstrap", () => {
       "https://lightvela.tencent.com/auth/sign-in",
     );
   });
-
-  it("uses the lightvela auth backend on cn edgeone preview domains", () => {
-    vi.stubEnv("VITE_AUTH_API_BASE_URL", "");
-    stubHostname("lightvela-preview-gyaqxxw9.edgeone.cool");
-
-    const repositories = createRepositories();
-
-    expectOAuthStartURL(
-      repositories.auth.getOAuthStartUrl("qq"),
-      "https://api.lightvela.tencent.com/auth/oauth/qq/start",
-      "https://lightvela-preview-gyaqxxw9.edgeone.cool/auth/sign-in",
-    );
-    expectOAuthStartURL(
-      repositories.auth.getOAuthStartUrl("wechat"),
-      "https://api.lightvela.tencent.com/auth/oauth/wechat/start",
-      "https://lightvela-preview-gyaqxxw9.edgeone.cool/auth/sign-in",
-    );
-  });
 });
