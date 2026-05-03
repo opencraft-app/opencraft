@@ -33,54 +33,13 @@ stages:
               source .ci/runtime/gitops_promotion_bootstrap.sh
               ci_bootstrap_gitops_promotion_runtime "${CI_RUNTIME_DIR}" "${CI_RUNTIME_REF:-origin/master}"
               git diff --name-only HEAD~1..HEAD || true
-              python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/update_image_pin.py" --help >/dev/null
-              python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/project_release_bundle.py" --help >/dev/null
-              python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/plan_release_gates.py" --help >/dev/null
-              python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/verify_db_contract.py" --help >/dev/null
-              python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/verify_shprod_sync_preflight.py" --help >/dev/null
-              python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/validate_gitops_static.py" --help >/dev/null
-              python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/validate_gitops_kustomize.py" --help >/dev/null
-              python3 -m py_compile $(find \
-                "${CI_RUNTIME_DIR}/.ci/runtime/contracts" \
-                "${CI_RUNTIME_DIR}/.ci/runtime/gitops" \
-                "${CI_RUNTIME_DIR}/.ci/runtime/gates" \
-                "${CI_RUNTIME_DIR}/.ci/runtime/commands" \
-                -name '*.py' | sort)
-              case "${{ ci.branch }}" in
-                promote-beijing-sandbox-2-*)
-                  TARGET_ENV=beijing-sandbox-2
-                  ;;
-                promote-beijing-sandbox-*)
-                  TARGET_ENV=beijing-sandbox
-                  ;;
-                promote-shprod-*)
-                  TARGET_ENV=shprod
-                  ;;
-                *)
-                  TARGET_ENV=""
-                  ;;
-              esac
-              if [[ -n "$TARGET_ENV" ]]; then
-                ci_require_gitops_validation_tools
-                ci_prepare_sops_age_key
-                python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/validate_gitops_static.py" \
-                  --repo-root "$REPO_ROOT" \
-                  --env "$TARGET_ENV" \
-                  --bundle-manifest "${CI_RUNTIME_DIR}/.ci/runtime/release-bundles.manifest"
-                if [[ "$TARGET_ENV" == "shprod" ]]; then
-                  python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/validate_gitops_kustomize.py" \
-                    --repo-root "$REPO_ROOT" \
-                    --env "$TARGET_ENV" \
-                    --changed-only
-                else
-                  python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/validate_gitops_kustomize.py" \
-                    --repo-root "$REPO_ROOT" \
-                    --env "$TARGET_ENV"
-                fi
-              else
-                echo "skip GitOps static/Kustomize validation for unsupported promote branch ${{ ci.branch }}"
-              fi
-              echo "gitops promotion check passed"
+              ci_require_gitops_validation_tools
+              ci_prepare_sops_age_key
+              python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/validate_gitops_promotion.py" \
+                --repo-root "$REPO_ROOT" \
+                --source-branch "${{ ci.branch }}" \
+                --target-branch gitops \
+                --bundle-manifest "${CI_RUNTIME_DIR}/.ci/runtime/release-bundles.manifest"
 
   - name: 自动合并 GitOps MR
     jobs:
@@ -103,49 +62,10 @@ stages:
               CI_RUNTIME_DIR="$(mktemp -d)"
               source .ci/runtime/gitops_promotion_bootstrap.sh
               ci_bootstrap_gitops_promotion_runtime "${CI_RUNTIME_DIR}" "${CI_RUNTIME_REF:-origin/master}"
-              COMMIT_MESSAGE="$(git log -1 --format=%B)"
-              trailer_value() {
-                printf '%s\n' "$COMMIT_MESSAGE" | awk -F': ' -v key="$1" '$1 == key {print $2; exit}'
-              }
-              GATE_AUTO_MERGE_ALLOWED="$(trailer_value Release-gate-auto-merge)"
-              GATE_ARGO_SYNC="$(trailer_value Release-gate-argo-sync)"
-              case "${{ ci.branch }}" in
-                promote-beijing-sandbox-2-*|promote-beijing-sandbox-*)
-                  if [[ "$GATE_AUTO_MERGE_ALLOWED" != "true" ]]; then
-                    echo "refuse Beijing GitOps auto-merge because release gate did not allow auto merge"
-                    echo "Release-gate-auto-merge=${GATE_AUTO_MERGE_ALLOWED:-missing}"
-                    exit 1
-                  fi
-                  python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/gitops_merge_request.py" \
-                    --source-branch "${{ ci.branch }}" \
-                    --target-branch gitops \
-                    --title "自动合并北京 GitOps 发布 MR" \
-                    --description "promote 分支检查通过后自动合并到 gitops，并进入 Argo 收敛验收。" \
-                    --auto-merge \
-                    --remove-source-branch
-                  ;;
-                promote-shprod-*)
-                  if [[ "$GATE_AUTO_MERGE_ALLOWED" != "true" ]]; then
-                    echo "skip shprod GitOps auto-merge because release gate is not satisfied"
-                    echo "Release-gate-auto-merge=${GATE_AUTO_MERGE_ALLOWED:-missing}"
-                    exit 0
-                  fi
-                  if [[ "$GATE_ARGO_SYNC" != "manual" ]]; then
-                    echo "refuse shprod GitOps auto-merge because Argo sync policy is not manual"
-                    echo "Release-gate-argo-sync=${GATE_ARGO_SYNC:-missing}"
-                    exit 1
-                  fi
-                  python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/gitops_merge_request.py" \
-                    --source-branch "${{ ci.branch }}" \
-                    --target-branch gitops \
-                    --title "自动合并上海生产 GitOps 待同步 MR" \
-                    --description "promote 分支检查通过后自动合并到 gitops；上海生产仅进入待同步状态，不执行 Argo 自动 sync。" \
-                    --auto-merge
-                  ;;
-                *)
-                  echo "skip auto-merge for ${{ ci.branch }}"
-                  ;;
-              esac
+              python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/merge_gitops_promotion.py" \
+                --repo-root "$REPO_ROOT" \
+                --source-branch "${{ ci.branch }}" \
+                --target-branch gitops
 
   - name: GitOps 合并后验收
     jobs:
@@ -168,26 +88,10 @@ stages:
               CI_RUNTIME_DIR="$(mktemp -d)"
               source .ci/runtime/gitops_promotion_bootstrap.sh
               ci_bootstrap_gitops_promotion_runtime "${CI_RUNTIME_DIR}" "${CI_RUNTIME_REF:-origin/master}"
-              case "${{ ci.branch }}" in
-                promote-beijing-sandbox-2-*|promote-beijing-sandbox-*)
-                  python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/verify_gitops_release.py" \
-                    --repo-root "$REPO_ROOT" \
-                    --source-branch "${{ ci.branch }}" \
-                    --target-branch gitops
-                  ;;
-                promote-shprod-*)
-                  python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/verify_gitops_release.py" \
-                    --repo-root "$REPO_ROOT" \
-                    --source-branch "${{ ci.branch }}" \
-                    --target-branch gitops \
-                    --merge-only \
-                    --merge-wait-seconds 3600 \
-                    --merge-poll-seconds 15
-                  ;;
-                *)
-                  echo "skip Argo convergence verification for ${{ ci.branch }}"
-                  ;;
-              esac
+              python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/verify_gitops_promotion.py" \
+                --repo-root "$REPO_ROOT" \
+                --source-branch "${{ ci.branch }}" \
+                --target-branch gitops
 
   - name: 清理 promote 分支
     jobs:
@@ -210,18 +114,9 @@ stages:
               CI_RUNTIME_DIR="$(mktemp -d)"
               source .ci/runtime/gitops_promotion_bootstrap.sh
               ci_bootstrap_gitops_promotion_runtime "${CI_RUNTIME_DIR}" "${CI_RUNTIME_REF:-origin/master}"
-              case "${{ ci.branch }}" in
-                promote-beijing-sandbox-2-*|promote-beijing-sandbox-*)
-                  python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/gitops_cleanup_source_branch.py" \
-                    --source-branch "${{ ci.branch }}" \
-                    --target-branch gitops \
-                    --wait-seconds 120 \
-                    --poll-seconds 5
-                  ;;
-                promote-shprod-*)
-                  echo "skip source branch cleanup for production promote branch ${{ ci.branch }}; shprod keeps promote branches to avoid delete-event checkout failures"
-                  ;;
-                *)
-                  echo "skip branch cleanup for ${{ ci.branch }}"
-                  ;;
-              esac
+              python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/cleanup_gitops_promotion.py" \
+                --repo-root "$REPO_ROOT" \
+                --source-branch "${{ ci.branch }}" \
+                --target-branch gitops \
+                --wait-seconds 120 \
+                --poll-seconds 5

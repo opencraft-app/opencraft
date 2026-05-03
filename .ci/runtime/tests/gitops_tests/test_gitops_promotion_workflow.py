@@ -12,6 +12,7 @@ RUNTIME_DIR = REPO_ROOT / ".ci/runtime"
 if str(RUNTIME_DIR) not in sys.path:
     sys.path.insert(0, str(RUNTIME_DIR))
 
+from gitops.promotion_policy import policy_for_branch  # noqa: E402
 from gitops.shprod_sync_preflight import build_verify_command, parse_trailers  # noqa: E402
 
 APPROVED_GATE_VARS = {
@@ -31,21 +32,26 @@ APPROVED_GATE_VARS = {
 
 class GitOpsPromotionWorkflowTests(unittest.TestCase):
     def test_sandbox2_branch_is_matched_before_sandbox1(self) -> None:
-        workflow = (REPO_ROOT / ".ci/gitops-promotion.yml").read_text()
-        sandbox2_index = workflow.index("promote-beijing-sandbox-2-*)")
-        sandbox1_index = workflow.index("promote-beijing-sandbox-*)")
+        sandbox2_policy = policy_for_branch("promote-beijing-sandbox-2-ctl-tag")
+        sandbox1_policy = policy_for_branch("promote-beijing-sandbox-ctl-tag")
 
-        self.assertLess(sandbox2_index, sandbox1_index)
-        self.assertIn("TARGET_ENV=beijing-sandbox-2", workflow)
-        self.assertIn("--env \"$TARGET_ENV\"", workflow)
+        self.assertIsNotNone(sandbox2_policy)
+        self.assertIsNotNone(sandbox1_policy)
+        self.assertEqual(sandbox2_policy.env, "beijing-sandbox-2")
+        self.assertEqual(sandbox1_policy.env, "beijing-sandbox")
+        self.assertEqual(sandbox2_policy.kustomize_mode.value, "full")
 
     def test_all_auto_stages_route_sandbox2_promote_branches(self) -> None:
         workflow = (REPO_ROOT / ".ci/gitops-promotion.yml").read_text()
+        policy = policy_for_branch("promote-beijing-sandbox-2-ctl-tag")
 
-        self.assertGreaterEqual(workflow.count("promote-beijing-sandbox-2-*"), 4)
-        self.assertIn("gitops_merge_request.py", workflow)
-        self.assertIn("verify_gitops_release.py", workflow)
-        self.assertIn("gitops_cleanup_source_branch.py", workflow)
+        self.assertIsNotNone(policy)
+        self.assertEqual(policy.env, "beijing-sandbox-2")
+        self.assertTrue(policy.auto_merge)
+        self.assertTrue(policy.cleanup_source_branch)
+        self.assertIn("merge_gitops_promotion.py", workflow)
+        self.assertIn("verify_gitops_promotion.py", workflow)
+        self.assertIn("cleanup_gitops_promotion.py", workflow)
 
     def test_promotion_workflow_uses_shared_bootstrap_helper(self) -> None:
         workflow = (REPO_ROOT / ".ci/gitops-promotion.yml").read_text()
@@ -58,7 +64,7 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
         self.assertEqual(workflow.count("ci_bootstrap_gitops_promotion_runtime"), 4)
         self.assertIn('ci_materialize_runtime_manifest "${runtime_dir}" ".ci/runtime/materialize-files.txt"', helper)
         self.assertIn("GitOps 合并后验收", workflow)
-        self.assertIn("上海生产 GitOps 待同步 MR", workflow)
+        self.assertIn("按环境策略自动合并 GitOps MR", workflow)
 
     def test_build_and_promote_fans_out_auto_pin_envs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -183,12 +189,15 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
     def test_shprod_promote_branches_are_not_removed_by_automation(self) -> None:
         workflow = (REPO_ROOT / ".ci/gitops-promotion.yml").read_text()
         pin_script = (REPO_ROOT / ".ci/runtime/pin_image_to_gitops.sh").read_text()
+        policy = policy_for_branch("promote-shprod-lightclaw-auth-tag")
 
-        self.assertIn("promote-shprod-*)", workflow)
-        self.assertIn("skip source branch cleanup for production promote branch", workflow)
-        self.assertIn("上海生产仅进入待同步状态", workflow)
+        self.assertIsNotNone(policy)
+        self.assertFalse(policy.cleanup_source_branch)
+        self.assertEqual(policy.verify_mode.value, "merge_only")
+        self.assertEqual(policy.kustomize_mode.value, "changed_only")
+        self.assertEqual(policy.required_argo_sync, "manual")
+        self.assertIn("cleanup_gitops_promotion.py", workflow)
         self.assertIn("北京收敛与上海待同步验收", workflow)
-        self.assertIn("--merge-only", workflow)
         self.assertIn('case "$ENV_NAME" in', pin_script)
         self.assertIn("shprod)", pin_script)
         self.assertIn("MR_ARGS+=(--remove-source-branch)", pin_script)

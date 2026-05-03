@@ -180,6 +180,21 @@ extends:
 4. 两个门禁都通过后，主工作区投影 GitOps desired state 并更新 image pin
 5. 创建 / 自动合并 GitOps MR
 
+GitOps promote 分支策略已收口到 `.ci/runtime/gitops/promotion_policy.py`：
+
+- `beijing-sandbox` / `beijing-sandbox-2`
+  - 全量 GitOps static / Kustomize 验收
+  - gate 允许后自动合并
+  - 合并后等待 Argo 收敛
+  - 合并完成后清理 promote 源分支
+- `shprod`
+  - changed-only GitOps Kustomize 验收
+  - gate 允许且 `Release-gate-argo-sync=manual` 时自动合并
+  - 合并后只校验进入待同步状态，不执行 Argo 自动 sync
+  - 不清理 promote 源分支
+
+`.ci/gitops-promotion.yml` 只负责四个阶段的 Stream 编排和 runtime bootstrap，不再直接写北京/上海策略 `case`。
+
 镜像存在性门禁：
 
 - `.ci/runtime/commands/verify_image_exists.py`
