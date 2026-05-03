@@ -59,7 +59,7 @@ describe("UserAvatarMenu", () => {
 
     fireEvent.mouseEnter(screen.getByRole("button"));
 
-    expect(screen.getByText("套餐 专业版套餐")).toBeInTheDocument();
+    expect(screen.getByText("套餐：专业版套餐")).toBeInTheDocument();
     expect(screen.queryByText(/^未订阅$/)).not.toBeInTheDocument();
   });
 

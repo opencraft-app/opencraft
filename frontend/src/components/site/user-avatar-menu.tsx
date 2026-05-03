@@ -29,7 +29,7 @@ export const UserAvatarMenu = () => {
 
   const avatarSrc = avatarImageUrl(user?.avatarUrl ?? null);
   const subscriptionName = activePass?.bundle_name ?? session.currentSubscription?.code ?? null;
-  const subscriptionLabel = subscriptionName ? `${t("套餐")} ${subscriptionName}` : t("未订阅");
+  const subscriptionLabel = subscriptionName ? `${t("套餐")}：${subscriptionName}` : t("未订阅");
 
   return (
     <div ref={containerRef} className="relative">
