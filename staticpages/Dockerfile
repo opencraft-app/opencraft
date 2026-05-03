@@ -10,6 +10,7 @@ COPY third_party/staticpages ./
 RUN GOWORK=off CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/staticpages .
 
 FROM --platform=linux/amd64 alpine:3.20
+LABEL org.opencontainers.image.source="https://git.woa.com/wisp/mono2/tree/master/third_party/staticpages"
 RUN apk add --no-cache ca-certificates
 COPY --from=builder /out/staticpages /usr/local/bin/staticpages
 
