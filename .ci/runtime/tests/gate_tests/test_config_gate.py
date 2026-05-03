@@ -17,6 +17,52 @@ from support import process  # noqa: E402
 
 
 class ConfigGateTests(unittest.TestCase):
+    def test_prepare_worktree_generates_release_bundle_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp) / "repo"
+            worktree = Path(tmp) / "worktree"
+            runtime_dir = repo_root / ".ci/runtime"
+            bootstrap_file = ".ci/runtime/gitops_promotion_bootstrap.sh"
+            (repo_root / bootstrap_file).parent.mkdir(parents=True)
+            (repo_root / bootstrap_file).write_text("#!/usr/bin/env bash\n")
+
+            with (
+                mock.patch.object(config.subprocess, "run") as run,
+                mock.patch.object(config.shutil, "copytree") as copytree,
+            ):
+                config.prepare_worktree(
+                    repo_root=repo_root,
+                    worktree=worktree,
+                    runtime_dir=runtime_dir,
+                    remote_name="origin",
+                    gitops_branch="gitops",
+                    bootstrap_files=[bootstrap_file],
+                )
+
+        self.assertEqual(run.call_count, 2)
+        self.assertEqual(
+            run.call_args_list[0],
+            mock.call(
+                ["git", "-C", str(repo_root), "worktree", "add", "--detach", str(worktree), "origin/gitops"],
+                check=True,
+                stdout=subprocess.DEVNULL,
+            ),
+        )
+        self.assertEqual(
+            run.call_args_list[1],
+            mock.call(
+                [
+                    "python3",
+                    str(worktree / ".ci/runtime/commands/generate_release_bundle_manifest.py"),
+                    "--output",
+                    str(worktree / ".ci/runtime/release-bundles.manifest"),
+                ],
+                cwd=worktree,
+                check=True,
+            ),
+        )
+        copytree.assert_called_once_with(runtime_dir, worktree / ".ci/runtime", dirs_exist_ok=True)
+
     def test_project_and_pin_preserves_commands_and_cwd(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo_root = Path(tmp) / "repo"

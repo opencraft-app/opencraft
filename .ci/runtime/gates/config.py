@@ -79,6 +79,16 @@ def prepare_worktree(
     runtime_destination = worktree / ".ci/runtime"
     runtime_destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(runtime_dir, runtime_destination, dirs_exist_ok=True)
+    subprocess.run(
+        [
+            "python3",
+            str(runtime_destination / "commands/generate_release_bundle_manifest.py"),
+            "--output",
+            str(runtime_destination / "release-bundles.manifest"),
+        ],
+        cwd=worktree,
+        check=True,
+    )
 
 
 def project_and_pin(
