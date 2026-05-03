@@ -156,22 +156,20 @@ class ConfigGateTests(unittest.TestCase):
         self.assertEqual(static_command[4:], [str(init_repo_root), str(runtime_command_dir), str(repo_root), "shprod", str(bundle_manifest)])
         self.assertEqual(run_logged.call_args_list[0].kwargs["cwd"], repo_root)
         for call, service in zip(run_logged.call_args_list[1:], ("payment", "subscription"), strict=True):
+            command = call.args[0]
+            self.assertEqual(command[0:4], ["bash", "-c", mock.ANY, "bash"])
             self.assertEqual(
-                call,
-                mock.call(
-                    [
-                        "python3",
-                        str(runtime_command_dir / "validate_gitops_kustomize.py"),
-                        "--repo-root",
-                        str(repo_root),
-                        "--env",
-                        "shprod",
-                        "--source-path",
-                        f"argocd/services/{service}/shprod",
-                    ],
-                    cwd=repo_root,
-                ),
+                command[4:],
+                [
+                    str(init_repo_root),
+                    str(runtime_command_dir),
+                    str(repo_root),
+                    "shprod",
+                    f"argocd/services/{service}/shprod",
+                ],
             )
+            self.assertIn("validate_gitops_kustomize.py", command[2])
+            self.assertEqual(call.kwargs["cwd"], repo_root)
 
     def test_run_logged_forwards_stdout_then_stderr_to_stderr(self) -> None:
         command = ["demo"]

@@ -172,15 +172,23 @@ def validate_config(
         source_path = f"argocd/services/{service}/{env}"
         if not (repo_root / source_path / "kustomization.yaml").is_file():
             raise FileNotFoundError(f"配置契约失败：缺少 {source_path}/kustomization.yaml")
+        kustomize_script = (
+            'source "$1/.ci/init.sh"\n'
+            'ci_require_gitops_validation_tools\n'
+            'ci_prepare_sops_age_key\n'
+            'trap ci_cleanup_sops_age_key EXIT\n'
+            'python3 "$2/validate_gitops_kustomize.py" --repo-root "$3" --env "$4" --source-path "$5"\n'
+        )
         run_logged(
             [
-                "python3",
-                str(runtime_command_dir / "validate_gitops_kustomize.py"),
-                "--repo-root",
+                "bash",
+                "-c",
+                kustomize_script,
+                "bash",
+                str(init_repo_root),
+                str(runtime_command_dir),
                 str(repo_root),
-                "--env",
                 env,
-                "--source-path",
                 source_path,
             ],
             cwd=repo_root,
