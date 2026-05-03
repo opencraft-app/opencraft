@@ -1,13 +1,11 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 
 	"github.com/SpechtLabs/StaticPages/cmd"
 	"github.com/gin-gonic/gin"
-	"github.com/spechtlabs/go-otel-utils/otelprovider"
 	"github.com/spechtlabs/go-otel-utils/otelzap"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
@@ -32,14 +30,6 @@ var (
 )
 
 func main() {
-	logProvider := otelprovider.NewLogger(
-		otelprovider.WithLogAutomaticEnv(),
-	)
-
-	traceProvider := otelprovider.NewTracer(
-		otelprovider.WithTraceAutomaticEnv(),
-	)
-
 	// Initialize Logging
 	debug := os.Getenv("OTEL_LOG_LEVEL") == "debug"
 	var zapLogger *zap.Logger
@@ -69,29 +59,12 @@ func main() {
 		otelzap.WithAnnotateLevel(zap.WarnLevel),
 		otelzap.WithErrorStatusLevel(zap.ErrorLevel),
 		otelzap.WithStackTrace(false),
-		otelzap.WithLoggerProvider(logProvider),
 	)
 
 	// Replace global otelZap logger
 	undoOtelZapGlobals := otelzap.ReplaceGlobals(otelZapLogger)
 
 	defer func() {
-		if err := traceProvider.ForceFlush(context.Background()); err != nil {
-			otelzap.L().Warn("failed to flush traces")
-		}
-
-		if err := logProvider.ForceFlush(context.Background()); err != nil {
-			otelzap.L().Warn("failed to flush logs")
-		}
-
-		if err := traceProvider.Shutdown(context.Background()); err != nil {
-			panic(err)
-		}
-
-		if err := logProvider.Shutdown(context.Background()); err != nil {
-			panic(err)
-		}
-
 		undoStdLogRedirect()
 		undoOtelZapGlobals()
 		undoZapGlobals()
