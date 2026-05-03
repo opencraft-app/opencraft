@@ -22,7 +22,7 @@ def merge_bundle_sources(source_dir: Path) -> dict[str, Any]:
         raise FileNotFoundError(f"release bundle source dir not found: {source_dir}")
 
     manifest: dict[str, Any] = {"bundles": {}}
-    for path in sorted(source_dir.glob("*.yaml")):
+    for path in sorted(source_dir.glob("*.bundle")):
         document = load_mapping(path)
         bundles = document.pop("bundles", {}) or {}
         if not isinstance(bundles, dict):

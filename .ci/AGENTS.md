@@ -37,6 +37,7 @@ rg -n "extends|check-in|template|parameters|<keyword>" src/backend/ci/core/commo
 - root `extends` 不能同时带 `stages/jobs/steps/variables/finally`；服务实例 YAML 只保留 `name/on/extends`。
 - 当前仓库仍按 Stream `version: v2.0` 编写：root `extends.template` 必须是字符串，实例参数放 `extends.parameters`。
 - 不要把 `.ci/templates/*.yml` 局部模板入口切到 `version: v3.0`；蓝盾 PAC v3 暂未支持局部模板，除非模板已迁到平台/远程模板机制。
+- 不要在 `.ci/**` 放非流水线 `.yaml` 文件；蓝盾会把它们误识别成流水线。私有配置用 `.manifest` / `.bundle` 后缀。
 - 生产审批优先确认当前平台是否支持 `check-in`；如果 schema/UI 不稳定，不要把 shprod 发布链路绑定到未验证的 approval YAML。
 
 ## 实际运行机

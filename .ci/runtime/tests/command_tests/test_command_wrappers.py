@@ -27,6 +27,12 @@ class CommandWrapperTests(unittest.TestCase):
         self.assertTrue(expected_python.issubset(manifest_entries))
         self.assertFalse(any("/db_gates/" in entry for entry in manifest_entries))
 
+    def test_ci_private_configs_do_not_use_yaml_extension(self) -> None:
+        self.assertFalse(
+            list((REPO_ROOT / ".ci").rglob("*.yaml")),
+            "BK-CI treats .ci/**/*.yaml as pipeline candidates; use .manifest/.bundle for private configs",
+        )
+
     def test_smoke_reuses_manifest_generation_helper(self) -> None:
         smoke_script = (RUNTIME_DIR / "smoke_materialized_runtime.sh").read_text()
 

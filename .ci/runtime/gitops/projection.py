@@ -77,12 +77,11 @@ def sync_publish_subset(repo_root: str, source_ref: str, target_ref: str, patter
 
 
 def load_manifest_text_from_source_ref(repo_root: str, source_ref: str) -> str:
-    for path in (".ci/runtime/release-bundles.manifest", ".ci/runtime/release-bundles.yaml"):
-        try:
-            return git_show_text(repo_root, source_ref, path)
-        except subprocess.CalledProcessError:
-            continue
-    raise FileNotFoundError(f"release bundle manifest not found in {source_ref}")
+    path = ".ci/runtime/release-bundles.manifest"
+    try:
+        return git_show_text(repo_root, source_ref, path)
+    except subprocess.CalledProcessError as exc:
+        raise FileNotFoundError(f"release bundle manifest not found in {source_ref}") from exc
 
 
 def main() -> int:

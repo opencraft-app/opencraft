@@ -58,6 +58,7 @@
 - `on.push.paths` 仍留在每个服务入口 YAML；这是 Stream 触发发现和 MR check 可读性的服务边界。
 - `version: v2.0` 入口使用 `extends.template: <path>` + `extends.parameters`；当前平台会拒绝 v2 里的 `extends.template` 对象写法。
 - 不要为了 `extends.template.path` 对象写法切到 `version: v3.0`；蓝盾 PAC v3 暂未支持局部模板，`.ci/templates/service-release.yml` 这类本仓库模板应继续走 Stream v2。
+- 非流水线配置不要使用 `.yaml` 后缀放在 `.ci/**` 下；蓝盾会把 `.ci/**/*.yaml` 误识别成流水线候选。Guard 注册表用 `.ci/guards.manifest`，release bundle 源用 `.ci/runtime/bundles/*.bundle`。
 - `frontend`、`frontend-edgeone-*`、`gitops-*`、`ci-runtime`、`mr-placeholder` 不属于这批标准 service release 入口，不使用该模板。
 
 ### 新增标准服务流水线
@@ -101,7 +102,7 @@ extends:
 - 业务 YAML 只声明 `on.push.paths`、`paths-ignore` 和 `extends`；不要复制 `concurrency`、`variables`、`stages`。
 - 不要把 `.ci/**`、`.ci/runtime/**`、`.ci/templates/**` 放进业务流水线 `paths`，避免 CI 模板变更隐式构建镜像或推进 GitOps。
 - CI 模板、runtime、guard 的变更只触发 `构建 CI runtime`；业务服务是否需要重新构建，应由业务路径变更或手动触发决定。
-- `SERVICE` 是 `.ci/runtime/bundles/*.yaml` 里的 bundle id；`BUNDLE` 是 GitOps pin target。多数服务二者相同，`lightclaw-auth` 是例外：`SERVICE=user-auth`、`BUNDLE=lightclaw-auth`。
+- `SERVICE` 是 `.ci/runtime/bundles/*.bundle` 里的 bundle id；`BUNDLE` 是 GitOps pin target。多数服务二者相同，`lightclaw-auth` 是例外：`SERVICE=user-auth`、`BUNDLE=lightclaw-auth`。
 - `MASTER_*` / `PLAYGROUND_*` 是 CSV env set。标准服务默认 master 构建 `beijing-sandbox,shprod` 但只自动 pin `beijing-sandbox`；`sandbox` 当前覆盖为只构建北京沙箱环境。
 
 ### 模板变更服务端验收
@@ -191,7 +192,7 @@ extends:
 
 DB contract 的声明位置是：
 
-- `.ci/runtime/bundles/*.yaml`，CI 会生成合并产物 `.ci/runtime/release-bundles.manifest`
+- `.ci/runtime/bundles/*.bundle`，CI 会生成合并产物 `.ci/runtime/release-bundles.manifest`
 
 已支持的契约类型：
 
@@ -224,7 +225,7 @@ DB job / readiness Job 的 kubeconfig 读取顺序：
 
 发布契约与 bundle 元数据。这里描述“必须满足什么”，不执行 registry / Kustomize / Kubernetes / GitOps 变更：
 
-- `.ci/runtime/bundles/*.yaml`
+- `.ci/runtime/bundles/*.bundle`
   - bundle owner/source、publish paths、image targets、DB contract、轻量依赖声明的 review 源文件
 - `.ci/runtime/release-bundles.manifest`
   - CI 生成的合并产物；运行时仍以这个文件作为 bundle manifest 输入
@@ -300,10 +301,10 @@ MR / push 变更目录约束派发：
 - `.ci/mr-placeholder.yml`
   - MR commit check 入口，从 `origin/master` materialize trusted runtime 后运行 guard dispatcher
   - trusted guard 失败且本次 MR 只修改 `.ci/**` 时，允许 fallback 到当前分支的 `.ci/checks/guard.sh`，用于修复坏掉的 `.ci` 自身 guard；业务代码变更不允许 fallback
-- `.ci/guards.yaml`
+- `.ci/guards.manifest`
   - guard 注册表，声明 changed path pattern 与对应 guard command
 - `.ci/runtime/guards/changed_guards.py`
-  - 计算 changed files，按 `.ci/guards.yaml` 派发匹配的 guard
+  - 计算 changed files，按 `.ci/guards.manifest` 派发匹配的 guard
 - `.ci/checks/guard.sh`
   - `.ci/**` 变更的 CI runtime / YAML / materialize 门禁
 - `service-gateway/checks/guard.sh`
@@ -315,12 +316,12 @@ MR / push 变更目录约束派发：
 
 Guard 自举策略：
 
-- 默认执行 **trusted guard**：MR 流水线从 `origin/master` 读取 `.ci/guards.yaml`、dispatcher runtime 和 guard command，避免 MR 分支通过修改 guard 绕过门禁。
+- 默认执行 **trusted guard**：MR 流水线从 `origin/master` 读取 `.ci/guards.manifest`、dispatcher runtime 和 guard command，避免 MR 分支通过修改 guard 绕过门禁。
 - 允许 `.ci` 自修复 fallback：如果 trusted guard 失败，且变更文件全部位于 `.ci/**`，则允许执行当前 MR 分支的 `.ci/checks/guard.sh` 作为 candidate guard。
 - fallback 的目的只用于修复 target branch 上已经损坏的 `.ci` 自身 guard，不能用于业务代码变更。
 - 只要变更中包含非 `.ci/**` 文件，例如 `frontend/**`、`service-gateway/**` 或 `argocd/**`，fallback 立即禁止，保持 trusted guard 的失败结果。
 - candidate guard 必须跑完整 `.ci` 门禁，包括 shell 语法、Python compile、prod manual sync、runtime 单测、materialized runtime smoke、YAML parse 和 `git diff --check`。
-- 后续新增目录 guard 时，应把 command 放在对应目录的 `checks/guard.sh`，并在 `.ci/guards.yaml` 注册；不要依赖隐式目录扫描。
+- 后续新增目录 guard 时，应把 command 放在对应目录的 `checks/guard.sh`，并在 `.ci/guards.manifest` 注册；不要依赖隐式目录扫描。
 
 ### frontend
 
@@ -349,7 +350,7 @@ CI 运行环境自举、secret 读取和工具安装：
   - 验证 materialized runtime 里 command wrapper 的 import/`--help` 可用
 - `.ci/runtime/materialize-files.txt`
   - CI runtime 临时目录投影的唯一文件清单，promotion workflow 和 smoke 共用
-  - materialized runtime 会从 `.ci/runtime/bundles/*.yaml` 生成 `.ci/runtime/release-bundles.manifest`，不要手工维护临时目录内的合并产物
+  - materialized runtime 会从 `.ci/runtime/bundles/*.bundle` 生成 `.ci/runtime/release-bundles.manifest`，不要手工维护临时目录内的合并产物
 - `.ci/runtime/gitops_promotion_bootstrap.sh`
   - GitOps promotion 各 stage 共用的 runtime materialize 自举函数，避免 YAML 里重复维护 `CI_RUNTIME_REF` / manifest 投影逻辑
 
@@ -679,7 +680,7 @@ CI_RUNTIME_REF=refs/tags/ci-runtime-20260429-1
 - `frontend-edgeone-lightvela*.yml`
   - 独立手动发布 EdgeOne 正式项目，不走 GitOps image pin
 - `mr-placeholder.yml`
-  - MR commit check 入口，按 changed files 派发 `.ci/guards.yaml` 注册的 guard
+  - MR commit check 入口，按 changed files 派发 `.ci/guards.manifest` 注册的 guard
 - `lightclaw-auth.yml` 对应的 build bundle 是：
   - `user-auth`
   - 但 GitOps pin target 是 `lightclaw-auth`

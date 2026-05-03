@@ -18,7 +18,7 @@ from tests.helpers import git  # noqa: E402
 
 class ChangedGuardsTests(unittest.TestCase):
     def test_repo_guard_registry_commands_exist(self) -> None:
-        guards = load_guards(REPO_ROOT, ".ci/guards.yaml", "")
+        guards = load_guards(REPO_ROOT, ".ci/guards.manifest", "")
 
         self.assertTrue(guards)
         for guard in guards:
@@ -30,7 +30,7 @@ class ChangedGuardsTests(unittest.TestCase):
             repo = Path(tmp)
             (repo / ".ci/checks").mkdir(parents=True)
             (repo / "service-gateway/checks").mkdir(parents=True)
-            (repo / ".ci/guards.yaml").write_text(
+            (repo / ".ci/guards.manifest").write_text(
                 textwrap.dedent(
                     """\
                     guards:
@@ -70,7 +70,7 @@ class ChangedGuardsTests(unittest.TestCase):
             git(repo, "config", "user.name", "CI")
             (repo / "service-gateway/checks").mkdir(parents=True)
             (repo / ".ci").mkdir()
-            (repo / ".ci/guards.yaml").write_text(
+            (repo / ".ci/guards.manifest").write_text(
                 textwrap.dedent(
                     """\
                     guards:
@@ -111,7 +111,7 @@ class ChangedGuardsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
             (repo / ".ci/checks").mkdir(parents=True)
-            (repo / ".ci/guards.yaml").write_text(
+            (repo / ".ci/guards.manifest").write_text(
                 textwrap.dedent(
                     """\
                     guards:

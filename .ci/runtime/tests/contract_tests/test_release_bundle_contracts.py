@@ -49,7 +49,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual((RUNTIME_DIR / "release-bundles.manifest").read_text(), rendered)
 
     def test_each_bundle_source_defines_one_bundle(self) -> None:
-        for path in sorted((RUNTIME_DIR / "bundles").glob("*.yaml")):
+        for path in sorted((RUNTIME_DIR / "bundles").glob("*.bundle")):
             with self.subTest(path=path.name):
                 document = yaml.safe_load(path.read_text()) or {}
                 bundles = document.get("bundles") or {}

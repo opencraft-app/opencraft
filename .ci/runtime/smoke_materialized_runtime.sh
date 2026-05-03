@@ -64,7 +64,7 @@ assert_materialized_release_bundle_manifest() {
   local bundle_dir="$runtime_dir/.ci/runtime/bundles"
   local bundle_manifest="$runtime_dir/.ci/runtime/release-bundles.manifest"
 
-  if ! find "$bundle_dir" -type f -name '*.yaml' -print -quit | grep -q .; then
+  if ! find "$bundle_dir" -type f -name '*.bundle' -print -quit | grep -q .; then
     echo "materialized runtime is missing release bundle source files: $bundle_dir" >&2
     return 1
   fi

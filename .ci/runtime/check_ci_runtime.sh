@@ -58,9 +58,22 @@ echo "============================================================"
 bash .ci/runtime/smoke_materialized_runtime.sh
 
 echo "============================================================"
-echo "CI runtime 约束：解析 Stream YAML 与 guards.yaml"
+echo "CI runtime 约束：解析 Stream YAML 与 guards.manifest"
 echo "============================================================"
-python3 -c 'from pathlib import Path; import yaml; [yaml.safe_load(path.open()) for path in sorted(Path(".ci").glob("**/*.yml"))]; yaml.safe_load(Path(".ci/guards.yaml").read_text()); print("parsed .ci yaml files, including templates")'
+python3 - <<'PY'
+from pathlib import Path
+import yaml
+
+for path in sorted(Path(".ci").glob("**/*.yml")):
+    yaml.safe_load(path.read_text())
+yaml.safe_load(Path(".ci/guards.manifest").read_text())
+
+unexpected_yaml = sorted(path.as_posix() for path in Path(".ci").glob("**/*.yaml"))
+if unexpected_yaml:
+    raise SystemExit("non-pipeline .yaml files under .ci are forbidden: " + ", ".join(unexpected_yaml))
+
+print("parsed .ci yml files and guards manifest")
+PY
 
 echo "============================================================"
 echo "CI runtime 约束：检查 diff 空白与冲突标记"
