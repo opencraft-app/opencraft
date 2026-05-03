@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import subprocess
 import sys
 from pathlib import Path
 
 from contracts.release_plan import GatePlan, plan_release_gates
+from support.process import run_logged
 
 
 def load_plan(
@@ -181,13 +181,3 @@ def emit_plan(plan: GatePlan) -> None:
     for action in plan.manual_actions or ["无"]:
         print(f"- {action}", file=sys.stderr)
     print("============================================================", file=sys.stderr)
-
-
-def run_logged(command: list[str], *, cwd: Path) -> None:
-    result = subprocess.run(command, cwd=cwd, text=True, capture_output=True, check=False)
-    if result.stdout:
-        print(result.stdout, file=sys.stderr, end="")
-    if result.stderr:
-        print(result.stderr, file=sys.stderr, end="")
-    if result.returncode != 0:
-        raise subprocess.CalledProcessError(result.returncode, command, result.stdout, result.stderr)

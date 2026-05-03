@@ -1,12 +1,12 @@
 # Runtime files required by materialized CI checks.
 # Keep this list free of secrets, kubeconfigs, and environment-local files.
 .ci/runtime/materialize-files.txt
-.ci/runtime/release-bundles.manifest
 .ci/runtime/check_ci_runtime.sh
 .ci/runtime/gitops_promotion_bootstrap.sh
 .ci/runtime/commands/__init__.py
 .ci/runtime/commands/audit_gitops_drift.py
 .ci/runtime/commands/build_release_image.py
+.ci/runtime/commands/generate_release_bundle_manifest.py
 .ci/runtime/commands/gitops_cleanup_source_branch.py
 .ci/runtime/commands/gitops_merge_request.py
 .ci/runtime/commands/gitops_merge_request_note.py
@@ -27,11 +27,25 @@
 .ci/runtime/contracts/build_release_image.py
 .ci/runtime/contracts/bundles.py
 .ci/runtime/contracts/image_existence.py
-.ci/runtime/contracts/image_pin.py
-.ci/runtime/contracts/project_release_bundle.py
+.ci/runtime/contracts/release_bundle_manifest.py
 .ci/runtime/contracts/release_plan.py
 .ci/runtime/contracts/resolve_release_bundle.py
+.ci/runtime/bundles/_catalogs.yaml
+.ci/runtime/bundles/admin-gateway.yaml
+.ci/runtime/bundles/ai-gateway.yaml
+.ci/runtime/bundles/ctl.yaml
+.ci/runtime/bundles/frontend-ds.yaml
+.ci/runtime/bundles/frontend.yaml
+.ci/runtime/bundles/gateway-dashboard.yaml
+.ci/runtime/bundles/nextgen-dashboard.yaml
+.ci/runtime/bundles/payment.yaml
+.ci/runtime/bundles/sandbox.yaml
+.ci/runtime/bundles/service-gateway.yaml
+.ci/runtime/bundles/session.yaml
+.ci/runtime/bundles/subscription.yaml
+.ci/runtime/bundles/user-auth.yaml
 .ci/runtime/gitops/__init__.py
+.ci/runtime/gitops/argocd.py
 .ci/runtime/gitops/gitops_cleanup_source_branch.py
 .ci/runtime/gitops/gitops_drift_audit.py
 .ci/runtime/gitops/gitops_kustomize_validation.py
@@ -39,6 +53,7 @@
 .ci/runtime/gitops/gitops_merge_request_note.py
 .ci/runtime/gitops/gitops_release_verifier.py
 .ci/runtime/gitops/gitops_static_validation.py
+.ci/runtime/gitops/git.py
 .ci/runtime/gitops/gongfeng.py
 .ci/runtime/gitops/image_pin.py
 .ci/runtime/gitops/prod_manual_sync_validation.py
@@ -53,3 +68,7 @@
 .ci/runtime/gates/runner.py
 .ci/runtime/guards/__init__.py
 .ci/runtime/guards/changed_guards.py
+.ci/runtime/support/__init__.py
+.ci/runtime/support/logging.py
+.ci/runtime/support/process.py
+.ci/runtime/support/yaml.py

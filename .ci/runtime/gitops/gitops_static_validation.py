@@ -10,13 +10,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
-import yaml
-
 RUNTIME_DIR = Path(__file__).resolve().parents[1]
 if str(RUNTIME_DIR) not in sys.path:
     sys.path.insert(0, str(RUNTIME_DIR))
 
 from contracts.bundles import load_bundle, load_manifest  # noqa: E402
+from support.yaml import load_mapping  # noqa: E402
 
 
 APPSET_REL = "argocd/apps/beijing-sandbox/sandbox-family-appset.yaml"
@@ -53,13 +52,6 @@ def repo_rel(path: Path, repo_root: Path) -> str:
     return path.relative_to(repo_root).as_posix()
 
 
-def load_yaml(path: Path) -> dict[str, Any]:
-    payload = yaml.safe_load(path.read_text()) or {}
-    if not isinstance(payload, dict):
-        raise ValueError(f"{path} must contain a YAML mapping")
-    return payload
-
-
 def path_is_covered(candidate: str, patterns: Iterable[str]) -> bool:
     candidate = candidate.strip("/")
     for raw_pattern in patterns:
@@ -88,7 +80,7 @@ def load_catalogs(repo_root: Path, env: str) -> tuple[list[CatalogEntry], list[s
     for catalog_file in sorted(catalog_dir.glob("*.yaml")):
         rel_file = repo_rel(catalog_file, repo_root)
         try:
-            data = load_yaml(catalog_file)
+            data = load_mapping(catalog_file)
         except Exception as exc:  # noqa: BLE001
             errors.append(f"{rel_file}: failed to parse YAML: {exc}")
             continue
@@ -138,7 +130,7 @@ def validate_appset(repo_root: Path) -> list[str]:
         errors.append(f"{APPSET_REL}: template must not use reserved git generator field {{ .path }}")
 
     try:
-        data = load_yaml(appset)
+        data = load_mapping(appset)
     except Exception as exc:  # noqa: BLE001
         return [f"{APPSET_REL}: failed to parse YAML: {exc}"]
     if data.get("kind") != "ApplicationSet":
@@ -179,7 +171,7 @@ def paths_from_kustomization(kustomization: Path, repo_root: Path, seen: set[Pat
         return []
     seen.add(kustomization)
 
-    data = load_yaml(kustomization)
+    data = load_mapping(kustomization)
     references: list[str] = []
     for field in ("resources", "components"):
         for item in data.get(field) or []:
@@ -202,7 +194,7 @@ def paths_from_kustomization(kustomization: Path, repo_root: Path, seen: set[Pat
             continue
         references.append(generator_rel)
         if resolved.is_file():
-            generator = load_yaml(resolved)
+            generator = load_mapping(resolved)
             for secret_file in generator.get("files") or []:
                 secret_resolved = (resolved.parent / str(secret_file)).resolve()
                 try:
@@ -327,7 +319,7 @@ def validate_direct_apps(repo_root: Path, env: str) -> list[str]:
     for app_file in app_files:
         rel_file = repo_rel(app_file, repo_root)
         try:
-            data = load_yaml(app_file)
+            data = load_mapping(app_file)
         except Exception as exc:  # noqa: BLE001
             errors.append(f"{rel_file}: failed to parse YAML: {exc}")
             continue

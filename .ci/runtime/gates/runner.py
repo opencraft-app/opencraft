@@ -66,7 +66,7 @@ def run(args: argparse.Namespace) -> ReleaseGateResult:
     runtime_dir = runtime_command_dir.parent
     bundle_manifest = runtime_dir / "release-bundles.manifest"
 
-    image_status = run_image_gate(
+    image_gate = run_image_gate(
         repo_root=repo_root,
         runtime_command_dir=runtime_command_dir,
         env=args.env,
@@ -87,7 +87,7 @@ def run(args: argparse.Namespace) -> ReleaseGateResult:
                 bundle_service=args.bundle_service,
                 pin_targets=args.pin_targets,
                 env=args.env,
-                image=args.image,
+                image=image_gate.pin_payload,
                 source_ref=args.source_ref,
                 deployed_at=args.deployed_at,
                 bootstrap_files=list(BOOTSTRAP_FILES),
@@ -100,14 +100,16 @@ def run(args: argparse.Namespace) -> ReleaseGateResult:
                 service=args.bundle_service,
                 env=args.env,
                 source_ref=args.source_ref,
-                image=args.image,
+                image=image_gate.pin_payload,
                 pin_targets=args.pin_targets,
             )
             config_status = config_future.result()
             db_status, plan = db_future.result()
 
     return ReleaseGateResult(
-        image_status=image_status,
+        image_status=image_gate.status,
+        image_pin_payload=image_gate.pin_payload,
+        image_digests_json=image_gate.digests_json,
         config_status=config_status,
         db_status=db_status,
         requires_db_readiness=plan.requires_db_readiness,

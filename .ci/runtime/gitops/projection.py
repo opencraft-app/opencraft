@@ -11,6 +11,9 @@ import sys
 from pathlib import PurePosixPath
 
 from contracts.bundles import load_bundle, parse_manifest_text
+from gitops.git import list_files as git_list_files
+from gitops.git import run as git_run
+from gitops.git import show_text as git_show_text
 
 
 def parse_args() -> argparse.Namespace:
@@ -23,13 +26,8 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def git_output(repo_root: str, *args: str) -> str:
-    return subprocess.check_output(["git", "-C", repo_root, *args], text=True)
-
-
 def list_tracked_files(repo_root: str, ref: str) -> list[str]:
-    output = git_output(repo_root, "ls-tree", "-r", "--name-only", ref)
-    return [line.strip() for line in output.splitlines() if line.strip()]
+    return git_list_files(repo_root, ref)
 
 
 def match_path(path: str, pattern: str) -> bool:
@@ -71,9 +69,9 @@ def sync_publish_subset(repo_root: str, source_ref: str, target_ref: str, patter
     to_checkout = sorted(source_files)
 
     for chunk in batched(to_delete):
-        subprocess.run(["git", "-C", repo_root, "rm", "-f", "--ignore-unmatch", "--", *chunk], check=True)
+        git_run(repo_root, "rm", "-f", "--ignore-unmatch", "--", *chunk)
     for chunk in batched(to_checkout):
-        subprocess.run(["git", "-C", repo_root, "checkout", source_ref, "--", *chunk], check=True)
+        git_run(repo_root, "checkout", source_ref, "--", *chunk)
 
     return len(to_checkout), len(to_delete)
 
@@ -81,7 +79,7 @@ def sync_publish_subset(repo_root: str, source_ref: str, target_ref: str, patter
 def load_manifest_text_from_source_ref(repo_root: str, source_ref: str) -> str:
     for path in (".ci/runtime/release-bundles.manifest", ".ci/runtime/release-bundles.yaml"):
         try:
-            return git_output(repo_root, "show", f"{source_ref}:{path}")
+            return git_show_text(repo_root, source_ref, path)
         except subprocess.CalledProcessError:
             continue
     raise FileNotFoundError(f"release bundle manifest not found in {source_ref}")

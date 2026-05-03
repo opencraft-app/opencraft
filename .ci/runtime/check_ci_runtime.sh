@@ -26,7 +26,7 @@ bash -n \
 
 echo "============================================================"
 echo "CI runtime 约束：开始 Python 编译检查"
-echo "检查对象：contracts / gitops / gates / guards / commands"
+echo "检查对象：contracts / gitops / gates / guards / commands / support"
 echo "============================================================"
 python3 -m py_compile $(find \
   .ci/runtime/contracts \
@@ -34,12 +34,18 @@ python3 -m py_compile $(find \
   .ci/runtime/gates \
   .ci/runtime/guards \
   .ci/runtime/commands \
+  .ci/runtime/support \
   -name '*.py' | sort)
 
 echo "============================================================"
 echo "CI runtime 约束：校验生产 Argo sync 必须保持人工"
 echo "============================================================"
 python3 .ci/runtime/commands/validate_prod_manual_sync.py --repo-root "$REPO_ROOT"
+
+echo "============================================================"
+echo "CI runtime 约束：校验 release bundle manifest 由拆分源生成"
+echo "============================================================"
+python3 .ci/runtime/commands/generate_release_bundle_manifest.py --check
 
 echo "============================================================"
 echo "CI runtime 约束：运行 runtime 单测"

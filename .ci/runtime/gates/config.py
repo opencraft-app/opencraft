@@ -7,6 +7,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+from support.logging import print_section
+from support.process import run_logged
+
 
 def run_config_gate(
     *,
@@ -134,13 +137,15 @@ def validate_config(
     pin_targets: str,
     env: str,
 ) -> None:
-    print("============================================================", file=sys.stderr)
-    print("GitOps 发布门禁：校验配置契约", file=sys.stderr)
-    print(f"目标环境：{env}", file=sys.stderr)
-    print(f"目标服务：{pin_targets}", file=sys.stderr)
-    print("检查内容：GitOps 静态结构、服务级 Kustomize 渲染、未替换占位符", file=sys.stderr)
-    print("说明：配置和镜像 pin 同属 desired state；配置契约失败时不会创建 promote MR。", file=sys.stderr)
-    print("============================================================", file=sys.stderr)
+    print_section(
+        "GitOps 发布门禁：校验配置契约",
+        [
+            f"目标环境：{env}",
+            f"目标服务：{pin_targets}",
+            "检查内容：GitOps 静态结构、服务级 Kustomize 渲染、未替换占位符",
+            "说明：配置和镜像 pin 同属 desired state；配置契约失败时不会创建 promote MR。",
+        ],
+    )
 
     script = (
         'source "$1/.ci/init.sh"\n'
@@ -171,16 +176,4 @@ def validate_config(
             cwd=repo_root,
         )
 
-    print("============================================================", file=sys.stderr)
-    print("GitOps 发布门禁：配置契约校验通过", file=sys.stderr)
-    print("============================================================", file=sys.stderr)
-
-
-def run_logged(command: list[str], *, cwd: Path) -> None:
-    result = subprocess.run(command, cwd=cwd, text=True, capture_output=True, check=False)
-    if result.stdout:
-        print(result.stdout, file=sys.stderr, end="")
-    if result.stderr:
-        print(result.stderr, file=sys.stderr, end="")
-    if result.returncode != 0:
-        raise subprocess.CalledProcessError(result.returncode, command, result.stdout, result.stderr)
+    print_section("GitOps 发布门禁：配置契约校验通过")

@@ -1,0 +1,61 @@
+bundles:
+  user-auth:
+    owner: user/auth
+    source: user/auth
+    db_contract:
+      mode: migration
+      db_job_service: lightclaw-auth
+      migration_operation: migration
+      seed_operation: seed
+      seed_required: false
+      migration_paths:
+      - user/auth/migrations/**
+      expected_migration_source: user/auth/migrations
+      verifier:
+        namespace: user-auth
+        configmap: lightclaw-auth-config
+        secret: lightclaw-auth-secrets
+        database_env: LIGHTCLAW_AUTH_DB
+        user_env: LIGHTCLAW_AUTH_DB_USER
+        password_env: LIGHTCLAW_AUTH_DB_PASSWORD
+    reason: User auth formal release bundle for Argo-managed rollout and DB job contract.
+    allowed_paths:
+    - user/auth/k8s/base
+    - user/auth/k8s/overlays/beijing-sandbox
+    - user/auth/k8s/overlays/shprod
+    - user/auth/Dockerfile
+    - user/auth/migrations
+    exit_condition: Can be removed only after the deployable contract moves to an
+      explicit imported package path.
+    publish_paths:
+    - argocd/services/lightclaw-auth/{env}/**
+    - argocd/apps/{env}/lightclaw-auth.yaml
+    - argocd/secrets/{env}/lightclaw-auth-secrets.sops.yaml
+    - user/auth/k8s/base/**
+    - user/auth/k8s/overlays/{env}/**
+    publish_paths_by_env:
+      beijing-sandbox:
+      - argocd/services/lightclaw-auth/beijing-sandbox/**
+      - argocd/services/lightclaw-auth/common/**
+      - argocd/services/lightclaw-auth/profiles/sandbox/**
+      - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
+      - argocd/catalogs/sandbox/beijing-sandbox/lightclaw-auth.yaml
+      - argocd/secrets/beijing-sandbox/lightclaw-auth-secrets.sops.yaml
+      - user/auth/k8s/base/**
+      - user/auth/k8s/overlays/beijing-sandbox/**
+      beijing-sandbox-2:
+      - argocd/services/lightclaw-auth/beijing-sandbox-2/**
+      - argocd/services/lightclaw-auth/common/**
+      - argocd/services/lightclaw-auth/profiles/sandbox/**
+      - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
+      - argocd/catalogs/sandbox/beijing-sandbox-2/lightclaw-auth.yaml
+      - argocd/secrets/beijing-sandbox-2/lightclaw-auth-secrets.sops.yaml
+      - user/auth/k8s/base/**
+      - user/auth/k8s/overlays/beijing-sandbox-2/**
+      - user/auth/k8s/overlays/beijing-sandbox/**
+    dockerfile: user/auth/Dockerfile
+    build_context: user/auth
+    image_repo:
+      beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/lightclaw-auth
+      shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/lightclaw-auth
+      beijing-sandbox-2: lightclaw-bj8.tencentcloudcr.com/lightclaw/lightclaw-auth

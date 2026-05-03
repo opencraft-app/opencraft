@@ -1,4 +1,4 @@
-version: v2.0
+version: v3.0
 name: 构建 admin-gateway
 
 on:

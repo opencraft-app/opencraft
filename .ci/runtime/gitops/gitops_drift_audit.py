@@ -8,7 +8,6 @@ import argparse
 import json
 import os
 import ssl
-import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -17,6 +16,14 @@ from pathlib import Path
 from typing import Any, Callable, Sequence
 
 import yaml
+
+from gitops.argocd import api_request as argocd_api_request
+from gitops.argocd import login as login_argocd
+from gitops.argocd import resolve_settings as resolve_argocd_settings
+from gitops.argocd import resolve_string_setting
+from gitops.git import list_files as git_list_files
+from gitops.git import output as git_output
+from gitops.git import show_text as git_show_text
 
 
 CATALOG_DIRS = {
@@ -67,121 +74,8 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def read_secret_value(path: str) -> str:
-    with open(path, "r") as fh:
-        return fh.read().strip()
-
-
-def effective_string_setting(value: str | None) -> str:
-    if not value:
-        return ""
-    value = value.strip()
-    if value.startswith("${{") and value.endswith("}}"):
-        return ""
-    return value
-
-
-def resolve_string_setting(
-    cli_value: str | None,
-    env_name: str,
-    file_path: str,
-    default: str = "",
-) -> str:
-    cli_value = effective_string_setting(cli_value)
-    if cli_value:
-        return cli_value
-
-    env_value = effective_string_setting(os.environ.get(env_name))
-    if env_value:
-        return env_value
-
-    file_candidate = Path(file_path)
-    if file_candidate.is_file():
-        file_value = effective_string_setting(read_secret_value(str(file_candidate)))
-        if file_value:
-            return file_value
-
-    return effective_string_setting(default)
-
-
-def resolve_bool_setting(cli_flag: bool, env_name: str, file_path: str, default: bool = False) -> bool:
-    if cli_flag:
-        return True
-
-    env_value = os.environ.get(env_name, "").strip().lower()
-    if env_value in {"1", "true", "yes", "on"}:
-        return True
-    if env_value in {"0", "false", "no", "off"}:
-        return False
-
-    file_candidate = Path(file_path)
-    if file_candidate.is_file():
-        file_value = read_secret_value(str(file_candidate)).strip().lower()
-        if file_value in {"1", "true", "yes", "on"}:
-            return True
-        if file_value in {"0", "false", "no", "off"}:
-            return False
-
-    return default
-
-
-def resolve_argocd_settings(args: argparse.Namespace) -> tuple[str, str, str, ssl.SSLContext]:
-    base_url = resolve_string_setting(
-        args.argocd_base_url,
-        "ARGOCD_BASE_URL",
-        "/etc/lightclaw-ci/argocd_base_url",
-        "https://argocd.lightclaw.tech",
-    )
-    username = resolve_string_setting(
-        args.argocd_username,
-        "ARGOCD_USERNAME",
-        "/etc/lightclaw-ci/argocd_username",
-    )
-    password = resolve_string_setting(
-        args.argocd_password,
-        "ARGOCD_PASSWORD",
-        "/etc/lightclaw-ci/argocd_password",
-    )
-    insecure_skip_verify = resolve_bool_setting(
-        args.argocd_insecure_skip_verify,
-        "ARGOCD_INSECURE_SKIP_VERIFY",
-        "/etc/lightclaw-ci/argocd_insecure_skip_verify",
-        False,
-    )
-
-    if not username or not password:
-        raise RuntimeError(
-            "missing Argo CD credentials; provide --argocd-username/--argocd-password, "
-            "set ARGOCD_USERNAME/ARGOCD_PASSWORD, or populate /etc/lightclaw-ci/argocd_username "
-            "and /etc/lightclaw-ci/argocd_password"
-        )
-
-    ssl_context = ssl._create_unverified_context() if insecure_skip_verify else ssl.create_default_context()
-    return base_url.rstrip("/"), username, password, ssl_context
-
-
-def git_output(repo_root: Path, args: Sequence[str]) -> str:
-    result = subprocess.run(
-        ["git", *args],
-        cwd=repo_root,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return result.stdout
-
-
 def gitops_commit(repo_root: Path, gitops_ref: str) -> str:
-    return git_output(repo_root, ["rev-parse", gitops_ref]).strip()
-
-
-def git_show_text(repo_root: Path, gitops_ref: str, repo_path: str) -> str:
-    return git_output(repo_root, ["show", f"{gitops_ref}:{repo_path}"])
-
-
-def git_list_files(repo_root: Path, gitops_ref: str, repo_path: str) -> list[str]:
-    output = git_output(repo_root, ["ls-tree", "-r", "--name-only", gitops_ref, "--", repo_path])
-    return [line.strip() for line in output.splitlines() if line.strip()]
+    return git_output(repo_root, "rev-parse", gitops_ref, strip=True)
 
 
 def parse_yaml_text(text: str, source: str) -> dict[str, Any]:
@@ -279,39 +173,6 @@ def load_expected_direct_apps(repo_root: Path, env: str, gitops_ref: str) -> lis
             )
         )
     return expected
-
-
-def argocd_api_request(
-    method: str,
-    url: str,
-    ssl_context: ssl.SSLContext,
-    token: str,
-    form_data: dict[str, Any] | None = None,
-) -> Any:
-    headers = {"Authorization": f"Bearer {token}"}
-    data = None
-    if form_data is not None:
-        data = json.dumps(form_data).encode()
-        headers["Content-Type"] = "application/json"
-    req = urllib.request.Request(url, data=data, headers=headers, method=method)
-    with urllib.request.urlopen(req, context=ssl_context) as resp:
-        payload = resp.read().decode()
-    return json.loads(payload) if payload else None
-
-
-def login_argocd(base_url: str, username: str, password: str, ssl_context: ssl.SSLContext) -> str:
-    req = urllib.request.Request(
-        f"{base_url}/api/v1/session",
-        data=json.dumps({"username": username, "password": password}).encode(),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(req, context=ssl_context) as resp:
-        payload = json.loads(resp.read().decode())
-    token = payload.get("token", "").strip()
-    if not token:
-        raise RuntimeError("argo cd login succeeded but no token was returned")
-    return token
 
 
 def list_argocd_apps(base_url: str, ssl_context: ssl.SSLContext, token: str) -> list[dict[str, Any]]:

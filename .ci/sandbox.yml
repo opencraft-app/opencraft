@@ -18,14 +18,13 @@ on:
   manual: enabled
 
 extends:
-  template:
-    path: .ci/templates/service-release.yml
-    variables:
-      SERVICE: sandbox
-      BUNDLE: sandbox
-      DISPLAY_NAME: sandbox
-      DEFAULT_TARGET_ENV: beijing-sandbox-2
-      MASTER_BUILD_ENVS: beijing-sandbox
-      MASTER_AUTO_PIN_ENVS: beijing-sandbox
-      PLAYGROUND_BUILD_ENVS: beijing-sandbox-2
-      PLAYGROUND_AUTO_PIN_ENVS: beijing-sandbox-2
+  template: .ci/templates/service-release.yml
+  parameters:
+    SERVICE: sandbox
+    BUNDLE: sandbox
+    DISPLAY_NAME: sandbox
+    DEFAULT_TARGET_ENV: beijing-sandbox-2
+    MASTER_BUILD_ENVS: beijing-sandbox
+    MASTER_AUTO_PIN_ENVS: beijing-sandbox
+    PLAYGROUND_BUILD_ENVS: beijing-sandbox-2
+    PLAYGROUND_AUTO_PIN_ENVS: beijing-sandbox-2

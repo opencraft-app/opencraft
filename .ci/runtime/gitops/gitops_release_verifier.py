@@ -5,19 +5,31 @@ Validate that a merged GitOps MR has converged in Argo CD and annotate the MR.
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import re
 import subprocess
 import sys
 import time
 import urllib.error
-import urllib.parse
-import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, List, Sequence, Set, Tuple
 import ssl
+
+from gitops.argocd import api_request as argocd_api_request
+from gitops.argocd import login as login_argocd
+from gitops.argocd import resolve_settings as resolve_argocd_settings
+from gitops.git import lines as git_lines
+from gitops.git import output as git_output
+from gitops.git import run as git_run
+from gitops.gongfeng import (
+    api_json_request,
+    env_int,
+    merge_request_note_url,
+    merge_requests_url,
+    require_settings_from_args,
+    resolve_private_token_from_args,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -47,21 +59,6 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def env_int(name: str) -> int | None:
-    value = os.environ.get(name, "").strip()
-    return int(value) if value else None
-
-
-def require_gongfeng_settings(args: argparse.Namespace) -> None:
-    missing = []
-    if not args.api_base:
-        missing.append("GIT_WOA_API_BASE or --api-base")
-    if args.project_id is None:
-        missing.append("GITOPS_PROJECT_ID or --project-id")
-    if missing:
-        raise RuntimeError("missing Gongfeng settings: " + ", ".join(missing))
-
-
 @dataclass(frozen=True)
 class ReleaseTarget:
     service: str
@@ -72,145 +69,11 @@ class ReleaseTarget:
         return f"{self.service}-{self.env}"
 
 
-def read_secret_value(path: str) -> str:
-    with open(path, "r") as fh:
-        return fh.read().strip()
-
-
-def resolve_private_token(args: argparse.Namespace) -> str:
-    if args.private_token:
-        return args.private_token.strip()
-
-    try:
-        return read_secret_value(args.private_token_file)
-    except FileNotFoundError:
-        pass
-
-    env_token = os.environ.get("GIT_WOA_PRIVATE_TOKEN", "").strip()
-    if env_token:
-        return env_token
-
-    raise RuntimeError(
-        "missing Git WOA token; provide --private-token, ensure %s exists, or set GIT_WOA_PRIVATE_TOKEN"
-        % args.private_token_file
-    )
-
-
-def resolve_string_setting(
-    cli_value: Optional[str],
-    env_name: str,
-    file_path: str,
-    default: str = "",
-) -> str:
-    if cli_value and cli_value.strip():
-        return cli_value.strip()
-
-    env_value = os.environ.get(env_name, "").strip()
-    if env_value:
-        return env_value
-
-    file_candidate = Path(file_path)
-    if file_candidate.is_file():
-        return read_secret_value(str(file_candidate))
-
-    return default.strip()
-
-
-def resolve_bool_setting(cli_flag: bool, env_name: str, file_path: str, default: bool = False) -> bool:
-    if cli_flag:
-        return True
-
-    env_value = os.environ.get(env_name, "").strip().lower()
-    if env_value in {"1", "true", "yes", "on"}:
-        return True
-    if env_value in {"0", "false", "no", "off"}:
-        return False
-
-    file_candidate = Path(file_path)
-    if file_candidate.is_file():
-        file_value = read_secret_value(str(file_candidate)).strip().lower()
-        if file_value in {"1", "true", "yes", "on"}:
-            return True
-        if file_value in {"0", "false", "no", "off"}:
-            return False
-
-    return default
-
-
-def resolve_argocd_settings(args: argparse.Namespace) -> Tuple[str, str, str, ssl.SSLContext]:
-    base_url = resolve_string_setting(
-        args.argocd_base_url,
-        "ARGOCD_BASE_URL",
-        "/etc/lightclaw-ci/argocd_base_url",
-        "https://argocd.lightclaw.tech",
-    )
-    username = resolve_string_setting(
-        args.argocd_username,
-        "ARGOCD_USERNAME",
-        "/etc/lightclaw-ci/argocd_username",
-    )
-    password = resolve_string_setting(
-        args.argocd_password,
-        "ARGOCD_PASSWORD",
-        "/etc/lightclaw-ci/argocd_password",
-    )
-    insecure_skip_verify = resolve_bool_setting(
-        args.argocd_insecure_skip_verify,
-        "ARGOCD_INSECURE_SKIP_VERIFY",
-        "/etc/lightclaw-ci/argocd_insecure_skip_verify",
-        False,
-    )
-
-    if not username or not password:
-        raise RuntimeError(
-            "missing Argo CD credentials; provide --argocd-username/--argocd-password, set ARGOCD_USERNAME/ARGOCD_PASSWORD, or populate /etc/lightclaw-ci/argocd_username and /etc/lightclaw-ci/argocd_password"
-        )
-
-    ssl_context = ssl._create_unverified_context() if insecure_skip_verify else ssl.create_default_context()
-    return base_url.rstrip("/"), username, password, ssl_context
-
-
-def api_request(method: str, url: str, private_token: str, form_data: Optional[Dict[str, Any]] = None) -> Any:
-    headers = {"PRIVATE-TOKEN": private_token}
-    data = None
-    if form_data is not None:
-        data = urllib.parse.urlencode(form_data).encode()
-    req = urllib.request.Request(url, data=data, headers=headers, method=method)
-    with urllib.request.urlopen(req) as resp:
-        payload = resp.read().decode()
-    return json.loads(payload) if payload else None
-
-
-def argocd_api_request(
-    method: str,
-    url: str,
-    ssl_context: ssl.SSLContext,
-    token: str,
-    form_data: Optional[Dict[str, Any]] = None,
-) -> Any:
-    headers = {"Authorization": f"Bearer {token}"}
-    data = None
-    if form_data is not None:
-        data = json.dumps(form_data).encode()
-        headers["Content-Type"] = "application/json"
-    req = urllib.request.Request(url, data=data, headers=headers, method=method)
-    with urllib.request.urlopen(req, context=ssl_context) as resp:
-        payload = resp.read().decode()
-    return json.loads(payload) if payload else None
-
-
 def list_merge_requests(
     api_base: str, project_id: int, private_token: str, state: str, source_branch: str, target_branch: str
 ) -> List[Dict[str, Any]]:
-    params = urllib.parse.urlencode(
-        {
-            "state": state,
-            "source_branch": source_branch,
-            "target_branch": target_branch,
-        }
-    )
-    url = f"{api_base}/projects/{project_id}/merge_requests?{params}"
-    return api_request("GET", url, private_token)
+    url = merge_requests_url(api_base, project_id, state=state, source_branch=source_branch, target_branch=target_branch)
+    return api_json_request("GET", url, private_token)
 
 
 def resolve_merged_mr(args: argparse.Namespace, private_token: str) -> Dict[str, Any]:
@@ -238,93 +101,46 @@ def resolve_merged_mr(args: argparse.Namespace, private_token: str) -> Dict[str,
 def post_merge_request_note(
     api_base: str, project_id: int, private_token: str, mr_id: int, body: str
 ) -> Dict[str, Any]:
-    url = f"{api_base}/projects/{project_id}/merge_requests/{mr_id}/notes"
-    return api_request("POST", url, private_token, {"body": body})
+    return api_json_request("POST", merge_request_note_url(api_base, project_id, mr_id), private_token, {"body": body})
 
 
 def changed_files_from_head(repo_root: Path) -> List[str]:
-    result = subprocess.run(
-        ["git", "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"],
-        cwd=repo_root,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    return git_lines(repo_root, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD")
 
 
 def changed_files_from_recent_commits(repo_root: Path, max_count: int = 20) -> List[str]:
-    commits_result = subprocess.run(
-        ["git", "rev-list", "--max-count", str(max_count), "HEAD"],
-        cwd=repo_root,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    commits = [line.strip() for line in commits_result.stdout.splitlines() if line.strip()]
-
     changed_files: List[str] = []
     seen: Set[str] = set()
-    for commit in commits:
-        result = subprocess.run(
-            ["git", "diff-tree", "--root", "--no-commit-id", "--name-only", "-r", commit],
-            cwd=repo_root,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        for line in result.stdout.splitlines():
-            path = line.strip()
-            if not path or path in seen:
+    for commit in git_lines(repo_root, "rev-list", "--max-count", str(max_count), "HEAD"):
+        for path in git_lines(repo_root, "diff-tree", "--root", "--no-commit-id", "--name-only", "-r", commit):
+            if path in seen:
                 continue
             seen.add(path)
             changed_files.append(path)
     return changed_files
 
 
-def git_output(repo_root: Path, *args: str) -> str:
-    result = subprocess.run(
-        ["git", *args],
-        cwd=repo_root,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return result.stdout.strip()
-
-
 def ensure_commit_available(repo_root: Path, revision: str, target_branch: str) -> None:
     try:
-        git_output(repo_root, "cat-file", "-e", f"{revision}^{{commit}}")
+        git_output(repo_root, "cat-file", "-e", f"{revision}^{{commit}}", strip=True)
         return
     except subprocess.CalledProcessError:
         pass
 
-    subprocess.run(
-        ["git", "fetch", "origin", target_branch],
-        cwd=repo_root,
-        check=True,
-    )
-    git_output(repo_root, "cat-file", "-e", f"{revision}^{{commit}}")
+    git_run(repo_root, "fetch", "origin", target_branch)
+    git_output(repo_root, "cat-file", "-e", f"{revision}^{{commit}}", strip=True)
 
 
 def changed_files_from_merge_commit(repo_root: Path, merge_commit_sha: str, target_branch: str) -> List[str]:
     ensure_commit_available(repo_root, merge_commit_sha, target_branch)
-    parents_line = git_output(repo_root, "rev-list", "--parents", "-n", "1", merge_commit_sha)
+    parents_line = git_output(repo_root, "rev-list", "--parents", "-n", "1", merge_commit_sha, strip=True)
     revisions = parents_line.split()
     if len(revisions) >= 2:
         base_revision = revisions[1]
     else:
         base_revision = f"{merge_commit_sha}^"
 
-    result = subprocess.run(
-        ["git", "diff", "--name-only", base_revision, merge_commit_sha],
-        cwd=repo_root,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    return git_lines(repo_root, "diff", "--name-only", base_revision, merge_commit_sha)
 
 
 def infer_release_targets(changed_files: Sequence[str]) -> List[ReleaseTarget]:
@@ -364,21 +180,6 @@ def expected_images_for_target(repo_root: Path, target: ReleaseTarget) -> List[s
     if not unique_images:
         raise RuntimeError(f"no *_IMAGE entries found in {env_files[0]}")
     return unique_images
-
-
-def login_argocd(base_url: str, username: str, password: str, ssl_context: ssl.SSLContext) -> str:
-    req = urllib.request.Request(
-        f"{base_url}/api/v1/session",
-        data=json.dumps({"username": username, "password": password}).encode(),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(req, context=ssl_context) as resp:
-        payload = json.loads(resp.read().decode())
-    token = payload.get("token", "").strip()
-    if not token:
-        raise RuntimeError("argo cd login succeeded but no token was returned")
-    return token
 
 
 def argocd_get_application(
@@ -603,9 +404,9 @@ def format_waiting_note(mr: Dict[str, Any], targets: Sequence[ReleaseTarget]) ->
 
 def main() -> int:
     args = parse_args()
-    require_gongfeng_settings(args)
+    require_settings_from_args(args)
     repo_root = Path(args.repo_root).resolve()
-    private_token = resolve_private_token(args)
+    private_token = resolve_private_token_from_args(args)
     merged_mr = resolve_merged_mr(args, private_token)
 
     changed_files = changed_files_from_merge_commit(

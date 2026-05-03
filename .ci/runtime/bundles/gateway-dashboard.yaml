@@ -1,0 +1,45 @@
+bundles:
+  gateway-dashboard:
+    owner: gateway-dashboard
+    source: gateway-dashboard
+    db_contract: none
+    reason: Gateway dashboard formal release bundle for Argo-managed admin UI rollout.
+    allowed_paths:
+    - gateway-dashboard/k8s/base
+    - gateway-dashboard/k8s/overlays/beijing-sandbox
+    - gateway-dashboard/k8s/overlays/shprod
+    - gateway-dashboard/Dockerfile
+    exit_condition: Can be removed only after the deployable contract moves to an
+      explicit imported package path.
+    publish_paths:
+    - argocd/services/gateway-dashboard/{env}/**
+    - argocd/apps/{env}/gateway-dashboard.yaml
+    - argocd/secrets/{env}/gateway-dashboard-runtime-secrets.sops.yaml
+    - gateway-dashboard/k8s/base/**
+    - gateway-dashboard/k8s/overlays/{env}/**
+    publish_paths_by_env:
+      beijing-sandbox:
+      - argocd/services/gateway-dashboard/beijing-sandbox/**
+      - argocd/services/gateway-dashboard/common/**
+      - argocd/services/gateway-dashboard/profiles/sandbox/**
+      - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
+      - argocd/catalogs/sandbox/beijing-sandbox/gateway-dashboard.yaml
+      - argocd/secrets/beijing-sandbox/gateway-dashboard-runtime-secrets.sops.yaml
+      - gateway-dashboard/k8s/base/**
+      - gateway-dashboard/k8s/overlays/beijing-sandbox/**
+      beijing-sandbox-2:
+      - argocd/services/gateway-dashboard/beijing-sandbox-2/**
+      - argocd/services/gateway-dashboard/common/**
+      - argocd/services/gateway-dashboard/profiles/sandbox/**
+      - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
+      - argocd/catalogs/sandbox/beijing-sandbox-2/gateway-dashboard.yaml
+      - argocd/secrets/beijing-sandbox-2/gateway-dashboard-runtime-secrets.sops.yaml
+      - gateway-dashboard/k8s/base/**
+      - gateway-dashboard/k8s/overlays/beijing-sandbox-2/**
+      - gateway-dashboard/k8s/overlays/beijing-sandbox/**
+    dockerfile: gateway-dashboard/Dockerfile
+    build_context: gateway-dashboard
+    image_repo:
+      beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/gateway-dashboard
+      shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/gateway-dashboard
+      beijing-sandbox-2: lightclaw-bj8.tencentcloudcr.com/lightclaw/gateway-dashboard

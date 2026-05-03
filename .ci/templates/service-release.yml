@@ -1,5 +1,28 @@
 version: v2.0
 
+parameters:
+  - name: SERVICE
+    type: string
+  - name: BUNDLE
+    type: string
+  - name: DISPLAY_NAME
+    type: string
+  - name: DEFAULT_TARGET_ENV
+    type: string
+    default: shprod
+  - name: MASTER_BUILD_ENVS
+    type: string
+    default: beijing-sandbox,shprod
+  - name: MASTER_AUTO_PIN_ENVS
+    type: string
+    default: beijing-sandbox
+  - name: PLAYGROUND_BUILD_ENVS
+    type: string
+    default: beijing-sandbox-2
+  - name: PLAYGROUND_AUTO_PIN_ENVS
+    type: string
+    default: beijing-sandbox-2
+
 concurrency:
   group: mono2-master-release
   cancel-in-progress: false
@@ -7,6 +30,14 @@ concurrency:
   queue-timeout-minutes: 480
 
 variables:
+  SERVICE: ${{ parameters.SERVICE }}
+  BUNDLE: ${{ parameters.BUNDLE }}
+  DISPLAY_NAME: ${{ parameters.DISPLAY_NAME }}
+  DEFAULT_TARGET_ENV: ${{ parameters.DEFAULT_TARGET_ENV }}
+  MASTER_BUILD_ENVS: ${{ parameters.MASTER_BUILD_ENVS }}
+  MASTER_AUTO_PIN_ENVS: ${{ parameters.MASTER_AUTO_PIN_ENVS }}
+  PLAYGROUND_BUILD_ENVS: ${{ parameters.PLAYGROUND_BUILD_ENVS }}
+  PLAYGROUND_AUTO_PIN_ENVS: ${{ parameters.PLAYGROUND_AUTO_PIN_ENVS }}
   PIPELINE_MODE:
     value: build
     readonly: false

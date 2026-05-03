@@ -35,7 +35,9 @@ rg -n "extends|check-in|template|parameters|<keyword>" src/backend/ci/core/commo
 - `on.push` 在当前 schema 下可以是对象或数组；不要写 GitHub Actions 风格的 `push.enable`。
 - `mr.action` 只接受 schema enum 中的值；遇到 `CI_YAML_INVALID` 先查 `ci.json`。
 - root `extends` 不能同时带 `stages/jobs/steps/variables/finally`；服务实例 YAML 只保留 `name/on/extends`。
-- root `extends` 的 path-based 模板实例变量使用 `extends.template.variables`；不要凭样例里的 `extends.parameters` 直接套用。
+- `version: v2.0` 的 root `extends.template` 按当前平台报错表现必须是字符串，实例参数放 `extends.parameters`。
+- `version: v3.0` 的 root `extends.template` 可以是对象，path-based 模板实例变量放 `extends.template.variables`。
+- 当前仅 `.ci/admin-gateway.yml` 作为 v3.0 root extends 试点；不要未经服务端验收就批量切业务流水线。
 - 生产审批优先确认当前平台是否支持 `check-in`；如果 schema/UI 不稳定，不要把 shprod 发布链路绑定到未验证的 approval YAML。
 
 ## 实际运行机

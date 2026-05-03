@@ -1,0 +1,34 @@
+bundles:
+  nextgen-dashboard:
+    owner: nextgen-dashboard
+    source: nextgen-dashboard
+    db_contract: none
+    reason: Nextgen dashboard formal release bundle for Argo-managed dashboard rollout.
+    allowed_paths:
+    - nextgen-dashboard/k8s/base
+    - nextgen-dashboard/k8s/overlays/beijing-sandbox
+    - nextgen-dashboard/k8s/overlays/shprod
+    - nextgen-dashboard/Dockerfile
+    exit_condition: Can be removed only after the deployable contract moves to an
+      explicit imported package path.
+    publish_paths:
+    - argocd/services/nextgen-dashboard/{env}/**
+    - argocd/apps/{env}/nextgen-dashboard.yaml
+    - argocd/secrets/{env}/nextgen-dashboard-runtime-secrets.sops.yaml
+    - nextgen-dashboard/k8s/base/**
+    - nextgen-dashboard/k8s/overlays/{env}/**
+    publish_paths_by_env:
+      beijing-sandbox:
+      - argocd/services/nextgen-dashboard/beijing-sandbox/**
+      - argocd/services/nextgen-dashboard/common/**
+      - argocd/services/nextgen-dashboard/profiles/sandbox/**
+      - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
+      - argocd/catalogs/sandbox/beijing-sandbox/nextgen-dashboard.yaml
+      - argocd/secrets/beijing-sandbox/nextgen-dashboard-runtime-secrets.sops.yaml
+      - nextgen-dashboard/k8s/base/**
+      - nextgen-dashboard/k8s/overlays/beijing-sandbox/**
+    dockerfile: nextgen-dashboard/Dockerfile
+    build_context: nextgen-dashboard
+    image_repo:
+      beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/nextgen-dashboard
+      shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/nextgen-dashboard

@@ -1,0 +1,15 @@
+catalog_publish_exemptions_by_env:
+  beijing-sandbox:
+    argocd/catalogs/sandbox/beijing-sandbox/session.yaml: session has no CI build
+      contract or release workflow; deploy-facing catalog is tracked but not promotable
+      by release-bundle CI.
+  beijing-sandbox-2:
+    argocd/catalogs/sandbox/beijing-sandbox-2/ai-gateway.yaml: ai-gateway sandbox2
+      image repo differs from the current release-bundle build repo contract; keep
+      catalog deploy-only until image repo is reconciled.
+    argocd/catalogs/sandbox/beijing-sandbox-2/nextgen-dashboard.yaml: nextgen-dashboard
+      sandbox2 image repo differs from the current release-bundle build repo contract;
+      keep catalog deploy-only until image repo is reconciled.
+    argocd/catalogs/sandbox/beijing-sandbox-2/session.yaml: session has no CI build
+      contract or release workflow; deploy-facing catalog is tracked but not promotable
+      by release-bundle CI.

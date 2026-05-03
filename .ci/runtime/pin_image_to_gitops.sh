@@ -28,8 +28,11 @@ ENV_NAME="$3"
 IMAGE="$4"
 SOURCE_REF="$5"
 GATE_IMAGE_STATUS="unknown"
+GATE_IMAGE_PIN_PAYLOAD=""
+GATE_IMAGE_DIGESTS_JSON="{}"
 GATE_CONFIG_STATUS="unknown"
 GATE_DB_STATUS="unknown"
+PIN_IMAGE="$IMAGE"
 
 ci_require_commands git python3
 
@@ -80,7 +83,7 @@ project_and_pin_gitops_state() {
       --repo-root "$target_repo_root" \
       --service "$service" \
       --env "$ENV_NAME" \
-      --image "$IMAGE" \
+      --image "$PIN_IMAGE" \
       --deployed-at "$DEPLOYED_AT"
     if [[ "$add_to_git" == "true" ]]; then
       git -C "$target_repo_root" add "argocd/services/$service/$ENV_NAME"
@@ -113,6 +116,7 @@ run_release_gates() {
     echo "GitOps 发布门禁结果不可加载；不会创建 promote MR。" >&2
     exit 1
   fi
+  PIN_IMAGE="${GATE_IMAGE_PIN_PAYLOAD:-$IMAGE}"
   rm -f "$gate_env_file"
 }
 
@@ -172,6 +176,7 @@ echo "发布 bundle：${BUNDLE_SERVICE}"
 echo "目标服务：${SERVICE_ARG}"
 echo "目标环境：${ENV_DISPLAY_NAME} (${ENV_NAME})"
 echo "目标镜像：${IMAGE}"
+echo "GitOps pin 镜像：${PIN_IMAGE}"
 echo "源代码 revision：${SOURCE_REF}"
 echo "GitOps 目标分支：${GITOPS_BRANCH}"
 echo "promote 分支：${PROMOTE_BRANCH}"
@@ -200,6 +205,8 @@ Release-bundle: ${BUNDLE_SERVICE}
 Release-target-env: ${ENV_NAME}
 Release-pin-targets: ${SERVICE_ARG}
 Release-image: ${IMAGE}
+Release-image-pin: ${PIN_IMAGE}
+Release-image-digests: ${GATE_IMAGE_DIGESTS_JSON}
 Release-gate-image-status: ${GATE_IMAGE_STATUS}
 Release-gate-config-status: ${GATE_CONFIG_STATUS}
 Release-gate-db-status: ${GATE_DB_STATUS}
@@ -231,11 +238,13 @@ $MR_DESCRIPTION_HEADER
 - 环境：$ENV_DISPLAY_NAME ($ENV_NAME)
 - 服务：$SERVICE_ARG
 - 镜像：$IMAGE
+- GitOps pin：$PIN_IMAGE
 - 源 revision：$SOURCE_REF
 - 发布时间：$DEPLOYED_AT
 - 源分支：$PROMOTE_BRANCH
 - 目标分支：$GITOPS_BRANCH
 - 镜像存在性：$GATE_IMAGE_STATUS
+- 镜像 digest：$GATE_IMAGE_DIGESTS_JSON
 - 配置契约：$GATE_CONFIG_STATUS
 - DB readiness：required=$GATE_REQUIRES_DB_READINESS status=$GATE_DB_STATUS
 - 自动合并允许：$GATE_AUTO_MERGE_ALLOWED
@@ -288,9 +297,11 @@ $NOTE_HEADLINE
 - 环境：$ENV_DISPLAY_NAME ($ENV_NAME)
 - 服务：$SERVICE_ARG
 - 镜像：$IMAGE
+- GitOps pin：$PIN_IMAGE
 - 源 revision：$SOURCE_REF
 - promote 分支：$PROMOTE_BRANCH
 - 镜像存在性：$GATE_IMAGE_STATUS
+- 镜像 digest：$GATE_IMAGE_DIGESTS_JSON
 - 配置契约：$GATE_CONFIG_STATUS
 - DB readiness：required=$GATE_REQUIRES_DB_READINESS status=$GATE_DB_STATUS
 - 自动合并允许：$GATE_AUTO_MERGE_ALLOWED

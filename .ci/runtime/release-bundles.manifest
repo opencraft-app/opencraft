@@ -3,9 +3,9 @@ bundles:
     owner: admin-gateway
     source: admin-gateway
     db_contract: none
-    reason: Admin gateway release bundle with an independent image tag and CI
-      pipeline. It currently reuses the service-gateway Dockerfile/build context
-      until the gateway binaries are split.
+    reason: Admin gateway release bundle with an independent image tag and CI pipeline.
+      It currently reuses the service-gateway Dockerfile/build context until the gateway
+      binaries are split.
     allowed_paths:
     - admin-gateway/k8s/base
     - admin-gateway/k8s/overlays/beijing-sandbox
@@ -93,6 +93,105 @@ bundles:
     image_repo:
       beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/ai-gateway
       shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/ai-gateway
+  ctl:
+    owner: ctl
+    source: ctl
+    db_contract:
+      mode: migration
+      db_job_service: ctl
+      migration_operation: migration
+      readiness_supported: false
+      migration_paths:
+      - ctl/migrations/**
+      expected_migration_source: ctl/migrations
+    reason: CTL formal release bundle for Argo-managed rollout.
+    allowed_paths:
+    - ctl/k8s/base
+    - ctl/k8s/overlays/beijing-sandbox
+    - ctl/k8s/overlays/shprod
+    - ctl/Dockerfile
+    exit_condition: Can be removed only after the deployable contract moves to an
+      explicit imported package path.
+    publish_paths:
+    - argocd/services/ctl/{env}/**
+    - argocd/apps/{env}/ctl.yaml
+    - argocd/secrets/{env}/ctl-conf-common.sops.yaml
+    - argocd/secrets/{env}/ctl-conf-rewrite.sops.yaml
+    - argocd/secrets/{env}/ctl-runtime-secrets.sops.yaml
+    - ctl/k8s/base/**
+    - ctl/k8s/overlays/{env}/**
+    publish_paths_by_env:
+      beijing-sandbox:
+      - argocd/services/ctl/beijing-sandbox/**
+      - argocd/services/ctl/common/**
+      - argocd/services/ctl/profiles/sandbox/**
+      - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
+      - argocd/catalogs/sandbox/beijing-sandbox/ctl.yaml
+      - argocd/secrets/beijing-sandbox/ctl-conf-common.sops.yaml
+      - argocd/secrets/beijing-sandbox/ctl-conf-rewrite.sops.yaml
+      - argocd/secrets/beijing-sandbox/ctl-runtime-secrets.sops.yaml
+      - ctl/k8s/base/**
+      - ctl/k8s/overlays/beijing-sandbox/**
+      beijing-sandbox-2:
+      - argocd/services/ctl/beijing-sandbox-2/**
+      - argocd/services/ctl/common/**
+      - argocd/services/ctl/profiles/sandbox/**
+      - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
+      - argocd/catalogs/sandbox/beijing-sandbox-2/ctl.yaml
+      - argocd/secrets/beijing-sandbox-2/ctl-conf-common.sops.yaml
+      - argocd/secrets/beijing-sandbox-2/ctl-conf-rewrite.sops.yaml
+      - argocd/secrets/beijing-sandbox-2/ctl-runtime-secrets.sops.yaml
+      - ctl/k8s/base/**
+      - ctl/k8s/overlays/beijing-sandbox-2/**
+      - ctl/k8s/overlays/beijing-sandbox/**
+    dockerfile: ctl/Dockerfile
+    build_context: ctl
+    image_repo:
+      beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/ctl
+      shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/ctl
+      beijing-sandbox-2: lightclaw-bj8.tencentcloudcr.com/lightclaw/ctl
+  frontend-ds:
+    owner: frontend-ds
+    source: frontend-ds
+    db_contract: none
+    reason: Frontend DS formal release bundle for Argo-managed rollout.
+    allowed_paths:
+    - frontend-ds/k8s/base
+    - frontend-ds/k8s/overlays/shprod
+    - frontend-ds/deploy/Dockerfile
+    exit_condition: Can be removed only after the deployable contract moves to an
+      explicit imported package path.
+    publish_paths:
+    - argocd/services/frontend-ds/{env}/**
+    - argocd/apps/{env}/frontend-ds.yaml
+    - frontend-ds/k8s/base/**
+    - frontend-ds/k8s/overlays/{env}/**
+    dockerfile: frontend-ds/deploy/Dockerfile
+    build_context: frontend-ds
+    image_repo:
+      shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/frontend-ds
+    publish_paths_by_env: {}
+  frontend:
+    owner: frontend
+    source: frontend
+    db_contract: none
+    reason: Frontend formal release bundle for Argo-managed rollout.
+    allowed_paths:
+    - frontend/k8s/base
+    - frontend/k8s/overlays/shprod
+    - frontend/deploy/Dockerfile
+    exit_condition: Can be removed only after the deployable contract moves to an
+      explicit imported package path.
+    publish_paths:
+    - argocd/services/frontend/{env}/**
+    - argocd/apps/{env}/frontend.yaml
+    - frontend/k8s/base/**
+    - frontend/k8s/overlays/{env}/**
+    dockerfile: frontend/deploy/Dockerfile
+    build_context: frontend
+    image_repo:
+      shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/frontend
+    publish_paths_by_env: {}
   gateway-dashboard:
     owner: gateway-dashboard
     source: gateway-dashboard
@@ -229,6 +328,102 @@ bundles:
       beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/payment
       shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/payment
       beijing-sandbox-2: lightclaw-bj8.tencentcloudcr.com/lightclaw/payment
+  sandbox:
+    owner: sandbox
+    source: sandbox
+    db_contract:
+      mode: migration
+      db_job_service: sandbox
+      migration_operation: migration
+      migration_image_key: SANDBOX_MIGRATE_IMAGE
+      migration_paths:
+      - sandbox/migrations/**
+      expected_migration_source: sandbox/migrations
+      always_verify_baseline: true
+      verifier:
+        namespace: sandbox
+        configmap: sandbox-runtime-config
+        secret: sandbox-runtime-secrets
+        database_env: MYSQL_DB
+        user_env: MYSQL_USER
+        password_env: MYSQL_PASSWORD
+        baseline_checks:
+        - name: sandbox-pools-present
+          query: SELECT COUNT(*) FROM pools
+          min: 1
+          failure_hint: Run ENV=<env> bash sandbox/scripts/sync-default-pools.sh --base-image
+            <img-id> after confirming the target base image.
+    reason: Sandbox formal release bundle for future Argo-managed rollout.
+    allowed_paths:
+    - sandbox/k8s/base
+    - sandbox/k8s/overlays/beijing-sandbox
+    - sandbox/k8s/overlays/shprod
+    - sandbox/config
+    - sandbox/migrations
+    exit_condition: Can be removed only after the deployable contract moves to an
+      explicit imported package path.
+    publish_paths:
+    - argocd/services/sandbox/{env}/**
+    - argocd/apps/{env}/sandbox.yaml
+    - argocd/secrets/{env}/sandbox-runtime-secrets.sops.yaml
+    - sandbox/k8s/base/**
+    - sandbox/k8s/overlays/{env}/**
+    publish_paths_by_env:
+      beijing-sandbox:
+      - argocd/services/sandbox/beijing-sandbox/**
+      - argocd/services/sandbox/common/**
+      - argocd/services/sandbox/profiles/sandbox/**
+      - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
+      - argocd/catalogs/sandbox/beijing-sandbox/sandbox.yaml
+      - argocd/secrets/beijing-sandbox/sandbox-runtime-secrets.sops.yaml
+      - sandbox/k8s/base/**
+      - sandbox/k8s/overlays/beijing-sandbox/**
+      beijing-sandbox-2:
+      - argocd/services/sandbox/beijing-sandbox-2/**
+      - argocd/services/sandbox/common/**
+      - argocd/services/sandbox/profiles/sandbox/**
+      - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
+      - argocd/catalogs/sandbox/beijing-sandbox-2/sandbox.yaml
+      - argocd/secrets/beijing-sandbox-2/sandbox-runtime-secrets.sops.yaml
+      - sandbox/k8s/base/**
+      - sandbox/k8s/overlays/beijing-sandbox-2/**
+      - sandbox/k8s/overlays/beijing-sandbox/**
+    image_targets:
+    - name: api
+      image_key: SANDBOX_API_IMAGE
+      dockerfile: sandbox/Dockerfile.api
+      build_context: sandbox
+      image_repo:
+        beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/sandbox-api
+        beijing-sandbox-2: lightclaw-bj8.tencentcloudcr.com/lightclaw/sandbox-api
+    - name: migrate
+      image_key: SANDBOX_MIGRATE_IMAGE
+      dockerfile: sandbox/Dockerfile.migrate
+      build_context: sandbox
+      image_repo:
+        beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/sandbox-migrate
+        beijing-sandbox-2: lightclaw-bj8.tencentcloudcr.com/lightclaw/sandbox-migrate
+    - name: worker
+      image_key: SANDBOX_WORKER_IMAGE
+      dockerfile: sandbox/Dockerfile.worker
+      build_context: sandbox
+      image_repo:
+        beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/sandbox-worker
+        beijing-sandbox-2: lightclaw-bj8.tencentcloudcr.com/lightclaw/sandbox-worker
+    - name: ingressproxy-router
+      image_key: SANDBOX_INGRESSPROXY_ROUTER_IMAGE
+      dockerfile: sandbox/Dockerfile.ingressproxy-router
+      build_context: sandbox
+      image_repo:
+        beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/sandbox-ingressproxy-router
+        beijing-sandbox-2: lightclaw-bj8.tencentcloudcr.com/lightclaw/sandbox-ingressproxy-router
+    - name: ingressproxy-shard
+      image_key: SANDBOX_INGRESSPROXY_SHARD_IMAGE
+      dockerfile: sandbox/Dockerfile.ingressproxy-shard
+      build_context: sandbox
+      image_repo:
+        beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/sandbox-ingressproxy-shard
+        beijing-sandbox-2: lightclaw-bj8.tencentcloudcr.com/lightclaw/sandbox-ingressproxy-shard
   service-gateway:
     owner: service-gateway
     source: service-gateway
@@ -319,7 +514,7 @@ bundles:
         baseline_checks:
         - name: subscription-plans-free-lite-pro
           query: SELECT COUNT(*) FROM subscription_plans WHERE code IN ('free','lite','pro')
-          expected: "3"
+          expected: '3'
     reason: Subscription service formal release bundle for Argo-managed rollout and
       DB job contract.
     allowed_paths:
@@ -422,200 +617,6 @@ bundles:
       beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/lightclaw-auth
       shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/lightclaw-auth
       beijing-sandbox-2: lightclaw-bj8.tencentcloudcr.com/lightclaw/lightclaw-auth
-  ctl:
-    owner: ctl
-    source: ctl
-    db_contract:
-      mode: migration
-      db_job_service: ctl
-      migration_operation: migration
-      readiness_supported: false
-      migration_paths:
-      - ctl/migrations/**
-      expected_migration_source: ctl/migrations
-    reason: CTL formal release bundle for Argo-managed rollout.
-    allowed_paths:
-    - ctl/k8s/base
-    - ctl/k8s/overlays/beijing-sandbox
-    - ctl/k8s/overlays/shprod
-    - ctl/Dockerfile
-    exit_condition: Can be removed only after the deployable contract moves to an
-      explicit imported package path.
-    publish_paths:
-    - argocd/services/ctl/{env}/**
-    - argocd/apps/{env}/ctl.yaml
-    - argocd/secrets/{env}/ctl-conf-common.sops.yaml
-    - argocd/secrets/{env}/ctl-conf-rewrite.sops.yaml
-    - argocd/secrets/{env}/ctl-runtime-secrets.sops.yaml
-    - ctl/k8s/base/**
-    - ctl/k8s/overlays/{env}/**
-    publish_paths_by_env:
-      beijing-sandbox:
-      - argocd/services/ctl/beijing-sandbox/**
-      - argocd/services/ctl/common/**
-      - argocd/services/ctl/profiles/sandbox/**
-      - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
-      - argocd/catalogs/sandbox/beijing-sandbox/ctl.yaml
-      - argocd/secrets/beijing-sandbox/ctl-conf-common.sops.yaml
-      - argocd/secrets/beijing-sandbox/ctl-conf-rewrite.sops.yaml
-      - argocd/secrets/beijing-sandbox/ctl-runtime-secrets.sops.yaml
-      - ctl/k8s/base/**
-      - ctl/k8s/overlays/beijing-sandbox/**
-      beijing-sandbox-2:
-      - argocd/services/ctl/beijing-sandbox-2/**
-      - argocd/services/ctl/common/**
-      - argocd/services/ctl/profiles/sandbox/**
-      - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
-      - argocd/catalogs/sandbox/beijing-sandbox-2/ctl.yaml
-      - argocd/secrets/beijing-sandbox-2/ctl-conf-common.sops.yaml
-      - argocd/secrets/beijing-sandbox-2/ctl-conf-rewrite.sops.yaml
-      - argocd/secrets/beijing-sandbox-2/ctl-runtime-secrets.sops.yaml
-      - ctl/k8s/base/**
-      - ctl/k8s/overlays/beijing-sandbox-2/**
-      - ctl/k8s/overlays/beijing-sandbox/**
-    dockerfile: ctl/Dockerfile
-    build_context: ctl
-    image_repo:
-      beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/ctl
-      shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/ctl
-      beijing-sandbox-2: lightclaw-bj8.tencentcloudcr.com/lightclaw/ctl
-  sandbox:
-    owner: sandbox
-    source: sandbox
-    db_contract:
-      mode: migration
-      db_job_service: sandbox
-      migration_operation: migration
-      migration_image_key: SANDBOX_MIGRATE_IMAGE
-      migration_paths:
-      - sandbox/migrations/**
-      expected_migration_source: sandbox/migrations
-      always_verify_baseline: true
-      verifier:
-        namespace: sandbox
-        configmap: sandbox-runtime-config
-        secret: sandbox-runtime-secrets
-        database_env: MYSQL_DB
-        user_env: MYSQL_USER
-        password_env: MYSQL_PASSWORD
-        baseline_checks:
-        - name: sandbox-pools-present
-          query: SELECT COUNT(*) FROM pools
-          min: 1
-          failure_hint: Run ENV=<env> bash sandbox/scripts/sync-default-pools.sh --base-image <img-id> after confirming the target base image.
-    reason: Sandbox formal release bundle for future Argo-managed rollout.
-    allowed_paths:
-    - sandbox/k8s/base
-    - sandbox/k8s/overlays/beijing-sandbox
-    - sandbox/k8s/overlays/shprod
-    - sandbox/config
-    - sandbox/migrations
-    exit_condition: Can be removed only after the deployable contract moves to an
-      explicit imported package path.
-    publish_paths:
-    - argocd/services/sandbox/{env}/**
-    - argocd/apps/{env}/sandbox.yaml
-    - argocd/secrets/{env}/sandbox-runtime-secrets.sops.yaml
-    - sandbox/k8s/base/**
-    - sandbox/k8s/overlays/{env}/**
-    publish_paths_by_env:
-      beijing-sandbox:
-      - argocd/services/sandbox/beijing-sandbox/**
-      - argocd/services/sandbox/common/**
-      - argocd/services/sandbox/profiles/sandbox/**
-      - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
-      - argocd/catalogs/sandbox/beijing-sandbox/sandbox.yaml
-      - argocd/secrets/beijing-sandbox/sandbox-runtime-secrets.sops.yaml
-      - sandbox/k8s/base/**
-      - sandbox/k8s/overlays/beijing-sandbox/**
-      beijing-sandbox-2:
-      - argocd/services/sandbox/beijing-sandbox-2/**
-      - argocd/services/sandbox/common/**
-      - argocd/services/sandbox/profiles/sandbox/**
-      - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
-      - argocd/catalogs/sandbox/beijing-sandbox-2/sandbox.yaml
-      - argocd/secrets/beijing-sandbox-2/sandbox-runtime-secrets.sops.yaml
-      - sandbox/k8s/base/**
-      - sandbox/k8s/overlays/beijing-sandbox-2/**
-      - sandbox/k8s/overlays/beijing-sandbox/**
-    image_targets:
-    - name: api
-      image_key: SANDBOX_API_IMAGE
-      dockerfile: sandbox/Dockerfile.api
-      build_context: sandbox
-      image_repo:
-        beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/sandbox-api
-        beijing-sandbox-2: lightclaw-bj8.tencentcloudcr.com/lightclaw/sandbox-api
-    - name: migrate
-      image_key: SANDBOX_MIGRATE_IMAGE
-      dockerfile: sandbox/Dockerfile.migrate
-      build_context: sandbox
-      image_repo:
-        beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/sandbox-migrate
-        beijing-sandbox-2: lightclaw-bj8.tencentcloudcr.com/lightclaw/sandbox-migrate
-    - name: worker
-      image_key: SANDBOX_WORKER_IMAGE
-      dockerfile: sandbox/Dockerfile.worker
-      build_context: sandbox
-      image_repo:
-        beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/sandbox-worker
-        beijing-sandbox-2: lightclaw-bj8.tencentcloudcr.com/lightclaw/sandbox-worker
-    - name: ingressproxy-router
-      image_key: SANDBOX_INGRESSPROXY_ROUTER_IMAGE
-      dockerfile: sandbox/Dockerfile.ingressproxy-router
-      build_context: sandbox
-      image_repo:
-        beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/sandbox-ingressproxy-router
-        beijing-sandbox-2: lightclaw-bj8.tencentcloudcr.com/lightclaw/sandbox-ingressproxy-router
-    - name: ingressproxy-shard
-      image_key: SANDBOX_INGRESSPROXY_SHARD_IMAGE
-      dockerfile: sandbox/Dockerfile.ingressproxy-shard
-      build_context: sandbox
-      image_repo:
-        beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/sandbox-ingressproxy-shard
-        beijing-sandbox-2: lightclaw-bj8.tencentcloudcr.com/lightclaw/sandbox-ingressproxy-shard
-  frontend:
-    owner: frontend
-    source: frontend
-    db_contract: none
-    reason: Frontend formal release bundle for Argo-managed rollout.
-    allowed_paths:
-    - frontend/k8s/base
-    - frontend/k8s/overlays/shprod
-    - frontend/deploy/Dockerfile
-    exit_condition: Can be removed only after the deployable contract moves to an
-      explicit imported package path.
-    publish_paths:
-    - argocd/services/frontend/{env}/**
-    - argocd/apps/{env}/frontend.yaml
-    - frontend/k8s/base/**
-    - frontend/k8s/overlays/{env}/**
-    dockerfile: frontend/deploy/Dockerfile
-    build_context: frontend
-    image_repo:
-      shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/frontend
-    publish_paths_by_env: {}
-  frontend-ds:
-    owner: frontend-ds
-    source: frontend-ds
-    db_contract: none
-    reason: Frontend DS formal release bundle for Argo-managed rollout.
-    allowed_paths:
-    - frontend-ds/k8s/base
-    - frontend-ds/k8s/overlays/shprod
-    - frontend-ds/deploy/Dockerfile
-    exit_condition: Can be removed only after the deployable contract moves to an
-      explicit imported package path.
-    publish_paths:
-    - argocd/services/frontend-ds/{env}/**
-    - argocd/apps/{env}/frontend-ds.yaml
-    - frontend-ds/k8s/base/**
-    - frontend-ds/k8s/overlays/{env}/**
-    dockerfile: frontend-ds/deploy/Dockerfile
-    build_context: frontend-ds
-    image_repo:
-      shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/frontend-ds
-    publish_paths_by_env: {}
 catalog_publish_exemptions_by_env:
   beijing-sandbox:
     argocd/catalogs/sandbox/beijing-sandbox/session.yaml: session has no CI build

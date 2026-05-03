@@ -9,6 +9,8 @@ from dataclasses import dataclass
 
 APPROVED_GATE_KEYS = (
     "GATE_IMAGE_STATUS",
+    "GATE_IMAGE_PIN_PAYLOAD",
+    "GATE_IMAGE_DIGESTS_JSON",
     "GATE_CONFIG_STATUS",
     "GATE_DB_STATUS",
     "GATE_REQUIRES_DB_READINESS",
@@ -23,6 +25,8 @@ APPROVED_GATE_KEYS = (
 @dataclass(frozen=True)
 class ReleaseGateResult:
     image_status: str
+    image_pin_payload: str
+    image_digests_json: str
     config_status: str
     db_status: str
     requires_db_readiness: bool
@@ -35,6 +39,8 @@ class ReleaseGateResult:
     def to_env(self) -> dict[str, str]:
         return {
             "GATE_IMAGE_STATUS": self.image_status,
+            "GATE_IMAGE_PIN_PAYLOAD": self.image_pin_payload,
+            "GATE_IMAGE_DIGESTS_JSON": self.image_digests_json,
             "GATE_CONFIG_STATUS": self.config_status,
             "GATE_DB_STATUS": self.db_status,
             "GATE_REQUIRES_DB_READINESS": _bool(self.requires_db_readiness),
