@@ -11,7 +11,7 @@ from pathlib import Path
 from uuid import uuid4
 
 
-DEFAULT_API_URL = "https://staticpages-api.preview.lightclaw.tech/api/upload"
+DEFAULT_API_URL = "https://staticpages-api.sandbox.lightclaw.tech/api/upload"
 DEFAULT_REPOSITORY = "wisp/mono2"
 BRANCH_PREFIX = "frontsandbox/"
 DNS_SAFE_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
@@ -87,7 +87,7 @@ def upload(args: argparse.Namespace) -> int:
         print("frontend 预览发布决策：上传静态产物到 StaticPages")
         print(f"源分支：{args.source_branch}")
         print(f"预览名：{preview_name}")
-        print(f"目标域名：https://{preview_name}.preview.lightclaw.tech")
+        print(f"目标域名：https://{preview_name}.sandbox.lightclaw.tech")
         print(f"上传文件数：{len(files)}")
         print(f"上传体积：{size} bytes")
         print(f"StaticPages API：{args.api_url}")

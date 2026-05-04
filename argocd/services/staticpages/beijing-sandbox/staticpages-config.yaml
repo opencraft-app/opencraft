@@ -12,7 +12,7 @@ output:
   format: short
 
 pages:
-  - domain: preview.lightclaw.tech
+  - domain: sandbox.lightclaw.tech
     bucket:
       applicationId: ENV(STATICPAGES_COS_SECRET_ID)
       name: webhosting-1388575217
