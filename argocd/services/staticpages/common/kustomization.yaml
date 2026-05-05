@@ -46,12 +46,6 @@ replacements:
           name: staticpages-preview
         fieldPaths:
           - spec.rules.0.host
-      - select:
-          kind: TkeServiceConfig
-          name: staticpages-preview-config
-        fieldPaths:
-          - spec.loadBalancer.l7Listeners.0.domains.0.domain
-          - spec.loadBalancer.l7Listeners.0.domains.0.rules.0.healthCheck.httpCheckDomain
   - source:
       kind: ConfigMap
       name: staticpages-platform-values
@@ -62,9 +56,3 @@ replacements:
           name: staticpages-preview
         fieldPaths:
           - spec.rules.1.host
-      - select:
-          kind: TkeServiceConfig
-          name: staticpages-preview-config
-        fieldPaths:
-          - spec.loadBalancer.l7Listeners.0.domains.1.domain
-          - spec.loadBalancer.l7Listeners.0.domains.1.rules.0.healthCheck.httpCheckDomain

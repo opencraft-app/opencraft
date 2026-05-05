@@ -109,7 +109,6 @@ metadata:
     kubernetes.io/ingress.class: qcloud
     ingress.cloud.tencent.com/modification-protection: "false"
     ingress.cloud.tencent.com/direct-access: "true"
-    ingress.cloud.tencent.com/tke-service-config: staticpages-preview-config
 spec:
   ingressClassName: qcloud
   rules:
@@ -133,43 +132,3 @@ spec:
                 name: staticpages
                 port:
                   name: proxy
----
-apiVersion: cloud.tencent.com/v1alpha1
-kind: TkeServiceConfig
-metadata:
-  name: staticpages-preview-config
-  namespace: frontend-preview
-spec:
-  loadBalancer:
-    l7Listeners:
-      - protocol: HTTP
-        port: 80
-        domains:
-          - domain: REPLACE_STATICPAGES_API_HOST
-            rules:
-              - url: /
-                forwardType: HTTP
-                healthCheck:
-                  enable: true
-                  intervalTime: 10
-                  timeout: 5
-                  healthNum: 2
-                  unHealthNum: 2
-                  httpCheckPath: /healthz
-                  httpCheckDomain: REPLACE_STATICPAGES_API_HOST
-                  httpCheckMethod: HEAD
-                  httpCode: 2
-          - domain: REPLACE_STATICPAGES_PREVIEW_WILDCARD_HOST
-            rules:
-              - url: /
-                forwardType: HTTP
-                healthCheck:
-                  enable: true
-                  intervalTime: 10
-                  timeout: 5
-                  healthNum: 2
-                  unHealthNum: 2
-                  httpCheckPath: /healthz
-                  httpCheckDomain: REPLACE_STATICPAGES_PREVIEW_WILDCARD_HOST
-                  httpCheckMethod: HEAD
-                  httpCode: 2
