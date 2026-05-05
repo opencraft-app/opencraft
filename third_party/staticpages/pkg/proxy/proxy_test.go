@@ -115,6 +115,30 @@ type testProxyServer struct {
 func TestProxyServeHTTP(t *testing.T) {
 	tests := []testProxyServer{
 		{
+			name:           "load balancer head root health check",
+			domain:         "example.com",
+			method:         http.MethodHead,
+			requestPath:    "/",
+			expectedStatus: http.StatusOK,
+			expectErrorLog: false,
+		},
+		{
+			name:           "explicit get health check",
+			domain:         "example.com",
+			method:         http.MethodGet,
+			requestPath:    "/healthz",
+			expectedStatus: http.StatusOK,
+			expectErrorLog: false,
+		},
+		{
+			name:           "explicit head health check",
+			domain:         "example.com",
+			method:         http.MethodHead,
+			requestPath:    "/healthz",
+			expectedStatus: http.StatusOK,
+			expectErrorLog: false,
+		},
+		{
 			name:                "valid target path resolved",
 			domain:              "example.com",
 			method:              http.MethodGet,

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
@@ -9,6 +10,51 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestHealthHandlerSupportsLoadBalancerChecks(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	api := NewRestApi(config.StaticPagesConfig{})
+
+	tests := []struct {
+		name           string
+		method         string
+		path           string
+		expectedStatus int
+		expectedBody   string
+	}{
+		{
+			name:           "head root",
+			method:         http.MethodHead,
+			path:           "/",
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:           "get healthz",
+			method:         http.MethodGet,
+			path:           "/healthz",
+			expectedStatus: http.StatusOK,
+			expectedBody:   `{"status":"ok"}`,
+		},
+		{
+			name:           "head healthz",
+			method:         http.MethodHead,
+			path:           "/healthz",
+			expectedStatus: http.StatusOK,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(test.method, test.path, nil)
+
+			api.router.ServeHTTP(recorder, request)
+
+			assert.Equal(t, test.expectedStatus, recorder.Code)
+			assert.Equal(t, test.expectedBody, recorder.Body.String())
+		})
+	}
+}
 
 func TestVerifyAgainstBearerPages(t *testing.T) {
 	gin.SetMode(gin.TestMode)

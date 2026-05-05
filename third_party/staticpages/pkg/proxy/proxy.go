@@ -449,6 +449,11 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	))
 	defer span.End()
 
+	if isHealthCheckRequest(req) {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
 	// Only allow GET requests
 	switch req.Method {
 	case http.MethodGet:
@@ -468,6 +473,14 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+}
+
+func isHealthCheckRequest(req *http.Request) bool {
+	if req.URL.Path == "/healthz" {
+		return req.Method == http.MethodGet || req.Method == http.MethodHead
+	}
+
+	return req.URL.Path == "/" && req.Method == http.MethodHead
 }
 
 // ServeAsync starts the reverse proxy server on the specified address and logs the startup message.

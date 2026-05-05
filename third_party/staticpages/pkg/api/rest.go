@@ -43,6 +43,10 @@ func NewRestApi(conf config.StaticPagesConfig) *RestApi {
 	r.router = gin.New(func(e *gin.Engine) {})
 
 	// Setup Routes
+	r.router.GET("/", r.HealthHandler)
+	r.router.HEAD("/", r.HealthHandler)
+	r.router.GET("/healthz", r.HealthHandler)
+	r.router.HEAD("/healthz", r.HealthHandler)
 	r.router.POST("/api/upload", r.UploadHandler)
 
 	// Setup otelgin to expose Open Telemetry
@@ -73,6 +77,18 @@ func NewRestApi(conf config.StaticPagesConfig) *RestApi {
 	p.Use(r.router)
 
 	return r
+}
+
+// HealthHandler returns a lightweight success response for load balancer and
+// Kubernetes health checks. Tencent CLB defaults to probing HEAD /, so the API
+// root must be healthy even though upload traffic uses /api/upload.
+func (r *RestApi) HealthHandler(ct *gin.Context) {
+	if ct.Request.Method == http.MethodHead {
+		ct.Status(http.StatusOK)
+		return
+	}
+
+	ct.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
 // ServeAsync starts the REST API server asynchronously on the specified address by calling Serve within a goroutine.
