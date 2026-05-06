@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 from gitops.promotion_policy import GateDeniedBehavior, PromotionPolicy, require_policy_for_branch
-from gitops.release_facts import trailers_from_git
+from gitops.release_facts import release_facts_from_mapping, trailers_from_git
 from gitops.release_view import render_console_section
 from support.logging import print_section
 
@@ -38,6 +38,55 @@ def _commit_trailers(repo_root: Path, revision: str = "HEAD") -> dict[str, str]:
     return trailers
 
 
+def _git_success(args: list[str], *, cwd: Path) -> bool:
+    return subprocess.run(
+        ["git", "-C", str(cwd), *args],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    ).returncode == 0
+
+
+def _resolve_revision(repo_root: Path, name: str) -> str:
+    candidates = [name, f"origin/{name}", f"refs/remotes/origin/{name}"]
+    for candidate in candidates:
+        if _git_success(["rev-parse", "--verify", candidate], cwd=repo_root):
+            return candidate
+    return name
+
+
+def _fetch_branch(repo_root: Path, branch: str) -> None:
+    subprocess.run(
+        ["git", "-C", str(repo_root), "fetch", "origin", branch],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+
+
+def _release_trailers(repo_root: Path, source_branch: str, target_branch: str) -> dict[str, str]:
+    """Find release trailers from the promote range, not necessarily HEAD.
+
+    Promote branches may receive follow-up CI-only repair commits. Those commits
+    intentionally do not carry release trailers, so policy decisions must use the
+    latest commit in target..source that actually describes a release.
+    """
+
+    _fetch_branch(repo_root, source_branch)
+    _fetch_branch(repo_root, target_branch)
+    source_ref = _resolve_revision(repo_root, source_branch)
+    target_ref = _resolve_revision(repo_root, target_branch)
+
+    revisions = _git_output(["log", "--format=%H", f"{target_ref}..{source_ref}"], cwd=repo_root).splitlines()
+    for revision in revisions:
+        trailers = _commit_trailers(repo_root, revision)
+        if trailers.get("Release-id") or trailers.get("Release-gate-auto-merge"):
+            print(f"release trailers selected from commit {revision[:12]}", flush=True)
+            return trailers
+
+    return _commit_trailers(repo_root)
+
+
 def _print_policy(source_branch: str, policy: PromotionPolicy, stage: str) -> None:
     print_section(
         f"GitOps promote 策略：{stage}",
@@ -54,7 +103,7 @@ def _print_policy(source_branch: str, policy: PromotionPolicy, stage: str) -> No
     )
 
 
-def _print_release_view(repo_root: Path, source_branch: str, stage: str) -> None:
+def _print_release_view(repo_root: Path, source_branch: str, target_branch: str, stage: str) -> None:
     if (
         subprocess.run(
             ["git", "-C", str(repo_root), "rev-parse", "--is-inside-work-tree"],
@@ -66,9 +115,12 @@ def _print_release_view(repo_root: Path, source_branch: str, stage: str) -> None
     ):
         return
     try:
-        facts = trailers_from_git(repo_root)
+        facts = release_facts_from_mapping(_release_trailers(repo_root, source_branch, target_branch))
     except subprocess.CalledProcessError:
-        return
+        try:
+            facts = trailers_from_git(repo_root)
+        except subprocess.CalledProcessError:
+            return
     print(render_console_section(title="GitOps release view", facts=facts, source_branch=source_branch, stage=stage))
 
 
@@ -113,7 +165,7 @@ def validate_main(argv: list[str] | None = None) -> int:
     repo_root = Path(args.repo_root).resolve()
     policy = require_policy_for_branch(args.source_branch)
     _print_policy(args.source_branch, policy, "前置验收")
-    _print_release_view(repo_root, args.source_branch, "validate")
+    _print_release_view(repo_root, args.source_branch, args.target_branch, "validate")
     _compile_runtime_python()
 
     _run(
@@ -151,12 +203,12 @@ def merge_main(argv: list[str] | None = None) -> int:
     repo_root = Path(args.repo_root).resolve()
     policy = require_policy_for_branch(args.source_branch)
     _print_policy(args.source_branch, policy, "自动合并")
-    _print_release_view(repo_root, args.source_branch, "merge")
+    _print_release_view(repo_root, args.source_branch, args.target_branch, "merge")
     if not policy.auto_merge:
         print(f"skip auto-merge for {args.source_branch}: policy auto_merge=false")
         return 0
 
-    trailers = _commit_trailers(repo_root)
+    trailers = _release_trailers(repo_root, args.source_branch, args.target_branch)
     gate_auto_merge = trailers.get("Release-gate-auto-merge", "")
     gate_argo_sync = trailers.get("Release-gate-argo-sync", "")
 
@@ -211,7 +263,7 @@ def verify_main(argv: list[str] | None = None) -> int:
     repo_root = Path(args.repo_root).resolve()
     policy = require_policy_for_branch(args.source_branch)
     _print_policy(args.source_branch, policy, "合并后验收")
-    _print_release_view(repo_root, args.source_branch, "verify")
+    _print_release_view(repo_root, args.source_branch, args.target_branch, "verify")
 
     command = [
         sys.executable,
@@ -251,7 +303,7 @@ def cleanup_main(argv: list[str] | None = None) -> int:
     repo_root = Path(args.repo_root).resolve()
     policy = require_policy_for_branch(args.source_branch)
     _print_policy(args.source_branch, policy, "清理分支")
-    _print_release_view(repo_root, args.source_branch, "cleanup")
+    _print_release_view(repo_root, args.source_branch, args.target_branch, "cleanup")
 
     if not policy.cleanup_source_branch:
         print(
