@@ -225,6 +225,8 @@ func normalizedReturnToOrigin(raw string) string {
 	if err != nil {
 		return ""
 	}
+	// Exact-origin allowlist entries are intended for sandbox-only HTTP
+	// debugging endpoints such as http://<ip>:5173, not path-level redirects.
 	if parsed.User != nil || parsed.Opaque != "" || parsed.Scheme == "" || parsed.Host == "" {
 		return ""
 	}
