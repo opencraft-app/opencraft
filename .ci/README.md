@@ -414,6 +414,15 @@ Python runtime 的低层复用工具。这里只放跨包、无业务领域知�
 
 不要把业务逻辑写进 command wrapper。
 
+### root scripts boundary
+
+根目录 `scripts/` 不再承载 CI release runtime。判断规则：
+
+- 需要被 `.ci/*.yml`、GitOps promote、release gate、drift audit 或 MR guard 直接调用的发布运行时代码，必须放在 `.ci/runtime/`
+- `scripts/` 可以保留仓库维护 / 一次性运维 / 本地辅助脚本，例如 SSM 导出、SOPS 扫描、CLS 校验、EdgeOne 子账号创建、旧环境 bootstrap
+- 新增脚本如果需要进入 CI 发布闭环，先放入 `.ci/runtime/commands/` 或对应语义包，再同步 `.ci/runtime/materialize-files.txt` 和 runtime 测试
+- 禁止重新引入 `scripts/build_and_promote_to_gitops.sh`、`scripts/promote_bundle_image_to_gitops.sh`、`scripts/verify_gitops_release.py` 这类 CI release runtime 入口
+
 ### tests
 
 Runtime 单测按语义分组，避免一个扁平目录继续增长：

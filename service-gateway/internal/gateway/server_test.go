@@ -1374,6 +1374,90 @@ func TestCorsWildcardEdgeOneRunOriginAllowed(t *testing.T) {
 	}
 }
 
+func TestCorsAllowAnyOriginReflectsValidOrigins(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer upstream.Close()
+
+	handler, err := NewHandler(Config{
+		AuthServiceURL: "http://auth.invalid",
+		AllowedOrigins: []string{"*"},
+		Routes: []Route{
+			{
+				Name:     "public",
+				Prefix:   "/v1/bundles",
+				Upstream: upstream.URL,
+				Access:   AccessPublic,
+				Methods:  []string{http.MethodGet},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+
+	for _, origin := range []string{
+		"https://random.example.com",
+		"https://preview.sandbox.lightclaw.tech",
+		"http://30.184.61.101:5173",
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/v1/bundles", nil)
+		req.Header.Set("Origin", origin)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("origin %q: expected 204, got %d body=%s", origin, rec.Code, rec.Body.String())
+		}
+		if got := rec.Header().Get("Access-Control-Allow-Origin"); got != origin {
+			t.Fatalf("origin %q: expected reflected allow-origin, got %q", origin, got)
+		}
+		if got := rec.Header().Get("Access-Control-Allow-Credentials"); got != "true" {
+			t.Fatalf("origin %q: expected credentials header, got %q", origin, got)
+		}
+	}
+}
+
+func TestCorsAllowAnyOriginRejectsInvalidOriginSyntax(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer upstream.Close()
+
+	handler, err := NewHandler(Config{
+		AuthServiceURL: "http://auth.invalid",
+		AllowedOrigins: []string{"*"},
+		Routes: []Route{
+			{
+				Name:     "public",
+				Prefix:   "/v1/bundles",
+				Upstream: upstream.URL,
+				Access:   AccessPublic,
+				Methods:  []string{http.MethodGet},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+
+	for _, origin := range []string{
+		"null",
+		"file://local",
+		"https://random.example.com/path",
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/v1/bundles", nil)
+		req.Header.Set("Origin", origin)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+
+		if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+			t.Fatalf("origin %q: expected no allow-origin, got %q", origin, got)
+		}
+	}
+}
+
 func TestCorsWildcardLocalhostAnyPortAllowed(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
