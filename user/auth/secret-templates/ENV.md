@@ -2,6 +2,7 @@
 
 本文档变更会命中 `lightclaw-auth` 发布流水线的 `user/auth/**` 监听路径。
 通过 MR 合入 `master` 时，可用于验证 `lightclaw-auth` 的完整发布触发链路。
+如果模板化入口触发漏判，可用同路径文档变更验证直接 stages 入口。
 
 ## 必填
 
