@@ -21,7 +21,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 SERVICE_SPECS: dict[tuple[str, str], dict[str, Any]] = {

@@ -324,7 +324,7 @@ Release gate 执行层。这里负责证明 image/config/db contract 是否满�
   - CI 命令入口
 - `.ci/runtime/commands/verify_db_contract.py`
   - CI 命令入口
-- `scripts/run_gitops_db_job.py`
+- `.ci/runtime/commands/run_gitops_db_job.py`
   - 实际执行 migration / seed 这类受控 DB Job
 
 ### guards

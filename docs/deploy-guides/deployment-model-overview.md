@@ -89,7 +89,7 @@ release bundle 清单：
 `DB migration / seed` 不是正式发布脚本的一部分。  
 统一走平台级入口：
 
-- [scripts/run_gitops_db_job.py](../../scripts/run_gitops_db_job.py)
+- [.ci/runtime/commands/run_gitops_db_job.py](../../.ci/runtime/commands/run_gitops_db_job.py)
 - 历史 DB job 模板已退役
 - [gitops-db-job-runbook.md](../runbooks/gitops-db-job-runbook.md)
 

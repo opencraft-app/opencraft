@@ -156,7 +156,7 @@ def plan_release_gates(
         )
     if requires_db_job and db_status != "passed":
         command = (
-            "python3 scripts/run_gitops_db_job.py "
+            "python3 .ci/runtime/commands/run_gitops_db_job.py "
             f"--service {db_job_service} --operation {db_job_operation} --env {env} --revision {source_sha} --apply --wait"
         )
         if db_job_image_override:

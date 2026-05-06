@@ -112,7 +112,7 @@ def run_db_readiness_flow(
     if apply_migration and plan.requires_db_job:
         args = [
             "python3",
-            str(repo_root / "scripts/run_gitops_db_job.py"),
+            str(runtime_command_dir / "run_gitops_db_job.py"),
             "--service",
             plan.db_job_service,
             "--operation",
