@@ -31,7 +31,9 @@ stages:
               echo "ci.branch=${{ ci.branch }}"
               CI_RUNTIME_DIR="$(mktemp -d)"
               source .ci/runtime/gitops_promotion_bootstrap.sh
-              ci_bootstrap_gitops_promotion_runtime "${CI_RUNTIME_DIR}" "${CI_RUNTIME_REF:-origin/master}"
+              RESOLVED_RUNTIME_REF="$(ci_resolve_gitops_promotion_runtime_ref "${CI_RUNTIME_REF:-origin/master}")"
+              echo "resolved_runtime_ref=${RESOLVED_RUNTIME_REF}"
+              ci_bootstrap_gitops_promotion_runtime "${CI_RUNTIME_DIR}" "$RESOLVED_RUNTIME_REF"
               SOURCE_BRANCH="$(ci_resolve_gitops_promotion_source_branch "${{ ci.branch }}")"
               echo "resolved_source_branch=${SOURCE_BRANCH}"
               git diff --name-only HEAD~1..HEAD || true
@@ -63,7 +65,9 @@ stages:
             run: |
               CI_RUNTIME_DIR="$(mktemp -d)"
               source .ci/runtime/gitops_promotion_bootstrap.sh
-              ci_bootstrap_gitops_promotion_runtime "${CI_RUNTIME_DIR}" "${CI_RUNTIME_REF:-origin/master}"
+              RESOLVED_RUNTIME_REF="$(ci_resolve_gitops_promotion_runtime_ref "${CI_RUNTIME_REF:-origin/master}")"
+              echo "resolved_runtime_ref=${RESOLVED_RUNTIME_REF}"
+              ci_bootstrap_gitops_promotion_runtime "${CI_RUNTIME_DIR}" "$RESOLVED_RUNTIME_REF"
               SOURCE_BRANCH="$(ci_resolve_gitops_promotion_source_branch "${{ ci.branch }}")"
               echo "resolved_source_branch=${SOURCE_BRANCH}"
               python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/merge_gitops_promotion.py" \
@@ -91,7 +95,9 @@ stages:
             run: |
               CI_RUNTIME_DIR="$(mktemp -d)"
               source .ci/runtime/gitops_promotion_bootstrap.sh
-              ci_bootstrap_gitops_promotion_runtime "${CI_RUNTIME_DIR}" "${CI_RUNTIME_REF:-origin/master}"
+              RESOLVED_RUNTIME_REF="$(ci_resolve_gitops_promotion_runtime_ref "${CI_RUNTIME_REF:-origin/master}")"
+              echo "resolved_runtime_ref=${RESOLVED_RUNTIME_REF}"
+              ci_bootstrap_gitops_promotion_runtime "${CI_RUNTIME_DIR}" "$RESOLVED_RUNTIME_REF"
               SOURCE_BRANCH="$(ci_resolve_gitops_promotion_source_branch "${{ ci.branch }}")"
               echo "resolved_source_branch=${SOURCE_BRANCH}"
               python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/verify_gitops_promotion.py" \
@@ -119,7 +125,9 @@ stages:
             run: |
               CI_RUNTIME_DIR="$(mktemp -d)"
               source .ci/runtime/gitops_promotion_bootstrap.sh
-              ci_bootstrap_gitops_promotion_runtime "${CI_RUNTIME_DIR}" "${CI_RUNTIME_REF:-origin/master}"
+              RESOLVED_RUNTIME_REF="$(ci_resolve_gitops_promotion_runtime_ref "${CI_RUNTIME_REF:-origin/master}")"
+              echo "resolved_runtime_ref=${RESOLVED_RUNTIME_REF}"
+              ci_bootstrap_gitops_promotion_runtime "${CI_RUNTIME_DIR}" "$RESOLVED_RUNTIME_REF"
               SOURCE_BRANCH="$(ci_resolve_gitops_promotion_source_branch "${{ ci.branch }}")"
               echo "resolved_source_branch=${SOURCE_BRANCH}"
               python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/cleanup_gitops_promotion.py" \

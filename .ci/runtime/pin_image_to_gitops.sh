@@ -12,10 +12,6 @@ COMMITTER_NAME="${COMMITTER_NAME:-skipzhang}"
 COMMITTER_EMAIL="${COMMITTER_EMAIL:-skipzhang@tencent.com}"
 ci_export_gongfeng_defaults
 GITOPS_AUTO_MERGE_ENVS="${GITOPS_AUTO_MERGE_ENVS:-beijing-sandbox}"
-BOOTSTRAP_FILES=(
-  ".ci/gitops-promotion.yml"
-  ".ci/runtime/gitops_promotion_bootstrap.sh"
-)
 
 if [[ $# -ne 5 ]]; then
   echo "usage: $0 <bundle-service> <service[,service2,...]> <env> <image> <source-ref>" >&2
@@ -138,15 +134,6 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for bootstrap_file in "${BOOTSTRAP_FILES[@]}"; do
-  if [[ ! -f "$REPO_ROOT/$bootstrap_file" ]]; then
-    echo "missing bootstrap file: $bootstrap_file" >&2
-    exit 1
-  fi
-  mkdir -p "$bootstrap_dir/$(dirname "$bootstrap_file")"
-  cp "$REPO_ROOT/$bootstrap_file" "$bootstrap_dir/$bootstrap_file"
-done
-
 mkdir -p "$bootstrap_dir/.ci"
 rm -rf "$bootstrap_dir/.ci/runtime"
 cp -R "$REPO_ROOT/.ci/runtime" "$bootstrap_dir/.ci/runtime"
@@ -194,12 +181,6 @@ git -C "$REPO_ROOT" checkout -B "$PROMOTE_BRANCH" "$REMOTE_NAME/$GITOPS_BRANCH"
 git -C "$REPO_ROOT" config user.name "$COMMITTER_NAME"
 git -C "$REPO_ROOT" config user.email "$COMMITTER_EMAIL"
 
-for bootstrap_file in "${BOOTSTRAP_FILES[@]}"; do
-  mkdir -p "$REPO_ROOT/$(dirname "$bootstrap_file")"
-  cp "$bootstrap_dir/$bootstrap_file" "$REPO_ROOT/$bootstrap_file"
-  git -C "$REPO_ROOT" add "$bootstrap_file"
-done
-
 project_and_pin_gitops_state "$REPO_ROOT" true
 
 if git -C "$REPO_ROOT" diff --cached --quiet; then
@@ -210,6 +191,7 @@ fi
 COMMIT_BODY="$(cat <<EOF
 Release-id: ${RELEASE_ID}
 Release-created-at: ${DEPLOYED_AT}
+Release-source-branch: ${PROMOTE_BRANCH}
 Release-runtime-ref: ${RELEASE_RUNTIME_REF}
 Release-runtime-commit: ${RELEASE_RUNTIME_COMMIT}
 Release-bundle: ${BUNDLE_SERVICE}

@@ -22,9 +22,38 @@ ci_bootstrap_gitops_promotion_runtime() {
   ci_init_repo_root
 }
 
+ci_gitops_promotion_trailer() {
+  local key="${1:?trailer key required}"
+  git log --format=%B -n 20 HEAD 2>/dev/null |
+    awk -F': ' -v key="$key" '$1 == key { print substr($0, length(key) + 3); exit }'
+}
+
+ci_resolve_gitops_promotion_runtime_ref() {
+  local fallback_ref="${1:-origin/master}"
+  local runtime_commit
+
+  runtime_commit="$(ci_gitops_promotion_trailer Release-runtime-commit || true)"
+  if [[ -n "$runtime_commit" ]]; then
+    printf '%s\n' "$runtime_commit"
+    return 0
+  fi
+
+  printf '%s\n' "$fallback_ref"
+}
+
 ci_resolve_gitops_promotion_source_branch() {
   local ci_branch="${1:-}"
   local candidate
+
+  candidate="$(ci_gitops_promotion_trailer Release-source-branch || true)"
+  candidate="${candidate#refs/heads/}"
+  candidate="${candidate#origin/}"
+  case "$candidate" in
+    promote-*)
+      printf '%s\n' "$candidate"
+      return 0
+      ;;
+  esac
 
   for candidate in \
     "$ci_branch" \

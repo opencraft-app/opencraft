@@ -80,6 +80,28 @@ class PromotionCommandTests(unittest.TestCase):
         self.assertEqual(trailers["Release-gate-auto-merge"], "true")
         self.assertEqual(trailers["Release-gate-argo-sync"], "auto")
 
+    def test_validate_rejects_ci_changes_in_promote_diff(self) -> None:
+        with tempfile.TemporaryDirectory() as repo:
+            repo_path = Path(repo)
+            subprocess.run(["git", "init", "-b", "gitops"], cwd=repo_path, check=True, stdout=subprocess.DEVNULL)
+            subprocess.run(["git", "config", "user.name", "test"], cwd=repo_path, check=True)
+            subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo_path, check=True)
+            (repo_path / "state.txt").write_text("base\n")
+            subprocess.run(["git", "add", "state.txt"], cwd=repo_path, check=True)
+            subprocess.run(["git", "commit", "-m", "base"], cwd=repo_path, check=True, stdout=subprocess.DEVNULL)
+            subprocess.run(["git", "checkout", "-b", "promote-beijing-sandbox-ctl-tag"], cwd=repo_path, check=True, stdout=subprocess.DEVNULL)
+            (repo_path / ".ci").mkdir()
+            (repo_path / ".ci/gitops-promotion.yml").write_text("version: v2.0\n")
+            subprocess.run(["git", "add", ".ci/gitops-promotion.yml"], cwd=repo_path, check=True)
+            subprocess.run(["git", "commit", "-m", "bad ci diff"], cwd=repo_path, check=True, stdout=subprocess.DEVNULL)
+
+            with self.assertRaisesRegex(RuntimeError, "must not carry .ci changes"):
+                gitops_promotion._reject_ci_changes(  # noqa: SLF001
+                    repo_path,
+                    "promote-beijing-sandbox-ctl-tag",
+                    "gitops",
+                )
+
     def test_verify_command_uses_shprod_merge_only_policy(self) -> None:
         with tempfile.TemporaryDirectory() as repo:
             commands: list[list[str]] = []

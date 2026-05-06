@@ -87,6 +87,26 @@ def _release_trailers(repo_root: Path, source_branch: str, target_branch: str) -
     return _commit_trailers(repo_root)
 
 
+def _changed_files(repo_root: Path, source_branch: str, target_branch: str) -> list[str]:
+    _fetch_branch(repo_root, source_branch)
+    _fetch_branch(repo_root, target_branch)
+    source_ref = _resolve_revision(repo_root, source_branch)
+    target_ref = _resolve_revision(repo_root, target_branch)
+    output = _git_output(["diff", "--name-only", f"{target_ref}..{source_ref}"], cwd=repo_root)
+    return [line for line in output.splitlines() if line]
+
+
+def _reject_ci_changes(repo_root: Path, source_branch: str, target_branch: str) -> None:
+    ci_changes = [path for path in _changed_files(repo_root, source_branch, target_branch) if path == ".ci" or path.startswith(".ci/")]
+    if ci_changes:
+        formatted = ", ".join(ci_changes[:20])
+        suffix = "" if len(ci_changes) <= 20 else f", ... (+{len(ci_changes) - 20} more)"
+        raise RuntimeError(
+            "GitOps promote branches must not carry .ci changes; "
+            f"move CI/runtime updates to master/gitops before promoting. changed={formatted}{suffix}"
+        )
+
+
 def _print_policy(source_branch: str, policy: PromotionPolicy, stage: str) -> None:
     print_section(
         f"GitOps promote 策略：{stage}",
@@ -167,6 +187,7 @@ def validate_main(argv: list[str] | None = None) -> int:
     _print_policy(args.source_branch, policy, "前置验收")
     _print_release_view(repo_root, args.source_branch, args.target_branch, "validate")
     _compile_runtime_python()
+    _reject_ci_changes(repo_root, args.source_branch, args.target_branch)
 
     _run(
         [
