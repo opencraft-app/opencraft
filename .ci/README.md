@@ -52,12 +52,13 @@
 公共模板：
 
 - `.ci/templates/service-release.yml`
-  - 统一承载 service release 的 `concurrency`、启动变量、checkout、build、北京自动 pin、手动 promote 逻辑
+  - 统一承载 service release 的启动变量、checkout、build、北京自动 pin、手动 promote 逻辑
   - 继续调用 `.ci/runtime/build_and_promote_to_gitops.sh` 与 `.ci/runtime/promote_bundle_image_to_gitops.sh`
 
 约束：
 
 - `on.push.paths` 只放业务路径、GitOps 服务路径、对应 secrets/app 路径；不要放 `.ci/**`。
+- `concurrency` 必须放在每个 service 入口 YAML；蓝盾模板 schema 不允许 `.ci/templates/service-release.yml` 顶层声明 `concurrency`。
 - `version: v2.0` 入口使用 `extends.template: service-release.yml` + `extends.parameters`；当前平台会拒绝 v2 里的 `extends.template` 对象写法。
 - 蓝盾解析 `extends.template` 时会相对 `.ci/templates/` 查找；不要写 `.ci/templates/service-release.yml`，否则可能被解析为 `.ci/templates/.ci/templates/service-release.yml` 并 404。
 - 不要为了 `extends.template.path` 对象写法切到 `version: v3.0`；蓝盾 PAC v3 暂未支持局部模板，`.ci/templates/service-release.yml` 这类本仓库模板应继续走 Stream v2。
@@ -87,6 +88,12 @@ on:
       - "**/OWNERS"
   manual: enabled
 
+concurrency:
+  group: mono2-master-release
+  cancel-in-progress: false
+  queue-length: 20
+  queue-timeout-minutes: 480
+
 extends:
   template: service-release.yml
   parameters:
@@ -102,7 +109,7 @@ extends:
 
 规则：
 
-- 业务 YAML 只声明 `on.push.paths`、`manual` 和 `extends`；不要复制 `concurrency`、`variables`、`stages`。
+- 业务 YAML 只声明 `on.push.paths`、`manual`、`concurrency` 和 `extends`；不要复制 `variables`、`stages`。
 - 不要把 `.ci/**`、`.ci/runtime/**`、`.ci/templates/**` 放进业务流水线 `paths`，避免 CI 模板变更隐式构建镜像或推进 GitOps。
 - CI 模板、runtime、guard 的变更只触发 `构建 CI runtime`；业务服务是否需要重新构建，应由业务路径变更或手动触发决定。
 - `SERVICE` 是 `.ci/runtime/bundles/*.bundle` 里的 bundle id；`BUNDLE` 是 GitOps pin target。多数服务二者相同，`lightclaw-auth` 是例外：`SERVICE=user-auth`、`BUNDLE=lightclaw-auth`。

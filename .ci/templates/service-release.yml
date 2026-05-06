@@ -23,12 +23,6 @@ parameters:
     type: string
     default: beijing-sandbox-2
 
-concurrency:
-  group: mono2-master-release
-  cancel-in-progress: false
-  queue-length: 20
-  queue-timeout-minutes: 480
-
 variables:
   SERVICE: ${{ parameters.SERVICE }}
   BUNDLE: ${{ parameters.BUNDLE }}

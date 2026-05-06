@@ -197,12 +197,19 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 continue
             with self.subTest(workflow=workflow_path):
                 self.assertEqual(workflow.get("version"), "v2.0")
+                self.assertEqual((workflow.get("concurrency") or {}).get("group"), "mono2-master-release")
                 self.assertIsInstance((workflow.get("extends") or {}).get("template"), str)
                 self.assert_release_entry_targets(
                     workflow,
                     expected_service=(workflow.get("extends") or {}).get("parameters", {}).get("SERVICE"),
                     expected_pin_targets=(workflow.get("extends") or {}).get("parameters", {}).get("BUNDLE"),
                 )
+
+    def test_local_templates_do_not_use_unsupported_top_level_concurrency(self) -> None:
+        for template_path in sorted((REPO_ROOT / ".ci/templates").glob("*.yml")):
+            with self.subTest(template=template_path.name):
+                template = yaml.safe_load(template_path.read_text()) or {}
+                self.assertNotIn("concurrency", template)
 
     def test_only_ci_runtime_listens_to_ci_file_changes(self) -> None:
         for workflow_path in sorted(REPO_ROOT.glob(".ci/*.yml")):
