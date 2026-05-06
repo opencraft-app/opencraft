@@ -62,7 +62,12 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
         self.assertNotIn("ci_materialize_runtime_manifest", workflow)
         self.assertEqual(workflow.count("source .ci/runtime/gitops_promotion_bootstrap.sh"), 4)
         self.assertEqual(workflow.count("ci_bootstrap_gitops_promotion_runtime"), 4)
+        self.assertEqual(workflow.count("ci_resolve_gitops_promotion_source_branch"), 4)
+        self.assertNotIn('--source-branch "${{ ci.branch }}"', workflow)
         self.assertIn('ci_materialize_runtime_manifest "${runtime_dir}" ".ci/runtime/materialize-files.txt"', helper)
+        self.assertIn("ci_resolve_gitops_promotion_source_branch()", helper)
+        self.assertIn("BK_CI_REPO_GIT_WEBHOOK_SOURCE_BRANCH", helper)
+        self.assertIn("refs/heads/promote-*", helper)
         self.assertIn("GitOps 合并后验收", workflow)
         self.assertIn("按环境策略自动合并 GitOps MR", workflow)
 

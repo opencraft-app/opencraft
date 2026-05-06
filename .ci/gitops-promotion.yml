@@ -32,12 +32,14 @@ stages:
               CI_RUNTIME_DIR="$(mktemp -d)"
               source .ci/runtime/gitops_promotion_bootstrap.sh
               ci_bootstrap_gitops_promotion_runtime "${CI_RUNTIME_DIR}" "${CI_RUNTIME_REF:-origin/master}"
+              SOURCE_BRANCH="$(ci_resolve_gitops_promotion_source_branch "${{ ci.branch }}")"
+              echo "resolved_source_branch=${SOURCE_BRANCH}"
               git diff --name-only HEAD~1..HEAD || true
               ci_require_gitops_validation_tools
               ci_prepare_sops_age_key
               python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/validate_gitops_promotion.py" \
                 --repo-root "$REPO_ROOT" \
-                --source-branch "${{ ci.branch }}" \
+                --source-branch "$SOURCE_BRANCH" \
                 --target-branch gitops \
                 --bundle-manifest "${CI_RUNTIME_DIR}/.ci/runtime/release-bundles.manifest"
 
@@ -62,9 +64,11 @@ stages:
               CI_RUNTIME_DIR="$(mktemp -d)"
               source .ci/runtime/gitops_promotion_bootstrap.sh
               ci_bootstrap_gitops_promotion_runtime "${CI_RUNTIME_DIR}" "${CI_RUNTIME_REF:-origin/master}"
+              SOURCE_BRANCH="$(ci_resolve_gitops_promotion_source_branch "${{ ci.branch }}")"
+              echo "resolved_source_branch=${SOURCE_BRANCH}"
               python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/merge_gitops_promotion.py" \
                 --repo-root "$REPO_ROOT" \
-                --source-branch "${{ ci.branch }}" \
+                --source-branch "$SOURCE_BRANCH" \
                 --target-branch gitops
 
   - name: GitOps 合并后验收
@@ -88,9 +92,11 @@ stages:
               CI_RUNTIME_DIR="$(mktemp -d)"
               source .ci/runtime/gitops_promotion_bootstrap.sh
               ci_bootstrap_gitops_promotion_runtime "${CI_RUNTIME_DIR}" "${CI_RUNTIME_REF:-origin/master}"
+              SOURCE_BRANCH="$(ci_resolve_gitops_promotion_source_branch "${{ ci.branch }}")"
+              echo "resolved_source_branch=${SOURCE_BRANCH}"
               python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/verify_gitops_promotion.py" \
                 --repo-root "$REPO_ROOT" \
-                --source-branch "${{ ci.branch }}" \
+                --source-branch "$SOURCE_BRANCH" \
                 --target-branch gitops
 
   - name: 清理 promote 分支
@@ -114,9 +120,11 @@ stages:
               CI_RUNTIME_DIR="$(mktemp -d)"
               source .ci/runtime/gitops_promotion_bootstrap.sh
               ci_bootstrap_gitops_promotion_runtime "${CI_RUNTIME_DIR}" "${CI_RUNTIME_REF:-origin/master}"
+              SOURCE_BRANCH="$(ci_resolve_gitops_promotion_source_branch "${{ ci.branch }}")"
+              echo "resolved_source_branch=${SOURCE_BRANCH}"
               python3 "${CI_RUNTIME_DIR}/.ci/runtime/commands/cleanup_gitops_promotion.py" \
                 --repo-root "$REPO_ROOT" \
-                --source-branch "${{ ci.branch }}" \
+                --source-branch "$SOURCE_BRANCH" \
                 --target-branch gitops \
                 --wait-seconds 120 \
                 --poll-seconds 5
