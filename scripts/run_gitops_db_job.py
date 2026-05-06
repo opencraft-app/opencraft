@@ -118,6 +118,8 @@ def parse_args() -> argparse.Namespace:
 
 def load_platform_env(env_name: str) -> dict[str, str]:
     path = REPO_ROOT / "deploy" / "envs" / env_name / "platform.env"
+    if not path.is_file():
+        return {"PULUMI_ENV_NAME": env_name}
     return load_env_file(path)
 
 
@@ -166,7 +168,7 @@ def require_repo_payload_revision(spec: dict[str, Any], revision: str) -> None:
         raise ValueError("ctl/migrations has uncommitted changes; commit or clean them before running the DB job")
 
 
-def resolve_kubeconfig(platform_env: dict[str, str], b64_env_name: str) -> tuple[str, Path | None]:
+def resolve_kubeconfig(platform_env: dict[str, str], b64_env_name: str, env_name: str = "") -> tuple[str, Path | None]:
     b64 = os.environ.get(b64_env_name, "").strip()
     if b64:
         temp = tempfile.NamedTemporaryFile("wb", suffix=".kubeconfig", delete=False)
@@ -180,14 +182,22 @@ def resolve_kubeconfig(platform_env: dict[str, str], b64_env_name: str) -> tuple
         if not resolved.is_file():
             raise FileNotFoundError(f"missing DB_JOB_KUBECONFIG_FILE: {resolved}")
         return str(resolved), None
-    env_name = platform_env.get("PULUMI_ENV_NAME", "").strip()
-    if env_name:
-        ci_file = Path("/etc/lightclaw-ci") / f"kubeconfig_{env_name.replace('-', '_')}"
+
+    ci_env_name = env_name or platform_env.get("PULUMI_ENV_NAME", "").strip()
+    if ci_env_name:
+        ci_file = Path("/etc/lightclaw-ci") / f"kubeconfig_{ci_env_name.replace('-', '_')}"
         if ci_file.is_file():
             return str(ci_file), None
+
     kubeconfig = platform_env.get("DEPLOY_KUBECONFIG", "").strip()
     if not kubeconfig:
-        raise ValueError("DEPLOY_KUBECONFIG missing in platform.env and no kubeconfig b64 env provided")
+        expected = ""
+        if ci_env_name:
+            expected = f", or provide /etc/lightclaw-ci/kubeconfig_{ci_env_name.replace('-', '_')}"
+        raise ValueError(
+            "DEPLOY_KUBECONFIG missing in platform.env and no kubeconfig b64 env provided"
+            f"{expected}"
+        )
     resolved = Path(kubeconfig)
     if not resolved.is_absolute():
         resolved = Path.cwd() / resolved
@@ -420,7 +430,7 @@ def main() -> int:
         return 1
 
     platform_env = load_platform_env(args.env)
-    kubeconfig, temp_path = resolve_kubeconfig(platform_env, args.kubeconfig_b64_env)
+    kubeconfig, temp_path = resolve_kubeconfig(platform_env, args.kubeconfig_b64_env, args.env)
     requested_by = os.environ.get("GITLAB_USER_LOGIN") or os.environ.get("USER") or "unknown"
 
     try:
