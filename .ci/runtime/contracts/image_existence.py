@@ -21,6 +21,7 @@ class ImageCheckResult:
     image: str
     exists: bool
     digest: str = ""
+    key: str = ""
 
 
 def parse_args() -> argparse.Namespace:
@@ -33,19 +34,29 @@ def parse_args() -> argparse.Namespace:
 
 
 def image_references(raw_image: str) -> list[str]:
+    return [entry.image for entry in image_reference_entries(raw_image)]
+
+
+@dataclass(frozen=True)
+class ImageReference:
+    image: str
+    key: str = ""
+
+
+def image_reference_entries(raw_image: str) -> list[ImageReference]:
     raw = raw_image.strip()
     if not raw:
         raise ValueError("image reference is empty")
     if not raw.startswith("{"):
-        return [raw]
+        return [ImageReference(image=raw)]
 
     payload = json.loads(raw)
     images = payload.get("images") if isinstance(payload, dict) else None
     if not isinstance(images, dict) or not images:
         raise ValueError("image JSON payload must contain a non-empty images object")
 
-    refs = [str(value).strip() for value in images.values()]
-    if any(not ref for ref in refs):
+    refs = [ImageReference(image=str(value).strip(), key=str(key)) for key, value in images.items()]
+    if any(not ref.image for ref in refs):
         raise ValueError("image JSON payload contains an empty image reference")
     return refs
 
@@ -90,9 +101,9 @@ def docker_login(registry: str, docker_bin: str, run: RunCommand = subprocess.ru
     return True
 
 
-def inspect_image(image: str, docker_bin: str, run: RunCommand = subprocess.run) -> ImageCheckResult:
+def inspect_image(image: str, docker_bin: str, run: RunCommand = subprocess.run, *, key: str = "") -> ImageCheckResult:
     result = run(
-        [docker_bin, "manifest", "inspect", image],
+        [docker_bin, "manifest", "inspect", "--verbose", image],
         text=True,
         capture_output=True,
         check=False,
@@ -101,19 +112,34 @@ def inspect_image(image: str, docker_bin: str, run: RunCommand = subprocess.run)
         stderr = (result.stderr or "").strip()
         if stderr:
             print(stderr, file=sys.stderr)
-        return ImageCheckResult(image=image, exists=False)
+        return ImageCheckResult(image=image, exists=False, key=key)
 
     digest = ""
     try:
         manifest = json.loads(result.stdout or "{}")
-        digest = str(manifest.get("Descriptor", {}).get("digest") or manifest.get("digest") or "")
+        digest = manifest_digest(manifest)
     except json.JSONDecodeError:
         digest = ""
-    return ImageCheckResult(image=image, exists=True, digest=digest)
+    return ImageCheckResult(image=image, exists=True, digest=digest, key=key)
+
+
+def manifest_digest(manifest: object) -> str:
+    if isinstance(manifest, dict):
+        descriptor = manifest.get("Descriptor")
+        if isinstance(descriptor, dict) and descriptor.get("digest"):
+            return str(descriptor["digest"])
+        if manifest.get("digest"):
+            return str(manifest["digest"])
+        manifests = manifest.get("manifests")
+        if isinstance(manifests, list) and len(manifests) == 1:
+            return manifest_digest(manifests[0])
+    if isinstance(manifest, list) and len(manifest) == 1:
+        return manifest_digest(manifest[0])
+    return ""
 
 
 def verify_images(
-    images: Sequence[str],
+    images: Sequence[str | ImageReference],
     *,
     docker_bin: str = "docker",
     skip_login: bool = False,
@@ -124,13 +150,42 @@ def verify_images(
 
     logged_in: set[str] = set()
     results: list[ImageCheckResult] = []
-    for image in images:
-        registry = registry_from_image(image)
+    for item in images:
+        entry = item if isinstance(item, ImageReference) else ImageReference(image=str(item))
+        registry = registry_from_image(entry.image)
         if not skip_login and registry not in logged_in:
             docker_login(registry, docker_bin, run=run)
             logged_in.add(registry)
-        results.append(inspect_image(image, docker_bin, run=run))
+        results.append(inspect_image(entry.image, docker_bin, run=run, key=entry.key))
     return results
+
+
+def digest_ref(image: str, digest: str) -> str:
+    if not digest:
+        raise ValueError(f"image digest is missing for {image}")
+    base = image.split("@", 1)[0]
+    last_slash = base.rfind("/")
+    last_colon = base.rfind(":")
+    if last_colon > last_slash:
+        base = base[:last_colon]
+    return f"{base}@{digest}"
+
+
+def digest_pin_payload(results: Sequence[ImageCheckResult]) -> str:
+    if not results:
+        return ""
+    if not all(result.exists and result.digest for result in results):
+        return ""
+    if any(result.key for result in results):
+        return json.dumps(
+            {"images": {result.key: digest_ref(result.image, result.digest) for result in results}},
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+    if len(results) == 1:
+        result = results[0]
+        return digest_ref(result.image, result.digest)
+    return ""
 
 
 def emit(results: Sequence[ImageCheckResult], output_format: str) -> None:
@@ -152,7 +207,14 @@ def emit(results: Sequence[ImageCheckResult], output_format: str) -> None:
     if output_format == "dotenv":
         print(f"IMAGE_EXISTS={str(payload['all_exist']).lower()}")
         image_refs_json = json.dumps([result.image for result in results], ensure_ascii=False, sort_keys=True)
+        image_digests_json = json.dumps(
+            {result.image: result.digest for result in results if result.digest},
+            ensure_ascii=False,
+            sort_keys=True,
+        )
         print("IMAGE_REFS_JSON=" + shlex.quote(image_refs_json))
+        print("IMAGE_DIGESTS_JSON=" + shlex.quote(image_digests_json))
+        print("IMAGE_PIN_PAYLOAD=" + shlex.quote(digest_pin_payload(results)))
         return
 
     for result in results:
@@ -164,7 +226,7 @@ def emit(results: Sequence[ImageCheckResult], output_format: str) -> None:
 def main() -> int:
     args = parse_args()
     try:
-        refs = image_references(args.image)
+        refs = image_reference_entries(args.image)
         results = verify_images(refs, docker_bin=args.docker_bin, skip_login=args.skip_login)
     except (ValueError, FileNotFoundError, subprocess.CalledProcessError) as exc:
         print(str(exc), file=sys.stderr)

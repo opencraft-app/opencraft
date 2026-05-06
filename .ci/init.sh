@@ -400,6 +400,20 @@ ci_materialize_runtime_files() {
   done
 }
 
+ci_generate_release_bundle_manifest() {
+  local runtime_dir="$1"
+  local generator="${runtime_dir}/.ci/runtime/commands/generate_release_bundle_manifest.py"
+  local source_dir="${runtime_dir}/.ci/runtime/bundles"
+  local output_path="${runtime_dir}/.ci/runtime/release-bundles.manifest"
+
+  if [[ -f "$generator" && -d "$source_dir" ]]; then
+    ci_require_commands python3
+    python3 "$generator" \
+      --source-dir "$source_dir" \
+      --output "$output_path" >/dev/null
+  fi
+}
+
 ci_materialize_runtime_manifest() {
   local runtime_dir="$1"
   local manifest_path="${2:-.ci/runtime/materialize-files.txt}"
@@ -438,6 +452,7 @@ ci_materialize_runtime_manifest() {
   fi
 
   ci_materialize_runtime_files "$runtime_dir" "${runtime_files[@]}"
+  ci_generate_release_bundle_manifest "$runtime_dir"
 }
 
 ci_bootstrap_node_locked() {

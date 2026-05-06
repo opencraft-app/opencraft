@@ -5,17 +5,12 @@ on:
   push:
     branches: [ master ]
     paths:
-      # Keep the CI contract self-triggering: frontend build behavior changes and manual retriggers must run this pipeline.
-      - .ci/frontend.yml
-      - .ci/init.sh
-      - .ci/runtime/build_and_promote_to_gitops.sh
-      - .ci/runtime/promote_bundle_image_to_gitops.sh
-      - .ci/runtime/pin_image_to_gitops.sh
-      - .ci/runtime/release-bundles.manifest
-      - .ci/runtime/**
       - frontend/**
       - argocd/services/frontend/**
       - argocd/apps/*/frontend.yaml
+    paths-ignore:
+      - OWNERS
+      - "**/OWNERS"
   manual: enabled
 
 concurrency:

@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: frontend-preview
+components:
+  - ../common
+generators:
+  - ksops-secret-generator.yaml
+configMapGenerator:
+  - name: staticpages-platform-values
+    envs:
+      - staticpages-platform.env
+  - name: staticpages-config
+    files:
+      - config.yaml=staticpages-config.yaml

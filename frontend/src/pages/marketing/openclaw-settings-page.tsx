@@ -39,6 +39,8 @@ import { useOpenClaw } from "@/contexts/openclaw-context";
 import { useRepositories } from "@/contexts/repository-context";
 import type { BotTerminalSession } from "@/domain/types";
 import { BrandMark } from "@/components/site/brand-mark";
+import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
+import { useSession } from "@/contexts/session-context";
 import { avatarImageUrl } from "@/lib/avatar-image";
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
 import { readStoredAuthToken } from "@/repositories/http-repositories";
@@ -134,18 +136,22 @@ void _staggerContainer;
 /* ─── Navbar ─── */
 
 const SettingsNavbar = () => {
+  const { isAuthenticated: isLoggedIn } = useSession();
   return (
     <header
       className="fixed inset-x-0 top-0 z-50 border-b border-black/5 bg-white/90 backdrop-blur-[20px]"
     >
       <div className="mx-auto flex h-[60px] items-center justify-between max-w-[1440px] px-6 md:px-[80px]">
         <BrandMark to="/" />
-        <Link
-          to="/"
-          className="inline-flex items-center justify-center h-[36px] px-5 bg-[#F5F5F5] text-black/90 rounded-[100px] border border-[#E6E9EF] shadow-[0_2px_0_rgba(187,187,187,0.05)] hover:bg-black/5 transition-colors font-heading text-sm font-medium"
-        >
-          返回首页
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link
+            to="/"
+            className="inline-flex items-center justify-center h-[36px] px-5 bg-[#F5F5F5] text-black/90 rounded-[100px] border border-[#E6E9EF] shadow-[0_2px_0_rgba(187,187,187,0.05)] hover:bg-black/5 transition-colors font-heading text-sm font-medium"
+          >
+            返回首页
+          </Link>
+          {isLoggedIn && <UserAvatarMenu />}
+        </div>
       </div>
     </header>
   );

@@ -15,6 +15,8 @@ from typing import Any
 
 import yaml
 
+from support.yaml import load_mapping
+
 
 CATALOG_DIR_TEMPLATE = "argocd/catalogs/sandbox/{env}"
 SUPPORTED_SANDBOX_ENVS = {"beijing-sandbox", "beijing-sandbox-2"}
@@ -26,13 +28,6 @@ PLACEHOLDER_RE = re.compile(r"\bREPLACE_[A-Z0-9_]+\b")
 class KustomizeTarget:
     app_name: str
     source_path: str
-
-
-def load_yaml(path: Path) -> dict[str, Any]:
-    payload = yaml.safe_load(path.read_text()) or {}
-    if not isinstance(payload, dict):
-        raise ValueError(f"{path} must contain a YAML mapping")
-    return payload
 
 
 def load_targets(repo_root: Path, env: str, changed_only: bool = False) -> list[KustomizeTarget]:
@@ -50,7 +45,7 @@ def load_targets(repo_root: Path, env: str, changed_only: bool = False) -> list[
 
     targets: list[KustomizeTarget] = []
     for catalog_file in sorted(catalog_dir.glob("*.yaml")):
-        data = load_yaml(catalog_file)
+        data = load_mapping(catalog_file)
         service = str(data.get("service", "")).strip()
         catalog_env = str(data.get("env", "")).strip()
         source_path = str(data.get("sourcePath", "")).strip()
@@ -105,7 +100,7 @@ def load_direct_app_targets(repo_root: Path, env: str, service_names: set[str] |
 
     targets: list[KustomizeTarget] = []
     for app_file in sorted(apps_dir.glob("*.yaml")):
-        data = load_yaml(app_file)
+        data = load_mapping(app_file)
         if data.get("kind") != "Application":
             raise ValueError(f"{app_file}: kind must be Application")
         metadata = data.get("metadata") or {}
@@ -173,10 +168,22 @@ def validate_target(repo_root: Path, target: KustomizeTarget, kustomize_bin: str
     return []
 
 
+def explicit_source_target(source_path: str) -> KustomizeTarget:
+    parts = source_path.rstrip("/").split("/")
+    app_name = parts[-2] if len(parts) >= 2 else source_path
+    return KustomizeTarget(app_name=app_name, source_path=source_path)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo-root", type=Path, default=Path("."))
     parser.add_argument("--env", default="beijing-sandbox")
+    parser.add_argument(
+        "--source-path",
+        action="append",
+        default=[],
+        help="Validate an explicit GitOps source path. Can be passed multiple times.",
+    )
     parser.add_argument("--kustomize-bin", default="kustomize")
     parser.add_argument("--timeout-seconds", type=int, default=120)
     parser.add_argument(
@@ -196,7 +203,10 @@ def main() -> int:
         return 1
 
     try:
-        targets = load_targets(repo_root, args.env, args.changed_only)
+        if args.source_path:
+            targets = [explicit_source_target(source_path) for source_path in args.source_path]
+        else:
+            targets = load_targets(repo_root, args.env, args.changed_only)
     except Exception as exc:  # noqa: BLE001
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1

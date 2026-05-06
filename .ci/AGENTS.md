@@ -12,10 +12,33 @@ BK-CI 开源实现：
 建议查证路径：
 
 - `src/backend/ci/core/common/common-pipeline-yaml/`：Stream YAML schema、parser、transfer 逻辑。
+- `src/backend/ci/core/common/common-pipeline-yaml/src/main/resources/schema/V3_0/ci.json`：v2.0 YAML 顶层字段、`on`、`extends`、`stages/jobs/steps`、`check-in` 的 JSON schema。
+- `src/backend/ci/core/common/common-pipeline-yaml/src/test/resources/samples/`：官方样例，优先看 `extends/`、`jobs/`、`steps/`、`all/`。
+- `src/backend/ci/core/common/common-pipeline-yaml/src/test/resources/templates/`：模板样例，优先确认 `parameters`、`variables.template`、stage/job/step template 行为。
+- `src/backend/ci/core/common/common-pipeline-yaml/src/test/resources/compared/`：样例展开后的期望结果，用来确认服务端 parser/transfer 实际会怎么实例化。
+- `src/backend/ci/core/common/common-pipeline-yaml/src/main/kotlin/com/tencent/devops/process/yaml/v3/`：v3 parser / model / transfer 源码；schema 不足时以这里为准。
 - `src/backend/ci/core/common/common-pipeline/`：Pipeline model、stage check-in、人工审核元素。
 - `support-files/sql/5001_init_dml/5001_ci_store-init_dml_mysql.sql`：内置插件 atom code 与输入参数。
 
+查证建议：
+
+```bash
+git clone --depth 1 --filter=blob:none --sparse https://github.com/TencentBlueKing/bk-ci.git /tmp/bk-ci-src
+cd /tmp/bk-ci-src
+git sparse-checkout set src/backend/ci/core/common/common-pipeline-yaml src/backend/ci/core/common/common-pipeline support-files/sql/5001_init_dml
+rg -n "extends|check-in|template|parameters|<keyword>" src/backend/ci/core/common/common-pipeline-yaml
+```
+
 不要凭记忆猜蓝盾 YAML 语法；仓库里没有现成示例时，先用 BK-CI 源码或公开文档确认后再改 `.ci/*.yml`。
+本仓库已经踩过的规则：
+
+- `on.push` 在当前 schema 下可以是对象或数组；不要写 GitHub Actions 风格的 `push.enable`。
+- `mr.action` 只接受 schema enum 中的值；遇到 `CI_YAML_INVALID` 先查 `ci.json`。
+- root `extends` 不能同时带 `stages/jobs/steps/variables/finally`；服务实例 YAML 只保留 `name/on/extends`。
+- 当前仓库仍按 Stream `version: v2.0` 编写：root `extends.template` 必须是字符串，实例参数放 `extends.parameters`。
+- 不要把 `.ci/templates/*.yml` 局部模板入口切到 `version: v3.0`；蓝盾 PAC v3 暂未支持局部模板，除非模板已迁到平台/远程模板机制。
+- 不要在 `.ci/**` 放非流水线 `.yaml` 文件；蓝盾会把它们误识别成流水线。私有配置用 `.manifest` / `.bundle` 后缀。
+- 生产审批优先确认当前平台是否支持 `check-in`；如果 schema/UI 不稳定，不要把 shprod 发布链路绑定到未验证的 approval YAML。
 
 ## 实际运行机
 

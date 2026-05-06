@@ -9,4 +9,5 @@ use (
 	./payment
 	./service-gateway
 	./subscription
+	./third_party/staticpages
 )

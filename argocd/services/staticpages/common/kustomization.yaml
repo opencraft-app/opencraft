@@ -1,0 +1,58 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+namespace: frontend-preview
+generatorOptions:
+  disableNameSuffixHash: true
+resources:
+  - ../../../../staticpages/k8s/base
+replacements:
+  - source:
+      kind: ConfigMap
+      name: staticpages-platform-values
+      fieldPath: data.STATICPAGES_IMAGE
+    targets:
+      - select:
+          kind: Deployment
+          name: staticpages
+        fieldPaths:
+          - spec.template.spec.containers.0.image
+  - source:
+      kind: ConfigMap
+      name: staticpages-platform-values
+      fieldPath: data.STATICPAGES_NODE_POOL
+    targets:
+      - select:
+          kind: Deployment
+          name: staticpages
+        fieldPaths:
+          - spec.template.spec.nodeSelector.pool
+  - source:
+      kind: ConfigMap
+      name: staticpages-platform-values
+      fieldPath: data.STATICPAGES_DEPLOYED_AT
+    targets:
+      - select:
+          kind: Deployment
+          name: staticpages
+        fieldPaths:
+          - spec.template.metadata.annotations.[staticpages.lightclaw.dev/redeploy-at]
+  - source:
+      kind: ConfigMap
+      name: staticpages-platform-values
+      fieldPath: data.STATICPAGES_API_HOST
+    targets:
+      - select:
+          kind: Ingress
+          name: staticpages-preview
+        fieldPaths:
+          - spec.rules.0.host
+  - source:
+      kind: ConfigMap
+      name: staticpages-platform-values
+      fieldPath: data.STATICPAGES_PREVIEW_WILDCARD_HOST
+    targets:
+      - select:
+          kind: Ingress
+          name: staticpages-preview
+        fieldPaths:
+          - spec.rules.1.host

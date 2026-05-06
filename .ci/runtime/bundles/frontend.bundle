@@ -1,0 +1,22 @@
+bundles:
+  frontend:
+    owner: frontend
+    source: frontend
+    db_contract: none
+    reason: Frontend formal release bundle for Argo-managed rollout.
+    allowed_paths:
+    - frontend/k8s/base
+    - frontend/k8s/overlays/shprod
+    - frontend/deploy/Dockerfile
+    exit_condition: Can be removed only after the deployable contract moves to an
+      explicit imported package path.
+    publish_paths:
+    - argocd/services/frontend/{env}/**
+    - argocd/apps/{env}/frontend.yaml
+    - frontend/k8s/base/**
+    - frontend/k8s/overlays/{env}/**
+    dockerfile: frontend/deploy/Dockerfile
+    build_context: frontend
+    image_repo:
+      shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/frontend
+    publish_paths_by_env: {}

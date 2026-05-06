@@ -1,0 +1,58 @@
+bundles:
+  ctl:
+    owner: ctl
+    source: ctl
+    db_contract:
+      mode: migration
+      db_job_service: ctl
+      migration_operation: migration
+      readiness_supported: false
+      migration_paths:
+      - ctl/migrations/**
+      expected_migration_source: ctl/migrations
+    reason: CTL formal release bundle for Argo-managed rollout.
+    allowed_paths:
+    - ctl/k8s/base
+    - ctl/k8s/overlays/beijing-sandbox
+    - ctl/k8s/overlays/shprod
+    - ctl/Dockerfile
+    exit_condition: Can be removed only after the deployable contract moves to an
+      explicit imported package path.
+    publish_paths:
+    - argocd/services/ctl/{env}/**
+    - argocd/apps/{env}/ctl.yaml
+    - argocd/secrets/{env}/ctl-conf-common.sops.yaml
+    - argocd/secrets/{env}/ctl-conf-rewrite.sops.yaml
+    - argocd/secrets/{env}/ctl-runtime-secrets.sops.yaml
+    - ctl/k8s/base/**
+    - ctl/k8s/overlays/{env}/**
+    publish_paths_by_env:
+      beijing-sandbox:
+      - argocd/services/ctl/beijing-sandbox/**
+      - argocd/services/ctl/common/**
+      - argocd/services/ctl/profiles/sandbox/**
+      - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
+      - argocd/catalogs/sandbox/beijing-sandbox/ctl.yaml
+      - argocd/secrets/beijing-sandbox/ctl-conf-common.sops.yaml
+      - argocd/secrets/beijing-sandbox/ctl-conf-rewrite.sops.yaml
+      - argocd/secrets/beijing-sandbox/ctl-runtime-secrets.sops.yaml
+      - ctl/k8s/base/**
+      - ctl/k8s/overlays/beijing-sandbox/**
+      beijing-sandbox-2:
+      - argocd/services/ctl/beijing-sandbox-2/**
+      - argocd/services/ctl/common/**
+      - argocd/services/ctl/profiles/sandbox/**
+      - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
+      - argocd/catalogs/sandbox/beijing-sandbox-2/ctl.yaml
+      - argocd/secrets/beijing-sandbox-2/ctl-conf-common.sops.yaml
+      - argocd/secrets/beijing-sandbox-2/ctl-conf-rewrite.sops.yaml
+      - argocd/secrets/beijing-sandbox-2/ctl-runtime-secrets.sops.yaml
+      - ctl/k8s/base/**
+      - ctl/k8s/overlays/beijing-sandbox-2/**
+      - ctl/k8s/overlays/beijing-sandbox/**
+    dockerfile: ctl/Dockerfile
+    build_context: ctl
+    image_repo:
+      beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/ctl
+      shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/ctl
+      beijing-sandbox-2: lightclaw-bj8.tencentcloudcr.com/lightclaw/ctl

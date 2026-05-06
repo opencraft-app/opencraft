@@ -1,0 +1,17 @@
+bundles:
+  session:
+    owner: session
+    source: session
+    db_contract: none
+    reason: Session service release bundle import for formal Argo-managed rollout.
+    allowed_paths:
+    - session/k8s/base
+    - session/k8s/overlays/beijing-sandbox
+    exit_condition: Can be removed only after the deployable contract moves to an
+      explicit imported package path.
+    publish_paths:
+    - argocd/services/session/{env}/**
+    - argocd/apps/{env}/session.yaml
+    - argocd/secrets/{env}/session-runtime-secrets.sops.yaml
+    - session/k8s/base/**
+    - session/k8s/overlays/{env}/**
