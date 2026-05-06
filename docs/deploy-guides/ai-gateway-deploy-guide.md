@@ -15,7 +15,7 @@
 ## 构建入口
 
 ```bash
-python3 .ci/runtime/harness_ci/commands/build_release_image.py --service ai-gateway --env <env> --tag <tag>
+python3 .ci/runtime/commands/build_release_image.py --service ai-gateway --env <env> --tag <tag>
 ```
 
 ## DB 操作面

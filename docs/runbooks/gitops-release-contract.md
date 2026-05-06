@@ -15,7 +15,7 @@
 
 ## Artifact Ownership Contract
 
-每个正式发布 bundle 必须在 [.ci/runtime/release-bundles.yaml](../../.ci/runtime/release-bundles.yaml) 中声明：
+每个正式发布 bundle 必须在 [.ci/runtime/bundles/*.bundle](../../.ci/runtime/bundles/) 中声明。CI/runtime 执行时会生成临时合并产物 `.ci/runtime/release-bundles.manifest`，该文件不提交到 Git。
 
 - `source`
 - `owner`
@@ -37,13 +37,13 @@
 对具备 `dockerfile/build_context/image_repo` 的 bundle，统一入口：
 
 ```bash
-python3 .ci/runtime/harness_ci/commands/build_release_image.py --service <service> --env <env> --tag <tag>
+python3 .ci/runtime/commands/build_release_image.py --service <service> --env <env> --tag <tag>
 ```
 
 需要推镜像时：
 
 ```bash
-python3 .ci/runtime/harness_ci/commands/build_release_image.py --service <service> --env <env> --tag <tag> --push
+python3 .ci/runtime/commands/build_release_image.py --service <service> --env <env> --tag <tag> --push
 ```
 
 输出：
@@ -53,7 +53,7 @@ python3 .ci/runtime/harness_ci/commands/build_release_image.py --service <servic
 例外：
 
 - `sandbox` 当前仍走 `images/build-image.py`
-- 在它被正式 bundle 化之前，不强行纳入 `.ci/runtime/harness_ci/commands/build_release_image.py`
+- 在它被正式 bundle 化之前，不强行纳入 `.ci/runtime/commands/build_release_image.py`
 
 ## Image Pin Contract
 
