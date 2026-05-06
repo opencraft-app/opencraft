@@ -37,7 +37,7 @@ variables:
     readonly: false
     allow-modify-at-startup: true
   TARGET_ENV:
-    value: ${{ variables.DEFAULT_TARGET_ENV }}
+    value: ${{ parameters.DEFAULT_TARGET_ENV }}
     readonly: false
     allow-modify-at-startup: true
   SOURCE_SHA:

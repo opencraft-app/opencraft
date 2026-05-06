@@ -211,6 +211,12 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 template = yaml.safe_load(template_path.read_text()) or {}
                 self.assertNotIn("concurrency", template)
 
+    def test_service_release_target_env_default_uses_parameter_directly(self) -> None:
+        template = yaml.safe_load((REPO_ROOT / ".ci/templates/service-release.yml").read_text()) or {}
+        target_env = ((template.get("variables") or {}).get("TARGET_ENV") or {}).get("value")
+
+        self.assertEqual(target_env, "${{ parameters.DEFAULT_TARGET_ENV }}")
+
     def test_only_ci_runtime_listens_to_ci_file_changes(self) -> None:
         for workflow_path in sorted(REPO_ROOT.glob(".ci/*.yml")):
             workflow = yaml.safe_load(workflow_path.read_text())
