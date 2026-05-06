@@ -266,6 +266,8 @@ class ReleaseBundleContractTests(unittest.TestCase):
     def extends_template_path(self, workflow_data: dict) -> str:
         template = (workflow_data.get("extends") or {}).get("template")
         if isinstance(template, str):
+            if "/" not in template:
+                return f".ci/templates/{template}"
             return template
         if isinstance(template, dict):
             return str(template.get("path") or "")
@@ -303,7 +305,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
             )
             return
 
-        self.assertEqual(self.extends_template_path(workflow_data), ".ci/templates/service-release.yml")
+        self.assertEqual((workflow_data.get("extends") or {}).get("template"), "service-release.yml")
         self.assertEqual(variables.get("SERVICE"), expected_service)
         self.assertEqual(variables.get("BUNDLE"), expected_pin_targets)
         if expected_master_build_envs is not None:

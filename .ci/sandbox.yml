@@ -18,7 +18,7 @@ on:
   manual: enabled
 
 extends:
-  template: .ci/templates/service-release.yml
+  template: service-release.yml
   parameters:
     SERVICE: sandbox
     BUNDLE: sandbox
