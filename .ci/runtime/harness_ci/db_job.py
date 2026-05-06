@@ -168,7 +168,13 @@ def require_repo_payload_revision(spec: dict[str, Any], revision: str) -> None:
         raise ValueError("ctl/migrations has uncommitted changes; commit or clean them before running the DB job")
 
 
-def resolve_kubeconfig(platform_env: dict[str, str], b64_env_name: str, env_name: str = "") -> tuple[str, Path | None]:
+def resolve_kubeconfig(
+    platform_env: dict[str, str],
+    b64_env_name: str,
+    env_name: str = "",
+    *,
+    allow_ci_default_file: bool = True,
+) -> tuple[str, Path | None]:
     b64 = os.environ.get(b64_env_name, "").strip()
     if b64:
         temp = tempfile.NamedTemporaryFile("wb", suffix=".kubeconfig", delete=False)
@@ -184,7 +190,7 @@ def resolve_kubeconfig(platform_env: dict[str, str], b64_env_name: str, env_name
         return str(resolved), None
 
     ci_env_name = env_name or platform_env.get("PULUMI_ENV_NAME", "").strip()
-    if ci_env_name:
+    if allow_ci_default_file and ci_env_name:
         ci_file = Path("/etc/lightclaw-ci") / f"kubeconfig_{ci_env_name.replace('-', '_')}"
         if ci_file.is_file():
             return str(ci_file), None

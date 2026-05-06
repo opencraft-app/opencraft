@@ -36,21 +36,14 @@ class RunGitopsDbJobTests(unittest.TestCase):
         self.assertIsNone(temp_path)
 
     def test_resolve_kubeconfig_error_mentions_default_ci_path(self) -> None:
-        original_is_file = Path.is_file
-
-        def fake_is_file(path: Path) -> bool:
-            if str(path) == "/etc/lightclaw-ci/kubeconfig_beijing_sandbox":
-                return False
-            return original_is_file(path)
-
         with mock.patch.dict(os.environ, {}, clear=True):
-            with mock.patch.object(Path, "is_file", fake_is_file):
-                with self.assertRaisesRegex(ValueError, "/etc/lightclaw-ci/kubeconfig_beijing_sandbox"):
-                    db_job.resolve_kubeconfig(
-                        {"PULUMI_ENV_NAME": "beijing-sandbox"},
-                        "DB_JOB_KUBECONFIG_B64",
-                        "beijing-sandbox",
-                    )
+            with self.assertRaisesRegex(ValueError, "/etc/lightclaw-ci/kubeconfig_beijing_sandbox"):
+                db_job.resolve_kubeconfig(
+                    {"PULUMI_ENV_NAME": "beijing-sandbox"},
+                    "DB_JOB_KUBECONFIG_B64",
+                    "beijing-sandbox",
+                    allow_ci_default_file=False,
+                )
 
 
 if __name__ == "__main__":
