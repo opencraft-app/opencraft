@@ -41,7 +41,7 @@ export interface Bot {
   mission?: string;
   scenario?: string;
   createdAt: string;
-  status: "draft" | "active" | "paused";
+  status: "draft" | "provisioning" | "active" | "paused" | "failed" | "deleting";
 }
 
 export interface BotBornCard {

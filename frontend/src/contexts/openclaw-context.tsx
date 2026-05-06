@@ -21,7 +21,7 @@ export interface OpenClawBot {
   personalityEmoji: string;
   intro: string;
   soulTemplateId?: string;
-  status: "running" | "paused" | "draft";
+  status: "running" | "paused" | "draft" | "provisioning" | "failed" | "deleting";
   createdAt: string;
   connectedChannels: ("wechat" | "qq")[];
   installedSkills: string[];
@@ -72,7 +72,17 @@ const mapBotToOpenClawBot = (bot: Bot, channels?: ("wechat" | "qq")[]): OpenClaw
   personality: bot.template || "默认设定",
   personalityEmoji: "✨",
   intro: bot.mission || "",
-  status: bot.status === "active" ? "running" : bot.status === "paused" ? "paused" : "draft",
+  status: bot.status === "active"
+    ? "running"
+    : bot.status === "paused"
+      ? "paused"
+      : bot.status === "provisioning"
+        ? "provisioning"
+        : bot.status === "failed"
+          ? "failed"
+          : bot.status === "deleting"
+            ? "deleting"
+            : "draft",
   createdAt: bot.createdAt,
   connectedChannels: channels ?? [],
   installedSkills: [],
@@ -289,7 +299,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
         personality: bot.personality,
         personalityEmoji: bot.personalityEmoji,
         intro: bot.intro,
-        status: bot.status === "running" ? "running" : bot.status === "paused" ? "paused" : "draft",
+        status: mapBotToOpenClawBot(created).status,
         createdAt: created.createdAt,
         connectedChannels: [],
         installedSkills: [],
