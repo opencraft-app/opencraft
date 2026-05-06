@@ -100,6 +100,10 @@ func TestValidatedReturnToURLWithConfiguredHTTPOrigin(t *testing.T) {
 	if got := validatedReturnToURLWithAllowlist(allowed, allowlist); got != allowed {
 		t.Fatalf("expected configured http origin to be allowed, got %q", got)
 	}
+	allowedArbitraryPath := "http://30.184.61.101:5173/any/deep/path?next=/dashboard#panel"
+	if got := validatedReturnToURLWithAllowlist(allowedArbitraryPath, allowlist); got != allowedArbitraryPath {
+		t.Fatalf("expected configured http origin to allow arbitrary path, got %q", got)
+	}
 	if got := validatedReturnToURLWithAllowlist("http://30.184.61.101:3000/auth/sign-in", allowlist); got != "" {
 		t.Fatalf("expected different port to stay blocked, got %q", got)
 	}

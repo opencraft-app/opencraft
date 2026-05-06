@@ -91,7 +91,7 @@ python3 .ci/runtime/harness_ci/commands/build_release_image.py --service <servic
 
 `DB migration / seed` 继续保留，但只保留统一平台级入口：
 
-- [run_gitops_db_job.py](../../scripts/run_gitops_db_job.py)
+- [run_gitops_db_job.py](../../.ci/runtime/commands/run_gitops_db_job.py)
 - 历史 DB job 模板已退役
 - [gitops-db-job-runbook.md](gitops-db-job-runbook.md)
 

@@ -40,7 +40,7 @@ python3 .ci/runtime/harness_ci/commands/build_release_image.py --service ctl --e
 
 `ctl` migration 现在走平台级受控入口：
 
-- `scripts/run_gitops_db_job.py --service ctl --operation migration --env <env> --revision <sha>`
+- `python3 .ci/runtime/commands/run_gitops_db_job.py --service ctl --operation migration --env <env> --revision <sha>`
 - 历史 DB job 模板已退役；当前以脚本和 runbook 为准
 
 ## 异步链路与 DB 约束
