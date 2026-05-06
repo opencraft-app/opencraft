@@ -15,6 +15,7 @@ from typing import Any, Mapping
 RELEASE_TRAILER_KEYS = (
     "Release-id",
     "Release-created-at",
+    "Release-source-branch",
     "Release-runtime-ref",
     "Release-runtime-commit",
     "Release-bundle",

@@ -375,7 +375,7 @@ ci_with_lock() {
 ci_prepare_runtime_ref() {
   local runtime_ref="${1:-${CI_RUNTIME_REF:-origin/master}}"
   ci_require_commands git
-  git fetch origin master --tags
+  ci_git_fetch_origin master --tags
   export CI_RUNTIME_REF="$runtime_ref"
   export CI_RUNTIME_COMMIT
   CI_RUNTIME_COMMIT="$(git rev-parse "${runtime_ref}")"
@@ -564,11 +564,64 @@ ci_load_git_woa_private_token() {
   fi
 
   if [[ -n "${GIT_WOA_PRIVATE_TOKEN:-}" ]]; then
+    if ci_is_unexpanded_setting "$GIT_WOA_PRIVATE_TOKEN"; then
+      ci_log "GIT_WOA_PRIVATE_TOKEN contains an unexpanded CI settings placeholder; ignoring it"
+      return 1
+    fi
     printf '%s' "$GIT_WOA_PRIVATE_TOKEN" | ci_read_secret_value
     return 0
   fi
 
   return 1
+}
+
+ci_git_fetch_origin() {
+  ci_require_commands git
+
+  local fetch_url="${CI_GIT_FETCH_REMOTE_URL:-git@git.woa.com:wisp/mono2.git}"
+  local fetch_args=()
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      -* | *:*)
+        fetch_args+=("$arg")
+        ;;
+      *)
+        fetch_args+=("+refs/heads/${arg}:refs/remotes/origin/${arg}")
+        ;;
+    esac
+  done
+
+  ci_log "git fetch ${fetch_url} ${fetch_args[*]}"
+  if GIT_TERMINAL_PROMPT=0 git fetch "$fetch_url" "${fetch_args[@]}"; then
+    return 0
+  fi
+
+  ci_log "git fetch via ${fetch_url} failed; falling back to checkout origin"
+
+  local token askpass status=0
+  if token="$(ci_load_git_woa_private_token 2>/dev/null)" && [[ -n "$token" ]]; then
+    askpass="$(mktemp)"
+    cat > "$askpass" <<'EOF'
+#!/usr/bin/env bash
+case "$1" in
+  *Username*) printf '%s\n' "${GIT_WOA_FETCH_USERNAME:-oauth2}" ;;
+  *Password*) printf '%s\n' "$GIT_WOA_FETCH_TOKEN" ;;
+  *) printf '\n' ;;
+esac
+EOF
+    chmod 700 "$askpass"
+    ci_log "git fetch origin with Git WOA token"
+    GIT_ASKPASS="$askpass" \
+      GIT_TERMINAL_PROMPT=0 \
+      GIT_WOA_FETCH_TOKEN="$token" \
+      git fetch origin "$@" || status=$?
+    rm -f "$askpass"
+    return "$status"
+  fi
+
+  ci_log "git fetch origin without Git WOA token"
+  GIT_TERMINAL_PROMPT=0 git fetch origin "${fetch_args[@]}"
 }
 
 ci_load_registry_password() {

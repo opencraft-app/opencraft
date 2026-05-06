@@ -30,6 +30,7 @@ var oauthReturnToAllowedHostPatterns = []oauthAllowedHostPattern{
 type oauthReturnToAllowlist struct {
 	baseDomains  []string
 	hostPatterns []oauthAllowedHostPattern
+	origins      []string
 }
 
 func defaultOAuthReturnToAllowlist() oauthReturnToAllowlist {
@@ -47,10 +48,17 @@ func buildOAuthReturnToAllowlist(hosts []string) oauthReturnToAllowlist {
 	allowlist := oauthReturnToAllowlist{
 		baseDomains:  make([]string, 0, len(hosts)),
 		hostPatterns: make([]oauthAllowedHostPattern, 0, len(hosts)),
+		origins:      make([]string, 0, len(hosts)),
 	}
 	for _, raw := range hosts {
 		host := strings.ToLower(strings.TrimSpace(raw))
 		if host == "" {
+			continue
+		}
+		if strings.Contains(host, "://") {
+			if origin := normalizedReturnToOrigin(host); origin != "" {
+				allowlist.origins = append(allowlist.origins, origin)
+			}
 			continue
 		}
 		if strings.Count(host, "*") == 0 {
@@ -69,7 +77,7 @@ func buildOAuthReturnToAllowlist(hosts []string) oauthReturnToAllowlist {
 			suffix: suffix,
 		})
 	}
-	if len(allowlist.baseDomains) == 0 && len(allowlist.hostPatterns) == 0 {
+	if len(allowlist.baseDomains) == 0 && len(allowlist.hostPatterns) == 0 && len(allowlist.origins) == 0 {
 		return defaultOAuthReturnToAllowlist()
 	}
 	return allowlist
@@ -148,12 +156,12 @@ func validatedReturnToURLWithAllowlist(rawURL string, allowlist oauthReturnToAll
 	if parsed.User != nil || parsed.Opaque != "" {
 		return ""
 	}
-	if !isAllowedReturnToScheme(parsed.Scheme, parsed.Hostname()) {
+	if !isAllowedReturnToScheme(parsed.Scheme, parsed.Hostname(), parsed, allowlist) {
 		return ""
 	}
 
 	host := strings.ToLower(strings.TrimSpace(parsed.Hostname()))
-	if host == "" || !isAllowedReturnToHost(host, allowlist) {
+	if host == "" || (!isAllowedReturnToHost(host, allowlist) && !isAllowedReturnToOrigin(parsed, allowlist)) {
 		return ""
 	}
 
@@ -187,16 +195,60 @@ func isAllowedReturnToHost(host string, allowlist oauthReturnToAllowlist) bool {
 	return false
 }
 
-func isAllowedReturnToScheme(scheme string, host string) bool {
+func isAllowedReturnToScheme(scheme string, host string, parsed *url.URL, allowlist oauthReturnToAllowlist) bool {
 	normalizedScheme := strings.ToLower(strings.TrimSpace(scheme))
 	switch normalizedScheme {
 	case "https":
 		return true
 	case "http":
-		return isLoopbackHost(host)
+		return isLoopbackHost(host) || isAllowedReturnToOrigin(parsed, allowlist)
 	default:
 		return false
 	}
+}
+
+func isAllowedReturnToOrigin(parsed *url.URL, allowlist oauthReturnToAllowlist) bool {
+	origin := normalizedReturnToParsedOrigin(parsed)
+	if origin == "" {
+		return false
+	}
+	for _, allowed := range allowlist.origins {
+		if origin == allowed {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizedReturnToOrigin(raw string) string {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return ""
+	}
+	// Exact-origin allowlist entries are intended for sandbox-only HTTP
+	// debugging endpoints such as http://<ip>:5173, not path-level redirects.
+	if parsed.User != nil || parsed.Opaque != "" || parsed.Scheme == "" || parsed.Host == "" {
+		return ""
+	}
+	if parsed.Path != "" && parsed.Path != "/" {
+		return ""
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return ""
+	}
+	return normalizedReturnToParsedOrigin(parsed)
+}
+
+func normalizedReturnToParsedOrigin(parsed *url.URL) string {
+	if parsed == nil {
+		return ""
+	}
+	scheme := strings.ToLower(strings.TrimSpace(parsed.Scheme))
+	host := strings.ToLower(strings.TrimSpace(parsed.Host))
+	if scheme == "" || host == "" {
+		return ""
+	}
+	return scheme + "://" + host
 }
 
 func isLoopbackHost(host string) bool {

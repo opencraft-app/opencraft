@@ -327,6 +327,39 @@ describe("http repositories auth token bootstrap", () => {
     );
   });
 
+  it("keeps ctl creating instances as provisioning bots", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          code: "OK",
+          message: "success",
+          data: {
+            instance_id: "ins_creating",
+            status: "Creating",
+            created_at: "2026-03-24T00:00:00Z",
+          },
+        }),
+        {
+          status: 201,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    const bot = await repositories.bots.createBot({ name: "创建中 Bot" });
+
+    expect(bot).toEqual(
+      expect.objectContaining({
+        id: "ins_creating",
+        name: "创建中 Bot",
+        status: "provisioning",
+      }),
+    );
+  });
+
   it("creates a tat terminal session for a bot via sandbox session bootstrap", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     const fetchMock = vi

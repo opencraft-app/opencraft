@@ -5,7 +5,7 @@ from pathlib import Path
 REPO_ROOT = next(parent for parent in Path(__file__).resolve().parents if (parent / ".ci/runtime").is_dir())
 RUNTIME_DIR = REPO_ROOT / ".ci/runtime"
 COMMAND_DIR = RUNTIME_DIR / "commands"
-ALLOWED_MAIN_MODULE_PREFIXES = ("contracts.", "gitops.", "gates.", "guards.", "support.")
+ALLOWED_MAIN_MODULE_PREFIXES = ("contracts.", "gitops.", "gates.", "guards.", "support.", "harness_ci.")
 
 
 class CommandWrapperTests(unittest.TestCase):
@@ -21,6 +21,10 @@ class CommandWrapperTests(unittest.TestCase):
             for package in ("commands", "contracts", "gitops", "gates", "guards", "support")
             for path in (RUNTIME_DIR / package).rglob("*.py")
         }
+        expected_python.update(
+            str(path.relative_to(REPO_ROOT))
+            for path in (RUNTIME_DIR / "harness_ci").rglob("*.py")
+        )
 
         self.assertFalse(any(".secret" in entry or "kubeconfig" in entry for entry in manifest_entries))
         self.assertTrue(all(entry.startswith(".ci/runtime/") for entry in manifest_entries))
@@ -97,6 +101,7 @@ class CommandWrapperTests(unittest.TestCase):
             "run_release_gates.py": "gates.runner",
             "plan_release_gates.py": "contracts.release_plan",
             "verify_db_contract.py": "gates.db_contract_verifier",
+            "run_gitops_db_job.py": "harness_ci.db_job",
         }
         for filename, module_name in expected.items():
             with self.subTest(filename=filename):

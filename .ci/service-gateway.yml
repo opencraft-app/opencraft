@@ -16,8 +16,14 @@ on:
       - "**/OWNERS"
   manual: enabled
 
+concurrency:
+  group: mono2-master-release
+  cancel-in-progress: false
+  queue-length: 20
+  queue-timeout-minutes: 480
+
 extends:
-  template: .ci/templates/service-release.yml
+  template: service-release.yml
   parameters:
     SERVICE: service-gateway
     BUNDLE: service-gateway

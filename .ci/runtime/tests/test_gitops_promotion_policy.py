@@ -1,4 +1,5 @@
 import tempfile
+import subprocess
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -41,6 +42,66 @@ class PromotionPolicyTests(unittest.TestCase):
 
 
 class PromotionCommandTests(unittest.TestCase):
+    def test_release_trailers_are_read_from_release_commit_not_repair_head(self) -> None:
+        with tempfile.TemporaryDirectory() as repo:
+            repo_path = Path(repo)
+            subprocess.run(["git", "init", "-b", "gitops"], cwd=repo_path, check=True, stdout=subprocess.DEVNULL)
+            subprocess.run(["git", "config", "user.name", "test"], cwd=repo_path, check=True)
+            subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo_path, check=True)
+            (repo_path / "state.txt").write_text("base\n")
+            subprocess.run(["git", "add", "state.txt"], cwd=repo_path, check=True)
+            subprocess.run(["git", "commit", "-m", "base"], cwd=repo_path, check=True, stdout=subprocess.DEVNULL)
+            subprocess.run(["git", "checkout", "-b", "promote-beijing-sandbox-ctl-tag"], cwd=repo_path, check=True, stdout=subprocess.DEVNULL)
+            (repo_path / "state.txt").write_text("release\n")
+            subprocess.run(["git", "add", "state.txt"], cwd=repo_path, check=True)
+            subprocess.run(
+                [
+                    "git",
+                    "commit",
+                    "-m",
+                    "发布到北京测试：ctl",
+                    "-m",
+                    "Release-id: beijing-sandbox/ctl/source/tag\nRelease-gate-auto-merge: true\nRelease-gate-argo-sync: auto",
+                ],
+                cwd=repo_path,
+                check=True,
+                stdout=subprocess.DEVNULL,
+            )
+            (repo_path / "ci.txt").write_text("repair\n")
+            subprocess.run(["git", "add", "ci.txt"], cwd=repo_path, check=True)
+            subprocess.run(["git", "commit", "-m", "刷新 CI 入口"], cwd=repo_path, check=True, stdout=subprocess.DEVNULL)
+
+            trailers = gitops_promotion._release_trailers(  # noqa: SLF001
+                repo_path,
+                "promote-beijing-sandbox-ctl-tag",
+                "gitops",
+            )
+
+        self.assertEqual(trailers["Release-gate-auto-merge"], "true")
+        self.assertEqual(trailers["Release-gate-argo-sync"], "auto")
+
+    def test_validate_rejects_ci_changes_in_promote_diff(self) -> None:
+        with tempfile.TemporaryDirectory() as repo:
+            repo_path = Path(repo)
+            subprocess.run(["git", "init", "-b", "gitops"], cwd=repo_path, check=True, stdout=subprocess.DEVNULL)
+            subprocess.run(["git", "config", "user.name", "test"], cwd=repo_path, check=True)
+            subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo_path, check=True)
+            (repo_path / "state.txt").write_text("base\n")
+            subprocess.run(["git", "add", "state.txt"], cwd=repo_path, check=True)
+            subprocess.run(["git", "commit", "-m", "base"], cwd=repo_path, check=True, stdout=subprocess.DEVNULL)
+            subprocess.run(["git", "checkout", "-b", "promote-beijing-sandbox-ctl-tag"], cwd=repo_path, check=True, stdout=subprocess.DEVNULL)
+            (repo_path / ".ci").mkdir()
+            (repo_path / ".ci/gitops-promotion.yml").write_text("version: v2.0\n")
+            subprocess.run(["git", "add", ".ci/gitops-promotion.yml"], cwd=repo_path, check=True)
+            subprocess.run(["git", "commit", "-m", "bad ci diff"], cwd=repo_path, check=True, stdout=subprocess.DEVNULL)
+
+            with self.assertRaisesRegex(RuntimeError, "must not carry .ci changes"):
+                gitops_promotion._reject_ci_changes(  # noqa: SLF001
+                    repo_path,
+                    "promote-beijing-sandbox-ctl-tag",
+                    "gitops",
+                )
+
     def test_verify_command_uses_shprod_merge_only_policy(self) -> None:
         with tempfile.TemporaryDirectory() as repo:
             commands: list[list[str]] = []

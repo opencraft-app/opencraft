@@ -25,11 +25,14 @@ stages:
               fetchDepth: 50
           - name: 派发变更目录约束
             shell: bash
+            env:
+              GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}
             run: |
               echo "ci.event=${{ ci.event }}"
               echo "ci.branch=${{ ci.branch }}"
               echo "ci.sha=${{ ci.sha }}"
-              git fetch origin master
+              source .ci/init.sh
+              ci_git_fetch_origin master
 
               CHANGED_FILES_FILE="$(mktemp)"
               if git diff --name-only origin/master...HEAD > "$CHANGED_FILES_FILE"; then
@@ -47,7 +50,9 @@ stages:
               mkdir -p "${CI_RUNTIME_DIR}/.ci"
               git show origin/master:.ci/init.sh > "${CI_RUNTIME_DIR}/.ci/init.sh"
               source "${CI_RUNTIME_DIR}/.ci/init.sh"
-              ci_prepare_runtime_ref origin/master
+              export CI_RUNTIME_REF="origin/master"
+              export CI_RUNTIME_COMMIT="$(git rev-parse "${CI_RUNTIME_REF}")"
+              echo "MR 占位检查 runtime：CI_RUNTIME_REF=${CI_RUNTIME_REF} CI_RUNTIME_COMMIT=${CI_RUNTIME_COMMIT}"
               git show "${CI_RUNTIME_COMMIT}:.ci/init.sh" > "${CI_RUNTIME_DIR}/.ci/init.sh"
               source "${CI_RUNTIME_DIR}/.ci/init.sh"
               ci_materialize_runtime_manifest "${CI_RUNTIME_DIR}" ".ci/runtime/materialize-files.txt"

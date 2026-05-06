@@ -13,8 +13,10 @@
 - 北京测试环境自动把 `master@SHA` 的发布子集投影到 `gitops`，创建 MR 并自动合并
 - 上海正式环境手动 promote 到 `gitops` 的 MR；门禁通过后可自动合并，但 Argo sync 仍由人工执行
 
-当前 `.ci/*.yml` 不再依赖 `ci.event == 'push' / 'manual'` 来分流。
-已改为：
+标准服务 `.ci/<service>.yml` 保留各自的 `on.push.paths` 和 `manual` 入口，
+但发布执行逻辑统一复用 `.ci/templates/service-release.yml`。
+
+流水线内仍然避免依赖 `ci.event == 'push' / 'manual'` 做复杂策略分流：
 
 - 默认 `PIPELINE_MODE=build`
   - 运行构建
@@ -22,7 +24,6 @@
 - 手动把 `PIPELINE_MODE` 改成 `promote`
   - 只执行 `手动发布 <service> 到 GitOps` 对应步骤
   - 需要同时提供 `SOURCE_SHA`
-
 ## Service Release Template
 
 标准服务构建发布入口正在从“每个 `.ci/<service>.yml` 复制完整 stages”演进为根级 `extends` 模板模型。
@@ -40,8 +41,9 @@
 - `.ci/service-gateway.yml`
 - `.ci/subscription.yml`
 
-这些入口保留 Stream 发现所需的 `name` / `on` / 路径触发声明，并通过统一模板传入
-`SERVICE` / `BUNDLE` / `DISPLAY_NAME`。
+这些入口保留 `name` / `on.push.paths` / `manual` / `extends`，并通过统一模板传入
+`SERVICE` / `BUNDLE` / `DISPLAY_NAME`。服务级变更仍由对应 `.ci/<service>.yml`
+的 `push.paths` 触发，模板只承载执行逻辑。
 其中 `lightclaw-auth` 的 `SERVICE` 仍是 release bundle id `user-auth`，`BUNDLE`
 仍是 GitOps pin target `lightclaw-auth`。
 其中 `sandbox` 显式覆盖 env 矩阵，当前只构建和自动 pin 北京沙箱链路，不隐式构建 `shprod`。
@@ -50,20 +52,22 @@
 公共模板：
 
 - `.ci/templates/service-release.yml`
-  - 统一承载 service release 的 `concurrency`、启动变量、checkout、build、北京自动 pin、手动 promote 逻辑
+  - 统一承载 service release 的启动变量、checkout、build、北京自动 pin、手动 promote 逻辑
   - 继续调用 `.ci/runtime/build_and_promote_to_gitops.sh` 与 `.ci/runtime/promote_bundle_image_to_gitops.sh`
 
 约束：
 
-- `on.push.paths` 仍留在每个服务入口 YAML；这是 Stream 触发发现和 MR check 可读性的服务边界。
-- `version: v2.0` 入口使用 `extends.template: <path>` + `extends.parameters`；当前平台会拒绝 v2 里的 `extends.template` 对象写法。
+- `on.push.paths` 只放业务路径、GitOps 服务路径、对应 secrets/app 路径；不要放 `.ci/**`。
+- `concurrency` 必须放在每个 service 入口 YAML；蓝盾模板 schema 不允许 `.ci/templates/service-release.yml` 顶层声明 `concurrency`。
+- `version: v2.0` 入口使用 `extends.template: service-release.yml` + `extends.parameters`；当前平台会拒绝 v2 里的 `extends.template` 对象写法。
+- 蓝盾解析 `extends.template` 时会相对 `.ci/templates/` 查找；不要写 `.ci/templates/service-release.yml`，否则可能被解析为 `.ci/templates/.ci/templates/service-release.yml` 并 404。
 - 不要为了 `extends.template.path` 对象写法切到 `version: v3.0`；蓝盾 PAC v3 暂未支持局部模板，`.ci/templates/service-release.yml` 这类本仓库模板应继续走 Stream v2。
 - 非流水线配置不要使用 `.yaml` 后缀放在 `.ci/**` 下；蓝盾会把 `.ci/**/*.yaml` 误识别成流水线候选。Guard 注册表用 `.ci/guards.manifest`，release bundle 源用 `.ci/runtime/bundles/*.bundle`。
 - `frontend`、`frontend-edgeone-*`、`gitops-*`、`ci-runtime`、`mr-placeholder` 不属于这批标准 service release 入口，不使用该模板。
 
 ### 新增标准服务流水线
 
-新增一个普通镜像 + GitOps pin 的标准服务时，优先复制已迁移入口的形态：
+新增一个普通镜像 + GitOps pin 的标准服务时，新增 `.ci/<service>.yml`，形态如下：
 
 ```yaml
 version: v2.0
@@ -84,8 +88,14 @@ on:
       - "**/OWNERS"
   manual: enabled
 
+concurrency:
+  group: mono2-master-release
+  cancel-in-progress: false
+  queue-length: 20
+  queue-timeout-minutes: 480
+
 extends:
-  template: .ci/templates/service-release.yml
+  template: service-release.yml
   parameters:
     SERVICE: <release-bundle-id>
     BUNDLE: <gitops-pin-target>
@@ -99,7 +109,7 @@ extends:
 
 规则：
 
-- 业务 YAML 只声明 `on.push.paths`、`paths-ignore` 和 `extends`；不要复制 `concurrency`、`variables`、`stages`。
+- 业务 YAML 只声明 `on.push.paths`、`manual`、`concurrency` 和 `extends`；不要复制 `variables`、`stages`。
 - 不要把 `.ci/**`、`.ci/runtime/**`、`.ci/templates/**` 放进业务流水线 `paths`，避免 CI 模板变更隐式构建镜像或推进 GitOps。
 - CI 模板、runtime、guard 的变更只触发 `构建 CI runtime`；业务服务是否需要重新构建，应由业务路径变更或手动触发决定。
 - `SERVICE` 是 `.ci/runtime/bundles/*.bundle` 里的 bundle id；`BUNDLE` 是 GitOps pin target。多数服务二者相同，`lightclaw-auth` 是例外：`SERVICE=user-auth`、`BUNDLE=lightclaw-auth`。
@@ -314,7 +324,7 @@ Release gate 执行层。这里负责证明 image/config/db contract 是否满�
   - CI 命令入口
 - `.ci/runtime/commands/verify_db_contract.py`
   - CI 命令入口
-- `scripts/run_gitops_db_job.py`
+- `.ci/runtime/commands/run_gitops_db_job.py`
   - 实际执行 migration / seed 这类受控 DB Job
 
 ### guards
@@ -404,6 +414,15 @@ Python runtime 的低层复用工具。这里只放跨包、无业务领域知�
 
 不要把业务逻辑写进 command wrapper。
 
+### root scripts boundary
+
+根目录 `scripts/` 不再承载 CI release runtime。判断规则：
+
+- 需要被 `.ci/*.yml`、GitOps promote、release gate、drift audit 或 MR guard 直接调用的发布运行时代码，必须放在 `.ci/runtime/`
+- `scripts/` 可以保留仓库维护 / 一次性运维 / 本地辅助脚本，例如 SSM 导出、SOPS 扫描、CLS 校验、EdgeOne 子账号创建、旧环境 bootstrap
+- 新增脚本如果需要进入 CI 发布闭环，先放入 `.ci/runtime/commands/` 或对应语义包，再同步 `.ci/runtime/materialize-files.txt` 和 runtime 测试
+- 禁止重新引入 `scripts/build_and_promote_to_gitops.sh`、`scripts/promote_bundle_image_to_gitops.sh`、`scripts/verify_gitops_release.py` 这类 CI release runtime 入口
+
 ### tests
 
 Runtime 单测按语义分组，避免一个扁平目录继续增长：
@@ -433,15 +452,20 @@ Runtime 单测按语义分组，避免一个扁平目录继续增长：
 - `gitops` 只负责 deploy-facing 发布视图
 - 不要让 Argo 继续盯 `master`
 
-### 2. Monorepo 下不要用一个大 YAML 自动决定 service
+### 2. Monorepo 下 trigger 和 release 执行边界要清晰
 
 当前仓库是 monorepo。  
-如果只有一份流水线 YAML，push 到 `master` 时无法稳定判断到底该构建哪个 service。
+如果只有一份完整发布流水线 YAML，push 到 `master` 时很容易把 trigger、调度、构建、promote 全揉在一起。
+当前保留每个 service 自己声明 `on.push.paths`，执行逻辑用 `extends` 复用模板。
 
 已验证更稳的方式是：
 
-- 每个 service 一份 `.ci/*.yml`
-- 用 `on.push.paths` 只监听自己的目录和共用脚本
+- 每个 service 一份 `.ci/<service>.yml`
+  - 明确声明自己的 `push.paths` 和手动入口
+  - 继续通过 `extends` 复用 service release 模板
+- `extends.template` 使用短名 `service-release.yml`
+  - 蓝盾会相对 `.ci/templates/` 解析模板路径
+  - 不要写 `.ci/templates/service-release.yml`，否则可能解析成重复路径并 404
 
 ### 3. service-gateway / admin-gateway 发布边界必须拆开
 
@@ -452,7 +476,7 @@ Runtime 单测按语义分组，避免一个扁平目录继续增长：
 - `service-gateway.yml`
   - 只构建 / pin / promote：
     - `service-gateway`
-  - `on.push.paths` 同时监听：
+  - `on.push.paths` 监听：
     - `service-gateway/**`
 - `admin-gateway.yml`
   - 只构建 / pin / promote：
@@ -460,7 +484,7 @@ Runtime 单测按语义分组，避免一个扁平目录继续增长：
   - 当前构建实现仍临时复用：
     - `service-gateway/Dockerfile`
     - `service-gateway` build context
-  - `on.push.paths` 同时监听：
+  - `on.push.paths` 监听：
     - `admin-gateway/**`
     - `service-gateway/**`
 

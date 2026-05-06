@@ -42,11 +42,14 @@ func NewRestApi(conf config.StaticPagesConfig) *RestApi {
 	// Setup Gin router
 	r.router = gin.New(func(e *gin.Engine) {})
 
+	r.router.Use(r.CORSMiddleware())
+
 	// Setup Routes
 	r.router.GET("/", r.HealthHandler)
 	r.router.HEAD("/", r.HealthHandler)
 	r.router.GET("/healthz", r.HealthHandler)
 	r.router.HEAD("/healthz", r.HealthHandler)
+	r.router.OPTIONS("/api/upload", r.PreflightHandler)
 	r.router.POST("/api/upload", r.UploadHandler)
 
 	// Setup otelgin to expose Open Telemetry
@@ -89,6 +92,10 @@ func (r *RestApi) HealthHandler(ct *gin.Context) {
 	}
 
 	ct.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+func (r *RestApi) PreflightHandler(ct *gin.Context) {
+	ct.Status(http.StatusNoContent)
 }
 
 // ServeAsync starts the REST API server asynchronously on the specified address by calling Serve within a goroutine.

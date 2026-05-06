@@ -197,12 +197,31 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 continue
             with self.subTest(workflow=workflow_path):
                 self.assertEqual(workflow.get("version"), "v2.0")
+                self.assertEqual((workflow.get("concurrency") or {}).get("group"), "mono2-master-release")
                 self.assertIsInstance((workflow.get("extends") or {}).get("template"), str)
                 self.assert_release_entry_targets(
                     workflow,
                     expected_service=(workflow.get("extends") or {}).get("parameters", {}).get("SERVICE"),
                     expected_pin_targets=(workflow.get("extends") or {}).get("parameters", {}).get("BUNDLE"),
                 )
+
+    def test_local_templates_do_not_use_unsupported_top_level_concurrency(self) -> None:
+        for template_path in sorted((REPO_ROOT / ".ci/templates").glob("*.yml")):
+            with self.subTest(template=template_path.name):
+                template = yaml.safe_load(template_path.read_text()) or {}
+                self.assertNotIn("concurrency", template)
+
+    def test_service_release_target_env_default_uses_parameter_directly(self) -> None:
+        template_path = REPO_ROOT / ".ci/templates/service-release.yml"
+        template_text = template_path.read_text()
+        template = yaml.safe_load(template_text) or {}
+        target_env = ((template.get("variables") or {}).get("TARGET_ENV") or {}).get("value")
+
+        self.assertEqual(target_env, "${{ parameters.DEFAULT_TARGET_ENV }}")
+        self.assertNotRegex(
+            template_text,
+            r"\$\{\{\s*variables\.(SERVICE|BUNDLE|DISPLAY_NAME|DEFAULT_TARGET_ENV|MASTER_BUILD_ENVS|MASTER_AUTO_PIN_ENVS|PLAYGROUND_BUILD_ENVS|PLAYGROUND_AUTO_PIN_ENVS)\s*\}\}",
+        )
 
     def test_only_ci_runtime_listens_to_ci_file_changes(self) -> None:
         for workflow_path in sorted(REPO_ROOT.glob(".ci/*.yml")):
@@ -266,6 +285,8 @@ class ReleaseBundleContractTests(unittest.TestCase):
     def extends_template_path(self, workflow_data: dict) -> str:
         template = (workflow_data.get("extends") or {}).get("template")
         if isinstance(template, str):
+            if "/" not in template:
+                return f".ci/templates/{template}"
             return template
         if isinstance(template, dict):
             return str(template.get("path") or "")
@@ -303,7 +324,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
             )
             return
 
-        self.assertEqual(self.extends_template_path(workflow_data), ".ci/templates/service-release.yml")
+        self.assertEqual((workflow_data.get("extends") or {}).get("template"), "service-release.yml")
         self.assertEqual(variables.get("SERVICE"), expected_service)
         self.assertEqual(variables.get("BUNDLE"), expected_pin_targets)
         if expected_master_build_envs is not None:

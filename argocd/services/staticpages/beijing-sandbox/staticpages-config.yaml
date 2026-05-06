@@ -8,6 +8,10 @@ proxy:
   timeout: 30s
   compression: true
 
+cors:
+  allowedOrigins:
+    - "*"
+
 output:
   format: short
 
