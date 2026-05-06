@@ -8,6 +8,13 @@ class MRPlaceholderWorkflowTests(unittest.TestCase):
     def test_ci_only_candidate_guard_fallback_is_constrained(self) -> None:
         workflow = (REPO_ROOT / ".ci/mr-placeholder.yml").read_text()
 
+        self.assertIn("GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}", workflow)
+        self.assertIn("source .ci/init.sh", workflow)
+        self.assertIn("ci_git_fetch_origin master", workflow)
+        self.assertNotIn("git fetch origin master", workflow)
+        self.assertIn('export CI_RUNTIME_REF="origin/master"', workflow)
+        self.assertIn('git rev-parse "${CI_RUNTIME_REF}"', workflow)
+        self.assertNotIn("ci_prepare_runtime_ref origin/master", workflow)
         self.assertIn("--trusted-ref origin/master", workflow)
         self.assertIn('--changed-files-file "$CHANGED_FILES_FILE"', workflow)
         self.assertIn("trusted guard 失败，检查是否允许 .ci 自修复 fallback", workflow)
