@@ -1,5 +1,7 @@
 # lightclaw-auth 线上环境变量说明
 
+本文档变更会命中 `lightclaw-auth` 发布流水线的 `user/auth/**` 监听路径。
+
 ## 必填
 
 | 变量 | 说明 | 示例 |
