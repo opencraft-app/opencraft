@@ -91,6 +91,23 @@ func TestValidatedReturnToURLWithConfiguredLocalhostHTTP(t *testing.T) {
 	}
 }
 
+func TestValidatedReturnToURLWithConfiguredHTTPOrigin(t *testing.T) {
+	t.Parallel()
+
+	allowlist := buildOAuthReturnToAllowlist([]string{"http://30.184.61.101:5173"})
+
+	allowed := "http://30.184.61.101:5173/auth/sign-in"
+	if got := validatedReturnToURLWithAllowlist(allowed, allowlist); got != allowed {
+		t.Fatalf("expected configured http origin to be allowed, got %q", got)
+	}
+	if got := validatedReturnToURLWithAllowlist("http://30.184.61.101:3000/auth/sign-in", allowlist); got != "" {
+		t.Fatalf("expected different port to stay blocked, got %q", got)
+	}
+	if got := validatedReturnToURLWithAllowlist("http://30.184.61.102:5173/auth/sign-in", allowlist); got != "" {
+		t.Fatalf("expected different host to stay blocked, got %q", got)
+	}
+}
+
 func TestAppendSessionTokenToReturnTo(t *testing.T) {
 	t.Parallel()
 
