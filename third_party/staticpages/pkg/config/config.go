@@ -44,9 +44,14 @@ type Proxy struct {
 	Compression         bool
 }
 
+type CORS struct {
+	AllowedOrigins []string
+}
+
 type StaticPagesConfig struct {
 	Server Server
 	Proxy  Proxy
+	CORS   CORS
 	Output Output
 	Pages  []*Page
 }
