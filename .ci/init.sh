@@ -578,13 +578,34 @@ ci_load_git_woa_private_token() {
 ci_git_fetch_origin() {
   ci_require_commands git
 
+  local fetch_url="${CI_GIT_FETCH_REMOTE_URL:-git@git.woa.com:wisp/mono2.git}"
+  local fetch_args=()
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      -* | *:*)
+        fetch_args+=("$arg")
+        ;;
+      *)
+        fetch_args+=("+refs/heads/${arg}:refs/remotes/origin/${arg}")
+        ;;
+    esac
+  done
+
+  ci_log "git fetch ${fetch_url} ${fetch_args[*]}"
+  if GIT_TERMINAL_PROMPT=0 git fetch "$fetch_url" "${fetch_args[@]}"; then
+    return 0
+  fi
+
+  ci_log "git fetch via ${fetch_url} failed; falling back to checkout origin"
+
   local token askpass status=0
   if token="$(ci_load_git_woa_private_token 2>/dev/null)" && [[ -n "$token" ]]; then
     askpass="$(mktemp)"
     cat > "$askpass" <<'EOF'
 #!/usr/bin/env bash
 case "$1" in
-  *Username*) printf '%s\n' "oauth2" ;;
+  *Username*) printf '%s\n' "${GIT_WOA_FETCH_USERNAME:-oauth2}" ;;
   *Password*) printf '%s\n' "$GIT_WOA_FETCH_TOKEN" ;;
   *) printf '\n' ;;
 esac
@@ -600,7 +621,7 @@ EOF
   fi
 
   ci_log "git fetch origin without Git WOA token"
-  GIT_TERMINAL_PROMPT=0 git fetch origin "$@"
+  GIT_TERMINAL_PROMPT=0 git fetch origin "${fetch_args[@]}"
 }
 
 ci_load_registry_password() {
