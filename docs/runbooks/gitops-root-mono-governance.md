@@ -31,7 +31,7 @@
 只有满足下面任一条件的文件，才应该进入当前 repo 的 `gitops` 发布视图：
 
 1. `argocd/` 下的 deploy-facing 文件
-2. 在 [.ci/runtime/release-bundles.yaml](../../.ci/runtime/release-bundles.yaml) 中明确声明的 release bundle import
+2. 在 [.ci/runtime/bundles/*.bundle](../../.ci/runtime/bundles/) 中明确声明的 release bundle import
 3. GitOps 路径必需的脚本 / manifest 模板
 4. 与已纳管服务直接相关的 runbook / governance 文档
 

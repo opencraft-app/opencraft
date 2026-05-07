@@ -723,6 +723,7 @@ const createBotRepository = (): BotRepository => {
         wsUrl: "wss://example.invalid/ws",
         cols: 120,
         rows: 32,
+        timeoutSeconds: 3600,
       };
     },
 

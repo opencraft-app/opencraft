@@ -5,14 +5,10 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { Button } from "@/components/ui/button";
-import {
-  GrammarCanvas,
-  GrammarMiniStat,
-  GrammarPageIntro,
-  GrammarSectionCard,
-} from "@/components/site/homepage-grammar";
 import { useRepositories } from "@/contexts/repository-context";
 import type { BotTerminalSession } from "@/domain/types";
+
+const DEFAULT_TAT_TERMINAL_TIMEOUT_SECONDS = 3600;
 
 const decodeBase64 = (value: string) => {
   const binary = atob(value);
@@ -195,11 +191,14 @@ export const BotTerminalPage = () => {
     };
 
     window.addEventListener("resize", throttledResize);
+    const resizeObserver = new ResizeObserver(throttledResize);
+    resizeObserver.observe(terminalContainerRef.current);
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
 
     return () => {
       window.removeEventListener("resize", throttledResize);
+      resizeObserver.disconnect();
       if (resizeTimer !== null) window.clearTimeout(resizeTimer);
       terminal.dispose();
       terminalRef.current = null;
@@ -266,12 +265,14 @@ export const BotTerminalPage = () => {
             },
           }));
           authTimerRef.current = window.setTimeout(() => {
+            const timeoutSeconds = bootstrap.timeoutSeconds ?? DEFAULT_TAT_TERMINAL_TIMEOUT_SECONDS;
             socket.send(JSON.stringify({
               Type: "PtyStart",
               Data: {
                 SessionId: bootstrap.sessionId,
                 Cols: terminalRef.current?.cols ?? bootstrap.cols,
                 Rows: terminalRef.current?.rows ?? bootstrap.rows,
+                MaxIdleTime: timeoutSeconds,
               },
             }));
           }, 1000);
@@ -346,85 +347,47 @@ export const BotTerminalPage = () => {
   }, [id, repositories.bots]);
 
   return (
-    <div className="px-4 py-6 sm:px-6 lg:px-8">
-      <GrammarCanvas className="mx-auto max-w-7xl">
-        <div className="space-y-8 px-6 py-6 sm:px-8 sm:py-8">
-          <GrammarPageIntro
-            eyebrow={<p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-tertiary)]">Bot Console</p>}
-            title="腾讯云 TAT Web Console"
-            description="这个页面直接为当前 bot 绑定的 sandbox 创建 TAT PTY session。先拿 sandbox terminal bootstrap，再连腾讯云 websocket，不再额外暴露实例密钥。"
-            actions={(
-              <>
-                <Button asChild variant="outline">
-                  <Link to={id ? `/bots/${id}/workspace` : "/dashboard/settings"}>返回工作台</Link>
-                </Button>
-                <Button asChild>
-                  <Link to={id ? `/bots/${id}/settings` : "/dashboard/settings"}>查看设置</Link>
-                </Button>
-              </>
-            )}
-          />
-
-          <div className="grid gap-6 xl:grid-cols-[0.32fr_0.68fr]">
-            <GrammarSectionCard
-              kicker="Session"
-              title="终端会话"
-              description="这里展示当前 bot 对应的 sandbox 和 TAT bootstrap。连接状态异常时，先看这里确认是不是 sandbox 还没分配。"
-            >
-              <div className="grid gap-3 sm:grid-cols-2">
-                <GrammarMiniStat label="Bot" value={id ?? "-"} note="当前页面绑定的 bot id" />
-                <GrammarMiniStat label="State" value={connectionState} note={error ?? "terminal websocket running"} />
-                <GrammarMiniStat label="Region" value={session?.region ?? "-"} note="TAT websocket 所在地域" />
-                <GrammarMiniStat label="Sandbox" value={session?.sandboxId ?? "-"} note="从 ctl 实例映射到 sandbox" />
-              </div>
-              <div className="space-y-2 text-sm leading-7 text-[var(--text-secondary)]">
-                <p><strong>Instance:</strong> {session?.instanceId ?? "-"}</p>
-                <p><strong>Pool:</strong> {session?.poolId ?? "-"}</p>
-                <p><strong>Session ID:</strong> {session?.sessionId ?? "-"}</p>
-                <p><strong>WS:</strong> <span className="break-all">{session?.wsUrl ?? "-"}</span></p>
-                {error ? <p className="text-[var(--danger)]"><strong>Error:</strong> {error}</p> : null}
-              </div>
-            </GrammarSectionCard>
-
-            <GrammarSectionCard
-              kicker="Console"
-              title="Live PTY"
-              description="真正的 shell 流量直接走腾讯云 TAT websocket。这个页面只负责 bootstrap 和浏览器终端渲染。"
-              className="min-h-[42rem]"
-            >
-              <div
-                className="overflow-hidden rounded-[1.75rem] border p-3 shadow-[var(--shadow-soft)]"
-                style={{
-                  borderColor: "#0f0b09",
-                  background: "#0f0b09",
-                }}
-              >
-                <div
-                  className="mb-3 flex items-center justify-between rounded-[1rem] border px-3 py-2 text-xs"
-                  style={{
-                    borderColor: "rgba(255,255,255,0.08)",
-                    background: "rgba(255,255,255,0.03)",
-                    color: "#f1dac7",
-                  }}
-                >
-                  <span>lightclaw.tencent-tat.console</span>
-                  <span>{connectionState}</span>
-                </div>
-                <div
-                  ref={terminalContainerRef}
-                  className="tat-terminal-host min-h-[34rem] rounded-[1rem] border p-2"
-                  style={{
-                    borderColor: "rgba(255,255,255,0.08)",
-                    background: "#16110d",
-                    letterSpacing: 0,
-                    lineHeight: 1.2,
-                  }}
-                />
-              </div>
-            </GrammarSectionCard>
+    <div className="flex min-h-dvh flex-col bg-[#080706] p-2 text-[#f4eadf] sm:p-3">
+      <header className="mb-2 flex shrink-0 items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.035] px-3 py-2 shadow-[0_20px_80px_rgba(0,0,0,0.45)] backdrop-blur sm:px-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-[#9d8f83]">
+            <span className="h-2 w-2 rounded-full bg-[#b7ef83] shadow-[0_0_18px_rgba(183,239,131,0.7)]" />
+            TAT Console
+          </div>
+          <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-[#d7c8b9]">
+            <span className="truncate">{id ?? "unknown bot"}</span>
+            <span className="text-[#6f6258]">/</span>
+            <span className="truncate">{session?.sandboxId ?? "waiting sandbox"}</span>
+            <span className="hidden text-[#6f6258] sm:inline">/</span>
+            <span className="hidden truncate sm:inline">{session?.region ?? "region pending"}</span>
           </div>
         </div>
-      </GrammarCanvas>
+        <div className="flex shrink-0 items-center gap-2">
+          <span
+            className="hidden rounded-full border border-white/10 px-3 py-1 text-xs text-[#f1dac7] sm:inline-flex"
+            title={error ?? undefined}
+          >
+            {error ?? connectionState}
+          </span>
+          <Button asChild variant="outline" className="h-9 border-white/15 bg-transparent px-3 text-[#f4eadf] hover:bg-white/10 hover:text-white">
+            <Link to={id ? `/bots/${id}/workspace` : "/dashboard/settings"}>返回</Link>
+          </Button>
+          <Button asChild className="h-9 bg-[#f4eadf] px-3 text-[#14100d] hover:bg-white">
+            <Link to={id ? `/bots/${id}/settings` : "/dashboard/settings"}>设置</Link>
+          </Button>
+        </div>
+      </header>
+
+      <main className="min-h-0 flex-1 overflow-hidden rounded-[1.5rem] border border-white/10 bg-[#120d0a] p-2 shadow-[0_28px_120px_rgba(0,0,0,0.62)]">
+        <div
+          ref={terminalContainerRef}
+          className="tat-terminal-host h-full min-h-[calc(100dvh-5.75rem)] rounded-[1rem] border border-white/[0.07] bg-[#16110d] p-2"
+          style={{
+            letterSpacing: 0,
+            lineHeight: 1.2,
+          }}
+        />
+      </main>
     </div>
   );
 };

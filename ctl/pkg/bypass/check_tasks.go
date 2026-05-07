@@ -20,7 +20,7 @@ const (
 	bypassCheckTasks       = "checkTasks"
 	checkTasksBatchSize    = 200
 	checkTasksLockSeconds  = 600
-	checkTasksLookbackDays = -7
+	checkTasksLookbackDays = -90
 )
 
 func init() {

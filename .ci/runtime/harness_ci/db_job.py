@@ -21,7 +21,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 SERVICE_SPECS: dict[tuple[str, str], dict[str, Any]] = {
@@ -95,6 +95,16 @@ SERVICE_SPECS: dict[tuple[str, str], dict[str, Any]] = {
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run a controlled GitOps migration/seed job.")
+    parser.add_argument(
+        "--repo-root",
+        default="",
+        help="Source checkout root used for repo-backed DB payloads. Defaults to the runtime checkout.",
+    )
+    parser.add_argument(
+        "--deploy-root",
+        default="",
+        help="Deploy-facing GitOps checkout root used for argocd/services env files. Defaults to repo root.",
+    )
     parser.add_argument("--service", required=True, choices=sorted({svc for svc, _ in SERVICE_SPECS}))
     parser.add_argument("--operation", required=True, choices=sorted({op for _, op in SERVICE_SPECS}))
     parser.add_argument("--env", required=True, help="Deploy env name, e.g. beijing-sandbox")
@@ -118,7 +128,9 @@ def parse_args() -> argparse.Namespace:
 
 def load_platform_env(env_name: str) -> dict[str, str]:
     path = REPO_ROOT / "deploy" / "envs" / env_name / "platform.env"
-    return load_env_file(path) if path.is_file() else {}
+    if not path.is_file():
+        return {"PULUMI_ENV_NAME": env_name}
+    return load_env_file(path)
 
 
 def load_env_file(path: Path) -> dict[str, str]:
@@ -151,11 +163,11 @@ def runtime_secret_value(source_key: str, env_name: str) -> str:
     return ""
 
 
-def load_service_platform_env(spec: dict[str, Any], env_name: str) -> dict[str, str]:
+def load_service_platform_env(spec: dict[str, Any], env_name: str, deploy_root: Path) -> dict[str, str]:
     relative = spec.get("platform_env_file", "").strip()
     if not relative:
         return {}
-    path = REPO_ROOT / relative.format(env=env_name)
+    path = deploy_root / relative.format(env=env_name)
     return load_env_file(path)
 
 
@@ -181,7 +193,13 @@ def require_repo_payload_revision(spec: dict[str, Any], revision: str) -> None:
         raise ValueError("ctl/migrations has uncommitted changes; commit or clean them before running the DB job")
 
 
-def resolve_kubeconfig(platform_env: dict[str, str], env_name: str, b64_env_name: str) -> tuple[str, Path | None]:
+def resolve_kubeconfig(
+    platform_env: dict[str, str],
+    b64_env_name: str,
+    env_name: str = "",
+    *,
+    allow_ci_default_file: bool = True,
+) -> tuple[str, Path | None]:
     b64 = os.environ.get(b64_env_name, "").strip()
     if b64:
         temp = tempfile.NamedTemporaryFile("wb", suffix=".kubeconfig", delete=False)
@@ -195,13 +213,20 @@ def resolve_kubeconfig(platform_env: dict[str, str], env_name: str, b64_env_name
         if not resolved.is_file():
             raise FileNotFoundError(f"missing DB_JOB_KUBECONFIG_FILE: {resolved}")
         return str(resolved), None
-    ci_env_name = platform_env.get("PULUMI_ENV_NAME", "").strip() or env_name
-    ci_file = Path("/etc/lightclaw-ci") / f"kubeconfig_{ci_env_name.replace('-', '_')}"
-    if ci_file.is_file():
-        return str(ci_file), None
+    ci_env_name = env_name or platform_env.get("PULUMI_ENV_NAME", "").strip()
+    if allow_ci_default_file and ci_env_name:
+        ci_file = Path("/etc/lightclaw-ci") / f"kubeconfig_{ci_env_name.replace('-', '_')}"
+        if ci_file.is_file():
+            return str(ci_file), None
     kubeconfig = platform_env.get("DEPLOY_KUBECONFIG", "").strip()
     if not kubeconfig:
-        raise ValueError("DEPLOY_KUBECONFIG missing in platform.env and no kubeconfig b64 env provided")
+        expected = ""
+        if ci_env_name:
+            expected = f", or provide /etc/lightclaw-ci/kubeconfig_{ci_env_name.replace('-', '_')}"
+        raise ValueError(
+            "DEPLOY_KUBECONFIG missing in platform.env and no kubeconfig b64 env provided"
+            f"{expected}"
+        )
     resolved = Path(kubeconfig)
     if not resolved.is_absolute():
         resolved = Path.cwd() / resolved
@@ -434,20 +459,26 @@ def write_summary(path: str, summary: dict[str, Any]) -> None:
 
 
 def main() -> int:
+    global REPO_ROOT
+
     args = parse_args()
+    if args.repo_root.strip():
+        REPO_ROOT = Path(args.repo_root).resolve()
+    deploy_root = Path(args.deploy_root).resolve() if args.deploy_root.strip() else REPO_ROOT
+
     key = (args.service, args.operation)
     if key not in SERVICE_SPECS:
         print(f"unsupported service/operation combination: {args.service}/{args.operation}", file=sys.stderr)
         return 1
 
     platform_env = load_platform_env(args.env)
-    kubeconfig, temp_path = resolve_kubeconfig(platform_env, args.env, args.kubeconfig_b64_env)
+    kubeconfig, temp_path = resolve_kubeconfig(platform_env, args.kubeconfig_b64_env, args.env)
     requested_by = os.environ.get("GITLAB_USER_LOGIN") or os.environ.get("USER") or "unknown"
 
     try:
         spec = SERVICE_SPECS[key]
         require_repo_payload_revision(spec, args.revision)
-        service_platform_env = load_service_platform_env(spec, args.env)
+        service_platform_env = load_service_platform_env(spec, args.env, deploy_root)
         image = resolve_job_image(args, spec, kubeconfig, service_platform_env)
         job_name = generate_job_name(args.service, args.operation)
         dynamic: dict[str, Any] = {}

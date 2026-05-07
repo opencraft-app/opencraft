@@ -44,6 +44,7 @@ import { formatDate, formatNumber, formatTokens, statusVariant } from "@/lib/uti
 export default function UsersPage() {
   const router = useRouter();
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<UserStatusFilter>(DEFAULT_USER_STATUS_FILTER);
   const [deleteTarget, setDeleteTarget] = useState<User | null>(null);
@@ -52,7 +53,7 @@ export default function UsersPage() {
   const [selectedPlanId, setSelectedPlanId] = useState("");
   const [switchMode, setSwitchMode] = useState<"reset" | "deduct_used">("reset");
 
-  const { data, isLoading } = useUsers(page, search || undefined, statusFilter);
+  const { data, isLoading } = useUsers(page, pageSize, search || undefined, statusFilter);
   const updateUser = useUpdateUser();
   const deleteUser = useDeleteUser();
   const subscribeUser = useSubscribeUser();
@@ -212,8 +213,10 @@ export default function UsersPage() {
         data={data?.items ?? []}
         total={data?.total ?? 0}
         page={page}
-        pageSize={20}
+        pageSize={pageSize}
+        pageSizeOptions={[20, 50, 100]}
         onPageChange={setPage}
+        onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
         isLoading={isLoading}
       />
 

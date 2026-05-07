@@ -675,15 +675,16 @@ func TestPostSandboxTATSessionReturnsTerminalBootstrap(t *testing.T) {
 	defer authServer.Close()
 	commands := &stubCommandRunner{
 		sessionResp: provider.TerminalSession{
-			SessionID:  "sess-1",
-			Region:     "ap-beijing",
-			InstanceID: "ins-test-1",
-			OwnerUin:   "10001",
-			LoginUin:   "10002",
-			AppID:      12345,
-			WsURL:      "wss://ap-beijing.forward.tat-tc.tencent.cn/ws",
-			Cols:       120,
-			Rows:       32,
+			SessionID:      "sess-1",
+			Region:         "ap-beijing",
+			InstanceID:     "ins-test-1",
+			OwnerUin:       "10001",
+			LoginUin:       "10002",
+			AppID:          12345,
+			WsURL:          "wss://ap-beijing.forward.tat-tc.tencent.cn/ws",
+			Cols:           120,
+			Rows:           32,
+			TimeoutSeconds: 3600,
 		},
 	}
 
@@ -720,6 +721,9 @@ func TestPostSandboxTATSessionReturnsTerminalBootstrap(t *testing.T) {
 	}
 	if got := resp["wsUrl"]; got != "wss://ap-beijing.forward.tat-tc.tencent.cn/ws" {
 		t.Fatalf("expected wsUrl, got %v", got)
+	}
+	if got := resp["timeoutSeconds"]; got != float64(3600) {
+		t.Fatalf("expected timeoutSeconds 3600, got %v", got)
 	}
 }
 

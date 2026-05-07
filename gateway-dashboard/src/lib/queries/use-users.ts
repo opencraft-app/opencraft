@@ -93,18 +93,18 @@ export interface UserUsageLogsResponse {
   summary: UserUsageLogsSummary;
 }
 
-export function useUsers(page: number = 1, search?: string, status?: UserStatusFilter) {
+export function useUsers(page: number = 1, pageSize: number = 20, search?: string, status?: UserStatusFilter) {
   return useQuery({
-    queryKey: ["users", page, search, status],
+    queryKey: ["users", page, pageSize, search, status],
     queryFn: async () => {
       const raw = await apiClient<PaginatedResponse<User> | { users: User[]; total: number; page: number; page_size: number }>(
         "ai-gateway/users",
-        { params: { page, page_size: 20, search, status: status ? toUserStatusQueryParam(status) : undefined } }
+        { params: { page, page_size: pageSize, search, status: status ? toUserStatusQueryParam(status) : undefined } }
       );
       // 兼容新旧响应格式
       if ("items" in raw) return raw as PaginatedResponse<User>;
       const res = raw as { users: User[]; total: number; page: number; page_size: number };
-      return { items: res.users ?? [], total: res.total ?? 0, page: res.page ?? 1, page_size: res.page_size ?? 20 };
+      return { items: res.users ?? [], total: res.total ?? 0, page: res.page ?? 1, page_size: res.page_size ?? pageSize };
     },
   });
 }

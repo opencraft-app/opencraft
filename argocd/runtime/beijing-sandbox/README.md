@@ -53,4 +53,9 @@ It should not manage:
 
 - the `sops-age` private key material itself
 - repo credentials
-- target cluster registration
+- target cluster credentials
+
+Target cluster registration is still Git-tracked by non-sensitive definitions in
+`argocd/clusters/`. Apply those definitions with
+`.ci/runtime/commands/onboard_argocd_target_cluster.py`, which reads the
+credential material from local/CI secret storage instead of committing it.

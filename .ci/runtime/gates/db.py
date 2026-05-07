@@ -35,6 +35,7 @@ def load_plan(
 def run_db_gate(
     *,
     repo_root: Path,
+    gitops_worktree: Path,
     runtime_command_dir: Path,
     bundle_manifest: Path,
     service: str,
@@ -59,7 +60,15 @@ def run_db_gate(
         if plan.release_dependency_changed:
             raise RuntimeError("同批依赖服务发生变更；北京自动发布停止，避免无序自动 sync。")
         if plan.requires_db_readiness:
-            run_db_readiness_flow(repo_root, runtime_command_dir, plan, env, source_ref, apply_migration=True)
+            run_db_readiness_flow(
+                repo_root,
+                gitops_worktree,
+                runtime_command_dir,
+                plan,
+                env,
+                source_ref,
+                apply_migration=True,
+            )
             plan = load_plan(
                 repo_root=repo_root,
                 bundle_manifest=bundle_manifest,
@@ -77,7 +86,16 @@ def run_db_gate(
     if env == "shprod":
         print("上海生产策略：GitOps MR 可进入待同步状态；Argo sync 保持人工执行。", file=sys.stderr)
         if plan.requires_db_readiness:
-            run_db_readiness_flow(repo_root, runtime_command_dir, plan, env, source_ref, apply_migration=False, shprod=True)
+            run_db_readiness_flow(
+                repo_root,
+                gitops_worktree,
+                runtime_command_dir,
+                plan,
+                env,
+                source_ref,
+                apply_migration=False,
+                shprod=True,
+            )
             plan = load_plan(
                 repo_root=repo_root,
                 bundle_manifest=bundle_manifest,
@@ -96,6 +114,7 @@ def run_db_gate(
 
 def run_db_readiness_flow(
     repo_root: Path,
+    gitops_worktree: Path,
     runtime_command_dir: Path,
     plan: GatePlan,
     env: str,
@@ -112,7 +131,11 @@ def run_db_readiness_flow(
     if apply_migration and plan.requires_db_job:
         args = [
             "python3",
-            str(repo_root / "scripts/run_gitops_db_job.py"),
+            str(runtime_command_dir / "run_gitops_db_job.py"),
+            "--repo-root",
+            str(repo_root),
+            "--deploy-root",
+            str(gitops_worktree),
             "--service",
             plan.db_job_service,
             "--operation",
@@ -127,7 +150,7 @@ def run_db_readiness_flow(
         if plan.db_job_image_override:
             args.extend(["--image-override", plan.db_job_image_override])
         print("GitOps 发布门禁：先执行受控 DB job", file=sys.stderr)
-        run_logged(args, cwd=repo_root)
+        run_logged(args, cwd=gitops_worktree)
 
     if shprod:
         print("GitOps 待同步门禁：执行上海生产 DB readiness 只读校验", file=sys.stderr)
@@ -138,7 +161,7 @@ def run_db_readiness_flow(
             "python3",
             str(runtime_command_dir / "verify_db_contract.py"),
             "--repo-root",
-            str(repo_root),
+            str(gitops_worktree),
             "--service",
             plan.service,
             "--env",
@@ -146,7 +169,7 @@ def run_db_readiness_flow(
             "--apply",
             "--wait",
         ],
-        cwd=repo_root,
+        cwd=gitops_worktree,
     )
 
 

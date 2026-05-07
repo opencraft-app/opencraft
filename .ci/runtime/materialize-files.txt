@@ -13,11 +13,13 @@
 .ci/runtime/commands/gitops_merge_request.py
 .ci/runtime/commands/gitops_merge_request_note.py
 .ci/runtime/commands/merge_gitops_promotion.py
+.ci/runtime/commands/onboard_argocd_target_cluster.py
 .ci/runtime/commands/plan_release_gates.py
 .ci/runtime/commands/project_release_bundle.py
 .ci/runtime/commands/resolve_release_bundle.py
 .ci/runtime/commands/run_release_gates.py
 .ci/runtime/commands/run_changed_guards.py
+.ci/runtime/commands/run_gitops_db_job.py
 .ci/runtime/commands/update_image_pin.py
 .ci/runtime/commands/upload_staticpages_preview.py
 .ci/runtime/commands/validate_gitops_promotion.py
@@ -53,6 +55,7 @@
 .ci/runtime/bundles/user-auth.bundle
 .ci/runtime/gitops/__init__.py
 .ci/runtime/gitops/argocd.py
+.ci/runtime/gitops/argocd_target_cluster.py
 .ci/runtime/gitops/gitops_cleanup_source_branch.py
 .ci/runtime/gitops/gitops_drift_audit.py
 .ci/runtime/gitops/gitops_kustomize_validation.py
@@ -85,6 +88,8 @@
 .ci/runtime/gates/runner.py
 .ci/runtime/guards/__init__.py
 .ci/runtime/guards/changed_guards.py
+.ci/runtime/harness_ci/__init__.py
+.ci/runtime/harness_ci/db_job.py
 .ci/runtime/support/__init__.py
 .ci/runtime/support/logging.py
 .ci/runtime/support/process.py

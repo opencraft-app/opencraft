@@ -73,12 +73,16 @@ flowchart TD
 默认统一入口：
 
 ```bash
-python3 .ci/runtime/harness_ci/commands/build_release_image.py --service <service> --env <env> --tag <tag>
+python3 .ci/runtime/commands/build_release_image.py --service <service> --env <env> --tag <tag>
 ```
 
-release bundle 清单：
+release bundle 源清单：
 
-- [.ci/runtime/release-bundles.yaml](../../.ci/runtime/release-bundles.yaml)
+- [.ci/runtime/bundles/*.bundle](../../.ci/runtime/bundles/)
+
+CI/runtime 会在执行时生成临时合并产物：
+
+- `.ci/runtime/release-bundles.manifest`（不提交到 Git）
 
 当前显式例外：
 
@@ -89,7 +93,7 @@ release bundle 清单：
 `DB migration / seed` 不是正式发布脚本的一部分。  
 统一走平台级入口：
 
-- [scripts/run_gitops_db_job.py](../../scripts/run_gitops_db_job.py)
+- [.ci/runtime/commands/run_gitops_db_job.py](../../.ci/runtime/commands/run_gitops_db_job.py)
 - 历史 DB job 模板已退役
 - [gitops-db-job-runbook.md](../runbooks/gitops-db-job-runbook.md)
 

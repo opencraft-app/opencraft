@@ -1,0 +1,11 @@
+apiVersion: lightclaw.dev/v1alpha1
+kind: ArgoTargetCluster
+metadata:
+  name: beijing-sandbox-2
+spec:
+  description: Second Beijing sandbox TKE cluster consumed by sandbox-family ApplicationSet.
+  server: https://lb-241nxkgb-9ckftviuye4z68qd.clb.bj-tencentclb.com:443
+  projectPath: argocd/projects/beijing-sandbox-2.yaml
+  kubeconfigHint: .secret/cls-ftjhqdjt-config
+  owner: infra_pulumi/envs/tencentcloud/beijing-sandbox-2
+
