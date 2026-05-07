@@ -151,6 +151,8 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
   useEffect(() => {
     if (session.currentSubscription?.status === "active") {
       setIsSubscribed(true);
+    } else if (session.currentSubscription && session.currentSubscription.status !== "active") {
+      setIsSubscribed(false);
     }
   }, [session.currentSubscription]);
 
@@ -161,9 +163,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
       const now = Date.now();
       const active = passes.find((p) => !p.deleted_time && new Date(p.expired_time).getTime() > now) ?? null;
       setActivePass(active);
-      if (active) {
-        setIsSubscribed(true);
-      }
+      setIsSubscribed(Boolean(active));
     } catch {
       /* 接口失败不阻断其他流程，保持现有状态 */
     }
