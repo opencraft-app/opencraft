@@ -2493,9 +2493,6 @@ export const OpenClawSettingsPage = () => {
     [],
   );
 
-  /* 侧边栏导航：Settings 配置面板 */
-  const [activePanel, setActivePanel] = useState<"model" | "channel" | "skill">("model");
-
   /* 改名相关 */
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState("");
@@ -3041,7 +3038,7 @@ export const OpenClawSettingsPage = () => {
                 {/* 分割线 */}
                 <div style={{ borderTop: "1px solid rgba(0,0,0,0.05)" }} />
 
-                {/* ─ 使用设置：侧边栏导航 + 右侧面板 ─ */}
+                {/* ─ 使用设置：三列卡片 ─ */}
                 <div>
                   {(() => {
                     // --- tea-sdk-lightclaw props ---
@@ -3125,51 +3122,39 @@ export const OpenClawSettingsPage = () => {
                     // / getInstalledSkills 等），否则已配置项目列表永远是空。
                     const sdkIsDataReady = true;
 
-                    const sdkCommonProps = {
-                      instance: sdkInstance,
-                      regionShortName: sdkRegionShortName,
-                      featureFlags: sdkFeatureFlags,
-                      productConfig: sdkProductConfig,
-                      isOperationDisabled: sdkIsOperationDisabled,
-                      operationDisabledContent: sdkOperationDisabledContent,
-                      isDataReady: sdkIsDataReady,
-                      operationDisabledTip: sdkOperationDisabledTip,
-                    };
-
-                    const navItems: { id: "model" | "channel" | "skill"; label: string }[] = [
-                      { id: "model", label: "模型" },
-                      { id: "channel", label: "通道" },
-                      { id: "skill", label: "技能" },
-                    ];
-
                     return (
-                      <div className="_lh-settings-layout">
-                        {/* 左侧侧边栏导航 */}
-                        <nav className="_lh-settings-sidebar">
-                          <div className="_lh-settings-sidebar__group-title">基础配置</div>
-                          {navItems.map((item) => (
-                            <button
-                              key={item.id}
-                              onClick={() => setActivePanel(item.id)}
-                              className={cn(
-                                "_lh-settings-sidebar__item",
-                                activePanel === item.id && "_lh-settings-sidebar__item--active",
-                              )}
-                            >
-                              {item.label}
-                            </button>
-                          ))}
-                        </nav>
-
-                        {/* 右侧配置面板 */}
-                        <div className="_lh-settings-content">
-                          <div className="_lh-claw-bot-panel">
-                            <div className="_lh-claw-bot-panel__cards _lh-cards-single">
-                              {activePanel === "model" && <ModelCard {...sdkCommonProps} />}
-                              {activePanel === "channel" && <ChannelCard {...sdkCommonProps} />}
-                              {activePanel === "skill" && <SkillCard {...sdkCommonProps} />}
-                            </div>
-                          </div>
+                      <div className="_lh-claw-bot-panel tea-mt-4n">
+                        <div className="_lh-claw-bot-panel__cards _lh-cards-grid">
+                          <ModelCard
+                            instance={sdkInstance}
+                            regionShortName={sdkRegionShortName}
+                            featureFlags={sdkFeatureFlags}
+                            productConfig={sdkProductConfig}
+                            isOperationDisabled={sdkIsOperationDisabled}
+                            operationDisabledContent={sdkOperationDisabledContent}
+                            isDataReady={sdkIsDataReady}
+                            operationDisabledTip={sdkOperationDisabledTip}
+                          />
+                          <ChannelCard
+                            instance={sdkInstance}
+                            regionShortName={sdkRegionShortName}
+                            featureFlags={sdkFeatureFlags}
+                            productConfig={sdkProductConfig}
+                            isOperationDisabled={sdkIsOperationDisabled}
+                            operationDisabledContent={sdkOperationDisabledContent}
+                            isDataReady={sdkIsDataReady}
+                            operationDisabledTip={sdkOperationDisabledTip}
+                          />
+                          <SkillCard
+                            instance={sdkInstance}
+                            regionShortName={sdkRegionShortName}
+                            featureFlags={sdkFeatureFlags}
+                            productConfig={sdkProductConfig}
+                            isDataReady={sdkIsDataReady}
+                            isOperationDisabled={sdkIsOperationDisabled}
+                            operationDisabledContent={sdkOperationDisabledContent}
+                            operationDisabledTip={sdkOperationDisabledTip}
+                          />
                         </div>
                       </div>
                     );

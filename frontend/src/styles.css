@@ -961,89 +961,6 @@ code {
   opacity: 1;
 }
 
-/* ───────── Settings 侧边栏导航布局 ───────── */
-._lh-settings-layout {
-  display: flex;
-  gap: 24px;
-  min-height: 400px;
-}
-
-._lh-settings-sidebar {
-  width: 180px;
-  flex-shrink: 0;
-  padding-top: 4px;
-}
-
-._lh-settings-sidebar__group-title {
-  padding: 8px 12px;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: rgba(0, 0, 0, 0.4);
-  user-select: none;
-}
-
-._lh-settings-sidebar__item {
-  display: flex;
-  align-items: center;
-  width: 100%;
-  padding: 10px 12px;
-  margin-bottom: 6px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  font-size: 14px;
-  font-weight: 500;
-  color: rgba(0, 0, 0, 0.6);
-  cursor: pointer;
-  transition: all 0.15s ease;
-  text-align: left;
-}
-
-._lh-settings-sidebar__item:hover {
-  background: rgba(0, 0, 0, 0.03);
-  color: rgba(0, 0, 0, 0.85);
-}
-
-._lh-settings-sidebar__item--active {
-  background: rgba(0, 0, 0, 0.9);
-  color: #fff;
-  font-weight: 600;
-}
-
-._lh-settings-sidebar__item--active:hover {
-  background: rgba(0, 0, 0, 0.9);
-  color: #fff;
-}
-
-._lh-settings-content {
-  flex: 1;
-  min-width: 0;
-}
-
-@media (max-width: 767px) {
-  ._lh-settings-layout {
-    flex-direction: column;
-    gap: 16px;
-  }
-  ._lh-settings-sidebar {
-    width: 100%;
-    display: flex;
-    gap: 4px;
-    overflow-x: auto;
-    padding-top: 0;
-  }
-  ._lh-settings-sidebar__group-title {
-    display: none;
-  }
-  ._lh-settings-sidebar__item {
-    white-space: nowrap;
-    padding: 8px 16px;
-    border-radius: 20px;
-  }
-}
-
 /* ───────── SDK 卡片容器布局（业务侧控制） ─────────
    tea-sdk 1.0.17 开始给卡片写入固定 width/min-width。
    这里在业务面板内显式接管容器与单卡片尺寸，避免出现三根窄柱。 */
@@ -1053,17 +970,6 @@ code {
   gap: 16px;
   width: 100%;
   align-items: stretch;
-}
-
-/* 侧边栏模式下卡片单列全宽展示 */
-._lh-claw-bot-panel ._lh-cards-single._lh-claw-bot-panel__cards {
-  display: block;
-  width: 100%;
-}
-
-._lh-claw-bot-panel ._lh-cards-single._lh-claw-bot-panel__cards > ._lh-claw-bot-panel__card {
-  width: 100%;
-  min-width: 0;
 }
 
 ._lh-claw-bot-panel ._lh-cards-grid._lh-claw-bot-panel__cards > ._lh-claw-bot-panel__card {
