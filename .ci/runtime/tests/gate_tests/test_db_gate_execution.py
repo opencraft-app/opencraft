@@ -14,14 +14,17 @@ from gates.db import run_db_gate  # noqa: E402
 
 class DbGateExecutionTests(unittest.TestCase):
     def test_shprod_readiness_never_runs_controlled_db_job(self) -> None:
-        commands: list[list[str]] = []
+        command_calls: list[tuple[list[str], Path]] = []
+        repo_root = Path("/tmp/source-root")
+        gitops_worktree = Path("/tmp/projected-gitops")
         initial = self.plan(env="shprod", db_status="unknown")
         passed = self.plan(env="shprod", db_status="passed")
 
         with mock.patch("gates.db.load_plan", side_effect=[initial, passed]), \
-            mock.patch("gates.db.run_logged", side_effect=lambda command, cwd: commands.append(command)):
+            mock.patch("gates.db.run_logged", side_effect=lambda command, cwd: command_calls.append((command, cwd))):
             status, plan = run_db_gate(
-                repo_root=Path(".").resolve(),
+                repo_root=repo_root,
+                gitops_worktree=gitops_worktree,
                 runtime_command_dir=RUNTIME_DIR / "commands",
                 bundle_manifest=RUNTIME_DIR / "release-bundles.manifest",
                 service="payment",
@@ -31,21 +34,29 @@ class DbGateExecutionTests(unittest.TestCase):
                 pin_targets="payment",
             )
 
+        commands = [command for command, _cwd in command_calls]
         rendered_commands = "\n".join(" ".join(command) for command in commands)
         self.assertEqual(status, "passed")
         self.assertEqual(plan.db_status, "passed")
         self.assertIn("verify_db_contract.py", rendered_commands)
         self.assertNotIn("run_gitops_db_job.py", rendered_commands)
+        verify_command = next(command for command in commands if any("verify_db_contract.py" in part for part in command))
+        self.assertIn(str(gitops_worktree), verify_command)
+        self.assertIn(("bash", str(repo_root)), [(command[0], str(cwd)) for command, cwd in command_calls])
+        self.assertIn((verify_command, gitops_worktree), command_calls)
 
     def test_beijing_readiness_runs_controlled_db_job_when_required(self) -> None:
-        commands: list[list[str]] = []
+        command_calls: list[tuple[list[str], Path]] = []
+        repo_root = Path("/tmp/source-root")
+        gitops_worktree = Path("/tmp/projected-gitops")
         initial = self.plan(env="beijing-sandbox", db_status="unknown")
         passed = self.plan(env="beijing-sandbox", db_status="passed")
 
         with mock.patch("gates.db.load_plan", side_effect=[initial, passed]), \
-            mock.patch("gates.db.run_logged", side_effect=lambda command, cwd: commands.append(command)):
+            mock.patch("gates.db.run_logged", side_effect=lambda command, cwd: command_calls.append((command, cwd))):
             status, plan = run_db_gate(
-                repo_root=Path(".").resolve(),
+                repo_root=repo_root,
+                gitops_worktree=gitops_worktree,
                 runtime_command_dir=RUNTIME_DIR / "commands",
                 bundle_manifest=RUNTIME_DIR / "release-bundles.manifest",
                 service="payment",
@@ -55,11 +66,19 @@ class DbGateExecutionTests(unittest.TestCase):
                 pin_targets="payment",
             )
 
+        commands = [command for command, _cwd in command_calls]
         rendered_commands = "\n".join(" ".join(command) for command in commands)
         self.assertEqual(status, "passed")
         self.assertEqual(plan.db_status, "passed")
         self.assertIn("run_gitops_db_job.py", rendered_commands)
         self.assertIn("verify_db_contract.py", rendered_commands)
+        db_job_command = next(command for command in commands if any("run_gitops_db_job.py" in part for part in command))
+        verify_command = next(command for command in commands if any("verify_db_contract.py" in part for part in command))
+        self.assertIn(str(repo_root), db_job_command)
+        self.assertIn(str(gitops_worktree), db_job_command)
+        self.assertIn(str(gitops_worktree), verify_command)
+        self.assertIn((db_job_command, gitops_worktree), command_calls)
+        self.assertIn((verify_command, gitops_worktree), command_calls)
 
     def plan(self, *, env: str, db_status: str) -> SimpleNamespace:
         return SimpleNamespace(

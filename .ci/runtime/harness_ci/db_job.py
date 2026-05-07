@@ -95,6 +95,16 @@ SERVICE_SPECS: dict[tuple[str, str], dict[str, Any]] = {
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run a controlled GitOps migration/seed job.")
+    parser.add_argument(
+        "--repo-root",
+        default="",
+        help="Source checkout root used for repo-backed DB payloads. Defaults to the runtime checkout.",
+    )
+    parser.add_argument(
+        "--deploy-root",
+        default="",
+        help="Deploy-facing GitOps checkout root used for argocd/services env files. Defaults to repo root.",
+    )
     parser.add_argument("--service", required=True, choices=sorted({svc for svc, _ in SERVICE_SPECS}))
     parser.add_argument("--operation", required=True, choices=sorted({op for _, op in SERVICE_SPECS}))
     parser.add_argument("--env", required=True, help="Deploy env name, e.g. beijing-sandbox")
@@ -138,11 +148,11 @@ def load_env_file(path: Path) -> dict[str, str]:
     return values
 
 
-def load_service_platform_env(spec: dict[str, Any], env_name: str) -> dict[str, str]:
+def load_service_platform_env(spec: dict[str, Any], env_name: str, deploy_root: Path) -> dict[str, str]:
     relative = spec.get("platform_env_file", "").strip()
     if not relative:
         return {}
-    path = REPO_ROOT / relative.format(env=env_name)
+    path = deploy_root / relative.format(env=env_name)
     return load_env_file(path)
 
 
@@ -429,7 +439,13 @@ def write_summary(path: str, summary: dict[str, Any]) -> None:
 
 
 def main() -> int:
+    global REPO_ROOT
+
     args = parse_args()
+    if args.repo_root.strip():
+        REPO_ROOT = Path(args.repo_root).resolve()
+    deploy_root = Path(args.deploy_root).resolve() if args.deploy_root.strip() else REPO_ROOT
+
     key = (args.service, args.operation)
     if key not in SERVICE_SPECS:
         print(f"unsupported service/operation combination: {args.service}/{args.operation}", file=sys.stderr)
@@ -442,7 +458,7 @@ def main() -> int:
     try:
         spec = SERVICE_SPECS[key]
         require_repo_payload_revision(spec, args.revision)
-        service_platform_env = load_service_platform_env(spec, args.env)
+        service_platform_env = load_service_platform_env(spec, args.env, deploy_root)
         image = resolve_job_image(args, spec, kubeconfig, service_platform_env)
         job_name = generate_job_name(args.service, args.operation)
         dynamic: dict[str, Any] = {}
