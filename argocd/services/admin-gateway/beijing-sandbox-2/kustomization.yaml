@@ -12,3 +12,5 @@ configMapGenerator:
 - name: admin-gateway-platform-values
   envs:
   - admin-gateway-platform.env
+patches:
+- path: delete-servicemonitor.yaml
