@@ -39,6 +39,7 @@
 - `.ci/payment.yml`
 - `.ci/sandbox.yml`
 - `.ci/service-gateway.yml`
+- `.ci/staticpages.yml`
 - `.ci/subscription.yml`
 
 这些入口保留 `name` / `on.push.paths` / `manual` / `extends`，并通过统一模板传入
@@ -65,6 +66,15 @@
 - 非流水线配置不要使用 `.yaml` 后缀放在 `.ci/**` 下；蓝盾会把 `.ci/**/*.yaml` 误识别成流水线候选。Guard 注册表用 `.ci/guards.manifest`，release bundle 源用 `.ci/runtime/bundles/*.bundle`。
 - `frontend`、`frontend-edgeone-*`、`gitops-*`、`ci-runtime`、`mr-placeholder` 不属于这批标准 service release 入口，不使用该模板。
 
+### Release 并发模型
+
+标准服务 release 入口按服务维度独立排队：
+
+- `mono2-service-release-<service>`：同一个服务的构建 / 手动 promote 串行，避免同服务多个提交互相覆盖 GitOps pin。
+- 不同服务使用不同 concurrency group，可以并行构建镜像，避免 `sandbox`、`ctl`、`ai-gateway` 等互不相关的发布互相阻塞。
+- `gitops-promotion.yml` 仍由 promote 分支触发 GitOps MR 前置验收、自动合并、Argo 收敛和分支清理；不要把多个服务重新塞回 `mono2-master-release`。
+- `frontend-edgeone-*` 和 `frontend-preview` 已有独立发布/预览并发组，不参与标准服务 release group。
+
 ### 新增标准服务流水线
 
 新增一个普通镜像 + GitOps pin 的标准服务时，新增 `.ci/<service>.yml`，形态如下：
@@ -89,7 +99,7 @@ on:
   manual: enabled
 
 concurrency:
-  group: mono2-master-release
+  group: mono2-service-release-<service>
   cancel-in-progress: false
   queue-length: 20
   queue-timeout-minutes: 480
@@ -518,28 +528,32 @@ Runtime 单测按语义分组，避免一个扁平目录继续增长：
 
 - `jobs.release.runs-on.self-hosted: true`
 - `jobs.release.runs-on.pool-name: env`
-- `concurrency.group: mono2-master-release`
+- `concurrency.group: mono2-service-release-<service>`
   - `cancel-in-progress: false`
   - `queue-length: 20`
 - `PIPELINE_MODE`
   - 默认值 `build`
   - 手动 promote 时改成 `promote`
 
-### 5B. 只限制 master 主链路并发，不锁 promote 检查
+### 5B. 按服务限制 release 并发，不锁 promote 检查
 
-当前已经给所有 `master` 上的 service 流水线加了同一个顶层 `concurrency.group`：
+当前 service release 流水线按服务维度设置顶层 `concurrency.group`：
 
-- `mono2-master-release`
+- `mono2-service-release-admin-gateway`
+- `mono2-service-release-ai-gateway`
+- `mono2-service-release-sandbox`
+- 其他服务同理
 
 效果是：
 
-- 同一时间最多只跑一个主构建/发布流水线
-- 其他被触发的 service pipeline 会排队
+- 同一个服务的多次构建 / 手动 promote 串行，避免同服务多个提交互相覆盖 GitOps pin
+- 不同服务可以并行构建镜像，避免一个服务的慢构建阻塞其他服务
+- promote 分支仍然进入 `.ci/gitops-promotion.yml` 做统一验收、自动合并和 Argo 收敛
 
 但 `.ci/gitops-promotion.yml` 没有使用这个 group。原因是：
 
 - 北京主链路会等待 `promote-*` 分支自己的检查结果
-- 如果把 promote 检查也锁进同一个并发组，会和主链路互相等待，形成死锁
+- 如果把 promote 检查锁进服务构建并发组，会和主链路互相等待，形成死锁
 
 ### 6. 不要再把 `ci.event` 当作唯一分流依据
 
