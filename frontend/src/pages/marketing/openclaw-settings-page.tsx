@@ -57,6 +57,8 @@ import { createMonoDebugExecAdapter } from "@/pages/marketing/openclaw-tat-adapt
 import { installOpenClawConsoleHelpers } from "@/pages/marketing/openclaw-console-helpers";
 import "@tencent/tea-sdk-lightclaw/styles";
 
+const DEFAULT_TAT_TERMINAL_TIMEOUT_SECONDS = 3600;
+
 // Vite 生产构建（Rollup）会 tree-shake 掉 SDK 的自动 i18n.init()，
 // 导致 t() 返回空字符串。
 // SDK 的 initI18n 签名为 () => void，不接收词条参数；语言切换由
@@ -1141,12 +1143,14 @@ const TerminalModal = ({ botId, botName, onClose }: { botId: string; botName: st
             },
           }));
           authTimerRef.current = window.setTimeout(() => {
+            const timeoutSeconds = bootstrap.timeoutSeconds ?? DEFAULT_TAT_TERMINAL_TIMEOUT_SECONDS;
             socket.send(JSON.stringify({
               Type: "PtyStart",
               Data: {
                 SessionId: bootstrap.sessionId,
                 Cols: terminalRef.current?.cols ?? bootstrap.cols,
                 Rows: terminalRef.current?.rows ?? bootstrap.rows,
+                MaxIdleTime: timeoutSeconds,
               },
             }));
           }, 1000);

@@ -396,6 +396,7 @@ describe("http repositories auth token bootstrap", () => {
             wsUrl: "wss://ap-beijing.forward.tat-tc.tencent.cn/ws",
             cols: 120,
             rows: 32,
+            timeoutSeconds: 3600,
           }),
           {
             status: 200,
@@ -420,6 +421,7 @@ describe("http repositories auth token bootstrap", () => {
       wsUrl: "wss://ap-beijing.forward.tat-tc.tencent.cn/ws",
       cols: 120,
       rows: 32,
+      timeoutSeconds: 3600,
     });
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
