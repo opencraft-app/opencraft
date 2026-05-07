@@ -99,7 +99,7 @@ class ReleaseGatePlannerTests(unittest.TestCase):
         self.assertFalse(plan.auto_sync_allowed)
         self.assertIn("sync-default-pools", "\n".join(plan.manual_actions))
 
-    def test_ctl_requires_manual_readiness_confirmation(self) -> None:
+    def test_ctl_supports_automatic_readiness_confirmation(self) -> None:
         with self._repo_with_commit("ctl/internal/api.go") as (repo_root, source_sha):
             plan = plan_release_gates(
                 repo_root=repo_root,
@@ -113,10 +113,10 @@ class ReleaseGatePlannerTests(unittest.TestCase):
 
         self.assertTrue(plan.requires_db_job)
         self.assertTrue(plan.requires_db_readiness)
-        self.assertFalse(plan.readiness_supported)
+        self.assertTrue(plan.readiness_supported)
         self.assertFalse(plan.auto_merge_allowed)
         self.assertFalse(plan.auto_sync_allowed)
-        self.assertIn("manual DB readiness confirmation required", "\n".join(plan.manual_actions))
+        self.assertIn("verify_db_contract.py", "\n".join(plan.manual_actions))
 
     def test_shprod_always_uses_manual_argo_sync(self) -> None:
         with self._repo_with_commit("frontend/src/App.tsx") as (repo_root, source_sha):

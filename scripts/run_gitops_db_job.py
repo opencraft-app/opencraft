@@ -118,7 +118,7 @@ def parse_args() -> argparse.Namespace:
 
 def load_platform_env(env_name: str) -> dict[str, str]:
     path = REPO_ROOT / "deploy" / "envs" / env_name / "platform.env"
-    return load_env_file(path)
+    return load_env_file(path) if path.is_file() else {}
 
 
 def load_env_file(path: Path) -> dict[str, str]:
@@ -134,6 +134,21 @@ def load_env_file(path: Path) -> dict[str, str]:
         key, value = line.split("=", 1)
         values[key] = value
     return values
+
+
+def runtime_secret_value(source_key: str, env_name: str) -> str:
+    value = os.environ.get(source_key, "").strip()
+    if value:
+        return value
+    normalized_env = env_name.replace("-", "_")
+    lower_key = source_key.lower()
+    for path in (
+        Path("/etc/lightclaw-ci") / f"{lower_key}_{normalized_env}",
+        Path("/etc/lightclaw-ci") / lower_key,
+    ):
+        if path.is_file():
+            return path.read_text().strip()
+    return ""
 
 
 def load_service_platform_env(spec: dict[str, Any], env_name: str) -> dict[str, str]:
@@ -166,7 +181,7 @@ def require_repo_payload_revision(spec: dict[str, Any], revision: str) -> None:
         raise ValueError("ctl/migrations has uncommitted changes; commit or clean them before running the DB job")
 
 
-def resolve_kubeconfig(platform_env: dict[str, str], b64_env_name: str) -> tuple[str, Path | None]:
+def resolve_kubeconfig(platform_env: dict[str, str], env_name: str, b64_env_name: str) -> tuple[str, Path | None]:
     b64 = os.environ.get(b64_env_name, "").strip()
     if b64:
         temp = tempfile.NamedTemporaryFile("wb", suffix=".kubeconfig", delete=False)
@@ -180,11 +195,10 @@ def resolve_kubeconfig(platform_env: dict[str, str], b64_env_name: str) -> tuple
         if not resolved.is_file():
             raise FileNotFoundError(f"missing DB_JOB_KUBECONFIG_FILE: {resolved}")
         return str(resolved), None
-    env_name = platform_env.get("PULUMI_ENV_NAME", "").strip()
-    if env_name:
-        ci_file = Path("/etc/lightclaw-ci") / f"kubeconfig_{env_name.replace('-', '_')}"
-        if ci_file.is_file():
-            return str(ci_file), None
+    ci_env_name = platform_env.get("PULUMI_ENV_NAME", "").strip() or env_name
+    ci_file = Path("/etc/lightclaw-ci") / f"kubeconfig_{ci_env_name.replace('-', '_')}"
+    if ci_file.is_file():
+        return str(ci_file), None
     kubeconfig = platform_env.get("DEPLOY_KUBECONFIG", "").strip()
     if not kubeconfig:
         raise ValueError("DEPLOY_KUBECONFIG missing in platform.env and no kubeconfig b64 env provided")
@@ -254,13 +268,20 @@ def build_configmap_manifest(namespace: str, name: str, source_dir: Path) -> dic
     return json.loads(result.stdout)
 
 
-def build_ctl_dynamic_resources(job_name: str, platform_env: dict[str, str], service_platform_env: dict[str, str]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+def build_ctl_dynamic_resources(
+    job_name: str,
+    env_name: str,
+    platform_env: dict[str, str],
+    service_platform_env: dict[str, str],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     mysql_host = service_platform_env.get("CTL_TEST_MYSQL_HOST", "").strip()
-    mysql_password = platform_env.get("CTL_TEST_MYSQL_PASSWORD", "").strip()
+    mysql_password = platform_env.get("CTL_TEST_MYSQL_PASSWORD", "").strip() or runtime_secret_value(
+        "CTL_TEST_MYSQL_PASSWORD", env_name
+    )
     if not mysql_host:
         raise ValueError("missing CTL_TEST_MYSQL_HOST in ctl platform env")
     if not mysql_password:
-        raise ValueError("missing CTL_TEST_MYSQL_PASSWORD in platform.env")
+        raise ValueError("missing CTL_TEST_MYSQL_PASSWORD in platform.env, environment, or /etc/lightclaw-ci")
 
     dsn = f"mysql://root:{mysql_password}@tcp({mysql_host}:3306)/ctl?multiStatements=true"  # pragma: allowlist secret
     migrations_name = f"{job_name}-migrations"
@@ -420,7 +441,7 @@ def main() -> int:
         return 1
 
     platform_env = load_platform_env(args.env)
-    kubeconfig, temp_path = resolve_kubeconfig(platform_env, args.kubeconfig_b64_env)
+    kubeconfig, temp_path = resolve_kubeconfig(platform_env, args.env, args.kubeconfig_b64_env)
     requested_by = os.environ.get("GITLAB_USER_LOGIN") or os.environ.get("USER") or "unknown"
 
     try:
@@ -432,7 +453,7 @@ def main() -> int:
         dynamic: dict[str, Any] = {}
         extra_resources: list[dict[str, Any]] = []
         if spec.get("dynamic_builder") == "ctl":
-            dynamic, extra_resources = build_ctl_dynamic_resources(job_name, platform_env, service_platform_env)
+            dynamic, extra_resources = build_ctl_dynamic_resources(job_name, args.env, platform_env, service_platform_env)
         manifest = build_job_manifest(
             args.service, args.operation, args.revision, requested_by, spec, image, job_name=job_name, dynamic=dynamic
         )

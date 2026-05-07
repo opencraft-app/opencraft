@@ -9,7 +9,12 @@ RUNTIME_DIR = next(parent for parent in Path(__file__).resolve().parents if pare
 if str(RUNTIME_DIR) not in sys.path:
     sys.path.insert(0, str(RUNTIME_DIR))
 
-from gates.db_contract_verifier import build_check_script, build_job_manifest, max_migration_version  # noqa: E402
+from gates.db_contract_verifier import (  # noqa: E402
+    build_check_script,
+    build_job_manifest,
+    max_migration_version,
+    resolve_runtime_env,
+)
 
 
 class DbContractVerifierTests(unittest.TestCase):
@@ -64,6 +69,73 @@ class DbContractVerifierTests(unittest.TestCase):
         self.assertIn('"configMapRef": {"name": "subscription-config"}', payload)
         self.assertIn('"secretRef": {"name": "subscription-runtime-secrets"}', payload)
         self.assertNotIn('"value":', payload)
+
+    def test_ctl_runtime_env_can_be_injected_without_gitops_secret(self) -> None:
+        verifier = {
+            "service_platform_env_file": "argocd/services/ctl/{env}/ctl-platform.env",
+            "static_env": {
+                "MYSQL_PORT": "3306",
+                "CTL_DB": "ctl",
+                "CTL_DB_USER": "root",
+            },
+            "env_from_service_platform": {
+                "MYSQL_HOST": "CTL_TEST_MYSQL_HOST",
+            },
+            "env_from_platform": {
+                "CTL_DB_PASSWORD": "CTL_TEST_MYSQL_PASSWORD",
+            },
+            "node_selector_from_service_platform": {
+                "pool": "CTL_NODE_POOL",
+            },
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            (repo_root / "argocd/services/ctl/beijing-sandbox").mkdir(parents=True)
+            (repo_root / "argocd/services/ctl/beijing-sandbox/ctl-platform.env").write_text(
+                "CTL_TEST_MYSQL_HOST=10.15.224.4\nCTL_NODE_POOL=general-bj8\n"
+            )
+            (repo_root / "deploy/envs/beijing-sandbox").mkdir(parents=True)
+            (repo_root / "deploy/envs/beijing-sandbox/platform.env").write_text(
+                "CTL_TEST_MYSQL_PASSWORD=test-password\n"
+            )
+
+            env_values, node_selector = resolve_runtime_env(repo_root, "beijing-sandbox", verifier)
+
+        self.assertEqual(env_values["MYSQL_HOST"], "10.15.224.4")
+        self.assertEqual(env_values["CTL_DB_PASSWORD"], "test-password")
+        self.assertEqual(node_selector, {"pool": "general-bj8"})
+
+    def test_job_manifest_supports_runtime_env_and_host_network(self) -> None:
+        verifier = {
+            "namespace": "ctl",
+            "hostNetwork": True,
+            "dnsPolicy": "ClusterFirstWithHostNet",
+            "database_env": "CTL_DB",
+            "user_env": "CTL_DB_USER",
+            "password_env": "CTL_DB_PASSWORD",
+        }
+
+        manifest = build_job_manifest(
+            "ctl",
+            "beijing-sandbox",
+            verifier,
+            expected_version=16,
+            env_values={
+                "MYSQL_HOST": "10.15.224.4",
+                "MYSQL_PORT": "3306",
+                "CTL_DB": "ctl",
+                "CTL_DB_USER": "root",
+                "CTL_DB_PASSWORD": "test-password",
+            },
+            node_selector={"pool": "general-bj8"},
+        )
+        pod_spec = manifest["spec"]["template"]["spec"]
+
+        self.assertTrue(pod_spec["hostNetwork"])
+        self.assertEqual(pod_spec["dnsPolicy"], "ClusterFirstWithHostNet")
+        self.assertEqual(pod_spec["nodeSelector"], {"pool": "general-bj8"})
+        self.assertIn({"name": "MYSQL_HOST", "value": "10.15.224.4"}, pod_spec["containers"][0]["env"])
 
 
 if __name__ == "__main__":
