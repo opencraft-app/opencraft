@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from contracts.bundles import DEFAULT_MANIFEST_PATH, load_bundle, load_manifest
+from harness_ci.secrets import build_secret_manifest, redact, resolve_contract_secret_values, secret_env_ref
 
 
 def load_env_file(path: Path) -> dict[str, str]:
@@ -91,9 +92,15 @@ def copy_env_values(
     return values
 
 
-def resolve_runtime_env(repo_root: Path, env: str, verifier: Mapping[str, Any]) -> tuple[dict[str, str], dict[str, str]]:
+def resolve_runtime_env(
+    repo_root: Path,
+    env: str,
+    verifier: Mapping[str, Any],
+    db_contract: Mapping[str, Any] | None = None,
+) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
     service_platform_env = resolve_service_platform_env(repo_root, env, verifier)
     platform_env = resolve_platform_env(repo_root, env, verifier)
+    resolved_secrets = resolve_contract_secret_values(repo_root, env, db_contract or {})
 
     env_values = required_mapping(verifier.get("static_env"), "verifier.static_env")
     env_values.update(
@@ -112,6 +119,15 @@ def resolve_runtime_env(repo_root: Path, env: str, verifier: Mapping[str, Any]) 
             allow_runtime_fallback=True,
         )
     )
+    env_secret_values: dict[str, str] = {}
+    for target_key, resolver_name in required_mapping(
+        verifier.get("env_from_secret_resolver"),
+        "verifier.env_from_secret_resolver",
+    ).items():
+        value = resolved_secrets.get(resolver_name, "").strip()
+        if not value:
+            raise ValueError(f"missing secret resolver output {resolver_name} for {target_key}")
+        env_secret_values[target_key] = value
 
     node_selector = required_mapping(verifier.get("node_selector"), "verifier.node_selector")
     node_selector.update(
@@ -124,7 +140,7 @@ def resolve_runtime_env(repo_root: Path, env: str, verifier: Mapping[str, Any]) 
             str(verifier.get("service_platform_env_file")),
         )
     )
-    return env_values, node_selector
+    return env_values, node_selector, env_secret_values
 
 
 def resolve_kubeconfig(repo_root: Path, env: str, b64_env_name: str) -> tuple[str, Path | None]:
@@ -233,6 +249,7 @@ def build_job_manifest(
     expected_version: int,
     *,
     env_values: Mapping[str, str] | None = None,
+    env_secret_refs: Mapping[str, tuple[str, str]] | None = None,
     node_selector: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     job_name = f"db-contract-{service.replace('_', '-').replace('/', '-')}-{env}-{int(time.time())}"
@@ -257,6 +274,14 @@ def build_job_manifest(
         pod_spec["containers"][0]["env"] = [
             {"name": key, "value": value} for key, value in sorted(env_values.items())
         ]
+    if env_secret_refs:
+        pod_spec["containers"][0].setdefault("env", [])
+        pod_spec["containers"][0]["env"].extend(
+            [
+                {"name": key, "valueFrom": secret_env_ref(secret_name, secret_key)}
+                for key, (secret_name, secret_key) in sorted(env_secret_refs.items())
+            ]
+        )
     if verifier.get("hostNetwork") or verifier.get("host_network"):
         pod_spec["hostNetwork"] = True
         pod_spec["dnsPolicy"] = str(
@@ -300,6 +325,16 @@ def apply_manifest(kubeconfig: str, manifest: dict[str, Any]) -> None:
         raise RuntimeError(f"kubectl apply failed\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}")
 
 
+def delete_manifest(kubeconfig: str, manifest: dict[str, Any]) -> None:
+    result = kubectl(
+        kubeconfig,
+        ["delete", "-f", "-", "--ignore-not-found=true"],
+        input_text=json.dumps(manifest),
+    )
+    if result.returncode != 0:
+        print(f"warning: kubectl cleanup failed\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}", file=sys.stderr)
+
+
 def wait_for_job(kubeconfig: str, namespace: str, name: str, timeout_seconds: int) -> str:
     deadline = time.time() + timeout_seconds
     while time.time() < deadline:
@@ -313,6 +348,15 @@ def wait_for_job(kubeconfig: str, namespace: str, name: str, timeout_seconds: in
             return "failed"
         time.sleep(5)
     return "timeout"
+
+
+def collect_job_logs(kubeconfig: str, namespace: str, name: str, secret_values: Mapping[str, str]) -> str:
+    result = kubectl(
+        kubeconfig,
+        ["-n", namespace, "logs", f"job/{name}", "--all-containers=true", "--tail=200"],
+    )
+    combined = "\n".join(part for part in (result.stdout, result.stderr) if part.strip())
+    return redact(combined, secret_values)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -352,14 +396,37 @@ def main() -> int:
     if not verifier:
         raise ValueError(f"bundle {args.service} does not define db_contract.verifier")
     expected_version = max_migration_version(repo_root, str(contract.get("expected_migration_source") or ""))
-    env_values, node_selector = resolve_runtime_env(repo_root, args.env, verifier)
+    env_values, node_selector, env_secret_values = resolve_runtime_env(repo_root, args.env, verifier, contract)
+    secret_name = ""
+    env_secret_refs: dict[str, tuple[str, str]] = {}
+    secret_manifest: dict[str, Any] | None = None
+    if env_secret_values:
+        secret_name = f"db-contract-{args.service.replace('_', '-').replace('/', '-')}-{args.env}-{int(time.time())}-secrets"
+        secret_manifest = build_secret_manifest(
+            verifier["namespace"],
+            secret_name,
+            env_secret_values,
+            labels={
+                "gitops.clawhub.dev/service": args.service,
+                "gitops.clawhub.dev/env": args.env,
+                "gitops.clawhub.dev/operation": "db-contract-readiness",
+                "gitops.clawhub.dev/managed-by": "verify_db_contract.py",
+            },
+        )
+        env_secret_refs = {key: (secret_name, key) for key in env_secret_values}
     manifest_doc = build_job_manifest(
         args.service,
         args.env,
         verifier,
         expected_version,
         env_values=env_values,
+        env_secret_refs=env_secret_refs,
         node_selector=node_selector,
+    )
+    apply_manifest_doc = (
+        {"apiVersion": "v1", "kind": "List", "items": [secret_manifest, manifest_doc]}
+        if secret_manifest
+        else manifest_doc
     )
     summary = {
         "service": args.service,
@@ -367,18 +434,29 @@ def main() -> int:
         "namespace": verifier["namespace"],
         "job_name": manifest_doc["metadata"]["name"],
         "expected_schema_version": expected_version,
+        "auxiliary_resources": [secret_name] if secret_name else [],
         "status": "rendered",
     }
     temp_path: Path | None = None
     try:
         if args.apply:
             kubeconfig, temp_path = resolve_kubeconfig(repo_root, args.env, args.kubeconfig_b64_env)
-            apply_manifest(kubeconfig, manifest_doc)
+            apply_manifest(kubeconfig, apply_manifest_doc)
             summary["status"] = "applied"
             if args.wait:
                 status = wait_for_job(kubeconfig, verifier["namespace"], manifest_doc["metadata"]["name"], args.timeout_seconds)
                 summary["status"] = status
                 if status != "succeeded":
+                    logs = collect_job_logs(
+                        kubeconfig,
+                        verifier["namespace"],
+                        manifest_doc["metadata"]["name"],
+                        env_secret_values,
+                    )
+                    if logs:
+                        summary["logs"] = logs
+                        print("DB readiness logs:", file=sys.stderr)
+                        print(logs, file=sys.stderr)
                     write_summary(args.output_json, summary)
                     print(json.dumps(summary, ensure_ascii=False, indent=2))
                     return 1
@@ -386,5 +464,7 @@ def main() -> int:
         print(json.dumps(summary, ensure_ascii=False, indent=2))
         return 0
     finally:
+        if args.apply and "kubeconfig" in locals():
+            delete_manifest(kubeconfig, apply_manifest_doc)
         if temp_path is not None:
             temp_path.unlink(missing_ok=True)

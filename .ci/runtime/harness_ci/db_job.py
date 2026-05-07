@@ -21,6 +21,9 @@ import time
 from pathlib import Path
 from typing import Any
 
+from contracts.bundles import DEFAULT_MANIFEST_PATH, load_bundle, load_manifest
+from harness_ci.secrets import build_secret_manifest, redact, resolve_contract_secret_values, secret_env_ref
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
@@ -118,6 +121,16 @@ def parse_args() -> argparse.Namespace:
         "--image-override",
         default="",
         help="Optional explicit image override. When set, use this image instead of reading from the live Deployment.",
+    )
+    parser.add_argument(
+        "--bundle-service",
+        default="",
+        help="Release bundle service name. Defaults to --service.",
+    )
+    parser.add_argument(
+        "--bundle-manifest",
+        default=str(DEFAULT_MANIFEST_PATH),
+        help="Release bundle manifest used for DB secret resolver configuration.",
     )
     parser.add_argument(
         "--kubeconfig-b64-env",
@@ -297,24 +310,48 @@ def build_configmap_manifest(namespace: str, name: str, source_dir: Path) -> dic
 def build_ctl_dynamic_resources(
     job_name: str,
     env_name: str,
+    deploy_root: Path,
     platform_env: dict[str, str],
     service_platform_env: dict[str, str],
+    db_contract: dict[str, Any],
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     mysql_host = service_platform_env.get("CTL_TEST_MYSQL_HOST", "").strip()
+    resolved_secrets = resolve_contract_secret_values(deploy_root, env_name, db_contract)
+    resolver_name = str(db_contract.get("db_job_secret_resolver") or "").strip()
     mysql_password = platform_env.get("CTL_TEST_MYSQL_PASSWORD", "").strip() or runtime_secret_value(
         "CTL_TEST_MYSQL_PASSWORD", env_name
     )
+    if resolver_name:
+        mysql_password = resolved_secrets.get(resolver_name, "").strip() or mysql_password
     if not mysql_host:
         raise ValueError("missing CTL_TEST_MYSQL_HOST in ctl platform env")
     if not mysql_password:
-        raise ValueError("missing CTL_TEST_MYSQL_PASSWORD in platform.env, environment, or /etc/lightclaw-ci")
+        raise ValueError(
+            "missing ctl DB password from db_contract.secret_resolvers, platform.env, environment, or /etc/lightclaw-ci"
+        )
 
     dsn = f"mysql://root:{mysql_password}@tcp({mysql_host}:3306)/ctl?multiStatements=true"  # pragma: allowlist secret
     migrations_name = f"{job_name}-migrations"
+    secret_name = f"{job_name}-secrets"
     migrations = build_configmap_manifest("ctl", migrations_name, REPO_ROOT / "ctl" / "migrations")
+    secret = build_secret_manifest(
+        "ctl",
+        secret_name,
+        {
+            "MYSQL_ROOT_PASSWORD": mysql_password,
+            "CTL_MIGRATE_DSN": dsn,
+        },
+        labels={
+            "gitops.clawhub.dev/service": "ctl",
+            "gitops.clawhub.dev/operation": "migration",
+            "gitops.clawhub.dev/managed-by": "run_gitops_db_job.py",
+        },
+    )
 
     dynamic = {
-        "env": [{"name": "CTL_MIGRATE_DSN", "value": dsn}],
+        "env": [
+            {"name": "CTL_MIGRATE_DSN", "valueFrom": secret_env_ref(secret_name, "CTL_MIGRATE_DSN")},
+        ],
         "volumeMounts": [{"name": "migrations", "mountPath": "/migrations"}],
         "volumes": [{"name": "migrations", "configMap": {"name": migrations_name}}],
         "initContainers": [
@@ -327,7 +364,10 @@ def build_ctl_dynamic_resources(
                     {"name": "MYSQL_PORT", "value": "3306"},
                     {"name": "MYSQL_ROOT_USER", "value": "root"},
                     {"name": "CTL_DB", "value": "ctl"},
-                    {"name": "MYSQL_ROOT_PASSWORD", "value": mysql_password},
+                    {
+                        "name": "MYSQL_ROOT_PASSWORD",
+                        "valueFrom": secret_env_ref(secret_name, "MYSQL_ROOT_PASSWORD"),
+                    },
                 ],
                 "command": [
                     "/bin/sh",
@@ -336,8 +376,12 @@ def build_ctl_dynamic_resources(
                 ],
             }
         ],
+        "secretValues": {
+            "MYSQL_ROOT_PASSWORD": mysql_password,
+            "CTL_MIGRATE_DSN": dsn,
+        },
     }
-    return dynamic, [migrations]
+    return dynamic, [secret, migrations]
 
 
 def generate_job_name(service: str, operation: str) -> str:
@@ -459,6 +503,45 @@ def write_summary(path: str, summary: dict[str, Any]) -> None:
     output.write_text(json.dumps(summary, ensure_ascii=False, indent=2))
 
 
+def load_job_db_contract(bundle_manifest: Path, service: str, env_name: str) -> dict[str, Any]:
+    try:
+        manifest = load_manifest(bundle_manifest)
+        return dict(load_bundle(manifest, service, env_name).db_contract)
+    except KeyError:
+        return {}
+
+
+def kubectl_delete(kubeconfig: str, manifest: dict[str, Any]) -> None:
+    result = subprocess.run(
+        ["kubectl", "--kubeconfig", kubeconfig, "delete", "-f", "-", "--ignore-not-found=true"],
+        input=json.dumps(manifest),
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        print(f"warning: kubectl cleanup failed\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}", file=sys.stderr)
+
+
+def collect_job_logs(kubeconfig: str, namespace: str, name: str, secret_values: dict[str, str]) -> str:
+    result = subprocess.run(
+        [
+            "kubectl",
+            "--kubeconfig",
+            kubeconfig,
+            "-n",
+            namespace,
+            "logs",
+            f"job/{name}",
+            "--all-containers=true",
+            "--tail=200",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    combined = "\n".join(part for part in (result.stdout, result.stderr) if part.strip())
+    return redact(combined, secret_values)
+
+
 def main() -> int:
     global REPO_ROOT
 
@@ -475,21 +558,31 @@ def main() -> int:
     platform_env = load_platform_env(args.env)
     kubeconfig, temp_path = resolve_kubeconfig(platform_env, args.kubeconfig_b64_env, args.env)
     requested_by = os.environ.get("GITLAB_USER_LOGIN") or os.environ.get("USER") or "unknown"
+    bundle_service = args.bundle_service.strip() or args.service
+    db_contract = load_job_db_contract(Path(args.bundle_manifest).resolve(), bundle_service, args.env)
 
+    apply_manifest_doc: dict[str, Any] | None = None
+    manifest: dict[str, Any] | None = None
+    dynamic: dict[str, Any] = {}
     try:
         spec = SERVICE_SPECS[key]
         require_repo_payload_revision(spec, args.revision)
         service_platform_env = load_service_platform_env(spec, args.env, deploy_root)
         image = resolve_job_image(args, spec, kubeconfig, service_platform_env)
         job_name = generate_job_name(args.service, args.operation)
-        dynamic: dict[str, Any] = {}
         extra_resources: list[dict[str, Any]] = []
         if spec.get("dynamic_builder") == "ctl":
-            dynamic, extra_resources = build_ctl_dynamic_resources(job_name, args.env, platform_env, service_platform_env)
+            dynamic, extra_resources = build_ctl_dynamic_resources(
+                job_name,
+                args.env,
+                deploy_root,
+                platform_env,
+                service_platform_env,
+                db_contract,
+            )
         manifest = build_job_manifest(
             args.service, args.operation, args.revision, requested_by, spec, image, job_name=job_name, dynamic=dynamic
         )
-        apply_manifest_doc: dict[str, Any]
         if extra_resources:
             apply_manifest_doc = {"apiVersion": "v1", "kind": "List", "items": [*extra_resources, manifest]}
         else:
@@ -517,6 +610,16 @@ def main() -> int:
             result = wait_for_job(kubeconfig, spec["namespace"], manifest["metadata"]["name"], args.timeout_seconds)
             summary["status"] = result
             if result != "succeeded":
+                logs = collect_job_logs(
+                    kubeconfig,
+                    spec["namespace"],
+                    manifest["metadata"]["name"],
+                    dynamic.get("secretValues") or {},
+                )
+                if logs:
+                    summary["logs"] = logs
+                    print("DB job logs:", file=sys.stderr)
+                    print(logs, file=sys.stderr)
                 write_summary(args.output_json, summary)
                 print(json.dumps(summary, ensure_ascii=False, indent=2))
                 return 1
@@ -525,6 +628,8 @@ def main() -> int:
         print(json.dumps(summary, ensure_ascii=False, indent=2))
         return 0
     finally:
+        if args.apply and apply_manifest_doc is not None:
+            kubectl_delete(kubeconfig, apply_manifest_doc)
         if temp_path is not None:
             temp_path.unlink(missing_ok=True)
 

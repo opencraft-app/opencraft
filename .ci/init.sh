@@ -78,8 +78,10 @@ ci_require_gitops_validation_tools() {
 
 ci_ensure_db_job_tools() {
   ci_ensure_kubectl
-  ci_require_commands python3 kubectl
-  ci_log "db job tools found: kubectl=$(command -v kubectl)"
+  ci_ensure_sops
+  ci_require_commands python3 kubectl sops openssl
+  ci_prepare_sops_age_key
+  ci_log "db job tools found: kubectl=$(command -v kubectl) sops=$(command -v sops) openssl=$(command -v openssl)"
 }
 
 ci_ensure_gitops_validation_tools() {

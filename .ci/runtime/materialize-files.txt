@@ -90,6 +90,7 @@
 .ci/runtime/guards/changed_guards.py
 .ci/runtime/harness_ci/__init__.py
 .ci/runtime/harness_ci/db_job.py
+.ci/runtime/harness_ci/secrets.py
 .ci/runtime/support/__init__.py
 .ci/runtime/support/logging.py
 .ci/runtime/support/process.py
