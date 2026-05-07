@@ -55,6 +55,7 @@ import {
 } from "@tencent/tea-sdk-lightclaw";
 import { createMonoDebugExecAdapter } from "@/pages/marketing/openclaw-tat-adapter";
 import { installOpenClawConsoleHelpers } from "@/pages/marketing/openclaw-console-helpers";
+import { getOpenClawCreateLimitMessage } from "@/pages/marketing/openclaw-create-availability";
 import "@tencent/tea-sdk-lightclaw/styles";
 
 const DEFAULT_TAT_TERMINAL_TIMEOUT_SECONDS = 3600;
@@ -2444,6 +2445,11 @@ export const OpenClawSettingsPage = () => {
     () => bots.filter((bot) => bot.status !== "provisioning" && bot.status !== "deleting"),
     [bots],
   );
+  const createLimitMessage = useMemo(
+    () => getOpenClawCreateLimitMessage(bots, user.plan.maxBots),
+    [bots, user.plan.maxBots],
+  );
+  const canCreateBot = createLimitMessage === null;
   const provisioningBot = useMemo(() => {
     if (requestedCreatingBotId) {
       return bots.find((bot) => bot.id === requestedCreatingBotId && bot.status === "provisioning") ?? null;
@@ -2555,6 +2561,12 @@ export const OpenClawSettingsPage = () => {
 
   useEffect(() => {
     if (!creatingParam) return;
+    if (creatingParam === "true" && !requestedCreatingBotId && !provisioningBot && !botsLoading) {
+      setIsCreating(false);
+      setCreationError(null);
+      navigate("/dashboard/settings", { replace: true });
+      return;
+    }
     setIsCreating(true);
     setCreationError(null);
     if (requestedCreatingBotId) {
@@ -2564,7 +2576,7 @@ export const OpenClawSettingsPage = () => {
     if (provisioningBot) {
       setActiveTabId(provisioningBot.id);
     }
-  }, [creatingParam, requestedCreatingBotId, provisioningBot]);
+  }, [creatingParam, requestedCreatingBotId, provisioningBot, botsLoading, navigate]);
 
   /*
    * 刷新恢复：如果用户刷新后 URL 参数丢失，但后端仍有 Creating 实例，
@@ -2661,8 +2673,10 @@ export const OpenClawSettingsPage = () => {
   ]);
 
   const handleCreateNew = () => {
-    // 按钮显示逻辑已保证 bots.length < maxBots 时才可见，此处做二次防御
-    if (bots.length >= user.plan.maxBots) return;
+    if (createLimitMessage) {
+      setDirectCreateError(createLimitMessage);
+      return;
+    }
     if (isSubscribed) {
       // 已订阅：弹确认框，直接创建，不跳套餐页
       setDirectCreateError(null);
@@ -2863,7 +2877,7 @@ export const OpenClawSettingsPage = () => {
             >
               我的智能体伙伴
             </h1>
-            {!isCreating && visibleBots.length > 0 && bots.length < user.plan.maxBots && (
+            {!isCreating && visibleBots.length > 0 && canCreateBot && (
               <button
                 onClick={handleCreateNew}
                 className="flex items-center gap-2 rounded-full bg-black/90 px-5 py-2 text-base font-medium leading-normal text-white transition-all hover:opacity-90 active:scale-[0.98]"
@@ -3155,11 +3169,22 @@ export const OpenClawSettingsPage = () => {
             !isCreating && !botsLoading && visibleBots.length === 0 && (
               <div className="flex flex-col items-center justify-center py-20 text-center">
                 <p className="text-sm" style={{ color: "rgba(0,0,0,0.40)" }}>即刻创建你的第一个云端智能体伙伴</p>
+                {createLimitMessage && (
+                  <p className="mt-3 max-w-sm text-xs leading-relaxed" style={{ color: "rgba(0,0,0,0.48)" }}>
+                    {createLimitMessage}
+                  </p>
+                )}
                 <button
                   onClick={handleCreateNew}
-                  className="mt-6 inline-flex items-center gap-2 rounded-full bg-black/90 px-6 py-2.5 text-sm font-semibold text-white transition-all hover:opacity-90"
+                  disabled={!canCreateBot}
+                  className={cn(
+                    "mt-6 inline-flex items-center gap-2 rounded-full px-6 py-2.5 text-sm font-semibold text-white transition-all",
+                    canCreateBot
+                      ? "bg-black/90 hover:opacity-90"
+                      : "cursor-not-allowed bg-black/30",
+                  )}
                 >
-                  立即创建
+                  {canCreateBot ? "立即创建" : "暂不可创建"}
                 </button>
               </div>
             )
