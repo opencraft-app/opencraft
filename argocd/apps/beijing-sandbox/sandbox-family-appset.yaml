@@ -13,6 +13,7 @@ spec:
         revision: gitops
         files:
           - path: argocd/catalogs/sandbox/*/*.yaml
+          - path: argocd/catalogs/playground/beijing-playground/*/*.yaml
   template:
     metadata:
       name: '{{ .service }}-{{ .env }}'
