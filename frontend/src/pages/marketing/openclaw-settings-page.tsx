@@ -24,6 +24,7 @@ import {
   Download,
   Pencil,
   Trash2,
+  Wand2,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
@@ -45,9 +46,9 @@ import { avatarImageUrl } from "@/lib/avatar-image";
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
 import { readStoredAuthToken } from "@/repositories/http-repositories";
 import {
-  ModelCard,
-  ChannelCard,
-  SkillCard,
+  ModelPanel,
+  ChannelPanel,
+  SkillPanel,
   createLighthouseConfig,
   initI18n,
   type IInstanceInfo,
@@ -158,6 +159,10 @@ const SettingsNavbar = () => {
     </header>
   );
 };
+
+/* ─── 实例配置子页面类型（模型 / 通道 / 技能，放在单个 bot 内部切换） ─── */
+
+type SettingsSectionId = "model" | "channel" | "skill";
 
 /* ─── Section Card Wrapper ─── */
 
@@ -2447,6 +2452,10 @@ export const OpenClawSettingsPage = () => {
     return bots.find((bot) => bot.status === "provisioning") ?? null;
   }, [bots, requestedCreatingBotId]);
 
+
+  /* 实例内部的子页面切换：通道 / 模型 / 技能（通道置顶，作为默认进入项） */
+  const [activeSection, setActiveSection] = useState<SettingsSectionId>("channel");
+
   /* Tab 切换 */
   const [activeTabId, setActiveTabId] = useState((visibleBots[0]?.id ?? requestedCreatingBotId) || "creating");
   // bots 异步加载完成后，若当前 tab 无效则自动切换到第一个可展示 bot
@@ -3010,39 +3019,83 @@ export const OpenClawSettingsPage = () => {
                     // / getInstalledSkills 等），否则已配置项目列表永远是空。
                     const sdkIsDataReady = true;
 
+
+                    const sections: { id: SettingsSectionId; label: string; icon: React.ReactNode }[] = [
+                      { id: "channel", label: "通道", icon: <MessageCircle className="h-4 w-4" /> },
+                      { id: "model", label: "模型", icon: <Sparkles className="h-4 w-4" /> },
+                      { id: "skill", label: "技能", icon: <Wand2 className="h-4 w-4" /> },
+                    ];
+
                     return (
                       <div className="_lh-claw-bot-panel tea-mt-4n">
-                        <div className="_lh-claw-bot-panel__cards _lh-cards-grid">
-                          <ModelCard
-                            instance={sdkInstance}
-                            regionShortName={sdkRegionShortName}
-                            featureFlags={sdkFeatureFlags}
-                            productConfig={sdkProductConfig}
-                            isOperationDisabled={sdkIsOperationDisabled}
-                            operationDisabledContent={sdkOperationDisabledContent}
-                            isDataReady={sdkIsDataReady}
-                            operationDisabledTip={sdkOperationDisabledTip}
-                          />
-                          <ChannelCard
-                            instance={sdkInstance}
-                            regionShortName={sdkRegionShortName}
-                            featureFlags={sdkFeatureFlags}
-                            productConfig={sdkProductConfig}
-                            isOperationDisabled={sdkIsOperationDisabled}
-                            operationDisabledContent={sdkOperationDisabledContent}
-                            isDataReady={sdkIsDataReady}
-                            operationDisabledTip={sdkOperationDisabledTip}
-                          />
-                          <SkillCard
-                            instance={sdkInstance}
-                            regionShortName={sdkRegionShortName}
-                            featureFlags={sdkFeatureFlags}
-                            productConfig={sdkProductConfig}
-                            isDataReady={sdkIsDataReady}
-                            isOperationDisabled={sdkIsOperationDisabled}
-                            operationDisabledContent={sdkOperationDisabledContent}
-                            operationDisabledTip={sdkOperationDisabledTip}
-                          />
+                        <div className="flex flex-col gap-4 md:flex-row md:gap-6">
+                          {/* 左侧：竖向 tab 列表（仅在本实例内切换子页面） */}
+                          <nav
+                            aria-label="实例配置导航"
+                            className="flex flex-row gap-1 overflow-x-auto md:w-[160px] md:flex-shrink-0 md:flex-col md:overflow-visible"
+                          >
+                            {sections.map((section) => {
+                              const isActive = section.id === activeSection;
+                              return (
+                                <button
+                                  key={section.id}
+                                  type="button"
+                                  onClick={() => setActiveSection(section.id)}
+                                  aria-current={isActive ? "page" : undefined}
+                                  className={cn(
+                                    "flex flex-shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                                    "md:w-full",
+                                    isActive
+                                      ? "bg-black/[0.06] text-black/90"
+                                      : "text-black/60 hover:bg-black/[0.04] hover:text-black/90",
+                                  )}
+                                >
+                                  <span className="flex h-5 w-5 items-center justify-center">{section.icon}</span>
+                                  <span>{section.label}</span>
+                                </button>
+                              );
+                            })}
+                          </nav>
+
+                          {/* 右侧：当前选中的配置卡片（单卡撑满） */}
+                          <div className="_lh-claw-bot-panel__cards min-w-0 flex-1">
+                            {activeSection === "model" && (
+                              <ModelPanel
+                                instance={sdkInstance}
+                                regionShortName={sdkRegionShortName}
+                                featureFlags={sdkFeatureFlags}
+                                productConfig={sdkProductConfig}
+                                isOperationDisabled={sdkIsOperationDisabled}
+                                operationDisabledContent={sdkOperationDisabledContent}
+                                isDataReady={sdkIsDataReady}
+                                operationDisabledTip={sdkOperationDisabledTip}
+                              />
+                            )}
+                            {activeSection === "channel" && (
+                              <ChannelPanel
+                                instance={sdkInstance}
+                                regionShortName={sdkRegionShortName}
+                                featureFlags={sdkFeatureFlags}
+                                productConfig={sdkProductConfig}
+                                isOperationDisabled={sdkIsOperationDisabled}
+                                operationDisabledContent={sdkOperationDisabledContent}
+                                isDataReady={sdkIsDataReady}
+                                operationDisabledTip={sdkOperationDisabledTip}
+                              />
+                            )}
+                            {activeSection === "skill" && (
+                              <SkillPanel
+                                instance={sdkInstance}
+                                regionShortName={sdkRegionShortName}
+                                featureFlags={sdkFeatureFlags}
+                                productConfig={sdkProductConfig}
+                                isDataReady={sdkIsDataReady}
+                                isOperationDisabled={sdkIsOperationDisabled}
+                                operationDisabledContent={sdkOperationDisabledContent}
+                                operationDisabledTip={sdkOperationDisabledTip}
+                              />
+                            )}
+                          </div>
                         </div>
                       </div>
                     );
