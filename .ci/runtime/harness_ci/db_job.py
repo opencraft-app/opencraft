@@ -64,6 +64,7 @@ SERVICE_SPECS: dict[tuple[str, str], dict[str, Any]] = {
         "namespace": "ctl",
         "deployment": "ctl-api",
         "image": "migrate/migrate:v4.18.3",
+        "ignore_image_override": True,
         "platform_env_file": "argocd/services/ctl/{env}/ctl-platform.env",
         "dynamic_builder": "ctl",
         "requires_repo_revision": True,
@@ -256,7 +257,7 @@ def first_container_image(deploy: dict[str, Any]) -> str:
 def resolve_job_image(
     args: argparse.Namespace, spec: dict[str, Any], kubeconfig: str, service_platform_env: dict[str, str]
 ) -> str:
-    if args.image_override.strip():
+    if args.image_override.strip() and not spec.get("ignore_image_override"):
         return args.image_override.strip()
     fixed_image = spec.get("image", "").strip()
     if fixed_image:

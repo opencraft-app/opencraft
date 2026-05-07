@@ -8,6 +8,7 @@ Trigger note:
 - 2026-05-07: README-only change to rerun Beijing ctl release after DB readiness gate support landed
 - 2026-05-07: README-only change to rerun Beijing ctl release after CI DB password bootstrap was prepared
 - 2026-05-07: README-only change to rerun Beijing ctl release after CI DB password smoke passed
+- 2026-05-07: README-only change to rerun Beijing ctl release after DB job image override fix
 
 ## 架构概览
 

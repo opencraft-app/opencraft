@@ -3,6 +3,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 
@@ -44,6 +45,26 @@ class RunGitopsDbJobTests(unittest.TestCase):
                     "beijing-sandbox",
                     allow_ci_default_file=False,
                 )
+
+    def test_ctl_migration_uses_fixed_migrate_image_even_with_release_image_override(self) -> None:
+        image = db_job.resolve_job_image(
+            SimpleNamespace(image_override="example.com/ctl:release"),
+            db_job.SERVICE_SPECS[("ctl", "migration")],
+            kubeconfig="/tmp/unused",
+            service_platform_env={},
+        )
+
+        self.assertEqual(image, "migrate/migrate:v4.18.3")
+
+    def test_regular_db_job_still_uses_release_image_override(self) -> None:
+        image = db_job.resolve_job_image(
+            SimpleNamespace(image_override="example.com/payment:release"),
+            db_job.SERVICE_SPECS[("payment", "migration")],
+            kubeconfig="/tmp/unused",
+            service_platform_env={},
+        )
+
+        self.assertEqual(image, "example.com/payment:release")
 
 
 if __name__ == "__main__":
