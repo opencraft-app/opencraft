@@ -192,6 +192,12 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
         self.assertIn("Release-image-pin: ${PIN_IMAGE}", script)
         self.assertIn("Release-image-digests: ${GATE_IMAGE_DIGESTS_JSON}", script)
         self.assertIn('--image "$PIN_IMAGE"', script)
+        self.assertIn("validate_gate_env_file", script)
+        self.assertIn("GitOps 发布门禁结果包含非 dotenv 输出", script)
+        self.assertIn("refresh_promote_remote_tracking", script)
+        self.assertIn('git -C "$REPO_ROOT" fetch "$REMOTE_NAME" "+refs/heads/${PROMOTE_BRANCH}:${remote_ref}"', script)
+        self.assertIn('git -C "$REPO_ROOT" update-ref -d "$remote_ref"', script)
+        self.assertIn("refresh_promote_remote_tracking\ngit -C \"$REPO_ROOT\" push --force-with-lease", script)
 
     def test_pin_script_consumes_only_approved_gate_variables(self) -> None:
         script = (REPO_ROOT / ".ci/runtime/pin_image_to_gitops.sh").read_text()
