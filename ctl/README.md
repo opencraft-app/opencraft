@@ -5,6 +5,7 @@
 Trigger note:
 
 - 2026-04-26: README-only change to trigger the Beijing ctl image rebuild and GitOps promotion
+- 2026-05-07: README-only change to rerun Beijing ctl release after DB readiness gate support landed
 
 ## 架构概览
 
