@@ -2430,12 +2430,16 @@ export const OpenClawSettingsPage = () => {
   const [searchParams] = useSearchParams();
   const creatingParam = searchParams.get("creating")?.trim() ?? "";
   const requestedCreatingBotId = creatingParam && creatingParam !== "true" ? creatingParam : "";
-  const { bots, botsLoading, deleteBot, updateBot, user, refreshBots } = useOpenClaw();
+  const { bots, botsLoading, deleteBot, updateBot, user, refreshBots, isSubscribed, addBot } = useOpenClaw();
   const repositories = useRepositories();
 
   /* 创建 loading 状态 */
   const [isCreating, setIsCreating] = useState(Boolean(creatingParam));
   const [creationError, setCreationError] = useState<string | null>(null);
+  /* 已订阅用户直接创建 Agent 的确认弹窗 */
+  const [showCreateConfirm, setShowCreateConfirm] = useState(false);
+  const [directCreating, setDirectCreating] = useState(false);
+  const [directCreateError, setDirectCreateError] = useState<string | null>(null);
   const visibleBots = useMemo(
     () => bots.filter((bot) => bot.status !== "provisioning" && bot.status !== "deleting"),
     [bots],
@@ -2659,7 +2663,37 @@ export const OpenClawSettingsPage = () => {
   const handleCreateNew = () => {
     // 按钮显示逻辑已保证 bots.length < maxBots 时才可见，此处做二次防御
     if (bots.length >= user.plan.maxBots) return;
-    navigate("/subscribe");
+    if (isSubscribed) {
+      // 已订阅：弹确认框，直接创建，不跳套餐页
+      setDirectCreateError(null);
+      setShowCreateConfirm(true);
+    } else {
+      // 未订阅：跳转套餐订阅页
+      navigate("/subscribe");
+    }
+  };
+
+  const handleConfirmCreate = async () => {
+    setDirectCreating(true);
+    setDirectCreateError(null);
+    try {
+      const newBot = await addBot({
+        name: "我的Hermes",
+        personality: "默认设定",
+        personalityEmoji: "✨",
+        intro: "",
+        soulTemplateId: undefined,
+        status: "running",
+      });
+      setShowCreateConfirm(false);
+      // 进入页面内 loading 状态，带上新 bot id 供轮询定位
+      setIsCreating(true);
+      navigate(`/dashboard/settings?creating=${encodeURIComponent(newBot.id)}`, { replace: true });
+    } catch (err) {
+      setDirectCreateError(err instanceof Error ? err.message : "创建失败，请稍后重试");
+    } finally {
+      setDirectCreating(false);
+    }
   };
 
   const avatarUrl = activeBot ? getAvatarForBot(activeBot.id) : "";
@@ -2715,6 +2749,56 @@ export const OpenClawSettingsPage = () => {
                 确认删除
               </button>
               <button onClick={() => setShowDeleteConfirm(false)} className="py-2 text-sm transition-colors hover:opacity-70" style={{ color: "#999", background: "none", border: "none", cursor: "pointer" }}>
+                取消
+              </button>
+            </div>
+          </motion.div>
+        </div>,
+        document.body,
+      )}
+
+      {/* Create Confirm Dialog */}
+      {showCreateConfirm && createPortal(
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          onClick={() => { if (!directCreating) setShowCreateConfirm(false); }}
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            className="mx-4 w-full max-w-sm rounded-2xl border bg-white p-6 shadow-2xl"
+            style={{ borderColor: "rgba(238,238,238,0.4)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3" style={{ marginBottom: "20px" }}>
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "rgba(7,193,96,0.08)" }}>
+                <Sparkles className="h-5 w-5" style={{ color: "#07C160" }} />
+              </div>
+              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>创建新智能体</h3>
+            </div>
+            <p style={{ color: "#666", fontSize: "14px", lineHeight: 1.6, marginBottom: "20px" }}>
+              即刻创建全新的 Hermes Agent
+            </p>
+            {directCreateError && <p className="text-xs" style={{ color: "#DC2626", marginBottom: "12px" }}>{directCreateError}</p>}
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => void handleConfirmCreate()}
+                disabled={directCreating}
+                className="flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-all"
+                style={{
+                  backgroundColor: directCreating ? "#9CA3AF" : "var(--lw-fg)",
+                  cursor: directCreating ? "not-allowed" : "pointer",
+                }}
+              >
+                {directCreating && <Loader2 className="h-4 w-4 animate-spin" />}
+                {directCreating ? "创建中..." : "确认创建"}
+              </button>
+              <button
+                onClick={() => setShowCreateConfirm(false)}
+                disabled={directCreating}
+                className="py-2 text-sm transition-colors hover:opacity-70"
+                style={{ color: "#999", background: "none", border: "none", cursor: directCreating ? "not-allowed" : "pointer" }}
+              >
                 取消
               </button>
             </div>
