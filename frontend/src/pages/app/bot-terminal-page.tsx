@@ -14,6 +14,8 @@ import {
 import { useRepositories } from "@/contexts/repository-context";
 import type { BotTerminalSession } from "@/domain/types";
 
+const DEFAULT_TAT_TERMINAL_TIMEOUT_SECONDS = 3600;
+
 const decodeBase64 = (value: string) => {
   const binary = atob(value);
   const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
@@ -266,12 +268,14 @@ export const BotTerminalPage = () => {
             },
           }));
           authTimerRef.current = window.setTimeout(() => {
+            const timeoutSeconds = bootstrap.timeoutSeconds ?? DEFAULT_TAT_TERMINAL_TIMEOUT_SECONDS;
             socket.send(JSON.stringify({
               Type: "PtyStart",
               Data: {
                 SessionId: bootstrap.sessionId,
                 Cols: terminalRef.current?.cols ?? bootstrap.cols,
                 Rows: terminalRef.current?.rows ?? bootstrap.rows,
+                MaxIdleTime: timeoutSeconds,
               },
             }));
           }, 1000);
@@ -381,6 +385,7 @@ export const BotTerminalPage = () => {
                 <p><strong>Instance:</strong> {session?.instanceId ?? "-"}</p>
                 <p><strong>Pool:</strong> {session?.poolId ?? "-"}</p>
                 <p><strong>Session ID:</strong> {session?.sessionId ?? "-"}</p>
+                <p><strong>PTY Timeout:</strong> {session?.timeoutSeconds ?? DEFAULT_TAT_TERMINAL_TIMEOUT_SECONDS}s</p>
                 <p><strong>WS:</strong> <span className="break-all">{session?.wsUrl ?? "-"}</span></p>
                 {error ? <p className="text-[var(--danger)]"><strong>Error:</strong> {error}</p> : null}
               </div>

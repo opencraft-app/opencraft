@@ -46,17 +46,18 @@ type tatCommandResultResponse struct {
 }
 
 type tatSessionResponse struct {
-	SandboxID  string `json:"sandboxID"`
-	PoolID     string `json:"poolID"`
-	SessionID  string `json:"sessionId"`
-	Region     string `json:"region"`
-	InstanceID string `json:"instanceId"`
-	OwnerUin   string `json:"ownerUin"`
-	LoginUin   string `json:"loginUin"`
-	AppID      int64  `json:"appId"`
-	WsURL      string `json:"wsUrl"`
-	Cols       int    `json:"cols"`
-	Rows       int    `json:"rows"`
+	SandboxID      string `json:"sandboxID"`
+	PoolID         string `json:"poolID"`
+	SessionID      string `json:"sessionId"`
+	Region         string `json:"region"`
+	InstanceID     string `json:"instanceId"`
+	OwnerUin       string `json:"ownerUin"`
+	LoginUin       string `json:"loginUin"`
+	AppID          int64  `json:"appId"`
+	WsURL          string `json:"wsUrl"`
+	Cols           int    `json:"cols"`
+	Rows           int    `json:"rows"`
+	TimeoutSeconds int    `json:"timeoutSeconds"`
 }
 
 func registerTATRoutes(r gin.IRouter, h *handler) {
@@ -96,19 +97,23 @@ func (h *handler) postSandboxTATSession(c *gin.Context) {
 	if strings.TrimSpace(session.InstanceID) == "" {
 		session.InstanceID = inst.CloudID
 	}
+	if session.TimeoutSeconds <= 0 {
+		session.TimeoutSeconds = provider.DefaultTerminalTimeoutSeconds
+	}
 
 	c.JSON(http.StatusOK, tatSessionResponse{
-		SandboxID:  sb.ID,
-		PoolID:     pool.ID,
-		SessionID:  session.SessionID,
-		Region:     session.Region,
-		InstanceID: session.InstanceID,
-		OwnerUin:   session.OwnerUin,
-		LoginUin:   session.LoginUin,
-		AppID:      session.AppID,
-		WsURL:      session.WsURL,
-		Cols:       session.Cols,
-		Rows:       session.Rows,
+		SandboxID:      sb.ID,
+		PoolID:         pool.ID,
+		SessionID:      session.SessionID,
+		Region:         session.Region,
+		InstanceID:     session.InstanceID,
+		OwnerUin:       session.OwnerUin,
+		LoginUin:       session.LoginUin,
+		AppID:          session.AppID,
+		WsURL:          session.WsURL,
+		Cols:           session.Cols,
+		Rows:           session.Rows,
+		TimeoutSeconds: session.TimeoutSeconds,
 	})
 }
 

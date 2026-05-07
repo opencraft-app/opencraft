@@ -161,15 +161,16 @@ type CommandRunner interface {
 }
 
 type TerminalSession struct {
-	SessionID  string `json:"sessionId"`
-	Region     string `json:"region"`
-	InstanceID string `json:"instanceId"`
-	OwnerUin   string `json:"ownerUin"`
-	LoginUin   string `json:"loginUin"`
-	AppID      int64  `json:"appId"`
-	WsURL      string `json:"wsUrl"`
-	Cols       int    `json:"cols"`
-	Rows       int    `json:"rows"`
+	SessionID      string `json:"sessionId"`
+	Region         string `json:"region"`
+	InstanceID     string `json:"instanceId"`
+	OwnerUin       string `json:"ownerUin"`
+	LoginUin       string `json:"loginUin"`
+	AppID          int64  `json:"appId"`
+	WsURL          string `json:"wsUrl"`
+	Cols           int    `json:"cols"`
+	Rows           int    `json:"rows"`
+	TimeoutSeconds int    `json:"timeoutSeconds"`
 }
 
 // TerminalSessionStarter is an optional capability for cloud providers that can
