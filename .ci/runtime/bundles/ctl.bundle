@@ -6,10 +6,28 @@ bundles:
       mode: migration
       db_job_service: ctl
       migration_operation: migration
-      readiness_supported: false
       migration_paths:
       - ctl/migrations/**
       expected_migration_source: ctl/migrations
+      verifier:
+        namespace: ctl
+        image: mysql:8.0
+        hostNetwork: true
+        dnsPolicy: ClusterFirstWithHostNet
+        service_platform_env_file: argocd/services/ctl/{env}/ctl-platform.env
+        static_env:
+          MYSQL_PORT: "3306"
+          CTL_DB: ctl
+          CTL_DB_USER: root
+        env_from_service_platform:
+          MYSQL_HOST: CTL_TEST_MYSQL_HOST
+        env_from_platform:
+          CTL_DB_PASSWORD: CTL_TEST_MYSQL_PASSWORD
+        node_selector_from_service_platform:
+          pool: CTL_NODE_POOL
+        database_env: CTL_DB
+        user_env: CTL_DB_USER
+        password_env: CTL_DB_PASSWORD
     reason: CTL formal release bundle for Argo-managed rollout.
     allowed_paths:
     - ctl/k8s/base

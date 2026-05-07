@@ -30,6 +30,7 @@
 | `frontend-ds/` | 前端设计系统 | 前端 | [frontend-ds/AGENTS.md](frontend-ds/AGENTS.md) |
 | `nextgen-dashboard/` | 下一代控制台前端 | 前端 | [nextgen-dashboard/AGENTS.md](nextgen-dashboard/AGENTS.md) |
 | `gateway-dashboard/` | 网关控制台前端 | 前端 | [gateway-dashboard/AGENTS.md](gateway-dashboard/AGENTS.md) |
+| `cloudladdergateway/` | Go + Connect + Gin | 条件代理/Webhook 网关 | [cloudladdergateway/AGENTS.md](cloudladdergateway/AGENTS.md) |
 | `ai-gateway/` | Go | 后端服务 | [ai-gateway/AGENTS.md](ai-gateway/AGENTS.md) |
 | `service-gateway/` | Go | 后端服务 | [service-gateway/AGENTS.md](service-gateway/AGENTS.md) |
 | `admin-gateway/` | Go | 后端服务 | [admin-gateway/AGENTS.md](admin-gateway/AGENTS.md) |
