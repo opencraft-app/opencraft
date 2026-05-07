@@ -10,6 +10,7 @@ Trigger note:
 - 2026-05-07: README-only change to rerun Beijing ctl release after CI DB password smoke passed
 - 2026-05-07: README-only change to rerun Beijing ctl release after DB job image override fix
 - 2026-05-07: README-only change to verify dynamic SOPS DB secret resolution in Beijing ctl release
+- 2026-05-07: README-only change to rerun Beijing ctl release after DB gate tool env inheritance fix
 
 ## 架构概览
 
