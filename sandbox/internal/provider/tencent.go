@@ -29,17 +29,18 @@ import (
 
 // TencentConfig holds required parameters for CVM operations.
 type TencentConfig struct {
-	SecretID         string
-	SecretKey        string
-	Endpoint         string
-	VPCEndpoint      string
-	TATEndpoint      string
-	Region           string
-	InstanceType     string
-	KeyPairID        string
-	InstancePassword string
-	AddressType      string
-	PublicEgressMbps int64
+	SecretID               string
+	SecretKey              string
+	Endpoint               string
+	VPCEndpoint            string
+	TATEndpoint            string
+	Region                 string
+	InstanceType           string
+	KeyPairID              string
+	InstancePassword       string
+	AddressType            string
+	PublicEgressMbps       int64
+	TerminalTimeoutSeconds int
 	// IngressProxyBaseURL enables verifying private addresses via ingressproxy ip-backdoor.
 	// Example: http://ingressproxy-router (must have PROXY_ENABLE_IP_BACKDOOR=true).
 	IngressProxyBaseURL string
@@ -51,16 +52,27 @@ type TencentConfig struct {
 // Optional: TENCENT_KEY_PAIR_ID
 func NewTencentCloudProviderFromEnv() (*TencentCloudProvider, error) {
 	cfg := TencentConfig{
-		SecretID:            os.Getenv("TENCENT_SECRET_ID"),
-		SecretKey:           os.Getenv("TENCENT_SECRET_KEY"),
-		Endpoint:            strings.TrimSpace(os.Getenv("TENCENT_CVM_ENDPOINT")),
-		VPCEndpoint:         strings.TrimSpace(os.Getenv("TENCENT_VPC_ENDPOINT")),
-		TATEndpoint:         strings.TrimSpace(os.Getenv("TENCENT_TAT_ENDPOINT")),
-		Region:              os.Getenv("TENCENT_REGION"),
-		InstanceType:        os.Getenv("TENCENT_INSTANCE_TYPE"),
-		KeyPairID:           os.Getenv("TENCENT_KEY_PAIR_ID"),
-		InstancePassword:    os.Getenv("TENCENT_INSTANCE_PASSWORD"),
-		IngressProxyBaseURL: strings.TrimSpace(os.Getenv("INGRESSPROXY_BASE_URL")),
+		SecretID:               os.Getenv("TENCENT_SECRET_ID"),
+		SecretKey:              os.Getenv("TENCENT_SECRET_KEY"),
+		Endpoint:               strings.TrimSpace(os.Getenv("TENCENT_CVM_ENDPOINT")),
+		VPCEndpoint:            strings.TrimSpace(os.Getenv("TENCENT_VPC_ENDPOINT")),
+		TATEndpoint:            strings.TrimSpace(os.Getenv("TENCENT_TAT_ENDPOINT")),
+		Region:                 os.Getenv("TENCENT_REGION"),
+		InstanceType:           os.Getenv("TENCENT_INSTANCE_TYPE"),
+		KeyPairID:              os.Getenv("TENCENT_KEY_PAIR_ID"),
+		InstancePassword:       os.Getenv("TENCENT_INSTANCE_PASSWORD"),
+		TerminalTimeoutSeconds: DefaultTerminalTimeoutSeconds,
+		IngressProxyBaseURL:    strings.TrimSpace(os.Getenv("INGRESSPROXY_BASE_URL")),
+	}
+	if raw := strings.TrimSpace(os.Getenv("TENCENT_TAT_TERMINAL_TIMEOUT_SECONDS")); raw != "" {
+		v, err := strconv.Atoi(raw)
+		if err != nil {
+			return nil, fmt.Errorf("invalid TENCENT_TAT_TERMINAL_TIMEOUT_SECONDS %q: %w", raw, err)
+		}
+		if v <= 0 {
+			return nil, fmt.Errorf("invalid TENCENT_TAT_TERMINAL_TIMEOUT_SECONDS %q: must be > 0", raw)
+		}
+		cfg.TerminalTimeoutSeconds = v
 	}
 	if mbps := strings.TrimSpace(os.Getenv("TENCENT_PUBLIC_EGRESS_MBPS")); mbps != "" {
 		v, err := strconv.ParseInt(mbps, 10, 64)
@@ -198,6 +210,8 @@ const (
 	defaultTerminalRows = 32
 )
 
+const DefaultTerminalTimeoutSeconds = 3600
+
 func isRateLimitErr(err error) bool {
 	sdk, ok := err.(*tcerrors.TencentCloudSDKError)
 	return ok && sdk.Code == rateLimitCode
@@ -266,6 +280,9 @@ func (p *TencentCloudProvider) buildEnvdProcessTarget(address string) (targetURL
 
 // NewTencentCloudProvider constructs provider from config.
 func NewTencentCloudProvider(cfg TencentConfig) (*TencentCloudProvider, error) {
+	if cfg.TerminalTimeoutSeconds <= 0 {
+		cfg.TerminalTimeoutSeconds = DefaultTerminalTimeoutSeconds
+	}
 	cred := common.NewCredential(cfg.SecretID, cfg.SecretKey)
 	httpProfile := profile.NewHttpProfile()
 	if cfg.Endpoint != "" {
@@ -1315,15 +1332,16 @@ func (p *TencentCloudProvider) StartTerminalSession(ctx context.Context, region,
 	}
 
 	return TerminalSession{
-		SessionID:  payload.Response.SessionID,
-		Region:     region,
-		InstanceID: instanceID,
-		OwnerUin:   accountInfo.OwnerUin,
-		LoginUin:   accountInfo.LoginUin,
-		AppID:      accountInfo.AppID,
-		WsURL:      fmt.Sprintf("wss://%s.forward.tat-tc.tencent.cn/ws", region),
-		Cols:       defaultTerminalCols,
-		Rows:       defaultTerminalRows,
+		SessionID:      payload.Response.SessionID,
+		Region:         region,
+		InstanceID:     instanceID,
+		OwnerUin:       accountInfo.OwnerUin,
+		LoginUin:       accountInfo.LoginUin,
+		AppID:          accountInfo.AppID,
+		WsURL:          fmt.Sprintf("wss://%s.forward.tat-tc.tencent.cn/ws", region),
+		Cols:           defaultTerminalCols,
+		Rows:           defaultTerminalRows,
+		TimeoutSeconds: p.cfg.TerminalTimeoutSeconds,
 	}, nil
 }
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import concurrent.futures
 import shutil
 import subprocess
 import sys
@@ -75,36 +74,32 @@ def run(args: argparse.Namespace) -> ReleaseGateResult:
 
     with GateTempResources(repo_root) as resources:
         assert resources.worktree is not None
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-            config_future = executor.submit(
-                run_config_gate,
-                repo_root=repo_root,
-                worktree=resources.worktree,
-                runtime_dir=runtime_dir,
-                runtime_command_dir=runtime_command_dir,
-                remote_name=args.remote_name,
-                gitops_branch=args.gitops_branch,
-                bundle_service=args.bundle_service,
-                pin_targets=args.pin_targets,
-                env=args.env,
-                image=image_gate.pin_payload,
-                source_ref=args.source_ref,
-                deployed_at=args.deployed_at,
-                bootstrap_files=list(BOOTSTRAP_FILES),
-            )
-            db_future = executor.submit(
-                run_db_gate,
-                repo_root=repo_root,
-                runtime_command_dir=runtime_command_dir,
-                bundle_manifest=bundle_manifest,
-                service=args.bundle_service,
-                env=args.env,
-                source_ref=args.source_ref,
-                image=image_gate.pin_payload,
-                pin_targets=args.pin_targets,
-            )
-            config_status = config_future.result()
-            db_status, plan = db_future.result()
+        config_status = run_config_gate(
+            repo_root=repo_root,
+            worktree=resources.worktree,
+            runtime_dir=runtime_dir,
+            runtime_command_dir=runtime_command_dir,
+            remote_name=args.remote_name,
+            gitops_branch=args.gitops_branch,
+            bundle_service=args.bundle_service,
+            pin_targets=args.pin_targets,
+            env=args.env,
+            image=image_gate.pin_payload,
+            source_ref=args.source_ref,
+            deployed_at=args.deployed_at,
+            bootstrap_files=list(BOOTSTRAP_FILES),
+        )
+        db_status, plan = run_db_gate(
+            repo_root=repo_root,
+            gitops_worktree=resources.worktree,
+            runtime_command_dir=runtime_command_dir,
+            bundle_manifest=bundle_manifest,
+            service=args.bundle_service,
+            env=args.env,
+            source_ref=args.source_ref,
+            image=image_gate.pin_payload,
+            pin_targets=args.pin_targets,
+        )
 
     return ReleaseGateResult(
         image_status=image_gate.status,

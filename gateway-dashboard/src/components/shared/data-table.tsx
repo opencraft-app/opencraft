@@ -16,6 +16,13 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 interface DataTableProps<TData, TValue> {
@@ -24,7 +31,9 @@ interface DataTableProps<TData, TValue> {
   total?: number;
   page?: number;
   pageSize?: number;
+  pageSizeOptions?: number[];
   onPageChange?: (page: number) => void;
+  onPageSizeChange?: (pageSize: number) => void;
   isLoading?: boolean;
 }
 
@@ -34,7 +43,9 @@ export function DataTable<TData, TValue>({
   total = 0,
   page = 1,
   pageSize = 20,
+  pageSizeOptions,
   onPageChange,
+  onPageSizeChange,
   isLoading,
 }: DataTableProps<TData, TValue>) {
   const table = useReactTable({
@@ -103,29 +114,54 @@ export function DataTable<TData, TValue>({
         </Table>
       </div>
 
-      {totalPages > 1 && onPageChange && (
+      {onPageChange && total > 0 && (
         <div className="flex items-center justify-between py-4">
-          <p className="text-sm text-muted-foreground">
-            共 {total} 条 &middot; 第 {page} / {totalPages} 页
-          </p>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onPageChange(page - 1)}
-              disabled={page <= 1}
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onPageChange(page + 1)}
-              disabled={page >= totalPages}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
+          <div className="flex items-center gap-4">
+            <p className="text-sm text-muted-foreground">
+              共 {total} 条{totalPages > 1 && <> &middot; 第 {page} / {totalPages} 页</>}
+            </p>
+            {onPageSizeChange && pageSizeOptions && pageSizeOptions.length > 1 && (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">每页</span>
+                <Select
+                  value={String(pageSize)}
+                  onValueChange={(v) => onPageSizeChange(Number(v))}
+                >
+                  <SelectTrigger className="h-8 w-[70px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {pageSizeOptions.map((size) => (
+                      <SelectItem key={size} value={String(size)}>
+                        {size}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <span className="text-sm text-muted-foreground">条</span>
+              </div>
+            )}
           </div>
+          {totalPages > 1 && (
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onPageChange(page - 1)}
+                disabled={page <= 1}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onPageChange(page + 1)}
+                disabled={page >= totalPages}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
         </div>
       )}
     </div>

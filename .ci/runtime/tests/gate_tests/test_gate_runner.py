@@ -41,7 +41,7 @@ class GateRunnerTests(unittest.TestCase):
         self.assertNotIn("GATE_REQUIRES_DB_JOB", output)
         self.assertNotIn("GATE_RELEASE_DEPENDENCIES", output)
 
-    def test_runner_runs_image_gate_before_config_and_db(self) -> None:
+    def test_runner_runs_image_gate_then_projected_config_before_db(self) -> None:
         call_order: list[str] = []
 
         with self.patch_runner(call_order) as patched:
@@ -50,9 +50,12 @@ class GateRunnerTests(unittest.TestCase):
             patched["db"].assert_called_once()
             self.assertEqual(patched["config"].call_args.kwargs["image"], "example.com/payment@sha256:abc")
             self.assertEqual(patched["db"].call_args.kwargs["image"], "example.com/payment@sha256:abc")
+            self.assertEqual(
+                patched["db"].call_args.kwargs["gitops_worktree"],
+                patched["config"].call_args.kwargs["worktree"],
+            )
 
-        self.assertEqual(call_order[0], "image")
-        self.assertCountEqual(call_order[1:], ["config", "db"])
+        self.assertEqual(call_order, ["image", "config", "db"])
         self.assertEqual(result.image_status, "passed")
         self.assertEqual(result.image_pin_payload, "example.com/payment@sha256:abc")
         self.assertEqual(result.config_status, "passed")

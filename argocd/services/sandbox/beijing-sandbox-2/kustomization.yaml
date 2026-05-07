@@ -12,6 +12,8 @@ configMapGenerator:
   envs:
   - sandbox-platform.env
 patches:
+- path: delete-servicemonitor.yaml
+- path: delete-podmonitor.yaml
 - target:
     kind: Job
     name: sandbox-db-migrate-v2

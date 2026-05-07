@@ -17,7 +17,7 @@ on:
   manual: enabled
 
 concurrency:
-  group: mono2-master-release
+  group: mono2-service-release-subscription
   cancel-in-progress: false
   queue-length: 20
   queue-timeout-minutes: 480

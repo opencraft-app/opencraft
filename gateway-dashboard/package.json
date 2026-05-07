@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "node --experimental-strip-types --test src/**/*.test.ts",
     "portkey": "node node_modules/@portkey-ai/gateway/build/start-server.js --port 18787 --headless",
     "postinstall": "patch-package"
   },
