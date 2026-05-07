@@ -114,11 +114,11 @@ export function DataTable<TData, TValue>({
         </Table>
       </div>
 
-      {totalPages > 1 && onPageChange && (
+      {onPageChange && total > 0 && (
         <div className="flex items-center justify-between py-4">
           <div className="flex items-center gap-4">
             <p className="text-sm text-muted-foreground">
-              共 {total} 条 &middot; 第 {page} / {totalPages} 页
+              共 {total} 条{totalPages > 1 && <> &middot; 第 {page} / {totalPages} 页</>}
             </p>
             {onPageSizeChange && pageSizeOptions && pageSizeOptions.length > 1 && (
               <div className="flex items-center gap-2">
@@ -142,24 +142,26 @@ export function DataTable<TData, TValue>({
               </div>
             )}
           </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onPageChange(page - 1)}
-              disabled={page <= 1}
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onPageChange(page + 1)}
-              disabled={page >= totalPages}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
+          {totalPages > 1 && (
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onPageChange(page - 1)}
+                disabled={page <= 1}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onPageChange(page + 1)}
+                disabled={page >= totalPages}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
         </div>
       )}
     </div>
