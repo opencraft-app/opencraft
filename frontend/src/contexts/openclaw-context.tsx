@@ -151,7 +151,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
   useEffect(() => {
     if (session.currentSubscription?.status === "active") {
       setIsSubscribed(true);
-    } else if (session.currentSubscription && session.currentSubscription.status !== "active") {
+    } else if (session.currentSubscription) {
       setIsSubscribed(false);
     }
   }, [session.currentSubscription]);
