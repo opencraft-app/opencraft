@@ -2690,7 +2690,21 @@ export const OpenClawSettingsPage = () => {
       setIsCreating(true);
       navigate(`/dashboard/settings?creating=${encodeURIComponent(newBot.id)}`, { replace: true });
     } catch (err) {
-      setDirectCreateError(err instanceof Error ? err.message : "创建失败，请稍后重试");
+      const raw = err instanceof Error ? err.message : "";
+      // 将后端错误映射为用户友好文案
+      let friendlyMsg: string;
+      if (/quota|limit|exceed/i.test(raw)) {
+        friendlyMsg = "当前套餐的 Agent 配额已满，请升级套餐或删除现有 Agent 后重试。";
+      } else if (/resource|sandbox|pool|exhaust/i.test(raw)) {
+        friendlyMsg = "云端资源暂时紧张，请稍后再试。";
+      } else if (/timeout|timed?\s*out/i.test(raw)) {
+        friendlyMsg = "创建超时，请稍后重试。";
+      } else if (/network|fetch|connect/i.test(raw)) {
+        friendlyMsg = "网络异常，请检查网络后重试。";
+      } else {
+        friendlyMsg = raw || "创建失败，请稍后重试。";
+      }
+      setDirectCreateError(friendlyMsg);
     } finally {
       setDirectCreating(false);
     }
@@ -2791,7 +2805,7 @@ export const OpenClawSettingsPage = () => {
                 }}
               >
                 {directCreating && <Loader2 className="h-4 w-4 animate-spin" />}
-                {directCreating ? "创建中..." : "确认创建"}
+                {directCreating ? "创建中..." : directCreateError ? "重试" : "确认创建"}
               </button>
               <button
                 onClick={() => setShowCreateConfirm(false)}
