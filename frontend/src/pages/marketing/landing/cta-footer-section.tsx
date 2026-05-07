@@ -1,5 +1,4 @@
-import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { ArrowUpRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
@@ -20,7 +19,6 @@ export function CTAFooterSection({
 }) {
   const navigate = useNavigate();
   const t = useT();
-  const [showQR, setShowQR] = useState(false);
 
   const handleCreateClick = () => {
     if (!isLoggedIn) {
@@ -70,7 +68,9 @@ export function CTAFooterSection({
       />
 
       <div className="relative z-10 mx-auto flex max-w-[1440px] flex-col px-6 pb-6 pt-[56px] md:px-[120px] md:pb-10 md:pt-[100px]">
-        {/* 主内容：标题 + 按钮 */}
+        {/* 主内容：标题 + 按钮
+            - 桌面端：横向左右分布（标题左、按钮右）并居中对齐
+            - 移动端：垂直堆叠（标题上、按钮下） */}
         <div className="flex flex-col items-start gap-8 md:flex-row md:items-center md:justify-between md:gap-10">
           <motion.div variants={staggerContainer} initial="hidden" whileInView="visible" viewport={viewportConfig} className="flex max-w-[560px] flex-col gap-3 md:gap-4">
             <motion.h2 variants={titleReveal} className="font-heading text-[26px] font-medium leading-[1.4] text-black md:text-[36px] md:leading-[1.56]">
@@ -97,11 +97,13 @@ export function CTAFooterSection({
           </motion.div>
         </div>
 
-        {/* 版权信息 Footer（含加入交流群入口） */}
-        <div className="relative mt-10 border-t border-black/8 pt-5 md:mt-16 md:pt-6">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] leading-[1.6] tracking-[-0.013em] text-black/50 md:gap-[22px] md:text-xs md:leading-[1.5]">
+        {/* 版权信息 Footer
+            - 与主内容之间用分隔线隔开（不再穿过任何内容）
+            - 移动端上下留白更紧凑 */}
+        <div className="mt-10 border-t border-black/8 pt-5 md:mt-16 md:pt-6">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] leading-[1.6] tracking-[-0.013em] text-black/50 md:gap-[22px] md:text-xs md:leading-[1.5]">
             <span>
-              {t("© {{year}} LightVela 版权所有，由腾讯轻量云团队出品。", { year: new Date().getFullYear() })}
+              {t("© {{year}} LightVela 版权所有。", { year: new Date().getFullYear() })}
               {shouldShowICP() && (
                 <>
                   {" "}
@@ -119,36 +121,6 @@ export function CTAFooterSection({
               <a href="https://cloud.tencent.com/document/product/301/48034" target="_blank" rel="noopener noreferrer" className="transition-colors hover:text-black">
                 {t("服务条款")}
               </a>
-            </span>
-            {/* 加入交流群 — hover 展示二维码 */}
-            <span
-              className="relative"
-              onMouseEnter={() => setShowQR(true)}
-              onMouseLeave={() => setShowQR(false)}
-            >
-              <span className="cursor-pointer transition-colors hover:text-black">
-                {t("加入交流群")}
-              </span>
-              <AnimatePresence>
-                {showQR && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 4 }}
-                    transition={{ duration: 0.2, ease: "easeOut" }}
-                    className="absolute bottom-full left-1/2 z-20 mb-3 -translate-x-1/2 flex flex-col items-center gap-2 rounded-xl bg-white p-4 shadow-lg"
-                    style={{ width: "200px" }}
-                  >
-                    <img
-                      src="/assets/landing/about/community-qr.png"
-                      alt="加入交流群"
-                      className="rounded-lg"
-                      style={{ width: "168px", height: "168px" }}
-                    />
-                    <span className="whitespace-nowrap text-[11px] tracking-wider text-black/50">{t("扫码加入交流群")}</span>
-                  </motion.div>
-                )}
-              </AnimatePresence>
             </span>
           </div>
         </div>

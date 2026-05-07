@@ -19,7 +19,6 @@ import { OpenClawSuccessPage } from "@/pages/marketing/openclaw-success-page";
 import { OpenClawSettingsPage } from "@/pages/marketing/openclaw-settings-page";
 import { AccountPage } from "@/pages/marketing/account-page";
 import { AccountOrdersPage } from "@/pages/marketing/account-orders-page";
-import { AboutPage } from "@/pages/marketing/about-page";
 import { ChangelogPage } from "@/pages/marketing/changelog-page";
 import { DocsPage } from "@/pages/docs/docs-page";
 import { DocsLayout } from "@/components/docs/docs-layout";
@@ -44,10 +43,6 @@ export const router = createBrowserRouter([
       {
         path: "changelog",
         element: <ChangelogPage />,
-      },
-      {
-        path: "about",
-        element: <AboutPage />,
       },
       /* ── 产品文档（LightVela Docs） ──
          /docs             → 重定向到 /docs/overview

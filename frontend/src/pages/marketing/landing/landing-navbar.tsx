@@ -51,7 +51,6 @@ function useNavLinks(): NavLink[] {
     { label: t("概览"), href: "/" },
     { label: t("更新日志"), href: "/changelog" },
     { label: t("产品文档"), href: "/docs" },
-    { label: t("关于我们"), href: "/about" },
     /* 养虾博客：暂未开张，先隐藏入口；博客上线后去掉注释即可 */
     // { label: t("博客"), href: "#", comingSoon: true },
   ];
@@ -94,7 +93,7 @@ export function LandingNavbar({
           {navLinks.map((link) => {
             const active = isLinkActive(link.href, location.pathname);
             const { label } = link;
-            const className = `inline-flex items-center gap-1.5 text-[14px] transition-all duration-250 ease-out hover:text-black/90 hover:-translate-y-[2px] ${
+            const className = `inline-flex items-center gap-1.5 text-[14px] transition-colors duration-200 hover:text-black/90 ${
               active ? "font-semibold text-black/90" : "font-normal text-black/90"
             }`;
             const content = (
