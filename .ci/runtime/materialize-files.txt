@@ -75,6 +75,7 @@
 .ci/runtime/gitops/git.py
 .ci/runtime/gitops/gongfeng.py
 .ci/runtime/gitops/image_pin.py
+.ci/runtime/gitops/playground_environment_create.py
 .ci/runtime/gitops/playground_environment.py
 .ci/runtime/gitops/promotion_policy.py
 .ci/runtime/gitops/prod_manual_sync_validation.py
