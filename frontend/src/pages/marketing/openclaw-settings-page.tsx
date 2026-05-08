@@ -49,6 +49,7 @@ import {
   ChannelCard,
   SkillCard,
   createLighthouseConfig,
+  createLightClawScripts,
   initI18n,
   type IInstanceInfo,
   type IFeatureFlags,
@@ -56,6 +57,15 @@ import {
 import { createMonoDebugExecAdapter } from "@/pages/marketing/openclaw-tat-adapter";
 import { installOpenClawConsoleHelpers } from "@/pages/marketing/openclaw-console-helpers";
 import { getOpenClawCreateLimitMessage } from "@/pages/marketing/openclaw-create-availability";
+import {
+  getRestartBlockReason,
+  isActiveBotRestarting as computeIsActiveBotRestarting,
+  getActiveBotRestartError,
+  buildRestartErrorMessage,
+  setErrorForBot,
+  clearErrorForBot,
+  type RestartErrors,
+} from "@/pages/marketing/openclaw-restart-gateway";
 import "@tencent/tea-sdk-lightclaw/styles";
 
 const DEFAULT_TAT_TERMINAL_TIMEOUT_SECONDS = 3600;
@@ -2426,6 +2436,8 @@ const getBotStatusLabel = (status: OpenClawBot["status"]) => {
 
 /* ─── Main Settings Page ─── */
 
+const hermesGatewayCommands = createLightClawScripts({ regionShortName: "gz", agentType: "hermes" }).hermes.gateway;
+
 export const OpenClawSettingsPage = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -2551,6 +2563,46 @@ export const OpenClawSettingsPage = () => {
 
   /* Terminal 弹窗 */
   const [showTerminal, setShowTerminal] = useState(false);
+
+  /* ── 重启 Gateway ── */
+  // restartingBotIds: 正在重启的 bot ID 集合，支持多 bot 并行重启
+  const [restartingBotIds, setRestartingBotIds] = useState<Set<string>>(new Set());
+  // 错误按 bot 维度存储，多 bot 并行失败时各自保留错误信息
+  const [restartErrors, setRestartErrors] = useState<RestartErrors>(new Map());
+
+  // execDebugCommand 是同步等待命令执行完成的接口。
+  // 当返回 SUCCESS 时 `harness gateway restart` 已经执行完毕，
+  // gateway 进程重启不会改变实例的 running 状态，因此不需要轮询。
+  // 保留短暂视觉反馈（1.5s）让用户感知到操作已执行。
+  const RESTART_FEEDBACK_MS = 1500;
+
+  const handleRestartGateway = async () => {
+    if (getRestartBlockReason(activeBot, restartingBotIds)) return;
+    const targetBotId = activeBot!.id;
+    setRestartingBotIds((prev) => new Set(prev).add(targetBotId));
+    setRestartErrors((prev) => clearErrorForBot(prev, targetBotId));
+    try {
+      const result = await repositories.bots.execDebugCommand(targetBotId, hermesGatewayCommands.getRestartCommand());
+      const errorMsg = buildRestartErrorMessage(result);
+      if (errorMsg) {
+        setRestartErrors((prev) => setErrorForBot(prev, targetBotId, errorMsg));
+        setRestartingBotIds((prev) => { const next = new Set(prev); next.delete(targetBotId); return next; });
+        return;
+      }
+      // 命令已成功执行完毕，短暂保持视觉反馈后恢复
+      setTimeout(() => {
+        setRestartingBotIds((prev) => { const next = new Set(prev); next.delete(targetBotId); return next; });
+      }, RESTART_FEEDBACK_MS);
+    } catch (err) {
+      setRestartErrors((prev) => setErrorForBot(prev, targetBotId, err instanceof Error ? err.message : "重启失败"));
+      setRestartingBotIds((prev) => { const next = new Set(prev); next.delete(targetBotId); return next; });
+    }
+  };
+
+  // 当前 tab 的 bot 是否正在重启
+  const isActiveBotRestarting = computeIsActiveBotRestarting(activeBot, restartingBotIds);
+  // 当前 tab 是否展示错误
+  const activeBotRestartError = getActiveBotRestartError(activeBot, restartErrors);
 
   useEffect(() => {
     return installOpenClawConsoleHelpers({
@@ -3011,18 +3063,51 @@ export const OpenClawSettingsPage = () => {
                       )}
                       <div className="mt-1.5 flex flex-wrap items-center gap-x-5 gap-y-1">
                         <div className="flex items-center gap-1.5">
-                          <span
-                            className="inline-block h-2 w-2 rounded-full"
-                            style={{ background: getBotStatusColor(activeBot.status) }}
-                          />
-                          <span className="text-xs font-medium" style={{ color: "rgba(0,0,0,0.60)" }}>
-                            {getBotStatusLabel(activeBot.status)}
+                          {isActiveBotRestarting ? (
+                            <Loader2 className="h-3 w-3 animate-spin" style={{ color: "rgba(0,0,0,0.45)" }} />
+                          ) : (
+                            <span
+                              className="inline-block h-2 w-2 rounded-full"
+                              style={{ background: getBotStatusColor(activeBot.status) }}
+                            />
+                          )}
+                          <span className="font-medium" style={{ color: "rgba(0,0,0,0.60)", fontSize: 12 }}>
+                            {isActiveBotRestarting ? "重启中..." : getBotStatusLabel(activeBot.status)}
                           </span>
                         </div>
-                        <span className="text-xs" style={{ color: "rgba(0,0,0,0.40)" }}>
+                        {/* 重启链接 */}
+                        <button
+                          onClick={handleRestartGateway}
+                          disabled={isActiveBotRestarting || activeBot.status !== "running"}
+                          className="group transition-colors"
+                          style={{
+                            fontSize: 12,
+                            color: isActiveBotRestarting || activeBot.status !== "running" ? "rgba(0,0,0,0.25)" : "var(--lw-accent)",
+                            cursor: isActiveBotRestarting || activeBot.status !== "running" ? "not-allowed" : "pointer",
+                            background: "none",
+                            border: "none",
+                            padding: 0,
+                            position: "relative",
+                          }}
+                          title={isActiveBotRestarting ? "正在重启中" : "重启 Hermes Agent 网关"}
+                        >
+                          重启
+                          {isActiveBotRestarting && (
+                            <span
+                              className="pointer-events-none absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap rounded px-2 py-0.5 text-[10px] text-white opacity-0 transition-opacity group-hover:opacity-100"
+                              style={{ background: "rgba(0,0,0,0.75)" }}
+                            >
+                              正在重启中
+                            </span>
+                          )}
+                        </button>
+                        <span style={{ color: "rgba(0,0,0,0.40)", fontSize: 12 }}>
                           创建于 {new Date(activeBot.createdAt).toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric" })}
                         </span>
                       </div>
+                      {activeBotRestartError && (
+                        <p className="mt-1 text-xs" style={{ color: "#DC2626" }}>{activeBotRestartError}</p>
+                      )}
                     </div>
                     <button
                       onClick={() => { setDeleteInput(""); setShowDeleteConfirm(true); }}
