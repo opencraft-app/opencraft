@@ -3004,21 +3004,11 @@ export const OpenClawSettingsPage = () => {
                       runCommand: commandAdapter.runCommand,
                       getInvocationTask: commandAdapter.getInvocationTask,
                     };
-                    // 默认允许 UI 交互，不做前置在线态检查。
-                    // 用户点击「添加模型/通道/技能」时，SDK command executor
-                    // 会真正下发命令到 mono 后端；若 bot 当前状态不允许执行
-                    // （非 running、envd 未就绪等），后端会返回错误，
-                    // 交由 SDK 以命令执行失败的形式反馈到 UI。
-                    const sdkIsOperationDisabled = false;
-                    const sdkOperationDisabledContent = "";
-                    // **必须**为空字符串：SDK 内部 `useEffect` 判断条件是
-                    // `isDataReady && !operationDisabledTip`，只有 tip 为空时
-                    // 才会真正拉取当前 bot 的模型/通道/技能列表。
-                    const sdkOperationDisabledTip = "";
-                    // 设为 true 以触发 SDK 挂载时的数据加载（getOpenclawConfig
-                    // / getInstalledSkills 等），否则已配置项目列表永远是空。
-                    const sdkIsDataReady = true;
-
+                    // 操作禁用 / 数据加载相关 prop 全部走 SDK 默认值：
+                    //   isOperationDisabled=false / operationDisabledContent=""
+                    //   operationDisabledTip="" / isDataReady=true
+                    // 默认允许 UI 交互且立即拉数据，bot 不在线时由后端返回错误，
+                    // 由 SDK 以命令执行失败的形式反馈到 UI。
 
                     const sections: { id: SettingsSectionId; label: string; icon: React.ReactNode }[] = [
                       { id: "channel", label: "通道", icon: <MessageCircle className="h-4 w-4" /> },
@@ -3065,10 +3055,6 @@ export const OpenClawSettingsPage = () => {
                                 regionShortName={sdkRegionShortName}
                                 featureFlags={sdkFeatureFlags}
                                 productConfig={sdkProductConfig}
-                                isOperationDisabled={sdkIsOperationDisabled}
-                                operationDisabledContent={sdkOperationDisabledContent}
-                                isDataReady={sdkIsDataReady}
-                                operationDisabledTip={sdkOperationDisabledTip}
                               />
                             )}
                             {activeSection === "channel" && (
@@ -3077,10 +3063,6 @@ export const OpenClawSettingsPage = () => {
                                 regionShortName={sdkRegionShortName}
                                 featureFlags={sdkFeatureFlags}
                                 productConfig={sdkProductConfig}
-                                isOperationDisabled={sdkIsOperationDisabled}
-                                operationDisabledContent={sdkOperationDisabledContent}
-                                isDataReady={sdkIsDataReady}
-                                operationDisabledTip={sdkOperationDisabledTip}
                               />
                             )}
                             {activeSection === "skill" && (
@@ -3089,10 +3071,6 @@ export const OpenClawSettingsPage = () => {
                                 regionShortName={sdkRegionShortName}
                                 featureFlags={sdkFeatureFlags}
                                 productConfig={sdkProductConfig}
-                                isDataReady={sdkIsDataReady}
-                                isOperationDisabled={sdkIsOperationDisabled}
-                                operationDisabledContent={sdkOperationDisabledContent}
-                                operationDisabledTip={sdkOperationDisabledTip}
                               />
                             )}
                           </div>
