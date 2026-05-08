@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
+import os
 import re
 import shutil
+import socket
+import ssl
 import subprocess
 import sys
+import time
 import urllib.error
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Sequence
@@ -29,6 +35,15 @@ DEFAULT_FROM_ENV = "sandbox-bj-3"
 DEFAULT_CLUSTER_NAME = "beijing-playground"
 DEFAULT_PROJECT = "beijing-playground"
 LIGHTCLAW_DOMAIN = "lightclaw.tech"
+PLAYGROUND_DB_SERVICES: tuple[tuple[str, str], ...] = (
+    ("payment", "migration"),
+    ("lightclaw-auth", "migration"),
+    ("lightclaw-auth", "seed"),
+    ("ai-gateway", "migration"),
+    ("subscription", "migration"),
+    ("sandbox", "migration"),
+    ("ctl", "migration"),
+)
 
 
 @dataclass(frozen=True)
@@ -72,6 +87,26 @@ class PlaygroundClonePlan:
     tls_secret_name: str
     files: tuple[CloneFile, ...]
     replacements: tuple[tuple[str, str], ...]
+
+
+@dataclass(frozen=True)
+class DatabaseGrant:
+    database: str
+    username: str | None
+    password_secret: str | None
+    password_key: str | None
+
+
+@dataclass(frozen=True)
+class PlaygroundBootstrapPlan:
+    repo_root: Path
+    env: str
+    namespace: str
+    kubeconfig: Path
+    mysql_host: str
+    revision: str
+    grants: tuple[DatabaseGrant, ...]
+    db_jobs: tuple[tuple[str, str], ...]
 
 
 def parse_args() -> argparse.Namespace:
@@ -123,6 +158,49 @@ def parse_create_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def parse_bootstrap_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Bootstrap a playground environment after GitOps creates it: create DBs/grants, "
+            "run controlled DB jobs, restart workloads, and print a final diagnostic. "
+            "Default mode is dry-run; pass --apply for live changes."
+        )
+    )
+    parser.add_argument("--repo-root", type=Path, default=Path("."))
+    parser.add_argument("--env", required=True, help="Playground env, e.g. sandbox-bj-4")
+    parser.add_argument("--namespace")
+    parser.add_argument("--kubeconfig", type=Path)
+    parser.add_argument("--mysql-host", default="")
+    parser.add_argument("--revision", default="")
+    parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--skip-db-bootstrap", action="store_true")
+    parser.add_argument("--skip-db-job", action="append", default=[], help="Skip service/operation, e.g. ctl/migration")
+    parser.add_argument("--skip-restart", action="store_true")
+    parser.add_argument("--timeout-seconds", type=int, default=900)
+    parser.add_argument("--kubectl-retries", type=int, default=3)
+    return parser.parse_args(argv)
+
+
+def parse_contract_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Check a playground environment contract before or after GitOps merge. "
+            "Default checks are local/static and safe for CI. DNS/TLS/HTTP probes are opt-in."
+        )
+    )
+    parser.add_argument("--repo-root", type=Path, default=Path("."))
+    parser.add_argument("--env", required=True, help="Playground env, e.g. sandbox-bj-5")
+    parser.add_argument("--playground-root", default=DEFAULT_PLAYGROUND_ROOT)
+    parser.add_argument("--namespace")
+    parser.add_argument("--cluster-name", default=DEFAULT_CLUSTER_NAME)
+    parser.add_argument("--project", default=DEFAULT_PROJECT)
+    parser.add_argument("--check-dns", action="store_true")
+    parser.add_argument("--check-tls", action="store_true")
+    parser.add_argument("--check-http", action="store_true")
+    parser.add_argument("--timeout-seconds", type=float, default=8.0)
+    return parser.parse_args(argv)
+
+
 def fetch_origin_refs(repo_root: Path, refs: Sequence[str]) -> CheckResult:
     branches = sorted({ref.split("/", 1)[1] for ref in refs if ref.startswith("origin/") and "/" in ref})
     if not branches:
@@ -147,12 +225,43 @@ def env_slug(env: str) -> str:
     return env.replace("-", "_")
 
 
+def ctl_database_name(env: str) -> str:
+    if re.fullmatch(r"sandbox-bj-\d+", env):
+        return f"ctl_{env_slug(env)}"
+    return "ctl"
+
+
+def playground_database_grants(env: str) -> tuple[DatabaseGrant, ...]:
+    slug = env_slug(env)
+    return (
+        DatabaseGrant(f"ctl_{slug}", None, None, None),
+        DatabaseGrant(f"lightclaw_auth_{slug}", "lightclaw_auth", "lightclaw-auth-secrets", "LIGHTCLAW_AUTH_DB_PASSWORD"),
+        DatabaseGrant(f"lightclaw_payment_{slug}", "lightclaw_payment", "payment-runtime-secrets", "PAYMENT_DB_PASSWORD"),
+        DatabaseGrant(f"ai_gateway_{slug}", "ai_gateway", "ai-gateway-runtime-secrets", "AI_GATEWAY_DB_PASSWORD"),
+        DatabaseGrant(
+            f"lightclaw_subscription_{slug}",
+            "lightclaw_subscription",
+            "subscription-runtime-secrets",
+            "SUBSCRIPTION_DB_PASSWORD",
+        ),
+        DatabaseGrant(f"cvm_{slug}", None, "sandbox-runtime-secrets", "MYSQL_PASSWORD"),
+    )
+
+
 def default_namespace(env: str) -> str:
     return f"lightvela-playground-{env}"
 
 
 def default_api_host(env: str) -> str:
     return f"api-{env}.{LIGHTCLAW_DOMAIN}"
+
+
+def default_admin_host(env: str) -> str:
+    return f"admin-{env}.{LIGHTCLAW_DOMAIN}"
+
+
+def default_frontend_host(env: str) -> str:
+    return f"frontend.{env}.{LIGHTCLAW_DOMAIN}"
 
 
 def default_sandbox_host(env: str) -> str:
@@ -296,7 +405,7 @@ def build_playground_clone_plan(
 def render_clone_text(text: str, plan: PlaygroundClonePlan) -> str:
     for old, new in plan.replacements:
         text = text.replace(old, new)
-    return text
+    return "\n".join(line.rstrip() for line in text.splitlines()) + ("\n" if text.endswith("\n") else "")
 
 
 def render_clone_bytes(data: bytes, plan: PlaygroundClonePlan) -> bytes:
@@ -334,7 +443,75 @@ def validate_clone_plan(plan: PlaygroundClonePlan) -> list[str]:
         errors.append("no service sourcePath files would be generated")
     if not secret_targets:
         errors.append("no secret files would be copied")
+    service_dirs = {
+        item.target.parent.relative_to(plan.repo_root).as_posix()
+        for item in service_targets
+        if item.target.name == "kustomization.yaml"
+    }
+    source_residue_tokens = [
+        plan.from_env,
+        env_slug(plan.from_env),
+        default_namespace(plan.from_env),
+        *legacy_playground_domain_aliases(plan.from_env),
+        *legacy_playground_api_aliases(plan.from_env),
+    ]
+    short_env_match = re.fullmatch(r"sandbox-bj-(\d+)", plan.from_env)
+    if short_env_match:
+        source_residue_tokens.append(f"bj8{short_env_match.group(1)}")
+    for item in plan.files:
+        if item.source.name.endswith(".sops.yaml"):
+            continue
+        try:
+            rendered = (
+                render_catalog_bytes(item.source.read_bytes(), plan).decode()
+                if f"/{plan.playground_root.rstrip('/')}/{plan.from_env}/" in item.source.as_posix()
+                else render_clone_bytes(item.source.read_bytes(), plan).decode()
+            )
+        except UnicodeDecodeError:
+            continue
+        for token in source_residue_tokens:
+            if token and token in rendered:
+                errors.append(
+                    f"{item.target.relative_to(plan.repo_root)} still contains source environment residue {token!r}"
+                )
+                break
+        if f"/{plan.playground_root.rstrip('/')}/{plan.to_env}/" in item.target.as_posix():
+            try:
+                payload = load_yaml_mapping(rendered, item.target.as_posix())
+            except ValueError as exc:
+                errors.append(str(exc))
+                continue
+            if payload.get("env") != plan.to_env:
+                errors.append(f"{item.target.relative_to(plan.repo_root)} env must be {plan.to_env}")
+            if payload.get("namespace") != plan.namespace:
+                errors.append(f"{item.target.relative_to(plan.repo_root)} namespace must be {plan.namespace}")
+            if payload.get("project") != plan.project:
+                errors.append(f"{item.target.relative_to(plan.repo_root)} project must be {plan.project}")
+            if payload.get("destinationName") != plan.cluster_name:
+                errors.append(f"{item.target.relative_to(plan.repo_root)} destinationName must be {plan.cluster_name}")
+            source_path = str(payload.get("sourcePath") or "")
+            if source_path not in service_dirs:
+                errors.append(
+                    f"{item.target.relative_to(plan.repo_root)} sourcePath {source_path!r} is not in generated service dirs"
+                )
     return errors
+
+
+def clone_plan_warnings(plan: PlaygroundClonePlan) -> list[str]:
+    warnings: list[str] = []
+    secret_count = sum(1 for item in plan.files if f"/argocd/secrets/{plan.to_env}/" in item.target.as_posix())
+    if secret_count:
+        warnings.append(
+            "将复制源环境加密 SOPS secret；脚本不会解密 payload。强隔离环境必须重新生成 SSM/SOPS 后再发布。"
+        )
+    if plan.tls_secret_name:
+        warnings.append(
+            f"计划替换 sandbox TLS secret 为 {plan.tls_secret_name}；只有证书 SAN 覆盖 {plan.wildcard_host} 时才应启用 wildcard HTTPS，否则保持 HTTP-only。"
+        )
+    warnings.append(
+        "DNS、证书申请、qcloud cert id、Argo refresh、DB bootstrap 仍是外部动作；脚本只生成 GitOps closure。"
+    )
+    return warnings
 
 
 def write_clone_plan(plan: PlaygroundClonePlan, *, force: bool = False) -> list[Path]:
@@ -355,6 +532,703 @@ def write_clone_plan(plan: PlaygroundClonePlan, *, force: bool = False) -> list[
         shutil.copymode(item.source, item.target, follow_symlinks=False)
         written.append(item.target)
     return written
+
+
+def load_env_file(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    if not path.is_file():
+        return values
+    for raw_line in path.read_text().splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key.strip()] = value.strip().strip('"').strip("'")
+    return values
+
+
+def load_local_catalog_apps(repo_root: Path, catalog_path: str) -> list[CatalogApp]:
+    catalog_root = repo_root / catalog_path
+    if not catalog_root.is_dir():
+        raise FileNotFoundError(f"missing local catalog directory: {catalog_path}")
+    apps: list[CatalogApp] = []
+    for path in sorted(catalog_root.glob("*.yaml")):
+        payload = load_yaml_mapping(path.read_text(), path.as_posix())
+        missing = [
+            key
+            for key in ("service", "env", "project", "destinationName", "namespace", "sourcePath")
+            if not payload.get(key)
+        ]
+        if missing:
+            raise ValueError(f"{path.relative_to(repo_root)} missing required fields: {', '.join(missing)}")
+        service = str(payload["service"])
+        env = str(payload["env"])
+        apps.append(
+            CatalogApp(
+                app_name=f"{service}-{env}",
+                service=service,
+                env=env,
+                project=str(payload["project"]),
+                destination_name=str(payload["destinationName"]),
+                namespace=str(payload["namespace"]),
+                source_path=str(payload["sourcePath"]),
+                catalog_file=path.relative_to(repo_root).as_posix(),
+            )
+        )
+    return apps
+
+
+def check_playground_catalog_contract(
+    repo_root: Path,
+    env: str,
+    playground_root: str,
+    namespace: str,
+    project: str,
+    cluster_name: str,
+) -> tuple[CheckResult, list[CatalogApp]]:
+    catalog_path = catalog_dir(playground_root, env)
+    try:
+        apps = load_local_catalog_apps(repo_root, catalog_path)
+    except (FileNotFoundError, ValueError) as exc:
+        return (
+            CheckResult(
+                "Playground catalog contract",
+                "fail",
+                (str(exc),),
+                ("先用 create_playground_environment.py 生成 catalog，再提交 GitOps MR。",),
+            ),
+            [],
+        )
+    errors: list[str] = []
+    services = sorted({app.service for app in apps})
+    for app in apps:
+        if app.env != env:
+            errors.append(f"{app.catalog_file}: env={app.env}, expected={env}")
+        if app.namespace != namespace:
+            errors.append(f"{app.catalog_file}: namespace={app.namespace}, expected={namespace}")
+        if app.project != project:
+            errors.append(f"{app.catalog_file}: project={app.project}, expected={project}")
+        if app.destination_name != cluster_name:
+            errors.append(f"{app.catalog_file}: destinationName={app.destination_name}, expected={cluster_name}")
+        source_path = repo_root / app.source_path
+        if not source_path.is_dir():
+            errors.append(f"{app.catalog_file}: sourcePath does not exist: {app.source_path}")
+        if not app.source_path.endswith(f"/{env}"):
+            errors.append(f"{app.catalog_file}: sourcePath must end with /{env}: {app.source_path}")
+    if errors:
+        return (
+            CheckResult(
+                "Playground catalog contract",
+                "fail",
+                tuple(errors),
+                ("修复 catalog 的 env/namespace/project/destinationName/sourcePath 后重跑。",),
+            ),
+            apps,
+        )
+    return (
+        CheckResult(
+            "Playground catalog contract",
+            "ok",
+            (f"catalog apps={len(apps)} services={','.join(services)} namespace={namespace}",),
+        ),
+        apps,
+    )
+
+
+def public_service_source_paths(apps: Sequence[CatalogApp]) -> dict[str, str]:
+    public_services = {"frontend", "service-gateway", "admin-gateway", "sandbox"}
+    return {app.service: app.source_path for app in apps if app.service in public_services}
+
+
+def source_path_contains(repo_root: Path, source_path: str, needle: str) -> bool:
+    root = repo_root / source_path
+    if not root.is_dir():
+        return False
+    for path in root.rglob("*"):
+        if path.is_file() and needle in path.read_text(errors="ignore"):
+            return True
+    return False
+
+
+def source_path_has_direct_access(repo_root: Path, source_path: str) -> bool:
+    root = repo_root / source_path
+    if not root.is_dir():
+        return False
+    for path in root.rglob("*"):
+        if not path.is_file():
+            continue
+        text = path.read_text(errors="ignore")
+        if "direct-access" in text and ('value: "true"' in text or "value: 'true'" in text or "direct-access: \"true\"" in text):
+            return True
+    return False
+
+
+def source_path_removes_sandbox_wildcard_tls(repo_root: Path, source_path: str) -> bool:
+    root = repo_root / source_path
+    if not root.is_dir():
+        return False
+    kustomization = root / "kustomization.yaml"
+    if not kustomization.is_file():
+        return False
+    text = kustomization.read_text()
+    return "path: /spec/tls" in text and "path: /spec/loadBalancer/l7Listeners/1" in text
+
+
+def qcloud_cert_secret_files(repo_root: Path, source_path: str) -> list[str]:
+    root = repo_root / source_path
+    if not root.is_dir():
+        return []
+    files: list[str] = []
+    for path in sorted(root.rglob("*.yaml")):
+        if "qcloud_cert_id" in path.read_text(errors="ignore"):
+            files.append(path.relative_to(repo_root).as_posix())
+    return files
+
+
+def check_playground_network_contract(repo_root: Path, env: str, apps: Sequence[CatalogApp]) -> CheckResult:
+    expected_sandbox_host = default_sandbox_host(env)
+    expected_wildcard_host = default_wildcard_host(env)
+    sandbox_env_path = repo_root / "argocd/services/sandbox" / env / "sandbox-platform.env"
+    sandbox_env = load_env_file(sandbox_env_path)
+    errors: list[str] = []
+    warnings: list[str] = []
+    if not sandbox_env_path.is_file():
+        errors.append(f"missing {sandbox_env_path.relative_to(repo_root)}")
+    else:
+        public_host = sandbox_env.get("SANDBOX_INGRESSPROXY_PUBLIC_HOST")
+        healthcheck_host = sandbox_env.get("SANDBOX_INGRESSPROXY_HEALTHCHECK_HOST")
+        tls_secret = sandbox_env.get("SANDBOX_INGRESSPROXY_TLS_SECRET_NAME")
+        if public_host != expected_wildcard_host:
+            errors.append(f"{sandbox_env_path.relative_to(repo_root)} SANDBOX_INGRESSPROXY_PUBLIC_HOST={public_host}, expected={expected_wildcard_host}")
+        if healthcheck_host != expected_sandbox_host:
+            errors.append(f"{sandbox_env_path.relative_to(repo_root)} SANDBOX_INGRESSPROXY_HEALTHCHECK_HOST={healthcheck_host}, expected={expected_sandbox_host}")
+        sandbox_source_path = public_service_source_paths(apps).get("sandbox", "")
+        if tls_secret and not source_path_removes_sandbox_wildcard_tls(repo_root, sandbox_source_path):
+            warnings.append(
+                f"{sandbox_env_path.relative_to(repo_root)} configures wildcard TLS secret {tls_secret}; verify cert SAN covers {expected_wildcard_host}, otherwise keep wildcard HTTP-only."
+            )
+
+    for service, source_path in public_service_source_paths(apps).items():
+        if service == "sandbox":
+            continue
+        if not source_path_has_direct_access(repo_root, source_path):
+            warnings.append(
+                f"{source_path}: no direct-access annotation found in env sourcePath; if public CLB returns 504, compare this with working playground envs."
+            )
+        cert_files = qcloud_cert_secret_files(repo_root, source_path)
+        for cert_file in cert_files:
+            warnings.append(
+                f"{cert_file}: contains qcloud_cert_id; after DNS is created, run this checker with --check-tls to prove the certificate SAN covers the target host."
+            )
+    status = "fail" if errors else ("warn" if warnings else "ok")
+    lines = [*errors, *warnings] or ("network contract static checks passed",)
+    actions = ()
+    if errors:
+        actions = ("修复 sandbox platform env 和对应 sourcePath 后重跑。",)
+    elif warnings:
+        actions = ("这些是现场易错项；合入前确认 DNS/证书/Ingress live 证据。",)
+    return CheckResult("Playground network contract", status, tuple(lines), actions)
+
+
+def resolve_host(host: str, timeout_seconds: float) -> tuple[str, ...]:
+    old_timeout = socket.getdefaulttimeout()
+    socket.setdefaulttimeout(timeout_seconds)
+    try:
+        infos = socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)
+    finally:
+        socket.setdefaulttimeout(old_timeout)
+    return tuple(sorted({item[4][0] for item in infos}))
+
+
+def check_dns_contract(env: str, timeout_seconds: float) -> CheckResult:
+    hosts = (
+        default_api_host(env),
+        default_admin_host(env),
+        default_frontend_host(env),
+        default_sandbox_host(env),
+    )
+    lines: list[str] = []
+    failed = False
+    for host in hosts:
+        try:
+            addresses = resolve_host(host, timeout_seconds)
+            lines.append(f"{host}: {','.join(addresses)}")
+        except OSError as exc:
+            failed = True
+            lines.append(f"{host}: DNS lookup failed: {exc}")
+    return CheckResult(
+        "Playground DNS probe",
+        "fail" if failed else "ok",
+        tuple(lines),
+        ("补齐 DNS 记录后重跑；wildcard 记录需要单独用实例 host 验证。",) if failed else (),
+    )
+
+
+def tls_certificate_matches(host: str, timeout_seconds: float) -> str:
+    context = ssl.create_default_context()
+    with socket.create_connection((host, 443), timeout=timeout_seconds) as sock:
+        with context.wrap_socket(sock, server_hostname=host) as tls_sock:
+            cert = tls_sock.getpeercert()
+    ssl.match_hostname(cert, host)
+    subject_alt_names = ", ".join(value for key, value in cert.get("subjectAltName", ()) if key == "DNS")
+    return subject_alt_names or "-"
+
+
+def check_tls_contract(env: str, timeout_seconds: float) -> CheckResult:
+    hosts = (
+        default_api_host(env),
+        default_admin_host(env),
+        default_frontend_host(env),
+    )
+    lines: list[str] = []
+    failed = False
+    for host in hosts:
+        try:
+            sans = tls_certificate_matches(host, timeout_seconds)
+            lines.append(f"{host}: cert SAN OK ({sans})")
+        except Exception as exc:  # noqa: BLE001
+            failed = True
+            lines.append(f"{host}: TLS cert check failed: {exc}")
+    return CheckResult(
+        "Playground TLS probe",
+        "fail" if failed else "ok",
+        tuple(lines),
+        ("固定入口需要单域名证书；不要用不覆盖目标 host 的 wildcard 证书硬套。",) if failed else (),
+    )
+
+
+def http_status(url: str, timeout_seconds: float) -> str:
+    request = urllib.request.Request(url, headers={"User-Agent": "harness-ci-playground-check/1.0"})
+    try:
+        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+            return str(response.status)
+    except urllib.error.HTTPError as exc:
+        return str(exc.code)
+
+
+def check_http_contract(env: str, timeout_seconds: float) -> CheckResult:
+    probes = (
+        (f"https://{default_api_host(env)}/healthz", {"200"}),
+        (f"https://{default_admin_host(env)}/healthz", {"200"}),
+        (f"https://{default_frontend_host(env)}/", {"200", "301", "302"}),
+        (f"http://{default_sandbox_host(env)}/", {"200", "301", "302", "400", "404"}),
+    )
+    lines: list[str] = []
+    failed = False
+    for url, accepted in probes:
+        try:
+            status = http_status(url, timeout_seconds)
+            lines.append(f"{url}: HTTP {status}")
+            if status not in accepted:
+                failed = True
+        except Exception as exc:  # noqa: BLE001
+            failed = True
+            lines.append(f"{url}: probe failed: {exc}")
+    return CheckResult(
+        "Playground public endpoint probe",
+        "fail" if failed else "ok",
+        tuple(lines),
+        ("公网入口未达预期；按 DNS -> TLS -> Ingress direct-access -> endpoints 顺序排查。",) if failed else (),
+    )
+
+
+def check_playground_contract_main(argv: Sequence[str] | None = None) -> int:
+    args = parse_contract_args(argv)
+    repo_root = args.repo_root.resolve()
+    namespace = args.namespace or default_namespace(args.env)
+    results: list[CheckResult] = []
+    catalog_result, apps = check_playground_catalog_contract(
+        repo_root,
+        args.env,
+        args.playground_root,
+        namespace,
+        args.project,
+        args.cluster_name,
+    )
+    results.append(catalog_result)
+    results.append(check_playground_network_contract(repo_root, args.env, apps))
+    if args.check_dns:
+        results.append(check_dns_contract(args.env, args.timeout_seconds))
+    if args.check_tls:
+        results.append(check_tls_contract(args.env, args.timeout_seconds))
+    if args.check_http:
+        results.append(check_http_contract(args.env, args.timeout_seconds))
+
+    print(f"playground environment contract check: env={args.env} namespace={namespace}")
+    print(f"expected fixed hosts: api={default_api_host(args.env)} admin={default_admin_host(args.env)} frontend={default_frontend_host(args.env)} sandbox={default_sandbox_host(args.env)}")
+    print(f"expected wildcard host: {default_wildcard_host(args.env)}")
+    for result in results:
+        print_result(result)
+    failed = [result for result in results if result.status == "fail"]
+    if failed:
+        print("=" * 60)
+        print("检查结论：未通过。先修复 FAIL 项，再合入或继续 live 操作。")
+        return 1
+    warnings = [result for result in results if result.status == "warn"]
+    print("=" * 60)
+    if warnings:
+        print("检查结论：静态硬约束通过，但仍有 WARN 项需要人工/Agent 确认证据。")
+    else:
+        print("检查结论：playground contract 通过。")
+    return 0
+
+
+def run_local_git(repo_root: Path, *args: str) -> str:
+    result = subprocess.run(["git", *args], cwd=repo_root, check=True, capture_output=True, text=True)
+    return result.stdout.strip()
+
+
+def default_kubeconfig_for_env(env: str) -> Path:
+    candidates = (
+        Path("/etc/lightclaw-ci") / f"kubeconfig_{env_slug(env)}",
+        Path("/etc/lightclaw-ci/kubeconfig_beijing_sandbox_2"),
+    )
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return candidates[0]
+
+
+def kubectl_cmd(kubeconfig: Path, namespace: str, *args: str) -> list[str]:
+    return [
+        "kubectl",
+        "--request-timeout=60s",
+        "--kubeconfig",
+        str(kubeconfig),
+        "-n",
+        namespace,
+        *args,
+    ]
+
+
+def transient_kubectl_error(stderr: str) -> bool:
+    lowered = stderr.lower()
+    return "eof" in lowered or "context deadline exceeded" in lowered or "timeout" in lowered
+
+
+def kubectl_capture(kubeconfig: Path, namespace: str, *args: str, retries: int = 3) -> str:
+    last: subprocess.CalledProcessError | None = None
+    for attempt in range(1, max(retries, 1) + 1):
+        try:
+            result = subprocess.run(
+                kubectl_cmd(kubeconfig, namespace, *args),
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            return result.stdout
+        except subprocess.CalledProcessError as exc:
+            last = exc
+            stderr = exc.stderr.lower()
+            if not transient_kubectl_error(stderr) or attempt >= max(retries, 1):
+                break
+            time.sleep(5)
+    assert last is not None
+    raise last
+
+
+def kubectl_apply(kubeconfig: Path, manifest: dict[str, Any], retries: int = 3) -> str:
+    last: subprocess.CalledProcessError | None = None
+    for attempt in range(1, max(retries, 1) + 1):
+        try:
+            result = subprocess.run(
+                [
+                    "kubectl",
+                    "--request-timeout=60s",
+                    "--kubeconfig",
+                    str(kubeconfig),
+                    "apply",
+                    "--validate=false",
+                    "-f",
+                    "-",
+                ],
+                input=json.dumps(manifest),
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            return result.stdout
+        except subprocess.CalledProcessError as exc:
+            last = exc
+            stderr = exc.stderr.lower()
+            if not transient_kubectl_error(stderr) or attempt >= max(retries, 1):
+                break
+            time.sleep(5)
+    assert last is not None
+    raise last
+
+
+def kubectl_secret_key_ref(name: str, key: str) -> dict[str, Any]:
+    return {"secretKeyRef": {"name": name, "key": key}}
+
+
+def secret_value_from_cluster(kubeconfig: Path, namespace: str, secret: str, key: str, retries: int = 3) -> str:
+    encoded = kubectl_capture(kubeconfig, namespace, "get", "secret", secret, "-o", f"jsonpath={{.data.{key}}}", retries=retries)
+    return base64.b64decode(encoded.strip()).decode()
+
+
+def discover_mysql_host(kubeconfig: Path, namespace: str, retries: int = 3) -> str:
+    payload = kubectl_capture(kubeconfig, namespace, "get", "configmap", "-o", "json", retries=retries)
+    data = json.loads(payload)
+    hosts: set[str] = set()
+    for item in data.get("items") or []:
+        for key, value in (item.get("data") or {}).items():
+            if key.endswith("MYSQL_HOST") and value:
+                hosts.add(str(value))
+    if len(hosts) != 1:
+        raise ValueError(f"cannot infer a single MYSQL_HOST from namespace {namespace}; found={sorted(hosts)}")
+    return next(iter(hosts))
+
+
+def build_playground_bootstrap_plan(
+    repo_root: Path,
+    env: str,
+    namespace: str | None = None,
+    kubeconfig: Path | None = None,
+    mysql_host: str = "",
+    revision: str = "",
+) -> PlaygroundBootstrapPlan:
+    repo_root = repo_root.resolve()
+    namespace = namespace or default_namespace(env)
+    kubeconfig = (kubeconfig or default_kubeconfig_for_env(env)).resolve()
+    if not revision:
+        revision = run_local_git(repo_root, "rev-parse", "HEAD")
+    return PlaygroundBootstrapPlan(
+        repo_root=repo_root,
+        env=env,
+        namespace=namespace,
+        kubeconfig=kubeconfig,
+        mysql_host=mysql_host,
+        revision=revision,
+        grants=playground_database_grants(env),
+        db_jobs=PLAYGROUND_DB_SERVICES,
+    )
+
+
+def bootstrap_database_job_manifest(plan: PlaygroundBootstrapPlan) -> dict[str, Any]:
+    env: list[dict[str, Any]] = [
+        {"name": "MYSQL_HOST", "value": plan.mysql_host},
+        {"name": "ROOT_PASSWORD", "valueFrom": kubectl_secret_key_ref("lightclaw-auth-secrets", "MYSQL_ROOT_PASSWORD")},
+    ]
+    for index, grant in enumerate(plan.grants):
+        if grant.password_secret and grant.password_key:
+            env.append({"name": f"GRANT_PASSWORD_{index}", "valueFrom": kubectl_secret_key_ref(grant.password_secret, grant.password_key)})
+        if grant.database.startswith("cvm_"):
+            env.append({"name": f"GRANT_USER_{index}", "valueFrom": kubectl_secret_key_ref("sandbox-runtime-secrets", "MYSQL_USER")})
+
+    lines = [
+        'sql_escape() { printf "%s" "$1" | sed "s/\'/\'\'/g"; }',
+        "emit_sql() {",
+    ]
+    for index, grant in enumerate(plan.grants):
+        db_env = f"DB_{index}"
+        lines.append(f'  {db_env}="{grant.database}"')
+        lines.append(f'  echo "CREATE DATABASE IF NOT EXISTS \\`${{{db_env}}}\\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"')
+        if grant.username:
+            user_literal = grant.username
+            password_env = f"GRANT_PASSWORD_{index}"
+            lines.append(f'  P_{index}="$(sql_escape "${{{password_env}}}")"')
+            lines.append(f'  echo "CREATE USER IF NOT EXISTS \'{user_literal}\'@\'%\' IDENTIFIED BY \'${{P_{index}}}\';"')
+            lines.append(f'  echo "ALTER USER \'{user_literal}\'@\'%\' IDENTIFIED BY \'${{P_{index}}}\';"')
+            lines.append(f'  echo "GRANT ALL PRIVILEGES ON \\`${{{db_env}}}\\`.* TO \'{user_literal}\'@\'%\';"')
+        elif grant.database.startswith("cvm_"):
+            user_env = f"GRANT_USER_{index}"
+            password_env = f"GRANT_PASSWORD_{index}"
+            lines.append(f'  U_{index}="$(sql_escape "${{{user_env}}}")"')
+            lines.append(f'  P_{index}="$(sql_escape "${{{password_env}}}")"')
+            lines.append(f'  echo "CREATE USER IF NOT EXISTS \'${{U_{index}}}\'@\'%\' IDENTIFIED BY \'${{P_{index}}}\';"')
+            lines.append(f'  echo "ALTER USER \'${{U_{index}}}\'@\'%\' IDENTIFIED BY \'${{P_{index}}}\';"')
+            lines.append(f'  echo "GRANT ALL PRIVILEGES ON \\`${{{db_env}}}\\`.* TO \'${{U_{index}}}\'@\'%\';"')
+    lines.extend(["  echo 'FLUSH PRIVILEGES;'", "}", "emit_sql >/tmp/bootstrap.sql", 'mysql --host="$MYSQL_HOST" --port=3306 --user=root --password="$ROOT_PASSWORD" </tmp/bootstrap.sql', f'echo "db bootstrap {plan.env} ok"'])
+    return {
+        "apiVersion": "batch/v1",
+        "kind": "Job",
+        "metadata": {"name": f"db-bootstrap-{plan.env}", "namespace": plan.namespace},
+        "spec": {
+            "backoffLimit": 0,
+            "ttlSecondsAfterFinished": 86400,
+            "template": {
+                "spec": {
+                    "restartPolicy": "Never",
+                    "containers": [
+                        {
+                            "name": "mysql",
+                            "image": "mysql:8.0",
+                            "env": env,
+                            "command": ["/bin/sh", "-ec"],
+                            "args": ["\n".join(lines)],
+                        }
+                    ],
+                }
+            },
+        },
+    }
+
+
+def wait_for_kubernetes_job(kubeconfig: Path, namespace: str, name: str, timeout_seconds: int, retries: int) -> str:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        payload = kubectl_capture(kubeconfig, namespace, "get", "job", name, "-o", "json", retries=retries)
+        status = json.loads(payload).get("status") or {}
+        if status.get("succeeded", 0) > 0:
+            return "succeeded"
+        if status.get("failed", 0) > 0 and status.get("active", 0) == 0:
+            return "failed"
+        time.sleep(5)
+    return "timeout"
+
+
+def run_database_bootstrap(plan: PlaygroundBootstrapPlan, timeout_seconds: int, retries: int) -> None:
+    manifest = bootstrap_database_job_manifest(plan)
+    try:
+        kubectl_capture(
+            plan.kubeconfig,
+            plan.namespace,
+            "delete",
+            "job",
+            manifest["metadata"]["name"],
+            "--ignore-not-found=true",
+            retries=retries,
+        )
+    except subprocess.CalledProcessError as exc:
+        if not transient_kubectl_error(exc.stderr):
+            raise
+        print(f"警告：删除旧 DB bootstrap job 时遇到临时 apiserver 错误，继续幂等 apply：{exc.stderr.strip()}")
+    kubectl_apply(plan.kubeconfig, manifest, retries=retries)
+    result = wait_for_kubernetes_job(plan.kubeconfig, plan.namespace, manifest["metadata"]["name"], timeout_seconds, retries)
+    if result != "succeeded":
+        logs = kubectl_capture(plan.kubeconfig, plan.namespace, "logs", f"job/{manifest['metadata']['name']}", "--tail=80", retries=retries)
+        raise RuntimeError(f"database bootstrap job {manifest['metadata']['name']} {result}\n{logs}")
+
+
+def run_playground_db_jobs(plan: PlaygroundBootstrapPlan, skip: set[str], timeout_seconds: int, retries: int) -> None:
+    env = os.environ.copy()
+    env["DB_JOB_KUBECONFIG_FILE"] = str(plan.kubeconfig)
+    try:
+        env["CTL_TEST_MYSQL_PASSWORD"] = secret_value_from_cluster(
+            plan.kubeconfig, plan.namespace, "lightclaw-auth-secrets", "MYSQL_ROOT_PASSWORD", retries
+        )
+    except Exception:
+        pass
+    for service, operation in plan.db_jobs:
+        key = f"{service}/{operation}"
+        if key in skip or service in skip:
+            print(f"跳过 DB job：{key}")
+            continue
+        print(f"执行 DB job：{key}")
+        subprocess.run(
+            [
+                sys.executable,
+                str(plan.repo_root / ".ci/runtime/commands/run_gitops_db_job.py"),
+                "--repo-root",
+                str(plan.repo_root),
+                "--deploy-root",
+                str(plan.repo_root),
+                "--service",
+                service,
+                "--operation",
+                operation,
+                "--env",
+                plan.env,
+                "--revision",
+                plan.revision,
+                "--namespace",
+                plan.namespace,
+                "--kubectl-retries",
+                str(retries),
+                "--apply",
+                "--wait",
+                "--timeout-seconds",
+                str(timeout_seconds),
+            ],
+            cwd=plan.repo_root,
+            env=env,
+            check=True,
+        )
+
+
+PLAYGROUND_RESTART_SELECTORS = (
+    "app=ctl-api",
+    "app=ctl-bypass",
+    "app=ctl-service",
+    "app=gateway-backend",
+    "app=lightclaw-auth",
+    "app=nextgen-dashboard",
+    "app=payment",
+    "app=sandbox-api",
+    "app=sandbox-worker-sharded",
+    "app=subscription",
+)
+
+
+def restart_playground_workloads(plan: PlaygroundBootstrapPlan, retries: int) -> None:
+    for selector in PLAYGROUND_RESTART_SELECTORS:
+        print(f"重启 workload pods：{selector}")
+        kubectl_capture(plan.kubeconfig, plan.namespace, "delete", "pod", "-l", selector, "--ignore-not-found=true", retries=retries)
+
+
+def print_bootstrap_plan(plan: PlaygroundBootstrapPlan, *, apply: bool, skip: set[str]) -> None:
+    print("=" * 60)
+    print("Playground 环境运行时初始化")
+    print(f"模式：{'执行 live 修改' if apply else 'dry-run（不会改 live）'}")
+    print(f"环境：{plan.env}")
+    print(f"namespace：{plan.namespace}")
+    print(f"kubeconfig：{plan.kubeconfig}")
+    print(f"MySQL host：{plan.mysql_host or '自动从 ConfigMap 推导'}")
+    print(f"revision：{plan.revision}")
+    print("=" * 60)
+    print("将确保数据库/授权：")
+    for grant in plan.grants:
+        user = grant.username or ("sandbox-runtime-secrets/MYSQL_USER" if grant.database.startswith("cvm_") else "root-only")
+        print(f"- database={grant.database} user={user}")
+    print("将执行 DB job：")
+    for service, operation in plan.db_jobs:
+        key = f"{service}/{operation}"
+        suffix = "（跳过）" if key in skip or service in skip else ""
+        print(f"- {key}{suffix}")
+    print("将重启 DB schema 相关 workload pod。")
+    print("不会打印任何 Secret 值。")
+
+
+def bootstrap_playground_main(argv: Sequence[str] | None = None) -> int:
+    args = parse_bootstrap_args(argv)
+    plan = build_playground_bootstrap_plan(
+        repo_root=args.repo_root,
+        env=args.env,
+        namespace=args.namespace,
+        kubeconfig=args.kubeconfig,
+        mysql_host=args.mysql_host,
+        revision=args.revision,
+    )
+    skip = set(args.skip_db_job)
+    if not plan.mysql_host and args.apply:
+        plan = PlaygroundBootstrapPlan(
+            repo_root=plan.repo_root,
+            env=plan.env,
+            namespace=plan.namespace,
+            kubeconfig=plan.kubeconfig,
+            mysql_host=discover_mysql_host(plan.kubeconfig, plan.namespace, args.kubectl_retries),
+            revision=plan.revision,
+            grants=plan.grants,
+            db_jobs=plan.db_jobs,
+        )
+    print_bootstrap_plan(plan, apply=args.apply, skip=skip)
+    if not args.apply:
+        print("=" * 60)
+        print(f"确认后执行：python3 .ci/runtime/commands/bootstrap_playground_environment.py --env {plan.env} --apply")
+        return 0
+    if not plan.mysql_host:
+        raise ValueError("--mysql-host is required when it cannot be inferred from live ConfigMaps")
+    if args.skip_db_bootstrap:
+        print("跳过 DB bootstrap：按参数 --skip-db-bootstrap")
+    else:
+        run_database_bootstrap(plan, args.timeout_seconds, args.kubectl_retries)
+    run_playground_db_jobs(plan, skip, args.timeout_seconds, args.kubectl_retries)
+    if not args.skip_restart:
+        restart_playground_workloads(plan, args.kubectl_retries)
+    print("=" * 60)
+    print("Playground runtime bootstrap 完成。建议等待 1-2 分钟后运行 diagnose_playground_environment.py 验证 Argo/K8s。")
+    return 0
 
 
 def print_clone_plan(plan: PlaygroundClonePlan, *, write: bool, force: bool, written: Sequence[Path] = ()) -> None:
@@ -385,6 +1259,12 @@ def print_clone_plan(plan: PlaygroundClonePlan, *, write: bool, force: bool, wri
     print("将自动替换：env、namespace、sourcePath、app 名、DB name、Redis prefix、内部 service DNS、域名。")
     print("风险提示：将复制源环境的加密 SOPS secret；不会解密也不会修改敏感值。如需强隔离，必须重新生成 SSM/SOPS。")
     print("需要 Agent/人工确认：DNS/证书、SSM/SOPS 是否需要重新生成、是否触发 Argo refresh、是否纳入 drift audit。")
+    warnings = clone_plan_warnings(plan)
+    if warnings:
+        print("=" * 60)
+        print("Checker 提示：")
+        for warning in warnings:
+            print(f"- {warning}")
     if write:
         print("=" * 60)
         print(f"已写入文件：{len(written)}")

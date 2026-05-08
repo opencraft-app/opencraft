@@ -15,14 +15,19 @@ from tests.helpers import git
 from gitops.playground_environment import (
     CatalogApp,
     appset_file_globs,
+    bootstrap_database_job_manifest,
     build_playground_clone_plan,
+    build_playground_bootstrap_plan,
     check_appset_refs,
     check_catalog,
+    check_playground_contract_main,
     create_playground_main,
     fetch_origin_refs,
+    playground_database_grants,
     load_yaml_mapping,
     render_clone_text,
     target_conflicts,
+    validate_clone_plan,
     write_clone_plan,
 )
 
@@ -214,6 +219,88 @@ class PlaygroundEnvironmentTests(unittest.TestCase):
             self.assertEqual(source.read_bytes(), target.read_bytes())
             self.assertIn("sandbox-bj-3", target.read_text())
 
+    def test_create_playground_validation_rejects_unmapped_source_residue(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            create_playground_fixture(repo)
+            stale_file = repo / "argocd/services/ctl/sandbox-bj-3/stale-domain.yaml"
+            stale_file.write_text("host: admin-bj83.lightclaw.tech\n")
+
+            plan = build_playground_clone_plan(repo, "sandbox-bj-3", "sandbox-bj-4")
+            errors = validate_clone_plan(plan)
+
+        self.assertTrue(any("source environment residue" in error for error in errors), errors)
+
+    def test_create_playground_validation_rejects_catalog_sourcepath_without_generated_service(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            create_playground_fixture(repo)
+            broken_catalog = repo / "argocd/catalogs/playground/beijing-playground/sandbox-bj-3/ctl.yaml"
+            broken_catalog.write_text(
+                textwrap.dedent(
+                    """
+                    service: ctl
+                    env: sandbox-bj-3
+                    project: beijing-playground
+                    destinationName: beijing-playground
+                    namespace: lightvela-playground-sandbox-bj-3
+                    sourcePath: argocd/services/missing/sandbox-bj-3
+                    environmentModel: playground
+                    playgroundCluster: beijing-playground
+                    """
+                ).lstrip()
+            )
+
+            plan = build_playground_clone_plan(repo, "sandbox-bj-3", "sandbox-bj-4")
+            errors = validate_clone_plan(plan)
+
+        self.assertTrue(any("sourcePath" in error and "generated service dirs" in error for error in errors), errors)
+
+    def test_contract_checker_passes_static_contract_with_warnings(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            create_playground_fixture(repo)
+            write_clone_plan(build_playground_clone_plan(repo, "sandbox-bj-3", "sandbox-bj-4"))
+
+            stdout = StringIO()
+            with redirect_stdout(stdout):
+                exit_code = check_playground_contract_main(["--repo-root", str(repo), "--env", "sandbox-bj-4"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("Playground catalog contract: OK", stdout.getvalue())
+        self.assertIn("Playground network contract: WARN", stdout.getvalue())
+
+    def test_contract_checker_warns_for_qcloud_cert_ids_until_tls_probe_runs(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            create_playground_fixture(repo)
+            write_clone_plan(build_playground_clone_plan(repo, "sandbox-bj-3", "sandbox-bj-4"))
+            cert_file = repo / "argocd/services/service-gateway/sandbox-bj-4/tls-secrets.yaml"
+            cert_file.write_text("stringData:\n  qcloud_cert_id: copied-cert\n")
+
+            stdout = StringIO()
+            with redirect_stdout(stdout):
+                exit_code = check_playground_contract_main(["--repo-root", str(repo), "--env", "sandbox-bj-4"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("Playground network contract: WARN", stdout.getvalue())
+        self.assertIn("--check-tls", stdout.getvalue())
+
+    def test_contract_checker_rejects_wrong_sandbox_public_host(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            create_playground_fixture(repo)
+            write_clone_plan(build_playground_clone_plan(repo, "sandbox-bj-3", "sandbox-bj-4"))
+            sandbox_env = repo / "argocd/services/sandbox/sandbox-bj-4/sandbox-platform.env"
+            sandbox_env.write_text(sandbox_env.read_text().replace("*.sandbox-bj-4.lightclaw.tech", "*.sandbox-bj-3.lightclaw.tech"))
+
+            stdout = StringIO()
+            with redirect_stdout(stdout):
+                exit_code = check_playground_contract_main(["--repo-root", str(repo), "--env", "sandbox-bj-4"])
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("SANDBOX_INGRESSPROXY_PUBLIC_HOST", stdout.getvalue())
+
     def test_create_playground_can_set_project_and_cluster_independently(self) -> None:
         with TemporaryDirectory() as tmp:
             repo = Path(tmp)
@@ -257,6 +344,42 @@ class PlaygroundEnvironmentTests(unittest.TestCase):
         self.assertIn("sandbox-bj-4-lightclaw-tech-wildcard-tls", rendered)
         self.assertNotIn("sandbox-bj-3", rendered)
         self.assertNotIn("bj83", rendered)
+
+    def test_playground_database_grants_are_env_scoped(self) -> None:
+        grants = playground_database_grants("sandbox-bj-4")
+
+        self.assertEqual(
+            [grant.database for grant in grants],
+            [
+                "ctl_sandbox_bj_4",
+                "lightclaw_auth_sandbox_bj_4",
+                "lightclaw_payment_sandbox_bj_4",
+                "ai_gateway_sandbox_bj_4",
+                "lightclaw_subscription_sandbox_bj_4",
+                "cvm_sandbox_bj_4",
+            ],
+        )
+
+    def test_bootstrap_manifest_uses_secret_refs_without_plain_secret_values(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            git(repo, "init", "-b", "master")
+            git(repo, "commit", "--allow-empty", "-m", "root")
+
+            plan = build_playground_bootstrap_plan(
+                repo,
+                "sandbox-bj-4",
+                kubeconfig=Path("/tmp/kubeconfig"),
+                mysql_host="10.31.192.4",
+            )
+            manifest = bootstrap_database_job_manifest(plan)
+            rendered = yaml_dump_for_test(manifest)
+
+        self.assertIn("db-bootstrap-sandbox-bj-4", rendered)
+        self.assertIn("lightclaw-auth-secrets", rendered)
+        self.assertIn("PAYMENT_DB_PASSWORD", rendered)
+        self.assertIn("ctl_sandbox_bj_4", rendered)
+        self.assertNotIn("replace-with-secret", rendered)
 
 def create_playground_fixture(repo: Path) -> None:
     services = (
@@ -332,6 +455,12 @@ def create_playground_fixture(repo: Path) -> None:
     (secret_dir / "ai-gateway-runtime-secrets.sops.yaml").write_text("encrypted: sandbox-bj-3\n")
     (secret_dir / "tcr-ccr-clawhub-secret.sops.yaml").write_text("encrypted: registry\n")
     (secret_dir / "README.md").write_text("secret notes for sandbox-bj-3\n")
+
+
+def yaml_dump_for_test(payload: object) -> str:
+    import yaml
+
+    return yaml.safe_dump(payload, allow_unicode=True, sort_keys=False)
 
 
 if __name__ == "__main__":

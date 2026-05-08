@@ -5,7 +5,9 @@
 .ci/runtime/gitops_promotion_bootstrap.sh
 .ci/runtime/commands/__init__.py
 .ci/runtime/commands/audit_gitops_drift.py
+.ci/runtime/commands/bootstrap_playground_environment.py
 .ci/runtime/commands/build_release_image.py
+.ci/runtime/commands/check_playground_environment_contract.py
 .ci/runtime/commands/cleanup_gitops_promotion.py
 .ci/runtime/commands/create_playground_environment.py
 .ci/runtime/commands/diagnose_playground_environment.py
@@ -93,7 +95,6 @@
 .ci/runtime/guards/changed_guards.py
 .ci/runtime/harness_ci/__init__.py
 .ci/runtime/harness_ci/db_job.py
-.ci/runtime/harness_ci/secrets.py
 .ci/runtime/support/__init__.py
 .ci/runtime/support/logging.py
 .ci/runtime/support/process.py

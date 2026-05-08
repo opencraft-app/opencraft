@@ -5,6 +5,7 @@ Static GitOps invariants for sandbox ApplicationSet and direct Application model
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,6 +22,7 @@ from support.yaml import load_mapping  # noqa: E402
 APPSET_REL = "argocd/apps/beijing-sandbox/sandbox-family-appset.yaml"
 APPS_DIR_REL = "argocd/apps/beijing-sandbox"
 CATALOG_DIR_TEMPLATE = "argocd/catalogs/sandbox/{env}"
+PLAYGROUND_CATALOG_DIR_TEMPLATE = "argocd/catalogs/playground/beijing-playground/{env}"
 SUPPORTED_SANDBOX_ENVS = {"beijing-sandbox", "beijing-sandbox-2"}
 SUPPORTED_DIRECT_APP_ENVS = {"shprod"}
 ALLOWED_BEIJING_APP_FILES = {"argocd-runtime.yaml", "sandbox-family-appset.yaml"}
@@ -66,7 +68,13 @@ def path_is_covered(candidate: str, patterns: Iterable[str]) -> bool:
 
 
 def catalog_dir_rel(env: str) -> str:
+    if is_playground_env(env):
+        return PLAYGROUND_CATALOG_DIR_TEMPLATE.format(env=env)
     return CATALOG_DIR_TEMPLATE.format(env=env)
+
+
+def is_playground_env(env: str) -> bool:
+    return re.fullmatch(r"sandbox-bj-\d+", env) is not None
 
 
 def load_catalogs(repo_root: Path, env: str) -> tuple[list[CatalogEntry], list[str]]:
@@ -145,6 +153,8 @@ def validate_appset(repo_root: Path) -> list[str]:
     }
     if "argocd/catalogs/sandbox/*/*.yaml" not in file_paths:
         errors.append(f"{APPSET_REL}: git generator must read argocd/catalogs/sandbox/*/*.yaml")
+    if "argocd/catalogs/playground/beijing-playground/*/*.yaml" not in file_paths:
+        errors.append(f"{APPSET_REL}: git generator must read argocd/catalogs/playground/beijing-playground/*/*.yaml")
     return errors
 
 
@@ -293,7 +303,7 @@ def validate(repo_root: Path, env: str, bundle_manifest: Path) -> list[str]:
     if env in SUPPORTED_DIRECT_APP_ENVS:
         return validate_direct_apps(repo_root, env)
 
-    if env not in SUPPORTED_SANDBOX_ENVS:
+    if env not in SUPPORTED_SANDBOX_ENVS and not is_playground_env(env):
         return [f"unsupported env for AppSet static validation: {env}"]
 
     catalogs, catalog_errors = load_catalogs(repo_root, env)
@@ -301,7 +311,8 @@ def validate(repo_root: Path, env: str, bundle_manifest: Path) -> list[str]:
     errors.extend(validate_appset(repo_root))
     errors.extend(catalog_errors)
     errors.extend(validate_beijing_apps_dir(repo_root))
-    errors.extend(validate_publish_closure(repo_root, bundle_manifest, catalogs, env))
+    if env in SUPPORTED_SANDBOX_ENVS:
+        errors.extend(validate_publish_closure(repo_root, bundle_manifest, catalogs, env))
     return errors
 
 
