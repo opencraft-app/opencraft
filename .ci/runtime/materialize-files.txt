@@ -7,6 +7,8 @@
 .ci/runtime/commands/audit_gitops_drift.py
 .ci/runtime/commands/build_release_image.py
 .ci/runtime/commands/cleanup_gitops_promotion.py
+.ci/runtime/commands/create_playground_environment.py
+.ci/runtime/commands/diagnose_playground_environment.py
 .ci/runtime/commands/describe_gitops_promotion.py
 .ci/runtime/commands/generate_release_bundle_manifest.py
 .ci/runtime/commands/gitops_cleanup_source_branch.py
@@ -73,6 +75,7 @@
 .ci/runtime/gitops/git.py
 .ci/runtime/gitops/gongfeng.py
 .ci/runtime/gitops/image_pin.py
+.ci/runtime/gitops/playground_environment.py
 .ci/runtime/gitops/promotion_policy.py
 .ci/runtime/gitops/prod_manual_sync_validation.py
 .ci/runtime/gitops/projection.py
