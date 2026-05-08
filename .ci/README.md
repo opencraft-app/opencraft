@@ -222,6 +222,15 @@ GitOps promote 的可读发布视图由 `.ci/runtime/gitops/release_facts.py` �
 
 `sandbox-bj-N` / `beijing-playground` 新环境建设先按 GitOps closure 推进，再补外部 DNS/证书/SSM 动作。不要为了复用证书临时改变域名模型。
 
+playground 的运行时状态也应尽量 namespace-local：
+
+- `env-bootstrap` app 管理 `mysql` / `redis` 的 `StatefulSet + PVC + Service`。
+- 业务配置指向 `mysql.<namespace>.svc.cluster.local` 和 `redis.<namespace>.svc.cluster.local:6379`。
+- `create_playground_environment.py --write` 会为新环境生成最小 `playground-runtime-secrets.sops.yaml`，只承载 MySQL root 和 Redis password；缺 `sops` 或 age key 时直接失败。
+- `env-bootstrap` 通过 `ksops-runtime-secrets-generator.yaml` 引入该 secret；MySQL/Redis StatefulSet 与 DB bootstrap/root 路径不能再引用复制来的大 secret。
+- 删除 playground catalog 后，Argo prune namespace 内 workload 和 PVC，销毁语义比共享外部 MySQL/Redis 更干净。
+- 共享外部 MySQL/Redis 只适合 `beijing-sandbox` 这类预发布环境，不作为 `sandbox-bj-N` 的默认模型。
+
 固定入口默认是：
 
 - `api-sandbox-bj-N.lightclaw.tech`
@@ -248,7 +257,7 @@ GitOps promote 的可读发布视图由 `.ci/runtime/gitops/release_facts.py` �
 4. 配置固定入口单域名证书；wildcard HTTPS 没有合适证书时跳过。
 5. 合入 GitOps MR，让 sandbox-family AppSet 生成 apps。
 6. 等 Argo apps 到最新 `gitops` revision 的 `Synced / Healthy`。
-7. 确认 SOPS secret payload 已经改成目标环境，再执行 DB bootstrap / readiness。
+7. 确认 namespace-local MySQL/Redis Ready，且 `playground-runtime-secrets` 已生成并由 env-bootstrap 引入，再执行 DB bootstrap / readiness。
 8. 检查 pods、Service endpoints、Ingress Ready。
 9. 用公网 curl 验证固定 HTTPS 入口；wildcard HTTP 出现 `400 invalid host` 时，说明已到 ingressproxy，只是没有具体实例映射。
 
@@ -256,7 +265,7 @@ GitOps promote 的可读发布视图由 `.ci/runtime/gitops/release_facts.py` �
 
 - pod/endpoints 正常但公网 504：优先查 `ingress.cloud.tencent.com/direct-access: "true"`、TkeServiceConfig health check、NodePort/endpoints。
 - Argo app missing：先查 `sandbox-family-appset.yaml` 是否覆盖 playground catalog，再 refresh root app。
-- DB job 失败：先确认 namespace 和 SOPS payload，不要只看 secret 文件名或 metadata。
+- DB job 失败：先确认 namespace-local MySQL/Redis Ready、namespace、`playground-runtime-secrets` 和业务 SOPS payload，不要只看 secret 文件名或 metadata。
 - TLS 不通：先查证书 SAN 覆盖，不要反复切换 Ingress 配置。
 
 ## Playground 环境诊断脚手架

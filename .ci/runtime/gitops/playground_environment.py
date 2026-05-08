@@ -7,17 +7,19 @@ import base64
 import json
 import os
 import re
+import secrets
 import shutil
 import socket
 import ssl
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Callable, Iterable, Sequence
 
 import yaml
 
@@ -35,6 +37,9 @@ DEFAULT_FROM_ENV = "sandbox-bj-3"
 DEFAULT_CLUSTER_NAME = "beijing-playground"
 DEFAULT_PROJECT = "beijing-playground"
 LIGHTCLAW_DOMAIN = "lightclaw.tech"
+PLAYGROUND_RUNTIME_SECRET_NAME = "playground-runtime-secrets"
+PLAYGROUND_RUNTIME_SECRET_FILE = f"{PLAYGROUND_RUNTIME_SECRET_NAME}.sops.yaml"
+PLAYGROUND_RUNTIME_KSOPS_GENERATOR = "ksops-runtime-secrets-generator.yaml"
 PLAYGROUND_DB_SERVICES: tuple[tuple[str, str], ...] = (
     ("payment", "migration"),
     ("lightclaw-auth", "migration"),
@@ -70,6 +75,19 @@ class CheckResult:
 class CloneFile:
     source: Path
     target: Path
+
+
+@dataclass(frozen=True)
+class GeneratedFile:
+    target: Path
+    text: str
+
+
+@dataclass(frozen=True)
+class RenderedFile:
+    target: Path
+    data: bytes
+    mode_source: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -272,6 +290,22 @@ def default_wildcard_host(env: str) -> str:
     return f"*.{default_sandbox_host(env)}"
 
 
+def local_mysql_host(namespace: str) -> str:
+    return f"mysql.{namespace}.svc.cluster.local"
+
+
+def local_redis_addr(namespace: str) -> str:
+    return f"redis.{namespace}.svc.cluster.local:6379"
+
+
+def runtime_secret_target(plan: PlaygroundClonePlan) -> Path:
+    return plan.repo_root / "argocd/secrets" / plan.to_env / PLAYGROUND_RUNTIME_SECRET_FILE
+
+
+def runtime_secret_generator_target(plan: PlaygroundClonePlan) -> Path:
+    return plan.repo_root / "argocd/services/env-bootstrap" / plan.to_env / PLAYGROUND_RUNTIME_KSOPS_GENERATOR
+
+
 def tls_secret_name_for_host(host: str) -> str:
     return f"{host.replace('*.', '').replace('.', '-')}-wildcard-tls"
 
@@ -405,7 +439,36 @@ def build_playground_clone_plan(
 def render_clone_text(text: str, plan: PlaygroundClonePlan) -> str:
     for old, new in plan.replacements:
         text = text.replace(old, new)
+    text = apply_playground_runtime_overrides(text, plan)
     return "\n".join(line.rstrip() for line in text.splitlines()) + ("\n" if text.endswith("\n") else "")
+
+
+def apply_playground_runtime_overrides(text: str, plan: PlaygroundClonePlan) -> str:
+    """Point cloned playground services at namespace-local stateful dependencies."""
+
+    mysql_host = local_mysql_host(plan.namespace)
+    redis_addr = local_redis_addr(plan.namespace)
+    text = re.sub(
+        r"(?m)^([A-Z0-9_]*MYSQL_HOST=).*$",
+        rf"\g<1>{mysql_host}",
+        text,
+    )
+    text = re.sub(
+        r"(?m)^([A-Z0-9_]*REDIS_ADDR=).*$",
+        rf"\g<1>{redis_addr}",
+        text,
+    )
+    text = re.sub(
+        r"(?m)^(\s*[A-Z0-9_]*MYSQL_HOST:\s*).*$",
+        rf"\g<1>{mysql_host}",
+        text,
+    )
+    text = re.sub(
+        r"(?m)^(\s*[A-Z0-9_]*REDIS_ADDR:\s*).*$",
+        rf"\g<1>{redis_addr}",
+        text,
+    )
+    return text
 
 
 def render_clone_bytes(data: bytes, plan: PlaygroundClonePlan) -> bytes:
@@ -428,15 +491,298 @@ def render_catalog_bytes(data: bytes, plan: PlaygroundClonePlan) -> bytes:
     return text.encode()
 
 
+def generated_playground_files(plan: PlaygroundClonePlan) -> tuple[GeneratedFile, ...]:
+    return (
+        GeneratedFile(
+            plan.repo_root / catalog_dir(plan.playground_root, plan.to_env) / "env-bootstrap.yaml",
+            env_bootstrap_catalog_text(plan),
+        ),
+        GeneratedFile(
+            plan.repo_root / "argocd/services/env-bootstrap" / plan.to_env / "kustomization.yaml",
+            env_bootstrap_kustomization_text(plan),
+        ),
+        GeneratedFile(
+            runtime_secret_generator_target(plan),
+            env_bootstrap_runtime_secret_generator_text(plan),
+        ),
+        GeneratedFile(
+            plan.repo_root / "argocd/services/env-bootstrap" / plan.to_env / "namespace.yaml",
+            env_bootstrap_namespace_text(plan),
+        ),
+        GeneratedFile(
+            plan.repo_root / "argocd/services/env-bootstrap" / plan.to_env / "serviceaccount.yaml",
+            env_bootstrap_serviceaccount_text(plan),
+        ),
+        GeneratedFile(
+            plan.repo_root / "argocd/services/env-bootstrap" / plan.to_env / "mysql.yaml",
+            mysql_stateful_runtime_text(plan),
+        ),
+        GeneratedFile(
+            plan.repo_root / "argocd/services/env-bootstrap" / plan.to_env / "redis.yaml",
+            redis_stateful_runtime_text(plan),
+        ),
+    )
+
+
+def env_bootstrap_catalog_text(plan: PlaygroundClonePlan) -> str:
+    return yaml.safe_dump(
+        {
+            "service": "env-bootstrap",
+            "env": plan.to_env,
+            "project": plan.project,
+            "destinationName": plan.cluster_name,
+            "namespace": plan.namespace,
+            "sourcePath": f"argocd/services/env-bootstrap/{plan.to_env}",
+            "environmentModel": "playground",
+            "playgroundCluster": plan.cluster_name,
+        },
+        allow_unicode=True,
+        sort_keys=False,
+    )
+
+
+def env_bootstrap_kustomization_text(plan: PlaygroundClonePlan) -> str:
+    resources = ["namespace.yaml", "serviceaccount.yaml", "mysql.yaml", "redis.yaml"]
+    generators = [PLAYGROUND_RUNTIME_KSOPS_GENERATOR]
+    if any(item.target.name == "ksops-pull-secret-generator.yaml" for item in plan.files):
+        generators.insert(0, "ksops-pull-secret-generator.yaml")
+    return yaml.safe_dump(
+        {
+            "apiVersion": "kustomize.config.k8s.io/v1beta1",
+            "kind": "Kustomization",
+            "namespace": plan.namespace,
+            "resources": resources,
+            "generators": generators,
+        },
+        allow_unicode=True,
+        sort_keys=False,
+    )
+
+
+def env_bootstrap_runtime_secret_generator_text(plan: PlaygroundClonePlan) -> str:
+    return yaml.safe_dump(
+        {
+            "apiVersion": "viaduct.ai/v1",
+            "kind": "ksops",
+            "metadata": {"name": PLAYGROUND_RUNTIME_SECRET_NAME},
+            "files": [f"../../../secrets/{plan.to_env}/{PLAYGROUND_RUNTIME_SECRET_FILE}"],
+        },
+        allow_unicode=True,
+        sort_keys=False,
+    )
+
+
+def env_bootstrap_namespace_text(plan: PlaygroundClonePlan) -> str:
+    return yaml.safe_dump(
+        {
+            "apiVersion": "v1",
+            "kind": "Namespace",
+            "metadata": {
+                "name": plan.namespace,
+                "labels": {
+                    "lightclaw.dev/environment-model": "playground",
+                    "lightclaw.dev/environment-name": plan.to_env,
+                },
+            },
+        },
+        allow_unicode=True,
+        sort_keys=False,
+    )
+
+
+def env_bootstrap_serviceaccount_text(plan: PlaygroundClonePlan) -> str:
+    return yaml.safe_dump(
+        {
+            "apiVersion": "v1",
+            "kind": "ServiceAccount",
+            "metadata": {
+                "name": "default",
+                "namespace": plan.namespace,
+            },
+            "imagePullSecrets": [{"name": "tcr-bj8-lightclaw"}, {"name": "tcr-ccr-clawhub"}],
+        },
+        allow_unicode=True,
+        sort_keys=False,
+    )
+
+
+def mysql_stateful_runtime_text(plan: PlaygroundClonePlan) -> str:
+    return yaml.safe_dump_all(
+        [
+            {
+                "apiVersion": "v1",
+                "kind": "Service",
+                "metadata": {"name": "mysql", "labels": {"app": "mysql"}},
+                "spec": {
+                    "clusterIP": "None",
+                    "ports": [{"name": "mysql", "port": 3306, "targetPort": 3306}],
+                    "selector": {"app": "mysql"},
+                },
+            },
+            {
+                "apiVersion": "apps/v1",
+                "kind": "StatefulSet",
+                "metadata": {"name": "mysql", "labels": {"app": "mysql"}},
+                "spec": {
+                    "serviceName": "mysql",
+                    "replicas": 1,
+                    "selector": {"matchLabels": {"app": "mysql"}},
+                    "template": {
+                        "metadata": {"labels": {"app": "mysql"}},
+                        "spec": {
+                            "containers": [
+                                {
+                                    "name": "mysql",
+                                    "image": "mysql:8.0",
+                                    "args": [
+                                        "--character-set-server=utf8mb4",
+                                        "--collation-server=utf8mb4_unicode_ci",
+                                        "--default-authentication-plugin=mysql_native_password",
+                                    ],
+                                    "ports": [{"name": "mysql", "containerPort": 3306}],
+                                    "env": [
+                                        {
+                                            "name": "MYSQL_ROOT_PASSWORD",
+                                            "valueFrom": {
+                                                "secretKeyRef": {
+                                                    "name": PLAYGROUND_RUNTIME_SECRET_NAME,
+                                                    "key": "MYSQL_ROOT_PASSWORD",
+                                                }
+                                            },
+                                        }
+                                    ],
+                                    "volumeMounts": [{"name": "mysql-data", "mountPath": "/var/lib/mysql"}],
+                                    "readinessProbe": {
+                                        "tcpSocket": {"port": 3306},
+                                        "initialDelaySeconds": 10,
+                                        "periodSeconds": 5,
+                                    },
+                                    "resources": {
+                                        "requests": {"cpu": "100m", "memory": "256Mi"},
+                                        "limits": {"cpu": "1000m", "memory": "1Gi"},
+                                    },
+                                }
+                            ]
+                        },
+                    },
+                    "volumeClaimTemplates": [
+                        {
+                            "metadata": {"name": "mysql-data"},
+                            "spec": {
+                                "accessModes": ["ReadWriteOnce"],
+                                "resources": {"requests": {"storage": "20Gi"}},
+                            },
+                        }
+                    ],
+                },
+            },
+        ],
+        allow_unicode=True,
+        sort_keys=False,
+    )
+
+
+def redis_stateful_runtime_text(plan: PlaygroundClonePlan) -> str:
+    return yaml.safe_dump_all(
+        [
+            {
+                "apiVersion": "v1",
+                "kind": "Service",
+                "metadata": {"name": "redis", "labels": {"app": "redis"}},
+                "spec": {
+                    "clusterIP": "None",
+                    "ports": [{"name": "redis", "port": 6379, "targetPort": 6379}],
+                    "selector": {"app": "redis"},
+                },
+            },
+            {
+                "apiVersion": "apps/v1",
+                "kind": "StatefulSet",
+                "metadata": {"name": "redis", "labels": {"app": "redis"}},
+                "spec": {
+                    "serviceName": "redis",
+                    "replicas": 1,
+                    "selector": {"matchLabels": {"app": "redis"}},
+                    "template": {
+                        "metadata": {"labels": {"app": "redis"}},
+                        "spec": {
+                            "containers": [
+                                {
+                                    "name": "redis",
+                                    "image": "redis:7-alpine",
+                                    "ports": [{"name": "redis", "containerPort": 6379}],
+                                    "env": [
+                                        {
+                                            "name": "REDIS_PASSWORD",
+                                            "valueFrom": {
+                                                "secretKeyRef": {
+                                                    "name": PLAYGROUND_RUNTIME_SECRET_NAME,
+                                                    "key": "REDIS_PASSWORD",
+                                                }
+                                            },
+                                        }
+                                    ],
+                                    "command": ["/bin/sh", "-ec"],
+                                    "args": [
+                                        'exec redis-server --appendonly yes --requirepass "$REDIS_PASSWORD"'
+                                    ],
+                                    "volumeMounts": [{"name": "redis-data", "mountPath": "/data"}],
+                                    "readinessProbe": {
+                                        "tcpSocket": {"port": 6379},
+                                        "initialDelaySeconds": 5,
+                                        "periodSeconds": 5,
+                                    },
+                                    "resources": {
+                                        "requests": {"cpu": "50m", "memory": "128Mi"},
+                                        "limits": {"cpu": "500m", "memory": "512Mi"},
+                                    },
+                                }
+                            ]
+                        },
+                    },
+                    "volumeClaimTemplates": [
+                        {
+                            "metadata": {"name": "redis-data"},
+                            "spec": {
+                                "accessModes": ["ReadWriteOnce"],
+                                "resources": {"requests": {"storage": "5Gi"}},
+                            },
+                        }
+                    ],
+                },
+            },
+        ],
+        allow_unicode=True,
+        sort_keys=False,
+    )
+
+
+def all_plan_targets(plan: PlaygroundClonePlan) -> tuple[Path, ...]:
+    return (
+        tuple(item.target for item in plan.files)
+        + tuple(item.target for item in generated_playground_files(plan))
+        + (runtime_secret_target(plan),)
+    )
+
+
 def target_conflicts(plan: PlaygroundClonePlan) -> list[Path]:
-    return sorted({item.target for item in plan.files if item.target.exists()})
+    return sorted({path for path in all_plan_targets(plan) if path.exists()})
 
 
 def validate_clone_plan(plan: PlaygroundClonePlan) -> list[str]:
     errors: list[str] = []
-    catalog_targets = [item for item in plan.files if f"/{plan.playground_root.rstrip('/')}/{plan.to_env}/" in item.target.as_posix()]
-    service_targets = [item for item in plan.files if f"/argocd/services/" in item.target.as_posix() and f"/{plan.to_env}/" in item.target.as_posix()]
-    secret_targets = [item for item in plan.files if f"/argocd/secrets/{plan.to_env}/" in item.target.as_posix()]
+    generated_files = generated_playground_files(plan)
+    catalog_targets = [
+        path
+        for path in all_plan_targets(plan)
+        if f"/{plan.playground_root.rstrip('/')}/{plan.to_env}/" in path.as_posix()
+    ]
+    service_targets = [
+        path
+        for path in all_plan_targets(plan)
+        if f"/argocd/services/" in path.as_posix() and f"/{plan.to_env}/" in path.as_posix()
+    ]
+    secret_targets = [path for path in all_plan_targets(plan) if f"/argocd/secrets/{plan.to_env}/" in path.as_posix()]
     if not catalog_targets:
         errors.append("no catalog files would be generated")
     if not service_targets:
@@ -444,9 +790,9 @@ def validate_clone_plan(plan: PlaygroundClonePlan) -> list[str]:
     if not secret_targets:
         errors.append("no secret files would be copied")
     service_dirs = {
-        item.target.parent.relative_to(plan.repo_root).as_posix()
-        for item in service_targets
-        if item.target.name == "kustomization.yaml"
+        path.parent.relative_to(plan.repo_root).as_posix()
+        for path in service_targets
+        if path.name == "kustomization.yaml"
     }
     source_residue_tokens = [
         plan.from_env,
@@ -458,41 +804,50 @@ def validate_clone_plan(plan: PlaygroundClonePlan) -> list[str]:
     short_env_match = re.fullmatch(r"sandbox-bj-(\d+)", plan.from_env)
     if short_env_match:
         source_residue_tokens.append(f"bj8{short_env_match.group(1)}")
+    rendered_items: list[tuple[Path, str]] = []
     for item in plan.files:
         if item.source.name.endswith(".sops.yaml"):
             continue
         try:
-            rendered = (
-                render_catalog_bytes(item.source.read_bytes(), plan).decode()
-                if f"/{plan.playground_root.rstrip('/')}/{plan.from_env}/" in item.source.as_posix()
-                else render_clone_bytes(item.source.read_bytes(), plan).decode()
+            rendered_items.append(
+                (
+                    item.target,
+                    (
+                        render_catalog_bytes(item.source.read_bytes(), plan).decode()
+                        if f"/{plan.playground_root.rstrip('/')}/{plan.from_env}/" in item.source.as_posix()
+                        else render_clone_bytes(item.source.read_bytes(), plan).decode()
+                    ),
+                )
             )
         except UnicodeDecodeError:
             continue
+    rendered_items.extend((item.target, item.text) for item in generated_files)
+    latest_rendered = {target: rendered for target, rendered in rendered_items}
+    for target, rendered in latest_rendered.items():
         for token in source_residue_tokens:
             if token and token in rendered:
                 errors.append(
-                    f"{item.target.relative_to(plan.repo_root)} still contains source environment residue {token!r}"
+                    f"{target.relative_to(plan.repo_root)} still contains source environment residue {token!r}"
                 )
                 break
-        if f"/{plan.playground_root.rstrip('/')}/{plan.to_env}/" in item.target.as_posix():
+        if f"/{plan.playground_root.rstrip('/')}/{plan.to_env}/" in target.as_posix():
             try:
-                payload = load_yaml_mapping(rendered, item.target.as_posix())
+                payload = load_yaml_mapping(rendered, target.as_posix())
             except ValueError as exc:
                 errors.append(str(exc))
                 continue
             if payload.get("env") != plan.to_env:
-                errors.append(f"{item.target.relative_to(plan.repo_root)} env must be {plan.to_env}")
+                errors.append(f"{target.relative_to(plan.repo_root)} env must be {plan.to_env}")
             if payload.get("namespace") != plan.namespace:
-                errors.append(f"{item.target.relative_to(plan.repo_root)} namespace must be {plan.namespace}")
+                errors.append(f"{target.relative_to(plan.repo_root)} namespace must be {plan.namespace}")
             if payload.get("project") != plan.project:
-                errors.append(f"{item.target.relative_to(plan.repo_root)} project must be {plan.project}")
+                errors.append(f"{target.relative_to(plan.repo_root)} project must be {plan.project}")
             if payload.get("destinationName") != plan.cluster_name:
-                errors.append(f"{item.target.relative_to(plan.repo_root)} destinationName must be {plan.cluster_name}")
+                errors.append(f"{target.relative_to(plan.repo_root)} destinationName must be {plan.cluster_name}")
             source_path = str(payload.get("sourcePath") or "")
             if source_path not in service_dirs:
                 errors.append(
-                    f"{item.target.relative_to(plan.repo_root)} sourcePath {source_path!r} is not in generated service dirs"
+                    f"{target.relative_to(plan.repo_root)} sourcePath {source_path!r} is not in generated service dirs"
                 )
     return errors
 
@@ -504,32 +859,199 @@ def clone_plan_warnings(plan: PlaygroundClonePlan) -> list[str]:
         warnings.append(
             "将复制源环境加密 SOPS secret；脚本不会解密 payload。强隔离环境必须重新生成 SSM/SOPS 后再发布。"
         )
+    warnings.append(
+        "将为目标环境生成新的最小 playground-runtime-secrets SOPS 文件，只包含 MYSQL_ROOT_PASSWORD/REDIS_PASSWORD；缺少 sops 或 age key 时 --write 会直接失败。"
+    )
     if plan.tls_secret_name:
         warnings.append(
             f"计划替换 sandbox TLS secret 为 {plan.tls_secret_name}；只有证书 SAN 覆盖 {plan.wildcard_host} 时才应启用 wildcard HTTPS，否则保持 HTTP-only。"
         )
     warnings.append(
-        "DNS、证书申请、qcloud cert id、Argo refresh、DB bootstrap 仍是外部动作；脚本只生成 GitOps closure。"
+        "DNS、证书申请、qcloud cert id、Argo refresh 仍是外部动作；MySQL/Redis 运行时会进入 GitOps closure，DB schema bootstrap 仍需合入后执行。"
     )
     return warnings
 
 
-def write_clone_plan(plan: PlaygroundClonePlan, *, force: bool = False) -> list[Path]:
+def is_unexpanded_ci_setting(value: str) -> bool:
+    stripped = value.strip()
+    return stripped.startswith("${{") and stripped.endswith("}}")
+
+
+def sops_age_key_file_candidates() -> tuple[Path, ...]:
+    return (
+        Path("/etc/lightclaw-ci/sops-age.keys.txt"),
+        Path.home() / ".config/sops/age/keys.txt",
+        Path("/.config/sops/age/keys.txt"),
+    )
+
+
+def resolve_sops_age_key_file() -> tuple[Path, Path | None]:
+    env_key_file = os.environ.get("SOPS_AGE_KEY_FILE", "")
+    env_key = os.environ.get("SOPS_AGE_KEY", "")
+    if env_key_file and not is_unexpanded_ci_setting(env_key_file):
+        path = Path(env_key_file)
+        if not path.is_file():
+            raise RuntimeError(f"SOPS_AGE_KEY_FILE is set but not readable: {env_key_file}")
+        return path, None
+    if env_key_file and is_unexpanded_ci_setting(env_key_file):
+        env_key_file = ""
+
+    for candidate in sops_age_key_file_candidates():
+        if candidate.is_file():
+            return candidate, None
+
+    if env_key and not is_unexpanded_ci_setting(env_key):
+        with tempfile.NamedTemporaryFile("w", prefix="lightclaw-sops-age.", delete=False) as handle:
+            handle.write(env_key)
+            handle.write("\n")
+            temp_path = Path(handle.name)
+        temp_path.chmod(0o600)
+        return temp_path, temp_path
+
+    raise RuntimeError(
+        "missing SOPS age key; set SOPS_AGE_KEY_FILE, provide /etc/lightclaw-ci/sops-age.keys.txt, "
+        "provide ~/.config/sops/age/keys.txt, provide /.config/sops/age/keys.txt, or set SOPS_AGE_KEY"
+    )
+
+
+def sops_recipient_donor_paths(plan: PlaygroundClonePlan) -> tuple[Path, ...]:
+    secret_root = plan.repo_root / "argocd/secrets" / plan.from_env
+    preferred = (
+        secret_root / PLAYGROUND_RUNTIME_SECRET_FILE,
+        secret_root / "sandbox-runtime-secrets.sops.yaml",
+    )
+    others = tuple(sorted(path for path in secret_root.glob("*.sops.yaml") if path not in preferred))
+    return (*preferred, *others)
+
+
+def age_recipients_from_sops_file(path: Path) -> tuple[str, ...]:
+    if not path.is_file():
+        return ()
+    payload = yaml.safe_load(path.read_text()) or {}
+    if not isinstance(payload, dict):
+        return ()
+    sops = payload.get("sops") or {}
+    if not isinstance(sops, dict):
+        return ()
+    recipients: list[str] = []
+    for item in sops.get("age") or []:
+        if isinstance(item, dict) and isinstance(item.get("recipient"), str):
+            recipients.append(item["recipient"])
+    return tuple(recipients)
+
+
+def resolve_playground_runtime_recipients(plan: PlaygroundClonePlan) -> tuple[str, ...]:
+    for donor in sops_recipient_donor_paths(plan):
+        recipients = age_recipients_from_sops_file(donor)
+        if recipients:
+            return recipients
+    searched = ", ".join(path.relative_to(plan.repo_root).as_posix() for path in sops_recipient_donor_paths(plan))
+    raise RuntimeError(f"missing SOPS age recipient for {plan.from_env}; searched: {searched}")
+
+
+def random_playground_password() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def playground_runtime_secret_plaintext(plan: PlaygroundClonePlan) -> str:
+    return yaml.safe_dump(
+        {
+            "apiVersion": "v1",
+            "kind": "Secret",
+            "metadata": {
+                "name": PLAYGROUND_RUNTIME_SECRET_NAME,
+                "namespace": plan.namespace,
+                "labels": {
+                    "lightclaw.dev/environment-model": "playground",
+                    "lightclaw.dev/environment-name": plan.to_env,
+                },
+            },
+            "type": "Opaque",
+            "stringData": {
+                "MYSQL_ROOT_PASSWORD": random_playground_password(),
+                "REDIS_PASSWORD": random_playground_password(),
+            },
+        },
+        allow_unicode=True,
+        sort_keys=False,
+    )
+
+
+def encrypt_playground_runtime_secret(plan: PlaygroundClonePlan) -> bytes:
+    sops_bin = shutil.which("sops")
+    if not sops_bin:
+        raise RuntimeError("missing required command: sops")
+    recipients = resolve_playground_runtime_recipients(plan)
+    key_file, temp_key_file = resolve_sops_age_key_file()
+    plaintext = playground_runtime_secret_plaintext(plan)
+    cmd = [
+        sops_bin,
+        "--encrypt",
+        "--input-type",
+        "yaml",
+        "--output-type",
+        "yaml",
+        "--filename-override",
+        runtime_secret_target(plan).relative_to(plan.repo_root).as_posix(),
+        "--age",
+        ",".join(recipients),
+        "/dev/stdin",
+    ]
+    env = os.environ.copy()
+    env["SOPS_AGE_KEY_FILE"] = str(key_file)
+    env.pop("SOPS_AGE_KEY", None)
+    try:
+        result = subprocess.run(cmd, input=plaintext, capture_output=True, text=True, env=env)
+    finally:
+        if temp_key_file is not None:
+            temp_key_file.unlink(missing_ok=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"sops encrypt failed\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}")
+    return result.stdout.encode()
+
+
+RuntimeSecretEncryptor = Callable[[PlaygroundClonePlan], bytes]
+
+
+def rendered_clone_plan_files(
+    plan: PlaygroundClonePlan,
+    *,
+    runtime_secret_encryptor: RuntimeSecretEncryptor | None = None,
+) -> list[RenderedFile]:
+    rendered: list[RenderedFile] = []
+    for item in plan.files:
+        if item.source.name.endswith(".sops.yaml"):
+            data = item.source.read_bytes()
+        elif f"/{plan.playground_root.rstrip('/')}/{plan.from_env}/" in item.source.as_posix():
+            data = render_catalog_bytes(item.source.read_bytes(), plan)
+        else:
+            data = render_clone_bytes(item.source.read_bytes(), plan)
+        rendered.append(RenderedFile(item.target, data, item.source))
+    for item in generated_playground_files(plan):
+        rendered.append(RenderedFile(item.target, item.text.encode(), None))
+    encryptor = runtime_secret_encryptor or encrypt_playground_runtime_secret
+    rendered.append(RenderedFile(runtime_secret_target(plan), encryptor(plan), None))
+    return rendered
+
+
+def write_clone_plan(
+    plan: PlaygroundClonePlan,
+    *,
+    force: bool = False,
+    runtime_secret_encryptor: RuntimeSecretEncryptor | None = None,
+) -> list[Path]:
     conflicts = target_conflicts(plan)
     if conflicts and not force:
         conflict_text = "\n".join(str(path.relative_to(plan.repo_root)) for path in conflicts[:50])
         raise FileExistsError(f"target files already exist; pass --force to overwrite:\n{conflict_text}")
 
+    rendered_files = rendered_clone_plan_files(plan, runtime_secret_encryptor=runtime_secret_encryptor)
     written: list[Path] = []
-    for item in plan.files:
+    for item in rendered_files:
         item.target.parent.mkdir(parents=True, exist_ok=True)
-        if item.source.name.endswith(".sops.yaml"):
-            item.target.write_bytes(item.source.read_bytes())
-        elif f"/{plan.playground_root.rstrip('/')}/{plan.from_env}/" in item.source.as_posix():
-            item.target.write_bytes(render_catalog_bytes(item.source.read_bytes(), plan))
-        else:
-            item.target.write_bytes(render_clone_bytes(item.source.read_bytes(), plan))
-        shutil.copymode(item.source, item.target, follow_symlinks=False)
+        item.target.write_bytes(item.data)
+        if item.mode_source is not None:
+            shutil.copymode(item.mode_source, item.target, follow_symlinks=False)
         written.append(item.target)
     return written
 
@@ -730,6 +1252,125 @@ def check_playground_network_contract(repo_root: Path, env: str, apps: Sequence[
     return CheckResult("Playground network contract", status, tuple(lines), actions)
 
 
+def check_playground_stateful_runtime_contract(
+    repo_root: Path,
+    env: str,
+    namespace: str,
+    apps: Sequence[CatalogApp],
+) -> CheckResult:
+    errors: list[str] = []
+    warnings: list[str] = []
+    env_bootstrap = next((app for app in apps if app.service == "env-bootstrap"), None)
+    if env_bootstrap is None:
+        errors.append("missing env-bootstrap catalog app; namespace-local MySQL/Redis must be managed by GitOps")
+        source_root = repo_root / "argocd/services/env-bootstrap" / env
+    else:
+        source_root = repo_root / env_bootstrap.source_path
+    kustomization_path = source_root / "kustomization.yaml"
+    if not kustomization_path.is_file():
+        errors.append(f"missing {kustomization_path.relative_to(repo_root)}")
+        resources: set[str] = set()
+        generators: set[str] = set()
+    else:
+        payload = load_yaml_mapping(kustomization_path.read_text(), kustomization_path.as_posix())
+        if payload.get("namespace") != namespace:
+            errors.append(f"{kustomization_path.relative_to(repo_root)} namespace={payload.get('namespace')}, expected={namespace}")
+        resources = {str(item) for item in payload.get("resources") or []}
+        generators = {str(item) for item in payload.get("generators") or []}
+        for required in ("namespace.yaml", "serviceaccount.yaml", "mysql.yaml", "redis.yaml"):
+            if required not in resources:
+                errors.append(f"{kustomization_path.relative_to(repo_root)} missing resource {required}")
+        if PLAYGROUND_RUNTIME_KSOPS_GENERATOR not in generators:
+            errors.append(f"{kustomization_path.relative_to(repo_root)} missing generator {PLAYGROUND_RUNTIME_KSOPS_GENERATOR}")
+        if PLAYGROUND_RUNTIME_KSOPS_GENERATOR in resources:
+            errors.append(f"{kustomization_path.relative_to(repo_root)} must put {PLAYGROUND_RUNTIME_KSOPS_GENERATOR} under generators, not resources")
+
+    runtime_sops = repo_root / "argocd/secrets" / env / PLAYGROUND_RUNTIME_SECRET_FILE
+    if not runtime_sops.is_file():
+        errors.append(f"missing {runtime_sops.relative_to(repo_root)}")
+    runtime_generator = source_root / PLAYGROUND_RUNTIME_KSOPS_GENERATOR
+    if not runtime_generator.is_file():
+        errors.append(f"missing {runtime_generator.relative_to(repo_root)}")
+    else:
+        generator_payload = load_yaml_mapping(runtime_generator.read_text(), runtime_generator.as_posix())
+        files = [str(item) for item in generator_payload.get("files") or []]
+        expected_file_ref = f"../../../secrets/{env}/{PLAYGROUND_RUNTIME_SECRET_FILE}"
+        if generator_payload.get("kind") != "ksops":
+            errors.append(f"{runtime_generator.relative_to(repo_root)} kind must be ksops")
+        if expected_file_ref not in files:
+            errors.append(f"{runtime_generator.relative_to(repo_root)} must include {expected_file_ref}")
+
+    for runtime_name, file_name, service_name, statefulset_name, required_secret_key in (
+        ("MySQL", "mysql.yaml", "mysql", "mysql", "MYSQL_ROOT_PASSWORD"),
+        ("Redis", "redis.yaml", "redis", "redis", "REDIS_PASSWORD"),
+    ):
+        path = source_root / file_name
+        if not path.is_file():
+            errors.append(f"missing {path.relative_to(repo_root)}")
+            continue
+        docs = [doc for doc in yaml.safe_load_all(path.read_text()) if isinstance(doc, dict)]
+        kinds = {(doc.get("kind"), doc.get("metadata", {}).get("name")) for doc in docs}
+        if ("Service", service_name) not in kinds:
+            errors.append(f"{path.relative_to(repo_root)} must define Service/{service_name}")
+        if ("StatefulSet", statefulset_name) not in kinds:
+            errors.append(f"{path.relative_to(repo_root)} must define StatefulSet/{statefulset_name}")
+        statefulsets = [doc for doc in docs if doc.get("kind") == "StatefulSet" and doc.get("metadata", {}).get("name") == statefulset_name]
+        if not statefulsets:
+            continue
+        sts = statefulsets[0]
+        if not sts.get("spec", {}).get("volumeClaimTemplates"):
+            errors.append(f"{path.relative_to(repo_root)} StatefulSet/{statefulset_name} must use PVC volumeClaimTemplates")
+        rendered = path.read_text()
+        if "lightclaw-auth-secrets" in rendered or "sandbox-runtime-secrets" in rendered:
+            errors.append(
+                f"{path.relative_to(repo_root)} StatefulSet/{statefulset_name} must not use broad service secrets for runtime root password"
+            )
+        containers = sts.get("spec", {}).get("template", {}).get("spec", {}).get("containers") or []
+        secret_refs = []
+        for container in containers:
+            for env_item in container.get("env") or []:
+                ref = (env_item.get("valueFrom") or {}).get("secretKeyRef")
+                if isinstance(ref, dict):
+                    secret_refs.append((ref.get("name"), ref.get("key")))
+        if (PLAYGROUND_RUNTIME_SECRET_NAME, required_secret_key) not in secret_refs:
+            errors.append(
+                f"{path.relative_to(repo_root)} StatefulSet/{statefulset_name} must reference {PLAYGROUND_RUNTIME_SECRET_NAME}/{required_secret_key}"
+            )
+        if runtime_name == "Redis":
+            if "--appendonly yes" not in rendered:
+                warnings.append(f"{path.relative_to(repo_root)} Redis should enable AOF for restart persistence")
+
+    mysql_host = local_mysql_host(namespace)
+    redis_addr = local_redis_addr(namespace)
+    ignored_runtime_contract_files = {"README.md"}
+    for app in apps:
+        source_path = repo_root / app.source_path
+        if not source_path.is_dir():
+            continue
+        for path in source_path.rglob("*"):
+            if (
+                not path.is_file()
+                or path.name.endswith(".sops.yaml")
+                or path.name in ignored_runtime_contract_files
+                or path.suffix.lower() in {".md", ".markdown"}
+            ):
+                continue
+            text = path.read_text(errors="ignore")
+            if "MYSQL_HOST" in text and mysql_host not in text:
+                errors.append(f"{path.relative_to(repo_root)} has MYSQL_HOST but does not point to {mysql_host}")
+            if "REDIS_ADDR" in text and redis_addr not in text:
+                errors.append(f"{path.relative_to(repo_root)} has REDIS_ADDR but does not point to {redis_addr}")
+
+    status = "fail" if errors else ("warn" if warnings else "ok")
+    lines = [*errors, *warnings] or (
+        f"namespace-local MySQL/Redis contract passed: mysql={mysql_host} redis={redis_addr}",
+    )
+    actions = ()
+    if errors:
+        actions = ("修复 env-bootstrap StatefulSet/PVC 和业务 MYSQL_HOST/REDIS_ADDR 后重跑。",)
+    return CheckResult("Playground stateful runtime contract", status, tuple(lines), actions)
+
+
 def resolve_host(host: str, timeout_seconds: float) -> tuple[str, ...]:
     old_timeout = socket.getdefaulttimeout()
     socket.setdefaulttimeout(timeout_seconds)
@@ -846,6 +1487,7 @@ def check_playground_contract_main(argv: Sequence[str] | None = None) -> int:
         args.cluster_name,
     )
     results.append(catalog_result)
+    results.append(check_playground_stateful_runtime_contract(repo_root, args.env, namespace, apps))
     results.append(check_playground_network_contract(repo_root, args.env, apps))
     if args.check_dns:
         results.append(check_dns_contract(args.env, args.timeout_seconds))
@@ -1008,7 +1650,7 @@ def build_playground_bootstrap_plan(
 def bootstrap_database_job_manifest(plan: PlaygroundBootstrapPlan) -> dict[str, Any]:
     env: list[dict[str, Any]] = [
         {"name": "MYSQL_HOST", "value": plan.mysql_host},
-        {"name": "ROOT_PASSWORD", "valueFrom": kubectl_secret_key_ref("lightclaw-auth-secrets", "MYSQL_ROOT_PASSWORD")},
+        {"name": "ROOT_PASSWORD", "valueFrom": kubectl_secret_key_ref(PLAYGROUND_RUNTIME_SECRET_NAME, "MYSQL_ROOT_PASSWORD")},
     ]
     for index, grant in enumerate(plan.grants):
         if grant.password_secret and grant.password_key:
@@ -1106,7 +1748,7 @@ def run_playground_db_jobs(plan: PlaygroundBootstrapPlan, skip: set[str], timeou
     env["DB_JOB_KUBECONFIG_FILE"] = str(plan.kubeconfig)
     try:
         env["CTL_TEST_MYSQL_PASSWORD"] = secret_value_from_cluster(
-            plan.kubeconfig, plan.namespace, "lightclaw-auth-secrets", "MYSQL_ROOT_PASSWORD", retries
+            plan.kubeconfig, plan.namespace, PLAYGROUND_RUNTIME_SECRET_NAME, "MYSQL_ROOT_PASSWORD", retries
         )
     except Exception:
         pass
@@ -1232,9 +1874,10 @@ def bootstrap_playground_main(argv: Sequence[str] | None = None) -> int:
 
 
 def print_clone_plan(plan: PlaygroundClonePlan, *, write: bool, force: bool, written: Sequence[Path] = ()) -> None:
-    catalog_files = [item.target for item in plan.files if f"/{plan.playground_root.rstrip('/')}/{plan.to_env}/" in item.target.as_posix()]
-    service_files = [item.target for item in plan.files if f"/argocd/services/" in item.target.as_posix() and f"/{plan.to_env}/" in item.target.as_posix()]
-    secret_files = [item.target for item in plan.files if f"/argocd/secrets/{plan.to_env}/" in item.target.as_posix()]
+    targets = sorted(set(all_plan_targets(plan)))
+    catalog_files = [path for path in targets if f"/{plan.playground_root.rstrip('/')}/{plan.to_env}/" in path.as_posix()]
+    service_files = [path for path in targets if f"/argocd/services/" in path.as_posix() and f"/{plan.to_env}/" in path.as_posix()]
+    secret_files = [path for path in targets if f"/argocd/secrets/{plan.to_env}/" in path.as_posix()]
 
     print("=" * 60)
     print("Playground 环境克隆脚手架")
@@ -1257,6 +1900,10 @@ def print_clone_plan(plan: PlaygroundClonePlan, *, write: bool, force: bool, wri
         print(f"- {path.relative_to(plan.repo_root)}")
     print("=" * 60)
     print("将自动替换：env、namespace、sourcePath、app 名、DB name、Redis prefix、内部 service DNS、域名。")
+    print(
+        "将自动生成：namespace-local MySQL/Redis StatefulSet + PVC，并把 MYSQL_HOST/REDIS_ADDR 指向 namespace 内 Service。"
+    )
+    print("将自动生成：最小 playground-runtime-secrets SOPS 文件，包含新的 MYSQL_ROOT_PASSWORD / REDIS_PASSWORD。")
     print("风险提示：将复制源环境的加密 SOPS secret；不会解密也不会修改敏感值。如需强隔离，必须重新生成 SSM/SOPS。")
     print("需要 Agent/人工确认：DNS/证书、SSM/SOPS 是否需要重新生成、是否触发 Argo refresh、是否纳入 drift audit。")
     warnings = clone_plan_warnings(plan)

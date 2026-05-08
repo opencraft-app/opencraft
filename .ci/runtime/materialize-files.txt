@@ -77,6 +77,9 @@
 .ci/runtime/gitops/git.py
 .ci/runtime/gitops/gongfeng.py
 .ci/runtime/gitops/image_pin.py
+.ci/runtime/gitops/playground_bootstrap.py
+.ci/runtime/gitops/playground_contract.py
+.ci/runtime/gitops/playground_create.py
 .ci/runtime/gitops/playground_environment.py
 .ci/runtime/gitops/promotion_policy.py
 .ci/runtime/gitops/prod_manual_sync_validation.py
@@ -95,6 +98,7 @@
 .ci/runtime/guards/changed_guards.py
 .ci/runtime/harness_ci/__init__.py
 .ci/runtime/harness_ci/db_job.py
+.ci/runtime/harness_ci/secrets.py
 .ci/runtime/support/__init__.py
 .ci/runtime/support/logging.py
 .ci/runtime/support/process.py

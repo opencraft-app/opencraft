@@ -104,6 +104,10 @@ TLS 约束：
 - 如果 live 诊断证明某个改动有效，必须立即把等价期望态反投影到 GitOps 文件。
 - 创建新环境时优先使用 `.ci/runtime/commands/create_playground_environment.py` 生成 GitOps 渲染闭包，再人工/Agent 补齐不能稳定自动化的 DNS、证书和 SSM/SOPS 步骤。
 - 克隆 SOPS secret 后必须解密校验 payload 的 env、DB name、Redis prefix、域名和 namespace，不要只看 metadata 或文件路径。
+- playground 的 MySQL/Redis 必须优先使用 namespace-local `StatefulSet + PVC`，由 `env-bootstrap` app 纳入 GitOps；业务配置应指向 `mysql.<namespace>.svc.cluster.local` 和 `redis.<namespace>.svc.cluster.local:6379`。
+- 新建 `sandbox-bj-N` 时必须生成目标环境独立的 `argocd/secrets/<env>/playground-runtime-secrets.sops.yaml`，只包含 `MYSQL_ROOT_PASSWORD` / `REDIS_PASSWORD`；缺少 `sops` 或 age key 时直接失败，不允许明文 fallback。
+- MySQL/Redis StatefulSet 和 DB bootstrap/root 路径只能引用 `playground-runtime-secrets`；业务 grant password 仍可来自各服务自己的 SOPS secret，但不能把 `lightclaw-auth-secrets` / `sandbox-runtime-secrets` 继续作为运行时 root secret。
+- playground 销毁默认以删除 catalog/closure 为主，让 Argo prune namespace 内 MySQL/Redis/PVC；不要再把 playground 运行时状态放到共享外部 MySQL/Redis，除非明确需要跨环境保留数据。
 
 ### Ingress / TKE 约束
 
@@ -114,12 +118,12 @@ TLS 约束：
 
 ### 建设顺序
 
-1. 生成或克隆 GitOps closure：catalog、services、secrets、AppProject、必要 k8s overlay。
+1. 生成或克隆 GitOps closure：catalog、services、secrets、AppProject、必要 k8s overlay，以及 env-bootstrap 内的 MySQL/Redis StatefulSet/PVC。
 2. 运行 strict Kustomize 和 GitOps static validation。
 3. 配置固定入口 DNS 和 wildcard HTTP DNS。
 4. 为固定入口申请或选择单域名证书，并生成/引用正确 qcloud cert secret。
 5. 合入 GitOps MR 后刷新 Argo，确认 apps 在最新 `gitops` revision 上 `Synced / Healthy`。
-6. 确认 SOPS secret payload 已指向目标环境后，再执行 DB bootstrap / readiness / migration。
+6. 确认 namespace-local MySQL/Redis Ready，且 `playground-runtime-secrets` 已生成并由 env-bootstrap ksops generator 引入后，再执行 DB bootstrap / readiness / migration。
 7. 检查 namespace pod Ready/Completed、Ingress Ready、Service endpoints。
 8. 用公网 curl 验证固定 HTTPS 入口和 wildcard HTTP 入口。
 
@@ -131,6 +135,8 @@ TLS 约束：
 - 哪些步骤已经进入 GitOps MR，哪些只是 live 诊断或人工外部动作。
 - 证书是否覆盖目标 host；如果不覆盖，直接标记为不能使用。
 - SOPS secret 是否复用源环境；如果复用，提示后续如需强隔离必须重新生成 SSM/SOPS。
+- 是否生成了新的最小 `playground-runtime-secrets`；如果缺 SOPS/age key，必须停止而不是提交半成品。
+- MySQL/Redis 是否由目标 namespace 内 StatefulSet/PVC 承载；如果仍指向外部共享地址，必须标记为不符合 playground 模型。
 - 最终验收证据：Argo revision、sync/health、pod 状态、Ingress 状态、公网 curl 结果。
 
 ## 远端写入模板

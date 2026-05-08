@@ -10,8 +10,8 @@ RUNTIME_DIR = Path(__file__).resolve().parents[1]
 if str(RUNTIME_DIR) not in sys.path:
     sys.path.insert(0, str(RUNTIME_DIR))
 
-from gitops.playground_environment import create_playground_main  # noqa: E402
+from gitops.playground_create import main  # noqa: E402
 
 
 if __name__ == "__main__":
-    raise SystemExit(create_playground_main())
+    raise SystemExit(main())
