@@ -13,7 +13,7 @@ COPY vendor ./vendor
 ARG VITE_AUTH_API_BASE_URL
 ENV VITE_AUTH_API_BASE_URL="${VITE_AUTH_API_BASE_URL}"
 
-RUN corepack enable && cd /frontend && pnpm install --frozen-lockfile && pnpm build
+RUN corepack enable && corepack prepare pnpm@10.23.0 --activate && cd /frontend && pnpm install --frozen-lockfile && pnpm build
 
 FROM nginx:1.27-alpine
 
