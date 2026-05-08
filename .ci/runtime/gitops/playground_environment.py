@@ -143,11 +143,6 @@ def parse_args() -> argparse.Namespace:
         )
     )
     parser.add_argument("--repo-root", type=Path, default=Path("."))
-    parser.add_argument(
-        "--runtime-root",
-        type=Path,
-        help="Checkout that contains .ci/runtime and repo-backed migration payloads. Defaults to --repo-root.",
-    )
     parser.add_argument("--env", default="sandbox-bj-3")
     parser.add_argument("--gitops-ref", default="origin/gitops")
     parser.add_argument("--source-ref", default="origin/master")
@@ -198,6 +193,11 @@ def parse_bootstrap_args(argv: Sequence[str] | None = None) -> argparse.Namespac
         )
     )
     parser.add_argument("--repo-root", type=Path, default=Path("."))
+    parser.add_argument(
+        "--runtime-root",
+        type=Path,
+        help="Checkout that contains .ci/runtime and repo-backed migration payloads. Defaults to --repo-root.",
+    )
     parser.add_argument("--env", required=True, help="Playground env, e.g. sandbox-bj-4")
     parser.add_argument("--namespace")
     parser.add_argument("--kubeconfig", type=Path)
