@@ -745,7 +745,7 @@ def redis_stateful_runtime_text(plan: PlaygroundClonePlan) -> str:
                             "metadata": {"name": "redis-data"},
                             "spec": {
                                 "accessModes": ["ReadWriteOnce"],
-                                "resources": {"requests": {"storage": "5Gi"}},
+                                "resources": {"requests": {"storage": "10Gi"}},
                             },
                         }
                     ],

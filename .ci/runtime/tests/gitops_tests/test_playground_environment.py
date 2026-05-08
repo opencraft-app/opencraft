@@ -237,6 +237,7 @@ class PlaygroundEnvironmentTests(unittest.TestCase):
             self.assertIn(PLAYGROUND_RUNTIME_SECRET_NAME, redis_runtime)
             self.assertNotIn("sandbox-runtime-secrets", redis_runtime)
             self.assertIn("volumeClaimTemplates", redis_runtime)
+            self.assertIn("storage: 10Gi", redis_runtime)
             self.assertIn("--appendonly yes", redis_runtime)
 
     def test_create_playground_conflicts_fail_without_force(self) -> None:
