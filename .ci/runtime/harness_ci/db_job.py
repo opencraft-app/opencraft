@@ -260,11 +260,26 @@ def resolve_kubeconfig(
     return str(resolved), None
 
 
+def kubectl_command(cmd: list[str]) -> list[str]:
+    if cmd and cmd[0] == "kubectl" and not any(part.startswith("--request-timeout=") for part in cmd):
+        return [cmd[0], "--request-timeout=60s", *cmd[1:]]
+    return cmd
+
+
 def kubectl_run(cmd: list[str], *, input_text: str | None = None, retries: int = 1) -> subprocess.CompletedProcess[str]:
     attempts = max(1, retries)
+    kubectl_cmd = kubectl_command(cmd)
     last_result: subprocess.CompletedProcess[str] | None = None
     for attempt in range(1, attempts + 1):
-        result = subprocess.run(cmd, input=input_text, capture_output=True, text=True)
+        try:
+            result = subprocess.run(kubectl_cmd, input=input_text, capture_output=True, text=True, timeout=75)
+        except subprocess.TimeoutExpired as exc:
+            result = subprocess.CompletedProcess(
+                kubectl_cmd,
+                124,
+                stdout=exc.stdout or "",
+                stderr=(exc.stderr or "") + "\nkubectl command timed out after 75s",
+            )
         if result.returncode == 0:
             return result
         last_result = result

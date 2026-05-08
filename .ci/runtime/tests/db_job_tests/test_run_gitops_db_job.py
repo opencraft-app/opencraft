@@ -66,6 +66,17 @@ class RunGitopsDbJobTests(unittest.TestCase):
 
         self.assertEqual(image, "example.com/payment:release")
 
+    def test_kubectl_command_adds_request_timeout(self) -> None:
+        command = db_job.kubectl_command(["kubectl", "--kubeconfig", "/tmp/kubeconfig", "get", "pods"])
+
+        self.assertEqual(command[:2], ["kubectl", "--request-timeout=60s"])
+
+    def test_kubectl_command_preserves_existing_request_timeout(self) -> None:
+        command = db_job.kubectl_command(["kubectl", "--request-timeout=10s", "get", "pods"])
+
+        self.assertEqual(command.count("--request-timeout=10s"), 1)
+        self.assertNotIn("--request-timeout=60s", command)
+
     def test_ctl_dynamic_resources_use_temporary_secret_refs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             migrations = Path(tmp) / "ctl" / "migrations"
