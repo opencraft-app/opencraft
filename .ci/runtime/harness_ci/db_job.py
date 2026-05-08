@@ -33,6 +33,7 @@ SERVICE_SPECS: dict[tuple[str, str], dict[str, Any]] = {
         "deployment": "payment",
         "configmap": "payment-config",
         "secret": "payment-runtime-secrets",
+        "image_env_key": "PAYMENT_IMAGE",
         "command": ["/usr/local/bin/payment-migrate"],
     },
     ("subscription", "migration"): {
@@ -40,6 +41,7 @@ SERVICE_SPECS: dict[tuple[str, str], dict[str, Any]] = {
         "deployment": "subscription",
         "configmap": "subscription-config",
         "secret": "subscription-runtime-secrets",
+        "image_env_key": "SUBSCRIPTION_IMAGE",
         "command": ["/usr/local/bin/subscription-migrate"],
     },
     ("lightclaw-auth", "migration"): {
@@ -47,6 +49,7 @@ SERVICE_SPECS: dict[tuple[str, str], dict[str, Any]] = {
         "deployment": "lightclaw-auth",
         "configmap": "lightclaw-auth-config",
         "secret": "lightclaw-auth-secrets",
+        "image_env_key": "AUTH_IMAGE",
         "command": ["/usr/local/bin/lightclaw-auth-migrate"],
     },
     ("lightclaw-auth", "seed"): {
@@ -54,6 +57,7 @@ SERVICE_SPECS: dict[tuple[str, str], dict[str, Any]] = {
         "deployment": "lightclaw-auth",
         "configmap": "lightclaw-auth-config",
         "secret": "lightclaw-auth-secrets",
+        "image_env_key": "AUTH_IMAGE",
         "command": ["/usr/local/bin/lightclaw-auth-seed"],
     },
     ("ai-gateway", "migration"): {
@@ -61,6 +65,7 @@ SERVICE_SPECS: dict[tuple[str, str], dict[str, Any]] = {
         "deployment": "gateway-backend",
         "configmap": "ai-gateway-runtime-config",
         "secret": "ai-gateway-runtime-secrets",
+        "image_env_key": "AI_GATEWAY_IMAGE",
         "command": ["/usr/local/bin/ai-gateway-migrate"],
     },
     ("ctl", "migration"): {

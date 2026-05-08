@@ -66,6 +66,16 @@ class RunGitopsDbJobTests(unittest.TestCase):
 
         self.assertEqual(image, "example.com/payment:release")
 
+    def test_regular_db_job_uses_platform_env_image_before_live_lookup(self) -> None:
+        image = db_job.resolve_job_image(
+            SimpleNamespace(image_override="", kubectl_retries=1),
+            db_job.SERVICE_SPECS[("payment", "migration")],
+            kubeconfig="/tmp/unused",
+            service_platform_env={"PAYMENT_IMAGE": "example.com/payment:from-env"},
+        )
+
+        self.assertEqual(image, "example.com/payment:from-env")
+
     def test_kubectl_command_adds_request_timeout(self) -> None:
         command = db_job.kubectl_command(["kubectl", "--kubeconfig", "/tmp/kubeconfig", "get", "pods"])
 
