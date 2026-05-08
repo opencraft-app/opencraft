@@ -27,6 +27,7 @@ from gitops.playground_environment import (
     fetch_origin_refs,
     PLAYGROUND_RUNTIME_SECRET_FILE,
     PLAYGROUND_RUNTIME_SECRET_NAME,
+    PLAYGROUND_PULL_SECRET_NAMES,
     playground_database_grants,
     load_yaml_mapping,
     render_clone_text,
@@ -179,7 +180,7 @@ class PlaygroundEnvironmentTests(unittest.TestCase):
             secret_readme = (repo / "argocd/secrets/sandbox-bj-4/README.md").read_text()
             self.assertEqual(len(catalog_files), 12)
             self.assertEqual(len(service_dirs), 12)
-            self.assertEqual(len(secret_files), 3)
+            self.assertEqual(len(secret_files), 4)
             self.assertGreater(len(written), 20)
             self.assertIn("sandbox-bj-4", secret_readme)
             self.assertNotIn("sandbox-bj-3", secret_readme)
@@ -239,6 +240,15 @@ class PlaygroundEnvironmentTests(unittest.TestCase):
             self.assertIn("volumeClaimTemplates", redis_runtime)
             self.assertIn("storage: 10Gi", redis_runtime)
             self.assertIn("--appendonly yes", redis_runtime)
+            serviceaccount = (env_bootstrap / "serviceaccount.yaml").read_text()
+            for name in PLAYGROUND_PULL_SECRET_NAMES:
+                self.assertIn(f"name: {name}", serviceaccount)
+            pull_secret = load_yaml_mapping(
+                (repo / "argocd/secrets/sandbox-bj-4/tcr-bj8-lightclaw-secret.sops.yaml").read_text(),
+                "pull-secret",
+            )
+            self.assertEqual(pull_secret["metadata"]["namespace"], "lightvela-playground-sandbox-bj-4")
+            self.assertEqual(pull_secret["metadata"]["name"], "tcr.bj8-lightclaw-secret")
 
     def test_create_playground_conflicts_fail_without_force(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -251,17 +261,19 @@ class PlaygroundEnvironmentTests(unittest.TestCase):
             with self.assertRaises(FileExistsError):
                 write_clone_plan_for_test(plan)
 
-    def test_create_playground_copies_secret_bytes_without_rewriting_content(self) -> None:
+    def test_create_playground_rewrites_sops_secret_metadata_without_decrypting_payload(self) -> None:
         with TemporaryDirectory() as tmp:
             repo = Path(tmp)
             create_playground_fixture(repo)
             plan = build_playground_clone_plan(repo, "sandbox-bj-3", "sandbox-bj-4")
             write_clone_plan_for_test(plan)
 
-            source = repo / "argocd/secrets/sandbox-bj-3/ai-gateway-runtime-secrets.sops.yaml"
-            target = repo / "argocd/secrets/sandbox-bj-4/ai-gateway-runtime-secrets.sops.yaml"
-            self.assertEqual(source.read_bytes(), target.read_bytes())
-            self.assertIn("sandbox-bj-3", target.read_text())
+            target = repo / "argocd/secrets/sandbox-bj-4/tcr-bj8-lightclaw-secret.sops.yaml"
+            payload = load_yaml_mapping(target.read_text(), "target")
+
+            self.assertEqual(payload["metadata"]["namespace"], "lightvela-playground-sandbox-bj-4")
+            self.assertEqual(payload["metadata"]["name"], "tcr.bj8-lightclaw-secret")
+            self.assertEqual(payload["stringData"][".dockerconfigjson"], "ENC[AES256_GCM,data:registry]")
 
     def test_create_playground_validation_rejects_unmapped_source_residue(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -611,7 +623,30 @@ def create_playground_fixture(repo: Path) -> None:
             """
         ).lstrip()
     )
-    (secret_dir / "tcr-ccr-clawhub-secret.sops.yaml").write_text("encrypted: registry\n")
+    for filename, secret_name in (
+        ("tcr-bj8-lightclaw-secret.sops.yaml", "tcr.bj8-lightclaw-secret"),
+        ("tcr-ccr-clawhub-secret.sops.yaml", "tcr.ccr-clawhub-secret"),
+    ):
+        (secret_dir / filename).write_text(
+            textwrap.dedent(
+                f"""
+                apiVersion: v1
+                kind: Secret
+                metadata:
+                  name: {secret_name}
+                  namespace: lightvela-playground-sandbox-bj-3
+                  annotations:
+                    managed-by: harness-ci-sandbox-bj-3-bootstrap
+                type: kubernetes.io/dockerconfigjson
+                stringData:
+                  .dockerconfigjson: ENC[AES256_GCM,data:registry]
+                sops:
+                  age:
+                    - recipient: age1testrecipient
+                      enc: test
+                """
+            ).lstrip()
+        )
     (secret_dir / "README.md").write_text("secret notes for sandbox-bj-3\n")
 
 

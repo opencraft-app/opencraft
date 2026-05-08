@@ -40,6 +40,7 @@ LIGHTCLAW_DOMAIN = "lightclaw.tech"
 PLAYGROUND_RUNTIME_SECRET_NAME = "playground-runtime-secrets"
 PLAYGROUND_RUNTIME_SECRET_FILE = f"{PLAYGROUND_RUNTIME_SECRET_NAME}.sops.yaml"
 PLAYGROUND_RUNTIME_KSOPS_GENERATOR = "ksops-runtime-secrets-generator.yaml"
+PLAYGROUND_PULL_SECRET_NAMES = ("tcr.bj8-lightclaw-secret", "tcr.ccr-clawhub-secret")
 PLAYGROUND_DB_SERVICES: tuple[tuple[str, str], ...] = (
     ("payment", "migration"),
     ("lightclaw-auth", "migration"),
@@ -491,6 +492,20 @@ def render_catalog_bytes(data: bytes, plan: PlaygroundClonePlan) -> bytes:
     return text.encode()
 
 
+def render_sops_secret_bytes(data: bytes, plan: PlaygroundClonePlan) -> bytes:
+    payload = yaml.safe_load(data.decode()) or {}
+    if not isinstance(payload, dict) or payload.get("kind") != "Secret":
+        return data
+    metadata = payload.setdefault("metadata", {})
+    if isinstance(metadata, dict):
+        metadata["namespace"] = plan.namespace
+        annotations = metadata.setdefault("annotations", {})
+        if isinstance(annotations, dict):
+            managed_by = str(annotations.get("managed-by") or "")
+            annotations["managed-by"] = managed_by.replace(plan.from_env, plan.to_env) or f"harness-ci-{plan.to_env}-bootstrap"
+    return yaml.safe_dump(payload, allow_unicode=True, sort_keys=False).encode()
+
+
 def generated_playground_files(plan: PlaygroundClonePlan) -> tuple[GeneratedFile, ...]:
     return (
         GeneratedFile(
@@ -599,7 +614,7 @@ def env_bootstrap_serviceaccount_text(plan: PlaygroundClonePlan) -> str:
                 "name": "default",
                 "namespace": plan.namespace,
             },
-            "imagePullSecrets": [{"name": "tcr-bj8-lightclaw"}, {"name": "tcr-ccr-clawhub"}],
+            "imagePullSecrets": [{"name": name} for name in PLAYGROUND_PULL_SECRET_NAMES],
         },
         allow_unicode=True,
         sort_keys=False,
@@ -1021,7 +1036,7 @@ def rendered_clone_plan_files(
     rendered: list[RenderedFile] = []
     for item in plan.files:
         if item.source.name.endswith(".sops.yaml"):
-            data = item.source.read_bytes()
+            data = render_sops_secret_bytes(item.source.read_bytes(), plan)
         elif f"/{plan.playground_root.rstrip('/')}/{plan.from_env}/" in item.source.as_posix():
             data = render_catalog_bytes(item.source.read_bytes(), plan)
         else:
@@ -1299,6 +1314,40 @@ def check_playground_stateful_runtime_contract(
             errors.append(f"{runtime_generator.relative_to(repo_root)} kind must be ksops")
         if expected_file_ref not in files:
             errors.append(f"{runtime_generator.relative_to(repo_root)} must include {expected_file_ref}")
+
+    serviceaccount_path = source_root / "serviceaccount.yaml"
+    if serviceaccount_path.is_file():
+        serviceaccount = load_yaml_mapping(serviceaccount_path.read_text(), serviceaccount_path.as_posix())
+        refs = {
+            str(item.get("name"))
+            for item in serviceaccount.get("imagePullSecrets") or []
+            if isinstance(item, dict)
+        }
+        for name in PLAYGROUND_PULL_SECRET_NAMES:
+            if name not in refs:
+                errors.append(f"{serviceaccount_path.relative_to(repo_root)} missing imagePullSecret {name}")
+
+    pull_generator = source_root / "ksops-pull-secret-generator.yaml"
+    if pull_generator.is_file():
+        pull_payload = load_yaml_mapping(pull_generator.read_text(), pull_generator.as_posix())
+        for file_ref in [str(item) for item in pull_payload.get("files") or []]:
+            secret_path = (pull_generator.parent / file_ref).resolve()
+            if not secret_path.is_file():
+                errors.append(f"{pull_generator.relative_to(repo_root)} references missing {file_ref}")
+                continue
+            payload = load_yaml_mapping(secret_path.read_text(), secret_path.as_posix())
+            metadata = payload.get("metadata") or {}
+            name = str(metadata.get("name") or "")
+            if name in PLAYGROUND_PULL_SECRET_NAMES and metadata.get("namespace") != namespace:
+                errors.append(f"{secret_path.relative_to(repo_root)} namespace={metadata.get('namespace')}, expected={namespace}")
+        pull_names = {
+            str((load_yaml_mapping(((pull_generator.parent / file_ref).resolve()).read_text(), file_ref).get("metadata") or {}).get("name") or "")
+            for file_ref in [str(item) for item in pull_payload.get("files") or []]
+            if (pull_generator.parent / file_ref).resolve().is_file()
+        }
+        for name in PLAYGROUND_PULL_SECRET_NAMES:
+            if name not in pull_names:
+                errors.append(f"{pull_generator.relative_to(repo_root)} must generate Secret/{name}")
 
     for runtime_name, file_name, service_name, statefulset_name, required_secret_key in (
         ("MySQL", "mysql.yaml", "mysql", "mysql", "MYSQL_ROOT_PASSWORD"),
