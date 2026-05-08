@@ -4,12 +4,18 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 RUNTIME_DIR = next(parent for parent in Path(__file__).resolve().parents if parent.name == "runtime" and parent.parent.name == ".ci")
 if str(RUNTIME_DIR) not in sys.path:
     sys.path.insert(0, str(RUNTIME_DIR))
 
-from gates.db_contract_verifier import build_check_script, build_job_manifest, max_migration_version  # noqa: E402
+from gates.db_contract_verifier import (  # noqa: E402
+    build_check_script,
+    build_job_manifest,
+    max_migration_version,
+    resolve_runtime_env,
+)
 
 
 class DbContractVerifierTests(unittest.TestCase):
@@ -64,6 +70,138 @@ class DbContractVerifierTests(unittest.TestCase):
         self.assertIn('"configMapRef": {"name": "subscription-config"}', payload)
         self.assertIn('"secretRef": {"name": "subscription-runtime-secrets"}', payload)
         self.assertNotIn('"value":', payload)
+
+    def test_ctl_runtime_env_can_be_injected_without_gitops_secret(self) -> None:
+        verifier = {
+            "service_platform_env_file": "argocd/services/ctl/{env}/ctl-platform.env",
+            "static_env": {
+                "MYSQL_PORT": "3306",
+                "CTL_DB": "ctl",
+                "CTL_DB_USER": "root",
+            },
+            "env_from_service_platform": {
+                "MYSQL_HOST": "CTL_TEST_MYSQL_HOST",
+            },
+            "env_from_platform": {
+                "CTL_DB_PASSWORD": "CTL_TEST_MYSQL_PASSWORD",
+            },
+            "node_selector_from_service_platform": {
+                "pool": "CTL_NODE_POOL",
+            },
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            (repo_root / "argocd/services/ctl/beijing-sandbox").mkdir(parents=True)
+            (repo_root / "argocd/services/ctl/beijing-sandbox/ctl-platform.env").write_text(
+                "CTL_TEST_MYSQL_HOST=10.15.224.4\nCTL_NODE_POOL=general-bj8\n"
+            )
+            (repo_root / "deploy/envs/beijing-sandbox").mkdir(parents=True)
+            (repo_root / "deploy/envs/beijing-sandbox/platform.env").write_text(
+                "CTL_TEST_MYSQL_PASSWORD=test-password\n"
+            )
+
+            env_values, node_selector, env_secret_values = resolve_runtime_env(repo_root, "beijing-sandbox", verifier)
+
+        self.assertEqual(env_values["MYSQL_HOST"], "10.15.224.4")
+        self.assertEqual(env_values["CTL_DB_PASSWORD"], "test-password")
+        self.assertEqual(env_secret_values, {})
+        self.assertEqual(node_selector, {"pool": "general-bj8"})
+
+    def test_ctl_runtime_env_can_use_secret_resolver_without_inline_password(self) -> None:
+        verifier = {
+            "service_platform_env_file": "argocd/services/ctl/{env}/ctl-platform.env",
+            "static_env": {
+                "MYSQL_PORT": "3306",
+                "CTL_DB": "ctl",
+                "CTL_DB_USER": "root",
+            },
+            "env_from_service_platform": {
+                "MYSQL_HOST": "CTL_TEST_MYSQL_HOST",
+            },
+            "env_from_secret_resolver": {
+                "CTL_DB_PASSWORD": "ctl_db_password",
+            },
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            (repo_root / "argocd/services/ctl/beijing-sandbox").mkdir(parents=True)
+            (repo_root / "argocd/services/ctl/beijing-sandbox/ctl-platform.env").write_text(
+                "CTL_TEST_MYSQL_HOST=10.15.224.4\n"
+            )
+
+            with mock.patch(
+                "gates.db_contract_verifier.resolve_contract_secret_values",
+                return_value={"ctl_db_password": "test-password"},
+            ):
+                env_values, _node_selector, env_secret_values = resolve_runtime_env(
+                    repo_root,
+                    "beijing-sandbox",
+                    verifier,
+                    {"secret_resolvers": {"ctl_db_password": {"type": "sops_toml"}}},
+                )
+
+        self.assertEqual(env_values["MYSQL_HOST"], "10.15.224.4")
+        self.assertNotIn("CTL_DB_PASSWORD", env_values)
+        self.assertEqual(env_secret_values["CTL_DB_PASSWORD"], "test-password")
+
+    def test_job_manifest_supports_runtime_env_and_host_network(self) -> None:
+        verifier = {
+            "namespace": "ctl",
+            "hostNetwork": True,
+            "dnsPolicy": "ClusterFirstWithHostNet",
+            "database_env": "CTL_DB",
+            "user_env": "CTL_DB_USER",
+            "password_env": "CTL_DB_PASSWORD",
+        }
+
+        manifest = build_job_manifest(
+            "ctl",
+            "beijing-sandbox",
+            verifier,
+            expected_version=16,
+            env_values={
+                "MYSQL_HOST": "10.15.224.4",
+                "MYSQL_PORT": "3306",
+                "CTL_DB": "ctl",
+                "CTL_DB_USER": "root",
+                "CTL_DB_PASSWORD": "test-password",
+            },
+            node_selector={"pool": "general-bj8"},
+        )
+        pod_spec = manifest["spec"]["template"]["spec"]
+
+        self.assertTrue(pod_spec["hostNetwork"])
+        self.assertEqual(pod_spec["dnsPolicy"], "ClusterFirstWithHostNet")
+        self.assertEqual(pod_spec["nodeSelector"], {"pool": "general-bj8"})
+        self.assertIn({"name": "MYSQL_HOST", "value": "10.15.224.4"}, pod_spec["containers"][0]["env"])
+
+    def test_job_manifest_supports_secret_env_refs_without_inline_secret(self) -> None:
+        verifier = {
+            "namespace": "ctl",
+            "database_env": "CTL_DB",
+            "user_env": "CTL_DB_USER",
+            "password_env": "CTL_DB_PASSWORD",
+        }
+
+        manifest = build_job_manifest(
+            "ctl",
+            "beijing-sandbox",
+            verifier,
+            expected_version=16,
+            env_values={
+                "MYSQL_HOST": "10.15.224.4",
+                "MYSQL_PORT": "3306",
+                "CTL_DB": "ctl",
+                "CTL_DB_USER": "root",
+            },
+            env_secret_refs={"CTL_DB_PASSWORD": ("db-contract-ctl-secrets", "CTL_DB_PASSWORD")},
+        )
+        payload = json.dumps(manifest)
+
+        self.assertIn('"secretKeyRef": {"name": "db-contract-ctl-secrets", "key": "CTL_DB_PASSWORD"}', payload)
+        self.assertNotIn("test-password", payload)
 
 
 if __name__ == "__main__":

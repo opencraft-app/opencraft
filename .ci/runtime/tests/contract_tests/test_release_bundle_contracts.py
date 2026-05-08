@@ -197,7 +197,8 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 continue
             with self.subTest(workflow=workflow_path):
                 self.assertEqual(workflow.get("version"), "v2.0")
-                self.assertEqual((workflow.get("concurrency") or {}).get("group"), "mono2-master-release")
+                expected_group = f"mono2-service-release-{Path(workflow_path).stem}"
+                self.assertEqual((workflow.get("concurrency") or {}).get("group"), expected_group)
                 self.assertIsInstance((workflow.get("extends") or {}).get("template"), str)
                 self.assert_release_entry_targets(
                     workflow,

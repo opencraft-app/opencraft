@@ -50,12 +50,23 @@ import {
   ChannelPanel,
   SkillPanel,
   createLighthouseConfig,
+  createLightClawScripts,
   initI18n,
   type IInstanceInfo,
   type IFeatureFlags,
 } from "@tencent/tea-sdk-lightclaw";
 import { createMonoDebugExecAdapter } from "@/pages/marketing/openclaw-tat-adapter";
 import { installOpenClawConsoleHelpers } from "@/pages/marketing/openclaw-console-helpers";
+import { getOpenClawCreateLimitMessage } from "@/pages/marketing/openclaw-create-availability";
+import {
+  getRestartBlockReason,
+  isActiveBotRestarting as computeIsActiveBotRestarting,
+  getActiveBotRestartError,
+  buildRestartErrorMessage,
+  setErrorForBot,
+  clearErrorForBot,
+  type RestartErrors,
+} from "@/pages/marketing/openclaw-restart-gateway";
 import "@tencent/tea-sdk-lightclaw/styles";
 
 const DEFAULT_TAT_TERMINAL_TIMEOUT_SECONDS = 3600;
@@ -2430,21 +2441,32 @@ const getBotStatusLabel = (status: OpenClawBot["status"]) => {
 
 /* ─── Main Settings Page ─── */
 
+const hermesGatewayCommands = createLightClawScripts({ regionShortName: "gz", agentType: "hermes" }).hermes.gateway;
+
 export const OpenClawSettingsPage = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const creatingParam = searchParams.get("creating")?.trim() ?? "";
   const requestedCreatingBotId = creatingParam && creatingParam !== "true" ? creatingParam : "";
-  const { bots, botsLoading, deleteBot, updateBot, user, refreshBots } = useOpenClaw();
+  const { bots, botsLoading, deleteBot, updateBot, user, refreshBots, isSubscribed, addBot } = useOpenClaw();
   const repositories = useRepositories();
 
   /* 创建 loading 状态 */
   const [isCreating, setIsCreating] = useState(Boolean(creatingParam));
   const [creationError, setCreationError] = useState<string | null>(null);
+  /* 已订阅用户直接创建 Agent 的确认弹窗 */
+  const [showCreateConfirm, setShowCreateConfirm] = useState(false);
+  const [directCreating, setDirectCreating] = useState(false);
+  const [directCreateError, setDirectCreateError] = useState<string | null>(null);
   const visibleBots = useMemo(
     () => bots.filter((bot) => bot.status !== "provisioning" && bot.status !== "deleting"),
     [bots],
   );
+  const createLimitMessage = useMemo(
+    () => getOpenClawCreateLimitMessage(bots, user.plan.maxBots),
+    [bots, user.plan.maxBots],
+  );
+  const canCreateBot = createLimitMessage === null;
   const provisioningBot = useMemo(() => {
     if (requestedCreatingBotId) {
       return bots.find((bot) => bot.id === requestedCreatingBotId && bot.status === "provisioning") ?? null;
@@ -2551,6 +2573,46 @@ export const OpenClawSettingsPage = () => {
   /* Terminal 弹窗 */
   const [showTerminal, setShowTerminal] = useState(false);
 
+  /* ── 重启 Gateway ── */
+  // restartingBotIds: 正在重启的 bot ID 集合，支持多 bot 并行重启
+  const [restartingBotIds, setRestartingBotIds] = useState<Set<string>>(new Set());
+  // 错误按 bot 维度存储，多 bot 并行失败时各自保留错误信息
+  const [restartErrors, setRestartErrors] = useState<RestartErrors>(new Map());
+
+  // execDebugCommand 是同步等待命令执行完成的接口。
+  // 当返回 SUCCESS 时 `harness gateway restart` 已经执行完毕，
+  // gateway 进程重启不会改变实例的 running 状态，因此不需要轮询。
+  // 保留短暂视觉反馈（1.5s）让用户感知到操作已执行。
+  const RESTART_FEEDBACK_MS = 1500;
+
+  const handleRestartGateway = async () => {
+    if (getRestartBlockReason(activeBot, restartingBotIds)) return;
+    const targetBotId = activeBot!.id;
+    setRestartingBotIds((prev) => new Set(prev).add(targetBotId));
+    setRestartErrors((prev) => clearErrorForBot(prev, targetBotId));
+    try {
+      const result = await repositories.bots.execDebugCommand(targetBotId, hermesGatewayCommands.getRestartCommand());
+      const errorMsg = buildRestartErrorMessage(result);
+      if (errorMsg) {
+        setRestartErrors((prev) => setErrorForBot(prev, targetBotId, errorMsg));
+        setRestartingBotIds((prev) => { const next = new Set(prev); next.delete(targetBotId); return next; });
+        return;
+      }
+      // 命令已成功执行完毕，短暂保持视觉反馈后恢复
+      setTimeout(() => {
+        setRestartingBotIds((prev) => { const next = new Set(prev); next.delete(targetBotId); return next; });
+      }, RESTART_FEEDBACK_MS);
+    } catch (err) {
+      setRestartErrors((prev) => setErrorForBot(prev, targetBotId, err instanceof Error ? err.message : "重启失败"));
+      setRestartingBotIds((prev) => { const next = new Set(prev); next.delete(targetBotId); return next; });
+    }
+  };
+
+  // 当前 tab 的 bot 是否正在重启
+  const isActiveBotRestarting = computeIsActiveBotRestarting(activeBot, restartingBotIds);
+  // 当前 tab 是否展示错误
+  const activeBotRestartError = getActiveBotRestartError(activeBot, restartErrors);
+
   useEffect(() => {
     return installOpenClawConsoleHelpers({
       host: window as Window & { help?: unknown; terminal?: unknown; console: Console },
@@ -2560,6 +2622,12 @@ export const OpenClawSettingsPage = () => {
 
   useEffect(() => {
     if (!creatingParam) return;
+    if (creatingParam === "true" && !requestedCreatingBotId && !provisioningBot && !botsLoading) {
+      setIsCreating(false);
+      setCreationError(null);
+      navigate("/dashboard/settings", { replace: true });
+      return;
+    }
     setIsCreating(true);
     setCreationError(null);
     if (requestedCreatingBotId) {
@@ -2569,7 +2637,7 @@ export const OpenClawSettingsPage = () => {
     if (provisioningBot) {
       setActiveTabId(provisioningBot.id);
     }
-  }, [creatingParam, requestedCreatingBotId, provisioningBot]);
+  }, [creatingParam, requestedCreatingBotId, provisioningBot, botsLoading, navigate]);
 
   /*
    * 刷新恢复：如果用户刷新后 URL 参数丢失，但后端仍有 Creating 实例，
@@ -2666,9 +2734,55 @@ export const OpenClawSettingsPage = () => {
   ]);
 
   const handleCreateNew = () => {
-    // 按钮显示逻辑已保证 bots.length < maxBots 时才可见，此处做二次防御
-    if (bots.length >= user.plan.maxBots) return;
-    navigate("/subscribe");
+    if (createLimitMessage) {
+      setDirectCreateError(createLimitMessage);
+      return;
+    }
+    if (isSubscribed) {
+      // 已订阅：弹确认框，直接创建，不跳套餐页
+      setDirectCreateError(null);
+      setShowCreateConfirm(true);
+    } else {
+      // 未订阅：跳转套餐订阅页
+      navigate("/subscribe");
+    }
+  };
+
+  const handleConfirmCreate = async () => {
+    setDirectCreating(true);
+    setDirectCreateError(null);
+    try {
+      const newBot = await addBot({
+        name: "我的Hermes",
+        personality: "默认设定",
+        personalityEmoji: "✨",
+        intro: "",
+        soulTemplateId: undefined,
+        status: "running",
+      });
+      setShowCreateConfirm(false);
+      // 进入页面内 loading 状态，带上新 bot id 供轮询定位
+      setIsCreating(true);
+      navigate(`/dashboard/settings?creating=${encodeURIComponent(newBot.id)}`, { replace: true });
+    } catch (err) {
+      const raw = err instanceof Error ? err.message : "";
+      // 将后端错误映射为用户友好文案
+      let friendlyMsg: string;
+      if (/quota|limit|exceed/i.test(raw)) {
+        friendlyMsg = "当前套餐的 Agent 配额已满，请升级套餐或删除现有 Agent 后重试。";
+      } else if (/resource|sandbox|pool|exhaust/i.test(raw)) {
+        friendlyMsg = "云端资源暂时紧张，请稍后再试。";
+      } else if (/timeout|timed?\s*out/i.test(raw)) {
+        friendlyMsg = "创建超时，请稍后重试。";
+      } else if (/network|fetch|connect/i.test(raw)) {
+        friendlyMsg = "网络异常，请检查网络后重试。";
+      } else {
+        friendlyMsg = raw || "创建失败，请稍后重试。";
+      }
+      setDirectCreateError(friendlyMsg);
+    } finally {
+      setDirectCreating(false);
+    }
   };
 
   const avatarUrl = activeBot ? getAvatarForBot(activeBot.id) : "";
@@ -2732,6 +2846,56 @@ export const OpenClawSettingsPage = () => {
         document.body,
       )}
 
+      {/* Create Confirm Dialog */}
+      {showCreateConfirm && createPortal(
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          onClick={() => { if (!directCreating) setShowCreateConfirm(false); }}
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            className="mx-4 w-full max-w-sm rounded-2xl border bg-white p-6 shadow-2xl"
+            style={{ borderColor: "rgba(238,238,238,0.4)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3" style={{ marginBottom: "20px" }}>
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "rgba(7,193,96,0.08)" }}>
+                <Sparkles className="h-5 w-5" style={{ color: "#07C160" }} />
+              </div>
+              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>创建新智能体</h3>
+            </div>
+            <p style={{ color: "#666", fontSize: "14px", lineHeight: 1.6, marginBottom: "20px" }}>
+              即刻创建全新的 Hermes Agent
+            </p>
+            {directCreateError && <p className="text-xs" style={{ color: "#DC2626", marginBottom: "12px" }}>{directCreateError}</p>}
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => void handleConfirmCreate()}
+                disabled={directCreating}
+                className="flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-all"
+                style={{
+                  backgroundColor: directCreating ? "#9CA3AF" : "var(--lw-fg)",
+                  cursor: directCreating ? "not-allowed" : "pointer",
+                }}
+              >
+                {directCreating && <Loader2 className="h-4 w-4 animate-spin" />}
+                {directCreating ? "创建中..." : directCreateError ? "重试" : "确认创建"}
+              </button>
+              <button
+                onClick={() => setShowCreateConfirm(false)}
+                disabled={directCreating}
+                className="py-2 text-sm transition-colors hover:opacity-70"
+                style={{ color: "#999", background: "none", border: "none", cursor: directCreating ? "not-allowed" : "pointer" }}
+              >
+                取消
+              </button>
+            </div>
+          </motion.div>
+        </div>,
+        document.body,
+      )}
+
       {/* Channel Modal */}
       {showChannelModal && activeBot && (
         <ChannelModal bot={activeBot} onClose={() => setShowChannelModal(false)} />
@@ -2774,7 +2938,7 @@ export const OpenClawSettingsPage = () => {
             >
               我的智能体伙伴
             </h1>
-            {!isCreating && visibleBots.length > 0 && bots.length < user.plan.maxBots && (
+            {!isCreating && visibleBots.length > 0 && canCreateBot && (
               <button
                 onClick={handleCreateNew}
                 className="flex items-center gap-2 rounded-full bg-black/90 px-5 py-2 text-base font-medium leading-normal text-white transition-all hover:opacity-90 active:scale-[0.98]"
@@ -2908,18 +3072,51 @@ export const OpenClawSettingsPage = () => {
                       )}
                       <div className="mt-1.5 flex flex-wrap items-center gap-x-5 gap-y-1">
                         <div className="flex items-center gap-1.5">
-                          <span
-                            className="inline-block h-2 w-2 rounded-full"
-                            style={{ background: getBotStatusColor(activeBot.status) }}
-                          />
-                          <span className="text-xs font-medium" style={{ color: "rgba(0,0,0,0.60)" }}>
-                            {getBotStatusLabel(activeBot.status)}
+                          {isActiveBotRestarting ? (
+                            <Loader2 className="h-3 w-3 animate-spin" style={{ color: "rgba(0,0,0,0.45)" }} />
+                          ) : (
+                            <span
+                              className="inline-block h-2 w-2 rounded-full"
+                              style={{ background: getBotStatusColor(activeBot.status) }}
+                            />
+                          )}
+                          <span className="font-medium" style={{ color: "rgba(0,0,0,0.60)", fontSize: 12 }}>
+                            {isActiveBotRestarting ? "重启中..." : getBotStatusLabel(activeBot.status)}
                           </span>
                         </div>
-                        <span className="text-xs" style={{ color: "rgba(0,0,0,0.40)" }}>
+                        {/* 重启链接 */}
+                        <button
+                          onClick={handleRestartGateway}
+                          disabled={isActiveBotRestarting || activeBot.status !== "running"}
+                          className="group transition-colors"
+                          style={{
+                            fontSize: 12,
+                            color: isActiveBotRestarting || activeBot.status !== "running" ? "rgba(0,0,0,0.25)" : "var(--lw-accent)",
+                            cursor: isActiveBotRestarting || activeBot.status !== "running" ? "not-allowed" : "pointer",
+                            background: "none",
+                            border: "none",
+                            padding: 0,
+                            position: "relative",
+                          }}
+                          title={isActiveBotRestarting ? "正在重启中" : "重启 Hermes Agent 网关"}
+                        >
+                          重启
+                          {isActiveBotRestarting && (
+                            <span
+                              className="pointer-events-none absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap rounded px-2 py-0.5 text-[10px] text-white opacity-0 transition-opacity group-hover:opacity-100"
+                              style={{ background: "rgba(0,0,0,0.75)" }}
+                            >
+                              正在重启中
+                            </span>
+                          )}
+                        </button>
+                        <span style={{ color: "rgba(0,0,0,0.40)", fontSize: 12 }}>
                           创建于 {new Date(activeBot.createdAt).toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric" })}
                         </span>
                       </div>
+                      {activeBotRestartError && (
+                        <p className="mt-1 text-xs" style={{ color: "#DC2626" }}>{activeBotRestartError}</p>
+                      )}
                     </div>
                     <button
                       onClick={() => { setDeleteInput(""); setShowDeleteConfirm(true); }}
@@ -3088,11 +3285,22 @@ export const OpenClawSettingsPage = () => {
             !isCreating && !botsLoading && visibleBots.length === 0 && (
               <div className="flex flex-col items-center justify-center py-20 text-center">
                 <p className="text-sm" style={{ color: "rgba(0,0,0,0.40)" }}>即刻创建你的第一个云端智能体伙伴</p>
+                {createLimitMessage && (
+                  <p className="mt-3 max-w-sm text-xs leading-relaxed" style={{ color: "rgba(0,0,0,0.48)" }}>
+                    {createLimitMessage}
+                  </p>
+                )}
                 <button
                   onClick={handleCreateNew}
-                  className="mt-6 inline-flex items-center gap-2 rounded-full bg-black/90 px-6 py-2.5 text-sm font-semibold text-white transition-all hover:opacity-90"
+                  disabled={!canCreateBot}
+                  className={cn(
+                    "mt-6 inline-flex items-center gap-2 rounded-full px-6 py-2.5 text-sm font-semibold text-white transition-all",
+                    canCreateBot
+                      ? "bg-black/90 hover:opacity-90"
+                      : "cursor-not-allowed bg-black/30",
+                  )}
                 >
-                  立即创建
+                  {canCreateBot ? "立即创建" : "暂不可创建"}
                 </button>
               </div>
             )

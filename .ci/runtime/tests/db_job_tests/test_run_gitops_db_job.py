@@ -3,6 +3,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 
@@ -44,6 +45,65 @@ class RunGitopsDbJobTests(unittest.TestCase):
                     "beijing-sandbox",
                     allow_ci_default_file=False,
                 )
+
+    def test_ctl_migration_uses_fixed_migrate_image_even_with_release_image_override(self) -> None:
+        image = db_job.resolve_job_image(
+            SimpleNamespace(image_override="example.com/ctl:release"),
+            db_job.SERVICE_SPECS[("ctl", "migration")],
+            kubeconfig="/tmp/unused",
+            service_platform_env={},
+        )
+
+        self.assertEqual(image, "migrate/migrate:v4.18.3")
+
+    def test_regular_db_job_still_uses_release_image_override(self) -> None:
+        image = db_job.resolve_job_image(
+            SimpleNamespace(image_override="example.com/payment:release"),
+            db_job.SERVICE_SPECS[("payment", "migration")],
+            kubeconfig="/tmp/unused",
+            service_platform_env={},
+        )
+
+        self.assertEqual(image, "example.com/payment:release")
+
+    def test_ctl_dynamic_resources_use_temporary_secret_refs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            migrations = Path(tmp) / "ctl" / "migrations"
+            migrations.mkdir(parents=True)
+            (migrations / "000001_init.up.sql").write_text("select 1;\n")
+            with mock.patch.object(db_job, "REPO_ROOT", Path(tmp)), \
+                mock.patch.object(
+                    db_job,
+                    "resolve_contract_secret_values",
+                    return_value={"ctl_db_password": "test-password"},
+                ), \
+                mock.patch.object(
+                    db_job,
+                    "build_configmap_manifest",
+                    return_value={
+                        "apiVersion": "v1",
+                        "kind": "ConfigMap",
+                        "metadata": {"name": "gitops-ctl-migration-test-migrations", "namespace": "ctl"},
+                    },
+                ):
+                dynamic, resources = db_job.build_ctl_dynamic_resources(
+                    "gitops-ctl-migration-test",
+                    "beijing-sandbox",
+                    Path("/tmp/gitops"),
+                    {},
+                    {"CTL_TEST_MYSQL_HOST": "10.15.224.4"},
+                    {"db_job_secret_resolver": "ctl_db_password"},
+                )
+
+        self.assertEqual(resources[0]["kind"], "Secret")
+        self.assertEqual(resources[0]["metadata"]["name"], "gitops-ctl-migration-test-secrets")
+        self.assertEqual(resources[0]["stringData"]["MYSQL_ROOT_PASSWORD"], "test-password")
+        env_payload = str(dynamic["env"])
+        init_env_payload = str(dynamic["initContainers"][0]["env"])
+        self.assertIn("secretKeyRef", env_payload)
+        self.assertIn("secretKeyRef", init_env_payload)
+        self.assertNotIn("test-password", env_payload)
+        self.assertNotIn("test-password", init_env_payload)
 
 
 if __name__ == "__main__":

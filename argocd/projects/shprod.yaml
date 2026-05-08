@@ -24,7 +24,6 @@ spec:
         - mono-release-groups/mono-shprod-readonly
       policies:
         - p, proj:shprod:mono-observe, applications, get, shprod/*, allow
-        - p, proj:shprod:mono-observe, projects, get, shprod, allow
     - name: mono-logs
       description: Log access for mono leaf apps in Shanghai production.
       groups:

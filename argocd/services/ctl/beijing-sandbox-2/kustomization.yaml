@@ -15,3 +15,5 @@ configMapGenerator:
   - SOUL-gentle.md=souls/SOUL-gentle.md
   - SOUL-humor.md=souls/SOUL-humor.md
   - SOUL-pro.md=souls/SOUL-pro.md
+patches:
+- path: delete-servicemonitor.yaml

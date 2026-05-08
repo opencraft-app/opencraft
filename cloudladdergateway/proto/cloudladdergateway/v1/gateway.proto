@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package cloudladdergateway.v1;
+
+option go_package = "github.com/openclaw/openclaw/mono/cloudladdergateway/gen/cloudladdergateway/v1;gatewayv1";
+
+service CloudLadderGatewayService {
+  rpc Invoke(ProxyRequest) returns (ProxyResponse);
+  rpc CheckRoute(RouteCheckRequest) returns (RouteCheckResponse);
+}
+
+message Header {
+  string name = 1;
+  repeated string values = 2;
+}
+
+message ProxyRequest {
+  string route_id = 1;
+  string method = 2;
+  string path = 3;
+  string query = 4;
+  repeated Header headers = 5;
+  bytes body = 6;
+  map<string, string> attributes = 7;
+  string request_id = 8;
+  string caller = 9;
+  string timestamp = 10;
+  string signature = 11;
+}
+
+message ProxyResponse {
+  int32 status_code = 1;
+  repeated Header headers = 2;
+  bytes body = 3;
+  string upstream_url = 4;
+  repeated WebhookDelivery webhook_deliveries = 5;
+}
+
+message WebhookDelivery {
+  string id = 1;
+  string mode = 2;
+  string status = 3;
+  int32 status_code = 4;
+  string error = 5;
+  string target_url = 6;
+}
+
+message RouteCheckRequest {
+  ProxyRequest request = 1;
+}
+
+message RouteCheckResponse {
+  bool matched = 1;
+  string route_id = 2;
+  string error = 3;
+}

@@ -35,6 +35,7 @@ def load_plan(
 def run_db_gate(
     *,
     repo_root: Path,
+    gitops_worktree: Path,
     runtime_command_dir: Path,
     bundle_manifest: Path,
     service: str,
@@ -59,7 +60,16 @@ def run_db_gate(
         if plan.release_dependency_changed:
             raise RuntimeError("同批依赖服务发生变更；北京自动发布停止，避免无序自动 sync。")
         if plan.requires_db_readiness:
-            run_db_readiness_flow(repo_root, runtime_command_dir, plan, env, source_ref, apply_migration=True)
+            run_db_readiness_flow(
+                repo_root,
+                gitops_worktree,
+                runtime_command_dir,
+                bundle_manifest,
+                plan,
+                env,
+                source_ref,
+                apply_migration=True,
+            )
             plan = load_plan(
                 repo_root=repo_root,
                 bundle_manifest=bundle_manifest,
@@ -77,7 +87,17 @@ def run_db_gate(
     if env == "shprod":
         print("上海生产策略：GitOps MR 可进入待同步状态；Argo sync 保持人工执行。", file=sys.stderr)
         if plan.requires_db_readiness:
-            run_db_readiness_flow(repo_root, runtime_command_dir, plan, env, source_ref, apply_migration=False, shprod=True)
+            run_db_readiness_flow(
+                repo_root,
+                gitops_worktree,
+                runtime_command_dir,
+                bundle_manifest,
+                plan,
+                env,
+                source_ref,
+                apply_migration=False,
+                shprod=True,
+            )
             plan = load_plan(
                 repo_root=repo_root,
                 bundle_manifest=bundle_manifest,
@@ -96,7 +116,9 @@ def run_db_gate(
 
 def run_db_readiness_flow(
     repo_root: Path,
+    gitops_worktree: Path,
     runtime_command_dir: Path,
+    bundle_manifest: Path,
     plan: GatePlan,
     env: str,
     source_ref: str,
@@ -104,7 +126,6 @@ def run_db_readiness_flow(
     apply_migration: bool,
     shprod: bool = False,
 ) -> None:
-    ensure_db_tools(repo_root)
     if not plan.readiness_supported:
         if shprod:
             raise RuntimeError("DB readiness contract 不支持自动校验；停止进入上海生产待同步状态。")
@@ -113,6 +134,10 @@ def run_db_readiness_flow(
         args = [
             "python3",
             str(runtime_command_dir / "run_gitops_db_job.py"),
+            "--repo-root",
+            str(repo_root),
+            "--deploy-root",
+            str(gitops_worktree),
             "--service",
             plan.db_job_service,
             "--operation",
@@ -121,39 +146,53 @@ def run_db_readiness_flow(
             env,
             "--revision",
             source_ref,
+            "--bundle-service",
+            plan.service,
+            "--bundle-manifest",
+            str(bundle_manifest),
             "--apply",
             "--wait",
         ]
         if plan.db_job_image_override:
             args.extend(["--image-override", plan.db_job_image_override])
         print("GitOps 发布门禁：先执行受控 DB job", file=sys.stderr)
-        run_logged(args, cwd=repo_root)
+        run_with_db_tools(repo_root, args, cwd=gitops_worktree)
 
     if shprod:
         print("GitOps 待同步门禁：执行上海生产 DB readiness 只读校验", file=sys.stderr)
     else:
         print("GitOps 发布门禁：执行 DB readiness 只读校验", file=sys.stderr)
-    run_logged(
+    run_with_db_tools(
+        repo_root,
         [
             "python3",
             str(runtime_command_dir / "verify_db_contract.py"),
             "--repo-root",
-            str(repo_root),
+            str(gitops_worktree),
             "--service",
             plan.service,
             "--env",
             env,
+            "--bundle-manifest",
+            str(bundle_manifest),
             "--apply",
             "--wait",
         ],
-        cwd=repo_root,
+        cwd=gitops_worktree,
     )
 
 
-def ensure_db_tools(repo_root: Path) -> None:
+def run_with_db_tools(repo_root: Path, command: list[str], *, cwd: Path) -> None:
     run_logged(
-        ["bash", "-c", 'source "$1/.ci/init.sh"; ci_ensure_db_job_tools', "bash", str(repo_root)],
-        cwd=repo_root,
+        [
+            "bash",
+            "-c",
+            'source "$1/.ci/init.sh"; shift; ci_ensure_db_job_tools; "$@"',
+            "bash",
+            str(repo_root),
+            *command,
+        ],
+        cwd=cwd,
     )
 
 
