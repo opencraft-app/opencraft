@@ -76,6 +76,20 @@ class RunGitopsDbJobTests(unittest.TestCase):
 
         self.assertEqual(image, "example.com/payment:from-env")
 
+    def test_payment_db_job_loads_gitops_platform_env(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            env_file = Path(tmp) / "argocd/services/payment/sandbox-bj-6/payment-platform.env"
+            env_file.parent.mkdir(parents=True)
+            env_file.write_text("PAYMENT_IMAGE=example.com/payment:from-file\n")
+
+            payload = db_job.load_service_platform_env(
+                db_job.SERVICE_SPECS[("payment", "migration")],
+                "sandbox-bj-6",
+                Path(tmp),
+            )
+
+        self.assertEqual(payload["PAYMENT_IMAGE"], "example.com/payment:from-file")
+
     def test_kubectl_command_adds_request_timeout(self) -> None:
         command = db_job.kubectl_command(["kubectl", "--kubeconfig", "/tmp/kubeconfig", "get", "pods"])
 
