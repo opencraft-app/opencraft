@@ -162,6 +162,10 @@ func newRouter(handler *instanceHandler, bh *bundleHandler, ph *passHandler) htt
 	// Pass 路由
 	mux.HandleFunc("/admin/api/ctl/passes", ph.handleAdminPasses)
 	mux.HandleFunc("/v1/passes", ph.handleUserPasses)
+	// 内部反向回调（trade -> ctl）：
+	//   - 裸路径 /internal/ctl/passes 承载 GET 互斥占用查询（Q66 拍板）
+	//   - 子路径 /internal/ctl/passes/{action} 承载 POST 生命周期动作（complete / 后续 renew/isolate/destroy）
+	mux.HandleFunc("/internal/ctl/passes", ph.handleInternalPasses)
 	mux.HandleFunc("/internal/ctl/passes/", ph.handleInternalPasses)
 
 	return requestMetadataMiddleware(metricsMiddleware(notFoundMiddleware(mux)))
@@ -276,6 +280,7 @@ func normalizePath(path string) string {
 	case "/health", "/metrics", "/internal/bots", "/v1/soul-templates", "/v1/me/usage",
 		"/v1/bundles", "/v1/passes",
 		"/admin/api/ctl/bundles", "/admin/api/ctl/passes",
+		"/internal/ctl/passes",
 		"/internal/ctl/passes/complete":
 		return path
 	}
