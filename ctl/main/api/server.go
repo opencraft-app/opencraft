@@ -162,6 +162,7 @@ func newRouter(handler *instanceHandler, bh *bundleHandler, ph *passHandler) htt
 	// Pass 路由
 	mux.HandleFunc("/admin/api/ctl/passes", ph.handleAdminPasses)
 	mux.HandleFunc("/v1/passes", ph.handleUserPasses)
+	mux.HandleFunc("/internal/ctl/passes/", ph.handleInternalPasses)
 
 	return requestMetadataMiddleware(metricsMiddleware(notFoundMiddleware(mux)))
 }
@@ -274,7 +275,8 @@ func normalizePath(path string) string {
 	switch path {
 	case "/health", "/metrics", "/internal/bots", "/v1/soul-templates", "/v1/me/usage",
 		"/v1/bundles", "/v1/passes",
-		"/admin/api/ctl/bundles", "/admin/api/ctl/passes":
+		"/admin/api/ctl/bundles", "/admin/api/ctl/passes",
+		"/internal/ctl/passes/complete":
 		return path
 	}
 	if strings.HasPrefix(path, "/internal/instances/") && strings.HasSuffix(path, "/chatclaw/runtime-bootstrap") {
@@ -285,6 +287,11 @@ func normalizePath(path string) string {
 	}
 	if strings.HasPrefix(path, "/internal/ctl/bundles/") {
 		return "/internal/ctl/bundles/{bundleId}"
+	}
+	if strings.HasPrefix(path, "/internal/ctl/passes/") {
+		// 当前仅 /complete 为已知；其它（renew / isolate / destroy 等）归一到 {action} 占位
+		// 避免后续生命周期接口加进来时高基数
+		return "/internal/ctl/passes/{action}"
 	}
 
 	parts := strings.Split(strings.Trim(path, "/"), "/")

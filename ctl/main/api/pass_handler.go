@@ -161,6 +161,51 @@ func (h *passHandler) describePasses(w http.ResponseWriter, r *http.Request) {
 	writeSuccess(w, r, http.StatusOK, &transport.ListPassesResponse{Passes: passes})
 }
 
+// handleInternalPasses 处理 /internal/ctl/passes/* 内部反向回调路由
+//
+// 当前承载（v4 收敛 — billing-integration B3）：
+//   - POST /internal/ctl/passes/complete — trade 反向调，完成付费 pass 发货
+//
+// 鉴权：CTL_INTERNAL_TOKEN（与 chatclaw runtime-bootstrap 一致）
+//
+// 后续生命周期接口（renew / isolate / destroy）等 Q49 拍板的生命周期子需求再加挂同一 mux。
+func (h *passHandler) handleInternalPasses(w http.ResponseWriter, r *http.Request) {
+	if !requireInternalBearer(r) {
+		writeHTTPError(w, r, errcode.ErrUnauthorized)
+		return
+	}
+
+	subPath := strings.Trim(strings.TrimPrefix(r.URL.Path, "/internal/ctl/passes/"), "/")
+	switch subPath {
+	case "complete":
+		h.completePass(w, r)
+	default:
+		writeHTTPError(w, r, errcode.ErrNotFound)
+	}
+}
+
+// completePass POST /internal/ctl/passes/complete — trade 反向回调发货付费 pass
+func (h *passHandler) completePass(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
+		return
+	}
+
+	var req transport.CompletePassRequest
+	if err := decodeJSONBody(r, &req); err != nil {
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrInvalidParam, "%s", err.Error()))
+		return
+	}
+
+	detail, err := h.logic.CompletePass(&req)
+	if err != nil {
+		writeHTTPError(w, r, err)
+		return
+	}
+	writeSuccess(w, r, http.StatusOK, detailToPassResponse(detail))
+}
+
 // detailToPassResponse 将 PassDetail 转换为响应
 func detailToPassResponse(d *passlogic.PassDetail) *transport.PassResponse {
 	return &transport.PassResponse{

@@ -16,6 +16,7 @@ import (
 	modelfactory "ctl/pkg/model/factory"
 	passmodel "ctl/pkg/model/pass"
 	"ctl/pkg/resource"
+	"ctl/pkg/transport"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -51,6 +52,16 @@ type Logic interface {
 	// CreateTrialPass 为用户创建试用权益
 	// 有效期由 Bundle 的 time_span + time_unit 决定，调用方不指定
 	CreateTrialPass(userID string, bundleID string) (*PassDetail, error)
+
+	// CompletePass 由 trade 服务在 jifei createResource 回调后反向调用 ctl，完成付费 pass 发货
+	//
+	// v4 收敛（billing-integration B3 新增）：
+	//   - 入参 time_span / time_unit 由 trade 透传（来源于下单时的 trade_order，而非 bundle 字段）
+	//   - 入参 uin / app_id 由 trade 透传，写入 ctl_pass 表（取代 CreateTrialPass 中的 TODO=0）
+	//   - 入参 deal_name 仅日志记录用于排障，ctl_pass 表不持久化（归 trade_order 反查）
+	//   - renew_flag 本期 logic 内部写死 MANUAL_RENEW（不读 req.RenewFlag，待 AUTO_RENEW 放开后再切换）
+	//   - 兜底防御：用户已有 active pass 直接报 ErrPassAlreadyExists（不做幂等，不依赖 pass_pending_order）
+	CompletePass(req *transport.CompletePassRequest) (*PassDetail, error)
 
 	// GetPasses 查询所有 Pass（后台管理用）
 	GetPasses(userID *string, bundleID *string) ([]*PassDetail, error)
@@ -201,9 +212,10 @@ func (l *logic) CreateTrialPass(userID string, bundleID string) (*PassDetail, er
 		PassID:      passID,
 		UserID:      userID,
 		BundleID:    bundleID,
-		Uin:         0, // TODO: 后续从 shadow binding 获取
-		AppID:       0, // TODO: 后续从 shadow binding 获取
+		Uin:         0, // TODO: 后续从 shadow binding 获取（试用 pass）
+		AppID:       0, // TODO: 后续从 shadow binding 获取（试用 pass）
 		ExpiredTime: expiredTime,
+		RenewFlag:   passmodel.RenewFlagManual, // v4 收敛：试用 pass 默认手动续费
 	}
 
 	if err := passDao.CreatePassWithQuota(entity, userID, agentQuota); err != nil {
@@ -408,4 +420,200 @@ func entitiesToDetails(entities []*passmodel.Entity) []*PassDetail {
 		details = append(details, entityToDetail(e))
 	}
 	return details
+}
+
+// CompletePass v4 收敛：trade 反向调 ctl 完成付费 pass 发货。
+//
+// 与 CreateTrialPass 的差异：
+//  1. 入参从 (userID, bundleID) 升级为完整 *transport.CompletePassRequest（透传 jifei 协议字段）
+//  2. expired_time 计算用 req.TimeSpan/TimeUnit（trade 持有的下单参数），不再读 bundle.TimeSpan/TimeUnit
+//  3. entity.Uin / AppID 从 req 透传写入（不再 TODO=0）
+//  4. RenewFlag 强制写 MANUAL_RENEW（v4 收敛：本期不对外暴露，req.RenewFlag 仅协议预留）
+//  5. deal_name 仅日志记录用于排障，pass 表不持久化
+//
+// 复用 CreateTrialPass 步骤 5-12 的核心逻辑（EnsureUser → DecrementAvailCount →
+// GeneratePassID → ApplySubscription → CreatePassWithQuota）。
+func (l *logic) CompletePass(req *transport.CompletePassRequest) (*PassDetail, error) {
+	// 步骤 0：入参强校验（v4：trade 透传字段必须齐全，缺失即拒）
+	if err := validateCompletePassRequest(req); err != nil {
+		return nil, err
+	}
+
+	logger := resource.ZapLogger.With(
+		zap.String("user_id", req.UserID),
+		zap.String("bundle_id", req.BundleID),
+		zap.String("deal_name", req.DealName),
+		zap.Int64("uin", req.Uin),
+		zap.Int64("app_id", req.AppID),
+	)
+	logger.Info("complete pass started")
+
+	// 步骤 1：校验 Bundle 存在且 ONLINE
+	bundle, err := l.bundleLogic.GetBundleByID(req.BundleID)
+	if err != nil {
+		return nil, err
+	}
+	if bundle.BundleState != bundlemodel.StateOnline {
+		return nil, errcode.ErrPassBundleOffline
+	}
+
+	// 步骤 2：静态售罄校验
+	if bundle.StaticSoldOut {
+		return nil, errcode.ErrPassBundleSoldOut
+	}
+
+	agentQuota := bundle.AgentQuota
+
+	// 步骤 3：用户唯一 Pass 兜底防御（v4 收敛：不做幂等，存在即拒）
+	passDao := modelfactory.DefaultDaoFactory.PassDao(nil)
+	existing, err := passDao.ListByUserID(req.UserID)
+	if err != nil {
+		return nil, fmt.Errorf("check existing pass: %w", err)
+	}
+	if len(existing) > 0 {
+		// 等价于 v4 设计稿中的 USER_HAS_ACTIVE_PASS
+		return nil, errcode.ErrPassAlreadyExists
+	}
+
+	// 步骤 4：配额校验
+	quotaDao := modelfactory.DefaultDaoFactory.UserResourceQuotaDao(nil)
+	quotaEntity, err := quotaDao.SelectQuota(req.UserID, "OPENCLAW_INSTANCE", "")
+	if err != nil {
+		return nil, fmt.Errorf("check quota: %w", err)
+	}
+	if quotaEntity != nil {
+		consumed := quotaEntity.ResourceQuotaTotal - quotaEntity.ResourceQuotaAvailable
+		if consumed > agentQuota {
+			return nil, errcode.ErrPassQuotaExceeded
+		}
+	}
+
+	// 步骤 5：确保 ai-gateway 里的业务用户存在
+	ensureCtx, ensureCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	logger.Info("complete pass ensure-user started")
+	ensured, ensureErr := adapterfactory.DefaultAdapterFactory.AiGatewayAdapter().EnsureUser(ensureCtx, req.UserID, "")
+	ensureCancel()
+	if ensureErr != nil {
+		logger.Warn("complete pass ensure-user failed", zap.Error(ensureErr))
+		return nil, fmt.Errorf("ensure ai-gateway user: %w", ensureErr)
+	}
+	logger.Info("complete pass ensure-user succeeded",
+		zap.Bool("created", ensured != nil && ensured.Result == "created"),
+	)
+
+	// 步骤 6：扣减 bundle 可售卖余量（原子操作，并发安全）
+	bundleDao := modelfactory.DefaultDaoFactory.BundleDao(nil)
+	ok, err := bundleDao.DecrementAvailCount(req.BundleID, 1)
+	if err != nil {
+		return nil, fmt.Errorf("decrement bundle avail count: %w", err)
+	}
+	if !ok {
+		return nil, errcode.ErrBundleSalesQuotaEmpty
+	}
+	bundleQuotaDeducted := true
+	defer func() {
+		if bundleQuotaDeducted {
+			_ = bundleDao.IncrementAvailCount(req.BundleID, 1)
+		}
+	}()
+
+	// 步骤 7：生成 pass_id
+	idGenDao := modelfactory.DefaultDaoFactory.IdGenDao(nil)
+	autoID, err := idGenDao.GenId("pass")
+	if err != nil {
+		return nil, fmt.Errorf("generate pass auto id: %w", err)
+	}
+	password := "passmon" + config.ServerConf.MiscConfig.ObjectIdPasswordSuffix
+	region := config.ServerConf.MiscConfig.Region
+	passID, err := objectid.GeneratePassID(autoID, password, region)
+	if err != nil {
+		return nil, fmt.Errorf("generate pass id: %w", err)
+	}
+
+	// 步骤 8：计算 expired_time（v4 收敛：用 req 透传的 TimeSpan/TimeUnit，trade_order 已持有）
+	now := time.Now().UTC()
+	expiredTime, err := CalcExpiredTime(now, req.TimeSpan, req.TimeUnit)
+	if err != nil {
+		return nil, fmt.Errorf("calc expired_time: %w", err)
+	}
+
+	// 步骤 9：AI Token 订阅联动（与 CreateTrialPass 一致，credit > 0 时调 ApplySubscription）
+	if bundle.Credit > 0 {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		sub, subErr := adapterfactory.DefaultAdapterFactory.AiGatewayAdapter().
+			ApplySubscription(ctx, req.UserID, bundle.AiGatewayPlanID)
+		cancel()
+		if subErr != nil {
+			return nil, fmt.Errorf("apply ai-gateway subscription: %w", subErr)
+		}
+		if sub != nil {
+			logger.Info("complete pass subscription applied",
+				zap.String("pass_id", passID),
+				zap.String("plan_id", bundle.AiGatewayPlanID),
+				zap.String("subscription_id", sub.ID),
+			)
+		}
+	}
+
+	// 步骤 10：事务写入 pass + quota（v4 收敛：uin/app_id 从 req 透传，renew_flag 写死 MANUAL_RENEW）
+	entity := &passmodel.Entity{
+		PassID:      passID,
+		UserID:      req.UserID,
+		BundleID:    req.BundleID,
+		Uin:         req.Uin,
+		AppID:       req.AppID,
+		ExpiredTime: expiredTime,
+		RenewFlag:   passmodel.RenewFlagManual, // v4 收敛：本期不对外暴露，logic 写死
+	}
+	if err := passDao.CreatePassWithQuota(entity, req.UserID, agentQuota); err != nil {
+		return nil, fmt.Errorf("create pass with quota: %w", err)
+	}
+
+	// 步骤 11：创建成功，取消回滚
+	bundleQuotaDeducted = false
+
+	// 步骤 12：读回返回
+	saved, err := passDao.GetByPassID(passID)
+	if err != nil {
+		return nil, fmt.Errorf("read back pass: %w", err)
+	}
+	detail := entityToDetail(saved)
+	detail.BundleName = bundle.BundleName
+	detail.CreditTotal = bundle.Credit
+	detail.CreditAvailable = bundle.Credit
+
+	logger.Info("complete pass succeeded", zap.String("pass_id", passID))
+	return detail, nil
+}
+
+// validateCompletePassRequest v4 收敛：CompletePass 入参强校验
+//
+// trade 反向调时所有字段必填，缺失即报 ErrPassInvalidParam（trade 侧应已校验，
+// ctl 侧仅做防御性校验避免脏数据进入业务流程）。
+func validateCompletePassRequest(req *transport.CompletePassRequest) error {
+	if req == nil {
+		return errcode.Wrap(errcode.ErrPassInvalidParam, "request is nil")
+	}
+	if req.UserID == "" {
+		return errcode.Wrap(errcode.ErrPassInvalidParam, "user_id is required")
+	}
+	if req.BundleID == "" {
+		return errcode.Wrap(errcode.ErrPassInvalidParam, "bundle_id is required")
+	}
+	if req.TimeSpan <= 0 {
+		return errcode.Wrap(errcode.ErrPassInvalidParam, "time_span must be > 0")
+	}
+	if req.TimeUnit != bundlemodel.TimeUnitMonth && req.TimeUnit != bundlemodel.TimeUnitDay {
+		return errcode.Wrap(errcode.ErrPassInvalidParam, "time_unit must be 'm' or 'd'")
+	}
+	if req.Uin <= 0 {
+		return errcode.Wrap(errcode.ErrPassInvalidParam, "uin must be > 0")
+	}
+	if req.AppID <= 0 {
+		return errcode.Wrap(errcode.ErrPassInvalidParam, "app_id must be > 0")
+	}
+	if req.DealName == "" {
+		return errcode.Wrap(errcode.ErrPassInvalidParam, "deal_name is required")
+	}
+	return nil
 }

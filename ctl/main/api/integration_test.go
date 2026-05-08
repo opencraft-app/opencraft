@@ -878,11 +878,231 @@ func seedBundleForPass(t *testing.T, bundleID string, credit int64, aiGatewayPla
 		TimeSpan:              30,
 		TimeUnit:              bundlemodel.TimeUnitDay,
 		AiGatewayPlanID:       aiGatewayPlanID,
+		AiGatewayPlans:        "[]",
 		StaticSoldOut:         false,
 		BundleSalesAvailCount: 10,
 		BundleSalesTotalCount: 10,
 	}).Error
 	if err != nil {
 		t.Fatalf("seed bundle: %v", err)
+	}
+}
+
+// =============================================================================
+// CompletePass internal API (v4 收敛 - billing-integration B3)
+// =============================================================================
+
+// completePassReqDefaults 返回一份合法的 CompletePass 请求体，可由 caller 修改其中字段以构造
+// 异常用例（缺字段 / 非法值等）。所有必填字段均有默认值，调用方可只覆盖差异部分。
+func completePassReqDefaults(userID, bundleID string) map[string]any {
+	return map[string]any{
+		"user_id":    userID,
+		"bundle_id":  bundleID,
+		"time_span":  3,
+		"time_unit":  "m",
+		"uin":        int64(10000001),
+		"app_id":     int64(20000001),
+		"deal_name":  "deal-test-001",
+		"renew_flag": "MANUAL_RENEW",
+	}
+}
+
+func TestCompletePassAPIIntegrationHappyPath(t *testing.T) {
+	h := newAPIIntegrationHarness(t)
+	bundleID := "bundle_complete_happy"
+	seedBundleForPass(t, bundleID, 0, "")
+
+	body := completePassReqDefaults(h.userID, bundleID)
+	resp := h.request(t, http.MethodPost, "/internal/ctl/passes/complete", body, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", resp.StatusCode, readBody(t, resp))
+	}
+	envelope := decodeSuccessEnvelope[transport.PassResponse](t, resp)
+
+	// 1) 返回值校验：uin / app_id 必须从 req 透传到 entity（取代 CreateTrialPass 的 TODO=0）
+	if envelope.Data.Uin != 10000001 {
+		t.Fatalf("expected uin=10000001 from req passthrough, got %d", envelope.Data.Uin)
+	}
+	if envelope.Data.AppID != 20000001 {
+		t.Fatalf("expected app_id=20000001 from req passthrough, got %d", envelope.Data.AppID)
+	}
+	if envelope.Data.UserID != h.userID || envelope.Data.BundleID != bundleID {
+		t.Fatalf("unexpected user_id / bundle_id: %+v", envelope.Data)
+	}
+	if envelope.Data.PassID == "" {
+		t.Fatal("expected pass_id to be generated")
+	}
+
+	// 2) 落库校验：renew_flag 必须为 MANUAL_RENEW（v4 收敛：logic 内部写死，不读 req.RenewFlag）
+	var renewFlag string
+	if err := resource.GormDB.Table("pass").
+		Where("user_id = ? AND bundle_id = ?", h.userID, bundleID).
+		Pluck("renew_flag", &renewFlag).Error; err != nil {
+		t.Fatalf("query renew_flag: %v", err)
+	}
+	if renewFlag != "MANUAL_RENEW" {
+		t.Fatalf("expected renew_flag=MANUAL_RENEW from logic hard-code, got %q", renewFlag)
+	}
+
+	// 3) bundle 销量必须扣 1
+	var bundle bundlemodel.Entity
+	if err := resource.GormDB.Table(bundlemodel.TableName).
+		Where("bundle_id = ?", bundleID).First(&bundle).Error; err != nil {
+		t.Fatalf("load bundle: %v", err)
+	}
+	if bundle.BundleSalesAvailCount != 9 {
+		t.Fatalf("expected bundle avail=9 after deduct, got %d", bundle.BundleSalesAvailCount)
+	}
+
+	// 4) ai-gateway EnsureUser 必须被调用一次
+	h.aigw.mu.Lock()
+	calls := h.aigw.ensureUserCalls
+	lastUserID := h.aigw.lastEnsureUserID
+	h.aigw.mu.Unlock()
+	if calls != 1 || lastUserID != h.userID {
+		t.Fatalf("expected EnsureUser called once with userID=%s, got calls=%d userID=%s",
+			h.userID, calls, lastUserID)
+	}
+}
+
+func TestCompletePassAPIIntegrationUserHasActivePassRejected(t *testing.T) {
+	h := newAPIIntegrationHarness(t)
+	bundleID := "bundle_complete_dup"
+	seedBundleForPass(t, bundleID, 0, "")
+
+	// 第一次 CompletePass 创建 pass
+	body := completePassReqDefaults(h.userID, bundleID)
+	first := h.request(t, http.MethodPost, "/internal/ctl/passes/complete", body, nil)
+	if first.StatusCode != http.StatusOK {
+		t.Fatalf("expected first complete to succeed, got %d body=%s", first.StatusCode, readBody(t, first))
+	}
+	_ = readBody(t, first)
+
+	// 第二次 CompletePass 同 user → v4 兜底防御 USER_HAS_ACTIVE_PASS（复用 ErrPassAlreadyExists, HTTP 409）
+	body2 := completePassReqDefaults(h.userID, bundleID)
+	body2["deal_name"] = "deal-test-002"
+	second := h.request(t, http.MethodPost, "/internal/ctl/passes/complete", body2, nil)
+	if second.StatusCode != http.StatusConflict {
+		t.Fatalf("expected 409 Conflict on second complete (USER_HAS_ACTIVE_PASS), got %d body=%s",
+			second.StatusCode, readBody(t, second))
+	}
+	bodyStr := readBody(t, second)
+	if !strings.Contains(bodyStr, "PASS_ALREADY_EXISTS") {
+		t.Fatalf("expected error code PASS_ALREADY_EXISTS, got body=%s", bodyStr)
+	}
+
+	// 落库校验：仍然只有 1 条 pass（防御生效）
+	var passCount int64
+	if err := resource.GormDB.Table("pass").
+		Where("user_id = ?", h.userID).Count(&passCount).Error; err != nil {
+		t.Fatalf("count pass: %v", err)
+	}
+	if passCount != 1 {
+		t.Fatalf("expected exactly 1 pass row after duplicate complete, got %d", passCount)
+	}
+}
+
+func TestCompletePassAPIIntegrationInvalidParamRejected(t *testing.T) {
+	h := newAPIIntegrationHarness(t)
+	bundleID := "bundle_complete_invalid"
+	seedBundleForPass(t, bundleID, 0, "")
+
+	cases := []struct {
+		name   string
+		mutate func(map[string]any)
+	}{
+		{
+			name:   "missing_user_id",
+			mutate: func(b map[string]any) { delete(b, "user_id") },
+		},
+		{
+			name:   "missing_bundle_id",
+			mutate: func(b map[string]any) { delete(b, "bundle_id") },
+		},
+		{
+			name:   "missing_deal_name",
+			mutate: func(b map[string]any) { delete(b, "deal_name") },
+		},
+		{
+			name:   "invalid_time_unit",
+			mutate: func(b map[string]any) { b["time_unit"] = "y" },
+		},
+		{
+			name:   "non_positive_time_span",
+			mutate: func(b map[string]any) { b["time_span"] = 0 },
+		},
+		{
+			name:   "non_positive_uin",
+			mutate: func(b map[string]any) { b["uin"] = int64(0) },
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			body := completePassReqDefaults(h.userID, bundleID)
+			tc.mutate(body)
+			resp := h.request(t, http.MethodPost, "/internal/ctl/passes/complete", body, nil)
+			if resp.StatusCode != http.StatusBadRequest {
+				t.Fatalf("expected 400 for %s, got %d body=%s", tc.name, resp.StatusCode, readBody(t, resp))
+			}
+			bodyStr := readBody(t, resp)
+			// ctl errcode.Wrap 仅用于日志/链路上下文，不会写入响应 message；
+			// 此处只断言错误码（业务定位由子用例 name 自身保证）。
+			if !strings.Contains(bodyStr, "PASS_INVALID_PARAM") {
+				t.Fatalf("expected PASS_INVALID_PARAM for %s, got body=%s", tc.name, bodyStr)
+			}
+		})
+	}
+}
+
+func TestCompletePassAPIIntegrationInternalBearerEnforced(t *testing.T) {
+	// 显式启用 internal token 鉴权（默认空值会放行，无法测到 401）
+	t.Setenv("CTL_INTERNAL_TOKEN", "test-internal-token-for-complete-pass")
+
+	h := newAPIIntegrationHarness(t)
+	bundleID := "bundle_complete_auth"
+	seedBundleForPass(t, bundleID, 0, "")
+
+	body := completePassReqDefaults(h.userID, bundleID)
+
+	// Case 1: 不带 Authorization 头 → 401
+	respNoAuth := h.request(t, http.MethodPost, "/internal/ctl/passes/complete", body, nil)
+	if respNoAuth.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 without bearer, got %d body=%s",
+			respNoAuth.StatusCode, readBody(t, respNoAuth))
+	}
+	_ = readBody(t, respNoAuth)
+
+	// Case 2: 错误 token → 401
+	respBadAuth := h.request(t, http.MethodPost, "/internal/ctl/passes/complete", body, map[string]string{
+		"Authorization": "Bearer wrong-token",
+	})
+	if respBadAuth.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 with wrong bearer, got %d body=%s",
+			respBadAuth.StatusCode, readBody(t, respBadAuth))
+	}
+	_ = readBody(t, respBadAuth)
+
+	// Case 3: 正确 token → 200
+	respOK := h.request(t, http.MethodPost, "/internal/ctl/passes/complete", body, map[string]string{
+		"Authorization": "Bearer test-internal-token-for-complete-pass",
+	})
+	if respOK.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 with correct bearer, got %d body=%s",
+			respOK.StatusCode, readBody(t, respOK))
+	}
+	_ = readBody(t, respOK)
+}
+
+func TestCompletePassAPIIntegrationUnknownSubpathReturns404(t *testing.T) {
+	h := newAPIIntegrationHarness(t)
+
+	// 验证 handleInternalPasses 对未知 subpath（renew / isolate 等未实现接口）返回 404
+	resp := h.request(t, http.MethodPost, "/internal/ctl/passes/renew", map[string]any{
+		"pass_id": "pass-test",
+	}, nil)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected 404 for unimplemented subpath, got %d body=%s",
+			resp.StatusCode, readBody(t, resp))
 	}
 }
