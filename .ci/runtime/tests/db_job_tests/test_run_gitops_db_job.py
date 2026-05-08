@@ -140,6 +140,8 @@ class RunGitopsDbJobTests(unittest.TestCase):
         self.assertIn("secretKeyRef", init_env_payload)
         self.assertNotIn("test-password", env_payload)
         self.assertNotIn("test-password", init_env_payload)
+        self.assertIn("/ctl?multiStatements=true", resources[0]["stringData"]["CTL_MIGRATE_DSN"])
+        self.assertEqual(dynamic["initContainers"][0]["env"][3]["value"], "ctl")
 
     def test_ctl_dynamic_resources_respect_namespace_override(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -164,7 +166,7 @@ class RunGitopsDbJobTests(unittest.TestCase):
                         },
                     },
                 ):
-                _, resources = db_job.build_ctl_dynamic_resources(
+                dynamic, resources = db_job.build_ctl_dynamic_resources(
                     "gitops-ctl-migration-test",
                     "lightvela-playground-sandbox-bj-6",
                     "sandbox-bj-6",
@@ -176,6 +178,8 @@ class RunGitopsDbJobTests(unittest.TestCase):
 
         self.assertEqual(resources[0]["metadata"]["namespace"], "lightvela-playground-sandbox-bj-6")
         self.assertEqual(resources[1]["metadata"]["namespace"], "lightvela-playground-sandbox-bj-6")
+        self.assertIn("/ctl_sandbox_bj_6?multiStatements=true", resources[0]["stringData"]["CTL_MIGRATE_DSN"])
+        self.assertEqual(dynamic["initContainers"][0]["env"][3]["value"], "ctl_sandbox_bj_6")
 
 
 if __name__ == "__main__":

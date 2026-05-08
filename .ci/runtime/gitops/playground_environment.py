@@ -92,6 +92,12 @@ class RenderedFile:
 
 
 @dataclass(frozen=True)
+class PlaygroundRuntimeSecretValues:
+    mysql_root_password: str
+    redis_password: str
+
+
+@dataclass(frozen=True)
 class PlaygroundClonePlan:
     repo_root: Path
     from_env: str
@@ -311,6 +317,10 @@ def tls_secret_name_for_host(host: str) -> str:
     return f"{host.replace('*.', '').replace('.', '-')}-wildcard-tls"
 
 
+def host_to_secret_stem(host: str) -> str:
+    return host.replace("*.", "").replace(".", "-")
+
+
 def legacy_playground_domain_aliases(env: str) -> tuple[str, ...]:
     """Return legacy short playground domains such as sandbox-bj83 for sandbox-bj-3."""
 
@@ -325,6 +335,20 @@ def legacy_playground_api_aliases(env: str) -> tuple[str, ...]:
     if not match:
         return ()
     return (f"api-bj8{match.group(1)}.{LIGHTCLAW_DOMAIN}",)
+
+
+def legacy_playground_admin_aliases(env: str) -> tuple[str, ...]:
+    match = re.fullmatch(r"sandbox-bj-(\d+)", env)
+    if not match:
+        return ()
+    return (f"admin-bj8{match.group(1)}.{LIGHTCLAW_DOMAIN}",)
+
+
+def legacy_playground_frontend_aliases(env: str) -> tuple[str, ...]:
+    match = re.fullmatch(r"sandbox-bj-(\d+)", env)
+    if not match:
+        return ()
+    return (f"bj8{match.group(1)}.lightclaw.pages.dev",)
 
 
 def source_domain_replacements(from_env: str, to_plan: PlaygroundClonePlan | None = None) -> tuple[tuple[str, str], ...]:
@@ -345,7 +369,24 @@ def source_domain_replacements(from_env: str, to_plan: PlaygroundClonePlan | Non
             ]
         )
     for alias in legacy_playground_api_aliases(from_env):
-        replacements.append((alias, to_plan.api_host))
+        replacements.extend(
+            [
+                (alias, to_plan.api_host),
+                (f"{host_to_secret_stem(alias)}-tls", f"{host_to_secret_stem(to_plan.api_host)}-tls"),
+            ]
+        )
+    for alias in legacy_playground_admin_aliases(from_env):
+        replacements.extend(
+            [
+                (alias, default_admin_host(to_plan.to_env)),
+                (
+                    f"{host_to_secret_stem(alias)}-tls",
+                    f"{host_to_secret_stem(default_admin_host(to_plan.to_env))}-tls",
+                ),
+            ]
+        )
+    for alias in legacy_playground_frontend_aliases(from_env):
+        replacements.append((alias, default_frontend_host(to_plan.to_env)))
     return tuple(replacements)
 
 
@@ -437,10 +478,16 @@ def build_playground_clone_plan(
     )
 
 
-def render_clone_text(text: str, plan: PlaygroundClonePlan) -> str:
+def render_clone_text(
+    text: str,
+    plan: PlaygroundClonePlan,
+    runtime_values: PlaygroundRuntimeSecretValues | None = None,
+) -> str:
     for old, new in plan.replacements:
         text = text.replace(old, new)
     text = apply_playground_runtime_overrides(text, plan)
+    if runtime_values is not None:
+        text = apply_ctl_runtime_overrides(text, plan, runtime_values)
     return "\n".join(line.rstrip() for line in text.splitlines()) + ("\n" if text.endswith("\n") else "")
 
 
@@ -472,16 +519,80 @@ def apply_playground_runtime_overrides(text: str, plan: PlaygroundClonePlan) -> 
     return text
 
 
-def render_clone_bytes(data: bytes, plan: PlaygroundClonePlan) -> bytes:
+def apply_ctl_runtime_overrides(
+    text: str,
+    plan: PlaygroundClonePlan,
+    runtime_values: PlaygroundRuntimeSecretValues,
+) -> str:
+    if "server_conf_rewrite.toml" not in text:
+        return text
+    mysql_host = local_mysql_host(plan.namespace)
+    redis_host = f"redis.{plan.namespace}.svc.cluster.local"
+    db_password = ctl_legacy_aes_encrypt(runtime_values.mysql_root_password)
+    redis_password = ctl_legacy_aes_encrypt(runtime_values.redis_password)
+    section = ""
+    lines: list[str] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            section = stripped.strip("[]")
+        prefix = line[: len(line) - len(line.lstrip())]
+        if section == "db" and stripped.startswith("host ="):
+            line = f'{prefix}host = "{mysql_host}"'
+        elif section == "db" and stripped.startswith("password ="):
+            line = f'{prefix}password = "{db_password}"'
+        elif section == "redis" and stripped.startswith("host ="):
+            line = f'{prefix}host = "{redis_host}"'
+        elif section == "redis" and stripped.startswith("pass ="):
+            line = f'{prefix}pass = "{redis_password}"'
+        lines.append(line)
+    return "\n".join(lines) + ("\n" if text.endswith("\n") else "")
+
+
+def ctl_legacy_aes_encrypt(value: str) -> str:
+    openssl = shutil.which("openssl")
+    if not openssl:
+        raise RuntimeError("missing required command: openssl")
+    # Matches ctl/pkg/util/cipher.go: AES-256-CBC, PKCS7 padding, using ASCII md5 hex strings as key/IV bytes.
+    result = subprocess.run(
+        [
+            openssl,
+            "enc",
+            "-aes-256-cbc",
+            "-K",
+            "6661643063653232316338323665656465323533636230393536636130373030",
+            "-iv",
+            "39396330303737653132303961366166",
+            "-base64",
+            "-A",
+        ],
+        input=value,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"ctl legacy AES encrypt failed: {result.stderr.strip()}")
+    return result.stdout.strip()
+
+
+def render_clone_bytes(
+    data: bytes,
+    plan: PlaygroundClonePlan,
+    runtime_values: PlaygroundRuntimeSecretValues | None = None,
+) -> bytes:
     try:
         text = data.decode()
     except UnicodeDecodeError:
         return data
-    return render_clone_text(text, plan).encode()
+    return render_clone_text(text, plan, runtime_values).encode()
 
 
-def render_catalog_bytes(data: bytes, plan: PlaygroundClonePlan) -> bytes:
-    text = render_clone_bytes(data, plan).decode()
+def render_catalog_bytes(
+    data: bytes,
+    plan: PlaygroundClonePlan,
+    runtime_values: PlaygroundRuntimeSecretValues | None = None,
+) -> bytes:
+    text = render_clone_bytes(data, plan, runtime_values).decode()
     payload = yaml.safe_load(text) or {}
     if isinstance(payload, dict):
         payload["project"] = plan.project
@@ -492,10 +603,17 @@ def render_catalog_bytes(data: bytes, plan: PlaygroundClonePlan) -> bytes:
     return text.encode()
 
 
-def render_sops_secret_bytes(data: bytes, plan: PlaygroundClonePlan) -> bytes:
+def render_sops_secret_bytes(
+    data: bytes,
+    plan: PlaygroundClonePlan,
+    target_path: Path,
+    runtime_values: PlaygroundRuntimeSecretValues | None = None,
+) -> bytes:
     payload = yaml.safe_load(data.decode()) or {}
     if not isinstance(payload, dict) or payload.get("kind") != "Secret":
         return data
+    if runtime_values is not None:
+        return render_kubernetes_sops_secret_bytes(data, plan, target_path, runtime_values)
     metadata = payload.setdefault("metadata", {})
     if isinstance(metadata, dict):
         metadata["namespace"] = plan.namespace
@@ -504,6 +622,90 @@ def render_sops_secret_bytes(data: bytes, plan: PlaygroundClonePlan) -> bytes:
             managed_by = str(annotations.get("managed-by") or "")
             annotations["managed-by"] = managed_by.replace(plan.from_env, plan.to_env) or f"harness-ci-{plan.to_env}-bootstrap"
     return yaml.safe_dump(payload, allow_unicode=True, sort_keys=False).encode()
+
+
+def render_kubernetes_sops_secret_bytes(
+    data: bytes,
+    plan: PlaygroundClonePlan,
+    target_path: Path,
+    runtime_values: PlaygroundRuntimeSecretValues,
+) -> bytes:
+    plaintext = decrypt_sops_yaml_bytes(data)
+    if not isinstance(plaintext, dict) or plaintext.get("kind") != "Secret":
+        return render_sops_secret_bytes(data, plan, target_path, None)
+    metadata = plaintext.setdefault("metadata", {})
+    if isinstance(metadata, dict):
+        metadata["namespace"] = plan.namespace
+        annotations = metadata.setdefault("annotations", {})
+        if isinstance(annotations, dict):
+            managed_by = str(annotations.get("managed-by") or "")
+            annotations["managed-by"] = managed_by.replace(plan.from_env, plan.to_env) or f"harness-ci-{plan.to_env}-bootstrap"
+    if isinstance(plaintext.get("stringData"), dict) and "REDIS_PASSWORD" in plaintext["stringData"]:
+        plaintext["stringData"]["REDIS_PASSWORD"] = runtime_values.redis_password
+    elif isinstance(plaintext.get("data"), dict) and "REDIS_PASSWORD" in plaintext["data"]:
+        plaintext["data"]["REDIS_PASSWORD"] = base64.b64encode(runtime_values.redis_password.encode()).decode()
+    recipients = age_recipients_from_sops_payload(yaml.safe_load(data.decode()) or {})
+    return encrypt_sops_yaml_bytes(plaintext, recipients, target_path.relative_to(plan.repo_root).as_posix())
+
+
+def decrypt_sops_yaml_bytes(data: bytes) -> dict[str, Any]:
+    sops_bin = shutil.which("sops")
+    if not sops_bin:
+        raise RuntimeError("missing required command: sops")
+    key_file, temp_key_file = resolve_sops_age_key_file()
+    env = os.environ.copy()
+    env["SOPS_AGE_KEY_FILE"] = str(key_file)
+    env.pop("SOPS_AGE_KEY", None)
+    try:
+        result = subprocess.run(
+            [sops_bin, "--decrypt", "--input-type", "yaml", "--output-type", "yaml", "/dev/stdin"],
+            input=data,
+            capture_output=True,
+            env=env,
+        )
+    finally:
+        if temp_key_file is not None:
+            temp_key_file.unlink(missing_ok=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"sops decrypt failed: {result.stderr.decode(errors='replace').strip()}")
+    payload = yaml.safe_load(result.stdout.decode()) or {}
+    if not isinstance(payload, dict):
+        raise ValueError("decrypted SOPS payload is not a YAML mapping")
+    return payload
+
+
+def encrypt_sops_yaml_bytes(payload: dict[str, Any], recipients: Sequence[str], filename_override: str) -> bytes:
+    sops_bin = shutil.which("sops")
+    if not sops_bin:
+        raise RuntimeError("missing required command: sops")
+    if not recipients:
+        raise RuntimeError(f"missing SOPS age recipient for {filename_override}")
+    key_file, temp_key_file = resolve_sops_age_key_file()
+    plaintext = yaml.safe_dump(payload, allow_unicode=True, sort_keys=False)
+    cmd = [
+        sops_bin,
+        "--encrypt",
+        "--input-type",
+        "yaml",
+        "--output-type",
+        "yaml",
+        "--filename-override",
+        filename_override,
+        "--age",
+        ",".join(recipients),
+        "/dev/stdin",
+    ]
+    env = os.environ.copy()
+    env["SOPS_AGE_KEY_FILE"] = str(key_file)
+    env.pop("SOPS_AGE_KEY", None)
+    try:
+        result = subprocess.run(cmd, input=plaintext.encode(), capture_output=True, env=env)
+    finally:
+        if temp_key_file is not None:
+            temp_key_file.unlink(missing_ok=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"sops encrypt failed: {result.stderr.decode(errors='replace').strip()}")
+    return result.stdout
 
 
 def generated_playground_files(plan: PlaygroundClonePlan) -> tuple[GeneratedFile, ...]:
@@ -872,7 +1074,7 @@ def clone_plan_warnings(plan: PlaygroundClonePlan) -> list[str]:
     secret_count = sum(1 for item in plan.files if f"/argocd/secrets/{plan.to_env}/" in item.target.as_posix())
     if secret_count:
         warnings.append(
-            "将复制源环境加密 SOPS secret；脚本不会解密 payload。强隔离环境必须重新生成 SSM/SOPS 后再发布。"
+            "将复制并重新加密源环境 SOPS secret；脚本只会改 metadata 与 Redis 密码对齐。强隔离环境必须重新生成 SSM/SOPS 后再发布。"
         )
     warnings.append(
         "将为目标环境生成新的最小 playground-runtime-secrets SOPS 文件，只包含 MYSQL_ROOT_PASSWORD/REDIS_PASSWORD；缺少 sops 或 age key 时 --write 会直接失败。"
@@ -943,6 +1145,10 @@ def age_recipients_from_sops_file(path: Path) -> tuple[str, ...]:
     if not path.is_file():
         return ()
     payload = yaml.safe_load(path.read_text()) or {}
+    return age_recipients_from_sops_payload(payload)
+
+
+def age_recipients_from_sops_payload(payload: Any) -> tuple[str, ...]:
     if not isinstance(payload, dict):
         return ()
     sops = payload.get("sops") or {}
@@ -968,7 +1174,14 @@ def random_playground_password() -> str:
     return secrets.token_urlsafe(32)
 
 
-def playground_runtime_secret_plaintext(plan: PlaygroundClonePlan) -> str:
+def generate_playground_runtime_values() -> PlaygroundRuntimeSecretValues:
+    return PlaygroundRuntimeSecretValues(
+        mysql_root_password=random_playground_password(),
+        redis_password=random_playground_password(),
+    )
+
+
+def playground_runtime_secret_plaintext(plan: PlaygroundClonePlan, values: PlaygroundRuntimeSecretValues) -> str:
     return yaml.safe_dump(
         {
             "apiVersion": "v1",
@@ -983,8 +1196,8 @@ def playground_runtime_secret_plaintext(plan: PlaygroundClonePlan) -> str:
             },
             "type": "Opaque",
             "stringData": {
-                "MYSQL_ROOT_PASSWORD": random_playground_password(),
-                "REDIS_PASSWORD": random_playground_password(),
+                "MYSQL_ROOT_PASSWORD": values.mysql_root_password,
+                "REDIS_PASSWORD": values.redis_password,
             },
         },
         allow_unicode=True,
@@ -992,13 +1205,16 @@ def playground_runtime_secret_plaintext(plan: PlaygroundClonePlan) -> str:
     )
 
 
-def encrypt_playground_runtime_secret(plan: PlaygroundClonePlan) -> bytes:
+def encrypt_playground_runtime_secret(
+    plan: PlaygroundClonePlan,
+    values: PlaygroundRuntimeSecretValues | None = None,
+) -> bytes:
     sops_bin = shutil.which("sops")
     if not sops_bin:
         raise RuntimeError("missing required command: sops")
     recipients = resolve_playground_runtime_recipients(plan)
     key_file, temp_key_file = resolve_sops_age_key_file()
-    plaintext = playground_runtime_secret_plaintext(plan)
+    plaintext = playground_runtime_secret_plaintext(plan, values or generate_playground_runtime_values())
     cmd = [
         sops_bin,
         "--encrypt",
@@ -1034,18 +1250,24 @@ def rendered_clone_plan_files(
     runtime_secret_encryptor: RuntimeSecretEncryptor | None = None,
 ) -> list[RenderedFile]:
     rendered: list[RenderedFile] = []
+    runtime_values = generate_playground_runtime_values()
     for item in plan.files:
         if item.source.name.endswith(".sops.yaml"):
-            data = render_sops_secret_bytes(item.source.read_bytes(), plan)
+            sops_runtime_values = runtime_values if runtime_secret_encryptor is None else None
+            data = render_sops_secret_bytes(item.source.read_bytes(), plan, item.target, sops_runtime_values)
         elif f"/{plan.playground_root.rstrip('/')}/{plan.from_env}/" in item.source.as_posix():
-            data = render_catalog_bytes(item.source.read_bytes(), plan)
+            data = render_catalog_bytes(item.source.read_bytes(), plan, runtime_values)
         else:
-            data = render_clone_bytes(item.source.read_bytes(), plan)
+            data = render_clone_bytes(item.source.read_bytes(), plan, runtime_values)
         rendered.append(RenderedFile(item.target, data, item.source))
     for item in generated_playground_files(plan):
         rendered.append(RenderedFile(item.target, item.text.encode(), None))
     encryptor = runtime_secret_encryptor or encrypt_playground_runtime_secret
-    rendered.append(RenderedFile(runtime_secret_target(plan), encryptor(plan), None))
+    if runtime_secret_encryptor is None:
+        runtime_secret_data = encrypt_playground_runtime_secret(plan, runtime_values)
+    else:
+        runtime_secret_data = encryptor(plan)
+    rendered.append(RenderedFile(runtime_secret_target(plan), runtime_secret_data, None))
     return rendered
 
 
@@ -1953,7 +2175,7 @@ def print_clone_plan(plan: PlaygroundClonePlan, *, write: bool, force: bool, wri
         "将自动生成：namespace-local MySQL/Redis StatefulSet + PVC，并把 MYSQL_HOST/REDIS_ADDR 指向 namespace 内 Service。"
     )
     print("将自动生成：最小 playground-runtime-secrets SOPS 文件，包含新的 MYSQL_ROOT_PASSWORD / REDIS_PASSWORD。")
-    print("风险提示：将复制源环境的加密 SOPS secret；不会解密也不会修改敏感值。如需强隔离，必须重新生成 SSM/SOPS。")
+    print("风险提示：将复制并重新加密源环境 SOPS secret；只改 metadata 与 Redis 密码对齐。如需强隔离，必须重新生成 SSM/SOPS。")
     print("需要 Agent/人工确认：DNS/证书、SSM/SOPS 是否需要重新生成、是否触发 Argo refresh、是否纳入 drift audit。")
     warnings = clone_plan_warnings(plan)
     if warnings:

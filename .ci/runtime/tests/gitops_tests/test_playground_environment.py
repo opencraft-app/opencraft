@@ -25,6 +25,7 @@ from gitops.playground_environment import (
     check_playground_contract_main,
     create_playground_main,
     fetch_origin_refs,
+    PlaygroundRuntimeSecretValues,
     PLAYGROUND_RUNTIME_SECRET_FILE,
     PLAYGROUND_RUNTIME_SECRET_NAME,
     PLAYGROUND_PULL_SECRET_NAMES,
@@ -250,6 +251,35 @@ class PlaygroundEnvironmentTests(unittest.TestCase):
             self.assertEqual(pull_secret["metadata"]["namespace"], "lightvela-playground-sandbox-bj-4")
             self.assertEqual(pull_secret["metadata"]["name"], "tcr.bj8-lightclaw-secret")
 
+    def test_ctl_rewrite_points_to_namespace_local_stateful_services(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            create_playground_fixture(repo)
+            plan = build_playground_clone_plan(repo, "sandbox-bj-3", "sandbox-bj-4")
+            rendered = render_clone_text(
+                textwrap.dedent(
+                    """
+                    data:
+                      server_conf_rewrite.toml: |
+                        [db]
+                        host = "10.31.192.4"
+                        password = "old"
+                        database = "ctl_sandbox_bj_3"
+
+                        [redis]
+                        host = "10.31.192.2"
+                        pass = "old"
+                    """
+                ),
+                plan,
+                PlaygroundRuntimeSecretValues(mysql_root_password="mysql-root", redis_password="redis-pass"),
+            )
+
+        self.assertIn('host = "mysql.lightvela-playground-sandbox-bj-4.svc.cluster.local"', rendered)
+        self.assertIn('host = "redis.lightvela-playground-sandbox-bj-4.svc.cluster.local"', rendered)
+        self.assertNotIn('password = "old"', rendered)
+        self.assertNotIn('pass = "old"', rendered)
+
     def test_create_playground_conflicts_fail_without_force(self) -> None:
         with TemporaryDirectory() as tmp:
             repo = Path(tmp)
@@ -280,7 +310,7 @@ class PlaygroundEnvironmentTests(unittest.TestCase):
             repo = Path(tmp)
             create_playground_fixture(repo)
             stale_file = repo / "argocd/services/ctl/sandbox-bj-3/stale-domain.yaml"
-            stale_file.write_text("host: admin-bj83.lightclaw.tech\n")
+            stale_file.write_text("host: unmapped-bj83.lightclaw.tech\n")
 
             plan = build_playground_clone_plan(repo, "sandbox-bj-3", "sandbox-bj-4")
             errors = validate_clone_plan(plan)

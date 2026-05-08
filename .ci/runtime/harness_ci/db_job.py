@@ -14,6 +14,7 @@ import base64
 import copy
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -389,7 +390,12 @@ def build_ctl_dynamic_resources(
             "missing ctl DB password from db_contract.secret_resolvers, platform.env, environment, or /etc/lightclaw-ci"
         )
 
-    dsn = f"mysql://root:{mysql_password}@tcp({mysql_host}:3306)/ctl?multiStatements=true"  # pragma: allowlist secret
+    ctl_db = (
+        service_platform_env.get("CTL_DB", "").strip()
+        or platform_env.get("CTL_DB", "").strip()
+        or default_ctl_database(env_name)
+    )
+    dsn = f"mysql://root:{mysql_password}@tcp({mysql_host}:3306)/{ctl_db}?multiStatements=true"  # pragma: allowlist secret
     migrations_name = f"{job_name}-migrations"
     secret_name = f"{job_name}-secrets"
     migrations = build_configmap_manifest(namespace, migrations_name, REPO_ROOT / "ctl" / "migrations")
@@ -422,7 +428,7 @@ def build_ctl_dynamic_resources(
                     {"name": "MYSQL_HOST", "value": mysql_host},
                     {"name": "MYSQL_PORT", "value": "3306"},
                     {"name": "MYSQL_ROOT_USER", "value": "root"},
-                    {"name": "CTL_DB", "value": "ctl"},
+                    {"name": "CTL_DB", "value": ctl_db},
                     {
                         "name": "MYSQL_ROOT_PASSWORD",
                         "valueFrom": secret_env_ref(secret_name, "MYSQL_ROOT_PASSWORD"),
@@ -441,6 +447,12 @@ def build_ctl_dynamic_resources(
         },
     }
     return dynamic, [secret, migrations]
+
+
+def default_ctl_database(env_name: str) -> str:
+    if re.fullmatch(r"sandbox-bj-\d+", env_name):
+        return f"ctl_{env_name.replace('-', '_')}"
+    return "ctl"
 
 
 def generate_job_name(service: str, operation: str) -> str:
