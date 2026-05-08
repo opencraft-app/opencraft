@@ -14,6 +14,7 @@ const (
 	ColumnTimeSpan              = "time_span"
 	ColumnTimeUnit              = "time_unit"
 	ColumnAiGatewayPlanID       = "ai_gateway_plan_id"
+	ColumnAiGatewayPlans        = "ai_gateway_plans"
 	ColumnStaticSoldOut         = "static_sold_out"
 	ColumnBundleSalesAvailCount = "bundle_sales_available_count"
 	ColumnBundleSalesTotalCount = "bundle_sales_total_count"
@@ -48,6 +49,10 @@ type Entity struct {
 	TimeSpan              int    `gorm:"column:time_span"`          // 套餐周期数值
 	TimeUnit              string `gorm:"column:time_unit"`          // 套餐周期单位 "m"=月 / "d"=天
 	AiGatewayPlanID       string `gorm:"column:ai_gateway_plan_id"` // ai-gateway Plan UUID（credit=0 时允许空）
+	// AiGatewayPlans 多对多 plan 列表（JSON），DB 内部字段，唯一消费方 ctl/pass.CompletePaidPassFromJifei
+	// 格式：[{"plan_id":"plan-xxx","quota_per_period":1000000}, ...]
+	// trade 不感知；ctl user-facing / internal-facing 出参一律不暴露（Q37/Q38 拍板，2026-05-08 trade 子需求 C）
+	AiGatewayPlans        string `gorm:"column:ai_gateway_plans;type:json"`
 	StaticSoldOut         bool   `gorm:"column:static_sold_out"`    // 静态售罄标记
 	BundleSalesAvailCount int    `gorm:"column:bundle_sales_available_count"`
 	BundleSalesTotalCount int    `gorm:"column:bundle_sales_total_count"`

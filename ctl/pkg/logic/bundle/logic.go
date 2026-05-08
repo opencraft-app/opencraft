@@ -30,6 +30,10 @@ type BundleDetail struct {
 	TimeSpan              int    // 套餐周期数值
 	TimeUnit              string // 套餐周期单位 "m"=月 / "d"=天
 	AiGatewayPlanID       string // ai-gateway Plan UUID（credit=0 时允许空）
+	// AiGatewayPlans 多对多 plan 列表（JSON 字符串），DB 内部字段。
+	// 唯一消费方：ctl/pass.CompletePaidPassFromJifei 按 period 选 plan_id；
+	// trade 不感知；ctl 任何 user-facing / internal-facing 出参一律不暴露（Q37/Q38 拍板）。
+	AiGatewayPlans        string
 	StaticSoldOut         bool
 	BundleSalesAvailCount int
 	BundleSalesTotalCount int
@@ -372,6 +376,7 @@ func entityToDetail(e *bundlemodel.Entity) *BundleDetail {
 		TimeSpan:              e.TimeSpan,
 		TimeUnit:              e.TimeUnit,
 		AiGatewayPlanID:       e.AiGatewayPlanID,
+		AiGatewayPlans:        e.AiGatewayPlans,
 		StaticSoldOut:         e.StaticSoldOut,
 		BundleSalesAvailCount: e.BundleSalesAvailCount,
 		BundleSalesTotalCount: e.BundleSalesTotalCount,

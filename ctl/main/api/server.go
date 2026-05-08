@@ -157,6 +157,7 @@ func newRouter(handler *instanceHandler, bh *bundleHandler, ph *passHandler) htt
 	// Bundle 路由
 	mux.HandleFunc("/admin/api/ctl/bundles", bh.handleAdminBundles)
 	mux.HandleFunc("/v1/bundles", bh.handleUserBundles)
+	mux.HandleFunc("/internal/ctl/bundles/", bh.handleInternalBundleByID)
 
 	// Pass 路由
 	mux.HandleFunc("/admin/api/ctl/passes", ph.handleAdminPasses)
@@ -281,6 +282,9 @@ func normalizePath(path string) string {
 	}
 	if strings.HasPrefix(path, "/internal/bots/") && strings.HasSuffix(path, "/borncard") {
 		return "/internal/bots/{id}/borncard"
+	}
+	if strings.HasPrefix(path, "/internal/ctl/bundles/") {
+		return "/internal/ctl/bundles/{bundleId}"
 	}
 
 	parts := strings.Split(strings.Trim(path, "/"), "/")
