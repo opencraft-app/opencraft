@@ -50,6 +50,7 @@ PLAYGROUND_DB_SERVICES: tuple[tuple[str, str], ...] = (
     ("sandbox", "migration"),
     ("ctl", "migration"),
 )
+PLAYGROUND_REPO_BACKED_DB_JOBS: frozenset[tuple[str, str]] = frozenset({("ctl", "migration")})
 
 
 @dataclass(frozen=True)
@@ -131,6 +132,7 @@ class PlaygroundBootstrapPlan:
     kubeconfig: Path
     mysql_host: str
     revision: str
+    runtime_revision: str
     grants: tuple[DatabaseGrant, ...]
     db_jobs: tuple[tuple[str, str], ...]
 
@@ -1914,6 +1916,7 @@ def build_playground_bootstrap_plan(
     kubeconfig = (kubeconfig or default_kubeconfig_for_env(env)).resolve()
     if not revision:
         revision = run_local_git(repo_root, "rev-parse", "HEAD")
+    runtime_revision = run_local_git(runtime_root, "rev-parse", "HEAD")
     return PlaygroundBootstrapPlan(
         repo_root=repo_root,
         runtime_root=runtime_root,
@@ -1922,6 +1925,7 @@ def build_playground_bootstrap_plan(
         kubeconfig=kubeconfig,
         mysql_host=mysql_host,
         revision=revision,
+        runtime_revision=runtime_revision,
         grants=playground_database_grants(env),
         db_jobs=PLAYGROUND_DB_SERVICES,
     )
@@ -2038,6 +2042,7 @@ def run_playground_db_jobs(plan: PlaygroundBootstrapPlan, skip: set[str], timeou
             print(f"跳过 DB job：{key}")
             continue
         print(f"执行 DB job：{key}")
+        job_revision = plan.runtime_revision if (service, operation) in PLAYGROUND_REPO_BACKED_DB_JOBS else plan.revision
         subprocess.run(
             [
                 sys.executable,
@@ -2053,7 +2058,7 @@ def run_playground_db_jobs(plan: PlaygroundBootstrapPlan, skip: set[str], timeou
                 "--env",
                 plan.env,
                 "--revision",
-                plan.revision,
+                job_revision,
                 "--namespace",
                 plan.namespace,
                 "--kubectl-retries",
@@ -2098,6 +2103,8 @@ def print_bootstrap_plan(plan: PlaygroundBootstrapPlan, *, apply: bool, skip: se
     print(f"kubeconfig：{plan.kubeconfig}")
     print(f"MySQL host：{plan.mysql_host or '自动从 ConfigMap 推导'}")
     print(f"revision：{plan.revision}")
+    if plan.runtime_revision != plan.revision:
+        print(f"runtime revision：{plan.runtime_revision}")
     print("=" * 60)
     print("将确保数据库/授权：")
     for grant in plan.grants:
@@ -2133,6 +2140,7 @@ def bootstrap_playground_main(argv: Sequence[str] | None = None) -> int:
             kubeconfig=plan.kubeconfig,
             mysql_host=discover_mysql_host(plan.kubeconfig, plan.namespace, args.kubectl_retries),
             revision=plan.revision,
+            runtime_revision=plan.runtime_revision,
             grants=plan.grants,
             db_jobs=plan.db_jobs,
         )
