@@ -8,6 +8,7 @@
 .ci/runtime/commands/build_release_image.py
 .ci/runtime/commands/cleanup_gitops_promotion.py
 .ci/runtime/commands/create_playground_environment.py
+.ci/runtime/commands/configure_playground_dns.py
 .ci/runtime/commands/diagnose_playground_environment.py
 .ci/runtime/commands/describe_gitops_promotion.py
 .ci/runtime/commands/generate_release_bundle_manifest.py
@@ -96,6 +97,7 @@
 .ci/runtime/harness_ci/secrets.py
 .ci/runtime/support/__init__.py
 .ci/runtime/support/logging.py
+.ci/runtime/support/playground_dns.py
 .ci/runtime/support/process.py
 .ci/runtime/support/staticpages_preview.py
 .ci/runtime/support/yaml.py
