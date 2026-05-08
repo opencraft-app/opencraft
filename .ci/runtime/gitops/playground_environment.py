@@ -618,10 +618,12 @@ def render_sops_secret_bytes(
     runtime_values: PlaygroundRuntimeSecretValues | None = None,
 ) -> bytes:
     payload = yaml.safe_load(data.decode()) or {}
-    if not isinstance(payload, dict) or payload.get("kind") != "Secret":
+    if not isinstance(payload, dict):
         return data
     if runtime_values is not None:
         return render_kubernetes_sops_secret_bytes(data, plan, target_path, runtime_values)
+    if payload.get("kind") != "Secret":
+        return data
     metadata = payload.setdefault("metadata", {})
     if isinstance(metadata, dict):
         metadata["namespace"] = plan.namespace
@@ -640,7 +642,7 @@ def render_kubernetes_sops_secret_bytes(
 ) -> bytes:
     plaintext = decrypt_sops_yaml_bytes(data)
     if not isinstance(plaintext, dict) or plaintext.get("kind") != "Secret":
-        return render_sops_secret_bytes(data, plan, target_path, None)
+        return data
     metadata = plaintext.setdefault("metadata", {})
     if isinstance(metadata, dict):
         metadata["namespace"] = plan.namespace
