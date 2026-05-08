@@ -113,9 +113,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--operation", required=True, choices=sorted({op for _, op in SERVICE_SPECS}))
     parser.add_argument("--env", required=True, help="Deploy env name, e.g. beijing-sandbox")
     parser.add_argument("--revision", required=True, help="Git revision or commit SHA this job targets")
+    parser.add_argument(
+        "--namespace",
+        default="",
+        help="Optional namespace override for playground-style single-namespace environments.",
+    )
     parser.add_argument("--apply", action="store_true", help="Apply the job to the cluster")
     parser.add_argument("--wait", action="store_true", help="Wait for job completion")
     parser.add_argument("--timeout-seconds", type=int, default=1800, help="Wait timeout in seconds")
+    parser.add_argument(
+        "--kubectl-retries",
+        type=int,
+        default=1,
+        help="Retry count for kubectl calls against transiently unstable API servers.",
+    )
     parser.add_argument("--output-json", default="", help="Optional path to write execution summary JSON")
     parser.add_argument(
         "--image-override",
@@ -249,11 +260,24 @@ def resolve_kubeconfig(
     return str(resolved), None
 
 
-def kubectl_json(kubeconfig: str, namespace: str, kind: str, name: str) -> dict[str, Any]:
-    result = subprocess.run(
+def kubectl_run(cmd: list[str], *, input_text: str | None = None, retries: int = 1) -> subprocess.CompletedProcess[str]:
+    attempts = max(1, retries)
+    last_result: subprocess.CompletedProcess[str] | None = None
+    for attempt in range(1, attempts + 1):
+        result = subprocess.run(cmd, input=input_text, capture_output=True, text=True)
+        if result.returncode == 0:
+            return result
+        last_result = result
+        if attempt < attempts:
+            time.sleep(min(2 * attempt, 10))
+    assert last_result is not None
+    return last_result
+
+
+def kubectl_json(kubeconfig: str, namespace: str, kind: str, name: str, *, retries: int = 1) -> dict[str, Any]:
+    result = kubectl_run(
         ["kubectl", "--kubeconfig", kubeconfig, "-n", namespace, "get", kind, name, "-o", "json"],
-        capture_output=True,
-        text=True,
+        retries=retries,
     )
     if result.returncode != 0:
         raise RuntimeError(f"kubectl get {kind}/{name} failed\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}")
@@ -268,7 +292,10 @@ def first_container_image(deploy: dict[str, Any]) -> str:
 
 
 def resolve_job_image(
-    args: argparse.Namespace, spec: dict[str, Any], kubeconfig: str, service_platform_env: dict[str, str]
+    args: argparse.Namespace,
+    spec: dict[str, Any],
+    kubeconfig: str,
+    service_platform_env: dict[str, str],
 ) -> str:
     if args.image_override.strip() and not spec.get("ignore_image_override"):
         return args.image_override.strip()
@@ -281,7 +308,13 @@ def resolve_job_image(
         if not image:
             raise ValueError(f"missing {image_env_key} in service platform env")
         return image
-    deploy = kubectl_json(kubeconfig, spec["namespace"], "deployment", spec["deployment"])
+    deploy = kubectl_json(
+        kubeconfig,
+        spec["namespace"],
+        "deployment",
+        spec["deployment"],
+        retries=getattr(args, "kubectl_retries", 1),
+    )
     return first_container_image(deploy)
 
 
@@ -309,6 +342,7 @@ def build_configmap_manifest(namespace: str, name: str, source_dir: Path) -> dic
 
 def build_ctl_dynamic_resources(
     job_name: str,
+    namespace: str,
     env_name: str,
     deploy_root: Path,
     platform_env: dict[str, str],
@@ -333,9 +367,9 @@ def build_ctl_dynamic_resources(
     dsn = f"mysql://root:{mysql_password}@tcp({mysql_host}:3306)/ctl?multiStatements=true"  # pragma: allowlist secret
     migrations_name = f"{job_name}-migrations"
     secret_name = f"{job_name}-secrets"
-    migrations = build_configmap_manifest("ctl", migrations_name, REPO_ROOT / "ctl" / "migrations")
+    migrations = build_configmap_manifest(namespace, migrations_name, REPO_ROOT / "ctl" / "migrations")
     secret = build_secret_manifest(
-        "ctl",
+        namespace,
         secret_name,
         {
             "MYSQL_ROOT_PASSWORD": mysql_password,
@@ -467,25 +501,24 @@ def build_job_manifest(
     }
 
 
-def apply_manifest(kubeconfig: str, manifest: dict[str, Any]) -> None:
-    result = subprocess.run(
+def apply_manifest(kubeconfig: str, manifest: dict[str, Any], *, retries: int = 1) -> None:
+    result = kubectl_run(
         ["kubectl", "--kubeconfig", kubeconfig, "apply", "-f", "-"],
-        input=json.dumps(manifest),
-        capture_output=True,
-        text=True,
+        input_text=json.dumps(manifest),
+        retries=retries,
     )
     if result.returncode != 0:
         raise RuntimeError(f"kubectl apply failed\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}")
 
 
-def get_job_status(kubeconfig: str, namespace: str, name: str) -> dict[str, Any]:
-    return kubectl_json(kubeconfig, namespace, "job", name)
+def get_job_status(kubeconfig: str, namespace: str, name: str, *, retries: int = 1) -> dict[str, Any]:
+    return kubectl_json(kubeconfig, namespace, "job", name, retries=retries)
 
 
-def wait_for_job(kubeconfig: str, namespace: str, name: str, timeout_seconds: int) -> str:
+def wait_for_job(kubeconfig: str, namespace: str, name: str, timeout_seconds: int, *, retries: int = 1) -> str:
     deadline = time.time() + timeout_seconds
     while time.time() < deadline:
-        job = get_job_status(kubeconfig, namespace, name)
+        job = get_job_status(kubeconfig, namespace, name, retries=retries)
         status = job.get("status") or {}
         if status.get("succeeded", 0) > 0:
             return "succeeded"
@@ -511,19 +544,25 @@ def load_job_db_contract(bundle_manifest: Path, service: str, env_name: str) -> 
         return {}
 
 
-def kubectl_delete(kubeconfig: str, manifest: dict[str, Any]) -> None:
-    result = subprocess.run(
+def kubectl_delete(kubeconfig: str, manifest: dict[str, Any], *, retries: int = 1) -> None:
+    result = kubectl_run(
         ["kubectl", "--kubeconfig", kubeconfig, "delete", "-f", "-", "--ignore-not-found=true"],
-        input=json.dumps(manifest),
-        capture_output=True,
-        text=True,
+        input_text=json.dumps(manifest),
+        retries=retries,
     )
     if result.returncode != 0:
         print(f"warning: kubectl cleanup failed\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}", file=sys.stderr)
 
 
-def collect_job_logs(kubeconfig: str, namespace: str, name: str, secret_values: dict[str, str]) -> str:
-    result = subprocess.run(
+def collect_job_logs(
+    kubeconfig: str,
+    namespace: str,
+    name: str,
+    secret_values: dict[str, str],
+    *,
+    retries: int = 1,
+) -> str:
+    result = kubectl_run(
         [
             "kubectl",
             "--kubeconfig",
@@ -535,8 +574,7 @@ def collect_job_logs(kubeconfig: str, namespace: str, name: str, secret_values: 
             "--all-containers=true",
             "--tail=200",
         ],
-        capture_output=True,
-        text=True,
+        retries=retries,
     )
     combined = "\n".join(part for part in (result.stdout, result.stderr) if part.strip())
     return redact(combined, secret_values)
@@ -565,7 +603,10 @@ def main() -> int:
     manifest: dict[str, Any] | None = None
     dynamic: dict[str, Any] = {}
     try:
-        spec = SERVICE_SPECS[key]
+        spec = copy.deepcopy(SERVICE_SPECS[key])
+        namespace_override = args.namespace.strip()
+        if namespace_override:
+            spec["namespace"] = namespace_override
         require_repo_payload_revision(spec, args.revision)
         service_platform_env = load_service_platform_env(spec, args.env, deploy_root)
         image = resolve_job_image(args, spec, kubeconfig, service_platform_env)
@@ -574,6 +615,7 @@ def main() -> int:
         if spec.get("dynamic_builder") == "ctl":
             dynamic, extra_resources = build_ctl_dynamic_resources(
                 job_name,
+                spec["namespace"],
                 args.env,
                 deploy_root,
                 platform_env,
@@ -603,11 +645,17 @@ def main() -> int:
         }
 
         if args.apply:
-            apply_manifest(kubeconfig, apply_manifest_doc)
+            apply_manifest(kubeconfig, apply_manifest_doc, retries=args.kubectl_retries)
             summary["status"] = "applied"
 
         if args.apply and args.wait:
-            result = wait_for_job(kubeconfig, spec["namespace"], manifest["metadata"]["name"], args.timeout_seconds)
+            result = wait_for_job(
+                kubeconfig,
+                spec["namespace"],
+                manifest["metadata"]["name"],
+                args.timeout_seconds,
+                retries=args.kubectl_retries,
+            )
             summary["status"] = result
             if result != "succeeded":
                 logs = collect_job_logs(
@@ -615,6 +663,7 @@ def main() -> int:
                     spec["namespace"],
                     manifest["metadata"]["name"],
                     dynamic.get("secretValues") or {},
+                    retries=args.kubectl_retries,
                 )
                 if logs:
                     summary["logs"] = logs
@@ -629,7 +678,7 @@ def main() -> int:
         return 0
     finally:
         if args.apply and apply_manifest_doc is not None:
-            kubectl_delete(kubeconfig, apply_manifest_doc)
+            kubectl_delete(kubeconfig, apply_manifest_doc, retries=args.kubectl_retries)
         if temp_path is not None:
             temp_path.unlink(missing_ok=True)
 

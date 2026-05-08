@@ -88,6 +88,7 @@ class RunGitopsDbJobTests(unittest.TestCase):
                 ):
                 dynamic, resources = db_job.build_ctl_dynamic_resources(
                     "gitops-ctl-migration-test",
+                    "ctl",
                     "beijing-sandbox",
                     Path("/tmp/gitops"),
                     {},
@@ -104,6 +105,42 @@ class RunGitopsDbJobTests(unittest.TestCase):
         self.assertIn("secretKeyRef", init_env_payload)
         self.assertNotIn("test-password", env_payload)
         self.assertNotIn("test-password", init_env_payload)
+
+    def test_ctl_dynamic_resources_respect_namespace_override(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            migrations = Path(tmp) / "ctl" / "migrations"
+            migrations.mkdir(parents=True)
+            (migrations / "000001_init.up.sql").write_text("select 1;\n")
+            with mock.patch.object(db_job, "REPO_ROOT", Path(tmp)), \
+                mock.patch.object(
+                    db_job,
+                    "resolve_contract_secret_values",
+                    return_value={"ctl_db_password": "test-password"},
+                ), \
+                mock.patch.object(
+                    db_job,
+                    "build_configmap_manifest",
+                    return_value={
+                        "apiVersion": "v1",
+                        "kind": "ConfigMap",
+                        "metadata": {
+                            "name": "gitops-ctl-migration-test-migrations",
+                            "namespace": "lightvela-playground-sandbox-bj-6",
+                        },
+                    },
+                ):
+                _, resources = db_job.build_ctl_dynamic_resources(
+                    "gitops-ctl-migration-test",
+                    "lightvela-playground-sandbox-bj-6",
+                    "sandbox-bj-6",
+                    Path("/tmp/gitops"),
+                    {},
+                    {"CTL_TEST_MYSQL_HOST": "mysql.lightvela-playground-sandbox-bj-6.svc.cluster.local"},
+                    {"db_job_secret_resolver": "ctl_db_password"},
+                )
+
+        self.assertEqual(resources[0]["metadata"]["namespace"], "lightvela-playground-sandbox-bj-6")
+        self.assertEqual(resources[1]["metadata"]["namespace"], "lightvela-playground-sandbox-bj-6")
 
 
 if __name__ == "__main__":
