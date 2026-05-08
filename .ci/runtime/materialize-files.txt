@@ -5,6 +5,7 @@
 .ci/runtime/gitops_promotion_bootstrap.sh
 .ci/runtime/commands/__init__.py
 .ci/runtime/commands/audit_gitops_drift.py
+.ci/runtime/commands/bootstrap_playground_environment.py
 .ci/runtime/commands/build_release_image.py
 .ci/runtime/commands/cleanup_gitops_promotion.py
 .ci/runtime/commands/create_playground_environment.py

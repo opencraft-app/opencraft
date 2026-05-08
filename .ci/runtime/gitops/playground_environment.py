@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
+import time
 import urllib.error
 from dataclasses import dataclass
 from pathlib import Path
@@ -29,6 +32,15 @@ DEFAULT_FROM_ENV = "sandbox-bj-3"
 DEFAULT_CLUSTER_NAME = "beijing-playground"
 DEFAULT_PROJECT = "beijing-playground"
 LIGHTCLAW_DOMAIN = "lightclaw.tech"
+PLAYGROUND_DB_SERVICES: tuple[tuple[str, str], ...] = (
+    ("payment", "migration"),
+    ("lightclaw-auth", "migration"),
+    ("lightclaw-auth", "seed"),
+    ("ai-gateway", "migration"),
+    ("subscription", "migration"),
+    ("sandbox", "migration"),
+    ("ctl", "migration"),
+)
 
 
 @dataclass(frozen=True)
@@ -72,6 +84,26 @@ class PlaygroundClonePlan:
     tls_secret_name: str
     files: tuple[CloneFile, ...]
     replacements: tuple[tuple[str, str], ...]
+
+
+@dataclass(frozen=True)
+class DatabaseGrant:
+    database: str
+    username: str | None
+    password_secret: str | None
+    password_key: str | None
+
+
+@dataclass(frozen=True)
+class PlaygroundBootstrapPlan:
+    repo_root: Path
+    env: str
+    namespace: str
+    kubeconfig: Path
+    mysql_host: str
+    revision: str
+    grants: tuple[DatabaseGrant, ...]
+    db_jobs: tuple[tuple[str, str], ...]
 
 
 def parse_args() -> argparse.Namespace:
@@ -123,6 +155,29 @@ def parse_create_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def parse_bootstrap_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Bootstrap a playground environment after GitOps creates it: create DBs/grants, "
+            "run controlled DB jobs, restart workloads, and print a final diagnostic. "
+            "Default mode is dry-run; pass --apply for live changes."
+        )
+    )
+    parser.add_argument("--repo-root", type=Path, default=Path("."))
+    parser.add_argument("--env", required=True, help="Playground env, e.g. sandbox-bj-4")
+    parser.add_argument("--namespace")
+    parser.add_argument("--kubeconfig", type=Path)
+    parser.add_argument("--mysql-host", default="")
+    parser.add_argument("--revision", default="")
+    parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--skip-db-bootstrap", action="store_true")
+    parser.add_argument("--skip-db-job", action="append", default=[], help="Skip service/operation, e.g. ctl/migration")
+    parser.add_argument("--skip-restart", action="store_true")
+    parser.add_argument("--timeout-seconds", type=int, default=900)
+    parser.add_argument("--kubectl-retries", type=int, default=3)
+    return parser.parse_args(argv)
+
+
 def fetch_origin_refs(repo_root: Path, refs: Sequence[str]) -> CheckResult:
     branches = sorted({ref.split("/", 1)[1] for ref in refs if ref.startswith("origin/") and "/" in ref})
     if not branches:
@@ -145,6 +200,29 @@ def catalog_dir(playground_root: str, env: str) -> str:
 
 def env_slug(env: str) -> str:
     return env.replace("-", "_")
+
+
+def ctl_database_name(env: str) -> str:
+    if re.fullmatch(r"sandbox-bj-\d+", env):
+        return f"ctl_{env_slug(env)}"
+    return "ctl"
+
+
+def playground_database_grants(env: str) -> tuple[DatabaseGrant, ...]:
+    slug = env_slug(env)
+    return (
+        DatabaseGrant(f"ctl_{slug}", None, None, None),
+        DatabaseGrant(f"lightclaw_auth_{slug}", "lightclaw_auth", "lightclaw-auth-secrets", "LIGHTCLAW_AUTH_DB_PASSWORD"),
+        DatabaseGrant(f"lightclaw_payment_{slug}", "lightclaw_payment", "payment-runtime-secrets", "PAYMENT_DB_PASSWORD"),
+        DatabaseGrant(f"ai_gateway_{slug}", "ai_gateway", "ai-gateway-runtime-secrets", "AI_GATEWAY_DB_PASSWORD"),
+        DatabaseGrant(
+            f"lightclaw_subscription_{slug}",
+            "lightclaw_subscription",
+            "subscription-runtime-secrets",
+            "SUBSCRIPTION_DB_PASSWORD",
+        ),
+        DatabaseGrant(f"cvm_{slug}", None, "sandbox-runtime-secrets", "MYSQL_PASSWORD"),
+    )
 
 
 def default_namespace(env: str) -> str:
@@ -355,6 +433,364 @@ def write_clone_plan(plan: PlaygroundClonePlan, *, force: bool = False) -> list[
         shutil.copymode(item.source, item.target, follow_symlinks=False)
         written.append(item.target)
     return written
+
+
+def run_local_git(repo_root: Path, *args: str) -> str:
+    result = subprocess.run(["git", *args], cwd=repo_root, check=True, capture_output=True, text=True)
+    return result.stdout.strip()
+
+
+def default_kubeconfig_for_env(env: str) -> Path:
+    candidates = (
+        Path("/etc/lightclaw-ci") / f"kubeconfig_{env_slug(env)}",
+        Path("/etc/lightclaw-ci/kubeconfig_beijing_sandbox_2"),
+    )
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return candidates[0]
+
+
+def kubectl_cmd(kubeconfig: Path, namespace: str, *args: str) -> list[str]:
+    return [
+        "kubectl",
+        "--request-timeout=60s",
+        "--kubeconfig",
+        str(kubeconfig),
+        "-n",
+        namespace,
+        *args,
+    ]
+
+
+def transient_kubectl_error(stderr: str) -> bool:
+    lowered = stderr.lower()
+    return "eof" in lowered or "context deadline exceeded" in lowered or "timeout" in lowered
+
+
+def kubectl_capture(kubeconfig: Path, namespace: str, *args: str, retries: int = 3) -> str:
+    last: subprocess.CalledProcessError | None = None
+    for attempt in range(1, max(retries, 1) + 1):
+        try:
+            result = subprocess.run(
+                kubectl_cmd(kubeconfig, namespace, *args),
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            return result.stdout
+        except subprocess.CalledProcessError as exc:
+            last = exc
+            stderr = exc.stderr.lower()
+            if not transient_kubectl_error(stderr) or attempt >= max(retries, 1):
+                break
+            time.sleep(5)
+    assert last is not None
+    raise last
+
+
+def kubectl_apply(kubeconfig: Path, manifest: dict[str, Any], retries: int = 3) -> str:
+    last: subprocess.CalledProcessError | None = None
+    for attempt in range(1, max(retries, 1) + 1):
+        try:
+            result = subprocess.run(
+                [
+                    "kubectl",
+                    "--request-timeout=60s",
+                    "--kubeconfig",
+                    str(kubeconfig),
+                    "apply",
+                    "--validate=false",
+                    "-f",
+                    "-",
+                ],
+                input=json.dumps(manifest),
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            return result.stdout
+        except subprocess.CalledProcessError as exc:
+            last = exc
+            stderr = exc.stderr.lower()
+            if not transient_kubectl_error(stderr) or attempt >= max(retries, 1):
+                break
+            time.sleep(5)
+    assert last is not None
+    raise last
+
+
+def kubectl_secret_key_ref(name: str, key: str) -> dict[str, Any]:
+    return {"secretKeyRef": {"name": name, "key": key}}
+
+
+def secret_value_from_cluster(kubeconfig: Path, namespace: str, secret: str, key: str, retries: int = 3) -> str:
+    encoded = kubectl_capture(kubeconfig, namespace, "get", "secret", secret, "-o", f"jsonpath={{.data.{key}}}", retries=retries)
+    return base64.b64decode(encoded.strip()).decode()
+
+
+def discover_mysql_host(kubeconfig: Path, namespace: str, retries: int = 3) -> str:
+    payload = kubectl_capture(kubeconfig, namespace, "get", "configmap", "-o", "json", retries=retries)
+    data = json.loads(payload)
+    hosts: set[str] = set()
+    for item in data.get("items") or []:
+        for key, value in (item.get("data") or {}).items():
+            if key.endswith("MYSQL_HOST") and value:
+                hosts.add(str(value))
+    if len(hosts) != 1:
+        raise ValueError(f"cannot infer a single MYSQL_HOST from namespace {namespace}; found={sorted(hosts)}")
+    return next(iter(hosts))
+
+
+def build_playground_bootstrap_plan(
+    repo_root: Path,
+    env: str,
+    namespace: str | None = None,
+    kubeconfig: Path | None = None,
+    mysql_host: str = "",
+    revision: str = "",
+) -> PlaygroundBootstrapPlan:
+    repo_root = repo_root.resolve()
+    namespace = namespace or default_namespace(env)
+    kubeconfig = (kubeconfig or default_kubeconfig_for_env(env)).resolve()
+    if not revision:
+        revision = run_local_git(repo_root, "rev-parse", "HEAD")
+    return PlaygroundBootstrapPlan(
+        repo_root=repo_root,
+        env=env,
+        namespace=namespace,
+        kubeconfig=kubeconfig,
+        mysql_host=mysql_host,
+        revision=revision,
+        grants=playground_database_grants(env),
+        db_jobs=PLAYGROUND_DB_SERVICES,
+    )
+
+
+def bootstrap_database_job_manifest(plan: PlaygroundBootstrapPlan) -> dict[str, Any]:
+    env: list[dict[str, Any]] = [
+        {"name": "MYSQL_HOST", "value": plan.mysql_host},
+        {"name": "ROOT_PASSWORD", "valueFrom": kubectl_secret_key_ref("lightclaw-auth-secrets", "MYSQL_ROOT_PASSWORD")},
+    ]
+    for index, grant in enumerate(plan.grants):
+        if grant.password_secret and grant.password_key:
+            env.append({"name": f"GRANT_PASSWORD_{index}", "valueFrom": kubectl_secret_key_ref(grant.password_secret, grant.password_key)})
+        if grant.database.startswith("cvm_"):
+            env.append({"name": f"GRANT_USER_{index}", "valueFrom": kubectl_secret_key_ref("sandbox-runtime-secrets", "MYSQL_USER")})
+
+    lines = [
+        'sql_escape() { printf "%s" "$1" | sed "s/\'/\'\'/g"; }',
+        "emit_sql() {",
+    ]
+    for index, grant in enumerate(plan.grants):
+        db_env = f"DB_{index}"
+        lines.append(f'  {db_env}="{grant.database}"')
+        lines.append(f'  echo "CREATE DATABASE IF NOT EXISTS \\`${{{db_env}}}\\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"')
+        if grant.username:
+            user_literal = grant.username
+            password_env = f"GRANT_PASSWORD_{index}"
+            lines.append(f'  P_{index}="$(sql_escape "${{{password_env}}}")"')
+            lines.append(f'  echo "CREATE USER IF NOT EXISTS \'{user_literal}\'@\'%\' IDENTIFIED BY \'${{P_{index}}}\';"')
+            lines.append(f'  echo "ALTER USER \'{user_literal}\'@\'%\' IDENTIFIED BY \'${{P_{index}}}\';"')
+            lines.append(f'  echo "GRANT ALL PRIVILEGES ON \\`${{{db_env}}}\\`.* TO \'{user_literal}\'@\'%\';"')
+        elif grant.database.startswith("cvm_"):
+            user_env = f"GRANT_USER_{index}"
+            password_env = f"GRANT_PASSWORD_{index}"
+            lines.append(f'  U_{index}="$(sql_escape "${{{user_env}}}")"')
+            lines.append(f'  P_{index}="$(sql_escape "${{{password_env}}}")"')
+            lines.append(f'  echo "CREATE USER IF NOT EXISTS \'${{U_{index}}}\'@\'%\' IDENTIFIED BY \'${{P_{index}}}\';"')
+            lines.append(f'  echo "ALTER USER \'${{U_{index}}}\'@\'%\' IDENTIFIED BY \'${{P_{index}}}\';"')
+            lines.append(f'  echo "GRANT ALL PRIVILEGES ON \\`${{{db_env}}}\\`.* TO \'${{U_{index}}}\'@\'%\';"')
+    lines.extend(["  echo 'FLUSH PRIVILEGES;'", "}", "emit_sql >/tmp/bootstrap.sql", 'mysql --host="$MYSQL_HOST" --port=3306 --user=root --password="$ROOT_PASSWORD" </tmp/bootstrap.sql', f'echo "db bootstrap {plan.env} ok"'])
+    return {
+        "apiVersion": "batch/v1",
+        "kind": "Job",
+        "metadata": {"name": f"db-bootstrap-{plan.env}", "namespace": plan.namespace},
+        "spec": {
+            "backoffLimit": 0,
+            "ttlSecondsAfterFinished": 86400,
+            "template": {
+                "spec": {
+                    "restartPolicy": "Never",
+                    "containers": [
+                        {
+                            "name": "mysql",
+                            "image": "mysql:8.0",
+                            "env": env,
+                            "command": ["/bin/sh", "-ec"],
+                            "args": ["\n".join(lines)],
+                        }
+                    ],
+                }
+            },
+        },
+    }
+
+
+def wait_for_kubernetes_job(kubeconfig: Path, namespace: str, name: str, timeout_seconds: int, retries: int) -> str:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        payload = kubectl_capture(kubeconfig, namespace, "get", "job", name, "-o", "json", retries=retries)
+        status = json.loads(payload).get("status") or {}
+        if status.get("succeeded", 0) > 0:
+            return "succeeded"
+        if status.get("failed", 0) > 0 and status.get("active", 0) == 0:
+            return "failed"
+        time.sleep(5)
+    return "timeout"
+
+
+def run_database_bootstrap(plan: PlaygroundBootstrapPlan, timeout_seconds: int, retries: int) -> None:
+    manifest = bootstrap_database_job_manifest(plan)
+    try:
+        kubectl_capture(
+            plan.kubeconfig,
+            plan.namespace,
+            "delete",
+            "job",
+            manifest["metadata"]["name"],
+            "--ignore-not-found=true",
+            retries=retries,
+        )
+    except subprocess.CalledProcessError as exc:
+        if not transient_kubectl_error(exc.stderr):
+            raise
+        print(f"警告：删除旧 DB bootstrap job 时遇到临时 apiserver 错误，继续幂等 apply：{exc.stderr.strip()}")
+    kubectl_apply(plan.kubeconfig, manifest, retries=retries)
+    result = wait_for_kubernetes_job(plan.kubeconfig, plan.namespace, manifest["metadata"]["name"], timeout_seconds, retries)
+    if result != "succeeded":
+        logs = kubectl_capture(plan.kubeconfig, plan.namespace, "logs", f"job/{manifest['metadata']['name']}", "--tail=80", retries=retries)
+        raise RuntimeError(f"database bootstrap job {manifest['metadata']['name']} {result}\n{logs}")
+
+
+def run_playground_db_jobs(plan: PlaygroundBootstrapPlan, skip: set[str], timeout_seconds: int, retries: int) -> None:
+    env = os.environ.copy()
+    env["DB_JOB_KUBECONFIG_FILE"] = str(plan.kubeconfig)
+    try:
+        env["CTL_TEST_MYSQL_PASSWORD"] = secret_value_from_cluster(
+            plan.kubeconfig, plan.namespace, "lightclaw-auth-secrets", "MYSQL_ROOT_PASSWORD", retries
+        )
+    except Exception:
+        pass
+    for service, operation in plan.db_jobs:
+        key = f"{service}/{operation}"
+        if key in skip or service in skip:
+            print(f"跳过 DB job：{key}")
+            continue
+        print(f"执行 DB job：{key}")
+        subprocess.run(
+            [
+                sys.executable,
+                str(plan.repo_root / ".ci/runtime/commands/run_gitops_db_job.py"),
+                "--repo-root",
+                str(plan.repo_root),
+                "--deploy-root",
+                str(plan.repo_root),
+                "--service",
+                service,
+                "--operation",
+                operation,
+                "--env",
+                plan.env,
+                "--revision",
+                plan.revision,
+                "--namespace",
+                plan.namespace,
+                "--kubectl-retries",
+                str(retries),
+                "--apply",
+                "--wait",
+                "--timeout-seconds",
+                str(timeout_seconds),
+            ],
+            cwd=plan.repo_root,
+            env=env,
+            check=True,
+        )
+
+
+PLAYGROUND_RESTART_SELECTORS = (
+    "app=ctl-api",
+    "app=ctl-bypass",
+    "app=ctl-service",
+    "app=gateway-backend",
+    "app=lightclaw-auth",
+    "app=nextgen-dashboard",
+    "app=payment",
+    "app=sandbox-api",
+    "app=sandbox-worker-sharded",
+    "app=subscription",
+)
+
+
+def restart_playground_workloads(plan: PlaygroundBootstrapPlan, retries: int) -> None:
+    for selector in PLAYGROUND_RESTART_SELECTORS:
+        print(f"重启 workload pods：{selector}")
+        kubectl_capture(plan.kubeconfig, plan.namespace, "delete", "pod", "-l", selector, "--ignore-not-found=true", retries=retries)
+
+
+def print_bootstrap_plan(plan: PlaygroundBootstrapPlan, *, apply: bool, skip: set[str]) -> None:
+    print("=" * 60)
+    print("Playground 环境运行时初始化")
+    print(f"模式：{'执行 live 修改' if apply else 'dry-run（不会改 live）'}")
+    print(f"环境：{plan.env}")
+    print(f"namespace：{plan.namespace}")
+    print(f"kubeconfig：{plan.kubeconfig}")
+    print(f"MySQL host：{plan.mysql_host or '自动从 ConfigMap 推导'}")
+    print(f"revision：{plan.revision}")
+    print("=" * 60)
+    print("将确保数据库/授权：")
+    for grant in plan.grants:
+        user = grant.username or ("sandbox-runtime-secrets/MYSQL_USER" if grant.database.startswith("cvm_") else "root-only")
+        print(f"- database={grant.database} user={user}")
+    print("将执行 DB job：")
+    for service, operation in plan.db_jobs:
+        key = f"{service}/{operation}"
+        suffix = "（跳过）" if key in skip or service in skip else ""
+        print(f"- {key}{suffix}")
+    print("将重启 DB schema 相关 workload pod。")
+    print("不会打印任何 Secret 值。")
+
+
+def bootstrap_playground_main(argv: Sequence[str] | None = None) -> int:
+    args = parse_bootstrap_args(argv)
+    plan = build_playground_bootstrap_plan(
+        repo_root=args.repo_root,
+        env=args.env,
+        namespace=args.namespace,
+        kubeconfig=args.kubeconfig,
+        mysql_host=args.mysql_host,
+        revision=args.revision,
+    )
+    skip = set(args.skip_db_job)
+    if not plan.mysql_host and args.apply:
+        plan = PlaygroundBootstrapPlan(
+            repo_root=plan.repo_root,
+            env=plan.env,
+            namespace=plan.namespace,
+            kubeconfig=plan.kubeconfig,
+            mysql_host=discover_mysql_host(plan.kubeconfig, plan.namespace, args.kubectl_retries),
+            revision=plan.revision,
+            grants=plan.grants,
+            db_jobs=plan.db_jobs,
+        )
+    print_bootstrap_plan(plan, apply=args.apply, skip=skip)
+    if not args.apply:
+        print("=" * 60)
+        print(f"确认后执行：python3 .ci/runtime/commands/bootstrap_playground_environment.py --env {plan.env} --apply")
+        return 0
+    if not plan.mysql_host:
+        raise ValueError("--mysql-host is required when it cannot be inferred from live ConfigMaps")
+    if args.skip_db_bootstrap:
+        print("跳过 DB bootstrap：按参数 --skip-db-bootstrap")
+    else:
+        run_database_bootstrap(plan, args.timeout_seconds, args.kubectl_retries)
+    run_playground_db_jobs(plan, skip, args.timeout_seconds, args.kubectl_retries)
+    if not args.skip_restart:
+        restart_playground_workloads(plan, args.kubectl_retries)
+    print("=" * 60)
+    print("Playground runtime bootstrap 完成。建议等待 1-2 分钟后运行 diagnose_playground_environment.py 验证 Argo/K8s。")
+    return 0
 
 
 def print_clone_plan(plan: PlaygroundClonePlan, *, write: bool, force: bool, written: Sequence[Path] = ()) -> None:

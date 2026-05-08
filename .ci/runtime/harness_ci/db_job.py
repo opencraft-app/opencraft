@@ -14,6 +14,7 @@ import base64
 import copy
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -137,6 +138,17 @@ def parse_args() -> argparse.Namespace:
         default="DB_JOB_KUBECONFIG_B64",
         help="Environment variable holding base64 kubeconfig for CI use",
     )
+    parser.add_argument(
+        "--namespace",
+        default="",
+        help="Override the Kubernetes namespace for playground/shared-namespace environments.",
+    )
+    parser.add_argument(
+        "--kubectl-retries",
+        type=int,
+        default=3,
+        help="Retry kubectl apply/get operations. Playground apiserver can return transient EOF.",
+    )
     return parser.parse_args()
 
 
@@ -249,15 +261,22 @@ def resolve_kubeconfig(
     return str(resolved), None
 
 
-def kubectl_json(kubeconfig: str, namespace: str, kind: str, name: str) -> dict[str, Any]:
-    result = subprocess.run(
-        ["kubectl", "--kubeconfig", kubeconfig, "-n", namespace, "get", kind, name, "-o", "json"],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"kubectl get {kind}/{name} failed\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}")
-    return json.loads(result.stdout)
+def kubectl_json(kubeconfig: str, namespace: str, kind: str, name: str, *, retries: int = 3) -> dict[str, Any]:
+    last: subprocess.CompletedProcess[str] | None = None
+    for attempt in range(1, max(retries, 1) + 1):
+        result = subprocess.run(
+            ["kubectl", "--request-timeout=60s", "--kubeconfig", kubeconfig, "-n", namespace, "get", kind, name, "-o", "json"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            return json.loads(result.stdout)
+        last = result
+        if not transient_kubectl_error(result.stderr) or attempt >= max(retries, 1):
+            break
+        time.sleep(5)
+    assert last is not None
+    raise RuntimeError(f"kubectl get {kind}/{name} failed\nstdout:\n{last.stdout}\nstderr:\n{last.stderr}")
 
 
 def first_container_image(deploy: dict[str, Any]) -> str:
@@ -268,7 +287,12 @@ def first_container_image(deploy: dict[str, Any]) -> str:
 
 
 def resolve_job_image(
-    args: argparse.Namespace, spec: dict[str, Any], kubeconfig: str, service_platform_env: dict[str, str]
+    args: argparse.Namespace,
+    spec: dict[str, Any],
+    kubeconfig: str,
+    service_platform_env: dict[str, str],
+    *,
+    retries: int = 3,
 ) -> str:
     if args.image_override.strip() and not spec.get("ignore_image_override"):
         return args.image_override.strip()
@@ -281,8 +305,14 @@ def resolve_job_image(
         if not image:
             raise ValueError(f"missing {image_env_key} in service platform env")
         return image
-    deploy = kubectl_json(kubeconfig, spec["namespace"], "deployment", spec["deployment"])
+    deploy = kubectl_json(kubeconfig, spec["namespace"], "deployment", spec["deployment"], retries=retries)
     return first_container_image(deploy)
+
+
+def ctl_database_name(env_name: str) -> str:
+    if re.fullmatch(r"sandbox-bj-\d+", env_name):
+        return f"ctl_{env_name.replace('-', '_')}"
+    return "ctl"
 
 
 def build_configmap_manifest(namespace: str, name: str, source_dir: Path) -> dict[str, Any]:
@@ -310,6 +340,7 @@ def build_configmap_manifest(namespace: str, name: str, source_dir: Path) -> dic
 def build_ctl_dynamic_resources(
     job_name: str,
     env_name: str,
+    namespace: str,
     deploy_root: Path,
     platform_env: dict[str, str],
     service_platform_env: dict[str, str],
@@ -330,12 +361,13 @@ def build_ctl_dynamic_resources(
             "missing ctl DB password from db_contract.secret_resolvers, platform.env, environment, or /etc/lightclaw-ci"
         )
 
-    dsn = f"mysql://root:{mysql_password}@tcp({mysql_host}:3306)/ctl?multiStatements=true"  # pragma: allowlist secret
+    ctl_db = ctl_database_name(env_name)
+    dsn = f"mysql://root:{mysql_password}@tcp({mysql_host}:3306)/{ctl_db}?multiStatements=true"  # pragma: allowlist secret
     migrations_name = f"{job_name}-migrations"
     secret_name = f"{job_name}-secrets"
-    migrations = build_configmap_manifest("ctl", migrations_name, REPO_ROOT / "ctl" / "migrations")
+    migrations = build_configmap_manifest(namespace, migrations_name, REPO_ROOT / "ctl" / "migrations")
     secret = build_secret_manifest(
-        "ctl",
+        namespace,
         secret_name,
         {
             "MYSQL_ROOT_PASSWORD": mysql_password,
@@ -363,7 +395,7 @@ def build_ctl_dynamic_resources(
                     {"name": "MYSQL_HOST", "value": mysql_host},
                     {"name": "MYSQL_PORT", "value": "3306"},
                     {"name": "MYSQL_ROOT_USER", "value": "root"},
-                    {"name": "CTL_DB", "value": "ctl"},
+                    {"name": "CTL_DB", "value": ctl_db},
                     {
                         "name": "MYSQL_ROOT_PASSWORD",
                         "valueFrom": secret_env_ref(secret_name, "MYSQL_ROOT_PASSWORD"),
@@ -467,25 +499,38 @@ def build_job_manifest(
     }
 
 
-def apply_manifest(kubeconfig: str, manifest: dict[str, Any]) -> None:
-    result = subprocess.run(
-        ["kubectl", "--kubeconfig", kubeconfig, "apply", "-f", "-"],
-        input=json.dumps(manifest),
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"kubectl apply failed\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}")
+def transient_kubectl_error(stderr: str) -> bool:
+    lowered = stderr.lower()
+    return "eof" in lowered or "context deadline exceeded" in lowered or "timeout" in lowered
 
 
-def get_job_status(kubeconfig: str, namespace: str, name: str) -> dict[str, Any]:
-    return kubectl_json(kubeconfig, namespace, "job", name)
+def apply_manifest(kubeconfig: str, manifest: dict[str, Any], *, retries: int = 3) -> None:
+    last: subprocess.CompletedProcess[str] | None = None
+    for attempt in range(1, max(retries, 1) + 1):
+        result = subprocess.run(
+            ["kubectl", "--request-timeout=60s", "--kubeconfig", kubeconfig, "apply", "--validate=false", "-f", "-"],
+            input=json.dumps(manifest),
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            return
+        last = result
+        if not transient_kubectl_error(result.stderr) or attempt >= max(retries, 1):
+            break
+        time.sleep(5)
+    assert last is not None
+    raise RuntimeError(f"kubectl apply failed\nstdout:\n{last.stdout}\nstderr:\n{last.stderr}")
 
 
-def wait_for_job(kubeconfig: str, namespace: str, name: str, timeout_seconds: int) -> str:
+def get_job_status(kubeconfig: str, namespace: str, name: str, *, retries: int = 3) -> dict[str, Any]:
+    return kubectl_json(kubeconfig, namespace, "job", name, retries=retries)
+
+
+def wait_for_job(kubeconfig: str, namespace: str, name: str, timeout_seconds: int, *, retries: int = 3) -> str:
     deadline = time.time() + timeout_seconds
     while time.time() < deadline:
-        job = get_job_status(kubeconfig, namespace, name)
+        job = get_job_status(kubeconfig, namespace, name, retries=retries)
         status = job.get("status") or {}
         if status.get("succeeded", 0) > 0:
             return "succeeded"
@@ -565,16 +610,19 @@ def main() -> int:
     manifest: dict[str, Any] | None = None
     dynamic: dict[str, Any] = {}
     try:
-        spec = SERVICE_SPECS[key]
+        spec = copy.deepcopy(SERVICE_SPECS[key])
+        if args.namespace.strip():
+            spec["namespace"] = args.namespace.strip()
         require_repo_payload_revision(spec, args.revision)
         service_platform_env = load_service_platform_env(spec, args.env, deploy_root)
-        image = resolve_job_image(args, spec, kubeconfig, service_platform_env)
+        image = resolve_job_image(args, spec, kubeconfig, service_platform_env, retries=args.kubectl_retries)
         job_name = generate_job_name(args.service, args.operation)
         extra_resources: list[dict[str, Any]] = []
         if spec.get("dynamic_builder") == "ctl":
             dynamic, extra_resources = build_ctl_dynamic_resources(
                 job_name,
                 args.env,
+                spec["namespace"],
                 deploy_root,
                 platform_env,
                 service_platform_env,
@@ -603,11 +651,17 @@ def main() -> int:
         }
 
         if args.apply:
-            apply_manifest(kubeconfig, apply_manifest_doc)
+            apply_manifest(kubeconfig, apply_manifest_doc, retries=args.kubectl_retries)
             summary["status"] = "applied"
 
         if args.apply and args.wait:
-            result = wait_for_job(kubeconfig, spec["namespace"], manifest["metadata"]["name"], args.timeout_seconds)
+            result = wait_for_job(
+                kubeconfig,
+                spec["namespace"],
+                manifest["metadata"]["name"],
+                args.timeout_seconds,
+                retries=args.kubectl_retries,
+            )
             summary["status"] = result
             if result != "succeeded":
                 logs = collect_job_logs(

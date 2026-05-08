@@ -15,11 +15,14 @@ from tests.helpers import git
 from gitops.playground_environment import (
     CatalogApp,
     appset_file_globs,
+    bootstrap_database_job_manifest,
     build_playground_clone_plan,
+    build_playground_bootstrap_plan,
     check_appset_refs,
     check_catalog,
     create_playground_main,
     fetch_origin_refs,
+    playground_database_grants,
     load_yaml_mapping,
     render_clone_text,
     target_conflicts,
@@ -258,6 +261,42 @@ class PlaygroundEnvironmentTests(unittest.TestCase):
         self.assertNotIn("sandbox-bj-3", rendered)
         self.assertNotIn("bj83", rendered)
 
+    def test_playground_database_grants_are_env_scoped(self) -> None:
+        grants = playground_database_grants("sandbox-bj-4")
+
+        self.assertEqual(
+            [grant.database for grant in grants],
+            [
+                "ctl_sandbox_bj_4",
+                "lightclaw_auth_sandbox_bj_4",
+                "lightclaw_payment_sandbox_bj_4",
+                "ai_gateway_sandbox_bj_4",
+                "lightclaw_subscription_sandbox_bj_4",
+                "cvm_sandbox_bj_4",
+            ],
+        )
+
+    def test_bootstrap_manifest_uses_secret_refs_without_plain_secret_values(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            git(repo, "init", "-b", "master")
+            git(repo, "commit", "--allow-empty", "-m", "root")
+
+            plan = build_playground_bootstrap_plan(
+                repo,
+                "sandbox-bj-4",
+                kubeconfig=Path("/tmp/kubeconfig"),
+                mysql_host="10.31.192.4",
+            )
+            manifest = bootstrap_database_job_manifest(plan)
+            rendered = yaml_dump_for_test(manifest)
+
+        self.assertIn("db-bootstrap-sandbox-bj-4", rendered)
+        self.assertIn("lightclaw-auth-secrets", rendered)
+        self.assertIn("PAYMENT_DB_PASSWORD", rendered)
+        self.assertIn("ctl_sandbox_bj_4", rendered)
+        self.assertNotIn("replace-with-secret", rendered)
+
 def create_playground_fixture(repo: Path) -> None:
     services = (
         "admin-gateway",
@@ -332,6 +371,12 @@ def create_playground_fixture(repo: Path) -> None:
     (secret_dir / "ai-gateway-runtime-secrets.sops.yaml").write_text("encrypted: sandbox-bj-3\n")
     (secret_dir / "tcr-ccr-clawhub-secret.sops.yaml").write_text("encrypted: registry\n")
     (secret_dir / "README.md").write_text("secret notes for sandbox-bj-3\n")
+
+
+def yaml_dump_for_test(payload: object) -> str:
+    import yaml
+
+    return yaml.safe_dump(payload, allow_unicode=True, sort_keys=False)
 
 
 if __name__ == "__main__":

@@ -66,6 +66,10 @@ class RunGitopsDbJobTests(unittest.TestCase):
 
         self.assertEqual(image, "example.com/payment:release")
 
+    def test_ctl_database_name_is_env_scoped_for_playground(self) -> None:
+        self.assertEqual(db_job.ctl_database_name("sandbox-bj-4"), "ctl_sandbox_bj_4")
+        self.assertEqual(db_job.ctl_database_name("beijing-sandbox"), "ctl")
+
     def test_ctl_dynamic_resources_use_temporary_secret_refs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             migrations = Path(tmp) / "ctl" / "migrations"
@@ -89,6 +93,7 @@ class RunGitopsDbJobTests(unittest.TestCase):
                 dynamic, resources = db_job.build_ctl_dynamic_resources(
                     "gitops-ctl-migration-test",
                     "beijing-sandbox",
+                    "ctl",
                     Path("/tmp/gitops"),
                     {},
                     {"CTL_TEST_MYSQL_HOST": "10.15.224.4"},
@@ -104,6 +109,43 @@ class RunGitopsDbJobTests(unittest.TestCase):
         self.assertIn("secretKeyRef", init_env_payload)
         self.assertNotIn("test-password", env_payload)
         self.assertNotIn("test-password", init_env_payload)
+
+    def test_ctl_dynamic_resources_use_override_namespace_and_playground_db(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            migrations = Path(tmp) / "ctl" / "migrations"
+            migrations.mkdir(parents=True)
+            (migrations / "000001_init.up.sql").write_text("select 1;\n")
+            with mock.patch.object(db_job, "REPO_ROOT", Path(tmp)), \
+                mock.patch.object(
+                    db_job,
+                    "resolve_contract_secret_values",
+                    return_value={"ctl_db_password": "test-password"},
+                ), \
+                mock.patch.object(
+                    db_job,
+                    "build_configmap_manifest",
+                    return_value={
+                        "apiVersion": "v1",
+                        "kind": "ConfigMap",
+                        "metadata": {
+                            "name": "gitops-ctl-migration-test-migrations",
+                            "namespace": "lightvela-playground-sandbox-bj-4",
+                        },
+                    },
+                ):
+                dynamic, resources = db_job.build_ctl_dynamic_resources(
+                    "gitops-ctl-migration-test",
+                    "sandbox-bj-4",
+                    "lightvela-playground-sandbox-bj-4",
+                    Path("/tmp/gitops"),
+                    {},
+                    {"CTL_TEST_MYSQL_HOST": "10.15.224.4"},
+                    {"db_job_secret_resolver": "ctl_db_password"},
+                )
+
+        self.assertEqual(resources[0]["metadata"]["namespace"], "lightvela-playground-sandbox-bj-4")
+        self.assertEqual(resources[1]["metadata"]["namespace"], "lightvela-playground-sandbox-bj-4")
+        self.assertIn("ctl_sandbox_bj_4", dynamic["secretValues"]["CTL_MIGRATE_DSN"])
 
 
 if __name__ == "__main__":
