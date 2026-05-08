@@ -125,6 +125,7 @@ class DatabaseGrant:
 @dataclass(frozen=True)
 class PlaygroundBootstrapPlan:
     repo_root: Path
+    runtime_root: Path
     env: str
     namespace: str
     kubeconfig: Path
@@ -142,6 +143,11 @@ def parse_args() -> argparse.Namespace:
         )
     )
     parser.add_argument("--repo-root", type=Path, default=Path("."))
+    parser.add_argument(
+        "--runtime-root",
+        type=Path,
+        help="Checkout that contains .ci/runtime and repo-backed migration payloads. Defaults to --repo-root.",
+    )
     parser.add_argument("--env", default="sandbox-bj-3")
     parser.add_argument("--gitops-ref", default="origin/gitops")
     parser.add_argument("--source-ref", default="origin/master")
@@ -1896,18 +1902,21 @@ def discover_mysql_host(kubeconfig: Path, namespace: str, retries: int = 3) -> s
 def build_playground_bootstrap_plan(
     repo_root: Path,
     env: str,
+    runtime_root: Path | None = None,
     namespace: str | None = None,
     kubeconfig: Path | None = None,
     mysql_host: str = "",
     revision: str = "",
 ) -> PlaygroundBootstrapPlan:
     repo_root = repo_root.resolve()
+    runtime_root = (runtime_root or repo_root).resolve()
     namespace = namespace or default_namespace(env)
     kubeconfig = (kubeconfig or default_kubeconfig_for_env(env)).resolve()
     if not revision:
         revision = run_local_git(repo_root, "rev-parse", "HEAD")
     return PlaygroundBootstrapPlan(
         repo_root=repo_root,
+        runtime_root=runtime_root,
         env=env,
         namespace=namespace,
         kubeconfig=kubeconfig,
@@ -2032,9 +2041,9 @@ def run_playground_db_jobs(plan: PlaygroundBootstrapPlan, skip: set[str], timeou
         subprocess.run(
             [
                 sys.executable,
-                str(plan.repo_root / ".ci/runtime/commands/run_gitops_db_job.py"),
+                str(plan.runtime_root / ".ci/runtime/commands/run_gitops_db_job.py"),
                 "--repo-root",
-                str(plan.repo_root),
+                str(plan.runtime_root),
                 "--deploy-root",
                 str(plan.repo_root),
                 "--service",
@@ -2054,7 +2063,7 @@ def run_playground_db_jobs(plan: PlaygroundBootstrapPlan, skip: set[str], timeou
                 "--timeout-seconds",
                 str(timeout_seconds),
             ],
-            cwd=plan.repo_root,
+            cwd=plan.runtime_root,
             env=env,
             check=True,
         )
@@ -2107,6 +2116,7 @@ def bootstrap_playground_main(argv: Sequence[str] | None = None) -> int:
     args = parse_bootstrap_args(argv)
     plan = build_playground_bootstrap_plan(
         repo_root=args.repo_root,
+        runtime_root=args.runtime_root,
         env=args.env,
         namespace=args.namespace,
         kubeconfig=args.kubeconfig,
@@ -2117,6 +2127,7 @@ def bootstrap_playground_main(argv: Sequence[str] | None = None) -> int:
     if not plan.mysql_host and args.apply:
         plan = PlaygroundBootstrapPlan(
             repo_root=plan.repo_root,
+            runtime_root=plan.runtime_root,
             env=plan.env,
             namespace=plan.namespace,
             kubeconfig=plan.kubeconfig,
