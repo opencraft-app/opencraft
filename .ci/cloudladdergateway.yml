@@ -42,15 +42,19 @@ stages:
             run: |
               source .ci/init.sh
               ci_init_repo_root
-              ci_require_commands go docker
+              ci_require_commands docker
 
-              go version
               docker version
 
               SHORT_SHA="${{ ci.sha }}"
               SHORT_SHA="${SHORT_SHA:0:12}"
 
-              make -C cloudladdergateway test
+              docker run --rm \
+                -v "$REPO_ROOT:/workspace" \
+                -w /workspace/cloudladdergateway \
+                golang:1.26-bookworm \
+                go test ./...
+
               make -C cloudladdergateway image \
                 REGISTRY=cloudladdergateway-ci \
                 TAG="${SHORT_SHA}"
