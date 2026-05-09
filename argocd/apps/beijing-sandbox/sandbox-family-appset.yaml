@@ -30,6 +30,12 @@ spec:
       destination:
         name: '{{ .destinationName }}'
         namespace: '{{ .namespace }}'
+      ignoreDifferences:
+        - group: ""
+          kind: ServiceAccount
+          name: default
+          jsonPointers:
+            - /imagePullSecrets
       syncPolicy:
         automated:
           prune: true
