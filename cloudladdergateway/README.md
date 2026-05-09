@@ -30,23 +30,24 @@ docker build -f cloudladdergateway/Dockerfile -t cloudladdergateway:local .
 docker run --rm -p 8095:8095 cloudladdergateway:local
 ```
 
-推送到 csighub 内网 registry：
+推送到 csighub：
 
 ```bash
 make -C cloudladdergateway csighub TAG=dev
 ```
 
 默认构建标签仍是 `csighub.tencentyun.com/skipzhang/cloudladdergateway:<tag>`，但当前 Mac 上
-`csighub.tencentyun.com` 需要内网 DNS；`csighub` 目标会按 `cvm-sandbox` 的做法把镜像通过
-`21.41.42.116:80/skipzhang` 这个 HTTP registry 后端推上去：
+`csighub.tencentyun.com` 需要内网 DNS；`csighub` 目标会同时推送：
+
+- `21.41.42.116:80/skipzhang/cloudladdergateway:<tag>`，用于 HTTP 内网 push endpoint。
+- `csighub.tencentyun.com/skipzhang/cloudladdergateway:<tag>`，用于 public csighub 拉取入口。
 
 ```bash
 make -C cloudladdergateway csighub TAG=dev \
   CSIGHUB_PUSH_REGISTRY=21.41.42.116:80/skipzhang
 ```
 
-该目标使用 `go run github.com/google/go-containerregistry/cmd/crane@v0.21.4 push --insecure`，
-不要求全局 Docker daemon 配置 insecure registry。
+该目标默认使用 PATH 里的 `crane`，不要求全局 Docker daemon 配置 insecure registry。
 
 如果所在网络可以直接解析并访问 `csighub.tencentyun.com`，也可以单独执行 `login-csighub`。
 登录支持三种来源：
@@ -65,7 +66,8 @@ make -C cloudladdergateway login-csighub \
   CSIGHUB_ENV_FILE=/path/to/env-file
 ```
 
-登录脚本使用 `docker login --password-stdin`，不会把密码打印到日志。
+登录脚本默认使用 `crane auth login --password-stdin`，不会把密码打印到日志；如需 Docker 登录可设置
+`CSIGHUB_LOGIN_TOOL=docker`。
 
 镜像不内置 HMAC secret。运行时注入 `CLOUDLADDER_PAYMENT_HMAC_SECRET`：
 
