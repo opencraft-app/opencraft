@@ -17,7 +17,6 @@ import (
 	pctx "ctl/pkg/context"
 	"ctl/pkg/errcode"
 	logfields "ctl/pkg/log"
-	passlogic "ctl/pkg/logic/pass"
 	"ctl/pkg/resource"
 	"ctl/pkg/transport"
 	"go.uber.org/zap"
@@ -1540,29 +1539,6 @@ func TestInternalListPassesMissingExternalUserID(t *testing.T) {
 	}
 }
 
-// TestInternalListPassesUnsupportedState 验证：state 参数取值不在白名单时
-// 返回 ErrInvalidParam，不会触达 logic 层。
-//
-// 当前白名单：仅 "in_service"（缺省也等价于 in_service）。
-// 其它取值（"expired" / "isolated" / "deleted" / 任意拼写错误）一律拒绝。
-func TestInternalListPassesUnsupportedState(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/internal/ctl/passes?external_user_id=user-1&state=expired", nil)
-	rec := httptest.NewRecorder()
-
-	newRouter(&instanceHandler{logic: &stubLogic{}}, &bundleHandler{}, &passHandler{}).ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d body=%s", rec.Code, rec.Body.String())
-	}
-	var payload errorResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if payload.Code != errcode.ErrInvalidParam.Code {
-		t.Fatalf("unexpected error code: %+v", payload)
-	}
-}
-
 // TestInternalListPassesMethodNotAllowed 验证：除 GET 外的方法返回 405，
 // Allow 头声明只接受 GET。
 func TestInternalListPassesMethodNotAllowed(t *testing.T) {
@@ -1578,37 +1554,4 @@ func TestInternalListPassesMethodNotAllowed(t *testing.T) {
 		t.Fatalf("expected Allow=GET, got %q", got)
 	}
 }
-
-// TestIsInServicePassPredicate 验证 isInServicePass 的边界判定：
-//   - expired_time 已过 → false
-//   - isolated_time 非空 → false
-//   - deleted_time 非空 → false
-//   - 三者都满足 → true
-func TestIsInServicePassPredicate(t *testing.T) {
-	now := time.Now().UTC()
-	future := now.Add(24 * time.Hour)
-	past := now.Add(-1 * time.Hour)
-
-	cases := []struct {
-		name string
-		pass *passlogic.PassDetail
-		want bool
-	}{
-		{"nil pass", nil, false},
-		{"expired", &passlogic.PassDetail{ExpiredTime: past}, false},
-		{"isolated", &passlogic.PassDetail{ExpiredTime: future, IsolatedTime: ptrTime(now)}, false},
-		{"deleted", &passlogic.PassDetail{ExpiredTime: future, DeletedTime: ptrTime(now)}, false},
-		{"in service", &passlogic.PassDetail{ExpiredTime: future}, true},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := isInServicePass(tc.pass, now)
-			if got != tc.want {
-				t.Fatalf("want %v, got %v", tc.want, got)
-			}
-		})
-	}
-}
-
-func ptrTime(t time.Time) *time.Time { return &t }
 

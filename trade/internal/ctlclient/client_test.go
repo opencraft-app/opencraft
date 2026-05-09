@@ -113,7 +113,7 @@ func TestGetBundleByID_EmptyBundleIDClientSide(t *testing.T) {
 	}
 }
 
-func TestListInServicePasses_NonEmpty(t *testing.T) {
+func TestListPassesByUser_NonEmpty(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/internal/ctl/passes" {
 			t.Errorf("path mismatch: %s", r.URL.Path)
@@ -121,8 +121,9 @@ func TestListInServicePasses_NonEmpty(t *testing.T) {
 		if got := r.URL.Query().Get("external_user_id"); got != "user-aaa" {
 			t.Errorf("external_user_id mismatch: %q", got)
 		}
-		if got := r.URL.Query().Get("state"); got != "in_service" {
-			t.Errorf("state mismatch: %q", got)
+		// Q66 修订 + Q69：不再带 state 参数（互斥占用规则只看是否存在记录）
+		if got := r.URL.Query().Get("state"); got != "" {
+			t.Errorf("state should not be set, got %q", got)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(envelopeForSuccess(t, map[string]any{
@@ -139,7 +140,7 @@ func TestListInServicePasses_NonEmpty(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "secret-xyz")
-	passes, err := c.ListInServicePasses(context.Background(), "user-aaa")
+	passes, err := c.ListPassesByUser(context.Background(), "user-aaa")
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -148,7 +149,7 @@ func TestListInServicePasses_NonEmpty(t *testing.T) {
 	}
 }
 
-func TestListInServicePasses_Empty(t *testing.T) {
+func TestListPassesByUser_Empty(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(envelopeForSuccess(t, map[string]any{"passes": []*PassDetail{}}))
@@ -156,7 +157,7 @@ func TestListInServicePasses_Empty(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "secret-xyz")
-	passes, err := c.ListInServicePasses(context.Background(), "user-aaa")
+	passes, err := c.ListPassesByUser(context.Background(), "user-aaa")
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}
@@ -165,9 +166,9 @@ func TestListInServicePasses_Empty(t *testing.T) {
 	}
 }
 
-func TestListInServicePasses_EmptyExternalUserID(t *testing.T) {
+func TestListPassesByUser_EmptyExternalUserID(t *testing.T) {
 	c := New("http://does-not-matter", "secret-xyz")
-	_, err := c.ListInServicePasses(context.Background(), "  ")
+	_, err := c.ListPassesByUser(context.Background(), "  ")
 	if err == nil || !strings.Contains(err.Error(), "externalUserID is required") {
 		t.Fatalf("expected externalUserID required err, got %v", err)
 	}

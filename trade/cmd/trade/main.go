@@ -24,7 +24,7 @@ func main() {
 	defer mysqlStore.Close()
 
 	// ctl 反向调用客户端（迭代 2 接入）
-	//   - checkCreate 阶段：GetBundleByID + ListInServicePasses
+	//   - checkCreate 阶段：GetBundleByID + ListPassesByUser
 	//   - createResource 阶段：CompletePass
 	// 当前迭代仅初始化并预留依赖注入入口；具体调用在迭代 5 / 6 接入。
 	ctlClient := ctlclient.New(cfg.CtlInternalBaseURL, cfg.InternalServiceToken)

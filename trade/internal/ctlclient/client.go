@@ -1,8 +1,8 @@
 // Package ctlclient 封装 trade → ctl 的内部反向调用。
 //
 // 设计稿对齐（trade-purchase-flow-design §5.2 / §5.4 / §6 / §7.5）：
-//   - checkCreate：调 GetBundleByID + ListInServicePasses 做实时校验
-//     （Q24 / Q33：bundle 自校验；Q25 / Q66：互斥占用查询）
+//   - checkCreate：调 GetBundleByID + ListPassesByUser 做实时校验
+//     （Q24 / Q33：bundle 自校验；Q25 / Q66 修订 / Q69：互斥占用查询）
 //   - createResource：调 CompletePass 完成发货
 //     （Q42 / billing-integration B3：trade 透传完整入参，ctl 不做幂等）
 //
@@ -43,13 +43,14 @@ type Client interface {
 	// trade 用法：checkCreate 阶段拿 bundle_state / bundle_sales_state 做自校验。
 	GetBundleByID(ctx context.Context, bundleID string) (*BundleDetail, error)
 
-	// ListInServicePasses 调 GET /internal/ctl/passes?external_user_id=xxx&state=in_service
+	// ListPassesByUser 调 GET /internal/ctl/passes?external_user_id=xxx
 	//
-	// 返回当前 user_id 名下"在期 pass"列表（expired_time > now AND
-	// isolated_time IS NULL AND deleted_time IS NULL）。
+	// 返回当前 user_id 名下**全部** pass 记录（不论是否过期 / 隔离 / 删除）。
 	//
-	// trade 用法：checkCreate 阶段判定互斥占用 — 列表非空即互斥占用，需阻断下单。
-	ListInServicePasses(ctx context.Context, externalUserID string) ([]*PassDetail, error)
+	// trade 用法（Q66 修订 + Q69 拍板，2026-05-09）：checkCreate 阶段判定互斥占用 —
+	// **列表非空即互斥占用**，无条件阻断新购下单（过期 pass 走续费路径，不走新购）。
+	// trade 业务层只关心数组长度，不需要逐条检查时间字段。
+	ListPassesByUser(ctx context.Context, externalUserID string) ([]*PassDetail, error)
 
 	// CompletePass 调 POST /internal/ctl/passes/complete
 	//
@@ -83,8 +84,8 @@ type BundleDetail struct {
 //
 // 字段含义详见 ctl pass.go transport 定义；这里 trade 主要消费：
 //   - PassID / BundleID / ExpiredTime / IsolatedTime / DeletedTime —
-//     互斥占用判定（虽然 ctl 已在 list 时过滤 in_service，trade 侧仍保留
-//     字段方便排障/审计）
+//     互斥占用判定保留字段方便排障/审计（Q69：trade 只关心列表非空，不需要
+//     逐条检查时间字段，但保留字段用于日志记录"互斥被哪条 pass 占用"）
 //   - Uin / AppID — createResource 透传校验
 type PassDetail struct {
 	PassID       string     `json:"pass_id"`
@@ -141,7 +142,7 @@ func (e *Error) Error() string {
 //
 // 典型场景：
 //   - GetBundleByID 时 bundleID 在 ctl 不存在
-//   - ListInServicePasses 时（理论不返 404，但保留兼容）
+//   - ListPassesByUser 时（理论不返 404，但保留兼容）
 var ErrNotFound = errors.New("ctlclient: not found")
 
 // ErrUnauthorized 在 ctl 返回 401 时返回，通常意味着 InternalServiceToken
@@ -205,13 +206,12 @@ func (c *httpClient) GetBundleByID(ctx context.Context, bundleID string) (*Bundl
 	return &detail, nil
 }
 
-func (c *httpClient) ListInServicePasses(ctx context.Context, externalUserID string) ([]*PassDetail, error) {
+func (c *httpClient) ListPassesByUser(ctx context.Context, externalUserID string) ([]*PassDetail, error) {
 	if strings.TrimSpace(externalUserID) == "" {
 		return nil, fmt.Errorf("ctlclient: externalUserID is required")
 	}
 	q := url.Values{}
 	q.Set("external_user_id", externalUserID)
-	q.Set("state", "in_service")
 	endpoint := c.baseURL + "/internal/ctl/passes?" + q.Encode()
 
 	// ctl 返回 {data: {passes: [...]}}, 这里反序列化到 listPassesResponse 桥接结构

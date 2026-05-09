@@ -51,7 +51,7 @@ trade-migrate  # 读 TRADE_MYSQL_DSN 环境变量
 参考 `/root/project/mono/.tmp/trade-implementation-plan.md`：
 
 - [x] **迭代 1** — 设计稿章节落地清理 + trade 服务骨架（目录搭建、main.go、config、store、三表 migration、httpapi 空壳）
-- [x] **迭代 2** — ctl 仓 reverse RPC 暴露（GetBundleByID / ListInServicePasses 互斥占用查询 / CompletePass + trade `internal/ctlclient/` 封装；详见 `.tmp/trade-implementation-plan.md` 迭代 2 完成状态 + `.tmp/trade-purchase-flow-design.md` Q66 拍板）
+- [x] **迭代 2** — ctl 仓 reverse RPC 暴露（GetBundleByID / ListPassesByUser 互斥占用查询 / CompletePass + trade `internal/ctlclient/` 封装；详见 `.tmp/trade-implementation-plan.md` 迭代 2 完成状态 + `.tmp/trade-purchase-flow-design.md` Q66 修订 + Q69 拍板）
 - [x] **迭代 3** — jifei CGW 协议适配层（出向：jifeiclient + bundledef DAO + jifei 适配层 共 52 测试 PASS；自决 Q67 PascalCase 最小字段集 + Q68 三层错误模型；详见 `.tmp/trade-implementation-plan.md` 迭代 3 完成状态 + `.tmp/trade-purchase-flow-design.md` Q67 / Q68 拍板）
 - [ ] **迭代 4** — jifei 回调入向 dispatcher（Q60）
 - [ ] **迭代 5** — checkCreate handler（Q62）

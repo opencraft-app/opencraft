@@ -3,7 +3,6 @@ package main
 import (
 	"net/http"
 	"strings"
-	"time"
 
 	"ctl/pkg/errcode"
 	passlogic "ctl/pkg/logic/pass"
@@ -164,9 +163,9 @@ func (h *passHandler) describePasses(w http.ResponseWriter, r *http.Request) {
 
 // handleInternalPasses 处理 /internal/ctl/passes 与 /internal/ctl/passes/* 内部反向回调路由
 //
-// 当前承载（v4 收敛 — billing-integration B3 + Q66 互斥占用查询）：
-//   - GET  /internal/ctl/passes?external_user_id=xxx&state=in_service —
-//     trade.checkCreate 反向调，按 user_id 查在期 pass 做互斥占用判定
+// 当前承载（v5 收敛 — billing-integration B3 + Q66 修订 + Q69 互斥占用规则）：
+//   - GET  /internal/ctl/passes?external_user_id=xxx —
+//     trade.checkCreate 反向调，按 user_id 查该用户**全部** pass 记录做互斥占用判定（Q69）
 //   - POST /internal/ctl/passes/complete —
 //     trade 反向调，完成付费 pass 发货
 //
@@ -195,18 +194,20 @@ func (h *passHandler) handleInternalPasses(w http.ResponseWriter, r *http.Reques
 	}
 }
 
-// listInternalPasses GET /internal/ctl/passes?external_user_id=xxx&state=in_service
+// listInternalPasses GET /internal/ctl/passes?external_user_id=xxx
 //
-// 用途（Q66 拍板，2026-05-08）：
-//   - trade.checkCreate 在创建 jifei 订单前调本接口，查 user 是否已有"在期"pass，
-//     存在即报互斥占用，阻断重复下单 / 互斥套餐冲突。
-//
-// 当前 state 语义：
-//   - "in_service"：expired_time > now() AND isolated_time IS NULL AND deleted_time IS NULL
-//   - 其它取值（"expired" / "isolated" / "deleted"）本期保留契约，未实现，命中即报 ErrInvalidParam
-//   - 缺省 state（不传）等价于 in_service（高频默认场景，简化 trade 调用方）
+// 用途（Q66 修订 + Q69 拍板，2026-05-09）：
+//   - trade.checkCreate 在创建 jifei 订单前调本接口，查 user 是否有任何 pass 记录；
+//     **只要存在任意一条记录（不论是否过期 / 隔离 / 删除），即报互斥占用，阻断重复下单**。
+//   - 业务规则（Q69）：过期的 pass 走续费路径，不走新购；所以新购流程下"用户曾经
+//     拥有过 pass" 这个事实本身就是互斥占用信号。
 //
 // 鉴权：requireInternalBearer（外层 handleInternalPasses 已校验）
+//
+// 实现说明：直接复用 `Logic.DescribePasses(userID)`，**handler 层不做任何状态过滤**，
+// 把 DAO 查到的全部 pass 原样透传给 trade。trade 业务层只关心数组长度即可：
+//   - len == 0 → 用户从未持有 pass，可以下新单
+//   - len > 0 → 互斥占用，拒绝下新单
 func (h *passHandler) listInternalPasses(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
@@ -220,51 +221,17 @@ func (h *passHandler) listInternalPasses(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	state := strings.TrimSpace(r.URL.Query().Get("state"))
-	if state == "" {
-		state = "in_service"
-	}
-	if state != "in_service" {
-		writeHTTPError(w, r, errcode.Wrap(errcode.ErrInvalidParam,
-			"state %q not supported, only 'in_service' is implemented", state))
-		return
-	}
-
 	details, err := h.logic.DescribePasses(externalUserID)
 	if err != nil {
 		writeHTTPError(w, r, err)
 		return
 	}
 
-	now := time.Now().UTC()
 	passes := make([]*transport.PassResponse, 0, len(details))
 	for _, d := range details {
-		if !isInServicePass(d, now) {
-			continue
-		}
 		passes = append(passes, detailToPassResponse(d))
 	}
 	writeSuccess(w, r, http.StatusOK, &transport.ListPassesResponse{Passes: passes})
-}
-
-// isInServicePass 判定 pass 是否处于"在期"状态：
-//   - expired_time > now（未到期）
-//   - isolated_time IS NULL（未隔离）
-//   - deleted_time IS NULL（未删除）
-func isInServicePass(d *passlogic.PassDetail, now time.Time) bool {
-	if d == nil {
-		return false
-	}
-	if d.IsolatedTime != nil {
-		return false
-	}
-	if d.DeletedTime != nil {
-		return false
-	}
-	if !d.ExpiredTime.After(now) {
-		return false
-	}
-	return true
 }
 
 // completePass POST /internal/ctl/passes/complete — trade 反向回调发货付费 pass
