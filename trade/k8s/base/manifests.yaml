@@ -8,9 +8,13 @@
 # - 敏感凭证全部走 secretRef（详见 trade-implementation-plan.md §1 迭代 9C）
 # - imagePullSecrets 沿用 mono 既有 TCR 三件套（与 payment/ctl 一致）
 #
-# 占位符（由 overlay 用 kustomize patch 替换或由 GitOps CI 注入）：
-#   REPLACE_TRADE_IMAGE         — 镜像 tag，如 mirrors.tencent.com/lightclaw/trade:<sha>
+# 占位符（由 deploy-facing argocd/services/trade/common/ Component 的
+# replacements 从 trade-platform-values configmap 注入；详见
+# argocd/services/trade/common/kustomization.yaml）：
+#   REPLACE_TRADE_IMAGE         — 镜像 tag, 如 lightclaw-bj8.tencentcloudcr.com/lightclaw/trade:bj8-<sha>
 #   REPLACE_TRADE_NODE_POOL     — 北京/上海集群的节点池标签
+#   REPLACE_TRADE_MYSQL_HOST    — DB host (北京 cynosdb 共用 10.15.224.4)
+#   REPLACE_TRADE_MYSQL_PORT    — DB port (默认 3306)
 #
 apiVersion: v1
 kind: Namespace
@@ -51,7 +55,10 @@ data:
   TRADE_JIFEI_OUR_INTERFACE_PREFIX: "lightvela"
 
   # --- DB ---
-  # MYSQL_HOST / MYSQL_PORT 由 overlay/SSM 注入（不同环境不同库实例）
+  # MYSQL_HOST / MYSQL_PORT 由 deploy-facing common Component 用 replacements
+  # 从 trade-platform-values configmap 注入；TRADE_DB_PASSWORD 走 secret。
+  MYSQL_HOST: "REPLACE_TRADE_MYSQL_HOST"
+  MYSQL_PORT: "REPLACE_TRADE_MYSQL_PORT"
   TRADE_DB: "trade"
   TRADE_DB_USER: "trade"
 ---

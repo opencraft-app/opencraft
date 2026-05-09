@@ -1,0 +1,21 @@
+# trade 北京 sandbox deploy-facing 环境特化（迭代 9B）
+#
+# 与 payment/beijing-sandbox 同构:
+#   - components: ../common 注入 image / node_pool / db_host / db_port replacements
+#   - configMapGenerator: trade-platform-values 提供真值
+#   - generators (ksops): 引 ../../../secrets/beijing-sandbox/trade-runtime-secrets.sops.yaml
+#
+# 与 payment 不同:
+#   - namespace=trade（独立）
+#   - 不组合 ../profiles/sandbox（无共享 ns 删除需求）
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: trade
+components:
+  - ../common
+generators:
+  - ksops-secret-generator.yaml
+configMapGenerator:
+  - name: trade-platform-values
+    envs:
+      - trade-platform.env
