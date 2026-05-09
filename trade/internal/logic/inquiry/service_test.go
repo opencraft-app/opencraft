@@ -9,6 +9,7 @@ import (
 
 	"git.woa.com/wisp/mono/trade/internal/ctlclient"
 	"git.woa.com/wisp/mono/trade/internal/jifeiclient"
+	"git.woa.com/wisp/mono/trade/internal/shadowclient"
 	"git.woa.com/wisp/mono/trade/internal/store"
 )
 
@@ -434,3 +435,197 @@ func newSvcStub() *Service {
 		JifeiClient: &fakeJifei{},
 	})
 }
+
+// ============================================================================
+// 8B-1: shadow client integration tests
+// ============================================================================
+
+// fakeShadow 是 inquiry 测试用的 shadowclient.Client mock。
+type fakeShadow struct {
+	getBindingFn   func(ctx context.Context, externalUserID string) (*shadowclient.Binding, error)
+	calls          atomic.Int32
+	lastExternalID string
+}
+
+func (f *fakeShadow) GetBindingByExternalUserID(ctx context.Context, externalUserID string) (*shadowclient.Binding, error) {
+	f.calls.Add(1)
+	f.lastExternalID = externalUserID
+	if f.getBindingFn != nil {
+		return f.getBindingFn(ctx, externalUserID)
+	}
+	return nil, errors.New("fakeShadow: GetBindingByExternalUserID not implemented")
+}
+
+// 当 ShadowClient 注入 + 调用方未传 Uin/AppID 时，service 应反查 shadow 回填这两个字段。
+func TestQuote_ShadowClient_BackfillUinAndAppID(t *testing.T) {
+	shadow := &fakeShadow{
+		getBindingFn: func(ctx context.Context, externalUserID string) (*shadowclient.Binding, error) {
+			return &shadowclient.Binding{
+				UserID:   externalUserID,
+				Uin:      "9999888",
+				OwnerUin: "9999888",
+				AppID:    "12345",
+			}, nil
+		},
+	}
+	jifei := &fakeJifei{
+		getPriceFn: func(ctx context.Context, req *jifeiclient.GetPriceRequest) (*jifeiclient.GetPriceResponse, error) {
+			return stdJifeiPriceResp(), nil
+		},
+	}
+	svc := New(Deps{
+		CTLClient:    &fakeCTL{getBundleByIDFn: func(_ context.Context, _ string) (*ctlclient.BundleDetail, error) { return stdBundle(), nil }},
+		BundleStore:  &fakeBundleStore{def: stdDef()},
+		JifeiClient:  jifei,
+		ShadowClient: shadow,
+	})
+
+	req := stdQuoteReq()
+	req.Uin = ""
+	req.AppID = ""
+	if _, err := svc.Quote(context.Background(), req); err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if shadow.calls.Load() != 1 {
+		t.Errorf("shadow calls = %d, want 1", shadow.calls.Load())
+	}
+	if shadow.lastExternalID != "user-1" {
+		t.Errorf("shadow lastExternalID = %q, want user-1", shadow.lastExternalID)
+	}
+	if jifei.lastGetPriceArgs == nil || jifei.lastGetPriceArgs.Uin != "9999888" {
+		t.Errorf("jifei.Uin = %q, want 9999888 (backfilled from shadow)",
+			func() string {
+				if jifei.lastGetPriceArgs == nil {
+					return "<nil>"
+				}
+				return jifei.lastGetPriceArgs.Uin
+			}())
+	}
+}
+
+// 当调用方已传 Uin 时，即使 ShadowClient 注入也不应被调用（保持显式入参优先）。
+func TestQuote_ShadowClient_SkippedWhenUinProvided(t *testing.T) {
+	shadow := &fakeShadow{
+		getBindingFn: func(_ context.Context, _ string) (*shadowclient.Binding, error) {
+			t.Fatal("shadow should NOT be called when Uin is provided")
+			return nil, nil
+		},
+	}
+	jifei := &fakeJifei{
+		getPriceFn: func(_ context.Context, _ *jifeiclient.GetPriceRequest) (*jifeiclient.GetPriceResponse, error) {
+			return stdJifeiPriceResp(), nil
+		},
+	}
+	svc := New(Deps{
+		CTLClient:    &fakeCTL{getBundleByIDFn: func(_ context.Context, _ string) (*ctlclient.BundleDetail, error) { return stdBundle(), nil }},
+		BundleStore:  &fakeBundleStore{def: stdDef()},
+		JifeiClient:  jifei,
+		ShadowClient: shadow,
+	})
+	req := stdQuoteReq() // Uin = "1000123456" 已显式提供
+	if _, err := svc.Quote(context.Background(), req); err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if shadow.calls.Load() != 0 {
+		t.Errorf("shadow calls = %d, want 0", shadow.calls.Load())
+	}
+}
+
+// shadow 反查返 ErrBindingNotFound → service 映射为 inquiry.ErrBindingNotFound 业务错。
+func TestQuote_ShadowClient_BindingNotFound(t *testing.T) {
+	shadow := &fakeShadow{
+		getBindingFn: func(_ context.Context, _ string) (*shadowclient.Binding, error) {
+			return nil, shadowclient.ErrBindingNotFound
+		},
+	}
+	svc := New(Deps{
+		CTLClient:    &fakeCTL{},
+		BundleStore:  &fakeBundleStore{def: stdDef()},
+		JifeiClient:  &fakeJifei{},
+		ShadowClient: shadow,
+	})
+	req := stdQuoteReq()
+	req.Uin = ""
+	req.AppID = ""
+	_, err := svc.Quote(context.Background(), req)
+	if err == nil {
+		t.Fatal("want err")
+	}
+	if !errors.Is(err, ErrBindingNotFound) {
+		t.Errorf("err = %v, want ErrBindingNotFound", err)
+	}
+}
+
+// shadow 反查返其他错误 → service 透传（5xx 排障）。
+func TestQuote_ShadowClient_UpstreamError(t *testing.T) {
+	upstreamErr := errors.New("shadow 503 service unavailable")
+	shadow := &fakeShadow{
+		getBindingFn: func(_ context.Context, _ string) (*shadowclient.Binding, error) {
+			return nil, upstreamErr
+		},
+	}
+	svc := New(Deps{
+		CTLClient:    &fakeCTL{},
+		BundleStore:  &fakeBundleStore{def: stdDef()},
+		JifeiClient:  &fakeJifei{},
+		ShadowClient: shadow,
+	})
+	req := stdQuoteReq()
+	req.Uin = ""
+	_, err := svc.Quote(context.Background(), req)
+	if err == nil {
+		t.Fatal("want err")
+	}
+	if !errors.Is(err, upstreamErr) {
+		t.Errorf("err = %v, want wrap upstream err", err)
+	}
+}
+
+// 当 ShadowClient 注入但 ExternalUserID 也空 → 直接 ErrInvalidInput（无法身份溯源）。
+func TestQuote_ShadowClient_NoIdentityAnchor(t *testing.T) {
+	svc := New(Deps{
+		CTLClient:    &fakeCTL{},
+		BundleStore:  &fakeBundleStore{def: stdDef()},
+		JifeiClient:  &fakeJifei{},
+		ShadowClient: &fakeShadow{},
+	})
+	req := stdQuoteReq()
+	req.Uin = ""
+	req.AppID = ""
+	req.ExternalUserID = ""
+	_, err := svc.Quote(context.Background(), req)
+	if err == nil {
+		t.Fatal("want err")
+	}
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Errorf("err = %v, want ErrInvalidInput", err)
+	}
+	if !strings.Contains(err.Error(), "external_user_id or uin is required") {
+		t.Errorf("err = %v, want 'external_user_id or uin is required' substring", err)
+	}
+}
+
+// shadow 返回成功但 Uin 为空 → 也算 binding not found（防御 shadow 写入半残数据）。
+func TestQuote_ShadowClient_EmptyUinReturned(t *testing.T) {
+	shadow := &fakeShadow{
+		getBindingFn: func(_ context.Context, _ string) (*shadowclient.Binding, error) {
+			return &shadowclient.Binding{UserID: "user-1", Uin: "", AppID: "12345"}, nil
+		},
+	}
+	svc := New(Deps{
+		CTLClient:    &fakeCTL{},
+		BundleStore:  &fakeBundleStore{def: stdDef()},
+		JifeiClient:  &fakeJifei{},
+		ShadowClient: shadow,
+	})
+	req := stdQuoteReq()
+	req.Uin = ""
+	_, err := svc.Quote(context.Background(), req)
+	if err == nil {
+		t.Fatal("want err")
+	}
+	if !errors.Is(err, ErrBindingNotFound) {
+		t.Errorf("err = %v, want ErrBindingNotFound", err)
+	}
+}
+

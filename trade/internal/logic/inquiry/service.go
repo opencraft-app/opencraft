@@ -28,6 +28,7 @@ import (
 
 	"git.woa.com/wisp/mono/trade/internal/ctlclient"
 	"git.woa.com/wisp/mono/trade/internal/jifeiclient"
+	"git.woa.com/wisp/mono/trade/internal/shadowclient"
 	"git.woa.com/wisp/mono/trade/internal/store"
 )
 
@@ -41,6 +42,10 @@ var (
 
 	// ErrBundleOffline bundle 在 ctl 已下架（bundle_state != ONLINE）
 	ErrBundleOffline = errors.New("inquiry: bundle offline")
+
+	// ErrBindingNotFound externalUserId 在 shadow 没有绑定记录（用户未实名 / 未绑云账号）
+	// 上层应映射为引导用户实名 / 绑定的业务错，不上报 5xx
+	ErrBindingNotFound = errors.New("inquiry: binding not found")
 )
 
 // QuoteRequest 是单次询价的入参。
@@ -86,11 +91,15 @@ type QuoteResult struct {
 
 // Deps 是 Service 的依赖注入。
 //
-// 全部必填（构造期 New() 校验）；nil 视为编程错。
+// 必填项（构造期 New() 校验）：CTLClient / BundleStore / JifeiClient。
+// 可选项：ShadowClient — 8B-1 后接入；非 nil 时 Quote 自动反查 externalUserId →
+// (uin, app_id) 回填；nil 时退化为"由调用方在 QuoteRequest 显式提供 Uin/AppID"
+// 的 8A 行为，保持向后兼容（确保 8A 已有测试不受影响）。
 type Deps struct {
-	CTLClient   ctlclient.Client
-	BundleStore store.BundleDefinitionStore
-	JifeiClient jifeiclient.Client
+	CTLClient    ctlclient.Client
+	BundleStore  store.BundleDefinitionStore
+	JifeiClient  jifeiclient.Client
+	ShadowClient shadowclient.Client // 可选，nil 表示由调用方传 Uin/AppID
 }
 
 // Service 实现"业务层询价"能力。
@@ -116,6 +125,7 @@ func New(deps Deps) *Service {
 //
 // 流程：
 //  1. 校验入参
+//  1.5. 如果 ShadowClient 已注入且 Uin 空 → 反查 externalUserId 回填 Uin/AppID
 //  2. 反查 ctl bundle（确认存在 + 在售）
 //  3. 反查 trade_bundle_definition（拿 jifei 协议元数据 + sv_* + category）
 //  4. 拼装 jifei GetPriceRequest（goodsDetail 中展平 sv_*、写 productCode / subProductCode /
@@ -123,8 +133,30 @@ func New(deps Deps) *Service {
 //  5. 调 jifei CGW GetPrice
 //  6. 拍平为 QuoteResult 返回（首条 data 项；本期 GoodsNum=1，data 始终长度 1）
 func (s *Service) Quote(ctx context.Context, req QuoteRequest) (*QuoteResult, error) {
-	if err := validateQuoteRequest(req); err != nil {
+	if err := s.validateQuoteRequest(&req); err != nil {
 		return nil, err
+	}
+
+	// 1.5 shadow 反查（8B-1）：当 Uin 未由调用方显式提供时，从 externalUserId 反查云账号身份。
+	if strings.TrimSpace(req.Uin) == "" && s.deps.ShadowClient != nil {
+		if strings.TrimSpace(req.ExternalUserID) == "" {
+			return nil, fmt.Errorf("%w: external_user_id is required when uin is missing", ErrInvalidInput)
+		}
+		binding, err := s.deps.ShadowClient.GetBindingByExternalUserID(ctx, req.ExternalUserID)
+		if err != nil {
+			if errors.Is(err, shadowclient.ErrBindingNotFound) {
+				return nil, fmt.Errorf("%w: externalUserId=%s", ErrBindingNotFound, req.ExternalUserID)
+			}
+			return nil, fmt.Errorf("inquiry: shadow GetBindingByExternalUserID: %w", err)
+		}
+		if strings.TrimSpace(binding.Uin) == "" {
+			return nil, fmt.Errorf("%w: shadow returned empty uin for externalUserId=%s",
+				ErrBindingNotFound, req.ExternalUserID)
+		}
+		req.Uin = binding.Uin
+		if req.AppID == "" {
+			req.AppID = binding.AppID
+		}
 	}
 
 	// 2. 反查 ctl bundle
@@ -226,12 +258,26 @@ func (s *Service) Quote(ctx context.Context, req QuoteRequest) (*QuoteResult, er
 }
 
 // validateQuoteRequest 校验 QuoteRequest 必填字段。
-func validateQuoteRequest(req QuoteRequest) error {
+//
+// Uin 校验策略（8B-1）：
+//   - ShadowClient 已注入：Uin 允许为空（后续从 shadow 反查回填）；但 ExternalUserID 必填
+//   - ShadowClient 未注入（8A 行为）：Uin 必填，与原行为完全一致
+//
+// 接收指针是为了兼容 GoodsNum 默认值兜底（GoodsNum<=0 时改写为 1）。
+func (s *Service) validateQuoteRequest(req *QuoteRequest) error {
 	if strings.TrimSpace(req.BundleID) == "" {
 		return fmt.Errorf("%w: bundle_id is required", ErrInvalidInput)
 	}
-	if strings.TrimSpace(req.Uin) == "" {
-		return fmt.Errorf("%w: uin is required", ErrInvalidInput)
+	if s.deps.ShadowClient == nil {
+		// 8A 行为：Uin 必填
+		if strings.TrimSpace(req.Uin) == "" {
+			return fmt.Errorf("%w: uin is required", ErrInvalidInput)
+		}
+	} else {
+		// 8B-1 行为：Uin 允许从 shadow 反查；但至少要有一个身份锚点
+		if strings.TrimSpace(req.Uin) == "" && strings.TrimSpace(req.ExternalUserID) == "" {
+			return fmt.Errorf("%w: external_user_id or uin is required", ErrInvalidInput)
+		}
 	}
 	if req.TimeSpan <= 0 {
 		return fmt.Errorf("%w: time_span must be > 0", ErrInvalidInput)

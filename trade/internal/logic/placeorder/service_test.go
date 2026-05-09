@@ -9,6 +9,7 @@ import (
 
 	"git.woa.com/wisp/mono/trade/internal/ctlclient"
 	"git.woa.com/wisp/mono/trade/internal/jifeiclient"
+	"git.woa.com/wisp/mono/trade/internal/shadowclient"
 	"git.woa.com/wisp/mono/trade/internal/store"
 )
 
@@ -528,5 +529,182 @@ func TestNew_PanicsOnNilDeps(t *testing.T) {
 			tc.mut(&d)
 			_ = New(d)
 		})
+	}
+}
+
+// ============================================================================
+// 8B-1: shadow client integration tests
+// ============================================================================
+
+// fakeShadow 是 placeorder 测试用的 shadowclient.Client mock。
+type fakeShadow struct {
+	getBindingFn   func(ctx context.Context, externalUserID string) (*shadowclient.Binding, error)
+	calls          atomic.Int32
+	lastExternalID string
+}
+
+func (f *fakeShadow) GetBindingByExternalUserID(ctx context.Context, externalUserID string) (*shadowclient.Binding, error) {
+	f.calls.Add(1)
+	f.lastExternalID = externalUserID
+	if f.getBindingFn != nil {
+		return f.getBindingFn(ctx, externalUserID)
+	}
+	return nil, errors.New("fakeShadow: GetBindingByExternalUserID not implemented")
+}
+
+// 当 ShadowClient 注入 + 调用方未传 Uin/AppID 时，service 应反查 shadow 回填这两个字段。
+func TestPlaceOrder_ShadowClient_BackfillUinAndAppID(t *testing.T) {
+	shadow := &fakeShadow{
+		getBindingFn: func(ctx context.Context, externalUserID string) (*shadowclient.Binding, error) {
+			return &shadowclient.Binding{
+				UserID:   externalUserID,
+				Uin:      "9999888",
+				OwnerUin: "9999888",
+				AppID:    "12345",
+			}, nil
+		},
+	}
+	d := newStdDeps()
+	svc := New(Deps{
+		CTLClient:    d.ctl,
+		BundleStore:  d.bundle,
+		JifeiClient:  d.jifei,
+		OrderWriter:  d.writer,
+		OrderStore:   d.store,
+		ShadowClient: shadow,
+	})
+	req := stdPlaceOrderReq()
+	req.Uin = ""
+	req.AppID = ""
+	if _, err := svc.PlaceOrder(context.Background(), req); err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if shadow.calls.Load() != 1 {
+		t.Errorf("shadow calls = %d, want 1", shadow.calls.Load())
+	}
+	if shadow.lastExternalID != "user-1" {
+		t.Errorf("shadow lastExternalID = %q, want user-1", shadow.lastExternalID)
+	}
+	// 验证 jifei generateDeals 拿到的 OwnerUin/Uin 是反查后的 9999888
+	if d.jifei.lastGenerateDealsReq == nil || d.jifei.lastGenerateDealsReq.Uin != "9999888" {
+		t.Errorf("jifei.Uin = %q, want 9999888 (backfilled from shadow)",
+			func() string {
+				if d.jifei.lastGenerateDealsReq == nil {
+					return "<nil>"
+				}
+				return d.jifei.lastGenerateDealsReq.Uin
+			}())
+	}
+	// 验证 trade_order 写入的 Uin/AppID 也是回填后的值
+	if d.writer.lastCreateOrderInput.Uin != "9999888" || d.writer.lastCreateOrderInput.AppID != "12345" {
+		t.Errorf("trade_order: Uin=%q AppID=%q, want 9999888/12345",
+			d.writer.lastCreateOrderInput.Uin, d.writer.lastCreateOrderInput.AppID)
+	}
+}
+
+// 当调用方已传 Uin 时，即使 ShadowClient 注入也不应被调用。
+func TestPlaceOrder_ShadowClient_SkippedWhenUinProvided(t *testing.T) {
+	shadow := &fakeShadow{
+		getBindingFn: func(_ context.Context, _ string) (*shadowclient.Binding, error) {
+			t.Fatal("shadow should NOT be called when Uin is provided")
+			return nil, nil
+		},
+	}
+	d := newStdDeps()
+	svc := New(Deps{
+		CTLClient:    d.ctl,
+		BundleStore:  d.bundle,
+		JifeiClient:  d.jifei,
+		OrderWriter:  d.writer,
+		OrderStore:   d.store,
+		ShadowClient: shadow,
+	})
+	req := stdPlaceOrderReq() // Uin 已显式提供
+	if _, err := svc.PlaceOrder(context.Background(), req); err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if shadow.calls.Load() != 0 {
+		t.Errorf("shadow calls = %d, want 0", shadow.calls.Load())
+	}
+}
+
+// shadow 反查返 ErrBindingNotFound → service 映射为 placeorder.ErrBindingNotFound。
+func TestPlaceOrder_ShadowClient_BindingNotFound(t *testing.T) {
+	shadow := &fakeShadow{
+		getBindingFn: func(_ context.Context, _ string) (*shadowclient.Binding, error) {
+			return nil, shadowclient.ErrBindingNotFound
+		},
+	}
+	d := newStdDeps()
+	svc := New(Deps{
+		CTLClient:    d.ctl,
+		BundleStore:  d.bundle,
+		JifeiClient:  d.jifei,
+		OrderWriter:  d.writer,
+		OrderStore:   d.store,
+		ShadowClient: shadow,
+	})
+	req := stdPlaceOrderReq()
+	req.Uin = ""
+	req.AppID = ""
+	_, err := svc.PlaceOrder(context.Background(), req)
+	if err == nil {
+		t.Fatal("want err")
+	}
+	if !errors.Is(err, ErrBindingNotFound) {
+		t.Errorf("err = %v, want ErrBindingNotFound", err)
+	}
+	// 不应有 jifei / order writer 副作用
+	if d.jifei.generateDealsCalls.Load() != 0 {
+		t.Errorf("jifei.generateDeals called = %d, want 0", d.jifei.generateDealsCalls.Load())
+	}
+	if d.writer.createOrderCalls.Load() != 0 {
+		t.Errorf("writer.createOrder called = %d, want 0", d.writer.createOrderCalls.Load())
+	}
+}
+
+// shadow 反查返其他错误 → service 透传。
+func TestPlaceOrder_ShadowClient_UpstreamError(t *testing.T) {
+	upstreamErr := errors.New("shadow 503 service unavailable")
+	shadow := &fakeShadow{
+		getBindingFn: func(_ context.Context, _ string) (*shadowclient.Binding, error) {
+			return nil, upstreamErr
+		},
+	}
+	d := newStdDeps()
+	svc := New(Deps{
+		CTLClient:    d.ctl,
+		BundleStore:  d.bundle,
+		JifeiClient:  d.jifei,
+		OrderWriter:  d.writer,
+		OrderStore:   d.store,
+		ShadowClient: shadow,
+	})
+	req := stdPlaceOrderReq()
+	req.Uin = ""
+	_, err := svc.PlaceOrder(context.Background(), req)
+	if err == nil {
+		t.Fatal("want err")
+	}
+	if !errors.Is(err, upstreamErr) {
+		t.Errorf("err = %v, want wrap upstream err", err)
+	}
+}
+
+// 8A 行为完全保留：ShadowClient 未注入时 Uin 强校验仍生效。
+func TestPlaceOrder_NoShadowClient_UinStillRequired(t *testing.T) {
+	d := newStdDeps()
+	// ShadowClient 字段保持零值（nil）
+	req := stdPlaceOrderReq()
+	req.Uin = ""
+	_, err := d.service.PlaceOrder(context.Background(), req)
+	if err == nil {
+		t.Fatal("want err")
+	}
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Errorf("err = %v, want ErrInvalidInput", err)
+	}
+	if !strings.Contains(err.Error(), "uin is required") {
+		t.Errorf("err = %v, want 'uin is required' substring", err)
 	}
 }

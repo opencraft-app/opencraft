@@ -35,6 +35,7 @@ import (
 
 	"git.woa.com/wisp/mono/trade/internal/ctlclient"
 	"git.woa.com/wisp/mono/trade/internal/jifeiclient"
+	"git.woa.com/wisp/mono/trade/internal/shadowclient"
 	"git.woa.com/wisp/mono/trade/internal/store"
 )
 
@@ -58,6 +59,10 @@ var (
 	// ErrPayURLUnavailable trade_order 中暂无 pay_url 缓存（GeneratePayURL 本期不主动调
 	// jifei 生成支付 url，仅返回缓存值；缓存为空时返此错由上层降级）
 	ErrPayURLUnavailable = errors.New("placeorder: pay url not available")
+
+	// ErrBindingNotFound externalUserId 在 shadow 没有绑定记录（用户未实名 / 未绑云账号）
+	// 上层应映射为引导用户实名 / 绑定的业务错，不上报 5xx
+	ErrBindingNotFound = errors.New("placeorder: binding not found")
 )
 
 // PlaceOrderRequest 是 PlaceOrder 入参。
@@ -89,13 +94,17 @@ type PlaceOrderResult struct {
 
 // Deps 是 Service 的依赖注入。
 //
-// 全部必填（构造期 New() 校验）；nil 视为编程错。
+// 必填项（构造期 New() 校验）：CTLClient / BundleStore / JifeiClient / OrderWriter / OrderStore。
+// 可选项：ShadowClient — 8B-1 后接入；非 nil 时 PlaceOrder 自动反查 externalUserId →
+// (uin, app_id) 回填；nil 时退化为"由调用方在 PlaceOrderRequest 显式提供 Uin/AppID"
+// 的 8A 行为，保持向后兼容。
 type Deps struct {
-	CTLClient   ctlclient.Client
-	BundleStore store.BundleDefinitionStore
-	JifeiClient jifeiclient.Client
-	OrderWriter store.OrderWriter
-	OrderStore  store.OrderStore // GeneratePayURL 反查 trade_order.pay_url 用
+	CTLClient    ctlclient.Client
+	BundleStore  store.BundleDefinitionStore
+	JifeiClient  jifeiclient.Client
+	OrderWriter  store.OrderWriter
+	OrderStore   store.OrderStore // GeneratePayURL 反查 trade_order.pay_url 用
+	ShadowClient shadowclient.Client // 可选，nil 表示由调用方传 Uin/AppID
 }
 
 // Service 实现"业务层下单"能力。
@@ -125,8 +134,30 @@ func New(deps Deps) *Service {
 
 // PlaceOrder 执行单次下单。
 func (s *Service) PlaceOrder(ctx context.Context, req PlaceOrderRequest) (*PlaceOrderResult, error) {
-	if err := validatePlaceOrderRequest(&req); err != nil {
+	if err := s.validatePlaceOrderRequest(&req); err != nil {
 		return nil, err
+	}
+
+	// 1.5 shadow 反查（8B-1）：当 Uin 未由调用方显式提供时，从 externalUserId 反查云账号身份。
+	if strings.TrimSpace(req.Uin) == "" && s.deps.ShadowClient != nil {
+		if strings.TrimSpace(req.ExternalUserID) == "" {
+			return nil, fmt.Errorf("%w: external_user_id is required when uin is missing", ErrInvalidInput)
+		}
+		binding, err := s.deps.ShadowClient.GetBindingByExternalUserID(ctx, req.ExternalUserID)
+		if err != nil {
+			if errors.Is(err, shadowclient.ErrBindingNotFound) {
+				return nil, fmt.Errorf("%w: externalUserId=%s", ErrBindingNotFound, req.ExternalUserID)
+			}
+			return nil, fmt.Errorf("placeorder: shadow GetBindingByExternalUserID: %w", err)
+		}
+		if strings.TrimSpace(binding.Uin) == "" {
+			return nil, fmt.Errorf("%w: shadow returned empty uin for externalUserId=%s",
+				ErrBindingNotFound, req.ExternalUserID)
+		}
+		req.Uin = binding.Uin
+		if req.AppID == "" {
+			req.AppID = binding.AppID
+		}
 	}
 
 	// 2. 反查 ctl bundle
@@ -268,15 +299,22 @@ func (s *Service) GeneratePayURL(ctx context.Context, dealName string) (string, 
 }
 
 // validatePlaceOrderRequest 校验 PlaceOrderRequest 必填字段。
-func validatePlaceOrderRequest(req *PlaceOrderRequest) error {
+//
+// Uin / ExternalUserID 校验策略（8B-1）：
+//   - ShadowClient 已注入：Uin 允许为空（后续从 shadow 反查回填）；ExternalUserID 必填
+//   - ShadowClient 未注入（8A 行为）：ExternalUserID + Uin 双必填，与原行为完全一致
+func (s *Service) validatePlaceOrderRequest(req *PlaceOrderRequest) error {
 	if strings.TrimSpace(req.BundleID) == "" {
 		return fmt.Errorf("%w: bundle_id is required", ErrInvalidInput)
 	}
 	if strings.TrimSpace(req.ExternalUserID) == "" {
 		return fmt.Errorf("%w: external_user_id is required", ErrInvalidInput)
 	}
-	if strings.TrimSpace(req.Uin) == "" {
-		return fmt.Errorf("%w: uin is required", ErrInvalidInput)
+	if s.deps.ShadowClient == nil {
+		// 8A 行为：Uin 必填
+		if strings.TrimSpace(req.Uin) == "" {
+			return fmt.Errorf("%w: uin is required", ErrInvalidInput)
+		}
 	}
 	if req.Period <= 0 {
 		return fmt.Errorf("%w: period must be > 0", ErrInvalidInput)

@@ -95,8 +95,11 @@ func authMiddleware(expectedToken string) gin.HandlerFunc {
 // 字段命名遵循 Lightclaw 业务层 camelCase 风格（与 ctl ↔ trade 内部约定一致，详见设计稿
 // §3.3 trade 内部询价接口草案）。
 //
-// 注意：本期 ExternalUserID + (Uin, AppID) 都作为入参；shadow 反查（externalUserId →
-// uin/appId）留作 8B 或后续迭代接入。当 shadow client 接线后，可改为只接受 ExternalUserID。
+// Uin / AppID 字段策略（迭代 8B-1 起）：
+//   - 当 trade 启动期注入了 ShadowClient（cfg.ShadowInternalBaseURL 非空），调用方可只传
+//     ExternalUserID，trade 内部反查 shadow 自动回填 (Uin, AppID)
+//   - 调用方仍可显式传 Uin / AppID（强同步语义，绕过 shadow 反查）
+//   - ShadowClient 未注入时（8A 行为）：Uin 必填，否则 400
 type inquiryBatchRequest struct {
 	ExternalUserID string   `json:"externalUserId"`
 	Uin            string   `json:"uin"`
@@ -176,6 +179,9 @@ func classifyInquiryError(err error) (string, int) {
 		return "BundleNotFound", http.StatusNotFound
 	case errors.Is(err, inquiry.ErrBundleOffline):
 		return "BundleOffline", http.StatusConflict
+	case errors.Is(err, inquiry.ErrBindingNotFound):
+		// 8B-1：externalUserId 在 shadow 没有绑定记录（用户未实名 / 未绑云账号）
+		return "BindingNotFound", http.StatusUnprocessableEntity
 	default:
 		return "UpstreamError", http.StatusBadGateway
 	}
@@ -188,8 +194,11 @@ func classifyInquiryError(err error) (string, int) {
 // placeOrderRequest 是 POST /internal/trade/orders 入参（与设计稿 §4.2.1 对齐）。
 //
 // 设计稿原文："入参只带 externalUserId（不带 uin/appId），trade 内部换 uin/app_id 后调 jifei"。
-// 本期 8A 折中：(Uin, AppID) 仍允许显式传入便于 ctl 在 shadow client 接线前打通链路；
-// 后续 8B 接入 shadow 后可改为强制只接 ExternalUserID。
+// 迭代 8B-1 起：
+//   - trade 启动期已注入 ShadowClient → 调用方可只传 ExternalUserID，trade 自动反查 (Uin,
+//     AppID)；这是设计稿期望的最终形态
+//   - 调用方仍可显式传 Uin / AppID（覆盖反查）
+//   - ShadowClient 未注入时（8A 行为）：Uin 必填，否则 400
 type placeOrderRequest struct {
 	ExternalUserID string `json:"externalUserId"`
 	Uin            string `json:"uin"`
@@ -272,6 +281,9 @@ func classifyPlaceOrderError(err error) (string, int) {
 		return "DealNameConflict", http.StatusConflict
 	case errors.Is(err, placeorder.ErrJifeiResponseInvalid):
 		return "UpstreamInvalidResponse", http.StatusBadGateway
+	case errors.Is(err, placeorder.ErrBindingNotFound):
+		// 8B-1：externalUserId 在 shadow 没有绑定记录（用户未实名 / 未绑云账号）
+		return "BindingNotFound", http.StatusUnprocessableEntity
 	default:
 		return "UpstreamError", http.StatusBadGateway
 	}

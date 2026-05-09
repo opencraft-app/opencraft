@@ -15,6 +15,7 @@ import (
 	"git.woa.com/wisp/mono/trade/internal/jifeiclient"
 	"git.woa.com/wisp/mono/trade/internal/logic/inquiry"
 	"git.woa.com/wisp/mono/trade/internal/logic/placeorder"
+	"git.woa.com/wisp/mono/trade/internal/shadowclient"
 	"git.woa.com/wisp/mono/trade/internal/store"
 	"git.woa.com/wisp/mono/trade/internal/worker"
 )
@@ -37,6 +38,12 @@ func main() {
 	//   - 询价 / 下单（迭代 8A）：GetBundleByID（确认 bundle 存在 + 在售）
 	ctlClient := ctlclient.New(cfg.CtlInternalBaseURL, cfg.InternalServiceToken)
 
+	// shadow 反向调用客户端（迭代 8B-1）：
+	//   - 询价 (inquiry.Service.Quote) / 下单 (placeorder.Service.PlaceOrder) 在调用方
+	//     未显式提供 uin/app_id 时，按 externalUserId 反查云账号身份
+	//   - cfg.ShadowInternalBaseURL 已在 config.Load() 强校验非空
+	shadowClient := shadowclient.New(cfg.ShadowInternalBaseURL, cfg.InternalServiceToken)
+
 	// jifei CGW 出向客户端（迭代 8A）：
 	//   - 询价：GetPrice
 	//   - 下单：GenerateDeals
@@ -48,20 +55,22 @@ func main() {
 		cfg.JifeiComponentName, // 复用 trade 自家 componentName 作为 x-qcloud-user-id 兜底
 	)
 
-	// 业务 service 装配（迭代 8A）：
+	// 业务 service 装配（迭代 8A，8B-1 起注入 shadowClient）：
 	//   - inquiry：批量询价
 	//   - placeorder：下单 + pay-url
 	inquirySvc := inquiry.New(inquiry.Deps{
-		CTLClient:   ctlClient,
-		BundleStore: mysqlStore,
-		JifeiClient: jifeiClient,
+		CTLClient:    ctlClient,
+		BundleStore:  mysqlStore,
+		JifeiClient:  jifeiClient,
+		ShadowClient: shadowClient,
 	})
 	placeOrderSvc := placeorder.New(placeorder.Deps{
-		CTLClient:   ctlClient,
-		BundleStore: mysqlStore,
-		JifeiClient: jifeiClient,
-		OrderWriter: mysqlStore,
-		OrderStore:  mysqlStore,
+		CTLClient:    ctlClient,
+		BundleStore:  mysqlStore,
+		JifeiClient:  jifeiClient,
+		OrderWriter:  mysqlStore,
+		OrderStore:   mysqlStore,
+		ShadowClient: shadowClient,
 	})
 
 	router := httpapi.NewRouter(httpapi.ServerConfig{
