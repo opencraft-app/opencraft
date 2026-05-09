@@ -650,12 +650,29 @@ def render_kubernetes_sops_secret_bytes(
         if isinstance(annotations, dict):
             managed_by = str(annotations.get("managed-by") or "")
             annotations["managed-by"] = managed_by.replace(plan.from_env, plan.to_env) or f"harness-ci-{plan.to_env}-bootstrap"
-    if isinstance(plaintext.get("stringData"), dict) and "REDIS_PASSWORD" in plaintext["stringData"]:
-        plaintext["stringData"]["REDIS_PASSWORD"] = runtime_values.redis_password
-    elif isinstance(plaintext.get("data"), dict) and "REDIS_PASSWORD" in plaintext["data"]:
-        plaintext["data"]["REDIS_PASSWORD"] = base64.b64encode(runtime_values.redis_password.encode()).decode()
+    apply_runtime_secret_value_overrides(plaintext, target_path, runtime_values)
     recipients = age_recipients_from_sops_payload(yaml.safe_load(data.decode()) or {})
     return encrypt_sops_yaml_bytes(plaintext, recipients, target_path.relative_to(plan.repo_root).as_posix())
+
+
+def apply_runtime_secret_value_overrides(
+    payload: dict[str, Any],
+    target_path: Path,
+    runtime_values: PlaygroundRuntimeSecretValues,
+) -> None:
+    if target_path.name == "sandbox-runtime-secrets.sops.yaml":
+        set_secret_value(payload, "MYSQL_PASSWORD", runtime_values.mysql_root_password)
+    set_secret_value(payload, "REDIS_PASSWORD", runtime_values.redis_password)
+
+
+def set_secret_value(payload: dict[str, Any], key: str, value: str) -> None:
+    string_data = payload.get("stringData")
+    if isinstance(string_data, dict) and key in string_data:
+        string_data[key] = value
+        return
+    data = payload.get("data")
+    if isinstance(data, dict) and key in data:
+        data[key] = base64.b64encode(value.encode()).decode()
 
 
 def decrypt_sops_yaml_bytes(data: bytes) -> dict[str, Any]:
@@ -876,7 +893,8 @@ def mysql_stateful_runtime_text(plan: PlaygroundClonePlan) -> str:
                                                     "key": "MYSQL_ROOT_PASSWORD",
                                                 }
                                             },
-                                        }
+                                        },
+                                        {"name": "MYSQL_ROOT_HOST", "value": "%"},
                                     ],
                                     "volumeMounts": [{"name": "mysql-data", "mountPath": "/var/lib/mysql"}],
                                     "readinessProbe": {
@@ -1084,7 +1102,7 @@ def clone_plan_warnings(plan: PlaygroundClonePlan) -> list[str]:
     secret_count = sum(1 for item in plan.files if f"/argocd/secrets/{plan.to_env}/" in item.target.as_posix())
     if secret_count:
         warnings.append(
-            "将复制并重新加密源环境 SOPS secret；脚本只会改 metadata 与 Redis 密码对齐。强隔离环境必须重新生成 SSM/SOPS 后再发布。"
+            "将复制并重新加密源环境 SOPS secret；脚本会改 metadata、Redis 密码，并把 sandbox MySQL 密码对齐到新环境 root 密码。强隔离环境必须重新生成 SSM/SOPS 后再发布。"
         )
     warnings.append(
         "将为目标环境生成新的最小 playground-runtime-secrets SOPS 文件，只包含 MYSQL_ROOT_PASSWORD/REDIS_PASSWORD；缺少 sops 或 age key 时 --write 会直接失败。"

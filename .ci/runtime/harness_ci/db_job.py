@@ -45,7 +45,11 @@ SERVICE_SPECS: dict[tuple[str, str], dict[str, Any]] = {
         "secret": "subscription-runtime-secrets",
         "platform_env_file": "argocd/services/subscription/{env}/subscription-platform.env",
         "image_env_key": "SUBSCRIPTION_IMAGE",
-        "command": ["/usr/local/bin/subscription-migrate"],
+        "command": [
+            "/bin/sh",
+            "-ec",
+            'export SUBSCRIPTION_MYSQL_DSN="${SUBSCRIPTION_DB_USER}:${SUBSCRIPTION_DB_PASSWORD}@tcp(${MYSQL_HOST}:${MYSQL_PORT})/${SUBSCRIPTION_DB}?parseTime=true&multiStatements=true"; exec /usr/local/bin/subscription-migrate',
+        ],
     },
     ("lightclaw-auth", "migration"): {
         "namespace": "user-auth",
@@ -54,7 +58,11 @@ SERVICE_SPECS: dict[tuple[str, str], dict[str, Any]] = {
         "secret": "lightclaw-auth-secrets",
         "platform_env_file": "argocd/services/lightclaw-auth/{env}/auth-platform.env",
         "image_env_key": "AUTH_IMAGE",
-        "command": ["/usr/local/bin/lightclaw-auth-migrate"],
+        "command": [
+            "/bin/sh",
+            "-ec",
+            'export LIGHTCLAW_MYSQL_DSN="${LIGHTCLAW_AUTH_DB_USER}:${LIGHTCLAW_AUTH_DB_PASSWORD}@tcp(${MYSQL_HOST}:${MYSQL_PORT})/${LIGHTCLAW_AUTH_DB}?parseTime=true&multiStatements=true"; exec /usr/local/bin/lightclaw-auth-migrate',
+        ],
     },
     ("lightclaw-auth", "seed"): {
         "namespace": "user-auth",
@@ -63,7 +71,11 @@ SERVICE_SPECS: dict[tuple[str, str], dict[str, Any]] = {
         "secret": "lightclaw-auth-secrets",
         "platform_env_file": "argocd/services/lightclaw-auth/{env}/auth-platform.env",
         "image_env_key": "AUTH_IMAGE",
-        "command": ["/usr/local/bin/lightclaw-auth-seed"],
+        "command": [
+            "/bin/sh",
+            "-ec",
+            'export LIGHTCLAW_MYSQL_DSN="${LIGHTCLAW_AUTH_DB_USER}:${LIGHTCLAW_AUTH_DB_PASSWORD}@tcp(${MYSQL_HOST}:${MYSQL_PORT})/${LIGHTCLAW_AUTH_DB}?parseTime=true&multiStatements=true"; exec /usr/local/bin/lightclaw-auth-seed',
+        ],
     },
     ("ai-gateway", "migration"): {
         "namespace": "ai-gateway",
@@ -72,7 +84,11 @@ SERVICE_SPECS: dict[tuple[str, str], dict[str, Any]] = {
         "secret": "ai-gateway-runtime-secrets",
         "platform_env_file": "argocd/services/ai-gateway/{env}/ai-gateway-platform.env",
         "image_env_key": "AI_GATEWAY_IMAGE",
-        "command": ["/usr/local/bin/ai-gateway-migrate"],
+        "command": [
+            "/bin/sh",
+            "-ec",
+            'export AI_GATEWAY_MIGRATE_DSN="${AI_GATEWAY_DB_USER}:${AI_GATEWAY_DB_PASSWORD}@tcp(${MYSQL_HOST}:${MYSQL_PORT})/${AI_GATEWAY_DB}?parseTime=true&multiStatements=true"; exec /usr/local/bin/ai-gateway-migrate',
+        ],
     },
     ("ctl", "migration"): {
         "namespace": "ctl",

@@ -17,6 +17,7 @@ from tests.helpers import git
 from gitops.playground_environment import (
     CatalogApp,
     appset_file_globs,
+    apply_runtime_secret_value_overrides,
     bootstrap_database_job_manifest,
     build_playground_clone_plan,
     build_playground_bootstrap_plan,
@@ -41,6 +42,37 @@ from gitops.playground_environment import (
 
 
 class PlaygroundEnvironmentTests(unittest.TestCase):
+    def test_runtime_secret_overrides_align_sandbox_mysql_password_to_root_password(self) -> None:
+        payload = {
+            "kind": "Secret",
+            "stringData": {
+                "MYSQL_USER": "root",
+                "MYSQL_PASSWORD": "old-sandbox-password",
+                "REDIS_PASSWORD": "old-redis-password",
+            },
+        }
+        values = PlaygroundRuntimeSecretValues(mysql_root_password="new-root-password", redis_password="new-redis-password")
+
+        apply_runtime_secret_value_overrides(payload, Path("sandbox-runtime-secrets.sops.yaml"), values)
+
+        self.assertEqual(payload["stringData"]["MYSQL_PASSWORD"], "new-root-password")
+        self.assertEqual(payload["stringData"]["REDIS_PASSWORD"], "new-redis-password")
+
+    def test_runtime_secret_overrides_leave_non_sandbox_mysql_passwords_unchanged(self) -> None:
+        payload = {
+            "kind": "Secret",
+            "stringData": {
+                "MYSQL_ROOT_PASSWORD": "service-root-password",
+                "REDIS_PASSWORD": "old-redis-password",
+            },
+        }
+        values = PlaygroundRuntimeSecretValues(mysql_root_password="new-root-password", redis_password="new-redis-password")
+
+        apply_runtime_secret_value_overrides(payload, Path("ai-gateway-runtime-secrets.sops.yaml"), values)
+
+        self.assertEqual(payload["stringData"]["MYSQL_ROOT_PASSWORD"], "service-root-password")
+        self.assertEqual(payload["stringData"]["REDIS_PASSWORD"], "new-redis-password")
+
     def test_appset_globs_include_sandbox_and_playground(self) -> None:
         appset = load_yaml_mapping(
             textwrap.dedent(

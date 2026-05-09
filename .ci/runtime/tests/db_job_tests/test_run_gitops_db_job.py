@@ -90,6 +90,21 @@ class RunGitopsDbJobTests(unittest.TestCase):
 
         self.assertEqual(payload["PAYMENT_IMAGE"], "example.com/payment:from-file")
 
+    def test_dsn_based_jobs_build_expected_dsn_before_running_migration(self) -> None:
+        cases = (
+            (("lightclaw-auth", "migration"), "LIGHTCLAW_MYSQL_DSN", "/usr/local/bin/lightclaw-auth-migrate"),
+            (("lightclaw-auth", "seed"), "LIGHTCLAW_MYSQL_DSN", "/usr/local/bin/lightclaw-auth-seed"),
+            (("ai-gateway", "migration"), "AI_GATEWAY_MIGRATE_DSN", "/usr/local/bin/ai-gateway-migrate"),
+            (("subscription", "migration"), "SUBSCRIPTION_MYSQL_DSN", "/usr/local/bin/subscription-migrate"),
+        )
+
+        for key, dsn_env, binary in cases:
+            with self.subTest(key=key):
+                command = " ".join(db_job.SERVICE_SPECS[key]["command"])
+                self.assertIn(f"export {dsn_env}=", command)
+                self.assertIn("multiStatements=true", command)
+                self.assertIn(binary, command)
+
     def test_kubectl_command_adds_request_timeout(self) -> None:
         command = db_job.kubectl_command(["kubectl", "--kubeconfig", "/tmp/kubeconfig", "get", "pods"])
 
