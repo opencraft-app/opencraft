@@ -38,6 +38,9 @@ importers:
       '@xterm/xterm':
         specifier: ^6.0.0
         version: 6.0.0
+      aegis-web-sdk:
+        specifier: ^1.41.13
+        version: 1.41.13
       bson:
         specifier: ^7.2.0
         version: 7.2.0
@@ -1481,6 +1484,9 @@ packages:
     resolution: {integrity: sha512-UVJyE9MttOsBQIDKw1skb9nAwQuR5wuGD3+82K6JgJlm/Y+KI92oNsMNGZCYdDsVtRHSak0pcV5Dno5+4jh9sw==}
     engines: {node: '>=0.4.0'}
     hasBin: true
+
+  aegis-web-sdk@1.41.13:
+    resolution: {integrity: sha512-f7W1h28HJSPEjeZq+ZnPG33s5Ce0mxJh5ci3h4ky1pPFtRrzEZjQV5bHq24Ru22p+SYpmZC5RwBdQfWoYFKBnw==}
 
   agent-base@6.0.2:
     resolution: {integrity: sha512-RZNwNclF7+MS/8bDg70amg32dyeZGZxiDuQmZxKLAlQjr3jGyLx+4Kkk58UO7D2QdgFIQCovuSuZESne6RG6XQ==}
@@ -3316,6 +3322,9 @@ packages:
   web-namespaces@2.0.1:
     resolution: {integrity: sha512-bKr1DkiNa2krS7qxNtdrtHAmzuYGFQLiQ13TsorsdT6ULTkPLKuu5+GsFpDlg6JFjUTwX2DyhMPG2be8uPrqsQ==}
 
+  web-vitals@3.5.2:
+    resolution: {integrity: sha512-c0rhqNcHXRkY/ogGDJQxZ9Im9D19hDihbzSQJrsioex+KnFgmMzBiy57Z1EjkhX/+OjyBpclDCzz2ITtjokFmg==}
+
   webidl-conversions@3.0.1:
     resolution: {integrity: sha512-2JAn3z8AR6rjK8Sm8orRC0h/bcl/DqL7tRPdGZ4I1CjdF+EaMLmYxBHyXuKL849eucPFhvBoxMsflfOb8kxaeQ==}
 
@@ -4669,6 +4678,10 @@ snapshots:
   acorn@7.4.1: {}
 
   acorn@8.16.0: {}
+
+  aegis-web-sdk@1.41.13:
+    dependencies:
+      web-vitals: 3.5.2
 
   agent-base@6.0.2:
     dependencies:
@@ -6904,6 +6917,8 @@ snapshots:
       loose-envify: 1.4.0
 
   web-namespaces@2.0.1: {}
+
+  web-vitals@3.5.2: {}
 
   webidl-conversions@3.0.1: {}
 

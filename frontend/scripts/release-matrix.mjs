@@ -38,6 +38,51 @@ function ensureStringMap(value, fieldName, comboId) {
   return Object.fromEntries(entries.map(([key, item]) => [key.trim(), item.trim()]));
 }
 
+function ensureOptionalString(value, fieldName, comboId) {
+  if (value == null) {
+    return undefined;
+  }
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error(`release matrix combo ${comboId} must define ${fieldName} as a non-empty string`);
+  }
+  return value.trim();
+}
+
+function ensureObservabilityConfig(value, comboId) {
+  if (value == null) {
+    return {};
+  }
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`release matrix combo ${comboId} must define observability as an object`);
+  }
+
+  const aegis = value.aegis;
+  if (aegis == null) {
+    return {};
+  }
+  if (typeof aegis !== "object" || Array.isArray(aegis)) {
+    throw new Error(`release matrix combo ${comboId} must define observability.aegis as an object`);
+  }
+
+  const enabled = ensureOptionalString(aegis.enabled, "observability.aegis.enabled", comboId);
+  if (enabled && !["true", "false", "auto"].includes(enabled)) {
+    throw new Error(`release matrix combo ${comboId} has unsupported observability.aegis.enabled ${enabled}`);
+  }
+  const id = ensureOptionalString(aegis.id, "observability.aegis.id", comboId);
+  const hostUrl = ensureOptionalString(aegis.hostUrl, "observability.aegis.hostUrl", comboId);
+  if (enabled === "true" && (!id || !hostUrl)) {
+    throw new Error(`release matrix combo ${comboId} must define observability.aegis.id and hostUrl when enabled=true`);
+  }
+
+  return {
+    aegis: {
+      enabled: enabled ?? "auto",
+      id,
+      hostUrl,
+    },
+  };
+}
+
 export function loadReleaseMatrix(matrixPath = process.env.FRONTEND_RELEASE_MATRIX_FILE?.trim() || DEFAULT_MATRIX_PATH) {
   const raw = JSON.parse(readFileSync(matrixPath, "utf8"));
   if (!raw || !Array.isArray(raw.combos)) {
@@ -72,6 +117,7 @@ export function loadReleaseMatrix(matrixPath = process.env.FRONTEND_RELEASE_MATR
       authApiBaseUrl: ensureNonEmptyString(combo.authApiBaseUrl, "authApiBaseUrl", id),
       outputDir: ensureNonEmptyString(combo.outputDir, "outputDir", id),
       deployEnv: ensureStringMap(combo.deployEnv, "deployEnv", id),
+      observability: ensureObservabilityConfig(combo.observability, id),
     };
 
     return normalized;
@@ -127,6 +173,25 @@ export function createComboEnvironment(combo, projectName, env = process.env) {
     FRONTEND_RELEASE_CHANNEL: combo.channel,
     VITE_AUTH_API_BASE_URL: combo.authApiBaseUrl,
   };
+
+  const aegis = combo.observability?.aegis;
+  if (aegis) {
+    nextEnv.VITE_AEGIS_ENABLED = aegis.enabled ?? "auto";
+    if (aegis.id) {
+      nextEnv.VITE_AEGIS_ID = aegis.id;
+    } else {
+      delete nextEnv.VITE_AEGIS_ID;
+    }
+    if (aegis.hostUrl) {
+      nextEnv.VITE_AEGIS_HOST_URL = aegis.hostUrl;
+    } else {
+      delete nextEnv.VITE_AEGIS_HOST_URL;
+    }
+  } else {
+    nextEnv.VITE_AEGIS_ENABLED = "false";
+    delete nextEnv.VITE_AEGIS_ID;
+    delete nextEnv.VITE_AEGIS_HOST_URL;
+  }
 
   if (combo.channel === "cf") {
     nextEnv.CLOUDFLARE_PAGES_PROJECT_NAME = projectName;
