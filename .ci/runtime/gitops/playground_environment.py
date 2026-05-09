@@ -1472,6 +1472,18 @@ def qcloud_cert_secret_files(repo_root: Path, source_path: str) -> list[str]:
     return files
 
 
+def is_encrypted_sops_scalar(value: Any) -> bool:
+    return isinstance(value, str) and value.startswith("ENC[")
+
+
+def pull_secret_name_from_path(path: Path) -> str:
+    mapping = {
+        "tcr-bj8-lightclaw-secret.sops.yaml": "tcr.bj8-lightclaw-secret",
+        "tcr-ccr-clawhub-secret.sops.yaml": "tcr.ccr-clawhub-secret",
+    }
+    return mapping.get(path.name, "")
+
+
 def check_playground_network_contract(repo_root: Path, env: str, apps: Sequence[CatalogApp]) -> CheckResult:
     expected_sandbox_host = default_sandbox_host(env)
     expected_wildcard_host = default_wildcard_host(env)
@@ -1587,14 +1599,22 @@ def check_playground_stateful_runtime_contract(
                 continue
             payload = load_yaml_mapping(secret_path.read_text(), secret_path.as_posix())
             metadata = payload.get("metadata") or {}
-            name = str(metadata.get("name") or "")
-            if name in PLAYGROUND_PULL_SECRET_NAMES and metadata.get("namespace") != namespace:
-                errors.append(f"{secret_path.relative_to(repo_root)} namespace={metadata.get('namespace')}, expected={namespace}")
-        pull_names = {
-            str((load_yaml_mapping(((pull_generator.parent / file_ref).resolve()).read_text(), file_ref).get("metadata") or {}).get("name") or "")
-            for file_ref in [str(item) for item in pull_payload.get("files") or []]
-            if (pull_generator.parent / file_ref).resolve().is_file()
-        }
+            raw_name = metadata.get("name") if isinstance(metadata, dict) else ""
+            raw_namespace = metadata.get("namespace") if isinstance(metadata, dict) else ""
+            name = pull_secret_name_from_path(secret_path) if is_encrypted_sops_scalar(raw_name) or not raw_name else str(raw_name)
+            if name in PLAYGROUND_PULL_SECRET_NAMES and raw_namespace and not is_encrypted_sops_scalar(raw_namespace) and raw_namespace != namespace:
+                errors.append(f"{secret_path.relative_to(repo_root)} namespace={raw_namespace}, expected={namespace}")
+        pull_names: set[str] = set()
+        for file_ref in [str(item) for item in pull_payload.get("files") or []]:
+            secret_path = (pull_generator.parent / file_ref).resolve()
+            if not secret_path.is_file():
+                continue
+            payload = load_yaml_mapping(secret_path.read_text(), file_ref)
+            metadata = payload.get("metadata") or {}
+            raw_name = metadata.get("name") if isinstance(metadata, dict) else ""
+            name = pull_secret_name_from_path(secret_path) if is_encrypted_sops_scalar(raw_name) or not raw_name else str(raw_name)
+            if name:
+                pull_names.add(name)
         for name in PLAYGROUND_PULL_SECRET_NAMES:
             if name not in pull_names:
                 errors.append(f"{pull_generator.relative_to(repo_root)} must generate Secret/{name}")

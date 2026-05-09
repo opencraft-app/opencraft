@@ -388,6 +388,25 @@ class PlaygroundEnvironmentTests(unittest.TestCase):
         self.assertIn("Playground catalog contract: OK", stdout.getvalue())
         self.assertIn("Playground network contract: WARN", stdout.getvalue())
 
+    def test_contract_checker_accepts_fully_encrypted_pull_secret_metadata(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            create_playground_fixture(repo)
+            write_clone_plan_for_test(build_playground_clone_plan(repo, "sandbox-bj-3", "sandbox-bj-4"))
+            for filename in ("tcr-bj8-lightclaw-secret.sops.yaml", "tcr-ccr-clawhub-secret.sops.yaml"):
+                path = repo / f"argocd/secrets/sandbox-bj-4/{filename}"
+                payload = load_yaml_mapping(path.read_text(), path.as_posix())
+                payload["metadata"]["name"] = "ENC[AES256_GCM,data:name]"
+                payload["metadata"]["namespace"] = "ENC[AES256_GCM,data:namespace]"
+                path.write_text(yaml_dump_for_test(payload))
+
+            stdout = StringIO()
+            with redirect_stdout(stdout):
+                exit_code = check_playground_contract_main(["--repo-root", str(repo), "--env", "sandbox-bj-4"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertNotIn("must generate Secret", stdout.getvalue())
+
     def test_contract_checker_warns_for_qcloud_cert_ids_until_tls_probe_runs(self) -> None:
         with TemporaryDirectory() as tmp:
             repo = Path(tmp)
