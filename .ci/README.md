@@ -239,6 +239,16 @@ frontend 容器镜像必须单独确认：
 - retag 必须记录来源 tag、目标 tag、digest 和“不重新构建”的理由；它只解决 registry tag 缺失，不替代长期 CI 构建入口。
 - 如果 frontend 源码、Dockerfile、lockfile、`VITE_*` 构建参数或静态资源入口有任何差异，必须重新构建，不能 retag。
 
+受控检查/retag 入口：
+
+```bash
+python3 .ci/runtime/commands/ensure_playground_frontend_image.py \
+  --target-image lightclaw-bj8.tencentcloudcr.com/lightclaw/frontend:frontend-sandbox-bj-6-d28bf7b09cab \
+  --source-image lightclaw-bj8.tencentcloudcr.com/lightclaw/frontend:frontend-sandbox-bj-5-d28bf7b09cab
+```
+
+默认只检查并给出结论；确认为同 source sha 等价镜像后，加 `--apply` 才会执行 `docker pull/tag/push`。执行前先用 `.ci/init.sh` 的 `ci_set_registry_credentials <env>` 加载 registry 凭据。
+
 固定入口默认是：
 
 - `api-sandbox-bj-N.lightclaw.tech`

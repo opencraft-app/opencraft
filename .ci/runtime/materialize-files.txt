@@ -12,6 +12,7 @@
 .ci/runtime/commands/create_playground_environment.py
 .ci/runtime/commands/diagnose_playground_environment.py
 .ci/runtime/commands/describe_gitops_promotion.py
+.ci/runtime/commands/ensure_playground_frontend_image.py
 .ci/runtime/commands/generate_release_bundle_manifest.py
 .ci/runtime/commands/gitops_cleanup_source_branch.py
 .ci/runtime/commands/gitops_merge_request.py
@@ -39,6 +40,7 @@
 .ci/runtime/contracts/build_release_image.py
 .ci/runtime/contracts/bundles.py
 .ci/runtime/contracts/image_existence.py
+.ci/runtime/contracts/playground_frontend_image.py
 .ci/runtime/contracts/release_bundle_manifest.py
 .ci/runtime/contracts/release_plan.py
 .ci/runtime/contracts/resolve_release_bundle.py
