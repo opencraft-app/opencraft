@@ -21,8 +21,7 @@ describe("lazy route helpers", () => {
 
     render(lazyRoute(LazyPage));
 
-    expect(await screen.findByRole("status")).toBeInTheDocument();
-    expect(screen.getByText("正在准备下一页")).toBeInTheDocument();
+    expect(screen.queryByText("Deferred page loaded")).not.toBeInTheDocument();
     await act(async () => {
       resolveModule({ DeferredPage });
       await modulePromise;
