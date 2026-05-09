@@ -30,8 +30,8 @@ importers:
         specifier: ^4.60.0
         version: 4.60.0
       '@tencent/tea-sdk-lightclaw':
-        specifier: 1.0.24
-        version: 1.0.24(@tencent/qcloud-iaas-api@1.0.1)(@types/react@19.2.14)(fast-deep-equal@3.1.3)(lodash.merge@4.6.2)(path-to-regexp@2.4.0)(prop-types@15.8.1)(redux-logger@3.0.6)(redux-saga@0.16.2)(redux@4.2.1)(reselect@4.1.8)(saga-duck@3.4.8(react-redux@7.2.9(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(redux-saga@0.16.2)(redux@4.2.1))(semaphore-async-await@1.5.1)(tencentcloud-sdk-nodejs@4.1.217)(typescript@5.9.3)
+        specifier: ^1.0.33
+        version: 1.0.33(@tencent/qcloud-iaas-api@1.0.1)(@types/react@19.2.14)(fast-deep-equal@3.1.3)(lodash.merge@4.6.2)(path-to-regexp@2.4.0)(prop-types@15.8.1)(redux-logger@3.0.6)(redux-saga@0.16.2)(redux@4.2.1)(reselect@4.1.8)(saga-duck@3.4.8(react-redux@7.2.9(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(redux-saga@0.16.2)(redux@4.2.1))(semaphore-async-await@1.5.1)(tencentcloud-sdk-nodejs@4.1.217)(typescript@5.9.3)
       '@xterm/addon-fit':
         specifier: ^0.11.0
         version: 0.11.0
@@ -1288,8 +1288,8 @@ packages:
       react: '>=16.13.1'
       react-dom: '>=16.13.1'
 
-  '@tencent/tea-sdk-lightclaw@1.0.24':
-    resolution: {integrity: sha512-EqfCUqg0N/6CveyrsAbbbxZfLWnOZw30wiyZtbw7BXqnG1x3jy8T84RucRRUDqcvbPYXMmUx2aXtrX4xdidKqQ==, tarball: https://mirrors.tencent.com/npm/@tencent/tea-sdk-lightclaw/-/@tencent/tea-sdk-lightclaw-1.0.24.tgz}
+  '@tencent/tea-sdk-lightclaw@1.0.33':
+    resolution: {integrity: sha512-QTuwBi9VmE0aug6r5kNtRm7HENvoGhTvOM25n2wAxzhwmMR3w+WyY5SsO7VRDiI0kynpjPYvB+faXjwpiD9BMQ==, tarball: https://mirrors.tencent.com/npm/@tencent/tea-sdk-lightclaw/-/@tencent/tea-sdk-lightclaw-1.0.33.tgz}
     engines: {typescript: '>3.3'}
 
   '@tencent/tea-style-lighthouse@1.0.371':
@@ -2394,6 +2394,11 @@ packages:
   lru-cache@5.1.1:
     resolution: {integrity: sha512-KpNARQA3Iwv+jTA0utUVVbrh+Jlrr1Fv0e56GGzAFOXN7dk/FviaDW8LHmK52DlcH4WP2n6gI8vN1aesBFgo9w==}
 
+  lucide-react@0.460.0:
+    resolution: {integrity: sha512-BVtq/DykVeIvRTJvRAgCsOwaGL8Un3Bxh8MbDxMhEWlZay3T4IpEKDEpwt5KZ0KJMHzgm6jrltxlT5eXOWXDHg==}
+    peerDependencies:
+      react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0-rc
+
   lucide-react@0.554.0:
     resolution: {integrity: sha512-St+z29uthEJVx0Is7ellNkgTEhaeSoA42I7JjOCBCrc5X6LYMGSv0P/2uS5HDLTExP5tpiqRD2PyUEOS6s9UXA==}
     peerDependencies:
@@ -3325,6 +3330,7 @@ packages:
   whatwg-encoding@2.0.0:
     resolution: {integrity: sha512-p41ogyeMUrw3jWclHWTQg1k05DSVXPLcVxRTYsXUk+ZooOCZLcoYgPZ/HL/D/N+uQPOtcp1me1WhBEaX02mhWg==}
     engines: {node: '>=12'}
+    deprecated: Use @exodus/bytes instead for a more spec-conformant and faster implementation
 
   whatwg-mimetype@3.0.0:
     resolution: {integrity: sha512-nt+N2dzIutVRxARx1nghPKGv1xHikU7HKdfafKkLNLindmPU/ch3U31NOCGGA/dmPcmb1VlofO0vnKAcsm0o/Q==}
@@ -4397,7 +4403,7 @@ snapshots:
       react: 16.14.0
       react-dom: 16.14.0(react@16.14.0)
 
-  '@tencent/tea-sdk-lightclaw@1.0.24(@tencent/qcloud-iaas-api@1.0.1)(@types/react@19.2.14)(fast-deep-equal@3.1.3)(lodash.merge@4.6.2)(path-to-regexp@2.4.0)(prop-types@15.8.1)(redux-logger@3.0.6)(redux-saga@0.16.2)(redux@4.2.1)(reselect@4.1.8)(saga-duck@3.4.8(react-redux@7.2.9(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(redux-saga@0.16.2)(redux@4.2.1))(semaphore-async-await@1.5.1)(tencentcloud-sdk-nodejs@4.1.217)(typescript@5.9.3)':
+  '@tencent/tea-sdk-lightclaw@1.0.33(@tencent/qcloud-iaas-api@1.0.1)(@types/react@19.2.14)(fast-deep-equal@3.1.3)(lodash.merge@4.6.2)(path-to-regexp@2.4.0)(prop-types@15.8.1)(redux-logger@3.0.6)(redux-saga@0.16.2)(redux@4.2.1)(reselect@4.1.8)(saga-duck@3.4.8(react-redux@7.2.9(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(redux-saga@0.16.2)(redux@4.2.1))(semaphore-async-await@1.5.1)(tencentcloud-sdk-nodejs@4.1.217)(typescript@5.9.3)':
     dependencies:
       '@tencent/iaas-common': 3.8.38(@tencent/tea-app@2.1.25(@tencent/tea-component@2.8.6-beta.35(@types/react@19.2.14)(prop-types@15.8.1)(react-dom@16.14.0(react@16.14.0))(react@16.14.0))(moment@2.30.1)(react-dom@16.14.0(react@16.14.0))(react@16.14.0)(tencentcloud-sdk-nodejs@4.1.217))(@tencent/tea-component@2.8.6-beta.35(@types/react@19.2.14)(prop-types@15.8.1)(react-dom@16.14.0(react@16.14.0))(react@16.14.0))(classnames@2.2.6)(fast-deep-equal@3.1.3)(lodash.merge@4.6.2)(moment@2.30.1)(path-to-regexp@2.4.0)(react-dom@19.2.4(react@19.2.4))(react-redux@7.2.9(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(react@19.2.4)(redux-logger@3.0.6)(redux-saga@0.16.2)(redux@4.2.1)(reselect@4.1.8)(saga-duck@3.4.8(react-redux@7.2.9(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(redux-saga@0.16.2)(redux@4.2.1))(semaphore-async-await@1.5.1)(typescript@5.9.3)
       '@tencent/iaas-component': 0.2.105(225065547723104f7eb926cf2d0d1877)
@@ -4411,6 +4417,7 @@ snapshots:
       classnames: 2.2.6
       js-base64: 2.6.4
       lodash: 4.18.1
+      lucide-react: 0.460.0(react@16.14.0)
       moment: 2.30.1
       qrcode.react: 3.2.0(react@16.14.0)
       react: 16.14.0
@@ -5693,6 +5700,10 @@ snapshots:
   lru-cache@5.1.1:
     dependencies:
       yallist: 3.1.1
+
+  lucide-react@0.460.0(react@16.14.0):
+    dependencies:
+      react: 16.14.0
 
   lucide-react@0.554.0(react@19.2.4):
     dependencies:
