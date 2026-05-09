@@ -12,7 +12,14 @@
         "CLOUDFLARE_ACCOUNT_ID"
       ],
       "authApiBaseUrl": "https://lightclaw.tech",
-      "outputDir": "dist-cn"
+      "outputDir": "dist-cn",
+      "observability": {
+        "aegis": {
+          "enabled": "true",
+          "id": "4e66EF5XoPEXx3y8lw",
+          "hostUrl": "https://rumt-zh.com"
+        }
+      }
     },
     {
       "id": "global-cf",
@@ -26,7 +33,14 @@
         "CLOUDFLARE_ACCOUNT_ID"
       ],
       "authApiBaseUrl": "https://lightclaw.tech",
-      "outputDir": "dist-global"
+      "outputDir": "dist-global",
+      "observability": {
+        "aegis": {
+          "enabled": "true",
+          "id": "2ellOCK3ozed3owgOj",
+          "hostUrl": "https://rumt-sg.com"
+        }
+      }
     },
     {
       "id": "eo:cn-lightvela-prod",

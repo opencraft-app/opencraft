@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -26,6 +29,17 @@ const cnCfCombo = {
   deployEnv: {},
 };
 
+const cnCfObservedCombo = {
+  ...cnCfCombo,
+  observability: {
+    aegis: {
+      enabled: "true",
+      id: "4e66EF5XoPEXx3y8lw",
+      hostUrl: "https://rumt-zh.com",
+    },
+  },
+};
+
 const globalCfCombo = {
   ...cnCfCombo,
   id: "global-cf",
@@ -34,6 +48,17 @@ const globalCfCombo = {
   projectName: "lightvela-intl",
   authApiBaseUrl: "https://lightclaw.tech",
   outputDir: "dist-global",
+};
+
+const globalCfObservedCombo = {
+  ...globalCfCombo,
+  observability: {
+    aegis: {
+      enabled: "true",
+      id: "2ellOCK3ozed3owgOj",
+      hostUrl: "https://rumt-sg.com",
+    },
+  },
 };
 
 describe("release matrix helpers", () => {
@@ -65,18 +90,19 @@ describe("release matrix helpers", () => {
       CLOUDFLARE_ACCOUNT_ID: "account",
     };
 
-    const comboEnv = createComboEnvironment(cnCfCombo, "lightclaw", env);
+    const comboEnv = createComboEnvironment(cnCfObservedCombo, "lightclaw", env);
 
     expect(comboEnv.VITE_AUTH_API_BASE_URL).toBe("https://lightclaw.tech");
-    expect(comboEnv.VITE_AEGIS_ENABLED).toBe("false");
-    expect(comboEnv.VITE_AEGIS_ID).toBeUndefined();
+    expect(comboEnv.VITE_AEGIS_ENABLED).toBe("true");
+    expect(comboEnv.VITE_AEGIS_ID).toBe("4e66EF5XoPEXx3y8lw");
+    expect(comboEnv.VITE_AEGIS_HOST_URL).toBe("https://rumt-zh.com");
     expect(comboEnv.CLOUDFLARE_PAGES_PROJECT_NAME).toBe("lightclaw");
     expect(comboEnv.CLOUDFLARE_PAGES_DIR).toBe("dist-cn");
     expect(formatComboSummary(cnCfCombo, "lightclaw")).toContain("cn-cf");
   });
 
   it("creates Cloudflare env for the global intl site", () => {
-    const comboEnv = createComboEnvironment(globalCfCombo, "lightvela-intl", {
+    const comboEnv = createComboEnvironment(globalCfObservedCombo, "lightvela-intl", {
       CLOUDFLARE_API_TOKEN: "token",
       CLOUDFLARE_ACCOUNT_ID: "account",
     });
@@ -85,7 +111,9 @@ describe("release matrix helpers", () => {
     expect(comboEnv.CLOUDFLARE_PAGES_PROJECT_NAME).toBe("lightvela-intl");
     expect(comboEnv.CLOUDFLARE_PAGES_DIR).toBe("dist-global");
     expect(comboEnv.VITE_AUTH_API_BASE_URL).toBe("https://lightclaw.tech");
-    expect(comboEnv.VITE_AEGIS_ENABLED).toBe("false");
+    expect(comboEnv.VITE_AEGIS_ENABLED).toBe("true");
+    expect(comboEnv.VITE_AEGIS_ID).toBe("2ellOCK3ozed3owgOj");
+    expect(comboEnv.VITE_AEGIS_HOST_URL).toBe("https://rumt-sg.com");
   });
 
   it("injects Aegis environment from combo observability config", () => {
@@ -150,6 +178,28 @@ describe("release matrix helpers", () => {
     expect(comboEnv.VITE_AEGIS_HOST_URL).toBeUndefined();
   });
 
+  it("rejects enabled Aegis config without id or hostUrl", () => {
+    const dir = mkdtempSync(join(tmpdir(), "release-matrix-"));
+    const matrixPath = join(dir, "release-matrix.json");
+    try {
+      writeFileSync(matrixPath, JSON.stringify({
+        combos: [{
+          ...cnCfCombo,
+          observability: {
+            aegis: {
+              enabled: "true",
+              id: "rum-cn",
+            },
+          },
+        }],
+      }));
+
+      expect(() => loadReleaseMatrix(matrixPath)).toThrow("must define observability.aegis.id and hostUrl when enabled=true");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("carries optional deploy env values for edgeone combos", () => {
     const eoCombo = {
       ...cnCfCombo,
@@ -173,6 +223,44 @@ describe("release matrix helpers", () => {
     expect(comboEnv.EDGEONE_PAGES_DIR).toBe("dist-cn");
     expect(comboEnv.EDGEONE_PAGES_AREA).toBe("global");
     expect(comboEnv.EDGEONE_PAGES_ENV).toBe("preview");
+  });
+
+  it("includes China Cloudflare Aegis config in the release matrix", () => {
+    const { combos } = loadReleaseMatrix();
+    const combo = combos.find((item) => item.id === "cn-cf");
+
+    expect(combo).toMatchObject({
+      region: "cn",
+      channel: "cf",
+      buildCommand: "build:cn",
+      projectName: "lightclaw",
+      observability: {
+        aegis: {
+          enabled: "true",
+          id: "4e66EF5XoPEXx3y8lw",
+          hostUrl: "https://rumt-zh.com",
+        },
+      },
+    });
+  });
+
+  it("includes global Cloudflare Aegis config in the release matrix", () => {
+    const { combos } = loadReleaseMatrix();
+    const combo = combos.find((item) => item.id === "global-cf");
+
+    expect(combo).toMatchObject({
+      region: "global",
+      channel: "cf",
+      buildCommand: "build:global",
+      projectName: "lightvela-intl",
+      observability: {
+        aegis: {
+          enabled: "true",
+          id: "2ellOCK3ozed3owgOj",
+          hostUrl: "https://rumt-sg.com",
+        },
+      },
+    });
   });
 
   it("includes the production China EdgeOne lightvela project in the release matrix", () => {

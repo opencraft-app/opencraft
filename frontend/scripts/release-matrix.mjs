@@ -68,12 +68,17 @@ function ensureObservabilityConfig(value, comboId) {
   if (enabled && !["true", "false", "auto"].includes(enabled)) {
     throw new Error(`release matrix combo ${comboId} has unsupported observability.aegis.enabled ${enabled}`);
   }
+  const id = ensureOptionalString(aegis.id, "observability.aegis.id", comboId);
+  const hostUrl = ensureOptionalString(aegis.hostUrl, "observability.aegis.hostUrl", comboId);
+  if (enabled === "true" && (!id || !hostUrl)) {
+    throw new Error(`release matrix combo ${comboId} must define observability.aegis.id and hostUrl when enabled=true`);
+  }
 
   return {
     aegis: {
       enabled: enabled ?? "auto",
-      id: ensureOptionalString(aegis.id, "observability.aegis.id", comboId),
-      hostUrl: ensureOptionalString(aegis.hostUrl, "observability.aegis.hostUrl", comboId),
+      id,
+      hostUrl,
     },
   };
 }

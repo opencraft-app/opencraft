@@ -31,6 +31,7 @@ export type AegisConfig = {
 
 let aegis: AegisInstance | null = null;
 let initPromise: Promise<AegisInstance | null> | null = null;
+let pendingUin: string | undefined;
 
 export function resolveAegisConfig(
   env: AegisEnv = import.meta.env,
@@ -54,11 +55,14 @@ export function resolveAegisConfig(
   };
 }
 
-export async function initAegis(): Promise<AegisInstance | null> {
+export async function initAegis(
+  env: AegisEnv = import.meta.env,
+  region: Region = REGION,
+): Promise<AegisInstance | null> {
   if (aegis) return aegis;
   if (initPromise) return initPromise;
 
-  const config = resolveAegisConfig();
+  const config = resolveAegisConfig(env, region);
   if (!config) return null;
 
   initPromise = import("aegis-web-sdk")
@@ -70,6 +74,7 @@ export async function initAegis(): Promise<AegisInstance | null> {
         reportAssetSpeed: true,
         spa: true,
       });
+      aegis.setConfig?.({ uin: pendingUin });
       return aegis;
     })
     .catch((error: unknown) => {
@@ -82,11 +87,12 @@ export async function initAegis(): Promise<AegisInstance | null> {
 }
 
 export function setAegisUser(uin: string | null | undefined) {
-  if (!aegis?.setConfig) return;
-  aegis.setConfig({ uin: uin || undefined });
+  pendingUin = uin || undefined;
+  aegis?.setConfig?.({ uin: pendingUin });
 }
 
 export function resetAegisForTest() {
   aegis = null;
   initPromise = null;
+  pendingUin = undefined;
 }

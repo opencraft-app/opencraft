@@ -1,5 +1,25 @@
-import { describe, expect, it } from "vitest";
-import { resolveAegisConfig } from "@/observability/aegis";
+import { describe, expect, it, vi } from "vitest";
+import {
+  initAegis,
+  resetAegisForTest,
+  resolveAegisConfig,
+  setAegisUser,
+} from "@/observability/aegis";
+
+const aegisMock = vi.hoisted(() => ({
+  constructor: vi.fn(),
+  setConfig: vi.fn(),
+}));
+
+vi.mock("aegis-web-sdk", () => ({
+  default: class MockAegis {
+    setConfig = aegisMock.setConfig;
+
+    constructor(options: unknown) {
+      aegisMock.constructor(options);
+    }
+  },
+}));
 
 describe("resolveAegisConfig", () => {
   it("does not enable RUM for dev builds", () => {
@@ -44,5 +64,29 @@ describe("resolveAegisConfig", () => {
       VITE_AEGIS_ID: "global-id",
       VITE_AEGIS_HOST_URL: "https://rumt-us.com",
     }, "global")?.hostUrl).toBe("https://rumt-us.com");
+  });
+});
+
+describe("initAegis", () => {
+  it("applies a user id that arrives before the SDK finishes initializing", async () => {
+    resetAegisForTest();
+    aegisMock.constructor.mockClear();
+    aegisMock.setConfig.mockClear();
+
+    setAegisUser("usr_123");
+    await initAegis({
+      PROD: true,
+      VITE_AEGIS_ID: "cn-id",
+      VITE_AEGIS_HOST_URL: "https://rumt-zh.com",
+    }, "cn");
+
+    expect(aegisMock.constructor).toHaveBeenCalledWith({
+      id: "cn-id",
+      hostUrl: "https://rumt-zh.com",
+      reportApiSpeed: true,
+      reportAssetSpeed: true,
+      spa: true,
+    });
+    expect(aegisMock.setConfig).toHaveBeenCalledWith({ uin: "usr_123" });
   });
 });
