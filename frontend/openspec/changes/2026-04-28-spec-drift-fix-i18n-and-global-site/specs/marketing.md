@@ -192,8 +192,8 @@
    保持源码整洁（例：实名认证 `REALNAME_ENABLED` 已在上线后移除）。
 9. **静态资源 URL 约定**：
    - 所有 `public` 根相对路径必须通过 `assetUrl(path)`（`src/lib/asset-url.ts`）包装
-   - CDN 基址 `CDN_BASE` **硬编码**在源码常量中，**不通过环境变量配置**
-   - 所有环境（dev / prod）统一走 CDN；切换 CDN 需修改常量并发版
+   - `assetUrl(path)` 只归一化为站点根路径；Pages / EdgeOne 本身就是 CDN，不再额外拼接独立 COS CDN 域名
+   - 随前端发布的静态资源必须进入站点构建产物，跟随 `pnpm build*` 的压缩与 WebP 后处理
    - 绝对 URL（`http(s)://` / `//`）与 `data:` URI 直接 passthrough，不二次拼接
 10. **区域化（国内 / 国际站）编译期分支**：
     - `src/lib/region.ts` 暴露 `REGION` / `isCN` / `isGlobal` / `DEFAULT_LOCALE` 编译期常量，由 `VITE_REGION` 在 Vite 构建期注入；未命中分支会被 Tree-shake，不会进入对侧站点 bundle。
@@ -220,7 +220,7 @@
 - `account-page.tsx` 41KB / 1084 行，偏大（含实名认证入口），
   后续应拆分「账号信息 / 订阅 / 权益 / 安全中心 / 实名认证」为独立子组件；
   `VerifyIdentityModal` + 错误码映射函数 `mapErrorMessage` 应优先抽离为独立文件。
-- `src/lib/asset-url.ts` 的 `isUsingCdn` 恒为 `true`，保留为向后兼容导出，
+- `src/lib/asset-url.ts` 的 `isUsingCdn` / `cdnBase` 仅保留为向后兼容导出，
   可后续批量 grep 清理调用方 import。
 - i18n 字典目前只有 `zh-CN` / `en-US` 两份，`en-US.json` 由翻译流程产出，
   `pnpm i18n:check` 会列出未补 key；正式发布国际站前必须保证清单为空。

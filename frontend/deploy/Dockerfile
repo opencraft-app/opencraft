@@ -7,6 +7,7 @@ COPY package.json pnpm-lock.yaml .npmrc ./
 COPY index.html ./
 COPY tsconfig.json tsconfig.app.json tsconfig.node.json vite.config.ts ./
 COPY public ./public
+COPY scripts ./scripts
 COPY src ./src
 COPY vendor ./vendor
 

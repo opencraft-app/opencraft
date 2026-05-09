@@ -19,6 +19,7 @@ from support.yaml import load_mapping
 
 
 CATALOG_DIR_TEMPLATE = "argocd/catalogs/sandbox/{env}"
+PLAYGROUND_CATALOG_DIR_TEMPLATE = "argocd/catalogs/playground/beijing-playground/{env}"
 SUPPORTED_SANDBOX_ENVS = {"beijing-sandbox", "beijing-sandbox-2"}
 SUPPORTED_DIRECT_APP_ENVS = {"shprod"}
 PLACEHOLDER_RE = re.compile(r"\bREPLACE_[A-Z0-9_]+\b")
@@ -35,10 +36,10 @@ def load_targets(repo_root: Path, env: str, changed_only: bool = False) -> list[
         changed_services = changed_direct_app_services(repo_root, env) if changed_only else None
         return load_direct_app_targets(repo_root, env, changed_services)
 
-    if env not in SUPPORTED_SANDBOX_ENVS:
+    if env not in SUPPORTED_SANDBOX_ENVS and not is_playground_env(env):
         raise ValueError(f"unsupported env for strict kustomize validation: {env}")
 
-    catalog_dir_rel = CATALOG_DIR_TEMPLATE.format(env=env)
+    catalog_dir_rel = catalog_dir_for_env(env)
     catalog_dir = repo_root / catalog_dir_rel
     if not catalog_dir.is_dir():
         raise ValueError(f"missing catalog directory: {catalog_dir_rel}")
@@ -57,6 +58,16 @@ def load_targets(repo_root: Path, env: str, changed_only: bool = False) -> list[
     if not targets:
         raise ValueError(f"no catalog files found under {catalog_dir_rel}")
     return targets
+
+
+def is_playground_env(env: str) -> bool:
+    return re.fullmatch(r"sandbox-bj-\d+", env) is not None
+
+
+def catalog_dir_for_env(env: str) -> str:
+    if is_playground_env(env):
+        return PLAYGROUND_CATALOG_DIR_TEMPLATE.format(env=env)
+    return CATALOG_DIR_TEMPLATE.format(env=env)
 
 
 def changed_direct_app_services(repo_root: Path, env: str) -> set[str]:

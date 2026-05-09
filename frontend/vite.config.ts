@@ -3,7 +3,7 @@ import tailwindcss from "@tailwindcss/vite";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
-import { loadEnv } from "vite";
+import { loadEnv, type PluginOption } from "vite";
 import { defineConfig } from "vitest/config";
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
@@ -277,7 +277,8 @@ function reactDomFindDOMNodeVitePlugin() {
  *   `if(To&&To.createElement&&!To.findDOMNode){To.findDOMNode=...}`
  *
  * `To` 是 CJS `module.exports`，始终可写。patch 后 `Ha(To)` 返回的
- * `yo` 上就有 `findDOMNode` 了。
+ * `yo` 上就有 `findDOMNode` 了。注意：开启 manualChunks 后 react-dom
+ * 可能进入 vendor chunk，因此不能只处理 entry chunk。
  */
 function reactDomPolyfillBuildPlugin() {
   // findDOMNode shim —— Fiber DFS（和 dev 模式完全一致）
@@ -288,8 +289,7 @@ function reactDomPolyfillBuildPlugin() {
     apply: "build" as const,
     renderChunk: {
       order: "post" as const,
-      handler(code: string, chunk: any) {
-        if (!chunk.isEntry) return null;
+      handler(code: string) {
         if (!code.includes("createElement")) return null;
 
         // 收集所有需要注入 patch 的位置（从后往前插入，避免偏移错乱）
@@ -334,6 +334,48 @@ function reactDomPolyfillBuildPlugin() {
       },
     },
   };
+}
+
+function manualChunks(id: string) {
+  if (!id.includes("node_modules")) return undefined;
+
+  if (/[\\/]node_modules[\\/](?:\.pnpm[\\/])?(?:react|react-dom|react-router|react-router-dom|scheduler)[@\\/]/.test(id)) {
+    return "vendor-framework";
+  }
+  if (id.includes("framer-motion")) return "vendor-motion";
+  if (id.includes("@xterm/")) return "vendor-terminal";
+  if (
+    id.includes("react-markdown")
+    || id.includes("react-syntax-highlighter")
+    || id.includes("remark-")
+    || id.includes("rehype-")
+    || id.includes("micromark")
+    || id.includes("mdast-")
+    || id.includes("hast-")
+    || id.includes("unified")
+  ) {
+    return "vendor-docs";
+  }
+  if (
+    id.includes("@tencent/tea-sdk-lightclaw")
+    || id.includes("tea-component")
+    || id.includes("tea-style")
+    || id.includes("tea-app")
+  ) {
+    return "vendor-tea";
+  }
+  if (id.includes("html2canvas")) return "vendor-capture";
+  if (
+    id.includes("@radix-ui/")
+    || id.includes("lucide-react")
+    || id.includes("class-variance-authority")
+    || id.includes("tailwind-merge")
+    || id.includes("clsx")
+  ) {
+    return "vendor-ui";
+  }
+
+  return undefined;
 }
 
 export default defineConfig(({ mode }) => {
@@ -382,29 +424,61 @@ export default defineConfig(({ mode }) => {
       PRODUCTION: JSON.stringify(mode === "production"),
       INTL_TRANSLATION_ID: JSON.stringify(""),
     },
-    plugins: [react(), tailwindcss(), sdkI18nPlugin(), reactDomFindDOMNodeVitePlugin(), reactDomPolyfillBuildPlugin()],
+    plugins: [
+      react(),
+      tailwindcss(),
+      sdkI18nPlugin(),
+      reactDomFindDOMNodeVitePlugin(),
+      reactDomPolyfillBuildPlugin(),
+    ] as unknown as PluginOption[],
     resolve: {
       // Deduplicate React so the locally-linked SDK shares the host app's copy
       dedupe: ["react", "react-dom"],
-      alias: {
-        "@": path.resolve(rootDir, "./src"),
+      alias: [
+        {
+          find: /^react-syntax-highlighter$/,
+          replacement: path.resolve(rootDir, "src/vendor/react-syntax-highlighter-shim.ts"),
+        },
+        {
+          find: /^property-information\/(find|normalize|html|svg)$/,
+          replacement: path.resolve(
+            rootDir,
+            "node_modules/.pnpm/property-information@5.6.0/node_modules/property-information/$1.js",
+          ),
+        },
+        {
+          find: /^@\//,
+          replacement: `${path.resolve(rootDir, "./src")}/`,
+        },
         // i18n 词条是 CJS 文件，需精确 alias 到实际路径。
         // 注意：此条必须在 SDK 主入口 alias 之前，否则会被前缀匹配拦截。
-        "@tencent/tea-sdk-lightclaw/i18n/translation/en": USE_LOCAL_SDK
-          ? path.join(LOCAL_SDK_ROOT, "i18n/translation/en.js")
-          : path.resolve(rootDir, "node_modules/@tencent/tea-sdk-lightclaw/i18n/translation/en.js"),
-        "@tencent/tea-sdk-lightclaw/i18n/translation/zh": USE_LOCAL_SDK
-          ? path.join(LOCAL_SDK_ROOT, "i18n/translation/zh.js")
-          : path.resolve(rootDir, "node_modules/@tencent/tea-sdk-lightclaw/i18n/translation/zh.js"),
+        {
+          find: "@tencent/tea-sdk-lightclaw/i18n/translation/en",
+          replacement: USE_LOCAL_SDK
+            ? path.join(LOCAL_SDK_ROOT, "i18n/translation/en.js")
+            : path.resolve(rootDir, "node_modules/@tencent/tea-sdk-lightclaw/i18n/translation/en.js"),
+        },
+        {
+          find: "@tencent/tea-sdk-lightclaw/i18n/translation/zh",
+          replacement: USE_LOCAL_SDK
+            ? path.join(LOCAL_SDK_ROOT, "i18n/translation/zh.js")
+            : path.resolve(rootDir, "node_modules/@tencent/tea-sdk-lightclaw/i18n/translation/zh.js"),
+        },
         // dev:local 模式：指向 SDK 本地源码，改代码即时 HMR。
         // npm 包模式：不需要 alias，Vite 通过 package.json exports 自动解析。
         ...(USE_LOCAL_SDK
-          ? {
-            "@tencent/tea-sdk-lightclaw/styles": LOCAL_SDK_STYLES_ENTRY,
-            "@tencent/tea-sdk-lightclaw": LOCAL_SDK_SRC_ENTRY,
-          }
-          : {}),
-      },
+          ? [
+            {
+              find: "@tencent/tea-sdk-lightclaw/styles",
+              replacement: LOCAL_SDK_STYLES_ENTRY,
+            },
+            {
+              find: "@tencent/tea-sdk-lightclaw",
+              replacement: LOCAL_SDK_SRC_ENTRY,
+            },
+          ]
+          : []),
+      ],
     },
     server: {
       host: devHost,
@@ -422,6 +496,16 @@ export default defineConfig(({ mode }) => {
       host: devHost,
       port: devPort,
       ...(allowedHosts.length > 0 ? { allowedHosts } : {}),
+    },
+    build: {
+      rollupOptions: {
+        output: {
+          // Keep vendor boundaries coarse and stable; route-level dynamic
+          // imports own page chunks, while this function keeps shared deps
+          // cacheable without binding chunks to page file names.
+          manualChunks,
+        },
+      },
     },
     optimizeDeps: {
       // dev:local 走源码 HMR → 排除预打包；

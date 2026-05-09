@@ -23,10 +23,48 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import rehypeRaw from "rehype-raw";
 import rehypeSlug from "rehype-slug";
 import remarkGfm from "remark-gfm";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { oneLight } from "react-syntax-highlighter/dist/esm/styles/prism";
+import SyntaxHighlighter from "react-syntax-highlighter/dist/esm/light";
+import bash from "react-syntax-highlighter/dist/esm/languages/hljs/bash";
+import css from "react-syntax-highlighter/dist/esm/languages/hljs/css";
+import diff from "react-syntax-highlighter/dist/esm/languages/hljs/diff";
+import dockerfile from "react-syntax-highlighter/dist/esm/languages/hljs/dockerfile";
+import go from "react-syntax-highlighter/dist/esm/languages/hljs/go";
+import javascript from "react-syntax-highlighter/dist/esm/languages/hljs/javascript";
+import json from "react-syntax-highlighter/dist/esm/languages/hljs/json";
+import markdown from "react-syntax-highlighter/dist/esm/languages/hljs/markdown";
+import python from "react-syntax-highlighter/dist/esm/languages/hljs/python";
+import shell from "react-syntax-highlighter/dist/esm/languages/hljs/shell";
+import typescript from "react-syntax-highlighter/dist/esm/languages/hljs/typescript";
+import xml from "react-syntax-highlighter/dist/esm/languages/hljs/xml";
+import yaml from "react-syntax-highlighter/dist/esm/languages/hljs/yaml";
+import { github } from "react-syntax-highlighter/dist/esm/styles/hljs";
 import { Check, Copy } from "lucide-react";
 import type { TocItem } from "@/components/docs/docs-toc";
+
+SyntaxHighlighter.registerLanguage("bash", bash);
+SyntaxHighlighter.registerLanguage("sh", bash);
+SyntaxHighlighter.registerLanguage("shell", shell);
+SyntaxHighlighter.registerLanguage("shell-session", shell);
+SyntaxHighlighter.registerLanguage("css", css);
+SyntaxHighlighter.registerLanguage("diff", diff);
+SyntaxHighlighter.registerLanguage("docker", dockerfile);
+SyntaxHighlighter.registerLanguage("dockerfile", dockerfile);
+SyntaxHighlighter.registerLanguage("go", go);
+SyntaxHighlighter.registerLanguage("javascript", javascript);
+SyntaxHighlighter.registerLanguage("js", javascript);
+SyntaxHighlighter.registerLanguage("json", json);
+SyntaxHighlighter.registerLanguage("jsx", javascript);
+SyntaxHighlighter.registerLanguage("markdown", markdown);
+SyntaxHighlighter.registerLanguage("md", markdown);
+SyntaxHighlighter.registerLanguage("html", xml);
+SyntaxHighlighter.registerLanguage("xml", xml);
+SyntaxHighlighter.registerLanguage("python", python);
+SyntaxHighlighter.registerLanguage("py", python);
+SyntaxHighlighter.registerLanguage("typescript", typescript);
+SyntaxHighlighter.registerLanguage("ts", typescript);
+SyntaxHighlighter.registerLanguage("tsx", typescript);
+SyntaxHighlighter.registerLanguage("yaml", yaml);
+SyntaxHighlighter.registerLanguage("yml", yaml);
 
 /** 从 ReactNode 里抽出纯文本，用于生成锚点 id / 判定 Callout 类型。 */
 function extractText(node: ReactNode): string {
@@ -108,7 +146,7 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
       </div>
       <SyntaxHighlighter
         language={lang}
-        style={oneLight as Record<string, React.CSSProperties>}
+        style={github as Record<string, React.CSSProperties>}
         customStyle={{
           margin: 0,
           padding: "1rem",
@@ -210,8 +248,8 @@ export function MarkdownRenderer({ content, onTocCollected }: MarkdownRendererPr
     },
 
     // 链接：内部 /docs/* 走 react-router；锚点保持原生；其他开新标签页
-    a({ href, children, ...props }) {
-      if (!href) return <a {...props}>{children}</a>;
+    a({ href, children }) {
+      if (!href) return <a>{children}</a>;
       if (href.startsWith("/docs")) {
         return (
           <Link to={href} className="prose-link">
@@ -221,13 +259,13 @@ export function MarkdownRenderer({ content, onTocCollected }: MarkdownRendererPr
       }
       if (href.startsWith("#")) {
         return (
-          <a href={href} {...props}>
+          <a href={href}>
             {children}
           </a>
         );
       }
       return (
-        <a href={href} target="_blank" rel="noreferrer" {...props}>
+        <a href={href} target="_blank" rel="noreferrer">
           {children}
           <span className="text-gray-400">↗</span>
         </a>
@@ -235,21 +273,21 @@ export function MarkdownRenderer({ content, onTocCollected }: MarkdownRendererPr
     },
 
     // GFM 任务列表复选框：黑色风格
-    input(props) {
-      if (props.type === "checkbox") {
+    input({ checked, disabled, type }) {
+      if (type === "checkbox") {
         return (
           <span
             className="inline-flex items-center justify-center w-4 h-4 mr-1 rounded border align-middle -translate-y-[1px]"
             style={{
-              borderColor: props.checked ? "#000" : "#D1D1D6",
-              background: props.checked ? "#000" : "#fff",
+              borderColor: checked ? "#000" : "#D1D1D6",
+              background: checked ? "#000" : "#fff",
             }}
           >
-            {props.checked ? <Check size={12} color="#fff" strokeWidth={3} /> : null}
+            {checked ? <Check size={12} color="#fff" strokeWidth={3} /> : null}
           </span>
         );
       }
-      return <input {...props} />;
+      return <input type={type} checked={checked} disabled={disabled} readOnly />;
     },
   };
 

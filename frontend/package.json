@@ -10,9 +10,10 @@
     "dev:local": "VITE_LOCAL_SDK=1 vite",
     "i18n:extract": "node scripts/i18n-extract.mjs",
     "i18n:check": "node scripts/i18n-extract.mjs --check",
-    "build": "tsc -b && vite build",
-    "build:cn": "tsc -b && vite build --mode cn --outDir dist-cn",
-    "build:global": "tsc -b && vite build --mode global --outDir dist-global",
+    "assets:optimize": "node scripts/optimize-static-assets.mjs",
+    "build": "tsc -b && vite build && node scripts/optimize-static-assets.mjs dist",
+    "build:cn": "tsc -b && vite build --mode cn --outDir dist-cn && node scripts/optimize-static-assets.mjs dist-cn",
+    "build:global": "tsc -b && vite build --mode global --outDir dist-global && node scripts/optimize-static-assets.mjs dist-global",
     "preview": "vite preview",
     "check": "tsc --noEmit",
     "test": "vitest run",
@@ -62,6 +63,7 @@
     "@types/react-syntax-highlighter": "^15.5.13",
     "@vitejs/plugin-react": "^5.0.2",
     "jsdom": "^28.1.0",
+    "sharp": "^0.33.5",
     "tailwindcss": "^4.1.12",
     "typescript": "~5.9.2",
     "vite": "^7.1.7",
@@ -69,7 +71,9 @@
   },
   "pnpm": {
     "onlyBuiltDependencies": [
-      "esbuild"
+      "core-js",
+      "esbuild",
+      "sharp"
     ],
     "overrides": {}
   }
