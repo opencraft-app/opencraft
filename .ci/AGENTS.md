@@ -109,6 +109,14 @@ TLS 约束：
 - MySQL/Redis StatefulSet 和 DB bootstrap/root 路径只能引用 `playground-runtime-secrets`；业务 grant password 仍可来自各服务自己的 SOPS secret，但不能把 `lightclaw-auth-secrets` / `sandbox-runtime-secrets` 继续作为运行时 root secret。
 - playground 销毁默认以删除 catalog/closure 为主，让 Argo prune namespace 内 MySQL/Redis/PVC；不要再把 playground 运行时状态放到共享外部 MySQL/Redis，除非明确需要跨环境保留数据。
 
+### Frontend 镜像规则
+
+- `argocd/services/frontend/<env>/frontend-platform.env` 里的 `FRONTEND_IMAGE` 必须先在 TCR 中真实存在，再让 Argo 收敛；否则会表现为 `frontend-web ImagePullBackOff`。
+- 正常路径是为目标环境构建并推送目标 tag，例如 `frontend-sandbox-bj-N-<source-sha>`，不要把缺失镜像留给 Argo 暴露。
+- 只在满足全部条件时允许 retag 解锁 live：目标 tag 缺失、同 registry 中存在同 source sha 的等价 tag、只是环境名 tag 缺失、没有 frontend 代码或构建参数差异。
+- retag 是现场解锁动作，不是发布真相源；执行后必须记录来源 tag、目标 tag、digest，并补齐后续 CI/脚手架缺口。
+- 不允许用 retag 掩盖构建失败。如果源码、`VITE_*` 构建参数、Dockerfile、lockfile 或静态资源入口存在差异，必须重新构建目标 env 镜像。
+
 ### Ingress / TKE 约束
 
 - playground public ingress 默认应使用直连转发：`ingress.cloud.tencent.com/direct-access: "true"`。
@@ -123,9 +131,10 @@ TLS 约束：
 3. 配置固定入口 DNS 和 wildcard HTTP DNS。
 4. 为固定入口申请或选择单域名证书，并生成/引用正确 qcloud cert secret。
 5. 合入 GitOps MR 后刷新 Argo，确认 apps 在最新 `gitops` revision 上 `Synced / Healthy`。
-6. 确认 namespace-local MySQL/Redis Ready，且 `playground-runtime-secrets` 已生成并由 env-bootstrap ksops generator 引入后，再执行 DB bootstrap / readiness / migration。
-7. 检查 namespace pod Ready/Completed、Ingress Ready、Service endpoints。
-8. 用公网 curl 验证固定 HTTPS 入口和 wildcard HTTP 入口。
+6. 确认 frontend 目标镜像 tag 已存在；缺 tag 时优先补构建，只有同 source sha 等价 tag 已存在时才允许 retag 解锁。
+7. 确认 namespace-local MySQL/Redis Ready，且 `playground-runtime-secrets` 已生成并由 env-bootstrap ksops generator 引入后，再执行 DB bootstrap / readiness / migration。
+8. 检查 namespace pod Ready/Completed、Ingress Ready、Service endpoints。
+9. 用公网 curl 验证固定 HTTPS 入口和 wildcard HTTP 入口。
 
 ### Agent 输出约定
 
@@ -137,6 +146,7 @@ TLS 约束：
 - SOPS secret 是否复用源环境；如果复用，提示后续如需强隔离必须重新生成 SSM/SOPS。
 - 是否生成了新的最小 `playground-runtime-secrets`；如果缺 SOPS/age key，必须停止而不是提交半成品。
 - MySQL/Redis 是否由目标 namespace 内 StatefulSet/PVC 承载；如果仍指向外部共享地址，必须标记为不符合 playground 模型。
+- frontend 目标镜像 tag 是否存在；如果执行过 retag，必须说明为什么不构建、来源 tag、目标 tag 和 digest。
 - 最终验收证据：Argo revision、sync/health、pod 状态、Ingress 状态、公网 curl 结果。
 
 ## 远端写入模板

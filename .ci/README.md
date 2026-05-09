@@ -231,6 +231,14 @@ playground 的运行时状态也应尽量 namespace-local：
 - 删除 playground catalog 后，Argo prune namespace 内 workload 和 PVC，销毁语义比共享外部 MySQL/Redis 更干净。
 - 共享外部 MySQL/Redis 只适合 `beijing-sandbox` 这类预发布环境，不作为 `sandbox-bj-N` 的默认模型。
 
+frontend 容器镜像必须单独确认：
+
+- `argocd/services/frontend/<env>/frontend-platform.env` 写入的 `FRONTEND_IMAGE` 必须已经存在于 TCR。
+- 正常路径是构建并推送目标 env tag，例如 `frontend-sandbox-bj-N-<source-sha>`。
+- 只有当同 registry 中已经存在同 source sha 的等价 frontend 镜像，且只是缺少目标 env tag 时，才允许把已有 tag retag 成目标 tag 来解锁 live。
+- retag 必须记录来源 tag、目标 tag、digest 和“不重新构建”的理由；它只解决 registry tag 缺失，不替代长期 CI 构建入口。
+- 如果 frontend 源码、Dockerfile、lockfile、`VITE_*` 构建参数或静态资源入口有任何差异，必须重新构建，不能 retag。
+
 固定入口默认是：
 
 - `api-sandbox-bj-N.lightclaw.tech`
@@ -257,15 +265,17 @@ playground 的运行时状态也应尽量 namespace-local：
 4. 配置固定入口单域名证书；wildcard HTTPS 没有合适证书时跳过。
 5. 合入 GitOps MR，让 sandbox-family AppSet 生成 apps。
 6. 等 Argo apps 到最新 `gitops` revision 的 `Synced / Healthy`。
-7. 确认 namespace-local MySQL/Redis Ready，且 `playground-runtime-secrets` 已生成并由 env-bootstrap 引入，再执行 DB bootstrap / readiness。
-8. 检查 pods、Service endpoints、Ingress Ready。
-9. 用公网 curl 验证固定 HTTPS 入口；wildcard HTTP 出现 `400 invalid host` 时，说明已到 ingressproxy，只是没有具体实例映射。
+7. 确认 frontend 目标镜像 tag 存在。缺 tag 时优先补构建；只有同 source sha 等价 tag 已存在时，才允许 retag 解锁。
+8. 确认 namespace-local MySQL/Redis Ready，且 `playground-runtime-secrets` 已生成并由 env-bootstrap 引入，再执行 DB bootstrap / readiness。
+9. 检查 pods、Service endpoints、Ingress Ready。
+10. 用公网 curl 验证固定 HTTPS 入口；wildcard HTTP 出现 `400 invalid host` 时，说明已到 ingressproxy，只是没有具体实例映射。
 
 排障优先级：
 
 - pod/endpoints 正常但公网 504：优先查 `ingress.cloud.tencent.com/direct-access: "true"`、TkeServiceConfig health check、NodePort/endpoints。
 - Argo app missing：先查 `sandbox-family-appset.yaml` 是否覆盖 playground catalog，再 refresh root app。
 - DB job 失败：先确认 namespace-local MySQL/Redis Ready、namespace、`playground-runtime-secrets` 和业务 SOPS payload，不要只看 secret 文件名或 metadata。
+- frontend `ImagePullBackOff`：先查 `FRONTEND_IMAGE` tag 是否存在。若同 source sha 的其它 playground tag 已存在，可以 retag 临时解锁；否则必须构建目标 env 镜像。
 - TLS 不通：先查证书 SAN 覆盖，不要反复切换 Ingress 配置。
 
 ## Playground 环境诊断脚手架
