@@ -12,6 +12,9 @@ import (
 	"git.woa.com/wisp/mono/trade/internal/config"
 	"git.woa.com/wisp/mono/trade/internal/ctlclient"
 	"git.woa.com/wisp/mono/trade/internal/httpapi"
+	"git.woa.com/wisp/mono/trade/internal/jifeiclient"
+	"git.woa.com/wisp/mono/trade/internal/logic/inquiry"
+	"git.woa.com/wisp/mono/trade/internal/logic/placeorder"
 	"git.woa.com/wisp/mono/trade/internal/store"
 	"git.woa.com/wisp/mono/trade/internal/worker"
 )
@@ -29,9 +32,37 @@ func main() {
 	defer mysqlStore.Close()
 
 	// ctl 反向调用客户端：
-	//   - checkCreate 阶段（迭代 5 已落地）：GetBundleByID + ListPassesByUser
+	//   - checkCreate 阶段（迭代 5）：GetBundleByID + ListPassesByUser
 	//   - createResource 阶段（迭代 6）：CompletePass
+	//   - 询价 / 下单（迭代 8A）：GetBundleByID（确认 bundle 存在 + 在售）
 	ctlClient := ctlclient.New(cfg.CtlInternalBaseURL, cfg.InternalServiceToken)
+
+	// jifei CGW 出向客户端（迭代 8A）：
+	//   - 询价：GetPrice
+	//   - 下单：GenerateDeals
+	//
+	// 配置缺失（JifeiCGWGatewayURL 空）允许启动 — 内部 RPC 调用时会因 baseURL 空报错；
+	// 这是为了让"仅承载 jifei 回调的本地起服"也能工作（联调期未配置出向）。
+	jifeiClient := jifeiclient.New(
+		cfg.JifeiCGWGatewayURL,
+		cfg.JifeiComponentName, // 复用 trade 自家 componentName 作为 x-qcloud-user-id 兜底
+	)
+
+	// 业务 service 装配（迭代 8A）：
+	//   - inquiry：批量询价
+	//   - placeorder：下单 + pay-url
+	inquirySvc := inquiry.New(inquiry.Deps{
+		CTLClient:   ctlClient,
+		BundleStore: mysqlStore,
+		JifeiClient: jifeiClient,
+	})
+	placeOrderSvc := placeorder.New(placeorder.Deps{
+		CTLClient:   ctlClient,
+		BundleStore: mysqlStore,
+		JifeiClient: jifeiClient,
+		OrderWriter: mysqlStore,
+		OrderStore:  mysqlStore,
+	})
 
 	router := httpapi.NewRouter(httpapi.ServerConfig{
 		InternalServiceToken:    cfg.InternalServiceToken,
@@ -44,10 +75,12 @@ func main() {
 		CTLClient:   ctlClient,
 		// 迭代 6：createResource handler 抢占式幂等。
 		FlowStore: mysqlStore,
-		// OrderUpdater 在迭代 8 PlaceOrder 写端落地后才接线；本期允许 nil。
-		// trade_order 写端尚未实现，createResource 成功后只在 ctl 侧生成 pass，
-		// trade_order.resource_id 暂不回填，由 reconcile worker（迭代 7）兜底。
-		OrderUpdater: nil,
+		// 迭代 8A 起：trade_order 写端 DAO 已实现，注入 mysqlStore；
+		// createResource handler 在收尾阶段反向回填 resource_id + status='provisioned'。
+		OrderUpdater: mysqlStore,
+		// 迭代 8A 起：内部 RPC 业务 service。
+		InquiryService:    inquirySvc,
+		PlaceOrderService: placeOrderSvc,
 	})
 
 	server := &http.Server{
