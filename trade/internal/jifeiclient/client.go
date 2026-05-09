@@ -61,10 +61,11 @@ const (
 
 	// 询价 / 下单的 CGW interfaceName 与 componentName。
 	// componentName 取 interfaceName 第二段（"price" / "Deal"），与 PDF 第 3 页一致。
-	InterfaceNameGetPrice      = "qcloud.price.getPrice"
-	InterfaceNameGenerateDeals = "qcloud.Deal.generateDeals"
-	ComponentNamePrice         = "price"
-	ComponentNameDeal          = "Deal"
+	InterfaceNameGetPrice             = "qcloud.price.getPrice"
+	InterfaceNameGenerateDeals        = "qcloud.Deal.generateDeals"
+	InterfaceNameGenerateDealsAndPay  = "qcloud.Deal.generateDealsAndPay"
+	ComponentNamePrice                = "price"
+	ComponentNameDeal                 = "Deal"
 
 	// defaultTimeout 是 jifei CGW 出向请求默认超时；与 ctlclient 一致。
 	defaultTimeout = 4 * time.Second
@@ -114,6 +115,19 @@ type Client interface {
 	// 入参 req 已经是 CGW para 内层业务字段（OwnerUin / Uin / GoodsInfos[]）；
 	// 出参 PascalCase（与 PDF 第 8 页 PriceInfos / BigDealId / DealNames[] 严格对齐）。
 	GenerateDeals(ctx context.Context, req *GenerateDealsRequest) (*GenerateDealsResponse, error)
+
+	// GenerateDealsAndPay 调用 jifei CGW `qcloud.Deal.generateDealsAndPay` "下单并支付" 一体化接口
+	// （迭代 8B-1.5）。
+	//
+	// 与 GenerateDeals 的关系：
+	//   - 协议规范完全一致（jifei PDF §1 "协议规范：接口协议与下单接口 generateDeals 保持一致"）
+	//   - 复用 GoodsInfo + 同样的 OwnerUin / Uin 字段，只在 para 多一个 AutoVoucher 标志位
+	//   - 一次调用完成 "创建订单 + 同步支付"，跳过支付 URL，并触发业务侧 checkCreate / createResource
+	//     回调（这是 jifei 文档中 **唯一可在购买环节即时返回 resourceId 的接口**）
+	//
+	// 与 PlaceOrder 双步链路相比，PlaceOrderAndPay 用于联调测试 / 自动化 e2e 场景：在测试代金券充足
+	// 的环境下，无需真人浏览器付款即可让 trade -> jifei -> ctl.createResource 整条链路端到端跑通。
+	GenerateDealsAndPay(ctx context.Context, req *GenerateDealsAndPayRequest) (*GenerateDealsAndPayResponse, error)
 }
 
 // Options 是 Client 可选构造参数。

@@ -44,6 +44,12 @@ func (f *fakeJifei) GenerateDeals(ctx context.Context, req *jifeiclient.Generate
 	return &jifeiclient.GenerateDealsResponse{}, nil
 }
 
+// GenerateDealsAndPay 仅为满足 jifeiclient.Client interface；
+// jifei adapter 当前不调用该方法（PlaceOrderAndPay 走 logic/placeorder/service 直接拼装）。
+func (f *fakeJifei) GenerateDealsAndPay(ctx context.Context, req *jifeiclient.GenerateDealsAndPayRequest) (*jifeiclient.GenerateDealsAndPayResponse, error) {
+	return nil, errors.New("fakeJifei: GenerateDealsAndPay not used by jifei adapter")
+}
+
 // 编译期断言：fakeJifei 实现 jifeiclient.Client。
 var _ jifeiclient.Client = (*fakeJifei)(nil)
 

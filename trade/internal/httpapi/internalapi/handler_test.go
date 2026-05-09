@@ -64,8 +64,9 @@ func (fakeBundleStore) GetBundleDefinitionByID(ctx context.Context, bundleID str
 }
 
 type fakeJifei struct {
-	getPriceFn      func(ctx context.Context, req *jifeiclient.GetPriceRequest) (*jifeiclient.GetPriceResponse, error)
-	generateDealsFn func(ctx context.Context, req *jifeiclient.GenerateDealsRequest) (*jifeiclient.GenerateDealsResponse, error)
+	getPriceFn             func(ctx context.Context, req *jifeiclient.GetPriceRequest) (*jifeiclient.GetPriceResponse, error)
+	generateDealsFn        func(ctx context.Context, req *jifeiclient.GenerateDealsRequest) (*jifeiclient.GenerateDealsResponse, error)
+	generateDealsAndPayFn  func(ctx context.Context, req *jifeiclient.GenerateDealsAndPayRequest) (*jifeiclient.GenerateDealsAndPayResponse, error)
 }
 
 func (f *fakeJifei) GetPrice(ctx context.Context, req *jifeiclient.GetPriceRequest) (*jifeiclient.GetPriceResponse, error) {
@@ -85,6 +86,18 @@ func (f *fakeJifei) GenerateDeals(ctx context.Context, req *jifeiclient.Generate
 	return &jifeiclient.GenerateDealsResponse{
 		BigDealID: "big-1",
 		DealNames: []string{"deal-1"},
+	}, nil
+}
+func (f *fakeJifei) GenerateDealsAndPay(ctx context.Context, req *jifeiclient.GenerateDealsAndPayRequest) (*jifeiclient.GenerateDealsAndPayResponse, error) {
+	if f.generateDealsAndPayFn != nil {
+		return f.generateDealsAndPayFn(ctx, req)
+	}
+	return &jifeiclient.GenerateDealsAndPayResponse{
+		BigDealIDs: []string{"big-pay-1"},
+		DealNames:  []string{"deal-pay-1"},
+		ResourceIDs: map[string][]string{
+			"deal-pay-1": {"lhins-default-resource"},
+		},
 	}, nil
 }
 
@@ -409,6 +422,114 @@ func TestPlaceOrder_JifeiInvalidResponse(t *testing.T) {
 }
 
 // ============================================================================
+// place order and pay tests (8B-1.5)
+// ============================================================================
+
+func TestPlaceOrderAndPay_HappyPath(t *testing.T) {
+	env := newTestEnv(t)
+	body := map[string]any{
+		"externalUserId": "user-1",
+		"uin":            "1000",
+		"appId":          "10001",
+		"bundleId":       "b1",
+		"period":         1,
+		"timeUnit":       "m",
+		"goodsNum":       1,
+		"payMode":        1,
+		"regionId":       1,
+	}
+	rec := env.doJSON(http.MethodPost, "/internal/trade/orders/place-and-pay", body, true)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	resp := decodeBody(t, rec)
+	if resp["dealName"] != "deal-pay-1" {
+		t.Errorf("dealName mismatch: %v", resp["dealName"])
+	}
+	if resp["bigOrderId"] != "big-pay-1" {
+		t.Errorf("bigOrderId mismatch: %v", resp["bigOrderId"])
+	}
+	// 一体化接口不返回 PayURL（与 PlaceOrder 区分的关键行为差异）
+	if pu, ok := resp["payUrl"]; ok && pu != "" {
+		t.Errorf("payUrl should be empty for place-and-pay, got %v", pu)
+	}
+	if env.orderWriter.createOrderCalls.Load() != 1 {
+		t.Errorf("expected CreateOrder called once, got %d", env.orderWriter.createOrderCalls.Load())
+	}
+}
+
+func TestPlaceOrderAndPay_InvalidInput(t *testing.T) {
+	env := newTestEnv(t)
+	body := map[string]any{
+		"bundleId": "", // 必填字段缺失
+		"period":   1,
+		"timeUnit": "m",
+	}
+	rec := env.doJSON(http.MethodPost, "/internal/trade/orders/place-and-pay", body, true)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", rec.Code)
+	}
+	resp := decodeBody(t, rec)
+	if resp["code"] != "InvalidRequest" {
+		t.Errorf("expected code=InvalidRequest, got %v", resp["code"])
+	}
+}
+
+// TestPlaceOrderAndPay_BundleOffline 验证 bundle 已下架时返 409 Conflict（与 PlaceOrder 一致）。
+func TestPlaceOrderAndPay_BundleOffline(t *testing.T) {
+	env := newTestEnv(t)
+	env.ctl.getBundleByIDFn = func(ctx context.Context, bundleID string) (*ctlclient.BundleDetail, error) {
+		return &ctlclient.BundleDetail{BundleID: bundleID, BundleState: "OFFLINE"}, nil
+	}
+	body := map[string]any{
+		"externalUserId": "u1",
+		"uin":            "1000",
+		"bundleId":       "b1",
+		"period":         1,
+		"timeUnit":       "m",
+		"payMode":        1,
+	}
+	rec := env.doJSON(http.MethodPost, "/internal/trade/orders/place-and-pay", body, true)
+	if rec.Code != http.StatusConflict {
+		t.Errorf("expected 409, got %d", rec.Code)
+	}
+}
+
+// TestPlaceOrderAndPay_JifeiInvalidResponse 验证 jifei 返回缺失 BigDealIDs / DealNames 时返 502。
+func TestPlaceOrderAndPay_JifeiInvalidResponse(t *testing.T) {
+	env := newTestEnv(t)
+	env.jifei.generateDealsAndPayFn = func(ctx context.Context, req *jifeiclient.GenerateDealsAndPayRequest) (*jifeiclient.GenerateDealsAndPayResponse, error) {
+		return &jifeiclient.GenerateDealsAndPayResponse{}, nil // 空响应
+	}
+	body := map[string]any{
+		"externalUserId": "u1",
+		"uin":            "1000",
+		"bundleId":       "b1",
+		"period":         1,
+		"timeUnit":       "m",
+		"payMode":        1,
+	}
+	rec := env.doJSON(http.MethodPost, "/internal/trade/orders/place-and-pay", body, true)
+	if rec.Code != http.StatusBadGateway {
+		t.Errorf("expected 502, got %d", rec.Code)
+	}
+}
+
+// TestPlaceOrderAndPay_AuthRequired 验证缺失 Authorization header 时返 401（与 inquiry / placeOrder 一致）。
+func TestPlaceOrderAndPay_AuthRequired(t *testing.T) {
+	env := newTestEnv(t)
+	body := map[string]any{
+		"externalUserId": "u1",
+		"uin":            "1000",
+		"bundleId":       "b1",
+	}
+	rec := env.doJSON(http.MethodPost, "/internal/trade/orders/place-and-pay", body, false)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401, got %d", rec.Code)
+	}
+}
+
+// ============================================================================
 // pay url tests
 // ============================================================================
 
@@ -427,18 +548,20 @@ func TestPayURL_HappyPath(t *testing.T) {
 	}
 }
 
-func TestPayURL_NotAvailable(t *testing.T) {
+func TestPayURL_PayURLNotCached_ReturnsMockURL(t *testing.T) {
+	// 8B-1.5：trade_order 存在但 pay_url 列空时返 mock URL，HTTP 200。
 	env := newTestEnv(t)
 	env.orderStore.getOrderByDealNameFn = func(ctx context.Context, dealName string) (*store.TradeOrder, error) {
 		return &store.TradeOrder{DealName: dealName, PayURL: ""}, nil
 	}
 	rec := env.doJSON(http.MethodPost, "/internal/trade/orders/deal-1/pay-url", nil, true)
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Errorf("expected 503, got %d", rec.Code)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
 	}
 	resp := decodeBody(t, rec)
-	if resp["code"] != "PayURLNotAvailable" {
-		t.Errorf("expected code=PayURLNotAvailable, got %v", resp["code"])
+	want := "https://buy.cloud.tencent.com/lighthouse/mock?dealName=deal-1&token=mock"
+	if resp["payUrl"] != want {
+		t.Errorf("mock payUrl mismatch:\n  got  %v\n  want %s", resp["payUrl"], want)
 	}
 }
 

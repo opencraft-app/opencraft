@@ -67,6 +67,10 @@ func (f *fakeJifei) GenerateDeals(ctx context.Context, req *jifeiclient.Generate
 	}
 	return nil, errors.New("fakeJifei: GenerateDeals not implemented")
 }
+func (f *fakeJifei) GenerateDealsAndPay(ctx context.Context, req *jifeiclient.GenerateDealsAndPayRequest) (*jifeiclient.GenerateDealsAndPayResponse, error) {
+	// inquiry service 不会调 GenerateDealsAndPay，本方法仅为满足 interface 实现
+	return nil, errors.New("fakeJifei: GenerateDealsAndPay not used by inquiry")
+}
 
 // ============================================================================
 // helpers

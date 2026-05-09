@@ -2,9 +2,10 @@
 //
 // 设计稿对齐（trade-purchase-flow-design.md §3.3 / §4.2.1 / §4.2.2 / §3.6）：
 //
-//   - POST /internal/trade/inquiry/batch         批量询价（ctl/pass CreatePass 询价分支用）
-//   - POST /internal/trade/orders                下单（ctl/pass CreatePass 下单分支用）
-//   - POST /internal/trade/orders/:dealName/pay-url  生成支付 url（ctl/pass CreatePass 拉支付页用）
+//   - POST /internal/trade/inquiry/batch              批量询价（ctl/pass CreatePass 询价分支用）
+//   - POST /internal/trade/orders                     下单（ctl/pass CreatePass 下单分支用）
+//   - POST /internal/trade/orders/place-and-pay       下单+支付一体化（迭代 8B-1.5 测试链路用）
+//   - POST /internal/trade/orders/:dealName/pay-url   生成支付 url（ctl/pass CreatePass 拉支付页用）
 //
 // 鉴权（§3.6 + 设计稿 §4.2.1）：
 //   - HTTP header `Authorization: Bearer <InternalServiceToken>` 校验
@@ -58,6 +59,7 @@ func Install(router *gin.Engine, deps Deps) {
 
 	group.POST("/inquiry/batch", inquiryBatchHandler(deps.Inquiry))
 	group.POST("/orders", placeOrderHandler(deps.PlaceOrder))
+	group.POST("/orders/place-and-pay", placeOrderAndPayHandler(deps.PlaceOrder))
 	group.POST("/orders/:dealName/pay-url", payURLHandler(deps.PlaceOrder))
 }
 
@@ -286,6 +288,66 @@ func classifyPlaceOrderError(err error) (string, int) {
 		return "BindingNotFound", http.StatusUnprocessableEntity
 	default:
 		return "UpstreamError", http.StatusBadGateway
+	}
+}
+
+// ============================================================================
+// place order and pay (8B-1.5)
+// ============================================================================
+
+// placeOrderAndPayHandler 处理 "下单 + 自动支付" 一体化端点（迭代 8B-1.5）。
+//
+// 与 placeOrderHandler 的差异：
+//   - placeOrderHandler 调 placeorder.PlaceOrder：仅创建订单，落库 status='pending_pay'，
+//     调用方再走 /orders/:dealName/pay-url 拉支付 URL 引导用户在浏览器付款。
+//   - placeOrderAndPayHandler 调 placeorder.PlaceOrderAndPay：调 jifei 一体化接口
+//     `qcloud.Deal.generateDealsAndPay`，**一次调用**完成"创建订单 + 同步支付 + 触发 createResource
+//     发货回调"，跳过支付 URL；落库 status='paid_pending_provision'。
+//
+// 入参 / 出参 schema 与 placeOrderHandler 完全一致（均为 placeOrderRequest / placeOrderResponse），
+// 调用方可平滑切换；唯一行为差异是 PayURL/ExpireAt 永远不会返回（一体化接口跳过支付 URL 概念）。
+//
+// 使用场景（业务侧）：
+//   - **联调测试 / 自动化 e2e**：测试代金券充足的环境用本端点让 trade ↔ jifei ↔ ctl.createResource
+//     端到端跑通，不需要真人浏览器付款
+//   - **降配场景**：jifei 协议规范要求降配必须用本接口，不能拆分成下单+支付两步（详见
+//     placeorder.Service.PlaceOrderAndPay 注释）
+//
+// 错误码与 placeOrderHandler 共用 classifyPlaceOrderError，避免业务错误分类发散。
+func placeOrderAndPayHandler(svc *placeorder.Service) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req placeOrderRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"code":    "InvalidRequest",
+				"message": "decode JSON: " + err.Error(),
+			})
+			return
+		}
+		res, err := svc.PlaceOrderAndPay(c.Request.Context(), placeorder.PlaceOrderRequest{
+			ExternalUserID: req.ExternalUserID,
+			Uin:            req.Uin,
+			AppID:          req.AppID,
+			BundleID:       req.BundleID,
+			Period:         req.Period,
+			TimeUnit:       req.TimeUnit,
+			GoodsNum:       req.GoodsNum,
+			PayMode:        req.PayMode,
+			RegionID:       req.RegionID,
+		})
+		if err != nil {
+			code, status := classifyPlaceOrderError(err)
+			c.JSON(status, gin.H{
+				"code":    code,
+				"message": err.Error(),
+			})
+			return
+		}
+		// PayURL/ExpireAt 一体化接口下永远为空（不再走支付 URL 流程）
+		c.JSON(http.StatusOK, placeOrderResponse{
+			DealName:   res.DealName,
+			BigOrderID: res.BigOrderID,
+		})
 	}
 }
 

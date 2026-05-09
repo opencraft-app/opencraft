@@ -583,3 +583,192 @@ func TestTruncate(t *testing.T) {
 		t.Errorf("truncated body: got %q", got)
 	}
 }
+
+// ============================================================================
+// 8B-1.5: GenerateDealsAndPay tests
+// ============================================================================
+
+// TestGenerateDealsAndPay_Success 覆盖一体化下单+支付 happy-path：
+//   - interfaceName=qcloud.Deal.generateDealsAndPay、componentName=Deal
+//   - PascalCase 字段 OwnerUin / Uin / AppId / AutoVoucher / GoodsInfos[]（与 generateDeals 一致）
+//   - 响应 DealNames / BigDealIds / ResourceIds / DealDeliverResults 正确解析
+func TestGenerateDealsAndPay_Success(t *testing.T) {
+	var (
+		seenInterface string
+		seenComponent string
+		seenPara      GenerateDealsAndPayRequest
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var env envelope
+		if err := json.Unmarshal(body, &env); err != nil {
+			t.Fatalf("unmarshal envelope: %v", err)
+		}
+		seenInterface = env.Interface.InterfaceName
+		seenComponent = env.ComponentName
+		if err := json.Unmarshal(env.Interface.Para, &seenPara); err != nil {
+			t.Fatalf("unmarshal para: %v", err)
+		}
+		_, _ = w.Write(envelopeForSuccess(t, GenerateDealsAndPayResponse{
+			DealNames:  []string{"20260509000000001-001"},
+			BigDealIDs: []string{"20260509000000001"},
+			DealIDs:    []string{"1103944452"},
+			ResourceIDs: map[string][]string{
+				"20260509000000001-001": {"lhins-abc123"},
+			},
+			DealDeliverResults: map[string]map[string]interface{}{
+				"20260509000000001-001": {"state": "0", "resourceId": []interface{}{"lhins-abc123"}},
+			},
+		}))
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, "trade-uin", Options{
+		EventIDProvider: fixedEventIDProvider,
+		NowProvider:     fixedNowProvider,
+	})
+	autoVoucher := 1
+	resp, err := cli.GenerateDealsAndPay(context.Background(), &GenerateDealsAndPayRequest{
+		OwnerUin:    "100012345678",
+		Uin:         "100012345678",
+		AppID:       1300012345,
+		AutoVoucher: &autoVoucher,
+		GoodsInfos: []GoodsInfo{
+			{
+				GoodsCategoryID: "100018",
+				RegionID:        8,
+				GoodsNum:        1,
+				PayMode:         1,
+				GoodsDetail: map[string]interface{}{
+					"productCode":    "p_lighthouse",
+					"subProductCode": "sp_lighthouse_pass",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("GenerateDealsAndPay: %v", err)
+	}
+	if seenInterface != InterfaceNameGenerateDealsAndPay {
+		t.Errorf("interfaceName: got %q want %q", seenInterface, InterfaceNameGenerateDealsAndPay)
+	}
+	if seenComponent != ComponentNameDeal {
+		t.Errorf("componentName: got %q want %q", seenComponent, ComponentNameDeal)
+	}
+	if seenPara.OwnerUin != "100012345678" || seenPara.Uin != "100012345678" {
+		t.Errorf("para owner/uin: %+v", seenPara)
+	}
+	if seenPara.AppID != 1300012345 {
+		t.Errorf("para AppID = %d, want 1300012345", seenPara.AppID)
+	}
+	if seenPara.AutoVoucher == nil || *seenPara.AutoVoucher != 1 {
+		t.Errorf("para AutoVoucher = %v, want *1", seenPara.AutoVoucher)
+	}
+	if len(seenPara.GoodsInfos) != 1 {
+		t.Fatalf("para GoodsInfos len = %d", len(seenPara.GoodsInfos))
+	}
+	if seenPara.GoodsInfos[0].GoodsCategoryID != "100018" {
+		t.Errorf("GoodsCategoryID: %q", seenPara.GoodsInfos[0].GoodsCategoryID)
+	}
+	if len(resp.DealNames) != 1 || resp.DealNames[0] != "20260509000000001-001" {
+		t.Errorf("response DealNames: %v", resp.DealNames)
+	}
+	if len(resp.BigDealIDs) != 1 || resp.BigDealIDs[0] != "20260509000000001" {
+		t.Errorf("response BigDealIDs: %v", resp.BigDealIDs)
+	}
+	if got := resp.ResourceIDs["20260509000000001-001"]; len(got) != 1 || got[0] != "lhins-abc123" {
+		t.Errorf("response ResourceIDs: %v", resp.ResourceIDs)
+	}
+	if state, _ := resp.DealDeliverResults["20260509000000001-001"]["state"].(string); state != "0" {
+		t.Errorf("response DealDeliverResults state: %v", resp.DealDeliverResults)
+	}
+}
+
+// TestGenerateDealsAndPay_AutoVoucherOmittedWhenNil 验证 AutoVoucher = nil 时
+// JSON 序列化省略字段（不显式给 jifei 传 0）。
+func TestGenerateDealsAndPay_AutoVoucherOmittedWhenNil(t *testing.T) {
+	var seenRawPara map[string]json.RawMessage
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var env envelope
+		_ = json.Unmarshal(body, &env)
+		_ = json.Unmarshal(env.Interface.Para, &seenRawPara)
+		_, _ = w.Write(envelopeForSuccess(t, GenerateDealsAndPayResponse{
+			DealNames: []string{"d1"}, BigDealIDs: []string{"b1"},
+		}))
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, "trade-uin")
+	_, err := cli.GenerateDealsAndPay(context.Background(), &GenerateDealsAndPayRequest{
+		OwnerUin: "1", Uin: "1",
+		// AutoVoucher 故意不传
+		GoodsInfos: []GoodsInfo{{GoodsCategoryID: "100018", GoodsNum: 1, PayMode: 1}},
+	})
+	if err != nil {
+		t.Fatalf("GenerateDealsAndPay: %v", err)
+	}
+	if _, hasAutoVoucher := seenRawPara["AutoVoucher"]; hasAutoVoucher {
+		t.Errorf("AutoVoucher field should be omitted when nil, raw para: %v", seenRawPara)
+	}
+}
+
+// TestGenerateDealsAndPay_BusinessError 验证业务失败传播 *CGWError，
+// 错误码取 PDF §6 的"账户余额不足 100207"。
+func TestGenerateDealsAndPay_BusinessError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(envelopeForError(t, 100207, "Balance.Insufficient"))
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, "trade-uin")
+	_, err := cli.GenerateDealsAndPay(context.Background(), &GenerateDealsAndPayRequest{
+		OwnerUin: "1", Uin: "1",
+		GoodsInfos: []GoodsInfo{{GoodsCategoryID: "100018", GoodsNum: 1, PayMode: 1}},
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	var cgwErr *CGWError
+	if !errors.As(err, &cgwErr) {
+		t.Fatalf("err = %v, want *CGWError", err)
+	}
+	if cgwErr.ReturnCode != 100207 {
+		t.Errorf("ReturnCode: got %d", cgwErr.ReturnCode)
+	}
+	if cgwErr.InterfaceName != InterfaceNameGenerateDealsAndPay {
+		t.Errorf("InterfaceName: got %q", cgwErr.InterfaceName)
+	}
+}
+
+// TestGenerateDealsAndPay_NilRequest 验证 client-side 入参校验。
+func TestGenerateDealsAndPay_NilRequest(t *testing.T) {
+	cli := New("http://unused", "trade-uin")
+	_, err := cli.GenerateDealsAndPay(context.Background(), nil)
+	if err == nil || !strings.Contains(err.Error(), "nil request") {
+		t.Errorf("err = %v, want 'nil request'", err)
+	}
+}
+
+// TestGenerateDealsAndPay_MissingOwnerUin 验证 OwnerUin 必填。
+func TestGenerateDealsAndPay_MissingOwnerUin(t *testing.T) {
+	cli := New("http://unused", "trade-uin")
+	_, err := cli.GenerateDealsAndPay(context.Background(), &GenerateDealsAndPayRequest{
+		Uin:        "1",
+		GoodsInfos: []GoodsInfo{{GoodsCategoryID: "100018", GoodsNum: 1, PayMode: 1}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "OwnerUin") {
+		t.Errorf("err = %v, want 'OwnerUin' substring", err)
+	}
+}
+
+// TestGenerateDealsAndPay_EmptyGoodsInfos 验证 GoodsInfos 必填。
+func TestGenerateDealsAndPay_EmptyGoodsInfos(t *testing.T) {
+	cli := New("http://unused", "trade-uin")
+	_, err := cli.GenerateDealsAndPay(context.Background(), &GenerateDealsAndPayRequest{
+		OwnerUin: "1", Uin: "1",
+	})
+	if err == nil || !strings.Contains(err.Error(), "GoodsInfos") {
+		t.Errorf("err = %v, want 'GoodsInfos' substring", err)
+	}
+}
