@@ -365,15 +365,12 @@ function manualChunks(id: string) {
     return "vendor-tea";
   }
   if (id.includes("html2canvas")) return "vendor-capture";
-  if (
-    id.includes("@radix-ui/")
-    || id.includes("lucide-react")
-    || id.includes("class-variance-authority")
-    || id.includes("tailwind-merge")
-    || id.includes("clsx")
-  ) {
-    return "vendor-ui";
-  }
+  // 注意：曾经把 @radix-ui / lucide-react / clsx / tailwind-merge / cva
+  // 拆成 vendor-ui chunk，但拆包后会出现 "U is not a function" 运行时错误：
+  // 这些是被业务代码 named-import 的纯函数库，跨 chunk 引用时初始化顺序
+  // 不可靠，Rollup 又无法在所有调用点正确插入 init wrapper。
+  // 解法：让它们留在调用方所在 chunk（业务主 chunk）里，由 Rollup
+  // 自动处理跨 chunk 引用。
 
   return undefined;
 }
