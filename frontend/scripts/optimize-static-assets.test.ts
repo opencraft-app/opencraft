@@ -46,6 +46,7 @@ describe("optimizeStaticAssets", () => {
       [
         '<img src="/hero.png">',
         '<img src="https://cdn.example.com/remote.png">',
+        '<img src="https://cdn.example.com/hero.png">',
         '<img src="data:image/png;base64,abcd">',
       ].join("\n"),
     );
@@ -65,6 +66,7 @@ describe("optimizeStaticAssets", () => {
     expect((await stat(path.join(root, "hero.png"))).size).toBeLessThanOrEqual(beforeHero);
     expect(html).toContain('src="/hero.webp"');
     expect(html).toContain('src="https://cdn.example.com/remote.png"');
+    expect(html).toContain('src="https://cdn.example.com/hero.png"');
     expect(html).toContain('src="data:image/png;base64,abcd"');
     expect(css).toContain("url('/hero.webp?v=1#top')");
     expect(css).toContain("url(./nested-card.webp)");

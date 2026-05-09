@@ -9,7 +9,7 @@ const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg"]);
 const TEXT_EXTENSIONS = new Set([".html", ".css", ".js", ".mjs"]);
 const DEFAULT_WEBP_QUALITY = 82;
 const DEFAULT_JPEG_QUALITY = 82;
-const URL_RE = /((?:\.\.\/|\.\/|\/(?!\/))[^"'()\s?#]+?\.(?:png|jpe?g))(\?[^"'()\s#]*)?(#[^"'()\s]*)?/gi;
+const URL_RE = /(^|["'(\s=])((?:\.\.\/|\.\/|\/(?!\/))[^"'()\s?#]+?\.(?:png|jpe?g))(\?[^"'()\s#]*)?(#[^"'()\s]*)?/gi;
 
 function usage() {
   return "Usage: node scripts/optimize-static-assets.mjs <dist-dir> [more-dist-dirs...]";
@@ -91,7 +91,7 @@ function replaceReferenceExtension(referencePath) {
 async function rewriteTextFileReferences(textFilePath, rootDir, webpByOriginalPath) {
   const originalText = await readFile(textFilePath, "utf8");
   let replacements = 0;
-  const rewritten = originalText.replace(URL_RE, (match, referencePath, query = "", hash = "") => {
+  const rewritten = originalText.replace(URL_RE, (match, boundary, referencePath, query = "", hash = "") => {
     const imagePath = resolveReferencedPath(referencePath, textFilePath, rootDir);
     if (!isInsideRoot(imagePath, rootDir)) return match;
 
@@ -99,7 +99,7 @@ async function rewriteTextFileReferences(textFilePath, rootDir, webpByOriginalPa
     if (!webpPath || !existsSync(webpPath)) return match;
 
     replacements += 1;
-    return `${replaceReferenceExtension(referencePath)}${query}${hash}`;
+    return `${boundary}${replaceReferenceExtension(referencePath)}${query}${hash}`;
   });
 
   if (rewritten !== originalText) {
