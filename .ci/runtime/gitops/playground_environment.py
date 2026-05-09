@@ -33,7 +33,7 @@ from gitops.git import show_text as git_show_text
 DEFAULT_APPSET_PATH = "argocd/apps/beijing-sandbox/sandbox-family-appset.yaml"
 DEFAULT_PLAYGROUND_ROOT = "argocd/catalogs/playground/beijing-playground"
 DEFAULT_ROOT_APP = "root-beijing-sandbox"
-DEFAULT_FROM_ENV = "sandbox-bj-3"
+DEFAULT_FROM_ENV = "sandbox-bj-5"
 DEFAULT_CLUSTER_NAME = "beijing-playground"
 DEFAULT_PROJECT = "beijing-playground"
 LIGHTCLAW_DOMAIN = "lightclaw.tech"
@@ -402,6 +402,26 @@ def collect_files_under(root: Path) -> list[Path]:
     return sorted(path for path in root.rglob("*") if path.is_file())
 
 
+def playground_gitops_checkout_hint(
+    repo_root: Path,
+    from_env: str,
+    playground_root: str = DEFAULT_PLAYGROUND_ROOT,
+) -> str:
+    catalog_source = repo_root / catalog_dir(playground_root, from_env)
+    return "\n".join(
+        [
+            f"missing source catalog directory: {catalog_source}",
+            "不能在 master 源码 checkout 里直接跑默认命令，因为 playground GitOps 模板只在 origin/gitops，不在 master。",
+            "请使用 GitOps checkout 作为 --repo-root，或者使用 wrapper 自动创建临时 GitOps worktree：",
+            "  git fetch origin gitops",
+            "  git worktree add --detach /tmp/mono2-gitops origin/gitops",
+            f"  python3 .ci/runtime/commands/create_playground_environment.py --repo-root /tmp/mono2-gitops --from-env {from_env} --to-env <sandbox-bj-N>",
+            "或直接执行：",
+            f"  .ci/runtime/create_playground_from_gitops.sh --from-env {from_env} --to-env <sandbox-bj-N>",
+        ]
+    )
+
+
 def build_playground_clone_plan(
     repo_root: Path,
     from_env: str,
@@ -424,7 +444,7 @@ def build_playground_clone_plan(
     catalog_source = repo_root / catalog_dir(playground_root, from_env)
     secret_source = repo_root / "argocd/secrets" / from_env
     if not catalog_source.is_dir():
-        raise FileNotFoundError(f"missing source catalog directory: {catalog_source}")
+        raise FileNotFoundError(playground_gitops_checkout_hint(repo_root, from_env, playground_root))
     if not secret_source.is_dir():
         raise FileNotFoundError(f"missing source secret directory: {secret_source}")
 
@@ -2260,18 +2280,22 @@ def print_clone_plan(plan: PlaygroundClonePlan, *, write: bool, force: bool, wri
 
 def create_playground_main(argv: Sequence[str] | None = None) -> int:
     args = parse_create_args(argv)
-    plan = build_playground_clone_plan(
-        repo_root=args.repo_root,
-        from_env=args.from_env,
-        to_env=args.to_env,
-        playground_root=args.playground_root,
-        cluster_name=args.cluster_name,
-        project=args.project,
-        namespace=args.namespace,
-        api_host=args.api_host,
-        sandbox_host=args.sandbox_host,
-        wildcard_host=args.wildcard_host,
-    )
+    try:
+        plan = build_playground_clone_plan(
+            repo_root=args.repo_root,
+            from_env=args.from_env,
+            to_env=args.to_env,
+            playground_root=args.playground_root,
+            cluster_name=args.cluster_name,
+            project=args.project,
+            namespace=args.namespace,
+            api_host=args.api_host,
+            sandbox_host=args.sandbox_host,
+            wildcard_host=args.wildcard_host,
+        )
+    except FileNotFoundError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
     errors = validate_clone_plan(plan)
     if errors:
         for error in errors:

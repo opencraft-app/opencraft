@@ -1,7 +1,7 @@
 import textwrap
 import unittest
 import os
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -16,6 +16,7 @@ from tests.helpers import git
 
 from gitops.playground_environment import (
     CatalogApp,
+    DEFAULT_FROM_ENV,
     appset_file_globs,
     apply_runtime_secret_value_overrides,
     bootstrap_database_job_manifest,
@@ -42,6 +43,9 @@ from gitops.playground_environment import (
 
 
 class PlaygroundEnvironmentTests(unittest.TestCase):
+    def test_default_template_source_includes_frontend(self) -> None:
+        self.assertEqual(DEFAULT_FROM_ENV, "sandbox-bj-5")
+
     def test_runtime_secret_overrides_align_sandbox_mysql_password_to_root_password(self) -> None:
         payload = {
             "kind": "Secret",
@@ -191,13 +195,30 @@ class PlaygroundEnvironmentTests(unittest.TestCase):
 
             stdout = StringIO()
             with redirect_stdout(stdout):
-                exit_code = create_playground_main(["--repo-root", str(repo), "--to-env", "sandbox-bj-4"])
+                exit_code = create_playground_main(
+                    ["--repo-root", str(repo), "--from-env", "sandbox-bj-3", "--to-env", "sandbox-bj-4"]
+                )
 
             self.assertEqual(exit_code, 0)
             self.assertFalse((repo / "argocd/catalogs/playground/beijing-playground/sandbox-bj-4").exists())
             self.assertIn("dry-run", stdout.getvalue())
             self.assertIn("需要 Agent/人工确认", stdout.getvalue())
             self.assertIn("风险提示", stdout.getvalue())
+
+    def test_create_playground_from_source_checkout_prints_gitops_hint(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / ".git").mkdir()
+
+            stderr = StringIO()
+            with redirect_stderr(stderr):
+                exit_code = create_playground_main(["--repo-root", str(repo), "--to-env", "sandbox-bj-6"])
+
+            self.assertEqual(exit_code, 1)
+            message = stderr.getvalue()
+            self.assertIn("不能在 master 源码 checkout 里直接跑默认命令", message)
+            self.assertIn(".ci/runtime/create_playground_from_gitops.sh", message)
+            self.assertIn("--repo-root /tmp/mono2-gitops", message)
 
     def test_create_playground_write_generates_render_closure(self) -> None:
         with TemporaryDirectory() as tmp:

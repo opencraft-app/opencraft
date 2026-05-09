@@ -279,6 +279,19 @@ python3 .ci/runtime/commands/ensure_playground_frontend_image.py \
 
 默认只检查并给出结论；确认为同 source sha 等价镜像后，加 `--apply` 才会执行 `docker pull/tag/push`。执行前先用 `.ci/init.sh` 的 `ci_set_registry_credentials <env>` 加载 registry 凭据。
 
+GitOps closure 克隆入口：
+
+```bash
+.ci/runtime/create_playground_from_gitops.sh --to-env sandbox-bj-6
+```
+
+默认模板源是 `sandbox-bj-5`，因为它包含 frontend closure；不要退回 `sandbox-bj-3` 作为默认模板源。不要在 `master` 源码 checkout 里直接跑 `create_playground_environment.py` 的默认命令；playground 模板在 `origin/gitops`。如果已经有持久 GitOps worktree，需要写文件时使用：
+
+```bash
+GITOPS_WORKTREE=/tmp/mono2-gitops-create \
+  .ci/runtime/create_playground_from_gitops.sh --to-env sandbox-bj-6 --write
+```
+
 固定入口默认是：
 
 - `api-sandbox-bj-N.lightclaw.tech`

@@ -56,6 +56,12 @@ class RunGitopsDbJobTests(unittest.TestCase):
 
         self.assertEqual(image, "migrate/migrate:v4.18.3")
 
+    def test_ctl_migration_does_not_depend_on_shell_in_migrate_image(self) -> None:
+        spec = db_job.SERVICE_SPECS[("ctl", "migration")]
+
+        self.assertEqual(spec["command"], ["migrate"])
+        self.assertEqual(spec["args"], ["-path=/migrations", "-database=$(CTL_MIGRATE_DSN)", "up"])
+
     def test_regular_db_job_still_uses_release_image_override(self) -> None:
         image = db_job.resolve_job_image(
             SimpleNamespace(image_override="example.com/payment:release"),

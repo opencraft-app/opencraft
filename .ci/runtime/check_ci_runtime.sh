@@ -15,6 +15,7 @@ bash -n \
   .ci/init.sh \
   .ci/runtime/build_and_promote_to_gitops.sh \
   .ci/runtime/check_ci_runtime.sh \
+  .ci/runtime/create_playground_from_gitops.sh \
   .ci/runtime/gitops_promotion_bootstrap.sh \
   .ci/runtime/pin_image_to_gitops.sh \
   .ci/runtime/promote_bundle_image_to_gitops.sh \

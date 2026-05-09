@@ -102,7 +102,9 @@ TLS 约束：
 
 - 长期配置必须通过 `gitops` MR 追踪；live patch、curl 或控制台操作只能用于诊断和临时解锁。
 - 如果 live 诊断证明某个改动有效，必须立即把等价期望态反投影到 GitOps 文件。
-- 创建新环境时优先使用 `.ci/runtime/commands/create_playground_environment.py` 生成 GitOps 渲染闭包，再人工/Agent 补齐不能稳定自动化的 DNS、证书和 SSM/SOPS 步骤。
+- 创建新环境时优先使用 `.ci/runtime/create_playground_from_gitops.sh --to-env sandbox-bj-N` 生成 GitOps 渲染闭包；不要在 `master` 源码 checkout 里直接跑默认命令，因为 playground 模板只在 `origin/gitops`。
+- 默认模板源是 `sandbox-bj-5`，因为它包含 frontend closure；除非明确需要排查历史差异，否则不要用 `sandbox-bj-3` 作为新环境模板源。
+- 已经在持久 GitOps worktree 内操作时，才直接使用 `.ci/runtime/commands/create_playground_environment.py --repo-root <gitops-worktree>`；再人工/Agent 补齐不能稳定自动化的 DNS、证书和 SSM/SOPS 步骤。
 - 克隆 SOPS secret 后必须解密校验 payload 的 env、DB name、Redis prefix、域名和 namespace，不要只看 metadata 或文件路径。
 - playground 的 MySQL/Redis 必须优先使用 namespace-local `StatefulSet + PVC`，由 `env-bootstrap` app 纳入 GitOps；业务配置应指向 `mysql.<namespace>.svc.cluster.local` 和 `redis.<namespace>.svc.cluster.local:6379`。
 - 新建 `sandbox-bj-N` 时必须生成目标环境独立的 `argocd/secrets/<env>/playground-runtime-secrets.sops.yaml`，只包含 `MYSQL_ROOT_PASSWORD` / `REDIS_PASSWORD`；缺少 `sops` 或 age key 时直接失败，不允许明文 fallback。
