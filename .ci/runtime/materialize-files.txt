@@ -5,11 +5,14 @@
 .ci/runtime/gitops_promotion_bootstrap.sh
 .ci/runtime/commands/__init__.py
 .ci/runtime/commands/audit_gitops_drift.py
+.ci/runtime/commands/bootstrap_playground_environment.py
 .ci/runtime/commands/build_release_image.py
+.ci/runtime/commands/check_playground_environment_contract.py
 .ci/runtime/commands/cleanup_gitops_promotion.py
 .ci/runtime/commands/create_playground_environment.py
 .ci/runtime/commands/diagnose_playground_environment.py
 .ci/runtime/commands/describe_gitops_promotion.py
+.ci/runtime/commands/ensure_playground_frontend_image.py
 .ci/runtime/commands/generate_release_bundle_manifest.py
 .ci/runtime/commands/gitops_cleanup_source_branch.py
 .ci/runtime/commands/gitops_merge_request.py
@@ -37,6 +40,7 @@
 .ci/runtime/contracts/build_release_image.py
 .ci/runtime/contracts/bundles.py
 .ci/runtime/contracts/image_existence.py
+.ci/runtime/contracts/playground_frontend_image.py
 .ci/runtime/contracts/release_bundle_manifest.py
 .ci/runtime/contracts/release_plan.py
 .ci/runtime/contracts/resolve_release_bundle.py
@@ -75,6 +79,9 @@
 .ci/runtime/gitops/git.py
 .ci/runtime/gitops/gongfeng.py
 .ci/runtime/gitops/image_pin.py
+.ci/runtime/gitops/playground_bootstrap.py
+.ci/runtime/gitops/playground_contract.py
+.ci/runtime/gitops/playground_create.py
 .ci/runtime/gitops/playground_environment.py
 .ci/runtime/gitops/promotion_policy.py
 .ci/runtime/gitops/prod_manual_sync_validation.py

@@ -1,9 +1,11 @@
 import textwrap
 import unittest
+import os
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 import sys
 
 RUNTIME_DIR = next(parent for parent in Path(__file__).resolve().parents if parent.name == "runtime" and parent.parent.name == ".ci")
@@ -15,19 +17,62 @@ from tests.helpers import git
 from gitops.playground_environment import (
     CatalogApp,
     appset_file_globs,
+    apply_runtime_secret_value_overrides,
+    bootstrap_database_job_manifest,
     build_playground_clone_plan,
+    build_playground_bootstrap_plan,
     check_appset_refs,
     check_catalog,
+    check_playground_contract_main,
     create_playground_main,
     fetch_origin_refs,
+    PlaygroundRuntimeSecretValues,
+    PLAYGROUND_RUNTIME_SECRET_FILE,
+    PLAYGROUND_RUNTIME_SECRET_NAME,
+    PLAYGROUND_PULL_SECRET_NAMES,
+    playground_database_grants,
     load_yaml_mapping,
     render_clone_text,
+    resolve_playground_runtime_recipients,
+    run_playground_db_jobs,
     target_conflicts,
+    validate_clone_plan,
     write_clone_plan,
 )
 
 
 class PlaygroundEnvironmentTests(unittest.TestCase):
+    def test_runtime_secret_overrides_align_sandbox_mysql_password_to_root_password(self) -> None:
+        payload = {
+            "kind": "Secret",
+            "stringData": {
+                "MYSQL_USER": "root",
+                "MYSQL_PASSWORD": "old-sandbox-password",
+                "REDIS_PASSWORD": "old-redis-password",
+            },
+        }
+        values = PlaygroundRuntimeSecretValues(mysql_root_password="new-root-password", redis_password="new-redis-password")
+
+        apply_runtime_secret_value_overrides(payload, Path("sandbox-runtime-secrets.sops.yaml"), values)
+
+        self.assertEqual(payload["stringData"]["MYSQL_PASSWORD"], "new-root-password")
+        self.assertEqual(payload["stringData"]["REDIS_PASSWORD"], "new-redis-password")
+
+    def test_runtime_secret_overrides_leave_non_sandbox_mysql_passwords_unchanged(self) -> None:
+        payload = {
+            "kind": "Secret",
+            "stringData": {
+                "MYSQL_ROOT_PASSWORD": "service-root-password",
+                "REDIS_PASSWORD": "old-redis-password",
+            },
+        }
+        values = PlaygroundRuntimeSecretValues(mysql_root_password="new-root-password", redis_password="new-redis-password")
+
+        apply_runtime_secret_value_overrides(payload, Path("ai-gateway-runtime-secrets.sops.yaml"), values)
+
+        self.assertEqual(payload["stringData"]["MYSQL_ROOT_PASSWORD"], "service-root-password")
+        self.assertEqual(payload["stringData"]["REDIS_PASSWORD"], "new-redis-password")
+
     def test_appset_globs_include_sandbox_and_playground(self) -> None:
         appset = load_yaml_mapping(
             textwrap.dedent(
@@ -160,7 +205,7 @@ class PlaygroundEnvironmentTests(unittest.TestCase):
             create_playground_fixture(repo)
 
             plan = build_playground_clone_plan(repo, "sandbox-bj-3", "sandbox-bj-4")
-            written = write_clone_plan(plan)
+            written = write_clone_plan_for_test(plan)
 
             catalog_files = list((repo / "argocd/catalogs/playground/beijing-playground/sandbox-bj-4").glob("*.yaml"))
             service_dirs = list((repo / "argocd/services").glob("*/sandbox-bj-4"))
@@ -168,7 +213,7 @@ class PlaygroundEnvironmentTests(unittest.TestCase):
             secret_readme = (repo / "argocd/secrets/sandbox-bj-4/README.md").read_text()
             self.assertEqual(len(catalog_files), 12)
             self.assertEqual(len(service_dirs), 12)
-            self.assertEqual(len(secret_files), 2)
+            self.assertEqual(len(secret_files), 4)
             self.assertGreater(len(written), 20)
             self.assertIn("sandbox-bj-4", secret_readme)
             self.assertNotIn("sandbox-bj-3", secret_readme)
@@ -190,29 +235,208 @@ class PlaygroundEnvironmentTests(unittest.TestCase):
             self.assertIn("SANDBOX_INGRESSPROXY_HEALTHCHECK_HOST=sandbox-bj-4.lightclaw.tech", sandbox_env)
             self.assertIn("SANDBOX_INGRESSPROXY_TLS_SECRET_NAME=sandbox-bj-4-lightclaw-tech-wildcard-tls", sandbox_env)
             self.assertIn('REDIS_ROUTE_PREFIX: "route:sandbox-bj-4:"', (repo / "argocd/services/sandbox/sandbox-bj-4/patch-playground-db-redis.yaml").read_text())
+            self.assertIn(
+                "SANDBOX_MYSQL_HOST=mysql.lightvela-playground-sandbox-bj-4.svc.cluster.local",
+                sandbox_env,
+            )
+            self.assertIn(
+                "SANDBOX_REDIS_ADDR=redis.lightvela-playground-sandbox-bj-4.svc.cluster.local:6379",
+                sandbox_env,
+            )
+
+            env_bootstrap = repo / "argocd/services/env-bootstrap/sandbox-bj-4"
+            kustomization = load_yaml_mapping((env_bootstrap / "kustomization.yaml").read_text(), "kustomization")
+            self.assertIn("mysql.yaml", kustomization["resources"])
+            self.assertIn("redis.yaml", kustomization["resources"])
+            self.assertIn("ksops-runtime-secrets-generator.yaml", kustomization["generators"])
+            self.assertNotIn("ksops-runtime-secrets-generator.yaml", kustomization["resources"])
+            self.assertIn(
+                f"../../../secrets/sandbox-bj-4/{PLAYGROUND_RUNTIME_SECRET_FILE}",
+                (env_bootstrap / "ksops-runtime-secrets-generator.yaml").read_text(),
+            )
+            runtime_secret = (repo / f"argocd/secrets/sandbox-bj-4/{PLAYGROUND_RUNTIME_SECRET_FILE}").read_text()
+            self.assertIn(f"name: {PLAYGROUND_RUNTIME_SECRET_NAME}", runtime_secret)
+            self.assertIn("MYSQL_ROOT_PASSWORD: ENC[", runtime_secret)
+            self.assertIn("REDIS_PASSWORD: ENC[", runtime_secret)
+            self.assertNotIn("LIGHTCLAW_AUTH_DB_PASSWORD", runtime_secret)
+            mysql_runtime = (env_bootstrap / "mysql.yaml").read_text()
+            redis_runtime = (env_bootstrap / "redis.yaml").read_text()
+            self.assertIn("kind: StatefulSet", mysql_runtime)
+            self.assertIn("name: mysql", mysql_runtime)
+            self.assertIn(PLAYGROUND_RUNTIME_SECRET_NAME, mysql_runtime)
+            self.assertNotIn("lightclaw-auth-secrets", mysql_runtime)
+            self.assertIn("volumeClaimTemplates", mysql_runtime)
+            self.assertIn("kind: StatefulSet", redis_runtime)
+            self.assertIn("name: redis", redis_runtime)
+            self.assertIn(PLAYGROUND_RUNTIME_SECRET_NAME, redis_runtime)
+            self.assertNotIn("sandbox-runtime-secrets", redis_runtime)
+            self.assertIn("volumeClaimTemplates", redis_runtime)
+            self.assertIn("storage: 10Gi", redis_runtime)
+            self.assertIn("--appendonly yes", redis_runtime)
+            serviceaccount = (env_bootstrap / "serviceaccount.yaml").read_text()
+            for name in PLAYGROUND_PULL_SECRET_NAMES:
+                self.assertIn(f"name: {name}", serviceaccount)
+            pull_secret = load_yaml_mapping(
+                (repo / "argocd/secrets/sandbox-bj-4/tcr-bj8-lightclaw-secret.sops.yaml").read_text(),
+                "pull-secret",
+            )
+            self.assertEqual(pull_secret["metadata"]["namespace"], "lightvela-playground-sandbox-bj-4")
+            self.assertEqual(pull_secret["metadata"]["name"], "tcr.bj8-lightclaw-secret")
+
+    def test_ctl_rewrite_points_to_namespace_local_stateful_services(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            create_playground_fixture(repo)
+            plan = build_playground_clone_plan(repo, "sandbox-bj-3", "sandbox-bj-4")
+            rendered = render_clone_text(
+                textwrap.dedent(
+                    """
+                    data:
+                      server_conf_rewrite.toml: |
+                        [db]
+                        host = "10.31.192.4"
+                        password = "old"
+                        database = "ctl_sandbox_bj_3"
+
+                        [redis]
+                        host = "10.31.192.2"
+                        pass = "old"
+                    """
+                ),
+                plan,
+                PlaygroundRuntimeSecretValues(mysql_root_password="mysql-root", redis_password="redis-pass"),
+            )
+
+        self.assertIn('host = "mysql.lightvela-playground-sandbox-bj-4.svc.cluster.local"', rendered)
+        self.assertIn('host = "redis.lightvela-playground-sandbox-bj-4.svc.cluster.local"', rendered)
+        self.assertNotIn('password = "old"', rendered)
+        self.assertNotIn('pass = "old"', rendered)
 
     def test_create_playground_conflicts_fail_without_force(self) -> None:
         with TemporaryDirectory() as tmp:
             repo = Path(tmp)
             create_playground_fixture(repo)
             plan = build_playground_clone_plan(repo, "sandbox-bj-3", "sandbox-bj-4")
-            write_clone_plan(plan)
+            write_clone_plan_for_test(plan)
 
             self.assertTrue(target_conflicts(plan))
             with self.assertRaises(FileExistsError):
-                write_clone_plan(plan)
+                write_clone_plan_for_test(plan)
 
-    def test_create_playground_copies_secret_bytes_without_rewriting_content(self) -> None:
+    def test_create_playground_rewrites_sops_secret_metadata_without_decrypting_payload(self) -> None:
         with TemporaryDirectory() as tmp:
             repo = Path(tmp)
             create_playground_fixture(repo)
             plan = build_playground_clone_plan(repo, "sandbox-bj-3", "sandbox-bj-4")
-            write_clone_plan(plan)
+            write_clone_plan_for_test(plan)
 
-            source = repo / "argocd/secrets/sandbox-bj-3/ai-gateway-runtime-secrets.sops.yaml"
-            target = repo / "argocd/secrets/sandbox-bj-4/ai-gateway-runtime-secrets.sops.yaml"
-            self.assertEqual(source.read_bytes(), target.read_bytes())
-            self.assertIn("sandbox-bj-3", target.read_text())
+            target = repo / "argocd/secrets/sandbox-bj-4/tcr-bj8-lightclaw-secret.sops.yaml"
+            payload = load_yaml_mapping(target.read_text(), "target")
+
+            self.assertEqual(payload["metadata"]["namespace"], "lightvela-playground-sandbox-bj-4")
+            self.assertEqual(payload["metadata"]["name"], "tcr.bj8-lightclaw-secret")
+            self.assertEqual(payload["stringData"][".dockerconfigjson"], "ENC[AES256_GCM,data:registry]")
+
+    def test_create_playground_validation_rejects_unmapped_source_residue(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            create_playground_fixture(repo)
+            stale_file = repo / "argocd/services/ctl/sandbox-bj-3/stale-domain.yaml"
+            stale_file.write_text("host: unmapped-bj83.lightclaw.tech\n")
+
+            plan = build_playground_clone_plan(repo, "sandbox-bj-3", "sandbox-bj-4")
+            errors = validate_clone_plan(plan)
+
+        self.assertTrue(any("source environment residue" in error for error in errors), errors)
+
+    def test_create_playground_validation_rejects_catalog_sourcepath_without_generated_service(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            create_playground_fixture(repo)
+            broken_catalog = repo / "argocd/catalogs/playground/beijing-playground/sandbox-bj-3/ctl.yaml"
+            broken_catalog.write_text(
+                textwrap.dedent(
+                    """
+                    service: ctl
+                    env: sandbox-bj-3
+                    project: beijing-playground
+                    destinationName: beijing-playground
+                    namespace: lightvela-playground-sandbox-bj-3
+                    sourcePath: argocd/services/missing/sandbox-bj-3
+                    environmentModel: playground
+                    playgroundCluster: beijing-playground
+                    """
+                ).lstrip()
+            )
+
+            plan = build_playground_clone_plan(repo, "sandbox-bj-3", "sandbox-bj-4")
+            errors = validate_clone_plan(plan)
+
+        self.assertTrue(any("sourcePath" in error and "generated service dirs" in error for error in errors), errors)
+
+    def test_contract_checker_passes_static_contract_with_warnings(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            create_playground_fixture(repo)
+            write_clone_plan_for_test(build_playground_clone_plan(repo, "sandbox-bj-3", "sandbox-bj-4"))
+
+            stdout = StringIO()
+            with redirect_stdout(stdout):
+                exit_code = check_playground_contract_main(["--repo-root", str(repo), "--env", "sandbox-bj-4"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("Playground catalog contract: OK", stdout.getvalue())
+        self.assertIn("Playground network contract: WARN", stdout.getvalue())
+
+    def test_contract_checker_accepts_fully_encrypted_pull_secret_metadata(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            create_playground_fixture(repo)
+            write_clone_plan_for_test(build_playground_clone_plan(repo, "sandbox-bj-3", "sandbox-bj-4"))
+            for filename in ("tcr-bj8-lightclaw-secret.sops.yaml", "tcr-ccr-clawhub-secret.sops.yaml"):
+                path = repo / f"argocd/secrets/sandbox-bj-4/{filename}"
+                payload = load_yaml_mapping(path.read_text(), path.as_posix())
+                payload["metadata"]["name"] = "ENC[AES256_GCM,data:name]"
+                payload["metadata"]["namespace"] = "ENC[AES256_GCM,data:namespace]"
+                path.write_text(yaml_dump_for_test(payload))
+
+            stdout = StringIO()
+            with redirect_stdout(stdout):
+                exit_code = check_playground_contract_main(["--repo-root", str(repo), "--env", "sandbox-bj-4"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertNotIn("must generate Secret", stdout.getvalue())
+
+    def test_contract_checker_warns_for_qcloud_cert_ids_until_tls_probe_runs(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            create_playground_fixture(repo)
+            write_clone_plan_for_test(build_playground_clone_plan(repo, "sandbox-bj-3", "sandbox-bj-4"))
+            cert_file = repo / "argocd/services/service-gateway/sandbox-bj-4/tls-secrets.yaml"
+            cert_file.write_text("stringData:\n  qcloud_cert_id: copied-cert\n")
+
+            stdout = StringIO()
+            with redirect_stdout(stdout):
+                exit_code = check_playground_contract_main(["--repo-root", str(repo), "--env", "sandbox-bj-4"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("Playground network contract: WARN", stdout.getvalue())
+        self.assertIn("--check-tls", stdout.getvalue())
+
+    def test_contract_checker_rejects_wrong_sandbox_public_host(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            create_playground_fixture(repo)
+            write_clone_plan_for_test(build_playground_clone_plan(repo, "sandbox-bj-3", "sandbox-bj-4"))
+            sandbox_env = repo / "argocd/services/sandbox/sandbox-bj-4/sandbox-platform.env"
+            sandbox_env.write_text(sandbox_env.read_text().replace("*.sandbox-bj-4.lightclaw.tech", "*.sandbox-bj-3.lightclaw.tech"))
+
+            stdout = StringIO()
+            with redirect_stdout(stdout):
+                exit_code = check_playground_contract_main(["--repo-root", str(repo), "--env", "sandbox-bj-4"])
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("SANDBOX_INGRESSPROXY_PUBLIC_HOST", stdout.getvalue())
 
     def test_create_playground_can_set_project_and_cluster_independently(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -225,7 +449,7 @@ class PlaygroundEnvironmentTests(unittest.TestCase):
                 cluster_name="playground-cluster-2",
                 project="playground-project-2",
             )
-            write_clone_plan(plan)
+            write_clone_plan_for_test(plan)
 
             catalog = load_yaml_mapping(
                 (repo / "argocd/catalogs/playground/beijing-playground/sandbox-bj-4/ctl.yaml").read_text(),
@@ -257,6 +481,144 @@ class PlaygroundEnvironmentTests(unittest.TestCase):
         self.assertIn("sandbox-bj-4-lightclaw-tech-wildcard-tls", rendered)
         self.assertNotIn("sandbox-bj-3", rendered)
         self.assertNotIn("bj83", rendered)
+
+    def test_playground_database_grants_are_env_scoped(self) -> None:
+        grants = playground_database_grants("sandbox-bj-4")
+
+        self.assertEqual(
+            [grant.database for grant in grants],
+            [
+                "ctl_sandbox_bj_4",
+                "lightclaw_auth_sandbox_bj_4",
+                "lightclaw_payment_sandbox_bj_4",
+                "ai_gateway_sandbox_bj_4",
+                "lightclaw_subscription_sandbox_bj_4",
+                "cvm_sandbox_bj_4",
+            ],
+        )
+
+    def test_bootstrap_manifest_uses_secret_refs_without_plain_secret_values(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            git(repo, "init", "-b", "master")
+            git(repo, "commit", "--allow-empty", "-m", "root")
+
+            plan = build_playground_bootstrap_plan(
+                repo,
+                "sandbox-bj-4",
+                kubeconfig=Path("/tmp/kubeconfig"),
+                mysql_host="10.31.192.4",
+            )
+            manifest = bootstrap_database_job_manifest(plan)
+            rendered = yaml_dump_for_test(manifest)
+
+        self.assertIn("db-bootstrap-sandbox-bj-4", rendered)
+        self.assertIn("playground-runtime-secrets", rendered)
+        self.assertIn("PAYMENT_DB_PASSWORD", rendered)
+        self.assertIn("ctl_sandbox_bj_4", rendered)
+        self.assertNotIn("replace-with-secret", rendered)
+
+    def test_create_playground_missing_sops_fails_before_writes(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            create_playground_fixture(repo)
+            plan = build_playground_clone_plan(repo, "sandbox-bj-3", "sandbox-bj-4")
+
+            with patch.dict(os.environ, {"PATH": "", "SOPS_AGE_KEY_FILE": "", "SOPS_AGE_KEY": ""}, clear=False):
+                with self.assertRaisesRegex(RuntimeError, "missing required command: sops"):
+                    write_clone_plan(plan)
+
+            self.assertFalse((repo / "argocd/catalogs/playground/beijing-playground/sandbox-bj-4").exists())
+            self.assertFalse((repo / "argocd/secrets/sandbox-bj-4").exists())
+
+    def test_create_playground_runtime_secret_encryption_failure_leaves_no_writes(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            create_playground_fixture(repo)
+            plan = build_playground_clone_plan(repo, "sandbox-bj-3", "sandbox-bj-4")
+
+            def failing_encryptor(_plan):
+                raise RuntimeError("synthetic encrypt failure")
+
+            with self.assertRaisesRegex(RuntimeError, "synthetic encrypt failure"):
+                write_clone_plan(plan, runtime_secret_encryptor=failing_encryptor)
+
+            self.assertFalse((repo / "argocd/catalogs/playground/beijing-playground/sandbox-bj-4").exists())
+            self.assertFalse((repo / "argocd/secrets/sandbox-bj-4").exists())
+
+    def test_create_playground_missing_sops_recipient_leaves_no_writes(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            create_playground_fixture(repo)
+            for path in (repo / "argocd/secrets/sandbox-bj-3").glob("*.sops.yaml"):
+                path.write_text("encrypted: no-recipient\n")
+            plan = build_playground_clone_plan(repo, "sandbox-bj-3", "sandbox-bj-4")
+
+            def recipient_check_encryptor(_plan):
+                resolve_playground_runtime_recipients(_plan)
+                return b"unreachable\n"
+
+            with self.assertRaisesRegex(RuntimeError, "missing SOPS age recipient"):
+                write_clone_plan(plan, runtime_secret_encryptor=recipient_check_encryptor)
+
+            self.assertFalse((repo / "argocd/catalogs/playground/beijing-playground/sandbox-bj-4").exists())
+
+    def test_contract_checker_rejects_missing_runtime_secret(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            create_playground_fixture(repo)
+            write_clone_plan_for_test(build_playground_clone_plan(repo, "sandbox-bj-3", "sandbox-bj-4"))
+            (repo / f"argocd/secrets/sandbox-bj-4/{PLAYGROUND_RUNTIME_SECRET_FILE}").unlink()
+
+            stdout = StringIO()
+            with redirect_stdout(stdout):
+                exit_code = check_playground_contract_main(["--repo-root", str(repo), "--env", "sandbox-bj-4"])
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn(PLAYGROUND_RUNTIME_SECRET_FILE, stdout.getvalue())
+
+    def test_contract_checker_rejects_broad_runtime_secret_refs(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            create_playground_fixture(repo)
+            write_clone_plan_for_test(build_playground_clone_plan(repo, "sandbox-bj-3", "sandbox-bj-4"))
+            mysql_runtime = repo / "argocd/services/env-bootstrap/sandbox-bj-4/mysql.yaml"
+            mysql_runtime.write_text(mysql_runtime.read_text().replace(PLAYGROUND_RUNTIME_SECRET_NAME, "lightclaw-auth-secrets"))
+
+            stdout = StringIO()
+            with redirect_stdout(stdout):
+                exit_code = check_playground_contract_main(["--repo-root", str(repo), "--env", "sandbox-bj-4"])
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("must not use broad service secrets", stdout.getvalue())
+
+    def test_run_playground_db_jobs_reads_root_password_from_runtime_secret(self) -> None:
+        with TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            git(repo, "init", "-b", "master")
+            git(repo, "commit", "--allow-empty", "-m", "root")
+            plan = build_playground_bootstrap_plan(
+                repo,
+                "sandbox-bj-4",
+                kubeconfig=Path("/tmp/kubeconfig"),
+                mysql_host="mysql.lightvela-playground-sandbox-bj-4.svc.cluster.local",
+            )
+
+            with (
+                patch("gitops.playground_environment.secret_value_from_cluster", return_value="root-password") as secret,
+                patch("gitops.playground_environment.subprocess.run") as run,
+            ):
+                run_playground_db_jobs(plan, set(), 1, 1)
+
+        secret.assert_called_once_with(
+            plan.kubeconfig,
+            plan.namespace,
+            PLAYGROUND_RUNTIME_SECRET_NAME,
+            "MYSQL_ROOT_PASSWORD",
+            1,
+        )
+        self.assertEqual(run.call_count, len(plan.db_jobs))
+        self.assertTrue(all(call.kwargs["env"]["CTL_TEST_MYSQL_PASSWORD"] == "root-password" for call in run.call_args_list))
 
 def create_playground_fixture(repo: Path) -> None:
     services = (
@@ -316,6 +678,8 @@ def create_playground_fixture(repo: Path) -> None:
             SANDBOX_INGRESSPROXY_PUBLIC_HOST=*.sandbox-bj83.lightclaw.tech
             SANDBOX_INGRESSPROXY_HEALTHCHECK_HOST=sandbox-bj83.lightclaw.tech
             SANDBOX_INGRESSPROXY_TLS_SECRET_NAME=sandbox-bj83-lightclaw-tech-wildcard-tls
+            SANDBOX_MYSQL_HOST=10.31.192.4
+            SANDBOX_REDIS_ADDR=10.31.192.10:6379
             """
         ).lstrip()
     )
@@ -329,9 +693,72 @@ def create_playground_fixture(repo: Path) -> None:
     )
     secret_dir = repo / "argocd/secrets/sandbox-bj-3"
     secret_dir.mkdir(parents=True)
-    (secret_dir / "ai-gateway-runtime-secrets.sops.yaml").write_text("encrypted: sandbox-bj-3\n")
-    (secret_dir / "tcr-ccr-clawhub-secret.sops.yaml").write_text("encrypted: registry\n")
+    (secret_dir / "ai-gateway-runtime-secrets.sops.yaml").write_text(
+        textwrap.dedent(
+            """
+            encrypted: sandbox-bj-3
+            sops:
+              age:
+                - recipient: age1testrecipient
+                  enc: test
+            """
+        ).lstrip()
+    )
+    for filename, secret_name in (
+        ("tcr-bj8-lightclaw-secret.sops.yaml", "tcr.bj8-lightclaw-secret"),
+        ("tcr-ccr-clawhub-secret.sops.yaml", "tcr.ccr-clawhub-secret"),
+    ):
+        (secret_dir / filename).write_text(
+            textwrap.dedent(
+                f"""
+                apiVersion: v1
+                kind: Secret
+                metadata:
+                  name: {secret_name}
+                  namespace: lightvela-playground-sandbox-bj-3
+                  annotations:
+                    managed-by: harness-ci-sandbox-bj-3-bootstrap
+                type: kubernetes.io/dockerconfigjson
+                stringData:
+                  .dockerconfigjson: ENC[AES256_GCM,data:registry]
+                sops:
+                  age:
+                    - recipient: age1testrecipient
+                      enc: test
+                """
+            ).lstrip()
+        )
     (secret_dir / "README.md").write_text("secret notes for sandbox-bj-3\n")
+
+
+def fake_runtime_secret_encryptor(plan) -> bytes:
+    return textwrap.dedent(
+        f"""
+        apiVersion: v1
+        kind: Secret
+        metadata:
+          name: {PLAYGROUND_RUNTIME_SECRET_NAME}
+          namespace: {plan.namespace}
+        type: Opaque
+        stringData:
+          MYSQL_ROOT_PASSWORD: ENC[AES256_GCM,data:mysql-root]
+          REDIS_PASSWORD: ENC[AES256_GCM,data:redis]
+        sops:
+          age:
+            - recipient: age1testrecipient
+              enc: test
+        """
+    ).lstrip().encode()
+
+
+def write_clone_plan_for_test(plan, *, force: bool = False):
+    return write_clone_plan(plan, force=force, runtime_secret_encryptor=fake_runtime_secret_encryptor)
+
+
+def yaml_dump_for_test(payload: object) -> str:
+    import yaml
+
+    return yaml.safe_dump(payload, allow_unicode=True, sort_keys=False)
 
 
 if __name__ == "__main__":
