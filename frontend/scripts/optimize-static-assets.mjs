@@ -88,20 +88,10 @@ function replaceReferenceExtension(referencePath) {
   return referencePath.replace(/\.(png|jpe?g)$/i, ".webp");
 }
 
-function isFunctionArgumentString(text, matchOffset, boundary) {
-  if (boundary !== "\"" && boundary !== "'") return false;
-  const beforeQuote = text.slice(0, matchOffset);
-  return /[A-Za-z_$][\w$]*\(\s*$/.test(beforeQuote);
-}
-
 async function rewriteTextFileReferences(textFilePath, rootDir, webpByOriginalPath) {
   const originalText = await readFile(textFilePath, "utf8");
-  const ext = path.extname(textFilePath).toLowerCase();
-  const isScript = ext === ".js" || ext === ".mjs";
   let replacements = 0;
-  const rewritten = originalText.replace(URL_RE, (match, boundary, referencePath, query = "", hash = "", offset) => {
-    if (isScript && isFunctionArgumentString(originalText, offset, boundary)) return match;
-
+  const rewritten = originalText.replace(URL_RE, (match, boundary, referencePath, query = "", hash = "") => {
     const imagePath = resolveReferencedPath(referencePath, textFilePath, rootDir);
     if (!isInsideRoot(imagePath, rootDir)) return match;
 
