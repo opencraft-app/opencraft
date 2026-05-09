@@ -2,11 +2,11 @@ IMAGE ?= cloudladdergateway
 TAG ?= dev
 CSIGHUB_PUBLIC_REGISTRY ?= csighub.tencentyun.com/skipzhang
 CSIGHUB_PUSH_REGISTRY ?= 21.41.42.116:80/skipzhang
-CRANE ?= go run github.com/google/go-containerregistry/cmd/crane@v0.21.4
+CRANE ?= crane
 IMAGE_TARBALL ?= $(TMPDIR)$(IMAGE)-$(TAG).tar
 REGISTRY ?= $(CSIGHUB_PUBLIC_REGISTRY)
 
-.PHONY: generate test image login-csighub csighub run-image
+.PHONY: generate test image login-csighub csighub csighub-internal csighub-public run-image
 
 generate:
 	rm -rf gen cloudladdergateway
@@ -34,8 +34,16 @@ login-csighub:
 
 csighub: image
 	docker save "$(REGISTRY)/$(IMAGE):$(TAG)" -o "$(IMAGE_TARBALL)"
+	$(MAKE) csighub-internal IMAGE_TARBALL="$(IMAGE_TARBALL)" IMAGE="$(IMAGE)" TAG="$(TAG)" CSIGHUB_PUSH_REGISTRY="$(CSIGHUB_PUSH_REGISTRY)" CRANE="$(CRANE)"
+	$(MAKE) csighub-public IMAGE_TARBALL="$(IMAGE_TARBALL)" IMAGE="$(IMAGE)" TAG="$(TAG)" CSIGHUB_PUBLIC_REGISTRY="$(CSIGHUB_PUBLIC_REGISTRY)" CRANE="$(CRANE)"
+
+csighub-internal:
 	$(CRANE) push --insecure "$(IMAGE_TARBALL)" "$(CSIGHUB_PUSH_REGISTRY)/$(IMAGE):$(TAG)"
 	@echo "pushed $(CSIGHUB_PUSH_REGISTRY)/$(IMAGE):$(TAG)"
+
+csighub-public:
+	$(CRANE) push "$(IMAGE_TARBALL)" "$(CSIGHUB_PUBLIC_REGISTRY)/$(IMAGE):$(TAG)"
+	@echo "pushed $(CSIGHUB_PUBLIC_REGISTRY)/$(IMAGE):$(TAG)"
 
 run-image:
 	@test -n "$$CLOUDLADDER_PAYMENT_HMAC_SECRET" || (echo "CLOUDLADDER_PAYMENT_HMAC_SECRET is required at runtime"; exit 1)

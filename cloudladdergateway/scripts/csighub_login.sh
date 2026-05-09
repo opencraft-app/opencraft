@@ -3,6 +3,7 @@ set -euo pipefail
 
 REGISTRY_HOST="${REGISTRY_HOST:-csighub.tencentyun.com}"
 CSIGHUB_ENV_FILE="${CSIGHUB_ENV_FILE:-}"
+CSIGHUB_LOGIN_TOOL="${CSIGHUB_LOGIN_TOOL:-crane}"
 
 load_allowed_env_file() {
   local env_file="$1"
@@ -33,8 +34,23 @@ load_allowed_env_file() {
 login_with_password() {
   local username="$1"
   local password="$2"
-  printf '%s' "$password" | docker login "$REGISTRY_HOST" --username "$username" --password-stdin >/dev/null
-  printf 'Logged in to %s as %s\n' "$REGISTRY_HOST" "$username"
+  case "$CSIGHUB_LOGIN_TOOL" in
+    crane)
+      command -v crane >/dev/null || {
+        echo "crane is required for CSIGHUB_LOGIN_TOOL=crane" >&2
+        exit 1
+      }
+      printf '%s' "$password" | crane auth login "$REGISTRY_HOST" --username "$username" --password-stdin >/dev/null
+      ;;
+    docker)
+      printf '%s' "$password" | docker login "$REGISTRY_HOST" --username "$username" --password-stdin >/dev/null
+      ;;
+    *)
+      echo "unsupported CSIGHUB_LOGIN_TOOL: $CSIGHUB_LOGIN_TOOL" >&2
+      exit 1
+      ;;
+  esac
+  printf 'Logged in to %s as %s via %s\n' "$REGISTRY_HOST" "$username" "$CSIGHUB_LOGIN_TOOL"
 }
 
 login_with_tencentcloud_token() {
