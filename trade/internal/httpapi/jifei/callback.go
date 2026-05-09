@@ -24,33 +24,20 @@ const (
 // InstallStubHandlers 把仍未落地的 handler stub 注册到 dispatcher；
 // 已落地的真 handler 由各业务包独立 Install 函数注册（避免本包反向依赖业务包）。
 //
-// 当前已落地：
+// 当前已落地（迭代 6 完成后）：
 //   - lightvela.pass.checkCreate     → 迭代 5 已落地（trade/internal/logic/checkcreate.Install）
+//   - lightvela.pass.createResource  → 迭代 6 已落地（trade/internal/logic/createresource.Install）
 //
-// 仍为 stub：
-//   - lightvela.pass.createResource  → 迭代 6 落地
+// 当前没有 stub 占位 — 本函数保留为空实现，向后兼容已有测试 / 调用方。
+// 后续迭代如新增续费 / 隔离 / 销毁回调（lightvela.pass.renew / isolate / destroy 等），
+// 真 handler 落地之前在本函数补 stub 注册。
 //
-// stub 行为：路由命中后返非零 returnCode `ReturnCodeNotImplemented`，message 注明动作名 + 迭代号；
-// 测试可断言 stub 被正确路由（通过 returnCode 区分协议层错 vs 业务层 stub）。
-//
-// 调用方约定：server 装配阶段先调本函数注册剩余 stub，再调具体业务包的 Install
+// 调用方约定：server 装配阶段先调本函数注册剩余 stub（如有），再调具体业务包的 Install
 // 注册真 handler — 顺序无所谓（dispatcher 同名 key 重复注册会 panic，配置错就尽早暴露）。
-//
-// **重要**：迭代 5 起，调用方应改用 InstallStubHandlersExceptCheckCreate（见下方）
-// 把 checkCreate 的 stub 跳过，由 checkcreate 包注册真 handler。本函数保持原行为
-// 向后兼容（如有测试只想跑 stub 路由不依赖 checkcreate 业务包，仍可用本函数）。
 func InstallStubHandlers(d *Dispatcher) {
-	d.Register(InterfaceNameCheckCreate, stubHandler(d, InterfaceNameCheckCreate, 5))
-	d.Register(InterfaceNameCreateResource, stubHandler(d, InterfaceNameCreateResource, 6))
-}
-
-// InstallStubHandlersExceptCheckCreate 仅为迭代 6 之前未落地的 createResource 注册 stub。
-//
-// 迭代 5 起，server 装配阶段应先调用本函数注册 createResource stub，再调用
-// checkcreate.Install 注册 checkCreate 真 handler — 避免 InstallStubHandlers
-// 与 checkcreate.Install 之间发生 dispatcher 重复注册 panic。
-func InstallStubHandlersExceptCheckCreate(d *Dispatcher) {
-	d.Register(InterfaceNameCreateResource, stubHandler(d, InterfaceNameCreateResource, 6))
+	// 迭代 6 起 checkCreate / createResource 都已经有真 handler，本函数当前为空。
+	// 保留函数签名向后兼容；新增动作的 stub 在此追加。
+	_ = d
 }
 
 // stubHandler 构造一个统一形态的 stub handler；提取出来减少 InstallStubHandlers /

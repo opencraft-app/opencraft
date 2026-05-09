@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -22,6 +23,7 @@ func init() {
 // ---- 测试用 fake 依赖 ---------------------------------------------------------
 //
 // 迭代 5 起 NewRouter 强制非 nil OrderStore / BundleStore / CTLClient；
+// 迭代 6 起追加 FlowStore 必填（OrderUpdater 仍允许 nil，迭代 8 接线）。
 // router 层测试只关心 routing / framework invariants，不关心业务结果，
 // 因此 fake 全部返"trade_order not found"让 handler 走最早的失败分支即可，
 // 这样既不需要构造完整 happy-path 数据，又能命中真 handler 验证 routing 通畅。
@@ -50,6 +52,29 @@ func (fakeCTLClientUnused) CompletePass(_ context.Context, _ *ctlclient.Complete
 	return nil, errors.New("ctl client not exercised in router test")
 }
 
+// fakeFlowStoreAcquireWins 总是返 acquired=true 让 createResource handler 进入主链路；
+// 主链路第一步会撞 OrderStore 反查 not found，从而以 ReturnCodeOrderNotFound=600202 退出。
+//
+// 与 checkCreate 路径分开断言：checkCreate handler 的 OrderNotFound code 是 600101，
+// createResource handler 的 OrderNotFound code 是 600202，路由互不串扰。
+type fakeFlowStoreAcquireWins struct{}
+
+func (fakeFlowStoreAcquireWins) TryAcquireSlot(_ context.Context, _, _, _ string, _ []byte) (bool, *store.Flow, error) {
+	return true, nil, nil
+}
+func (fakeFlowStoreAcquireWins) MarkCompleted(_ context.Context, _, _, _ string, _ []byte) error {
+	return nil
+}
+func (fakeFlowStoreAcquireWins) MarkFailed(_ context.Context, _, _, _ string, _ []byte) error {
+	return nil
+}
+func (fakeFlowStoreAcquireWins) GetFlow(_ context.Context, _, _, _ string) (*store.Flow, error) {
+	return nil, store.ErrFlowNotFound
+}
+func (fakeFlowStoreAcquireWins) ListInProgressBefore(_ context.Context, _ time.Time, _ int) ([]*store.Flow, error) {
+	return nil, nil
+}
+
 func newTestRouter() *gin.Engine {
 	return NewRouter(ServerConfig{
 		InternalServiceToken:    "test-token",
@@ -59,6 +84,8 @@ func newTestRouter() *gin.Engine {
 		OrderStore:              fakeOrderStoreNotFound{},
 		BundleStore:             fakeBundleDefStoreUnused{},
 		CTLClient:               fakeCTLClientUnused{},
+		FlowStore:               fakeFlowStoreAcquireWins{},
+		// OrderUpdater 留 nil — createResource handler 主链路允许 OrderUpdater nil（迭代 8 接线）。
 	})
 }
 
@@ -147,7 +174,7 @@ func TestNewRouter_JifeiCallback_RoutingErrorReturnsFrameworkError(t *testing.T)
 	}
 }
 
-// 迭代 5 起 NewRouter 强制三个业务依赖非 nil — 验证 panic 行为：
+// 迭代 5 起 NewRouter 强制三个业务依赖非 nil；迭代 6 追加 FlowStore — 验证 panic 行为：
 // nil 任一字段必然 panic（启动期暴露配置错而不是延迟到第一个请求）。
 func TestNewRouter_NilDeps_Panics(t *testing.T) {
 	cases := []struct {
@@ -156,15 +183,19 @@ func TestNewRouter_NilDeps_Panics(t *testing.T) {
 	}{
 		{"order_store_nil", ServerConfig{
 			JifeiComponentName: "trade", JifeiProtocolVersion: "1.0", JifeiOurInterfacePrefix: "lightvela",
-			OrderStore: nil, BundleStore: fakeBundleDefStoreUnused{}, CTLClient: fakeCTLClientUnused{},
+			OrderStore: nil, BundleStore: fakeBundleDefStoreUnused{}, CTLClient: fakeCTLClientUnused{}, FlowStore: fakeFlowStoreAcquireWins{},
 		}},
 		{"bundle_store_nil", ServerConfig{
 			JifeiComponentName: "trade", JifeiProtocolVersion: "1.0", JifeiOurInterfacePrefix: "lightvela",
-			OrderStore: fakeOrderStoreNotFound{}, BundleStore: nil, CTLClient: fakeCTLClientUnused{},
+			OrderStore: fakeOrderStoreNotFound{}, BundleStore: nil, CTLClient: fakeCTLClientUnused{}, FlowStore: fakeFlowStoreAcquireWins{},
 		}},
 		{"ctl_client_nil", ServerConfig{
 			JifeiComponentName: "trade", JifeiProtocolVersion: "1.0", JifeiOurInterfacePrefix: "lightvela",
-			OrderStore: fakeOrderStoreNotFound{}, BundleStore: fakeBundleDefStoreUnused{}, CTLClient: nil,
+			OrderStore: fakeOrderStoreNotFound{}, BundleStore: fakeBundleDefStoreUnused{}, CTLClient: nil, FlowStore: fakeFlowStoreAcquireWins{},
+		}},
+		{"flow_store_nil", ServerConfig{
+			JifeiComponentName: "trade", JifeiProtocolVersion: "1.0", JifeiOurInterfacePrefix: "lightvela",
+			OrderStore: fakeOrderStoreNotFound{}, BundleStore: fakeBundleDefStoreUnused{}, CTLClient: fakeCTLClientUnused{}, FlowStore: nil,
 		}},
 	}
 	for _, tc := range cases {

@@ -16,11 +16,17 @@ func init() {
 }
 
 // 端到端：构造 gin engine + dispatcher + stub，发真 HTTP POST，验证响应 framework 结构。
+//
+// 注意：迭代 6 起 InstallStubHandlers 不再注册 stub（checkCreate / createResource 都已经
+// 有真 handler 落地），所以本测试 helper 直接注册"测试用 stub" handler 来保持本文件断言
+// 形态不变（只验证 dispatcher / callback HTTP 框架本身，不验证业务 handler）。
 func newCallbackEngine(t *testing.T) *gin.Engine {
 	t.Helper()
 	b := NewFrameworkBuilder("trade", "1.0")
 	d := NewDispatcher("lightvela", b)
-	InstallStubHandlers(d)
+	// 测试本地注册 stub（不影响生产装配路径）
+	d.Register(InterfaceNameCheckCreate, stubHandler(d, InterfaceNameCheckCreate, 5))
+	d.Register(InterfaceNameCreateResource, stubHandler(d, InterfaceNameCreateResource, 6))
 
 	e := gin.New()
 	e.Use(gin.Recovery())

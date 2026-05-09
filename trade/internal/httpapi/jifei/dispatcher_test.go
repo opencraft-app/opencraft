@@ -244,8 +244,12 @@ func TestDispatcher_Register_PanicsOnDuplicate(t *testing.T) {
 }
 
 func TestDispatcher_RegisteredInterfaceNames_ListsAllRegistered(t *testing.T) {
+	// 迭代 6 起 InstallStubHandlers 已为空（checkCreate / createResource 都有真 handler）；
+	// 本测试改为手动注册 2 个 stub，断言 RegisteredInterfaceNames 列表完整 — 仍验证
+	// dispatcher 注册表本身的可观测性，独立于 InstallStubHandlers 是否已腾空。
 	d := newTestDispatcher()
-	InstallStubHandlers(d)
+	d.Register(InterfaceNameCheckCreate, stubHandler(d, InterfaceNameCheckCreate, 5))
+	d.Register(InterfaceNameCreateResource, stubHandler(d, InterfaceNameCreateResource, 6))
 	names := d.RegisteredInterfaceNames()
 	if len(names) != 2 {
 		t.Fatalf("expected 2 stub registrations, got %d: %+v", len(names), names)
@@ -262,11 +266,11 @@ func TestDispatcher_RegisteredInterfaceNames_ListsAllRegistered(t *testing.T) {
 	}
 }
 
-// --- stub 行为测试（保证迭代 5/6 替换前 stub 有可观测语义）---
+// --- stub 行为测试（保留 stubHandler 工厂的可观测语义，未来扩展回调时复用）---
 
 func TestInstallStubHandlers_CheckCreate_ReturnsNotImplementedWithSeqID(t *testing.T) {
 	d := newTestDispatcher()
-	InstallStubHandlers(d)
+	d.Register(InterfaceNameCheckCreate, stubHandler(d, InterfaceNameCheckCreate, 5))
 	body := []byte(`{
         "seqId": "seq-trace-123",
         "interface": {"interfaceName": "lightvela.pass.checkCreate", "para": {}}
@@ -286,7 +290,7 @@ func TestInstallStubHandlers_CheckCreate_ReturnsNotImplementedWithSeqID(t *testi
 
 func TestInstallStubHandlers_CreateResource_ReturnsNotImplementedWithSeqID(t *testing.T) {
 	d := newTestDispatcher()
-	InstallStubHandlers(d)
+	d.Register(InterfaceNameCreateResource, stubHandler(d, InterfaceNameCreateResource, 6))
 	body := []byte(`{
         "seqId": "seq-trace-456",
         "interface": {"interfaceName": "lightvela.pass.createResource", "para": {}}

@@ -37,6 +37,12 @@ func main() {
 		OrderStore:  mysqlStore,
 		BundleStore: mysqlStore,
 		CTLClient:   ctlClient,
+		// 迭代 6：createResource handler 抢占式幂等。
+		FlowStore: mysqlStore,
+		// OrderUpdater 在迭代 8 PlaceOrder 写端落地后才接线；本期允许 nil。
+		// trade_order 写端尚未实现，createResource 成功后只在 ctl 侧生成 pass，
+		// trade_order.resource_id 暂不回填，由 reconcile worker（迭代 7）兜底。
+		OrderUpdater: nil,
 	})
 
 	server := &http.Server{
