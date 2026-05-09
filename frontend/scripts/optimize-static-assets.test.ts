@@ -54,11 +54,20 @@ describe("optimizeStaticAssets", () => {
       path.join(root, "style.css"),
       ".hero{background:url('/hero.png?v=1#top')} .card{background:url(./nested-card.jpg)}",
     );
+    await writeFile(
+      path.join(root, "app.js"),
+      [
+        "const localImage = \"/hero.png\";",
+        "const cdnImage = assetUrl(\"/hero.png\");",
+        "const minifiedCdnImage = Jn(\"/nested-card.jpg\");",
+      ].join("\n"),
+    );
 
     const beforeHero = (await stat(path.join(root, "hero.png"))).size;
     const summary = await optimizeStaticAssets(root, { log: () => undefined });
     const html = await readFile(path.join(root, "index.html"), "utf8");
     const css = await readFile(path.join(root, "style.css"), "utf8");
+    const js = await readFile(path.join(root, "app.js"), "utf8");
 
     expect(existsSync(path.join(root, "hero.png"))).toBe(true);
     expect(existsSync(path.join(root, "hero.webp"))).toBe(true);
@@ -70,7 +79,10 @@ describe("optimizeStaticAssets", () => {
     expect(html).toContain('src="data:image/png;base64,abcd"');
     expect(css).toContain("url('/hero.webp?v=1#top')");
     expect(css).toContain("url(./nested-card.webp)");
+    expect(js).toContain('const localImage = "/hero.webp";');
+    expect(js).toContain('const cdnImage = assetUrl("/hero.png");');
+    expect(js).toContain('const minifiedCdnImage = Jn("/nested-card.jpg");');
     expect(summary.webpWritten).toBe(2);
-    expect(summary.referenceRewrites).toBe(3);
+    expect(summary.referenceRewrites).toBe(4);
   });
 });
