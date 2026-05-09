@@ -161,6 +161,156 @@ func (h *passHandler) describePasses(w http.ResponseWriter, r *http.Request) {
 	writeSuccess(w, r, http.StatusOK, &transport.ListPassesResponse{Passes: passes})
 }
 
+// handleAdminPassesOrder POST /admin/api/ctl/passes/order — 后台管理触发付费 pass 下单
+//
+// 用途（billing-integration B2 新增）：
+//   - 后台管理员代用户触发付费 pass 下单流程，便于联调 / 客服补单
+//   - 入参：user_id（必填，后台必须显式指定）+ bundle_id + period + time_unit
+//   - 出参：deal_name + pay_url
+//
+// 鉴权：复用 admin 路由所在的 admin 鉴权（与 handleAdminPasses 一致；当前 mux 注册
+// 在同一前缀下，未来如有 admin 中间件可统一加挂）。
+func (h *passHandler) handleAdminPassesOrder(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
+		return
+	}
+
+	// 后台路径：必须显式带 user_id；这里把 user_id 当作 body 字段一起接（与
+	// CreateTrialPassRequest 的 admin 流程保持一致）。
+	var body struct {
+		UserID                            string `json:"user_id"`
+		transport.CreatePassOrderRequest         // 内嵌：bundle_id / period / time_unit
+	}
+	if err := decodeJSONBody(r, &body); err != nil {
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrInvalidParam, "%s", err.Error()))
+		return
+	}
+	if body.UserID == "" {
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrPassInvalidParam, "user_id is required for admin"))
+		return
+	}
+
+	result, err := h.logic.CreatePassOrder(body.UserID, &body.CreatePassOrderRequest)
+	if err != nil {
+		writeHTTPError(w, r, err)
+		return
+	}
+	writeSuccess(w, r, http.StatusOK, result)
+}
+
+// handleUserPassesOrder POST /v1/passes/order — 用户可见付费 pass 下单入口
+//
+// 用途（billing-integration B2 新增）：
+//   - 用户在控制台选择付费 bundle 后，由前端调本接口拿支付页 URL
+//   - user_id 自动取当前登录用户（请求 header X-User-Id）
+//   - 入参：bundle_id + period + time_unit
+//   - 出参：deal_name + pay_url
+func (h *passHandler) handleUserPassesOrder(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
+		return
+	}
+
+	ctx, ok := newRequestContext(r)
+	if !ok {
+		writeHTTPError(w, r, errcode.ErrUnauthorized)
+		return
+	}
+
+	var req transport.CreatePassOrderRequest
+	if err := decodeJSONBody(r, &req); err != nil {
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrInvalidParam, "%s", err.Error()))
+		return
+	}
+
+	result, err := h.logic.CreatePassOrder(ctx.GetUserID(), &req)
+	if err != nil {
+		writeHTTPError(w, r, err)
+		return
+	}
+	writeSuccess(w, r, http.StatusOK, result)
+}
+
+// handleAdminPassesOrderAndPay POST /admin/api/ctl/passes/order-and-pay — 后台触发"下单并支付"一体化（仅用于联调测试）
+//
+// ⚠️ **仅用于联调测试 / 自动化 e2e，现网控制台禁止暴露此入口给真实用户。**
+//
+// 用途（billing-integration B2 新增）：
+//   - 直接触发 jifei `qcloud.Deal.generateDealsAndPay` 一体化接口，跳过支付 URL 引导，
+//     用于 e2e 验证完整链路（含 jifei → trade.checkCreate → trade.createResource → ctl.CompletePass 回调）
+//   - 入参：user_id（必填）+ bundle_id + period + time_unit（与 CreatePassOrder 一致）
+//   - 出参：deal_name + big_order_id（不返 pay_url）
+//
+// 鉴权：复用 admin 路由（与 handleAdminPassesOrder 一致）；现网应通过运维网关 ACL 进一步收敛。
+func (h *passHandler) handleAdminPassesOrderAndPay(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
+		return
+	}
+
+	// 后台路径：必须显式带 user_id；与 handleAdminPassesOrder 入参结构对齐。
+	var body struct {
+		UserID                            string `json:"user_id"`
+		transport.CreatePassOrderRequest         // 内嵌：bundle_id / period / time_unit
+	}
+	if err := decodeJSONBody(r, &body); err != nil {
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrInvalidParam, "%s", err.Error()))
+		return
+	}
+	if body.UserID == "" {
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrPassInvalidParam, "user_id is required for admin"))
+		return
+	}
+
+	result, err := h.logic.CreatePassOrderAndPay(body.UserID, &body.CreatePassOrderRequest)
+	if err != nil {
+		writeHTTPError(w, r, err)
+		return
+	}
+	writeSuccess(w, r, http.StatusOK, result)
+}
+
+// handleUserPassesOrderAndPay POST /v1/passes/order-and-pay — 用户侧触发"下单并支付"一体化（仅用于联调测试）
+//
+// ⚠️ **仅用于联调测试 / 自动化 e2e，现网控制台禁止暴露此入口给真实用户。**
+// 现网用户支付链路：handleUserPassesOrder → 拿支付 URL → 跳转计费支付页 → 计费回调发货。
+//
+// 用途（billing-integration B2 新增）：
+//   - e2e 测试时直接以"当前登录用户"身份触发 jifei 一体化下单+支付，不走支付 URL
+//   - user_id 自动取当前登录用户（请求 header X-User-Id）
+//   - 入参：bundle_id + period + time_unit
+//   - 出参：deal_name + big_order_id
+func (h *passHandler) handleUserPassesOrderAndPay(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
+		return
+	}
+
+	ctx, ok := newRequestContext(r)
+	if !ok {
+		writeHTTPError(w, r, errcode.ErrUnauthorized)
+		return
+	}
+
+	var req transport.CreatePassOrderRequest
+	if err := decodeJSONBody(r, &req); err != nil {
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrInvalidParam, "%s", err.Error()))
+		return
+	}
+
+	result, err := h.logic.CreatePassOrderAndPay(ctx.GetUserID(), &req)
+	if err != nil {
+		writeHTTPError(w, r, err)
+		return
+	}
+	writeSuccess(w, r, http.StatusOK, result)
+}
+
 // handleInternalPasses 处理 /internal/ctl/passes 与 /internal/ctl/passes/* 内部反向回调路由
 //
 // 当前承载（v5 收敛 — billing-integration B3 + Q66 修订 + Q69 互斥占用规则）：

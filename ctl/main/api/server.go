@@ -161,7 +161,13 @@ func newRouter(handler *instanceHandler, bh *bundleHandler, ph *passHandler) htt
 
 	// Pass 路由
 	mux.HandleFunc("/admin/api/ctl/passes", ph.handleAdminPasses)
+	mux.HandleFunc("/admin/api/ctl/passes/order", ph.handleAdminPassesOrder)
+	// /admin/api/ctl/passes/order-and-pay — 仅用于联调测试 / 自动化 e2e，现网控制台禁止暴露
+	mux.HandleFunc("/admin/api/ctl/passes/order-and-pay", ph.handleAdminPassesOrderAndPay)
 	mux.HandleFunc("/v1/passes", ph.handleUserPasses)
+	mux.HandleFunc("/v1/passes/order", ph.handleUserPassesOrder)
+	// /v1/passes/order-and-pay — 仅用于联调测试 / 自动化 e2e，现网控制台禁止暴露
+	mux.HandleFunc("/v1/passes/order-and-pay", ph.handleUserPassesOrderAndPay)
 	// 内部反向回调（trade -> ctl）：
 	//   - 裸路径 /internal/ctl/passes 承载 GET 互斥占用查询（Q66 拍板）
 	//   - 子路径 /internal/ctl/passes/{action} 承载 POST 生命周期动作（complete / 后续 renew/isolate/destroy）
@@ -278,8 +284,9 @@ func normalizePath(path string) string {
 	// 静态路径直接返回
 	switch path {
 	case "/health", "/metrics", "/internal/bots", "/v1/soul-templates", "/v1/me/usage",
-		"/v1/bundles", "/v1/passes",
-		"/admin/api/ctl/bundles", "/admin/api/ctl/passes",
+		"/v1/bundles", "/v1/passes", "/v1/passes/order", "/v1/passes/order-and-pay",
+		"/admin/api/ctl/bundles", "/admin/api/ctl/passes", "/admin/api/ctl/passes/order",
+		"/admin/api/ctl/passes/order-and-pay",
 		"/internal/ctl/passes",
 		"/internal/ctl/passes/complete":
 		return path
