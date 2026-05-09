@@ -18,6 +18,12 @@ import (
 //   - JifeiCGWGatewayURL / JifeiCGWHostHeader：jifei CGW 询价 / 下单 / 退款响应等所有出向请求统一入口（Q51 / §3.5.5）
 //   - JifeiCallbackSignatureKey：jifei → trade 回调验签密钥（Q13 checkCreate signature 校验；与 Q47
 //     trade → jifei 请求方向不签名严格区分两个签名方向）
+//   - JifeiComponentName / JifeiProtocolVersion：trade 出口 PDF framework 出参（Q58）固定字段，
+//     jifei 侧按 PDF 协议解析 framework 双层结构；componentName 默认 `"trade"`，version 默认 `"1.0"`，
+//     联调期可按 jifei 同事 align 结果 override；具体语义见 .tmp/trade-purchase-flow-design.md Q58。
+//   - JifeiOurInterfacePrefix：jifei → trade 回调入参三段式 `interfaceName` 第一段（业务前缀）；
+//     默认 `"lightvela"`，dispatcher 层（Q60）按它校验 `lightvela.pass.checkCreate` /
+//     `lightvela.pass.createResource` 等是否属于 trade 自家路由。
 //
 // 环境变量命名遵循 monorepo 既有约定：
 //   - TRADE_*：trade 服务私有
@@ -33,6 +39,11 @@ type Config struct {
 	JifeiCGWGatewayURL          string
 	JifeiCGWHostHeader          string
 	JifeiCallbackSignatureKey   string
+
+	// Q58 出口 framework 双层结构必填项；Q60 dispatcher 入参三段式校验前缀。
+	JifeiComponentName       string
+	JifeiProtocolVersion     string
+	JifeiOurInterfacePrefix  string
 }
 
 // Load 从环境变量构建 Config，未设必填项时返回 error。
@@ -55,6 +66,11 @@ func Load() (Config, error) {
 		JifeiCGWGatewayURL:        strings.TrimSpace(os.Getenv("JIFEI_CGW_GATEWAY_URL")),
 		JifeiCGWHostHeader:        strings.TrimSpace(os.Getenv("JIFEI_CGW_HOST_HEADER")),
 		JifeiCallbackSignatureKey: strings.TrimSpace(os.Getenv("TRADE_TENCENT_BILLING_SIGNATURE_KEY")),
+
+		// Q58 / Q60 dispatcher + builder 默认值（联调期按 jifei align 后再 override）
+		JifeiComponentName:      envOrDefault("TRADE_JIFEI_COMPONENT_NAME", "trade"),
+		JifeiProtocolVersion:    envOrDefault("TRADE_JIFEI_PROTOCOL_VERSION", "1.0"),
+		JifeiOurInterfacePrefix: envOrDefault("TRADE_JIFEI_OUR_INTERFACE_PREFIX", "lightvela"),
 	}
 
 	if cfg.MySQLDSN == "" {

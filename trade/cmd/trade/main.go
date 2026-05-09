@@ -31,7 +31,10 @@ func main() {
 	_ = ctlClient // 防止 unused 编译错；迭代 5 起注入到 service / handler
 
 	router := httpapi.NewRouter(httpapi.ServerConfig{
-		InternalServiceToken: cfg.InternalServiceToken,
+		InternalServiceToken:    cfg.InternalServiceToken,
+		JifeiComponentName:      cfg.JifeiComponentName,
+		JifeiProtocolVersion:    cfg.JifeiProtocolVersion,
+		JifeiOurInterfacePrefix: cfg.JifeiOurInterfacePrefix,
 	})
 
 	server := &http.Server{

@@ -4,19 +4,32 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+
+	"git.woa.com/wisp/mono/trade/internal/httpapi/jifei"
 )
 
 // ServerConfig 是 NewRouter 的输入参数。
 type ServerConfig struct {
 	// InternalServiceToken 用于校验 ctl → trade 内部接口调用方身份。
 	InternalServiceToken string
+
+	// JifeiComponentName / JifeiProtocolVersion / JifeiOurInterfacePrefix 是
+	// jifei callback dispatcher（Q60）+ 出口 framework builder（Q58）的协议层配置；
+	// 由 cmd/trade/main.go 从 config.Config 直传到此结构。
+	JifeiComponentName      string
+	JifeiProtocolVersion    string
+	JifeiOurInterfacePrefix string
 }
 
 // NewRouter 装配 trade 服务的 HTTP Router。
 //
-// 当前迭代（迭代 1）仅暴露：
+// 当前迭代（迭代 4）暴露：
 //   - GET  /healthz                    存活探针
-//   - POST /trade/jifei/callback       jifei 回调统一 endpoint（Q60，dispatcher 占位，迭代 4 实现）
+//   - POST /trade/jifei/callback       jifei 回调统一 endpoint（Q60 dispatcher，三段式 interfaceName 路由）
+//
+// 已注册 interfaceName（迭代 4 全部为 stub，迭代 5/6 接入真实 handler）：
+//   - lightvela.pass.checkCreate     → stub（迭代 5 替换）
+//   - lightvela.pass.createResource  → stub（迭代 6 替换）
 //
 // 后续迭代逐步补充：
 //   - 迭代 5：checkCreate handler（实时 5 项校验，不写 trade_flow，每次独立校验，无幂等）
@@ -31,18 +44,11 @@ func NewRouter(cfg ServerConfig) *gin.Engine {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
-	// jifei 回调统一 endpoint（Q60）
-	// 真正的 dispatcher（按 PDF framework 双层 framework.componentName 路由 checkCreate /
-	// createResource / queryFlow / queryResources 等子接口）将在迭代 4 实现，本迭代仅暴露占位。
-	router.POST("/trade/jifei/callback", placeholderJifeiCallback)
+	// jifei 回调统一 endpoint（Q60）+ Q58 framework builder + Q60 dispatcher
+	builder := jifei.NewFrameworkBuilder(cfg.JifeiComponentName, cfg.JifeiProtocolVersion)
+	dispatcher := jifei.NewDispatcher(cfg.JifeiOurInterfacePrefix, builder)
+	jifei.InstallStubHandlers(dispatcher)
+	router.POST("/trade/jifei/callback", jifei.CallbackHandler(dispatcher))
 
 	return router
-}
-
-func placeholderJifeiCallback(c *gin.Context) {
-	c.JSON(http.StatusNotImplemented, gin.H{
-		"returnCode":    501,
-		"returnValue":   501,
-		"returnMessage": "jifei callback dispatcher not implemented yet (planned: iteration 4)",
-	})
 }

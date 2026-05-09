@@ -53,7 +53,7 @@ trade-migrate  # 读 TRADE_MYSQL_DSN 环境变量
 - [x] **迭代 1** — 设计稿章节落地清理 + trade 服务骨架（目录搭建、main.go、config、store、三表 migration、httpapi 空壳）
 - [x] **迭代 2** — ctl 仓 reverse RPC 暴露（GetBundleByID / ListPassesByUser 互斥占用查询 / CompletePass + trade `internal/ctlclient/` 封装；详见 `.tmp/trade-implementation-plan.md` 迭代 2 完成状态 + `.tmp/trade-purchase-flow-design.md` Q66 修订 + Q69 拍板）
 - [x] **迭代 3** — jifei CGW 协议适配层（出向：jifeiclient + bundledef DAO + jifei 适配层 共 52 测试 PASS；自决 Q67 PascalCase 最小字段集 + Q68 三层错误模型；详见 `.tmp/trade-implementation-plan.md` 迭代 3 完成状态 + `.tmp/trade-purchase-flow-design.md` Q67 / Q68 拍板）
-- [ ] **迭代 4** — jifei 回调入向 dispatcher（Q60）
+- [x] **迭代 4** — jifei 回调入向 dispatcher（统一 endpoint `POST /trade/jifei/callback` + 三段式 interfaceName 路由 + PDF framework 双层入/出参 + Q56 退款响应 builder + 迭代 5/6 stub 占位 + 35 个测试 PASS / 0 lint error；详见 `.tmp/trade-implementation-plan.md` 迭代 4 完成状态 + 设计稿 Q53/Q56/Q57/Q58/Q60 拍板）
 - [ ] **迭代 5** — checkCreate handler（Q62）
 - [ ] **迭代 6** — createResource handler（Q61 抢占式幂等）
 - [ ] **迭代 7** — trade_flow reconcile worker
