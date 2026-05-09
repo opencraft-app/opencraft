@@ -28,6 +28,8 @@ import (
 	"ctl/pkg/resource"
 	"ctl/pkg/tracing"
 	"ctl/pkg/transport"
+
+	adapterfactory "ctl/pkg/adapter/factory"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.uber.org/zap"
@@ -131,7 +133,13 @@ func (w *statusCapturingResponseWriter) Unwrap() http.ResponseWriter {
 func newAPIServer() (*apiServer, error) {
 	addr := fmt.Sprintf("%s:%d", config.ServerConf.APIConfig.Host, config.ServerConf.APIConfig.Port)
 	ih := &instanceHandler{logic: instancelogic.NewLogic()}
-	bh := &bundleHandler{logic: bundlelogic.NewLogic()}
+	bh := &bundleHandler{
+		logic: bundlelogic.NewLogic(),
+		// 注入 trade adapter，用于 describeBundles 调 trade 询价回填 user-facing
+		// UserBundleResponse.Price（迭代 8C / 设计稿 §10 Q-CGW-01）。失败时
+		// handler 内部会降级为 Price=nil，不阻断 bundle 列表。
+		tradeAdapter: adapterfactory.DefaultAdapterFactory.TradeAdapter(),
+	}
 	ph := &passHandler{logic: passlogic.NewLogic()}
 	server := &http.Server{
 		Addr:              addr,

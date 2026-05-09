@@ -22,6 +22,7 @@ import (
 	psandbox "ctl/pkg/adapter/sandbox"
 	"ctl/pkg/adapter/shadow"
 	"ctl/pkg/adapter/sts"
+	"ctl/pkg/adapter/trade"
 	"ctl/pkg/adapter/whitelist"
 	"ctl/pkg/config"
 	instancelogic "ctl/pkg/instance"
@@ -134,6 +135,7 @@ func (f *apiIntegrationAdapterFactory) WhitelistAdapter() whitelist.Adapter     
 func (f *apiIntegrationAdapterFactory) AiGatewayAdapter() paigateway.Adapter             { return f.aigateway }
 func (f *apiIntegrationAdapterFactory) OpenClawGatewayAdapter() popenclawgateway.Adapter { return nil }
 func (f *apiIntegrationAdapterFactory) ShadowAdapter() shadow.Adapter                    { return nil }
+func (f *apiIntegrationAdapterFactory) TradeAdapter() trade.Adapter                      { return nil }
 
 func (h *apiIntegrationHarness) request(t *testing.T, method, path string, body any, headers map[string]string) *http.Response {
 	t.Helper()

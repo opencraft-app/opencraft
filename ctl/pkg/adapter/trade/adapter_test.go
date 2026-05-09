@@ -388,3 +388,185 @@ func TestErrorOnNilReceiver(t *testing.T) {
 		t.Fatalf("expected empty string for nil receiver, got %q", got)
 	}
 }
+
+// ============================================================================
+// InquiryBatch（迭代 8C）
+// ============================================================================
+
+func TestInquiryBatch_Success(t *testing.T) {
+	var (
+		gotMethod string
+		gotPath   string
+		gotAuth   string
+		gotCT     string
+		gotReq    InquiryBatchRequest
+	)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		gotAuth = r.Header.Get("Authorization")
+		gotCT = r.Header.Get("Content-Type")
+		if err := json.NewDecoder(r.Body).Decode(&gotReq); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(InquiryBatchResult{
+			Prices: []*BundleQuote{
+				{
+					BundleID:      "bundle_basic_monthly",
+					BundleName:    "基础版月卡",
+					Price:         "9.90",
+					TotalCost:     "9.90",
+					RealTotalCost: "9.90",
+					Currency:      "CNY",
+					Discount:      1.0,
+					TimeSpan:      1,
+					TimeUnit:      "m",
+					GoodsNum:      1,
+				},
+				{
+					BundleID:      "bundle_pro_yearly",
+					BundleName:    "专业版年卡",
+					Price:         "999.00",
+					TotalCost:     "999.00",
+					RealTotalCost: "899.10",
+					Currency:      "CNY",
+					Discount:      0.9,
+					TimeSpan:      1,
+					TimeUnit:      "y",
+					GoodsNum:      1,
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	adp := newTestAdapter(t, server.URL, "internal-token")
+
+	result, err := adp.InquiryBatch(context.Background(), &InquiryBatchRequest{
+		ExternalUserID: "usr_test",
+		BundleIDs:      []string{"bundle_basic_monthly", "bundle_pro_yearly"},
+		Period:         1,
+		TimeUnit:       "m",
+		GoodsNum:       1,
+		PayMode:        1,
+		RegionID:       47,
+	})
+	if err != nil {
+		t.Fatalf("InquiryBatch: %v", err)
+	}
+
+	if gotMethod != http.MethodPost {
+		t.Fatalf("expected POST, got %s", gotMethod)
+	}
+	if gotPath != "/internal/trade/inquiry/batch" {
+		t.Fatalf("unexpected path: %s", gotPath)
+	}
+	if gotAuth != "Bearer internal-token" {
+		t.Fatalf("expected bearer header, got %q", gotAuth)
+	}
+	if gotCT != "application/json" {
+		t.Fatalf("expected application/json content-type, got %q", gotCT)
+	}
+	if len(gotReq.BundleIDs) != 2 || gotReq.BundleIDs[0] != "bundle_basic_monthly" {
+		t.Fatalf("unexpected request body: %+v", gotReq)
+	}
+	if gotReq.Period != 1 || gotReq.TimeUnit != "m" || gotReq.RegionID != 47 || gotReq.PayMode != 1 || gotReq.GoodsNum != 1 {
+		t.Fatalf("unexpected request defaults: %+v", gotReq)
+	}
+	if result == nil || len(result.Prices) != 2 {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+	if result.Prices[0].BundleID != "bundle_basic_monthly" || result.Prices[0].RealTotalCost != "9.90" {
+		t.Fatalf("unexpected first quote: %+v", result.Prices[0])
+	}
+	if result.Prices[1].Discount != 0.9 || result.Prices[1].Currency != "CNY" {
+		t.Fatalf("unexpected second quote: %+v", result.Prices[1])
+	}
+}
+
+func TestInquiryBatch_BaseURLMissing(t *testing.T) {
+	adp := NewTradeAdapter(&Config{}, nil)
+	_, err := adp.InquiryBatch(context.Background(), &InquiryBatchRequest{
+		ExternalUserID: "x",
+		BundleIDs:      []string{"b1"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "base_url not configured") {
+		t.Fatalf("expected base_url error, got %v", err)
+	}
+}
+
+func TestInquiryBatch_NilRequest(t *testing.T) {
+	adp := newTestAdapter(t, "http://example.invalid", "")
+	_, err := adp.InquiryBatch(context.Background(), nil)
+	if err == nil || !strings.Contains(err.Error(), "request is nil") {
+		t.Fatalf("expected nil request error, got %v", err)
+	}
+}
+
+func TestInquiryBatch_EmptyBundleIDs(t *testing.T) {
+	adp := newTestAdapter(t, "http://example.invalid", "tok")
+	_, err := adp.InquiryBatch(context.Background(), &InquiryBatchRequest{
+		ExternalUserID: "usr",
+		BundleIDs:      nil,
+	})
+	if err == nil || !strings.Contains(err.Error(), "bundleIds is required") {
+		t.Fatalf("expected bundleIds required error, got %v", err)
+	}
+}
+
+func TestInquiryBatch_BusinessError_DecodedAsTradeError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(errorResponse{
+			Code:    "BundleNotFound",
+			Message: "bundle bundle_x not found",
+		})
+	}))
+	defer server.Close()
+
+	adp := newTestAdapter(t, server.URL, "tok")
+
+	_, err := adp.InquiryBatch(context.Background(), &InquiryBatchRequest{
+		ExternalUserID: "usr_test",
+		BundleIDs:      []string{"bundle_x"},
+		Period:         1,
+		TimeUnit:       "m",
+	})
+	var tradeErr *Error
+	if !errors.As(err, &tradeErr) {
+		t.Fatalf("expected *trade.Error, got %T: %v", err, err)
+	}
+	if tradeErr.Status != http.StatusNotFound || tradeErr.Code != "BundleNotFound" {
+		t.Fatalf("unexpected error: %+v", tradeErr)
+	}
+	if !strings.Contains(tradeErr.Endpoint, "/internal/trade/inquiry/batch") {
+		t.Fatalf("expected endpoint /internal/trade/inquiry/batch, got %q", tradeErr.Endpoint)
+	}
+}
+
+func TestInquiryBatch_TokenOptional(t *testing.T) {
+	// Token 为空时不应注入 Authorization header（避免发出 "Bearer " 这种坏值）。
+	var gotAuth string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(InquiryBatchResult{Prices: []*BundleQuote{}})
+	}))
+	defer server.Close()
+
+	adp := newTestAdapter(t, server.URL, "")
+
+	_, err := adp.InquiryBatch(context.Background(), &InquiryBatchRequest{
+		ExternalUserID: "x",
+		BundleIDs:      []string{"b1"},
+	})
+	if err != nil {
+		t.Fatalf("InquiryBatch: %v", err)
+	}
+	if gotAuth != "" {
+		t.Fatalf("expected no auth header when token empty, got %q", gotAuth)
+	}
+}

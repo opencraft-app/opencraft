@@ -2,6 +2,7 @@
 //
 // 端点对接（与 trade.internal/httpapi/internalapi/handler.go 保持一致）：
 //
+//   - POST /internal/trade/inquiry/batch                 批量询价（InquiryBatch，迭代 8C describeBundles 用）
 //   - POST /internal/trade/orders                        下单（PlaceOrder）
 //   - POST /internal/trade/orders/place-and-pay         下单 + 支付一体化（PlaceOrderAndPay，迭代 8B-1.5）
 //   - POST /internal/trade/orders/{dealName}/pay-url     生成 / 反查支付页 URL（GeneratePayURL）
@@ -72,8 +73,66 @@ type PayURLResult struct {
 	ExpireAt string `json:"expireAt,omitempty"`
 }
 
+// InquiryBatchRequest 与 trade /internal/trade/inquiry/batch 入参 inquiryBatchRequest 字段集对齐。
+//
+// 设计稿 §3.4 / §10 Q-CGW-01：
+//   - period / timeUnit 来自调用方 HTTP 入参（Q24 拍板，bundle 不再持有时长）
+//   - 入参不带 subProductCode（Q25 拍板，trade 内部按 bundleId 查 trade_bundle_definition）
+//   - ExternalUserID 是当前登录用户的业务 ID；ShadowClient 已注入时调用方可只传 ExternalUserID，
+//     trade 自动反查 (Uin, AppID)
+//   - 公开页未登录场景（Q31 选项 b）：ctl 不应调到本接口，前端走"无价 bundle 列表"分支
+type InquiryBatchRequest struct {
+	ExternalUserID string   `json:"externalUserId"`
+	Uin            string   `json:"uin,omitempty"`
+	AppID          string   `json:"appId,omitempty"`
+	BundleIDs      []string `json:"bundleIds"`
+	Period         int      `json:"period"`   // 时长数值（如 1 / 12）
+	TimeUnit       string   `json:"timeUnit"` // "m" / "y"
+	GoodsNum       int      `json:"goodsNum"` // 本期固定 1（Q41）
+	PayMode        int      `json:"payMode"`  // 0/1/2，本期固定 1（预付，Q42）
+	RegionID       int      `json:"regionId"` // 默认 47（fixedRegionID，Q41）
+}
+
+// BundleQuote 是 trade 询价响应单条 bundle 报价（与 trade.inquiry.QuoteResult 字段集对齐）。
+//
+// 字段命名 snake_case 与 ctl 整体风格对齐；trade 侧 QuoteResult 已经是 snake_case JSON tag，
+// 这里直接复用。Currency / Discount 由 trade 侧拍平 CGW policyDetail.total 后给出。
+type BundleQuote struct {
+	BundleID       string  `json:"bundle_id"`
+	BundleName     string  `json:"bundle_name"`
+	Price          string  `json:"price"`           // 单价（带小数字符串）
+	TotalCost      string  `json:"total_cost"`      // 折扣前总价
+	RealTotalCost  string  `json:"real_total_cost"` // 实付总价（折扣后）
+	Currency       string  `json:"currency"`        // 通常 "CNY"
+	Discount       float64 `json:"discount"`        // policyDetail.total 拍平
+	TimeSpan       int     `json:"time_span"`
+	TimeUnit       string  `json:"time_unit"`
+	GoodsNum       int     `json:"goods_num"`
+	ProductCode    string  `json:"product_code"`
+	SubProductCode string  `json:"sub_product_code"`
+	Pid            string  `json:"pid"`
+}
+
+// InquiryBatchResult 与 trade inquiryBatchResponse 字段集对齐。
+type InquiryBatchResult struct {
+	Prices []*BundleQuote `json:"prices"`
+}
+
 // Adapter trade 服务适配器接口。
 type Adapter interface {
+	// InquiryBatch 调 trade POST /internal/trade/inquiry/batch 批量询价。
+	//
+	// 用途（迭代 8C 设计稿 §3.4 / §10 Q-CGW-01）：
+	//   - ctl describeBundles handler 在拿到 ONLINE bundle 列表后调本接口拉取每个 bundle 的
+	//     当前报价，回填到 user-facing UserBundleResponse.Price 字段
+	//   - jifei 询价 SDK 在 trade 侧已支持单 RPC 多 bundle 询价（trade 内部串行调 jifei），
+	//     ctl 一次 RPC 拿全部报价
+	//
+	// 错误降级语义（调用方约定）：
+	//   - 任一 bundle 询价失败 → trade 返回 4xx/5xx；ctl 调用方应捕获后整批回填 nil，
+	//     不阻断 bundle 列表展示（设计稿 §10 Q-CGW-01）
+	InquiryBatch(ctx context.Context, req *InquiryBatchRequest) (*InquiryBatchResult, error)
+
 	// PlaceOrder 调 trade POST /internal/trade/orders 创建一笔 jifei 订单。
 	PlaceOrder(ctx context.Context, req *PlaceOrderRequest) (*PlaceOrderResult, error)
 
@@ -155,6 +214,25 @@ func (e *Error) Error() string {
 	}
 	return fmt.Sprintf("trade adapter: %s -> %d %s: %s",
 		e.Endpoint, e.Status, e.Code, e.Message)
+}
+
+func (a *adapter) InquiryBatch(ctx context.Context, req *InquiryBatchRequest) (*InquiryBatchResult, error) {
+	if a.config.BaseURL == "" {
+		return nil, fmt.Errorf("trade adapter: base_url not configured")
+	}
+	if req == nil {
+		return nil, fmt.Errorf("trade adapter: InquiryBatch request is nil")
+	}
+	if len(req.BundleIDs) == 0 {
+		return nil, fmt.Errorf("trade adapter: InquiryBatch: bundleIds is required")
+	}
+
+	endpoint := strings.TrimRight(a.config.BaseURL, "/") + "/internal/trade/inquiry/batch"
+	var result InquiryBatchResult
+	if err := a.doJSON(ctx, http.MethodPost, endpoint, req, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
 }
 
 func (a *adapter) PlaceOrder(ctx context.Context, req *PlaceOrderRequest) (*PlaceOrderResult, error) {
