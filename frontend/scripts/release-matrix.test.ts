@@ -68,6 +68,8 @@ describe("release matrix helpers", () => {
     const comboEnv = createComboEnvironment(cnCfCombo, "lightclaw", env);
 
     expect(comboEnv.VITE_AUTH_API_BASE_URL).toBe("https://lightclaw.tech");
+    expect(comboEnv.VITE_AEGIS_ENABLED).toBe("false");
+    expect(comboEnv.VITE_AEGIS_ID).toBeUndefined();
     expect(comboEnv.CLOUDFLARE_PAGES_PROJECT_NAME).toBe("lightclaw");
     expect(comboEnv.CLOUDFLARE_PAGES_DIR).toBe("dist-cn");
     expect(formatComboSummary(cnCfCombo, "lightclaw")).toContain("cn-cf");
@@ -83,6 +85,69 @@ describe("release matrix helpers", () => {
     expect(comboEnv.CLOUDFLARE_PAGES_PROJECT_NAME).toBe("lightvela-intl");
     expect(comboEnv.CLOUDFLARE_PAGES_DIR).toBe("dist-global");
     expect(comboEnv.VITE_AUTH_API_BASE_URL).toBe("https://lightclaw.tech");
+    expect(comboEnv.VITE_AEGIS_ENABLED).toBe("false");
+  });
+
+  it("injects Aegis environment from combo observability config", () => {
+    const comboEnv = createComboEnvironment({
+      ...cnCfCombo,
+      observability: {
+        aegis: {
+          enabled: "true",
+          id: "rum-cn",
+          hostUrl: "https://rumt-zh.com",
+        },
+      },
+    }, "lightclaw", {
+      CLOUDFLARE_API_TOKEN: "token",
+      CLOUDFLARE_ACCOUNT_ID: "account",
+      VITE_AEGIS_ID: "should-not-leak",
+    });
+
+    expect(comboEnv.VITE_AEGIS_ENABLED).toBe("true");
+    expect(comboEnv.VITE_AEGIS_ID).toBe("rum-cn");
+    expect(comboEnv.VITE_AEGIS_HOST_URL).toBe("https://rumt-zh.com");
+  });
+
+  it("injects global Aegis environment from explicit combo config", () => {
+    const comboEnv = createComboEnvironment({
+      ...globalCfCombo,
+      observability: {
+        aegis: {
+          enabled: "true",
+          id: "rum-global",
+          hostUrl: "https://rumt-sg.com",
+        },
+      },
+    }, "lightvela-intl", {
+      CLOUDFLARE_API_TOKEN: "token",
+      CLOUDFLARE_ACCOUNT_ID: "account",
+      VITE_AEGIS_ID: "should-not-leak",
+    });
+
+    expect(comboEnv.VITE_AEGIS_ENABLED).toBe("true");
+    expect(comboEnv.VITE_AEGIS_ID).toBe("rum-global");
+    expect(comboEnv.VITE_AEGIS_HOST_URL).toBe("https://rumt-sg.com");
+  });
+
+  it("does not leak ambient Aegis values when combo omits them", () => {
+    const comboEnv = createComboEnvironment({
+      ...globalCfCombo,
+      observability: {
+        aegis: {
+          enabled: "auto",
+        },
+      },
+    }, "lightvela-intl", {
+      CLOUDFLARE_API_TOKEN: "token",
+      CLOUDFLARE_ACCOUNT_ID: "account",
+      VITE_AEGIS_ID: "ambient-id",
+      VITE_AEGIS_HOST_URL: "https://ambient.example.com",
+    });
+
+    expect(comboEnv.VITE_AEGIS_ENABLED).toBe("auto");
+    expect(comboEnv.VITE_AEGIS_ID).toBeUndefined();
+    expect(comboEnv.VITE_AEGIS_HOST_URL).toBeUndefined();
   });
 
   it("carries optional deploy env values for edgeone combos", () => {
@@ -122,6 +187,13 @@ describe("release matrix helpers", () => {
       projectName: "lightvela",
       authApiBaseUrl: "https://api.lightvela.tencent.com",
       outputDir: "dist-cn",
+      observability: {
+        aegis: {
+          enabled: "true",
+          id: "4e66EF5XoPEXx3y8lw",
+          hostUrl: "https://rumt-zh.com",
+        },
+      },
       deployEnv: {
         EDGEONE_PAGES_AREA: "global",
         EDGEONE_PAGES_ENV: "production",
@@ -142,6 +214,13 @@ describe("release matrix helpers", () => {
       projectName: "lightvela-intl",
       authApiBaseUrl: "https://lightclaw.tech",
       outputDir: "dist-global",
+      observability: {
+        aegis: {
+          enabled: "true",
+          id: "2ellOCK3ozed3owgOj",
+          hostUrl: "https://rumt-sg.com",
+        },
+      },
       deployEnv: {
         EDGEONE_PAGES_AREA: "global",
         EDGEONE_PAGES_ENV: "production",

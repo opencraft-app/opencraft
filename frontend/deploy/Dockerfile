@@ -13,6 +13,12 @@ COPY vendor ./vendor
 
 ARG VITE_AUTH_API_BASE_URL
 ENV VITE_AUTH_API_BASE_URL="${VITE_AUTH_API_BASE_URL}"
+ARG VITE_AEGIS_ENABLED=true
+ARG VITE_AEGIS_ID=4e66EF5XoPEXx3y8lw
+ARG VITE_AEGIS_HOST_URL=https://rumt-zh.com
+ENV VITE_AEGIS_ENABLED="${VITE_AEGIS_ENABLED}"
+ENV VITE_AEGIS_ID="${VITE_AEGIS_ID}"
+ENV VITE_AEGIS_HOST_URL="${VITE_AEGIS_HOST_URL}"
 
 RUN corepack enable && corepack prepare pnpm@10.23.0 --activate && cd /frontend && pnpm install --frozen-lockfile && pnpm build
 

@@ -32,6 +32,7 @@
     "@tencent/tea-sdk-lightclaw": "^1.0.33",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
+    "aegis-web-sdk": "^1.41.13",
     "bson": "^7.2.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

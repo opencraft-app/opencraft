@@ -2,6 +2,7 @@
 // tea-component 在模块初始化时就会调用这些已移除的 API，必须在任何
 // tea-component 代码执行前完成 monkey-patch。
 import "@/polyfills/react-dom-compat";
+import "@/observability/aegis-bootstrap";
 
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
