@@ -33,6 +33,7 @@ AUTO_RELEASE_WORKFLOWS = {
 BUSINESS_WORKFLOWS = {
     ".ci/admin-gateway.yml",
     ".ci/ai-gateway.yml",
+    ".ci/cloudladdergateway.yml",
     ".ci/ctl.yml",
     ".ci/frontend.yml",
     ".ci/gateway-dashboard.yml",

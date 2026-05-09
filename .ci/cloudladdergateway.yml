@@ -1,0 +1,56 @@
+version: v2.0
+name: 构建 cloudladdergateway
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - cloudladdergateway/**
+    paths-ignore:
+      - OWNERS
+      - "**/OWNERS"
+  manual: enabled
+
+concurrency:
+  group: mono2-service-build-cloudladdergateway
+  cancel-in-progress: true
+  queue-length: 1
+  queue-timeout-minutes: 60
+
+stages:
+  - name: 构建 cloudladdergateway
+    jobs:
+      validate:
+        name: 测试并构建 cloudladdergateway
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - checkout: self
+            name: 拉取代码
+            with:
+              fetchDepth: 50
+          - name: 打印 cloudladdergateway 构建上下文
+            shell: bash
+            run: |
+              echo "ci.event=${{ ci.event }}"
+              echo "ci.branch=${{ ci.branch }}"
+              echo "ci.sha=${{ ci.sha }}"
+          - name: 测试并构建 cloudladdergateway
+            shell: bash
+            run: |
+              source .ci/init.sh
+              ci_init_repo_root
+              ci_require_commands go docker
+
+              go version
+              docker version
+
+              SHORT_SHA="${{ ci.sha }}"
+              SHORT_SHA="${SHORT_SHA:0:12}"
+
+              make -C cloudladdergateway test
+              make -C cloudladdergateway image \
+                REGISTRY=cloudladdergateway-ci \
+                TAG="${SHORT_SHA}"

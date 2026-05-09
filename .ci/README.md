@@ -42,6 +42,12 @@
 - `.ci/staticpages.yml`
 - `.ci/subscription.yml`
 
+独立验证入口：
+
+- `.ci/cloudladdergateway.yml`
+  - 当前只运行 `go test ./...` 和 Docker 镜像构建验证。
+  - 该服务暂未接入 GitOps release bundle，因此不使用 `.ci/templates/service-release.yml`，也不会自动 promote/pin。
+
 这些入口保留 `name` / `on.push.paths` / `manual` / `extends`，并通过统一模板传入
 `SERVICE` / `BUNDLE` / `DISPLAY_NAME`。服务级变更仍由对应 `.ci/<service>.yml`
 的 `push.paths` 触发，模板只承载执行逻辑。
@@ -65,6 +71,7 @@
 - 不要为了 `extends.template.path` 对象写法切到 `version: v3.0`；蓝盾 PAC v3 暂未支持局部模板，`.ci/templates/service-release.yml` 这类本仓库模板应继续走 Stream v2。
 - 非流水线配置不要使用 `.yaml` 后缀放在 `.ci/**` 下；蓝盾会把 `.ci/**/*.yaml` 误识别成流水线候选。Guard 注册表用 `.ci/guards.manifest`，release bundle 源用 `.ci/runtime/bundles/*.bundle`。
 - `frontend`、`frontend-edgeone-*`、`gitops-*`、`ci-runtime`、`mr-placeholder` 不属于这批标准 service release 入口，不使用该模板。
+- `cloudladdergateway` 当前只有独立验证入口，不属于标准 service release 入口；等补齐 GitOps closure 和 release bundle 后再迁入模板。
 
 ### Release 并发模型
 
@@ -845,6 +852,7 @@ CI_RUNTIME_REF=refs/tags/ci-runtime-20260429-1
 - `admin-gateway.yml`
 - `ai-gateway.yml`
 - `ci-runtime.yml`
+- `cloudladdergateway.yml`
 - `ctl.yml`
 - `frontend-edgeone-lightvela.yml`
 - `frontend-edgeone-lightvela-intl.yml`

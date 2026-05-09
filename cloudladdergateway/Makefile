@@ -1,4 +1,12 @@
-.PHONY: generate test
+IMAGE ?= cloudladdergateway
+TAG ?= dev
+CSIGHUB_PUBLIC_REGISTRY ?= csighub.tencentyun.com/skipzhang
+CSIGHUB_PUSH_REGISTRY ?= 21.41.42.116:80/skipzhang
+CRANE ?= go run github.com/google/go-containerregistry/cmd/crane@v0.21.4
+IMAGE_TARBALL ?= $(TMPDIR)$(IMAGE)-$(TAG).tar
+REGISTRY ?= $(CSIGHUB_PUBLIC_REGISTRY)
+
+.PHONY: generate test image login-csighub csighub run-image
 
 generate:
 	rm -rf gen cloudladdergateway
@@ -13,3 +21,27 @@ generate:
 
 test:
 	go test ./...
+
+image:
+	docker build --platform linux/amd64 \
+		-f Dockerfile \
+		-t "$(REGISTRY)/$(IMAGE):$(TAG)" \
+		..
+
+login-csighub:
+	REGISTRY_HOST="$$(printf '%s' "$(REGISTRY)" | cut -d/ -f1)" \
+		./scripts/csighub_login.sh
+
+csighub: image
+	docker save "$(REGISTRY)/$(IMAGE):$(TAG)" -o "$(IMAGE_TARBALL)"
+	$(CRANE) push --insecure "$(IMAGE_TARBALL)" "$(CSIGHUB_PUSH_REGISTRY)/$(IMAGE):$(TAG)"
+	@echo "pushed $(CSIGHUB_PUSH_REGISTRY)/$(IMAGE):$(TAG)"
+
+run-image:
+	@test -n "$$CLOUDLADDER_PAYMENT_HMAC_SECRET" || (echo "CLOUDLADDER_PAYMENT_HMAC_SECRET is required at runtime"; exit 1)
+	@printf 'CLOUDLADDER_PAYMENT_HMAC_SECRET set=true length=%s fingerprint=%s\n' \
+		"$${#CLOUDLADDER_PAYMENT_HMAC_SECRET}" \
+		"$$(printf '%s' "$$CLOUDLADDER_PAYMENT_HMAC_SECRET" | shasum -a 256 | awk '{print substr($$1,1,12)}')"
+	docker run --rm -p 8095:8095 \
+		-e CLOUDLADDER_PAYMENT_HMAC_SECRET \
+		"$(REGISTRY)/$(IMAGE):$(TAG)"
