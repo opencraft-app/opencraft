@@ -838,7 +838,7 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
         output: string;
       }>(baseUrl, `/v1/instances/${encodeURIComponent(botId)}/debug/exec`, {
         method: "POST",
-        body: { command },
+        body: { command, run_as_user: "agentuser" },
       });
       return {
         status: payload.status,

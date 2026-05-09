@@ -132,6 +132,43 @@ class GitOpsKustomizeValidationTests(unittest.TestCase):
             args = args_file.read_text().splitlines()
             self.assertIn("argocd/services/demo/beijing-sandbox-2", args)
 
+    def test_kustomize_validator_loads_playground_catalog_targets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self.write_repo(Path(tmp), env="sandbox-bj-6")
+            args_file = repo / "args.txt"
+            fake_kustomize = repo / "fake-kustomize"
+            fake_kustomize.write_text(
+                textwrap.dedent(
+                    f"""\
+                    #!/usr/bin/env bash
+                    printf '%s\\n' "$@" > {args_file}
+                    cat <<'YAML'
+                    apiVersion: v1
+                    kind: ConfigMap
+                    metadata:
+                      name: demo
+                    YAML
+                    """
+                )
+            )
+            fake_kustomize.chmod(0o755)
+
+            exit_code = self.run_main(
+                [
+                    "validate_gitops_kustomize.py",
+                    "--repo-root",
+                    str(repo),
+                    "--env",
+                    "sandbox-bj-6",
+                    "--kustomize-bin",
+                    str(fake_kustomize),
+                ]
+            )
+
+            self.assertEqual(exit_code, 0)
+            args = args_file.read_text().splitlines()
+            self.assertIn("argocd/services/demo/sandbox-bj-6", args)
+
     def test_kustomize_validator_accepts_explicit_source_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = self.write_repo(Path(tmp))
@@ -228,9 +265,14 @@ class GitOpsKustomizeValidationTests(unittest.TestCase):
             self.assertEqual(args_file.read_text().splitlines(), ["argocd/services/frontend/shprod"])
 
     def write_repo(self, repo: Path, env: str = "beijing-sandbox") -> Path:
-        (repo / f"argocd/catalogs/sandbox/{env}").mkdir(parents=True)
+        catalog_root = (
+            f"argocd/catalogs/playground/beijing-playground/{env}"
+            if env.startswith("sandbox-bj-")
+            else f"argocd/catalogs/sandbox/{env}"
+        )
+        (repo / catalog_root).mkdir(parents=True)
         (repo / f"argocd/services/demo/{env}").mkdir(parents=True)
-        (repo / f"argocd/catalogs/sandbox/{env}/demo.yaml").write_text(
+        (repo / f"{catalog_root}/demo.yaml").write_text(
             textwrap.dedent(
                 f"""\
                 service: demo

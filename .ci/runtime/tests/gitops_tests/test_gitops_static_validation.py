@@ -37,6 +37,18 @@ class GitOpsStaticValidationTests(unittest.TestCase):
 
             self.assertEqual(errors, [])
 
+    def test_valid_playground_catalog_passes_without_release_bundle_closure(self) -> None:
+        with self.repo() as tmp:
+            repo = self.write_valid_repo(tmp, env="sandbox-bj-6")
+
+            errors = validate(
+                repo,
+                "sandbox-bj-6",
+                repo / ".ci/runtime/release-bundles.manifest",
+            )
+
+            self.assertEqual(errors, [])
+
     def test_explicit_catalog_publish_exemption_passes(self) -> None:
         with self.repo() as tmp:
             repo = self.write_valid_repo(tmp, env="beijing-sandbox-2")
@@ -155,9 +167,14 @@ class GitOpsStaticValidationTests(unittest.TestCase):
 
     def write_valid_repo(self, raw_repo: str | Path, env: str = "beijing-sandbox") -> Path:
         repo = Path(raw_repo)
+        catalog_root = (
+            f"argocd/catalogs/playground/beijing-playground/{env}"
+            if env.startswith("sandbox-bj-")
+            else f"argocd/catalogs/sandbox/{env}"
+        )
         (repo / ".ci/runtime").mkdir(parents=True)
         (repo / "argocd/apps/beijing-sandbox").mkdir(parents=True)
-        (repo / f"argocd/catalogs/sandbox/{env}").mkdir(parents=True)
+        (repo / catalog_root).mkdir(parents=True)
         (repo / f"argocd/services/demo/{env}").mkdir(parents=True)
         (repo / "argocd/services/demo/common").mkdir(parents=True)
         (repo / "argocd/services/demo/profiles/sandbox").mkdir(parents=True)
@@ -183,7 +200,7 @@ class GitOpsStaticValidationTests(unittest.TestCase):
                         - argocd/services/demo/common/**
                         - argocd/services/demo/profiles/sandbox/**
                         - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
-                        - argocd/catalogs/sandbox/{env}/demo.yaml
+                        - {catalog_root}/demo.yaml
                         - argocd/secrets/{env}/demo.sops.yaml
                 """
             )
@@ -192,7 +209,7 @@ class GitOpsStaticValidationTests(unittest.TestCase):
             self.appset_text("{{ .sourcePath }}")
         )
         (repo / "argocd/apps/beijing-sandbox/argocd-runtime.yaml").write_text("kind: Application\n")
-        (repo / f"argocd/catalogs/sandbox/{env}/demo.yaml").write_text(
+        (repo / f"{catalog_root}/demo.yaml").write_text(
             textwrap.dedent(
                 f"""\
                 service: demo
@@ -248,6 +265,7 @@ class GitOpsStaticValidationTests(unittest.TestCase):
                 - git:
                     files:
                       - path: argocd/catalogs/sandbox/*/*.yaml
+                      - path: argocd/catalogs/playground/beijing-playground/*/*.yaml
               template:
                 spec:
                   source:

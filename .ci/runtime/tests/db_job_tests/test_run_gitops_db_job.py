@@ -66,9 +66,55 @@ class RunGitopsDbJobTests(unittest.TestCase):
 
         self.assertEqual(image, "example.com/payment:release")
 
-    def test_ctl_database_name_is_env_scoped_for_playground(self) -> None:
-        self.assertEqual(db_job.ctl_database_name("sandbox-bj-4"), "ctl_sandbox_bj_4")
-        self.assertEqual(db_job.ctl_database_name("beijing-sandbox"), "ctl")
+    def test_regular_db_job_uses_platform_env_image_before_live_lookup(self) -> None:
+        image = db_job.resolve_job_image(
+            SimpleNamespace(image_override="", kubectl_retries=1),
+            db_job.SERVICE_SPECS[("payment", "migration")],
+            kubeconfig="/tmp/unused",
+            service_platform_env={"PAYMENT_IMAGE": "example.com/payment:from-env"},
+        )
+
+        self.assertEqual(image, "example.com/payment:from-env")
+
+    def test_payment_db_job_loads_gitops_platform_env(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            env_file = Path(tmp) / "argocd/services/payment/sandbox-bj-6/payment-platform.env"
+            env_file.parent.mkdir(parents=True)
+            env_file.write_text("PAYMENT_IMAGE=example.com/payment:from-file\n")
+
+            payload = db_job.load_service_platform_env(
+                db_job.SERVICE_SPECS[("payment", "migration")],
+                "sandbox-bj-6",
+                Path(tmp),
+            )
+
+        self.assertEqual(payload["PAYMENT_IMAGE"], "example.com/payment:from-file")
+
+    def test_dsn_based_jobs_build_expected_dsn_before_running_migration(self) -> None:
+        cases = (
+            (("lightclaw-auth", "migration"), "LIGHTCLAW_MYSQL_DSN", "/usr/local/bin/lightclaw-auth-migrate"),
+            (("lightclaw-auth", "seed"), "LIGHTCLAW_MYSQL_DSN", "/usr/local/bin/lightclaw-auth-seed"),
+            (("ai-gateway", "migration"), "AI_GATEWAY_MIGRATE_DSN", "/usr/local/bin/ai-gateway-migrate"),
+            (("subscription", "migration"), "SUBSCRIPTION_MYSQL_DSN", "/usr/local/bin/subscription-migrate"),
+        )
+
+        for key, dsn_env, binary in cases:
+            with self.subTest(key=key):
+                command = " ".join(db_job.SERVICE_SPECS[key]["command"])
+                self.assertIn(f"export {dsn_env}=", command)
+                self.assertIn("multiStatements=true", command)
+                self.assertIn(binary, command)
+
+    def test_kubectl_command_adds_request_timeout(self) -> None:
+        command = db_job.kubectl_command(["kubectl", "--kubeconfig", "/tmp/kubeconfig", "get", "pods"])
+
+        self.assertEqual(command[:2], ["kubectl", "--request-timeout=60s"])
+
+    def test_kubectl_command_preserves_existing_request_timeout(self) -> None:
+        command = db_job.kubectl_command(["kubectl", "--request-timeout=10s", "get", "pods"])
+
+        self.assertEqual(command.count("--request-timeout=10s"), 1)
+        self.assertNotIn("--request-timeout=60s", command)
 
     def test_ctl_dynamic_resources_use_temporary_secret_refs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -92,8 +138,8 @@ class RunGitopsDbJobTests(unittest.TestCase):
                 ):
                 dynamic, resources = db_job.build_ctl_dynamic_resources(
                     "gitops-ctl-migration-test",
-                    "beijing-sandbox",
                     "ctl",
+                    "beijing-sandbox",
                     Path("/tmp/gitops"),
                     {},
                     {"CTL_TEST_MYSQL_HOST": "10.15.224.4"},
@@ -109,8 +155,10 @@ class RunGitopsDbJobTests(unittest.TestCase):
         self.assertIn("secretKeyRef", init_env_payload)
         self.assertNotIn("test-password", env_payload)
         self.assertNotIn("test-password", init_env_payload)
+        self.assertIn("/ctl?multiStatements=true", resources[0]["stringData"]["CTL_MIGRATE_DSN"])
+        self.assertEqual(dynamic["initContainers"][0]["env"][3]["value"], "ctl")
 
-    def test_ctl_dynamic_resources_use_override_namespace_and_playground_db(self) -> None:
+    def test_ctl_dynamic_resources_respect_namespace_override(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             migrations = Path(tmp) / "ctl" / "migrations"
             migrations.mkdir(parents=True)
@@ -129,23 +177,24 @@ class RunGitopsDbJobTests(unittest.TestCase):
                         "kind": "ConfigMap",
                         "metadata": {
                             "name": "gitops-ctl-migration-test-migrations",
-                            "namespace": "lightvela-playground-sandbox-bj-4",
+                            "namespace": "lightvela-playground-sandbox-bj-6",
                         },
                     },
                 ):
                 dynamic, resources = db_job.build_ctl_dynamic_resources(
                     "gitops-ctl-migration-test",
-                    "sandbox-bj-4",
-                    "lightvela-playground-sandbox-bj-4",
+                    "lightvela-playground-sandbox-bj-6",
+                    "sandbox-bj-6",
                     Path("/tmp/gitops"),
                     {},
-                    {"CTL_TEST_MYSQL_HOST": "10.15.224.4"},
+                    {"CTL_TEST_MYSQL_HOST": "mysql.lightvela-playground-sandbox-bj-6.svc.cluster.local"},
                     {"db_job_secret_resolver": "ctl_db_password"},
                 )
 
-        self.assertEqual(resources[0]["metadata"]["namespace"], "lightvela-playground-sandbox-bj-4")
-        self.assertEqual(resources[1]["metadata"]["namespace"], "lightvela-playground-sandbox-bj-4")
-        self.assertIn("ctl_sandbox_bj_4", dynamic["secretValues"]["CTL_MIGRATE_DSN"])
+        self.assertEqual(resources[0]["metadata"]["namespace"], "lightvela-playground-sandbox-bj-6")
+        self.assertEqual(resources[1]["metadata"]["namespace"], "lightvela-playground-sandbox-bj-6")
+        self.assertIn("/ctl_sandbox_bj_6?multiStatements=true", resources[0]["stringData"]["CTL_MIGRATE_DSN"])
+        self.assertEqual(dynamic["initContainers"][0]["env"][3]["value"], "ctl_sandbox_bj_6")
 
 
 if __name__ == "__main__":
