@@ -137,6 +137,29 @@ extends:
 4. 确认 `PIPELINE_MODE=build` 时只按业务分支规则构建；`PIPELINE_MODE=promote` 时只进入手动 GitOps promote。
 5. 如果只是验证模板实例化，不要通过修改 `.ci/**` 来触发业务流水线。
 
+## Playground DNS
+
+Playground 环境公网 DNS 通过 `.ci/runtime/commands/configure_playground_dns.py`
+维护。脚本只从环境变量读取腾讯云密钥，不把 Secret 写入仓库。
+
+典型用法：
+
+```bash
+TENCENTCLOUD_SECRET_ID=... \
+TENCENTCLOUD_SECRET_KEY=... \
+python3 .ci/runtime/commands/configure_playground_dns.py \
+  --env sandbox-bj-4 \
+  --domain lightclaw.tech \
+  --namespace lightvela-playground-sandbox-bj-4 \
+  --kubeconfig /etc/lightclaw-ci/kubeconfig_beijing_sandbox_2 \
+  --include-env-root
+```
+
+脚本会从 Kubernetes Ingress 发现 host -> CLB 地址，并 upsert DNSPod
+记录。`--include-env-root` 会把 `<env>.lightclaw.tech` 指向
+`*.<env>.lightclaw.tech` 同一个 sandbox ingressproxy CLB，避免根域不被通配
+记录覆盖。
+
 ## Verified Working Setup
 
 这套模式已经实际验证通过：
