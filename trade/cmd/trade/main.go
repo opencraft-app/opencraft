@@ -23,18 +23,20 @@ func main() {
 	}
 	defer mysqlStore.Close()
 
-	// ctl 反向调用客户端（迭代 2 接入）
-	//   - checkCreate 阶段：GetBundleByID + ListPassesByUser
-	//   - createResource 阶段：CompletePass
-	// 当前迭代仅初始化并预留依赖注入入口；具体调用在迭代 5 / 6 接入。
+	// ctl 反向调用客户端：
+	//   - checkCreate 阶段（迭代 5 已落地）：GetBundleByID + ListPassesByUser
+	//   - createResource 阶段（迭代 6）：CompletePass
 	ctlClient := ctlclient.New(cfg.CtlInternalBaseURL, cfg.InternalServiceToken)
-	_ = ctlClient // 防止 unused 编译错；迭代 5 起注入到 service / handler
 
 	router := httpapi.NewRouter(httpapi.ServerConfig{
 		InternalServiceToken:    cfg.InternalServiceToken,
 		JifeiComponentName:      cfg.JifeiComponentName,
 		JifeiProtocolVersion:    cfg.JifeiProtocolVersion,
 		JifeiOurInterfacePrefix: cfg.JifeiOurInterfacePrefix,
+		// 迭代 5：checkCreate handler 业务依赖。
+		OrderStore:  mysqlStore,
+		BundleStore: mysqlStore,
+		CTLClient:   ctlClient,
 	})
 
 	server := &http.Server{
