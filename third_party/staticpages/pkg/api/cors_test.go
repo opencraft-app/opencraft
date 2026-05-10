@@ -20,7 +20,7 @@ func TestCORSPreflightAllowsConfiguredWildcardOrigin(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodOptions, "/api/upload", nil)
-	request.Header.Set("Origin", "https://preview.sandbox.lightclaw.tech")
+	request.Header.Set("Origin", "https://demo.preview.lightclaw.tech")
 	request.Header.Set("Access-Control-Request-Method", http.MethodPost)
 	request.Header.Set("Access-Control-Request-Headers", "authorization,content-type,x-staticpages-repository")
 
@@ -39,7 +39,7 @@ func TestCORSHeadersAreNotSetWhenDisabled(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodOptions, "/api/upload", nil)
-	request.Header.Set("Origin", "https://preview.sandbox.lightclaw.tech")
+	request.Header.Set("Origin", "https://demo.preview.lightclaw.tech")
 
 	api.router.ServeHTTP(recorder, request)
 
@@ -57,7 +57,7 @@ func TestCORSHeadersAreAppliedToUploadResponses(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/api/upload", nil)
-	request.Header.Set("Origin", "https://preview.sandbox.lightclaw.tech")
+	request.Header.Set("Origin", "https://demo.preview.lightclaw.tech")
 
 	api.router.ServeHTTP(recorder, request)
 

@@ -16,13 +16,14 @@ output:
   format: short
 
 pages:
-  - domain: sandbox.lightclaw.tech
+  - domain: preview.lightclaw.tech
     bucket:
       applicationId: ENV(STATICPAGES_COS_SECRET_ID)
       name: webhosting-1388575217
       region: ap-beijing
       secret: ENV(STATICPAGES_COS_SECRET_KEY)
       url: https://cos.ap-beijing.myqcloud.com
+      usePathStyle: false
     git:
       provider: bearer
       repository: wisp/mono2

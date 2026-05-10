@@ -73,10 +73,14 @@ func WithBucketConf(bucketConf *config.BucketConfig) S3ClientOption {
 	return func(c *S3PageClient) {
 		c.s3Endpoint = bucketConf.URL.String()
 		c.s3BucketName = bucketConf.Name.String()
+		usePathStyle := true
+		if bucketConf.UsePathStyle != nil {
+			usePathStyle = *bucketConf.UsePathStyle
+		}
 		c.s3Options = s3.Options{
 			BaseEndpoint:  &c.s3Endpoint,
 			Region:        bucketConf.Region.String(), // required even if arbitrary
-			UsePathStyle:  true,                       // required for Backblaze B2 compatibility
+			UsePathStyle:  usePathStyle,
 			UseAccelerate: false,                      // maybe required for BackBlaze B2 compatibility? TODO: test
 			Logger:        otelzap.L(),
 			Credentials: aws.NewCredentialsCache(

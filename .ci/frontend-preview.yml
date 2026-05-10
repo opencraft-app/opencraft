@@ -20,7 +20,7 @@ concurrency:
 
 variables:
   STATICPAGES_API_URL:
-    value: https://staticpages-api.sandbox.lightclaw.tech/api/upload
+    value: https://staticpages-api.preview.lightclaw.tech/api/upload
     readonly: false
     allow-modify-at-startup: true
 
@@ -55,7 +55,7 @@ stages:
               echo "============================================================"
               echo "frontend 预览发布决策：进入 StaticPages 分支预览流程"
               echo "触发分支：${{ ci.branch }}"
-              echo "目标规则：frontsandbox/<name> -> https://<name>.sandbox.lightclaw.tech"
+              echo "目标规则：frontsandbox/<name> -> https://<name>.preview.lightclaw.tech"
               echo "发布方式：构建 frontend dist-cn 后上传到 StaticPages，不创建 GitOps MR"
               echo "============================================================"
               source .ci/init.sh

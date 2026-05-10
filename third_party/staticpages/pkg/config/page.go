@@ -32,6 +32,7 @@ type BucketConfig struct {
 	ApplicationID EnvValue `yaml:"applicationId"`
 	Secret        EnvValue `yaml:"secret"`
 	Region        EnvValue `yaml:"region"`
+	UsePathStyle  *bool    `yaml:"usePathStyle"`
 }
 
 type PageProxy struct {
