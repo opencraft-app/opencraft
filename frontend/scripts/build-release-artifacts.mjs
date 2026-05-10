@@ -27,13 +27,29 @@ function resolveArtifactMatrixSelection(env) {
 }
 
 function resolveReleaseHintTitle(combo) {
+  if (combo.id === "cf:cn-lightvela-staging") {
+    return "Cloudflare 国内预发站";
+  }
+  if (combo.id === "cf:global-lightvela-intl-staging") {
+    return "Cloudflare 国际预发站";
+  }
   if (combo.id === "eo:cn-lightvela-prod") {
     return "EdgeOne 国内正式站";
   }
   if (combo.id === "eo:global-lightvela-intl-prod") {
     return "EdgeOne 国际正式站";
   }
-  return `EdgeOne ${combo.projectName}`;
+  return `${combo.channel.toUpperCase()} ${combo.projectName}`;
+}
+
+function resolveReleaseHintCiName(combo) {
+  if (combo.id === "eo:cn-lightvela-prod") {
+    return "发布 frontend eo:cn-lightvela-prod";
+  }
+  if (combo.id === "eo:global-lightvela-intl-prod") {
+    return "发布 frontend eo:global-lightvela-intl-prod";
+  }
+  return "构建 frontend";
 }
 
 function resolveReleaseHintShortSha(result) {
@@ -43,17 +59,38 @@ function resolveReleaseHintShortSha(result) {
   return tag.slice(0, 12);
 }
 
-function logReleaseHint({ combo, result, env, log }) {
-  if (combo.channel !== "eo") return;
+function formatReleaseHint({ combo, result }) {
   const lines = [
     "============================================================",
     `可发布版本：${resolveReleaseHintTitle(combo)}`,
-    `CI：发布 frontend ${combo.id}`,
+    `CI：${resolveReleaseHintCiName(combo)}`,
     `FRONTEND_ARTIFACT_SOURCE_SHA=${resolveReleaseHintShortSha(result)}`,
     `FRONTEND_ARTIFACT_REF=${result.ref}`,
     "============================================================",
   ];
-  log(colorText(lines.join("\n"), "green", env));
+  return lines.join("\n");
+}
+
+function colorMultiline(text, color, env) {
+  return text
+    .split("\n")
+    .map((line) => colorText(line, color, env))
+    .join("\n");
+}
+
+function logReleaseHint({ combo, result, env, log }) {
+  log(colorMultiline(formatReleaseHint({ combo, result }), "green", env));
+}
+
+function logReleaseHintSummary({ hints, env, log }) {
+  if (hints.length === 0) return;
+  const summary = [
+    "============================================================",
+    "可发布版本汇总",
+    "============================================================",
+    ...hints.map((hint) => formatReleaseHint(hint)),
+  ].join("\n");
+  log(colorMultiline(summary, "green", env));
 }
 
 export function executeBuildReleaseArtifacts({
@@ -72,6 +109,7 @@ export function executeBuildReleaseArtifacts({
     throw new Error("FRONTEND_ARTIFACT_MODE=required is required for build:release-artifacts");
   }
   validateArtifacts(env);
+  const releaseHints = [];
 
   log(`${colorText("frontend artifact build matrix file:", "bold", env)} ${matrixPath}`);
   log(`${colorText("frontend artifact build selection:", "bold", env)} ${selectedCombos.map((combo) => highlightComboId(combo.id, env)).join(", ")}`);
@@ -90,9 +128,11 @@ export function executeBuildReleaseArtifacts({
       log,
     });
     log(`${colorText("frontend artifact build combo archived:", "green", env)} ${highlightArtifactRef(result.ref, env)}`);
+    releaseHints.push({ combo, result });
     logReleaseHint({ combo, result, env, log });
     log(`${colorText("frontend artifact build combo done:", "green", env)} ${highlightComboId(combo.id, env)}`);
   }
+  logReleaseHintSummary({ hints: releaseHints, env, log });
 }
 
 const currentModulePath = import.meta.url.startsWith("file:")

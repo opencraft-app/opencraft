@@ -119,5 +119,36 @@ describe("build release artifacts", () => {
       "FRONTEND_ARTIFACT_REF=registry.example.com/lightclaw/frontend-pages:dfde008ca43a-eo-cn-lightvela-prod",
       "============================================================",
     ].join("\n"));
+    expect(logs.join("\n")).toContain("可发布版本汇总");
+  });
+
+  it("prints all selected matrix release hints together at the end", () => {
+    const logs: string[] = [];
+
+    executeBuildReleaseArtifacts({
+      env: {
+        ...baseEnv,
+        NO_COLOR: "1",
+        FRONTEND_ARTIFACT_MATRIX: "cf:cn-lightvela-staging,eo:global-lightvela-intl-prod",
+      },
+      log: (message: string) => logs.push(message),
+      validateArtifacts: () => {},
+      runScript: () => {},
+      archiveAndVerifyArtifact: ({ combo }) => ({
+        manifest: {
+          shortSha: "dfde008ca43a",
+        },
+        ref: `registry.example.com/lightclaw/frontend-pages:dfde008ca43a-${combo.id.replace(/[^a-z0-9._-]+/gi, "-").toLowerCase()}`,
+      }),
+    });
+
+    const summaryLog = logs.at(-1) ?? "";
+    expect(summaryLog).toContain("可发布版本汇总");
+    expect(summaryLog).toContain("可发布版本：Cloudflare 国内预发站");
+    expect(summaryLog).toContain("CI：构建 frontend");
+    expect(summaryLog).toContain("FRONTEND_ARTIFACT_REF=registry.example.com/lightclaw/frontend-pages:dfde008ca43a-cf-cn-lightvela-staging");
+    expect(summaryLog).toContain("可发布版本：EdgeOne 国际正式站");
+    expect(summaryLog).toContain("CI：发布 frontend eo:global-lightvela-intl-prod");
+    expect(summaryLog).toContain("FRONTEND_ARTIFACT_REF=registry.example.com/lightclaw/frontend-pages:dfde008ca43a-eo-global-lightvela-intl-prod");
   });
 });
