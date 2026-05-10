@@ -715,6 +715,41 @@ ci_set_registry_credentials() {
   return 1
 }
 
+ci_ensure_oras() {
+  local version="${ORAS_VERSION_OVERRIDE:-1.2.3}"
+  local os arch archive cache_root install_dir bin url
+
+  os="$(ci_os_name)"
+  arch="$(ci_arch_name)"
+  archive="oras_${version}_${os}_${arch}.tar.gz"
+  cache_root="${HOME}/.cache/lightclaw-ci/oras"
+  install_dir="${cache_root}/v${version}/${os}/${arch}"
+  bin="${install_dir}/oras"
+  url="https://github.com/oras-project/oras/releases/download/v${version}/${archive}"
+
+  if [[ ! -x "$bin" ]]; then
+    ci_with_lock "oras-${version}-${os}-${arch}" ci_install_oras "$url" "$archive" "$cache_root" "$install_dir"
+  else
+    ci_log "oras ${version} already present at ${bin}"
+  fi
+
+  export PATH="${install_dir}:${PATH}"
+  export ORAS_BIN="$bin"
+}
+
+ci_install_oras() {
+  local url="$1"
+  local archive="$2"
+  local cache_root="$3"
+  local install_dir="$4"
+
+  mkdir -p "$cache_root" "$install_dir"
+  ci_download_file "$url" "${cache_root}/${archive}"
+  tar -xzf "${cache_root}/${archive}" -C "$install_dir" oras
+  chmod +x "${install_dir}/oras"
+  ci_log "installed oras at ${install_dir}/oras"
+}
+
 ci_ensure_node() {
   local node_version="${NODE_VERSION_OVERRIDE:-22.12.0}"
   local node_dist="node-v${node_version}-linux-x64"

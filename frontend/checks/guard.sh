@@ -56,6 +56,6 @@ echo "============================================================"
 echo "frontend 约束：运行 release matrix / static route guard 单测"
 echo "目的：防止 Pages / EdgeOne 发布矩阵与 SPA fallback 约束回归"
 echo "============================================================"
-"$PNPM_BIN" test scripts/release-matrix.test.ts scripts/check-static-route-conflicts.test.ts
+"$PNPM_BIN" test scripts/release-matrix.test.ts scripts/frontend-artifact.test.ts scripts/check-static-route-conflicts.test.ts
 
 echo "frontend 约束：全部通过"
