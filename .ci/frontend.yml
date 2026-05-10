@@ -78,10 +78,14 @@ stages:
               CLOUDFLARE_API_TOKEN: ${{ settings.CLOUDFLARE_API_TOKEN }}
               CLOUDFLARE_ACCOUNT_ID: ${{ settings.CLOUDFLARE_ACCOUNT_ID }}
               EDGEONE_API_TOKEN: ${{ settings.EDGEONE_API_TOKEN }}
+              TCR_SHPROD_PASSWORD: ${{ settings.TCR_SHPROD_PASSWORD }}
               VITE_AUTH_API_BASE_URL: https://lightclaw.tech
               CLOUDFLARE_PAGES_COMMIT_HASH: ${{ ci.sha }}
               CLOUDFLARE_PAGES_COMMIT_MESSAGE: Cloudflare Pages deploy from frontend pipeline
               FRONTEND_RELEASE_MATRIX: ${{ variables.FRONTEND_RELEASE_MATRIX }}
+              FRONTEND_ARTIFACT_MODE: required
+              FRONTEND_ARTIFACT_REPOSITORY: lightclaw-shprod.tencentcloudcr.com/lightclaw/frontend-pages
+              FRONTEND_ARTIFACT_SOURCE_SHA: ${{ ci.sha }}
             run: |
               if [[ "${{ variables.PIPELINE_MODE }}" == "promote" ]]; then
                 echo "skip build step because PIPELINE_MODE=promote"
@@ -104,6 +108,8 @@ stages:
               else
                 echo "edgeone api token not required for FRONTEND_RELEASE_MATRIX=${FRONTEND_RELEASE_MATRIX}"
               fi
+              ci_set_registry_credentials shprod
+              ci_ensure_oras
               ci_ensure_node
               ci_ensure_pnpm
 

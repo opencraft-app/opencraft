@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   createComboEnvironment,
+  executeReleaseMatrix,
   formatComboSummary,
   loadReleaseMatrix,
   resolveComboProjectName,
@@ -315,5 +316,98 @@ describe("release matrix helpers", () => {
       },
     });
     expect(combo?.requiredSecretEnv).toContain("EDGEONE_API_TOKEN");
+  });
+
+  it("keeps release execution unchanged when artifact mode is unset", () => {
+    const calls: string[] = [];
+
+    executeReleaseMatrix({
+      env: {
+        FRONTEND_RELEASE_MATRIX: "cn-cf",
+        CLOUDFLARE_API_TOKEN: "token",
+        CLOUDFLARE_ACCOUNT_ID: "account",
+      },
+      log: () => {},
+      runScript: (scriptName: string) => calls.push(scriptName),
+      archiveAndVerifyArtifact: () => calls.push("artifact"),
+    });
+
+    expect(calls).toEqual(["build:cn", "deploy:cf"]);
+  });
+
+  it("rejects unsupported artifact modes before building", () => {
+    const calls: string[] = [];
+
+    expect(() => executeReleaseMatrix({
+      env: {
+        FRONTEND_RELEASE_MATRIX: "cn-cf",
+        FRONTEND_ARTIFACT_MODE: "dry-run",
+        CLOUDFLARE_API_TOKEN: "token",
+        CLOUDFLARE_ACCOUNT_ID: "account",
+      },
+      log: () => {},
+      runScript: (scriptName: string) => calls.push(scriptName),
+    })).toThrow("unsupported FRONTEND_ARTIFACT_MODE dry-run");
+    expect(calls).toEqual([]);
+  });
+
+  it("validates artifact prerequisites before the first build in required mode", () => {
+    const calls: string[] = [];
+
+    expect(() => executeReleaseMatrix({
+      env: {
+        FRONTEND_RELEASE_MATRIX: "cn-cf",
+        FRONTEND_ARTIFACT_MODE: "required",
+        CLOUDFLARE_API_TOKEN: "token",
+        CLOUDFLARE_ACCOUNT_ID: "account",
+      },
+      log: () => {},
+      runScript: (scriptName: string) => calls.push(scriptName),
+      validateArtifacts: () => {
+        throw new Error("artifact prereq failed");
+      },
+    })).toThrow("artifact prereq failed");
+    expect(calls).toEqual([]);
+  });
+
+  it("archives and verifies a combo between build and deploy in required mode", () => {
+    const calls: string[] = [];
+
+    executeReleaseMatrix({
+      env: {
+        FRONTEND_RELEASE_MATRIX: "cn-cf",
+        FRONTEND_ARTIFACT_MODE: "required",
+        CLOUDFLARE_API_TOKEN: "token",
+        CLOUDFLARE_ACCOUNT_ID: "account",
+      },
+      log: () => {},
+      runScript: (scriptName: string) => calls.push(scriptName),
+      validateArtifacts: () => calls.push("validate-artifacts"),
+      archiveAndVerifyArtifact: ({ combo }) => calls.push(`artifact:${combo.id}`),
+    });
+
+    expect(calls).toEqual(["validate-artifacts", "build:cn", "artifact:cn-cf", "deploy:cf"]);
+  });
+
+  it("does not deploy when required artifact archiving fails", () => {
+    const calls: string[] = [];
+
+    expect(() => executeReleaseMatrix({
+      env: {
+        FRONTEND_RELEASE_MATRIX: "cn-cf",
+        FRONTEND_ARTIFACT_MODE: "required",
+        CLOUDFLARE_API_TOKEN: "token",
+        CLOUDFLARE_ACCOUNT_ID: "account",
+      },
+      log: () => {},
+      runScript: (scriptName: string) => calls.push(scriptName),
+      validateArtifacts: () => calls.push("validate-artifacts"),
+      archiveAndVerifyArtifact: () => {
+        calls.push("artifact");
+        throw new Error("archive failed");
+      },
+    })).toThrow("archive failed");
+
+    expect(calls).toEqual(["validate-artifacts", "build:cn", "artifact"]);
   });
 });

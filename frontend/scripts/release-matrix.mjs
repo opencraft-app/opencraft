@@ -3,6 +3,13 @@ import { resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
+import {
+  ARTIFACT_MODE_REQUIRED,
+  archiveAndVerifyFrontendArtifact,
+  resolveArtifactMode,
+  validateArtifactPrerequisites,
+} from "./frontend-artifact.mjs";
+
 const DEFAULT_MATRIX_PATH = resolve(process.cwd(), "release-matrix.json");
 const VALID_REGIONS = new Set(["cn", "global"]);
 const VALID_CHANNELS = new Set(["cf", "eo"]);
@@ -171,6 +178,7 @@ export function createComboEnvironment(combo, projectName, env = process.env) {
     FRONTEND_RELEASE_COMBO_ID: combo.id,
     FRONTEND_RELEASE_REGION: combo.region,
     FRONTEND_RELEASE_CHANNEL: combo.channel,
+    VITE_REGION: combo.region,
     VITE_AUTH_API_BASE_URL: combo.authApiBaseUrl,
   };
 
@@ -224,10 +232,17 @@ export function formatComboSummary(combo, projectName) {
   return `${combo.id} (region=${combo.region}, channel=${combo.channel}, project=${projectName}, outputDir=${combo.outputDir})`;
 }
 
-export function executeReleaseMatrix({ env = process.env, log = console.log } = {}) {
+export function executeReleaseMatrix({
+  env = process.env,
+  log = console.log,
+  runScript = runPnpmScript,
+  validateArtifacts = validateArtifactPrerequisites,
+  archiveAndVerifyArtifact = archiveAndVerifyFrontendArtifact,
+} = {}) {
   const { matrixPath, combos } = loadReleaseMatrix();
   const selectedIds = resolveSelectedComboIds(env.FRONTEND_RELEASE_MATRIX);
   const selectedCombos = selectReleaseCombos(combos, selectedIds);
+  const artifactMode = resolveArtifactMode(env);
 
   log(`frontend release matrix file: ${matrixPath}`);
   log(
@@ -235,6 +250,13 @@ export function executeReleaseMatrix({ env = process.env, log = console.log } = 
       .map((combo) => combo.id)
       .join(", ")}`,
   );
+  if (artifactMode) {
+    log(`frontend artifact mode: ${artifactMode}`);
+  }
+
+  if (artifactMode === ARTIFACT_MODE_REQUIRED) {
+    validateArtifacts(env);
+  }
 
   for (const combo of selectedCombos) {
     validateRequiredSecrets(combo, env);
@@ -242,8 +264,17 @@ export function executeReleaseMatrix({ env = process.env, log = console.log } = 
     const comboEnv = createComboEnvironment(combo, projectName, env);
 
     log(`frontend release combo start: ${formatComboSummary(combo, projectName)}`);
-    runPnpmScript(combo.buildCommand, comboEnv);
-    runPnpmScript(combo.deployCommand, comboEnv);
+    runScript(combo.buildCommand, comboEnv);
+    if (artifactMode === ARTIFACT_MODE_REQUIRED) {
+      archiveAndVerifyArtifact({
+        combo,
+        projectName,
+        comboEnv,
+        env,
+        log,
+      });
+    }
+    runScript(combo.deployCommand, comboEnv);
     log(`frontend release combo done: ${combo.id}`);
   }
 }
