@@ -34,6 +34,8 @@ stages:
           pool-name: env
         env:
           STATICPAGES_UPLOAD_TOKEN: ${{ settings.STATICPAGES_UPLOAD_TOKEN }}
+          SOPS_AGE_KEY: ${{ settings.SOPS_AGE_KEY }}
+          SOPS_AGE_KEY_FILE: ${{ settings.SOPS_AGE_KEY_FILE }}
         steps:
           - checkout: self
             name: 拉取代码
@@ -69,6 +71,17 @@ stages:
               "$PNPM_BIN" build:cn
 
               cd "$REPO_ROOT"
+              if [[ -z "${STATICPAGES_UPLOAD_TOKEN:-}" ]] || ci_is_unexpanded_setting "$STATICPAGES_UPLOAD_TOKEN"; then
+                echo "STATICPAGES_UPLOAD_TOKEN not provided by CI settings; decrypting GitOps StaticPages runtime secret"
+                ci_ensure_sops
+                ci_prepare_sops_age_key
+                STATICPAGES_UPLOAD_TOKEN="$(sops --decrypt --extract '["stringData"]["STATICPAGES_UPLOAD_TOKEN"]' argocd/secrets/beijing-sandbox/staticpages-runtime-secrets.sops.yaml | ci_read_secret_value)"
+                export STATICPAGES_UPLOAD_TOKEN
+                echo "STATICPAGES_UPLOAD_TOKEN source=argocd/secrets/beijing-sandbox/staticpages-runtime-secrets.sops.yaml fingerprint=$(printf '%s' "$STATICPAGES_UPLOAD_TOKEN" | ci_fingerprint_secret)"
+              else
+                echo "STATICPAGES_UPLOAD_TOKEN source=ci-settings fingerprint=$(printf '%s' "$STATICPAGES_UPLOAD_TOKEN" | ci_fingerprint_secret)"
+              fi
+
               python3 .ci/runtime/commands/upload_staticpages_preview.py \
                 --artifact-dir frontend/dist-cn \
                 --api-url "$STATICPAGES_API_URL" \
