@@ -56,6 +56,72 @@ export function highlightComboId(comboId, env = process.env) {
   return colorText(comboId, "cyan", env);
 }
 
+function resolveReleaseHintTitle(combo) {
+  if (combo.id === "cf:cn-lightvela-staging") {
+    return "Cloudflare 国内预发站";
+  }
+  if (combo.id === "cf:global-lightvela-intl-staging") {
+    return "Cloudflare 国际预发站";
+  }
+  if (combo.id === "eo:cn-lightvela-prod") {
+    return "EdgeOne 国内正式站";
+  }
+  if (combo.id === "eo:global-lightvela-intl-prod") {
+    return "EdgeOne 国际正式站";
+  }
+  return `${combo.channel.toUpperCase()} ${combo.projectName}`;
+}
+
+function resolveReleaseHintCiName(combo) {
+  if (combo.id === "eo:cn-lightvela-prod") {
+    return "发布 frontend eo:cn-lightvela-prod";
+  }
+  if (combo.id === "eo:global-lightvela-intl-prod") {
+    return "发布 frontend eo:global-lightvela-intl-prod";
+  }
+  return "构建 frontend";
+}
+
+function resolveReleaseHintShortSha(result) {
+  const manifestShortSha = result.manifest?.shortSha;
+  if (manifestShortSha) return manifestShortSha;
+  const tag = result.ref?.slice(result.ref.lastIndexOf(":") + 1) ?? "";
+  return tag.slice(0, 12);
+}
+
+export function formatReleaseHint({ combo, result }) {
+  return [
+    "============================================================",
+    `可发布版本：${resolveReleaseHintTitle(combo)}`,
+    `CI：${resolveReleaseHintCiName(combo)}`,
+    `FRONTEND_ARTIFACT_SOURCE_SHA=${resolveReleaseHintShortSha(result)}`,
+    `FRONTEND_ARTIFACT_REF=${result.ref}`,
+    "============================================================",
+  ].join("\n");
+}
+
+export function colorMultiline(text, color, env = process.env) {
+  return text
+    .split("\n")
+    .map((line) => colorText(line, color, env))
+    .join("\n");
+}
+
+export function logReleaseHint({ combo, result, env = process.env, log = console.log }) {
+  log(colorMultiline(formatReleaseHint({ combo, result }), "green", env));
+}
+
+export function logReleaseHintSummary({ hints, env = process.env, log = console.log }) {
+  if (hints.length === 0) return;
+  const summary = [
+    "============================================================",
+    "可发布版本汇总",
+    "============================================================",
+    ...hints.map((hint) => formatReleaseHint(hint)),
+  ].join("\n");
+  log(colorMultiline(summary, "green", env));
+}
+
 export function resolveArtifactMode(env = process.env) {
   const rawMode = env.FRONTEND_ARTIFACT_MODE?.trim() ?? "";
   if (!rawMode) return "";

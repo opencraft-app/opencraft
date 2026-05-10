@@ -7,6 +7,8 @@ import {
   colorText,
   highlightArtifactRef,
   highlightComboId,
+  logReleaseHint,
+  logReleaseHintSummary,
   resolveArtifactMode,
   validateArtifactPrerequisites,
 } from "./frontend-artifact.mjs";
@@ -24,73 +26,6 @@ function resolveArtifactMatrixSelection(env) {
   const artifactMatrix = env.FRONTEND_ARTIFACT_MATRIX?.trim();
   if (artifactMatrix) return resolveSelectedComboIds(artifactMatrix);
   return resolveSelectedComboIds(env.FRONTEND_RELEASE_MATRIX);
-}
-
-function resolveReleaseHintTitle(combo) {
-  if (combo.id === "cf:cn-lightvela-staging") {
-    return "Cloudflare 国内预发站";
-  }
-  if (combo.id === "cf:global-lightvela-intl-staging") {
-    return "Cloudflare 国际预发站";
-  }
-  if (combo.id === "eo:cn-lightvela-prod") {
-    return "EdgeOne 国内正式站";
-  }
-  if (combo.id === "eo:global-lightvela-intl-prod") {
-    return "EdgeOne 国际正式站";
-  }
-  return `${combo.channel.toUpperCase()} ${combo.projectName}`;
-}
-
-function resolveReleaseHintCiName(combo) {
-  if (combo.id === "eo:cn-lightvela-prod") {
-    return "发布 frontend eo:cn-lightvela-prod";
-  }
-  if (combo.id === "eo:global-lightvela-intl-prod") {
-    return "发布 frontend eo:global-lightvela-intl-prod";
-  }
-  return "构建 frontend";
-}
-
-function resolveReleaseHintShortSha(result) {
-  const manifestShortSha = result.manifest?.shortSha;
-  if (manifestShortSha) return manifestShortSha;
-  const tag = result.ref?.slice(result.ref.lastIndexOf(":") + 1) ?? "";
-  return tag.slice(0, 12);
-}
-
-function formatReleaseHint({ combo, result }) {
-  const lines = [
-    "============================================================",
-    `可发布版本：${resolveReleaseHintTitle(combo)}`,
-    `CI：${resolveReleaseHintCiName(combo)}`,
-    `FRONTEND_ARTIFACT_SOURCE_SHA=${resolveReleaseHintShortSha(result)}`,
-    `FRONTEND_ARTIFACT_REF=${result.ref}`,
-    "============================================================",
-  ];
-  return lines.join("\n");
-}
-
-function colorMultiline(text, color, env) {
-  return text
-    .split("\n")
-    .map((line) => colorText(line, color, env))
-    .join("\n");
-}
-
-function logReleaseHint({ combo, result, env, log }) {
-  log(colorMultiline(formatReleaseHint({ combo, result }), "green", env));
-}
-
-function logReleaseHintSummary({ hints, env, log }) {
-  if (hints.length === 0) return;
-  const summary = [
-    "============================================================",
-    "可发布版本汇总",
-    "============================================================",
-    ...hints.map((hint) => formatReleaseHint(hint)),
-  ].join("\n");
-  log(colorMultiline(summary, "green", env));
 }
 
 export function executeBuildReleaseArtifacts({
