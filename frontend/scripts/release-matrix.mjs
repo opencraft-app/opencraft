@@ -212,7 +212,7 @@ export function createComboEnvironment(combo, projectName, env = process.env) {
   return nextEnv;
 }
 
-function runPnpmScript(scriptName, env) {
+export function runPnpmScript(scriptName, env) {
   const pnpmBin = env.PNPM_BIN?.trim() || "pnpm";
   const result = spawnSync(pnpmBin, ["run", scriptName], {
     stdio: "inherit",

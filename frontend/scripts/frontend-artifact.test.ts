@@ -5,12 +5,15 @@ import { describe, expect, it } from "vitest";
 
 import {
   ARCHIVE_FILE,
+  assertArtifactManifestMatchesCombo,
   archiveFrontendArtifact,
   artifactIdentitiesMatch,
   buildArtifactManifest,
   MANIFEST_FILE,
   normalizeComboIdForTag,
+  resolveArtifactSourceShaInput,
   resolveArtifactTag,
+  resolveExpectedArtifactReleaseRef,
   runArchiveCli,
   validateArtifactPrerequisites,
   verifyFrontendArtifact,
@@ -112,6 +115,62 @@ describe("frontend artifact helpers", () => {
     expect(() => validateArtifactPrerequisites({ FRONTEND_ARTIFACT_MODE: "required" })).toThrow("missing prerequisite");
   });
 
+  it("resolves release source SHA inputs from short or full hex values", () => {
+    expect(resolveArtifactSourceShaInput("dfde008ca43a")).toEqual({
+      shortSha: "dfde008ca43a",
+      fullSourceSha: undefined,
+    });
+    expect(resolveArtifactSourceShaInput(sourceSha)).toEqual({
+      shortSha: "dfde008ca43a",
+      fullSourceSha: sourceSha,
+    });
+    expect(() => resolveArtifactSourceShaInput("dfde008c")).toThrow("12 or 40");
+    expect(() => resolveArtifactSourceShaInput("not-a-sha")).toThrow("12 or 40");
+  });
+
+  it("derives release artifact refs and validates ref overrides", () => {
+    const repository = "registry.example.com/lightclaw/frontend-pages";
+    const ref = `${repository}:dfde008ca43a-eo-global-lightvela-intl-prod`;
+
+    expect(resolveExpectedArtifactReleaseRef({
+      repository,
+      sourceSha,
+      targetComboId: combo.id,
+    })).toMatchObject({
+      repository,
+      tag: "dfde008ca43a-eo-global-lightvela-intl-prod",
+      ref,
+      shortSha: "dfde008ca43a",
+      fullSourceSha: sourceSha,
+    });
+    expect(resolveExpectedArtifactReleaseRef({
+      repository,
+      artifactRef: ref,
+      targetComboId: combo.id,
+    })).toMatchObject({
+      repository,
+      tag: "dfde008ca43a-eo-global-lightvela-intl-prod",
+      ref,
+      shortSha: "dfde008ca43a",
+    });
+    expect(() => resolveExpectedArtifactReleaseRef({
+      repository,
+      sourceSha: "aaaaaaaaaaaa",
+      artifactRef: ref,
+      targetComboId: combo.id,
+    })).toThrow("does not match FRONTEND_ARTIFACT_REF");
+    expect(() => resolveExpectedArtifactReleaseRef({
+      repository,
+      artifactRef: `wrong.example.com/lightclaw/frontend-pages:dfde008ca43a-eo-global-lightvela-intl-prod`,
+      targetComboId: combo.id,
+    })).toThrow("does not match expected");
+    expect(() => resolveExpectedArtifactReleaseRef({
+      repository,
+      artifactRef: `${repository}:dfde008ca43a-eo-cn-lightvela-prod`,
+      targetComboId: combo.id,
+    })).toThrow("tag must be");
+  });
+
   it("builds a manifest with required fields and stable identities", () => {
     const dist = createDist();
     try {
@@ -182,13 +241,14 @@ describe("frontend artifact helpers", () => {
       expect(result.manifest.archive.bytes).toBeGreaterThan(0);
       expect(result.push?.command).toBe("oras");
       expect(result.push?.args).toContain("push");
-      expect(() => verifyFrontendArtifact({
+      const verified = verifyFrontendArtifact({
         ref: result.ref,
         expectedManifest: result.manifest,
         dryRun: true,
         workDir,
         log: () => {},
-      })).not.toThrow();
+      });
+      expect(verified.extractDir).toContain("dist");
     } finally {
       rmSync(dist, { recursive: true, force: true });
       rmSync(workDir, { recursive: true, force: true });
@@ -431,6 +491,48 @@ describe("frontend artifact helpers", () => {
       })).toThrow("does not reference an entry");
     } finally {
       rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("validates an artifact manifest against the target combo and baked env", () => {
+    const dist = createDist();
+    try {
+      const manifest = buildArtifactManifest({
+        combo,
+        projectName: "lightvela-intl",
+        comboEnv,
+        outputDir: dist,
+        repository: "registry.example.com/lightclaw/frontend-pages",
+        sourceSha,
+      });
+
+      expect(() => assertArtifactManifestMatchesCombo({
+        manifest,
+        ref: manifest.artifact.ref,
+        targetCombo: combo,
+        projectName: "lightvela-intl",
+        comboEnv,
+        repository: "registry.example.com/lightclaw/frontend-pages",
+        tag: manifest.artifact.tag,
+        shortSha: manifest.shortSha,
+        fullSourceSha: sourceSha,
+      })).not.toThrow();
+      expect(() => assertArtifactManifestMatchesCombo({
+        manifest: {
+          ...manifest,
+          comboId: "eo:cn-lightvela-prod",
+        },
+        ref: manifest.artifact.ref,
+        targetCombo: combo,
+        projectName: "lightvela-intl",
+        comboEnv,
+        repository: "registry.example.com/lightclaw/frontend-pages",
+        tag: manifest.artifact.tag,
+        shortSha: manifest.shortSha,
+        fullSourceSha: sourceSha,
+      })).toThrow("comboId mismatch");
+    } finally {
+      rmSync(dist, { recursive: true, force: true });
     }
   });
 });
