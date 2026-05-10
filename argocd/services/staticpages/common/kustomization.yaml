@@ -5,6 +5,14 @@ generatorOptions:
   disableNameSuffixHash: true
 resources:
   - ../../../../staticpages/k8s/base
+patches:
+  - target:
+      kind: Ingress
+      name: staticpages-preview
+    patch: |-
+      - op: add
+        path: /metadata/annotations/ingress.cloud.tencent.com~1pass-to-target
+        value: "true"
 replacements:
   - source:
       kind: ConfigMap
