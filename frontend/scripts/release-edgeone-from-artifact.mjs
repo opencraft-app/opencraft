@@ -3,6 +3,9 @@ import { fileURLToPath } from "node:url";
 
 import {
   assertArtifactManifestMatchesCombo,
+  colorText,
+  highlightArtifactRef,
+  highlightComboId,
   resolveExpectedArtifactReleaseRef,
   verifyFrontendArtifact,
 } from "./frontend-artifact.mjs";
@@ -46,9 +49,9 @@ export function executeEdgeOneArtifactRelease({
     targetComboId: combo.id,
   });
 
-  log(`frontend EO artifact release matrix file: ${matrixPath}`);
-  log(`frontend EO artifact release target: ${formatComboSummary(combo, projectName)}`);
-  log(`frontend EO artifact release ref: ${artifact.ref}`);
+  log(`${colorText("frontend EO artifact release matrix file:", "bold", env)} ${matrixPath}`);
+  log(`${colorText("frontend EO artifact release target:", "bold", env)} ${formatComboSummary(combo, projectName)}`);
+  log(`${colorText("frontend EO artifact release ref:", "green", env)} ${highlightArtifactRef(artifact.ref, env)}`);
 
   const verified = verifyArtifact({
     ref: artifact.ref,
@@ -75,7 +78,7 @@ export function executeEdgeOneArtifactRelease({
     ...comboEnv,
     EDGEONE_PAGES_DIR: verified.extractDir,
   });
-  log(`frontend EO artifact release done: ${combo.id}`);
+  log(`${colorText("frontend EO artifact release done:", "green", env)} ${highlightComboId(combo.id, env)}`);
 }
 
 const currentModulePath = import.meta.url.startsWith("file:")

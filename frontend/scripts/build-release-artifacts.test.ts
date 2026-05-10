@@ -90,4 +90,34 @@ describe("build release artifacts", () => {
 
     expect(calls).toEqual([]);
   });
+
+  it("prints copy-ready EdgeOne release parameters after archiving", () => {
+    const logs: string[] = [];
+
+    executeBuildReleaseArtifacts({
+      env: {
+        ...baseEnv,
+        NO_COLOR: "1",
+        FRONTEND_ARTIFACT_MATRIX: "eo:cn-lightvela-prod",
+      },
+      log: (message: string) => logs.push(message),
+      validateArtifacts: () => {},
+      runScript: () => {},
+      archiveAndVerifyArtifact: () => ({
+        manifest: {
+          shortSha: "dfde008ca43a",
+        },
+        ref: "registry.example.com/lightclaw/frontend-pages:dfde008ca43a-eo-cn-lightvela-prod",
+      }),
+    });
+
+    expect(logs.join("\n")).toContain([
+      "============================================================",
+      "可发布版本：EdgeOne 国内正式站",
+      "CI：发布 frontend eo:cn-lightvela-prod",
+      "FRONTEND_ARTIFACT_SOURCE_SHA=dfde008ca43a",
+      "FRONTEND_ARTIFACT_REF=registry.example.com/lightclaw/frontend-pages:dfde008ca43a-eo-cn-lightvela-prod",
+      "============================================================",
+    ].join("\n"));
+  });
 });
