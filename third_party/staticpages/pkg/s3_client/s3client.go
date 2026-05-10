@@ -15,6 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/smithy-go"
 	"github.com/sierrasoftworks/humane-errors-go"
 	"github.com/spechtlabs/go-otel-utils/otelzap"
@@ -33,6 +34,7 @@ type S3PageClient struct {
 	s3Options    s3.Options
 	s3Endpoint   string
 	s3BucketName string
+	publicRead   bool
 }
 
 func NewS3PageClient(page *config.Page, options ...S3ClientOption) *S3PageClient {
@@ -43,6 +45,7 @@ func NewS3PageClient(page *config.Page, options ...S3ClientOption) *S3PageClient
 		s3Options:    s3.Options{},
 		s3Endpoint:   "",
 		s3BucketName: "",
+		publicRead:   false,
 		client:       nil,
 	}
 
@@ -77,6 +80,10 @@ func WithBucketConf(bucketConf *config.BucketConfig) S3ClientOption {
 		if bucketConf.UsePathStyle != nil {
 			usePathStyle = *bucketConf.UsePathStyle
 		}
+		publicRead := false
+		if bucketConf.PublicRead != nil {
+			publicRead = *bucketConf.PublicRead
+		}
 		c.s3Options = s3.Options{
 			BaseEndpoint:  &c.s3Endpoint,
 			Region:        bucketConf.Region.String(), // required even if arbitrary
@@ -90,6 +97,7 @@ func WithBucketConf(bucketConf *config.BucketConfig) S3ClientOption {
 					"",
 				)),
 		}
+		c.publicRead = publicRead
 	}
 }
 
@@ -183,13 +191,18 @@ func (c *S3PageClient) uploadFileInFolder(ctx context.Context, source, file, tar
 	}
 
 	// Upload the file to S3
-	_, err = c.client.PutObject(ctx, &s3.PutObjectInput{
+	input := &s3.PutObjectInput{
 		Bucket:        aws.String(c.s3BucketName),
 		Key:           aws.String(s3Key),
 		Body:          f,
 		ContentLength: aws.Int64(fileInfo.Size()),
 		ContentType:   aws.String(determineContentType(file)),
-	})
+	}
+	if c.publicRead {
+		input.ACL = types.ObjectCannedACLPublicRead
+	}
+
+	_, err = c.client.PutObject(ctx, input)
 
 	if err != nil {
 		return humane.Wrap(err, fmt.Sprintf("failed to upload file %s to S3", file))
