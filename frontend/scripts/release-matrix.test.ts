@@ -385,10 +385,50 @@ describe("release matrix helpers", () => {
       log: () => {},
       runScript: (scriptName: string) => calls.push(scriptName),
       validateArtifacts: () => calls.push("validate-artifacts"),
-      archiveAndVerifyArtifact: ({ combo }) => calls.push(`artifact:${combo.id}`),
+      archiveAndVerifyArtifact: ({ combo }) => {
+        calls.push(`artifact:${combo.id}`);
+        return {
+          manifest: {
+            shortSha: "dfde008ca43a",
+          },
+          ref: "registry.example.com/lightclaw/frontend-pages:dfde008ca43a-cf-cn-lightvela-staging",
+        };
+      },
     });
 
     expect(calls).toEqual(["validate-artifacts", "build:cn", "artifact:cf:cn-lightvela-staging", "deploy:cf"]);
+  });
+
+  it("prints preview release hints for required artifact mode", () => {
+    const logs: string[] = [];
+
+    executeReleaseMatrix({
+      env: {
+        FRONTEND_RELEASE_MATRIX: "cf:cn-lightvela-staging,cf:global-lightvela-intl-staging",
+        FRONTEND_ARTIFACT_MODE: "required",
+        FRONTEND_ARTIFACT_REPOSITORY: "registry.example.com/lightclaw/frontend-pages",
+        FRONTEND_ARTIFACT_SOURCE_SHA: "dfde008ca43aba0cb0dcdfcc1b0c66bd204a2ea8",
+        CLOUDFLARE_API_TOKEN: "token",
+        CLOUDFLARE_ACCOUNT_ID: "account",
+        NO_COLOR: "1",
+      },
+      log: (message: string) => logs.push(message),
+      runScript: () => {},
+      validateArtifacts: () => {},
+      archiveAndVerifyArtifact: ({ combo }) => ({
+        manifest: {
+          shortSha: "dfde008ca43a",
+        },
+        ref: `registry.example.com/lightclaw/frontend-pages:dfde008ca43a-${combo.id.replace(/[^a-z0-9._-]+/gi, "-").toLowerCase()}`,
+      }),
+    });
+
+    const logText = logs.join("\n");
+    expect(logText).toContain("可发布版本：Cloudflare 国内预发站");
+    expect(logText).toContain("FRONTEND_ARTIFACT_REF=registry.example.com/lightclaw/frontend-pages:dfde008ca43a-cf-cn-lightvela-staging");
+    expect(logText).toContain("可发布版本：Cloudflare 国际预发站");
+    expect(logText).toContain("FRONTEND_ARTIFACT_REF=registry.example.com/lightclaw/frontend-pages:dfde008ca43a-cf-global-lightvela-intl-staging");
+    expect(logs.at(-1)).toContain("可发布版本汇总");
   });
 
   it("does not deploy when required artifact archiving fails", () => {

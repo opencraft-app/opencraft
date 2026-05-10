@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 import {
   ARTIFACT_MODE_REQUIRED,
   archiveAndVerifyFrontendArtifact,
+  logReleaseHint,
+  logReleaseHintSummary,
   resolveArtifactMode,
   validateArtifactPrerequisites,
 } from "./frontend-artifact.mjs";
@@ -257,6 +259,7 @@ export function executeReleaseMatrix({
   if (artifactMode === ARTIFACT_MODE_REQUIRED) {
     validateArtifacts(env);
   }
+  const releaseHints = [];
 
   for (const combo of selectedCombos) {
     validateRequiredSecrets(combo, env);
@@ -266,17 +269,20 @@ export function executeReleaseMatrix({
     log(`frontend release combo start: ${formatComboSummary(combo, projectName)}`);
     runScript(combo.buildCommand, comboEnv);
     if (artifactMode === ARTIFACT_MODE_REQUIRED) {
-      archiveAndVerifyArtifact({
+      const result = archiveAndVerifyArtifact({
         combo,
         projectName,
         comboEnv,
         env,
         log,
       });
+      releaseHints.push({ combo, result });
+      logReleaseHint({ combo, result, env, log });
     }
     runScript(combo.deployCommand, comboEnv);
     log(`frontend release combo done: ${combo.id}`);
   }
+  logReleaseHintSummary({ hints: releaseHints, env, log });
 }
 
 const currentModulePath = import.meta.url.startsWith("file:")
