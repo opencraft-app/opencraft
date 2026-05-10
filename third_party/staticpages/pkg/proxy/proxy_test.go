@@ -99,6 +99,70 @@ func TestNewProxy(t *testing.T) {
 	}
 }
 
+func TestShouldUseOriginBypass(t *testing.T) {
+	enabled := true
+	disabled := false
+
+	tests := []struct {
+		name     string
+		host     string
+		pages    []*config.Page
+		expected bool
+	}{
+		{
+			name:     "unconfigured backend uses origin bypass by default",
+			host:     "cdn.example.com",
+			expected: true,
+		},
+		{
+			name: "configured backend uses origin bypass by default",
+			host: "cdn.example.com",
+			pages: []*config.Page{
+				{Proxy: config.PageProxy{URL: config.EnvValue("https://cdn.example.com")}},
+			},
+			expected: true,
+		},
+		{
+			name: "configured backend can disable origin bypass",
+			host: "webhosting-1388575217.cos.ap-beijing.myqcloud.com",
+			pages: []*config.Page{
+				{
+					Proxy: config.PageProxy{
+						URL:          config.EnvValue("https://webhosting-1388575217.cos.ap-beijing.myqcloud.com"),
+						OriginBypass: &disabled,
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "configured backend can explicitly keep origin bypass",
+			host: "cdn.example.com",
+			pages: []*config.Page{
+				{
+					Proxy: config.PageProxy{
+						URL:          config.EnvValue("https://cdn.example.com"),
+						OriginBypass: &enabled,
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name:     "literal IP addresses use default dialing",
+			host:     "127.0.0.1",
+			expected: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			proxy := NewProxy(config.StaticPagesConfig{Pages: test.pages})
+			assert.Equal(t, test.expected, proxy.shouldUseOriginBypass(test.host))
+		})
+	}
+}
+
 type testProxyServer struct {
 	name                string
 	domain              string

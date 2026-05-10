@@ -110,6 +110,13 @@ func (p *Proxy) createDialContext(dialer *net.Dialer) func(ctx context.Context, 
 			return nil, err
 		}
 
+		if !p.shouldUseOriginBypass(host) {
+			span.SetAttributes(attribute.Bool("origin_bypass", false))
+			otelzap.L().Ctx(ctx).Debug("using default DNS for proxy backend",
+				zap.String("host", host))
+			return dialer.DialContext(ctx, network, addr)
+		}
+
 		// Always use external DNS resolution to avoid CloudFlare loops
 		// This resolves the hostname using external DNS servers instead of local DNS
 		originIP, err := p.resolveOriginIP(ctx, host)
@@ -132,6 +139,32 @@ func (p *Proxy) createDialContext(dialer *net.Dialer) func(ctx context.Context, 
 
 		return dialer.DialContext(ctx, network, resolvedAddr)
 	}
+}
+
+func (p *Proxy) shouldUseOriginBypass(host string) bool {
+	if net.ParseIP(host) != nil {
+		return false
+	}
+
+	for _, page := range p.conf.Pages {
+		if page == nil {
+			continue
+		}
+
+		backendURL, err := url.Parse(page.Proxy.URL.String())
+		if err != nil {
+			continue
+		}
+
+		if strings.EqualFold(backendURL.Hostname(), host) {
+			if page.Proxy.OriginBypass != nil {
+				return *page.Proxy.OriginBypass
+			}
+			return true
+		}
+	}
+
+	return true
 }
 
 // resolveOriginIP resolves the origin IP for a hostname using external DNS servers

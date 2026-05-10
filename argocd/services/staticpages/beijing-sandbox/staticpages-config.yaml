@@ -39,6 +39,7 @@ pages:
     proxy:
       url: https://webhosting-1388575217.cos.ap-beijing.myqcloud.com
       path: ""
+      originBypass: false
       searchPath:
         - /index.html
         - /index.htm

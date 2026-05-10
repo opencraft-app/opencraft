@@ -37,10 +37,11 @@ type BucketConfig struct {
 }
 
 type PageProxy struct {
-	URL        EnvValue `yaml:"url"`
-	Path       EnvValue `yaml:"path"`
-	SearchPath []string `yaml:"searchPath"`
-	NotFound   string   `yaml:"notFound"`
+	URL          EnvValue `yaml:"url"`
+	Path         EnvValue `yaml:"path"`
+	SearchPath   []string `yaml:"searchPath"`
+	NotFound     string   `yaml:"notFound"`
+	OriginBypass *bool    `yaml:"originBypass"`
 }
 
 type SubDomain struct {
