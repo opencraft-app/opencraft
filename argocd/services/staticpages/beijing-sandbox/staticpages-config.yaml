@@ -24,6 +24,7 @@ pages:
       secret: ENV(STATICPAGES_COS_SECRET_KEY)
       url: https://cos.ap-beijing.myqcloud.com
       usePathStyle: false
+      publicRead: true
     git:
       provider: bearer
       repository: wisp/mono2

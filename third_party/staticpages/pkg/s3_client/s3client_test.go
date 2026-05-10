@@ -23,3 +23,20 @@ func TestWithBucketConfAllowsVirtualHostedStyle(t *testing.T) {
 
 	assert.False(t, client.s3Options.UsePathStyle)
 }
+
+func TestWithBucketConfDisablesPublicReadByDefault(t *testing.T) {
+	client := &S3PageClient{}
+
+	WithBucketConf(&config.BucketConfig{})(client)
+
+	assert.False(t, client.publicRead)
+}
+
+func TestWithBucketConfAllowsPublicReadArtifacts(t *testing.T) {
+	client := &S3PageClient{}
+	publicRead := true
+
+	WithBucketConf(&config.BucketConfig{PublicRead: &publicRead})(client)
+
+	assert.True(t, client.publicRead)
+}
