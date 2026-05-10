@@ -23,7 +23,8 @@
     "archive:artifact": "node scripts/archive-release-artifact.mjs",
     "verify:artifact": "node scripts/verify-release-artifact.mjs",
     "build:release-artifacts": "node scripts/build-release-artifacts.mjs",
-    "release:eo:artifact": "node scripts/release-edgeone-from-artifact.mjs"
+    "release:eo:artifact": "node scripts/release-edgeone-from-artifact.mjs",
+    "release:cf:artifact": "node scripts/release-cloudflare-from-artifact.mjs"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.15",

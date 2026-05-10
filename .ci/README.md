@@ -526,8 +526,9 @@ Guard 自举策略：
 前端 Pages / EdgeOne / GitOps 镜像构建发布：
 
 - `.ci/frontend.yml`
-  - 默认构建 Cloudflare Pages 矩阵 + frontend GitOps 镜像；Pages 步骤只允许 `cf:*` 矩阵，不加载 EdgeOne token
-  - 同一入口额外构建并归档 `eo:cn-lightvela-prod` / `eo:global-lightvela-intl-prod` OCI artifact；该步骤只需要 TCR/ORAS，不发布 EdgeOne
+  - 默认先构建并归档完整 frontend Pages artifact 矩阵：`cf:cn-lightvela-staging`、`cf:global-lightvela-intl-staging`、`eo:cn-lightvela-prod`、`eo:global-lightvela-intl-prod`
+  - Cloudflare 预发发布步骤只允许 `cf:*` 矩阵，并从 TCR 拉取已归档 artifact 校验后发布；不现场 rebuild
+  - artifact 构建步骤只需要 TCR/ORAS，不加载 Cloudflare/EdgeOne 发布 token
 - `.ci/frontend-edgeone-lightvela.yml`
   - 手动发布 `eo:cn-lightvela-prod`；强制从已归档 artifact 发布
 - `.ci/frontend-edgeone-lightvela-intl.yml`
@@ -535,9 +536,11 @@ Guard 自举策略：
 - `frontend/release-matrix.json`
   - Pages / EdgeOne 发布矩阵唯一事实来源；CF 组合 ID 使用站点化名称 `cf:cn-lightvela-staging`、`cf:global-lightvela-intl-staging`
 - `frontend/scripts/release-matrix.mjs`
-  - 解析矩阵并执行 build/deploy
+  - 解析矩阵并执行 build/deploy；不作为 `.ci/frontend.yml` 的默认发布入口
 - `frontend/scripts/build-release-artifacts.mjs`
   - 复用矩阵 env 逻辑，只执行 build/archive/verify，不执行 deploy
+- `frontend/scripts/release-cloudflare-from-artifact.mjs`
+  - CF 预发发布入口：拉取 artifact，校验 repo/tag/source/combo/baked env/content 后，用解压目录发布 Cloudflare Pages
 - `frontend/scripts/release-edgeone-from-artifact.mjs`
   - EO 正式发布入口：拉取 artifact，校验 repo/tag/source/combo/baked env/content 后，用解压目录发布 EdgeOne
 
@@ -898,7 +901,7 @@ CI_RUNTIME_REF=refs/tags/ci-runtime-20260429-1
   - 当前复用 `service-gateway/Dockerfile` 和 `service-gateway` build context，但镜像 repo/tag 独立
 - `frontend.yml`
   - `build` 模式构建 frontend shprod 镜像，不自动 pin shprod
-  - Pages 矩阵发布、EO artifact 归档与 GitOps 镜像发布在同一入口内分流
+  - frontend Pages artifact 全矩阵归档、CF 预发 artifact 发布与 GitOps 镜像发布在同一入口内分流
 - `frontend-edgeone-lightvela*.yml`
   - 独立手动发布 EdgeOne 正式项目，不走 GitOps image pin，不现场 rebuild；必须输入 `FRONTEND_ARTIFACT_SOURCE_SHA` 或高级覆盖 `FRONTEND_ARTIFACT_REF`
 - `mr-placeholder.yml`

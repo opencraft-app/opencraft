@@ -60,6 +60,7 @@ echo "============================================================"
   scripts/release-matrix.test.ts \
   scripts/frontend-artifact.test.ts \
   scripts/build-release-artifacts.test.ts \
+  scripts/release-cloudflare-from-artifact.test.ts \
   scripts/release-edgeone-from-artifact.test.ts \
   scripts/check-static-route-conflicts.test.ts
 

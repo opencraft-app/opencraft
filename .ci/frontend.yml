@@ -29,7 +29,7 @@ variables:
     readonly: false
     allow-modify-at-startup: true
   FRONTEND_ARTIFACT_MATRIX:
-    value: eo:cn-lightvela-prod,eo:global-lightvela-intl-prod
+    value: cf:cn-lightvela-staging,cf:global-lightvela-intl-staging,eo:cn-lightvela-prod,eo:global-lightvela-intl-prod
     readonly: false
     allow-modify-at-startup: true
   TARGET_ENV:
@@ -77,7 +77,44 @@ stages:
               SHORT_SHA="${{ ci.sha }}"
               SHORT_SHA="${SHORT_SHA:0:12}"
               echo "::set-output name=tag::frontend-${SHORT_SHA}"
-          - name: 构建 frontend Pages 矩阵
+          - name: 构建 frontend artifact 全矩阵
+            shell: bash
+            env:
+              TCR_SHPROD_PASSWORD: ${{ settings.TCR_SHPROD_PASSWORD }}
+              VITE_AUTH_API_BASE_URL: https://lightclaw.tech
+              FRONTEND_ARTIFACT_MATRIX: ${{ variables.FRONTEND_ARTIFACT_MATRIX }}
+              FRONTEND_ARTIFACT_MODE: required
+              FRONTEND_ARTIFACT_REPOSITORY: lightclaw-shprod.tencentcloudcr.com/lightclaw/frontend-pages
+              FRONTEND_ARTIFACT_SOURCE_SHA: ${{ ci.sha }}
+            run: |
+              if [[ "${{ variables.PIPELINE_MODE }}" == "promote" ]]; then
+                echo "skip artifact build step because PIPELINE_MODE=promote"
+                exit 0
+              fi
+              echo "============================================================"
+              echo "frontend 发布决策：进入 artifact 全矩阵构建归档流程"
+              echo "artifact 矩阵：${FRONTEND_ARTIFACT_MATRIX}"
+              echo "artifact 仓库：${FRONTEND_ARTIFACT_REPOSITORY}"
+              echo "artifact source sha：${FRONTEND_ARTIFACT_SOURCE_SHA}"
+              echo "发布模型：仅 build/archive/verify，不发布 Pages"
+              echo "============================================================"
+              source .ci/init.sh
+              ci_init_repo_root
+              ci_export_gongfeng_defaults
+              ci_set_registry_credentials shprod
+              ci_ensure_oras
+              ci_ensure_node
+              ci_ensure_pnpm
+
+              "$NODE_BIN" --version
+              "$NPM_BIN" --version
+
+              cd "$REPO_ROOT/frontend"
+              rm -rf node_modules
+              "$PNPM_BIN" --version
+              "$PNPM_BIN" install --frozen-lockfile
+              "$PNPM_BIN" build:release-artifacts
+          - name: 发布 frontend Cloudflare 预发 artifact 矩阵
             shell: bash
             env:
               CLOUDFLARE_API_TOKEN: ${{ settings.CLOUDFLARE_API_TOKEN }}
@@ -85,23 +122,21 @@ stages:
               TCR_SHPROD_PASSWORD: ${{ settings.TCR_SHPROD_PASSWORD }}
               VITE_AUTH_API_BASE_URL: https://lightclaw.tech
               CLOUDFLARE_PAGES_COMMIT_HASH: ${{ ci.sha }}
-              CLOUDFLARE_PAGES_COMMIT_MESSAGE: Cloudflare Pages deploy from frontend pipeline
+              CLOUDFLARE_PAGES_COMMIT_MESSAGE: Cloudflare Pages deploy from archived frontend artifact
               FRONTEND_RELEASE_MATRIX: ${{ variables.FRONTEND_RELEASE_MATRIX }}
-              FRONTEND_ARTIFACT_MODE: required
               FRONTEND_ARTIFACT_REPOSITORY: lightclaw-shprod.tencentcloudcr.com/lightclaw/frontend-pages
               FRONTEND_ARTIFACT_SOURCE_SHA: ${{ ci.sha }}
             run: |
               if [[ "${{ variables.PIPELINE_MODE }}" == "promote" ]]; then
-                echo "skip build step because PIPELINE_MODE=promote"
+                echo "skip Cloudflare artifact release step because PIPELINE_MODE=promote"
                 exit 0
               fi
               echo "============================================================"
-              echo "frontend 发布决策：进入 Pages 矩阵发布流程"
-              echo "触发原因：PIPELINE_MODE=${{ variables.PIPELINE_MODE }}，满足非 promote 构建发布条件"
+              echo "frontend 发布决策：进入 Cloudflare 预发 artifact 发布流程"
               echo "发布矩阵：${FRONTEND_RELEASE_MATRIX}"
-              echo "发布模型：CI 只选择矩阵项，组合定义以 frontend/release-matrix.json 为准"
-              echo "发布来源：branch=${{ ci.branch }} sha=${{ ci.sha }}"
-              echo "下一步：安装依赖并执行 pnpm release:matrix"
+              echo "artifact 仓库：${FRONTEND_ARTIFACT_REPOSITORY}"
+              echo "artifact source sha：${FRONTEND_ARTIFACT_SOURCE_SHA}"
+              echo "发布模型：从 TCR 拉取已归档产物，校验后发布 Cloudflare，不现场构建"
               echo "============================================================"
               matrix_without_separators="${FRONTEND_RELEASE_MATRIX//,/}"
               matrix_without_separators="${matrix_without_separators//[[:space:]]/}"
@@ -116,7 +151,7 @@ stages:
                   continue
                 fi
                 if [[ "$combo" != cf:* ]]; then
-                  echo "frontend Pages matrix CI only allows cf:* combos; rejected ${combo}" >&2
+                  echo "frontend Cloudflare artifact release only allows cf:* combos; rejected ${combo}" >&2
                   exit 1
                 fi
               done
@@ -133,46 +168,9 @@ stages:
               "$NPM_BIN" --version
 
               cd "$REPO_ROOT/frontend"
-              rm -rf node_modules
               "$PNPM_BIN" --version
               "$PNPM_BIN" install --frozen-lockfile
-              "$PNPM_BIN" release:matrix
-          - name: 构建 frontend EdgeOne artifact 矩阵
-            shell: bash
-            env:
-              TCR_SHPROD_PASSWORD: ${{ settings.TCR_SHPROD_PASSWORD }}
-              VITE_AUTH_API_BASE_URL: https://lightclaw.tech
-              FRONTEND_ARTIFACT_MATRIX: ${{ variables.FRONTEND_ARTIFACT_MATRIX }}
-              FRONTEND_ARTIFACT_MODE: required
-              FRONTEND_ARTIFACT_REPOSITORY: lightclaw-shprod.tencentcloudcr.com/lightclaw/frontend-pages
-              FRONTEND_ARTIFACT_SOURCE_SHA: ${{ ci.sha }}
-            run: |
-              if [[ "${{ variables.PIPELINE_MODE }}" == "promote" ]]; then
-                echo "skip artifact build step because PIPELINE_MODE=promote"
-                exit 0
-              fi
-              echo "============================================================"
-              echo "frontend 发布决策：进入 EdgeOne artifact 构建归档流程"
-              echo "artifact 矩阵：${FRONTEND_ARTIFACT_MATRIX}"
-              echo "artifact 仓库：${FRONTEND_ARTIFACT_REPOSITORY}"
-              echo "artifact source sha：${FRONTEND_ARTIFACT_SOURCE_SHA}"
-              echo "发布模型：仅 build/archive/verify，不发布 EdgeOne"
-              echo "============================================================"
-              source .ci/init.sh
-              ci_init_repo_root
-              ci_export_gongfeng_defaults
-              ci_set_registry_credentials shprod
-              ci_ensure_oras
-              ci_ensure_node
-              ci_ensure_pnpm
-
-              "$NODE_BIN" --version
-              "$NPM_BIN" --version
-
-              cd "$REPO_ROOT/frontend"
-              "$PNPM_BIN" --version
-              "$PNPM_BIN" install --frozen-lockfile
-              "$PNPM_BIN" build:release-artifacts
+              "$PNPM_BIN" release:cf:artifact
           - name: 构建 frontend GitOps 镜像
             shell: bash
             env:
