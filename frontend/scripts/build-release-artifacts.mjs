@@ -4,6 +4,9 @@ import { fileURLToPath } from "node:url";
 import {
   ARTIFACT_MODE_REQUIRED,
   archiveAndVerifyFrontendArtifact,
+  colorText,
+  highlightArtifactRef,
+  highlightComboId,
   resolveArtifactMode,
   validateArtifactPrerequisites,
 } from "./frontend-artifact.mjs";
@@ -23,6 +26,36 @@ function resolveArtifactMatrixSelection(env) {
   return resolveSelectedComboIds(env.FRONTEND_RELEASE_MATRIX);
 }
 
+function resolveReleaseHintTitle(combo) {
+  if (combo.id === "eo:cn-lightvela-prod") {
+    return "EdgeOne 国内正式站";
+  }
+  if (combo.id === "eo:global-lightvela-intl-prod") {
+    return "EdgeOne 国际正式站";
+  }
+  return `EdgeOne ${combo.projectName}`;
+}
+
+function resolveReleaseHintShortSha(result) {
+  const manifestShortSha = result.manifest?.shortSha;
+  if (manifestShortSha) return manifestShortSha;
+  const tag = result.ref?.slice(result.ref.lastIndexOf(":") + 1) ?? "";
+  return tag.slice(0, 12);
+}
+
+function logReleaseHint({ combo, result, env, log }) {
+  if (combo.channel !== "eo") return;
+  const lines = [
+    "============================================================",
+    `可发布版本：${resolveReleaseHintTitle(combo)}`,
+    `CI：发布 frontend ${combo.id}`,
+    `FRONTEND_ARTIFACT_SOURCE_SHA=${resolveReleaseHintShortSha(result)}`,
+    `FRONTEND_ARTIFACT_REF=${result.ref}`,
+    "============================================================",
+  ];
+  log(colorText(lines.join("\n"), "green", env));
+}
+
 export function executeBuildReleaseArtifacts({
   env = process.env,
   log = console.log,
@@ -40,14 +73,14 @@ export function executeBuildReleaseArtifacts({
   }
   validateArtifacts(env);
 
-  log(`frontend artifact build matrix file: ${matrixPath}`);
-  log(`frontend artifact build selection: ${selectedCombos.map((combo) => combo.id).join(", ")}`);
+  log(`${colorText("frontend artifact build matrix file:", "bold", env)} ${matrixPath}`);
+  log(`${colorText("frontend artifact build selection:", "bold", env)} ${selectedCombos.map((combo) => highlightComboId(combo.id, env)).join(", ")}`);
 
   for (const combo of selectedCombos) {
     const projectName = resolveComboProjectName(combo, env);
     const comboEnv = createComboEnvironment(combo, projectName, env);
 
-    log(`frontend artifact build combo start: ${formatComboSummary(combo, projectName)}`);
+    log(`${colorText("frontend artifact build combo start:", "bold", env)} ${formatComboSummary(combo, projectName)}`);
     runScript(combo.buildCommand, comboEnv);
     const result = archiveAndVerifyArtifact({
       combo,
@@ -56,8 +89,9 @@ export function executeBuildReleaseArtifacts({
       env,
       log,
     });
-    log(`frontend artifact build combo archived: ${result.ref}`);
-    log(`frontend artifact build combo done: ${combo.id}`);
+    log(`${colorText("frontend artifact build combo archived:", "green", env)} ${highlightArtifactRef(result.ref, env)}`);
+    logReleaseHint({ combo, result, env, log });
+    log(`${colorText("frontend artifact build combo done:", "green", env)} ${highlightComboId(combo.id, env)}`);
   }
 }
 

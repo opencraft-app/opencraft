@@ -14,6 +14,13 @@ export const ARCHIVE_FILE = "dist.tar.gz";
 
 const FULL_SHA_RE = /^[0-9a-f]{40}$/i;
 const SHORT_SHA_RE = /^[0-9a-f]{12}$/i;
+const ANSI = {
+  reset: "\u001b[0m",
+  bold: "\u001b[1m",
+  cyan: "\u001b[36m",
+  green: "\u001b[32m",
+  yellow: "\u001b[33m",
+};
 const TEXT_EXTENSIONS = new Set([
   ".css",
   ".html",
@@ -29,6 +36,25 @@ const TEXT_EXTENSIONS = new Set([
 const SECRET_KEY_RE = /(TOKEN|PASSWORD|SECRET|PRIVATE|CREDENTIAL)/i;
 const PLACEHOLDER_RE = /^\$\{\{.*\}\}$|^(changeme|change_me|placeholder|replace_me|todo|test|dummy)$/i;
 const ARTIFACT_NOT_FOUND_RE = /(not\s+found|404|manifest\s+unknown|name\s+unknown|repository\s+unknown|not\s+exist|does\s+not\s+exist|failed\s+to\s+resolve.*not\s+found)/i;
+
+function shouldColor(env = process.env) {
+  return !env.NO_COLOR && !env.CI_NO_COLOR;
+}
+
+export function colorText(text, color, env = process.env) {
+  if (!shouldColor(env)) return text;
+  const prefix = ANSI[color];
+  if (!prefix) return text;
+  return `${prefix}${text}${ANSI.reset}`;
+}
+
+export function highlightArtifactRef(ref, env = process.env) {
+  return colorText(ref, "green", env);
+}
+
+export function highlightComboId(comboId, env = process.env) {
+  return colorText(comboId, "cyan", env);
+}
 
 export function resolveArtifactMode(env = process.env) {
   const rawMode = env.FRONTEND_ARTIFACT_MODE?.trim() ?? "";
@@ -552,7 +578,7 @@ export function archiveFrontendArtifact({ combo, projectName, comboEnv, env = pr
         if (!artifactIdentitiesMatch(existing, manifest)) {
           throw new Error(`frontend artifact ${ref} already exists with different identity`);
         }
-        log(`frontend artifact exists with matching identity; skip push: ${ref}`);
+        log(`${colorText("frontend artifact exists with matching identity; skip push:", "yellow", env)} ${highlightArtifactRef(ref, env)}`);
         return { manifest, manifestPath, archivePath, ref, skippedPush: true };
       }
     } finally {
@@ -561,7 +587,7 @@ export function archiveFrontendArtifact({ combo, projectName, comboEnv, env = pr
   }
 
   const push = orasPush(ref, manifestPath, archivePath, env, { dryRun });
-  log(`frontend artifact archived: ${ref}`);
+  log(`${colorText("frontend artifact archived:", "bold", env)} ${highlightArtifactRef(ref, env)}`);
   return { manifest, manifestPath, archivePath, ref, skippedPush: false, push };
 }
 
@@ -618,7 +644,7 @@ export function verifyFrontendArtifact({ ref, expectedManifest, env = process.en
   if (rebuilt.assets.entryJsSha256 !== manifest.assets.entryJsSha256) {
     throw new Error(`frontend artifact ${ref} extracted entry JS hash mismatch`);
   }
-  log(`frontend artifact verified: ${ref}`);
+  log(`${colorText("frontend artifact verified:", "green", env)} ${highlightArtifactRef(ref, env)}`);
   return { manifest, ref, extractDir };
 }
 
