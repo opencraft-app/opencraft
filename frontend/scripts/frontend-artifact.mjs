@@ -13,6 +13,7 @@ export const MANIFEST_FILE = "manifest.json";
 export const ARCHIVE_FILE = "dist.tar.gz";
 
 const FULL_SHA_RE = /^[0-9a-f]{40}$/i;
+const SHORT_SHA_RE = /^[0-9a-f]{12}$/i;
 const TEXT_EXTENSIONS = new Set([
   ".css",
   ".html",
@@ -60,6 +61,17 @@ export function resolveShortSha(sourceSha) {
     throw new Error("FRONTEND_ARTIFACT_SOURCE_SHA must be a full 40-character git SHA");
   }
   return trimmed.slice(0, 12).toLowerCase();
+}
+
+export function resolveArtifactSourceShaInput(sourceSha) {
+  const trimmed = String(sourceSha ?? "").trim().toLowerCase();
+  if (SHORT_SHA_RE.test(trimmed)) {
+    return { shortSha: trimmed, fullSourceSha: undefined };
+  }
+  if (FULL_SHA_RE.test(trimmed)) {
+    return { shortSha: trimmed.slice(0, 12), fullSourceSha: trimmed };
+  }
+  throw new Error("FRONTEND_ARTIFACT_SOURCE_SHA must be exactly 12 or 40 hexadecimal characters");
 }
 
 export function resolveArtifactTag(sourceSha, comboId) {
@@ -173,7 +185,7 @@ function readIndexEntry(outputDir) {
   };
 }
 
-function resolveBakedEnv(comboEnv) {
+export function resolveBakedEnv(comboEnv) {
   const bakedEnv = {
     VITE_REGION: comboEnv.VITE_REGION,
     VITE_AUTH_API_BASE_URL: comboEnv.VITE_AUTH_API_BASE_URL,
@@ -238,13 +250,133 @@ function getRegistryHost(repository) {
   return repository.split("/", 1)[0];
 }
 
-function repositoryFromRef(ref) {
-  const lastSlash = ref.lastIndexOf("/");
-  const tagSeparator = ref.lastIndexOf(":");
-  if (tagSeparator <= lastSlash) {
-    throw new Error(`frontend artifact ref must include a tag: ${ref}`);
+export function parseArtifactRef(ref) {
+  const trimmed = String(ref ?? "").trim();
+  if (!trimmed) {
+    throw new Error("frontend artifact ref is required");
   }
-  return ref.slice(0, tagSeparator);
+  const lastSlash = trimmed.lastIndexOf("/");
+  const tagSeparator = trimmed.lastIndexOf(":");
+  if (tagSeparator <= lastSlash) {
+    throw new Error(`frontend artifact ref must include a tag: ${trimmed}`);
+  }
+  return {
+    repository: trimmed.slice(0, tagSeparator),
+    tag: trimmed.slice(tagSeparator + 1),
+    ref: trimmed,
+  };
+}
+
+function repositoryFromRef(ref) {
+  return parseArtifactRef(ref).repository;
+}
+
+export function resolveExpectedArtifactReleaseRef({
+  env = process.env,
+  targetComboId,
+  repository = env.FRONTEND_ARTIFACT_REPOSITORY,
+  sourceSha = env.FRONTEND_ARTIFACT_SOURCE_SHA,
+  artifactRef = env.FRONTEND_ARTIFACT_REF,
+} = {}) {
+  const expectedRepository = String(repository ?? "").trim();
+  if (!expectedRepository) {
+    throw new Error("FRONTEND_ARTIFACT_REPOSITORY is required");
+  }
+  const normalizedComboId = normalizeComboIdForTag(targetComboId);
+  const rawSourceSha = String(sourceSha ?? "").trim();
+  const rawArtifactRef = String(artifactRef ?? "").trim();
+  if (!rawSourceSha && !rawArtifactRef) {
+    throw new Error("FRONTEND_ARTIFACT_SOURCE_SHA or FRONTEND_ARTIFACT_REF is required");
+  }
+
+  const source = rawSourceSha ? resolveArtifactSourceShaInput(rawSourceSha) : undefined;
+  if (!rawArtifactRef) {
+    const tag = `${source.shortSha}-${normalizedComboId}`;
+    return {
+      repository: expectedRepository,
+      tag,
+      ref: `${expectedRepository}:${tag}`,
+      shortSha: source.shortSha,
+      fullSourceSha: source.fullSourceSha,
+      targetComboId,
+    };
+  }
+
+  const parsed = parseArtifactRef(rawArtifactRef);
+  if (parsed.repository !== expectedRepository) {
+    throw new Error(`frontend artifact ref repository ${parsed.repository} does not match expected ${expectedRepository}`);
+  }
+  const suffix = `-${normalizedComboId}`;
+  if (!parsed.tag.endsWith(suffix) || !SHORT_SHA_RE.test(parsed.tag.slice(0, -suffix.length))) {
+    throw new Error(`frontend artifact tag must be <shortSha>-${normalizedComboId}: ${parsed.tag}`);
+  }
+  const shortSha = parsed.tag.slice(0, -suffix.length).toLowerCase();
+  const expectedTag = `${shortSha}-${normalizedComboId}`;
+  if (parsed.tag !== expectedTag) {
+    throw new Error(`frontend artifact tag ${parsed.tag} does not match canonical tag ${expectedTag}`);
+  }
+  if (source && source.shortSha !== shortSha) {
+    throw new Error(`FRONTEND_ARTIFACT_SOURCE_SHA ${source.shortSha} does not match FRONTEND_ARTIFACT_REF short SHA ${shortSha}`);
+  }
+  return {
+    repository: expectedRepository,
+    tag: expectedTag,
+    ref: `${expectedRepository}:${expectedTag}`,
+    shortSha,
+    fullSourceSha: source?.fullSourceSha,
+    targetComboId,
+  };
+}
+
+export function assertArtifactManifestMatchesCombo({
+  manifest,
+  ref,
+  targetCombo,
+  projectName,
+  comboEnv,
+  repository,
+  tag,
+  shortSha,
+  fullSourceSha,
+} = {}) {
+  if (!manifest || typeof manifest !== "object") {
+    throw new Error("frontend artifact manifest is required");
+  }
+  const expectedTag = tag ?? `${shortSha}-${normalizeComboIdForTag(targetCombo.id)}`;
+  const expectedRef = `${repository}:${expectedTag}`;
+  const parsed = parseArtifactRef(ref ?? manifest.artifact?.ref);
+  const checks = [
+    ["artifact.repository", manifest.artifact?.repository, repository],
+    ["artifact.tag", manifest.artifact?.tag, expectedTag],
+    ["artifact.ref", manifest.artifact?.ref, expectedRef],
+    ["resolved ref", parsed.ref, expectedRef],
+    ["comboId", manifest.comboId, targetCombo.id],
+    ["projectName", manifest.projectName, projectName],
+    ["channel", manifest.channel, targetCombo.channel],
+    ["region", manifest.region, targetCombo.region],
+    ["outputDir", manifest.outputDir, targetCombo.outputDir],
+    ["buildCommand", manifest.buildCommand, targetCombo.buildCommand],
+    ["deployCommand", manifest.deployCommand, targetCombo.deployCommand],
+    ["shortSha", manifest.shortSha, shortSha],
+  ];
+  if (fullSourceSha) {
+    checks.push(["sourceSha", manifest.sourceSha, fullSourceSha]);
+  }
+
+  for (const [field, actual, expected] of checks) {
+    if (actual !== expected) {
+      throw new Error(`frontend artifact manifest ${field} mismatch: expected ${expected}, got ${actual}`);
+    }
+  }
+
+  const expectedBakedEnv = resolveBakedEnv(comboEnv);
+  const actualBakedEnv = manifest.bakedEnv ?? {};
+  const keys = new Set([...Object.keys(expectedBakedEnv), ...Object.keys(actualBakedEnv)]);
+  for (const key of keys) {
+    if (actualBakedEnv[key] !== expectedBakedEnv[key]) {
+      throw new Error(`frontend artifact manifest baked env ${key} mismatch: expected ${expectedBakedEnv[key]}, got ${actualBakedEnv[key]}`);
+    }
+  }
 }
 
 function orasBin(env) {
@@ -487,7 +619,7 @@ export function verifyFrontendArtifact({ ref, expectedManifest, env = process.en
     throw new Error(`frontend artifact ${ref} extracted entry JS hash mismatch`);
   }
   log(`frontend artifact verified: ${ref}`);
-  return { manifest, ref };
+  return { manifest, ref, extractDir };
 }
 
 export function archiveAndVerifyFrontendArtifact(options) {

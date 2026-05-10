@@ -21,7 +21,9 @@
     "deploy:eo": "node scripts/deploy-edgeone-pages.mjs",
     "release:matrix": "node scripts/release-matrix.mjs",
     "archive:artifact": "node scripts/archive-release-artifact.mjs",
-    "verify:artifact": "node scripts/verify-release-artifact.mjs"
+    "verify:artifact": "node scripts/verify-release-artifact.mjs",
+    "build:release-artifacts": "node scripts/build-release-artifacts.mjs",
+    "release:eo:artifact": "node scripts/release-edgeone-from-artifact.mjs"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.15",

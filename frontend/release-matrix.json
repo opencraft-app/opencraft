@@ -1,7 +1,7 @@
 {
   "combos": [
     {
-      "id": "cn-cf",
+      "id": "cf:cn-lightvela-staging",
       "region": "cn",
       "channel": "cf",
       "buildCommand": "build:cn",
@@ -22,7 +22,7 @@
       }
     },
     {
-      "id": "global-cf",
+      "id": "cf:global-lightvela-intl-staging",
       "region": "global",
       "channel": "cf",
       "buildCommand": "build:global",

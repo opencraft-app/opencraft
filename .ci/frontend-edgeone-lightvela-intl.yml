@@ -15,6 +15,14 @@ variables:
     value: eo:global-lightvela-intl-prod
     readonly: true
     allow-modify-at-startup: false
+  FRONTEND_ARTIFACT_SOURCE_SHA:
+    value: ""
+    readonly: false
+    allow-modify-at-startup: true
+  FRONTEND_ARTIFACT_REF:
+    value: ""
+    readonly: false
+    allow-modify-at-startup: true
 
 stages:
   - name: 发布 frontend eo:global-lightvela-intl-prod
@@ -35,19 +43,27 @@ stages:
               EDGEONE_API_TOKEN_FILE: /etc/lightclaw-ci/edgeone_lightvela_intl_prod_token
               EDGEONE_API_TOKEN_REQUIRED: "1"
               EDGEONE_API_TOKEN: ${{ settings.EDGEONE_LIGHTVELA_INTL_PROD_TOKEN }}
+              TCR_SHPROD_PASSWORD: ${{ settings.TCR_SHPROD_PASSWORD }}
               FRONTEND_RELEASE_MATRIX: ${{ variables.FRONTEND_RELEASE_MATRIX }}
+              FRONTEND_ARTIFACT_REPOSITORY: lightclaw-shprod.tencentcloudcr.com/lightclaw/frontend-pages
+              FRONTEND_ARTIFACT_SOURCE_SHA: ${{ variables.FRONTEND_ARTIFACT_SOURCE_SHA }}
+              FRONTEND_ARTIFACT_REF: ${{ variables.FRONTEND_ARTIFACT_REF }}
             run: |
               echo "============================================================"
-              echo "frontend 发布决策：进入 EdgeOne lightvela-intl 正式项目发布流程"
+              echo "frontend 发布决策：进入 EdgeOne lightvela-intl artifact 发布流程"
               echo "发布矩阵：${FRONTEND_RELEASE_MATRIX}"
               echo "发布项目：eo:global-lightvela-intl-prod"
+              echo "artifact 仓库：${FRONTEND_ARTIFACT_REPOSITORY}"
+              echo "artifact source sha：${FRONTEND_ARTIFACT_SOURCE_SHA}"
+              echo "artifact ref override：${FRONTEND_ARTIFACT_REF}"
               echo "发布来源：branch=${{ ci.branch }} sha=${{ ci.sha }}"
-              echo "构建版本：国际版 build:global -> dist-global"
-              echo "下一步：安装依赖并执行 pnpm release:matrix"
+              echo "下一步：拉取并校验 artifact 后执行 pnpm release:eo:artifact"
               echo "============================================================"
               source .ci/init.sh
               ci_init_repo_root
               ci_load_edgeone_credentials
+              ci_set_registry_credentials shprod
+              ci_ensure_oras
               ci_ensure_node
               ci_ensure_pnpm
 
@@ -55,7 +71,7 @@ stages:
               "$NPM_BIN" --version
 
               cd "$REPO_ROOT/frontend"
-              rm -rf node_modules dist-global
+              rm -rf node_modules
               "$PNPM_BIN" --version
               "$PNPM_BIN" install --frozen-lockfile
-              "$PNPM_BIN" release:matrix
+              "$PNPM_BIN" release:eo:artifact

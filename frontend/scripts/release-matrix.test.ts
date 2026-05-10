@@ -15,7 +15,7 @@ import {
 } from "./release-matrix.mjs";
 
 const cnCfCombo = {
-  id: "cn-cf",
+  id: "cf:cn-lightvela-staging",
   region: "cn",
   channel: "cf",
   buildCommand: "build:cn",
@@ -43,7 +43,7 @@ const cnCfObservedCombo = {
 
 const globalCfCombo = {
   ...cnCfCombo,
-  id: "global-cf",
+  id: "cf:global-lightvela-intl-staging",
   region: "global",
   buildCommand: "build:global",
   projectName: "lightvela-intl",
@@ -64,14 +64,16 @@ const globalCfObservedCombo = {
 
 describe("release matrix helpers", () => {
   it("parses explicit matrix selections", () => {
-    expect(resolveSelectedComboIds("cn-cf, global-cf, cn-cf")).toEqual(["cn-cf", "global-cf"]);
+    expect(resolveSelectedComboIds("cf:cn-lightvela-staging, cf:global-lightvela-intl-staging, cf:cn-lightvela-staging")).toEqual(["cf:cn-lightvela-staging", "cf:global-lightvela-intl-staging"]);
     expect(resolveSelectedComboIds("")).toBeNull();
   });
 
   it("selects configured combos and rejects unknown ids", () => {
     const combos = [cnCfCombo, globalCfCombo];
-    expect(selectReleaseCombos(combos, ["global-cf"])).toEqual([combos[1]]);
+    expect(selectReleaseCombos(combos, ["cf:global-lightvela-intl-staging"])).toEqual([combos[1]]);
     expect(() => selectReleaseCombos(combos, ["missing"])).toThrow("unknown frontend release matrix combo id(s): missing");
+    expect(() => selectReleaseCombos(combos, ["cn-cf"])).toThrow("unknown frontend release matrix combo id(s): cn-cf");
+    expect(() => selectReleaseCombos(combos, ["global-cf"])).toThrow("unknown frontend release matrix combo id(s): global-cf");
   });
 
   it("validates secrets and resolves project names", () => {
@@ -99,7 +101,7 @@ describe("release matrix helpers", () => {
     expect(comboEnv.VITE_AEGIS_HOST_URL).toBe("https://rumt-zh.com");
     expect(comboEnv.CLOUDFLARE_PAGES_PROJECT_NAME).toBe("lightclaw");
     expect(comboEnv.CLOUDFLARE_PAGES_DIR).toBe("dist-cn");
-    expect(formatComboSummary(cnCfCombo, "lightclaw")).toContain("cn-cf");
+    expect(formatComboSummary(cnCfCombo, "lightclaw")).toContain("cf:cn-lightvela-staging");
   });
 
   it("creates Cloudflare env for the global intl site", () => {
@@ -228,7 +230,7 @@ describe("release matrix helpers", () => {
 
   it("includes China Cloudflare Aegis config in the release matrix", () => {
     const { combos } = loadReleaseMatrix();
-    const combo = combos.find((item) => item.id === "cn-cf");
+    const combo = combos.find((item) => item.id === "cf:cn-lightvela-staging");
 
     expect(combo).toMatchObject({
       region: "cn",
@@ -247,7 +249,7 @@ describe("release matrix helpers", () => {
 
   it("includes global Cloudflare Aegis config in the release matrix", () => {
     const { combos } = loadReleaseMatrix();
-    const combo = combos.find((item) => item.id === "global-cf");
+    const combo = combos.find((item) => item.id === "cf:global-lightvela-intl-staging");
 
     expect(combo).toMatchObject({
       region: "global",
@@ -323,7 +325,7 @@ describe("release matrix helpers", () => {
 
     executeReleaseMatrix({
       env: {
-        FRONTEND_RELEASE_MATRIX: "cn-cf",
+        FRONTEND_RELEASE_MATRIX: "cf:cn-lightvela-staging",
         CLOUDFLARE_API_TOKEN: "token",
         CLOUDFLARE_ACCOUNT_ID: "account",
       },
@@ -340,7 +342,7 @@ describe("release matrix helpers", () => {
 
     expect(() => executeReleaseMatrix({
       env: {
-        FRONTEND_RELEASE_MATRIX: "cn-cf",
+        FRONTEND_RELEASE_MATRIX: "cf:cn-lightvela-staging",
         FRONTEND_ARTIFACT_MODE: "dry-run",
         CLOUDFLARE_API_TOKEN: "token",
         CLOUDFLARE_ACCOUNT_ID: "account",
@@ -356,7 +358,7 @@ describe("release matrix helpers", () => {
 
     expect(() => executeReleaseMatrix({
       env: {
-        FRONTEND_RELEASE_MATRIX: "cn-cf",
+        FRONTEND_RELEASE_MATRIX: "cf:cn-lightvela-staging",
         FRONTEND_ARTIFACT_MODE: "required",
         CLOUDFLARE_API_TOKEN: "token",
         CLOUDFLARE_ACCOUNT_ID: "account",
@@ -375,7 +377,7 @@ describe("release matrix helpers", () => {
 
     executeReleaseMatrix({
       env: {
-        FRONTEND_RELEASE_MATRIX: "cn-cf",
+        FRONTEND_RELEASE_MATRIX: "cf:cn-lightvela-staging",
         FRONTEND_ARTIFACT_MODE: "required",
         CLOUDFLARE_API_TOKEN: "token",
         CLOUDFLARE_ACCOUNT_ID: "account",
@@ -386,7 +388,7 @@ describe("release matrix helpers", () => {
       archiveAndVerifyArtifact: ({ combo }) => calls.push(`artifact:${combo.id}`),
     });
 
-    expect(calls).toEqual(["validate-artifacts", "build:cn", "artifact:cn-cf", "deploy:cf"]);
+    expect(calls).toEqual(["validate-artifacts", "build:cn", "artifact:cf:cn-lightvela-staging", "deploy:cf"]);
   });
 
   it("does not deploy when required artifact archiving fails", () => {
@@ -394,7 +396,7 @@ describe("release matrix helpers", () => {
 
     expect(() => executeReleaseMatrix({
       env: {
-        FRONTEND_RELEASE_MATRIX: "cn-cf",
+        FRONTEND_RELEASE_MATRIX: "cf:cn-lightvela-staging",
         FRONTEND_ARTIFACT_MODE: "required",
         CLOUDFLARE_API_TOKEN: "token",
         CLOUDFLARE_ACCOUNT_ID: "account",
