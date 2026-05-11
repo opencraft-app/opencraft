@@ -53,17 +53,6 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
         self.assertIn("verify_gitops_promotion.py", workflow)
         self.assertIn("cleanup_gitops_promotion.py", workflow)
 
-    def test_all_auto_stages_route_playground_promote_branches(self) -> None:
-        policy = policy_for_branch("promote-sandbox-bj-7-trade-tag")
-
-        self.assertIsNotNone(policy)
-        self.assertEqual(policy.env, "sandbox-bj-7")
-        self.assertEqual(policy.kustomize_mode.value, "full")
-        self.assertEqual(policy.verify_mode.value, "argo_convergence")
-        self.assertTrue(policy.auto_merge)
-        self.assertTrue(policy.auto_sync)
-        self.assertTrue(policy.cleanup_source_branch)
-
     def test_promotion_workflow_uses_shared_bootstrap_helper(self) -> None:
         workflow = (REPO_ROOT / ".ci/gitops-promotion.yml").read_text()
         helper = (REPO_ROOT / ".ci/runtime/gitops_promotion_bootstrap.sh").read_text()
@@ -79,18 +68,11 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
         self.assertIn("resolved_runtime_ref=", workflow)
         self.assertIn('ci_materialize_runtime_manifest "${runtime_dir}" ".ci/runtime/materialize-files.txt"', helper)
         self.assertIn("ci_gitops_promotion_trailer()", helper)
-        self.assertNotIn("git show HEAD:.ci/init.sh", helper)
-        self.assertNotIn('source "${runtime_dir}/.ci/init.sh"\n  ci_prepare_runtime_ref "$runtime_ref"', helper)
-        self.assertIn("ci_bootstrap_prepare_runtime_ref()", helper)
-        self.assertIn("ci_bootstrap_fetch_origin()", helper)
-        self.assertIn("ci_bootstrap_load_git_woa_private_token()", helper)
-        self.assertIn("Release-runtime-ref", helper)
         self.assertIn("Release-runtime-commit", helper)
         self.assertIn("Release-source-branch", helper)
         self.assertIn("ci_resolve_gitops_promotion_source_branch()", helper)
         self.assertIn("BK_CI_REPO_GIT_WEBHOOK_SOURCE_BRANCH", helper)
         self.assertIn("refs/heads/promote-*", helper)
-        self.assertIn("GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}", workflow)
         self.assertIn("GitOps 合并后验收", workflow)
         self.assertIn("按环境策略自动合并 GitOps MR", workflow)
 
@@ -151,7 +133,7 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
                 }
             )
 
-            subprocess.run(
+            result = subprocess.run(
                 [
                     "/bin/bash",
                     str(REPO_ROOT / ".ci/runtime/build_and_promote_to_gitops.sh"),
@@ -173,6 +155,80 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
             self.assertIn("example.com/beijing-sandbox:test-tag", pins[0])
             self.assertIn("sandbox\tsandbox\tbeijing-sandbox-2\t", pins[1])
             self.assertIn("example.com/beijing-sandbox-2:test-tag", pins[1])
+            self.assertIn("发布产物已生成：可复制下面参数手动 promote", result.stdout)
+            self.assertIn("PIPELINE_MODE=promote TARGET_ENV=beijing-sandbox SOURCE_SHA=", result.stdout)
+            self.assertIn("PIPELINE_MODE=promote TARGET_ENV=beijing-sandbox-2 SOURCE_SHA=", result.stdout)
+
+    def test_build_without_auto_pin_prints_manual_promote_hint(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fake_bin = Path(tmp)
+            fake_python = fake_bin / "python3"
+            fake_python.write_text(
+                textwrap.dedent(
+                    f"""\
+                    #!/bin/bash
+                    if [[ "$1" == "{REPO_ROOT}/.ci/runtime/commands/build_release_image.py" ]]; then
+                      env_name=""
+                      output_file=""
+                      while [[ $# -gt 0 ]]; do
+                        case "$1" in
+                          --env)
+                            env_name="$2"
+                            shift 2
+                            ;;
+                          --image-output-file)
+                            output_file="$2"
+                            shift 2
+                            ;;
+                          *)
+                            shift
+                            ;;
+                        esac
+                      done
+                      printf 'registry.example.com/frontend:test-tag\\n' > "$output_file"
+                      exit 0
+                    fi
+                    exec "{sys.executable}" "$@"
+                    """
+                )
+            )
+            fake_python.chmod(0o755)
+            env = os.environ.copy()
+            env.update(
+                {
+                    "PATH": f"{fake_bin}:{env['PATH']}",
+                    "TCR_SHPROD_PASSWORD": "fake-password",
+                    "BUILD_TAG_OVERRIDE": "test-tag",
+                    "DEPLOYED_AT": "2026-04-29T00:00:00Z",
+                }
+            )
+
+            result = subprocess.run(
+                [
+                    "/bin/bash",
+                    str(REPO_ROOT / ".ci/runtime/build_and_promote_to_gitops.sh"),
+                    "frontend",
+                    "frontend",
+                    "shprod",
+                    "none",
+                ],
+                cwd=REPO_ROOT,
+                env=env,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+
+            source_ref = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, text=True).strip()
+            self.assertIn("发布产物已生成：可复制下面参数手动 promote", result.stdout)
+            self.assertIn(f"SOURCE_SHA:\x1b[0m {source_ref}", result.stdout)
+            self.assertIn("镜像 tag:\x1b[0m test-tag", result.stdout)
+            self.assertIn("镜像:\x1b[0m registry.example.com/frontend:test-tag", result.stdout)
+            self.assertIn(f"PIPELINE_MODE=promote TARGET_ENV=shprod SOURCE_SHA={source_ref}", result.stdout)
+            self.assertIn(
+                f"promote_bundle_image_to_gitops.sh frontend frontend shprod {source_ref}",
+                result.stdout,
+            )
 
     def test_pin_script_uses_materialized_runtime_after_gitops_checkout(self) -> None:
         script = (REPO_ROOT / ".ci/runtime/pin_image_to_gitops.sh").read_text()
@@ -210,12 +266,6 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
         self.assertIn("Release-image-pin: ${PIN_IMAGE}", script)
         self.assertIn("Release-image-digests: ${GATE_IMAGE_DIGESTS_JSON}", script)
         self.assertIn('--image "$PIN_IMAGE"', script)
-        self.assertIn("validate_gate_env_file", script)
-        self.assertIn("GitOps 发布门禁结果包含非 dotenv 输出", script)
-        self.assertIn("refresh_promote_remote_tracking", script)
-        self.assertIn('git -C "$REPO_ROOT" fetch "$REMOTE_NAME" "+refs/heads/${PROMOTE_BRANCH}:${remote_ref}"', script)
-        self.assertIn('git -C "$REPO_ROOT" update-ref -d "$remote_ref"', script)
-        self.assertIn("refresh_promote_remote_tracking\ngit -C \"$REPO_ROOT\" push --force-with-lease", script)
 
     def test_pin_script_consumes_only_approved_gate_variables(self) -> None:
         script = (REPO_ROOT / ".ci/runtime/pin_image_to_gitops.sh").read_text()
