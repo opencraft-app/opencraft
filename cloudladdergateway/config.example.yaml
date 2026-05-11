@@ -88,7 +88,14 @@ auth:
   callers:
     - id: payment
       secret_env: CLOUDLADDER_PAYMENT_HMAC_SECRET
-      routes: ["sandbox-cn", "qcbuy.price.get_price"]
+      routes:
+        - sandbox-cn
+        - billing-trade-cn-test
+        - billing-trade-cn-pre
+        - billing-trade-cn-prod
+        - billing-trade-intl-test
+        - billing-trade-intl-pre
+        - billing-trade-intl-prod
 
 audit:
   service_name: cloudladdergateway
@@ -121,21 +128,44 @@ routes:
         headers:
           X-CloudLadder-Webhook: "mirror-to-staging"
 
-  - id: billing-query-via-polaris
-    description: "Resolve IDC billing service through Polaris sidecar."
+  - id: billing-trade-cn-test
+    description: "Proxy Tencent billing trade domestic test environment."
     callers: ["payment"]
     condition: 'request.method == "POST"'
     upstream:
-      scheme: http
-      polaris:
-        service: "billing.service"
-        namespace: "Production"
-      timeout: 10s
-      allowed_methods: ["POST"]
+      backend: billing-trade-cn-test
 
-  - id: qcbuy.price.get_price
-    description: "Query qcbuy price through Tencent billing trade backend."
+  - id: billing-trade-cn-pre
+    description: "Proxy Tencent billing trade domestic pre-release environment."
+    callers: ["payment"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: billing-trade-cn-pre
+
+  - id: billing-trade-cn-prod
+    description: "Proxy Tencent billing trade domestic production environment."
     callers: ["payment"]
     condition: 'request.method == "POST"'
     upstream:
       backend: billing-trade-cn-prod
+
+  - id: billing-trade-intl-test
+    description: "Proxy Tencent billing trade international test environment."
+    callers: ["payment"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: billing-trade-intl-test
+
+  - id: billing-trade-intl-pre
+    description: "Proxy Tencent billing trade international pre-release environment."
+    callers: ["payment"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: billing-trade-intl-pre
+
+  - id: billing-trade-intl-prod
+    description: "Proxy Tencent billing trade international production environment."
+    callers: ["payment"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: billing-trade-intl-prod

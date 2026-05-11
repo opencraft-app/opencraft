@@ -123,7 +123,8 @@ routes:
 
 Polaris resolver 会调用 Sidecar `/v1/GetOneInstance`，缓存 `host:port`。当 Sidecar 临时失败且已有旧缓存时，默认使用旧实例兜底，避免 IDC 内部服务发现短抖动直接打断调用。
 
-可复用后端可以配置成 backend alias，route 只引用别名：
+可复用后端可以配置成 backend alias。当前 billing trade 直接把后端别名暴露成同名 route，调用方通过
+`route_id` 选择要访问的站点和环境：
 
 ```yaml
 backends:
@@ -139,11 +140,22 @@ backends:
         Host: "trade.tencentyun.com"
 
 routes:
-  - id: qcbuy.price.get_price
+  - id: billing-trade-cn-prod
     callers: ["payment"]
     condition: 'request.method == "POST"'
     upstream:
       backend: billing-trade-cn-prod
+```
+
+HTTP 调用示例：
+
+```bash
+curl -X POST 'http://127.0.0.1:8095/v1/proxy/billing-trade-cn-prod/interfaces/interface.php' \
+  -H 'X-CloudLadder-Caller: payment' \
+  -H 'X-CloudLadder-Timestamp: 2026-05-07T12:00:00Z' \
+  -H 'X-CloudLadder-Signature: sha256=<hex>' \
+  -H 'Content-Type: application/json' \
+  -d '{"version":"1.0","componentName":"qcbuy","caller":"payment","eventId":4962132,"timestamp":1504077981,"interface":{"interfaceName":"qcloud.price.getPrice","para":{}}}'
 ```
 
 Billing trade 后端别名固定为：

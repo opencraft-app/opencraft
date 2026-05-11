@@ -29,8 +29,30 @@ routes:
 
 func TestExampleConfigLoads(t *testing.T) {
 	t.Setenv("CLOUDLADDER_PAYMENT_HMAC_SECRET", "test-secret")
-	if _, err := Load("../../config.example.yaml"); err != nil {
+	cfg, err := Load("../../config.example.yaml")
+	if err != nil {
 		t.Fatalf("load example config: %v", err)
+	}
+	wantRoutes := map[string]bool{
+		"billing-trade-cn-test":   false,
+		"billing-trade-cn-pre":    false,
+		"billing-trade-cn-prod":   false,
+		"billing-trade-intl-test": false,
+		"billing-trade-intl-pre":  false,
+		"billing-trade-intl-prod": false,
+	}
+	for _, route := range cfg.Routes {
+		if _, ok := wantRoutes[route.ID]; ok {
+			wantRoutes[route.ID] = true
+			if route.Upstream.Backend != route.ID {
+				t.Fatalf("route %q should use matching backend alias, got %q", route.ID, route.Upstream.Backend)
+			}
+		}
+	}
+	for routeID, found := range wantRoutes {
+		if !found {
+			t.Fatalf("example config missing route %q", routeID)
+		}
 	}
 }
 
