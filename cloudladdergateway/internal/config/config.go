@@ -12,11 +12,14 @@ import (
 
 const DefaultMaxBodyBytes int64 = 10 << 20
 
+const RouteModeSignedHTTPTunnel = "signed_http_tunnel"
+
 type Config struct {
 	Addr         string          `yaml:"addr"`
 	MaxBodyBytes int64           `yaml:"max_body_bytes"`
 	Transport    TransportConfig `yaml:"transport"`
 	Discovery    DiscoveryConfig `yaml:"discovery"`
+	Backends     []BackendConfig `yaml:"backends"`
 	Auth         AuthConfig      `yaml:"auth"`
 	Audit        AuditConfig     `yaml:"audit"`
 	Routes       []RouteConfig   `yaml:"routes"`
@@ -39,6 +42,11 @@ type PolarisDiscoveryConfig struct {
 	SidecarURL   string `yaml:"sidecar_url"`
 	CacheTTL     string `yaml:"cache_ttl"`
 	StaleOnError *bool  `yaml:"stale_on_error"`
+}
+
+type BackendConfig struct {
+	Alias    string         `yaml:"alias"`
+	Upstream UpstreamConfig `yaml:"upstream"`
 }
 
 type AuthConfig struct {
@@ -72,6 +80,7 @@ type AuditOTLPConfig struct {
 type RouteConfig struct {
 	ID          string          `yaml:"id"`
 	Description string          `yaml:"description"`
+	Mode        string          `yaml:"mode"`
 	Condition   string          `yaml:"condition"`
 	Callers     []string        `yaml:"callers"`
 	Upstream    UpstreamConfig  `yaml:"upstream"`
@@ -79,6 +88,7 @@ type RouteConfig struct {
 }
 
 type UpstreamConfig struct {
+	Backend        string                `yaml:"backend"`
 	BaseURL        string                `yaml:"base_url"`
 	Scheme         string                `yaml:"scheme"`
 	Polaris        PolarisUpstreamConfig `yaml:"polaris"`
@@ -205,41 +215,57 @@ func (c Config) Validate() error {
 		}
 		seenCallers[caller.ID] = struct{}{}
 	}
+	seenBackends := map[string]struct{}{}
+	for i, backend := range c.Backends {
+		if strings.TrimSpace(backend.Alias) == "" {
+			return fmt.Errorf("backends[%d].alias is required", i)
+		}
+		if _, ok := seenBackends[backend.Alias]; ok {
+			return fmt.Errorf("duplicate backend alias %q", backend.Alias)
+		}
+		seenBackends[backend.Alias] = struct{}{}
+		if strings.TrimSpace(backend.Upstream.Backend) != "" {
+			return fmt.Errorf("backend %q upstream.backend is not allowed", backend.Alias)
+		}
+		if err := validateConcreteUpstream("backend "+backend.Alias, backend.Upstream); err != nil {
+			return err
+		}
+		if _, err := ParseDuration(backend.Upstream.Timeout, 30*time.Second); err != nil {
+			return fmt.Errorf("backend %q upstream.timeout: %w", backend.Alias, err)
+		}
+	}
 	seen := map[string]struct{}{}
 	for i, route := range c.Routes {
 		if strings.TrimSpace(route.ID) == "" {
 			return fmt.Errorf("routes[%d].id is required", i)
 		}
+		mode := normalizeRouteMode(route.Mode)
+		switch mode {
+		case "", RouteModeSignedHTTPTunnel:
+		default:
+			return fmt.Errorf("route %q mode %q is not supported", route.ID, route.Mode)
+		}
 		if _, ok := seen[route.ID]; ok {
 			return fmt.Errorf("duplicate route id %q", route.ID)
 		}
 		seen[route.ID] = struct{}{}
-		hasStatic := strings.TrimSpace(route.Upstream.BaseURL) != ""
-		hasPolaris := strings.TrimSpace(route.Upstream.Polaris.Service) != "" || strings.TrimSpace(route.Upstream.Polaris.Namespace) != ""
-		switch {
-		case hasStatic && hasPolaris:
-			return fmt.Errorf("route %q upstream must use either base_url or polaris, not both", route.ID)
-		case hasStatic:
-			if _, err := url.ParseRequestURI(route.Upstream.BaseURL); err != nil {
-				return fmt.Errorf("route %q upstream.base_url: %w", route.ID, err)
-			}
-		case hasPolaris:
-			if strings.TrimSpace(route.Upstream.Polaris.Service) == "" {
-				return fmt.Errorf("route %q upstream.polaris.service is required", route.ID)
-			}
-			if strings.TrimSpace(route.Upstream.Polaris.Namespace) == "" {
-				return fmt.Errorf("route %q upstream.polaris.namespace is required", route.ID)
-			}
-			switch strings.TrimSpace(route.Upstream.Scheme) {
-			case "", "http", "https":
-			default:
-				return fmt.Errorf("route %q upstream.scheme must be http or https", route.ID)
-			}
-		default:
-			return fmt.Errorf("route %q upstream requires base_url or polaris", route.ID)
+		upstream, err := c.ResolveUpstream(route.ID, route.Upstream)
+		if err != nil {
+			return err
 		}
-		if _, err := ParseDuration(route.Upstream.Timeout, 30*time.Second); err != nil {
+		if err := validateConcreteUpstream("route "+route.ID, upstream); err != nil {
+			return err
+		}
+		if _, err := ParseDuration(upstream.Timeout, 30*time.Second); err != nil {
 			return fmt.Errorf("route %q upstream.timeout: %w", route.ID, err)
+		}
+		if mode == RouteModeSignedHTTPTunnel {
+			if _, ok := trustedHost(upstream); !ok {
+				return fmt.Errorf("route %q signed_http_tunnel requires upstream base_url host or upstream.headers.Host", route.ID)
+			}
+			if len(route.Webhooks) > 0 {
+				return fmt.Errorf("route %q signed_http_tunnel does not support webhooks", route.ID)
+			}
 		}
 		for j, webhook := range route.Webhooks {
 			if strings.TrimSpace(webhook.ID) == "" {
@@ -252,6 +278,98 @@ func (c Config) Validate() error {
 				return fmt.Errorf("route %q webhook %q timeout: %w", route.ID, webhook.ID, err)
 			}
 		}
+	}
+	return nil
+}
+
+func normalizeRouteMode(mode string) string {
+	return strings.ToLower(strings.TrimSpace(mode))
+}
+
+func trustedHost(upstream UpstreamConfig) (string, bool) {
+	for key, value := range upstream.Headers {
+		if strings.EqualFold(key, "Host") && strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value), true
+		}
+	}
+	if strings.TrimSpace(upstream.BaseURL) == "" {
+		return "", false
+	}
+	parsed, err := url.Parse(upstream.BaseURL)
+	if err != nil || parsed.Host == "" {
+		return "", false
+	}
+	return parsed.Host, true
+}
+
+func (c Config) ResolveUpstream(routeID string, upstream UpstreamConfig) (UpstreamConfig, error) {
+	backendAlias := strings.TrimSpace(upstream.Backend)
+	if backendAlias == "" {
+		return upstream, nil
+	}
+	if strings.TrimSpace(upstream.BaseURL) != "" ||
+		strings.TrimSpace(upstream.Polaris.Service) != "" ||
+		strings.TrimSpace(upstream.Polaris.Namespace) != "" {
+		return UpstreamConfig{}, fmt.Errorf("route %q upstream must not mix backend with base_url or polaris", routeID)
+	}
+	var backend *BackendConfig
+	for i := range c.Backends {
+		if c.Backends[i].Alias == backendAlias {
+			backend = &c.Backends[i]
+			break
+		}
+	}
+	if backend == nil {
+		return UpstreamConfig{}, fmt.Errorf("route %q references unknown backend %q", routeID, backendAlias)
+	}
+	resolved := backend.Upstream
+	if upstream.Scheme != "" {
+		resolved.Scheme = upstream.Scheme
+	}
+	if upstream.Timeout != "" {
+		resolved.Timeout = upstream.Timeout
+	}
+	if len(upstream.AllowedMethods) > 0 {
+		resolved.AllowedMethods = append([]string(nil), upstream.AllowedMethods...)
+	}
+	if len(upstream.Headers) > 0 {
+		headers := map[string]string{}
+		for key, value := range resolved.Headers {
+			headers[key] = value
+		}
+		for key, value := range upstream.Headers {
+			headers[key] = value
+		}
+		resolved.Headers = headers
+	}
+	resolved.Backend = ""
+	return resolved, nil
+}
+
+func validateConcreteUpstream(label string, upstream UpstreamConfig) error {
+	hasStatic := strings.TrimSpace(upstream.BaseURL) != ""
+	hasPolaris := strings.TrimSpace(upstream.Polaris.Service) != "" || strings.TrimSpace(upstream.Polaris.Namespace) != ""
+	switch {
+	case hasStatic && hasPolaris:
+		return fmt.Errorf("%s upstream must use either base_url or polaris, not both", label)
+	case hasStatic:
+		if _, err := url.ParseRequestURI(upstream.BaseURL); err != nil {
+			return fmt.Errorf("%s upstream.base_url: %w", label, err)
+		}
+	case hasPolaris:
+		if strings.TrimSpace(upstream.Polaris.Service) == "" {
+			return fmt.Errorf("%s upstream.polaris.service is required", label)
+		}
+		if strings.TrimSpace(upstream.Polaris.Namespace) == "" {
+			return fmt.Errorf("%s upstream.polaris.namespace is required", label)
+		}
+		switch strings.TrimSpace(upstream.Scheme) {
+		case "", "http", "https":
+		default:
+			return fmt.Errorf("%s upstream.scheme must be http or https", label)
+		}
+	default:
+		return fmt.Errorf("%s upstream requires base_url or polaris", label)
 	}
 	return nil
 }

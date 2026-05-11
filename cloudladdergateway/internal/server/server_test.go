@@ -2,9 +2,11 @@ package server
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 	gatewayv1 "github.com/openclaw/openclaw/mono/cloudladdergateway/gen/cloudladdergateway/v1"
@@ -64,6 +66,120 @@ func TestGinHTTPInvoke(t *testing.T) {
 		t.Fatalf("expected 202, got %d body=%s", rec.Code, rec.Body.String())
 	}
 	if got := rec.Body.String(); got != "gin-ok" {
+		t.Fatalf("unexpected body %q", got)
+	}
+}
+
+func TestGinHTTPSignedTunnelUsesExistingProxyRoute(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Path; got != "/sdk-path" {
+			t.Fatalf("expected /sdk-path, got %s", got)
+		}
+		if got := r.Host; got != "billing.dev.tencentcloudapi.com" {
+			t.Fatalf("expected trusted upstream Host, got %q", got)
+		}
+		if got := r.Header.Get("X-CloudLadder-Route"); got != "" {
+			t.Fatalf("expected route header stripped, got %q", got)
+		}
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte("signed-gin-ok"))
+	}))
+	defer upstream.Close()
+
+	engine, err := proxy.NewEngine(config.Config{
+		MaxBodyBytes: config.DefaultMaxBodyBytes,
+		Routes: []config.RouteConfig{{
+			ID:   "tcapi-billing-cn-dev",
+			Mode: config.RouteModeSignedHTTPTunnel,
+			Upstream: config.UpstreamConfig{
+				BaseURL: upstream.URL,
+				Headers: map[string]string{
+					"Host": "billing.dev.tencentcloudapi.com",
+				},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	router := NewGinRouter(engine, testAuthenticator(t, false), config.DefaultMaxBodyBytes)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/proxy/tcapi-billing-cn-dev/sdk-path?x=1", nil)
+	req.Header.Set("X-CloudLadder-Signed-Host", "billing.dev.tencentcloudapi.com")
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Body.String(); got != "signed-gin-ok" {
+		t.Fatalf("unexpected body %q", got)
+	}
+}
+
+func TestGinHTTPSignedTunnelPreservesEscapedPathForAuthAndUpstream(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.EscapedPath(); got != "/sdk/a%2Fb" {
+			t.Fatalf("expected escaped upstream path /sdk/a%%2Fb, got %s", got)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("escaped-ok"))
+	}))
+	defer upstream.Close()
+
+	engine, err := proxy.NewEngine(config.Config{
+		MaxBodyBytes: config.DefaultMaxBodyBytes,
+		Routes: []config.RouteConfig{{
+			ID:   "tcapi-billing-cn-dev",
+			Mode: config.RouteModeSignedHTTPTunnel,
+			Upstream: config.UpstreamConfig{
+				BaseURL: upstream.URL,
+				Headers: map[string]string{
+					"Host": "billing.dev.tencentcloudapi.com",
+				},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	t.Setenv("TEST_SHADOW_SECRET", "secret")
+	authenticator, err := auth.New(config.Config{
+		Auth: config.AuthConfig{
+			Enabled:       true,
+			TimestampSkew: "5m",
+			Callers: []config.CallerConfig{{
+				ID:        "shadow",
+				SecretEnv: "TEST_SHADOW_SECRET",
+				Routes:    []string{"tcapi-billing-cn-dev"},
+			}},
+		},
+		Routes: []config.RouteConfig{{ID: "tcapi-billing-cn-dev"}},
+	})
+	if err != nil {
+		t.Fatalf("new authenticator: %v", err)
+	}
+	router := NewGinRouter(engine, authenticator, config.DefaultMaxBodyBytes)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/proxy/tcapi-billing-cn-dev/sdk/a%2Fb?Action=CreateOrders", nil)
+	timestamp := time.Now().UTC().Format(time.RFC3339)
+	req.Header.Set("X-CloudLadder-Signed-Host", "billing.dev.tencentcloudapi.com")
+	req.Header.Set("X-CloudLadder-Caller", "shadow")
+	req.Header.Set("X-CloudLadder-Timestamp", timestamp)
+	req.Header.Set("X-CloudLadder-Signature", auth.Sign("secret", auth.Request{
+		Caller:    "shadow",
+		RouteID:   "tcapi-billing-cn-dev",
+		Method:    http.MethodPost,
+		Path:      "/sdk/a%2Fb",
+		Query:     "Action=CreateOrders",
+		Timestamp: timestamp,
+	}))
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		body, _ := io.ReadAll(rec.Body)
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, body)
+	}
+	if got := rec.Body.String(); got != "escaped-ok" {
 		t.Fatalf("unexpected body %q", got)
 	}
 }
