@@ -59,6 +59,15 @@ func TestSaveArtifactsToTempRejectsArchivePathTraversal(t *testing.T) {
 	assert.Contains(t, err.Error(), "invalid archive path")
 }
 
+func TestRequestUsesTarGzipUploadAcceptsUploadFormatHeader(t *testing.T) {
+	request := httptest.NewRequest(http.MethodPost, "/api/upload", nil)
+	request.Header.Set(staticPagesUploadFormatHeader, "tgz")
+	ct, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ct.Request = request
+
+	assert.True(t, requestUsesTarGzipUpload(ct))
+}
+
 func buildTarGzip(t *testing.T, files map[string]string) []byte {
 	t.Helper()
 	var body bytes.Buffer
