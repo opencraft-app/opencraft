@@ -10,10 +10,12 @@
  */
 
 import { Outlet, ScrollRestoration } from "react-router-dom";
+import { ImpersonationBanner } from "@/components/site/impersonation-banner";
 
 export function RootLayout() {
   return (
     <>
+      <ImpersonationBanner />
       <Outlet />
       <ScrollRestoration />
     </>

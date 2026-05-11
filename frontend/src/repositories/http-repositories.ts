@@ -35,6 +35,7 @@ import type {
 interface SessionPayload {
   session: {
     user: User;
+    impersonated?: boolean;
     authenticatedAt?: string;
     sessionToken?: string;
   };
@@ -201,6 +202,7 @@ export const bootstrapStoredAuthTokenFromLocation = () => {
 const mapSession = (payload: SessionPayload): AuthSessionSnapshot => ({
   user: payload.session.user,
   currentSubscription: null,
+  impersonated: payload.session.impersonated === true,
   authenticatedAt: payload.session.authenticatedAt,
   sessionToken: payload.session.sessionToken,
 });

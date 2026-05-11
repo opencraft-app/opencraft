@@ -379,12 +379,31 @@ func (s *MySQLStore) CreateSession(ctx context.Context, user User, now time.Time
 	return session, nil
 }
 
+func (s *MySQLStore) CreateImpersonationSession(ctx context.Context, user User, reason string, now time.Time, sessionTTL time.Duration) (*AuthSession, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin tx: %w", err)
+	}
+	defer rollback(tx)
+
+	session, err := createImpersonationSessionTx(ctx, tx, user, strings.TrimSpace(reason), now, sessionTTL)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit create impersonation session: %w", err)
+	}
+	return session, nil
+}
+
 func (s *MySQLStore) CurrentSession(ctx context.Context, token string, now time.Time) (*AuthSession, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT
 			s.token,
 			s.authenticated_at,
 			s.expires_at,
+			s.impersonated,
+			s.impersonation_reason,
 			u.id,
 			u.name,
 			u.email,
@@ -402,6 +421,8 @@ func (s *MySQLStore) CurrentSession(ctx context.Context, token string, now time.
 	var sessionToken string
 	var authenticatedAt time.Time
 	var expiresAt time.Time
+	var impersonated bool
+	var impersonationReason sql.NullString
 	var user User
 	var emailValue sql.NullString
 	var phoneValue sql.NullString
@@ -413,6 +434,8 @@ func (s *MySQLStore) CurrentSession(ctx context.Context, token string, now time.
 		&sessionToken,
 		&authenticatedAt,
 		&expiresAt,
+		&impersonated,
+		&impersonationReason,
 		&user.ID,
 		&user.Name,
 		&emailValue,
@@ -442,9 +465,12 @@ func (s *MySQLStore) CurrentSession(ctx context.Context, token string, now time.
 	user.AvatarSource = avatarSource.String
 	user.RealnameVerified = realnameVerifiedAt.Valid
 	session := &AuthSession{
-		Token:           sessionToken,
-		User:            user,
-		AuthenticatedAt: authenticatedAt,
+		Token:               sessionToken,
+		User:                user,
+		AuthenticatedAt:     authenticatedAt,
+		ExpiresAt:           expiresAt,
+		Impersonated:        impersonated,
+		ImpersonationReason: impersonationReason.String,
 	}
 	return session, nil
 }
@@ -1175,6 +1201,14 @@ func (s *MySQLStore) findOrCreateOAuthUserTx(ctx context.Context, tx *sql.Tx, in
 }
 
 func createSessionTx(ctx context.Context, tx *sql.Tx, user User, now time.Time, sessionTTL time.Duration) (*AuthSession, error) {
+	return createSessionWithMetadataTx(ctx, tx, user, now, sessionTTL, false, "")
+}
+
+func createImpersonationSessionTx(ctx context.Context, tx *sql.Tx, user User, reason string, now time.Time, sessionTTL time.Duration) (*AuthSession, error) {
+	return createSessionWithMetadataTx(ctx, tx, user, now, sessionTTL, true, strings.TrimSpace(reason))
+}
+
+func createSessionWithMetadataTx(ctx context.Context, tx *sql.Tx, user User, now time.Time, sessionTTL time.Duration, impersonated bool, reason string) (*AuthSession, error) {
 	token, err := newOpaqueToken()
 	if err != nil {
 		return nil, fmt.Errorf("create session token: %w", err)
@@ -1184,19 +1218,24 @@ func createSessionTx(ctx context.Context, tx *sql.Tx, user User, now time.Time, 
 		INSERT INTO auth_sessions (
 			token,
 			user_id,
+			impersonated,
+			impersonation_reason,
 			authenticated_at,
 			expires_at,
 			created_at,
 			updated_at
-		) VALUES (?, ?, ?, ?, ?, ?)
-	`, token, user.ID, now, expiresAt, now, now); err != nil {
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	`, token, user.ID, impersonated, nullableString(strings.TrimSpace(reason)), now, expiresAt, now, now); err != nil {
 		return nil, fmt.Errorf("insert auth session: %w", err)
 	}
 
 	return &AuthSession{
-		Token:           token,
-		User:            user,
-		AuthenticatedAt: now,
+		Token:               token,
+		User:                user,
+		AuthenticatedAt:     now,
+		ExpiresAt:           expiresAt,
+		Impersonated:        impersonated,
+		ImpersonationReason: strings.TrimSpace(reason),
 	}, nil
 }
 

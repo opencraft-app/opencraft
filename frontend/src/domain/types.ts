@@ -198,6 +198,7 @@ export interface CurrentSubscription {
 export interface AuthSessionSnapshot {
   user: User;
   currentSubscription: CurrentSubscription | null;
+  impersonated: boolean;
   authenticatedAt?: string;
   sessionToken?: string;
 }

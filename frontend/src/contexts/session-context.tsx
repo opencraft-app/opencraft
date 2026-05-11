@@ -25,6 +25,7 @@ interface SessionState extends LocalSessionState {
   stage: AuthStage;
   user: User | null;
   currentSubscription: CurrentSubscription | null;
+  impersonated: boolean;
 }
 
 type SessionAction =
@@ -49,6 +50,7 @@ const defaultSessionState: SessionState = {
   stage: "anonymous",
   user: null,
   currentSubscription: null,
+  impersonated: false,
   ...defaultLocalSessionState,
 };
 
@@ -61,6 +63,7 @@ const sessionReducer = (state: SessionState, action: SessionAction): SessionStat
         stage: action.payload ? "authenticated" : "anonymous",
         user: action.payload?.user ?? null,
         currentSubscription: action.payload?.currentSubscription ?? null,
+        impersonated: action.payload?.impersonated ?? false,
       };
     case "SET_AUTH_READY":
       return {

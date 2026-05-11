@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -62,10 +63,23 @@ type createInviteRequest struct {
 	Message string `json:"message"`
 }
 
+type createImpersonationSessionRequest struct {
+	ReturnTo string `json:"returnTo"`
+	Reason   string `json:"reason"`
+}
+
+type adminImpersonationSessionResponse struct {
+	LoginURL     string `json:"loginUrl"`
+	ExpiresAt    string `json:"expiresAt"`
+	UserID       string `json:"userId"`
+	Impersonated bool   `json:"impersonated"`
+}
+
 func registerAdminRoutes(group *gin.RouterGroup, authService *service.Service, avatarStore AvatarStore) {
 	handler := &adminHandler{service: authService, avatarStore: avatarStore}
 	group.GET("/users", handler.listUsers)
 	group.DELETE("/users/:id", handler.deleteUser)
+	group.POST("/users/:id/impersonation-sessions", handler.createImpersonationSession)
 	group.GET("/sms-challenges", handler.listSMSChallenges)
 	group.DELETE("/sms-challenges/:phone", handler.deleteSMSChallenge)
 	group.GET("/invites", handler.listInvites)
@@ -122,6 +136,77 @@ func (h *adminHandler) deleteUser(ctx *gin.Context) {
 
 	ctx.Status(http.StatusNoContent)
 }
+
+func (h *adminHandler) createImpersonationSession(ctx *gin.Context) {
+	var req createImpersonationSessionRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, api.ErrorResponse{Code: "invalid_request", Message: "请求格式不正确。"})
+		return
+	}
+
+	if _, err := parseImpersonationReturnTo(req.ReturnTo); err != nil {
+		ctx.JSON(http.StatusBadRequest, api.ErrorResponse{Code: "invalid_return_to", Message: "returnTo 必须是包含 scheme 和 host 的绝对 URL。"})
+		return
+	}
+
+	session, err := h.service.CreateImpersonationSession(ctx.Request.Context(), ctx.Param("id"), req.Reason)
+	if err != nil {
+		body, status := toErrorBody(err)
+		ctx.JSON(status, body)
+		return
+	}
+	loginURL, err := buildImpersonationLoginURL(req.ReturnTo, session.Token)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, api.ErrorResponse{Code: "invalid_return_to", Message: "returnTo 必须是包含 scheme 和 host 的绝对 URL。"})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, adminImpersonationSessionResponse{
+		LoginURL:     loginURL,
+		ExpiresAt:    session.ExpiresAt.UTC().Format(timeRFC3339Milli),
+		UserID:       session.User.ID,
+		Impersonated: true,
+	})
+}
+
+func buildImpersonationLoginURL(rawReturnTo string, sessionToken string) (string, error) {
+	parsed, err := parseImpersonationReturnTo(rawReturnTo)
+	if err != nil {
+		return "", err
+	}
+
+	parsed.Fragment = withSessionTokenFragment(parsed.Fragment, sessionToken)
+	return parsed.String(), nil
+}
+
+func parseImpersonationReturnTo(rawReturnTo string) (*url.URL, error) {
+	parsed, err := url.Parse(strings.TrimSpace(rawReturnTo))
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return nil, errInvalidReturnTo
+	}
+	return parsed, nil
+}
+
+func withSessionTokenFragment(rawFragment string, sessionToken string) string {
+	parts := make([]string, 0)
+	for _, part := range strings.Split(rawFragment, "&") {
+		if part == "" {
+			continue
+		}
+		key := part
+		if before, _, ok := strings.Cut(part, "="); ok {
+			key = before
+		}
+		if decodedKey, err := url.QueryUnescape(key); err == nil && decodedKey == "session_token" {
+			continue
+		}
+		parts = append(parts, part)
+	}
+	parts = append(parts, "session_token="+url.QueryEscape(strings.TrimSpace(sessionToken)))
+	return strings.Join(parts, "&")
+}
+
+var errInvalidReturnTo = &service.Error{Code: "invalid_return_to", Message: "returnTo 必须是包含 scheme 和 host 的绝对 URL。", Status: http.StatusBadRequest}
 
 func (h *adminHandler) listSMSChallenges(ctx *gin.Context) {
 	items, err := h.service.ListAdminSMSChallenges(ctx.Request.Context(), ctx.Query("search"), queryLimit(ctx))

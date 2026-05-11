@@ -21,6 +21,7 @@ type Store interface {
 	BindOAuthSession(ctx context.Context, token string, input OAuthSignInInput, now time.Time, sessionTTL time.Duration) (*AuthSession, error)
 	GetPasswordUser(ctx context.Context, email string) (User, []byte, error)
 	CreateSession(ctx context.Context, user User, now time.Time, sessionTTL time.Duration) (*AuthSession, error)
+	CreateImpersonationSession(ctx context.Context, user User, reason string, now time.Time, sessionTTL time.Duration) (*AuthSession, error)
 	CurrentSession(ctx context.Context, token string, now time.Time) (*AuthSession, error)
 	CurrentProfile(ctx context.Context, token string, now time.Time) (User, error)
 	FindUserByID(ctx context.Context, userID string) (User, error)

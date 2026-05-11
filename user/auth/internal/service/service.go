@@ -137,11 +137,16 @@ type AdminInvite struct {
 }
 
 type AuthSession struct {
-	Token           string
-	User            User
-	PlanSelection   *PlanSelection
-	AuthenticatedAt time.Time
+	Token               string
+	User                User
+	PlanSelection       *PlanSelection
+	AuthenticatedAt     time.Time
+	ExpiresAt           time.Time
+	Impersonated        bool
+	ImpersonationReason string
 }
+
+const impersonationSessionTTL = 30 * time.Minute
 
 type VerifySMSInput struct {
 	Name       string
@@ -186,11 +191,13 @@ type smsChallenge struct {
 }
 
 type sessionRecord struct {
-	Token           string
-	UserID          string
-	PlanSelection   *PlanSelection
-	AuthenticatedAt time.Time
-	ExpiresAt       time.Time
+	Token               string
+	UserID              string
+	PlanSelection       *PlanSelection
+	AuthenticatedAt     time.Time
+	ExpiresAt           time.Time
+	Impersonated        bool
+	ImpersonationReason string
 }
 
 func New(opts Options) *Service {
@@ -342,6 +349,25 @@ func (s *Service) ForgotPassword(_ context.Context, email string) error {
 
 func (s *Service) CurrentSession(ctx context.Context, token string) (*AuthSession, error) {
 	return s.store.CurrentSession(ctx, token, s.now())
+}
+
+func (s *Service) CreateImpersonationSession(ctx context.Context, userID string, reason string) (*AuthSession, error) {
+	trimmedUserID := strings.TrimSpace(userID)
+	if trimmedUserID == "" {
+		return nil, newError("user_not_found", "用户不存在。", http.StatusNotFound)
+	}
+	trimmedReason := strings.TrimSpace(reason)
+	if trimmedReason == "" {
+		return nil, newError("impersonation_reason_required", "请填写代登原因。", http.StatusBadRequest)
+	}
+	if len([]rune(trimmedReason)) > 512 {
+		return nil, newError("impersonation_reason_too_long", "代登原因不能超过 512 个字符。", http.StatusBadRequest)
+	}
+	user, err := s.store.FindUserByID(ctx, trimmedUserID)
+	if err != nil {
+		return nil, err
+	}
+	return s.store.CreateImpersonationSession(ctx, user, trimmedReason, s.now(), impersonationSessionTTL)
 }
 
 func (s *Service) VerifyRealname(ctx context.Context, token string, input RealnameVerifyInput) (RealnameVerifyResult, error) {
