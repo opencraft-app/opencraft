@@ -2,7 +2,7 @@ defaults:
   region: ap-singapore
   version_id: SSM_Current
   age_recipients:
-  - age1f2mw5cply9lf73x4lkwfdaglqqfhaq2qtauj8eq47fckgafyddgq6mkgjd
+  - age1q4s9kt3h5n0fgmez4kyp7tsahgjhuxpyeteye8lp46kqkyvardusctl258
 items:
 - id: gateway-dashboard-runtime-secrets
   secret_name: mono-sgprod-gateway-dashboard-runtime-secrets
