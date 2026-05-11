@@ -6,7 +6,7 @@ metadata:
 spec:
   project: sgprod-admin-gateway
   source:
-    repoURL: git@git.woa.com:wisp/mono2.git
+    repoURL: ssh://git@git.woa.com:443/wisp/mono2.git
     targetRevision: gitops
     path: argocd/services/admin-gateway/sgprod
   destination:

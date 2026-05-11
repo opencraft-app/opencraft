@@ -6,7 +6,7 @@ metadata:
 spec:
   description: Ctl cutover project for Singapore migration onto mono2.
   sourceRepos:
-    - git@git.woa.com:wisp/mono2.git
+    - ssh://git@git.woa.com:443/wisp/mono2.git
   destinations:
     - namespace: ctl
       name: sgprod
