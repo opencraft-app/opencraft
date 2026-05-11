@@ -17,6 +17,7 @@ from gitops.gitops_release_verifier import (
     format_convergence_log_line,
     format_merge_only_note,
     infer_release_targets,
+    revision_contains_merge_commit,
 )
 
 
@@ -131,6 +132,80 @@ class GitopsReleaseVerifierTests(unittest.TestCase):
             changed_files = changed_files_from_merge_commit(repo_root, merge_commit, "gitops")
 
         self.assertEqual(changed_files, [])
+
+    def test_revision_contains_merge_commit_accepts_later_gitops_head(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            git(repo_root, "init")
+            git(repo_root, "config", "user.email", "ci@example.com")
+            git(repo_root, "config", "user.name", "CI")
+            (repo_root / "README.md").write_text("base\n")
+            git(repo_root, "add", ".")
+            git(repo_root, "commit", "-m", "base")
+            git(repo_root, "checkout", "-b", "gitops")
+
+            git(repo_root, "checkout", "-b", "promote-auth")
+            service_dir = repo_root / "argocd" / "services" / "lightclaw-auth" / "beijing-sandbox"
+            service_dir.mkdir(parents=True)
+            (service_dir / "auth-platform.env").write_text("AUTH_IMAGE=example.com/auth:v1\n")
+            git(repo_root, "add", ".")
+            git(repo_root, "commit", "-m", "pin auth image")
+
+            git(repo_root, "checkout", "gitops")
+            git(repo_root, "merge", "--no-ff", "promote-auth", "-m", "merge auth promote")
+            auth_merge_commit = git_output(repo_root, "rev-parse", "HEAD")
+
+            git(repo_root, "checkout", "-b", "promote-dashboard")
+            dashboard_dir = repo_root / "argocd" / "services" / "gateway-dashboard" / "beijing-sandbox"
+            dashboard_dir.mkdir(parents=True)
+            (dashboard_dir / "gateway-dashboard-platform.env").write_text("GATEWAY_DASHBOARD_IMAGE=example.com/dashboard:v1\n")
+            git(repo_root, "add", ".")
+            git(repo_root, "commit", "-m", "pin dashboard image")
+
+            git(repo_root, "checkout", "gitops")
+            git(repo_root, "merge", "--no-ff", "promote-dashboard", "-m", "merge dashboard promote")
+            later_gitops_head = git_output(repo_root, "rev-parse", "HEAD")
+
+            contains = revision_contains_merge_commit(
+                repo_root,
+                later_gitops_head,
+                auth_merge_commit,
+                "gitops",
+            )
+
+        self.assertTrue(contains)
+
+    def test_revision_contains_merge_commit_rejects_unrelated_revision(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            git(repo_root, "init")
+            git(repo_root, "config", "user.email", "ci@example.com")
+            git(repo_root, "config", "user.name", "CI")
+            (repo_root / "README.md").write_text("base\n")
+            git(repo_root, "add", ".")
+            git(repo_root, "commit", "-m", "base")
+            git(repo_root, "checkout", "-b", "gitops")
+
+            git(repo_root, "checkout", "-b", "promote-auth")
+            (repo_root / "auth.env").write_text("AUTH_IMAGE=example.com/auth:v1\n")
+            git(repo_root, "add", ".")
+            git(repo_root, "commit", "-m", "pin auth image")
+            auth_commit = git_output(repo_root, "rev-parse", "HEAD")
+
+            git(repo_root, "checkout", "gitops")
+            (repo_root / "dashboard.env").write_text("DASHBOARD_IMAGE=example.com/dashboard:v1\n")
+            git(repo_root, "add", ".")
+            git(repo_root, "commit", "-m", "pin dashboard image")
+            unrelated_gitops_head = git_output(repo_root, "rev-parse", "HEAD")
+
+            contains = revision_contains_merge_commit(
+                repo_root,
+                unrelated_gitops_head,
+                auth_commit,
+                "gitops",
+            )
+
+        self.assertFalse(contains)
 
     def test_format_convergence_log_line_includes_live_state_and_expectations(self) -> None:
         line = format_convergence_log_line(
