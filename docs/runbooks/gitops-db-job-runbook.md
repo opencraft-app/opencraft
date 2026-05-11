@@ -5,7 +5,7 @@
 ## Files
 
 - 脚本：
-  - `scripts/run_gitops_db_job.py`
+  - `.ci/runtime/commands/run_gitops_db_job.py`
 - 历史 DB job 模板：
   - 已退役，不再作为现行入口
 
@@ -42,7 +42,7 @@
 示例：
 
 ```bash
-python3 scripts/run_gitops_db_job.py \
+python3 .ci/runtime/commands/run_gitops_db_job.py \
   --service subscription \
   --env beijing-sandbox \
   --operation migration \
@@ -52,7 +52,7 @@ python3 scripts/run_gitops_db_job.py \
 真正执行：
 
 ```bash
-python3 scripts/run_gitops_db_job.py \
+python3 .ci/runtime/commands/run_gitops_db_job.py \
   --service subscription \
   --env beijing-sandbox \
   --operation migration \
@@ -64,7 +64,7 @@ python3 scripts/run_gitops_db_job.py \
 如果需要显式指定镜像：
 
 ```bash
-python3 scripts/run_gitops_db_job.py \
+python3 .ci/runtime/commands/run_gitops_db_job.py \
   --service lightclaw-auth \
   --env beijing-sandbox \
   --operation migration \
@@ -77,7 +77,7 @@ python3 scripts/run_gitops_db_job.py \
 `ctl` 的示例：
 
 ```bash
-python3 scripts/run_gitops_db_job.py \
+python3 .ci/runtime/commands/run_gitops_db_job.py \
   --service ctl \
   --env beijing-sandbox \
   --operation migration \
@@ -96,7 +96,7 @@ python3 scripts/run_gitops_db_job.py \
 `sandbox` 的示例：
 
 ```bash
-python3 scripts/run_gitops_db_job.py \
+python3 .ci/runtime/commands/run_gitops_db_job.py \
   --service sandbox \
   --env beijing-sandbox \
   --operation migration \

@@ -1,0 +1,133 @@
+version: v2.0
+
+parameters:
+  - name: SERVICE
+    type: string
+  - name: BUNDLE
+    type: string
+  - name: DISPLAY_NAME
+    type: string
+  - name: DEFAULT_TARGET_ENV
+    type: string
+    default: shprod
+  - name: MASTER_BUILD_ENVS
+    type: string
+    default: beijing-sandbox,shprod
+  - name: MASTER_AUTO_PIN_ENVS
+    type: string
+    default: beijing-sandbox
+  - name: PLAYGROUND_BUILD_ENVS
+    type: string
+    default: beijing-sandbox-2
+  - name: PLAYGROUND_AUTO_PIN_ENVS
+    type: string
+    default: beijing-sandbox-2
+
+variables:
+  PIPELINE_MODE:
+    value: build
+    readonly: false
+    allow-modify-at-startup: true
+  TARGET_ENV:
+    value: ${{ parameters.DEFAULT_TARGET_ENV }}
+    readonly: false
+    allow-modify-at-startup: true
+  SOURCE_SHA:
+    value: ""
+    readonly: false
+    allow-modify-at-startup: true
+
+stages:
+  - name: 构建 ${{ parameters.DISPLAY_NAME }}
+    jobs:
+      release:
+        name: 构建 ${{ parameters.DISPLAY_NAME }} 镜像
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        env:
+          GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}
+        steps:
+          - checkout: self
+            name: 拉取代码
+            with:
+              fetchDepth: 50
+          - name: 打印 ${{ parameters.DISPLAY_NAME }} 构建上下文
+            shell: bash
+            run: |
+              echo "ci.event=${{ ci.event }}"
+              echo "ci.branch=${{ ci.branch }}"
+              echo "PIPELINE_MODE=${{ variables.PIPELINE_MODE }}"
+              echo "TARGET_ENV=${{ variables.TARGET_ENV }}"
+              echo "SOURCE_SHA=${{ variables.SOURCE_SHA }}"
+              echo "SERVICE=${{ parameters.SERVICE }}"
+              echo "BUNDLE=${{ parameters.BUNDLE }}"
+              echo "DEFAULT_TARGET_ENV=${{ parameters.DEFAULT_TARGET_ENV }}"
+              echo "MASTER_BUILD_ENVS=${{ parameters.MASTER_BUILD_ENVS }}"
+              echo "MASTER_AUTO_PIN_ENVS=${{ parameters.MASTER_AUTO_PIN_ENVS }}"
+              echo "PLAYGROUND_BUILD_ENVS=${{ parameters.PLAYGROUND_BUILD_ENVS }}"
+              echo "PLAYGROUND_AUTO_PIN_ENVS=${{ parameters.PLAYGROUND_AUTO_PIN_ENVS }}"
+          - id: prepare
+            name: 准备 ${{ parameters.DISPLAY_NAME }} 构建标签
+            shell: bash
+            run: |
+              if [[ "${{ variables.PIPELINE_MODE }}" == "promote" ]]; then
+                echo "skip build step because PIPELINE_MODE=promote"
+                exit 0
+              fi
+              SHORT_SHA="${{ ci.sha }}"
+              SHORT_SHA="${SHORT_SHA:0:12}"
+              echo "::set-output name=tag::${{ parameters.SERVICE }}-${SHORT_SHA}"
+          - name: 构建并推进 ${{ parameters.DISPLAY_NAME }} 北京测试
+            shell: bash
+            env:
+              TCR_BEIJING_PASSWORD: ${{ settings.TCR_BEIJING_PASSWORD }}
+              TCR_SHPROD_PASSWORD: ${{ settings.TCR_SHPROD_PASSWORD }}
+            run: |
+              if [[ "${{ variables.PIPELINE_MODE }}" == "promote" ]]; then
+                echo "skip build step because PIPELINE_MODE=promote"
+                exit 0
+              fi
+              source .ci/init.sh
+              ci_init_repo_root
+              ci_export_gongfeng_defaults
+              REMOTE_URL="$(ci_gitops_remote_url)"
+              GITOPS_BRANCH=gitops
+              BUILD_TAG_OVERRIDE="${{ steps.prepare.outputs.tag }}"
+              export REMOTE_URL GITOPS_BRANCH BUILD_TAG_OVERRIDE
+              case "${{ ci.branch }}" in
+                master)
+                  BUILD_ENVS="${{ parameters.MASTER_BUILD_ENVS }}"
+                  AUTO_PIN_ENVS="${{ parameters.MASTER_AUTO_PIN_ENVS }}"
+                  ;;
+                playground/sandbox-bj-2)
+                  BUILD_ENVS="${{ parameters.PLAYGROUND_BUILD_ENVS }}"
+                  AUTO_PIN_ENVS="${{ parameters.PLAYGROUND_AUTO_PIN_ENVS }}"
+                  ;;
+                *)
+                  echo "unsupported source branch for release: ${{ ci.branch }}" >&2
+                  exit 1
+                  ;;
+              esac
+              echo "BUILD_ENVS=${BUILD_ENVS}"
+              echo "AUTO_PIN_ENVS=${AUTO_PIN_ENVS}"
+              bash .ci/runtime/build_and_promote_to_gitops.sh "${{ parameters.SERVICE }}" "${{ parameters.BUNDLE }}" "${BUILD_ENVS}" "${AUTO_PIN_ENVS}"
+          - name: 手动发布 ${{ parameters.DISPLAY_NAME }} 到 GitOps
+            shell: bash
+            run: |
+              if [[ "${{ variables.PIPELINE_MODE }}" != "promote" ]]; then
+                echo "skip promote step because PIPELINE_MODE=${{ variables.PIPELINE_MODE }}"
+                exit 0
+              fi
+              SOURCE_SHA="${{ variables.SOURCE_SHA }}"
+              if [[ -z "$SOURCE_SHA" ]]; then
+                SOURCE_SHA="${{ ci.sha }}"
+                echo "SOURCE_SHA not provided; default to ci.sha=$SOURCE_SHA"
+              fi
+              test -n "$SOURCE_SHA"
+              source .ci/init.sh
+              ci_init_repo_root
+              ci_export_gongfeng_defaults
+              REMOTE_URL="$(ci_gitops_remote_url)" \
+              GITOPS_BRANCH=gitops \
+              bash .ci/runtime/promote_bundle_image_to_gitops.sh "${{ parameters.SERVICE }}" "${{ parameters.BUNDLE }}" "${{ variables.TARGET_ENV }}" "$SOURCE_SHA"

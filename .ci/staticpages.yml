@@ -1,0 +1,35 @@
+version: v2.0
+name: 构建 staticpages
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - staticpages/**
+      - third_party/staticpages/**
+      - argocd/services/staticpages/**
+      - argocd/catalogs/sandbox/beijing-sandbox/staticpages.yaml
+      - argocd/secrets/beijing-sandbox/staticpages-runtime-secrets.sops.yaml
+    paths-ignore:
+      - OWNERS
+      - "**/OWNERS"
+  manual: enabled
+
+concurrency:
+  group: mono2-service-release-staticpages
+  cancel-in-progress: false
+  queue-length: 20
+  queue-timeout-minutes: 480
+
+extends:
+  template: service-release.yml
+  parameters:
+    SERVICE: staticpages
+    BUNDLE: staticpages
+    DISPLAY_NAME: staticpages
+    DEFAULT_TARGET_ENV: beijing-sandbox
+    MASTER_BUILD_ENVS: beijing-sandbox
+    MASTER_AUTO_PIN_ENVS: beijing-sandbox
+    PLAYGROUND_BUILD_ENVS: ""
+    PLAYGROUND_AUTO_PIN_ENVS: ""

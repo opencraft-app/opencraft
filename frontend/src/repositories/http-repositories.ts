@@ -477,10 +477,17 @@ const writeBotDrafts = (drafts: Record<string, BotDraft>) => {
 
 const mapInstanceStatusToBotStatus = (status: string): Bot["status"] => {
   switch (status) {
+    case "Creating":
+      return "provisioning";
     case "Paused":
       return "paused";
     case "Running":
       return "active";
+    case "Failed":
+      return "failed";
+    case "Deleting":
+    case "Deleted":
+      return "deleting";
     default:
       return "draft";
   }
@@ -589,7 +596,7 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
           botId: bot.id,
           environment: "production",
           region: "ap-beijing",
-          status: bot.status === "paused" ? "queued" : bot.status === "active" ? "running" : "failed",
+          status: bot.status === "active" ? "running" : bot.status === "failed" ? "failed" : "queued",
           updatedAt: new Date().toISOString(),
         }) satisfies Deployment),
         releases: primaryBot ? defaultVersionsForBot(primaryBot.id) : [],
@@ -831,7 +838,7 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
         output: string;
       }>(baseUrl, `/v1/instances/${encodeURIComponent(botId)}/debug/exec`, {
         method: "POST",
-        body: { command },
+        body: { command, run_as_user: "agentuser" },
       });
       return {
         status: payload.status,

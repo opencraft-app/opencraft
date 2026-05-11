@@ -11,10 +11,13 @@ on:
       - argocd/services/lightclaw-auth/**
       - argocd/apps/*/lightclaw-auth.yaml
       - argocd/secrets/*/lightclaw-auth-secrets.sops.yaml
+    paths-ignore:
+      - OWNERS
+      - "**/OWNERS"
   manual: enabled
 
 concurrency:
-  group: mono2-master-release
+  group: mono2-service-release-lightclaw-auth
   cancel-in-progress: false
   queue-length: 20
   queue-timeout-minutes: 480
@@ -56,6 +59,12 @@ stages:
               echo "PIPELINE_MODE=${{ variables.PIPELINE_MODE }}"
               echo "TARGET_ENV=${{ variables.TARGET_ENV }}"
               echo "SOURCE_SHA=${{ variables.SOURCE_SHA }}"
+              echo "SERVICE=user-auth"
+              echo "BUNDLE=lightclaw-auth"
+              echo "MASTER_BUILD_ENVS=beijing-sandbox,shprod"
+              echo "MASTER_AUTO_PIN_ENVS=beijing-sandbox"
+              echo "PLAYGROUND_BUILD_ENVS=beijing-sandbox-2"
+              echo "PLAYGROUND_AUTO_PIN_ENVS=beijing-sandbox-2"
           - id: prepare
             name: 准备 lightclaw-auth 构建标签
             shell: bash

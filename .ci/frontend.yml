@@ -5,21 +5,16 @@ on:
   push:
     branches: [ master ]
     paths:
-      # Keep the CI contract self-triggering: frontend build behavior changes and manual retriggers must run this pipeline.
-      - .ci/frontend.yml
-      - .ci/init.sh
-      - .ci/runtime/build_and_promote_to_gitops.sh
-      - .ci/runtime/promote_bundle_image_to_gitops.sh
-      - .ci/runtime/pin_image_to_gitops.sh
-      - .ci/runtime/release-bundles.manifest
-      - .ci/runtime/**
       - frontend/**
       - argocd/services/frontend/**
       - argocd/apps/*/frontend.yaml
+    paths-ignore:
+      - OWNERS
+      - "**/OWNERS"
   manual: enabled
 
 concurrency:
-  group: mono2-master-release
+  group: mono2-service-release-frontend
   cancel-in-progress: false
   queue-length: 20
   queue-timeout-minutes: 480
@@ -30,7 +25,11 @@ variables:
     readonly: false
     allow-modify-at-startup: true
   FRONTEND_RELEASE_MATRIX:
-    value: cn-cf,global-cf
+    value: cf:cn-lightvela-staging,cf:global-lightvela-intl-staging
+    readonly: false
+    allow-modify-at-startup: true
+  FRONTEND_ARTIFACT_MATRIX:
+    value: cf:cn-lightvela-staging,cf:global-lightvela-intl-staging,eo:cn-lightvela-prod,eo:global-lightvela-intl-prod
     readonly: false
     allow-modify-at-startup: true
   TARGET_ENV:
@@ -64,6 +63,7 @@ stages:
               echo "ci.branch=${{ ci.branch }}"
               echo "PIPELINE_MODE=${{ variables.PIPELINE_MODE }}"
               echo "FRONTEND_RELEASE_MATRIX=${{ variables.FRONTEND_RELEASE_MATRIX }}"
+              echo "FRONTEND_ARTIFACT_MATRIX=${{ variables.FRONTEND_ARTIFACT_MATRIX }}"
               echo "TARGET_ENV=${{ variables.TARGET_ENV }}"
               echo "SOURCE_SHA=${{ variables.SOURCE_SHA }}"
           - id: prepare
@@ -77,38 +77,32 @@ stages:
               SHORT_SHA="${{ ci.sha }}"
               SHORT_SHA="${SHORT_SHA:0:12}"
               echo "::set-output name=tag::frontend-${SHORT_SHA}"
-          - name: 构建 frontend Pages 矩阵
+          - name: 构建 frontend artifact 全矩阵
             shell: bash
             env:
-              CLOUDFLARE_API_TOKEN: ${{ settings.CLOUDFLARE_API_TOKEN }}
-              CLOUDFLARE_ACCOUNT_ID: ${{ settings.CLOUDFLARE_ACCOUNT_ID }}
-              EDGEONE_API_TOKEN: ${{ settings.EDGEONE_API_TOKEN }}
+              TCR_SHPROD_PASSWORD: ${{ settings.TCR_SHPROD_PASSWORD }}
               VITE_AUTH_API_BASE_URL: https://lightclaw.tech
-              CLOUDFLARE_PAGES_COMMIT_HASH: ${{ ci.sha }}
-              CLOUDFLARE_PAGES_COMMIT_MESSAGE: Cloudflare Pages deploy from frontend pipeline
-              FRONTEND_RELEASE_MATRIX: ${{ variables.FRONTEND_RELEASE_MATRIX }}
+              FRONTEND_ARTIFACT_MATRIX: ${{ variables.FRONTEND_ARTIFACT_MATRIX }}
+              FRONTEND_ARTIFACT_MODE: required
+              FRONTEND_ARTIFACT_REPOSITORY: lightclaw-shprod.tencentcloudcr.com/lightclaw/frontend-pages
+              FRONTEND_ARTIFACT_SOURCE_SHA: ${{ ci.sha }}
             run: |
               if [[ "${{ variables.PIPELINE_MODE }}" == "promote" ]]; then
-                echo "skip build step because PIPELINE_MODE=promote"
+                echo "skip artifact build step because PIPELINE_MODE=promote"
                 exit 0
               fi
               echo "============================================================"
-              echo "frontend 发布决策：进入 Pages 矩阵发布流程"
-              echo "触发原因：PIPELINE_MODE=${{ variables.PIPELINE_MODE }}，满足非 promote 构建发布条件"
-              echo "发布矩阵：${FRONTEND_RELEASE_MATRIX}"
-              echo "发布模型：CI 只选择矩阵项，组合定义以 frontend/release-matrix.json 为准"
-              echo "发布来源：branch=${{ ci.branch }} sha=${{ ci.sha }}"
-              echo "下一步：安装依赖并执行 pnpm release:matrix"
+              echo "frontend 发布决策：进入 artifact 全矩阵构建归档流程"
+              echo "artifact 矩阵：${FRONTEND_ARTIFACT_MATRIX}"
+              echo "artifact 仓库：${FRONTEND_ARTIFACT_REPOSITORY}"
+              echo "artifact source sha：${FRONTEND_ARTIFACT_SOURCE_SHA}"
+              echo "发布模型：仅 build/archive/verify，不发布 Pages"
               echo "============================================================"
               source .ci/init.sh
               ci_init_repo_root
               ci_export_gongfeng_defaults
-              ci_load_cloudflare_credentials
-              if ci_frontend_release_matrix_needs_edgeone "$FRONTEND_RELEASE_MATRIX"; then
-                ci_load_edgeone_credentials
-              else
-                echo "edgeone api token not required for FRONTEND_RELEASE_MATRIX=${FRONTEND_RELEASE_MATRIX}"
-              fi
+              ci_set_registry_credentials shprod
+              ci_ensure_oras
               ci_ensure_node
               ci_ensure_pnpm
 
@@ -119,7 +113,64 @@ stages:
               rm -rf node_modules
               "$PNPM_BIN" --version
               "$PNPM_BIN" install --frozen-lockfile
-              "$PNPM_BIN" release:matrix
+              "$PNPM_BIN" build:release-artifacts
+          - name: 发布 frontend Cloudflare 预发 artifact 矩阵
+            shell: bash
+            env:
+              CLOUDFLARE_API_TOKEN: ${{ settings.CLOUDFLARE_API_TOKEN }}
+              CLOUDFLARE_ACCOUNT_ID: ${{ settings.CLOUDFLARE_ACCOUNT_ID }}
+              TCR_SHPROD_PASSWORD: ${{ settings.TCR_SHPROD_PASSWORD }}
+              VITE_AUTH_API_BASE_URL: https://lightclaw.tech
+              CLOUDFLARE_PAGES_COMMIT_HASH: ${{ ci.sha }}
+              CLOUDFLARE_PAGES_COMMIT_MESSAGE: Cloudflare Pages deploy from archived frontend artifact
+              FRONTEND_RELEASE_MATRIX: ${{ variables.FRONTEND_RELEASE_MATRIX }}
+              FRONTEND_ARTIFACT_REPOSITORY: lightclaw-shprod.tencentcloudcr.com/lightclaw/frontend-pages
+              FRONTEND_ARTIFACT_SOURCE_SHA: ${{ ci.sha }}
+            run: |
+              if [[ "${{ variables.PIPELINE_MODE }}" == "promote" ]]; then
+                echo "skip Cloudflare artifact release step because PIPELINE_MODE=promote"
+                exit 0
+              fi
+              echo "============================================================"
+              echo "frontend 发布决策：进入 Cloudflare 预发 artifact 发布流程"
+              echo "发布矩阵：${FRONTEND_RELEASE_MATRIX}"
+              echo "artifact 仓库：${FRONTEND_ARTIFACT_REPOSITORY}"
+              echo "artifact source sha：${FRONTEND_ARTIFACT_SOURCE_SHA}"
+              echo "发布模型：从 TCR 拉取已归档产物，校验后发布 Cloudflare，不现场构建"
+              echo "============================================================"
+              matrix_without_separators="${FRONTEND_RELEASE_MATRIX//,/}"
+              matrix_without_separators="${matrix_without_separators//[[:space:]]/}"
+              if [[ -z "$matrix_without_separators" ]]; then
+                echo "FRONTEND_RELEASE_MATRIX must explicitly select cf:* combos in this CI" >&2
+                exit 1
+              fi
+              IFS=',' read -ra release_combos <<< "$FRONTEND_RELEASE_MATRIX"
+              for combo in "${release_combos[@]}"; do
+                combo="${combo//[[:space:]]/}"
+                if [[ -z "$combo" ]]; then
+                  continue
+                fi
+                if [[ "$combo" != cf:* ]]; then
+                  echo "frontend Cloudflare artifact release only allows cf:* combos; rejected ${combo}" >&2
+                  exit 1
+                fi
+              done
+              source .ci/init.sh
+              ci_init_repo_root
+              ci_export_gongfeng_defaults
+              ci_load_cloudflare_credentials
+              ci_set_registry_credentials shprod
+              ci_ensure_oras
+              ci_ensure_node
+              ci_ensure_pnpm
+
+              "$NODE_BIN" --version
+              "$NPM_BIN" --version
+
+              cd "$REPO_ROOT/frontend"
+              "$PNPM_BIN" --version
+              "$PNPM_BIN" install --frozen-lockfile
+              "$PNPM_BIN" release:cf:artifact
           - name: 构建 frontend GitOps 镜像
             shell: bash
             env:

@@ -60,8 +60,8 @@ function VisualCard({ variant: _variant }: { variant: "lobster" }) {
      即使用户切换为中文，该配图仍保留英文版——避免同一站点出现国内渠道图标的信息错位；
      国内站则始终使用中文版（含 QQ/微信/飞书图标）。 */
   const imgPath = isGlobal
-    ? "/changelog/lightvela-launch-en.png"
-    : "/changelog/lightvela-launch.png";
+    ? "/assets/changelog/lightvela-launch-en.png"
+    : "/assets/changelog/lightvela-launch.png";
   /* LightVela 正式上线卡片 — 直接使用 Figma 导出的合成图 */
   return (
     <div

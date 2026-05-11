@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Command wrapper for semantic runtime module image_pin."""
+"""Command wrapper for semantic runtime module gitops.image_pin."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ RUNTIME_DIR = Path(__file__).resolve().parents[1]
 if str(RUNTIME_DIR) not in sys.path:
     sys.path.insert(0, str(RUNTIME_DIR))
 
-from contracts.image_pin import main  # noqa: E402
+from gitops.image_pin import main  # noqa: E402
 
 
 if __name__ == "__main__":

@@ -15,7 +15,7 @@
 ## 构建入口
 
 ```bash
-python3 .ci/runtime/harness_ci/commands/build_release_image.py --service ai-gateway --env <env> --tag <tag>
+python3 .ci/runtime/commands/build_release_image.py --service ai-gateway --env <env> --tag <tag>
 ```
 
 ## DB 操作面
@@ -23,7 +23,7 @@ python3 .ci/runtime/harness_ci/commands/build_release_image.py --service ai-gate
 `migration` 不再属于 service-local 正式发布路径。  
 统一走平台级 DB job：
 
-- `scripts/run_gitops_db_job.py`
+- `python3 .ci/runtime/commands/run_gitops_db_job.py`
 - 历史 DB job 模板已退役；当前以脚本和 runbook 为准
 
 ## 运行时约束

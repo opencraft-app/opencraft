@@ -24,7 +24,6 @@ spec:
         - mono-release-groups/mono-beijing-sandbox-readonly
       policies:
         - p, proj:beijing-sandbox:mono-observe, applications, get, beijing-sandbox/*, allow
-        - p, proj:beijing-sandbox:mono-observe, projects, get, beijing-sandbox, allow
     - name: mono-logs
       description: Log access for mono leaf apps in Beijing sandbox.
       groups:

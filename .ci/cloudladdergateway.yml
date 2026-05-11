@@ -1,0 +1,101 @@
+version: v2.0
+name: 构建并推送 cloudladdergateway
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - cloudladdergateway/**
+    paths-ignore:
+      - OWNERS
+      - "**/OWNERS"
+  manual: enabled
+
+concurrency:
+  group: mono2-service-build-cloudladdergateway
+  cancel-in-progress: true
+  queue-length: 1
+  queue-timeout-minutes: 60
+
+stages:
+  - name: 构建并推送 cloudladdergateway
+    jobs:
+      validate:
+        name: 测试、构建并推送 cloudladdergateway
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - checkout: self
+            name: 拉取代码
+            with:
+              fetchDepth: 50
+          - name: 打印 cloudladdergateway 构建上下文
+            shell: bash
+            run: |
+              echo "ci.event=${{ ci.event }}"
+              echo "ci.branch=${{ ci.branch }}"
+              echo "ci.sha=${{ ci.sha }}"
+          - name: 测试、构建并推送 cloudladdergateway
+            shell: bash
+            run: |
+              source .ci/init.sh
+              ci_init_repo_root
+              ci_require_commands docker curl tar
+
+              docker version
+
+              install_crane() {
+                local version="${CRANE_VERSION_OVERRIDE:-0.21.4}"
+                local install_dir="${HOME}/.cache/lightclaw-ci/cloudladdergateway-tools/crane/v${version}"
+                local bin="${install_dir}/crane"
+                local archive="${install_dir}/go-containerregistry_Linux_x86_64.tar.gz"
+
+                if [[ ! -x "$bin" ]]; then
+                  mkdir -p "$install_dir"
+                  echo "安装 cloudladdergateway 发布工具：crane ${version}"
+                  curl -fsSL \
+                    "https://github.com/google/go-containerregistry/releases/download/v${version}/go-containerregistry_Linux_x86_64.tar.gz" \
+                    -o "$archive"
+                  tar -xzf "$archive" -C "$install_dir" crane
+                  chmod +x "$bin"
+                fi
+
+                export PATH="${install_dir}:${PATH}"
+                crane version
+              }
+
+              load_csighub_credentials() {
+                if [[ -r /etc/lightclaw-ci/csighub_username && -r /etc/lightclaw-ci/csighub_password ]]; then
+                  export CSIGHUB_USERNAME="$(tr -d '\r\n' < /etc/lightclaw-ci/csighub_username)"
+                  export CSIGHUB_PASSWORD="$(tr -d '\r\n' < /etc/lightclaw-ci/csighub_password)"
+                  echo "cloudladdergateway 发布凭据：已从 /etc/lightclaw-ci/csighub_* 加载"
+                elif [[ -n "${CSIGHUB_USERNAME:-}" && -n "${CSIGHUB_PASSWORD:-}" ]]; then
+                  echo "cloudladdergateway 发布凭据：已从环境变量加载"
+                else
+                  echo "缺少 csighub 发布凭据：请配置 /etc/lightclaw-ci/csighub_username 和 /etc/lightclaw-ci/csighub_password，或设置 CSIGHUB_USERNAME/CSIGHUB_PASSWORD" >&2
+                  return 1
+                fi
+              }
+
+              SHORT_SHA="${{ ci.sha }}"
+              SHORT_SHA="${SHORT_SHA:0:12}"
+
+              docker run --rm \
+                -v "$REPO_ROOT:/workspace" \
+                -w /workspace/cloudladdergateway \
+                golang:1.26-bookworm \
+                go test ./...
+
+              install_crane
+              load_csighub_credentials
+
+              echo "cloudladdergateway 发布决策：推送到 csighub.tencentyun.com/skipzhang/cloudladdergateway:${SHORT_SHA}"
+
+              REGISTRY_HOST=csighub.tencentyun.com \
+                CSIGHUB_LOGIN_TOOL=crane \
+                cloudladdergateway/scripts/csighub_login.sh
+
+              make -C cloudladdergateway csighub \
+                TAG="${SHORT_SHA}"

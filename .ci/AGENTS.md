@@ -12,10 +12,33 @@ BK-CI 开源实现：
 建议查证路径：
 
 - `src/backend/ci/core/common/common-pipeline-yaml/`：Stream YAML schema、parser、transfer 逻辑。
+- `src/backend/ci/core/common/common-pipeline-yaml/src/main/resources/schema/V3_0/ci.json`：v2.0 YAML 顶层字段、`on`、`extends`、`stages/jobs/steps`、`check-in` 的 JSON schema。
+- `src/backend/ci/core/common/common-pipeline-yaml/src/test/resources/samples/`：官方样例，优先看 `extends/`、`jobs/`、`steps/`、`all/`。
+- `src/backend/ci/core/common/common-pipeline-yaml/src/test/resources/templates/`：模板样例，优先确认 `parameters`、`variables.template`、stage/job/step template 行为。
+- `src/backend/ci/core/common/common-pipeline-yaml/src/test/resources/compared/`：样例展开后的期望结果，用来确认服务端 parser/transfer 实际会怎么实例化。
+- `src/backend/ci/core/common/common-pipeline-yaml/src/main/kotlin/com/tencent/devops/process/yaml/v3/`：v3 parser / model / transfer 源码；schema 不足时以这里为准。
 - `src/backend/ci/core/common/common-pipeline/`：Pipeline model、stage check-in、人工审核元素。
 - `support-files/sql/5001_init_dml/5001_ci_store-init_dml_mysql.sql`：内置插件 atom code 与输入参数。
 
+查证建议：
+
+```bash
+git clone --depth 1 --filter=blob:none --sparse https://github.com/TencentBlueKing/bk-ci.git /tmp/bk-ci-src
+cd /tmp/bk-ci-src
+git sparse-checkout set src/backend/ci/core/common/common-pipeline-yaml src/backend/ci/core/common/common-pipeline support-files/sql/5001_init_dml
+rg -n "extends|check-in|template|parameters|<keyword>" src/backend/ci/core/common/common-pipeline-yaml
+```
+
 不要凭记忆猜蓝盾 YAML 语法；仓库里没有现成示例时，先用 BK-CI 源码或公开文档确认后再改 `.ci/*.yml`。
+本仓库已经踩过的规则：
+
+- `on.push` 在当前 schema 下可以是对象或数组；不要写 GitHub Actions 风格的 `push.enable`。
+- `mr.action` 只接受 schema enum 中的值；遇到 `CI_YAML_INVALID` 先查 `ci.json`。
+- root `extends` 不能同时带 `stages/jobs/steps/variables/finally`；服务实例 YAML 只保留 `name/on/extends`。
+- 当前仓库仍按 Stream `version: v2.0` 编写：root `extends.template` 必须是字符串，实例参数放 `extends.parameters`。
+- 不要把 `.ci/templates/*.yml` 局部模板入口切到 `version: v3.0`；蓝盾 PAC v3 暂未支持局部模板，除非模板已迁到平台/远程模板机制。
+- 不要在 `.ci/**` 放非流水线 `.yaml` 文件；蓝盾会把它们误识别成流水线。私有配置用 `.manifest` / `.bundle` 后缀。
+- 生产审批优先确认当前平台是否支持 `check-in`；如果 schema/UI 不稳定，不要把 shprod 发布链路绑定到未验证的 approval YAML。
 
 ## 实际运行机
 
@@ -53,6 +76,80 @@ CI runtime 会优先读取构建机本地文件，再回退到 Stream settings�
 `edgeone_lightvela_prod_token` 用于 `发布 frontend eo:cn-lightvela-prod`，应是 `lightvela` 正式项目可用的 EdgeOne Pages API token，不要复用 `lightvela-preview` 的预览 token。
 `edgeone_lightvela_intl_prod_token` 用于 `发布 frontend eo:global-lightvela-intl-prod`，应是 `lightvela-intl` 正式项目可用的 EdgeOne Pages API token，发布产物来自国际版 `build:global` / `dist-global`。
 `kubeconfig_*` 文件用于 DB-aware release gate 创建一次性 DB readiness / migration Job，文件权限必须是 `0600`，不要提交到 Git。
+
+## Playground 环境创建提示词（P0）
+
+当用户要求创建、修复或扩容 `sandbox-bj-N` / `beijing-playground` 环境时，先按本节执行，不要靠现场试错推进。
+
+### 目标域名和 TLS 模型
+
+默认域名模型：
+
+- 固定 API 入口：`api-sandbox-bj-N.lightclaw.tech`
+- 固定 Admin 入口：`admin-sandbox-bj-N.lightclaw.tech`
+- 固定 frontend 入口：`frontend.sandbox-bj-N.lightclaw.tech`
+- 可选环境首页：`sandbox-bj-N.lightclaw.tech`
+- 实例 wildcard 入口：`*.sandbox-bj-N.lightclaw.tech`
+
+TLS 约束：
+
+- 固定入口使用单域名证书；不要假设免费 wildcard 证书可用。
+- 实例 wildcard 入口默认 HTTP-only，除非已经有真实覆盖 `*.sandbox-bj-N.lightclaw.tech` 的付费或导入证书。
+- 不允许复用不覆盖目标 host 的证书，例如 `*.sandbox.lightclaw.tech` 不能覆盖 `api-sandbox-bj-N.lightclaw.tech`、`frontend.sandbox-bj-N.lightclaw.tech` 或 `*.sandbox-bj-N.lightclaw.tech`。
+- 写入或引用 TLS secret 前，必须确认候选证书 SAN 覆盖目标 host；不覆盖就不要绑定 TLS。
+
+### GitOps-only 规则
+
+- 长期配置必须通过 `gitops` MR 追踪；live patch、curl 或控制台操作只能用于诊断和临时解锁。
+- 如果 live 诊断证明某个改动有效，必须立即把等价期望态反投影到 GitOps 文件。
+- 创建新环境时优先使用 `.ci/runtime/create_playground_from_gitops.sh --to-env sandbox-bj-N` 生成 GitOps 渲染闭包；不要在 `master` 源码 checkout 里直接跑默认命令，因为 playground 模板只在 `origin/gitops`。
+- 默认模板源是 `sandbox-bj-5`，因为它包含 frontend closure；除非明确需要排查历史差异，否则不要用 `sandbox-bj-3` 作为新环境模板源。
+- 已经在持久 GitOps worktree 内操作时，才直接使用 `.ci/runtime/commands/create_playground_environment.py --repo-root <gitops-worktree>`；再人工/Agent 补齐不能稳定自动化的 DNS、证书和 SSM/SOPS 步骤。
+- 克隆 SOPS secret 后必须解密校验 payload 的 env、DB name、Redis prefix、域名和 namespace，不要只看 metadata 或文件路径。
+- playground 的 MySQL/Redis 必须优先使用 namespace-local `StatefulSet + PVC`，由 `env-bootstrap` app 纳入 GitOps；业务配置应指向 `mysql.<namespace>.svc.cluster.local` 和 `redis.<namespace>.svc.cluster.local:6379`。
+- 新建 `sandbox-bj-N` 时必须生成目标环境独立的 `argocd/secrets/<env>/playground-runtime-secrets.sops.yaml`，只包含 `MYSQL_ROOT_PASSWORD` / `REDIS_PASSWORD`；缺少 `sops` 或 age key 时直接失败，不允许明文 fallback。
+- MySQL/Redis StatefulSet 和 DB bootstrap/root 路径只能引用 `playground-runtime-secrets`；业务 grant password 仍可来自各服务自己的 SOPS secret，但不能把 `lightclaw-auth-secrets` / `sandbox-runtime-secrets` 继续作为运行时 root secret。
+- playground 销毁默认以删除 catalog/closure 为主，让 Argo prune namespace 内 MySQL/Redis/PVC；不要再把 playground 运行时状态放到共享外部 MySQL/Redis，除非明确需要跨环境保留数据。
+
+### Frontend 镜像规则
+
+- `argocd/services/frontend/<env>/frontend-platform.env` 里的 `FRONTEND_IMAGE` 必须先在 TCR 中真实存在，再让 Argo 收敛；否则会表现为 `frontend-web ImagePullBackOff`。
+- 正常路径是为目标环境构建并推送目标 tag，例如 `frontend-sandbox-bj-N-<source-sha>`，不要把缺失镜像留给 Argo 暴露。
+- 只在满足全部条件时允许 retag 解锁 live：目标 tag 缺失、同 registry 中存在同 source sha 的等价 tag、只是环境名 tag 缺失、没有 frontend 代码或构建参数差异。
+- retag 是现场解锁动作，不是发布真相源；执行后必须记录来源 tag、目标 tag、digest，并补齐后续 CI/脚手架缺口。
+- 不允许用 retag 掩盖构建失败。如果源码、`VITE_*` 构建参数、Dockerfile、lockfile 或静态资源入口存在差异，必须重新构建目标 env 镜像。
+
+### Ingress / TKE 约束
+
+- playground public ingress 默认应使用直连转发：`ingress.cloud.tencent.com/direct-access: "true"`。
+- 适用对象包括 frontend、service-gateway、admin-gateway、sandbox ingressproxy 等公网入口。
+- 如果 pod、Service endpoints 正常但公网 CLB 返回 504，优先对比 `direct-access`、TkeServiceConfig health check、NodePort/endpoints，而不是反复改证书。
+- `400 invalid host` 对 wildcard HTTP 入口通常表示请求已经到达 ingressproxy，但实例 host 没有资源映射；这不是 DNS/CLB 不通。
+
+### 建设顺序
+
+1. 生成或克隆 GitOps closure：catalog、services、secrets、AppProject、必要 k8s overlay，以及 env-bootstrap 内的 MySQL/Redis StatefulSet/PVC。
+2. 运行 strict Kustomize 和 GitOps static validation。
+3. 配置固定入口 DNS 和 wildcard HTTP DNS。
+4. 为固定入口申请或选择单域名证书，并生成/引用正确 qcloud cert secret。
+5. 合入 GitOps MR 后刷新 Argo，确认 apps 在最新 `gitops` revision 上 `Synced / Healthy`。
+6. 确认 frontend 目标镜像 tag 已存在；缺 tag 时优先补构建，只有同 source sha 等价 tag 已存在时才允许 retag 解锁。
+7. 确认 namespace-local MySQL/Redis Ready，且 `playground-runtime-secrets` 已生成并由 env-bootstrap ksops generator 引入后，再执行 DB bootstrap / readiness / migration。
+8. 检查 namespace pod Ready/Completed、Ingress Ready、Service endpoints。
+9. 用公网 curl 验证固定 HTTPS 入口和 wildcard HTTP 入口。
+
+### Agent 输出约定
+
+创建 playground 环境时，Agent 必须明确打印：
+
+- 本次环境名、namespace、固定入口域名、wildcard 域名。
+- 哪些步骤已经进入 GitOps MR，哪些只是 live 诊断或人工外部动作。
+- 证书是否覆盖目标 host；如果不覆盖，直接标记为不能使用。
+- SOPS secret 是否复用源环境；如果复用，提示后续如需强隔离必须重新生成 SSM/SOPS。
+- 是否生成了新的最小 `playground-runtime-secrets`；如果缺 SOPS/age key，必须停止而不是提交半成品。
+- MySQL/Redis 是否由目标 namespace 内 StatefulSet/PVC 承载；如果仍指向外部共享地址，必须标记为不符合 playground 模型。
+- frontend 目标镜像 tag 是否存在；如果执行过 retag，必须说明为什么不构建、来源 tag、目标 tag 和 digest。
+- 最终验收证据：Argo revision、sync/health、pod 状态、Ingress 状态、公网 curl 结果。
 
 ## 远端写入模板
 

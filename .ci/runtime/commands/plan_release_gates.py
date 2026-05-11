@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Command wrapper for semantic runtime module release_gates."""
+"""Command wrapper for semantic runtime module contracts.release_plan."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ RUNTIME_DIR = Path(__file__).resolve().parents[1]
 if str(RUNTIME_DIR) not in sys.path:
     sys.path.insert(0, str(RUNTIME_DIR))
 
-from db_gates.release_gates import main  # noqa: E402
+from contracts.release_plan import main  # noqa: E402
 
 
 if __name__ == "__main__":

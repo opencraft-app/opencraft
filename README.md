@@ -1,5 +1,6 @@
 # mono
 
+
 ⚠️ **必读**：clone 后请执行 `make setup` 启用编译检查门禁，防止编译不通过的代码被提交。
 
 ## 这是什么项目
@@ -119,7 +120,41 @@ CLOUDFLARE_PAGES_PROJECT_NAME=lightclaw pnpm deploy:cf
 - Pages 项目名当前用：
   - `lightclaw`
 
-### 3. 当前正式环境发布方式
+### 3. Frontend 分支自动预览
+
+当前已经支持基于 StaticPages 的 frontend 分支自动预览。
+
+只要把分支推送到 `frontsandbox/` 前缀，CI 会自动构建 `frontend/dist-cn` 并上传到 StaticPages：
+
+```bash
+git push origin <local-branch>:frontsandbox/<preview-name>
+```
+
+预览地址规则：
+
+```text
+frontsandbox/<preview-name> -> https://<preview-name>.preview.lightclaw.tech/
+```
+
+示例：
+
+```bash
+git push origin HEAD:frontsandbox/codex-staticpages-smoke
+```
+
+约 2 分钟后可访问：
+
+```text
+https://codex-staticpages-smoke.preview.lightclaw.tech/
+```
+
+补充约束：
+
+- `<preview-name>` 会作为子域名前缀使用，建议只用小写字母、数字和 `-`
+- 这条链路只用于分支预览，不创建 GitOps MR，也不代表正式发布
+- 如果预览站短时间返回 `502`，通常是 CI 仍在构建或上传，等待流水线完成后再刷新
+
+### 4. 当前正式环境发布方式
 
 当前北京 / 上海正式链路统一按 GitOps 发布：
 

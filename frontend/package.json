@@ -11,15 +11,21 @@
     "dev:local:global": "VITE_LOCAL_SDK=1 vite --mode global",
     "i18n:extract": "node scripts/i18n-extract.mjs",
     "i18n:check": "node scripts/i18n-extract.mjs --check",
-    "build": "tsc -b && vite build",
-    "build:cn": "tsc -b && vite build --mode cn --outDir dist-cn",
-    "build:global": "tsc -b && vite build --mode global --outDir dist-global",
+    "assets:optimize": "node scripts/optimize-static-assets.mjs",
+    "build": "tsc -b && vite build && node scripts/optimize-static-assets.mjs dist",
+    "build:cn": "tsc -b && vite build --mode cn --outDir dist-cn && node scripts/optimize-static-assets.mjs dist-cn",
+    "build:global": "tsc -b && vite build --mode global --outDir dist-global && node scripts/optimize-static-assets.mjs dist-global",
     "preview": "vite preview",
     "check": "tsc --noEmit",
     "test": "vitest run",
     "deploy:cf": "node scripts/deploy-cloudflare-pages.mjs",
     "deploy:eo": "node scripts/deploy-edgeone-pages.mjs",
-    "release:matrix": "node scripts/release-matrix.mjs"
+    "release:matrix": "node scripts/release-matrix.mjs",
+    "archive:artifact": "node scripts/archive-release-artifact.mjs",
+    "verify:artifact": "node scripts/verify-release-artifact.mjs",
+    "build:release-artifacts": "node scripts/build-release-artifacts.mjs",
+    "release:eo:artifact": "node scripts/release-edgeone-from-artifact.mjs",
+    "release:cf:artifact": "node scripts/release-cloudflare-from-artifact.mjs"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.15",
@@ -29,9 +35,10 @@
     "@radix-ui/react-slot": "^1.2.3",
     "@radix-ui/react-tabs": "^1.1.13",
     "@rollup/rollup-darwin-arm64": "^4.60.0",
-    "@tencent/tea-sdk-lightclaw": "^1.0.24",
+    "@tencent/tea-sdk-lightclaw": "^1.0.33",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
+    "aegis-web-sdk": "^1.41.13",
     "bson": "^7.2.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -63,6 +70,7 @@
     "@types/react-syntax-highlighter": "^15.5.13",
     "@vitejs/plugin-react": "^5.0.2",
     "jsdom": "^28.1.0",
+    "sharp": "^0.33.5",
     "tailwindcss": "^4.1.12",
     "typescript": "~5.9.2",
     "vite": "^7.1.7",
@@ -70,7 +78,9 @@
   },
   "pnpm": {
     "onlyBuiltDependencies": [
-      "esbuild"
+      "core-js",
+      "esbuild",
+      "sharp"
     ],
     "overrides": {}
   }

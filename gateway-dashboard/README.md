@@ -2,6 +2,10 @@
 
 `gateway-dashboard` 是 `ai-gateway` 管理后台，公网挂载在 `/admin/gateway`。
 
+Trigger note:
+
+- 2026-05-08: README-only change to rerun gateway-dashboard release after GitOps gate stdout and promote lease fixes.
+
 公网 `CVM -> dashboard -> ai-gateway` 专用模式下，当前保证可用的页面收敛为：
 
 - 用户

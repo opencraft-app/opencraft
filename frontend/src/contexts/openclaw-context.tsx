@@ -21,7 +21,7 @@ export interface OpenClawBot {
   personalityEmoji: string;
   intro: string;
   soulTemplateId?: string;
-  status: "running" | "paused" | "draft";
+  status: "running" | "paused" | "draft" | "provisioning" | "failed" | "deleting";
   createdAt: string;
   connectedChannels: ("wechat" | "qq")[];
   installedSkills: string[];
@@ -72,7 +72,17 @@ const mapBotToOpenClawBot = (bot: Bot, channels?: ("wechat" | "qq")[]): OpenClaw
   personality: bot.template || "默认设定",
   personalityEmoji: "✨",
   intro: bot.mission || "",
-  status: bot.status === "active" ? "running" : bot.status === "paused" ? "paused" : "draft",
+  status: bot.status === "active"
+    ? "running"
+    : bot.status === "paused"
+      ? "paused"
+      : bot.status === "provisioning"
+        ? "provisioning"
+        : bot.status === "failed"
+          ? "failed"
+          : bot.status === "deleting"
+            ? "deleting"
+            : "draft",
   createdAt: bot.createdAt,
   connectedChannels: channels ?? [],
   installedSkills: [],
@@ -141,6 +151,8 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
   useEffect(() => {
     if (session.currentSubscription?.status === "active") {
       setIsSubscribed(true);
+    } else if (session.currentSubscription) {
+      setIsSubscribed(false);
     }
   }, [session.currentSubscription]);
 
@@ -151,9 +163,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
       const now = Date.now();
       const active = passes.find((p) => !p.deleted_time && new Date(p.expired_time).getTime() > now) ?? null;
       setActivePass(active);
-      if (active) {
-        setIsSubscribed(true);
-      }
+      setIsSubscribed(Boolean(active));
     } catch {
       /* 接口失败不阻断其他流程，保持现有状态 */
     }
@@ -289,7 +299,7 @@ export const OpenClawProvider = ({ children }: PropsWithChildren) => {
         personality: bot.personality,
         personalityEmoji: bot.personalityEmoji,
         intro: bot.intro,
-        status: bot.status === "running" ? "running" : bot.status === "paused" ? "paused" : "draft",
+        status: mapBotToOpenClawBot(created).status,
         createdAt: created.createdAt,
         connectedChannels: [],
         installedSkills: [],

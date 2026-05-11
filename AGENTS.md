@@ -30,6 +30,7 @@
 | `frontend-ds/` | 前端设计系统 | 前端 | [frontend-ds/AGENTS.md](frontend-ds/AGENTS.md) |
 | `nextgen-dashboard/` | 下一代控制台前端 | 前端 | [nextgen-dashboard/AGENTS.md](nextgen-dashboard/AGENTS.md) |
 | `gateway-dashboard/` | 网关控制台前端 | 前端 | [gateway-dashboard/AGENTS.md](gateway-dashboard/AGENTS.md) |
+| `cloudladdergateway/` | Go + Connect + Gin | 条件代理/Webhook 网关 | [cloudladdergateway/AGENTS.md](cloudladdergateway/AGENTS.md) |
 | `ai-gateway/` | Go | 后端服务 | [ai-gateway/AGENTS.md](ai-gateway/AGENTS.md) |
 | `service-gateway/` | Go | 后端服务 | [service-gateway/AGENTS.md](service-gateway/AGENTS.md) |
 | `admin-gateway/` | Go | 后端服务 | [admin-gateway/AGENTS.md](admin-gateway/AGENTS.md) |
@@ -46,7 +47,7 @@
 > 全仓库服务（除特殊说明外）均已切换到 **Argo CD** 发布模型：
 > - source-facing 真源：`<service>/k8s/base/` + `<service>/k8s/overlays/<env>/`
 > - deploy-facing 真源：`argocd/services/<service>/<env>/`
-> - 统一镜像构建命令：`python3 .ci/runtime/harness_ci/commands/build_release_image.py --service <service> --env <env> --tag <tag>`
+> - 统一镜像构建命令：`python3 .ci/runtime/commands/build_release_image.py --service <service> --env <env> --tag <tag>`
 
 ### 当前发布分支模型（P0）
 
@@ -110,6 +111,17 @@
 - 如果页面仍是旧版本，先比较公网 `index.html` 资产 hash 与镜像内 `index.html`；hash 仍旧通常说明新镜像未真正收敛到 live workload，或边缘缓存仍在返回旧 HTML。
 - Argo 长时间停在旧 revision 时，可对 app 加 `argocd.argoproj.io/refresh=hard` 强刷后再观察 sync / rollout。
 - 上海正式环境前端构建命令固定使用 `cd frontend && pnpm install && pnpm build`，不要用 `pnpm update`。
+
+### Playground 环境创建约束（P0）
+
+创建或修复 `sandbox-bj-N` / `beijing-playground` 环境时，必须先阅读 `.ci/AGENTS.md` 的“Playground 环境创建提示词（P0）”。
+
+特别注意：
+
+- 长期配置必须进入 `gitops` MR；live patch 只能作为诊断和临时解锁。
+- 固定入口使用单域名证书；实例 wildcard 入口默认 HTTP-only。
+- 不要复用不覆盖目标 host 的 TLS cert。
+- SOPS secret 克隆后必须校验 payload 已经指向目标环境，不要只看 metadata、文件名或 namespace。
 
 ### 新环境实名 SSM 预置（P0）
 

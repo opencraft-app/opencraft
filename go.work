@@ -2,6 +2,7 @@ go 1.26
 
 use (
 	./ai-gateway
+	./cloudladdergateway
 	./ctl
 	./images/envd
 	./nextgen-dashboard
@@ -9,4 +10,5 @@ use (
 	./payment
 	./service-gateway
 	./subscription
+	./third_party/staticpages
 )

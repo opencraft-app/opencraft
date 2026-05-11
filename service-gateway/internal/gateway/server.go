@@ -541,12 +541,16 @@ type wildcardOrigin struct {
 type originAllowlist struct {
 	exact     map[string]struct{}
 	wildcards []wildcardOrigin
+	allowAny  bool
 }
 
 func (a originAllowlist) Allows(origin string) bool {
 	origin = strings.TrimSpace(origin)
 	if origin == "" {
 		return false
+	}
+	if a.allowAny {
+		return isReflectableCORSOrigin(origin)
 	}
 	if _, ok := a.exact[origin]; ok {
 		return true
@@ -591,6 +595,10 @@ func normalizeAllowedOrigins(origins []string) originAllowlist {
 		if trimmed == "" {
 			continue
 		}
+		if trimmed == "*" {
+			allowed.allowAny = true
+			continue
+		}
 		if strings.HasSuffix(trimmed, ":*") {
 			base := strings.TrimSuffix(trimmed, ":*")
 			u, err := url.Parse(base)
@@ -633,6 +641,19 @@ func normalizeAllowedOrigins(origins []string) originAllowlist {
 		allowed.exact[trimmed] = struct{}{}
 	}
 	return allowed
+}
+
+func isReflectableCORSOrigin(origin string) bool {
+	u, err := url.Parse(origin)
+	if err != nil || u.User != nil || u.Opaque != "" || u.Hostname() == "" || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
+		return false
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "http", "https":
+		return true
+	default:
+		return false
+	}
 }
 
 func corsAllowedMethods(allowed []string) []string {

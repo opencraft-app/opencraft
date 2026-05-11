@@ -12,9 +12,6 @@ COMMITTER_NAME="${COMMITTER_NAME:-skipzhang}"
 COMMITTER_EMAIL="${COMMITTER_EMAIL:-skipzhang@tencent.com}"
 ci_export_gongfeng_defaults
 GITOPS_AUTO_MERGE_ENVS="${GITOPS_AUTO_MERGE_ENVS:-beijing-sandbox}"
-BOOTSTRAP_FILES=(
-  ".ci/gitops-promotion.yml"
-)
 
 if [[ $# -ne 5 ]]; then
   echo "usage: $0 <bundle-service> <service[,service2,...]> <env> <image> <source-ref>" >&2
@@ -27,7 +24,13 @@ ENV_NAME="$3"
 IMAGE="$4"
 SOURCE_REF="$5"
 GATE_IMAGE_STATUS="unknown"
+GATE_IMAGE_PIN_PAYLOAD=""
+GATE_IMAGE_DIGESTS_JSON="{}"
+GATE_CONFIG_STATUS="unknown"
 GATE_DB_STATUS="unknown"
+PIN_IMAGE="$IMAGE"
+RELEASE_RUNTIME_REF="${CI_RUNTIME_REF:-$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)}"
+RELEASE_RUNTIME_COMMIT="${CI_RUNTIME_COMMIT:-$(git -C "$REPO_ROOT" rev-parse HEAD)}"
 
 ci_require_commands git python3
 
@@ -45,24 +48,6 @@ env_display_name() {
   esac
 }
 
-load_release_gate_plan() {
-  local db_status="$1"
-  local gate_env_file
-  gate_env_file="$(mktemp)"
-  python3 "$RUNTIME_COMMAND_DIR/plan_release_gates.py" \
-    --repo-root "$REPO_ROOT" \
-    --service "$BUNDLE_SERVICE" \
-    --env "$ENV_NAME" \
-    --source-sha "$SOURCE_REF" \
-    --image "$IMAGE" \
-    --pin-targets "$SERVICE_ARG" \
-    --db-status "$db_status" \
-    --format dotenv > "$gate_env_file"
-  # shellcheck disable=SC1090
-  source "$gate_env_file"
-  rm -f "$gate_env_file"
-}
-
 json_array_to_bullets() {
   python3 - "$1" <<'PY'
 import json
@@ -77,121 +62,113 @@ else:
 PY
 }
 
-run_release_gate() {
-  load_release_gate_plan "$GATE_DB_STATUS"
+validate_gate_env_file() {
+  local path="$1"
+  python3 - "$path" <<'PY'
+from pathlib import Path
+import sys
 
-  echo "============================================================"
-  echo "GitOps 发布门禁：DB-aware release gate"
-  echo "DB contract：mode=${GATE_DB_MODE} migration_changed=${GATE_MIGRATION_CHANGED}"
-  echo "DB job：required=${GATE_REQUIRES_DB_JOB} service=${GATE_DB_JOB_SERVICE} operation=${GATE_DB_JOB_OPERATION}"
-  echo "DB readiness：required=${GATE_REQUIRES_DB_READINESS} supported=${GATE_READINESS_SUPPORTED} status=${GATE_DB_STATUS}"
-  echo "依赖变更：${GATE_RELEASE_DEPENDENCY_CHANGED} dependencies=${GATE_RELEASE_DEPENDENCIES}"
-  echo "自动合并允许：${GATE_AUTO_MERGE_ALLOWED}"
-  echo "Argo sync 策略：${GATE_ARGO_SYNC} auto_sync_allowed=${GATE_AUTO_SYNC_ALLOWED}"
-  echo "人工动作："
-  json_array_to_bullets "$GATE_MANUAL_ACTIONS"
-  echo "============================================================"
-
-  case "$ENV_NAME" in
-    beijing-sandbox|beijing-sandbox-2)
-      if [[ "$GATE_RELEASE_DEPENDENCY_CHANGED" == "true" ]]; then
-        echo "同批依赖服务发生变更；北京自动发布停止，避免无序自动 sync。" >&2
-        exit 1
-      fi
-      if [[ "$GATE_REQUIRES_DB_READINESS" == "true" ]]; then
-        ci_ensure_db_job_tools
-        if [[ "$GATE_READINESS_SUPPORTED" != "true" ]]; then
-          echo "DB readiness contract 不支持自动校验；停止自动发布。" >&2
-          exit 1
-        fi
-        if [[ "$GATE_REQUIRES_DB_JOB" == "true" ]]; then
-          db_job_args=(
-            --service "$GATE_DB_JOB_SERVICE"
-            --operation "$GATE_DB_JOB_OPERATION"
-            --env "$ENV_NAME"
-            --revision "$SOURCE_REF"
-            --apply
-            --wait
-          )
-          if [[ -n "$GATE_DB_JOB_IMAGE_OVERRIDE" ]]; then
-            db_job_args+=(--image-override "$GATE_DB_JOB_IMAGE_OVERRIDE")
-          fi
-          echo "GitOps 发布门禁：先执行受控 DB job"
-          python3 "$REPO_ROOT/scripts/run_gitops_db_job.py" "${db_job_args[@]}"
-        fi
-        echo "GitOps 发布门禁：执行 DB readiness 只读校验"
-        python3 "$RUNTIME_COMMAND_DIR/verify_db_contract.py" \
-          --repo-root "$REPO_ROOT" \
-          --service "$BUNDLE_SERVICE" \
-          --env "$ENV_NAME" \
-          --apply \
-          --wait
-        GATE_DB_STATUS="passed"
-        load_release_gate_plan "$GATE_DB_STATUS"
-      fi
-      if [[ "$GATE_AUTO_MERGE_ALLOWED" != "true" ]]; then
-        echo "北京自动发布门禁未通过；不创建可自动合并的 GitOps MR。" >&2
-        exit 1
-      fi
-      ;;
-    shprod)
-      echo "上海生产策略：GitOps MR 可进入待同步状态；Argo sync 保持人工执行。"
-      if [[ "$GATE_REQUIRES_DB_READINESS" == "true" ]]; then
-        ci_ensure_db_job_tools
-        if [[ "$GATE_READINESS_SUPPORTED" != "true" ]]; then
-          echo "DB readiness contract 不支持自动校验；停止进入上海生产待同步状态。" >&2
-          exit 1
-        fi
-        echo "GitOps 待同步门禁：执行上海生产 DB readiness 只读校验"
-        python3 "$RUNTIME_COMMAND_DIR/verify_db_contract.py" \
-          --repo-root "$REPO_ROOT" \
-          --service "$BUNDLE_SERVICE" \
-          --env "$ENV_NAME" \
-          --apply \
-          --wait
-        GATE_DB_STATUS="passed"
-        load_release_gate_plan "$GATE_DB_STATUS"
-      fi
-      ;;
-    *)
-      echo "非自动环境：只创建 GitOps MR，不自动 Argo sync。"
-      ;;
-  esac
+allowed = {
+    "GATE_IMAGE_STATUS",
+    "GATE_IMAGE_PIN_PAYLOAD",
+    "GATE_IMAGE_DIGESTS_JSON",
+    "GATE_CONFIG_STATUS",
+    "GATE_DB_STATUS",
+    "GATE_REQUIRES_DB_READINESS",
+    "GATE_AUTO_MERGE_ALLOWED",
+    "GATE_AUTO_SYNC_ALLOWED",
+    "GATE_ARGO_SYNC",
+    "GATE_RELEASE_DEPENDENCY_CHANGED",
+    "GATE_MANUAL_ACTIONS",
 }
 
-run_image_gate() {
-  local image_gate_file
+path = Path(sys.argv[1])
+bad_lines = []
+for line_number, line in enumerate(path.read_text().splitlines(), start=1):
+    if not line.strip():
+        continue
+    key = line.split("=", 1)[0]
+    if key not in allowed:
+        bad_lines.append(f"{line_number}: {line}")
 
-  echo "============================================================"
-  echo "GitOps 发布门禁：校验目标镜像是否已存在"
-  echo "目标环境：${ENV_NAME}"
-  echo "目标镜像：${IMAGE}"
-  echo "说明：GitOps pin 只能写入已存在于镜像仓库的 tag；缺失时停止 promote，避免 Argo 拉取 ImagePullBackOff。"
-  echo "============================================================"
+if bad_lines:
+    print("GitOps 发布门禁结果包含非 dotenv 输出；不会 source 执行。", file=sys.stderr)
+    for line in bad_lines[:20]:
+        print(line, file=sys.stderr)
+    sys.exit(1)
+PY
+}
 
-  ci_set_registry_credentials "$ENV_NAME"
-  image_gate_file="$(mktemp)"
-  if ! python3 "$RUNTIME_COMMAND_DIR/verify_image_exists.py" \
+refresh_promote_remote_tracking() {
+  local remote_ref="refs/remotes/${REMOTE_NAME}/${PROMOTE_BRANCH}"
+  if git -C "$REPO_ROOT" fetch "$REMOTE_NAME" "+refs/heads/${PROMOTE_BRANCH}:${remote_ref}" >/dev/null 2>&1; then
+    echo "GitOps 发布进度：已刷新远端 promote 分支引用 ${REMOTE_NAME}/${PROMOTE_BRANCH}"
+    return 0
+  fi
+
+  git -C "$REPO_ROOT" update-ref -d "$remote_ref" >/dev/null 2>&1 || true
+  echo "GitOps 发布进度：远端 promote 分支暂不存在，将创建 ${PROMOTE_BRANCH}"
+}
+
+project_and_pin_gitops_state() {
+  local target_repo_root="$1"
+  local add_to_git="${2:-false}"
+  local service
+  local services
+
+  python3 "$RUNTIME_COMMAND_DIR/project_release_bundle.py" \
+    --repo-root "$target_repo_root" \
+    --service "$BUNDLE_SERVICE" \
+    --env "$ENV_NAME" \
+    --source-ref "$SOURCE_REF"
+
+  IFS=',' read -r -a services <<<"$SERVICE_ARG"
+  for service in "${services[@]}"; do
+    echo "GitOps 发布进度：更新 ${service}/${ENV_NAME} 的镜像 pin"
+    python3 "$RUNTIME_COMMAND_DIR/update_image_pin.py" \
+      --repo-root "$target_repo_root" \
+      --service "$service" \
+      --env "$ENV_NAME" \
+      --image "$PIN_IMAGE" \
+      --deployed-at "$DEPLOYED_AT"
+    if [[ "$add_to_git" == "true" ]]; then
+      git -C "$target_repo_root" add "argocd/services/$service/$ENV_NAME"
+    fi
+  done
+}
+
+run_release_gates() {
+  local gate_env_file
+  gate_env_file="$(mktemp)"
+  if ! python3 "$RUNTIME_COMMAND_DIR/run_release_gates.py" \
+    --repo-root "$REPO_ROOT" \
+    --runtime-command-dir "$RUNTIME_COMMAND_DIR" \
+    --bundle-service "$BUNDLE_SERVICE" \
+    --pin-targets "$SERVICE_ARG" \
+    --env "$ENV_NAME" \
     --image "$IMAGE" \
-    --format dotenv > "$image_gate_file"; then
-    rm -f "$image_gate_file"
-    echo "镜像存在性门禁失败；不会写 GitOps pin，也不会创建 promote MR。" >&2
+    --source-ref "$SOURCE_REF" \
+    --deployed-at "$DEPLOYED_AT" \
+    --remote-name "$REMOTE_NAME" \
+    --gitops-branch "$GITOPS_BRANCH" \
+    --format dotenv > "$gate_env_file"; then
+    rm -f "$gate_env_file"
+    echo "GitOps 发布门禁失败；不会创建 promote MR。" >&2
+    exit 1
+  fi
+  if ! validate_gate_env_file "$gate_env_file"; then
+    rm -f "$gate_env_file"
+    echo "GitOps 发布门禁结果不可加载；不会创建 promote MR。" >&2
     exit 1
   fi
   # shellcheck disable=SC1090
-  source "$image_gate_file"
-  rm -f "$image_gate_file"
-
-  if [[ "${IMAGE_EXISTS:-false}" != "true" ]]; then
-    echo "镜像存在性门禁失败；verify_image_exists.py 未确认所有镜像存在。" >&2
+  if ! source "$gate_env_file"; then
+    rm -f "$gate_env_file"
+    echo "GitOps 发布门禁结果不可加载；不会创建 promote MR。" >&2
     exit 1
   fi
-  GATE_IMAGE_STATUS="passed"
-
-  echo "============================================================"
-  echo "GitOps 发布门禁：镜像存在性校验通过"
-  echo "镜像清单：${IMAGE_REFS_JSON:-[]}"
-  echo "============================================================"
+  PIN_IMAGE="${GATE_IMAGE_PIN_PAYLOAD:-$IMAGE}"
+  rm -f "$gate_env_file"
 }
 
 if ! git -C "$REPO_ROOT" diff --quiet || ! git -C "$REPO_ROOT" diff --cached --quiet; then
@@ -210,20 +187,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for bootstrap_file in "${BOOTSTRAP_FILES[@]}"; do
-  if [[ ! -f "$REPO_ROOT/$bootstrap_file" ]]; then
-    echo "missing bootstrap file: $bootstrap_file" >&2
-    exit 1
-  fi
-  mkdir -p "$bootstrap_dir/$(dirname "$bootstrap_file")"
-  cp "$REPO_ROOT/$bootstrap_file" "$bootstrap_dir/$bootstrap_file"
-done
-
 mkdir -p "$bootstrap_dir/.ci"
+rm -rf "$bootstrap_dir/.ci/runtime"
 cp -R "$REPO_ROOT/.ci/runtime" "$bootstrap_dir/.ci/runtime"
 RUNTIME_COMMAND_DIR="$bootstrap_dir/.ci/runtime/commands"
-run_image_gate
-run_release_gate
 
 if [[ -n "$REMOTE_URL" ]]; then
   REMOTE_NAME="gitops-target"
@@ -235,11 +202,14 @@ if [[ -n "$REMOTE_URL" ]]; then
 fi
 
 git -C "$REPO_ROOT" fetch "$REMOTE_NAME" "$GITOPS_BRANCH"
+run_release_gates
 
 IMAGE_TAG="${IMAGE##*:}"
+SOURCE_SHORT="${SOURCE_REF:0:12}"
 SERVICE_SLUG="$(sanitize_branch_component "$SERVICE_ARG")"
 PROMOTE_BRANCH="promote-$(sanitize_branch_component "$ENV_NAME")-${SERVICE_SLUG}-$(sanitize_branch_component "$IMAGE_TAG")"
 ENV_DISPLAY_NAME="$(env_display_name "$ENV_NAME")"
+RELEASE_ID="${ENV_NAME}/${SERVICE_ARG}/${SOURCE_SHORT}/${IMAGE_TAG}"
 
 echo "============================================================"
 if [[ "$ENV_NAME" == "shprod" ]]; then
@@ -251,7 +221,10 @@ echo "发布 bundle：${BUNDLE_SERVICE}"
 echo "目标服务：${SERVICE_ARG}"
 echo "目标环境：${ENV_DISPLAY_NAME} (${ENV_NAME})"
 echo "目标镜像：${IMAGE}"
+echo "GitOps pin 镜像：${PIN_IMAGE}"
 echo "源代码 revision：${SOURCE_REF}"
+echo "Release ID：${RELEASE_ID}"
+echo "Runtime：${RELEASE_RUNTIME_REF} (${RELEASE_RUNTIME_COMMIT})"
 echo "GitOps 目标分支：${GITOPS_BRANCH}"
 echo "promote 分支：${PROMOTE_BRANCH}"
 echo "执行说明：先从 master runtime 临时副本投影发布子集，再更新 image pin 并创建/复用 MR"
@@ -261,30 +234,7 @@ git -C "$REPO_ROOT" checkout -B "$PROMOTE_BRANCH" "$REMOTE_NAME/$GITOPS_BRANCH"
 git -C "$REPO_ROOT" config user.name "$COMMITTER_NAME"
 git -C "$REPO_ROOT" config user.email "$COMMITTER_EMAIL"
 
-for bootstrap_file in "${BOOTSTRAP_FILES[@]}"; do
-  mkdir -p "$REPO_ROOT/$(dirname "$bootstrap_file")"
-  cp "$bootstrap_dir/$bootstrap_file" "$REPO_ROOT/$bootstrap_file"
-  git -C "$REPO_ROOT" add "$bootstrap_file"
-done
-
-python3 "$RUNTIME_COMMAND_DIR/project_release_bundle.py" \
-  --repo-root "$REPO_ROOT" \
-  --service "$BUNDLE_SERVICE" \
-  --env "$ENV_NAME" \
-  --source-ref "$SOURCE_REF"
-
-IFS=',' read -r -a SERVICES <<<"$SERVICE_ARG"
-
-for SERVICE in "${SERVICES[@]}"; do
-  echo "GitOps 发布进度：更新 ${SERVICE}/${ENV_NAME} 的镜像 pin"
-  python3 "$RUNTIME_COMMAND_DIR/update_image_pin.py" \
-    --repo-root "$REPO_ROOT" \
-    --service "$SERVICE" \
-    --env "$ENV_NAME" \
-    --image "$IMAGE" \
-    --deployed-at "$DEPLOYED_AT"
-  git -C "$REPO_ROOT" add "argocd/services/$SERVICE/$ENV_NAME"
-done
+project_and_pin_gitops_state "$REPO_ROOT" true
 
 if git -C "$REPO_ROOT" diff --cached --quiet; then
   echo "no gitops pin changes detected"
@@ -292,11 +242,19 @@ if git -C "$REPO_ROOT" diff --cached --quiet; then
 fi
 
 COMMIT_BODY="$(cat <<EOF
+Release-id: ${RELEASE_ID}
+Release-created-at: ${DEPLOYED_AT}
+Release-source-branch: ${PROMOTE_BRANCH}
+Release-runtime-ref: ${RELEASE_RUNTIME_REF}
+Release-runtime-commit: ${RELEASE_RUNTIME_COMMIT}
 Release-bundle: ${BUNDLE_SERVICE}
 Release-target-env: ${ENV_NAME}
 Release-pin-targets: ${SERVICE_ARG}
 Release-image: ${IMAGE}
+Release-image-pin: ${PIN_IMAGE}
+Release-image-digests: ${GATE_IMAGE_DIGESTS_JSON}
 Release-gate-image-status: ${GATE_IMAGE_STATUS}
+Release-gate-config-status: ${GATE_CONFIG_STATUS}
 Release-gate-db-status: ${GATE_DB_STATUS}
 Release-gate-db-readiness-required: ${GATE_REQUIRES_DB_READINESS}
 Release-gate-auto-merge: ${GATE_AUTO_MERGE_ALLOWED}
@@ -317,6 +275,7 @@ else
 fi
 
 git -C "$REPO_ROOT" commit -m "$COMMIT_TITLE" -m "$COMMIT_BODY"
+refresh_promote_remote_tracking
 git -C "$REPO_ROOT" push --force-with-lease -u "$REMOTE_NAME" "$PROMOTE_BRANCH"
 
 MR_GATE_ACTIONS="$(json_array_to_bullets "$GATE_MANUAL_ACTIONS")"
@@ -326,11 +285,14 @@ $MR_DESCRIPTION_HEADER
 - 环境：$ENV_DISPLAY_NAME ($ENV_NAME)
 - 服务：$SERVICE_ARG
 - 镜像：$IMAGE
+- GitOps pin：$PIN_IMAGE
 - 源 revision：$SOURCE_REF
 - 发布时间：$DEPLOYED_AT
 - 源分支：$PROMOTE_BRANCH
 - 目标分支：$GITOPS_BRANCH
 - 镜像存在性：$GATE_IMAGE_STATUS
+- 镜像 digest：$GATE_IMAGE_DIGESTS_JSON
+- 配置契约：$GATE_CONFIG_STATUS
 - DB readiness：required=$GATE_REQUIRES_DB_READINESS status=$GATE_DB_STATUS
 - 自动合并允许：$GATE_AUTO_MERGE_ALLOWED
 - Argo sync：$GATE_ARGO_SYNC
@@ -382,9 +344,12 @@ $NOTE_HEADLINE
 - 环境：$ENV_DISPLAY_NAME ($ENV_NAME)
 - 服务：$SERVICE_ARG
 - 镜像：$IMAGE
+- GitOps pin：$PIN_IMAGE
 - 源 revision：$SOURCE_REF
 - promote 分支：$PROMOTE_BRANCH
 - 镜像存在性：$GATE_IMAGE_STATUS
+- 镜像 digest：$GATE_IMAGE_DIGESTS_JSON
+- 配置契约：$GATE_CONFIG_STATUS
 - DB readiness：required=$GATE_REQUIRES_DB_READINESS status=$GATE_DB_STATUS
 - 自动合并允许：$GATE_AUTO_MERGE_ALLOWED
 - Argo sync：$GATE_ARGO_SYNC

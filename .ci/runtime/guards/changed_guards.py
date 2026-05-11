@@ -28,7 +28,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--repo-root", type=Path, default=Path("."))
     parser.add_argument("--base-ref", default="origin/master")
     parser.add_argument("--head-ref", default="HEAD")
-    parser.add_argument("--guards-file", default=".ci/guards.yaml")
+    parser.add_argument("--guards-file", default=".ci/guards.manifest")
     parser.add_argument(
         "--trusted-ref",
         default="",

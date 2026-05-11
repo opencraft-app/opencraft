@@ -333,6 +333,14 @@ pnpm dev
 pnpm build
 ```
 
+构建完成后会自动执行 `scripts/optimize-static-assets.mjs`：
+
+- 只处理构建产物目录（`dist` / `dist-cn` / `dist-global`），不改源码图片
+- 压缩产物里的 `.png` / `.jpg` / `.jpeg` 原图，并保留原文件
+- 为每张原图生成同目录、同 basename 的 `.webp`
+- 只把构建产物里的 `.html` / `.css` / `.js` / `.mjs` 本地引用改成 `.webp`
+- 不改 `https://` / `//` 外链、`data:`、SVG、ICO、字体、视频
+
 ### 类型检查
 
 ```bash

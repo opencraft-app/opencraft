@@ -1184,7 +1184,7 @@ export const SubscribePage = () => {
         }
       }
       /* 2. 调用后端创建实例资源 */
-      await addBot({
+      const createdBot = await addBot({
         name: t("我的Hermes"),
         personality: t("默认设定"),
         personalityEmoji: "✨",
@@ -1195,8 +1195,8 @@ export const SubscribePage = () => {
       subscribe();
       setModalStep("closed");
       setSelectedPlan(null);
-      /* 3. 跳转到管理页，由管理页展示创建 loading 动画 */
-      navigate("/dashboard/settings?creating=true");
+      /* 3. 跳转到管理页，由管理页轮询真实后端状态，Running 后才交付 */
+      navigate(`/dashboard/settings?creating=${encodeURIComponent(createdBot.id)}`);
     } catch (err) {
       const fallbackMsg = err instanceof Error ? err.message : t("创建失败，请稍后重试。");
       const code = err instanceof RepositoryError ? err.code : (err as Error & { code?: string })?.code;

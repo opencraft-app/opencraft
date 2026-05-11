@@ -13,8 +13,10 @@
 - 北京测试环境自动把 `master@SHA` 的发布子集投影到 `gitops`，创建 MR 并自动合并
 - 上海正式环境手动 promote 到 `gitops` 的 MR；门禁通过后可自动合并，但 Argo sync 仍由人工执行
 
-当前 `.ci/*.yml` 不再依赖 `ci.event == 'push' / 'manual'` 来分流。
-已改为：
+标准服务 `.ci/<service>.yml` 保留各自的 `on.push.paths` 和 `manual` 入口，
+但发布执行逻辑统一复用 `.ci/templates/service-release.yml`。
+
+流水线内仍然避免依赖 `ci.event == 'push' / 'manual'` 做复杂策略分流：
 
 - 默认 `PIPELINE_MODE=build`
   - 运行构建
@@ -22,6 +24,148 @@
 - 手动把 `PIPELINE_MODE` 改成 `promote`
   - 只执行 `手动发布 <service> 到 GitOps` 对应步骤
   - 需要同时提供 `SOURCE_SHA`
+## Service Release Template
+
+标准服务构建发布入口正在从“每个 `.ci/<service>.yml` 复制完整 stages”演进为根级 `extends` 模板模型。
+
+已迁移入口：
+
+- `.ci/admin-gateway.yml`
+- `.ci/ai-gateway.yml`
+- `.ci/ctl.yml`
+- `.ci/gateway-dashboard.yml`
+- `.ci/lightclaw-auth.yml`
+- `.ci/nextgen-dashboard.yml`
+- `.ci/payment.yml`
+- `.ci/sandbox.yml`
+- `.ci/service-gateway.yml`
+- `.ci/staticpages.yml`
+- `.ci/subscription.yml`
+
+独立验证入口：
+
+- `.ci/cloudladdergateway.yml`
+  - 当前只运行 `go test ./...` 和 Docker 镜像构建验证。
+  - 该服务暂未接入 GitOps release bundle，因此不使用 `.ci/templates/service-release.yml`，也不会自动 promote/pin。
+
+这些入口保留 `name` / `on.push.paths` / `manual` / `extends`，并通过统一模板传入
+`SERVICE` / `BUNDLE` / `DISPLAY_NAME`。服务级变更仍由对应 `.ci/<service>.yml`
+的 `push.paths` 触发，模板只承载执行逻辑。
+其中 `lightclaw-auth` 的 `SERVICE` 仍是 release bundle id `user-auth`，`BUNDLE`
+仍是 GitOps pin target `lightclaw-auth`。
+其中 `sandbox` 显式覆盖 env 矩阵，当前只构建和自动 pin 北京沙箱链路，不隐式构建 `shprod`。
+当前标准服务入口统一使用 `version: v2.0` + `extends.parameters`。
+
+公共模板：
+
+- `.ci/templates/service-release.yml`
+  - 统一承载 service release 的启动变量、checkout、build、北京自动 pin、手动 promote 逻辑
+  - 继续调用 `.ci/runtime/build_and_promote_to_gitops.sh` 与 `.ci/runtime/promote_bundle_image_to_gitops.sh`
+
+约束：
+
+- `on.push.paths` 只放业务路径、GitOps 服务路径、对应 secrets/app 路径；不要放 `.ci/**`。
+- `concurrency` 必须放在每个 service 入口 YAML；蓝盾模板 schema 不允许 `.ci/templates/service-release.yml` 顶层声明 `concurrency`。
+- `version: v2.0` 入口使用 `extends.template: service-release.yml` + `extends.parameters`；当前平台会拒绝 v2 里的 `extends.template` 对象写法。
+- 蓝盾解析 `extends.template` 时会相对 `.ci/templates/` 查找；不要写 `.ci/templates/service-release.yml`，否则可能被解析为 `.ci/templates/.ci/templates/service-release.yml` 并 404。
+- 不要为了 `extends.template.path` 对象写法切到 `version: v3.0`；蓝盾 PAC v3 暂未支持局部模板，`.ci/templates/service-release.yml` 这类本仓库模板应继续走 Stream v2。
+- 非流水线配置不要使用 `.yaml` 后缀放在 `.ci/**` 下；蓝盾会把 `.ci/**/*.yaml` 误识别成流水线候选。Guard 注册表用 `.ci/guards.manifest`，release bundle 源用 `.ci/runtime/bundles/*.bundle`。
+- `frontend`、`frontend-edgeone-*`、`gitops-*`、`ci-runtime`、`mr-placeholder` 不属于这批标准 service release 入口，不使用该模板。
+- `cloudladdergateway` 当前只有独立验证入口，不属于标准 service release 入口；等补齐 GitOps closure 和 release bundle 后再迁入模板。
+
+### Release 并发模型
+
+标准服务 release 入口按服务维度独立排队：
+
+- `mono2-service-release-<service>`：同一个服务的构建 / 手动 promote 串行，避免同服务多个提交互相覆盖 GitOps pin。
+- 不同服务使用不同 concurrency group，可以并行构建镜像，避免 `sandbox`、`ctl`、`ai-gateway` 等互不相关的发布互相阻塞。
+- `gitops-promotion.yml` 仍由 promote 分支触发 GitOps MR 前置验收、自动合并、Argo 收敛和分支清理；不要把多个服务重新塞回 `mono2-master-release`。
+- `frontend-edgeone-*` 和 `frontend-preview` 已有独立发布/预览并发组，不参与标准服务 release group。
+
+### 新增标准服务流水线
+
+新增一个普通镜像 + GitOps pin 的标准服务时，新增 `.ci/<service>.yml`，形态如下：
+
+```yaml
+version: v2.0
+name: 构建 <service>
+
+on:
+  push:
+    branches:
+      - master
+      - playground/sandbox-bj-2
+    paths:
+      - <service>/**
+      - argocd/services/<service>/**
+      - argocd/apps/*/<service>.yaml
+      - argocd/secrets/*/<service>-runtime-secrets.sops.yaml
+    paths-ignore:
+      - OWNERS
+      - "**/OWNERS"
+  manual: enabled
+
+concurrency:
+  group: mono2-service-release-<service>
+  cancel-in-progress: false
+  queue-length: 20
+  queue-timeout-minutes: 480
+
+extends:
+  template: service-release.yml
+  parameters:
+    SERVICE: <release-bundle-id>
+    BUNDLE: <gitops-pin-target>
+    DISPLAY_NAME: <service>
+    DEFAULT_TARGET_ENV: shprod
+    MASTER_BUILD_ENVS: beijing-sandbox,shprod
+    MASTER_AUTO_PIN_ENVS: beijing-sandbox
+    PLAYGROUND_BUILD_ENVS: beijing-sandbox-2
+    PLAYGROUND_AUTO_PIN_ENVS: beijing-sandbox-2
+```
+
+规则：
+
+- 业务 YAML 只声明 `on.push.paths`、`manual`、`concurrency` 和 `extends`；不要复制 `variables`、`stages`。
+- 不要把 `.ci/**`、`.ci/runtime/**`、`.ci/templates/**` 放进业务流水线 `paths`，避免 CI 模板变更隐式构建镜像或推进 GitOps。
+- CI 模板、runtime、guard 的变更只触发 `构建 CI runtime`；业务服务是否需要重新构建，应由业务路径变更或手动触发决定。
+- `SERVICE` 是 `.ci/runtime/bundles/*.bundle` 里的 bundle id；`BUNDLE` 是 GitOps pin target。多数服务二者相同，`lightclaw-auth` 是例外：`SERVICE=user-auth`、`BUNDLE=lightclaw-auth`。
+- `MASTER_*` / `PLAYGROUND_*` 是 CSV env set。标准服务默认 master 构建 `beijing-sandbox,shprod` 但只自动 pin `beijing-sandbox`；`sandbox` 当前覆盖为只构建北京沙箱环境。
+
+### 模板变更服务端验收
+
+`.ci/templates/service-release.yml` 或模板调用契约变化后，本地 guard 只能证明仓库内静态逻辑正确，不能完全证明 BK-CI 服务端模板实例化成功。
+
+推荐验收顺序：
+
+1. 推送后确认 `构建 CI runtime` 通过。
+2. 手动触发一个低风险标准服务，例如 `构建 gateway-dashboard` 或 `构建 ai-gateway`。
+3. 在日志中确认模板已正确实例化：`SERVICE`、`BUNDLE`、`PIPELINE_MODE`、`TARGET_ENV` 输出符合预期。
+4. 确认 `PIPELINE_MODE=build` 时只按业务分支规则构建；`PIPELINE_MODE=promote` 时只进入手动 GitOps promote。
+5. 如果只是验证模板实例化，不要通过修改 `.ci/**` 来触发业务流水线。
+
+## Playground DNS
+
+Playground 环境公网 DNS 通过 `.ci/runtime/commands/configure_playground_dns.py`
+维护。脚本只从环境变量读取腾讯云密钥，不把 Secret 写入仓库。
+
+典型用法：
+
+```bash
+TENCENTCLOUD_SECRET_ID=... \
+TENCENTCLOUD_SECRET_KEY=... \
+python3 .ci/runtime/commands/configure_playground_dns.py \
+  --env sandbox-bj-4 \
+  --domain lightclaw.tech \
+  --namespace lightvela-playground-sandbox-bj-4 \
+  --kubeconfig /etc/lightclaw-ci/kubeconfig_beijing_sandbox_2 \
+  --include-env-root
+```
+
+脚本会从 Kubernetes Ingress 发现 host -> CLB 地址，并 upsert DNSPod
+记录。`--include-env-root` 会把 `<env>.lightclaw.tech` 指向
+`*.<env>.lightclaw.tech` 同一个 sandbox ingressproxy CLB，避免根域不被通配
+记录覆盖。
 
 ## Verified Working Setup
 
@@ -51,7 +195,8 @@
 
 - 北京预发布：
   - `beijing-sandbox` / `beijing-sandbox-2` 保持自动 GitOps MR 合并和 Argo 自动收敛
-  - promote 写 GitOps pin 前先校验目标镜像 tag 已存在于 TCR；缺失时停止，避免 Argo `ImagePullBackOff`
+  - promote 写 GitOps pin 前先校验目标镜像 tag 已存在于 TCR，并把 tag 解析成 digest pin；缺失或无法解析 digest 时停止，避免 Argo `ImagePullBackOff` 和 mutable tag 漂移
+  - GitOps desired state 变更必须通过 config contract：静态结构、服务级 Kustomize 渲染、未替换占位符
   - 只要服务声明 `db_contract.mode: migration`，promote 时默认执行幂等受控 DB job
   - DB job 成功后再运行只读 DB readiness Job，确认 `schema_migrations` 非 dirty 且版本达到 repo 期望
   - readiness 失败时不创建可自动合并的发布 MR
@@ -59,20 +204,193 @@
   - promote MR 允许在 release gate 通过后自动合入 `gitops`
   - 合入后只表示 desired state 已进入“待同步状态”
   - `argocd/apps/shprod/**` 必须保持非自动 sync，人工确认 DB readiness 后再 sync
-  - 进入待同步前同样必须通过目标镜像存在性校验；Git commit 存在不等于镜像 tag 已构建并推送
+  - 进入待同步前同样必须通过目标镜像存在性和 digest 解析；Git commit 存在不等于镜像 tag 已构建并推送
+  - 进入待同步前同样必须通过服务级 config contract；生产配置变化通过 GitOps MR 审计，不绕过 MR
+
+三类发布 contract：
+
+- `image_contract`
+  - 目标 TCR tag/digest 必须存在，pin 前校验并转换为不可变 digest ref，失败时不写 GitOps desired state
+  - 这是最先执行的门禁，因为失败时继续跑 DB job 没有意义
+- `config_contract`
+  - 默认适用于所有 GitOps bundle
+  - 由 `.ci/runtime/contracts/bundles.py` 解析为 `mode: gitops`
+  - promote 分支提交前执行 `validate_gitops_static.py` 和服务级 `validate_gitops_kustomize.py --source-path`
+  - 校验范围是本次 pin target 的 `argocd/services/<service>/<env>`，避免 unrelated shprod placeholder 阻塞单服务 promote
+  - 镜像存在性通过后，CI 会在临时 GitOps worktree 中预投影 desired state，并与 DB gate 并行执行
+- `db_contract`
+  - 仅 DB 服务显式声明；`mode: migration` 时每次 promote 都跑幂等 DB job/readiness
+  - 与 config contract 并行执行，但仍依赖 image contract 先通过，避免镜像不存在时推进 DB
+
+执行顺序：
+
+1. `image_contract`
+2. 拉取 GitOps 基线，在临时 worktree 预投影 desired state
+3. 并行执行 `config_contract` 与 `db_contract`
+4. 两个门禁都通过后，主工作区投影 GitOps desired state 并更新 image pin
+5. 创建 / 自动合并 GitOps MR
+
+GitOps promote 分支策略已收口到 `.ci/runtime/gitops/promotion_policy.py`：
+
+- `beijing-sandbox` / `beijing-sandbox-2`
+  - 全量 GitOps static / Kustomize 验收
+  - gate 允许后自动合并
+  - 合并后等待 Argo 收敛
+  - 合并完成后清理 promote 源分支
+- `shprod`
+  - changed-only GitOps Kustomize 验收
+  - gate 允许且 `Release-gate-argo-sync=manual` 时自动合并
+  - 合并后只校验进入待同步状态，不执行 Argo 自动 sync
+  - 不清理 promote 源分支
+
+`.ci/gitops-promotion.yml` 只负责四个阶段的 Stream 编排和 runtime bootstrap，不再直接写北京/上海策略 `case`。
+
+GitOps promote 的可读发布视图由 `.ci/runtime/gitops/release_facts.py` 与
+`.ci/runtime/gitops/release_view.py` 派生生成：
+
+## Playground 环境创建提示词
+
+`sandbox-bj-N` / `beijing-playground` 新环境建设先按 GitOps closure 推进，再补外部 DNS/证书/SSM 动作。不要为了复用证书临时改变域名模型。
+
+playground 的运行时状态也应尽量 namespace-local：
+
+- `env-bootstrap` app 管理 `mysql` / `redis` 的 `StatefulSet + PVC + Service`。
+- 业务配置指向 `mysql.<namespace>.svc.cluster.local` 和 `redis.<namespace>.svc.cluster.local:6379`。
+- `create_playground_environment.py --write` 会为新环境生成最小 `playground-runtime-secrets.sops.yaml`，只承载 MySQL root 和 Redis password；缺 `sops` 或 age key 时直接失败。
+- `env-bootstrap` 通过 `ksops-runtime-secrets-generator.yaml` 引入该 secret；MySQL/Redis StatefulSet 与 DB bootstrap/root 路径不能再引用复制来的大 secret。
+- 删除 playground catalog 后，Argo prune namespace 内 workload 和 PVC，销毁语义比共享外部 MySQL/Redis 更干净。
+- 共享外部 MySQL/Redis 只适合 `beijing-sandbox` 这类预发布环境，不作为 `sandbox-bj-N` 的默认模型。
+
+frontend 容器镜像必须单独确认：
+
+- `argocd/services/frontend/<env>/frontend-platform.env` 写入的 `FRONTEND_IMAGE` 必须已经存在于 TCR。
+- 正常路径是构建并推送目标 env tag，例如 `frontend-sandbox-bj-N-<source-sha>`。
+- 只有当同 registry 中已经存在同 source sha 的等价 frontend 镜像，且只是缺少目标 env tag 时，才允许把已有 tag retag 成目标 tag 来解锁 live。
+- retag 必须记录来源 tag、目标 tag、digest 和“不重新构建”的理由；它只解决 registry tag 缺失，不替代长期 CI 构建入口。
+- 如果 frontend 源码、Dockerfile、lockfile、`VITE_*` 构建参数或静态资源入口有任何差异，必须重新构建，不能 retag。
+
+受控检查/retag 入口：
+
+```bash
+python3 .ci/runtime/commands/ensure_playground_frontend_image.py \
+  --target-image lightclaw-bj8.tencentcloudcr.com/lightclaw/frontend:frontend-sandbox-bj-6-d28bf7b09cab \
+  --source-image lightclaw-bj8.tencentcloudcr.com/lightclaw/frontend:frontend-sandbox-bj-5-d28bf7b09cab
+```
+
+默认只检查并给出结论；确认为同 source sha 等价镜像后，加 `--apply` 才会执行 `docker pull/tag/push`。执行前先用 `.ci/init.sh` 的 `ci_set_registry_credentials <env>` 加载 registry 凭据。
+
+GitOps closure 克隆入口：
+
+```bash
+.ci/runtime/create_playground_from_gitops.sh --to-env sandbox-bj-6
+```
+
+默认模板源是 `sandbox-bj-5`，因为它包含 frontend closure；不要退回 `sandbox-bj-3` 作为默认模板源。不要在 `master` 源码 checkout 里直接跑 `create_playground_environment.py` 的默认命令；playground 模板在 `origin/gitops`。如果已经有持久 GitOps worktree，需要写文件时使用：
+
+```bash
+GITOPS_WORKTREE=/tmp/mono2-gitops-create \
+  .ci/runtime/create_playground_from_gitops.sh --to-env sandbox-bj-6 --write
+```
+
+固定入口默认是：
+
+- `api-sandbox-bj-N.lightclaw.tech`
+- `admin-sandbox-bj-N.lightclaw.tech`
+- `frontend.sandbox-bj-N.lightclaw.tech`
+- 可选 `sandbox-bj-N.lightclaw.tech`
+
+实例入口默认是：
+
+- `*.sandbox-bj-N.lightclaw.tech`
+
+证书规则：
+
+- 固定入口申请或选择单域名证书。
+- wildcard 实例入口默认只开 HTTP；没有真实覆盖 `*.sandbox-bj-N.lightclaw.tech` 的证书时，不要绑定 HTTPS。
+- 不要把 `*.sandbox.lightclaw.tech` 证书复用到 `sandbox-bj-N` 的 API/Admin/frontend/wildcard host。
+- 证书 secret 进入 GitOps 前，必须确认 SAN 覆盖目标 host。
+
+推荐执行顺序：
+
+1. 用 `.ci/runtime/commands/create_playground_environment.py` 生成或克隆 GitOps closure。
+2. 校验 catalog、services、secrets、AppProject 和 strict Kustomize。
+3. 配置 DNS：固定入口和 wildcard HTTP。
+4. 配置固定入口单域名证书；wildcard HTTPS 没有合适证书时跳过。
+5. 合入 GitOps MR，让 sandbox-family AppSet 生成 apps。
+6. 等 Argo apps 到最新 `gitops` revision 的 `Synced / Healthy`。
+7. 确认 frontend 目标镜像 tag 存在。缺 tag 时优先补构建；只有同 source sha 等价 tag 已存在时，才允许 retag 解锁。
+8. 确认 namespace-local MySQL/Redis Ready，且 `playground-runtime-secrets` 已生成并由 env-bootstrap 引入，再执行 DB bootstrap / readiness。
+9. 检查 pods、Service endpoints、Ingress Ready。
+10. 用公网 curl 验证固定 HTTPS 入口；wildcard HTTP 出现 `400 invalid host` 时，说明已到 ingressproxy，只是没有具体实例映射。
+
+排障优先级：
+
+- pod/endpoints 正常但公网 504：优先查 `ingress.cloud.tencent.com/direct-access: "true"`、TkeServiceConfig health check、NodePort/endpoints。
+- Argo app missing：先查 `sandbox-family-appset.yaml` 是否覆盖 playground catalog，再 refresh root app。
+- DB job 失败：先确认 namespace-local MySQL/Redis Ready、namespace、`playground-runtime-secrets` 和业务 SOPS payload，不要只看 secret 文件名或 metadata。
+- frontend `ImagePullBackOff`：先查 `FRONTEND_IMAGE` tag 是否存在。若同 source sha 的其它 playground tag 已存在，可以 retag 临时解锁；否则必须构建目标 env 镜像。
+- TLS 不通：先查证书 SAN 覆盖，不要反复切换 Ingress 配置。
+
+## Playground 环境诊断脚手架
+
+北京 playground 的新增/恢复流程不是完全自动化发布产品，但已经沉淀了一个可执行诊断入口：
+
+```bash
+python3 .ci/runtime/commands/diagnose_playground_environment.py \
+  --repo-root . \
+  --env sandbox-bj-3 \
+  --fetch \
+  --argocd-base-url https://9.208.245.238:30547 \
+  --argocd-username admin \
+  --argocd-insecure-skip-verify \
+  --kubeconfig .secret/cls-ftjhqdjt-config
+```
+
+该脚本按证据链分段检查：
+
+- `origin/master` 与 `origin/gitops` 的 `sandbox-family-appset.yaml` 是否同时扫描 sandbox 和 playground catalog。
+- `origin/gitops` 是否存在 `argocd/catalogs/playground/beijing-playground/<env>/*.yaml` inventory。
+- Argo live apps 是否按 catalog 生成，并达到 `Synced / Healthy`。
+- 可选 kubeconfig 下目标 namespace 是否有 pod，且 pod phase 没有异常。
+
+脚本不直接写 Git、不直接改 live，不会替代 GitOps MR。遇到不能稳定自动化的环节，它只打印下一步建议，例如：
+
+- AppSet glob 被 promote 回滚：分别修 `master` 和 `gitops` 的 `sandbox-family-appset.yaml`。
+- catalog 不存在：创建 GitOps 迁移 MR，把 playground catalog / services / secrets 投影到 `gitops`。
+- Argo app missing：refresh `root-beijing-sandbox`，等待 ApplicationSet 重建；如果仍 missing，再查 AppSet generator。
+- namespace 为空或 kubectl EOF：先以 Argo API 为主证据，再排查目标集群 apiserver/network。
+
+常用弱依赖模式：
+
+```bash
+python3 .ci/runtime/commands/diagnose_playground_environment.py \
+  --repo-root . \
+  --env sandbox-bj-3 \
+  --fetch \
+  --skip-argocd \
+  --skip-kubernetes
+```
+
+这个模式适合在没有 Argo 凭据或 kubeconfig 的本地先检查 GitOps 入口和 catalog 真相源。
+
+- 真相源仍是 promote commit trailers、Gongfeng MR、`gitops` merge commit 和 Argo live state
+- MR comment 与 CI console 只作为派生视图，不引入持久 `release-record.json`
+- 手动排障可运行 `.ci/runtime/commands/describe_gitops_promotion.py --source-branch <promote-branch> --target-branch gitops`
 
 镜像存在性门禁：
 
 - `.ci/runtime/commands/verify_image_exists.py`
   - 支持单镜像 ref 和 `{"images": {...}}` 多镜像 payload
-  - 使用 `docker manifest inspect` 校验 registry 中的 tag 是否存在
-  - 由 `.ci/runtime/pin_image_to_gitops.sh` 在更新 `*-platform.env` 前执行
+  - 使用 `docker manifest inspect --verbose` 校验 registry 中的 tag 是否存在，并读取 manifest digest
+  - 由 `.ci/runtime/pin_image_to_gitops.sh` 在更新 `*-platform.env` 前执行；后续 `*-platform.env` 写入的是 `repo@sha256:...` digest ref
+  - promote commit trailer 会同时保留 `Release-image` 原始 tag、`Release-image-pin` digest pin 和 `Release-image-digests` 解析证据
 - registry 凭据仍通过 `.ci/init.sh` 的 `ci_set_registry_credentials <env>` 读取 `/etc/lightclaw-ci/tcr_*` 或 Stream settings
 - 这个门禁属于 promote runtime gate，不是 MR 静态 guard；它校验的是“发布输入是否真实存在”
 
 DB contract 的声明位置是：
 
-- `.ci/runtime/release-bundles.manifest`
+- `.ci/runtime/bundles/*.bundle` 是唯一人工维护源
+- `.ci/runtime/release-bundles.manifest` 是 CI/runtime 临时生成物，不提交到 Git
 
 已支持的契约类型：
 
@@ -103,27 +421,33 @@ DB job / readiness Job 的 kubeconfig 读取顺序：
 
 ### contracts
 
-发布契约、bundle 元数据和镜像 pin 规则：
+发布契约与 bundle 元数据。这里描述“必须满足什么”，不执行 registry / Kustomize / Kubernetes / GitOps 变更：
 
+- `.ci/runtime/bundles/*.bundle`
+  - bundle owner/source、publish paths、image targets、DB contract、轻量依赖声明的 review 源文件
 - `.ci/runtime/release-bundles.manifest`
-  - bundle owner/source、publish paths、image targets、DB contract、轻量依赖声明
+  - CI/runtime 临时生成的合并产物；运行时仍以这个文件作为 bundle manifest 输入，但不提交到 Git
+- `.ci/runtime/contracts/release_bundle_manifest.py`
+  - 从拆分源生成合并 manifest，并提供 `--check` 校验 `.bundle` 源可合并、无重复、可渲染
 - `.ci/runtime/contracts/bundles.py`
-  - 解析 release bundle manifest
-- `.ci/runtime/contracts/image_pin.py`
-  - 更新 `argocd/services/<service>/<env>/*-platform.env`
+  - 解析 release bundle manifest，并提供默认 `config_contract`
+- `.ci/runtime/contracts/release_plan.py`
+  - 根据 source diff、DB contract、环境策略输出纯 release gate plan
 - `.ci/runtime/contracts/image_existence.py`
-  - promote 写 pin 前校验目标镜像 tag 已存在，支持单镜像和多镜像 payload
-- `.ci/runtime/contracts/project_release_bundle.py`
-  - 从 `master@SHA` 投影发布子集到 promote 分支
+  - 镜像引用解析/存在性辅助；release promote 由 `.ci/runtime/gates/image.py` 执行门禁
 
 ### gitops
 
 GitOps MR、promote 分支、收敛验收和漂移审计：
 
 - `.ci/runtime/pin_image_to_gitops.sh`
-  - image gate / DB gate 后投影 GitOps 子集、更新 image pin、创建 MR
+  - 调用统一 release gate runner；门禁通过后投影 GitOps 子集、更新 image pin、创建 MR
 - `.ci/runtime/promote_bundle_image_to_gitops.sh`
   - 手动 promote 已存在镜像到 GitOps
+- `.ci/runtime/gitops/projection.py`
+  - 从 `master@SHA` 投影发布子集到 promote 分支
+- `.ci/runtime/gitops/image_pin.py`
+  - 更新 `argocd/services/<service>/<env>/*-platform.env`
 - `.ci/runtime/gitops/gitops_merge_request.py`
   - 创建 / 复用 / 自动合并 GitOps MR
 - `.ci/runtime/gitops/gitops_merge_request_note.py`
@@ -135,23 +459,37 @@ GitOps MR、promote 分支、收敛验收和漂移审计：
 - `.ci/runtime/gitops/gitops_static_validation.py`
   - GitOps 静态结构校验
 - `.ci/runtime/gitops/gitops_kustomize_validation.py`
-  - Kustomize / SOPS / KSOPS 渲染校验
+  - Kustomize / SOPS / KSOPS 渲染校验，支持按 env 或显式 `--source-path` 校验单服务
 - `.ci/runtime/gitops/gitops_drift_audit.py`
   - GitOps 漂移审计
+- `.ci/runtime/gitops/argocd.py`
+  - Argo CD settings / login / API 访问共享 helper；release verifier 与 drift audit 不再各自维护凭据解析和 HTTP 调用
+- `.ci/runtime/gitops/git.py`
+  - GitOps runtime 共享 Git 读操作 helper，避免 projection / verifier / drift audit 各自维护 `git show` / `ls-tree` 包装
 
-### db_gates
+### gates
 
-DB-aware release gate、受控 DB Job 和只读 readiness：
+Release gate 执行层。这里负责证明 image/config/db contract 是否满足，并把结果收敛为 shell 可读的 allowlist 字段：
 
-- `.ci/runtime/db_gates/release_gates.py`
-  - 根据 source diff、DB contract、环境策略输出 release gate plan
-- `.ci/runtime/db_gates/db_contract_verifier.py`
+- `.ci/runtime/commands/run_release_gates.py`
+  - CI 命令入口；thin wrapper，只导入 `gates.runner.main`
+- `.ci/runtime/gates/runner.py`
+  - 先执行 image gate；image 通过后并行执行 config gate 与 DB gate；只输出 allowlist `GATE_*` dotenv
+  - runner 独占 gate-run 临时 bootstrap/worktree 生命周期；shell 只拥有后续 GitOps publish/MR 所需资源
+- `.ci/runtime/gates/image.py`
+  - 校验目标镜像 tag 已存在并生成不可变 digest pin payload
+- `.ci/runtime/gates/config.py`
+  - 在 runner 提供的临时 GitOps worktree 中预投影 desired state，并调用 GitOps static/Kustomize 校验
+  - 只做 proof 编排，不拥有 projection/image-pin 业务语义
+- `.ci/runtime/gates/db.py`
+  - 执行 DB-aware gate：受控 DB job + 只读 readiness，复用纯 planner 的 release policy 结果
+- `.ci/runtime/gates/db_contract_verifier.py`
   - 渲染并可执行只读 DB readiness Kubernetes Job
 - `.ci/runtime/commands/plan_release_gates.py`
   - CI 命令入口
 - `.ci/runtime/commands/verify_db_contract.py`
   - CI 命令入口
-- `scripts/run_gitops_db_job.py`
+- `.ci/runtime/commands/run_gitops_db_job.py`
   - 实际执行 migration / seed 这类受控 DB Job
 
 ### guards
@@ -161,10 +499,10 @@ MR / push 变更目录约束派发：
 - `.ci/mr-placeholder.yml`
   - MR commit check 入口，从 `origin/master` materialize trusted runtime 后运行 guard dispatcher
   - trusted guard 失败且本次 MR 只修改 `.ci/**` 时，允许 fallback 到当前分支的 `.ci/checks/guard.sh`，用于修复坏掉的 `.ci` 自身 guard；业务代码变更不允许 fallback
-- `.ci/guards.yaml`
+- `.ci/guards.manifest`
   - guard 注册表，声明 changed path pattern 与对应 guard command
 - `.ci/runtime/guards/changed_guards.py`
-  - 计算 changed files，按 `.ci/guards.yaml` 派发匹配的 guard
+  - 计算 changed files，按 `.ci/guards.manifest` 派发匹配的 guard
 - `.ci/checks/guard.sh`
   - `.ci/**` 变更的 CI runtime / YAML / materialize 门禁
 - `service-gateway/checks/guard.sh`
@@ -176,27 +514,35 @@ MR / push 变更目录约束派发：
 
 Guard 自举策略：
 
-- 默认执行 **trusted guard**：MR 流水线从 `origin/master` 读取 `.ci/guards.yaml`、dispatcher runtime 和 guard command，避免 MR 分支通过修改 guard 绕过门禁。
+- 默认执行 **trusted guard**：MR 流水线从 `origin/master` 读取 `.ci/guards.manifest`、dispatcher runtime 和 guard command，避免 MR 分支通过修改 guard 绕过门禁。
 - 允许 `.ci` 自修复 fallback：如果 trusted guard 失败，且变更文件全部位于 `.ci/**`，则允许执行当前 MR 分支的 `.ci/checks/guard.sh` 作为 candidate guard。
 - fallback 的目的只用于修复 target branch 上已经损坏的 `.ci` 自身 guard，不能用于业务代码变更。
 - 只要变更中包含非 `.ci/**` 文件，例如 `frontend/**`、`service-gateway/**` 或 `argocd/**`，fallback 立即禁止，保持 trusted guard 的失败结果。
 - candidate guard 必须跑完整 `.ci` 门禁，包括 shell 语法、Python compile、prod manual sync、runtime 单测、materialized runtime smoke、YAML parse 和 `git diff --check`。
-- 后续新增目录 guard 时，应把 command 放在对应目录的 `checks/guard.sh`，并在 `.ci/guards.yaml` 注册；不要依赖隐式目录扫描。
+- 后续新增目录 guard 时，应把 command 放在对应目录的 `checks/guard.sh`，并在 `.ci/guards.manifest` 注册；不要依赖隐式目录扫描。
 
 ### frontend
 
 前端 Pages / EdgeOne / GitOps 镜像构建发布：
 
 - `.ci/frontend.yml`
-  - 默认构建 Cloudflare Pages 矩阵 + frontend GitOps 镜像；纯 CF 矩阵不加载 EdgeOne token
+  - 默认先构建并归档完整 frontend Pages artifact 矩阵：`cf:cn-lightvela-staging`、`cf:global-lightvela-intl-staging`、`eo:cn-lightvela-prod`、`eo:global-lightvela-intl-prod`
+  - Cloudflare 预发发布步骤只允许 `cf:*` 矩阵，并从 TCR 拉取已归档 artifact 校验后发布；不现场 rebuild
+  - artifact 构建步骤只需要 TCR/ORAS，不加载 Cloudflare/EdgeOne 发布 token
 - `.ci/frontend-edgeone-lightvela.yml`
-  - 手动发布 `eo:cn-lightvela-prod`
+  - 手动发布 `eo:cn-lightvela-prod`；强制从已归档 artifact 发布
 - `.ci/frontend-edgeone-lightvela-intl.yml`
-  - 手动发布 `eo:global-lightvela-intl-prod`
+  - 手动发布 `eo:global-lightvela-intl-prod`；强制从已归档 artifact 发布
 - `frontend/release-matrix.json`
-  - Pages 发布矩阵唯一事实来源
+  - Pages / EdgeOne 发布矩阵唯一事实来源；CF 组合 ID 使用站点化名称 `cf:cn-lightvela-staging`、`cf:global-lightvela-intl-staging`
 - `frontend/scripts/release-matrix.mjs`
-  - 解析矩阵并执行 build/deploy
+  - 解析矩阵并执行 build/deploy；不作为 `.ci/frontend.yml` 的默认发布入口
+- `frontend/scripts/build-release-artifacts.mjs`
+  - 复用矩阵 env 逻辑，只执行 build/archive/verify，不执行 deploy
+- `frontend/scripts/release-cloudflare-from-artifact.mjs`
+  - CF 预发发布入口：拉取 artifact，校验 repo/tag/source/combo/baked env/content 后，用解压目录发布 Cloudflare Pages
+- `frontend/scripts/release-edgeone-from-artifact.mjs`
+  - EO 正式发布入口：拉取 artifact，校验 repo/tag/source/combo/baked env/content 后，用解压目录发布 EdgeOne
 
 ### bootstrap
 
@@ -210,15 +556,66 @@ CI 运行环境自举、secret 读取和工具安装：
   - 验证 materialized runtime 里 command wrapper 的 import/`--help` 可用
 - `.ci/runtime/materialize-files.txt`
   - CI runtime 临时目录投影的唯一文件清单，promotion workflow 和 smoke 共用
+  - materialized runtime 会从 `.ci/runtime/bundles/*.bundle` 生成 `.ci/runtime/release-bundles.manifest`，不要手工维护临时目录内的合并产物
+- `.ci/runtime/gitops_promotion_bootstrap.sh`
+  - GitOps promotion 各 stage 共用的 runtime materialize 自举函数，避免 YAML 里重复维护 `CI_RUNTIME_REF` / manifest 投影逻辑
+
+### support
+
+Python runtime 的低层复用工具。这里只放跨包、无业务领域知识的基础设施 helper：
+
+- `.ci/runtime/support/process.py`
+  - 统一 `subprocess.run` 的 stdout/stderr 转发和失败传播；调用方仍显式声明命令、`cwd` 和业务顺序
+- `.ci/runtime/support/logging.py`
+  - 统一中文 section/banner 输出；不要把 release gate 顺序或业务判断藏进日志 helper
+- `.ci/runtime/support/yaml.py`
+  - 统一“文件必须是 YAML mapping”的低层读取逻辑；不承载 release bundle / GitOps 领域规则
+
+边界约束：
+
+- 当前只允许 `process` / `logging` / `yaml` 这类机械基础设施；`support.cli` 和 decorator 风格 CLI framework 暂不引入
+- `support.temp` 只有在单独迁移 `gates/runner.py` 或 `gates/db_contract_verifier.py` 这类真实 temp consumer 时才允许新增
+- 新增 `support/*.py` 必须同步 `.ci/runtime/materialize-files.txt`、`.ci/runtime/check_ci_runtime.sh` 和 materialized runtime smoke 覆盖
+- support 只能消除机械重复；不能隐藏 image-first、config/db 并行、GitOps publish/MR 这类发布编排顺序
 
 ### commands
 
 所有 CI 可执行 Python 入口统一放在 `.ci/runtime/commands/`。这些文件只做两件事：
 
 1. 把 `.ci/runtime` 加入 `sys.path`
-2. 从 `contracts` / `gitops` / `db_gates` / `guards` 导入对应 `main`
+2. 从 `contracts` / `gitops` / `gates` / `guards` 导入对应 `main`
 
 不要把业务逻辑写进 command wrapper。
+
+### root scripts boundary
+
+根目录 `scripts/` 不再承载 CI release runtime。判断规则：
+
+- 需要被 `.ci/*.yml`、GitOps promote、release gate、drift audit 或 MR guard 直接调用的发布运行时代码，必须放在 `.ci/runtime/`
+- `scripts/` 可以保留仓库维护 / 一次性运维 / 本地辅助脚本，例如 SSM 导出、SOPS 扫描、CLS 校验、EdgeOne 子账号创建、旧环境 bootstrap
+- 新增脚本如果需要进入 CI 发布闭环，先放入 `.ci/runtime/commands/` 或对应语义包，再同步 `.ci/runtime/materialize-files.txt` 和 runtime 测试
+- 禁止重新引入 `scripts/build_and_promote_to_gitops.sh`、`scripts/promote_bundle_image_to_gitops.sh`、`scripts/verify_gitops_release.py` 这类 CI release runtime 入口
+
+### tests
+
+Runtime 单测按语义分组，避免一个扁平目录继续增长：
+
+- `.ci/runtime/tests/command_tests/`
+  - command wrapper 纯度、materialize manifest 覆盖
+- `.ci/runtime/tests/contract_tests/`
+  - release bundle / image contract / release plan
+- `.ci/runtime/tests/gate_tests/`
+  - image/config/db gate runner 与 DB readiness verifier
+- `.ci/runtime/tests/gitops_tests/`
+  - GitOps projection、MR、Kustomize、drift、prod manual sync
+- `.ci/runtime/tests/guard_tests/`
+  - changed-file guard dispatcher 和 MR placeholder workflow
+- `.ci/runtime/tests/test_discovery.py`
+  - meta-test：确认 `python3 -m unittest discover -s .ci/runtime/tests` 能加载所有 `tests/**/test_*.py`，防止分组后漏跑
+- `.ci/runtime/tests/helpers.py`
+  - 测试侧共享 Git 命令 helper；只抽机械 fixture，不把业务断言藏进 helper
+
+注意：测试子目录不要命名为 `contracts` / `gates` / `gitops`，否则会遮蔽 runtime 同名包。
 
 ## Successful Experience
 
@@ -228,15 +625,20 @@ CI 运行环境自举、secret 读取和工具安装：
 - `gitops` 只负责 deploy-facing 发布视图
 - 不要让 Argo 继续盯 `master`
 
-### 2. Monorepo 下不要用一个大 YAML 自动决定 service
+### 2. Monorepo 下 trigger 和 release 执行边界要清晰
 
 当前仓库是 monorepo。  
-如果只有一份流水线 YAML，push 到 `master` 时无法稳定判断到底该构建哪个 service。
+如果只有一份完整发布流水线 YAML，push 到 `master` 时很容易把 trigger、调度、构建、promote 全揉在一起。
+当前保留每个 service 自己声明 `on.push.paths`，执行逻辑用 `extends` 复用模板。
 
 已验证更稳的方式是：
 
-- 每个 service 一份 `.ci/*.yml`
-- 用 `on.push.paths` 只监听自己的目录和共用脚本
+- 每个 service 一份 `.ci/<service>.yml`
+  - 明确声明自己的 `push.paths` 和手动入口
+  - 继续通过 `extends` 复用 service release 模板
+- `extends.template` 使用短名 `service-release.yml`
+  - 蓝盾会相对 `.ci/templates/` 解析模板路径
+  - 不要写 `.ci/templates/service-release.yml`，否则可能解析成重复路径并 404
 
 ### 3. service-gateway / admin-gateway 发布边界必须拆开
 
@@ -247,7 +649,7 @@ CI 运行环境自举、secret 读取和工具安装：
 - `service-gateway.yml`
   - 只构建 / pin / promote：
     - `service-gateway`
-  - `on.push.paths` 同时监听：
+  - `on.push.paths` 监听：
     - `service-gateway/**`
 - `admin-gateway.yml`
   - 只构建 / pin / promote：
@@ -255,7 +657,7 @@ CI 运行环境自举、secret 读取和工具安装：
   - 当前构建实现仍临时复用：
     - `service-gateway/Dockerfile`
     - `service-gateway` build context
-  - `on.push.paths` 同时监听：
+  - `on.push.paths` 监听：
     - `admin-gateway/**`
     - `service-gateway/**`
 
@@ -289,28 +691,32 @@ CI 运行环境自举、secret 读取和工具安装：
 
 - `jobs.release.runs-on.self-hosted: true`
 - `jobs.release.runs-on.pool-name: env`
-- `concurrency.group: mono2-master-release`
+- `concurrency.group: mono2-service-release-<service>`
   - `cancel-in-progress: false`
   - `queue-length: 20`
 - `PIPELINE_MODE`
   - 默认值 `build`
   - 手动 promote 时改成 `promote`
 
-### 5B. 只限制 master 主链路并发，不锁 promote 检查
+### 5B. 按服务限制 release 并发，不锁 promote 检查
 
-当前已经给所有 `master` 上的 service 流水线加了同一个顶层 `concurrency.group`：
+当前 service release 流水线按服务维度设置顶层 `concurrency.group`：
 
-- `mono2-master-release`
+- `mono2-service-release-admin-gateway`
+- `mono2-service-release-ai-gateway`
+- `mono2-service-release-sandbox`
+- 其他服务同理
 
 效果是：
 
-- 同一时间最多只跑一个主构建/发布流水线
-- 其他被触发的 service pipeline 会排队
+- 同一个服务的多次构建 / 手动 promote 串行，避免同服务多个提交互相覆盖 GitOps pin
+- 不同服务可以并行构建镜像，避免一个服务的慢构建阻塞其他服务
+- promote 分支仍然进入 `.ci/gitops-promotion.yml` 做统一验收、自动合并和 Argo 收敛
 
 但 `.ci/gitops-promotion.yml` 没有使用这个 group。原因是：
 
 - 北京主链路会等待 `promote-*` 分支自己的检查结果
-- 如果把 promote 检查也锁进同一个并发组，会和主链路互相等待，形成死锁
+- 如果把 promote 检查锁进服务构建并发组，会和主链路互相等待，形成死锁
 
 ### 6. 不要再把 `ci.event` 当作唯一分流依据
 
@@ -467,6 +873,7 @@ CI_RUNTIME_REF=refs/tags/ci-runtime-20260429-1
 - `admin-gateway.yml`
 - `ai-gateway.yml`
 - `ci-runtime.yml`
+- `cloudladdergateway.yml`
 - `ctl.yml`
 - `frontend-edgeone-lightvela.yml`
 - `frontend-edgeone-lightvela-intl.yml`
@@ -494,11 +901,11 @@ CI_RUNTIME_REF=refs/tags/ci-runtime-20260429-1
   - 当前复用 `service-gateway/Dockerfile` 和 `service-gateway` build context，但镜像 repo/tag 独立
 - `frontend.yml`
   - `build` 模式构建 frontend shprod 镜像，不自动 pin shprod
-  - Pages 矩阵发布与 GitOps 镜像发布在同一入口内分流
+  - frontend Pages artifact 全矩阵归档、CF 预发 artifact 发布与 GitOps 镜像发布在同一入口内分流
 - `frontend-edgeone-lightvela*.yml`
-  - 独立手动发布 EdgeOne 正式项目，不走 GitOps image pin
+  - 独立手动发布 EdgeOne 正式项目，不走 GitOps image pin，不现场 rebuild；必须输入 `FRONTEND_ARTIFACT_SOURCE_SHA` 或高级覆盖 `FRONTEND_ARTIFACT_REF`
 - `mr-placeholder.yml`
-  - MR commit check 入口，按 changed files 派发 `.ci/guards.yaml` 注册的 guard
+  - MR commit check 入口，按 changed files 派发 `.ci/guards.manifest` 注册的 guard
 - `lightclaw-auth.yml` 对应的 build bundle 是：
   - `user-auth`
   - 但 GitOps pin target 是 `lightclaw-auth`
@@ -552,6 +959,19 @@ CI_RUNTIME_REF=refs/tags/ci-runtime-20260429-1
   - `/etc/lightclaw-ci/edgeone_lightvela_intl_prod_token`
   `发布 frontend eo:cn-lightvela-prod` 和 `发布 frontend eo:global-lightvela-intl-prod` 会优先读取对应本地文件，缺失时再回落到 Stream settings
 
+### Frontend EdgeOne Artifact Release Inputs
+
+EdgeOne 正式发布 CI 不再现场构建源码，只发布 `构建 frontend` 入口已经上传到 TCR 的 frontend Pages OCI artifact。
+
+- 常规输入：`FRONTEND_ARTIFACT_SOURCE_SHA`
+  - 接受 12 位 short SHA 或 40 位 full SHA
+  - 发布脚本按固定 EO combo 拼出 `<shortSha>-<normalizedComboId>` tag
+- 高级覆盖：`FRONTEND_ARTIFACT_REF`
+  - 传完整 OCI artifact ref，例如 `lightclaw-shprod.tencentcloudcr.com/lightclaw/frontend-pages:<shortSha>-eo-cn-lightvela-prod`
+  - 如果同时传 `FRONTEND_ARTIFACT_SOURCE_SHA`，两者必须解析到同一个 repo、short SHA 和目标 combo
+- 目标 combo 固定在对应 CI 文件的 `FRONTEND_RELEASE_MATRIX`，不能跨 combo 发布。
+- 发布前会校验 manifest 中的 `comboId`、`projectName`、`channel`、`region`、`outputDir`、Aegis/Vite baked env、archive sha/size 与解压内容 identity。
+
 ## Shared Scripts
 
 - `.ci/runtime/commands/update_image_pin.py`
@@ -580,6 +1000,7 @@ CI_RUNTIME_REF=refs/tags/ci-runtime-20260429-1
   - 仍临时复用 `service-gateway` 构建上下文；后续如果需要彻底隔离二进制，应再拆 Dockerfile / build context
 - `session`
   - 有 release bundle / GitOps deploy-facing 路径，但没有 CI 构建元数据和独立 Stream YAML
+  - 北京测试 / 北京测试2 都把它作为 deploy-only catalog 管理；如果要纳入完整自动镜像发布，需要先补源码构建入口和 Dockerfile
 - `frontend-ds`
   - 有 shprod release bundle 和镜像构建元数据，但没有独立 Stream YAML，也不在当前 live 发布主链路中
 - `sandbox`

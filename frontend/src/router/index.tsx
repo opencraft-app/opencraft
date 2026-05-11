@@ -2,27 +2,30 @@ import { Navigate, createBrowserRouter } from "react-router-dom";
 import { AppShellLayout } from "@/layouts/app-shell-layout";
 import { MarketingLayout } from "@/layouts/marketing-layout";
 import { RootLayout } from "@/layouts/root-layout";
-import { InvitePage } from "@/pages/auth/invite-page";
-import { SignInPage } from "@/pages/auth/sign-in-page";
-import { SignUpPage } from "@/pages/auth/sign-up-page";
-import { AccountProfilePage } from "@/pages/app/account-profile-page";
-import { BotTerminalPage } from "@/pages/app/bot-terminal-page";
-import { PlanSelectPage } from "@/pages/app/plan-select-page";
-import { SettingsPage } from "@/pages/app/settings-page";
-import { StyleLabPage } from "@/pages/app/style-lab-page";
-import { WorkspacePage } from "@/pages/app/workspace-page";
 import { LandingPage } from "@/pages/marketing/landing-page";
-import { CreateOpenClawPage } from "@/pages/marketing/create-openclaw-page";
-import { SubscribePage } from "@/pages/marketing/subscribe-page";
-import { OpenClawSetupPage } from "@/pages/marketing/openclaw-setup-page";
-import { OpenClawSuccessPage } from "@/pages/marketing/openclaw-success-page";
-import { OpenClawSettingsPage } from "@/pages/marketing/openclaw-settings-page";
-import { AccountPage } from "@/pages/marketing/account-page";
-import { AccountOrdersPage } from "@/pages/marketing/account-orders-page";
-import { ChangelogPage } from "@/pages/marketing/changelog-page";
-import { DocsPage } from "@/pages/docs/docs-page";
-import { DocsLayout } from "@/components/docs/docs-layout";
+import { lazyNamed, lazyRoute } from "@/router/lazy-page";
 import { AppAccessGuard, AuthenticatedGuard, AuthRouteGuard, MarketingAuthGuard, PlanGuard } from "@/router/guards";
+
+const InvitePage = lazyNamed(() => import("@/pages/auth/invite-page"), "InvitePage");
+const SignInPage = lazyNamed(() => import("@/pages/auth/sign-in-page"), "SignInPage");
+const SignUpPage = lazyNamed(() => import("@/pages/auth/sign-up-page"), "SignUpPage");
+const AccountProfilePage = lazyNamed(() => import("@/pages/app/account-profile-page"), "AccountProfilePage");
+const BotTerminalPage = lazyNamed(() => import("@/pages/app/bot-terminal-page"), "BotTerminalPage");
+const PlanSelectPage = lazyNamed(() => import("@/pages/app/plan-select-page"), "PlanSelectPage");
+const SettingsPage = lazyNamed(() => import("@/pages/app/settings-page"), "SettingsPage");
+const StyleLabPage = lazyNamed(() => import("@/pages/app/style-lab-page"), "StyleLabPage");
+const WorkspacePage = lazyNamed(() => import("@/pages/app/workspace-page"), "WorkspacePage");
+const CreateOpenClawPage = lazyNamed(() => import("@/pages/marketing/create-openclaw-page"), "CreateOpenClawPage");
+const SubscribePage = lazyNamed(() => import("@/pages/marketing/subscribe-page"), "SubscribePage");
+const OpenClawSetupPage = lazyNamed(() => import("@/pages/marketing/openclaw-setup-page"), "OpenClawSetupPage");
+const OpenClawSuccessPage = lazyNamed(() => import("@/pages/marketing/openclaw-success-page"), "OpenClawSuccessPage");
+const OpenClawSettingsPage = lazyNamed(() => import("@/pages/marketing/openclaw-settings-page"), "OpenClawSettingsPage");
+const AccountPage = lazyNamed(() => import("@/pages/marketing/account-page"), "AccountPage");
+const AccountOrdersPage = lazyNamed(() => import("@/pages/marketing/account-orders-page"), "AccountOrdersPage");
+const AboutPage = lazyNamed(() => import("@/pages/marketing/about-page"), "AboutPage");
+const ChangelogPage = lazyNamed(() => import("@/pages/marketing/changelog-page"), "ChangelogPage");
+const DocsPage = lazyNamed(() => import("@/pages/docs/docs-page"), "DocsPage");
+const DocsLayout = lazyNamed(() => import("@/components/docs/docs-layout"), "DocsLayout");
 
 const NotFoundPage = () => (
   <div className="mx-auto max-w-2xl px-4 py-20 text-center">
@@ -42,14 +45,18 @@ export const router = createBrowserRouter([
       },
       {
         path: "changelog",
-        element: <ChangelogPage />,
+        element: lazyRoute(ChangelogPage),
+      },
+      {
+        path: "about",
+        element: lazyRoute(AboutPage),
       },
       /* ── 产品文档（LightVela Docs） ──
          /docs             → 重定向到 /docs/overview
          /docs/:slug       → 一级文档，例如 /docs/overview、/docs/faq
          /docs/:cat/:slug  → 二级文档，例如 /docs/configuration/model */
       {
-        element: <DocsLayout />,
+        element: lazyRoute(DocsLayout),
         children: [
           {
             path: "docs",
@@ -57,11 +64,11 @@ export const router = createBrowserRouter([
           },
           {
             path: "docs/:slug",
-            element: <DocsPage />,
+            element: lazyRoute(DocsPage),
           },
           {
             path: "docs/:category/:slug",
-            element: <DocsPage />,
+            element: lazyRoute(DocsPage),
           },
         ],
       },
@@ -70,31 +77,31 @@ export const router = createBrowserRouter([
         children: [
           {
             path: "dashboard/create",
-            element: <CreateOpenClawPage />,
+            element: lazyRoute(CreateOpenClawPage),
           },
           {
             path: "subscribe",
-            element: <SubscribePage />,
+            element: lazyRoute(SubscribePage),
           },
           {
             path: "dashboard/setup",
-            element: <OpenClawSetupPage />,
+            element: lazyRoute(OpenClawSetupPage),
           },
           {
             path: "dashboard/success",
-            element: <OpenClawSuccessPage />,
+            element: lazyRoute(OpenClawSuccessPage),
           },
           {
             path: "dashboard/settings",
-            element: <OpenClawSettingsPage />,
+            element: lazyRoute(OpenClawSettingsPage),
           },
           {
             path: "account",
-            element: <AccountPage />,
+            element: lazyRoute(AccountPage),
           },
           {
             path: "account/orders",
-            element: <AccountOrdersPage />,
+            element: lazyRoute(AccountOrdersPage),
           },
           /* ── /dashboard 裸路径兜底：SPA 内部 navigate("/dashboard") 或用户手敲时，
              统一导向 /dashboard/settings，避免命中外层 NotFound。 ── */
@@ -146,11 +153,11 @@ export const router = createBrowserRouter([
             children: [
               {
                 path: "auth/sign-in",
-                element: <SignInPage />,
+                element: lazyRoute(SignInPage),
               },
               {
                 path: "auth/sign-up",
-                element: <SignUpPage />,
+                element: lazyRoute(SignUpPage),
               },
               {
                 path: "auth/sign-up-code",
@@ -158,7 +165,7 @@ export const router = createBrowserRouter([
               },
               {
                 path: "auth/invite",
-                element: <InvitePage />,
+                element: lazyRoute(InvitePage),
               },
               {
                 path: "auth/forgot-password",
@@ -174,7 +181,7 @@ export const router = createBrowserRouter([
                 children: [
                   {
                     path: "plans/select",
-                    element: <PlanSelectPage />,
+                    element: lazyRoute(PlanSelectPage),
                   },
                 ],
               },
@@ -192,19 +199,19 @@ export const router = createBrowserRouter([
         children: [
           {
             path: "/settings/account",
-            element: <AccountProfilePage />,
+            element: lazyRoute(AccountProfilePage),
           },
           {
             path: "/bots/:id/workspace",
-            element: <WorkspacePage />,
+            element: lazyRoute(WorkspacePage),
           },
           {
             path: "/bots/:id/settings",
-            element: <SettingsPage />,
+            element: lazyRoute(SettingsPage),
           },
           {
             path: "/bots/:id/terminal",
-            element: <BotTerminalPage />,
+            element: lazyRoute(BotTerminalPage),
           },
           {
             path: "*",
@@ -223,7 +230,7 @@ export const router = createBrowserRouter([
         children: [
           {
             index: true,
-            element: <StyleLabPage />,
+            element: lazyRoute(StyleLabPage),
           },
         ],
       },

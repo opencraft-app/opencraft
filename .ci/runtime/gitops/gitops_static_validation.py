@@ -5,23 +5,24 @@ Static GitOps invariants for sandbox ApplicationSet and direct Application model
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
-
-import yaml
 
 RUNTIME_DIR = Path(__file__).resolve().parents[1]
 if str(RUNTIME_DIR) not in sys.path:
     sys.path.insert(0, str(RUNTIME_DIR))
 
 from contracts.bundles import load_bundle, load_manifest  # noqa: E402
+from support.yaml import load_mapping  # noqa: E402
 
 
 APPSET_REL = "argocd/apps/beijing-sandbox/sandbox-family-appset.yaml"
 APPS_DIR_REL = "argocd/apps/beijing-sandbox"
 CATALOG_DIR_TEMPLATE = "argocd/catalogs/sandbox/{env}"
+PLAYGROUND_CATALOG_DIR_TEMPLATE = "argocd/catalogs/playground/beijing-playground/{env}"
 SUPPORTED_SANDBOX_ENVS = {"beijing-sandbox", "beijing-sandbox-2"}
 SUPPORTED_DIRECT_APP_ENVS = {"shprod"}
 ALLOWED_BEIJING_APP_FILES = {"argocd-runtime.yaml", "sandbox-family-appset.yaml"}
@@ -53,13 +54,6 @@ def repo_rel(path: Path, repo_root: Path) -> str:
     return path.relative_to(repo_root).as_posix()
 
 
-def load_yaml(path: Path) -> dict[str, Any]:
-    payload = yaml.safe_load(path.read_text()) or {}
-    if not isinstance(payload, dict):
-        raise ValueError(f"{path} must contain a YAML mapping")
-    return payload
-
-
 def path_is_covered(candidate: str, patterns: Iterable[str]) -> bool:
     candidate = candidate.strip("/")
     for raw_pattern in patterns:
@@ -74,7 +68,13 @@ def path_is_covered(candidate: str, patterns: Iterable[str]) -> bool:
 
 
 def catalog_dir_rel(env: str) -> str:
+    if is_playground_env(env):
+        return PLAYGROUND_CATALOG_DIR_TEMPLATE.format(env=env)
     return CATALOG_DIR_TEMPLATE.format(env=env)
+
+
+def is_playground_env(env: str) -> bool:
+    return re.fullmatch(r"sandbox-bj-\d+", env) is not None
 
 
 def load_catalogs(repo_root: Path, env: str) -> tuple[list[CatalogEntry], list[str]]:
@@ -88,7 +88,7 @@ def load_catalogs(repo_root: Path, env: str) -> tuple[list[CatalogEntry], list[s
     for catalog_file in sorted(catalog_dir.glob("*.yaml")):
         rel_file = repo_rel(catalog_file, repo_root)
         try:
-            data = load_yaml(catalog_file)
+            data = load_mapping(catalog_file)
         except Exception as exc:  # noqa: BLE001
             errors.append(f"{rel_file}: failed to parse YAML: {exc}")
             continue
@@ -138,7 +138,7 @@ def validate_appset(repo_root: Path) -> list[str]:
         errors.append(f"{APPSET_REL}: template must not use reserved git generator field {{ .path }}")
 
     try:
-        data = load_yaml(appset)
+        data = load_mapping(appset)
     except Exception as exc:  # noqa: BLE001
         return [f"{APPSET_REL}: failed to parse YAML: {exc}"]
     if data.get("kind") != "ApplicationSet":
@@ -153,6 +153,8 @@ def validate_appset(repo_root: Path) -> list[str]:
     }
     if "argocd/catalogs/sandbox/*/*.yaml" not in file_paths:
         errors.append(f"{APPSET_REL}: git generator must read argocd/catalogs/sandbox/*/*.yaml")
+    if "argocd/catalogs/playground/beijing-playground/*/*.yaml" not in file_paths:
+        errors.append(f"{APPSET_REL}: git generator must read argocd/catalogs/playground/beijing-playground/*/*.yaml")
     return errors
 
 
@@ -179,7 +181,7 @@ def paths_from_kustomization(kustomization: Path, repo_root: Path, seen: set[Pat
         return []
     seen.add(kustomization)
 
-    data = load_yaml(kustomization)
+    data = load_mapping(kustomization)
     references: list[str] = []
     for field in ("resources", "components"):
         for item in data.get(field) or []:
@@ -202,7 +204,7 @@ def paths_from_kustomization(kustomization: Path, repo_root: Path, seen: set[Pat
             continue
         references.append(generator_rel)
         if resolved.is_file():
-            generator = load_yaml(resolved)
+            generator = load_mapping(resolved)
             for secret_file in generator.get("files") or []:
                 secret_resolved = (resolved.parent / str(secret_file)).resolve()
                 try:
@@ -301,7 +303,7 @@ def validate(repo_root: Path, env: str, bundle_manifest: Path) -> list[str]:
     if env in SUPPORTED_DIRECT_APP_ENVS:
         return validate_direct_apps(repo_root, env)
 
-    if env not in SUPPORTED_SANDBOX_ENVS:
+    if env not in SUPPORTED_SANDBOX_ENVS and not is_playground_env(env):
         return [f"unsupported env for AppSet static validation: {env}"]
 
     catalogs, catalog_errors = load_catalogs(repo_root, env)
@@ -309,7 +311,8 @@ def validate(repo_root: Path, env: str, bundle_manifest: Path) -> list[str]:
     errors.extend(validate_appset(repo_root))
     errors.extend(catalog_errors)
     errors.extend(validate_beijing_apps_dir(repo_root))
-    errors.extend(validate_publish_closure(repo_root, bundle_manifest, catalogs, env))
+    if env in SUPPORTED_SANDBOX_ENVS:
+        errors.extend(validate_publish_closure(repo_root, bundle_manifest, catalogs, env))
     return errors
 
 
@@ -327,7 +330,7 @@ def validate_direct_apps(repo_root: Path, env: str) -> list[str]:
     for app_file in app_files:
         rel_file = repo_rel(app_file, repo_root)
         try:
-            data = load_yaml(app_file)
+            data = load_mapping(app_file)
         except Exception as exc:  # noqa: BLE001
             errors.append(f"{rel_file}: failed to parse YAML: {exc}")
             continue

@@ -35,9 +35,33 @@ echo "============================================================"
 "$PNPM_BIN" install --frozen-lockfile
 
 echo "============================================================"
-echo "frontend 约束：运行 release matrix 单测"
-echo "目的：防止 Pages / EdgeOne 发布矩阵回归"
+echo "frontend 约束：运行 TypeScript 类型检查"
+echo "目的：MR 阶段拦截类型错误，避免进入发布流水线后才失败"
 echo "============================================================"
-"$PNPM_BIN" test scripts/release-matrix.test.ts
+"$PNPM_BIN" check
+
+echo "============================================================"
+echo "frontend 约束：运行 i18n 完整性检查"
+echo "目的：MR 阶段拦截新增中文文案但缺少英文翻译"
+echo "============================================================"
+"$PNPM_BIN" i18n:check
+
+echo "============================================================"
+echo "frontend 约束：检查静态目录与 BrowserRouter 路由冲突"
+echo "目的：防止 EdgeOne Pages 将同名静态目录优先于 SPA fallback，导致深链刷新 404"
+echo "============================================================"
+"$NODE_BIN" scripts/check-static-route-conflicts.mjs
+
+echo "============================================================"
+echo "frontend 约束：运行 release matrix / static route guard 单测"
+echo "目的：防止 Pages / EdgeOne 发布矩阵与 SPA fallback 约束回归"
+echo "============================================================"
+"$PNPM_BIN" test \
+  scripts/release-matrix.test.ts \
+  scripts/frontend-artifact.test.ts \
+  scripts/build-release-artifacts.test.ts \
+  scripts/release-cloudflare-from-artifact.test.ts \
+  scripts/release-edgeone-from-artifact.test.ts \
+  scripts/check-static-route-conflicts.test.ts
 
 echo "frontend 约束：全部通过"

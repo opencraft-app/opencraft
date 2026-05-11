@@ -13,6 +13,7 @@ spec:
         revision: gitops
         files:
           - path: argocd/catalogs/sandbox/*/*.yaml
+          - path: argocd/catalogs/playground/beijing-playground/*/*.yaml
   template:
     metadata:
       name: '{{ .service }}-{{ .env }}'
@@ -29,6 +30,12 @@ spec:
       destination:
         name: '{{ .destinationName }}'
         namespace: '{{ .namespace }}'
+      ignoreDifferences:
+        - group: ""
+          kind: ServiceAccount
+          name: default
+          jsonPointers:
+            - /imagePullSecrets
       syncPolicy:
         automated:
           prune: true

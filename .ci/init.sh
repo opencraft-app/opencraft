@@ -78,8 +78,10 @@ ci_require_gitops_validation_tools() {
 
 ci_ensure_db_job_tools() {
   ci_ensure_kubectl
-  ci_require_commands python3 kubectl
-  ci_log "db job tools found: kubectl=$(command -v kubectl)"
+  ci_ensure_sops
+  ci_require_commands python3 kubectl sops openssl
+  ci_prepare_sops_age_key
+  ci_log "db job tools found: kubectl=$(command -v kubectl) sops=$(command -v sops) openssl=$(command -v openssl)"
 }
 
 ci_ensure_gitops_validation_tools() {
@@ -375,7 +377,7 @@ ci_with_lock() {
 ci_prepare_runtime_ref() {
   local runtime_ref="${1:-${CI_RUNTIME_REF:-origin/master}}"
   ci_require_commands git
-  git fetch origin master --tags
+  ci_git_fetch_origin master --tags
   export CI_RUNTIME_REF="$runtime_ref"
   export CI_RUNTIME_COMMIT
   CI_RUNTIME_COMMIT="$(git rev-parse "${runtime_ref}")"
@@ -398,6 +400,20 @@ ci_materialize_runtime_files() {
     mkdir -p "${runtime_dir}/$(dirname "${repo_path}")"
     git show "${CI_RUNTIME_COMMIT}:${repo_path}" > "${runtime_dir}/${repo_path}"
   done
+}
+
+ci_generate_release_bundle_manifest() {
+  local runtime_dir="$1"
+  local generator="${runtime_dir}/.ci/runtime/commands/generate_release_bundle_manifest.py"
+  local source_dir="${runtime_dir}/.ci/runtime/bundles"
+  local output_path="${runtime_dir}/.ci/runtime/release-bundles.manifest"
+
+  if [[ -f "$generator" && -d "$source_dir" ]]; then
+    ci_require_commands python3
+    python3 "$generator" \
+      --source-dir "$source_dir" \
+      --output "$output_path" >/dev/null
+  fi
 }
 
 ci_materialize_runtime_manifest() {
@@ -438,6 +454,7 @@ ci_materialize_runtime_manifest() {
   fi
 
   ci_materialize_runtime_files "$runtime_dir" "${runtime_files[@]}"
+  ci_generate_release_bundle_manifest "$runtime_dir"
 }
 
 ci_bootstrap_node_locked() {
@@ -549,11 +566,64 @@ ci_load_git_woa_private_token() {
   fi
 
   if [[ -n "${GIT_WOA_PRIVATE_TOKEN:-}" ]]; then
+    if ci_is_unexpanded_setting "$GIT_WOA_PRIVATE_TOKEN"; then
+      ci_log "GIT_WOA_PRIVATE_TOKEN contains an unexpanded CI settings placeholder; ignoring it"
+      return 1
+    fi
     printf '%s' "$GIT_WOA_PRIVATE_TOKEN" | ci_read_secret_value
     return 0
   fi
 
   return 1
+}
+
+ci_git_fetch_origin() {
+  ci_require_commands git
+
+  local fetch_url="${CI_GIT_FETCH_REMOTE_URL:-git@git.woa.com:wisp/mono2.git}"
+  local fetch_args=()
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      -* | *:*)
+        fetch_args+=("$arg")
+        ;;
+      *)
+        fetch_args+=("+refs/heads/${arg}:refs/remotes/origin/${arg}")
+        ;;
+    esac
+  done
+
+  ci_log "git fetch ${fetch_url} ${fetch_args[*]}"
+  if GIT_TERMINAL_PROMPT=0 git fetch "$fetch_url" "${fetch_args[@]}"; then
+    return 0
+  fi
+
+  ci_log "git fetch via ${fetch_url} failed; falling back to checkout origin"
+
+  local token askpass status=0
+  if token="$(ci_load_git_woa_private_token 2>/dev/null)" && [[ -n "$token" ]]; then
+    askpass="$(mktemp)"
+    cat > "$askpass" <<'EOF'
+#!/usr/bin/env bash
+case "$1" in
+  *Username*) printf '%s\n' "${GIT_WOA_FETCH_USERNAME:-oauth2}" ;;
+  *Password*) printf '%s\n' "$GIT_WOA_FETCH_TOKEN" ;;
+  *) printf '\n' ;;
+esac
+EOF
+    chmod 700 "$askpass"
+    ci_log "git fetch origin with Git WOA token"
+    GIT_ASKPASS="$askpass" \
+      GIT_TERMINAL_PROMPT=0 \
+      GIT_WOA_FETCH_TOKEN="$token" \
+      git fetch origin "$@" || status=$?
+    rm -f "$askpass"
+    return "$status"
+  fi
+
+  ci_log "git fetch origin without Git WOA token"
+  GIT_TERMINAL_PROMPT=0 git fetch origin "${fetch_args[@]}"
 }
 
 ci_load_registry_password() {
@@ -643,6 +713,41 @@ ci_set_registry_credentials() {
 
   echo "registry credentials for ${env_name} are not configured; push is expected to fail" >&2
   return 1
+}
+
+ci_ensure_oras() {
+  local version="${ORAS_VERSION_OVERRIDE:-1.2.3}"
+  local os arch archive cache_root install_dir bin url
+
+  os="$(ci_os_name)"
+  arch="$(ci_arch_name)"
+  archive="oras_${version}_${os}_${arch}.tar.gz"
+  cache_root="${HOME}/.cache/lightclaw-ci/oras"
+  install_dir="${cache_root}/v${version}/${os}/${arch}"
+  bin="${install_dir}/oras"
+  url="https://github.com/oras-project/oras/releases/download/v${version}/${archive}"
+
+  if [[ ! -x "$bin" ]]; then
+    ci_with_lock "oras-${version}-${os}-${arch}" ci_install_oras "$url" "$archive" "$cache_root" "$install_dir"
+  else
+    ci_log "oras ${version} already present at ${bin}"
+  fi
+
+  export PATH="${install_dir}:${PATH}"
+  export ORAS_BIN="$bin"
+}
+
+ci_install_oras() {
+  local url="$1"
+  local archive="$2"
+  local cache_root="$3"
+  local install_dir="$4"
+
+  mkdir -p "$cache_root" "$install_dir"
+  ci_download_file "$url" "${cache_root}/${archive}"
+  tar -xzf "${cache_root}/${archive}" -C "$install_dir" oras
+  chmod +x "${install_dir}/oras"
+  ci_log "installed oras at ${install_dir}/oras"
 }
 
 ci_ensure_node() {
