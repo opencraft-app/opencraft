@@ -601,13 +601,13 @@ const SubscriptionSection = ({
       <div className="px-5 py-5 md:px-8 md:py-8" style={{ borderBottom: "1px solid #E6E9EF" }}>
         <div className="flex flex-wrap items-center gap-2.5">
           <h3 className="text-[18px] md:text-[20px]" style={{ fontWeight: 500, color: "rgba(0,0,0,0.9)", lineHeight: 1.6 }}>
-            订阅套餐
+            {t("订阅套餐")}
           </h3>
           <span
             className="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold"
             style={{ background: "rgba(20,122,86,0.08)", color: "#147A56" }}
           >
-            内测期免费体验
+            {t("内测期免费体验")}
           </span>
         </div>
       </div>
@@ -1049,7 +1049,7 @@ export const AccountPage = () => {
 
               {user?.id && (
                 /* 账号 ID 行 —— 国内国际站都展示，独立于实名认证区 */
-                <div className="flex flex-col gap-12 px-8 pt-8">
+                <div className="flex flex-col gap-12 px-8 py-8">
                   <div className="flex items-center justify-between">
                     <span className="text-sm" style={{ color: "rgba(0,0,0,0.5)", lineHeight: "24px" }}>{t("账号 ID")}</span>
                     <div className="flex min-w-0 items-center gap-2">
@@ -1077,7 +1077,7 @@ export const AccountPage = () => {
 
               {showRealnameSection && (
                 /* Bottom: info rows —— 暂只放出「实名认证」行，「登录账号」行待能区分多渠道登录方式后再恢复 */
-                <div className="flex flex-col gap-12 px-8 py-8">
+                <div className="flex flex-col gap-12 px-8 pb-8">
                   {/*
                 <div className="flex items-center justify-between">
                   <span className="text-sm" style={{ color: "rgba(0,0,0,0.5)", lineHeight: "24px" }}>
@@ -1095,7 +1095,7 @@ export const AccountPage = () => {
                 */}
 
                   <div className="flex items-center justify-between">
-                    <span className="text-sm" style={{ color: "rgba(0,0,0,0.5)", lineHeight: "24px" }}>实名认证</span>
+                    <span className="text-sm" style={{ color: "rgba(0,0,0,0.5)", lineHeight: "24px" }}>{t("实名认证")}</span>
                     {verified ? (
                       <div className="flex items-center gap-3">
                         <div className="flex items-center gap-2">

@@ -4,12 +4,16 @@ import { ArrowLeft } from "lucide-react";
 import { LoginModal } from "@/components/site/login-modal";
 import { LegalFooter } from "@/components/site/legal-footer";
 import { useSession } from "@/contexts/session-context";
+import { useT } from "@/i18n/t";
 
-const GuardLoading = () => (
-  <div className="flex min-h-dvh items-center justify-center bg-white px-4 text-sm text-[var(--text-secondary)]">
-    正在恢复会话...
-  </div>
-);
+const GuardLoading = () => {
+  const t = useT();
+  return (
+    <div className="flex min-h-dvh items-center justify-center bg-white px-4 text-sm text-[var(--text-secondary)]">
+      {t("正在恢复会话...")}
+    </div>
+  );
+};
 
 export const AuthRouteGuard = () => {
   const { authReady, isAuthenticated } = useSession();
@@ -74,6 +78,7 @@ export const PlanGuard = () => {
 export const MarketingAuthGuard = () => {
   const { authReady, isAuthenticated } = useSession();
   const [showLogin, setShowLogin] = useState(false);
+  const t = useT();
 
   if (!authReady) {
     return <GuardLoading />;
@@ -98,18 +103,18 @@ export const MarketingAuthGuard = () => {
               className="h-16 w-16 select-none object-contain pointer-events-none"
             />
           </div> */}
-          <h2 className="text-xl font-bold" style={{ color: "#333", marginBottom: 16 }}>请先登录</h2>
+          <h2 className="text-xl font-bold" style={{ color: "#333", marginBottom: 16 }}>{t("请先登录")}</h2>
           <p className="text-sm leading-relaxed" style={{ color: "#999", marginBottom: 48 }}>
-            登录后即可创建和管理你的 Hermes
+            {t("登录后即可创建和管理你的 Hermes")}
           </p>
           <button
             onClick={() => setShowLogin(true)}
             className="lw-btn-primary"
           >
-            立即登录
+            {t("立即登录")}
           </button>
           <Link to="/" className="lw-back-link" style={{ marginTop: 36 }}>
-            <ArrowLeft className="h-3.5 w-3.5" /> 返回首页
+            <ArrowLeft className="h-3.5 w-3.5" /> {t("返回首页")}
           </Link>
         </div>
       </main>

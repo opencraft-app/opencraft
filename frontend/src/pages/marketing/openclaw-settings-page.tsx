@@ -40,6 +40,7 @@ import { useOpenClaw, type OpenClawBot } from "@/contexts/openclaw-context";
 import { useRepositories } from "@/contexts/repository-context";
 import type { BotTerminalSession } from "@/domain/types";
 import { BrandMark } from "@/components/site/brand-mark";
+import { LanguageSwitcher } from "@/components/site/language-switcher";
 import { useT, t as rawT } from "@/i18n/t";
 import { isGlobal } from "@/lib/region";
 import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
@@ -159,6 +160,7 @@ void _staggerContainer;
 
 const SettingsNavbar = () => {
   const { isAuthenticated: isLoggedIn } = useSession();
+  const t = useT();
   return (
     <header
       className="fixed inset-x-0 top-0 z-50 border-b border-black/5 bg-white/90 backdrop-blur-[20px]"
@@ -166,11 +168,13 @@ const SettingsNavbar = () => {
       <div className="mx-auto flex h-[60px] items-center justify-between max-w-[1440px] px-6 md:px-[80px]">
         <BrandMark to="/" />
         <div className="flex items-center gap-3">
+          {/* 语言切换器：仅国际站展示 */}
+          {isGlobal && <LanguageSwitcher />}
           <Link
             to="/"
             className="inline-flex items-center justify-center h-[36px] px-5 bg-[#F5F5F5] text-black/90 rounded-[100px] border border-[#E6E9EF] shadow-[0_2px_0_rgba(187,187,187,0.05)] hover:bg-black/5 transition-colors font-heading text-sm font-medium"
           >
-            返回首页
+            {t("返回首页")}
           </Link>
           {isLoggedIn && <UserAvatarMenu />}
         </div>
