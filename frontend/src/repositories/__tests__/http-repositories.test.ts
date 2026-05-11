@@ -66,6 +66,7 @@ describe("http repositories auth token bootstrap", () => {
                 inviteRequired: false,
                 createdAt: "2026-03-20T00:00:00Z",
               },
+              impersonated: true,
               sessionToken: "persisted-bearer-token",
             },
           }),
@@ -89,8 +90,9 @@ describe("http repositories auth token bootstrap", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const repositories = createHttpRepositories("https://lightclaw.tech");
-    await repositories.auth.getSession();
+    const session = await repositories.auth.getSession();
 
+    expect(session?.impersonated).toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(2);
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const headers = new Headers(init.headers);

@@ -366,12 +366,15 @@ components:
       required:
         - user
         - authenticatedAt
+        - impersonated
       properties:
         user:
           $ref: '#/components/schemas/User'
         authenticatedAt:
           type: string
           format: date-time
+        impersonated:
+          type: boolean
         sessionToken:
           type: string
           description: Opaque session token for non-cookie clients.
