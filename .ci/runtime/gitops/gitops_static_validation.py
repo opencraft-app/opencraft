@@ -24,12 +24,7 @@ APPS_DIR_REL = "argocd/apps/beijing-sandbox"
 CATALOG_DIR_TEMPLATE = "argocd/catalogs/sandbox/{env}"
 PLAYGROUND_CATALOG_DIR_TEMPLATE = "argocd/catalogs/playground/beijing-playground/{env}"
 SUPPORTED_SANDBOX_ENVS = {"beijing-sandbox", "beijing-sandbox-2"}
-SUPPORTED_DIRECT_APP_ENVS = {"shprod", "sgprod"}
-ALLOWED_MONO2_REPO_URLS = {
-    "git@git.woa.com:wisp/mono2.git",
-    # Singapore TKE cannot reliably egress to git.woa.com:22, while TGit supports SSH on 443.
-    "ssh://git@git.woa.com:443/wisp/mono2.git",
-}
+SUPPORTED_DIRECT_APP_ENVS = {"shprod"}
 ALLOWED_BEIJING_APP_FILES = {"argocd-runtime.yaml", "sandbox-family-appset.yaml"}
 REQUIRED_CATALOG_FIELDS = {
     "service",
@@ -345,10 +340,8 @@ def validate_direct_apps(repo_root: Path, env: str) -> list[str]:
         source = spec.get("source") or {}
         destination = spec.get("destination") or {}
         source_path = str(source.get("path") or "").strip()
-        if source.get("repoURL") not in ALLOWED_MONO2_REPO_URLS:
-            errors.append(
-                f"{rel_file}: spec.source.repoURL must point at one of {sorted(ALLOWED_MONO2_REPO_URLS)}"
-            )
+        if source.get("repoURL") != "git@git.woa.com:wisp/mono2.git":
+            errors.append(f"{rel_file}: spec.source.repoURL must point at git@git.woa.com:wisp/mono2.git")
         if source.get("targetRevision") != "gitops":
             errors.append(f"{rel_file}: spec.source.targetRevision must be gitops")
         if not source_path.startswith(f"argocd/services/") or f"/{env}" not in source_path:

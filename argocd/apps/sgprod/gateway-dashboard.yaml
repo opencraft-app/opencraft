@@ -6,7 +6,7 @@ metadata:
 spec:
   project: sgprod-gateway-dashboard
   source:
-    repoURL: ssh://git@git.woa.com:443/wisp/mono2.git
+    repoURL: git@git.woa.com:wisp/mono2.git
     targetRevision: gitops
     path: argocd/services/gateway-dashboard/sgprod
   destination:

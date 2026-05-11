@@ -6,7 +6,7 @@ metadata:
 spec:
   description: Lightclaw auth cutover project for Singapore migration onto mono2.
   sourceRepos:
-    - ssh://git@git.woa.com:443/wisp/mono2.git
+    - git@git.woa.com:wisp/mono2.git
   destinations:
     - namespace: user-auth
       name: sgprod

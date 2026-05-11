@@ -162,34 +162,6 @@ class GitOpsStaticValidationTests(unittest.TestCase):
 
             self.assertTrue(any("forbids business hand-written leaf apps" in error for error in errors))
 
-    def test_sgprod_direct_app_allows_ssh_over_443_repo_url(self) -> None:
-        with self.repo() as tmp:
-            repo = Path(tmp)
-            (repo / "argocd/apps/sgprod").mkdir(parents=True)
-            (repo / "argocd/services/demo/sgprod").mkdir(parents=True)
-            (repo / "argocd/services/demo/sgprod/kustomization.yaml").write_text(
-                "apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\n"
-            )
-            (repo / "argocd/apps/sgprod/demo.yaml").write_text(
-                textwrap.dedent(
-                    """\
-                    apiVersion: argoproj.io/v1alpha1
-                    kind: Application
-                    spec:
-                      source:
-                        repoURL: ssh://git@git.woa.com:443/wisp/mono2.git
-                        targetRevision: gitops
-                        path: argocd/services/demo/sgprod
-                      destination:
-                        name: sgprod
-                    """
-                )
-            )
-
-            errors = validate(repo, "sgprod", repo / ".ci/runtime/release-bundles.manifest")
-
-            self.assertEqual(errors, [])
-
     def repo(self) -> tempfile.TemporaryDirectory[str]:
         return tempfile.TemporaryDirectory()
 

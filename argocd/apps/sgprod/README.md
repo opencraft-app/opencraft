@@ -7,7 +7,7 @@
 - root app:
   - `root-sgprod`
 - Git repo:
-  - `ssh://git@git.woa.com:443/wisp/mono2.git`
+  - `git@git.woa.com:wisp/mono2.git`
 - revision:
   - `gitops`
 
@@ -57,7 +57,7 @@
 
 新增/修改新加坡 leaf app 时，至少要同时确认：
 
-- `spec.source.repoURL` 指向 `ssh://git@git.woa.com:443/wisp/mono2.git`
+- `spec.source.repoURL` 指向 `git@git.woa.com:wisp/mono2.git`
 - `spec.source.targetRevision` 指向 `gitops`
 - `spec.destination.name` 继续使用 `sgprod`
 - `spec.project` 与服务对应的 cutover project 一致

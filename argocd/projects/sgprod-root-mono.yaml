@@ -6,7 +6,7 @@ metadata:
 spec:
   description: Historical root app boundary for Singapore production.
   sourceRepos:
-    - ssh://git@git.woa.com:443/wisp/mono2.git
+    - git@git.woa.com:wisp/mono2.git
   destinations:
     - namespace: argocd
       server: https://kubernetes.default.svc
