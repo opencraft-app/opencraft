@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from contracts.release_plan import GatePlan, plan_release_gates
+from contracts.release_plan import GatePlan, is_preprod_auto_sync_env, plan_release_gates
 from support.process import run_logged
 
 
@@ -56,9 +56,9 @@ def run_db_gate(
     )
     emit_plan(plan)
 
-    if env in {"beijing-sandbox", "beijing-sandbox-2"}:
+    if is_preprod_auto_sync_env(env):
         if plan.release_dependency_changed:
-            raise RuntimeError("同批依赖服务发生变更；北京自动发布停止，避免无序自动 sync。")
+            raise RuntimeError("同批依赖服务发生变更；预发布自动发布停止，避免无序自动 sync。")
         if plan.requires_db_readiness:
             run_db_readiness_flow(
                 repo_root,
@@ -81,7 +81,7 @@ def run_db_gate(
                 db_status="passed",
             )
         if not plan.auto_merge_allowed:
-            raise RuntimeError("北京自动发布门禁未通过；不创建可自动合并的 GitOps MR。")
+            raise RuntimeError("预发布自动发布门禁未通过；不创建可自动合并的 GitOps MR。")
         return "passed", plan
 
     if env == "shprod":

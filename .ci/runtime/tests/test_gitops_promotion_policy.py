@@ -22,6 +22,18 @@ class PromotionPolicyTests(unittest.TestCase):
         self.assertTrue(policy.auto_merge)
         self.assertTrue(policy.cleanup_source_branch)
 
+    def test_playground_branch_uses_auto_merge_convergence_policy(self) -> None:
+        policy = promotion_policy.policy_for_branch("promote-sandbox-bj-7-trade-abc123")
+
+        self.assertIsNotNone(policy)
+        self.assertEqual(policy.env, "sandbox-bj-7")
+        self.assertEqual(policy.branch_prefix, "promote-sandbox-bj-7-")
+        self.assertEqual(policy.kustomize_mode.value, "full")
+        self.assertEqual(policy.verify_mode.value, "argo_convergence")
+        self.assertTrue(policy.auto_merge)
+        self.assertTrue(policy.auto_sync)
+        self.assertTrue(policy.cleanup_source_branch)
+
     def test_shprod_policy_is_merge_only_changed_only_and_keeps_branch(self) -> None:
         policy = promotion_policy.policy_for_branch("promote-shprod-lightclaw-auth-abc123")
 
