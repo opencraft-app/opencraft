@@ -1,0 +1,14 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: admin-gateway-sgprod
+  namespace: argocd
+spec:
+  project: sgprod-admin-gateway
+  source:
+    repoURL: git@git.woa.com:wisp/mono2.git
+    targetRevision: gitops
+    path: argocd/services/admin-gateway/sgprod
+  destination:
+    namespace: lightclaw-gateway
+    name: sgprod

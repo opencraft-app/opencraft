@@ -1,0 +1,14 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: frontend-sgprod
+  namespace: argocd
+spec:
+  project: sgprod-frontend
+  source:
+    repoURL: git@git.woa.com:wisp/mono2.git
+    targetRevision: gitops
+    path: argocd/services/frontend/sgprod
+  destination:
+    namespace: frontend
+    name: sgprod

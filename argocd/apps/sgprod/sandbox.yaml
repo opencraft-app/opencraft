@@ -1,0 +1,14 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: sandbox-sgprod
+  namespace: argocd
+spec:
+  project: sgprod-sandbox
+  source:
+    repoURL: git@git.woa.com:wisp/mono2.git
+    targetRevision: gitops
+    path: argocd/services/sandbox/sgprod
+  destination:
+    namespace: sandbox
+    name: sgprod

@@ -1,0 +1,100 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: lightclaw-gateway
+
+resources:
+  - ../../base
+
+patches:
+  - target:
+      kind: Ingress
+      name: lightclaw-public
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: api.lightvela.ai
+      - op: replace
+        path: /spec/tls/0/hosts/0
+        value: api.lightvela.ai
+      - op: replace
+        path: /spec/tls/0/secretName
+        value: api-lightvela-ai-tls
+
+configMapGenerator:
+  - name: service-gateway-config
+    files:
+      - generated/config.yaml
+  - name: service-gateway-platform-values
+    envs:
+      - generated/platform.env
+
+secretGenerator:
+  - name: service-gateway-runtime-secrets
+    envs:
+      - generated/service-gateway-runtime-secrets.env
+
+generatorOptions:
+  disableNameSuffixHash: true
+
+replacements:
+  - source:
+      kind: ConfigMap
+      name: service-gateway-platform-values
+      fieldPath: data.SERVICE_GATEWAY_IMAGE
+    targets:
+      - select:
+          kind: Deployment
+          name: service-gateway
+        fieldPaths:
+          - spec.template.spec.containers.0.image
+  - source:
+      kind: ConfigMap
+      name: service-gateway-platform-values
+      fieldPath: data.SERVICE_GATEWAY_NODE_POOL
+    targets:
+      - select:
+          kind: Deployment
+          name: service-gateway
+        fieldPaths:
+          - spec.template.spec.nodeSelector.pool
+  - source:
+      kind: ConfigMap
+      name: service-gateway-platform-values
+      fieldPath: data.SERVICE_GATEWAY_DEPLOYED_AT
+    targets:
+      - select:
+          kind: Deployment
+          name: service-gateway
+        fieldPaths:
+          - spec.template.metadata.annotations.[service-gateway.clawhub.dev/redeploy-at]
+  - source:
+      kind: ConfigMap
+      name: service-gateway-platform-values
+      fieldPath: data.SERVICE_GATEWAY_CLS_TOPIC_ID
+    targets:
+      - select:
+          kind: LogConfig
+          name: service-gateway-access
+        fieldPaths:
+          - spec.clsDetail.topicId
+  - source:
+      kind: ConfigMap
+      name: service-gateway-platform-values
+      fieldPath: data.SERVICE_GATEWAY_PUBLIC_HOST
+    targets:
+      - select:
+          kind: TkeServiceConfig
+          name: lightclaw-public-config
+        fieldPaths:
+          - spec.loadBalancer.l7Listeners.0.domains.0.domain
+          - spec.loadBalancer.l7Listeners.0.domains.0.rules.0.healthCheck.httpCheckDomain
+          - spec.loadBalancer.l7Listeners.0.domains.0.rules.1.healthCheck.httpCheckDomain
+          - spec.loadBalancer.l7Listeners.0.domains.0.rules.2.healthCheck.httpCheckDomain
+          - spec.loadBalancer.l7Listeners.0.domains.0.rules.3.healthCheck.httpCheckDomain
+          - spec.loadBalancer.l7Listeners.1.defaultServer
+          - spec.loadBalancer.l7Listeners.1.domains.0.domain
+          - spec.loadBalancer.l7Listeners.1.domains.0.rules.0.healthCheck.httpCheckDomain
+          - spec.loadBalancer.l7Listeners.1.domains.0.rules.1.healthCheck.httpCheckDomain
+          - spec.loadBalancer.l7Listeners.1.domains.0.rules.2.healthCheck.httpCheckDomain
+          - spec.loadBalancer.l7Listeners.1.domains.0.rules.3.healthCheck.httpCheckDomain
+          - spec.loadBalancer.l7Listeners.1.domains.0.rules.4.healthCheck.httpCheckDomain

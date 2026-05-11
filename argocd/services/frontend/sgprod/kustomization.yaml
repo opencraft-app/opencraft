@@ -1,0 +1,78 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: frontend
+
+resources:
+  - ../../../../frontend/k8s/base
+  - tls-secrets.yaml
+
+generatorOptions:
+  disableNameSuffixHash: true
+
+configMapGenerator:
+  - name: frontend-platform-values
+    envs:
+      - frontend-platform.env
+
+replacements:
+  - source:
+      kind: ConfigMap
+      name: frontend-platform-values
+      fieldPath: data.FRONTEND_PUBLIC_HOST
+    targets:
+      - select:
+          kind: Ingress
+          name: preview-lightclaw-public
+        fieldPaths:
+          - spec.rules.0.host
+          - spec.tls.0.hosts.0
+      - select:
+          kind: TkeServiceConfig
+          name: preview-lightclaw-public-config
+        fieldPaths:
+          - spec.loadBalancer.l7Listeners.0.domains.0.domain
+          - spec.loadBalancer.l7Listeners.0.domains.0.rules.0.healthCheck.httpCheckDomain
+          - spec.loadBalancer.l7Listeners.1.defaultServer
+          - spec.loadBalancer.l7Listeners.1.domains.0.domain
+          - spec.loadBalancer.l7Listeners.1.domains.0.rules.0.healthCheck.httpCheckDomain
+  - source:
+      kind: ConfigMap
+      name: frontend-platform-values
+      fieldPath: data.FRONTEND_TLS_SECRET_NAME
+    targets:
+      - select:
+          kind: Ingress
+          name: preview-lightclaw-public
+        fieldPaths:
+          - spec.tls.0.secretName
+  - source:
+      kind: ConfigMap
+      name: frontend-platform-values
+      fieldPath: data.FRONTEND_IMAGE
+    targets:
+      - select:
+          kind: Deployment
+          name: frontend-web
+        fieldPaths:
+          - spec.template.spec.containers.0.image
+  - source:
+      kind: ConfigMap
+      name: frontend-platform-values
+      fieldPath: data.FRONTEND_NODE_POOL
+    targets:
+      - select:
+          kind: Deployment
+          name: frontend-web
+        fieldPaths:
+          - spec.template.spec.nodeSelector.pool
+  - source:
+      kind: ConfigMap
+      name: frontend-platform-values
+      fieldPath: data.FRONTEND_DEPLOYED_AT
+    targets:
+      - select:
+          kind: Deployment
+          name: frontend-web
+        fieldPaths:
+          - spec.template.metadata.annotations.[frontend.lightclaw.dev/redeploy-at]
