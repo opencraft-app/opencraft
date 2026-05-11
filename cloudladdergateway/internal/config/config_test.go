@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -40,6 +41,11 @@ func TestExampleConfigLoads(t *testing.T) {
 		"billing-trade-intl-test": false,
 		"billing-trade-intl-pre":  false,
 		"billing-trade-intl-prod": false,
+		"tcapi-account-cn-dev":    false,
+		"tcapi-billing-cn-dev":    false,
+		"tcapi-account-cn-test":   false,
+		"tcapi-cam-cn-test":       false,
+		"tcapi-sts-cn-test":       false,
 	}
 	for _, route := range cfg.Routes {
 		if _, ok := wantRoutes[route.ID]; ok {
@@ -47,12 +53,85 @@ func TestExampleConfigLoads(t *testing.T) {
 			if route.Upstream.Backend != route.ID {
 				t.Fatalf("route %q should use matching backend alias, got %q", route.ID, route.Upstream.Backend)
 			}
+			if strings.HasPrefix(route.ID, "tcapi-") && route.Mode != RouteModeSignedHTTPTunnel {
+				t.Fatalf("route %q should use signed tunnel mode, got %q", route.ID, route.Mode)
+			}
 		}
 	}
 	for routeID, found := range wantRoutes {
 		if !found {
 			t.Fatalf("example config missing route %q", routeID)
 		}
+	}
+}
+
+func TestLoadValidatesSignedHTTPRouteMode(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(`
+routes:
+  - id: tcapi-billing-cn-dev
+    mode: signed_http_tunnel
+    upstream:
+      base_url: https://billing.dev.tencentcloudapi.com
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	if _, err := Load(path); err != nil {
+		t.Fatalf("load signed tunnel route: %v", err)
+	}
+}
+
+func TestLoadRejectsUnknownRouteMode(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(`
+routes:
+  - id: tcapi-billing-cn-dev
+    mode: magic_tunnel
+    upstream:
+      base_url: https://billing.dev.tencentcloudapi.com
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	if _, err := Load(path); err == nil {
+		t.Fatal("expected unknown route mode to fail")
+	}
+}
+
+func TestLoadRejectsSignedHTTPRouteWithoutTrustedHost(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(`
+routes:
+  - id: tcapi-billing-cn-dev
+    mode: signed_http_tunnel
+    upstream:
+      scheme: https
+      polaris:
+        service: billing
+        namespace: Test
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	if _, err := Load(path); err == nil {
+		t.Fatal("expected signed tunnel without trusted host to fail")
+	}
+}
+
+func TestLoadRejectsSignedHTTPRouteWithWebhook(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(`
+routes:
+  - id: tcapi-billing-cn-dev
+    mode: signed_http_tunnel
+    upstream:
+      base_url: https://billing.dev.tencentcloudapi.com
+    webhooks:
+      - id: mirror
+        url: https://example.com/webhook
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	if _, err := Load(path); err == nil {
+		t.Fatal("expected signed tunnel webhook to fail")
 	}
 }
 

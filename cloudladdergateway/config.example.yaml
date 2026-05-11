@@ -82,6 +82,36 @@ backends:
       headers:
         Host: "intl.trade.tencentyun.com"
 
+  - alias: tcapi-account-cn-dev
+    upstream:
+      base_url: "https://account.dev.tencentcloudapi.com"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - alias: tcapi-billing-cn-dev
+    upstream:
+      base_url: "https://billing.dev.tencentcloudapi.com"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - alias: tcapi-account-cn-test
+    upstream:
+      base_url: "https://account.test.tencentcloudapi.com"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - alias: tcapi-cam-cn-test
+    upstream:
+      base_url: "https://cam.test.tencentcloudapi.com"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - alias: tcapi-sts-cn-test
+    upstream:
+      base_url: "https://sts.test.tencentcloudapi.com"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
 auth:
   enabled: true
   timestamp_skew: 5m
@@ -96,6 +126,14 @@ auth:
         - billing-trade-intl-test
         - billing-trade-intl-pre
         - billing-trade-intl-prod
+    - id: shadow
+      secret_env: CLOUDLADDER_SHADOW_HMAC_SECRET
+      routes:
+        - tcapi-account-cn-dev
+        - tcapi-billing-cn-dev
+        - tcapi-account-cn-test
+        - tcapi-cam-cn-test
+        - tcapi-sts-cn-test
 
 audit:
   service_name: cloudladdergateway
@@ -169,3 +207,43 @@ routes:
     condition: 'request.method == "POST"'
     upstream:
       backend: billing-trade-intl-prod
+
+  - id: tcapi-account-cn-dev
+    description: "Signed tunnel for TencentCloud account API domestic dev endpoint."
+    mode: signed_http_tunnel
+    callers: ["shadow"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: tcapi-account-cn-dev
+
+  - id: tcapi-billing-cn-dev
+    description: "Signed tunnel for TencentCloud billing API domestic dev endpoint."
+    mode: signed_http_tunnel
+    callers: ["shadow"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: tcapi-billing-cn-dev
+
+  - id: tcapi-account-cn-test
+    description: "Signed tunnel for TencentCloud account API test endpoint from shadow script defaults."
+    mode: signed_http_tunnel
+    callers: ["shadow"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: tcapi-account-cn-test
+
+  - id: tcapi-cam-cn-test
+    description: "Signed tunnel for TencentCloud CAM API test endpoint from shadow script defaults."
+    mode: signed_http_tunnel
+    callers: ["shadow"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: tcapi-cam-cn-test
+
+  - id: tcapi-sts-cn-test
+    description: "Signed tunnel for TencentCloud STS API test endpoint from shadow script defaults."
+    mode: signed_http_tunnel
+    callers: ["shadow"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: tcapi-sts-cn-test

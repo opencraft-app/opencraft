@@ -2,6 +2,8 @@ package proxy
 
 import (
 	"context"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -81,6 +83,205 @@ func TestEngineInvokeRoutesByStarlarkAndMirrorsWebhook(t *testing.T) {
 	}
 	if len(resp.WebhookDeliveries) != 1 || resp.WebhookDeliveries[0].Status != "delivered" {
 		t.Fatalf("unexpected deliveries %+v", resp.WebhookDeliveries)
+	}
+}
+
+func TestEngineSignedHTTPTunnelPreservesSignedRequestAndStripsControlHeaders(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("expected POST, got %s", r.Method)
+		}
+		if r.URL.Path != "/v1/orders" || r.URL.RawQuery != "region=ap-guangzhou" {
+			t.Fatalf("unexpected target %s?%s", r.URL.Path, r.URL.RawQuery)
+		}
+		body, _ := io.ReadAll(r.Body)
+		if string(body) != `{"order":1}` {
+			t.Fatalf("unexpected body %q", body)
+		}
+		if r.Host != "billing.dev.tencentcloudapi.com" {
+			t.Fatalf("expected trusted upstream Host, got %q", r.Host)
+		}
+		if got := r.Header.Get("Authorization"); got != "TC3-HMAC-SHA256 signed" {
+			t.Fatalf("expected Authorization preserved, got %q", got)
+		}
+		if got := r.Header.Get("Content-Type"); got != "application/json" {
+			t.Fatalf("expected Content-Type preserved, got %q", got)
+		}
+		if got := r.Header.Get("X-TC-Action"); got != "CreateOrders" {
+			t.Fatalf("expected X-TC-Action preserved, got %q", got)
+		}
+		for _, name := range []string{
+			"X-CloudLadder-Caller",
+			"X-CloudLadder-Timestamp",
+			"X-CloudLadder-Signature",
+			"X-CloudLadder-Signed-Host",
+			"X-CloudLadder-Route",
+			"X-CloudLadder-Request-ID",
+			"X-Caller",
+			"X-Service-Name",
+		} {
+			if got := r.Header.Get(name); got != "" {
+				t.Fatalf("expected %s stripped, got %q", name, got)
+			}
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("signed-ok"))
+	}))
+	defer upstream.Close()
+
+	engine, err := NewEngine(config.Config{
+		MaxBodyBytes: config.DefaultMaxBodyBytes,
+		Routes: []config.RouteConfig{{
+			ID:   "tcapi-billing-cn-dev",
+			Mode: config.RouteModeSignedHTTPTunnel,
+			Upstream: config.UpstreamConfig{
+				BaseURL: upstream.URL,
+				Headers: map[string]string{
+					"Host": "billing.dev.tencentcloudapi.com",
+				},
+				AllowedMethods: []string{http.MethodPost},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+
+	resp, err := engine.Invoke(context.Background(), Request{
+		RouteID: "tcapi-billing-cn-dev",
+		Method:  http.MethodPost,
+		Path:    "/v1/orders",
+		Query:   "region=ap-guangzhou",
+		Headers: http.Header{
+			"Authorization":             []string{"TC3-HMAC-SHA256 signed"},
+			"Content-Type":              []string{"application/json"},
+			"X-TC-Action":               []string{"CreateOrders"},
+			"X-CloudLadder-Caller":      []string{"shadow"},
+			"X-CloudLadder-Timestamp":   []string{"2026-05-11T00:00:00Z"},
+			"X-CloudLadder-Signature":   []string{"sha256=test"},
+			"X-CloudLadder-Signed-Host": []string{"BILLING.DEV.TENCENTCLOUDAPI.COM:80"},
+			"X-CloudLadder-Route":       []string{"spoofed"},
+			"X-CloudLadder-Request-ID":  []string{"req-1"},
+			"X-Caller":                  []string{"alias-caller"},
+			"X-Service-Name":            []string{"alias-service"},
+		},
+		Body: []byte(`{"order":1}`),
+	})
+	if err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	if string(resp.Body) != "signed-ok" {
+		t.Fatalf("unexpected body %q", resp.Body)
+	}
+}
+
+func TestEngineSignedHTTPTunnelPreservesEscapedPath(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.EscapedPath(); got != "/v1/a%2Fb" {
+			t.Fatalf("expected escaped path /v1/a%%2Fb, got %s", got)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("escaped-ok"))
+	}))
+	defer upstream.Close()
+
+	engine, err := NewEngine(config.Config{
+		MaxBodyBytes: config.DefaultMaxBodyBytes,
+		Routes: []config.RouteConfig{{
+			ID:   "tcapi-billing-cn-dev",
+			Mode: config.RouteModeSignedHTTPTunnel,
+			Upstream: config.UpstreamConfig{
+				BaseURL: upstream.URL,
+				Headers: map[string]string{
+					"Host": "billing.dev.tencentcloudapi.com",
+				},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+
+	resp, err := engine.Invoke(context.Background(), Request{
+		RouteID: "tcapi-billing-cn-dev",
+		Method:  http.MethodPost,
+		Path:    "/v1/a%2Fb",
+		Headers: http.Header{
+			"X-CloudLadder-Signed-Host": []string{"billing.dev.tencentcloudapi.com"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	if string(resp.Body) != "escaped-ok" {
+		t.Fatalf("unexpected body %q", resp.Body)
+	}
+}
+
+func TestEngineSignedHTTPTunnelRejectsSignedHostMismatch(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("upstream should not be called")
+	}))
+	defer upstream.Close()
+
+	engine, err := NewEngine(config.Config{
+		MaxBodyBytes: config.DefaultMaxBodyBytes,
+		Routes: []config.RouteConfig{{
+			ID:   "tcapi-billing-cn-dev",
+			Mode: config.RouteModeSignedHTTPTunnel,
+			Upstream: config.UpstreamConfig{
+				BaseURL: upstream.URL,
+				Headers: map[string]string{
+					"Host": "billing.dev.tencentcloudapi.com",
+				},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+
+	_, err = engine.Invoke(context.Background(), Request{
+		RouteID: "tcapi-billing-cn-dev",
+		Method:  http.MethodPost,
+		Path:    "/",
+		Headers: http.Header{"X-CloudLadder-Signed-Host": []string{"account.dev.tencentcloudapi.com"}},
+	})
+	if !errors.Is(err, ErrSignedHostMismatch) {
+		t.Fatalf("expected ErrSignedHostMismatch, got %v", err)
+	}
+}
+
+func TestEngineSignedHTTPTunnelRequiresSignedHost(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("upstream should not be called")
+	}))
+	defer upstream.Close()
+
+	engine, err := NewEngine(config.Config{
+		MaxBodyBytes: config.DefaultMaxBodyBytes,
+		Routes: []config.RouteConfig{{
+			ID:   "tcapi-billing-cn-dev",
+			Mode: config.RouteModeSignedHTTPTunnel,
+			Upstream: config.UpstreamConfig{
+				BaseURL: upstream.URL,
+				Headers: map[string]string{
+					"Host": "billing.dev.tencentcloudapi.com",
+				},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+
+	_, err = engine.Invoke(context.Background(), Request{
+		RouteID: "tcapi-billing-cn-dev",
+		Method:  http.MethodPost,
+		Path:    "/",
+	})
+	if !errors.Is(err, ErrSignedHostMismatch) {
+		t.Fatalf("expected ErrSignedHostMismatch, got %v", err)
 	}
 }
 

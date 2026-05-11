@@ -12,6 +12,8 @@ import (
 
 const DefaultMaxBodyBytes int64 = 10 << 20
 
+const RouteModeSignedHTTPTunnel = "signed_http_tunnel"
+
 type Config struct {
 	Addr         string          `yaml:"addr"`
 	MaxBodyBytes int64           `yaml:"max_body_bytes"`
@@ -78,6 +80,7 @@ type AuditOTLPConfig struct {
 type RouteConfig struct {
 	ID          string          `yaml:"id"`
 	Description string          `yaml:"description"`
+	Mode        string          `yaml:"mode"`
 	Condition   string          `yaml:"condition"`
 	Callers     []string        `yaml:"callers"`
 	Upstream    UpstreamConfig  `yaml:"upstream"`
@@ -236,6 +239,12 @@ func (c Config) Validate() error {
 		if strings.TrimSpace(route.ID) == "" {
 			return fmt.Errorf("routes[%d].id is required", i)
 		}
+		mode := normalizeRouteMode(route.Mode)
+		switch mode {
+		case "", RouteModeSignedHTTPTunnel:
+		default:
+			return fmt.Errorf("route %q mode %q is not supported", route.ID, route.Mode)
+		}
 		if _, ok := seen[route.ID]; ok {
 			return fmt.Errorf("duplicate route id %q", route.ID)
 		}
@@ -250,6 +259,14 @@ func (c Config) Validate() error {
 		if _, err := ParseDuration(upstream.Timeout, 30*time.Second); err != nil {
 			return fmt.Errorf("route %q upstream.timeout: %w", route.ID, err)
 		}
+		if mode == RouteModeSignedHTTPTunnel {
+			if _, ok := trustedHost(upstream); !ok {
+				return fmt.Errorf("route %q signed_http_tunnel requires upstream base_url host or upstream.headers.Host", route.ID)
+			}
+			if len(route.Webhooks) > 0 {
+				return fmt.Errorf("route %q signed_http_tunnel does not support webhooks", route.ID)
+			}
+		}
 		for j, webhook := range route.Webhooks {
 			if strings.TrimSpace(webhook.ID) == "" {
 				return fmt.Errorf("route %q webhooks[%d].id is required", route.ID, j)
@@ -263,6 +280,26 @@ func (c Config) Validate() error {
 		}
 	}
 	return nil
+}
+
+func normalizeRouteMode(mode string) string {
+	return strings.ToLower(strings.TrimSpace(mode))
+}
+
+func trustedHost(upstream UpstreamConfig) (string, bool) {
+	for key, value := range upstream.Headers {
+		if strings.EqualFold(key, "Host") && strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value), true
+		}
+	}
+	if strings.TrimSpace(upstream.BaseURL) == "" {
+		return "", false
+	}
+	parsed, err := url.Parse(upstream.BaseURL)
+	if err != nil || parsed.Host == "" {
+		return "", false
+	}
+	return parsed.Host, true
 }
 
 func (c Config) ResolveUpstream(routeID string, upstream UpstreamConfig) (UpstreamConfig, error) {

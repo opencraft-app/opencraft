@@ -171,6 +171,66 @@ Billing trade 后端别名固定为：
 
 国内站 / 国际站按腾讯云账号 `uin` 属性区分，不按下单地域 `region` 区分。使用 Polaris/L5 访问 billing trade 时必须显式带对应 `Host`；计费后台接口 timeout 不低于 `5s`。
 
+## Signed HTTP Tunnel
+
+`mode: signed_http_tunnel` 用于转发 TencentCloud SDK 已签名的 HTTP 请求。调用方仍然通过
+`/v1/proxy/:route_id/*path` 访问 gateway，但上游 `Host` 只能来自 route/backend 的可信配置，不能来自调用方任意 URL。
+
+```yaml
+backends:
+  - alias: tcapi-billing-cn-dev
+    upstream:
+      base_url: "https://billing.dev.tencentcloudapi.com"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+routes:
+  - id: tcapi-billing-cn-dev
+    mode: signed_http_tunnel
+    callers: ["shadow"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: tcapi-billing-cn-dev
+```
+
+Signed tunnel 的转发规则：
+
+- 保留 `Authorization`、`Content-Type`、`X-TC-*`、path、query 和 body。
+- 入口请求的 `Host` 是 gateway host；上游请求的 `Host` 从 `base_url` 或 `upstream.headers.Host` 重建。
+- `X-CloudLadder-Caller`、`X-CloudLadder-Timestamp`、`X-CloudLadder-Signature`、`X-CloudLadder-Signed-Host`、`X-CloudLadder-Route`、`X-CloudLadder-Request-ID`、`X-Caller`、`X-Service-Name` 不会透传到上游。
+- `X-CloudLadder-Signed-Host` 仅用于 gateway 校验原始 TencentCloud host，校验后会被剥离。
+- v1 不支持在 `signed_http_tunnel` route 上配置 webhook。
+
+Go SDK 调用方可使用 `pkg/sdktransport` 包装 TencentCloud SDK 的 HTTP transport：
+
+```go
+transport, err := sdktransport.New(sdktransport.Options{
+    GatewayBaseURL: "https://cloudladdergateway.internal",
+    RouteID:        "tcapi-billing-cn-dev",
+    Caller:         "shadow",
+    Secret:         os.Getenv("CLOUDLADDER_SHADOW_HMAC_SECRET"),
+})
+if err != nil {
+    return err
+}
+
+client, err := billingv20180709.NewClient(credential, "ap-guangzhou", profile)
+if err != nil {
+    return err
+}
+client.WithHttpTransport(transport)
+```
+
+当前示例只包含已确认的 TencentCloud API host：
+
+| alias | Host | 来源 |
+| --- | --- | --- |
+| `tcapi-account-cn-dev` | `account.dev.tencentcloudapi.com` | SaaS 注册开发联调文档 |
+| `tcapi-billing-cn-dev` | `billing.dev.tencentcloudapi.com` | `shadow` 默认 billing API endpoint |
+| `tcapi-account-cn-test` | `account.test.tencentcloudapi.com` | `shadow/scripts/start-tencent-test.sh` |
+| `tcapi-cam-cn-test` | `cam.test.tencentcloudapi.com` | `shadow/scripts/start-tencent-test.sh` |
+| `tcapi-sts-cn-test` | `sts.test.tencentcloudapi.com` | `shadow/scripts/start-tencent-test.sh` |
+
 ## 上游连接池
 
 上游 HTTP client 默认开启连接池：

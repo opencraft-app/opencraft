@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -25,9 +26,10 @@ import (
 )
 
 var (
-	ErrNoRoute      = errors.New("no route matched request")
-	ErrMethodDenied = errors.New("method is not allowed for route")
-	ErrBodyTooLarge = errors.New("body is larger than configured max_body_bytes")
+	ErrNoRoute            = errors.New("no route matched request")
+	ErrMethodDenied       = errors.New("method is not allowed for route")
+	ErrBodyTooLarge       = errors.New("body is larger than configured max_body_bytes")
+	ErrSignedHostMismatch = errors.New("signed host does not match route trusted host")
 )
 
 type Engine struct {
@@ -49,6 +51,7 @@ func WithAuditor(auditor audit.Auditor) EngineOption {
 type Route struct {
 	ID          string
 	Description string
+	Mode        string
 	Condition   string
 	Upstream    Upstream
 	Webhooks    []Webhook
@@ -61,6 +64,8 @@ type Upstream struct {
 	Timeout        time.Duration
 	AllowedMethods []string
 	Headers        map[string]string
+	TrustedHost    string
+	TrustedScheme  string
 }
 
 type PolarisUpstream struct {
@@ -105,6 +110,7 @@ func NewEngine(cfg config.Config, opts ...EngineOption) (*Engine, error) {
 			AllowedMethods: normalizeMethods(upstreamCfg.AllowedMethods),
 			Headers:        cloneStringMap(upstreamCfg.Headers),
 		}
+		upstream.TrustedHost, upstream.TrustedScheme = signedTunnelTrustedHost(upstreamCfg)
 		if upstream.Scheme == "" {
 			upstream.Scheme = "http"
 		}
@@ -117,6 +123,7 @@ func NewEngine(cfg config.Config, opts ...EngineOption) (*Engine, error) {
 		route := Route{
 			ID:          routeCfg.ID,
 			Description: routeCfg.Description,
+			Mode:        strings.ToLower(strings.TrimSpace(routeCfg.Mode)),
 			Condition:   routeCfg.Condition,
 			Upstream:    upstream,
 		}
@@ -206,10 +213,17 @@ func (e *Engine) Invoke(ctx context.Context, req Request) (Response, error) {
 		return Response{}, err
 	}
 	copyHeaders(httpReq.Header, req.Headers)
-	for name, value := range route.Upstream.Headers {
-		setRequestHeader(httpReq, name, value)
+	if route.Mode == config.RouteModeSignedHTTPTunnel {
+		if err := prepareSignedTunnelRequest(httpReq, req, route); err != nil {
+			e.recordAudit(ctx, req, route.ID, targetURL, 0, start, err, 0, 0)
+			return Response{}, err
+		}
+	} else {
+		for name, value := range route.Upstream.Headers {
+			setRequestHeader(httpReq, name, value)
+		}
+		httpReq.Header.Set("X-CloudLadder-Route", route.ID)
 	}
-	httpReq.Header.Set("X-CloudLadder-Route", route.ID)
 
 	httpResp, err := e.httpClient.Do(httpReq)
 	if err != nil {
@@ -468,7 +482,13 @@ func joinURL(baseURL string, path string, rawQuery string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	parsed.Path = strings.TrimRight(parsed.Path, "/") + "/" + strings.TrimLeft(path, "/")
+	escapedPath := strings.TrimRight(parsed.EscapedPath(), "/") + "/" + strings.TrimLeft(path, "/")
+	unescapedPath, err := url.PathUnescape(escapedPath)
+	if err != nil {
+		return "", err
+	}
+	parsed.Path = unescapedPath
+	parsed.RawPath = escapedPath
 	parsed.RawQuery = rawQuery
 	return parsed.String(), nil
 }
@@ -543,6 +563,130 @@ func copyHeaders(dst http.Header, src http.Header) {
 			dst.Add(name, value)
 		}
 	}
+}
+
+var signedTunnelControlHeaders = []string{
+	"X-CloudLadder-Caller",
+	"X-CloudLadder-Timestamp",
+	"X-CloudLadder-Signature",
+	"X-CloudLadder-Signed-Host",
+	"X-CloudLadder-Route",
+	"X-CloudLadder-Request-ID",
+	"X-Caller",
+	"X-Service-Name",
+}
+
+func prepareSignedTunnelRequest(httpReq *http.Request, req Request, route Route) error {
+	trustedHost := strings.TrimSpace(route.Upstream.TrustedHost)
+	if trustedHost == "" {
+		return fmt.Errorf("route %q signed_http_tunnel missing trusted host", route.ID)
+	}
+	signedHost := strings.TrimSpace(headerValue(req.Headers, "X-CloudLadder-Signed-Host"))
+	if signedHost == "" {
+		return fmt.Errorf("%w: missing X-CloudLadder-Signed-Host", ErrSignedHostMismatch)
+	}
+	expected, err := normalizeSignedHost(trustedHost, route.Upstream.TrustedScheme)
+	if err != nil {
+		return fmt.Errorf("route %q trusted host: %w", route.ID, err)
+	}
+	actual, err := normalizeSignedHost(signedHost, route.Upstream.TrustedScheme)
+	if err != nil {
+		return fmt.Errorf("route %q signed host: %w", route.ID, err)
+	}
+	if actual != expected {
+		return fmt.Errorf("%w: got %q want %q", ErrSignedHostMismatch, signedHost, trustedHost)
+	}
+	for _, name := range signedTunnelControlHeaders {
+		deleteHeader(httpReq.Header, name)
+	}
+	deleteHeader(httpReq.Header, "Host")
+	setRequestHeader(httpReq, "Host", trustedHost)
+	return nil
+}
+
+func headerValue(headers http.Header, name string) string {
+	if value := strings.TrimSpace(headers.Get(name)); value != "" {
+		return value
+	}
+	for key, values := range headers {
+		if !strings.EqualFold(key, name) {
+			continue
+		}
+		for _, value := range values {
+			if strings.TrimSpace(value) != "" {
+				return value
+			}
+		}
+	}
+	return ""
+}
+
+func deleteHeader(headers http.Header, name string) {
+	headers.Del(name)
+	for key := range headers {
+		if strings.EqualFold(key, name) {
+			delete(headers, key)
+		}
+	}
+}
+
+func signedTunnelTrustedHost(upstream config.UpstreamConfig) (string, string) {
+	scheme := strings.TrimSpace(upstream.Scheme)
+	if strings.TrimSpace(upstream.BaseURL) != "" {
+		if parsed, err := url.Parse(upstream.BaseURL); err == nil {
+			if scheme == "" {
+				scheme = parsed.Scheme
+			}
+		}
+	}
+	for key, value := range upstream.Headers {
+		if strings.EqualFold(key, "Host") && strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value), defaultScheme(scheme)
+		}
+	}
+	if strings.TrimSpace(upstream.BaseURL) == "" {
+		return "", defaultScheme(scheme)
+	}
+	parsed, err := url.Parse(upstream.BaseURL)
+	if err != nil {
+		return "", defaultScheme(scheme)
+	}
+	return parsed.Host, defaultScheme(scheme)
+}
+
+func defaultScheme(scheme string) string {
+	scheme = strings.ToLower(strings.TrimSpace(scheme))
+	if scheme == "" {
+		return "http"
+	}
+	return scheme
+}
+
+func normalizeSignedHost(host string, scheme string) (string, error) {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return "", errors.New("empty host")
+	}
+	if strings.Contains(host, "://") {
+		parsed, err := url.Parse(host)
+		if err != nil {
+			return "", err
+		}
+		host = parsed.Host
+	}
+	if host == "" {
+		return "", errors.New("empty host")
+	}
+	lower := strings.ToLower(host)
+	name, port, err := net.SplitHostPort(lower)
+	if err != nil {
+		return lower, nil
+	}
+	scheme = defaultScheme(scheme)
+	if (scheme == "http" && port == "80") || (scheme == "https" && port == "443") {
+		return name, nil
+	}
+	return net.JoinHostPort(name, port), nil
 }
 
 func setRequestHeader(req *http.Request, name string, value string) {
