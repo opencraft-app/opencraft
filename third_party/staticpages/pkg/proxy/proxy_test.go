@@ -166,8 +166,10 @@ func TestShouldUseOriginBypass(t *testing.T) {
 type testProxyServer struct {
 	name                string
 	domain              string
+	pageDomain          string
 	method              string
 	requestPath         string
+	preview             config.PreviewConfig
 	searchPaths         []string
 	requestPathResponse int
 	searchPathResponses map[string]int
@@ -242,6 +244,20 @@ func TestProxyServeHTTP(t *testing.T) {
 			expectErrorLog: true,
 		},
 		{
+			name:        "unknown preview branch returns not found",
+			domain:      "missing.example.com",
+			pageDomain:  "example.com",
+			method:      http.MethodGet,
+			requestPath: "/",
+			preview: config.PreviewConfig{
+				Enabled: true,
+				Branch:  true,
+			},
+			expectedStatus: http.StatusNotFound,
+			expectedBody:   "StaticPages preview not found\n",
+			expectErrorLog: true,
+		},
+		{
 			name:                "invalid method",
 			domain:              "example.com",
 			method:              http.MethodPost,
@@ -273,10 +289,15 @@ func TestProxyServeHTTP(t *testing.T) {
 			s3Backend := setupMockS3(&test)
 			defer s3Backend.Close()
 
+			pageDomain := test.domain
+			if test.pageDomain != "" {
+				pageDomain = test.pageDomain
+			}
+
 			conf := config.StaticPagesConfig{
 				Pages: []*config.Page{
 					{
-						Domain: config.FromString(test.domain),
+						Domain: config.FromString(pageDomain),
 						Proxy: config.PageProxy{
 							URL:        config.EnvValue(backend.URL),
 							SearchPath: test.searchPaths,
@@ -288,6 +309,7 @@ func TestProxyServeHTTP(t *testing.T) {
 							Secret:        "test",
 							Region:        "test",
 						},
+						Preview: test.preview,
 					},
 				},
 			}
