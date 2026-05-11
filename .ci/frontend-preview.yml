@@ -105,7 +105,9 @@ stages:
                 echo "STATICPAGES_UPLOAD_TOKEN source=ci-settings fingerprint=$(printf '%s' "$STATICPAGES_UPLOAD_TOKEN" | ci_fingerprint_secret)"
               fi
 
+              staticpages_upload_timeout_seconds=900
               echo "顺序上传 frontend 国内站和国际站 StaticPages 预览，避免并发更新 StaticPages index"
+              echo "StaticPages 上传客户端超时：${staticpages_upload_timeout_seconds}s"
               python3 .ci/runtime/commands/upload_staticpages_preview.py \
                 --artifact-dir frontend/dist-cn \
                 --api-url "$STATICPAGES_API_URL" \
@@ -113,6 +115,7 @@ stages:
                 --source-branch "${{ ci.branch }}" \
                 --variant cn \
                 --sha "${{ ci.sha }}" \
+                --timeout-seconds "$staticpages_upload_timeout_seconds" \
                 --no-progress
 
               python3 .ci/runtime/commands/upload_staticpages_preview.py \
@@ -122,4 +125,5 @@ stages:
                 --source-branch "${{ ci.branch }}" \
                 --variant intl \
                 --sha "${{ ci.sha }}" \
+                --timeout-seconds "$staticpages_upload_timeout_seconds" \
                 --no-progress
