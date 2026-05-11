@@ -42,6 +42,7 @@ import type { BotTerminalSession } from "@/domain/types";
 import { BrandMark } from "@/components/site/brand-mark";
 import { LanguageSwitcher } from "@/components/site/language-switcher";
 import { useT, t as rawT } from "@/i18n/t";
+import { useTranslation } from "react-i18next";
 import { isGlobal } from "@/lib/region";
 import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
 import { useSession } from "@/contexts/session-context";
@@ -1047,6 +1048,7 @@ type ConnectionState = "loading" | "bootstrapping" | "authenticating" | "connect
 /* ─── Terminal Modal ─── */
 
 const TerminalModal = ({ botId, botName, onClose }: { botId: string; botName: string; onClose: () => void }) => {
+  const t = useT();
   const repositories = useRepositories();
   const terminalContainerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
@@ -1254,7 +1256,7 @@ const TerminalModal = ({ botId, botName, onClose }: { botId: string; botName: st
           return;
         }
         setConnectionState("error");
-        setError(connectError instanceof Error ? connectError.message : "终端连接失败");
+        setError(connectError instanceof Error ? connectError.message : t("终端连接失败"));
       }
     };
 
@@ -1268,12 +1270,12 @@ const TerminalModal = ({ botId, botName, onClose }: { botId: string; botName: st
   }, [botId, botName, repositories.bots]);
 
   const stateLabel: Record<ConnectionState, string> = {
-    loading: "初始化...",
-    bootstrapping: "获取会话...",
-    authenticating: "认证中...",
-    connected: "已连接",
-    closed: "已断开",
-    error: "连接失败",
+    loading: t("初始化..."),
+    bootstrapping: t("获取会话..."),
+    authenticating: t("认证中..."),
+    connected: t("已连接"),
+    closed: t("已断开"),
+    error: t("连接失败"),
   };
 
   const stateColor: Record<ConnectionState, string> = {
@@ -1324,7 +1326,7 @@ const TerminalModal = ({ botId, botName, onClose }: { botId: string; botName: st
           <button
             onClick={onClose}
             className="flex h-7 w-7 items-center justify-center rounded-lg transition-colors hover:bg-[rgba(255,255,255,0.1)] text-[var(--text-tertiary)]"
-            title="关闭终端"
+            title={t("关闭终端")}
           >
             <X className="h-4 w-4" />
           </button>
@@ -1378,6 +1380,7 @@ const BirthCertificateModal = ({
   bot: { id: string; name: string; createdAt: string };
   onClose: () => void;
 }) => {
+  const t = useT();
   const repositories = useRepositories();
   const certificateRef = useRef<HTMLDivElement>(null);
   const [downloading, setDownloading] = useState(false);
@@ -1404,7 +1407,7 @@ const BirthCertificateModal = ({
         if (cancelled) {
           return;
         }
-        const message = error instanceof Error ? error.message : "出生证明加载失败";
+        const message = error instanceof Error ? error.message : t("出生证明加载失败");
         setBornCardError(message);
         setBornCardOrder(null);
         setBornCardCreatedAt(bot.createdAt);
@@ -2389,11 +2392,11 @@ export const _BotInfoCard = ({ bot, index, onDelete, onTerminal }: { bot: { id: 
 
 /* ─── Creating Loading Animation ─── */
 
-const CREATING_TEXT = "正在给 Hermes Agent 喂咖啡，唤醒大脑中";
 const CREATING_POLL_INTERVAL_MS = 3000;
 const CREATING_MAX_WAIT_MS = 15 * 60 * 1000;
 
 const CreatingLoadingView = ({ errorMessage }: { errorMessage?: string | null }) => {
+  const t = useT();
   /* 动态 "..." 计数：0 -> 1 -> 2 -> 3 -> 0 ... 每 450ms 切换 */
   const [dotCount, setDotCount] = useState(1);
 
@@ -2445,7 +2448,7 @@ const CreatingLoadingView = ({ errorMessage }: { errorMessage?: string | null })
           errorMessage
         ) : (
           <>
-            {CREATING_TEXT}
+            {t("正在给 Hermes Agent 喂咖啡，唤醒大脑中")}
             <span className="inline-block" style={{ width: "1.5em", textAlign: "left" }}>
               {dots}
             </span>
@@ -2464,12 +2467,12 @@ const getBotStatusColor = (status: OpenClawBot["status"]) => {
 };
 
 const getBotStatusLabel = (status: OpenClawBot["status"]) => {
-  if (status === "running") return "运行中";
-  if (status === "paused") return "已暂停";
-  if (status === "failed") return "创建失败";
-  if (status === "deleting") return "删除中";
-  if (status === "provisioning") return "创建中";
-  return "草稿";
+  if (status === "running") return rawT("运行中");
+  if (status === "paused") return rawT("已暂停");
+  if (status === "failed") return rawT("创建失败");
+  if (status === "deleting") return rawT("删除中");
+  if (status === "provisioning") return rawT("创建中");
+  return rawT("草稿");
 };
 
 /* ─── Main Settings Page ─── */
@@ -2478,6 +2481,8 @@ const hermesGatewayCommands = createLightClawScripts({ regionShortName: "gz", ag
 
 export const OpenClawSettingsPage = () => {
   const t = useT();
+  const { i18n: i18nInstance } = useTranslation();
+  const i18nLanguage = i18nInstance.language;
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const creatingParam = searchParams.get("creating")?.trim() ?? "";
@@ -2594,7 +2599,7 @@ export const OpenClawSettingsPage = () => {
       setShowDeleteConfirm(false);
       setDeleteInput("");
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : "删除失败，请稍后重试。");
+      setDeleteError(err instanceof Error ? err.message : t("删除失败，请稍后重试。"));
     }
   };
 
@@ -2637,7 +2642,7 @@ export const OpenClawSettingsPage = () => {
         setRestartingBotIds((prev) => { const next = new Set(prev); next.delete(targetBotId); return next; });
       }, RESTART_FEEDBACK_MS);
     } catch (err) {
-      setRestartErrors((prev) => setErrorForBot(prev, targetBotId, err instanceof Error ? err.message : "重启失败"));
+      setRestartErrors((prev) => setErrorForBot(prev, targetBotId, err instanceof Error ? err.message : t("重启失败")));
       setRestartingBotIds((prev) => { const next = new Set(prev); next.delete(targetBotId); return next; });
     }
   };
@@ -2729,7 +2734,7 @@ export const OpenClawSettingsPage = () => {
         if (snapshot.bot.status === "deleting") {
           await refreshBots();
           if (cancelled) return;
-          setCreationError("Hermes 正在删除中，请稍后刷新页面查看状态。");
+          setCreationError(t("Hermes 正在删除中，请稍后刷新页面查看状态。"));
           return;
         }
       } catch (err) {
@@ -2739,7 +2744,7 @@ export const OpenClawSettingsPage = () => {
       if (cancelled) return;
 
       if (Date.now() - startedAt >= CREATING_MAX_WAIT_MS) {
-        setCreationError("Hermes 仍在创建中，请稍后刷新页面查看状态。");
+        setCreationError(t("Hermes 仍在创建中，请稍后刷新页面查看状态。"));
         return;
       }
 
@@ -2787,8 +2792,8 @@ export const OpenClawSettingsPage = () => {
     setDirectCreateError(null);
     try {
       const newBot = await addBot({
-        name: "我的Hermes",
-        personality: "默认设定",
+        name: t("我的Hermes"),
+        personality: t("默认设定"),
         personalityEmoji: "✨",
         intro: "",
         soulTemplateId: undefined,
@@ -2803,15 +2808,15 @@ export const OpenClawSettingsPage = () => {
       // 将后端错误映射为用户友好文案
       let friendlyMsg: string;
       if (/quota|limit|exceed/i.test(raw)) {
-        friendlyMsg = "当前套餐的 Agent 配额已满，请升级套餐或删除现有 Agent 后重试。";
+        friendlyMsg = t("当前套餐的 Agent 配额已满，请升级套餐或删除现有 Agent 后重试。");
       } else if (/resource|sandbox|pool|exhaust/i.test(raw)) {
-        friendlyMsg = "云端资源暂时紧张，请稍后再试。";
+        friendlyMsg = t("云端资源暂时紧张，请稍后再试。");
       } else if (/timeout|timed?\s*out/i.test(raw)) {
-        friendlyMsg = "创建超时，请稍后重试。";
+        friendlyMsg = t("创建超时，请稍后重试。");
       } else if (/network|fetch|connect/i.test(raw)) {
-        friendlyMsg = "网络异常，请检查网络后重试。";
+        friendlyMsg = t("网络异常，请检查网络后重试。");
       } else {
-        friendlyMsg = raw || "创建失败，请稍后重试。";
+        friendlyMsg = raw || t("创建失败，请稍后重试。");
       }
       setDirectCreateError(friendlyMsg);
     } finally {
@@ -2897,10 +2902,10 @@ export const OpenClawSettingsPage = () => {
               <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "rgba(7,193,96,0.08)" }}>
                 <Sparkles className="h-5 w-5" style={{ color: "#07C160" }} />
               </div>
-              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>创建新智能体</h3>
+              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("创建新智能体")}</h3>
             </div>
             <p style={{ color: "#666", fontSize: "14px", lineHeight: 1.6, marginBottom: "20px" }}>
-              即刻创建全新的 Hermes Agent
+              {t("即刻创建全新的 Hermes Agent")}
             </p>
             {directCreateError && <p className="text-xs" style={{ color: "#DC2626", marginBottom: "12px" }}>{directCreateError}</p>}
             <div className="flex flex-col gap-2">
@@ -2914,7 +2919,7 @@ export const OpenClawSettingsPage = () => {
                 }}
               >
                 {directCreating && <Loader2 className="h-4 w-4 animate-spin" />}
-                {directCreating ? "创建中..." : directCreateError ? "重试" : "确认创建"}
+                {directCreating ? t("创建中...") : directCreateError ? t("重试") : t("确认创建")}
               </button>
               <button
                 onClick={() => setShowCreateConfirm(false)}
@@ -2922,7 +2927,7 @@ export const OpenClawSettingsPage = () => {
                 className="py-2 text-sm transition-colors hover:opacity-70"
                 style={{ color: "#999", background: "none", border: "none", cursor: directCreating ? "not-allowed" : "pointer" }}
               >
-                取消
+                {t("取消")}
               </button>
             </div>
           </motion.div>
@@ -3098,7 +3103,7 @@ export const OpenClawSettingsPage = () => {
                             onClick={handleStartRename}
                             className="flex h-7 w-7 items-center justify-center rounded-full transition-all hover:bg-black/5"
                             style={{ color: "#bbb", border: "none", background: "transparent", cursor: "pointer" }}
-                            title="重命名"
+                            title={t("重命名")}
                           >
                             <Pencil className="h-3.5 w-3.5" />
                           </button>
@@ -3115,7 +3120,7 @@ export const OpenClawSettingsPage = () => {
                             />
                           )}
                           <span className="font-medium" style={{ color: "rgba(0,0,0,0.60)", fontSize: 12 }}>
-                            {isActiveBotRestarting ? "重启中..." : getBotStatusLabel(activeBot.status)}
+                            {isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}
                           </span>
                         </div>
                         {/* 重启链接 */}
@@ -3132,20 +3137,25 @@ export const OpenClawSettingsPage = () => {
                             padding: 0,
                             position: "relative",
                           }}
-                          title={isActiveBotRestarting ? "正在重启中" : "重启 Hermes Agent 网关"}
+                          title={isActiveBotRestarting ? t("正在重启中") : t("重启 Hermes Agent 网关")}
                         >
-                          重启
+                          {t("重启")}
                           {isActiveBotRestarting && (
                             <span
                               className="pointer-events-none absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap rounded px-2 py-0.5 text-[10px] text-white opacity-0 transition-opacity group-hover:opacity-100"
                               style={{ background: "rgba(0,0,0,0.75)" }}
                             >
-                              正在重启中
+                              {t("正在重启中")}
                             </span>
                           )}
                         </button>
                         <span style={{ color: "rgba(0,0,0,0.40)", fontSize: 12 }}>
-                          创建于 {new Date(activeBot.createdAt).toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric" })}
+                          {t("创建于 {{date}}", {
+                            date: new Date(activeBot.createdAt).toLocaleDateString(
+                              i18nLanguage?.startsWith("en") ? "en-US" : "zh-CN",
+                              { year: "numeric", month: "long", day: "numeric" },
+                            ),
+                          })}
                         </span>
                       </div>
                       {activeBotRestartError && (
@@ -3156,7 +3166,7 @@ export const OpenClawSettingsPage = () => {
                       onClick={() => { setDeleteInput(""); setShowDeleteConfirm(true); }}
                       className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full transition-all hover:bg-[rgba(220,38,38,0.08)]"
                       style={{ color: "#ccc", border: "none", background: "transparent", cursor: "pointer" }}
-                      title="删除此 Hermes"
+                      title={t("删除此 Hermes")}
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
@@ -3242,9 +3252,9 @@ export const OpenClawSettingsPage = () => {
                     // 由 SDK 以命令执行失败的形式反馈到 UI。
 
                     const sections: { id: SettingsSectionId; label: string; icon: React.ReactNode }[] = [
-                      { id: "channel", label: "通道", icon: <MessageCircle className="h-4 w-4" /> },
-                      { id: "model", label: "模型", icon: <Sparkles className="h-4 w-4" /> },
-                      { id: "skill", label: "技能", icon: <Wand2 className="h-4 w-4" /> },
+                      { id: "channel", label: t("通道"), icon: <MessageCircle className="h-4 w-4" /> },
+                      { id: "model", label: t("模型"), icon: <Sparkles className="h-4 w-4" /> },
+                      { id: "skill", label: t("技能"), icon: <Wand2 className="h-4 w-4" /> },
                     ];
 
                     return (
@@ -3252,7 +3262,7 @@ export const OpenClawSettingsPage = () => {
                         <div className="flex flex-col gap-4 md:flex-row md:gap-6">
                           {/* 左侧：竖向 tab 列表（仅在本实例内切换子页面） */}
                           <nav
-                            aria-label="实例配置导航"
+                            aria-label={t("实例配置导航")}
                             className="flex flex-row gap-1 overflow-x-auto md:w-[160px] md:flex-shrink-0 md:flex-col md:overflow-visible"
                           >
                             {sections.map((section) => {
