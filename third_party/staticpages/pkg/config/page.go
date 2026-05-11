@@ -32,13 +32,16 @@ type BucketConfig struct {
 	ApplicationID EnvValue `yaml:"applicationId"`
 	Secret        EnvValue `yaml:"secret"`
 	Region        EnvValue `yaml:"region"`
+	UsePathStyle  *bool    `yaml:"usePathStyle"`
+	PublicRead    *bool    `yaml:"publicRead"`
 }
 
 type PageProxy struct {
-	URL        EnvValue `yaml:"url"`
-	Path       EnvValue `yaml:"path"`
-	SearchPath []string `yaml:"searchPath"`
-	NotFound   string   `yaml:"notFound"`
+	URL          EnvValue `yaml:"url"`
+	Path         EnvValue `yaml:"path"`
+	SearchPath   []string `yaml:"searchPath"`
+	NotFound     string   `yaml:"notFound"`
+	OriginBypass *bool    `yaml:"originBypass"`
 }
 
 type SubDomain struct {

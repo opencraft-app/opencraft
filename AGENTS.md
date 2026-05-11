@@ -112,6 +112,17 @@
 - Argo 长时间停在旧 revision 时，可对 app 加 `argocd.argoproj.io/refresh=hard` 强刷后再观察 sync / rollout。
 - 上海正式环境前端构建命令固定使用 `cd frontend && pnpm install && pnpm build`，不要用 `pnpm update`。
 
+### Playground 环境创建约束（P0）
+
+创建或修复 `sandbox-bj-N` / `beijing-playground` 环境时，必须先阅读 `.ci/AGENTS.md` 的“Playground 环境创建提示词（P0）”。
+
+特别注意：
+
+- 长期配置必须进入 `gitops` MR；live patch 只能作为诊断和临时解锁。
+- 固定入口使用单域名证书；实例 wildcard 入口默认 HTTP-only。
+- 不要复用不覆盖目标 host 的 TLS cert。
+- SOPS secret 克隆后必须校验 payload 已经指向目标环境，不要只看 metadata、文件名或 namespace。
+
 ### 新环境实名 SSM 预置（P0）
 
 创建或发布新的测试/正式环境时，只要环境包含 `lightclaw-auth`，或 `service-gateway` 写路由启用了

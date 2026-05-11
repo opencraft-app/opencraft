@@ -3,6 +3,15 @@ import { resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
+import {
+  ARTIFACT_MODE_REQUIRED,
+  archiveAndVerifyFrontendArtifact,
+  logReleaseHint,
+  logReleaseHintSummary,
+  resolveArtifactMode,
+  validateArtifactPrerequisites,
+} from "./frontend-artifact.mjs";
+
 const DEFAULT_MATRIX_PATH = resolve(process.cwd(), "release-matrix.json");
 const VALID_REGIONS = new Set(["cn", "global"]);
 const VALID_CHANNELS = new Set(["cf", "eo"]);
@@ -36,6 +45,51 @@ function ensureStringMap(value, fieldName, comboId) {
     }
   }
   return Object.fromEntries(entries.map(([key, item]) => [key.trim(), item.trim()]));
+}
+
+function ensureOptionalString(value, fieldName, comboId) {
+  if (value == null) {
+    return undefined;
+  }
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error(`release matrix combo ${comboId} must define ${fieldName} as a non-empty string`);
+  }
+  return value.trim();
+}
+
+function ensureObservabilityConfig(value, comboId) {
+  if (value == null) {
+    return {};
+  }
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`release matrix combo ${comboId} must define observability as an object`);
+  }
+
+  const aegis = value.aegis;
+  if (aegis == null) {
+    return {};
+  }
+  if (typeof aegis !== "object" || Array.isArray(aegis)) {
+    throw new Error(`release matrix combo ${comboId} must define observability.aegis as an object`);
+  }
+
+  const enabled = ensureOptionalString(aegis.enabled, "observability.aegis.enabled", comboId);
+  if (enabled && !["true", "false", "auto"].includes(enabled)) {
+    throw new Error(`release matrix combo ${comboId} has unsupported observability.aegis.enabled ${enabled}`);
+  }
+  const id = ensureOptionalString(aegis.id, "observability.aegis.id", comboId);
+  const hostUrl = ensureOptionalString(aegis.hostUrl, "observability.aegis.hostUrl", comboId);
+  if (enabled === "true" && (!id || !hostUrl)) {
+    throw new Error(`release matrix combo ${comboId} must define observability.aegis.id and hostUrl when enabled=true`);
+  }
+
+  return {
+    aegis: {
+      enabled: enabled ?? "auto",
+      id,
+      hostUrl,
+    },
+  };
 }
 
 export function loadReleaseMatrix(matrixPath = process.env.FRONTEND_RELEASE_MATRIX_FILE?.trim() || DEFAULT_MATRIX_PATH) {
@@ -72,6 +126,7 @@ export function loadReleaseMatrix(matrixPath = process.env.FRONTEND_RELEASE_MATR
       authApiBaseUrl: ensureNonEmptyString(combo.authApiBaseUrl, "authApiBaseUrl", id),
       outputDir: ensureNonEmptyString(combo.outputDir, "outputDir", id),
       deployEnv: ensureStringMap(combo.deployEnv, "deployEnv", id),
+      observability: ensureObservabilityConfig(combo.observability, id),
     };
 
     return normalized;
@@ -125,8 +180,28 @@ export function createComboEnvironment(combo, projectName, env = process.env) {
     FRONTEND_RELEASE_COMBO_ID: combo.id,
     FRONTEND_RELEASE_REGION: combo.region,
     FRONTEND_RELEASE_CHANNEL: combo.channel,
+    VITE_REGION: combo.region,
     VITE_AUTH_API_BASE_URL: combo.authApiBaseUrl,
   };
+
+  const aegis = combo.observability?.aegis;
+  if (aegis) {
+    nextEnv.VITE_AEGIS_ENABLED = aegis.enabled ?? "auto";
+    if (aegis.id) {
+      nextEnv.VITE_AEGIS_ID = aegis.id;
+    } else {
+      delete nextEnv.VITE_AEGIS_ID;
+    }
+    if (aegis.hostUrl) {
+      nextEnv.VITE_AEGIS_HOST_URL = aegis.hostUrl;
+    } else {
+      delete nextEnv.VITE_AEGIS_HOST_URL;
+    }
+  } else {
+    nextEnv.VITE_AEGIS_ENABLED = "false";
+    delete nextEnv.VITE_AEGIS_ID;
+    delete nextEnv.VITE_AEGIS_HOST_URL;
+  }
 
   if (combo.channel === "cf") {
     nextEnv.CLOUDFLARE_PAGES_PROJECT_NAME = projectName;
@@ -139,7 +214,7 @@ export function createComboEnvironment(combo, projectName, env = process.env) {
   return nextEnv;
 }
 
-function runPnpmScript(scriptName, env) {
+export function runPnpmScript(scriptName, env) {
   const pnpmBin = env.PNPM_BIN?.trim() || "pnpm";
   const result = spawnSync(pnpmBin, ["run", scriptName], {
     stdio: "inherit",
@@ -159,10 +234,17 @@ export function formatComboSummary(combo, projectName) {
   return `${combo.id} (region=${combo.region}, channel=${combo.channel}, project=${projectName}, outputDir=${combo.outputDir})`;
 }
 
-export function executeReleaseMatrix({ env = process.env, log = console.log } = {}) {
+export function executeReleaseMatrix({
+  env = process.env,
+  log = console.log,
+  runScript = runPnpmScript,
+  validateArtifacts = validateArtifactPrerequisites,
+  archiveAndVerifyArtifact = archiveAndVerifyFrontendArtifact,
+} = {}) {
   const { matrixPath, combos } = loadReleaseMatrix();
   const selectedIds = resolveSelectedComboIds(env.FRONTEND_RELEASE_MATRIX);
   const selectedCombos = selectReleaseCombos(combos, selectedIds);
+  const artifactMode = resolveArtifactMode(env);
 
   log(`frontend release matrix file: ${matrixPath}`);
   log(
@@ -170,6 +252,14 @@ export function executeReleaseMatrix({ env = process.env, log = console.log } = 
       .map((combo) => combo.id)
       .join(", ")}`,
   );
+  if (artifactMode) {
+    log(`frontend artifact mode: ${artifactMode}`);
+  }
+
+  if (artifactMode === ARTIFACT_MODE_REQUIRED) {
+    validateArtifacts(env);
+  }
+  const releaseHints = [];
 
   for (const combo of selectedCombos) {
     validateRequiredSecrets(combo, env);
@@ -177,10 +267,22 @@ export function executeReleaseMatrix({ env = process.env, log = console.log } = 
     const comboEnv = createComboEnvironment(combo, projectName, env);
 
     log(`frontend release combo start: ${formatComboSummary(combo, projectName)}`);
-    runPnpmScript(combo.buildCommand, comboEnv);
-    runPnpmScript(combo.deployCommand, comboEnv);
+    runScript(combo.buildCommand, comboEnv);
+    if (artifactMode === ARTIFACT_MODE_REQUIRED) {
+      const result = archiveAndVerifyArtifact({
+        combo,
+        projectName,
+        comboEnv,
+        env,
+        log,
+      });
+      releaseHints.push({ combo, result });
+      logReleaseHint({ combo, result, env, log });
+    }
+    runScript(combo.deployCommand, comboEnv);
     log(`frontend release combo done: ${combo.id}`);
   }
+  logReleaseHintSummary({ hints: releaseHints, env, log });
 }
 
 const currentModulePath = import.meta.url.startsWith("file:")

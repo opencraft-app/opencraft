@@ -37,6 +37,18 @@ class GitOpsStaticValidationTests(unittest.TestCase):
 
             self.assertEqual(errors, [])
 
+    def test_valid_playground_catalog_passes_without_release_bundle_closure(self) -> None:
+        with self.repo() as tmp:
+            repo = self.write_valid_repo(tmp, env="sandbox-bj-6")
+
+            errors = validate(
+                repo,
+                "sandbox-bj-6",
+                repo / ".ci/runtime/release-bundles.manifest",
+            )
+
+            self.assertEqual(errors, [])
+
     def test_explicit_catalog_publish_exemption_passes(self) -> None:
         with self.repo() as tmp:
             repo = self.write_valid_repo(tmp, env="beijing-sandbox-2")
@@ -85,6 +97,31 @@ class GitOpsStaticValidationTests(unittest.TestCase):
             errors = validate(repo, "beijing-sandbox-2", repo / ".ci/runtime/release-bundles.manifest")
 
             self.assertTrue(any("catalog is not covered" in error for error in errors))
+
+    def test_empty_env_publish_paths_skip_bundle_closure(self) -> None:
+        with self.repo() as tmp:
+            repo = self.write_valid_repo(tmp)
+            manifest = (repo / ".ci/runtime/release-bundles.manifest").read_text()
+            manifest += textwrap.dedent(
+                """\
+                  disabled:
+                    owner: disabled
+                    source: disabled
+                    reason: disabled
+                    allowed_paths:
+                      - disabled/k8s/base
+                    exit_condition: never
+                    publish_paths:
+                      - argocd/catalogs/playground/beijing-playground/{env}/disabled.yaml
+                    publish_paths_by_env:
+                      beijing-sandbox: []
+                """
+            )
+            (repo / ".ci/runtime/release-bundles.manifest").write_text(manifest)
+
+            errors = validate(repo, "beijing-sandbox", repo / ".ci/runtime/release-bundles.manifest")
+
+            self.assertEqual(errors, [])
 
     def test_appset_reserved_path_template_fails(self) -> None:
         with self.repo() as tmp:
@@ -155,9 +192,14 @@ class GitOpsStaticValidationTests(unittest.TestCase):
 
     def write_valid_repo(self, raw_repo: str | Path, env: str = "beijing-sandbox") -> Path:
         repo = Path(raw_repo)
+        catalog_root = (
+            f"argocd/catalogs/playground/beijing-playground/{env}"
+            if env.startswith("sandbox-bj-")
+            else f"argocd/catalogs/sandbox/{env}"
+        )
         (repo / ".ci/runtime").mkdir(parents=True)
         (repo / "argocd/apps/beijing-sandbox").mkdir(parents=True)
-        (repo / f"argocd/catalogs/sandbox/{env}").mkdir(parents=True)
+        (repo / catalog_root).mkdir(parents=True)
         (repo / f"argocd/services/demo/{env}").mkdir(parents=True)
         (repo / "argocd/services/demo/common").mkdir(parents=True)
         (repo / "argocd/services/demo/profiles/sandbox").mkdir(parents=True)
@@ -183,7 +225,7 @@ class GitOpsStaticValidationTests(unittest.TestCase):
                         - argocd/services/demo/common/**
                         - argocd/services/demo/profiles/sandbox/**
                         - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
-                        - argocd/catalogs/sandbox/{env}/demo.yaml
+                        - {catalog_root}/demo.yaml
                         - argocd/secrets/{env}/demo.sops.yaml
                 """
             )
@@ -192,7 +234,7 @@ class GitOpsStaticValidationTests(unittest.TestCase):
             self.appset_text("{{ .sourcePath }}")
         )
         (repo / "argocd/apps/beijing-sandbox/argocd-runtime.yaml").write_text("kind: Application\n")
-        (repo / f"argocd/catalogs/sandbox/{env}/demo.yaml").write_text(
+        (repo / f"{catalog_root}/demo.yaml").write_text(
             textwrap.dedent(
                 f"""\
                 service: demo
@@ -248,6 +290,7 @@ class GitOpsStaticValidationTests(unittest.TestCase):
                 - git:
                     files:
                       - path: argocd/catalogs/sandbox/*/*.yaml
+                      - path: argocd/catalogs/playground/beijing-playground/*/*.yaml
               template:
                 spec:
                   source:

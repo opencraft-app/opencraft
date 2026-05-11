@@ -4,8 +4,9 @@
 
 Runtime model:
 
-- Upload API: `staticpages-api.sandbox.lightclaw.tech`
-- Preview wildcard: `*.sandbox.lightclaw.tech`
+- Upload API: `staticpages-api.preview.lightclaw.tech`
+- Preview wildcard: `*.preview.lightclaw.tech`
+- TLS certificate secret: `preview-lightclaw-tech-wildcard-tls`
 - Storage backend: COS bucket `webhosting-1388575217`
 - Upload auth: bearer token from `staticpages-runtime-secrets`
 

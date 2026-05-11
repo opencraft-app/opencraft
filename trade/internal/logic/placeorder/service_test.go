@@ -1,0 +1,1052 @@
+package placeorder
+
+import (
+	"context"
+	"errors"
+	"strings"
+	"sync/atomic"
+	"testing"
+
+	"git.woa.com/wisp/mono/trade/internal/ctlclient"
+	"git.woa.com/wisp/mono/trade/internal/jifeiclient"
+	"git.woa.com/wisp/mono/trade/internal/shadowclient"
+	"git.woa.com/wisp/mono/trade/internal/store"
+)
+
+// ============================================================================
+// fakes
+// ============================================================================
+
+type fakeCTL struct {
+	getBundleByIDFn func(ctx context.Context, bundleID string) (*ctlclient.BundleDetail, error)
+}
+
+func (f *fakeCTL) GetBundleByID(ctx context.Context, bundleID string) (*ctlclient.BundleDetail, error) {
+	if f.getBundleByIDFn != nil {
+		return f.getBundleByIDFn(ctx, bundleID)
+	}
+	return nil, errors.New("fakeCTL: GetBundleByID not implemented")
+}
+func (f *fakeCTL) ListPassesByUser(ctx context.Context, externalUserID string) ([]*ctlclient.PassDetail, error) {
+	return nil, errors.New("not used")
+}
+func (f *fakeCTL) CompletePass(ctx context.Context, req *ctlclient.CompletePassRequest) (*ctlclient.PassDetail, error) {
+	return nil, errors.New("not used")
+}
+
+type fakeBundleStore struct {
+	def *store.BundleDefinition
+	err error
+}
+
+func (f *fakeBundleStore) GetBundleDefinitionByID(ctx context.Context, bundleID string) (*store.BundleDefinition, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.def, nil
+}
+
+type fakeJifei struct {
+	generateDealsFn      func(ctx context.Context, req *jifeiclient.GenerateDealsRequest) (*jifeiclient.GenerateDealsResponse, error)
+	generateDealsCalls   atomic.Int32
+	lastGenerateDealsReq *jifeiclient.GenerateDealsRequest
+
+	// 8B-1.5: GenerateDealsAndPay 钩子（jifei `qcloud.Deal.generateDealsAndPay` 一体化下单+支付接口）
+	generateDealsAndPayFn      func(ctx context.Context, req *jifeiclient.GenerateDealsAndPayRequest) (*jifeiclient.GenerateDealsAndPayResponse, error)
+	generateDealsAndPayCalls   atomic.Int32
+	lastGenerateDealsAndPayReq *jifeiclient.GenerateDealsAndPayRequest
+
+	// 8B-1.6: GetMidasEarmarking 钩子（jifei `qcloud.margin.getMidasEarmarking` 获取支付 URL）
+	getMidasEarmarkingFn      func(ctx context.Context, req *jifeiclient.GetMidasEarmarkingRequest) (*jifeiclient.GetMidasEarmarkingResponse, error)
+	getMidasEarmarkingCalls   atomic.Int32
+	lastGetMidasEarmarkingReq *jifeiclient.GetMidasEarmarkingRequest
+}
+
+func (f *fakeJifei) GetPrice(ctx context.Context, req *jifeiclient.GetPriceRequest) (*jifeiclient.GetPriceResponse, error) {
+	return nil, errors.New("not used")
+}
+func (f *fakeJifei) GenerateDeals(ctx context.Context, req *jifeiclient.GenerateDealsRequest) (*jifeiclient.GenerateDealsResponse, error) {
+	f.generateDealsCalls.Add(1)
+	f.lastGenerateDealsReq = req
+	if f.generateDealsFn != nil {
+		return f.generateDealsFn(ctx, req)
+	}
+	return nil, errors.New("fakeJifei: GenerateDeals not implemented")
+}
+func (f *fakeJifei) GenerateDealsAndPay(ctx context.Context, req *jifeiclient.GenerateDealsAndPayRequest) (*jifeiclient.GenerateDealsAndPayResponse, error) {
+	f.generateDealsAndPayCalls.Add(1)
+	f.lastGenerateDealsAndPayReq = req
+	if f.generateDealsAndPayFn != nil {
+		return f.generateDealsAndPayFn(ctx, req)
+	}
+	return nil, errors.New("fakeJifei: GenerateDealsAndPay not implemented")
+}
+func (f *fakeJifei) GetMidasEarmarking(ctx context.Context, req *jifeiclient.GetMidasEarmarkingRequest) (*jifeiclient.GetMidasEarmarkingResponse, error) {
+	f.getMidasEarmarkingCalls.Add(1)
+	f.lastGetMidasEarmarkingReq = req
+	if f.getMidasEarmarkingFn != nil {
+		return f.getMidasEarmarkingFn(ctx, req)
+	}
+	return nil, errors.New("fakeJifei: GetMidasEarmarking not implemented")
+}
+
+type fakeOrderWriter struct {
+	createOrderFn          func(ctx context.Context, in store.CreateOrderInput) error
+	createOrderCalls       atomic.Int32
+	lastCreateOrderInput   store.CreateOrderInput
+	markProvisionedFn      func(ctx context.Context, dealName, resourceID string) error
+	markProvisionedCalls   atomic.Int32
+
+	// 8B-1.6: UpdatePayURL 钩子（GeneratePayURL 命中 jifei 后写回 trade_order.pay_url 缓存）
+	updatePayURLFn        func(ctx context.Context, dealName, payURL string) error
+	updatePayURLCalls     atomic.Int32
+	lastUpdatePayURLDeal  string
+	lastUpdatePayURLValue string
+}
+
+func (f *fakeOrderWriter) CreateOrder(ctx context.Context, in store.CreateOrderInput) error {
+	f.createOrderCalls.Add(1)
+	f.lastCreateOrderInput = in
+	if f.createOrderFn != nil {
+		return f.createOrderFn(ctx, in)
+	}
+	return nil
+}
+
+func (f *fakeOrderWriter) MarkOrderProvisioned(ctx context.Context, dealName, resourceID string) error {
+	f.markProvisionedCalls.Add(1)
+	if f.markProvisionedFn != nil {
+		return f.markProvisionedFn(ctx, dealName, resourceID)
+	}
+	return nil
+}
+
+func (f *fakeOrderWriter) UpdatePayURL(ctx context.Context, dealName, payURL string) error {
+	f.updatePayURLCalls.Add(1)
+	f.lastUpdatePayURLDeal = dealName
+	f.lastUpdatePayURLValue = payURL
+	if f.updatePayURLFn != nil {
+		return f.updatePayURLFn(ctx, dealName, payURL)
+	}
+	return nil
+}
+
+type fakeOrderStore struct {
+	getOrderByDealNameFn func(ctx context.Context, dealName string) (*store.TradeOrder, error)
+}
+
+func (f *fakeOrderStore) GetOrderByDealName(ctx context.Context, dealName string) (*store.TradeOrder, error) {
+	if f.getOrderByDealNameFn != nil {
+		return f.getOrderByDealNameFn(ctx, dealName)
+	}
+	return nil, errors.New("fakeOrderStore: GetOrderByDealName not implemented")
+}
+
+// ============================================================================
+// helpers
+// ============================================================================
+
+func stdBundle() *ctlclient.BundleDetail {
+	return &ctlclient.BundleDetail{
+		BundleID:    "bundle_linux_small",
+		BundleName:  "Linux Small",
+		BundleState: "ONLINE",
+	}
+}
+
+func stdDef() *store.BundleDefinition {
+	return &store.BundleDefinition{
+		BundleID:       "bundle_linux_small",
+		ProductCode:    "p_lighthouse",
+		SubProductCode: "sp_linux_small",
+		Pid:            "1234",
+		CategoryIDs: []store.CategoryIDEntry{
+			{Scene: "purchase", Category: "100059"},
+		},
+		SVList: map[string]interface{}{
+			"cpu": "2",
+			"mem": "4G",
+		},
+		ProductInfo: []map[string]interface{}{{"k": "v"}},
+	}
+}
+
+func stdPlaceOrderReq() PlaceOrderRequest {
+	return PlaceOrderRequest{
+		ExternalUserID: "user-1",
+		Uin:            "1000123456",
+		AppID:          "10001",
+		BundleID:       "bundle_linux_small",
+		Period:         1,
+		TimeUnit:       "m",
+		GoodsNum:       1,
+		PayMode:        1,
+		RegionID:       1,
+	}
+}
+
+func stdJifeiDealsResp() *jifeiclient.GenerateDealsResponse {
+	return &jifeiclient.GenerateDealsResponse{
+		BigDealID: "20260509000000001",
+		DealNames: []string{"20260509000000001-001"},
+	}
+}
+
+// stdDeps 装配一组默认 fakes，单测里按需替换字段。
+type stdDeps struct {
+	ctl     *fakeCTL
+	bundle  *fakeBundleStore
+	jifei   *fakeJifei
+	writer  *fakeOrderWriter
+	store   *fakeOrderStore
+	service *Service
+}
+
+func newStdDeps() *stdDeps {
+	d := &stdDeps{
+		ctl: &fakeCTL{
+			getBundleByIDFn: func(ctx context.Context, bundleID string) (*ctlclient.BundleDetail, error) {
+				return stdBundle(), nil
+			},
+		},
+		bundle: &fakeBundleStore{def: stdDef()},
+		jifei: &fakeJifei{
+			generateDealsFn: func(ctx context.Context, req *jifeiclient.GenerateDealsRequest) (*jifeiclient.GenerateDealsResponse, error) {
+				return stdJifeiDealsResp(), nil
+			},
+		},
+		writer: &fakeOrderWriter{},
+		store:  &fakeOrderStore{},
+	}
+	d.service = New(Deps{
+		CTLClient:   d.ctl,
+		BundleStore: d.bundle,
+		JifeiClient: d.jifei,
+		OrderWriter: d.writer,
+		OrderStore:  d.store,
+	})
+	return d
+}
+
+// ============================================================================
+// PlaceOrder tests
+// ============================================================================
+
+func TestPlaceOrder_HappyPath(t *testing.T) {
+	d := newStdDeps()
+	res, err := d.service.PlaceOrder(context.Background(), stdPlaceOrderReq())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.DealName != "20260509000000001-001" {
+		t.Errorf("DealName mismatch: got %q", res.DealName)
+	}
+	if res.BigOrderID != "20260509000000001" {
+		t.Errorf("BigOrderID mismatch: got %q", res.BigOrderID)
+	}
+	if res.PayURL != "" {
+		t.Errorf("PayURL should be empty in PlaceOrder result, got %q", res.PayURL)
+	}
+	// jifei 入参验证
+	if d.jifei.generateDealsCalls.Load() != 1 {
+		t.Errorf("expected GenerateDeals called once, got %d", d.jifei.generateDealsCalls.Load())
+	}
+	jReq := d.jifei.lastGenerateDealsReq
+	if jReq == nil {
+		t.Fatal("expected lastGenerateDealsReq non-nil")
+	}
+	if jReq.OwnerUin != "1000123456" || jReq.Uin != "1000123456" {
+		t.Errorf("OwnerUin/Uin mismatch: %+v", jReq)
+	}
+	if len(jReq.GoodsInfos) != 1 {
+		t.Fatalf("expected GoodsInfos len 1, got %d", len(jReq.GoodsInfos))
+	}
+	gi := jReq.GoodsInfos[0]
+	if gi.GoodsCategoryID != "100059" {
+		t.Errorf("GoodsCategoryID mismatch: got %q", gi.GoodsCategoryID)
+	}
+	if gi.RegionID != 1 || gi.GoodsNum != 1 || gi.PayMode != 1 {
+		t.Errorf("RegionID/GoodsNum/PayMode mismatch: %+v", gi)
+	}
+	if gi.GoodsDetail["productCode"] != "p_lighthouse" {
+		t.Errorf("goodsDetail.productCode mismatch: %+v", gi.GoodsDetail)
+	}
+	if gi.GoodsDetail["sv_cpu"] != "2" {
+		t.Errorf("goodsDetail.sv_cpu mismatch: %+v", gi.GoodsDetail)
+	}
+	if gi.GoodsDetail["timeSpan"] != 1 {
+		t.Errorf("goodsDetail.timeSpan mismatch: %+v", gi.GoodsDetail)
+	}
+
+	// trade_order 落库参数验证
+	if d.writer.createOrderCalls.Load() != 1 {
+		t.Errorf("expected CreateOrder called once, got %d", d.writer.createOrderCalls.Load())
+	}
+	in := d.writer.lastCreateOrderInput
+	if in.DealName != "20260509000000001-001" {
+		t.Errorf("CreateOrderInput.DealName mismatch: got %q", in.DealName)
+	}
+	if in.BigOrderID != "20260509000000001" {
+		t.Errorf("CreateOrderInput.BigOrderID mismatch: got %q", in.BigOrderID)
+	}
+	if in.Status != "pending_pay" {
+		t.Errorf("CreateOrderInput.Status mismatch: got %q", in.Status)
+	}
+	if in.SubProductCode != "sp_linux_small" {
+		t.Errorf("CreateOrderInput.SubProductCode mismatch: got %q", in.SubProductCode)
+	}
+	if in.ResourceType != "pass" {
+		t.Errorf("CreateOrderInput.ResourceType mismatch: got %q", in.ResourceType)
+	}
+	if in.GoodsDetail == nil || in.GoodsDetail["productCode"] != "p_lighthouse" {
+		t.Errorf("CreateOrderInput.GoodsDetail mismatch: %+v", in.GoodsDetail)
+	}
+}
+
+func TestPlaceOrder_InvalidInput(t *testing.T) {
+	cases := []struct {
+		name string
+		mut  func(req *PlaceOrderRequest)
+	}{
+		{"empty bundle_id", func(r *PlaceOrderRequest) { r.BundleID = "" }},
+		{"empty external_user_id", func(r *PlaceOrderRequest) { r.ExternalUserID = "" }},
+		{"empty uin", func(r *PlaceOrderRequest) { r.Uin = "" }},
+		{"non-positive period", func(r *PlaceOrderRequest) { r.Period = 0 }},
+		{"empty time_unit", func(r *PlaceOrderRequest) { r.TimeUnit = "" }},
+		{"invalid pay_mode", func(r *PlaceOrderRequest) { r.PayMode = 99 }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			d := newStdDeps()
+			req := stdPlaceOrderReq()
+			tc.mut(&req)
+			_, err := d.service.PlaceOrder(context.Background(), req)
+			if !errors.Is(err, ErrInvalidInput) {
+				t.Fatalf("expected ErrInvalidInput, got %v", err)
+			}
+			if d.jifei.generateDealsCalls.Load() != 0 {
+				t.Error("jifei should not be called on validation failure")
+			}
+			if d.writer.createOrderCalls.Load() != 0 {
+				t.Error("writer should not be called on validation failure")
+			}
+		})
+	}
+}
+
+func TestPlaceOrder_GoodsNumZeroDefaultsToOne(t *testing.T) {
+	d := newStdDeps()
+	req := stdPlaceOrderReq()
+	req.GoodsNum = 0
+	res, err := d.service.PlaceOrder(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.DealName == "" {
+		t.Error("expected non-empty DealName")
+	}
+	jReq := d.jifei.lastGenerateDealsReq
+	if jReq.GoodsInfos[0].GoodsNum != 1 {
+		t.Errorf("expected GoodsNum default to 1, got %d", jReq.GoodsInfos[0].GoodsNum)
+	}
+}
+
+func TestPlaceOrder_BundleNotFoundFromCTL(t *testing.T) {
+	d := newStdDeps()
+	d.ctl.getBundleByIDFn = func(ctx context.Context, bundleID string) (*ctlclient.BundleDetail, error) {
+		return nil, ctlclient.ErrNotFound
+	}
+	_, err := d.service.PlaceOrder(context.Background(), stdPlaceOrderReq())
+	if !errors.Is(err, ErrBundleNotFound) {
+		t.Fatalf("expected ErrBundleNotFound, got %v", err)
+	}
+	if d.jifei.generateDealsCalls.Load() != 0 {
+		t.Error("jifei should not be called when bundle not found")
+	}
+}
+
+func TestPlaceOrder_BundleOffline(t *testing.T) {
+	d := newStdDeps()
+	d.ctl.getBundleByIDFn = func(ctx context.Context, bundleID string) (*ctlclient.BundleDetail, error) {
+		b := stdBundle()
+		b.BundleState = "OFFLINE"
+		return b, nil
+	}
+	_, err := d.service.PlaceOrder(context.Background(), stdPlaceOrderReq())
+	if !errors.Is(err, ErrBundleOffline) {
+		t.Fatalf("expected ErrBundleOffline, got %v", err)
+	}
+}
+
+func TestPlaceOrder_CTLGenericError(t *testing.T) {
+	d := newStdDeps()
+	d.ctl.getBundleByIDFn = func(ctx context.Context, bundleID string) (*ctlclient.BundleDetail, error) {
+		return nil, errors.New("ctl 5xx")
+	}
+	_, err := d.service.PlaceOrder(context.Background(), stdPlaceOrderReq())
+	if errors.Is(err, ErrBundleNotFound) || errors.Is(err, ErrBundleOffline) {
+		t.Fatalf("generic ctl error should not be classified as NotFound/Offline: %v", err)
+	}
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestPlaceOrder_BundleDefinitionNotFound(t *testing.T) {
+	d := newStdDeps()
+	d.bundle.def = nil
+	d.bundle.err = store.ErrBundleDefinitionNotFound
+	_, err := d.service.PlaceOrder(context.Background(), stdPlaceOrderReq())
+	if !errors.Is(err, ErrBundleNotFound) {
+		t.Fatalf("expected ErrBundleNotFound, got %v", err)
+	}
+}
+
+func TestPlaceOrder_MissingPurchaseCategory(t *testing.T) {
+	d := newStdDeps()
+	def := stdDef()
+	def.CategoryIDs = []store.CategoryIDEntry{{Scene: "renew", Category: "100060"}}
+	d.bundle.def = def
+	_, err := d.service.PlaceOrder(context.Background(), stdPlaceOrderReq())
+	if err == nil || !strings.Contains(err.Error(), "purchase") {
+		t.Fatalf("expected purchase category missing error, got %v", err)
+	}
+}
+
+func TestPlaceOrder_JifeiCGWBusinessError(t *testing.T) {
+	d := newStdDeps()
+	d.jifei.generateDealsFn = func(ctx context.Context, req *jifeiclient.GenerateDealsRequest) (*jifeiclient.GenerateDealsResponse, error) {
+		return nil, &jifeiclient.CGWError{
+			ReturnCode:    40001,
+			ReturnMessage: "deal already exists",
+			InterfaceName: jifeiclient.InterfaceNameGenerateDeals,
+			EventID:       "ev-1",
+		}
+	}
+	_, err := d.service.PlaceOrder(context.Background(), stdPlaceOrderReq())
+	var cgwErr *jifeiclient.CGWError
+	if !errors.As(err, &cgwErr) {
+		t.Fatalf("expected wrap of *CGWError, got %v", err)
+	}
+	if cgwErr.ReturnCode != 40001 {
+		t.Errorf("ReturnCode mismatch: got %d", cgwErr.ReturnCode)
+	}
+	if d.writer.createOrderCalls.Load() != 0 {
+		t.Error("trade_order should NOT be persisted when jifei generateDeals fails")
+	}
+}
+
+func TestPlaceOrder_JifeiResponseInvalid(t *testing.T) {
+	cases := []struct {
+		name string
+		resp *jifeiclient.GenerateDealsResponse
+	}{
+		{"nil response", nil},
+		{"empty BigDealID", &jifeiclient.GenerateDealsResponse{BigDealID: "", DealNames: []string{"d1"}}},
+		{"empty DealNames", &jifeiclient.GenerateDealsResponse{BigDealID: "big-1", DealNames: nil}},
+		{"empty deal name string", &jifeiclient.GenerateDealsResponse{BigDealID: "big-1", DealNames: []string{""}}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			d := newStdDeps()
+			d.jifei.generateDealsFn = func(ctx context.Context, req *jifeiclient.GenerateDealsRequest) (*jifeiclient.GenerateDealsResponse, error) {
+				return tc.resp, nil
+			}
+			_, err := d.service.PlaceOrder(context.Background(), stdPlaceOrderReq())
+			if !errors.Is(err, ErrJifeiResponseInvalid) {
+				t.Fatalf("expected ErrJifeiResponseInvalid, got %v", err)
+			}
+			if d.writer.createOrderCalls.Load() != 0 {
+				t.Error("trade_order should NOT be persisted")
+			}
+		})
+	}
+}
+
+func TestPlaceOrder_TradeOrderDuplicate(t *testing.T) {
+	d := newStdDeps()
+	d.writer.createOrderFn = func(ctx context.Context, in store.CreateOrderInput) error {
+		return store.ErrTradeOrderDuplicate
+	}
+	_, err := d.service.PlaceOrder(context.Background(), stdPlaceOrderReq())
+	if !errors.Is(err, ErrDealNameDuplicate) {
+		t.Fatalf("expected ErrDealNameDuplicate, got %v", err)
+	}
+}
+
+func TestPlaceOrder_TradeOrderGenericPersistError(t *testing.T) {
+	d := newStdDeps()
+	d.writer.createOrderFn = func(ctx context.Context, in store.CreateOrderInput) error {
+		return errors.New("connection reset")
+	}
+	_, err := d.service.PlaceOrder(context.Background(), stdPlaceOrderReq())
+	if errors.Is(err, ErrDealNameDuplicate) || errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("generic persist error should not be classified: %v", err)
+	}
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+// ============================================================================
+// GeneratePayURL tests
+// ============================================================================
+
+func TestGeneratePayURL_HappyPath(t *testing.T) {
+	d := newStdDeps()
+	d.store.getOrderByDealNameFn = func(ctx context.Context, dealName string) (*store.TradeOrder, error) {
+		return &store.TradeOrder{
+			DealName: dealName,
+			PayURL:   "https://buy.cloud.tencent.com/abc",
+		}, nil
+	}
+	url, err := d.service.GeneratePayURL(context.Background(), "deal-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if url != "https://buy.cloud.tencent.com/abc" {
+		t.Errorf("url mismatch: %q", url)
+	}
+}
+
+func TestGeneratePayURL_EmptyDealName(t *testing.T) {
+	d := newStdDeps()
+	_, err := d.service.GeneratePayURL(context.Background(), "")
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected ErrInvalidInput, got %v", err)
+	}
+}
+
+func TestGeneratePayURL_NotFound(t *testing.T) {
+	d := newStdDeps()
+	d.store.getOrderByDealNameFn = func(ctx context.Context, dealName string) (*store.TradeOrder, error) {
+		return nil, store.ErrTradeOrderNotFound
+	}
+	_, err := d.service.GeneratePayURL(context.Background(), "deal-x")
+	if !errors.Is(err, store.ErrTradeOrderNotFound) {
+		t.Fatalf("expected wrap of ErrTradeOrderNotFound, got %v", err)
+	}
+}
+
+func TestGeneratePayURL_PayURLNotCached_CallsJifeiAndWritesBack(t *testing.T) {
+	// 8B-1.6：trade_order 存在但 pay_url 列空时，调 jifei `qcloud.margin.getMidasEarmarking`
+	// 拿真实 URL，并写回 trade_order.pay_url 缓存（Q-PAY-2 协同）。
+	d := newStdDeps()
+	d.store.getOrderByDealNameFn = func(ctx context.Context, dealName string) (*store.TradeOrder, error) {
+		return &store.TradeOrder{DealName: dealName, Uin: "1000123456", PayURL: ""}, nil
+	}
+	d.jifei.getMidasEarmarkingFn = func(ctx context.Context, req *jifeiclient.GetMidasEarmarkingRequest) (*jifeiclient.GetMidasEarmarkingResponse, error) {
+		// 协议层入参断言：OwnerUin / Uin 来自 trade_order，DealNames 单元素切片
+		if req.OwnerUin != "1000123456" || req.Uin != "1000123456" {
+			t.Errorf("ownerUin/uin mismatch: %+v", req)
+		}
+		if len(req.DealNames) != 1 || req.DealNames[0] != "deal-1" {
+			t.Errorf("dealNames mismatch: %+v", req.DealNames)
+		}
+		return &jifeiclient.GetMidasEarmarkingResponse{
+			BillID:     "bill-1",
+			URL:        "https://buy.cloud.tencent.com/midas/real?dealName=deal-1",
+			AppID:      "1000029101",
+			NeedCharge: 1,
+		}, nil
+	}
+	url, err := d.service.GeneratePayURL(context.Background(), "deal-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := "https://buy.cloud.tencent.com/midas/real?dealName=deal-1"
+	if url != want {
+		t.Errorf("URL mismatch:\n  got  %q\n  want %q", url, want)
+	}
+	// 断言：trade_order.pay_url 已写回缓存
+	if d.writer.updatePayURLCalls.Load() != 1 {
+		t.Errorf("expected UpdatePayURL called once, got %d", d.writer.updatePayURLCalls.Load())
+	}
+	if d.writer.lastUpdatePayURLDeal != "deal-1" || d.writer.lastUpdatePayURLValue != want {
+		t.Errorf("UpdatePayURL args mismatch: deal=%q url=%q",
+			d.writer.lastUpdatePayURLDeal, d.writer.lastUpdatePayURLValue)
+	}
+	// 断言：jifei 调用一次
+	if d.jifei.getMidasEarmarkingCalls.Load() != 1 {
+		t.Errorf("expected GetMidasEarmarking called once, got %d", d.jifei.getMidasEarmarkingCalls.Load())
+	}
+}
+
+func TestGeneratePayURL_JifeiBusinessError_PassedThrough(t *testing.T) {
+	// Q-PAY-5：jifei 业务错（returnCode != 0）统一透传，不在 service 层做错误码语义分类。
+	d := newStdDeps()
+	d.store.getOrderByDealNameFn = func(ctx context.Context, dealName string) (*store.TradeOrder, error) {
+		return &store.TradeOrder{DealName: dealName, Uin: "1000123456", PayURL: ""}, nil
+	}
+	cgwErr := &jifeiclient.CGWError{
+		ReturnCode:    100151,
+		ReturnMessage: "resource lock conflict",
+	}
+	d.jifei.getMidasEarmarkingFn = func(ctx context.Context, req *jifeiclient.GetMidasEarmarkingRequest) (*jifeiclient.GetMidasEarmarkingResponse, error) {
+		return nil, cgwErr
+	}
+	_, err := d.service.GeneratePayURL(context.Background(), "deal-1")
+	if err == nil {
+		t.Fatalf("expected jifei business error, got nil")
+	}
+	var got *jifeiclient.CGWError
+	if !errors.As(err, &got) {
+		t.Fatalf("expected *CGWError pass-through, got %T: %v", err, err)
+	}
+	if got.ReturnCode != 100151 {
+		t.Errorf("returnCode mismatch: got %d", got.ReturnCode)
+	}
+	// 断言：不应写回缓存
+	if d.writer.updatePayURLCalls.Load() != 0 {
+		t.Errorf("expected UpdatePayURL not called on jifei error, got %d", d.writer.updatePayURLCalls.Load())
+	}
+}
+
+func TestGeneratePayURL_WriteBackFailure_StillReturnsURL(t *testing.T) {
+	// 写回 trade_order.pay_url 失败时不阻塞用户支付：仍返 jifei URL，落库错走 ELK 日志兜底（Q-PAY-1 b）。
+	d := newStdDeps()
+	d.store.getOrderByDealNameFn = func(ctx context.Context, dealName string) (*store.TradeOrder, error) {
+		return &store.TradeOrder{DealName: dealName, Uin: "1000123456", PayURL: ""}, nil
+	}
+	d.jifei.getMidasEarmarkingFn = func(ctx context.Context, req *jifeiclient.GetMidasEarmarkingRequest) (*jifeiclient.GetMidasEarmarkingResponse, error) {
+		return &jifeiclient.GetMidasEarmarkingResponse{URL: "https://buy.cloud.tencent.com/midas/x"}, nil
+	}
+	d.writer.updatePayURLFn = func(ctx context.Context, dealName, payURL string) error {
+		return errors.New("simulated db error")
+	}
+	url, err := d.service.GeneratePayURL(context.Background(), "deal-1")
+	if err != nil {
+		t.Fatalf("write-back failure should not propagate, got %v", err)
+	}
+	if url != "https://buy.cloud.tencent.com/midas/x" {
+		t.Errorf("URL mismatch: got %q", url)
+	}
+}
+
+func TestGeneratePayURL_TradeOrderMissingUin(t *testing.T) {
+	// 防御性：trade_order.uin 列在 PlaceOrder 入口就应该写入；万一为空走防御性返错。
+	d := newStdDeps()
+	d.store.getOrderByDealNameFn = func(ctx context.Context, dealName string) (*store.TradeOrder, error) {
+		return &store.TradeOrder{DealName: dealName, Uin: "", PayURL: ""}, nil
+	}
+	_, err := d.service.GeneratePayURL(context.Background(), "deal-1")
+	if err == nil {
+		t.Fatalf("expected error for missing uin")
+	}
+	if !strings.Contains(err.Error(), "uin") {
+		t.Errorf("error should mention uin: %v", err)
+	}
+	// 不应调 jifei
+	if d.jifei.getMidasEarmarkingCalls.Load() != 0 {
+		t.Errorf("expected GetMidasEarmarking not called, got %d", d.jifei.getMidasEarmarkingCalls.Load())
+	}
+}
+
+// ============================================================================
+// New nil-deps panics
+// ============================================================================
+
+func TestNew_PanicsOnNilDeps(t *testing.T) {
+	cases := []struct {
+		name string
+		mut  func(d *Deps)
+	}{
+		{"CTLClient nil", func(d *Deps) { d.CTLClient = nil }},
+		{"BundleStore nil", func(d *Deps) { d.BundleStore = nil }},
+		{"JifeiClient nil", func(d *Deps) { d.JifeiClient = nil }},
+		{"OrderWriter nil", func(d *Deps) { d.OrderWriter = nil }},
+		{"OrderStore nil", func(d *Deps) { d.OrderStore = nil }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r == nil {
+					t.Fatal("expected panic")
+				}
+			}()
+			d := Deps{
+				CTLClient:   &fakeCTL{},
+				BundleStore: &fakeBundleStore{},
+				JifeiClient: &fakeJifei{},
+				OrderWriter: &fakeOrderWriter{},
+				OrderStore:  &fakeOrderStore{},
+			}
+			tc.mut(&d)
+			_ = New(d)
+		})
+	}
+}
+
+// ============================================================================
+// 8B-1: shadow client integration tests
+// ============================================================================
+
+// fakeShadow 是 placeorder 测试用的 shadowclient.Client mock。
+type fakeShadow struct {
+	getBindingFn   func(ctx context.Context, externalUserID string) (*shadowclient.Binding, error)
+	calls          atomic.Int32
+	lastExternalID string
+}
+
+func (f *fakeShadow) GetBindingByExternalUserID(ctx context.Context, externalUserID string) (*shadowclient.Binding, error) {
+	f.calls.Add(1)
+	f.lastExternalID = externalUserID
+	if f.getBindingFn != nil {
+		return f.getBindingFn(ctx, externalUserID)
+	}
+	return nil, errors.New("fakeShadow: GetBindingByExternalUserID not implemented")
+}
+
+// 当 ShadowClient 注入 + 调用方未传 Uin/AppID 时，service 应反查 shadow 回填这两个字段。
+func TestPlaceOrder_ShadowClient_BackfillUinAndAppID(t *testing.T) {
+	shadow := &fakeShadow{
+		getBindingFn: func(ctx context.Context, externalUserID string) (*shadowclient.Binding, error) {
+			return &shadowclient.Binding{
+				UserID:   externalUserID,
+				Uin:      "9999888",
+				OwnerUin: "9999888",
+				AppID:    "12345",
+			}, nil
+		},
+	}
+	d := newStdDeps()
+	svc := New(Deps{
+		CTLClient:    d.ctl,
+		BundleStore:  d.bundle,
+		JifeiClient:  d.jifei,
+		OrderWriter:  d.writer,
+		OrderStore:   d.store,
+		ShadowClient: shadow,
+	})
+	req := stdPlaceOrderReq()
+	req.Uin = ""
+	req.AppID = ""
+	if _, err := svc.PlaceOrder(context.Background(), req); err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if shadow.calls.Load() != 1 {
+		t.Errorf("shadow calls = %d, want 1", shadow.calls.Load())
+	}
+	if shadow.lastExternalID != "user-1" {
+		t.Errorf("shadow lastExternalID = %q, want user-1", shadow.lastExternalID)
+	}
+	// 验证 jifei generateDeals 拿到的 OwnerUin/Uin 是反查后的 9999888
+	if d.jifei.lastGenerateDealsReq == nil || d.jifei.lastGenerateDealsReq.Uin != "9999888" {
+		t.Errorf("jifei.Uin = %q, want 9999888 (backfilled from shadow)",
+			func() string {
+				if d.jifei.lastGenerateDealsReq == nil {
+					return "<nil>"
+				}
+				return d.jifei.lastGenerateDealsReq.Uin
+			}())
+	}
+	// 验证 trade_order 写入的 Uin/AppID 也是回填后的值
+	if d.writer.lastCreateOrderInput.Uin != "9999888" || d.writer.lastCreateOrderInput.AppID != "12345" {
+		t.Errorf("trade_order: Uin=%q AppID=%q, want 9999888/12345",
+			d.writer.lastCreateOrderInput.Uin, d.writer.lastCreateOrderInput.AppID)
+	}
+}
+
+// 当调用方已传 Uin 时，即使 ShadowClient 注入也不应被调用。
+func TestPlaceOrder_ShadowClient_SkippedWhenUinProvided(t *testing.T) {
+	shadow := &fakeShadow{
+		getBindingFn: func(_ context.Context, _ string) (*shadowclient.Binding, error) {
+			t.Fatal("shadow should NOT be called when Uin is provided")
+			return nil, nil
+		},
+	}
+	d := newStdDeps()
+	svc := New(Deps{
+		CTLClient:    d.ctl,
+		BundleStore:  d.bundle,
+		JifeiClient:  d.jifei,
+		OrderWriter:  d.writer,
+		OrderStore:   d.store,
+		ShadowClient: shadow,
+	})
+	req := stdPlaceOrderReq() // Uin 已显式提供
+	if _, err := svc.PlaceOrder(context.Background(), req); err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if shadow.calls.Load() != 0 {
+		t.Errorf("shadow calls = %d, want 0", shadow.calls.Load())
+	}
+}
+
+// shadow 反查返 ErrBindingNotFound → service 映射为 placeorder.ErrBindingNotFound。
+func TestPlaceOrder_ShadowClient_BindingNotFound(t *testing.T) {
+	shadow := &fakeShadow{
+		getBindingFn: func(_ context.Context, _ string) (*shadowclient.Binding, error) {
+			return nil, shadowclient.ErrBindingNotFound
+		},
+	}
+	d := newStdDeps()
+	svc := New(Deps{
+		CTLClient:    d.ctl,
+		BundleStore:  d.bundle,
+		JifeiClient:  d.jifei,
+		OrderWriter:  d.writer,
+		OrderStore:   d.store,
+		ShadowClient: shadow,
+	})
+	req := stdPlaceOrderReq()
+	req.Uin = ""
+	req.AppID = ""
+	_, err := svc.PlaceOrder(context.Background(), req)
+	if err == nil {
+		t.Fatal("want err")
+	}
+	if !errors.Is(err, ErrBindingNotFound) {
+		t.Errorf("err = %v, want ErrBindingNotFound", err)
+	}
+	// 不应有 jifei / order writer 副作用
+	if d.jifei.generateDealsCalls.Load() != 0 {
+		t.Errorf("jifei.generateDeals called = %d, want 0", d.jifei.generateDealsCalls.Load())
+	}
+	if d.writer.createOrderCalls.Load() != 0 {
+		t.Errorf("writer.createOrder called = %d, want 0", d.writer.createOrderCalls.Load())
+	}
+}
+
+// shadow 反查返其他错误 → service 透传。
+func TestPlaceOrder_ShadowClient_UpstreamError(t *testing.T) {
+	upstreamErr := errors.New("shadow 503 service unavailable")
+	shadow := &fakeShadow{
+		getBindingFn: func(_ context.Context, _ string) (*shadowclient.Binding, error) {
+			return nil, upstreamErr
+		},
+	}
+	d := newStdDeps()
+	svc := New(Deps{
+		CTLClient:    d.ctl,
+		BundleStore:  d.bundle,
+		JifeiClient:  d.jifei,
+		OrderWriter:  d.writer,
+		OrderStore:   d.store,
+		ShadowClient: shadow,
+	})
+	req := stdPlaceOrderReq()
+	req.Uin = ""
+	_, err := svc.PlaceOrder(context.Background(), req)
+	if err == nil {
+		t.Fatal("want err")
+	}
+	if !errors.Is(err, upstreamErr) {
+		t.Errorf("err = %v, want wrap upstream err", err)
+	}
+}
+
+// 8A 行为完全保留：ShadowClient 未注入时 Uin 强校验仍生效。
+func TestPlaceOrder_NoShadowClient_UinStillRequired(t *testing.T) {
+	d := newStdDeps()
+	// ShadowClient 字段保持零值（nil）
+	req := stdPlaceOrderReq()
+	req.Uin = ""
+	_, err := d.service.PlaceOrder(context.Background(), req)
+	if err == nil {
+		t.Fatal("want err")
+	}
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Errorf("err = %v, want ErrInvalidInput", err)
+	}
+	if !strings.Contains(err.Error(), "uin is required") {
+		t.Errorf("err = %v, want 'uin is required' substring", err)
+	}
+}
+
+
+// ============================================================================
+// 8B-1.5: PlaceOrderAndPay tests
+// ============================================================================
+
+// TestPlaceOrderAndPay_HappyPath 验证 PlaceOrderAndPay 一体化流程：
+//   - 调 jifei `qcloud.Deal.generateDealsAndPay` 一次（不再是两步式 generateDeals + payDealsNew）
+//   - 入参带正确的 OwnerUin / Uin / AppID(int64) / AutoVoucher=1 / GoodsInfos[]
+//   - 不调用普通 GenerateDeals
+//   - trade_order 落地 status='paid_pending_provision'（与普通 PlaceOrder 的 'pending_pay' 区分）
+//   - 返回 BigOrderID 取自响应 BigDealIDs[0]
+func TestPlaceOrderAndPay_HappyPath(t *testing.T) {
+	d := newStdDeps()
+	d.jifei.generateDealsAndPayFn = func(ctx context.Context, req *jifeiclient.GenerateDealsAndPayRequest) (*jifeiclient.GenerateDealsAndPayResponse, error) {
+		return &jifeiclient.GenerateDealsAndPayResponse{
+			DealNames:  []string{"20260509000000001-001"},
+			BigDealIDs: []string{"20260509000000001"},
+			DealIDs:    []string{"1103944452"},
+			ResourceIDs: map[string][]string{
+				"20260509000000001-001": {"lhins-abc123"},
+			},
+		}, nil
+	}
+
+	resp, err := d.service.PlaceOrderAndPay(context.Background(), stdPlaceOrderReq())
+	if err != nil {
+		t.Fatalf("PlaceOrderAndPay: %v", err)
+	}
+	if resp.DealName != "20260509000000001-001" {
+		t.Errorf("DealName = %q", resp.DealName)
+	}
+	if resp.BigOrderID != "20260509000000001" {
+		t.Errorf("BigOrderID = %q", resp.BigOrderID)
+	}
+	if d.jifei.generateDealsAndPayCalls.Load() != 1 {
+		t.Errorf("generateDealsAndPay calls = %d, want 1", d.jifei.generateDealsAndPayCalls.Load())
+	}
+	if d.jifei.generateDealsCalls.Load() != 0 {
+		t.Errorf("普通 generateDeals 不应被调用, got %d", d.jifei.generateDealsCalls.Load())
+	}
+	if pr := d.jifei.lastGenerateDealsAndPayReq; pr == nil {
+		t.Fatal("lastGenerateDealsAndPayReq is nil")
+	} else {
+		if pr.OwnerUin != "1000123456" || pr.Uin != "1000123456" {
+			t.Errorf("para owner/uin: %+v", pr)
+		}
+		if pr.AppID != 10001 {
+			t.Errorf("para AppID = %d, want 10001 (parsed from '10001')", pr.AppID)
+		}
+		if pr.AutoVoucher == nil || *pr.AutoVoucher != 1 {
+			t.Errorf("para AutoVoucher = %v, want *1", pr.AutoVoucher)
+		}
+		if len(pr.GoodsInfos) != 1 {
+			t.Fatalf("para GoodsInfos len = %d, want 1", len(pr.GoodsInfos))
+		}
+		if pr.GoodsInfos[0].GoodsCategoryID == "" {
+			t.Error("para GoodsCategoryID empty")
+		}
+		if pr.GoodsInfos[0].PayMode != 1 || pr.GoodsInfos[0].GoodsNum != 1 {
+			t.Errorf("para GoodsInfos[0] PayMode/GoodsNum: %+v", pr.GoodsInfos[0])
+		}
+	}
+	if d.writer.createOrderCalls.Load() != 1 {
+		t.Errorf("trade_order createOrder calls = %d, want 1", d.writer.createOrderCalls.Load())
+	}
+	if d.writer.lastCreateOrderInput.Status != "paid_pending_provision" {
+		t.Errorf("trade_order status = %q, want paid_pending_provision", d.writer.lastCreateOrderInput.Status)
+	}
+	if d.writer.lastCreateOrderInput.BigOrderID != "20260509000000001" {
+		t.Errorf("trade_order BigOrderID = %q", d.writer.lastCreateOrderInput.BigOrderID)
+	}
+}
+
+// TestPlaceOrderAndPay_GenerateDealsAndPayFailure：jifei generateDealsAndPay 业务失败时
+//   - 错误透传（带 placeorder: jifei GenerateDealsAndPay: ... 前缀）
+//   - trade_order 不写库（避免本地有孤立 paid 状态）
+func TestPlaceOrderAndPay_GenerateDealsAndPayFailure(t *testing.T) {
+	d := newStdDeps()
+	apiErr := errors.New("jifei 余额不足")
+	d.jifei.generateDealsAndPayFn = func(ctx context.Context, req *jifeiclient.GenerateDealsAndPayRequest) (*jifeiclient.GenerateDealsAndPayResponse, error) {
+		return nil, apiErr
+	}
+
+	_, err := d.service.PlaceOrderAndPay(context.Background(), stdPlaceOrderReq())
+	if err == nil {
+		t.Fatal("want err")
+	}
+	if !errors.Is(err, apiErr) {
+		t.Errorf("err = %v, want wrap apiErr", err)
+	}
+	if !strings.Contains(err.Error(), "GenerateDealsAndPay") {
+		t.Errorf("err message should mention GenerateDealsAndPay, got: %v", err)
+	}
+	if d.jifei.generateDealsAndPayCalls.Load() != 1 {
+		t.Errorf("generateDealsAndPay calls = %d, want 1", d.jifei.generateDealsAndPayCalls.Load())
+	}
+	if d.writer.createOrderCalls.Load() != 0 {
+		t.Errorf("trade_order createOrder should NOT be called on jifei failure, got %d",
+			d.writer.createOrderCalls.Load())
+	}
+}
+
+// TestPlaceOrderAndPay_InvalidResponse：响应缺失 BigDealIDs / DealNames 时返 ErrJifeiResponseInvalid。
+func TestPlaceOrderAndPay_InvalidResponse(t *testing.T) {
+	d := newStdDeps()
+	d.jifei.generateDealsAndPayFn = func(ctx context.Context, req *jifeiclient.GenerateDealsAndPayRequest) (*jifeiclient.GenerateDealsAndPayResponse, error) {
+		// 模拟协议异常：BigDealIDs 缺失
+		return &jifeiclient.GenerateDealsAndPayResponse{
+			DealNames: []string{"d1"},
+		}, nil
+	}
+
+	_, err := d.service.PlaceOrderAndPay(context.Background(), stdPlaceOrderReq())
+	if err == nil {
+		t.Fatal("want err")
+	}
+	if !errors.Is(err, ErrJifeiResponseInvalid) {
+		t.Errorf("err = %v, want ErrJifeiResponseInvalid", err)
+	}
+	if d.writer.createOrderCalls.Load() != 0 {
+		t.Errorf("trade_order createOrder should NOT be called on invalid response, got %d",
+			d.writer.createOrderCalls.Load())
+	}
+}
+
+// TestPlaceOrderAndPay_InvalidAppID：非数字 AppID 应返 ErrInvalidInput，不调 jifei。
+func TestPlaceOrderAndPay_InvalidAppID(t *testing.T) {
+	d := newStdDeps()
+	d.jifei.generateDealsAndPayFn = func(ctx context.Context, req *jifeiclient.GenerateDealsAndPayRequest) (*jifeiclient.GenerateDealsAndPayResponse, error) {
+		return nil, errors.New("should not be called")
+	}
+	req := stdPlaceOrderReq()
+	req.AppID = "not-a-number"
+
+	_, err := d.service.PlaceOrderAndPay(context.Background(), req)
+	if err == nil {
+		t.Fatal("want err")
+	}
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Errorf("err = %v, want ErrInvalidInput", err)
+	}
+	if d.jifei.generateDealsAndPayCalls.Load() != 0 {
+		t.Errorf("generateDealsAndPay should NOT be called with invalid appId, got %d",
+			d.jifei.generateDealsAndPayCalls.Load())
+	}
+}
+
+// TestPlaceOrderAndPay_ShadowReverseLookup：与 PlaceOrder 一致的反查逻辑也要在 PlaceOrderAndPay 生效。
+func TestPlaceOrderAndPay_ShadowReverseLookup(t *testing.T) {
+	shadow := &fakeShadow{
+		getBindingFn: func(ctx context.Context, externalUserID string) (*shadowclient.Binding, error) {
+			return &shadowclient.Binding{
+				UserID:   externalUserID,
+				Uin:      "9999888",
+				OwnerUin: "9999888",
+				AppID:    "12345",
+			}, nil
+		},
+	}
+	d := newStdDeps()
+	d.jifei.generateDealsAndPayFn = func(ctx context.Context, req *jifeiclient.GenerateDealsAndPayRequest) (*jifeiclient.GenerateDealsAndPayResponse, error) {
+		return &jifeiclient.GenerateDealsAndPayResponse{
+			DealNames:  []string{"d1"},
+			BigDealIDs: []string{"b1"},
+		}, nil
+	}
+	svc := New(Deps{
+		CTLClient:    d.ctl,
+		BundleStore:  d.bundle,
+		JifeiClient:  d.jifei,
+		OrderWriter:  d.writer,
+		OrderStore:   d.store,
+		ShadowClient: shadow,
+	})
+	req := stdPlaceOrderReq()
+	req.Uin = ""
+	req.AppID = ""
+
+	if _, err := svc.PlaceOrderAndPay(context.Background(), req); err != nil {
+		t.Fatalf("PlaceOrderAndPay: %v", err)
+	}
+	if shadow.calls.Load() != 1 {
+		t.Errorf("shadow calls = %d, want 1", shadow.calls.Load())
+	}
+	pr := d.jifei.lastGenerateDealsAndPayReq
+	if pr.Uin != "9999888" {
+		t.Errorf("generateDealsAndPay uin = %q, want backfilled 9999888", pr.Uin)
+	}
+	if pr.AppID != 12345 {
+		t.Errorf("generateDealsAndPay AppID = %d, want backfilled 12345", pr.AppID)
+	}
+	if d.writer.lastCreateOrderInput.Status != "paid_pending_provision" {
+		t.Errorf("trade_order status = %q, want paid_pending_provision",
+			d.writer.lastCreateOrderInput.Status)
+	}
+}

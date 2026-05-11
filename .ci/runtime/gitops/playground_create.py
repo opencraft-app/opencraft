@@ -1,4 +1,4 @@
-"""Create playground environment command entry point."""
+"""Command entrypoint for creating GitOps-only playground environments."""
 
 from __future__ import annotations
 

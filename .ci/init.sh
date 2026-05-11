@@ -46,6 +46,53 @@ ci_arch_name() {
   esac
 }
 
+ci_tune_staticpages_upload_tcp() {
+  if [[ "${CI_STATICPAGES_TCP_TUNING:-1}" == "0" ]]; then
+    ci_log "staticpages tcp tuning disabled by CI_STATICPAGES_TCP_TUNING=0"
+    return 0
+  fi
+
+  if [[ "$(ci_os_name)" != "linux" ]]; then
+    ci_log "staticpages tcp tuning skipped on non-linux host"
+    return 0
+  fi
+
+  if [[ "$(id -u)" -ne 0 ]]; then
+    ci_log "staticpages tcp tuning skipped because current user is not root"
+    return 0
+  fi
+
+  local conf_path="${CI_STATICPAGES_TCP_SYSCTL_CONF:-/etc/sysctl.d/99-lightclaw-ci-tcp-upload.conf}"
+  local qdisc="${CI_STATICPAGES_TCP_QDISC:-fq}"
+  local congestion="${CI_STATICPAGES_TCP_CONGESTION:-bbr}"
+  local buffer_max="${CI_STATICPAGES_TCP_BUFFER_MAX:-134217728}"
+
+  if [[ "$congestion" == "bbr" ]] && command -v modprobe >/dev/null 2>&1; then
+    modprobe tcp_bbr >/dev/null 2>&1 || ci_log "tcp_bbr module is not loadable; sysctl will keep the current congestion control if bbr is unavailable"
+  fi
+
+  mkdir -p "$(dirname "$conf_path")"
+  cat > "$conf_path" <<EOF
+# LightClaw CI: improve long-RTT StaticPages archive uploads to Beijing.
+net.core.rmem_max = ${buffer_max}
+net.core.wmem_max = ${buffer_max}
+net.ipv4.tcp_rmem = 4096 87380 ${buffer_max}
+net.ipv4.tcp_wmem = 4096 65536 ${buffer_max}
+net.core.default_qdisc = ${qdisc}
+net.ipv4.tcp_congestion_control = ${congestion}
+net.ipv4.tcp_mtu_probing = 1
+net.ipv4.tcp_slow_start_after_idle = 0
+EOF
+
+  if sysctl -p "$conf_path"; then
+    ci_log "staticpages tcp tuning applied from ${conf_path}"
+    return 0
+  fi
+
+  ci_log "staticpages tcp tuning failed to apply from ${conf_path}; continuing without blocking preview build"
+  return 0
+}
+
 ci_is_unexpanded_setting() {
   [[ "$1" == *'${{'*'settings.'*'}}'* ]]
 }
@@ -78,8 +125,10 @@ ci_require_gitops_validation_tools() {
 
 ci_ensure_db_job_tools() {
   ci_ensure_kubectl
-  ci_require_commands python3 kubectl
-  ci_log "db job tools found: kubectl=$(command -v kubectl)"
+  ci_ensure_sops
+  ci_require_commands python3 kubectl sops openssl
+  ci_prepare_sops_age_key
+  ci_log "db job tools found: kubectl=$(command -v kubectl) sops=$(command -v sops) openssl=$(command -v openssl)"
 }
 
 ci_ensure_gitops_validation_tools() {
@@ -637,7 +686,7 @@ ci_load_registry_password() {
       password_var="${TCR_BEIJING_PASSWORD:-}"
       password_file="$beijing_file"
       ;;
-    beijing-sandbox-2)
+    beijing-sandbox-2|sandbox-bj-*)
       password_var="${TCR_BEIJING_SANDBOX2_PASSWORD:-${TCR_BEIJING_PASSWORD:-}}"
       password_file="$beijing2_file"
       ;;
@@ -685,7 +734,7 @@ ci_set_registry_credentials() {
           source="env:TCR_BEIJING_PASSWORD"
         fi
         ;;
-      beijing-sandbox-2)
+      beijing-sandbox-2|sandbox-bj-*)
         if [[ -r "$beijing2_file" ]]; then
           source="file:$beijing2_file"
         elif [[ -n "${TCR_BEIJING_SANDBOX2_PASSWORD:-}" ]]; then
@@ -711,6 +760,41 @@ ci_set_registry_credentials() {
 
   echo "registry credentials for ${env_name} are not configured; push is expected to fail" >&2
   return 1
+}
+
+ci_ensure_oras() {
+  local version="${ORAS_VERSION_OVERRIDE:-1.2.3}"
+  local os arch archive cache_root install_dir bin url
+
+  os="$(ci_os_name)"
+  arch="$(ci_arch_name)"
+  archive="oras_${version}_${os}_${arch}.tar.gz"
+  cache_root="${HOME}/.cache/lightclaw-ci/oras"
+  install_dir="${cache_root}/v${version}/${os}/${arch}"
+  bin="${install_dir}/oras"
+  url="https://github.com/oras-project/oras/releases/download/v${version}/${archive}"
+
+  if [[ ! -x "$bin" ]]; then
+    ci_with_lock "oras-${version}-${os}-${arch}" ci_install_oras "$url" "$archive" "$cache_root" "$install_dir"
+  else
+    ci_log "oras ${version} already present at ${bin}"
+  fi
+
+  export PATH="${install_dir}:${PATH}"
+  export ORAS_BIN="$bin"
+}
+
+ci_install_oras() {
+  local url="$1"
+  local archive="$2"
+  local cache_root="$3"
+  local install_dir="$4"
+
+  mkdir -p "$cache_root" "$install_dir"
+  ci_download_file "$url" "${cache_root}/${archive}"
+  tar -xzf "${cache_root}/${archive}" -C "$install_dir" oras
+  chmod +x "${install_dir}/oras"
+  ci_log "installed oras at ${install_dir}/oras"
 }
 
 ci_ensure_node() {

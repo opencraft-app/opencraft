@@ -4,6 +4,7 @@ name: 发布 frontend 分支预览
 on:
   push:
     branches:
+      - master
       - frontsandbox/*
     paths:
       - frontend/**
@@ -20,7 +21,7 @@ concurrency:
 
 variables:
   STATICPAGES_API_URL:
-    value: https://staticpages-api.sandbox.lightclaw.tech/api/upload
+    value: https://staticpages-api.preview.lightclaw.tech/api/upload
     readonly: false
     allow-modify-at-startup: true
 
@@ -34,11 +35,13 @@ stages:
           pool-name: env
         env:
           STATICPAGES_UPLOAD_TOKEN: ${{ settings.STATICPAGES_UPLOAD_TOKEN }}
+          SOPS_AGE_KEY: ${{ settings.SOPS_AGE_KEY }}
+          SOPS_AGE_KEY_FILE: ${{ settings.SOPS_AGE_KEY_FILE }}
         steps:
           - checkout: self
             name: 拉取代码
             with:
-              fetchDepth: 50
+              fetchDepth: 1
           - name: 打印 frontend 预览上下文
             shell: bash
             run: |
@@ -55,23 +58,72 @@ stages:
               echo "============================================================"
               echo "frontend 预览发布决策：进入 StaticPages 分支预览流程"
               echo "触发分支：${{ ci.branch }}"
-              echo "目标规则：frontsandbox/<name> -> https://<name>.sandbox.lightclaw.tech"
-              echo "发布方式：构建 frontend dist-cn 后上传到 StaticPages，不创建 GitOps MR"
+              echo "目标规则：master -> https://master.preview.lightclaw.tech 和 https://intl-master.preview.lightclaw.tech"
+              echo "目标规则：frontsandbox/<name> -> https://<name>.preview.lightclaw.tech 和 https://intl-<name>.preview.lightclaw.tech"
+              echo "发布方式：构建 frontend dist-cn + dist-global 后并发上传到 StaticPages，不创建 GitOps MR"
               echo "============================================================"
+              set -euo pipefail
               source .ci/init.sh
               ci_init_repo_root
+              ci_tune_staticpages_upload_tcp
               ci_ensure_node
               ci_ensure_pnpm
 
               cd "$REPO_ROOT/frontend"
-              rm -rf node_modules dist-cn
+              rm -rf node_modules dist-cn dist-global
               "$PNPM_BIN" install --frozen-lockfile
-              "$PNPM_BIN" build:cn
+              "$PNPM_BIN" exec tsc -b
+
+              echo "并发构建 frontend 国内站和国际站产物"
+              echo "frontend 分支预览跳过 asset optimize；生产构建链路不受影响"
+              (
+                "$PNPM_BIN" exec vite build --mode cn --outDir dist-cn
+              ) &
+              build_cn_pid=$!
+              (
+                "$PNPM_BIN" exec vite build --mode global --outDir dist-global
+              ) &
+              build_global_pid=$!
+
+              build_failed=0
+              wait "$build_cn_pid" || build_failed=1
+              wait "$build_global_pid" || build_failed=1
+              if [[ "$build_failed" -ne 0 ]]; then
+                echo "frontend 国内站或国际站构建失败" >&2
+                exit 1
+              fi
 
               cd "$REPO_ROOT"
+              if [[ -z "${STATICPAGES_UPLOAD_TOKEN:-}" ]] || ci_is_unexpanded_setting "$STATICPAGES_UPLOAD_TOKEN"; then
+                echo "STATICPAGES_UPLOAD_TOKEN not provided by CI settings; decrypting GitOps StaticPages runtime secret"
+                ci_ensure_sops
+                ci_prepare_sops_age_key
+                STATICPAGES_UPLOAD_TOKEN="$(sops --decrypt --extract '["stringData"]["STATICPAGES_UPLOAD_TOKEN"]' argocd/secrets/beijing-sandbox/staticpages-runtime-secrets.sops.yaml | ci_read_secret_value)"
+                export STATICPAGES_UPLOAD_TOKEN
+                echo "STATICPAGES_UPLOAD_TOKEN source=argocd/secrets/beijing-sandbox/staticpages-runtime-secrets.sops.yaml fingerprint=$(printf '%s' "$STATICPAGES_UPLOAD_TOKEN" | ci_fingerprint_secret)"
+              else
+                echo "STATICPAGES_UPLOAD_TOKEN source=ci-settings fingerprint=$(printf '%s' "$STATICPAGES_UPLOAD_TOKEN" | ci_fingerprint_secret)"
+              fi
+
+              staticpages_upload_timeout_seconds=900
+              echo "顺序上传 frontend 国内站和国际站 StaticPages 预览，避免并发更新 StaticPages index"
+              echo "StaticPages 上传客户端超时：${staticpages_upload_timeout_seconds}s"
               python3 .ci/runtime/commands/upload_staticpages_preview.py \
                 --artifact-dir frontend/dist-cn \
                 --api-url "$STATICPAGES_API_URL" \
                 --repository wisp/mono2 \
                 --source-branch "${{ ci.branch }}" \
-                --sha "${{ ci.sha }}"
+                --variant cn \
+                --sha "${{ ci.sha }}" \
+                --timeout-seconds "$staticpages_upload_timeout_seconds" \
+                --no-progress
+
+              python3 .ci/runtime/commands/upload_staticpages_preview.py \
+                --artifact-dir frontend/dist-global \
+                --api-url "$STATICPAGES_API_URL" \
+                --repository wisp/mono2 \
+                --source-branch "${{ ci.branch }}" \
+                --variant intl \
+                --sha "${{ ci.sha }}" \
+                --timeout-seconds "$staticpages_upload_timeout_seconds" \
+                --no-progress

@@ -5,6 +5,14 @@ generatorOptions:
   disableNameSuffixHash: true
 resources:
   - ../../../../staticpages/k8s/base
+patches:
+  - target:
+      kind: Ingress
+      name: staticpages-preview
+    patch: |-
+      - op: add
+        path: /metadata/annotations/ingress.cloud.tencent.com~1pass-to-target
+        value: "true"
 replacements:
   - source:
       kind: ConfigMap
@@ -46,6 +54,18 @@ replacements:
           name: staticpages-preview
         fieldPaths:
           - spec.rules.0.host
+          - spec.tls.0.hosts.0
+      - select:
+          kind: TkeServiceConfig
+          name: staticpages-preview-config
+        fieldPaths:
+          - spec.loadBalancer.l7Listeners.0.domains.0.domain
+          - spec.loadBalancer.l7Listeners.0.domains.0.rules.0.healthCheck.httpCheckDomain
+          - spec.loadBalancer.l7Listeners.0.domains.1.rules.0.healthCheck.httpCheckDomain
+          - spec.loadBalancer.l7Listeners.1.defaultServer
+          - spec.loadBalancer.l7Listeners.1.domains.0.domain
+          - spec.loadBalancer.l7Listeners.1.domains.0.rules.0.healthCheck.httpCheckDomain
+          - spec.loadBalancer.l7Listeners.1.domains.1.rules.0.healthCheck.httpCheckDomain
   - source:
       kind: ConfigMap
       name: staticpages-platform-values
@@ -56,3 +76,20 @@ replacements:
           name: staticpages-preview
         fieldPaths:
           - spec.rules.1.host
+          - spec.tls.0.hosts.1
+      - select:
+          kind: TkeServiceConfig
+          name: staticpages-preview-config
+        fieldPaths:
+          - spec.loadBalancer.l7Listeners.0.domains.1.domain
+          - spec.loadBalancer.l7Listeners.1.domains.1.domain
+  - source:
+      kind: ConfigMap
+      name: staticpages-platform-values
+      fieldPath: data.STATICPAGES_TLS_SECRET_NAME
+    targets:
+      - select:
+          kind: Ingress
+          name: staticpages-preview
+        fieldPaths:
+          - spec.tls.0.secretName

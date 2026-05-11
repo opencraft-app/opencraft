@@ -1,7 +1,7 @@
 {
   "combos": [
     {
-      "id": "cn-cf",
+      "id": "cf:cn-lightvela-staging",
       "region": "cn",
       "channel": "cf",
       "buildCommand": "build:cn",
@@ -12,10 +12,17 @@
         "CLOUDFLARE_ACCOUNT_ID"
       ],
       "authApiBaseUrl": "https://lightclaw.tech",
-      "outputDir": "dist-cn"
+      "outputDir": "dist-cn",
+      "observability": {
+        "aegis": {
+          "enabled": "true",
+          "id": "4e66EF5XoPEXx3y8lw",
+          "hostUrl": "https://rumt-zh.com"
+        }
+      }
     },
     {
-      "id": "global-cf",
+      "id": "cf:global-lightvela-intl-staging",
       "region": "global",
       "channel": "cf",
       "buildCommand": "build:global",
@@ -26,7 +33,14 @@
         "CLOUDFLARE_ACCOUNT_ID"
       ],
       "authApiBaseUrl": "https://lightclaw.tech",
-      "outputDir": "dist-global"
+      "outputDir": "dist-global",
+      "observability": {
+        "aegis": {
+          "enabled": "true",
+          "id": "2ellOCK3ozed3owgOj",
+          "hostUrl": "https://rumt-sg.com"
+        }
+      }
     },
     {
       "id": "eo:cn-lightvela-prod",
@@ -40,6 +54,13 @@
       ],
       "authApiBaseUrl": "https://api.lightvela.tencent.com",
       "outputDir": "dist-cn",
+      "observability": {
+        "aegis": {
+          "enabled": "true",
+          "id": "4e66EF5XoPEXx3y8lw",
+          "hostUrl": "https://rumt-zh.com"
+        }
+      },
       "deployEnv": {
         "EDGEONE_PAGES_AREA": "global",
         "EDGEONE_PAGES_ENV": "production"
@@ -57,6 +78,13 @@
       ],
       "authApiBaseUrl": "https://lightclaw.tech",
       "outputDir": "dist-global",
+      "observability": {
+        "aegis": {
+          "enabled": "true",
+          "id": "2ellOCK3ozed3owgOj",
+          "hostUrl": "https://rumt-sg.com"
+        }
+      },
       "deployEnv": {
         "EDGEONE_PAGES_AREA": "global",
         "EDGEONE_PAGES_ENV": "production"

@@ -87,6 +87,7 @@ def prepare_worktree(
             str(runtime_destination / "release-bundles.manifest"),
         ],
         cwd=worktree,
+        stdout=subprocess.DEVNULL,
         check=True,
     )
 

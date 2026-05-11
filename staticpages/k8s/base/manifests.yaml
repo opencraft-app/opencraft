@@ -108,9 +108,15 @@ metadata:
   annotations:
     kubernetes.io/ingress.class: qcloud
     ingress.cloud.tencent.com/modification-protection: "false"
+    ingress.cloud.tencent.com/tke-service-config: staticpages-preview-config
     ingress.cloud.tencent.com/direct-access: "true"
 spec:
   ingressClassName: qcloud
+  tls:
+    - hosts:
+        - REPLACE_STATICPAGES_API_HOST
+        - REPLACE_STATICPAGES_PREVIEW_WILDCARD_HOST
+      secretName: REPLACE_STATICPAGES_TLS_SECRET_NAME
   rules:
     - host: REPLACE_STATICPAGES_API_HOST
       http:
@@ -121,7 +127,7 @@ spec:
               service:
                 name: staticpages
                 port:
-                  name: api
+                  number: 8081
     - host: REPLACE_STATICPAGES_PREVIEW_WILDCARD_HOST
       http:
         paths:
@@ -131,4 +137,76 @@ spec:
               service:
                 name: staticpages
                 port:
-                  name: proxy
+                  number: 8080
+---
+apiVersion: cloud.tencent.com/v1alpha1
+kind: TkeServiceConfig
+metadata:
+  name: staticpages-preview-config
+  namespace: frontend-preview
+spec:
+  loadBalancer:
+    l7Listeners:
+      - protocol: HTTP
+        port: 80
+        domains:
+          - domain: REPLACE_STATICPAGES_API_HOST
+            rules:
+              - url: /
+                forwardType: HTTP
+                healthCheck:
+                  enable: true
+                  intervalTime: 10
+                  timeout: 5
+                  healthNum: 2
+                  unHealthNum: 2
+                  httpCheckPath: /healthz
+                  httpCheckDomain: REPLACE_STATICPAGES_API_HOST
+                  httpCheckMethod: HEAD
+                  httpCode: 2
+          - domain: REPLACE_STATICPAGES_PREVIEW_WILDCARD_HOST
+            rules:
+              - url: /
+                forwardType: HTTP
+                healthCheck:
+                  enable: true
+                  intervalTime: 10
+                  timeout: 5
+                  healthNum: 2
+                  unHealthNum: 2
+                  httpCheckPath: /healthz
+                  httpCheckDomain: REPLACE_STATICPAGES_API_HOST
+                  httpCheckMethod: HEAD
+                  httpCode: 2
+      - protocol: HTTPS
+        port: 443
+        defaultServer: REPLACE_STATICPAGES_API_HOST
+        domains:
+          - domain: REPLACE_STATICPAGES_API_HOST
+            rules:
+              - url: /
+                forwardType: HTTP
+                healthCheck:
+                  enable: true
+                  intervalTime: 10
+                  timeout: 5
+                  healthNum: 2
+                  unHealthNum: 2
+                  httpCheckPath: /healthz
+                  httpCheckDomain: REPLACE_STATICPAGES_API_HOST
+                  httpCheckMethod: HEAD
+                  httpCode: 2
+          - domain: REPLACE_STATICPAGES_PREVIEW_WILDCARD_HOST
+            rules:
+              - url: /
+                forwardType: HTTP
+                healthCheck:
+                  enable: true
+                  intervalTime: 10
+                  timeout: 5
+                  healthNum: 2
+                  unHealthNum: 2
+                  httpCheckPath: /healthz
+                  httpCheckDomain: REPLACE_STATICPAGES_API_HOST
+                  httpCheckMethod: HEAD
+                  httpCode: 2

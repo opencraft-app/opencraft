@@ -42,6 +42,7 @@ env_display_name() {
   case "$1" in
     beijing-sandbox) printf '北京测试' ;;
     beijing-sandbox-2) printf '北京测试2' ;;
+    sandbox-bj-*) printf '北京 Playground %s' "$1" ;;
     shprod) printf '上海正式' ;;
     sgprod) printf '新加坡正式' ;;
     *) printf '%s' "$1" ;;
@@ -60,6 +61,54 @@ else:
     for item in items:
         print(f"- {item}")
 PY
+}
+
+validate_gate_env_file() {
+  local path="$1"
+  python3 - "$path" <<'PY'
+from pathlib import Path
+import sys
+
+allowed = {
+    "GATE_IMAGE_STATUS",
+    "GATE_IMAGE_PIN_PAYLOAD",
+    "GATE_IMAGE_DIGESTS_JSON",
+    "GATE_CONFIG_STATUS",
+    "GATE_DB_STATUS",
+    "GATE_REQUIRES_DB_READINESS",
+    "GATE_AUTO_MERGE_ALLOWED",
+    "GATE_AUTO_SYNC_ALLOWED",
+    "GATE_ARGO_SYNC",
+    "GATE_RELEASE_DEPENDENCY_CHANGED",
+    "GATE_MANUAL_ACTIONS",
+}
+
+path = Path(sys.argv[1])
+bad_lines = []
+for line_number, line in enumerate(path.read_text().splitlines(), start=1):
+    if not line.strip():
+        continue
+    key = line.split("=", 1)[0]
+    if key not in allowed:
+        bad_lines.append(f"{line_number}: {line}")
+
+if bad_lines:
+    print("GitOps 发布门禁结果包含非 dotenv 输出；不会 source 执行。", file=sys.stderr)
+    for line in bad_lines[:20]:
+        print(line, file=sys.stderr)
+    sys.exit(1)
+PY
+}
+
+refresh_promote_remote_tracking() {
+  local remote_ref="refs/remotes/${REMOTE_NAME}/${PROMOTE_BRANCH}"
+  if git -C "$REPO_ROOT" fetch "$REMOTE_NAME" "+refs/heads/${PROMOTE_BRANCH}:${remote_ref}" >/dev/null 2>&1; then
+    echo "GitOps 发布进度：已刷新远端 promote 分支引用 ${REMOTE_NAME}/${PROMOTE_BRANCH}"
+    return 0
+  fi
+
+  git -C "$REPO_ROOT" update-ref -d "$remote_ref" >/dev/null 2>&1 || true
+  echo "GitOps 发布进度：远端 promote 分支暂不存在，将创建 ${PROMOTE_BRANCH}"
 }
 
 project_and_pin_gitops_state() {
@@ -106,6 +155,11 @@ run_release_gates() {
     --format dotenv > "$gate_env_file"; then
     rm -f "$gate_env_file"
     echo "GitOps 发布门禁失败；不会创建 promote MR。" >&2
+    exit 1
+  fi
+  if ! validate_gate_env_file "$gate_env_file"; then
+    rm -f "$gate_env_file"
+    echo "GitOps 发布门禁结果不可加载；不会创建 promote MR。" >&2
     exit 1
   fi
   # shellcheck disable=SC1090
@@ -222,6 +276,7 @@ else
 fi
 
 git -C "$REPO_ROOT" commit -m "$COMMIT_TITLE" -m "$COMMIT_BODY"
+refresh_promote_remote_tracking
 git -C "$REPO_ROOT" push --force-with-lease -u "$REMOTE_NAME" "$PROMOTE_BRANCH"
 
 MR_GATE_ACTIONS="$(json_array_to_bullets "$GATE_MANUAL_ACTIONS")"

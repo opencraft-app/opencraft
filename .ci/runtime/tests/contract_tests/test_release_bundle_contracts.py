@@ -17,6 +17,7 @@ from contracts.release_bundle_manifest import dump_manifest, merge_bundle_source
 
 
 SANDBOX_ENV = "beijing-sandbox-2"
+PLAYGROUND_ENV = "sandbox-bj-7"
 AUTO_RELEASE_WORKFLOWS = {
     "admin-gateway": (".ci/admin-gateway.yml", "beijing-sandbox,shprod", "admin-gateway"),
     "ai-gateway": (".ci/ai-gateway.yml", "beijing-sandbox,shprod", "ai-gateway"),
@@ -33,6 +34,7 @@ AUTO_RELEASE_WORKFLOWS = {
 BUSINESS_WORKFLOWS = {
     ".ci/admin-gateway.yml",
     ".ci/ai-gateway.yml",
+    ".ci/cloudladdergateway.yml",
     ".ci/ctl.yml",
     ".ci/frontend.yml",
     ".ci/gateway-dashboard.yml",
@@ -43,6 +45,7 @@ BUSINESS_WORKFLOWS = {
     ".ci/service-gateway.yml",
     ".ci/staticpages.yml",
     ".ci/subscription.yml",
+    ".ci/trade.yml",
 }
 
 
@@ -72,26 +75,40 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 else:
                     self.assertEqual(list(bundles), [path.stem])
 
-    def test_sandbox2_auto_release_workflows_match_build_contracts(self) -> None:
+    def test_playground_auto_release_workflows_match_build_contracts(self) -> None:
         manifest = load_manifest()
 
         for bundle_name, (workflow_path, master_build_envs, pin_targets) in AUTO_RELEASE_WORKFLOWS.items():
             with self.subTest(bundle=bundle_name):
-                require_build_metadata(load_bundle(manifest, bundle_name, SANDBOX_ENV))
+                require_build_metadata(load_bundle(manifest, bundle_name, PLAYGROUND_ENV))
                 workflow = self.load_effective_workflow(workflow_path)
                 workflow_entry = yaml.safe_load((REPO_ROOT / workflow_path).read_text())
-                self.assertIn("- playground/sandbox-bj-2", (REPO_ROOT / workflow_path).read_text())
+                self.assertIn("playground/sandbox-bj-*", (REPO_ROOT / workflow_path).read_text())
                 self.assert_release_entry_targets(
                     workflow_entry,
                     expected_service=bundle_name,
                     expected_pin_targets=pin_targets,
                     expected_master_build_envs=master_build_envs,
                     expected_master_auto_pin_envs="beijing-sandbox",
-                    expected_playground_build_envs=SANDBOX_ENV,
-                    expected_playground_auto_pin_envs=SANDBOX_ENV,
+                    expected_playground_build_envs="auto",
+                    expected_playground_auto_pin_envs="auto",
                     workflow_text=(REPO_ROOT / workflow_path).read_text(),
                 )
                 self.assertIn("build_and_promote_to_gitops.sh", workflow)
+
+    def test_playground_env_reuses_beijing_registry_and_rewrites_gitops_paths(self) -> None:
+        manifest = load_manifest()
+
+        bundle = require_build_metadata(load_bundle(manifest, "ai-gateway", PLAYGROUND_ENV))
+
+        self.assertEqual(bundle.image_repo, "lightclaw-bj8.tencentcloudcr.com/lightclaw/ai-gateway")
+        self.assertIn(f"argocd/services/ai-gateway/{PLAYGROUND_ENV}/**", bundle.publish_paths)
+        self.assertIn(
+            f"argocd/catalogs/playground/beijing-playground/{PLAYGROUND_ENV}/ai-gateway.yaml",
+            bundle.publish_paths,
+        )
+        self.assertIn(f"argocd/secrets/{PLAYGROUND_ENV}/ai-gateway-runtime-secrets.sops.yaml", bundle.publish_paths)
+        self.assertNotIn("argocd/catalogs/sandbox/beijing-sandbox-2/ai-gateway.yaml", bundle.publish_paths)
 
     def test_sandbox2_catalogs_are_promotable_or_explicitly_exempt(self) -> None:
         manifest = load_manifest()
@@ -177,8 +194,8 @@ class ReleaseBundleContractTests(unittest.TestCase):
             expected_pin_targets="service-gateway",
             expected_master_build_envs="beijing-sandbox,shprod",
             expected_master_auto_pin_envs="beijing-sandbox",
-            expected_playground_build_envs=SANDBOX_ENV,
-            expected_playground_auto_pin_envs=SANDBOX_ENV,
+            expected_playground_build_envs="auto",
+            expected_playground_auto_pin_envs="auto",
         )
         self.assert_release_entry_targets(
             admin_workflow,
@@ -186,8 +203,32 @@ class ReleaseBundleContractTests(unittest.TestCase):
             expected_pin_targets="admin-gateway",
             expected_master_build_envs="beijing-sandbox,shprod",
             expected_master_auto_pin_envs="beijing-sandbox",
-            expected_playground_build_envs=SANDBOX_ENV,
-            expected_playground_auto_pin_envs=SANDBOX_ENV,
+            expected_playground_build_envs="auto",
+            expected_playground_auto_pin_envs="auto",
+        )
+
+    def test_trade_workflow_builds_beijing_and_playground(self) -> None:
+        manifest = load_manifest()
+        bundle = require_build_metadata(load_bundle(manifest, "trade", "beijing-sandbox"))
+        playground_bundle = require_build_metadata(load_bundle(manifest, "trade", PLAYGROUND_ENV))
+        workflow = yaml.safe_load((REPO_ROOT / ".ci/trade.yml").read_text())
+
+        self.assertEqual(bundle.image_repo, "lightclaw-bj8.tencentcloudcr.com/lightclaw/trade")
+        self.assertEqual(bundle.publish_paths, [])
+        self.assertEqual(playground_bundle.image_repo, "lightclaw-bj8.tencentcloudcr.com/lightclaw/trade")
+        self.assertIn(f"argocd/services/trade/{PLAYGROUND_ENV}/**", playground_bundle.publish_paths)
+        self.assertIn(
+            f"argocd/catalogs/playground/beijing-playground/{PLAYGROUND_ENV}/trade.yaml",
+            playground_bundle.publish_paths,
+        )
+        self.assert_release_entry_targets(
+            workflow,
+            expected_service="trade",
+            expected_pin_targets="trade",
+            expected_master_build_envs="beijing-sandbox",
+            expected_master_auto_pin_envs="none",
+            expected_playground_build_envs="auto",
+            expected_playground_auto_pin_envs="auto",
         )
 
     def test_standard_service_extends_stays_on_v2_local_template_contract(self) -> None:

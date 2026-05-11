@@ -15,13 +15,125 @@ discovery:
     cache_ttl: 30s
     stale_on_error: true
 
+backends:
+  - alias: billing-trade-cn-test
+    upstream:
+      scheme: http
+      polaris:
+        service: "cloud.drouter.http"
+        namespace: "Test"
+      timeout: 5s
+      allowed_methods: ["POST"]
+      headers:
+        Host: "trade.itd.com"
+
+  - alias: billing-trade-cn-pre
+    upstream:
+      scheme: http
+      polaris:
+        service: "jf_trade_pre"
+        namespace: "Pre-release"
+      timeout: 5s
+      allowed_methods: ["POST"]
+      headers:
+        Host: "pre.trade.billing.woa.com"
+
+  - alias: billing-trade-cn-prod
+    upstream:
+      scheme: http
+      polaris:
+        service: "1333953:131072"
+        namespace: "Production"
+      timeout: 5s
+      allowed_methods: ["POST"]
+      headers:
+        Host: "trade.tencentyun.com"
+
+  - alias: billing-trade-intl-test
+    upstream:
+      scheme: http
+      polaris:
+        service: "cloud.drouter.http"
+        namespace: "Test"
+      timeout: 5s
+      allowed_methods: ["POST"]
+      headers:
+        Host: "test.trade-intl.billing.tencentyun.com"
+
+  - alias: billing-trade-intl-pre
+    upstream:
+      scheme: http
+      polaris:
+        service: "jf_trade_pre_intl"
+        namespace: "Pre-release"
+      timeout: 5s
+      allowed_methods: ["POST"]
+      headers:
+        Host: "pre.trade.intl.billing.woa.com"
+
+  - alias: billing-trade-intl-prod
+    upstream:
+      scheme: http
+      polaris:
+        service: "jf_intl_trade"
+        namespace: "Production"
+      timeout: 5s
+      allowed_methods: ["POST"]
+      headers:
+        Host: "intl.trade.tencentyun.com"
+
+  - alias: tcapi-account-cn-dev
+    upstream:
+      base_url: "https://account.dev.tencentcloudapi.com"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - alias: tcapi-billing-cn-dev
+    upstream:
+      base_url: "https://billing.dev.tencentcloudapi.com"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - alias: tcapi-account-cn-test
+    upstream:
+      base_url: "https://account.test.tencentcloudapi.com"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - alias: tcapi-cam-cn-test
+    upstream:
+      base_url: "https://cam.test.tencentcloudapi.com"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+  - alias: tcapi-sts-cn-test
+    upstream:
+      base_url: "https://sts.test.tencentcloudapi.com"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
 auth:
   enabled: true
   timestamp_skew: 5m
   callers:
     - id: payment
       secret_env: CLOUDLADDER_PAYMENT_HMAC_SECRET
-      routes: ["sandbox-cn"]
+      routes:
+        - sandbox-cn
+        - billing-trade-cn-test
+        - billing-trade-cn-pre
+        - billing-trade-cn-prod
+        - billing-trade-intl-test
+        - billing-trade-intl-pre
+        - billing-trade-intl-prod
+    - id: shadow
+      secret_env: CLOUDLADDER_SHADOW_HMAC_SECRET
+      routes:
+        - tcapi-account-cn-dev
+        - tcapi-billing-cn-dev
+        - tcapi-account-cn-test
+        - tcapi-cam-cn-test
+        - tcapi-sts-cn-test
 
 audit:
   service_name: cloudladdergateway
@@ -54,14 +166,84 @@ routes:
         headers:
           X-CloudLadder-Webhook: "mirror-to-staging"
 
-  - id: billing-query-via-polaris
-    description: "Resolve IDC billing service through Polaris sidecar."
+  - id: billing-trade-cn-test
+    description: "Proxy Tencent billing trade domestic test environment."
     callers: ["payment"]
     condition: 'request.method == "POST"'
     upstream:
-      scheme: http
-      polaris:
-        service: "billing.service"
-        namespace: "Production"
-      timeout: 10s
-      allowed_methods: ["POST"]
+      backend: billing-trade-cn-test
+
+  - id: billing-trade-cn-pre
+    description: "Proxy Tencent billing trade domestic pre-release environment."
+    callers: ["payment"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: billing-trade-cn-pre
+
+  - id: billing-trade-cn-prod
+    description: "Proxy Tencent billing trade domestic production environment."
+    callers: ["payment"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: billing-trade-cn-prod
+
+  - id: billing-trade-intl-test
+    description: "Proxy Tencent billing trade international test environment."
+    callers: ["payment"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: billing-trade-intl-test
+
+  - id: billing-trade-intl-pre
+    description: "Proxy Tencent billing trade international pre-release environment."
+    callers: ["payment"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: billing-trade-intl-pre
+
+  - id: billing-trade-intl-prod
+    description: "Proxy Tencent billing trade international production environment."
+    callers: ["payment"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: billing-trade-intl-prod
+
+  - id: tcapi-account-cn-dev
+    description: "Signed tunnel for TencentCloud account API domestic dev endpoint."
+    mode: signed_http_tunnel
+    callers: ["shadow"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: tcapi-account-cn-dev
+
+  - id: tcapi-billing-cn-dev
+    description: "Signed tunnel for TencentCloud billing API domestic dev endpoint."
+    mode: signed_http_tunnel
+    callers: ["shadow"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: tcapi-billing-cn-dev
+
+  - id: tcapi-account-cn-test
+    description: "Signed tunnel for TencentCloud account API test endpoint from shadow script defaults."
+    mode: signed_http_tunnel
+    callers: ["shadow"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: tcapi-account-cn-test
+
+  - id: tcapi-cam-cn-test
+    description: "Signed tunnel for TencentCloud CAM API test endpoint from shadow script defaults."
+    mode: signed_http_tunnel
+    callers: ["shadow"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: tcapi-cam-cn-test
+
+  - id: tcapi-sts-cn-test
+    description: "Signed tunnel for TencentCloud STS API test endpoint from shadow script defaults."
+    mode: signed_http_tunnel
+    callers: ["shadow"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: tcapi-sts-cn-test

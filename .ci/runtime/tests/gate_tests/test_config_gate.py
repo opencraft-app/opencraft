@@ -58,6 +58,7 @@ class ConfigGateTests(unittest.TestCase):
                     str(worktree / ".ci/runtime/release-bundles.manifest"),
                 ],
                 cwd=worktree,
+                stdout=subprocess.DEVNULL,
                 check=True,
             ),
         )

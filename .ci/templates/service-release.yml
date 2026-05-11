@@ -18,10 +18,10 @@ parameters:
     default: beijing-sandbox
   - name: PLAYGROUND_BUILD_ENVS
     type: string
-    default: beijing-sandbox-2
+    default: auto
   - name: PLAYGROUND_AUTO_PIN_ENVS
     type: string
-    default: beijing-sandbox-2
+    default: auto
 
 variables:
   PIPELINE_MODE:
@@ -95,14 +95,29 @@ stages:
               GITOPS_BRANCH=gitops
               BUILD_TAG_OVERRIDE="${{ steps.prepare.outputs.tag }}"
               export REMOTE_URL GITOPS_BRANCH BUILD_TAG_OVERRIDE
+              resolve_playground_envs() {
+                local configured="$1"
+                local branch_env="$2"
+                case "$configured" in
+                  ""|auto|__branch__)
+                    printf '%s' "$branch_env"
+                    ;;
+                  *)
+                    printf '%s' "$configured"
+                    ;;
+                esac
+              }
               case "${{ ci.branch }}" in
                 master)
                   BUILD_ENVS="${{ parameters.MASTER_BUILD_ENVS }}"
                   AUTO_PIN_ENVS="${{ parameters.MASTER_AUTO_PIN_ENVS }}"
                   ;;
-                playground/sandbox-bj-2)
-                  BUILD_ENVS="${{ parameters.PLAYGROUND_BUILD_ENVS }}"
-                  AUTO_PIN_ENVS="${{ parameters.PLAYGROUND_AUTO_PIN_ENVS }}"
+                playground/sandbox-bj-*)
+                  PLAYGROUND_ENV="${{ ci.branch }}"
+                  PLAYGROUND_ENV="${PLAYGROUND_ENV#playground/}"
+                  BUILD_ENVS="$(resolve_playground_envs "${{ parameters.PLAYGROUND_BUILD_ENVS }}" "$PLAYGROUND_ENV")"
+                  AUTO_PIN_ENVS="$(resolve_playground_envs "${{ parameters.PLAYGROUND_AUTO_PIN_ENVS }}" "$PLAYGROUND_ENV")"
+                  echo "Playground 发布决策：分支 ${{ ci.branch }} 自动映射目标环境 ${PLAYGROUND_ENV}"
                   ;;
                 *)
                   echo "unsupported source branch for release: ${{ ci.branch }}" >&2

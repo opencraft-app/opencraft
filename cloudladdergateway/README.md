@@ -30,6 +30,57 @@ docker build -f cloudladdergateway/Dockerfile -t cloudladdergateway:local .
 docker run --rm -p 8095:8095 cloudladdergateway:local
 ```
 
+推送到 csighub：
+
+```bash
+make -C cloudladdergateway csighub TAG=dev
+```
+
+默认构建标签仍是 `csighub.tencentyun.com/skipzhang/cloudladdergateway:<tag>`，但当前 Mac 上
+`csighub.tencentyun.com` 需要内网 DNS；`csighub` 目标会同时推送：
+
+- `21.41.42.116:80/skipzhang/cloudladdergateway:<tag>`，用于 HTTP 内网 push endpoint。
+- `csighub.tencentyun.com/skipzhang/cloudladdergateway:<tag>`，用于 public csighub 拉取入口。
+
+```bash
+make -C cloudladdergateway csighub TAG=dev \
+  CSIGHUB_PUSH_REGISTRY=21.41.42.116:80/skipzhang
+```
+
+该目标默认使用 PATH 里的 `crane`，不要求全局 Docker daemon 配置 insecure registry。
+
+如果所在网络可以直接解析并访问 `csighub.tencentyun.com`，也可以单独执行 `login-csighub`。
+登录支持三种来源：
+
+```bash
+# 方式 1：固定 csighub 账号
+export CSIGHUB_USERNAME=...
+export CSIGHUB_PASSWORD=...
+
+# 方式 2：固定 TCR 账号
+export TCR_USERNAME=...
+export TCR_PASSWORD=...
+
+# 方式 3：读取现有 env 文件，通过 tccli 换临时 token
+make -C cloudladdergateway login-csighub \
+  CSIGHUB_ENV_FILE=/path/to/env-file
+```
+
+登录脚本默认使用 `crane auth login --password-stdin`，不会把密码打印到日志；如需 Docker 登录可设置
+`CSIGHUB_LOGIN_TOOL=docker`。
+
+镜像不内置 HMAC secret。运行时注入 `CLOUDLADDER_PAYMENT_HMAC_SECRET`：
+
+```bash
+export CLOUDLADDER_PAYMENT_HMAC_SECRET="$(openssl rand -hex 32)"
+make -C cloudladdergateway run-image TAG=dev
+```
+
+`run-image` 只打印 secret 的长度和 SHA-256 指纹前 12 位，便于客户端与服务端对账，不打印明文。
+
+运行镜像内置基础排障工具：`bash`、`curl`、`wget`、`strace`、`lsof`、`tmux`、`ss/ip`、`dig/nslookup`、
+`nc`、`ps/top`。手动部署到 K8s 后，可以直接 `kubectl exec` 进入 Pod 做 HTTP、DNS、端口和进程排查。
+
 ## HTTP 调用
 
 ```bash
@@ -74,6 +125,114 @@ routes:
 ```
 
 Polaris resolver 会调用 Sidecar `/v1/GetOneInstance`，缓存 `host:port`。当 Sidecar 临时失败且已有旧缓存时，默认使用旧实例兜底，避免 IDC 内部服务发现短抖动直接打断调用。
+
+可复用后端可以配置成 backend alias。当前 billing trade 直接把后端别名暴露成同名 route，调用方通过
+`route_id` 选择要访问的站点和环境：
+
+```yaml
+backends:
+  - alias: billing-trade-cn-prod
+    upstream:
+      scheme: http
+      polaris:
+        service: "1333953:131072"
+        namespace: "Production"
+      timeout: 5s
+      allowed_methods: ["POST"]
+      headers:
+        Host: "trade.tencentyun.com"
+
+routes:
+  - id: billing-trade-cn-prod
+    callers: ["payment"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: billing-trade-cn-prod
+```
+
+HTTP 调用示例：
+
+```bash
+curl -X POST 'http://127.0.0.1:8095/v1/proxy/billing-trade-cn-prod/interfaces/interface.php' \
+  -H 'X-CloudLadder-Caller: payment' \
+  -H 'X-CloudLadder-Timestamp: 2026-05-07T12:00:00Z' \
+  -H 'X-CloudLadder-Signature: sha256=<hex>' \
+  -H 'Content-Type: application/json' \
+  -d '{"version":"1.0","componentName":"qcbuy","caller":"payment","eventId":4962132,"timestamp":1504077981,"interface":{"interfaceName":"qcloud.price.getPrice","para":{}}}'
+```
+
+Billing trade 后端别名固定为：
+
+| alias | Polaris namespace/service | Host |
+| --- | --- | --- |
+| `billing-trade-cn-test` | `Test/cloud.drouter.http` | `trade.itd.com` |
+| `billing-trade-cn-pre` | `Pre-release/jf_trade_pre` | `pre.trade.billing.woa.com` |
+| `billing-trade-cn-prod` | `Production/1333953:131072` | `trade.tencentyun.com` |
+| `billing-trade-intl-test` | `Test/cloud.drouter.http` | `test.trade-intl.billing.tencentyun.com` |
+| `billing-trade-intl-pre` | `Pre-release/jf_trade_pre_intl` | `pre.trade.intl.billing.woa.com` |
+| `billing-trade-intl-prod` | `Production/jf_intl_trade` | `intl.trade.tencentyun.com` |
+
+国内站 / 国际站按腾讯云账号 `uin` 属性区分，不按下单地域 `region` 区分。使用 Polaris/L5 访问 billing trade 时必须显式带对应 `Host`；计费后台接口 timeout 不低于 `5s`。
+
+## Signed HTTP Tunnel
+
+`mode: signed_http_tunnel` 用于转发 TencentCloud SDK 已签名的 HTTP 请求。调用方仍然通过
+`/v1/proxy/:route_id/*path` 访问 gateway，但上游 `Host` 只能来自 route/backend 的可信配置，不能来自调用方任意 URL。
+
+```yaml
+backends:
+  - alias: tcapi-billing-cn-dev
+    upstream:
+      base_url: "https://billing.dev.tencentcloudapi.com"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
+routes:
+  - id: tcapi-billing-cn-dev
+    mode: signed_http_tunnel
+    callers: ["shadow"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: tcapi-billing-cn-dev
+```
+
+Signed tunnel 的转发规则：
+
+- 保留 `Authorization`、`Content-Type`、`X-TC-*`、path、query 和 body。
+- 入口请求的 `Host` 是 gateway host；上游请求的 `Host` 从 `base_url` 或 `upstream.headers.Host` 重建。
+- `X-CloudLadder-Caller`、`X-CloudLadder-Timestamp`、`X-CloudLadder-Signature`、`X-CloudLadder-Signed-Host`、`X-CloudLadder-Route`、`X-CloudLadder-Request-ID`、`X-Caller`、`X-Service-Name` 不会透传到上游。
+- `X-CloudLadder-Signed-Host` 仅用于 gateway 校验原始 TencentCloud host，校验后会被剥离。
+- v1 不支持在 `signed_http_tunnel` route 上配置 webhook。
+
+Go SDK 调用方可使用 `pkg/sdktransport` 包装 TencentCloud SDK 的 HTTP transport：
+
+```go
+transport, err := sdktransport.New(sdktransport.Options{
+    GatewayBaseURL: "https://cloudladdergateway.internal",
+    RouteID:        "tcapi-billing-cn-dev",
+    Caller:         "shadow",
+    Secret:         os.Getenv("CLOUDLADDER_SHADOW_HMAC_SECRET"),
+})
+if err != nil {
+    return err
+}
+
+client, err := billingv20180709.NewClient(credential, "ap-guangzhou", profile)
+if err != nil {
+    return err
+}
+client.WithHttpTransport(transport)
+```
+
+当前示例只包含已确认的 TencentCloud API host：
+
+| alias | Host | 来源 |
+| --- | --- | --- |
+| `tcapi-account-cn-dev` | `account.dev.tencentcloudapi.com` | SaaS 注册开发联调文档 |
+| `tcapi-billing-cn-dev` | `billing.dev.tencentcloudapi.com` | `shadow` 默认 billing API endpoint |
+| `tcapi-account-cn-test` | `account.test.tencentcloudapi.com` | `shadow/scripts/start-tencent-test.sh` |
+| `tcapi-cam-cn-test` | `cam.test.tencentcloudapi.com` | `shadow/scripts/start-tencent-test.sh` |
+| `tcapi-sts-cn-test` | `sts.test.tencentcloudapi.com` | `shadow/scripts/start-tencent-test.sh` |
 
 ## 上游连接池
 

@@ -28,6 +28,8 @@ import (
 	"ctl/pkg/resource"
 	"ctl/pkg/tracing"
 	"ctl/pkg/transport"
+
+	adapterfactory "ctl/pkg/adapter/factory"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.uber.org/zap"
@@ -131,7 +133,13 @@ func (w *statusCapturingResponseWriter) Unwrap() http.ResponseWriter {
 func newAPIServer() (*apiServer, error) {
 	addr := fmt.Sprintf("%s:%d", config.ServerConf.APIConfig.Host, config.ServerConf.APIConfig.Port)
 	ih := &instanceHandler{logic: instancelogic.NewLogic()}
-	bh := &bundleHandler{logic: bundlelogic.NewLogic()}
+	bh := &bundleHandler{
+		logic: bundlelogic.NewLogic(),
+		// 注入 trade adapter，用于 describeBundles 调 trade 询价回填 user-facing
+		// UserBundleResponse.Price（迭代 8C / 设计稿 §10 Q-CGW-01）。失败时
+		// handler 内部会降级为 Price=nil，不阻断 bundle 列表。
+		tradeAdapter: adapterfactory.DefaultAdapterFactory.TradeAdapter(),
+	}
 	ph := &passHandler{logic: passlogic.NewLogic()}
 	server := &http.Server{
 		Addr:              addr,
@@ -157,10 +165,22 @@ func newRouter(handler *instanceHandler, bh *bundleHandler, ph *passHandler) htt
 	// Bundle 路由
 	mux.HandleFunc("/admin/api/ctl/bundles", bh.handleAdminBundles)
 	mux.HandleFunc("/v1/bundles", bh.handleUserBundles)
+	mux.HandleFunc("/internal/ctl/bundles/", bh.handleInternalBundleByID)
 
 	// Pass 路由
 	mux.HandleFunc("/admin/api/ctl/passes", ph.handleAdminPasses)
+	mux.HandleFunc("/admin/api/ctl/passes/order", ph.handleAdminPassesOrder)
+	// /admin/api/ctl/passes/order-and-pay — 仅用于联调测试 / 自动化 e2e，现网控制台禁止暴露
+	mux.HandleFunc("/admin/api/ctl/passes/order-and-pay", ph.handleAdminPassesOrderAndPay)
 	mux.HandleFunc("/v1/passes", ph.handleUserPasses)
+	mux.HandleFunc("/v1/passes/order", ph.handleUserPassesOrder)
+	// /v1/passes/order-and-pay — 仅用于联调测试 / 自动化 e2e，现网控制台禁止暴露
+	mux.HandleFunc("/v1/passes/order-and-pay", ph.handleUserPassesOrderAndPay)
+	// 内部反向回调（trade -> ctl）：
+	//   - 裸路径 /internal/ctl/passes 承载 GET 互斥占用查询（Q66 拍板）
+	//   - 子路径 /internal/ctl/passes/{action} 承载 POST 生命周期动作（complete / 后续 renew/isolate/destroy）
+	mux.HandleFunc("/internal/ctl/passes", ph.handleInternalPasses)
+	mux.HandleFunc("/internal/ctl/passes/", ph.handleInternalPasses)
 
 	return requestMetadataMiddleware(metricsMiddleware(notFoundMiddleware(mux)))
 }
@@ -272,8 +292,11 @@ func normalizePath(path string) string {
 	// 静态路径直接返回
 	switch path {
 	case "/health", "/metrics", "/internal/bots", "/v1/soul-templates", "/v1/me/usage",
-		"/v1/bundles", "/v1/passes",
-		"/admin/api/ctl/bundles", "/admin/api/ctl/passes":
+		"/v1/bundles", "/v1/passes", "/v1/passes/order", "/v1/passes/order-and-pay",
+		"/admin/api/ctl/bundles", "/admin/api/ctl/passes", "/admin/api/ctl/passes/order",
+		"/admin/api/ctl/passes/order-and-pay",
+		"/internal/ctl/passes",
+		"/internal/ctl/passes/complete":
 		return path
 	}
 	if strings.HasPrefix(path, "/internal/instances/") && strings.HasSuffix(path, "/chatclaw/runtime-bootstrap") {
@@ -281,6 +304,14 @@ func normalizePath(path string) string {
 	}
 	if strings.HasPrefix(path, "/internal/bots/") && strings.HasSuffix(path, "/borncard") {
 		return "/internal/bots/{id}/borncard"
+	}
+	if strings.HasPrefix(path, "/internal/ctl/bundles/") {
+		return "/internal/ctl/bundles/{bundleId}"
+	}
+	if strings.HasPrefix(path, "/internal/ctl/passes/") {
+		// 当前仅 /complete 为已知；其它（renew / isolate / destroy 等）归一到 {action} 占位
+		// 避免后续生命周期接口加进来时高基数
+		return "/internal/ctl/passes/{action}"
 	}
 
 	parts := strings.Split(strings.Trim(path, "/"), "/")

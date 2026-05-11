@@ -11,4 +11,5 @@ use (
 	./service-gateway
 	./subscription
 	./third_party/staticpages
+	./trade
 )

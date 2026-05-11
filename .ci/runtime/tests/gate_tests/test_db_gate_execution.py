@@ -42,7 +42,8 @@ class DbGateExecutionTests(unittest.TestCase):
         self.assertNotIn("run_gitops_db_job.py", rendered_commands)
         verify_command = next(command for command in commands if any("verify_db_contract.py" in part for part in command))
         self.assertIn(str(gitops_worktree), verify_command)
-        self.assertIn(("bash", str(repo_root)), [(command[0], str(cwd)) for command, cwd in command_calls])
+        self.assertIn(str(repo_root), verify_command)
+        self.assertIn("ci_ensure_db_job_tools", verify_command[2])
         self.assertIn((verify_command, gitops_worktree), command_calls)
 
     def test_beijing_readiness_runs_controlled_db_job_when_required(self) -> None:
@@ -74,6 +75,9 @@ class DbGateExecutionTests(unittest.TestCase):
         self.assertIn("verify_db_contract.py", rendered_commands)
         db_job_command = next(command for command in commands if any("run_gitops_db_job.py" in part for part in command))
         verify_command = next(command for command in commands if any("verify_db_contract.py" in part for part in command))
+        self.assertEqual(db_job_command[0], "bash")
+        self.assertIn("ci_ensure_db_job_tools", db_job_command[2])
+        self.assertIn("ci_ensure_db_job_tools", verify_command[2])
         self.assertIn(str(repo_root), db_job_command)
         self.assertIn(str(gitops_worktree), db_job_command)
         self.assertIn(str(gitops_worktree), verify_command)

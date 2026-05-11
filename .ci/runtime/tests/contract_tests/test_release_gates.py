@@ -64,6 +64,23 @@ class ReleaseGatePlannerTests(unittest.TestCase):
         self.assertTrue(plan.auto_merge_allowed)
         self.assertTrue(plan.auto_sync_allowed)
 
+    def test_payment_db_gate_pass_enables_playground_auto_merge_and_sync(self) -> None:
+        with self._repo_with_commit("payment/migrations/202604290001_add_table.up.sql") as (repo_root, source_sha):
+            plan = plan_release_gates(
+                repo_root=repo_root,
+                bundle_manifest=REPO_ROOT / ".ci/runtime/release-bundles.manifest",
+                service="payment",
+                env="sandbox-bj-7",
+                source_sha=source_sha,
+                image="example.com/payment:test",
+                pin_targets="payment",
+                db_status="passed",
+            )
+
+        self.assertEqual(plan.argo_sync, "auto")
+        self.assertTrue(plan.auto_merge_allowed)
+        self.assertTrue(plan.auto_sync_allowed)
+
     def test_payment_non_migration_change_still_requires_idempotent_db_gate(self) -> None:
         with self._repo_with_commit("payment/internal/api.go") as (repo_root, source_sha):
             plan = plan_release_gates(

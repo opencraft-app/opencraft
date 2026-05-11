@@ -1,0 +1,36 @@
+version: v2.0
+name: 构建 trade
+
+on:
+  push:
+    branches:
+      - master
+      - playground/sandbox-bj-*
+    paths:
+      - trade/**
+      - argocd/services/trade/**
+      - argocd/catalogs/sandbox/beijing-sandbox/trade.yaml
+      - argocd/catalogs/playground/beijing-playground/*/trade.yaml
+      - argocd/secrets/*/trade-runtime-secrets.sops.yaml
+    paths-ignore:
+      - OWNERS
+      - "**/OWNERS"
+  manual: enabled
+
+concurrency:
+  group: mono2-service-release-trade
+  cancel-in-progress: false
+  queue-length: 20
+  queue-timeout-minutes: 480
+
+extends:
+  template: service-release.yml
+  parameters:
+    SERVICE: trade
+    BUNDLE: trade
+    DISPLAY_NAME: trade
+    DEFAULT_TARGET_ENV: beijing-sandbox
+    MASTER_BUILD_ENVS: beijing-sandbox
+    MASTER_AUTO_PIN_ENVS: none
+    PLAYGROUND_BUILD_ENVS: auto
+    PLAYGROUND_AUTO_PIN_ENVS: auto

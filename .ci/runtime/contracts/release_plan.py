@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Sequence
 
-from contracts.bundles import DEFAULT_MANIFEST_PATH, load_bundle, load_manifest
+from contracts.bundles import DEFAULT_MANIFEST_PATH, is_playground_env, load_bundle, load_manifest
 
 
 PREPROD_AUTO_SYNC_ENVS = {"beijing-sandbox", "beijing-sandbox-2"}
@@ -137,7 +137,7 @@ def plan_release_gates(
     dependencies = [str(item) for item in ((manifest.get("bundles") or {}).get(service, {}).get("release_dependencies") or [])]
     release_dependency_changed = dependency_changed(manifest, dependencies, changed_files)
 
-    argo_sync = "manual" if env in PROD_MANUAL_SYNC_ENVS else "auto" if env in PREPROD_AUTO_SYNC_ENVS else "manual"
+    argo_sync = "manual" if env in PROD_MANUAL_SYNC_ENVS else "auto" if is_preprod_auto_sync_env(env) else "manual"
     db_gate_satisfied = not requires_db_readiness or (readiness_supported and db_status == "passed")
     dependency_gate_satisfied = not release_dependency_changed
     gate_satisfied = db_gate_satisfied and dependency_gate_satisfied
@@ -198,6 +198,10 @@ def plan_release_gates(
         manual_actions=manual_actions,
         changed_files=changed_files,
     )
+
+
+def is_preprod_auto_sync_env(env: str) -> bool:
+    return env in PREPROD_AUTO_SYNC_ENVS or is_playground_env(env)
 
 
 def emit_dotenv(plan: GatePlan) -> str:

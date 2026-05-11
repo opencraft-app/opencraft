@@ -133,7 +133,7 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
                 }
             )
 
-            subprocess.run(
+            result = subprocess.run(
                 [
                     "/bin/bash",
                     str(REPO_ROOT / ".ci/runtime/build_and_promote_to_gitops.sh"),
@@ -155,6 +155,80 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
             self.assertIn("example.com/beijing-sandbox:test-tag", pins[0])
             self.assertIn("sandbox\tsandbox\tbeijing-sandbox-2\t", pins[1])
             self.assertIn("example.com/beijing-sandbox-2:test-tag", pins[1])
+            self.assertIn("发布产物已生成：可复制下面参数手动 promote", result.stdout)
+            self.assertIn("PIPELINE_MODE=promote TARGET_ENV=beijing-sandbox SOURCE_SHA=", result.stdout)
+            self.assertIn("PIPELINE_MODE=promote TARGET_ENV=beijing-sandbox-2 SOURCE_SHA=", result.stdout)
+
+    def test_build_without_auto_pin_prints_manual_promote_hint(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fake_bin = Path(tmp)
+            fake_python = fake_bin / "python3"
+            fake_python.write_text(
+                textwrap.dedent(
+                    f"""\
+                    #!/bin/bash
+                    if [[ "$1" == "{REPO_ROOT}/.ci/runtime/commands/build_release_image.py" ]]; then
+                      env_name=""
+                      output_file=""
+                      while [[ $# -gt 0 ]]; do
+                        case "$1" in
+                          --env)
+                            env_name="$2"
+                            shift 2
+                            ;;
+                          --image-output-file)
+                            output_file="$2"
+                            shift 2
+                            ;;
+                          *)
+                            shift
+                            ;;
+                        esac
+                      done
+                      printf 'registry.example.com/frontend:test-tag\\n' > "$output_file"
+                      exit 0
+                    fi
+                    exec "{sys.executable}" "$@"
+                    """
+                )
+            )
+            fake_python.chmod(0o755)
+            env = os.environ.copy()
+            env.update(
+                {
+                    "PATH": f"{fake_bin}:{env['PATH']}",
+                    "TCR_SHPROD_PASSWORD": "fake-password",
+                    "BUILD_TAG_OVERRIDE": "test-tag",
+                    "DEPLOYED_AT": "2026-04-29T00:00:00Z",
+                }
+            )
+
+            result = subprocess.run(
+                [
+                    "/bin/bash",
+                    str(REPO_ROOT / ".ci/runtime/build_and_promote_to_gitops.sh"),
+                    "frontend",
+                    "frontend",
+                    "shprod",
+                    "none",
+                ],
+                cwd=REPO_ROOT,
+                env=env,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+
+            source_ref = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, text=True).strip()
+            self.assertIn("发布产物已生成：可复制下面参数手动 promote", result.stdout)
+            self.assertIn(f"SOURCE_SHA:\x1b[0m {source_ref}", result.stdout)
+            self.assertIn("镜像 tag:\x1b[0m test-tag", result.stdout)
+            self.assertIn("镜像:\x1b[0m registry.example.com/frontend:test-tag", result.stdout)
+            self.assertIn(f"PIPELINE_MODE=promote TARGET_ENV=shprod SOURCE_SHA={source_ref}", result.stdout)
+            self.assertIn(
+                f"promote_bundle_image_to_gitops.sh frontend frontend shprod {source_ref}",
+                result.stdout,
+            )
 
     def test_pin_script_uses_materialized_runtime_after_gitops_checkout(self) -> None:
         script = (REPO_ROOT / ".ci/runtime/pin_image_to_gitops.sh").read_text()

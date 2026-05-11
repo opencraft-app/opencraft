@@ -24,6 +24,7 @@ stages:
           - name: 校验 promote 分支
             shell: bash
             env:
+              GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}
               SOPS_AGE_KEY: ${{ settings.SOPS_AGE_KEY }}
               SOPS_AGE_KEY_FILE: ${{ settings.SOPS_AGE_KEY_FILE }}
             run: |

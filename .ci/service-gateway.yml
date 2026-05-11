@@ -5,7 +5,7 @@ on:
   push:
     branches:
       - master
-      - playground/sandbox-bj-2
+      - playground/sandbox-bj-*
     paths:
       - service-gateway/**
       - argocd/services/service-gateway/**
@@ -31,5 +31,5 @@ extends:
     DEFAULT_TARGET_ENV: shprod
     MASTER_BUILD_ENVS: beijing-sandbox,shprod
     MASTER_AUTO_PIN_ENVS: beijing-sandbox
-    PLAYGROUND_BUILD_ENVS: beijing-sandbox-2
-    PLAYGROUND_AUTO_PIN_ENVS: beijing-sandbox-2
+    PLAYGROUND_BUILD_ENVS: auto
+    PLAYGROUND_AUTO_PIN_ENVS: auto

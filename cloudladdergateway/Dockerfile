@@ -10,7 +10,20 @@ COPY cloudladdergateway/ ./
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/cloudladdergateway ./cmd/cloudladdergateway
 
 FROM --platform=linux/amd64 alpine:3.20
-RUN apk add --no-cache ca-certificates tzdata
+RUN apk add --no-cache \
+    bash \
+    bind-tools \
+    busybox-extras \
+    ca-certificates \
+    curl \
+    iproute2 \
+    lsof \
+    netcat-openbsd \
+    procps \
+    strace \
+    tmux \
+    tzdata \
+    wget
 WORKDIR /app
 
 COPY --from=builder /out/cloudladdergateway /usr/local/bin/cloudladdergateway

@@ -42,6 +42,12 @@
 - `.ci/staticpages.yml`
 - `.ci/subscription.yml`
 
+独立验证入口：
+
+- `.ci/cloudladdergateway.yml`
+  - 当前只运行 `go test ./...` 和 Docker 镜像构建验证。
+  - 该服务暂未接入 GitOps release bundle，因此不使用 `.ci/templates/service-release.yml`，也不会自动 promote/pin。
+
 这些入口保留 `name` / `on.push.paths` / `manual` / `extends`，并通过统一模板传入
 `SERVICE` / `BUNDLE` / `DISPLAY_NAME`。服务级变更仍由对应 `.ci/<service>.yml`
 的 `push.paths` 触发，模板只承载执行逻辑。
@@ -65,6 +71,7 @@
 - 不要为了 `extends.template.path` 对象写法切到 `version: v3.0`；蓝盾 PAC v3 暂未支持局部模板，`.ci/templates/service-release.yml` 这类本仓库模板应继续走 Stream v2。
 - 非流水线配置不要使用 `.yaml` 后缀放在 `.ci/**` 下；蓝盾会把 `.ci/**/*.yaml` 误识别成流水线候选。Guard 注册表用 `.ci/guards.manifest`，release bundle 源用 `.ci/runtime/bundles/*.bundle`。
 - `frontend`、`frontend-edgeone-*`、`gitops-*`、`ci-runtime`、`mr-placeholder` 不属于这批标准 service release 入口，不使用该模板。
+- `cloudladdergateway` 当前只有独立验证入口，不属于标准 service release 入口；等补齐 GitOps closure 和 release bundle 后再迁入模板。
 
 ### Release 并发模型
 
@@ -136,6 +143,29 @@ extends:
 3. 在日志中确认模板已正确实例化：`SERVICE`、`BUNDLE`、`PIPELINE_MODE`、`TARGET_ENV` 输出符合预期。
 4. 确认 `PIPELINE_MODE=build` 时只按业务分支规则构建；`PIPELINE_MODE=promote` 时只进入手动 GitOps promote。
 5. 如果只是验证模板实例化，不要通过修改 `.ci/**` 来触发业务流水线。
+
+## Playground DNS
+
+Playground 环境公网 DNS 通过 `.ci/runtime/commands/configure_playground_dns.py`
+维护。脚本只从环境变量读取腾讯云密钥，不把 Secret 写入仓库。
+
+典型用法：
+
+```bash
+TENCENTCLOUD_SECRET_ID=... \
+TENCENTCLOUD_SECRET_KEY=... \
+python3 .ci/runtime/commands/configure_playground_dns.py \
+  --env sandbox-bj-4 \
+  --domain lightclaw.tech \
+  --namespace lightvela-playground-sandbox-bj-4 \
+  --kubeconfig /etc/lightclaw-ci/kubeconfig_beijing_sandbox_2 \
+  --include-env-root
+```
+
+脚本会从 Kubernetes Ingress 发现 host -> CLB 地址，并 upsert DNSPod
+记录。`--include-env-root` 会把 `<env>.lightclaw.tech` 指向
+`*.<env>.lightclaw.tech` 同一个 sandbox ingressproxy CLB，避免根域不被通配
+记录覆盖。
 
 ## Verified Working Setup
 
@@ -217,6 +247,131 @@ GitOps promote 分支策略已收口到 `.ci/runtime/gitops/promotion_policy.py`
 
 GitOps promote 的可读发布视图由 `.ci/runtime/gitops/release_facts.py` 与
 `.ci/runtime/gitops/release_view.py` 派生生成：
+
+## Playground 环境创建提示词
+
+`sandbox-bj-N` / `beijing-playground` 新环境建设先按 GitOps closure 推进，再补外部 DNS/证书/SSM 动作。不要为了复用证书临时改变域名模型。
+
+playground 的运行时状态也应尽量 namespace-local：
+
+- `env-bootstrap` app 管理 `mysql` / `redis` 的 `StatefulSet + PVC + Service`。
+- 业务配置指向 `mysql.<namespace>.svc.cluster.local` 和 `redis.<namespace>.svc.cluster.local:6379`。
+- `create_playground_environment.py --write` 会为新环境生成最小 `playground-runtime-secrets.sops.yaml`，只承载 MySQL root 和 Redis password；缺 `sops` 或 age key 时直接失败。
+- `env-bootstrap` 通过 `ksops-runtime-secrets-generator.yaml` 引入该 secret；MySQL/Redis StatefulSet 与 DB bootstrap/root 路径不能再引用复制来的大 secret。
+- 删除 playground catalog 后，Argo prune namespace 内 workload 和 PVC，销毁语义比共享外部 MySQL/Redis 更干净。
+- 共享外部 MySQL/Redis 只适合 `beijing-sandbox` 这类预发布环境，不作为 `sandbox-bj-N` 的默认模型。
+
+frontend 容器镜像必须单独确认：
+
+- `argocd/services/frontend/<env>/frontend-platform.env` 写入的 `FRONTEND_IMAGE` 必须已经存在于 TCR。
+- 正常路径是构建并推送目标 env tag，例如 `frontend-sandbox-bj-N-<source-sha>`。
+- 只有当同 registry 中已经存在同 source sha 的等价 frontend 镜像，且只是缺少目标 env tag 时，才允许把已有 tag retag 成目标 tag 来解锁 live。
+- retag 必须记录来源 tag、目标 tag、digest 和“不重新构建”的理由；它只解决 registry tag 缺失，不替代长期 CI 构建入口。
+- 如果 frontend 源码、Dockerfile、lockfile、`VITE_*` 构建参数或静态资源入口有任何差异，必须重新构建，不能 retag。
+
+受控检查/retag 入口：
+
+```bash
+python3 .ci/runtime/commands/ensure_playground_frontend_image.py \
+  --target-image lightclaw-bj8.tencentcloudcr.com/lightclaw/frontend:frontend-sandbox-bj-6-d28bf7b09cab \
+  --source-image lightclaw-bj8.tencentcloudcr.com/lightclaw/frontend:frontend-sandbox-bj-5-d28bf7b09cab
+```
+
+默认只检查并给出结论；确认为同 source sha 等价镜像后，加 `--apply` 才会执行 `docker pull/tag/push`。执行前先用 `.ci/init.sh` 的 `ci_set_registry_credentials <env>` 加载 registry 凭据。
+
+GitOps closure 克隆入口：
+
+```bash
+.ci/runtime/create_playground_from_gitops.sh --to-env sandbox-bj-6
+```
+
+默认模板源是 `sandbox-bj-5`，因为它包含 frontend closure；不要退回 `sandbox-bj-3` 作为默认模板源。不要在 `master` 源码 checkout 里直接跑 `create_playground_environment.py` 的默认命令；playground 模板在 `origin/gitops`。如果已经有持久 GitOps worktree，需要写文件时使用：
+
+```bash
+GITOPS_WORKTREE=/tmp/mono2-gitops-create \
+  .ci/runtime/create_playground_from_gitops.sh --to-env sandbox-bj-6 --write
+```
+
+固定入口默认是：
+
+- `api-sandbox-bj-N.lightclaw.tech`
+- `admin-sandbox-bj-N.lightclaw.tech`
+- `frontend.sandbox-bj-N.lightclaw.tech`
+- 可选 `sandbox-bj-N.lightclaw.tech`
+
+实例入口默认是：
+
+- `*.sandbox-bj-N.lightclaw.tech`
+
+证书规则：
+
+- 固定入口申请或选择单域名证书。
+- wildcard 实例入口默认只开 HTTP；没有真实覆盖 `*.sandbox-bj-N.lightclaw.tech` 的证书时，不要绑定 HTTPS。
+- 不要把 `*.sandbox.lightclaw.tech` 证书复用到 `sandbox-bj-N` 的 API/Admin/frontend/wildcard host。
+- 证书 secret 进入 GitOps 前，必须确认 SAN 覆盖目标 host。
+
+推荐执行顺序：
+
+1. 用 `.ci/runtime/commands/create_playground_environment.py` 生成或克隆 GitOps closure。
+2. 校验 catalog、services、secrets、AppProject 和 strict Kustomize。
+3. 配置 DNS：固定入口和 wildcard HTTP。
+4. 配置固定入口单域名证书；wildcard HTTPS 没有合适证书时跳过。
+5. 合入 GitOps MR，让 sandbox-family AppSet 生成 apps。
+6. 等 Argo apps 到最新 `gitops` revision 的 `Synced / Healthy`。
+7. 确认 frontend 目标镜像 tag 存在。缺 tag 时优先补构建；只有同 source sha 等价 tag 已存在时，才允许 retag 解锁。
+8. 确认 namespace-local MySQL/Redis Ready，且 `playground-runtime-secrets` 已生成并由 env-bootstrap 引入，再执行 DB bootstrap / readiness。
+9. 检查 pods、Service endpoints、Ingress Ready。
+10. 用公网 curl 验证固定 HTTPS 入口；wildcard HTTP 出现 `400 invalid host` 时，说明已到 ingressproxy，只是没有具体实例映射。
+
+排障优先级：
+
+- pod/endpoints 正常但公网 504：优先查 `ingress.cloud.tencent.com/direct-access: "true"`、TkeServiceConfig health check、NodePort/endpoints。
+- Argo app missing：先查 `sandbox-family-appset.yaml` 是否覆盖 playground catalog，再 refresh root app。
+- DB job 失败：先确认 namespace-local MySQL/Redis Ready、namespace、`playground-runtime-secrets` 和业务 SOPS payload，不要只看 secret 文件名或 metadata。
+- frontend `ImagePullBackOff`：先查 `FRONTEND_IMAGE` tag 是否存在。若同 source sha 的其它 playground tag 已存在，可以 retag 临时解锁；否则必须构建目标 env 镜像。
+- TLS 不通：先查证书 SAN 覆盖，不要反复切换 Ingress 配置。
+
+## Playground 环境诊断脚手架
+
+北京 playground 的新增/恢复流程不是完全自动化发布产品，但已经沉淀了一个可执行诊断入口：
+
+```bash
+python3 .ci/runtime/commands/diagnose_playground_environment.py \
+  --repo-root . \
+  --env sandbox-bj-3 \
+  --fetch \
+  --argocd-base-url https://9.208.245.238:30547 \
+  --argocd-username admin \
+  --argocd-insecure-skip-verify \
+  --kubeconfig .secret/cls-ftjhqdjt-config
+```
+
+该脚本按证据链分段检查：
+
+- `origin/master` 与 `origin/gitops` 的 `sandbox-family-appset.yaml` 是否同时扫描 sandbox 和 playground catalog。
+- `origin/gitops` 是否存在 `argocd/catalogs/playground/beijing-playground/<env>/*.yaml` inventory。
+- Argo live apps 是否按 catalog 生成，并达到 `Synced / Healthy`。
+- 可选 kubeconfig 下目标 namespace 是否有 pod，且 pod phase 没有异常。
+
+脚本不直接写 Git、不直接改 live，不会替代 GitOps MR。遇到不能稳定自动化的环节，它只打印下一步建议，例如：
+
+- AppSet glob 被 promote 回滚：分别修 `master` 和 `gitops` 的 `sandbox-family-appset.yaml`。
+- catalog 不存在：创建 GitOps 迁移 MR，把 playground catalog / services / secrets 投影到 `gitops`。
+- Argo app missing：refresh `root-beijing-sandbox`，等待 ApplicationSet 重建；如果仍 missing，再查 AppSet generator。
+- namespace 为空或 kubectl EOF：先以 Argo API 为主证据，再排查目标集群 apiserver/network。
+
+常用弱依赖模式：
+
+```bash
+python3 .ci/runtime/commands/diagnose_playground_environment.py \
+  --repo-root . \
+  --env sandbox-bj-3 \
+  --fetch \
+  --skip-argocd \
+  --skip-kubernetes
+```
+
+这个模式适合在没有 Argo 凭据或 kubeconfig 的本地先检查 GitOps 入口和 catalog 真相源。
 
 - 真相源仍是 promote commit trailers、Gongfeng MR、`gitops` merge commit 和 Argo live state
 - MR comment 与 CI console 只作为派生视图，不引入持久 `release-record.json`
@@ -371,15 +526,23 @@ Guard 自举策略：
 前端 Pages / EdgeOne / GitOps 镜像构建发布：
 
 - `.ci/frontend.yml`
-  - 默认构建 Cloudflare Pages 矩阵 + frontend GitOps 镜像；纯 CF 矩阵不加载 EdgeOne token
+  - 默认先构建并归档完整 frontend Pages artifact 矩阵：`cf:cn-lightvela-staging`、`cf:global-lightvela-intl-staging`、`eo:cn-lightvela-prod`、`eo:global-lightvela-intl-prod`
+  - Cloudflare 预发发布步骤只允许 `cf:*` 矩阵，并从 TCR 拉取已归档 artifact 校验后发布；不现场 rebuild
+  - artifact 构建步骤只需要 TCR/ORAS，不加载 Cloudflare/EdgeOne 发布 token
 - `.ci/frontend-edgeone-lightvela.yml`
-  - 手动发布 `eo:cn-lightvela-prod`
+  - 手动发布 `eo:cn-lightvela-prod`；强制从已归档 artifact 发布
 - `.ci/frontend-edgeone-lightvela-intl.yml`
-  - 手动发布 `eo:global-lightvela-intl-prod`
+  - 手动发布 `eo:global-lightvela-intl-prod`；强制从已归档 artifact 发布
 - `frontend/release-matrix.json`
-  - Pages 发布矩阵唯一事实来源
+  - Pages / EdgeOne 发布矩阵唯一事实来源；CF 组合 ID 使用站点化名称 `cf:cn-lightvela-staging`、`cf:global-lightvela-intl-staging`
 - `frontend/scripts/release-matrix.mjs`
-  - 解析矩阵并执行 build/deploy
+  - 解析矩阵并执行 build/deploy；不作为 `.ci/frontend.yml` 的默认发布入口
+- `frontend/scripts/build-release-artifacts.mjs`
+  - 复用矩阵 env 逻辑，只执行 build/archive/verify，不执行 deploy
+- `frontend/scripts/release-cloudflare-from-artifact.mjs`
+  - CF 预发发布入口：拉取 artifact，校验 repo/tag/source/combo/baked env/content 后，用解压目录发布 Cloudflare Pages
+- `frontend/scripts/release-edgeone-from-artifact.mjs`
+  - EO 正式发布入口：拉取 artifact，校验 repo/tag/source/combo/baked env/content 后，用解压目录发布 EdgeOne
 
 ### bootstrap
 
@@ -710,6 +873,7 @@ CI_RUNTIME_REF=refs/tags/ci-runtime-20260429-1
 - `admin-gateway.yml`
 - `ai-gateway.yml`
 - `ci-runtime.yml`
+- `cloudladdergateway.yml`
 - `ctl.yml`
 - `frontend-edgeone-lightvela.yml`
 - `frontend-edgeone-lightvela-intl.yml`
@@ -737,9 +901,9 @@ CI_RUNTIME_REF=refs/tags/ci-runtime-20260429-1
   - 当前复用 `service-gateway/Dockerfile` 和 `service-gateway` build context，但镜像 repo/tag 独立
 - `frontend.yml`
   - `build` 模式构建 frontend shprod 镜像，不自动 pin shprod
-  - Pages 矩阵发布与 GitOps 镜像发布在同一入口内分流
+  - frontend Pages artifact 全矩阵归档、CF 预发 artifact 发布与 GitOps 镜像发布在同一入口内分流
 - `frontend-edgeone-lightvela*.yml`
-  - 独立手动发布 EdgeOne 正式项目，不走 GitOps image pin
+  - 独立手动发布 EdgeOne 正式项目，不走 GitOps image pin，不现场 rebuild；必须输入 `FRONTEND_ARTIFACT_SOURCE_SHA` 或高级覆盖 `FRONTEND_ARTIFACT_REF`
 - `mr-placeholder.yml`
   - MR commit check 入口，按 changed files 派发 `.ci/guards.manifest` 注册的 guard
 - `lightclaw-auth.yml` 对应的 build bundle 是：
@@ -794,6 +958,19 @@ CI_RUNTIME_REF=refs/tags/ci-runtime-20260429-1
   - `/etc/lightclaw-ci/edgeone_lightvela_prod_token`
   - `/etc/lightclaw-ci/edgeone_lightvela_intl_prod_token`
   `发布 frontend eo:cn-lightvela-prod` 和 `发布 frontend eo:global-lightvela-intl-prod` 会优先读取对应本地文件，缺失时再回落到 Stream settings
+
+### Frontend EdgeOne Artifact Release Inputs
+
+EdgeOne 正式发布 CI 不再现场构建源码，只发布 `构建 frontend` 入口已经上传到 TCR 的 frontend Pages OCI artifact。
+
+- 常规输入：`FRONTEND_ARTIFACT_SOURCE_SHA`
+  - 接受 12 位 short SHA 或 40 位 full SHA
+  - 发布脚本按固定 EO combo 拼出 `<shortSha>-<normalizedComboId>` tag
+- 高级覆盖：`FRONTEND_ARTIFACT_REF`
+  - 传完整 OCI artifact ref，例如 `lightclaw-shprod.tencentcloudcr.com/lightclaw/frontend-pages:<shortSha>-eo-cn-lightvela-prod`
+  - 如果同时传 `FRONTEND_ARTIFACT_SOURCE_SHA`，两者必须解析到同一个 repo、short SHA 和目标 combo
+- 目标 combo 固定在对应 CI 文件的 `FRONTEND_RELEASE_MATRIX`，不能跨 combo 发布。
+- 发布前会校验 manifest 中的 `comboId`、`projectName`、`channel`、`region`、`outputDir`、Aegis/Vite baked env、archive sha/size 与解压内容 identity。
 
 ## Shared Scripts
 

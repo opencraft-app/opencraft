@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from contracts.release_plan import GatePlan, plan_release_gates
+from contracts.release_plan import GatePlan, is_preprod_auto_sync_env, plan_release_gates
 from support.process import run_logged
 
 
@@ -56,14 +56,15 @@ def run_db_gate(
     )
     emit_plan(plan)
 
-    if env in {"beijing-sandbox", "beijing-sandbox-2"}:
+    if is_preprod_auto_sync_env(env):
         if plan.release_dependency_changed:
-            raise RuntimeError("同批依赖服务发生变更；北京自动发布停止，避免无序自动 sync。")
+            raise RuntimeError("同批依赖服务发生变更；预发布自动发布停止，避免无序自动 sync。")
         if plan.requires_db_readiness:
             run_db_readiness_flow(
                 repo_root,
                 gitops_worktree,
                 runtime_command_dir,
+                bundle_manifest,
                 plan,
                 env,
                 source_ref,
@@ -80,7 +81,7 @@ def run_db_gate(
                 db_status="passed",
             )
         if not plan.auto_merge_allowed:
-            raise RuntimeError("北京自动发布门禁未通过；不创建可自动合并的 GitOps MR。")
+            raise RuntimeError("预发布自动发布门禁未通过；不创建可自动合并的 GitOps MR。")
         return "passed", plan
 
     if env == "shprod":
@@ -90,6 +91,7 @@ def run_db_gate(
                 repo_root,
                 gitops_worktree,
                 runtime_command_dir,
+                bundle_manifest,
                 plan,
                 env,
                 source_ref,
@@ -116,6 +118,7 @@ def run_db_readiness_flow(
     repo_root: Path,
     gitops_worktree: Path,
     runtime_command_dir: Path,
+    bundle_manifest: Path,
     plan: GatePlan,
     env: str,
     source_ref: str,
@@ -123,7 +126,6 @@ def run_db_readiness_flow(
     apply_migration: bool,
     shprod: bool = False,
 ) -> None:
-    ensure_db_tools(repo_root)
     if not plan.readiness_supported:
         if shprod:
             raise RuntimeError("DB readiness contract 不支持自动校验；停止进入上海生产待同步状态。")
@@ -144,19 +146,24 @@ def run_db_readiness_flow(
             env,
             "--revision",
             source_ref,
+            "--bundle-service",
+            plan.service,
+            "--bundle-manifest",
+            str(bundle_manifest),
             "--apply",
             "--wait",
         ]
         if plan.db_job_image_override:
             args.extend(["--image-override", plan.db_job_image_override])
         print("GitOps 发布门禁：先执行受控 DB job", file=sys.stderr)
-        run_logged(args, cwd=gitops_worktree)
+        run_with_db_tools(repo_root, args, cwd=gitops_worktree)
 
     if shprod:
         print("GitOps 待同步门禁：执行上海生产 DB readiness 只读校验", file=sys.stderr)
     else:
         print("GitOps 发布门禁：执行 DB readiness 只读校验", file=sys.stderr)
-    run_logged(
+    run_with_db_tools(
+        repo_root,
         [
             "python3",
             str(runtime_command_dir / "verify_db_contract.py"),
@@ -166,6 +173,8 @@ def run_db_readiness_flow(
             plan.service,
             "--env",
             env,
+            "--bundle-manifest",
+            str(bundle_manifest),
             "--apply",
             "--wait",
         ],
@@ -173,10 +182,17 @@ def run_db_readiness_flow(
     )
 
 
-def ensure_db_tools(repo_root: Path) -> None:
+def run_with_db_tools(repo_root: Path, command: list[str], *, cwd: Path) -> None:
     run_logged(
-        ["bash", "-c", 'source "$1/.ci/init.sh"; ci_ensure_db_job_tools', "bash", str(repo_root)],
-        cwd=repo_root,
+        [
+            "bash",
+            "-c",
+            'source "$1/.ci/init.sh"; shift; ci_ensure_db_job_tools; "$@"',
+            "bash",
+            str(repo_root),
+            *command,
+        ],
+        cwd=cwd,
     )
 
 
