@@ -78,6 +78,9 @@ make -C cloudladdergateway run-image TAG=dev
 
 `run-image` 只打印 secret 的长度和 SHA-256 指纹前 12 位，便于客户端与服务端对账，不打印明文。
 
+运行镜像内置基础排障工具：`bash`、`curl`、`wget`、`strace`、`lsof`、`tmux`、`ss/ip`、`dig/nslookup`、
+`nc`、`ps/top`。手动部署到 K8s 后，可以直接 `kubectl exec` 进入 Pod 做 HTTP、DNS、端口和进程排查。
+
 ## HTTP 调用
 
 ```bash
