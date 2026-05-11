@@ -115,7 +115,7 @@ def load_expected_apps(repo_root: Path, env: str, gitops_ref: str) -> list[Expec
 
     catalog_files = sorted(git_list_files(repo_root, gitops_ref, catalog_dir))
     if not catalog_files:
-        raise RuntimeError(f"no catalog files found under {catalog_dir} at {gitops_ref}")
+        return []
 
     expected: list[ExpectedApp] = []
     for catalog_file in catalog_files:
@@ -138,6 +138,20 @@ def load_expected_apps(repo_root: Path, env: str, gitops_ref: str) -> list[Expec
             )
         )
     return expected
+
+
+def expected_inventory_drifts(env: str, gitops_ref: str, expected_apps: Sequence[ExpectedApp]) -> list[Drift]:
+    catalog_dir = CATALOG_DIRS.get(env)
+    if catalog_dir and not expected_apps:
+        return [
+            Drift(
+                app_name=f"{env}/catalog",
+                field="gitops.catalog",
+                expected=f"{catalog_dir}/*.yaml",
+                live=f"missing at {gitops_ref}",
+            )
+        ]
+    return []
 
 
 def load_expected_direct_apps(repo_root: Path, env: str, gitops_ref: str) -> list[ExpectedApp]:
@@ -412,13 +426,14 @@ def run_audit(args: argparse.Namespace) -> tuple[str, list[Drift], int]:
 
     expected_apps = load_expected_apps(repo_root, args.env, args.gitops_ref)
     print(f"expected apps: {len(expected_apps)}")
+    inventory_drifts = expected_inventory_drifts(args.env, args.gitops_ref, expected_apps)
 
     argocd_base_url, argocd_username, argocd_password, ssl_context = resolve_argocd_settings(args)
     argocd_token = login_argocd(argocd_base_url, argocd_username, argocd_password, ssl_context)
     live_apps = list_argocd_apps(argocd_base_url, ssl_context, argocd_token)
     print(f"live apps visible: {len(live_apps)}")
 
-    drifts = evaluate_drift(
+    drifts = inventory_drifts + evaluate_drift(
         expected_apps=expected_apps,
         live_apps=live_apps,
         gitops_commit_sha=gitops_commit_sha,
@@ -441,4 +456,5 @@ def main() -> int:
         return exit_code
     except Exception as exc:  # noqa: BLE001
         notify_if_needed(webhook_url, args.env, args.gitops_ref, gitops_commit_sha, [], error=str(exc))
-        raise
+        print(f"gitops drift audit error: {exc}", file=sys.stderr)
+        return 1
