@@ -38,6 +38,9 @@ type Inventory struct {
 			NodePoolMinSize            int      `yaml:"node_pool_min_size"`
 			NodePoolDesiredCapacity    int      `yaml:"node_pool_desired_capacity"`
 			NodePoolMaxSize            int      `yaml:"node_pool_max_size"`
+			NodePoolSystemDiskType     string   `yaml:"node_pool_system_disk_type"`
+			NodePoolSystemDiskSize     int      `yaml:"node_pool_system_disk_size"`
+			ManageScaleWorker          *bool    `yaml:"manage_scale_worker"`
 			WorkerImgID                string   `yaml:"worker_img_id"`
 			NodePoolPublicIngressPorts []int    `yaml:"node_pool_public_ingress_ports"`
 		} `yaml:"tke"`

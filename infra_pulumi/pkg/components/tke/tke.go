@@ -119,8 +119,8 @@ func Ensure(ctx *stackctx.Context) error {
 		},
 		AutoScalingConfig: &kubernetes.NodePoolAutoScalingConfigArgs{
 			InstanceType:            pulumi.String(tke.InstanceType),
-			SystemDiskType:          pulumi.StringPtr("CLOUD_PREMIUM"),
-			SystemDiskSize:          pulumi.IntPtr(50),
+			SystemDiskType:          pulumi.StringPtr(nodePoolSystemDiskType(ctx)),
+			SystemDiskSize:          pulumi.IntPtr(nodePoolSystemDiskSize(ctx)),
 			OrderlySecurityGroupIds: pulumi.StringArray{nodePoolGroup.ID().ToStringOutput()},
 			InternetChargeType:      pulumi.StringPtr("TRAFFIC_POSTPAID_BY_HOUR"),
 			InternetMaxBandwidthOut: pulumi.IntPtr(0),
@@ -165,22 +165,28 @@ func Ensure(ctx *stackctx.Context) error {
 		return err
 	}
 
-	scaleWorker, err := kubernetes.NewScaleWorker(ctx.Pulumi, naming.StableResource("tke", "scale-worker"), &kubernetes.ScaleWorkerArgs{
-		ClusterId:     clusterID,
-		DesiredPodNum: scaleWorkerDesiredPodNum(ctx),
-		WorkerConfig: &kubernetes.ScaleWorkerWorkerConfigArgs{
-			AvailabilityZone:        pulumi.String(tke.AvailabilityZone),
-			InstanceType:            pulumi.String(tke.InstanceType),
-			SubnetId:                ctx.ResolveString(tke.SubnetID),
-			SecurityGroupIds:        pulumi.StringArray{nodePoolGroup.ID().ToStringOutput()},
-			ImgId:                   pulumi.StringPtr(tke.WorkerImgID),
-			Password:                ctx.Runtime.NodePassword,
-			EnhancedSecurityService: pulumi.Bool(false),
-			EnhancedMonitorService:  pulumi.Bool(false),
-		},
-	}, ctx.OptionsWithImport(ctx.Plan.TKE.ScaleWorkerID, pulumi.IgnoreChanges([]string{"desiredPodNum", "workerConfig"}))...)
-	if err != nil {
-		return err
+	endpointDependencies := []pulumi.Resource{nodePool}
+	if manageScaleWorker(ctx) {
+		scaleWorker, err := kubernetes.NewScaleWorker(ctx.Pulumi, naming.StableResource("tke", "scale-worker"), &kubernetes.ScaleWorkerArgs{
+			ClusterId:     clusterID,
+			DesiredPodNum: scaleWorkerDesiredPodNum(ctx),
+			WorkerConfig: &kubernetes.ScaleWorkerWorkerConfigArgs{
+				AvailabilityZone:        pulumi.String(tke.AvailabilityZone),
+				InstanceType:            pulumi.String(tke.InstanceType),
+				SubnetId:                ctx.ResolveString(tke.SubnetID),
+				SecurityGroupIds:        pulumi.StringArray{nodePoolGroup.ID().ToStringOutput()},
+				ImgId:                   pulumi.StringPtr(tke.WorkerImgID),
+				SystemDiskType:          pulumi.StringPtr(nodePoolSystemDiskType(ctx)),
+				SystemDiskSize:          pulumi.IntPtr(nodePoolSystemDiskSize(ctx)),
+				Password:                ctx.Runtime.NodePassword,
+				EnhancedSecurityService: pulumi.Bool(false),
+				EnhancedMonitorService:  pulumi.Bool(false),
+			},
+		}, ctx.OptionsWithImport(ctx.Plan.TKE.ScaleWorkerID, pulumi.IgnoreChanges([]string{"desiredPodNum", "workerConfig"}))...)
+		if err != nil {
+			return err
+		}
+		endpointDependencies = append(endpointDependencies, scaleWorker)
 	}
 
 	if !ctx.Runtime.EnableImport && tke.ClusterInternet {
@@ -192,7 +198,7 @@ func Ensure(ctx *stackctx.Context) error {
 		}
 		_, err = kubernetes.NewClusterEndpoint(ctx.Pulumi, naming.StableResource("tke", "cluster-endpoint"), endpointArgs,
 			ctx.Options(
-				pulumi.DependsOn([]pulumi.Resource{nodePool, scaleWorker}),
+				pulumi.DependsOn(endpointDependencies),
 				pulumi.IgnoreChanges([]string{
 					"clusterInternetDomain",
 					"clusterExternalEndpoint",
@@ -214,6 +220,29 @@ func Ensure(ctx *stackctx.Context) error {
 	ctx.Pulumi.Export("tkeNodePoolId", nodePool.ID())
 	ctx.Pulumi.Export("tkeNodePoolName", pulumi.String(nodePoolName))
 	return nil
+}
+
+func manageScaleWorker(ctx *stackctx.Context) bool {
+	if ctx.Inventory.Stacks.TKE.ManageScaleWorker == nil {
+		return true
+	}
+	return *ctx.Inventory.Stacks.TKE.ManageScaleWorker
+}
+
+func nodePoolSystemDiskType(ctx *stackctx.Context) string {
+	diskType := strings.TrimSpace(ctx.Inventory.Stacks.TKE.NodePoolSystemDiskType)
+	if diskType == "" {
+		return "CLOUD_PREMIUM"
+	}
+	return diskType
+}
+
+func nodePoolSystemDiskSize(ctx *stackctx.Context) int {
+	diskSize := ctx.Inventory.Stacks.TKE.NodePoolSystemDiskSize
+	if diskSize <= 0 {
+		return 50
+	}
+	return diskSize
 }
 
 func nodePoolNodeConfig(ctx *stackctx.Context) *kubernetes.NodePoolNodeConfigArgs {
