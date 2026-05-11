@@ -1,8 +1,8 @@
-// ⚠️ 必须最先 import：在 tea-app 模块加载前设置 window.VERSION，
-// 否则 tea-app 的 i18next lng 会固定为 "zh"。
-// 纯 side-effect import——只关心 module 顶层 `(window as any).VERSION = "en"` 的赋值，
-// 不使用其导出的 isEnglishEnv 值（SDK initI18n 签名 () => void，不接收词条参数）。
-import "@/lib/i18n-env";
+// ⚠️ 必须最先 import：模块顶层会同步设置 `window.VERSION`，
+// tea-app 的 i18n 模块在加载时读取此值决定 i18next 的 lng（zh / en）。
+// 同时导出 `bootstrapSdkI18n` 用于异步加载词条 + 调用 SDK 的 initI18n。
+// 语言由 @/lib/region 的 isGlobal 唯一决定，不再使用 ?lang= 参数。
+import { bootstrapSdkI18n } from "@/lib/i18n-env";
 
 import { LegalFooter } from "@/components/site/legal-footer";
 import { motion, AnimatePresence } from "framer-motion";
@@ -55,9 +55,9 @@ import {
   SkillPanel,
   createLighthouseConfig,
   createLightClawScripts,
-  initI18n,
   type IInstanceInfo,
   type IFeatureFlags,
+  type IProductConfig,
 } from "@tencent/tea-sdk-lightclaw";
 import { createMonoDebugExecAdapter } from "@/pages/marketing/openclaw-tat-adapter";
 import { installOpenClawConsoleHelpers } from "@/pages/marketing/openclaw-console-helpers";
@@ -75,12 +75,13 @@ import "@tencent/tea-sdk-lightclaw/styles";
 
 const DEFAULT_TAT_TERMINAL_TIMEOUT_SECONDS = 3600;
 
-// Vite 生产构建（Rollup）会 tree-shake 掉 SDK 的自动 i18n.init()，
-// 导致 t() 返回空字符串。
-// SDK 的 initI18n 签名为 () => void，不接收词条参数；语言切换由
-// @/lib/i18n-env 在 import 时副作用写入 window.VERSION 完成，
-// tea-app 模块加载时读取此值决定 lng，SDK 内部会自己挂载对应词条。
-initI18n();
+// SDK i18n 引导：
+//   - 国际站（isGlobal）：异步加载英文词条后调用 SDK 的 initI18n({ translation })
+//   - 国内站：同步空词条 init，t() 返回 key 字面值（=中文源码原文）
+// 配合 SDK 内部 MODEL_PROVIDER_LIST/CHANNEL_LIST 的 Proxy 惰性求值，
+// 即使英文词条尚未加载完成，组件首次访问列表时词条已就绪。
+// 这里 fire-and-forget，模块顶层不需要 await。
+void bootstrapSdkI18n();
 
 /* ─── Types ─── */
 
@@ -169,8 +170,11 @@ const SettingsNavbar = () => {
       <div className="mx-auto flex h-[60px] items-center justify-between max-w-[1440px] px-6 md:px-[80px]">
         <BrandMark to="/" />
         <div className="flex items-center gap-3">
-          {/* 语言切换器：仅国际站展示 */}
-          {isGlobal && <LanguageSwitcher />}
+          {/* 语言切换器：仅国际站展示。
+              ⚠️ settings 页内嵌 @tencent/tea-sdk-lightclaw（基于 tea-app i18n），
+              而 tea-app i18n 是 init-once 设计，运行时无法热切换 lng；
+              因此切换语言后必须刷新页面才能让 SDK 区域同步更新文案。 */}
+          {isGlobal && <LanguageSwitcher reloadAfterSwitch />}
           <Link
             to="/"
             className="inline-flex items-center justify-center h-[36px] px-5 bg-[#F5F5F5] text-black/90 rounded-[100px] border border-[#E6E9EF] shadow-[0_2px_0_rgba(187,187,187,0.05)] hover:bg-black/5 transition-colors font-heading text-sm font-medium"
@@ -194,25 +198,25 @@ export const _SectionCard = ({ title, icon, headerRight, children }: { title: st
   if (isGlobal) return null;
   return (
     <motion.div
-    variants={fadeIn}
-    className="overflow-hidden rounded-2xl"
-    style={{
-      border: "1px solid rgba(0,0,0,0.06)",
-      background: "#ffffff",
-      boxShadow: "0 4px 24px rgba(0,0,0,0.03), 0 1px 2px rgba(0,0,0,0.02)",
-    }}
-  >
-    <div className="flex items-center gap-3 px-6 py-4" style={{ borderBottom: "1px solid rgba(0,0,0,0.05)" }}>
-      <div className="flex h-8 w-8 items-center justify-center rounded-xl" style={{ background: "rgba(0,0,0,0.04)", color: "rgba(0,0,0,0.90)" }}>
-        {icon}
+      variants={fadeIn}
+      className="overflow-hidden rounded-2xl"
+      style={{
+        border: "1px solid rgba(0,0,0,0.06)",
+        background: "#ffffff",
+        boxShadow: "0 4px 24px rgba(0,0,0,0.03), 0 1px 2px rgba(0,0,0,0.02)",
+      }}
+    >
+      <div className="flex items-center gap-3 px-6 py-4" style={{ borderBottom: "1px solid rgba(0,0,0,0.05)" }}>
+        <div className="flex h-8 w-8 items-center justify-center rounded-xl" style={{ background: "rgba(0,0,0,0.04)", color: "rgba(0,0,0,0.90)" }}>
+          {icon}
+        </div>
+        <h3 className="flex-1 text-base font-semibold" style={{ color: "rgba(0,0,0,0.90)", letterSpacing: "-0.2px" }}>{title}</h3>
+        {headerRight}
       </div>
-      <h3 className="flex-1 text-base font-semibold" style={{ color: "rgba(0,0,0,0.90)", letterSpacing: "-0.2px" }}>{title}</h3>
-      {headerRight}
-    </div>
-    <div className="p-6">
-      {children}
-    </div>
-  </motion.div>
+      <div className="p-6">
+        {children}
+      </div>
+    </motion.div>
   );
 }
 
@@ -222,48 +226,48 @@ export const _DeleteConfirmDialog = ({ botName, onConfirm, onCancel }: { botName
   const t = useT();
   if (isGlobal) return null;
   return (
-  <motion.div
-    initial={{ opacity: 0 }}
-    animate={{ opacity: 1 }}
-    exit={{ opacity: 0 }}
-    className="fixed inset-0 z-50 flex items-center justify-center"
-    style={{ backgroundColor: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}
-    onClick={onCancel}
-  >
     <motion.div
-      initial={{ opacity: 0, y: 20, scale: 0.95 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: 20, scale: 0.95 }}
-      transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
-      className="relative mx-4 flex w-full max-w-sm flex-col items-center rounded-[1.75rem] border p-8 shadow-2xl"
-      style={{ background: "rgba(255,255,255,0.98)", borderColor: "rgba(0,0,0,0.06)" }}
-      onClick={(e) => e.stopPropagation()}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      style={{ backgroundColor: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}
+      onClick={onCancel}
     >
-      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl" style={{ background: "rgba(207,61,76,0.08)" }}>
-        <AlertTriangle className="h-6 w-6" style={{ color: "#cf3d4c" }} />
-      </div>
-      <h3 className="mb-1.5 text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("确认删除")}</h3>
-      <p className="mb-6 text-center text-sm leading-relaxed text-[var(--text-secondary)]">
-        {t("确定要删除龙虾 {{name}} 吗？此操作不可撤销。", { name: `"${botName}"` })}
-      </p>
-      <div className="flex w-full gap-3">
-        <button
-          onClick={onCancel}
-          className="flex-1 rounded-full border px-4 py-2.5 text-sm font-medium transition-colors hover:bg-[var(--surface-muted)]"
-          style={{ borderColor: "rgba(0,0,0,0.08)", color: "#666" }}
-        >
-          {t("取消")}
-        </button>
-        <button
-          onClick={onConfirm}
-          className="flex-1 rounded-full px-4 py-2.5 text-sm font-bold text-white transition-colors hover:opacity-90"
-          style={{ background: "#cf3d4c" }}
-        >
-          {t("确认删除")}
-        </button>
-      </div>
+      <motion.div
+        initial={{ opacity: 0, y: 20, scale: 0.95 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 20, scale: 0.95 }}
+        transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
+        className="relative mx-4 flex w-full max-w-sm flex-col items-center rounded-[1.75rem] border p-8 shadow-2xl"
+        style={{ background: "rgba(255,255,255,0.98)", borderColor: "rgba(0,0,0,0.06)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl" style={{ background: "rgba(207,61,76,0.08)" }}>
+          <AlertTriangle className="h-6 w-6" style={{ color: "#cf3d4c" }} />
+        </div>
+        <h3 className="mb-1.5 text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("确认删除")}</h3>
+        <p className="mb-6 text-center text-sm leading-relaxed text-[var(--text-secondary)]">
+          {t("确定要删除龙虾 {{name}} 吗？此操作不可撤销。", { name: `"${botName}"` })}
+        </p>
+        <div className="flex w-full gap-3">
+          <button
+            onClick={onCancel}
+            className="flex-1 rounded-full border px-4 py-2.5 text-sm font-medium transition-colors hover:bg-[var(--surface-muted)]"
+            style={{ borderColor: "rgba(0,0,0,0.08)", color: "#666" }}
+          >
+            {t("取消")}
+          </button>
+          <button
+            onClick={onConfirm}
+            className="flex-1 rounded-full px-4 py-2.5 text-sm font-bold text-white transition-colors hover:opacity-90"
+            style={{ background: "#cf3d4c" }}
+          >
+            {t("确认删除")}
+          </button>
+        </div>
+      </motion.div>
     </motion.div>
-  </motion.div>
   );
 };
 
@@ -273,41 +277,41 @@ export const _LimitReachedDialog = ({ maxBots, planName, onClose }: { maxBots: n
   const t = useT();
   if (isGlobal) return null;
   return (
-  <motion.div
-    initial={{ opacity: 0 }}
-    animate={{ opacity: 1 }}
-    exit={{ opacity: 0 }}
-    className="fixed inset-0 z-50 flex items-center justify-center"
-    style={{ backgroundColor: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}
-    onClick={onClose}
-  >
     <motion.div
-      initial={{ opacity: 0, y: 20, scale: 0.95 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: 20, scale: 0.95 }}
-      transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
-      className="relative mx-4 flex w-full max-w-sm flex-col items-center rounded-[1.75rem] border p-8 shadow-2xl"
-      style={{ background: "rgba(255,255,255,0.98)", borderColor: "rgba(0,0,0,0.06)" }}
-      onClick={(e) => e.stopPropagation()}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      style={{ backgroundColor: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}
+      onClick={onClose}
     >
-      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl" style={{ background: "rgba(230,111,98,0.08)" }}>
-        <Crown className="h-6 w-6" style={{ color: "var(--lw-accent)" }} />
-      </div>
-      <h3 className="mb-1.5 text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("已达创建上限")}</h3>
-      <p className="mb-2 text-center text-sm leading-relaxed text-[var(--text-secondary)]">
-        {t("当前 {{plan}} 套餐最多可创建 {{max}} 只龙虾，你已达到上限。", { plan: planName, max: String(maxBots) })}
-      </p>
-      <div className="flex w-full gap-3" style={{ marginTop: 25 }}>
-        <button
-          onClick={onClose}
-          className="flex-1 rounded-full border px-4 py-2.5 text-sm font-medium transition-colors hover:bg-[var(--surface-muted)]"
-          style={{ borderColor: "rgba(0,0,0,0.08)", color: "#666" }}
-        >
-          {t("我知道了")}
-        </button>
-      </div>
+      <motion.div
+        initial={{ opacity: 0, y: 20, scale: 0.95 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 20, scale: 0.95 }}
+        transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
+        className="relative mx-4 flex w-full max-w-sm flex-col items-center rounded-[1.75rem] border p-8 shadow-2xl"
+        style={{ background: "rgba(255,255,255,0.98)", borderColor: "rgba(0,0,0,0.06)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl" style={{ background: "rgba(230,111,98,0.08)" }}>
+          <Crown className="h-6 w-6" style={{ color: "var(--lw-accent)" }} />
+        </div>
+        <h3 className="mb-1.5 text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("已达创建上限")}</h3>
+        <p className="mb-2 text-center text-sm leading-relaxed text-[var(--text-secondary)]">
+          {t("当前 {{plan}} 套餐最多可创建 {{max}} 只龙虾，你已达到上限。", { plan: planName, max: String(maxBots) })}
+        </p>
+        <div className="flex w-full gap-3" style={{ marginTop: 25 }}>
+          <button
+            onClick={onClose}
+            className="flex-1 rounded-full border px-4 py-2.5 text-sm font-medium transition-colors hover:bg-[var(--surface-muted)]"
+            style={{ borderColor: "rgba(0,0,0,0.08)", color: "#666" }}
+          >
+            {t("我知道了")}
+          </button>
+        </div>
+      </motion.div>
     </motion.div>
-  </motion.div>
   );
 };
 
@@ -634,9 +638,9 @@ export const ChannelSection = () => {
 
               {/* 操作按钮 */}
               {wxStatus === "success" ? (
-                  <button onClick={closeQrModal} className="lw-btn-primary w-full">
-                    <Check className="h-4 w-4" /> {t("完成")}
-                  </button>
+                <button onClick={closeQrModal} className="lw-btn-primary w-full">
+                  <Check className="h-4 w-4" /> {t("完成")}
+                </button>
               ) : ["failed", "expired", "timeout"].includes(wxStatus) ? (
                 <div className="flex w-full gap-3">
                   <button onClick={closeQrModal} className="flex-1 rounded-full border px-4 py-2.5 text-sm font-medium transition-colors hover:bg-[var(--surface-muted)]" style={{ borderColor: "rgba(0,0,0,0.08)", color: "#666" }}>
@@ -3237,13 +3241,16 @@ export const OpenClawSettingsPage = () => {
                     //   这些 provider 在 mono 下无法自动获取 API Key（调不通
                     //   QueryHunyuanUserStatus / ListCodingPlanAPIKey 等），
                     //   下拉里直接不展示。
-                    const sdkProductConfig = {
+                    const sdkProductConfig: IProductConfig = {
                       ...createLighthouseConfig({
                         agentType: "hermes",
                         supportsTencentCloudApi: false,
                       }),
                       runCommand: commandAdapter.runCommand,
                       getInvocationTask: commandAdapter.getInvocationTask,
+                      // 国际站标识：用于 SDK 内根据站点类型过滤模型/通道列表
+                      // （isGlobal 来自 VITE_REGION，国内站为 false，国际站为 true）。
+                      isI18n: isGlobal,
                     };
                     // 操作禁用 / 数据加载相关 prop 全部走 SDK 默认值：
                     //   isOperationDisabled=false / operationDisabledContent=""
