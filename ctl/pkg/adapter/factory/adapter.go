@@ -9,6 +9,7 @@ import (
 	"ctl/pkg/adapter/sandbox"
 	"ctl/pkg/adapter/shadow"
 	"ctl/pkg/adapter/sts"
+	"ctl/pkg/adapter/trade"
 	"ctl/pkg/adapter/whitelist"
 	"ctl/pkg/config"
 	"ctl/pkg/resource"
@@ -25,6 +26,7 @@ type AdapterFactory interface {
 	AiGatewayAdapter() aigateway.Adapter
 	OpenClawGatewayAdapter() openclawgateway.Adapter
 	ShadowAdapter() shadow.Adapter
+	TradeAdapter() trade.Adapter
 }
 
 // DefaultAdapterFactory 默认适配器工厂实例
@@ -39,6 +41,8 @@ type adapterFactory struct {
 	openclawGateway     openclawgateway.Adapter
 	shadowOnce          sync.Once
 	shadowAdapter       shadow.Adapter
+	tradeOnce           sync.Once
+	tradeAdapter        trade.Adapter
 }
 
 // SandboxAdapter ...
@@ -89,6 +93,26 @@ func (f *adapterFactory) ShadowAdapter() shadow.Adapter {
 		f.shadowAdapter = shadow.NewShadowAdapter(cfg, resource.ZapLogger)
 	})
 	return f.shadowAdapter
+}
+
+// TradeAdapter 返回 trade 服务适配器单例（billing-integration B2 新增）。
+//
+// 当 AdapterConfig.Trade 缺失时，仍构造一个空 cfg 的 adapter，
+// 调用方实际触发请求时由 adapter 内部返回 "base_url not configured" 错误，
+// 与 ShadowAdapter / AiGatewayAdapter 保持同样的兜底语义。
+func (f *adapterFactory) TradeAdapter() trade.Adapter {
+	f.tradeOnce.Do(func() {
+		var cfg *trade.Config
+		if config.ServerConf.AdapterConfig != nil && config.ServerConf.AdapterConfig.Trade != nil {
+			cfg = &trade.Config{
+				BaseURL: config.ServerConf.AdapterConfig.Trade.BaseURL,
+				Token:   config.ServerConf.AdapterConfig.Trade.Token,
+				Timeout: config.ServerConf.AdapterConfig.Trade.Timeout,
+			}
+		}
+		f.tradeAdapter = trade.NewTradeAdapter(cfg, resource.ZapLogger)
+	})
+	return f.tradeAdapter
 }
 
 // NewClientConfig 创建通用的 HTTP 客户端配置

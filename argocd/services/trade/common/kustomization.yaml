@@ -1,0 +1,58 @@
+# trade 服务 deploy-facing common Component（迭代 9B）
+#
+# 范式参考: argocd/services/payment/common/kustomization.yaml
+# 与 payment 不同点:
+#   - namespace 用独立 `trade`（payment 共享 user-auth）
+#   - 因此不需要 profile/sandbox 的 delete-shared-namespace patch
+#   - 多注入 MYSQL_HOST / MYSQL_PORT（payment 同款；trade base 也用 REPLACE_ 占位）
+#
+# 真实值由 deploy-facing 环境目录（如 beijing-sandbox/）通过 configMapGenerator
+# 生成 trade-platform-values configmap 注入。
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+namespace: trade
+generatorOptions:
+  disableNameSuffixHash: true
+replacements:
+  - source:
+      kind: ConfigMap
+      name: trade-platform-values
+      fieldPath: data.TRADE_MYSQL_HOST
+    targets:
+      - select:
+          kind: ConfigMap
+          name: trade-config
+        fieldPaths:
+          - data.MYSQL_HOST
+  - source:
+      kind: ConfigMap
+      name: trade-platform-values
+      fieldPath: data.TRADE_MYSQL_PORT
+    targets:
+      - select:
+          kind: ConfigMap
+          name: trade-config
+        fieldPaths:
+          - data.MYSQL_PORT
+  - source:
+      kind: ConfigMap
+      name: trade-platform-values
+      fieldPath: data.TRADE_NODE_POOL
+    targets:
+      - select:
+          kind: Deployment
+          name: trade
+        fieldPaths:
+          - spec.template.spec.nodeSelector.pool
+  - source:
+      kind: ConfigMap
+      name: trade-platform-values
+      fieldPath: data.TRADE_IMAGE
+    targets:
+      - select:
+          kind: Deployment
+          name: trade
+        fieldPaths:
+          - spec.template.spec.containers.0.image
+resources:
+  - ../../../../trade/k8s/base

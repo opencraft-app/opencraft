@@ -171,6 +171,20 @@ type ShadowConfig struct {
 	Timeout int    `toml:"timeout"`  // 请求超时（秒），默认 10
 }
 
+// TradeConfig trade 服务适配器配置（billing-integration B2 新增）
+//
+// trade 当前提供的内部 RPC：
+//   - POST /internal/trade/orders                        下单（PlaceOrder）
+//   - POST /internal/trade/orders/{dealName}/pay-url     生成 / 反查支付页 URL（GeneratePayURL）
+//
+// 鉴权与 shadow / ai-gateway 一致，使用 Bearer Token，对应 trade 配置的
+// LIGHTCLAW_INTERNAL_SERVICE_TOKEN。
+type TradeConfig struct {
+	BaseURL string `toml:"base_url"` // trade 服务内部地址，如 http://trade.lightclaw.svc.cluster.local
+	Token   string `toml:"token"`    // 内部 API 认证 token
+	Timeout int    `toml:"timeout"`  // 请求超时（秒），默认 10
+}
+
 // AdapterConfig ...
 type AdapterConfig struct {
 	Lightpro struct {
@@ -218,6 +232,7 @@ type AdapterConfig struct {
 	Sandbox   *SandboxConfig   `toml:"sandbox"`
 	AiGateway *AiGatewayConfig `toml:"aigateway"`
 	Shadow    *ShadowConfig    `toml:"shadow"`
+	Trade     *TradeConfig     `toml:"trade"`
 }
 
 // TracingConfig ...

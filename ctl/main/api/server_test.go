@@ -1500,3 +1500,58 @@ func TestConfigureChannelInvalidJSONReturnsError(t *testing.T) {
 		t.Fatalf("unexpected error code: %+v", payload)
 	}
 }
+
+// TestInternalListPassesUnauthorizedWithBearerMismatch 验证：当配置了
+// CTL_INTERNAL_TOKEN 但请求未携带匹配 token 时，返回 401。
+//
+// 不进入 logic 层，仅校验路由 + 鉴权 middleware。
+func TestInternalListPassesUnauthorizedWithBearerMismatch(t *testing.T) {
+	t.Setenv("CTL_INTERNAL_TOKEN", "expected-secret")
+
+	req := httptest.NewRequest(http.MethodGet, "/internal/ctl/passes?external_user_id=user-1", nil)
+	req.Header.Set("Authorization", "Bearer wrong-secret")
+	rec := httptest.NewRecorder()
+
+	newRouter(&instanceHandler{logic: &stubLogic{}}, &bundleHandler{}, &passHandler{}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestInternalListPassesMissingExternalUserID 验证：缺少 external_user_id 参数时
+// 返回 ErrInvalidParam，不会触达 logic 层。
+func TestInternalListPassesMissingExternalUserID(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/internal/ctl/passes", nil)
+	rec := httptest.NewRecorder()
+
+	newRouter(&instanceHandler{logic: &stubLogic{}}, &bundleHandler{}, &passHandler{}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var payload errorResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload.Code != errcode.ErrInvalidParam.Code {
+		t.Fatalf("unexpected error code: %+v", payload)
+	}
+}
+
+// TestInternalListPassesMethodNotAllowed 验证：除 GET 外的方法返回 405，
+// Allow 头声明只接受 GET。
+func TestInternalListPassesMethodNotAllowed(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/internal/ctl/passes?external_user_id=user-1", nil)
+	rec := httptest.NewRecorder()
+
+	newRouter(&instanceHandler{logic: &stubLogic{}}, &bundleHandler{}, &passHandler{}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Allow"); got != http.MethodGet {
+		t.Fatalf("expected Allow=GET, got %q", got)
+	}
+}
+

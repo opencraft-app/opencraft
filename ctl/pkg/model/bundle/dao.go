@@ -75,6 +75,7 @@ func (d *dao) Upsert(entity *Entity) error {
 			ColumnTimeSpan,
 			ColumnTimeUnit,
 			ColumnAiGatewayPlanID,
+			ColumnAiGatewayPlans,
 			ColumnStaticSoldOut,
 			ColumnBundleSalesAvailCount,
 			ColumnBundleSalesTotalCount,
