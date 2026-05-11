@@ -16,6 +16,7 @@ DEFAULT_API_URL = f"https://staticpages-api.{DEFAULT_PREVIEW_DOMAIN}/api/upload"
 DEFAULT_REPOSITORY = "wisp/mono2"
 BRANCH_PREFIX = "frontsandbox/"
 DNS_SAFE_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
+INTL_PREVIEW_PREFIX = "intl-"
 
 
 def normalize_preview_name(source_branch: str) -> str:
@@ -32,6 +33,27 @@ def normalize_preview_name(source_branch: str) -> str:
     if not DNS_SAFE_RE.fullmatch(branch):
         raise ValueError(f"preview name is not DNS-safe: {branch!r}")
     return branch
+
+
+def preview_name_for_variant(source_branch: str, variant: str) -> str:
+    base = normalize_preview_name(source_branch)
+    if base.startswith(INTL_PREVIEW_PREFIX):
+        base = base[len(INTL_PREVIEW_PREFIX) :]
+    if not base:
+        raise ValueError(f"cannot derive preview name from branch {source_branch!r}")
+
+    if variant == "cn":
+        preview_name = base
+    elif variant == "intl":
+        preview_name = f"{INTL_PREVIEW_PREFIX}{base}"
+    else:
+        raise ValueError(f"unsupported preview variant: {variant!r}")
+
+    if len(preview_name) > 63:
+        preview_name = preview_name[:63].rstrip("-")
+    if not DNS_SAFE_RE.fullmatch(preview_name):
+        raise ValueError(f"preview name is not DNS-safe: {preview_name!r}")
+    return preview_name
 
 
 def iter_files(artifact_dir: Path) -> list[Path]:
@@ -70,7 +92,7 @@ def upload(args: argparse.Namespace) -> int:
     if not token or token.startswith("${{"):
         raise ValueError("missing STATICPAGES_UPLOAD_TOKEN")
 
-    preview_name = args.preview_name or normalize_preview_name(args.source_branch)
+    preview_name = args.preview_name or preview_name_for_variant(args.source_branch, args.variant)
     sha = args.sha.strip()
     if not sha:
         raise ValueError("missing source sha")
@@ -87,6 +109,7 @@ def upload(args: argparse.Namespace) -> int:
         print("============================================================")
         print("frontend 预览发布决策：上传静态产物到 StaticPages")
         print(f"源分支：{args.source_branch}")
+        print(f"产物版本：{args.variant}")
         print(f"预览名：{preview_name}")
         print(f"目标域名：https://{preview_name}.{DEFAULT_PREVIEW_DOMAIN}")
         print(f"上传文件数：{len(files)}")
@@ -121,6 +144,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--repository", default=os.environ.get("STATICPAGES_REPOSITORY", DEFAULT_REPOSITORY))
     parser.add_argument("--source-branch", required=True)
     parser.add_argument("--preview-name", default="")
+    parser.add_argument("--variant", choices=("cn", "intl"), default="cn")
     parser.add_argument("--sha", required=True)
     parser.add_argument("--token", default="")
     parser.add_argument("--timeout-seconds", type=int, default=300)

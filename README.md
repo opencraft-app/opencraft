@@ -124,7 +124,7 @@ CLOUDFLARE_PAGES_PROJECT_NAME=lightclaw pnpm deploy:cf
 
 当前已经支持基于 StaticPages 的 frontend 分支自动预览。
 
-只要把分支推送到 `frontsandbox/` 前缀，CI 会自动构建 `frontend/dist-cn` 并上传到 StaticPages：
+只要把分支推送到 `frontsandbox/` 前缀，CI 会自动构建 `frontend/dist-cn` 和 `frontend/dist-global` 并上传到 StaticPages：
 
 ```bash
 git push origin <local-branch>:frontsandbox/<preview-name>
@@ -134,6 +134,7 @@ git push origin <local-branch>:frontsandbox/<preview-name>
 
 ```text
 frontsandbox/<preview-name> -> https://<preview-name>.preview.lightclaw.tech/
+frontsandbox/<preview-name> -> https://intl-<preview-name>.preview.lightclaw.tech/
 ```
 
 示例：
@@ -146,11 +147,13 @@ git push origin HEAD:frontsandbox/codex-staticpages-smoke
 
 ```text
 https://codex-staticpages-smoke.preview.lightclaw.tech/
+https://intl-codex-staticpages-smoke.preview.lightclaw.tech/
 ```
 
 补充约束：
 
 - `<preview-name>` 会作为子域名前缀使用，建议只用小写字母、数字和 `-`
+- `intl-<preview-name>` 固定对应国际版 `dist-global`；不带 `intl-` 的地址对应国内版 `dist-cn`
 - 这条链路只用于分支预览，不创建 GitOps MR，也不代表正式发布
 - 如果预览站短时间返回 `502`，通常是 CI 仍在构建或上传，等待流水线完成后再刷新
 

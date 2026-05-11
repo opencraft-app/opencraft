@@ -57,8 +57,8 @@ stages:
               echo "============================================================"
               echo "frontend 预览发布决策：进入 StaticPages 分支预览流程"
               echo "触发分支：${{ ci.branch }}"
-              echo "目标规则：frontsandbox/<name> -> https://<name>.preview.lightclaw.tech"
-              echo "发布方式：构建 frontend dist-cn 后上传到 StaticPages，不创建 GitOps MR"
+              echo "目标规则：frontsandbox/<name> -> https://<name>.preview.lightclaw.tech 和 https://intl-<name>.preview.lightclaw.tech"
+              echo "发布方式：构建 frontend dist-cn + dist-global 后上传到 StaticPages，不创建 GitOps MR"
               echo "============================================================"
               source .ci/init.sh
               ci_init_repo_root
@@ -66,9 +66,10 @@ stages:
               ci_ensure_pnpm
 
               cd "$REPO_ROOT/frontend"
-              rm -rf node_modules dist-cn
+              rm -rf node_modules dist-cn dist-global
               "$PNPM_BIN" install --frozen-lockfile
               "$PNPM_BIN" build:cn
+              "$PNPM_BIN" build:global
 
               cd "$REPO_ROOT"
               if [[ -z "${STATICPAGES_UPLOAD_TOKEN:-}" ]] || ci_is_unexpanded_setting "$STATICPAGES_UPLOAD_TOKEN"; then
@@ -87,4 +88,13 @@ stages:
                 --api-url "$STATICPAGES_API_URL" \
                 --repository wisp/mono2 \
                 --source-branch "${{ ci.branch }}" \
+                --variant cn \
+                --sha "${{ ci.sha }}"
+
+              python3 .ci/runtime/commands/upload_staticpages_preview.py \
+                --artifact-dir frontend/dist-global \
+                --api-url "$STATICPAGES_API_URL" \
+                --repository wisp/mono2 \
+                --source-branch "${{ ci.branch }}" \
+                --variant intl \
                 --sha "${{ ci.sha }}"
