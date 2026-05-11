@@ -3314,7 +3314,7 @@ export const OpenClawSettingsPage = () => {
           {
             !isCreating && !botsLoading && visibleBots.length === 0 && (
               <div className="flex flex-col items-center justify-center py-20 text-center">
-                <p className="text-sm" style={{ color: "rgba(0,0,0,0.40)" }}>即刻创建你的第一个云端智能体伙伴</p>
+                <p className="text-sm" style={{ color: "rgba(0,0,0,0.40)" }}>{t("即刻创建你的第一个云端智能体伙伴")}</p>
                 {createLimitMessage && (
                   <p className="mt-3 max-w-sm text-xs leading-relaxed" style={{ color: "rgba(0,0,0,0.48)" }}>
                     {createLimitMessage}
@@ -3330,7 +3330,7 @@ export const OpenClawSettingsPage = () => {
                       : "cursor-not-allowed bg-black/30",
                   )}
                 >
-                  {canCreateBot ? "立即创建" : "暂不可创建"}
+                  {canCreateBot ? t("立即创建") : t("暂不可创建")}
                 </button>
               </div>
             )

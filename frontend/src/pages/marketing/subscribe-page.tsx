@@ -293,9 +293,31 @@ const PLACEHOLDER_PLAN_DEFS: PlaceholderPlanDef[] = [
   },
 ];
 
+/**
+ * i18n 静态标记块：占位套餐的中文字面量定义在 PLACEHOLDER_PLAN_DEFS 数据里，
+ * extract 脚本只能扫到 `t("...")` 字面量调用，无法跟踪 `t(def.name)` 这种动态参数。
+ * 因此在这里把所有占位套餐里出现过的中文，以一次性 `t("...")` 调用的形式声明出来，
+ * 既不影响运行时（这次调用结果被丢弃），又能保证 i18n-extract 把它们收录进字典。
+ *
+ * ⚠️ 修改 PLACEHOLDER_PLAN_DEFS 时请同步更新此处。
+ */
+const __markPlaceholderPlansForI18n = (t: (zh: string, opts?: Record<string, unknown>) => string): void => {
+  void t("巡游 Cruise");
+  void t("远航 Voyage");
+  void t("日常主力，让智能化成为习惯");
+  void t("体验进阶，把效率拉满");
+  void t("1 个");
+  void t("3 个");
+  void t("4核 8G 内存");
+  void t("极简配置面板");
+  void t("新功能优先体验");
+};
+
 /** 将纯数据占位套餐转为带 JSX + i18n 的 PlanInfo */
-const buildPlaceholderPlans = (t: (zh: string, opts?: Record<string, unknown>) => string): PlanInfo[] =>
-  PLACEHOLDER_PLAN_DEFS.map((def) => ({
+const buildPlaceholderPlans = (t: (zh: string, opts?: Record<string, unknown>) => string): PlanInfo[] => {
+  /* 静态标记，运行时一次性调用以让字典加载它们的翻译 */
+  __markPlaceholderPlansForI18n(t);
+  return PLACEHOLDER_PLAN_DEFS.map((def) => ({
     id: def.id,
     name: t(def.name),
     price: def.price,
@@ -313,6 +335,7 @@ const buildPlaceholderPlans = (t: (zh: string, opts?: Record<string, unknown>) =
     comingSoon: def.comingSoon,
     raw: makePlaceholderBundle(def.id, def.name, def.agentQuota),
   }));
+};
 
 /**
  * 后端错误码 → 用户提示文案映射（与 frontend-bundle-pass-integration.md 对齐）

@@ -392,6 +392,8 @@ export default defineConfig(({ mode }) => {
     "lightclaw.pages.dev",
     ".pages.dev",
     "lightvela.tencent.com",
+    "lightvela.ai",
+    "lightvela.com",
     "lightclaw.site",
     ".lightclaw.site",
   ];
