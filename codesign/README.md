@@ -2,7 +2,7 @@
 
 这份文档是 `codesign/` 的入口，目标是让**新加入的 agent** 快速理解：
 
-- 哪些文档覆盖 EdgeOne 测试发布
+- 哪些文档覆盖 StaticPages / EdgeOne 测试发布
 - 哪些文档覆盖后端新环境创建
 - 哪些文档是“操作手册”，哪些是“权限与创建记录”
 - 如果流程卡在仓库外，应该联系谁
@@ -10,6 +10,7 @@
 相关文档：
 
 - [EdgeOne Preview Operator 使用说明](./edgeone-preview-operator.md)
+- [StaticPages Frontend Preview Operator 使用说明](./staticpages-preview-operator.md)
 - [腾讯云 EdgeOne Preview 子账号创建记录](./tencent-cloud-edgeone-preview-account-provisioning.md)
 - [北京新后端测试环境创建记录](./beijing-backend-env-provisioning.md)
 
@@ -17,6 +18,8 @@
 
 - `edgeone-preview-operator.md`
   - 更偏“怎么用”
+- `staticpages-preview-operator.md`
+  - 更偏“怎么用 frontsandbox 自动获得国内版 + 国际版预览”
 - `tencent-cloud-edgeone-preview-account-provisioning.md`
   - 更偏“怎么创建出来、为什么这么设计、实际做了什么”
 - `beijing-backend-env-provisioning.md`
@@ -24,8 +27,9 @@
 
 ## 文档分组
 
-### 1. EdgeOne / 前端测试发布
+### 1. StaticPages / EdgeOne / 前端测试发布
 
+- [StaticPages Frontend Preview Operator 使用说明](./staticpages-preview-operator.md)
 - [EdgeOne Preview Operator 使用说明](./edgeone-preview-operator.md)
 - [腾讯云 EdgeOne Preview 子账号创建记录](./tencent-cloud-edgeone-preview-account-provisioning.md)
 
@@ -59,14 +63,21 @@
 ## 新 Agent 建议阅读顺序
 
 1. [codesign/AGENTS.md](./AGENTS.md)
-2. [EdgeOne Preview Operator 使用说明](./edgeone-preview-operator.md)
-3. [腾讯云 EdgeOne Preview 子账号创建记录](./tencent-cloud-edgeone-preview-account-provisioning.md)
+2. [StaticPages Frontend Preview Operator 使用说明](./staticpages-preview-operator.md)
+3. [EdgeOne Preview Operator 使用说明](./edgeone-preview-operator.md)
+4. [腾讯云 EdgeOne Preview 子账号创建记录](./tencent-cloud-edgeone-preview-account-provisioning.md)
 
-如果只是要“把 `frontend` 发到测试环境”，通常读完前两份就够了。  
+如果只是要“把 `frontend` 发到测试环境”，优先用 `frontsandbox/*` 自动预览，通常读完前两份就够了。
 如果要继续创建子账号、调策略、理解为什么这么设计，再读 provisioning 文档。
 
 ## 当前已验证结论
 
+- `frontsandbox/*` 分支预览会自动发布国内版和国际版：
+  - `https://<preview-name>.preview.lightclaw.tech`
+  - `https://intl-<preview-name>.preview.lightclaw.tech`
+- 已验证示例：`frontsandbox/docs-smoke-v2-20260511` 自动生成
+  `https://docs-smoke-v2-20260511.preview.lightclaw.tech` 和
+  `https://intl-docs-smoke-v2-20260511.preview.lightclaw.tech`。
 - EdgeOne CLI 可直接发布静态目录到现有 Pages 项目。
 - 当前默认测试项目是 `lightvela-preview`。
 - 发布前必须先本地构建出 `frontend/dist/`。
