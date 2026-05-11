@@ -29,6 +29,11 @@ class UploadStaticPagesPreviewTests(unittest.TestCase):
         self.assertEqual(preview_name_for_variant("frontsandbox/Demo_Feature", "cn"), "demo-feature")
         self.assertEqual(preview_name_for_variant("frontsandbox/Demo_Feature", "intl"), "intl-demo-feature")
 
+    def test_master_branch_publishes_stable_preview_pair(self) -> None:
+        self.assertEqual(normalize_preview_name("master"), "master")
+        self.assertEqual(preview_name_for_variant("master", "cn"), "master")
+        self.assertEqual(preview_name_for_variant("master", "intl"), "intl-master")
+
     def test_intl_prefixed_branch_does_not_double_prefix(self) -> None:
         self.assertEqual(preview_name_for_variant("frontsandbox/intl-demo-feature", "cn"), "demo-feature")
         self.assertEqual(preview_name_for_variant("frontsandbox/intl-demo-feature", "intl"), "intl-demo-feature")

@@ -1,6 +1,6 @@
 # StaticPages Frontend Preview Operator 使用说明
 
-这份文档记录 `frontsandbox/*` 分支自动预览能力：推送一个 frontend 预览分支后，CI 会同时构建国内版和国际版产物，并发布到 StaticPages。
+这份文档记录 `master` 和 `frontsandbox/*` 分支自动预览能力：推送命中 frontend 路径后，CI 会同时构建国内版和国际版产物，并发布到 StaticPages。
 
 ## 适用场景
 
@@ -21,6 +21,7 @@
 只要分支名符合：
 
 ```text
+master
 frontsandbox/<preview-name>
 ```
 
@@ -30,6 +31,13 @@ frontsandbox/<preview-name>
 2. `pnpm build:global`，产出 `frontend/dist-global`
 3. 上传国内版到 `<preview-name>.preview.lightclaw.tech`
 4. 上传国际版到 `intl-<preview-name>.preview.lightclaw.tech`
+
+`master` 是稳定预览名，固定发布到：
+
+```text
+https://master.preview.lightclaw.tech
+https://intl-master.preview.lightclaw.tech
+```
 
 示例：
 
@@ -45,6 +53,12 @@ https://intl-docs-smoke-v2-20260511.preview.lightclaw.tech
 ```
 
 ## 常用触发命令
+
+`master` 预览不需要额外分支；合入或推送到 `master` 且命中 `frontend/**` 后自动更新：
+
+```bash
+git push origin HEAD:master
+```
 
 如果当前本地分支就是要预览的内容：
 
@@ -63,6 +77,7 @@ git push origin origin/<existing-branch>:refs/heads/frontsandbox/<preview-name>
 
 ## 命名规则
 
+- `master` 固定生成 `master` 和 `intl-master`
 - `<preview-name>` 建议只使用小写字母、数字和 `-`
 - 上传脚本会把 `frontsandbox/Demo_Feature` 规范化为 `demo-feature`
 - 国际版固定加 `intl-` 前缀

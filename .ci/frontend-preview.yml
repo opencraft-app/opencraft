@@ -4,6 +4,7 @@ name: 发布 frontend 分支预览
 on:
   push:
     branches:
+      - master
       - frontsandbox/*
     paths:
       - frontend/**
@@ -57,6 +58,7 @@ stages:
               echo "============================================================"
               echo "frontend 预览发布决策：进入 StaticPages 分支预览流程"
               echo "触发分支：${{ ci.branch }}"
+              echo "目标规则：master -> https://master.preview.lightclaw.tech 和 https://intl-master.preview.lightclaw.tech"
               echo "目标规则：frontsandbox/<name> -> https://<name>.preview.lightclaw.tech 和 https://intl-<name>.preview.lightclaw.tech"
               echo "发布方式：构建 frontend dist-cn + dist-global 后上传到 StaticPages，不创建 GitOps MR"
               echo "============================================================"
