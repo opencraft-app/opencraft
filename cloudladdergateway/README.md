@@ -123,6 +123,42 @@ routes:
 
 Polaris resolver 会调用 Sidecar `/v1/GetOneInstance`，缓存 `host:port`。当 Sidecar 临时失败且已有旧缓存时，默认使用旧实例兜底，避免 IDC 内部服务发现短抖动直接打断调用。
 
+可复用后端可以配置成 backend alias，route 只引用别名：
+
+```yaml
+backends:
+  - alias: billing-trade-cn-prod
+    upstream:
+      scheme: http
+      polaris:
+        service: "1333953:131072"
+        namespace: "Production"
+      timeout: 5s
+      allowed_methods: ["POST"]
+      headers:
+        Host: "trade.tencentyun.com"
+
+routes:
+  - id: qcbuy.price.get_price
+    callers: ["payment"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: billing-trade-cn-prod
+```
+
+Billing trade 后端别名固定为：
+
+| alias | Polaris namespace/service | Host |
+| --- | --- | --- |
+| `billing-trade-cn-test` | `Test/cloud.drouter.http` | `trade.itd.com` |
+| `billing-trade-cn-pre` | `Pre-release/jf_trade_pre` | `pre.trade.billing.woa.com` |
+| `billing-trade-cn-prod` | `Production/1333953:131072` | `trade.tencentyun.com` |
+| `billing-trade-intl-test` | `Test/cloud.drouter.http` | `test.trade-intl.billing.tencentyun.com` |
+| `billing-trade-intl-pre` | `Pre-release/jf_trade_pre_intl` | `pre.trade.intl.billing.woa.com` |
+| `billing-trade-intl-prod` | `Production/jf_intl_trade` | `intl.trade.tencentyun.com` |
+
+国内站 / 国际站按腾讯云账号 `uin` 属性区分，不按下单地域 `region` 区分。使用 Polaris/L5 访问 billing trade 时必须显式带对应 `Host`；计费后台接口 timeout 不低于 `5s`。
+
 ## 上游连接池
 
 上游 HTTP client 默认开启连接池：

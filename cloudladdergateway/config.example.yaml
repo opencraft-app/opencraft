@@ -15,13 +15,80 @@ discovery:
     cache_ttl: 30s
     stale_on_error: true
 
+backends:
+  - alias: billing-trade-cn-test
+    upstream:
+      scheme: http
+      polaris:
+        service: "cloud.drouter.http"
+        namespace: "Test"
+      timeout: 5s
+      allowed_methods: ["POST"]
+      headers:
+        Host: "trade.itd.com"
+
+  - alias: billing-trade-cn-pre
+    upstream:
+      scheme: http
+      polaris:
+        service: "jf_trade_pre"
+        namespace: "Pre-release"
+      timeout: 5s
+      allowed_methods: ["POST"]
+      headers:
+        Host: "pre.trade.billing.woa.com"
+
+  - alias: billing-trade-cn-prod
+    upstream:
+      scheme: http
+      polaris:
+        service: "1333953:131072"
+        namespace: "Production"
+      timeout: 5s
+      allowed_methods: ["POST"]
+      headers:
+        Host: "trade.tencentyun.com"
+
+  - alias: billing-trade-intl-test
+    upstream:
+      scheme: http
+      polaris:
+        service: "cloud.drouter.http"
+        namespace: "Test"
+      timeout: 5s
+      allowed_methods: ["POST"]
+      headers:
+        Host: "test.trade-intl.billing.tencentyun.com"
+
+  - alias: billing-trade-intl-pre
+    upstream:
+      scheme: http
+      polaris:
+        service: "jf_trade_pre_intl"
+        namespace: "Pre-release"
+      timeout: 5s
+      allowed_methods: ["POST"]
+      headers:
+        Host: "pre.trade.intl.billing.woa.com"
+
+  - alias: billing-trade-intl-prod
+    upstream:
+      scheme: http
+      polaris:
+        service: "jf_intl_trade"
+        namespace: "Production"
+      timeout: 5s
+      allowed_methods: ["POST"]
+      headers:
+        Host: "intl.trade.tencentyun.com"
+
 auth:
   enabled: true
   timestamp_skew: 5m
   callers:
     - id: payment
       secret_env: CLOUDLADDER_PAYMENT_HMAC_SECRET
-      routes: ["sandbox-cn"]
+      routes: ["sandbox-cn", "qcbuy.price.get_price"]
 
 audit:
   service_name: cloudladdergateway
@@ -65,3 +132,10 @@ routes:
         namespace: "Production"
       timeout: 10s
       allowed_methods: ["POST"]
+
+  - id: qcbuy.price.get_price
+    description: "Query qcbuy price through Tencent billing trade backend."
+    callers: ["payment"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: billing-trade-cn-prod

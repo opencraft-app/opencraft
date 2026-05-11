@@ -211,6 +211,48 @@ func TestEngineResolvesPolarisUpstream(t *testing.T) {
 	}
 }
 
+func TestEngineUsesBackendAlias(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Host; got != "trade.tencentyun.com" {
+			t.Fatalf("expected Host header trade.tencentyun.com, got %q", got)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("backend-ok"))
+	}))
+	defer upstream.Close()
+
+	engine, err := NewEngine(config.Config{
+		MaxBodyBytes: config.DefaultMaxBodyBytes,
+		Backends: []config.BackendConfig{{
+			Alias: "billing-trade-cn-prod",
+			Upstream: config.UpstreamConfig{
+				BaseURL:        upstream.URL,
+				AllowedMethods: []string{http.MethodPost},
+				Headers:        map[string]string{"Host": "trade.tencentyun.com"},
+			},
+		}},
+		Routes: []config.RouteConfig{{
+			ID:       "qcbuy.price.get_price",
+			Upstream: config.UpstreamConfig{Backend: "billing-trade-cn-prod"},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+
+	resp, err := engine.Invoke(context.Background(), Request{
+		RouteID: "qcbuy.price.get_price",
+		Method:  http.MethodPost,
+		Path:    "/interfaces/interface.php",
+	})
+	if err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	if string(resp.Body) != "backend-ok" {
+		t.Fatalf("unexpected body %q", resp.Body)
+	}
+}
+
 type captureAuditor struct {
 	events []audit.Event
 }

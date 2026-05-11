@@ -27,6 +27,13 @@ routes:
 	}
 }
 
+func TestExampleConfigLoads(t *testing.T) {
+	t.Setenv("CLOUDLADDER_PAYMENT_HMAC_SECRET", "test-secret")
+	if _, err := Load("../../config.example.yaml"); err != nil {
+		t.Fatalf("load example config: %v", err)
+	}
+}
+
 func TestLoadAcceptsPolarisUpstreamAndDefaultsDiscovery(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	if err := os.WriteFile(path, []byte(`
@@ -72,5 +79,62 @@ routes:
 
 	if _, err := Load(path); err == nil {
 		t.Fatal("expected ambiguous upstream config to fail")
+	}
+}
+
+func TestLoadResolvesBackendAlias(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(`
+backends:
+  - alias: billing-trade-cn-prod
+    upstream:
+      scheme: http
+      polaris:
+        service: "1333953:131072"
+        namespace: Production
+      timeout: 5s
+      allowed_methods: ["POST"]
+      headers:
+        Host: trade.tencentyun.com
+routes:
+  - id: qcbuy.price.get_price
+    upstream:
+      backend: billing-trade-cn-prod
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	upstream, err := cfg.ResolveUpstream("qcbuy.price.get_price", cfg.Routes[0].Upstream)
+	if err != nil {
+		t.Fatalf("resolve upstream: %v", err)
+	}
+	if upstream.Polaris.Service != "1333953:131072" || upstream.Polaris.Namespace != "Production" {
+		t.Fatalf("unexpected polaris upstream %+v", upstream.Polaris)
+	}
+	if upstream.Headers["Host"] != "trade.tencentyun.com" {
+		t.Fatalf("expected Host header, got %+v", upstream.Headers)
+	}
+	if len(upstream.AllowedMethods) != 1 || upstream.AllowedMethods[0] != "POST" {
+		t.Fatalf("unexpected allowed methods %+v", upstream.AllowedMethods)
+	}
+}
+
+func TestLoadRejectsUnknownBackendAlias(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(`
+routes:
+  - id: qcbuy.price.get_price
+    upstream:
+      backend: billing-trade-cn-prod
+`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	if _, err := Load(path); err == nil {
+		t.Fatal("expected unknown backend alias to fail")
 	}
 }

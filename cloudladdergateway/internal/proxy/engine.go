@@ -93,21 +93,25 @@ func NewEngine(cfg config.Config, opts ...EngineOption) (*Engine, error) {
 	}
 	routes := make([]Route, 0, len(cfg.Routes))
 	for _, routeCfg := range cfg.Routes {
-		timeout, _ := config.ParseDuration(routeCfg.Upstream.Timeout, 30*time.Second)
+		upstreamCfg, err := cfg.ResolveUpstream(routeCfg.ID, routeCfg.Upstream)
+		if err != nil {
+			return nil, err
+		}
+		timeout, _ := config.ParseDuration(upstreamCfg.Timeout, 30*time.Second)
 		upstream := Upstream{
-			BaseURL:        strings.TrimRight(routeCfg.Upstream.BaseURL, "/"),
-			Scheme:         strings.TrimSpace(routeCfg.Upstream.Scheme),
+			BaseURL:        strings.TrimRight(upstreamCfg.BaseURL, "/"),
+			Scheme:         strings.TrimSpace(upstreamCfg.Scheme),
 			Timeout:        timeout,
-			AllowedMethods: normalizeMethods(routeCfg.Upstream.AllowedMethods),
-			Headers:        cloneStringMap(routeCfg.Upstream.Headers),
+			AllowedMethods: normalizeMethods(upstreamCfg.AllowedMethods),
+			Headers:        cloneStringMap(upstreamCfg.Headers),
 		}
 		if upstream.Scheme == "" {
 			upstream.Scheme = "http"
 		}
-		if routeCfg.Upstream.Polaris.Service != "" {
+		if upstreamCfg.Polaris.Service != "" {
 			upstream.Polaris = &PolarisUpstream{
-				Service:   routeCfg.Upstream.Polaris.Service,
-				Namespace: routeCfg.Upstream.Polaris.Namespace,
+				Service:   upstreamCfg.Polaris.Service,
+				Namespace: upstreamCfg.Polaris.Namespace,
 			}
 		}
 		route := Route{
@@ -203,7 +207,7 @@ func (e *Engine) Invoke(ctx context.Context, req Request) (Response, error) {
 	}
 	copyHeaders(httpReq.Header, req.Headers)
 	for name, value := range route.Upstream.Headers {
-		httpReq.Header.Set(name, value)
+		setRequestHeader(httpReq, name, value)
 	}
 	httpReq.Header.Set("X-CloudLadder-Route", route.ID)
 
@@ -340,7 +344,7 @@ func (e *Engine) deliverWebhook(ctx context.Context, route Route, webhook Webhoo
 		httpReq.Header.Set("Content-Type", contentType)
 	}
 	for name, value := range webhook.Headers {
-		httpReq.Header.Set(name, value)
+		setRequestHeader(httpReq, name, value)
 	}
 	httpReq.Header.Set("X-CloudLadder-Route", route.ID)
 	httpReq.Header.Set("X-CloudLadder-Webhook", webhook.ID)
@@ -539,6 +543,14 @@ func copyHeaders(dst http.Header, src http.Header) {
 			dst.Add(name, value)
 		}
 	}
+}
+
+func setRequestHeader(req *http.Request, name string, value string) {
+	if strings.EqualFold(name, "Host") {
+		req.Host = value
+		return
+	}
+	req.Header.Set(name, value)
 }
 
 func cloneHeader(src http.Header) http.Header {
