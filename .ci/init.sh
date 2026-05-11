@@ -639,7 +639,7 @@ ci_load_registry_password() {
       password_var="${TCR_BEIJING_PASSWORD:-}"
       password_file="$beijing_file"
       ;;
-    beijing-sandbox-2)
+    beijing-sandbox-2|sandbox-bj-*)
       password_var="${TCR_BEIJING_SANDBOX2_PASSWORD:-${TCR_BEIJING_PASSWORD:-}}"
       password_file="$beijing2_file"
       ;;
@@ -687,7 +687,7 @@ ci_set_registry_credentials() {
           source="env:TCR_BEIJING_PASSWORD"
         fi
         ;;
-      beijing-sandbox-2)
+      beijing-sandbox-2|sandbox-bj-*)
         if [[ -r "$beijing2_file" ]]; then
           source="file:$beijing2_file"
         elif [[ -n "${TCR_BEIJING_SANDBOX2_PASSWORD:-}" ]]; then

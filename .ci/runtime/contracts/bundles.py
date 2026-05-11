@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import re
 from typing import Any
 
 import yaml
@@ -13,6 +14,9 @@ import yaml
 
 RUNTIME_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_MANIFEST_PATH = RUNTIME_DIR / "release-bundles.manifest"
+PLAYGROUND_ENV_RE = re.compile(r"^sandbox-bj-\d+$")
+PLAYGROUND_TEMPLATE_ENVS = ("beijing-sandbox-2", "beijing-sandbox")
+PLAYGROUND_CATALOG_ROOT = "argocd/catalogs/playground/beijing-playground"
 
 
 @dataclass(frozen=True)
@@ -70,7 +74,7 @@ def load_bundle(manifest: dict[str, Any], service: str, env: str) -> ReleaseBund
         exit_condition=str(bundle.get("exit_condition", "")),
         dockerfile=_optional_str(bundle.get("dockerfile")),
         build_context=_optional_str(bundle.get("build_context")),
-        image_repo=_optional_str((bundle.get("image_repo") or {}).get(env)),
+        image_repo=_optional_str(_resolve_env_mapping_value(bundle.get("image_repo") or {}, env)),
         publish_paths=_resolve_publish_paths(bundle, env),
         image_targets=_resolve_image_targets(bundle, env),
         config_contract=_resolve_config_contract(bundle),
@@ -93,18 +97,59 @@ def _optional_str(value: Any) -> str | None:
     return text or None
 
 
+def is_playground_env(env: str) -> bool:
+    return bool(PLAYGROUND_ENV_RE.fullmatch(env))
+
+
+def _resolve_env_mapping_value(mapping: dict[str, Any], env: str) -> Any:
+    if env in mapping:
+        return mapping[env]
+    if is_playground_env(env):
+        for template_env in PLAYGROUND_TEMPLATE_ENVS:
+            if template_env in mapping:
+                return mapping[template_env]
+    return None
+
+
 def _resolve_publish_paths(bundle: dict[str, Any], env: str) -> list[str]:
     paths_by_env = bundle.get("publish_paths_by_env") or {}
-    raw_paths = paths_by_env[env] if env in paths_by_env else bundle.get("publish_paths")
+    source_env = env
+    if env in paths_by_env:
+        raw_paths = paths_by_env[env]
+    elif is_playground_env(env):
+        raw_paths = None
+        for template_env in PLAYGROUND_TEMPLATE_ENVS:
+            if template_env in paths_by_env:
+                source_env = template_env
+                raw_paths = paths_by_env[template_env]
+                break
+        if raw_paths is None:
+            raw_paths = bundle.get("publish_paths")
+    else:
+        raw_paths = bundle.get("publish_paths")
 
     resolved: list[str] = []
     seen: set[str] = set()
     for raw in raw_paths or []:
         path = str(raw).format(env=env)
+        if is_playground_env(env) and source_env != env:
+            path = _rewrite_playground_publish_path(path, source_env, env)
         if path not in seen:
             seen.add(path)
             resolved.append(path)
     return resolved
+
+
+def _rewrite_playground_publish_path(path: str, source_env: str, env: str) -> str:
+    path = path.replace(
+        f"argocd/catalogs/sandbox/{source_env}/",
+        f"{PLAYGROUND_CATALOG_ROOT}/{env}/",
+    )
+    if path.startswith("argocd/services/"):
+        path = path.replace(f"/{source_env}/", f"/{env}/")
+    path = path.replace(f"argocd/secrets/{source_env}/", f"argocd/secrets/{env}/")
+    path = path.replace(f"/k8s/overlays/{source_env}/", f"/k8s/overlays/{env}/")
+    return path
 
 
 def _resolve_image_targets(bundle: dict[str, Any], env: str) -> list[ImageTarget]:
@@ -117,12 +162,12 @@ def _resolve_image_targets(bundle: dict[str, Any], env: str) -> list[ImageTarget
         raw_image_repo = raw.get("image_repo") or {}
         if not isinstance(raw_image_repo, dict):
             raise ValueError("image target image_repo must be a YAML mapping")
-        if env not in raw_image_repo:
+        image_repo = _optional_str(_resolve_env_mapping_value(raw_image_repo, env))
+        if not image_repo:
             continue
 
         name = str(raw.get("name") or raw.get("image_key") or raw.get("dockerfile") or "")
         image_key = _optional_str(raw.get("image_key"))
-        image_repo = _optional_str(raw_image_repo.get(env))
         dockerfile = _optional_str(raw.get("dockerfile"))
         build_context = _optional_str(raw.get("build_context"))
         if not image_repo or not dockerfile or not build_context or not image_key:

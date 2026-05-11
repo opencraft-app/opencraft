@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+import re
 
 
 class KustomizeMode(str, Enum):
@@ -102,9 +103,30 @@ PROMOTION_POLICIES: tuple[PromotionPolicy, ...] = (
 )
 
 
+def _playground_policy_for_branch(source_branch: str) -> PromotionPolicy | None:
+    match = re.match(r"^promote-(sandbox-bj-\d+)-", source_branch)
+    if not match:
+        return None
+    env = match.group(1)
+    return PromotionPolicy(
+        env=env,
+        branch_prefix=f"promote-{env}-",
+        display_name=f"北京 Playground {env}",
+        auto_merge=True,
+        auto_sync=True,
+        cleanup_source_branch=True,
+        verify_mode=VerifyMode.ARGO_CONVERGENCE,
+        kustomize_mode=KustomizeMode.FULL,
+        gate_denied_behavior=GateDeniedBehavior.FAIL,
+    )
+
+
 def policy_for_branch(source_branch: str) -> PromotionPolicy | None:
     """Return the policy for a promote source branch, if supported."""
 
+    playground_policy = _playground_policy_for_branch(source_branch)
+    if playground_policy is not None:
+        return playground_policy
     for policy in sorted(PROMOTION_POLICIES, key=lambda item: len(item.branch_prefix), reverse=True):
         if source_branch.startswith(policy.branch_prefix):
             return policy
@@ -114,6 +136,6 @@ def policy_for_branch(source_branch: str) -> PromotionPolicy | None:
 def require_policy_for_branch(source_branch: str) -> PromotionPolicy:
     policy = policy_for_branch(source_branch)
     if policy is None:
-        supported = ", ".join(policy.branch_prefix + "*" for policy in PROMOTION_POLICIES)
+        supported = ", ".join([*(policy.branch_prefix + "*" for policy in PROMOTION_POLICIES), "promote-sandbox-bj-<N>-*"])
         raise ValueError(f"unsupported promote branch {source_branch!r}; supported patterns: {supported}")
     return policy

@@ -53,6 +53,17 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
         self.assertIn("verify_gitops_promotion.py", workflow)
         self.assertIn("cleanup_gitops_promotion.py", workflow)
 
+    def test_all_auto_stages_route_playground_promote_branches(self) -> None:
+        policy = policy_for_branch("promote-sandbox-bj-7-trade-tag")
+
+        self.assertIsNotNone(policy)
+        self.assertEqual(policy.env, "sandbox-bj-7")
+        self.assertEqual(policy.kustomize_mode.value, "full")
+        self.assertEqual(policy.verify_mode.value, "argo_convergence")
+        self.assertTrue(policy.auto_merge)
+        self.assertTrue(policy.auto_sync)
+        self.assertTrue(policy.cleanup_source_branch)
+
     def test_promotion_workflow_uses_shared_bootstrap_helper(self) -> None:
         workflow = (REPO_ROOT / ".ci/gitops-promotion.yml").read_text()
         helper = (REPO_ROOT / ".ci/runtime/gitops_promotion_bootstrap.sh").read_text()

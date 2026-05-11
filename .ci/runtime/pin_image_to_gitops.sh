@@ -42,6 +42,7 @@ env_display_name() {
   case "$1" in
     beijing-sandbox) printf '北京测试' ;;
     beijing-sandbox-2) printf '北京测试2' ;;
+    sandbox-bj-*) printf '北京 Playground %s' "$1" ;;
     shprod) printf '上海正式' ;;
     sgprod) printf '新加坡正式' ;;
     *) printf '%s' "$1" ;;

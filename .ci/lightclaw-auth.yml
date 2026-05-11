@@ -5,11 +5,12 @@ on:
   push:
     branches:
       - master
-      - playground/sandbox-bj-2
+      - playground/sandbox-bj-*
     paths:
       - user/auth/**
       - argocd/services/lightclaw-auth/**
       - argocd/apps/*/lightclaw-auth.yaml
+      - argocd/catalogs/playground/beijing-playground/*/lightclaw-auth.yaml
       - argocd/secrets/*/lightclaw-auth-secrets.sops.yaml
     paths-ignore:
       - OWNERS
@@ -63,8 +64,8 @@ stages:
               echo "BUNDLE=lightclaw-auth"
               echo "MASTER_BUILD_ENVS=beijing-sandbox,shprod"
               echo "MASTER_AUTO_PIN_ENVS=beijing-sandbox"
-              echo "PLAYGROUND_BUILD_ENVS=beijing-sandbox-2"
-              echo "PLAYGROUND_AUTO_PIN_ENVS=beijing-sandbox-2"
+              echo "PLAYGROUND_BUILD_ENVS=auto"
+              echo "PLAYGROUND_AUTO_PIN_ENVS=auto"
           - id: prepare
             name: 准备 lightclaw-auth 构建标签
             shell: bash
@@ -93,14 +94,29 @@ stages:
               GITOPS_BRANCH=gitops
               BUILD_TAG_OVERRIDE="${{ steps.prepare.outputs.tag }}"
               export REMOTE_URL GITOPS_BRANCH BUILD_TAG_OVERRIDE
+              resolve_playground_envs() {
+                local configured="$1"
+                local branch_env="$2"
+                case "$configured" in
+                  ""|auto|__branch__)
+                    printf '%s' "$branch_env"
+                    ;;
+                  *)
+                    printf '%s' "$configured"
+                    ;;
+                esac
+              }
               case "${{ ci.branch }}" in
                 master)
                   BUILD_ENVS="beijing-sandbox,shprod"
                   AUTO_PIN_ENVS="beijing-sandbox"
                   ;;
-                playground/sandbox-bj-2)
-                  BUILD_ENVS="beijing-sandbox-2"
-                  AUTO_PIN_ENVS="beijing-sandbox-2"
+                playground/sandbox-bj-*)
+                  PLAYGROUND_ENV="${{ ci.branch }}"
+                  PLAYGROUND_ENV="${PLAYGROUND_ENV#playground/}"
+                  BUILD_ENVS="$(resolve_playground_envs "auto" "$PLAYGROUND_ENV")"
+                  AUTO_PIN_ENVS="$(resolve_playground_envs "auto" "$PLAYGROUND_ENV")"
+                  echo "Playground 发布决策：分支 ${{ ci.branch }} 自动映射目标环境 ${PLAYGROUND_ENV}"
                   ;;
                 *)
                   echo "unsupported source branch for release: ${{ ci.branch }}" >&2
