@@ -56,6 +56,17 @@ def preview_name_for_variant(source_branch: str, variant: str) -> str:
     return preview_name
 
 
+def staticpages_sha_for_variant(source_sha: str, variant: str) -> str:
+    sha = source_sha.strip()
+    if not sha:
+        raise ValueError("missing source sha")
+    if variant == "cn":
+        return sha
+    if variant == "intl":
+        return f"{sha}-intl"
+    raise ValueError(f"unsupported preview variant: {variant!r}")
+
+
 def iter_files(artifact_dir: Path) -> list[Path]:
     files = [path for path in artifact_dir.rglob("*") if path.is_file()]
     if not files:
@@ -93,9 +104,7 @@ def upload(args: argparse.Namespace) -> int:
         raise ValueError("missing STATICPAGES_UPLOAD_TOKEN")
 
     preview_name = args.preview_name or preview_name_for_variant(args.source_branch, args.variant)
-    sha = args.sha.strip()
-    if not sha:
-        raise ValueError("missing source sha")
+    sha = staticpages_sha_for_variant(args.sha, args.variant)
 
     files = iter_files(artifact_dir)
     boundary = f"----staticpages-{uuid4().hex}"
@@ -109,6 +118,8 @@ def upload(args: argparse.Namespace) -> int:
         print("============================================================")
         print("frontend 预览发布决策：上传静态产物到 StaticPages")
         print(f"源分支：{args.source_branch}")
+        print(f"源 revision：{args.sha.strip()}")
+        print(f"StaticPages revision：{sha}")
         print(f"产物版本：{args.variant}")
         print(f"预览名：{preview_name}")
         print(f"目标域名：https://{preview_name}.{DEFAULT_PREVIEW_DOMAIN}")

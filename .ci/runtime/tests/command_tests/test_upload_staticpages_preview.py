@@ -13,6 +13,7 @@ from support.staticpages_preview import (  # noqa: E402
     DEFAULT_PREVIEW_DOMAIN,
     normalize_preview_name,
     preview_name_for_variant,
+    staticpages_sha_for_variant,
 )
 
 
@@ -31,6 +32,10 @@ class UploadStaticPagesPreviewTests(unittest.TestCase):
     def test_intl_prefixed_branch_does_not_double_prefix(self) -> None:
         self.assertEqual(preview_name_for_variant("frontsandbox/intl-demo-feature", "cn"), "demo-feature")
         self.assertEqual(preview_name_for_variant("frontsandbox/intl-demo-feature", "intl"), "intl-demo-feature")
+
+    def test_intl_variant_uses_distinct_staticpages_sha(self) -> None:
+        self.assertEqual(staticpages_sha_for_variant("abc123", "cn"), "abc123")
+        self.assertEqual(staticpages_sha_for_variant("abc123", "intl"), "abc123-intl")
 
     def test_staticpages_defaults_use_preview_domain(self) -> None:
         self.assertEqual(DEFAULT_PREVIEW_DOMAIN, "preview.lightclaw.tech")
