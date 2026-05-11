@@ -1,4 +1,6 @@
 import sys
+import tarfile
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -11,9 +13,11 @@ if str(RUNTIME_DIR) not in sys.path:
 from support.staticpages_preview import (  # noqa: E402
     DEFAULT_API_URL,
     DEFAULT_PREVIEW_DOMAIN,
+    ARCHIVE_MEDIA_TYPE,
     normalize_preview_name,
     preview_name_for_variant,
     staticpages_sha_for_variant,
+    write_tar_gzip_archive,
 )
 
 
@@ -45,6 +49,27 @@ class UploadStaticPagesPreviewTests(unittest.TestCase):
     def test_staticpages_defaults_use_preview_domain(self) -> None:
         self.assertEqual(DEFAULT_PREVIEW_DOMAIN, "preview.lightclaw.tech")
         self.assertEqual(DEFAULT_API_URL, "https://staticpages-api.preview.lightclaw.tech/api/upload")
+
+    def test_default_archive_media_type_is_tar_gzip(self) -> None:
+        self.assertEqual(ARCHIVE_MEDIA_TYPE, "application/vnd.lightvela.staticpages.archive.v1.tar+gzip")
+
+    def test_write_tar_gzip_archive_preserves_relative_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            artifact_dir = root / "dist"
+            (artifact_dir / "assets").mkdir(parents=True)
+            (artifact_dir / "index.html").write_text("<html></html>")
+            (artifact_dir / "assets" / "app.js").write_text("console.log('ok')")
+            archive_path = root / "dist.tar.gz"
+
+            write_tar_gzip_archive(
+                archive_path,
+                artifact_dir,
+                sorted(path for path in artifact_dir.rglob("*") if path.is_file()),
+            )
+
+            with tarfile.open(archive_path, "r:gz") as archive:
+                self.assertEqual(sorted(archive.getnames()), ["assets/app.js", "index.html"])
 
 
 if __name__ == "__main__":
