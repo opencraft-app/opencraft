@@ -219,7 +219,9 @@ def env_publish_paths(manifest: dict[str, Any], env: str) -> dict[str, list[str]
     for bundle_name, bundle_data in sorted((manifest.get("bundles") or {}).items()):
         if env not in (bundle_data.get("publish_paths_by_env") or {}):
             continue
-        paths_by_bundle[bundle_name] = load_bundle(manifest, bundle_name, env).publish_paths
+        publish_paths = load_bundle(manifest, bundle_name, env).publish_paths
+        if publish_paths:
+            paths_by_bundle[bundle_name] = publish_paths
     return paths_by_bundle
 
 

@@ -14,15 +14,15 @@ bundles:
     - trade/migrations
     exit_condition: Can be removed only after trade is folded into another billing
       runtime and no longer ships as an independent service.
-    publish_paths: []
-    publish_paths_by_env:
-      beijing-sandbox:
-      - argocd/services/trade/beijing-sandbox/**
+    publish_paths:
+      - argocd/services/trade/{env}/**
       - argocd/services/trade/common/**
       - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
-      - argocd/catalogs/sandbox/beijing-sandbox/trade.yaml
-      - argocd/secrets/beijing-sandbox/trade-runtime-secrets.sops.yaml
+      - argocd/catalogs/playground/beijing-playground/{env}/trade.yaml
+      - argocd/secrets/{env}/trade-runtime-secrets.sops.yaml
       - trade/k8s/base/**
+    publish_paths_by_env:
+      beijing-sandbox: []
     dockerfile: trade/Dockerfile
     build_context: trade
     image_repo:

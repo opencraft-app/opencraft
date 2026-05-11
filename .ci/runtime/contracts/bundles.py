@@ -119,7 +119,7 @@ def _resolve_publish_paths(bundle: dict[str, Any], env: str) -> list[str]:
     elif is_playground_env(env):
         raw_paths = None
         for template_env in PLAYGROUND_TEMPLATE_ENVS:
-            if template_env in paths_by_env:
+            if template_env in paths_by_env and paths_by_env[template_env]:
                 source_env = template_env
                 raw_paths = paths_by_env[template_env]
                 break

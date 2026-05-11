@@ -214,6 +214,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         workflow = yaml.safe_load((REPO_ROOT / ".ci/trade.yml").read_text())
 
         self.assertEqual(bundle.image_repo, "lightclaw-bj8.tencentcloudcr.com/lightclaw/trade")
+        self.assertEqual(bundle.publish_paths, [])
         self.assertEqual(playground_bundle.image_repo, "lightclaw-bj8.tencentcloudcr.com/lightclaw/trade")
         self.assertIn(f"argocd/services/trade/{PLAYGROUND_ENV}/**", playground_bundle.publish_paths)
         self.assertIn(
