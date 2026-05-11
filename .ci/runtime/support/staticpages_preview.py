@@ -4,8 +4,10 @@ import argparse
 import mimetypes
 import os
 import re
+import sys
 import tarfile
 import tempfile
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -19,6 +21,97 @@ BRANCH_PREFIX = "frontsandbox/"
 DNS_SAFE_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
 INTL_PREVIEW_PREFIX = "intl-"
 ARCHIVE_MEDIA_TYPE = "application/vnd.lightvela.staticpages.archive.v1.tar+gzip"
+PROGRESS_MIN_INTERVAL_SECONDS = 2.0
+PROGRESS_MIN_INTERVAL_BYTES = 8 * 1024 * 1024
+
+
+def format_bytes(value: int) -> str:
+    if value < 1024:
+        return f"{value} B"
+    if value < 1024 * 1024:
+        return f"{value / 1024:.1f} KiB"
+    if value < 1024 * 1024 * 1024:
+        return f"{value / 1024 / 1024:.1f} MiB"
+    return f"{value / 1024 / 1024 / 1024:.1f} GiB"
+
+
+class UploadProgressReader:
+    def __init__(
+        self,
+        raw,
+        *,
+        total_bytes: int,
+        enabled: bool,
+        label: str,
+        output=sys.stdout,
+        now=time.monotonic,
+    ) -> None:
+        self.raw = raw
+        self.total_bytes = total_bytes
+        self.enabled = enabled and total_bytes > 0
+        self.label = label
+        self.output = output
+        self.now = now
+        self.uploaded_bytes = 0
+        self.last_report_time = 0.0
+        self.last_report_bytes = 0
+        self.started = False
+        self.finished = False
+
+    def read(self, size: int = -1) -> bytes:
+        chunk = self.raw.read(size)
+        if chunk:
+            self.uploaded_bytes += len(chunk)
+            self.report(force=False)
+        else:
+            self.finish()
+        return chunk
+
+    def __len__(self) -> int:
+        return self.total_bytes
+
+    def __getattr__(self, name: str):
+        return getattr(self.raw, name)
+
+    def report(self, *, force: bool) -> None:
+        if not self.enabled:
+            return
+        current_time = self.now()
+        if not self.started:
+            self.started = True
+            self.last_report_time = current_time
+            self.last_report_bytes = self.uploaded_bytes
+            self.write_progress()
+            return
+
+        if not force:
+            elapsed = current_time - self.last_report_time
+            advanced = self.uploaded_bytes - self.last_report_bytes
+            if elapsed < PROGRESS_MIN_INTERVAL_SECONDS and advanced < PROGRESS_MIN_INTERVAL_BYTES:
+                return
+
+        self.last_report_time = current_time
+        self.last_report_bytes = self.uploaded_bytes
+        self.write_progress()
+
+    def finish(self) -> None:
+        if self.finished:
+            return
+        self.finished = True
+        if self.enabled:
+            self.uploaded_bytes = max(self.uploaded_bytes, self.total_bytes)
+            if not self.started or self.last_report_bytes < self.total_bytes:
+                self.report(force=True)
+
+    def write_progress(self) -> None:
+        percent = min(100.0, (self.uploaded_bytes / self.total_bytes) * 100)
+        prefix = f"{self.label} " if self.label else ""
+        print(
+            f"{prefix}上传进度：{percent:5.1f}% "
+            f"({format_bytes(self.uploaded_bytes)} / {format_bytes(self.total_bytes)})",
+            file=self.output,
+            flush=True,
+        )
 
 
 def normalize_preview_name(source_branch: str) -> str:
@@ -109,13 +202,19 @@ def upload_body(
     body_path: Path,
     headers: dict[str, str],
     timeout_seconds: int,
+    progress: bool,
+    progress_label: str,
 ) -> None:
-    with body_path.open("rb") as data:
+    size = body_path.stat().st_size
+    with body_path.open("rb") as raw:
+        data = UploadProgressReader(raw, total_bytes=size, enabled=progress, label=progress_label)
         request = urllib.request.Request(api_url, data=data, headers=headers, method="POST")
         try:
             with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+                data.finish()
                 print(response.read().decode("utf-8", errors="replace"))
         except urllib.error.HTTPError as exc:
+            data.finish()
             error_body = exc.read().decode("utf-8", errors="replace")
             raise RuntimeError(f"StaticPages upload failed: http={exc.code} body={error_body}") from exc
 
@@ -218,7 +317,14 @@ def _upload_archive(
             "X-StaticPages-Upload-Format": "tar.gz",
         }
     )
-    upload_body(api_url=args.api_url, body_path=body_path, headers=headers, timeout_seconds=args.timeout_seconds)
+    upload_body(
+        api_url=args.api_url,
+        body_path=body_path,
+        headers=headers,
+        timeout_seconds=args.timeout_seconds,
+        progress=not args.no_progress,
+        progress_label=f"{args.variant}/tar.gz",
+    )
 
 
 def _upload_multipart(
@@ -239,7 +345,14 @@ def _upload_multipart(
             "Content-Length": str(size),
         }
     )
-    upload_body(api_url=args.api_url, body_path=body_path, headers=headers, timeout_seconds=args.timeout_seconds)
+    upload_body(
+        api_url=args.api_url,
+        body_path=body_path,
+        headers=headers,
+        timeout_seconds=args.timeout_seconds,
+        progress=not args.no_progress,
+        progress_label=f"{args.variant}/multipart",
+    )
 
 
 def parse_args() -> argparse.Namespace:
@@ -255,6 +368,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sha", required=True)
     parser.add_argument("--token", default="")
     parser.add_argument("--timeout-seconds", type=int, default=300)
+    parser.add_argument("--no-progress", action="store_true", help="Disable upload progress logs.")
     return parser.parse_args()
 
 

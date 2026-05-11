@@ -41,7 +41,7 @@ stages:
           - checkout: self
             name: 拉取代码
             with:
-              fetchDepth: 50
+              fetchDepth: 1
           - name: 打印 frontend 预览上下文
             shell: bash
             run: |

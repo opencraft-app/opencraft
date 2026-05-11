@@ -2,6 +2,7 @@ import sys
 import tarfile
 import tempfile
 import unittest
+from io import StringIO
 from pathlib import Path
 
 
@@ -14,6 +15,8 @@ from support.staticpages_preview import (  # noqa: E402
     DEFAULT_API_URL,
     DEFAULT_PREVIEW_DOMAIN,
     ARCHIVE_MEDIA_TYPE,
+    UploadProgressReader,
+    format_bytes,
     normalize_preview_name,
     preview_name_for_variant,
     staticpages_sha_for_variant,
@@ -70,6 +73,37 @@ class UploadStaticPagesPreviewTests(unittest.TestCase):
 
             with tarfile.open(archive_path, "r:gz") as archive:
                 self.assertEqual(sorted(archive.getnames()), ["assets/app.js", "index.html"])
+
+    def test_format_bytes_uses_binary_units(self) -> None:
+        self.assertEqual(format_bytes(512), "512 B")
+        self.assertEqual(format_bytes(1536), "1.5 KiB")
+        self.assertEqual(format_bytes(2 * 1024 * 1024), "2.0 MiB")
+
+    def test_upload_progress_reader_reports_completion(self) -> None:
+        class Raw:
+            def __init__(self) -> None:
+                self.chunks = [b"abc", b"de", b""]
+
+            def read(self, size: int = -1) -> bytes:
+                return self.chunks.pop(0)
+
+        output = StringIO()
+        ticks = iter([0.0, 3.0, 6.0])
+        reader = UploadProgressReader(
+            Raw(),
+            total_bytes=5,
+            enabled=True,
+            label="cn/tar.gz",
+            output=output,
+            now=lambda: next(ticks),
+        )
+
+        self.assertEqual(reader.read(), b"abc")
+        self.assertEqual(reader.read(), b"de")
+        self.assertEqual(reader.read(), b"")
+        logs = output.getvalue()
+        self.assertIn("cn/tar.gz 上传进度", logs)
+        self.assertIn("100.0%", logs)
 
 
 if __name__ == "__main__":
