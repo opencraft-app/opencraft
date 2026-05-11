@@ -52,7 +52,7 @@ BK_CI_ACCESS_TOKEN="your_token" python3 .skills/devops-pipeline/scripts/pipeline
 
 **修改流水线参数前必须获得用户确认**：在调用修改参数脚本之前，必须向用户展示将要修改的参数名和新值并获得明确确认。未经用户确认，禁止执行修改操作。
 
-**访问令牌配置**：需要用户预先设置环境变量 `BK_CI_ACCESS_TOKEN`。
+**访问令牌配置**：调用蓝盾 API 前必须先检查环境变量 `BK_CI_ACCESS_TOKEN`。如果没有 token，明确向用户索要 token，或请求用户授权用已登录浏览器打开 `https://devops.woa.com/ms/auth/api/user/bkToken/get` 获取；不要含糊跳过蓝盾 API，也不要把缺 token 当作只能改走其他排查路径。
 
 ## 常用工作流
 
@@ -210,11 +210,11 @@ python scripts/pipeline_client.py update-params \
 | QUEUE | 排队中 |
 | STAGE_SUCCESS | 阶段成功 |
 
-## 如果执行 Python 脚本报错 `BK_CI_ACCESS_TOKEN` 找不到，获取访问令牌步骤如下
+## 如果 `BK_CI_ACCESS_TOKEN` 不存在，先找用户要
 
-1. 先检查当前 shell 是否已有环境变量：`echo "$BK_CI_ACCESS_TOKEN"`。如果已有，直接使用，不要重复获取。
-2. 如果没有 token，提示用户用已登录 WOA / 蓝盾账号的浏览器访问：`https://devops.woa.com/ms/auth/api/user/bkToken/get`。
-3. 如果当前会话可用浏览器工具，且用户允许使用登录态，可以用浏览器工具打开上述 URL 获取 token。
-4. 如果接口返回 JSON，从返回内容中复制 token 字段值；不要把 token 写入仓库、文档、日志或提交信息。
-5. 在当前 shell 设置环境变量：`export BK_CI_ACCESS_TOKEN="your_token"`。
-6. 如果上述接口不可用，再参照 `https://iwiki.woa.com/p/4016670096` 获取访问令牌。
+1. 先检查当前 shell 是否已有环境变量：`printf '%s\n' "${BK_CI_ACCESS_TOKEN:+set}"`。如果已有，直接使用，不要重复获取。
+2. 如果没有 token，停止蓝盾 API 操作并明确问用户：`当前 shell 没有 BK_CI_ACCESS_TOKEN；请把 token 发我，或授权我用已登录浏览器打开 https://devops.woa.com/ms/auth/api/user/bkToken/get 获取。`
+3. 用户提供 token 后，只在当前 shell 会话中导出：`export BK_CI_ACCESS_TOKEN="..."`；不要写入仓库、文档、提交信息或持久日志。
+4. 如果用户授权使用浏览器登录态，再打开 `https://devops.woa.com/ms/auth/api/user/bkToken/get` 获取 token；如果接口返回 JSON，只提取 token 字段值。
+5. 如果上述接口不可用，再参照 `https://iwiki.woa.com/p/4016670096` 获取访问令牌。
+6. 没拿到 token 前，可以做本地/runner 侧辅助排查，但必须说明这不是蓝盾 API 日志查询的替代。

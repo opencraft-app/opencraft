@@ -75,14 +75,13 @@ stages:
               "$PNPM_BIN" exec tsc -b
 
               echo "并发构建 frontend 国内站和国际站产物"
+              echo "frontend 分支预览跳过 asset optimize；生产构建链路不受影响"
               (
                 "$PNPM_BIN" exec vite build --mode cn --outDir dist-cn
-                node scripts/optimize-static-assets.mjs dist-cn
               ) &
               build_cn_pid=$!
               (
                 "$PNPM_BIN" exec vite build --mode global --outDir dist-global
-                node scripts/optimize-static-assets.mjs dist-global
               ) &
               build_global_pid=$!
 
@@ -106,15 +105,15 @@ stages:
                 echo "STATICPAGES_UPLOAD_TOKEN source=ci-settings fingerprint=$(printf '%s' "$STATICPAGES_UPLOAD_TOKEN" | ci_fingerprint_secret)"
               fi
 
-              echo "并发上传 frontend 国内站和国际站 StaticPages 预览"
+              echo "顺序上传 frontend 国内站和国际站 StaticPages 预览，避免并发更新 StaticPages index"
               python3 .ci/runtime/commands/upload_staticpages_preview.py \
                 --artifact-dir frontend/dist-cn \
                 --api-url "$STATICPAGES_API_URL" \
                 --repository wisp/mono2 \
                 --source-branch "${{ ci.branch }}" \
                 --variant cn \
-                --sha "${{ ci.sha }}" &
-              upload_cn_pid=$!
+                --sha "${{ ci.sha }}" \
+                --no-progress
 
               python3 .ci/runtime/commands/upload_staticpages_preview.py \
                 --artifact-dir frontend/dist-global \
@@ -122,13 +121,5 @@ stages:
                 --repository wisp/mono2 \
                 --source-branch "${{ ci.branch }}" \
                 --variant intl \
-                --sha "${{ ci.sha }}" &
-              upload_global_pid=$!
-
-              upload_failed=0
-              wait "$upload_cn_pid" || upload_failed=1
-              wait "$upload_global_pid" || upload_failed=1
-              if [[ "$upload_failed" -ne 0 ]]; then
-                echo "frontend 国内站或国际站 StaticPages 上传失败" >&2
-                exit 1
-              fi
+                --sha "${{ ci.sha }}" \
+                --no-progress

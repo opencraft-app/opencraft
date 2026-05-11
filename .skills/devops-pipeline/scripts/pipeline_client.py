@@ -21,6 +21,7 @@ import json
 import os
 import sys
 from typing import Any, Dict, Optional
+import urllib.parse
 import urllib.request
 import urllib.error
 import yaml
@@ -32,6 +33,11 @@ def print_data(data: Dict[str, Any]) -> None:
 
 
 BASE_URL = "https://devops.apigw.o.woa.com/prod/v4/apigw-user"
+
+
+def build_url(url: str, params: Dict[str, Any]) -> str:
+    """Append URL-encoded query parameters to an API URL."""
+    return f"{url}?{urllib.parse.urlencode(params)}" if params else url
 
 
 def make_request(
@@ -127,8 +133,7 @@ def cmd_startup_info(args: argparse.Namespace) -> None:
     if args.version:
         params["version"] = args.version
 
-    query_string = "&".join(f"{k}={v}" for k, v in params.items())
-    full_url = f"{url}?{query_string}"
+    full_url = build_url(url, params)
 
     result = make_request(full_url, access_token=access_token)
     print_data(result)
@@ -150,8 +155,7 @@ def cmd_start(args: argparse.Namespace) -> None:
     if args.build_no is not None:
         params["buildNo"] = args.build_no
 
-    query_string = "&".join(f"{k}={v}" for k, v in params.items())
-    full_url = f"{url}?{query_string}"
+    full_url = build_url(url, params)
 
     # 解析构建参数
     body_data = {}
@@ -181,8 +185,7 @@ def cmd_stop(args: argparse.Namespace) -> None:
     url = f"{BASE_URL}/projects/{args.project_id}/build_stop"
     params = {"buildId": args.build_id, "pipelineId": args.pipeline_id}
 
-    query_string = "&".join(f"{k}={v}" for k, v in params.items())
-    full_url = f"{url}?{query_string}"
+    full_url = build_url(url, params)
 
     result = make_request(
         full_url, method="POST", data={}, access_token=access_token
@@ -203,8 +206,7 @@ def cmd_status(args: argparse.Namespace) -> None:
     url = f"{BASE_URL}/projects/{args.project_id}/build_status"
     params = {"buildId": args.build_id, "pipelineId": args.pipeline_id}
 
-    query_string = "&".join(f"{k}={v}" for k, v in params.items())
-    full_url = f"{url}?{query_string}"
+    full_url = build_url(url, params)
 
     result = make_request(full_url, access_token=access_token)
     print_data(result)
@@ -264,8 +266,7 @@ def cmd_list(args: argparse.Namespace) -> None:
     if args.update_time_desc is not None:
         params["updateTimeDesc"] = args.update_time_desc
 
-    query_string = "&".join(f"{k}={v}" for k, v in params.items())
-    full_url = f"{url}?{query_string}"
+    full_url = build_url(url, params)
 
     result = make_request(full_url, access_token=access_token)
     print_data(result)
@@ -329,8 +330,7 @@ def cmd_update_params(args: argparse.Namespace) -> None:
     url = f"{BASE_URL}/projects/{args.project_id}/pipelines/pipeline"
     params: Dict[str, Any] = {"pipelineId": args.pipeline_id}
 
-    query_string = "&".join(f"{k}={v}" for k, v in params.items())
-    full_url = f"{url}?{query_string}"
+    full_url = build_url(url, params)
 
     # GET 流水线定义
     result = make_request(full_url, access_token=access_token)
@@ -415,8 +415,7 @@ def cmd_pipelines(args: argparse.Namespace) -> None:
     if args.show_delete is not None:
         params["showDelete"] = str(args.show_delete).lower()
 
-    query_string = "&".join(f"{k}={v}" for k, v in params.items())
-    full_url = f"{url}?{query_string}"
+    full_url = build_url(url, params)
 
     result = make_request(full_url, access_token=access_token)
 
