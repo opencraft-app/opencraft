@@ -55,6 +55,11 @@ type fakeJifei struct {
 	generateDealsAndPayFn      func(ctx context.Context, req *jifeiclient.GenerateDealsAndPayRequest) (*jifeiclient.GenerateDealsAndPayResponse, error)
 	generateDealsAndPayCalls   atomic.Int32
 	lastGenerateDealsAndPayReq *jifeiclient.GenerateDealsAndPayRequest
+
+	// 8B-1.6: GetMidasEarmarking 钩子（jifei `qcloud.margin.getMidasEarmarking` 获取支付 URL）
+	getMidasEarmarkingFn      func(ctx context.Context, req *jifeiclient.GetMidasEarmarkingRequest) (*jifeiclient.GetMidasEarmarkingResponse, error)
+	getMidasEarmarkingCalls   atomic.Int32
+	lastGetMidasEarmarkingReq *jifeiclient.GetMidasEarmarkingRequest
 }
 
 func (f *fakeJifei) GetPrice(ctx context.Context, req *jifeiclient.GetPriceRequest) (*jifeiclient.GetPriceResponse, error) {
@@ -76,6 +81,14 @@ func (f *fakeJifei) GenerateDealsAndPay(ctx context.Context, req *jifeiclient.Ge
 	}
 	return nil, errors.New("fakeJifei: GenerateDealsAndPay not implemented")
 }
+func (f *fakeJifei) GetMidasEarmarking(ctx context.Context, req *jifeiclient.GetMidasEarmarkingRequest) (*jifeiclient.GetMidasEarmarkingResponse, error) {
+	f.getMidasEarmarkingCalls.Add(1)
+	f.lastGetMidasEarmarkingReq = req
+	if f.getMidasEarmarkingFn != nil {
+		return f.getMidasEarmarkingFn(ctx, req)
+	}
+	return nil, errors.New("fakeJifei: GetMidasEarmarking not implemented")
+}
 
 type fakeOrderWriter struct {
 	createOrderFn          func(ctx context.Context, in store.CreateOrderInput) error
@@ -83,6 +96,12 @@ type fakeOrderWriter struct {
 	lastCreateOrderInput   store.CreateOrderInput
 	markProvisionedFn      func(ctx context.Context, dealName, resourceID string) error
 	markProvisionedCalls   atomic.Int32
+
+	// 8B-1.6: UpdatePayURL 钩子（GeneratePayURL 命中 jifei 后写回 trade_order.pay_url 缓存）
+	updatePayURLFn        func(ctx context.Context, dealName, payURL string) error
+	updatePayURLCalls     atomic.Int32
+	lastUpdatePayURLDeal  string
+	lastUpdatePayURLValue string
 }
 
 func (f *fakeOrderWriter) CreateOrder(ctx context.Context, in store.CreateOrderInput) error {
@@ -98,6 +117,16 @@ func (f *fakeOrderWriter) MarkOrderProvisioned(ctx context.Context, dealName, re
 	f.markProvisionedCalls.Add(1)
 	if f.markProvisionedFn != nil {
 		return f.markProvisionedFn(ctx, dealName, resourceID)
+	}
+	return nil
+}
+
+func (f *fakeOrderWriter) UpdatePayURL(ctx context.Context, dealName, payURL string) error {
+	f.updatePayURLCalls.Add(1)
+	f.lastUpdatePayURLDeal = dealName
+	f.lastUpdatePayURLValue = payURL
+	if f.updatePayURLFn != nil {
+		return f.updatePayURLFn(ctx, dealName, payURL)
 	}
 	return nil
 }
@@ -499,20 +528,117 @@ func TestGeneratePayURL_NotFound(t *testing.T) {
 	}
 }
 
-func TestGeneratePayURL_PayURLNotCached_ReturnsMockURL(t *testing.T) {
-	// 8B-1.5：trade_order 存在但 pay_url 列空时，不再返 ErrPayURLUnavailable，
-	// 而是返回确定性 mock URL（jifei "生成支付 url" SDK 接入前的桩实现）。
+func TestGeneratePayURL_PayURLNotCached_CallsJifeiAndWritesBack(t *testing.T) {
+	// 8B-1.6：trade_order 存在但 pay_url 列空时，调 jifei `qcloud.margin.getMidasEarmarking`
+	// 拿真实 URL，并写回 trade_order.pay_url 缓存（Q-PAY-2 协同）。
 	d := newStdDeps()
 	d.store.getOrderByDealNameFn = func(ctx context.Context, dealName string) (*store.TradeOrder, error) {
-		return &store.TradeOrder{DealName: dealName, PayURL: ""}, nil
+		return &store.TradeOrder{DealName: dealName, Uin: "1000123456", PayURL: ""}, nil
+	}
+	d.jifei.getMidasEarmarkingFn = func(ctx context.Context, req *jifeiclient.GetMidasEarmarkingRequest) (*jifeiclient.GetMidasEarmarkingResponse, error) {
+		// 协议层入参断言：OwnerUin / Uin 来自 trade_order，DealNames 单元素切片
+		if req.OwnerUin != "1000123456" || req.Uin != "1000123456" {
+			t.Errorf("ownerUin/uin mismatch: %+v", req)
+		}
+		if len(req.DealNames) != 1 || req.DealNames[0] != "deal-1" {
+			t.Errorf("dealNames mismatch: %+v", req.DealNames)
+		}
+		return &jifeiclient.GetMidasEarmarkingResponse{
+			BillID:     "bill-1",
+			URL:        "https://buy.cloud.tencent.com/midas/real?dealName=deal-1",
+			AppID:      "1000029101",
+			NeedCharge: 1,
+		}, nil
 	}
 	url, err := d.service.GeneratePayURL(context.Background(), "deal-1")
 	if err != nil {
-		t.Fatalf("expected nil err with mock URL, got %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
-	want := "https://buy.cloud.tencent.com/lighthouse/mock?dealName=deal-1&token=mock"
+	want := "https://buy.cloud.tencent.com/midas/real?dealName=deal-1"
 	if url != want {
-		t.Errorf("mock URL mismatch:\n  got  %q\n  want %q", url, want)
+		t.Errorf("URL mismatch:\n  got  %q\n  want %q", url, want)
+	}
+	// 断言：trade_order.pay_url 已写回缓存
+	if d.writer.updatePayURLCalls.Load() != 1 {
+		t.Errorf("expected UpdatePayURL called once, got %d", d.writer.updatePayURLCalls.Load())
+	}
+	if d.writer.lastUpdatePayURLDeal != "deal-1" || d.writer.lastUpdatePayURLValue != want {
+		t.Errorf("UpdatePayURL args mismatch: deal=%q url=%q",
+			d.writer.lastUpdatePayURLDeal, d.writer.lastUpdatePayURLValue)
+	}
+	// 断言：jifei 调用一次
+	if d.jifei.getMidasEarmarkingCalls.Load() != 1 {
+		t.Errorf("expected GetMidasEarmarking called once, got %d", d.jifei.getMidasEarmarkingCalls.Load())
+	}
+}
+
+func TestGeneratePayURL_JifeiBusinessError_PassedThrough(t *testing.T) {
+	// Q-PAY-5：jifei 业务错（returnCode != 0）统一透传，不在 service 层做错误码语义分类。
+	d := newStdDeps()
+	d.store.getOrderByDealNameFn = func(ctx context.Context, dealName string) (*store.TradeOrder, error) {
+		return &store.TradeOrder{DealName: dealName, Uin: "1000123456", PayURL: ""}, nil
+	}
+	cgwErr := &jifeiclient.CGWError{
+		ReturnCode:    100151,
+		ReturnMessage: "resource lock conflict",
+	}
+	d.jifei.getMidasEarmarkingFn = func(ctx context.Context, req *jifeiclient.GetMidasEarmarkingRequest) (*jifeiclient.GetMidasEarmarkingResponse, error) {
+		return nil, cgwErr
+	}
+	_, err := d.service.GeneratePayURL(context.Background(), "deal-1")
+	if err == nil {
+		t.Fatalf("expected jifei business error, got nil")
+	}
+	var got *jifeiclient.CGWError
+	if !errors.As(err, &got) {
+		t.Fatalf("expected *CGWError pass-through, got %T: %v", err, err)
+	}
+	if got.ReturnCode != 100151 {
+		t.Errorf("returnCode mismatch: got %d", got.ReturnCode)
+	}
+	// 断言：不应写回缓存
+	if d.writer.updatePayURLCalls.Load() != 0 {
+		t.Errorf("expected UpdatePayURL not called on jifei error, got %d", d.writer.updatePayURLCalls.Load())
+	}
+}
+
+func TestGeneratePayURL_WriteBackFailure_StillReturnsURL(t *testing.T) {
+	// 写回 trade_order.pay_url 失败时不阻塞用户支付：仍返 jifei URL，落库错走 ELK 日志兜底（Q-PAY-1 b）。
+	d := newStdDeps()
+	d.store.getOrderByDealNameFn = func(ctx context.Context, dealName string) (*store.TradeOrder, error) {
+		return &store.TradeOrder{DealName: dealName, Uin: "1000123456", PayURL: ""}, nil
+	}
+	d.jifei.getMidasEarmarkingFn = func(ctx context.Context, req *jifeiclient.GetMidasEarmarkingRequest) (*jifeiclient.GetMidasEarmarkingResponse, error) {
+		return &jifeiclient.GetMidasEarmarkingResponse{URL: "https://buy.cloud.tencent.com/midas/x"}, nil
+	}
+	d.writer.updatePayURLFn = func(ctx context.Context, dealName, payURL string) error {
+		return errors.New("simulated db error")
+	}
+	url, err := d.service.GeneratePayURL(context.Background(), "deal-1")
+	if err != nil {
+		t.Fatalf("write-back failure should not propagate, got %v", err)
+	}
+	if url != "https://buy.cloud.tencent.com/midas/x" {
+		t.Errorf("URL mismatch: got %q", url)
+	}
+}
+
+func TestGeneratePayURL_TradeOrderMissingUin(t *testing.T) {
+	// 防御性：trade_order.uin 列在 PlaceOrder 入口就应该写入；万一为空走防御性返错。
+	d := newStdDeps()
+	d.store.getOrderByDealNameFn = func(ctx context.Context, dealName string) (*store.TradeOrder, error) {
+		return &store.TradeOrder{DealName: dealName, Uin: "", PayURL: ""}, nil
+	}
+	_, err := d.service.GeneratePayURL(context.Background(), "deal-1")
+	if err == nil {
+		t.Fatalf("expected error for missing uin")
+	}
+	if !strings.Contains(err.Error(), "uin") {
+		t.Errorf("error should mention uin: %v", err)
+	}
+	// 不应调 jifei
+	if d.jifei.getMidasEarmarkingCalls.Load() != 0 {
+		t.Errorf("expected GetMidasEarmarking not called, got %d", d.jifei.getMidasEarmarkingCalls.Load())
 	}
 }
 

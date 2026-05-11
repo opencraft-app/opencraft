@@ -90,6 +90,23 @@ type OrderWriter interface {
 	// trade_order 不存在的情况理论上不应发生（createResource 触发条件是 jifei 已扣款 + jifei
 	// 入参 dealName 是 trade 自己生成的），但为防御兜底返 NotFound 让上层走 B 类返 jifei 重试。
 	MarkOrderProvisioned(ctx context.Context, dealName, resourceID string) error
+
+	// UpdatePayURL 用 deal_name 定位记录，把 jifei getMidasEarmarking 返回的支付 URL 写回缓存。
+	//
+	// SQL 语义（与 GeneratePayURL 命中即返的快路径协同 — Q-PAY-2）：
+	//
+	//   UPDATE trade_order SET pay_url = ?, updated_time = NOW() WHERE deal_name = ?
+	//
+	// 不更新 status 字段（Q-PAY-3：getMidasEarmarking 不改变订单状态机；status 仍由 PlaceOrder
+	// 入口写 'pending_pay'，由 createResource 收尾推进到 'provisioned'）。
+	//
+	// 错误：
+	//   - deal_name 不存在（rows affected = 0）→ wrap ErrTradeOrderNotFound
+	//   - 其他基础设施错 → raw error wrap
+	//
+	// 幂等性：jifei "getMidasEarmarking" 在同一 dealName 上多次调用应返回同一 URL，
+	// 重复写库为 no-op-ish（payURL 字段不变，updated_time 刷新）。
+	UpdatePayURL(ctx context.Context, dealName, payURL string) error
 }
 
 // ErrTradeOrderResourceIDConflict 表示 trade_order 已被另一个不同 resource_id 占用。
@@ -203,6 +220,40 @@ func (s *MySQLStore) MarkOrderProvisioned(ctx context.Context, dealName, resourc
 	if rowsAffected == 0 {
 		// 理论不会触发：上一步 SELECT 已确认存在；保留兜底返 NotFound
 		return fmt.Errorf("%w: dealName=%s (update affected 0 rows)", ErrTradeOrderNotFound, dealName)
+	}
+	return nil
+}
+
+// UpdatePayURL 实现 OrderWriter（jifei getMidasEarmarking 返回的支付 URL 写回 trade_order.pay_url）。
+//
+// 见 OrderWriter.UpdatePayURL 注释（Q-PAY-2 / Q-PAY-3）。
+func (s *MySQLStore) UpdatePayURL(ctx context.Context, dealName, payURL string) error {
+	if s == nil || s.db == nil {
+		return fmt.Errorf("trade_order: store is nil")
+	}
+	if dealName == "" {
+		return fmt.Errorf("trade_order: deal_name is required")
+	}
+	if payURL == "" {
+		return fmt.Errorf("trade_order: pay_url is required")
+	}
+
+	const q = `
+		UPDATE trade_order
+		   SET pay_url = ?, updated_time = NOW()
+		 WHERE deal_name = ?
+	`
+	res, err := s.db.ExecContext(ctx, q, payURL, dealName)
+	if err != nil {
+		return fmt.Errorf("trade_order: update pay_url dealName=%s: %w", dealName, err)
+	}
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("trade_order: rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("%w: dealName=%s (update pay_url affected 0 rows)",
+			ErrTradeOrderNotFound, dealName)
 	}
 	return nil
 }

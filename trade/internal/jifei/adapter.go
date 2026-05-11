@@ -86,6 +86,38 @@ type PlaceOrderResult struct {
 	DealName   string // jifei 子订单号（generateDeals 响应 DealNames[0]，Lighthouse 本期一笔下单 1 个 deal）
 }
 
+// GeneratePayURLRequest 是"获取支付 URL"适配层入参。
+//
+// 协议依据：jifei `qcloud.margin.getMidasEarmarking`（云 API 别名 CreatePayUrl，PDF §4 / §6）—
+// 调用方先用 PlaceOrder 拿到 dealName，再用本接口生成可在浏览器跳转的 Midas 收银台 URL。
+//
+// Lightclaw 本期裁剪（Q-PAY-4 / Q48 协议层最小字段集）：
+//   - 不传 platform（jifei 默认 pc）
+//   - 不传 voucherIds / wxOpenId / wxAppId / contractOrder / channel / remitpayPayerName
+//     （Lightclaw 控制台无对应 UI 入口）
+type GeneratePayURLRequest struct {
+	OwnerUin string // jifei 协议层 ownerUin（= 终端用户 uin，与 PlaceOrder 一致）
+	Uin      string // jifei 协议层 uin（= OwnerUin，payer = owner）
+	DealName string // 单次仅生成 1 个 deal 的支付 URL（与 Q41 GoodsNum=1 一致）
+}
+
+// GeneratePayURLResult 是"获取支付 URL"适配层响应。
+//
+// 字段映射 PDF §5 出参：
+//   - URL：jifei 返回的 Midas 收银台 URL（需要前端跳转）
+//   - BillID：jifei 米大师内部账单号，仅用于 ELK 日志兜底排障（Q-PAY-1 = b：不落表）
+//   - AppID：米大师商户 appid，同上仅日志
+//   - NeedCharge：1 = 需要支付 / 0 = 已扣完无需支付（前端可直接视为支付完成）
+//
+// 故意不持有 PDF §5 的 wxInfo / remitPayInfo 子对象，因 Lightclaw 本期不下发对应 channel
+// （Q-PAY-4），jifei 默认场景下这两个对象为空。
+type GeneratePayURLResult struct {
+	URL        string
+	BillID     string
+	AppID      string
+	NeedCharge int
+}
+
 // Adapter 是 jifei 适配层对外接口（便于 mock）。
 type Adapter interface {
 	// InquiryBatch 批量询价，bundleIDs[N] 一次调用 jifei → 返回 [N]InquiryItem。
@@ -93,6 +125,14 @@ type Adapter interface {
 
 	// PlaceOrder 下单，返回 (BigOrderID, DealName)。
 	PlaceOrder(ctx context.Context, req *PlaceOrderRequest) (*PlaceOrderResult, error)
+
+	// GeneratePayURL 调 jifei `qcloud.margin.getMidasEarmarking` 拿 Midas 收银台 URL。
+	//
+	// 错误语义：
+	//   - 入参缺失 → errors.New 包装
+	//   - jifei 业务错（returnCode != 0）→ 透传 *jifeiclient.CGWError（上层按 Q-PAY-5 统一 5xx 透传）
+	//   - HTTP 失败 → 透传 ErrCGWHTTPNon200 / 包装 raw error
+	GeneratePayURL(ctx context.Context, req *GeneratePayURLRequest) (*GeneratePayURLResult, error)
 }
 
 type adapter struct {
@@ -317,4 +357,48 @@ func lenSafe(resp *jifeiclient.GetPriceResponse) int {
 		return 0
 	}
 	return len(resp.Data)
+}
+
+// GeneratePayURL 调 jifei `qcloud.margin.getMidasEarmarking` 拿 Midas 收银台 URL。
+//
+// 流程：
+//  1. 校验入参（OwnerUin / Uin / DealName 必填）
+//  2. 调 jifeiclient.GetMidasEarmarking（DealNames 单元素切片 = [req.DealName]）
+//  3. 拍平响应到 GeneratePayURLResult（URL / BillID / AppID / NeedCharge）
+//
+// 协议字段裁剪与 Q-PAY-4 / Q48 一致：不传 platform / voucherIds / wxOpenId / wxAppId /
+// contractOrder / channel / remitpayPayerName（Lightclaw 本期不持有这些字段）。
+func (a *adapter) GeneratePayURL(ctx context.Context, req *GeneratePayURLRequest) (*GeneratePayURLResult, error) {
+	if req == nil {
+		return nil, errors.New("jifei.GeneratePayURL: nil request")
+	}
+	if req.OwnerUin == "" || req.Uin == "" {
+		return nil, errors.New("jifei.GeneratePayURL: ownerUin / uin is required")
+	}
+	if req.DealName == "" {
+		return nil, errors.New("jifei.GeneratePayURL: dealName is required")
+	}
+
+	resp, err := a.jifei.GetMidasEarmarking(ctx, &jifeiclient.GetMidasEarmarkingRequest{
+		OwnerUin:  req.OwnerUin,
+		Uin:       req.Uin,
+		DealNames: []string{req.DealName},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("jifei.GeneratePayURL: getMidasEarmarking: %w", err)
+	}
+	if resp == nil {
+		return nil, errors.New("jifei.GeneratePayURL: getMidasEarmarking response is nil")
+	}
+	if resp.URL == "" {
+		return nil, fmt.Errorf("jifei.GeneratePayURL: empty url in response (billId=%s appId=%s needCharge=%d)",
+			resp.BillID, resp.AppID, resp.NeedCharge)
+	}
+
+	return &GeneratePayURLResult{
+		URL:        resp.URL,
+		BillID:     resp.BillID,
+		AppID:      resp.AppID,
+		NeedCharge: resp.NeedCharge,
+	}, nil
 }

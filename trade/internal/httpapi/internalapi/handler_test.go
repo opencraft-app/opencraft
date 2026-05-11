@@ -67,6 +67,7 @@ type fakeJifei struct {
 	getPriceFn             func(ctx context.Context, req *jifeiclient.GetPriceRequest) (*jifeiclient.GetPriceResponse, error)
 	generateDealsFn        func(ctx context.Context, req *jifeiclient.GenerateDealsRequest) (*jifeiclient.GenerateDealsResponse, error)
 	generateDealsAndPayFn  func(ctx context.Context, req *jifeiclient.GenerateDealsAndPayRequest) (*jifeiclient.GenerateDealsAndPayResponse, error)
+	getMidasEarmarkingFn   func(ctx context.Context, req *jifeiclient.GetMidasEarmarkingRequest) (*jifeiclient.GetMidasEarmarkingResponse, error)
 }
 
 func (f *fakeJifei) GetPrice(ctx context.Context, req *jifeiclient.GetPriceRequest) (*jifeiclient.GetPriceResponse, error) {
@@ -100,10 +101,22 @@ func (f *fakeJifei) GenerateDealsAndPay(ctx context.Context, req *jifeiclient.Ge
 		},
 	}, nil
 }
+func (f *fakeJifei) GetMidasEarmarking(ctx context.Context, req *jifeiclient.GetMidasEarmarkingRequest) (*jifeiclient.GetMidasEarmarkingResponse, error) {
+	if f.getMidasEarmarkingFn != nil {
+		return f.getMidasEarmarkingFn(ctx, req)
+	}
+	return &jifeiclient.GetMidasEarmarkingResponse{
+		BillID:     "bill-default",
+		URL:        "https://buy.cloud.tencent.com/midas/handler-test-default",
+		AppID:      "1000029101",
+		NeedCharge: 1,
+	}, nil
+}
 
 type fakeOrderWriter struct {
 	createOrderFn    func(ctx context.Context, in store.CreateOrderInput) error
 	createOrderCalls atomic.Int32
+	updatePayURLFn   func(ctx context.Context, dealName, payURL string) error
 }
 
 func (f *fakeOrderWriter) CreateOrder(ctx context.Context, in store.CreateOrderInput) error {
@@ -114,6 +127,12 @@ func (f *fakeOrderWriter) CreateOrder(ctx context.Context, in store.CreateOrderI
 	return nil
 }
 func (f *fakeOrderWriter) MarkOrderProvisioned(ctx context.Context, dealName, resourceID string) error {
+	return nil
+}
+func (f *fakeOrderWriter) UpdatePayURL(ctx context.Context, dealName, payURL string) error {
+	if f.updatePayURLFn != nil {
+		return f.updatePayURLFn(ctx, dealName, payURL)
+	}
 	return nil
 }
 
@@ -548,20 +567,29 @@ func TestPayURL_HappyPath(t *testing.T) {
 	}
 }
 
-func TestPayURL_PayURLNotCached_ReturnsMockURL(t *testing.T) {
-	// 8B-1.5：trade_order 存在但 pay_url 列空时返 mock URL，HTTP 200。
+func TestPayURL_PayURLNotCached_CallsJifei(t *testing.T) {
+	// 8B-1.6：trade_order 存在但 pay_url 列空时，调 jifei `qcloud.margin.getMidasEarmarking`
+	// 拿真实 URL，HTTP 200 并写回 trade_order.pay_url 缓存。
 	env := newTestEnv(t)
 	env.orderStore.getOrderByDealNameFn = func(ctx context.Context, dealName string) (*store.TradeOrder, error) {
-		return &store.TradeOrder{DealName: dealName, PayURL: ""}, nil
+		return &store.TradeOrder{DealName: dealName, Uin: "1000123456", PayURL: ""}, nil
+	}
+	env.jifei.getMidasEarmarkingFn = func(ctx context.Context, req *jifeiclient.GetMidasEarmarkingRequest) (*jifeiclient.GetMidasEarmarkingResponse, error) {
+		return &jifeiclient.GetMidasEarmarkingResponse{
+			URL:        "https://buy.cloud.tencent.com/midas?token=real",
+			BillID:     "bill-1",
+			AppID:      "1000029101",
+			NeedCharge: 1,
+		}, nil
 	}
 	rec := env.doJSON(http.MethodPost, "/internal/trade/orders/deal-1/pay-url", nil, true)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
 	}
 	resp := decodeBody(t, rec)
-	want := "https://buy.cloud.tencent.com/lighthouse/mock?dealName=deal-1&token=mock"
+	want := "https://buy.cloud.tencent.com/midas?token=real"
 	if resp["payUrl"] != want {
-		t.Errorf("mock payUrl mismatch:\n  got  %v\n  want %s", resp["payUrl"], want)
+		t.Errorf("payUrl mismatch:\n  got  %v\n  want %s", resp["payUrl"], want)
 	}
 }
 

@@ -772,3 +772,165 @@ func TestGenerateDealsAndPay_EmptyGoodsInfos(t *testing.T) {
 		t.Errorf("err = %v, want 'GoodsInfos' substring", err)
 	}
 }
+
+// ============================================================================
+// GetMidasEarmarking tests（jifei `qcloud.margin.getMidasEarmarking`）
+//
+// 协议依据：PDF §4 入参 / §5 出参 / §6 错误码。注意 componentName="MC"（米大师 Midas Center
+// 简写）与 interfaceName 的第二段 "margin" 命名不对齐 — 是 jifei 历史遗留命名（MC 是 jifei
+// 内部模块码，margin 是云 API 别名命名），按 PDF curl 实例值写。
+// ============================================================================
+
+func TestGetMidasEarmarking_Success(t *testing.T) {
+	var (
+		seenInterface string
+		seenComponent string
+		seenPara      GetMidasEarmarkingRequest
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var env envelope
+		if err := json.Unmarshal(body, &env); err != nil {
+			t.Fatalf("unmarshal envelope: %v", err)
+		}
+		seenInterface = env.Interface.InterfaceName
+		seenComponent = env.ComponentName
+		if err := json.Unmarshal(env.Interface.Para, &seenPara); err != nil {
+			t.Fatalf("unmarshal para: %v", err)
+		}
+		_, _ = w.Write(envelopeForSuccess(t, GetMidasEarmarkingResponse{
+			BillID:     "20260509-bill-001",
+			URL:        "https://buy.cloud.tencent.com/midas/cashier?token=xyz",
+			AppID:      "1000029101",
+			NeedCharge: 1,
+		}))
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, "trade-uin", Options{
+		EventIDProvider: fixedEventIDProvider,
+		NowProvider:     fixedNowProvider,
+	})
+	resp, err := cli.GetMidasEarmarking(context.Background(), &GetMidasEarmarkingRequest{
+		OwnerUin:  "100012345678",
+		Uin:       "100012345678",
+		DealNames: []string{"20260509000000001-001"},
+	})
+	if err != nil {
+		t.Fatalf("GetMidasEarmarking: %v", err)
+	}
+	if seenInterface != InterfaceNameGetMidasEarmarking {
+		t.Errorf("interfaceName: got %q want %q", seenInterface, InterfaceNameGetMidasEarmarking)
+	}
+	if seenComponent != ComponentNameMidasCenter {
+		t.Errorf("componentName: got %q want %q", seenComponent, ComponentNameMidasCenter)
+	}
+	if seenPara.OwnerUin != "100012345678" || seenPara.Uin != "100012345678" {
+		t.Errorf("para owner/uin: %+v", seenPara)
+	}
+	if len(seenPara.DealNames) != 1 || seenPara.DealNames[0] != "20260509000000001-001" {
+		t.Errorf("para DealNames: %v", seenPara.DealNames)
+	}
+	if resp.URL != "https://buy.cloud.tencent.com/midas/cashier?token=xyz" {
+		t.Errorf("response URL: %q", resp.URL)
+	}
+	if resp.BillID != "20260509-bill-001" {
+		t.Errorf("response BillID: %q", resp.BillID)
+	}
+	if resp.AppID != "1000029101" {
+		t.Errorf("response AppID: %q", resp.AppID)
+	}
+	if resp.NeedCharge != 1 {
+		t.Errorf("response NeedCharge: %d", resp.NeedCharge)
+	}
+}
+
+func TestGetMidasEarmarking_BusinessError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// PDF §6：100151 资源锁占用（typical）
+		_, _ = w.Write(envelopeForError(t, 100151, "Resource.LockConflict"))
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, "trade-uin")
+	_, err := cli.GetMidasEarmarking(context.Background(), &GetMidasEarmarkingRequest{
+		OwnerUin:  "100012345678",
+		Uin:       "100012345678",
+		DealNames: []string{"deal-1"},
+	})
+	if err == nil {
+		t.Fatalf("expected business error")
+	}
+	var cgwErr *CGWError
+	if !errors.As(err, &cgwErr) {
+		t.Fatalf("expected *CGWError, got %T: %v", err, err)
+	}
+	if cgwErr.ReturnCode != 100151 {
+		t.Errorf("ReturnCode: got %d, want 100151", cgwErr.ReturnCode)
+	}
+	if cgwErr.InterfaceName != InterfaceNameGetMidasEarmarking {
+		t.Errorf("InterfaceName: got %q", cgwErr.InterfaceName)
+	}
+}
+
+func TestGetMidasEarmarking_HTTPNon200(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, "trade-uin")
+	_, err := cli.GetMidasEarmarking(context.Background(), &GetMidasEarmarkingRequest{
+		OwnerUin:  "1",
+		Uin:       "1",
+		DealNames: []string{"deal-1"},
+	})
+	if err == nil {
+		t.Fatalf("expected HTTP error")
+	}
+	if !errors.Is(err, ErrCGWHTTPNon200) {
+		t.Errorf("expected ErrCGWHTTPNon200, got %v", err)
+	}
+}
+
+func TestGetMidasEarmarking_NilRequest(t *testing.T) {
+	cli := New("http://unused", "trade-uin")
+	_, err := cli.GetMidasEarmarking(context.Background(), nil)
+	if err == nil || !strings.Contains(err.Error(), "nil request") {
+		t.Errorf("err = %v, want 'nil request'", err)
+	}
+}
+
+func TestGetMidasEarmarking_MissingOwnerUin(t *testing.T) {
+	cli := New("http://unused", "trade-uin")
+	_, err := cli.GetMidasEarmarking(context.Background(), &GetMidasEarmarkingRequest{
+		Uin:       "1",
+		DealNames: []string{"deal-1"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "OwnerUin") {
+		t.Errorf("err = %v, want 'OwnerUin' substring", err)
+	}
+}
+
+func TestGetMidasEarmarking_EmptyDealNames(t *testing.T) {
+	cli := New("http://unused", "trade-uin")
+	_, err := cli.GetMidasEarmarking(context.Background(), &GetMidasEarmarkingRequest{
+		OwnerUin: "1",
+		Uin:      "1",
+	})
+	if err == nil || !strings.Contains(err.Error(), "DealNames") {
+		t.Errorf("err = %v, want 'DealNames' substring", err)
+	}
+}
+
+func TestGetMidasEarmarking_DealNamesContainsEmpty(t *testing.T) {
+	cli := New("http://unused", "trade-uin")
+	_, err := cli.GetMidasEarmarking(context.Background(), &GetMidasEarmarkingRequest{
+		OwnerUin:  "1",
+		Uin:       "1",
+		DealNames: []string{"deal-1", "", "deal-3"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "DealNames[1]") {
+		t.Errorf("err = %v, want 'DealNames[1]' substring (empty element)", err)
+	}
+}

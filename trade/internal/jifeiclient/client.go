@@ -59,13 +59,20 @@ const (
 	// CGWUserIDHeader 是 CGW 网关用户标识 header（Q51）。
 	CGWUserIDHeader = "x-qcloud-user-id"
 
-	// 询价 / 下单的 CGW interfaceName 与 componentName。
-	// componentName 取 interfaceName 第二段（"price" / "Deal"），与 PDF 第 3 页一致。
-	InterfaceNameGetPrice             = "qcloud.price.getPrice"
-	InterfaceNameGenerateDeals        = "qcloud.Deal.generateDeals"
-	InterfaceNameGenerateDealsAndPay  = "qcloud.Deal.generateDealsAndPay"
-	ComponentNamePrice                = "price"
-	ComponentNameDeal                 = "Deal"
+	// 询价 / 下单 / 获取支付链接的 CGW interfaceName 与 componentName。
+	// componentName 取 interfaceName 第二段（"price" / "Deal" / "margin"），与 PDF 第 3 页一致。
+	//
+	// 注意：`qcloud.margin.getMidasEarmarking` 这条接口在 PDF 第 4 页 curl 示例中 componentName
+	// 写的是 "MC"（米大师 = Midas Center 简写，jifei 内部业务模块码），与 interfaceName
+	// 第二段 "margin" 不同 — 这是 jifei 历史遗留的命名不对齐，本 client 沿 PDF curl 实例值
+	// 写为 "MC"，确保与 jifei 网关识别一致。
+	InterfaceNameGetPrice              = "qcloud.price.getPrice"
+	InterfaceNameGenerateDeals         = "qcloud.Deal.generateDeals"
+	InterfaceNameGenerateDealsAndPay   = "qcloud.Deal.generateDealsAndPay"
+	InterfaceNameGetMidasEarmarking    = "qcloud.margin.getMidasEarmarking"
+	ComponentNamePrice                 = "price"
+	ComponentNameDeal                  = "Deal"
+	ComponentNameMidasCenter           = "MC"
 
 	// defaultTimeout 是 jifei CGW 出向请求默认超时；与 ctlclient 一致。
 	defaultTimeout = 4 * time.Second
@@ -128,6 +135,20 @@ type Client interface {
 	// 与 PlaceOrder 双步链路相比，PlaceOrderAndPay 用于联调测试 / 自动化 e2e 场景：在测试代金券充足
 	// 的环境下，无需真人浏览器付款即可让 trade -> jifei -> ctl.createResource 整条链路端到端跑通。
 	GenerateDealsAndPay(ctx context.Context, req *GenerateDealsAndPayRequest) (*GenerateDealsAndPayResponse, error)
+
+	// GetMidasEarmarking 调用 jifei CGW `qcloud.margin.getMidasEarmarking` "专款专用获取支付参数"
+	// 接口（云 API 别名 CreatePayUrl）。
+	//
+	// 用途：双步购买链路的第二步 — trade.PlaceOrder 调 generateDeals 拿到 dealName 后，调用方
+	// 再调本方法把 dealName 换成 Midas 收银台支付链接，由前端跳转 Midas 完成支付。jifei 异步
+	// 收款后再回调 trade.createResource 完成发货。
+	//
+	// 协议参考：`/root/project/mono/.tmp/专款专用获取支付参数+-+qcloud.margin.getMidasEarmarking.pdf`
+	// （5 页 / 2026-05-11 投放）。
+	//
+	// 错误语义同 GenerateDeals / GetPrice：HTTP 层 → ErrCGWHTTPNon200；envelope → ErrCGWInvalidEnvelope；
+	// 业务层 returnCode != 0 → *CGWError。
+	GetMidasEarmarking(ctx context.Context, req *GetMidasEarmarkingRequest) (*GetMidasEarmarkingResponse, error)
 }
 
 // Options 是 Client 可选构造参数。

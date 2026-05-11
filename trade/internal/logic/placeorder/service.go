@@ -21,8 +21,9 @@
 // 不做：
 //   - 询价复算（信任入参 period/payMode 即业务层传入语义；如需"防价格不一致" reconcile，
 //     由上层 ctl 在调用前自己询价并对比）
-//   - 支付 url 生成：拆为独立的 GeneratePayURL 方法（本期未命中 trade_order.pay_url 时返
-//     **确定性 mock URL** 占位，jifei "生成支付 url" SDK 接入后再替换为真实 URL）
+//   - 支付 url 生成：拆为独立的 GeneratePayURL 方法（迭代 8B-1.6 起调 jifei
+//     `qcloud.margin.getMidasEarmarking` 真实接入，未命中 trade_order.pay_url 时实时获取
+//     并写回缓存）
 package placeorder
 
 import (
@@ -435,26 +436,28 @@ func (s *Service) PlaceOrderAndPay(ctx context.Context, req PlaceOrderRequest) (
 
 // GeneratePayURL 生成 / 反查支付页 url（设计稿 §4.2.2 接口）。
 //
-// **本期实现策略**（迭代 8B-1.5，jifei "生成支付 url" SDK 接入前的桩实现）：
+// **本期实现策略**（迭代 8B-1.6，jifei `qcloud.margin.getMidasEarmarking` 真实接入）：
 //
-//	1) 反查 trade_order 取 pay_url
-//	2) 命中 → 返回缓存值（未来 jifei 异步回写 / pre-warm 的真实 URL）
-//	3) 未命中 → 返回 **确定性 mock URL**（不再返 ErrPayURLUnavailable）
+//	1) 反查 trade_order 取 (uin, pay_url)
+//	2) 命中 pay_url 缓存 → 直接返回（Q-PAY-2 拍板：同一 dealName 复用首次拿到的 URL）
+//	3) 未命中 → 调 jifei `qcloud.margin.getMidasEarmarking`（PDF 协议）→ 写回 trade_order.pay_url
+//	   缓存 → 返回 jifei 真实 URL
 //
-// 为什么改成 mock 兜底而非报错：
-//   - 真实 jifei "生成支付 url" SDK 尚未接入；调用链上游 ctl.CreatePassOrder 需要这个接口
-//     可用才能完成端到端流程（设计稿 §4.3 ctl Logic.CreatePassOrder 出参 PayURL 必须非空）。
-//   - 报错（503）会让上游服务直接挂掉，无法继续走"创建本地 pass + 关联订单"分支；返 mock URL
-//     则保持调用方契约不变，后续接入真实 SDK 时只需替换本函数实现，签名 / 错误类型不动。
-//   - mock URL 形如 `https://buy.cloud.tencent.com/lighthouse/mock?dealName=<dealName>&token=mock`，
-//     联调环境可被人眼识别为"未接入真实计费"，避免误以为已接入。
+// 错误语义：
+//   - dealName 在 trade_order 不存在 → wrap store.ErrTradeOrderNotFound（上层 handler 映射 4xx）
+//   - jifei 业务错（returnCode != 0）→ 透传 *jifeiclient.CGWError（Q-PAY-5 拍板：统一 5xx 透传，
+//     由调用方按错误码自行降级；本函数不做 jifei 错误码级别的语义分类）
+//   - jifei HTTP 失败 / 4s 超时 → 透传 ErrCGWHTTPNon200 / 包装 raw err
+//   - 写回 trade_order.pay_url 失败 → 仍返 jifei URL（已成功拿到 URL，落库失败属于运维异常，
+//     不能让用户付不了款）；落库错走 ELK 日志兜底（Q-PAY-1 b 协同）
 //
-// **未来扩展**：jifei "生成支付 url" SDK 调用接入后，本函数 step 3 替换为：
+// 不改 trade_order.status（Q-PAY-3 拍板）：getMidasEarmarking 在 status 状态机外侧；
+// status 仍由 PlaceOrder 入口写 'pending_pay'，由 createResource 收尾推进到 'provisioned'。
 //
-//	jifei.GeneratePayURL(dealName) → UPDATE trade_order SET pay_url=?, expire_time=? WHERE deal_name=?
-//	→ 返回 jifei 真实 URL
+// needCharge=0（PDF §5：余额已扣完不需要再付款）也直接返 URL（前端 Midas SDK 会识别此 URL 后
+// 立即返成功），不在本函数特化处理（Q-PAY-3 协同）。
 //
-// 当前 ErrPayURLUnavailable 哨兵保留（外部 errors.Is 兼容），但本函数已不再返出。
+// ErrPayURLUnavailable 哨兵保留（外部 errors.Is 兼容），但本函数已不再返出。
 func (s *Service) GeneratePayURL(ctx context.Context, dealName string) (string, error) {
 	dealName = strings.TrimSpace(dealName)
 	if dealName == "" {
@@ -469,24 +472,41 @@ func (s *Service) GeneratePayURL(ctx context.Context, dealName string) (string, 
 		}
 		return "", fmt.Errorf("placeorder: get trade_order dealName=%s: %w", dealName, err)
 	}
+	// 命中缓存：同一 dealName 复用首次拿到的 URL（Q-PAY-2）
 	if order.PayURL != "" {
 		return order.PayURL, nil
 	}
-	// 未命中 trade_order.pay_url 缓存 → 返 mock URL，保持调用方契约
-	return mockPayURL(dealName), nil
-}
 
-// mockPayURL 构造形如
-//
-//	https://buy.cloud.tencent.com/lighthouse/mock?dealName=<dealName>&token=mock
-//
-// 的占位 URL；jifei "生成支付 url" SDK 接入前用于解锁 ctl ↔ trade 端到端联调。
-//
-// 单独抽出函数便于：
-//   - 单测断言（不必硬编码常量）
-//   - 未来接入真实 SDK 时统一替换 / 删除
-func mockPayURL(dealName string) string {
-	return "https://buy.cloud.tencent.com/lighthouse/mock?dealName=" + dealName + "&token=mock"
+	// 未命中 → 调 jifei `qcloud.margin.getMidasEarmarking`
+	if order.Uin == "" {
+		// 防御性：trade_order 应当在 PlaceOrder 入口落库时写入 uin，理论不会触发
+		return "", fmt.Errorf("placeorder: trade_order.uin missing for dealName=%s (data inconsistency)",
+			dealName)
+	}
+	resp, err := s.deps.JifeiClient.GetMidasEarmarking(ctx, &jifeiclient.GetMidasEarmarkingRequest{
+		OwnerUin:  order.Uin,
+		Uin:       order.Uin,
+		DealNames: []string{dealName},
+	})
+	if err != nil {
+		// Q-PAY-5：透传给上层（含 *CGWError / ErrCGWHTTPNon200 等），由 handler 映射 5xx
+		return "", fmt.Errorf("placeorder: jifei GetMidasEarmarking dealName=%s: %w", dealName, err)
+	}
+	if resp == nil || resp.URL == "" {
+		return "", fmt.Errorf("placeorder: jifei GetMidasEarmarking returned empty url for dealName=%s",
+			dealName)
+	}
+
+	// 写回 trade_order.pay_url 缓存（最佳努力 — 失败不阻塞返 URL）
+	if writeErr := s.deps.OrderWriter.UpdatePayURL(ctx, dealName, resp.URL); writeErr != nil {
+		// 落库失败走 ELK 日志兜底（Q-PAY-1 b）；不阻塞用户支付。
+		// 这里用 fmt.Println 仅作为 placeholder — 实际会被框架级 logger（zap / slog）替换；
+		// 但保留这条日志输出避免静默丢失。
+		fmt.Printf("WARN placeorder: cache pay_url failed dealName=%s url=%s err=%v\n",
+			dealName, resp.URL, writeErr)
+	}
+
+	return resp.URL, nil
 }
 
 // validatePlaceOrderRequest 校验 PlaceOrderRequest 必填字段。

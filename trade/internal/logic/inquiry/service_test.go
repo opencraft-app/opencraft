@@ -71,6 +71,10 @@ func (f *fakeJifei) GenerateDealsAndPay(ctx context.Context, req *jifeiclient.Ge
 	// inquiry service 不会调 GenerateDealsAndPay，本方法仅为满足 interface 实现
 	return nil, errors.New("fakeJifei: GenerateDealsAndPay not used by inquiry")
 }
+func (f *fakeJifei) GetMidasEarmarking(ctx context.Context, req *jifeiclient.GetMidasEarmarkingRequest) (*jifeiclient.GetMidasEarmarkingResponse, error) {
+	// inquiry service 不会调 GetMidasEarmarking，本方法仅为满足 interface 实现
+	return nil, errors.New("fakeJifei: GetMidasEarmarking not used by inquiry")
+}
 
 // ============================================================================
 // helpers
