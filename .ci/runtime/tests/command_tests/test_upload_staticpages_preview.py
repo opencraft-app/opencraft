@@ -2,8 +2,10 @@ import sys
 import tarfile
 import tempfile
 import unittest
+from argparse import Namespace
 from io import StringIO
 from pathlib import Path
+from unittest.mock import patch
 
 
 REPO_ROOT = next(parent for parent in Path(__file__).resolve().parents if (parent / ".ci/runtime").is_dir())
@@ -15,11 +17,13 @@ from support.staticpages_preview import (  # noqa: E402
     DEFAULT_API_URL,
     DEFAULT_PREVIEW_DOMAIN,
     ARCHIVE_MEDIA_TYPE,
+    UploadTransportError,
     UploadProgressReader,
     format_bytes,
     normalize_preview_name,
     preview_name_for_variant,
     staticpages_sha_for_variant,
+    upload,
     write_tar_gzip_archive,
 )
 
@@ -104,6 +108,37 @@ class UploadStaticPagesPreviewTests(unittest.TestCase):
         logs = output.getvalue()
         self.assertIn("cn/tar.gz 上传进度", logs)
         self.assertIn("100.0%", logs)
+
+    def test_archive_transport_error_falls_back_to_multipart(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_dir = Path(tmp)
+            (artifact_dir / "index.html").write_text("<html></html>")
+            args = Namespace(
+                artifact_dir=str(artifact_dir),
+                archive_file="",
+                upload_mode="archive",
+                token="token",
+                source_branch="frontsandbox/demo",
+                preview_name="",
+                variant="cn",
+                sha="abc123",
+                api_url="https://staticpages-api.preview.lightclaw.tech/api/upload",
+                repository="wisp/mono2",
+                timeout_seconds=300,
+                no_progress=True,
+            )
+
+            with (
+                patch(
+                    "support.staticpages_preview._upload_archive",
+                    side_effect=UploadTransportError("urlopen EOF"),
+                ) as archive_upload,
+                patch("support.staticpages_preview._upload_multipart") as multipart_upload,
+            ):
+                self.assertEqual(upload(args), 0)
+
+            archive_upload.assert_called_once()
+            multipart_upload.assert_called_once()
 
 
 if __name__ == "__main__":

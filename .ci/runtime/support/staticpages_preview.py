@@ -25,6 +25,10 @@ PROGRESS_MIN_INTERVAL_SECONDS = 2.0
 PROGRESS_MIN_INTERVAL_BYTES = 8 * 1024 * 1024
 
 
+class UploadTransportError(RuntimeError):
+    pass
+
+
 def format_bytes(value: int) -> str:
     if value < 1024:
         return f"{value} B"
@@ -217,6 +221,9 @@ def upload_body(
             data.finish()
             error_body = exc.read().decode("utf-8", errors="replace")
             raise RuntimeError(f"StaticPages upload failed: http={exc.code} body={error_body}") from exc
+        except (urllib.error.URLError, OSError) as exc:
+            data.finish()
+            raise UploadTransportError(f"StaticPages upload transport failed: {exc}") from exc
 
 
 def upload(args: argparse.Namespace) -> int:
@@ -252,8 +259,11 @@ def upload(args: argparse.Namespace) -> int:
             body_path = Path(body.name)
             write_tar_gzip_archive(body_path, artifact_dir, files)
             body.flush()
-            _upload_archive(args, token, preview_name, sha, body_path, len(files))
-            return 0
+            try:
+                _upload_archive(args, token, preview_name, sha, body_path, len(files))
+                return 0
+            except UploadTransportError as exc:
+                print(f"StaticPages tar.gz 上传出现连接级错误，自动回退 multipart：{exc}", file=sys.stderr)
 
     boundary = f"----staticpages-{uuid4().hex}"
     with tempfile.NamedTemporaryFile(prefix="staticpages-upload-", suffix=".multipart") as body:
