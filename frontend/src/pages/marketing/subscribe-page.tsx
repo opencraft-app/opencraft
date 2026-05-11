@@ -139,7 +139,7 @@ const mapBundleToPlan = (bundle: Bundle, index: number, t: (zh: string, opts?: R
   for (const entry of bundle.description ?? []) {
     const k = (entry.Key ?? "").toLowerCase();
     if (k.includes("agent") || k.includes("积分") || k.includes("credit")) continue;
-    /* 「独立环境」统一前端展示规格，避免后端 Value 为空导致卡片露馄 */
+/* 「独立环境」统一前端展示规格，避免后端 Value 为空导致卡片露馅 */
     if (entry.Key === "独立环境") {
       envFeature = { icon: iconForKey(entry.Key), label: t("独立环境"), value: t("2核 4G 内存") };
       continue;
@@ -613,7 +613,7 @@ const PlanCard = ({
           <div style={{ minHeight: 48, marginBottom: 8 }} />
         )}
         {/* 今日剩余名额提示：只在未售罄且剩余比例较低时显示，避免每张卡都出现 */}
-            {typeof plan.availableCount === "number" && typeof plan.totalCount === "number" && plan.totalCount > 0 && plan.availableCount < plan.totalCount && (
+        {!isSoldOut && typeof plan.availableCount === "number" && typeof plan.totalCount === "number" && plan.totalCount > 0 && plan.availableCount < plan.totalCount && (
           <p
             style={{
               fontSize: 12,

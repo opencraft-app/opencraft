@@ -218,8 +218,8 @@ export const _SectionCard = ({ title, icon, headerRight, children }: { title: st
 /* ─── Delete Confirm Dialog ─── */
 
 export const _DeleteConfirmDialog = ({ botName, onConfirm, onCancel }: { botName: string; onConfirm: () => void; onCancel: () => void }) => {
-  if (isGlobal) return null;
   const t = useT();
+  if (isGlobal) return null;
   return (
   <motion.div
     initial={{ opacity: 0 }}
@@ -269,8 +269,8 @@ export const _DeleteConfirmDialog = ({ botName, onConfirm, onCancel }: { botName
 /* ─── Limit Reached Dialog ─── */
 
 export const _LimitReachedDialog = ({ maxBots, planName, onClose }: { maxBots: number; planName: string; onClose: () => void }) => {
-  if (isGlobal) return null;
   const t = useT();
+  if (isGlobal) return null;
   return (
   <motion.div
     initial={{ opacity: 0 }}
@@ -315,7 +315,6 @@ export const _LimitReachedDialog = ({ maxBots, planName, onClose }: { maxBots: n
 type WeixinSessionStatus = "idle" | "creating" | "starting" | "waiting_qr" | "scanned" | "success" | "failed" | "expired" | "cancelled" | "timeout";
 
 export const ChannelSection = () => {
-  if (isGlobal) return null;
   const t = useT();
   const repositories = useRepositories();
   const { bots, updateBot } = useOpenClaw();
@@ -553,6 +552,9 @@ export const ChannelSection = () => {
     cancelled: { text: t("已取消"), color: "#999" },
     timeout: { text: t("登录超时"), color: "#C67B1E" },
   };
+
+  // 国内站封存组件：所有 hooks 调用完毕后再做国际站短路（遵循 React Hooks 调用顺序规则）
+  if (isGlobal) return null;
 
   return (
     <>
@@ -2242,7 +2244,6 @@ const ChannelModal = ({ bot, onClose }: { bot: { id: string; name: string; conne
 };
 
 export const _BotInfoCard = ({ bot, index, onDelete, onTerminal }: { bot: { id: string; name: string; personality: string; personalityEmoji: string; intro: string; status: string; connectedChannels: string[]; installedSkills: string[]; createdAt: string }; index: number; onDelete: (id: string) => void; onTerminal: (id: string) => void }) => {
-  if (isGlobal) return null;
   void onDelete;
   void onTerminal;
   const [showBirthCert, setShowBirthCert] = useState(false);
@@ -2253,6 +2254,9 @@ export const _BotInfoCard = ({ bot, index, onDelete, onTerminal }: { bot: { id: 
   const [deleteErr, setDeleteErr] = useState<string | null>(null);
   const { deleteBot } = useOpenClaw();
   const t = useT();
+
+  // 国内站封存组件：所有 hooks 调用完毕后再做国际站短路（遵循 React Hooks 调用顺序规则）
+  if (isGlobal) return null;
 
   // 获取该 bot 的固定头像
   const avatarUrl = getAvatarForBot(bot.id);
