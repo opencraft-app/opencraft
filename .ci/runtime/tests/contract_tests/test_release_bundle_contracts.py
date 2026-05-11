@@ -43,6 +43,7 @@ BUSINESS_WORKFLOWS = {
     ".ci/service-gateway.yml",
     ".ci/staticpages.yml",
     ".ci/subscription.yml",
+    ".ci/trade.yml",
 }
 
 
@@ -188,6 +189,22 @@ class ReleaseBundleContractTests(unittest.TestCase):
             expected_master_auto_pin_envs="beijing-sandbox",
             expected_playground_build_envs=SANDBOX_ENV,
             expected_playground_auto_pin_envs=SANDBOX_ENV,
+        )
+
+    def test_trade_workflow_builds_beijing_without_auto_pin(self) -> None:
+        manifest = load_manifest()
+        bundle = require_build_metadata(load_bundle(manifest, "trade", "beijing-sandbox"))
+        workflow = yaml.safe_load((REPO_ROOT / ".ci/trade.yml").read_text())
+
+        self.assertEqual(bundle.image_repo, "lightclaw-bj8.tencentcloudcr.com/lightclaw/trade")
+        self.assert_release_entry_targets(
+            workflow,
+            expected_service="trade",
+            expected_pin_targets="trade",
+            expected_master_build_envs="beijing-sandbox",
+            expected_master_auto_pin_envs="none",
+            expected_playground_build_envs="",
+            expected_playground_auto_pin_envs="none",
         )
 
     def test_standard_service_extends_stays_on_v2_local_template_contract(self) -> None:
