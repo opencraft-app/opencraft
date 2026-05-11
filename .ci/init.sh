@@ -46,6 +46,53 @@ ci_arch_name() {
   esac
 }
 
+ci_tune_staticpages_upload_tcp() {
+  if [[ "${CI_STATICPAGES_TCP_TUNING:-1}" == "0" ]]; then
+    ci_log "staticpages tcp tuning disabled by CI_STATICPAGES_TCP_TUNING=0"
+    return 0
+  fi
+
+  if [[ "$(ci_os_name)" != "linux" ]]; then
+    ci_log "staticpages tcp tuning skipped on non-linux host"
+    return 0
+  fi
+
+  if [[ "$(id -u)" -ne 0 ]]; then
+    ci_log "staticpages tcp tuning skipped because current user is not root"
+    return 0
+  fi
+
+  local conf_path="${CI_STATICPAGES_TCP_SYSCTL_CONF:-/etc/sysctl.d/99-lightclaw-ci-tcp-upload.conf}"
+  local qdisc="${CI_STATICPAGES_TCP_QDISC:-fq}"
+  local congestion="${CI_STATICPAGES_TCP_CONGESTION:-bbr}"
+  local buffer_max="${CI_STATICPAGES_TCP_BUFFER_MAX:-134217728}"
+
+  if [[ "$congestion" == "bbr" ]] && command -v modprobe >/dev/null 2>&1; then
+    modprobe tcp_bbr >/dev/null 2>&1 || ci_log "tcp_bbr module is not loadable; sysctl will keep the current congestion control if bbr is unavailable"
+  fi
+
+  mkdir -p "$(dirname "$conf_path")"
+  cat > "$conf_path" <<EOF
+# LightClaw CI: improve long-RTT StaticPages archive uploads to Beijing.
+net.core.rmem_max = ${buffer_max}
+net.core.wmem_max = ${buffer_max}
+net.ipv4.tcp_rmem = 4096 87380 ${buffer_max}
+net.ipv4.tcp_wmem = 4096 65536 ${buffer_max}
+net.core.default_qdisc = ${qdisc}
+net.ipv4.tcp_congestion_control = ${congestion}
+net.ipv4.tcp_mtu_probing = 1
+net.ipv4.tcp_slow_start_after_idle = 0
+EOF
+
+  if sysctl -p "$conf_path"; then
+    ci_log "staticpages tcp tuning applied from ${conf_path}"
+    return 0
+  fi
+
+  ci_log "staticpages tcp tuning failed to apply from ${conf_path}; continuing without blocking preview build"
+  return 0
+}
+
 ci_is_unexpanded_setting() {
   [[ "$1" == *'${{'*'settings.'*'}}'* ]]
 }

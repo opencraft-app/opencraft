@@ -65,6 +65,7 @@ stages:
               set -euo pipefail
               source .ci/init.sh
               ci_init_repo_root
+              ci_tune_staticpages_upload_tcp
               ci_ensure_node
               ci_ensure_pnpm
 
