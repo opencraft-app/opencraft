@@ -90,10 +90,23 @@ export const stepLineGrow = {
   }),
 };
 
-/* ── Hero 小动物悬浮上升动画（无翻转） ── */
+/* ── Hero 装饰图淡入上浮动画（无翻转） ── */
 
-/** 悬浮上升容器（三张图同时浮现，无错开） */
-/* delayChildren 0.6s：光束刚扫到灯泡区域时，三张装饰图一起被"照"出来；staggerChildren 0 表示同步出现 */
+/**
+ * 入场结束后、常驻浮动启动前的衔接间隙（秒）
+ *
+ * 三张装饰图（灯泡/左/右）共用同一份延迟，确保常驻浮动同步启动；
+ * 入场动画 duration 0.6s + 这里 1.4s ≈ 2s 后开始循环浮动，避免与入场动画叠加抖动。
+ * 任何时序微调请只改这里一个值。
+ */
+export const HERO_FLOAT_LOOP_DELAY = 1.4;
+
+/**
+ * 装饰图入场容器（三张图同步浮现，无错开）
+ *
+ * delayChildren 0.6s：背景图淡入到位时，三张装饰图同步从下方浮现；
+ * staggerChildren 0 表示同步出现（不再错开节奏）。
+ */
 export const heroFloatStagger = {
   hidden: {},
   visible: {
@@ -101,34 +114,12 @@ export const heroFloatStagger = {
   },
 };
 
-/** 小动物从下方淡入上浮 — 中间 */
+/**
+ * 单张装饰图从下方淡入上浮的 variant（左/中/右共用同一份配置）
+ *
+ * 三张装饰图的入场动画完全一致，统一通过此 variant 应用，避免三份重复 export。
+ */
 export const heroFloatUp = {
-  hidden: { opacity: 0, y: 20 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: {
-      duration: 0.6,
-      ease: [0.16, 1, 0.3, 1],
-    },
-  },
-};
-
-/** 小动物从下方淡入上浮 — 左侧 */
-export const heroFloatUpLeft = {
-  hidden: { opacity: 0, y: 20 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: {
-      duration: 0.6,
-      ease: [0.16, 1, 0.3, 1],
-    },
-  },
-};
-
-/** 小动物从下方淡入上浮 — 右侧 */
-export const heroFloatUpRight = {
   hidden: { opacity: 0, y: 20 },
   visible: {
     opacity: 1,

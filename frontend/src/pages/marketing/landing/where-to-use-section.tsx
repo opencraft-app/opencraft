@@ -216,6 +216,8 @@ export function WhereToUseSection() {
     <section
       id="where-to-use"
       className="relative z-[1] overflow-hidden"
+      /* 刻意不设置 backgroundColor：依赖外层页面白底（避免遮挡 hero 区背景图末端的色调过渡）。
+         若未来 hero 背景延伸到此区域，请改为 transparent 或重新评估色调衔接。 */
       style={{ borderRadius: "61px 61px 0 0" }}
     >
       <div className="mx-auto w-full max-w-[1200px] px-6 pb-[64px] pt-[56px] md:px-10 md:pb-[120px] md:pt-[88px]">
