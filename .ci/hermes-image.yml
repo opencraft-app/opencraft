@@ -6,8 +6,6 @@ on:
     branches:
       - master
     paths:
-      - .ci/hermes-image.yml
-      - .ci/init.sh
       - images/**
     paths-ignore:
       - OWNERS
