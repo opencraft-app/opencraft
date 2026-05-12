@@ -6,6 +6,8 @@ on:
     branches:
       - master
     paths:
+      - .ci/hermes-image.yml
+      - .ci/init.sh
       - images/**
     paths-ignore:
       - OWNERS
@@ -45,7 +47,9 @@ stages:
               set -euo pipefail
               source .ci/init.sh
               ci_init_repo_root
-              ci_require_commands python3 bash curl tar ssh scp ssh-keygen tccli
+              ci_require_commands python3 bash curl tar ssh scp ssh-keygen
+              ci_ensure_tccli
+              ci_require_command tccli
               ci_load_tencentcloud_credentials
 
               bash -n images/build.sh images/deploy-build.sh images/tests/test-hermes-build-script.sh images/tests/test-hermes-runtime.sh

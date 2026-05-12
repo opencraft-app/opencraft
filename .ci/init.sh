@@ -838,6 +838,43 @@ ci_install_oras() {
   ci_log "installed oras at ${install_dir}/oras"
 }
 
+ci_ensure_tccli() {
+  if command -v tccli >/dev/null 2>&1; then
+    ci_log "tccli already present at $(command -v tccli)"
+    return 0
+  fi
+
+  ci_require_commands python3
+
+  local version="${TCCLI_VERSION_OVERRIDE:-3.1.90.1}"
+  local cache_root="${HOME}/.cache/lightclaw-ci/tccli"
+  local install_dir="${cache_root}/v${version}"
+  local bin="${install_dir}/venv/bin/tccli"
+
+  if [[ ! -x "$bin" ]]; then
+    ci_with_lock "tccli-${version}" ci_install_tccli "$version" "$install_dir"
+  else
+    ci_log "tccli ${version} already present at ${bin}"
+  fi
+
+  export PATH="${install_dir}/venv/bin:${PATH}"
+  export TCCLI_BIN="$bin"
+}
+
+ci_install_tccli() {
+  local version="$1"
+  local install_dir="$2"
+
+  mkdir -p "$install_dir"
+  ci_log "installing tccli ${version} into ${install_dir}"
+  rm -rf "${install_dir}/venv"
+  python3 -m venv "${install_dir}/venv" || return $?
+  "${install_dir}/venv/bin/python" -m pip install --upgrade pip || return $?
+  "${install_dir}/venv/bin/python" -m pip install "tccli==${version}" || return $?
+  chmod +x "${install_dir}/venv/bin/tccli" || return $?
+  ci_log "installed tccli at ${install_dir}/venv/bin/tccli"
+}
+
 ci_ensure_node() {
   local node_version="${NODE_VERSION_OVERRIDE:-22.12.0}"
   local node_dist="node-v${node_version}-linux-x64"
