@@ -162,6 +162,15 @@ else
   echo "${SKILLHUB_OUTPUT}"
 fi
 
+info "checking acli command"
+ACLI_OUTPUT="$(remote_exec "if command -v acli >/dev/null 2>&1; then acli --help >/dev/null && acli doctor; else echo MISSING; exit 1; fi" 2>&1 || true)"
+if echo "${ACLI_OUTPUT}" | grep -Eqi 'error|failed|missing'; then
+  fail "acli doctor failed"
+  echo "${ACLI_OUTPUT}"
+else
+  pass "acli command is available"
+fi
+
 info "checking root account lock"
 ROOT_STATUS="$(remote_exec "sudo passwd -S root 2>/dev/null | awk '{print \$2}'" 2>&1 || true)"
 if [ "${ROOT_STATUS}" = "L" ]; then

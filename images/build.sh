@@ -9,6 +9,7 @@
 # 参数定义:
 #   [openclaw_version]         可选，OpenClaw 版本；默认从 build-manifest.json 读取
 #   --runtime <kind>           openclaw | hermes，默认 openclaw
+#   --hermes-version <ver>     Hermes COS 版本；默认从 build-manifest.json 读取
 #   --envd-only                仅安装 envd
 #   --base-only                仅安装基础层（Node/Python/Playwright/系统依赖）
 #   --app-only                 仅安装应用层（OpenClaw/plugins/skills/gateway）
@@ -41,6 +42,11 @@ HERMES_INSTALL_ARGS=""
 HERMES_QWEN_CODE_VERSION=""
 HERMES_RUNTIME_USER=""
 HERMES_NODE_MAJOR=""
+HERMES_COS_BASE=""
+HERMES_VERSION=""
+HERMES_SRC_VERSION=""
+HERMES_GIT_COMMIT=""
+HERMES_ACLI_INSTALL_URL=""
 NODE_VERSION=""
 PNPM_VERSION=""
 PLAYWRIGHT_VERSION=""
@@ -62,6 +68,7 @@ QQBOT_VERSION="${QQBOT_VERSION:-}"
 WEIXIN_VERSION="${WEIXIN_VERSION:-}"
 SKILLS_MODE="essential"
 CUSTOM_SKILLS="${CUSTOM_SKILLS:-}"
+ARG_HERMES_VERSION="${ARG_HERMES_VERSION:-}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || pwd)"
 MANIFEST_PATH="${SCRIPT_DIR}/build-manifest.json"
@@ -92,6 +99,7 @@ Options:
   --base-only              Install only the base layer
   --app-only               Install only the application layer
   --runtime <kind>         Runtime flavor: openclaw | hermes (default: openclaw)
+  --hermes-version <ver>   Hermes COS version, for example hermes-agent-v20260506
   --only-plugins <list>    Only install the specified plugins (comma-separated)
   --qqbot-version <ver>    QQBot plugin version (default: build-manifest.json runtime.qqbot_version)
   --weixin-version <ver>   Weixin plugin version (default: build-manifest.json runtime.weixin_version)
@@ -142,6 +150,11 @@ values = {
     "HERMES_QWEN_CODE_VERSION": data.get("runtime_hermes", {}).get("qwen_code_version", ""),
     "HERMES_RUNTIME_USER": data.get("runtime_hermes", {}).get("runtime_user", ""),
     "HERMES_NODE_MAJOR": str(data.get("runtime_hermes", {}).get("node_major", "")),
+    "HERMES_COS_BASE": data.get("runtime_hermes", {}).get("cos_base", ""),
+    "HERMES_VERSION": data.get("runtime_hermes", {}).get("version", ""),
+    "HERMES_SRC_VERSION": data.get("runtime_hermes", {}).get("src_version", ""),
+    "HERMES_GIT_COMMIT": data.get("runtime_hermes", {}).get("git_commit", ""),
+    "HERMES_ACLI_INSTALL_URL": data.get("runtime_hermes", {}).get("acli_install_url", ""),
     "NODE_VERSION": runtime.get("node_version", ""),
     "PNPM_VERSION": runtime.get("pnpm_version", ""),
     "PLAYWRIGHT_VERSION": runtime.get("playwright_version", ""),
@@ -203,6 +216,10 @@ parse_args() {
     case "$1" in
       --runtime)
         RUNTIME_KIND="$2"
+        shift 2
+        ;;
+      --hermes-version)
+        ARG_HERMES_VERSION="$2"
         shift 2
         ;;
       --envd-only)
@@ -292,6 +309,9 @@ parse_args() {
 
   if [ "${RUNTIME_KIND}" = "hermes" ] && [ -n "${HERMES_RUNTIME_USER}" ] && [ "${LIGHTCLAW_RUNTIME_USER:-lightclaw}" = "lightclaw" ]; then
     RUNTIME_USER="${HERMES_RUNTIME_USER}"
+  fi
+  if [ "${RUNTIME_KIND}" = "hermes" ] && [ -n "${ARG_HERMES_VERSION}" ]; then
+    HERMES_VERSION="${ARG_HERMES_VERSION}"
   fi
 }
 
@@ -425,7 +445,7 @@ EOF
 
 ensure_global_bin_links() {
   local bin_name
-  for bin_name in node npm npx corepack pnpm openclaw clawhub agent-browser openclaw-weixin-login-session qwen hermes hermes-agent; do
+  for bin_name in node npm npx corepack pnpm openclaw clawhub agent-browser openclaw-weixin-login-session qwen hermes hermes-agent acli; do
     if [ -e "/usr/local/bin/${bin_name}" ]; then
       ln -sfn "/usr/local/bin/${bin_name}" "/usr/bin/${bin_name}"
     fi
@@ -764,10 +784,13 @@ install_hermes_extra_tools() {
   local skillhub_url_escaped=""
   log_info "installing hermes extra tools"
   printf -v skillhub_url_escaped '%q' "${SKILLHUB_INSTALL_URL}"
-  run_as_runtime_user "curl -fsSL ${skillhub_url_escaped} | bash"
+  run_as_runtime_user "curl -fsSL ${skillhub_url_escaped} | bash -s -- --cli-only"
   write_hermes_env_profile
   echo 'export PATH="$HOME/.local/bin:$PATH"' >> "${HERMES_ENV_PROFILE_PATH}"
   chmod 0644 "${HERMES_ENV_PROFILE_PATH}"
+  if [ -x "${RUNTIME_HOME}/.local/bin/skillhub" ]; then
+    install -m 0755 "${RUNTIME_HOME}/.local/bin/skillhub" /usr/local/bin/skillhub
+  fi
 }
 
 ensure_hermes_gateway_service() {
@@ -785,6 +808,13 @@ install_hermes_runtime() {
   local installer=""
   local qwen_spec="@qwen-code/qwen-code"
   local installer_escaped=""
+  local hermes_cos_dir=""
+  local hermes_tarball_url=""
+  local hermes_home="${RUNTIME_HOME}/.hermes"
+  local hermes_dir="${hermes_home}/hermes-agent"
+  local tarball=""
+  local stage_dir=""
+  local top_dir=""
 
   log_info "installing hermes runtime for ${RUNTIME_USER}"
 
@@ -798,19 +828,117 @@ install_hermes_runtime() {
     log_error "missing runtime_hermes.install_script_url in build-manifest.json"
     return 1
   fi
+  if [ -z "${HERMES_COS_BASE}" ]; then
+    log_error "missing runtime_hermes.cos_base in build-manifest.json"
+    return 1
+  fi
+
+  hermes_cos_dir="$(resolve_hermes_cos_dir)"
+  hermes_tarball_url="${HERMES_COS_BASE%/}/${hermes_cos_dir}/hermes-agent.tar.gz"
+  log_info "installing Hermes ${HERMES_VERSION:-${hermes_cos_dir}} from ${hermes_tarball_url}"
+
+  tarball="$(mktemp "${TMPDIR:-/tmp}/lightclaw-hermes-XXXXXX.tar.gz")"
+  stage_dir="$(mktemp -d "${TMPDIR:-/tmp}/lightclaw-hermes-stage-XXXXXX")"
+
+  curl -fsSL "${hermes_tarball_url}" -o "${tarball}"
+  tar -xzf "${tarball}" -C "${stage_dir}"
+  top_dir="$(find "${stage_dir}" -mindepth 1 -maxdepth 1 -type d | head -1)"
+  if [ -z "${top_dir}" ]; then
+    log_error "Hermes tarball layout unexpected: no top-level directory"
+    rm -rf "${tarball}" "${stage_dir}"
+    return 1
+  fi
+
+  mkdir -p "${hermes_home}"
+  rm -rf "${hermes_dir}"
+  mv "${top_dir}" "${hermes_dir}"
+  chown -R "${RUNTIME_USER}:${RUNTIME_USER}" "${hermes_home}"
+
+  run_as_runtime_user "$(cat <<EOF
+set -e
+cd '${hermes_dir}'
+git init -q
+git add -A
+git -c user.email=build@local -c user.name=build commit -q -m 'snapshot ${HERMES_VERSION:-${hermes_cos_dir}}'
+git branch -M main
+git remote remove origin >/dev/null 2>&1 || true
+git remote add origin '${hermes_dir}'
+git fetch origin -q
+git branch --set-upstream-to=origin/main main >/dev/null
+EOF
+)"
 
   installer="$(mktemp "${TMPDIR:-/tmp}/hermes-install-XXXXXX.sh")"
   curl -fsSL "${HERMES_INSTALL_SCRIPT_URL}" -o "${installer}"
   chmod 0755 "${installer}"
   printf -v installer_escaped '%q' "${installer}"
-  run_as_runtime_user "unset PLAYWRIGHT_BROWSERS_PATH; bash ${installer_escaped} ${HERMES_INSTALL_ARGS}"
-  rm -f "${installer}"
+  run_as_runtime_user "unset PLAYWRIGHT_BROWSERS_PATH; bash ${installer_escaped} ${HERMES_INSTALL_ARGS} --branch main"
+  rm -rf "${tarball}" "${stage_dir}" "${installer}"
 
   log_info "installing ${qwen_spec}"
   npm install -g "${qwen_spec}"
   ensure_global_bin_links
   ensure_hermes_runtime_bin_links
   write_hermes_env_profile
+  ensure_yuanbao_allow_all_users
+}
+
+fetch_latest_hermes_version() {
+  local meta=""
+  meta="$(curl -fsSL "${HERMES_COS_BASE%/}/latest.json" 2>/dev/null || true)"
+  if [ -z "${meta}" ]; then
+    return 1
+  fi
+  printf '%s' "${meta}" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("version",""))' 2>/dev/null
+}
+
+resolve_hermes_cos_dir() {
+  local version="${HERMES_VERSION}"
+  if [ -z "${version}" ]; then
+    log_info "No Hermes version specified, fetching latest from ${HERMES_COS_BASE%/}/latest.json"
+    version="$(fetch_latest_hermes_version || true)"
+  fi
+  if [ -z "${version}" ]; then
+    log_error "failed to resolve Hermes version"
+    return 1
+  fi
+  HERMES_VERSION="${version}"
+  case "${version}" in
+    hermes-agent-*) printf '%s\n' "${version}" ;;
+    *) printf 'hermes-agent-%s\n' "${version}" ;;
+  esac
+}
+
+ensure_yuanbao_allow_all_users() {
+  local env_file="${RUNTIME_HOME}/.hermes/.env"
+  touch "${env_file}"
+  if ! grep -q '^YUANBAO_ALLOW_ALL_USERS=' "${env_file}"; then
+    echo "YUANBAO_ALLOW_ALL_USERS=true" >>"${env_file}"
+  fi
+  chown "${RUNTIME_USER}:${RUNTIME_USER}" "${env_file}"
+}
+
+install_hermes_acli() {
+  if [ -z "${HERMES_ACLI_INSTALL_URL}" ]; then
+    log_error "missing runtime_hermes.acli_install_url in build-manifest.json"
+    return 1
+  fi
+  log_info "installing acli"
+  ACLI_RUN_AS="${RUNTIME_USER}" curl -fsSL "${HERMES_ACLI_INSTALL_URL}" | ACLI_RUN_AS="${RUNTIME_USER}" bash
+  if ! command -v acli >/dev/null 2>&1; then
+    log_error "acli not found in PATH after install"
+    return 1
+  fi
+  if ! acli --help >/dev/null 2>&1; then
+    log_error "acli --help failed"
+    return 1
+  fi
+  if ! acli doctor >/dev/null 2>&1; then
+    log_error "acli doctor failed"
+    acli doctor || true
+    return 1
+  fi
+  ensure_global_bin_links
 }
 
 install_envd_agent() {
@@ -1269,6 +1397,7 @@ build_app_layer() {
     install_hermes_runtime
     ensure_hermes_gateway_service
     install_hermes_extra_tools
+    install_hermes_acli
   else
     install_openclaw
     install_all_plugins

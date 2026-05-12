@@ -47,6 +47,9 @@
 - `.ci/cloudladdergateway.yml`
   - 当前只运行 `go test ./...` 和 Docker 镜像构建验证。
   - 该服务暂未接入 GitOps release bundle，因此不使用 `.ci/templates/service-release.yml`，也不会自动 promote/pin。
+- `.ci/hermes-image.yml`
+  - 用 `images/build-image.py --runtime hermes --base-image-id img-id352nof --with-verify` 构建、验证并同步 Hermes CVM 镜像。
+  - 腾讯云凭据只从构建机本地 `/etc/lightclaw-ci/tencentcloud_secret_id` 和 `/etc/lightclaw-ci/tencentcloud_secret_key` 读取，不通过流水线启动变量传入。
 
 这些入口保留 `name` / `on.push.paths` / `manual` / `extends`，并通过统一模板传入
 `SERVICE` / `BUNDLE` / `DISPLAY_NAME`。服务级变更仍由对应 `.ci/<service>.yml`

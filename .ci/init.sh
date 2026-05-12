@@ -557,6 +557,34 @@ ci_load_cloudflare_credentials() {
   fi
 }
 
+ci_load_tencentcloud_credentials() {
+  local secret_id_file="${TENCENTCLOUD_SECRET_ID_FILE:-/etc/lightclaw-ci/tencentcloud_secret_id}"
+  local secret_key_file="${TENCENTCLOUD_SECRET_KEY_FILE:-/etc/lightclaw-ci/tencentcloud_secret_key}"
+  local raw_secret_id=""
+  local raw_secret_key=""
+  local secret_id=""
+  local secret_key=""
+
+  if [[ ! -r "$secret_id_file" || ! -r "$secret_key_file" ]]; then
+    echo "missing Tencent Cloud credentials: provide ${secret_id_file} and ${secret_key_file}" >&2
+    return 1
+  fi
+
+  raw_secret_id="$(cat "$secret_id_file")"
+  raw_secret_key="$(cat "$secret_key_file")"
+  secret_id="$(printf '%s' "$raw_secret_id" | ci_read_secret_value)"
+  secret_key="$(printf '%s' "$raw_secret_key" | ci_read_secret_value)"
+
+  if [[ -z "$secret_id" || -z "$secret_key" ]]; then
+    echo "Tencent Cloud credentials loaded from files but at least one value is empty after trimming" >&2
+    return 1
+  fi
+
+  export TENCENTCLOUD_SECRET_ID="$secret_id"
+  export TENCENTCLOUD_SECRET_KEY="$secret_key"
+  ci_log "Tencent Cloud credentials loaded from local files (secret_id_len=${#secret_id}, secret_id_fingerprint=$(printf '%s' "$secret_id" | ci_fingerprint_secret), secret_key_len=${#secret_key}, secret_key_fingerprint=$(printf '%s' "$secret_key" | ci_fingerprint_secret))"
+}
+
 ci_load_edgeone_credentials() {
   local api_token_file="${EDGEONE_API_TOKEN_FILE:-/etc/lightclaw-ci/edgeone_api_token}"
   local raw_token=""
@@ -808,6 +836,83 @@ ci_install_oras() {
   tar -xzf "${cache_root}/${archive}" -C "$install_dir" oras
   chmod +x "${install_dir}/oras"
   ci_log "installed oras at ${install_dir}/oras"
+}
+
+ci_ensure_tccli() {
+  if command -v tccli >/dev/null 2>&1; then
+    ci_log "tccli already present at $(command -v tccli)"
+    return 0
+  fi
+
+  ci_require_commands python3
+
+  local version="${TCCLI_VERSION_OVERRIDE:-3.1.90.1}"
+  local cache_root="${HOME}/.cache/lightclaw-ci/tccli"
+  local install_dir="${cache_root}/v${version}"
+  local bin="${install_dir}/venv/bin/tccli"
+
+  if [[ ! -x "$bin" ]]; then
+    ci_with_lock "tccli-${version}" ci_install_tccli "$version" "$install_dir"
+  else
+    ci_log "tccli ${version} already present at ${bin}"
+  fi
+
+  export PATH="${install_dir}/venv/bin:${PATH}"
+  export TCCLI_BIN="$bin"
+}
+
+ci_install_tccli() {
+  local version="$1"
+  local install_dir="$2"
+
+  mkdir -p "$install_dir"
+  ci_log "installing tccli ${version} into ${install_dir}"
+  rm -rf "${install_dir}/venv"
+  python3 -m venv "${install_dir}/venv" || return $?
+  "${install_dir}/venv/bin/python" -m pip install --upgrade pip || return $?
+  "${install_dir}/venv/bin/python" -m pip install "tccli==${version}" || return $?
+  chmod +x "${install_dir}/venv/bin/tccli" || return $?
+  ci_log "installed tccli at ${install_dir}/venv/bin/tccli"
+}
+
+ci_ensure_go() {
+  ci_require_commands curl tar
+
+  local version="${GO_VERSION_OVERRIDE:-1.25.4}"
+  local os arch archive cache_root install_dir bin url
+
+  os="$(ci_os_name)"
+  arch="$(ci_arch_name)"
+  archive="go${version}.${os}-${arch}.tar.gz"
+  cache_root="${HOME}/.cache/lightclaw-ci/go"
+  install_dir="${cache_root}/go${version}.${os}-${arch}"
+  bin="${install_dir}/bin/go"
+  url="https://go.dev/dl/${archive}"
+
+  if [[ ! -x "$bin" ]]; then
+    ci_with_lock "go-${version}-${os}-${arch}" ci_install_go "$url" "$archive" "$cache_root" "$install_dir"
+  else
+    ci_log "go ${version} already present at ${bin}"
+  fi
+
+  export PATH="${install_dir}/bin:${PATH}"
+  export GO_BIN="$bin"
+  export GOTOOLCHAIN=local
+  ci_log "go ready at ${GO_BIN} ($("$GO_BIN" version))"
+}
+
+ci_install_go() {
+  local url="$1"
+  local archive="$2"
+  local cache_root="$3"
+  local install_dir="$4"
+
+  rm -rf "$install_dir"
+  mkdir -p "$cache_root" "$install_dir"
+  ci_download_file "$url" "${cache_root}/${archive}"
+  tar -xzf "${cache_root}/${archive}" -C "$install_dir" --strip-components=1
+  chmod +x "${install_dir}/bin/go"
+  ci_log "installed go at ${install_dir}/bin/go"
 }
 
 ci_ensure_node() {
