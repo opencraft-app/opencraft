@@ -1,8 +1,11 @@
-// ⚠️ 必须最先 import：模块顶层会同步设置 `window.VERSION`，
-// tea-app 的 i18n 模块在加载时读取此值决定 i18next 的 lng（zh / en）。
-// 同时导出 `bootstrapSdkI18n` 用于异步加载词条 + 调用 SDK 的 initI18n。
-// 语言由 @/lib/region 的 isGlobal 唯一决定，不再使用 ?lang= 参数。
-import { bootstrapSdkI18n } from "@/lib/i18n-env";
+// ⚠️ 必须最先 import：本模块在加载时同步完成两件事：
+//   1. 设置 `window.VERSION = "en"`（tea-app i18n 模块加载时据此决定 lng）
+//   2. 同步调用 SDK 的 `initI18n({ translation })` 注入词条
+// 这两步必须在任何 SDK 组件渲染之前完成，否则 SDK 内部的模块级缓存
+// （如 `cachedI18nList`、`MODEL_PROVIDER_LIST` 首次访问）会在 i18next
+// 未 init 状态下调用 t() 得到 undefined，被 ChannelPanel 的过滤逻辑剔除。
+// 语言由 @/lib/region 的 isGlobal + localStorage('lw-locale') 决定。
+import "@/lib/i18n-env";
 
 import { LegalFooter } from "@/components/site/legal-footer";
 import { motion, AnimatePresence } from "framer-motion";
@@ -74,14 +77,6 @@ import {
 import "@tencent/tea-sdk-lightclaw/styles";
 
 const DEFAULT_TAT_TERMINAL_TIMEOUT_SECONDS = 3600;
-
-// SDK i18n 引导：
-//   - 国际站（isGlobal）：异步加载英文词条后调用 SDK 的 initI18n({ translation })
-//   - 国内站：同步空词条 init，t() 返回 key 字面值（=中文源码原文）
-// 配合 SDK 内部 MODEL_PROVIDER_LIST/CHANNEL_LIST 的 Proxy 惰性求值，
-// 即使英文词条尚未加载完成，组件首次访问列表时词条已就绪。
-// 这里 fire-and-forget，模块顶层不需要 await。
-void bootstrapSdkI18n();
 
 /* ─── Types ─── */
 

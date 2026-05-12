@@ -10,25 +10,33 @@
  *   - **优先级**：`lw-locale`（用户主动切换）> `isGlobal`（编译期默认）
  *   - 国内站默认中文，国际站默认英文；任何站点都允许通过 LanguageSwitcher 切换
  *   - SDK 端的 tea-app i18n 是 init-once 设计（hasInited 锁定后 lng 无法热切换），
- *     因此**切换 SDK 语言必须刷新页面**——这一点由 SDK 使用页面的
- *     LanguageSwitcher 通过 `reloadAfterSwitch` prop 触发
+ *     因此**切换 SDK 语言必须刷新页面**
  *
- * ## 执行顺序
+ * ## 同步初始化的关键
  *
- * 1. **同步副作用阶段**（本模块 import 时）：
- *    根据上述优先级判定 `isEnglishEnv`，若为英文则设置 `window.VERSION = "en"`。
- *    必须在 `@tencent/tea-app` 模块加载前完成，否则 tea-app i18n 的 lng
- *    会被锁死为 "zh"。
+ * tea-app 的 `t(sentence)` 内部调 `i18next.t(key, { defaultValue: sentence })`，
+ * 但 i18next 在**未 init 状态**下 `t()` 会返回 `undefined`（即使传 defaultValue
+ * 也无效）。SDK 内部的 `MODEL_PROVIDER_LIST` / `getHermesChannelList` 等数据源
+ * 在首次访问时调用 `t()` 求值并缓存——如果 i18n 还没初始化，缓存里就会有
+ * 一堆 `undefined` 字段，导致 ChannelPanel 的 `.filter(ch => ch.primaryLabel)`
+ * 把整条目过滤掉。
  *
- * 2. **异步阶段**（消费方调用 `bootstrapSdkI18n()`）：
- *    - 英文环境：动态 import 英文词条 → `initI18n({ translation })`
- *    - 中文环境：`initI18n()`（空词条，t() 返回 key 字面值 = 中文源码原文）
+ * 因此：
+ *   1. **同步副作用阶段**：根据 `isEnglishEnv` 设置 `window.VERSION = "en"`，
+ *      并**同步 import** 英文词条 + 同步调用 `initI18n({ translation })`。
+ *      不能用 `await import('en')` 异步加载，否则会被 React 渲染抢跑。
+ *   2. 中文环境：直接 `initI18n()` 空词条（t 返回 key 字面值 = 中文源码原文）。
  *
- *    SDK 中 `MODEL_PROVIDER_LIST` / `CHANNEL_LIST` 为 Proxy 惰性求值，
- *    只要在 React 首次访问之前完成 init 即可生效。
+ * 静态 import 也允许 Rollup 在生产构建时直接把英文词条打进对应 chunk，
+ * 避免 SDK 自动 init 的 tree-shake 风险。
  */
 import { isGlobal } from "@/lib/region";
 import { initI18n } from "@tencent/tea-sdk-lightclaw";
+// 静态 import 英文词条：vite.config 已通过 sdkI18nPlugin 把 CJS 转成
+// ESM，并在 alias 里把 `@tencent/tea-sdk-lightclaw/i18n/translation/en`
+// 指向具体文件。这一行**必须**保留为静态 import——异步 `await import(...)`
+// 会被 React 渲染抢跑，导致 SDK 模块缓存里的 t() 求值出 undefined。
+import { translation as enTranslation } from "@tencent/tea-sdk-lightclaw/i18n/translation/en";
 
 /** 与 mono2 自身 i18n 共用的语言持久化 key（见 src/i18n/index.ts） */
 const LOCALE_STORAGE_KEY = "lw-locale";
@@ -65,7 +73,8 @@ export const isEnglishEnv: boolean = (() => {
   return isGlobal;
 })();
 
-// 同步副作用：tea-app 的 i18n 模块在加载时一次性读取 window.VERSION 决定 lng。
+// ── 步骤 1：同步设置 window.VERSION ──
+// tea-app 的 i18n 模块在加载时一次性读取 window.VERSION 决定 lng。
 // 必须在任何 import @tencent/tea-app 的代码执行之前赋值（即本模块作为页面
 // 的第一个 import）。
 if (isEnglishEnv) {
@@ -73,23 +82,13 @@ if (isEnglishEnv) {
   (window as any).VERSION = "en";
 }
 
-/**
- * 初始化 SDK i18n 词条。
- *
- * - 英文环境：异步加载英文词条后调用 SDK 的 `initI18n({ translation })`
- * - 中文环境：同步空词条 init，`t()` 返回 key 字面值（=中文源码原文）
- *
- * 多次调用安全（SDK initI18n 内部有幂等保护）。Promise 通常无需 await——
- * 模块顶层 `void bootstrapSdkI18n()` 即可，配合 SDK 内部 Proxy 惰性求值，
- * 组件首次访问列表时词条已就绪。
- */
-export async function bootstrapSdkI18n(): Promise<void> {
-  if (isEnglishEnv) {
-    const { translation } = await import(
-      "@tencent/tea-sdk-lightclaw/i18n/translation/en"
-    );
-    initI18n({ translation });
-  } else {
-    initI18n();
-  }
+// ── 步骤 2：同步注册 SDK i18n 词条 ──
+// 必须在任何 SDK 子模块（如 hermes.ts 的 buildHermesChannelList）首次
+// 调用 `t()` 之前完成；否则 i18next 未 init 状态下 t() 返回 undefined。
+// 因 SDK 内部用 `let cachedI18nList = ...` 模块级缓存，第一次返回 undefined
+// 后无法纠正——必须卡在 React 渲染之前同步完成 init。
+if (isEnglishEnv) {
+  initI18n({ translation: enTranslation });
+} else {
+  initI18n();
 }
