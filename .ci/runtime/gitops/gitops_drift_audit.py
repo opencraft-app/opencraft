@@ -32,6 +32,7 @@ CATALOG_DIRS = {
 }
 DIRECT_APP_DIRS = {
     "shprod": "argocd/apps/shprod",
+    "sgprod": "argocd/apps/sgprod",
 }
 DEFAULT_REPO_URL = "git@git.woa.com:wisp/mono2.git"
 DEFAULT_TARGET_REVISION = "gitops"

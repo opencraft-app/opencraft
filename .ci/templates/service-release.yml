@@ -12,7 +12,7 @@ parameters:
     default: shprod
   - name: MASTER_BUILD_ENVS
     type: string
-    default: beijing-sandbox,shprod
+    default: beijing-sandbox,shprod,sgprod
   - name: MASTER_AUTO_PIN_ENVS
     type: string
     default: beijing-sandbox
@@ -83,6 +83,7 @@ stages:
             env:
               TCR_BEIJING_PASSWORD: ${{ settings.TCR_BEIJING_PASSWORD }}
               TCR_SHPROD_PASSWORD: ${{ settings.TCR_SHPROD_PASSWORD }}
+              TCR_SGPROD_PASSWORD: ${{ settings.TCR_SGPROD_PASSWORD }}
             run: |
               if [[ "${{ variables.PIPELINE_MODE }}" == "promote" ]]; then
                 echo "skip build step because PIPELINE_MODE=promote"

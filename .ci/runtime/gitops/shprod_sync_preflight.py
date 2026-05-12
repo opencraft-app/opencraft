@@ -1,5 +1,5 @@
 """
-Run the post-approval shprod sync preflight checks.
+Run the post-approval production sync preflight checks.
 """
 
 from __future__ import annotations
@@ -117,7 +117,7 @@ def build_verify_command(
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run shprod post-approval DB readiness preflight.")
+    parser = argparse.ArgumentParser(description="Run production post-approval DB readiness preflight.")
     parser.add_argument("--repo-root", default=".")
     parser.add_argument("--bundle-manifest", default="")
     parser.add_argument("--source-branch", default="")
@@ -133,24 +133,24 @@ def main() -> int:
     runtime_dir = Path(__file__).resolve().parents[1]
     bundle_manifest = Path(args.bundle_manifest).resolve() if args.bundle_manifest else runtime_dir / "release-bundles.manifest"
 
-    if args.source_branch and not args.source_branch.startswith("promote-shprod-"):
-        print(f"skip shprod sync preflight for non-shprod branch {args.source_branch}")
+    if args.source_branch and not args.source_branch.startswith(("promote-shprod-", "promote-sgprod-")):
+        print(f"skip production sync preflight for non-production branch {args.source_branch}")
         return 0
 
     trailers = parse_trailers(git_commit_message(repo_root))
     service = require_trailer(trailers, "Release-bundle")
     env = require_trailer(trailers, "Release-target-env")
-    if env != "shprod":
-        print(f"skip shprod sync preflight for env {env}")
+    if env not in {"shprod", "sgprod"}:
+        print(f"skip production sync preflight for env {env}")
         return 0
 
     argo_sync = require_trailer(trailers, "Release-gate-argo-sync")
     if argo_sync != "manual":
-        raise ValueError(f"refuse shprod sync preflight because Argo sync policy is {argo_sync!r}, expected 'manual'")
+        raise ValueError(f"refuse production sync preflight because Argo sync policy is {argo_sync!r}, expected 'manual'")
     source_revision = require_trailer(trailers, "Source-revision")
 
     print("============================================================")
-    print("上海生产同步前置校验：人工审批后执行 DB readiness 只读校验")
+    print("生产同步前置校验：人工审批后执行 DB readiness 只读校验")
     print(f"promote 分支：{args.source_branch or '(unknown)'}")
     print(f"发布 bundle：{service}")
     print(f"目标环境：{env}")
@@ -158,7 +158,7 @@ def main() -> int:
     print("说明：只创建只读 verifier Job；不执行 migration，不执行 Argo sync")
     print("============================================================")
 
-    with tempfile.TemporaryDirectory(prefix="shprod-sync-source-") as source_dir:
+    with tempfile.TemporaryDirectory(prefix=f"{env}-sync-source-") as source_dir:
         source_root = Path(source_dir)
         export_source_tree(repo_root, source_revision, source_root)
         command = build_verify_command(

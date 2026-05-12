@@ -8,6 +8,7 @@ bundles:
     - gateway-dashboard/k8s/base
     - gateway-dashboard/k8s/overlays/beijing-sandbox
     - gateway-dashboard/k8s/overlays/shprod
+    - gateway-dashboard/k8s/overlays/sgprod
     - gateway-dashboard/Dockerfile
     exit_condition: Can be removed only after the deployable contract moves to an
       explicit imported package path.
@@ -42,4 +43,5 @@ bundles:
     image_repo:
       beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/gateway-dashboard
       shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/gateway-dashboard
+      sgprod: lightclaw-sgprod.tencentcloudcr.com/lightclaw/gateway-dashboard
       beijing-sandbox-2: lightclaw-bj8.tencentcloudcr.com/lightclaw/gateway-dashboard

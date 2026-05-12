@@ -10,6 +10,7 @@ bundles:
     - admin-gateway/k8s/base
     - admin-gateway/k8s/overlays/beijing-sandbox
     - admin-gateway/k8s/overlays/shprod
+    - admin-gateway/k8s/overlays/sgprod
     - service-gateway
     - service-gateway/Dockerfile
     exit_condition: Can be removed only after the deployable contract moves to an
@@ -45,4 +46,5 @@ bundles:
     image_repo:
       beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/admin-gateway
       shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/admin-gateway
+      sgprod: lightclaw-sgprod.tencentcloudcr.com/lightclaw/admin-gateway
       beijing-sandbox-2: lightclaw-bj8.tencentcloudcr.com/lightclaw/admin-gateway

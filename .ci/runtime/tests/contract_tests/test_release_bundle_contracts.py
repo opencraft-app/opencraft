@@ -19,16 +19,16 @@ from contracts.release_bundle_manifest import dump_manifest, merge_bundle_source
 SANDBOX_ENV = "beijing-sandbox-2"
 PLAYGROUND_ENV = "sandbox-bj-7"
 AUTO_RELEASE_WORKFLOWS = {
-    "admin-gateway": (".ci/admin-gateway.yml", "beijing-sandbox,shprod", "admin-gateway"),
-    "ai-gateway": (".ci/ai-gateway.yml", "beijing-sandbox,shprod", "ai-gateway"),
-    "ctl": (".ci/ctl.yml", "beijing-sandbox,shprod", "ctl"),
-    "gateway-dashboard": (".ci/gateway-dashboard.yml", "beijing-sandbox,shprod", "gateway-dashboard"),
-    "nextgen-dashboard": (".ci/nextgen-dashboard.yml", "beijing-sandbox,shprod", "nextgen-dashboard"),
-    "payment": (".ci/payment.yml", "beijing-sandbox,shprod", "payment"),
-    "sandbox": (".ci/sandbox.yml", "beijing-sandbox", "sandbox"),
-    "service-gateway": (".ci/service-gateway.yml", "beijing-sandbox,shprod", "service-gateway"),
-    "subscription": (".ci/subscription.yml", "beijing-sandbox,shprod", "subscription"),
-    "user-auth": (".ci/lightclaw-auth.yml", "beijing-sandbox,shprod", "lightclaw-auth"),
+    "admin-gateway": (".ci/admin-gateway.yml", "beijing-sandbox,shprod,sgprod", "admin-gateway"),
+    "ai-gateway": (".ci/ai-gateway.yml", "beijing-sandbox,shprod,sgprod", "ai-gateway"),
+    "ctl": (".ci/ctl.yml", "beijing-sandbox,shprod,sgprod", "ctl"),
+    "gateway-dashboard": (".ci/gateway-dashboard.yml", "beijing-sandbox,shprod,sgprod", "gateway-dashboard"),
+    "nextgen-dashboard": (".ci/nextgen-dashboard.yml", "beijing-sandbox,shprod,sgprod", "nextgen-dashboard"),
+    "payment": (".ci/payment.yml", "beijing-sandbox,shprod,sgprod", "payment"),
+    "sandbox": (".ci/sandbox.yml", "beijing-sandbox,sgprod", "sandbox"),
+    "service-gateway": (".ci/service-gateway.yml", "beijing-sandbox,shprod,sgprod", "service-gateway"),
+    "subscription": (".ci/subscription.yml", "beijing-sandbox,shprod,sgprod", "subscription"),
+    "user-auth": (".ci/lightclaw-auth.yml", "beijing-sandbox,shprod,sgprod", "lightclaw-auth"),
 }
 
 BUSINESS_WORKFLOWS = {
@@ -139,7 +139,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
     def test_sandbox_image_targets_match_platform_env_files(self) -> None:
         manifest = load_manifest()
 
-        for env in ["beijing-sandbox", "beijing-sandbox-2"]:
+        for env in ["beijing-sandbox", "beijing-sandbox-2", "sgprod"]:
             with self.subTest(env=env):
                 bundle = require_build_metadata(load_bundle(manifest, "sandbox", env))
                 image_keys = {target.image_key for target in bundle.image_targets}
@@ -163,26 +163,50 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertTrue(any(path.startswith("argocd/services/admin-gateway/shprod/") for path in admin_bundle.publish_paths))
         self.assertEqual(admin_bundle.image_repo, "lightclaw-shprod.tencentcloudcr.com/lightclaw/admin-gateway")
 
-    def test_shprod_release_bundles_project_exactly_one_direct_app(self) -> None:
+    def test_frontend_playground_release_uses_beijing_registry(self) -> None:
+        manifest = load_manifest()
+        bundle = require_build_metadata(load_bundle(manifest, "frontend", PLAYGROUND_ENV))
+
+        self.assertEqual(bundle.image_repo, "lightclaw-bj8.tencentcloudcr.com/lightclaw/frontend")
+        self.assertIn(f"argocd/services/frontend/{PLAYGROUND_ENV}/**", bundle.publish_paths)
+
+    def test_frontend_workflow_supports_playground_branch_release(self) -> None:
+        workflow_text = (REPO_ROOT / ".ci/frontend.yml").read_text()
+        workflow = yaml.safe_load(workflow_text)
+
+        self.assertIn("playground/sandbox-bj-*", workflow_text)
+        self.assertIn('PLAYGROUND_ENV="${{ ci.branch }}"', workflow_text)
+        self.assertIn('PLAYGROUND_ENV="${PLAYGROUND_ENV#playground/}"', workflow_text)
+        self.assertIn('BUILD_ENVS="$(resolve_playground_envs "auto" "$PLAYGROUND_ENV")"', workflow_text)
+        self.assertIn('AUTO_PIN_ENVS="$(resolve_playground_envs "auto" "$PLAYGROUND_ENV")"', workflow_text)
+        self.assert_release_entry_targets(
+            workflow,
+            expected_service="frontend",
+            expected_pin_targets="frontend",
+            workflow_text=workflow_text,
+        )
+
+    def test_prod_release_bundles_project_exactly_one_direct_app(self) -> None:
         manifest = load_manifest()
 
-        for bundle_name in sorted((manifest.get("bundles") or {})):
-            with self.subTest(bundle=bundle_name):
-                bundle = load_bundle(manifest, bundle_name, "shprod")
-                direct_services = {
-                    parts[2]
-                    for path in bundle.publish_paths
-                    if (parts := path.split("/"))
-                    and len(parts) >= 4
-                    and parts[0:2] == ["argocd", "services"]
-                    and parts[3] == "shprod"
-                }
-                if direct_services:
-                    self.assertEqual(
-                        len(direct_services),
-                        1,
-                        f"{bundle_name} shprod bundle must not project unrelated direct apps: {sorted(direct_services)}",
-                    )
+        for env in ["shprod", "sgprod"]:
+            for bundle_name in sorted((manifest.get("bundles") or {})):
+                with self.subTest(env=env, bundle=bundle_name):
+                    bundle = load_bundle(manifest, bundle_name, env)
+                    direct_services = {
+                        parts[2]
+                        for path in bundle.publish_paths
+                        if (parts := path.split("/"))
+                        and len(parts) >= 4
+                        and parts[0:2] == ["argocd", "services"]
+                        and parts[3] == env
+                    }
+                    if direct_services:
+                        self.assertEqual(
+                            len(direct_services),
+                            1,
+                            f"{bundle_name} {env} bundle must not project unrelated direct apps: {sorted(direct_services)}",
+                        )
 
     def test_gateway_workflows_pin_only_their_own_targets(self) -> None:
         service_workflow = yaml.safe_load((REPO_ROOT / ".ci/service-gateway.yml").read_text())
@@ -192,7 +216,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
             service_workflow,
             expected_service="service-gateway",
             expected_pin_targets="service-gateway",
-            expected_master_build_envs="beijing-sandbox,shprod",
+            expected_master_build_envs="beijing-sandbox,shprod,sgprod",
             expected_master_auto_pin_envs="beijing-sandbox",
             expected_playground_build_envs="auto",
             expected_playground_auto_pin_envs="auto",
@@ -201,7 +225,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
             admin_workflow,
             expected_service="admin-gateway",
             expected_pin_targets="admin-gateway",
-            expected_master_build_envs="beijing-sandbox,shprod",
+            expected_master_build_envs="beijing-sandbox,shprod,sgprod",
             expected_master_auto_pin_envs="beijing-sandbox",
             expected_playground_build_envs="auto",
             expected_playground_auto_pin_envs="auto",

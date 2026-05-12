@@ -66,6 +66,8 @@ class GitopsMergeRequestTests(unittest.TestCase):
     def test_shprod_auto_merge_note_points_to_manual_sync(self) -> None:
         self.assertIn("待同步状态", next_stage_after_merge("promote-shprod-frontend-abc"))
         self.assertIn("人工确认 DB readiness", next_stage_after_merge("promote-shprod-frontend-abc"))
+        self.assertIn("待同步状态", next_stage_after_merge("promote-sgprod-frontend-abc"))
+        self.assertIn("人工确认 DB readiness", next_stage_after_merge("promote-sgprod-frontend-abc"))
         self.assertIn("等待 Argo CD 收敛", next_stage_after_merge("promote-beijing-sandbox-frontend-abc"))
 
 

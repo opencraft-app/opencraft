@@ -42,14 +42,14 @@ class PromotionPolicy:
 
     @property
     def merge_title(self) -> str:
-        if self.env == "shprod":
-            return "自动合并上海生产 GitOps 待同步 MR"
+        if self.required_argo_sync == "manual":
+            return f"自动合并{self.display_name} GitOps 待同步 MR"
         return "自动合并北京 GitOps 发布 MR"
 
     @property
     def merge_description(self) -> str:
-        if self.env == "shprod":
-            return "promote 分支检查通过后自动合并到 gitops；上海生产仅进入待同步状态，不执行 Argo 自动 sync。"
+        if self.required_argo_sync == "manual":
+            return f"promote 分支检查通过后自动合并到 gitops；{self.display_name}仅进入待同步状态，不执行 Argo 自动 sync。"
         return "promote 分支检查通过后自动合并到 gitops，并进入 Argo 收敛验收。"
 
     @property
@@ -92,6 +92,18 @@ PROMOTION_POLICIES: tuple[PromotionPolicy, ...] = (
         env="shprod",
         branch_prefix="promote-shprod-",
         display_name="上海生产",
+        auto_merge=True,
+        auto_sync=False,
+        cleanup_source_branch=False,
+        verify_mode=VerifyMode.MERGE_ONLY,
+        kustomize_mode=KustomizeMode.CHANGED_ONLY,
+        gate_denied_behavior=GateDeniedBehavior.SKIP,
+        required_argo_sync="manual",
+    ),
+    PromotionPolicy(
+        env="sgprod",
+        branch_prefix="promote-sgprod-",
+        display_name="新加坡生产",
         auto_merge=True,
         auto_sync=False,
         cleanup_source_branch=False,

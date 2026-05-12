@@ -48,6 +48,20 @@ class PromotionPolicyTests(unittest.TestCase):
         self.assertFalse(policy.cleanup_source_branch)
         self.assertEqual(policy.required_argo_sync, "manual")
 
+    def test_sgprod_policy_matches_production_manual_sync_shape(self) -> None:
+        policy = promotion_policy.policy_for_branch("promote-sgprod-lightclaw-auth-abc123")
+
+        self.assertIsNotNone(policy)
+        self.assertEqual(policy.env, "sgprod")
+        self.assertEqual(policy.kustomize_args, ["--changed-only"])
+        self.assertEqual(
+            policy.verify_args,
+            ["--merge-only", "--merge-wait-seconds", "3600", "--merge-poll-seconds", "15"],
+        )
+        self.assertFalse(policy.auto_sync)
+        self.assertFalse(policy.cleanup_source_branch)
+        self.assertEqual(policy.required_argo_sync, "manual")
+
     def test_unknown_promote_branch_is_rejected(self) -> None:
         with self.assertRaises(ValueError):
             promotion_policy.require_policy_for_branch("promote-unknown-service-tag")

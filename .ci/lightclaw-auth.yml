@@ -62,7 +62,7 @@ stages:
               echo "SOURCE_SHA=${{ variables.SOURCE_SHA }}"
               echo "SERVICE=user-auth"
               echo "BUNDLE=lightclaw-auth"
-              echo "MASTER_BUILD_ENVS=beijing-sandbox,shprod"
+              echo "MASTER_BUILD_ENVS=beijing-sandbox,shprod,sgprod"
               echo "MASTER_AUTO_PIN_ENVS=beijing-sandbox"
               echo "PLAYGROUND_BUILD_ENVS=auto"
               echo "PLAYGROUND_AUTO_PIN_ENVS=auto"
@@ -108,7 +108,7 @@ stages:
               }
               case "${{ ci.branch }}" in
                 master)
-                  BUILD_ENVS="beijing-sandbox,shprod"
+                  BUILD_ENVS="beijing-sandbox,shprod,sgprod"
                   AUTO_PIN_ENVS="beijing-sandbox"
                   ;;
                 playground/sandbox-bj-*)

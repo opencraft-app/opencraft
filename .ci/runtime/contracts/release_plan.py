@@ -16,7 +16,7 @@ from contracts.bundles import DEFAULT_MANIFEST_PATH, is_playground_env, load_bun
 
 
 PREPROD_AUTO_SYNC_ENVS = {"beijing-sandbox", "beijing-sandbox-2"}
-PROD_MANUAL_SYNC_ENVS = {"shprod"}
+PROD_MANUAL_SYNC_ENVS = {"shprod", "sgprod"}
 
 
 @dataclass(frozen=True)

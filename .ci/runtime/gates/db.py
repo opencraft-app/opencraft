@@ -84,8 +84,8 @@ def run_db_gate(
             raise RuntimeError("预发布自动发布门禁未通过；不创建可自动合并的 GitOps MR。")
         return "passed", plan
 
-    if env == "shprod":
-        print("上海生产策略：GitOps MR 可进入待同步状态；Argo sync 保持人工执行。", file=sys.stderr)
+    if env in {"shprod", "sgprod"}:
+        print(f"{env} 生产策略：GitOps MR 可进入待同步状态；Argo sync 保持人工执行。", file=sys.stderr)
         if plan.requires_db_readiness:
             run_db_readiness_flow(
                 repo_root,
@@ -128,7 +128,7 @@ def run_db_readiness_flow(
 ) -> None:
     if not plan.readiness_supported:
         if shprod:
-            raise RuntimeError("DB readiness contract 不支持自动校验；停止进入上海生产待同步状态。")
+            raise RuntimeError("DB readiness contract 不支持自动校验；停止进入生产待同步状态。")
         raise RuntimeError("DB readiness contract 不支持自动校验；停止自动发布。")
     if apply_migration and plan.requires_db_job:
         args = [
@@ -159,7 +159,7 @@ def run_db_readiness_flow(
         run_with_db_tools(repo_root, args, cwd=gitops_worktree)
 
     if shprod:
-        print("GitOps 待同步门禁：执行上海生产 DB readiness 只读校验", file=sys.stderr)
+        print(f"GitOps 待同步门禁：执行 {env} 生产 DB readiness 只读校验", file=sys.stderr)
     else:
         print("GitOps 发布门禁：执行 DB readiness 只读校验", file=sys.stderr)
     run_with_db_tools(

@@ -31,7 +31,7 @@ extends:
     BUNDLE: admin-gateway
     DISPLAY_NAME: admin-gateway
     DEFAULT_TARGET_ENV: shprod
-    MASTER_BUILD_ENVS: beijing-sandbox,shprod
+    MASTER_BUILD_ENVS: beijing-sandbox,shprod,sgprod
     MASTER_AUTO_PIN_ENVS: beijing-sandbox
     PLAYGROUND_BUILD_ENVS: auto
     PLAYGROUND_AUTO_PIN_ENVS: auto

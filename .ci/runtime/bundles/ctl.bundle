@@ -41,6 +41,7 @@ bundles:
     - ctl/k8s/base
     - ctl/k8s/overlays/beijing-sandbox
     - ctl/k8s/overlays/shprod
+    - ctl/k8s/overlays/sgprod
     - ctl/Dockerfile
     exit_condition: Can be removed only after the deployable contract moves to an
       explicit imported package path.
@@ -81,4 +82,5 @@ bundles:
     image_repo:
       beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/ctl
       shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/ctl
+      sgprod: lightclaw-sgprod.tencentcloudcr.com/lightclaw/ctl
       beijing-sandbox-2: lightclaw-bj8.tencentcloudcr.com/lightclaw/ctl

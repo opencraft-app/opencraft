@@ -228,20 +228,23 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
         self.assertNotIn("GATE_READINESS_SUPPORTED", found_gate_vars)
         self.assertNotIn("GATE_RELEASE_DEPENDENCIES", found_gate_vars)
 
-    def test_shprod_promote_branches_are_not_removed_by_automation(self) -> None:
+    def test_prod_promote_branches_are_not_removed_by_automation(self) -> None:
         workflow = (REPO_ROOT / ".ci/gitops-promotion.yml").read_text()
         pin_script = (REPO_ROOT / ".ci/runtime/pin_image_to_gitops.sh").read_text()
-        policy = policy_for_branch("promote-shprod-lightclaw-auth-tag")
+        for branch in ["promote-shprod-lightclaw-auth-tag", "promote-sgprod-lightclaw-auth-tag"]:
+            with self.subTest(branch=branch):
+                policy = policy_for_branch(branch)
 
-        self.assertIsNotNone(policy)
-        self.assertFalse(policy.cleanup_source_branch)
-        self.assertEqual(policy.verify_mode.value, "merge_only")
-        self.assertEqual(policy.kustomize_mode.value, "changed_only")
-        self.assertEqual(policy.required_argo_sync, "manual")
+                self.assertIsNotNone(policy)
+                self.assertFalse(policy.cleanup_source_branch)
+                self.assertEqual(policy.verify_mode.value, "merge_only")
+                self.assertEqual(policy.kustomize_mode.value, "changed_only")
+                self.assertEqual(policy.required_argo_sync, "manual")
         self.assertIn("cleanup_gitops_promotion.py", workflow)
         self.assertIn("北京收敛与上海待同步验收", workflow)
         self.assertIn('case "$ENV_NAME" in', pin_script)
         self.assertIn("shprod)", pin_script)
+        self.assertIn("sgprod)", pin_script)
         self.assertIn("MR_ARGS+=(--remove-source-branch)", pin_script)
         self.assertIn("进入${ENV_DISPLAY_NAME}待同步状态", pin_script)
 

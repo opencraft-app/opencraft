@@ -12,6 +12,7 @@ bundles:
     - service-gateway/k8s/base
     - service-gateway/k8s/overlays/beijing-sandbox
     - service-gateway/k8s/overlays/shprod
+    - service-gateway/k8s/overlays/sgprod
     - service-gateway/Dockerfile
     exit_condition: Can be removed only after the deployable contract moves to an
       explicit imported package path.
@@ -28,6 +29,7 @@ bundles:
       - argocd/secrets/shprod/service-gateway-runtime-secrets.sops.yaml
       - service-gateway/k8s/base/**
       - service-gateway/k8s/overlays/shprod/**
+      - service-gateway/k8s/overlays/sgprod/**
       beijing-sandbox:
       - argocd/services/service-gateway/beijing-sandbox/**
       - argocd/services/service-gateway/common/**
@@ -52,4 +54,5 @@ bundles:
     image_repo:
       beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/service-gateway
       shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/service-gateway
+      sgprod: lightclaw-sgprod.tencentcloudcr.com/lightclaw/service-gateway
       beijing-sandbox-2: lightclaw-bj8.tencentcloudcr.com/lightclaw/service-gateway

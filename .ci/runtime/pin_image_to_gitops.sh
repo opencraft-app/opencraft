@@ -213,7 +213,7 @@ ENV_DISPLAY_NAME="$(env_display_name "$ENV_NAME")"
 RELEASE_ID="${ENV_NAME}/${SERVICE_ARG}/${SOURCE_SHORT}/${IMAGE_TAG}"
 
 echo "============================================================"
-if [[ "$ENV_NAME" == "shprod" ]]; then
+if [[ "$ENV_NAME" == "shprod" || "$ENV_NAME" == "sgprod" ]]; then
   echo "GitOps 待同步意图：准备把镜像 desired state 推进到 ${ENV_DISPLAY_NAME}"
 else
   echo "GitOps 发布意图：准备把镜像推进到 ${ENV_DISPLAY_NAME}"
@@ -265,7 +265,7 @@ Release-gate-dependency-changed: ${GATE_RELEASE_DEPENDENCY_CHANGED}
 Source-revision: ${SOURCE_REF}
 EOF
 )"
-if [[ "$ENV_NAME" == "shprod" ]]; then
+if [[ "$ENV_NAME" == "shprod" || "$ENV_NAME" == "sgprod" ]]; then
   COMMIT_TITLE="进入${ENV_DISPLAY_NAME}待同步状态：${SERVICE_ARG}"
   MR_TITLE="进入${ENV_DISPLAY_NAME}待同步状态：${SERVICE_ARG}"
   MR_DESCRIPTION_HEADER="自动化 GitOps 待同步变更。"

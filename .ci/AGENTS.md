@@ -64,6 +64,7 @@ CI runtime 会优先读取构建机本地文件，再回退到 Stream settings�
 - `/etc/lightclaw-ci/git_woa_private_token`
 - `/etc/lightclaw-ci/tcr_beijing_password`
 - `/etc/lightclaw-ci/tcr_shprod_password`
+- `/etc/lightclaw-ci/tcr_sgprod_password`
 - `/etc/lightclaw-ci/cloudflare_api_token`
 - `/etc/lightclaw-ci/cloudflare_account_id`
 - `/etc/lightclaw-ci/edgeone_lightvela_prod_token`
@@ -71,6 +72,7 @@ CI runtime 会优先读取构建机本地文件，再回退到 Stream settings�
 - `/etc/lightclaw-ci/kubeconfig_beijing_sandbox`
 - `/etc/lightclaw-ci/kubeconfig_beijing_sandbox_2`
 - `/etc/lightclaw-ci/kubeconfig_shprod`
+- `/etc/lightclaw-ci/kubeconfig_sgprod`
 - `/etc/lightclaw-ci/kubeconfig_singapore_sandbox`
 
 `edgeone_lightvela_prod_token` 用于 `发布 frontend eo:cn-lightvela-prod`，应是 `lightvela` 正式项目可用的 EdgeOne Pages API token，不要复用 `lightvela-preview` 的预览 token。
