@@ -111,6 +111,7 @@ CI 入口：
 - CI 使用 `python3 images/build-image.py --runtime hermes --base-image-id img-id352nof --with-verify`
 - 腾讯云凭据从构建机本地 `/etc/lightclaw-ci/tencentcloud_secret_id` 和 `/etc/lightclaw-ci/tencentcloud_secret_key` 读取
 - CI 会自动安装并缓存 `tccli`，不要求构建机预装腾讯云 CLI
+- CI 会自动安装并缓存 Go，用于上传前本地编译 `images/bin/envd`
 
 ### Full Build
 

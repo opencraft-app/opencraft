@@ -875,6 +875,46 @@ ci_install_tccli() {
   ci_log "installed tccli at ${install_dir}/venv/bin/tccli"
 }
 
+ci_ensure_go() {
+  ci_require_commands curl tar
+
+  local version="${GO_VERSION_OVERRIDE:-1.25.4}"
+  local os arch archive cache_root install_dir bin url
+
+  os="$(ci_os_name)"
+  arch="$(ci_arch_name)"
+  archive="go${version}.${os}-${arch}.tar.gz"
+  cache_root="${HOME}/.cache/lightclaw-ci/go"
+  install_dir="${cache_root}/go${version}.${os}-${arch}"
+  bin="${install_dir}/bin/go"
+  url="https://go.dev/dl/${archive}"
+
+  if [[ ! -x "$bin" ]]; then
+    ci_with_lock "go-${version}-${os}-${arch}" ci_install_go "$url" "$archive" "$cache_root" "$install_dir"
+  else
+    ci_log "go ${version} already present at ${bin}"
+  fi
+
+  export PATH="${install_dir}/bin:${PATH}"
+  export GO_BIN="$bin"
+  export GOTOOLCHAIN=local
+  ci_log "go ready at ${GO_BIN} ($("$GO_BIN" version))"
+}
+
+ci_install_go() {
+  local url="$1"
+  local archive="$2"
+  local cache_root="$3"
+  local install_dir="$4"
+
+  rm -rf "$install_dir"
+  mkdir -p "$cache_root" "$install_dir"
+  ci_download_file "$url" "${cache_root}/${archive}"
+  tar -xzf "${cache_root}/${archive}" -C "$install_dir" --strip-components=1
+  chmod +x "${install_dir}/bin/go"
+  ci_log "installed go at ${install_dir}/bin/go"
+}
+
 ci_ensure_node() {
   local node_version="${NODE_VERSION_OVERRIDE:-22.12.0}"
   local node_dist="node-v${node_version}-linux-x64"
