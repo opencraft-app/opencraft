@@ -105,6 +105,12 @@ python3 images/build-image.py --runtime hermes --base-image-id img-id352nof --wi
 - 默认验证套件：`runtime-hermes`
 - 不支持 OpenClaw 的插件 / skill 安装参数
 
+CI 入口：
+
+- `master` 上 `images/**` 变更会触发 `.ci/hermes-image.yml`
+- CI 使用 `python3 images/build-image.py --runtime hermes --base-image-id img-id352nof --with-verify`
+- 腾讯云凭据从构建机本地 `/etc/lightclaw-ci/tencentcloud_secret_id` 和 `/etc/lightclaw-ci/tencentcloud_secret_key` 读取
+
 ### Full Build
 
 从 Ubuntu 公网镜像直接完整构建：
