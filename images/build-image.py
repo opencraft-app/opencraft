@@ -147,6 +147,9 @@ DEFAULT_WEIXIN_VERSION = BUILD_MANIFEST["runtime"].get("weixin_version", "2.1.1"
 DEFAULT_HERMES_RUNTIME_USER = BUILD_MANIFEST.get("runtime_hermes", {}).get("runtime_user", "agentuser")
 DEFAULT_HERMES_NODE_MAJOR = str(BUILD_MANIFEST.get("runtime_hermes", {}).get("node_major", "22"))
 DEFAULT_HERMES_QWEN_CODE_VERSION = BUILD_MANIFEST.get("runtime_hermes", {}).get("qwen_code_version", "latest")
+DEFAULT_HERMES_VERSION = BUILD_MANIFEST.get("runtime_hermes", {}).get("version", "")
+DEFAULT_HERMES_SRC_VERSION = BUILD_MANIFEST.get("runtime_hermes", {}).get("src_version", "")
+DEFAULT_HERMES_GIT_COMMIT = BUILD_MANIFEST.get("runtime_hermes", {}).get("git_commit", "")
 BOOTSTRAP_SSH_USERS = ("ubuntu",)
 VERSION_QUERY_TIMEOUT = 15
 
@@ -1012,6 +1015,9 @@ def build_image_metadata(args, image_name, image_version, build_mode, verify_sui
         "weixin_version": args.weixin_version,
         "hermes_runtime_user": args.runtime_user if args.runtime == "hermes" else "",
         "hermes_node_major": DEFAULT_HERMES_NODE_MAJOR if args.runtime == "hermes" else "",
+        "hermes_version": args.hermes_version if args.runtime == "hermes" else "",
+        "hermes_src_version": DEFAULT_HERMES_SRC_VERSION if args.runtime == "hermes" else "",
+        "hermes_git_commit": DEFAULT_HERMES_GIT_COMMIT if args.runtime == "hermes" else "",
         "hermes_qwen_code_version": DEFAULT_HERMES_QWEN_CODE_VERSION if args.runtime == "hermes" else "",
         "skills_mode": args.skills,
         "custom_skills": args.custom_skills,
@@ -1393,6 +1399,7 @@ def terminate_instance(instance_id, region, dry_run=False):
 
 def step_deploy_build(ssh_host, ssh_port, openclaw_version=None, build_mode=None,
                       runtime_kind="openclaw",
+                      hermes_version=None,
                       only_plugins=None, qqbot_version=None, weixin_version=None,
                       skills_mode="essential", custom_skills=None,
                       runtime_user=DEFAULT_RUNTIME_USER,
@@ -1410,6 +1417,8 @@ def step_deploy_build(ssh_host, ssh_port, openclaw_version=None, build_mode=None
     build_args = []
     if runtime_kind and runtime_kind != "openclaw":
         build_args.extend(["--runtime", runtime_kind])
+    if runtime_kind == "hermes" and hermes_version:
+        build_args.extend(["--hermes-version", hermes_version])
     if runtime_kind == "openclaw" and openclaw_version:
         build_args.append(openclaw_version)
     if build_mode == "base-only":
@@ -1751,6 +1760,10 @@ def main():
         help="应用层运行时：openclaw | hermes (default: openclaw)",
     )
     parser.add_argument(
+        "--hermes-version", default=DEFAULT_HERMES_VERSION,
+        help=f"Hermes COS 版本，例如 hermes-agent-v20260506 (default: {DEFAULT_HERMES_VERSION or 'latest.json'})",
+    )
+    parser.add_argument(
         "--remote-build-dir", default=DEFAULT_REMOTE_BUILD_DIR,
         help=f"远端构建工作目录；制镜前会清理 (default: {DEFAULT_REMOTE_BUILD_DIR})",
     )
@@ -1951,6 +1964,8 @@ def main():
     if args.runtime == "hermes":
         log(f"  Hermes 用户:  {args.runtime_user}")
         log(f"  Hermes Node:  {DEFAULT_HERMES_NODE_MAJOR}")
+        log(f"  Hermes 版本:  {args.hermes_version or 'latest.json'}")
+        log(f"  Hermes 源版本: {DEFAULT_HERMES_SRC_VERSION or '未知'}")
         log(f"  Qwen Code:    {DEFAULT_HERMES_QWEN_CODE_VERSION}")
     else:
         log(f"  OpenClaw:     {args.openclaw_version or '默认'}")
@@ -2027,6 +2042,7 @@ def main():
                 openclaw_version=args.openclaw_version,
                 build_mode="base-only",
                 runtime_kind=args.runtime,
+                hermes_version=args.hermes_version,
                 runtime_user=args.runtime_user,
                 remote_dir=args.remote_build_dir,
                 dry_run=args.dry_run,
@@ -2069,6 +2085,7 @@ def main():
                     openclaw_version=args.openclaw_version,
                     build_mode=build_mode,
                     runtime_kind=args.runtime,
+                    hermes_version=args.hermes_version,
                     only_plugins=args.only_plugins,
                     qqbot_version=args.qqbot_version,
                     weixin_version=args.weixin_version,
@@ -2124,6 +2141,7 @@ def main():
                 openclaw_version=args.openclaw_version,
                 build_mode=build_mode,
                 runtime_kind=args.runtime,
+                hermes_version=args.hermes_version,
                 only_plugins=args.only_plugins,
                 qqbot_version=args.qqbot_version,
                 weixin_version=args.weixin_version,
@@ -2157,6 +2175,7 @@ def main():
                 openclaw_version=args.openclaw_version,
                 build_mode=build_mode,
                 runtime_kind=args.runtime,
+                hermes_version=args.hermes_version,
                 only_plugins=args.only_plugins,
                 qqbot_version=args.qqbot_version,
                 weixin_version=args.weixin_version,

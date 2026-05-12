@@ -232,13 +232,15 @@ func TestRunCreateInstanceTaskProvisionsAiGatewayOnCreate(t *testing.T) {
 		t.Fatalf("expected ensure user to run once before key creation, got %+v", aiGatewayAdapter.ensureCalls)
 	}
 	if len(sandboxAdapter.processCalls) != 2 {
-		t.Fatalf("expected install + model set process calls, got %d", len(sandboxAdapter.processCalls))
+		t.Fatalf("expected model cli ensure + model set process calls, got %d", len(sandboxAdapter.processCalls))
 	}
-	if !strings.Contains(sandboxAdapter.processCalls[0].Args[2], "curl -fsSL -z /usr/local/bin/harness") {
-		t.Fatalf("expected first process call to install harness, got %q", sandboxAdapter.processCalls[0].Args[2])
+	if !strings.Contains(sandboxAdapter.processCalls[0].Args[2], "command -v acli") || !strings.Contains(sandboxAdapter.processCalls[0].Args[2], "curl -fsSL -z /usr/local/bin/harness") {
+		t.Fatalf("expected first process call to prefer acli and fall back to harness install, got %q", sandboxAdapter.processCalls[0].Args[2])
 	}
-	if !strings.Contains(sandboxAdapter.processCalls[1].Args[2], "target_user='agentuser'") || !strings.Contains(sandboxAdapter.processCalls[1].Args[2], "harness model set") {
-		t.Fatalf("expected second process call to run harness model set as agentuser, got %q", sandboxAdapter.processCalls[1].Args[2])
+	if !strings.Contains(sandboxAdapter.processCalls[1].Args[2], "target_user='agentuser'") ||
+		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "acli model set") ||
+		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "harness model set") {
+		t.Fatalf("expected second process call to prefer acli and fall back to harness model set as agentuser, got %q", sandboxAdapter.processCalls[1].Args[2])
 	}
 	if !strings.Contains(sandboxAdapter.processCalls[1].Args[2], "--name") || !strings.Contains(sandboxAdapter.processCalls[1].Args[2], "custom") {
 		t.Fatalf("expected hermes provider name to stay fixed as custom, got %q", sandboxAdapter.processCalls[1].Args[2])

@@ -20,13 +20,19 @@ export HOME
 
 HERMES_INSTALL_SCRIPT_URL="https://example.com/install.sh"
 HERMES_INSTALL_ARGS="--skip-setup"
+HERMES_COS_BASE="https://example.com/hermes"
+HERMES_VERSION="hermes-agent-v20260506"
+HERMES_SRC_VERSION="0.12.0"
+HERMES_GIT_COMMIT="eda80e0b"
 HERMES_QWEN_CODE_VERSION="latest"
+HERMES_ACLI_INSTALL_URL="https://example.com/acli/install.sh"
 SKILLHUB_INSTALL_URL="https://example.com/skillhub.sh"
 HERMES_ENV_PROFILE_PATH="${TMPDIR}/etc/profile.d/hermes-env.sh"
 
 LOG_FILE="${TMPDIR}/calls.log"
 PROFILE_FILE="${HERMES_ENV_PROFILE_PATH}"
 INSTALLER_PAYLOAD="${TMPDIR}/installer-payload.sh"
+HERMES_TARBALL="${TMPDIR}/hermes-agent.tar.gz"
 
 log_call() {
   printf '%s\n' "$*" >>"${LOG_FILE}"
@@ -51,20 +57,35 @@ run_as_runtime_user() {
 
 cat <<'EOF' >"${INSTALLER_PAYLOAD}"
 #!/usr/bin/env bash
-mkdir -p "$HOME/.hermes/hermes-agent/venv/bin"
 cat >"$HOME/.hermes/hermes-agent/venv/bin/hermes-agent" <<'INNER'
 #!/usr/bin/env bash
 exit 0
 INNER
+cat >"$HOME/.hermes/hermes-agent/venv/bin/hermes" <<'INNER'
+#!/usr/bin/env bash
+echo "0.12.0"
+INNER
 chmod +x "$HOME/.hermes/hermes-agent/venv/bin/hermes-agent"
+chmod +x "$HOME/.hermes/hermes-agent/venv/bin/hermes"
 exit 0
 EOF
 chmod +x "${INSTALLER_PAYLOAD}"
 
+mkdir -p "${TMPDIR}/hermes-src/hermes-agent/venv/bin"
+cat >"${TMPDIR}/hermes-src/hermes-agent/README.md" <<'EOF'
+hermes fixture
+EOF
+tar -czf "${HERMES_TARBALL}" -C "${TMPDIR}/hermes-src" hermes-agent
+
 curl() {
+  if [[ "${1:-}" == "-fsSL" && "${2:-}" == "${HERMES_COS_BASE}/${HERMES_VERSION}/hermes-agent.tar.gz" && "${3:-}" == "-o" ]]; then
+    cp "${HERMES_TARBALL}" "${4}"
+    log_call "curl-hermes-tarball ${4}"
+    return 0
+  fi
   if [[ "${1:-}" == "-fsSL" && "${2:-}" == "${HERMES_INSTALL_SCRIPT_URL}" && "${3:-}" == "-o" ]]; then
     cp "${INSTALLER_PAYLOAD}" "${4}"
-    log_call "curl-download ${4}"
+    log_call "curl-installer ${4}"
     return 0
   fi
   if [[ "${1:-}" == "-fsSL" && "${2:-}" == "${SKILLHUB_INSTALL_URL}" ]]; then
@@ -73,6 +94,14 @@ curl() {
 exit 0
 EOF
     log_call "curl-skillhub"
+    return 0
+  fi
+  if [[ "${1:-}" == "-fsSL" && "${2:-}" == "${HERMES_ACLI_INSTALL_URL}" ]]; then
+    cat <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+    log_call "curl-acli"
     return 0
   fi
   command curl "$@"
@@ -108,6 +137,11 @@ sudo() {
   command sudo "$@"
 }
 
+acli() {
+  log_call "acli $*"
+  return 0
+}
+
 command() {
   if [[ "${1:-}" == "-v" && "${2:-}" == "skillhub" ]]; then
     return 1
@@ -131,22 +165,20 @@ ln() {
   log_call "ln $*"
 }
 
-grep() {
-  if [[ "${1:-}" == "-q" && "${2:-}" == "npm prefix -g" ]]; then
-    return 1
-  fi
-  command grep "$@"
-}
-
 mkdir -p "${HOME}/.local/bin" "${HOME}/.config/systemd/user"
 
 install_hermes_runtime
 install_hermes_extra_tools
+install_hermes_acli
 
-grep -q "curl-download" "${LOG_FILE}"
+grep -q "curl-hermes-tarball" "${LOG_FILE}"
+grep -q "curl-installer" "${LOG_FILE}"
 grep -q "npm-install @qwen-code/qwen-code@latest" "${LOG_FILE}"
 grep -q "curl-skillhub" "${LOG_FILE}"
+grep -q "curl-acli" "${LOG_FILE}"
+grep -q "acli doctor" "${LOG_FILE}"
 grep -q '\$HOME/.hermes/hermes-agent/venv/bin' "${PROFILE_FILE}"
 grep -q '\$HOME/.local/bin:\$PATH' "${PROFILE_FILE}"
+grep -q '^YUANBAO_ALLOW_ALL_USERS=true$' "${HOME}/.hermes/.env"
 
 echo "ok"

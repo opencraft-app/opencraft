@@ -28,6 +28,8 @@
 - 额外支持实验性运行时分支：
   - `python3 images/build-image.py --runtime hermes ...`
   - 默认运行用户为 `agentuser`
+  - 默认 Hermes 产物来自内部 COS pin 版本：`hermes-agent-v20260506` / `0.12.0`
+  - 镜像内安装 `acli` 并跑 `acli doctor`；CTL 初始化优先走 `acli model set`，旧镜像回退动态注入 `harness`
   - 默认验证套件为 `runtime-hermes`
 
 ## 2. 关键不变量
@@ -55,6 +57,7 @@
   - 如需附带 `envd` 独立回归，再显式加：`--verify-suites envd,runtime`
 - 如需实验 Hermes 运行时：
   - `python3 images/build-image.py --runtime hermes --base-image-id img-id352nof --with-verify`
+  - 可用 `--hermes-version hermes-agent-v20260506` 临时覆盖 Hermes COS 版本
   - 默认不会跑 OpenClaw 的 `runtime` / `weixin-login` 校验
 - 如果目标是验证 `weixin` 新版本，优先重新构镜并在 fresh sandbox 上验收；不要默认依赖“进实例临时 `openclaw plugins install/update`”这条高波动路径
 - 只验证到实例、不制镜时：
