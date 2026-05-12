@@ -3240,12 +3240,10 @@ export const OpenClawSettingsPage = () => {
                       ...createLighthouseConfig({
                         agentType: "hermes",
                         supportsTencentCloudApi: false,
+                        isI18n: isGlobal,
                       }),
                       runCommand: commandAdapter.runCommand,
                       getInvocationTask: commandAdapter.getInvocationTask,
-                      // 国际站标识：用于 SDK 内根据站点类型过滤模型/通道列表
-                      // （isGlobal 来自 VITE_REGION，国内站为 false，国际站为 true）。
-                      isI18n: isGlobal,
                     };
                     // 操作禁用 / 数据加载相关 prop 全部走 SDK 默认值：
                     //   isOperationDisabled=false / operationDisabledContent=""
