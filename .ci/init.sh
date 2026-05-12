@@ -557,6 +557,34 @@ ci_load_cloudflare_credentials() {
   fi
 }
 
+ci_load_tencentcloud_credentials() {
+  local secret_id_file="${TENCENTCLOUD_SECRET_ID_FILE:-/etc/lightclaw-ci/tencentcloud_secret_id}"
+  local secret_key_file="${TENCENTCLOUD_SECRET_KEY_FILE:-/etc/lightclaw-ci/tencentcloud_secret_key}"
+  local raw_secret_id=""
+  local raw_secret_key=""
+  local secret_id=""
+  local secret_key=""
+
+  if [[ ! -r "$secret_id_file" || ! -r "$secret_key_file" ]]; then
+    echo "missing Tencent Cloud credentials: provide ${secret_id_file} and ${secret_key_file}" >&2
+    return 1
+  fi
+
+  raw_secret_id="$(cat "$secret_id_file")"
+  raw_secret_key="$(cat "$secret_key_file")"
+  secret_id="$(printf '%s' "$raw_secret_id" | ci_read_secret_value)"
+  secret_key="$(printf '%s' "$raw_secret_key" | ci_read_secret_value)"
+
+  if [[ -z "$secret_id" || -z "$secret_key" ]]; then
+    echo "Tencent Cloud credentials loaded from files but at least one value is empty after trimming" >&2
+    return 1
+  fi
+
+  export TENCENTCLOUD_SECRET_ID="$secret_id"
+  export TENCENTCLOUD_SECRET_KEY="$secret_key"
+  ci_log "Tencent Cloud credentials loaded from local files (secret_id_len=${#secret_id}, secret_id_fingerprint=$(printf '%s' "$secret_id" | ci_fingerprint_secret), secret_key_len=${#secret_key}, secret_key_fingerprint=$(printf '%s' "$secret_key" | ci_fingerprint_secret))"
+}
+
 ci_load_edgeone_credentials() {
   local api_token_file="${EDGEONE_API_TOKEN_FILE:-/etc/lightclaw-ci/edgeone_api_token}"
   local raw_token=""
