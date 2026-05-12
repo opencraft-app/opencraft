@@ -189,8 +189,8 @@ const mapBundleToPlan = (bundle: Bundle, index: number, t: (zh: string, opts?: R
     name: bundle.bundle_name,
     badge: soldOut ? t("已售罄") : undefined,
     badgeStyle: soldOut ? "tag" : undefined,
-    price: "¥49",
-    priceUnit: t("/ 月"),
+    price: "$7.5",
+    priceUnit: "/ month",
     /* 价格右侧的促销小徽章：告知用户当前为内测限时免费，避免误会为永久免费 */
     promoTag: soldOut ? undefined : t("限时免费"),
     description: t("尝鲜体验，从一个 Agent 开始"),
@@ -253,8 +253,8 @@ const PLACEHOLDER_PLAN_DEFS: PlaceholderPlanDef[] = [
   {
     id: "placeholder-starter",
     name: "巡游 Cruise",
-    price: "¥99",
-    priceUnit: "/ 月",
+    price: "$15",
+    priceUnit: "/ month",
     description: "日常主力，让智能化成为习惯",
     features: [
       { iconKey: "user", label: "Agent", value: "1 个" },
@@ -273,8 +273,8 @@ const PLACEHOLDER_PLAN_DEFS: PlaceholderPlanDef[] = [
   {
     id: "placeholder-pro",
     name: "远航 Voyage",
-    price: "¥279",
-    priceUnit: "/ 月",
+    price: "$42",
+    priceUnit: "/ month",
     description: "体验进阶，把效率拉满",
     features: [
       { iconKey: "user", label: "Agent", value: "3 个" },
@@ -619,8 +619,8 @@ const PlanCard = ({
               fontSize: 12,
               fontWeight: 500,
               color: plan.availableCount <= 5 ? "#C67B1E" : colors.warmGray500,
-              marginTop: -20,
-              marginBottom: 20,
+              marginTop: 6,
+              marginBottom: 18,
             }}
           >
             {t("今日剩余 {{available}}/{{total}} 份", { available: plan.availableCount, total: plan.totalCount })}
@@ -899,7 +899,7 @@ const ConfirmOrderModal = ({
           >
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, fontSize: 14, color: colors.warmGray500 }}>
               <span>{plan.name}{t("订阅")}</span>
-              <span style={{ fontWeight: 600, color: colors.black }}>¥{priceNum}</span>
+              <span style={{ fontWeight: 600, color: colors.black }}>${priceNum}</span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16, fontSize: 14, color: colors.warmGray500 }}>
               <span>{t("订阅周期")}</span>
@@ -908,7 +908,7 @@ const ConfirmOrderModal = ({
             <div style={{ height: 1, background: colors.border, margin: "0 0 16px" }} />
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
               <span style={{ fontSize: 14, color: colors.warmGray500 }}>{t("总计:")}</span>
-              <span style={{ fontSize: 28, fontWeight: 700, color: colors.black, letterSpacing: "-1px" }}>¥{priceNum}</span>
+              <span style={{ fontSize: 28, fontWeight: 700, color: colors.black, letterSpacing: "-1px" }}>${priceNum}</span>
             </div>
           </div>
 
@@ -982,7 +982,7 @@ const ConfirmOrderModal = ({
               onMouseEnter={(e) => { e.currentTarget.style.background = colors.primaryHover; }}
               onMouseLeave={(e) => { e.currentTarget.style.background = colors.primary; }}
             >
-              {t("支付")} ¥{priceNum}
+              {t("支付")} ${priceNum}
             </button>
           </div>
         </div>

@@ -21,11 +21,11 @@ interface OrderItem {
 }
 
 const mockOrders: OrderItem[] = [
-  { id: "202604167832", description: "活动赠送包", type: "购买", duration: "–", quantity: 1, amount: "0.00 CNY", date: "2026-04-16 21:52:02", status: "已完成" },
-  { id: "202604021456", description: "活动赠送包", type: "购买", duration: "–", quantity: 1, amount: "0.00 CNY", date: "2026-04-02 14:26:40", status: "已完成" },
-  { id: "202603261893", description: "活动赠送包", type: "购买", duration: "–", quantity: 1, amount: "0.00 CNY", date: "2026-03-26 20:47:05", status: "已完成" },
-  { id: "202603262047", description: "活动赠送包", type: "购买", duration: "–", quantity: 1, amount: "0.00 CNY", date: "2026-03-26 20:46:56", status: "已完成" },
-  { id: "202602231100", description: "基础体验包", type: "购买", duration: "–", quantity: 1, amount: "0.00 CNY", date: "2026-02-23 19:00:14", status: "已完成" },
+  { id: "202604167832", description: "活动赠送包", type: "购买", duration: "–", quantity: 1, amount: "$0.00", date: "2026-04-16 21:52:02", status: "已完成" },
+  { id: "202604021456", description: "活动赠送包", type: "购买", duration: "–", quantity: 1, amount: "$0.00", date: "2026-04-02 14:26:40", status: "已完成" },
+  { id: "202603261893", description: "活动赠送包", type: "购买", duration: "–", quantity: 1, amount: "$0.00", date: "2026-03-26 20:47:05", status: "已完成" },
+  { id: "202603262047", description: "活动赠送包", type: "购买", duration: "–", quantity: 1, amount: "$0.00", date: "2026-03-26 20:46:56", status: "已完成" },
+  { id: "202602231100", description: "基础体验包", type: "购买", duration: "–", quantity: 1, amount: "$0.00", date: "2026-02-23 19:00:14", status: "已完成" },
 ];
 
 /* ─── Navbar ─── */

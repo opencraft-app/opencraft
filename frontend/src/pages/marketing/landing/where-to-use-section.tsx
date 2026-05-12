@@ -122,15 +122,22 @@ function useCnCards(): UseCaseCard[] {
   ];
 }
 
-/* ── 国际站卡片生成（Telegram / WhatsApp / Discord / Slack，真·品牌 Logo） ── */
+/* ── 国际站卡片生成（WeChat / Telegram / WhatsApp / Discord，真·品牌 Logo） ── */
 function useGlobalCards(): UseCaseCard[] {
   const t = useT();
   return [
     {
+      key: "wechat",
+      glow: "#10CC42",
+      icon: { kind: "img", src: assetUrl("/assets/landing/where-to-use/wechat-logo-550dda.png"), alt: "WeChat" },
+      title: t("WeChat"),
+      desc: t("迅速连接微信会话，随时随地保持联系。"),
+    },
+    {
       key: "telegram",
       glow: "#229ED9",
       icon: { kind: "img", src: assetUrl("/assets/landing/where-to-use/telegram-logo.png"), alt: "Telegram" },
-      title: t("Telegram"),
+      title: t("Telegram（即将支持）"),
       desc: t("轻松一键连接 Telegram 聊天，畅享安全高效的全球沟通体验。"),
     },
     {
@@ -146,13 +153,6 @@ function useGlobalCards(): UseCaseCard[] {
       icon: { kind: "img", src: assetUrl("/assets/landing/where-to-use/discord-logo.png"), alt: "Discord" },
       title: t("Discord（即将支持）"),
       desc: t("连接 Discord 社群频道，让实时交流与协作更加自由。"),
-    },
-    {
-      key: "slack",
-      glow: "#ECB22E",
-      icon: { kind: "img", src: assetUrl("/assets/landing/where-to-use/slack-logo.png"), alt: "Slack" },
-      title: t("Slack（即将支持）"),
-      desc: t("高效连接 Slack 协作，团队沟通与工作流即将无缝接入。"),
     },
   ];
 }
@@ -254,7 +254,7 @@ export function WhereToUseSection() {
         </motion.div>
 
         {/* 四卡片区域：移动端 1列 → 平板 2列 → 桌面 4列
-         * 数据按区域（isGlobal）选择：国内站 QQ/微信/飞书/企微，国际站 Telegram/WhatsApp/Discord/Slack */}
+         * 数据按区域（isGlobal）选择：国内站 QQ/微信/飞书/企微，国际站 WeChat/Telegram/WhatsApp/Discord */}
         <motion.div
           variants={staggerContainer}
           initial="hidden"
