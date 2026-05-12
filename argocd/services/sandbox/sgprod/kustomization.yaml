@@ -13,13 +13,7 @@ patches:
   - path: delete-sandbox-ingress-config.yaml
   - path: delete-servicemonitor.yaml
   - path: delete-podmonitor.yaml
-  - target:
-      kind: Job
-      name: sandbox-db-migrate-v2
-    patch: |-
-      - op: replace
-        path: /metadata/name
-        value: sandbox-db-migrate-v3
+  - path: delete-migration-job.yaml
 
 generators:
   - ksops-secret-generator.yaml
