@@ -54,7 +54,6 @@ stages:
 
               bash -n images/build.sh images/deploy-build.sh images/tests/test-hermes-build-script.sh images/tests/test-hermes-runtime.sh
               python3 -m py_compile images/build-image.py
-              python3 images/build-image.py versions
               python3 images/build-image.py \
                 --runtime hermes \
                 --base-image-id img-id352nof \
