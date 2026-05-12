@@ -92,12 +92,12 @@ export const stepLineGrow = {
 
 /* ── Hero 小动物悬浮上升动画（无翻转） ── */
 
-/** 悬浮上升容器（交错子元素） */
-/* delayChildren 推迟到 2.2s：先让光束扫下来、灯泡点亮，两侧装饰图再被"照"出来依次浮现 */
+/** 悬浮上升容器（三张图同时浮现，无错开） */
+/* delayChildren 0.6s：光束刚扫到灯泡区域时，三张装饰图一起被"照"出来；staggerChildren 0 表示同步出现 */
 export const heroFloatStagger = {
   hidden: {},
   visible: {
-    transition: { staggerChildren: 0.35, delayChildren: 2.2 },
+    transition: { staggerChildren: 0, delayChildren: 0.6 },
   },
 };
 
@@ -108,7 +108,7 @@ export const heroFloatUp = {
     opacity: 1,
     y: 0,
     transition: {
-      duration: 1.8,
+      duration: 0.6,
       ease: [0.16, 1, 0.3, 1],
     },
   },
@@ -121,7 +121,7 @@ export const heroFloatUpLeft = {
     opacity: 1,
     y: 0,
     transition: {
-      duration: 1.8,
+      duration: 0.6,
       ease: [0.16, 1, 0.3, 1],
     },
   },
@@ -134,7 +134,7 @@ export const heroFloatUpRight = {
     opacity: 1,
     y: 0,
     transition: {
-      duration: 1.8,
+      duration: 0.6,
       ease: [0.16, 1, 0.3, 1],
     },
   },

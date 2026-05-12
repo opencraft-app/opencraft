@@ -391,35 +391,6 @@ code {
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.12), 0 8px 24px rgba(0, 0, 0, 0.06);
 }
 
-/* ── Hero 小动物持续悬浮浮动（使用 translateY + GPU 加速，丝滑无抖动） ── */
-.lw-hero-float-1,
-.lw-hero-float-2,
-.lw-hero-float-3 {
-  will-change: transform;
-}
-.lw-hero-float-1 {
-  animation: lw-float-1 4s ease-in-out 3.0s infinite;
-}
-.lw-hero-float-2 {
-  animation: lw-float-2 4.5s ease-in-out 3.2s infinite;
-}
-.lw-hero-float-3 {
-  animation: lw-float-3 3.8s ease-in-out 3.4s infinite;
-}
-
-@keyframes lw-float-1 {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-12px); }
-}
-@keyframes lw-float-2 {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-10px); }
-}
-@keyframes lw-float-3 {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-14px); }
-}
-
 /* ── lightclaw-web landing page tokens ── */
 :root {
   --lw-bg: #FFFFFF;

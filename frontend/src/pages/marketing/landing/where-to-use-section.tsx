@@ -216,7 +216,7 @@ export function WhereToUseSection() {
     <section
       id="where-to-use"
       className="relative z-[1] overflow-hidden"
-      style={{ backgroundColor: "#FFFFFF", borderRadius: "61px 61px 0 0" }}
+      style={{ borderRadius: "61px 61px 0 0" }}
     >
       <div className="mx-auto w-full max-w-[1200px] px-6 pb-[64px] pt-[56px] md:px-10 md:pb-[120px] md:pt-[88px]">
         {/* 头部：Badge + 标题（左对齐） */}
