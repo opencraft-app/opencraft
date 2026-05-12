@@ -59,6 +59,8 @@ Cloudflare Pages（`pnpm deploy:cf` / `https://lightclaw.pages.dev`）是跟 mas
 
 验证未合并分支用 **EdgeOne Pages** 预览（项目 `lightvela-preview` / ProjectId `pages-fqdz1kdlfvp1` / 域名 `https://lightvela-preview-hpthlnbc.edgeone.cool`）：
 
+> ⚠️ **多人共享场景**：默认的 `lightvela-preview` project + production 环境会被多人同时使用，谁后部署谁覆盖。如果只是个人临时验证、且其他人**没有正在依赖**这个预览域名，可以直接走下面的 default 命令；如果在做评审 / 给别人发链接、或者已知有人在依赖，**请新建 dedicated preview project**（例如 `lightvela-preview-<你的名字>`）：把命令里的 `-n lightvela-preview` 换成 `-n lightvela-preview-pablo`，或设 `EDGEONE_PAGES_PROJECT_NAME=<dedicated-name>` 后再跑 `pnpm deploy:eo`。
+
 ```bash
 cd frontend
 # 国内站 → dist-cn/（shprod 部署）；国际站 → dist-global/（CF Pages + EdgeOne 预览）
