@@ -10,6 +10,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { LoginModal } from "@/components/site/login-modal";
 import { LegalFooter } from "@/components/site/legal-footer";
 import { useSession } from "@/contexts/session-context";
+import { useT, t as rawT } from "@/i18n/t";
 
 import { LandingNavbar } from "./landing/landing-navbar";
 
@@ -18,6 +19,7 @@ import { LandingNavbar } from "./landing/landing-navbar";
    ═══════════════════════════════════════════════════════════════ */
 
 function HeroSection() {
+  const t = useT();
   return (
     <section
       style={{
@@ -102,7 +104,7 @@ function HeroSection() {
             margin: 0,
           }}
         >
-          关于 LightVela
+          {t("关于 LightVela")}
         </motion.h1>
 
         <motion.p
@@ -117,7 +119,7 @@ function HeroSection() {
             margin: 0,
           }}
         >
-          让每一个数字灵魂，值得被温柔点亮
+          {t("让每一个数字灵魂，值得被温柔点亮")}
         </motion.p>
       </div>
     </section>
@@ -128,26 +130,35 @@ function HeroSection() {
    我们的故事 Section — 时间线风格
    ═══════════════════════════════════════════════════════════════ */
 
-const storyParagraphs = [
+/**
+ * 故事时间线段落。
+ * 注意：模块顶层不能调用 React Hook，因此使用 i18n 命令式接口 `rawT`，
+ * 该接口与 `useT()` 共享同一份 zh→key 反查表，且已被 i18n-extract 收录。
+ * 实际取值时机为模块加载时——在 i18next 初始化后，语言切换会触发整页刷新，
+ * 所以这里取一次值即可（与 `getBotStatusLabel` 的处理方式一致）。
+ */
+const getStoryParagraphs = () => [
   {
     id: "origin",
-    tag: "起源",
-    text: "2026 年 3 月 6 日，我们在深圳腾讯大厦楼下举办了第一场 OpenClaw 公益装机活动，没想到直接引爆了全国装虾热潮，也得到了 OpenClaw 创始人 Peter 的点赞转发。于是，在践行 AI 普惠的路上，我们决定再走一步，在全国各地开展线下公益装机活动，深圳龙岗的千人装机节成为中国最大规模的单场 AI 工具安装活动。再后来，Hermes Agent 的出现，我们也快速迭代跟进，旨在帮助用户能快速拥抱 AI Agent 前沿技术。",
+    tag: rawT("起源"),
+    text: rawT("2026 年 3 月 6 日，我们在深圳腾讯大厦楼下举办了第一场 OpenClaw 公益装机活动，没想到直接引爆了全国装虾热潮，也得到了 OpenClaw 创始人 Peter 的点赞转发。于是，在践行 AI 普惠的路上，我们决定再走一步，在全国各地开展线下公益装机活动，深圳龙岗的千人装机节成为中国最大规模的单场 AI 工具安装活动。再后来，Hermes Agent 的出现，我们也快速迭代跟进，旨在帮助用户能快速拥抱 AI Agent 前沿技术。"),
   },
   {
     id: "insight",
-    tag: "洞察",
-    text: "40+ 个城市，456 场活动，7 万人。这场运动让我们意识到：人们需要的不只是一次安装，而是持续、稳定、无门槛的 AI 服务。LightVela 因此诞生——将 AI Agent 的完整能力搬上云端，7×24 小时待命，数据完全归你。",
+    tag: rawT("洞察"),
+    text: rawT("40+ 个城市，456 场活动，7 万人。这场运动让我们意识到：人们需要的不只是一次安装，而是持续、稳定、无门槛的 AI 服务。LightVela 因此诞生——将 AI Agent 的完整能力搬上云端，7×24 小时待命，数据完全归你。"),
   },
   {
     id: "promise",
-    tag: "承诺",
-    text: "从装虾到全民拥抱 AI Agent，我们一直在。",
+    tag: rawT("承诺"),
+    text: rawT("从装虾到全民拥抱 AI Agent，我们一直在。"),
     isClosing: true,
   },
 ];
 
 function StorySection() {
+  const t = useT();
+  const storyParagraphs = getStoryParagraphs();
   return (
     <section
       style={{
@@ -174,7 +185,7 @@ function StorySection() {
               marginBottom: "14px",
             }}
           >
-            我们的故事
+            {t("我们的故事")}
           </h2>
           <div style={{ width: "28px", height: "2px", background: "#0a0a0a" }} />
         </motion.div>
@@ -194,7 +205,7 @@ function StorySection() {
             fontWeight: 300,
           }}
         >
-          LightVela 由腾讯轻量云团队出品。
+          {t("LightVela 由腾讯轻量云团队出品。")}
         </motion.p>
 
         {/* Paragraphs with tags */}
@@ -273,6 +284,7 @@ function StorySection() {
    ═══════════════════════════════════════════════════════════════ */
 
 function HighlightSection() {
+  const t = useT();
   const [showQR, setShowQR] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -442,7 +454,7 @@ function HighlightSection() {
           margin: 0,
         }}
       >
-        我们把 AI Agent 搬上云端，让你无需折腾部署，随时唤醒，对话数据永远只属于你。
+        {t("我们把 AI Agent 搬上云端，让你无需折腾部署，随时唤醒，对话数据永远只属于你。")}
       </motion.h3>
 
       {/* 找到我们按钮 + 悬浮二维码 */}
@@ -487,11 +499,11 @@ function HighlightSection() {
             >
               <img
                 src="/assets/landing/about/community-qr.png"
-                alt="加入交流群"
+                alt={t("加入交流群")}
                 style={{ width: "160px", height: "160px", borderRadius: "6px" }}
               />
               <span style={{ fontSize: "11px", color: "#888", letterSpacing: "0.04em" }}>
-                扫码加入交流群
+                {t("扫码加入交流群")}
               </span>
             </motion.div>
           )}
@@ -518,7 +530,7 @@ function HighlightSection() {
           }}
         >
           <span style={{ fontSize: "14px" }}>✦</span>
-          找到我们
+          {t("找到我们")}
         </motion.button>
       </motion.div>
     </section>
