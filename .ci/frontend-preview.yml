@@ -105,25 +105,47 @@ stages:
                 echo "STATICPAGES_UPLOAD_TOKEN source=ci-settings fingerprint=$(printf '%s' "$STATICPAGES_UPLOAD_TOKEN" | ci_fingerprint_secret)"
               fi
 
-              staticpages_upload_timeout_seconds=900
+              echo "frontend 预览产物大小："
+              du -sh frontend/dist-cn frontend/dist-global
+
+              staticpages_upload_timeout_seconds=1800
+              staticpages_upload_max_attempts=3
               echo "顺序上传 frontend 国内站和国际站 StaticPages 预览，避免并发更新 StaticPages index"
               echo "StaticPages 上传客户端超时：${staticpages_upload_timeout_seconds}s"
-              python3 .ci/runtime/commands/upload_staticpages_preview.py \
-                --artifact-dir frontend/dist-cn \
-                --api-url "$STATICPAGES_API_URL" \
-                --repository wisp/mono2 \
-                --source-branch "${{ ci.branch }}" \
-                --variant cn \
-                --sha "${{ ci.sha }}" \
-                --timeout-seconds "$staticpages_upload_timeout_seconds" \
-                --no-progress
+              echo "StaticPages 上传最大尝试次数：${staticpages_upload_max_attempts}"
 
-              python3 .ci/runtime/commands/upload_staticpages_preview.py \
-                --artifact-dir frontend/dist-global \
-                --api-url "$STATICPAGES_API_URL" \
-                --repository wisp/mono2 \
-                --source-branch "${{ ci.branch }}" \
-                --variant intl \
-                --sha "${{ ci.sha }}" \
-                --timeout-seconds "$staticpages_upload_timeout_seconds" \
-                --no-progress
+              upload_staticpages_preview() {
+                local variant="$1"
+                local artifact_dir="$2"
+                local attempt status sleep_seconds
+
+                for attempt in $(seq 1 "$staticpages_upload_max_attempts"); do
+                  echo "============================================================"
+                  echo "StaticPages 上传开始：variant=${variant} attempt=${attempt}/${staticpages_upload_max_attempts}"
+                  echo "产物目录：${artifact_dir}"
+                  echo "============================================================"
+                  if python3 .ci/runtime/commands/upload_staticpages_preview.py \
+                    --artifact-dir "$artifact_dir" \
+                    --api-url "$STATICPAGES_API_URL" \
+                    --repository wisp/mono2 \
+                    --source-branch "${{ ci.branch }}" \
+                    --variant "$variant" \
+                    --sha "${{ ci.sha }}" \
+                    --timeout-seconds "$staticpages_upload_timeout_seconds"; then
+                    echo "StaticPages 上传成功：variant=${variant} attempt=${attempt}/${staticpages_upload_max_attempts}"
+                    return 0
+                  fi
+
+                  status=$?
+                  echo "StaticPages 上传失败：variant=${variant} attempt=${attempt}/${staticpages_upload_max_attempts} status=${status}" >&2
+                  if [[ "$attempt" -ge "$staticpages_upload_max_attempts" ]]; then
+                    return "$status"
+                  fi
+                  sleep_seconds=$((attempt * 15))
+                  echo "StaticPages 上传重试等待：${sleep_seconds}s"
+                  sleep "$sleep_seconds"
+                done
+              }
+
+              upload_staticpages_preview cn frontend/dist-cn
+              upload_staticpages_preview intl frontend/dist-global
