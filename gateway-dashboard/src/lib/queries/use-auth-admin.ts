@@ -34,6 +34,13 @@ export interface AuthAdminInvite {
   updatedAt: string;
 }
 
+export interface AuthImpersonationSession {
+  loginUrl: string;
+  expiresAt: string;
+  userId: string;
+  impersonated: boolean;
+}
+
 interface AdminListResponse<T> {
   items: T[];
   total: number;
@@ -59,6 +66,27 @@ export function useDeleteAuthAdminUser() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["auth", "users"] });
     },
+  });
+}
+
+export function useCreateAuthImpersonationSession() {
+  return useMutation({
+    mutationFn: ({
+      userID,
+      returnTo,
+      reason,
+    }: {
+      userID: string;
+      returnTo: string;
+      reason: string;
+    }) =>
+      apiClient<AuthImpersonationSession>(
+        `auth/users/${encodeURIComponent(userID)}/impersonation-sessions`,
+        {
+          method: "POST",
+          body: { returnTo, reason },
+        }
+      ),
   });
 }
 

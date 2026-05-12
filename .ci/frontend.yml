@@ -245,8 +245,11 @@ stages:
                   ;;
               esac
               SOURCE_SHA="${{ variables.SOURCE_SHA }}"
+              CI_SHA_VALUE="${{ ci.sha }}"
+              SOURCE_SHA_ORIGIN="variables.SOURCE_SHA"
               if [ -z "$SOURCE_SHA" ]; then
-                SOURCE_SHA="${{ ci.sha }}"
+                SOURCE_SHA="$CI_SHA_VALUE"
+                SOURCE_SHA_ORIGIN="ci.sha"
               fi
               if [ -z "$SOURCE_SHA" ]; then
                 echo "SOURCE_SHA 为空，且 ci.sha 不可用；无法手动发布 frontend 到 GitOps。" >&2
@@ -254,10 +257,13 @@ stages:
               fi
               echo "============================================================"
               echo "frontend 发布决策：进入 GitOps 手动发布流程"
-              echo "触发原因：PIPELINE_MODE=${{ variables.PIPELINE_MODE }}，满足 promote 发布条件"
+              echo "触发原因：PIPELINE_MODE=${PIPELINE_MODE_VALUE}，满足 promote 发布条件"
               echo "目标环境：${{ variables.TARGET_ENV }}"
               echo "源码提交：$SOURCE_SHA"
-              echo "提交来源：SOURCE_SHA 为空时自动回退到本次手动选择的 ci.sha=${{ ci.sha }}"
+              echo "提交来源：${SOURCE_SHA_ORIGIN}"
+              if [ "$SOURCE_SHA_ORIGIN" = "ci.sha" ]; then
+                echo "SOURCE_SHA 为空，已回退到本次手动选择的 ci.sha"
+              fi
               echo "注意：promote 模式只投影已存在镜像到 GitOps，不构建 TCR 镜像"
               echo "下一步：把 frontend 镜像发布内容投影到 gitops 并创建发布 MR"
               echo "============================================================"

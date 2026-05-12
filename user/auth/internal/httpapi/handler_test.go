@@ -874,6 +874,127 @@ func TestAdminInvitesCreateListAndDisable(t *testing.T) {
 	}
 }
 
+func TestAdminCreateImpersonationSessionReturnsLoginURLAndPublicSessionFlag(t *testing.T) {
+	t.Parallel()
+
+	router := newAuthAdminTestRouter("admin-secret")
+	signUp := performJSONRequest(t, router, http.MethodPost, "/auth/password/sign-up", map[string]any{
+		"name":       "Alice",
+		"email":      "impersonation-http@example.com",
+		"password":   "password123",
+		"inviteCode": "VALID2026",
+	})
+	if signUp.Code != http.StatusOK {
+		t.Fatalf("expected 200 from sign up, got %d: %s", signUp.Code, signUp.Body.String())
+	}
+	var signUpBody sessionResponseBody
+	decodeJSONResponse(t, signUp, &signUpBody)
+
+	created := performAdminJSONRequest(t, router, http.MethodPost, "/admin/users/"+signUpBody.Session.User.ID+"/impersonation-sessions", map[string]any{
+		"returnTo": "https://console.example.com/dashboard?tab=bots#section=users&session_token=old&panel=1&session_token=older",
+		"reason":   "协助用户排查登录问题",
+	}, "admin-secret")
+	if created.Code != http.StatusOK {
+		t.Fatalf("expected 200 from impersonation create, got %d: %s", created.Code, created.Body.String())
+	}
+	var response adminImpersonationSessionResponse
+	decodeJSONResponse(t, created, &response)
+	if !response.Impersonated || response.UserID != signUpBody.Session.User.ID {
+		t.Fatalf("unexpected impersonation response: %+v", response)
+	}
+	if response.ExpiresAt != fixedHTTPTestNow().Add(30*time.Minute).UTC().Format(timeRFC3339Milli) {
+		t.Fatalf("expected short impersonation expiry, got %s", response.ExpiresAt)
+	}
+
+	loginURL, err := url.Parse(response.LoginURL)
+	if err != nil {
+		t.Fatalf("parse login url: %v", err)
+	}
+	if loginURL.Scheme != "https" || loginURL.Host != "console.example.com" || loginURL.Path != "/dashboard" || loginURL.RawQuery != "tab=bots" {
+		t.Fatalf("unexpected login url shape: %s", response.LoginURL)
+	}
+	fragmentValues, err := url.ParseQuery(loginURL.Fragment)
+	if err != nil {
+		t.Fatalf("parse login fragment: %v", err)
+	}
+	tokens := fragmentValues["session_token"]
+	if len(tokens) != 1 || strings.TrimSpace(tokens[0]) == "" {
+		t.Fatalf("expected exactly one session_token in fragment, got %#v from %q", tokens, loginURL.Fragment)
+	}
+	if fragmentValues.Get("section") != "users" || fragmentValues.Get("panel") != "1" {
+		t.Fatalf("expected existing non-token fragment values to be preserved, got %q", loginURL.Fragment)
+	}
+
+	current := performJSONRequest(t, router, http.MethodGet, "/auth/session", nil, &http.Cookie{Name: sessionCookieName, Value: tokens[0]})
+	if current.Code != http.StatusOK {
+		t.Fatalf("expected 200 from impersonated current session, got %d: %s", current.Code, current.Body.String())
+	}
+	var currentBody sessionResponseBody
+	decodeJSONResponse(t, current, &currentBody)
+	if !currentBody.Session.Impersonated {
+		t.Fatal("expected public session to expose impersonated=true")
+	}
+	var raw map[string]any
+	decodeJSONResponse(t, current, &raw)
+	sessionObject, ok := raw["session"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected session object in response: %#v", raw)
+	}
+	if _, ok := sessionObject["impersonationReason"]; ok {
+		t.Fatalf("public session must not expose impersonation reason: %s", current.Body.String())
+	}
+}
+
+func TestAdminCreateImpersonationSessionValidatesReturnTo(t *testing.T) {
+	t.Parallel()
+
+	router := newAuthAdminTestRouter("admin-secret")
+	signUp := performJSONRequest(t, router, http.MethodPost, "/auth/password/sign-up", map[string]any{
+		"name":       "Alice",
+		"email":      "impersonation-invalid-return@example.com",
+		"password":   "password123",
+		"inviteCode": "VALID2026",
+	})
+	var signUpBody sessionResponseBody
+	decodeJSONResponse(t, signUp, &signUpBody)
+
+	for _, returnTo := range []string{"", "/dashboard", "//console.example.com/dashboard", "javascript:alert(1)", "mailto:a@example.com"} {
+		recorder := performAdminJSONRequest(t, router, http.MethodPost, "/admin/users/"+signUpBody.Session.User.ID+"/impersonation-sessions", map[string]any{
+			"returnTo": returnTo,
+			"reason":   "协助用户",
+		}, "admin-secret")
+		if recorder.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400 for returnTo %q, got %d: %s", returnTo, recorder.Code, recorder.Body.String())
+		}
+	}
+}
+
+func TestAdminCreateImpersonationSessionAllowsStructuredAbsoluteReturnTo(t *testing.T) {
+	t.Parallel()
+
+	for _, returnTo := range []string{
+		"http://console.example.com/path",
+		"https://user:pass@console.example.com/path",
+		"custom://console.example.com/path",
+	} {
+		loginURL, err := buildImpersonationLoginURL(returnTo, "tok_123")
+		if err != nil {
+			t.Fatalf("expected %q to be accepted: %v", returnTo, err)
+		}
+		parsed, err := url.Parse(loginURL)
+		if err != nil {
+			t.Fatalf("parse generated url: %v", err)
+		}
+		fragmentValues, err := url.ParseQuery(parsed.Fragment)
+		if err != nil {
+			t.Fatalf("parse generated fragment: %v", err)
+		}
+		if fragmentValues.Get("session_token") != "tok_123" {
+			t.Fatalf("expected session_token fragment in %s", loginURL)
+		}
+	}
+}
+
 type sessionResponseBody struct {
 	Session struct {
 		User *struct {
@@ -887,6 +1008,7 @@ type sessionResponseBody struct {
 		PlanSelection *struct {
 			Tier string `json:"tier"`
 		} `json:"planSelection"`
+		Impersonated bool `json:"impersonated"`
 	} `json:"session"`
 }
 

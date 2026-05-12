@@ -368,6 +368,55 @@ func TestConfirmedPlanPersistsAcrossPasswordSessions(t *testing.T) {
 	}
 }
 
+func TestCreateImpersonationSessionMarksSessionAndKeepsReasonInternal(t *testing.T) {
+	store := NewMemoryStore(StoreOptions{
+		Now:                fixedNow,
+		SeedDefaultInvites: true,
+	})
+	svc := NewWithStore(store, Options{Now: fixedNow})
+	normalSession := mustPasswordSessionWithStore(t, svc, "impersonation@example.com")
+
+	if normalSession.Impersonated {
+		t.Fatal("expected normal password session not to be impersonated")
+	}
+
+	session, err := svc.CreateImpersonationSession(context.Background(), normalSession.User.ID, "  帮用户排查账单问题  ")
+	if err != nil {
+		t.Fatalf("create impersonation session: %v", err)
+	}
+	if !session.Impersonated {
+		t.Fatal("expected impersonation session to be marked")
+	}
+	if session.ImpersonationReason != "帮用户排查账单问题" {
+		t.Fatalf("expected trimmed reason to be stored internally, got %q", session.ImpersonationReason)
+	}
+	if session.ExpiresAt.Sub(fixedNow()) != impersonationSessionTTL {
+		t.Fatalf("expected short impersonation ttl %s, got %s", impersonationSessionTTL, session.ExpiresAt.Sub(fixedNow()))
+	}
+
+	current, err := svc.CurrentSession(context.Background(), session.Token)
+	if err != nil {
+		t.Fatalf("current impersonation session: %v", err)
+	}
+	if !current.Impersonated || current.ImpersonationReason != "帮用户排查账单问题" {
+		t.Fatalf("expected persisted impersonation metadata, got impersonated=%v reason=%q", current.Impersonated, current.ImpersonationReason)
+	}
+}
+
+func TestCreateImpersonationSessionRequiresReason(t *testing.T) {
+	svc := New(Options{Now: fixedNow})
+	session := mustPasswordSession(t, svc, "impersonation-reason@example.com")
+
+	_, err := svc.CreateImpersonationSession(context.Background(), session.User.ID, "   ")
+	if err == nil {
+		t.Fatal("expected missing reason to fail")
+	}
+	var authErr *Error
+	if !errors.As(err, &authErr) || authErr.Code != "impersonation_reason_required" || authErr.Status != 400 {
+		t.Fatalf("expected impersonation_reason_required 400, got %#v", err)
+	}
+}
+
 func TestDeleteCurrentUserRemovesUserSessionsAndSubscription(t *testing.T) {
 	svc := New(Options{Now: fixedNow})
 

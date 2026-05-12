@@ -1,10 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { MoreHorizontal, Trash2 } from "lucide-react";
+import { LogIn, MoreHorizontal, Trash2 } from "lucide-react";
 import { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,11 +14,20 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { DataTable } from "@/components/shared/data-table";
 import { PageHeader } from "@/components/shared/page-header";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import {
+  useCreateAuthImpersonationSession,
   useAuthAdminUsers,
   useDeleteAuthAdminUser,
   type AuthAdminUser,
@@ -26,8 +37,12 @@ import { formatDateTime } from "@/lib/utils";
 export default function AuthUsersPage() {
   const [search, setSearch] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<AuthAdminUser | null>(null);
+  const [impersonationTarget, setImpersonationTarget] = useState<AuthAdminUser | null>(null);
+  const [impersonationReturnTo, setImpersonationReturnTo] = useState("");
+  const [impersonationReason, setImpersonationReason] = useState("");
   const { data, isLoading } = useAuthAdminUsers(search || undefined);
   const deleteUser = useDeleteAuthAdminUser();
+  const createImpersonationSession = useCreateAuthImpersonationSession();
 
   async function handleDeleteUser() {
     if (!deleteTarget) {
@@ -39,6 +54,39 @@ export default function AuthUsersPage() {
       setDeleteTarget(null);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "注销认证用户失败");
+    }
+  }
+
+  function openImpersonationDialog(user: AuthAdminUser) {
+    setImpersonationTarget(user);
+    setImpersonationReturnTo("");
+    setImpersonationReason("");
+  }
+
+  async function handleCreateImpersonationSession() {
+    if (!impersonationTarget) {
+      return;
+    }
+    const returnTo = impersonationReturnTo.trim();
+    const reason = impersonationReason.trim();
+    if (!returnTo || !reason) {
+      toast.error("请输入登录目标 URL 和代登原因");
+      return;
+    }
+
+    try {
+      const session = await createImpersonationSession.mutateAsync({
+        userID: impersonationTarget.id,
+        returnTo,
+        reason,
+      });
+      window.open(session.loginUrl, "_blank", "noopener,noreferrer");
+      toast.success("代登链接已打开");
+      setImpersonationTarget(null);
+      setImpersonationReturnTo("");
+      setImpersonationReason("");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "创建代登会话失败");
     }
   }
 
@@ -128,6 +176,10 @@ export default function AuthUsersPage() {
               <MoreHorizontal className="h-4 w-4" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => openImpersonationDialog(row.original)}>
+                <LogIn className="mr-2 h-4 w-4" />
+                以此用户身份登录
+              </DropdownMenuItem>
               <DropdownMenuItem
                 variant="destructive"
                 onClick={() => setDeleteTarget(row.original)}
@@ -174,6 +226,63 @@ export default function AuthUsersPage() {
         onConfirm={handleDeleteUser}
         loading={deleteUser.isPending}
       />
+
+      <Dialog open={!!impersonationTarget} onOpenChange={(open) => !open && setImpersonationTarget(null)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>以用户身份登录</DialogTitle>
+            <DialogDescription>
+              创建一个短时运营代登会话，并把 session_token 写入你输入的目标 URL fragment。目标站点会以该用户身份启动。
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="rounded-lg border bg-muted/40 p-3 text-sm">
+              <div className="font-medium">{impersonationTarget?.name || impersonationTarget?.id}</div>
+              <code className="mt-1 block text-xs text-muted-foreground">{impersonationTarget?.id}</code>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="impersonation-return-to">登录目标 URL</Label>
+              <Input
+                id="impersonation-return-to"
+                placeholder="https://lightclaw.tech/openclaw/settings"
+                value={impersonationReturnTo}
+                onChange={(event) => setImpersonationReturnTo(event.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                必须是包含 scheme 和 host 的绝对 URL；域名不做白名单限制。
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="impersonation-reason">代登原因</Label>
+              <Textarea
+                id="impersonation-reason"
+                value={impersonationReason}
+                onChange={(event) => setImpersonationReason(event.target.value)}
+                placeholder="例如：协助用户排查订单状态"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setImpersonationTarget(null)}
+              disabled={createImpersonationSession.isPending}
+            >
+              取消
+            </Button>
+            <Button
+              onClick={() => void handleCreateImpersonationSession()}
+              disabled={createImpersonationSession.isPending}
+            >
+              {createImpersonationSession.isPending ? "创建中..." : "创建并打开"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

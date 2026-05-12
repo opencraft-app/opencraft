@@ -574,6 +574,7 @@ func (h *Handler) toSessionResponse(ctx context.Context, session *service.AuthSe
 	return api.SessionResponse{
 		Session: api.AuthSession{
 			AuthenticatedAt: session.AuthenticatedAt,
+			Impersonated:    session.Impersonated,
 			SessionToken:    &token,
 			User:            h.toAPIUser(ctx, session.User),
 		},

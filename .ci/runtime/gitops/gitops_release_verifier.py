@@ -151,6 +151,19 @@ def changed_files_from_merge_commit(repo_root: Path, merge_commit_sha: str, targ
     return git_lines(repo_root, "diff", "--name-only", base_revision, merge_commit_sha)
 
 
+def revision_contains_merge_commit(repo_root: Path, revision: str, merge_commit_sha: str, target_branch: str) -> bool:
+    if not revision:
+        return False
+
+    try:
+        ensure_commit_available(repo_root, revision, target_branch)
+        ensure_commit_available(repo_root, merge_commit_sha, target_branch)
+        git_run(repo_root, "merge-base", "--is-ancestor", merge_commit_sha, revision)
+        return True
+    except subprocess.CalledProcessError:
+        return False
+
+
 def infer_release_targets(changed_files: Sequence[str]) -> List[ReleaseTarget]:
     pattern = re.compile(r"^argocd/services/([^/]+)/([^/]+)/")
     ignored_env_dirs = {"common", "profiles"}
@@ -246,11 +259,13 @@ def format_convergence_log_line(
 
 
 def wait_for_application_convergence(
+    repo_root: Path,
     argocd_base_url: str,
     ssl_context: ssl.SSLContext,
     token: str,
     target: ReleaseTarget,
     merge_commit_sha: str,
+    target_branch: str,
     expected_images: Sequence[str],
     wait_seconds: int,
     poll_seconds: int,
@@ -291,7 +306,7 @@ def wait_for_application_convergence(
         )
 
         if (
-            revision == merge_commit_sha
+            revision_contains_merge_commit(repo_root, revision, merge_commit_sha, target_branch)
             and sync_status == "Synced"
             and health_status == "Healthy"
             and set(expected_images).issubset(image_set)
@@ -408,11 +423,13 @@ def main() -> int:
         for target in targets:
             expected_images = expected_images_for_target(repo_root, target)
             snapshot = wait_for_application_convergence(
+                repo_root=repo_root,
                 argocd_base_url=argocd_base_url,
                 ssl_context=ssl_context,
                 token=argocd_token,
                 target=target,
                 merge_commit_sha=merged_mr["merge_commit_sha"],
+                target_branch=args.target_branch,
                 expected_images=expected_images,
                 wait_seconds=args.wait_seconds,
                 poll_seconds=args.poll_seconds,

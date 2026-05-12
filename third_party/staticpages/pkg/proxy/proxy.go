@@ -41,6 +41,29 @@ type Proxy struct {
 	dnsResolver *net.Resolver // Custom DNS resolver using external DNS servers
 }
 
+type proxyResolutionError struct {
+	statusCode int
+	message    string
+}
+
+func (e *proxyResolutionError) Error() string {
+	return e.message
+}
+
+type proxyResolutionErrorContextKey struct{}
+
+type guardedTransport struct {
+	base http.RoundTripper
+}
+
+func (t guardedTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if err, ok := req.Context().Value(proxyResolutionErrorContextKey{}).(*proxyResolutionError); ok {
+		return nil, err
+	}
+
+	return t.base.RoundTrip(req)
+}
+
 // NewProxy initializes and returns a new Proxy instance configured with the provided logger and page definitions.
 func NewProxy(conf config.StaticPagesConfig) *Proxy {
 	// Create custom DNS resolver using external DNS servers (Google DNS and Cloudflare DNS)
@@ -75,19 +98,21 @@ func NewProxy(conf config.StaticPagesConfig) *Proxy {
 		KeepAlive: 30 * time.Second,
 	}
 
+	transport := &http.Transport{
+		DialContext:         p.createDialContext(dialer),
+		MaxIdleConns:        conf.Proxy.MaxIdleConns,
+		MaxIdleConnsPerHost: conf.Proxy.MaxIdleConnsPerHost,
+		IdleConnTimeout:     conf.Proxy.Timeout,
+		DisableCompression:  !conf.Proxy.Compression,
+	}
+
 	p.proxy = &httputil.ReverseProxy{
 		Director:       p.Director,       // Add a proxy director
 		ErrorHandler:   p.ErrorHandler,   // Add error handler to log errors
 		ModifyResponse: p.ModifyResponse, // Add response modifier to log response status
 
 		// Allow transport configuration provided by user
-		Transport: &http.Transport{
-			DialContext:         p.createDialContext(dialer),
-			MaxIdleConns:        conf.Proxy.MaxIdleConns,
-			MaxIdleConnsPerHost: conf.Proxy.MaxIdleConnsPerHost,
-			IdleConnTimeout:     conf.Proxy.Timeout,
-			DisableCompression:  !conf.Proxy.Compression,
-		},
+		Transport: guardedTransport{base: transport},
 	}
 
 	return p
@@ -228,6 +253,7 @@ func (p *Proxy) Director(req *http.Request) {
 		otelzap.L().Ctx(ctx).Warn("request context canceled",
 			zap.String("http.url", req.Host),
 			zap.String("http.path", req.URL.String()))
+		p.rejectRequest(req, api.StatusRequestContextCanceled, "request context canceled")
 		return
 	}
 
@@ -240,6 +266,7 @@ func (p *Proxy) Director(req *http.Request) {
 		requestUrl, _, err = net.SplitHostPort(req.Host)
 		if err != nil {
 			otelzap.L().WithError(err).Ctx(ctx).Error("unable to parse request url", zap.String("request_url", req.Host))
+			p.rejectRequest(req, http.StatusBadRequest, "invalid request host")
 			return
 		}
 	}
@@ -247,18 +274,22 @@ func (p *Proxy) Director(req *http.Request) {
 	page := p.pagesMap.Lookup(requestUrl)
 	if page == nil {
 		otelzap.L().Ctx(ctx).Error("no page found", zap.String("request_url", requestUrl))
+		p.rejectRequest(req, http.StatusNotFound, "StaticPages site not found")
 		return
 	}
 
 	backendUrl, err := url.Parse(page.Proxy.URL.String())
 	if err != nil {
 		otelzap.L().WithError(err).Ctx(ctx).Error("unable to parse proxy.url", zap.String("backend_url", page.Proxy.URL.String()))
+		p.rejectRequest(req, http.StatusBadGateway, "StaticPages backend is misconfigured")
 		return
 	}
 
 	metadata, err := s3_client.GetPageMetadata(ctx, page)
 	if err != nil {
 		otelzap.L().WithError(err).Ctx(ctx).Error("unable to get metadata", zap.String("domain", page.Domain.String()))
+		p.rejectRequest(req, http.StatusBadGateway, "StaticPages metadata is unavailable")
+		return
 	}
 
 	// Find the actual html document we are looking for
@@ -267,6 +298,7 @@ func (p *Proxy) Director(req *http.Request) {
 	sub, err := page.Domain.Subdomain(requestUrl)
 	if err != nil {
 		otelzap.L().WithError(err).Ctx(ctx).Error("unable to parse subdomain", zap.String("request_url", requestUrl))
+		p.rejectRequest(req, http.StatusBadRequest, "invalid preview host")
 		return
 	}
 
@@ -281,6 +313,7 @@ func (p *Proxy) Director(req *http.Request) {
 				zap.String("domain", page.Domain.String()),
 				zap.String("branch", sub),
 			)
+			p.rejectRequest(req, http.StatusNotFound, "StaticPages preview not found")
 			return
 		}
 
@@ -299,6 +332,7 @@ func (p *Proxy) Director(req *http.Request) {
 				zap.String("domain", page.Domain.String()),
 				zap.String("subdomain_or_sha", sub),
 			)
+			p.rejectRequest(req, http.StatusNotFound, "StaticPages preview not found")
 			return
 		}
 	}
@@ -399,6 +433,18 @@ func (p *Proxy) Director(req *http.Request) {
 		zap.String("host_header", req.Host))
 }
 
+func (p *Proxy) rejectRequest(req *http.Request, statusCode int, message string) {
+	*req = *req.WithContext(context.WithValue(req.Context(), proxyResolutionErrorContextKey{}, &proxyResolutionError{
+		statusCode: statusCode,
+		message:    message,
+	}))
+
+	req.URL.Scheme = "http"
+	req.URL.Host = "staticpages.invalid"
+	req.URL.Path = "/"
+	req.RequestURI = ""
+}
+
 // ErrorHandler handles errors during request processing by logging the error and responding with the appropriate HTTP status code.
 func (p *Proxy) ErrorHandler(w http.ResponseWriter, req *http.Request, err error) {
 	ctx, span := p.tracer.Start(req.Context(), "proxy.ErrorHandler", trace.WithAttributes(
@@ -409,6 +455,13 @@ func (p *Proxy) ErrorHandler(w http.ResponseWriter, req *http.Request, err error
 	defer span.End()
 
 	responseCode := http.StatusBadGateway
+	responseMessage := err.Error()
+
+	var resolutionError *proxyResolutionError
+	if errors.As(err, &resolutionError) {
+		responseCode = resolutionError.statusCode
+		responseMessage = resolutionError.message
+	}
 
 	switch err.Error() {
 	case "context canceled":
@@ -419,7 +472,7 @@ func (p *Proxy) ErrorHandler(w http.ResponseWriter, req *http.Request, err error
 		zap.String("request_url", req.Host),
 		zap.Int("http.code", responseCode))
 
-	http.Error(w, err.Error(), responseCode)
+	http.Error(w, responseMessage, responseCode)
 }
 
 // ModifyResponse inspects and logs HTTP responses with a status code of 300 or higher, returning nil or an error.

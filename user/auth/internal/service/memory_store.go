@@ -198,6 +198,13 @@ func (s *MemoryStore) CreateSession(_ context.Context, user User, now time.Time,
 	return s.createSessionLocked(user, now, sessionTTL)
 }
 
+func (s *MemoryStore) CreateImpersonationSession(_ context.Context, user User, reason string, now time.Time, sessionTTL time.Duration) (*AuthSession, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.createSessionWithMetadataLocked(user, now, sessionTTL, true, strings.TrimSpace(reason))
+}
+
 func (s *MemoryStore) CurrentSession(_ context.Context, token string, now time.Time) (*AuthSession, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -577,30 +584,42 @@ func (s *MemoryStore) getSessionLocked(token string, now time.Time) (*AuthSessio
 	}
 
 	return &AuthSession{
-		Token:           record.Token,
-		User:            user,
-		AuthenticatedAt: record.AuthenticatedAt,
+		Token:               record.Token,
+		User:                user,
+		AuthenticatedAt:     record.AuthenticatedAt,
+		ExpiresAt:           record.ExpiresAt,
+		Impersonated:        record.Impersonated,
+		ImpersonationReason: record.ImpersonationReason,
 	}, nil
 }
 
 func (s *MemoryStore) createSessionLocked(user User, now time.Time, sessionTTL time.Duration) (*AuthSession, error) {
+	return s.createSessionWithMetadataLocked(user, now, sessionTTL, false, "")
+}
+
+func (s *MemoryStore) createSessionWithMetadataLocked(user User, now time.Time, sessionTTL time.Duration, impersonated bool, reason string) (*AuthSession, error) {
 	token, err := newOpaqueToken()
 	if err != nil {
 		return nil, fmt.Errorf("create session token: %w", err)
 	}
 
 	record := sessionRecord{
-		Token:           token,
-		UserID:          user.ID,
-		AuthenticatedAt: now,
-		ExpiresAt:       now.Add(sessionTTL),
+		Token:               token,
+		UserID:              user.ID,
+		AuthenticatedAt:     now,
+		ExpiresAt:           now.Add(sessionTTL),
+		Impersonated:        impersonated,
+		ImpersonationReason: strings.TrimSpace(reason),
 	}
 	s.sessions[token] = record
 
 	return &AuthSession{
-		Token:           token,
-		User:            user,
-		AuthenticatedAt: now,
+		Token:               token,
+		User:                user,
+		AuthenticatedAt:     now,
+		ExpiresAt:           record.ExpiresAt,
+		Impersonated:        impersonated,
+		ImpersonationReason: record.ImpersonationReason,
 	}, nil
 }
 

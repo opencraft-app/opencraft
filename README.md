@@ -122,9 +122,16 @@ CLOUDFLARE_PAGES_PROJECT_NAME=lightclaw pnpm deploy:cf
 
 ### 3. Frontend 分支自动预览
 
-当前已经支持基于 StaticPages 的 frontend 分支自动预览。
+当前已经支持基于 StaticPages 的 frontend 自动预览。
 
-只要把分支推送到 `frontsandbox/` 前缀，CI 会自动构建 `frontend/dist-cn` 和 `frontend/dist-global` 并上传到 StaticPages：
+推送到 `master` 且命中 `frontend/**` 时，CI 会自动构建 `frontend/dist-cn` 和 `frontend/dist-global` 并上传到稳定预览地址：
+
+```text
+https://master.preview.lightclaw.tech/
+https://intl-master.preview.lightclaw.tech/
+```
+
+也可以把分支推送到 `frontsandbox/` 前缀生成按分支命名的预览：
 
 ```bash
 git push origin <local-branch>:frontsandbox/<preview-name>

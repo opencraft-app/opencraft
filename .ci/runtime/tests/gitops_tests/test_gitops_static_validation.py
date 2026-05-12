@@ -98,6 +98,31 @@ class GitOpsStaticValidationTests(unittest.TestCase):
 
             self.assertTrue(any("catalog is not covered" in error for error in errors))
 
+    def test_empty_env_publish_paths_skip_bundle_closure(self) -> None:
+        with self.repo() as tmp:
+            repo = self.write_valid_repo(tmp)
+            manifest = (repo / ".ci/runtime/release-bundles.manifest").read_text()
+            manifest += textwrap.dedent(
+                """\
+                  disabled:
+                    owner: disabled
+                    source: disabled
+                    reason: disabled
+                    allowed_paths:
+                      - disabled/k8s/base
+                    exit_condition: never
+                    publish_paths:
+                      - argocd/catalogs/playground/beijing-playground/{env}/disabled.yaml
+                    publish_paths_by_env:
+                      beijing-sandbox: []
+                """
+            )
+            (repo / ".ci/runtime/release-bundles.manifest").write_text(manifest)
+
+            errors = validate(repo, "beijing-sandbox", repo / ".ci/runtime/release-bundles.manifest")
+
+            self.assertEqual(errors, [])
+
     def test_appset_reserved_path_template_fails(self) -> None:
         with self.repo() as tmp:
             repo = self.write_valid_repo(tmp)
