@@ -57,7 +57,14 @@ def _resolve_revision(repo_root: Path, name: str) -> str:
 
 def _fetch_branch(repo_root: Path, branch: str) -> None:
     subprocess.run(
-        ["git", "-C", str(repo_root), "fetch", "origin", branch],
+        [
+            "git",
+            "-C",
+            str(repo_root),
+            "fetch",
+            "origin",
+            f"+refs/heads/{branch}:refs/remotes/origin/{branch}",
+        ],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         check=False,

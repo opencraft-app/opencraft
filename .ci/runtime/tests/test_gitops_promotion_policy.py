@@ -106,6 +106,50 @@ class PromotionCommandTests(unittest.TestCase):
         self.assertEqual(trailers["Release-gate-auto-merge"], "true")
         self.assertEqual(trailers["Release-gate-argo-sync"], "auto")
 
+    def test_release_trailers_refresh_remote_promote_ref(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            origin = Path(temp) / "origin.git"
+            source = Path(temp) / "source"
+            ci = Path(temp) / "ci"
+            subprocess.run(["git", "init", "--bare", origin], check=True, stdout=subprocess.DEVNULL)
+            subprocess.run(["git", "init", "-b", "gitops", source], check=True, stdout=subprocess.DEVNULL)
+            subprocess.run(["git", "config", "user.name", "test"], cwd=source, check=True)
+            subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=source, check=True)
+            (source / "state.txt").write_text("base\n")
+            subprocess.run(["git", "add", "state.txt"], cwd=source, check=True)
+            subprocess.run(["git", "commit", "-m", "base"], cwd=source, check=True, stdout=subprocess.DEVNULL)
+            subprocess.run(["git", "remote", "add", "origin", str(origin)], cwd=source, check=True)
+            subprocess.run(["git", "push", "origin", "gitops"], cwd=source, check=True, stdout=subprocess.DEVNULL)
+
+            subprocess.run(["git", "checkout", "-b", "promote-beijing-sandbox-ctl-tag"], cwd=source, check=True, stdout=subprocess.DEVNULL)
+            (source / "state.txt").write_text("release\n")
+            subprocess.run(["git", "add", "state.txt"], cwd=source, check=True)
+            subprocess.run(
+                [
+                    "git",
+                    "commit",
+                    "-m",
+                    "发布到北京测试：ctl",
+                    "-m",
+                    "Release-id: beijing-sandbox/ctl/source/tag\nRelease-gate-auto-merge: true\nRelease-gate-argo-sync: auto",
+                ],
+                cwd=source,
+                check=True,
+                stdout=subprocess.DEVNULL,
+            )
+            subprocess.run(["git", "push", "origin", "promote-beijing-sandbox-ctl-tag"], cwd=source, check=True, stdout=subprocess.DEVNULL)
+
+            subprocess.run(["git", "clone", "--branch", "gitops", "--single-branch", str(origin), str(ci)], check=True, stdout=subprocess.DEVNULL)
+
+            trailers = gitops_promotion._release_trailers(  # noqa: SLF001
+                ci,
+                "promote-beijing-sandbox-ctl-tag",
+                "gitops",
+            )
+
+        self.assertEqual(trailers["Release-gate-auto-merge"], "true")
+        self.assertEqual(trailers["Release-gate-argo-sync"], "auto")
+
     def test_validate_rejects_ci_changes_in_promote_diff(self) -> None:
         with tempfile.TemporaryDirectory() as repo:
             repo_path = Path(repo)
