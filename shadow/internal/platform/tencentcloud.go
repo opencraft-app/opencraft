@@ -14,6 +14,7 @@ import (
 	tcsts "git.woa.com/tencentcloud-internal/tencentcloud-sdk-go/tencentcloud/sts/v20180813"
 	otellog "go.opentelemetry.io/otel/log"
 
+	"shadow/internal/cloudladder"
 	"shadow/internal/telemetry"
 )
 
@@ -25,6 +26,7 @@ type TencentCloudOptions struct {
 	STSEndpoint     string
 	SecretID        string
 	SecretKey       string
+	CloudLadder     cloudladder.Options
 	RequestTimeout  time.Duration
 }
 
@@ -48,6 +50,14 @@ func NewTencentCloudProvider(opts TencentCloudOptions) (*TencentCloudProvider, e
 	if opts.RequestTimeout == 0 {
 		opts.RequestTimeout = 10 * time.Second
 	}
+	if err := opts.CloudLadder.Validate(); err != nil {
+		return nil, err
+	}
+	for _, endpoint := range []string{opts.AccountEndpoint, opts.CAMEndpoint, opts.STSEndpoint} {
+		if _, err := opts.CloudLadder.ValidateEndpoint(endpoint); err != nil {
+			return nil, err
+		}
+	}
 	return &TencentCloudProvider{opts: opts}, nil
 }
 
@@ -63,6 +73,51 @@ func (p *TencentCloudProvider) baseCredential() common.CredentialIface {
 	return common.NewCredential(p.opts.SecretID, p.opts.SecretKey)
 }
 
+func (p *TencentCloudProvider) accountClient(credential common.CredentialIface) (*tcaccount.Client, error) {
+	client, err := tcaccount.NewClient(credential, p.opts.Region, p.baseProfile(p.opts.AccountEndpoint))
+	if err != nil {
+		return nil, err
+	}
+	transport, err := p.opts.CloudLadder.TransportForEndpoint(p.opts.AccountEndpoint)
+	if err != nil {
+		return nil, err
+	}
+	if transport != nil {
+		client.WithHttpTransport(transport)
+	}
+	return client, nil
+}
+
+func (p *TencentCloudProvider) camClient() (*tccam.Client, error) {
+	client, err := tccam.NewClient(p.baseCredential(), p.opts.Region, p.baseProfile(p.opts.CAMEndpoint))
+	if err != nil {
+		return nil, err
+	}
+	transport, err := p.opts.CloudLadder.TransportForEndpoint(p.opts.CAMEndpoint)
+	if err != nil {
+		return nil, err
+	}
+	if transport != nil {
+		client.WithHttpTransport(transport)
+	}
+	return client, nil
+}
+
+func (p *TencentCloudProvider) stsClient() (*tcsts.Client, error) {
+	client, err := tcsts.NewClient(p.baseCredential(), p.opts.Region, p.baseProfile(p.opts.STSEndpoint))
+	if err != nil {
+		return nil, err
+	}
+	transport, err := p.opts.CloudLadder.TransportForEndpoint(p.opts.STSEndpoint)
+	if err != nil {
+		return nil, err
+	}
+	if transport != nil {
+		client.WithHttpTransport(transport)
+	}
+	return client, nil
+}
+
 func (p *TencentCloudProvider) SendRegisterSMS(ctx context.Context, in SendRegisterSMSInput) error {
 	telemetry.Info(ctx, telemetry.Logger("shadow/internal/platform/tencentcloud"), "tencentcloud SendSmsVerifyCode",
 		otellog.String("endpoint", p.opts.AccountEndpoint),
@@ -72,7 +127,7 @@ func (p *TencentCloudProvider) SendRegisterSMS(ctx context.Context, in SendRegis
 		otellog.String("client_ip", in.ClientIP),
 		otellog.String("lang", defaultString(in.Lang, "zh")),
 	)
-	client, err := tcaccount.NewClient(p.baseCredential(), p.opts.Region, p.baseProfile(p.opts.AccountEndpoint))
+	client, err := p.accountClient(p.baseCredential())
 	if err != nil {
 		return err
 	}
@@ -108,7 +163,7 @@ func (p *TencentCloudProvider) RegisterShadowAccount(ctx context.Context, in Reg
 		otellog.Bool("user_name_set", in.UserName != ""),
 		otellog.String("user_name", in.UserName),
 	)
-	client, err := tcaccount.NewClient(p.baseCredential(), p.opts.Region, p.baseProfile(p.opts.AccountEndpoint))
+	client, err := p.accountClient(p.baseCredential())
 	if err != nil {
 		return RegisterShadowAccountResult{}, err
 	}
@@ -145,7 +200,7 @@ func (p *TencentCloudProvider) RegisterShadowAccount(ctx context.Context, in Reg
 }
 
 func (p *TencentCloudProvider) GetAppIDByUin(ctx context.Context, uin int64) (int64, error) {
-	client, err := tcaccount.NewClient(p.baseCredential(), p.opts.Region, p.baseProfile(p.opts.AccountEndpoint))
+	client, err := p.accountClient(p.baseCredential())
 	if err != nil {
 		return 0, err
 	}
@@ -170,7 +225,7 @@ func (p *TencentCloudProvider) GetSaaSTokenByAuthCode(ctx context.Context, authC
 		otellog.String("client_ip", clientIP),
 		otellog.String("client_ua", clientUA),
 	)
-	client, err := tccam.NewClient(p.baseCredential(), p.opts.Region, p.baseProfile(p.opts.CAMEndpoint))
+	client, err := p.camClient()
 	if err != nil {
 		return SaaSTokenResult{}, err
 	}
@@ -203,7 +258,7 @@ func (p *TencentCloudProvider) GetSaaSAccessToken(ctx context.Context, token Saa
 		otellog.String("client_ip", clientIP),
 		otellog.String("client_ua", clientUA),
 	)
-	client, err := tcsts.NewClient(p.baseCredential(), p.opts.Region, p.baseProfile(p.opts.STSEndpoint))
+	client, err := p.stsClient()
 	if err != nil {
 		return TemporaryCredentials{}, err
 	}
@@ -240,7 +295,7 @@ func (p *TencentCloudProvider) SaveBasicAuth(ctx context.Context, in SaveBasicAu
 		otellog.Bool("has_id_card", in.IDCard != ""),
 	)
 	tokenCred := common.NewTokenCredential(in.Creds.TmpSecretID, in.Creds.TmpSecretKey, in.Creds.Token)
-	client, err := tcaccount.NewClient(tokenCred, p.opts.Region, p.baseProfile(p.opts.AccountEndpoint))
+	client, err := p.accountClient(tokenCred)
 	if err != nil {
 		return err
 	}
@@ -265,7 +320,7 @@ func (p *TencentCloudProvider) AuthenticateUser(ctx context.Context, in Authenti
 		otellog.String("checker", in.Checker),
 		otellog.String("check_type", in.CheckType),
 	)
-	client, err := tcaccount.NewClient(p.baseCredential(), p.opts.Region, p.baseProfile(p.opts.AccountEndpoint))
+	client, err := p.accountClient(p.baseCredential())
 	if err != nil {
 		return err
 	}
@@ -320,7 +375,7 @@ func (p *TencentCloudProvider) DescribeBasicAuth(ctx context.Context) (DescribeB
 		otellog.String("endpoint", p.opts.AccountEndpoint),
 		otellog.String("platform", p.opts.Platform),
 	)
-	client, err := tcaccount.NewClient(p.baseCredential(), p.opts.Region, p.baseProfile(p.opts.AccountEndpoint))
+	client, err := p.accountClient(p.baseCredential())
 	if err != nil {
 		return DescribeBasicAuthResult{}, err
 	}
@@ -352,7 +407,7 @@ func (p *TencentCloudProvider) DescribeBasicAuth(ctx context.Context) (DescribeB
 }
 
 func (p *TencentCloudProvider) UpdatePhone(ctx context.Context, in UpdatePhoneInput) error {
-	client, err := tcaccount.NewClient(p.baseCredential(), p.opts.Region, p.baseProfile(p.opts.AccountEndpoint))
+	client, err := p.accountClient(p.baseCredential())
 	if err != nil {
 		return err
 	}

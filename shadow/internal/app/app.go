@@ -74,6 +74,7 @@ func New(cfg config.Config) (*App, error) {
 			STSEndpoint:     cfg.STSEndpoint,
 			SecretID:        cfg.SecretID,
 			SecretKey:       cfg.SecretKey,
+			CloudLadder:     cfg.CloudLadder,
 			RequestTimeout:  cfg.RequestTimeout,
 		})
 		if err != nil {
@@ -120,6 +121,7 @@ func New(cfg config.Config) (*App, error) {
 			Region:         cfg.BillingAPIRegion,
 			SecretID:       cfg.BillingSecretID,
 			SecretKey:      cfg.BillingSecretKey,
+			CloudLadder:    cfg.CloudLadder,
 			RequestTimeout: cfg.RequestTimeout,
 		})
 		if err != nil {
