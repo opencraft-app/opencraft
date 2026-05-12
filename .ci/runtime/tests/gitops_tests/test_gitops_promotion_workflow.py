@@ -76,6 +76,12 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
         self.assertIn("GitOps 合并后验收", workflow)
         self.assertIn("按环境策略自动合并 GitOps MR", workflow)
 
+    def test_promotion_workflow_uses_full_checkout_history(self) -> None:
+        workflow = (REPO_ROOT / ".ci/gitops-promotion.yml").read_text()
+
+        self.assertEqual(workflow.count("fetchDepth: 0"), 4)
+        self.assertNotIn("fetchDepth: 50", workflow)
+
     def test_build_and_promote_fans_out_auto_pin_envs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             fake_bin = Path(tmp)
