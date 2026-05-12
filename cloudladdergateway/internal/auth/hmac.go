@@ -2,8 +2,6 @@ package auth
 
 import (
 	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
@@ -12,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openclaw/openclaw/mono/cloudladdergateway/internal/audit"
 	"github.com/openclaw/openclaw/mono/cloudladdergateway/internal/config"
+	"github.com/openclaw/openclaw/mono/shared/cloudladdertransport"
 )
 
 var (
@@ -116,21 +114,27 @@ func (a *Authenticator) Verify(req Request) error {
 }
 
 func Sign(secret string, req Request) string {
-	mac := hmac.New(sha256.New, []byte(secret))
-	_, _ = mac.Write([]byte(canonicalString(req)))
-	return "sha256=" + hex.EncodeToString(mac.Sum(nil))
+	return cloudladdertransport.Sign(secret, cloudladdertransport.Request{
+		Caller:    req.Caller,
+		RouteID:   req.RouteID,
+		Method:    req.Method,
+		Path:      req.Path,
+		Query:     req.Query,
+		Body:      req.Body,
+		Timestamp: req.Timestamp,
+	})
 }
 
 func canonicalString(req Request) string {
-	return strings.Join([]string{
-		req.Caller,
-		req.RouteID,
-		strings.ToUpper(req.Method),
-		req.Path,
-		req.Query,
-		req.Timestamp,
-		audit.BodySHA256(req.Body),
-	}, "\n")
+	return cloudladdertransport.CanonicalString(cloudladdertransport.Request{
+		Caller:    req.Caller,
+		RouteID:   req.RouteID,
+		Method:    req.Method,
+		Path:      req.Path,
+		Query:     req.Query,
+		Body:      req.Body,
+		Timestamp: req.Timestamp,
+	})
 }
 
 func RequestFromHTTP(r *http.Request, routeID string, proxyPath string, body []byte) Request {

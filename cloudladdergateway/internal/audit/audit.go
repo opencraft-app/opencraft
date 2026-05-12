@@ -2,8 +2,6 @@ package audit
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,6 +15,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 
 	"github.com/openclaw/openclaw/mono/cloudladdergateway/internal/config"
+	"github.com/openclaw/openclaw/mono/shared/cloudladdertransport"
 )
 
 type Auditor interface {
@@ -187,11 +186,7 @@ func normalizeEvent(event Event) Event {
 }
 
 func BodySHA256(body []byte) string {
-	if len(body) == 0 {
-		return ""
-	}
-	sum := sha256.Sum256(body)
-	return hex.EncodeToString(sum[:])
+	return cloudladdertransport.BodySHA256(body)
 }
 
 func serviceName(cfg config.AuditConfig) string {

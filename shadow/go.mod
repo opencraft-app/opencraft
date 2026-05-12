@@ -6,9 +6,10 @@ require (
 	git.woa.com/tencentcloud-internal/tencentcloud-sdk-go/tencentcloud/account v0.0.0
 	git.woa.com/tencentcloud-internal/tencentcloud-sdk-go/tencentcloud/billing v0.0.0
 	git.woa.com/tencentcloud-internal/tencentcloud-sdk-go/tencentcloud/cam v0.0.0
-	git.woa.com/tencentcloud-internal/tencentcloud-sdk-go/tencentcloud/common v1.0.1198
+	git.woa.com/tencentcloud-internal/tencentcloud-sdk-go/tencentcloud/common v1.0.1226
 	git.woa.com/tencentcloud-internal/tencentcloud-sdk-go/tencentcloud/sts v0.0.0
 	github.com/google/uuid v1.6.0
+	github.com/openclaw/openclaw/mono/shared/cloudladdertransport v0.0.0
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/exporters/stdout/stdoutlog v0.19.0
 	go.opentelemetry.io/otel/log v0.19.0
@@ -35,6 +36,8 @@ require (
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
 )
+
+replace github.com/openclaw/openclaw/mono/shared/cloudladdertransport => ../shared/cloudladdertransport
 
 replace git.woa.com/tencentcloud-internal/tencentcloud-sdk-go/tencentcloud/common => ./tencentcloud-sdk-go/tencentcloud/common
 
