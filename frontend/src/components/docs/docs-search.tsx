@@ -146,8 +146,6 @@ function buildIndex(locale?: string): SearchEntry[] {
   return entries;
 }
 
-const SEARCH_INDEX: SearchEntry[] = buildIndex();
-
 // ── 搜索打分 ────────────────────────────────────────────────────
 
 /**
@@ -174,7 +172,7 @@ function runSearch(query: string, searchIndex: SearchEntry[], limit = 20): Searc
   if (!q) return [];
   const tokens = q.split(/\s+/).filter(Boolean);
   if (!tokens.length) return [];
-  const scored = SEARCH_INDEX.map((e) => ({ e, s: scoreEntry(e, tokens) })).filter(
+  const scored = searchIndex.map((e) => ({ e, s: scoreEntry(e, tokens) })).filter(
     (x) => x.s > 0,
   );
   scored.sort((a, b) => b.s - a.s);
