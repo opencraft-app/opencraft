@@ -29,8 +29,8 @@ func TestStoreAvatarNormalizesAndStoresJPEG(t *testing.T) {
 	if err != nil {
 		t.Fatalf("store avatar failed: %v", err)
 	}
-	if objectKey != "avatars/usr_123/current.jpg" {
-		t.Fatalf("expected object key to use user prefix, got %q", objectKey)
+	if objectKey != "avatars/321_rsu/current.jpg" {
+		t.Fatalf("expected object key to use reversed user prefix, got %q", objectKey)
 	}
 	if client.lastContentType != "image/jpeg" {
 		t.Fatalf("expected normalized jpeg content type, got %q", client.lastContentType)
@@ -65,11 +65,21 @@ func TestSyncRemoteAvatarFetchesRemoteImageAndStores(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sync remote avatar failed: %v", err)
 	}
-	if objectKey != "avatars/usr_qq/current.jpg" {
+	if objectKey != "avatars/qq_rsu/current.jpg" {
 		t.Fatalf("unexpected object key: %q", objectKey)
 	}
 	if client.lastObjectKey != objectKey {
 		t.Fatalf("expected sync to upload object key %q, got %q", objectKey, client.lastObjectKey)
+	}
+}
+
+func TestAvatarObjectKeyReversesUserIDPrefix(t *testing.T) {
+	t.Parallel()
+
+	objectKey := avatarObjectKey("  usr_12345  ")
+
+	if objectKey != "avatars/54321_rsu/current.jpg" {
+		t.Fatalf("expected reversed user id object key, got %q", objectKey)
 	}
 }
 

@@ -162,5 +162,13 @@ func (s *Store) normalizeAvatar(content []byte) ([]byte, error) {
 }
 
 func avatarObjectKey(userID string) string {
-	return fmt.Sprintf("avatars/%s/current.jpg", strings.TrimSpace(userID))
+	return fmt.Sprintf("avatars/%s/current.jpg", reverseString(strings.TrimSpace(userID)))
+}
+
+func reverseString(value string) string {
+	runes := []rune(value)
+	for left, right := 0, len(runes)-1; left < right; left, right = left+1, right-1 {
+		runes[left], runes[right] = runes[right], runes[left]
+	}
+	return string(runes)
 }
