@@ -17,7 +17,10 @@ from contracts.bundles import ImageTarget, is_playground_env, load_bundle, load_
 
 RUNTIME_DIR = Path(__file__).resolve().parents[1]
 REPO_ROOT = RUNTIME_DIR.parents[1]
-PLAYGROUND_FRONTEND_AUTH_API_BASE_URL = "https://lightclaw.tech"
+
+
+def playground_frontend_auth_api_base_url(env: str) -> str:
+    return f"https://api-{env}.lightclaw.tech"
 
 
 def parse_args() -> argparse.Namespace:
@@ -82,7 +85,7 @@ def single_target_from_bundle(service: str, dockerfile: str, build_context: str,
 
 def resolve_docker_build_args(service: str, env: str) -> dict[str, str]:
     if service == "frontend" and is_playground_env(env):
-        return {"VITE_AUTH_API_BASE_URL": PLAYGROUND_FRONTEND_AUTH_API_BASE_URL}
+        return {"VITE_AUTH_API_BASE_URL": playground_frontend_auth_api_base_url(env)}
     return {}
 
 
