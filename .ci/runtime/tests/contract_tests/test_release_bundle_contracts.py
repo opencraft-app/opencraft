@@ -84,6 +84,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 require_build_metadata(load_bundle(manifest, bundle_name, PLAYGROUND_ENV))
                 workflow = self.load_effective_workflow(workflow_path)
                 workflow_entry = yaml.safe_load((REPO_ROOT / workflow_path).read_text())
+                self.assertEqual((workflow_entry.get("extends") or {}).get("template"), "service-release.yml")
                 self.assertIn("playground/sandbox-bj-*", (REPO_ROOT / workflow_path).read_text())
                 self.assert_release_entry_targets(
                     workflow_entry,
