@@ -67,6 +67,8 @@ replacements:
           name: gateway-model-internal
         fieldPaths:
           - metadata.annotations.[kubernetes.io/ingress.existLbId]
+        options:
+          create: true
   - source:
       kind: ConfigMap
       name: ai-gateway-platform-values
