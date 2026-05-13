@@ -13,8 +13,8 @@
 - `kustomization.yaml`
 - `ksops-assets-generator.yaml`
 - `ctl-platform.env`
+- `conf/server_conf.toml`
 - `souls/`
-- `../../../secrets/beijing-sandbox/ctl-conf-common.sops.yaml`
 - `../../../secrets/beijing-sandbox/ctl-conf-rewrite.sops.yaml`
 - `../../../secrets/beijing-sandbox/ctl-runtime-secrets.sops.yaml`
 
@@ -31,12 +31,12 @@
 
 加密资源（通过标准 `sops` 文件下发）：
 
-- `ConfigMap/ctl-conf-common`
 - `ConfigMap/ctl-conf-rewrite`
-- `Secret/ctl-runtime-secrets`
+- `Secret/ctl-runtime-secrets`（包含 `CTL_MQ_STREAM_KEY`、`CTL_AIGATEWAY_*`、`AGENTCHAT_*` 等运行时密文）
 
 普通资源：
 
+- `ConfigMap/ctl-conf-common`
 - `ConfigMap/ctl-soul-templates`
 
 ## Note

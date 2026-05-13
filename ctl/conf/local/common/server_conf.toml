@@ -219,8 +219,6 @@ credit_token_ratio = 10000
 
 [agentchat]
 business_code = "lightvela"
-secret_id = ""
-secret_key = ""
-launch_token_secret = ""
+# secret_id、secret_key、launch_token_secret 通过 AGENTCHAT_* runtime secret 环境变量注入
 launch_token_ttl_seconds = 300
 timestamp_skew_seconds = 300
