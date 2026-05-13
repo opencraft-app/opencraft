@@ -114,7 +114,7 @@ replacements:
           kind: Secret
           name: llm-lightvela-ai-tls
         fieldPaths:
-          - metadata.annotations.[qcloud_cert_id]
+          - metadata.annotations.qcloud_cert_id
           - stringData.qcloud_cert_id
   - source:
       kind: ConfigMap
