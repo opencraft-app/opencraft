@@ -53,6 +53,16 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
         self.assertIn("verify_gitops_promotion.py", workflow)
         self.assertIn("cleanup_gitops_promotion.py", workflow)
 
+    def test_playground_promote_branches_validate_changed_kustomize_only(self) -> None:
+        policy = policy_for_branch("promote-sandbox-bj-7-service-gateway-tag")
+
+        self.assertIsNotNone(policy)
+        self.assertEqual(policy.env, "sandbox-bj-7")
+        self.assertEqual(policy.kustomize_mode.value, "changed_only")
+        self.assertEqual(policy.kustomize_args, ["--changed-only"])
+        self.assertEqual(policy.verify_mode.value, "argo_convergence")
+        self.assertTrue(policy.auto_merge)
+
     def test_promotion_workflow_uses_shared_bootstrap_helper(self) -> None:
         workflow = (REPO_ROOT / ".ci/gitops-promotion.yml").read_text()
         helper = (REPO_ROOT / ".ci/runtime/gitops_promotion_bootstrap.sh").read_text()

@@ -169,6 +169,63 @@ class GitOpsKustomizeValidationTests(unittest.TestCase):
             args = args_file.read_text().splitlines()
             self.assertIn("argocd/services/demo/sandbox-bj-6", args)
 
+    def test_playground_changed_only_validates_changed_catalog_service(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            self.write_repo(repo, env="sandbox-bj-6")
+            self.write_repo(repo, env="sandbox-bj-6", service="other")
+            git(repo, "init")
+            git(repo, "config", "user.email", "ci@example.com")
+            git(repo, "config", "user.name", "CI")
+            git(repo, "add", ".")
+            git(repo, "commit", "-m", "base")
+            (repo / "argocd/services/demo/sandbox-bj-6/platform.env").write_text("IMAGE=demo\n")
+            git(repo, "add", ".")
+            git(repo, "commit", "-m", "promote demo")
+
+            args_file = repo / "args.txt"
+            fake_kustomize = repo / "fake-kustomize"
+            fake_kustomize.write_text(
+                textwrap.dedent(
+                    f"""\
+                    #!/usr/bin/env bash
+                    printf '%s\\n' "$2" >> {args_file}
+                    if [ "$2" = "argocd/services/other/sandbox-bj-6" ]; then
+                      cat <<'YAML'
+                    apiVersion: v1
+                    kind: ConfigMap
+                    data:
+                      image: REPLACE_OTHER_IMAGE
+                    YAML
+                    else
+                      cat <<'YAML'
+                    apiVersion: v1
+                    kind: ConfigMap
+                    metadata:
+                      name: demo
+                    YAML
+                    fi
+                    """
+                )
+            )
+            fake_kustomize.chmod(0o755)
+
+            exit_code = self.run_main(
+                [
+                    "validate_gitops_kustomize.py",
+                    "--repo-root",
+                    str(repo),
+                    "--env",
+                    "sandbox-bj-6",
+                    "--changed-only",
+                    "--kustomize-bin",
+                    str(fake_kustomize),
+                ]
+            )
+
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(args_file.read_text().splitlines(), ["argocd/services/demo/sandbox-bj-6"])
+
     def test_kustomize_validator_accepts_explicit_source_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = self.write_repo(Path(tmp))
@@ -264,27 +321,27 @@ class GitOpsKustomizeValidationTests(unittest.TestCase):
             self.assertEqual(exit_code, 0)
             self.assertEqual(args_file.read_text().splitlines(), ["argocd/services/frontend/shprod"])
 
-    def write_repo(self, repo: Path, env: str = "beijing-sandbox") -> Path:
+    def write_repo(self, repo: Path, env: str = "beijing-sandbox", service: str = "demo") -> Path:
         catalog_root = (
             f"argocd/catalogs/playground/beijing-playground/{env}"
             if env.startswith("sandbox-bj-")
             else f"argocd/catalogs/sandbox/{env}"
         )
-        (repo / catalog_root).mkdir(parents=True)
-        (repo / f"argocd/services/demo/{env}").mkdir(parents=True)
-        (repo / f"{catalog_root}/demo.yaml").write_text(
+        (repo / catalog_root).mkdir(parents=True, exist_ok=True)
+        (repo / f"argocd/services/{service}/{env}").mkdir(parents=True)
+        (repo / f"{catalog_root}/{service}.yaml").write_text(
             textwrap.dedent(
                 f"""\
-                service: demo
+                service: {service}
                 env: {env}
                 project: {env}
                 destinationName: {env}
-                namespace: demo
-                sourcePath: argocd/services/demo/{env}
+                namespace: {service}
+                sourcePath: argocd/services/{service}/{env}
                 """
             )
         )
-        (repo / f"argocd/services/demo/{env}/kustomization.yaml").write_text("kind: Kustomization\n")
+        (repo / f"argocd/services/{service}/{env}/kustomization.yaml").write_text("kind: Kustomization\n")
         return repo
 
     def write_shprod_direct_app(self, repo: Path, service: str) -> None:

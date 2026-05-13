@@ -128,7 +128,7 @@ def _playground_policy_for_branch(source_branch: str) -> PromotionPolicy | None:
         auto_sync=True,
         cleanup_source_branch=True,
         verify_mode=VerifyMode.ARGO_CONVERGENCE,
-        kustomize_mode=KustomizeMode.FULL,
+        kustomize_mode=KustomizeMode.CHANGED_ONLY,
         gate_denied_behavior=GateDeniedBehavior.FAIL,
     )
 
