@@ -42,7 +42,7 @@ pnpm dev:local      # 使用本地 monorepo 版 tea-sdk-lightclaw
 pnpm build          # 标准  / pnpm build:cn  / pnpm build:global
 
 # 质量门禁（提交前必跑）
-pnpm check          # tsc --noEmit 类型检查
+pnpm check          # tsc -b 类型检查（与构建前置检查一致）
 pnpm test           # vitest 单次运行
 pnpm i18n:extract   # 扫描 t() 生成 i18n/generated/*.json
 pnpm i18n:check     # 校验翻译完整性（CI 门禁）

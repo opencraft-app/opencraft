@@ -1,3 +1,4 @@
+import json
 import re
 import subprocess
 import sys
@@ -215,6 +216,13 @@ class ReleaseBundleContractTests(unittest.TestCase):
             workflow_text.index('export VITE_AUTH_API_BASE_URL="$PREVIEW_INTL_AUTH_API_BASE_URL"'),
             workflow_text.index('"$PNPM_BIN" exec vite build --mode global --outDir dist-global'),
         )
+
+    def test_frontend_mr_guard_runs_build_mode_typecheck(self) -> None:
+        package_json = json.loads((REPO_ROOT / "frontend/package.json").read_text())
+        guard_text = (REPO_ROOT / "frontend/checks/guard.sh").read_text()
+
+        self.assertEqual(package_json["scripts"]["check"], "tsc -b")
+        self.assertIn('"$PNPM_BIN" check', guard_text)
 
     def test_prod_release_bundles_project_exactly_one_direct_app(self) -> None:
         manifest = load_manifest()
