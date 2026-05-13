@@ -107,6 +107,91 @@ class PromotionCommandTests(unittest.TestCase):
         self.assertEqual(trailers["Release-gate-auto-merge"], "true")
         self.assertEqual(trailers["Release-gate-argo-sync"], "auto")
 
+    def test_release_trailer_selection_reports_ignored_runtime_trigger_commits(self) -> None:
+        with tempfile.TemporaryDirectory() as repo:
+            repo_path = Path(repo)
+            subprocess.run(["git", "init", "-b", "gitops"], cwd=repo_path, check=True, stdout=subprocess.DEVNULL)
+            subprocess.run(["git", "config", "user.name", "test"], cwd=repo_path, check=True)
+            subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo_path, check=True)
+            (repo_path / "state.txt").write_text("base\n")
+            subprocess.run(["git", "add", "state.txt"], cwd=repo_path, check=True)
+            subprocess.run(["git", "commit", "-m", "base"], cwd=repo_path, check=True, stdout=subprocess.DEVNULL)
+            subprocess.run(["git", "checkout", "-b", "promote-sandbox-bj-7-service-gateway-tag"], cwd=repo_path, check=True, stdout=subprocess.DEVNULL)
+            (repo_path / "state.txt").write_text("release\n")
+            subprocess.run(["git", "add", "state.txt"], cwd=repo_path, check=True)
+            subprocess.run(
+                [
+                    "git",
+                    "commit",
+                    "-m",
+                    "发布到北京 Playground sandbox-bj-7：service-gateway",
+                    "-m",
+                    "\n".join(
+                        [
+                            "Release-id: sandbox-bj-7/service-gateway/source/tag",
+                            "Release-runtime-ref: playground/sandbox-bj-7",
+                            "Release-runtime-commit: source",
+                            "Release-gate-auto-merge: true",
+                            "Release-gate-argo-sync: auto",
+                        ]
+                    ),
+                ],
+                cwd=repo_path,
+                check=True,
+                stdout=subprocess.DEVNULL,
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "commit",
+                    "--allow-empty",
+                    "-m",
+                    "Trigger promotion validation",
+                    "-m",
+                    "Release-runtime-ref: playground/sandbox-bj-7\nRelease-runtime-commit: runtime-fix",
+                ],
+                cwd=repo_path,
+                check=True,
+                stdout=subprocess.DEVNULL,
+            )
+
+            selection = gitops_promotion._select_release_trailers(  # noqa: SLF001
+                repo_path,
+                "promote-sandbox-bj-7-service-gateway-tag",
+                "gitops",
+            )
+
+        self.assertEqual(selection.search_mode, "target_range")
+        self.assertEqual(selection.trailers["Release-gate-auto-merge"], "true")
+        self.assertEqual(selection.trailers["Release-runtime-commit"], "source")
+        self.assertEqual(len(selection.ignored_runtime_only_revisions), 1)
+        self.assertEqual(selection.ignored_runtime_only_summary, selection.ignored_runtime_only_revisions[0][:12])
+
+    def test_release_gate_error_includes_selected_commit_and_repair_hint(self) -> None:
+        selection = gitops_promotion.ReleaseTrailerSelection(
+            trailers={
+                "Release-id": "sandbox-bj-7/service-gateway/source/tag",
+                "Release-runtime-ref": "playground/sandbox-bj-7",
+                "Release-runtime-commit": "244a7f35333177bfe9da737fee7950e52bb6c083",
+            },
+            revision="6c7b587f299998601ce9bf2bb65aac45d6d805e1",
+            search_mode="source_history_fallback",
+            ignored_runtime_only_revisions=("07e734bf4223fcf1dd1574f72d1a8607e2a92728",),
+        )
+
+        message = gitops_promotion._release_gate_error(  # noqa: SLF001
+            "promote-sandbox-bj-7-service-gateway-service-gateway-a14b69b75466",
+            selection,
+            "Release-gate-auto-merge",
+            "",
+            "true",
+        )
+
+        self.assertIn("Release-gate-auto-merge=missing expected=true", message)
+        self.assertIn("release_commit=6c7b587f2999", message)
+        self.assertIn("ignored_runtime_only_commits=07e734bf4223", message)
+        self.assertIn("CI retrigger/repair commit", message)
+
     def test_release_trailers_refresh_remote_promote_ref(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             origin = Path(temp) / "origin.git"

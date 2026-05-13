@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 from gitops.promotion_policy import GateDeniedBehavior, PromotionPolicy, require_policy_for_branch
@@ -15,6 +16,24 @@ from support.logging import print_section
 
 RUNTIME_DIR = Path(__file__).resolve().parents[1]
 COMMAND_DIR = RUNTIME_DIR / "commands"
+
+
+@dataclass(frozen=True)
+class ReleaseTrailerSelection:
+    trailers: dict[str, str]
+    revision: str
+    search_mode: str
+    ignored_runtime_only_revisions: tuple[str, ...] = ()
+
+    @property
+    def short_revision(self) -> str:
+        return self.revision[:12] if self.revision else "-"
+
+    @property
+    def ignored_runtime_only_summary(self) -> str:
+        if not self.ignored_runtime_only_revisions:
+            return "-"
+        return ",".join(revision[:12] for revision in self.ignored_runtime_only_revisions)
 
 
 def _run(command: list[str], *, cwd: Path | None = None) -> None:
@@ -71,7 +90,23 @@ def _fetch_branch(repo_root: Path, branch: str) -> None:
     )
 
 
-def _release_trailers(repo_root: Path, source_branch: str, target_branch: str) -> dict[str, str]:
+def _is_release_descriptor(trailers: dict[str, str]) -> bool:
+    return bool(trailers.get("Release-id") or trailers.get("Release-gate-auto-merge"))
+
+
+def _is_runtime_selector_only(trailers: dict[str, str]) -> bool:
+    return bool(trailers) and not _is_release_descriptor(trailers)
+
+
+def _log_revisions(repo_root: Path, revspec: str, *, limit: int | None = None) -> list[str]:
+    args = ["log", "--format=%H"]
+    if limit is not None:
+        args.extend(["-n", str(limit)])
+    args.append(revspec)
+    return _git_output(args, cwd=repo_root).splitlines()
+
+
+def _select_release_trailers(repo_root: Path, source_branch: str, target_branch: str) -> ReleaseTrailerSelection:
     """Find release trailers from the promote range, not necessarily HEAD.
 
     Promote branches may receive follow-up CI-only repair commits. Those commits
@@ -84,14 +119,68 @@ def _release_trailers(repo_root: Path, source_branch: str, target_branch: str) -
     source_ref = _resolve_revision(repo_root, source_branch)
     target_ref = _resolve_revision(repo_root, target_branch)
 
-    revisions = _git_output(["log", "--format=%H", f"{target_ref}..{source_ref}"], cwd=repo_root).splitlines()
+    ignored_runtime_only_revisions: list[str] = []
+    revisions = _log_revisions(repo_root, f"{target_ref}..{source_ref}")
     for revision in revisions:
         trailers = _commit_trailers(repo_root, revision)
-        if trailers.get("Release-id") or trailers.get("Release-gate-auto-merge"):
-            print(f"release trailers selected from commit {revision[:12]}", flush=True)
-            return trailers
+        if _is_release_descriptor(trailers):
+            return ReleaseTrailerSelection(
+                trailers=trailers,
+                revision=revision,
+                search_mode="target_range",
+                ignored_runtime_only_revisions=tuple(ignored_runtime_only_revisions),
+            )
+        if _is_runtime_selector_only(trailers):
+            ignored_runtime_only_revisions.append(revision)
 
-    return _commit_trailers(repo_root)
+    # CI repair / trigger commits may be created after the release commit. If the
+    # target branch ref is stale or the promote range is unexpectedly empty, keep
+    # the auto-merge decision tied to the latest real release descriptor in the
+    # source branch history instead of silently evaluating a trigger commit.
+    for revision in _log_revisions(repo_root, source_ref, limit=50):
+        trailers = _commit_trailers(repo_root, revision)
+        if _is_release_descriptor(trailers):
+            return ReleaseTrailerSelection(
+                trailers=trailers,
+                revision=revision,
+                search_mode="source_history_fallback",
+                ignored_runtime_only_revisions=tuple(ignored_runtime_only_revisions),
+            )
+        if _is_runtime_selector_only(trailers) and revision not in ignored_runtime_only_revisions:
+            ignored_runtime_only_revisions.append(revision)
+
+    return ReleaseTrailerSelection(
+        trailers=_commit_trailers(repo_root),
+        revision=_git_output(["rev-parse", "HEAD"], cwd=repo_root),
+        search_mode="head_fallback",
+        ignored_runtime_only_revisions=tuple(ignored_runtime_only_revisions),
+    )
+
+
+def _release_trailers(repo_root: Path, source_branch: str, target_branch: str) -> dict[str, str]:
+    selection = _select_release_trailers(repo_root, source_branch, target_branch)
+    print(
+        "release trailers selected: "
+        f"commit={selection.short_revision} mode={selection.search_mode} "
+        f"ignored_runtime_only_commits={selection.ignored_runtime_only_summary}",
+        flush=True,
+    )
+    return selection.trailers
+
+
+def _release_gate_error(source_branch: str, selection: ReleaseTrailerSelection, key: str, value: str, expected: str) -> str:
+    release_id = selection.trailers.get("Release-id") or "-"
+    runtime_ref = selection.trailers.get("Release-runtime-ref") or "-"
+    runtime_commit = (selection.trailers.get("Release-runtime-commit") or "-")[:12]
+    return (
+        f"release gate does not allow auto-merge for {source_branch}: "
+        f"{key}={value or 'missing'} expected={expected}; "
+        f"release_commit={selection.short_revision} selection={selection.search_mode} "
+        f"release_id={release_id} runtime={runtime_ref}/{runtime_commit} "
+        f"ignored_runtime_only_commits={selection.ignored_runtime_only_summary}. "
+        "If this is a CI retrigger/repair commit, keep Release-runtime-* on the trigger commit "
+        "but make sure an earlier commit on the promote branch still contains Release-id and Release-gate-* trailers."
+    )
 
 
 def _changed_files(repo_root: Path, source_branch: str, target_branch: str) -> list[str]:
@@ -236,14 +325,24 @@ def merge_main(argv: list[str] | None = None) -> int:
         print(f"skip auto-merge for {args.source_branch}: policy auto_merge=false")
         return 0
 
-    trailers = _release_trailers(repo_root, args.source_branch, args.target_branch)
+    selection = _select_release_trailers(repo_root, args.source_branch, args.target_branch)
+    print(
+        "release trailers selected: "
+        f"commit={selection.short_revision} mode={selection.search_mode} "
+        f"ignored_runtime_only_commits={selection.ignored_runtime_only_summary}",
+        flush=True,
+    )
+    trailers = selection.trailers
     gate_auto_merge = trailers.get("Release-gate-auto-merge", "")
     gate_argo_sync = trailers.get("Release-gate-argo-sync", "")
 
     if gate_auto_merge != "true":
-        message = (
-            f"release gate does not allow auto-merge for {args.source_branch}: "
-            f"Release-gate-auto-merge={gate_auto_merge or 'missing'}"
+        message = _release_gate_error(
+            args.source_branch,
+            selection,
+            "Release-gate-auto-merge",
+            gate_auto_merge,
+            "true",
         )
         if policy.gate_denied_behavior == GateDeniedBehavior.SKIP:
             print(message)
@@ -252,8 +351,13 @@ def merge_main(argv: list[str] | None = None) -> int:
 
     if policy.required_argo_sync is not None and gate_argo_sync != policy.required_argo_sync:
         raise RuntimeError(
-            f"refuse GitOps auto-merge for {args.source_branch}: "
-            f"Release-gate-argo-sync={gate_argo_sync or 'missing'} expected={policy.required_argo_sync}"
+            _release_gate_error(
+                args.source_branch,
+                selection,
+                "Release-gate-argo-sync",
+                gate_argo_sync,
+                policy.required_argo_sync,
+            )
         )
 
     command = [
