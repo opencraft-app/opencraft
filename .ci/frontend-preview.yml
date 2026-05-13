@@ -6,6 +6,7 @@ on:
     branches:
       - master
       - frontsandbox/*
+      - playground/sandbox-bj-*
     paths:
       - frontend/**
     paths-ignore:
@@ -52,7 +53,6 @@ stages:
           - name: 构建并上传 frontend 预览站点
             shell: bash
             env:
-              VITE_AUTH_API_BASE_URL: https://lightclaw.tech
               STATICPAGES_API_URL: ${{ variables.STATICPAGES_API_URL }}
             run: |
               echo "============================================================"
@@ -60,6 +60,7 @@ stages:
               echo "触发分支：${{ ci.branch }}"
               echo "目标规则：master -> https://master.preview.lightclaw.tech 和 https://intl-master.preview.lightclaw.tech"
               echo "目标规则：frontsandbox/<name> -> https://<name>.preview.lightclaw.tech 和 https://intl-<name>.preview.lightclaw.tech"
+              echo "目标规则：playground/sandbox-bj-N -> https://sandbox-bj-N.preview.lightclaw.tech 和 https://intl-sandbox-bj-N.preview.lightclaw.tech"
               echo "发布方式：构建 frontend dist-cn + dist-global 后并发上传到 StaticPages，不创建 GitOps MR"
               echo "============================================================"
               set -euo pipefail
@@ -68,6 +69,23 @@ stages:
               ci_tune_staticpages_upload_tcp
               ci_ensure_node
               ci_ensure_pnpm
+
+              resolve_preview_auth_api_base_url() {
+                local branch="$1"
+                case "$branch" in
+                  playground/sandbox-bj-*)
+                    local playground_env="${branch#playground/}"
+                    printf 'https://api-%s.lightclaw.tech' "$playground_env"
+                    ;;
+                  *)
+                    printf 'https://lightclaw.tech'
+                    ;;
+                esac
+              }
+
+              PREVIEW_AUTH_API_BASE_URL="$(resolve_preview_auth_api_base_url "${{ ci.branch }}")"
+              export VITE_AUTH_API_BASE_URL="$PREVIEW_AUTH_API_BASE_URL"
+              echo "预览 API base：${VITE_AUTH_API_BASE_URL}"
 
               cd "$REPO_ROOT/frontend"
               rm -rf node_modules dist-cn dist-global

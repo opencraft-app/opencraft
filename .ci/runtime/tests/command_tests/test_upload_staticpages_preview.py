@@ -28,6 +28,9 @@ class UploadStaticPagesPreviewTests(unittest.TestCase):
     def test_normalize_frontsandbox_branch_to_dns_label(self) -> None:
         self.assertEqual(normalize_preview_name("frontsandbox/Demo_Feature"), "demo-feature")
 
+    def test_normalize_playground_branch_to_env_preview_name(self) -> None:
+        self.assertEqual(normalize_preview_name("playground/sandbox-bj-7"), "sandbox-bj-7")
+
     def test_reject_empty_preview_name(self) -> None:
         with self.assertRaisesRegex(ValueError, "cannot derive preview name"):
             normalize_preview_name("frontsandbox/---")
@@ -35,6 +38,10 @@ class UploadStaticPagesPreviewTests(unittest.TestCase):
     def test_preview_variant_names_publish_cn_and_intl_pair(self) -> None:
         self.assertEqual(preview_name_for_variant("frontsandbox/Demo_Feature", "cn"), "demo-feature")
         self.assertEqual(preview_name_for_variant("frontsandbox/Demo_Feature", "intl"), "intl-demo-feature")
+
+    def test_playground_preview_variant_names_publish_env_pair(self) -> None:
+        self.assertEqual(preview_name_for_variant("playground/sandbox-bj-7", "cn"), "sandbox-bj-7")
+        self.assertEqual(preview_name_for_variant("playground/sandbox-bj-7", "intl"), "intl-sandbox-bj-7")
 
     def test_master_branch_publishes_stable_preview_pair(self) -> None:
         self.assertEqual(normalize_preview_name("master"), "master")

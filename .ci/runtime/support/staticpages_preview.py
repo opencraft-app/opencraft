@@ -18,6 +18,7 @@ DEFAULT_PREVIEW_DOMAIN = "preview.lightclaw.tech"
 DEFAULT_API_URL = f"https://staticpages-api.{DEFAULT_PREVIEW_DOMAIN}/api/upload"
 DEFAULT_REPOSITORY = "wisp/mono2"
 BRANCH_PREFIX = "frontsandbox/"
+PLAYGROUND_BRANCH_PREFIX = "playground/"
 DNS_SAFE_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
 INTL_PREVIEW_PREFIX = "intl-"
 ARCHIVE_MEDIA_TYPE = "application/vnd.lightvela.staticpages.archive.v1.tar+gzip"
@@ -118,6 +119,8 @@ def normalize_preview_name(source_branch: str) -> str:
     branch = source_branch.strip()
     if branch.startswith(BRANCH_PREFIX):
         branch = branch[len(BRANCH_PREFIX) :]
+    elif branch.startswith(PLAYGROUND_BRANCH_PREFIX):
+        branch = branch[len(PLAYGROUND_BRANCH_PREFIX) :]
     branch = branch.lower()
     branch = re.sub(r"[^a-z0-9-]+", "-", branch)
     branch = re.sub(r"-+", "-", branch).strip("-")
