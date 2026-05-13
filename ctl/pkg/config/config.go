@@ -3,6 +3,7 @@ package config
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -25,6 +26,7 @@ func Init(confDir string) error {
 
 	parseAPIConf()
 	parseRedisConf()
+	parseMQConf()
 	parseMySQLConf()
 	parseAdapterConf()
 	parseAllServiceRoleConf()
@@ -121,6 +123,9 @@ func parseConfFile(path string) error {
 
 func parseRedisConf() {
 	ServerConf.RedisConfig.Pass = util.DecryptString(ServerConf.RedisConfig.Pass)
+	if value := strings.TrimSpace(os.Getenv("CTL_REDIS_PASS")); value != "" {
+		ServerConf.RedisConfig.Pass = value
+	}
 	ServerConf.RedisConfig.ConnectTimeout = time.Duration(ServerConf.RedisConfig.ConnectTimeoutSeconds) * time.Second
 	ServerConf.RedisConfig.RWTimeout = time.Duration(ServerConf.RedisConfig.RWTimeoutSeconds) * time.Second
 	ServerConf.RedisConfig.MQRWTimeout = time.Duration(ServerConf.RedisConfig.MQRWTimeoutSeconds) * time.Second
@@ -130,14 +135,32 @@ func parseRedisConf() {
 		ServerConf.RedisConfig.PoolClientMaxIdleSeconds) * time.Second
 }
 
+func parseMQConf() {
+	if ServerConf.MQConfig == nil {
+		ServerConf.MQConfig = &MQConfig{}
+	}
+	if value := strings.TrimSpace(os.Getenv("CTL_MQ_STREAM_KEY")); value != "" {
+		ServerConf.MQConfig.StreamKey = value
+	}
+}
+
 func parseMySQLConf() {
 	ServerConf.DBConfig.Password = util.DecryptString(ServerConf.DBConfig.Password)
+	if value := strings.TrimSpace(os.Getenv("CTL_DB_PASSWORD")); value != "" {
+		ServerConf.DBConfig.Password = value
+	}
 	ServerConf.DBConfig.RWTimeout = time.Duration(ServerConf.DBConfig.RWTimeoutSeconds) * time.Second
 }
 
 func parseAdapterConf() {
 	ServerConf.AdapterConfig.Domain.InnerSecretId = util.DecryptString(ServerConf.AdapterConfig.Domain.InnerSecretId)
 	ServerConf.AdapterConfig.Domain.InnerSecretKey = util.DecryptString(ServerConf.AdapterConfig.Domain.InnerSecretKey)
+	if value := strings.TrimSpace(os.Getenv("CTL_DOMAIN_INNER_SECRET_ID")); value != "" {
+		ServerConf.AdapterConfig.Domain.InnerSecretId = value
+	}
+	if value := strings.TrimSpace(os.Getenv("CTL_DOMAIN_INNER_SECRET_KEY")); value != "" {
+		ServerConf.AdapterConfig.Domain.InnerSecretKey = value
+	}
 
 	if ServerConf.AdapterConfig.Sandbox == nil {
 		ServerConf.AdapterConfig.Sandbox = &SandboxConfig{}
@@ -160,6 +183,12 @@ func parseAdapterConf() {
 
 	if ServerConf.AdapterConfig.AiGateway == nil {
 		ServerConf.AdapterConfig.AiGateway = &AiGatewayConfig{}
+	}
+	if value := strings.TrimSpace(os.Getenv("CTL_AIGATEWAY_ADMIN_TOKEN")); value != "" {
+		ServerConf.AdapterConfig.AiGateway.AdminToken = value
+	}
+	if value := strings.TrimSpace(os.Getenv("CTL_AIGATEWAY_INTERNAL_SERVICE_TOKEN")); value != "" {
+		ServerConf.AdapterConfig.AiGateway.InternalServiceToken = value
 	}
 	if ServerConf.AdapterConfig.AiGateway.Timeout <= 0 {
 		ServerConf.AdapterConfig.AiGateway.Timeout = 10
@@ -215,5 +244,18 @@ func parseAgentChatConf() {
 	}
 	if strings.TrimSpace(ServerConf.AgentChat.LaunchTokenSecret) != "" {
 		ServerConf.AgentChat.LaunchTokenSecret = util.DecryptString(ServerConf.AgentChat.LaunchTokenSecret)
+	}
+	applyAgentChatSecretEnv(ServerConf.AgentChat)
+}
+
+func applyAgentChatSecretEnv(cfg *AgentChatConfig) {
+	if value := strings.TrimSpace(os.Getenv("AGENTCHAT_SECRET_ID")); value != "" {
+		cfg.SecretID = value
+	}
+	if value := strings.TrimSpace(os.Getenv("AGENTCHAT_SECRET_KEY")); value != "" {
+		cfg.SecretKey = value
+	}
+	if value := strings.TrimSpace(os.Getenv("AGENTCHAT_LAUNCH_TOKEN_SECRET")); value != "" {
+		cfg.LaunchTokenSecret = value
 	}
 }

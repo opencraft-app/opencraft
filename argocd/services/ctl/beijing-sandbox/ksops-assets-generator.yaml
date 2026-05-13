@@ -3,6 +3,5 @@ kind: ksops
 metadata:
   name: ctl-runtime-assets
 files:
-  - ../../../secrets/beijing-sandbox/ctl-conf-common.sops.yaml
   - ../../../secrets/beijing-sandbox/ctl-conf-rewrite.sops.yaml
   - ../../../secrets/beijing-sandbox/ctl-runtime-secrets.sops.yaml

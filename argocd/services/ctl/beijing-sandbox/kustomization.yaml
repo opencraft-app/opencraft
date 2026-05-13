@@ -10,6 +10,9 @@ configMapGenerator:
 - name: ctl-platform-values
   envs:
   - ctl-platform.env
+- name: ctl-conf-common
+  files:
+  - server_conf.toml=conf/server_conf.toml
 - name: ctl-soul-templates
   files:
   - SOUL-gentle.md=souls/SOUL-gentle.md

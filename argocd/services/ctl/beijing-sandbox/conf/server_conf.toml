@@ -1,0 +1,197 @@
+[api]
+host = "0.0.0.0"
+port = 9590
+pid_file = "lightglobal.pid"
+shutdown_timeout = 10
+enable_inner_sign = true
+
+[api.instance]
+default_template_id = "openclaw-default"
+soul_template_dir = "/etc/ctl/souls"
+
+[bypass]
+specify_names = []
+
+[log]
+
+[log.api]
+path = "/dev/stdout"
+level = 7
+async_queue_size = 0
+bufsize = 0
+formater = "json"
+enable_color = false
+
+[log.service]
+path = "/dev/stdout"
+level = 7
+async_queue_size = 0
+bufsize = 0
+formater = "json"
+enable_color = false
+
+[log.bypass]
+path = "/dev/stdout"
+level = 7
+async_queue_size = 0
+bufsize = 0
+formater = "json"
+enable_color = false
+
+[monitor]
+
+[monitor.api]
+enable_pprof = false
+port = 9591
+
+[monitor.service]
+enable_pprof = false
+port = 9592
+
+[monitor.bypass]
+enable_pprof = false
+port = 9593
+
+[db]
+host = ""
+port = 3306
+user = ""
+password = ""
+database = "lightglobal"
+rw_timeout_seconds = 3
+
+[redis]
+host = ""
+pass = ""
+port = 6379
+connect_timeout_seconds = 3
+rw_timeout_seconds = 3
+mq_rw_timeout_seconds = 300
+pool_size = 256
+pool_keepalive_interval_seconds = 10
+pool_client_max_idle_seconds = 30
+
+[mq]
+stream_key = ""
+group_name = "lightglobal_service"
+max_len = 100000
+
+[adapter]
+
+[adapter.lightpro]
+api_static_url = ""
+api_dynamic_url_suffix = "api.lightpro.polaris:9580"
+use_mock = false
+describe_mcp_servers_timeout_seconds = 10
+
+[adapter.lighthouse]
+api_static_url = ""
+api_dynamic_url_suffix = "api.lighthouse.polaris:9570"
+tcloud_url = ""
+
+[adapter.sts]
+url = "https://sts.tencentcloudapi.com"
+internal_url = ""
+use_mock = false
+
+[adapter.dnspod]
+url = ""
+
+[adapter.domain]
+inner_url = ""
+inner_ip = ""
+inner_secret_id = ""
+inner_secret_key = ""
+
+[adapter.sandbox]
+baseUrl = "https://api.e2b.app"
+apiKey = ""
+timeout = 30
+maxRetries = 3
+retryInterval = 1000
+
+[adapter.aigateway]
+base_url = "http://gateway.ai-gateway.svc.cluster.local"
+admin_token = ""
+internal_service_token = ""
+timeout = 10
+default_base_url = "http://10.15.226.135/v1"
+default_model_id = "kimi-k2.5"
+default_compatibility = "openai"
+default_gateway_port = 18789
+default_provider_id = ""
+
+[adapter.clouddc]
+url = "https://clouddc.tencentcloudapi.com"
+internal_url = "https://clouddc.ap-guangzhou.tencentcloudapi.woa.com"
+
+[adapter.whitelist]
+url = ""
+hostname = ""
+
+[service_role]
+
+[service_role.dns_ssl]
+role_name = "Lighthouse_QCSLinkedRoleInDnsAndSsl"
+secret_id = ""
+secret_key = ""
+credential_duration_seconds = 7200
+cache_seconds = 7000
+expect_cache_version = "first"
+
+[service_role.basic]
+role_name = "Lighthouse_QCSLinkedRoleInBasic"
+secret_id = ""
+secret_key = ""
+credential_duration_seconds = 7200
+cache_seconds = 7000
+expect_cache_version = "first"
+
+[service_account]
+
+[service_account.base]
+secret_id = ""
+secret_key = ""
+
+[service_account.lighthouse]
+secret_id = ""
+secret_key = ""
+credential_duration_seconds = 7200
+cache_seconds = 7000
+expect_cache_version = "first"
+
+[translate]
+dir = "/usr/local/lightglobal/i18n"
+
+[tracing]
+protocol = "grpc"
+async = true
+grpc_endpoint = "otlp.tpstelemetry.woa.com:12520"
+http_endpoint = "otlp.tpstelemetry.woa.com"
+tenant_id = ""
+service_namespace = "Production"
+
+[gray]
+enable = false
+start_hour = 1
+run_seconds = 600
+cpu_percent = 50
+
+[misc]
+region = ""
+object_id_password_suffix = ""
+apps_data_dir = "/data/lightglobal/apps"
+block_bypass_and_service = false
+use_random_machine_id = false
+account_area = "0"
+
+[global_quota]
+valid_modify_resource_names = ["OPENCLAW_INSTANCE"]
+
+[global_quota.resource_default_quotas]
+OPENCLAW_INSTANCE = 5
+
+[agentchat]
+business_code = "lightvela"
+launch_token_ttl_seconds = 300
+timestamp_skew_seconds = 300
