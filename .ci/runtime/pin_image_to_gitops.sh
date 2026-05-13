@@ -237,6 +237,13 @@ git -C "$REPO_ROOT" config user.email "$COMMITTER_EMAIL"
 
 project_and_pin_gitops_state "$REPO_ROOT" true
 
+deployed_at_only_diff="$(python3 "$RUNTIME_COMMAND_DIR/detect_deployed_at_only_diff.py" --repo-root "$REPO_ROOT")"
+if [[ "$deployed_at_only_diff" == "true" ]]; then
+  echo "GitOps 发布结果：仅 *_DEPLOYED_AT 时间戳变化，镜像 pin 与 deploy-facing 配置未变化；跳过 promote MR。"
+  git -C "$REPO_ROOT" reset --hard "$REMOTE_NAME/$GITOPS_BRANCH" >/dev/null
+  exit 0
+fi
+
 if git -C "$REPO_ROOT" diff --cached --quiet; then
   echo "no gitops pin changes detected"
   exit 0
