@@ -15,18 +15,6 @@ patches:
   - path: delete-default-serviceaccount.yaml
   - path: delete-servicemonitor.yaml
   - target:
-      kind: Deployment
-      name: service-gateway
-    patch: |-
-      - op: add
-        path: /spec/template/spec/containers/0/env/-
-        value:
-          name: SERVICE_GATEWAY_AI_GATEWAY_ADMIN_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: service-gateway-runtime-secrets
-              key: SERVICE_GATEWAY_AI_GATEWAY_ADMIN_TOKEN
-  - target:
       kind: Ingress
       name: lightclaw-public
     patch: |-

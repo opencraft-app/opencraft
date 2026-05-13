@@ -15,7 +15,6 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
-	"os"
 	"slices"
 	"sort"
 	"strings"
@@ -141,9 +140,8 @@ func WithAdminBridgeCookie(cfg AdminBridgeCookieConfig) Option {
 }
 
 type compiledRoute struct {
-	route                 Route
-	proxy                 *httputil.ReverseProxy
-	upstreamAuthorization string
+	route Route
+	proxy *httputil.ReverseProxy
 }
 
 type sessionEnvelope struct {
@@ -189,19 +187,9 @@ func NewHandler(cfg Config, opts ...Option) (http.Handler, error) {
 			return nil, fmt.Errorf("route %s response_header_timeout: %w", route.Name, err)
 		}
 
-		upstreamAuthorization := ""
-		if envKey := strings.TrimSpace(route.UpstreamBearerTokenEnv); envKey != "" {
-			token := strings.TrimSpace(os.Getenv(envKey))
-			if token == "" {
-				return nil, fmt.Errorf("route %s upstream bearer token env %q is empty", route.Name, envKey)
-			}
-			upstreamAuthorization = "Bearer " + token
-		}
-
 		routes = append(routes, compiledRoute{
-			route:                 route,
-			proxy:                 newSingleHostReverseProxy(target, newUpstreamTransport(responseHeaderTimeout), upstreamAuthorization, route.Prefix, route.RewritePrefix),
-			upstreamAuthorization: upstreamAuthorization,
+			route: route,
+			proxy: newSingleHostReverseProxy(target, newUpstreamTransport(responseHeaderTimeout), route.Prefix, route.RewritePrefix),
 		})
 		if subscriptionServiceURL == "" && hasRoutePrefix("/subscriptions/current", route.Prefix) {
 			subscriptionServiceURL = strings.TrimRight(target.String(), "/")
@@ -1089,16 +1077,13 @@ func (h *Handler) observeRequest(start time.Time, route string, r *http.Request,
 	h.metrics.ObserveRequest(r.Method, route, r.URL.Path, status, time.Since(start))
 }
 
-func newSingleHostReverseProxy(target *url.URL, transport http.RoundTripper, upstreamAuthorization string, routePrefix string, rewritePrefix string) *httputil.ReverseProxy {
+func newSingleHostReverseProxy(target *url.URL, transport http.RoundTripper, routePrefix string, rewritePrefix string) *httputil.ReverseProxy {
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	originalDirector := proxy.Director
 	proxy.Director = func(req *http.Request) {
 		originalDirector(req)
 		req.URL.Path = rewriteRoutePath(req.URL.Path, routePrefix, rewritePrefix)
 		req.URL.RawPath = ""
-		if upstreamAuthorization != "" {
-			req.Header.Set("Authorization", upstreamAuthorization)
-		}
 	}
 	proxy.Transport = transport
 	proxy.ModifyResponse = func(resp *http.Response) error {

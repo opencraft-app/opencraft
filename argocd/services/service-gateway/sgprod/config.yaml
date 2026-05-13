@@ -10,7 +10,6 @@ routes:
     methods: [GET, POST, PUT, DELETE, OPTIONS]
     upstream: http://gateway-backend.ai-gateway.svc.cluster.local
     access: admin
-    upstream_bearer_token_env: SERVICE_GATEWAY_AI_GATEWAY_ADMIN_TOKEN
   - name: users
     prefix: /users
     methods: [GET, OPTIONS]

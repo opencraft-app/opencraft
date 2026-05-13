@@ -247,11 +247,6 @@ spec:
                 secretKeyRef:
                   name: service-gateway-runtime-secrets
                   key: SERVICE_GATEWAY_ADMIN_BASIC_AUTH_PASSWORD
-            - name: SERVICE_GATEWAY_AI_GATEWAY_ADMIN_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: service-gateway-runtime-secrets
-                  key: AI_GATEWAY_ADMIN_TOKEN
           volumeMounts:
             - name: config
               mountPath: /etc/service-gateway/config.yaml

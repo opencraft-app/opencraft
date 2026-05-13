@@ -37,10 +37,6 @@ Admin bridge cookie:
 - cookie-authorized admin requests do not synthesize a Basic `Authorization` header upstream; route-level bearer injection still works as configured
 - deployment wiring uses `SERVICE_GATEWAY_ADMIN_BRIDGE_COOKIE_SECRET`
 
-For downstreams that still require their own admin bearer token, `service-gateway`
-can inject a route-specific upstream `Authorization` header via
-`upstream_bearer_token_env`.
-
 Route configs can set `rewrite_prefix` to rewrite the matched public prefix
 before proxying to an upstream. Existing routes without `rewrite_prefix` keep
 the original request path.

@@ -2324,61 +2324,6 @@ func TestAdminRouteRequiresBridgeSecretWhenConfigured(t *testing.T) {
 	}
 }
 
-func TestAdminRouteBridgeCookieKeepsUpstreamBearerInjection(t *testing.T) {
-	t.Setenv("SERVICE_GATEWAY_TEST_ADMIN_UPSTREAM_TOKEN", "inner-admin-token")
-
-	callCount := 0
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		callCount++
-		if got := r.Header.Get("Authorization"); got != "Bearer inner-admin-token" {
-			t.Fatalf("expected injected bearer token, got %q", got)
-		}
-		w.WriteHeader(http.StatusNoContent)
-	}))
-	defer upstream.Close()
-
-	handler, err := NewHandler(Config{
-		AuthServiceURL: "http://auth.invalid",
-		Routes: []Route{{
-			Name:                   "admin",
-			Prefix:                 "/admin",
-			Upstream:               upstream.URL,
-			Access:                 AccessAdmin,
-			UpstreamBearerTokenEnv: "SERVICE_GATEWAY_TEST_ADMIN_UPSTREAM_TOKEN",
-		}},
-	},
-		WithAdminBasicAuth("skipzhang", "secret"),
-		WithAdminBridgeCookie(AdminBridgeCookieConfig{
-			Secret: "bridge-secret",
-			Hosts:  []string{"admin.lightclaw.tech"},
-			Secure: true,
-		}),
-	)
-	if err != nil {
-		t.Fatalf("new handler: %v", err)
-	}
-
-	firstReq := httptest.NewRequest(http.MethodGet, "https://admin.lightclaw.tech/admin", nil)
-	firstReq.Host = "admin.lightclaw.tech"
-	firstReq.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("skipzhang:secret")))
-	firstRec := httptest.NewRecorder()
-	handler.ServeHTTP(firstRec, firstReq)
-	bridgeCookie := findCookieByName(t, firstRec.Result(), defaultAdminBridgeCookieName)
-
-	req := httptest.NewRequest(http.MethodGet, "https://admin.lightclaw.tech/admin", nil)
-	req.Host = "admin.lightclaw.tech"
-	req.AddCookie(bridgeCookie)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("expected 204, got %d body=%s", rec.Code, rec.Body.String())
-	}
-	if callCount != 2 {
-		t.Fatalf("expected two upstream calls, got %d", callCount)
-	}
-}
-
 func TestAdminRouteDoesNotIssueBridgeCookieForNonEligibleHost(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
@@ -2418,43 +2363,6 @@ func TestAdminRouteDoesNotIssueBridgeCookieForNonEligibleHost(t *testing.T) {
 		if cookie.Name == defaultAdminBridgeCookieName {
 			t.Fatal("expected no bridge cookie for non-eligible host")
 		}
-	}
-}
-
-func TestAdminRouteInjectsUpstreamBearerTokenWhenConfigured(t *testing.T) {
-	t.Setenv("SERVICE_GATEWAY_TEST_ADMIN_UPSTREAM_TOKEN", "inner-admin-token")
-
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.Header.Get("Authorization"); got != "Bearer inner-admin-token" {
-			t.Fatalf("expected injected bearer token, got %q", got)
-		}
-		w.WriteHeader(http.StatusNoContent)
-	}))
-	defer upstream.Close()
-
-	handler, err := NewHandler(Config{
-		AuthServiceURL: "http://auth.invalid",
-		Routes: []Route{
-			{
-				Name:                   "admin",
-				Prefix:                 "/api/admin",
-				Upstream:               upstream.URL,
-				Access:                 AccessAdmin,
-				UpstreamBearerTokenEnv: "SERVICE_GATEWAY_TEST_ADMIN_UPSTREAM_TOKEN",
-			},
-		},
-	}, WithAdminBasicAuth("admin", "secret"))
-	if err != nil {
-		t.Fatalf("new handler: %v", err)
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/api/admin/users", nil)
-	req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("admin:secret")))
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("expected 204, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 
