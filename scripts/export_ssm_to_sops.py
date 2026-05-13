@@ -41,6 +41,7 @@ from typing import Any
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+SOPS_ENCRYPTED_REGEX = "^(data|stringData)$"
 
 
 def parse_args() -> argparse.Namespace:
@@ -223,6 +224,9 @@ def encrypt_yaml(plaintext: str, recipients: list[str], filename_override: str) 
         "yaml",
         "--filename-override",
         filename_override,
+        "--encrypted-regex",
+        SOPS_ENCRYPTED_REGEX,
+        "--mac-only-encrypted",
         "--age",
         ",".join(recipients),
         "/dev/stdin",
