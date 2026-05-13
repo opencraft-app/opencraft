@@ -8,12 +8,18 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { MarkdownRenderer } from "@/components/docs/markdown-renderer";
 import { DocsSidebar } from "@/components/docs/docs-sidebar";
 import { DocsToc, type TocItem } from "@/components/docs/docs-toc";
 import { DocsPrevNext } from "@/components/docs/docs-prev-next";
-import { DEFAULT_SLUG, FLAT_SLUGS, SIDEBAR } from "@/config/docs-sidebar";
+import {
+  DEFAULT_SLUG,
+  getLocalizedFlatSlugs,
+  getLocalizedSidebar,
+  isEnglishLocale,
+} from "@/config/docs-sidebar";
 import {
   fixBoldBoundary,
   getDocBySlug,
@@ -25,10 +31,14 @@ import {
  * 根据 slug 计算面包屑：文档 › 分组 › 当前页。
  * 找不到分组时只返回 [文档, 当前页]；找不到当前页就只返回 [文档]。
  */
-function buildBreadcrumb(slug: string): Array<{ label: string; to?: string }> {
-  const crumbs: Array<{ label: string; to?: string }> = [{ label: "文档", to: "/docs" }];
-  const group = SIDEBAR.find((g) => g.items.some((it) => it.slug === slug));
-  const page = FLAT_SLUGS.find((s) => s.slug === slug);
+function buildBreadcrumb(slug: string, locale?: string): Array<{ label: string; to?: string }> {
+  const crumbs: Array<{ label: string; to?: string }> = [
+    { label: isEnglishLocale(locale) ? "Docs" : "文档", to: "/docs" },
+  ];
+  const sidebar = getLocalizedSidebar(locale);
+  const flatSlugs = getLocalizedFlatSlugs(locale);
+  const group = sidebar.find((g) => g.items.some((it) => it.slug === slug));
+  const page = flatSlugs.find((s) => s.slug === slug);
   if (group) crumbs.push({ label: group.title });
   if (page) crumbs.push({ label: page.title });
   return crumbs;
@@ -37,6 +47,7 @@ function buildBreadcrumb(slug: string): Array<{ label: string; to?: string }> {
 export function DocsPage() {
   const params = useParams<{ category?: string; slug?: string }>();
   const navigate = useNavigate();
+  const { i18n } = useTranslation();
   const [toc, setToc] = useState<TocItem[]>([]);
 
   // 拼出完整 slug：'configuration/model' 或 'overview'
@@ -47,9 +58,9 @@ export function DocsPage() {
     return parts.join("/") || DEFAULT_SLUG;
   }, [params]);
 
-  const rawContent = getDocBySlug(slug);
+  const rawContent = getDocBySlug(slug, i18n.language);
   const content = rawContent
-    ? fixBoldBoundary(rewriteImagePaths(rewriteMarkdownLinks(rawContent)))
+    ? fixBoldBoundary(rewriteImagePaths(rewriteMarkdownLinks(rawContent), i18n.language))
     : null;
 
   // 切页时的滚动归位由根布局的 <ScrollRestoration /> 统一处理：
@@ -66,9 +77,10 @@ export function DocsPage() {
 
   // 页面标题
   useEffect(() => {
-    const found = FLAT_SLUGS.find((s) => s.slug === slug);
-    document.title = found ? `${found.title} · LightVela 文档` : "LightVela 文档";
-  }, [slug]);
+    const found = getLocalizedFlatSlugs(i18n.language).find((s) => s.slug === slug);
+    const docsTitle = isEnglishLocale(i18n.language) ? "LightVela Docs" : "LightVela 文档";
+    document.title = found ? `${found.title} · ${docsTitle}` : docsTitle;
+  }, [slug, i18n.language]);
 
   return (
     <main className="flex-1">
@@ -81,7 +93,7 @@ export function DocsPage() {
                 aria-label="breadcrumb"
                 className="mb-3 text-[12px] text-[var(--text-tertiary)] flex items-center flex-wrap gap-1"
               >
-                {buildBreadcrumb(slug).map((c, i, arr) => (
+                {buildBreadcrumb(slug, i18n.language).map((c, i, arr) => (
                   <span key={`${c.label}-${i}`} className="inline-flex items-center gap-1">
                     {c.to && i < arr.length - 1 ? (
                       <Link
