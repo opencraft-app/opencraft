@@ -89,6 +89,8 @@ type Logic interface {
 	UpdateChatClawConversation(ctx pctx.Context, instanceID, conversationID string, req *transport.UpdateChatClawConversationRequest) (*transport.ChatClawConversationResponse, error)
 	DeleteChatClawConversation(ctx pctx.Context, instanceID, conversationID string) error
 	GetChatClawRuntimeBootstrap(ctx pctx.Context, instanceID, conversationID string) (*transport.ChatClawRuntimeBootstrapResponse, error)
+	CreateAgentChatLaunchToken(ctx pctx.Context, instanceID string) (*transport.AgentChatLaunchTokenResponse, error)
+	IntrospectAgentChatLaunchToken(ctx pctx.Context, req *transport.AgentChatIntrospectRequest) (*transport.AgentChatIntrospectResponse, error)
 	CreateWeixinLoginSession(ctx pctx.Context, instanceID string) (*transport.CreateWeixinLoginSessionResponse, error)
 	GetWeixinLoginSession(ctx pctx.Context, instanceID, sessionID string) (*transport.WeixinLoginSessionResponse, error)
 	CancelWeixinLoginSession(ctx pctx.Context, instanceID, sessionID string) (*transport.WeixinLoginSessionResponse, error)

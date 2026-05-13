@@ -21,6 +21,11 @@ routes:
     methods: [GET, POST, PUT, DELETE, OPTIONS]
     upstream: http://sandbox-api.sandbox.svc.cluster.local
     access: authenticated
+  - name: ctl-agentchat-introspect
+    prefix: /v1/integrations/agentchat
+    methods: [POST, OPTIONS]
+    upstream: http://ctl-api.ctl.svc.cluster.local
+    access: public
   - name: ctl
     prefix: /v1/instances
     methods: [GET, POST, PUT, DELETE, OPTIONS]

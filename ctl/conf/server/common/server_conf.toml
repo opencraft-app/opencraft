@@ -403,3 +403,11 @@ OPENCLAW_INSTANCE = 5
 [bundle]
 # credit 与 ai-gateway Token 的转换倍率：1 credit = N token
 credit_token_ratio = 10000
+
+[agentchat]
+business_code = "lightvela"
+secret_id = ""
+secret_key = ""
+launch_token_secret = ""
+launch_token_ttl_seconds = 300
+timestamp_skew_seconds = 300

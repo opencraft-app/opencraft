@@ -267,18 +267,35 @@ type ChatClawConversationResponse struct {
 }
 
 type ChatClawRuntimeBootstrapResponse struct {
-	UserID             string `json:"user_id" example:"usr_123"`
-	InstanceID         string `json:"instance_id" example:"ins_123"`
-	ConversationID     string `json:"conversation_id" example:"conv_123"`
-	ConversationKind   string `json:"conversation_kind" example:"conversation"`
-	AgentID            string `json:"agent_id,omitempty" example:"main"`
-	TeamID             string `json:"team_id,omitempty" example:"team_123"`
+	UserID             string   `json:"user_id" example:"usr_123"`
+	InstanceID         string   `json:"instance_id" example:"ins_123"`
+	ConversationID     string   `json:"conversation_id" example:"conv_123"`
+	ConversationKind   string   `json:"conversation_kind" example:"conversation"`
+	AgentID            string   `json:"agent_id,omitempty" example:"main"`
+	TeamID             string   `json:"team_id,omitempty" example:"team_123"`
 	TeamAgentIDs       []string `json:"team_agent_ids,omitempty"`
-	SessionID          string `json:"session_id" example:"ses_123"`
-	SessionTitle       string `json:"session_title" example:"New conversation"`
-	UpstreamSessionKey string `json:"upstream_session_key" example:"agent:main:chatclaw:123"`
-	GatewayURL         string `json:"gateway_url" example:"wss://18789-sandbox-123.sandbox.lightclaw.tech"`
-	GatewayToken       string `json:"gateway_token" example:"gw_123"`
+	SessionID          string   `json:"session_id" example:"ses_123"`
+	SessionTitle       string   `json:"session_title" example:"New conversation"`
+	UpstreamSessionKey string   `json:"upstream_session_key" example:"agent:main:chatclaw:123"`
+	GatewayURL         string   `json:"gateway_url" example:"wss://18789-sandbox-123.sandbox.lightclaw.tech"`
+	GatewayToken       string   `json:"gateway_token" example:"gw_123"`
+}
+
+type AgentChatLaunchTokenResponse struct {
+	LaunchToken string `json:"launch_token" example:"eyJ1c2VyX2lkIjoi..."`
+	ExpiresAt   int64  `json:"expires_at" example:"1800000300"`
+}
+
+type AgentChatIntrospectRequest struct {
+	LaunchToken  string `json:"launch_token"`
+	BusinessCode string `json:"businessCode"`
+	Timestamp    int64  `json:"timestamp"`
+	Sign         string `json:"sign"`
+}
+
+type AgentChatIntrospectResponse struct {
+	UserID     string `json:"user_id" example:"usr_123"`
+	InstanceID string `json:"instance_id" example:"ins_123"`
 }
 
 type ChatClawStateResponse struct {

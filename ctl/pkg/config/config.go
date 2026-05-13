@@ -29,6 +29,7 @@ func Init(confDir string) error {
 	parseAdapterConf()
 	parseAllServiceRoleConf()
 	parseAllServiceAccountConf()
+	parseAgentChatConf()
 
 	return nil
 }
@@ -194,4 +195,25 @@ func parseServiceAccountConf(accountConfig *ServiceAccountConfig) {
 func parseServiceAccountConfBase(accountConfig *ServiceAccountBase) {
 	accountConfig.SecretId = util.DecryptString(accountConfig.SecretId)
 	accountConfig.SecretKey = util.DecryptString(accountConfig.SecretKey)
+}
+
+func parseAgentChatConf() {
+	if ServerConf.AgentChat == nil {
+		ServerConf.AgentChat = &AgentChatConfig{}
+	}
+	if strings.TrimSpace(ServerConf.AgentChat.BusinessCode) == "" {
+		ServerConf.AgentChat.BusinessCode = "lightvela"
+	}
+	if ServerConf.AgentChat.LaunchTokenTTLSeconds <= 0 {
+		ServerConf.AgentChat.LaunchTokenTTLSeconds = 300
+	}
+	if ServerConf.AgentChat.TimestampSkewSeconds <= 0 {
+		ServerConf.AgentChat.TimestampSkewSeconds = 300
+	}
+	if strings.TrimSpace(ServerConf.AgentChat.SecretKey) != "" {
+		ServerConf.AgentChat.SecretKey = util.DecryptString(ServerConf.AgentChat.SecretKey)
+	}
+	if strings.TrimSpace(ServerConf.AgentChat.LaunchTokenSecret) != "" {
+		ServerConf.AgentChat.LaunchTokenSecret = util.DecryptString(ServerConf.AgentChat.LaunchTokenSecret)
+	}
 }
