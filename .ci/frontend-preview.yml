@@ -61,10 +61,23 @@ stages:
               echo "目标规则：master -> https://master.preview.lightclaw.tech 和 https://intl-master.preview.lightclaw.tech"
               echo "目标规则：frontsandbox/<name> -> https://<name>.preview.lightclaw.tech 和 https://intl-<name>.preview.lightclaw.tech"
               echo "目标规则：playground/sandbox-bj-N -> https://sandbox-bj-N.preview.lightclaw.tech 和 https://intl-sandbox-bj-N.preview.lightclaw.tech"
-              echo "发布方式：构建 frontend dist-cn + dist-global 后并发上传到 StaticPages，不创建 GitOps MR"
+              echo "发布方式：构建 frontend dist-cn + dist-global 后顺序上传到 StaticPages，不创建 GitOps MR"
               echo "============================================================"
               set -euo pipefail
-              source .ci/init.sh
+
+              FRONTEND_PREVIEW_RUNTIME_REF="${FRONTEND_PREVIEW_RUNTIME_REF:-origin/master}"
+              FRONTEND_PREVIEW_RUNTIME_DIR="$(mktemp -d)"
+              cleanup_frontend_preview_runtime() {
+                rm -rf "$FRONTEND_PREVIEW_RUNTIME_DIR"
+              }
+              trap cleanup_frontend_preview_runtime EXIT
+
+              echo "frontend 预览发布器来源：${FRONTEND_PREVIEW_RUNTIME_REF}"
+              git fetch --no-tags --depth=1 origin master:refs/remotes/origin/master
+              git archive --format=tar "$FRONTEND_PREVIEW_RUNTIME_REF" .ci | tar -xf - -C "$FRONTEND_PREVIEW_RUNTIME_DIR"
+              FRONTEND_PREVIEW_RUNTIME_CI_DIR="$FRONTEND_PREVIEW_RUNTIME_DIR/.ci"
+
+              source "$FRONTEND_PREVIEW_RUNTIME_CI_DIR/init.sh"
               ci_init_repo_root
               ci_tune_staticpages_upload_tcp
               ci_ensure_node
@@ -142,7 +155,7 @@ stages:
                   echo "StaticPages 上传开始：variant=${variant} attempt=${attempt}/${staticpages_upload_max_attempts}"
                   echo "产物目录：${artifact_dir}"
                   echo "============================================================"
-                  if python3 .ci/runtime/commands/upload_staticpages_preview.py \
+                  if python3 "$FRONTEND_PREVIEW_RUNTIME_CI_DIR/runtime/commands/upload_staticpages_preview.py" \
                     --artifact-dir "$artifact_dir" \
                     --api-url "$STATICPAGES_API_URL" \
                     --repository wisp/mono2 \

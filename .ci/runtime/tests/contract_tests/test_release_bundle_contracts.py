@@ -186,6 +186,18 @@ class ReleaseBundleContractTests(unittest.TestCase):
             workflow_text=workflow_text,
         )
 
+    def test_frontend_preview_uses_master_runtime(self) -> None:
+        workflow_text = (REPO_ROOT / ".ci/frontend-preview.yml").read_text()
+
+        self.assertIn('FRONTEND_PREVIEW_RUNTIME_REF="${FRONTEND_PREVIEW_RUNTIME_REF:-origin/master}"', workflow_text)
+        self.assertIn("git fetch --no-tags --depth=1 origin master:refs/remotes/origin/master", workflow_text)
+        self.assertIn('git archive --format=tar "$FRONTEND_PREVIEW_RUNTIME_REF" .ci', workflow_text)
+        self.assertIn('source "$FRONTEND_PREVIEW_RUNTIME_CI_DIR/init.sh"', workflow_text)
+        self.assertIn(
+            'python3 "$FRONTEND_PREVIEW_RUNTIME_CI_DIR/runtime/commands/upload_staticpages_preview.py"',
+            workflow_text,
+        )
+
     def test_prod_release_bundles_project_exactly_one_direct_app(self) -> None:
         manifest = load_manifest()
 
