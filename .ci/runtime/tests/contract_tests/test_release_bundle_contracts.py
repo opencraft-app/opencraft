@@ -95,6 +95,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
                     expected_playground_auto_pin_envs="auto",
                     workflow_text=(REPO_ROOT / workflow_path).read_text(),
                 )
+                self.assert_registry_credentials_cover_build_envs(workflow, master_build_envs)
                 self.assertIn("build_and_promote_to_gitops.sh", workflow)
 
     def test_playground_env_reuses_beijing_registry_and_rewrites_gitops_paths(self) -> None:
@@ -454,6 +455,18 @@ class ReleaseBundleContractTests(unittest.TestCase):
             rf".*?AUTO_PIN_ENVS=\"{re.escape(expected_auto_pin_envs)}\""
         )
         self.assertIsNotNone(re.search(pattern, workflow, re.DOTALL))
+
+    def assert_registry_credentials_cover_build_envs(self, workflow: str, build_envs: str) -> None:
+        required_by_env = {
+            "beijing-sandbox": "TCR_BEIJING_PASSWORD",
+            "beijing-sandbox-2": "TCR_BEIJING_PASSWORD",
+            "shprod": "TCR_SHPROD_PASSWORD",
+            "sgprod": "TCR_SGPROD_PASSWORD",
+        }
+        for env_name in {item.strip() for item in build_envs.split(",") if item.strip()}:
+            required = required_by_env.get(env_name)
+            if required:
+                self.assertIn(required, workflow, f"{env_name} builds require {required} in CI env")
 
 
 if __name__ == "__main__":
