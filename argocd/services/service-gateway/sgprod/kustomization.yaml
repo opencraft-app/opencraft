@@ -26,6 +26,13 @@ patches:
             secretKeyRef:
               name: service-gateway-runtime-secrets
               key: SERVICE_GATEWAY_AI_GATEWAY_ADMIN_TOKEN
+  - target:
+      kind: Ingress
+      name: lightclaw-public
+    patch: |-
+      - op: add
+        path: /metadata/annotations/ingress.cloud.tencent.com~1direct-access
+        value: "true"
 
 generatorOptions:
   disableNameSuffixHash: true
