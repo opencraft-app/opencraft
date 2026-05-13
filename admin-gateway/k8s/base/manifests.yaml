@@ -22,6 +22,7 @@ metadata:
     kubernetes.io/ingress.class: qcloud
     ingress.cloud.tencent.com/modification-protection: "false"
     ingress.cloud.tencent.com/tke-service-config: admin-lightclaw-public-config
+    ingress.cloud.tencent.com/direct-access: "true"
     ingress.cloud.tencent.com/rewrite-support: "true"
     ingress.cloud.tencent.com/auto-rewrite: "true"
 spec:

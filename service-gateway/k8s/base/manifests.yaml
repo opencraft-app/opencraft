@@ -22,6 +22,7 @@ metadata:
     kubernetes.io/ingress.class: qcloud
     ingress.cloud.tencent.com/tke-service-config: lightclaw-public-config
     ingress.cloud.tencent.com/modification-protection: "false"
+    ingress.cloud.tencent.com/direct-access: "true"
 spec:
   ingressClassName: qcloud
   tls:
@@ -247,6 +248,11 @@ spec:
                 secretKeyRef:
                   name: service-gateway-runtime-secrets
                   key: SERVICE_GATEWAY_ADMIN_BASIC_AUTH_PASSWORD
+            - name: SERVICE_GATEWAY_AI_GATEWAY_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: service-gateway-runtime-secrets
+                  key: SERVICE_GATEWAY_AI_GATEWAY_ADMIN_TOKEN
           volumeMounts:
             - name: config
               mountPath: /etc/service-gateway/config.yaml
