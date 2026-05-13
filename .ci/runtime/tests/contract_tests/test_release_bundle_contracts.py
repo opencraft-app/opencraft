@@ -198,6 +198,24 @@ class ReleaseBundleContractTests(unittest.TestCase):
             workflow_text,
         )
 
+    def test_frontend_preview_builds_cn_and_intl_with_separate_api_bases(self) -> None:
+        workflow_text = (REPO_ROOT / ".ci/frontend-preview.yml").read_text()
+
+        self.assertIn('PREVIEW_CN_AUTH_API_BASE_URL="$(resolve_preview_auth_api_base_url "${{ ci.branch }}" cn)"', workflow_text)
+        self.assertIn('PREVIEW_INTL_AUTH_API_BASE_URL="$(resolve_preview_auth_api_base_url "${{ ci.branch }}" intl)"', workflow_text)
+        self.assertIn('printf \'https://api.lightvela.ai\'', workflow_text)
+        self.assertIn('printf \'https://lightclaw.tech\'', workflow_text)
+        self.assertIn('export VITE_AUTH_API_BASE_URL="$PREVIEW_CN_AUTH_API_BASE_URL"', workflow_text)
+        self.assertIn('export VITE_AUTH_API_BASE_URL="$PREVIEW_INTL_AUTH_API_BASE_URL"', workflow_text)
+        self.assertLess(
+            workflow_text.index('export VITE_AUTH_API_BASE_URL="$PREVIEW_CN_AUTH_API_BASE_URL"'),
+            workflow_text.index('"$PNPM_BIN" exec vite build --mode cn --outDir dist-cn'),
+        )
+        self.assertLess(
+            workflow_text.index('export VITE_AUTH_API_BASE_URL="$PREVIEW_INTL_AUTH_API_BASE_URL"'),
+            workflow_text.index('"$PNPM_BIN" exec vite build --mode global --outDir dist-global'),
+        )
+
     def test_prod_release_bundles_project_exactly_one_direct_app(self) -> None:
         manifest = load_manifest()
 
