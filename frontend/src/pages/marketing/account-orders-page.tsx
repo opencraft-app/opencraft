@@ -6,6 +6,7 @@ import { Link } from "react-router-dom";
 import { useSession } from "@/contexts/session-context";
 import { BrandMark } from "@/components/site/brand-mark";
 import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
+import { isGlobal } from "@/lib/region";
 
 /* ─── Mock Order Data ─── */
 
@@ -316,7 +317,7 @@ export const AccountOrdersPage = () => {
                       </Td>
                       <Td align="center">{order.quantity}</Td>
                       <Td align="right">
-                        <span className="font-mono">{order.amount}</span>
+                        <span className="font-mono">{isGlobal ? "$0.00" : order.amount}</span>
                       </Td>
                       <Td>
                         <span className="text-[13px]" style={{ color: "#999" }}>{order.date}</span>
