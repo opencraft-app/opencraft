@@ -4,13 +4,17 @@
  * 激活态走 mono2 "黑 + 灰底 + 加粗" 的克制风格，与 landing-navbar 一致。
  */
 
+import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { Link, useLocation } from "react-router-dom";
-import { SIDEBAR } from "@/config/docs-sidebar";
+import { getLocalizedSidebar } from "@/config/docs-sidebar";
 import { DocsSearch } from "@/components/docs/docs-search";
 import { cn } from "@/lib/utils";
 
 export function DocsSidebar() {
   const { pathname } = useLocation();
+  const { i18n } = useTranslation();
+  const sidebar = useMemo(() => getLocalizedSidebar(i18n.language), [i18n.language]);
   // 当前 slug：去掉 `/docs/` 前缀
   const activeSlug = pathname.replace(/^\/docs\/?/, "");
 
@@ -23,7 +27,7 @@ export function DocsSidebar() {
         </div>
 
         <nav className="space-y-7">
-          {SIDEBAR.map((group) => {
+          {sidebar.map((group) => {
             // 该分组下是否有激活项 —— 决定组标题是否高亮
             const hasActive = group.items.some((i) => i.slug === activeSlug);
             return (

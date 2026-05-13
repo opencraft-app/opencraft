@@ -3,6 +3,8 @@
  */
 
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { isEnglishLocale } from "@/config/docs-sidebar";
 import { cn } from "@/lib/utils";
 
 export interface TocItem {
@@ -16,6 +18,7 @@ interface TocProps {
 }
 
 export function DocsToc({ items }: TocProps) {
+  const { i18n } = useTranslation();
   const [activeId, setActiveId] = useState<string>("");
 
   useEffect(() => {
@@ -50,7 +53,7 @@ export function DocsToc({ items }: TocProps) {
     <aside className="hidden xl:block w-56 shrink-0 pl-8 py-8">
       <div className="sticky top-[76px]">
         <h4 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-tertiary)] mb-3">
-          本页目录
+          {isEnglishLocale(i18n.language) ? "On this page" : "本页目录"}
         </h4>
         <ul className="space-y-1 text-sm border-l border-[var(--border-subtle)]">
           {items.map((item) => (

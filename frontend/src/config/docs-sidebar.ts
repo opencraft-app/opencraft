@@ -13,6 +13,7 @@ export interface DocItem {
    */
   slug: string | null;
   title: string;
+  titleEn?: string;
   /**
    * 是否作为二级目录项（视觉上缩进）。
    * 用于在"配置通道"下挂三个具体通道（微信/飞书/QQ）。
@@ -27,35 +28,40 @@ export interface DocItem {
 
 export interface DocGroup {
   title: string;
+  titleEn?: string;
   items: DocItem[];
 }
 
 export const SIDEBAR: DocGroup[] = [
   {
     title: "开始使用",
+    titleEn: "Getting Started",
     items: [
-      { slug: "overview", title: "LightVela 是什么" },
-      { slug: "quickstart", title: "快速开始" },
-      { slug: "account", title: "账号与实名认证" },
-      { slug: "core-concepts", title: "核心概念" },
+      { slug: "overview", title: "LightVela 是什么", titleEn: "What is LightVela" },
+      { slug: "quickstart", title: "快速开始", titleEn: "Quickstart" },
+      { slug: "core-concepts", title: "核心概念", titleEn: "Core Concepts" },
     ],
   },
   {
     title: "配置指南",
+    titleEn: "Configuration Guide",
     items: [
-      { slug: "configuration", title: "配置总览" },
-      { slug: "configuration/model", title: "配置模型" },
-      // "配置通道" 作为一级分组表头，点击跳转到第一个子项（微信）；下面挂三个具体 channel 作为二级项
-      { slug: null, title: "配置通道", defaultChildSlug: "configuration/channel-wechat" },
-      { slug: "configuration/channel-wechat", title: "微信", indent: true },
-      { slug: "configuration/channel-feishu", title: "飞书", indent: true },
-      { slug: "configuration/channel-qq", title: "QQ", indent: true },
-      { slug: "configuration/skill", title: "配置技能" },
+      { slug: "configuration", title: "配置总览", titleEn: "Configuration Overview" },
+      { slug: "configuration/model", title: "配置模型", titleEn: "Configure Models" },
+      // "配置通道" 作为一级分组表头，点击跳转到第一个子项（WeChat）；下面挂三个具体 channel 作为二级项
+      { slug: null, title: "配置通道", titleEn: "Configure Channels", defaultChildSlug: "configuration/channel-wechat" },
+      { slug: "configuration/channel-wechat", title: "WeChat", indent: true },
+      { slug: "configuration/channel-telegram", title: "Telegram", indent: true },
+      { slug: "configuration/channel-whatsapp", title: "WhatsApp", indent: true },
+      { slug: "configuration/channel-discord", title: "Discord", indent: true },
+      { slug: "configuration/channel-slack", title: "Slack", indent: true },
+      { slug: "configuration/skill", title: "配置技能", titleEn: "Configure Skills" },
     ],
   },
   {
     title: "参考",
-    items: [{ slug: "faq", title: "常见问题 FAQ" }],
+    titleEn: "Reference",
+    items: [{ slug: "faq", title: "常见问题 FAQ", titleEn: "FAQ" }],
   },
 ];
 
@@ -63,16 +69,32 @@ export const SIDEBAR: DocGroup[] = [
 export const SLUG_TO_FILE: Record<string, string> = {
   overview: "01-overview.md",
   quickstart: "02-quickstart.md",
-  account: "03-account.md",
   "core-concepts": "04-core-concepts.md",
   configuration: "05-configuration.md",
   "configuration/model": "configuration/model.md",
   "configuration/channel-wechat": "configuration/channel-wechat.md",
-  "configuration/channel-feishu": "configuration/channel-feishu.md",
-  "configuration/channel-qq": "configuration/channel-qq.md",
+  "configuration/channel-telegram": "configuration/channel-telegram.md",
+  "configuration/channel-whatsapp": "configuration/channel-whatsapp.md",
+  "configuration/channel-discord": "configuration/channel-discord.md",
+  "configuration/channel-slack": "configuration/channel-slack.md",
   "configuration/skill": "configuration/skill.md",
   faq: "07-faq.md",
 };
+
+export const isEnglishLocale = (locale?: string): boolean =>
+  locale?.toLowerCase().startsWith("en") ?? false;
+
+export function getLocalizedSidebar(locale?: string): DocGroup[] {
+  const useEnglish = isEnglishLocale(locale);
+  return SIDEBAR.map((group) => ({
+    ...group,
+    title: useEnglish && group.titleEn ? group.titleEn : group.title,
+    items: group.items.map((item) => ({
+      ...item,
+      title: useEnglish && item.titleEn ? item.titleEn : item.title,
+    })),
+  }));
+}
 
 /** 按侧栏顺序展平所有可点击 slug，用于上一篇 / 下一篇导航 */
 export const FLAT_SLUGS: Array<{ slug: string; title: string }> = SIDEBAR.flatMap(
@@ -81,5 +103,13 @@ export const FLAT_SLUGS: Array<{ slug: string; title: string }> = SIDEBAR.flatMa
       .filter((item): item is DocItem & { slug: string } => item.slug !== null)
       .map((item) => ({ slug: item.slug, title: item.title })),
 );
+
+export function getLocalizedFlatSlugs(locale?: string): Array<{ slug: string; title: string }> {
+  return getLocalizedSidebar(locale).flatMap((group) =>
+    group.items
+      .filter((item): item is DocItem & { slug: string } => item.slug !== null)
+      .map((item) => ({ slug: item.slug, title: item.title })),
+  );
+}
 
 export const DEFAULT_SLUG = "overview";

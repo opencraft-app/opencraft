@@ -10,7 +10,7 @@
  * 行为和现有文档站一致。
  */
 
-import { SLUG_TO_FILE } from "@/config/docs-sidebar";
+import { SLUG_TO_FILE, isEnglishLocale } from "@/config/docs-sidebar";
 
 // ── markdown 原文 ────────────────────────────────────────────────
 const markdownModules = import.meta.glob("/src/content/docs/**/*.md", {
@@ -26,23 +26,32 @@ const imageUrls = import.meta.glob("/src/content/docs/images/*.{png,jpg,jpeg,web
 }) as Record<string, string>;
 
 /** 根据 slug 拿到对应 markdown 的原始文本，找不到返回 null。 */
-export function getDocBySlug(slug: string): string | null {
+export function getDocBySlug(slug: string, locale?: string): string | null {
   const filePath = SLUG_TO_FILE[slug];
   if (!filePath) return null;
   const key = `/src/content/docs/${filePath}`;
+  const localizedKey = `/src/content/docs/en/${filePath}`;
+  if (isEnglishLocale(locale) && markdownModules[localizedKey]) {
+    return markdownModules[localizedKey] ?? null;
+  }
   return markdownModules[key] ?? null;
 }
 
 /**
  * 把 markdown 里的本地图片路径改写为 Vite 构建后的 URL。
  * 识别 `./images/xxx`、`../images/xxx`、`images/xxx` 三种写法。
+ * 英文环境下若存在同名 `-en` 图片，则只替换英文版图片，中文版仍使用原图。
  */
-export function rewriteImagePaths(md: string): string {
+export function rewriteImagePaths(md: string, locale?: string): string {
   return md.replace(
     /!\[([^\]]*)\]\((?:\.\/|\.\.\/)?images\/([^)]+)\)/g,
     (match, alt: string, fname: string) => {
       const key = `/src/content/docs/images/${fname}`;
-      const url = imageUrls[key];
+      const localizedName = locale?.startsWith("en")
+        ? fname.replace(/(\.[^.]+)$/, "-en$1")
+        : fname;
+      const localizedKey = `/src/content/docs/images/${localizedName}`;
+      const url = imageUrls[localizedKey] ?? imageUrls[key];
       if (!url) return match; // 找不到的保留原样，方便排查
       return `![${alt}](${url})`;
     },
@@ -116,7 +125,6 @@ export function rewriteMarkdownLinks(md: string): string {
     const map: Record<string, string> = {
       "01-overview": "overview",
       "02-quickstart": "quickstart",
-      "03-account": "account",
       "04-core-concepts": "core-concepts",
       "05-configuration": "configuration",
       "07-faq": "faq",

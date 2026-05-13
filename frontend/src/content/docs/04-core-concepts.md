@@ -17,17 +17,17 @@ LightVela 涉及四个核心概念：Hermes、模型、通道、技能。本页�
 ## 概念关系
 
 ```
-           ┌──────────────────────────────────┐
-           │           Hermes                 │
-           │  （LightVela 云端运行的 Agent）  │
-           └──────────────────────────────────┘
-                 │              │            │
-           ┌─────┘              │            └──────┐
-           ▼                    ▼                   ▼
-       ┌───────┐           ┌────────┐          ┌────────┐
-       │ 模型   │           │  通道  │          │  技能   │
-       └───────┘           └────────┘          └────────┘
-        模型服务商          微信/QQ/飞书         SkillHub
+┌──────────────────────────────────────────────────────────────┐
+│                            Hermes                            │
+│                （LightVela 云端运行的 Agent）                   │
+└──────────────────────────────────────────────────────────────┘
+      │                          │                        │
+┌─────┘                          │                        └──────┐
+▼                                ▼                               ▼
+┌───────┐                   ┌────────┐                   ┌────────┐
+│  模型  │                   │  通道  │                   │  技能   │
+└───────┘                   └────────┘                   └────────┘
+ 模型服务商       WeChat/Telegram/WhatsApp/Discord/Slack     SkillHub
 ```
 
 | 概念 | 角色 | 说明 |
@@ -37,7 +37,7 @@ LightVela 涉及四个核心概念：Hermes、模型、通道、技能。本页�
 | 通道 | 交互入口 | 用户与 Hermes 对话的平台 |
 | 技能 | 能力扩展 | Hermes 可调用的附加能力包 |
 
-![](./images/20260424-114253-e6d5.png)
+![](./images/3-1.png)
 
 ---
 
@@ -83,13 +83,17 @@ Hermes 具有以下特性：
 
 | 通道 | 接入方式 | 适用场景 |
 |---|---|---|
-| 微信 | 扫码自动绑定 | 日常个人使用 |
-| 飞书 | 扫码自动绑定 | 办公场景，支持富文本消息 |
-| QQ | 填写 AppID 与 AppSecret | 需要一定配置能力的场景 |
+| WeChat | 扫码自动绑定 | 日常个人使用，适合国内用户 |
+| Telegram | Bot Token 接入 | 个人或团队消息场景，配置简单，适合轻量自动化 |
+| WhatsApp | WhatsApp Business API 接入 | 海外用户沟通、客户服务、通知提醒等场景 |
+| Discord | Bot Token 接入 | 社群运营、开发者社区、游戏/兴趣群组互动 |
+| Slack | OAuth / App Token 接入 | 企业办公协作、团队通知、工作流自动化 |
 
-微信与飞书选择通道后点击「授权接入」生成二维码，使用手机扫码完成授权即可；QQ 则需先在 [QQ 开放平台](https://q.qq.com) 创建一个机器人，再将获得的 AppID 与 AppSecret 填回 LightVela。
+WeChat 选择通道后点击「授权接入」生成二维码，使用手机扫码完成授权即可。
 
-各通道的详细接入步骤见 [配置通道 - 微信](./configuration/channel-wechat.md) / [飞书](./configuration/channel-feishu.md) / [QQ](./configuration/channel-qq.md)。
+Telegram、WhatsApp、Discord、Slack 的相关配置通道仍在搭建中，即将上线启用。
+
+各通道的详细接入步骤见 [配置通道 - WeChat](./configuration/channel-wechat.md) / [Telegram](./configuration/channel-telegram.md) / [WhatsApp](./configuration/channel-whatsapp.md) / [Discord](./configuration/channel-discord.md) / [Slack](./configuration/channel-slack.md)。
 
 > 💡 **多通道并存**
 >
@@ -115,7 +119,7 @@ Hermes 具有以下特性：
 
 一次完整对话的内部流程如下：
 
-1. 用户通过通道（如微信）发送消息给 Hermes
+1. 用户通过通道（如 WeChat）发送消息给 Hermes
 
 2. Hermes 根据消息内容判断是否需要调用技能
 
