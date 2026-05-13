@@ -24,6 +24,7 @@ data:
   MYSQL_ROOT_USER: "root"
   AI_GATEWAY_DB: "ai_gateway"
   AI_GATEWAY_DB_USER: "ai_gateway"
+  AI_GATEWAY_EXPECTED_SCHEMA_VERSION: "4"
   REDIS_ADDR: "REPLACE_AI_GATEWAY_REDIS_ADDR"
 ---
 apiVersion: networking.k8s.io/v1
