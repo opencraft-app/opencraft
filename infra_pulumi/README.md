@@ -129,6 +129,12 @@ GOWORK=off go run ./cmd/infractl validate --stack beijing-sandbox
 - 这样旧 workload 清单里的不同 `imagePullSecrets` 名称都能继续工作，同时新项目可以逐步收敛到“不再手工维护项目级 pull secret”。
 - 当前集群级 pull secret 的 server 来自 TCR 实例真实公网域名，例如 `lightclaw-shprod.tencentcloudcr.com`；不要再假设固定是 `ccr.ccs.tencentyun.com`。
 
+### TKE 日志 Agent
+
+- `infra_pulumi` 不安装 TKE `tke-log-agent` addon。
+- 业务侧仍可保留 `LogConfig` 清单作为日志采集意图，但集群级日志 agent 不由本控制面启用。
+- 如果未来需要恢复 CLS 容器日志采集，必须先验证 TKE addon 在目标地域的 `clusterID`、`localRegion`、`clsHost` 渲染正确，再显式建模；不要依赖 addon 默认值。
+
 ### TCR 公网访问
 
 - `stacks.tcr.open_public_operation=true` 只表示开启 TCR 的公网能力，不代表公网来源已经放通。

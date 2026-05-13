@@ -139,17 +139,6 @@ func Ensure(ctx *stackctx.Context) error {
 		return err
 	}
 
-	if _, err := kubernetes.NewAddon(ctx.Pulumi, naming.StableResource("tke", "addon", "log-agent"), &kubernetes.AddonArgs{
-		ClusterId:    clusterID,
-		AddonName:    pulumi.String("tke-log-agent"),
-		AddonVersion: pulumi.StringPtr("1.1.23"),
-	}, ctx.OptionsWithImport(ctx.Plan.TKE.AddonID, pulumi.IgnoreChanges([]string{
-		"addonVersion",
-		"rawValues",
-	}))...); err != nil {
-		return err
-	}
-
 	tcrAddonImportID := ""
 	if ctx.Runtime.EnableImport && existingClusterID(ctx) != "" {
 		tcrAddonImportID = existingClusterID(ctx) + "#tcr"

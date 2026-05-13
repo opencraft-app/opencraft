@@ -32,7 +32,6 @@ type TKEPlan struct {
 	ClusterID               string
 	ClusterEndpointID       string
 	NodePoolID              string
-	AddonID                 string
 	ScaleWorkerID           string
 }
 
@@ -119,7 +118,6 @@ func ForEnvironment(env string) *Plan {
 			ClusterID:               "cls-8gnhos9p",
 			ClusterEndpointID:       "cls-8gnhos9p",
 			NodePoolID:              "cls-8gnhos9p#np-4fdv8kif",
-			AddonID:                 "cls-8gnhos9p#tke-log-agent",
 			ScaleWorkerID:           "cls-8gnhos9p#ins-85lpngpt",
 		},
 		Cynosdb: CynosdbPlan{
