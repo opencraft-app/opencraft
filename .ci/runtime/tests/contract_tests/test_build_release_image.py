@@ -8,15 +8,25 @@ RUNTIME_DIR = REPO_ROOT / ".ci" / "runtime"
 if str(RUNTIME_DIR) not in sys.path:
     sys.path.insert(0, str(RUNTIME_DIR))
 
-from contracts.build_release_image import docker_build_command, resolve_docker_build_args  # noqa: E402
+from contracts.build_release_image import (  # noqa: E402
+    docker_build_command,
+    playground_frontend_auth_api_base_url,
+    resolve_docker_build_args,
+)
 from contracts.bundles import ImageTarget  # noqa: E402
 
 
 class BuildReleaseImageTests(unittest.TestCase):
-    def test_frontend_playground_build_bakes_public_auth_api_base(self) -> None:
+    def test_frontend_playground_build_bakes_env_scoped_auth_api_base(self) -> None:
         self.assertEqual(
             resolve_docker_build_args("frontend", "sandbox-bj-7"),
-            {"VITE_AUTH_API_BASE_URL": "https://lightclaw.tech"},
+            {"VITE_AUTH_API_BASE_URL": "https://api-sandbox-bj-7.lightclaw.tech"},
+        )
+
+    def test_playground_frontend_auth_api_base_uses_env_name(self) -> None:
+        self.assertEqual(
+            playground_frontend_auth_api_base_url("sandbox-bj-6"),
+            "https://api-sandbox-bj-6.lightclaw.tech",
         )
 
     def test_frontend_non_playground_build_has_no_extra_build_args(self) -> None:
@@ -38,11 +48,11 @@ class BuildReleaseImageTests(unittest.TestCase):
             target,
             "registry.example.com/lightclaw/frontend:frontend-sandbox-bj-7-abc123",
             "linux/amd64",
-            {"VITE_AUTH_API_BASE_URL": "https://lightclaw.tech"},
+            {"VITE_AUTH_API_BASE_URL": "https://api-sandbox-bj-7.lightclaw.tech"},
         )
 
         self.assertIn("--build-arg", command)
-        self.assertIn("VITE_AUTH_API_BASE_URL=https://lightclaw.tech", command)
+        self.assertIn("VITE_AUTH_API_BASE_URL=https://api-sandbox-bj-7.lightclaw.tech", command)
         self.assertEqual(command[-1], "frontend")
 
 
