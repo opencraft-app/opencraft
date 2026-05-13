@@ -303,7 +303,7 @@ describe("release matrix helpers", () => {
       buildCommand: "build:global",
       deployCommand: "deploy:eo",
       projectName: "lightvela-intl",
-      authApiBaseUrl: "https://lightclaw.tech",
+      authApiBaseUrl: "https://api.lightvela.ai",
       outputDir: "dist-global",
       observability: {
         aegis: {
