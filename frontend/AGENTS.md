@@ -48,8 +48,8 @@ pnpm i18n:extract   # 扫描 t() 生成 i18n/generated/*.json
 pnpm i18n:check     # 校验翻译完整性（CI 门禁）
 
 # 部署
-pnpm deploy:eo                                                  # EdgeOne Pages（国际站预览）
-python3 scripts/build-release-image.py --service frontend --env shprod --tag <tag>  # Argo CD（国内站 shprod，monorepo 根执行）
+pnpm deploy:eo                                                  # EdgeOne Pages 通用部署脚本（默认推到 lightvela-preview，可通过 EDGEONE_PAGES_PROJECT_NAME / EDGEONE_PAGES_ENV / EDGEONE_PAGES_DIR 覆盖）
+python3 scripts/build-release-image.py --service frontend --env shprod --tag <tag>  # Argo CD（shprod，monorepo 根执行）
 ```
 
 > 无独立 Prettier/ESLint 配置，代码质量由 tsconfig strict 保障。
