@@ -23,9 +23,10 @@
 | i18n | `react-i18next` + 自研"中文即 key"（`src/i18n/`） |
 | 测试 | Vitest 4 + `@testing-library/react` + jsdom |
 | 包管理 | pnpm（与 `tea-sdk-lightclaw` workspace 联动） |
-| 默认分支 | `master`（国内站）；`feature/international-site`（国际站） |
+| 主干分支 | `master`（国内站 + 国际站代码合一，通过编译期 `isCN`/`isGlobal` 区分） |
+| 国际站域名 | 预览：`https://lightvela-preview-hpthlnbc.edgeone.cool`；API：`https://lightclaw.tech` |
 | TAPD workspace | `10132091` |
-| 发布 | Argo CD（`shprod`）主流 + Cloudflare Pages（`pnpm deploy:cf`） |
+| 发布 | 国内站：Argo CD（`shprod`）；国际站：EdgeOne Pages（`pnpm deploy:eo`） |
 
 ---
 
@@ -47,24 +48,21 @@ pnpm i18n:extract   # 扫描 t() 生成 i18n/generated/*.json
 pnpm i18n:check     # 校验翻译完整性（CI 门禁）
 
 # 部署
-pnpm deploy:cf                                                  # CF Pages
-python3 scripts/build-release-image.py --service frontend --env shprod --tag <tag>  # Argo CD（monorepo 根执行）
+pnpm deploy:eo                                                  # EdgeOne Pages（国际站预览）
+python3 scripts/build-release-image.py --service frontend --env shprod --tag <tag>  # Argo CD（国内站 shprod，monorepo 根执行）
 ```
 
 > 无独立 Prettier/ESLint 配置，代码质量由 tsconfig strict 保障。
 
-### 发布预览（EdgeOne Pages，agent 临时验证用）
+### 国际站发布预览（EdgeOne Pages）
 
-Cloudflare Pages（`pnpm deploy:cf` / `https://lightclaw.pages.dev`）是跟 master 同步的官方预览，由 CI 合入后自动发布，**不接受 agent 临时推送**。
-
-验证未合并分支用 **EdgeOne Pages** 预览（项目 `lightvela-preview` / ProjectId `pages-fqdz1kdlfvp1` / 域名 `https://lightvela-preview-hpthlnbc.edgeone.cool`）：
+国际站当前**唯一的预览/发布通道**是 **EdgeOne Pages**（项目 `lightvela-preview` / ProjectId `pages-fqdz1kdlfvp1` / 域名 `https://lightvela-preview-hpthlnbc.edgeone.cool`）。国际站发布从 `master` 拉取，使用 `pnpm build:global` 产出 `dist-global/`：
 
 > ⚠️ **多人共享场景**：默认的 `lightvela-preview` project + production 环境会被多人同时使用，谁后部署谁覆盖。如果只是个人临时验证、且其他人**没有正在依赖**这个预览域名，可以直接走下面的 default 命令；如果在做评审 / 给别人发链接、或者已知有人在依赖，**请新建 dedicated preview project**（例如 `lightvela-preview-<你的名字>`）：把命令里的 `-n lightvela-preview` 换成 `-n lightvela-preview-pablo`，或设 `EDGEONE_PAGES_PROJECT_NAME=<dedicated-name>` 后再跑 `pnpm deploy:eo`。
 
 ```bash
 cd frontend
-# 国内站 → dist-cn/（shprod 部署）；国际站 → dist-global/（CF Pages + EdgeOne 预览）
-# EdgeOne 预览只验国际站产物，因此清理 / 构建 / 部署都针对 dist-global
+# 国际站 → dist-global/（EdgeOne 预览）
 rm -rf dist-global                                                # 必做，防止上一分支残留产物
 VITE_AUTH_API_BASE_URL=https://lightclaw.tech pnpm build:global   # 产出 dist-global/
 TOKEN=$(tr -d '[:space:]' < ~/.tencentcloud/edgeone_pages_token)  # 末尾空白会让 CLI 误判 "No API token provided"
@@ -72,7 +70,7 @@ npx --yes edgeone pages deploy dist-global -n lightvela-preview -e production -t
 ```
 
 - ⚠️ **国内 / 国际产物目录不共用**：国内站 `dist-cn/`（`pnpm build:cn`），国际站 `dist-global/`（`pnpm build:global`）。切分支 / 切区域前务必 `rm -rf dist-cn dist-global` 清旧，避免把另一侧的残留发出去
-- 若要预览国内站产物，替换为 `rm -rf dist-cn && pnpm build:cn && npx edgeone pages deploy dist-cn ...`
+- 国际站 API 必须烘焙 `VITE_AUTH_API_BASE_URL=https://lightclaw.tech`，否则预览会请求到错误的后端
 - Token 位置：`~/.tencentcloud/edgeone_pages_token`（0600，仅 pablozhong 授权范围内）
 - `-e production` 是**测试项目自己的 production**，不是线上 `lightvela` 项目
 - CLI 输出的 `EDGEONE_DEPLOY_URL` 带 `eo_token` 和 `eo_time` 两个 query，**必须完整保留**，缺一个就 401
@@ -81,7 +79,7 @@ npx --yes edgeone pages deploy dist-global -n lightvela-preview -e production -t
 **发布后 bundle 指纹回验**（踩过坑，务必做）：
 
 1. `curl <预览URL>/index.html` 拿到 `/assets/index-<hash>.js`
-2. 本地 `ls dist-global/assets/index-*.js`（国内站则 `dist-cn/`）核对 hash 一致
+2. 本地 `ls dist-global/assets/index-*.js` 核对 hash 一致
 3. 对得上再在浏览器肉眼验证；对不上说明产物目录没覆盖或被缓存，硬刷新 / 重发
 
 **实名墙**：国内站 `/v1/instances/*` 写请求（POST/PUT/PATCH；DELETE 不拦）需要实名账号；未实名账号打开 settings 页时 `POST /v1/instances/{id}/debug/exec` 会在后台静默 403 `realname_required`。国际站 `isGlobal` 不展示实名入口，也不应被该实名墙拦截。
@@ -218,15 +216,45 @@ frontend/src/
 
 ### 8.6 区域差异（国内 vs 国际）
 
+国内站与国际站代码同一仓同一分支（`master`），通过编译期常量 `isCN` / `isGlobal` 在同一套代码里选择不同表现。新增区域相关功能时需同时考虑两边的表现。
+
+#### 先判断属于哪类场景，再决定写法
+
+绝大多数功能两站表现一致，只是文案语言不同；**不要**默认就写 `isCN`/`isGlobal` 分支。
+
+| 场景 | 占比 | 正确写法 |
+|---|---|---|
+| **A. 两站表现一致，仅文案语言不同**（默认） | 绝大多数 | 中文字面量包 `t("...")` → `pnpm i18n:extract` 补 `en-US.json` → `pnpm i18n:check`；**不要**写 `isCN`/`isGlobal` 分支 |
+| **B. 两站有功能 / UI / 接口差异** | 少数（OAuth、首页平台卡片、Bot 通道、ICP、实名等） | 用 `isCN`/`isGlobal` 数据驱动切换，下表 + 开发要点适用 |
+
+> 简单口诀：**「能用 `t()` 解决的，绝不上 `isGlobal`」**。把区域分支留给真正功能/数据有差异的场景。
+
+下表仅列**场景 B**（两站存在差异）的对照点：
+
 | 维度 | `isCN`（国内） | `isGlobal`（国际） |
 |---|---|---|
 | 构建 | `pnpm build:cn` → `dist-cn/` | `pnpm build:global` → `dist-global/` |
-| 环境变量 | `VITE_REGION=cn` | `VITE_REGION=global` |
-| OAuth | QQ / 微信 | Google / GitHub |
+| 开发命令 | `pnpm dev:cn` / `pnpm dev:local` | `pnpm dev:global` / `pnpm dev:local:global` |
+| 环境变量 | `VITE_REGION=cn` | `VITE_REGION=global` + `VITE_AUTH_API_BASE_URL=https://lightclaw.tech` |
+| 分支 | `master`（同仓同分支，代码合一） | `master`（同仓同分支，代码合一） |
+| 发布通道 | Argo CD `shprod` | EdgeOne Pages（`pnpm deploy:eo`） |
+| 语言 | 中文 zh-CN | 英文 en-US（`t()` 翻译，必须经 `pnpm i18n:check`） |
+| OAuth | QQ / 微信（含微信扫码登录 SSE） | Google / GitHub |
 | 首页平台卡片 | QQ / 微信 / 飞书 / 钉钉 | Telegram / WhatsApp / Discord / Slack |
-| 语言 | 中文 zh-CN | 英文 en-US（`t()` 翻译） |
-| 分支 | `master` | `feature/international-site` |
-| 法律信息 | 显示 ICP | 隐藏 ICP，显示条款 / 隐私 |
+| Bot 通道 | QQ 通道（国内独有）、微信扫码 | Telegram / WhatsApp / Discord / Slack |
+| 法律信息 | 显示 ICP 备案 | 隐藏 ICP，显示 Terms / Privacy |
+| 实名认证 | 写操作受实名墙拦截（`realname_required`） | 不展示实名入口，不应被实名墙拦截 |
+| 测试文件 | `*.test.tsx` | 国际站专属：`*.global.test.tsx` |
+
+**国际站开发要点**：
+
+- **判定方式**：始终用 `import { isGlobal, isCN } from '@/lib/region'` 做编译期判断；**禁止**用 `process.env`、`window.location`、`navigator.language` 在运行时判定区域
+- **数据驱动 UI**：landing 平台卡片、Nav 入口、OAuth 提供商等区域差异部分**必须**用数组/常量驱动，按 `isGlobal` 切换数据源，而非在 JSX 里写 `{isGlobal && <X/>}{isCN && <Y/>}` 散点判断
+- **i18n 强制**：国际站任何用户可见文案都必须经过 `t()`，新增文案后跑 `pnpm i18n:extract` + 补 `en-US.json` + `pnpm i18n:check`
+- **Repository 屏蔽**：`BotRepository` 中 QQ 通道、微信扫码 SSE 等 API 在 `isGlobal` 下不应被调用；新增国际站独有 API 同理
+- **不引入实名墙**：国际站新增写接口前确认后端没复用国内 `realname_required` 中间件；前端不要展示实名 CTA
+- **测试覆盖**：涉及区域差异的组件用 `vi.mock('@/lib/region')` 切换 `isCN`/`isGlobal` 双跑；纯国际站逻辑写 `*.global.test.tsx`
+- **预览验证**：合 MR 前必须用 `pnpm deploy:eo` 在 EdgeOne 上跑一遍国际站预览，做 bundle 指纹回验
 
 ---
 
