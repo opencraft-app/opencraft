@@ -102,11 +102,13 @@ function buildIndex(locale?: string): SearchEntry[] {
       });
 
       const filePath = SLUG_TO_FILE[item.slug];
+      // 英文环境只认英文 md；中文环境只认中文 md。
+      // 之前会在英文 md 缺失时 fallback 到中文 md，导致搜索结果出现
+      // "标题英文（来自 sidebar）+ 章节中文（来自 fallback md 的 H2）" 的混杂。
+      // 现在严格区分：英文 md 没建好就只索引 doc 标题，不抓章节，
+      // 并打 warn 提醒维护者补齐英文版。
       const tryKeys = filePath
-        ? [
-            `/src/content/docs/${useEnglish ? `en/${filePath}` : filePath}`,
-            `/src/content/docs/${filePath}`,
-          ]
+        ? [`/src/content/docs/${useEnglish ? `en/${filePath}` : filePath}`]
         : [];
 
       let raw: string | undefined;
@@ -116,7 +118,17 @@ function buildIndex(locale?: string): SearchEntry[] {
           break;
         }
       }
-      if (!raw) continue;
+      if (!raw) {
+        if (useEnglish && filePath && import.meta.env.DEV) {
+          // 仅在英文环境 + 开发模式下提醒，避免线上控制台噪音
+          console.warn(
+            `[docs-search] missing English markdown for slug "${item.slug}" ` +
+              `(expected /src/content/docs/en/${filePath}); ` +
+              `section index skipped to avoid mixed-language results.`,
+          );
+        }
+        continue;
+      }
 
       for (const h of extractH2(raw)) {
         entries.push({
@@ -384,7 +396,7 @@ export function DocsSearch() {
               </span>
               <span className="inline-flex items-center gap-1">
                 <KbdMini>↵</KbdMini>
-                跳转
+                {isEnglish ? "Go" : "跳转"}
               </span>
               <span className="inline-flex items-center gap-1">
                 <KbdMini>esc</KbdMini>

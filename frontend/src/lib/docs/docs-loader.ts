@@ -125,7 +125,6 @@ export function rewriteMarkdownLinks(md: string): string {
     const map: Record<string, string> = {
       "01-overview": "overview",
       "02-quickstart": "quickstart",
-      "03-account": "account",
       "04-core-concepts": "core-concepts",
       "05-configuration": "configuration",
       "07-faq": "faq",
