@@ -9,6 +9,13 @@ resources:
 
 patches:
   - path: delete-servicemonitor.yaml
+  - target:
+      kind: Ingress
+      name: admin-lightclaw-public
+    patch: |-
+      - op: add
+        path: /metadata/annotations/ingress.cloud.tencent.com~1direct-access
+        value: "true"
 
 generators:
   - ksops-secret-generator.yaml
