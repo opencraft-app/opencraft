@@ -3,7 +3,15 @@
  * 路由形态：
  *   /docs/:slug              例如 /docs/overview
  *   /docs/:category/:slug    例如 /docs/configuration/model
+ *
+ * 区域差异：
+ *   按 AGENTS.md 第 252 行规范，国内 / 国际站 sidebar 用数组/常量驱动，按
+ *   `isGlobal` 编译期切换数据源，terser 会消除未选中的一支为死代码。
+ *   - 国内站（CN_SIDEBAR）：微信 / 飞书 / QQ
+ *   - 国际站（GLOBAL_SIDEBAR）：WeChat / Telegram / WhatsApp / Discord / Slack
  */
+
+import { isGlobal } from "@/lib/region";
 
 export interface DocItem {
   /**
@@ -16,7 +24,7 @@ export interface DocItem {
   titleEn?: string;
   /**
    * 是否作为二级目录项（视觉上缩进）。
-   * 用于在"配置通道"下挂三个具体通道（微信/飞书/QQ）。
+   * 用于在"配置通道"下挂具体通道（国内：微信/飞书/QQ；国际：WeChat/Telegram/...）。
    */
   indent?: boolean;
   /**
@@ -32,7 +40,37 @@ export interface DocGroup {
   items: DocItem[];
 }
 
-export const SIDEBAR: DocGroup[] = [
+/** 国内站 sidebar：微信 / 飞书 / QQ */
+const CN_SIDEBAR: DocGroup[] = [
+  {
+    title: "开始使用",
+    items: [
+      { slug: "overview", title: "LightVela 是什么" },
+      { slug: "quickstart", title: "快速开始" },
+      { slug: "core-concepts", title: "核心概念" },
+    ],
+  },
+  {
+    title: "配置指南",
+    items: [
+      { slug: "configuration", title: "配置总览" },
+      { slug: "configuration/model", title: "配置模型" },
+      // "配置通道" 作为一级分组表头，点击跳转到第一个子项（微信）；下面挂三个具体 channel 作为二级项
+      { slug: null, title: "配置通道", defaultChildSlug: "configuration/channel-wechat" },
+      { slug: "configuration/channel-wechat", title: "微信", indent: true },
+      { slug: "configuration/channel-feishu", title: "飞书", indent: true },
+      { slug: "configuration/channel-qq", title: "QQ", indent: true },
+      { slug: "configuration/skill", title: "配置技能" },
+    ],
+  },
+  {
+    title: "参考",
+    items: [{ slug: "faq", title: "常见问题 FAQ" }],
+  },
+];
+
+/** 国际站 sidebar：WeChat / Telegram / WhatsApp / Discord / Slack */
+const GLOBAL_SIDEBAR: DocGroup[] = [
   {
     title: "开始使用",
     titleEn: "Getting Started",
@@ -48,7 +86,6 @@ export const SIDEBAR: DocGroup[] = [
     items: [
       { slug: "configuration", title: "配置总览", titleEn: "Configuration Overview" },
       { slug: "configuration/model", title: "配置模型", titleEn: "Configure Models" },
-      // "配置通道" 作为一级分组表头，点击跳转到第一个子项（WeChat）；下面挂三个具体 channel 作为二级项
       { slug: null, title: "配置通道", titleEn: "Configure Channels", defaultChildSlug: "configuration/channel-wechat" },
       { slug: "configuration/channel-wechat", title: "WeChat", indent: true },
       { slug: "configuration/channel-telegram", title: "Telegram", indent: true },
@@ -65,8 +102,27 @@ export const SIDEBAR: DocGroup[] = [
   },
 ];
 
+/**
+ * 当前区域生效的 sidebar。
+ * 编译期常量 `isGlobal` 决定使用哪一份；未选中的一支会被 terser 消除为死代码。
+ */
+export const SIDEBAR: DocGroup[] = isGlobal ? GLOBAL_SIDEBAR : CN_SIDEBAR;
+
 /** slug 到 markdown 文件路径（相对于 `@/content/docs/`）的映射 */
-export const SLUG_TO_FILE: Record<string, string> = {
+const CN_SLUG_TO_FILE: Record<string, string> = {
+  overview: "01-overview.md",
+  quickstart: "02-quickstart.md",
+  "core-concepts": "04-core-concepts.md",
+  configuration: "05-configuration.md",
+  "configuration/model": "configuration/model.md",
+  "configuration/channel-wechat": "configuration/channel-wechat.md",
+  "configuration/channel-feishu": "configuration/channel-feishu.md",
+  "configuration/channel-qq": "configuration/channel-qq.md",
+  "configuration/skill": "configuration/skill.md",
+  faq: "07-faq.md",
+};
+
+const GLOBAL_SLUG_TO_FILE: Record<string, string> = {
   overview: "01-overview.md",
   quickstart: "02-quickstart.md",
   "core-concepts": "04-core-concepts.md",
@@ -80,6 +136,10 @@ export const SLUG_TO_FILE: Record<string, string> = {
   "configuration/skill": "configuration/skill.md",
   faq: "07-faq.md",
 };
+
+export const SLUG_TO_FILE: Record<string, string> = isGlobal
+  ? GLOBAL_SLUG_TO_FILE
+  : CN_SLUG_TO_FILE;
 
 export const isEnglishLocale = (locale?: string): boolean =>
   locale?.toLowerCase().startsWith("en") ?? false;

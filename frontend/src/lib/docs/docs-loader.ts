@@ -11,6 +11,7 @@
  */
 
 import { SLUG_TO_FILE, isEnglishLocale } from "@/config/docs-sidebar";
+import { isGlobal } from "@/lib/region";
 
 // ── markdown 原文 ────────────────────────────────────────────────
 const markdownModules = import.meta.glob("/src/content/docs/**/*.md", {
@@ -25,16 +26,31 @@ const imageUrls = import.meta.glob("/src/content/docs/images/*.{png,jpg,jpeg,web
   import: "default",
 }) as Record<string, string>;
 
-/** 根据 slug 拿到对应 markdown 的原始文本，找不到返回 null。 */
+/**
+ * 根据 slug 拿到对应 markdown 的原始文本，找不到返回 null。
+ *
+ * 加载优先级：
+ *   - 国内站 (isCN)：             `docs/<file>`
+ *   - 国际站 (isGlobal) + 英文：  `docs/en/<file>`（缺失则降级 `docs/global/<file>` → `docs/<file>`）
+ *   - 国际站 (isGlobal) + 中文：  `docs/global/<file>`（缺失则降级 `docs/<file>`）
+ */
 export function getDocBySlug(slug: string, locale?: string): string | null {
   const filePath = SLUG_TO_FILE[slug];
   if (!filePath) return null;
-  const key = `/src/content/docs/${filePath}`;
-  const localizedKey = `/src/content/docs/en/${filePath}`;
-  if (isEnglishLocale(locale) && markdownModules[localizedKey]) {
-    return markdownModules[localizedKey] ?? null;
+
+  const cnKey = `/src/content/docs/${filePath}`;
+  const globalKey = `/src/content/docs/global/${filePath}`;
+  const enKey = `/src/content/docs/en/${filePath}`;
+
+  if (isGlobal) {
+    if (isEnglishLocale(locale)) {
+      return markdownModules[enKey] ?? markdownModules[globalKey] ?? markdownModules[cnKey] ?? null;
+    }
+    return markdownModules[globalKey] ?? markdownModules[cnKey] ?? null;
   }
-  return markdownModules[key] ?? null;
+
+  // 国内站：仅加载国内站文档
+  return markdownModules[cnKey] ?? null;
 }
 
 /**

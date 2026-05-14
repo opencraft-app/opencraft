@@ -26,6 +26,7 @@ import {
   getLocalizedSidebar,
   isEnglishLocale,
 } from "@/config/docs-sidebar";
+import { isGlobal } from "@/lib/region";
 import { overlayBackdropClass } from "@/components/ui/control-shell";
 import { cn } from "@/lib/utils";
 
@@ -102,14 +103,23 @@ function buildIndex(locale?: string): SearchEntry[] {
       });
 
       const filePath = SLUG_TO_FILE[item.slug];
-      // 英文环境只认英文 md；中文环境只认中文 md。
-      // 之前会在英文 md 缺失时 fallback 到中文 md，导致搜索结果出现
-      // "标题英文（来自 sidebar）+ 章节中文（来自 fallback md 的 H2）" 的混杂。
-      // 现在严格区分：英文 md 没建好就只索引 doc 标题，不抓章节，
-      // 并打 warn 提醒维护者补齐英文版。
-      const tryKeys = filePath
-        ? [`/src/content/docs/${useEnglish ? `en/${filePath}` : filePath}`]
-        : [];
+      // 路径解析与 docs-loader.ts 对齐：
+      //   - 国内站 (isCN)：              docs/<file>
+      //   - 国际站 (isGlobal) + 英文：   docs/en/<file>
+      //   - 国际站 (isGlobal) + 中文：   docs/global/<file>
+      // 严格区分语言/区域：缺失时不 fallback 到其他语言/区域，避免搜索结果
+      // 出现"标题英文 + 章节中文"等混杂。仅打 warn 提醒维护者补齐。
+      let tryKey: string | null = null;
+      if (filePath) {
+        if (isGlobal) {
+          tryKey = useEnglish
+            ? `/src/content/docs/en/${filePath}`
+            : `/src/content/docs/global/${filePath}`;
+        } else {
+          tryKey = `/src/content/docs/${filePath}`;
+        }
+      }
+      const tryKeys = tryKey ? [tryKey] : [];
 
       let raw: string | undefined;
       for (const k of tryKeys) {
@@ -119,12 +129,12 @@ function buildIndex(locale?: string): SearchEntry[] {
         }
       }
       if (!raw) {
-        if (useEnglish && filePath && import.meta.env.DEV) {
-          // 仅在英文环境 + 开发模式下提醒，避免线上控制台噪音
+        if (filePath && tryKey && import.meta.env.DEV && (useEnglish || isGlobal)) {
+          // 仅在国际站 / 英文环境 + 开发模式下提醒，避免线上控制台噪音
           console.warn(
-            `[docs-search] missing English markdown for slug "${item.slug}" ` +
-              `(expected /src/content/docs/en/${filePath}); ` +
-              `section index skipped to avoid mixed-language results.`,
+            `[docs-search] missing markdown for slug "${item.slug}" ` +
+              `(expected ${tryKey}); ` +
+              `section index skipped to avoid mixed-language/region results.`,
           );
         }
         continue;
