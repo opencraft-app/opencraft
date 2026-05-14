@@ -153,7 +153,7 @@ stages:
               GITOPS_BRANCH=gitops \
               bash .ci/runtime/promote_bundle_image_to_gitops.sh "${{ parameters.SERVICE }}" "${{ parameters.BUNDLE }}" "${{ variables.TARGET_ENV }}" "$SOURCE_SHA"
   - name: 确认生产 promote ${{ parameters.DISPLAY_NAME }}
-    if: "${{ parameters.ENABLE_MASTER_PROD_PROMOTE == true && variables.PIPELINE_MODE == 'build' && ci.branch == 'master' }}"
+    if: "parameters.ENABLE_MASTER_PROD_PROMOTE == true && variables.PIPELINE_MODE == 'build' && ci.branch == 'master'"
     check-in:
       reviews:
         flows:
@@ -161,6 +161,8 @@ stages:
             reviewers: [ "skipzhang" ]
         description: |
           本次 master 构建已生成 ${{ parameters.DISPLAY_NAME }} 正式环境镜像。
+
+          模板渲染探针：service=${{ parameters.SERVICE }}，display=${{ parameters.DISPLAY_NAME }}
 
           点击通过后，下一阶段会自动创建上海/新加坡 GitOps promote：
           - SERVICE=${{ parameters.SERVICE }}
@@ -192,7 +194,7 @@ stages:
             run: |
               echo "production promote check-in approved for ${{ parameters.DISPLAY_NAME }}"
   - name: 自动创建生产 promote ${{ parameters.DISPLAY_NAME }}
-    if: "${{ parameters.ENABLE_MASTER_PROD_PROMOTE == true && variables.PIPELINE_MODE == 'build' && ci.branch == 'master' }}"
+    if: "parameters.ENABLE_MASTER_PROD_PROMOTE == true && variables.PIPELINE_MODE == 'build' && ci.branch == 'master'"
     jobs:
       promote:
         name: 创建 ${{ parameters.DISPLAY_NAME }} 生产 GitOps promote

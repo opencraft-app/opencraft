@@ -367,19 +367,20 @@ class ReleaseBundleContractTests(unittest.TestCase):
 
         self.assertEqual(
             check_in_stage.get("if"),
-            "${{ parameters.ENABLE_MASTER_PROD_PROMOTE == true && variables.PIPELINE_MODE == 'build' && ci.branch == 'master' }}",
+            "parameters.ENABLE_MASTER_PROD_PROMOTE == true && variables.PIPELINE_MODE == 'build' && ci.branch == 'master'",
         )
         self.assertIn("check-in", check_in_stage)
         self.assertNotIn("PROD_PROMOTE_REVIEWERS", template_text)
         self.assertIn('reviewers: [ "skipzhang" ]', template_text)
         self.assertNotIn("${{ci.actor}}", template_text)
         self.assertNotIn("SOURCE_SHA=${{ ci.sha }}", template_text)
+        self.assertIn("模板渲染探针：service=${{ parameters.SERVICE }}", template_text)
         self.assertIn("生产 DB migration", template_text)
         self.assertIn("SOURCE_SHA 填构建阶段日志里的完整 SOURCE_SHA", template_text)
         self.assertIn("TIMEOUT_SECONDS 可不填，默认 1800", template_text)
         self.assertEqual(
             promote_stage.get("if"),
-            "${{ parameters.ENABLE_MASTER_PROD_PROMOTE == true && variables.PIPELINE_MODE == 'build' && ci.branch == 'master' }}",
+            "parameters.ENABLE_MASTER_PROD_PROMOTE == true && variables.PIPELINE_MODE == 'build' && ci.branch == 'master'",
         )
         self.assertIn("resolve_prod_promote_envs", template_text)
         self.assertIn('if [[ "$env_name" != "shprod" && "$env_name" != "sgprod" ]]; then', template_text)
