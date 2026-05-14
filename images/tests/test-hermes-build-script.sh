@@ -99,6 +99,8 @@ EOF
   if [[ "${1:-}" == "-fsSL" && "${2:-}" == "${HERMES_ACLI_INSTALL_URL}" ]]; then
     cat <<'EOF'
 #!/usr/bin/env bash
+[ "${ACLI_PRODUCT:-}" = "lightvela" ] || exit 41
+[ "${ACLI_RUN_AS:-}" = "${LIGHTCLAW_RUNTIME_USER:-agentuser}" ] || exit 42
 exit 0
 EOF
     log_call "curl-acli"

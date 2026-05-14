@@ -924,7 +924,7 @@ install_hermes_acli() {
     return 1
   fi
   log_info "installing acli"
-  ACLI_RUN_AS="${RUNTIME_USER}" curl -fsSL "${HERMES_ACLI_INSTALL_URL}" | ACLI_RUN_AS="${RUNTIME_USER}" bash
+  ACLI_RUN_AS="${RUNTIME_USER}" curl -fsSL "${HERMES_ACLI_INSTALL_URL}" | ACLI_PRODUCT=lightvela ACLI_RUN_AS="${RUNTIME_USER}" bash
   if ! command -v acli >/dev/null 2>&1; then
     log_error "acli not found in PATH after install"
     return 1
