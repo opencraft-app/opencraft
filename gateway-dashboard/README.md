@@ -4,6 +4,7 @@
 
 Trigger note:
 
+- 2026-05-15: README-only no-op change to rerun gateway-dashboard after check-in condition syntax probe.
 - 2026-05-08: README-only change to rerun gateway-dashboard release after GitOps gate stdout and promote lease fixes.
 - 2026-05-15: README-only no-op change to exercise the gateway-dashboard release trigger path.
 - 2026-05-15: README-only no-op change to rerun gateway-dashboard after service-release production promote check-in landed.
