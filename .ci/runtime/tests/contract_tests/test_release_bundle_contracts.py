@@ -243,7 +243,9 @@ class ReleaseBundleContractTests(unittest.TestCase):
             "执行生产 DB migration",
         ])
         self.assertIn("check-in", stages[1])
-        self.assertIn("${{ci.actor}}", workflow_text)
+        self.assertNotIn("${{ci.actor}}", workflow_text)
+        self.assertNotIn("${{ ci.actor }}", workflow_text)
+        self.assertIn('reviewers: [ "skipzhang" ]', workflow_text)
         self.assertIn("请先检查上一阶段 dry-run 日志中的执行计划", workflow_text)
         self.assertEqual(workflow_text.count("run_prod_db_migration.py"), 2)
         self.assertIn("Dry-run 并打印生产 DB migration 计划", workflow_text)
@@ -368,8 +370,12 @@ class ReleaseBundleContractTests(unittest.TestCase):
             "${{ parameters.ENABLE_MASTER_PROD_PROMOTE == true && variables.PIPELINE_MODE == 'build' && ci.branch == 'master' }}",
         )
         self.assertIn("check-in", check_in_stage)
-        self.assertIn("${{ci.actor}}", template_text)
+        self.assertNotIn("PROD_PROMOTE_REVIEWERS", template_text)
+        self.assertIn('reviewers: [ "skipzhang" ]', template_text)
+        self.assertNotIn("${{ci.actor}}", template_text)
+        self.assertNotIn("SOURCE_SHA=${{ ci.sha }}", template_text)
         self.assertIn("生产 DB migration", template_text)
+        self.assertIn("SOURCE_SHA 填构建阶段日志里的完整 SOURCE_SHA", template_text)
         self.assertIn("TIMEOUT_SECONDS 可不填，默认 1800", template_text)
         self.assertEqual(
             promote_stage.get("if"),
