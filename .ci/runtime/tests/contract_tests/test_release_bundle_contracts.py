@@ -226,6 +226,30 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(package_json["scripts"]["check"], "tsc -b")
         self.assertIn('"$PNPM_BIN" check', guard_text)
 
+    def test_prod_db_migration_workflow_is_manual_dry_run_then_check_in_then_apply(self) -> None:
+        workflow_path = REPO_ROOT / ".ci/db-migration.yml"
+        workflow_text = workflow_path.read_text()
+        workflow = yaml.safe_load(workflow_text)
+        on_config = workflow.get(True) or workflow.get("on") or {}
+        stages = workflow.get("stages") or []
+
+        self.assertNotIn("push", on_config)
+        self.assertEqual(on_config.get("manual"), "enabled")
+        self.assertIn("SOURCE_SHA", workflow.get("variables") or {})
+        self.assertNotIn("APPLY", workflow.get("variables") or {})
+        self.assertEqual([stage.get("name") for stage in stages], [
+            "Dry-run 生产 DB migration",
+            "人工确认生产 DB migration",
+            "执行生产 DB migration",
+        ])
+        self.assertIn("check-in", stages[1])
+        self.assertIn("${{ci.actor}}", workflow_text)
+        self.assertIn("请先检查上一阶段 dry-run 日志中的执行计划", workflow_text)
+        self.assertEqual(workflow_text.count("run_prod_db_migration.py"), 2)
+        self.assertIn("Dry-run 并打印生产 DB migration 计划", workflow_text)
+        self.assertIn("创建并等待 migration/readiness Job", workflow_text)
+        self.assertIn("--apply", workflow_text)
+
     def test_prod_release_bundles_project_exactly_one_direct_app(self) -> None:
         manifest = load_manifest()
 

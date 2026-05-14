@@ -28,6 +28,7 @@
 .ci/runtime/commands/run_release_gates.py
 .ci/runtime/commands/run_changed_guards.py
 .ci/runtime/commands/run_gitops_db_job.py
+.ci/runtime/commands/run_prod_db_migration.py
 .ci/runtime/commands/update_image_pin.py
 .ci/runtime/commands/upload_staticpages_preview.py
 .ci/runtime/commands/validate_gitops_promotion.py
@@ -104,6 +105,7 @@
 .ci/runtime/guards/changed_guards.py
 .ci/runtime/harness_ci/__init__.py
 .ci/runtime/harness_ci/db_job.py
+.ci/runtime/harness_ci/prod_db_migration.py
 .ci/runtime/harness_ci/secrets.py
 .ci/runtime/support/__init__.py
 .ci/runtime/support/logging.py

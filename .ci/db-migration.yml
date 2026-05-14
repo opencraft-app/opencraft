@@ -1,0 +1,120 @@
+version: v2.0
+name: 生产 DB migration
+
+on:
+  manual: enabled
+
+concurrency:
+  group: mono2-prod-db-migration
+  cancel-in-progress: false
+  queue-length: 1
+  queue-timeout-minutes: 480
+
+variables:
+  SERVICE:
+    value: payment
+    allow-modify-at-startup: true
+    description: "Bundle/service: payment, subscription, user-auth, lightclaw-auth, ai-gateway, ctl, sandbox"
+  TARGET_ENV:
+    value: shprod
+    allow-modify-at-startup: true
+    description: "Production env: shprod or sgprod"
+  SOURCE_SHA:
+    value: ""
+    allow-modify-at-startup: true
+    description: "Required source commit SHA whose built image and migrations will be executed"
+  TIMEOUT_SECONDS:
+    value: "1800"
+    allow-modify-at-startup: true
+    description: "Wait timeout for migration/readiness Jobs"
+
+stages:
+  - name: Dry-run 生产 DB migration
+    jobs:
+      dry_run:
+        name: 输出将执行的 migration/readiness Job
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        env:
+          SERVICE: ${{ variables.SERVICE }}
+          TARGET_ENV: ${{ variables.TARGET_ENV }}
+          SOURCE_SHA: ${{ variables.SOURCE_SHA }}
+          TIMEOUT_SECONDS: ${{ variables.TIMEOUT_SECONDS }}
+          SOPS_AGE_KEY: ${{ settings.SOPS_AGE_KEY }}
+          SOPS_AGE_KEY_FILE: ${{ settings.SOPS_AGE_KEY_FILE }}
+        steps:
+          - checkout: self
+            name: 拉取代码
+            with:
+              fetchDepth: 0
+          - name: Dry-run 并打印生产 DB migration 计划
+            shell: bash
+            run: |
+              set -euo pipefail
+              source .ci/init.sh
+              ci_init_repo_root
+              ci_ensure_db_job_tools
+              python3 "$REPO_ROOT/.ci/runtime/commands/run_prod_db_migration.py" \
+                --service "$SERVICE" \
+                --env "$TARGET_ENV" \
+                --source-sha "$SOURCE_SHA" \
+                --timeout-seconds "$TIMEOUT_SECONDS"
+
+  - name: 人工确认生产 DB migration
+    check-in:
+      reviews:
+        flows:
+          - name: 确认执行生产 DB migration
+            reviewers: [ "${{ci.actor}}" ]
+        description: |
+          请先检查上一阶段 dry-run 日志中的执行计划：
+          1. SERVICE / TARGET_ENV / SOURCE_SHA 是否正确。
+          2. image 是否是 SOURCE_SHA 对应的已构建镜像。
+          3. migration Job 和 DB readiness Job 的 namespace、job_name、expected_schema_version 是否符合预期。
+          4. 确认后下一阶段会创建一次性生产 migration Job，并等待完成；随后执行 DB readiness Job。
+      timeout-hours: 24
+    jobs:
+      approved:
+        name: 记录人工确认
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - name: 人工确认已通过
+            shell: bash
+            run: |
+              echo "人工确认已通过：${{ ci.actor }} approved production DB migration execution."
+
+  - name: 执行生产 DB migration
+    jobs:
+      apply:
+        name: 创建并等待 migration/readiness Job
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        env:
+          SERVICE: ${{ variables.SERVICE }}
+          TARGET_ENV: ${{ variables.TARGET_ENV }}
+          SOURCE_SHA: ${{ variables.SOURCE_SHA }}
+          TIMEOUT_SECONDS: ${{ variables.TIMEOUT_SECONDS }}
+          SOPS_AGE_KEY: ${{ settings.SOPS_AGE_KEY }}
+          SOPS_AGE_KEY_FILE: ${{ settings.SOPS_AGE_KEY_FILE }}
+        steps:
+          - checkout: self
+            name: 拉取代码
+            with:
+              fetchDepth: 0
+          - name: 执行生产 DB migration
+            shell: bash
+            run: |
+              set -euo pipefail
+              source .ci/init.sh
+              ci_init_repo_root
+              ci_ensure_db_job_tools
+              python3 "$REPO_ROOT/.ci/runtime/commands/run_prod_db_migration.py" \
+                --service "$SERVICE" \
+                --env "$TARGET_ENV" \
+                --source-sha "$SOURCE_SHA" \
+                --timeout-seconds "$TIMEOUT_SECONDS" \
+                --apply

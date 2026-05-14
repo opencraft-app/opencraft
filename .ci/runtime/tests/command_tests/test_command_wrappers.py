@@ -102,6 +102,7 @@ class CommandWrapperTests(unittest.TestCase):
             "plan_release_gates.py": "contracts.release_plan",
             "verify_db_contract.py": "gates.db_contract_verifier",
             "run_gitops_db_job.py": "harness_ci.db_job",
+            "run_prod_db_migration.py": "harness_ci.prod_db_migration",
         }
         for filename, module_name in expected.items():
             with self.subTest(filename=filename):
