@@ -13,20 +13,20 @@ concurrency:
 variables:
   SERVICE:
     value: payment
+    readonly: false
     allow-modify-at-startup: true
-    description: "Bundle/service: payment, subscription, user-auth, lightclaw-auth, ai-gateway, ctl, sandbox"
   TARGET_ENV:
     value: shprod
+    readonly: false
     allow-modify-at-startup: true
-    description: "Production env: shprod or sgprod"
   SOURCE_SHA:
     value: ""
+    readonly: false
     allow-modify-at-startup: true
-    description: "Required source commit SHA whose built image and migrations will be executed"
   TIMEOUT_SECONDS:
     value: "1800"
+    readonly: false
     allow-modify-at-startup: true
-    description: "Wait timeout for migration/readiness Jobs"
 
 stages:
   - name: Dry-run 生产 DB migration
