@@ -99,7 +99,14 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
   {
     title: "参考",
     titleEn: "Reference",
-    items: [{ slug: "faq", title: "常见问题 FAQ", titleEn: "FAQ" }],
+    items: [
+      { slug: "faq", title: "常见问题 FAQ", titleEn: "FAQ" },
+      {
+        slug: "faq/using-lightvela-safely",
+        title: "安全使用 LightVela",
+        titleEn: "Using LightVela Safely",
+      },
+    ],
   },
 ];
 
@@ -137,6 +144,7 @@ const GLOBAL_SLUG_TO_FILE: Record<string, string> = {
   "configuration/channel-slack": "configuration/channel-slack.md",
   "configuration/skill": "configuration/skill.md",
   faq: "07-faq.md",
+  "faq/using-lightvela-safely": "faq/using-lightvela-safely.md",
 };
 
 export const SLUG_TO_FILE: Record<string, string> = isGlobal

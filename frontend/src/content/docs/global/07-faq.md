@@ -2,6 +2,8 @@
 
 本页汇总使用 LightVela 过程中的常见问题。建议先使用 `Cmd/Ctrl + F` 搜索关键词。如未找到答案，可在 [快速开始](./02-quickstart.md)、[配置总览](./05-configuration.md) 或具体配置子页的「常见问题」小节中进一步查找。
 
+如需了解敏感信息、账号凭据、金融信息、健康信息和商业机密等内容的使用边界，请参见 [安全使用 LightVela](./faq/using-lightvela-safely.md)。
+
 ---
 
 ## 账号与登录
