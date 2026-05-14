@@ -245,6 +245,7 @@ func TestRunCreateInstanceTaskProvisionsAiGatewayOnCreate(t *testing.T) {
 	if !strings.Contains(sandboxAdapter.processCalls[1].Args[2], "--name") ||
 		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "acli model switch --model") ||
 		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "--model-name") ||
+		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "kimi-k2.5") ||
 		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "switch_model=") ||
 		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "model_name") ||
 		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "--model \"$switch_model\"") ||
