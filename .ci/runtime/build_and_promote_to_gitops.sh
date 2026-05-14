@@ -25,6 +25,46 @@ TAG="${BUILD_TAG_OVERRIDE:-${BUNDLE_SERVICE}-${SHORT_SHA}}"
 
 IFS=',' read -r -a ENVS <<<"$BUILD_ENVS"
 
+csv_contains() {
+  local csv="$1"
+  local needle="$2"
+  local item
+  if [[ "$csv" == "none" ]]; then
+    return 1
+  fi
+  IFS=',' read -r -a items <<<"$csv"
+  for item in "${items[@]}"; do
+    item="$(printf '%s' "$item" | xargs)"
+    if [[ "$item" == "$needle" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+is_prod_env() {
+  [[ "$1" == "shprod" || "$1" == "sgprod" ]]
+}
+
+is_beijing_sandbox_env() {
+  [[ "$1" == "beijing-sandbox" || "$1" == beijing-sandbox-* ]]
+}
+
+is_playground_env() {
+  [[ "$1" == sandbox-bj-* ]]
+}
+
+has_prod_promote_env() {
+  local env_name
+  for env_name in "${ENVS[@]}"; do
+    env_name="$(printf '%s' "$env_name" | xargs)"
+    if is_prod_env "$env_name" && ! csv_contains "$AUTO_PIN_ENVS" "$env_name"; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 BUILT_IMAGE_DIR="$(mktemp -d)"
 cleanup_built_image_dir() {
   rm -rf "$BUILT_IMAGE_DIR"
@@ -54,6 +94,10 @@ print_manual_promote_hints() {
   local color_note=$'\033[1;36m'
   local ci_name="${RELEASE_CI_NAME:-构建 ${BUNDLE_SERVICE}}"
   local display_name="${RELEASE_DISPLAY_NAME:-$BUNDLE_SERVICE}"
+  local has_prod_hint=false
+  if has_prod_promote_env; then
+    has_prod_hint=true
+  fi
 
   for ENV_NAME in "${ENVS[@]}"; do
     ENV_NAME="$(printf '%s' "$ENV_NAME" | xargs)"
@@ -69,10 +113,15 @@ print_manual_promote_hints() {
     if [[ "$has_hint" -eq 0 ]]; then
       echo
       echo "${color_title}============================================================${color_reset}"
-      echo "${color_title}可发布版本汇总：手动 promote 参数${color_reset}"
+      echo "${color_title}可发布版本汇总${color_reset}"
       echo "${color_title}============================================================${color_reset}"
-      echo "${color_note}发布产物已生成：构建 CI 会在人工确认后自动 promote 正式环境；也可复制下面参数手动 promote。${color_reset}"
-      echo "${color_note}说明：北京自动发布会继续走 auto-pin；正式环境默认等待人工确认后创建 GitOps promote。${color_reset}"
+      if [[ "$has_prod_hint" == true ]]; then
+        echo "${color_note}发布产物已生成：构建 CI 会在人工确认后自动 promote 正式环境；也可复制正式环境参数手动 promote。${color_reset}"
+        echo "${color_note}说明：北京沙箱会继续走 auto-pin；正式环境默认等待人工确认后创建 GitOps promote。${color_reset}"
+      else
+        echo "${color_note}发布产物已生成：当前构建没有待人工确认的正式环境 promote。${color_reset}"
+        echo "${color_note}说明：北京沙箱 / playground 按 auto-pin 或对应环境策略推进，不展示生产审批后续。${color_reset}"
+      fi
       has_hint=1
     fi
     echo "${color_title}============================================================${color_reset}"
@@ -83,10 +132,24 @@ print_manual_promote_hints() {
     echo "${color_key}SOURCE_SHA=${SOURCE_REF}${color_reset}"
     echo "${color_key}镜像 tag：${color_reset}${TAG}"
     echo "${color_key}镜像：${color_reset}${image}"
-    echo "${color_note}本地等价命令：REMOTE_URL=\"\$(ci_gitops_remote_url)\" GITOPS_BRANCH=gitops bash .ci/runtime/promote_bundle_image_to_gitops.sh ${BUNDLE_SERVICE} ${PIN_TARGETS} ${ENV_NAME} ${SOURCE_REF}${color_reset}"
-    echo "${color_key}手动触发参数:${color_reset} PIPELINE_MODE=promote TARGET_ENV=${ENV_NAME} SOURCE_SHA=${SOURCE_REF}"
-    echo "${color_key}DB 变更先执行 CI：${color_reset}生产 DB migration"
-    echo "${color_key}DB 变更参数:${color_reset} SERVICE=${BUNDLE_SERVICE} TARGET_ENV=${ENV_NAME} SOURCE_SHA=${SOURCE_REF} TIMEOUT_SECONDS=1800"
+    if csv_contains "$AUTO_PIN_ENVS" "$ENV_NAME"; then
+      echo "${color_key}发布方式：${color_reset}auto-pin，本次构建会自动创建对应 GitOps promote。"
+    else
+      echo "${color_note}本地等价命令：REMOTE_URL=\"\$(ci_gitops_remote_url)\" GITOPS_BRANCH=gitops bash .ci/runtime/promote_bundle_image_to_gitops.sh ${BUNDLE_SERVICE} ${PIN_TARGETS} ${ENV_NAME} ${SOURCE_REF}${color_reset}"
+      echo "${color_key}手动触发参数:${color_reset} PIPELINE_MODE=promote TARGET_ENV=${ENV_NAME} SOURCE_SHA=${SOURCE_REF}"
+    fi
+    if is_prod_env "$ENV_NAME"; then
+      echo "${color_key}DB 变更先执行 CI：${color_reset}生产 DB migration"
+      echo "${color_key}DB 变更参数:${color_reset} SERVICE=${BUNDLE_SERVICE} TARGET_ENV=${ENV_NAME} SOURCE_SHA=${SOURCE_REF} TIMEOUT_SECONDS=1800"
+    elif is_beijing_sandbox_env "$ENV_NAME"; then
+      echo "${color_key}北京沙箱 DB 变更过程：${color_reset}GitOps release gate 自动执行受控 DB job -> DB readiness 只读校验 -> 自动合并/收敛。"
+      echo "${color_key}北京沙箱 DB 参数：${color_reset}无需生产 DB migration；看 promote 分支的 release gate 日志。"
+    elif is_playground_env "$ENV_NAME"; then
+      echo "${color_key}Playground 发布后续：${color_reset}无需生产人工审批；不展示生产 DB migration 参数。"
+      echo "${color_key}Playground DB 提示：${color_reset}按 playground 环境的 GitOps/bootstrap 流程处理，不走生产 DB migration CI。"
+    else
+      echo "${color_key}DB 变更提示：${color_reset}当前环境没有专用 DB migration 参数提示；以 release gate 日志为准。"
+    fi
     echo "${color_title}------------------------------------------------------------${color_reset}"
   done
 }
