@@ -81,7 +81,7 @@
 5. 下方「当前模型」列表出现对应记录即表示配置成功
     
 
-![](../images/5-1.png)
+![](../images/20260424-115109-knjh.png)
 
 ### 自定义模型的附加字段
 
@@ -97,6 +97,50 @@
 > 💡 **如何配置自定义模型（如 OpenAI GPT、Google Gemini 等）**
 > 
 > 除了管理台列表中一键配置的 MiniMax、Kimi、智谱 GLM 等常用模型外，也支持用户通过「自定义模型」配置 OpenAI GPT、Google Gemini、Claude 或其他未在列表中展示的模型。
+
+---
+
+## 配置腾讯云 Token Plan 套餐
+
+腾讯云 Token Plan 套餐按包月方式计费，同等用量下费用相比按量调用节省超过 50%，已集成腾讯混元、智谱 GLM、Kimi-K2.5、MiniMax M2.5 等多种模型，并支持由系统自动选择合适的模型。
+
+### 1. 选择腾讯云 Token Plan
+
+在管理台「模型」卡片的第一级下拉中选择「模型 Coding Plan」，第二级下拉中选择「腾讯云 Token Plan」。
+
+模型下拉用于指定实际调用的模型，默认为「自动」，也可按需手动指定。
+
+![](../images/20260424-163147-p1p7.png)
+
+> ℹ️ **关于「自动」**
+> 
+> 选择「自动」时，系统会根据对话内容自动分配合适的模型；若需固定使用某个模型，可在下拉中手动选择。
+
+### 2. 获取 API Key
+
+单击卡片下方「点击获取 API KEY」链接，跳转至腾讯云 Token Plan 页面，按页面指引完成套餐选购后，在密钥管理处创建并复制 API Key。
+
+![](../images/20260424-163230-b764.png)
+
+> 🔔 **已购买账号无需重复选购**
+> 
+> 若当前登录的腾讯云账号此前已选购过 Token Plan，可直接在密钥管理处创建 API Key。
+
+> ⚠️ **Key 仅在创建时完整显示一次**
+> 
+> 请在创建后立即复制并妥善保存，离开页面后将无法再次完整查看。
+
+### 3. 回到管理台粘贴 Key
+
+返回 LightVela 管理台，将复制好的 API Key 粘贴至「API Key」输入框。
+
+### 4. 添加为默认
+
+单击「添加为默认」。下方「当前模型」列表出现对应记录，即表示配置成功。
+
+> 💡 **验证模型是否可用**
+> 
+> 可参考「更多常用操作 - 使用 LightClaw 与 OpenClaw 进行交互」章节，验证模型能否被正常调用。
 
 ---
 
@@ -122,32 +166,34 @@
 
 | 名称 | 服务商 |
 | --- | --- |
-| 智谱 AI（GLM 国际–Coding Plan） | 智谱 AI |
-| Kimi Coding Plan | Moonshot AI |
-| 小米 Token Plan | 小米 |
+| MiniMax Token Plan（国内） | MiniMax |
+| 腾讯云 Token Plan | 腾讯云 |
+| 腾讯云 Coding Plan | 腾讯云 |
 | 百炼 Coding Plan | 阿里云百炼 |
+| 智谱 Coding Plan（国内） | 智谱 AI |
 | 火山引擎方舟 Coding Plan | 火山引擎（字节） |
+| Kimi Coding Plan | Moonshot AI |
+| 百度千帆 Coding Plan | 百度 |
 
 ### 模型 API（按量）
 
 | 名称 | 服务商 |
 | --- | --- |
-| OpenAI | OpenAI |
-| Anthropic | Anthropic |
-| Google Gemini | Google |
-| OpenRouter | OpenRouter |
 | 深度求索（DeepSeek） | 深度求索 |
 | 百炼（千问） | 阿里 |
-| MiniMax（国际） | MiniMax |
-| Moonshot AI（Kimi 国际） | Moonshot |
-| 智谱 AI（GLM 国际） | 智谱 |
+| MiniMax | MiniMax |
+| Moonshot AI（Kimi） | Moonshot |
+| 智谱 AI（GLM） | 智谱 |
 | 火山引擎（豆包） | 字节 |
 | 小米 MiMo | 小米 |
+| 百度（文心一言） | 百度 |
 
 ### 自定义模型
 
 任何兼容 OpenAI Chat Completions 协议的端点均可接入，包括：
 
+- 国外大模型：Claude、GPT-4/5、Gemini（通过官方 API 或中转服务）
+    
 - 自建模型：vLLM、Ollama、LM Studio 等暴露 OpenAI 兼容端点的服务
     
 - 聚合平台：OpenRouter 等
@@ -161,11 +207,12 @@
 
 | 关注点 | 参考方向 |
 | --- | --- |
-| 免费额度 | 多数服务商新账号提供免费额度，可先行试用 |
+| 免费额度 | 多数国内服务商新账号提供免费额度，可先行试用 |
 | 长文本处理 | 选择上下文长度大的模型（如 Moonshot AI） |
 | 响应速度 | 不同服务商差异较大，以实际体验为准 |
-| 中文理解 | 中国模型对中文支持普遍更好 |
+| 中文理解 | 国内模型对中文支持普遍更好 |
 | 高频使用 | 选择对应服务商的 Coding Plan 包月套餐 |
+| 使用 Claude / GPT / Gemini | 选择自定义模型，自备可访问端点 |
 
 建议：先通过启航套餐的体验积分进行若干轮对话，确认 Hermes 工作正常后再决定模型选型。
 
@@ -198,14 +245,10 @@
 
 ## 下一步
 
-- [配置通道 - WeChat](./configuration/channel-wechat.md)
+- [配置通道 - 微信](./channel-wechat.md)
     
-- [配置通道 - Telegram](./configuration/channel-telegram.md)
+- [配置通道 - 飞书](./channel-feishu.md)
     
-- [配置通道 - WhatsApp](./configuration/channel-whatsapp.md)
+- [配置通道 - QQ](./channel-qq.md)
     
-- [配置通道 - Discord](./configuration/channel-discord.md)
-    
-- [配置通道 - Slack](./configuration/channel-slack.md)
-    
-- [配置技能](./configuration/skill.md)
+- [配置技能](./skill.md)
