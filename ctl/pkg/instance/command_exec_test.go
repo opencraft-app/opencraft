@@ -825,7 +825,10 @@ func TestConfigureOnboardUsesProcessStream(t *testing.T) {
 	}
 	if !strings.Contains(modelReq.Args[2], "--name") ||
 		!strings.Contains(modelReq.Args[2], "acli model switch --model") ||
-		!strings.Contains(modelReq.Args[2], "custom/custom") ||
+		!strings.Contains(modelReq.Args[2], "--model-name") ||
+		!strings.Contains(modelReq.Args[2], "switch_model=") ||
+		!strings.Contains(modelReq.Args[2], "model_name") ||
+		!strings.Contains(modelReq.Args[2], "--model \"$switch_model\"") ||
 		strings.Contains(modelReq.Args[2], "--agent") ||
 		!strings.Contains(modelReq.Args[2], "--api") ||
 		!strings.Contains(modelReq.Args[2], "--model-id") ||

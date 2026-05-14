@@ -937,27 +937,40 @@ func renderHermesModelSetCommand(modelID, providerName, baseURL, apiKey, compat 
 	if strings.TrimSpace(modelName) != "" {
 		acliParts = append(acliParts, fmt.Sprintf(`--model-name %s`, shellQuoteArg(modelName)))
 	}
-	acliSwitchModel := ""
-	if strings.TrimSpace(providerName) != "" && strings.TrimSpace(modelName) != "" {
-		acliSwitchModel = providerName + "/" + modelName
-	}
 	if harnessAPIMode := mapHermesAPIMode(compat); strings.TrimSpace(harnessAPIMode) != "" {
 		harnessParts = append(harnessParts, fmt.Sprintf(`--api-mode %s`, shellQuoteArg(harnessAPIMode)))
 	}
 	acliArgs := strings.Join(acliParts, " ")
-	acliSwitchCommand := ""
-	if acliSwitchModel != "" {
-		acliSwitchCommand = fmt.Sprintf(`  acli model switch --model %s`, shellQuoteArg(acliSwitchModel))
-	}
 	harnessArgs := strings.Join(harnessParts, " ")
 	secretExport := `ACLI_SECRET_API_KEY=` + shellQuoteArg(apiKey)
 	lines := []string{
 		`if command -v acli >/dev/null 2>&1; then`,
 		`  ` + secretExport,
-		fmt.Sprintf(`  acli provider save %s`, acliArgs),
-	}
-	if acliSwitchCommand != "" {
-		lines = append(lines, acliSwitchCommand)
+		fmt.Sprintf(`  save_output="$(acli provider save %s)"`, acliArgs),
+		`  printf '%s\n' "$save_output"`,
+		`  switch_model="$(printf '%s\n' "$save_output" | python3 -c 'import json,re,sys`,
+		`raw=sys.stdin.read()`,
+		`match=re.search(r"\{.*\}", raw, re.S)`,
+		`if not match:`,
+		`    raise SystemExit("provider save did not return JSON")`,
+		`payload=json.loads(match.group(0))`,
+		`data=payload.get("data", payload) if isinstance(payload, dict) else {}`,
+		`def pick(*keys):`,
+		`    for key in keys:`,
+		`        value=data.get(key) if isinstance(data, dict) else None`,
+		`        if isinstance(value, str) and value.strip():`,
+		`            return value.strip()`,
+		`    return ""`,
+		`model=pick("model", "model_name", "modelName", "default_model", "defaultModel")`,
+		`provider=pick("provider", "provider_name", "providerName", "name")`,
+		`if "/" in model:`,
+		`    print(model)`,
+		`elif provider and model:`,
+		`    print(provider + "/" + model)`,
+		`else:`,
+		`    raise SystemExit("provider save output missing switch model")`,
+		`')"`,
+		`  acli model switch --model "$switch_model"`,
 	}
 	lines = append(lines,
 		`elif command -v harness >/dev/null 2>&1; then`,
