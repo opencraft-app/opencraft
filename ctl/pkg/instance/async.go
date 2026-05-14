@@ -769,6 +769,7 @@ func (l *logic) configureOnboard(ctx pctx.Context, sandboxID string, apiKey stri
 
 	// Hermes 当前只接受固定 provider 名 `custom`，不能使用随机 provider id。
 	providerID := hermesDefaultProviderName
+	l.logHermesModelSetInput(sandboxID, providerID, modelID, baseURL, compat, apiKey)
 
 	installResult, err := l.execSandboxProcessCommand(ctx, sandboxID, "hermes_ensure_model_cli", &psandbox.ProcessStartRequest{
 		Cmd:  "/bin/bash",
@@ -852,6 +853,22 @@ func (l *logic) logHermesCommandResult(commandKind string, sandboxID string, res
 	l.logger.Info("hermes command finished", fields...)
 }
 
+func (l *logic) logHermesModelSetInput(sandboxID, providerID, modelID, baseURL, compat, apiKey string) {
+	if l.logger == nil {
+		return
+	}
+	l.logger.Info("hermes model set input",
+		zap.String("sandbox_id", sandboxID),
+		zap.String("provider_id", providerID),
+		zap.String("model_id", modelID),
+		zap.String("base_url", baseURL),
+		zap.String("compatibility", compat),
+		zap.String("api_mode", mapHermesAPIMode(compat)),
+		zap.Bool("api_key_present", strings.TrimSpace(apiKey) != ""),
+		zap.Int("api_key_length", len(strings.TrimSpace(apiKey))),
+	)
+}
+
 func (l *logic) logCreateOnboardPersistenceFailure(ctx pctx.Context, stage string, entity *modelinstance.Entity, sandboxID, keyID string, err error) {
 	if l.logger == nil || entity == nil {
 		return
@@ -891,25 +908,34 @@ func truncateForLog(value string, max int) string {
 }
 
 func renderHermesModelSetCommand(modelID, providerName, baseURL, apiKey, apiMode string) string {
-	parts := []string{
+	acliParts := []string{
+		fmt.Sprintf(`--provider %s`, shellQuoteArg(providerName)),
+		fmt.Sprintf(`--model-name %s`, shellQuoteArg(modelID)),
+		`--set-default true`,
+	}
+	harnessParts := []string{
 		fmt.Sprintf(`--model %s`, shellQuoteArg(modelID)),
 		fmt.Sprintf(`--name %s`, shellQuoteArg(providerName)),
 	}
 	if strings.TrimSpace(baseURL) != "" {
-		parts = append(parts, fmt.Sprintf(`--base-url %s`, shellQuoteArg(baseURL)))
+		acliParts = append(acliParts, fmt.Sprintf(`--base-url %s`, shellQuoteArg(baseURL)))
+		harnessParts = append(harnessParts, fmt.Sprintf(`--base-url %s`, shellQuoteArg(baseURL)))
 	}
 	if strings.TrimSpace(apiKey) != "" {
-		parts = append(parts, fmt.Sprintf(`--api-key %s`, shellQuoteArg(apiKey)))
+		acliParts = append(acliParts, fmt.Sprintf(`--api-key %s`, shellQuoteArg(apiKey)))
+		harnessParts = append(harnessParts, fmt.Sprintf(`--api-key %s`, shellQuoteArg(apiKey)))
 	}
 	if strings.TrimSpace(apiMode) != "" {
-		parts = append(parts, fmt.Sprintf(`--api-mode %s`, shellQuoteArg(apiMode)))
+		acliParts = append(acliParts, fmt.Sprintf(`--api-mode %s`, shellQuoteArg(apiMode)))
+		harnessParts = append(harnessParts, fmt.Sprintf(`--api-mode %s`, shellQuoteArg(apiMode)))
 	}
-	args := strings.Join(parts, " ")
+	acliArgs := strings.Join(acliParts, " ")
+	harnessArgs := strings.Join(harnessParts, " ")
 	return strings.Join([]string{
 		`if command -v acli >/dev/null 2>&1; then`,
-		fmt.Sprintf(`  acli model set %s`, args),
+		fmt.Sprintf(`  acli model set %s`, acliArgs),
 		`elif command -v harness >/dev/null 2>&1; then`,
-		fmt.Sprintf(`  harness model set %s`, args),
+		fmt.Sprintf(`  harness model set %s`, harnessArgs),
 		`else`,
 		`  echo "neither acli nor harness found" >&2`,
 		`  exit 127`,

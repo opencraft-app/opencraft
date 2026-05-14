@@ -821,7 +821,11 @@ func TestConfigureOnboardUsesProcessStream(t *testing.T) {
 	if !strings.Contains(modelReq.Args[2], "--api-key") || !strings.Contains(modelReq.Args[2], "sk-test") {
 		t.Fatalf("expected api key flag in command, got %q", modelReq.Args[2])
 	}
-	if !strings.Contains(modelReq.Args[2], "--name") || !strings.Contains(modelReq.Args[2], "custom") {
+	if !strings.Contains(modelReq.Args[2], "--provider") ||
+		!strings.Contains(modelReq.Args[2], "--model-name") ||
+		!strings.Contains(modelReq.Args[2], "--set-default true") ||
+		!strings.Contains(modelReq.Args[2], "--name") ||
+		!strings.Contains(modelReq.Args[2], "custom") {
 		t.Fatalf("expected fixed custom provider in command, got %q", modelReq.Args[2])
 	}
 	if modelReq.Env["HOME"] != "/home/agentuser" {

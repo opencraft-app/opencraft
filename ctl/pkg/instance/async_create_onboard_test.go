@@ -242,7 +242,11 @@ func TestRunCreateInstanceTaskProvisionsAiGatewayOnCreate(t *testing.T) {
 		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "harness model set") {
 		t.Fatalf("expected second process call to prefer acli and fall back to harness model set as agentuser, got %q", sandboxAdapter.processCalls[1].Args[2])
 	}
-	if !strings.Contains(sandboxAdapter.processCalls[1].Args[2], "--name") || !strings.Contains(sandboxAdapter.processCalls[1].Args[2], "custom") {
+	if !strings.Contains(sandboxAdapter.processCalls[1].Args[2], "--provider") ||
+		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "--model-name") ||
+		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "--set-default true") ||
+		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "--name") ||
+		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "custom") {
 		t.Fatalf("expected hermes provider name to stay fixed as custom, got %q", sandboxAdapter.processCalls[1].Args[2])
 	}
 	if sandboxAdapter.processCalls[1].Env["HOME"] != "/home/agentuser" {
