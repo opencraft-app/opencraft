@@ -171,10 +171,90 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
             self.assertIn("example.com/beijing-sandbox:test-tag", pins[0])
             self.assertIn("sandbox\tsandbox\tbeijing-sandbox-2\t", pins[1])
             self.assertIn("example.com/beijing-sandbox-2:test-tag", pins[1])
-            self.assertIn("发布产物已生成：构建 CI 会在人工确认后自动 promote 正式环境", result.stdout)
-            self.assertIn("PIPELINE_MODE=promote TARGET_ENV=beijing-sandbox SOURCE_SHA=", result.stdout)
-            self.assertIn("PIPELINE_MODE=promote TARGET_ENV=beijing-sandbox-2 SOURCE_SHA=", result.stdout)
-            self.assertIn("DB 变更参数:", result.stdout)
+            self.assertIn("发布产物已生成：当前构建没有待人工确认的正式环境 promote", result.stdout)
+            self.assertIn("发布方式：\x1b[0mauto-pin", result.stdout)
+            self.assertIn("北京沙箱 DB 变更过程：", result.stdout)
+            self.assertIn("GitOps release gate 自动执行受控 DB job -> DB readiness 只读校验 -> 自动合并/收敛", result.stdout)
+            self.assertNotIn("PIPELINE_MODE=promote TARGET_ENV=beijing-sandbox SOURCE_SHA=", result.stdout)
+            self.assertNotIn("DB 变更先执行 CI：", result.stdout)
+
+    def test_playground_auto_pin_suppresses_prod_followups(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fake_bin = Path(tmp)
+            pins_file = fake_bin / "pins.log"
+            fake_python = fake_bin / "python3"
+            fake_pin = fake_bin / "pin_image_to_gitops.sh"
+            fake_python.write_text(
+                textwrap.dedent(
+                    f"""\
+                    #!/bin/bash
+                    if [[ "$1" == "{REPO_ROOT}/.ci/runtime/commands/build_release_image.py" ]]; then
+                      env_name=""
+                      output_file=""
+                      while [[ $# -gt 0 ]]; do
+                        case "$1" in
+                          --env)
+                            env_name="$2"
+                            shift 2
+                            ;;
+                          --image-output-file)
+                            output_file="$2"
+                            shift 2
+                            ;;
+                          *)
+                            shift
+                            ;;
+                        esac
+                      done
+                      printf 'registry.example.com/%s:test-tag\\n' "$env_name" > "$output_file"
+                      exit 0
+                    fi
+                    exec "{sys.executable}" "$@"
+                    """
+                )
+            )
+            fake_pin.write_text(
+                textwrap.dedent(
+                    """\
+                    #!/bin/bash
+                    printf '%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" "$5" >> "$PIN_LOG_FILE"
+                    """
+                )
+            )
+            fake_python.chmod(0o755)
+            fake_pin.chmod(0o755)
+            env = os.environ.copy()
+            env.update(
+                {
+                    "PATH": f"{fake_bin}:{env['PATH']}",
+                    "TCR_BEIJING_PASSWORD": "fake-password",
+                    "BUILD_TAG_OVERRIDE": "test-tag",
+                    "DEPLOYED_AT": "2026-04-29T00:00:00Z",
+                    "PIN_SCRIPT_OVERRIDE": str(fake_pin),
+                    "PIN_LOG_FILE": str(pins_file),
+                }
+            )
+
+            result = subprocess.run(
+                [
+                    "/bin/bash",
+                    str(REPO_ROOT / ".ci/runtime/build_and_promote_to_gitops.sh"),
+                    "gateway-dashboard",
+                    "gateway-dashboard",
+                    "sandbox-bj-7",
+                    "sandbox-bj-7",
+                ],
+                cwd=REPO_ROOT,
+                env=env,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertIn("发布产物已生成：当前构建没有待人工确认的正式环境 promote", result.stdout)
+            self.assertIn("Playground 发布后续：", result.stdout)
+            self.assertIn("无需生产人工审批；不展示生产 DB migration 参数", result.stdout)
+            self.assertNotIn("生产发布确认", result.stdout)
 
     def test_build_without_auto_pin_prints_manual_promote_hint(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -237,7 +317,7 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
             )
 
             source_ref = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, text=True).strip()
-            self.assertIn("可发布版本汇总：手动 promote 参数", result.stdout)
+            self.assertIn("可发布版本汇总", result.stdout)
             self.assertIn("发布产物已生成：构建 CI 会在人工确认后自动 promote 正式环境", result.stdout)
             self.assertIn("CI：\x1b[0m构建 frontend", result.stdout)
             self.assertIn(f"SOURCE_SHA={source_ref}", result.stdout)

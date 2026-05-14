@@ -158,21 +158,21 @@ stages:
       reviews:
         flows:
           - name: 生产发布确认
-            reviewers: [ "${{ci.actor}}" ]
+            reviewers: [ "skipzhang" ]
         description: |
           本次 master 构建已生成 ${{ parameters.DISPLAY_NAME }} 正式环境镜像。
 
           点击通过后，下一阶段会自动创建上海/新加坡 GitOps promote：
           - SERVICE=${{ parameters.SERVICE }}
           - BUNDLE=${{ parameters.BUNDLE }}
-          - SOURCE_SHA=${{ ci.sha }}
+          - SOURCE_SHA 以构建阶段“可发布版本汇总”和下一阶段“生产 promote 计划”日志为准
           - 候选环境来自 MASTER_BUILD_ENVS=${{ parameters.MASTER_BUILD_ENVS }}
           - 会自动跳过 MASTER_AUTO_PIN_ENVS=${{ parameters.MASTER_AUTO_PIN_ENVS }}
 
           如果本次包含 DB 结构或 migration 变更，请先执行 CI「生产 DB migration」：
           - SERVICE=${{ parameters.SERVICE }}
           - TARGET_ENV=shprod 或 sgprod
-          - SOURCE_SHA=${{ ci.sha }}
+          - SOURCE_SHA 填构建阶段日志里的完整 SOURCE_SHA
           - TIMEOUT_SECONDS 可不填，默认 1800
 
           注意：
