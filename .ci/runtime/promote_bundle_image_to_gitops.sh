@@ -3,9 +3,10 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+PIN_SCRIPT="${PIN_SCRIPT_OVERRIDE:-$REPO_ROOT/.ci/runtime/pin_image_to_gitops.sh}"
 
 if [[ $# -ne 4 ]]; then
-  echo "usage: $0 <bundle-service> <pin-targets-csv> <target-env> <source-sha>" >&2
+  echo "usage: $0 <bundle-service> <pin-targets-csv> <target-envs-csv> <source-sha>" >&2
   exit 1
 fi
 
@@ -22,10 +23,38 @@ fi
 SHORT_SHA="${SOURCE_SHA:0:12}"
 TAG="${BUNDLE_SERVICE}-${SHORT_SHA}"
 
-eval "$(python3 "$REPO_ROOT/.ci/runtime/commands/resolve_release_bundle.py" \
-  --service "$BUNDLE_SERVICE" \
-  --env "$TARGET_ENV" \
-  --tag "$TAG" \
-  --format dotenv)"
+IFS=',' read -r -a TARGET_ENVS <<<"$TARGET_ENV"
+PROMOTED_COUNT=0
 
-bash "$REPO_ROOT/.ci/runtime/pin_image_to_gitops.sh" "$BUNDLE_SERVICE" "$PIN_TARGETS" "$TARGET_ENV" "$BUILD_IMAGE" "$SOURCE_SHA"
+for ENV_NAME in "${TARGET_ENVS[@]}"; do
+  ENV_NAME="$(printf '%s' "$ENV_NAME" | xargs)"
+  if [[ -z "$ENV_NAME" ]]; then
+    continue
+  fi
+
+  RESOLVE_OUTPUT="$(
+    python3 "$REPO_ROOT/.ci/runtime/commands/resolve_release_bundle.py" \
+      --service "$BUNDLE_SERVICE" \
+      --env "$ENV_NAME" \
+      --tag "$TAG" \
+      --format dotenv
+  )" || {
+    echo "failed to resolve release bundle for service ${BUNDLE_SERVICE} env ${ENV_NAME}" >&2
+    exit 1
+  }
+
+  unset BUILD_SERVICE BUILD_ENV BUILD_TAG BUILD_DOCKERFILE BUILD_CONTEXT BUILD_IMAGE_REPO BUILD_IMAGE BUILD_IMAGES_JSON
+  eval "$RESOLVE_OUTPUT"
+  if [[ -z "${BUILD_IMAGE:-}" ]]; then
+    echo "release bundle resolver did not emit BUILD_IMAGE for service ${BUNDLE_SERVICE} env ${ENV_NAME}" >&2
+    exit 1
+  fi
+
+  bash "$PIN_SCRIPT" "$BUNDLE_SERVICE" "$PIN_TARGETS" "$ENV_NAME" "$BUILD_IMAGE" "$SOURCE_SHA"
+  PROMOTED_COUNT=$((PROMOTED_COUNT + 1))
+done
+
+if [[ "$PROMOTED_COUNT" -eq 0 ]]; then
+  echo "target env list is empty" >&2
+  exit 1
+fi

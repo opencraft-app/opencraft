@@ -248,6 +248,88 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
                 result.stdout,
             )
 
+    def test_manual_promote_fans_out_csv_target_envs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fake_bin = Path(tmp)
+            pins_file = fake_bin / "pins.log"
+            fake_python = fake_bin / "python3"
+            fake_pin = fake_bin / "pin_image_to_gitops.sh"
+            fake_python.write_text(
+                textwrap.dedent(
+                    f"""\
+                    #!/bin/bash
+                    if [[ "$1" == "{REPO_ROOT}/.ci/runtime/commands/resolve_release_bundle.py" ]]; then
+                      env_name=""
+                      tag=""
+                      while [[ $# -gt 0 ]]; do
+                        case "$1" in
+                          --env)
+                            env_name="$2"
+                            shift 2
+                            ;;
+                          --tag)
+                            tag="$2"
+                            shift 2
+                            ;;
+                          *)
+                            shift
+                            ;;
+                        esac
+                      done
+                      printf 'BUILD_IMAGE=%q\\n' "registry.example.com/admin-gateway-${{env_name}}:${{tag}}"
+                      exit 0
+                    fi
+                    exec "{sys.executable}" "$@"
+                    """
+                )
+            )
+            fake_pin.write_text(
+                textwrap.dedent(
+                    """\
+                    #!/bin/bash
+                    printf '%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" "$5" >> "$PIN_LOG_FILE"
+                    """
+                )
+            )
+            fake_python.chmod(0o755)
+            fake_pin.chmod(0o755)
+            env = os.environ.copy()
+            env.update(
+                {
+                    "PATH": f"{fake_bin}:{env['PATH']}",
+                    "PIN_SCRIPT_OVERRIDE": str(fake_pin),
+                    "PIN_LOG_FILE": str(pins_file),
+                }
+            )
+
+            source_ref = "0123456789abcdef"
+            subprocess.run(
+                [
+                    "/bin/bash",
+                    str(REPO_ROOT / ".ci/runtime/promote_bundle_image_to_gitops.sh"),
+                    "admin-gateway",
+                    "admin-gateway",
+                    "shprod,sgprod",
+                    source_ref,
+                ],
+                cwd=REPO_ROOT,
+                env=env,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+
+            pins = pins_file.read_text().splitlines()
+            self.assertEqual(len(pins), 2)
+            self.assertEqual(
+                pins[0],
+                "admin-gateway\tadmin-gateway\tshprod\tregistry.example.com/admin-gateway-shprod:admin-gateway-0123456789ab\t0123456789abcdef",
+            )
+            self.assertEqual(
+                pins[1],
+                "admin-gateway\tadmin-gateway\tsgprod\tregistry.example.com/admin-gateway-sgprod:admin-gateway-0123456789ab\t0123456789abcdef",
+            )
+
     def test_pin_script_uses_materialized_runtime_after_gitops_checkout(self) -> None:
         script = (REPO_ROOT / ".ci/runtime/pin_image_to_gitops.sh").read_text()
 
