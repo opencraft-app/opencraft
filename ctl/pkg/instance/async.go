@@ -910,7 +910,7 @@ func truncateForLog(value string, max int) string {
 }
 
 func renderHermesModelSetCommand(modelID, providerName, baseURL, apiKey, compat string) string {
-	modelName := providerName
+	modelName := hermesModelName(modelID)
 	acliParts := []string{
 		fmt.Sprintf(`--name %s`, shellQuoteArg(providerName)),
 	}
@@ -981,6 +981,17 @@ func renderHermesModelSetCommand(modelID, providerName, baseURL, apiKey, compat 
 		`fi`,
 	)
 	return strings.Join(lines, "\n")
+}
+
+func hermesModelName(modelID string) string {
+	modelID = strings.TrimSpace(modelID)
+	if modelID == "" {
+		return ""
+	}
+	if idx := strings.LastIndex(modelID, "/"); idx >= 0 && idx+1 < len(modelID) {
+		return modelID[idx+1:]
+	}
+	return modelID
 }
 
 func mapHermesProviderAPI(compat string) string {
