@@ -18,7 +18,7 @@ LightVela 是腾讯轻量云团队推出的云端 Agent 托管产品，致力于
 
 LightVela 目前提供的产品是 **Hermes**，一个基于大语言模型的 AI Agent，未来会扩展到更多开箱即用的产品。本文档围绕 Hermes 展开。
 
-![1.00](./images/1-1.png)
+![1.00](./images/20260424-112540-oxe6.png)
 
 ***
 
@@ -26,9 +26,9 @@ LightVela 目前提供的产品是 **Hermes**，一个基于大语言模型的 A
 
 * 希望使用 AI Agent，但不具备服务器、容器、API 鉴权等技术背景的用户
 
-* 希望通过日常聊天软件（WeChat / Telegram / WhatsApp / Discord / Slack）与 AI 交互，而非独立 App 的用户
+* 希望通过日常聊天软件（微信 / QQ / 飞书）与 AI 交互，而非独立 App 的用户
 
-* 偏好使用多种大语言模型服务商的用户（支持 ChatGPT、Claude、Gemini、Deepseek、Qwen、Zhipu、Hunyuan 等）
+* 偏好使用国内大语言模型服务商的用户（支持 MiniMax、DeepSeek、Kimi、豆包、千问、智谱、文心、MiMo 等）
 
 * 需要跨会话持续记忆、而非每次从零对话的用户
 
@@ -50,7 +50,7 @@ LightVela 目前提供的产品是 **Hermes**，一个基于大语言模型的 A
 
 * **多模型支持**：支持接入国内主流大语言模型、各家 Coding Plan 包月套餐，以及任何 OpenAI 兼容端点，具体见 [配置模型](./configuration/model.md)
 
-* **多通道接入**：支持通过 WeChat、Telegram、WhatsApp、Discord、Slack 与 Hermes 进行对话
+* **多通道接入**：支持通过微信、QQ、飞书与 Hermes 进行对话
 
 * **技能扩展**：通过 [SkillHub](https://skillhub.tencent.com) 安装技能包，扩展 Hermes 的能力边界
 
@@ -65,11 +65,11 @@ LightVela 目前提供的产品是 **Hermes**，一个基于大语言模型的 A
 LightVela 在云端为用户运行一个专属的 Hermes 实例，并通过适配层接入用户指定的聊天平台。
 
 ```
-用户（在 WeChat / Telegram / WhatsApp / Discord / Slack 中发送消息）
+用户（在微信 / QQ / 飞书中发送消息）
       ↓
 LightVela 云端的 Hermes 实例（用户专属）
       ↓
-调用用户配置的大语言模型（GPT / Claude / Gemini / ...）
+调用用户配置的大语言模型（MiniMax / DeepSeek / ...）
       ↓
 响应经由原通道返回至用户
 ```
@@ -78,11 +78,11 @@ LightVela 云端的 Hermes 实例（用户专属）
 
 1. **模型**：Hermes 调用的大语言模型。启航套餐预置体验积分，可直接使用；也可配置自有 API Key
 
-2. **通道**：与 Hermes 对话的聊天平台（WeChat / Telegram / WhatsApp / Discord / Slack）
+2. **通道**：与 Hermes 对话的聊天平台（微信 / QQ / 飞书）
 
 3. **技能**（可选）：扩展 Hermes 的能力
 
-![1.00](./images/1-2.png)
+![1.00](./images/20260424-112633-89jm.png)
 
 ***
 
@@ -94,15 +94,19 @@ LightVela 采用套餐化计费。开通一个套餐即获得一个可用的 Her
 
 | 套餐        | 原价      | 当前状态 |
 | --------- | ------- | ---- |
-| 启航 Launch | $7.5 / 月 | 限时免费 |
-| 巡游 Cruise | $15 / 月 | 即将上线 |
-| 远航 Voyage | $42 / 月 | 即将上线 |
+| 启航 Launch | ¥49 / 月 | 限时免费 |
+| 巡游 Cruise | ——      | 即将上线 |
+| 远航 Voyage | ——      | 即将上线 |
 
 启航套餐包含：1 个 Hermes 实例、2 核 4G 独立运行环境、50G 专属云端存储、100 体验积分、7×24 小时在线、管理面板访问权限。
 
 > ℹ️ **内测期套餐说明**
 >
 > 内测期间启航套餐**限时限量免费**：名额按申请顺序放出，可能随时调整或关闭入口；免费期结束后将按原价计费，正式收费前会提前通过站内通知与邮件告知。
+
+> ⚠️ **开通套餐需先完成实名认证**
+>
+> 首次开通任意套餐前，账号需完成实名认证。认证为一次性操作，之后再开通其他套餐无需重复认证。详见 [账号与实名认证](./03-account.md)。
 
 ***
 
@@ -117,6 +121,8 @@ LightVela 采用套餐化计费。开通一个套餐即获得一个可用的 Her
 ## 下一步
 
 * **[快速开始](./02-quickstart.md)** — 5 分钟跑通第一个对话
+
+* **[账号与实名认证](./03-account.md)** — 账号管理与实名认证流程
 
 * **[核心概念](./04-core-concepts.md)** — Hermes、模型、通道、技能四项核心概念说明
 

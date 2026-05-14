@@ -47,6 +47,7 @@ const CN_SIDEBAR: DocGroup[] = [
     items: [
       { slug: "overview", title: "LightVela 是什么" },
       { slug: "quickstart", title: "快速开始" },
+      { slug: "account", title: "账号与实名认证" },
       { slug: "core-concepts", title: "核心概念" },
     ],
   },
@@ -112,6 +113,7 @@ export const SIDEBAR: DocGroup[] = isGlobal ? GLOBAL_SIDEBAR : CN_SIDEBAR;
 const CN_SLUG_TO_FILE: Record<string, string> = {
   overview: "01-overview.md",
   quickstart: "02-quickstart.md",
+  account: "03-account.md",
   "core-concepts": "04-core-concepts.md",
   configuration: "05-configuration.md",
   "configuration/model": "configuration/model.md",
