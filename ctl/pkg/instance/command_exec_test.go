@@ -815,16 +815,18 @@ func TestConfigureOnboardUsesProcessStream(t *testing.T) {
 	if modelReq.Cmd != "/bin/bash" {
 		t.Fatalf("expected bash process for model set, got %q", modelReq.Cmd)
 	}
-	if !strings.Contains(modelReq.Args[2], "acli model set") || !strings.Contains(modelReq.Args[2], "harness model set") {
-		t.Fatalf("expected acli-first model set command, got %q", modelReq.Args[2])
+	if !strings.Contains(modelReq.Args[2], "acli provider save") || !strings.Contains(modelReq.Args[2], "harness model set") {
+		t.Fatalf("expected acli-first provider save command, got %q", modelReq.Args[2])
 	}
-	if !strings.Contains(modelReq.Args[2], "--api-key") || !strings.Contains(modelReq.Args[2], "sk-test") {
+	if !strings.Contains(modelReq.Args[2], "ACLI_SECRET_API_KEY=") ||
+		!strings.Contains(modelReq.Args[2], "sk-test") ||
+		!strings.Contains(modelReq.Args[2], "--api-key \"$ACLI_SECRET_API_KEY\"") {
 		t.Fatalf("expected api key flag in command, got %q", modelReq.Args[2])
 	}
-	if !strings.Contains(modelReq.Args[2], "--provider") ||
+	if !strings.Contains(modelReq.Args[2], "--name") ||
+		!strings.Contains(modelReq.Args[2], "--api") ||
+		!strings.Contains(modelReq.Args[2], "--model-id") ||
 		!strings.Contains(modelReq.Args[2], "--model-name") ||
-		!strings.Contains(modelReq.Args[2], "--set-default true") ||
-		!strings.Contains(modelReq.Args[2], "--name") ||
 		!strings.Contains(modelReq.Args[2], "custom") {
 		t.Fatalf("expected fixed custom provider in command, got %q", modelReq.Args[2])
 	}

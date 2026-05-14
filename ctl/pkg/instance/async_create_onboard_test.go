@@ -238,14 +238,15 @@ func TestRunCreateInstanceTaskProvisionsAiGatewayOnCreate(t *testing.T) {
 		t.Fatalf("expected first process call to prefer acli and fall back to harness install, got %q", sandboxAdapter.processCalls[0].Args[2])
 	}
 	if !strings.Contains(sandboxAdapter.processCalls[1].Args[2], "target_user='agentuser'") ||
-		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "acli model set") ||
+		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "acli provider save") ||
 		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "harness model set") {
-		t.Fatalf("expected second process call to prefer acli and fall back to harness model set as agentuser, got %q", sandboxAdapter.processCalls[1].Args[2])
+		t.Fatalf("expected second process call to prefer acli provider save and fall back to harness model set as agentuser, got %q", sandboxAdapter.processCalls[1].Args[2])
 	}
-	if !strings.Contains(sandboxAdapter.processCalls[1].Args[2], "--provider") ||
+	if !strings.Contains(sandboxAdapter.processCalls[1].Args[2], "--name") ||
+		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "--api") ||
+		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "--api-key \"$ACLI_SECRET_API_KEY\"") ||
+		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "--model-id") ||
 		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "--model-name") ||
-		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "--set-default true") ||
-		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "--name") ||
 		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "custom") {
 		t.Fatalf("expected hermes provider name to stay fixed as custom, got %q", sandboxAdapter.processCalls[1].Args[2])
 	}
