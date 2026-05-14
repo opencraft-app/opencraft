@@ -88,6 +88,47 @@ func newHandlerTestRouterWithAuth(h *handler, authServiceURL string) *gin.Engine
 	return r
 }
 
+func TestListPoolsInternalRouteReturnsEmptyArray(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	svc := service.NewService(store.NewMemoryStore())
+	router := newHandlerTestRouter(&handler{svc: svc})
+	req := httptest.NewRequest(http.MethodGet, "/internal/pools", nil)
+	rr := httptest.NewRecorder()
+
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if body := strings.TrimSpace(rr.Body.String()); body != "[]" {
+		t.Fatalf("expected empty JSON array, got %s", body)
+	}
+}
+
+func TestListPoolInstancesInternalRouteReturnsEmptyArray(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	ctx := context.Background()
+	svc := service.NewService(store.NewMemoryStore())
+	pool, err := svc.CreatePool(ctx, "empty", "", "img-empty", 0, handlerTestVpcID, handlerTestSubnetID, handlerTestZone, handlerTestSecurityGroups)
+	if err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+	router := newHandlerTestRouter(&handler{svc: svc})
+	req := httptest.NewRequest(http.MethodGet, "/internal/pools/"+pool.ID+"/instances", nil)
+	rr := httptest.NewRecorder()
+
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if body := strings.TrimSpace(rr.Body.String()); body != "[]" {
+		t.Fatalf("expected empty JSON array, got %s", body)
+	}
+}
+
 func newAuthIntrospectionServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

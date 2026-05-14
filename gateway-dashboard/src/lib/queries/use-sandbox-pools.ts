@@ -1,5 +1,6 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api-client";
+import { ensureItems } from "@/lib/page-null-guards";
 
 export type SandboxPoolStatus = "active" | "paused";
 export type SandboxInstanceState =
@@ -63,7 +64,7 @@ export interface SandboxPoolUpdateInput extends SandboxPoolInput {
 export function useSandboxPools() {
   return useQuery({
     queryKey: ["sandbox-pools"],
-    queryFn: () => apiClient<SandboxPool[]>("sandbox/pools"),
+    queryFn: async () => ensureItems(await apiClient<SandboxPool[] | null>("sandbox/pools")),
     staleTime: 10_000,
     refetchInterval: 30_000,
   });
@@ -72,7 +73,8 @@ export function useSandboxPools() {
 export function useSandboxPoolInstances(poolID: string | null, enabled: boolean = true) {
   return useQuery({
     queryKey: ["sandbox-pools", poolID, "instances"],
-    queryFn: () => apiClient<SandboxPoolInstance[]>(`sandbox/pools/${poolID}/instances`),
+    queryFn: async () =>
+      ensureItems(await apiClient<SandboxPoolInstance[] | null>(`sandbox/pools/${poolID}/instances`)),
     enabled: enabled && !!poolID,
     staleTime: 10_000,
     refetchInterval: 30_000,
@@ -83,7 +85,8 @@ export function useSandboxPoolInstanceSummaries(poolIDs: string[]) {
   return useQueries({
     queries: poolIDs.map((poolID) => ({
       queryKey: ["sandbox-pools", poolID, "instances"],
-      queryFn: () => apiClient<SandboxPoolInstance[]>(`sandbox/pools/${poolID}/instances`),
+      queryFn: async () =>
+        ensureItems(await apiClient<SandboxPoolInstance[] | null>(`sandbox/pools/${poolID}/instances`)),
       staleTime: 10_000,
       refetchInterval: 30_000,
     })),

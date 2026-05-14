@@ -52,6 +52,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { DataTable } from "@/components/shared/data-table";
 import { PageHeader } from "@/components/shared/page-header";
+import { ensureItems } from "@/lib/page-null-guards";
 import { formatDateTime } from "@/lib/utils";
 import {
   useCreateSandboxPool,
@@ -195,7 +196,7 @@ function PoolInstancesDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const { data, isLoading, refetch, isFetching } = useSandboxPoolInstances(pool?.id ?? null, open);
-  const items = data ?? [];
+  const items = ensureItems(data);
 
   const columns = useMemo<ColumnDef<SandboxPoolInstance>[]>(
     () => [
@@ -254,7 +255,8 @@ export default function SandboxPoolsPage() {
   const [instancesPool, setInstancesPool] = useState<SandboxPool | null>(null);
   const [statusUpdatingPoolID, setStatusUpdatingPoolID] = useState<string | null>(null);
 
-  const { data: pools = [], isLoading, refetch } = useSandboxPools();
+  const { data: poolsData, isLoading, refetch } = useSandboxPools();
+  const pools = ensureItems(poolsData);
   const createPool = useCreateSandboxPool();
   const updatePool = useUpdateSandboxPool();
   const instanceQueries = useSandboxPoolInstanceSummaries(pools.map((pool) => pool.id));
@@ -267,7 +269,7 @@ export default function SandboxPoolsPage() {
   const instanceSummaryByPoolId = useMemo(() => {
     return pools.reduce<Record<string, Record<string, number>>>((acc, pool, index) => {
       const counts: Record<string, number> = {};
-      const instances = instanceQueries[index]?.data ?? [];
+      const instances = ensureItems(instanceQueries[index]?.data);
       for (const instance of instances) {
         counts[instance.state] = (counts[instance.state] ?? 0) + 1;
       }

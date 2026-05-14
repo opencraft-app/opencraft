@@ -164,7 +164,7 @@ func (s *MySQLStore) ListPools(ctx context.Context) ([]core.Pool, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	var res []core.Pool
+	res := make([]core.Pool, 0)
 	for rows.Next() {
 		var (
 			p                    core.Pool
@@ -269,7 +269,7 @@ func (s *MySQLStore) ListInstances(ctx context.Context, poolID string) ([]core.I
 		return nil, err
 	}
 	defer rows.Close()
-	var res []core.Instance
+	res := make([]core.Instance, 0)
 	for rows.Next() {
 		var inst core.Instance
 		if err := rows.Scan(&inst.ID, &inst.PoolID, &inst.State, &inst.CloudID, &inst.Address, &inst.CreatedAt, &inst.UpdatedAt); err != nil {
@@ -469,13 +469,13 @@ func (s *MySQLStore) CreateSandbox(ctx context.Context, sb core.Sandbox) (core.S
 
 func (s *MySQLStore) GetSandbox(ctx context.Context, id string) (core.Sandbox, error) {
 	var (
-		sb                 core.Sandbox
-		metaStr            sql.NullString
-		envStr             sql.NullString
-		resolutionDiverge  sql.NullString
-		autoPause          sql.NullBool
-		secure             sql.NullBool
-		allowNet           sql.NullBool
+		sb                core.Sandbox
+		metaStr           sql.NullString
+		envStr            sql.NullString
+		resolutionDiverge sql.NullString
+		autoPause         sql.NullBool
+		secure            sql.NullBool
+		allowNet          sql.NullBool
 	)
 	err := s.db.QueryRowContext(ctx, `
 		SELECT id, instance_id, pool_id, template_class_id, resolution_mode, resolution_source, resolution_divergence, region, metadata, env_vars, timeout_seconds, auto_pause, secure, allow_internet, created_at, updated_at
@@ -509,13 +509,13 @@ func (s *MySQLStore) ListSandboxes(ctx context.Context) ([]core.Sandbox, error) 
 	var res []core.Sandbox
 	for rows.Next() {
 		var (
-			sb                 core.Sandbox
-			metaStr            sql.NullString
-			envStr             sql.NullString
-			resolutionDiverge  sql.NullString
-			autoPause          sql.NullBool
-			secure             sql.NullBool
-			allowNet           sql.NullBool
+			sb                core.Sandbox
+			metaStr           sql.NullString
+			envStr            sql.NullString
+			resolutionDiverge sql.NullString
+			autoPause         sql.NullBool
+			secure            sql.NullBool
+			allowNet          sql.NullBool
 		)
 		if err := rows.Scan(&sb.ID, &sb.InstanceID, &sb.PoolID, &sb.TemplateClassID, &sb.ResolutionMode, &sb.ResolutionSource, &resolutionDiverge, &sb.Region, &metaStr, &envStr, &sb.TimeoutSeconds, &autoPause, &secure, &allowNet, &sb.CreatedAt, &sb.UpdatedAt); err != nil {
 			return nil, err
