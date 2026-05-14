@@ -353,6 +353,44 @@ class ReleaseBundleContractTests(unittest.TestCase):
             r"\$\{\{\s*variables\.(SERVICE|BUNDLE|DISPLAY_NAME|DEFAULT_TARGET_ENV|MASTER_BUILD_ENVS|MASTER_AUTO_PIN_ENVS|PLAYGROUND_BUILD_ENVS|PLAYGROUND_AUTO_PIN_ENVS)\s*\}\}",
         )
 
+    def test_service_release_promotes_prod_after_manual_check_in(self) -> None:
+        template_path = REPO_ROOT / ".ci/templates/service-release.yml"
+        template_text = template_path.read_text()
+        template = yaml.safe_load(template_text) or {}
+        stages = template.get("stages") or []
+        stage_by_name = {stage.get("name"): stage for stage in stages}
+
+        check_in_stage = stage_by_name["确认生产 promote ${{ parameters.DISPLAY_NAME }}"]
+        promote_stage = stage_by_name["自动创建生产 promote ${{ parameters.DISPLAY_NAME }}"]
+
+        self.assertEqual(
+            check_in_stage.get("if"),
+            "${{ parameters.ENABLE_MASTER_PROD_PROMOTE == true && variables.PIPELINE_MODE == 'build' && ci.branch == 'master' }}",
+        )
+        self.assertIn("check-in", check_in_stage)
+        self.assertIn("${{ci.actor}}", template_text)
+        self.assertIn("生产 DB migration", template_text)
+        self.assertIn("TIMEOUT_SECONDS 可不填，默认 1800", template_text)
+        self.assertEqual(
+            promote_stage.get("if"),
+            "${{ parameters.ENABLE_MASTER_PROD_PROMOTE == true && variables.PIPELINE_MODE == 'build' && ci.branch == 'master' }}",
+        )
+        self.assertIn("resolve_prod_promote_envs", template_text)
+        self.assertIn('if [[ "$env_name" != "shprod" && "$env_name" != "sgprod" ]]; then', template_text)
+        self.assertIn("MASTER_AUTO_PIN_ENVS", template_text)
+        self.assertIn("promote_bundle_image_to_gitops.sh", template_text)
+        self.assertIn("DB 变更提示：生产 DB migration 参数", template_text)
+
+    def test_service_release_workflows_without_prod_matrix_disable_prod_promote(self) -> None:
+        for workflow_path in [REPO_ROOT / ".ci/staticpages.yml", REPO_ROOT / ".ci/trade.yml"]:
+            with self.subTest(workflow=workflow_path.name):
+                workflow = yaml.safe_load(workflow_path.read_text()) or {}
+                params = (workflow.get("extends") or {}).get("parameters") or {}
+
+                self.assertNotIn("shprod", params.get("MASTER_BUILD_ENVS", ""))
+                self.assertNotIn("sgprod", params.get("MASTER_BUILD_ENVS", ""))
+                self.assertIs(params.get("ENABLE_MASTER_PROD_PROMOTE"), False)
+
     def test_only_ci_runtime_listens_to_ci_file_changes(self) -> None:
         for workflow_path in sorted(REPO_ROOT.glob(".ci/*.yml")):
             workflow = yaml.safe_load(workflow_path.read_text())

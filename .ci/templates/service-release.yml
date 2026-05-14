@@ -16,6 +16,9 @@ parameters:
   - name: MASTER_AUTO_PIN_ENVS
     type: string
     default: beijing-sandbox
+  - name: ENABLE_MASTER_PROD_PROMOTE
+    type: boolean
+    default: true
   - name: PLAYGROUND_BUILD_ENVS
     type: string
     default: auto
@@ -149,3 +152,132 @@ stages:
               REMOTE_URL="$(ci_gitops_remote_url)" \
               GITOPS_BRANCH=gitops \
               bash .ci/runtime/promote_bundle_image_to_gitops.sh "${{ parameters.SERVICE }}" "${{ parameters.BUNDLE }}" "${{ variables.TARGET_ENV }}" "$SOURCE_SHA"
+  - name: 确认生产 promote ${{ parameters.DISPLAY_NAME }}
+    if: "${{ parameters.ENABLE_MASTER_PROD_PROMOTE == true && variables.PIPELINE_MODE == 'build' && ci.branch == 'master' }}"
+    check-in:
+      reviews:
+        flows:
+          - name: 生产发布确认
+            reviewers: [ "${{ci.actor}}" ]
+        description: |
+          本次 master 构建已生成 ${{ parameters.DISPLAY_NAME }} 正式环境镜像。
+
+          点击通过后，下一阶段会自动创建上海/新加坡 GitOps promote：
+          - SERVICE=${{ parameters.SERVICE }}
+          - BUNDLE=${{ parameters.BUNDLE }}
+          - SOURCE_SHA=${{ ci.sha }}
+          - 候选环境来自 MASTER_BUILD_ENVS=${{ parameters.MASTER_BUILD_ENVS }}
+          - 会自动跳过 MASTER_AUTO_PIN_ENVS=${{ parameters.MASTER_AUTO_PIN_ENVS }}
+
+          如果本次包含 DB 结构或 migration 变更，请先执行 CI「生产 DB migration」：
+          - SERVICE=${{ parameters.SERVICE }}
+          - TARGET_ENV=shprod 或 sgprod
+          - SOURCE_SHA=${{ ci.sha }}
+          - TIMEOUT_SECONDS 可不填，默认 1800
+
+          注意：
+          - 生产 DB migration CI 会先 dry-run，再人工确认后 apply。
+          - 本阶段只创建 GitOps promote，不直接执行 DB migration。
+          - shprod/sgprod Argo 仍按生产策略进入待同步，后续需要人工检查 diff/sync。
+      timeout-hours: 24
+    jobs:
+      approve:
+        name: 等待人工确认生产 promote
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - name: 生产 promote 已确认
+            shell: bash
+            run: |
+              echo "production promote check-in approved for ${{ parameters.DISPLAY_NAME }}"
+  - name: 自动创建生产 promote ${{ parameters.DISPLAY_NAME }}
+    if: "${{ parameters.ENABLE_MASTER_PROD_PROMOTE == true && variables.PIPELINE_MODE == 'build' && ci.branch == 'master' }}"
+    jobs:
+      promote:
+        name: 创建 ${{ parameters.DISPLAY_NAME }} 生产 GitOps promote
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        env:
+          GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}
+        steps:
+          - checkout: self
+            name: 拉取代码
+            with:
+              fetchDepth: 50
+          - name: 创建 shprod/sgprod promote
+            shell: bash
+            run: |
+              if [[ "${{ variables.PIPELINE_MODE }}" != "build" ]]; then
+                echo "skip production promote because PIPELINE_MODE=${{ variables.PIPELINE_MODE }}"
+                exit 0
+              fi
+              if [[ "${{ ci.branch }}" != "master" ]]; then
+                echo "skip production promote because branch=${{ ci.branch }}"
+                exit 0
+              fi
+              source .ci/init.sh
+              ci_init_repo_root
+              ci_export_gongfeng_defaults
+
+              csv_contains() {
+                local csv="$1"
+                local needle="$2"
+                local item
+                IFS=',' read -r -a items <<<"$csv"
+                for item in "${items[@]}"; do
+                  item="$(printf '%s' "$item" | xargs)"
+                  if [[ "$item" == "$needle" ]]; then
+                    return 0
+                  fi
+                done
+                return 1
+              }
+
+              resolve_prod_promote_envs() {
+                local build_envs="$1"
+                local auto_pin_envs="$2"
+                local env_name
+                IFS=',' read -r -a envs <<<"$build_envs"
+                for env_name in "${envs[@]}"; do
+                  env_name="$(printf '%s' "$env_name" | xargs)"
+                  if [[ -z "$env_name" ]]; then
+                    continue
+                  fi
+                  if [[ "$env_name" != "shprod" && "$env_name" != "sgprod" ]]; then
+                    continue
+                  fi
+                  if [[ "$auto_pin_envs" != "none" ]] && csv_contains "$auto_pin_envs" "$env_name"; then
+                    echo "skip ${env_name}: it is already in MASTER_AUTO_PIN_ENVS" >&2
+                    continue
+                  fi
+                  printf '%s\n' "$env_name"
+                done
+              }
+
+              SOURCE_SHA="$(git rev-parse HEAD)"
+              PROD_ENVS="$(resolve_prod_promote_envs "${{ parameters.MASTER_BUILD_ENVS }}" "${{ parameters.MASTER_AUTO_PIN_ENVS }}")"
+              if [[ -z "$PROD_ENVS" ]]; then
+                echo "no shprod/sgprod env needs production promote"
+                exit 0
+              fi
+
+              echo "============================================================"
+              echo "生产 promote 计划：${{ parameters.DISPLAY_NAME }}"
+              echo "SERVICE=${{ parameters.SERVICE }}"
+              echo "BUNDLE=${{ parameters.BUNDLE }}"
+              echo "SOURCE_SHA=${SOURCE_SHA}"
+              echo "DB 变更提示：生产 DB migration 参数 SERVICE=${{ parameters.SERVICE }} TARGET_ENV=<shprod|sgprod> SOURCE_SHA=${SOURCE_SHA}"
+              echo "============================================================"
+
+              REMOTE_URL="$(ci_gitops_remote_url)"
+              GITOPS_BRANCH=gitops
+              export REMOTE_URL GITOPS_BRANCH
+              while IFS= read -r TARGET_ENV_NAME; do
+                if [[ -z "$TARGET_ENV_NAME" ]]; then
+                  continue
+                fi
+                echo "create GitOps promote: TARGET_ENV=${TARGET_ENV_NAME} SOURCE_SHA=${SOURCE_SHA}"
+                bash .ci/runtime/promote_bundle_image_to_gitops.sh "${{ parameters.SERVICE }}" "${{ parameters.BUNDLE }}" "$TARGET_ENV_NAME" "$SOURCE_SHA"
+              done <<<"$PROD_ENVS"

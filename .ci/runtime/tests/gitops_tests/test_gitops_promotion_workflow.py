@@ -171,9 +171,10 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
             self.assertIn("example.com/beijing-sandbox:test-tag", pins[0])
             self.assertIn("sandbox\tsandbox\tbeijing-sandbox-2\t", pins[1])
             self.assertIn("example.com/beijing-sandbox-2:test-tag", pins[1])
-            self.assertIn("发布产物已生成：可复制下面参数手动 promote", result.stdout)
+            self.assertIn("发布产物已生成：构建 CI 会在人工确认后自动 promote 正式环境", result.stdout)
             self.assertIn("PIPELINE_MODE=promote TARGET_ENV=beijing-sandbox SOURCE_SHA=", result.stdout)
             self.assertIn("PIPELINE_MODE=promote TARGET_ENV=beijing-sandbox-2 SOURCE_SHA=", result.stdout)
+            self.assertIn("DB 变更参数:", result.stdout)
 
     def test_build_without_auto_pin_prints_manual_promote_hint(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -237,12 +238,13 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
 
             source_ref = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, text=True).strip()
             self.assertIn("可发布版本汇总：手动 promote 参数", result.stdout)
-            self.assertIn("发布产物已生成：可复制下面参数手动 promote", result.stdout)
+            self.assertIn("发布产物已生成：构建 CI 会在人工确认后自动 promote 正式环境", result.stdout)
             self.assertIn("CI：\x1b[0m构建 frontend", result.stdout)
             self.assertIn(f"SOURCE_SHA={source_ref}", result.stdout)
             self.assertIn("镜像 tag：\x1b[0mtest-tag", result.stdout)
             self.assertIn("镜像：\x1b[0mregistry.example.com/frontend:test-tag", result.stdout)
             self.assertIn(f"PIPELINE_MODE=promote TARGET_ENV=shprod SOURCE_SHA={source_ref}", result.stdout)
+            self.assertIn(f"DB 变更参数:\x1b[0m SERVICE=frontend TARGET_ENV=shprod SOURCE_SHA={source_ref} TIMEOUT_SECONDS=1800", result.stdout)
             self.assertIn(
                 f"promote_bundle_image_to_gitops.sh frontend frontend shprod {source_ref}",
                 result.stdout,
