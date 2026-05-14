@@ -71,8 +71,8 @@ print_manual_promote_hints() {
       echo "${color_title}============================================================${color_reset}"
       echo "${color_title}可发布版本汇总：手动 promote 参数${color_reset}"
       echo "${color_title}============================================================${color_reset}"
-      echo "${color_note}发布产物已生成：可复制下面参数手动 promote${color_reset}"
-      echo "${color_note}说明：北京自动发布会继续走 auto-pin；正式/指定环境需要手动触发下面的 CI 参数。${color_reset}"
+      echo "${color_note}发布产物已生成：构建 CI 会在人工确认后自动 promote 正式环境；也可复制下面参数手动 promote。${color_reset}"
+      echo "${color_note}说明：北京自动发布会继续走 auto-pin；正式环境默认等待人工确认后创建 GitOps promote。${color_reset}"
       has_hint=1
     fi
     echo "${color_title}============================================================${color_reset}"
@@ -85,6 +85,8 @@ print_manual_promote_hints() {
     echo "${color_key}镜像：${color_reset}${image}"
     echo "${color_note}本地等价命令：REMOTE_URL=\"\$(ci_gitops_remote_url)\" GITOPS_BRANCH=gitops bash .ci/runtime/promote_bundle_image_to_gitops.sh ${BUNDLE_SERVICE} ${PIN_TARGETS} ${ENV_NAME} ${SOURCE_REF}${color_reset}"
     echo "${color_key}手动触发参数:${color_reset} PIPELINE_MODE=promote TARGET_ENV=${ENV_NAME} SOURCE_SHA=${SOURCE_REF}"
+    echo "${color_key}DB 变更先执行 CI：${color_reset}生产 DB migration"
+    echo "${color_key}DB 变更参数:${color_reset} SERVICE=${BUNDLE_SERVICE} TARGET_ENV=${ENV_NAME} SOURCE_SHA=${SOURCE_REF} TIMEOUT_SECONDS=1800"
     echo "${color_title}------------------------------------------------------------${color_reset}"
   done
 }
