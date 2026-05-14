@@ -204,6 +204,118 @@ func TestQQOAuthStartSetsReturnToCookieWhenAllowed(t *testing.T) {
 	}
 }
 
+func TestQQOAuthRelayUsesIssuerCallbackAndCreatesTargetSession(t *testing.T) {
+	client := &stubQQOAuthClient{
+		identity: service.OAuthSignInInput{
+			Provider:        "qq",
+			ProviderSubject: "relay-openid",
+			Name:            "QQ Relay User",
+		},
+	}
+	router := newAuthTestRouterWithQQ(client)
+
+	start := performOAuthRequest(
+		t,
+		router,
+		"https://api-sandbox-bj-7.lightclaw.tech/auth/oauth/qq/start?relay_mode=issuer&issuer_redirect_uri="+
+			url.QueryEscape("https://lightclaw.tech/auth/oauth/qq/callback")+
+			"&return_to="+url.QueryEscape("https://intl-sandbox-bj-7.preview.lightclaw.tech/dashboard/settings"),
+	)
+	if start.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("expected 307 from qq relay start, got %d: %s", start.Code, start.Body.String())
+	}
+	authorizeURL, err := url.Parse(start.Header().Get("Location"))
+	if err != nil {
+		t.Fatalf("parse authorize url: %v", err)
+	}
+	if got := authorizeURL.Query().Get("redirect_uri"); got != "https://lightclaw.tech/auth/oauth/qq/callback" {
+		t.Fatalf("expected issuer redirect_uri, got %q", got)
+	}
+	relayState, err := decodeOAuthRelayState(authorizeURL.Query().Get("state"))
+	if err != nil {
+		t.Fatalf("decode relay state: %v", err)
+	}
+	if relayState.TargetCallbackURI != "https://api-sandbox-bj-7.lightclaw.tech/auth/oauth/qq/callback" {
+		t.Fatalf("unexpected target callback: %q", relayState.TargetCallbackURI)
+	}
+	stateCookie := cookieFromRecorderByName(t, start, qqOAuthStateCookieName)
+	if stateCookie.Value != relayState.Nonce {
+		t.Fatalf("expected state cookie nonce %q, got %q", relayState.Nonce, stateCookie.Value)
+	}
+	returnToCookie := cookieFromRecorderByName(t, start, qqOAuthReturnToCookieName)
+
+	issuerCallback := performOAuthRequest(
+		t,
+		router,
+		"https://lightclaw.tech/auth/oauth/qq/callback?code=qq-code-relay&state="+url.QueryEscape(authorizeURL.Query().Get("state")),
+	)
+	if issuerCallback.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("expected 307 from issuer relay callback, got %d: %s", issuerCallback.Code, issuerCallback.Body.String())
+	}
+	if client.exchangeCalls != 0 {
+		t.Fatalf("issuer relay callback must not exchange code, got %d calls", client.exchangeCalls)
+	}
+	targetURL, err := url.Parse(issuerCallback.Header().Get("Location"))
+	if err != nil {
+		t.Fatalf("parse relay target url: %v", err)
+	}
+	if targetURL.Host != "api-sandbox-bj-7.lightclaw.tech" || targetURL.Path != "/auth/oauth/qq/callback" {
+		t.Fatalf("unexpected relay target: %q", targetURL.String())
+	}
+	if targetURL.Query().Get("code") != "qq-code-relay" || targetURL.Query().Get("state") != authorizeURL.Query().Get("state") {
+		t.Fatalf("relay target did not preserve callback query: %q", targetURL.RawQuery)
+	}
+
+	targetCallback := performOAuthRequest(t, router, targetURL.String(), stateCookie, returnToCookie)
+	if targetCallback.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("expected 307 from target relay callback, got %d: %s", targetCallback.Code, targetCallback.Body.String())
+	}
+	if client.exchangeCalls != 1 {
+		t.Fatalf("target callback should exchange code once, got %d calls", client.exchangeCalls)
+	}
+	if client.exchangeRedirectURI != "https://lightclaw.tech/auth/oauth/qq/callback" {
+		t.Fatalf("expected target exchange to use issuer redirect uri, got %q", client.exchangeRedirectURI)
+	}
+	redirected, err := url.Parse(targetCallback.Header().Get("Location"))
+	if err != nil {
+		t.Fatalf("parse final redirect: %v", err)
+	}
+	if redirected.Scheme != "https" || redirected.Host != "intl-sandbox-bj-7.preview.lightclaw.tech" || redirected.Path != "/dashboard/settings" {
+		t.Fatalf("unexpected final redirect: %q", redirected.String())
+	}
+	if !strings.Contains(redirected.Fragment, "session_token=") {
+		t.Fatalf("expected session token fragment in final redirect, got %q", redirected.String())
+	}
+}
+
+func TestWeChatOAuthRelayTargetExchangesWithIssuerRedirectURI(t *testing.T) {
+	client := &stubWeChatOAuthClient{}
+	router := newAuthTestRouterWithWeChat(client)
+	state, err := encodeOAuthRelayState(oauthRelayState{
+		Version:           1,
+		Mode:              oauthRelayModeIssuer,
+		Provider:          "wechat",
+		Nonce:             "wechat-relay-nonce",
+		IssuerRedirectURI: "https://lightclaw.tech/auth/oauth/wechat/callback",
+		TargetCallbackURI: "https://api-sandbox-bj-7.lightclaw.tech/auth/oauth/wechat/callback",
+	})
+	if err != nil {
+		t.Fatalf("encode relay state: %v", err)
+	}
+	callback := performOAuthRequest(
+		t,
+		router,
+		"https://api-sandbox-bj-7.lightclaw.tech/auth/oauth/wechat/callback?code=wechat-code-relay&state="+url.QueryEscape(state),
+		&http.Cookie{Name: wechatOAuthStateCookieName, Value: "wechat-relay-nonce"},
+	)
+	if callback.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("expected 307 from wechat relay target callback, got %d: %s", callback.Code, callback.Body.String())
+	}
+	if client.exchangeRedirectURI != "https://lightclaw.tech/auth/oauth/wechat/callback" {
+		t.Fatalf("expected wechat exchange to use issuer redirect uri, got %q", client.exchangeRedirectURI)
+	}
+}
+
 func TestWeChatOAuthStartSetsReturnToCookieWhenAllowed(t *testing.T) {
 	t.Parallel()
 
@@ -1054,10 +1166,14 @@ func TestQQOAuthCallbackIgnoresExistingSessionAndSignsInReturningQQUser(t *testi
 }
 
 type stubQQOAuthClient struct {
-	identity service.OAuthSignInInput
+	identity            service.OAuthSignInInput
+	exchangeRedirectURI string
+	exchangeCalls       int
 }
 
-func (s *stubQQOAuthClient) ExchangeCode(_ context.Context, code string, _ string) (*QQOAuthToken, error) {
+func (s *stubQQOAuthClient) ExchangeCode(_ context.Context, code string, redirectURI string) (*QQOAuthToken, error) {
+	s.exchangeCalls++
+	s.exchangeRedirectURI = strings.TrimSpace(redirectURI)
 	return &QQOAuthToken{
 		AccessToken: "qq-access-token-" + strings.TrimSpace(code),
 		ExpiresIn:   5184000,
@@ -1079,10 +1195,14 @@ func (s *stubQQOAuthClient) ResolveIdentity(_ context.Context, accessToken strin
 }
 
 type stubWeChatOAuthClient struct {
-	identity service.OAuthSignInInput
+	identity            service.OAuthSignInInput
+	exchangeRedirectURI string
+	exchangeCalls       int
 }
 
-func (s *stubWeChatOAuthClient) ExchangeCode(_ context.Context, code string, _ string) (*WeChatOAuthToken, error) {
+func (s *stubWeChatOAuthClient) ExchangeCode(_ context.Context, code string, redirectURI string) (*WeChatOAuthToken, error) {
+	s.exchangeCalls++
+	s.exchangeRedirectURI = strings.TrimSpace(redirectURI)
 	return &WeChatOAuthToken{
 		AccessToken:  "wechat-access-token-" + strings.TrimSpace(code),
 		RefreshToken: "wechat-refresh-token-" + strings.TrimSpace(code),
@@ -1181,4 +1301,15 @@ func cookieFromRecorderByName(t *testing.T, recorder *httptest.ResponseRecorder,
 	}
 	t.Fatalf("cookie %q not found", name)
 	return nil
+}
+
+func performOAuthRequest(t *testing.T, router http.Handler, rawURL string, cookies ...*http.Cookie) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, rawURL, nil)
+	for _, cookie := range cookies {
+		req.AddCookie(cookie)
+	}
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, req)
+	return recorder
 }

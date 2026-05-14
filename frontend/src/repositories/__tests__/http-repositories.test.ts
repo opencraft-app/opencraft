@@ -12,6 +12,7 @@ const AUTH_TOKEN_STORAGE_KEY = "lightclaw-auth-token-v1";
 describe("http repositories auth token bootstrap", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.stubEnv("VITE_OAUTH_RELAY_ISSUER_BASE_URL", "");
     const values = new Map<string, string>();
     vi.stubGlobal("localStorage", {
       getItem: (key: string) => values.get(key) ?? null,
@@ -662,6 +663,19 @@ describe("http repositories auth token bootstrap", () => {
       "https://lightclaw.tech/auth/oauth/wechat/start",
       "https://lightclaw.pages.dev/auth/sign-in",
     );
+  });
+
+  it("adds relay params without changing the target auth backend when relay issuer is configured", () => {
+    vi.stubEnv("VITE_OAUTH_RELAY_ISSUER_BASE_URL", "https://lightclaw.tech/");
+    stubHostname("intl-sandbox-bj-7.preview.lightclaw.tech");
+
+    const repositories = createHttpRepositories("https://api-sandbox-bj-7.lightclaw.tech");
+    const parsed = new URL(repositories.auth.getOAuthStartUrl("qq")!);
+
+    expect(`${parsed.origin}${parsed.pathname}`).toBe("https://api-sandbox-bj-7.lightclaw.tech/auth/oauth/qq/start");
+    expect(parsed.searchParams.get("relay_mode")).toBe("issuer");
+    expect(parsed.searchParams.get("issuer_redirect_uri")).toBe("https://lightclaw.tech/auth/oauth/qq/callback");
+    expect(parsed.searchParams.get("return_to")).toBe("https://intl-sandbox-bj-7.preview.lightclaw.tech/auth/sign-in");
   });
 
   it("uses the live auth backend on the primary site domain even without an explicit env var", () => {

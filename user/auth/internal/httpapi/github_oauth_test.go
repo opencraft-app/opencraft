@@ -18,13 +18,17 @@ import (
 // ─── stub ────────────────────────────────────────────────────────────────────
 
 type stubGitHubOAuthClient struct {
-	identity    service.OAuthSignInInput
-	exchangeErr error
-	identityErr error
-	accessToken string
+	identity            service.OAuthSignInInput
+	exchangeErr         error
+	identityErr         error
+	accessToken         string
+	exchangeRedirectURI string
+	exchangeCalls       int
 }
 
-func (s *stubGitHubOAuthClient) ExchangeCode(_ context.Context, code string, _ string) (*GitHubOAuthToken, error) {
+func (s *stubGitHubOAuthClient) ExchangeCode(_ context.Context, code string, redirectURI string) (*GitHubOAuthToken, error) {
+	s.exchangeCalls++
+	s.exchangeRedirectURI = strings.TrimSpace(redirectURI)
 	if s.exchangeErr != nil {
 		return nil, s.exchangeErr
 	}
@@ -491,6 +495,40 @@ func TestGitHubOAuthCallbackRedirectsBackToSiteFrontend(t *testing.T) {
 	}
 	if location.Scheme != "https" || location.Host != "lightclaw.site" || location.Path != "/" {
 		t.Fatalf("expected callback redirect to site frontend home, got %q", callbackRecorder.Header().Get("Location"))
+	}
+}
+
+func TestGitHubOAuthRelayTargetExchangesWithIssuerRedirectURI(t *testing.T) {
+	t.Parallel()
+
+	client := &stubGitHubOAuthClient{}
+	router := newAuthTestRouterWithGitHub(client)
+	relayState, err := encodeOAuthRelayState(oauthRelayState{
+		Version:           1,
+		Mode:              oauthRelayModeIssuer,
+		Provider:          "github",
+		Nonce:             "github-relay-nonce",
+		IssuerRedirectURI: "https://lightclaw.tech/auth/oauth/github/callback",
+		TargetCallbackURI: "https://api-sandbox-bj-7.lightclaw.tech/auth/oauth/github/callback",
+	})
+	if err != nil {
+		t.Fatalf("encode relay state: %v", err)
+	}
+
+	callback := performOAuthRequest(
+		t,
+		router,
+		"https://api-sandbox-bj-7.lightclaw.tech/auth/oauth/github/callback?code=github-code-relay&state="+url.QueryEscape(relayState),
+		&http.Cookie{Name: githubOAuthStateCookieName, Value: "github-relay-nonce"},
+	)
+	if callback.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("expected 307 from github relay target callback, got %d: %s", callback.Code, callback.Body.String())
+	}
+	if client.exchangeCalls != 1 {
+		t.Fatalf("expected github relay target callback to exchange once, got %d", client.exchangeCalls)
+	}
+	if client.exchangeRedirectURI != "https://lightclaw.tech/auth/oauth/github/callback" {
+		t.Fatalf("expected github exchange to use issuer redirect_uri, got %q", client.exchangeRedirectURI)
 	}
 }
 

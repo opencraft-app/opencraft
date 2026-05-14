@@ -18,13 +18,17 @@ import (
 // ─── stub ────────────────────────────────────────────────────────────────────
 
 type stubGoogleOAuthClient struct {
-	identity    service.OAuthSignInInput
-	exchangeErr error
-	identityErr error
-	accessToken string
+	identity            service.OAuthSignInInput
+	exchangeErr         error
+	identityErr         error
+	accessToken         string
+	exchangeRedirectURI string
+	exchangeCalls       int
 }
 
-func (s *stubGoogleOAuthClient) ExchangeCode(_ context.Context, code string, _ string) (*GoogleOAuthToken, error) {
+func (s *stubGoogleOAuthClient) ExchangeCode(_ context.Context, code string, redirectURI string) (*GoogleOAuthToken, error) {
+	s.exchangeCalls++
+	s.exchangeRedirectURI = strings.TrimSpace(redirectURI)
 	if s.exchangeErr != nil {
 		return nil, s.exchangeErr
 	}
@@ -478,6 +482,40 @@ func TestGoogleOAuthCallbackRedirectsBackToSiteFrontend(t *testing.T) {
 	}
 	if location.Scheme != "https" || location.Host != "lightclaw.site" || location.Path != "/" {
 		t.Fatalf("expected callback redirect to site frontend home, got %q", callbackRecorder.Header().Get("Location"))
+	}
+}
+
+func TestGoogleOAuthRelayTargetExchangesWithIssuerRedirectURI(t *testing.T) {
+	t.Parallel()
+
+	client := &stubGoogleOAuthClient{}
+	router := newAuthTestRouterWithGoogle(client)
+	relayState, err := encodeOAuthRelayState(oauthRelayState{
+		Version:           1,
+		Mode:              oauthRelayModeIssuer,
+		Provider:          "google",
+		Nonce:             "google-relay-nonce",
+		IssuerRedirectURI: "https://lightclaw.tech/auth/oauth/google/callback",
+		TargetCallbackURI: "https://api-sandbox-bj-7.lightclaw.tech/auth/oauth/google/callback",
+	})
+	if err != nil {
+		t.Fatalf("encode relay state: %v", err)
+	}
+
+	callback := performOAuthRequest(
+		t,
+		router,
+		"https://api-sandbox-bj-7.lightclaw.tech/auth/oauth/google/callback?code=google-code-relay&state="+url.QueryEscape(relayState),
+		&http.Cookie{Name: googleOAuthStateCookieName, Value: "google-relay-nonce"},
+	)
+	if callback.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("expected 307 from google relay target callback, got %d: %s", callback.Code, callback.Body.String())
+	}
+	if client.exchangeCalls != 1 {
+		t.Fatalf("expected google relay target callback to exchange once, got %d", client.exchangeCalls)
+	}
+	if client.exchangeRedirectURI != "https://lightclaw.tech/auth/oauth/google/callback" {
+		t.Fatalf("expected google exchange to use issuer redirect_uri, got %q", client.exchangeRedirectURI)
 	}
 }
 

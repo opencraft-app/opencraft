@@ -112,6 +112,16 @@ stages:
               PREVIEW_INTL_AUTH_API_BASE_URL="$(resolve_preview_auth_api_base_url "${{ ci.branch }}" intl)"
               echo "预览 API base：cn=${PREVIEW_CN_AUTH_API_BASE_URL}"
               echo "预览 API base：intl=${PREVIEW_INTL_AUTH_API_BASE_URL}"
+              case "${{ ci.branch }}" in
+                playground/sandbox-bj-*)
+                  export VITE_OAUTH_RELAY_ISSUER_BASE_URL="https://lightclaw.tech"
+                  echo "OAuth relay issuer base：${VITE_OAUTH_RELAY_ISSUER_BASE_URL}"
+                  ;;
+                *)
+                  unset VITE_OAUTH_RELAY_ISSUER_BASE_URL
+                  echo "OAuth relay issuer base：disabled"
+                  ;;
+              esac
 
               cd "$REPO_ROOT/frontend"
               rm -rf node_modules dist-cn dist-global

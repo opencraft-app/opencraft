@@ -209,6 +209,14 @@ const mapSession = (payload: SessionPayload): AuthSessionSnapshot => ({
 
 const buildUrl = (baseUrl: string, path: string) => `${baseUrl}${path}`;
 
+const configuredOAuthRelayIssuerBaseURL = (): string | null => {
+  const configured = import.meta.env.VITE_OAUTH_RELAY_ISSUER_BASE_URL?.trim();
+  if (!configured) {
+    return null;
+  }
+  return configured.replace(/\/$/, "");
+};
+
 const currentOAuthReturnTo = (): string | null => {
   if (typeof window === "undefined" || !window.location) {
     return null;
@@ -939,6 +947,11 @@ const createHttpAuthRepository = (baseUrl: string): AuthRepository => ({
   },
   getOAuthStartUrl(provider) {
     const startURL = new URL(buildUrl(baseUrl, `/auth/oauth/${provider}/start`));
+    const relayIssuerBaseURL = configuredOAuthRelayIssuerBaseURL();
+    if (relayIssuerBaseURL) {
+      startURL.searchParams.set("relay_mode", "issuer");
+      startURL.searchParams.set("issuer_redirect_uri", buildUrl(relayIssuerBaseURL, `/auth/oauth/${provider}/callback`));
+    }
     const returnTo = currentOAuthReturnTo();
     if (returnTo) {
       startURL.searchParams.set("return_to", returnTo);
