@@ -243,6 +243,12 @@ func TestRunCreateInstanceTaskProvisionsAiGatewayOnCreate(t *testing.T) {
 		t.Fatalf("expected second process call to prefer acli provider save and fall back to harness model set as agentuser, got %q", sandboxAdapter.processCalls[1].Args[2])
 	}
 	if !strings.Contains(sandboxAdapter.processCalls[1].Args[2], "--name") ||
+		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "acli model switch --model") ||
+		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "--model-name") ||
+		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "switch_model=") ||
+		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "model_name") ||
+		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "--model \"$switch_model\"") ||
+		strings.Contains(sandboxAdapter.processCalls[1].Args[2], "--agent") ||
 		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "--api") ||
 		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "--api-key \"$ACLI_SECRET_API_KEY\"") ||
 		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "--model-id") ||

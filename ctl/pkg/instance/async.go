@@ -910,7 +910,7 @@ func truncateForLog(value string, max int) string {
 }
 
 func renderHermesModelSetCommand(modelID, providerName, baseURL, apiKey, compat string) string {
-	modelName := hermesModelName(modelID)
+	modelName := providerName
 	acliParts := []string{
 		fmt.Sprintf(`--name %s`, shellQuoteArg(providerName)),
 	}
@@ -943,28 +943,44 @@ func renderHermesModelSetCommand(modelID, providerName, baseURL, apiKey, compat 
 	acliArgs := strings.Join(acliParts, " ")
 	harnessArgs := strings.Join(harnessParts, " ")
 	secretExport := `ACLI_SECRET_API_KEY=` + shellQuoteArg(apiKey)
-	return strings.Join([]string{
+	lines := []string{
 		`if command -v acli >/dev/null 2>&1; then`,
 		`  ` + secretExport,
-		fmt.Sprintf(`  acli provider save %s`, acliArgs),
+		fmt.Sprintf(`  save_output="$(acli provider save %s)"`, acliArgs),
+		`  printf '%s\n' "$save_output"`,
+		`  switch_model="$(printf '%s\n' "$save_output" | python3 -c 'import json,re,sys`,
+		`raw=sys.stdin.read()`,
+		`match=re.search(r"\{.*\}", raw, re.S)`,
+		`if not match:`,
+		`    raise SystemExit("provider save did not return JSON")`,
+		`payload=json.loads(match.group(0))`,
+		`data=payload.get("data", payload) if isinstance(payload, dict) else {}`,
+		`def pick(*keys):`,
+		`    for key in keys:`,
+		`        value=data.get(key) if isinstance(data, dict) else None`,
+		`        if isinstance(value, str) and value.strip():`,
+		`            return value.strip()`,
+		`    return ""`,
+		`model=pick("model", "model_name", "modelName", "default_model", "defaultModel")`,
+		`provider=pick("provider", "provider_name", "providerName", "name")`,
+		`if "/" in model:`,
+		`    print(model)`,
+		`elif provider and model:`,
+		`    print(provider + "/" + model)`,
+		`else:`,
+		`    raise SystemExit("provider save output missing switch model")`,
+		`')"`,
+		`  acli model switch --model "$switch_model"`,
+	}
+	lines = append(lines,
 		`elif command -v harness >/dev/null 2>&1; then`,
 		fmt.Sprintf(`  harness model set %s`, harnessArgs),
 		`else`,
 		`  echo "neither acli nor harness found" >&2`,
 		`  exit 127`,
 		`fi`,
-	}, "\n")
-}
-
-func hermesModelName(modelID string) string {
-	modelID = strings.TrimSpace(modelID)
-	if modelID == "" {
-		return ""
-	}
-	if idx := strings.LastIndex(modelID, "/"); idx >= 0 && idx+1 < len(modelID) {
-		return modelID[idx+1:]
-	}
-	return modelID
+	)
+	return strings.Join(lines, "\n")
 }
 
 func mapHermesProviderAPI(compat string) string {
