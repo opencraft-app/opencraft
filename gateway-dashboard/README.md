@@ -7,6 +7,7 @@ Trigger note:
 - 2026-05-08: README-only change to rerun gateway-dashboard release after GitOps gate stdout and promote lease fixes.
 - 2026-05-15: README-only no-op change to exercise the gateway-dashboard release trigger path.
 - 2026-05-15: README-only no-op change to rerun gateway-dashboard after service-release production promote check-in landed.
+- 2026-05-15: README-only no-op change to verify environment-aware release hints in gateway-dashboard CI.
 
 公网 `CVM -> dashboard -> ai-gateway` 专用模式下，当前保证可用的页面收敛为：
 
