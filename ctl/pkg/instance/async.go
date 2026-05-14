@@ -767,7 +767,9 @@ func (l *logic) configureOnboard(ctx pctx.Context, sandboxID string, apiKey stri
 		return fmt.Errorf("default_base_url or default_model_id not configured")
 	}
 
-	// Hermes 当前只接受固定 provider 名 `custom`，不能使用随机 provider id。
+	// Keep the provider identity stable with the legacy harness setup. The
+	// environment config decides the endpoint/model; provider naming is not a
+	// separate deploy-time default.
 	providerID := hermesDefaultProviderName
 	l.logHermesModelSetInput(sandboxID, providerID, modelID, baseURL, compat, apiKey)
 
@@ -788,7 +790,7 @@ func (l *logic) configureOnboard(ctx pctx.Context, sandboxID string, apiKey stri
 		providerID,
 		baseURL,
 		apiKey,
-		mapHermesAPIMode(compat),
+		compat,
 	))
 	modelSetResult, err := l.execSandboxProcessCommand(ctx, sandboxID, "hermes_model_set", &psandbox.ProcessStartRequest{
 		Cmd:  "/bin/bash",
@@ -907,11 +909,10 @@ func truncateForLog(value string, max int) string {
 	return value[len(value)-max:]
 }
 
-func renderHermesModelSetCommand(modelID, providerName, baseURL, apiKey, apiMode string) string {
+func renderHermesModelSetCommand(modelID, providerName, baseURL, apiKey, compat string) string {
+	modelName := hermesModelName(modelID)
 	acliParts := []string{
-		fmt.Sprintf(`--provider %s`, shellQuoteArg(providerName)),
-		fmt.Sprintf(`--model-name %s`, shellQuoteArg(modelID)),
-		`--set-default true`,
+		fmt.Sprintf(`--name %s`, shellQuoteArg(providerName)),
 	}
 	harnessParts := []string{
 		fmt.Sprintf(`--model %s`, shellQuoteArg(modelID)),
@@ -922,18 +923,30 @@ func renderHermesModelSetCommand(modelID, providerName, baseURL, apiKey, apiMode
 		harnessParts = append(harnessParts, fmt.Sprintf(`--base-url %s`, shellQuoteArg(baseURL)))
 	}
 	if strings.TrimSpace(apiKey) != "" {
-		acliParts = append(acliParts, fmt.Sprintf(`--api-key %s`, shellQuoteArg(apiKey)))
 		harnessParts = append(harnessParts, fmt.Sprintf(`--api-key %s`, shellQuoteArg(apiKey)))
 	}
-	if strings.TrimSpace(apiMode) != "" {
-		acliParts = append(acliParts, fmt.Sprintf(`--api-mode %s`, shellQuoteArg(apiMode)))
-		harnessParts = append(harnessParts, fmt.Sprintf(`--api-mode %s`, shellQuoteArg(apiMode)))
+	if api := mapHermesProviderAPI(compat); strings.TrimSpace(api) != "" {
+		acliParts = append(acliParts, fmt.Sprintf(`--api %s`, shellQuoteArg(api)))
+	}
+	if strings.TrimSpace(apiKey) != "" {
+		acliParts = append(acliParts, `--api-key "$ACLI_SECRET_API_KEY"`)
+	}
+	if strings.TrimSpace(modelID) != "" {
+		acliParts = append(acliParts, fmt.Sprintf(`--model-id %s`, shellQuoteArg(modelID)))
+	}
+	if strings.TrimSpace(modelName) != "" {
+		acliParts = append(acliParts, fmt.Sprintf(`--model-name %s`, shellQuoteArg(modelName)))
+	}
+	if harnessAPIMode := mapHermesAPIMode(compat); strings.TrimSpace(harnessAPIMode) != "" {
+		harnessParts = append(harnessParts, fmt.Sprintf(`--api-mode %s`, shellQuoteArg(harnessAPIMode)))
 	}
 	acliArgs := strings.Join(acliParts, " ")
 	harnessArgs := strings.Join(harnessParts, " ")
+	secretExport := `ACLI_SECRET_API_KEY=` + shellQuoteArg(apiKey)
 	return strings.Join([]string{
 		`if command -v acli >/dev/null 2>&1; then`,
-		fmt.Sprintf(`  acli model set %s`, acliArgs),
+		`  ` + secretExport,
+		fmt.Sprintf(`  acli provider save %s`, acliArgs),
 		`elif command -v harness >/dev/null 2>&1; then`,
 		fmt.Sprintf(`  harness model set %s`, harnessArgs),
 		`else`,
@@ -941,6 +954,28 @@ func renderHermesModelSetCommand(modelID, providerName, baseURL, apiKey, apiMode
 		`  exit 127`,
 		`fi`,
 	}, "\n")
+}
+
+func hermesModelName(modelID string) string {
+	modelID = strings.TrimSpace(modelID)
+	if modelID == "" {
+		return ""
+	}
+	if idx := strings.LastIndex(modelID, "/"); idx >= 0 && idx+1 < len(modelID) {
+		return modelID[idx+1:]
+	}
+	return modelID
+}
+
+func mapHermesProviderAPI(compat string) string {
+	switch strings.TrimSpace(strings.ToLower(compat)) {
+	case "", "openai", "openai-completions", "openai-compatible", "chat_completions", "chat-completions":
+		return "chat_completions"
+	case "anthropic", "anthropic-messages":
+		return "anthropic_messages"
+	default:
+		return compat
+	}
 }
 
 func mapHermesAPIMode(compat string) string {
