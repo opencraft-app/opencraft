@@ -49,9 +49,11 @@ done
 print_manual_promote_hints() {
   local has_hint=0
   local color_reset=$'\033[0m'
-  local color_title=$'\033[1;36m'
-  local color_key=$'\033[1;33m'
-  local color_cmd=$'\033[1;32m'
+  local color_title=$'\033[1;32m'
+  local color_key=$'\033[1;32m'
+  local color_note=$'\033[1;36m'
+  local ci_name="${RELEASE_CI_NAME:-构建 ${BUNDLE_SERVICE}}"
+  local display_name="${RELEASE_DISPLAY_NAME:-$BUNDLE_SERVICE}"
 
   for ENV_NAME in "${ENVS[@]}"; do
     ENV_NAME="$(printf '%s' "$ENV_NAME" | xargs)"
@@ -67,17 +69,22 @@ print_manual_promote_hints() {
     if [[ "$has_hint" -eq 0 ]]; then
       echo
       echo "${color_title}============================================================${color_reset}"
-      echo "${color_title}发布产物已生成：可复制下面参数手动 promote${color_reset}"
+      echo "${color_title}可发布版本汇总：手动 promote 参数${color_reset}"
       echo "${color_title}============================================================${color_reset}"
+      echo "${color_note}发布产物已生成：可复制下面参数手动 promote${color_reset}"
+      echo "${color_note}说明：北京自动发布会继续走 auto-pin；正式/指定环境需要手动触发下面的 CI 参数。${color_reset}"
       has_hint=1
     fi
-    echo "${color_key}服务:${color_reset} ${BUNDLE_SERVICE}"
-    echo "${color_key}目标环境:${color_reset} ${ENV_NAME}"
-    echo "${color_key}SOURCE_SHA:${color_reset} ${SOURCE_REF}"
-    echo "${color_key}镜像 tag:${color_reset} ${TAG}"
-    echo "${color_key}镜像:${color_reset} ${image}"
+    echo "${color_title}============================================================${color_reset}"
+    echo "${color_key}可发布版本：${color_reset}${display_name} -> ${ENV_NAME}"
+    echo "${color_key}CI：${color_reset}${ci_name}"
+    echo "${color_key}PIPELINE_MODE=promote${color_reset}"
+    echo "${color_key}TARGET_ENV=${ENV_NAME}${color_reset}"
+    echo "${color_key}SOURCE_SHA=${SOURCE_REF}${color_reset}"
+    echo "${color_key}镜像 tag：${color_reset}${TAG}"
+    echo "${color_key}镜像：${color_reset}${image}"
+    echo "${color_note}本地等价命令：REMOTE_URL=\"\$(ci_gitops_remote_url)\" GITOPS_BRANCH=gitops bash .ci/runtime/promote_bundle_image_to_gitops.sh ${BUNDLE_SERVICE} ${PIN_TARGETS} ${ENV_NAME} ${SOURCE_REF}${color_reset}"
     echo "${color_key}手动触发参数:${color_reset} PIPELINE_MODE=promote TARGET_ENV=${ENV_NAME} SOURCE_SHA=${SOURCE_REF}"
-    echo "${color_cmd}一键本地命令:${color_reset} REMOTE_URL=\"\$(ci_gitops_remote_url)\" GITOPS_BRANCH=gitops bash .ci/runtime/promote_bundle_image_to_gitops.sh ${BUNDLE_SERVICE} ${PIN_TARGETS} ${ENV_NAME} ${SOURCE_REF}"
     echo "${color_title}------------------------------------------------------------${color_reset}"
   done
 }

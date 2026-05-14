@@ -236,10 +236,12 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
             )
 
             source_ref = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, text=True).strip()
+            self.assertIn("可发布版本汇总：手动 promote 参数", result.stdout)
             self.assertIn("发布产物已生成：可复制下面参数手动 promote", result.stdout)
-            self.assertIn(f"SOURCE_SHA:\x1b[0m {source_ref}", result.stdout)
-            self.assertIn("镜像 tag:\x1b[0m test-tag", result.stdout)
-            self.assertIn("镜像:\x1b[0m registry.example.com/frontend:test-tag", result.stdout)
+            self.assertIn("CI：\x1b[0m构建 frontend", result.stdout)
+            self.assertIn(f"SOURCE_SHA={source_ref}", result.stdout)
+            self.assertIn("镜像 tag：\x1b[0mtest-tag", result.stdout)
+            self.assertIn("镜像：\x1b[0mregistry.example.com/frontend:test-tag", result.stdout)
             self.assertIn(f"PIPELINE_MODE=promote TARGET_ENV=shprod SOURCE_SHA={source_ref}", result.stdout)
             self.assertIn(
                 f"promote_bundle_image_to_gitops.sh frontend frontend shprod {source_ref}",
