@@ -910,7 +910,7 @@ func truncateForLog(value string, max int) string {
 }
 
 func renderHermesModelSetCommand(modelID, providerName, baseURL, apiKey, compat string) string {
-	modelName := hermesModelName(modelID)
+	modelName := providerName
 	acliParts := []string{
 		fmt.Sprintf(`--name %s`, shellQuoteArg(providerName)),
 	}
@@ -937,34 +937,37 @@ func renderHermesModelSetCommand(modelID, providerName, baseURL, apiKey, compat 
 	if strings.TrimSpace(modelName) != "" {
 		acliParts = append(acliParts, fmt.Sprintf(`--model-name %s`, shellQuoteArg(modelName)))
 	}
+	acliSwitchModel := ""
+	if strings.TrimSpace(providerName) != "" && strings.TrimSpace(modelName) != "" {
+		acliSwitchModel = providerName + "/" + modelName
+	}
 	if harnessAPIMode := mapHermesAPIMode(compat); strings.TrimSpace(harnessAPIMode) != "" {
 		harnessParts = append(harnessParts, fmt.Sprintf(`--api-mode %s`, shellQuoteArg(harnessAPIMode)))
 	}
 	acliArgs := strings.Join(acliParts, " ")
+	acliSwitchCommand := ""
+	if acliSwitchModel != "" {
+		acliSwitchCommand = fmt.Sprintf(`  acli model switch --model %s`, shellQuoteArg(acliSwitchModel))
+	}
 	harnessArgs := strings.Join(harnessParts, " ")
 	secretExport := `ACLI_SECRET_API_KEY=` + shellQuoteArg(apiKey)
-	return strings.Join([]string{
+	lines := []string{
 		`if command -v acli >/dev/null 2>&1; then`,
 		`  ` + secretExport,
 		fmt.Sprintf(`  acli provider save %s`, acliArgs),
+	}
+	if acliSwitchCommand != "" {
+		lines = append(lines, acliSwitchCommand)
+	}
+	lines = append(lines,
 		`elif command -v harness >/dev/null 2>&1; then`,
 		fmt.Sprintf(`  harness model set %s`, harnessArgs),
 		`else`,
 		`  echo "neither acli nor harness found" >&2`,
 		`  exit 127`,
 		`fi`,
-	}, "\n")
-}
-
-func hermesModelName(modelID string) string {
-	modelID = strings.TrimSpace(modelID)
-	if modelID == "" {
-		return ""
-	}
-	if idx := strings.LastIndex(modelID, "/"); idx >= 0 && idx+1 < len(modelID) {
-		return modelID[idx+1:]
-	}
-	return modelID
+	)
+	return strings.Join(lines, "\n")
 }
 
 func mapHermesProviderAPI(compat string) string {
