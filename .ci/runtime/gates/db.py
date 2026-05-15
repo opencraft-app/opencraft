@@ -36,6 +36,7 @@ def run_db_gate(
     *,
     repo_root: Path,
     gitops_worktree: Path,
+    runtime_repo_root: Path,
     runtime_command_dir: Path,
     bundle_manifest: Path,
     service: str,
@@ -64,6 +65,7 @@ def run_db_gate(
             run_db_readiness_flow(
                 repo_root,
                 gitops_worktree,
+                runtime_repo_root,
                 runtime_command_dir,
                 bundle_manifest,
                 plan,
@@ -91,6 +93,7 @@ def run_db_gate(
             run_db_readiness_flow(
                 repo_root,
                 gitops_worktree,
+                runtime_repo_root,
                 runtime_command_dir,
                 bundle_manifest,
                 plan,
@@ -118,6 +121,7 @@ def run_db_gate(
 def run_db_readiness_flow(
     repo_root: Path,
     gitops_worktree: Path,
+    runtime_repo_root: Path,
     runtime_command_dir: Path,
     bundle_manifest: Path,
     plan: GatePlan,
@@ -157,14 +161,14 @@ def run_db_readiness_flow(
         if plan.db_job_image_override:
             args.extend(["--image-override", plan.db_job_image_override])
         print(f"环境 {env} 执行 DB 变更：受控 DB job {plan.db_job_service}/{plan.db_job_operation}", file=sys.stderr)
-        run_with_db_tools(repo_root, args, cwd=gitops_worktree)
+        run_with_db_tools(runtime_repo_root, args, cwd=gitops_worktree)
 
     if shprod:
         print(f"GitOps 待同步门禁：执行 {env} 生产 DB readiness 只读校验", file=sys.stderr)
     else:
         print(f"环境 {env} 执行 DB readiness：服务 {plan.service}", file=sys.stderr)
     run_with_db_tools(
-        repo_root,
+        runtime_repo_root,
         [
             "python3",
             str(runtime_command_dir / "verify_db_contract.py"),
@@ -183,14 +187,14 @@ def run_db_readiness_flow(
     )
 
 
-def run_with_db_tools(repo_root: Path, command: list[str], *, cwd: Path) -> None:
+def run_with_db_tools(runtime_repo_root: Path, command: list[str], *, cwd: Path) -> None:
     run_logged(
         [
             "bash",
             "-c",
-            'source "$1/.ci/init.sh"; shift; ci_ensure_db_job_tools; "$@"',
+            'set -euo pipefail; source "$1/.ci/init.sh"; shift; ci_ensure_db_job_tools; "$@"',
             "bash",
-            str(repo_root),
+            str(runtime_repo_root),
             *command,
         ],
         cwd=cwd,

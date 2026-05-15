@@ -28,6 +28,7 @@ class DbGateExecutionTests(unittest.TestCase):
             status, plan = run_db_gate(
                 repo_root=repo_root,
                 gitops_worktree=gitops_worktree,
+                runtime_repo_root=RUNTIME_DIR.parent.parent,
                 runtime_command_dir=RUNTIME_DIR / "commands",
                 bundle_manifest=RUNTIME_DIR / "release-bundles.manifest",
                 service="payment",
@@ -45,8 +46,8 @@ class DbGateExecutionTests(unittest.TestCase):
         self.assertNotIn("run_gitops_db_job.py", rendered_commands)
         verify_command = next(command for command in commands if any("verify_db_contract.py" in part for part in command))
         self.assertIn(str(gitops_worktree), verify_command)
-        self.assertIn(str(repo_root), verify_command)
         self.assertIn("ci_ensure_db_job_tools", verify_command[2])
+        self.assertIn("set -euo pipefail", verify_command[2])
         self.assertIn((verify_command, gitops_worktree), command_calls)
 
     def test_beijing_readiness_runs_controlled_db_job_when_required(self) -> None:
@@ -62,6 +63,7 @@ class DbGateExecutionTests(unittest.TestCase):
             status, plan = run_db_gate(
                 repo_root=repo_root,
                 gitops_worktree=gitops_worktree,
+                runtime_repo_root=RUNTIME_DIR.parent.parent,
                 runtime_command_dir=RUNTIME_DIR / "commands",
                 bundle_manifest=RUNTIME_DIR / "release-bundles.manifest",
                 service="payment",
@@ -82,6 +84,8 @@ class DbGateExecutionTests(unittest.TestCase):
         self.assertEqual(db_job_command[0], "bash")
         self.assertIn("ci_ensure_db_job_tools", db_job_command[2])
         self.assertIn("ci_ensure_db_job_tools", verify_command[2])
+        self.assertIn("set -euo pipefail", db_job_command[2])
+        self.assertIn("set -euo pipefail", verify_command[2])
         self.assertIn(str(repo_root), db_job_command)
         self.assertIn(str(gitops_worktree), db_job_command)
         self.assertIn(str(gitops_worktree), verify_command)

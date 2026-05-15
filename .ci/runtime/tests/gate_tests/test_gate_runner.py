@@ -46,6 +46,10 @@ class GateRunnerTests(unittest.TestCase):
 
         with self.patch_runner(call_order) as patched:
             result = runner.run(self.args())
+            runtime_repo_root = Path(self.args().runtime_command_dir).resolve().parent.parent.parent
+            self.assertEqual(patched["image"].call_args.kwargs["runtime_repo_root"], runtime_repo_root)
+            self.assertEqual(patched["config"].call_args.kwargs["runtime_repo_root"], runtime_repo_root)
+            self.assertEqual(patched["db"].call_args.kwargs["runtime_repo_root"], runtime_repo_root)
             patched["config"].assert_called_once()
             patched["db"].assert_called_once()
             self.assertEqual(patched["config"].call_args.kwargs["image"], "example.com/payment@sha256:abc")

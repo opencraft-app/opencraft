@@ -63,10 +63,12 @@ def run(args: argparse.Namespace) -> ReleaseGateResult:
     repo_root = Path(args.repo_root).resolve()
     runtime_command_dir = Path(args.runtime_command_dir).resolve()
     runtime_dir = runtime_command_dir.parent
+    runtime_repo_root = runtime_dir.parent.parent
     bundle_manifest = runtime_dir / "release-bundles.manifest"
 
     image_gate = run_image_gate(
         repo_root=repo_root,
+        runtime_repo_root=runtime_repo_root,
         runtime_command_dir=runtime_command_dir,
         env=args.env,
         image=args.image,
@@ -78,6 +80,7 @@ def run(args: argparse.Namespace) -> ReleaseGateResult:
             repo_root=repo_root,
             worktree=resources.worktree,
             runtime_dir=runtime_dir,
+            runtime_repo_root=runtime_repo_root,
             runtime_command_dir=runtime_command_dir,
             remote_name=args.remote_name,
             gitops_branch=args.gitops_branch,
@@ -92,6 +95,7 @@ def run(args: argparse.Namespace) -> ReleaseGateResult:
         db_status, plan = run_db_gate(
             repo_root=repo_root,
             gitops_worktree=resources.worktree,
+            runtime_repo_root=runtime_repo_root,
             runtime_command_dir=runtime_command_dir,
             bundle_manifest=bundle_manifest,
             service=args.bundle_service,

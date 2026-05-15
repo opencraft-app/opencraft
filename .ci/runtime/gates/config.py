@@ -16,6 +16,7 @@ def run_config_gate(
     repo_root: Path,
     worktree: Path,
     runtime_dir: Path,
+    runtime_repo_root: Path,
     runtime_command_dir: Path,
     remote_name: str,
     gitops_branch: str,
@@ -47,7 +48,7 @@ def run_config_gate(
     )
     validate_config(
         repo_root=worktree,
-        init_repo_root=repo_root,
+        init_repo_root=runtime_repo_root,
         runtime_command_dir=runtime_command_dir,
         bundle_manifest=worktree / ".ci/runtime/release-bundles.manifest",
         pin_targets=pin_targets,
@@ -159,6 +160,7 @@ def validate_config(
     )
 
     script = (
+        "set -euo pipefail\n"
         'source "$1/.ci/init.sh"\n'
         'ci_require_gitops_validation_tools\n'
         'ci_prepare_sops_age_key\n'
@@ -174,6 +176,7 @@ def validate_config(
         if not (repo_root / source_path / "kustomization.yaml").is_file():
             raise FileNotFoundError(f"配置契约失败：缺少 {source_path}/kustomization.yaml")
         kustomize_script = (
+            "set -euo pipefail\n"
             'source "$1/.ci/init.sh"\n'
             'ci_require_gitops_validation_tools\n'
             'ci_prepare_sops_age_key\n'
