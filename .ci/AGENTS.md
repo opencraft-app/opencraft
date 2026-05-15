@@ -40,6 +40,42 @@ rg -n "extends|check-in|template|parameters|<keyword>" src/backend/ci/core/commo
 - 不要在 `.ci/**` 放非流水线 `.yaml` 文件；蓝盾会把它们误识别成流水线。私有配置用 `.manifest` / `.bundle` 后缀。
 - 生产审批优先确认当前平台是否支持 `check-in`；如果 schema/UI 不稳定，不要把 shprod 发布链路绑定到未验证的 approval YAML。
 
+### 蓝盾 stage `if` 实测规则
+
+当前 Devcloud / 蓝盾 Stream 平台上，stage 级 `if` 不要按 GitHub Actions 的“完整表达式求值”模型理解。
+本仓库通过 `.ci/stage-if-probe.yml` 在 live 蓝盾中实测过：
+
+- 能命中：`if: "${{ variables.PIPELINE_MODE }} == build"`
+- 能命中：`if: "${{ ci.branch }} == master"`
+- 能命中：`if: "${{ variables.PIPELINE_MODE }} == build && ${{ ci.branch }} == master"`
+- 会被跳过：`if: "variables.PIPELINE_MODE == 'build'"`
+- 会被跳过：`if: "ci.branch == 'master'"`
+- 会被跳过：`if: "${{ variables.PIPELINE_MODE == 'build' }}"`
+- 会被跳过：`if: "${{ variables.PIPELINE_MODE == 'build' && ci.branch == 'master' }}"`
+
+也就是说，stage `if` 的可靠写法是“先用 `${{ ... }}` 插值出值，再做字符串比较”：
+
+```yaml
+if: "${{ parameters.ENABLE_MASTER_PROD_PROMOTE }} == true && ${{ variables.PIPELINE_MODE }} == build && ${{ ci.branch }} == master"
+```
+
+不要写成下面两类形式：
+
+```yaml
+# 不可靠：裸表达式不会按预期解析
+if: "variables.PIPELINE_MODE == 'build' && ci.branch == 'master'"
+
+# 不可靠：整块布尔表达式不会按预期变成 true/false gate
+if: "${{ variables.PIPELINE_MODE == 'build' && ci.branch == 'master' }}"
+```
+
+工程约束：
+
+- stage `if` 只用于 UI 可见性和减少无意义阶段；不能作为发布安全边界。
+- 关键发布步骤必须继续在 shell 脚本里做 guard，例如检查 `PIPELINE_MODE`、`ci.branch`、目标环境白名单。
+- 审核说明里的 `${{ ... }}` 也会参与模板/运行时替换；不要在说明文本里放未验证的表达式样例。需要展示样例时，用静态文字或拆开写成 `$ {{ ... }}`。
+- 如果要改 stage `if` 语法，先更新并运行 `.ci/stage-if-probe.yml`，用 live 蓝盾结果验证后再改正式流水线模板。
+
 ## 实际运行机
 
 当前自有构建池 `env` 的 CI/CD 实际执行位置：
