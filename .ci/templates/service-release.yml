@@ -136,7 +136,7 @@ stages:
               esac
               echo "BUILD_ENVS=${BUILD_ENVS}"
               echo "AUTO_PIN_ENVS=${AUTO_PIN_ENVS}"
-              BUILD_ONLY=true bash .ci/runtime/build_and_promote_to_gitops.sh "${{ parameters.SERVICE }}" "${{ parameters.BUNDLE }}" "${BUILD_ENVS}" "${AUTO_PIN_ENVS}"
+              BUILD_ONLY=true bash "$REPO_ROOT/.ci/runtime/build_and_promote_to_gitops.sh" "${{ parameters.SERVICE }}" "${{ parameters.BUNDLE }}" "${BUILD_ENVS}" "${AUTO_PIN_ENVS}"
           - name: 北京测试 DB 变更检查与 GitOps auto-pin
             shell: bash
             env:
@@ -191,7 +191,7 @@ stages:
               esac
               echo "BUILD_ENVS=${BUILD_ENVS}"
               echo "AUTO_PIN_ENVS=${AUTO_PIN_ENVS}"
-              AUTO_PIN_ONLY=true bash .ci/runtime/build_and_promote_to_gitops.sh "${{ parameters.SERVICE }}" "${{ parameters.BUNDLE }}" "${BUILD_ENVS}" "${AUTO_PIN_ENVS}"
+              AUTO_PIN_ONLY=true bash "$REPO_ROOT/.ci/runtime/build_and_promote_to_gitops.sh" "${{ parameters.SERVICE }}" "${{ parameters.BUNDLE }}" "${BUILD_ENVS}" "${AUTO_PIN_ENVS}"
           - name: 手动发布 ${{ parameters.DISPLAY_NAME }} 到 GitOps
             shell: bash
             run: |
@@ -210,7 +210,7 @@ stages:
               ci_export_gongfeng_defaults
               REMOTE_URL="$(ci_gitops_remote_url)" \
               GITOPS_BRANCH=gitops \
-              bash .ci/runtime/promote_bundle_image_to_gitops.sh "${{ parameters.SERVICE }}" "${{ parameters.BUNDLE }}" "${{ variables.TARGET_ENV }}" "$SOURCE_SHA"
+              bash "$REPO_ROOT/.ci/runtime/promote_bundle_image_to_gitops.sh" "${{ parameters.SERVICE }}" "${{ parameters.BUNDLE }}" "${{ variables.TARGET_ENV }}" "$SOURCE_SHA"
   - name: 确认生产 promote ${{ parameters.DISPLAY_NAME }}
     if: "${{ parameters.ENABLE_MASTER_PROD_PROMOTE }} == true && ${{ variables.PIPELINE_MODE }} == build && ${{ ci.branch }} == master"
     check-in:
@@ -353,10 +353,18 @@ stages:
               REMOTE_URL="$(ci_gitops_remote_url)"
               GITOPS_BRANCH=gitops
               export REMOTE_URL GITOPS_BRANCH
+              RUNTIME_SNAPSHOT="$(mktemp -d)"
+              cleanup_runtime_snapshot() {
+                rm -rf "$RUNTIME_SNAPSHOT"
+              }
+              trap cleanup_runtime_snapshot EXIT
+              mkdir -p "$RUNTIME_SNAPSHOT/.ci"
+              cp -R "$REPO_ROOT/.ci/runtime" "$RUNTIME_SNAPSHOT/.ci/runtime"
+              PROMOTE_BUNDLE_SCRIPT="$RUNTIME_SNAPSHOT/.ci/runtime/promote_bundle_image_to_gitops.sh"
               while IFS= read -r TARGET_ENV_NAME; do
                 if [[ -z "$TARGET_ENV_NAME" ]]; then
                   continue
                 fi
                 echo "create GitOps promote: TARGET_ENV=${TARGET_ENV_NAME} SOURCE_SHA=${SOURCE_SHA}"
-                bash .ci/runtime/promote_bundle_image_to_gitops.sh "${{ parameters.SERVICE }}" "${{ parameters.BUNDLE }}" "$TARGET_ENV_NAME" "$SOURCE_SHA"
+                bash "$PROMOTE_BUNDLE_SCRIPT" "${{ parameters.SERVICE }}" "${{ parameters.BUNDLE }}" "$TARGET_ENV_NAME" "$SOURCE_SHA"
               done <<<"$PROD_ENVS"
