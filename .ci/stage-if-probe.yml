@@ -48,67 +48,164 @@ stages:
               echo "env.BK_CI_GIT_REPO_BRANCH=${BK_CI_GIT_REPO_BRANCH:-}"
               echo "env.BK_CI_GIT_REPO_REF=${BK_CI_GIT_REPO_REF:-}"
 
-  - name: 1 只验证 variables.PIPELINE_MODE
+  - name: 1A 裸表达式 variables.PIPELINE_MODE
     if: "variables.PIPELINE_MODE == 'build'"
     jobs:
       probe:
-        name: PIPELINE_MODE 条件命中
+        name: 裸表达式 PIPELINE_MODE 条件命中
         runs-on:
           self-hosted: true
           pool-name: env
         steps:
-          - name: PIPELINE_MODE stage-if 命中
+          - name: 裸表达式 PIPELINE_MODE stage-if 命中
             shell: bash
             run: |
               echo "stage-if matched: variables.PIPELINE_MODE == 'build'"
               echo "PIPELINE_MODE=${{ variables.PIPELINE_MODE }}"
 
-  - name: 2 只验证 ci.branch
-    if: "ci.branch == 'master'"
+  - name: 1B 表达式块 variables.PIPELINE_MODE
+    if: "${{ variables.PIPELINE_MODE == 'build' }}"
     jobs:
       probe:
-        name: ci.branch 条件命中
+        name: 表达式块 PIPELINE_MODE 条件命中
         runs-on:
           self-hosted: true
           pool-name: env
         steps:
-          - name: ci.branch stage-if 命中
+          - name: 表达式块 PIPELINE_MODE stage-if 命中
+            shell: bash
+            run: |
+              echo "stage-if matched: expression block variables.PIPELINE_MODE == 'build'"
+              echo "PIPELINE_MODE=${{ variables.PIPELINE_MODE }}"
+
+  - name: 1C 插值比较 variables.PIPELINE_MODE
+    if: "${{ variables.PIPELINE_MODE }} == build"
+    jobs:
+      probe:
+        name: 插值比较 PIPELINE_MODE 条件命中
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - name: 插值比较 PIPELINE_MODE stage-if 命中
+            shell: bash
+            run: |
+              echo "stage-if matched: interpolated variables.PIPELINE_MODE == build"
+              echo "PIPELINE_MODE=${{ variables.PIPELINE_MODE }}"
+
+  - name: 2A 裸表达式 ci.branch
+    if: "ci.branch == 'master'"
+    jobs:
+      probe:
+        name: 裸表达式 ci.branch 条件命中
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - name: 裸表达式 ci.branch stage-if 命中
             shell: bash
             run: |
               echo "stage-if matched: ci.branch == 'master'"
               echo "ci.branch=${{ ci.branch }}"
 
-  - name: 3 验证生产审核组合条件
+  - name: 2B 表达式块 ci.branch
+    if: "${{ ci.branch == 'master' }}"
+    jobs:
+      probe:
+        name: 表达式块 ci.branch 条件命中
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - name: 表达式块 ci.branch stage-if 命中
+            shell: bash
+            run: |
+              echo "stage-if matched: expression block ci.branch == 'master'"
+              echo "ci.branch=${{ ci.branch }}"
+
+  - name: 3A 裸表达式生产审核组合条件
     if: "variables.PIPELINE_MODE == 'build' && ci.branch == 'master'"
     check-in:
       reviews:
         flows:
-          - name: stage-if 探针审核
+          - name: 裸表达式 stage-if 探针审核
             reviewers: [ "skipzhang" ]
         description: |
-          BK-CI stage-if 探针命中。
+          BK-CI stage-if 裸表达式探针命中。
 
           期望命中条件：
           - variables.PIPELINE_MODE == 'build'
           - ci.branch == 'master'
 
-          如果这个审核阶段出现并可点击，说明生产审核 stage 可以使用：
+          如果这个审核阶段出现并可点击，说明生产审核 stage 可以使用裸表达式：
           if: "parameters.ENABLE_MASTER_PROD_PROMOTE == true && variables.PIPELINE_MODE == 'build' && ci.branch == 'master'"
       timeout-hours: 2
     jobs:
       probe:
-        name: 生产审核组合条件命中
+        name: 裸表达式生产审核组合条件命中
         runs-on:
           self-hosted: true
           pool-name: env
         steps:
-          - name: 组合条件 stage-if 命中
+          - name: 裸表达式组合条件 stage-if 命中
             shell: bash
             run: |
               echo "stage-if matched: variables.PIPELINE_MODE == 'build' && ci.branch == 'master'"
 
+  - name: 3B 表达式块生产审核组合条件
+    if: "${{ variables.PIPELINE_MODE == 'build' && ci.branch == 'master' }}"
+    check-in:
+      reviews:
+        flows:
+          - name: 表达式块 stage-if 探针审核
+            reviewers: [ "skipzhang" ]
+        description: |
+          BK-CI stage-if 表达式块探针命中。
+
+          期望命中条件：
+          - variables.PIPELINE_MODE == 'build'
+          - ci.branch == 'master'
+
+          如果这个审核阶段出现并可点击，说明生产审核 stage 应该使用：
+          if: "$ {{ parameters.ENABLE_MASTER_PROD_PROMOTE == true && variables.PIPELINE_MODE == 'build' && ci.branch == 'master' }}"
+      timeout-hours: 2
+    jobs:
+      probe:
+        name: 表达式块生产审核组合条件命中
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - name: 表达式块组合条件 stage-if 命中
+            shell: bash
+            run: |
+              echo "stage-if matched: expression block variables.PIPELINE_MODE == 'build' && ci.branch == 'master'"
+
+  - name: 3C 无条件审核基线
+    check-in:
+      reviews:
+        flows:
+          - name: 无条件审核基线
+            reviewers: [ "skipzhang" ]
+        description: |
+          这是无条件审核基线。
+
+          如果 3A/3B 都跳过，但本阶段出现并可点击，说明 check-in 本身没问题，问题集中在 stage if 表达式。
+      timeout-hours: 2
+    jobs:
+      probe:
+        name: 无条件审核基线命中
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - name: 无条件审核基线命中
+            shell: bash
+            run: |
+              echo "unconditional check-in baseline reached"
+
   - name: 4 反向验证 promote 模式应跳过
-    if: "variables.PIPELINE_MODE == 'promote' && ci.branch == 'master'"
+    if: "${{ variables.PIPELINE_MODE == 'promote' && ci.branch == 'master' }}"
     jobs:
       probe:
         name: promote 模式条件命中

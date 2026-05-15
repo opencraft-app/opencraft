@@ -1,1 +1,1 @@
-2026-05-15: trigger BK-CI stage-if probe for ci.branch and variables.PIPELINE_MODE.
+2026-05-15: rerun BK-CI stage-if probe with bare, expression-block, interpolation, and unconditional baseline stages.
