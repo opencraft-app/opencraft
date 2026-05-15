@@ -104,6 +104,7 @@ ci_init_repo_root
 RUNTIME_SNAPSHOT="$(mktemp -d)"
 trap 'rm -rf "$RUNTIME_SNAPSHOT"' EXIT
 mkdir -p "$RUNTIME_SNAPSHOT/.ci"
+cp "$REPO_ROOT/.ci/init.sh" "$RUNTIME_SNAPSHOT/.ci/init.sh"
 cp -R "$REPO_ROOT/.ci/runtime" "$RUNTIME_SNAPSHOT/.ci/runtime"
 
 PROMOTE_BUNDLE_SCRIPT="$RUNTIME_SNAPSHOT/.ci/runtime/promote_bundle_image_to_gitops.sh"
@@ -115,12 +116,15 @@ bash "$PROMOTE_BUNDLE_SCRIPT" "$SERVICE" "$BUNDLE" "$TARGET_ENV" "$SOURCE_SHA"
 ```bash
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="${REPO_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
+CI_INIT_SCRIPT="${CI_INIT_SCRIPT:-$SCRIPT_DIR/../init.sh}"
+source "$CI_INIT_SCRIPT"
 RUNTIME_COMMAND_DIR="${RUNTIME_COMMAND_DIR:-$SCRIPT_DIR/commands}"
 ```
 
 边界解释：
 
 - `SCRIPT_DIR` / `RUNTIME_COMMAND_DIR`：找当前 runtime 代码，必须允许来自临时 snapshot。
+- `CI_INIT_SCRIPT`：找当前 runtime 配套的 `.ci/init.sh`，必须来自 snapshot；不要在 fan-out 的第二次 promote 里回到已被 checkout 成 `promote-*` 的 `$REPO_ROOT/.ci/init.sh`。
 - `REPO_ROOT`：指向蓝盾 checkout 的真实仓库，哪怕它稍后被切到 `promote-*` 分支。
 - `PIN_SCRIPT` 默认应优先使用 runtime snapshot 旁边的 `pin_image_to_gitops.sh`，不要回到 mutable worktree 找脚本。
 - 需要连续创建 shprod、sgprod promote 分支时，必须在第一次 checkout 之前准备好 runtime snapshot。

@@ -404,6 +404,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn('AUTO_PIN_ONLY=true bash "$REPO_ROOT/.ci/runtime/build_and_promote_to_gitops.sh"', template_text)
         self.assertIn('bash "$REPO_ROOT/.ci/runtime/promote_bundle_image_to_gitops.sh"', template_text)
         self.assertIn('RUNTIME_SNAPSHOT="$(mktemp -d)"', template_text)
+        self.assertIn('cp "$REPO_ROOT/.ci/init.sh" "$RUNTIME_SNAPSHOT/.ci/init.sh"', template_text)
         self.assertIn('cp -R "$REPO_ROOT/.ci/runtime" "$RUNTIME_SNAPSHOT/.ci/runtime"', template_text)
         self.assertIn('PROMOTE_BUNDLE_SCRIPT="$RUNTIME_SNAPSHOT/.ci/runtime/promote_bundle_image_to_gitops.sh"', template_text)
         self.assertIn('bash "$PROMOTE_BUNDLE_SCRIPT"', template_text)

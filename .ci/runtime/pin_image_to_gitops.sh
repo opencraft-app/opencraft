@@ -4,7 +4,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="${REPO_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
-source "${REPO_ROOT}/.ci/init.sh"
+CI_INIT_SCRIPT="${CI_INIT_SCRIPT:-$SCRIPT_DIR/../init.sh}"
+source "$CI_INIT_SCRIPT"
 REMOTE_NAME="${REMOTE_NAME:-origin}"
 REMOTE_URL="${REMOTE_URL:-}"
 GITOPS_BRANCH="${GITOPS_BRANCH:-gitops}"

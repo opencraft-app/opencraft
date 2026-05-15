@@ -528,6 +528,9 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
         script = (REPO_ROOT / ".ci/runtime/pin_image_to_gitops.sh").read_text()
 
         self.assertIn('REPO_ROOT="${REPO_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"', script)
+        self.assertIn('CI_INIT_SCRIPT="${CI_INIT_SCRIPT:-$SCRIPT_DIR/../init.sh}"', script)
+        self.assertIn('source "$CI_INIT_SCRIPT"', script)
+        self.assertNotIn('source "${REPO_ROOT}/.ci/init.sh"', script)
         self.assertIn('cp -R "$REPO_ROOT/.ci/runtime" "$bootstrap_dir/.ci/runtime"', script)
         self.assertIn('RUNTIME_COMMAND_DIR="$bootstrap_dir/.ci/runtime/commands"', script)
         self.assertNotIn("BOOTSTRAP_FILES", script)

@@ -359,6 +359,7 @@ stages:
               }
               trap cleanup_runtime_snapshot EXIT
               mkdir -p "$RUNTIME_SNAPSHOT/.ci"
+              cp "$REPO_ROOT/.ci/init.sh" "$RUNTIME_SNAPSHOT/.ci/init.sh"
               cp -R "$REPO_ROOT/.ci/runtime" "$RUNTIME_SNAPSHOT/.ci/runtime"
               PROMOTE_BUNDLE_SCRIPT="$RUNTIME_SNAPSHOT/.ci/runtime/promote_bundle_image_to_gitops.sh"
               while IFS= read -r TARGET_ENV_NAME; do

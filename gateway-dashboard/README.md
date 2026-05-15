@@ -123,3 +123,5 @@ KUBECONFIG="${DEPLOY_KUBECONFIG}" kubectl -n ai-gateway port-forward svc/gateway
 ```text
 http://127.0.0.1:31300/admin/gateway/login
 ```
+
+<!-- ci: rerun gateway-dashboard after production promote runtime snapshot init fix (2026-05-15) -->
