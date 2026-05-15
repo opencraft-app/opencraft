@@ -30,6 +30,7 @@
 .ci/runtime/commands/run_changed_guards.py
 .ci/runtime/commands/run_gitops_db_job.py
 .ci/runtime/commands/run_prod_db_migration.py
+.ci/runtime/commands/trigger_frontend_edgeone_releases.py
 .ci/runtime/commands/update_image_pin.py
 .ci/runtime/commands/upload_staticpages_preview.py
 .ci/runtime/commands/validate_gitops_promotion.py
@@ -106,6 +107,7 @@
 .ci/runtime/guards/changed_guards.py
 .ci/runtime/harness_ci/__init__.py
 .ci/runtime/harness_ci/db_job.py
+.ci/runtime/harness_ci/frontend_edgeone_release_trigger.py
 .ci/runtime/harness_ci/prod_envs.py
 .ci/runtime/harness_ci/prod_db_migration.py
 .ci/runtime/harness_ci/secrets.py

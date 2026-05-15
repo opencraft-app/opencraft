@@ -125,6 +125,27 @@ stages:
               "$PNPM_BIN" --version
               "$PNPM_BIN" install --frozen-lockfile
               "$PNPM_BIN" build:release-artifacts
+          - name: 自动发起 frontend EdgeOne 正式站候选
+            shell: bash
+            env:
+              BK_CI_ACCESS_TOKEN: ${{ settings.BK_CI_ACCESS_TOKEN }}
+            run: |
+              if [[ "${{ variables.PIPELINE_MODE }}" == "promote" || "${{ variables.PIPELINE_MODE }}" == "edgeone-release" ]]; then
+                echo "skip EdgeOne release trigger step because PIPELINE_MODE=${{ variables.PIPELINE_MODE }}"
+                exit 0
+              fi
+              if [[ "${{ ci.branch }}" != "master" ]]; then
+                echo "skip EdgeOne release trigger step because branch=${{ ci.branch }}"
+                exit 0
+              fi
+              echo "============================================================"
+              echo "frontend 发布决策：自动发起 EdgeOne 正式站候选流水线"
+              echo "artifact source sha：${{ ci.sha }}"
+              echo "目标：国内正式站、国际正式站各自独立 check-in 审批"
+              echo "发布动作：本阶段只启动目标流水线，不直接发布 EdgeOne"
+              echo "============================================================"
+              python3 .ci/runtime/commands/trigger_frontend_edgeone_releases.py \
+                --source-sha "${{ ci.sha }}"
           - name: 发布 frontend Cloudflare 预发 artifact 矩阵
             shell: bash
             env:

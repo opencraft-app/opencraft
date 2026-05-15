@@ -206,6 +206,14 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertNotIn("确认发布 frontend EdgeOne 正式站", workflow_text)
         self.assertNotIn("发布 frontend EdgeOne 正式站", workflow_text)
         self.assertNotIn("ci_load_edgeone_credentials", workflow_text)
+        self.assertIn("自动发起 frontend EdgeOne 正式站候选", workflow_text)
+        self.assertIn("trigger_frontend_edgeone_releases.py", workflow_text)
+        self.assertIn('if [[ "${{ ci.branch }}" != "master" ]]; then', workflow_text)
+        self.assertIn("BK_CI_ACCESS_TOKEN", workflow_text)
+        self.assertLess(
+            workflow_text.index('"$PNPM_BIN" build:release-artifacts'),
+            workflow_text.index("trigger_frontend_edgeone_releases.py"),
+        )
 
     def test_frontend_edgeone_release_uses_dedicated_manual_workflows(self) -> None:
         cn_workflow = yaml.safe_load((REPO_ROOT / ".ci/frontend-edgeone-lightvela.yml").read_text()) or {}
@@ -234,6 +242,12 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("ci_load_edgeone_credentials", command_text)
         self.assertIn('ARTIFACT_SOURCE_SHA="$FRONTEND_EDGEONE_CI_SHA"', command_text)
         self.assertIn("FRONTEND_EDGEONE_ARTIFACT_SOURCE_SHA is empty and ci.sha is unavailable", command_text)
+
+        trigger_text = (REPO_ROOT / ".ci/runtime/harness_ci/frontend_edgeone_release_trigger.py").read_text()
+        self.assertIn("p-14693956c7f44dadb83d00c523de0dd7", trigger_text)
+        self.assertIn("p-1538e39f666f4be48ddf7cfea2acb589", trigger_text)
+        self.assertIn('"FRONTEND_EDGEONE_ARTIFACT_SOURCE_SHA": source_sha', trigger_text)
+        self.assertIn("目标流水线仍需人工 check-in 后才会发布", trigger_text)
 
     def test_frontend_preview_uses_master_runtime(self) -> None:
         workflow_text = (REPO_ROOT / ".ci/frontend-preview.yml").read_text()
