@@ -358,7 +358,8 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
             pins = pins_file.read_text().splitlines()
             self.assertEqual(len(pins), 1)
             self.assertIn("gateway-dashboard\tgateway-dashboard\tbeijing-sandbox\tregistry.example.com/beijing-sandbox:test-tag", pins[0])
-            self.assertIn("北京测试 DB gate / GitOps auto-pin 独立步骤", auto_pin_result.stdout)
+            self.assertIn("北京测试 DB 变更检查 / GitOps auto-pin 独立步骤", auto_pin_result.stdout)
+            self.assertIn("环境级 DB 变更检查：beijing-sandbox", auto_pin_result.stdout)
             self.assertNotIn("可发布版本汇总", auto_pin_result.stdout)
 
     def test_build_without_auto_pin_prints_manual_promote_hint(self) -> None:

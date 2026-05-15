@@ -187,12 +187,13 @@ fi
 
 if [[ "$AUTO_PIN_ONLY" == "true" ]]; then
   echo "============================================================"
-  echo "北京测试 DB gate / GitOps auto-pin 独立步骤"
+  echo "北京测试 DB 变更检查 / GitOps auto-pin 独立步骤"
   echo "bundle=${BUNDLE_SERVICE}"
   echo "pin_targets=${PIN_TARGETS}"
   echo "source_ref=${SOURCE_REF}"
   echo "image_dir=${BUILT_IMAGE_DIR}"
   echo "auto_pin_envs=${AUTO_PIN_ENVS}"
+  echo "说明：本步骤按环境执行 release gate；若该环境 DB contract 要求 migration，将在这里执行受控 DB job，再执行 DB readiness。"
   echo "============================================================"
 fi
 
@@ -208,6 +209,15 @@ for AUTO_PIN_ENV in "${AUTO_ENVS[@]}"; do
     exit 1
   fi
   AUTO_IMAGE="$(<"$AUTO_IMAGE_FILE")"
+
+  if [[ "$AUTO_PIN_ONLY" == "true" ]]; then
+    echo "============================================================"
+    echo "环境级 DB 变更检查：${AUTO_PIN_ENV}"
+    echo "服务：${BUNDLE_SERVICE}"
+    echo "镜像：${AUTO_IMAGE}"
+    echo "下一步：运行 image gate -> config gate -> DB migration/readiness gate -> GitOps auto-pin"
+    echo "============================================================"
+  fi
 
   DEPLOYED_AT="$DEPLOYED_AT" bash "$PIN_SCRIPT" "$BUNDLE_SERVICE" "$PIN_TARGETS" "$AUTO_PIN_ENV" "$AUTO_IMAGE" "$SOURCE_REF"
 done

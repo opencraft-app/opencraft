@@ -137,7 +137,7 @@ stages:
               echo "BUILD_ENVS=${BUILD_ENVS}"
               echo "AUTO_PIN_ENVS=${AUTO_PIN_ENVS}"
               BUILD_ONLY=true bash .ci/runtime/build_and_promote_to_gitops.sh "${{ parameters.SERVICE }}" "${{ parameters.BUNDLE }}" "${BUILD_ENVS}" "${AUTO_PIN_ENVS}"
-          - name: 北京测试 DB gate 与 GitOps auto-pin
+          - name: 北京测试 DB 变更检查与 GitOps auto-pin
             shell: bash
             env:
               GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}
@@ -146,7 +146,7 @@ stages:
               TCR_SGPROD_PASSWORD: ${{ settings.TCR_SGPROD_PASSWORD }}
             run: |
               if [[ "${{ variables.PIPELINE_MODE }}" == "promote" ]]; then
-                echo "skip Beijing DB gate / auto-pin because PIPELINE_MODE=promote"
+                echo "skip Beijing DB change gate / auto-pin because PIPELINE_MODE=promote"
                 exit 0
               fi
               source .ci/init.sh
@@ -212,7 +212,7 @@ stages:
               GITOPS_BRANCH=gitops \
               bash .ci/runtime/promote_bundle_image_to_gitops.sh "${{ parameters.SERVICE }}" "${{ parameters.BUNDLE }}" "${{ variables.TARGET_ENV }}" "$SOURCE_SHA"
   - name: 确认生产 promote ${{ parameters.DISPLAY_NAME }}
-    if: "${{ parameters.ENABLE_MASTER_PROD_PROMOTE }} == true && envs.BK_CI_EVENT == 'push' && (envs.BK_CI_GIT_REPO_BRANCH == 'master' || envs.BK_CI_GIT_REPO_REF == 'master')"
+    if: "${{ parameters.ENABLE_MASTER_PROD_PROMOTE }} == true"
     check-in:
       reviews:
         flows:
@@ -262,7 +262,7 @@ stages:
             run: |
               echo "production promote check-in approved for ${{ parameters.DISPLAY_NAME }}"
   - name: 自动创建生产 promote ${{ parameters.DISPLAY_NAME }}
-    if: "${{ parameters.ENABLE_MASTER_PROD_PROMOTE }} == true && envs.BK_CI_EVENT == 'push' && (envs.BK_CI_GIT_REPO_BRANCH == 'master' || envs.BK_CI_GIT_REPO_REF == 'master')"
+    if: "${{ parameters.ENABLE_MASTER_PROD_PROMOTE }} == true"
     jobs:
       promote:
         name: 创建 ${{ parameters.DISPLAY_NAME }} 生产 GitOps promote

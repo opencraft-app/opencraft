@@ -367,7 +367,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
 
         self.assertEqual(
             check_in_stage.get("if"),
-            "${{ parameters.ENABLE_MASTER_PROD_PROMOTE }} == true && envs.BK_CI_EVENT == 'push' && (envs.BK_CI_GIT_REPO_BRANCH == 'master' || envs.BK_CI_GIT_REPO_REF == 'master')",
+            "${{ parameters.ENABLE_MASTER_PROD_PROMOTE }} == true",
         )
         self.assertIn("check-in", check_in_stage)
         self.assertNotIn("PROD_PROMOTE_REVIEWERS", template_text)
@@ -384,7 +384,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("TIMEOUT_SECONDS=1800", template_text)
         self.assertEqual(
             promote_stage.get("if"),
-            "${{ parameters.ENABLE_MASTER_PROD_PROMOTE }} == true && envs.BK_CI_EVENT == 'push' && (envs.BK_CI_GIT_REPO_BRANCH == 'master' || envs.BK_CI_GIT_REPO_REF == 'master')",
+            "${{ parameters.ENABLE_MASTER_PROD_PROMOTE }} == true",
         )
         self.assertIn("resolve_prod_promote_envs", template_text)
         self.assertIn('if [[ "$env_name" != "shprod" && "$env_name" != "sgprod" ]]; then', template_text)
@@ -392,10 +392,12 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("promote_bundle_image_to_gitops.sh", template_text)
         self.assertIn("DB 变更提示：生产 DB migration 完整参数", template_text)
         self.assertIn("构建 ${{ parameters.DISPLAY_NAME }} 镜像矩阵", template_text)
-        self.assertIn("北京测试 DB gate 与 GitOps auto-pin", template_text)
+        self.assertIn("北京测试 DB 变更检查与 GitOps auto-pin", template_text)
         self.assertIn("BUILD_ONLY=true bash .ci/runtime/build_and_promote_to_gitops.sh", template_text)
         self.assertIn("AUTO_PIN_ONLY=true bash .ci/runtime/build_and_promote_to_gitops.sh", template_text)
         self.assertIn("RELEASE_IMAGE_DIR=\".ci/.release-images/${{ parameters.SERVICE }}-${{ steps.prepare.outputs.tag }}\"", template_text)
+        self.assertNotIn("BK_CI_GIT_REPO_BRANCH", check_in_stage.get("if"))
+        self.assertNotIn("PIPELINE_MODE", check_in_stage.get("if"))
 
     def test_service_release_workflows_without_prod_matrix_disable_prod_promote(self) -> None:
         for workflow_path in [REPO_ROOT / ".ci/staticpages.yml", REPO_ROOT / ".ci/trade.yml"]:

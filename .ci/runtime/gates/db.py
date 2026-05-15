@@ -156,13 +156,13 @@ def run_db_readiness_flow(
         ]
         if plan.db_job_image_override:
             args.extend(["--image-override", plan.db_job_image_override])
-        print("GitOps 发布门禁：先执行受控 DB job", file=sys.stderr)
+        print(f"环境 {env} 执行 DB 变更：受控 DB job {plan.db_job_service}/{plan.db_job_operation}", file=sys.stderr)
         run_with_db_tools(repo_root, args, cwd=gitops_worktree)
 
     if shprod:
         print(f"GitOps 待同步门禁：执行 {env} 生产 DB readiness 只读校验", file=sys.stderr)
     else:
-        print("GitOps 发布门禁：执行 DB readiness 只读校验", file=sys.stderr)
+        print(f"环境 {env} 执行 DB readiness：服务 {plan.service}", file=sys.stderr)
     run_with_db_tools(
         repo_root,
         [
@@ -231,6 +231,10 @@ def emit_preprod_db_gate_view(plan: GatePlan) -> None:
     print(f"源 revision：{plan.source_sha}", file=sys.stderr)
     print(f"DB contract：mode={plan.db_mode}", file=sys.stderr)
     print(f"migration 文件变更：{str(plan.migration_changed).lower()}", file=sys.stderr)
+    print(
+        f"环境 {plan.env} 是否执行 DB 变更：{str(plan.requires_db_job and plan.requires_db_readiness).lower()}",
+        file=sys.stderr,
+    )
     print(f"受控 DB job：will_run={str(plan.requires_db_job and plan.requires_db_readiness).lower()}", file=sys.stderr)
     if plan.requires_db_job:
         command = (
