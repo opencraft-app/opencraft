@@ -10,6 +10,7 @@
  */
 
 import { Outlet, ScrollRestoration } from "react-router-dom";
+import { CookieConsentBanner } from "@/components/site/cookie-consent-banner";
 import { ImpersonationBanner } from "@/components/site/impersonation-banner";
 
 export function RootLayout() {
@@ -17,6 +18,7 @@ export function RootLayout() {
     <>
       <ImpersonationBanner />
       <Outlet />
+      <CookieConsentBanner />
       <ScrollRestoration />
     </>
   );

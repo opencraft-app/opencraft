@@ -178,6 +178,9 @@ const mapBundleToPlan = (bundle: Bundle, index: number, t: (zh: string, opts?: R
   if (features.length < 4 && !features.some((f) => f.label === t("7×24 在线"))) {
     features.push({ icon: iconMap.clock, label: t("7×24 在线"), hasCheck: true });
   }
+  if (isGlobal && !features.some((f) => f.label === t("极简配置面板"))) {
+    features.push({ icon: iconMap.settings, label: t("极简配置面板"), hasCheck: true });
+  }
 
   /* 内测期间：无论后端是否返回 price，前端统一当免费版展示，价格右侧用 promoTag 标出"限时免费"。
      credit 是积分数量，与价格无关；price 字段待后续订阅变现时再恢复取用。 */
@@ -186,13 +189,13 @@ const mapBundleToPlan = (bundle: Bundle, index: number, t: (zh: string, opts?: R
 
   return {
     id: bundle.bundle_id,
-    name: bundle.bundle_name,
+    name: t(bundle.bundle_name),
     badge: soldOut ? t("已售罄") : undefined,
     badgeStyle: soldOut ? "tag" : undefined,
     price: isGlobal ? "$7.5" : "¥49",
     priceUnit: isGlobal ? "/ month" : t("/ 月"),
-    /* 国际站展示美元价格；国内站保留内测限时免费提示。 */
-    promoTag: soldOut || isGlobal ? undefined : t("限时免费"),
+    /* 国际站中英文都展示促销标签：英文为 Limited free，中文为限时免费；国内站保持原有中文标签。 */
+    promoTag: soldOut ? undefined : t("限时免费"),
     description: t("尝鲜体验，从一个 Agent 开始"),
     features,
     ctaLabel: soldOut ? t("已售罄") : t("立即开通"),
@@ -308,6 +311,7 @@ const PLACEHOLDER_PLAN_DEFS: PlaceholderPlanDef[] = [
  * ⚠️ 修改 PLACEHOLDER_PLAN_DEFS 时请同步更新此处。
  */
 const __markPlaceholderPlansForI18n = (t: (zh: string, opts?: Record<string, unknown>) => string): void => {
+  void t("免费试用 7天");
   void t("巡游 Cruise");
   void t("远航 Voyage");
   void t("日常主力，让智能化成为习惯");
@@ -568,7 +572,7 @@ const PlanCard = ({
             </span>
           </div>
         ) : plan.price ? (
-          <div style={{ display: "flex", alignItems: "baseline", gap: 2, marginBottom: 8, flexWrap: "wrap", rowGap: 6 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 2, marginBottom: 8, flexWrap: isGlobal ? "nowrap" : "wrap", rowGap: 6 }}>
             <span
               style={{
                 fontSize: 48,
@@ -597,15 +601,15 @@ const PlanCard = ({
             {plan.promoTag && (
               <span
                 style={{
-                  fontSize: 12,
+                  fontSize: isGlobal ? 11 : 12,
                   fontWeight: 600,
                   lineHeight: 1,
                   color: "#D14081",
                   background: "#FDE7F0",
                   border: "1px solid #F7B8D2",
                   borderRadius: 999,
-                  padding: "4px 10px",
-                  marginLeft: 8,
+                  padding: isGlobal ? "3px 8px" : "4px 10px",
+                  marginLeft: isGlobal ? 6 : 8,
                   whiteSpace: "nowrap",
                   alignSelf: "center",
                 }}
