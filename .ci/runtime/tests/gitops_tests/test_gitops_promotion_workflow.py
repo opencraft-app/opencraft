@@ -79,6 +79,8 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
         self.assertIn('ci_materialize_runtime_manifest "${runtime_dir}" ".ci/runtime/materialize-files.txt"', helper)
         self.assertIn("ci_gitops_promotion_trailer()", helper)
         self.assertIn("Release-runtime-commit", helper)
+        self.assertIn("does not contain .ci/init.sh; falling back to", helper)
+        self.assertIn('ci_bootstrap_prepare_runtime_ref "${CI_RUNTIME_FALLBACK_REF:-origin/master}"', helper)
         self.assertIn("Release-source-branch", helper)
         self.assertIn("ci_resolve_gitops_promotion_source_branch()", helper)
         self.assertIn("BK_CI_REPO_GIT_WEBHOOK_SOURCE_BRANCH", helper)
@@ -574,10 +576,16 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
         self.assertIn('python3 "$RUNTIME_COMMAND_DIR/resolve_release_bundle.py"', script)
         self.assertNotIn('python3 "$REPO_ROOT/.ci/runtime/commands/resolve_release_bundle.py"', script)
         self.assertIn('PIN_SCRIPT="${PIN_SCRIPT_OVERRIDE:-$SCRIPT_DIR/pin_image_to_gitops.sh}"', script)
+        self.assertIn('CI_RUNTIME_REF="${CI_RUNTIME_REF:-$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD', script)
+        self.assertIn('CI_RUNTIME_COMMIT="${CI_RUNTIME_COMMIT:-$(git -C "$REPO_ROOT" rev-parse HEAD', script)
+        self.assertIn("export CI_RUNTIME_REF CI_RUNTIME_COMMIT", script)
 
     def test_build_auto_pin_uses_runtime_snapshot_for_pin_loop(self) -> None:
         script = (REPO_ROOT / ".ci/runtime/build_and_promote_to_gitops.sh").read_text()
 
+        self.assertIn('CI_RUNTIME_REF="${CI_RUNTIME_REF:-$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD', script)
+        self.assertIn('CI_RUNTIME_COMMIT="${CI_RUNTIME_COMMIT:-$SOURCE_REF}"', script)
+        self.assertIn("export CI_RUNTIME_REF CI_RUNTIME_COMMIT", script)
         self.assertIn('prepare_pin_runtime_snapshot', script)
         self.assertIn('PIN_RUNTIME_SNAPSHOT="$(ci_create_runtime_snapshot "$REPO_ROOT/.ci")"', script)
         self.assertNotIn('cp "$REPO_ROOT/.ci/init.sh" "$PIN_RUNTIME_SNAPSHOT/.ci/init.sh"', script)

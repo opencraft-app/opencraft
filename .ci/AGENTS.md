@@ -94,6 +94,8 @@ git -C "$REPO_ROOT" checkout -B "$PROMOTE_BRANCH" "$REMOTE_NAME/$GITOPS_BRANCH"
 - runtime 代码位置应该来自脚本自身目录，例如 `SCRIPT_DIR` / `RUNTIME_COMMAND_DIR`。
 - 真实 Git 仓库位置应该来自外部继承的 `REPO_ROOT`，用于 `git -C "$REPO_ROOT"`、读取 source-facing / deploy-facing 数据、执行 checkout。
 - 从临时 runtime snapshot 运行脚本时，子脚本必须尊重外部 `REPO_ROOT`，不能重新按自身路径推导仓库根目录。
+- `CI_RUNTIME_REF` / `CI_RUNTIME_COMMIT` 必须在第一次 checkout 到 GitOps/promote 分支之前冻结并 export；否则 shprod/sgprod fan-out 第二轮会把上一轮 promote 分支提交写进 `Release-runtime-*`，导致后续 `.ci/init.sh` 不存在。
+- `promote-*` CI 的第一段 bootstrap 来自 `gitops` 分支 seed 文件，不是 master。修改 `.ci/gitops-promotion.yml` 或 `.ci/runtime/gitops_promotion_bootstrap.sh` 后，除了合入 master，还必须把这两个 seed 文件同步到 `gitops`，否则 retry 旧 promote CI 仍然使用旧 bootstrap。
 
 当前推荐模式：
 
@@ -116,6 +118,14 @@ bash "$PROMOTE_BUNDLE_SCRIPT" "$SERVICE" "$BUNDLE" "$TARGET_ENV" "$SOURCE_SHA"
 ```bash
 RUNTIME_SNAPSHOT="$(ci_create_runtime_snapshot "$REPO_ROOT/.ci")"
 trap 'rm -rf "$RUNTIME_SNAPSHOT"' EXIT
+```
+
+连续 fan-out 前还要固定 runtime 元数据：
+
+```bash
+CI_RUNTIME_REF="${CI_RUNTIME_REF:-$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD)}"
+CI_RUNTIME_COMMIT="${CI_RUNTIME_COMMIT:-$(git -C "$REPO_ROOT" rev-parse HEAD)}"
+export CI_RUNTIME_REF CI_RUNTIME_COMMIT
 ```
 
 脚本内部应遵守：

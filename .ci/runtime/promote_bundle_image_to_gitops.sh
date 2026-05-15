@@ -22,6 +22,10 @@ if [[ -z "$SOURCE_SHA" ]]; then
   echo "source sha not provided; default to HEAD=$SOURCE_SHA"
 fi
 
+CI_RUNTIME_REF="${CI_RUNTIME_REF:-$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || printf '%s' "$SOURCE_SHA")}"
+CI_RUNTIME_COMMIT="${CI_RUNTIME_COMMIT:-$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || printf '%s' "$SOURCE_SHA")}"
+export CI_RUNTIME_REF CI_RUNTIME_COMMIT
+
 SHORT_SHA="${SOURCE_SHA:0:12}"
 TAG="${BUNDLE_SERVICE}-${SHORT_SHA}"
 

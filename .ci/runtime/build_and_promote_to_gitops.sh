@@ -24,6 +24,9 @@ ci_require_commands git python3
 SHORT_SHA="$(git -C "$REPO_ROOT" rev-parse --short=12 HEAD)"
 SOURCE_REF="$(git -C "$REPO_ROOT" rev-parse HEAD)"
 TAG="${BUILD_TAG_OVERRIDE:-${BUNDLE_SERVICE}-${SHORT_SHA}}"
+CI_RUNTIME_REF="${CI_RUNTIME_REF:-$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || printf '%s' "$SOURCE_REF")}"
+CI_RUNTIME_COMMIT="${CI_RUNTIME_COMMIT:-$SOURCE_REF}"
+export CI_RUNTIME_REF CI_RUNTIME_COMMIT
 
 IFS=',' read -r -a ENVS <<<"$BUILD_ENVS"
 
