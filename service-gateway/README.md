@@ -92,3 +92,4 @@ CI note:
 - 2026-04-26 trigger 13: README-only change to rerun after GitOps MR token fallback fix
 - 2026-04-26 trigger 14: README-only change to rerun after preferring the host-local Git token file
 - 2026-05-08 trigger: README-only change to rerun after latest GitOps gate output and promote branch lease fixes
+- 2026-05-15 trigger: README-only change to rerun service-gateway after latest CI/runtime fixes
