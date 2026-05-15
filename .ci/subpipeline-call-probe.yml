@@ -1,5 +1,12 @@
 version: v2.0
-name: BK-CI 子流水线调用探针
+name: BK-CI EdgeOne fan-out DAG 探针
+
+# 结论记录：
+# BK-CI model 中有内部 SubPipelineCallElement / subPipelineCallAtom，
+# 但 Stream YAML step transfer 没有把 `uses: subPipelineCallAtom@...`
+# 特判成这个内部元素；它会按市场 atom 解析，live run 会报
+# PIPELINE_RUN_ERROR。这个探针因此只验证 Stream YAML DAG fan-out
+# 形态，并复用已验证的 build_start API runtime 作为动作载体。
 
 on:
   push:
@@ -13,7 +20,7 @@ on:
   manual: enabled
 
 concurrency:
-  group: mono2-subpipeline-call-probe
+  group: mono2-edgeone-fanout-dag-probe
   cancel-in-progress: false
   queue-length: 5
   queue-timeout-minutes: 120
@@ -23,9 +30,13 @@ variables:
     value: ""
     readonly: false
     allow-modify-at-startup: true
+  PROBE_APPLY:
+    value: "false"
+    readonly: false
+    allow-modify-at-startup: true
 
 stages:
-  - name: 0 打印子流水线调用探针上下文
+  - name: 0 打印 EdgeOne fan-out DAG 探针上下文
     jobs:
       probe:
         name: 打印探针上下文
@@ -44,22 +55,25 @@ stages:
               echo "ci.branch=${{ ci.branch }}"
               echo "ci.sha=${{ ci.sha }}"
               echo "variables.PROBE_ARTIFACT_SOURCE_SHA=${{ variables.PROBE_ARTIFACT_SOURCE_SHA }}"
-              echo "说明：本探针只验证 YAML 子流水线调用节点是否能启动目标流水线并传递参数。"
+              echo "variables.PROBE_APPLY=${{ variables.PROBE_APPLY }}"
+              echo "说明：本探针验证 YAML DAG fan-out 能否承载国内/国际两个独立发起节点。"
               echo "目标流水线自身仍有 EdgeOne 发布 check-in，不会绕过正式发布审批。"
 
-  - name: 1 确认运行子流水线调用探针
+  - name: 1 确认运行 EdgeOne fan-out DAG 探针
     check-in:
       reviews:
         flows:
-          - name: 子流水线调用探针确认
+          - name: EdgeOne fan-out DAG 探针确认
             reviewers: [ "skipzhang" ]
         description: |
-          本阶段只确认是否继续执行 BK-CI 子流水线调用探针。
+          本阶段只确认是否继续执行 BK-CI EdgeOne fan-out DAG 探针。
 
-          通过后，下一阶段会尝试用 YAML 原生子流水线调用节点启动：
+          通过后，下一阶段会在 YAML 图中分出两个独立 job：
           - 发布 frontend EdgeOne 国内正式站
           - 发布 frontend EdgeOne 国际正式站
 
+          PROBE_APPLY 默认为 false，只做 dry-run。
+          如果手动把 PROBE_APPLY 改为 true，会通过 build_start API 发起目标流水线。
           目标流水线仍然需要各自的人工 check-in 后才会发布 EdgeOne。
       timeout-hours: 2
     jobs:
@@ -69,41 +83,90 @@ stages:
           self-hosted: true
           pool-name: env
         steps:
-          - name: 子流水线调用探针已确认
+          - name: EdgeOne fan-out DAG 探针已确认
             shell: bash
             run: |
-              echo "subpipeline call probe approved"
+              echo "edgeone fan-out DAG probe approved"
 
-  - name: 2 发起 EdgeOne 子流水线探针
+  - name: 2 EdgeOne fan-out DAG 探针
     jobs:
-      cn:
-        name: 探针发起国内 EdgeOne 发布审批流水线
+      plan:
+        name: 生成 EdgeOne fan-out DAG 调用计划
         runs-on:
           self-hosted: true
           pool-name: env
         steps:
-          - name: 调用国内 EdgeOne 发布审批流水线
-            uses: subPipelineCallAtom@1.*
+          - checkout: self
+            name: 拉取代码
             with:
-              subPipelineId: p-14693956c7f44dadb83d00c523de0dd7
-              asynchronous: true
-              subPipelineType: ID
-              parameters:
-                FRONTEND_EDGEONE_ARTIFACT_SOURCE_SHA: ${{ variables.PROBE_ARTIFACT_SOURCE_SHA }}
-                FRONTEND_EDGEONE_ARTIFACT_REF: ""
+              fetchDepth: 1
+          - name: 打印调用计划
+            shell: bash
+            run: |
+              SOURCE_SHA="${{ variables.PROBE_ARTIFACT_SOURCE_SHA }}"
+              if [[ -z "$SOURCE_SHA" ]]; then
+                SOURCE_SHA="${{ ci.sha }}"
+              fi
+              echo "source_sha=$SOURCE_SHA"
+              echo "apply=${{ variables.PROBE_APPLY }}"
+              echo "fan-out jobs:"
+              echo "  - cn: p-14693956c7f44dadb83d00c523de0dd7"
+              echo "  - intl: p-1538e39f666f4be48ddf7cfea2acb589"
+
+      cn:
+        name: DAG 探针发起国内 EdgeOne 发布审批流水线
+        depend-on:
+          - plan
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - checkout: self
+            name: 拉取代码
+            with:
+              fetchDepth: 1
+          - name: 发起国内 EdgeOne 发布审批流水线
+            shell: bash
+            env:
+              BK_CI_ACCESS_TOKEN: ${{ settings.BK_CI_ACCESS_TOKEN }}
+            run: |
+              SOURCE_SHA="${{ variables.PROBE_ARTIFACT_SOURCE_SHA }}"
+              if [[ -z "$SOURCE_SHA" ]]; then
+                SOURCE_SHA="${{ ci.sha }}"
+              fi
+              extra_args=(--target cn)
+              if [[ "${{ variables.PROBE_APPLY }}" != "true" ]]; then
+                extra_args+=(--dry-run)
+              fi
+              python3 .ci/runtime/commands/trigger_frontend_edgeone_releases.py \
+                --source-sha "$SOURCE_SHA" \
+                "${extra_args[@]}"
 
       intl:
-        name: 探针发起国际 EdgeOne 发布审批流水线
+        name: DAG 探针发起国际 EdgeOne 发布审批流水线
+        depend-on:
+          - plan
         runs-on:
           self-hosted: true
           pool-name: env
         steps:
-          - name: 调用国际 EdgeOne 发布审批流水线
-            uses: subPipelineCallAtom@1.*
+          - checkout: self
+            name: 拉取代码
             with:
-              subPipelineId: p-1538e39f666f4be48ddf7cfea2acb589
-              asynchronous: true
-              subPipelineType: ID
-              parameters:
-                FRONTEND_EDGEONE_ARTIFACT_SOURCE_SHA: ${{ variables.PROBE_ARTIFACT_SOURCE_SHA }}
-                FRONTEND_EDGEONE_ARTIFACT_REF: ""
+              fetchDepth: 1
+          - name: 发起国际 EdgeOne 发布审批流水线
+            shell: bash
+            env:
+              BK_CI_ACCESS_TOKEN: ${{ settings.BK_CI_ACCESS_TOKEN }}
+            run: |
+              SOURCE_SHA="${{ variables.PROBE_ARTIFACT_SOURCE_SHA }}"
+              if [[ -z "$SOURCE_SHA" ]]; then
+                SOURCE_SHA="${{ ci.sha }}"
+              fi
+              extra_args=(--target intl)
+              if [[ "${{ variables.PROBE_APPLY }}" != "true" ]]; then
+                extra_args+=(--dry-run)
+              fi
+              python3 .ci/runtime/commands/trigger_frontend_edgeone_releases.py \
+                --source-sha "$SOURCE_SHA" \
+                "${extra_args[@]}"
