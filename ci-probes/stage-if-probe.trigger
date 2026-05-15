@@ -1,1 +1,1 @@
-2026-05-15: rerun BK-CI stage-if probe with ci.branch interpolation and combined interpolation check-in.
+2026-05-15: probe frontend EdgeOne release matrix stage-if with != none and master branch.

@@ -23,6 +23,10 @@ variables:
     value: build
     readonly: false
     allow-modify-at-startup: true
+  FRONTEND_EDGEONE_RELEASE_MATRIX:
+    value: eo:cn-lightvela-prod,eo:global-lightvela-intl-prod
+    readonly: false
+    allow-modify-at-startup: true
 
 stages:
   - name: 0 打印上下文
@@ -44,6 +48,7 @@ stages:
               echo "ci.branch=${{ ci.branch }}"
               echo "ci.sha=${{ ci.sha }}"
               echo "variables.PIPELINE_MODE=${{ variables.PIPELINE_MODE }}"
+              echo "variables.FRONTEND_EDGEONE_RELEASE_MATRIX=${{ variables.FRONTEND_EDGEONE_RELEASE_MATRIX }}"
               echo "env.BK_CI_EVENT=${BK_CI_EVENT:-}"
               echo "env.BK_CI_GIT_REPO_BRANCH=${BK_CI_GIT_REPO_BRANCH:-}"
               echo "env.BK_CI_GIT_REPO_REF=${BK_CI_GIT_REPO_REF:-}"
@@ -263,3 +268,51 @@ stages:
             shell: bash
             run: |
               echo "stage-if matched: variables.PIPELINE_MODE == 'promote' && ci.branch == 'master'"
+
+  - name: 5A 前端 EO 发布审核候选条件
+    if: "${{ variables.PIPELINE_MODE }} == build && ${{ ci.branch }} == master && ${{ variables.FRONTEND_EDGEONE_RELEASE_MATRIX }} != none"
+    check-in:
+      reviews:
+        flows:
+          - name: 前端 EO 发布审核候选条件
+            reviewers: [ "skipzhang" ]
+        description: |
+          BK-CI frontend EdgeOne 发布审核候选条件探针命中。
+
+          期望命中条件：
+          - PIPELINE_MODE 插值后等于 build
+          - ci.branch 插值后等于 master
+          - FRONTEND_EDGEONE_RELEASE_MATRIX 插值后不等于 none
+
+          正式 frontend 合并流水线预计使用同类条件控制人工审核阶段：
+          if: "$ {{ variables.PIPELINE_MODE }} == build && $ {{ ci.branch }} == master && $ {{ variables.FRONTEND_EDGEONE_RELEASE_MATRIX }} != none"
+      timeout-hours: 2
+    jobs:
+      probe:
+        name: 前端 EO 发布审核候选条件命中
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - name: 前端 EO 发布审核候选条件命中
+            shell: bash
+            run: |
+              echo "stage-if matched: frontend EO release candidate"
+              echo "PIPELINE_MODE=${{ variables.PIPELINE_MODE }}"
+              echo "ci.branch=${{ ci.branch }}"
+              echo "FRONTEND_EDGEONE_RELEASE_MATRIX=${{ variables.FRONTEND_EDGEONE_RELEASE_MATRIX }}"
+
+  - name: 5B 前端 EO none 反向条件
+    if: "${{ variables.PIPELINE_MODE }} == build && ${{ ci.branch }} == master && ${{ variables.FRONTEND_EDGEONE_RELEASE_MATRIX }} == none"
+    jobs:
+      probe:
+        name: 前端 EO none 反向条件命中
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - name: 前端 EO none 反向条件命中
+            shell: bash
+            run: |
+              echo "stage-if matched: frontend EO release matrix == none"
+              echo "FRONTEND_EDGEONE_RELEASE_MATRIX=${{ variables.FRONTEND_EDGEONE_RELEASE_MATRIX }}"
