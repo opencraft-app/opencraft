@@ -24,6 +24,21 @@ class ProdDbMigrationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "SERVICE must be one of"):
             prod_db_migration.map_service("frontend")
 
+    def test_skip_flag_allows_non_db_services(self) -> None:
+        with mock.patch.object(
+            prod_db_migration,
+            "parse_args",
+            return_value=SimpleNamespace(
+                service="frontend",
+                env="shprod",
+                source_sha="abc123",
+                timeout_seconds=1800,
+                skip_if_no_migration_change=True,
+                apply=False,
+            ),
+        ):
+            self.assertEqual(prod_db_migration.main(), 0)
+
     def test_dotenv_parser_handles_quoted_values(self) -> None:
         parsed = prod_db_migration.dotenv("BUILD_IMAGE='example.com/repo:tag with space'\nBUILD_TAG=abc\n")
 

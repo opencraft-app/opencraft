@@ -4,7 +4,9 @@ name: GitOps 验收与自动合并
 on:
   push:
     branches:
-      - promote-*
+      - promote-beijing-sandbox-*
+      - promote-beijing-sandbox-2-*
+      - promote-sandbox-bj-*
 
 stages:
   - name: GitOps MR 前置验收

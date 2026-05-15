@@ -67,6 +67,12 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
         workflow = (REPO_ROOT / ".ci/gitops-promotion.yml").read_text()
         helper = (REPO_ROOT / ".ci/runtime/gitops_promotion_bootstrap.sh").read_text()
 
+        self.assertIn("promote-beijing-sandbox-*", workflow)
+        self.assertIn("promote-beijing-sandbox-2-*", workflow)
+        self.assertIn("promote-sandbox-bj-*", workflow)
+        self.assertNotIn("- promote-*", workflow)
+        self.assertNotIn("promote-shprod-*", workflow)
+        self.assertNotIn("promote-sgprod-*", workflow)
         self.assertNotIn("ci_materialize_runtime_files", workflow)
         self.assertNotIn("ci_prepare_runtime_ref", workflow)
         self.assertNotIn("ci_materialize_runtime_manifest", workflow)
@@ -628,6 +634,7 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
 
     def test_prod_promote_branches_are_not_removed_by_automation(self) -> None:
         workflow = (REPO_ROOT / ".ci/gitops-promotion.yml").read_text()
+        prod_template = (REPO_ROOT / ".ci/templates/gitops-promotion-prod.yml").read_text()
         pin_script = (REPO_ROOT / ".ci/runtime/pin_image_to_gitops.sh").read_text()
         for branch in ["promote-shprod-lightclaw-auth-tag", "promote-sgprod-lightclaw-auth-tag"]:
             with self.subTest(branch=branch):
@@ -640,19 +647,32 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
                 self.assertEqual(policy.required_argo_sync, "manual")
         self.assertIn("cleanup_gitops_promotion.py", workflow)
         self.assertIn("北京收敛与上海待同步验收", workflow)
+        self.assertNotIn("cleanup_gitops_promotion.py", prod_template)
+        self.assertIn("确认 ${{ parameters.DISPLAY_NAME }} GitOps 待同步", prod_template)
         self.assertIn('case "$ENV_NAME" in', pin_script)
         self.assertIn("shprod)", pin_script)
         self.assertIn("sgprod)", pin_script)
         self.assertIn("MR_ARGS+=(--remove-source-branch)", pin_script)
         self.assertIn("进入${ENV_DISPLAY_NAME}待同步状态", pin_script)
 
-    def test_shprod_workflow_avoids_unsupported_stage_check_in(self) -> None:
+    def test_prod_promote_workflows_are_independent_per_env_with_db_approval(self) -> None:
         workflow = (REPO_ROOT / ".ci/gitops-promotion.yml").read_text()
+        shprod_workflow = (REPO_ROOT / ".ci/gitops-promotion-shprod.yml").read_text()
+        sgprod_workflow = (REPO_ROOT / ".ci/gitops-promotion-sgprod.yml").read_text()
+        prod_template = (REPO_ROOT / ".ci/templates/gitops-promotion-prod.yml").read_text()
 
         self.assertNotIn("check-in:", workflow)
-        self.assertNotIn("上海生产人工 Sync 审批", workflow)
-        self.assertNotIn("人工审批后 DB readiness 只读校验", workflow)
-        self.assertNotIn("校验人工 Argo sync 前 DB readiness", workflow)
+        self.assertIn("promote-shprod-*", shprod_workflow)
+        self.assertIn("TARGET_ENV: shprod", shprod_workflow)
+        self.assertIn("promote-sgprod-*", sgprod_workflow)
+        self.assertIn("TARGET_ENV: sgprod", sgprod_workflow)
+        self.assertIn("check-in:", prod_template)
+        self.assertIn("Dry-run ${{ parameters.DISPLAY_NAME }} DB migration", prod_template)
+        self.assertIn("执行 ${{ parameters.DISPLAY_NAME }} DB migration", prod_template)
+        self.assertIn("run_prod_db_migration.py", prod_template)
+        self.assertIn("--skip-if-no-migration-change", prod_template)
+        self.assertIn("--apply", prod_template)
+        self.assertIn("本审批不影响另一个生产环境", prod_template)
         self.assertIn("不执行 migration，不执行 Argo sync", (REPO_ROOT / ".ci/runtime/gitops/shprod_sync_preflight.py").read_text())
 
     def test_shprod_preflight_parses_release_context_trailers(self) -> None:

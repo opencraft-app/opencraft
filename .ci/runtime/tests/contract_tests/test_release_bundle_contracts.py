@@ -378,61 +378,26 @@ class ReleaseBundleContractTests(unittest.TestCase):
             r"\$\{\{\s*variables\.(SERVICE|BUNDLE|DISPLAY_NAME|DEFAULT_TARGET_ENV|MASTER_BUILD_ENVS|MASTER_AUTO_PIN_ENVS|PLAYGROUND_BUILD_ENVS|PLAYGROUND_AUTO_PIN_ENVS)\s*\}\}",
         )
 
-    def test_service_release_promotes_prod_after_manual_check_in(self) -> None:
+    def test_service_release_creates_independent_prod_promote_candidates(self) -> None:
         template_path = REPO_ROOT / ".ci/templates/service-release.yml"
         template_text = template_path.read_text()
         template = yaml.safe_load(template_text) or {}
         stages = template.get("stages") or []
         stage_by_name = {stage.get("name"): stage for stage in stages}
 
-        db_dry_run_stage = stage_by_name["Dry-run 生产 DB migration ${{ parameters.DISPLAY_NAME }}"]
-        check_in_stage = stage_by_name["确认生产 promote ${{ parameters.DISPLAY_NAME }}"]
-        db_apply_stage = stage_by_name["执行生产 DB migration ${{ parameters.DISPLAY_NAME }}"]
-        promote_stage = stage_by_name["自动创建生产 promote ${{ parameters.DISPLAY_NAME }}"]
+        promote_stage = stage_by_name["创建生产 promote 候选 ${{ parameters.DISPLAY_NAME }}"]
         prod_promote_stage_if = (
             "${{ parameters.ENABLE_MASTER_PROD_PROMOTE }} == true && "
             "${{ variables.PIPELINE_MODE }} == build && "
             "${{ ci.branch }} == master"
         )
-        prod_db_stage_if = (
-            "${{ parameters.ENABLE_MASTER_PROD_DB_MIGRATION }} == true && "
-            "${{ parameters.ENABLE_MASTER_PROD_PROMOTE }} == true && "
-            "${{ variables.PIPELINE_MODE }} == build && "
-            "${{ ci.branch }} == master"
-        )
 
-        self.assertEqual(db_dry_run_stage.get("if"), prod_db_stage_if)
-        self.assertEqual(db_apply_stage.get("if"), prod_db_stage_if)
-        self.assertIn("run_prod_db_migration.py", template_text)
+        self.assertNotIn("Dry-run 生产 DB migration ${{ parameters.DISPLAY_NAME }}", template_text)
+        self.assertNotIn("确认生产 promote ${{ parameters.DISPLAY_NAME }}", template_text)
+        self.assertNotIn("执行生产 DB migration ${{ parameters.DISPLAY_NAME }}", template_text)
+        self.assertNotIn("run_prod_db_migration.py", template_text)
         self.assertIn("resolve_prod_promote_envs.py", template_text)
-        self.assertIn("Dry-run 生产 DB migration", template_text)
-        self.assertIn("--skip-if-no-migration-change", template_text)
-        self.assertIn("--apply", template_text)
-        self.assertLess(
-            template_text.index("Dry-run 生产 DB migration ${{ parameters.DISPLAY_NAME }}"),
-            template_text.index("确认生产 promote ${{ parameters.DISPLAY_NAME }}"),
-        )
-        self.assertLess(
-            template_text.index("确认生产 promote ${{ parameters.DISPLAY_NAME }}"),
-            template_text.index("执行生产 DB migration ${{ parameters.DISPLAY_NAME }}"),
-        )
-        self.assertLess(
-            template_text.index("执行生产 DB migration ${{ parameters.DISPLAY_NAME }}"),
-            template_text.index("自动创建生产 promote ${{ parameters.DISPLAY_NAME }}"),
-        )
-
-        self.assertEqual(
-            check_in_stage.get("if"),
-            prod_promote_stage_if,
-        )
-        self.assertIn("check-in", check_in_stage)
-        self.assertNotIn("PROD_PROMOTE_REVIEWERS", template_text)
-        self.assertIn('reviewers: [ "skipzhang" ]', template_text)
-        self.assertNotIn("${{ci.actor}}", template_text)
         self.assertNotIn("SOURCE_SHA=${{ ci.sha }}", template_text)
-        self.assertIn("模板渲染探针：service=${{ parameters.SERVICE }}", template_text)
-        self.assertIn("生产 DB migration", template_text)
-        self.assertIn("生产 DB migration dry-run 已自动使用本次 SOURCE_SHA 和目标生产环境生成计划", template_text)
         self.assertNotIn("SOURCE_SHA=构建阶段日志里的完整 SOURCE_SHA", template_text)
         self.assertEqual(
             promote_stage.get("if"),
@@ -445,7 +410,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertNotIn('if [[ "$env_name" != "shprod" && "$env_name" != "sgprod" ]]; then', template_text)
         self.assertIn("MASTER_AUTO_PIN_ENVS", template_text)
         self.assertIn("promote_bundle_image_to_gitops.sh", template_text)
-        self.assertIn("执行生产 DB migration：${TARGET_ENV_NAME}", template_text)
+        self.assertIn("shprod/sgprod 将各自触发独立审批流水线", template_text)
         self.assertIn("构建 ${{ parameters.DISPLAY_NAME }} 镜像矩阵", template_text)
         self.assertIn("北京测试 DB 变更检查与 GitOps auto-pin", template_text)
         self.assertIn('BUILD_ONLY=true bash "$REPO_ROOT/.ci/runtime/build_and_promote_to_gitops.sh"', template_text)
@@ -457,9 +422,6 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn('PROMOTE_BUNDLE_SCRIPT="$RUNTIME_SNAPSHOT/.ci/runtime/promote_bundle_image_to_gitops.sh"', template_text)
         self.assertIn('bash "$PROMOTE_BUNDLE_SCRIPT"', template_text)
         self.assertIn("RELEASE_IMAGE_DIR=\".ci/.release-images/${{ parameters.SERVICE }}-${{ steps.prepare.outputs.tag }}\"", template_text)
-        self.assertNotIn("BK_CI_GIT_REPO_BRANCH", check_in_stage.get("if"))
-        self.assertIn("${{ variables.PIPELINE_MODE }} == build", check_in_stage.get("if"))
-        self.assertIn("${{ ci.branch }} == master", check_in_stage.get("if"))
 
     def test_db_contract_workflows_enable_inline_prod_db_migration(self) -> None:
         for workflow_path in sorted(PROD_DB_MIGRATION_WORKFLOWS):

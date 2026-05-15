@@ -1,0 +1,13 @@
+version: v2.0
+name: 上海生产 GitOps 审批与合并
+
+on:
+  push:
+    branches:
+      - promote-shprod-*
+
+extends:
+  template: gitops-promotion-prod.yml
+  parameters:
+    TARGET_ENV: shprod
+    DISPLAY_NAME: 上海生产

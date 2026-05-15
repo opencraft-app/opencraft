@@ -52,6 +52,7 @@ def resolve_python_bin() -> str:
 
 
 PYTHON_BIN = resolve_python_bin()
+SUPPORTED_SERVICES = {"payment", "subscription", "ai-gateway", "ctl", "sandbox", "user-auth", "lightclaw-auth"}
 
 
 def parse_args() -> argparse.Namespace:
@@ -281,6 +282,9 @@ def run_db_jobs(
 
 def main() -> int:
     args = parse_args()
+    if args.skip_if_no_migration_change and args.service not in SUPPORTED_SERVICES:
+        print(f"skip production DB migration: {args.service} has no migration DB job runner", flush=True)
+        return 0
     bundle_service, db_job_service = map_service(args.service)
     source_sha = resolve_source_sha(args.source_sha)
     short_sha = source_sha[:12]
