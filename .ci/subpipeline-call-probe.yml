@@ -1,0 +1,109 @@
+version: v2.0
+name: BK-CI 子流水线调用探针
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - ci-probes/subpipeline-call-probe.trigger
+    paths-ignore:
+      - OWNERS
+      - "**/OWNERS"
+  manual: enabled
+
+concurrency:
+  group: mono2-subpipeline-call-probe
+  cancel-in-progress: false
+  queue-length: 5
+  queue-timeout-minutes: 120
+
+variables:
+  PROBE_ARTIFACT_SOURCE_SHA:
+    value: ""
+    readonly: false
+    allow-modify-at-startup: true
+
+stages:
+  - name: 0 打印子流水线调用探针上下文
+    jobs:
+      probe:
+        name: 打印探针上下文
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - checkout: self
+            name: 拉取代码
+            with:
+              fetchDepth: 1
+          - name: 打印上下文
+            shell: bash
+            run: |
+              echo "ci.event=${{ ci.event }}"
+              echo "ci.branch=${{ ci.branch }}"
+              echo "ci.sha=${{ ci.sha }}"
+              echo "variables.PROBE_ARTIFACT_SOURCE_SHA=${{ variables.PROBE_ARTIFACT_SOURCE_SHA }}"
+              echo "说明：本探针只验证 YAML 子流水线调用节点是否能启动目标流水线并传递参数。"
+              echo "目标流水线自身仍有 EdgeOne 发布 check-in，不会绕过正式发布审批。"
+
+  - name: 1 确认运行子流水线调用探针
+    check-in:
+      reviews:
+        flows:
+          - name: 子流水线调用探针确认
+            reviewers: [ "skipzhang" ]
+        description: |
+          本阶段只确认是否继续执行 BK-CI 子流水线调用探针。
+
+          通过后，下一阶段会尝试用 YAML 原生子流水线调用节点启动：
+          - 发布 frontend EdgeOne 国内正式站
+          - 发布 frontend EdgeOne 国际正式站
+
+          目标流水线仍然需要各自的人工 check-in 后才会发布 EdgeOne。
+      timeout-hours: 2
+    jobs:
+      approve:
+        name: 等待探针确认
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - name: 子流水线调用探针已确认
+            shell: bash
+            run: |
+              echo "subpipeline call probe approved"
+
+  - name: 2 发起 EdgeOne 子流水线探针
+    jobs:
+      cn:
+        name: 探针发起国内 EdgeOne 发布审批流水线
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - name: 调用国内 EdgeOne 发布审批流水线
+            uses: subPipelineCallAtom@1.*
+            with:
+              subPipelineId: p-14693956c7f44dadb83d00c523de0dd7
+              asynchronous: true
+              subPipelineType: ID
+              parameters:
+                FRONTEND_EDGEONE_ARTIFACT_SOURCE_SHA: ${{ variables.PROBE_ARTIFACT_SOURCE_SHA }}
+                FRONTEND_EDGEONE_ARTIFACT_REF: ""
+
+      intl:
+        name: 探针发起国际 EdgeOne 发布审批流水线
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - name: 调用国际 EdgeOne 发布审批流水线
+            uses: subPipelineCallAtom@1.*
+            with:
+              subPipelineId: p-1538e39f666f4be48ddf7cfea2acb589
+              asynchronous: true
+              subPipelineType: ID
+              parameters:
+                FRONTEND_EDGEONE_ARTIFACT_SOURCE_SHA: ${{ variables.PROBE_ARTIFACT_SOURCE_SHA }}
+                FRONTEND_EDGEONE_ARTIFACT_REF: ""
