@@ -254,6 +254,22 @@ class ReleaseBundleContractTests(unittest.TestCase):
         frontend_text = (REPO_ROOT / ".ci/frontend.yml").read_text()
         self.assertIn("--target orchestrator", frontend_text)
 
+    def test_frontend_edgeone_orchestrator_probe_is_dry_run_by_default(self) -> None:
+        probe_text = (REPO_ROOT / ".ci/frontend-edgeone-orchestrator-probe.yml").read_text()
+        probe = yaml.safe_load(probe_text) or {}
+        stages = probe.get("stages") or []
+
+        self.assertEqual((probe.get(True) or probe.get("on") or {}).get("manual"), "enabled")
+        self.assertIn("ci-probes/frontend-edgeone-orchestrator-probe.trigger", probe_text)
+        self.assertEqual((probe.get("variables") or {}).get("PROBE_APPLY", {}).get("value"), "false")
+        self.assertIn("check-in", stages[1])
+        self.assertIn("reviewers: []", probe_text)
+        self.assertIn("depend-on:\n          - plan", probe_text)
+        self.assertIn("extra_args+=(--dry-run)", probe_text)
+        self.assertIn("--target cn", probe_text)
+        self.assertIn("--target intl", probe_text)
+        self.assertNotIn("manualReviewUserTask", probe_text)
+
     def test_frontend_preview_uses_master_runtime(self) -> None:
         workflow_text = (REPO_ROOT / ".ci/frontend-preview.yml").read_text()
 

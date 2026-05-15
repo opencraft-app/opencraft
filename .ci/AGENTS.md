@@ -81,6 +81,7 @@ if: "${{ variables.PIPELINE_MODE == 'build' && ci.branch == 'master' }}"
   - 放在 `runs-on.self-hosted.pool-name: env` 下，live run 会报“插件不能在该环境下运行”。
   - 放在 `runs-on: agentless` 下，live run 仍会按市场插件执行，并在 `MarketAtomTask.getAtomExecuteFile` 触发 NPE。
   - 当前已验证可用的 YAML 审核面仍是 stage 级 `check-in`。如果需要“是否准备进入生产”这种共享入口栅栏，使用单独编排流水线做 stage `check-in`，再通过 job DAG fan-out 调用两个独立发布流水线；两个正式站自己的独立审批仍保留在各自发布流水线里。
+  - 调整 frontend EdgeOne 编排流水线前，优先用 `.ci/frontend-edgeone-orchestrator-probe.yml` 验证 stage `check-in` + job fan-out。该探针默认 `PROBE_APPLY=false`，只 dry-run 目标发布调用。
 
 ### GitOps promote runtime 模型
 

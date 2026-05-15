@@ -1,0 +1,164 @@
+version: v2.0
+name: BK-CI frontend EdgeOne 编排 DAG 探针
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - ci-probes/frontend-edgeone-orchestrator-probe.trigger
+    paths-ignore:
+      - OWNERS
+      - "**/OWNERS"
+  manual: enabled
+
+concurrency:
+  group: mono2-frontend-edgeone-orchestrator-probe
+  cancel-in-progress: false
+  queue-length: 5
+  queue-timeout-minutes: 120
+
+variables:
+  PROBE_ARTIFACT_SOURCE_SHA:
+    value: ""
+    readonly: false
+    allow-modify-at-startup: true
+  PROBE_APPLY:
+    value: "false"
+    readonly: false
+    allow-modify-at-startup: true
+
+stages:
+  - name: 0 打印 frontend EdgeOne 编排探针上下文
+    jobs:
+      context:
+        name: 打印探针上下文
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - checkout: self
+            name: 拉取代码
+            with:
+              fetchDepth: 1
+          - name: 打印上下文
+            shell: bash
+            run: |
+              echo "ci.event=${{ ci.event }}"
+              echo "ci.branch=${{ ci.branch }}"
+              echo "ci.sha=${{ ci.sha }}"
+              echo "variables.PROBE_ARTIFACT_SOURCE_SHA=${{ variables.PROBE_ARTIFACT_SOURCE_SHA }}"
+              echo "variables.PROBE_APPLY=${{ variables.PROBE_APPLY }}"
+              echo "说明：本探针验证 frontend EdgeOne 编排 DAG 的 stage check-in 和 job fan-out。"
+              echo "默认 PROBE_APPLY=false，只 dry-run，不启动正式发布候选流水线。"
+
+  - name: 1 是否准备进入生产 frontend EdgeOne 探针
+    check-in:
+      reviews:
+        flows:
+          - name: 是否准备进入生产
+            reviewers: []
+        description: |
+          本阶段只验证共享入口人工栅栏是否可用。
+
+          点击通过后，下一阶段会在 YAML 图中分出两个独立 job：
+          - dry-run 国内 EdgeOne 发布候选调用
+          - dry-run 国际 EdgeOne 发布候选调用
+
+          PROBE_APPLY 默认为 false，不会启动正式发布候选流水线。
+          只有手动设置 PROBE_APPLY=true，才会真实调用目标发布流水线。
+      timeout-hours: 2
+    jobs:
+      approve:
+        name: 确认进入 frontend EdgeOne 编排探针
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - name: frontend EdgeOne 编排探针已确认
+            shell: bash
+            run: |
+              echo "frontend EdgeOne orchestrator probe approved"
+
+  - name: 2 fan-out 验证 frontend EdgeOne 发布候选调用
+    jobs:
+      plan:
+        name: 生成 frontend EdgeOne 编排探针计划
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - checkout: self
+            name: 拉取代码
+            with:
+              fetchDepth: 1
+          - name: 打印调用计划
+            shell: bash
+            run: |
+              SOURCE_SHA="${{ variables.PROBE_ARTIFACT_SOURCE_SHA }}"
+              if [[ -z "$SOURCE_SHA" ]]; then
+                SOURCE_SHA="${{ ci.sha }}"
+              fi
+              echo "source_sha=$SOURCE_SHA"
+              echo "apply=${{ variables.PROBE_APPLY }}"
+              echo "fan-out jobs:"
+              echo "  - cn: 发布 frontend EdgeOne 国内正式站"
+              echo "  - intl: 发布 frontend EdgeOne 国际正式站"
+
+      cn:
+        name: 探针国内 EdgeOne 发布候选调用
+        depend-on:
+          - plan
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - checkout: self
+            name: 拉取代码
+            with:
+              fetchDepth: 1
+          - name: 探针国内 EdgeOne 发布候选调用
+            shell: bash
+            env:
+              BK_CI_ACCESS_TOKEN: ${{ settings.BK_CI_ACCESS_TOKEN }}
+            run: |
+              SOURCE_SHA="${{ variables.PROBE_ARTIFACT_SOURCE_SHA }}"
+              if [[ -z "$SOURCE_SHA" ]]; then
+                SOURCE_SHA="${{ ci.sha }}"
+              fi
+              extra_args=(--target cn)
+              if [[ "${{ variables.PROBE_APPLY }}" != "true" ]]; then
+                extra_args+=(--dry-run)
+              fi
+              python3 .ci/runtime/commands/trigger_frontend_edgeone_releases.py \
+                --source-sha "$SOURCE_SHA" \
+                "${extra_args[@]}"
+
+      intl:
+        name: 探针国际 EdgeOne 发布候选调用
+        depend-on:
+          - plan
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - checkout: self
+            name: 拉取代码
+            with:
+              fetchDepth: 1
+          - name: 探针国际 EdgeOne 发布候选调用
+            shell: bash
+            env:
+              BK_CI_ACCESS_TOKEN: ${{ settings.BK_CI_ACCESS_TOKEN }}
+            run: |
+              SOURCE_SHA="${{ variables.PROBE_ARTIFACT_SOURCE_SHA }}"
+              if [[ -z "$SOURCE_SHA" ]]; then
+                SOURCE_SHA="${{ ci.sha }}"
+              fi
+              extra_args=(--target intl)
+              if [[ "${{ variables.PROBE_APPLY }}" != "true" ]]; then
+                extra_args+=(--dry-run)
+              fi
+              python3 .ci/runtime/commands/trigger_frontend_edgeone_releases.py \
+                --source-sha "$SOURCE_SHA" \
+                "${extra_args[@]}"
