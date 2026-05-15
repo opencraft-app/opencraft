@@ -172,10 +172,19 @@ stages:
           - 会自动跳过 MASTER_AUTO_PIN_ENVS=${{ parameters.MASTER_AUTO_PIN_ENVS }}
 
           如果本次包含 DB 结构或 migration 变更，请先执行 CI「生产 DB migration」：
+          参数请按下面两组复制；SOURCE_SHA 使用构建阶段日志里的完整 SHA。
+
+          上海正式：
           - SERVICE=${{ parameters.SERVICE }}
-          - TARGET_ENV=shprod 或 sgprod
-          - SOURCE_SHA 填构建阶段日志里的完整 SOURCE_SHA
-          - TIMEOUT_SECONDS 可不填，默认 1800
+          - TARGET_ENV=shprod
+          - SOURCE_SHA=构建阶段日志里的完整 SOURCE_SHA
+          - TIMEOUT_SECONDS=1800
+
+          新加坡正式：
+          - SERVICE=${{ parameters.SERVICE }}
+          - TARGET_ENV=sgprod
+          - SOURCE_SHA=构建阶段日志里的完整 SOURCE_SHA
+          - TIMEOUT_SECONDS=1800
 
           注意：
           - 生产 DB migration CI 会先 dry-run，再人工确认后 apply。
@@ -270,7 +279,16 @@ stages:
               echo "SERVICE=${{ parameters.SERVICE }}"
               echo "BUNDLE=${{ parameters.BUNDLE }}"
               echo "SOURCE_SHA=${SOURCE_SHA}"
-              echo "DB 变更提示：生产 DB migration 参数 SERVICE=${{ parameters.SERVICE }} TARGET_ENV=<shprod|sgprod> SOURCE_SHA=${SOURCE_SHA}"
+              echo "DB 变更提示：生产 DB migration 完整参数"
+              echo "CI=生产 DB migration"
+              echo "SERVICE=${{ parameters.SERVICE }}"
+              echo "SOURCE_SHA=${SOURCE_SHA}"
+              echo "TIMEOUT_SECONDS=1800"
+              while IFS= read -r TARGET_ENV_NAME; do
+                if [[ -n "$TARGET_ENV_NAME" ]]; then
+                  echo "TARGET_ENV=${TARGET_ENV_NAME}"
+                fi
+              done <<<"$PROD_ENVS"
               echo "============================================================"
 
               REMOTE_URL="$(ci_gitops_remote_url)"
