@@ -44,7 +44,7 @@ stages:
               echo "ci.branch=${{ ci.branch }}"
               echo "ci.sha=${{ ci.sha }}"
               echo "variables.PROBE_SOURCE_SHA=${{ variables.PROBE_SOURCE_SHA }}"
-              echo "说明：本探针验证 manualReviewUserTask 是否能在 DAG 分支 job 内作为独立审批点。"
+              echo "说明：本探针验证 manualReviewUserTask 是否能用 agentless job 作为 DAG 分支独立审批点。"
 
   - name: 1 job 内人工审核 DAG 探针
     jobs:
@@ -67,21 +67,15 @@ stages:
               fi
               echo "source_sha=$SOURCE_SHA"
               echo "branch jobs:"
-              echo "  - cn: job 内人工审核后继续"
-              echo "  - intl: job 内人工审核后继续"
+              echo "  - cn_approve(agentless) -> cn_release(env)"
+              echo "  - intl_approve(agentless) -> intl_release(env)"
 
-      cn:
-        name: 国内分支 job 内人工审核
+      cn_approve:
+        name: 国内分支人工审核
         depend-on:
           - plan
-        runs-on:
-          self-hosted: true
-          pool-name: env
+        runs-on: agentless
         steps:
-          - checkout: self
-            name: 拉取代码
-            with:
-              fetchDepth: 1
           - name: 国内分支人工审核
             uses: manualReviewUserTask@1.*
             with:
@@ -93,6 +87,19 @@ stages:
                 通过后只会继续执行本 job 的后续 echo step，不会发布 EdgeOne。
               markdownContent: false
               suggestRequired: false
+
+      cn_release:
+        name: 国内分支审核后继续
+        depend-on:
+          - cn_approve
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - checkout: self
+            name: 拉取代码
+            with:
+              fetchDepth: 1
           - name: 国内分支审核后继续
             shell: bash
             run: |
@@ -103,18 +110,12 @@ stages:
               echo "cn branch manual review passed"
               echo "source_sha=$SOURCE_SHA"
 
-      intl:
-        name: 国际分支 job 内人工审核
+      intl_approve:
+        name: 国际分支人工审核
         depend-on:
           - plan
-        runs-on:
-          self-hosted: true
-          pool-name: env
+        runs-on: agentless
         steps:
-          - checkout: self
-            name: 拉取代码
-            with:
-              fetchDepth: 1
           - name: 国际分支人工审核
             uses: manualReviewUserTask@1.*
             with:
@@ -126,6 +127,19 @@ stages:
                 通过后只会继续执行本 job 的后续 echo step，不会发布 EdgeOne。
               markdownContent: false
               suggestRequired: false
+
+      intl_release:
+        name: 国际分支审核后继续
+        depend-on:
+          - intl_approve
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - checkout: self
+            name: 拉取代码
+            with:
+              fetchDepth: 1
           - name: 国际分支审核后继续
             shell: bash
             run: |
