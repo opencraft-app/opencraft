@@ -76,6 +76,72 @@ if: "${{ variables.PIPELINE_MODE == 'build' && ci.branch == 'master' }}"
 - 审核说明里的 `${{ ... }}` 也会参与模板/运行时替换；不要在说明文本里放未验证的表达式样例。需要展示样例时，用静态文字或拆开写成 `$ {{ ... }}`。
 - 如果要改 stage `if` 语法，先更新并运行 `.ci/stage-if-probe.yml`，用 live 蓝盾结果验证后再改正式流水线模板。
 
+### GitOps promote runtime 模型
+
+生产 promote 不是普通“脚本读仓库然后退出”的模型。`.ci/runtime/pin_image_to_gitops.sh` 会在当前 CI checkout 里执行：
+
+```bash
+git -C "$REPO_ROOT" checkout -B "$PROMOTE_BRANCH" "$REMOTE_NAME/$GITOPS_BRANCH"
+```
+
+也就是说，调用它之后，当前工作树会从 `master` 变成 `gitops` / `promote-*` 分支内容。这个副作用是有意的：后续要在同一个工作树里投影 deploy-facing 文件、更新 image pin、提交并 push promote 分支。
+
+踩坑结论：
+
+- 不要假设调用 `pin_image_to_gitops.sh` 之后，`$PWD/.ci/runtime` 或 `$REPO_ROOT/.ci/runtime` 仍然存在。
+- 不要在同一个 shell loop 里第一次 promote 后，再用相对路径调用 `.ci/runtime/...`；生产 shprod/sgprod fan-out 会直接失败。
+- 不要把 runtime 脚本的“代码位置”和“目标仓库位置”混成一个概念。
+- runtime 代码位置应该来自脚本自身目录，例如 `SCRIPT_DIR` / `RUNTIME_COMMAND_DIR`。
+- 真实 Git 仓库位置应该来自外部继承的 `REPO_ROOT`，用于 `git -C "$REPO_ROOT"`、读取 source-facing / deploy-facing 数据、执行 checkout。
+- 从临时 runtime snapshot 运行脚本时，子脚本必须尊重外部 `REPO_ROOT`，不能重新按自身路径推导仓库根目录。
+
+当前推荐模式：
+
+```bash
+source .ci/init.sh
+ci_init_repo_root
+
+RUNTIME_SNAPSHOT="$(mktemp -d)"
+trap 'rm -rf "$RUNTIME_SNAPSHOT"' EXIT
+mkdir -p "$RUNTIME_SNAPSHOT/.ci"
+cp -R "$REPO_ROOT/.ci/runtime" "$RUNTIME_SNAPSHOT/.ci/runtime"
+
+PROMOTE_BUNDLE_SCRIPT="$RUNTIME_SNAPSHOT/.ci/runtime/promote_bundle_image_to_gitops.sh"
+bash "$PROMOTE_BUNDLE_SCRIPT" "$SERVICE" "$BUNDLE" "$TARGET_ENV" "$SOURCE_SHA"
+```
+
+脚本内部应遵守：
+
+```bash
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="${REPO_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
+RUNTIME_COMMAND_DIR="${RUNTIME_COMMAND_DIR:-$SCRIPT_DIR/commands}"
+```
+
+边界解释：
+
+- `SCRIPT_DIR` / `RUNTIME_COMMAND_DIR`：找当前 runtime 代码，必须允许来自临时 snapshot。
+- `REPO_ROOT`：指向蓝盾 checkout 的真实仓库，哪怕它稍后被切到 `promote-*` 分支。
+- `PIN_SCRIPT` 默认应优先使用 runtime snapshot 旁边的 `pin_image_to_gitops.sh`，不要回到 mutable worktree 找脚本。
+- 需要连续创建 shprod、sgprod promote 分支时，必须在第一次 checkout 之前准备好 runtime snapshot。
+- `build_and_promote_to_gitops.sh` 的 auto-pin 常常只处理一个自动环境，所以不容易暴露这个问题；生产 fan-out 才是高风险路径。
+
+测试约束：
+
+- 修改 `pin_image_to_gitops.sh`、`promote_bundle_image_to_gitops.sh`、`.ci/templates/service-release.yml` 后，至少运行：
+
+```bash
+python3 -m unittest discover -s .ci/runtime/tests/gitops_tests -p test_gitops_promotion_workflow.py
+python3 -m unittest discover -s .ci/runtime/tests/contract_tests -p test_release_bundle_contracts.py
+bash .ci/runtime/check_ci_runtime.sh
+```
+
+触发约束：
+
+- 业务流水线不会因为 `.ci/**` 变更自动触发；这是 contract 保护。
+- 如果修复的是通用 runtime/template，但需要验证某个业务流水线，必须额外改该业务监听路径内的 no-op 文件，例如 `gateway-dashboard/README.md`。
+- 不要把 `.ci/**` 加回业务流水线 `on.push.paths`，否则 CI runtime 变更会触发所有业务构建。
+
 ## 实际运行机
 
 当前自有构建池 `env` 的 CI/CD 实际执行位置：
