@@ -84,6 +84,8 @@ if: "${{ variables.PIPELINE_MODE == 'build' && ci.branch == 'master' }}"
   - 当前已验证可用的 YAML 审核面仍是 stage 级 `check-in`。如果需要国内/国际正式站独立审批，不要在编排流水线里加共享 `check-in`；编排流水线只做 job DAG fan-out，两个正式站自己的独立审批保留在各自发布流水线里。
   - `check-in.reviews.flows[*].reviewers` 不能写空数组。live 保存会失败并提示“审核组没有未配置可执行人”。当前 `version: v2.0` 转换路径也不支持可靠的 `groups` 字段；需要配置明确 reviewer 后再用 live 探针验证。
   - 调整 frontend EdgeOne 编排流水线前，优先用 `.ci/frontend-edgeone-orchestrator-probe.yml` 验证 job fan-out。该探针默认 `PROBE_APPLY=false`，只 dry-run 目标发布调用。
+  - 如果要验证“只暂停、不审批”的独立分支体验，先用 `.ci/frontend-edgeone-v3-step-pause-probe.yml`。这是隔离的 `version: v3.0`
+    探针，只验证 `can-pause-before-run` / `pause-notice-receivers` 能否保存、触发、分别继续；不要在验证通过前把正式 v2 流水线迁到 v3。
 
 ### GitOps promote runtime 模型
 

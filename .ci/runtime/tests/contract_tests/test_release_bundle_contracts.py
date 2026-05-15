@@ -278,6 +278,25 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("--target intl", probe_text)
         self.assertNotIn("manualReviewUserTask", probe_text)
 
+    def test_frontend_edgeone_v3_step_pause_probe_is_probe_only(self) -> None:
+        probe_text = (REPO_ROOT / ".ci/frontend-edgeone-v3-step-pause-probe.yml").read_text()
+        probe = yaml.safe_load(probe_text) or {}
+
+        self.assertEqual(probe.get("version"), "v3.0")
+        self.assertEqual((probe.get(True) or probe.get("on") or {}).get("manual"), "enabled")
+        self.assertIn("ci-probes/frontend-edgeone-v3-step-pause-probe.trigger", probe_text)
+        self.assertIn("can-pause-before-run: true", probe_text)
+        self.assertIn("pause-notice-receivers:", probe_text)
+        self.assertEqual(probe_text.count("can-pause-before-run: true"), 2)
+        self.assertIn("depend-on:\n          - plan", probe_text)
+        self.assertIn("cn branch resumed", probe_text)
+        self.assertIn("intl branch resumed", probe_text)
+        self.assertIn("probe_only=true", probe_text)
+        self.assertNotIn("release_frontend_edgeone_artifact.sh", probe_text)
+        self.assertNotIn("trigger_frontend_edgeone_releases.py", probe_text)
+        self.assertNotIn("manualReviewUserTask", probe_text)
+        self.assertNotIn("check-in:", probe_text)
+
     def test_frontend_preview_uses_master_runtime(self) -> None:
         workflow_text = (REPO_ROOT / ".ci/frontend-preview.yml").read_text()
 
