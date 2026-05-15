@@ -225,11 +225,15 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("FRONTEND_EDGEONE_ARTIFACT_REF", template.get("variables") or {})
         self.assertIn("check-in", stages[0])
         self.assertNotIn("if:", template_text)
-        self.assertIn("/etc/lightclaw-ci/edgeone_lightvela_prod_token", template_text)
-        self.assertIn("/etc/lightclaw-ci/edgeone_lightvela_intl_prod_token", template_text)
-        self.assertIn("ci_load_edgeone_credentials", template_text)
-        self.assertIn('ARTIFACT_SOURCE_SHA="${{ ci.sha }}"', template_text)
-        self.assertIn("FRONTEND_EDGEONE_ARTIFACT_SOURCE_SHA is empty and ci.sha is unavailable", template_text)
+        self.assertIn("release_frontend_edgeone_artifact.sh", template_text)
+        self.assertNotIn('"$PNPM_BIN" install --frozen-lockfile', template_text)
+
+        command_text = (REPO_ROOT / ".ci/runtime/commands/release_frontend_edgeone_artifact.sh").read_text()
+        self.assertIn("/etc/lightclaw-ci/edgeone_lightvela_prod_token", command_text)
+        self.assertIn("/etc/lightclaw-ci/edgeone_lightvela_intl_prod_token", command_text)
+        self.assertIn("ci_load_edgeone_credentials", command_text)
+        self.assertIn('ARTIFACT_SOURCE_SHA="$FRONTEND_EDGEONE_CI_SHA"', command_text)
+        self.assertIn("FRONTEND_EDGEONE_ARTIFACT_SOURCE_SHA is empty and ci.sha is unavailable", command_text)
 
     def test_frontend_preview_uses_master_runtime(self) -> None:
         workflow_text = (REPO_ROOT / ".ci/frontend-preview.yml").read_text()
@@ -237,17 +241,18 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn('FRONTEND_PREVIEW_RUNTIME_REF="${FRONTEND_PREVIEW_RUNTIME_REF:-origin/master}"', workflow_text)
         self.assertIn("git fetch --no-tags --depth=1 origin master:refs/remotes/origin/master", workflow_text)
         self.assertIn('git archive --format=tar "$FRONTEND_PREVIEW_RUNTIME_REF" .ci', workflow_text)
-        self.assertIn('source "$FRONTEND_PREVIEW_RUNTIME_CI_DIR/init.sh"', workflow_text)
-        self.assertIn(
-            'python3 "$FRONTEND_PREVIEW_RUNTIME_CI_DIR/runtime/commands/upload_staticpages_preview.py"',
-            workflow_text,
-        )
+        self.assertIn('bash "$FRONTEND_PREVIEW_RUNTIME_CI_DIR/runtime/commands/publish_frontend_preview.sh"', workflow_text)
+        self.assertNotIn('"$PNPM_BIN" exec vite build', workflow_text)
+
+        command_text = (REPO_ROOT / ".ci/runtime/commands/publish_frontend_preview.sh").read_text()
+        self.assertIn('source "$CI_DIR/init.sh"', command_text)
+        self.assertIn('python3 "$CI_DIR/runtime/commands/upload_staticpages_preview.py"', command_text)
 
     def test_frontend_preview_builds_cn_and_intl_with_separate_api_bases(self) -> None:
-        workflow_text = (REPO_ROOT / ".ci/frontend-preview.yml").read_text()
+        workflow_text = (REPO_ROOT / ".ci/runtime/commands/publish_frontend_preview.sh").read_text()
 
-        self.assertIn('PREVIEW_CN_AUTH_API_BASE_URL="$(resolve_preview_auth_api_base_url "${{ ci.branch }}" cn)"', workflow_text)
-        self.assertIn('PREVIEW_INTL_AUTH_API_BASE_URL="$(resolve_preview_auth_api_base_url "${{ ci.branch }}" intl)"', workflow_text)
+        self.assertIn('PREVIEW_CN_AUTH_API_BASE_URL="$(resolve_preview_auth_api_base_url "$FRONTEND_PREVIEW_BRANCH" cn)"', workflow_text)
+        self.assertIn('PREVIEW_INTL_AUTH_API_BASE_URL="$(resolve_preview_auth_api_base_url "$FRONTEND_PREVIEW_BRANCH" intl)"', workflow_text)
         self.assertIn('printf \'https://api.lightvela.ai\'', workflow_text)
         self.assertIn('printf \'https://lightclaw.tech\'', workflow_text)
         self.assertIn('export VITE_AUTH_API_BASE_URL="$PREVIEW_CN_AUTH_API_BASE_URL"', workflow_text)
