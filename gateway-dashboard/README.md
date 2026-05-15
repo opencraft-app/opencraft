@@ -4,6 +4,7 @@
 
 Trigger note:
 
+- 2026-05-15: README-only no-op change to rerun gateway-dashboard after promote bundle command snapshot fix.
 - 2026-05-15: README-only no-op change to rerun gateway-dashboard after pin script REPO_ROOT inheritance fix.
 - 2026-05-15: README-only no-op change to rerun gateway-dashboard after stable production promote runtime snapshot.
 - 2026-05-15: README-only no-op change to rerun gateway-dashboard after simplifying production stage guards.

@@ -4,6 +4,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="${REPO_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
+RUNTIME_COMMAND_DIR="${RUNTIME_COMMAND_DIR:-$SCRIPT_DIR/commands}"
 PIN_SCRIPT="${PIN_SCRIPT_OVERRIDE:-$SCRIPT_DIR/pin_image_to_gitops.sh}"
 
 if [[ $# -ne 4 ]]; then
@@ -34,7 +35,7 @@ for ENV_NAME in "${TARGET_ENVS[@]}"; do
   fi
 
   RESOLVE_OUTPUT="$(
-    python3 "$REPO_ROOT/.ci/runtime/commands/resolve_release_bundle.py" \
+    python3 "$RUNTIME_COMMAND_DIR/resolve_release_bundle.py" \
       --service "$BUNDLE_SERVICE" \
       --env "$ENV_NAME" \
       --tag "$TAG" \

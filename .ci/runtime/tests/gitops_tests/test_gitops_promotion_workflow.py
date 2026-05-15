@@ -439,14 +439,19 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
     def test_manual_promote_fans_out_csv_target_envs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             fake_bin = Path(tmp)
+            fake_runtime = fake_bin / "runtime"
+            fake_runtime_commands = fake_runtime / "commands"
             pins_file = fake_bin / "pins.log"
             fake_python = fake_bin / "python3"
             fake_pin = fake_bin / "pin_image_to_gitops.sh"
+            fake_resolver = fake_runtime_commands / "resolve_release_bundle.py"
+            fake_runtime_commands.mkdir(parents=True)
+            fake_resolver.touch()
             fake_python.write_text(
                 textwrap.dedent(
                     f"""\
                     #!/bin/bash
-                    if [[ "$1" == "{REPO_ROOT}/.ci/runtime/commands/resolve_release_bundle.py" ]]; then
+                    if [[ "$1" == "{fake_resolver}" ]]; then
                       env_name=""
                       tag=""
                       while [[ $# -gt 0 ]]; do
@@ -485,6 +490,7 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
             env.update(
                 {
                     "PATH": f"{fake_bin}:{env['PATH']}",
+                    "RUNTIME_COMMAND_DIR": str(fake_runtime_commands),
                     "PIN_SCRIPT_OVERRIDE": str(fake_pin),
                     "PIN_LOG_FILE": str(pins_file),
                 }
@@ -555,6 +561,14 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
         self.assertIn("Release-image-pin: ${PIN_IMAGE}", script)
         self.assertIn("Release-image-digests: ${GATE_IMAGE_DIGESTS_JSON}", script)
         self.assertIn('--image "$PIN_IMAGE"', script)
+
+    def test_promote_bundle_resolves_metadata_from_runtime_snapshot(self) -> None:
+        script = (REPO_ROOT / ".ci/runtime/promote_bundle_image_to_gitops.sh").read_text()
+
+        self.assertIn('RUNTIME_COMMAND_DIR="${RUNTIME_COMMAND_DIR:-$SCRIPT_DIR/commands}"', script)
+        self.assertIn('python3 "$RUNTIME_COMMAND_DIR/resolve_release_bundle.py"', script)
+        self.assertNotIn('python3 "$REPO_ROOT/.ci/runtime/commands/resolve_release_bundle.py"', script)
+        self.assertIn('PIN_SCRIPT="${PIN_SCRIPT_OVERRIDE:-$SCRIPT_DIR/pin_image_to_gitops.sh}"', script)
 
     def test_pin_script_consumes_only_approved_gate_variables(self) -> None:
         script = (REPO_ROOT / ".ci/runtime/pin_image_to_gitops.sh").read_text()
