@@ -57,6 +57,7 @@ def run_db_gate(
     emit_plan(plan)
 
     if is_preprod_auto_sync_env(env):
+        emit_preprod_db_gate_view(plan)
         if plan.release_dependency_changed:
             raise RuntimeError("同批依赖服务发生变更；预发布自动发布停止，避免无序自动 sync。")
         if plan.requires_db_readiness:
@@ -219,4 +220,34 @@ def emit_plan(plan: GatePlan) -> None:
     print("人工动作：", file=sys.stderr)
     for action in plan.manual_actions or ["无"]:
         print(f"- {action}", file=sys.stderr)
+    print("============================================================", file=sys.stderr)
+
+
+def emit_preprod_db_gate_view(plan: GatePlan) -> None:
+    print("============================================================", file=sys.stderr)
+    print("北京自动发布 DB gate 可视化", file=sys.stderr)
+    print(f"环境：{plan.env}", file=sys.stderr)
+    print(f"服务：{plan.service}", file=sys.stderr)
+    print(f"源 revision：{plan.source_sha}", file=sys.stderr)
+    print(f"DB contract：mode={plan.db_mode}", file=sys.stderr)
+    print(f"migration 文件变更：{str(plan.migration_changed).lower()}", file=sys.stderr)
+    print(f"受控 DB job：will_run={str(plan.requires_db_job and plan.requires_db_readiness).lower()}", file=sys.stderr)
+    if plan.requires_db_job:
+        command = (
+            "python3 .ci/runtime/commands/run_gitops_db_job.py "
+            f"--service {plan.db_job_service} --operation {plan.db_job_operation} "
+            f"--env {plan.env} --revision {plan.source_sha} --apply --wait"
+        )
+        if plan.db_job_image_override:
+            command += f" --image-override {plan.db_job_image_override}"
+        print(f"受控 DB job 命令：{command}", file=sys.stderr)
+    print(f"DB readiness：will_run={str(plan.requires_db_readiness).lower()}", file=sys.stderr)
+    if plan.requires_db_readiness:
+        print(
+            "DB readiness 命令："
+            f"python3 .ci/runtime/commands/verify_db_contract.py --service {plan.service} "
+            f"--env {plan.env} --apply --wait",
+            file=sys.stderr,
+        )
+    print("执行顺序：image gate -> config projection -> DB job/migration -> DB readiness -> GitOps MR auto-merge/sync", file=sys.stderr)
     print("============================================================", file=sys.stderr)
