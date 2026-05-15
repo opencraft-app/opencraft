@@ -2,7 +2,8 @@
 
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="${REPO_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
 source "${REPO_ROOT}/.ci/init.sh"
 REMOTE_NAME="${REMOTE_NAME:-origin}"
 REMOTE_URL="${REMOTE_URL:-}"
