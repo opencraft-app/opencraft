@@ -189,6 +189,20 @@ class ReleaseBundleContractTests(unittest.TestCase):
             workflow_text=workflow_text,
         )
 
+    def test_frontend_workflow_integrates_edgeone_artifact_release(self) -> None:
+        workflow_text = (REPO_ROOT / ".ci/frontend.yml").read_text()
+
+        self.assertIn("FRONTEND_EDGEONE_RELEASE_ENABLED", workflow_text)
+        self.assertIn("FRONTEND_EDGEONE_RELEASE_MATRIX", workflow_text)
+        self.assertIn("PIPELINE_MODE=edgeone-release", workflow_text)
+        self.assertIn("eo:cn-lightvela-prod|eo:global-lightvela-intl-prod", workflow_text)
+        self.assertIn("/etc/lightclaw-ci/edgeone_lightvela_prod_token", workflow_text)
+        self.assertIn("/etc/lightclaw-ci/edgeone_lightvela_intl_prod_token", workflow_text)
+        self.assertIn("ci_load_edgeone_credentials", workflow_text)
+        self.assertIn("FRONTEND_EDGEONE_ARTIFACT_REF can only be used when exactly one EdgeOne combo is selected", workflow_text)
+        self.assertFalse((REPO_ROOT / ".ci/frontend-edgeone-lightvela.yml").exists())
+        self.assertFalse((REPO_ROOT / ".ci/frontend-edgeone-lightvela-intl.yml").exists())
+
     def test_frontend_preview_uses_master_runtime(self) -> None:
         workflow_text = (REPO_ROOT / ".ci/frontend-preview.yml").read_text()
 

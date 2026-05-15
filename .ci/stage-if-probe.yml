@@ -27,6 +27,10 @@ variables:
     value: eo:cn-lightvela-prod,eo:global-lightvela-intl-prod
     readonly: false
     allow-modify-at-startup: true
+  FRONTEND_EDGEONE_RELEASE_ENABLED:
+    value: true
+    readonly: false
+    allow-modify-at-startup: true
 
 stages:
   - name: 0 打印上下文
@@ -48,6 +52,7 @@ stages:
               echo "ci.branch=${{ ci.branch }}"
               echo "ci.sha=${{ ci.sha }}"
               echo "variables.PIPELINE_MODE=${{ variables.PIPELINE_MODE }}"
+              echo "variables.FRONTEND_EDGEONE_RELEASE_ENABLED=${{ variables.FRONTEND_EDGEONE_RELEASE_ENABLED }}"
               echo "variables.FRONTEND_EDGEONE_RELEASE_MATRIX=${{ variables.FRONTEND_EDGEONE_RELEASE_MATRIX }}"
               echo "env.BK_CI_EVENT=${BK_CI_EVENT:-}"
               echo "env.BK_CI_GIT_REPO_BRANCH=${BK_CI_GIT_REPO_BRANCH:-}"
@@ -268,6 +273,36 @@ stages:
             shell: bash
             run: |
               echo "stage-if matched: variables.PIPELINE_MODE == 'promote' && ci.branch == 'master'"
+
+  - name: 4A 前端 EO 布尔开关正式条件
+    if: "${{ variables.FRONTEND_EDGEONE_RELEASE_ENABLED }} == true"
+    jobs:
+      probe:
+        name: 前端 EO 布尔开关正式条件命中
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - name: 前端 EO 布尔开关正式条件命中
+            shell: bash
+            run: |
+              echo "stage-if matched: FRONTEND_EDGEONE_RELEASE_ENABLED == true"
+              echo "FRONTEND_EDGEONE_RELEASE_ENABLED=${{ variables.FRONTEND_EDGEONE_RELEASE_ENABLED }}"
+
+  - name: 4B 前端 EO 布尔开关反向条件
+    if: "${{ variables.FRONTEND_EDGEONE_RELEASE_ENABLED }} == false"
+    jobs:
+      probe:
+        name: 前端 EO 布尔开关反向条件命中
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - name: 前端 EO 布尔开关反向条件命中
+            shell: bash
+            run: |
+              echo "stage-if matched: FRONTEND_EDGEONE_RELEASE_ENABLED == false"
+              echo "FRONTEND_EDGEONE_RELEASE_ENABLED=${{ variables.FRONTEND_EDGEONE_RELEASE_ENABLED }}"
 
   - name: 5A 前端 EO 发布审核候选条件
     if: "${{ variables.PIPELINE_MODE }} == build && ${{ ci.branch }} == master && ${{ variables.FRONTEND_EDGEONE_RELEASE_MATRIX }} != none"

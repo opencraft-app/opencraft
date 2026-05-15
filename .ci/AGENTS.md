@@ -75,6 +75,8 @@ if: "${{ variables.PIPELINE_MODE == 'build' && ci.branch == 'master' }}"
 - 关键发布步骤必须继续在 shell 脚本里做 guard，例如检查 `PIPELINE_MODE`、`ci.branch`、目标环境白名单。
 - 审核说明里的 `${{ ... }}` 也会参与模板/运行时替换；不要在说明文本里放未验证的表达式样例。需要展示样例时，用静态文字或拆开写成 `$ {{ ... }}`。
 - 如果要改 stage `if` 语法，先更新并运行 `.ci/stage-if-probe.yml`，用 live 蓝盾结果验证后再改正式流水线模板。
+- 不要用 stage `if` 直接判断逗号/冒号组成的矩阵字符串是否等于或不等于某个值。`FRONTEND_EDGEONE_RELEASE_MATRIX != none`
+  这类条件在探针里无法给出干净的反向验证；正式流水线应使用简单布尔开关控制 stage 可见性，再在 shell 里校验矩阵白名单。
 
 ### GitOps promote runtime 模型
 
