@@ -367,7 +367,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
 
         self.assertEqual(
             check_in_stage.get("if"),
-            "parameters.ENABLE_MASTER_PROD_PROMOTE == true && variables.PIPELINE_MODE == 'build' && ci.branch == 'master'",
+            "${{ parameters.ENABLE_MASTER_PROD_PROMOTE }} == true && variables.PIPELINE_MODE == 'build' && envs.BK_CI_GIT_REPO_BRANCH == 'master'",
         )
         self.assertIn("check-in", check_in_stage)
         self.assertNotIn("PROD_PROMOTE_REVIEWERS", template_text)
@@ -380,7 +380,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("TIMEOUT_SECONDS 可不填，默认 1800", template_text)
         self.assertEqual(
             promote_stage.get("if"),
-            "parameters.ENABLE_MASTER_PROD_PROMOTE == true && variables.PIPELINE_MODE == 'build' && ci.branch == 'master'",
+            "${{ parameters.ENABLE_MASTER_PROD_PROMOTE }} == true && variables.PIPELINE_MODE == 'build' && envs.BK_CI_GIT_REPO_BRANCH == 'master'",
         )
         self.assertIn("resolve_prod_promote_envs", template_text)
         self.assertIn('if [[ "$env_name" != "shprod" && "$env_name" != "sgprod" ]]; then', template_text)
