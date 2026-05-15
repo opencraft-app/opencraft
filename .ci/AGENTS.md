@@ -80,9 +80,10 @@ if: "${{ variables.PIPELINE_MODE == 'build' && ci.branch == 'master' }}"
 - 不要把 `manualReviewUserTask@1.*` 当作 job step 级人工审核来嵌入 Stream YAML DAG：
   - 放在 `runs-on.self-hosted.pool-name: env` 下，live run 会报“插件不能在该环境下运行”。
   - 放在 `runs-on: agentless` 下，live run 仍会按市场插件执行，并在 `MarketAtomTask.getAtomExecuteFile` 触发 NPE。
-  - 当前已验证可用的 YAML 审核面仍是 stage 级 `check-in`。如果需要“是否准备进入生产”这种共享入口栅栏，使用单独编排流水线做 stage `check-in`，再通过 job DAG fan-out 调用两个独立发布流水线；两个正式站自己的独立审批仍保留在各自发布流水线里。
+  - 如果只需要“暂停一下/点继续”，不要用 `manualReviewUserTask` 或 stage `check-in`；在具体发布 step 上使用 `can-pause-before-run: true` 和 `pause-notice-receivers`。这样国内/国际两个 fan-out job 可以各自暂停，互不阻塞。
+  - 当前已验证可用的 YAML 审核面仍是 stage 级 `check-in`。如果需要国内/国际正式站独立暂停，不要在编排流水线里加共享 `check-in`；编排流水线用 job DAG fan-out，并在两个发布 step 上各自前置暂停。
   - `check-in.reviews.flows[*].reviewers` 不能写空数组。live 保存会失败并提示“审核组没有未配置可执行人”。当前 `version: v2.0` 转换路径也不支持可靠的 `groups` 字段；需要配置明确 reviewer 后再用 live 探针验证。
-  - 调整 frontend EdgeOne 编排流水线前，优先用 `.ci/frontend-edgeone-orchestrator-probe.yml` 验证 stage `check-in` + job fan-out。该探针默认 `PROBE_APPLY=false`，只 dry-run 目标发布调用。
+  - 调整 frontend EdgeOne 编排流水线前，优先用 `.ci/frontend-edgeone-orchestrator-probe.yml` 验证 job fan-out 和 step 前置暂停。该探针默认 `PROBE_APPLY=false`，只 dry-run 目标发布调用。
 
 ### GitOps promote runtime 模型
 

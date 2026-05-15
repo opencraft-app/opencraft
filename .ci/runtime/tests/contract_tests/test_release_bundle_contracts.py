@@ -249,21 +249,29 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("p-14693956c7f44dadb83d00c523de0dd7", trigger_text)
         self.assertIn("p-1538e39f666f4be48ddf7cfea2acb589", trigger_text)
         self.assertIn('"FRONTEND_EDGEONE_ARTIFACT_SOURCE_SHA": source_sha', trigger_text)
-        self.assertIn("目标流水线仍需人工 check-in 后才会发布", trigger_text)
+        self.assertIn("目标流水线仍需人工暂停或 check-in 后才会发布", trigger_text)
 
         frontend_text = (REPO_ROOT / ".ci/frontend.yml").read_text()
         self.assertIn("--target orchestrator", frontend_text)
 
+        orchestrator_text = (REPO_ROOT / ".ci/subpipeline-call-probe.yml").read_text()
+        self.assertNotIn("check-in:", orchestrator_text)
+        self.assertIn("can-pause-before-run: true", orchestrator_text)
+        self.assertIn("pause-notice-receivers:", orchestrator_text)
+        self.assertIn("release_frontend_edgeone_artifact.sh", orchestrator_text)
+        self.assertIn('FRONTEND_EDGEONE_COMBO="eo:cn-lightvela-prod"', orchestrator_text)
+        self.assertIn('FRONTEND_EDGEONE_COMBO="eo:global-lightvela-intl-prod"', orchestrator_text)
+
     def test_frontend_edgeone_orchestrator_probe_is_dry_run_by_default(self) -> None:
         probe_text = (REPO_ROOT / ".ci/frontend-edgeone-orchestrator-probe.yml").read_text()
         probe = yaml.safe_load(probe_text) or {}
-        stages = probe.get("stages") or []
 
         self.assertEqual((probe.get(True) or probe.get("on") or {}).get("manual"), "enabled")
         self.assertIn("ci-probes/frontend-edgeone-orchestrator-probe.trigger", probe_text)
         self.assertEqual((probe.get("variables") or {}).get("PROBE_APPLY", {}).get("value"), "false")
-        self.assertIn("check-in", stages[1])
-        self.assertIn('reviewers: [ "skipzhang" ]', probe_text)
+        self.assertNotIn("check-in:", probe_text)
+        self.assertIn("can-pause-before-run: true", probe_text)
+        self.assertIn("pause-notice-receivers:", probe_text)
         self.assertIn("depend-on:\n          - plan", probe_text)
         self.assertIn("extra_args+=(--dry-run)", probe_text)
         self.assertIn("--target cn", probe_text)

@@ -49,38 +49,10 @@ stages:
               echo "ci.sha=${{ ci.sha }}"
               echo "variables.PROBE_ARTIFACT_SOURCE_SHA=${{ variables.PROBE_ARTIFACT_SOURCE_SHA }}"
               echo "variables.PROBE_APPLY=${{ variables.PROBE_APPLY }}"
-              echo "说明：本探针验证 frontend EdgeOne 编排 DAG 的 stage check-in 和 job fan-out。"
+              echo "说明：本探针验证 frontend EdgeOne 编排 DAG 的 job fan-out 和 step 前置暂停。"
               echo "默认 PROBE_APPLY=false，只 dry-run，不启动正式发布候选流水线。"
 
-  - name: 1 是否准备进入生产 frontend EdgeOne 探针
-    check-in:
-      reviews:
-        flows:
-          - name: 是否准备进入生产
-            reviewers: [ "skipzhang" ]
-        description: |
-          本阶段只验证共享入口人工栅栏是否可用。
-
-          点击通过后，下一阶段会在 YAML 图中分出两个独立 job：
-          - dry-run 国内 EdgeOne 发布候选调用
-          - dry-run 国际 EdgeOne 发布候选调用
-
-          PROBE_APPLY 默认为 false，不会启动正式发布候选流水线。
-          只有手动设置 PROBE_APPLY=true，才会真实调用目标发布流水线。
-      timeout-hours: 2
-    jobs:
-      approve:
-        name: 确认进入 frontend EdgeOne 编排探针
-        runs-on:
-          self-hosted: true
-          pool-name: env
-        steps:
-          - name: frontend EdgeOne 编排探针已确认
-            shell: bash
-            run: |
-              echo "frontend EdgeOne orchestrator probe approved"
-
-  - name: 2 fan-out 验证 frontend EdgeOne 发布候选调用
+  - name: 1 fan-out 验证 frontend EdgeOne 发布候选调用
     jobs:
       plan:
         name: 生成 frontend EdgeOne 编排探针计划
@@ -102,8 +74,8 @@ stages:
               echo "source_sha=$SOURCE_SHA"
               echo "apply=${{ variables.PROBE_APPLY }}"
               echo "fan-out jobs:"
-              echo "  - cn: 发布 frontend EdgeOne 国内正式站"
-              echo "  - intl: 发布 frontend EdgeOne 国际正式站"
+              echo "  - cn: 前置暂停后 dry-run 国内 EdgeOne 发布动作"
+              echo "  - intl: 前置暂停后 dry-run 国际 EdgeOne 发布动作"
 
       cn:
         name: 探针国内 EdgeOne 发布候选调用
@@ -117,7 +89,10 @@ stages:
             name: 拉取代码
             with:
               fetchDepth: 1
-          - name: 探针国内 EdgeOne 发布候选调用
+          - name: 探针国内 EdgeOne 前置暂停
+            can-pause-before-run: true
+            pause-notice-receivers:
+              - skipzhang
             shell: bash
             env:
               BK_CI_ACCESS_TOKEN: ${{ settings.BK_CI_ACCESS_TOKEN }}
@@ -146,7 +121,10 @@ stages:
             name: 拉取代码
             with:
               fetchDepth: 1
-          - name: 探针国际 EdgeOne 发布候选调用
+          - name: 探针国际 EdgeOne 前置暂停
+            can-pause-before-run: true
+            pause-notice-receivers:
+              - skipzhang
             shell: bash
             env:
               BK_CI_ACCESS_TOKEN: ${{ settings.BK_CI_ACCESS_TOKEN }}

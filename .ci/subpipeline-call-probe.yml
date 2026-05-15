@@ -10,7 +10,7 @@ name: 发布 frontend EdgeOne 正式站编排
 # - Stream YAML 不能直接用 `uses: subPipelineCallAtom@...` 调用子流水线；
 #   它会按市场 atom 解析并报 PIPELINE_RUN_ERROR。
 # - `manualReviewUserTask@...` 也不能作为 job step 级审核使用。
-# - 可用模型是 stage `check-in` + job DAG fan-out + build_start API。
+# - 可用模型是 job DAG fan-out + step `can-pause-before-run`；国内/国际两个发布 step 各自前置暂停。
 
 on:
   manual: enabled
@@ -53,37 +53,10 @@ stages:
               echo "variables.FRONTEND_EDGEONE_ARTIFACT_SOURCE_SHA=${{ variables.FRONTEND_EDGEONE_ARTIFACT_SOURCE_SHA }}"
               echo "variables.FRONTEND_EDGEONE_ARTIFACT_REF=${{ variables.FRONTEND_EDGEONE_ARTIFACT_REF }}"
               echo "说明：本流水线只编排 frontend EdgeOne 正式站候选发布。"
-              echo "通过生产入口审核后，会并行启动国内/国际两个独立发布流水线。"
-              echo "目标发布流水线自身仍有 EdgeOne 发布 check-in，不会绕过正式发布审批。"
+              echo "本编排流水线不做共享 stage 审批，会并行进入国内/国际两个独立发布 job。"
+              echo "两个发布 step 各自配置 can-pause-before-run，可分别点继续。"
 
-  - name: 1 是否准备进入生产 frontend EdgeOne
-    check-in:
-      reviews:
-        flows:
-          - name: 是否准备进入生产
-            reviewers: [ "skipzhang" ]
-        description: |
-          本阶段只确认是否允许本次 frontend 构建进入 EdgeOne 正式站候选发布流程。
-
-          点击通过后，下一阶段会在 YAML 图中分出两个独立 job，分别启动：
-          - 发布 frontend EdgeOne 国内正式站
-          - 发布 frontend EdgeOne 国际正式站
-
-          本阶段不直接发布 EdgeOne。两个目标流水线仍需要各自的人工 check-in 后才会发布正式站。
-      timeout-hours: 24
-    jobs:
-      approve:
-        name: 确认进入 frontend EdgeOne 生产候选流程
-        runs-on:
-          self-hosted: true
-          pool-name: env
-        steps:
-          - name: frontend EdgeOne 生产候选流程已确认
-            shell: bash
-            run: |
-              echo "frontend EdgeOne production candidate creation approved"
-
-  - name: 2 fan-out 启动 frontend EdgeOne 发布候选
+  - name: 1 fan-out 启动 frontend EdgeOne 发布候选
     jobs:
       plan:
         name: 生成 frontend EdgeOne fan-out 调用计划
@@ -106,55 +79,69 @@ stages:
               echo "source_sha=$SOURCE_SHA"
               echo "artifact_ref=$ARTIFACT_REF"
               echo "fan-out jobs:"
-              echo "  - cn: 发布 frontend EdgeOne 国内正式站"
-              echo "  - intl: 发布 frontend EdgeOne 国际正式站"
+              echo "  - cn: 前置暂停后发布 frontend EdgeOne 国内正式站"
+              echo "  - intl: 前置暂停后发布 frontend EdgeOne 国际正式站"
 
       cn:
-        name: 启动国内 EdgeOne 发布审批流水线
+        name: 发布 frontend EdgeOne 国内正式站
         depend-on:
           - plan
         runs-on:
           self-hosted: true
           pool-name: env
+        env:
+          EDGEONE_API_TOKEN_REQUIRED: "1"
+          EDGEONE_LIGHTVELA_PROD_TOKEN: ${{ settings.EDGEONE_LIGHTVELA_PROD_TOKEN }}
+          EDGEONE_LIGHTVELA_INTL_PROD_TOKEN: ${{ settings.EDGEONE_LIGHTVELA_INTL_PROD_TOKEN }}
+          TCR_SHPROD_PASSWORD: ${{ settings.TCR_SHPROD_PASSWORD }}
+          FRONTEND_ARTIFACT_REPOSITORY: lightclaw-shprod.tencentcloudcr.com/lightclaw/frontend-pages
         steps:
           - checkout: self
             name: 拉取代码
             with:
-              fetchDepth: 1
-          - name: 发起国内 EdgeOne 发布审批流水线
+              fetchDepth: 50
+          - name: 暂停确认后发布国内 EdgeOne 正式站
+            can-pause-before-run: true
+            pause-notice-receivers:
+              - skipzhang
             shell: bash
-            env:
-              BK_CI_ACCESS_TOKEN: ${{ settings.BK_CI_ACCESS_TOKEN }}
             run: |
-              SOURCE_SHA="${{ variables.FRONTEND_EDGEONE_ARTIFACT_SOURCE_SHA }}"
-              if [[ -z "$SOURCE_SHA" ]]; then
-                SOURCE_SHA="${{ ci.sha }}"
-              fi
-              python3 .ci/runtime/commands/trigger_frontend_edgeone_releases.py \
-                --source-sha "$SOURCE_SHA" \
-                --target cn
+              export FRONTEND_EDGEONE_CI_BRANCH="${{ ci.branch }}"
+              export FRONTEND_EDGEONE_CI_SHA="${{ ci.sha }}"
+              export FRONTEND_EDGEONE_COMBO="eo:cn-lightvela-prod"
+              export FRONTEND_EDGEONE_DISPLAY_NAME="frontend EdgeOne 国内正式站"
+              export FRONTEND_EDGEONE_ARTIFACT_REF="${{ variables.FRONTEND_EDGEONE_ARTIFACT_REF }}"
+              export FRONTEND_EDGEONE_ARTIFACT_SOURCE_SHA="${{ variables.FRONTEND_EDGEONE_ARTIFACT_SOURCE_SHA }}"
+              bash .ci/runtime/commands/release_frontend_edgeone_artifact.sh
 
       intl:
-        name: 启动国际 EdgeOne 发布审批流水线
+        name: 发布 frontend EdgeOne 国际正式站
         depend-on:
           - plan
         runs-on:
           self-hosted: true
           pool-name: env
+        env:
+          EDGEONE_API_TOKEN_REQUIRED: "1"
+          EDGEONE_LIGHTVELA_PROD_TOKEN: ${{ settings.EDGEONE_LIGHTVELA_PROD_TOKEN }}
+          EDGEONE_LIGHTVELA_INTL_PROD_TOKEN: ${{ settings.EDGEONE_LIGHTVELA_INTL_PROD_TOKEN }}
+          TCR_SHPROD_PASSWORD: ${{ settings.TCR_SHPROD_PASSWORD }}
+          FRONTEND_ARTIFACT_REPOSITORY: lightclaw-shprod.tencentcloudcr.com/lightclaw/frontend-pages
         steps:
           - checkout: self
             name: 拉取代码
             with:
-              fetchDepth: 1
-          - name: 发起国际 EdgeOne 发布审批流水线
+              fetchDepth: 50
+          - name: 暂停确认后发布国际 EdgeOne 正式站
+            can-pause-before-run: true
+            pause-notice-receivers:
+              - skipzhang
             shell: bash
-            env:
-              BK_CI_ACCESS_TOKEN: ${{ settings.BK_CI_ACCESS_TOKEN }}
             run: |
-              SOURCE_SHA="${{ variables.FRONTEND_EDGEONE_ARTIFACT_SOURCE_SHA }}"
-              if [[ -z "$SOURCE_SHA" ]]; then
-                SOURCE_SHA="${{ ci.sha }}"
-              fi
-              python3 .ci/runtime/commands/trigger_frontend_edgeone_releases.py \
-                --source-sha "$SOURCE_SHA" \
-                --target intl
+              export FRONTEND_EDGEONE_CI_BRANCH="${{ ci.branch }}"
+              export FRONTEND_EDGEONE_CI_SHA="${{ ci.sha }}"
+              export FRONTEND_EDGEONE_COMBO="eo:global-lightvela-intl-prod"
+              export FRONTEND_EDGEONE_DISPLAY_NAME="frontend EdgeOne 国际正式站"
+              export FRONTEND_EDGEONE_ARTIFACT_REF="${{ variables.FRONTEND_EDGEONE_ARTIFACT_REF }}"
+              export FRONTEND_EDGEONE_ARTIFACT_SOURCE_SHA="${{ variables.FRONTEND_EDGEONE_ARTIFACT_SOURCE_SHA }}"
+              bash .ci/runtime/commands/release_frontend_edgeone_artifact.sh
