@@ -1,7 +1,9 @@
 import json
 import sys
 import unittest
+from types import SimpleNamespace
 from pathlib import Path
+from unittest import mock
 
 
 REPO_ROOT = next(parent for parent in Path(__file__).resolve().parents if (parent / ".ci/runtime").is_dir())
@@ -44,6 +46,36 @@ class ProdDbMigrationTests(unittest.TestCase):
             prod_db_migration.resolve_image_override("sandbox", metadata),
             "example.com/sandbox-migrate:tag",
         )
+
+    def test_skip_when_source_sha_does_not_touch_migration_paths(self) -> None:
+        with mock.patch.object(
+            prod_db_migration,
+            "plan_release_gates",
+            return_value=SimpleNamespace(db_mode="migration", requires_db_job=True, migration_changed=False),
+        ):
+            self.assertTrue(
+                prod_db_migration.should_skip_for_no_migration_change(
+                    "payment",
+                    "shprod",
+                    "abc123",
+                    "example.com/payment:tag",
+                )
+            )
+
+    def test_do_not_skip_when_source_sha_touches_migration_paths(self) -> None:
+        with mock.patch.object(
+            prod_db_migration,
+            "plan_release_gates",
+            return_value=SimpleNamespace(db_mode="migration", requires_db_job=True, migration_changed=True),
+        ):
+            self.assertFalse(
+                prod_db_migration.should_skip_for_no_migration_change(
+                    "payment",
+                    "shprod",
+                    "abc123",
+                    "example.com/payment:tag",
+                )
+            )
 
 
 if __name__ == "__main__":

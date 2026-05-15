@@ -24,6 +24,7 @@
 .ci/runtime/commands/onboard_argocd_target_cluster.py
 .ci/runtime/commands/plan_release_gates.py
 .ci/runtime/commands/project_release_bundle.py
+.ci/runtime/commands/resolve_prod_promote_envs.py
 .ci/runtime/commands/resolve_release_bundle.py
 .ci/runtime/commands/run_release_gates.py
 .ci/runtime/commands/run_changed_guards.py
@@ -105,6 +106,7 @@
 .ci/runtime/guards/changed_guards.py
 .ci/runtime/harness_ci/__init__.py
 .ci/runtime/harness_ci/db_job.py
+.ci/runtime/harness_ci/prod_envs.py
 .ci/runtime/harness_ci/prod_db_migration.py
 .ci/runtime/harness_ci/secrets.py
 .ci/runtime/support/__init__.py

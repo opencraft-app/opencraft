@@ -18,8 +18,11 @@ import sys
 import tempfile
 from pathlib import Path
 
+from contracts.release_plan import plan_release_gates
+
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+RUNTIME_DIR = REPO_ROOT / ".ci" / "runtime"
 RUNTIME_COMMAND_DIR = REPO_ROOT / ".ci" / "runtime" / "commands"
 
 
@@ -57,6 +60,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--env", required=True, choices=("shprod", "sgprod"))
     parser.add_argument("--source-sha", required=True)
     parser.add_argument("--timeout-seconds", type=int, default=1800)
+    parser.add_argument("--skip-if-no-migration-change", action="store_true")
     parser.add_argument("--apply", action="store_true")
     return parser.parse_args()
 
@@ -129,6 +133,29 @@ def resolve_image_override(bundle_service: str, metadata: dict[str, str]) -> str
     if bundle_service != "sandbox":
         return metadata["BUILD_IMAGE"]
     return json.loads(metadata["BUILD_IMAGES_JSON"])["images"]["SANDBOX_MIGRATE_IMAGE"]
+
+
+def should_skip_for_no_migration_change(bundle_service: str, env: str, source_sha: str, image_payload: str) -> bool:
+    plan = plan_release_gates(
+        repo_root=REPO_ROOT,
+        bundle_manifest=RUNTIME_DIR / "release-bundles.manifest",
+        service=bundle_service,
+        env=env,
+        source_sha=source_sha,
+        image=image_payload,
+        pin_targets=bundle_service,
+        db_status="unknown",
+    )
+    if plan.db_mode != "migration" or not plan.requires_db_job:
+        print(f"skip production DB migration: {bundle_service}/{env} has no migration DB job contract", flush=True)
+        return True
+    if not plan.migration_changed:
+        print(
+            f"skip production DB migration: SOURCE_SHA {source_sha} does not change migration paths for {bundle_service}/{env}",
+            flush=True,
+        )
+        return True
+    return False
 
 
 def add_worktree(path: Path, ref: str) -> None:
@@ -259,7 +286,13 @@ def main() -> int:
     short_sha = source_sha[:12]
     tag = f"{bundle_service}-{short_sha}"
     metadata = resolve_release_metadata(bundle_service, args.env, tag)
+    image_payload = metadata["BUILD_IMAGE"]
     image = resolve_image_override(bundle_service, metadata)
+
+    if args.skip_if_no_migration_change and should_skip_for_no_migration_change(
+        bundle_service, args.env, source_sha, image_payload
+    ):
+        return 0
 
     with tempfile.TemporaryDirectory(prefix="prod-db-source-") as source_tmp, tempfile.TemporaryDirectory(
         prefix="prod-db-gitops-"

@@ -31,5 +31,6 @@ extends:
     DEFAULT_TARGET_ENV: shprod
     MASTER_BUILD_ENVS: beijing-sandbox,shprod,sgprod
     MASTER_AUTO_PIN_ENVS: beijing-sandbox
+    ENABLE_MASTER_PROD_DB_MIGRATION: true
     PLAYGROUND_BUILD_ENVS: auto
     PLAYGROUND_AUTO_PIN_ENVS: auto
