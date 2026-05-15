@@ -198,19 +198,38 @@ class ReleaseBundleContractTests(unittest.TestCase):
             workflow_text=workflow_text,
         )
 
-    def test_frontend_workflow_integrates_edgeone_artifact_release(self) -> None:
+    def test_frontend_workflow_keeps_edgeone_release_out_of_build_pipeline(self) -> None:
         workflow_text = (REPO_ROOT / ".ci/frontend.yml").read_text()
 
-        self.assertIn("FRONTEND_EDGEONE_RELEASE_ENABLED", workflow_text)
-        self.assertIn("FRONTEND_EDGEONE_RELEASE_MATRIX", workflow_text)
-        self.assertIn("PIPELINE_MODE=edgeone-release", workflow_text)
-        self.assertIn("eo:cn-lightvela-prod|eo:global-lightvela-intl-prod", workflow_text)
-        self.assertIn("/etc/lightclaw-ci/edgeone_lightvela_prod_token", workflow_text)
-        self.assertIn("/etc/lightclaw-ci/edgeone_lightvela_intl_prod_token", workflow_text)
-        self.assertIn("ci_load_edgeone_credentials", workflow_text)
-        self.assertIn("FRONTEND_EDGEONE_ARTIFACT_REF can only be used when exactly one EdgeOne combo is selected", workflow_text)
-        self.assertFalse((REPO_ROOT / ".ci/frontend-edgeone-lightvela.yml").exists())
-        self.assertFalse((REPO_ROOT / ".ci/frontend-edgeone-lightvela-intl.yml").exists())
+        self.assertNotIn("FRONTEND_EDGEONE_RELEASE_ENABLED", workflow_text)
+        self.assertNotIn("FRONTEND_EDGEONE_RELEASE_MATRIX", workflow_text)
+        self.assertNotIn("确认发布 frontend EdgeOne 正式站", workflow_text)
+        self.assertNotIn("发布 frontend EdgeOne 正式站", workflow_text)
+        self.assertNotIn("ci_load_edgeone_credentials", workflow_text)
+
+    def test_frontend_edgeone_release_uses_dedicated_manual_workflows(self) -> None:
+        cn_workflow = yaml.safe_load((REPO_ROOT / ".ci/frontend-edgeone-lightvela.yml").read_text()) or {}
+        intl_workflow = yaml.safe_load((REPO_ROOT / ".ci/frontend-edgeone-lightvela-intl.yml").read_text()) or {}
+        template_text = (REPO_ROOT / ".ci/templates/frontend-edgeone-release.yml").read_text()
+        template = yaml.safe_load(template_text) or {}
+        stages = template.get("stages") or []
+
+        self.assertEqual((cn_workflow.get(True) or cn_workflow.get("on") or {}).get("manual"), "enabled")
+        self.assertEqual((intl_workflow.get(True) or intl_workflow.get("on") or {}).get("manual"), "enabled")
+        self.assertEqual((cn_workflow.get("extends") or {}).get("parameters", {}).get("COMBO"), "eo:cn-lightvela-prod")
+        self.assertEqual(
+            (intl_workflow.get("extends") or {}).get("parameters", {}).get("COMBO"),
+            "eo:global-lightvela-intl-prod",
+        )
+        self.assertIn("FRONTEND_EDGEONE_ARTIFACT_SOURCE_SHA", template.get("variables") or {})
+        self.assertIn("FRONTEND_EDGEONE_ARTIFACT_REF", template.get("variables") or {})
+        self.assertIn("check-in", stages[0])
+        self.assertNotIn("if:", template_text)
+        self.assertIn("/etc/lightclaw-ci/edgeone_lightvela_prod_token", template_text)
+        self.assertIn("/etc/lightclaw-ci/edgeone_lightvela_intl_prod_token", template_text)
+        self.assertIn("ci_load_edgeone_credentials", template_text)
+        self.assertIn('ARTIFACT_SOURCE_SHA="${{ ci.sha }}"', template_text)
+        self.assertIn("FRONTEND_EDGEONE_ARTIFACT_SOURCE_SHA is empty and ci.sha is unavailable", template_text)
 
     def test_frontend_preview_uses_master_runtime(self) -> None:
         workflow_text = (REPO_ROOT / ".ci/frontend-preview.yml").read_text()
