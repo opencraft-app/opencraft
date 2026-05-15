@@ -263,7 +263,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("ci-probes/frontend-edgeone-orchestrator-probe.trigger", probe_text)
         self.assertEqual((probe.get("variables") or {}).get("PROBE_APPLY", {}).get("value"), "false")
         self.assertIn("check-in", stages[1])
-        self.assertIn("reviewers: []", probe_text)
+        self.assertIn('reviewers: [ "skipzhang" ]', probe_text)
         self.assertIn("depend-on:\n          - plan", probe_text)
         self.assertIn("extra_args+=(--dry-run)", probe_text)
         self.assertIn("--target cn", probe_text)
