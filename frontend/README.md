@@ -543,3 +543,5 @@ npx wrangler login
 ## 12. 一句话总结
 
 这是一个已经完成了主链路、设计系统初步收口、支持静态发布、并预留了 Go 认证后台接入边界的 Lightclaw 前端原型。
+
+<!-- ci: trigger frontend unified EdgeOne release pipeline verification after 9a0edcb (2026-05-15) -->
