@@ -1,6 +1,6 @@
 # Using LightVela Safely
 
-LightVela helps you connect AI capabilities to everyday collaboration and messaging channels such as WeChat, Telegram, WhatsApp, Discord, and Slack. To use LightVela safely, avoid entering sensitive, private, or high-risk information when interacting with AI.
+LightVela helps you connect AI capabilities to everyday collaboration and messaging channels such as WeChat. To use LightVela safely, avoid entering sensitive, private, or high-risk information when interacting with AI.
 
 ## Basic Principles
 
@@ -142,7 +142,7 @@ If you need to analyze this type of content, remove information that can identif
 
 ## Notes for Team Collaboration Channels
 
-LightVela may connect to messaging channels such as WeChat, Telegram, WhatsApp, Discord, and Slack. Please remember:
+LightVela may connect to messaging channels such as WeChat. Please remember:
 
 - Messages in group chats or channels may be visible to more members.
 - Different platforms have different message retention, forwarding, and permission mechanisms.

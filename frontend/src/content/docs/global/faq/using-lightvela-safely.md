@@ -1,6 +1,6 @@
 # 安全使用 LightVela
 
-LightVela 可以帮助你把 AI 能力接入 WeChat、Telegram、WhatsApp、Discord、Slack 等日常协作与通讯渠道。为了更安全地使用 LightVela，请在与 AI 交互时避免输入敏感、私密或高风险信息。
+LightVela 可以帮助你把 AI 能力接入 WeChat 等日常协作与通讯渠道。为了更安全地使用 LightVela，请在与 AI 交互时避免输入敏感、私密或高风险信息。
 
 ## 基本原则
 
@@ -142,7 +142,7 @@ LightVela 可以帮助你把 AI 能力接入 WeChat、Telegram、WhatsApp、Disc
 
 ## 团队协作渠道中的注意事项
 
-LightVela 可能连接到 WeChat、Telegram、WhatsApp、Discord、Slack 等通讯渠道。请记住：
+LightVela 可能连接到 WeChat 等通讯渠道。请记住：
 
 - 群聊或频道中的消息可能被更多成员看到。
 - 不同平台的消息保存、转发和权限机制不同。
