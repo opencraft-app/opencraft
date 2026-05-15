@@ -391,6 +391,11 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("MASTER_AUTO_PIN_ENVS", template_text)
         self.assertIn("promote_bundle_image_to_gitops.sh", template_text)
         self.assertIn("DB 变更提示：生产 DB migration 完整参数", template_text)
+        self.assertIn("构建 ${{ parameters.DISPLAY_NAME }} 镜像矩阵", template_text)
+        self.assertIn("北京测试 DB gate 与 GitOps auto-pin", template_text)
+        self.assertIn("BUILD_ONLY=true bash .ci/runtime/build_and_promote_to_gitops.sh", template_text)
+        self.assertIn("AUTO_PIN_ONLY=true bash .ci/runtime/build_and_promote_to_gitops.sh", template_text)
+        self.assertIn("RELEASE_IMAGE_DIR=\".ci/.release-images/${{ parameters.SERVICE }}-${{ steps.prepare.outputs.tag }}\"", template_text)
 
     def test_service_release_workflows_without_prod_matrix_disable_prod_promote(self) -> None:
         for workflow_path in [REPO_ROOT / ".ci/staticpages.yml", REPO_ROOT / ".ci/trade.yml"]:

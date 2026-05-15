@@ -6,6 +6,8 @@ REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 source "${REPO_ROOT}/.ci/init.sh"
 DEPLOYED_AT="${DEPLOYED_AT:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
 PIN_SCRIPT="${PIN_SCRIPT_OVERRIDE:-$REPO_ROOT/.ci/runtime/pin_image_to_gitops.sh}"
+BUILD_ONLY="${BUILD_ONLY:-false}"
+AUTO_PIN_ONLY="${AUTO_PIN_ONLY:-false}"
 
 if [[ $# -ne 4 ]]; then
   echo "usage: $0 <bundle-service> <pin-targets-csv> <build-envs-csv> <auto-pin-envs-csv-or-none>" >&2
@@ -24,6 +26,11 @@ SOURCE_REF="$(git -C "$REPO_ROOT" rev-parse HEAD)"
 TAG="${BUILD_TAG_OVERRIDE:-${BUNDLE_SERVICE}-${SHORT_SHA}}"
 
 IFS=',' read -r -a ENVS <<<"$BUILD_ENVS"
+
+if [[ "$BUILD_ONLY" == "true" && "$AUTO_PIN_ONLY" == "true" ]]; then
+  echo "BUILD_ONLY and AUTO_PIN_ONLY cannot both be true" >&2
+  exit 1
+fi
 
 csv_contains() {
   local csv="$1"
@@ -65,26 +72,37 @@ has_prod_promote_env() {
   return 1
 }
 
-BUILT_IMAGE_DIR="$(mktemp -d)"
+if [[ -n "${RELEASE_IMAGE_DIR:-}" ]]; then
+  BUILT_IMAGE_DIR="$RELEASE_IMAGE_DIR"
+  mkdir -p "$BUILT_IMAGE_DIR"
+  CLEANUP_BUILT_IMAGE_DIR=false
+else
+  BUILT_IMAGE_DIR="$(mktemp -d)"
+  CLEANUP_BUILT_IMAGE_DIR=true
+fi
 cleanup_built_image_dir() {
-  rm -rf "$BUILT_IMAGE_DIR"
+  if [[ "$CLEANUP_BUILT_IMAGE_DIR" == "true" ]]; then
+    rm -rf "$BUILT_IMAGE_DIR"
+  fi
 }
 trap cleanup_built_image_dir EXIT
 
-for ENV_NAME in "${ENVS[@]}"; do
-  ci_set_registry_credentials "$ENV_NAME"
-  image_output_file="$(mktemp)"
-  python3 "$REPO_ROOT/.ci/runtime/commands/build_release_image.py" \
-    --service "$BUNDLE_SERVICE" \
-    --env "$ENV_NAME" \
-    --tag "$TAG" \
-    --push \
-    --image-output-file "$image_output_file"
-  IMAGE="$(<"$image_output_file")"
-  rm -f "$image_output_file"
-  printf '%s\n' "$IMAGE" > "$BUILT_IMAGE_DIR/$ENV_NAME"
-  echo "built $BUNDLE_SERVICE for $ENV_NAME => $IMAGE"
-done
+if [[ "$AUTO_PIN_ONLY" != "true" ]]; then
+  for ENV_NAME in "${ENVS[@]}"; do
+    ci_set_registry_credentials "$ENV_NAME"
+    image_output_file="$(mktemp)"
+    python3 "$REPO_ROOT/.ci/runtime/commands/build_release_image.py" \
+      --service "$BUNDLE_SERVICE" \
+      --env "$ENV_NAME" \
+      --tag "$TAG" \
+      --push \
+      --image-output-file "$image_output_file"
+    IMAGE="$(<"$image_output_file")"
+    rm -f "$image_output_file"
+    printf '%s\n' "$IMAGE" > "$BUILT_IMAGE_DIR/$ENV_NAME"
+    echo "built $BUNDLE_SERVICE for $ENV_NAME => $IMAGE"
+  done
+fi
 
 print_manual_promote_hints() {
   local has_hint=0
@@ -154,10 +172,28 @@ print_manual_promote_hints() {
   done
 }
 
-print_manual_promote_hints
+if [[ "$AUTO_PIN_ONLY" != "true" ]]; then
+  print_manual_promote_hints
+fi
+
+if [[ "$BUILD_ONLY" == "true" ]]; then
+  echo "build-only mode: images persisted under $BUILT_IMAGE_DIR; skip GitOps auto-pin"
+  exit 0
+fi
 
 if [[ "$AUTO_PIN_ENVS" == "none" ]]; then
   exit 0
+fi
+
+if [[ "$AUTO_PIN_ONLY" == "true" ]]; then
+  echo "============================================================"
+  echo "北京测试 DB gate / GitOps auto-pin 独立步骤"
+  echo "bundle=${BUNDLE_SERVICE}"
+  echo "pin_targets=${PIN_TARGETS}"
+  echo "source_ref=${SOURCE_REF}"
+  echo "image_dir=${BUILT_IMAGE_DIR}"
+  echo "auto_pin_envs=${AUTO_PIN_ENVS}"
+  echo "============================================================"
 fi
 
 IFS=',' read -r -a AUTO_ENVS <<<"$AUTO_PIN_ENVS"

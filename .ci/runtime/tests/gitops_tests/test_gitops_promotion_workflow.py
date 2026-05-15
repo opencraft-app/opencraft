@@ -256,6 +256,111 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
             self.assertIn("无需生产人工审批；不展示生产 DB migration 参数", result.stdout)
             self.assertNotIn("生产发布确认", result.stdout)
 
+    def test_build_and_auto_pin_can_be_split_for_ci_visibility(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fake_bin = Path(tmp)
+            image_dir = fake_bin / "images"
+            pins_file = fake_bin / "pins.log"
+            fake_python = fake_bin / "python3"
+            fake_pin = fake_bin / "pin_image_to_gitops.sh"
+            fake_python.write_text(
+                textwrap.dedent(
+                    f"""\
+                    #!/bin/bash
+                    if [[ "$1" == "{REPO_ROOT}/.ci/runtime/commands/build_release_image.py" ]]; then
+                      env_name=""
+                      output_file=""
+                      while [[ $# -gt 0 ]]; do
+                        case "$1" in
+                          --env)
+                            env_name="$2"
+                            shift 2
+                            ;;
+                          --image-output-file)
+                            output_file="$2"
+                            shift 2
+                            ;;
+                          *)
+                            shift
+                            ;;
+                        esac
+                      done
+                      printf 'registry.example.com/%s:test-tag\\n' "$env_name" > "$output_file"
+                      exit 0
+                    fi
+                    exec "{sys.executable}" "$@"
+                    """
+                )
+            )
+            fake_pin.write_text(
+                textwrap.dedent(
+                    """\
+                    #!/bin/bash
+                    printf '%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" "$5" >> "$PIN_LOG_FILE"
+                    """
+                )
+            )
+            fake_python.chmod(0o755)
+            fake_pin.chmod(0o755)
+            base_env = os.environ.copy()
+            base_env.update(
+                {
+                    "PATH": f"{fake_bin}:{base_env['PATH']}",
+                    "TCR_BEIJING_PASSWORD": "fake-password",
+                    "TCR_SHPROD_PASSWORD": "fake-password",
+                    "BUILD_TAG_OVERRIDE": "test-tag",
+                    "DEPLOYED_AT": "2026-04-29T00:00:00Z",
+                    "PIN_SCRIPT_OVERRIDE": str(fake_pin),
+                    "PIN_LOG_FILE": str(pins_file),
+                    "RELEASE_IMAGE_DIR": str(image_dir),
+                }
+            )
+
+            build_env = base_env | {"BUILD_ONLY": "true"}
+            build_result = subprocess.run(
+                [
+                    "/bin/bash",
+                    str(REPO_ROOT / ".ci/runtime/build_and_promote_to_gitops.sh"),
+                    "gateway-dashboard",
+                    "gateway-dashboard",
+                    "beijing-sandbox,shprod",
+                    "beijing-sandbox",
+                ],
+                cwd=REPO_ROOT,
+                env=build_env,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual((image_dir / "beijing-sandbox").read_text().strip(), "registry.example.com/beijing-sandbox:test-tag")
+            self.assertEqual((image_dir / "shprod").read_text().strip(), "registry.example.com/shprod:test-tag")
+            self.assertIn("build-only mode", build_result.stdout)
+            self.assertFalse(pins_file.exists())
+
+            auto_pin_env = base_env | {"AUTO_PIN_ONLY": "true"}
+            auto_pin_result = subprocess.run(
+                [
+                    "/bin/bash",
+                    str(REPO_ROOT / ".ci/runtime/build_and_promote_to_gitops.sh"),
+                    "gateway-dashboard",
+                    "gateway-dashboard",
+                    "beijing-sandbox,shprod",
+                    "beijing-sandbox",
+                ],
+                cwd=REPO_ROOT,
+                env=auto_pin_env,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+
+            pins = pins_file.read_text().splitlines()
+            self.assertEqual(len(pins), 1)
+            self.assertIn("gateway-dashboard\tgateway-dashboard\tbeijing-sandbox\tregistry.example.com/beijing-sandbox:test-tag", pins[0])
+            self.assertIn("北京测试 DB gate / GitOps auto-pin 独立步骤", auto_pin_result.stdout)
+            self.assertNotIn("可发布版本汇总", auto_pin_result.stdout)
+
     def test_build_without_auto_pin_prints_manual_promote_hint(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             fake_bin = Path(tmp)

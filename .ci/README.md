@@ -37,6 +37,7 @@
 - playground 分支只展示 playground 自身的 auto-pin / bootstrap 后续，不展示生产人工审批或生产 DB migration 参数。
 - BK-CI `check-in` 审核页不要依赖 `ci.*` 运行时上下文渲染；审核说明里使用静态文字或模板参数，真实 `SOURCE_SHA` 以构建日志和执行阶段日志为准。
 - 生产人工审核 stage 的可见性只依赖模板开关、push 事件和 master 分支环境变量；`PIPELINE_MODE` 只在脚本内做二次保护，避免启动变量在 stage `if` 中导致误跳过。
+- 北京测试 auto-pin 拆成独立 `北京测试 DB gate 与 GitOps auto-pin` step；DB job / DB readiness 仍由 release gate 执行，但不再混在镜像构建 step 里。
 ## Service Release Template
 
 标准服务构建发布入口正在从“每个 `.ci/<service>.yml` 复制完整 stages”演进为根级 `extends` 模板模型。

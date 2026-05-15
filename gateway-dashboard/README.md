@@ -4,6 +4,7 @@
 
 Trigger note:
 
+- 2026-05-15: README-only no-op change to rerun gateway-dashboard after splitting Beijing DB gate into its own CI step.
 - 2026-05-15: README-only no-op change to rerun gateway-dashboard after moving production check-in gates off PIPELINE_MODE.
 - 2026-05-15: README-only no-op change to rerun gateway-dashboard after DB gate visibility landed.
 - 2026-05-15: README-only no-op change to rerun gateway-dashboard after switching check-in conditions to BK-CI envs.
