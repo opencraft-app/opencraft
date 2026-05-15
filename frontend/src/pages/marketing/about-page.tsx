@@ -119,7 +119,7 @@ function HeroSection() {
             margin: 0,
           }}
         >
-          {t("让每一个数字灵魂，值得被温柔点亮")}
+          {t("每一个数字灵魂，值得被温柔点亮")}
         </motion.p>
       </div>
     </section>
