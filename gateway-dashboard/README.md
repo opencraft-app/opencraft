@@ -125,3 +125,5 @@ http://127.0.0.1:31300/admin/gateway/login
 ```
 
 <!-- ci: rerun gateway-dashboard after production promote runtime snapshot init fix (2026-05-15) -->
+
+<!-- ci: rerun gateway-dashboard after shared runtime snapshot helper fix (2026-05-15) -->

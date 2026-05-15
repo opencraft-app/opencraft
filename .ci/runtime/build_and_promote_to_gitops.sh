@@ -80,12 +80,28 @@ else
   BUILT_IMAGE_DIR="$(mktemp -d)"
   CLEANUP_BUILT_IMAGE_DIR=true
 fi
+PIN_RUNTIME_SNAPSHOT=""
 cleanup_built_image_dir() {
   if [[ "$CLEANUP_BUILT_IMAGE_DIR" == "true" ]]; then
     rm -rf "$BUILT_IMAGE_DIR"
   fi
 }
-trap cleanup_built_image_dir EXIT
+cleanup_runtime_artifacts() {
+  cleanup_built_image_dir
+  if [[ -n "$PIN_RUNTIME_SNAPSHOT" ]]; then
+    rm -rf "$PIN_RUNTIME_SNAPSHOT"
+  fi
+}
+trap cleanup_runtime_artifacts EXIT
+
+prepare_pin_runtime_snapshot() {
+  if [[ -n "${PIN_SCRIPT_OVERRIDE:-}" ]]; then
+    return
+  fi
+
+  PIN_RUNTIME_SNAPSHOT="$(ci_create_runtime_snapshot "$REPO_ROOT/.ci")"
+  PIN_SCRIPT="$PIN_RUNTIME_SNAPSHOT/.ci/runtime/pin_image_to_gitops.sh"
+}
 
 if [[ "$AUTO_PIN_ONLY" != "true" ]]; then
   for ENV_NAME in "${ENVS[@]}"; do
@@ -196,6 +212,8 @@ if [[ "$AUTO_PIN_ONLY" == "true" ]]; then
   echo "说明：本步骤按环境执行 release gate；若该环境 DB contract 要求 migration，将在这里执行受控 DB job，再执行 DB readiness。"
   echo "============================================================"
 fi
+
+prepare_pin_runtime_snapshot
 
 IFS=',' read -r -a AUTO_ENVS <<<"$AUTO_PIN_ENVS"
 for AUTO_PIN_ENV in "${AUTO_ENVS[@]}"; do

@@ -111,6 +111,13 @@ PROMOTE_BUNDLE_SCRIPT="$RUNTIME_SNAPSHOT/.ci/runtime/promote_bundle_image_to_git
 bash "$PROMOTE_BUNDLE_SCRIPT" "$SERVICE" "$BUNDLE" "$TARGET_ENV" "$SOURCE_SHA"
 ```
 
+等价公共函数写法：
+
+```bash
+RUNTIME_SNAPSHOT="$(ci_create_runtime_snapshot "$REPO_ROOT/.ci")"
+trap 'rm -rf "$RUNTIME_SNAPSHOT"' EXIT
+```
+
 脚本内部应遵守：
 
 ```bash
@@ -127,8 +134,9 @@ RUNTIME_COMMAND_DIR="${RUNTIME_COMMAND_DIR:-$SCRIPT_DIR/commands}"
 - `CI_INIT_SCRIPT`：找当前 runtime 配套的 `.ci/init.sh`，必须来自 snapshot；不要在 fan-out 的第二次 promote 里回到已被 checkout 成 `promote-*` 的 `$REPO_ROOT/.ci/init.sh`。
 - `REPO_ROOT`：指向蓝盾 checkout 的真实仓库，哪怕它稍后被切到 `promote-*` 分支。
 - `PIN_SCRIPT` 默认应优先使用 runtime snapshot 旁边的 `pin_image_to_gitops.sh`，不要回到 mutable worktree 找脚本。
+- `pin_image_to_gitops.sh` 内部再次 materialize runtime 时，也必须从自身 `SCRIPT_DIR` 复制 runtime，不能从 `$REPO_ROOT/.ci/runtime` 复制。
 - 需要连续创建 shprod、sgprod promote 分支时，必须在第一次 checkout 之前准备好 runtime snapshot。
-- `build_and_promote_to_gitops.sh` 的 auto-pin 常常只处理一个自动环境，所以不容易暴露这个问题；生产 fan-out 才是高风险路径。
+- `build_and_promote_to_gitops.sh` 的 auto-pin 常常只处理一个自动环境，所以不容易暴露这个问题；但如果以后配置多个 auto-pin 环境，也必须复用同一套 runtime snapshot 模型。
 
 测试约束：
 

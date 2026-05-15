@@ -531,7 +531,9 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
         self.assertIn('CI_INIT_SCRIPT="${CI_INIT_SCRIPT:-$SCRIPT_DIR/../init.sh}"', script)
         self.assertIn('source "$CI_INIT_SCRIPT"', script)
         self.assertNotIn('source "${REPO_ROOT}/.ci/init.sh"', script)
-        self.assertIn('cp -R "$REPO_ROOT/.ci/runtime" "$bootstrap_dir/.ci/runtime"', script)
+        self.assertIn('runtime_snapshot="$(ci_create_runtime_snapshot "$runtime_source_ci_dir")"', script)
+        self.assertIn('bootstrap_dir="$runtime_snapshot"', script)
+        self.assertNotIn('cp -R "$REPO_ROOT/.ci/runtime" "$bootstrap_dir/.ci/runtime"', script)
         self.assertIn('RUNTIME_COMMAND_DIR="$bootstrap_dir/.ci/runtime/commands"', script)
         self.assertNotIn("BOOTSTRAP_FILES", script)
         self.assertNotIn('git -C "$REPO_ROOT" add "$bootstrap_file"', script)
@@ -572,6 +574,16 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
         self.assertIn('python3 "$RUNTIME_COMMAND_DIR/resolve_release_bundle.py"', script)
         self.assertNotIn('python3 "$REPO_ROOT/.ci/runtime/commands/resolve_release_bundle.py"', script)
         self.assertIn('PIN_SCRIPT="${PIN_SCRIPT_OVERRIDE:-$SCRIPT_DIR/pin_image_to_gitops.sh}"', script)
+
+    def test_build_auto_pin_uses_runtime_snapshot_for_pin_loop(self) -> None:
+        script = (REPO_ROOT / ".ci/runtime/build_and_promote_to_gitops.sh").read_text()
+
+        self.assertIn('prepare_pin_runtime_snapshot', script)
+        self.assertIn('PIN_RUNTIME_SNAPSHOT="$(ci_create_runtime_snapshot "$REPO_ROOT/.ci")"', script)
+        self.assertNotIn('cp "$REPO_ROOT/.ci/init.sh" "$PIN_RUNTIME_SNAPSHOT/.ci/init.sh"', script)
+        self.assertNotIn('cp -R "$REPO_ROOT/.ci/runtime" "$PIN_RUNTIME_SNAPSHOT/.ci/runtime"', script)
+        self.assertIn('PIN_SCRIPT="$PIN_RUNTIME_SNAPSHOT/.ci/runtime/pin_image_to_gitops.sh"', script)
+        self.assertIn('prepare_pin_runtime_snapshot\n\nIFS=\',\' read -r -a AUTO_ENVS <<<"$AUTO_PIN_ENVS"', script)
 
     def test_pin_script_consumes_only_approved_gate_variables(self) -> None:
         script = (REPO_ROOT / ".ci/runtime/pin_image_to_gitops.sh").read_text()

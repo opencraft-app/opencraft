@@ -192,7 +192,10 @@ trap cleanup EXIT
 
 mkdir -p "$bootstrap_dir/.ci"
 rm -rf "$bootstrap_dir/.ci/runtime"
-cp -R "$REPO_ROOT/.ci/runtime" "$bootstrap_dir/.ci/runtime"
+runtime_source_ci_dir="$(cd "$SCRIPT_DIR/.." && pwd)"
+runtime_snapshot="$(ci_create_runtime_snapshot "$runtime_source_ci_dir")"
+rm -rf "$bootstrap_dir"
+bootstrap_dir="$runtime_snapshot"
 RUNTIME_COMMAND_DIR="$bootstrap_dir/.ci/runtime/commands"
 
 if [[ -n "$REMOTE_URL" ]]; then

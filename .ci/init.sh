@@ -117,6 +117,17 @@ ci_export_gongfeng_defaults() {
   export GITOPS_REPO_PATH="${GITOPS_REPO_PATH:-wisp/mono2}"
 }
 
+ci_create_runtime_snapshot() {
+  local source_ci_dir="${1:-${REPO_ROOT:-$(git rev-parse --show-toplevel)}/.ci}"
+  local snapshot_dir
+  snapshot_dir="$(mktemp -d)"
+
+  mkdir -p "$snapshot_dir/.ci"
+  cp "$source_ci_dir/init.sh" "$snapshot_dir/.ci/init.sh"
+  cp -R "$source_ci_dir/runtime" "$snapshot_dir/.ci/runtime"
+  printf '%s\n' "$snapshot_dir"
+}
+
 ci_require_gitops_validation_tools() {
   ci_ensure_gitops_validation_tools
   ci_require_commands python3 kustomize sops ksops
