@@ -131,3 +131,5 @@ http://127.0.0.1:31300/admin/gateway/login
 <!-- ci: rerun gateway-dashboard after release gate runtime init fix (2026-05-15) -->
 
 <!-- ci: rerun gateway-dashboard after gitops promote runtime seed fallback fix (2026-05-15) -->
+
+<!-- ci: rerun gateway-dashboard final promote verification after sgprod promote branch seed fix (2026-05-15) -->
