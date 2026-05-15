@@ -141,8 +141,8 @@ stages:
               echo "============================================================"
               echo "frontend 发布决策：自动发起 EdgeOne 正式站编排流水线"
               echo "artifact source sha：${{ ci.sha }}"
-              echo "fan-out：进入国内/国际两个独立发布 job"
-              echo "独立暂停：两个发布 step 各自 can-pause-before-run，互不阻塞"
+              echo "fan-out：启动国内/国际两个独立发布审批流水线"
+              echo "独立审批：由两个目标发布流水线各自 check-in，互不阻塞"
               echo "发布动作：本阶段只启动编排流水线，不直接发布 EdgeOne"
               echo "============================================================"
               python3 .ci/runtime/commands/trigger_frontend_edgeone_releases.py \

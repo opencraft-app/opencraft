@@ -49,7 +49,7 @@ stages:
               echo "ci.sha=${{ ci.sha }}"
               echo "variables.PROBE_ARTIFACT_SOURCE_SHA=${{ variables.PROBE_ARTIFACT_SOURCE_SHA }}"
               echo "variables.PROBE_APPLY=${{ variables.PROBE_APPLY }}"
-              echo "说明：本探针验证 frontend EdgeOne 编排 DAG 的 job fan-out 和 step 前置暂停。"
+              echo "说明：本探针验证 frontend EdgeOne 编排 DAG 的 job fan-out。"
               echo "默认 PROBE_APPLY=false，只 dry-run，不启动正式发布候选流水线。"
 
   - name: 1 fan-out 验证 frontend EdgeOne 发布候选调用
@@ -74,8 +74,8 @@ stages:
               echo "source_sha=$SOURCE_SHA"
               echo "apply=${{ variables.PROBE_APPLY }}"
               echo "fan-out jobs:"
-              echo "  - cn: 前置暂停后 dry-run 国内 EdgeOne 发布动作"
-              echo "  - intl: 前置暂停后 dry-run 国际 EdgeOne 发布动作"
+              echo "  - cn: dry-run 国内 EdgeOne 发布审批流水线调用"
+              echo "  - intl: dry-run 国际 EdgeOne 发布审批流水线调用"
 
       cn:
         name: 探针国内 EdgeOne 发布候选调用
@@ -89,10 +89,7 @@ stages:
             name: 拉取代码
             with:
               fetchDepth: 1
-          - name: 探针国内 EdgeOne 前置暂停
-            can-pause-before-run: true
-            pause-notice-receivers:
-              - skipzhang
+          - name: 探针国内 EdgeOne 发布候选调用
             shell: bash
             env:
               BK_CI_ACCESS_TOKEN: ${{ settings.BK_CI_ACCESS_TOKEN }}
@@ -121,10 +118,7 @@ stages:
             name: 拉取代码
             with:
               fetchDepth: 1
-          - name: 探针国际 EdgeOne 前置暂停
-            can-pause-before-run: true
-            pause-notice-receivers:
-              - skipzhang
+          - name: 探针国际 EdgeOne 发布候选调用
             shell: bash
             env:
               BK_CI_ACCESS_TOKEN: ${{ settings.BK_CI_ACCESS_TOKEN }}

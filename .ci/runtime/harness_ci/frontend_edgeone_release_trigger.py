@@ -145,7 +145,7 @@ def main() -> int:
         print(f"combo={pipeline.combo}")
         print(f"branch={args.branch}")
         print(f"artifact_source_sha={source_sha}")
-        print("发布动作：只启动目标流水线，目标流水线仍需人工暂停或 check-in 后才会发布")
+        print("发布动作：只启动目标流水线，目标流水线仍需人工 check-in 后才会发布")
         print("============================================================")
         if args.dry_run:
             continue
