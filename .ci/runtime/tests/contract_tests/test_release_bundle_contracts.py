@@ -364,10 +364,15 @@ class ReleaseBundleContractTests(unittest.TestCase):
 
         check_in_stage = stage_by_name["确认生产 promote ${{ parameters.DISPLAY_NAME }}"]
         promote_stage = stage_by_name["自动创建生产 promote ${{ parameters.DISPLAY_NAME }}"]
+        prod_promote_stage_if = (
+            "${{ parameters.ENABLE_MASTER_PROD_PROMOTE }} == true && "
+            "${{ variables.PIPELINE_MODE }} == build && "
+            "${{ ci.branch }} == master"
+        )
 
         self.assertEqual(
             check_in_stage.get("if"),
-            "${{ parameters.ENABLE_MASTER_PROD_PROMOTE }} == true",
+            prod_promote_stage_if,
         )
         self.assertIn("check-in", check_in_stage)
         self.assertNotIn("PROD_PROMOTE_REVIEWERS", template_text)
@@ -384,8 +389,10 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("TIMEOUT_SECONDS=1800", template_text)
         self.assertEqual(
             promote_stage.get("if"),
-            "${{ parameters.ENABLE_MASTER_PROD_PROMOTE }} == true",
+            prod_promote_stage_if,
         )
+        self.assertIn('if [[ "${{ variables.PIPELINE_MODE }}" != "build" ]]; then', template_text)
+        self.assertIn('if [[ "${{ ci.branch }}" != "master" ]]; then', template_text)
         self.assertIn("resolve_prod_promote_envs", template_text)
         self.assertIn('if [[ "$env_name" != "shprod" && "$env_name" != "sgprod" ]]; then', template_text)
         self.assertIn("MASTER_AUTO_PIN_ENVS", template_text)
@@ -397,7 +404,8 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("AUTO_PIN_ONLY=true bash .ci/runtime/build_and_promote_to_gitops.sh", template_text)
         self.assertIn("RELEASE_IMAGE_DIR=\".ci/.release-images/${{ parameters.SERVICE }}-${{ steps.prepare.outputs.tag }}\"", template_text)
         self.assertNotIn("BK_CI_GIT_REPO_BRANCH", check_in_stage.get("if"))
-        self.assertNotIn("PIPELINE_MODE", check_in_stage.get("if"))
+        self.assertIn("${{ variables.PIPELINE_MODE }} == build", check_in_stage.get("if"))
+        self.assertIn("${{ ci.branch }} == master", check_in_stage.get("if"))
 
     def test_service_release_workflows_without_prod_matrix_disable_prod_promote(self) -> None:
         for workflow_path in [REPO_ROOT / ".ci/staticpages.yml", REPO_ROOT / ".ci/trade.yml"]:
