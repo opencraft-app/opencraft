@@ -385,13 +385,23 @@ class ReleaseBundleContractTests(unittest.TestCase):
         stages = template.get("stages") or []
         stage_by_name = {stage.get("name"): stage for stage in stages}
 
+        entry_stage = stage_by_name["是否准备进入生产 ${{ parameters.DISPLAY_NAME }}"]
         promote_stage = stage_by_name["创建生产 promote 候选 ${{ parameters.DISPLAY_NAME }}"]
         prod_promote_stage_if = (
             "${{ parameters.ENABLE_MASTER_PROD_PROMOTE }} == true && "
             "${{ variables.PIPELINE_MODE }} == build && "
             "${{ ci.branch }} == master"
         )
+        entry_reviews = (((entry_stage.get("check-in") or {}).get("reviews") or {}).get("flows") or [])[0]
 
+        self.assertEqual(entry_stage.get("if"), prod_promote_stage_if)
+        self.assertEqual(entry_reviews.get("name"), "是否准备进入生产")
+        self.assertEqual(entry_reviews.get("reviewers"), [])
+        self.assertIn("本阶段只确认是否允许本次构建进入生产候选流程", template_text)
+        self.assertLess(
+            template_text.index("是否准备进入生产 ${{ parameters.DISPLAY_NAME }}"),
+            template_text.index("创建生产 promote 候选 ${{ parameters.DISPLAY_NAME }}"),
+        )
         self.assertNotIn("Dry-run 生产 DB migration ${{ parameters.DISPLAY_NAME }}", template_text)
         self.assertNotIn("确认生产 promote ${{ parameters.DISPLAY_NAME }}", template_text)
         self.assertNotIn("执行生产 DB migration ${{ parameters.DISPLAY_NAME }}", template_text)

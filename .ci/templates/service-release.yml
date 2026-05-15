@@ -214,6 +214,34 @@ stages:
               REMOTE_URL="$(ci_gitops_remote_url)" \
               GITOPS_BRANCH=gitops \
               bash "$REPO_ROOT/.ci/runtime/promote_bundle_image_to_gitops.sh" "${{ parameters.SERVICE }}" "${{ parameters.BUNDLE }}" "${{ variables.TARGET_ENV }}" "$SOURCE_SHA"
+  - name: 是否准备进入生产 ${{ parameters.DISPLAY_NAME }}
+    if: "${{ parameters.ENABLE_MASTER_PROD_PROMOTE }} == true && ${{ variables.PIPELINE_MODE }} == build && ${{ ci.branch }} == master"
+    check-in:
+      reviews:
+        flows:
+          - name: 是否准备进入生产
+            reviewers: []
+        description: |
+          本阶段只确认是否允许本次构建进入生产候选流程。
+
+          点击通过后，流水线会为实际存在 GitOps diff 的生产环境创建 promote 候选分支：
+          - shprod 会进入独立的上海生产审批流水线
+          - sgprod 会进入独立的新加坡生产审批流水线
+          - 若某个环境没有 deploy-facing diff，则不会创建该环境 promote 候选分支
+
+          本阶段不执行生产 DB migration，不合并 GitOps，也不触发 Argo sync。
+      timeout-hours: 24
+    jobs:
+      approve:
+        name: 确认进入生产候选流程
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - name: 生产候选流程已确认
+            shell: bash
+            run: |
+              echo "production candidate creation approved for ${{ parameters.DISPLAY_NAME }}"
   - name: 创建生产 promote 候选 ${{ parameters.DISPLAY_NAME }}
     if: "${{ parameters.ENABLE_MASTER_PROD_PROMOTE }} == true && ${{ variables.PIPELINE_MODE }} == build && ${{ ci.branch }} == master"
     jobs:
