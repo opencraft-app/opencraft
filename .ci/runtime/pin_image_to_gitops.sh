@@ -65,6 +65,25 @@ else:
 PY
 }
 
+green_log() {
+  printf '\033[32m%s\033[0m\n' "$*"
+}
+
+gitops_skip_notice() {
+  local reason="$1"
+
+  green_log "============================================================"
+  green_log "GitOps promote 跳过：${reason}"
+  green_log "目标服务：${SERVICE_ARG}"
+  green_log "目标环境：${ENV_DISPLAY_NAME} (${ENV_NAME})"
+  green_log "目标镜像：${IMAGE}"
+  green_log "GitOps pin 镜像：${PIN_IMAGE}"
+  green_log "源代码 revision：${SOURCE_REF}"
+  green_log "promote 分支：${PROMOTE_BRANCH}"
+  green_log "处理结果：不会创建 GitOps promote MR，也不会触发 Argo sync。"
+  green_log "============================================================"
+}
+
 validate_gate_env_file() {
   local path="$1"
   python3 - "$path" <<'PY'
@@ -244,13 +263,13 @@ project_and_pin_gitops_state "$REPO_ROOT" true
 
 deployed_at_only_diff="$(python3 "$RUNTIME_COMMAND_DIR/detect_deployed_at_only_diff.py" --repo-root "$REPO_ROOT")"
 if [[ "$deployed_at_only_diff" == "true" ]]; then
-  echo "GitOps 发布结果：仅 *_DEPLOYED_AT 时间戳变化，镜像 pin 与 deploy-facing 配置未变化；跳过 promote MR。"
+  gitops_skip_notice "仅 *_DEPLOYED_AT 时间戳变化，镜像 pin 与 deploy-facing 配置未变化。"
   git -C "$REPO_ROOT" reset --hard "$REMOTE_NAME/$GITOPS_BRANCH" >/dev/null
   exit 0
 fi
 
 if git -C "$REPO_ROOT" diff --cached --quiet; then
-  echo "no gitops pin changes detected"
+  gitops_skip_notice "投影后没有 GitOps staged diff。"
   exit 0
 fi
 

@@ -593,6 +593,18 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
         self.assertIn('PIN_SCRIPT="$PIN_RUNTIME_SNAPSHOT/.ci/runtime/pin_image_to_gitops.sh"', script)
         self.assertIn('prepare_pin_runtime_snapshot\n\nIFS=\',\' read -r -a AUTO_ENVS <<<"$AUTO_PIN_ENVS"', script)
 
+    def test_prod_promote_fanout_pins_runtime_before_branch_checkouts(self) -> None:
+        template = (REPO_ROOT / ".ci/templates/service-release.yml").read_text()
+
+        self.assertIn('SOURCE_SHA="$(git rev-parse HEAD)"', template)
+        self.assertIn('CI_RUNTIME_REF="${CI_RUNTIME_REF:-${{ ci.branch }}}"', template)
+        self.assertIn('CI_RUNTIME_COMMIT="${CI_RUNTIME_COMMIT:-$SOURCE_SHA}"', template)
+        self.assertIn("export CI_RUNTIME_REF CI_RUNTIME_COMMIT", template)
+        self.assertLess(
+            template.index('export CI_RUNTIME_REF CI_RUNTIME_COMMIT'),
+            template.index('PROMOTE_BUNDLE_SCRIPT="$RUNTIME_SNAPSHOT/.ci/runtime/promote_bundle_image_to_gitops.sh"'),
+        )
+
     def test_pin_script_consumes_only_approved_gate_variables(self) -> None:
         script = (REPO_ROOT / ".ci/runtime/pin_image_to_gitops.sh").read_text()
         found_gate_vars = set(re.findall(r"\bGATE_[A-Z_]+\b", script))
@@ -603,6 +615,16 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
         self.assertNotIn("GATE_DB_JOB_SERVICE", found_gate_vars)
         self.assertNotIn("GATE_READINESS_SUPPORTED", found_gate_vars)
         self.assertNotIn("GATE_RELEASE_DEPENDENCIES", found_gate_vars)
+
+    def test_pin_script_prints_green_skip_notice_for_noop_promote(self) -> None:
+        script = (REPO_ROOT / ".ci/runtime/pin_image_to_gitops.sh").read_text()
+
+        self.assertIn("green_log()", script)
+        self.assertIn("printf '\\033[32m%s\\033[0m\\n' \"$*\"", script)
+        self.assertIn("GitOps promote 跳过：${reason}", script)
+        self.assertIn("处理结果：不会创建 GitOps promote MR，也不会触发 Argo sync。", script)
+        self.assertIn('gitops_skip_notice "仅 *_DEPLOYED_AT 时间戳变化，镜像 pin 与 deploy-facing 配置未变化。"', script)
+        self.assertIn('gitops_skip_notice "投影后没有 GitOps staged diff。"', script)
 
     def test_prod_promote_branches_are_not_removed_by_automation(self) -> None:
         workflow = (REPO_ROOT / ".ci/gitops-promotion.yml").read_text()
