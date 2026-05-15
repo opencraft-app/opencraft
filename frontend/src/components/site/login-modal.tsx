@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Loader2, X } from "lucide-react";
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useRepositories } from "@/contexts/repository-context";
 import { useSession } from "@/contexts/session-context";
@@ -13,6 +14,7 @@ import {
   type OAuthProvider,
 } from "@/lib/oauth";
 import { assetUrl } from "@/lib/asset-url";
+import { isGlobal } from "@/lib/region";
 
 const qqLogo = assetUrl("/login/qq-logo.png");
 const wechatLogo = assetUrl("/login/wechat-logo.png");
@@ -303,15 +305,25 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
                     {t("《服务协议》")}
                   </a>{" "}
                   {t("与")}{" "}
-                  <a
-                    href="https://cloud.tencent.com/document/product/301/11470"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="font-medium hover:underline"
-                    style={{ color: "var(--lw-accent)" }}
-                  >
-                    {t("《隐私保护协议》")}
-                  </a>
+                  {isGlobal ? (
+                    <Link
+                      to="/privacy-policy"
+                      className="font-medium hover:underline"
+                      style={{ color: "var(--lw-accent)" }}
+                    >
+                      {t("《隐私保护协议》")}
+                    </Link>
+                  ) : (
+                    <a
+                      href="https://cloud.tencent.com/document/product/301/11470"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-medium hover:underline"
+                      style={{ color: "var(--lw-accent)" }}
+                    >
+                      {t("《隐私保护协议》")}
+                    </a>
+                  )}
                 </span>
               </label>
               {/* Agree hint */}

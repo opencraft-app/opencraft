@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowUpRight } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 import { fadeInUp, staggerContainer, titleReveal, viewportConfig } from "./constants";
 import { BEIAN_URL, ICP_LICENSE, shouldShowICP } from "@/constants/legal";
 import { useT } from "@/i18n/t";
+import { isGlobal } from "@/lib/region";
 
 export function CTAFooterSection({
   onLoginClick,
@@ -112,9 +113,15 @@ export function CTAFooterSection({
               )}
             </span>
             <span>
-              <a href="https://cloud.tencent.com/document/product/301/11470" target="_blank" rel="noopener noreferrer" className="transition-colors hover:text-black">
-                {t("隐私政策")}
-              </a>
+              {isGlobal ? (
+                <Link to="/privacy-policy" className="transition-colors hover:text-black">
+                  {t("隐私政策")}
+                </Link>
+              ) : (
+                <a href="https://cloud.tencent.com/document/product/301/11470" target="_blank" rel="noopener noreferrer" className="transition-colors hover:text-black">
+                  {t("隐私政策")}
+                </a>
+              )}
               ·
               <a href="https://cloud.tencent.com/document/product/301/48034" target="_blank" rel="noopener noreferrer" className="transition-colors hover:text-black">
                 {t("服务条款")}

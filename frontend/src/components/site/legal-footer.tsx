@@ -1,7 +1,9 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { BEIAN_URL, ICP_LICENSE, shouldShowICP } from "@/constants/legal";
 import { useT } from "@/i18n/t";
+import { isGlobal } from "@/lib/region";
 
 export const LegalFooter = () => {
   const currentYear = new Date().getFullYear();
@@ -33,14 +35,20 @@ export const LegalFooter = () => {
             )}
           </span>
           <span>
-            <a
-              href="https://cloud.tencent.com/document/product/301/11470"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="transition-colors hover:text-black"
-            >
-              {t("隐私政策")}
-            </a>
+            {isGlobal ? (
+              <Link to="/privacy-policy" className="transition-colors hover:text-black">
+                {t("隐私政策")}
+              </Link>
+            ) : (
+              <a
+                href="https://cloud.tencent.com/document/product/301/11470"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="transition-colors hover:text-black"
+              >
+                {t("隐私政策")}
+              </a>
+            )}
             ·
             <a
               href="https://cloud.tencent.com/document/product/301/48034"
