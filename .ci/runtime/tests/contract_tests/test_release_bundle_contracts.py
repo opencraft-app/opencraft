@@ -198,7 +198,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
             workflow_text=workflow_text,
         )
 
-    def test_frontend_workflow_keeps_edgeone_release_out_of_build_pipeline(self) -> None:
+    def test_frontend_workflow_uses_native_edgeone_subpipeline_fanout(self) -> None:
         workflow_text = (REPO_ROOT / ".ci/frontend.yml").read_text()
 
         self.assertNotIn("FRONTEND_EDGEONE_RELEASE_ENABLED", workflow_text)
@@ -206,14 +206,19 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertNotIn("确认发布 frontend EdgeOne 正式站", workflow_text)
         self.assertNotIn("发布 frontend EdgeOne 正式站", workflow_text)
         self.assertNotIn("ci_load_edgeone_credentials", workflow_text)
-        self.assertIn("自动发起 frontend EdgeOne 正式站编排", workflow_text)
-        self.assertIn("trigger_frontend_edgeone_releases.py", workflow_text)
-        self.assertIn("--target orchestrator", workflow_text)
-        self.assertIn('if [[ "${{ ci.branch }}" != "master" ]]; then', workflow_text)
-        self.assertIn("BK_CI_ACCESS_TOKEN", workflow_text)
+        self.assertNotIn("trigger_frontend_edgeone_releases.py", workflow_text)
+        self.assertNotIn("--target orchestrator", workflow_text)
+        self.assertNotIn("BK_CI_ACCESS_TOKEN", workflow_text)
+        self.assertIn("自动发起 frontend EdgeOne 正式站发布候选", workflow_text)
+        self.assertIn("SubPipelineExecStream@1.*", workflow_text)
+        self.assertIn('if: "${{ variables.PIPELINE_MODE }} == build && ${{ ci.branch }} == master"', workflow_text)
+        self.assertIn('targetPathFromUrl: ".ci/frontend-edgeone-lightvela.yml"', workflow_text)
+        self.assertIn('targetPathFromUrl: ".ci/frontend-edgeone-lightvela-intl.yml"', workflow_text)
+        self.assertIn('key: "FRONTEND_EDGEONE_ARTIFACT_SOURCE_SHA"', workflow_text)
+        self.assertIn('value: "${{ ci.sha }}"', workflow_text)
         self.assertLess(
             workflow_text.index('"$PNPM_BIN" build:release-artifacts'),
-            workflow_text.index("trigger_frontend_edgeone_releases.py"),
+            workflow_text.index("SubPipelineExecStream@1.*"),
         )
 
     def test_frontend_edgeone_release_uses_dedicated_manual_workflows(self) -> None:
@@ -244,39 +249,37 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn('ARTIFACT_SOURCE_SHA="$FRONTEND_EDGEONE_CI_SHA"', command_text)
         self.assertIn("FRONTEND_EDGEONE_ARTIFACT_SOURCE_SHA is empty and ci.sha is unavailable", command_text)
 
-        trigger_text = (REPO_ROOT / ".ci/runtime/harness_ci/frontend_edgeone_release_trigger.py").read_text()
-        self.assertIn("p-9f8b7c9ae96448e8b6b03b2318cf6091", trigger_text)
-        self.assertIn("p-14693956c7f44dadb83d00c523de0dd7", trigger_text)
-        self.assertIn("p-1538e39f666f4be48ddf7cfea2acb589", trigger_text)
-        self.assertIn('"FRONTEND_EDGEONE_ARTIFACT_SOURCE_SHA": source_sha', trigger_text)
-        self.assertIn("目标流水线仍需人工 check-in 后才会发布", trigger_text)
-
         frontend_text = (REPO_ROOT / ".ci/frontend.yml").read_text()
-        self.assertIn("--target orchestrator", frontend_text)
+        self.assertIn("SubPipelineExecStream@1.*", frontend_text)
 
         orchestrator_text = (REPO_ROOT / ".ci/subpipeline-call-probe.yml").read_text()
         self.assertNotIn("check-in:", orchestrator_text)
         self.assertNotIn("can-pause-before-run:", orchestrator_text)
         self.assertNotIn("pause-notice-receivers:", orchestrator_text)
-        self.assertIn("trigger_frontend_edgeone_releases.py", orchestrator_text)
-        self.assertIn("--target cn", orchestrator_text)
-        self.assertIn("--target intl", orchestrator_text)
+        self.assertNotIn("trigger_frontend_edgeone_releases.py", orchestrator_text)
+        self.assertIn("SubPipelineExecStream@1.*", orchestrator_text)
+        self.assertIn('targetPathFromUrl: ".ci/frontend-edgeone-lightvela.yml"', orchestrator_text)
+        self.assertIn('targetPathFromUrl: ".ci/frontend-edgeone-lightvela-intl.yml"', orchestrator_text)
 
-    def test_frontend_edgeone_orchestrator_probe_is_dry_run_by_default(self) -> None:
+    def test_frontend_edgeone_orchestrator_probe_uses_harmless_subpipeline_child(self) -> None:
         probe_text = (REPO_ROOT / ".ci/frontend-edgeone-orchestrator-probe.yml").read_text()
         probe = yaml.safe_load(probe_text) or {}
+        child_text = (REPO_ROOT / ".ci/frontend-edgeone-subpipeline-child-probe.yml").read_text()
 
         self.assertEqual((probe.get(True) or probe.get("on") or {}).get("manual"), "enabled")
         self.assertIn("ci-probes/frontend-edgeone-orchestrator-probe.trigger", probe_text)
-        self.assertEqual((probe.get("variables") or {}).get("PROBE_APPLY", {}).get("value"), "false")
         self.assertNotIn("check-in:", probe_text)
         self.assertNotIn("can-pause-before-run:", probe_text)
         self.assertNotIn("pause-notice-receivers:", probe_text)
         self.assertIn("depend-on:\n          - plan", probe_text)
-        self.assertIn("extra_args+=(--dry-run)", probe_text)
-        self.assertIn("--target cn", probe_text)
-        self.assertIn("--target intl", probe_text)
+        self.assertIn("SubPipelineExecStream@1.*", probe_text)
+        self.assertIn('targetPathFromUrl: ".ci/frontend-edgeone-subpipeline-child-probe.yml"', probe_text)
+        self.assertIn('value: "cn"', probe_text)
+        self.assertIn('value: "intl"', probe_text)
+        self.assertNotIn("release_frontend_edgeone_artifact.sh", probe_text)
+        self.assertNotIn("trigger_frontend_edgeone_releases.py", probe_text)
         self.assertNotIn("manualReviewUserTask", probe_text)
+        self.assertIn("只验证 SubPipelineExecStream 参数传递，不发布 EdgeOne", child_text)
 
     def test_frontend_preview_uses_master_runtime(self) -> None:
         workflow_text = (REPO_ROOT / ".ci/frontend-preview.yml").read_text()

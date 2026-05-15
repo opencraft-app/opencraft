@@ -23,10 +23,6 @@ variables:
     value: ""
     readonly: false
     allow-modify-at-startup: true
-  PROBE_APPLY:
-    value: "false"
-    readonly: false
-    allow-modify-at-startup: true
 
 stages:
   - name: 0 打印 frontend EdgeOne 编排探针上下文
@@ -48,9 +44,8 @@ stages:
               echo "ci.branch=${{ ci.branch }}"
               echo "ci.sha=${{ ci.sha }}"
               echo "variables.PROBE_ARTIFACT_SOURCE_SHA=${{ variables.PROBE_ARTIFACT_SOURCE_SHA }}"
-              echo "variables.PROBE_APPLY=${{ variables.PROBE_APPLY }}"
-              echo "说明：本探针验证 frontend EdgeOne 编排 DAG 的 job fan-out。"
-              echo "默认 PROBE_APPLY=false，只 dry-run，不启动正式发布候选流水线。"
+              echo "说明：本探针验证 frontend EdgeOne 编排 DAG 的 SubPipelineExecStream fan-out。"
+              echo "只调用 harmless child probe，不启动正式发布候选流水线。"
 
   - name: 1 fan-out 验证 frontend EdgeOne 发布候选调用
     jobs:
@@ -72,65 +67,44 @@ stages:
                 SOURCE_SHA="${{ ci.sha }}"
               fi
               echo "source_sha=$SOURCE_SHA"
-              echo "apply=${{ variables.PROBE_APPLY }}"
               echo "fan-out jobs:"
-              echo "  - cn: dry-run 国内 EdgeOne 发布审批流水线调用"
-              echo "  - intl: dry-run 国际 EdgeOne 发布审批流水线调用"
+              echo "  - cn: 调用国内分支 harmless child probe"
+              echo "  - intl: 调用国际分支 harmless child probe"
 
       cn:
         name: 探针国内 EdgeOne 发布候选调用
         depend-on:
           - plan
-        runs-on:
-          self-hosted: true
-          pool-name: env
         steps:
-          - checkout: self
-            name: 拉取代码
-            with:
-              fetchDepth: 1
           - name: 探针国内 EdgeOne 发布候选调用
-            shell: bash
-            env:
-              BK_CI_ACCESS_TOKEN: ${{ settings.BK_CI_ACCESS_TOKEN }}
-            run: |
-              SOURCE_SHA="${{ variables.PROBE_ARTIFACT_SOURCE_SHA }}"
-              if [[ -z "$SOURCE_SHA" ]]; then
-                SOURCE_SHA="${{ ci.sha }}"
-              fi
-              extra_args=(--target cn)
-              if [[ "${{ variables.PROBE_APPLY }}" != "true" ]]; then
-                extra_args+=(--dry-run)
-              fi
-              python3 .ci/runtime/commands/trigger_frontend_edgeone_releases.py \
-                --source-sha "$SOURCE_SHA" \
-                "${extra_args[@]}"
+            uses: "SubPipelineExecStream@1.*"
+            with:
+              repositoryType: "URL"
+              repositoryFromUrl: "https://git.woa.com/wisp/mono2.git"
+              targetBranchFromUrl: "master"
+              targetPathFromUrl: ".ci/frontend-edgeone-subpipeline-child-probe.yml"
+              buildInfo: ""
+              paramsInput:
+                - key: "PROBE_TARGET"
+                  value: "cn"
+                - key: "PROBE_ARTIFACT_SOURCE_SHA"
+                  value: "${{ variables.PROBE_ARTIFACT_SOURCE_SHA }}"
 
       intl:
         name: 探针国际 EdgeOne 发布候选调用
         depend-on:
           - plan
-        runs-on:
-          self-hosted: true
-          pool-name: env
         steps:
-          - checkout: self
-            name: 拉取代码
-            with:
-              fetchDepth: 1
           - name: 探针国际 EdgeOne 发布候选调用
-            shell: bash
-            env:
-              BK_CI_ACCESS_TOKEN: ${{ settings.BK_CI_ACCESS_TOKEN }}
-            run: |
-              SOURCE_SHA="${{ variables.PROBE_ARTIFACT_SOURCE_SHA }}"
-              if [[ -z "$SOURCE_SHA" ]]; then
-                SOURCE_SHA="${{ ci.sha }}"
-              fi
-              extra_args=(--target intl)
-              if [[ "${{ variables.PROBE_APPLY }}" != "true" ]]; then
-                extra_args+=(--dry-run)
-              fi
-              python3 .ci/runtime/commands/trigger_frontend_edgeone_releases.py \
-                --source-sha "$SOURCE_SHA" \
-                "${extra_args[@]}"
+            uses: "SubPipelineExecStream@1.*"
+            with:
+              repositoryType: "URL"
+              repositoryFromUrl: "https://git.woa.com/wisp/mono2.git"
+              targetBranchFromUrl: "master"
+              targetPathFromUrl: ".ci/frontend-edgeone-subpipeline-child-probe.yml"
+              buildInfo: ""
+              paramsInput:
+                - key: "PROBE_TARGET"
+                  value: "intl"
+                - key: "PROBE_ARTIFACT_SOURCE_SHA"
+                  value: "${{ variables.PROBE_ARTIFACT_SOURCE_SHA }}"

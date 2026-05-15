@@ -174,6 +174,9 @@ bash .ci/runtime/check_ci_runtime.sh
 - 业务流水线不会因为 `.ci/**` 变更自动触发；这是 contract 保护。
 - 如果修复的是通用 runtime/template，但需要验证某个业务流水线，必须额外改该业务监听路径内的 no-op 文件，例如 `gateway-dashboard/README.md`。
 - 不要把 `.ci/**` 加回业务流水线 `on.push.paths`，否则 CI runtime 变更会触发所有业务构建。
+- Stream 子流水线调用应使用 `SubPipelineExecStream@1.*`，不要使用已验证失败的 `subPipelineCallAtom@1.*`。生产 frontend EdgeOne
+  发布候选由 `构建 frontend` 的原生子流水线 stage 并行调用 `.ci/frontend-edgeone-lightvela*.yml`，避免依赖 `BK_CI_ACCESS_TOKEN`
+  调 build_start API。
 
 ## 实际运行机
 

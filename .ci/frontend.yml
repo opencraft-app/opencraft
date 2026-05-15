@@ -125,29 +125,6 @@ stages:
               "$PNPM_BIN" --version
               "$PNPM_BIN" install --frozen-lockfile
               "$PNPM_BIN" build:release-artifacts
-          - name: 自动发起 frontend EdgeOne 正式站编排
-            shell: bash
-            env:
-              BK_CI_ACCESS_TOKEN: ${{ settings.BK_CI_ACCESS_TOKEN }}
-            run: |
-              if [[ "${{ variables.PIPELINE_MODE }}" == "promote" || "${{ variables.PIPELINE_MODE }}" == "edgeone-release" ]]; then
-                echo "skip EdgeOne release trigger step because PIPELINE_MODE=${{ variables.PIPELINE_MODE }}"
-                exit 0
-              fi
-              if [[ "${{ ci.branch }}" != "master" ]]; then
-                echo "skip EdgeOne release trigger step because branch=${{ ci.branch }}"
-                exit 0
-              fi
-              echo "============================================================"
-              echo "frontend 发布决策：自动发起 EdgeOne 正式站编排流水线"
-              echo "artifact source sha：${{ ci.sha }}"
-              echo "fan-out：启动国内/国际两个独立发布审批流水线"
-              echo "独立审批：由两个目标发布流水线各自 check-in，互不阻塞"
-              echo "发布动作：本阶段只启动编排流水线，不直接发布 EdgeOne"
-              echo "============================================================"
-              python3 .ci/runtime/commands/trigger_frontend_edgeone_releases.py \
-                --source-sha "${{ ci.sha }}" \
-                --target orchestrator
           - name: 发布 frontend Cloudflare 预发 artifact 矩阵
             shell: bash
             env:
@@ -296,3 +273,61 @@ stages:
               REMOTE_URL="$(ci_gitops_remote_url)" \
               GITOPS_BRANCH=gitops \
               bash .ci/runtime/promote_bundle_image_to_gitops.sh frontend frontend "${{ variables.TARGET_ENV }}" "$SOURCE_SHA"
+
+  - name: 自动发起 frontend EdgeOne 正式站发布候选
+    if: "${{ variables.PIPELINE_MODE }} == build && ${{ ci.branch }} == master"
+    jobs:
+      plan:
+        name: 打印 frontend EdgeOne 子流水线调用计划
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - name: 打印调用计划
+            shell: bash
+            run: |
+              echo "============================================================"
+              echo "frontend 发布决策：原生 Stream 子流水线发起 EdgeOne 正式站发布候选"
+              echo "artifact source sha：${{ ci.sha }}"
+              echo "fan-out：cn / intl 两个 job 并行调用两个独立发布流水线"
+              echo "独立审批：由两个目标发布流水线各自 check-in，互不阻塞"
+              echo "发布动作：本阶段只发起子流水线，不直接发布 EdgeOne"
+              echo "============================================================"
+
+      cn:
+        name: 发起 frontend EdgeOne 国内正式站发布候选
+        depend-on:
+          - plan
+        steps:
+          - name: 调用 frontend EdgeOne 国内正式站子流水线
+            uses: "SubPipelineExecStream@1.*"
+            with:
+              repositoryType: "URL"
+              repositoryFromUrl: "https://git.woa.com/wisp/mono2.git"
+              targetBranchFromUrl: "master"
+              targetPathFromUrl: ".ci/frontend-edgeone-lightvela.yml"
+              buildInfo: ""
+              paramsInput:
+                - key: "FRONTEND_EDGEONE_ARTIFACT_SOURCE_SHA"
+                  value: "${{ ci.sha }}"
+                - key: "FRONTEND_EDGEONE_ARTIFACT_REF"
+                  value: ""
+
+      intl:
+        name: 发起 frontend EdgeOne 国际正式站发布候选
+        depend-on:
+          - plan
+        steps:
+          - name: 调用 frontend EdgeOne 国际正式站子流水线
+            uses: "SubPipelineExecStream@1.*"
+            with:
+              repositoryType: "URL"
+              repositoryFromUrl: "https://git.woa.com/wisp/mono2.git"
+              targetBranchFromUrl: "master"
+              targetPathFromUrl: ".ci/frontend-edgeone-lightvela-intl.yml"
+              buildInfo: ""
+              paramsInput:
+                - key: "FRONTEND_EDGEONE_ARTIFACT_SOURCE_SHA"
+                  value: "${{ ci.sha }}"
+                - key: "FRONTEND_EDGEONE_ARTIFACT_REF"
+                  value: ""

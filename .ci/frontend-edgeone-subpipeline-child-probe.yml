@@ -1,0 +1,37 @@
+version: v2.0
+name: BK-CI frontend EdgeOne 子流水线目标探针
+
+on:
+  manual: enabled
+
+concurrency:
+  group: mono2-frontend-edgeone-subpipeline-child-probe
+  cancel-in-progress: false
+  queue-length: 5
+  queue-timeout-minutes: 120
+
+variables:
+  PROBE_TARGET:
+    value: ""
+    readonly: false
+    allow-modify-at-startup: true
+  PROBE_ARTIFACT_SOURCE_SHA:
+    value: ""
+    readonly: false
+    allow-modify-at-startup: true
+
+stages:
+  - name: 子流水线调用目标探针
+    jobs:
+      probe:
+        name: 打印子流水线调用参数
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - name: 打印参数
+            shell: bash
+            run: |
+              echo "probe target=${{ variables.PROBE_TARGET }}"
+              echo "probe source sha=${{ variables.PROBE_ARTIFACT_SOURCE_SHA }}"
+              echo "说明：本流水线只验证 SubPipelineExecStream 参数传递，不发布 EdgeOne。"
