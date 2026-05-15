@@ -153,7 +153,7 @@ stages:
               GITOPS_BRANCH=gitops \
               bash .ci/runtime/promote_bundle_image_to_gitops.sh "${{ parameters.SERVICE }}" "${{ parameters.BUNDLE }}" "${{ variables.TARGET_ENV }}" "$SOURCE_SHA"
   - name: 确认生产 promote ${{ parameters.DISPLAY_NAME }}
-    if: "parameters.ENABLE_MASTER_PROD_PROMOTE == true && variables.PIPELINE_MODE == 'build' && ci.branch == 'master'"
+    if: "${{ parameters.ENABLE_MASTER_PROD_PROMOTE }} == true && variables.PIPELINE_MODE == 'build' && envs.BK_CI_GIT_REPO_BRANCH == 'master'"
     check-in:
       reviews:
         flows:
@@ -194,7 +194,7 @@ stages:
             run: |
               echo "production promote check-in approved for ${{ parameters.DISPLAY_NAME }}"
   - name: 自动创建生产 promote ${{ parameters.DISPLAY_NAME }}
-    if: "parameters.ENABLE_MASTER_PROD_PROMOTE == true && variables.PIPELINE_MODE == 'build' && ci.branch == 'master'"
+    if: "${{ parameters.ENABLE_MASTER_PROD_PROMOTE }} == true && variables.PIPELINE_MODE == 'build' && envs.BK_CI_GIT_REPO_BRANCH == 'master'"
     jobs:
       promote:
         name: 创建 ${{ parameters.DISPLAY_NAME }} 生产 GitOps promote
