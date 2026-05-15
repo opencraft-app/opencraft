@@ -1,45 +1,41 @@
 version: v2.0
-name: BK-CI EdgeOne fan-out DAG 探针
+name: 发布 frontend EdgeOne 正式站编排
 
-# 结论记录：
-# BK-CI model 中有内部 SubPipelineCallElement / subPipelineCallAtom，
-# 但 Stream YAML step transfer 没有把 `uses: subPipelineCallAtom@...`
-# 特判成这个内部元素；它会按市场 atom 解析，live run 会报
-# PIPELINE_RUN_ERROR。这个探针因此只验证 Stream YAML DAG fan-out
-# 形态，并复用已验证的 build_start API runtime 作为动作载体。
+# 历史说明：
+# 本文件最初用于验证 subpipeline call / fan-out 能力。当前保留文件路径，
+# 是为了复用已创建的 BK-CI pipeline id，由构建 frontend 通过 build_start
+# API 自动启动本编排流水线。
+#
+# 已验证的边界：
+# - Stream YAML 不能直接用 `uses: subPipelineCallAtom@...` 调用子流水线；
+#   它会按市场 atom 解析并报 PIPELINE_RUN_ERROR。
+# - `manualReviewUserTask@...` 也不能作为 job step 级审核使用。
+# - 可用模型是 stage `check-in` + job DAG fan-out + build_start API。
 
 on:
-  push:
-    branches:
-      - master
-    paths:
-      - ci-probes/subpipeline-call-probe.trigger
-    paths-ignore:
-      - OWNERS
-      - "**/OWNERS"
   manual: enabled
 
 concurrency:
-  group: mono2-edgeone-fanout-dag-probe
+  group: mono2-frontend-edgeone-release-orchestrator
   cancel-in-progress: false
-  queue-length: 5
-  queue-timeout-minutes: 120
+  queue-length: 10
+  queue-timeout-minutes: 480
 
 variables:
-  PROBE_ARTIFACT_SOURCE_SHA:
+  FRONTEND_EDGEONE_ARTIFACT_SOURCE_SHA:
     value: ""
     readonly: false
     allow-modify-at-startup: true
-  PROBE_APPLY:
-    value: "false"
+  FRONTEND_EDGEONE_ARTIFACT_REF:
+    value: ""
     readonly: false
     allow-modify-at-startup: true
 
 stages:
-  - name: 0 打印 EdgeOne fan-out DAG 探针上下文
+  - name: 0 打印 frontend EdgeOne 编排上下文
     jobs:
-      probe:
-        name: 打印探针上下文
+      context:
+        name: 打印编排上下文
         runs-on:
           self-hosted: true
           pool-name: env
@@ -54,44 +50,43 @@ stages:
               echo "ci.event=${{ ci.event }}"
               echo "ci.branch=${{ ci.branch }}"
               echo "ci.sha=${{ ci.sha }}"
-              echo "variables.PROBE_ARTIFACT_SOURCE_SHA=${{ variables.PROBE_ARTIFACT_SOURCE_SHA }}"
-              echo "variables.PROBE_APPLY=${{ variables.PROBE_APPLY }}"
-              echo "说明：本探针验证 YAML DAG fan-out 能否承载国内/国际两个独立发起节点。"
-              echo "目标流水线自身仍有 EdgeOne 发布 check-in，不会绕过正式发布审批。"
+              echo "variables.FRONTEND_EDGEONE_ARTIFACT_SOURCE_SHA=${{ variables.FRONTEND_EDGEONE_ARTIFACT_SOURCE_SHA }}"
+              echo "variables.FRONTEND_EDGEONE_ARTIFACT_REF=${{ variables.FRONTEND_EDGEONE_ARTIFACT_REF }}"
+              echo "说明：本流水线只编排 frontend EdgeOne 正式站候选发布。"
+              echo "通过生产入口审核后，会并行启动国内/国际两个独立发布流水线。"
+              echo "目标发布流水线自身仍有 EdgeOne 发布 check-in，不会绕过正式发布审批。"
 
-  - name: 1 确认运行 EdgeOne fan-out DAG 探针
+  - name: 1 是否准备进入生产 frontend EdgeOne
     check-in:
       reviews:
         flows:
-          - name: EdgeOne fan-out DAG 探针确认
-            reviewers: [ "skipzhang" ]
+          - name: 是否准备进入生产
+            reviewers: []
         description: |
-          本阶段只确认是否继续执行 BK-CI EdgeOne fan-out DAG 探针。
+          本阶段只确认是否允许本次 frontend 构建进入 EdgeOne 正式站候选发布流程。
 
-          通过后，下一阶段会在 YAML 图中分出两个独立 job：
+          点击通过后，下一阶段会在 YAML 图中分出两个独立 job，分别启动：
           - 发布 frontend EdgeOne 国内正式站
           - 发布 frontend EdgeOne 国际正式站
 
-          PROBE_APPLY 默认为 false，只做 dry-run。
-          如果手动把 PROBE_APPLY 改为 true，会通过 build_start API 发起目标流水线。
-          目标流水线仍然需要各自的人工 check-in 后才会发布 EdgeOne。
-      timeout-hours: 2
+          本阶段不直接发布 EdgeOne。两个目标流水线仍需要各自的人工 check-in 后才会发布正式站。
+      timeout-hours: 24
     jobs:
       approve:
-        name: 等待探针确认
+        name: 确认进入 frontend EdgeOne 生产候选流程
         runs-on:
           self-hosted: true
           pool-name: env
         steps:
-          - name: EdgeOne fan-out DAG 探针已确认
+          - name: frontend EdgeOne 生产候选流程已确认
             shell: bash
             run: |
-              echo "edgeone fan-out DAG probe approved"
+              echo "frontend EdgeOne production candidate creation approved"
 
-  - name: 2 EdgeOne fan-out DAG 探针
+  - name: 2 fan-out 启动 frontend EdgeOne 发布候选
     jobs:
       plan:
-        name: 生成 EdgeOne fan-out DAG 调用计划
+        name: 生成 frontend EdgeOne fan-out 调用计划
         runs-on:
           self-hosted: true
           pool-name: env
@@ -103,18 +98,19 @@ stages:
           - name: 打印调用计划
             shell: bash
             run: |
-              SOURCE_SHA="${{ variables.PROBE_ARTIFACT_SOURCE_SHA }}"
+              SOURCE_SHA="${{ variables.FRONTEND_EDGEONE_ARTIFACT_SOURCE_SHA }}"
               if [[ -z "$SOURCE_SHA" ]]; then
                 SOURCE_SHA="${{ ci.sha }}"
               fi
+              ARTIFACT_REF="${{ variables.FRONTEND_EDGEONE_ARTIFACT_REF }}"
               echo "source_sha=$SOURCE_SHA"
-              echo "apply=${{ variables.PROBE_APPLY }}"
+              echo "artifact_ref=$ARTIFACT_REF"
               echo "fan-out jobs:"
-              echo "  - cn: p-14693956c7f44dadb83d00c523de0dd7"
-              echo "  - intl: p-1538e39f666f4be48ddf7cfea2acb589"
+              echo "  - cn: 发布 frontend EdgeOne 国内正式站"
+              echo "  - intl: 发布 frontend EdgeOne 国际正式站"
 
       cn:
-        name: DAG 探针发起国内 EdgeOne 发布审批流水线
+        name: 启动国内 EdgeOne 发布审批流水线
         depend-on:
           - plan
         runs-on:
@@ -130,20 +126,16 @@ stages:
             env:
               BK_CI_ACCESS_TOKEN: ${{ settings.BK_CI_ACCESS_TOKEN }}
             run: |
-              SOURCE_SHA="${{ variables.PROBE_ARTIFACT_SOURCE_SHA }}"
+              SOURCE_SHA="${{ variables.FRONTEND_EDGEONE_ARTIFACT_SOURCE_SHA }}"
               if [[ -z "$SOURCE_SHA" ]]; then
                 SOURCE_SHA="${{ ci.sha }}"
               fi
-              extra_args=(--target cn)
-              if [[ "${{ variables.PROBE_APPLY }}" != "true" ]]; then
-                extra_args+=(--dry-run)
-              fi
               python3 .ci/runtime/commands/trigger_frontend_edgeone_releases.py \
                 --source-sha "$SOURCE_SHA" \
-                "${extra_args[@]}"
+                --target cn
 
       intl:
-        name: DAG 探针发起国际 EdgeOne 发布审批流水线
+        name: 启动国际 EdgeOne 发布审批流水线
         depend-on:
           - plan
         runs-on:
@@ -159,14 +151,10 @@ stages:
             env:
               BK_CI_ACCESS_TOKEN: ${{ settings.BK_CI_ACCESS_TOKEN }}
             run: |
-              SOURCE_SHA="${{ variables.PROBE_ARTIFACT_SOURCE_SHA }}"
+              SOURCE_SHA="${{ variables.FRONTEND_EDGEONE_ARTIFACT_SOURCE_SHA }}"
               if [[ -z "$SOURCE_SHA" ]]; then
                 SOURCE_SHA="${{ ci.sha }}"
               fi
-              extra_args=(--target intl)
-              if [[ "${{ variables.PROBE_APPLY }}" != "true" ]]; then
-                extra_args+=(--dry-run)
-              fi
               python3 .ci/runtime/commands/trigger_frontend_edgeone_releases.py \
                 --source-sha "$SOURCE_SHA" \
-                "${extra_args[@]}"
+                --target intl

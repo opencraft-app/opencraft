@@ -77,6 +77,10 @@ if: "${{ variables.PIPELINE_MODE == 'build' && ci.branch == 'master' }}"
 - 如果要改 stage `if` 语法，先更新并运行 `.ci/stage-if-probe.yml`，用 live 蓝盾结果验证后再改正式流水线模板。
 - 不要用 stage `if` 直接判断逗号/冒号组成的矩阵字符串是否等于或不等于某个值。`FRONTEND_EDGEONE_RELEASE_MATRIX != none`
   这类条件在探针里无法给出干净的反向验证；正式流水线应使用简单布尔开关控制 stage 可见性，再在 shell 里校验矩阵白名单。
+- 不要把 `manualReviewUserTask@1.*` 当作 job step 级人工审核来嵌入 Stream YAML DAG：
+  - 放在 `runs-on.self-hosted.pool-name: env` 下，live run 会报“插件不能在该环境下运行”。
+  - 放在 `runs-on: agentless` 下，live run 仍会按市场插件执行，并在 `MarketAtomTask.getAtomExecuteFile` 触发 NPE。
+  - 当前已验证可用的 YAML 审核面仍是 stage 级 `check-in`。如果需要“是否准备进入生产”这种共享入口栅栏，使用单独编排流水线做 stage `check-in`，再通过 job DAG fan-out 调用两个独立发布流水线；两个正式站自己的独立审批仍保留在各自发布流水线里。
 
 ### GitOps promote runtime 模型
 

@@ -23,6 +23,11 @@ class EdgeOneReleasePipeline:
 
 
 PIPELINES = {
+    "orchestrator": EdgeOneReleasePipeline(
+        name="frontend EdgeOne 正式站编排",
+        combo="edgeone-release-orchestrator",
+        pipeline_id="p-9f8b7c9ae96448e8b6b03b2318cf6091",
+    ),
     "cn": EdgeOneReleasePipeline(
         name="frontend EdgeOne 国内正式站",
         combo="eo:cn-lightvela-prod",
