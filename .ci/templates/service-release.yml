@@ -327,6 +327,9 @@ stages:
               }
 
               SOURCE_SHA="$(git rev-parse HEAD)"
+              CI_RUNTIME_REF="${CI_RUNTIME_REF:-${{ ci.branch }}}"
+              CI_RUNTIME_COMMIT="${CI_RUNTIME_COMMIT:-$SOURCE_SHA}"
+              export CI_RUNTIME_REF CI_RUNTIME_COMMIT
               PROD_ENVS="$(resolve_prod_promote_envs "${{ parameters.MASTER_BUILD_ENVS }}" "${{ parameters.MASTER_AUTO_PIN_ENVS }}")"
               if [[ -z "$PROD_ENVS" ]]; then
                 echo "no shprod/sgprod env needs production promote"
