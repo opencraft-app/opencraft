@@ -360,6 +360,21 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("创建并等待 migration/readiness Job", workflow_text)
         self.assertIn("--apply", workflow_text)
 
+    def test_lightclaw_auth_prod_replaces_oauth_return_hosts(self) -> None:
+        for env in ["shprod", "sgprod"]:
+            with self.subTest(env=env):
+                workflow = yaml.safe_load(
+                    (REPO_ROOT / f"argocd/services/lightclaw-auth/{env}/kustomization.yaml").read_text()
+                )
+                replacements = workflow.get("replacements") or []
+                self.assertTrue(
+                    any(
+                        (replacement.get("source") or {}).get("fieldPath")
+                        == "data.AUTH_OAUTH_RETURN_TO_ALLOWED_HOSTS"
+                        for replacement in replacements
+                    )
+                )
+
     def test_prod_release_bundles_project_exactly_one_direct_app(self) -> None:
         manifest = load_manifest()
 
