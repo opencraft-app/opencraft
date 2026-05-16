@@ -26,7 +26,7 @@ AUTO_RELEASE_WORKFLOWS = {
     "gateway-dashboard": (".ci/gateway-dashboard.yml", "beijing-sandbox,shprod,sgprod", "gateway-dashboard"),
     "nextgen-dashboard": (".ci/nextgen-dashboard.yml", "beijing-sandbox,shprod,sgprod", "nextgen-dashboard"),
     "payment": (".ci/payment.yml", "beijing-sandbox,shprod,sgprod", "payment"),
-    "sandbox": (".ci/sandbox.yml", "beijing-sandbox,sgprod", "sandbox"),
+    "sandbox": (".ci/sandbox.yml", "beijing-sandbox,shprod,sgprod", "sandbox"),
     "service-gateway": (".ci/service-gateway.yml", "beijing-sandbox,shprod,sgprod", "service-gateway"),
     "subscription": (".ci/subscription.yml", "beijing-sandbox,shprod,sgprod", "subscription"),
     "user-auth": (".ci/lightclaw-auth.yml", "beijing-sandbox,shprod,sgprod", "lightclaw-auth"),
@@ -330,6 +330,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(on_config.get("manual"), "enabled")
         self.assertIn("SOURCE_SHA", workflow.get("variables") or {})
         self.assertNotIn("APPLY", workflow.get("variables") or {})
+        self.assertEqual(((workflow.get("variables") or {}).get("SKIP_IF_NO_MIGRATION_CHANGE") or {}).get("value"), "false")
         self.assertEqual([stage.get("name") for stage in stages], [
             "Dry-run 生产 DB migration",
             "人工确认生产 DB migration",
@@ -341,6 +342,8 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn('reviewers: [ "skipzhang" ]', workflow_text)
         self.assertIn("请先检查上一阶段 dry-run 日志中的执行计划", workflow_text)
         self.assertEqual(workflow_text.count("run_prod_db_migration.py"), 2)
+        self.assertIn("SKIP_IF_NO_MIGRATION_CHANGE", workflow_text)
+        self.assertIn("--skip-if-no-migration-change", workflow_text)
         self.assertIn("Dry-run 并打印生产 DB migration 计划", workflow_text)
         self.assertIn("创建并等待 migration/readiness Job", workflow_text)
         self.assertIn("--apply", workflow_text)
@@ -457,8 +460,22 @@ class ReleaseBundleContractTests(unittest.TestCase):
 
         entry_stage = stage_by_name["是否准备进入生产 ${{ parameters.DISPLAY_NAME }}"]
         promote_stage = stage_by_name["创建生产 promote 候选 ${{ parameters.DISPLAY_NAME }}"]
+        shprod_db_stage = stage_by_name["发起 shprod DB migration ${{ parameters.DISPLAY_NAME }}"]
+        sgprod_db_stage = stage_by_name["发起 sgprod DB migration ${{ parameters.DISPLAY_NAME }}"]
         prod_promote_stage_if = (
             "${{ parameters.ENABLE_MASTER_PROD_PROMOTE }} == true && "
+            "${{ variables.PIPELINE_MODE }} == build && "
+            "${{ ci.branch }} == master"
+        )
+        shprod_db_stage_if = (
+            "${{ parameters.ENABLE_MASTER_PROD_DB_MIGRATION }} == true && "
+            "${{ parameters.ENABLE_MASTER_SHPROD_DB_MIGRATION }} == true && "
+            "${{ variables.PIPELINE_MODE }} == build && "
+            "${{ ci.branch }} == master"
+        )
+        sgprod_db_stage_if = (
+            "${{ parameters.ENABLE_MASTER_PROD_DB_MIGRATION }} == true && "
+            "${{ parameters.ENABLE_MASTER_SGPROD_DB_MIGRATION }} == true && "
             "${{ variables.PIPELINE_MODE }} == build && "
             "${{ ci.branch }} == master"
         )
@@ -472,6 +489,10 @@ class ReleaseBundleContractTests(unittest.TestCase):
             template_text.index("是否准备进入生产 ${{ parameters.DISPLAY_NAME }}"),
             template_text.index("创建生产 promote 候选 ${{ parameters.DISPLAY_NAME }}"),
         )
+        self.assertLess(
+            template_text.index("创建生产 promote 候选 ${{ parameters.DISPLAY_NAME }}"),
+            template_text.index("发起 shprod DB migration ${{ parameters.DISPLAY_NAME }}"),
+        )
         self.assertNotIn("Dry-run 生产 DB migration ${{ parameters.DISPLAY_NAME }}", template_text)
         self.assertNotIn("确认生产 promote ${{ parameters.DISPLAY_NAME }}", template_text)
         self.assertNotIn("执行生产 DB migration ${{ parameters.DISPLAY_NAME }}", template_text)
@@ -483,6 +504,8 @@ class ReleaseBundleContractTests(unittest.TestCase):
             promote_stage.get("if"),
             prod_promote_stage_if,
         )
+        self.assertEqual(shprod_db_stage.get("if"), shprod_db_stage_if)
+        self.assertEqual(sgprod_db_stage.get("if"), sgprod_db_stage_if)
         self.assertIn('if [[ "${{ variables.PIPELINE_MODE }}" != "build" ]]; then', template_text)
         self.assertIn('if [[ "${{ ci.branch }}" != "master" ]]; then', template_text)
         self.assertNotIn("csv_contains()", template_text)
@@ -502,8 +525,18 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn('PROMOTE_BUNDLE_SCRIPT="$RUNTIME_SNAPSHOT/.ci/runtime/promote_bundle_image_to_gitops.sh"', template_text)
         self.assertIn('bash "$PROMOTE_BUNDLE_SCRIPT"', template_text)
         self.assertIn("RELEASE_IMAGE_DIR=\".ci/.release-images/${{ parameters.SERVICE }}-${{ steps.prepare.outputs.tag }}\"", template_text)
+        self.assertIn("SubPipelineExecStream@1.*", template_text)
+        self.assertEqual(template_text.count('targetPathFromUrl: ".ci/db-migration.yml"'), 2)
+        self.assertIn('key: "SERVICE"', template_text)
+        self.assertIn('value: "${{ parameters.BUNDLE }}"', template_text)
+        self.assertIn('key: "SOURCE_SHA"', template_text)
+        self.assertIn('value: "${{ ci.sha }}"', template_text)
+        self.assertIn('key: "SKIP_IF_NO_MIGRATION_CHANGE"', template_text)
+        self.assertEqual(template_text.count('value: "true"'), 2)
+        self.assertIn('value: "shprod"', template_text)
+        self.assertIn('value: "sgprod"', template_text)
 
-    def test_db_contract_workflows_enable_inline_prod_db_migration(self) -> None:
+    def test_db_contract_workflows_enable_prod_db_migration_child_pipelines(self) -> None:
         for workflow_path in sorted(PROD_DB_MIGRATION_WORKFLOWS):
             with self.subTest(workflow=workflow_path):
                 workflow = yaml.safe_load((REPO_ROOT / workflow_path).read_text()) or {}
