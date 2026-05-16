@@ -16,9 +16,14 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
+from typing import Any
 
+from contracts.bundles import load_bundle, load_manifest
 from contracts.release_plan import plan_release_gates
+from gates import db_contract_verifier
+from harness_ci.secrets import build_secret_manifest, secret_env_ref
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -136,7 +141,7 @@ def resolve_image_override(bundle_service: str, metadata: dict[str, str]) -> str
     return json.loads(metadata["BUILD_IMAGES_JSON"])["images"]["SANDBOX_MIGRATE_IMAGE"]
 
 
-def should_skip_for_no_migration_change(bundle_service: str, env: str, source_sha: str, image_payload: str) -> bool:
+def migration_diff_hint(bundle_service: str, env: str, source_sha: str, image_payload: str) -> dict[str, Any]:
     plan = plan_release_gates(
         repo_root=REPO_ROOT,
         bundle_manifest=RUNTIME_DIR / "release-bundles.manifest",
@@ -147,16 +152,228 @@ def should_skip_for_no_migration_change(bundle_service: str, env: str, source_sh
         pin_targets=bundle_service,
         db_status="unknown",
     )
+    hint = {
+        "db_mode": plan.db_mode,
+        "requires_db_job": plan.requires_db_job,
+        "migration_changed": plan.migration_changed,
+    }
     if plan.db_mode != "migration" or not plan.requires_db_job:
         print(f"skip production DB migration: {bundle_service}/{env} has no migration DB job contract", flush=True)
-        return True
+        hint["has_migration_contract"] = False
+        return hint
+    hint["has_migration_contract"] = True
     if not plan.migration_changed:
         print(
-            f"skip production DB migration: SOURCE_SHA {source_sha} does not change migration paths for {bundle_service}/{env}",
+            f"production DB migration diff hint: SOURCE_SHA {source_sha} does not change migration paths for {bundle_service}/{env}; "
+            "environment DB version will decide whether migration is required",
             flush=True,
         )
-        return True
-    return False
+    else:
+        print(
+            f"production DB migration diff hint: SOURCE_SHA {source_sha} changes migration paths for {bundle_service}/{env}",
+            flush=True,
+        )
+    return hint
+
+
+def load_db_contract(bundle_service: str, env: str) -> dict[str, Any]:
+    manifest = load_manifest(RUNTIME_DIR / "release-bundles.manifest")
+    return dict(load_bundle(manifest, bundle_service, env).db_contract)
+
+
+def build_version_probe_script(verifier: dict[str, Any], expected_version: int) -> str:
+    database_env = str(verifier["database_env"])
+    user_env = str(verifier["user_env"])
+    password_env = str(verifier["password_env"])
+    return "\n".join(
+        [
+            "set -eu",
+            "value() {",
+            '  name="$1"',
+            '  eval "printf \'%s\' \\"\\${${name}:-}\\""',
+            "}",
+            f"db=\"$(value {db_contract_verifier.shell_single_quote(database_env)})\"",
+            f"user=\"$(value {db_contract_verifier.shell_single_quote(user_env)})\"",
+            f"password=\"$(value {db_contract_verifier.shell_single_quote(password_env)})\"",
+            'test -n "${MYSQL_HOST:-}"',
+            'test -n "${MYSQL_PORT:-}"',
+            'test -n "$db"',
+            'test -n "$user"',
+            'test -n "$password"',
+            'mysql_query() { mysql --host="${MYSQL_HOST}" --port="${MYSQL_PORT}" --user="$user" --password="$password" "$db" -Nse "$1"; }',
+            'table_exists="$(mysql_query "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = \'schema_migrations\'")"',
+            'if [ "$table_exists" = "0" ]; then',
+            f'  echo "MIGRATION_VERSION current=0 dirty=false table_exists=false expected={expected_version}"',
+            "  exit 0",
+            "fi",
+            'dirty_count="$(mysql_query "SELECT COUNT(*) FROM schema_migrations WHERE dirty = 1")"',
+            'version="$(mysql_query "SELECT COALESCE(MAX(version), 0) FROM schema_migrations")"',
+            'dirty=false',
+            'if [ "$dirty_count" != "0" ]; then dirty=true; fi',
+            f'echo "MIGRATION_VERSION current=$version dirty=$dirty table_exists=true expected={expected_version}"',
+        ]
+    ) + "\n"
+
+
+def build_version_probe_job(
+    *,
+    service: str,
+    env: str,
+    verifier: dict[str, Any],
+    expected_version: int,
+    env_values: dict[str, str],
+    env_secret_refs: dict[str, tuple[str, str]],
+    node_selector: dict[str, str],
+) -> dict[str, Any]:
+    job_name = f"db-version-{service.replace('_', '-').replace('/', '-')}-{env}-{int(time.time())}"
+    env_from = []
+    if verifier.get("configmap"):
+        env_from.append({"configMapRef": {"name": verifier["configmap"]}})
+    if verifier.get("secret"):
+        env_from.append({"secretRef": {"name": verifier["secret"]}})
+    container: dict[str, Any] = {
+        "name": "probe",
+        "image": verifier.get("image", "mysql:8.0"),
+        "imagePullPolicy": "IfNotPresent",
+        "envFrom": env_from,
+        "command": ["/bin/sh", "-c", build_version_probe_script(verifier, expected_version)],
+    }
+    env_entries = [{"name": key, "value": value} for key, value in sorted(env_values.items())]
+    env_entries.extend(
+        [
+            {"name": key, "valueFrom": secret_env_ref(secret_name, secret_key)}
+            for key, (secret_name, secret_key) in sorted(env_secret_refs.items())
+        ]
+    )
+    if env_entries:
+        container["env"] = env_entries
+    pod_spec: dict[str, Any] = {
+        "restartPolicy": "Never",
+        "containers": [container],
+    }
+    if verifier.get("hostNetwork") or verifier.get("host_network"):
+        pod_spec["hostNetwork"] = True
+        pod_spec["dnsPolicy"] = str(verifier.get("dnsPolicy") or verifier.get("dns_policy") or "ClusterFirstWithHostNet")
+    if node_selector:
+        pod_spec["nodeSelector"] = dict(node_selector)
+    return {
+        "apiVersion": "batch/v1",
+        "kind": "Job",
+        "metadata": {
+            "name": job_name,
+            "namespace": verifier["namespace"],
+            "labels": {
+                "gitops.clawhub.dev/service": service,
+                "gitops.clawhub.dev/env": env,
+                "gitops.clawhub.dev/operation": "db-version-probe",
+                "gitops.clawhub.dev/managed-by": "run_prod_db_migration.py",
+            },
+        },
+        "spec": {
+            "backoffLimit": 0,
+            "ttlSecondsAfterFinished": 300,
+            "template": {"spec": pod_spec},
+        },
+    }
+
+
+def parse_version_probe_logs(logs: str) -> dict[str, Any]:
+    for line in logs.splitlines():
+        if not line.startswith("MIGRATION_VERSION "):
+            continue
+        values: dict[str, Any] = {}
+        for item in line.removeprefix("MIGRATION_VERSION ").split():
+            key, value = item.split("=", 1)
+            if key in {"current", "expected"}:
+                values[key] = int(value)
+            elif key in {"dirty", "table_exists"}:
+                values[key] = value.lower() == "true"
+            else:
+                values[key] = value
+        return values
+    raise ValueError(f"migration version probe output missing MIGRATION_VERSION line:\n{logs}")
+
+
+def probe_db_version(*, source_dir: Path, deploy_root: Path, bundle_service: str, env: str, timeout_seconds: int) -> dict[str, Any]:
+    contract = load_db_contract(bundle_service, env)
+    verifier = contract.get("verifier") or {}
+    if not verifier:
+        raise ValueError(f"bundle {bundle_service} does not define db_contract.verifier")
+    expected_version = db_contract_verifier.max_migration_version(
+        source_dir,
+        str(contract.get("expected_migration_source") or ""),
+    )
+    env_values, node_selector, env_secret_values = db_contract_verifier.resolve_runtime_env(
+        deploy_root,
+        env,
+        verifier,
+        contract,
+    )
+    secret_name = ""
+    env_secret_refs: dict[str, tuple[str, str]] = {}
+    secret_manifest: dict[str, Any] | None = None
+    if env_secret_values:
+        secret_name = f"db-version-{bundle_service.replace('_', '-').replace('/', '-')}-{env}-{int(time.time())}-secrets"
+        secret_manifest = build_secret_manifest(
+            verifier["namespace"],
+            secret_name,
+            env_secret_values,
+            labels={
+                "gitops.clawhub.dev/service": bundle_service,
+                "gitops.clawhub.dev/env": env,
+                "gitops.clawhub.dev/operation": "db-version-probe",
+                "gitops.clawhub.dev/managed-by": "run_prod_db_migration.py",
+            },
+        )
+        env_secret_refs = {key: (secret_name, key) for key in env_secret_values}
+    job = build_version_probe_job(
+        service=bundle_service,
+        env=env,
+        verifier=verifier,
+        expected_version=expected_version,
+        env_values=env_values,
+        env_secret_refs=env_secret_refs,
+        node_selector=node_selector,
+    )
+    manifest = {"apiVersion": "v1", "kind": "List", "items": [secret_manifest, job]} if secret_manifest else job
+    kubeconfig, temp_path = db_contract_verifier.resolve_kubeconfig(deploy_root, env, "DB_JOB_KUBECONFIG_B64")
+    try:
+        db_contract_verifier.apply_manifest(kubeconfig, manifest)
+        status = db_contract_verifier.wait_for_job(kubeconfig, verifier["namespace"], job["metadata"]["name"], timeout_seconds)
+        logs = db_contract_verifier.collect_job_logs(
+            kubeconfig,
+            verifier["namespace"],
+            job["metadata"]["name"],
+            env_secret_values,
+        )
+        if status != "succeeded":
+            raise RuntimeError(f"DB version probe failed: status={status}\n{logs}")
+        probe = parse_version_probe_logs(logs)
+        probe.update(
+            {
+                "expected_source": str(contract.get("expected_migration_source") or ""),
+                "namespace": verifier["namespace"],
+                "job_name": job["metadata"]["name"],
+            }
+        )
+        return probe
+    finally:
+        db_contract_verifier.delete_manifest(kubeconfig, manifest)
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+
+
+def decide_migration(version_probe: dict[str, Any]) -> dict[str, Any]:
+    current = int(version_probe["current"])
+    expected = int(version_probe["expected"])
+    dirty = bool(version_probe["dirty"])
+    if dirty:
+        return {"decision": "block", "reason": f"schema_migrations dirty at version {current}"}
+    if current > expected:
+        return {"decision": "block", "reason": f"database version {current} is newer than source latest {expected}"}
+    if current < expected:
+        return {"decision": "run_migration", "reason": f"database version {current} is behind source latest {expected}"}
+    return {"decision": "skip_migration", "reason": f"database version {current} already matches source latest {expected}"}
 
 
 def add_worktree(path: Path, ref: str) -> None:
@@ -195,8 +412,17 @@ def print_plan(
     tag: str,
     image: str,
     apply: bool,
+    version_probe: dict[str, Any],
+    migration_decision: dict[str, Any],
+    diff_hint: dict[str, Any],
 ) -> None:
-    action = "APPLY: 将创建并等待一次性 migration Job，然后执行 readiness Job" if apply else "DRY-RUN: 只渲染将执行的 migration/readiness Job，不创建集群资源"
+    if apply:
+        action = "APPLY: 已执行只读 DB 版本探测；将创建并等待一次性 migration Job，然后执行 readiness Job"
+    else:
+        action = "DRY-RUN: 已执行只读 DB 版本探测；只渲染后续 migration/readiness Job，不执行 migration"
+    if migration_decision["decision"] == "skip_migration":
+        action = action.replace("migration Job，然后执行 readiness Job", "readiness Job；migration Job 会跳过")
+        action = action.replace("只渲染后续 migration/readiness Job", "只渲染后续 readiness Job；migration Job 会跳过")
     print("=" * 60, flush=True)
     print("生产 DB migration 执行计划", flush=True)
     print(f"action={action}", flush=True)
@@ -206,8 +432,24 @@ def print_plan(
     print(f"source_sha={source_sha}", flush=True)
     print(f"tag={tag}", flush=True)
     print(f"image={image}", flush=True)
+    print(f"diff_migration_changed={str(diff_hint.get('migration_changed')).lower()}", flush=True)
+    print(
+        "db_version_probe="
+        f"current={version_probe['current']} "
+        f"latest={version_probe['expected']} "
+        f"dirty={str(version_probe['dirty']).lower()} "
+        f"table_exists={str(version_probe['table_exists']).lower()} "
+        f"namespace={version_probe.get('namespace', '')} "
+        f"job={version_probe.get('job_name', '')}",
+        flush=True,
+    )
+    print(f"decision={migration_decision['decision']} reason={migration_decision['reason']}", flush=True)
     print("gitops_source=origin/gitops with SOURCE_SHA bundle projection", flush=True)
-    print("说明：SOURCE_SHA 提供 migration 源码和镜像 tag；GitOps 投影后的 worktree 提供生产配置和密钥。", flush=True)
+    print(
+        "说明：SOURCE_SHA 提供 migration 源码和镜像 tag；GitOps 投影后的 worktree 提供生产配置和密钥；"
+        "是否执行 migration 由目标环境 schema_migrations 与源码 latest version 对比决定。",
+        flush=True,
+    )
     print("=" * 60, flush=True)
 
 
@@ -222,6 +464,7 @@ def run_db_jobs(
     image: str,
     timeout_seconds: int,
     apply: bool,
+    run_migration: bool,
 ) -> None:
     db_job_args = [
         PYTHON_BIN,
@@ -273,9 +516,14 @@ def run_db_jobs(
         db_job_args.extend(["--apply", "--wait"])
         verify_args.extend(["--apply", "--wait"])
 
-    run(db_job_args)
+    if run_migration:
+        run(db_job_args)
+    else:
+        print("skip migration Job: target DB schema version already matches source latest version", flush=True)
     run(verify_args)
     for path in ("db-migration-job.json", "db-readiness.json"):
+        if path == "db-migration-job.json" and not run_migration:
+            continue
         print(f"{path}:")
         print(Path(path).read_text())
 
@@ -292,10 +540,8 @@ def main() -> int:
     metadata = resolve_release_metadata(bundle_service, args.env, tag)
     image_payload = metadata["BUILD_IMAGE"]
     image = resolve_image_override(bundle_service, metadata)
-
-    if args.skip_if_no_migration_change and should_skip_for_no_migration_change(
-        bundle_service, args.env, source_sha, image_payload
-    ):
+    diff_hint = migration_diff_hint(bundle_service, args.env, source_sha, image_payload)
+    if not diff_hint.get("has_migration_contract", False):
         return 0
 
     with tempfile.TemporaryDirectory(prefix="prod-db-source-") as source_tmp, tempfile.TemporaryDirectory(
@@ -308,6 +554,28 @@ def main() -> int:
         try:
             add_worktree(source_dir, source_sha)
             project_gitops(bundle_service, args.env, source_sha, gitops_dir)
+            version_probe = probe_db_version(
+                source_dir=source_dir,
+                deploy_root=gitops_dir,
+                bundle_service=bundle_service,
+                env=args.env,
+                timeout_seconds=args.timeout_seconds,
+            )
+            migration_decision = decide_migration(version_probe)
+            if migration_decision["decision"] == "block":
+                print_plan(
+                    db_job_service=db_job_service,
+                    bundle_service=bundle_service,
+                    env=args.env,
+                    source_sha=source_sha,
+                    tag=tag,
+                    image=image,
+                    apply=args.apply,
+                    version_probe=version_probe,
+                    migration_decision=migration_decision,
+                    diff_hint=diff_hint,
+                )
+                raise RuntimeError(f"production DB migration blocked: {migration_decision['reason']}")
             print_plan(
                 db_job_service=db_job_service,
                 bundle_service=bundle_service,
@@ -316,6 +584,9 @@ def main() -> int:
                 tag=tag,
                 image=image,
                 apply=args.apply,
+                version_probe=version_probe,
+                migration_decision=migration_decision,
+                diff_hint=diff_hint,
             )
             run_db_jobs(
                 source_dir=source_dir,
@@ -327,6 +598,7 @@ def main() -> int:
                 image=image,
                 timeout_seconds=args.timeout_seconds,
                 apply=args.apply,
+                run_migration=migration_decision["decision"] == "run_migration",
             )
         finally:
             remove_worktree(source_dir)

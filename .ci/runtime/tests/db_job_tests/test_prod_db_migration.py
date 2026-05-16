@@ -62,35 +62,67 @@ class ProdDbMigrationTests(unittest.TestCase):
             "example.com/sandbox-migrate:tag",
         )
 
-    def test_skip_when_source_sha_does_not_touch_migration_paths(self) -> None:
+    def test_diff_hint_does_not_gate_when_source_sha_does_not_touch_migration_paths(self) -> None:
         with mock.patch.object(
             prod_db_migration,
             "plan_release_gates",
             return_value=SimpleNamespace(db_mode="migration", requires_db_job=True, migration_changed=False),
         ):
-            self.assertTrue(
-                prod_db_migration.should_skip_for_no_migration_change(
-                    "payment",
-                    "shprod",
-                    "abc123",
-                    "example.com/payment:tag",
-                )
+            hint = prod_db_migration.migration_diff_hint(
+                "payment",
+                "shprod",
+                "abc123",
+                "example.com/payment:tag",
             )
 
-    def test_do_not_skip_when_source_sha_touches_migration_paths(self) -> None:
+        self.assertTrue(hint["has_migration_contract"])
+        self.assertFalse(hint["migration_changed"])
+
+    def test_diff_hint_reports_source_sha_touches_migration_paths(self) -> None:
         with mock.patch.object(
             prod_db_migration,
             "plan_release_gates",
             return_value=SimpleNamespace(db_mode="migration", requires_db_job=True, migration_changed=True),
         ):
-            self.assertFalse(
-                prod_db_migration.should_skip_for_no_migration_change(
-                    "payment",
-                    "shprod",
-                    "abc123",
-                    "example.com/payment:tag",
-                )
+            hint = prod_db_migration.migration_diff_hint(
+                "payment",
+                "shprod",
+                "abc123",
+                "example.com/payment:tag",
             )
+
+        self.assertTrue(hint["has_migration_contract"])
+        self.assertTrue(hint["migration_changed"])
+
+    def test_parse_version_probe_logs(self) -> None:
+        parsed = prod_db_migration.parse_version_probe_logs(
+            "noise\nMIGRATION_VERSION current=6 dirty=false table_exists=true expected=7\n"
+        )
+
+        self.assertEqual(parsed["current"], 6)
+        self.assertEqual(parsed["expected"], 7)
+        self.assertFalse(parsed["dirty"])
+        self.assertTrue(parsed["table_exists"])
+
+    def test_decide_migration_runs_when_database_is_behind(self) -> None:
+        decision = prod_db_migration.decide_migration({"current": 6, "expected": 7, "dirty": False})
+
+        self.assertEqual(decision["decision"], "run_migration")
+
+    def test_decide_migration_skips_when_database_matches_source(self) -> None:
+        decision = prod_db_migration.decide_migration({"current": 7, "expected": 7, "dirty": False})
+
+        self.assertEqual(decision["decision"], "skip_migration")
+
+    def test_decide_migration_blocks_dirty_database(self) -> None:
+        decision = prod_db_migration.decide_migration({"current": 7, "expected": 7, "dirty": True})
+
+        self.assertEqual(decision["decision"], "block")
+
+    def test_decide_migration_blocks_database_ahead_of_source(self) -> None:
+        decision = prod_db_migration.decide_migration({"current": 8, "expected": 7, "dirty": False})
+
+        self.assertEqual(decision["decision"], "block")
 
 
 if __name__ == "__main__":
