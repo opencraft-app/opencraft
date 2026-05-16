@@ -197,7 +197,24 @@ class ReleaseGatePlannerTests(unittest.TestCase):
         self.assertTrue(plan.release_dependency_changed)
         self.assertFalse(plan.auto_merge_allowed)
         self.assertFalse(plan.auto_sync_allowed)
-        self.assertIn("same-batch dependency changes", "\n".join(plan.manual_actions))
+        self.assertIn("检测到同批依赖服务变更", "\n".join(plan.manual_actions))
+        self.assertIn("再重试当前服务发布", "\n".join(plan.manual_actions))
+
+    def test_dependency_trigger_marker_does_not_block_service_gateway_auto_sync(self) -> None:
+        with self._repo_with_commit("payment/.ci-trigger") as (repo_root, source_sha):
+            plan = plan_release_gates(
+                repo_root=repo_root,
+                bundle_manifest=REPO_ROOT / ".ci/runtime/release-bundles.manifest",
+                service="service-gateway",
+                env="beijing-sandbox",
+                source_sha=source_sha,
+                image="example.com/service-gateway:test",
+                pin_targets="service-gateway",
+            )
+
+        self.assertFalse(plan.release_dependency_changed)
+        self.assertTrue(plan.auto_merge_allowed)
+        self.assertTrue(plan.auto_sync_allowed)
 
     def _repo_with_commit(self, changed_path: str):
         return TempGitRepo(changed_path)

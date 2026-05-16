@@ -17,6 +17,7 @@ from contracts.bundles import DEFAULT_MANIFEST_PATH, is_playground_env, load_bun
 
 PREPROD_AUTO_SYNC_ENVS = {"beijing-sandbox", "beijing-sandbox-2"}
 PROD_MANUAL_SYNC_ENVS = {"shprod", "sgprod"}
+DEPENDENCY_CHANGE_IGNORED_BASENAMES = {".ci-trigger"}
 
 
 @dataclass(frozen=True)
@@ -105,7 +106,12 @@ def dependency_changed(manifest: dict[str, Any], dependencies: Sequence[str], ch
             prefix = str(bundle.get(key) or "").strip().strip("/")
             if prefix:
                 prefixes.append(prefix + "/")
-    return any(path.startswith(tuple(prefixes)) for path in changed_files) if prefixes else False
+    if not prefixes:
+        return False
+    return any(
+        path.startswith(tuple(prefixes)) and Path(path).name not in DEPENDENCY_CHANGE_IGNORED_BASENAMES
+        for path in changed_files
+    )
 
 
 def plan_release_gates(
@@ -148,11 +154,11 @@ def plan_release_gates(
     pin_target_list = [item.strip() for item in pin_targets.split(",") if item.strip()]
     if dependencies:
         manual_actions.append(
-            f"confirm dependency readiness before sync: {', '.join(dependencies)}"
+            f"确认依赖服务已发布并就绪后再同步当前服务：{', '.join(dependencies)}"
         )
     if release_dependency_changed:
         manual_actions.append(
-            "same-batch dependency changes detected; publish dependency services in an explicit order before syncing this service"
+            "检测到同批依赖服务变更；请等待依赖服务流水线完成并确认环境收敛后，再重试当前服务发布。"
         )
     if requires_db_job and db_status != "passed":
         command = (

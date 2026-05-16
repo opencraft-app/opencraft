@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -29,6 +30,16 @@ from harness_ci.secrets import build_secret_manifest, secret_env_ref
 REPO_ROOT = Path(__file__).resolve().parents[3]
 RUNTIME_DIR = REPO_ROOT / ".ci" / "runtime"
 RUNTIME_COMMAND_DIR = REPO_ROOT / ".ci" / "runtime" / "commands"
+ANSI_RESET = "\033[0m"
+ANSI_BOLD_GREEN = "\033[1;32m"
+ANSI_BOLD_YELLOW = "\033[1;33m"
+ANSI_CYAN = "\033[36m"
+
+
+def color(text: str, code: str) -> str:
+    if os.environ.get("NO_COLOR"):
+        return text
+    return f"{code}{text}{ANSI_RESET}"
 
 
 def resolve_python_bin() -> str:
@@ -181,6 +192,27 @@ def load_db_contract(bundle_service: str, env: str) -> dict[str, Any]:
     return dict(load_bundle(manifest, bundle_service, env).db_contract)
 
 
+def pending_migration_files(repo_root: Path, source: str, current: int, expected: int) -> list[dict[str, Any]]:
+    source_dir = repo_root / source
+    if not source_dir.is_dir() or current >= expected:
+        return []
+    migrations: list[dict[str, Any]] = []
+    for path in sorted(source_dir.glob("*.up.sql")):
+        match = re.match(r"^(\d+)_", path.name)
+        if not match:
+            continue
+        version = int(match.group(1))
+        if current < version <= expected:
+            migrations.append(
+                {
+                    "version": version,
+                    "path": str(path.relative_to(repo_root)),
+                    "sql": path.read_text(),
+                }
+            )
+    return migrations
+
+
 def build_version_probe_script(verifier: dict[str, Any], expected_version: int) -> str:
     database_env = str(verifier["database_env"])
     user_env = str(verifier["user_env"])
@@ -303,6 +335,7 @@ def probe_db_version(*, source_dir: Path, deploy_root: Path, bundle_service: str
         source_dir,
         str(contract.get("expected_migration_source") or ""),
     )
+    expected_source = str(contract.get("expected_migration_source") or "")
     env_values, node_selector, env_secret_values = db_contract_verifier.resolve_runtime_env(
         deploy_root,
         env,
@@ -349,9 +382,16 @@ def probe_db_version(*, source_dir: Path, deploy_root: Path, bundle_service: str
         if status != "succeeded":
             raise RuntimeError(f"DB version probe failed: status={status}\n{logs}")
         probe = parse_version_probe_logs(logs)
+        pending_migrations = pending_migration_files(
+            source_dir,
+            expected_source,
+            int(probe["current"]),
+            expected_version,
+        )
         probe.update(
             {
-                "expected_source": str(contract.get("expected_migration_source") or ""),
+                "expected_source": expected_source,
+                "pending_migrations": pending_migrations,
                 "namespace": verifier["namespace"],
                 "job_name": job["metadata"]["name"],
             }
@@ -374,6 +414,23 @@ def decide_migration(version_probe: dict[str, Any]) -> dict[str, Any]:
     if current < expected:
         return {"decision": "run_migration", "reason": f"database version {current} is behind source latest {expected}"}
     return {"decision": "skip_migration", "reason": f"database version {current} already matches source latest {expected}"}
+
+
+def human_decision_summary(*, apply: bool, version_probe: dict[str, Any], migration_decision: dict[str, Any]) -> str:
+    current = int(version_probe["current"])
+    expected = int(version_probe["expected"])
+    decision = str(migration_decision["decision"])
+    if decision == "run_migration":
+        action = "将执行 migration" if apply else "审批通过后将执行 migration"
+        pending_count = len(version_probe.get("pending_migrations") or [])
+        return (
+            f"结论：目标库当前版本 {current}，源码 latest {expected}；{action}，"
+            f"预计执行 {pending_count} 个 pending SQL，把 schema_migrations 推进到 {expected}。"
+        )
+    if decision == "skip_migration":
+        action = "将跳过 migration" if apply else "审批通过后也会跳过 migration"
+        return f"结论：目标库当前版本 {current} 已等于源码 latest {expected}；{action}，只执行 DB readiness。"
+    return f"结论：阻断生产 DB migration；{migration_decision['reason']}。"
 
 
 def add_worktree(path: Path, ref: str) -> None:
@@ -425,7 +482,10 @@ def print_plan(
         action = action.replace("只渲染后续 migration/readiness Job", "只渲染后续 readiness Job；migration Job 会跳过")
     print("=" * 60, flush=True)
     print("生产 DB migration 执行计划", flush=True)
+    print(human_decision_summary(apply=apply, version_probe=version_probe, migration_decision=migration_decision), flush=True)
     print(f"action={action}", flush=True)
+    if not apply:
+        print("dry_run_safety=本阶段只执行只读 DB 版本探测；migration/readiness 只渲染 JSON，不会创建 Job，不会修改 DB。", flush=True)
     print(f"service={db_job_service}", flush=True)
     print(f"bundle={bundle_service}", flush=True)
     print(f"env={env}", flush=True)
@@ -444,6 +504,18 @@ def print_plan(
         flush=True,
     )
     print(f"decision={migration_decision['decision']} reason={migration_decision['reason']}", flush=True)
+    pending_migrations = version_probe.get("pending_migrations") or []
+    print(f"pending_migration_count={len(pending_migrations)}", flush=True)
+    if pending_migrations:
+        print(color("pending_migrations:", ANSI_BOLD_GREEN), flush=True)
+        for migration in pending_migrations:
+            print(color(f"  - version={migration['version']} path={migration['path']}", ANSI_BOLD_YELLOW), flush=True)
+        print(color("pending_migration_sql:", ANSI_BOLD_GREEN), flush=True)
+        for migration in pending_migrations:
+            print(color(f"----- BEGIN {migration['path']} -----", ANSI_BOLD_YELLOW), flush=True)
+            sql = str(migration.get("sql") or "").rstrip()
+            print(color(sql if sql else "-- empty migration file", ANSI_CYAN), flush=True)
+            print(color(f"----- END {migration['path']} -----", ANSI_BOLD_YELLOW), flush=True)
     print("gitops_source=origin/gitops with SOURCE_SHA bundle projection", flush=True)
     print(
         "说明：SOURCE_SHA 提供 migration 源码和镜像 tag；GitOps 投影后的 worktree 提供生产配置和密钥；"
@@ -517,9 +589,19 @@ def run_db_jobs(
         verify_args.extend(["--apply", "--wait"])
 
     if run_migration:
+        if not apply:
+            print(
+                "dry-run render: migration Job 只渲染；下面命令没有 --apply/--wait，不会创建 migration Job，不会修改 DB。",
+                flush=True,
+            )
         run(db_job_args)
     else:
         print("skip migration Job: target DB schema version already matches source latest version", flush=True)
+    if not apply:
+        print(
+            "dry-run render: DB readiness Job 只渲染；下面命令没有 --apply/--wait，不会创建 readiness Job。",
+            flush=True,
+        )
     run(verify_args)
     for path in ("db-migration-job.json", "db-readiness.json"):
         if path == "db-migration-job.json" and not run_migration:
@@ -607,7 +689,7 @@ def main() -> int:
     if args.apply:
         print("production DB migration completed; continue with GitOps promote/sync after review.")
     else:
-        print("production DB migration dry-run completed; approve the next CI stage to execute.")
+        print("production DB migration dry-run completed; DB mutation has NOT run. Approve the next CI stage only if the plan is expected.")
     return 0
 
 

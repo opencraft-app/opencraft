@@ -264,34 +264,9 @@ class ReleaseBundleContractTests(unittest.TestCase):
         frontend_text = (REPO_ROOT / ".ci/frontend.yml").read_text()
         self.assertIn("SubPipelineExecStream@1.*", frontend_text)
 
-        orchestrator_text = (REPO_ROOT / ".ci/subpipeline-call-probe.yml").read_text()
-        self.assertNotIn("check-in:", orchestrator_text)
-        self.assertNotIn("can-pause-before-run:", orchestrator_text)
-        self.assertNotIn("pause-notice-receivers:", orchestrator_text)
-        self.assertNotIn("trigger_frontend_edgeone_releases.py", orchestrator_text)
-        self.assertIn("SubPipelineExecStream@1.*", orchestrator_text)
-        self.assertIn('targetPathFromUrl: ".ci/frontend-edgeone-lightvela.yml"', orchestrator_text)
-        self.assertIn('targetPathFromUrl: ".ci/frontend-edgeone-lightvela-intl.yml"', orchestrator_text)
-
-    def test_frontend_edgeone_orchestrator_probe_uses_harmless_subpipeline_child(self) -> None:
-        probe_text = (REPO_ROOT / ".ci/frontend-edgeone-orchestrator-probe.yml").read_text()
-        probe = yaml.safe_load(probe_text) or {}
-        child_text = (REPO_ROOT / ".ci/frontend-edgeone-subpipeline-child-probe.yml").read_text()
-
-        self.assertEqual((probe.get(True) or probe.get("on") or {}).get("manual"), "enabled")
-        self.assertIn("ci-probes/frontend-edgeone-orchestrator-probe.trigger", probe_text)
-        self.assertNotIn("check-in:", probe_text)
-        self.assertNotIn("can-pause-before-run:", probe_text)
-        self.assertNotIn("pause-notice-receivers:", probe_text)
-        self.assertIn("depend-on:\n          - plan", probe_text)
-        self.assertIn("SubPipelineExecStream@1.*", probe_text)
-        self.assertIn('targetPathFromUrl: ".ci/frontend-edgeone-subpipeline-child-probe.yml"', probe_text)
-        self.assertIn('value: "cn"', probe_text)
-        self.assertIn('value: "intl"', probe_text)
-        self.assertNotIn("release_frontend_edgeone_artifact.sh", probe_text)
-        self.assertNotIn("trigger_frontend_edgeone_releases.py", probe_text)
-        self.assertNotIn("manualReviewUserTask", probe_text)
-        self.assertIn("只验证 SubPipelineExecStream 参数传递，不发布 EdgeOne", child_text)
+        self.assertFalse((REPO_ROOT / ".ci/subpipeline-call-probe.yml").exists())
+        self.assertFalse((REPO_ROOT / ".ci/frontend-edgeone-orchestrator-probe.yml").exists())
+        self.assertFalse((REPO_ROOT / ".ci/frontend-edgeone-subpipeline-child-probe.yml").exists())
 
     def test_frontend_preview_uses_master_runtime(self) -> None:
         workflow_text = (REPO_ROOT / ".ci/frontend-preview.yml").read_text()

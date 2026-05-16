@@ -124,6 +124,51 @@ class ProdDbMigrationTests(unittest.TestCase):
 
         self.assertEqual(decision["decision"], "block")
 
+    def test_human_decision_summary_makes_dry_run_action_explicit(self) -> None:
+        summary = prod_db_migration.human_decision_summary(
+            apply=False,
+            version_probe={
+                "current": 5,
+                "expected": 7,
+                "dirty": False,
+                "pending_migrations": [
+                    {
+                        "version": 6,
+                        "path": "user/auth/migrations/000006_add_user_realname_history.up.sql",
+                        "sql": "ALTER TABLE users ADD COLUMN realname_history JSON NULL;",
+                    },
+                    {
+                        "version": 7,
+                        "path": "user/auth/migrations/000007_add_impersonation_session_fields.up.sql",
+                        "sql": "ALTER TABLE users ADD COLUMN impersonation_session_id VARCHAR(64) NULL;",
+                    },
+                ],
+            },
+            migration_decision={"decision": "run_migration", "reason": "database version 5 is behind source latest 7"},
+        )
+
+        self.assertIn("目标库当前版本 5", summary)
+        self.assertIn("源码 latest 7", summary)
+        self.assertIn("审批通过后将执行 migration", summary)
+        self.assertIn("预计执行 2 个 pending SQL", summary)
+
+    def test_pending_migration_files_lists_only_up_sql_between_current_and_expected(self) -> None:
+        pending = prod_db_migration.pending_migration_files(
+            REPO_ROOT,
+            "user/auth/migrations",
+            current=5,
+            expected=7,
+        )
+
+        self.assertEqual(
+            [{key: item[key] for key in ("version", "path")} for item in pending],
+            [
+                {"version": 6, "path": "user/auth/migrations/000006_add_user_realname_history.up.sql"},
+                {"version": 7, "path": "user/auth/migrations/000007_add_impersonation_session_fields.up.sql"},
+            ],
+        )
+        self.assertTrue(pending[0]["sql"].strip())
+
 
 if __name__ == "__main__":
     unittest.main()

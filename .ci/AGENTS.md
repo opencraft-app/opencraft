@@ -43,7 +43,7 @@ rg -n "extends|check-in|template|parameters|<keyword>" src/backend/ci/core/commo
 ### 蓝盾 stage `if` 实测规则
 
 当前 Devcloud / 蓝盾 Stream 平台上，stage 级 `if` 不要按 GitHub Actions 的“完整表达式求值”模型理解。
-本仓库通过 `.ci/stage-if-probe.yml` 在 live 蓝盾中实测过：
+本仓库曾通过临时 `stage-if` 探针在 live 蓝盾中实测过：
 
 - 能命中：`if: "${{ variables.PIPELINE_MODE }} == build"`
 - 能命中：`if: "${{ ci.branch }} == master"`
@@ -74,7 +74,7 @@ if: "${{ variables.PIPELINE_MODE == 'build' && ci.branch == 'master' }}"
 - stage `if` 只用于 UI 可见性和减少无意义阶段；不能作为发布安全边界。
 - 关键发布步骤必须继续在 shell 脚本里做 guard，例如检查 `PIPELINE_MODE`、`ci.branch`、目标环境白名单。
 - 审核说明里的 `${{ ... }}` 也会参与模板/运行时替换；不要在说明文本里放未验证的表达式样例。需要展示样例时，用静态文字或拆开写成 `$ {{ ... }}`。
-- 如果要改 stage `if` 语法，先更新并运行 `.ci/stage-if-probe.yml`，用 live 蓝盾结果验证后再改正式流水线模板。
+- 如果要改 stage `if` 语法，先临时新增最小探针并用 live 蓝盾结果验证，再改正式流水线模板；验证完成后删除探针流水线，避免长期噪音入口。
 - 不要用 stage `if` 直接判断逗号/冒号组成的矩阵字符串是否等于或不等于某个值。`FRONTEND_EDGEONE_RELEASE_MATRIX != none`
   这类条件在探针里无法给出干净的反向验证；正式流水线应使用简单布尔开关控制 stage 可见性，再在 shell 里校验矩阵白名单。
 - 不要把 `manualReviewUserTask@1.*` 当作 job step 级人工审核来嵌入 Stream YAML DAG：
@@ -83,7 +83,7 @@ if: "${{ variables.PIPELINE_MODE == 'build' && ci.branch == 'master' }}"
   - `can-pause-before-run` / `pause-notice-receivers` 是 v3 step 字段；当前 `version: v2.0` Stream YAML 会报 schema invalid，不要写进 v2 正式流水线。
   - 当前已验证可用的 YAML 审核面仍是 stage 级 `check-in`。如果需要国内/国际正式站独立审批，不要在编排流水线里加共享 `check-in`；编排流水线只做 job DAG fan-out，两个正式站自己的独立审批保留在各自发布流水线里。
   - `check-in.reviews.flows[*].reviewers` 不能写空数组。live 保存会失败并提示“审核组没有未配置可执行人”。当前 `version: v2.0` 转换路径也不支持可靠的 `groups` 字段；需要配置明确 reviewer 后再用 live 探针验证。
-  - 调整 frontend EdgeOne 编排流水线前，优先用 `.ci/frontend-edgeone-orchestrator-probe.yml` 验证 job fan-out。该探针默认 `PROBE_APPLY=false`，只 dry-run 目标发布调用。
+  - 调整 frontend EdgeOne 编排流水线前，优先用临时 harmless child 探针验证 job fan-out；验证完成后删除探针流水线。
   - 当前平台不识别仓库内 `version: v3.0` 流水线文件。不要为了 `can-pause-before-run` 新增 V3 探针或把正式流水线迁到 V3；
     正式路径继续使用 v2 job DAG fan-out，独立人工确认保留在两个目标发布流水线各自的 `check-in`。
 
