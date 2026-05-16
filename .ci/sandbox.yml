@@ -25,6 +25,7 @@ concurrency:
 
 extends:
   template: service-release.yml
+  # Refresh compiled Stream pipeline after service-release template changes.
   parameters:
     SERVICE: sandbox
     BUNDLE: sandbox
