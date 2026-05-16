@@ -33,8 +33,6 @@ secretGenerator:
     envs:
       - generated/service-gateway-runtime-secrets.env
 
-generatorOptions:
-  disableNameSuffixHash: true
 
 replacements:
   - source:
