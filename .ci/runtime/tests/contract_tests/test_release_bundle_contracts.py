@@ -151,7 +151,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
     def test_sandbox_image_targets_match_platform_env_files(self) -> None:
         manifest = load_manifest()
 
-        for env in ["beijing-sandbox", "beijing-sandbox-2", "sgprod"]:
+        for env in ["beijing-sandbox", "beijing-sandbox-2", "shprod", "sgprod"]:
             with self.subTest(env=env):
                 bundle = require_build_metadata(load_bundle(manifest, "sandbox", env))
                 image_keys = {target.image_key for target in bundle.image_targets}
@@ -164,6 +164,14 @@ class ReleaseBundleContractTests(unittest.TestCase):
 
                 self.assertEqual(len(image_keys), 5)
                 self.assertTrue(image_keys <= env_keys)
+
+    def test_auto_release_master_envs_have_build_contracts(self) -> None:
+        manifest = load_manifest()
+
+        for bundle_name, (_, master_build_envs, _) in AUTO_RELEASE_WORKFLOWS.items():
+            for env in master_build_envs.split(","):
+                with self.subTest(bundle=bundle_name, env=env):
+                    require_build_metadata(load_bundle(manifest, bundle_name, env))
 
     def test_gateway_release_bundles_are_independent(self) -> None:
         manifest = load_manifest()
