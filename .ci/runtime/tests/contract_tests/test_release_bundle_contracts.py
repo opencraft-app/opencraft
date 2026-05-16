@@ -543,6 +543,8 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("RELEASE_IMAGE_DIR=\".ci/.release-images/${{ parameters.SERVICE }}-${{ steps.prepare.outputs.tag }}\"", template_text)
         self.assertIn("SubPipelineExecStream@1.*", template_text)
         self.assertEqual(template_text.count('targetPathFromUrl: ".ci/db-migration.yml"'), 2)
+        self.assertIn('buildInfo: "shprod DB migration: ${{ parameters.BUNDLE }} @ ${{ ci.sha }}"', template_text)
+        self.assertIn('buildInfo: "sgprod DB migration: ${{ parameters.BUNDLE }} @ ${{ ci.sha }}"', template_text)
         self.assertIn('key: "SERVICE"', template_text)
         self.assertIn('value: "${{ parameters.BUNDLE }}"', template_text)
         self.assertIn('key: "SOURCE_SHA"', template_text)

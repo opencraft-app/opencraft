@@ -338,7 +338,7 @@ stages:
               repositoryFromUrl: "https://git.woa.com/wisp/mono2.git"
               targetBranchFromUrl: "master"
               targetPathFromUrl: ".ci/db-migration.yml"
-              buildInfo: ""
+              buildInfo: "shprod DB migration: ${{ parameters.BUNDLE }} @ ${{ ci.sha }}"
               paramsInput:
                 - key: "SERVICE"
                   value: "${{ parameters.BUNDLE }}"
@@ -363,7 +363,7 @@ stages:
               repositoryFromUrl: "https://git.woa.com/wisp/mono2.git"
               targetBranchFromUrl: "master"
               targetPathFromUrl: ".ci/db-migration.yml"
-              buildInfo: ""
+              buildInfo: "sgprod DB migration: ${{ parameters.BUNDLE }} @ ${{ ci.sha }}"
               paramsInput:
                 - key: "SERVICE"
                   value: "${{ parameters.BUNDLE }}"
