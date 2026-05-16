@@ -22,6 +22,12 @@ parameters:
   - name: ENABLE_MASTER_PROD_DB_MIGRATION
     type: boolean
     default: false
+  - name: ENABLE_MASTER_SHPROD_DB_MIGRATION
+    type: boolean
+    default: true
+  - name: ENABLE_MASTER_SGPROD_DB_MIGRATION
+    type: boolean
+    default: true
   - name: PLAYGROUND_BUILD_ENVS
     type: string
     default: auto
@@ -313,3 +319,53 @@ stages:
                 echo "create GitOps promote: TARGET_ENV=${TARGET_ENV_NAME} SOURCE_SHA=${SOURCE_SHA}"
                 bash "$PROMOTE_BUNDLE_SCRIPT" "${{ parameters.SERVICE }}" "${{ parameters.BUNDLE }}" "$TARGET_ENV_NAME" "$SOURCE_SHA"
               done <<<"$PROD_ENVS"
+  - name: 发起 shprod DB migration ${{ parameters.DISPLAY_NAME }}
+    if: "${{ parameters.ENABLE_MASTER_PROD_DB_MIGRATION }} == true && ${{ parameters.ENABLE_MASTER_SHPROD_DB_MIGRATION }} == true && ${{ variables.PIPELINE_MODE }} == build && ${{ ci.branch }} == master"
+    jobs:
+      trigger:
+        name: 发起 ${{ parameters.DISPLAY_NAME }} shprod DB migration 审批流水线
+        steps:
+          - name: 调用 shprod 生产 DB migration 子流水线
+            uses: "SubPipelineExecStream@1.*"
+            with:
+              repositoryType: "URL"
+              repositoryFromUrl: "https://git.woa.com/wisp/mono2.git"
+              targetBranchFromUrl: "master"
+              targetPathFromUrl: ".ci/db-migration.yml"
+              buildInfo: ""
+              paramsInput:
+                - key: "SERVICE"
+                  value: "${{ parameters.BUNDLE }}"
+                - key: "TARGET_ENV"
+                  value: "shprod"
+                - key: "SOURCE_SHA"
+                  value: "${{ ci.sha }}"
+                - key: "TIMEOUT_SECONDS"
+                  value: "1800"
+                - key: "SKIP_IF_NO_MIGRATION_CHANGE"
+                  value: "true"
+  - name: 发起 sgprod DB migration ${{ parameters.DISPLAY_NAME }}
+    if: "${{ parameters.ENABLE_MASTER_PROD_DB_MIGRATION }} == true && ${{ parameters.ENABLE_MASTER_SGPROD_DB_MIGRATION }} == true && ${{ variables.PIPELINE_MODE }} == build && ${{ ci.branch }} == master"
+    jobs:
+      trigger:
+        name: 发起 ${{ parameters.DISPLAY_NAME }} sgprod DB migration 审批流水线
+        steps:
+          - name: 调用 sgprod 生产 DB migration 子流水线
+            uses: "SubPipelineExecStream@1.*"
+            with:
+              repositoryType: "URL"
+              repositoryFromUrl: "https://git.woa.com/wisp/mono2.git"
+              targetBranchFromUrl: "master"
+              targetPathFromUrl: ".ci/db-migration.yml"
+              buildInfo: ""
+              paramsInput:
+                - key: "SERVICE"
+                  value: "${{ parameters.BUNDLE }}"
+                - key: "TARGET_ENV"
+                  value: "sgprod"
+                - key: "SOURCE_SHA"
+                  value: "${{ ci.sha }}"
+                - key: "TIMEOUT_SECONDS"
+                  value: "1800"
+                - key: "SKIP_IF_NO_MIGRATION_CHANGE"
+                  value: "true"

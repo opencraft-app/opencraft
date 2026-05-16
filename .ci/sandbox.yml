@@ -30,7 +30,7 @@ extends:
     BUNDLE: sandbox
     DISPLAY_NAME: sandbox
     DEFAULT_TARGET_ENV: beijing-sandbox-2
-    MASTER_BUILD_ENVS: beijing-sandbox,sgprod
+    MASTER_BUILD_ENVS: beijing-sandbox,shprod,sgprod
     MASTER_AUTO_PIN_ENVS: beijing-sandbox
     ENABLE_MASTER_PROD_DB_MIGRATION: true
     PLAYGROUND_BUILD_ENVS: auto
