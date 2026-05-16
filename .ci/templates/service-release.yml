@@ -87,8 +87,11 @@ stages:
                 echo "skip build step because PIPELINE_MODE=promote"
                 exit 0
               fi
-              SHORT_SHA="${{ ci.sha }}"
-              SHORT_SHA="${SHORT_SHA:0:12}"
+              SHORT_SHA='${{ ci.sha }}'
+              if [[ -z "$SHORT_SHA" || "$SHORT_SHA" == *'${{'* ]]; then
+                SHORT_SHA="${BK_CI_GIT_HEAD_COMMITS%%,*}"
+              fi
+              SHORT_SHA="$(printf '%.12s' "$SHORT_SHA")"
               echo "::set-output name=tag::${{ parameters.SERVICE }}-${SHORT_SHA}"
           - name: 构建 ${{ parameters.DISPLAY_NAME }} 镜像矩阵
             shell: bash
@@ -210,7 +213,10 @@ stages:
               fi
               SOURCE_SHA="${{ variables.SOURCE_SHA }}"
               if [[ -z "$SOURCE_SHA" ]]; then
-                SOURCE_SHA="${{ ci.sha }}"
+                SOURCE_SHA='${{ ci.sha }}'
+                if [[ -z "$SOURCE_SHA" || "$SOURCE_SHA" == *'${{'* ]]; then
+                  SOURCE_SHA="${BK_CI_GIT_HEAD_COMMITS%%,*}"
+                fi
                 echo "SOURCE_SHA not provided; default to ci.sha=$SOURCE_SHA"
               fi
               test -n "$SOURCE_SHA"
