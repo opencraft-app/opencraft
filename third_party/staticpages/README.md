@@ -59,3 +59,5 @@ For full setup instructions, see the [Helm Chart documentation](https://github.c
 ## Contributing
 
 Contributions are welcome! Feel free to open issues or pull requests. For larger changes, please start with a discussion in the issue section.
+
+<!-- ci: trigger staticpages build at 2026-05-16T09:28:04+08:00 -->
