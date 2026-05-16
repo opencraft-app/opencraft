@@ -487,7 +487,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
 
         self.assertEqual(entry_stage.get("if"), prod_promote_stage_if)
         self.assertEqual(entry_reviews.get("name"), "是否准备进入生产")
-        self.assertEqual(entry_reviews.get("reviewers"), [])
+        self.assertEqual(entry_reviews.get("reviewers"), ["skipzhang"])
         self.assertIn("本阶段只确认是否允许本次构建进入生产候选流程", template_text)
         self.assertLess(
             template_text.index("是否准备进入生产 ${{ parameters.DISPLAY_NAME }}"),
