@@ -191,6 +191,10 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn('PLAYGROUND_ENV="${PLAYGROUND_ENV#playground/}"', workflow_text)
         self.assertIn('BUILD_ENVS="$(resolve_playground_envs "auto" "$PLAYGROUND_ENV")"', workflow_text)
         self.assertIn('AUTO_PIN_ENVS="$(resolve_playground_envs "auto" "$PLAYGROUND_ENV")"', workflow_text)
+        self.assertIn("SHORT_SHA='${{ ci.sha }}'", workflow_text)
+        self.assertIn('SHORT_SHA="${BK_CI_GIT_HEAD_COMMITS%%,*}"', workflow_text)
+        self.assertNotIn('SHORT_SHA="${{ ci.sha }}"', workflow_text)
+        self.assertNotIn('SHORT_SHA="${SHORT_SHA:0:12}"', workflow_text)
         self.assert_release_entry_targets(
             workflow,
             expected_service="frontend",
@@ -515,6 +519,10 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("promote_bundle_image_to_gitops.sh", template_text)
         self.assertIn("shprod/sgprod 将各自触发独立审批流水线", template_text)
         self.assertIn("构建 ${{ parameters.DISPLAY_NAME }} 镜像矩阵", template_text)
+        self.assertIn("SHORT_SHA='${{ ci.sha }}'", template_text)
+        self.assertIn('SHORT_SHA="${BK_CI_GIT_HEAD_COMMITS%%,*}"', template_text)
+        self.assertNotIn('SHORT_SHA="${{ ci.sha }}"', template_text)
+        self.assertNotIn('SHORT_SHA="${SHORT_SHA:0:12}"', template_text)
         self.assertIn("北京测试 DB 变更检查与 GitOps auto-pin", template_text)
         self.assertIn('BUILD_ONLY=true bash "$REPO_ROOT/.ci/runtime/build_and_promote_to_gitops.sh"', template_text)
         self.assertIn('AUTO_PIN_ONLY=true bash "$REPO_ROOT/.ci/runtime/build_and_promote_to_gitops.sh"', template_text)

@@ -36,7 +36,8 @@ stages:
             run: |
               echo "ci.event=${{ ci.event }}"
               echo "ci.branch=${{ ci.branch }}"
-              echo "ci.sha=${{ ci.sha }}"
+              CI_SHA_FOR_LOG='${{ ci.sha }}'
+              echo "ci.sha=${CI_SHA_FOR_LOG}"
               echo "runtime=hermes"
               echo "base_image_id=img-id352nof"
           - name: 构建 Hermes CVM 镜像

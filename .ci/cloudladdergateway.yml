@@ -36,7 +36,8 @@ stages:
             run: |
               echo "ci.event=${{ ci.event }}"
               echo "ci.branch=${{ ci.branch }}"
-              echo "ci.sha=${{ ci.sha }}"
+              CI_SHA_FOR_LOG='${{ ci.sha }}'
+              echo "ci.sha=${CI_SHA_FOR_LOG}"
           - name: 测试、构建并推送 cloudladdergateway
             shell: bash
             run: |
@@ -79,8 +80,11 @@ stages:
                 fi
               }
 
-              SHORT_SHA="${{ ci.sha }}"
-              SHORT_SHA="${SHORT_SHA:0:12}"
+              SHORT_SHA='${{ ci.sha }}'
+              if [[ -z "$SHORT_SHA" || "$SHORT_SHA" == *'${{'* ]]; then
+                SHORT_SHA="${BK_CI_GIT_HEAD_COMMITS%%,*}"
+              fi
+              SHORT_SHA="$(printf '%.12s' "$SHORT_SHA")"
 
               docker run --rm \
                 -v "$REPO_ROOT:/workspace" \
