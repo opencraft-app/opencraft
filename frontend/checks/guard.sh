@@ -64,4 +64,12 @@ echo "============================================================"
   scripts/release-edgeone-from-artifact.test.ts \
   scripts/check-static-route-conflicts.test.ts
 
+echo "============================================================"
+echo "frontend 约束：运行国内/国际 Vite 打包"
+echo "目的：MR 阶段真实验证 bundler、动态 import 与区域化编译；跳过图片优化以控制 checker 成本"
+echo "============================================================"
+rm -rf dist-ci-cn dist-ci-global
+VITE_AUTH_API_BASE_URL=https://api.lightvela.ai "$PNPM_BIN" exec vite build --mode cn --outDir dist-ci-cn
+VITE_AUTH_API_BASE_URL=https://lightclaw.tech "$PNPM_BIN" exec vite build --mode global --outDir dist-ci-global
+
 echo "frontend 约束：全部通过"

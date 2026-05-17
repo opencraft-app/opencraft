@@ -299,12 +299,15 @@ class ReleaseBundleContractTests(unittest.TestCase):
             workflow_text.index('"$PNPM_BIN" exec vite build --mode global --outDir dist-global'),
         )
 
-    def test_frontend_mr_guard_runs_build_mode_typecheck(self) -> None:
+    def test_frontend_mr_guard_runs_typecheck_and_vite_builds(self) -> None:
         package_json = json.loads((REPO_ROOT / "frontend/package.json").read_text())
         guard_text = (REPO_ROOT / "frontend/checks/guard.sh").read_text()
 
         self.assertEqual(package_json["scripts"]["check"], "tsc -b")
         self.assertIn('"$PNPM_BIN" check', guard_text)
+        self.assertIn('VITE_AUTH_API_BASE_URL=https://api.lightvela.ai "$PNPM_BIN" exec vite build --mode cn --outDir dist-ci-cn', guard_text)
+        self.assertIn('VITE_AUTH_API_BASE_URL=https://lightclaw.tech "$PNPM_BIN" exec vite build --mode global --outDir dist-ci-global', guard_text)
+        self.assertIn("rm -rf dist-ci-cn dist-ci-global", guard_text)
 
     def test_prod_db_migration_workflow_is_manual_dry_run_then_check_in_then_apply(self) -> None:
         workflow_path = REPO_ROOT / ".ci/db-migration.yml"
