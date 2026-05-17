@@ -114,8 +114,8 @@ type Pool struct {
 	Zone                      string     `json:"zone"`
 	// SecurityGroups lists security group IDs applied when provisioning instances for the pool.
 	SecurityGroups       []string          `json:"security_groups,omitempty"`
-	TemplateClassID      string            `json:"template_class_id,omitempty"`
-	SKUID                string            `json:"sku_id,omitempty"`
+	TemplateClassID      string            `json:"template_class_id"`
+	SKUID                string            `json:"sku_id"`
 	CapacityState        PoolCapacityState `json:"capacity_state,omitempty"`
 	MaxCapacity          int               `json:"max_capacity,omitempty"`
 	CapacityBundleID     string            `json:"capacity_bundle_id,omitempty"`

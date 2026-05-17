@@ -37,3 +37,10 @@ export async function PATCH(
 ) {
   return proxyRequest(req, await params);
 }
+
+export async function PUT(
+  req: NextRequest,
+  { params }: { params: Promise<{ path: string[] }> }
+) {
+  return proxyRequest(req, await params);
+}
