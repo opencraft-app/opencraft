@@ -329,8 +329,46 @@ stages:
     if: "${{ parameters.ENABLE_MASTER_PROD_DB_MIGRATION }} == true && ${{ parameters.ENABLE_MASTER_SHPROD_DB_MIGRATION }} == true && ${{ variables.PIPELINE_MODE }} == build && ${{ ci.branch }} == master"
     jobs:
       trigger:
-        name: 发起 ${{ parameters.DISPLAY_NAME }} shprod DB migration 审批流水线
+        name: 判断并发起 ${{ parameters.DISPLAY_NAME }} shprod DB migration 流水线
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        env:
+          SOPS_AGE_KEY: ${{ settings.SOPS_AGE_KEY }}
+          SOPS_AGE_KEY_FILE: ${{ settings.SOPS_AGE_KEY_FILE }}
         steps:
+          - checkout: self
+            name: 拉取代码
+            with:
+              fetchDepth: 0
+          - id: plan
+            name: 判断 shprod 是否会产生实际 DB 变更
+            shell: bash
+            run: |
+              set -euo pipefail
+              source .ci/init.sh
+              ci_init_repo_root
+              ci_ensure_db_job_tools
+              python3 "$REPO_ROOT/.ci/runtime/commands/run_prod_db_migration.py" \
+                --service "${{ parameters.BUNDLE }}" \
+                --env shprod \
+                --source-sha "${{ ci.sha }}" \
+                --timeout-seconds 1800 \
+                --skip-if-no-migration-change \
+                --decision-output shprod-db-migration-decision.json
+              echo "shprod-db-migration-decision.json:"
+              cat shprod-db-migration-decision.json
+              DECISION="$(python3 -c 'import json; print(json.load(open("shprod-db-migration-decision.json", encoding="utf-8"))["decision"])')"
+              case "$DECISION" in
+                run_migration|skip_migration|block)
+                  ;;
+                *)
+                  echo "unexpected shprod DB migration decision: $DECISION" >&2
+                  exit 1
+                  ;;
+              esac
+              echo "::set-output name=decision::$DECISION"
+              echo "shprod DB migration decision=$DECISION"
           - name: 调用 shprod 生产 DB migration 子流水线
             uses: "SubPipelineExecStream@1.*"
             with:
@@ -338,7 +376,7 @@ stages:
               repositoryFromUrl: "https://git.woa.com/wisp/mono2.git"
               targetBranchFromUrl: "master"
               targetPathFromUrl: ".ci/db-migration.yml"
-              buildInfo: "shprod DB migration: ${{ parameters.BUNDLE }} @ ${{ ci.sha }}"
+              buildInfo: "shprod DB migration: ${{ parameters.BUNDLE }} @ ${{ ci.sha }} decision=${{ steps.plan.outputs.decision }}"
               paramsInput:
                 - key: "SERVICE"
                   value: "${{ parameters.BUNDLE }}"
@@ -350,12 +388,52 @@ stages:
                   value: "1800"
                 - key: "SKIP_IF_NO_MIGRATION_CHANGE"
                   value: "true"
+                - key: "MIGRATION_DECISION"
+                  value: "${{ steps.plan.outputs.decision }}"
   - name: 发起 sgprod DB migration ${{ parameters.DISPLAY_NAME }}
     if: "${{ parameters.ENABLE_MASTER_PROD_DB_MIGRATION }} == true && ${{ parameters.ENABLE_MASTER_SGPROD_DB_MIGRATION }} == true && ${{ variables.PIPELINE_MODE }} == build && ${{ ci.branch }} == master"
     jobs:
       trigger:
-        name: 发起 ${{ parameters.DISPLAY_NAME }} sgprod DB migration 审批流水线
+        name: 判断并发起 ${{ parameters.DISPLAY_NAME }} sgprod DB migration 流水线
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        env:
+          SOPS_AGE_KEY: ${{ settings.SOPS_AGE_KEY }}
+          SOPS_AGE_KEY_FILE: ${{ settings.SOPS_AGE_KEY_FILE }}
         steps:
+          - checkout: self
+            name: 拉取代码
+            with:
+              fetchDepth: 0
+          - id: plan
+            name: 判断 sgprod 是否会产生实际 DB 变更
+            shell: bash
+            run: |
+              set -euo pipefail
+              source .ci/init.sh
+              ci_init_repo_root
+              ci_ensure_db_job_tools
+              python3 "$REPO_ROOT/.ci/runtime/commands/run_prod_db_migration.py" \
+                --service "${{ parameters.BUNDLE }}" \
+                --env sgprod \
+                --source-sha "${{ ci.sha }}" \
+                --timeout-seconds 1800 \
+                --skip-if-no-migration-change \
+                --decision-output sgprod-db-migration-decision.json
+              echo "sgprod-db-migration-decision.json:"
+              cat sgprod-db-migration-decision.json
+              DECISION="$(python3 -c 'import json; print(json.load(open("sgprod-db-migration-decision.json", encoding="utf-8"))["decision"])')"
+              case "$DECISION" in
+                run_migration|skip_migration|block)
+                  ;;
+                *)
+                  echo "unexpected sgprod DB migration decision: $DECISION" >&2
+                  exit 1
+                  ;;
+              esac
+              echo "::set-output name=decision::$DECISION"
+              echo "sgprod DB migration decision=$DECISION"
           - name: 调用 sgprod 生产 DB migration 子流水线
             uses: "SubPipelineExecStream@1.*"
             with:
@@ -363,7 +441,7 @@ stages:
               repositoryFromUrl: "https://git.woa.com/wisp/mono2.git"
               targetBranchFromUrl: "master"
               targetPathFromUrl: ".ci/db-migration.yml"
-              buildInfo: "sgprod DB migration: ${{ parameters.BUNDLE }} @ ${{ ci.sha }}"
+              buildInfo: "sgprod DB migration: ${{ parameters.BUNDLE }} @ ${{ ci.sha }} decision=${{ steps.plan.outputs.decision }}"
               paramsInput:
                 - key: "SERVICE"
                   value: "${{ parameters.BUNDLE }}"
@@ -375,3 +453,5 @@ stages:
                   value: "1800"
                 - key: "SKIP_IF_NO_MIGRATION_CHANGE"
                   value: "true"
+                - key: "MIGRATION_DECISION"
+                  value: "${{ steps.plan.outputs.decision }}"

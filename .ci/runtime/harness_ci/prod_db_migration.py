@@ -78,6 +78,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--source-sha", required=True)
     parser.add_argument("--timeout-seconds", type=int, default=1800)
     parser.add_argument("--skip-if-no-migration-change", action="store_true")
+    parser.add_argument(
+        "--expect-decision",
+        choices=("run_migration", "skip_migration", "block"),
+        help="Fail if the live DB version probe produces a different migration decision.",
+    )
+    parser.add_argument(
+        "--decision-output",
+        help="Write the live DB version probe decision as JSON for caller orchestration.",
+    )
     parser.add_argument("--apply", action="store_true")
     return parser.parse_args()
 
@@ -416,6 +425,53 @@ def decide_migration(version_probe: dict[str, Any]) -> dict[str, Any]:
     return {"decision": "skip_migration", "reason": f"database version {current} already matches source latest {expected}"}
 
 
+def write_decision_output(
+    path: str | None,
+    *,
+    service: str,
+    env: str,
+    source_sha: str,
+    decision: str,
+    reason: str,
+    version_probe: dict[str, Any] | None = None,
+    diff_hint: dict[str, Any] | None = None,
+) -> None:
+    if not path:
+        return
+    payload: dict[str, Any] = {
+        "service": service,
+        "env": env,
+        "source_sha": source_sha,
+        "decision": decision,
+        "reason": reason,
+    }
+    if version_probe:
+        payload.update(
+            {
+                "current": version_probe.get("current"),
+                "latest": version_probe.get("expected"),
+                "dirty": version_probe.get("dirty"),
+                "table_exists": version_probe.get("table_exists"),
+                "pending_migration_count": len(version_probe.get("pending_migrations") or []),
+            }
+        )
+    if diff_hint:
+        payload["diff_migration_changed"] = diff_hint.get("migration_changed")
+        payload["db_mode"] = diff_hint.get("db_mode")
+    output_path = Path(path)
+    output_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(f"decision output written: {output_path}", flush=True)
+
+
+def enforce_expected_decision(expected: str | None, actual: str, reason: str) -> None:
+    if not expected:
+        return
+    if expected != actual:
+        raise RuntimeError(
+            f"production DB migration decision mismatch: expected {expected}, actual {actual}; reason={reason}"
+        )
+
+
 def human_decision_summary(*, apply: bool, version_probe: dict[str, Any], migration_decision: dict[str, Any]) -> str:
     current = int(version_probe["current"])
     expected = int(version_probe["expected"])
@@ -614,6 +670,17 @@ def main() -> int:
     args = parse_args()
     if args.skip_if_no_migration_change and args.service not in SUPPORTED_SERVICES:
         print(f"skip production DB migration: {args.service} has no migration DB job runner", flush=True)
+        decision = "skip_migration"
+        reason = f"{args.service} has no migration DB job runner"
+        enforce_expected_decision(getattr(args, "expect_decision", None), decision, reason)
+        write_decision_output(
+            getattr(args, "decision_output", None),
+            service=args.service,
+            env=args.env,
+            source_sha=args.source_sha,
+            decision=decision,
+            reason=reason,
+        )
         return 0
     bundle_service, db_job_service = map_service(args.service)
     source_sha = resolve_source_sha(args.source_sha)
@@ -624,6 +691,18 @@ def main() -> int:
     image = resolve_image_override(bundle_service, metadata)
     diff_hint = migration_diff_hint(bundle_service, args.env, source_sha, image_payload)
     if not diff_hint.get("has_migration_contract", False):
+        decision = "skip_migration"
+        reason = f"{bundle_service}/{args.env} has no migration DB job contract"
+        enforce_expected_decision(getattr(args, "expect_decision", None), decision, reason)
+        write_decision_output(
+            getattr(args, "decision_output", None),
+            service=bundle_service,
+            env=args.env,
+            source_sha=source_sha,
+            decision=decision,
+            reason=reason,
+            diff_hint=diff_hint,
+        )
         return 0
 
     with tempfile.TemporaryDirectory(prefix="prod-db-source-") as source_tmp, tempfile.TemporaryDirectory(
@@ -644,6 +723,21 @@ def main() -> int:
                 timeout_seconds=args.timeout_seconds,
             )
             migration_decision = decide_migration(version_probe)
+            write_decision_output(
+                getattr(args, "decision_output", None),
+                service=bundle_service,
+                env=args.env,
+                source_sha=source_sha,
+                decision=str(migration_decision["decision"]),
+                reason=str(migration_decision["reason"]),
+                version_probe=version_probe,
+                diff_hint=diff_hint,
+            )
+            enforce_expected_decision(
+                getattr(args, "expect_decision", None),
+                str(migration_decision["decision"]),
+                str(migration_decision["reason"]),
+            )
             if migration_decision["decision"] == "block":
                 print_plan(
                     db_job_service=db_job_service,

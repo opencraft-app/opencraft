@@ -1,0 +1,176 @@
+version: v2.0
+
+variables:
+  SERVICE:
+    value: payment
+    readonly: false
+    allow-modify-at-startup: true
+  TARGET_ENV:
+    value: shprod
+    readonly: false
+    allow-modify-at-startup: true
+  SOURCE_SHA:
+    value: ""
+    readonly: false
+    allow-modify-at-startup: true
+  TIMEOUT_SECONDS:
+    value: "1800"
+    readonly: false
+    allow-modify-at-startup: true
+  SKIP_IF_NO_MIGRATION_CHANGE:
+    value: "false"
+    readonly: false
+    allow-modify-at-startup: true
+  MIGRATION_DECISION:
+    value: run_migration
+    readonly: false
+    allow-modify-at-startup: true
+
+stages:
+  - name: Dry-run 生产 DB migration
+    jobs:
+      dry_run:
+        name: 输出将执行的 migration/readiness Job
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        env:
+          SERVICE: ${{ variables.SERVICE }}
+          TARGET_ENV: ${{ variables.TARGET_ENV }}
+          SOURCE_SHA: ${{ variables.SOURCE_SHA }}
+          TIMEOUT_SECONDS: ${{ variables.TIMEOUT_SECONDS }}
+          SKIP_IF_NO_MIGRATION_CHANGE: ${{ variables.SKIP_IF_NO_MIGRATION_CHANGE }}
+          MIGRATION_DECISION: ${{ variables.MIGRATION_DECISION }}
+          SOPS_AGE_KEY: ${{ settings.SOPS_AGE_KEY }}
+          SOPS_AGE_KEY_FILE: ${{ settings.SOPS_AGE_KEY_FILE }}
+        steps:
+          - checkout: self
+            name: 拉取代码
+            with:
+              fetchDepth: 0
+          - name: Dry-run 并打印生产 DB migration 计划
+            shell: bash
+            run: |
+              set -euo pipefail
+              case "${MIGRATION_DECISION:-}" in
+                run_migration|skip_migration|block)
+                  ;;
+                *)
+                  echo "MIGRATION_DECISION must be run_migration, skip_migration, or block; got ${MIGRATION_DECISION:-}" >&2
+                  exit 1
+                  ;;
+              esac
+              source .ci/init.sh
+              ci_init_repo_root
+              ci_ensure_db_job_tools
+              EXTRA_ARGS=(--decision-output db-migration-decision.json --expect-decision "$MIGRATION_DECISION")
+              if [[ "${SKIP_IF_NO_MIGRATION_CHANGE:-false}" == "true" ]]; then
+                EXTRA_ARGS+=(--skip-if-no-migration-change)
+              fi
+              python3 "$REPO_ROOT/.ci/runtime/commands/run_prod_db_migration.py" \
+                --service "$SERVICE" \
+                --env "$TARGET_ENV" \
+                --source-sha "$SOURCE_SHA" \
+                --timeout-seconds "$TIMEOUT_SECONDS" \
+                "${EXTRA_ARGS[@]}"
+              echo "db-migration-decision.json:"
+              cat db-migration-decision.json
+
+  - name: 跳过生产 DB migration
+    if: "${{ variables.MIGRATION_DECISION }} == skip_migration"
+    jobs:
+      skip:
+        name: 记录无实际 DB 变更
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - name: 无实际 DB 变更，跳过人工审核和 apply
+            shell: bash
+            run: |
+              echo "生产 DB migration 已静默跳过：调用方传入 MIGRATION_DECISION=skip_migration，且 Dry-run 阶段已用真实 DB 版本探测校验该决策。"
+              echo "本次不会出现人工审核，不会创建 migration Job。"
+
+  - name: 阻断生产 DB migration
+    if: "${{ variables.MIGRATION_DECISION }} == block"
+    jobs:
+      block:
+        name: 阻断并提示人工处理
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - name: 阻断生产 DB migration
+            shell: bash
+            run: |
+              echo "生产 DB migration 被阻断：调用方传入 MIGRATION_DECISION=block。"
+              echo "请查看 Dry-run 阶段日志中的 dirty/current/latest 或 DB 超前原因。"
+              exit 1
+
+  - name: 人工确认生产 DB migration
+    if: "${{ variables.MIGRATION_DECISION }} == run_migration"
+    check-in:
+      reviews:
+        flows:
+          - name: 确认执行生产 DB migration
+            reviewers: [ "skipzhang" ]
+        description: |
+          请先检查上一阶段 dry-run 日志中的执行计划：
+          1. SERVICE / TARGET_ENV / SOURCE_SHA 是否正确。
+          2. image 是否是 SOURCE_SHA 对应的已构建镜像。
+          3. schema_migrations current/latest 显示本次会产生实际 DB 变更。
+          4. pending SQL 列表和 SQL 正文符合预期。
+          5. 确认后下一阶段会创建一次性生产 migration Job，并等待完成；随后执行 DB readiness Job。
+      timeout-hours: 24
+    jobs:
+      approved:
+        name: 记录人工确认
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - name: 人工确认已通过
+            shell: bash
+            run: |
+              echo "人工确认已通过：production DB migration execution approved."
+
+  - name: 执行生产 DB migration
+    if: "${{ variables.MIGRATION_DECISION }} == run_migration"
+    jobs:
+      apply:
+        name: 创建并等待 migration/readiness Job
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        env:
+          SERVICE: ${{ variables.SERVICE }}
+          TARGET_ENV: ${{ variables.TARGET_ENV }}
+          SOURCE_SHA: ${{ variables.SOURCE_SHA }}
+          TIMEOUT_SECONDS: ${{ variables.TIMEOUT_SECONDS }}
+          SKIP_IF_NO_MIGRATION_CHANGE: ${{ variables.SKIP_IF_NO_MIGRATION_CHANGE }}
+          MIGRATION_DECISION: ${{ variables.MIGRATION_DECISION }}
+          SOPS_AGE_KEY: ${{ settings.SOPS_AGE_KEY }}
+          SOPS_AGE_KEY_FILE: ${{ settings.SOPS_AGE_KEY_FILE }}
+        steps:
+          - checkout: self
+            name: 拉取代码
+            with:
+              fetchDepth: 0
+          - name: 执行生产 DB migration
+            shell: bash
+            run: |
+              set -euo pipefail
+              source .ci/init.sh
+              ci_init_repo_root
+              ci_ensure_db_job_tools
+              EXTRA_ARGS=(--expect-decision "$MIGRATION_DECISION")
+              if [[ "${SKIP_IF_NO_MIGRATION_CHANGE:-false}" == "true" ]]; then
+                EXTRA_ARGS+=(--skip-if-no-migration-change)
+              fi
+              python3 "$REPO_ROOT/.ci/runtime/commands/run_prod_db_migration.py" \
+                --service "$SERVICE" \
+                --env "$TARGET_ENV" \
+                --source-sha "$SOURCE_SHA" \
+                --timeout-seconds "$TIMEOUT_SECONDS" \
+                "${EXTRA_ARGS[@]}" \
+                --apply
