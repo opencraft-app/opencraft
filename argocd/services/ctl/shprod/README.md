@@ -43,3 +43,7 @@
 ## Note
 
 `ctl` 的 steady-state Argo 目录不接 migration job。数据库变更继续走平台级 DB job 入口，而不是常驻 Kustomization。
+
+## CI Trigger Notes
+
+- 2026-05-17T19:37:38Z: trigger ctl release pipeline after DB gate runtime-secret resolver fix.
