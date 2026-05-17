@@ -278,7 +278,7 @@ func (l *logic) RunCreateInstanceTask(ctx pctx.Context, payload *CreateInstanceT
 		return errcode.ErrInstanceStatusInvalid
 	}
 
-	candidates, err := l.resolveCreateCandidatePools(ctx)
+	candidates, err := l.resolveCreateCandidatePools(ctx, payload.SKUID)
 	if err != nil {
 		return err
 	}
@@ -374,7 +374,7 @@ func (l *logic) FinalizeCreateInstanceTaskFailure(ctx pctx.Context, payload *Cre
 	}
 	entity, err := l.instanceDao.GetByInstanceID(ctx, payload.InstanceID)
 	if err == nil && entity.Status == modelinstance.InstanceStatusCreating {
-		metric.RecordInstanceCreate("fail", firstTemplateOrUnknown(l.templateCandidates()), time.Since(entity.CreatedAt).Seconds())
+		metric.RecordInstanceCreate("fail", "unknown", time.Since(entity.CreatedAt).Seconds())
 		if updateErr := l.instanceDao.UpdateStatus(ctx, entity.Id, modelinstance.InstanceStatusFailed); updateErr != nil {
 			l.logger.Warn("update create task instance failed state failed",
 				zap.Error(updateErr),

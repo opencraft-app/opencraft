@@ -323,7 +323,7 @@ func (l *logic) CreateInstance(ctx pctx.Context, req *transport.CreateInstanceRe
 		return nil, errcode.ErrInstanceQuotaExceeded
 	}
 
-	decision, err := l.evaluateCreateChurnGuard(ctx)
+	decision, err := l.evaluateCreateChurnGuard(ctx, l.defaultSKUID)
 	if err != nil {
 		l.rollbackQuota(ctx)
 		return nil, err
@@ -442,72 +442,32 @@ func (l *logic) templateCandidates() []string {
 	return uniqueNonEmptyStringsPreserveOrder(append([]string{l.defaultTemplate}, l.candidateTemplates...))
 }
 
-func (l *logic) resolveCreateCandidatePools(ctx pctx.Context) ([]string, error) {
-	configured := uniqueNonEmptyStringsPreserveOrder(l.templateCandidates())
-	if len(configured) == 0 {
-		l.logger.Warn("no static candidate pools configured, will rely on sandbox runtime list")
-	}
-
+func (l *logic) resolveCreateCandidatePools(ctx pctx.Context, skuID string) ([]string, error) {
 	if l.sandboxAdapter == nil {
-		if len(configured) == 0 {
-			return nil, errcode.Wrap(errcode.ErrSandboxServiceError, "sandbox adapter is unavailable")
-		}
-		return configured, nil
+		return nil, errcode.Wrap(errcode.ErrSandboxServiceError, "sandbox adapter is unavailable")
 	}
 
 	livePoolEntities, err := l.sandboxAdapter.ListPools(ctx)
 	if err != nil {
-		if len(configured) > 0 {
-			l.logger.Warn("list pools failed, fallback to configured candidates", zap.Error(err))
-			return configured, nil
-		}
 		return nil, errcode.Wrap(errcode.ErrSandboxServiceError, "list pools: %v", err)
 	}
 
-	livePools := uniqueNonEmptyStringsPreserveOrder(listPoolIDs(livePoolEntities))
+	livePools := uniqueNonEmptyStringsPreserveOrder(listPoolIDs(livePoolEntities, l.defaultTemplateClass, skuID))
 	if len(livePools) == 0 {
-		if len(configured) > 0 {
-			l.logger.Warn("no live pools returned, fallback to configured candidates")
-			return configured, nil
-		}
-		return nil, errcode.Wrap(errcode.ErrSandboxServiceError, "no sandbox pools available")
+		return nil, errcode.Wrap(errcode.ErrSandboxServiceError, "no active sandbox pools available")
 	}
-
-	liveSet := make(map[string]struct{}, len(livePools))
-	for _, poolID := range livePools {
-		liveSet[poolID] = struct{}{}
-	}
-
-	configuredSet := make(map[string]struct{}, len(configured))
-	for _, poolID := range configured {
-		configuredSet[poolID] = struct{}{}
-	}
-
-	matched := make([]string, 0, len(configured))
-	for _, poolID := range configured {
-		if _, ok := liveSet[poolID]; ok {
-			matched = append(matched, poolID)
-		}
-	}
-	if len(matched) > 0 {
-		return matched, nil
-	}
-
-	if len(configured) == 0 {
-		return livePools, nil
-	}
-
-	l.logger.Warn("configured pools unavailable in live list, fallback to live pool list",
-		zap.Strings("configured_pools", configured),
-		zap.Strings("live_pools", livePools),
-	)
 	return livePools, nil
 }
 
-func listPoolIDs(pools []psandbox.Pool) []string {
+func listPoolIDs(pools []psandbox.Pool, templateClassID, skuID string) []string {
 	seen := make(map[string]struct{}, len(pools))
 	ids := make([]string, 0, len(pools))
+	templateClassID = strings.TrimSpace(templateClassID)
+	skuID = strings.TrimSpace(skuID)
 	for _, pool := range pools {
+		if !poolEligibleForCreate(pool, templateClassID, skuID) {
+			continue
+		}
 		poolID := strings.TrimSpace(pool.ID)
 		if poolID == "" {
 			continue
@@ -519,6 +479,30 @@ func listPoolIDs(pools []psandbox.Pool) []string {
 		ids = append(ids, poolID)
 	}
 	return ids
+}
+
+func poolEligibleForCreate(pool psandbox.Pool, templateClassID, skuID string) bool {
+	if status := strings.TrimSpace(pool.Status); status != "" && status != "active" {
+		return false
+	}
+	switch strings.TrimSpace(pool.CapacityState) {
+	case "", "active":
+	default:
+		return false
+	}
+	if templateClassID != "" {
+		poolTemplateClassID := strings.TrimSpace(pool.TemplateClassID)
+		if poolTemplateClassID != "" && poolTemplateClassID != templateClassID {
+			return false
+		}
+	}
+	if skuID != "" {
+		poolSKUID := strings.TrimSpace(pool.SKUID)
+		if poolSKUID != "" && poolSKUID != skuID {
+			return false
+		}
+	}
+	return true
 }
 
 func (l *logic) createSandboxWithFallback(ctx pctx.Context, instanceID string, skuID string, ordered orderedCandidatePools, timeout int32) (*psandbox.Sandbox, error) {
