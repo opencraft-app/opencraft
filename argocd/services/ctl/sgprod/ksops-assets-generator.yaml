@@ -4,4 +4,4 @@ metadata:
   name: ctl-runtime-assets
 files:
   - ../../../secrets/sgprod/ctl-conf-common.sops.yaml
-  - ../../../secrets/sgprod/ctl-conf-rewrite.sops.yaml
+  - ../../../secrets/sgprod/ctl-runtime-secrets.sops.yaml

@@ -77,6 +77,7 @@ func TestRuntimeSecretEnvOverridesSharedConfig(t *testing.T) {
 	t.Setenv("CTL_MQ_STREAM_KEY", "env-stream-key")
 	t.Setenv("CTL_AIGATEWAY_ADMIN_TOKEN", "env-admin-token")
 	t.Setenv("CTL_AIGATEWAY_INTERNAL_SERVICE_TOKEN", "env-internal-token")
+	t.Setenv("CTL_SHADOW_TOKEN", "env-shadow-token")
 	ServerConf = &GlobalConfig{
 		RedisConfig: &RedisConfig{
 			Pass: util.EncryptString("toml-redis-pass"),
@@ -91,6 +92,10 @@ func TestRuntimeSecretEnvOverridesSharedConfig(t *testing.T) {
 			AiGateway: &AiGatewayConfig{
 				AdminToken:           "toml-admin-token",
 				InternalServiceToken: "toml-internal-token",
+			},
+			Shadow: &ShadowConfig{
+				Token:   "toml-shadow-token",
+				Timeout: 5,
 			},
 		},
 	}
@@ -114,6 +119,9 @@ func TestRuntimeSecretEnvOverridesSharedConfig(t *testing.T) {
 	}
 	if ServerConf.AdapterConfig.AiGateway.InternalServiceToken != "env-internal-token" {
 		t.Fatalf("aigateway internal token was not overridden from env")
+	}
+	if ServerConf.AdapterConfig.Shadow.Token != "env-shadow-token" {
+		t.Fatalf("shadow token was not overridden from env")
 	}
 }
 

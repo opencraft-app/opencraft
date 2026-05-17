@@ -14,8 +14,9 @@
 - `delete-migration-job.yaml`
 - `ksops-assets-generator.yaml`
 - `ctl-platform.env`
+- `ctl-conf-rewrite.yaml`
 - `../../../secrets/sgprod/ctl-conf-common.sops.yaml`
-- `../../../secrets/sgprod/ctl-conf-rewrite.sops.yaml`
+- `../../../secrets/sgprod/ctl-runtime-secrets.sops.yaml`
 
 ## Current Runtime Contract
 
@@ -31,7 +32,16 @@
 加密资源（通过标准 `sops` 文件下发）：
 
 - `ConfigMap/ctl-conf-common`
+- `Secret/ctl-runtime-secrets`
+
+明文资源：
+
 - `ConfigMap/ctl-conf-rewrite`
+
+`ctl-conf-rewrite.yaml` 只放环境策略和非敏感连接信息，例如默认
+`template_class_id` / `sku_id`、服务地址、超时和限额。DB password、Redis
+password、shadow token 等敏感值必须通过 `ctl-runtime-secrets` 注入，不要再写回
+rewrite TOML。
 
 ## Note
 

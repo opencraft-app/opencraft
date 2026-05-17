@@ -181,6 +181,16 @@ func parseAdapterConf() {
 		ServerConf.AdapterConfig.Sandbox.RetryInterval = 1000
 	}
 
+	if ServerConf.AdapterConfig.Shadow == nil {
+		ServerConf.AdapterConfig.Shadow = &ShadowConfig{}
+	}
+	if value := strings.TrimSpace(os.Getenv("CTL_SHADOW_TOKEN")); value != "" {
+		ServerConf.AdapterConfig.Shadow.Token = value
+	}
+	if ServerConf.AdapterConfig.Shadow.Timeout <= 0 {
+		ServerConf.AdapterConfig.Shadow.Timeout = 10
+	}
+
 	if ServerConf.AdapterConfig.AiGateway == nil {
 		ServerConf.AdapterConfig.AiGateway = &AiGatewayConfig{}
 	}
