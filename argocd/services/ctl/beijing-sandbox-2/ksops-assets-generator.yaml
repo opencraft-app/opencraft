@@ -4,5 +4,4 @@ metadata:
   name: ctl-runtime-assets
 files:
   - ../../../secrets/beijing-sandbox-2/ctl-conf-common.sops.yaml
-  - ../../../secrets/beijing-sandbox-2/ctl-conf-rewrite.sops.yaml
   - ../../../secrets/beijing-sandbox-2/ctl-runtime-secrets.sops.yaml

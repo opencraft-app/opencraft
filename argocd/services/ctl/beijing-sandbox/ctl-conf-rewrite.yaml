@@ -1,0 +1,103 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ctl-conf-rewrite
+  namespace: ctl
+  labels:
+    app.kubernetes.io/name: ctl
+    app.kubernetes.io/managed-by: argocd
+  annotations:
+    managed-by: argocd/services/ctl/beijing-sandbox/ctl-conf-rewrite.yaml
+data:
+  server_conf_rewrite.toml: |
+    # CTL 测试环境覆盖配置
+    # 此文件覆盖 common/server_conf.toml 中的同名字段
+    # 密码加密方法：cd ctl && go test -v -test.run=TestCipherEncrypt ./pkg/util/ -args <明文密码>
+
+    [api]
+    enable_inner_sign = false
+
+    [api.instance]
+    default_template_id = "pool-c3"
+    candidate_template_ids = ["pool-c0", "pool-c1", "pool-c2", "pool-c3", "pool-c4", "pool-c5"]
+
+    [db]
+    host = "10.15.224.4"
+    port = 3306
+    user = "root"
+    database = "ctl"
+    rw_timeout_seconds = 10
+
+    [redis]
+    host = "10.15.231.163"
+    port = 6379
+    connect_timeout_seconds = 5
+    rw_timeout_seconds = 5
+    mq_rw_timeout_seconds = 300
+    pool_size = 16
+
+    [mq]
+    stream_key = "ctl"
+    group_name = "ctl_service"
+    max_len = 100000
+
+    [monitor.api]
+    enable_pprof = true
+    port = 9591
+
+    [monitor.service]
+    enable_pprof = true
+    port = 9592
+
+    [monitor.bypass]
+    enable_pprof = false
+    port = 9593
+
+    [adapter.sandbox]
+    baseUrl = "http://sandbox-api.sandbox.svc.cluster.local"
+    processBaseUrl = "http://ingressproxy-router.sandbox.svc.cluster.local"
+    apiKey = ""
+    timeout = 60
+    maxRetries = 3
+    retryInterval = 1000
+
+    # 测试环境不可用的 adapter，设置 use_mock = true
+    [adapter.lightpro]
+    use_mock = true
+
+    [adapter.sts]
+    use_mock = true
+
+    [log.api]
+    enable_color = false
+
+    [log.service]
+    enable_color = false
+
+    [log.bypass]
+    enable_color = false
+
+    [translate]
+    dir = "/usr/local/lightglobal/i18n"
+
+    [tracing]
+    protocol = ""
+    async = false
+    grpc_endpoint = ""
+    http_endpoint = ""
+    tenant_id = "default"
+    service_namespace = "test"
+
+    [misc]
+    region = "ap-beijing"
+    object_id_password_suffix = "test_env"
+    apps_data_dir = "/data/lightglobal/apps"
+    block_bypass_and_service = false
+    use_random_machine_id = true
+    account_area = "0"
+
+    [global_quota]
+    valid_modify_resource_names = ["OPENCLAW_INSTANCE"]
+
+    [global_quota.resource_default_quotas]
+    OPENCLAW_INSTANCE = 5
