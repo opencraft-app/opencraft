@@ -22,7 +22,7 @@ variables:
     readonly: false
     allow-modify-at-startup: true
   MIGRATION_DECISION:
-    value: run_migration
+    value: auto
     readonly: false
     allow-modify-at-startup: true
 
@@ -53,17 +53,25 @@ stages:
             run: |
               set -euo pipefail
               case "${MIGRATION_DECISION:-}" in
+                auto|"")
+                  MIGRATION_DECISION=auto
+                  ;;
                 run_migration|skip_migration|block)
                   ;;
                 *)
-                  echo "MIGRATION_DECISION must be run_migration, skip_migration, or block; got ${MIGRATION_DECISION:-}" >&2
+                  echo "MIGRATION_DECISION must be auto, run_migration, skip_migration, or block; got ${MIGRATION_DECISION:-}" >&2
                   exit 1
                   ;;
               esac
               source .ci/init.sh
               ci_init_repo_root
               ci_ensure_db_job_tools
-              EXTRA_ARGS=(--decision-output db-migration-decision.json --expect-decision "$MIGRATION_DECISION")
+              EXTRA_ARGS=(--decision-output db-migration-decision.json)
+              if [[ "$MIGRATION_DECISION" == "auto" ]]; then
+                EXTRA_ARGS+=(--fail-if-run-without-expect)
+              else
+                EXTRA_ARGS+=(--expect-decision "$MIGRATION_DECISION")
+              fi
               if [[ "${SKIP_IF_NO_MIGRATION_CHANGE:-false}" == "true" ]]; then
                 EXTRA_ARGS+=(--skip-if-no-migration-change)
               fi

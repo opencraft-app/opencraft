@@ -124,6 +124,103 @@ class ProdDbMigrationTests(unittest.TestCase):
 
         self.assertEqual(decision["decision"], "block")
 
+    def test_expected_decision_allows_matching_live_probe_decision(self) -> None:
+        prod_db_migration.enforce_expected_decision(
+            "skip_migration",
+            "skip_migration",
+            "database version already matches source latest",
+        )
+
+    def test_expected_decision_rejects_mismatched_live_probe_decision(self) -> None:
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "expected run_migration, actual skip_migration",
+        ):
+            prod_db_migration.enforce_expected_decision(
+                "run_migration",
+                "skip_migration",
+                "database version 5 already matches source latest 5",
+            )
+
+    def test_auto_mode_fails_closed_when_live_probe_requires_migration(self) -> None:
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "requires explicit MIGRATION_DECISION=run_migration",
+        ):
+            prod_db_migration.enforce_explicit_run_requirement(
+                True,
+                None,
+                "run_migration",
+                "database version 5 is behind source latest 7",
+            )
+
+    def test_auto_mode_allows_noop_migration_decision(self) -> None:
+        prod_db_migration.enforce_explicit_run_requirement(
+            True,
+            None,
+            "skip_migration",
+            "database version 5 already matches source latest 5",
+        )
+
+    def test_auto_mode_main_prints_plan_before_fail_closed_run_migration(self) -> None:
+        call_order: list[str] = []
+        original_enforce_explicit = prod_db_migration.enforce_explicit_run_requirement
+
+        def record_plan(**_: object) -> None:
+            call_order.append("print_plan")
+
+        def record_enforce(require_explicit: bool, expected: str | None, actual: str, reason: str) -> None:
+            call_order.append("enforce_explicit")
+            original_enforce_explicit(require_explicit, expected, actual, reason)
+
+        with mock.patch.object(
+            prod_db_migration,
+            "parse_args",
+            return_value=SimpleNamespace(
+                service="payment",
+                env="shprod",
+                source_sha="abc123",
+                timeout_seconds=1800,
+                skip_if_no_migration_change=True,
+                expect_decision=None,
+                decision_output=None,
+                fail_if_run_without_expect=True,
+                apply=False,
+            ),
+        ), mock.patch.object(prod_db_migration, "resolve_source_sha", return_value="abc123"), mock.patch.object(
+            prod_db_migration,
+            "resolve_release_metadata",
+            return_value={"BUILD_IMAGE": "example.com/payment:tag"},
+        ), mock.patch.object(
+            prod_db_migration,
+            "migration_diff_hint",
+            return_value={"has_migration_contract": True, "migration_changed": False},
+        ), mock.patch.object(prod_db_migration, "add_worktree"), mock.patch.object(
+            prod_db_migration,
+            "project_gitops",
+        ), mock.patch.object(
+            prod_db_migration,
+            "probe_db_version",
+            return_value={
+                "current": 5,
+                "expected": 7,
+                "dirty": False,
+                "table_exists": True,
+                "pending_migrations": [],
+            },
+        ), mock.patch.object(prod_db_migration, "print_plan", side_effect=record_plan), mock.patch.object(
+            prod_db_migration,
+            "enforce_explicit_run_requirement",
+            side_effect=record_enforce,
+        ), mock.patch.object(prod_db_migration, "run_db_jobs"), mock.patch.object(
+            prod_db_migration,
+            "remove_worktree",
+        ):
+            with self.assertRaisesRegex(RuntimeError, "requires explicit MIGRATION_DECISION=run_migration"):
+                prod_db_migration.main()
+
+        self.assertEqual(call_order, ["print_plan", "enforce_explicit"])
+
     def test_human_decision_summary_makes_dry_run_action_explicit(self) -> None:
         summary = prod_db_migration.human_decision_summary(
             apply=False,
