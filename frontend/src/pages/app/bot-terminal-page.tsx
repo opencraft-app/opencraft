@@ -1,80 +1,31 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { deserialize } from "bson";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { Button } from "@/components/ui/button";
 import { useRepositories } from "@/contexts/repository-context";
 import type { BotTerminalSession } from "@/domain/types";
-
-const DEFAULT_TAT_TERMINAL_TIMEOUT_SECONDS = 3600;
-
-const decodeBase64 = (value: string) => {
-  const binary = atob(value);
-  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
-  return new TextDecoder().decode(bytes);
-};
-
-const encodeBase64 = (value: string) => {
-  const bytes = new TextEncoder().encode(value);
-  let binary = "";
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-  return btoa(binary);
-};
-
-const decodeFrame = async (frame: string | Blob | ArrayBuffer) => {
-  if (typeof frame === "string") {
-    return JSON.parse(frame);
-  }
-
-  if (frame instanceof Blob) {
-    return decodeFrame(await frame.arrayBuffer());
-  }
-
-  const bytes = new Uint8Array(frame);
-  try {
-    return deserialize(bytes);
-  } catch {
-    return JSON.parse(new TextDecoder().decode(bytes));
-  }
-};
-
-const extractTerminalOutput = (message: any): string => {
-  const payload = message?.Data;
-  if (!payload || typeof payload !== "object") {
-    return "";
-  }
-
-  const candidates = [
-    payload.Output,
-    payload.Data,
-    payload?.Data?.Output,
-    payload?.Data?.Data,
-  ];
-
-  for (const candidate of candidates) {
-    if (typeof candidate === "string") {
-      try {
-        return decodeBase64(candidate);
-      } catch {
-        return candidate;
-      }
-    }
-    if (candidate instanceof Uint8Array) {
-      return new TextDecoder().decode(candidate);
-    }
-    if (candidate instanceof ArrayBuffer) {
-      return new TextDecoder().decode(candidate);
-    }
-  }
-
-  return "";
-};
+import type { TencentPtyClient, TencentPtyConnectionState } from "@/lib/tencent-pty-client";
 
 type ConnectionState = "loading" | "bootstrapping" | "authenticating" | "connected" | "closed" | "error";
+
+const mapPtyState = (state: TencentPtyConnectionState): ConnectionState => {
+  switch (state) {
+    case "idle":
+    case "connecting":
+      return "bootstrapping";
+    case "authenticating":
+    case "starting":
+      return "authenticating";
+    case "ready":
+      return "connected";
+    case "closed":
+      return "closed";
+    case "error":
+      return "error";
+  }
+};
 
 export const BotTerminalPage = () => {
   const { id } = useParams<{ id: string }>();
@@ -82,18 +33,11 @@ export const BotTerminalPage = () => {
   const terminalContainerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
-  const socketRef = useRef<WebSocket | null>(null);
-  const authTimerRef = useRef<number | null>(null);
-  const sessionRef = useRef<BotTerminalSession | null>(null);
+  const ptyClientRef = useRef<TencentPtyClient | null>(null);
 
   const [session, setSession] = useState<BotTerminalSession | null>(null);
   const [connectionState, setConnectionState] = useState<ConnectionState>("loading");
   const [error, setError] = useState<string | null>(null);
-  const connectionStateRef = useRef<ConnectionState>("loading");
-
-  useEffect(() => {
-    connectionStateRef.current = connectionState;
-  }, [connectionState]);
 
   useEffect(() => {
     if (!terminalContainerRef.current || terminalRef.current) {
@@ -150,35 +94,12 @@ export const BotTerminalPage = () => {
     terminal.writeln("");
 
     terminal.onData((data) => {
-      const activeSession = sessionRef.current;
-      const socket = socketRef.current;
-      if (!activeSession || !socket || socket.readyState !== WebSocket.OPEN) {
-        return;
-      }
-      socket.send(JSON.stringify({
-        Type: "PtyInput",
-        Data: {
-          SessionId: activeSession.sessionId,
-          Input: encodeBase64(data),
-        },
-      }));
+      ptyClientRef.current?.sendInput(data);
     });
 
     const handleResize = () => {
       refitTerminal();
-      const activeSession = sessionRef.current;
-      const socket = socketRef.current;
-      if (!activeSession || !socket || socket.readyState !== WebSocket.OPEN) {
-        return;
-      }
-      socket.send(JSON.stringify({
-        Type: "PtyResize",
-        Data: {
-          SessionId: activeSession.sessionId,
-          Cols: terminal.cols,
-          Rows: terminal.rows,
-        },
-      }));
+      ptyClientRef.current?.resize(terminal.cols, terminal.rows);
     };
 
     let resizeTimer: number | null = null;
@@ -216,20 +137,8 @@ export const BotTerminalPage = () => {
     let cancelled = false;
 
     const closeSocket = () => {
-      const activeSession = sessionRef.current;
-      const socket = socketRef.current;
-      if (authTimerRef.current !== null) {
-        window.clearTimeout(authTimerRef.current);
-        authTimerRef.current = null;
-      }
-      if (activeSession && socket && socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({
-          Type: "PtyStop",
-          Data: { SessionId: activeSession.sessionId },
-        }));
-      }
-      socket?.close();
-      socketRef.current = null;
+      ptyClientRef.current?.close();
+      ptyClientRef.current = null;
     };
 
     const connect = async () => {
@@ -240,7 +149,6 @@ export const BotTerminalPage = () => {
         if (cancelled) {
           return;
         }
-        sessionRef.current = bootstrap;
         setSession(bootstrap);
 
         const terminal = terminalRef.current;
@@ -249,85 +157,43 @@ export const BotTerminalPage = () => {
         terminal?.writeln(`Connecting bot ${id}...`);
         fitAddon?.fit();
 
-        const socket = new WebSocket(bootstrap.wsUrl);
-        socket.binaryType = "arraybuffer";
-        socketRef.current = socket;
-
-        socket.onopen = () => {
-          setConnectionState("authenticating");
-          socket.send(JSON.stringify({
-            Type: "SessionAuth",
-            Data: {
-              Uin: bootstrap.ownerUin,
-              AppId: bootstrap.appId,
-              InstanceId: bootstrap.instanceId,
-              SessionId: bootstrap.sessionId,
-            },
-          }));
-          authTimerRef.current = window.setTimeout(() => {
-            const timeoutSeconds = bootstrap.timeoutSeconds ?? DEFAULT_TAT_TERMINAL_TIMEOUT_SECONDS;
-            socket.send(JSON.stringify({
-              Type: "PtyStart",
-              Data: {
-                SessionId: bootstrap.sessionId,
-                Cols: terminalRef.current?.cols ?? bootstrap.cols,
-                Rows: terminalRef.current?.rows ?? bootstrap.rows,
-                MaxIdleTime: timeoutSeconds,
-              },
-            }));
-          }, 1000);
-        };
-
-        socket.onmessage = async (event) => {
-          try {
-            const message = await decodeFrame(event.data);
-            switch (message?.Type) {
-              case "PtyReady":
-                setConnectionState("connected");
-                terminalRef.current?.focus();
-                return;
-              case "PtyOutput": {
-                const output = extractTerminalOutput(message);
-                if (output) {
-                  terminalRef.current?.write(output);
-                }
-                return;
-              }
-              case "PtyError":
-              case "Error": {
-                const messageText = message?.Data?.Message || "terminal error";
-                setConnectionState("error");
-                setError(messageText);
-                terminalRef.current?.writeln(`\r\n[error] ${messageText}`);
-                return;
-              }
-              default: {
-                const output = extractTerminalOutput(message);
-                if (output) {
-                  terminalRef.current?.write(output);
-                }
-              }
+        const { TencentPtyClient } = await import("@/lib/tencent-pty-client");
+        if (cancelled) {
+          return;
+        }
+        const ptyClient = new TencentPtyClient(bootstrap, {
+          getDimensions: () => ({
+            cols: terminalRef.current?.cols ?? bootstrap.cols,
+            rows: terminalRef.current?.rows ?? bootstrap.rows,
+          }),
+          onStateChange: (state) => {
+            if (!cancelled) {
+              setConnectionState(mapPtyState(state));
             }
-          } catch (decodeError) {
+          },
+          onReady: () => {
+            terminalRef.current?.focus();
+          },
+          onOutput: (output) => {
+            terminalRef.current?.write(output);
+          },
+          onError: (message) => {
+            if (!cancelled) {
+              setError(message);
+              terminalRef.current?.writeln(`\r\n[error] ${message}`);
+            }
+          },
+          onDecodeError: (decodeError) => {
             terminalRef.current?.writeln(`\r\n[decode-error] ${String(decodeError)}`);
-          }
-        };
-
-        socket.onerror = () => {
-          setConnectionState("error");
-          setError("websocket error");
-          terminalRef.current?.writeln("\r\n[error] websocket error");
-        };
-
-        socket.onclose = (event) => {
-          if (cancelled) {
-            return;
-          }
-          if (connectionStateRef.current !== "error") {
-            setConnectionState("closed");
-          }
-          terminalRef.current?.writeln(`\r\n[closed] code=${event.code}`);
-        };
+          },
+          onClose: (event) => {
+            if (!cancelled) {
+              terminalRef.current?.writeln(`\r\n[closed] code=${event.code}`);
+            }
+          },
+        });
+        ptyClientRef.current = ptyClient;
+        ptyClient.connect();
       } catch (connectError) {
         if (cancelled) {
           return;
@@ -342,7 +208,6 @@ export const BotTerminalPage = () => {
     return () => {
       cancelled = true;
       closeSocket();
-      sessionRef.current = null;
     };
   }, [id, repositories.bots]);
 
