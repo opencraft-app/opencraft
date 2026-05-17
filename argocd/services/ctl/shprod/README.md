@@ -46,4 +46,4 @@
 
 ## CI Trigger Notes
 
-- 2026-05-17T19:37:38Z: trigger ctl release pipeline after DB gate runtime-secret resolver fix.
+- 2026-05-17T19:51:27Z: trigger ctl release pipeline after runtime DB secret plaintext fix.
