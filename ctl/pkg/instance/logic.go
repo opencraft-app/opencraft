@@ -4,6 +4,7 @@ import (
 	stdctx "context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -125,6 +126,8 @@ func NewLogic() Logic {
 		logger = zap.NewNop()
 	}
 	instanceConf := currentInstanceAPIConfig()
+	defaultTemplateClass := defaultTemplateClassIDFromConfig(instanceConf)
+	defaultTemplate := defaultTemplateIDFromConfig(instanceConf)
 	return &logic{
 		instanceDao:            modelfactory.DefaultDaoFactory.InstanceDao(nil),
 		channelLoginSessionDao: modelfactory.DefaultDaoFactory.ChannelLoginSessionDao(nil),
@@ -137,10 +140,10 @@ func NewLogic() Logic {
 		operationHistoryDao:    modelfactory.DefaultDaoFactory.OperationHistoryDao(nil),
 		objectIdLogic:          objectid.NewLogic(),
 		logger:                 logger,
-		defaultTemplateClass:   defaultTemplateClassIDFromConfig(instanceConf),
-		defaultTemplate:        defaultTemplateIDFromConfig(instanceConf),
+		defaultTemplateClass:   defaultTemplateClass,
+		defaultTemplate:        defaultTemplate,
 		defaultSKUID:           defaultSKUIDFromConfig(instanceConf),
-		candidateTemplates:     candidateTemplateIDsFromConfig(instanceConf),
+		candidateTemplates:     candidateTemplateIDsFromConfig(instanceConf, defaultTemplateClass, defaultTemplate),
 		executeTasksInline:     false,
 		weixinHub:              newWeixinLoginHub(),
 		churnGuard:             newCreateChurnGuard(instanceConf, logger),
@@ -176,10 +179,14 @@ func newLogicForTest(instanceDao modelinstance.Dao, quotaDao quota.Dao, sandboxA
 		defaultTemplateClass: strings.TrimSpace(templateClassID),
 		defaultTemplate:      defaultTemplate,
 		defaultSKUID:         defaultSKUIDFromConfig(instanceConf),
-		candidateTemplates:   append([]string(nil), candidateTemplates...),
-		executeTasksInline:   true,
-		weixinHub:            newWeixinLoginHub(),
-		churnGuard:           newCreateChurnGuard(instanceConf, logger),
+		candidateTemplates: filterTemplateCandidatesForTemplateClass(
+			uniqueNonEmptyStringsPreserveOrder(candidateTemplates),
+			strings.TrimSpace(templateClassID),
+			defaultTemplate,
+		),
+		executeTasksInline: true,
+		weixinHub:          newWeixinLoginHub(),
+		churnGuard:         newCreateChurnGuard(instanceConf, logger),
 	}
 }
 
@@ -204,11 +211,38 @@ func defaultSKUIDFromConfig(conf *config.InstanceAPIConfig) string {
 	return strings.TrimSpace(conf.DefaultSKUID)
 }
 
-func candidateTemplateIDsFromConfig(conf *config.InstanceAPIConfig) []string {
+var legacyTemplateAliasPattern = regexp.MustCompile(`^pool-[a-z]?\d+$`)
+
+func candidateTemplateIDsFromConfig(conf *config.InstanceAPIConfig, templateClassID, defaultTemplate string) []string {
 	if conf == nil {
 		return nil
 	}
-	return append([]string(nil), conf.CandidateTemplateIDs...)
+	candidates := uniqueNonEmptyStringsPreserveOrder(conf.CandidateTemplateIDs)
+	return filterTemplateCandidatesForTemplateClass(candidates, strings.TrimSpace(templateClassID), strings.TrimSpace(defaultTemplate))
+}
+
+func filterTemplateCandidatesForTemplateClass(candidates []string, templateClassID, defaultTemplate string) []string {
+	classID := strings.TrimSpace(templateClassID)
+	if classID == "" {
+		return candidates
+	}
+
+	filtered := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" || candidate == classID {
+			continue
+		}
+		if candidate == defaultTemplate {
+			filtered = append(filtered, candidate)
+			continue
+		}
+		if legacyTemplateAliasPattern.MatchString(candidate) {
+			continue
+		}
+		filtered = append(filtered, candidate)
+	}
+	return filtered
 }
 
 func currentInstanceAPIConfig() *config.InstanceAPIConfig {
@@ -255,10 +289,6 @@ func (l *logic) GetUserUsage(ctx pctx.Context) (*transport.UserUsageResponse, er
 func (l *logic) CreateInstance(ctx pctx.Context, req *transport.CreateInstanceRequest) (resp *transport.InstanceResponse, retErr error) {
 	if ctx == nil || strings.TrimSpace(ctx.GetUserID()) == "" {
 		return nil, errcode.ErrInstanceMissingUserID
-	}
-
-	if len(l.templateCandidates()) == 0 {
-		return nil, errcode.Wrap(errcode.ErrInstanceCreationFailed, "default template id is empty")
 	}
 	if req == nil {
 		req = &transport.CreateInstanceRequest{}
@@ -410,6 +440,85 @@ func defaultQuotaTotal(resourceName string) int64 {
 
 func (l *logic) templateCandidates() []string {
 	return uniqueNonEmptyStringsPreserveOrder(append([]string{l.defaultTemplate}, l.candidateTemplates...))
+}
+
+func (l *logic) resolveCreateCandidatePools(ctx pctx.Context) ([]string, error) {
+	configured := uniqueNonEmptyStringsPreserveOrder(l.templateCandidates())
+	if len(configured) == 0 {
+		l.logger.Warn("no static candidate pools configured, will rely on sandbox runtime list")
+	}
+
+	if l.sandboxAdapter == nil {
+		if len(configured) == 0 {
+			return nil, errcode.Wrap(errcode.ErrSandboxServiceError, "sandbox adapter is unavailable")
+		}
+		return configured, nil
+	}
+
+	livePoolEntities, err := l.sandboxAdapter.ListPools(ctx)
+	if err != nil {
+		if len(configured) > 0 {
+			l.logger.Warn("list pools failed, fallback to configured candidates", zap.Error(err))
+			return configured, nil
+		}
+		return nil, errcode.Wrap(errcode.ErrSandboxServiceError, "list pools: %v", err)
+	}
+
+	livePools := uniqueNonEmptyStringsPreserveOrder(listPoolIDs(livePoolEntities))
+	if len(livePools) == 0 {
+		if len(configured) > 0 {
+			l.logger.Warn("no live pools returned, fallback to configured candidates")
+			return configured, nil
+		}
+		return nil, errcode.Wrap(errcode.ErrSandboxServiceError, "no sandbox pools available")
+	}
+
+	liveSet := make(map[string]struct{}, len(livePools))
+	for _, poolID := range livePools {
+		liveSet[poolID] = struct{}{}
+	}
+
+	configuredSet := make(map[string]struct{}, len(configured))
+	for _, poolID := range configured {
+		configuredSet[poolID] = struct{}{}
+	}
+
+	matched := make([]string, 0, len(configured))
+	for _, poolID := range configured {
+		if _, ok := liveSet[poolID]; ok {
+			matched = append(matched, poolID)
+		}
+	}
+	if len(matched) > 0 {
+		return matched, nil
+	}
+
+	if len(configured) == 0 {
+		return livePools, nil
+	}
+
+	l.logger.Warn("configured pools unavailable in live list, fallback to live pool list",
+		zap.Strings("configured_pools", configured),
+		zap.Strings("live_pools", livePools),
+	)
+	return livePools, nil
+}
+
+func listPoolIDs(pools []psandbox.Pool) []string {
+	seen := make(map[string]struct{}, len(pools))
+	ids := make([]string, 0, len(pools))
+	for _, pool := range pools {
+		poolID := strings.TrimSpace(pool.ID)
+		if poolID == "" {
+			continue
+		}
+		if _, ok := seen[poolID]; ok {
+			continue
+		}
+		seen[poolID] = struct{}{}
+		ids = append(ids, poolID)
+	}
+	return ids
 }
 
 func (l *logic) createSandboxWithFallback(ctx pctx.Context, instanceID string, skuID string, ordered orderedCandidatePools, timeout int32) (*psandbox.Sandbox, error) {

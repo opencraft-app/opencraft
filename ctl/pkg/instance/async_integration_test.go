@@ -20,6 +20,7 @@ import (
 	psandbox "ctl/pkg/adapter/sandbox"
 	"ctl/pkg/adapter/shadow"
 	"ctl/pkg/adapter/sts"
+	"ctl/pkg/adapter/trade"
 	"ctl/pkg/adapter/whitelist"
 	"ctl/pkg/config"
 	pctx "ctl/pkg/context"
@@ -323,6 +324,7 @@ func (f *inlineStubAdapterFactory) OpenClawGatewayAdapter() popenclawgateway.Ada
 	return nil
 }
 func (f *inlineStubAdapterFactory) ShadowAdapter() shadow.Adapter { return nil }
+func (f *inlineStubAdapterFactory) TradeAdapter() trade.Adapter   { return nil }
 
 func installInlineStubFactory(sandbox psandbox.Adapter) func() {
 	original := adapterfactory.DefaultAdapterFactory

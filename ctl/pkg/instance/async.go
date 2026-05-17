@@ -278,7 +278,10 @@ func (l *logic) RunCreateInstanceTask(ctx pctx.Context, payload *CreateInstanceT
 		return errcode.ErrInstanceStatusInvalid
 	}
 
-	candidates := l.templateCandidates()
+	candidates, err := l.resolveCreateCandidatePools(ctx)
+	if err != nil {
+		return err
+	}
 	selection := l.selectCreateCandidatePools(ctx, candidates)
 	l.logger.Info("selected sandbox candidate pools for create",
 		zap.String("instance_id", entity.InstanceId),

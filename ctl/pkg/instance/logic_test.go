@@ -32,6 +32,8 @@ type sandboxAdapterStub struct {
 	createResponses    []*psandbox.Sandbox
 	createErr          error
 	createErrors       []error
+	listPoolsResp      []psandbox.Pool
+	listPoolsErr       error
 	createRequests     []*psandbox.CreateSandboxRequest
 	processRequests    []*psandbox.ProcessStartRequest
 	deleteErr          error
@@ -165,7 +167,13 @@ func (s *sandboxAdapterStub) ListSandboxes(context.Context, *psandbox.ListSandbo
 	panic("unexpected call")
 }
 func (s *sandboxAdapterStub) ListPools(context.Context) ([]psandbox.Pool, error) {
-	panic("unexpected call")
+	if s.listPoolsErr != nil {
+		return nil, s.listPoolsErr
+	}
+	if s.listPoolsResp != nil {
+		return s.listPoolsResp, nil
+	}
+	return nil, nil
 }
 func (s *sandboxAdapterStub) ListPoolInstances(context.Context, string) ([]psandbox.PoolInstance, error) {
 	panic("unexpected call")
@@ -608,6 +616,144 @@ func TestCreateInstanceFallsBackToNextTemplateAfterFailure(t *testing.T) {
 	}
 }
 
+func TestCreateInstancePrefersConfiguredCandidatesWhenAvailableInLivePools(t *testing.T) {
+	testutil.NewMySQLDB(t, "..", "..", "migrations")
+
+	ctx := testutil.NewContext(t, "user-1")
+	if err := modelfactory.DefaultDaoFactory.UserResourceQuotaDao(ctx).DB().Create(&quota.Entity{
+		UserID:                 ctx.GetUserID(),
+		ResourceName:           "OPENCLAW_INSTANCE",
+		ResourceKey:            "",
+		ResourceQuotaAvailable: 1,
+		ResourceQuotaTotal:     1,
+	}).Error; err != nil {
+		t.Fatalf("seed quota: %v", err)
+	}
+
+	adapter := &sandboxAdapterStub{
+		listPoolsResp: []psandbox.Pool{
+			{ID: "cfg-live"},
+			{ID: "cfg-primary"},
+		},
+		createResp: &psandbox.Sandbox{SandboxID: "sbx-config-pref"},
+	}
+	logic := instancelogic.NewLogicForTest(
+		modelfactory.DefaultDaoFactory.InstanceDao(ctx),
+		modelfactory.DefaultDaoFactory.UserResourceQuotaDao(ctx),
+		adapter,
+		nil, // aiGatewayAdapter
+		nil, // operationHistoryDao
+		nil,
+		"cfg-primary",
+		"cfg-primary",
+		"cfg-secondary",
+	)
+
+	resp, err := logic.CreateInstance(ctx, &transport.CreateInstanceRequest{})
+	if err != nil {
+		t.Fatalf("create instance with configured preference: %v", err)
+	}
+	if resp.SandboxID != "sbx-config-pref" {
+		t.Fatalf("unexpected sandbox id: %s", resp.SandboxID)
+	}
+	if len(adapter.createRequests) != 1 {
+		t.Fatalf("expected one create attempt, got %d", len(adapter.createRequests))
+	}
+	if adapter.createRequests[0].TemplateID != "cfg-primary" {
+		t.Fatalf("expected configured template to be selected first, got %q", adapter.createRequests[0].TemplateID)
+	}
+}
+
+func TestCreateInstanceFallsBackToLivePoolsWhenConfiguredMissing(t *testing.T) {
+	testutil.NewMySQLDB(t, "..", "..", "migrations")
+
+	ctx := testutil.NewContext(t, "user-1")
+	if err := modelfactory.DefaultDaoFactory.UserResourceQuotaDao(ctx).DB().Create(&quota.Entity{
+		UserID:                 ctx.GetUserID(),
+		ResourceName:           "OPENCLAW_INSTANCE",
+		ResourceKey:            "",
+		ResourceQuotaAvailable: 1,
+		ResourceQuotaTotal:     1,
+	}).Error; err != nil {
+		t.Fatalf("seed quota: %v", err)
+	}
+
+	adapter := &sandboxAdapterStub{
+		listPoolsResp: []psandbox.Pool{
+			{ID: "cfg-live"},
+		},
+		createResp: &psandbox.Sandbox{SandboxID: "sbx-live-fallback"},
+	}
+	logic := instancelogic.NewLogicForTest(
+		modelfactory.DefaultDaoFactory.InstanceDao(ctx),
+		modelfactory.DefaultDaoFactory.UserResourceQuotaDao(ctx),
+		adapter,
+		nil, // aiGatewayAdapter
+		nil, // operationHistoryDao
+		nil,
+		"cfg-primary",
+		"cfg-primary",
+	)
+
+	resp, err := logic.CreateInstance(ctx, &transport.CreateInstanceRequest{})
+	if err != nil {
+		t.Fatalf("create instance with live fallback: %v", err)
+	}
+	if resp.SandboxID != "sbx-live-fallback" {
+		t.Fatalf("unexpected sandbox id: %s", resp.SandboxID)
+	}
+	if len(adapter.createRequests) != 1 {
+		t.Fatalf("expected one create attempt, got %d", len(adapter.createRequests))
+	}
+	if adapter.createRequests[0].TemplateID != "cfg-live" {
+		t.Fatalf("expected live pool fallback template, got %q", adapter.createRequests[0].TemplateID)
+	}
+}
+
+func TestCreateInstanceFallsBackToConfiguredCandidatesWhenListPoolsFails(t *testing.T) {
+	testutil.NewMySQLDB(t, "..", "..", "migrations")
+
+	ctx := testutil.NewContext(t, "user-1")
+	if err := modelfactory.DefaultDaoFactory.UserResourceQuotaDao(ctx).DB().Create(&quota.Entity{
+		UserID:                 ctx.GetUserID(),
+		ResourceName:           "OPENCLAW_INSTANCE",
+		ResourceKey:            "",
+		ResourceQuotaAvailable: 1,
+		ResourceQuotaTotal:     1,
+	}).Error; err != nil {
+		t.Fatalf("seed quota: %v", err)
+	}
+
+	adapter := &sandboxAdapterStub{
+		listPoolsErr: errors.New("list pools failed"),
+		createResp:   &psandbox.Sandbox{SandboxID: "sbx-config-after-fail"},
+	}
+	logic := instancelogic.NewLogicForTest(
+		modelfactory.DefaultDaoFactory.InstanceDao(ctx),
+		modelfactory.DefaultDaoFactory.UserResourceQuotaDao(ctx),
+		adapter,
+		nil, // aiGatewayAdapter
+		nil, // operationHistoryDao
+		nil,
+		"cfg-primary",
+		"cfg-primary",
+	)
+
+	resp, err := logic.CreateInstance(ctx, &transport.CreateInstanceRequest{})
+	if err != nil {
+		t.Fatalf("create instance with pool list fallback: %v", err)
+	}
+	if resp.SandboxID != "sbx-config-after-fail" {
+		t.Fatalf("unexpected sandbox id: %s", resp.SandboxID)
+	}
+	if len(adapter.createRequests) != 1 {
+		t.Fatalf("expected one create attempt, got %d", len(adapter.createRequests))
+	}
+	if adapter.createRequests[0].TemplateID != "cfg-primary" {
+		t.Fatalf("expected configured template fallback, got %q", adapter.createRequests[0].TemplateID)
+	}
+}
+
 func TestCreateInstanceSendsTemplateClassIDAlongsideLegacyTemplateFallback(t *testing.T) {
 	testutil.NewMySQLDB(t, "..", "..", "migrations")
 
@@ -661,6 +807,67 @@ func TestCreateInstanceSendsTemplateClassIDAlongsideLegacyTemplateFallback(t *te
 	}
 	if adapter.createRequests[1].TemplateID != "pool-secondary" {
 		t.Fatalf("unexpected second legacy template id: %s", adapter.createRequests[1].TemplateID)
+	}
+}
+
+func TestCreateInstanceSkipsLegacyTemplateAliasCandidatesInTemplateClassMode(t *testing.T) {
+	testutil.NewMySQLDB(t, "..", "..", "migrations")
+
+	ctx := testutil.NewContext(t, "user-template-class-legacy")
+	if err := modelfactory.DefaultDaoFactory.UserResourceQuotaDao(ctx).DB().Create(&quota.Entity{
+		UserID:                 ctx.GetUserID(),
+		ResourceName:           "OPENCLAW_INSTANCE",
+		ResourceKey:            "",
+		ResourceQuotaAvailable: 1,
+		ResourceQuotaTotal:     1,
+	}).Error; err != nil {
+		t.Fatalf("seed quota: %v", err)
+	}
+
+	adapter := &sandboxAdapterStub{
+		createErrors: []error{
+			errcode.ErrSandboxServiceError,
+			nil,
+		},
+		createResponses: []*psandbox.Sandbox{
+			{SandboxID: "sbx-template-class-legacy-skip"},
+		},
+	}
+	logic := instancelogic.NewLogicForTestWithTemplateClass(
+		modelfactory.DefaultDaoFactory.InstanceDao(ctx),
+		modelfactory.DefaultDaoFactory.UserResourceQuotaDao(ctx),
+		adapter,
+		nil,
+		nil,
+		nil,
+		"openclaw-default",
+		"pool-fallback",
+		"pool-c0",
+		"pool-primary",
+		"pool-c1",
+		"pool-fallback",
+	)
+
+	resp, err := logic.CreateInstance(ctx, &transport.CreateInstanceRequest{})
+	if err != nil {
+		t.Fatalf("create instance with legacy candidates filtered: %v", err)
+	}
+	if resp.SandboxID != "sbx-template-class-legacy-skip" {
+		t.Fatalf("unexpected sandbox id: %s", resp.SandboxID)
+	}
+	if len(adapter.createRequests) != 2 {
+		t.Fatalf("expected legacy candidates to be filtered and fallback to pool-primary, got attempts: %d", len(adapter.createRequests))
+	}
+	if adapter.createRequests[0].TemplateID != "pool-fallback" {
+		t.Fatalf("unexpected first template id: %s", adapter.createRequests[0].TemplateID)
+	}
+	if adapter.createRequests[1].TemplateID != "pool-primary" {
+		t.Fatalf("unexpected second template id: %s", adapter.createRequests[1].TemplateID)
+	}
+	for i, req := range adapter.createRequests {
+		if req.TemplateClassID != "openclaw-default" {
+			t.Fatalf("request %d missing template class id, got %q", i, req.TemplateClassID)
+		}
 	}
 }
 
