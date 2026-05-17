@@ -33,7 +33,6 @@ import { QRCodeSVG } from "qrcode.react";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { deserialize } from "bson";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
@@ -41,7 +40,7 @@ import { cn } from "@/lib/utils";
 import { assetUrl } from "@/lib/asset-url";
 import { useOpenClaw, type OpenClawBot } from "@/contexts/openclaw-context";
 import { useRepositories } from "@/contexts/repository-context";
-import type { BotTerminalSession } from "@/domain/types";
+import type { TencentPtyClient, TencentPtyConnectionState } from "@/lib/tencent-pty-client";
 import { BrandMark } from "@/components/site/brand-mark";
 import { LanguageSwitcher } from "@/components/site/language-switcher";
 import { useT, t as rawT } from "@/i18n/t";
@@ -75,8 +74,6 @@ import {
   type RestartErrors,
 } from "@/pages/marketing/openclaw-restart-gateway";
 import "@tencent/tea-sdk-lightclaw/styles";
-
-const DEFAULT_TAT_TERMINAL_TIMEOUT_SECONDS = 3600;
 
 /* ─── Types ─── */
 
@@ -988,61 +985,24 @@ void SkillSection;
 
 /* ─── Terminal Utilities ─── */
 
-const decodeBase64 = (value: string) => {
-  const binary = atob(value);
-  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
-  return new TextDecoder().decode(bytes);
-};
-
-const encodeBase64 = (value: string) => {
-  const bytes = new TextEncoder().encode(value);
-  let binary = "";
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-  return btoa(binary);
-};
-
-const decodeFrame = async (frame: string | Blob | ArrayBuffer) => {
-  if (typeof frame === "string") {
-    return JSON.parse(frame);
-  }
-  if (frame instanceof Blob) {
-    return decodeFrame(await frame.arrayBuffer());
-  }
-  const bytes = new Uint8Array(frame);
-  try {
-    return deserialize(bytes);
-  } catch {
-    return JSON.parse(new TextDecoder().decode(bytes));
-  }
-};
-
-const extractTerminalOutput = (message: any): string => {
-  const payload = message?.Data;
-  if (!payload || typeof payload !== "object") {
-    return "";
-  }
-  const candidates = [payload.Output, payload.Data, payload?.Data?.Output, payload?.Data?.Data];
-  for (const candidate of candidates) {
-    if (typeof candidate === "string") {
-      try {
-        return decodeBase64(candidate);
-      } catch {
-        return candidate;
-      }
-    }
-    if (candidate instanceof Uint8Array) {
-      return new TextDecoder().decode(candidate);
-    }
-    if (candidate instanceof ArrayBuffer) {
-      return new TextDecoder().decode(candidate);
-    }
-  }
-  return "";
-};
-
 type ConnectionState = "loading" | "bootstrapping" | "authenticating" | "connected" | "closed" | "error";
+
+const mapPtyState = (state: TencentPtyConnectionState): ConnectionState => {
+  switch (state) {
+    case "idle":
+    case "connecting":
+      return "bootstrapping";
+    case "authenticating":
+    case "starting":
+      return "authenticating";
+    case "ready":
+      return "connected";
+    case "closed":
+      return "closed";
+    case "error":
+      return "error";
+  }
+};
 
 /* ─── Terminal Modal ─── */
 
@@ -1052,9 +1012,7 @@ const TerminalModal = ({ botId, botName, onClose }: { botId: string; botName: st
   const terminalContainerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
-  const socketRef = useRef<WebSocket | null>(null);
-  const authTimerRef = useRef<number | null>(null);
-  const sessionRef = useRef<BotTerminalSession | null>(null);
+  const ptyClientRef = useRef<TencentPtyClient | null>(null);
 
   const [connectionState, setConnectionState] = useState<ConnectionState>("loading");
   const [error, setError] = useState<string | null>(null);
@@ -1105,28 +1063,12 @@ const TerminalModal = ({ botId, botName, onClose }: { botId: string; botName: st
     terminal.writeln("");
 
     terminal.onData((data) => {
-      const activeSession = sessionRef.current;
-      const socket = socketRef.current;
-      if (!activeSession || !socket || socket.readyState !== WebSocket.OPEN) {
-        return;
-      }
-      socket.send(JSON.stringify({
-        Type: "PtyInput",
-        Data: { SessionId: activeSession.sessionId, Input: encodeBase64(data) },
-      }));
+      ptyClientRef.current?.sendInput(data);
     });
 
     const handleResize = () => {
       fitAddon.fit();
-      const activeSession = sessionRef.current;
-      const socket = socketRef.current;
-      if (!activeSession || !socket || socket.readyState !== WebSocket.OPEN) {
-        return;
-      }
-      socket.send(JSON.stringify({
-        Type: "PtyResize",
-        Data: { SessionId: activeSession.sessionId, Cols: terminal.cols, Rows: terminal.rows },
-      }));
+      ptyClientRef.current?.resize(terminal.cols, terminal.rows);
     };
 
     window.addEventListener("resize", handleResize);
@@ -1146,17 +1088,8 @@ const TerminalModal = ({ botId, botName, onClose }: { botId: string; botName: st
     let cancelled = false;
 
     const closeSocket = () => {
-      const activeSession = sessionRef.current;
-      const socket = socketRef.current;
-      if (authTimerRef.current !== null) {
-        window.clearTimeout(authTimerRef.current);
-        authTimerRef.current = null;
-      }
-      if (activeSession && socket && socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ Type: "PtyStop", Data: { SessionId: activeSession.sessionId } }));
-      }
-      socket?.close();
-      socketRef.current = null;
+      ptyClientRef.current?.close();
+      ptyClientRef.current = null;
     };
 
     const connect = async () => {
@@ -1167,89 +1100,48 @@ const TerminalModal = ({ botId, botName, onClose }: { botId: string; botName: st
         if (cancelled) {
           return;
         }
-        sessionRef.current = bootstrap;
 
         terminalRef.current?.reset();
         terminalRef.current?.writeln(`Connecting ${botName} (${botId})...`);
         fitAddonRef.current?.fit();
 
-        const socket = new WebSocket(bootstrap.wsUrl);
-        socket.binaryType = "arraybuffer";
-        socketRef.current = socket;
-
-        socket.onopen = () => {
-          setConnectionState("authenticating");
-          socket.send(JSON.stringify({
-            Type: "SessionAuth",
-            Data: {
-              Uin: bootstrap.ownerUin,
-              AppId: bootstrap.appId,
-              InstanceId: bootstrap.instanceId,
-              SessionId: bootstrap.sessionId,
-            },
-          }));
-          authTimerRef.current = window.setTimeout(() => {
-            const timeoutSeconds = bootstrap.timeoutSeconds ?? DEFAULT_TAT_TERMINAL_TIMEOUT_SECONDS;
-            socket.send(JSON.stringify({
-              Type: "PtyStart",
-              Data: {
-                SessionId: bootstrap.sessionId,
-                Cols: terminalRef.current?.cols ?? bootstrap.cols,
-                Rows: terminalRef.current?.rows ?? bootstrap.rows,
-                MaxIdleTime: timeoutSeconds,
-              },
-            }));
-          }, 1000);
-        };
-
-        socket.onmessage = async (event) => {
-          try {
-            const message = await decodeFrame(event.data);
-            switch (message?.Type) {
-              case "PtyReady":
-                setConnectionState("connected");
-                terminalRef.current?.focus();
-                return;
-              case "PtyOutput": {
-                const output = extractTerminalOutput(message);
-                if (output) {
-                  terminalRef.current?.write(output);
-                }
-                return;
-              }
-              case "PtyError":
-              case "Error": {
-                const messageText = message?.Data?.Message || "terminal error";
-                setConnectionState("error");
-                setError(messageText);
-                terminalRef.current?.writeln(`\r\n[error] ${messageText}`);
-                return;
-              }
-              default: {
-                const output = extractTerminalOutput(message);
-                if (output) {
-                  terminalRef.current?.write(output);
-                }
-              }
+        const { TencentPtyClient } = await import("@/lib/tencent-pty-client");
+        if (cancelled) {
+          return;
+        }
+        const ptyClient = new TencentPtyClient(bootstrap, {
+          getDimensions: () => ({
+            cols: terminalRef.current?.cols ?? bootstrap.cols,
+            rows: terminalRef.current?.rows ?? bootstrap.rows,
+          }),
+          onStateChange: (state) => {
+            if (!cancelled) {
+              setConnectionState(mapPtyState(state));
             }
-          } catch (decodeError) {
+          },
+          onReady: () => {
+            terminalRef.current?.focus();
+          },
+          onOutput: (output) => {
+            terminalRef.current?.write(output);
+          },
+          onError: (message) => {
+            if (!cancelled) {
+              setError(message);
+              terminalRef.current?.writeln(`\r\n[error] ${message}`);
+            }
+          },
+          onDecodeError: (decodeError) => {
             terminalRef.current?.writeln(`\r\n[decode-error] ${String(decodeError)}`);
-          }
-        };
-
-        socket.onerror = () => {
-          setConnectionState("error");
-          setError("websocket error");
-          terminalRef.current?.writeln("\r\n[error] websocket error");
-        };
-
-        socket.onclose = (event) => {
-          if (cancelled) {
-            return;
-          }
-          setConnectionState("closed");
-          terminalRef.current?.writeln(`\r\n[closed] code=${event.code}`);
-        };
+          },
+          onClose: (event) => {
+            if (!cancelled) {
+              terminalRef.current?.writeln(`\r\n[closed] code=${event.code}`);
+            }
+          },
+        });
+        ptyClientRef.current = ptyClient;
+        ptyClient.connect();
       } catch (connectError) {
         if (cancelled) {
           return;
@@ -1264,7 +1156,6 @@ const TerminalModal = ({ botId, botName, onClose }: { botId: string; botName: st
     return () => {
       cancelled = true;
       closeSocket();
-      sessionRef.current = null;
     };
   }, [botId, botName, repositories.bots]);
 
