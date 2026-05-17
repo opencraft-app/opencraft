@@ -212,6 +212,13 @@ class ReleaseBundleContractTests(unittest.TestCase):
 
     def test_frontend_workflow_uses_native_edgeone_subpipeline_fanout(self) -> None:
         workflow_text = (REPO_ROOT / ".ci/frontend.yml").read_text()
+        workflow = yaml.safe_load(workflow_text) or {}
+        stages = workflow.get("stages") or []
+        stage_by_name = {stage.get("name"): stage for stage in stages}
+        approval_stage = stage_by_name["确认发起 frontend EdgeOne 正式站发布候选"]
+        fanout_stage = stage_by_name["自动发起 frontend EdgeOne 正式站发布候选"]
+        prod_edgeone_if = "${{ variables.PIPELINE_MODE }} == build && ${{ ci.branch }} == master"
+        approval_reviews = (((approval_stage.get("check-in") or {}).get("reviews") or {}).get("flows") or [])[0]
 
         self.assertNotIn("FRONTEND_EDGEONE_RELEASE_ENABLED", workflow_text)
         self.assertNotIn("FRONTEND_EDGEONE_RELEASE_MATRIX", workflow_text)
@@ -221,6 +228,12 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertNotIn("trigger_frontend_edgeone_releases.py", workflow_text)
         self.assertNotIn("--target orchestrator", workflow_text)
         self.assertNotIn("BK_CI_ACCESS_TOKEN", workflow_text)
+        self.assertEqual(approval_stage.get("if"), prod_edgeone_if)
+        self.assertEqual(fanout_stage.get("if"), prod_edgeone_if)
+        self.assertEqual(approval_reviews.get("name"), "确认发起 frontend EdgeOne 正式站发布候选")
+        self.assertEqual(approval_reviews.get("reviewers"), ["skipzhang"])
+        self.assertIn("本阶段确认是否允许本次 frontend 构建发起 EdgeOne 正式站发布候选", workflow_text)
+        self.assertIn("本阶段只控制是否允许从本次构建发起生产发布候选", workflow_text)
         self.assertIn("自动发起 frontend EdgeOne 正式站发布候选", workflow_text)
         self.assertIn("SubPipelineExecStream@1.*", workflow_text)
         self.assertIn('if: "${{ variables.PIPELINE_MODE }} == build && ${{ ci.branch }} == master"', workflow_text)
@@ -230,6 +243,10 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn('value: "${{ ci.sha }}"', workflow_text)
         self.assertLess(
             workflow_text.index('"$PNPM_BIN" build:release-artifacts'),
+            workflow_text.index("确认发起 frontend EdgeOne 正式站发布候选"),
+        )
+        self.assertLess(
+            workflow_text.index("确认发起 frontend EdgeOne 正式站发布候选"),
             workflow_text.index("SubPipelineExecStream@1.*"),
         )
 

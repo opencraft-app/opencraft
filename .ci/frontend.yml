@@ -280,6 +280,34 @@ stages:
               GITOPS_BRANCH=gitops \
               bash .ci/runtime/promote_bundle_image_to_gitops.sh frontend frontend "${{ variables.TARGET_ENV }}" "$SOURCE_SHA"
 
+  - name: 确认发起 frontend EdgeOne 正式站发布候选
+    if: "${{ variables.PIPELINE_MODE }} == build && ${{ ci.branch }} == master"
+    check-in:
+      reviews:
+        flows:
+          - name: 确认发起 frontend EdgeOne 正式站发布候选
+            reviewers: [ "skipzhang" ]
+        description: |
+          本阶段确认是否允许本次 frontend 构建发起 EdgeOne 正式站发布候选。
+
+          点击通过后，流水线会并行发起两个独立的 EdgeOne 正式站发布子流水线：
+          - 发布 frontend EdgeOne 国内正式站
+          - 发布 frontend EdgeOne 国际正式站
+
+          子流水线仍会各自执行正式发布前的 check-in；本阶段只控制是否允许从本次构建发起生产发布候选。
+      timeout-hours: 24
+    jobs:
+      approve:
+        name: 等待确认发起 frontend EdgeOne 正式站发布候选
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - name: frontend EdgeOne 正式站发布候选已确认
+            shell: bash
+            run: |
+              echo "frontend EdgeOne production release candidate fan-out approved"
+
   - name: 自动发起 frontend EdgeOne 正式站发布候选
     if: "${{ variables.PIPELINE_MODE }} == build && ${{ ci.branch }} == master"
     jobs:
