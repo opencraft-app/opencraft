@@ -1,8 +1,0 @@
-version: v2.0
-name: BK-CI DB migration 审核跳过探针
-
-on:
-  manual: enabled
-
-extends:
-  template: db-migration-checkin-skip-probe.yml
