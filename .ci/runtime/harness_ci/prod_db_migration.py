@@ -84,6 +84,11 @@ def parse_args() -> argparse.Namespace:
         help="Fail if the live DB version probe produces a different migration decision.",
     )
     parser.add_argument(
+        "--fail-if-run-without-expect",
+        action="store_true",
+        help="Fail when live DB probe requires a migration but caller did not explicitly expect run_migration.",
+    )
+    parser.add_argument(
         "--decision-output",
         help="Write the live DB version probe decision as JSON for caller orchestration.",
     )
@@ -472,6 +477,16 @@ def enforce_expected_decision(expected: str | None, actual: str, reason: str) ->
         )
 
 
+def enforce_explicit_run_requirement(require_explicit: bool, expected: str | None, actual: str, reason: str) -> None:
+    if not require_explicit or expected:
+        return
+    if actual == "run_migration":
+        raise RuntimeError(
+            "production DB migration requires explicit MIGRATION_DECISION=run_migration; "
+            f"actual run_migration was detected from live DB probe; reason={reason}"
+        )
+
+
 def human_decision_summary(*, apply: bool, version_probe: dict[str, Any], migration_decision: dict[str, Any]) -> str:
     current = int(version_probe["current"])
     expected = int(version_probe["expected"])
@@ -733,11 +748,6 @@ def main() -> int:
                 version_probe=version_probe,
                 diff_hint=diff_hint,
             )
-            enforce_expected_decision(
-                getattr(args, "expect_decision", None),
-                str(migration_decision["decision"]),
-                str(migration_decision["reason"]),
-            )
             if migration_decision["decision"] == "block":
                 print_plan(
                     db_job_service=db_job_service,
@@ -763,6 +773,19 @@ def main() -> int:
                 version_probe=version_probe,
                 migration_decision=migration_decision,
                 diff_hint=diff_hint,
+            )
+            actual_decision = str(migration_decision["decision"])
+            actual_reason = str(migration_decision["reason"])
+            enforce_expected_decision(
+                getattr(args, "expect_decision", None),
+                actual_decision,
+                actual_reason,
+            )
+            enforce_explicit_run_requirement(
+                bool(getattr(args, "fail_if_run_without_expect", False)),
+                getattr(args, "expect_decision", None),
+                actual_decision,
+                actual_reason,
             )
             run_db_jobs(
                 source_dir=source_dir,

@@ -327,7 +327,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("MIGRATION_DECISION", template.get("variables") or {})
         self.assertNotIn("APPLY", template.get("variables") or {})
         self.assertEqual(((template.get("variables") or {}).get("SKIP_IF_NO_MIGRATION_CHANGE") or {}).get("value"), "false")
-        self.assertEqual(((template.get("variables") or {}).get("MIGRATION_DECISION") or {}).get("value"), "run_migration")
+        self.assertEqual(((template.get("variables") or {}).get("MIGRATION_DECISION") or {}).get("value"), "auto")
         self.assertEqual([stage.get("name") for stage in template_stages], [
             "Dry-run 生产 DB migration",
             "跳过生产 DB migration",
@@ -348,7 +348,9 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("SKIP_IF_NO_MIGRATION_CHANGE", template_text)
         self.assertIn("MIGRATION_DECISION", template_text)
         self.assertIn("--decision-output db-migration-decision.json", template_text)
+        self.assertIn("MIGRATION_DECISION must be auto, run_migration, skip_migration, or block", template_text)
         self.assertIn('--expect-decision "$MIGRATION_DECISION"', template_text)
+        self.assertIn("--fail-if-run-without-expect", template_text)
         self.assertIn("--skip-if-no-migration-change", template_text)
         self.assertIn("无实际 DB 变更，跳过人工审核和 apply", template_text)
         self.assertIn("Dry-run 并打印生产 DB migration 计划", template_text)
@@ -484,18 +486,21 @@ class ReleaseBundleContractTests(unittest.TestCase):
         promote_stage = stage_by_name["创建生产 promote 候选 ${{ parameters.DISPLAY_NAME }}"]
         shprod_db_stage = stage_by_name["发起 shprod DB migration ${{ parameters.DISPLAY_NAME }}"]
         sgprod_db_stage = stage_by_name["发起 sgprod DB migration ${{ parameters.DISPLAY_NAME }}"]
+        second_approval_stage = stage_by_name["二次确认生产镜像升级 ${{ parameters.DISPLAY_NAME }}"]
         prod_promote_stage_if = (
             "${{ parameters.ENABLE_MASTER_PROD_PROMOTE }} == true && "
             "${{ variables.PIPELINE_MODE }} == build && "
             "${{ ci.branch }} == master"
         )
         shprod_db_stage_if = (
+            "${{ parameters.ENABLE_MASTER_PROD_PROMOTE }} == true && "
             "${{ parameters.ENABLE_MASTER_PROD_DB_MIGRATION }} == true && "
             "${{ parameters.ENABLE_MASTER_SHPROD_DB_MIGRATION }} == true && "
             "${{ variables.PIPELINE_MODE }} == build && "
             "${{ ci.branch }} == master"
         )
         sgprod_db_stage_if = (
+            "${{ parameters.ENABLE_MASTER_PROD_PROMOTE }} == true && "
             "${{ parameters.ENABLE_MASTER_PROD_DB_MIGRATION }} == true && "
             "${{ parameters.ENABLE_MASTER_SGPROD_DB_MIGRATION }} == true && "
             "${{ variables.PIPELINE_MODE }} == build && "
@@ -506,14 +511,22 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(entry_stage.get("if"), prod_promote_stage_if)
         self.assertEqual(entry_reviews.get("name"), "是否准备进入生产")
         self.assertEqual(entry_reviews.get("reviewers"), ["skipzhang"])
-        self.assertIn("本阶段只确认是否允许本次构建进入生产候选流程", template_text)
+        self.assertIn("本阶段确认是否允许本次构建进入生产候选流程", template_text)
         self.assertLess(
             template_text.index("是否准备进入生产 ${{ parameters.DISPLAY_NAME }}"),
-            template_text.index("创建生产 promote 候选 ${{ parameters.DISPLAY_NAME }}"),
+            template_text.index("发起 shprod DB migration ${{ parameters.DISPLAY_NAME }}"),
         )
         self.assertLess(
-            template_text.index("创建生产 promote 候选 ${{ parameters.DISPLAY_NAME }}"),
             template_text.index("发起 shprod DB migration ${{ parameters.DISPLAY_NAME }}"),
+            template_text.index("发起 sgprod DB migration ${{ parameters.DISPLAY_NAME }}"),
+        )
+        self.assertLess(
+            template_text.index("发起 sgprod DB migration ${{ parameters.DISPLAY_NAME }}"),
+            template_text.index("二次确认生产镜像升级 ${{ parameters.DISPLAY_NAME }}"),
+        )
+        self.assertLess(
+            template_text.index("二次确认生产镜像升级 ${{ parameters.DISPLAY_NAME }}"),
+            template_text.index("创建生产 promote 候选 ${{ parameters.DISPLAY_NAME }}"),
         )
         self.assertNotIn("Dry-run 生产 DB migration ${{ parameters.DISPLAY_NAME }}", template_text)
         self.assertNotIn("确认生产 promote ${{ parameters.DISPLAY_NAME }}", template_text)
@@ -530,6 +543,10 @@ class ReleaseBundleContractTests(unittest.TestCase):
         )
         self.assertEqual(shprod_db_stage.get("if"), shprod_db_stage_if)
         self.assertEqual(sgprod_db_stage.get("if"), sgprod_db_stage_if)
+        self.assertEqual(second_approval_stage.get("if"), prod_promote_stage_if)
+        second_approval_reviews = (((second_approval_stage.get("check-in") or {}).get("reviews") or {}).get("flows") or [])[0]
+        self.assertEqual(second_approval_reviews.get("name"), "二次确认生产镜像升级")
+        self.assertEqual(second_approval_reviews.get("reviewers"), ["skipzhang"])
         self.assertIn('if [[ "${{ variables.PIPELINE_MODE }}" != "build" ]]; then', template_text)
         self.assertIn('if [[ "${{ ci.branch }}" != "master" ]]; then', template_text)
         self.assertNotIn("csv_contains()", template_text)
@@ -537,7 +554,11 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertNotIn('if [[ "$env_name" != "shprod" && "$env_name" != "sgprod" ]]; then', template_text)
         self.assertIn("MASTER_AUTO_PIN_ENVS", template_text)
         self.assertIn("promote_bundle_image_to_gitops.sh", template_text)
-        self.assertIn("shprod/sgprod 将各自触发独立审批流水线", template_text)
+        self.assertIn("若本服务启用生产 DB migration，会先发起 shprod / sgprod DB 子流水线", template_text)
+        self.assertIn("若本服务未启用生产 DB migration，会直接进入生产镜像升级二次确认", template_text)
+        self.assertIn("本次镜像 tag / SOURCE_SHA 确实允许进入 shprod / sgprod GitOps 待同步流程", template_text)
+        self.assertIn("若本服务启用生产 DB migration，shprod / sgprod DB 子流水线已经完成", template_text)
+        self.assertIn("点击通过后，流水线才会创建 shprod / sgprod promote 分支", template_text)
         self.assertIn("构建 ${{ parameters.DISPLAY_NAME }} 镜像矩阵", template_text)
         self.assertIn("SHORT_SHA='${{ ci.sha }}'", template_text)
         self.assertIn('SHORT_SHA="${BK_CI_GIT_HEAD_COMMITS%%,*}"', template_text)
@@ -575,6 +596,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 params = (workflow.get("extends") or {}).get("parameters") or {}
 
                 self.assertIs(params.get("ENABLE_MASTER_PROD_DB_MIGRATION"), True)
+                self.assertIsNot(params.get("ENABLE_MASTER_PROD_PROMOTE"), False)
 
     def test_service_release_workflows_without_prod_matrix_disable_prod_promote(self) -> None:
         for workflow_path in [REPO_ROOT / ".ci/staticpages.yml", REPO_ROOT / ".ci/trade.yml"]:

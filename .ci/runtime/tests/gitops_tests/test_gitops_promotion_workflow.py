@@ -655,7 +655,7 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
         self.assertIn("MR_ARGS+=(--remove-source-branch)", pin_script)
         self.assertIn("进入${ENV_DISPLAY_NAME}待同步状态", pin_script)
 
-    def test_prod_promote_workflows_are_independent_per_env_with_db_approval(self) -> None:
+    def test_prod_promote_workflows_are_independent_per_env_without_db_apply(self) -> None:
         workflow = (REPO_ROOT / ".ci/gitops-promotion.yml").read_text()
         shprod_workflow = (REPO_ROOT / ".ci/gitops-promotion-shprod.yml").read_text()
         sgprod_workflow = (REPO_ROOT / ".ci/gitops-promotion-sgprod.yml").read_text()
@@ -667,11 +667,13 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
         self.assertIn("promote-sgprod-*", sgprod_workflow)
         self.assertIn("TARGET_ENV: sgprod", sgprod_workflow)
         self.assertIn("check-in:", prod_template)
-        self.assertIn("Dry-run ${{ parameters.DISPLAY_NAME }} DB migration", prod_template)
-        self.assertIn("执行 ${{ parameters.DISPLAY_NAME }} DB migration", prod_template)
-        self.assertIn("run_prod_db_migration.py", prod_template)
-        self.assertIn("--skip-if-no-migration-change", prod_template)
-        self.assertIn("--apply", prod_template)
+        self.assertNotIn("Dry-run ${{ parameters.DISPLAY_NAME }} DB migration", prod_template)
+        self.assertNotIn("执行 ${{ parameters.DISPLAY_NAME }} DB migration", prod_template)
+        self.assertNotIn("run_prod_db_migration.py", prod_template)
+        self.assertNotIn("--skip-if-no-migration-change", prod_template)
+        self.assertNotIn("--apply", prod_template)
+        self.assertIn("生产 DB migration 子流水线已经完成", prod_template)
+        self.assertIn("不会再次执行 DB migration", prod_template)
         self.assertIn("本审批不影响另一个生产环境", prod_template)
         self.assertIn("不执行 migration，不执行 Argo sync", (REPO_ROOT / ".ci/runtime/gitops/shprod_sync_preflight.py").read_text())
 
