@@ -4,6 +4,7 @@ import (
 	stdctx "context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -125,6 +126,8 @@ func NewLogic() Logic {
 		logger = zap.NewNop()
 	}
 	instanceConf := currentInstanceAPIConfig()
+	defaultTemplateClass := defaultTemplateClassIDFromConfig(instanceConf)
+	defaultTemplate := defaultTemplateIDFromConfig(instanceConf)
 	return &logic{
 		instanceDao:            modelfactory.DefaultDaoFactory.InstanceDao(nil),
 		channelLoginSessionDao: modelfactory.DefaultDaoFactory.ChannelLoginSessionDao(nil),
@@ -137,10 +140,10 @@ func NewLogic() Logic {
 		operationHistoryDao:    modelfactory.DefaultDaoFactory.OperationHistoryDao(nil),
 		objectIdLogic:          objectid.NewLogic(),
 		logger:                 logger,
-		defaultTemplateClass:   defaultTemplateClassIDFromConfig(instanceConf),
-		defaultTemplate:        defaultTemplateIDFromConfig(instanceConf),
+		defaultTemplateClass:   defaultTemplateClass,
+		defaultTemplate:        defaultTemplate,
 		defaultSKUID:           defaultSKUIDFromConfig(instanceConf),
-		candidateTemplates:     candidateTemplateIDsFromConfig(instanceConf),
+		candidateTemplates:     candidateTemplateIDsFromConfig(instanceConf, defaultTemplateClass, defaultTemplate),
 		executeTasksInline:     false,
 		weixinHub:              newWeixinLoginHub(),
 		churnGuard:             newCreateChurnGuard(instanceConf, logger),
@@ -176,10 +179,14 @@ func newLogicForTest(instanceDao modelinstance.Dao, quotaDao quota.Dao, sandboxA
 		defaultTemplateClass: strings.TrimSpace(templateClassID),
 		defaultTemplate:      defaultTemplate,
 		defaultSKUID:         defaultSKUIDFromConfig(instanceConf),
-		candidateTemplates:   append([]string(nil), candidateTemplates...),
-		executeTasksInline:   true,
-		weixinHub:            newWeixinLoginHub(),
-		churnGuard:           newCreateChurnGuard(instanceConf, logger),
+		candidateTemplates: filterTemplateCandidatesForTemplateClass(
+			uniqueNonEmptyStringsPreserveOrder(candidateTemplates),
+			strings.TrimSpace(templateClassID),
+			defaultTemplate,
+		),
+		executeTasksInline: true,
+		weixinHub:          newWeixinLoginHub(),
+		churnGuard:         newCreateChurnGuard(instanceConf, logger),
 	}
 }
 
@@ -204,11 +211,38 @@ func defaultSKUIDFromConfig(conf *config.InstanceAPIConfig) string {
 	return strings.TrimSpace(conf.DefaultSKUID)
 }
 
-func candidateTemplateIDsFromConfig(conf *config.InstanceAPIConfig) []string {
+var legacyTemplateAliasPattern = regexp.MustCompile(`^pool-[a-z]?\d+$`)
+
+func candidateTemplateIDsFromConfig(conf *config.InstanceAPIConfig, templateClassID, defaultTemplate string) []string {
 	if conf == nil {
 		return nil
 	}
-	return append([]string(nil), conf.CandidateTemplateIDs...)
+	candidates := uniqueNonEmptyStringsPreserveOrder(conf.CandidateTemplateIDs)
+	return filterTemplateCandidatesForTemplateClass(candidates, strings.TrimSpace(templateClassID), strings.TrimSpace(defaultTemplate))
+}
+
+func filterTemplateCandidatesForTemplateClass(candidates []string, templateClassID, defaultTemplate string) []string {
+	classID := strings.TrimSpace(templateClassID)
+	if classID == "" {
+		return candidates
+	}
+
+	filtered := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" || candidate == classID {
+			continue
+		}
+		if candidate == defaultTemplate {
+			filtered = append(filtered, candidate)
+			continue
+		}
+		if legacyTemplateAliasPattern.MatchString(candidate) {
+			continue
+		}
+		filtered = append(filtered, candidate)
+	}
+	return filtered
 }
 
 func currentInstanceAPIConfig() *config.InstanceAPIConfig {
@@ -256,10 +290,6 @@ func (l *logic) CreateInstance(ctx pctx.Context, req *transport.CreateInstanceRe
 	if ctx == nil || strings.TrimSpace(ctx.GetUserID()) == "" {
 		return nil, errcode.ErrInstanceMissingUserID
 	}
-
-	if len(l.templateCandidates()) == 0 {
-		return nil, errcode.Wrap(errcode.ErrInstanceCreationFailed, "default template id is empty")
-	}
 	if req == nil {
 		req = &transport.CreateInstanceRequest{}
 	}
@@ -293,7 +323,7 @@ func (l *logic) CreateInstance(ctx pctx.Context, req *transport.CreateInstanceRe
 		return nil, errcode.ErrInstanceQuotaExceeded
 	}
 
-	decision, err := l.evaluateCreateChurnGuard(ctx)
+	decision, err := l.evaluateCreateChurnGuard(ctx, l.defaultSKUID)
 	if err != nil {
 		l.rollbackQuota(ctx)
 		return nil, err
@@ -410,6 +440,69 @@ func defaultQuotaTotal(resourceName string) int64 {
 
 func (l *logic) templateCandidates() []string {
 	return uniqueNonEmptyStringsPreserveOrder(append([]string{l.defaultTemplate}, l.candidateTemplates...))
+}
+
+func (l *logic) resolveCreateCandidatePools(ctx pctx.Context, skuID string) ([]string, error) {
+	if l.sandboxAdapter == nil {
+		return nil, errcode.Wrap(errcode.ErrSandboxServiceError, "sandbox adapter is unavailable")
+	}
+
+	livePoolEntities, err := l.sandboxAdapter.ListPools(ctx)
+	if err != nil {
+		return nil, errcode.Wrap(errcode.ErrSandboxServiceError, "list pools: %v", err)
+	}
+
+	livePools := uniqueNonEmptyStringsPreserveOrder(listPoolIDs(livePoolEntities, l.defaultTemplateClass, skuID))
+	if len(livePools) == 0 {
+		return nil, errcode.Wrap(errcode.ErrSandboxServiceError, "no active sandbox pools available")
+	}
+	return livePools, nil
+}
+
+func listPoolIDs(pools []psandbox.Pool, templateClassID, skuID string) []string {
+	seen := make(map[string]struct{}, len(pools))
+	ids := make([]string, 0, len(pools))
+	templateClassID = strings.TrimSpace(templateClassID)
+	skuID = strings.TrimSpace(skuID)
+	for _, pool := range pools {
+		if !poolEligibleForCreate(pool, templateClassID, skuID) {
+			continue
+		}
+		poolID := strings.TrimSpace(pool.ID)
+		if poolID == "" {
+			continue
+		}
+		if _, ok := seen[poolID]; ok {
+			continue
+		}
+		seen[poolID] = struct{}{}
+		ids = append(ids, poolID)
+	}
+	return ids
+}
+
+func poolEligibleForCreate(pool psandbox.Pool, templateClassID, skuID string) bool {
+	if status := strings.TrimSpace(pool.Status); status != "" && status != "active" {
+		return false
+	}
+	switch strings.TrimSpace(pool.CapacityState) {
+	case "", "active":
+	default:
+		return false
+	}
+	if templateClassID != "" {
+		poolTemplateClassID := strings.TrimSpace(pool.TemplateClassID)
+		if poolTemplateClassID != "" && poolTemplateClassID != templateClassID {
+			return false
+		}
+	}
+	if skuID != "" {
+		poolSKUID := strings.TrimSpace(pool.SKUID)
+		if poolSKUID != "" && poolSKUID != skuID {
+			return false
+		}
+	}
+	return true
 }
 
 func (l *logic) createSandboxWithFallback(ctx pctx.Context, instanceID string, skuID string, ordered orderedCandidatePools, timeout int32) (*psandbox.Sandbox, error) {
