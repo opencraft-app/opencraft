@@ -83,6 +83,52 @@ test("buildModuleAdminProxyRequest maps sandbox module to internal API and forwa
   assert.equal(await new Response(built.init.body).text(), JSON.stringify({ pool_id: "default" }));
 });
 
+test("buildModuleAdminProxyRequest maps sandbox PUT binding replacements to internal API", async () => {
+  const body = JSON.stringify([{ sku_id: "sku-hermes-2c4g", priority: 1, weight: 100 }]);
+  const req = new Request("https://admin.example.com/admin/api/sandbox/template-classes/hermes/skus", {
+    method: "PUT",
+    headers: {
+      "content-type": "application/json",
+      authorization: "Bearer browser-token",
+    },
+    body,
+  });
+
+  const built = await buildModuleAdminProxyRequest(req, {
+    module: "sandbox",
+    path: ["template-classes", "hermes", "skus"],
+    upstreamBaseURL: "https://sandbox.internal",
+  });
+
+  assert.equal(built.url.toString(), "https://sandbox.internal/internal/template-classes/hermes/skus");
+  assert.equal(built.init.method, "PUT");
+  assert.equal(built.init.headers.get("content-type"), "application/json");
+  assert.equal(await new Response(built.init.body).text(), body);
+});
+
+test("buildModuleAdminProxyRequest maps sandbox PUT pool binding replacements to internal API", async () => {
+  const body = JSON.stringify([{ pool_id: "pool-1", priority: 1, weight: 100, role: "primary" }]);
+  const req = new Request("https://admin.example.com/admin/api/sandbox/template-classes/hermes/bindings", {
+    method: "PUT",
+    headers: {
+      "content-type": "application/json",
+      authorization: "Bearer browser-token",
+    },
+    body,
+  });
+
+  const built = await buildModuleAdminProxyRequest(req, {
+    module: "sandbox",
+    path: ["template-classes", "hermes", "bindings"],
+    upstreamBaseURL: "https://sandbox.internal",
+  });
+
+  assert.equal(built.url.toString(), "https://sandbox.internal/internal/template-classes/hermes/bindings");
+  assert.equal(built.init.method, "PUT");
+  assert.equal(built.init.headers.get("content-type"), "application/json");
+  assert.equal(await new Response(built.init.body).text(), body);
+});
+
 test("buildModuleAdminProxyRequest preserves binary request bodies and content type", async () => {
   const bytes = new Uint8Array([0, 255, 128, 64]);
   const req = new Request("https://admin.example.com/admin/api/ai-gateway/upload", {
@@ -291,6 +337,126 @@ test("proxyModuleAdminRequest validates token then proxies internal request with
   assert.deepEqual(calls, [
     { url: "https://gateway.internal/api/admin/stats", authorization: "Bearer valid-token" },
     { url: "https://sandbox.internal/internal/pools", authorization: null },
+  ]);
+});
+
+test("proxyModuleAdminRequest validates token before sandbox PUT and does not forward Authorization", async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  const calls: Array<{ url: string; method: string | undefined; authorization: string | null; body: string }> = [];
+  globalThis.fetch = (async (input, init) => {
+    const headers = new Headers(init?.headers);
+    calls.push({
+      url: String(input),
+      method: init?.method,
+      authorization: headers.get("authorization"),
+      body: init?.body ? await new Response(init.body).text() : "",
+    });
+    if (String(input) === "https://gateway.internal/api/admin/stats") {
+      return Promise.resolve(new Response("{}", { status: 200 }));
+    }
+    return Promise.resolve(new Response(JSON.stringify([{ sku_id: "sku-hermes-2c4g" }]), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+  }) as typeof fetch;
+
+  const response = await proxyModuleAdminRequest(
+    new Request("https://admin.example.com/admin/api/sandbox/template-classes/hermes/skus", {
+      method: "PUT",
+      headers: {
+        authorization: "Bearer valid-token",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify([{ sku_id: "sku-hermes-2c4g" }]),
+    }),
+    { path: ["template-classes", "hermes", "skus"] },
+    {
+      module: "sandbox",
+      upstreamBaseURL: "https://sandbox.internal",
+      serviceName: "Sandbox",
+      requireAdminTokenValidation: true,
+      validationBaseURL: "https://gateway.internal",
+      forwardBrowserToken: false,
+    }
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls, [
+    {
+      url: "https://gateway.internal/api/admin/stats",
+      method: "GET",
+      authorization: "Bearer valid-token",
+      body: "",
+    },
+    {
+      url: "https://sandbox.internal/internal/template-classes/hermes/skus",
+      method: "PUT",
+      authorization: null,
+      body: JSON.stringify([{ sku_id: "sku-hermes-2c4g" }]),
+    },
+  ]);
+});
+
+test("proxyModuleAdminRequest proxies sandbox pool binding PUT through internal API", async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  const calls: Array<{ url: string; method: string | undefined; authorization: string | null; body: string }> = [];
+  globalThis.fetch = (async (input, init) => {
+    const headers = new Headers(init?.headers);
+    calls.push({
+      url: String(input),
+      method: init?.method,
+      authorization: headers.get("authorization"),
+      body: init?.body ? await new Response(init.body).text() : "",
+    });
+    if (String(input) === "https://gateway.internal/api/admin/stats") {
+      return Promise.resolve(new Response("{}", { status: 200 }));
+    }
+    return Promise.resolve(new Response(JSON.stringify([{ pool_id: "pool-1" }]), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+  }) as typeof fetch;
+
+  const response = await proxyModuleAdminRequest(
+    new Request("https://admin.example.com/admin/api/sandbox/template-classes/hermes/bindings", {
+      method: "PUT",
+      headers: {
+        authorization: "Bearer valid-token",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify([{ pool_id: "pool-1" }]),
+    }),
+    { path: ["template-classes", "hermes", "bindings"] },
+    {
+      module: "sandbox",
+      upstreamBaseURL: "https://sandbox.internal",
+      serviceName: "Sandbox",
+      requireAdminTokenValidation: true,
+      validationBaseURL: "https://gateway.internal",
+      forwardBrowserToken: false,
+    }
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls, [
+    {
+      url: "https://gateway.internal/api/admin/stats",
+      method: "GET",
+      authorization: "Bearer valid-token",
+      body: "",
+    },
+    {
+      url: "https://sandbox.internal/internal/template-classes/hermes/bindings",
+      method: "PUT",
+      authorization: null,
+      body: JSON.stringify([{ pool_id: "pool-1" }]),
+    },
   ]);
 });
 

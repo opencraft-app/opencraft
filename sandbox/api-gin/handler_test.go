@@ -106,6 +106,42 @@ func TestListPoolsInternalRouteReturnsEmptyArray(t *testing.T) {
 	}
 }
 
+func TestListPoolsInternalRouteIncludesExplicitLegacyBindingFields(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	ctx := context.Background()
+	svc := service.NewService(store.NewMemoryStore())
+	pool, err := svc.CreatePool(ctx, "legacy", "", "img-legacy", 0, handlerTestVpcID, handlerTestSubnetID, handlerTestZone, handlerTestSecurityGroups)
+	if err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+	router := newHandlerTestRouter(&handler{svc: svc})
+	req := httptest.NewRequest(http.MethodGet, "/internal/pools", nil)
+	rr := httptest.NewRecorder()
+
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	var resp []map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp) != 1 {
+		t.Fatalf("expected one pool, got %+v", resp)
+	}
+	if resp[0]["id"] != pool.ID {
+		t.Fatalf("expected pool %s, got %+v", pool.ID, resp[0])
+	}
+	if value, ok := resp[0]["template_class_id"]; !ok || value != "" {
+		t.Fatalf("expected explicit empty template_class_id, got value=%#v ok=%v body=%s", value, ok, rr.Body.String())
+	}
+	if value, ok := resp[0]["sku_id"]; !ok || value != "" {
+		t.Fatalf("expected explicit empty sku_id, got value=%#v ok=%v body=%s", value, ok, rr.Body.String())
+	}
+}
+
 func TestListPoolInstancesInternalRouteReturnsEmptyArray(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -653,6 +689,165 @@ func TestPostPoolInternalRouteCreatesPool(t *testing.T) {
 	}
 }
 
+func TestInternalTemplateClassRoutesLockServedContract(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	svc := service.NewService(store.NewMemoryStore())
+	router := newHandlerTestRouter(&handler{svc: svc})
+
+	createReq := httptest.NewRequest(http.MethodPost, "/internal/template-classes", bytes.NewBufferString(`{
+		"id":"hermes",
+		"name":"Hermes",
+		"description":"Hermes runtime",
+		"workload_type":"bot",
+		"region":"ap-singapore",
+		"resolution_mode":"sandbox_primary",
+		"status":"active"
+	}`))
+	createReq.Header.Set("Content-Type", "application/json")
+	createRR := httptest.NewRecorder()
+	router.ServeHTTP(createRR, createReq)
+	if createRR.Code != http.StatusCreated {
+		t.Fatalf("expected template class create 201, got %d body=%s", createRR.Code, createRR.Body.String())
+	}
+	var created core.TemplateClass
+	if err := json.Unmarshal(createRR.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decode template class: %v", err)
+	}
+	if created.ID != "hermes" || created.Region != "ap-singapore" || created.ResolutionMode != core.ResolutionModeSandboxPrimary {
+		t.Fatalf("unexpected template class: %+v", created)
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/internal/template-classes", nil)
+	listRR := httptest.NewRecorder()
+	router.ServeHTTP(listRR, listReq)
+	if listRR.Code != http.StatusOK {
+		t.Fatalf("expected template class list 200, got %d body=%s", listRR.Code, listRR.Body.String())
+	}
+	var listed []core.TemplateClass
+	if err := json.Unmarshal(listRR.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("decode template classes: %v", err)
+	}
+	if len(listed) != 1 || listed[0].ID != "hermes" {
+		t.Fatalf("expected listed hermes template class, got %+v", listed)
+	}
+}
+
+func TestInternalSKURoutesLockServedContract(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	ctx := context.Background()
+	svc := service.NewService(store.NewMemoryStore())
+	if _, err := svc.UpsertTemplateClass(ctx, core.TemplateClass{
+		ID:             "hermes",
+		Name:           "Hermes",
+		ResolutionMode: core.ResolutionModeSandboxPrimary,
+	}); err != nil {
+		t.Fatalf("upsert template class: %v", err)
+	}
+	router := newHandlerTestRouter(&handler{svc: svc})
+
+	createReq := httptest.NewRequest(http.MethodPost, "/internal/skus", bytes.NewBufferString(`{
+		"id":"sku-hermes-2c4g",
+		"name":"Hermes 2C4G",
+		"template_class_id":"hermes",
+		"base_image":"img-hermes-stable",
+		"desired_image_id":"img-hermes-desired",
+		"instance_type":"SA5.MEDIUM4",
+		"default_desired_capacity":2
+	}`))
+	createReq.Header.Set("Content-Type", "application/json")
+	createRR := httptest.NewRecorder()
+	router.ServeHTTP(createRR, createReq)
+	if createRR.Code != http.StatusCreated {
+		t.Fatalf("expected sku create 201, got %d body=%s", createRR.Code, createRR.Body.String())
+	}
+	var created core.SKU
+	if err := json.Unmarshal(createRR.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decode sku: %v", err)
+	}
+	if created.ID != "sku-hermes-2c4g" || created.TemplateClassID != "hermes" || created.RolloutState != core.SKURolloutStateStable {
+		t.Fatalf("unexpected sku: %+v", created)
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/internal/skus", nil)
+	listRR := httptest.NewRecorder()
+	router.ServeHTTP(listRR, listReq)
+	if listRR.Code != http.StatusOK {
+		t.Fatalf("expected sku list 200, got %d body=%s", listRR.Code, listRR.Body.String())
+	}
+	var listed []core.SKU
+	if err := json.Unmarshal(listRR.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("decode skus: %v", err)
+	}
+	if len(listed) != 1 || listed[0].ID != "sku-hermes-2c4g" {
+		t.Fatalf("expected listed sku-hermes-2c4g, got %+v", listed)
+	}
+}
+
+func TestInternalTemplateBindingReplaceRoutesLockServedContract(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	ctx := context.Background()
+	svc := service.NewService(store.NewMemoryStore())
+	if _, err := svc.UpsertTemplateClass(ctx, core.TemplateClass{
+		ID:             "hermes",
+		Name:           "Hermes",
+		ResolutionMode: core.ResolutionModeSandboxPrimary,
+	}); err != nil {
+		t.Fatalf("upsert template class: %v", err)
+	}
+	if _, err := svc.UpsertSKU(ctx, core.SKU{
+		ID:              "sku-hermes-2c4g",
+		Name:            "Hermes 2C4G",
+		TemplateClassID: "hermes",
+		BaseImage:       "img-hermes",
+		DesiredImageID:  "img-hermes",
+		InstanceType:    "SA5.MEDIUM4",
+	}); err != nil {
+		t.Fatalf("upsert sku: %v", err)
+	}
+	pool, err := svc.CreatePool(ctx, "hermes-pool", "", "img-hermes", 0, handlerTestVpcID, handlerTestSubnetID, handlerTestZone, handlerTestSecurityGroups)
+	if err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+	router := newHandlerTestRouter(&handler{svc: svc})
+
+	skuReq := httptest.NewRequest(http.MethodPut, "/internal/template-classes/hermes/skus", bytes.NewBufferString(`[
+		{"sku_id":"sku-hermes-2c4g","priority":1,"weight":100,"admission_state":"active","rollout_eligibility":true}
+	]`))
+	skuReq.Header.Set("Content-Type", "application/json")
+	skuRR := httptest.NewRecorder()
+	router.ServeHTTP(skuRR, skuReq)
+	if skuRR.Code != http.StatusOK {
+		t.Fatalf("expected sku binding replace 200, got %d body=%s", skuRR.Code, skuRR.Body.String())
+	}
+	var skuBindings []core.TemplateSkuBinding
+	if err := json.Unmarshal(skuRR.Body.Bytes(), &skuBindings); err != nil {
+		t.Fatalf("decode sku bindings: %v", err)
+	}
+	if len(skuBindings) != 1 || skuBindings[0].SKUID != "sku-hermes-2c4g" || skuBindings[0].Weight != 100 {
+		t.Fatalf("unexpected sku bindings: %+v", skuBindings)
+	}
+
+	poolReq := httptest.NewRequest(http.MethodPut, "/internal/template-classes/hermes/bindings", bytes.NewBufferString(`[
+		{"pool_id":"`+pool.ID+`","priority":1,"weight":100,"role":"primary","admission_state":"active"}
+	]`))
+	poolReq.Header.Set("Content-Type", "application/json")
+	poolRR := httptest.NewRecorder()
+	router.ServeHTTP(poolRR, poolReq)
+	if poolRR.Code != http.StatusOK {
+		t.Fatalf("expected pool binding replace 200, got %d body=%s", poolRR.Code, poolRR.Body.String())
+	}
+	var poolBindings []core.TemplatePoolBinding
+	if err := json.Unmarshal(poolRR.Body.Bytes(), &poolBindings); err != nil {
+		t.Fatalf("decode pool bindings: %v", err)
+	}
+	if len(poolBindings) != 1 || poolBindings[0].PoolID != pool.ID || poolBindings[0].Role != core.PoolBindingRolePrimary {
+		t.Fatalf("unexpected pool bindings: %+v", poolBindings)
+	}
+}
+
 func TestPostSandboxTATCommandRunsAgainstSandboxInstance(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -927,10 +1122,18 @@ func TestInternalTemplateClassResolveRouteReturnsActivePools(t *testing.T) {
 	}
 
 	var resp struct {
-		Pools []core.Pool `json:"pools"`
+		TemplateClass core.TemplateClass         `json:"template_class"`
+		Bindings      []core.TemplatePoolBinding `json:"bindings"`
+		Pools         []core.Pool                `json:"pools"`
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode response: %v", err)
+	}
+	if resp.TemplateClass.ID != "openclaw-default" {
+		t.Fatalf("expected template_class openclaw-default, got %+v", resp.TemplateClass)
+	}
+	if len(resp.Bindings) != 1 || resp.Bindings[0].PoolID != pool.ID {
+		t.Fatalf("expected binding for pool %s, got %+v", pool.ID, resp.Bindings)
 	}
 	if len(resp.Pools) != 1 || resp.Pools[0].ID != pool.ID {
 		t.Fatalf("expected resolved pool %s, got %+v", pool.ID, resp.Pools)

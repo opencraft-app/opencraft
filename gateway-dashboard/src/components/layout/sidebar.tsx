@@ -22,6 +22,7 @@ import {
   Boxes,
   Bot,
   BadgeDollarSign,
+  GitBranch,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -49,6 +50,7 @@ const navItems = [
   { label: "路由", href: "/routing", icon: Route },
   { label: "缓存", href: "/cache", icon: Database },
   { label: "沙箱池", href: "/sandbox-pools", icon: Boxes },
+  { label: "沙箱 SKU", href: "/sandbox-skus", icon: GitBranch },
   { label: "CTL Bots", href: "/ctl-bots", icon: Bot },
   { type: "separator" as const },
   { label: "测试", href: "/playground", icon: FlaskConical },
