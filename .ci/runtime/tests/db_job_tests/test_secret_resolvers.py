@@ -33,6 +33,24 @@ class SecretResolverTests(unittest.TestCase):
 
         self.assertEqual(value, "plain-password")
 
+    def test_sops_yaml_resolver_reads_dotted_path(self) -> None:
+        with mock.patch.object(
+            secrets,
+            "decrypt_sops_yaml",
+            return_value={"stringData": {"CTL_DB_PASSWORD": "plain-password"}},
+        ):
+            value = secrets.resolve_secret_value(
+                Path("/repo"),
+                "beijing-sandbox",
+                {
+                    "type": "sops_yaml",
+                    "file": "argocd/secrets/{env}/ctl-runtime-secrets.sops.yaml",
+                    "yaml_path": "stringData.CTL_DB_PASSWORD",
+                },
+            )
+
+        self.assertEqual(value, "plain-password")
+
     def test_temporary_secret_manifest_uses_string_data(self) -> None:
         manifest = secrets.build_secret_manifest(
             "ctl",
