@@ -1,13 +1,16 @@
 /**
- * 临时维护公告条（2026-05-19 02:00 CST 自动隐藏）
+ * 临时维护公告条（北京时间 2026-05-19 06:00 自动撤下）
  *
  * 显示位置：仅 landing（"/"）和 settings（"/dashboard/settings"）页顶部。
- * 显示条件：国内站（isCN）且未到过期时刻、且用户未点击关闭。
+ * 显示条件：国内站（isCN）且未到撤下时刻、且用户未点击关闭。
  *
  * 关闭行为：localStorage key 带版本号，下次新公告换 ID 即可重新弹。
  *
- * 过期处理：构建期常量 EXPIRES_AT 是北京时间 2026-05-19 02:00 (UTC+8)
+ * 过期处理：构建期常量 EXPIRES_AT 是北京时间 2026-05-19 06:00 (UTC+8)
  * 对应的 Unix 毫秒，到期后无论 localStorage 状态都不再显示。
+ *
+ * 注意：升级窗口是 0:00-3:00，公告撤下时间是 06:00，留 3 小时缓冲让
+ * 错过升级窗口刚醒来的用户也能看到说明。
  */
 
 import { Megaphone, X } from "lucide-react";
@@ -21,8 +24,8 @@ const ANNOUNCEMENT_ID = "0518-hermes-upgrade";
 
 const STORAGE_KEY = `lw-announcement-dismissed:${ANNOUNCEMENT_ID}`;
 
-/** 北京时间 2026-05-19 02:00:00 = UTC 2026-05-18 18:00:00 */
-const EXPIRES_AT = Date.UTC(2026, 4 /* 0-indexed: May */, 18, 18, 0, 0);
+/** 北京时间 2026-05-19 06:00:00 = UTC 2026-05-18 22:00:00 */
+const EXPIRES_AT = Date.UTC(2026, 4 /* 0-indexed: May */, 18, 22, 0, 0);
 
 /** 显示的路径白名单 */
 const VISIBLE_PATHS = new Set<string>(["/", "/dashboard/settings"]);
@@ -32,6 +35,8 @@ export function MaintenanceAnnouncementBanner() {
   const location = useLocation();
   // 默认不显示，挂载时再读 localStorage —— 避免 SSR / 首屏 flash 不一致
   const [dismissed, setDismissed] = useState(true);
+  /** 组件挂载后同步刷新一次"是否已过期"，并在到期时刻 setTimeout 强制隐藏 */
+  const [expired, setExpired] = useState(() => Date.now() >= EXPIRES_AT);
 
   useEffect(() => {
     try {
@@ -42,11 +47,23 @@ export function MaintenanceAnnouncementBanner() {
     }
   }, []);
 
+  // 用户挂着浏览器跨过 06:00 的场景：不依赖刷新 / 切路由，到点强制隐藏。
+  // setTimeout 上限 ~24 天（i32 ms），公告窗口最多几小时所以稳。
+  useEffect(() => {
+    const remaining = EXPIRES_AT - Date.now();
+    if (remaining <= 0) {
+      setExpired(true);
+      return;
+    }
+    const timer = setTimeout(() => setExpired(true), remaining);
+    return () => clearTimeout(timer);
+  }, []);
+
   // 国内站才显示
   if (!isCN) return null;
 
   // 时间过期不显示
-  if (Date.now() >= EXPIRES_AT) return null;
+  if (expired) return null;
 
   // 路径白名单外不显示
   if (!VISIBLE_PATHS.has(location.pathname)) return null;
@@ -64,7 +81,7 @@ export function MaintenanceAnnouncementBanner() {
         <Megaphone className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
         <p className="flex-1 leading-relaxed">
           {t(
-            "重要通知：我们将于北京时间 2026 年 5 月 19 日 0 点～2 点，对平台存量的 Hermes Agent 进行后台自动升级，升级期间可能导致你的智能体对话 / 任务执行短暂中止，带来的不便尽请谅解。",
+            "重要通知：我们将于北京时间 2026 年 5 月 19 日 0 点～3 点，对平台存量的 Hermes Agent 版本进行后台自动升级，升级期间可能导致你的智能体对话 / 任务执行短暂中止，带来的不便尽请谅解。",
           )}
         </p>
         <button
