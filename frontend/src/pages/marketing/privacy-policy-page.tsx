@@ -7,7 +7,6 @@ interface PolicyCopy {
   backHome: string;
   brand: string;
   title: string;
-  updated: string;
   intro: string[];
   sections: Array<{ title: string; paragraphs: string[]; bullets?: string[] }>;
   processTitle: string;
@@ -36,7 +35,6 @@ const en: PolicyCopy = {
   backHome: "Back to Home",
   brand: "LightVela",
   title: "Privacy Policy",
-  updated: "Last Updated: May 2026",
   intro: [
     "Welcome to LightVela! This Privacy Policy explains the when, how, and why when it comes to the processing of your personal information in connection with the LightVela website and service (together, the “Service”), and sets out your choices and rights in relation to that information.",
     "For the purposes of data protection laws, the data controller of your personal information in relation to the Service is Tencent Cloud International Pte. Ltd. (“we”, “us”, “our”).",
@@ -199,7 +197,6 @@ const zh: PolicyCopy = {
   backHome: "返回首页",
   brand: "LightVela",
   title: "隐私政策",
-  updated: "最后更新：2026 年 5 月",
   intro: [
     "欢迎使用 LightVela！本隐私政策说明我们在您使用 LightVela 网站及服务（合称“服务”）时，会在何时、如何以及为何处理您的个人信息，并说明您对相关信息享有的选择和权利。",
     "就数据保护法律而言，与服务相关的个人信息控制者为 Tencent Cloud International Pte. Ltd.（“我们”）。",
@@ -614,9 +611,7 @@ export const PrivacyPolicyPage = () => {
       <main className="mx-auto max-w-5xl px-5 py-10 sm:px-8 sm:py-14 lg:py-16">
         <article className="rounded-[2rem] border border-slate-200 bg-white px-5 py-8 shadow-[0_24px_80px_-56px_rgba(15,23,42,0.35)] sm:px-8 sm:py-10 lg:px-12">
           <div className="border-b border-slate-200 pb-12 sm:pb-14">
-            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#0B2E70]">{copy.brand}</p>
-            <h1 className="mt-10 text-4xl font-semibold tracking-[-0.06em] text-slate-950 sm:text-5xl">{copy.title}</h1>
-            <p className="mt-10 text-sm font-medium text-slate-500">{copy.updated}</p>
+            <h1 className="text-4xl font-semibold tracking-[-0.06em] text-slate-950 sm:text-5xl">{copy.title}</h1>
             <div className="mt-12 space-y-6">
               {copy.intro.map((paragraph) => (
                 <p key={paragraph} className="text-base leading-9 text-slate-700">

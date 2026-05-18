@@ -20,6 +20,7 @@ const CreateOpenClawPage = lazyNamed(() => import("@/pages/marketing/create-open
 const SubscribePage = lazyNamed(() => import("@/pages/marketing/subscribe-page"), "SubscribePage");
 const PrivacyPolicyPage = lazyNamed(() => import("@/pages/marketing/privacy-policy-page"), "PrivacyPolicyPage");
 const CookiePolicyPage = lazyNamed(() => import("@/pages/marketing/cookie-policy-page"), "CookiePolicyPage");
+const OpenSourceLicensesPage = lazyNamed(() => import("@/pages/marketing/open-source-licenses-page"), "OpenSourceLicensesPage");
 const OpenClawSetupPage = lazyNamed(() => import("@/pages/marketing/openclaw-setup-page"), "OpenClawSetupPage");
 const OpenClawSuccessPage = lazyNamed(() => import("@/pages/marketing/openclaw-success-page"), "OpenClawSuccessPage");
 const OpenClawSettingsPage = lazyNamed(() => import("@/pages/marketing/openclaw-settings-page"), "OpenClawSettingsPage");
@@ -84,6 +85,10 @@ export const router = createBrowserRouter([
             {
               path: "cookie-policy",
               element: lazyRoute(CookiePolicyPage),
+            },
+            {
+              path: "open-source-licenses",
+              element: lazyRoute(OpenSourceLicensesPage),
             },
           ]
         : []),
