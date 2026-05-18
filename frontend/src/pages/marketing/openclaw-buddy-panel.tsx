@@ -11,7 +11,7 @@
  */
 
 import { ExternalLink, Loader2, Users } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useT } from "@/i18n/t";
 import { useAsyncResource } from "@/services/use-async-resource";
 import { MarkdownRenderer } from "@/components/docs/markdown-renderer";
@@ -147,10 +147,11 @@ export function BuddyPanel() {
 
 function SoulList({ onPick }: { onPick: (slug: string) => void }) {
   const t = useT();
-  const { data, loading, error, reload } = useAsyncResource(
-    () => fetchSouls({ page: 1, pageSize: 30 }),
-    [],
-  );
+  // useCallback 是为了让 fetcher 引用在 render 间保持稳定。useAsyncResource 内部
+  // 用 useCallback([fetcher]) 派生 run，并把 run 作为 useEffect 依赖；如果直接传
+  // 内联箭头函数，每次 render 都是新引用 → run 变 → effect 重跑 → 无限请求。
+  const fetcher = useCallback(() => fetchSouls({ page: 1, pageSize: 30 }), []);
+  const { data, loading, error, reload } = useAsyncResource(fetcher, []);
 
   if (loading) return <CenterLoader />;
   if (error) return <ErrorState message={error} onRetry={reload} />;
@@ -194,10 +195,8 @@ function SoulCard({ soul, onClick }: { soul: SkillHubSoul; onClick: () => void }
 
 function SkillSetList({ onPick }: { onPick: (slug: string) => void }) {
   const t = useT();
-  const { data, loading, error, reload } = useAsyncResource(
-    () => fetchSkillSets({ page: 1, pageSize: 30 }),
-    [],
-  );
+  const fetcher = useCallback(() => fetchSkillSets({ page: 1, pageSize: 30 }), []);
+  const { data, loading, error, reload } = useAsyncResource(fetcher, []);
 
   if (loading) return <CenterLoader />;
   if (error) return <ErrorState message={error} onRetry={reload} />;
@@ -242,7 +241,8 @@ function SkillSetCard({ set, onClick }: { set: SkillHubSkillSet; onClick: () => 
 // ─── 详情弹窗 ───────────────────────────────────────────────────────────────
 
 function SoulPreviewModal({ slug, onClose }: { slug: string; onClose: () => void }) {
-  const { data, loading, error } = useAsyncResource(() => fetchSoulDetail(slug), [slug]);
+  const fetcher = useCallback(() => fetchSoulDetail(slug), [slug]);
+  const { data, loading, error } = useAsyncResource(fetcher, [slug]);
   return (
     <PreviewModal title={data?.displayName ?? ""} onClose={onClose}>
       {loading && <CenterLoader />}
@@ -260,7 +260,8 @@ function SoulPreviewModal({ slug, onClose }: { slug: string; onClose: () => void
 }
 
 function SkillSetPreviewModal({ slug, onClose }: { slug: string; onClose: () => void }) {
-  const { data, loading, error } = useAsyncResource(() => fetchSkillSetDetail(slug), [slug]);
+  const fetcher = useCallback(() => fetchSkillSetDetail(slug), [slug]);
+  const { data, loading, error } = useAsyncResource(fetcher, [slug]);
   return (
     <PreviewModal title={data?.displayName ?? ""} onClose={onClose}>
       {loading && <CenterLoader />}
