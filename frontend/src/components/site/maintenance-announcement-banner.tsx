@@ -91,37 +91,36 @@ export function MaintenanceAnnouncementBanner() {
 
   return (
     <div
-      // 高度由 ANNOUNCEMENT_BANNER_HEIGHT_PX (= 36px) 决定 —— 用 min-h 而不是
-      // 固定 h-9，是为了在窄屏文案折行时允许公告条增高，不被裁断。
-      // navbar / hero 的偏移按 36px 写死的好处：绝大多数情况单行不增高，
-      // 只有窄屏多行才会与 navbar 留出小重叠（仍可读，可接受的退化）。
-      className="fixed inset-x-0 top-0 z-[60] flex min-h-9 items-center border-b border-amber-300 bg-amber-50 px-4 py-1.5 text-sm text-amber-950 shadow-sm"
+      // 公告条强制 36px 单行高（h-9）。喇叭和文案打成一个 inline-flex 整体，
+      // 在 flex-1 容器里居中。X 按钮 absolute 脱离居中流，<p> 上 pr-8 安全
+      // padding 避免长文字撞到 X。窄屏文案放不下时整组横向滚动看完。
+      className="fixed inset-x-0 top-0 z-[60] flex h-9 items-center justify-center border-b border-amber-300 bg-amber-50 px-4 text-sm text-amber-950 shadow-sm"
       role="status"
       aria-live="polite"
     >
-      <div className="mx-auto flex w-full max-w-7xl items-center gap-3">
-        <Megaphone className="h-4 w-4 shrink-0" aria-hidden="true" />
-        <p className="flex-1 leading-relaxed">
+      <div className="flex min-w-0 flex-1 justify-center overflow-x-auto whitespace-nowrap">
+        <span className="inline-flex items-center gap-2 pr-8 leading-9">
+          <Megaphone className="h-4 w-4 shrink-0" aria-hidden="true" />
           {t(
-            "重要通知：我们将于北京时间 2026 年 5 月 19 日 0 点～3 点，对平台存量的 Hermes Agent 版本进行后台自动升级，升级期间可能导致智能体对话或任务执行短暂中止，带来的不便尽请谅解。",
+            "通知：我们将于北京时间2026年5月19日0点～3点，对存量的 Hermes Agent 版本进行后台自动升级，升级期间可能导致智能体对话或任务执行短暂中止，带来不便尽请谅解。",
           )}
-        </p>
-        <button
-          type="button"
-          aria-label={t("关闭公告")}
-          onClick={() => {
-            try {
-              window.localStorage.setItem(STORAGE_KEY, "1");
-            } catch {
-              /* 写不进去也无妨，本次 session 视觉上隐藏即可 */
-            }
-            setDismissed(true);
-          }}
-          className="-mr-1 shrink-0 rounded p-0.5 transition-colors hover:bg-amber-100"
-        >
-          <X className="h-4 w-4" />
-        </button>
+        </span>
       </div>
+      <button
+        type="button"
+        aria-label={t("关闭公告")}
+        onClick={() => {
+          try {
+            window.localStorage.setItem(STORAGE_KEY, "1");
+          } catch {
+            /* 写不进去也无妨，本次 session 视觉上隐藏即可 */
+          }
+          setDismissed(true);
+        }}
+        className="absolute right-3 top-1/2 -translate-y-1/2 rounded p-0.5 transition-colors hover:bg-amber-100"
+      >
+        <X className="h-4 w-4" />
+      </button>
     </div>
   );
 }
