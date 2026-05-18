@@ -11,6 +11,7 @@ import { LoginModal } from "@/components/site/login-modal";
 import { LegalFooter } from "@/components/site/legal-footer";
 import { useSession } from "@/contexts/session-context";
 import { useT, t as rawT } from "@/i18n/t";
+import { isGlobal } from "@/lib/region";
 
 import { LandingNavbar } from "./landing/landing-navbar";
 
@@ -498,12 +499,12 @@ function HighlightSection() {
               }}
             >
               <img
-                src="/assets/landing/about/community-qr.png"
+                src={isGlobal ? "/assets/landing/about/International-Discord.png" : "/assets/landing/about/community-qr.png"}
                 alt={t("加入交流群")}
                 style={{ width: "160px", height: "160px", borderRadius: "6px" }}
               />
               <span style={{ fontSize: "11px", color: "#888", letterSpacing: "0.04em" }}>
-                {t("扫码加入交流群")}
+                {isGlobal ? t("扫码加入Discord交流群") : t("扫码加入交流群")}
               </span>
             </motion.div>
           )}
