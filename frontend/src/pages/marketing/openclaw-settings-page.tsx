@@ -64,6 +64,7 @@ import {
 } from "@tencent/tea-sdk-lightclaw";
 import { createMonoDebugExecAdapter } from "@/pages/marketing/openclaw-tat-adapter";
 import { installOpenClawConsoleHelpers } from "@/pages/marketing/openclaw-console-helpers";
+import { BuddyPanel } from "@/pages/marketing/openclaw-buddy-panel";
 import { getOpenClawCreateLimitMessage } from "@/pages/marketing/openclaw-create-availability";
 import {
   getRestartBlockReason,
@@ -3207,69 +3208,7 @@ export const OpenClawSettingsPage = () => {
                                 productConfig={sdkProductConfig}
                               />
                             )}
-                            {activeSection === "buddy" && (
-                              // AI 搭子（v0 占位）：复用 SkillHub /hermes 的产品概念，先把入口
-                              // 摆出来；后端代理 + 真接口在 v1 接入，此处仅给一个跳转 SkillHub
-                              // 本站的临时通路，避免用户进来发现"啥都没有"。
-                              <div
-                                className="overflow-hidden rounded-2xl"
-                                style={{
-                                  border: "1px solid rgba(0,0,0,0.06)",
-                                  background: "#ffffff",
-                                  boxShadow:
-                                    "0 4px 24px rgba(0,0,0,0.03), 0 1px 2px rgba(0,0,0,0.02)",
-                                }}
-                              >
-                                <div
-                                  className="flex items-center gap-3 px-6 py-4"
-                                  style={{ borderBottom: "1px solid rgba(0,0,0,0.05)" }}
-                                >
-                                  <div
-                                    className="flex h-8 w-8 items-center justify-center rounded-xl"
-                                    style={{
-                                      background: "rgba(0,0,0,0.04)",
-                                      color: "rgba(0,0,0,0.90)",
-                                    }}
-                                  >
-                                    <Users className="h-4 w-4" />
-                                  </div>
-                                  <h3
-                                    className="flex-1 text-base font-semibold"
-                                    style={{
-                                      color: "rgba(0,0,0,0.90)",
-                                      letterSpacing: "-0.2px",
-                                    }}
-                                  >
-                                    {t("AI 搭子")}
-                                  </h3>
-                                </div>
-                                <div className="flex flex-col gap-4 p-6">
-                                  <p
-                                    className="text-sm leading-relaxed"
-                                    style={{ color: "rgba(0,0,0,0.60)" }}
-                                  >
-                                    {t(
-                                      "通过抽卡选择 AI 人设、组合技能包，把你的 LightVela 实例打造成专属的 AI 搭子。该能力正在接入中，可先到 SkillHub 本站使用完整版。",
-                                    )}
-                                  </p>
-                                  <div>
-                                    <a
-                                      href="https://skillhub.cn/hermes"
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition-colors"
-                                      style={{
-                                        background: "rgba(0,0,0,0.04)",
-                                        color: "rgba(0,0,0,0.90)",
-                                      }}
-                                    >
-                                      {t("前往 SkillHub 体验完整版")}
-                                      <ExternalLink className="h-3.5 w-3.5" />
-                                    </a>
-                                  </div>
-                                </div>
-                              </div>
-                            )}
+                            {activeSection === "buddy" && <BuddyPanel />}
                           </div>
                         </div>
                       </div>
