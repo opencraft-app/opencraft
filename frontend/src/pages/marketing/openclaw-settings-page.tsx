@@ -157,7 +157,7 @@ const SettingsNavbar = () => {
   const t = useT();
   return (
     <header
-      className="fixed inset-x-0 top-0 z-50 border-b border-black/5 bg-white/90 backdrop-blur-[20px]"
+      className="lw-fixed-top fixed inset-x-0 z-50 border-b border-black/5 bg-white/90 backdrop-blur-[20px]"
     >
       <div className="mx-auto flex h-[60px] items-center justify-between max-w-[1440px] px-6 md:px-[80px]">
         <BrandMark to="/" />
@@ -2847,7 +2847,7 @@ export const OpenClawSettingsPage = () => {
         )}
       </AnimatePresence>
 
-      <main className="flex-grow px-6 pb-16 pt-24 md:px-8">
+      <main className="lw-app-top-pad flex-grow px-6 pb-16 md:px-8">
         <section className="mx-auto" style={{ maxWidth: 1200 }}>
           {/* Page Header */}
           <motion.div

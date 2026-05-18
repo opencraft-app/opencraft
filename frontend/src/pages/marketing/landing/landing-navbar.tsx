@@ -83,7 +83,7 @@ export function LandingNavbar({
 
   return (
     <header
-      className="fixed top-0 inset-x-0 z-50 border-b bg-white/90 backdrop-blur-[20px] border-black/5"
+      className="lw-fixed-top fixed inset-x-0 z-50 border-b bg-white/90 backdrop-blur-[20px] border-black/5"
     >
       <div className="mx-auto flex items-center h-[60px] max-w-[1440px] px-6 md:px-10 lg:px-[80px]">
         {/* Logo — 统一使用 BrandMark 组件，保持跨页面视觉一致 */}

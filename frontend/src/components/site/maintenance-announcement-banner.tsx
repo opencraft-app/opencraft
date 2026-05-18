@@ -30,6 +30,25 @@ const EXPIRES_AT = Date.UTC(2026, 4 /* 0-indexed: May */, 18, 22, 0, 0);
 /** 显示的路径白名单 */
 const VISIBLE_PATHS = new Set<string>(["/", "/dashboard/settings"]);
 
+/** 公告条占据的 viewport 高度（px）。同步给 LandingNavbar / SettingsNavbar /
+ * HeroSection 留位时使用，硬编码而非测量，避免布局抖动。 */
+export const ANNOUNCEMENT_BANNER_HEIGHT_PX = 36;
+
+/**
+ * 给 <body> 设 `lw-has-announcement` class —— 全局 CSS 据此把
+ * 下方的 fixed navbar / hero padding 偏移 ANNOUNCEMENT_BANNER_HEIGHT_PX。
+ * 这样 navbar / hero 不需要 import 公告组件、也不需要 React state 联动。
+ */
+function useBodyAnnouncementClass(visible: boolean) {
+  useEffect(() => {
+    if (!visible) return;
+    document.body.classList.add("lw-has-announcement");
+    return () => {
+      document.body.classList.remove("lw-has-announcement");
+    };
+  }, [visible]);
+}
+
 export function MaintenanceAnnouncementBanner() {
   const t = useT();
   const location = useLocation();
@@ -59,29 +78,32 @@ export function MaintenanceAnnouncementBanner() {
     return () => clearTimeout(timer);
   }, []);
 
-  // 国内站才显示
-  if (!isCN) return null;
+  // 把"是否实际渲染"汇成一个布尔，方便 useBodyAnnouncementClass 跟随
+  const visible =
+    isCN &&
+    !expired &&
+    VISIBLE_PATHS.has(location.pathname) &&
+    !dismissed;
 
-  // 时间过期不显示
-  if (expired) return null;
+  useBodyAnnouncementClass(visible);
 
-  // 路径白名单外不显示
-  if (!VISIBLE_PATHS.has(location.pathname)) return null;
-
-  // 用户已关闭
-  if (dismissed) return null;
+  if (!visible) return null;
 
   return (
     <div
-      className="sticky top-0 z-[80] border-b border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-950 shadow-sm"
+      // 高度由 ANNOUNCEMENT_BANNER_HEIGHT_PX (= 36px) 决定 —— 用 min-h 而不是
+      // 固定 h-9，是为了在窄屏文案折行时允许公告条增高，不被裁断。
+      // navbar / hero 的偏移按 36px 写死的好处：绝大多数情况单行不增高，
+      // 只有窄屏多行才会与 navbar 留出小重叠（仍可读，可接受的退化）。
+      className="fixed inset-x-0 top-0 z-[60] flex min-h-9 items-center border-b border-amber-300 bg-amber-50 px-4 py-1.5 text-sm text-amber-950 shadow-sm"
       role="status"
       aria-live="polite"
     >
-      <div className="mx-auto flex max-w-7xl items-start gap-3">
-        <Megaphone className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+      <div className="mx-auto flex w-full max-w-7xl items-center gap-3">
+        <Megaphone className="h-4 w-4 shrink-0" aria-hidden="true" />
         <p className="flex-1 leading-relaxed">
           {t(
-            "重要通知：我们将于北京时间 2026 年 5 月 19 日 0 点～3 点，对平台存量的 Hermes Agent 版本进行后台自动升级，升级期间可能导致你的智能体对话 / 任务执行短暂中止，带来的不便尽请谅解。",
+            "重要通知：我们将于北京时间 2026 年 5 月 19 日 0 点～3 点，对平台存量的 Hermes Agent 版本进行后台自动升级，升级期间可能导致智能体对话或任务执行短暂中止，带来的不便尽请谅解。",
           )}
         </p>
         <button
@@ -95,7 +117,7 @@ export function MaintenanceAnnouncementBanner() {
             }
             setDismissed(true);
           }}
-          className="-mr-1 mt-0.5 shrink-0 rounded p-0.5 transition-colors hover:bg-amber-100"
+          className="-mr-1 shrink-0 rounded p-0.5 transition-colors hover:bg-amber-100"
         >
           <X className="h-4 w-4" />
         </button>

@@ -120,7 +120,7 @@ export function HeroSection({
   ];
 
   return (
-    <section id="hero" className="relative overflow-x-clip bg-white pt-[60px]">
+    <section id="hero" className="lw-hero-top-pad relative overflow-x-clip bg-white">
       {/* ── Hero 背景光晕（设计稿合成图：原 Figma Vector 7725 / 7729 / 7728 三层叠加扁平化输出） ── */}
       {/* 整体作为按钮下方装饰图（灯泡/星星/爱心）的背景，z 低于装饰图层 */}
       {/* 移动端隐藏：避免窄屏出现大面积色块 */}
