@@ -47,6 +47,9 @@ HERMES_VERSION=""
 HERMES_SRC_VERSION=""
 HERMES_GIT_COMMIT=""
 HERMES_ACLI_INSTALL_URL=""
+HERMES_SYSTEM_BIN_DIR="${HERMES_SYSTEM_BIN_DIR:-/usr/local/bin}"
+HERMES_SYSTEM_LINK_DIR="${HERMES_SYSTEM_LINK_DIR:-/usr/bin}"
+ACLI_IDENTITY_PATH="${ACLI_IDENTITY_PATH:-/etc/acli/identity.yaml}"
 NODE_VERSION=""
 PNPM_VERSION=""
 PLAYWRIGHT_VERSION=""
@@ -741,19 +744,59 @@ install_node_major_from_nodesource() {
 
 ensure_hermes_runtime_bin_links() {
   local candidate=""
+  local resolved=""
+  local target=""
+  local link_target=""
+  local real_bin=""
+  local real_bin_escaped=""
+  local tmp=""
+  local tool_name=""
   local found_any=false
 
-  for candidate in \
-    "${RUNTIME_HOME}/.hermes/hermes-agent/venv/bin/hermes-agent" \
-    "${RUNTIME_HOME}/.hermes/hermes-agent/venv/bin/hermes" \
-    "${RUNTIME_HOME}/.local/bin/hermes-agent" \
-    "${RUNTIME_HOME}/.local/bin/hermes" \
-    "${RUNTIME_HOME}/.cargo/bin/hermes-agent" \
-    "${RUNTIME_HOME}/.cargo/bin/hermes"; do
-    if [ -x "${candidate}" ]; then
-      ln -sfn "${candidate}" "/usr/local/bin/$(basename "${candidate}")"
-      found_any=true
+  mkdir -p "${HERMES_SYSTEM_BIN_DIR}" "${HERMES_SYSTEM_LINK_DIR}"
+
+  for tool_name in hermes hermes-agent; do
+    real_bin=""
+    for candidate in \
+      "${RUNTIME_HOME}/.hermes/hermes-agent/venv/bin/${tool_name}" \
+      "${RUNTIME_HOME}/.local/bin/${tool_name}" \
+      "${RUNTIME_HOME}/.cargo/bin/${tool_name}"; do
+      [ -x "${candidate}" ] || continue
+      resolved="$(readlink -f "${candidate}" 2>/dev/null || printf '%s\n' "${candidate}")"
+      case "${resolved}" in
+        "${HERMES_SYSTEM_BIN_DIR}/"*|"${HERMES_SYSTEM_LINK_DIR}/"*)
+          log_warn "skip ${tool_name} candidate resolving to system wrapper: ${candidate} -> ${resolved}"
+          continue
+          ;;
+      esac
+      real_bin="${resolved}"
+      break
+    done
+
+    if [ -z "${real_bin}" ]; then
+      continue
     fi
+
+    if [ ! -x "${real_bin}" ]; then
+      log_warn "skip ${tool_name} non-executable resolved path: ${real_bin}"
+      continue
+    fi
+
+    printf -v real_bin_escaped '%q' "${real_bin}"
+    target="${HERMES_SYSTEM_BIN_DIR}/${tool_name}"
+    link_target="${HERMES_SYSTEM_LINK_DIR}/${tool_name}"
+    tmp="$(mktemp "${HERMES_SYSTEM_BIN_DIR}/.${tool_name}.XXXXXX")"
+    cat >"${tmp}" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+exec ${real_bin_escaped} "\$@"
+EOF
+    chmod 0755 "${tmp}"
+    rm -f "${target}" "${link_target}"
+    mv "${tmp}" "${target}"
+    ln -sfn "${target}" "${link_target}"
+    found_any=true
+    log_info "installed Hermes system wrapper: ${target} -> ${real_bin}"
   done
 
   if [ "${found_any}" = false ]; then
@@ -791,6 +834,39 @@ install_hermes_extra_tools() {
   if [ -x "${RUNTIME_HOME}/.local/bin/skillhub" ]; then
     install -m 0755 "${RUNTIME_HOME}/.local/bin/skillhub" /usr/local/bin/skillhub
   fi
+}
+
+ensure_hermes_acli_identity() {
+  local identity="${ACLI_IDENTITY_PATH}"
+  local runtime_version="${HERMES_SRC_VERSION}"
+
+  mkdir -p "$(dirname "${identity}")"
+  touch "${identity}"
+
+  upsert_identity_key() {
+    local key="$1"
+    local value="$2"
+    if grep -q "^${key}:" "${identity}"; then
+      sed -i -e "s|^${key}:.*|${key}: ${value}|" "${identity}"
+    else
+      printf '%s: %s\n' "${key}" "${value}" >>"${identity}"
+    fi
+  }
+
+  if [ -z "${runtime_version}" ]; then
+    runtime_version="$(run_as_runtime_user "${RUNTIME_HOME}/.hermes/hermes-agent/venv/bin/hermes --version 2>/dev/null | sed -n 's/^Hermes Agent v\\([^ ]*\\).*/\\1/p' | head -1" || true)"
+  fi
+
+  upsert_identity_key product lightvela
+  upsert_identity_key run_as "${RUNTIME_USER}"
+  upsert_identity_key runtime hermes
+  upsert_identity_key runtime_bin "${RUNTIME_HOME}/.hermes/hermes-agent/venv/bin/hermes"
+  upsert_identity_key runtime_home "${RUNTIME_HOME}/.hermes"
+  if [ -n "${runtime_version}" ]; then
+    upsert_identity_key runtime_version "${runtime_version}"
+  fi
+
+  log_info "ensured acli identity for Hermes runtime: ${identity}"
 }
 
 ensure_hermes_gateway_service() {
@@ -929,13 +1005,14 @@ install_hermes_acli() {
     log_error "acli not found in PATH after install"
     return 1
   fi
-  if ! acli --help >/dev/null 2>&1; then
-    log_error "acli --help failed"
+  ensure_hermes_acli_identity
+  if ! run_as_runtime_user "acli --help >/dev/null 2>&1"; then
+    log_error "acli --help failed for ${RUNTIME_USER}"
     return 1
   fi
-  if ! acli doctor >/dev/null 2>&1; then
-    log_error "acli doctor failed"
-    acli doctor || true
+  if ! run_as_runtime_user "acli doctor >/dev/null 2>&1"; then
+    log_error "acli doctor failed for ${RUNTIME_USER}"
+    run_as_runtime_user "acli doctor" || true
     return 1
   fi
   ensure_global_bin_links
