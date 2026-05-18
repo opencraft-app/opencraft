@@ -54,9 +54,37 @@ python3 scripts/build-release-image.py --service frontend --env shprod --tag <ta
 
 > 无独立 Prettier/ESLint 配置，代码质量由 tsconfig strict 保障。
 
+### 分支自动预览（StaticPages，推荐日常使用）
+
+把分支推到 `frontsandbox/<name>`（命中 `frontend/**` 路径），CI 会自动构建国内版 + 国际版并发布到 StaticPages，约 2 分钟可访问。**不需要手工跑构建、不需要 token，是日常评审 / 验证的首选。**
+
+地址规则：
+
+- 国内版：`https://<name>.preview.lightclaw.tech`
+- 国际版：`https://intl-<name>.preview.lightclaw.tech`
+
+`master` 同样走这条链路，固定生成 `https://master.preview.lightclaw.tech` 和 `https://intl-master.preview.lightclaw.tech`。
+
+```bash
+# 推一个本地分支去触发预览
+git push origin HEAD:frontsandbox/docs-smoke-v2-20260511
+# → 2min 后：
+#   https://docs-smoke-v2-20260511.preview.lightclaw.tech         # 国内版
+#   https://intl-docs-smoke-v2-20260511.preview.lightclaw.tech    # 国际版
+```
+
+命名要点：
+
+- `<name>` 建议只用小写字母 / 数字 / `-`；脚本会把 `frontsandbox/Demo_Feature` 规范化为 `demo-feature`
+- 国际版固定加 `intl-` 前缀；分支已经叫 `frontsandbox/intl-foo` 不会变成 `intl-intl-foo`
+- 短时间内访问得到 `502` 通常是 CI 还在跑，等流水线完成再刷
+- **这条链路不代表正式发布**，只是预览；正式发布走 Argo CD（国内）和下面的 EdgeOne Pages（国际）
+
+流水线定义见 [`.ci/frontend-preview.yml`](../.ci/frontend-preview.yml)，完整运维手册和踩坑清单见 [`../codesign/staticpages-preview-operator.md`](../codesign/staticpages-preview-operator.md)。
+
 ### 国际站发布预览（EdgeOne Pages）
 
-国际站当前**唯一的预览/发布通道**是 **EdgeOne Pages**（项目 `lightvela-preview` / ProjectId `pages-fqdz1kdlfvp1` / 域名 `https://lightvela-preview-hpthlnbc.edgeone.cool`）。国际站发布从 `master` 拉取，使用 `pnpm build:global` 产出 `dist-global/`：
+国际站当前**正式发布通道**是 **EdgeOne Pages**（项目 `lightvela-preview` / ProjectId `pages-fqdz1kdlfvp1` / 域名 `https://lightvela-preview-hpthlnbc.edgeone.cool`）。日常评审用上面的 `frontsandbox/*` 自动预览即可；只有在需要 EdgeOne 域名（例如对外发链接给非内部同事）或验证生产 Pages 项目的发布权限时，才走这条手工链路。从 `master` 拉取，使用 `pnpm build:global` 产出 `dist-global/`：
 
 > ⚠️ **多人共享场景**：默认的 `lightvela-preview` project + production 环境会被多人同时使用，谁后部署谁覆盖。如果只是个人临时验证、且其他人**没有正在依赖**这个预览域名，可以直接走下面的 default 命令；如果在做评审 / 给别人发链接、或者已知有人在依赖，**请新建 dedicated preview project**（例如 `lightvela-preview-<你的名字>`）：把命令里的 `-n lightvela-preview` 换成 `-n lightvela-preview-pablo`，或设 `EDGEONE_PAGES_PROJECT_NAME=<dedicated-name>` 后再跑 `pnpm deploy:eo`。
 
