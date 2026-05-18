@@ -75,12 +75,9 @@ export function DocsPage() {
     }
   }, [rawContent, slug, navigate]);
 
-  // 页面标题
-  useEffect(() => {
-    const found = getLocalizedFlatSlugs(i18n.language).find((s) => s.slug === slug);
-    const docsTitle = isEnglishLocale(i18n.language) ? "LightVela Docs" : "LightVela 文档";
-    document.title = found ? `${found.title} · ${docsTitle}` : docsTitle;
-  }, [slug, i18n.language]);
+  // 浏览器页签标题统一沿用 index.html 中的默认值，不在文档页内改写。
+  // 历史上此处会把 title 改成 `${某文档标题} · LightVela 文档`，但缺少卸载时的还原逻辑，
+  // 离开文档页后 title 卡在文档标题不变；统一不改即可。
 
   return (
     <main className="flex-1">
