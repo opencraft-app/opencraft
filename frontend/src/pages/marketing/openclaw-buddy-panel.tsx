@@ -1,20 +1,24 @@
 /**
- * AI 搭子面板（v0.5）
+ * AI 搭子面板（v0.6）
  *
  * 在 Hermes 实例 Settings 内，从 SkillHub 公共接口拉取 Soul（人设）和
- * SkillSet（技能包）目录展示。仅只读浏览，**不涉及抽卡 / 创建组合 /
- * 安装到 bot** —— 这些依赖鉴权，等"mono2 后端代理 + service token"方案
- * 落地后再做。
+ * SkillSet（技能包）目录展示，并提供"抽人设"交互（视觉对齐 SkillHub /hermes
+ * 的 DrawModal）。
+ *
+ * 抽卡数据策略：**前端从公共 souls 池 Math.random**，不调 SkillHub 的
+ * draw 接口（该接口需要 JWT Cookie 鉴权）。"创建组合 / 安装到 bot" 等用户态
+ * 写操作仍依赖鉴权，等 mono2 后端代理 + service token 方案落地后再做。
  *
  * 数据来源：`@/lib/skillhub-api`，跨域直连 https://api.skillhub.cn 的
  * 公共接口（lightclaw.tech 已在其 CORS 白名单内）。
  */
 
-import { ExternalLink, Loader2, Users } from "lucide-react";
+import { ExternalLink, Loader2, Sparkles, Users, X } from "lucide-react";
 import { useCallback, useState } from "react";
 import { useT } from "@/i18n/t";
 import { useAsyncResource } from "@/services/use-async-resource";
 import { MarkdownRenderer } from "@/components/docs/markdown-renderer";
+import { DrawSoulModal } from "@/pages/marketing/openclaw-buddy-draw-modal";
 import {
   fetchSkillSetDetail,
   fetchSkillSets,
@@ -42,12 +46,29 @@ export function BuddyPanel() {
   const [activeTab, setActiveTab] = useState<BuddyTab>("souls");
   const [previewSoulSlug, setPreviewSoulSlug] = useState<string | null>(null);
   const [previewSkillSetSlug, setPreviewSkillSetSlug] = useState<string | null>(null);
+  /** 已通过抽卡选中的 Soul，用于头部 chip + 技能包 tab 的"已选人设"提示 */
+  const [selectedSoul, setSelectedSoul] = useState<SkillHubSoul | null>(null);
+  /** 抽卡弹窗开关 */
+  const [drawOpen, setDrawOpen] = useState(false);
+
+  // souls 列表是 SoulList 与 DrawSoulModal 共用的数据源 —— 提到这一层统一拉取，
+  // 避免 SoulList 内部 fetch 一次、DrawModal 再单独 fetch 一次。
+  const soulsFetcher = useCallback(() => fetchSouls({ page: 1, pageSize: 30 }), []);
+  const soulsResource = useAsyncResource(soulsFetcher, []);
+  const souls = soulsResource.data?.souls ?? [];
+
+  const handlePickFromDraw = useCallback((soul: SkillHubSoul) => {
+    setSelectedSoul(soul);
+    setDrawOpen(false);
+    // 抽完自动跳到"技能包"tab，让用户进入下一步
+    setActiveTab("skillsets");
+  }, []);
 
   return (
     <div className="overflow-hidden rounded-2xl" style={PANEL_CARD_STYLE}>
-      {/* 头部：标题 + 跳转完整版 */}
+      {/* 头部：标题 + 抽卡按钮 + 跳转 SkillHub */}
       <div
-        className="flex items-center gap-3 px-6 py-4"
+        className="flex flex-wrap items-center gap-3 px-6 py-4"
         style={{ borderBottom: "1px solid rgba(0,0,0,0.05)" }}
       >
         <div
@@ -57,21 +78,41 @@ export function BuddyPanel() {
           <Users className="h-4 w-4" />
         </div>
         <h3
-          className="flex-1 text-base font-semibold"
+          className="text-base font-semibold"
           style={{ color: "rgba(0,0,0,0.90)", letterSpacing: "-0.2px" }}
         >
           {t("AI 搭子")}
         </h3>
-        <a
-          href="https://skillhub.cn/hermes"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 text-xs font-medium transition-colors"
-          style={{ color: "rgba(0,0,0,0.60)" }}
-        >
-          {t("前往 SkillHub 体验完整版")}
-          <ExternalLink className="h-3 w-3" />
-        </a>
+
+        {selectedSoul && (
+          <SelectedSoulChip
+            soul={selectedSoul}
+            onClear={() => setSelectedSoul(null)}
+          />
+        )}
+
+        <div className="ml-auto flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setDrawOpen(true)}
+            disabled={souls.length === 0}
+            className="inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+            style={{ background: "rgba(0,0,0,0.90)", color: "#ffffff" }}
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            {t("抽取人设")}
+          </button>
+          <a
+            href="https://skillhub.cn/hermes"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 text-xs font-medium transition-colors"
+            style={{ color: "rgba(0,0,0,0.60)" }}
+          >
+            {t("前往 SkillHub 体验完整版")}
+            <ExternalLink className="h-3 w-3" />
+          </a>
+        </div>
       </div>
 
       {/* 提示条 */}
@@ -83,9 +124,11 @@ export function BuddyPanel() {
           borderBottom: "1px solid rgba(0,0,0,0.05)",
         }}
       >
-        {t(
-          "浏览 SkillHub 提供的 AI 人设和技能包目录。抽卡选择、组装、一键安装到 LightVela 实例的能力正在接入中。",
-        )}
+        {selectedSoul
+          ? t("已选好人设，下一步去「技能包」里挑选你想给它装上的能力。")
+          : t(
+              "浏览 SkillHub 提供的 AI 人设和技能包目录。抽卡选择、组装、一键安装到 LightVela 实例的能力正在接入中。",
+            )}
       </div>
 
       {/* 子 Tab：人设 / 技能包 */}
@@ -100,12 +143,14 @@ export function BuddyPanel() {
           ] as { id: BuddyTab; label: string }[]
         ).map((tab) => {
           const isActive = tab.id === activeTab;
+          // 抽完人设后，"技能包" tab 加一个 step-2 圆点强调下一步
+          const showNextStepDot = tab.id === "skillsets" && selectedSoul !== null;
           return (
             <button
               key={tab.id}
               type="button"
               onClick={() => setActiveTab(tab.id)}
-              className="px-3 py-2 text-sm font-medium transition-colors"
+              className="relative px-3 py-2 text-sm font-medium transition-colors"
               style={{
                 color: isActive ? "rgba(0,0,0,0.90)" : "rgba(0,0,0,0.50)",
                 borderBottom: isActive
@@ -115,6 +160,13 @@ export function BuddyPanel() {
               }}
             >
               {tab.label}
+              {showNextStepDot && (
+                <span
+                  className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle"
+                  style={{ background: "#FF7A45" }}
+                  aria-label={t("下一步")}
+                />
+              )}
             </button>
           );
         })}
@@ -123,12 +175,25 @@ export function BuddyPanel() {
       {/* 内容区 */}
       <div className="p-6">
         {activeTab === "souls" && (
-          <SoulList onPick={(slug) => setPreviewSoulSlug(slug)} />
+          <SoulList
+            souls={souls}
+            loading={soulsResource.loading}
+            error={soulsResource.error}
+            onReload={soulsResource.reload}
+            onPick={(slug) => setPreviewSoulSlug(slug)}
+          />
         )}
         {activeTab === "skillsets" && (
           <SkillSetList onPick={(slug) => setPreviewSkillSetSlug(slug)} />
         )}
       </div>
+
+      <DrawSoulModal
+        open={drawOpen}
+        souls={souls}
+        onClose={() => setDrawOpen(false)}
+        onPick={handlePickFromDraw}
+      />
 
       {previewSoulSlug && (
         <SoulPreviewModal slug={previewSoulSlug} onClose={() => setPreviewSoulSlug(null)} />
@@ -143,20 +208,56 @@ export function BuddyPanel() {
   );
 }
 
+// ─── 已选人设 chip ──────────────────────────────────────────────────────────
+
+function SelectedSoulChip({
+  soul,
+  onClear,
+}: {
+  soul: SkillHubSoul;
+  onClear: () => void;
+}) {
+  const t = useT();
+  return (
+    <div
+      className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs"
+      style={{
+        background: "rgba(255,122,69,0.10)",
+        color: "#A85020",
+      }}
+    >
+      <span style={{ color: "rgba(0,0,0,0.50)" }}>{t("已选")}</span>
+      <span className="font-medium">{soul.displayName}</span>
+      <button
+        type="button"
+        onClick={onClear}
+        aria-label={t("取消选中")}
+        className="-mr-1 ml-0.5 transition-opacity hover:opacity-70"
+      >
+        <X className="h-3 w-3" />
+      </button>
+    </div>
+  );
+}
+
 // ─── 列表组件 ───────────────────────────────────────────────────────────────
 
-function SoulList({ onPick }: { onPick: (slug: string) => void }) {
+function SoulList({
+  souls,
+  loading,
+  error,
+  onReload,
+  onPick,
+}: {
+  souls: SkillHubSoul[];
+  loading: boolean;
+  error: string | null;
+  onReload: () => void;
+  onPick: (slug: string) => void;
+}) {
   const t = useT();
-  // useCallback 是为了让 fetcher 引用在 render 间保持稳定。useAsyncResource 内部
-  // 用 useCallback([fetcher]) 派生 run，并把 run 作为 useEffect 依赖；如果直接传
-  // 内联箭头函数，每次 render 都是新引用 → run 变 → effect 重跑 → 无限请求。
-  const fetcher = useCallback(() => fetchSouls({ page: 1, pageSize: 30 }), []);
-  const { data, loading, error, reload } = useAsyncResource(fetcher, []);
-
   if (loading) return <CenterLoader />;
-  if (error) return <ErrorState message={error} onRetry={reload} />;
-
-  const souls = data?.souls ?? [];
+  if (error) return <ErrorState message={error} onRetry={onReload} />;
   if (souls.length === 0) {
     return <EmptyState text={t("暂无人设数据")} />;
   }
@@ -360,4 +461,3 @@ function EmptyState({ text }: { text: string }) {
     </div>
   );
 }
-// preview rebuild trigger 1779104256
