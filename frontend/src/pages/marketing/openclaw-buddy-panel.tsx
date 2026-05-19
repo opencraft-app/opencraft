@@ -202,7 +202,9 @@ function SoulSlotGrid({
   if (loading) return <CenterLoader />;
   if (error) return <ErrorState message={error} onRetry={onReload} />;
   return (
-    <div className="grid grid-cols-3 gap-3 md:gap-4">
+    // 网格 max-w 锁在 500px 居中，让单卡 ≈ 155×220（贴近 SkillHub PC 卡 182×256 / 移动 164×231）；
+    // 不锁的话 slot 会被 settings 面板撑到 280×395+，整体太占垂直空间。
+    <div className="mx-auto grid max-w-[500px] grid-cols-3 gap-3">
       {Array.from({ length: MAX_DRAWS }).map((_, i) => {
         const soul = drawnSouls[i];
         return soul ? (
