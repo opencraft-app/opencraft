@@ -2620,9 +2620,10 @@ export const OpenClawSettingsPage = () => {
         }
 
         if (snapshot.bot.status === "deleting") {
+          setIsCreating(false);
+          setCreationError(null);
+          navigate("/dashboard/settings", { replace: true });
           await refreshBots();
-          if (cancelled) return;
-          setCreationError(t("Hermes 正在删除中，请稍后刷新页面查看状态。"));
           return;
         }
       } catch (err) {
