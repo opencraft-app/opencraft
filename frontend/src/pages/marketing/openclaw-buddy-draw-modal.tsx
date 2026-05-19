@@ -289,9 +289,25 @@ function FlipReveal({ soul, onDone }: { soul: SkillHubSoul; onDone: () => void }
       exit={{ opacity: 0 }}
       transition={{ duration: 1.0, ease: "easeOut" }}
       className="absolute inset-0 z-10 flex items-center justify-center"
-      style={{ perspective: 800, pointerEvents: "none" }}
+      style={{ perspective: 800, pointerEvents: "none", transformStyle: "preserve-3d" }}
     >
-      <SoulFaceCard soul={soul} size="small" />
+      <div
+        className="relative aspect-[112/157] w-[156px]"
+        style={{ transformStyle: "preserve-3d" }}
+      >
+        <div
+          className="absolute inset-0"
+          style={{ backfaceVisibility: "hidden" }}
+        >
+          <CardBack active />
+        </div>
+        <div
+          className="absolute inset-0"
+          style={{ backfaceVisibility: "hidden", transform: "rotateY(180deg)" }}
+        >
+          <SoulFaceCard soul={soul} size="small" />
+        </div>
+      </div>
     </motion.div>
   );
 }
