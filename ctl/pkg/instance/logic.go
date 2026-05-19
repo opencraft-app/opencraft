@@ -54,6 +54,7 @@ var expectedResumeConflictMessages = []string{
 type Logic interface {
 	CreateInstance(ctx pctx.Context, req *transport.CreateInstanceRequest) (*transport.InstanceResponse, error)
 	UpdateInstance(ctx pctx.Context, instanceID string, req *transport.UpdateInstanceRequest) (*transport.InstanceResponse, error)
+	ResetInstanceConfig(ctx pctx.Context, instanceID string) (*transport.InstanceConfigResetResponse, error)
 	ListSoulTemplates(ctx pctx.Context) (*transport.ListSoulTemplatesResponse, error)
 	GetUserUsage(ctx pctx.Context) (*transport.UserUsageResponse, error)
 	GetInstance(ctx pctx.Context, instanceID string) (*transport.InstanceResponse, error)

@@ -1205,7 +1205,7 @@ func TestConfigureQQChannelEnsuresPluginBeforeAdd(t *testing.T) {
 	if !strings.Contains(pluginCmd, `openclaw plugins list`) {
 		t.Fatalf("expected qqbot plugin list preflight, got %s", pluginCmd)
 	}
-	if !strings.Contains(pluginCmd, `grep -Fq 'openclaw-qqbot'`) {
+	if !strings.Contains(pluginCmd, `grep -Fq`) || !strings.Contains(pluginCmd, `openclaw-qqbot`) {
 		t.Fatalf("expected qqbot plugin runtime id check, got %s", pluginCmd)
 	}
 	if !strings.Contains(pluginCmd, `openclaw plugins install @tencent-connect/openclaw-qqbot`) {

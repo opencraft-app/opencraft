@@ -687,6 +687,49 @@ func seedPlan(t *testing.T, r *gin.Engine, h *AdminHandler) uuid.UUID {
 
 // --- Tests ---
 
+func TestAdminRevokeApiKeyDeactivatesExistingKey(t *testing.T) {
+	r, h, keyRepo := setupAdminTestWithKeyRepo(t)
+	keyID := uuid.New()
+	keyRepo.keys = append(keyRepo.keys, model.ApiKey{
+		ID:        keyID,
+		UserID:    uuid.New(),
+		KeyHash:   "hash-revoke",
+		KeyPrefix: "sk-revoke",
+		Name:      "revoke me",
+		IsActive:  true,
+		CreatedAt: time.Now(),
+	})
+	r.DELETE("/api/admin/api-keys/:id", h.RevokeApiKey)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodDelete, "/api/admin/api-keys/"+keyID.String(), nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	stored, err := keyRepo.GetByID(keyID)
+	if err != nil {
+		t.Fatalf("get key: %v", err)
+	}
+	if stored.IsActive {
+		t.Fatal("expected key to be deactivated")
+	}
+}
+
+func TestAdminRevokeApiKeyRejectsUnknownKey(t *testing.T) {
+	r, h := setupAdminTest(t)
+	r.DELETE("/api/admin/api-keys/:id", h.RevokeApiKey)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodDelete, "/api/admin/api-keys/"+uuid.NewString(), nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", w.Code, w.Body.String())
+	}
+}
+
 func TestAdminProvision_Success(t *testing.T) {
 	r, h := setupAdminTest(t)
 

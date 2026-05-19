@@ -488,6 +488,18 @@ func (h *instanceHandler) handleInstance(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		writeSuccess(w, r, http.StatusOK, resp)
+	case len(parts) == 3 && parts[1] == "config" && parts[2] == "reset" && r.Method == http.MethodPost:
+		ctx, ok := newRequestContext(r)
+		if !ok {
+			writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
+			return
+		}
+		resp, err := h.logic.ResetInstanceConfig(ctx, instanceID)
+		if err != nil {
+			writeHTTPError(w, r, err)
+			return
+		}
+		writeSuccess(w, r, http.StatusOK, resp)
 	case len(parts) == 2 && r.Method == http.MethodGet && parts[1] == "borncard":
 		ctx, ok := newRequestContext(r)
 		if !ok {
