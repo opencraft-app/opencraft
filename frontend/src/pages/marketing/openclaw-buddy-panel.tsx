@@ -14,7 +14,7 @@
  */
 
 import { ExternalLink, Loader2, Sparkles, Users, X } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useT } from "@/i18n/t";
 import { useAsyncResource } from "@/services/use-async-resource";
 import { MarkdownRenderer } from "@/components/docs/markdown-renderer";
@@ -50,6 +50,18 @@ export function BuddyPanel() {
   const [selectedSoul, setSelectedSoul] = useState<SkillHubSoul | null>(null);
   /** 抽卡弹窗开关 */
   const [drawOpen, setDrawOpen] = useState(false);
+
+  /** 是否已经自动弹过一次抽卡 modal —— 用 ref 而非 state，避免触发额外 render。
+   * 进入 BuddyPanel 时如果默认 tab 是 souls，自动弹一次让用户立刻看到抽卡台；
+   * 用户 X 关闭、抽完跳 skillsets、或后续切回 souls 都不再自动弹。
+   * 重新抽卡走头部"抽取人设"按钮。 */
+  const hasAutoOpenedRef = useRef(false);
+  useEffect(() => {
+    if (hasAutoOpenedRef.current) return;
+    if (activeTab !== "souls") return;
+    hasAutoOpenedRef.current = true;
+    setDrawOpen(true);
+  }, [activeTab]);
 
   // souls 列表是 SoulList 与 DrawSoulModal 共用的数据源 —— 提到这一层统一拉取，
   // 避免 SoulList 内部 fetch 一次、DrawModal 再单独 fetch 一次。
