@@ -2598,33 +2598,51 @@ export const OpenClawSettingsPage = () => {
       }
 
       try {
-        const snapshot = await repositories.bots.getSettingsSnapshot(targetBotId);
+        const targetBot = await (async () => {
+          try {
+            const snapshot = await repositories.bots.getSettingsSnapshot(targetBotId);
+            return snapshot.bot;
+          } catch (detailError) {
+            const dashboard = await repositories.bots.getDashboardSnapshot("live");
+            const listedBot = dashboard.bots.find((bot) => bot.id === targetBotId);
+            if (listedBot) return listedBot;
+            throw detailError;
+          }
+        })();
         if (cancelled) return;
 
-        if (snapshot.bot.status === "active") {
-          await refreshBots();
-          if (cancelled) return;
-          setActiveTabId(targetBotId);
-          setCreationError(null);
+        if (targetBot.status === "active") {
           setIsCreating(false);
+          setCreationError(null);
+          setActiveTabId(targetBotId);
           navigate("/dashboard/settings", { replace: true });
+          await refreshBots();
           return;
         }
 
-        if (snapshot.bot.status === "failed") {
-          await refreshBots();
-          if (cancelled) return;
-          setActiveTabId(targetBotId);
-          setCreationError(null);
+        if (targetBot.status === "failed") {
           setIsCreating(false);
+          setCreationError(null);
+          setActiveTabId(targetBotId);
           navigate("/dashboard/settings", { replace: true });
+          await refreshBots();
           return;
         }
 
-        if (snapshot.bot.status === "deleting") {
+        if (targetBot.status === "deleting") {
+          setIsCreating(false);
+          setCreationError(null);
+          navigate("/dashboard/settings", { replace: true });
           await refreshBots();
-          if (cancelled) return;
-          setCreationError(t("Hermes 正在删除中，请稍后刷新页面查看状态。"));
+          return;
+        }
+
+        if (targetBot.status !== "provisioning") {
+          setIsCreating(false);
+          setCreationError(null);
+          setActiveTabId(targetBotId);
+          navigate("/dashboard/settings", { replace: true });
+          await refreshBots();
           return;
         }
       } catch (err) {
@@ -2656,7 +2674,6 @@ export const OpenClawSettingsPage = () => {
     creationError,
     requestedCreatingBotId,
     provisioningBot?.id,
-    botsLoading,
     repositories.bots,
     refreshBots,
     navigate,
@@ -3131,7 +3148,6 @@ export const OpenClawSettingsPage = () => {
                       ...createLighthouseConfig({
                         agentType: "hermes",
                         supportsTencentCloudApi: false,
-                        isI18n: isGlobal,
                       }),
                       runCommand: commandAdapter.runCommand,
                       getInvocationTask: commandAdapter.getInvocationTask,
