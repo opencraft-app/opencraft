@@ -34,8 +34,8 @@ const PANEL_CARD_STYLE: React.CSSProperties = {
   boxShadow: "0 4px 24px rgba(0,0,0,0.03), 0 1px 2px rgba(0,0,0,0.02)",
 };
 
-/** 抽卡槽位数上限（与 SkillHub `/hermes/edit-soul` 的卡片数量保持一致的体感） */
-const MAX_DRAWS = 9;
+/** 抽卡槽位数上限（4 列 × 2 行 = 8 张，留出"再抽更多"的余裕） */
+const MAX_DRAWS = 8;
 
 export function BuddyPanel() {
   const t = useT();
@@ -109,7 +109,7 @@ export function BuddyPanel() {
             style={{ background: "rgba(0,0,0,0.90)", color: "#ffffff" }}
           >
             <Sparkles className="h-3.5 w-3.5" />
-            {isAtMax ? t("已抽满 9 张") : t("抽取人设")}
+            {isAtMax ? t("已抽满 8 张") : t("抽取人设")}
           </button>
           <a
             href="https://skillhub.cn/hermes"
@@ -134,7 +134,7 @@ export function BuddyPanel() {
         }}
       >
         {t(
-          "在 SkillHub 16 张 AI 人设里抽出你的 9 张专属卡牌。组装、一键安装到 LightVela 实例的能力正在接入中。",
+          "在 SkillHub 16 张 AI 人设里抽出你的 8 张专属卡牌。组装、一键安装到 LightVela 实例的能力正在接入中。",
         )}
       </div>
 
@@ -202,19 +202,28 @@ function SoulSlotGrid({
   if (loading) return <CenterLoader />;
   if (error) return <ErrorState message={error} onRetry={onReload} />;
   return (
-    // 网格 max-w 锁在 500px 居中，让单卡 ≈ 155×220（贴近 SkillHub PC 卡 182×256 / 移动 164×231）；
-    // 不锁的话 slot 会被 settings 面板撑到 280×395+，整体太占垂直空间。
-    <div className="mx-auto grid max-w-[500px] grid-cols-3 gap-3">
+    // 网格 max-w 锁在 560px 居中，4 列下单卡 ≈ 131×184，比 SkillHub PC 卡（182×256）
+    // 更紧凑，适合 settings 面板里 8 张全部铺开的紧凑型展示。
+    <div className="mx-auto grid max-w-[560px] grid-cols-4 gap-3">
       {Array.from({ length: MAX_DRAWS }).map((_, i) => {
         const soul = drawnSouls[i];
-        return soul ? (
-          <FilledSlot
-            key={soul.slug}
-            soul={soul}
-            onClick={() => onClickFilled(soul.slug)}
+        if (soul) {
+          return (
+            <FilledSlot
+              key={soul.slug}
+              soul={soul}
+              onClick={() => onClickFilled(soul.slug)}
+            />
+          );
+        }
+        // 仅"下一个待抽的空格"展示提示文案，引导用户下一步动作
+        const isNextSlot = i === drawnSouls.length;
+        return (
+          <EmptySlot
+            key={`empty-${i}`}
+            onClick={onClickEmpty}
+            showHint={isNextSlot}
           />
-        ) : (
-          <EmptySlot key={`empty-${i}`} onClick={onClickEmpty} />
         );
       })}
     </div>
@@ -233,16 +242,31 @@ function FilledSlot({ soul, onClick }: { soul: SkillHubSoul; onClick: () => void
   );
 }
 
-function EmptySlot({ onClick }: { onClick: () => void }) {
+function EmptySlot({
+  onClick,
+  showHint,
+}: {
+  onClick: () => void;
+  /** 是否在卡片上叠加"解锁独特灵魂"提示文案，仅当前下一个待抽空格为 true */
+  showHint: boolean;
+}) {
   const t = useT();
   return (
     <button
       type="button"
       onClick={onClick}
       aria-label={t("点击空卡抽取人设")}
-      className="block w-full cursor-pointer transition-transform duration-200 hover:-translate-y-1"
+      className="relative block w-full cursor-pointer transition-transform duration-200 hover:-translate-y-1"
     >
-      <CardBack iconClassName="h-12 w-12" />
+      <CardBack iconClassName="h-9 w-9" />
+      {showHint && (
+        <div
+          className="pointer-events-none absolute inset-x-2 bottom-3 text-center text-[11px] font-medium leading-tight"
+          style={{ color: "rgba(0,0,0,0.55)" }}
+        >
+          {t("解锁独特灵魂")}
+        </div>
+      )}
     </button>
   );
 }
