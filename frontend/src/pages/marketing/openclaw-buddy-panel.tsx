@@ -1,9 +1,8 @@
 /**
- * AI 搭子面板（v0.6）
+ * AI 搭子面板（v0.7）
  *
- * 在 Hermes 实例 Settings 内，从 SkillHub 公共接口拉取 Soul（人设）和
- * SkillSet（技能包）目录展示，并提供"抽人设"交互（视觉对齐 SkillHub /hermes
- * 的 DrawModal）。
+ * 在 Hermes 实例 Settings 内，从 SkillHub 公共接口拉取 Soul（人设）目录展示，
+ * 并提供"抽人设"交互（视觉对齐 SkillHub /hermes 的 DrawModal）。
  *
  * 抽卡数据策略：**前端从公共 souls 池 Math.random**，不调 SkillHub 的
  * draw 接口（该接口需要 JWT Cookie 鉴权）。"创建组合 / 安装到 bot" 等用户态
@@ -11,6 +10,8 @@
  *
  * 数据来源：`@/lib/skillhub-api`，跨域直连 https://api.skillhub.cn 的
  * 公共接口（lightclaw.tech 已在其 CORS 白名单内）。
+ *
+ * 注：SkillSet（技能包）功能已下线，待"组装 + 一键安装"方案成熟后再恢复。
  */
 
 import { ExternalLink, Loader2, Sparkles, Users, X } from "lucide-react";
@@ -20,15 +21,10 @@ import { useAsyncResource } from "@/services/use-async-resource";
 import { MarkdownRenderer } from "@/components/docs/markdown-renderer";
 import { DrawSoulModal } from "@/pages/marketing/openclaw-buddy-draw-modal";
 import {
-  fetchSkillSetDetail,
-  fetchSkillSets,
   fetchSoulDetail,
   fetchSouls,
-  type SkillHubSkillSet,
   type SkillHubSoul,
 } from "@/lib/skillhub-api";
-
-type BuddyTab = "souls" | "skillsets";
 
 const PANEL_CARD_STYLE: React.CSSProperties = {
   border: "1px solid rgba(0,0,0,0.06)",
@@ -43,25 +39,21 @@ const ITEM_CARD_STYLE: React.CSSProperties = {
 
 export function BuddyPanel() {
   const t = useT();
-  const [activeTab, setActiveTab] = useState<BuddyTab>("souls");
   const [previewSoulSlug, setPreviewSoulSlug] = useState<string | null>(null);
-  const [previewSkillSetSlug, setPreviewSkillSetSlug] = useState<string | null>(null);
-  /** 已通过抽卡选中的 Soul，用于头部 chip + 技能包 tab 的"已选人设"提示 */
+  /** 已通过抽卡选中的 Soul，用于头部 chip 提示 */
   const [selectedSoul, setSelectedSoul] = useState<SkillHubSoul | null>(null);
   /** 抽卡弹窗开关 */
   const [drawOpen, setDrawOpen] = useState(false);
 
   /** 是否已经自动弹过一次抽卡 modal —— 用 ref 而非 state，避免触发额外 render。
-   * 进入 BuddyPanel 时如果默认 tab 是 souls，自动弹一次让用户立刻看到抽卡台；
-   * 用户 X 关闭、抽完跳 skillsets、或后续切回 souls 都不再自动弹。
-   * 重新抽卡走头部"抽取人设"按钮。 */
+   * 进入 BuddyPanel 时自动弹一次让用户立刻看到抽卡台；
+   * 用户 X 关闭、抽完之后都不再自动弹。重新抽卡走头部"抽取人设"按钮。 */
   const hasAutoOpenedRef = useRef(false);
   useEffect(() => {
     if (hasAutoOpenedRef.current) return;
-    if (activeTab !== "souls") return;
     hasAutoOpenedRef.current = true;
     setDrawOpen(true);
-  }, [activeTab]);
+  }, []);
 
   // souls 列表是 SoulList 与 DrawSoulModal 共用的数据源 —— 提到这一层统一拉取，
   // 避免 SoulList 内部 fetch 一次、DrawModal 再单独 fetch 一次。
@@ -72,8 +64,6 @@ export function BuddyPanel() {
   const handlePickFromDraw = useCallback((soul: SkillHubSoul) => {
     setSelectedSoul(soul);
     setDrawOpen(false);
-    // 抽完自动跳到"技能包"tab，让用户进入下一步
-    setActiveTab("skillsets");
   }, []);
 
   return (
@@ -136,68 +126,20 @@ export function BuddyPanel() {
           borderBottom: "1px solid rgba(0,0,0,0.05)",
         }}
       >
-        {selectedSoul
-          ? t("已选好人设，下一步去「技能包」里挑选你想给它装上的能力。")
-          : t(
-              "浏览 SkillHub 提供的 AI 人设和技能包目录。抽卡选择、组装、一键安装到 LightVela 实例的能力正在接入中。",
-            )}
-      </div>
-
-      {/* 子 Tab：人设 / 技能包 */}
-      <div
-        className="flex gap-1 px-6 pt-4"
-        style={{ borderBottom: "1px solid rgba(0,0,0,0.05)" }}
-      >
-        {(
-          [
-            { id: "souls", label: t("人设") },
-            { id: "skillsets", label: t("技能包") },
-          ] as { id: BuddyTab; label: string }[]
-        ).map((tab) => {
-          const isActive = tab.id === activeTab;
-          // 抽完人设后，"技能包" tab 加一个 step-2 圆点强调下一步
-          const showNextStepDot = tab.id === "skillsets" && selectedSoul !== null;
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setActiveTab(tab.id)}
-              className="relative px-3 py-2 text-sm font-medium transition-colors"
-              style={{
-                color: isActive ? "rgba(0,0,0,0.90)" : "rgba(0,0,0,0.50)",
-                borderBottom: isActive
-                  ? "2px solid rgba(0,0,0,0.90)"
-                  : "2px solid transparent",
-                marginBottom: "-1px",
-              }}
-            >
-              {tab.label}
-              {showNextStepDot && (
-                <span
-                  className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle"
-                  style={{ background: "#FF7A45" }}
-                  aria-label={t("下一步")}
-                />
-              )}
-            </button>
-          );
-        })}
+        {t(
+          "浏览 SkillHub 提供的 AI 人设。抽卡选择、组装、一键安装到 LightVela 实例的能力正在接入中。",
+        )}
       </div>
 
       {/* 内容区 */}
       <div className="p-6">
-        {activeTab === "souls" && (
-          <SoulList
-            souls={souls}
-            loading={soulsResource.loading}
-            error={soulsResource.error}
-            onReload={soulsResource.reload}
-            onPick={(slug) => setPreviewSoulSlug(slug)}
-          />
-        )}
-        {activeTab === "skillsets" && (
-          <SkillSetList onPick={(slug) => setPreviewSkillSetSlug(slug)} />
-        )}
+        <SoulList
+          souls={souls}
+          loading={soulsResource.loading}
+          error={soulsResource.error}
+          onReload={soulsResource.reload}
+          onPick={(slug) => setPreviewSoulSlug(slug)}
+        />
       </div>
 
       <DrawSoulModal
@@ -209,12 +151,6 @@ export function BuddyPanel() {
 
       {previewSoulSlug && (
         <SoulPreviewModal slug={previewSoulSlug} onClose={() => setPreviewSoulSlug(null)} />
-      )}
-      {previewSkillSetSlug && (
-        <SkillSetPreviewModal
-          slug={previewSkillSetSlug}
-          onClose={() => setPreviewSkillSetSlug(null)}
-        />
       )}
     </div>
   );
@@ -306,74 +242,10 @@ function SoulCard({ soul, onClick }: { soul: SkillHubSoul; onClick: () => void }
   );
 }
 
-function SkillSetList({ onPick }: { onPick: (slug: string) => void }) {
-  const t = useT();
-  const fetcher = useCallback(() => fetchSkillSets({ page: 1, pageSize: 30 }), []);
-  const { data, loading, error, reload } = useAsyncResource(fetcher, []);
-
-  if (loading) return <CenterLoader />;
-  if (error) return <ErrorState message={error} onRetry={reload} />;
-
-  const sets = data?.skillSets ?? [];
-  if (sets.length === 0) {
-    return <EmptyState text={t("暂无技能包数据")} />;
-  }
-
-  return (
-    <ul className="grid grid-cols-1 gap-3 md:grid-cols-2">
-      {sets.map((set) => (
-        <SkillSetCard key={set.slug} set={set} onClick={() => onPick(set.slug)} />
-      ))}
-    </ul>
-  );
-}
-
-function SkillSetCard({ set, onClick }: { set: SkillHubSkillSet; onClick: () => void }) {
-  return (
-    <li>
-      <button
-        type="button"
-        onClick={onClick}
-        className="flex w-full flex-col gap-1.5 rounded-xl px-4 py-3 text-left transition-colors hover:bg-[rgba(0,0,0,0.02)]"
-        style={ITEM_CARD_STYLE}
-      >
-        <div className="text-sm font-semibold" style={{ color: "rgba(0,0,0,0.90)" }}>
-          {set.displayName}
-        </div>
-        <div
-          className="line-clamp-3 text-xs leading-relaxed"
-          style={{ color: "rgba(0,0,0,0.55)" }}
-        >
-          {set.summary}
-        </div>
-      </button>
-    </li>
-  );
-}
-
 // ─── 详情弹窗 ───────────────────────────────────────────────────────────────
 
 function SoulPreviewModal({ slug, onClose }: { slug: string; onClose: () => void }) {
   const fetcher = useCallback(() => fetchSoulDetail(slug), [slug]);
-  const { data, loading, error } = useAsyncResource(fetcher, [slug]);
-  return (
-    <PreviewModal title={data?.displayName ?? ""} onClose={onClose}>
-      {loading && <CenterLoader />}
-      {error && <ErrorState message={error} onRetry={onClose} />}
-      {data && (
-        <div className="prose-doc max-w-none">
-          <p className="mb-4 text-sm" style={{ color: "rgba(0,0,0,0.65)" }}>
-            {data.summary}
-          </p>
-          <MarkdownRenderer content={data.content} />
-        </div>
-      )}
-    </PreviewModal>
-  );
-}
-
-function SkillSetPreviewModal({ slug, onClose }: { slug: string; onClose: () => void }) {
-  const fetcher = useCallback(() => fetchSkillSetDetail(slug), [slug]);
   const { data, loading, error } = useAsyncResource(fetcher, [slug]);
   return (
     <PreviewModal title={data?.displayName ?? ""} onClose={onClose}>
