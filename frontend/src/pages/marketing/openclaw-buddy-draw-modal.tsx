@@ -17,13 +17,16 @@ import { Eye, Loader2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useT } from "@/i18n/t";
 import { fetchSoulDetail, type SkillHubSoul } from "@/lib/skillhub-api";
-import { MarkdownRenderer } from "@/components/docs/markdown-renderer";
 import { useAsyncResource } from "@/services/use-async-resource";
 import {
   REVEAL_STAR_BG,
   getSoulColor,
 } from "@/lib/soul-visuals";
-import { CardBack, SoulFaceCard } from "@/pages/marketing/openclaw-buddy-cards";
+import {
+  CardBack,
+  SoulFaceCard,
+  SoulSpecRenderer,
+} from "@/pages/marketing/openclaw-buddy-cards";
 
 /** 跑灯顺序：左→右、上→下，蛇形闭合避免抖动 */
 const CYCLE_ORDER = [0, 1, 2, 5, 4, 3];
@@ -386,9 +389,9 @@ function SoulInterpretModal({ soul, onClose }: { soul: SkillHubSoul; onClose: ()
             <p className="py-8 text-center text-sm text-black/55">{error}</p>
           )}
           {data && (
-            <div className="prose-doc max-w-none">
+            <div>
               <p className="mb-4 text-sm leading-7 text-black/65">{data.summary}</p>
-              <MarkdownRenderer content={data.content} />
+              <SoulSpecRenderer content={data.content} />
             </div>
           )}
         </div>

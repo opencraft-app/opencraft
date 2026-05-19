@@ -16,12 +16,15 @@
  */
 
 import { ExternalLink, Loader2, Sparkles, Users } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { useT } from "@/i18n/t";
 import { useAsyncResource } from "@/services/use-async-resource";
-import { MarkdownRenderer } from "@/components/docs/markdown-renderer";
 import { DrawSoulModal } from "@/pages/marketing/openclaw-buddy-draw-modal";
-import { CardBack, SoulFaceCard } from "@/pages/marketing/openclaw-buddy-cards";
+import {
+  CardBack,
+  SoulFaceCard,
+  SoulSpecRenderer,
+} from "@/pages/marketing/openclaw-buddy-cards";
 import {
   fetchSoulDetail,
   fetchSouls,
@@ -34,8 +37,8 @@ const PANEL_CARD_STYLE: React.CSSProperties = {
   boxShadow: "0 4px 24px rgba(0,0,0,0.03), 0 1px 2px rgba(0,0,0,0.02)",
 };
 
-/** 抽卡槽位数上限（4 列 × 2 行 = 8 张，留出"再抽更多"的余裕） */
-const MAX_DRAWS = 8;
+/** 抽卡槽位数上限（6 列 × 1 行 = 6 张，单行展示） */
+const MAX_DRAWS = 6;
 
 export function BuddyPanel() {
   const t = useT();
@@ -44,16 +47,6 @@ export function BuddyPanel() {
   const [drawnSouls, setDrawnSouls] = useState<SkillHubSoul[]>([]);
   /** 抽卡弹窗开关 */
   const [drawOpen, setDrawOpen] = useState(false);
-
-  /** 是否已经自动弹过一次抽卡 modal —— 用 ref 而非 state，避免触发额外 render。
-   * 进入 BuddyPanel 时自动弹一次让用户立刻看到抽卡台；
-   * 用户 X 关闭、抽完之后都不再自动弹。重新抽卡走头部"抽取人设"按钮或点空卡。 */
-  const hasAutoOpenedRef = useRef(false);
-  useEffect(() => {
-    if (hasAutoOpenedRef.current) return;
-    hasAutoOpenedRef.current = true;
-    setDrawOpen(true);
-  }, []);
 
   // souls 列表是抽卡 modal 的候选池数据源 —— 提到这一层统一拉取，
   // 避免 SoulSlotGrid 内部 fetch 一次、DrawModal 再单独 fetch 一次。
@@ -101,16 +94,6 @@ export function BuddyPanel() {
         {drawnSouls.length > 0 && <ProgressChip drawn={drawnSouls.length} max={MAX_DRAWS} />}
 
         <div className="ml-auto flex items-center gap-3">
-          <button
-            type="button"
-            onClick={handleOpenDraw}
-            disabled={souls.length === 0 || isAtMax}
-            className="inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-            style={{ background: "rgba(0,0,0,0.90)", color: "#ffffff" }}
-          >
-            <Sparkles className="h-3.5 w-3.5" />
-            {isAtMax ? t("已抽满 8 张") : t("抽取人设")}
-          </button>
           <a
             href="https://skillhub.cn/hermes"
             target="_blank"
@@ -124,22 +107,26 @@ export function BuddyPanel() {
         </div>
       </div>
 
-      {/* 提示条 */}
-      <div
-        className="px-6 py-3 text-xs leading-relaxed"
-        style={{
-          background: "rgba(0,0,0,0.02)",
-          color: "rgba(0,0,0,0.55)",
-          borderBottom: "1px solid rgba(0,0,0,0.05)",
-        }}
-      >
-        {t(
-          "在 SkillHub 16 张 AI 人设里抽出你的 8 张专属卡牌。组装、一键安装到 LightVela 实例的能力正在接入中。",
-        )}
+      {/* 主 CTA：抽取人设 —— 显眼居中，作为页面主要动作入口 */}
+      <div className="flex justify-center pt-6 pb-4">
+        <button
+          type="button"
+          onClick={handleOpenDraw}
+          disabled={souls.length === 0 || isAtMax}
+          className="inline-flex items-center gap-2 rounded-full px-6 py-2.5 text-sm font-semibold transition-all hover:-translate-y-0.5 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none"
+          style={{
+            background: "rgba(0,0,0,0.90)",
+            color: "#ffffff",
+            boxShadow: "0 6px 16px rgba(0,0,0,0.10)",
+          }}
+        >
+          <Sparkles className="h-4 w-4" />
+          {isAtMax ? t("已抽满 6 张") : t("抽取人设")}
+        </button>
       </div>
 
-      {/* 内容区：9 格抽卡槽 */}
-      <div className="p-6">
+      {/* 内容区：6 格抽卡槽 */}
+      <div className="px-6 pb-6">
         <SoulSlotGrid
           drawnSouls={drawnSouls}
           loading={soulsResource.loading && souls.length === 0}
@@ -202,9 +189,9 @@ function SoulSlotGrid({
   if (loading) return <CenterLoader />;
   if (error) return <ErrorState message={error} onRetry={onReload} />;
   return (
-    // 网格 max-w 锁在 560px 居中，4 列下单卡 ≈ 131×184，比 SkillHub PC 卡（182×256）
-    // 更紧凑，适合 settings 面板里 8 张全部铺开的紧凑型展示。
-    <div className="mx-auto grid max-w-[560px] grid-cols-4 gap-3">
+    // 网格 max-w 锁在 920px 居中，6 列下单卡 ≈ 143×202，单行展示 6 张抽卡槽。
+    // 容器在更窄视口里会自然缩小，cell 跟着变小。
+    <div className="mx-auto grid max-w-[920px] grid-cols-6 gap-3">
       {Array.from({ length: MAX_DRAWS }).map((_, i) => {
         const soul = drawnSouls[i];
         if (soul) {
@@ -258,11 +245,11 @@ function EmptySlot({
       aria-label={t("点击空卡抽取人设")}
       className="relative block w-full cursor-pointer transition-transform duration-200 hover:-translate-y-1"
     >
-      <CardBack iconClassName="h-9 w-9" />
+      <CardBack iconClassName={showHint ? "hidden" : "h-9 w-9"} />
       {showHint && (
         <div
-          className="pointer-events-none absolute inset-x-2 bottom-3 text-center text-[11px] font-medium leading-tight"
-          style={{ color: "rgba(0,0,0,0.55)" }}
+          className="pointer-events-none absolute inset-0 flex items-center justify-center px-2 text-center text-[12px] font-medium leading-tight"
+          style={{ color: "rgba(0,0,0,0.65)" }}
         >
           {t("解锁独特灵魂")}
         </div>
@@ -281,11 +268,11 @@ function SoulPreviewModal({ slug, onClose }: { slug: string; onClose: () => void
       {loading && <CenterLoader />}
       {error && <ErrorState message={error} onRetry={onClose} />}
       {data && (
-        <div className="prose-doc max-w-none">
+        <div>
           <p className="mb-4 text-sm" style={{ color: "rgba(0,0,0,0.65)" }}>
             {data.summary}
           </p>
-          <MarkdownRenderer content={data.content} />
+          <SoulSpecRenderer content={data.content} />
         </div>
       )}
     </PreviewModal>

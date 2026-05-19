@@ -145,3 +145,44 @@ export function SoulFaceCard({
     </div>
   );
 }
+
+/**
+ * SoulSpecRenderer —— 把 SkillHub 公共 souls API 返回的 `content` 字段渲染成结构化文档。
+ *
+ * 后端返回的 content **不是 markdown**：是一段中文段落，用 `【xxx】` 区分小节、单换行分行。
+ * 直接喂给 markdown 渲染器会被压成一坨没结构的长文（markdown 把单换行当作空格），
+ * 所以这里按 `【xxx】` 自己分段、每行 `<p>`，避免格式乱掉。
+ */
+export function SoulSpecRenderer({ content }: { content: string }) {
+  if (!content) return null;
+  const lines = content.split("\n");
+  return (
+    <div className="text-sm leading-7" style={{ color: "rgba(0,0,0,0.75)" }}>
+      {lines.map((line, i) => {
+        const trimmed = line.trim();
+        if (!trimmed) return null;
+        const headerMatch = trimmed.match(/^【(.+?)】(.*)$/);
+        if (headerMatch) {
+          const title = headerMatch[1] ?? "";
+          const rest = (headerMatch[2] ?? "").trim();
+          return (
+            <div key={i} className="mt-5 first:mt-0">
+              <h4
+                className="text-[15px] font-semibold"
+                style={{ color: "rgba(0,0,0,0.90)" }}
+              >
+                {title}
+              </h4>
+              {rest && <p className="mt-2">{rest}</p>}
+            </div>
+          );
+        }
+        return (
+          <p key={i} className="mt-2 first:mt-0">
+            {trimmed}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
