@@ -2598,10 +2598,20 @@ export const OpenClawSettingsPage = () => {
       }
 
       try {
-        const snapshot = await repositories.bots.getSettingsSnapshot(targetBotId);
+        const targetBot = await (async () => {
+          try {
+            const snapshot = await repositories.bots.getSettingsSnapshot(targetBotId);
+            return snapshot.bot;
+          } catch (detailError) {
+            const dashboard = await repositories.bots.getDashboardSnapshot("live");
+            const listedBot = dashboard.bots.find((bot) => bot.id === targetBotId);
+            if (listedBot) return listedBot;
+            throw detailError;
+          }
+        })();
         if (cancelled) return;
 
-        if (snapshot.bot.status === "active") {
+        if (targetBot.status === "active") {
           setIsCreating(false);
           setCreationError(null);
           setActiveTabId(targetBotId);
@@ -2610,7 +2620,7 @@ export const OpenClawSettingsPage = () => {
           return;
         }
 
-        if (snapshot.bot.status === "failed") {
+        if (targetBot.status === "failed") {
           setIsCreating(false);
           setCreationError(null);
           setActiveTabId(targetBotId);
@@ -2619,9 +2629,18 @@ export const OpenClawSettingsPage = () => {
           return;
         }
 
-        if (snapshot.bot.status === "deleting") {
+        if (targetBot.status === "deleting") {
           setIsCreating(false);
           setCreationError(null);
+          navigate("/dashboard/settings", { replace: true });
+          await refreshBots();
+          return;
+        }
+
+        if (targetBot.status !== "provisioning") {
+          setIsCreating(false);
+          setCreationError(null);
+          setActiveTabId(targetBotId);
           navigate("/dashboard/settings", { replace: true });
           await refreshBots();
           return;
@@ -3129,7 +3148,6 @@ export const OpenClawSettingsPage = () => {
                       ...createLighthouseConfig({
                         agentType: "hermes",
                         supportsTencentCloudApi: false,
-                        isI18n: isGlobal,
                       }),
                       runCommand: commandAdapter.runCommand,
                       getInvocationTask: commandAdapter.getInvocationTask,
