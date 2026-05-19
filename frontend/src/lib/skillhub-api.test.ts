@@ -37,13 +37,13 @@ describe("skillhub-api", () => {
 
     it("uses the SkillHub public souls endpoint", async () => {
       await fetchSouls();
-      expect(fetchMock).toHaveBeenCalledWith("https://api.skillhub.cn/api/v1/souls");
+      expect(fetchMock).toHaveBeenCalledWith("/__skillhub/api/v1/souls");
     });
 
     it("appends paging query parameters", async () => {
       await fetchSouls({ page: 2, pageSize: 30 });
       expect(fetchMock).toHaveBeenCalledWith(
-        "https://api.skillhub.cn/api/v1/souls?page=2&pageSize=30",
+        "/__skillhub/api/v1/souls?page=2&pageSize=30",
       );
     });
   });
@@ -52,7 +52,7 @@ describe("skillhub-api", () => {
     it("URL-encodes the slug", async () => {
       const fetchMock = mockFetch({ slug: "a b" });
       await fetchSoulDetail("a b");
-      expect(fetchMock).toHaveBeenCalledWith("https://api.skillhub.cn/api/v1/souls/a%20b");
+      expect(fetchMock).toHaveBeenCalledWith("/__skillhub/api/v1/souls/a%20b");
     });
   });
 

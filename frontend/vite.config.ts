@@ -484,6 +484,13 @@ export default defineConfig(({ mode }) => {
       port: devPort,
       ...(allowedHosts.length > 0 ? { allowedHosts } : {}),
       ...(hmr ? { hmr } : {}),
+      proxy: {
+        "/__skillhub": {
+          target: "https://api.skillhub.cn",
+          changeOrigin: true,
+          rewrite: (url) => url.replace(/^\/__skillhub/, ""),
+        },
+      },
       fs: {
         // Allow Vite to serve files from the sibling SDK checkout when linked.
         allow: [rootDir, LOCAL_SDK_ROOT],
