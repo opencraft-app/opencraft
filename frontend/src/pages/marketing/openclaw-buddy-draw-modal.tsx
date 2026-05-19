@@ -4,6 +4,9 @@
  * 视觉参考 SkillHub `/hermes` 的 DrawModal：6 张卡牌背面（3×2 网格）→ 跑灯
  * 高亮在 6 张卡之间走马灯 → 抽中卡片 3D 翻牌放大 → 结果展示 → "使用此人设"。
  *
+ * 翻牌后正面与 reveal 阶段都使用 `@/lib/soul-visuals` 里镜像的 SkillHub 卡面图（bgUrl）+
+ * 主题渐变色（color），实现与 SkillHub 原版一致的视觉体验。
+ *
  * 数据策略：从 props 传入的 souls 池里 Math.random 一张作为抽卡结果。
  * **不调 SkillHub 的 /activity/.../souls/draw 接口** —— 该接口需要鉴权，
  * 等"mono2 后端代理 + service token"方案落地后再换成真接口。
@@ -14,6 +17,11 @@ import { X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useT } from "@/i18n/t";
 import type { SkillHubSoul } from "@/lib/skillhub-api";
+import {
+  REVEAL_STAR_BG,
+  getSoulColor,
+  getSoulVisuals,
+} from "@/lib/soul-visuals";
 
 /** 卡背纹理（来自 SkillHub COS，公开图片资源） */
 const CARD_BACK_IMG =
@@ -120,67 +128,110 @@ export function DrawSoulModal({ open, souls, onClose, onPick }: DrawSoulModalPro
 
   if (!open) return null;
 
+  const isRevealed = phase === "revealed" && winnerSoul !== null;
+
   return (
     <div
       className="fixed inset-0 z-[60] flex items-center justify-center p-4"
       style={{ backgroundColor: "rgba(0,0,0,0.6)" }}
       onClick={onClose}
     >
-      <div
-        className="relative flex w-full max-w-[460px] flex-col items-center gap-6 rounded-2xl bg-white px-6 py-8"
+      {/* 弹窗主体：reveal 阶段切换为 soul.color 全屏渐变背景 */}
+      <motion.div
+        className="relative w-full max-w-[412px] overflow-hidden rounded-2xl"
+        animate={{
+          background: isRevealed && winnerSoul
+            ? getSoulColor(winnerSoul)
+            : "#ffffff",
+        }}
+        transition={{ duration: 0.4, ease: "easeOut" }}
         onClick={(e) => e.stopPropagation()}
       >
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label={t("关闭")}
-          className="absolute right-4 top-4 transition-opacity hover:opacity-60"
-          style={{ color: "rgba(0,0,0,0.55)" }}
-        >
-          <X className="h-5 w-5" />
-        </button>
+        <CloseButton onClick={onClose} variant={isRevealed ? "light" : "default"} />
 
-        <h3 className="text-lg font-semibold" style={{ color: "rgba(0,0,0,0.90)" }}>
-          {phase === "revealed" ? t("抽卡结果") : t("抽取你的 AI 人设")}
-        </h3>
-
-        {phase !== "revealed" ? (
-          <>
-            {/* 6 张卡牌 3×2 网格 */}
-            <div className="grid grid-cols-3 gap-3" style={{ width: 360 }}>
-              {Array.from({ length: 6 }).map((_, i) => (
-                <CardBack key={i} active={activeIdx === i} />
-              ))}
-            </div>
-
-            {phase === "idle" ? (
-              <button
-                type="button"
-                onClick={handleStart}
-                disabled={souls.length === 0}
-                className="rounded-full px-8 py-2.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-                style={{ background: "rgba(0,0,0,0.90)", color: "#ffffff" }}
+        <AnimatePresence mode="wait">
+          {!isRevealed ? (
+            <motion.div
+              key="drawing"
+              initial={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.3 }}
+              className="relative flex flex-col items-center gap-6 px-6 py-9"
+              style={{ perspective: 800 }}
+            >
+              <h3
+                className="text-lg font-semibold"
+                style={{ color: "rgba(0,0,0,0.90)" }}
               >
-                {souls.length === 0 ? t("加载中…") : t("开始抽卡")}
-              </button>
-            ) : (
-              <p className="text-sm" style={{ color: "rgba(0,0,0,0.55)" }}>
-                {t("正在抽取…")}
-              </p>
-            )}
-          </>
-        ) : null}
+                {phase === "flipping"
+                  ? t("翻牌中…")
+                  : t("抽取你的 AI 人设")}
+              </h3>
 
-        <AnimatePresence>
-          {phase === "flipping" && winnerSoul && (
-            <FlipReveal soul={winnerSoul} onDone={handleFlipDone} />
-          )}
-          {phase === "revealed" && winnerSoul && (
-            <RevealResult soul={winnerSoul} onConfirm={handleConfirm} onRedraw={handleStart} />
+              {/* 6 张卡牌 3×2 网格 */}
+              <div className="grid grid-cols-3 gap-3" style={{ width: 360 }}>
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <CardBack key={i} active={activeIdx === i} />
+                ))}
+              </div>
+
+              {phase === "idle" && (
+                <button
+                  type="button"
+                  onClick={handleStart}
+                  disabled={souls.length === 0}
+                  className="rounded-full px-8 py-2.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                  style={{ background: "rgba(0,0,0,0.90)", color: "#ffffff" }}
+                >
+                  {souls.length === 0 ? t("加载中…") : t("开始抽卡")}
+                </button>
+              )}
+              {phase === "cycling" && (
+                <p className="text-sm" style={{ color: "rgba(0,0,0,0.55)" }}>
+                  {t("正在抽取…")}
+                </p>
+              )}
+
+              {/* 翻牌动画：在 6 张卡上叠一层放大翻转的中奖卡 */}
+              {phase === "flipping" && winnerSoul && (
+                <FlipReveal soul={winnerSoul} onDone={handleFlipDone} />
+              )}
+            </motion.div>
+          ) : (
+            <RevealPanel
+              soul={winnerSoul!}
+              onConfirm={handleConfirm}
+              onRedraw={handleStart}
+            />
           )}
         </AnimatePresence>
-      </div>
+      </motion.div>
     </div>
+  );
+}
+
+// ─── 关闭按钮 ───────────────────────────────────────────────────────────────
+
+function CloseButton({
+  onClick,
+  variant = "default",
+}: {
+  onClick: () => void;
+  variant?: "default" | "light";
+}) {
+  const t = useT();
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={t("关闭")}
+      className="absolute right-4 top-4 z-20 transition-opacity hover:opacity-60"
+      style={{
+        color: variant === "light" ? "rgba(255,255,255,0.9)" : "rgba(0,0,0,0.55)",
+      }}
+    >
+      <X className="h-5 w-5" />
+    </button>
   );
 }
 
@@ -222,7 +273,7 @@ function CardBack({ active }: { active: boolean }) {
   );
 }
 
-// ─── 翻牌动画（短暂占位，1.2s 后通知 done） ─────────────────────────────────
+// ─── 翻牌动画 ───────────────────────────────────────────────────────────────
 
 function FlipReveal({ soul, onDone }: { soul: SkillHubSoul; onDone: () => void }) {
   useEffect(() => {
@@ -237,17 +288,17 @@ function FlipReveal({ soul, onDone }: { soul: SkillHubSoul; onDone: () => void }
       animate={{ rotateY: 180, scale: 1.2 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 1.0, ease: "easeOut" }}
-      className="absolute inset-0 flex items-center justify-center"
+      className="absolute inset-0 z-10 flex items-center justify-center"
       style={{ perspective: 800, pointerEvents: "none" }}
     >
-      <SoulFaceCard soul={soul} />
+      <SoulFaceCard soul={soul} size="small" />
     </motion.div>
   );
 }
 
-// ─── 抽卡结果展示 ───────────────────────────────────────────────────────────
+// ─── 抽中后 reveal 全屏面板 ──────────────────────────────────────────────────
 
-function RevealResult({
+function RevealPanel({
   soul,
   onConfirm,
   onRedraw,
@@ -259,30 +310,52 @@ function RevealResult({
   const t = useT();
   return (
     <motion.div
-      key="reveal"
-      initial={{ opacity: 0, scale: 0.92 }}
-      animate={{ opacity: 1, scale: 1 }}
+      key="revealed"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="flex flex-col items-center gap-5"
+      transition={{ duration: 0.4 }}
+      className="relative px-9 pb-8 pt-9"
     >
-      <SoulFaceCard soul={soul} />
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          onClick={onRedraw}
-          className="rounded-full px-5 py-2 text-sm font-medium transition-colors"
-          style={{ background: "rgba(0,0,0,0.04)", color: "rgba(0,0,0,0.85)" }}
-        >
-          {t("再抽一次")}
-        </button>
-        <button
-          type="button"
-          onClick={onConfirm}
-          className="rounded-full px-6 py-2 text-sm font-medium transition-colors"
-          style={{ background: "rgba(0,0,0,0.90)", color: "#ffffff" }}
-        >
-          {t("使用此人设")}
-        </button>
+      {/* 顶部星点装饰，覆盖在彩色背景之上、内容之下 */}
+      <img
+        src={REVEAL_STAR_BG}
+        alt=""
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 h-[296px] w-full object-cover"
+        draggable={false}
+      />
+
+      <div className="relative z-10 flex flex-col items-center gap-6">
+        {/* 标题：固定文案 + 名字片段拼接，让 i18n 提取走"恭喜获得"这一条 key */}
+        <h2 className="text-center font-heading text-[22px] font-semibold leading-[1.36em] text-white">
+          {t("恭喜获得")}「{soul.displayName}」！
+        </h2>
+
+        {/* 大版人设卡 */}
+        <SoulFaceCard soul={soul} size="large" />
+
+        <div className="mt-2 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={onRedraw}
+            className="rounded-full px-5 py-2 text-sm font-medium text-white/90 transition-colors hover:bg-white/10"
+            style={{
+              background: "rgba(255,255,255,0.12)",
+              border: "1px solid rgba(255,255,255,0.4)",
+            }}
+          >
+            {t("再抽一次")}
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="rounded-full px-6 py-2 text-sm font-semibold transition-colors hover:bg-black"
+            style={{ background: "#202020", color: "#ffffff" }}
+          >
+            {t("使用此人设")}
+          </button>
+        </div>
       </div>
     </motion.div>
   );
@@ -291,42 +364,52 @@ function RevealResult({
 // ─── Soul 正面卡片 ──────────────────────────────────────────────────────────
 
 /**
- * Soul 正面卡片 —— SkillHub 的版本依赖各 soul hardcoded 的 avatar / bgUrl /
- * color 资源（在他们前端 constants/souls.ts 里），公共 API 没暴露这些字段。
- * 这里基于 slug 派生一个伪随机渐变色，作为视觉差异化。
+ * 翻牌后展示的人设卡 —— 用 `bgUrl` 作整张卡背景图（每张 soul 自带的全身像 +
+ * 渐变背景），底部叠 `displayName` + `summary`。视觉直接对齐 SkillHub
+ * `SoulCardFace` 在 `useBgUrl=true` 模式下的渲染。
  */
-function SoulFaceCard({ soul }: { soul: SkillHubSoul }) {
-  const gradient = gradientFromSlug(soul.slug);
+function SoulFaceCard({
+  soul,
+  size,
+}: {
+  soul: SkillHubSoul;
+  size: "small" | "large";
+}) {
+  const visuals = getSoulVisuals(soul);
+  const isLarge = size === "large";
   return (
     <div
-      className="flex aspect-[3/4] w-[180px] flex-col items-center justify-center gap-2 rounded-[8px] px-3 py-4 text-center"
+      className="relative overflow-hidden rounded-[10px]"
       style={{
-        background: gradient,
-        color: "rgba(0,0,0,0.85)",
-        boxShadow: "0 12px 32px rgba(0,0,0,0.10)",
+        width: isLarge ? 240 : 156,
+        aspectRatio: isLarge ? "240 / 338" : "112 / 157",
+        background: visuals.bgUrl
+          ? `url(${visuals.bgUrl}) center/cover no-repeat`
+          : "#f0f0f0",
+        border: isLarge ? "4px solid #fff" : "2px solid #fff",
+        boxShadow: isLarge
+          ? "0 26px 63px rgba(0,0,0,0.08)"
+          : "0 12px 32px rgba(0,0,0,0.10)",
       }}
     >
-      <div
-        className="flex h-12 w-12 items-center justify-center rounded-full text-base font-semibold"
-        style={{ background: "rgba(255,255,255,0.55)", color: "rgba(0,0,0,0.85)" }}
-      >
-        {soul.slug.slice(0, 2).toUpperCase()}
-      </div>
-      <div className="text-sm font-semibold">{soul.displayName}</div>
-      <div className="line-clamp-3 text-[11px] leading-snug" style={{ color: "rgba(0,0,0,0.65)" }}>
-        {soul.summary}
+      {/* 底部信息浮层 */}
+      <div className="absolute inset-x-3 bottom-3 flex flex-col gap-1">
+        <div
+          className={`font-heading font-semibold text-black ${
+            isLarge ? "text-[20px] leading-[1.4em]" : "text-[15px] leading-[1.4em]"
+          }`}
+        >
+          {soul.displayName}
+        </div>
+        <p
+          className={`line-clamp-2 text-left leading-[1.5em] ${
+            isLarge ? "text-[13px]" : "text-[11px]"
+          }`}
+          style={{ color: "rgba(0,0,0,0.7)" }}
+        >
+          {soul.summary}
+        </p>
       </div>
     </div>
   );
-}
-
-/** 由 slug 派生稳定的卡面渐变色，让同名人设每次抽出来颜色一致 */
-function gradientFromSlug(slug: string): string {
-  let hash = 0;
-  for (let i = 0; i < slug.length; i += 1) {
-    hash = (hash * 31 + slug.charCodeAt(i)) >>> 0;
-  }
-  const hue1 = hash % 360;
-  const hue2 = (hue1 + 40) % 360;
-  return `linear-gradient(160deg, hsl(${hue1}deg 75% 88%) 0%, hsl(${hue2}deg 70% 92%) 100%)`;
 }
