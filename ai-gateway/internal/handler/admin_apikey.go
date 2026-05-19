@@ -214,7 +214,13 @@ func (h *AdminHandler) RevokeApiKey(c *gin.Context) {
 		return
 	}
 
-	if err := h.keySvc.Revoke(keyID, ""); err != nil {
+	key, err := h.keySvc.GetByID(keyID)
+	if err != nil {
+		response.ErrBadRequest(c, err.Error())
+		return
+	}
+
+	if err := h.keySvc.Revoke(keyID, key.KeyHash); err != nil {
 		response.ErrBadRequest(c, err.Error())
 		return
 	}

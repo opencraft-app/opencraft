@@ -548,6 +548,67 @@ func TestRealnameRequiredWriteAllowsVerifiedSession(t *testing.T) {
 	}
 }
 
+func TestInstancesPrefixAllowsNestedConfigResetWithoutDedicatedRoute(t *testing.T) {
+	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"session": map[string]any{
+				"user": map[string]any{
+					"id":               "usr_verified",
+					"email":            "verified@example.com",
+					"realnameVerified": true,
+				},
+			},
+		})
+	}))
+	defer auth.Close()
+
+	upstreamCalls := 0
+	var upstreamPath string
+	var upstreamMethod string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		upstreamPath = r.URL.Path
+		upstreamMethod = r.Method
+		if got := r.Header.Get("X-Lightclaw-User-ID"); got != "usr_verified" {
+			t.Fatalf("expected injected user id, got %q", got)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer upstream.Close()
+
+	handler, err := NewHandler(Config{
+		AuthServiceURL: auth.URL,
+		Routes: []Route{{
+			Name:            "ctl",
+			Prefix:          "/v1/instances",
+			Methods:         []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodOptions},
+			Upstream:        upstream.URL,
+			Access:          AccessAuthenticated,
+			RequireRealname: true,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/instances/ins-1/config/reset", nil)
+	req.Header.Set("Authorization", "Bearer tok-123")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if upstreamCalls != 1 {
+		t.Fatalf("expected one upstream call, got %d", upstreamCalls)
+	}
+	if upstreamMethod != http.MethodPost || upstreamPath != "/v1/instances/ins-1/config/reset" {
+		t.Fatalf("unexpected upstream request: %s %s", upstreamMethod, upstreamPath)
+	}
+}
+
 func TestRealnameRequiredDoesNotBlockReadOrPreflight(t *testing.T) {
 	authCalls := 0
 	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
