@@ -1,12 +1,13 @@
 /**
- * AI 搭子面板（v0.7）
+ * AI 搭子面板（v0.8）
  *
- * 在 Hermes 实例 Settings 内，从 SkillHub 公共接口拉取 Soul（人设）目录展示，
- * 并提供"抽人设"交互（视觉对齐 SkillHub /hermes 的 DrawModal）。
+ * 在 Hermes 实例 Settings 内，从 SkillHub 公共接口拉取 Soul（人设）目录，
+ * 渲染成 9 张抽卡槽（3×3 网格）：默认全部为空白卡背，每抽到一张人设填入下一格。
+ * 视觉对齐 SkillHub `/hermes/edit-soul` —— 抽到的卡用 SoulFaceCard（bgUrl 全卡面），
+ * 没抽到的用 CardBack（灰底 + 拼图 icon）。
  *
- * 抽卡数据策略：**前端从公共 souls 池 Math.random**，不调 SkillHub 的
- * draw 接口（该接口需要 JWT Cookie 鉴权）。"创建组合 / 安装到 bot" 等用户态
- * 写操作仍依赖鉴权，等 mono2 后端代理 + service token 方案落地后再做。
+ * 抽卡数据策略：**前端从公共 souls 池 Math.random**，且自动剔除已抽到的 slug，
+ * 每次抽出新一张。不调 SkillHub 的 draw 接口（鉴权方案待落地）。
  *
  * 数据来源：`@/lib/skillhub-api`，跨域直连 https://api.skillhub.cn 的
  * 公共接口（lightclaw.tech 已在其 CORS 白名单内）。
@@ -14,12 +15,13 @@
  * 注：AI 搭子当前仅保留 Soul（人设）浏览与抽卡能力。
  */
 
-import { ExternalLink, Loader2, Sparkles, Users, X } from "lucide-react";
+import { ExternalLink, Loader2, Sparkles, Users } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useT } from "@/i18n/t";
 import { useAsyncResource } from "@/services/use-async-resource";
 import { MarkdownRenderer } from "@/components/docs/markdown-renderer";
 import { DrawSoulModal } from "@/pages/marketing/openclaw-buddy-draw-modal";
+import { CardBack, SoulFaceCard } from "@/pages/marketing/openclaw-buddy-cards";
 import {
   fetchSoulDetail,
   fetchSouls,
@@ -32,22 +34,20 @@ const PANEL_CARD_STYLE: React.CSSProperties = {
   boxShadow: "0 4px 24px rgba(0,0,0,0.03), 0 1px 2px rgba(0,0,0,0.02)",
 };
 
-const ITEM_CARD_STYLE: React.CSSProperties = {
-  border: "1px solid rgba(0,0,0,0.06)",
-  background: "#ffffff",
-};
+/** 抽卡槽位数上限（与 SkillHub `/hermes/edit-soul` 的卡片数量保持一致的体感） */
+const MAX_DRAWS = 9;
 
 export function BuddyPanel() {
   const t = useT();
   const [previewSoulSlug, setPreviewSoulSlug] = useState<string | null>(null);
-  /** 已通过抽卡选中的 Soul，用于头部 chip 提示 */
-  const [selectedSoul, setSelectedSoul] = useState<SkillHubSoul | null>(null);
+  /** 已抽到的人设，按抽到顺序排列，去重 by slug，最多 MAX_DRAWS 张 */
+  const [drawnSouls, setDrawnSouls] = useState<SkillHubSoul[]>([]);
   /** 抽卡弹窗开关 */
   const [drawOpen, setDrawOpen] = useState(false);
 
   /** 是否已经自动弹过一次抽卡 modal —— 用 ref 而非 state，避免触发额外 render。
    * 进入 BuddyPanel 时自动弹一次让用户立刻看到抽卡台；
-   * 用户 X 关闭、抽完之后都不再自动弹。重新抽卡走头部"抽取人设"按钮。 */
+   * 用户 X 关闭、抽完之后都不再自动弹。重新抽卡走头部"抽取人设"按钮或点空卡。 */
   const hasAutoOpenedRef = useRef(false);
   useEffect(() => {
     if (hasAutoOpenedRef.current) return;
@@ -55,20 +55,32 @@ export function BuddyPanel() {
     setDrawOpen(true);
   }, []);
 
-  // souls 列表是 SoulList 与 DrawSoulModal 共用的数据源 —— 提到这一层统一拉取，
-  // 避免 SoulList 内部 fetch 一次、DrawModal 再单独 fetch 一次。
+  // souls 列表是抽卡 modal 的候选池数据源 —— 提到这一层统一拉取，
+  // 避免 SoulSlotGrid 内部 fetch 一次、DrawModal 再单独 fetch 一次。
   const soulsFetcher = useCallback(() => fetchSouls({ page: 1, pageSize: 30 }), []);
   const soulsResource = useAsyncResource(soulsFetcher, []);
   const souls = soulsResource.data?.souls ?? [];
 
+  const drawnSlugs = drawnSouls.map((s) => s.slug);
+  const isAtMax = drawnSouls.length >= MAX_DRAWS;
+
   const handlePickFromDraw = useCallback((soul: SkillHubSoul) => {
-    setSelectedSoul(soul);
+    setDrawnSouls((prev) => {
+      if (prev.some((s) => s.slug === soul.slug)) return prev; // dedupe（防御）
+      if (prev.length >= MAX_DRAWS) return prev; // 上限保护
+      return [...prev, soul];
+    });
     setDrawOpen(false);
   }, []);
 
+  const handleOpenDraw = useCallback(() => {
+    if (isAtMax) return;
+    setDrawOpen(true);
+  }, [isAtMax]);
+
   return (
     <div className="overflow-hidden rounded-2xl" style={PANEL_CARD_STYLE}>
-      {/* 头部：标题 + 抽卡按钮 + 跳转 SkillHub */}
+      {/* 头部：标题 + 进度 + 抽卡按钮 + 跳转 SkillHub */}
       <div
         className="flex flex-wrap items-center gap-3 px-6 py-4"
         style={{ borderBottom: "1px solid rgba(0,0,0,0.05)" }}
@@ -86,23 +98,18 @@ export function BuddyPanel() {
           {t("AI 搭子")}
         </h3>
 
-        {selectedSoul && (
-          <SelectedSoulChip
-            soul={selectedSoul}
-            onClear={() => setSelectedSoul(null)}
-          />
-        )}
+        {drawnSouls.length > 0 && <ProgressChip drawn={drawnSouls.length} max={MAX_DRAWS} />}
 
         <div className="ml-auto flex items-center gap-3">
           <button
             type="button"
-            onClick={() => setDrawOpen(true)}
-            disabled={souls.length === 0}
+            onClick={handleOpenDraw}
+            disabled={souls.length === 0 || isAtMax}
             className="inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
             style={{ background: "rgba(0,0,0,0.90)", color: "#ffffff" }}
           >
             <Sparkles className="h-3.5 w-3.5" />
-            {t("抽取人设")}
+            {isAtMax ? t("已抽满 9 张") : t("抽取人设")}
           </button>
           <a
             href="https://skillhub.cn/hermes"
@@ -127,24 +134,26 @@ export function BuddyPanel() {
         }}
       >
         {t(
-          "浏览 SkillHub 提供的 AI 人设。抽卡选择、组装、一键安装到 LightVela 实例的能力正在接入中。",
+          "在 SkillHub 16 张 AI 人设里抽出你的 9 张专属卡牌。组装、一键安装到 LightVela 实例的能力正在接入中。",
         )}
       </div>
 
-      {/* 内容区 */}
+      {/* 内容区：9 格抽卡槽 */}
       <div className="p-6">
-        <SoulList
-          souls={souls}
-          loading={soulsResource.loading}
-          error={soulsResource.error}
+        <SoulSlotGrid
+          drawnSouls={drawnSouls}
+          loading={soulsResource.loading && souls.length === 0}
+          error={souls.length === 0 ? soulsResource.error : null}
           onReload={soulsResource.reload}
-          onPick={(slug) => setPreviewSoulSlug(slug)}
+          onClickFilled={(slug) => setPreviewSoulSlug(slug)}
+          onClickEmpty={handleOpenDraw}
         />
       </div>
 
       <DrawSoulModal
         open={drawOpen}
         souls={souls}
+        drawnSlugs={drawnSlugs}
         onClose={() => setDrawOpen(false)}
         onPick={handlePickFromDraw}
       />
@@ -156,89 +165,83 @@ export function BuddyPanel() {
   );
 }
 
-// ─── 已选人设 chip ──────────────────────────────────────────────────────────
+// ─── 进度 chip ──────────────────────────────────────────────────────────────
 
-function SelectedSoulChip({
-  soul,
-  onClear,
-}: {
-  soul: SkillHubSoul;
-  onClear: () => void;
-}) {
+function ProgressChip({ drawn, max }: { drawn: number; max: number }) {
   const t = useT();
   return (
     <div
-      className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs"
-      style={{
-        background: "rgba(255,122,69,0.10)",
-        color: "#A85020",
-      }}
+      className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium"
+      style={{ background: "rgba(255,122,69,0.10)", color: "#A85020" }}
     >
-      <span style={{ color: "rgba(0,0,0,0.50)" }}>{t("已选")}</span>
-      <span className="font-medium">{soul.displayName}</span>
-      <button
-        type="button"
-        onClick={onClear}
-        aria-label={t("取消选中")}
-        className="-mr-1 ml-0.5 transition-opacity hover:opacity-70"
-      >
-        <X className="h-3 w-3" />
-      </button>
+      <span style={{ color: "rgba(0,0,0,0.50)" }}>{t("已抽")}</span>
+      <span>
+        {drawn}/{max}
+      </span>
     </div>
   );
 }
 
-// ─── 列表组件 ───────────────────────────────────────────────────────────────
+// ─── 9 格抽卡槽 ─────────────────────────────────────────────────────────────
 
-function SoulList({
-  souls,
+function SoulSlotGrid({
+  drawnSouls,
   loading,
   error,
   onReload,
-  onPick,
+  onClickFilled,
+  onClickEmpty,
 }: {
-  souls: SkillHubSoul[];
+  drawnSouls: SkillHubSoul[];
   loading: boolean;
   error: string | null;
   onReload: () => void;
-  onPick: (slug: string) => void;
+  onClickFilled: (slug: string) => void;
+  onClickEmpty: () => void;
 }) {
-  const t = useT();
   if (loading) return <CenterLoader />;
   if (error) return <ErrorState message={error} onRetry={onReload} />;
-  if (souls.length === 0) {
-    return <EmptyState text={t("暂无人设数据")} />;
-  }
-
   return (
-    <ul className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-      {souls.map((soul) => (
-        <SoulCard key={soul.slug} soul={soul} onClick={() => onPick(soul.slug)} />
-      ))}
-    </ul>
+    <div className="grid grid-cols-3 gap-3 md:gap-4">
+      {Array.from({ length: MAX_DRAWS }).map((_, i) => {
+        const soul = drawnSouls[i];
+        return soul ? (
+          <FilledSlot
+            key={soul.slug}
+            soul={soul}
+            onClick={() => onClickFilled(soul.slug)}
+          />
+        ) : (
+          <EmptySlot key={`empty-${i}`} onClick={onClickEmpty} />
+        );
+      })}
+    </div>
   );
 }
 
-function SoulCard({ soul, onClick }: { soul: SkillHubSoul; onClick: () => void }) {
+function FilledSlot({ soul, onClick }: { soul: SkillHubSoul; onClick: () => void }) {
   return (
-    <li>
-      <button
-        type="button"
-        onClick={onClick}
-        className="flex w-full flex-col gap-1.5 rounded-xl px-4 py-3 text-left transition-colors hover:bg-[rgba(0,0,0,0.02)]"
-        style={ITEM_CARD_STYLE}
-      >
-        <div className="text-sm font-semibold" style={{ color: "rgba(0,0,0,0.90)" }}>
-          {soul.displayName}
-        </div>
-        <div
-          className="line-clamp-2 text-xs leading-relaxed"
-          style={{ color: "rgba(0,0,0,0.55)" }}
-        >
-          {soul.summary}
-        </div>
-      </button>
-    </li>
+    <button
+      type="button"
+      onClick={onClick}
+      className="block w-full transition-transform duration-200 hover:-translate-y-1"
+    >
+      <SoulFaceCard soul={soul} size="slot" />
+    </button>
+  );
+}
+
+function EmptySlot({ onClick }: { onClick: () => void }) {
+  const t = useT();
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={t("点击空卡抽取人设")}
+      className="block w-full cursor-pointer transition-transform duration-200 hover:-translate-y-1"
+    >
+      <CardBack iconClassName="h-12 w-12" />
+    </button>
   );
 }
 
@@ -334,14 +337,6 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
       >
         {t("重试")}
       </button>
-    </div>
-  );
-}
-
-function EmptyState({ text }: { text: string }) {
-  return (
-    <div className="py-10 text-center text-sm" style={{ color: "rgba(0,0,0,0.45)" }}>
-      {text}
     </div>
   );
 }

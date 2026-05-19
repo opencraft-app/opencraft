@@ -14,7 +14,7 @@
 
 import { motion, AnimatePresence } from "framer-motion";
 import { Eye, Loader2, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useT } from "@/i18n/t";
 import { fetchSoulDetail, type SkillHubSoul } from "@/lib/skillhub-api";
 import { MarkdownRenderer } from "@/components/docs/markdown-renderer";
@@ -22,20 +22,8 @@ import { useAsyncResource } from "@/services/use-async-resource";
 import {
   REVEAL_STAR_BG,
   getSoulColor,
-  getSoulVisuals,
 } from "@/lib/soul-visuals";
-
-/** 卡背纹理（来自 SkillHub COS，公开图片资源） */
-const CARD_BACK_IMG =
-  "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/86be223d-cfc5-41bf-9950-e7d5b1353e13.png";
-
-/** 拼图图标（来自 SkillHub COS） */
-const PUZZLE_ICON =
-  "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/d224cdb8-a36f-43ef-8da7-99ba79ef5cba.png";
-
-/** 彩虹渐变高亮边框（来自 SkillHub） */
-const RAINBOW_GRADIENT =
-  "linear-gradient(224deg, #1446FF 0%, #249CFF 25%, #7AF1FF 51%, #FFD900 74%, #FF966D 100%)";
+import { CardBack, SoulFaceCard } from "@/pages/marketing/openclaw-buddy-cards";
 
 /** 跑灯顺序：左→右、上→下，蛇形闭合避免抖动 */
 const CYCLE_ORDER = [0, 1, 2, 5, 4, 3];
@@ -50,12 +38,14 @@ interface DrawSoulModalProps {
   open: boolean;
   /** 抽卡候选池（即从 fetchSouls 拿到的列表） */
   souls: SkillHubSoul[];
+  /** 已抽到过的 slug 集合，会从抽卡池里剔除，避免重复抽到同一张人设 */
+  drawnSlugs?: string[];
   onClose: () => void;
   /** 抽中并点击 "使用此人设" 时回调 */
   onPick: (soul: SkillHubSoul) => void;
 }
 
-export function DrawSoulModal({ open, souls, onClose, onPick }: DrawSoulModalProps) {
+export function DrawSoulModal({ open, souls, drawnSlugs, onClose, onPick }: DrawSoulModalProps) {
   const t = useT();
   const [phase, setPhase] = useState<Phase>("idle");
   /** 跑灯当前高亮卡片索引（0-5） */
@@ -115,14 +105,21 @@ export function DrawSoulModal({ open, souls, onClose, onPick }: DrawSoulModalPro
     setPhase("revealed");
   }, []);
 
+  /** 抽卡池：剔除已抽到的 slug，避免重复抽到同一张 */
+  const drawablePool = useMemo(() => {
+    if (!drawnSlugs || drawnSlugs.length === 0) return souls;
+    const drawn = new Set(drawnSlugs);
+    return souls.filter((s) => !drawn.has(s.slug));
+  }, [souls, drawnSlugs]);
+
   const handleStart = useCallback(() => {
-    if (souls.length === 0) return;
-    const soul = souls[Math.floor(Math.random() * souls.length)]!;
+    if (drawablePool.length === 0) return;
+    const soul = drawablePool[Math.floor(Math.random() * drawablePool.length)]!;
     setWinnerSoul(soul);
     setWinnerIdx(Math.floor(Math.random() * 6));
     stepRef.current = 0;
     setPhase("cycling");
-  }, [souls]);
+  }, [drawablePool]);
 
   const handleConfirm = useCallback(() => {
     if (winnerSoul) onPick(winnerSoul);
@@ -181,11 +178,15 @@ export function DrawSoulModal({ open, souls, onClose, onPick }: DrawSoulModalPro
                 <button
                   type="button"
                   onClick={handleStart}
-                  disabled={souls.length === 0}
+                  disabled={drawablePool.length === 0}
                   className="rounded-full px-8 py-2.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                   style={{ background: "rgba(0,0,0,0.90)", color: "#ffffff" }}
                 >
-                  {souls.length === 0 ? t("加载中…") : t("开始抽卡")}
+                  {souls.length === 0
+                    ? t("加载中…")
+                    : drawablePool.length === 0
+                      ? t("已抽完所有人设")
+                      : t("开始抽卡")}
                 </button>
               )}
               {phase === "cycling" && (
@@ -233,44 +234,6 @@ function CloseButton({
     >
       <X className="h-5 w-5" />
     </button>
-  );
-}
-
-// ─── 卡牌背面 ───────────────────────────────────────────────────────────────
-
-function CardBack({ active }: { active: boolean }) {
-  return (
-    <div
-      className="relative aspect-[112/157] w-full overflow-hidden rounded transition-shadow duration-200"
-      style={{
-        background: active ? RAINBOW_GRADIENT : "#E9E9E9",
-        padding: active ? 2 : 0.6,
-        boxShadow: active ? "0 32px 54px rgba(0,0,0,0.05)" : "none",
-      }}
-    >
-      <div className="relative h-full w-full overflow-hidden rounded-[3px] bg-white">
-        <img
-          src={CARD_BACK_IMG}
-          alt=""
-          draggable={false}
-          className="absolute inset-0 h-full w-full object-cover"
-        />
-        <img
-          src={PUZZLE_ICON}
-          alt=""
-          draggable={false}
-          className="pointer-events-none absolute left-1/2 top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2"
-        />
-        <div
-          className="pointer-events-none absolute rounded-[3px] border"
-          style={{
-            inset: 2.5,
-            borderColor: "rgba(0,0,0,0.08)",
-            borderWidth: 0.6,
-          }}
-        />
-      </div>
-    </div>
   );
 }
 
@@ -373,77 +336,6 @@ function RevealPanel({
         )}
       </AnimatePresence>
     </motion.div>
-  );
-}
-
-// ─── Soul 正面卡片 ──────────────────────────────────────────────────────────
-
-/**
- * 翻牌后展示的人设卡 —— 用 `bgUrl` 作整张卡背景图（每张 soul 自带的全身像 +
- * 渐变背景），底部叠 `displayName` + `summary`。视觉直接对齐 SkillHub
- * `SoulCardFace` 在 `useBgUrl=true` 模式下的渲染。
- */
-function SoulFaceCard({
-  soul,
-  size,
-  onInterpret,
-}: {
-  soul: SkillHubSoul;
-  size: "small" | "large";
-  onInterpret?: () => void;
-}) {
-  const t = useT();
-  const visuals = getSoulVisuals(soul);
-  const isLarge = size === "large";
-  return (
-    <div
-      className="relative overflow-hidden rounded-[10px]"
-      style={{
-        width: isLarge ? 240 : 156,
-        aspectRatio: isLarge ? "240 / 338" : "112 / 157",
-        background: visuals.bgUrl
-          ? `url(${visuals.bgUrl}) center/cover no-repeat`
-          : "#f0f0f0",
-        border: isLarge ? "4px solid #fff" : "2px solid #fff",
-        boxShadow: isLarge
-          ? "0 26px 63px rgba(0,0,0,0.08)"
-          : "0 12px 32px rgba(0,0,0,0.10)",
-      }}
-    >
-      {/* 底部信息浮层 */}
-      <div className="absolute inset-x-3 bottom-3 flex flex-col gap-1">
-        <div
-          className={`font-heading font-semibold text-black ${
-            isLarge ? "text-[20px] leading-[1.4em]" : "text-[15px] leading-[1.4em]"
-          }`}
-        >
-          {soul.displayName}
-        </div>
-        <p
-          className={`line-clamp-2 text-left leading-[1.5em] ${
-            isLarge ? "text-[13px]" : "text-[11px]"
-          }`}
-          style={{ color: "rgba(0,0,0,0.7)" }}
-        >
-          {soul.summary}
-        </p>
-        {isLarge && onInterpret && (
-          <button
-            type="button"
-            onClick={onInterpret}
-            className="ml-auto mt-1 inline-flex items-center gap-1 font-medium underline underline-offset-4 transition-opacity hover:opacity-70"
-            style={{
-              color: "rgba(0,0,0,0.72)",
-              fontSize: 12,
-              lineHeight: "18px",
-            }}
-          >
-            <Eye className="h-3 w-3" />
-            {t("人设解读")}
-          </button>
-        )}
-      </div>
-    </div>
   );
 }
 
