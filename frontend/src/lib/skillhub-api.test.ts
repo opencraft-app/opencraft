@@ -7,8 +7,6 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  fetchSkillSetDetail,
-  fetchSkillSets,
   fetchSoulDetail,
   fetchSouls,
 } from "./skillhub-api";
@@ -55,24 +53,6 @@ describe("skillhub-api", () => {
       const fetchMock = mockFetch({ slug: "a b" });
       await fetchSoulDetail("a b");
       expect(fetchMock).toHaveBeenCalledWith("https://api.skillhub.cn/api/v1/souls/a%20b");
-    });
-  });
-
-  describe("fetchSkillSets", () => {
-    it("uses the public skillsets endpoint", async () => {
-      const fetchMock = mockFetch({ skillSets: [] });
-      await fetchSkillSets();
-      expect(fetchMock).toHaveBeenCalledWith("https://api.skillhub.cn/api/v1/skillsets");
-    });
-  });
-
-  describe("fetchSkillSetDetail", () => {
-    it("URL-encodes the slug", async () => {
-      const fetchMock = mockFetch({ slug: "x" });
-      await fetchSkillSetDetail("tech/sub");
-      expect(fetchMock).toHaveBeenCalledWith(
-        "https://api.skillhub.cn/api/v1/skillsets/tech%2Fsub",
-      );
     });
   });
 

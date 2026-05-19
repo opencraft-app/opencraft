@@ -11,7 +11,7 @@
  * 数据来源：`@/lib/skillhub-api`，跨域直连 https://api.skillhub.cn 的
  * 公共接口（lightclaw.tech 已在其 CORS 白名单内）。
  *
- * 注：SkillSet（技能包）功能已下线，待"组装 + 一键安装"方案成熟后再恢复。
+ * 注：AI 搭子当前仅保留 Soul（人设）浏览与抽卡能力。
  */
 
 import { ExternalLink, Loader2, Sparkles, Users, X } from "lucide-react";
