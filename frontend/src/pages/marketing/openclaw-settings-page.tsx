@@ -2602,22 +2602,20 @@ export const OpenClawSettingsPage = () => {
         if (cancelled) return;
 
         if (snapshot.bot.status === "active") {
-          await refreshBots();
-          if (cancelled) return;
-          setActiveTabId(targetBotId);
-          setCreationError(null);
           setIsCreating(false);
+          setCreationError(null);
+          setActiveTabId(targetBotId);
           navigate("/dashboard/settings", { replace: true });
+          await refreshBots();
           return;
         }
 
         if (snapshot.bot.status === "failed") {
-          await refreshBots();
-          if (cancelled) return;
-          setActiveTabId(targetBotId);
-          setCreationError(null);
           setIsCreating(false);
+          setCreationError(null);
+          setActiveTabId(targetBotId);
           navigate("/dashboard/settings", { replace: true });
+          await refreshBots();
           return;
         }
 
@@ -2656,7 +2654,6 @@ export const OpenClawSettingsPage = () => {
     creationError,
     requestedCreatingBotId,
     provisioningBot?.id,
-    botsLoading,
     repositories.bots,
     refreshBots,
     navigate,
