@@ -203,15 +203,7 @@ function SoulSlotGrid({
             />
           );
         }
-        // 仅"下一个待抽的空格"展示提示文案，引导用户下一步动作
-        const isNextSlot = i === drawnSouls.length;
-        return (
-          <EmptySlot
-            key={`empty-${i}`}
-            onClick={onClickEmpty}
-            showHint={isNextSlot}
-          />
-        );
+        return <EmptySlot key={`empty-${i}`} onClick={onClickEmpty} />;
       })}
     </div>
   );
@@ -229,32 +221,31 @@ function FilledSlot({ soul, onClick }: { soul: SkillHubSoul; onClick: () => void
   );
 }
 
-function EmptySlot({
-  onClick,
-  showHint,
-}: {
-  onClick: () => void;
-  /** 是否在卡片上叠加"解锁独特灵魂"提示文案，仅当前下一个待抽空格为 true */
-  showHint: boolean;
-}) {
+function EmptySlot({ onClick }: { onClick: () => void }) {
   const t = useT();
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={t("点击空卡抽取人设")}
-      className="relative block w-full cursor-pointer transition-transform duration-200 hover:-translate-y-1"
-    >
-      <CardBack iconClassName={showHint ? "hidden" : "h-9 w-9"} />
-      {showHint && (
-        <div
-          className="pointer-events-none absolute inset-0 flex items-center justify-center px-2 text-center text-[12px] font-medium leading-tight"
-          style={{ color: "rgba(0,0,0,0.65)" }}
-        >
-          {t("解锁独特灵魂")}
-        </div>
-      )}
-    </button>
+    // group + group-hover 让卡片在 hover 时浮出顶部 tooltip 提示
+    <div className="group relative">
+      <button
+        type="button"
+        onClick={onClick}
+        aria-label={t("点击空卡抽取人设")}
+        className="block w-full cursor-pointer transition-transform duration-200 hover:-translate-y-1"
+      >
+        <CardBack iconClassName="h-9 w-9" />
+      </button>
+      {/* 悬浮提示：仅当 hover 时浮出，定位在卡片正上方 */}
+      <div
+        className="pointer-events-none absolute -top-9 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md px-3 py-1.5 text-[11px] font-medium text-white opacity-0 transition-opacity duration-150 group-hover:opacity-100"
+        style={{
+          background: "rgba(0,0,0,0.85)",
+          boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+        }}
+        role="tooltip"
+      >
+        {t("为你的 Agent 伙伴解锁独特灵魂")}
+      </div>
+    </div>
   );
 }
 
