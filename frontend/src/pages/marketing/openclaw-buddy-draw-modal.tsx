@@ -13,10 +13,12 @@
  */
 
 import { motion, AnimatePresence } from "framer-motion";
-import { X } from "lucide-react";
+import { Eye, Loader2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useT } from "@/i18n/t";
-import type { SkillHubSoul } from "@/lib/skillhub-api";
+import { fetchSoulDetail, type SkillHubSoul } from "@/lib/skillhub-api";
+import { MarkdownRenderer } from "@/components/docs/markdown-renderer";
+import { useAsyncResource } from "@/services/use-async-resource";
 import {
   REVEAL_STAR_BG,
   getSoulColor,
@@ -201,7 +203,6 @@ export function DrawSoulModal({ open, souls, onClose, onPick }: DrawSoulModalPro
             <RevealPanel
               soul={winnerSoul!}
               onConfirm={handleConfirm}
-              onRedraw={handleStart}
             />
           )}
         </AnimatePresence>
@@ -317,13 +318,12 @@ function FlipReveal({ soul, onDone }: { soul: SkillHubSoul; onDone: () => void }
 function RevealPanel({
   soul,
   onConfirm,
-  onRedraw,
 }: {
   soul: SkillHubSoul;
   onConfirm: () => void;
-  onRedraw: () => void;
 }) {
   const t = useT();
+  const [interpretOpen, setInterpretOpen] = useState(false);
   return (
     <motion.div
       key="revealed"
@@ -342,37 +342,36 @@ function RevealPanel({
         draggable={false}
       />
 
-      <div className="relative z-10 flex flex-col items-center gap-6">
+      <div className="relative z-10 flex flex-col items-center gap-7">
         {/* 标题：固定文案 + 名字片段拼接，让 i18n 提取走"恭喜获得"这一条 key */}
         <h2 className="text-center font-heading text-[22px] font-semibold leading-[1.36em] text-white">
           {t("恭喜获得")}「{soul.displayName}」！
         </h2>
 
         {/* 大版人设卡 */}
-        <SoulFaceCard soul={soul} size="large" />
+        <SoulFaceCard
+          soul={soul}
+          size="large"
+          onInterpret={() => setInterpretOpen(true)}
+        />
 
-        <div className="mt-2 flex items-center gap-3">
-          <button
-            type="button"
-            onClick={onRedraw}
-            className="rounded-full px-5 py-2 text-sm font-medium text-white/90 transition-colors hover:bg-white/10"
-            style={{
-              background: "rgba(255,255,255,0.12)",
-              border: "1px solid rgba(255,255,255,0.4)",
-            }}
-          >
-            {t("再抽一次")}
-          </button>
+        <div className="mt-3 w-full">
           <button
             type="button"
             onClick={onConfirm}
-            className="rounded-full px-6 py-2 text-sm font-semibold transition-colors hover:bg-black"
-            style={{ background: "#202020", color: "#ffffff" }}
+            className="h-14 w-full rounded-full text-base font-semibold transition-colors hover:bg-black"
+            style={{ background: "#202020", color: "#ffffff", boxShadow: "0 14px 28px rgba(0,0,0,0.10)" }}
           >
             {t("使用此人设")}
           </button>
         </div>
       </div>
+
+      <AnimatePresence>
+        {interpretOpen && (
+          <SoulInterpretModal soul={soul} onClose={() => setInterpretOpen(false)} />
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }
@@ -387,10 +386,13 @@ function RevealPanel({
 function SoulFaceCard({
   soul,
   size,
+  onInterpret,
 }: {
   soul: SkillHubSoul;
   size: "small" | "large";
+  onInterpret?: () => void;
 }) {
+  const t = useT();
   const visuals = getSoulVisuals(soul);
   const isLarge = size === "large";
   return (
@@ -425,7 +427,76 @@ function SoulFaceCard({
         >
           {soul.summary}
         </p>
+        {isLarge && onInterpret && (
+          <button
+            type="button"
+            onClick={onInterpret}
+            className="ml-auto mt-1 inline-flex items-center gap-1 text-xs font-medium transition-opacity hover:opacity-70"
+            style={{ color: "rgba(0,0,0,0.82)" }}
+          >
+            <Eye className="h-3.5 w-3.5" />
+            {t("人设解读")}
+          </button>
+        )}
       </div>
     </div>
+  );
+}
+
+function SoulInterpretModal({ soul, onClose }: { soul: SkillHubSoul; onClose: () => void }) {
+  const t = useT();
+  const fetcher = useCallback(() => fetchSoulDetail(soul.slug), [soul.slug]);
+  const { data, loading, error } = useAsyncResource(fetcher, [soul.slug]);
+
+  return (
+    <motion.div
+      className="absolute inset-0 z-30 flex items-center justify-center bg-black/45 px-5"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={onClose}
+    >
+      <motion.div
+        className="max-h-[76vh] w-full overflow-hidden rounded-2xl bg-white"
+        initial={{ y: 18, scale: 0.98 }}
+        animate={{ y: 0, scale: 1 }}
+        exit={{ y: 12, scale: 0.98 }}
+        transition={{ duration: 0.2, ease: "easeOut" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-3 border-b border-black/10 px-5 py-4">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <Eye className="h-4 w-4 text-black/70" />
+            <h3 className="truncate text-base font-semibold text-black/90">
+              {t("人设解读")} · {soul.displayName}
+            </h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label={t("关闭")}
+            className="text-black/55 transition-opacity hover:opacity-70"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="max-h-[60vh] overflow-y-auto px-5 py-4">
+          {loading && (
+            <div className="flex items-center justify-center py-12 text-black/40">
+              <Loader2 className="h-5 w-5 animate-spin" />
+            </div>
+          )}
+          {error && (
+            <p className="py-8 text-center text-sm text-black/55">{error}</p>
+          )}
+          {data && (
+            <div className="prose-doc max-w-none">
+              <p className="mb-4 text-sm leading-7 text-black/65">{data.summary}</p>
+              <MarkdownRenderer content={data.content} />
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </motion.div>
   );
 }
