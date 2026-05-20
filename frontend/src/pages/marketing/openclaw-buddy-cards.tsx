@@ -110,22 +110,47 @@ export function SoulFaceCard({
       }}
     >
       {/* 底部信息浮层 */}
-      <div className="absolute inset-x-3 bottom-3 flex flex-col gap-1">
+      <div className="absolute inset-x-3 bottom-3 flex flex-col gap-0.5">
         <div
-          className={`font-heading font-semibold text-black ${
+          className={`text-center font-normal text-black ${
             isLarge ? "text-[20px] leading-[1.4em]" : "text-[15px] leading-[1.4em]"
           }`}
+          style={{ fontFamily: "var(--font-chuangji)" }}
         >
           {soul.displayName}
         </div>
         <p
-          className={`line-clamp-2 text-left leading-[1.5em] ${
-            isLarge ? "text-[13px]" : "text-[11px]"
+          className={`line-clamp-2 leading-[1.5em] ${
+            isLarge ? "text-center text-[13px]" : "text-left text-[11px]"
           }`}
           style={{ color: "rgba(0,0,0,0.7)" }}
         >
           {soul.summary}
         </p>
+        {/* 「人设解读」link：slot/small 尺寸用 SkillHub 同款迷你内联样式 */}
+        {!isLarge && onInterpret && (
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={(e) => {
+              e.stopPropagation();
+              onInterpret();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                e.stopPropagation();
+                onInterpret();
+              }
+            }}
+            className="mt-1 flex cursor-pointer items-center justify-end gap-[3px] text-black/55 transition-colors duration-200 hover:text-[#3957FF]"
+          >
+            <Eye className="h-3 w-3" />
+            <span className="text-[9px] leading-[1.4em] underline">
+              {t("人设解读")}
+            </span>
+          </div>
+        )}
         {isLarge && onInterpret && (
           <button
             type="button"

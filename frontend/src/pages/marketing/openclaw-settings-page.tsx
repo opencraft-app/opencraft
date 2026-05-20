@@ -27,7 +27,7 @@ import {
   Download,
   Pencil,
   Trash2,
-  Users,
+  UserRound,
   Wand2,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
@@ -3144,11 +3144,11 @@ export const OpenClawSettingsPage = () => {
                     // 默认允许 UI 交互且立即拉数据，bot 不在线时由后端返回错误，
                     // 由 SDK 以命令执行失败的形式反馈到 UI。
 
-                    const sections: { id: SettingsSectionId; label: string; icon: React.ReactNode }[] = [
+                    const sections: { id: SettingsSectionId; label: string; icon: React.ReactNode; badge?: string }[] = [
                       { id: "channel", label: t("通道"), icon: <MessageCircle className="h-4 w-4" /> },
                       { id: "model", label: t("模型"), icon: <Sparkles className="h-4 w-4" /> },
                       { id: "skill", label: t("技能"), icon: <Wand2 className="h-4 w-4" /> },
-                      { id: "buddy", label: t("AI 搭子"), icon: <Users className="h-4 w-4" /> },
+                      { id: "buddy", label: t("人设"), icon: <UserRound className="h-4 w-4" />, badge: "NEW" },
                     ];
 
                     return (
@@ -3177,6 +3177,18 @@ export const OpenClawSettingsPage = () => {
                                 >
                                   <span className="flex h-5 w-5 items-center justify-center">{section.icon}</span>
                                   <span>{section.label}</span>
+                                  {section.badge && (
+                                    <span
+                                      className="ml-0.5 rounded-full px-1.5 py-0.5 text-[9px] font-bold leading-none tracking-wide"
+                                      style={{
+                                        background:
+                                          "linear-gradient(95deg, #6B4FE0, #F4B43A)",
+                                        color: "#ffffff",
+                                      }}
+                                    >
+                                      {section.badge}
+                                    </span>
+                                  )}
                                 </button>
                               );
                             })}
@@ -3208,7 +3220,9 @@ export const OpenClawSettingsPage = () => {
                                 productConfig={sdkProductConfig}
                               />
                             )}
-                            {activeSection === "buddy" && <BuddyPanel />}
+                            {activeSection === "buddy" && (
+                              <BuddyPanel botId={activeBot?.id ?? null} />
+                            )}
                           </div>
                         </div>
                       </div>

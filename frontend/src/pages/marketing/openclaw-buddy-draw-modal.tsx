@@ -15,8 +15,11 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { Eye, Loader2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useT } from "@/i18n/t";
 import { fetchSoulDetail, type SkillHubSoul } from "@/lib/skillhub-api";
+import { getSoulSpec } from "@/lib/soul-interpretations";
+import { SoulSpecPanel } from "@/components/soul-spec-panel";
 import { useAsyncResource } from "@/services/use-async-resource";
 import {
   REVEAL_STAR_BG,
@@ -33,6 +36,30 @@ const CYCLE_ORDER = [0, 1, 2, 5, 4, 3];
 
 const SPEED_MS = 130;
 const MIN_CYCLES = 2; // 跑灯至少跑满圈数后才能停在赢家位置
+
+/** 卡牌尺寸（小卡）+ 翻牌放大比例（对齐 SkillHub）*/
+const CARD_W = 112;
+const CARD_H = 157.54;
+const FLIP_SCALE = 1.4;
+
+/** 3×2 网格容器尺寸（含 gap） */
+const GRID_W = 360;
+const GRID_GAP = 12;
+const GRID_H = CARD_H * 2 + GRID_GAP;
+
+/** 6 张卡的绝对坐标（左上角原点）*/
+const CARD_POSITIONS: { x: number; y: number }[] = [
+  { x: 0, y: 0 },
+  { x: CARD_W + GRID_GAP, y: 0 },
+  { x: (CARD_W + GRID_GAP) * 2, y: 0 },
+  { x: 0, y: CARD_H + GRID_GAP },
+  { x: CARD_W + GRID_GAP, y: CARD_H + GRID_GAP },
+  { x: (CARD_W + GRID_GAP) * 2, y: CARD_H + GRID_GAP },
+];
+
+/** 翻牌时中奖卡飞到的中心位置（左上角坐标）*/
+const CENTER_X = (GRID_W - CARD_W * FLIP_SCALE) / 2;
+const CENTER_Y = (GRID_H - CARD_H * FLIP_SCALE) / 2;
 
 /** 弹窗阶段 */
 type Phase = "idle" | "cycling" | "flipping" | "revealed";
@@ -89,7 +116,7 @@ export function DrawSoulModal({ open, souls, drawnSlugs, onClose, onPick }: Draw
         nextIdx === winnerIdx
       ) {
         // 留 200ms 让用户看清"停在哪张"，再翻牌
-        tickerRef.current = setTimeout(() => setPhase("flipping"), 200);
+        tickerRef.current = setTimeout(() => setPhase("flipping"), 600);
         return;
       }
       tickerRef.current = setTimeout(tick, SPEED_MS);
@@ -103,10 +130,16 @@ export function DrawSoulModal({ open, souls, drawnSlugs, onClose, onPick }: Draw
     };
   }, [phase, winnerIdx]);
 
-  /** 翻牌完成 → 展示结果 */
-  const handleFlipDone = useCallback(() => {
-    setPhase("revealed");
-  }, []);
+  /** flipping 阶段时序（对齐 SkillHub）：
+   * - 0~300ms 非中奖卡 fade out
+   * - 300~700ms 中奖卡移动 + 放大
+   * - 700~1200ms Y 轴 3D 翻转
+   * - 1200~1700ms 停顿，再切到 revealed 全屏 */
+  useEffect(() => {
+    if (phase !== "flipping") return;
+    const t = setTimeout(() => setPhase("revealed"), 1700);
+    return () => clearTimeout(t);
+  }, [phase]);
 
   /** 抽卡池：剔除已抽到的 slug，避免重复抽到同一张 */
   const drawablePool = useMemo(() => {
@@ -162,18 +195,30 @@ export function DrawSoulModal({ open, souls, drawnSlugs, onClose, onPick }: Draw
               style={{ perspective: 800 }}
             >
               <h3
-                className="text-lg font-semibold"
+                className="relative z-20 text-lg font-semibold"
                 style={{ color: "rgba(0,0,0,0.90)" }}
               >
                 {phase === "flipping"
                   ? t("翻牌中…")
-                  : t("抽取你的 AI 人设")}
+                  : t("玄学开启！寻找独特灵魂…")}
               </h3>
 
-              {/* 6 张卡牌 3×2 网格 */}
-              <div className="grid grid-cols-3 gap-3" style={{ width: 360 }}>
-                {Array.from({ length: 6 }).map((_, i) => (
-                  <CardBack key={i} active={activeIdx === i} />
+              {/* 6 张卡牌 3×2 网格（绝对坐标，方便中奖卡 framer-motion 移动到中心 + 放大 + 翻转） */}
+              <div
+                className="relative"
+                style={{ width: GRID_W, height: GRID_H }}
+              >
+                {CARD_POSITIONS.map((pos, i) => (
+                  <DrawCard
+                    key={i}
+                    x={pos.x}
+                    y={pos.y}
+                    isActive={activeIdx === i}
+                    isWinner={i === winnerIdx}
+                    phase={phase}
+                    soul={winnerSoul ?? null}
+                    onStart={phase === "idle" && drawablePool.length > 0 ? handleStart : undefined}
+                  />
                 ))}
               </div>
 
@@ -196,11 +241,6 @@ export function DrawSoulModal({ open, souls, drawnSlugs, onClose, onPick }: Draw
                 <p className="text-sm" style={{ color: "rgba(0,0,0,0.55)" }}>
                   {t("正在抽取…")}
                 </p>
-              )}
-
-              {/* 翻牌动画：在 6 张卡上叠一层放大翻转的中奖卡 */}
-              {phase === "flipping" && winnerSoul && (
-                <FlipReveal soul={winnerSoul} onDone={handleFlipDone} />
               )}
             </motion.div>
           ) : (
@@ -240,40 +280,116 @@ function CloseButton({
   );
 }
 
-// ─── 翻牌动画 ───────────────────────────────────────────────────────────────
+// ─── 卡牌渲染（cycling / flipping）───────────────────────────────────────────
 
-function FlipReveal({ soul, onDone }: { soul: SkillHubSoul; onDone: () => void }) {
-  useEffect(() => {
-    const t = setTimeout(onDone, 1200);
-    return () => clearTimeout(t);
-  }, [onDone]);
+/** 6 张卡之一：默认 CardBack；flipping 阶段非中奖卡淡出，中奖卡飞到中心 + 放大 + Y 轴 3D 翻转。
+ *  idle 阶段且传入 onStart 时，卡片本身可点击触发抽卡（小手 cursor）。 */
+function DrawCard({
+  x,
+  y,
+  isActive,
+  isWinner,
+  phase,
+  soul,
+  onStart,
+}: {
+  x: number;
+  y: number;
+  isActive: boolean;
+  isWinner: boolean;
+  phase: Phase;
+  soul: SkillHubSoul | null;
+  onStart?: () => void;
+}) {
+  const isFlipping = phase === "flipping";
+  const isRevealed = phase === "revealed";
 
-  return (
-    <motion.div
-      key="flip"
-      initial={{ rotateY: 0, scale: 1 }}
-      animate={{ rotateY: 180, scale: 1.2 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 1.0, ease: "easeOut" }}
-      className="absolute inset-0 z-10 flex items-center justify-center"
-      style={{ perspective: 800, pointerEvents: "none", transformStyle: "preserve-3d" }}
-    >
-      <div
-        className="relative aspect-[112/157] w-[156px]"
+  // 非中奖卡在翻牌阶段淡出消失
+  if ((isFlipping || isRevealed) && !isWinner) {
+    return (
+      <motion.div
+        className="absolute"
+        initial={{ opacity: 1, scale: 1 }}
+        animate={{ opacity: 0, scale: 0.9 }}
+        transition={{ duration: 0.3, ease: "easeIn" }}
+        style={{ left: x, top: y, width: CARD_W, height: CARD_H }}
+      >
+        <CardBack />
+      </motion.div>
+    );
+  }
+
+  // 中奖卡：移动到中心 + 放大 + Y 轴翻转
+  if (isFlipping && isWinner) {
+    return (
+      <motion.div
+        className="absolute z-10"
+        initial={{ left: x, top: y, width: CARD_W, height: CARD_H }}
+        animate={{
+          left: CENTER_X,
+          top: CENTER_Y,
+          width: CARD_W * FLIP_SCALE,
+          height: CARD_H * FLIP_SCALE,
+        }}
+        transition={{ duration: 0.4, delay: 0.3, ease: "easeInOut" }}
         style={{ transformStyle: "preserve-3d" }}
       >
-        <div
-          className="absolute inset-0"
-          style={{ backfaceVisibility: "hidden" }}
-        >
-          <CardBack active />
-        </div>
-        <div
-          className="absolute inset-0"
-          style={{ backfaceVisibility: "hidden", transform: "rotateY(180deg)" }}
-        >
-          <SoulFaceCard soul={soul} size="small" />
-        </div>
+        <FlipCard isActive soul={soul} />
+      </motion.div>
+    );
+  }
+
+  // 默认（idle / cycling / error）
+  // idle 阶段：button + cursor-pointer + hover 微抬，可点击触发抽卡
+  // cycling：恢复成普通 div，避免 Active spotlight 时点击重抽
+  if (phase === "idle" && onStart) {
+    return (
+      <button
+        type="button"
+        onClick={onStart}
+        className="absolute cursor-pointer transition-transform duration-200 hover:-translate-y-1"
+        style={{ left: x, top: y, width: CARD_W, height: CARD_H }}
+      >
+        <CardBack active={isActive} />
+      </button>
+    );
+  }
+  return (
+    <div
+      className="absolute"
+      style={{ left: x, top: y, width: CARD_W, height: CARD_H }}
+    >
+      <CardBack active={isActive} />
+    </div>
+  );
+}
+
+/** 翻牌：Y 轴 180° 旋转，背→正 */
+function FlipCard({ isActive, soul }: { isActive: boolean; soul: SkillHubSoul | null }) {
+  return (
+    <motion.div
+      className="relative h-full w-full"
+      initial={{ rotateY: 0 }}
+      animate={{ rotateY: 180 }}
+      transition={{ duration: 0.5, delay: 0.7, ease: "easeInOut" }}
+      style={{ transformStyle: "preserve-3d" }}
+    >
+      {/* 背面 */}
+      <div
+        className="absolute inset-0"
+        style={{ backfaceVisibility: "hidden" }}
+      >
+        <CardBack active={isActive} />
+      </div>
+      {/* 正面（旋转后可见）*/}
+      <div
+        className="absolute inset-0"
+        style={{
+          backfaceVisibility: "hidden",
+          transform: "rotateY(180deg)",
+        }}
+      >
+        {soul ? <SoulFaceCard soul={soul} size="small" /> : <CardBack />}
       </div>
     </motion.div>
   );
@@ -328,7 +444,7 @@ function RevealPanel({
             className="h-14 w-full rounded-full text-base font-semibold transition-colors hover:bg-black"
             style={{ background: "#202020", color: "#ffffff", boxShadow: "0 14px 28px rgba(0,0,0,0.10)" }}
           >
-            {t("使用此人设")}
+            {t("添加此人设")}
           </button>
         </div>
       </div>
@@ -347,23 +463,25 @@ function SoulInterpretModal({ soul, onClose }: { soul: SkillHubSoul; onClose: ()
   const fetcher = useCallback(() => fetchSoulDetail(soul.slug), [soul.slug]);
   const { data, loading, error } = useAsyncResource(fetcher, [soul.slug]);
 
-  return (
+  // 用 Portal 挂到 body，避开 reveal panel 的 padding/高度裁切，
+  // 同时 fixed 相对视口居中，不被祖先 transform/filter 影响。
+  return createPortal(
     <motion.div
-      className="absolute inset-0 z-30 flex items-center justify-center bg-black/45 px-5"
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/45 px-4 py-6"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       onClick={onClose}
     >
       <motion.div
-        className="max-h-[76vh] w-full overflow-hidden rounded-2xl bg-white"
+        className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
         initial={{ y: 18, scale: 0.98 }}
         animate={{ y: 0, scale: 1 }}
         exit={{ y: 12, scale: 0.98 }}
         transition={{ duration: 0.2, ease: "easeOut" }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center gap-3 border-b border-black/10 px-5 py-4">
+        <div className="flex items-center gap-3 border-b border-black/10 px-6 py-4">
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <Eye className="h-4 w-4 text-black/70" />
             <h3 className="truncate text-base font-semibold text-black/90">
@@ -379,7 +497,7 @@ function SoulInterpretModal({ soul, onClose }: { soul: SkillHubSoul; onClose: ()
             <X className="h-5 w-5" />
           </button>
         </div>
-        <div className="max-h-[60vh] overflow-y-auto px-5 py-4">
+        <div className="flex-1 overflow-y-auto px-6 py-5">
           {loading && (
             <div className="flex items-center justify-center py-12 text-black/40">
               <Loader2 className="h-5 w-5 animate-spin" />
@@ -388,14 +506,22 @@ function SoulInterpretModal({ soul, onClose }: { soul: SkillHubSoul; onClose: ()
           {error && (
             <p className="py-8 text-center text-sm text-black/55">{error}</p>
           )}
-          {data && (
-            <div>
-              <p className="mb-4 text-sm leading-7 text-black/65">{data.summary}</p>
-              <SoulSpecRenderer content={data.content} />
-            </div>
-          )}
+          {data && (() => {
+            // 优先使用本地 SkillHub 同款"人设解读 + 5 维度"；缺失时回退到 OpenSpec
+            const spec = getSoulSpec(soul.slug);
+            if (spec) {
+              return <SoulSpecPanel spec={spec} />;
+            }
+            return (
+              <div>
+                <p className="mb-4 text-sm leading-7 text-black/65">{data.summary}</p>
+                <SoulSpecRenderer content={data.content} />
+              </div>
+            );
+          })()}
         </div>
       </motion.div>
-    </motion.div>
+    </motion.div>,
+    document.body,
   );
 }

@@ -486,7 +486,7 @@ export default defineConfig(({ mode }) => {
       ...(hmr ? { hmr } : {}),
       proxy: {
         "/__skillhub": {
-          target: "https://api.skillhub.cn",
+          target: "https://lightmake.cloud",
           changeOrigin: true,
           rewrite: (url) => url.replace(/^\/__skillhub/, ""),
         },

@@ -9,15 +9,17 @@
  * 抽卡数据策略：**前端从公共 souls 池 Math.random**，且自动剔除已抽到的 slug，
  * 每次抽出新一张。不调 SkillHub 的 draw 接口（鉴权方案待落地）。
  *
- * 数据来源：`@/lib/skillhub-api`，跨域直连 https://api.skillhub.cn 的
- * 公共接口（lightclaw.tech 已在其 CORS 白名单内）。
+ * 数据来源：`@/lib/skillhub-api`，跨域直连 https://lightmake.cloud 的
+ * 公共接口（lightclaw.tech 与 EO Pages 预览域名都在其 CORS 白名单内）。
  *
  * 注：AI 搭子当前仅保留 Soul（人设）浏览与抽卡能力。
  */
 
-import { ExternalLink, Loader2, Sparkles, Users } from "lucide-react";
-import { useCallback, useState } from "react";
+import { AlertCircle, Check, Dice5, Download, ExternalLink, Loader2, RotateCcw, Sparkles, X, Zap } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useT } from "@/i18n/t";
+import { useRepositories } from "@/contexts/repository-context";
 import { useAsyncResource } from "@/services/use-async-resource";
 import { DrawSoulModal } from "@/pages/marketing/openclaw-buddy-draw-modal";
 import {
@@ -30,6 +32,9 @@ import {
   fetchSouls,
   type SkillHubSoul,
 } from "@/lib/skillhub-api";
+import { getSoulSpec, buildSoulMd } from "@/lib/soul-interpretations";
+import { SoulSpecPanel } from "@/components/soul-spec-panel";
+import { loadBuddyState, saveBuddyState } from "@/lib/buddy-storage";
 
 const PANEL_CARD_STYLE: React.CSSProperties = {
   border: "1px solid rgba(0,0,0,0.06)",
@@ -40,13 +45,55 @@ const PANEL_CARD_STYLE: React.CSSProperties = {
 /** 抽卡槽位数上限（6 列 × 1 行 = 6 张，单行展示） */
 const MAX_DRAWS = 6;
 
-export function BuddyPanel() {
+export function BuddyPanel({
+  botId,
+}: {
+  /** 当前 settings 选中的 bot id；null 时降级为浏览器下载 soul.md */
+  botId?: string | null;
+} = {}) {
   const t = useT();
+  const repositories = useRepositories();
   const [previewSoulSlug, setPreviewSoulSlug] = useState<string | null>(null);
+
+  // 持久化：从 localStorage 读出当前 botId 上次抽到的卡 + 已注入 slug。
+  // 后续切到后端 DB 时只需替换 buddy-storage 里的实现。
+  const initialState = (() => {
+    if (typeof window === "undefined") return { drawnSouls: [], appliedSlug: null };
+    return loadBuddyState(botId) ?? { drawnSouls: [], appliedSlug: null };
+  })();
+
   /** 已抽到的人设，按抽到顺序排列，去重 by slug，最多 MAX_DRAWS 张 */
-  const [drawnSouls, setDrawnSouls] = useState<SkillHubSoul[]>([]);
+  const [drawnSouls, setDrawnSouls] = useState<SkillHubSoul[]>(initialState.drawnSouls);
   /** 抽卡弹窗开关 */
   const [drawOpen, setDrawOpen] = useState(false);
+
+  /** 注入结果 toast：'idle' 时不显示。'applying' 期间禁掉重复点击。
+   *  成功路径不弹 toast —— 卡片徽章 + 按钮文案已足以表达；只对失败/降级提示。 */
+  type ToastState =
+    | { kind: "idle" }
+    | { kind: "applying" }
+    | { kind: "fallback"; message: string }
+    | { kind: "error"; message: string };
+  const [toast, setToast] = useState<ToastState>({ kind: "idle" });
+  const toastTimerRef = useRef<number | null>(null);
+  const showToast = useCallback((next: ToastState, autoHideMs = 3500) => {
+    if (toastTimerRef.current) {
+      window.clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = null;
+    }
+    setToast(next);
+    if (next.kind !== "idle" && next.kind !== "applying" && autoHideMs > 0) {
+      toastTimerRef.current = window.setTimeout(() => {
+        setToast({ kind: "idle" });
+        toastTimerRef.current = null;
+      }, autoHideMs);
+    }
+  }, []);
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    };
+  }, []);
 
   // souls 列表是抽卡 modal 的候选池数据源 —— 提到这一层统一拉取，
   // 避免 SoulSlotGrid 内部 fetch 一次、DrawModal 再单独 fetch 一次。
@@ -57,97 +104,419 @@ export function BuddyPanel() {
   const drawnSlugs = drawnSouls.map((s) => s.slug);
   const isAtMax = drawnSouls.length >= MAX_DRAWS;
 
-  const handlePickFromDraw = useCallback((soul: SkillHubSoul) => {
-    setDrawnSouls((prev) => {
-      if (prev.some((s) => s.slug === soul.slug)) return prev; // dedupe（防御）
-      if (prev.length >= MAX_DRAWS) return prev; // 上限保护
-      return [...prev, soul];
-    });
-    setDrawOpen(false);
-  }, []);
+  /** 标记正在被重抽的 slug。null 表示当前不是重抽（普通抽卡）。 */
+  const [rerollingSlug, setRerollingSlug] = useState<string | null>(null);
+
+  const handlePickFromDraw = useCallback(
+    (soul: SkillHubSoul) => {
+      setDrawnSouls((prev) => {
+        // 重抽：替换原位置；防御性 dedupe（同一张再次抽到则保持原状即可）
+        if (rerollingSlug) {
+          const idx = prev.findIndex((s) => s.slug === rerollingSlug);
+          if (idx === -1) return prev;
+          if (prev.some((s, i) => i !== idx && s.slug === soul.slug)) return prev;
+          const copy = prev.slice();
+          copy[idx] = soul;
+          return copy;
+        }
+        // 新抽：追加到末尾
+        if (prev.some((s) => s.slug === soul.slug)) return prev; // dedupe（防御）
+        if (prev.length >= MAX_DRAWS) return prev; // 上限保护
+        return [...prev, soul];
+      });
+      setRerollingSlug(null);
+      setDrawOpen(false);
+    },
+    [rerollingSlug],
+  );
 
   const handleOpenDraw = useCallback(() => {
     if (isAtMax) return;
+    setRerollingSlug(null); // 普通抽卡前确保清掉重抽标记
     setDrawOpen(true);
   }, [isAtMax]);
 
+  /** 重抽某张已抽到的卡：复用抽卡 modal 流程（翻牌动画 → reveal → 替换原位） */
+  const handleReroll = useCallback((slug: string) => {
+    setRerollingSlug(slug);
+    setDrawOpen(true);
+  }, []);
+
+  /** 重抽时是否可用：候选池非空才允许 */
+  const canReroll = souls.length > drawnSouls.length;
+
+  /** 选中态（单选）：选中后右上角显示勾，可"应用到 Agent" */
+  const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
+  /** 上一次成功应用到 Agent 的 slug —— 用于按钮上展示「已应用」反馈 */
+  const [appliedSlug, setAppliedSlug] = useState<string | null>(initialState.appliedSlug);
+
+  // 切 bot：用新 botId 的本地状态覆盖（清空选中），保证不串。
+  // 第一次 mount 时也会跑一次（设置初始状态），但因为初始 state 已经从 storage 读了，
+  // 所以是同值赋值，无副作用。
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const next = loadBuddyState(botId) ?? { drawnSouls: [], appliedSlug: null };
+    setDrawnSouls(next.drawnSouls);
+    setAppliedSlug(next.appliedSlug);
+    setSelectedSlug(null);
+  }, [botId]);
+
+  // 持久化：drawnSouls / appliedSlug 任一变化都落盘
+  useEffect(() => {
+    saveBuddyState(botId, { drawnSouls, appliedSlug });
+  }, [botId, drawnSouls, appliedSlug]);
+
+  /** 切换选中：再点一次取消选中 */
+  const handleToggleSelect = useCallback((slug: string) => {
+    setSelectedSlug((prev) => (prev === slug ? null : slug));
+  }, []);
+
+  // 当选中卡被重抽掉了，自动清空选中态
+  useEffect(() => {
+    if (selectedSlug && !drawnSouls.some((s) => s.slug === selectedSlug)) {
+      setSelectedSlug(null);
+    }
+  }, [drawnSouls, selectedSlug]);
+
+  // 当已注入卡被重抽掉，"已注入"徽章应一并清空（避免错位到其它卡）
+  // 注意：被覆盖的旧 SOUL.md 已经备份在 sandbox，前端只是失去本地 UI 状态。
+  useEffect(() => {
+    if (appliedSlug && !drawnSouls.some((s) => s.slug === appliedSlug)) {
+      setAppliedSlug(null);
+    }
+  }, [drawnSouls, appliedSlug]);
+
+  /** 注入人设：
+   *  - 有 botId → 走 `debug/exec` 一把梭：备份旧 SOUL.md（若存在）→ 写入新 SOUL.md
+   *    路径 `${HOME}/.hermes/SOUL.md`（hermes-agent 运行时读这里，不是
+   *    `~/.openclaw/workspace/SOUL.md` —— 那是 openclaw runtime 的约定）。
+   *    走 raw bash 而非 `workspace/files`：后者写死 `${HOME}/.openclaw/workspace`
+   *    且强制白名单文件名，hermes 场景两个限制都不适用。
+   *  - 无 botId → 浏览器下载 soul.md（兜底）
+   *  内容：用 SkillHub /api/v1/souls/<slug> 的 content 拼装，对齐 zip 包格式。
+   */
+  const handleApply = useCallback(async () => {
+    if (!selectedSlug) return; // 按钮已 disabled，理论上点不到
+    if (toast.kind === "applying") return; // 防重复点击
+    const soul = drawnSouls.find((s) => s.slug === selectedSlug);
+    if (!soul) return;
+
+    showToast({ kind: "applying" }, 0);
+
+    // 最短转圈时长：避免极快返回时按钮一闪而过、用户无感知。
+    // 每个 return 出口前都 await `ensureMinSpin()` 把剩余时间补齐。
+    const startedAt = Date.now();
+    const MIN_SPIN_MS = 2000;
+    const ensureMinSpin = () => {
+      const elapsed = Date.now() - startedAt;
+      const remaining = MIN_SPIN_MS - elapsed;
+      return remaining > 0
+        ? new Promise<void>((resolve) => window.setTimeout(resolve, remaining))
+        : Promise.resolve();
+    };
+
+    let md: string;
+    try {
+      const detail = await fetchSoulDetail(soul.slug);
+      md = buildSoulMd({
+        slug: soul.slug,
+        displayName: soul.displayName,
+        summary: soul.summary,
+        content: detail.content ?? "",
+      });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("[buddy] fetch soul detail failed:", err);
+      await ensureMinSpin();
+      showToast({
+        kind: "error",
+        message: t("拉取人设详情失败，请检查网络后重试"),
+      });
+      return;
+    }
+
+    // 路径 A：写入到当前 bot 工作区的 SOUL.md（覆盖前先备份）
+    if (botId) {
+      try {
+        // UTF-8 → base64（避免 btoa 直接吃中文炸 latin1）
+        const mdBytes = new TextEncoder().encode(md);
+        let binary = "";
+        for (const b of mdBytes) binary += String.fromCharCode(b);
+        const mdBase64 = btoa(binary);
+
+        // 时间戳：2026-05-20T14_13_05-123（冒号点都换掉，文件名安全）
+        const ts = new Date()
+          .toISOString()
+          .replace(/[:.]/g, "-")
+          .replace("T", "_")
+          .replace("Z", "");
+
+        // 一把梭：mkdir → 备份到独立子目录 → heredoc base64 解码写入
+        // 路径：${HOME}/.hermes/SOUL.md（hermes-agent 运行时实际读取位置）
+        // 备份：${HOME}/.hermes/.soul-backups/<ts>.md（跟主文件分开，便于 ls 查看）
+        const bash = [
+          'set -e',
+          'WORKSPACE_DIR="${HOME}/.hermes"',
+          'BACKUP_DIR="$WORKSPACE_DIR/.soul-backups"',
+          'mkdir -p "$WORKSPACE_DIR" "$BACKUP_DIR"',
+          'TARGET="$WORKSPACE_DIR/SOUL.md"',
+          `BACKUP="$BACKUP_DIR/${ts}.md"`,
+          'if [ -s "$TARGET" ]; then cp "$TARGET" "$BACKUP"; fi',
+          "cat <<'__CTL_SOUL_EOF__' | base64 -d > \"$TARGET\"",
+          mdBase64,
+          '__CTL_SOUL_EOF__',
+        ].join('\n');
+
+        const result = await repositories.bots.execDebugCommand(botId, bash);
+        if (result.exitCode !== 0) {
+          throw new Error(`exec exit ${result.exitCode}: ${result.output}`);
+        }
+        await ensureMinSpin();
+        setAppliedSlug(selectedSlug);
+        // 成功不再 toast：卡片左上角的"已注入"徽章 + 按钮变"已注入人设"
+        // 已经够明显了，再弹 toast 反而冗余。失败仍然必须提醒。
+        setToast({ kind: "idle" });
+        return;
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error("[buddy] inject SOUL.md to bot failed, fallback to download:", err);
+        // 写入失败 → 不打断用户，降级走浏览器下载
+      }
+    }
+
+    // 路径 B：浏览器下载兜底
+    await ensureMinSpin();
+    const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "soul.md";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    setAppliedSlug(selectedSlug);
+    // 区分两种降级原因：botId 为空（用户未选 bot） vs sandbox 写入失败
+    showToast({
+      kind: "fallback",
+      message: botId
+        ? t("无法写入 Bot 沙箱，已下载 soul.md 到本地")
+        : t("当前未选中 Bot，已下载 soul.md 到本地"),
+    });
+  }, [selectedSlug, drawnSouls, botId, repositories, toast.kind, showToast, t]);
+
+  const isApplied = selectedSlug !== null && selectedSlug === appliedSlug;
+
   return (
-    <div className="overflow-hidden rounded-2xl" style={PANEL_CARD_STYLE}>
-      {/* 头部：标题 + 进度 + 抽卡按钮 + 跳转 SkillHub */}
-      <div
-        className="flex flex-wrap items-center gap-3 px-6 py-4"
-        style={{ borderBottom: "1px solid rgba(0,0,0,0.05)" }}
-      >
-        <div
-          className="flex h-8 w-8 items-center justify-center rounded-xl"
-          style={{ background: "rgba(0,0,0,0.04)", color: "rgba(0,0,0,0.90)" }}
-        >
-          <Users className="h-4 w-4" />
-        </div>
-        <h3
-          className="text-base font-semibold"
-          style={{ color: "rgba(0,0,0,0.90)", letterSpacing: "-0.2px" }}
-        >
-          {t("AI 搭子")}
-        </h3>
-
-        {drawnSouls.length > 0 && <ProgressChip drawn={drawnSouls.length} max={MAX_DRAWS} />}
-
-        <div className="ml-auto flex items-center gap-3">
-          <a
-            href="https://skillhub.cn/hermes"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 text-xs font-medium transition-colors"
-            style={{ color: "rgba(0,0,0,0.60)" }}
-          >
-            {t("前往 SkillHub 体验完整版")}
-            <ExternalLink className="h-3 w-3" />
-          </a>
-        </div>
-      </div>
-
-      {/* 主 CTA：抽取人设 —— 显眼居中，作为页面主要动作入口 */}
-      <div className="flex justify-center pt-6 pb-4">
-        <button
-          type="button"
-          onClick={handleOpenDraw}
-          disabled={souls.length === 0 || isAtMax}
-          className="inline-flex items-center gap-2 rounded-full px-6 py-2.5 text-sm font-semibold transition-all hover:-translate-y-0.5 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none"
+    <div className="relative overflow-hidden rounded-2xl" style={PANEL_CARD_STYLE}>
+      <InjectToast state={toast} onClose={() => setToast({ kind: "idle" })} t={t} />
+      {/* 顶部标题 slogan + 右上角 SkillHub 入口 */}
+      <div className="relative flex items-center justify-center px-6 pt-5 pb-3">
+        <h2
+          className="flex items-center gap-2 text-xl font-semibold"
           style={{
-            background: "rgba(0,0,0,0.90)",
-            color: "#ffffff",
-            boxShadow: "0 6px 16px rgba(0,0,0,0.10)",
+            letterSpacing: "-0.2px",
+            backgroundImage:
+              "linear-gradient(95deg, rgba(0,0,0,0.92) 0%, #6B4FE0 45%, #F4B43A 100%)",
+            backgroundClip: "text",
+            WebkitBackgroundClip: "text",
+            color: "transparent",
+            WebkitTextFillColor: "transparent",
           }}
         >
-          <Sparkles className="h-4 w-4" />
-          {isAtMax ? t("已抽满 6 张") : t("抽取人设")}
-        </button>
+          <Sparkles
+            className="h-5 w-5 animate-pulse"
+            style={{ color: "#6B4FE0" }}
+          />
+          {t("为你的 Agent 解锁独特灵魂，让它从此与众不同")}
+        </h2>
+        <a
+          href="https://skillhub.cn/hermes"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="absolute right-6 inline-flex shrink-0 items-center gap-1.5 text-xs font-medium transition-colors hover:opacity-80"
+          style={{ color: "rgba(0,0,0,0.55)", top: "50%", transform: "translateY(calc(-50% + 6px))" }}
+        >
+          {t("灵感来自 SkillHub")}
+          <ExternalLink className="h-3 w-3" />
+        </a>
       </div>
 
-      {/* 内容区：6 格抽卡槽 */}
-      <div className="px-6 pb-6">
+      {/* 内容区：6 格抽卡槽，下方接进度 chip 靠右展示，避免覆盖卡片本身 */}
+      <div className="px-6 pt-2 pb-2">
         <SoulSlotGrid
           drawnSouls={drawnSouls}
           loading={soulsResource.loading && souls.length === 0}
           error={souls.length === 0 ? soulsResource.error : null}
           onReload={soulsResource.reload}
-          onClickFilled={(slug) => setPreviewSoulSlug(slug)}
+          onClickFilled={handleToggleSelect}
           onClickEmpty={handleOpenDraw}
+          onReroll={handleReroll}
+          canReroll={canReroll}
+          selectedSlug={selectedSlug}
+          appliedSlug={appliedSlug}
+          onPreview={(slug) => setPreviewSoulSlug(slug)}
         />
+      </div>
+
+      {/* 卡片下方：抽取人设 + 应用到 Agent 双 CTA 居中并排；chip 绝对定位浮于右侧不占位 */}
+      <div className="relative flex items-center justify-center gap-3 px-6 py-5">
+        <button
+          type="button"
+          onClick={handleOpenDraw}
+          disabled={souls.length === 0 || isAtMax}
+          className="inline-flex items-center gap-2 rounded-full px-5 py-2 text-sm font-medium transition-all hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none"
+          style={{
+            background: "rgba(0,0,0,0.04)",
+            color: "rgba(0,0,0,0.85)",
+            border: "1px solid rgba(0,0,0,0.06)",
+          }}
+        >
+          <Dice5 className="h-4 w-4" />
+          {isAtMax ? t("已抽满 6 张") : t("抽取人设")}
+        </button>
+        <div className="group relative">
+          <button
+            type="button"
+            onClick={handleApply}
+            disabled={!selectedSlug || toast.kind === "applying"}
+            className="inline-flex cursor-pointer items-center gap-2 rounded-full px-5 py-2 text-sm font-medium transition-all hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none"
+            style={{
+              background: "rgba(0,0,0,0.90)",
+              color: "#ffffff",
+              boxShadow: "0 4px 12px rgba(0,0,0,0.10)",
+            }}
+          >
+            {toast.kind === "applying" ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : isApplied ? (
+              <RotateCcw className="h-4 w-4" />
+            ) : (
+              <Zap className="h-4 w-4" />
+            )}
+            {toast.kind === "applying"
+              ? t("注入中…")
+              : isApplied
+                ? t("再次注入")
+                : t("注入人设")}
+          </button>
+          {/* 自定义浮卡：仅 disabled 因「未选中」时立即浮出，避开原生 title 延迟 */}
+          {!selectedSlug && (
+            <div
+              className="pointer-events-none absolute bottom-full left-1/2 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md px-3 py-1.5 text-[11px] font-medium opacity-0 transition-opacity duration-150 group-hover:opacity-100"
+              style={{
+                background: "rgba(0,0,0,0.85)",
+                color: "#ffffff",
+                boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+              }}
+              role="tooltip"
+            >
+              {t("请先选择人设，再注入")}
+              <span
+                className="absolute left-1/2 -translate-x-1/2"
+                style={{
+                  top: "100%",
+                  width: 0,
+                  height: 0,
+                  borderLeft: "5px solid transparent",
+                  borderRight: "5px solid transparent",
+                  borderTop: "5px solid rgba(0,0,0,0.85)",
+                }}
+                aria-hidden
+              />
+            </div>
+          )}
+        </div>
+        {drawnSouls.length > 0 && (
+          <div className="absolute right-6 top-1/2 -translate-y-1/2">
+            <ProgressChip drawn={drawnSouls.length} max={MAX_DRAWS} />
+          </div>
+        )}
       </div>
 
       <DrawSoulModal
         open={drawOpen}
         souls={souls}
-        drawnSlugs={drawnSlugs}
-        onClose={() => setDrawOpen(false)}
+        // 重抽时把"被重抽的卡"从已抽列表里移除，让其他池里的 soul 可以替补它的位置
+        drawnSlugs={rerollingSlug ? drawnSlugs.filter((s) => s !== rerollingSlug) : drawnSlugs}
+        onClose={() => {
+          setDrawOpen(false);
+          setRerollingSlug(null);
+        }}
         onPick={handlePickFromDraw}
       />
 
       {previewSoulSlug && (
         <SoulPreviewModal slug={previewSoulSlug} onClose={() => setPreviewSoulSlug(null)} />
       )}
+    </div>
+  );
+}
+
+// ─── 注入结果 toast ──────────────────────────────────────────────────────────
+// 仅区分 2 个可见状态：fallback（橙色下载提示，botId 缺失或 sandbox 写入失败时
+// 降级浏览器下载）、error（红色，拉取详情失败 / 未选中卡）。
+// applying 状态由按钮内部 spinner 表达，不再弹 toast 避免双重提示。
+// 绝对定位在 panel 顶部居中，3.5s 自动消失。
+
+function InjectToast({
+  state,
+  onClose,
+  t,
+}: {
+  state:
+    | { kind: "idle" }
+    | { kind: "applying" }
+    | { kind: "fallback"; message: string }
+    | { kind: "error"; message: string };
+  onClose: () => void;
+  t: (s: string) => string;
+}) {
+  // applying 状态：按钮自己有 spinner，toast 不重复显示
+  if (state.kind === "idle" || state.kind === "applying") return null;
+
+  // 颜色 / 图标按状态切换
+  let bg: string;
+  const fg = "#ffffff";
+  let icon: React.ReactNode;
+  let text: string;
+
+  if (state.kind === "fallback") {
+    bg = "#B7791F";
+    icon = <Download className="h-4 w-4" />;
+    text = state.message;
+  } else {
+    // error
+    bg = "#B91C1C";
+    icon = <AlertCircle className="h-4 w-4" />;
+    text = state.message;
+  }
+
+  return (
+    <div
+      className="pointer-events-none absolute inset-x-0 top-3 z-30 flex justify-center px-4"
+      role="status"
+      aria-live="polite"
+    >
+      <div
+        className="pointer-events-auto inline-flex max-w-[90%] items-center gap-2 rounded-full px-4 py-2 text-sm font-medium shadow-lg"
+        style={{
+          background: bg,
+          color: fg,
+          boxShadow: "0 8px 24px rgba(15,23,42,0.18)",
+        }}
+      >
+        {icon}
+        <span className="truncate">{text}</span>
+        <button
+          type="button"
+          onClick={onClose}
+          className="ml-1 inline-flex h-5 w-5 items-center justify-center rounded-full transition hover:bg-white/15"
+          aria-label={t("关闭")}
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
     </div>
   );
 }
@@ -159,9 +528,9 @@ function ProgressChip({ drawn, max }: { drawn: number; max: number }) {
   return (
     <div
       className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium"
-      style={{ background: "rgba(255,122,69,0.10)", color: "#A85020" }}
+      style={{ background: "rgba(0,0,0,0.05)", color: "rgba(0,0,0,0.65)" }}
     >
-      <span style={{ color: "rgba(0,0,0,0.50)" }}>{t("已抽")}</span>
+      <span style={{ color: "rgba(0,0,0,0.45)" }}>{t("已抽")}</span>
       <span>
         {drawn}/{max}
       </span>
@@ -178,6 +547,11 @@ function SoulSlotGrid({
   onReload,
   onClickFilled,
   onClickEmpty,
+  onReroll,
+  canReroll,
+  selectedSlug,
+  appliedSlug,
+  onPreview,
 }: {
   drawnSouls: SkillHubSoul[];
   loading: boolean;
@@ -185,13 +559,18 @@ function SoulSlotGrid({
   onReload: () => void;
   onClickFilled: (slug: string) => void;
   onClickEmpty: () => void;
+  onReroll: (slug: string) => void;
+  canReroll: boolean;
+  selectedSlug: string | null;
+  appliedSlug: string | null;
+  onPreview: (slug: string) => void;
 }) {
   if (loading) return <CenterLoader />;
   if (error) return <ErrorState message={error} onRetry={onReload} />;
   return (
-    // 网格 max-w 锁在 920px 居中，6 列下单卡 ≈ 143×202，单行展示 6 张抽卡槽。
+    // 网格 max-w 锁在 1120px 居中，6 列下单卡 ≈ 175×245，单行展示 6 张抽卡槽。
     // 容器在更窄视口里会自然缩小，cell 跟着变小。
-    <div className="mx-auto grid max-w-[920px] grid-cols-6 gap-3">
+    <div className="mx-auto grid max-w-[1120px] grid-cols-6 gap-4">
       {Array.from({ length: MAX_DRAWS }).map((_, i) => {
         const soul = drawnSouls[i];
         if (soul) {
@@ -199,7 +578,12 @@ function SoulSlotGrid({
             <FilledSlot
               key={soul.slug}
               soul={soul}
+              selected={selectedSlug === soul.slug}
+              applied={appliedSlug === soul.slug}
               onClick={() => onClickFilled(soul.slug)}
+              onReroll={() => onReroll(soul.slug)}
+              canReroll={canReroll}
+              onPreview={() => onPreview(soul.slug)}
             />
           );
         }
@@ -209,15 +593,98 @@ function SoulSlotGrid({
   );
 }
 
-function FilledSlot({ soul, onClick }: { soul: SkillHubSoul; onClick: () => void }) {
+function FilledSlot({
+  soul,
+  selected,
+  applied,
+  onClick,
+  onReroll,
+  canReroll,
+  onPreview,
+}: {
+  soul: SkillHubSoul;
+  selected: boolean;
+  applied: boolean;
+  onClick: () => void;
+  onReroll: () => void;
+  canReroll: boolean;
+  onPreview: () => void;
+}) {
+  const t = useT();
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="block w-full transition-transform duration-200 hover:-translate-y-1"
+    <div
+      className="group relative transition-transform duration-200 hover:-translate-y-1"
+      style={{
+        // 选中态：黑色 2px 描边 + 强阴影（对齐 SkillHub）
+        // 已注入但未选中：不加描边，仅靠左上角胶囊徽章标识
+        boxShadow: selected
+          ? "0 0 0 2px #000000, 0 20px 48px rgba(0,0,0,0.08)"
+          : "none",
+        borderRadius: 12,
+      }}
     >
-      <SoulFaceCard soul={soul} size="slot" />
-    </button>
+      <button
+        type="button"
+        onClick={onClick}
+        aria-pressed={selected}
+        aria-label={selected ? t("取消选中此人设") : t("选中此人设")}
+        className="block w-full cursor-pointer"
+      >
+        <SoulFaceCard soul={soul} size="slot" onInterpret={onPreview} />
+      </button>
+
+      {/* 左上角：已注入徽章（紫金渐变胶囊 + "已注入"文案）。
+          同一时间只可能 1 张卡有这个徽章（appliedSlug 是单值 state） */}
+      {applied && (
+        <div
+          className="pointer-events-none absolute left-1.5 top-1.5 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold"
+          style={{
+            backgroundImage: "linear-gradient(135deg, #6B4FE0 0%, #F4B43A 100%)",
+            color: "#ffffff",
+            boxShadow: "0 4px 10px rgba(107,79,224,0.32)",
+            letterSpacing: "0.2px",
+          }}
+          aria-label={t("当前已注入到 Bot")}
+        >
+          {t("已注入")}
+        </div>
+      )}
+
+      {/* 右上角：选中态显示「勾」（SkillHub 同款黑底白勾），未选中显示「重抽」（hover 浮现） */}
+      {selected ? (
+        <div
+          className="pointer-events-none absolute right-1.5 top-1.5 inline-flex h-[18px] w-[18px] items-center justify-center rounded-full"
+          style={{
+            background: "#000000",
+            color: "#ffffff",
+          }}
+          aria-hidden
+        >
+          <Check className="h-2.5 w-2.5" strokeWidth={3} />
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (canReroll) onReroll();
+          }}
+          disabled={!canReroll}
+          aria-label={t("重新抽取这张人设")}
+          title={t("重新抽取")}
+          className="absolute right-2 top-2 inline-flex h-6 w-6 items-center justify-center rounded-full opacity-0 transition-opacity duration-150 hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100 disabled:cursor-not-allowed disabled:hover:opacity-50"
+          style={{
+            background: "rgba(255,255,255,0.92)",
+            color: "rgba(0,0,0,0.65)",
+            border: "1px solid rgba(0,0,0,0.06)",
+            boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
+            backdropFilter: "blur(4px)",
+          }}
+        >
+          <RotateCcw className="h-3 w-3" />
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -234,16 +701,45 @@ function EmptySlot({ onClick }: { onClick: () => void }) {
       >
         <CardBack iconClassName="h-9 w-9" />
       </button>
-      {/* 悬浮提示：仅当 hover 时浮出，定位在卡片正上方 */}
+      {/* 悬浮提示：仅当 hover 时浮出，定位在卡片正中（浅色系） */}
       <div
-        className="pointer-events-none absolute -top-9 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md px-3 py-1.5 text-[11px] font-medium text-white opacity-0 transition-opacity duration-150 group-hover:opacity-100"
+        className="pointer-events-none absolute left-1/2 top-[35%] -translate-x-1/2 -translate-y-1/2 whitespace-nowrap rounded-md px-3 py-1.5 text-[11px] font-medium opacity-0 transition-opacity duration-150 group-hover:opacity-100"
         style={{
-          background: "rgba(0,0,0,0.85)",
-          boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+          background: "rgba(255,255,255,0.95)",
+          color: "rgba(0,0,0,0.75)",
+          border: "1px solid rgba(0,0,0,0.06)",
+          boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+          backdropFilter: "blur(4px)",
         }}
         role="tooltip"
       >
-        {t("为你的 Agent 伙伴解锁独特灵魂")}
+        {t("点击抽取人设")}
+        {/* 底部居中三角箭头：双层 border 法实现 1px 浅边描边 */}
+        <span
+          className="absolute left-1/2 -translate-x-1/2"
+          style={{
+            top: "100%",
+            width: 0,
+            height: 0,
+            borderLeft: "6px solid transparent",
+            borderRight: "6px solid transparent",
+            borderTop: "6px solid rgba(0,0,0,0.06)",
+          }}
+          aria-hidden
+        />
+        <span
+          className="absolute left-1/2 -translate-x-1/2"
+          style={{
+            top: "100%",
+            marginTop: -1,
+            width: 0,
+            height: 0,
+            borderLeft: "5px solid transparent",
+            borderRight: "5px solid transparent",
+            borderTop: "5px solid rgba(255,255,255,0.95)",
+          }}
+          aria-hidden
+        />
       </div>
     </div>
   );
@@ -254,17 +750,21 @@ function EmptySlot({ onClick }: { onClick: () => void }) {
 function SoulPreviewModal({ slug, onClose }: { slug: string; onClose: () => void }) {
   const fetcher = useCallback(() => fetchSoulDetail(slug), [slug]);
   const { data, loading, error } = useAsyncResource(fetcher, [slug]);
+  const spec = getSoulSpec(slug);
   return (
     <PreviewModal title={data?.displayName ?? ""} onClose={onClose}>
       {loading && <CenterLoader />}
       {error && <ErrorState message={error} onRetry={onClose} />}
-      {data && (
-        <div>
-          <p className="mb-4 text-sm" style={{ color: "rgba(0,0,0,0.65)" }}>
-            {data.summary}
-          </p>
-          <SoulSpecRenderer content={data.content} />
-        </div>
+      {data && (spec
+        ? <SoulSpecPanel spec={spec} />
+        : (
+          <div>
+            <p className="mb-4 text-sm" style={{ color: "rgba(0,0,0,0.65)" }}>
+              {data.summary}
+            </p>
+            <SoulSpecRenderer content={data.content} />
+          </div>
+        )
       )}
     </PreviewModal>
   );
@@ -280,7 +780,9 @@ function PreviewModal({
   children: React.ReactNode;
 }) {
   const t = useT();
-  return (
+  // 用 Portal 挂到 body，避开外层 framer-motion `filter: blur(...)`
+  // 创建的 containing block —— 否则 fixed 会相对该祖先定位，导致弹窗被裁。
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
@@ -312,7 +814,8 @@ function PreviewModal({
         </div>
         <div className="flex-1 overflow-y-auto px-6 py-4">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
