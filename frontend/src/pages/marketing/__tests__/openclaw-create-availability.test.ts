@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { getOpenClawCreateLimitMessage, type OpenClawCreateAvailabilityBot } from "./openclaw-create-availability";
+import { getOpenClawCreateLimitMessage, type OpenClawCreateAvailabilityBot } from "../openclaw-create-availability";
 
 const bot = (status: OpenClawCreateAvailabilityBot["status"]): OpenClawCreateAvailabilityBot => ({ status });
 

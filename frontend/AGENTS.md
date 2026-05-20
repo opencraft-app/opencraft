@@ -172,9 +172,9 @@ frontend/src/
 
 ## 六、测试约定
 
-- 文件命名 `*.test.ts` / `*.test.tsx`，**与被测文件同目录并列**（非 `__tests__/`）；国际站专属 `*.global.test.tsx`
+- 文件命名 `*.test.ts` / `*.test.tsx`，**统一放在被测文件同级的 `__tests__/` 子目录下**（路径形如 `foo/__tests__/foo.test.tsx`）；国际站专属 `*.global.test.tsx`
 - 全局 setup：`src/test/setup.ts`
-- 运行：`pnpm test` / `pnpm test src/path/to/file.test.tsx` / `pnpm check`
+- 运行：`pnpm test` / `pnpm test src/path/to/__tests__/file.test.tsx` / `pnpm check`
 - 断言规范：
   - 禁止形式化断言（`expect(true).toBe(true)`）
   - Mock 必须符合真实业务场景，禁止 `name: 'test'` 占位
@@ -272,7 +272,7 @@ frontend/src/
 | Bot 通道 | QQ 通道（国内独有）、微信扫码 | Telegram / WhatsApp / Discord / Slack |
 | 法律信息 | 显示 ICP 备案 | 隐藏 ICP，显示 Terms / Privacy |
 | 实名认证 | 写操作受实名墙拦截（`realname_required`） | 不展示实名入口，不应被实名墙拦截 |
-| 测试文件 | `*.test.tsx` | 国际站专属：`*.global.test.tsx` |
+| 测试文件 | `__tests__/*.test.tsx` | 国际站专属：`__tests__/*.global.test.tsx` |
 
 **国际站开发要点**：
 

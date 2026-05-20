@@ -1,7 +1,7 @@
 import { act, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { lazyNamed, lazyRoute } from "./lazy-page";
+import { lazyNamed, lazyRoute } from "../lazy-page";
 
 describe("lazy route helpers", () => {
   it("loads named page exports behind the shared route fallback", async () => {

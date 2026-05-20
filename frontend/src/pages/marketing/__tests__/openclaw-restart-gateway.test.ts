@@ -9,7 +9,7 @@ import {
   clearErrorForBot,
   type RestartableBot,
   type RestartErrors,
-} from "./openclaw-restart-gateway";
+} from "../openclaw-restart-gateway";
 
 const bot = (id: string, status: RestartableBot["status"] = "running"): RestartableBot => ({ id, status });
 
