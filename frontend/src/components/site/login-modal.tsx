@@ -324,6 +324,19 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
                       {t("《隐私保护协议》")}
                     </a>
                   )}
+                  {isGlobal ? (
+                    <>
+                      {" "}
+                      {t("与")}{" "}
+                      <Link
+                        to="/open-source-licenses"
+                        className="font-medium hover:underline"
+                        style={{ color: "var(--lw-accent)" }}
+                      >
+                        {t("《开源声明》")}
+                      </Link>
+                    </>
+                  ) : null}
                 </span>
               </label>
               {/* Agree hint */}

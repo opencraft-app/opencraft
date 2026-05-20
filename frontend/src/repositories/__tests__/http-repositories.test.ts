@@ -290,6 +290,46 @@ describe("http repositories auth token bootstrap", () => {
     );
   });
 
+  it("normalizes ctl instance status variants", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          code: "OK",
+          message: "success",
+          data: {
+            total: 5,
+            page: 1,
+            page_size: 20,
+            items: [
+              { instance_id: "ins_running_lower", status: "running", created_at: "2026-03-24T00:00:00Z" },
+              { instance_id: "ins_active", status: "active", created_at: "2026-03-24T00:00:00Z" },
+              { instance_id: "ins_succeeded", status: "Succeeded", created_at: "2026-03-24T00:00:00Z" },
+              { instance_id: "ins_queued", status: "queued", created_at: "2026-03-24T00:00:00Z" },
+              { instance_id: "ins_deleted_lower", status: "deleted", created_at: "2026-03-24T00:00:00Z" },
+            ],
+          },
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    const snapshot = await repositories.bots.getDashboardSnapshot("live");
+
+    expect(snapshot.bots.map((bot) => [bot.id, bot.status])).toEqual([
+      ["ins_running_lower", "active"],
+      ["ins_active", "active"],
+      ["ins_succeeded", "active"],
+      ["ins_queued", "provisioning"],
+      ["ins_deleted_lower", "deleting"],
+    ]);
+  });
+
   it("creates bots through ctl instances", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     const fetchMock = vi.fn().mockResolvedValue(

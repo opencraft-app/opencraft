@@ -136,7 +136,8 @@ type createTaskAiGatewayAdapterStub struct {
 		userID   string
 		nickname string
 	}
-	revoked []string
+	revokeErrByKeyID map[string]error
+	revoked          []string
 }
 
 func (s *createTaskAiGatewayAdapterStub) CreateApiKey(_ context.Context, _ string, _ string) (*paigateway.CreateApiKeyResponse, error) {
@@ -158,6 +159,11 @@ func (s *createTaskAiGatewayAdapterStub) EnsureUser(_ context.Context, userID st
 }
 func (s *createTaskAiGatewayAdapterStub) RevokeApiKey(_ context.Context, keyID string) error {
 	s.revoked = append(s.revoked, keyID)
+	if s.revokeErrByKeyID != nil {
+		if err := s.revokeErrByKeyID[keyID]; err != nil {
+			return err
+		}
+	}
 	return nil
 }
 func (s *createTaskAiGatewayAdapterStub) GetUserUsage(_ context.Context, _ string) (*paigateway.UserUsageResponse, error) {

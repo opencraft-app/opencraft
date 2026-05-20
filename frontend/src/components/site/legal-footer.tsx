@@ -58,6 +58,14 @@ export const LegalFooter = () => {
             >
               {t("服务条款")}
             </a>
+            {isGlobal ? (
+              <>
+                ·
+                <Link to="/open-source-licenses" className="transition-colors hover:text-black">
+                  {t("开源声明")}
+                </Link>
+              </>
+            ) : null}
           </span>
           {/* 加入交流群 — hover 展示二维码 */}
           <span
@@ -79,13 +87,13 @@ export const LegalFooter = () => {
                   style={{ width: "200px" }}
                 >
                   <img
-                    src="/assets/landing/about/community-qr.png"
+                    src={isGlobal ? "/assets/landing/about/International-Discord.png" : "/assets/landing/about/community-qr.png"}
                     alt="加入交流群"
                     className="rounded-lg"
                     style={{ width: "168px", height: "168px" }}
                   />
                   <span className="whitespace-nowrap text-[11px] tracking-wider text-black/50">
-                    {t("扫码加入交流群")}
+                    {isGlobal ? t("扫码加入Discord交流群") : t("扫码加入交流群")}
                   </span>
                 </motion.div>
               )}

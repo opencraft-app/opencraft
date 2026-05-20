@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { assetUrl, cdnBase, isUsingCdn } from "./asset-url";
+import { assetUrl, cdnBase, isUsingCdn } from "../asset-url";
 
 describe("assetUrl", () => {
   it("keeps frontend-owned assets on the current site", () => {

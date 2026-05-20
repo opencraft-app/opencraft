@@ -486,17 +486,25 @@ const writeBotDrafts = (drafts: Record<string, BotDraft>) => {
 };
 
 const mapInstanceStatusToBotStatus = (status: string): Bot["status"] => {
-  switch (status) {
-    case "Creating":
+  switch (status.trim().toLowerCase()) {
+    case "creating":
+    case "provisioning":
+    case "pending":
+    case "queued":
       return "provisioning";
-    case "Paused":
+    case "paused":
       return "paused";
-    case "Running":
+    case "running":
+    case "active":
+    case "ready":
+    case "succeeded":
+    case "success":
       return "active";
-    case "Failed":
+    case "failed":
+    case "error":
       return "failed";
-    case "Deleting":
-    case "Deleted":
+    case "deleting":
+    case "deleted":
       return "deleting";
     default:
       return "draft";

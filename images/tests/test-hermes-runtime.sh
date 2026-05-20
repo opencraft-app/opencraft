@@ -144,6 +144,27 @@ else
   pass "hermes runtime command is available"
 fi
 
+info "checking hermes command topology"
+HERMES_TOPOLOGY_OUTPUT="$(remote_exec_runtime '
+  set -e
+  export HOME='"${RUNTIME_HOME}"'
+  export USER='"${RUNTIME_USER}"'
+  for p in /usr/local/bin/hermes /usr/local/bin/hermes-agent; do
+    test -x "$p"
+    test ! -L "$p"
+  done
+  test "$(readlink -f /usr/bin/hermes)" = /usr/local/bin/hermes
+  test "$(readlink -f /usr/bin/hermes-agent)" = /usr/local/bin/hermes-agent
+  head -1 "$HOME/.hermes/hermes-agent/venv/bin/hermes"
+  head -1 "$HOME/.hermes/hermes-agent/venv/bin/hermes-agent"
+' 2>&1 || true)"
+if echo "${HERMES_TOPOLOGY_OUTPUT}" | grep -q '^#!.*python'; then
+  pass "hermes command topology is standardized"
+else
+  fail "hermes command topology is not standardized"
+  echo "${HERMES_TOPOLOGY_OUTPUT}"
+fi
+
 info "checking hermes profile"
 PROFILE_OUTPUT="$(remote_exec "test -f /etc/profile.d/hermes-env.sh && cat /etc/profile.d/hermes-env.sh" 2>&1 || true)"
 if echo "${PROFILE_OUTPUT}" | grep -q '\$HOME/.hermes/hermes-agent/venv/bin' && echo "${PROFILE_OUTPUT}" | grep -q '\$HOME/.local/bin'; then
@@ -163,12 +184,25 @@ else
 fi
 
 info "checking acli command"
-ACLI_OUTPUT="$(remote_exec "if command -v acli >/dev/null 2>&1; then acli --help >/dev/null && acli doctor; else echo MISSING; exit 1; fi" 2>&1 || true)"
+ACLI_OUTPUT="$(remote_exec_runtime "if command -v acli >/dev/null 2>&1; then acli --help >/dev/null && acli doctor; else echo MISSING; exit 1; fi" 2>&1 || true)"
 if echo "${ACLI_OUTPUT}" | grep -Eqi 'error|failed|missing'; then
   fail "acli doctor failed"
   echo "${ACLI_OUTPUT}"
 else
   pass "acli command is available"
+fi
+
+info "checking acli identity"
+ACLI_IDENTITY_OUTPUT="$(remote_exec "test -f /etc/acli/identity.yaml && grep -E '^(product|run_as|runtime|runtime_bin|runtime_home|runtime_version):' /etc/acli/identity.yaml" 2>&1 || true)"
+if echo "${ACLI_IDENTITY_OUTPUT}" | grep -q '^product: lightvela$' \
+  && echo "${ACLI_IDENTITY_OUTPUT}" | grep -q '^run_as: '"${RUNTIME_USER}"'$' \
+  && echo "${ACLI_IDENTITY_OUTPUT}" | grep -q '^runtime: hermes$' \
+  && echo "${ACLI_IDENTITY_OUTPUT}" | grep -q '^runtime_bin: '"${RUNTIME_HOME}"'/.hermes/hermes-agent/venv/bin/hermes$' \
+  && echo "${ACLI_IDENTITY_OUTPUT}" | grep -q '^runtime_home: '"${RUNTIME_HOME}"'/.hermes$'; then
+  pass "acli identity targets lightvela hermes runtime"
+else
+  fail "acli identity does not target lightvela hermes runtime"
+  echo "${ACLI_IDENTITY_OUTPUT}"
 fi
 
 info "checking root account lock"

@@ -50,6 +50,9 @@ data:
   # overlay 里按环境特化（北京 stub 与上海正式不同 endpoint）。
   JIFEI_CGW_GATEWAY_URL: ""
   JIFEI_CGW_HOST_HEADER: ""
+  # JIFEI_CGW_X_QCLOUD_USER_ID（v1.7.4 D9 新增）：仅测试环境带（测试 uin 如 700000164995），
+  # 现网为空字符串（部署侧出口 IP 鉴权，jifeiclient 跳过 header 注入）。
+  JIFEI_CGW_X_QCLOUD_USER_ID: ""
   TRADE_JIFEI_COMPONENT_NAME: "trade"
   TRADE_JIFEI_PROTOCOL_VERSION: "1.0"
   TRADE_JIFEI_OUR_INTERFACE_PREFIX: "lightvela"

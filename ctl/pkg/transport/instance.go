@@ -58,6 +58,22 @@ type SetTimeoutRequest struct {
 	Timeout *int32 `json:"timeout" example:"1800"`
 }
 
+// InstanceConfigResetProvider 返回给前端的一次性配置下发材料。
+type InstanceConfigResetProvider struct {
+	ProviderName string `json:"provider_name" example:"custom"`
+	BaseURL      string `json:"base_url" example:"https://api.lightvela.ai/v1"`
+	ModelID      string `json:"model_id" example:"lightvela/default"`
+	API          string `json:"api" example:"chat_completions"`
+	APIKey       string `json:"api_key" example:"sk-xxxx"`
+}
+
+// InstanceConfigResetResponse 实例配置重置准备响应。
+type InstanceConfigResetResponse struct {
+	KeyID     string                       `json:"key_id" example:"550e8400-e29b-41d4-a716-446655440000"`
+	KeyPrefix string                       `json:"key_prefix" example:"sk-abcd1"`
+	Config    *InstanceConfigResetProvider `json:"config"`
+}
+
 // PaginationParams 分页参数
 type PaginationParams struct {
 	// 页码，从 1 开始，默认 1

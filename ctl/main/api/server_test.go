@@ -30,6 +30,9 @@ type stubLogic struct {
 	updateResp                             *transport.InstanceResponse
 	updateErr                              error
 	updateReq                              *transport.UpdateInstanceRequest
+	resetConfigResp                        *transport.InstanceConfigResetResponse
+	resetConfigErr                         error
+	resetConfigInstanceID                  string
 	listSoulResp                           *transport.ListSoulTemplatesResponse
 	listSoulErr                            error
 	usageResp                              *transport.UserUsageResponse
@@ -132,6 +135,14 @@ func (s *stubLogic) UpdateInstance(ctx pctx.Context, instanceID string, req *tra
 	}
 	if s.updateResp != nil || s.updateErr != nil {
 		return s.updateResp, s.updateErr
+	}
+	return nil, errors.New("unexpected call")
+}
+
+func (s *stubLogic) ResetInstanceConfig(ctx pctx.Context, instanceID string) (*transport.InstanceConfigResetResponse, error) {
+	s.resetConfigInstanceID = instanceID
+	if s.resetConfigResp != nil || s.resetConfigErr != nil {
+		return s.resetConfigResp, s.resetConfigErr
 	}
 	return nil, errors.New("unexpected call")
 }
@@ -556,6 +567,52 @@ func TestUpdateInstanceUsesSuccessEnvelope(t *testing.T) {
 	}
 	if handler.logic.(*stubLogic).updateReq == nil || handler.logic.(*stubLogic).updateReq.Name == nil || *handler.logic.(*stubLogic).updateReq.Name != "Renamed Bot" {
 		t.Fatalf("expected name to be forwarded, got %+v", handler.logic.(*stubLogic).updateReq)
+	}
+}
+
+func TestResetInstanceConfigUsesSuccessEnvelope(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/v1/instances/ins-1/config/reset", nil)
+	req.Header.Set(headerUserID, "user-1")
+	rec := httptest.NewRecorder()
+
+	handler := &instanceHandler{logic: &stubLogic{
+		resetConfigResp: &transport.InstanceConfigResetResponse{
+			KeyID:     "key-new",
+			KeyPrefix: "sk-new",
+			Config: &transport.InstanceConfigResetProvider{
+				ProviderName: "custom",
+				BaseURL:      "https://model.internal/v1",
+				ModelID:      "kimi-k2.5",
+				API:          "chat_completions",
+				APIKey:       "sk-new-secret",
+			},
+		},
+	}}
+	newRouter(handler, &bundleHandler{}, &passHandler{}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var payload struct {
+		Code    string                                `json:"code"`
+		Message string                                `json:"message"`
+		Data    transport.InstanceConfigResetResponse `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload.Code != "OK" || payload.Message != "success" {
+		t.Fatalf("unexpected envelope: %s", rec.Body.String())
+	}
+	if payload.Data.KeyID != "key-new" || payload.Data.KeyPrefix != "sk-new" {
+		t.Fatalf("unexpected key data: %+v", payload.Data)
+	}
+	if payload.Data.Config == nil || payload.Data.Config.APIKey != "sk-new-secret" || payload.Data.Config.API != "chat_completions" {
+		t.Fatalf("unexpected config data: %+v", payload.Data.Config)
+	}
+	if handler.logic.(*stubLogic).resetConfigInstanceID != "ins-1" {
+		t.Fatalf("expected instance id to be forwarded, got %q", handler.logic.(*stubLogic).resetConfigInstanceID)
 	}
 }
 

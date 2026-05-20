@@ -112,6 +112,10 @@ func (l *logic) loadOwnedRunningInstance(ctx pctx.Context, instanceID string) (*
 	if err != nil {
 		return nil, err
 	}
+	entityUserID := strings.TrimSpace(entity.UserId)
+	if entityUserID != "" && entityUserID != strings.TrimSpace(ctx.GetUserID()) {
+		return nil, errcode.ErrInstanceNotFound
+	}
 	if entity.Status != modelinstance.InstanceStatusRunning {
 		return nil, errcode.Wrap(errcode.ErrDebugNotSupported, "instance status is %s, expected running", entity.Status)
 	}

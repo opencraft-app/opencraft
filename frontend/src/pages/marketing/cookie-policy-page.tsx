@@ -23,7 +23,6 @@ type CookiePolicyCopy = {
   backHome: string;
   brand: string;
   title: string;
-  updated: string;
   intro: string[];
   sections: CookieSection[];
   tableHeaders: {
@@ -38,7 +37,6 @@ const en: CookiePolicyCopy = {
   backHome: "Back to Home",
   brand: "LightVela",
   title: "Cookies Policy",
-  updated: "Last updated: May 2026",
   tableHeaders: {
     cookie: "Cookie",
     name: "Cookie Name",
@@ -150,7 +148,6 @@ const zh: CookiePolicyCopy = {
   backHome: "返回首页",
   brand: "LightVela",
   title: "Cookies 政策",
-  updated: "最后更新：2026 年 5 月",
   tableHeaders: {
     cookie: "Cookie",
     name: "Cookie 名称",
@@ -373,9 +370,7 @@ export const CookiePolicyPage = () => {
       <main className="mx-auto max-w-5xl px-5 py-10 sm:px-8 sm:py-14 lg:py-16">
         <article className="rounded-[2rem] border border-slate-200 bg-white px-5 py-8 shadow-[0_24px_80px_-56px_rgba(15,23,42,0.35)] sm:px-8 sm:py-10 lg:px-12">
           <div className="border-b border-slate-200 pb-12 sm:pb-14">
-            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#0B2E70]">{copy.brand}</p>
-            <h1 className="mt-10 text-4xl font-semibold tracking-[-0.06em] text-slate-950 sm:text-5xl">{copy.title}</h1>
-            <p className="mt-10 text-sm font-medium text-slate-500">{copy.updated}</p>
+            <h1 className="text-4xl font-semibold tracking-[-0.06em] text-slate-950 sm:text-5xl">{copy.title}</h1>
             <div className="mt-12 space-y-6">
               {copy.intro.map((paragraph) => (
                 <p key={paragraph} className="text-base leading-9 text-slate-700">
