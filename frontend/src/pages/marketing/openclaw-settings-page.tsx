@@ -3148,6 +3148,7 @@ export const OpenClawSettingsPage = () => {
                       ...createLighthouseConfig({
                         agentType: "hermes",
                         supportsTencentCloudApi: false,
+                        isI18n: isGlobal,
                       }),
                       runCommand: commandAdapter.runCommand,
                       getInvocationTask: commandAdapter.getInvocationTask,
