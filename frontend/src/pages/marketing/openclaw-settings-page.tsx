@@ -10,6 +10,7 @@ import {
   ArrowRight,
   Check,
   MessageCircle,
+  MessageSquare,
   Loader2,
   Calendar,
   Mail,
@@ -56,6 +57,7 @@ import {
   type IFeatureFlags,
 } from "@tencent/tea-sdk-lightclaw";
 import { createMonoDebugExecAdapter } from "@/pages/marketing/openclaw-tat-adapter";
+import { createLightVelaCommandExecutor } from "@/pages/marketing/openclaw-command-executor";
 import { installOpenClawConsoleHelpers } from "@/pages/marketing/openclaw-console-helpers";
 import { getOpenClawCreateLimitMessage } from "@/pages/marketing/openclaw-create-availability";
 import {
@@ -68,6 +70,8 @@ import {
   type RestartErrors,
 } from "@/pages/marketing/openclaw-restart-gateway";
 import "@tencent/tea-sdk-lightclaw/styles";
+// LightVela 对话面板（npm 包 @tencent/agentchat-lightvela-panel@0.2.5-beta.0）
+import { LightVelaPanel } from "@tencent/agentchat-lightvela-panel";
 
 const DEFAULT_TAT_TERMINAL_TIMEOUT_SECONDS = 3600;
 
@@ -171,9 +175,9 @@ const SettingsNavbar = () => {
   );
 };
 
-/* ─── 实例配置子页面类型（模型 / 通道 / 技能，放在单个 bot 内部切换） ─── */
+/* ─── 实例配置子页面类型（模型 / 通道 / 技能 / 对话，放在单个 bot 内部切换） ─── */
 
-type SettingsSectionId = "model" | "channel" | "skill";
+type SettingsSectionId = "model" | "channel" | "skill" | "chat";
 
 /* ─── Section Card Wrapper ─── */
 
@@ -2450,6 +2454,9 @@ export const OpenClawSettingsPage = () => {
   const requestedCreatingBotId = creatingParam && creatingParam !== "true" ? creatingParam : "";
   const { bots, botsLoading, deleteBot, updateBot, user, refreshBots, isSubscribed, addBot } = useOpenClaw();
   const repositories = useRepositories();
+  // 账号 id：来自 /auth/profile 下发的 session.user.id，用于 LightVelaPanel.userId 等场景
+  const { session } = useSession();
+  const accountId = session.user?.id ?? "";
 
   /* 创建 loading 状态 */
   const [isCreating, setIsCreating] = useState(Boolean(creatingParam));
@@ -2476,7 +2483,7 @@ export const OpenClawSettingsPage = () => {
 
 
   /* 实例内部的子页面切换：通道 / 模型 / 技能（通道置顶，作为默认进入项） */
-  const [activeSection, setActiveSection] = useState<SettingsSectionId>("channel");
+  const [activeSection, setActiveSection] = useState<SettingsSectionId>("chat");
 
   /* Tab 切换 */
   const [activeTabId, setActiveTabId] = useState((visibleBots[0]?.id ?? requestedCreatingBotId) || "creating");
@@ -2488,6 +2495,137 @@ export const OpenClawSettingsPage = () => {
     }
   }, [visibleBots, activeTabId, isCreating]);
   const activeBot = visibleBots.find((b) => b.id === activeTabId) ?? visibleBots[0];
+
+  /**
+   * AgentChat（LightVela）启动 token：
+   * - 接口：`POST /v1/instances/:instanceId/agentchat/launch-token`，需带 LightClaw Bearer 登录态
+   * - TTL：300 秒；过期前 60 秒自动续期
+   * - 仅在用户进入 chat tab 且 activeBot 存在时拉取，避免无意义请求
+   * - 401 / 网络错误：状态置为 error，由 chat tab UI 提示并提供重试
+   */
+  const [launchToken, setLaunchToken] = useState<string | null>(null);
+  const [launchTokenStatus, setLaunchTokenStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [launchTokenError, setLaunchTokenError] = useState<string | null>(null);
+  const [launchTokenRefreshTick, setLaunchTokenRefreshTick] = useState(0);
+
+  const activeBotId = activeBot?.id;
+
+  useEffect(() => {
+    // 仅在 chat tab 激活、activeBot 已就位、用户已登录（拿到账号 id）时拉取
+    if (activeSection !== "chat" || !activeBotId) {
+      return;
+    }
+    if (!accountId) {
+      setLaunchTokenStatus("error");
+      setLaunchTokenError("未登录，无法获取账号 id");
+      return;
+    }
+
+    const baseUrl = resolveConfiguredAuthApiBaseUrl();
+    if (!baseUrl) {
+      setLaunchTokenStatus("error");
+      setLaunchTokenError("未配置后端地址（VITE_AUTH_API_BASE_URL）");
+      return;
+    }
+
+    const authToken = readStoredAuthToken();
+    if (!authToken) {
+      setLaunchTokenStatus("error");
+      setLaunchTokenError("未登录，无法获取 AgentChat 启动 token");
+      return;
+    }
+
+    const controller = new AbortController();
+    let cancelled = false;
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const fetchLaunchToken = async () => {
+      setLaunchTokenStatus("loading");
+      setLaunchTokenError(null);
+      try {
+        const url = `${baseUrl.replace(/\/$/, "")}/v1/instances/${encodeURIComponent(activeBotId)}/agentchat/launch-token`;
+        const response = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${authToken}`,
+          },
+          body: "{}",
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          if (cancelled) return;
+          let detail = `HTTP ${response.status}`;
+          try {
+            const body = await response.json() as { code?: string; message?: string };
+            if (body?.message) detail = `${body.code ?? response.status}: ${body.message}`;
+          } catch {
+            // 忽略响应体解析错误
+          }
+          setLaunchTokenStatus("error");
+          setLaunchTokenError(detail);
+          return;
+        }
+
+        const json = await response.json() as {
+          code?: string;
+          data?: { launch_token?: string; expires_at?: number };
+          message?: string;
+        };
+        if (cancelled) return;
+
+        const token = json?.data?.launch_token;
+        const expiresAt = json?.data?.expires_at;
+        if (!token) {
+          setLaunchTokenStatus("error");
+          setLaunchTokenError(json?.message || "返回数据缺少 launch_token");
+          return;
+        }
+
+        setLaunchToken(token);
+        setLaunchTokenStatus("ready");
+
+        // 过期前 60s 触发续期；若返回的 expires_at 不可信则按 4 分钟兜底
+        const now = Math.floor(Date.now() / 1000);
+        const ttlSeconds = typeof expiresAt === "number" && expiresAt > now
+          ? expiresAt - now
+          : 300;
+        const refreshAfterMs = Math.max(30, ttlSeconds - 60) * 1000;
+        refreshTimer = setTimeout(() => {
+          if (!cancelled) {
+            setLaunchTokenRefreshTick((tick) => tick + 1);
+          }
+        }, refreshAfterMs);
+      } catch (e) {
+        if (cancelled || (e as Error)?.name === "AbortError") return;
+        setLaunchTokenStatus("error");
+        setLaunchTokenError((e as Error)?.message || "请求失败");
+      }
+    };
+
+    fetchLaunchToken();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+      if (refreshTimer) clearTimeout(refreshTimer);
+    };
+  }, [activeSection, activeBotId, accountId, launchTokenRefreshTick]);
+
+  // 切到非 chat tab 或换 bot 时，清空已缓存的 token，避免泄露给下个 bot
+  useEffect(() => {
+    if (activeSection !== "chat") {
+      setLaunchToken(null);
+      setLaunchTokenStatus("idle");
+      setLaunchTokenError(null);
+    }
+  }, [activeSection, activeBotId]);
+
+  const retryLaunchToken = useCallback(() => {
+    setLaunchTokenRefreshTick((tick) => tick + 1);
+  }, []);
+
 
   /**
    * tea-sdk-lightclaw 的 ModelCard / ChannelCard / SkillCard 内部通过
@@ -2512,6 +2650,27 @@ export const OpenClawSettingsPage = () => {
         },
       }),
     [],
+  );
+
+  /**
+   * LightVelaPanel 用的 commandExecutor。
+   *
+   * 与上方 `commandAdapter`（给 `@tencent/tea-sdk-lightclaw` SDK 走 TAT 协议
+   * 的适配器）不同，LightVelaPanel 接受的是 ClawPanel 公共层定义的更直接的
+   * `CommandExecutor` 契约（`(options) => Promise<{ taskStatus, exitCode, output, ... }>`）。
+   *
+   * 两者底层都走 mono debug/exec，但接口形状不同：
+   *   - commandAdapter：runCommand → getInvocationTask 两步式（兼容 SDK 的 TAT 模型）
+   *   - lightvelaCommandExecutor：单步同步返回（贴近 LightVelaPanel 期望）
+   *
+   * 仅在 activeBot 存在时构造；切换到无 bot 状态会传 undefined，让 panel
+   * 内部 fallback 到默认 TAT 通道（实际 lightvela 场景不会走到）。
+   */
+  const lightvelaCommandExecutor = useMemo(
+    () => activeBotId
+      ? createLightVelaCommandExecutor(repositories, activeBotId)
+      : undefined,
+    [repositories, activeBotId],
   );
 
   /* 改名相关 */
@@ -3208,6 +3367,7 @@ export const OpenClawSettingsPage = () => {
                     // 由 SDK 以命令执行失败的形式反馈到 UI。
 
                     const sections: { id: SettingsSectionId; label: string; icon: React.ReactNode }[] = [
+                      { id: "chat", label: "对话", icon: <MessageSquare className="h-4 w-4" /> },
                       { id: "channel", label: "通道", icon: <MessageCircle className="h-4 w-4" /> },
                       { id: "model", label: "模型", icon: <Sparkles className="h-4 w-4" /> },
                       { id: "skill", label: "技能", icon: <Wand2 className="h-4 w-4" /> },
@@ -3269,6 +3429,48 @@ export const OpenClawSettingsPage = () => {
                                 featureFlags={sdkFeatureFlags}
                                 productConfig={sdkProductConfig}
                               />
+                            )}
+                            {activeSection === "chat" && (
+                              <div className="overflow-hidden rounded-lg border border-black/[0.08] bg-white">
+                                {(launchTokenStatus === "idle" || launchTokenStatus === "loading") && (
+                                  <div className="p-6 text-sm text-black/60">
+                                    正在获取 AgentChat 启动 token…
+                                  </div>
+                                )}
+                                {launchTokenStatus === "error" && (
+                                  <div className="p-6 text-sm">
+                                    <p className="text-red-500">
+                                      获取 AgentChat 启动 token 失败：{launchTokenError || "未知错误"}
+                                    </p>
+                                    <button
+                                      type="button"
+                                      onClick={retryLaunchToken}
+                                      className="mt-3 inline-flex items-center rounded-md border border-black/[0.12] bg-white px-3 py-1.5 text-xs font-medium text-black/80 hover:bg-black/[0.04]"
+                                    >
+                                      重试
+                                    </button>
+                                  </div>
+                                )}
+                                {launchTokenStatus === "ready" && launchToken && accountId && (
+                                  <LightVelaPanel
+                                    isHermesBlueprint={true}
+                                    instanceIds={[sdkInstance.InstanceId]}
+                                    instanceId={sdkInstance.InstanceId}
+                                    region="ap-guangzhou"
+                                    userId={accountId}
+                                    product="lightvela"
+                                    lightvelaApiParams={{ 
+                                      businessCode: 'lightvela',
+                                      token: launchToken 
+                                    }}
+                                    commandExecutor={lightvelaCommandExecutor}
+                                    features={{
+                                      autoActivate: true,
+                                      nativeWsGray: true,
+                                    }}
+                                  />
+                                )}
+                              </div>
                             )}
                           </div>
                         </div>

@@ -20,6 +20,46 @@ const LOCAL_SDK_SRC_ENTRY = path.join(LOCAL_SDK_ROOT, "src/index.ts");
 const LOCAL_SDK_STYLES_ENTRY = path.join(LOCAL_SDK_ROOT, "styles/index.css");
 
 /**
+ * 本地 lightvela-panel（@tencent/agentchat-lightvela-panel）联调（已停用）
+ * ────────────────────────────────────────────────────────────────────────
+ * 现已通过 npm 包 @tencent/agentchat-lightvela-panel引入，
+ * 走 node_modules 正常解析，无需本地链接。
+ *
+ * 如需恢复本地联调（开发 AgentChat-web 源码 → mono2 即时看到效果），需：
+ *   1. 取消下方 4 块 alias 与 optimizeDeps.exclude 的注释
+ *   2. 同步取消 tsconfig.json / tsconfig.app.json 中 paths 的注释
+ *   3. 在 AgentChat-web 中先 `pnpm -r build`（仅默认 dist 模式需要）
+ *   4. 启动：`pnpm dev:local-agentchat`（src HMR 模式）
+ *           或 `pnpm dev:local-all`（联调 SDK + AgentChat-web）
+ *
+ * 由于 mono2/frontend 与 AgentChat-web 是两个独立的 pnpm 项目，
+ * 通过 Vite alias 把 4 个 workspace 包指向 AgentChat-web 内已 build 的 dist。
+ * 它们内部的 import（@tencent/agentchat-claw-panel 等）由 pnpm 软链
+ * （AgentChat-web/packages/lightvela-panel/node_modules/@tencent/*）解析。
+ */
+// const AGENTCHAT_WEB_ROOT = path.resolve(rootDir, "../../AgentChat-web");
+// const LIGHTVELA_PANEL_PKG = path.join(AGENTCHAT_WEB_ROOT, "packages/lightvela-panel");
+// const CLAW_PANEL_PKG = path.join(AGENTCHAT_WEB_ROOT, "packages/claw-panel");
+// const CLAW_HOOKS_PKG = path.join(AGENTCHAT_WEB_ROOT, "packages/claw-hooks");
+// const CLAW_COMPONENTS_PKG = path.join(AGENTCHAT_WEB_ROOT, "packages/claw-components");
+
+// Local hot-reload development switch for AgentChat-web 4 packages.
+//
+// Usage: `pnpm dev:local-agentchat` (sets VITE_LOCAL_AGENTCHAT=1) to load the
+// 4 claw packages directly from their `src/` TypeScript sources instead of
+// `dist/es/index.js`. Edits to claw `.ts/.tsx` trigger Vite HMR instantly,
+// no `pnpm -r build` needed on the AgentChat-web side.
+//
+// Mirrors the VITE_LOCAL_SDK pattern. Combine via `pnpm dev:local-all`.
+// const USE_LOCAL_AGENTCHAT = process.env.VITE_LOCAL_AGENTCHAT === "1";
+// const AGENTCHAT_SRC_ENTRIES = {
+//   components: path.join(CLAW_COMPONENTS_PKG, "src/index.ts"),
+//   hooks: path.join(CLAW_HOOKS_PKG, "src/index.ts"),
+//   panel: path.join(CLAW_PANEL_PKG, "src/index.ts"),
+//   lightvela: path.join(LIGHTVELA_PANEL_PKG, "src/index.tsx"),
+// } as const;
+
+/**
  * Polyfill snippet appended to the end of `react-dom`'s CommonJS entry.
  *
  * `@tencent/tea-component` (DomRef.js, ThemeMode.js) and `react-
@@ -475,6 +515,37 @@ export default defineConfig(({ mode }) => {
             },
           ]
           : []),
+
+        // ── 本地 lightvela-panel 联调（已停用，详见文件顶部说明） ──
+        // 当前走 npm 包 @tencent/agentchat-lightvela-panel@0.2.5-beta.0，
+        // 由 node_modules 自动解析，无需 alias。
+        //
+        // 如需恢复本地联调，取消下方注释（顺序：子包在前，主包在后，
+        // 因为 Vite alias 是前缀匹配）。
+        // {
+        //   find: "@tencent/agentchat-claw-components",
+        //   replacement: USE_LOCAL_AGENTCHAT
+        //     ? AGENTCHAT_SRC_ENTRIES.components
+        //     : path.join(CLAW_COMPONENTS_PKG, "dist/es/index.js"),
+        // },
+        // {
+        //   find: "@tencent/agentchat-claw-hooks",
+        //   replacement: USE_LOCAL_AGENTCHAT
+        //     ? AGENTCHAT_SRC_ENTRIES.hooks
+        //     : path.join(CLAW_HOOKS_PKG, "dist/es/index.js"),
+        // },
+        // {
+        //   find: "@tencent/agentchat-claw-panel",
+        //   replacement: USE_LOCAL_AGENTCHAT
+        //     ? AGENTCHAT_SRC_ENTRIES.panel
+        //     : path.join(CLAW_PANEL_PKG, "dist/es/index.js"),
+        // },
+        // {
+        //   find: "@tencent/agentchat-lightvela-panel",
+        //   replacement: USE_LOCAL_AGENTCHAT
+        //     ? AGENTCHAT_SRC_ENTRIES.lightvela
+        //     : path.join(LIGHTVELA_PANEL_PKG, "dist/es/index.js"),
+        // },
       ],
     },
     server: {
@@ -484,6 +555,7 @@ export default defineConfig(({ mode }) => {
       ...(hmr ? { hmr } : {}),
       fs: {
         // Allow Vite to serve files from the sibling SDK checkout when linked.
+        // 如需恢复 AgentChat-web 本地联调，需在此追加 AGENTCHAT_WEB_ROOT。
         allow: [rootDir, LOCAL_SDK_ROOT],
       },
     },
@@ -510,7 +582,19 @@ export default defineConfig(({ mode }) => {
       // tea-style-lighthouse 等）是 CJS + 带 CSS/SVG/TTF 资源的老包，
       // 必须纳入预打包让 esbuild 统一处理，否则 Vite 会把深路径 CSS
       // 当成直接文件请求，在非本地环境下解析失败。
-      exclude: USE_LOCAL_SDK ? ["@tencent/tea-sdk-lightclaw"] : [],
+      exclude: [
+        ...(USE_LOCAL_SDK ? ["@tencent/tea-sdk-lightclaw"] : []),
+        // 本地 AgentChat-web 联调已停用，走 npm 包正常预打包。
+        // 如需恢复本地源码 HMR 模式，取消注释以排除预打包冻结：
+        // ...(USE_LOCAL_AGENTCHAT
+        //   ? [
+        //     "@tencent/agentchat-claw-components",
+        //     "@tencent/agentchat-claw-hooks",
+        //     "@tencent/agentchat-claw-panel",
+        //     "@tencent/agentchat-lightvela-panel",
+        //   ]
+        //   : []),
+      ],
       include: USE_LOCAL_SDK
         ? []
         : [
