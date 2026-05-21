@@ -2,10 +2,12 @@ import { isValidElement, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_GATEWAY_URL,
   Header,
   SettingsPage,
   SessionPage,
   parseSessionCreateMetaJSON,
+  resolveInitialGatewayURL,
   summarizeSessionCreateMeta,
 } from "./App";
 import type { SessionRow } from "./lib/sessionState";
@@ -143,6 +145,16 @@ describe("SessionPage", () => {
 });
 
 describe("SettingsPage", () => {
+  it("uses the CloudAgent gateway as the default endpoint", () => {
+    expect(resolveInitialGatewayURL()).toBe(DEFAULT_GATEWAY_URL);
+  });
+
+  it("keeps a persisted gateway endpoint over the default", () => {
+    expect(resolveInitialGatewayURL("http://127.0.0.1:18094")).toBe(
+      "http://127.0.0.1:18094",
+    );
+  });
+
   it("renders session create params templates in settings", () => {
     const html = renderToStaticMarkup(
       <SettingsPage

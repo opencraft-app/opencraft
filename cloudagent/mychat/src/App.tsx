@@ -109,6 +109,7 @@ const SIDEBAR_MAX_WIDTH = 420;
 const MOBILE_MEDIA_QUERY = "(max-width: 1023px)";
 const DEFAULT_CWD = "/workspace";
 const SESSION_METADATA_POLL_MS = 2000;
+export const DEFAULT_GATEWAY_URL = "http://cloudagent.lightvela.com";
 const MarkdownContent = lazy(() => import("./components/MarkdownContent"));
 const ACP_RESTORE_ENVIRONMENT: AcpRestoreEnvironment = {
   cwd: DEFAULT_CWD,
@@ -811,7 +812,7 @@ export function App() {
   }
 
   function resetGatewaySettings() {
-    setGatewayURLInput("");
+    setGatewayURLInput(DEFAULT_GATEWAY_URL);
   }
 
   function selectSessionMetaTemplate(templateId: string) {
@@ -1448,7 +1449,7 @@ export function SettingsPage({
               id="gateway-uri"
               value={gatewayURLInput}
               onChange={(event) => onChangeGatewayURL(event.target.value)}
-              placeholder="http://127.0.0.1:18094 or ws://127.0.0.1:18094/acp"
+              placeholder={`${DEFAULT_GATEWAY_URL} or ws://127.0.0.1:18094/acp`}
               className="min-h-[120px] rounded-[24px] border border-border bg-input px-5 py-4 font-mono text-sm"
             />
             <div className="rounded-[20px] border border-border bg-background/70 px-4 py-3 text-sm text-muted">
@@ -2672,9 +2673,9 @@ function initialSessionCreateMetaJSON(state: StoredUiState) {
   return state.sessionCreateMetaJSON ?? SESSION_META_TEMPLATES[0].json;
 }
 
-function resolveInitialGatewayURL(storedGatewayURL?: string) {
+export function resolveInitialGatewayURL(storedGatewayURL?: string) {
   const urlGateway = readGatewayURLFromLocation();
-  return urlGateway || storedGatewayURL || "";
+  return urlGateway || storedGatewayURL || DEFAULT_GATEWAY_URL;
 }
 
 function readGatewayURLFromLocation() {

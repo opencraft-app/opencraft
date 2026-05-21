@@ -7,19 +7,19 @@
 当前北京 EKS CI 公网地址：
 
 ```text
-101.42.117.125
+cloudagent.lightvela.com
 ```
 
 ACP raw WebSocket endpoint：
 
 ```text
-ws://101.42.117.125:8080/acp
+ws://cloudagent.lightvela.com/acp
 ```
 
 HTTP base URL：
 
 ```text
-http://101.42.117.125:8080
+http://cloudagent.lightvela.com
 ```
 
 注意：`18094` 是本地开发端口；云上部署监听 `8080`。
@@ -32,16 +32,16 @@ http://101.42.117.125:8080
 http://127.0.0.1:5173/
 ```
 
-连接当前云上 ACP：
+默认会连接当前云上 ACP：
 
 ```text
-http://127.0.0.1:5173/?acp_url=ws%3A%2F%2F101.42.117.125%3A8080%2Facp
+http://127.0.0.1:5173/
 ```
 
-未编码写法也可以：
+本地或其他 gateway 调试时，也可以显式覆盖：
 
 ```text
-http://127.0.0.1:5173/?acp_url=http://101.42.117.125:8080/acp
+http://127.0.0.1:5173/?acp_url=http://127.0.0.1:18094/acp
 ```
 
 如果换机器访问，`127.0.0.1:5173` 指的是访问者自己的机器。那台机器也需要启动 MyChat 前端，或者改用可被访问的前端地址。
@@ -63,7 +63,7 @@ JSON-RPC 2.0
 连接地址：
 
 ```text
-ws://101.42.117.125:8080/acp
+ws://cloudagent.lightvela.com/acp
 ```
 
 ### initialize
@@ -205,7 +205,7 @@ GATEWAY_DEFAULT_PROJECT_ID
 ACP WebSocket 调试直连可以不传 header：
 
 ```text
-GET ws://101.42.117.125:8080/acp
+GET ws://cloudagent.lightvela.com/acp
 ```
 
 服务端会落到默认 scope。当前云上默认值由容器环境变量提供：
@@ -259,7 +259,7 @@ X-Project-ID: project-live
 文件上传同样走 HTTP API，因此至少需要上述一组 header：
 
 ```bash
-curl -sS -X POST http://101.42.117.125:8080/v1/files \
+curl -sS -X POST http://cloudagent.lightvela.com/v1/files \
   -H 'Authorization: Bearer smoke-key' \
   -F purpose=assistants \
   -F file=@./README.md
@@ -268,7 +268,7 @@ curl -sS -X POST http://101.42.117.125:8080/v1/files \
 或者：
 
 ```bash
-curl -sS -X POST http://101.42.117.125:8080/v1/files \
+curl -sS -X POST http://cloudagent.lightvela.com/v1/files \
   -H 'X-Tenant-ID: tenant-live' \
   -H 'X-Project-ID: project-live' \
   -F purpose=assistants \
@@ -282,7 +282,7 @@ curl -sS -X POST http://101.42.117.125:8080/v1/files \
 验证 ACP endpoint 可达：
 
 ```bash
-curl -i -X OPTIONS http://101.42.117.125:8080/acp
+curl -i -X OPTIONS http://cloudagent.lightvela.com/acp
 ```
 
 预期：
@@ -296,7 +296,7 @@ HTTP/1.1 204 No Content
 ```bash
 curl -sS \
   -H 'Authorization: Bearer smoke-key' \
-  http://101.42.117.125:8080/v1/models
+  http://cloudagent.lightvela.com/v1/models
 ```
 
 预期返回 `agent-sidecar-chat`、`agent-sidecar-tool` 等模型。
@@ -304,7 +304,7 @@ curl -sS \
 最小 chat completion：
 
 ```bash
-curl -sS -X POST http://101.42.117.125:8080/v1/chat/completions \
+curl -sS -X POST http://cloudagent.lightvela.com/v1/chat/completions \
   -H 'Authorization: Bearer smoke-key' \
   -H 'Content-Type: application/json' \
   -d '{
