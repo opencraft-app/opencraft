@@ -23,3 +23,22 @@ items:
       app.kubernetes.io/managed-by: argocd
     annotations:
       managed-by: export_ssm_to_sops.py
+
+  # v1.7.28 BUG-15 修复 (2026-05-21):
+  # ctl-runtime-secrets 之前没有 SSM 真源, 用 sandbox-bj-5 fork 出来时的 dummy 占位,
+  # 导致 trade -> ctl /internal/ctl/passes/complete 调用 401 (Bearer token 不匹配,
+  # ctl 期望 'dummy' 但 trade 发 LIGHTCLAW_INTERNAL_SERVICE_TOKEN 真值).
+  # SSM 现含 CTL_INTERNAL_TOKEN + CTL_TEST_AIGATEWAY_INTERNAL_TOKEN 与 trade 一致的
+  # 真值; export_ssm_to_sops.py 跑后 sops yaml 同步.
+  - id: ctl-runtime-secrets
+    secret_name: mono-sandbox-bj-7-ctl-runtime-secrets
+    namespace: lightvela-playground-sandbox-bj-7
+    kubernetes_resource_name: ctl-runtime-secrets
+    kubernetes_resource_kind: Secret
+    output_path: argocd/secrets/sandbox-bj-7/ctl-runtime-secrets.sops.yaml
+    secret_type: Opaque
+    labels:
+      app.kubernetes.io/name: ctl
+      app.kubernetes.io/managed-by: argocd
+    annotations:
+      managed-by: export_ssm_to_sops.py
