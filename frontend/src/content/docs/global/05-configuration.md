@@ -67,9 +67,9 @@ LightVela 的所有配置集中在「我的 Hermes」管理台中，由三个配
 | 通道 | 接入方式 | 所需条件 |
 |---|---|---|
 | WeChat | 扫码授权 | 一台装有微信的手机 |
-| Telegram（即将推出） | Bot Token 接入 | 通过 BotFather 创建 Telegram Bot，并获取 Bot Token |
-| WhatsApp（即将推出） | WhatsApp Business API 接入 | 需要 Meta 开发者账号、WhatsApp Business Account，并完成 Cloud API 基础配置 |
-| Discord（即将推出） | Bot Token 接入 | 在 Discord Developer Portal 创建 Application，添加 Bot，并邀请到服务器 |
+| Telegram | Bot Token 接入 | 通过 BotFather 创建 Telegram Bot，并获取 Bot Token |
+| WhatsApp | WhatsApp Business API 接入 | 需要 Meta 开发者账号、WhatsApp Business Account，并完成 Cloud API 基础配置 |
+| Discord | Bot Token 接入 | 在 Discord Developer Portal 创建 Application，添加 Bot，并邀请到服务器 |
 
 **按键提供**：通道下拉、「授权接入」按钮、所选通道的介绍与「查看详情」链接、「已接入通道」列表。
 

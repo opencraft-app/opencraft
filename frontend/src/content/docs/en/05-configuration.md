@@ -67,9 +67,9 @@ The three buttons are arranged from left to right. The recommended configuration
 | Channel | Access method | Requirement |
 |---|---|---|
 | WeChat | QR-code authorization | A phone with WeChat installed |
-| Telegram (coming soon) | Bot Token access | Create a Telegram Bot through BotFather and obtain a Bot Token |
-| WhatsApp (coming soon) | WhatsApp Business API access | Meta developer account, WhatsApp Business Account, and basic Cloud API setup |
-| Discord (coming soon) | Bot Token access | Create an Application in Discord Developer Portal, add a Bot, and invite it to a server |
+| Telegram | Bot Token access | Create a Telegram Bot through BotFather and obtain a Bot Token |
+| WhatsApp | WhatsApp Business API access | Meta developer account, WhatsApp Business Account, and basic Cloud API setup |
+| Discord | Bot Token access | Create an Application in Discord Developer Portal, add a Bot, and invite it to a server |
 
 **Button provides**: Channel dropdown, "Authorize Access" button, selected channel introduction and "View Details" link, and "Connected channels" list.
 
