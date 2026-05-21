@@ -1,0 +1,8 @@
+*
+!research/
+!research/hermes-rs/
+!research/hermes-rs/**
+research/hermes-rs/target
+research/hermes-rs/.git
+research/hermes-rs/.github
+research/hermes-rs/assets

@@ -1,0 +1,31 @@
+# Secrets and local env
+.env
+.env.*
+!.env.example
+
+# Local agent/runtime state
+.omx/
+
+# Python
+.venv*/
+venv/
+__pycache__/
+*.py[cod]
+
+# Node
+node_modules/
+
+# Build artifacts
+dist/
+build/
+!gateway/build/
+!gateway/build/**
+*.log
+
+# Local OS/editor noise
+.DS_Store
+
+# Large upstream research checkouts kept as local references.
+research/LibreChat/
+research/open-webui/
+research/hermes-rs/

@@ -1,0 +1,169 @@
+package wrapper
+
+import (
+	"database/sql"
+	"strings"
+)
+
+func migrateStore(db *sql.DB) error {
+	statements := []string{
+		`CREATE TABLE IF NOT EXISTS files (
+			id TEXT PRIMARY KEY,
+			scope_tenant TEXT NOT NULL,
+			scope_project TEXT NOT NULL,
+			scope_sandbox TEXT NOT NULL DEFAULT '',
+			kind TEXT NOT NULL,
+			purpose TEXT NOT NULL,
+			filename TEXT NOT NULL,
+			content_type TEXT NOT NULL,
+			bytes INTEGER NOT NULL,
+			sha256 TEXT NOT NULL,
+			storage_uri TEXT NOT NULL,
+			source_response_id TEXT NOT NULL DEFAULT '',
+			created_at INTEGER NOT NULL,
+			expires_at TEXT NOT NULL,
+			deleted_at TEXT
+		)`,
+		`CREATE INDEX IF NOT EXISTS files_scope_idx ON files(scope_tenant, scope_project, scope_sandbox)`,
+		`CREATE TABLE IF NOT EXISTS responses (
+			id TEXT PRIMARY KEY,
+			scope_tenant TEXT NOT NULL,
+			scope_project TEXT NOT NULL,
+			scope_sandbox TEXT NOT NULL DEFAULT '',
+			model TEXT NOT NULL,
+			status TEXT NOT NULL,
+			output_text TEXT,
+			output_json TEXT,
+			artifact_file_ids_json TEXT,
+			created_at INTEGER NOT NULL,
+			updated_at INTEGER NOT NULL,
+			error_code TEXT,
+			error_message TEXT
+		)`,
+		`CREATE INDEX IF NOT EXISTS responses_scope_idx ON responses(scope_tenant, scope_project, scope_sandbox)`,
+		`CREATE TABLE IF NOT EXISTS audit_events (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			type TEXT NOT NULL,
+			subject_id TEXT NOT NULL DEFAULT '',
+			response_id TEXT NOT NULL DEFAULT '',
+			file_id TEXT NOT NULL DEFAULT '',
+			scope_tenant TEXT NOT NULL,
+			scope_project TEXT NOT NULL,
+			scope_sandbox TEXT NOT NULL DEFAULT '',
+			created_at TEXT NOT NULL,
+			detail TEXT NOT NULL DEFAULT ''
+		)`,
+		`CREATE INDEX IF NOT EXISTS audit_response_idx ON audit_events(response_id, id)`,
+		`CREATE TABLE IF NOT EXISTS sessions (
+			session_id TEXT PRIMARY KEY,
+			scope_tenant TEXT NOT NULL,
+			scope_project TEXT NOT NULL,
+			scope_sandbox TEXT NOT NULL DEFAULT '',
+			cwd TEXT NOT NULL,
+			title TEXT NOT NULL DEFAULT '',
+			model TEXT NOT NULL,
+			state TEXT NOT NULL,
+			closed INTEGER NOT NULL DEFAULT 0,
+			runtime_generation INTEGER NOT NULL,
+			current_response_id TEXT NOT NULL DEFAULT '',
+			last_runtime_error TEXT NOT NULL DEFAULT '',
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL,
+			read_only_reason TEXT NOT NULL DEFAULT '',
+			deleted_at TEXT
+		)`,
+		`CREATE INDEX IF NOT EXISTS sessions_scope_idx ON sessions(scope_tenant, scope_project, scope_sandbox, updated_at)`,
+		`CREATE TABLE IF NOT EXISTS turns (
+			id TEXT PRIMARY KEY,
+			session_id TEXT NOT NULL,
+			turn_index INTEGER NOT NULL,
+			status TEXT NOT NULL,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL,
+			UNIQUE(session_id, turn_index)
+		)`,
+		`CREATE INDEX IF NOT EXISTS turns_session_idx ON turns(session_id, turn_index)`,
+		`CREATE TABLE IF NOT EXISTS messages (
+			id TEXT PRIMARY KEY,
+			turn_id TEXT NOT NULL,
+			session_id TEXT NOT NULL,
+			role TEXT NOT NULL,
+			status TEXT NOT NULL,
+			message_index INTEGER NOT NULL,
+			response_id TEXT NOT NULL DEFAULT '',
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL,
+			UNIQUE(turn_id, role),
+			UNIQUE(turn_id, message_index)
+		)`,
+		`CREATE INDEX IF NOT EXISTS messages_session_idx ON messages(session_id, turn_id, message_index)`,
+		`CREATE TABLE IF NOT EXISTS message_blocks (
+			id TEXT PRIMARY KEY,
+			message_id TEXT NOT NULL,
+			turn_id TEXT NOT NULL,
+			session_id TEXT NOT NULL,
+			block_index INTEGER NOT NULL,
+			type TEXT NOT NULL,
+			status TEXT NOT NULL,
+			tool_call_id TEXT NOT NULL DEFAULT '',
+			response_id TEXT NOT NULL DEFAULT '',
+			payload_json TEXT NOT NULL,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL,
+			UNIQUE(message_id, block_index)
+		)`,
+		`CREATE INDEX IF NOT EXISTS message_blocks_replay_idx ON message_blocks(session_id, turn_id, block_index)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS message_blocks_tool_idx ON message_blocks(message_id, tool_call_id) WHERE tool_call_id <> ''`,
+		`CREATE TABLE IF NOT EXISTS session_files (
+			session_id TEXT NOT NULL,
+			event_id INTEGER NOT NULL,
+			file_id TEXT NOT NULL,
+			staged_rel_path TEXT NOT NULL,
+			display_name TEXT NOT NULL,
+			mime_type TEXT NOT NULL,
+			bytes INTEGER NOT NULL,
+			purpose TEXT NOT NULL,
+			PRIMARY KEY(session_id, event_id, file_id)
+		)`,
+		`CREATE INDEX IF NOT EXISTS session_files_file_idx ON session_files(file_id)`,
+		`CREATE TABLE IF NOT EXISTS session_runtimes (
+			session_id TEXT NOT NULL,
+			generation INTEGER NOT NULL,
+			sandbox_backend TEXT NOT NULL DEFAULT '',
+			sandbox_template_id TEXT NOT NULL DEFAULT '',
+			runtime_id TEXT NOT NULL DEFAULT '',
+			outer_sandbox_id TEXT NOT NULL DEFAULT '',
+			outer_sandbox_domain TEXT NOT NULL DEFAULT '',
+			outer_envd_access_token TEXT NOT NULL DEFAULT '',
+			outer_traffic_token TEXT NOT NULL DEFAULT '',
+			daemon_addr TEXT NOT NULL DEFAULT '',
+			remote_binary TEXT NOT NULL DEFAULT '',
+			inner_sandbox_id TEXT NOT NULL DEFAULT '',
+			inner_sandbox_domain TEXT NOT NULL DEFAULT '',
+			inner_envd_access_token TEXT NOT NULL DEFAULT '',
+			session_proxy_id TEXT NOT NULL DEFAULT '',
+			health_state TEXT NOT NULL DEFAULT '',
+			last_health_at TEXT,
+			cleanup_state TEXT NOT NULL DEFAULT '',
+			last_cleanup_error TEXT NOT NULL DEFAULT '',
+			PRIMARY KEY(session_id, generation)
+		)`,
+	}
+	for _, stmt := range statements {
+		if _, err := db.Exec(stmt); err != nil {
+			return err
+		}
+	}
+	for _, stmt := range []string{
+		`ALTER TABLE session_runtimes ADD COLUMN sandbox_backend TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE session_runtimes ADD COLUMN sandbox_template_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE session_runtimes ADD COLUMN inner_sandbox_domain TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE session_runtimes ADD COLUMN inner_envd_access_token TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE session_runtimes ADD COLUMN session_proxy_id TEXT NOT NULL DEFAULT ''`,
+	} {
+		if _, err := db.Exec(stmt); err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
+			return err
+		}
+	}
+	return nil
+}
