@@ -495,6 +495,7 @@ export function App() {
             sessions,
             previousRows: conversationsRef.current,
             defaultCwd: ACP_RESTORE_ENVIRONMENT.cwd,
+            emptyDraftId: `conv-${crypto.randomUUID()}`,
             pendingOpenAfterList: pendingOpenAfterListRef.current,
             storedActiveSessionId: storedActiveSessionIdRef.current,
             activeConversationId: activeConversationRef.current,
@@ -1843,10 +1844,12 @@ export function resolveSessionEnvdFileURL(
 }
 
 export function sessionEnvdUploadRequestInit(file: Blob): RequestInit {
+  const form = new FormData();
+  const filename = file instanceof File ? file.name : "upload";
+  form.append("file", file, filename);
   return {
     method: "POST",
-    headers: { "Content-Type": "application/octet-stream" },
-    body: file,
+    body: form,
   };
 }
 

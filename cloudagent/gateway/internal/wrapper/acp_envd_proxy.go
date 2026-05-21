@@ -5,6 +5,8 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
+	"mime/multipart"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -281,6 +283,7 @@ func (g *ACPGateway) proxyEnvd(w http.ResponseWriter, r *http.Request, envdPath 
 			stripEnvdCredentialHeaders(out.Header)
 			out.Header.Set("X-Access-Token", runtime.InnerEnvdAccessToken)
 			out.Header.Set("Authorization", basicAuthHeader(envdProxyUser()))
+			wrapRawEnvdFileUpload(out, r)
 		},
 		FlushInterval: -1,
 		ErrorHandler: func(rw http.ResponseWriter, req *http.Request, proxyErr error) {
@@ -293,6 +296,7 @@ func (g *ACPGateway) proxyEnvd(w http.ResponseWriter, r *http.Request, envdPath 
 			writeError(rw, http.StatusBadGateway, "inner_envd_transport_failed", proxyErr.Error())
 		},
 		ModifyResponse: func(resp *http.Response) error {
+			stripUpstreamCORSHeaders(resp.Header)
 			if resp.StatusCode == http.StatusUnauthorized {
 				g.invalidateInnerEnvdTarget(session.SessionID, generation)
 				if allowRetry {
@@ -306,6 +310,42 @@ func (g *ACPGateway) proxyEnvd(w http.ResponseWriter, r *http.Request, envdPath 
 	}
 	proxy.ServeHTTP(w, r)
 	return shouldRetry
+}
+
+func stripUpstreamCORSHeaders(h http.Header) {
+	for _, name := range []string{
+		"Access-Control-Allow-Origin",
+		"Access-Control-Allow-Credentials",
+		"Access-Control-Allow-Methods",
+		"Access-Control-Allow-Headers",
+		"Access-Control-Expose-Headers",
+		"Access-Control-Max-Age",
+	} {
+		h.Del(name)
+	}
+	removeHeaderToken(h, "Vary", "Origin")
+}
+
+func removeHeaderToken(h http.Header, name, token string) {
+	values := h.Values(name)
+	if len(values) == 0 {
+		return
+	}
+	h.Del(name)
+	for _, value := range values {
+		parts := strings.Split(value, ",")
+		kept := make([]string, 0, len(parts))
+		for _, part := range parts {
+			part = strings.TrimSpace(part)
+			if part == "" || strings.EqualFold(part, token) {
+				continue
+			}
+			kept = append(kept, part)
+		}
+		if len(kept) > 0 {
+			h.Add(name, strings.Join(kept, ", "))
+		}
+	}
 }
 
 func envdProxyCanRetry(r *http.Request) bool {
@@ -557,6 +597,44 @@ func sanitizedEnvdQuery(in url.Values) url.Values {
 		out.Set("username", user)
 	}
 	return out
+}
+
+func wrapRawEnvdFileUpload(out *http.Request, original *http.Request) {
+	if original.Method != http.MethodPost || out.URL.Path != "/files" {
+		return
+	}
+	contentType := strings.ToLower(strings.TrimSpace(original.Header.Get("Content-Type")))
+	if strings.HasPrefix(contentType, "multipart/form-data") {
+		return
+	}
+	if original.Body == nil || original.Body == http.NoBody {
+		return
+	}
+	workspacePath := strings.TrimSpace(out.URL.Query().Get("path"))
+	filename := "upload"
+	if parts := strings.Split(strings.TrimRight(workspacePath, "/"), "/"); len(parts) > 0 && parts[len(parts)-1] != "" {
+		filename = parts[len(parts)-1]
+	}
+	reader, writer := io.Pipe()
+	multipartWriter := multipart.NewWriter(writer)
+	go func() {
+		part, err := multipartWriter.CreateFormFile("file", filename)
+		if err == nil {
+			_, err = io.Copy(part, original.Body)
+		}
+		if closeErr := multipartWriter.Close(); err == nil {
+			err = closeErr
+		}
+		if err != nil {
+			_ = writer.CloseWithError(err)
+			return
+		}
+		_ = writer.Close()
+	}()
+	out.Body = reader
+	out.ContentLength = -1
+	out.Header.Del("Content-Length")
+	out.Header.Set("Content-Type", multipartWriter.FormDataContentType())
 }
 
 func envdCredentialQueryKey(key string) bool {

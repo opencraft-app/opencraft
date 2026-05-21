@@ -82,7 +82,7 @@ func TestBrowserFileUploadPreflightAllowsMyChatHeaders(t *testing.T) {
 	if resp.Code != http.StatusNoContent {
 		t.Fatalf("preflight status=%d body=%s", resp.Code, resp.Body.String())
 	}
-	if got := resp.Header().Get("Access-Control-Allow-Origin"); got != "http://127.0.0.1:5173" {
+	if got := resp.Header().Get("Access-Control-Allow-Origin"); got != "*" {
 		t.Fatalf("allow origin=%q", got)
 	}
 	if got := resp.Header().Get("Access-Control-Allow-Methods"); !strings.Contains(got, "POST") {
@@ -119,7 +119,7 @@ func TestBrowserFileUploadResponseIncludesCORS(t *testing.T) {
 	if resp.Code != http.StatusOK {
 		t.Fatalf("upload status=%d body=%s", resp.Code, resp.Body.String())
 	}
-	if got := resp.Header().Get("Access-Control-Allow-Origin"); got != "http://127.0.0.1:5173" {
+	if got := resp.Header().Get("Access-Control-Allow-Origin"); got != "*" {
 		t.Fatalf("allow origin=%q", got)
 	}
 }

@@ -164,9 +164,11 @@ describe("SessionPage", () => {
 
     const init = sessionEnvdUploadRequestInit(new Blob(["hello"]));
     expect(init.method).toBe("POST");
-    expect(init.headers).toEqual({ "Content-Type": "application/octet-stream" });
-    expect(JSON.stringify(init.headers)).not.toContain("X-Tenant-ID");
-    expect(JSON.stringify(init.headers)).not.toContain("X-Project-ID");
+    expect(init.body).toBeInstanceOf(FormData);
+    expect(init.headers).toBeUndefined();
+    const headers = JSON.stringify(init.headers ?? {});
+    expect(headers).not.toContain("X-Tenant-ID");
+    expect(headers).not.toContain("X-Project-ID");
   });
 });
 

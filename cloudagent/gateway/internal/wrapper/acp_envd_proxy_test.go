@@ -300,10 +300,15 @@ func TestSessionScopedEnvdProxyForwardsRawFileUpload(t *testing.T) {
 		if r.URL.Query().Get("path") != "/workspace/upload.txt" {
 			t.Fatalf("inner query = %s", r.URL.RawQuery)
 		}
-		if got := r.Header.Get("Content-Type"); got != "application/octet-stream" {
+		if got := r.Header.Get("Content-Type"); !strings.HasPrefix(got, "multipart/form-data;") {
 			t.Fatalf("inner content-type = %q", got)
 		}
-		body, _ := io.ReadAll(r.Body)
+		file, _, err := r.FormFile("file")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer file.Close()
+		body, _ := io.ReadAll(file)
 		if string(body) != "upload-body" {
 			t.Fatalf("inner body = %q", string(body))
 		}
@@ -338,6 +343,48 @@ func TestSessionScopedEnvdProxyForwardsRawFileUpload(t *testing.T) {
 	}
 	if !sawInner {
 		t.Fatal("inner envd was not called")
+	}
+}
+
+func TestSessionScopedEnvdProxyStripsUpstreamCORS(t *testing.T) {
+	inner := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Access-Control-Allow-Origin", "http://inner.example")
+		w.Header().Add("Access-Control-Expose-Headers", "Grpc-Status")
+		w.Header().Add("Vary", "Origin, Accept-Encoding")
+		_, _ = w.Write([]byte("file-body"))
+	}))
+	defer inner.Close()
+
+	manager := &envdProxyRuntimeManager{innerDomain: inner.URL}
+	srv := newACPTestServerWithRuntime(t, manager)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	client := dialACPWS(t, "ws"+trimHTTPPrefix(ts.URL)+"/acp", nil)
+	defer client.close()
+	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "session/new", "params": map[string]any{}})
+	result := waitForRPCID(t, client, float64(1))["result"].(map[string]any)
+	sessionID := result["sessionId"].(string)
+
+	req, err := http.NewRequest(http.MethodGet, ts.URL+"/v1/acp/sessions/"+sessionID+"/envd/files?path=/workspace/a.txt", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Origin", "http://127.0.0.1:5173")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if values := resp.Header.Values("Access-Control-Allow-Origin"); len(values) != 1 || values[0] != "*" {
+		t.Fatalf("allow origin values=%v", values)
+	}
+	if got := resp.Header.Get("Access-Control-Expose-Headers"); got != "Content-Disposition, Content-Type" {
+		t.Fatalf("expose headers=%q", got)
+	}
+	if got := resp.Header.Values("Vary"); len(got) != 2 || got[0] != "Origin" || got[1] != "Accept-Encoding" {
+		t.Fatalf("vary=%v", got)
 	}
 }
 
