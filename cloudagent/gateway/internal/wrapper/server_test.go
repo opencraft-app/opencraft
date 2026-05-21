@@ -124,6 +124,18 @@ func TestBrowserFileUploadResponseIncludesCORS(t *testing.T) {
 	}
 }
 
+func TestHealthzAllowsUnauthenticatedProbe(t *testing.T) {
+	srv, _ := newTestServer(t, FakeWorker{})
+	resp := request(t, srv, http.MethodGet, "/healthz", "", "", nil, "")
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("healthz status=%d body=%s", resp.Code, resp.Body.String())
+	}
+	if got := resp.Body.String(); got != "ok\n" {
+		t.Fatalf("healthz body=%q", got)
+	}
+}
+
 func TestCrossScopeFileReadDenied(t *testing.T) {
 	srv, _ := newTestServer(t, FakeWorker{})
 	uploadResp := uploadFile(t, srv, "tenant-a", "project-a", "input.txt", []byte("input data"))

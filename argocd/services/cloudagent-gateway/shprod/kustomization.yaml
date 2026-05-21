@@ -51,6 +51,25 @@ replacements:
   - source:
       kind: ConfigMap
       name: cloudagent-gateway-platform-values
+      fieldPath: data.CLOUDAGENT_GATEWAY_PUBLIC_HOST
+    targets:
+      - select:
+          kind: Ingress
+          name: gateway-public
+        fieldPaths:
+          - spec.rules.0.host
+      - select:
+          kind: TkeServiceConfig
+          name: gateway-public-config
+        fieldPaths:
+          - spec.loadBalancer.l7Listeners.0.domains.0.domain
+          - spec.loadBalancer.l7Listeners.0.domains.0.rules.0.healthCheck.httpCheckDomain
+          - spec.loadBalancer.l7Listeners.0.domains.0.rules.1.healthCheck.httpCheckDomain
+          - spec.loadBalancer.l7Listeners.0.domains.0.rules.2.healthCheck.httpCheckDomain
+          - spec.loadBalancer.l7Listeners.0.domains.0.rules.3.healthCheck.httpCheckDomain
+  - source:
+      kind: ConfigMap
+      name: cloudagent-gateway-platform-values
       fieldPath: data.CLOUDAGENT_GATEWAY_AGS_TEMPLATE
     targets:
       - select:

@@ -49,6 +49,7 @@ stacks:
       - 32310
       - 32498
       - 30671
+      - 32661
 
   cynosdb:
     availability_zone: ap-shanghai-5

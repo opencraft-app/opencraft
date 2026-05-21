@@ -26,6 +26,7 @@ func NewServer(store *Store, worker Worker) *Server {
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", s.handleHealthz)
 	mux.HandleFunc("GET /v1/models", s.handleListModels)
 	mux.HandleFunc("POST /v1/files", s.handleCreateFile)
 	mux.HandleFunc("GET /v1/files/", s.handleGetFileContent)
@@ -40,6 +41,12 @@ func (s *Server) Handler() http.Handler {
 		}
 		mux.ServeHTTP(w, r)
 	}))
+}
+
+func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("ok\n"))
 }
 
 func withCORS(next http.Handler) http.Handler {
