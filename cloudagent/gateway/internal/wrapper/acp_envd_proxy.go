@@ -14,7 +14,10 @@ import (
 	"time"
 )
 
-const acpEnvdProxyPortPrefix = "49983-"
+const (
+	acpEnvdProxyPortPrefix    = "49983-"
+	acpSessionEnvdProxyPrefix = "/v1/acp/sessions/"
+)
 
 var errInnerEnvdStaleAuth = errors.New("inner envd returned unauthorized")
 
@@ -58,7 +61,7 @@ func (s *Server) serveMaybeEnvdProxy(w http.ResponseWriter, r *http.Request) boo
 	if !validPort {
 		return false
 	}
-	proxyDomain := strings.Trim(strings.TrimSpace(os.Getenv("ACP_ENVD_PROXY_DOMAIN")), ".")
+	proxyDomain := envdProxyDomain()
 	if proxyDomain == "" {
 		if strings.HasPrefix(host, acpEnvdProxyPortPrefix) {
 			writeError(w, http.StatusServiceUnavailable, "envd_proxy_not_configured", "ACP_ENVD_PROXY_DOMAIN is required for envd proxy hosts")
@@ -72,6 +75,10 @@ func (s *Server) serveMaybeEnvdProxy(w http.ResponseWriter, r *http.Request) boo
 	}
 	s.acpGate.serveEnvdProxy(w, r, proxyID)
 	return true
+}
+
+func envdProxyDomain() string {
+	return strings.Trim(strings.TrimSpace(os.Getenv("ACP_ENVD_PROXY_DOMAIN")), ".")
 }
 
 func parseEnvdProxyHost(host, proxyDomain string) (string, bool) {
@@ -157,7 +164,7 @@ func (g *ACPGateway) serveEnvdProxy(w http.ResponseWriter, r *http.Request, prox
 		writeError(w, http.StatusBadGateway, "inner_envd_unavailable", err.Error())
 		return
 	}
-	if !g.proxyEnvd(w, r, session, generation, proxyID, runtime, start, envdProxyCanRetry(r)) {
+	if !g.proxyEnvd(w, r, r.URL.Path, session, generation, proxyID, runtime, start, envdProxyCanRetry(r)) {
 		return
 	}
 	runtime, err = g.ensureInnerEnvdTarget(r.Context(), session.SessionID, scope, generation, true)
@@ -171,22 +178,103 @@ func (g *ACPGateway) serveEnvdProxy(w http.ResponseWriter, r *http.Request, prox
 		return
 	}
 	fmt.Fprintf(os.Stderr, "timeline source=server event=envd_proxy_retry session_id=%s generation=%d session_proxy_id=%s\n", session.SessionID, generation, proxyID)
-	g.proxyEnvd(w, r, session, generation, proxyID, runtime, start, false)
+	g.proxyEnvd(w, r, r.URL.Path, session, generation, proxyID, runtime, start, false)
 }
 
-func (g *ACPGateway) proxyEnvd(w http.ResponseWriter, r *http.Request, session *acpSession, generation int64, proxyID string, runtime ACPSessionRuntime, start time.Time, allowRetry bool) bool {
+func (g *ACPGateway) HandleSessionEnvdProxy(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	sessionID, envdPath, ok := parseSessionEnvdProxyPath(r.URL.Path)
+	if !ok {
+		writeError(w, http.StatusNotFound, "not_found", "unknown session envd endpoint")
+		return
+	}
+	scope, errResp := acpScopeFromRequest(r)
+	if errResp != nil {
+		status := http.StatusBadRequest
+		if errResp.Code == "identity_missing" {
+			status = http.StatusUnauthorized
+		}
+		writeError(w, status, errResp.Code, errResp.Message)
+		return
+	}
+	session, generation, err := g.sessionForSessionID(scope, sessionID)
+	if err != nil {
+		var stale staleSessionProxyError
+		if errors.As(err, &stale) {
+			writeError(w, http.StatusGone, "stale_session", "session is stale")
+			return
+		}
+		var scopeErr sessionScopeError
+		if errors.As(err, &scopeErr) {
+			writeError(w, http.StatusForbidden, "scope_mismatch", "session is outside caller scope")
+			return
+		}
+		writeError(w, http.StatusNotFound, "session_not_found", "session id not found")
+		return
+	}
+	runtime, err := g.ensureInnerEnvdTarget(r.Context(), session.SessionID, scope, generation, false)
+	if err != nil {
+		var stale staleSessionProxyError
+		if errors.As(err, &stale) {
+			writeError(w, http.StatusGone, "stale_session", "session is stale")
+			return
+		}
+		writeError(w, http.StatusBadGateway, "inner_envd_unavailable", err.Error())
+		return
+	}
+	proxyID := session.Runtime.SessionProxyID
+	if proxyID == "" {
+		proxyID = session.SessionID
+	}
+	if !g.proxyEnvd(w, r, envdPath, session, generation, proxyID, runtime, start, envdProxyCanRetry(r)) {
+		return
+	}
+	runtime, err = g.ensureInnerEnvdTarget(r.Context(), session.SessionID, scope, generation, true)
+	if err != nil {
+		var stale staleSessionProxyError
+		if errors.As(err, &stale) {
+			writeError(w, http.StatusGone, "stale_session", "session is stale")
+			return
+		}
+		writeError(w, http.StatusBadGateway, "inner_envd_unavailable", err.Error())
+		return
+	}
+	fmt.Fprintf(os.Stderr, "timeline source=server event=session_envd_proxy_retry session_id=%s generation=%d\n", session.SessionID, generation)
+	g.proxyEnvd(w, r, envdPath, session, generation, proxyID, runtime, start, false)
+}
+
+func parseSessionEnvdProxyPath(requestPath string) (string, string, bool) {
+	rest := strings.TrimPrefix(requestPath, acpSessionEnvdProxyPrefix)
+	if rest == requestPath {
+		return "", "", false
+	}
+	sessionID, envdPath, found := strings.Cut(rest, "/envd")
+	sessionID = strings.TrimSpace(sessionID)
+	if !found || sessionID == "" || strings.Contains(sessionID, "/") {
+		return "", "", false
+	}
+	if envdPath == "" {
+		envdPath = "/"
+	}
+	if !strings.HasPrefix(envdPath, "/") {
+		envdPath = "/" + envdPath
+	}
+	return sessionID, envdPath, true
+}
+
+func (g *ACPGateway) proxyEnvd(w http.ResponseWriter, r *http.Request, envdPath string, session *acpSession, generation int64, proxyID string, runtime ACPSessionRuntime, start time.Time, allowRetry bool) bool {
 	target, err := innerEnvdURL(runtime)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "inner_envd_unavailable", err.Error())
 		return false
 	}
-	fmt.Fprintf(os.Stderr, "timeline source=server event=envd_proxy_start session_id=%s generation=%d session_proxy_id=%s inner_sandbox_id=%s path=%s\n", session.SessionID, generation, proxyID, runtime.InnerSandboxID, r.URL.Path)
+	fmt.Fprintf(os.Stderr, "timeline source=server event=envd_proxy_start session_id=%s generation=%d session_proxy_id=%s inner_sandbox_id=%s path=%s\n", session.SessionID, generation, proxyID, runtime.InnerSandboxID, envdPath)
 	shouldRetry := false
 	proxy := &httputil.ReverseProxy{
 		Director: func(out *http.Request) {
 			out.URL.Scheme = target.Scheme
 			out.URL.Host = target.Host
-			out.URL.Path = singleJoiningSlash(target.Path, r.URL.Path)
+			out.URL.Path = singleJoiningSlash(target.Path, envdPath)
 			out.URL.RawPath = ""
 			out.URL.RawQuery = sanitizedEnvdQuery(r.URL.Query()).Encode()
 			out.Host = target.Host
@@ -271,6 +359,43 @@ func (g *ACPGateway) sessionForProxyID(scope Scope, proxyID string) (*acpSession
 	g.sessions[session.SessionID] = session
 	g.mu.Unlock()
 	return cloneSession(session), proxyGeneration, nil
+}
+
+func (g *ACPGateway) sessionForSessionID(scope Scope, sessionID string) (*acpSession, int64, error) {
+	g.mu.Lock()
+	if session := g.sessions[sessionID]; session != nil {
+		if !sameScope(scope, session.Scope) {
+			g.mu.Unlock()
+			return nil, 0, sessionScopeError{}
+		}
+		if session.Closed || session.State == acpRuntimeStateClosing || session.State == acpRuntimeStateClosed {
+			g.mu.Unlock()
+			return nil, 0, staleSessionProxyError{}
+		}
+		generation := session.RuntimeGeneration
+		out := cloneSession(session)
+		g.mu.Unlock()
+		return out, generation, nil
+	}
+	g.mu.Unlock()
+
+	if g.store == nil {
+		return nil, 0, fmt.Errorf("session not found")
+	}
+	session, err := g.store.LoadACPSession(scope, sessionID)
+	if err != nil {
+		return nil, 0, err
+	}
+	if !sameScope(scope, session.Scope) {
+		return nil, 0, sessionScopeError{}
+	}
+	if session.Closed || session.State == acpRuntimeStateClosing || session.State == acpRuntimeStateClosed {
+		return nil, 0, staleSessionProxyError{}
+	}
+	g.mu.Lock()
+	g.sessions[session.SessionID] = session
+	g.mu.Unlock()
+	return cloneSession(session), session.RuntimeGeneration, nil
 }
 
 func (g *ACPGateway) invalidateInnerEnvdTarget(sessionID string, generation int64) {

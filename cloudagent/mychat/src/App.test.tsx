@@ -7,7 +7,9 @@ import {
   SettingsPage,
   SessionPage,
   parseSessionCreateMetaJSON,
+  resolveSessionEnvdFileURL,
   resolveInitialGatewayURL,
+  sessionEnvdUploadRequestInit,
   summarizeSessionCreateMeta,
 } from "./App";
 import type { SessionRow } from "./lib/sessionState";
@@ -117,6 +119,8 @@ describe("SessionPage", () => {
         metadata={{
           sessionId: "session_meta",
           runtimeGeneration: 2,
+          sessionProxyID: "spx-sessionmeta",
+          envdProxyDomain: "envd.cloudagent.lightvela.com",
           closed: false,
           promptInFlight: false,
           cleanupPending: false,
@@ -130,6 +134,7 @@ describe("SessionPage", () => {
             outerSandboxDomain: "ap-beijing.tencentags.com",
           },
         }}
+        gatewayURL="https://cloudagent.lightvela.com"
         onBack={() => {}}
       />,
     );
@@ -139,8 +144,29 @@ describe("SessionPage", () => {
     expect(html).toContain("498c6c11-74d7-426e-bdb1-13d8aa73997e");
     expect(html).toContain("inner_sandbox_456");
     expect(html).toContain("rt_session_meta_2");
+    expect(html).toContain("spx-sessionmeta");
+    expect(html).toContain("https://49983-spx-sessionmeta.envd.cloudagent.lightvela.com/");
+    expect(html).toContain("Workspace Files");
     expect(html).toContain("The requested resource does not exist");
     expect(html).not.toContain("outer_sandbox_id");
+  });
+
+  it("builds session-scoped transfer requests without hardcoded scope headers", () => {
+    expect(
+      resolveSessionEnvdFileURL(
+        "session_abc",
+        "/workspace/hello world.txt",
+        "http://127.0.0.1:8080",
+      ),
+    ).toBe(
+      "http://127.0.0.1:8080/v1/acp/sessions/session_abc/envd/files?path=%2Fworkspace%2Fhello+world.txt",
+    );
+
+    const init = sessionEnvdUploadRequestInit(new Blob(["hello"]));
+    expect(init.method).toBe("POST");
+    expect(init.headers).toEqual({ "Content-Type": "application/octet-stream" });
+    expect(JSON.stringify(init.headers)).not.toContain("X-Tenant-ID");
+    expect(JSON.stringify(init.headers)).not.toContain("X-Project-ID");
   });
 });
 
@@ -152,6 +178,12 @@ describe("SettingsPage", () => {
   it("keeps a persisted gateway endpoint over the default", () => {
     expect(resolveInitialGatewayURL("http://127.0.0.1:18094")).toBe(
       "http://127.0.0.1:18094",
+    );
+  });
+
+  it("normalizes deprecated persisted gateway hosts", () => {
+    expect(resolveInitialGatewayURL("http://cloudagent.lightclaw.cn")).toBe(
+      "http://cloudagent.lightvela.com",
     );
   });
 
@@ -194,6 +226,7 @@ describe("SettingsPage", () => {
 
     expect(html).toContain("Session create params");
     expect(html).toContain("Talos");
+    expect(html).toContain("default CloudAgent endpoint");
     expect(html).toContain("Backend: talos · template 498c6c11");
     expect(html).toContain("sandbox_backend");
     expect(html).toContain("sandbox_template_id");

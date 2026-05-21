@@ -4,6 +4,8 @@ import {
   isSameChatMessageTarget,
   mergeChatMessage,
   resolveAcpHTTPURL,
+  resolveEnvdFileURL,
+  resolveEnvdProxyHTTPBaseURL,
   resolveAcpTransportMode,
   resolveAcpWebSocketURL,
   stripDataURLPrefix,
@@ -32,6 +34,27 @@ describe("ACP gateway URL resolution", () => {
       }),
     ).toBe("ws://127.0.0.1:18094/acp");
     expect(resolveAcpTransportMode("ws://127.0.0.1:18094/acp")).toBe("raw");
+  });
+
+  it("builds session-scoped envd file URLs from proxy metadata", () => {
+    const status = {
+      sessionId: "session_1",
+      sessionProxyID: "spx-abc123",
+      envdProxyDomain: ".envd.cloudagent.lightvela.com.",
+    };
+
+    expect(
+      resolveEnvdProxyHTTPBaseURL(status, "https://cloudagent.lightvela.com"),
+    ).toBe("https://49983-spx-abc123.envd.cloudagent.lightvela.com/");
+    expect(
+      resolveEnvdFileURL(
+        status,
+        "/workspace/hello world.txt",
+        "https://cloudagent.lightvela.com",
+      ),
+    ).toBe(
+      "https://49983-spx-abc123.envd.cloudagent.lightvela.com/files?path=%2Fworkspace%2Fhello+world.txt",
+    );
   });
 
   it("converts explicit http gateway to raw ACP websocket", () => {

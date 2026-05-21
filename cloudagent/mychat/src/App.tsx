@@ -17,6 +17,7 @@ import {
   ChevronDown,
   ChevronsUpDown,
   CircleDot,
+  Download,
   Mic,
   Paperclip,
   PanelLeft,
@@ -25,6 +26,7 @@ import {
   SlidersHorizontal,
   SquarePlus,
   Trash2,
+  Upload,
   Wrench,
   X,
 } from "lucide-react";
@@ -46,7 +48,9 @@ import {
 } from "./components/ai-elements/conversation";
 import {
   AcpClient,
+  resolveAcpHTTPURL,
   resolveAcpWebSocketURL,
+  resolveEnvdProxyHTTPBaseURL,
   isSameChatMessageTarget,
   mergeChatMessage,
   type AgentCapabilities,
@@ -110,6 +114,7 @@ const MOBILE_MEDIA_QUERY = "(max-width: 1023px)";
 const DEFAULT_CWD = "/workspace";
 const SESSION_METADATA_POLL_MS = 2000;
 export const DEFAULT_GATEWAY_URL = "http://cloudagent.lightvela.com";
+const CURRENT_GATEWAY_HOST = "cloudagent.lightvela.com";
 const MarkdownContent = lazy(() => import("./components/MarkdownContent"));
 const ACP_RESTORE_ENVIRONMENT: AcpRestoreEnvironment = {
   cwd: DEFAULT_CWD,
@@ -805,7 +810,7 @@ export function App() {
   }
 
   function saveGatewaySettings() {
-    const next = gatewayURLInput.trim();
+    const next = normalizeGatewayURL(gatewayURLInput) || DEFAULT_GATEWAY_URL;
     setGatewayURLInput(next);
     setAppliedGatewayURL(next);
     setViewMode("chat");
@@ -1322,6 +1327,7 @@ export function App() {
                     status={status}
                     metadata={activeSessionStatus}
                     metadataAvailable={canInspectSessionMetadata}
+                    gatewayURL={appliedGatewayURL || undefined}
                     onBack={() => setViewMode("chat")}
                   />
                 ) : activeMessages.length === 0 ? (
@@ -1433,10 +1439,9 @@ export function SettingsPage({
             Gateway URI
           </h1>
           <p className="mt-3 text-sm leading-6 text-muted">
-            Leave it empty to keep the default current-origin websocket
-            endpoint. You can paste either http(s)://... or ws(s)://.... If you
-            point to /acp, MyChat will switch to raw ACP transport
-            automatically.
+            Leave it empty to use the default CloudAgent endpoint. You can paste
+            either http(s)://... or ws(s)://.... If you point to /acp, MyChat
+            will switch to raw ACP transport automatically.
           </p>
           <div className="mt-8 space-y-3">
             <label
@@ -1488,16 +1493,31 @@ export function SessionPage({
   status,
   metadata,
   metadataAvailable,
+  gatewayURL,
   onBack,
 }: {
   session: SessionRow;
   status: ConnectionStatus;
   metadata?: SessionStatusSnapshot;
   metadataAvailable: boolean;
+  gatewayURL?: string;
   onBack: () => void;
 }) {
   const modelValue = getConfigOptionValue(session.configOptions, "model");
   const modeValue = getConfigOptionValue(session.configOptions, "mode");
+  const [workspacePath, setWorkspacePath] = useState(
+    () => `${session.cwd || DEFAULT_CWD}/`,
+  );
+  const [workspaceFile, setWorkspaceFile] = useState<File | null>(null);
+  const [transferBusy, setTransferBusy] = useState(false);
+  const [transferMessage, setTransferMessage] = useState("");
+  const envdProxyBaseURL = resolveEnvdProxyHTTPBaseURL(metadata, gatewayURL);
+  const workspaceFileInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    setWorkspacePath(`${session.cwd || DEFAULT_CWD}/`);
+    setWorkspaceFile(null);
+    setTransferMessage("");
+  }, [session.id, session.cwd]);
   const overviewRows = [
     ["Title", session.title || "Untitled session"],
     ["Session ID", session.sessionId ?? "Draft session"],
@@ -1532,6 +1552,8 @@ export function SessionPage({
           "Runtime Generation",
           formatOptionalNumber(metadata?.runtimeGeneration),
         ],
+        ["Session Proxy ID", metadata?.sessionProxyID ?? "Not created"],
+        ["Envd Proxy", envdProxyBaseURL ?? "Not configured"],
         ["Last Refreshed", formatTimestamp(metadata?.receivedAt)],
         ["Closed", formatOptionalBoolean(metadata?.closed)],
         ["Prompt In Flight", formatOptionalBoolean(metadata?.promptInFlight)],
@@ -1539,11 +1561,88 @@ export function SessionPage({
         ["Last Runtime Error", metadata?.lastRuntimeError ?? "None"],
       ]
     : [["CloudAgent Metadata", "Not exposed"]];
+  const envdReady = Boolean(session.sessionId);
+
+  async function uploadWorkspaceFile() {
+    if (!workspaceFile) {
+      setTransferMessage("Choose a file first.");
+      return;
+    }
+    const targetPath = resolveWorkspaceTransferPath(
+      workspacePath,
+      workspaceFile.name,
+    );
+    const endpoint = resolveSessionEnvdFileURL(
+      session.sessionId,
+      targetPath,
+      gatewayURL,
+    );
+    if (!endpoint) {
+      setTransferMessage("Session is not ready for workspace file transfer.");
+      return;
+    }
+    setTransferBusy(true);
+    setTransferMessage("Uploading...");
+    try {
+      const response = await fetch(endpoint, {
+        ...sessionEnvdUploadRequestInit(workspaceFile),
+      });
+      if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        throw new Error(`HTTP ${response.status}${body ? ` ${body}` : ""}`);
+      }
+      setTransferMessage(`Uploaded to ${targetPath}`);
+    } catch (error) {
+      setTransferMessage(
+        `Upload failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    } finally {
+      setTransferBusy(false);
+    }
+  }
+
+  async function downloadWorkspaceFile() {
+    const targetPath = resolveWorkspaceTransferPath(workspacePath);
+    const endpoint = resolveSessionEnvdFileURL(
+      session.sessionId,
+      targetPath,
+      gatewayURL,
+    );
+    if (!endpoint) {
+      setTransferMessage("Session is not ready for workspace file transfer.");
+      return;
+    }
+    setTransferBusy(true);
+    setTransferMessage("Downloading...");
+    try {
+      const response = await fetch(endpoint);
+      if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        throw new Error(`HTTP ${response.status}${body ? ` ${body}` : ""}`);
+      }
+      const blob = await response.blob();
+      const objectURL = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectURL;
+      anchor.download = fileNameFromWorkspacePath(targetPath);
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(objectURL);
+      setTransferMessage(`Downloaded ${targetPath}`);
+    } catch (error) {
+      setTransferMessage(
+        `Download failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    } finally {
+      setTransferBusy(false);
+    }
+  }
 
   return (
-    <div className="flex flex-1 items-start">
-      <div className="w-full rounded-[28px] border border-border bg-panel p-6 shadow-sm sm:p-8">
-        <div className="max-w-3xl">
+    <div className="flex min-w-0 flex-1 items-start">
+      <div className="min-w-0 w-full rounded-[28px] border border-border bg-panel p-6 shadow-sm sm:p-8">
+        <div className="max-w-3xl min-w-0">
           <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted">
             Session
           </p>
@@ -1555,8 +1654,7 @@ export function SessionPage({
                   : "Draft session"}
               </h1>
               <p className="mt-2 text-sm leading-6 text-muted">
-                Current ACP session summary. Runtime internals stay summarized
-                here; raw protocol payloads are not displayed.
+                Current ACP session summary.
               </p>
             </div>
             <Button variant="ghost" onClick={onBack}>
@@ -1564,6 +1662,62 @@ export function SessionPage({
             </Button>
           </div>
           <div className="mt-8 space-y-6">
+            <section>
+              <h2 className="text-sm font-semibold text-foreground">
+                Workspace Files
+              </h2>
+              <div className="mt-3 rounded-[20px] border border-border bg-background/70 p-4">
+                <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+                  <input
+                    value={workspacePath}
+                    onChange={(event) => setWorkspacePath(event.target.value)}
+                    className="min-h-11 min-w-0 rounded-[16px] border border-border bg-input px-4 font-mono text-sm text-foreground"
+                    placeholder="/workspace/path/to/file"
+                    aria-label="Workspace file path"
+                  />
+                  <Button
+                    variant="soft"
+                    onClick={() => workspaceFileInputRef.current?.click()}
+                  >
+                    <Paperclip className="h-4 w-4" />
+                    <span className="max-w-[12rem] truncate">
+                      {workspaceFile?.name ?? "Choose file"}
+                    </span>
+                  </Button>
+                  <input
+                    ref={workspaceFileInputRef}
+                    type="file"
+                    className="sr-only"
+                    onChange={(event) =>
+                      setWorkspaceFile(event.target.files?.[0] ?? null)
+                    }
+                  />
+                </div>
+                <div className="mt-3 flex flex-wrap gap-3">
+                  <Button
+                    onClick={uploadWorkspaceFile}
+                    disabled={!envdReady || transferBusy}
+                  >
+                    <Upload className="h-4 w-4" />
+                    Upload
+                  </Button>
+                  <Button
+                    variant="soft"
+                    onClick={downloadWorkspaceFile}
+                    disabled={!envdReady || transferBusy}
+                  >
+                    <Download className="h-4 w-4" />
+                    Download
+                  </Button>
+                </div>
+                <p className="mt-3 min-h-5 break-words text-sm text-muted">
+                  {transferMessage ||
+                    (envdReady
+                      ? "Uses the session-scoped envd proxy; inner credentials stay server-side."
+                      : "Open or reconnect this session before transferring files.")}
+                </p>
+              </div>
+            </section>
             <SessionInfoSection title="Overview" rows={overviewRows} />
             <SessionInfoSection title="Configuration" rows={configurationRows} />
             <SessionInfoSection title="Runtime" rows={runtimeRows} />
@@ -1662,6 +1816,43 @@ function formatTimestamp(value: string | undefined) {
   const timestamp = new Date(value);
   if (Number.isNaN(timestamp.getTime())) return "Unknown";
   return timestamp.toLocaleTimeString();
+}
+
+function resolveWorkspaceTransferPath(value: string, fallbackFileName?: string) {
+  const trimmed = value.trim() || DEFAULT_CWD;
+  if (trimmed.endsWith("/") && fallbackFileName) return trimmed + fallbackFileName;
+  return trimmed;
+}
+
+export function resolveSessionEnvdFileURL(
+  sessionId: string | undefined,
+  workspacePath: string,
+  gatewayOverride?: string,
+) {
+  const sessionID = sessionId?.trim();
+  const pathValue = workspacePath.trim();
+  if (!sessionID || !pathValue) return undefined;
+  const url = new URL(
+    resolveAcpHTTPURL(
+      `/v1/acp/sessions/${encodeURIComponent(sessionID)}/envd/files`,
+      gatewayOverride,
+    ),
+  );
+  url.searchParams.set("path", pathValue);
+  return url.toString();
+}
+
+export function sessionEnvdUploadRequestInit(file: Blob): RequestInit {
+  return {
+    method: "POST",
+    headers: { "Content-Type": "application/octet-stream" },
+    body: file,
+  };
+}
+
+function fileNameFromWorkspacePath(pathValue: string) {
+  const parts = pathValue.split("/").filter(Boolean);
+  return parts.at(-1) || "download";
 }
 
 function hasCloudAgentMethod(
@@ -2674,8 +2865,14 @@ function initialSessionCreateMetaJSON(state: StoredUiState) {
 }
 
 export function resolveInitialGatewayURL(storedGatewayURL?: string) {
-  const urlGateway = readGatewayURLFromLocation();
-  return urlGateway || storedGatewayURL || DEFAULT_GATEWAY_URL;
+  const urlGateway = normalizeGatewayURL(readGatewayURLFromLocation());
+  return urlGateway || normalizeGatewayURL(storedGatewayURL) || DEFAULT_GATEWAY_URL;
+}
+
+function normalizeGatewayURL(value?: string) {
+  const trimmed = value?.trim() ?? "";
+  if (!trimmed) return "";
+  return trimmed.replace(/cloudagent\.lightclaw\.cn/g, CURRENT_GATEWAY_HOST);
 }
 
 function readGatewayURLFromLocation() {
