@@ -2468,3 +2468,92 @@ func TestUnmatchedRootReturnsNotFoundWithoutCatchAllRoute(t *testing.T) {
 		t.Fatalf("expected 404, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestAuthenticatedRouteCanInjectUpstreamBearerToken(t *testing.T) {
+	t.Setenv("SERVICE_GATEWAY_TEST_UPSTREAM_TOKEN", "internal-secret")
+	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"session": map[string]any{
+				"user": map[string]any{"id": "usr_123", "email": "user@example.com"},
+			},
+		})
+	}))
+	defer auth.Close()
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer internal-secret" {
+			t.Fatalf("expected upstream bearer token, got %q", got)
+		}
+		if got := r.Header.Get("X-Lightclaw-User-ID"); got != "usr_123" {
+			t.Fatalf("expected injected user id, got %q", got)
+		}
+		if got := r.Header.Get("Cookie"); got != "" {
+			t.Fatalf("expected user cookies to be stripped before internal upstream, got %q", got)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer upstream.Close()
+
+	handler, err := NewHandler(Config{
+		AuthServiceURL: auth.URL,
+		Routes: []Route{{
+			Name:                   "vibebase",
+			Prefix:                 "/v1/vibebase",
+			RewritePrefix:          "/v1",
+			Upstream:               upstream.URL,
+			UpstreamBearerTokenEnv: "SERVICE_GATEWAY_TEST_UPSTREAM_TOKEN",
+			Access:                 AccessAuthenticated,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/vibebase/namespaces/prefs/kv/theme", nil)
+	req.Header.Set("Authorization", "Bearer user-token")
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "user-session"})
+	req.AddCookie(&http.Cookie{Name: "analytics", Value: "tracking"})
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected upstream status, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAuthenticatedRouteFailsClosedWhenUpstreamBearerTokenMissing(t *testing.T) {
+	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"session": map[string]any{
+				"user": map[string]any{"id": "usr_123", "email": "user@example.com"},
+			},
+		})
+	}))
+	defer auth.Close()
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("upstream should not be called when internal token env is missing")
+	}))
+	defer upstream.Close()
+
+	handler, err := NewHandler(Config{
+		AuthServiceURL: auth.URL,
+		Routes: []Route{{
+			Name:                   "vibebase",
+			Prefix:                 "/v1/vibebase",
+			Upstream:               upstream.URL,
+			UpstreamBearerTokenEnv: "SERVICE_GATEWAY_TEST_MISSING_TOKEN",
+			Access:                 AccessAuthenticated,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/vibebase/namespaces/prefs/kv/theme", nil)
+	req.Header.Set("Authorization", "Bearer user-token")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("expected bad gateway, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}

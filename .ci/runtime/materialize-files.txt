@@ -64,6 +64,7 @@
 .ci/runtime/bundles/session.bundle
 .ci/runtime/bundles/staticpages.bundle
 .ci/runtime/bundles/subscription.bundle
+.ci/runtime/bundles/vibebase.bundle
 .ci/runtime/bundles/user-auth.bundle
 .ci/runtime/gitops/__init__.py
 .ci/runtime/gitops/argocd.py

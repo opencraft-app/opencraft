@@ -1,0 +1,56 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+namespace: ai-gateway
+resources:
+  - ../../../../vibebase/k8s/overlays/beijing-sandbox
+replacements:
+  - source:
+      kind: ConfigMap
+      name: vibebase-platform-values
+      fieldPath: data.VIBEBASE_IMAGE
+    targets:
+      - select:
+          kind: Deployment
+          name: vibebase
+        fieldPaths:
+          - spec.template.spec.containers.0.image
+  - source:
+      kind: ConfigMap
+      name: vibebase-platform-values
+      fieldPath: data.VIBEBASE_NODE_POOL
+    targets:
+      - select:
+          kind: Deployment
+          name: vibebase
+        fieldPaths:
+          - spec.template.spec.nodeSelector.pool
+  - source:
+      kind: ConfigMap
+      name: vibebase-platform-values
+      fieldPath: data.VIBEBASE_DEPLOYED_AT
+    targets:
+      - select:
+          kind: Deployment
+          name: vibebase
+        fieldPaths:
+          - spec.template.metadata.annotations.[vibebase.lightclaw.dev/redeploy-at]
+  - source:
+      kind: ConfigMap
+      name: vibebase-platform-values
+      fieldPath: data.VIBEBASE_REDIS_ADDR
+    targets:
+      - select:
+          kind: ConfigMap
+          name: vibebase-config
+        fieldPaths:
+          - data.VIBEBASE_REDIS_ADDR
+  - source:
+      kind: ConfigMap
+      name: vibebase-platform-values
+      fieldPath: data.VIBEBASE_INTERNAL_SERVICE_TOKEN
+    targets:
+      - select:
+          kind: ConfigMap
+          name: vibebase-config
+        fieldPaths:
+          - data.VIBEBASE_INTERNAL_SERVICE_TOKEN

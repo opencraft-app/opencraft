@@ -1,0 +1,6 @@
+service: vibebase
+env: beijing-sandbox
+project: beijing-sandbox
+destinationName: beijing-sandbox
+namespace: ai-gateway
+sourcePath: argocd/services/vibebase/beijing-sandbox

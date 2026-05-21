@@ -1,0 +1,88 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vibebase-config
+  namespace: ai-gateway
+data:
+  VIBEBASE_ADDR: ":8080"
+  VIBEBASE_REDIS_ADDR: "REPLACE_VIBEBASE_REDIS_ADDR"
+  VIBEBASE_REDIS_DB: "0"
+  VIBEBASE_INTERNAL_SERVICE_TOKEN: "REPLACE_VIBEBASE_INTERNAL_SERVICE_TOKEN"
+  VIBEBASE_MAX_KEYS_PER_USER: "5000"
+  VIBEBASE_MAX_KEY_BYTES: "5000"
+  VIBEBASE_MAX_VALUE_BYTES: "5000"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vibebase
+  namespace: ai-gateway
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: vibebase
+  template:
+    metadata:
+      labels:
+        app: vibebase
+      annotations:
+        vibebase.lightclaw.dev/redeploy-at: REPLACE_VIBEBASE_DEPLOYED_AT
+    spec:
+      nodeSelector:
+        pool: REPLACE_VIBEBASE_NODE_POOL
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: vibebase
+      containers:
+        - name: vibebase
+          image: REPLACE_VIBEBASE_IMAGE
+          imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: vibebase-config
+          env:
+            - name: VIBEBASE_REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: vibebase-runtime-secrets
+                  key: REDIS_PASSWORD
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vibebase
+  namespace: ai-gateway
+spec:
+  selector:
+    app: vibebase
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
