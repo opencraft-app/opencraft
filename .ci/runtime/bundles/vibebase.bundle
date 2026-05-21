@@ -18,6 +18,7 @@ bundles:
     - vibebase/k8s/overlays/{env}/**
     publish_paths_by_env:
       beijing-sandbox:
+      - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
       - argocd/services/vibebase/beijing-sandbox/**
       - argocd/services/vibebase/common/**
       - argocd/services/service-gateway/beijing-sandbox/config.yaml
