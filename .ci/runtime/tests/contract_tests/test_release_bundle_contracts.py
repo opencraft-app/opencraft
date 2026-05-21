@@ -35,6 +35,7 @@ AUTO_RELEASE_WORKFLOWS = {
 BUSINESS_WORKFLOWS = {
     ".ci/admin-gateway.yml",
     ".ci/ai-gateway.yml",
+    ".ci/cloudagent-gateway.yml",
     ".ci/cloudladdergateway.yml",
     ".ci/ctl.yml",
     ".ci/frontend.yml",
@@ -474,6 +475,12 @@ class ReleaseBundleContractTests(unittest.TestCase):
                     expected_pin_targets=(workflow.get("extends") or {}).get("parameters", {}).get("BUNDLE"),
                 )
 
+    def test_cloudagent_gateway_adds_service_prod_reviewers(self) -> None:
+        workflow = yaml.safe_load((REPO_ROOT / ".ci/cloudagent-gateway.yml").read_text())
+        parameters = (workflow.get("extends") or {}).get("parameters") or {}
+
+        self.assertEqual(parameters.get("PROD_REVIEWERS"), '["skipzhang", "roberttwang", "cocofhu"]')
+
     def test_local_templates_do_not_use_unsupported_top_level_concurrency(self) -> None:
         for template_path in sorted((REPO_ROOT / ".ci/templates").glob("*.yml")):
             with self.subTest(template=template_path.name):
@@ -527,7 +534,6 @@ class ReleaseBundleContractTests(unittest.TestCase):
 
         self.assertEqual(entry_stage.get("if"), prod_promote_stage_if)
         self.assertEqual(entry_reviews.get("name"), "是否准备进入生产")
-        self.assertEqual(entry_reviews.get("reviewers"), ["skipzhang"])
         self.assertIn("本阶段确认是否允许本次构建进入生产候选流程", template_text)
         self.assertLess(
             template_text.index("是否准备进入生产 ${{ parameters.DISPLAY_NAME }}"),
@@ -563,7 +569,11 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(second_approval_stage.get("if"), prod_promote_stage_if)
         second_approval_reviews = (((second_approval_stage.get("check-in") or {}).get("reviews") or {}).get("flows") or [])[0]
         self.assertEqual(second_approval_reviews.get("name"), "二次确认生产镜像升级")
-        self.assertEqual(second_approval_reviews.get("reviewers"), ["skipzhang"])
+        template_parameters = {parameter.get("name"): parameter for parameter in template.get("parameters") or []}
+        self.assertEqual(template_parameters.get("PROD_REVIEWERS", {}).get("default"), '["skipzhang"]')
+        self.assertEqual(entry_reviews.get("reviewers"), "${{ parameters.PROD_REVIEWERS }}")
+        self.assertEqual(second_approval_reviews.get("reviewers"), "${{ parameters.PROD_REVIEWERS }}")
+        self.assertIn("reviewers: ${{ parameters.PROD_REVIEWERS }}", template_text)
         self.assertIn('if [[ "${{ variables.PIPELINE_MODE }}" != "build" ]]; then', template_text)
         self.assertIn('if [[ "${{ ci.branch }}" != "master" ]]; then', template_text)
         self.assertNotIn("csv_contains()", template_text)
