@@ -81,6 +81,10 @@ make hermes-sidecar-linux
 CN_MIRRORS=0 make hermes-sidecar-linux
 ```
 
+## 镜像构建
+
+`build/server/Dockerfile` 使用 Dockerfile cache mount 语法，CI 和本地 `docker build` 都需要启用 BuildKit。
+
 也可以单独覆盖：
 
 ```bash
