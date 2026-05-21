@@ -69,6 +69,14 @@ routes:
     upstream: http://chatclaw-runtime.chatclaw-runtime.svc.cluster.local
     access: authenticated
     auth_strategy: session
+  - name: vibebase
+    prefix: /v1/vibebase
+    rewrite_prefix: /v1
+    methods: [GET, PUT, DELETE, OPTIONS]
+    upstream: http://vibebase.ai-gateway.svc.cluster.local
+    upstream_bearer_token_env: SERVICE_GATEWAY_VIBEBASE_INTERNAL_TOKEN
+    access: authenticated
+    auth_strategy: session
   - name: auth
     prefix: /auth
     methods: [GET, POST, PUT, DELETE, OPTIONS]
