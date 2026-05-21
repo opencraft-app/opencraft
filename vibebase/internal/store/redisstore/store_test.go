@@ -88,6 +88,23 @@ func TestPerUserQuotaAndIsolation(t *testing.T) {
 	}
 }
 
+func TestRedisKeysAreReadableAndKeepUserSlotStable(t *testing.T) {
+	keys := redisKeys("user:a/b}", "drafts space", "theme/dark")
+
+	if keys.global != "vibebase:user:{uid:user%3Aa%2Fb%7D}:keys" {
+		t.Fatalf("unexpected global key: %s", keys.global)
+	}
+	if keys.namespace != "vibebase:user:{uid:user%3Aa%2Fb%7D}:ns:drafts%20space:keys" {
+		t.Fatalf("unexpected namespace key: %s", keys.namespace)
+	}
+	if keys.item != "vibebase:item:{uid:user%3Aa%2Fb%7D}:ns:drafts%20space:key:theme%2Fdark" {
+		t.Fatalf("unexpected item key: %s", keys.item)
+	}
+	if keys.member != "drafts space\x00theme/dark" {
+		t.Fatalf("unexpected member: %q", keys.member)
+	}
+}
+
 func TestListReturnsMetadataWithCursor(t *testing.T) {
 	s := newTestStore(t, 5000)
 	ctx := context.Background()

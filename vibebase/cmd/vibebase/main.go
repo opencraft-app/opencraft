@@ -35,7 +35,7 @@ func main() {
 	handler := httpapi.New(httpapi.Options{
 		Store:                store,
 		InternalServiceToken: cfg.InternalServiceToken,
-		MaxKeyBytes:          cfg.MaxKeyBytes,
+		MaxNameBytes:         cfg.MaxNameBytes,
 		MaxValueBytes:        cfg.MaxValueBytes,
 	})
 	server := &http.Server{Addr: cfg.Addr, Handler: handler}

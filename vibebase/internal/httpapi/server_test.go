@@ -58,7 +58,7 @@ func (f *fakeStore) List(_ context.Context, ownerID string, namespace string, _ 
 func (f *fakeStore) Ping(context.Context) error { return nil }
 
 func TestRejectsMissingTrustedIdentity(t *testing.T) {
-	handler := New(Options{Store: &fakeStore{}, InternalServiceToken: "secret", MaxKeyBytes: 5000, MaxValueBytes: 5000})
+	handler := New(Options{Store: &fakeStore{}, InternalServiceToken: "secret", MaxNameBytes: 5000, MaxValueBytes: 5000})
 	req := httptest.NewRequest(http.MethodPut, "/v1/namespaces/prefs/kv/theme", bytes.NewBufferString("dark"))
 	req.Header.Set("Authorization", "Bearer secret")
 	rec := httptest.NewRecorder()
@@ -70,7 +70,7 @@ func TestRejectsMissingTrustedIdentity(t *testing.T) {
 
 func TestStoresUnderInjectedUserOnly(t *testing.T) {
 	backend := &fakeStore{}
-	handler := New(Options{Store: backend, InternalServiceToken: "secret", MaxKeyBytes: 5000, MaxValueBytes: 5000})
+	handler := New(Options{Store: backend, InternalServiceToken: "secret", MaxNameBytes: 5000, MaxValueBytes: 5000})
 
 	put := httptest.NewRequest(http.MethodPut, "/v1/namespaces/prefs/kv/theme", bytes.NewBufferString("dark"))
 	put.Header.Set("Authorization", "Bearer secret")
@@ -109,7 +109,7 @@ func TestStoresUnderInjectedUserOnly(t *testing.T) {
 }
 
 func TestRejectsOversizedKeyAndValue(t *testing.T) {
-	handler := New(Options{Store: &fakeStore{}, InternalServiceToken: "secret", MaxKeyBytes: 4, MaxValueBytes: 3})
+	handler := New(Options{Store: &fakeStore{}, InternalServiceToken: "secret", MaxNameBytes: 4, MaxValueBytes: 3})
 	req := httptest.NewRequest(http.MethodPut, "/v1/namespaces/prefs/kv/toolong", bytes.NewBufferString("abc"))
 	req.Header.Set("Authorization", "Bearer secret")
 	req.Header.Set(identityUserHeader, "user-a")
@@ -130,7 +130,7 @@ func TestRejectsOversizedKeyAndValue(t *testing.T) {
 }
 
 func TestRejectsNonUTF8KeyAndValue(t *testing.T) {
-	handler := New(Options{Store: &fakeStore{}, InternalServiceToken: "secret", MaxKeyBytes: 5000, MaxValueBytes: 5000})
+	handler := New(Options{Store: &fakeStore{}, InternalServiceToken: "secret", MaxNameBytes: 5000, MaxValueBytes: 5000})
 
 	req := httptest.NewRequest(http.MethodPut, "/v1/namespaces/prefs/kv/%ff", bytes.NewBufferString("ok"))
 	req.Header.Set("Authorization", "Bearer secret")

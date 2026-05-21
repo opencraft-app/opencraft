@@ -25,14 +25,14 @@ const (
 type Server struct {
 	store                store.KVStore
 	internalServiceToken string
-	maxKeyBytes          int
+	maxNameBytes         int
 	maxValueBytes        int
 }
 
 type Options struct {
 	Store                store.KVStore
 	InternalServiceToken string
-	MaxKeyBytes          int
+	MaxNameBytes         int
 	MaxValueBytes        int
 }
 
@@ -40,7 +40,7 @@ func New(opts Options) http.Handler {
 	s := &Server{
 		store:                opts.Store,
 		internalServiceToken: opts.InternalServiceToken,
-		maxKeyBytes:          opts.MaxKeyBytes,
+		maxNameBytes:         opts.MaxNameBytes,
 		maxValueBytes:        opts.MaxValueBytes,
 	}
 	mux := http.NewServeMux()
@@ -95,7 +95,7 @@ func (s *Server) handleKV(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found")
 		return
 	}
-	if err := validateName("namespace", namespace, s.maxKeyBytes); err != nil {
+	if err := validateName("namespace", namespace, s.maxNameBytes); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -109,7 +109,7 @@ func (s *Server) handleKV(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := validateName("key", key, s.maxKeyBytes); err != nil {
+	if err := validateName("key", key, s.maxNameBytes); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
