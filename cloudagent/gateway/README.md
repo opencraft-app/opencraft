@@ -10,6 +10,10 @@
 
 当前唯一主路径是 `GATEWAY_WORKER_MODE=agent_injected`，sidecar 固定为 Hermes Rust 二进制。
 
+## CI trigger notes
+
+- 2026-05-21: README-only no-op change to rerun cloudagent-gateway after production reviewer override landed.
+
 ## ACP WebSocket
 
 完整接入文档见 [docs/acp-backend.md](docs/acp-backend.md)。
