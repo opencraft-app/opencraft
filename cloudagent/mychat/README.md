@@ -34,6 +34,8 @@ http://127.0.0.1:5173/
 ```
 
 When targeting a local gateway, override it with `?acp_url=http://127.0.0.1:18094/acp`.
+For production CloudAgent auth and session workspace upload/download details,
+see [`docs/cloudagent-auth-and-files.md`](docs/cloudagent-auth-and-files.md).
 
 Run the optional Go gateway:
 
