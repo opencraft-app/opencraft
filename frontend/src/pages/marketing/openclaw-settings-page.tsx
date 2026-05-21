@@ -11,7 +11,7 @@ import { LegalFooter } from "@/components/site/legal-footer";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowRight,
-  Boxes,
+  BrainCircuit,
   Check,
   MessageCircle,
   Loader2,
@@ -3162,7 +3162,7 @@ export const OpenClawSettingsPage = () => {
 
                     const sections: { id: SettingsSectionId; label: string; icon: React.ReactNode }[] = [
                       { id: "channel", label: t("通道"), icon: <MessageCircle className="h-4 w-4" /> },
-                      { id: "model", label: t("模型"), icon: <Boxes className="h-4 w-4" /> },
+                      { id: "model", label: t("模型"), icon: <BrainCircuit className="h-4 w-4" /> },
                       { id: "skill", label: t("技能"), icon: <Wand2 className="h-4 w-4" /> },
                     ];
 
