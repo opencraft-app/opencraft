@@ -53,6 +53,7 @@
 .ci/runtime/bundles/_catalogs.bundle
 .ci/runtime/bundles/admin-gateway.bundle
 .ci/runtime/bundles/ai-gateway.bundle
+.ci/runtime/bundles/cloudagent-gateway.bundle
 .ci/runtime/bundles/ctl.bundle
 .ci/runtime/bundles/frontend-ds.bundle
 .ci/runtime/bundles/frontend.bundle

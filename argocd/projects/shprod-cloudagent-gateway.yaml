@@ -1,0 +1,18 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: shprod-cloudagent-gateway
+  namespace: argocd
+spec:
+  description: CloudAgent gateway Shanghai production rollout project.
+  sourceRepos:
+    - git@git.woa.com:wisp/mono2.git
+  destinations:
+    - namespace: cloudagent
+      name: shprod
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'
