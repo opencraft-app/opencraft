@@ -34,7 +34,11 @@ import {
 } from "@/lib/skillhub-api";
 import { getSoulSpec, buildSoulMd } from "@/lib/soul-interpretations";
 import { SoulSpecPanel } from "@/components/soul-spec-panel";
-import { loadBuddyState, saveBuddyState } from "@/lib/buddy-storage";
+import {
+  loadBuddyState,
+  saveBuddyState,
+  VibebaseError,
+} from "@/lib/buddy-storage";
 
 const PANEL_CARD_STYLE: React.CSSProperties = {
   border: "1px solid rgba(0,0,0,0.06)",
@@ -55,15 +59,15 @@ export function BuddyPanel({
   const repositories = useRepositories();
   const [previewSoulSlug, setPreviewSoulSlug] = useState<string | null>(null);
 
-  // 持久化：从 localStorage 读出当前 botId 上次抽到的卡 + 已注入 slug。
-  // 后续切到后端 DB 时只需替换 buddy-storage 里的实现。
-  const initialState = (() => {
-    if (typeof window === "undefined") return { drawnSouls: [], appliedSlug: null };
-    return loadBuddyState(botId) ?? { drawnSouls: [], appliedSlug: null };
-  })();
+  // 持久化：状态走 Vibebase（用户级 KV，跨设备一致）。
+  // 加载流程：mount / 切 botId → 异步拉取 → 期间显示 loading 占位（空抽卡盘 + 转圈）。
+  // 写入流程：drawnSouls / appliedSlug 变化触发防抖（500ms）后异步推送。
+  // 错误处理：401 → 切到"未登录"提示态，禁用抽卡；其他错误 → 顶部 error toast。
+  type LoadStatus = "loading" | "loaded" | "unauthorized" | "error";
+  const [loadStatus, setLoadStatus] = useState<LoadStatus>("loading");
 
   /** 已抽到的人设，按抽到顺序排列，去重 by slug，最多 MAX_DRAWS 张 */
-  const [drawnSouls, setDrawnSouls] = useState<SkillHubSoul[]>(initialState.drawnSouls);
+  const [drawnSouls, setDrawnSouls] = useState<SkillHubSoul[]>([]);
   /** 抽卡弹窗开关 */
   const [drawOpen, setDrawOpen] = useState(false);
 
@@ -148,23 +152,116 @@ export function BuddyPanel({
   /** 选中态（单选）：选中后右上角显示勾，可"应用到 Agent" */
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   /** 上一次成功应用到 Agent 的 slug —— 用于按钮上展示「已应用」反馈 */
-  const [appliedSlug, setAppliedSlug] = useState<string | null>(initialState.appliedSlug);
+  const [appliedSlug, setAppliedSlug] = useState<string | null>(null);
 
-  // 切 bot：用新 botId 的本地状态覆盖（清空选中），保证不串。
-  // 第一次 mount 时也会跑一次（设置初始状态），但因为初始 state 已经从 storage 读了，
-  // 所以是同值赋值，无副作用。
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // 切 botId：清空当前 UI → 异步从 Vibebase 拉取该 bot 的状态。
+  // 用 reqId 防止快速切换时的回调竞态（旧 promise 后到不能覆盖新 bot 的数据）。
+  const loadReqIdRef = useRef(0);
+  // 记录"已知与服务端一致"的快照（按 botId 维度）。save effect 做内容比对，
+  // 与该快照相同则跳过，避免 load 完成后的"自我同步"PUT。
+  // 比 ref 旗子更稳：StrictMode 双 mount / 切 bot 重入都不会漏判 / 多判。
+  const syncedSnapshotRef = useRef<{ botId: string | null | undefined; data: string } | null>(null);
   useEffect(() => {
-    const next = loadBuddyState(botId) ?? { drawnSouls: [], appliedSlug: null };
-    setDrawnSouls(next.drawnSouls);
-    setAppliedSlug(next.appliedSlug);
+    const reqId = ++loadReqIdRef.current;
+    setLoadStatus("loading");
+    setDrawnSouls([]);
+    setAppliedSlug(null);
     setSelectedSlug(null);
+
+    loadBuddyState(botId)
+      .then((state) => {
+        if (loadReqIdRef.current !== reqId) return; // 已被新请求超车
+        const drawnSouls = state?.drawnSouls ?? [];
+        const appliedSlug = state?.appliedSlug ?? null;
+        // 同步快照：与 setState 同一批，确保 save effect 看到的快照已是最新
+        syncedSnapshotRef.current = {
+          botId,
+          data: JSON.stringify({ drawnSouls, appliedSlug }),
+        };
+        setDrawnSouls(drawnSouls);
+        setAppliedSlug(appliedSlug);
+        setLoadStatus("loaded");
+      })
+      .catch((err: unknown) => {
+        if (loadReqIdRef.current !== reqId) return;
+        if (err instanceof VibebaseError && err.isUnauthorized) {
+          setLoadStatus("unauthorized");
+          return;
+        }
+        // eslint-disable-next-line no-console
+        console.error("[buddy] loadBuddyState failed:", err);
+        setLoadStatus("error");
+      });
   }, [botId]);
 
-  // 持久化：drawnSouls / appliedSlug 任一变化都落盘
+  // 持久化：drawnSouls / appliedSlug 变化时防抖 500ms 推送 Vibebase。
+  // - 加载未完成不写（避免空数据覆盖云端）
+  // - 与已同步快照相同时不写（避免 load 完成后的"自我同步"PUT）
+  // - 401 / error 状态不写（写也是 401 / error 死循环）
+  // - 写入失败仅 console 报警，不阻塞 UI；下一次变化会重试
+  const saveTimerRef = useRef<number | null>(null);
   useEffect(() => {
-    saveBuddyState(botId, { drawnSouls, appliedSlug });
-  }, [botId, drawnSouls, appliedSlug]);
+    if (loadStatus !== "loaded") return;
+    const currentData = JSON.stringify({ drawnSouls, appliedSlug });
+    const synced = syncedSnapshotRef.current;
+    if (synced && synced.botId === botId && synced.data === currentData) {
+      // 当前数据已和服务端一致（来自 load，或上次 save 成功）→ 跳过
+      return;
+    }
+    if (saveTimerRef.current) {
+      window.clearTimeout(saveTimerRef.current);
+    }
+    saveTimerRef.current = window.setTimeout(() => {
+      saveTimerRef.current = null;
+      saveBuddyState(botId, { drawnSouls, appliedSlug })
+        .then(() => {
+          // 写入成功后更新快照，让 StrictMode 双 mount / 同值再触发不会重复 PUT
+          syncedSnapshotRef.current = { botId, data: currentData };
+        })
+        .catch((err: unknown) => {
+          if (err instanceof VibebaseError && err.isUnauthorized) {
+            // session 中途失效（比如 cookie 过期）→ 切到未登录态
+            setLoadStatus("unauthorized");
+            return;
+          }
+          // eslint-disable-next-line no-console
+          console.error("[buddy] saveBuddyState failed:", err);
+          showToast({
+            kind: "error",
+            message: t("保存搭子状态失败，请检查网络后重试"),
+          });
+        });
+    }, 500);
+    return () => {
+      if (saveTimerRef.current) {
+        window.clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+    };
+  }, [botId, drawnSouls, appliedSlug, loadStatus, showToast, t]);
+
+  // unmount：把 pending 的 save 立即 flush 一次，避免用户刚抽完就关页面丢数据。
+  // 用 ref 跟踪最新值，确保 unmount cleanup 拿到的不是首次 render 的旧 closure。
+  const latestSaveRef = useRef({ botId, drawnSouls, appliedSlug, loadStatus });
+  latestSaveRef.current = { botId, drawnSouls, appliedSlug, loadStatus };
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current) {
+        window.clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+        const latest = latestSaveRef.current;
+        // 仅在已 loaded（即数据可信）时 flush；其余状态直接放弃
+        if (latest.loadStatus === "loaded") {
+          saveBuddyState(latest.botId, {
+            drawnSouls: latest.drawnSouls,
+            appliedSlug: latest.appliedSlug,
+          }).catch(() => {
+            /* unmount 时无 UI 可提示，fire-and-forget */
+          });
+        }
+      }
+    };
+  }, []);
 
   /** 切换选中：再点一次取消选中 */
   const handleToggleSelect = useCallback((slug: string) => {
@@ -344,19 +441,50 @@ export function BuddyPanel({
 
       {/* 内容区：6 格抽卡槽，下方接进度 chip 靠右展示，避免覆盖卡片本身 */}
       <div className="px-6 pt-2 pb-2">
-        <SoulSlotGrid
-          drawnSouls={drawnSouls}
-          loading={soulsResource.loading && souls.length === 0}
-          error={souls.length === 0 ? soulsResource.error : null}
-          onReload={soulsResource.reload}
-          onClickFilled={handleToggleSelect}
-          onClickEmpty={handleOpenDraw}
-          onReroll={handleReroll}
-          canReroll={canReroll}
-          selectedSlug={selectedSlug}
-          appliedSlug={appliedSlug}
-          onPreview={(slug) => setPreviewSoulSlug(slug)}
-        />
+        {loadStatus === "unauthorized" ? (
+          <UnauthorizedState />
+        ) : loadStatus === "error" ? (
+          <ErrorState
+            message={t("加载搭子状态失败，请检查网络后重试")}
+            onRetry={() => {
+              // 触发 useEffect 重跑：直接 ++reqId 不行（不会触发 effect），用 botId-tick
+              // 兜底：直接刷一次页面对应的 effect 依赖
+              loadReqIdRef.current++;
+              setLoadStatus("loading");
+              loadBuddyState(botId)
+                .then((state) => {
+                  setDrawnSouls(state?.drawnSouls ?? []);
+                  setAppliedSlug(state?.appliedSlug ?? null);
+                  setLoadStatus("loaded");
+                })
+                .catch((err: unknown) => {
+                  if (err instanceof VibebaseError && err.isUnauthorized) {
+                    setLoadStatus("unauthorized");
+                    return;
+                  }
+                  setLoadStatus("error");
+                });
+            }}
+          />
+        ) : (
+          <SoulSlotGrid
+            drawnSouls={drawnSouls}
+            // souls 池在拉取 + 自身 buddy state 在加载，任一未完成都给 loading
+            loading={
+              loadStatus === "loading"
+              || (soulsResource.loading && souls.length === 0)
+            }
+            error={souls.length === 0 ? soulsResource.error : null}
+            onReload={soulsResource.reload}
+            onClickFilled={handleToggleSelect}
+            onClickEmpty={handleOpenDraw}
+            onReroll={handleReroll}
+            canReroll={canReroll}
+            selectedSlug={selectedSlug}
+            appliedSlug={appliedSlug}
+            onPreview={(slug) => setPreviewSoulSlug(slug)}
+          />
+        )}
       </div>
 
       {/* 卡片下方：抽取人设 + 应用到 Agent 双 CTA 居中并排；chip 绝对定位浮于右侧不占位 */}
@@ -364,7 +492,7 @@ export function BuddyPanel({
         <button
           type="button"
           onClick={handleOpenDraw}
-          disabled={souls.length === 0 || isAtMax}
+          disabled={souls.length === 0 || isAtMax || loadStatus !== "loaded"}
           className="inline-flex items-center gap-2 rounded-full px-5 py-2 text-sm font-medium transition-all hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none"
           style={{
             background: "rgba(0,0,0,0.04)",
@@ -379,7 +507,11 @@ export function BuddyPanel({
           <button
             type="button"
             onClick={handleApply}
-            disabled={!selectedSlug || toast.kind === "applying"}
+            disabled={
+              !selectedSlug
+              || toast.kind === "applying"
+              || loadStatus !== "loaded"
+            }
             className="inline-flex cursor-pointer items-center gap-2 rounded-full px-5 py-2 text-sm font-medium transition-all hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none"
             style={{
               background: "rgba(0,0,0,0.90)",
@@ -844,6 +976,26 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
       >
         {t("重试")}
       </button>
+    </div>
+  );
+}
+
+// 未登录态：Vibebase 返回 401 时整面板替换为这个空状态。
+// 不弹 toast、不嵌套在 grid 里，让用户视觉上一目了然"需要先登录"。
+function UnauthorizedState() {
+  const t = useT();
+  return (
+    <div className="flex flex-col items-center gap-3 py-12 text-center">
+      <AlertCircle
+        className="h-6 w-6"
+        style={{ color: "rgba(0,0,0,0.45)" }}
+      />
+      <p className="text-sm" style={{ color: "rgba(0,0,0,0.65)" }}>
+        {t("登录后即可保存你的搭子人设")}
+      </p>
+      <p className="text-xs" style={{ color: "rgba(0,0,0,0.4)" }}>
+        {t("AI 搭子状态会同步到你的账号，跨设备可见")}
+      </p>
     </div>
   );
 }

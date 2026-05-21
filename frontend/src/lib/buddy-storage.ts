@@ -1,24 +1,32 @@
 /**
- * AI 搭子人设抽卡的本地持久化（localStorage 版）。
+ * AI 搭子人设抽卡的持久化（Vibebase 版）。
  *
  * 设计原则：
+ * - **服务端真源**：状态写到 Vibebase（用户级 KV），跨设备 / 跨浏览器一致。
  * - **按 bot 隔离**：不同 botId 各存一份，避免互相串。
- * - **薄抽象**：只对外暴露 `loadBuddyState / saveBuddyState`，底层是 localStorage。
- *   后续切到后端数据库（持久化到 Cert / 用户态）时，**只需要替换这两个函数实现**，
- *   `openclaw-buddy-panel.tsx` 不用动。
- * - **格式 schema 化**：带 version 号 + drawnSouls 完整字段（不只 slug），
- *   重启时不用再请求 SkillHub 列表就能立即渲染卡面。
+ * - **异步**：load/save 都是 Promise；UI 层负责加载态与失败提示。
+ * - **错误透明**：失败原样抛 `VibebaseError`，由调用方（panel）决定是 toast
+ *   还是降级。本模块**不做静默兜底**，避免数据不一致。
  *
- * 失败处理：localStorage 不可用 / JSON 解析失败 / 版本不匹配 → 全部当无数据。
- * 没有也不影响功能（只是回到空抽卡盘）。
+ * Vibebase namespace / key：
+ *   - namespace = `agent-state`
+ *   - key       = `buddy.{botId}` 或 `buddy.__no_bot__`（未选 bot 时）
+ *   - value     = `BuddyStateV1` JSON
  */
 
 import type { SkillHubSoul } from "@/lib/skillhub-api";
+import {
+  deleteValue,
+  getJSON,
+  setJSON,
+  VibebaseError,
+} from "@/lib/vibebase-client";
 
-const KEY_PREFIX = "lightclaw.buddy.state.v1";
+const VIBEBASE_NAMESPACE = "agent-state";
+const KEY_PREFIX = "buddy";
 const NULL_BOT_KEY = "__no_bot__";
 
-/** 持久化结构 v1 */
+/** 持久化结构 v1（与 Vibebase 里的 schema 同步）。 */
 interface BuddyStateV1 {
   version: 1;
   /** 已抽到的人设（保留完整字段，避免重启后再查 SkillHub） */
@@ -34,59 +42,58 @@ export interface BuddyState {
   appliedSlug: string | null;
 }
 
-function storageKey(botId: string | null | undefined): string {
+function buildKey(botId: string | null | undefined): string {
   return `${KEY_PREFIX}.${botId || NULL_BOT_KEY}`;
 }
 
-function safeStorage(): Storage | null {
-  if (typeof window === "undefined") return null;
-  try {
-    return window.localStorage;
-  } catch {
-    // 隐私模式 / iframe 跨站策略 → 拿不到 localStorage
+/**
+ * 从 Vibebase 拉取当前 bot 的搭子状态。
+ * - key 不存在 / 数据 schema 不匹配 → 返回 null（视为无数据）
+ * - 401（未登录）等错误 → 抛 `VibebaseError`，由调用方处理
+ */
+export async function loadBuddyState(
+  botId: string | null | undefined,
+): Promise<BuddyState | null> {
+  const data = await getJSON<Partial<BuddyStateV1>>(
+    VIBEBASE_NAMESPACE,
+    buildKey(botId),
+  );
+  if (!data || data.version !== 1 || !Array.isArray(data.drawnSouls)) {
     return null;
   }
+  return {
+    drawnSouls: data.drawnSouls,
+    appliedSlug:
+      typeof data.appliedSlug === "string" ? data.appliedSlug : null,
+  };
 }
 
-export function loadBuddyState(botId: string | null | undefined): BuddyState | null {
-  const ls = safeStorage();
-  if (!ls) return null;
-  try {
-    const raw = ls.getItem(storageKey(botId));
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<BuddyStateV1>;
-    if (parsed?.version !== 1 || !Array.isArray(parsed.drawnSouls)) return null;
-    return {
-      drawnSouls: parsed.drawnSouls,
-      appliedSlug: typeof parsed.appliedSlug === "string" ? parsed.appliedSlug : null,
-    };
-  } catch {
-    return null;
-  }
+/**
+ * 写入当前 bot 的搭子状态。
+ * 失败原样抛 `VibebaseError`，调用方决定 toast 还是重试。
+ */
+export async function saveBuddyState(
+  botId: string | null | undefined,
+  state: BuddyState,
+): Promise<void> {
+  const payload: BuddyStateV1 = {
+    version: 1,
+    drawnSouls: state.drawnSouls,
+    appliedSlug: state.appliedSlug,
+    updatedAt: Date.now(),
+  };
+  await setJSON(VIBEBASE_NAMESPACE, buildKey(botId), payload);
 }
 
-export function saveBuddyState(botId: string | null | undefined, state: BuddyState): void {
-  const ls = safeStorage();
-  if (!ls) return;
-  try {
-    const payload: BuddyStateV1 = {
-      version: 1,
-      drawnSouls: state.drawnSouls,
-      appliedSlug: state.appliedSlug,
-      updatedAt: Date.now(),
-    };
-    ls.setItem(storageKey(botId), JSON.stringify(payload));
-  } catch {
-    // 配额满 / 写失败 → 静默丢弃；下次再试
-  }
+/**
+ * 清空当前 bot 的搭子状态（重置抽卡盘）。
+ * 不存在时静默成功。
+ */
+export async function clearBuddyState(
+  botId: string | null | undefined,
+): Promise<void> {
+  await deleteValue(VIBEBASE_NAMESPACE, buildKey(botId));
 }
 
-export function clearBuddyState(botId: string | null | undefined): void {
-  const ls = safeStorage();
-  if (!ls) return;
-  try {
-    ls.removeItem(storageKey(botId));
-  } catch {
-    // ignore
-  }
-}
+/** 重新导出 VibebaseError，方便 panel 层 instanceof 判断未登录 / 配额等。 */
+export { VibebaseError };
