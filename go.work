@@ -14,4 +14,5 @@ use (
 	./third_party/staticpages
 	./trade
 	./vibebase
+	./cloudagent/acp-client
 )
