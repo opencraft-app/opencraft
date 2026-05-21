@@ -971,6 +971,7 @@ func (g *ACPGateway) cloudAgentSessionStatus(scope Scope, sessionID string) (map
 		"prompt_in_flight":    session.CurrentPrompt != nil,
 		"runtime_generation":  session.RuntimeGeneration,
 		"session_proxy_id":    runtime.SessionProxyID,
+		"envd_proxy_domain":   envdProxyDomain(),
 		"cleanup_pending":     g.cleanups[sessionID] != nil,
 		"last_runtime_error":  session.LastRuntimeError,
 		"created_at":          session.CreatedAt.Format(time.RFC3339Nano),

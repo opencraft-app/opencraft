@@ -85,6 +85,8 @@ export interface CloudAgentSessionStatus {
   currentResponseId?: string;
   promptInFlight?: boolean;
   runtimeGeneration?: number;
+  sessionProxyID?: string;
+  envdProxyDomain?: string;
   cleanupPending?: boolean;
   lastRuntimeError?: string;
   sandbox?: {
@@ -195,6 +197,11 @@ export interface AcpClientOptions {
   gatewayURL?: string;
   fileUploadURL?: string;
 }
+
+export const DEFAULT_GATEWAY_IDENTITY_HEADERS = {
+  "X-Tenant-ID": "default",
+  "X-Project-ID": "default",
+};
 
 type AcpTransportMode = "app" | "raw";
 
@@ -1447,10 +1454,7 @@ export class AcpClient {
     form.append("file", file.file, file.name);
     const response = await fetch(endpoint, {
       method: "POST",
-      headers: {
-        "X-Tenant-ID": "default",
-        "X-Project-ID": "default",
-      },
+      headers: DEFAULT_GATEWAY_IDENTITY_HEADERS,
       body: form,
     });
     if (!response.ok) {
@@ -1490,6 +1494,38 @@ export class AcpClient {
 export function resolveAcpHTTPURL(pathOrURL: string, gatewayOverride?: string) {
   const base = resolveAcpHTTPBaseURL(gatewayOverride);
   return new URL(pathOrURL, base).toString();
+}
+
+export function resolveEnvdProxyHTTPBaseURL(
+  status: Pick<
+    CloudAgentSessionStatus,
+    "sessionProxyID" | "envdProxyDomain"
+  > | undefined,
+  gatewayOverride?: string,
+) {
+  const proxyID = status?.sessionProxyID?.trim();
+  const domain = status?.envdProxyDomain?.trim().replace(/^\.+|\.+$/g, "");
+  if (!proxyID || !domain) return undefined;
+  const wsURL = resolveAcpWebSocketURL(gatewayOverride);
+  const parsed = new URL(wsURL);
+  const protocol = parsed.protocol === "wss:" ? "https:" : "http:";
+  return `${protocol}//49983-${proxyID}.${domain}/`;
+}
+
+export function resolveEnvdFileURL(
+  status: Pick<
+    CloudAgentSessionStatus,
+    "sessionProxyID" | "envdProxyDomain"
+  > | undefined,
+  workspacePath: string,
+  gatewayOverride?: string,
+) {
+  const base = resolveEnvdProxyHTTPBaseURL(status, gatewayOverride);
+  const path = workspacePath.trim();
+  if (!base || !path) return undefined;
+  const url = new URL("/files", base);
+  url.searchParams.set("path", path);
+  return url.toString();
 }
 
 function resolveAcpHTTPBaseURL(gatewayOverride?: string) {
@@ -1764,6 +1800,8 @@ function readCloudAgentSessionStatus(
     currentResponseId: readString(result.current_response_id),
     promptInFlight: readBoolean(result.prompt_in_flight),
     runtimeGeneration: readNumber(result.runtime_generation),
+    sessionProxyID: readString(result.session_proxy_id),
+    envdProxyDomain: readString(result.envd_proxy_domain),
     cleanupPending: readBoolean(result.cleanup_pending),
     lastRuntimeError: readString(result.last_runtime_error),
     sandbox: sandbox

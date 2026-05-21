@@ -236,6 +236,86 @@ func TestEnvdProxyRejectsScopeMismatch(t *testing.T) {
 	}
 }
 
+func TestSessionScopedEnvdProxyForwardsFilesAPI(t *testing.T) {
+	var sawInner bool
+	inner := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawInner = true
+		if r.URL.Path != "/files" {
+			t.Fatalf("inner path = %s", r.URL.Path)
+		}
+		if r.URL.Query().Get("path") != "/workspace/a.txt" {
+			t.Fatalf("inner query = %s", r.URL.RawQuery)
+		}
+		if got := r.Header.Get("X-Access-Token"); got != "inner-token" {
+			t.Fatalf("inner X-Access-Token = %q", got)
+		}
+		user, _, ok := r.BasicAuth()
+		if !ok || user != "user" {
+			t.Fatalf("inner basic auth user=%q ok=%t", user, ok)
+		}
+		_, _ = w.Write([]byte("file-body"))
+	}))
+	defer inner.Close()
+
+	manager := &envdProxyRuntimeManager{innerDomain: inner.URL}
+	srv := newACPTestServerWithRuntime(t, manager)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	client := dialACPWS(t, "ws"+trimHTTPPrefix(ts.URL)+"/acp", map[string]string{"Authorization": "Bearer test-key"})
+	defer client.close()
+	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "session/new", "params": map[string]any{}})
+	result := waitForRPCID(t, client, float64(1))["result"].(map[string]any)
+	sessionID := result["sessionId"].(string)
+
+	req, err := http.NewRequest(http.MethodGet, ts.URL+"/v1/acp/sessions/"+sessionID+"/envd/files?path=/workspace/a.txt", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer test-key")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK || string(body) != "file-body" {
+		t.Fatalf("status=%d body=%s", resp.StatusCode, string(body))
+	}
+	if !sawInner {
+		t.Fatal("inner envd was not called")
+	}
+}
+
+func TestSessionScopedEnvdProxyRejectsScopeMismatch(t *testing.T) {
+	manager := &envdProxyRuntimeManager{innerDomain: "http://127.0.0.1:1"}
+	srv := newACPTestServerWithRuntime(t, manager)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	client := dialACPWS(t, "ws"+trimHTTPPrefix(ts.URL)+"/acp", map[string]string{"X-Tenant-ID": "tenant-a", "X-Project-ID": "project-a"})
+	defer client.close()
+	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "session/new", "params": map[string]any{}})
+	result := waitForRPCID(t, client, float64(1))["result"].(map[string]any)
+	sessionID := result["sessionId"].(string)
+
+	req, err := http.NewRequest(http.MethodGet, ts.URL+"/v1/acp/sessions/"+sessionID+"/envd/files?path=/workspace/a.txt", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("X-Tenant-ID", "tenant-b")
+	req.Header.Set("X-Project-ID", "project-a")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusForbidden || !strings.Contains(string(body), "scope_mismatch") {
+		t.Fatalf("status=%d body=%s", resp.StatusCode, string(body))
+	}
+}
+
 func TestEnvdProxyRetriesStaleAuthOnce(t *testing.T) {
 	t.Setenv("ACP_ENVD_PROXY_DOMAIN", "proxy.test")
 	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

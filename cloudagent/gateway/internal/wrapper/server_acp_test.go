@@ -1014,6 +1014,7 @@ func TestACPRejectsNonTextPromptBlocks(t *testing.T) {
 }
 
 func TestACPCloudAgentSessionStatus(t *testing.T) {
+	t.Setenv("ACP_ENVD_PROXY_DOMAIN", "envd.cloudagent.lightvela.com")
 	manager := &recordingACPRuntimeManager{}
 	srv := newACPTestServerWithRuntime(t, manager)
 	ts := httptest.NewServer(srv.Handler())
@@ -1060,6 +1061,9 @@ func TestACPCloudAgentSessionStatus(t *testing.T) {
 	}
 	if result["session_proxy_id"] == "" {
 		t.Fatalf("status missing session_proxy_id: %#v", result)
+	}
+	if result["envd_proxy_domain"] != "envd.cloudagent.lightvela.com" {
+		t.Fatalf("status missing envd proxy domain: %#v", result)
 	}
 }
 
