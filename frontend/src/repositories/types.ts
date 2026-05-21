@@ -124,10 +124,6 @@ export interface BotRepository {
   subscribeWeixinLoginSessionEvents(botId: string, sessionId: string, signal?: AbortSignal): AsyncIterable<{ event: string; data: unknown }>;
   listSoulTemplates(): Promise<SoulTemplate[]>;
   execDebugCommand(botId: string, command: string): Promise<{ status: string; exitCode: number; output: string }>;
-  /** 读取 bot workspace 下的某个文件（如 SOUL.md），缺失时返回 null */
-  getWorkspaceFile(botId: string, name: string): Promise<{ name: string; content: string } | null>;
-  /** 写入/覆盖 bot workspace 下的某个文件（如 SOUL.md） */
-  updateWorkspaceFile(botId: string, name: string, content: string): Promise<{ name: string; updatedAt: number }>;
 }
 
 export interface Repositories {

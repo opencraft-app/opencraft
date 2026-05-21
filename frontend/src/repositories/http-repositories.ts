@@ -864,35 +864,6 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
         output: payload.output,
       };
     },
-
-    async getWorkspaceFile(botId, name) {
-      try {
-        const payload = await requestEnvelope<{
-          name: string;
-          content: string;
-        }>(baseUrl, `/v1/instances/${encodeURIComponent(botId)}/workspace/files?name=${encodeURIComponent(name)}`, {
-          method: "GET",
-        });
-        return { name: payload.name, content: payload.content };
-      } catch (err) {
-        // 文件不存在时后端会 404，按"不存在"处理（不视为错误）
-        if (err && typeof err === "object" && "status" in err && (err as { status?: number }).status === 404) {
-          return null;
-        }
-        throw err;
-      }
-    },
-
-    async updateWorkspaceFile(botId, name, content) {
-      const payload = await requestEnvelope<{
-        name: string;
-        updated_at: number;
-      }>(baseUrl, `/v1/instances/${encodeURIComponent(botId)}/workspace/files`, {
-        method: "POST",
-        body: { name, content },
-      });
-      return { name: payload.name, updatedAt: payload.updated_at };
-    },
   };
 };
 

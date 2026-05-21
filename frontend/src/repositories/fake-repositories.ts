@@ -829,18 +829,5 @@ const createBotRepository = (): BotRepository => {
       }
       return { status: "Succeeded", exitCode: 0, output: "" };
     },
-
-    async getWorkspaceFile(_botId, _name) {
-      await wait(NETWORK_DELAY_MS);
-      // fake 模式下假装文件不存在，避免假数据混淆
-      return null;
-    },
-
-    async updateWorkspaceFile(_botId, name, content) {
-      await wait(NETWORK_DELAY_MS);
-      // eslint-disable-next-line no-console
-      console.info("[fake] updateWorkspaceFile:", name, "size=", content.length);
-      return { name, updatedAt: Date.now() };
-    },
   };
 };
