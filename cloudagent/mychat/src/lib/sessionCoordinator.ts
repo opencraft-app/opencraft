@@ -80,6 +80,7 @@ export function planSessionList(input: {
   sessions: ListedSession[];
   previousRows: SessionRow[];
   defaultCwd: string;
+  emptyDraftId?: string;
   pendingOpenAfterList: string | null;
   storedActiveSessionId?: string;
   activeConversationId: string;
@@ -87,11 +88,15 @@ export function planSessionList(input: {
   restoreEnvironment: AcpRestoreEnvironment;
   activeLiveConnection: boolean;
 }) {
-  const conversations = rowsFromListedSessions(input.sessions, input.previousRows, input.defaultCwd);
+  const listedRows = rowsFromListedSessions(input.sessions, input.previousRows, input.defaultCwd);
+  const createdEmptyDraft = listedRows.length === 0;
+  const conversations = !createdEmptyDraft
+    ? listedRows
+    : [createDraftRow(input.emptyDraftId ?? 'conv-empty-draft', input.defaultCwd, input.restoreEnvironment.mcpServers)];
   const preferred = input.pendingOpenAfterList === 'first' ? input.storedActiveSessionId : input.pendingOpenAfterList;
   const activeConversationId = resolveActiveRowId(conversations, preferred ?? input.activeConversationId);
   const activeConversation = conversations.find((row) => row.id === activeConversationId);
-  const effects = activeConversation
+  const effects = activeConversation && !createdEmptyDraft
     ? planOpenConversation({
       conversation: activeConversation,
       capabilities: input.capabilities,
