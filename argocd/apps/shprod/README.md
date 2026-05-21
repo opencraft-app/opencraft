@@ -25,6 +25,7 @@
 
 - `admin-gateway`
 - `ai-gateway`
+- `cloudagent-gateway`
 - `ctl`
 - `frontend`
 - `gateway-dashboard`
@@ -42,6 +43,7 @@
 - leaf projects:
   - `shprod-admin-gateway`
   - `shprod-ai-gateway`
+  - `shprod-cloudagent-gateway`
   - `shprod-ctl`
   - `shprod-frontend`
   - `shprod-gateway-dashboard`

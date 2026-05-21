@@ -22,6 +22,7 @@
 
 - `admin-gateway-runtime-secrets.sops.yaml`
 - `ai-gateway-runtime-secrets.sops.yaml`
+- `cloudagent-gateway-runtime-secrets.sops.yaml`
 - `ctl-conf-common.sops.yaml`
 - `ctl-conf-rewrite.sops.yaml`
 - `gateway-dashboard-runtime-secrets.sops.yaml`
