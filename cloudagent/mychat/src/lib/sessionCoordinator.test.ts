@@ -79,6 +79,28 @@ describe('ACP session coordinator open decisions', () => {
     ]);
   });
 
+  it('creates a writable draft when session/list is empty', () => {
+    const result = planSessionList({
+      sessions: [],
+      previousRows: [],
+      defaultCwd: restoreEnvironment.cwd,
+      emptyDraftId: 'draft-empty',
+      pendingOpenAfterList: 'first',
+      storedActiveSessionId: undefined,
+      activeConversationId: '',
+      capabilities: listCapable,
+      restoreEnvironment,
+      activeLiveConnection: false,
+    });
+
+    expect(result.activeConversationId).toBe('draft-empty');
+    expect(result.conversations).toMatchObject([
+      { id: 'draft-empty', restoreState: 'new', source: 'draft' },
+    ]);
+    expect(result.conversations[0].sessionId).toBeUndefined();
+    expect(result.effects).toEqual([]);
+  });
+
   it('rebinds an already-live session without replaying history', () => {
     const row = rowFromSession('session-1');
 

@@ -8,6 +8,8 @@ import {
   SessionPage,
   parseSessionCreateMetaJSON,
   resolveInitialGatewayURL,
+  resolveSessionEnvdFileURL,
+  sessionEnvdUploadRequestInit,
   summarizeSessionCreateMeta,
 } from "./App";
 import type { SessionRow } from "./lib/sessionState";
@@ -147,6 +149,26 @@ describe("SessionPage", () => {
     expect(html).toContain("Workspace Files");
     expect(html).toContain("The requested resource does not exist");
     expect(html).not.toContain("outer_sandbox_id");
+  });
+
+  it("builds session-scoped transfer requests without hardcoded scope headers", () => {
+    expect(
+      resolveSessionEnvdFileURL(
+        "session_abc",
+        "/workspace/hello world.txt",
+        "http://127.0.0.1:8080",
+      ),
+    ).toBe(
+      "http://127.0.0.1:8080/v1/acp/sessions/session_abc/envd/files?path=%2Fworkspace%2Fhello+world.txt",
+    );
+
+    const init = sessionEnvdUploadRequestInit(new Blob(["hello"]));
+    expect(init.method).toBe("POST");
+    expect(init.body).toBeInstanceOf(FormData);
+    expect(init.headers).toBeUndefined();
+    const headers = JSON.stringify(init.headers ?? {});
+    expect(headers).not.toContain("X-Tenant-ID");
+    expect(headers).not.toContain("X-Project-ID");
   });
 });
 

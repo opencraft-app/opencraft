@@ -496,6 +496,7 @@ export function App() {
             sessions,
             previousRows: conversationsRef.current,
             defaultCwd: ACP_RESTORE_ENVIRONMENT.cwd,
+            emptyDraftId: `conv-${crypto.randomUUID()}`,
             pendingOpenAfterList: pendingOpenAfterListRef.current,
             storedActiveSessionId: storedActiveSessionIdRef.current,
             activeConversationId: activeConversationRef.current,
@@ -1831,7 +1832,7 @@ function resolveWorkspaceTransferPath(value: string, fallbackFileName?: string) 
   return trimmed;
 }
 
-function resolveSessionEnvdFileURL(
+export function resolveSessionEnvdFileURL(
   sessionId: string | undefined,
   workspacePath: string,
   gatewayOverride?: string,
@@ -1847,6 +1848,16 @@ function resolveSessionEnvdFileURL(
   );
   url.searchParams.set("path", pathValue);
   return url.toString();
+}
+
+export function sessionEnvdUploadRequestInit(file: Blob): RequestInit {
+  const form = new FormData();
+  const filename = file instanceof File ? file.name : "upload";
+  form.append("file", file, filename);
+  return {
+    method: "POST",
+    body: form,
+  };
 }
 
 function fileNameFromWorkspacePath(pathValue: string) {
