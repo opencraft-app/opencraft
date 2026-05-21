@@ -33,6 +33,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/responses", s.handleCreateResponse)
 	mux.HandleFunc("GET /v1/responses/", s.handleGetResponse)
 	mux.HandleFunc("POST /v1/chat/completions", s.handleCreateChatCompletion)
+	mux.HandleFunc("/v1/acp/sessions/", s.handleSessionEnvdProxy)
 	mux.HandleFunc("/acp", s.handleRawACP)
 	mux.HandleFunc("/ws", s.handleAppWS)
 	return withCORS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -87,6 +88,10 @@ func (s *Server) handleRawACP(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleAppWS(w http.ResponseWriter, r *http.Request) {
 	s.acpGate.HandleAppWS(w, r)
+}
+
+func (s *Server) handleSessionEnvdProxy(w http.ResponseWriter, r *http.Request) {
+	s.acpGate.HandleSessionEnvdProxy(w, r)
 }
 
 func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
