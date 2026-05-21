@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+load_cloudagent_env() {
+  local caller_root="$1"
+  local repo_root
+  local candidate
+
+  repo_root="$(cd "$caller_root/.." && pwd)"
+
+  for candidate in "$repo_root/.env" "$caller_root/.env"; do
+    if [ -f "$candidate" ]; then
+      set -a
+      # shellcheck disable=SC1090
+      . "$candidate"
+      set +a
+      export CLOUDAGENT_ENV_FILE="$candidate"
+      return 0
+    fi
+  done
+
+  return 0
+}
