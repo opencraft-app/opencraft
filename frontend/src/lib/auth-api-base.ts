@@ -22,6 +22,8 @@ export const resolveConfiguredAuthApiBaseUrl = () => {
       || hostname === "www.lightclaw.tech"
       || hostname === "lightclaw.pages.dev"
       || hostname.endsWith(".lightclaw.pages.dev")
+      || hostname === "lightvela-intl.pages.dev"
+      || hostname.endsWith(".lightvela-intl.pages.dev")
     ) {
       return "https://lightclaw.tech";
     }
