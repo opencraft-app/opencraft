@@ -15,9 +15,10 @@
  * 注：AI 搭子当前仅保留 Soul（人设）浏览与抽卡能力。
  */
 
-import { AlertCircle, Check, Dice5, Download, ExternalLink, Loader2, RotateCcw, Sparkles, X, Zap } from "lucide-react";
+import { AlertCircle, AlertTriangle, Check, Dice5, Download, ExternalLink, Loader2, RotateCcw, Sparkles, Trash2, X, Zap } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { AnimatePresence, motion } from "framer-motion";
 import { useT } from "@/i18n/t";
 import { useRepositories } from "@/contexts/repository-context";
 import { useAsyncResource } from "@/services/use-async-resource";
@@ -402,6 +403,110 @@ export function BuddyPanel({
     });
   }, [selectedSlug, drawnSouls, botId, repositories, toast.kind, showToast, t]);
 
+  /**
+   * 清除 Bot 沙箱里当前的 SOUL.md（让 hermes-agent 回到无人设状态）。
+   * 删之前再备份一次到 `.soul-backups/<ts>.removed.md`，万一用户后悔可以手动恢复。
+   * - 没有 botId 或 sandbox 写入失败 → 静默忽略，前端 UI 自己清就够了
+   * - 有 botId 但 sandbox 调用失败 → console.error，不阻塞 UI 流程
+   */
+  const clearSandboxSoul = useCallback(async () => {
+    if (!botId) return;
+    const ts = new Date()
+      .toISOString()
+      .replace(/[:.]/g, "-")
+      .replace("T", "_")
+      .replace("Z", "");
+    // 防御性：ts 只含 [0-9_-]，避免未来上游污染导致 shell 注入
+    if (!/^[0-9_-]+$/.test(ts)) return;
+    const bash = [
+      "set -eo pipefail",
+      'WORKSPACE_DIR="${HOME}/.hermes"',
+      'BACKUP_DIR="$WORKSPACE_DIR/.soul-backups"',
+      'TARGET="$WORKSPACE_DIR/SOUL.md"',
+      // 只有 SOUL.md 存在且非空才走 backup → rm 流程，否则直接结束
+      'if [ -s "$TARGET" ]; then',
+      '  mkdir -p "$BACKUP_DIR"',
+      `  cp "$TARGET" "$BACKUP_DIR/${ts}.removed.md"`,
+      '  rm -f "$TARGET"',
+      "fi",
+    ].join("\n");
+    try {
+      const result = await repositories.bots.execDebugCommand(botId, bash);
+      if (result.exitCode !== 0) {
+        throw new Error(`exec exit ${result.exitCode}: ${result.output}`);
+      }
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("[buddy] clearSandboxSoul failed:", err);
+    }
+  }, [botId, repositories]);
+
+  /**
+   * 删除确认弹窗状态机：
+   * - idle：无弹窗
+   * - deleteOne：删除单张卡（带 slug，记是否已注入用于显示文案差异）
+   * - clearAll：清空全部已抽人设
+   */
+  type ConfirmState =
+    | { kind: "idle" }
+    | { kind: "deleteOne"; slug: string; soulName: string; isApplied: boolean }
+    | { kind: "clearAll"; hasApplied: boolean };
+  const [confirmState, setConfirmState] = useState<ConfirmState>({ kind: "idle" });
+
+  /**
+   * 删除单张抽到的人设（弹 confirm）。
+   * - 普通卡 / 已注入卡 都弹确认（"删除"是破坏性操作，统一加 confirm 更稳）
+   * - 真正执行落到 confirmDeleteOne
+   */
+  const handleDeleteOne = useCallback(
+    (slug: string) => {
+      const soul = drawnSouls.find((s) => s.slug === slug);
+      if (!soul) return;
+      setConfirmState({
+        kind: "deleteOne",
+        slug,
+        soulName: soul.displayName,
+        isApplied: slug === appliedSlug,
+      });
+    },
+    [drawnSouls, appliedSlug],
+  );
+
+  /** confirm 回调：真正执行单张删除。 */
+  const confirmDeleteOne = useCallback(
+    async (slug: string, isAppliedTarget: boolean) => {
+      setConfirmState({ kind: "idle" });
+      setDrawnSouls((prev) => prev.filter((s) => s.slug !== slug));
+      // applied/selected 的清理由 useEffect 自动处理（drawnSouls 变化触发）
+      if (isAppliedTarget) {
+        await clearSandboxSoul();
+      }
+    },
+    [clearSandboxSoul],
+  );
+
+  /**
+   * 清空全部已抽人设（弹 confirm）。
+   * - 真正执行落到 confirmClearAll
+   */
+  const handleClearAll = useCallback(() => {
+    if (drawnSouls.length === 0) return;
+    setConfirmState({ kind: "clearAll", hasApplied: !!appliedSlug });
+  }, [drawnSouls.length, appliedSlug]);
+
+  /** confirm 回调：真正清空。 */
+  const confirmClearAll = useCallback(
+    async (hadApplied: boolean) => {
+      setConfirmState({ kind: "idle" });
+      setDrawnSouls([]);
+      setSelectedSlug(null);
+      if (hadApplied) {
+        await clearSandboxSoul();
+      }
+    },
+    [clearSandboxSoul],
+  );
+
   const isApplied = selectedSlug !== null && selectedSlug === appliedSlug;
 
   return (
@@ -479,6 +584,7 @@ export function BuddyPanel({
             onClickFilled={handleToggleSelect}
             onClickEmpty={handleOpenDraw}
             onReroll={handleReroll}
+            onDelete={handleDeleteOne}
             canReroll={canReroll}
             selectedSlug={selectedSlug}
             appliedSlug={appliedSlug}
@@ -560,8 +666,24 @@ export function BuddyPanel({
           )}
         </div>
         {drawnSouls.length > 0 && (
-          <div className="absolute right-6 top-1/2 -translate-y-1/2">
+          <div className="absolute right-6 top-1/2 flex -translate-y-1/2 items-center gap-2">
             <ProgressChip drawn={drawnSouls.length} max={MAX_DRAWS} />
+            <button
+              type="button"
+              onClick={handleClearAll}
+              disabled={loadStatus !== "loaded"}
+              aria-label={t("清空所有已抽人设")}
+              title={t("清空全部")}
+              className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+              style={{
+                background: "rgba(220,38,38,0.06)",
+                color: "rgba(220,38,38,0.88)",
+                border: "1px solid rgba(220,38,38,0.16)",
+              }}
+            >
+              <Trash2 className="h-3 w-3" />
+              {t("清空")}
+            </button>
           </div>
         )}
       </div>
@@ -581,6 +703,40 @@ export function BuddyPanel({
       {previewSoulSlug && (
         <SoulPreviewModal slug={previewSoulSlug} onClose={() => setPreviewSoulSlug(null)} />
       )}
+
+      {/* 删除确认弹窗（视觉对齐 settings 页 _DeleteConfirmDialog） */}
+      <AnimatePresence>
+        {confirmState.kind === "deleteOne" && (
+          <ConfirmDialog
+            key="confirm-delete-one"
+            title={t("确认删除人设")}
+            message={
+              confirmState.isApplied
+                ? t("该人设已注入 Agent，删除会同时取消 Agent 当前人设，确认？")
+                : t("确定要从抽卡盘里删除「{{name}}」吗？此操作不可撤销。", {
+                  name: confirmState.soulName,
+                })
+            }
+            confirmLabel={t("确认删除")}
+            onCancel={() => setConfirmState({ kind: "idle" })}
+            onConfirm={() => confirmDeleteOne(confirmState.slug, confirmState.isApplied)}
+          />
+        )}
+        {confirmState.kind === "clearAll" && (
+          <ConfirmDialog
+            key="confirm-clear-all"
+            title={t("确认清空所有人设")}
+            message={
+              confirmState.hasApplied
+                ? t("将清空所有已抽人设，并取消 Agent 当前人设，此操作不可撤销。")
+                : t("将清空所有已抽人设，此操作不可撤销。")
+            }
+            confirmLabel={t("确认清空")}
+            onCancel={() => setConfirmState({ kind: "idle" })}
+            onConfirm={() => confirmClearAll(confirmState.hasApplied)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -680,6 +836,7 @@ function SoulSlotGrid({
   onClickFilled,
   onClickEmpty,
   onReroll,
+  onDelete,
   canReroll,
   selectedSlug,
   appliedSlug,
@@ -692,6 +849,7 @@ function SoulSlotGrid({
   onClickFilled: (slug: string) => void;
   onClickEmpty: () => void;
   onReroll: (slug: string) => void;
+  onDelete: (slug: string) => void;
   canReroll: boolean;
   selectedSlug: string | null;
   appliedSlug: string | null;
@@ -714,6 +872,7 @@ function SoulSlotGrid({
               applied={appliedSlug === soul.slug}
               onClick={() => onClickFilled(soul.slug)}
               onReroll={() => onReroll(soul.slug)}
+              onDelete={() => onDelete(soul.slug)}
               canReroll={canReroll}
               onPreview={() => onPreview(soul.slug)}
             />
@@ -731,6 +890,7 @@ function FilledSlot({
   applied,
   onClick,
   onReroll,
+  onDelete,
   canReroll,
   onPreview,
 }: {
@@ -739,6 +899,7 @@ function FilledSlot({
   applied: boolean;
   onClick: () => void;
   onReroll: () => void;
+  onDelete: () => void;
   canReroll: boolean;
   onPreview: () => void;
 }) {
@@ -782,7 +943,7 @@ function FilledSlot({
         </div>
       )}
 
-      {/* 右上角：选中态显示「勾」（SkillHub 同款黑底白勾），未选中显示「重抽」（hover 浮现） */}
+      {/* 右上角：选中态显示「勾」（SkillHub 同款黑底白勾），未选中显示「删除 + 重抽」（hover 浮现） */}
       {selected ? (
         <div
           className="pointer-events-none absolute right-1.5 top-1.5 inline-flex h-[18px] w-[18px] items-center justify-center rounded-full"
@@ -795,26 +956,47 @@ function FilledSlot({
           <Check className="h-2.5 w-2.5" strokeWidth={3} />
         </div>
       ) : (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            if (canReroll) onReroll();
-          }}
-          disabled={!canReroll}
-          aria-label={t("重新抽取这张人设")}
-          title={t("重新抽取")}
-          className="absolute right-2 top-2 inline-flex h-6 w-6 items-center justify-center rounded-full opacity-0 transition-opacity duration-150 hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100 disabled:cursor-not-allowed disabled:hover:opacity-50"
-          style={{
-            background: "rgba(255,255,255,0.92)",
-            color: "rgba(0,0,0,0.65)",
-            border: "1px solid rgba(0,0,0,0.06)",
-            boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
-            backdropFilter: "blur(4px)",
-          }}
-        >
-          <RotateCcw className="h-3 w-3" />
-        </button>
+        <div className="absolute right-2 top-2 flex items-center gap-1.5 opacity-0 transition-opacity duration-150 focus-within:opacity-100 group-hover:opacity-100">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+            aria-label={t("删除这张人设")}
+            title={t("删除")}
+            className="inline-flex h-6 w-6 items-center justify-center rounded-full"
+            style={{
+              background: "rgba(255,255,255,0.92)",
+              color: "rgba(220,38,38,0.88)",
+              border: "1px solid rgba(220,38,38,0.18)",
+              boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
+              backdropFilter: "blur(4px)",
+            }}
+          >
+            <Trash2 className="h-3 w-3" />
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (canReroll) onReroll();
+            }}
+            disabled={!canReroll}
+            aria-label={t("重新抽取这张人设")}
+            title={t("重新抽取")}
+            className="inline-flex h-6 w-6 items-center justify-center rounded-full disabled:cursor-not-allowed disabled:opacity-50"
+            style={{
+              background: "rgba(255,255,255,0.92)",
+              color: "rgba(0,0,0,0.65)",
+              border: "1px solid rgba(0,0,0,0.06)",
+              boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
+              backdropFilter: "blur(4px)",
+            }}
+          >
+            <RotateCcw className="h-3 w-3" />
+          </button>
+        </div>
       )}
     </div>
   );
@@ -997,5 +1179,94 @@ function UnauthorizedState() {
         {t("AI 搭子状态会同步到你的账号，跨设备可见")}
       </p>
     </div>
+  );
+}
+
+// ─── 删除确认弹窗 ─────────────────────────────────────────────────────────────
+// 视觉对齐 `openclaw-settings-page.tsx` 的 `_DeleteConfirmDialog`：
+//   - 半透明遮罩 + 8px 模糊
+//   - 圆角白色卡片 + AlertTriangle 红色图标 + 标题 + 说明 + 取消/确认按钮
+// 通过 `createPortal` 挂到 document.body，避免 panel 内嵌套定位影响
+//
+// onConfirm / onCancel 由调用方控制；本组件不持有状态，仅展示 + 转发事件。
+
+function ConfirmDialog({
+  title,
+  message,
+  confirmLabel,
+  onConfirm,
+  onCancel,
+}: {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const t = useT();
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      style={{
+        backgroundColor: "rgba(0,0,0,0.6)",
+        backdropFilter: "blur(8px)",
+        WebkitBackdropFilter: "blur(8px)",
+      }}
+      onClick={onCancel}
+      role="dialog"
+      aria-modal="true"
+    >
+      <motion.div
+        initial={{ opacity: 0, y: 20, scale: 0.95 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 20, scale: 0.95 }}
+        transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
+        className="relative mx-4 flex w-full max-w-sm flex-col items-center rounded-[1.75rem] border p-8 shadow-2xl"
+        style={{
+          background: "rgba(255,255,255,0.98)",
+          borderColor: "rgba(0,0,0,0.06)",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div
+          className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl"
+          style={{ background: "rgba(207,61,76,0.08)" }}
+        >
+          <AlertTriangle className="h-6 w-6" style={{ color: "#cf3d4c" }} />
+        </div>
+        <h3 className="mb-1.5 text-lg font-bold" style={{ color: "rgba(0,0,0,0.92)" }}>
+          {title}
+        </h3>
+        <p
+          className="mb-6 text-center text-sm leading-relaxed"
+          style={{ color: "rgba(0,0,0,0.65)" }}
+        >
+          {message}
+        </p>
+        <div className="flex w-full gap-3">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="flex-1 rounded-full border px-4 py-2.5 text-sm font-medium transition-colors hover:bg-[rgba(0,0,0,0.04)]"
+            style={{ borderColor: "rgba(0,0,0,0.08)", color: "#666" }}
+          >
+            {t("取消")}
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="flex-1 rounded-full px-4 py-2.5 text-sm font-bold text-white transition-colors hover:opacity-90"
+            style={{ background: "#cf3d4c" }}
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>,
+    document.body,
   );
 }

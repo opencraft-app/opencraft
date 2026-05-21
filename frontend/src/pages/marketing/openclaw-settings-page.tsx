@@ -3165,7 +3165,10 @@ export const OpenClawSettingsPage = () => {
                       { id: "channel", label: t("通道"), icon: <MessageCircle className="h-4 w-4" /> },
                       { id: "model", label: t("模型"), icon: <Sparkles className="h-4 w-4" /> },
                       { id: "skill", label: t("技能"), icon: <Wand2 className="h-4 w-4" /> },
-                      { id: "buddy", label: t("人设"), icon: <UserRound className="h-4 w-4" />, badge: "NEW" },
+                      // AI 搭子（人设抽卡）当前仅国内站上线；国际站隐藏入口
+                      ...(!isGlobal
+                        ? [{ id: "buddy" as const, label: t("人设"), icon: <UserRound className="h-4 w-4" />, badge: "NEW" }]
+                        : []),
                     ];
 
                     return (
@@ -3237,7 +3240,7 @@ export const OpenClawSettingsPage = () => {
                                 productConfig={sdkProductConfig}
                               />
                             )}
-                            {activeSection === "buddy" && (
+                            {activeSection === "buddy" && !isGlobal && (
                               <BuddyPanel botId={activeBot?.id ?? null} />
                             )}
                           </div>
