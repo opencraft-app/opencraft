@@ -106,13 +106,19 @@ def docker_build_command(target: ImageTarget, image: str, platform: str, build_a
     return cmd
 
 
+def docker_build_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env["DOCKER_BUILDKIT"] = "1"
+    return env
+
+
 def build_target(target: ImageTarget, tag: str, platform: str, push: bool, build_args: dict[str, str]) -> str:
     image = f"{target.image_repo}:{tag}"
     cmd = docker_build_command(target, image, platform, build_args)
     if build_args:
         rendered_args = " ".join(f"{key}={value}" for key, value in sorted(build_args.items()))
         print(f"docker build args: {rendered_args}")
-    subprocess.run(cmd, cwd=REPO_ROOT, check=True)
+    subprocess.run(cmd, cwd=REPO_ROOT, check=True, env=docker_build_env())
     if push:
         docker_login(target.image_repo)
         subprocess.run(["docker", "push", image], check=True)
