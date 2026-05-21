@@ -1586,12 +1586,8 @@ export function SessionPage({
     setTransferBusy(true);
     setTransferMessage("Uploading...");
     try {
-      const form = new FormData();
-      form.append("file", workspaceFile, workspaceFile.name);
       const response = await fetch(endpoint, {
-        method: "POST",
-        headers: DEFAULT_GATEWAY_IDENTITY_HEADERS,
-        body: form,
+        ...sessionEnvdUploadRequestInit(workspaceFile),
       });
       if (!response.ok) {
         const body = await response.text().catch(() => "");
@@ -1621,9 +1617,7 @@ export function SessionPage({
     setTransferBusy(true);
     setTransferMessage("Downloading...");
     try {
-      const response = await fetch(endpoint, {
-        headers: DEFAULT_GATEWAY_IDENTITY_HEADERS,
-      });
+      const response = await fetch(endpoint, sessionEnvdDownloadRequestInit());
       if (!response.ok) {
         const body = await response.text().catch(() => "");
         throw new Error(`HTTP ${response.status}${body ? ` ${body}` : ""}`);
@@ -1856,7 +1850,14 @@ export function sessionEnvdUploadRequestInit(file: Blob): RequestInit {
   form.append("file", file, filename);
   return {
     method: "POST",
+    headers: DEFAULT_GATEWAY_IDENTITY_HEADERS,
     body: form,
+  };
+}
+
+export function sessionEnvdDownloadRequestInit(): RequestInit {
+  return {
+    headers: DEFAULT_GATEWAY_IDENTITY_HEADERS,
   };
 }
 

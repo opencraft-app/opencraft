@@ -471,17 +471,26 @@ func (w *AgentSidecarWorker) EnsureSessionEnvdRuntime(ctx context.Context, runti
 	}
 	sb := runtimeOuterSandbox(runtime)
 	command := w.ensureInnerCommand(runtime, req.Force)
-	result, err := backend.client.RunCommand(ctx, sb, command, nil, nil, nil)
+	fmt.Fprintf(os.Stderr, "timeline source=go event=ensure_inner_envd_command_start mode=acp_session_runtime session_id=%s generation=%d outer_sandbox_id=%s force=%t has_inner_target=%t daemon_addr=%s\n", req.SessionID, req.Generation, runtime.OuterSandboxID, req.Force, runtime.hasInnerEnvdTarget(), quoteTimelineField(runtime.DaemonAddr))
+	result, err := backend.client.RunCommand(ctx, sb, command, nil, nil, func(text string) error {
+		logRemoteStderr(time.Now(), workerJob{JobID: "acp_ensure_inner", ResponseID: req.SessionID}, text)
+		return nil
+	})
 	if err != nil {
-		return ACPSessionRuntimeUpdate{}, fmt.Errorf("ensure inner envd session_id=%s generation=%d outer_sandbox_id=%s: %w", req.SessionID, req.Generation, runtime.OuterSandboxID, err)
+		detail := commandFailureDetail(err, result)
+		fmt.Fprintf(os.Stderr, "timeline source=go event=ensure_inner_envd_command_failed mode=acp_session_runtime session_id=%s generation=%d outer_sandbox_id=%s stdout_bytes=%d stderr_bytes=%d error=%s\n", req.SessionID, req.Generation, runtime.OuterSandboxID, len(result.Stdout), len(result.Stderr), quoteTimelineField(detail))
+		return ACPSessionRuntimeUpdate{}, fmt.Errorf("ensure inner envd session_id=%s generation=%d outer_sandbox_id=%s: %s", req.SessionID, req.Generation, runtime.OuterSandboxID, detail)
 	}
 	var response sidecarEnsureInnerResponse
 	if err := json.Unmarshal([]byte(strings.TrimSpace(result.Stdout)), &response); err != nil {
+		fmt.Fprintf(os.Stderr, "timeline source=go event=ensure_inner_envd_parse_failed mode=acp_session_runtime session_id=%s generation=%d outer_sandbox_id=%s stdout_bytes=%d stderr_bytes=%d error=%s\n", req.SessionID, req.Generation, runtime.OuterSandboxID, len(result.Stdout), len(result.Stderr), quoteTimelineField(err.Error()))
 		return ACPSessionRuntimeUpdate{}, fmt.Errorf("parse ensure inner envd response session_id=%s generation=%d: %w stdout_bytes=%d", req.SessionID, req.Generation, err, len(result.Stdout))
 	}
 	if response.InnerSandboxID == "" || response.InnerSandboxDomain == "" || response.InnerEnvdAccessToken == "" {
+		fmt.Fprintf(os.Stderr, "timeline source=go event=ensure_inner_envd_incomplete mode=acp_session_runtime session_id=%s generation=%d outer_sandbox_id=%s inner_sandbox_id=%s domain_set=%t token_set=%t\n", req.SessionID, req.Generation, runtime.OuterSandboxID, quoteTimelineField(response.InnerSandboxID), response.InnerSandboxDomain != "", response.InnerEnvdAccessToken != "")
 		return ACPSessionRuntimeUpdate{}, fmt.Errorf("ensure inner envd returned incomplete identity session_id=%s generation=%d inner_sandbox_id=%q domain_set=%t token_set=%t", req.SessionID, req.Generation, response.InnerSandboxID, response.InnerSandboxDomain != "", response.InnerEnvdAccessToken != "")
 	}
+	fmt.Fprintf(os.Stderr, "timeline source=go event=ensure_inner_envd_command_done mode=acp_session_runtime session_id=%s generation=%d outer_sandbox_id=%s inner_sandbox_id=%s stdout_bytes=%d stderr_bytes=%d\n", req.SessionID, req.Generation, runtime.OuterSandboxID, response.InnerSandboxID, len(result.Stdout), len(result.Stderr))
 	return ACPSessionRuntimeUpdate{
 		InnerSandboxID:       response.InnerSandboxID,
 		InnerSandboxDomain:   response.InnerSandboxDomain,
@@ -794,6 +803,37 @@ func stripWrapperControlLines(stdout string) string {
 		lines = append(lines, line)
 	}
 	return strings.TrimSpace(strings.Join(lines, "\n"))
+}
+
+func commandFailureDetail(err error, result CommandResult) string {
+	if err == nil {
+		return ""
+	}
+	parts := []string{err.Error()}
+	if stderr := commandOutputTail(result.Stderr, 2000); stderr != "" {
+		parts = append(parts, "stderr="+fmt.Sprintf("%q", redactCommandOutput(stderr)))
+	}
+	if stdout := commandOutputTail(result.Stdout, 2000); stdout != "" {
+		parts = append(parts, "stdout="+fmt.Sprintf("%q", redactCommandOutput(stdout)))
+	}
+	return strings.Join(parts, " ")
+}
+
+func commandOutputTail(value string, limit int) string {
+	value = strings.TrimSpace(value)
+	if value == "" || limit <= 0 {
+		return ""
+	}
+	if len(value) <= limit {
+		return value
+	}
+	return "...[truncated]\n" + value[len(value)-limit:]
+}
+
+var commandOutputSensitivePattern = regexp.MustCompile(`(?i)(envd_access_token|traffic_access_token|api[_-]?key|access[_-]?token)(["'=:\s]+)([^"',\s}]+)`)
+
+func redactCommandOutput(value string) string {
+	return commandOutputSensitivePattern.ReplaceAllString(value, `$1$2<redacted>`)
 }
 
 func (w *AgentSidecarWorker) Run(ctx context.Context, job workerJob, emit func(workerEvent) error) (workerResult, error) {

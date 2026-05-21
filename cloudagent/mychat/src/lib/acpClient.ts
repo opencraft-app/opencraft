@@ -199,8 +199,8 @@ export interface AcpClientOptions {
 }
 
 export const DEFAULT_GATEWAY_IDENTITY_HEADERS = {
-  "X-Tenant-ID": "default",
-  "X-Project-ID": "default",
+  "X-Tenant-ID": "tenant-live",
+  "X-Project-ID": "project-live",
 };
 
 type AcpTransportMode = "app" | "raw";

@@ -1,6 +1,7 @@
 package wrapper
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -118,6 +119,22 @@ func TestStripWrapperControlLinesPreventsResultLeak(t *testing.T) {
 	raw := "noise\nWRAPPER_EVENT_JSON={\"type\":\"output_text_delta\",\"delta\":\"x\"}\nWRAPPER_RESULT_JSON={\"output_text\":\"\"}\nWRAPPER_ERROR_JSON={\"message\":\"boom\"}\n"
 	if got := stripWrapperControlLines(raw); got != "noise" {
 		t.Fatalf("stripWrapperControlLines returned %q", got)
+	}
+}
+
+func TestCommandFailureDetailIncludesRedactedOutput(t *testing.T) {
+	got := commandFailureDetail(errors.New("exit status 1"), CommandResult{
+		Stderr: `daemon /ensure-inner failed: HTTP 500: {"error":"boom","envd_access_token":"secret"}`,
+		Stdout: `{"api_key":"secret","ok":false}`,
+	})
+	if !strings.Contains(got, "exit status 1") || !strings.Contains(got, "stderr=") || !strings.Contains(got, "stdout=") {
+		t.Fatalf("missing failure detail: %s", got)
+	}
+	if strings.Contains(got, "secret") {
+		t.Fatalf("failure detail leaked secret: %s", got)
+	}
+	if !strings.Contains(got, "<redacted>") {
+		t.Fatalf("failure detail did not redact: %s", got)
 	}
 }
 
