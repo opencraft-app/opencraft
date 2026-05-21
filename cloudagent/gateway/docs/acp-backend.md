@@ -430,8 +430,10 @@ ws.onopen = async () => {
 MyChat 可以直接打开：
 
 ```text
-http://127.0.0.1:5173/?acp_url=ws%3A%2F%2F127.0.0.1%3A18094%2Facp
+http://127.0.0.1:5173/
 ```
+
+默认会连接 `http://cloudagent.lightvela.com`。本地 gateway 调试时再用 `?acp_url=...` 覆盖。
 
 接入检查：
 

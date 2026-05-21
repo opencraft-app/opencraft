@@ -13,13 +13,13 @@ CloudAgent is an experimental agent runtime monorepo. The current focus is an AC
 The current Beijing cloud deployment is:
 
 ```text
-http://101.42.117.125:8080
+http://cloudagent.lightvela.com
 ```
 
 Raw ACP WebSocket endpoint:
 
 ```text
-ws://101.42.117.125:8080/acp
+ws://cloudagent.lightvela.com/acp
 ```
 
 `18094` is the local development port. The cloud service listens on `8080`.
@@ -34,16 +34,16 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-Open MyChat against the current cloud ACP backend:
+Open MyChat. It uses the current cloud ACP backend by default:
 
 ```text
-http://127.0.0.1:5173/?acp_url=ws%3A%2F%2F101.42.117.125%3A8080%2Facp
+http://127.0.0.1:5173/
 ```
 
-Equivalent unencoded form:
+Equivalent default gateway base:
 
 ```text
-http://127.0.0.1:5173/?acp_url=http://101.42.117.125:8080/acp
+http://cloudagent.lightvela.com
 ```
 
 If you open the URL from another machine, `127.0.0.1:5173` means that machine itself. Start `mychat` on that machine, or expose the frontend through a reachable host.
@@ -53,7 +53,7 @@ If you open the URL from another machine, `127.0.0.1:5173` means that machine it
 For the raw ACP WebSocket debug endpoint, no header is required:
 
 ```text
-ws://101.42.117.125:8080/acp
+ws://cloudagent.lightvela.com/acp
 ```
 
 When no identity header is provided, the backend falls back to its configured default scope:
@@ -81,13 +81,13 @@ HTTP APIs such as `/v1/models`, `/v1/files`, `/v1/responses`, and `/v1/chat/comp
 ```bash
 curl -sS \
   -H 'Authorization: Bearer smoke-key' \
-  http://101.42.117.125:8080/v1/models
+  http://cloudagent.lightvela.com/v1/models
 ```
 
 File upload example:
 
 ```bash
-curl -sS -X POST http://101.42.117.125:8080/v1/files \
+curl -sS -X POST http://cloudagent.lightvela.com/v1/files \
   -H 'Authorization: Bearer smoke-key' \
   -F purpose=assistants \
   -F file=@./README.md
@@ -102,7 +102,7 @@ Do not put Tencent Cloud secrets, TokenHub keys, or AGS keys in the frontend.
 Connect to:
 
 ```text
-ws://101.42.117.125:8080/acp
+ws://cloudagent.lightvela.com/acp
 ```
 
 Initialize:

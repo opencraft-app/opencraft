@@ -27,11 +27,13 @@ Run the frontend:
 pnpm dev --host 127.0.0.1
 ```
 
-When using `gateway` directly, open:
+By default, MyChat connects to `http://cloudagent.lightvela.com`. Open:
 
 ```text
-http://127.0.0.1:5173/?acp_url=http://127.0.0.1:18094/acp
+http://127.0.0.1:5173/
 ```
+
+When targeting a local gateway, override it with `?acp_url=http://127.0.0.1:18094/acp`.
 
 Run the optional Go gateway:
 
