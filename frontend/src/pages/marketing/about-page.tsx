@@ -445,7 +445,9 @@ function HighlightSection() {
         style={{
           position: "relative",
           zIndex: 3,
-          maxWidth: "780px",
+          width: "max-content",
+          maxWidth: "95vw",
+          fontFamily: "'Yozai', var(--font-heading)",
           fontSize: "clamp(20px, 3.2vw, 36px)",
           fontWeight: 400,
           color: "#1a1a1a",
@@ -455,7 +457,9 @@ function HighlightSection() {
           margin: 0,
         }}
       >
-        {t("我们把 AI Agent 搬上云端，让你无需折腾部署，随时唤醒，对话数据永远只属于你。")}
+        {t("我们让 AI Agent 在云端为你待命，随时召之即来。")}
+        <br />
+        {t("你的每一次对话，都只属于你自己。")}
       </motion.h3>
 
       {/* 找到我们按钮 + 悬浮二维码 */}
