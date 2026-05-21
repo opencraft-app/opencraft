@@ -10,7 +10,6 @@ if str(RUNTIME_DIR) not in sys.path:
 
 from contracts.build_release_image import (  # noqa: E402
     docker_build_command,
-    docker_build_env,
     playground_frontend_auth_api_base_url,
     resolve_docker_build_args,
 )
@@ -55,10 +54,6 @@ class BuildReleaseImageTests(unittest.TestCase):
         self.assertIn("--build-arg", command)
         self.assertIn("VITE_AUTH_API_BASE_URL=https://api-sandbox-bj-7.lightclaw.tech", command)
         self.assertEqual(command[-1], "frontend")
-
-    def test_docker_build_env_enables_buildkit(self) -> None:
-        self.assertEqual(docker_build_env()["DOCKER_BUILDKIT"], "1")
-
 
 if __name__ == "__main__":
     unittest.main()

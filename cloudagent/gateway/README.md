@@ -83,7 +83,7 @@ CN_MIRRORS=0 make hermes-sidecar-linux
 
 ## 镜像构建
 
-`build/server/Dockerfile` 使用 Dockerfile cache mount 语法，CI 和本地 `docker build` 都需要启用 BuildKit。
+`build/server/Dockerfile` 需要保持 legacy Docker builder 兼容。当前蓝盾 runner 没有可用 buildx，不要在这个 Dockerfile 里加入 cache mount 等 BuildKit-only 语法，除非先升级 runner 构建能力。
 
 也可以单独覆盖：
 
