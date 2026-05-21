@@ -136,6 +136,4 @@ After access succeeds, the WeChat bot can receive and reply to basic text messag
     
 - [Configure Channel - Discord](./configuration/channel-discord.md) — Community operations, developer communities, and interest-group interactions
     
-- [Configure Channel - Slack](./configuration/channel-slack.md) — Workplace collaboration, team notifications, and workflow automation
-    
 - [Configure Skills](./configuration/skill.md) — Extend Hermes capabilities

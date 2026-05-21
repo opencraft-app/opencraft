@@ -92,7 +92,7 @@ LightVela 主要服务国际用户，Google / GitHub一键登录覆盖面最广�
 
 ## 通道相关
 
-### WeChat、Telegram、WhatsApp、Discord、Slack 能否同时接入
+### WeChat、Telegram、WhatsApp、Discord 能否同时接入
 
 可以。多个通道指向同一个 Hermes 实例，共享记忆与 Agent 行为。
 

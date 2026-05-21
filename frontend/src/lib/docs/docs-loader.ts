@@ -59,23 +59,37 @@ export function getDocBySlug(slug: string, locale?: string): string | null {
 
 /**
  * 把 markdown 里的本地图片路径改写为 Vite 构建后的 URL。
- * 识别 `./images/xxx`、`../images/xxx`、`images/xxx` 三种写法。
+ * 识别 `![](./images/xxx)`、`![](../images/xxx)`、`![](images/xxx)` 三种写法，
+ * 以及内联 HTML `<img src="../images/xxx" ...>`（用于需要 width 等属性的场景）。
  * 英文环境下若存在同名 `-en` 图片，则只替换英文版图片，中文版仍使用原图。
  */
 export function rewriteImagePaths(md: string, locale?: string): string {
-  return md.replace(
-    /!\[([^\]]*)\]\((?:\.\/|\.\.\/)?images\/([^)]+)\)/g,
-    (match, alt: string, fname: string) => {
-      const key = `/src/content/docs/images/${fname}`;
-      const localizedName = locale?.startsWith("en")
-        ? fname.replace(/(\.[^.]+)$/, "-en$1")
-        : fname;
-      const localizedKey = `/src/content/docs/images/${localizedName}`;
-      const url = imageUrls[localizedKey] ?? imageUrls[key];
-      if (!url) return match; // 找不到的保留原样，方便排查
-      return `![${alt}](${url})`;
-    },
-  );
+  const resolveUrl = (fname: string): string | undefined => {
+    const key = `/src/content/docs/images/${fname}`;
+    const localizedName = locale?.startsWith("en")
+      ? fname.replace(/(\.[^.]+)$/, "-en$1")
+      : fname;
+    const localizedKey = `/src/content/docs/images/${localizedName}`;
+    return imageUrls[localizedKey] ?? imageUrls[key];
+  };
+
+  return md
+    .replace(
+      /!\[([^\]]*)\]\((?:\.\/|\.\.\/)?images\/([^)]+)\)/g,
+      (match, alt: string, fname: string) => {
+        const url = resolveUrl(fname);
+        if (!url) return match; // 找不到的保留原样，方便排查
+        return `![${alt}](${url})`;
+      },
+    )
+    .replace(
+      /<img\b([^>]*?)\bsrc="(?:\.\/|\.\.\/)?images\/([^"]+)"([^>]*)>/g,
+      (match, before: string, fname: string, after: string) => {
+        const url = resolveUrl(fname);
+        if (!url) return match;
+        return `<img${before}src="${url}"${after}>`;
+      },
+    );
 }
 
 /**
