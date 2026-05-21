@@ -9,6 +9,7 @@ import {
   parseSessionCreateMetaJSON,
   resolveInitialGatewayURL,
   resolveSessionEnvdFileURL,
+  sessionEnvdDownloadRequestInit,
   sessionEnvdUploadRequestInit,
   summarizeSessionCreateMeta,
 } from "./App";
@@ -151,7 +152,7 @@ describe("SessionPage", () => {
     expect(html).not.toContain("outer_sandbox_id");
   });
 
-  it("builds session-scoped transfer requests without hardcoded scope headers", () => {
+  it("builds session-scoped transfer requests with default scope headers", () => {
     expect(
       resolveSessionEnvdFileURL(
         "session_abc",
@@ -165,10 +166,15 @@ describe("SessionPage", () => {
     const init = sessionEnvdUploadRequestInit(new Blob(["hello"]));
     expect(init.method).toBe("POST");
     expect(init.body).toBeInstanceOf(FormData);
-    expect(init.headers).toBeUndefined();
-    const headers = JSON.stringify(init.headers ?? {});
-    expect(headers).not.toContain("X-Tenant-ID");
-    expect(headers).not.toContain("X-Project-ID");
+    expect(init.headers).toMatchObject({
+      "X-Tenant-ID": "tenant-live",
+      "X-Project-ID": "project-live",
+    });
+
+    expect(sessionEnvdDownloadRequestInit().headers).toMatchObject({
+      "X-Tenant-ID": "tenant-live",
+      "X-Project-ID": "project-live",
+    });
   });
 });
 
