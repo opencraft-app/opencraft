@@ -206,6 +206,4 @@ When this happens, check the model configuration again.
     
 - [Configure Channel - Discord](./configuration/channel-discord.md)
     
-- [Configure Channel - Slack](./configuration/channel-slack.md)
-    
 - [Configure Skills](./configuration/skill.md)
