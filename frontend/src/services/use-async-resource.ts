@@ -19,6 +19,7 @@ export const useAsyncResource = <T,>(
   const requestIdRef = useRef(0);
 
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
       mountedRef.current = false;
     };
