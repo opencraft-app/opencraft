@@ -11,7 +11,7 @@ import (
 const (
 	defaultAddr          = ":8080"
 	defaultMaxKeys       = 5000
-	defaultMaxKeyBytes   = 5000
+	defaultMaxNameBytes  = 128
 	defaultMaxValueBytes = 5000
 	defaultRedisTimeout  = 2 * time.Second
 )
@@ -25,7 +25,7 @@ type Config struct {
 	RedisTimeout         time.Duration
 	InternalServiceToken string
 	MaxKeysPerUser       int
-	MaxKeyBytes          int
+	MaxNameBytes         int
 	MaxValueBytes        int
 }
 
@@ -37,7 +37,7 @@ func FromEnv() (Config, error) {
 		RedisPassword:  getEnv("VIBEBASE_REDIS_PASSWORD", os.Getenv("REDIS_PASSWORD")),
 		RedisTimeout:   defaultRedisTimeout,
 		MaxKeysPerUser: defaultMaxKeys,
-		MaxKeyBytes:    defaultMaxKeyBytes,
+		MaxNameBytes:   defaultMaxNameBytes,
 		MaxValueBytes:  defaultMaxValueBytes,
 	}
 	cfg.InternalServiceToken = strings.TrimSpace(os.Getenv("VIBEBASE_INTERNAL_SERVICE_TOKEN"))
@@ -55,7 +55,7 @@ func FromEnv() (Config, error) {
 	if cfg.MaxKeysPerUser, err = getInt("VIBEBASE_MAX_KEYS_PER_USER", defaultMaxKeys); err != nil {
 		return Config{}, err
 	}
-	if cfg.MaxKeyBytes, err = getInt("VIBEBASE_MAX_KEY_BYTES", defaultMaxKeyBytes); err != nil {
+	if cfg.MaxNameBytes, err = getMaxNameBytes(); err != nil {
 		return Config{}, err
 	}
 	if cfg.MaxValueBytes, err = getInt("VIBEBASE_MAX_VALUE_BYTES", defaultMaxValueBytes); err != nil {
@@ -68,7 +68,7 @@ func FromEnv() (Config, error) {
 		}
 		cfg.RedisTimeout = timeout
 	}
-	if cfg.MaxKeysPerUser <= 0 || cfg.MaxKeyBytes <= 0 || cfg.MaxValueBytes <= 0 || cfg.RedisTimeout <= 0 {
+	if cfg.MaxKeysPerUser <= 0 || cfg.MaxNameBytes <= 0 || cfg.MaxValueBytes <= 0 || cfg.RedisTimeout <= 0 {
 		return Config{}, fmt.Errorf("limits and timeouts must be positive")
 	}
 	return cfg, nil
@@ -79,6 +79,17 @@ func getEnv(key string, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func getMaxNameBytes() (int, error) {
+	if raw := strings.TrimSpace(os.Getenv("VIBEBASE_MAX_NAME_BYTES")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil {
+			return 0, fmt.Errorf("VIBEBASE_MAX_NAME_BYTES: %w", err)
+		}
+		return value, nil
+	}
+	return getInt("VIBEBASE_MAX_KEY_BYTES", defaultMaxNameBytes)
 }
 
 func getInt(key string, fallback int) (int, error) {

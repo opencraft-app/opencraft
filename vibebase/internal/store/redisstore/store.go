@@ -2,9 +2,7 @@ package redisstore
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -183,41 +181,52 @@ type redisKeySet struct {
 }
 
 func redisKeys(ownerID string, namespace string, key string) redisKeySet {
-	ownerHash := digest(ownerID)
-	namespaceHash := digest(namespace)
-	entryHash := digest(namespace + "\x00" + key)
-	member := zsetMember(namespace, key, entryHash)
+	ownerTag := "uid:" + redisKeyEscape(ownerID)
+	namespaceEscaped := redisKeyEscape(namespace)
+	keyEscaped := redisKeyEscape(key)
+	member := zsetMember(namespace, key)
 	return redisKeySet{
-		owner:     ownerHash,
+		owner:     ownerTag,
 		member:    member,
-		global:    "vibebase:user:{" + ownerHash + "}:keys",
-		namespace: "vibebase:user:{" + ownerHash + "}:ns:" + namespaceHash + ":keys",
-		item:      itemKeyByOwnerHash(ownerHash, entryHash),
+		global:    "vibebase:user:{" + ownerTag + "}:keys",
+		namespace: "vibebase:user:{" + ownerTag + "}:ns:" + namespaceEscaped + ":keys",
+		item:      itemKeyByOwnerTag(ownerTag, namespaceEscaped, keyEscaped),
 	}
 }
 
 func itemKey(ownerID string, member string) string {
-	return itemKeyByOwnerHash(digest(ownerID), entryHashFromMember(member))
+	namespace, key := namespaceAndKeyFromMember(member)
+	return itemKeyByOwnerTag("uid:"+redisKeyEscape(ownerID), redisKeyEscape(namespace), redisKeyEscape(key))
 }
 
-func itemKeyByOwnerHash(ownerHash string, entryHash string) string {
-	return "vibebase:item:{" + ownerHash + "}:" + entryHash
+func itemKeyByOwnerTag(ownerTag string, namespace string, key string) string {
+	return "vibebase:item:{" + ownerTag + "}:ns:" + namespace + ":key:" + key
 }
 
-func zsetMember(namespace string, key string, entryHash string) string {
-	return namespace + "\x00" + key + "\x00" + entryHash
+func zsetMember(namespace string, key string) string {
+	return namespace + "\x00" + key
 }
 
-func entryHashFromMember(member string) string {
-	if idx := strings.LastIndex(member, "\x00"); idx >= 0 && idx+1 < len(member) {
-		return member[idx+1:]
+func namespaceAndKeyFromMember(member string) (string, string) {
+	namespace, key, ok := strings.Cut(member, "\x00")
+	if !ok {
+		return "", member
 	}
-	return member
+	return namespace, key
 }
 
-func digest(value string) string {
-	sum := sha256.Sum256([]byte(value))
-	return hex.EncodeToString(sum[:])
+func redisKeyEscape(value string) string {
+	var b strings.Builder
+	b.Grow(len(value))
+	for i := 0; i < len(value); i++ {
+		c := value[i]
+		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~' {
+			b.WriteByte(c)
+			continue
+		}
+		b.WriteString(fmt.Sprintf("%%%02X", c))
+	}
+	return b.String()
 }
 
 func entryFromHash(values map[string]string) (store.Entry, error) {
