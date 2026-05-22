@@ -113,6 +113,14 @@ const iconMap: Record<IconKey, React.ReactNode> = {
 /**
  * 将后端 Bundle 映射成前端 PlanInfo。
  * 接收 t 函数以确保所有用户可见文案都走 i18n。
+ *
+ * 后端 bundle_name / description.Key 目前返回的是中文（或中英混排）原文，
+ * 这里一律交给 t() 按当前 locale 查字典：
+ *   - zh-CN：字典里中文翻译与原文一致，回显原文
+ *   - en-US：字典里填入对应英文（如 `启航 Launch` → Launch）
+ *   - 字典未命中：t() 内部会回显中文原文，不会白屏
+ * 如此中英切换、国际站中文模式都能交给 i18n 运行时自然处理，
+ * 后续后端支持国际化字段后只要后端返中文、前端不需任何改动。
  */
 const iconForKey = (key: string): React.ReactNode => {
   const k = key.toLowerCase();
@@ -124,7 +132,23 @@ const iconForKey = (key: string): React.ReactNode => {
   return iconMap.check;
 };
 
+/**
+ * i18n 静态标记块：后端返回的 bundle_name 与 description.Key 是动态字符串，
+ * extract 脚本只能扫到 `t("...")` 字面量调用，无法跟踪 `t(bundle.bundle_name)`。
+ * 这里把后端目前会下发的中文原文静态列举出来，仅供脚本扫描使用：
+ *   - 运行时 void 调用一次，结果丢弃，不影响逻辑
+ *   - 后续后端返回字串变化时，只需同步更新本表
+ */
+const __markBundleBackendStringsForI18n = (t: (zh: string, opts?: Record<string, unknown>) => string): void => {
+  /* bundle_name */
+  void t("启航 Launch");
+  /* description.Key */
+  void t("7*24小时在线");
+};
+
 const mapBundleToPlan = (bundle: Bundle, index: number, t: (zh: string, opts?: Record<string, unknown>) => string): PlanInfo => {
+  /* 静态标记，运行时一次性调用以让字典加载后端下发中文的翻译 */
+  __markBundleBackendStringsForI18n(t);
   const features: PlanFeature[] = [];
 
   /* agent_quota 打头阵 */
@@ -137,24 +161,28 @@ const mapBundleToPlan = (bundle: Bundle, index: number, t: (zh: string, opts?: R
   let storageFeature: PlanFeature | null = null;
   const otherFeatures: PlanFeature[] = [];
   for (const entry of bundle.description ?? []) {
-    const k = (entry.Key ?? "").toLowerCase();
+    const rawKey = entry.Key ?? "";
+    const k = rawKey.toLowerCase();
     if (k.includes("agent") || k.includes("积分") || k.includes("credit")) continue;
-/* 「独立环境」统一前端展示规格，避免后端 Value 为空导致卡片露馅 */
-    if (entry.Key === "独立环境") {
-      envFeature = { icon: iconForKey(entry.Key), label: t("独立环境"), value: t("2核 4G 内存") };
+    /* 统一走 i18n 字典：当前语言是 en-US 则查英文，zh-CN 则回显原文。
+       动态参数 extract 脚本扫不到，为此在 __markBundleBackendStringsForI18n 中静态列举。 */
+    const label = t(rawKey);
+    /* 「独立环境」统一前端展示规格，避免后端 Value 为空导致卡片露馅 */
+    if (rawKey === "独立环境") {
+      envFeature = { icon: iconForKey(rawKey), label, value: t("2核 4G 内存") };
       continue;
     }
     /* 「专属云端存储」前端统一展示容量，避免后端缺值 */
-    if (entry.Key === "专属云端存储") {
-      storageFeature = { icon: iconMap.hardDrive, label: t("专属云端存储"), value: "50G" };
+    if (rawKey === "专属云端存储") {
+      storageFeature = { icon: iconMap.hardDrive, label, value: "50G" };
       continue;
     }
     /* 后端 Value 为空时，用右侧勾替代，避免卡片右侧空白 */
     if (!entry.Value) {
-      otherFeatures.push({ icon: iconForKey(entry.Key), label: t(entry.Key), hasCheck: true });
+      otherFeatures.push({ icon: iconForKey(rawKey), label, hasCheck: true });
       continue;
     }
-    otherFeatures.push({ icon: iconForKey(entry.Key), label: t(entry.Key), value: entry.Value });
+    otherFeatures.push({ icon: iconForKey(rawKey), label, value: entry.Value });
   }
   /* 顺序：独立环境 → 专属云端存储 → 模型积分 → 其他描述项 */
   if (envFeature) features.push(envFeature);
@@ -189,6 +217,8 @@ const mapBundleToPlan = (bundle: Bundle, index: number, t: (zh: string, opts?: R
 
   return {
     id: bundle.bundle_id,
+    /* 统一走 i18n 字典：当前语言是 en-US 则查英文（如 `启航 Launch` → Launch），
+       zh-CN 则回显后端原文。 */
     name: t(bundle.bundle_name),
     badge: soldOut ? t("已售罄") : undefined,
     badgeStyle: soldOut ? "tag" : undefined,
