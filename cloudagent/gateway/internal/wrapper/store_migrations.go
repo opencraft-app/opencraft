@@ -130,7 +130,10 @@ func migrateStore(db *sql.DB) error {
 			session_id TEXT NOT NULL,
 			generation INTEGER NOT NULL,
 			sandbox_backend TEXT NOT NULL DEFAULT '',
-			sandbox_template_id TEXT NOT NULL DEFAULT '',
+			agent_version TEXT NOT NULL DEFAULT '',
+			agent_template_id TEXT NOT NULL DEFAULT '',
+			workspace_version TEXT NOT NULL DEFAULT '',
+			workspace_template_id TEXT NOT NULL DEFAULT '',
 			runtime_id TEXT NOT NULL DEFAULT '',
 			outer_sandbox_id TEXT NOT NULL DEFAULT '',
 			outer_sandbox_domain TEXT NOT NULL DEFAULT '',
@@ -156,7 +159,10 @@ func migrateStore(db *sql.DB) error {
 	}
 	for _, stmt := range []string{
 		`ALTER TABLE session_runtimes ADD COLUMN sandbox_backend TEXT NOT NULL DEFAULT ''`,
-		`ALTER TABLE session_runtimes ADD COLUMN sandbox_template_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE session_runtimes ADD COLUMN agent_version TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE session_runtimes ADD COLUMN agent_template_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE session_runtimes ADD COLUMN workspace_version TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE session_runtimes ADD COLUMN workspace_template_id TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE session_runtimes ADD COLUMN inner_sandbox_domain TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE session_runtimes ADD COLUMN inner_envd_access_token TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE session_runtimes ADD COLUMN session_proxy_id TEXT NOT NULL DEFAULT ''`,

@@ -4,7 +4,7 @@
 
 1. 本地 Go HTTP server 接收 `/v1/responses`、`/v1/files`
 2. 创建外层腾讯云 AGS sandbox
-3. 外层下载并运行 Hermes Rust sidecar
+3. 外层下载并运行 CloudAgent Rust sidecar
 4. sidecar 内部直接跑 Hermes，会在首次工具调用时自动创建一个会话级内层 AGS sandbox
 5. Hermes 以这个 inner sandbox 作为整个会话的 workspace；长时记忆仍保留在外层运行环境，不会复制 `MEMORY.md` / `USER.md` 到 inner sandbox
 
@@ -28,7 +28,7 @@
 1. 浏览器或客户端连到 wrapper 的 `/ws` 或 `/acp`
 2. wrapper 在内存里维护 ACP `sessionId`
 3. `session/prompt` 会调用现有 `Worker.Run(...)`
-4. 后端继续进入 AGS sandbox + Hermes sidecar
+4. 后端继续进入 AGS sandbox + CloudAgent sidecar
 
 第一阶段已实现的 ACP 能力：
 
@@ -66,23 +66,23 @@
 
 ## 中国网络加速
 
-默认 `make hermes-sidecar-linux` / `make e2e-agent-sidecar` 会带上适合中国网络的构建参数：
+默认 `make cloudagent-sidecar-linux` / `make e2e-agent-sidecar` 会带上适合中国网络的构建参数：
 
 - `CN_MIRRORS=1`
-- Hermes Rust sidecar: `rsproxy.cn` 作为 cargo mirror，`CARGO_HTTP_MULTIPLEXING=false` 降低 HTTP/2 抖动
+- CloudAgent Rust sidecar: `rsproxy.cn` 作为 cargo mirror，`CARGO_HTTP_MULTIPLEXING=false` 降低 HTTP/2 抖动
 - Dockerfile 里的 Debian `apt` 源默认改成清华镜像 `mirrors.tuna.tsinghua.edu.cn`
 
 首次拉基础镜像这一步仍然取决于你的 Docker daemon。最稳妥的是给 Docker 自己配 `registry-mirrors`，或者显式覆盖基础镜像：
 
 ```bash
-HERMES_SIDECAR_RUST_BASE_IMAGE='docker.m.daocloud.io/library/rust:1.86-bookworm' \
-make hermes-sidecar-linux
+CLOUDAGENT_SIDECAR_RUST_BASE_IMAGE='docker.m.daocloud.io/library/rust:1.86-bookworm' \
+make cloudagent-sidecar-linux
 ```
 
 如果你不想用这些国内默认值，可以显式关闭：
 
 ```bash
-CN_MIRRORS=0 make hermes-sidecar-linux
+CN_MIRRORS=0 make cloudagent-sidecar-linux
 ```
 
 ## 镜像构建
@@ -92,29 +92,29 @@ CN_MIRRORS=0 make hermes-sidecar-linux
 也可以单独覆盖：
 
 ```bash
-HERMES_SIDECAR_CARGO_REGISTRY_MIRROR='https://rsproxy.cn' \
-HERMES_SIDECAR_DEBIAN_MIRROR='mirrors.aliyun.com' \
-make hermes-sidecar-linux
+CLOUDAGENT_SIDECAR_CARGO_REGISTRY_MIRROR='https://rsproxy.cn' \
+CLOUDAGENT_SIDECAR_DEBIAN_MIRROR='mirrors.aliyun.com' \
+make cloudagent-sidecar-linux
 ```
 
 ## Hermes Rust 构建缓存
 
-`make hermes-sidecar-linux` 的 Dockerfile 会先只复制 `Cargo.toml` / `Cargo.lock` 和最小 stub 源码，预编译依赖到 BuildKit cache mount；再复制真实源码，只重编 `hermes-core` 和 `hermes-sidecar`。这样改业务源码时不会重新编译 `tokio`、`reqwest`、`serde` 等依赖。
+`make cloudagent-sidecar-linux` 的 Dockerfile 会先只复制 `Cargo.toml` / `Cargo.lock` 和最小 stub 源码，预编译依赖到 BuildKit cache mount；再复制真实源码，只重编 `hermes-core` 和 `hermes-sidecar`。这样改业务源码时不会重新编译 `tokio`、`reqwest`、`serde` 等依赖。
 
 默认 Docker 构建使用更快的 release profile 覆盖：
 
-- `HERMES_SIDECAR_CARGO_INCREMENTAL=1`
-- `HERMES_SIDECAR_CARGO_PROFILE_RELEASE_LTO=false`
-- `HERMES_SIDECAR_CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16`
-- `HERMES_SIDECAR_CARGO_PROFILE_RELEASE_STRIP=true`
+- `CLOUDAGENT_SIDECAR_CARGO_INCREMENTAL=1`
+- `CLOUDAGENT_SIDECAR_CARGO_PROFILE_RELEASE_LTO=false`
+- `CLOUDAGENT_SIDECAR_CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16`
+- `CLOUDAGENT_SIDECAR_CARGO_PROFILE_RELEASE_STRIP=true`
 
 如果要回到 workspace `Cargo.toml` 里的最小体积 LTO 构建，可以显式覆盖：
 
 ```bash
-HERMES_SIDECAR_CARGO_INCREMENTAL=0 \
-HERMES_SIDECAR_CARGO_PROFILE_RELEASE_LTO=true \
-HERMES_SIDECAR_CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1 \
-make hermes-sidecar-linux
+CLOUDAGENT_SIDECAR_CARGO_INCREMENTAL=0 \
+CLOUDAGENT_SIDECAR_CARGO_PROFILE_RELEASE_LTO=true \
+CLOUDAGENT_SIDECAR_CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1 \
+make cloudagent-sidecar-linux
 ```
 
 ## 环境变量
@@ -165,7 +165,7 @@ make e2e-agent-sidecar
 如果你只想把 sidecar 自动上传到 COS 并拿到公开 URL，可以单独跑：
 
 ```bash
-make publish-hermes-sidecar
+make publish-cloudagent-sidecar
 ```
 
 如果你想让本地服务也走这条自动发布流程，直接跑：
@@ -176,7 +176,7 @@ make start-agent-sidecar-server
 
 这个脚本会做完整闭环：
 
-- 构建 Go server 和 Hermes Rust sidecar
+- 构建 Go server 和 CloudAgent Rust sidecar
 - 跑 `go test ./...`
 - 上传 sidecar 到 COS（`public-read`）
 - 生成公开可读 URL
@@ -195,33 +195,33 @@ make start-agent-sidecar-server
 [e2e] ok
 ```
 
-当前 `make e2e-agent-sidecar` 已按 Hermes sidecar 的真实信号做断言。脚本会校验：
+当前 `make e2e-agent-sidecar` 已按 CloudAgent sidecar 的真实信号做断言。脚本会校验：
 
 - 纯聊天：有 `inner_not_started`，没有 `tool_exec_start`
 - COS 下载：有 `sidecar_download_start` / `sidecar_download_done`，并且 outer sandbox 内还能看到 `source=sidecar_boot event=download_start` / `download_done`
 - 工具调用：有 `inner_create_start`、`inner_ready`、`tool_exec_done`、`inner_shutdown_done`
 - 文件链路：有 `input_loaded`，并且 artifact 下载阶段有 `file_download_done`
 
-Hermes sidecar 现在已经真正支持流式透传：sidecar 会把 Hermes 的 `AgentEvent::Content` 逐段输出成 wrapper 事件，wrapper 再转成 `response.output_text.delta` SSE。也就是说，`stream:true` 不再只是“最后一次性吐完整答案再包装成流”。
+CloudAgent sidecar 现在已经真正支持流式透传：sidecar 会把 Hermes 的 `AgentEvent::Content` 逐段输出成 wrapper 事件，wrapper 再转成 `response.output_text.delta` SSE。也就是说，`stream:true` 不再只是“最后一次性吐完整答案再包装成流”。
 
 ## 手动启动服务
 
 如果想自己玩，不跑完整 e2e，可以先构建：
 
 ```bash
-make hermes-sidecar-linux server
+make cloudagent-sidecar-linux server
 ```
 
 上传 sidecar 到 COS 并生成公开 URL，最简单的是直接用内置发布流程：
 
 ```bash
-make publish-hermes-sidecar
+make publish-cloudagent-sidecar
 ```
 
 它会自动：
 
 - 从仓库根目录 `.env` 读取 `COSCMD_CONFIG` / `COSCMD_BIN`
-- 计算 Hermes sidecar sha256
+- 计算 CloudAgent sidecar sha256
 - 上传到 COS
 - 调 `putobjectacl --grant-read anyone` 设成 `public-read`
 - 把稳定公开 URL 写到 `/tmp/agent-sidecar-url.clean`
@@ -230,12 +230,12 @@ make publish-hermes-sidecar
 如果你想手动执行等价命令，也可以这样：
 
 ```bash
-SIDECAR_SHA="$(shasum -a 256 dist/hermes-sidecar-linux-amd64 | awk '{print $1}')"
-SIDECAR_OBJECT="/agent-sidecar/$(date +%Y%m%d)/hermes-sidecar-linux-amd64-${SIDECAR_SHA:0:12}"
+SIDECAR_SHA="$(shasum -a 256 dist/cloudagent-sidecar-linux-amd64 | awk '{print $1}')"
+SIDECAR_OBJECT="/agent-sidecar/$(date +%Y%m%d)/cloudagent-sidecar-linux-amd64-${SIDECAR_SHA:0:12}"
 COS_BUCKET="$(awk -F '=' '/^[[:space:]]*bucket[[:space:]]*=/{gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2); print $2; exit}' "$COSCMD_CONFIG")"
 COS_REGION="$(awk -F '=' '/^[[:space:]]*region[[:space:]]*=/{gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2); print $2; exit}' "$COSCMD_CONFIG")"
 
-"${COSCMD_BIN:-coscmd}" -c "$COSCMD_CONFIG" upload -f -y dist/hermes-sidecar-linux-amd64 "$SIDECAR_OBJECT"
+"${COSCMD_BIN:-coscmd}" -c "$COSCMD_CONFIG" upload -f -y dist/cloudagent-sidecar-linux-amd64 "$SIDECAR_OBJECT"
 "${COSCMD_BIN:-coscmd}" -c "$COSCMD_CONFIG" putobjectacl "$SIDECAR_OBJECT" --grant-read anyone
 printf 'https://%s.cos.%s.myqcloud.com%s\n' "$COS_BUCKET" "$COS_REGION" "$SIDECAR_OBJECT" > /tmp/agent-sidecar-url.clean
 printf '%s\n' "$SIDECAR_SHA" > /tmp/agent-sidecar-sha256.clean
@@ -297,7 +297,7 @@ GATEWAY_DATA_DIR=/tmp/gateway-agent-data-2 \
 - `INNER_SANDBOX_TEMPLATE`
 - `COSCMD_CONFIG` 和可用的 `coscmd`，用于自动上传 sidecar
 - `GATEWAY_AGENT_SIDECAR_URL` 或 `GATEWAY_AGENT_SIDECAR_URL_FILE`；如果不传，脚本会自动发布并生成
-- `GATEWAY_AGENT_SIDECAR_SHA256`，或者本地已有 `dist/hermes-sidecar-linux-amd64` 供脚本自动计算
+- `GATEWAY_AGENT_SIDECAR_SHA256`，或者本地已有 `dist/cloudagent-sidecar-linux-amd64` 供脚本自动计算
 
 注意：wrapper 进程只会读取启动时注入的 `GATEWAY_AGENT_SIDECAR_URL`。如果你重新发布了 sidecar，正在运行的本地服务不会自动热更新这个 URL，需要重启 wrapper 进程。
 
@@ -323,8 +323,8 @@ GATEWAY_AGENT_SIDECAR_SHA256="$SIDECAR_SHA" \
 
 如果你只是想手动玩起来，推荐按下面顺序：
 
-1. `make hermes-sidecar-linux server`
-2. `make publish-hermes-sidecar`
+1. `make cloudagent-sidecar-linux server`
+2. `make publish-cloudagent-sidecar`
 3. `./scripts/start_agent_sidecar_server.sh`
 4. 另开一个终端，用 `curl` 打 `/v1/responses` / `/v1/files`
 5. 盯着 server stderr 里的 timeline，看是否符合预期
@@ -472,7 +472,7 @@ curl -sS http://127.0.0.1:18094/v1/files/$ARTIFACT_FILE_ID/content \
 关键日志：
 
 - `inner_not_started`：纯聊，没有创建内层 AGS
-- `sidecar_download_start`：wrapper 已在外层 sandbox 内准备下载 Hermes sidecar
+- `sidecar_download_start`：wrapper 已在外层 sandbox 内准备下载 CloudAgent sidecar
 - `source=sidecar_boot event=download_start`：外层 sandbox 里开始从 COS 下载 sidecar
 - `source=sidecar_boot event=download_done`：COS 下载完成
 - `source=sidecar_boot event=exec_start`：sidecar 二进制即将启动
@@ -487,7 +487,7 @@ curl -sS http://127.0.0.1:18094/v1/files/$ARTIFACT_FILE_ID/content \
 
 如果你只想验证路由是否正确，看这几个事件就够了。
 
-说明：当前 `inner_*` 日志已经桥接到 Hermes sidecar timeline，足够稳定地判断“是否走了内层 sandbox 路径”。如果后续你还想把“内层 sandbox 实际创建耗时”拆得更精确，可以继续把 Hermes core 的原始 tracing 字段透传出来。
+说明：当前 `inner_*` 日志已经桥接到 CloudAgent sidecar timeline，足够稳定地判断“是否走了内层 sandbox 路径”。如果后续你还想把“内层 sandbox 实际创建耗时”拆得更精确，可以继续把 Hermes core 的原始 tracing 字段透传出来。
 
 一个完整手动请求通常会长这样：
 
@@ -517,7 +517,7 @@ inner_shutdown_done
 
 ## 性能参考
 
-2026-05-16 北京实测，使用 Hermes Rust sidecar、真实 COS 公有 URL、真实 E2B/TokenHub：
+2026-05-16 北京实测，使用 CloudAgent Rust sidecar、真实 COS 公有 URL、真实 E2B/TokenHub：
 
 - `make e2e-agent-sidecar` 全量通过
 - 非流式总耗时基线：纯聊 `3.83s`，terminal 工具 `7.43s`，上传文件 + `file_read` + artifact 下载 `7.32s`
@@ -538,7 +538,7 @@ inner_shutdown_done
 所以当前主要固定成本已经不在 Rust 进程本身，而在：
 
 - 外层 AGS 创建
-- 从 COS 下载约 `6.2MB` 的 Hermes sidecar
+- 从 COS 下载约 `6.2MB` 的 CloudAgent sidecar
 - 模型推理
 - 如需工具，再走一次 inner sandbox 路径
 
@@ -575,7 +575,7 @@ inner_shutdown_done
 
 ### 为什么现在更快
 
-Hermes Rust sidecar 当前 Linux 二进制约 `6.2MB`，COS 下载和进程冷启动都比较轻。当前链路的主要耗时已经从“sidecar 自身启动”转移到“AGS 创建 + 模型推理 + 工具路径”。
+CloudAgent Rust sidecar 当前 Linux 二进制约 `6.2MB`，COS 下载和进程冷启动都比较轻。当前链路的主要耗时已经从“sidecar 自身启动”转移到“AGS 创建 + 模型推理 + 工具路径”。
 
 ### 强制命令模式还在吗
 

@@ -229,6 +229,7 @@ func TestAgentSidecarWorkerRunsSidecarBinaryDirectly(t *testing.T) {
 		OuterTemplateID: "outer-template",
 		InnerTemplateID: "inner-template",
 		SidecarURL:      "https://example.com/hermes-sidecar",
+		SidecarSHA256:   "54ecc6642308b8fb71bb5b856d801c2f1da03ec47d0052bdbbaf44a821c8ba81",
 		TokenHubAPIKey:  "tokenhub-key",
 	})
 	if err != nil {
@@ -240,6 +241,33 @@ func TestAgentSidecarWorkerRunsSidecarBinaryDirectly(t *testing.T) {
 	}
 	if !strings.Contains(command, "/tmp/hermes-sidecar") {
 		t.Fatalf("expected binary path in command: %s", command)
+	}
+	if !strings.Contains(command, "sha256sum -c -") {
+		t.Fatalf("expected sidecar sha256 verification in command: %s", command)
+	}
+}
+
+func TestAgentSidecarWorkerUsesLoaderForSignedArtifact(t *testing.T) {
+	worker, err := NewAgentSidecarWorker(AgentSidecarWorkerConfig{
+		Client:          &AGSClient{apiKey: "test", domain: "example.com"},
+		OuterTemplateID: "outer-template",
+		InnerTemplateID: "inner-template",
+		SidecarURL:      "https://example.com/hermes-sidecar",
+		SidecarSHA256:   "54ecc6642308b8fb71bb5b856d801c2f1da03ec47d0052bdbbaf44a821c8ba81",
+		AgentLoaderPath: "/usr/local/bin/cloudagent-agent-loader",
+		TokenHubAPIKey:  "tokenhub-key",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifact := worker.defaultSidecarArtifact()
+	artifact.SigURL = "https://example.com/hermes-sidecar.sig"
+	artifact.SigningKeyID = "cloudagent-agent-release-v1"
+	command := sidecarLoaderCommand(worker.agentLoaderPath, "/tmp/hermes-sidecar", artifact, "daemon", "--addr", "127.0.0.1:38000")
+	for _, want := range []string{"/usr/local/bin/cloudagent-agent-loader", "--sig-url", "--key-id", "cloudagent-agent-release-v1", "daemon", "--addr"} {
+		if !strings.Contains(command, want) {
+			t.Fatalf("expected %q in command: %s", want, command)
+		}
 	}
 }
 

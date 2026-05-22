@@ -1,0 +1,25 @@
+[package]
+name = "cloudagent-agent-loader"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+rust-version = "1.86"
+description = "Trusted loader for signed CloudAgent artifacts"
+
+[[bin]]
+name = "cloudagent-agent-loader"
+path = "src/main.rs"
+
+[[bin]]
+name = "cloudagent-agent-sign"
+path = "src/bin/cloudagent-agent-sign.rs"
+
+[dependencies]
+anyhow = "1.0"
+base64 = "0.22"
+ed25519-dalek = "2.2"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+tokio = { version = "1.36", features = ["macros", "rt-multi-thread"] }

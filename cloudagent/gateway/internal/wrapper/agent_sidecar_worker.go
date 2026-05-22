@@ -7,15 +7,23 @@ import (
 	"errors"
 	"fmt"
 	"hash/crc32"
+	"net/url"
 	"os"
 	"path"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
 )
 
 const defaultTalosTemplateID = "498c6c11-74d7-426e-bdb1-13d8aa73997e"
+
+const (
+	defaultAgentVersion     = "builtin.v1"
+	defaultWorkspaceVersion = "builtin.v1"
+	defaultSigningKeyID     = "cloudagent-agent-release-v1"
+)
 
 type AgentSidecarWorkerConfig struct {
 	Client                *AGSClient
@@ -25,6 +33,7 @@ type AgentSidecarWorkerConfig struct {
 	SidecarBinaryPath     string
 	SidecarURL            string
 	SidecarSHA256         string
+	AgentLoaderPath       string
 	SandboxHostURL        string
 	SandboxHostSHA256     string
 	TokenHubAPIKey        string
@@ -57,6 +66,7 @@ type AgentSidecarWorker struct {
 	sidecarBinaryPath     string
 	sidecarURL            string
 	sidecarSHA256         string
+	agentLoaderPath       string
 	sandboxHostURL        string
 	sandboxHostSHA256     string
 	tokenHubAPIKey        string
@@ -130,6 +140,7 @@ func NewAgentSidecarWorker(cfg AgentSidecarWorkerConfig) (*AgentSidecarWorker, e
 		sidecarBinaryPath:     cfg.SidecarBinaryPath,
 		sidecarURL:            cfg.SidecarURL,
 		sidecarSHA256:         cfg.SidecarSHA256,
+		agentLoaderPath:       firstNonEmpty(cfg.AgentLoaderPath, "/usr/local/bin/cloudagent-agent-loader"),
 		sandboxHostURL:        strings.TrimSpace(cfg.SandboxHostURL),
 		sandboxHostSHA256:     strings.TrimSpace(cfg.SandboxHostSHA256),
 		tokenHubAPIKey:        cfg.TokenHubAPIKey,
@@ -178,6 +189,7 @@ func NewAgentSidecarWorkerFromEnv() (*AgentSidecarWorker, error) {
 		SidecarBinaryPath:     firstEnv("GATEWAY_AGENT_SIDECAR_BINARY", "AGENT_SIDECAR_BINARY"),
 		SidecarURL:            firstEnv("GATEWAY_AGENT_SIDECAR_URL", "AGENT_SIDECAR_URL"),
 		SidecarSHA256:         firstEnv("GATEWAY_AGENT_SIDECAR_SHA256", "AGENT_SIDECAR_SHA256"),
+		AgentLoaderPath:       firstEnv("GATEWAY_AGENT_LOADER_PATH", "AGENT_LOADER_PATH"),
 		SandboxHostURL:        firstEnv("GATEWAY_SANDBOX_HOST_URL", "HERMES_SANDBOX_HOST_URL", "SANDBOX_HOST_URL"),
 		SandboxHostSHA256:     firstEnv("GATEWAY_SANDBOX_HOST_SHA256", "HERMES_SANDBOX_HOST_SHA256", "SANDBOX_HOST_SHA256"),
 		TokenHubAPIKey:        firstEnv("GATEWAY_TOKENHUB_API_KEY", "TOKENHUB_API_KEY"),
@@ -242,8 +254,25 @@ func (w *AgentSidecarWorker) StartSessionRuntime(ctx context.Context, req ACPSes
 		}
 		return ACPSessionRuntime{}, fmt.Errorf("default sandbox backend is not configured")
 	}
-	if templateID := strings.TrimSpace(req.SandboxTemplateID); templateID != "" {
+	agentVersion := normalizeRuntimeVersion(req.AgentVersion, defaultAgentVersion)
+	agentPlugin, err := agentBehaviorPluginFor(agentVersion)
+	if err != nil {
+		return ACPSessionRuntime{}, err
+	}
+	sidecarArtifact, err := validatedSidecarArtifact("session sidecar_artifact", req.SidecarArtifact)
+	if err != nil {
+		return ACPSessionRuntime{}, err
+	}
+	req.SidecarArtifact = sidecarArtifact
+	workspaceVersion := normalizeRuntimeVersion(req.WorkspaceVersion, defaultWorkspaceVersion)
+	workspaceSpec, err := workspaceRuntimeSpecFor(workspaceVersion)
+	if err != nil {
+		return ACPSessionRuntime{}, err
+	}
+	if templateID := strings.TrimSpace(agentPlugin.templateID); templateID != "" {
 		backend.outerTemplateID = templateID
+	}
+	if templateID := strings.TrimSpace(workspaceSpec.templateID); templateID != "" {
 		backend.innerTemplateID = templateID
 	}
 	timeline := func(event string, fields ...string) {
@@ -257,7 +286,7 @@ func (w *AgentSidecarWorker) StartSessionRuntime(ctx context.Context, req ACPSes
 		all = append(all, fields...)
 		fmt.Fprintln(os.Stderr, strings.Join(all, " "))
 	}
-	timeline("acp_runtime_outer_create_start", "backend="+backend.name, "template="+backend.outerTemplateID)
+	timeline("acp_runtime_outer_create_start", "backend="+backend.name, "template="+backend.outerTemplateID, "agent_version="+agentVersion, "workspace_template="+backend.innerTemplateID, "workspace_version="+workspaceVersion)
 	sb, err := backend.client.CreateSandbox(ctx, CreateSandboxOptions{
 		TemplateID:          backend.outerTemplateID,
 		TimeoutSeconds:      w.sandboxTimeoutSeconds,
@@ -278,7 +307,10 @@ func (w *AgentSidecarWorker) StartSessionRuntime(ctx context.Context, req ACPSes
 	runtime := ACPSessionRuntime{
 		RuntimeID:            fmt.Sprintf("rt_%s_%d", req.SessionID, req.Generation),
 		SandboxBackend:       backend.name,
-		SandboxTemplateID:    backend.outerTemplateID,
+		AgentVersion:         agentVersion,
+		AgentTemplateID:      backend.outerTemplateID,
+		WorkspaceVersion:     workspaceVersion,
+		WorkspaceTemplateID:  backend.innerTemplateID,
 		OuterSandboxID:       sb.SandboxID,
 		OuterSandboxDomain:   sb.Domain,
 		OuterEnvdAccessToken: sb.EnvdAccessToken,
@@ -323,32 +355,33 @@ func (w *AgentSidecarWorker) ReattachSessionRuntime(ctx context.Context, runtime
 	return runtime, nil
 }
 
-func (w *AgentSidecarWorker) PromptSessionRuntime(ctx context.Context, runtime ACPSessionRuntime, req ACPSessionRuntimePromptRequest, emit func(workerEvent) error) (workerResult, ACPSessionRuntimeUpdate, error) {
+func (w *AgentSidecarWorker) runACPSessionPrompt(ctx context.Context, job workerJob, emit func(workerEvent) error) (workerResult, error) {
 	start := time.Now()
+	runtime := job.ACPSessionRuntime
 	backend, err := w.backendForRuntime(runtime)
 	if err != nil {
-		return workerResult{}, ACPSessionRuntimeUpdate{}, err
+		return workerResult{}, err
 	}
 	sb := runtimeOuterSandbox(runtime)
-	if len(req.InputFiles) > 0 {
-		if err := w.stageSessionFiles(ctx, backend.client, sb, runtime, req); err != nil {
-			return workerResult{}, ACPSessionRuntimeUpdate{}, err
+	if len(job.InputFiles) > 0 {
+		if err := w.stageSessionFiles(ctx, backend.client, sb, runtime, job); err != nil {
+			return workerResult{}, err
 		}
 	}
 	promptCommand := fmt.Sprintf(
 		"%s client --addr %s prompt --prompt-b64 %s --job-id %s --response-id %s --cwd-b64 %s",
 		shellQuote(runtime.RemoteBinary),
 		shellQuote(runtime.DaemonAddr),
-		shellQuote(base64.StdEncoding.EncodeToString([]byte(req.Prompt))),
-		shellQuote(req.JobID),
-		shellQuote(req.ResponseID),
-		shellQuote(base64.StdEncoding.EncodeToString([]byte(req.CWD))),
+		shellQuote(base64.StdEncoding.EncodeToString([]byte(job.Instruction))),
+		shellQuote(job.JobID),
+		shellQuote(job.ResponseID),
+		shellQuote(base64.StdEncoding.EncodeToString([]byte(job.CWD))),
 	)
 	cancelCommand := fmt.Sprintf(
 		"%s client --addr %s cancel --job-id %s >/dev/null 2>&1 || true",
 		shellQuote(runtime.RemoteBinary),
 		shellQuote(runtime.DaemonAddr),
-		shellQuote(req.JobID),
+		shellQuote(job.JobID),
 	)
 	command := "trap " + shellQuote(cancelCommand) + " TERM INT; " + promptCommand
 	var deltaSeq int64
@@ -357,7 +390,7 @@ func (w *AgentSidecarWorker) PromptSessionRuntime(ctx context.Context, runtime A
 	stdoutParser := &sidecarStdoutParser{}
 	emitStdoutEvents := func(events []sidecarStdoutEvent) error {
 		for _, event := range events {
-			workerEvent, textDelta := workerEventFromSidecarEvent(req.JobID, atomic.AddInt64(&eventSeq, 1), event)
+			workerEvent, textDelta := workerEventFromSidecarEvent(job.JobID, atomic.AddInt64(&eventSeq, 1), event)
 			if workerEvent.Kind == "" {
 				continue
 			}
@@ -368,37 +401,37 @@ func (w *AgentSidecarWorker) PromptSessionRuntime(ctx context.Context, runtime A
 			if emit == nil {
 				continue
 			}
-			fmt.Fprintf(os.Stderr, "timeline source=go t=%.3fs event=acp_runtime_stream_delta mode=acp_session_runtime session_id=%s generation=%d outer_sandbox_id=%s job_id=%s kind=%s seq=%d delta_bytes=%d\n", time.Since(start).Seconds(), req.SessionID, req.Generation, runtime.OuterSandboxID, req.JobID, workerEvent.Kind, workerEvent.Sequence, len(event.Delta))
+			fmt.Fprintf(os.Stderr, "timeline source=go t=%.3fs event=acp_runtime_stream_delta mode=acp_session_runtime session_id=%s generation=%d outer_sandbox_id=%s job_id=%s kind=%s seq=%d delta_bytes=%d\n", time.Since(start).Seconds(), job.ACPSessionID, job.ACPSessionGeneration, runtime.OuterSandboxID, job.JobID, workerEvent.Kind, workerEvent.Sequence, len(event.Delta))
 			if err := emit(workerEvent); err != nil {
-				fmt.Fprintf(os.Stderr, "timeline source=go t=%.3fs event=acp_runtime_stream_emit_failed mode=acp_session_runtime session_id=%s generation=%d outer_sandbox_id=%s job_id=%s kind=%s seq=%d delta_bytes=%d error=%q\n", time.Since(start).Seconds(), req.SessionID, req.Generation, runtime.OuterSandboxID, req.JobID, workerEvent.Kind, workerEvent.Sequence, len(event.Delta), err.Error())
+				fmt.Fprintf(os.Stderr, "timeline source=go t=%.3fs event=acp_runtime_stream_emit_failed mode=acp_session_runtime session_id=%s generation=%d outer_sandbox_id=%s job_id=%s kind=%s seq=%d delta_bytes=%d error=%q\n", time.Since(start).Seconds(), job.ACPSessionID, job.ACPSessionGeneration, runtime.OuterSandboxID, job.JobID, workerEvent.Kind, workerEvent.Sequence, len(event.Delta), err.Error())
 				return err
 			}
-			fmt.Fprintf(os.Stderr, "timeline source=go t=%.3fs event=acp_runtime_stream_emit_done mode=acp_session_runtime session_id=%s generation=%d outer_sandbox_id=%s job_id=%s kind=%s seq=%d delta_bytes=%d\n", time.Since(start).Seconds(), req.SessionID, req.Generation, runtime.OuterSandboxID, req.JobID, workerEvent.Kind, workerEvent.Sequence, len(event.Delta))
+			fmt.Fprintf(os.Stderr, "timeline source=go t=%.3fs event=acp_runtime_stream_emit_done mode=acp_session_runtime session_id=%s generation=%d outer_sandbox_id=%s job_id=%s kind=%s seq=%d delta_bytes=%d\n", time.Since(start).Seconds(), job.ACPSessionID, job.ACPSessionGeneration, runtime.OuterSandboxID, job.JobID, workerEvent.Kind, workerEvent.Sequence, len(event.Delta))
 		}
 		return nil
 	}
-	fmt.Fprintf(os.Stderr, "timeline source=go t=%.3fs event=acp_runtime_prompt_start mode=acp_session_runtime session_id=%s generation=%d outer_sandbox_id=%s\n", time.Since(start).Seconds(), req.SessionID, req.Generation, runtime.OuterSandboxID)
+	fmt.Fprintf(os.Stderr, "timeline source=go t=%.3fs event=acp_runtime_prompt_start mode=acp_session_runtime session_id=%s generation=%d outer_sandbox_id=%s\n", time.Since(start).Seconds(), job.ACPSessionID, job.ACPSessionGeneration, runtime.OuterSandboxID)
 	result, err := backend.client.RunCommand(ctx, sb, command, nil, func(text string) error {
 		return emitStdoutEvents(stdoutParser.Feed(text))
 	}, func(text string) error {
-		logRemoteStderr(start, workerJob{JobID: req.JobID, ResponseID: req.ResponseID}, text)
+		logRemoteStderr(start, workerJob{JobID: job.JobID, ResponseID: job.ResponseID}, text)
 		return nil
 	})
 	if err != nil {
 		if runErr, ok := parseAgentRunErrorEnvelope(result.Stdout); ok {
-			fmt.Fprintf(os.Stderr, "timeline source=go t=%.3fs event=acp_runtime_prompt_agent_error mode=acp_session_runtime session_id=%s generation=%d outer_sandbox_id=%s job_id=%s code=%s message=%s\n", time.Since(start).Seconds(), req.SessionID, req.Generation, runtime.OuterSandboxID, req.JobID, runErr.Code, quoteTimelineField(runErr.Message))
-			return workerResult{}, ACPSessionRuntimeUpdate{}, workerFailureFromAgentRunError(runErr)
+			fmt.Fprintf(os.Stderr, "timeline source=go t=%.3fs event=acp_runtime_prompt_agent_error mode=acp_session_runtime session_id=%s generation=%d outer_sandbox_id=%s job_id=%s code=%s message=%s\n", time.Since(start).Seconds(), job.ACPSessionID, job.ACPSessionGeneration, runtime.OuterSandboxID, job.JobID, runErr.Code, quoteTimelineField(runErr.Message))
+			return workerResult{}, workerFailureFromAgentRunError(runErr)
 		}
-		fmt.Fprintf(os.Stderr, "timeline source=go t=%.3fs event=acp_runtime_prompt_failed mode=acp_session_runtime session_id=%s generation=%d outer_sandbox_id=%s job_id=%s error=%s\n", time.Since(start).Seconds(), req.SessionID, req.Generation, runtime.OuterSandboxID, req.JobID, quoteTimelineField(err.Error()))
-		return workerResult{}, ACPSessionRuntimeUpdate{}, fmt.Errorf("acp prompt sidecar client session_id=%s generation=%d job_id=%s outer_sandbox_id=%s: %w", req.SessionID, req.Generation, req.JobID, runtime.OuterSandboxID, err)
+		fmt.Fprintf(os.Stderr, "timeline source=go t=%.3fs event=acp_runtime_prompt_failed mode=acp_session_runtime session_id=%s generation=%d outer_sandbox_id=%s job_id=%s error=%s\n", time.Since(start).Seconds(), job.ACPSessionID, job.ACPSessionGeneration, runtime.OuterSandboxID, job.JobID, quoteTimelineField(err.Error()))
+		return workerResult{}, fmt.Errorf("acp prompt sidecar client session_id=%s generation=%d job_id=%s outer_sandbox_id=%s: %w", job.ACPSessionID, job.ACPSessionGeneration, job.JobID, runtime.OuterSandboxID, err)
 	}
 	if err := emitStdoutEvents(stdoutParser.Finish()); err != nil {
-		return workerResult{}, ACPSessionRuntimeUpdate{}, err
+		return workerResult{}, err
 	}
 	envelope, sawEnvelope := parseAgentRunEnvelope(result.Stdout)
 	if runErr, ok := parseAgentRunErrorEnvelope(result.Stdout); ok {
-		fmt.Fprintf(os.Stderr, "timeline source=go t=%.3fs event=acp_runtime_result_error mode=acp_session_runtime session_id=%s generation=%d outer_sandbox_id=%s job_id=%s code=%s message=%s stdout_bytes=%d\n", time.Since(start).Seconds(), req.SessionID, req.Generation, runtime.OuterSandboxID, req.JobID, runErr.Code, quoteTimelineField(runErr.Message), len(result.Stdout))
-		return workerResult{}, ACPSessionRuntimeUpdate{}, workerFailureFromAgentRunError(runErr)
+		fmt.Fprintf(os.Stderr, "timeline source=go t=%.3fs event=acp_runtime_result_error mode=acp_session_runtime session_id=%s generation=%d outer_sandbox_id=%s job_id=%s code=%s message=%s stdout_bytes=%d\n", time.Since(start).Seconds(), job.ACPSessionID, job.ACPSessionGeneration, runtime.OuterSandboxID, job.JobID, runErr.Code, quoteTimelineField(runErr.Message), len(result.Stdout))
+		return workerResult{}, workerFailureFromAgentRunError(runErr)
 	}
 	output := envelope.OutputText
 	if output == "" && !sawEnvelope {
@@ -407,55 +440,56 @@ func (w *AgentSidecarWorker) PromptSessionRuntime(ctx context.Context, runtime A
 	if output == "" && streamedOutput.Len() > 0 {
 		output = streamedOutput.String()
 	}
-	fmt.Fprintf(os.Stderr, "timeline source=go t=%.3fs event=acp_runtime_result_envelope mode=acp_session_runtime session_id=%s generation=%d outer_sandbox_id=%s job_id=%s saw_result=%t stdout_bytes=%d streamed_bytes=%d output_bytes=%d inner_sandbox_id=%s\n", time.Since(start).Seconds(), req.SessionID, req.Generation, runtime.OuterSandboxID, req.JobID, sawEnvelope, len(result.Stdout), streamedOutput.Len(), len(output), envelope.InnerSandboxID)
+	fmt.Fprintf(os.Stderr, "timeline source=go t=%.3fs event=acp_runtime_result_envelope mode=acp_session_runtime session_id=%s generation=%d outer_sandbox_id=%s job_id=%s saw_result=%t stdout_bytes=%d streamed_bytes=%d output_bytes=%d inner_sandbox_id=%s\n", time.Since(start).Seconds(), job.ACPSessionID, job.ACPSessionGeneration, runtime.OuterSandboxID, job.JobID, sawEnvelope, len(result.Stdout), streamedOutput.Len(), len(output), envelope.InnerSandboxID)
 	if output == "" && sawEnvelope {
-		return workerResult{}, ACPSessionRuntimeUpdate{}, workerError("agent_empty_output", fmt.Sprintf("sidecar returned WRAPPER_RESULT_JSON with empty output_text session_id=%s generation=%d job_id=%s outer_sandbox_id=%s inner_sandbox_id=%s stdout_bytes=%d", req.SessionID, req.Generation, req.JobID, runtime.OuterSandboxID, envelope.InnerSandboxID, len(result.Stdout)))
+		return workerResult{}, workerError("agent_empty_output", fmt.Sprintf("sidecar returned WRAPPER_RESULT_JSON with empty output_text session_id=%s generation=%d job_id=%s outer_sandbox_id=%s inner_sandbox_id=%s stdout_bytes=%d", job.ACPSessionID, job.ACPSessionGeneration, job.JobID, runtime.OuterSandboxID, envelope.InnerSandboxID, len(result.Stdout)))
 	}
 	if output == "" {
 		output = stripWrapperControlLines(result.Stdout)
 	}
 	if output == "" {
-		return workerResult{}, ACPSessionRuntimeUpdate{}, workerError("agent_empty_output", fmt.Sprintf("sidecar returned empty output session_id=%s generation=%d job_id=%s outer_sandbox_id=%s stdout_bytes=%d", req.SessionID, req.Generation, req.JobID, runtime.OuterSandboxID, len(result.Stdout)))
+		return workerResult{}, workerError("agent_empty_output", fmt.Sprintf("sidecar returned empty output session_id=%s generation=%d job_id=%s outer_sandbox_id=%s stdout_bytes=%d", job.ACPSessionID, job.ACPSessionGeneration, job.JobID, runtime.OuterSandboxID, len(result.Stdout)))
 	}
 	if emit != nil && output != "" && atomic.LoadInt64(&deltaSeq) == 0 {
 		if err := emit(workerEvent{
 			WorkerContractVersion: WorkerContractVersion,
-			EventID:               "evt_" + req.JobID + "_acp_session_final",
-			JobID:                 req.JobID,
+			EventID:               "evt_" + job.JobID + "_acp_session_final",
+			JobID:                 job.JobID,
 			Sequence:              1,
 			Kind:                  "output_text_delta",
 			Timestamp:             time.Now().UTC().Unix(),
 			Delta:                 output,
 		}); err != nil {
-			return workerResult{}, ACPSessionRuntimeUpdate{}, err
+			return workerResult{}, err
 		}
 	} else if emit != nil && output != "" {
 		if delta := missingFinalDelta(output, streamedOutput.String()); delta != "" {
 			seq := atomic.AddInt64(&deltaSeq, 1)
 			if err := emit(workerEvent{
 				WorkerContractVersion: WorkerContractVersion,
-				EventID:               "evt_" + req.JobID + "_acp_session_final_tail",
-				JobID:                 req.JobID,
+				EventID:               "evt_" + job.JobID + "_acp_session_final_tail",
+				JobID:                 job.JobID,
 				Sequence:              seq,
 				Kind:                  "output_text_delta",
 				Timestamp:             time.Now().UTC().Unix(),
 				Delta:                 delta,
 			}); err != nil {
-				return workerResult{}, ACPSessionRuntimeUpdate{}, err
+				return workerResult{}, err
 			}
 		}
 	}
-	fmt.Fprintf(os.Stderr, "timeline source=go t=%.3fs event=acp_runtime_prompt_done mode=acp_session_runtime session_id=%s generation=%d outer_sandbox_id=%s inner_sandbox_id=%s\n", time.Since(start).Seconds(), req.SessionID, req.Generation, runtime.OuterSandboxID, envelope.InnerSandboxID)
+	fmt.Fprintf(os.Stderr, "timeline source=go t=%.3fs event=acp_runtime_prompt_done mode=acp_session_runtime session_id=%s generation=%d outer_sandbox_id=%s inner_sandbox_id=%s\n", time.Since(start).Seconds(), job.ACPSessionID, job.ACPSessionGeneration, runtime.OuterSandboxID, envelope.InnerSandboxID)
 	return workerResult{
-			WorkerContractVersion: WorkerContractVersion,
-			JobID:                 req.JobID,
-			Status:                "completed",
-			OutputText:            output,
-		}, ACPSessionRuntimeUpdate{
+		WorkerContractVersion: WorkerContractVersion,
+		JobID:                 job.JobID,
+		Status:                "completed",
+		OutputText:            output,
+		RuntimeUpdate: ACPSessionRuntimeUpdate{
 			InnerSandboxID:       envelope.InnerSandboxID,
 			InnerSandboxDomain:   envelope.InnerSandboxDomain,
 			InnerEnvdAccessToken: envelope.InnerEnvdAccessToken,
-		}, nil
+		},
+	}, nil
 }
 
 type sidecarEnsureInnerResponse struct {
@@ -506,14 +540,14 @@ func (w *AgentSidecarWorker) ensureInnerCommand(runtime ACPSessionRuntime, force
 	return command
 }
 
-func (w *AgentSidecarWorker) stageSessionFiles(ctx context.Context, client *AGSClient, sb AGSSandbox, runtime ACPSessionRuntime, req ACPSessionRuntimePromptRequest) error {
+func (w *AgentSidecarWorker) stageSessionFiles(ctx context.Context, client *AGSClient, sb AGSSandbox, runtime ACPSessionRuntime, job workerJob) error {
 	manifest := sidecarStageFilesManifest{
-		SessionID:     req.SessionID,
-		Generation:    req.Generation,
+		SessionID:     job.ACPSessionID,
+		Generation:    job.ACPSessionGeneration,
 		WorkspaceRoot: acpRuntimeCWD,
-		Files:         make([]sidecarStageFileEntry, 0, len(req.InputFiles)),
+		Files:         make([]sidecarStageFileEntry, 0, len(job.InputFiles)),
 	}
-	for _, file := range req.InputFiles {
+	for _, file := range job.InputFiles {
 		workspacePath := strings.TrimSpace(file.WorkspacePath)
 		if workspacePath == "" {
 			return fmt.Errorf("input file %s missing workspace path", file.FileID)
@@ -548,11 +582,11 @@ func (w *AgentSidecarWorker) stageSessionFiles(ctx context.Context, client *AGSC
 		" client --addr " + shellQuote(runtime.DaemonAddr) +
 		" stage-files --manifest-b64 " + shellQuote(base64.StdEncoding.EncodeToString(payload))
 	_, err = client.RunCommand(ctx, sb, command, nil, nil, func(text string) error {
-		logRemoteStderr(time.Now(), workerJob{JobID: req.JobID, ResponseID: req.ResponseID}, text)
+		logRemoteStderr(time.Now(), workerJob{JobID: job.JobID, ResponseID: job.ResponseID}, text)
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("stage input files session_id=%s generation=%d outer_sandbox_id=%s: %w", req.SessionID, req.Generation, sb.SandboxID, err)
+		return fmt.Errorf("stage input files session_id=%s generation=%d outer_sandbox_id=%s: %w", job.ACPSessionID, job.ACPSessionGeneration, sb.SandboxID, err)
 	}
 	return nil
 }
@@ -620,6 +654,255 @@ func (w *AgentSidecarWorker) CancelSessionRuntime(ctx context.Context, runtime A
 	return err
 }
 
+type agentBehaviorPlugin struct {
+	version         string
+	templateID      string
+	sidecarURL      string
+	sidecarSHA256   string
+	sidecarSigURL   string
+	signingKeyID    string
+	buildInitScript func(agentInitScriptContext) string
+}
+
+type workspaceRuntimeSpec struct {
+	version    string
+	templateID string
+}
+
+type agentBehaviorRegistryEntry struct {
+	TemplateID    string `json:"template_id"`
+	SidecarURL    string `json:"sidecar_url"`
+	SidecarSHA256 string `json:"sidecar_sha256"`
+	SidecarSigURL string `json:"sidecar_sig_url"`
+	SigningKeyID  string `json:"signing_key_id"`
+}
+
+type agentSidecarArtifact struct {
+	URL          string
+	SHA256       string
+	SigURL       string
+	SigningKeyID string
+}
+
+type agentInitScriptContext struct {
+	Prepare        string
+	Workspace      string
+	WorkspaceOwner string
+	Runtime        ACPSessionRuntime
+	SessionID      string
+	ListenAddr     string
+	MemoryDir      string
+	LogPath        string
+	PIDPath        string
+	DaemonCommand  string
+}
+
+func agentBehaviorPluginFor(version string) (agentBehaviorPlugin, error) {
+	version = normalizeRuntimeVersion(version, defaultAgentVersion)
+	switch version {
+	case "builtin.v1", "default":
+		return agentBehaviorPlugin{version: version, buildInitScript: buildBuiltinAgentInitScript}, nil
+	}
+	if plugin, ok, err := agentBehaviorPluginFromEnvRegistry(version); err != nil {
+		return agentBehaviorPlugin{}, err
+	} else if ok {
+		return plugin, nil
+	}
+	return agentBehaviorPlugin{}, fmt.Errorf("agent version %q is not registered", version)
+}
+
+func workspaceRuntimeSpecFor(version string) (workspaceRuntimeSpec, error) {
+	version = normalizeRuntimeVersion(version, defaultWorkspaceVersion)
+	switch version {
+	case "builtin.v1", "default":
+		return workspaceRuntimeSpec{version: version}, nil
+	default:
+		return workspaceRuntimeSpec{}, fmt.Errorf("workspace version %q is not registered", version)
+	}
+}
+
+func normalizeRuntimeVersion(version, fallback string) string {
+	version = strings.TrimSpace(version)
+	if version == "" {
+		return fallback
+	}
+	return version
+}
+
+func agentBehaviorPluginFromEnvRegistry(version string) (agentBehaviorPlugin, bool, error) {
+	raw := firstEnv("GATEWAY_AGENT_VERSION_REGISTRY_JSON", "AGENT_VERSION_REGISTRY_JSON")
+	if raw == "" {
+		return agentBehaviorPlugin{}, false, nil
+	}
+	var registry map[string]agentBehaviorRegistryEntry
+	if err := json.Unmarshal([]byte(raw), &registry); err != nil {
+		return agentBehaviorPlugin{}, false, fmt.Errorf("agent version registry is invalid: %w", err)
+	}
+	entry, ok := registry[version]
+	if !ok {
+		return agentBehaviorPlugin{}, false, nil
+	}
+	plugin := agentBehaviorPlugin{
+		version:         version,
+		templateID:      strings.TrimSpace(entry.TemplateID),
+		sidecarURL:      strings.TrimSpace(entry.SidecarURL),
+		sidecarSHA256:   normalizeSHA256(entry.SidecarSHA256),
+		sidecarSigURL:   strings.TrimSpace(entry.SidecarSigURL),
+		signingKeyID:    strings.TrimSpace(entry.SigningKeyID),
+		buildInitScript: buildBuiltinAgentInitScript,
+	}
+	artifact, err := validatedSidecarArtifact("agent version "+strconv.Quote(version), agentSidecarArtifact{
+		URL:          plugin.sidecarURL,
+		SHA256:       plugin.sidecarSHA256,
+		SigURL:       plugin.sidecarSigURL,
+		SigningKeyID: plugin.signingKeyID,
+	})
+	if err != nil {
+		return agentBehaviorPlugin{}, false, err
+	}
+	if artifact.URL == "" {
+		return plugin, true, nil
+	}
+	plugin.sidecarURL = artifact.URL
+	plugin.sidecarSHA256 = artifact.SHA256
+	plugin.sidecarSigURL = artifact.SigURL
+	plugin.signingKeyID = artifact.SigningKeyID
+	return plugin, true, nil
+}
+
+func normalizeSHA256(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func isSHA256Hex(value string) bool {
+	if len(value) != 64 {
+		return false
+	}
+	for _, ch := range value {
+		if (ch < '0' || ch > '9') && (ch < 'a' || ch > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+func isAllowedSidecarURL(value string) bool {
+	return strings.HasPrefix(value, "https://") || strings.HasPrefix(value, "http://")
+}
+
+func validatedSidecarArtifact(source string, artifact agentSidecarArtifact) (agentSidecarArtifact, error) {
+	artifact.URL = strings.TrimSpace(artifact.URL)
+	artifact.SHA256 = normalizeSHA256(artifact.SHA256)
+	artifact.SigURL = strings.TrimSpace(artifact.SigURL)
+	artifact.SigningKeyID = strings.TrimSpace(artifact.SigningKeyID)
+	if artifact.URL == "" {
+		if artifact.SHA256 != "" || artifact.SigURL != "" || artifact.SigningKeyID != "" {
+			return agentSidecarArtifact{}, fmt.Errorf("%s sidecar_url is required when sidecar artifact fields are set", source)
+		}
+		return agentSidecarArtifact{}, nil
+	}
+	if !isAllowedSidecarURL(artifact.URL) {
+		return agentSidecarArtifact{}, fmt.Errorf("%s sidecar_url must be an http(s) URL", source)
+	}
+	if artifact.SHA256 != "" && !isSHA256Hex(artifact.SHA256) {
+		return agentSidecarArtifact{}, fmt.Errorf("%s sidecar_sha256 is invalid", source)
+	}
+	if artifact.SigURL == "" {
+		artifact.SigURL = derivedSidecarSignatureURL(artifact.URL)
+	}
+	if !isAllowedSidecarURL(artifact.SigURL) {
+		return agentSidecarArtifact{}, fmt.Errorf("%s sidecar_sig_url must be an http(s) URL", source)
+	}
+	if artifact.SigningKeyID == "" {
+		artifact.SigningKeyID = defaultSigningKeyID
+	}
+	return artifact, nil
+}
+
+func derivedSidecarSignatureURL(sidecarURL string) string {
+	parsed, err := url.Parse(sidecarURL)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return sidecarURL + ".sig"
+	}
+	parsed.Path += ".sig"
+	return parsed.String()
+}
+
+func (w *AgentSidecarWorker) defaultSidecarArtifact() agentSidecarArtifact {
+	return agentSidecarArtifact{
+		URL:    strings.TrimSpace(w.sidecarURL),
+		SHA256: normalizeSHA256(w.sidecarSHA256),
+	}
+}
+
+func resolvedSidecarArtifact(requested agentSidecarArtifact, plugin agentBehaviorPlugin, fallback agentSidecarArtifact) agentSidecarArtifact {
+	if requested.URL != "" {
+		return requested
+	}
+	if plugin.sidecarURL != "" {
+		return agentSidecarArtifact{
+			URL:          plugin.sidecarURL,
+			SHA256:       plugin.sidecarSHA256,
+			SigURL:       plugin.sidecarSigURL,
+			SigningKeyID: plugin.signingKeyID,
+		}
+	}
+	return fallback
+}
+
+func (artifact agentSidecarArtifact) signed() bool {
+	return artifact.URL != "" && artifact.SigURL != "" && artifact.SigningKeyID != ""
+}
+
+func sidecarDownloadCommand(remoteBinary string, artifact agentSidecarArtifact) string {
+	download := "mkdir -p " + shellQuote(path.Dir(remoteBinary)) +
+		" && curl -fsSL --show-error --retry 3 --retry-delay 1 --connect-timeout 10 --max-time 180 -o " + shellQuote(remoteBinary) + " " + shellQuote(artifact.URL)
+	if artifact.SHA256 != "" {
+		download += " && printf '%s  %s\\n' " + shellQuote(artifact.SHA256) + " " + shellQuote(remoteBinary) + " | sha256sum -c -"
+	}
+	return download
+}
+
+func sidecarLoaderCommand(loaderPath, remoteBinary string, artifact agentSidecarArtifact, args ...string) string {
+	parts := []string{
+		shellQuote(loaderPath),
+		"--url", shellQuote(artifact.URL),
+		"--output", shellQuote(remoteBinary),
+		"--sig-url", shellQuote(artifact.SigURL),
+		"--key-id", shellQuote(artifact.SigningKeyID),
+	}
+	if artifact.SHA256 != "" {
+		parts = append(parts, "--sha256", shellQuote(artifact.SHA256))
+	}
+	parts = append(parts, "--")
+	for _, arg := range args {
+		parts = append(parts, shellQuote(arg))
+	}
+	return strings.Join(parts, " ")
+}
+
+func sidecarPlainCommand(remoteBinary string, args ...string) string {
+	parts := []string{shellQuote(remoteBinary)}
+	for _, arg := range args {
+		parts = append(parts, shellQuote(arg))
+	}
+	return strings.Join(parts, " ")
+}
+
+func buildBuiltinAgentInitScript(ctx agentInitScriptContext) string {
+	daemonCommand := ctx.DaemonCommand
+	if daemonCommand == "" {
+		daemonCommand = shellQuote(ctx.Runtime.RemoteBinary)
+	}
+	return ctx.Prepare +
+		" && sudo -n mkdir -p " + shellQuote(ctx.Workspace) +
+		" && sudo -n chown " + shellQuote(ctx.WorkspaceOwner+":"+ctx.WorkspaceOwner) + " " + shellQuote(ctx.Workspace) +
+		" && mkdir -p " + shellQuote(ctx.MemoryDir) +
+		" && printf '%s\\n' " + shellQuote("timeline source=daemon_launcher event=start workspace="+ctx.Workspace+" argv="+ctx.Runtime.RemoteBinary+" daemon --addr "+ctx.ListenAddr+" --session-id "+ctx.SessionID) + " >> " + shellQuote(ctx.LogPath) +
+		" && ( nohup " + daemonCommand +
+		" > " + shellQuote(ctx.LogPath) + " 2>&1 < /dev/null & echo $! > " + shellQuote(ctx.PIDPath) + " )"
+}
+
 func (w *AgentSidecarWorker) bootSessionDaemon(ctx context.Context, sb AGSSandbox, runtime ACPSessionRuntime, req ACPSessionRuntimeStartRequest) error {
 	backend, err := w.backendForRuntime(runtime)
 	if err != nil {
@@ -632,10 +915,27 @@ func (w *AgentSidecarWorker) bootSessionDaemon(ctx context.Context, sb AGSSandbo
 	pidPath := path.Join(sessionRoot, "daemon.pid")
 	listenAddr := strings.TrimPrefix(runtime.DaemonAddr, "http://")
 	listenAddr = strings.TrimPrefix(listenAddr, "https://")
+	plugin, err := agentBehaviorPluginFor(runtime.AgentVersion)
+	if err != nil {
+		return err
+	}
+	artifact := resolvedSidecarArtifact(req.SidecarArtifact, plugin, w.defaultSidecarArtifact())
 	var prepare string
-	if w.sidecarURL != "" {
-		prepare = "mkdir -p " + shellQuote(sessionRoot) +
-			" && curl -fsSL --show-error --retry 3 --retry-delay 1 --connect-timeout 10 --max-time 180 -o " + shellQuote(runtime.RemoteBinary) + " " + shellQuote(w.sidecarURL)
+	var daemonCommand string
+	daemonArgs := []string{
+		"daemon",
+		"--addr", listenAddr,
+		"--session-id", req.SessionID,
+		"--workspace", workspace,
+		"--memory-dir", memoryDir,
+	}
+	if artifact.signed() {
+		prepare = "mkdir -p " + shellQuote(sessionRoot)
+		daemonCommand = sidecarLoaderCommand(w.agentLoaderPath, runtime.RemoteBinary, artifact, daemonArgs...)
+	} else if artifact.URL != "" {
+		prepare = sidecarDownloadCommand(runtime.RemoteBinary, artifact)
+		prepare += " && chmod +x " + shellQuote(runtime.RemoteBinary)
+		daemonCommand = sidecarPlainCommand(runtime.RemoteBinary, daemonArgs...)
 	} else {
 		binary, err := os.ReadFile(w.sidecarBinaryPath)
 		if err != nil {
@@ -645,6 +945,8 @@ func (w *AgentSidecarWorker) bootSessionDaemon(ctx context.Context, sb AGSSandbo
 			return err
 		}
 		prepare = "mkdir -p " + shellQuote(sessionRoot)
+		prepare += " && chmod +x " + shellQuote(runtime.RemoteBinary)
+		daemonCommand = sidecarPlainCommand(runtime.RemoteBinary, daemonArgs...)
 	}
 	env := map[string]string{
 		"TOKENHUB_API_KEY":              w.tokenHubAPIKey,
@@ -652,9 +954,13 @@ func (w *AgentSidecarWorker) bootSessionDaemon(ctx context.Context, sb AGSSandbo
 		"E2B_API_KEY":                   backend.client.apiKey,
 		"E2B_API_URL":                   backend.client.apiURL,
 		"E2B_DOMAIN":                    backend.client.domain,
-		"INNER_SANDBOX_TEMPLATE":        backend.innerTemplateID,
+		"INNER_SANDBOX_TEMPLATE":        firstNonEmpty(runtime.WorkspaceTemplateID, backend.innerTemplateID),
 		"INNER_SANDBOX_COMMAND":         w.forceInnerCommand,
 		"INNER_SANDBOX_TIMEOUT":         "300",
+		"CLOUDAGENT_AGENT_VERSION":      runtime.AgentVersion,
+		"CLOUDAGENT_AGENT_TEMPLATE_ID":  runtime.AgentTemplateID,
+		"CLOUDAGENT_WORKSPACE_VERSION":  runtime.WorkspaceVersion,
+		"CLOUDAGENT_WORKSPACE_TEMPLATE": runtime.WorkspaceTemplateID,
 		"OPENAI_AGENTS_DISABLE_TRACING": "1",
 	}
 	w.addSandboxHostEnv(env)
@@ -665,17 +971,18 @@ func (w *AgentSidecarWorker) bootSessionDaemon(ctx context.Context, sb AGSSandbo
 	if workspaceOwner == "" {
 		workspaceOwner = "user"
 	}
-	command := prepare +
-		" && sudo -n mkdir -p " + shellQuote(workspace) +
-		" && sudo -n chown " + shellQuote(workspaceOwner+":"+workspaceOwner) + " " + shellQuote(workspace) +
-		" && mkdir -p " + shellQuote(memoryDir) +
-		" && chmod +x " + shellQuote(runtime.RemoteBinary) +
-		" && printf '%s\\n' " + shellQuote("timeline source=daemon_launcher event=start workspace="+workspace+" argv="+runtime.RemoteBinary+" daemon --addr "+listenAddr+" --session-id "+req.SessionID) + " >> " + shellQuote(logPath) +
-		" && ( nohup " + shellQuote(runtime.RemoteBinary) +
-		" daemon --addr " + shellQuote(listenAddr) + " --session-id " + shellQuote(req.SessionID) +
-		" --workspace " + shellQuote(workspace) +
-		" --memory-dir " + shellQuote(memoryDir) +
-		" > " + shellQuote(logPath) + " 2>&1 < /dev/null & echo $! > " + shellQuote(pidPath) + " )"
+	command := plugin.buildInitScript(agentInitScriptContext{
+		Prepare:        prepare,
+		Workspace:      workspace,
+		WorkspaceOwner: workspaceOwner,
+		Runtime:        runtime,
+		SessionID:      req.SessionID,
+		ListenAddr:     listenAddr,
+		MemoryDir:      memoryDir,
+		LogPath:        logPath,
+		PIDPath:        pidPath,
+		DaemonCommand:  daemonCommand,
+	})
 	command = w.sandboxHostEnvPrefix() + command
 	if _, err := backend.client.RunCommand(ctx, sb, command, env, nil, func(text string) error {
 		logRemoteStderr(time.Now(), workerJob{JobID: "acp_daemon_start", ResponseID: req.SessionID}, text)
@@ -837,6 +1144,10 @@ func redactCommandOutput(value string) string {
 }
 
 func (w *AgentSidecarWorker) Run(ctx context.Context, job workerJob, emit func(workerEvent) error) (workerResult, error) {
+	if job.isACPSessionPrompt() {
+		return w.runACPSessionPrompt(ctx, job, emit)
+	}
+
 	start := time.Now()
 	backend, err := w.backendForJob(job)
 	if err != nil {
@@ -884,8 +1195,9 @@ func (w *AgentSidecarWorker) Run(ctx context.Context, job workerJob, emit func(w
 	}
 
 	remoteBinary := path.Join("/tmp/gateway", job.JobID, "agent-sidecar")
-	if w.sidecarURL != "" {
-		timeline("sidecar_download_configured", "url="+quoteTimelineField(redactURL(w.sidecarURL)))
+	artifact := w.defaultSidecarArtifact()
+	if artifact.URL != "" {
+		timeline("sidecar_download_configured", "url="+quoteTimelineField(redactURL(artifact.URL)))
 		timeline("sidecar_download_start")
 	} else {
 		binary, err := os.ReadFile(w.sidecarBinaryPath)
@@ -981,7 +1293,7 @@ func (w *AgentSidecarWorker) Run(ctx context.Context, job workerJob, emit func(w
 	if err := emitStdoutEvents(stdoutParser.Finish()); err != nil {
 		return workerResult{}, err
 	}
-	if w.sidecarURL != "" {
+	if artifact.URL != "" {
 		timeline("sidecar_download_done")
 	}
 	timeline("sidecar_command_done", fmt.Sprintf("stdout_bytes=%d", len(result.Stdout)), fmt.Sprintf("stderr_bytes=%d", len(result.Stderr)))
@@ -1076,12 +1388,16 @@ func (w *AgentSidecarWorker) FetchArtifact(ctx context.Context, job workerJob, a
 
 func (w *AgentSidecarWorker) sidecarCommand(remoteBinary string) string {
 	run := shellQuote(remoteBinary)
-	if w.sidecarURL == "" {
+	artifact := w.defaultSidecarArtifact()
+	if artifact.URL == "" {
 		return "printf '%s\\n' 'timeline source=sidecar_boot event=exec_start' >&2 && chmod +x " + shellQuote(remoteBinary) + " && " + run
 	}
-	download := "mkdir -p " + shellQuote(path.Dir(remoteBinary)) +
-		" && printf '%s\\n' 'timeline source=sidecar_boot event=download_start' >&2" +
-		" && curl -fsSL --show-error --retry 3 --retry-delay 1 --connect-timeout 10 --max-time 180 -o " + shellQuote(remoteBinary) + " " + shellQuote(w.sidecarURL)
+	if artifact.signed() {
+		loader := sidecarLoaderCommand(w.agentLoaderPath, remoteBinary, artifact)
+		return "printf '%s\\n' 'timeline source=sidecar_boot event=loader_exec_start' >&2 && " + loader
+	}
+	download := "printf '%s\\n' 'timeline source=sidecar_boot event=download_start' >&2" +
+		" && " + sidecarDownloadCommand(remoteBinary, artifact)
 	download += " && printf '%s\\n' 'timeline source=sidecar_boot event=download_done' >&2"
 	return download + " && printf '%s\\n' 'timeline source=sidecar_boot event=exec_start' >&2 && chmod +x " + shellQuote(remoteBinary) + " && " + run
 }

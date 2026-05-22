@@ -23,7 +23,10 @@ const (
 type ACPSessionRuntime struct {
 	RuntimeID            string
 	SandboxBackend       string
-	SandboxTemplateID    string
+	AgentVersion         string
+	AgentTemplateID      string
+	WorkspaceVersion     string
+	WorkspaceTemplateID  string
 	OuterSandboxID       string
 	OuterSandboxDomain   string
 	OuterEnvdAccessToken string
@@ -37,24 +40,15 @@ type ACPSessionRuntime struct {
 }
 
 type ACPSessionRuntimeStartRequest struct {
-	SessionID         string
-	Scope             Scope
-	CWD               string
-	History           []acpHistoryEntry
-	Generation        int64
-	SandboxBackend    string
-	SandboxTemplateID string
-}
-
-type ACPSessionRuntimePromptRequest struct {
-	SessionID  string
-	Scope      Scope
-	CWD        string
-	Prompt     string
-	InputFiles []materializedFile
-	JobID      string
-	ResponseID string
-	Generation int64
+	SessionID        string
+	Scope            Scope
+	CWD              string
+	History          []acpHistoryEntry
+	Generation       int64
+	SandboxBackend   string
+	AgentVersion     string
+	WorkspaceVersion string
+	SidecarArtifact  agentSidecarArtifact
 }
 
 type ACPSessionRuntimeUpdate struct {
@@ -77,26 +71,20 @@ type ACPSessionEnvdRuntimeManager interface {
 type ACPSessionRuntimeManager interface {
 	StartSessionRuntime(context.Context, ACPSessionRuntimeStartRequest) (ACPSessionRuntime, error)
 	ReattachSessionRuntime(context.Context, ACPSessionRuntime) (ACPSessionRuntime, error)
-	PromptSessionRuntime(context.Context, ACPSessionRuntime, ACPSessionRuntimePromptRequest, func(workerEvent) error) (workerResult, ACPSessionRuntimeUpdate, error)
 	CancelSessionRuntime(context.Context, ACPSessionRuntime, string) error
 	CloseSessionRuntime(context.Context, ACPSessionRuntime) error
 }
 
-type fakeACPSessionRuntimeManager struct {
-	worker Worker
-}
+type fakeACPSessionRuntimeManager struct{}
 
 func newACPSessionRuntimeManager(worker Worker) ACPSessionRuntimeManager {
 	if manager, ok := worker.(ACPSessionRuntimeManager); ok {
 		return manager
 	}
-	return fakeACPSessionRuntimeManager{worker: worker}
+	return fakeACPSessionRuntimeManager{}
 }
 
 func (m fakeACPSessionRuntimeManager) StartSessionRuntime(ctx context.Context, req ACPSessionRuntimeStartRequest) (ACPSessionRuntime, error) {
-	if m.worker == nil {
-		return ACPSessionRuntime{}, fmt.Errorf("acp session runtime manager is unavailable")
-	}
 	return ACPSessionRuntime{
 		RuntimeID:      fmt.Sprintf("fake_runtime_%s_%d", req.SessionID, req.Generation),
 		DaemonAddr:     "fake",
@@ -111,31 +99,6 @@ func (m fakeACPSessionRuntimeManager) ReattachSessionRuntime(ctx context.Context
 	return runtime, nil
 }
 
-func (m fakeACPSessionRuntimeManager) PromptSessionRuntime(ctx context.Context, runtime ACPSessionRuntime, req ACPSessionRuntimePromptRequest, emit func(workerEvent) error) (workerResult, ACPSessionRuntimeUpdate, error) {
-	job := workerJob{
-		WorkerContractVersion: WorkerContractVersion,
-		JobID:                 req.JobID,
-		ResponseID:            req.ResponseID,
-		Scope:                 req.Scope,
-		Instruction:           req.Prompt,
-		TimeoutSeconds:        300,
-	}
-	result, err := m.worker.Run(ctx, job, emit)
-	if err != nil {
-		return workerResult{}, ACPSessionRuntimeUpdate{}, err
-	}
-	if result.JobID == "" {
-		result.JobID = req.JobID
-	}
-	if result.WorkerContractVersion == "" {
-		result.WorkerContractVersion = WorkerContractVersion
-	}
-	if result.Status == "" {
-		result.Status = "completed"
-	}
-	return result, ACPSessionRuntimeUpdate{}, nil
-}
-
 func (m fakeACPSessionRuntimeManager) CloseSessionRuntime(ctx context.Context, runtime ACPSessionRuntime) error {
 	select {
 	case <-ctx.Done():
@@ -143,6 +106,10 @@ func (m fakeACPSessionRuntimeManager) CloseSessionRuntime(ctx context.Context, r
 	case <-time.After(1 * time.Millisecond):
 		return nil
 	}
+}
+
+func (job workerJob) isACPSessionPrompt() bool {
+	return job.ACPSessionID != "" || job.ACPSessionRuntime.RuntimeID != "" || job.ACPSessionRuntime.OuterSandboxID != ""
 }
 
 func (m fakeACPSessionRuntimeManager) CancelSessionRuntime(ctx context.Context, runtime ACPSessionRuntime, jobID string) error {

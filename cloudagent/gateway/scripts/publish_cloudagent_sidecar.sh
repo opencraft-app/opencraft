@@ -42,8 +42,8 @@ if [ ! -f "$COSCMD_CONFIG" ]; then
   exit 2
 fi
 
-SIDECAR_LOCAL_PATH="${GATEWAY_AGENT_SIDECAR_BINARY:-$ROOT_DIR/dist/hermes-sidecar-linux-amd64}"
-SIDECAR_BASENAME="hermes-sidecar-linux-amd64"
+SIDECAR_LOCAL_PATH="${GATEWAY_AGENT_SIDECAR_BINARY:-$ROOT_DIR/dist/cloudagent-sidecar-linux-amd64}"
+SIDECAR_BASENAME="cloudagent-sidecar-linux-amd64"
 
 if [ ! -f "$SIDECAR_LOCAL_PATH" ]; then
   printf 'missing sidecar binary: %s\n' "$SIDECAR_LOCAL_PATH" >&2

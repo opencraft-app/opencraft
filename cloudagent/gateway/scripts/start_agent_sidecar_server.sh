@@ -23,7 +23,7 @@ require_cmd() {
   fi
 }
 
-PUBLISH_HELPER="$ROOT_DIR/scripts/publish_hermes_sidecar.sh"
+PUBLISH_HELPER="$ROOT_DIR/scripts/publish_cloudagent_sidecar.sh"
 SANDBOX_HOST_PUBLISH_HELPER="$ROOT_DIR/../sandbox-host/scripts/publish_sandbox_host.sh"
 GATEWAY_WORKER_MODE="${GATEWAY_WORKER_MODE:-agent_injected}"
 GATEWAY_ADDR="${GATEWAY_ADDR:-127.0.0.1:18094}"

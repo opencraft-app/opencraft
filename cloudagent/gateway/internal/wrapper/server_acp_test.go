@@ -271,7 +271,7 @@ func TestACPPromptAcceptsWrapperFileResourceBlocks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := NewServer(store, FakeWorker{OutputText: "unused"})
+	srv := NewServer(store, manager)
 	srv.acpGate.runtimeManager = manager
 	upload := uploadFile(t, srv, "tenant-a", "project-a", "TODO.md", []byte("# todo\n"))
 	fileID := upload["id"].(string)
@@ -307,10 +307,10 @@ func TestACPPromptAcceptsWrapperFileResourceBlocks(t *testing.T) {
 
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
-	if len(manager.prompts) != 1 {
-		t.Fatalf("expected one prompt, got %#v", manager.prompts)
+	if len(manager.workerJobs) != 1 {
+		t.Fatalf("expected one prompt, got %#v", manager.workerJobs)
 	}
-	prompt := manager.prompts[0]
+	prompt := manager.workerJobs[0]
 	if len(prompt.InputFiles) != 1 {
 		t.Fatalf("expected resource file to be materialized, got %#v", prompt.InputFiles)
 	}
@@ -318,8 +318,8 @@ func TestACPPromptAcceptsWrapperFileResourceBlocks(t *testing.T) {
 	if file.FileID != fileID || file.WorkspacePath != "./inputs/docs/TODO.md" || file.ContentType != "text/markdown" {
 		t.Fatalf("unexpected materialized file: %#v", file)
 	}
-	if !strings.Contains(prompt.Prompt, "./inputs/docs/TODO.md") || strings.Contains(prompt.Prompt, "# todo") {
-		t.Fatalf("prompt should contain compact manifest without file body: %q", prompt.Prompt)
+	if !strings.Contains(prompt.Instruction, "./inputs/docs/TODO.md") || strings.Contains(prompt.Instruction, "# todo") {
+		t.Fatalf("prompt should contain compact manifest without file body: %q", prompt.Instruction)
 	}
 }
 
@@ -699,6 +699,38 @@ func TestACPSessionRuntimeStartsOnNewAndPromptsAreIncremental(t *testing.T) {
 	}
 }
 
+func TestACPPromptExecutesThroughWorkerRunWithSessionRuntime(t *testing.T) {
+	manager := &recordingACPRuntimeManager{}
+	srv := newACPTestServerWithRuntime(t, manager)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	client := dialACPWS(t, "ws"+trimHTTPPrefix(ts.URL)+"/acp", map[string]string{"Authorization": "Bearer test-key"})
+	defer client.close()
+	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{}})
+	waitForRPCID(t, client, float64(1))
+	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 2, "method": "session/new", "params": map[string]any{}})
+	newResp := waitForRPCID(t, client, float64(2))
+	sessionID := newResp["result"].(map[string]any)["sessionId"].(string)
+
+	sendACPPrompt(t, client, sessionID, 3, "worker run")
+
+	jobs := manager.recordedWorkerJobs()
+	if len(jobs) != 1 {
+		t.Fatalf("expected one Worker.Run job, got %d", len(jobs))
+	}
+	job := jobs[0]
+	if job.ACPSessionID != sessionID || job.ACPSessionGeneration != 1 {
+		t.Fatalf("worker job missing ACP session identity: %#v", job)
+	}
+	if job.ACPSessionRuntime.OuterSandboxID == "" || job.ACPSessionRuntime.RuntimeID == "" {
+		t.Fatalf("worker job missing ACP runtime host identity: %#v", job.ACPSessionRuntime)
+	}
+	if job.Instruction != "worker run" || job.CWD != sidecarRequestCWD() {
+		t.Fatalf("unexpected worker job prompt fields: %#v", job)
+	}
+}
+
 func TestACPRuntimeCWDIsAlwaysSandboxWorkspace(t *testing.T) {
 	manager := &recordingACPRuntimeManager{}
 	srv := newACPTestServerWithRuntime(t, manager)
@@ -760,8 +792,7 @@ func TestACPSessionNewPassesCloudAgentSandboxBackendMeta(t *testing.T) {
 			"cwd": "/workspace",
 			"_meta": map[string]any{
 				"cloudagent": map[string]any{
-					"sandbox_backend":     "talos",
-					"sandbox_template_id": "498c6c11-74d7-426e-bdb1-13d8aa73997e",
+					"sandbox_backend": "talos",
 				},
 			},
 		},
@@ -771,8 +802,79 @@ func TestACPSessionNewPassesCloudAgentSandboxBackendMeta(t *testing.T) {
 	if got := manager.startBackends(); len(got) != 1 || got[0] != "talos" {
 		t.Fatalf("runtime start sandbox backend = %#v, want [talos]", got)
 	}
-	if got := manager.startTemplateIDs(); len(got) != 1 || got[0] != "498c6c11-74d7-426e-bdb1-13d8aa73997e" {
-		t.Fatalf("runtime start sandbox template = %#v, want [498c6c11-74d7-426e-bdb1-13d8aa73997e]", got)
+}
+
+func TestACPSessionNewPassesAgentAndWorkspaceVersions(t *testing.T) {
+	manager := &recordingACPRuntimeManager{}
+	srv := newACPTestServerWithRuntime(t, manager)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	client := dialACPWS(t, "ws"+trimHTTPPrefix(ts.URL)+"/acp", map[string]string{"Authorization": "Bearer test-key"})
+	defer client.close()
+	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{}})
+	waitForRPCID(t, client, float64(1))
+	client.writeJSON(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      2,
+		"method":  "session/new",
+		"params": map[string]any{
+			"cwd": "/workspace",
+			"_meta": map[string]any{
+				"cloudagent": map[string]any{
+					"agent_version":     "builtin.v1",
+					"workspace_version": "builtin.v1",
+				},
+			},
+		},
+	})
+	waitForRPCID(t, client, float64(2))
+
+	starts := manager.recordedStarts()
+	if len(starts) != 1 {
+		t.Fatalf("expected one start request, got %d", len(starts))
+	}
+	start := starts[0]
+	if start.AgentVersion != "builtin.v1" || start.WorkspaceVersion != "builtin.v1" {
+		t.Fatalf("unexpected version selection: %#v", start)
+	}
+}
+
+func TestACPSessionNewPassesCustomSidecarURL(t *testing.T) {
+	manager := &recordingACPRuntimeManager{}
+	srv := newACPTestServerWithRuntime(t, manager)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	client := dialACPWS(t, "ws"+trimHTTPPrefix(ts.URL)+"/acp", map[string]string{"Authorization": "Bearer test-key"})
+	defer client.close()
+	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{}})
+	waitForRPCID(t, client, float64(1))
+	client.writeJSON(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      2,
+		"method":  "session/new",
+		"params": map[string]any{
+			"cwd": "/workspace",
+			"_meta": map[string]any{
+				"cloudagent": map[string]any{
+					"sidecar_url": "https://example.com/cloudagent-sidecar-linux-amd64-custom",
+				},
+			},
+		},
+	})
+	waitForRPCID(t, client, float64(2))
+
+	starts := manager.recordedStarts()
+	if len(starts) != 1 {
+		t.Fatalf("expected one start request, got %d", len(starts))
+	}
+	artifact := starts[0].SidecarArtifact
+	if artifact.URL != "https://example.com/cloudagent-sidecar-linux-amd64-custom" {
+		t.Fatalf("unexpected sidecar url: %#v", artifact)
+	}
+	if artifact.SHA256 != "" || artifact.SigURL != "" || artifact.SigningKeyID != "" {
+		t.Fatalf("gateway should pass raw sidecar artifact to runtime validator: %#v", artifact)
 	}
 }
 
@@ -1077,7 +1179,10 @@ func newACPTestServerWithRuntime(t *testing.T, manager ACPSessionRuntimeManager)
 }
 
 func newACPTestServerWithRuntimeAndStore(store *Store, manager ACPSessionRuntimeManager) *Server {
-	worker := FakeWorker{OutputText: "unused"}
+	var worker Worker = FakeWorker{OutputText: "unused"}
+	if executor, ok := manager.(Worker); ok {
+		worker = executor
+	}
 	return &Server{
 		store:  store,
 		worker: worker,
@@ -1111,7 +1216,7 @@ func sendACPPrompt(t *testing.T, client *acpWSClient, sessionID string, id int, 
 type recordingACPRuntimeManager struct {
 	mu            sync.Mutex
 	starts        []ACPSessionRuntimeStartRequest
-	prompts       []ACPSessionRuntimePromptRequest
+	workerJobs    []workerJob
 	cancels       []ACPSessionRuntime
 	closes        []ACPSessionRuntime
 	events        []workerEvent
@@ -1127,7 +1232,14 @@ func (m *recordingACPRuntimeManager) StartSessionRuntime(ctx context.Context, re
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.starts = append(m.starts, req)
-	return ACPSessionRuntime{RuntimeID: fmt.Sprintf("rt_%d", len(m.starts)), SandboxBackend: req.SandboxBackend, SandboxTemplateID: req.SandboxTemplateID, OuterSandboxID: fmt.Sprintf("outer_%d", len(m.starts)), DaemonAddr: "fake"}, nil
+	return ACPSessionRuntime{
+		RuntimeID:        fmt.Sprintf("rt_%d", len(m.starts)),
+		SandboxBackend:   req.SandboxBackend,
+		AgentVersion:     normalizeRuntimeVersion(req.AgentVersion, defaultAgentVersion),
+		WorkspaceVersion: normalizeRuntimeVersion(req.WorkspaceVersion, defaultWorkspaceVersion),
+		OuterSandboxID:   fmt.Sprintf("outer_%d", len(m.starts)),
+		DaemonAddr:       "fake",
+	}, nil
 }
 
 func (m *recordingACPRuntimeManager) ReattachSessionRuntime(ctx context.Context, runtime ACPSessionRuntime) (ACPSessionRuntime, error) {
@@ -1143,9 +1255,9 @@ func (m *recordingACPRuntimeManager) ReattachSessionRuntime(ctx context.Context,
 	return runtime, nil
 }
 
-func (m *recordingACPRuntimeManager) PromptSessionRuntime(ctx context.Context, runtime ACPSessionRuntime, req ACPSessionRuntimePromptRequest, emit func(workerEvent) error) (workerResult, ACPSessionRuntimeUpdate, error) {
+func (m *recordingACPRuntimeManager) Run(ctx context.Context, job workerJob, emit func(workerEvent) error) (workerResult, error) {
 	m.mu.Lock()
-	m.prompts = append(m.prompts, req)
+	m.workerJobs = append(m.workerJobs, job)
 	promptErr := m.promptErr
 	if len(m.promptErrs) > 0 {
 		promptErr = m.promptErrs[0]
@@ -1153,30 +1265,34 @@ func (m *recordingACPRuntimeManager) PromptSessionRuntime(ctx context.Context, r
 	}
 	m.mu.Unlock()
 	if promptErr != nil {
-		return workerResult{}, ACPSessionRuntimeUpdate{}, promptErr
+		return workerResult{}, promptErr
 	}
 	if emit != nil {
 		events := m.events
 		if len(events) == 0 {
-			events = []workerEvent{{WorkerContractVersion: WorkerContractVersion, EventID: "evt_" + req.JobID, JobID: req.JobID, Sequence: 1, Kind: "output_text_delta", Timestamp: time.Now().UTC().Unix(), Delta: "answer: " + req.Prompt}}
+			events = []workerEvent{{WorkerContractVersion: WorkerContractVersion, EventID: "evt_" + job.JobID, JobID: job.JobID, Sequence: 1, Kind: "output_text_delta", Timestamp: time.Now().UTC().Unix(), Delta: "answer: " + job.Instruction}}
 		}
 		for _, event := range events {
 			event.WorkerContractVersion = WorkerContractVersion
-			event.JobID = req.JobID
+			event.JobID = job.JobID
 			event.Timestamp = time.Now().UTC().Unix()
 			if event.EventID == "" {
-				event.EventID = fmt.Sprintf("evt_%s_%d", req.JobID, event.Sequence)
+				event.EventID = fmt.Sprintf("evt_%s_%d", job.JobID, event.Sequence)
 			}
 			if err := emit(event); err != nil {
-				return workerResult{}, ACPSessionRuntimeUpdate{}, err
+				return workerResult{}, err
 			}
 		}
 	}
 	outputText := m.resultText
 	if outputText == "" {
-		outputText = "answer: " + req.Prompt
+		outputText = "answer: " + job.Instruction
 	}
-	return workerResult{WorkerContractVersion: WorkerContractVersion, JobID: req.JobID, Status: "completed", OutputText: outputText}, ACPSessionRuntimeUpdate{}, nil
+	return workerResult{WorkerContractVersion: WorkerContractVersion, JobID: job.JobID, Status: "completed", OutputText: outputText}, nil
+}
+
+func (m *recordingACPRuntimeManager) FetchArtifact(ctx context.Context, job workerJob, artifact artifactDescriptor) ([]byte, error) {
+	return nil, fmt.Errorf("artifacts are not supported by recording ACP test worker")
 }
 
 func (m *recordingACPRuntimeManager) CloseSessionRuntime(ctx context.Context, runtime ACPSessionRuntime) error {
@@ -1234,11 +1350,23 @@ func (m *recordingACPRuntimeManager) waitCloseCount(t *testing.T, want int) {
 func (m *recordingACPRuntimeManager) promptTexts() []string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	out := make([]string, 0, len(m.prompts))
-	for _, prompt := range m.prompts {
-		out = append(out, prompt.Prompt)
+	out := make([]string, 0, len(m.workerJobs))
+	for _, prompt := range m.workerJobs {
+		out = append(out, prompt.Instruction)
 	}
 	return out
+}
+
+func (m *recordingACPRuntimeManager) recordedWorkerJobs() []workerJob {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]workerJob(nil), m.workerJobs...)
+}
+
+func (m *recordingACPRuntimeManager) recordedStarts() []ACPSessionRuntimeStartRequest {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]ACPSessionRuntimeStartRequest(nil), m.starts...)
 }
 
 func (m *recordingACPRuntimeManager) startCWDs() []string {
@@ -1261,21 +1389,11 @@ func (m *recordingACPRuntimeManager) startBackends() []string {
 	return out
 }
 
-func (m *recordingACPRuntimeManager) startTemplateIDs() []string {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	out := make([]string, 0, len(m.starts))
-	for _, start := range m.starts {
-		out = append(out, start.SandboxTemplateID)
-	}
-	return out
-}
-
 func (m *recordingACPRuntimeManager) promptCWDs() []string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	out := make([]string, 0, len(m.prompts))
-	for _, prompt := range m.prompts {
+	out := make([]string, 0, len(m.workerJobs))
+	for _, prompt := range m.workerJobs {
 		out = append(out, prompt.CWD)
 	}
 	return out
@@ -1291,13 +1409,13 @@ func newBlockingACPRuntimeManager() *blockingACPRuntimeManager {
 	return &blockingACPRuntimeManager{started: make(chan struct{})}
 }
 
-func (m *blockingACPRuntimeManager) PromptSessionRuntime(ctx context.Context, runtime ACPSessionRuntime, req ACPSessionRuntimePromptRequest, emit func(workerEvent) error) (workerResult, ACPSessionRuntimeUpdate, error) {
+func (m *blockingACPRuntimeManager) Run(ctx context.Context, job workerJob, emit func(workerEvent) error) (workerResult, error) {
 	m.mu.Lock()
-	m.prompts = append(m.prompts, req)
+	m.workerJobs = append(m.workerJobs, job)
 	m.mu.Unlock()
 	m.once.Do(func() { close(m.started) })
 	<-ctx.Done()
-	return workerResult{}, ACPSessionRuntimeUpdate{}, ctx.Err()
+	return workerResult{}, ctx.Err()
 }
 
 func (m *blockingACPRuntimeManager) waitStarted(t *testing.T) {
