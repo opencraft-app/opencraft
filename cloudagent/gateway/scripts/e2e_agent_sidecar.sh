@@ -197,12 +197,12 @@ assert_log_since_not() {
   fi
 }
 
-log "build server and Hermes sidecar"
-make hermes-sidecar-linux server
+log "build server and CloudAgent sidecar"
+make cloudagent-sidecar-linux server
 make test
 
-SIDECAR_SHA="$(shasum -a 256 dist/hermes-sidecar-linux-amd64 | awk '{print $1}')"
-SIDECAR_OBJECT="${COS_OBJECT_PREFIX%/}/hermes-sidecar-linux-amd64-${SIDECAR_SHA:0:12}"
+SIDECAR_SHA="$(shasum -a 256 dist/cloudagent-sidecar-linux-amd64 | awk '{print $1}')"
+SIDECAR_OBJECT="${COS_OBJECT_PREFIX%/}/cloudagent-sidecar-linux-amd64-${SIDECAR_SHA:0:12}"
 PUBLIC_URL_FILE="$WORK_DIR/sidecar-url.clean"
 
 COS_BUCKET="${COS_BUCKET:-$(awk -F '=' '/^[[:space:]]*bucket[[:space:]]*=/{gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2); print $2; exit}' "$COSCMD_CONFIG")}"
@@ -214,8 +214,8 @@ fi
 PUBLIC_BASE_URL="${COS_PUBLIC_BASE_URL:-https://${COS_BUCKET}.cos.${COS_REGION}.myqcloud.com}"
 PUBLIC_URL="${PUBLIC_BASE_URL%/}/${SIDECAR_OBJECT#/}"
 
-log "upload Hermes sidecar to COS object=${SIDECAR_OBJECT}"
-"$COSCMD_BIN" -c "$COSCMD_CONFIG" upload -f -y dist/hermes-sidecar-linux-amd64 "$SIDECAR_OBJECT"
+log "upload CloudAgent sidecar to COS object=${SIDECAR_OBJECT}"
+"$COSCMD_BIN" -c "$COSCMD_CONFIG" upload -f -y dist/cloudagent-sidecar-linux-amd64 "$SIDECAR_OBJECT"
 "$COSCMD_BIN" -c "$COSCMD_CONFIG" putobjectacl "$SIDECAR_OBJECT" --grant-read anyone
 printf '%s\n' "$PUBLIC_URL" >"$PUBLIC_URL_FILE"
 curl -fsSI --connect-timeout 10 --max-time 30 "$PUBLIC_URL" >/dev/null
@@ -236,7 +236,7 @@ INNER_SANDBOX_TEMPLATE="$INNER_TEMPLATE" \
 TOKENHUB_API_KEY="$TOKENHUB_API_KEY" \
 TOKENHUB_MODEL="$TOKENHUB_MODEL" \
 GATEWAY_AGS_REQUEST_TIMEOUT_SECONDS=300 \
-GATEWAY_AGENT_SIDECAR_BINARY="$ROOT_DIR/dist/hermes-sidecar-linux-amd64" \
+GATEWAY_AGENT_SIDECAR_BINARY="$ROOT_DIR/dist/cloudagent-sidecar-linux-amd64" \
 GATEWAY_AGENT_SIDECAR_URL="$(cat "$PUBLIC_URL_FILE")" \
 GATEWAY_AGENT_SIDECAR_SHA256="$SIDECAR_SHA" \
 GATEWAY_SANDBOX_HOST_URL="$SANDBOX_HOST_URL" \

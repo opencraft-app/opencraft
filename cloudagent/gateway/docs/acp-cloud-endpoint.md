@@ -105,14 +105,25 @@ ws://cloudagent.lightvela.com/acp
     "_meta": {
       "cloudagent": {
         "sandbox_backend": "talos",
-        "sandbox_template_id": "498c6c11-74d7-426e-bdb1-13d8aa73997e"
+        "agent_version": "builtin.v1",
+        "workspace_version": "builtin.v1"
       }
     }
   }
 }
 ```
 
-不传 `sandbox_backend` 时使用服务端默认配置。传 `sandbox_template_id` 时，该会话的外层和内层 sandbox 都会使用这个 template；不传时使用服务端 `GATEWAY_TALOS_TEMPLATE`。当前可用 backend 取决于服务端环境变量；例如 `talos` 需要后端配置 `GATEWAY_TALOS_API_KEY` 和对应 template。
+不传 `sandbox_backend` 时使用服务端默认配置。`agent_version` 控制外层 Agent runtime host 的灰度版本，版本内部决定外层模板、初始化脚本插件，以及服务端 allowlist 里的 signed sidecar artifact；`workspace_version` 控制 inner workspace runtime 的灰度版本，版本内部决定内层模板和行为配置。当前可用 backend 取决于服务端环境变量；例如 `talos` 需要后端配置 `GATEWAY_TALOS_API_KEY` 和对应 template。
+
+客户端也可以直接传 signed sidecar artifact URL：
+
+```json
+{
+  "sidecar_url": "https://bucket.cos.ap-shanghai.myqcloud.com/agent-sidecar/cloudagent-sidecar-linux-amd64-custom"
+}
+```
+
+服务端默认把签名 URL 拼成 `${sidecar_url}.sig`，`signing_key_id` 缺省为 `cloudagent-agent-release-v1`。外层 sandbox 通过预置的 Rust `cloudagent-agent-loader` 先验 Ed25519 detached `.sig`，再用 `.sig` envelope 里的 SHA256 校验 ELF bytes，最后才 `execve` sidecar。
 
 ### _cloudagent.session.status
 

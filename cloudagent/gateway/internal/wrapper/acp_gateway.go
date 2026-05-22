@@ -157,8 +157,43 @@ type acpSessionMeta struct {
 }
 
 type acpCloudAgentSessionMeta struct {
-	SandboxBackend    string `json:"sandbox_backend,omitempty"`
-	SandboxTemplateID string `json:"sandbox_template_id,omitempty"`
+	SandboxBackend   string                           `json:"sandbox_backend,omitempty"`
+	AgentVersion     string                           `json:"agent_version,omitempty"`
+	WorkspaceVersion string                           `json:"workspace_version,omitempty"`
+	SidecarURL       string                           `json:"sidecar_url,omitempty"`
+	SidecarSHA256    string                           `json:"sidecar_sha256,omitempty"`
+	SidecarSigURL    string                           `json:"sidecar_sig_url,omitempty"`
+	SigningKeyID     string                           `json:"signing_key_id,omitempty"`
+	SidecarArtifact  acpCloudAgentSidecarArtifactMeta `json:"sidecar_artifact,omitempty"`
+}
+
+type acpCloudAgentSidecarArtifactMeta struct {
+	SidecarURL    string `json:"sidecar_url,omitempty"`
+	SidecarSHA256 string `json:"sidecar_sha256,omitempty"`
+	SidecarSigURL string `json:"sidecar_sig_url,omitempty"`
+	SigningKeyID  string `json:"signing_key_id,omitempty"`
+}
+
+func (m acpCloudAgentSessionMeta) sidecarArtifact() agentSidecarArtifact {
+	artifact := agentSidecarArtifact{
+		URL:          strings.TrimSpace(m.SidecarArtifact.SidecarURL),
+		SHA256:       normalizeSHA256(m.SidecarArtifact.SidecarSHA256),
+		SigURL:       strings.TrimSpace(m.SidecarArtifact.SidecarSigURL),
+		SigningKeyID: strings.TrimSpace(m.SidecarArtifact.SigningKeyID),
+	}
+	if artifact.URL == "" {
+		artifact.URL = strings.TrimSpace(m.SidecarURL)
+	}
+	if artifact.SHA256 == "" {
+		artifact.SHA256 = normalizeSHA256(m.SidecarSHA256)
+	}
+	if artifact.SigURL == "" {
+		artifact.SigURL = strings.TrimSpace(m.SidecarSigURL)
+	}
+	if artifact.SigningKeyID == "" {
+		artifact.SigningKeyID = strings.TrimSpace(m.SigningKeyID)
+	}
+	return artifact
 }
 
 type acpCloudAgentSessionRequest struct {
@@ -505,17 +540,17 @@ func (g *ACPGateway) startPrompt(ctx context.Context, ws *WSConn, id json.RawMes
 		return err
 	}
 	promptCtx, cancel := context.WithCancel(ctx)
-	run, runtime, promptReq, err := g.beginPrompt(session.Scope, session.SessionID, cancel, req.CWD, trimmed, userText, inputFiles)
+	run, promptJob, err := g.beginPrompt(session.Scope, session.SessionID, cancel, req.CWD, trimmed, userText, inputFiles)
 	if err != nil {
 		cancel()
 		return err
 	}
 	run.setResponseTarget(ws, id, appEnvelope)
-	go g.runPromptAsync(promptCtx, ws, id, session.SessionID, runtime, promptReq, run, appEnvelope)
+	go g.runPromptAsync(promptCtx, ws, id, session.SessionID, promptJob, run, appEnvelope)
 	return nil
 }
 
-func (g *ACPGateway) runPromptAsync(ctx context.Context, ws *WSConn, id json.RawMessage, sessionID string, runtime ACPSessionRuntime, req ACPSessionRuntimePromptRequest, run *acpPromptRun, appEnvelope bool) {
+func (g *ACPGateway) runPromptAsync(ctx context.Context, ws *WSConn, id json.RawMessage, sessionID string, job workerJob, run *acpPromptRun, appEnvelope bool) {
 	start := time.Now()
 	var streamSeq int64
 	emit := func(ev workerEvent) error {
@@ -529,7 +564,7 @@ func (g *ACPGateway) runPromptAsync(ctx context.Context, ws *WSConn, id json.Raw
 		if g.store != nil && run.TurnID != "" && run.AssistantMessageID != "" {
 			blockType, toolCallID := canonicalBlockTypeFromWorkerEvent(ev)
 			if blockType != "" {
-				blockID, err := g.store.UpsertACPAssistantBlock(sessionID, run.TurnID, run.AssistantMessageID, req.ResponseID, blockType, toolCallID, update)
+				blockID, err := g.store.UpsertACPAssistantBlock(sessionID, run.TurnID, run.AssistantMessageID, job.ResponseID, blockType, toolCallID, update)
 				if err != nil {
 					return err
 				}
@@ -538,24 +573,24 @@ func (g *ACPGateway) runPromptAsync(ctx context.Context, ws *WSConn, id json.Raw
 			}
 		}
 		seq := atomic.AddInt64(&streamSeq, 1)
-		fmt.Fprintf(os.Stderr, "timeline source=server t=%.3fs event=acp_ws_stream_emit_start session_id=%s job_id=%s kind=%s seq=%d delta_bytes=%d app_envelope=%t\n", time.Since(start).Seconds(), sessionID, req.JobID, ev.Kind, seq, deltaBytes, appEnvelope)
+		fmt.Fprintf(os.Stderr, "timeline source=server t=%.3fs event=acp_ws_stream_emit_start session_id=%s job_id=%s kind=%s seq=%d delta_bytes=%d app_envelope=%t\n", time.Since(start).Seconds(), sessionID, job.JobID, ev.Kind, seq, deltaBytes, appEnvelope)
 		err := g.writeNotification(ws, appEnvelope, "session/update", map[string]any{
 			"sessionId": sessionID,
 			"update":    update,
 		})
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "timeline source=server t=%.3fs event=acp_ws_stream_emit_failed session_id=%s job_id=%s kind=%s seq=%d delta_bytes=%d error=%q\n", time.Since(start).Seconds(), sessionID, req.JobID, ev.Kind, seq, deltaBytes, err.Error())
+			fmt.Fprintf(os.Stderr, "timeline source=server t=%.3fs event=acp_ws_stream_emit_failed session_id=%s job_id=%s kind=%s seq=%d delta_bytes=%d error=%q\n", time.Since(start).Seconds(), sessionID, job.JobID, ev.Kind, seq, deltaBytes, err.Error())
 			return err
 		}
-		fmt.Fprintf(os.Stderr, "timeline source=server t=%.3fs event=acp_ws_stream_emit_done session_id=%s job_id=%s kind=%s seq=%d delta_bytes=%d\n", time.Since(start).Seconds(), sessionID, req.JobID, ev.Kind, seq, deltaBytes)
+		fmt.Fprintf(os.Stderr, "timeline source=server t=%.3fs event=acp_ws_stream_emit_done session_id=%s job_id=%s kind=%s seq=%d delta_bytes=%d\n", time.Since(start).Seconds(), sessionID, job.JobID, ev.Kind, seq, deltaBytes)
 		return nil
 	}
-	result, update, err := g.runtimeManager.PromptSessionRuntime(ctx, runtime, req, emit)
+	result, err := g.runPromptWorker(ctx, job, emit)
 	if err != nil && isRecoverablePromptRuntimeError(err) {
-		recoveredRuntime, recoveredReq, recovered := g.recoverPromptRuntime(ctx, sessionID, run, req, runtime, err)
+		recoveredJob, recovered := g.recoverPromptRuntime(ctx, sessionID, run, job, err)
 		if recovered {
-			result, update, err = g.runtimeManager.PromptSessionRuntime(ctx, recoveredRuntime, recoveredReq, emit)
-			req = recoveredReq
+			result, err = g.runPromptWorker(ctx, recoveredJob, emit)
+			job = recoveredJob
 		}
 	}
 	if err != nil {
@@ -570,11 +605,31 @@ func (g *ACPGateway) runPromptAsync(ctx context.Context, ws *WSConn, id json.Raw
 		_ = g.finishInterruptedPrompt(ws, id, appEnvelope, sessionID, run, reason)
 		return
 	}
-	if err := g.finishSuccessfulPrompt(sessionID, run, req.ResponseID, result, update); err != nil {
+	if err := g.finishSuccessfulPrompt(sessionID, run, job.ResponseID, result, result.RuntimeUpdate); err != nil {
 		_ = g.writeResponse(ws, appEnvelope, mustJSONRPCError(id, -32000, err.Error()))
 		return
 	}
 	_ = g.writeResponse(ws, appEnvelope, mustJSONRPCResult(id, acpPromptResult{StopReason: "end_turn"}))
+}
+
+func (g *ACPGateway) runPromptWorker(ctx context.Context, job workerJob, emit func(workerEvent) error) (workerResult, error) {
+	if g.worker == nil {
+		return workerResult{}, fmt.Errorf("acp prompt worker is unavailable")
+	}
+	result, err := g.worker.Run(ctx, job, emit)
+	if err != nil {
+		return workerResult{}, err
+	}
+	if result.JobID == "" {
+		result.JobID = job.JobID
+	}
+	if result.WorkerContractVersion == "" {
+		result.WorkerContractVersion = WorkerContractVersion
+	}
+	if result.Status == "" {
+		result.Status = "completed"
+	}
+	return result, nil
 }
 
 func acpUpdateFromWorkerEvent(ev workerEvent) (map[string]any, int, bool) {
@@ -727,13 +782,14 @@ func (g *ACPGateway) persistSession(session *acpSession) {
 	}
 }
 
-func (g *ACPGateway) recoverPromptRuntime(ctx context.Context, sessionID string, run *acpPromptRun, req ACPSessionRuntimePromptRequest, staleRuntime ACPSessionRuntime, cause error) (ACPSessionRuntime, ACPSessionRuntimePromptRequest, bool) {
+func (g *ACPGateway) recoverPromptRuntime(ctx context.Context, sessionID string, run *acpPromptRun, job workerJob, cause error) (workerJob, bool) {
 	g.mu.Lock()
 	session, ok := g.sessions[sessionID]
 	if !ok || session.CurrentPrompt != run || session.RuntimeGeneration != run.Generation || session.State != acpRuntimeStatePrompting || run.stopReason() != "" {
 		g.mu.Unlock()
-		return ACPSessionRuntime{}, req, false
+		return job, false
 	}
+	staleRuntime := job.ACPSessionRuntime
 	historyLen := run.HistoryLenBefore
 	if historyLen > len(session.History) {
 		historyLen = len(session.History)
@@ -747,16 +803,17 @@ func (g *ACPGateway) recoverPromptRuntime(ctx context.Context, sessionID string,
 	session.UpdatedAt = time.Now().UTC()
 	g.persistSession(session)
 	startReq := ACPSessionRuntimeStartRequest{
-		SessionID:         session.SessionID,
-		Scope:             session.Scope,
-		CWD:               sidecarRequestCWD(),
-		History:           history,
-		Generation:        session.RuntimeGeneration,
-		SandboxBackend:    staleRuntime.SandboxBackend,
-		SandboxTemplateID: staleRuntime.SandboxTemplateID,
+		SessionID:        session.SessionID,
+		Scope:            session.Scope,
+		CWD:              sidecarRequestCWD(),
+		History:          history,
+		Generation:       session.RuntimeGeneration,
+		SandboxBackend:   staleRuntime.SandboxBackend,
+		AgentVersion:     staleRuntime.AgentVersion,
+		WorkspaceVersion: staleRuntime.WorkspaceVersion,
 	}
-	recoveredReq := req
-	recoveredReq.Generation = session.RuntimeGeneration
+	recoveredJob := job
+	recoveredJob.ACPSessionGeneration = session.RuntimeGeneration
 	generation := session.RuntimeGeneration
 	g.mu.Unlock()
 
@@ -778,7 +835,7 @@ func (g *ACPGateway) recoverPromptRuntime(ctx context.Context, sessionID string,
 				_ = g.runtimeManager.CloseSessionRuntime(cleanupCtx, recoveredRuntime)
 			}()
 		}
-		return ACPSessionRuntime{}, recoveredReq, false
+		return recoveredJob, false
 	}
 	if err != nil {
 		current.State = acpRuntimeStateFailed
@@ -786,7 +843,7 @@ func (g *ACPGateway) recoverPromptRuntime(ctx context.Context, sessionID string,
 		current.UpdatedAt = time.Now().UTC()
 		g.persistSession(current)
 		fmt.Fprintf(os.Stderr, "timeline source=server event=acp_runtime_recover_failed session_id=%s error=%s\n", sessionID, quoteServerField(err.Error()))
-		return ACPSessionRuntime{}, recoveredReq, false
+		return recoveredJob, false
 	}
 	current.Runtime = recoveredRuntime
 	g.ensureRuntimeProxyIDLocked(current)
@@ -796,7 +853,8 @@ func (g *ACPGateway) recoverPromptRuntime(ctx context.Context, sessionID string,
 	current.UpdatedAt = time.Now().UTC()
 	g.persistSession(current)
 	fmt.Fprintf(os.Stderr, "timeline source=server event=acp_runtime_recover_done session_id=%s new_outer_sandbox_id=%s\n", sessionID, recoveredRuntime.OuterSandboxID)
-	return recoveredRuntime, recoveredReq, true
+	recoveredJob.ACPSessionRuntime = recoveredRuntime
+	return recoveredJob, true
 }
 
 func (g *ACPGateway) preflightPromptRuntime(ctx context.Context, scope Scope, sessionID string) error {
@@ -980,7 +1038,10 @@ func (g *ACPGateway) cloudAgentSessionStatus(scope Scope, sessionID string) (map
 		"event_count":         len(session.Events),
 		"sandbox": map[string]any{
 			"backend":                     backend,
-			"sandbox_template_id":         runtime.SandboxTemplateID,
+			"agent_version":               runtime.AgentVersion,
+			"agent_template_id":           runtime.AgentTemplateID,
+			"workspace_version":           runtime.WorkspaceVersion,
+			"workspace_template_id":       runtime.WorkspaceTemplateID,
 			"runtime_id":                  runtime.RuntimeID,
 			"outer_sandbox_id":            runtime.OuterSandboxID,
 			"outer_sandbox_domain":        runtime.OuterSandboxDomain,
@@ -1007,6 +1068,7 @@ func acpReplayUpdate(event acpSessionEvent) (map[string]any, bool) {
 }
 
 func (g *ACPGateway) createSession(ctx context.Context, scope Scope, req acpSessionRequest) (*acpSession, error) {
+	sidecarArtifact := req.Meta.CloudAgent.sidecarArtifact()
 	g.mu.Lock()
 	sessionID := "session_" + randomHex(16)
 	now := time.Now().UTC()
@@ -1023,13 +1085,15 @@ func (g *ACPGateway) createSession(ctx context.Context, scope Scope, req acpSess
 	}
 	g.sessions[sessionID] = session
 	startReq := ACPSessionRuntimeStartRequest{
-		SessionID:         session.SessionID,
-		Scope:             session.Scope,
-		CWD:               sidecarRequestCWD(),
-		History:           cloneHistory(session.History),
-		Generation:        session.RuntimeGeneration,
-		SandboxBackend:    strings.ToLower(strings.TrimSpace(req.Meta.CloudAgent.SandboxBackend)),
-		SandboxTemplateID: strings.TrimSpace(req.Meta.CloudAgent.SandboxTemplateID),
+		SessionID:        session.SessionID,
+		Scope:            session.Scope,
+		CWD:              sidecarRequestCWD(),
+		History:          cloneHistory(session.History),
+		Generation:       session.RuntimeGeneration,
+		SandboxBackend:   strings.ToLower(strings.TrimSpace(req.Meta.CloudAgent.SandboxBackend)),
+		AgentVersion:     strings.TrimSpace(req.Meta.CloudAgent.AgentVersion),
+		WorkspaceVersion: strings.TrimSpace(req.Meta.CloudAgent.WorkspaceVersion),
+		SidecarArtifact:  sidecarArtifact,
 	}
 	g.mu.Unlock()
 	runtime, err := g.runtimeManager.StartSessionRuntime(ctx, startReq)
@@ -1255,24 +1319,24 @@ func (g *ACPGateway) cancelSessionPrompt(scope Scope, sessionID string) error {
 	return nil
 }
 
-func (g *ACPGateway) beginPrompt(scope Scope, sessionID string, cancel context.CancelFunc, cwd, prompt, userText string, inputFiles []materializedFile) (*acpPromptRun, ACPSessionRuntime, ACPSessionRuntimePromptRequest, error) {
+func (g *ACPGateway) beginPrompt(scope Scope, sessionID string, cancel context.CancelFunc, cwd, prompt, userText string, inputFiles []materializedFile) (*acpPromptRun, workerJob, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	session, ok := g.sessions[sessionID]
 	if !ok {
-		return nil, ACPSessionRuntime{}, ACPSessionRuntimePromptRequest{}, fmt.Errorf("session not found")
+		return nil, workerJob{}, fmt.Errorf("session not found")
 	}
 	if !sameScope(scope, session.Scope) {
-		return nil, ACPSessionRuntime{}, ACPSessionRuntimePromptRequest{}, fmt.Errorf("session is outside caller scope")
+		return nil, workerJob{}, fmt.Errorf("session is outside caller scope")
 	}
 	if session.Closed || session.State == acpRuntimeStateClosed {
-		return nil, ACPSessionRuntime{}, ACPSessionRuntimePromptRequest{}, fmt.Errorf("session is closed; resume it before prompting")
+		return nil, workerJob{}, fmt.Errorf("session is closed; resume it before prompting")
 	}
 	if session.State != acpRuntimeStateReady {
-		return nil, ACPSessionRuntime{}, ACPSessionRuntimePromptRequest{}, fmt.Errorf("session is not ready")
+		return nil, workerJob{}, fmt.Errorf("session is not ready")
 	}
 	if session.CurrentPrompt != nil {
-		return nil, ACPSessionRuntime{}, ACPSessionRuntimePromptRequest{}, fmt.Errorf("session already has an in-flight prompt")
+		return nil, workerJob{}, fmt.Errorf("session already has an in-flight prompt")
 	}
 	if cwd != "" {
 		session.CWD = defaultSessionCWD(cwd)
@@ -1284,7 +1348,7 @@ func (g *ACPGateway) beginPrompt(scope Scope, sessionID string, cancel context.C
 		var err error
 		turnRecord, err = g.store.BeginACPPromptTurn(session.SessionID, responseID, userText, inputFiles)
 		if err != nil {
-			return nil, ACPSessionRuntime{}, ACPSessionRuntimePromptRequest{}, err
+			return nil, workerJob{}, err
 		}
 	}
 	run := &acpPromptRun{
@@ -1308,18 +1372,22 @@ func (g *ACPGateway) beginPrompt(scope Scope, sessionID string, cancel context.C
 		run.UserMessageID = messageID
 		session.History = append(session.History, acpHistoryEntry{Role: "user", Text: userText, At: session.UpdatedAt, MessageID: messageID, BlockID: "block_" + randomHex(12)})
 	}
-	req := ACPSessionRuntimePromptRequest{
-		SessionID:  session.SessionID,
-		Scope:      session.Scope,
-		CWD:        sidecarRequestCWD(),
-		Prompt:     prompt,
-		InputFiles: append([]materializedFile(nil), inputFiles...),
-		JobID:      jobID,
-		ResponseID: responseID,
-		Generation: session.RuntimeGeneration,
+	job := workerJob{
+		WorkerContractVersion: WorkerContractVersion,
+		JobID:                 jobID,
+		ResponseID:            responseID,
+		Model:                 session.Model,
+		Scope:                 session.Scope,
+		CWD:                   sidecarRequestCWD(),
+		Instruction:           prompt,
+		InputFiles:            append([]materializedFile(nil), inputFiles...),
+		TimeoutSeconds:        300,
+		ACPSessionID:          session.SessionID,
+		ACPSessionGeneration:  session.RuntimeGeneration,
+		ACPSessionRuntime:     session.Runtime,
 	}
 	g.persistSession(session)
-	return run, session.Runtime, req, nil
+	return run, job, nil
 }
 
 func (g *ACPGateway) promptCanEmit(sessionID string, run *acpPromptRun) bool {

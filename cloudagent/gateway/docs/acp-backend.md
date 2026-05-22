@@ -1,6 +1,6 @@
 # ACP Backend Integration
 
-本文档说明 `gateway` 的 ACP 后端怎么接入、启动、验证和排障。这里的 ACP 后端指本地 Go wrapper 暴露的 WebSocket JSON-RPC 服务；它内部会按会话拉起外层腾讯云 AGS sandbox，并在外层常驻 Hermes sidecar daemon。
+本文档说明 `gateway` 的 ACP 后端怎么接入、启动、验证和排障。这里的 ACP 后端指本地 Go wrapper 暴露的 WebSocket JSON-RPC 服务；它内部会按会话拉起外层腾讯云 AGS sandbox，并在外层常驻 CloudAgent sidecar daemon。
 
 ## 架构
 
@@ -10,14 +10,14 @@
 ACP client
   -> gateway Go server
   -> outer AGS sandbox
-  -> Hermes Rust sidecar daemon
+  -> CloudAgent Rust sidecar daemon
   -> TokenHub Chat Completions
   -> inner AGS sandbox, only when Hermes tools are used
 ```
 
 关键语义：
 
-- `session/new` 会立即创建 outer AGS sandbox，并在 outer 里后台启动一个常驻 Hermes sidecar daemon。
+- `session/new` 会立即创建 outer AGS sandbox，并在 outer 里后台启动一个常驻 CloudAgent sidecar daemon。
 - 纯聊天只走 outer daemon + TokenHub，不创建 inner sandbox。
 - 当模型决定使用 `terminal`、`file_read`、`file_list`、`file_search` 等 Hermes 工具时，Hermes 会在同一个 outer daemon 里创建会话级 inner AGS sandbox。
 - inner sandbox id 会由 sidecar 回传给 wrapper，wrapper 记录在 ACP runtime 上，便于 close/delete/cancel 清理。
@@ -60,7 +60,7 @@ make server
 脚本会自动：
 
 - 从仓库 `.env` 加载配置。
-- 读取或发布 Hermes sidecar 到 COS。
+- 读取或发布 CloudAgent sidecar 到 COS。
 - 把 sidecar URL 和 SHA256 注入 wrapper。
 - 启动 `dist/gateway-server`。
 
@@ -73,6 +73,7 @@ GATEWAY_DATA_DIR=/tmp/gateway-agent-data \
 ```
 
 重新发布 sidecar 后必须重启 wrapper。wrapper 只在启动时读取 `GATEWAY_AGENT_SIDECAR_URL` 和 `GATEWAY_AGENT_SIDECAR_SHA256`。
+指定 `agent_version` 时，客户端仍然只能传版本号；实际 sidecar COS URL/SHA 由服务端 allowlist registry 解析，不能由客户端直接传 URL。
 
 ## 必需配置
 
@@ -88,6 +89,63 @@ export INNER_SANDBOX_TEMPLATE="$GATEWAY_AGS_TEMPLATE"
 export COSCMD_CONFIG='/tmp/cos-agent-sidecar.conf'
 export COSCMD_BIN='/tmp/coscmd-venv/bin/coscmd'
 ```
+
+可选的 Agent 版本 registry：
+
+```bash
+export GATEWAY_AGENT_VERSION_REGISTRY_JSON='{
+  "builtin.v1-54ecc6642308": {
+    "sidecar_url": "https://cloudagent-sidecar-shanghai-1388575217.cos.ap-shanghai.myqcloud.com/agent-sidecar/20260522/cloudagent-sidecar-linux-amd64-54ecc6642308",
+    "signing_key_id": "cloudagent-agent-release-v1"
+  }
+}'
+```
+
+`builtin.v1` 保持兼容：继续使用全局 `GATEWAY_AGENT_SIDECAR_URL` / `GATEWAY_AGENT_SIDECAR_SHA256`，或者本地上传 binary。
+registry 里的版本是服务端 allowlist；如果配置了 `sidecar_url`，`sidecar_sig_url` 可省略并默认拼成 `${sidecar_url}.sig`，`signing_key_id` 可省略并默认使用 `cloudagent-agent-release-v1`。`sidecar_sha256` 也可省略，loader 会从验签通过的 detached `.sig` envelope 里读取 sha256，再校验 ELF bytes。签名版本不会走 `curl && chmod +x && exec`，而是调用预置在外层 sandbox template 里的 Rust loader：
+
+```bash
+/usr/local/bin/cloudagent-agent-loader \
+  --url "$sidecar_url" \
+  --output /tmp/gateway/sessions/session_xxx/hermes-sidecar \
+  --sig-url "$sidecar_sig_url" \
+  --key-id "$signing_key_id" \
+  -- daemon --addr 127.0.0.1:38000 --session-id session_xxx
+```
+
+loader 默认从 `/etc/cloudagent/agent-loader-keys.json` 读取可信 Ed25519 公钥，也可用 `GATEWAY_AGENT_LOADER_PATH` 覆盖 loader 路径。公钥文件必须由 sandbox template 预置，不能从 COS 动态下载：
+
+```json
+{
+  "keys": {
+    "cloudagent-agent-release-v1": "base64-ed25519-public-key"
+  }
+}
+```
+
+客户端也可以在创建 session 时直接传 signed artifact URL；服务端会按同样规则拼 `.sig` 并走 loader 验签：
+
+```json
+{
+  "cwd": "/workspace",
+  "_meta": {
+    "cloudagent": {
+      "sidecar_url": "https://bucket.cos.ap-shanghai.myqcloud.com/agent-sidecar/cloudagent-sidecar-linux-amd64-custom"
+    }
+  }
+}
+```
+
+发布签名版本：
+
+```bash
+make init-cloudagent-signing-key
+make signupload-cloudagent-sidecar
+```
+
+`init-cloudagent-signing-key` 会把私钥 seed 写入被 git ignore 的 `.env`，并只输出公钥形式的 `trusted_keys_json`。公钥可以进入 sandbox template 的 `/etc/cloudagent/agent-loader-keys.json`；私钥 seed 只留在本地发布环境，不进入仓库、COS、gateway registry 或 sandbox。
+
+`signupload-cloudagent-sidecar` 会执行 `build -> sign detached .sig -> upload binary + .sig -> print registry JSON`。签名私钥从 `.env` 中的 `CLOUDAGENT_AGENT_RELEASE_ED25519_SEED_B64` 或 `CLOUDAGENT_AGENT_RELEASE_ED25519_SEED_FILE` 读取。脚本 stderr 也会输出对应的 `trusted_keys_json`，用于写入 sandbox template 的 `/etc/cloudagent/agent-loader-keys.json`。
 
 常用可选项：
 
@@ -176,6 +234,30 @@ ACP 当前主要是会话型协议，租户/项目治理还不是最终形态。
   }
 }
 ```
+
+可通过 CloudAgent 私有 `_meta.cloudagent` 为单个会话选择 Agent runtime host 和
+Workspace runtime：
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "session/new",
+  "params": {
+    "cwd": "/workspace",
+    "_meta": {
+      "cloudagent": {
+        "sandbox_backend": "talos",
+        "agent_version": "builtin.v1",
+        "workspace_version": "builtin.v1"
+      }
+    }
+  }
+}
+```
+
+`agent_version` 控制外层 Agent runtime host 的灰度版本，版本内部决定外层模板、初始化脚本插件，以及可选的 sidecar COS artifact。
+`workspace_version` 控制 inner workspace runtime 的灰度版本，版本内部决定内层模板和行为配置。
 
 返回：
 
@@ -484,7 +566,7 @@ wrapper 和 sidecar 都向 stderr 打 timeline。常用事件：
 - `acp_runtime_outer_create_start` / `acp_runtime_outer_create_done`
   外层 AGS 创建开始/完成。
 - `acp_runtime_daemon_done`
-  outer 里的 Hermes sidecar daemon 已启动并通过 health check。
+  outer 里的 CloudAgent sidecar daemon 已启动并通过 health check。
 - `acp_runtime_prompt_start` / `acp_runtime_prompt_done`
   一轮 ACP prompt 开始/完成。
 - `inner_sandbox_id=...`

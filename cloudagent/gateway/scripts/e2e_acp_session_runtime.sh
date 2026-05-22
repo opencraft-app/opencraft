@@ -73,11 +73,11 @@ s.close()
 PY
 }
 
-log "build server and Hermes sidecar"
-make hermes-sidecar-linux server test
+log "build server and CloudAgent sidecar"
+make cloudagent-sidecar-linux server test
 
-SIDECAR_SHA="$(shasum -a 256 dist/hermes-sidecar-linux-amd64 | awk '{print $1}')"
-SIDECAR_OBJECT="${COS_OBJECT_PREFIX%/}/hermes-sidecar-linux-amd64-${SIDECAR_SHA:0:12}"
+SIDECAR_SHA="$(shasum -a 256 dist/cloudagent-sidecar-linux-amd64 | awk '{print $1}')"
+SIDECAR_OBJECT="${COS_OBJECT_PREFIX%/}/cloudagent-sidecar-linux-amd64-${SIDECAR_SHA:0:12}"
 
 COS_BUCKET="${COS_BUCKET:-$(awk -F '=' '/^[[:space:]]*bucket[[:space:]]*=/{gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2); print $2; exit}' "$COSCMD_CONFIG")}"
 COS_REGION="${COS_REGION:-$(awk -F '=' '/^[[:space:]]*region[[:space:]]*=/{gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2); print $2; exit}' "$COSCMD_CONFIG")}"
@@ -88,8 +88,8 @@ fi
 PUBLIC_BASE_URL="${COS_PUBLIC_BASE_URL:-https://${COS_BUCKET}.cos.${COS_REGION}.myqcloud.com}"
 PUBLIC_URL="${PUBLIC_BASE_URL%/}/${SIDECAR_OBJECT#/}"
 
-log "upload Hermes sidecar to COS object=${SIDECAR_OBJECT}"
-"$COSCMD_BIN" -c "$COSCMD_CONFIG" upload -f -y dist/hermes-sidecar-linux-amd64 "$SIDECAR_OBJECT" >/dev/null
+log "upload CloudAgent sidecar to COS object=${SIDECAR_OBJECT}"
+"$COSCMD_BIN" -c "$COSCMD_CONFIG" upload -f -y dist/cloudagent-sidecar-linux-amd64 "$SIDECAR_OBJECT" >/dev/null
 "$COSCMD_BIN" -c "$COSCMD_CONFIG" putobjectacl "$SIDECAR_OBJECT" --grant-read anyone >/dev/null
 curl -fsSI --connect-timeout 10 --max-time 30 "$PUBLIC_URL" >/dev/null
 

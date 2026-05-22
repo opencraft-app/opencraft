@@ -37,6 +37,17 @@ RUN mkdir -p /root/.cargo \
     fi
 
 WORKDIR /src
+
+WORKDIR /src/agent-loader
+COPY agent-loader/Cargo.toml agent-loader/Cargo.lock ./
+RUN --mount=type=cache,id=cloudagent-agent-loader-cargo-registry,target=/usr/local/cargo/registry \
+    --mount=type=cache,id=cloudagent-agent-loader-cargo-git,target=/usr/local/cargo/git \
+    --mount=type=cache,id=cloudagent-agent-loader-cargo-target,target=/tmp/cargo-target-agent-loader \
+    mkdir -p src/bin \
+    && printf 'fn main() {}\n' > src/main.rs \
+    && printf 'fn main() {}\n' > src/bin/cloudagent-agent-sign.rs \
+    && cargo build --locked --release --target-dir /tmp/cargo-target-agent-loader
+
 WORKDIR /src/research/hermes-rs
 
 COPY research/hermes-rs/Cargo.toml research/hermes-rs/Cargo.lock ./
@@ -55,13 +66,20 @@ RUN --mount=type=cache,id=hermes-sidecar-cargo-registry,target=/usr/local/cargo/
     && cargo build --locked --release -p hermes-sidecar --target-dir /tmp/cargo-target
 
 COPY research/hermes-rs /src/research/hermes-rs
+COPY agent-loader /src/agent-loader
 
 RUN --mount=type=cache,id=hermes-sidecar-cargo-registry,target=/usr/local/cargo/registry \
     --mount=type=cache,id=hermes-sidecar-cargo-git,target=/usr/local/cargo/git \
     --mount=type=cache,id=hermes-sidecar-cargo-target,target=/tmp/cargo-target \
+    --mount=type=cache,id=cloudagent-agent-loader-cargo-target,target=/tmp/cargo-target-agent-loader \
     find crates/hermes-core/src crates/hermes-sidecar/src -type f -exec touch {} + \
     && cargo build --locked --release -p hermes-sidecar --target-dir /tmp/cargo-target \
-    && install -D /tmp/cargo-target/release/hermes-sidecar /out/hermes-sidecar-linux-amd64
+    && cd /src/agent-loader \
+    && cargo build --locked --release --target-dir /tmp/cargo-target-agent-loader \
+    && cd /src/research/hermes-rs \
+    && install -D /tmp/cargo-target/release/hermes-sidecar /out/cloudagent-sidecar-linux-amd64 \
+    && install -D /tmp/cargo-target-agent-loader/release/cloudagent-agent-loader /out/cloudagent-agent-loader-linux-amd64
 
 FROM scratch AS artifact
-COPY --from=build /out/hermes-sidecar-linux-amd64 /hermes-sidecar-linux-amd64
+COPY --from=build /out/cloudagent-sidecar-linux-amd64 /cloudagent-sidecar-linux-amd64
+COPY --from=build /out/cloudagent-agent-loader-linux-amd64 /cloudagent-agent-loader-linux-amd64

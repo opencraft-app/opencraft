@@ -94,14 +94,18 @@ func (s *Store) saveACPRuntimeLocked(session *acpSession) error {
 	runtime := session.Runtime
 	_, err := s.db.Exec(`
 INSERT INTO session_runtimes (
-	session_id, generation, sandbox_backend, sandbox_template_id, runtime_id, outer_sandbox_id, outer_sandbox_domain,
+	session_id, generation, sandbox_backend, agent_version, agent_template_id,
+	workspace_version, workspace_template_id, runtime_id, outer_sandbox_id, outer_sandbox_domain,
 	outer_envd_access_token, outer_traffic_token, daemon_addr, remote_binary,
 	inner_sandbox_id, inner_sandbox_domain, inner_envd_access_token, session_proxy_id,
 	health_state, cleanup_state, last_cleanup_error
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(session_id, generation) DO UPDATE SET
 	sandbox_backend = excluded.sandbox_backend,
-	sandbox_template_id = excluded.sandbox_template_id,
+	agent_version = excluded.agent_version,
+	agent_template_id = excluded.agent_template_id,
+	workspace_version = excluded.workspace_version,
+	workspace_template_id = excluded.workspace_template_id,
 	runtime_id = excluded.runtime_id,
 	outer_sandbox_id = excluded.outer_sandbox_id,
 	outer_sandbox_domain = excluded.outer_sandbox_domain,
@@ -116,8 +120,9 @@ ON CONFLICT(session_id, generation) DO UPDATE SET
 	health_state = excluded.health_state,
 	cleanup_state = excluded.cleanup_state,
 	last_cleanup_error = excluded.last_cleanup_error`,
-		session.SessionID, session.RuntimeGeneration, runtime.SandboxBackend, runtime.SandboxTemplateID, runtime.RuntimeID, runtime.OuterSandboxID,
-		runtime.OuterSandboxDomain, runtime.OuterEnvdAccessToken, runtime.OuterTrafficToken,
+		session.SessionID, session.RuntimeGeneration, runtime.SandboxBackend,
+		runtime.AgentVersion, runtime.AgentTemplateID, runtime.WorkspaceVersion, runtime.WorkspaceTemplateID,
+		runtime.RuntimeID, runtime.OuterSandboxID, runtime.OuterSandboxDomain, runtime.OuterEnvdAccessToken, runtime.OuterTrafficToken,
 		runtime.DaemonAddr, runtime.RemoteBinary, runtime.InnerSandboxID, runtime.InnerSandboxDomain,
 		runtime.InnerEnvdAccessToken, runtime.SessionProxyID, string(session.State), "", session.LastRuntimeError)
 	return err
@@ -270,15 +275,22 @@ func (s *Store) loadACPRuntimeLocked(sessionID string, generation int64) (ACPSes
 SELECT runtime_id, outer_sandbox_id, outer_sandbox_domain, outer_envd_access_token,
        outer_traffic_token, daemon_addr, remote_binary, inner_sandbox_id,
        inner_sandbox_domain, inner_envd_access_token, session_proxy_id,
-       sandbox_backend, sandbox_template_id
+       sandbox_backend, agent_version, agent_template_id,
+       workspace_version, workspace_template_id
 FROM session_runtimes WHERE session_id = ? AND generation = ?`, sessionID, generation).Scan(
 		&runtime.RuntimeID, &runtime.OuterSandboxID, &runtime.OuterSandboxDomain,
 		&runtime.OuterEnvdAccessToken, &runtime.OuterTrafficToken, &runtime.DaemonAddr,
 		&runtime.RemoteBinary, &runtime.InnerSandboxID, &runtime.InnerSandboxDomain,
-		&runtime.InnerEnvdAccessToken, &runtime.SessionProxyID, &runtime.SandboxBackend, &runtime.SandboxTemplateID,
+		&runtime.InnerEnvdAccessToken, &runtime.SessionProxyID, &runtime.SandboxBackend,
+		&runtime.AgentVersion, &runtime.AgentTemplateID,
+		&runtime.WorkspaceVersion, &runtime.WorkspaceTemplateID,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ACPSessionRuntime{}, nil
+	}
+	if err == nil {
+		runtime.AgentVersion = normalizeRuntimeVersion(runtime.AgentVersion, defaultAgentVersion)
+		runtime.WorkspaceVersion = normalizeRuntimeVersion(runtime.WorkspaceVersion, defaultWorkspaceVersion)
 	}
 	return runtime, err
 }
