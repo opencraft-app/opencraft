@@ -137,24 +137,28 @@ const mapBundleToPlan = (bundle: Bundle, index: number, t: (zh: string, opts?: R
   let storageFeature: PlanFeature | null = null;
   const otherFeatures: PlanFeature[] = [];
   for (const entry of bundle.description ?? []) {
-    const k = (entry.Key ?? "").toLowerCase();
+    /* 短期修复：后端当前返回的 `7*24小时在线` 与前端字典里收录的 `7×24 在线` 不一致，
+       导致国际站无法命中翻译。这里临时做一次映射，后续后端支持国际化 description 后可去除。 */
+    const rawKey = entry.Key ?? "";
+    const dictKey = rawKey === "7*24小时在线" ? "7×24 在线" : rawKey;
+    const k = dictKey.toLowerCase();
     if (k.includes("agent") || k.includes("积分") || k.includes("credit")) continue;
 /* 「独立环境」统一前端展示规格，避免后端 Value 为空导致卡片露馅 */
-    if (entry.Key === "独立环境") {
-      envFeature = { icon: iconForKey(entry.Key), label: t("独立环境"), value: t("2核 4G 内存") };
+    if (dictKey === "独立环境") {
+      envFeature = { icon: iconForKey(dictKey), label: t("独立环境"), value: t("2核 4G 内存") };
       continue;
     }
     /* 「专属云端存储」前端统一展示容量，避免后端缺值 */
-    if (entry.Key === "专属云端存储") {
+    if (dictKey === "专属云端存储") {
       storageFeature = { icon: iconMap.hardDrive, label: t("专属云端存储"), value: "50G" };
       continue;
     }
     /* 后端 Value 为空时，用右侧勾替代，避免卡片右侧空白 */
     if (!entry.Value) {
-      otherFeatures.push({ icon: iconForKey(entry.Key), label: t(entry.Key), hasCheck: true });
+      otherFeatures.push({ icon: iconForKey(dictKey), label: t(dictKey), hasCheck: true });
       continue;
     }
-    otherFeatures.push({ icon: iconForKey(entry.Key), label: t(entry.Key), value: entry.Value });
+    otherFeatures.push({ icon: iconForKey(dictKey), label: t(dictKey), value: entry.Value });
   }
   /* 顺序：独立环境 → 专属云端存储 → 模型积分 → 其他描述项 */
   if (envFeature) features.push(envFeature);
@@ -189,7 +193,9 @@ const mapBundleToPlan = (bundle: Bundle, index: number, t: (zh: string, opts?: R
 
   return {
     id: bundle.bundle_id,
-    name: t(bundle.bundle_name),
+    /* 短期修复：后端当前返回 `启航 Launch` 这种中英混排名，国际站下中英夹杂，
+       临时走 t() 查字典。后续后端支持国际化 bundle_name 后可去掉。 */
+    name: bundle.bundle_name === "启航 Launch" ? t("启航") : t(bundle.bundle_name),
     badge: soldOut ? t("已售罄") : undefined,
     badgeStyle: soldOut ? "tag" : undefined,
     price: isGlobal ? "$7.5" : "¥49",
