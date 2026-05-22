@@ -96,7 +96,7 @@ function ChangelogContent() {
      isGlobal 是 Vite 编译期常量，未命中的分支会被 tree-shake 掉，
      不会污染另一侧站点的 bundle。 */
   const launchDesc = isGlobal
-    ? t("支持一键创建云端 Hermes，支持接入 Telegram、WhatsApp、Discord、Slack 通道")
+    ? t("支持一键创建云端 Hermes，支持接入 WeChat、Telegram、WhatsApp、Discord 通道")
     : t("支持一键创建云端 Hermes，支持接入 QQ、微信、飞书通道");
 
   const changelogData: ChangelogEntry[] = [

@@ -46,14 +46,32 @@ func TestExampleConfigLoads(t *testing.T) {
 		"tcapi-account-cn-test":   false,
 		"tcapi-cam-cn-test":       false,
 		"tcapi-sts-cn-test":       false,
+		"jifei-test":              false,
+		"shadow-account-test":     false,
+		"shadow-cam-test":         false,
+		"shadow-sts-test":         false,
+		"shadow-billing-api-test": false,
 	}
 	for _, route := range cfg.Routes {
 		if _, ok := wantRoutes[route.ID]; ok {
 			wantRoutes[route.ID] = true
-			if route.Upstream.Backend != route.ID {
+			wantBackend := route.ID
+			switch route.ID {
+			case "jifei-test":
+				wantBackend = "billing-trade-cn-test"
+			case "shadow-account-test":
+				wantBackend = "tcapi-account-cn-test"
+			case "shadow-cam-test":
+				wantBackend = "tcapi-cam-cn-test"
+			case "shadow-sts-test":
+				wantBackend = "tcapi-sts-cn-test"
+			case "shadow-billing-api-test":
+				wantBackend = "tcapi-billing-cn-dev"
+			}
+			if route.Upstream.Backend != wantBackend {
 				t.Fatalf("route %q should use matching backend alias, got %q", route.ID, route.Upstream.Backend)
 			}
-			if strings.HasPrefix(route.ID, "tcapi-") && route.Mode != RouteModeSignedHTTPTunnel {
+			if (strings.HasPrefix(route.ID, "tcapi-") || strings.HasPrefix(route.ID, "shadow-")) && route.Mode != RouteModeSignedHTTPTunnel {
 				t.Fatalf("route %q should use signed tunnel mode, got %q", route.ID, route.Mode)
 			}
 		}

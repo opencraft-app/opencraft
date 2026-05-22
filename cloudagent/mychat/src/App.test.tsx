@@ -7,8 +7,9 @@ import {
   SettingsPage,
   SessionPage,
   parseSessionCreateMetaJSON,
-  resolveSessionEnvdFileURL,
   resolveInitialGatewayURL,
+  resolveSessionEnvdFileURL,
+  sessionEnvdDownloadRequestInit,
   sessionEnvdUploadRequestInit,
   summarizeSessionCreateMeta,
 } from "./App";
@@ -151,7 +152,7 @@ describe("SessionPage", () => {
     expect(html).not.toContain("outer_sandbox_id");
   });
 
-  it("builds session-scoped transfer requests without hardcoded scope headers", () => {
+  it("builds session-scoped transfer requests with default scope headers", () => {
     expect(
       resolveSessionEnvdFileURL(
         "session_abc",
@@ -165,10 +166,15 @@ describe("SessionPage", () => {
     const init = sessionEnvdUploadRequestInit(new Blob(["hello"]));
     expect(init.method).toBe("POST");
     expect(init.body).toBeInstanceOf(FormData);
-    expect(init.headers).toBeUndefined();
-    const headers = JSON.stringify(init.headers ?? {});
-    expect(headers).not.toContain("X-Tenant-ID");
-    expect(headers).not.toContain("X-Project-ID");
+    expect(init.headers).toMatchObject({
+      "X-Tenant-ID": "tenant-live",
+      "X-Project-ID": "project-live",
+    });
+
+    expect(sessionEnvdDownloadRequestInit().headers).toMatchObject({
+      "X-Tenant-ID": "tenant-live",
+      "X-Project-ID": "project-live",
+    });
   });
 });
 
@@ -177,15 +183,15 @@ describe("SettingsPage", () => {
     expect(resolveInitialGatewayURL()).toBe(DEFAULT_GATEWAY_URL);
   });
 
-  it("keeps a persisted gateway endpoint over the default", () => {
+  it("ignores persisted gateway endpoints on startup", () => {
     expect(resolveInitialGatewayURL("http://127.0.0.1:18094")).toBe(
-      "http://127.0.0.1:18094",
+      DEFAULT_GATEWAY_URL,
     );
   });
 
-  it("normalizes deprecated persisted gateway hosts", () => {
+  it("ignores deprecated persisted gateway hosts", () => {
     expect(resolveInitialGatewayURL("http://cloudagent.lightclaw.cn")).toBe(
-      "http://cloudagent.lightvela.com",
+      DEFAULT_GATEWAY_URL,
     );
   });
 

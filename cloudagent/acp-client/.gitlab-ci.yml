@@ -1,0 +1,78 @@
+# GitLab CI：校验、编译并打包 acp-client 服务端（二进制 + web 静态资源）
+# 产物：dist/acp-client-<版本>-linux-amd64.tar.gz，解压后同目录运行 ./acp-client 即可
+
+stages:
+  - verify
+  - build
+  - release
+
+variables:
+  GO_VERSION: "1.22"
+  CGO_ENABLED: "0"
+  GOPROXY: "https://proxy.golang.org,direct"
+
+.go_job:
+  image: golang:${GO_VERSION}-bookworm
+  before_script:
+    - go version
+    - go env
+    - go mod download
+
+verify:
+  stage: verify
+  extends: .go_job
+  script:
+    - go vet ./...
+
+build-package:
+  stage: build
+  extends: .go_job
+  script:
+    - |
+      set -euo pipefail
+      VERSION="${CI_COMMIT_TAG:-${CI_COMMIT_SHORT_SHA}}"
+      PKG="acp-client-${VERSION}-linux-amd64"
+      mkdir -p "dist/${PKG}"
+      go build -trimpath -ldflags="-s -w" -o "dist/${PKG}/acp-client" ./cmd/acp-client
+      cp -a web "dist/${PKG}/"
+      cd dist
+      tar -czf "${PKG}.tar.gz" "${PKG}"
+      sha256sum "${PKG}.tar.gz" | tee "${PKG}.tar.gz.sha256"
+      cd "${CI_PROJECT_DIR}"
+      {
+        echo "BUILD_JOB_ID=${CI_JOB_ID}"
+        echo "RELEASE_TGZ=${PKG}.tar.gz"
+        echo "RELEASE_SHASUM=${PKG}.tar.gz.sha256"
+      } > build.env
+  artifacts:
+    name: "acp-client-${CI_COMMIT_REF_SLUG}-${CI_COMMIT_SHORT_SHA}"
+    reports:
+      dotenv: build.env
+    paths:
+      - dist/*.tar.gz
+      - dist/*.sha256
+      - build.env
+    expire_in: 30 days
+
+# 推送 Git tag 时创建 GitLab Release，并在 Release 页挂上构建产物下载链接（指向本 pipeline 的 build-package job 工件）。
+# 若创建失败：在仓库 Settings → CI/CD → Job token permissions 中为「Release」放行 job token（或授予维护者已默认可用，视实例策略而定）。
+gitlab-release:
+  stage: release
+  image: registry.gitlab.com/gitlab-org/release-cli:latest
+  needs:
+    - job: build-package
+      artifacts: true
+  rules:
+    - if: $CI_COMMIT_TAG
+  script:
+    - echo "Creating GitLab Release for tag ${CI_COMMIT_TAG}"
+  release:
+    tag_name: $CI_COMMIT_TAG
+    name: "acp-client $CI_COMMIT_TAG"
+    description: "Linux amd64 可执行文件与 web 静态资源打包；见下方 Assets 下载 `.tar.gz`，解压后执行 `./acp-client`。"
+    assets:
+      links:
+        - name: "$RELEASE_TGZ"
+          url: "$CI_PROJECT_URL/-/jobs/$BUILD_JOB_ID/artifacts/file/dist/$RELEASE_TGZ"
+        - name: "$RELEASE_SHASUM"
+          url: "$CI_PROJECT_URL/-/jobs/$BUILD_JOB_ID/artifacts/file/dist/$RELEASE_SHASUM"

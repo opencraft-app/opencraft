@@ -1,5 +1,16 @@
 @import "tailwindcss";
 
+/* 造字工房 创际黑体（自托管，避开跨域字体被浏览器拒绝渲染的问题）
+ * woff2 优先（压缩高、所有现代浏览器支持）；otf 作为老浏览器兜底。 */
+@font-face {
+  font-family: "ChuangJiHei";
+  src: url("/fonts/chuangji-hei.woff2") format("woff2"),
+       url("/fonts/chuangji-hei.otf") format("opentype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   --app-background: #ffffff;
   --bg-app: #ffffff;
@@ -34,6 +45,7 @@
     "SF Mono", "JetBrains Mono", ui-monospace, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   --font-handwriting: "Kalam", cursive;
   --font-display-num: "Alimama ShuHeiTi", var(--font-heading);
+  --font-chuangji: "ChuangJiHei", -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
 }
 
 * {

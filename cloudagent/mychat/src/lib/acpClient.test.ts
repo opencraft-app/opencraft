@@ -2024,7 +2024,7 @@ describe("ACP attachment prompt blocks", () => {
       "http://127.0.0.1:18094/v1/files",
       expect.objectContaining({
         method: "POST",
-        headers: { "X-Tenant-ID": "default", "X-Project-ID": "default" },
+        headers: { "X-Tenant-ID": "tenant-live", "X-Project-ID": "project-live" },
       }),
     );
     expect(sent[0].message.params.prompt).toEqual([

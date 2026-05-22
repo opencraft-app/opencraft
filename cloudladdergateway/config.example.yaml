@@ -115,17 +115,18 @@ backends:
 auth:
   enabled: true
   timestamp_skew: 5m
+  # 历史 trade/jifei 联调链路还没有接入 HMAC，继续允许无签名访问；
+  # shadow → TencentCloud API 隧道不在此列表内，必须使用 shadow caller 签名。
+  allow_unauthenticated:
+    - sandbox-cn
+    - billing-trade-cn-test
+    - billing-trade-cn-pre
+    - billing-trade-cn-prod
+    - billing-trade-intl-test
+    - billing-trade-intl-pre
+    - billing-trade-intl-prod
+    - jifei-test
   callers:
-    - id: payment
-      secret_env: CLOUDLADDER_PAYMENT_HMAC_SECRET
-      routes:
-        - sandbox-cn
-        - billing-trade-cn-test
-        - billing-trade-cn-pre
-        - billing-trade-cn-prod
-        - billing-trade-intl-test
-        - billing-trade-intl-pre
-        - billing-trade-intl-prod
     - id: shadow
       secret_env: CLOUDLADDER_SHADOW_HMAC_SECRET
       routes:
@@ -134,6 +135,10 @@ auth:
         - tcapi-account-cn-test
         - tcapi-cam-cn-test
         - tcapi-sts-cn-test
+        - shadow-account-test
+        - shadow-cam-test
+        - shadow-sts-test
+        - shadow-billing-api-test
 
 audit:
   service_name: cloudladdergateway
@@ -168,6 +173,13 @@ routes:
 
   - id: billing-trade-cn-test
     description: "Proxy Tencent billing trade domestic test environment."
+    callers: ["payment"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: billing-trade-cn-test
+
+  - id: jifei-test
+    description: "Legacy sandbox-bj-7 route alias for Tencent billing trade domestic test environment."
     callers: ["payment"]
     condition: 'request.method == "POST"'
     upstream:
@@ -247,3 +259,35 @@ routes:
     condition: 'request.method == "POST"'
     upstream:
       backend: tcapi-sts-cn-test
+
+  - id: shadow-account-test
+    description: "Compatibility alias for TencentCloud account API test endpoint."
+    mode: signed_http_tunnel
+    callers: ["shadow"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: tcapi-account-cn-test
+
+  - id: shadow-cam-test
+    description: "Compatibility alias for TencentCloud CAM API test endpoint."
+    mode: signed_http_tunnel
+    callers: ["shadow"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: tcapi-cam-cn-test
+
+  - id: shadow-sts-test
+    description: "Compatibility alias for TencentCloud STS API test endpoint."
+    mode: signed_http_tunnel
+    callers: ["shadow"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: tcapi-sts-cn-test
+
+  - id: shadow-billing-api-test
+    description: "Compatibility alias for TencentCloud billing API dev endpoint."
+    mode: signed_http_tunnel
+    callers: ["shadow"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: tcapi-billing-cn-dev

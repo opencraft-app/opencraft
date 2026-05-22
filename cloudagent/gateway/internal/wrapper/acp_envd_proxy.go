@@ -190,7 +190,7 @@ func (g *ACPGateway) HandleSessionEnvdProxy(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusNotFound, "not_found", "unknown session envd endpoint")
 		return
 	}
-	scope, errResp := acpScopeFromRequest(r)
+	scope, errResp := scopeFromRequest(r)
 	if errResp != nil {
 		status := http.StatusBadRequest
 		if errResp.Code == "identity_missing" {
@@ -512,6 +512,7 @@ func (g *ACPGateway) ensureInnerEnvdTarget(ctx context.Context, sessionID string
 		g.envdEnsures[key] = call
 		g.mu.Unlock()
 
+		fmt.Fprintf(os.Stderr, "timeline source=server event=inner_envd_ensure_start session_id=%s generation=%d outer_sandbox_id=%s force=%t cached_target=%t\n", sessionID, generation, runtime.OuterSandboxID, effectiveForce, runtime.hasInnerEnvdTarget())
 		update, err := manager.EnsureSessionEnvdRuntime(ctx, runtime, ACPSessionRuntimeEnsureRequest{
 			SessionID:  sessionID,
 			Scope:      scope,
@@ -553,6 +554,7 @@ func (g *ACPGateway) ensureInnerEnvdTarget(ctx context.Context, sessionID string
 		close(call.done)
 		g.mu.Unlock()
 		if err != nil {
+			fmt.Fprintf(os.Stderr, "timeline source=server event=inner_envd_ensure_failed session_id=%s generation=%d outer_sandbox_id=%s error=%s\n", sessionID, generation, runtime.OuterSandboxID, quoteServerField(err.Error()))
 			return ACPSessionRuntime{}, err
 		}
 		return ensuredRuntime, nil

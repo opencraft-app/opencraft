@@ -48,6 +48,7 @@ import {
 } from "./components/ai-elements/conversation";
 import {
   AcpClient,
+  DEFAULT_GATEWAY_IDENTITY_HEADERS,
   resolveAcpHTTPURL,
   resolveAcpWebSocketURL,
   resolveEnvdProxyHTTPBaseURL,
@@ -231,7 +232,7 @@ const SESSION_META_TEMPLATES: SessionMetaTemplate[] = [
 export function App() {
   const [storedInitialState] = useState(loadStoredState);
   const [initialGatewayURL] = useState(() =>
-    resolveInitialGatewayURL(storedInitialState.gatewayURL),
+    resolveInitialGatewayURL(),
   );
   const [sessionMetaTemplateId, setSessionMetaTemplateId] = useState(
     () => storedInitialState.sessionMetaTemplateId ?? "default",
@@ -1616,7 +1617,7 @@ export function SessionPage({
     setTransferBusy(true);
     setTransferMessage("Downloading...");
     try {
-      const response = await fetch(endpoint);
+      const response = await fetch(endpoint, sessionEnvdDownloadRequestInit());
       if (!response.ok) {
         const body = await response.text().catch(() => "");
         throw new Error(`HTTP ${response.status}${body ? ` ${body}` : ""}`);
@@ -1849,7 +1850,14 @@ export function sessionEnvdUploadRequestInit(file: Blob): RequestInit {
   form.append("file", file, filename);
   return {
     method: "POST",
+    headers: DEFAULT_GATEWAY_IDENTITY_HEADERS,
     body: form,
+  };
+}
+
+export function sessionEnvdDownloadRequestInit(): RequestInit {
+  return {
+    headers: DEFAULT_GATEWAY_IDENTITY_HEADERS,
   };
 }
 
@@ -2867,9 +2875,9 @@ function initialSessionCreateMetaJSON(state: StoredUiState) {
   return state.sessionCreateMetaJSON ?? SESSION_META_TEMPLATES[0].json;
 }
 
-export function resolveInitialGatewayURL(storedGatewayURL?: string) {
+export function resolveInitialGatewayURL(_storedGatewayURL?: string) {
   const urlGateway = normalizeGatewayURL(readGatewayURLFromLocation());
-  return urlGateway || normalizeGatewayURL(storedGatewayURL) || DEFAULT_GATEWAY_URL;
+  return urlGateway || DEFAULT_GATEWAY_URL;
 }
 
 function normalizeGatewayURL(value?: string) {

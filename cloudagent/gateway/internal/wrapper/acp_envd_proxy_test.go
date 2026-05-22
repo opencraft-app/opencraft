@@ -263,7 +263,7 @@ func TestSessionScopedEnvdProxyForwardsFilesAPI(t *testing.T) {
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
-	client := dialACPWS(t, "ws"+trimHTTPPrefix(ts.URL)+"/acp", nil)
+	client := dialACPWS(t, "ws"+trimHTTPPrefix(ts.URL)+"/acp", map[string]string{"Authorization": "Bearer test-key"})
 	defer client.close()
 	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "session/new", "params": map[string]any{}})
 	result := waitForRPCID(t, client, float64(1))["result"].(map[string]any)
@@ -273,6 +273,7 @@ func TestSessionScopedEnvdProxyForwardsFilesAPI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	req.Header.Set("Authorization", "Bearer test-key")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -331,6 +332,7 @@ func TestSessionScopedEnvdProxyForwardsRawFileUpload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	req.Header.Set("Authorization", "Bearer test-key")
 	req.Header.Set("Content-Type", "application/octet-stream")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -370,6 +372,7 @@ func TestSessionScopedEnvdProxyStripsUpstreamCORS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	req.Header.Set("Authorization", "Bearer test-key")
 	req.Header.Set("Origin", "http://127.0.0.1:5173")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
