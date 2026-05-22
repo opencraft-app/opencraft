@@ -11,6 +11,7 @@ on:
       - argocd/services/cloudagent-gateway/**
       - argocd/apps/*/cloudagent-gateway.yaml
       - argocd/secrets/*/cloudagent-gateway-runtime-secrets.sops.yaml
+      - argocd/secrets/*/cloudagent-wsa-search-secrets.sops.yaml
     paths-ignore:
       - OWNERS
       - "**/OWNERS"

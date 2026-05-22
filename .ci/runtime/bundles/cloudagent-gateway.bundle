@@ -13,6 +13,7 @@ bundles:
     - argocd/services/cloudagent-gateway/{env}/**
     - argocd/apps/{env}/cloudagent-gateway.yaml
     - argocd/secrets/{env}/cloudagent-gateway-runtime-secrets.sops.yaml
+    - argocd/secrets/{env}/cloudagent-wsa-search-secrets.sops.yaml
     - cloudagent/gateway/**
     - cloudagent/sandbox-host/**
     dockerfile: cloudagent/gateway/build/server/Dockerfile

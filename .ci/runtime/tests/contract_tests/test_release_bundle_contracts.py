@@ -476,10 +476,19 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 )
 
     def test_cloudagent_gateway_adds_service_prod_reviewers(self) -> None:
+        manifest = load_manifest()
+        bundle = load_bundle(manifest, "cloudagent-gateway", "shprod")
         workflow = yaml.safe_load((REPO_ROOT / ".ci/cloudagent-gateway.yml").read_text())
         parameters = (workflow.get("extends") or {}).get("parameters") or {}
+        on_config = workflow.get("on") or workflow.get(True) or {}
+        watched_paths = ((on_config.get("push") or {}).get("paths") or [])
 
         self.assertEqual(parameters.get("PROD_REVIEWERS"), '["skipzhang", "roberttwang", "cocofhu"]')
+        self.assertIn(
+            "argocd/secrets/shprod/cloudagent-wsa-search-secrets.sops.yaml",
+            bundle.publish_paths,
+        )
+        self.assertIn("argocd/secrets/*/cloudagent-wsa-search-secrets.sops.yaml", watched_paths)
 
     def test_local_templates_do_not_use_unsupported_top_level_concurrency(self) -> None:
         for template_path in sorted((REPO_ROOT / ".ci/templates").glob("*.yml")):
