@@ -66,7 +66,7 @@ import {
 import { createMonoDebugExecAdapter } from "@/pages/marketing/openclaw-tat-adapter";
 import { installOpenClawConsoleHelpers } from "@/pages/marketing/openclaw-console-helpers";
 import { BuddyPanel } from "@/pages/marketing/openclaw-buddy-panel";
-import { getOpenClawCreateLimitMessage } from "@/pages/marketing/openclaw-create-availability";
+import { findCompletedCreatingBot, getOpenClawCreateLimitMessage } from "@/pages/marketing/openclaw-create-availability";
 import {
   getRestartBlockReason,
   isActiveBotRestarting as computeIsActiveBotRestarting,
@@ -2405,6 +2405,10 @@ export const OpenClawSettingsPage = () => {
     }
     return bots.find((bot) => bot.status === "provisioning") ?? null;
   }, [bots, requestedCreatingBotId]);
+  const completedCreatingBot = useMemo(
+    () => findCompletedCreatingBot(visibleBots, requestedCreatingBotId),
+    [visibleBots, requestedCreatingBotId],
+  );
 
 
   /* 实例内部的子页面切换：通道 / 模型 / 技能（通道置顶，作为默认进入项） */
@@ -2554,6 +2558,13 @@ export const OpenClawSettingsPage = () => {
 
   useEffect(() => {
     if (!creatingParam) return;
+    if (completedCreatingBot) {
+      setIsCreating(false);
+      setCreationError(null);
+      setActiveTabId(completedCreatingBot.id);
+      navigate("/dashboard/settings", { replace: true });
+      return;
+    }
     if (creatingParam === "true" && !requestedCreatingBotId && !provisioningBot && !botsLoading) {
       setIsCreating(false);
       setCreationError(null);
@@ -2569,11 +2580,14 @@ export const OpenClawSettingsPage = () => {
     if (provisioningBot) {
       setActiveTabId(provisioningBot.id);
     }
-  }, [creatingParam, requestedCreatingBotId, provisioningBot, botsLoading, navigate]);
+  }, [creatingParam, requestedCreatingBotId, provisioningBot, completedCreatingBot, botsLoading, navigate]);
 
   /*
-   * 刷新恢复：如果用户刷新后 URL 参数丢失，但后端仍有 Creating 实例，
-   * 继续回到创建等待页，避免把未就绪 bot 当作可用 bot 交付。
+   * 刷新恢复：URL 丢 creating 参数但后端仍有 provisioning bot 时，把用户带回等待页。
+   *
+   * 与下方「兜底退出」存在 race：polling 退出后 URL 被清，期间「兜底退出」会主动
+   * setIsCreating(false)；本 effect 若同帧把它翻回 true，下一帧「兜底退出」再翻
+   * 回 false，最终收敛到非 loading 态。短暂闪烁可接受。
    */
   useEffect(() => {
     if (creatingParam || isCreating || botsLoading || !provisioningBot) return;
@@ -2582,6 +2596,35 @@ export const OpenClawSettingsPage = () => {
     setActiveTabId(provisioningBot.id);
     navigate(`/dashboard/settings?creating=${encodeURIComponent(provisioningBot.id)}`, { replace: true });
   }, [creatingParam, isCreating, botsLoading, provisioningBot, navigate]);
+
+  /*
+   * 兜底退出 loading：只看 bots 列表证据主动 setIsCreating(false)，收敛 polling
+   * cleanup race（polling effect 在 await refreshBots 期间被自身 cleanup 抛弃，
+   * setIsCreating(false) 永远没执行）。
+   *
+   *   模式 A：URL 携带 botId —— 只看该 botId，天然支持多 bot 并发，不误伤其他 provisioning。
+   *   模式 B：URL 不指定 botId —— 无 provisioning bot 且有可见 bot 时退出。
+   *
+   * 不放 botsLoading 在 deps 里 —— refreshBots 期间必须能继续兜底，否则错过时机。
+   */
+  useEffect(() => {
+    if (!isCreating || creationError) return;
+    if (requestedCreatingBotId) {
+      const targetBot = bots.find((b) => b.id === requestedCreatingBotId);
+      if (targetBot && targetBot.status !== "provisioning" && targetBot.status !== "deleting") {
+        setIsCreating(false);
+        setCreationError(null);
+        setActiveTabId(targetBot.id);
+        navigate("/dashboard/settings", { replace: true });
+      }
+      return;
+    }
+    if (!provisioningBot && bots.some((b) => b.status !== "provisioning" && b.status !== "deleting")) {
+      setIsCreating(false);
+      setCreationError(null);
+      navigate("/dashboard/settings", { replace: true });
+    }
+  }, [isCreating, creationError, requestedCreatingBotId, bots, provisioningBot, navigate]);
 
   /* 创建态只以后端真实状态为准：Running 才进入设置页，Failed/Deleting 停在错误态。 */
   useEffect(() => {
