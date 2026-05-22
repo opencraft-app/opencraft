@@ -66,7 +66,7 @@ import {
 import { createMonoDebugExecAdapter } from "@/pages/marketing/openclaw-tat-adapter";
 import { installOpenClawConsoleHelpers } from "@/pages/marketing/openclaw-console-helpers";
 import { BuddyPanel } from "@/pages/marketing/openclaw-buddy-panel";
-import { getOpenClawCreateLimitMessage } from "@/pages/marketing/openclaw-create-availability";
+import { findCompletedCreatingBot, getOpenClawCreateLimitMessage } from "@/pages/marketing/openclaw-create-availability";
 import {
   getRestartBlockReason,
   isActiveBotRestarting as computeIsActiveBotRestarting,
@@ -2405,6 +2405,10 @@ export const OpenClawSettingsPage = () => {
     }
     return bots.find((bot) => bot.status === "provisioning") ?? null;
   }, [bots, requestedCreatingBotId]);
+  const completedCreatingBot = useMemo(
+    () => findCompletedCreatingBot(visibleBots, requestedCreatingBotId),
+    [visibleBots, requestedCreatingBotId],
+  );
 
 
   /* 实例内部的子页面切换：通道 / 模型 / 技能（通道置顶，作为默认进入项） */
@@ -2554,6 +2558,13 @@ export const OpenClawSettingsPage = () => {
 
   useEffect(() => {
     if (!creatingParam) return;
+    if (completedCreatingBot) {
+      setIsCreating(false);
+      setCreationError(null);
+      setActiveTabId(completedCreatingBot.id);
+      navigate("/dashboard/settings", { replace: true });
+      return;
+    }
     if (creatingParam === "true" && !requestedCreatingBotId && !provisioningBot && !botsLoading) {
       setIsCreating(false);
       setCreationError(null);
@@ -2569,7 +2580,7 @@ export const OpenClawSettingsPage = () => {
     if (provisioningBot) {
       setActiveTabId(provisioningBot.id);
     }
-  }, [creatingParam, requestedCreatingBotId, provisioningBot, botsLoading, navigate]);
+  }, [creatingParam, requestedCreatingBotId, provisioningBot, completedCreatingBot, botsLoading, navigate]);
 
   /*
    * 刷新恢复：如果用户刷新后 URL 参数丢失，但后端仍有 Creating 实例，
