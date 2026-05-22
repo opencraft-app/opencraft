@@ -148,3 +148,22 @@ func TestRuntimeClockEnvUsesShanghaiDate(t *testing.T) {
 		t.Fatalf("time note=%q", env["HERMES_CURRENT_TIME_NOTE"])
 	}
 }
+
+func TestAddWebSearchEnvPassesTencentWSAConfig(t *testing.T) {
+	t.Setenv("CLOUDAGENT_WEB_SEARCH_PROVIDER", "tencent_wsa")
+	t.Setenv("TENCENTCLOUD_WSA_ENDPOINT", "https://api.wsa.cloud.tencent.com/SearchPro")
+	t.Setenv("TENCENTCLOUD_WSA_APIKEY", "test-wsa-key")
+	env := map[string]string{}
+
+	addWebSearchEnv(env)
+
+	if env["CLOUDAGENT_WEB_SEARCH_PROVIDER"] != "tencent_wsa" {
+		t.Fatalf("provider=%q", env["CLOUDAGENT_WEB_SEARCH_PROVIDER"])
+	}
+	if env["TENCENTCLOUD_WSA_ENDPOINT"] != "https://api.wsa.cloud.tencent.com/SearchPro" {
+		t.Fatalf("endpoint=%q", env["TENCENTCLOUD_WSA_ENDPOINT"])
+	}
+	if env["TENCENTCLOUD_WSA_APIKEY"] != "test-wsa-key" {
+		t.Fatalf("api key not passed")
+	}
+}

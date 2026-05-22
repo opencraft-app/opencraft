@@ -964,6 +964,7 @@ func (w *AgentSidecarWorker) bootSessionDaemon(ctx context.Context, sb AGSSandbo
 		"OPENAI_AGENTS_DISABLE_TRACING": "1",
 	}
 	w.addSandboxHostEnv(env)
+	addWebSearchEnv(env)
 	for key, value := range runtimeClockEnv(time.Now()) {
 		env[key] = value
 	}
@@ -1244,6 +1245,7 @@ func (w *AgentSidecarWorker) Run(ctx context.Context, job workerJob, emit func(w
 		"OPENAI_AGENTS_DISABLE_TRACING":   "1",
 	}
 	w.addSandboxHostEnv(env)
+	addWebSearchEnv(env)
 	for key, value := range runtimeClockEnv(time.Now()) {
 		env[key] = value
 	}
@@ -1405,6 +1407,18 @@ func (w *AgentSidecarWorker) sidecarCommand(remoteBinary string) string {
 func (w *AgentSidecarWorker) addSandboxHostEnv(env map[string]string) {
 	if w.sandboxHostURL != "" {
 		env["HERMES_SANDBOX_HOST_URL"] = w.sandboxHostURL
+	}
+}
+
+func addWebSearchEnv(env map[string]string) {
+	if provider := strings.TrimSpace(firstEnv("CLOUDAGENT_WEB_SEARCH_PROVIDER", "GATEWAY_WEB_SEARCH_PROVIDER")); provider != "" {
+		env["CLOUDAGENT_WEB_SEARCH_PROVIDER"] = provider
+	}
+	if endpoint := strings.TrimSpace(firstEnv("TENCENTCLOUD_WSA_ENDPOINT", "GATEWAY_TENCENTCLOUD_WSA_ENDPOINT")); endpoint != "" {
+		env["TENCENTCLOUD_WSA_ENDPOINT"] = endpoint
+	}
+	if apiKey := strings.TrimSpace(firstEnv("TENCENTCLOUD_WSA_APIKEY", "GATEWAY_TENCENTCLOUD_WSA_APIKEY")); apiKey != "" {
+		env["TENCENTCLOUD_WSA_APIKEY"] = apiKey
 	}
 }
 

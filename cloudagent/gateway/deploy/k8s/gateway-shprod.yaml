@@ -30,6 +30,8 @@ data:
   GATEWAY_SANDBOX_HOST_URL: "REPLACE_ME_SHPROD_SANDBOX_HOST_URL"
   GATEWAY_SANDBOX_HOST_SHA256: "REPLACE_ME_SHPROD_SANDBOX_HOST_SHA256"
   GATEWAY_TALOS_TEMPLATE: "498c6c11-74d7-426e-bdb1-13d8aa73997e"
+  CLOUDAGENT_WEB_SEARCH_PROVIDER: "tencent_wsa"
+  TENCENTCLOUD_WSA_ENDPOINT: "https://api.wsa.cloud.tencent.com/SearchPro"
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -84,6 +86,12 @@ spec:
                 secretKeyRef:
                   name: gateway-runtime-secrets
                   key: GATEWAY_TALOS_API_KEY
+                  optional: true
+            - name: TENCENTCLOUD_WSA_APIKEY
+              valueFrom:
+                secretKeyRef:
+                  name: cloudagent-wsa-search-secrets
+                  key: TENCENTCLOUD_WSA_APIKEY
                   optional: true
           readinessProbe:
             httpGet:
