@@ -72,8 +72,9 @@ export function BuddyPanel({
   /** 抽卡弹窗开关 */
   const [drawOpen, setDrawOpen] = useState(false);
 
-  /** 注入结果 toast：'idle' 时不显示。'applying' 期间禁掉重复点击。
-   *  成功路径不弹 toast —— 卡片徽章 + 按钮文案已足以表达；只对失败/降级提示。 */
+  /** 注入结果 toast。idle 不显示；applying 期间禁掉重复点击。
+   *  fallback: botId 缺失 / sandbox 写入失败，降级浏览器下载。
+   *  error: 拉取详情失败 / 未选中卡。 */
   type ToastState =
     | { kind: "idle" }
     | { kind: "applying" }
@@ -371,9 +372,10 @@ export function BuddyPanel({
         }
         await ensureMinSpin();
         setAppliedSlug(selectedSlug);
-        // 成功不再 toast：卡片左上角的"已注入"徽章 + 按钮变"已注入人设"
-        // 已经够明显了，再弹 toast 反而冗余。失败仍然必须提醒。
+        // hermes-agent 在 session 启动时一次性快照 SOUL.md，已存在 session 不感知
+        // 文件变化，弹一个确认对话框提示用户在 IM 里输入 /new 开新 session 让新人设生效。
         setToast({ kind: "idle" });
+        setConfirmState({ kind: "applySuccess" });
         return;
       } catch (err) {
         // eslint-disable-next-line no-console
@@ -442,15 +444,15 @@ export function BuddyPanel({
   }, [botId, repositories]);
 
   /**
-   * 删除确认弹窗状态机：
+   * 弹窗状态机：
    * - idle：无弹窗
    * - deleteOne：删除单张卡（带 slug，记是否已注入用于显示文案差异）
-   * - clearAll：清空全部已抽人设
+   * - applySuccess：注入成功后提示用户 /new 开启新会话
    */
   type ConfirmState =
     | { kind: "idle" }
     | { kind: "deleteOne"; slug: string; soulName: string; isApplied: boolean }
-    | { kind: "clearAll"; hasApplied: boolean };
+    | { kind: "applySuccess" };
   const [confirmState, setConfirmState] = useState<ConfirmState>({ kind: "idle" });
 
   /**
@@ -479,28 +481,6 @@ export function BuddyPanel({
       setDrawnSouls((prev) => prev.filter((s) => s.slug !== slug));
       // applied/selected 的清理由 useEffect 自动处理（drawnSouls 变化触发）
       if (isAppliedTarget) {
-        await clearSandboxSoul();
-      }
-    },
-    [clearSandboxSoul],
-  );
-
-  /**
-   * 清空全部已抽人设（弹 confirm）。
-   * - 真正执行落到 confirmClearAll
-   */
-  const handleClearAll = useCallback(() => {
-    if (drawnSouls.length === 0) return;
-    setConfirmState({ kind: "clearAll", hasApplied: !!appliedSlug });
-  }, [drawnSouls.length, appliedSlug]);
-
-  /** confirm 回调：真正清空。 */
-  const confirmClearAll = useCallback(
-    async (hadApplied: boolean) => {
-      setConfirmState({ kind: "idle" });
-      setDrawnSouls([]);
-      setSelectedSlug(null);
-      if (hadApplied) {
         await clearSandboxSoul();
       }
     },
@@ -666,24 +646,8 @@ export function BuddyPanel({
           )}
         </div>
         {drawnSouls.length > 0 && (
-          <div className="absolute right-6 top-1/2 flex -translate-y-1/2 items-center gap-2">
+          <div className="absolute right-6 top-1/2 -translate-y-1/2">
             <ProgressChip drawn={drawnSouls.length} max={MAX_DRAWS} />
-            <button
-              type="button"
-              onClick={handleClearAll}
-              disabled={loadStatus !== "loaded"}
-              aria-label={t("清空所有已抽人设")}
-              title={t("清空全部")}
-              className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-              style={{
-                background: "rgba(220,38,38,0.06)",
-                color: "rgba(220,38,38,0.88)",
-                border: "1px solid rgba(220,38,38,0.16)",
-              }}
-            >
-              <Trash2 className="h-3 w-3" />
-              {t("清空")}
-            </button>
           </div>
         )}
       </div>
@@ -722,18 +686,13 @@ export function BuddyPanel({
             onConfirm={() => confirmDeleteOne(confirmState.slug, confirmState.isApplied)}
           />
         )}
-        {confirmState.kind === "clearAll" && (
-          <ConfirmDialog
-            key="confirm-clear-all"
-            title={t("确认清空所有人设")}
-            message={
-              confirmState.hasApplied
-                ? t("将清空所有已抽人设，并取消 Agent 当前人设，此操作不可撤销。")
-                : t("将清空所有已抽人设，此操作不可撤销。")
-            }
-            confirmLabel={t("确认清空")}
-            onCancel={() => setConfirmState({ kind: "idle" })}
-            onConfirm={() => confirmClearAll(confirmState.hasApplied)}
+        {confirmState.kind === "applySuccess" && (
+          <InfoDialog
+            key="info-apply-success"
+            title={t("人设已注入")}
+            message={t("请在与 Agent 的对话中输入 /new 开启新会话，让新人设生效。")}
+            buttonLabel={t("我知道了")}
+            onClose={() => setConfirmState({ kind: "idle" })}
           />
         )}
       </AnimatePresence>
@@ -742,10 +701,8 @@ export function BuddyPanel({
 }
 
 // ─── 注入结果 toast ──────────────────────────────────────────────────────────
-// 仅区分 2 个可见状态：fallback（橙色下载提示，botId 缺失或 sandbox 写入失败时
-// 降级浏览器下载）、error（红色，拉取详情失败 / 未选中卡）。
-// applying 状态由按钮内部 spinner 表达，不再弹 toast 避免双重提示。
-// 绝对定位在 panel 顶部居中，3.5s 自动消失。
+// fallback（橙，下载兜底）/ error（红，失败）。
+// applying 由按钮自带 spinner，不重复弹。3.5s 自动消失。
 
 function InjectToast({
   state,
@@ -1263,6 +1220,85 @@ function ConfirmDialog({
             style={{ background: "#cf3d4c" }}
           >
             {confirmLabel}
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>,
+    document.body,
+  );
+}
+
+// ─── 信息对话框 ──────────────────────────────────────────────────────────────
+// 视觉对齐 ConfirmDialog，但单按钮 + 蓝色 Info 图标，用于"成功 + 后续指引"场景。
+// onClose 由调用方控制；点遮罩或确认按钮都触发 onClose。
+
+function InfoDialog({
+  title,
+  message,
+  buttonLabel,
+  onClose,
+}: {
+  title: string;
+  message: string;
+  buttonLabel: string;
+  onClose: () => void;
+}) {
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      style={{
+        backgroundColor: "rgba(0,0,0,0.6)",
+        backdropFilter: "blur(8px)",
+        WebkitBackdropFilter: "blur(8px)",
+      }}
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+    >
+      <motion.div
+        initial={{ opacity: 0, y: 20, scale: 0.95 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 20, scale: 0.95 }}
+        transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
+        className="relative mx-4 flex w-full max-w-sm flex-col rounded-[1.5rem] border p-6 shadow-2xl"
+        style={{
+          background: "rgba(255,255,255,0.98)",
+          borderColor: "rgba(0,0,0,0.06)",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3
+          className="mb-2.5 inline-flex items-center gap-1.5 text-base font-semibold"
+          style={{ color: "rgba(0,0,0,0.92)" }}
+        >
+          <Check className="h-4 w-4" style={{ color: "rgba(0,0,0,0.55)" }} aria-hidden />
+          {title}
+        </h3>
+        <p
+          className="text-left text-[13px] leading-relaxed"
+          style={{ color: "rgba(0,0,0,0.55)", paddingTop: 10, paddingBottom: 10 }}
+        >
+          {/* 把 message 里的 /new 高亮成红色加粗，便于用户一眼识别要输入的命令 */}
+          {message.split(/(\/new)/g).map((part, i) =>
+            part === "/new" ? (
+              <strong key={i} style={{ color: "#cf3d4c", fontWeight: 600 }}>{part}</strong>
+            ) : (
+              <span key={i}>{part}</span>
+            ),
+          )}
+        </p>
+        <div className="flex justify-center">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full px-5 py-2 text-sm font-medium text-white transition-colors hover:opacity-90"
+            style={{ background: "rgba(0,0,0,0.90)" }}
+          >
+            {buttonLabel}
           </button>
         </div>
       </motion.div>
