@@ -97,7 +97,7 @@ python3 images/build-image.py --runtime hermes --base-image-id img-id352nof --wi
 当前 Hermes 路径：
 
 - 默认运行用户：`agentuser`
-- 从 `runtime_hermes.cos_base` 下载 pin 版本 Hermes tarball；当前为 `hermes-agent-v20260506` / `0.12.0`
+- 默认从 `runtime_hermes.cos_base` 的 `latest.json` 解析 Hermes tarball 和源版本；可用 `--hermes-version` 临时 pin 到指定 COS 目录
 - 解压到 `~/.hermes/hermes-agent`，伪造成本地 git repo 后复用官方 `install.sh --skip-setup --branch main`
 - 安装 `@qwen-code/qwen-code`
 - 安装 `skillhub --cli-only`
@@ -164,7 +164,7 @@ python3 images/build-image.py --openclaw-version 2026.3.24 --qqbot-version 1.6.6
 
 ```bash
 python3 images/build-image.py --runtime hermes
-python3 images/build-image.py --runtime hermes --hermes-version hermes-agent-v20260506
+python3 images/build-image.py --runtime hermes --hermes-version hermes-agent-v20260520
 ```
 
 ## Manual Build

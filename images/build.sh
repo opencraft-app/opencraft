@@ -9,7 +9,7 @@
 # 参数定义:
 #   [openclaw_version]         可选，OpenClaw 版本；默认从 build-manifest.json 读取
 #   --runtime <kind>           openclaw | hermes，默认 openclaw
-#   --hermes-version <ver>     Hermes COS 版本；默认从 build-manifest.json 读取
+#   --hermes-version <ver>     Hermes COS 版本；默认从 runtime_hermes.cos_base/latest.json 读取
 #   --envd-only                仅安装 envd
 #   --base-only                仅安装基础层（Node/Python/Playwright/系统依赖）
 #   --app-only                 仅安装应用层（OpenClaw/plugins/skills/gateway）
@@ -102,7 +102,7 @@ Options:
   --base-only              Install only the base layer
   --app-only               Install only the application layer
   --runtime <kind>         Runtime flavor: openclaw | hermes (default: openclaw)
-  --hermes-version <ver>   Hermes COS version, for example hermes-agent-v20260506
+  --hermes-version <ver>   Hermes COS version, for example hermes-agent-v20260520 (default: latest.json)
   --only-plugins <list>    Only install the specified plugins (comma-separated)
   --qqbot-version <ver>    QQBot plugin version (default: build-manifest.json runtime.qqbot_version)
   --weixin-version <ver>   Weixin plugin version (default: build-manifest.json runtime.weixin_version)
@@ -909,6 +909,7 @@ install_hermes_runtime() {
     return 1
   fi
 
+  ensure_hermes_version_resolved
   hermes_cos_dir="$(resolve_hermes_cos_dir)"
   hermes_tarball_url="${HERMES_COS_BASE%/}/${hermes_cos_dir}/hermes-agent.tar.gz"
   log_info "installing Hermes ${HERMES_VERSION:-${hermes_cos_dir}} from ${hermes_tarball_url}"
@@ -959,30 +960,56 @@ EOF
   ensure_yuanbao_allow_all_users
 }
 
-fetch_latest_hermes_version() {
+fetch_latest_hermes_metadata() {
   local meta=""
   meta="$(curl -fsSL "${HERMES_COS_BASE%/}/latest.json" 2>/dev/null || true)"
   if [ -z "${meta}" ]; then
     return 1
   fi
-  printf '%s' "${meta}" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("version",""))' 2>/dev/null
+  eval "$(
+    printf '%s' "${meta}" | python3 -c '
+import json
+import shlex
+import sys
+
+data = json.load(sys.stdin)
+version = data.get("version", "")
+if not version:
+    raise SystemExit(1)
+
+values = {
+    "HERMES_VERSION": version,
+    "HERMES_SRC_VERSION": data.get("src_version", ""),
+    "HERMES_GIT_COMMIT": data.get("git_commit_full") or data.get("git_commit", ""),
+}
+for key, value in values.items():
+    if value:
+        print(f"{key}={shlex.quote(str(value))}")
+' 2>/dev/null
+  )"
+  [ -n "${HERMES_VERSION}" ]
 }
 
 resolve_hermes_cos_dir() {
   local version="${HERMES_VERSION}"
+  case "${version}" in
+    hermes-agent-*) printf '%s\n' "${version}" ;;
+    *) printf 'hermes-agent-%s\n' "${version}" ;;
+  esac
+}
+
+ensure_hermes_version_resolved() {
+  local version="${HERMES_VERSION}"
   if [ -z "${version}" ]; then
-    log_info "No Hermes version specified, fetching latest from ${HERMES_COS_BASE%/}/latest.json"
-    version="$(fetch_latest_hermes_version || true)"
+    log_info "No Hermes version specified, fetching latest from ${HERMES_COS_BASE%/}/latest.json" >&2
+    fetch_latest_hermes_metadata || true
+    version="${HERMES_VERSION}"
   fi
   if [ -z "${version}" ]; then
     log_error "failed to resolve Hermes version"
     return 1
   fi
   HERMES_VERSION="${version}"
-  case "${version}" in
-    hermes-agent-*) printf '%s\n' "${version}" ;;
-    *) printf 'hermes-agent-%s\n' "${version}" ;;
-  esac
 }
 
 ensure_yuanbao_allow_all_users() {

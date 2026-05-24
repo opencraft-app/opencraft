@@ -144,6 +144,24 @@ else
   pass "hermes runtime command is available"
 fi
 
+info "checking hermes runtime version"
+HERMES_VERSION_OUTPUT="$(remote_exec_runtime '
+  export HOME='"${RUNTIME_HOME}"'
+  export USER='"${RUNTIME_USER}"'
+  export PATH=/usr/local/bin:/usr/bin:/bin:$HOME/.local/bin:$HOME/.cargo/bin:$HOME/.hermes/hermes-agent/venv/bin
+  hermes --version
+' 2>&1 || true)"
+HERMES_BIN_VERSION="$(printf '%s\n' "${HERMES_VERSION_OUTPUT}" | grep -Eo '[0-9]+(\.[0-9]+){1,2}' | head -1 || true)"
+HERMES_IDENTITY_VERSION="$(remote_exec "awk -F': *' '/^runtime_version:/ {print \$2}' /etc/acli/identity.yaml 2>/dev/null" 2>&1 || true)"
+if [ -n "${HERMES_BIN_VERSION}" ] && [ -n "${HERMES_IDENTITY_VERSION}" ] && [ "${HERMES_BIN_VERSION}" = "${HERMES_IDENTITY_VERSION}" ]; then
+  pass "hermes runtime version matches identity: ${HERMES_BIN_VERSION}"
+else
+  fail "hermes runtime version does not match identity"
+  echo "hermes --version output: ${HERMES_VERSION_OUTPUT}"
+  echo "parsed hermes version: ${HERMES_BIN_VERSION}"
+  echo "identity runtime_version: ${HERMES_IDENTITY_VERSION}"
+fi
+
 info "checking hermes command topology"
 HERMES_TOPOLOGY_OUTPUT="$(remote_exec_runtime '
   set -e

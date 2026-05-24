@@ -22,9 +22,9 @@ REAL_RUNTIME_HOME="$(readlink -f "${RUNTIME_HOME}" 2>/dev/null || printf '%s\n' 
 HERMES_INSTALL_SCRIPT_URL="https://example.com/install.sh"
 HERMES_INSTALL_ARGS="--skip-setup"
 HERMES_COS_BASE="https://example.com/hermes"
-HERMES_VERSION="hermes-agent-v20260506"
-HERMES_SRC_VERSION="0.12.0"
-HERMES_GIT_COMMIT="eda80e0b"
+HERMES_VERSION=""
+HERMES_SRC_VERSION=""
+HERMES_GIT_COMMIT=""
 HERMES_QWEN_CODE_VERSION="latest"
 HERMES_ACLI_INSTALL_URL="https://example.com/acli/install.sh"
 SKILLHUB_INSTALL_URL="https://example.com/skillhub.sh"
@@ -68,7 +68,7 @@ exit 0
 INNER
 cat >"$HOME/.hermes/hermes-agent/venv/bin/hermes" <<'INNER'
 #!/usr/bin/env bash
-echo "0.12.0"
+echo "0.14.0"
 INNER
 chmod +x "$HOME/.hermes/hermes-agent/venv/bin/hermes-agent"
 chmod +x "$HOME/.hermes/hermes-agent/venv/bin/hermes"
@@ -83,7 +83,19 @@ EOF
 tar -czf "${HERMES_TARBALL}" -C "${TMPDIR}/hermes-src" hermes-agent
 
 curl() {
-  if [[ "${1:-}" == "-fsSL" && "${2:-}" == "${HERMES_COS_BASE}/${HERMES_VERSION}/hermes-agent.tar.gz" && "${3:-}" == "-o" ]]; then
+  if [[ "${1:-}" == "-fsSL" && "${2:-}" == "${HERMES_COS_BASE}/latest.json" ]]; then
+    cat <<'EOF'
+{
+  "version": "hermes-agent-v20260520",
+  "src_version": "0.14.0",
+  "git_commit": "main",
+  "git_commit_full": "main"
+}
+EOF
+    log_call "curl-hermes-latest"
+    return 0
+  fi
+  if [[ "${1:-}" == "-fsSL" && "${2:-}" == "${HERMES_COS_BASE}/hermes-agent-v20260520/hermes-agent.tar.gz" && "${3:-}" == "-o" ]]; then
     cp "${HERMES_TARBALL}" "${4}"
     log_call "curl-hermes-tarball ${4}"
     return 0
@@ -187,6 +199,7 @@ install_hermes_runtime
 install_hermes_extra_tools
 install_hermes_acli
 
+grep -q "curl-hermes-latest" "${LOG_FILE}"
 grep -q "curl-hermes-tarball" "${LOG_FILE}"
 grep -q "curl-installer" "${LOG_FILE}"
 grep -q "npm-install @qwen-code/qwen-code@latest" "${LOG_FILE}"
@@ -201,7 +214,7 @@ grep -q '^product: lightvela$' "${ACLI_IDENTITY_PATH}"
 grep -q '^run_as: agentuser$' "${ACLI_IDENTITY_PATH}"
 grep -q "^runtime_bin: ${RUNTIME_HOME}/.hermes/hermes-agent/venv/bin/hermes$" "${ACLI_IDENTITY_PATH}"
 grep -q "^runtime_home: ${RUNTIME_HOME}/.hermes$" "${ACLI_IDENTITY_PATH}"
-grep -q '^runtime_version: 0.12.0$' "${ACLI_IDENTITY_PATH}"
+grep -q '^runtime_version: 0.14.0$' "${ACLI_IDENTITY_PATH}"
 grep -q "exec ${REAL_RUNTIME_HOME}/.hermes/hermes-agent/venv/bin/hermes " "${HERMES_SYSTEM_BIN_DIR}/hermes"
 grep -q "exec ${REAL_RUNTIME_HOME}/.hermes/hermes-agent/venv/bin/hermes-agent " "${HERMES_SYSTEM_BIN_DIR}/hermes-agent"
 ! grep -q "ln -sfn ${HOME}/.hermes/hermes-agent/venv/bin/hermes ${HERMES_SYSTEM_BIN_DIR}/hermes" "${LOG_FILE}"
