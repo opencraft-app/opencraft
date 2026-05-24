@@ -1010,6 +1010,7 @@ ensure_hermes_version_resolved() {
     return 1
   fi
   HERMES_VERSION="${version}"
+  log_info "Resolved Hermes metadata: version=${HERMES_VERSION} src_version=${HERMES_SRC_VERSION:-unknown} git_commit=${HERMES_GIT_COMMIT:-unknown}"
 }
 
 ensure_yuanbao_allow_all_users() {
