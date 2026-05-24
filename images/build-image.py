@@ -1761,7 +1761,7 @@ def main():
     )
     parser.add_argument(
         "--hermes-version", default=DEFAULT_HERMES_VERSION,
-        help=f"Hermes COS 版本，例如 hermes-agent-v20260506 (default: {DEFAULT_HERMES_VERSION or 'latest.json'})",
+        help=f"Hermes COS 版本，例如 hermes-agent-v20260520 (default: {DEFAULT_HERMES_VERSION or 'latest.json'})",
     )
     parser.add_argument(
         "--remote-build-dir", default=DEFAULT_REMOTE_BUILD_DIR,
