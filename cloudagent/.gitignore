@@ -29,4 +29,3 @@ cargo-vendor/
 # Large upstream research checkouts kept as local references.
 research/LibreChat/
 research/open-webui/
-research/hermes-rs/
