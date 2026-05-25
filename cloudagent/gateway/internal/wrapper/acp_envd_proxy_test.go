@@ -82,7 +82,7 @@ func TestEnvdProxyEnsuresInnerAndRewritesAuth(t *testing.T) {
 	defer client.close()
 	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "session/new", "params": map[string]any{}})
 	result := waitForRPCID(t, client, float64(1))["result"].(map[string]any)
-	proxyID, _ := result["session_proxy_id"].(string)
+	proxyID, _ := cloudAgentResultMeta(t, result)["session_proxy_id"].(string)
 	if proxyID == "" {
 		t.Fatalf("session/new did not return session_proxy_id: %#v", result)
 	}
@@ -217,7 +217,7 @@ func TestEnvdProxyRejectsScopeMismatch(t *testing.T) {
 	defer client.close()
 	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "session/new", "params": map[string]any{}})
 	result := waitForRPCID(t, client, float64(1))["result"].(map[string]any)
-	proxyID := result["session_proxy_id"].(string)
+	proxyID := cloudAgentResultMeta(t, result)["session_proxy_id"].(string)
 
 	req, err := http.NewRequest(http.MethodGet, ts.URL+"/files?path=/workspace/a.txt", nil)
 	if err != nil {
@@ -441,7 +441,7 @@ func TestEnvdProxyRetriesStaleAuthOnce(t *testing.T) {
 	defer client.close()
 	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "session/new", "params": map[string]any{}})
 	result := waitForRPCID(t, client, float64(1))["result"].(map[string]any)
-	proxyID := result["session_proxy_id"].(string)
+	proxyID := cloudAgentResultMeta(t, result)["session_proxy_id"].(string)
 
 	req, err := http.NewRequest(http.MethodPost, ts.URL+"/process.Process/Start", nil)
 	if err != nil {
@@ -490,7 +490,7 @@ func TestEnvdProxyDoesNotRetryBodyRequest(t *testing.T) {
 	defer client.close()
 	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "session/new", "params": map[string]any{}})
 	result := waitForRPCID(t, client, float64(1))["result"].(map[string]any)
-	proxyID := result["session_proxy_id"].(string)
+	proxyID := cloudAgentResultMeta(t, result)["session_proxy_id"].(string)
 
 	req, err := http.NewRequest(http.MethodPost, ts.URL+"/process.Process/Start", strings.NewReader("body"))
 	if err != nil {
@@ -570,7 +570,7 @@ func TestEnvdProxyInvalidationSurvivesGatewayRestart(t *testing.T) {
 	defer client.close()
 	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "session/new", "params": map[string]any{}})
 	result := waitForRPCID(t, client, float64(1))["result"].(map[string]any)
-	proxyID := result["session_proxy_id"].(string)
+	proxyID := cloudAgentResultMeta(t, result)["session_proxy_id"].(string)
 
 	req, err := http.NewRequest(http.MethodPost, ts.URL+"/process.Process/Start", strings.NewReader("body"))
 	if err != nil {
@@ -640,7 +640,7 @@ func TestEnvdProxyPassesThroughFilesNotFoundWithoutRetry(t *testing.T) {
 	defer client.close()
 	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "session/new", "params": map[string]any{}})
 	result := waitForRPCID(t, client, float64(1))["result"].(map[string]any)
-	proxyID := result["session_proxy_id"].(string)
+	proxyID := cloudAgentResultMeta(t, result)["session_proxy_id"].(string)
 
 	req, err := http.NewRequest(http.MethodGet, ts.URL+"/files?path=/workspace/missing.txt", nil)
 	if err != nil {
@@ -677,7 +677,7 @@ func TestEnvdProxyStaleHostReturnsGone(t *testing.T) {
 	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "session/new", "params": map[string]any{}})
 	result := waitForRPCID(t, client, float64(1))["result"].(map[string]any)
 	sessionID := result["sessionId"].(string)
-	proxyID := result["session_proxy_id"].(string)
+	proxyID := cloudAgentResultMeta(t, result)["session_proxy_id"].(string)
 
 	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 2, "method": "session/close", "params": map[string]any{"sessionId": sessionID}})
 	_ = waitForRPCID(t, client, float64(2))
@@ -726,7 +726,7 @@ func TestEnvdProxyDeletedSessionStaysGoneAfterReload(t *testing.T) {
 	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "session/new", "params": map[string]any{}})
 	result := waitForRPCID(t, client, float64(1))["result"].(map[string]any)
 	sessionID := result["sessionId"].(string)
-	proxyID := result["session_proxy_id"].(string)
+	proxyID := cloudAgentResultMeta(t, result)["session_proxy_id"].(string)
 	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 2, "method": "session/delete", "params": map[string]any{"sessionId": sessionID}})
 	_ = waitForRPCID(t, client, float64(2))
 	client.close()

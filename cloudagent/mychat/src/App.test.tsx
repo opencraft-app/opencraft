@@ -6,6 +6,7 @@ import {
   Header,
   SettingsPage,
   SessionPage,
+  WorkspaceRestoreNotice,
   parseSessionCreateMetaJSON,
   resolveInitialGatewayURL,
   resolveSessionEnvdFileURL,
@@ -41,6 +42,15 @@ describe("Header session entry", () => {
 });
 
 describe("SessionPage", () => {
+  it("renders a workspace restore spinner for chat recovery", () => {
+    const html = renderToStaticMarkup(<WorkspaceRestoreNotice />);
+
+    expect(html).toContain('role="status"');
+    expect(html).toContain("workspace-restore-spinner");
+    expect(html).toContain("animate-spin");
+    expect(html).toContain("正在恢复 Workspace");
+  });
+
   it("renders draft session placeholders without raw JSON", () => {
     const html = renderToStaticMarkup(
       <SessionPage
@@ -128,7 +138,7 @@ describe("SessionPage", () => {
           lastRuntimeError: "ags http 404: The requested resource does not exist",
           sandbox: {
             backend: "ags",
-            sandboxTemplateId: "498c6c11-74d7-426e-bdb1-13d8aa73997e",
+            agentTemplateId: "498c6c11-74d7-426e-bdb1-13d8aa73997e",
             runtimeId: "rt_session_meta_2",
             outerSandboxId: "outer_sandbox_123",
             innerSandboxId: "inner_sandbox_456",
@@ -212,7 +222,7 @@ describe("SettingsPage", () => {
             id: "talos",
             name: "Talos",
             description: "Use Talos backend",
-            json: '{"_meta":{"cloudagent":{"sandbox_backend":"talos","sandbox_template_id":"498c6c11-74d7-426e-bdb1-13d8aa73997e"}}}',
+            json: '{"_meta":{"cloudagent":{"sandbox_backend":"talos","agent_version":"builtin.v1","workspace_version":"builtin.v1"}}}',
           },
           {
             id: "custom",
@@ -222,8 +232,8 @@ describe("SettingsPage", () => {
           },
         ]}
         sessionMetaTemplateId="talos"
-        sessionMetaJSON='{"_meta":{"cloudagent":{"sandbox_backend":"talos","sandbox_template_id":"498c6c11-74d7-426e-bdb1-13d8aa73997e"}}}'
-        sessionMetaSummary="Backend: talos · template 498c6c11"
+        sessionMetaJSON='{"_meta":{"cloudagent":{"sandbox_backend":"talos","agent_version":"builtin.v1","workspace_version":"builtin.v1"}}}'
+        sessionMetaSummary="Backend: talos · agent builtin.v1"
         onSessionMetaTemplateChange={() => {}}
         onSessionMetaJSONChange={() => {}}
         onSave={() => {}}
@@ -235,9 +245,10 @@ describe("SettingsPage", () => {
     expect(html).toContain("Session create params");
     expect(html).toContain("Talos");
     expect(html).toContain("default CloudAgent endpoint");
-    expect(html).toContain("Backend: talos · template 498c6c11");
+    expect(html).toContain("Backend: talos · agent builtin.v1");
     expect(html).toContain("sandbox_backend");
-    expect(html).toContain("sandbox_template_id");
+    expect(html).toContain("agent_version");
+    expect(html).toContain("workspace_version");
     expect(html).toContain("This only applies when a new ACP session is created.");
   });
 });
@@ -245,7 +256,7 @@ describe("SettingsPage", () => {
 describe("session/new meta JSON", () => {
   it("parses cloudagent backend meta and summarizes the selected backend", () => {
     const parsed = parseSessionCreateMetaJSON(
-      '{"_meta":{"cloudagent":{"sandbox_backend":"talos","sandbox_template_id":"498c6c11-74d7-426e-bdb1-13d8aa73997e"}}}',
+      '{"_meta":{"cloudagent":{"sandbox_backend":"talos","agent_version":"builtin.v1","workspace_version":"builtin.v1"}}}',
     );
 
     expect(parsed.error).toBeUndefined();
@@ -253,12 +264,13 @@ describe("session/new meta JSON", () => {
       _meta: {
         cloudagent: {
           sandbox_backend: "talos",
-          sandbox_template_id: "498c6c11-74d7-426e-bdb1-13d8aa73997e",
+          agent_version: "builtin.v1",
+          workspace_version: "builtin.v1",
         },
       },
     });
     expect(summarizeSessionCreateMeta(parsed.value)).toBe(
-      "Backend: talos · template 498c6c11",
+      "Backend: talos · agent builtin.v1",
     );
   });
 

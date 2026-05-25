@@ -179,6 +179,18 @@ func (c *AGSClient) DeleteSandbox(ctx context.Context, sandboxID string) error {
 	return err
 }
 
+func (c *AGSClient) RefreshSandboxTimeout(ctx context.Context, sandboxID string, timeoutSeconds int) error {
+	if sandboxID == "" {
+		return nil
+	}
+	if timeoutSeconds <= 0 {
+		timeoutSeconds = 300
+	}
+	body := map[string]any{"timeout": timeoutSeconds}
+	op := fmt.Sprintf("refresh_sandbox sandbox_id=%s timeout=%d domain=%s api_url=%s", sandboxID, timeoutSeconds, c.domain, c.apiURL)
+	return c.doJSON(ctx, http.MethodPost, c.apiURL+"/sandboxes/"+url.PathEscape(sandboxID)+"/timeout", body, nil, op)
+}
+
 func isIdempotentDeleteSandboxError(err error) bool {
 	if err == nil {
 		return false
@@ -316,6 +328,10 @@ func (c *AGSClient) doJSON(ctx context.Context, method, endpoint string, body an
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return decodeHTTPError(resp, op)
+	}
+	if out == nil {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return nil
 	}
 	return json.NewDecoder(resp.Body).Decode(out)
 }

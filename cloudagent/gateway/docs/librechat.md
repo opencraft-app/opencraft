@@ -86,7 +86,7 @@ Then verify from the wrapper logs that the UI message reached the real chain. A 
 - `sidecar_download_done`
 - `response_completed`
 
-For a chat-only request, `inner_not_started` is expected and proves the inner AGS sandbox was not created unnecessarily. Tool requests should instead show `inner_create_start`, `inner_ready`, and `tool_exec_done`.
+For a chat-only request, `inner_sandbox_id=""` in `sidecar_result_envelope` proves the inner AGS sandbox was not created unnecessarily. Tool requests should instead show `kind=tool_call`, `kind=tool_call_update`, and a non-empty `inner_sandbox_id`.
 
 Finally rerun wrapper regression:
 

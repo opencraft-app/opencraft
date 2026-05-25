@@ -91,7 +91,7 @@ ws://cloudagent.lightvela.com/acp
 }
 ```
 
-响应里会返回 `sessionId`。后续 prompt 都使用这个 `sessionId`。
+响应里会返回标准 ACP `sessionId`。后续 prompt 都使用这个 `sessionId`。CloudAgent 自有状态统一放在 `_meta.cloudagent`；不要从标准方法响应顶层读取 `readOnly`、`readOnlyReason` 或 `session_proxy_id`。
 
 可通过 CloudAgent 私有 `_meta` 扩展为单个会话指定 sandbox backend：
 
@@ -125,10 +125,31 @@ ws://cloudagent.lightvela.com/acp
 
 服务端默认把签名 URL 拼成 `${sidecar_url}.sig`，`signing_key_id` 缺省为 `cloudagent-agent-release-v1`。外层 sandbox 通过预置的 Rust `cloudagent-agent-loader` 先验 Ed25519 detached `.sig`，再用 `.sig` envelope 里的 SHA256 校验 ELF bytes，最后才 `execve` sidecar。
 
+`session/new` 响应示例：
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "result": {
+    "sessionId": "session_xxx",
+    "configOptions": [],
+    "_meta": {
+      "cloudagent": {
+        "state": "ready",
+        "read_only": false,
+        "read_only_reason": "",
+        "session_proxy_id": "proxy_xxx"
+      }
+    }
+  }
+}
+```
+
 ### _cloudagent.session.status
 
 CloudAgent 私有扩展方法，用于查看 session 绑定的 runtime/sandbox 状态。
-扩展方法名使用点分隔，扩展字段使用 `snake_case`。
+扩展方法名使用点分隔，扩展输入和输出字段使用 `snake_case`，不支持 camelCase alias。
 
 ```json
 {
@@ -142,6 +163,50 @@ CloudAgent 私有扩展方法，用于查看 session 绑定的 runtime/sandbox �
 ```
 
 该接口不会返回 envd token、traffic token、API key 或签名 URL。
+
+### _cloudagent.runtime.ensure_ready
+
+CloudAgent 私有扩展方法，用于在 `session/load` 回放 transcript 后恢复 workspace/runtime host。该方法不回放消息，只确保 session 绑定的 runtime host 可继续执行 prompt、文件和工具能力。
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 21,
+  "method": "_cloudagent.runtime.ensure_ready",
+  "params": {
+    "session_id": "session_xxx",
+    "cwd": "/workspace"
+  }
+}
+```
+
+返回包含 `_cloudagent.session.status` 同款 runtime 状态字段，并额外包含 `restore_source: "runtime_ensure_ready"` 和 `runtime_ensure_ready` 对象。
+
+### session/load / session/resume / session/list
+
+`session/load` 只回放 transcript，不启动 runtime；回放完成通过 `_cloudagent.session.replay_done` notification 显式通知。`session/resume` 或 `_cloudagent.runtime.ensure_ready` 才负责恢复 runtime host。
+
+`session/load` 和 `session/resume` 响应不在顶层返回 `sessionId`，只返回标准配置字段和 `_meta.cloudagent`：
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 22,
+  "result": {
+    "configOptions": [],
+    "_meta": {
+      "cloudagent": {
+        "state": "ready",
+        "read_only": false,
+        "read_only_reason": "",
+        "session_proxy_id": "proxy_xxx"
+      }
+    }
+  }
+}
+```
+
+`session/list` 的每个 session 行顶层只放标准列表字段，CloudAgent 状态仍放 `_meta.cloudagent`。
 
 ### session/prompt
 

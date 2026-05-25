@@ -10,6 +10,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
+import { flushSync } from "react-dom";
 import {
   AlarmClock,
   ArrowDown,
@@ -18,6 +19,7 @@ import {
   ChevronsUpDown,
   CircleDot,
   Download,
+  Loader2,
   Mic,
   Paperclip,
   PanelLeft,
@@ -96,6 +98,7 @@ import {
   planSendPrompt,
   planSessionList,
   planSessionReady,
+  planSessionStatusReady,
   planTransportLoss,
   type AcpRestoreEnvironment,
   type PendingPrompt,
@@ -117,6 +120,11 @@ const SESSION_METADATA_POLL_MS = 2000;
 export const DEFAULT_GATEWAY_URL = "http://cloudagent.lightvela.com";
 const CURRENT_GATEWAY_HOST = "cloudagent.lightvela.com";
 const MarkdownContent = lazy(() => import("./components/MarkdownContent"));
+let markdownContentPreload: Promise<unknown> | undefined;
+const RESTORE_DEBUG_QUERY_KEY = "debug_restore";
+const RESTORE_DEBUG_STORAGE_KEY = "cloudagent_debug_restore";
+const CLOUDAGENT_RUNTIME_ENSURE_READY_METHOD =
+  "_cloudagent.runtime.ensure_ready";
 const ACP_RESTORE_ENVIRONMENT: AcpRestoreEnvironment = {
   cwd: DEFAULT_CWD,
   // ACP requires clients to resend the full intended MCP server list on load/resume.
@@ -124,6 +132,10 @@ const ACP_RESTORE_ENVIRONMENT: AcpRestoreEnvironment = {
   mcpServers: [] as unknown[],
   mcpServersAuthoritative: true,
 };
+
+function preloadMarkdownContent() {
+  markdownContentPreload ??= import("./components/MarkdownContent");
+}
 
 interface BrowserSpeechRecognition extends EventTarget {
   continuous: boolean;
@@ -213,7 +225,8 @@ const SESSION_META_TEMPLATES: SessionMetaTemplate[] = [
         _meta: {
           cloudagent: {
             sandbox_backend: "talos",
-            sandbox_template_id: "498c6c11-74d7-426e-bdb1-13d8aa73997e",
+            agent_version: "builtin.v1",
+            workspace_version: "builtin.v1",
           },
         },
       },
@@ -255,6 +268,7 @@ export function App() {
   >({});
   const [sessionStatusByConversation, setSessionStatusByConversation] =
     useState<Record<string, SessionStatusSnapshot>>({});
+  const [restoreStatusPollVersion, setRestoreStatusPollVersion] = useState(0);
   const [commandsByConversation, setCommandsByConversation] = useState<
     Record<string, unknown[]>
   >({});
@@ -281,6 +295,7 @@ export function App() {
   const conversationsRef = useRef(conversations);
   const messagesRef = useRef(messages);
   const pendingTurnsRef = useRef(pendingTurns);
+  const statusRef = useRef(status);
   const capabilitiesRef = useRef(capabilities);
   const listedSessionsRef = useRef(listedSessions);
   const pendingOpenAfterListRef = useRef<string | null>(null);
@@ -288,7 +303,52 @@ export function App() {
   const loadReplayTrackersRef = useRef<Map<string, LoadReplayTracker>>(
     new Map(),
   );
+  const pendingLoadReplayDoneRef = useRef<Set<string>>(new Set());
+  const loadedTranscriptSessionIdsRef = useRef<Set<string>>(new Set());
   const sidebarResizeMovedRef = useRef(false);
+  const restoreDebugRef = useRef(isRestoreDebugEnabled());
+
+  const debugRestore = useCallback((event: string, data?: unknown) => {
+    if (!restoreDebugRef.current) return;
+    const payload = {
+      at: new Date().toISOString(),
+      data,
+    };
+    console.log(`[cloudagent:restore] ${event}`, payload);
+    pushCloudAgentDebugEvent("restore", event, payload);
+  }, []);
+
+  function commitConversations(next: SessionRow[]) {
+    conversationsRef.current = next;
+    setConversations(next);
+  }
+
+  function updateConversationsCommitted(
+    updater: (rows: SessionRow[]) => SessionRow[],
+  ) {
+    const next = updater(conversationsRef.current);
+    conversationsRef.current = next;
+    setConversations(next);
+  }
+
+  function commitActiveConversationId(next: string) {
+    activeConversationRef.current = next;
+    setActiveConversationId(next);
+  }
+
+  function commitMessages(next: ChatMessage[]) {
+    messagesRef.current = next;
+    exposeCloudAgentMessages(next);
+    setMessages(next);
+  }
+
+  function updateMessagesCommitted(
+    updater: (messages: ChatMessage[]) => ChatMessage[],
+  ) {
+    const next = updater(messagesRef.current);
+    messagesRef.current = next;
+    setMessages(next);
+  }
 
   const flushPendingPrompt = useCallback((conversationId: string) => {
     const pending = pendingPromptsRef.current.get(conversationId);
@@ -306,10 +366,12 @@ export function App() {
 
   const clearLoadReplayTracker = useCallback((conversationId: string) => {
     loadReplayTrackersRef.current.delete(conversationId);
+    pendingLoadReplayDoneRef.current.delete(conversationId);
   }, []);
 
   const clearAllLoadReplayTrackers = useCallback(() => {
     loadReplayTrackersRef.current.clear();
+    pendingLoadReplayDoneRef.current.clear();
   }, []);
 
   const settleLoadReplay = useCallback(
@@ -317,6 +379,20 @@ export function App() {
       const tracker = loadReplayTrackersRef.current.get(conversationId);
       if (!tracker) return;
       if (evaluateLoadReplay(tracker.lifecycle) !== "live") return;
+      const conversation = conversationsRef.current.find(
+        (item) => item.id === conversationId,
+      );
+      if (conversation?.sessionId) {
+        loadedTranscriptSessionIdsRef.current.add(conversation.sessionId);
+        setRestoreStatusPollVersion((version) => version + 1);
+      }
+      debugRestore("replay_settled", {
+        conversationId,
+        sessionId: conversation?.sessionId,
+        messageCount: messagesRef.current.filter(
+          (message) => message.conversationId === conversationId,
+        ).length,
+      });
       clearLoadReplayTracker(conversationId);
       const client = clientRef.current;
       if (!client) return;
@@ -328,42 +404,74 @@ export function App() {
         if (effect.type === "activate_loaded_session") {
           client.setActiveSession(effect.conversationId, effect.sessionId);
         } else if (effect.type === "resume_session") {
-          client.resumeSession(
-            effect.conversationId,
-            effect.sessionId,
-            effect.cwd,
-            effect.mcpServers,
-            effect.additionalDirectories,
-          );
+          if (
+            hasCloudAgentRuntimeEnsureReadyMethod(capabilitiesRef.current)
+          ) {
+            debugRestore("call_runtime_ensure_ready", {
+              conversationId: effect.conversationId,
+              sessionId: effect.sessionId,
+              cwd: effect.cwd,
+            });
+            client.ensureRuntimeReady(
+              effect.conversationId,
+              effect.sessionId,
+              effect.cwd,
+            );
+          } else {
+            debugRestore("call_session_resume", {
+              conversationId: effect.conversationId,
+              sessionId: effect.sessionId,
+              cwd: effect.cwd,
+            });
+            client.resumeSession(
+              effect.conversationId,
+              effect.sessionId,
+              effect.cwd,
+              effect.mcpServers,
+              effect.additionalDirectories,
+            );
+          }
         } else if (effect.type === "update_row_restore_state") {
-          setConversations((prev) => applyRowRestoreEffect(prev, effect));
+          debugRestore("restore_state_update_after_replay", effect);
+          updateConversationsCommitted((prev) =>
+            applyRowRestoreEffect(prev, effect),
+          );
         } else if (effect.type === "flush_pending_prompt") {
           flushPendingPrompt(effect.conversationId);
         }
       }
     },
-    [clearLoadReplayTracker, flushPendingPrompt],
+    [clearLoadReplayTracker, debugRestore, flushPendingPrompt],
   );
 
   const completeLoadReplay = useCallback(
     (conversationId: string) => {
       const tracker = loadReplayTrackersRef.current.get(conversationId);
-      if (!tracker) return;
+      if (!tracker) {
+        pendingLoadReplayDoneRef.current.add(conversationId);
+        debugRestore("replay_done_before_tracker", { conversationId });
+        return;
+      }
       tracker.lifecycle = markLoadReplayDone(tracker.lifecycle);
       settleLoadReplay(conversationId);
     },
-    [settleLoadReplay],
+    [debugRestore, settleLoadReplay],
   );
 
   const beginLoadReplayTracking = useCallback(
     (conversationId: string) => {
-      clearLoadReplayTracker(conversationId);
+      loadReplayTrackersRef.current.delete(conversationId);
       const tracker: LoadReplayTracker = {
         lifecycle: beginLoadReplayState(Date.now()),
       };
       loadReplayTrackersRef.current.set(conversationId, tracker);
+      debugRestore("replay_begin", { conversationId });
+      if (pendingLoadReplayDoneRef.current.delete(conversationId)) {
+        tracker.lifecycle = markLoadReplayDone(tracker.lifecycle);
+        settleLoadReplay(conversationId);
+      }
     },
-    [clearLoadReplayTracker],
+    [debugRestore, settleLoadReplay],
   );
 
   useEffect(() => {
@@ -381,6 +489,10 @@ export function App() {
   useEffect(() => {
     pendingTurnsRef.current = pendingTurns;
   }, [pendingTurns]);
+
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
 
   useEffect(() => {
     capabilitiesRef.current = capabilities;
@@ -413,6 +525,11 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    const timeoutId = window.setTimeout(preloadMarkdownContent, 250);
+    return () => window.clearTimeout(timeoutId);
+  }, []);
+
+  useEffect(() => {
     const query = window.matchMedia(MOBILE_MEDIA_QUERY);
     const sync = () => {
       const nextIsMobile = query.matches;
@@ -429,6 +546,7 @@ export function App() {
     const client = new AcpClient(
       {
         onStatus: (nextStatus) => {
+          statusRef.current = nextStatus;
           setStatus(nextStatus);
           if (nextStatus === "disconnected" || nextStatus === "error") {
             const plan = planTransportLoss({
@@ -437,11 +555,17 @@ export function App() {
             setPendingTurns(plan.pendingTurns);
             setPermissionRequests(plan.permissionRequests);
             pendingPromptsRef.current = plan.pendingPrompts;
-            setConversations(plan.conversations);
+            commitConversations(plan.conversations);
             executeSessionEffects(plan.effects, client);
           }
         },
         onReady: (nextCapabilities) => {
+          capabilitiesRef.current = nextCapabilities;
+          debugRestore("ready", {
+            loadSession: nextCapabilities.loadSession,
+            hasList: Boolean(nextCapabilities.sessionCapabilities?.list),
+            storedActiveSessionId: storedActiveSessionIdRef.current,
+          });
           setCapabilities(nextCapabilities);
           const plan = planReady({
             capabilities: nextCapabilities,
@@ -457,13 +581,20 @@ export function App() {
             "activeConversationId" in plan
               ? plan.activeConversationId
               : undefined;
-          if (readyConversations) setConversations(readyConversations);
+          if (readyConversations) commitConversations(readyConversations);
           if (typeof readyActiveConversationId === "string")
-            setActiveConversationId(readyActiveConversationId);
+            commitActiveConversationId(readyActiveConversationId);
           executeSessionEffects(plan.effects, client);
         },
         onMessage: (message) => {
-          setMessages((prev) => {
+          debugRestore("message", {
+            conversationId: message.conversationId,
+            id: message.id,
+            role: message.role,
+            contentLength: message.content.length,
+            timelineBlocks: message.timelineBlocks?.length ?? 0,
+          });
+          updateMessagesCommitted((prev) => {
             const existing = prev.find((item) =>
               isSameChatMessageTarget(item, message),
             );
@@ -476,6 +607,16 @@ export function App() {
           });
         },
         onSession: (state) => {
+          debugRestore("session_result", {
+            conversationId: state.conversationId,
+            sessionId: state.sessionId,
+            restoreSource: state.restoreSource,
+            readOnly: state.readOnly,
+            readOnlyReason: state.readOnlyReason,
+          });
+          if (state.restoreSource === "new") {
+            loadedTranscriptSessionIdsRef.current.add(state.sessionId);
+          }
           const plan = planSessionReady({
             state,
             conversations: conversationsRef.current,
@@ -484,14 +625,28 @@ export function App() {
             pendingTurns: pendingTurnsRef.current,
             pendingPrompts: pendingPromptsRef.current,
           });
-          setConversations(plan.conversations);
-          setActiveConversationId(plan.activeConversationId);
-          setMessages(plan.messages);
-          setPendingTurns(plan.pendingTurns);
+          const commitSessionReady = () => {
+            commitConversations(plan.conversations);
+            commitActiveConversationId(plan.activeConversationId);
+            commitMessages(plan.messages);
+            setPendingTurns(plan.pendingTurns);
+          };
+          if (state.restoreSource === "load") flushSync(commitSessionReady);
+          else commitSessionReady();
           pendingPromptsRef.current = plan.pendingPrompts;
           executeSessionEffects(plan.effects, client);
         },
         onSessionList: (sessions) => {
+          listedSessionsRef.current = sessions;
+          debugRestore("session_list", {
+            count: sessions.length,
+            sessions: sessions.map((session) => ({
+              sessionId: session.sessionId,
+              title: session.title,
+              state: session.state,
+              readOnly: session.readOnly,
+            })),
+          });
           const plan = planSessionList({
             sessions,
             previousRows: conversationsRef.current,
@@ -502,18 +657,23 @@ export function App() {
             activeConversationId: activeConversationRef.current,
             capabilities: capabilitiesRef.current,
             restoreEnvironment: ACP_RESTORE_ENVIRONMENT,
-            activeLiveConnection: false,
+            activeLiveConnection: statusRef.current === "connected",
+            transcriptLoadedSessionIds: loadedTranscriptSessionIdsRef.current,
           });
           setListedSessions(sessions);
           setListStatus(plan.listStatus);
           setListError(plan.listError);
           pendingOpenAfterListRef.current = plan.pendingOpenAfterList;
-          setConversations(plan.conversations);
-          setActiveConversationId(plan.activeConversationId);
+          commitConversations(plan.conversations);
+          commitActiveConversationId(plan.activeConversationId);
+          debugRestore("session_list_plan", {
+            activeConversationId: plan.activeConversationId,
+            effects: plan.effects,
+          });
           executeSessionEffects(plan.effects, client);
         },
         onControlOptions: (conversationId, nextOptions) => {
-          setConversations((prev) =>
+          updateConversationsCommitted((prev) =>
             updateRowConfigOptions(prev, conversationId, nextOptions),
           );
         },
@@ -530,6 +690,18 @@ export function App() {
           }));
         },
         onSessionStatus: (conversationId, sessionStatus) => {
+          debugRestore("session_status_result", {
+            conversationId,
+            sessionId: sessionStatus.sessionId,
+            state: sessionStatus.state,
+            readOnly: sessionStatus.readOnly,
+            readOnlyReason: sessionStatus.readOnlyReason,
+            runtimeStatus: sessionStatus.runtimeStatus,
+            runtimeStatusSource: sessionStatus.runtimeStatusSource,
+            runtimeStatusError: sessionStatus.runtimeStatusError,
+            workspacePersistent: sessionStatus.workspacePersistent,
+            runtimeRestorable: sessionStatus.runtimeRestorable,
+          });
           setSessionStatusByConversation((prev) => ({
             ...prev,
             [conversationId]: {
@@ -537,6 +709,16 @@ export function App() {
               receivedAt: new Date().toISOString(),
             },
           }));
+          const plan = planSessionStatusReady({
+            conversationId,
+            status: sessionStatus,
+            conversations: conversationsRef.current,
+            transcriptLoaded: Boolean(
+              sessionStatus.sessionId &&
+                loadedTranscriptSessionIdsRef.current.has(sessionStatus.sessionId),
+            ),
+          });
+          executeSessionEffects(plan.effects, client);
         },
         onTurn: (conversationId, turnState) => {
           setPendingTurns((prev) => {
@@ -586,7 +768,7 @@ export function App() {
             error.conversationId ?? activeConversationRef.current;
           const content = `${error.code}/${error.kind}${error.message ? `: ${error.message}` : ""}`;
           setLastError(content);
-          setMessages((prev) => [
+          updateMessagesCommitted((prev) => [
             ...prev,
             {
               id: crypto.randomUUID(),
@@ -608,7 +790,7 @@ export function App() {
             });
             pendingPromptsRef.current = plan.pendingPrompts;
             setPendingTurns(plan.pendingTurns);
-            setConversations(plan.conversations);
+            commitConversations(plan.conversations);
             if (plan.listStatus) setListStatus(plan.listStatus);
             if (plan.listError) setListError(plan.listError);
             executeSessionEffects(plan.effects, client);
@@ -625,7 +807,7 @@ export function App() {
           setPermissionRequests((prev) =>
             prev.filter((request) => request.conversationId !== conversationId),
           );
-          setConversations((prev) =>
+          updateConversationsCommitted((prev) =>
             applyRowRestoreEffect(prev, {
               type: "update_row_restore_state",
               conversationId,
@@ -635,6 +817,7 @@ export function App() {
         },
         onSessionDeleted: (conversationId, sessionId) => {
           clearLoadReplayTracker(conversationId);
+          loadedTranscriptSessionIdsRef.current.delete(sessionId);
           pendingPromptsRef.current.delete(conversationId);
           setPendingTurns((prev) => {
             const next = new Set(prev);
@@ -659,7 +842,7 @@ export function App() {
             delete next[conversationId];
             return next;
           });
-          setMessages((prev) =>
+          updateMessagesCommitted((prev) =>
             applyTranscriptEffect(prev, {
               type: "remove_transcript",
               conversationId,
@@ -668,16 +851,17 @@ export function App() {
           setListedSessions((prev) =>
             prev.filter((session) => session.sessionId !== sessionId),
           );
-          setConversations((prev) => removeSessionRow(prev, conversationId));
-          setActiveConversationId((current) => {
-            if (current !== conversationId) return current;
-            const remaining = conversationsRef.current.filter(
-              (conversation) => conversation.id !== conversationId,
-            );
-            return resolveActiveRowId(remaining);
-          });
+          const remaining = removeSessionRow(
+            conversationsRef.current,
+            conversationId,
+          );
+          commitConversations(remaining);
+          if (activeConversationRef.current === conversationId) {
+            commitActiveConversationId(resolveActiveRowId(remaining));
+          }
         },
         onReplayDone: (conversationId) => {
+          debugRestore("replay_done", { conversationId });
           completeLoadReplay(conversationId);
         },
         onTrace: () => undefined,
@@ -749,6 +933,30 @@ export function App() {
     capabilities,
     "_cloudagent.session.status",
   );
+  const chatWorkspaceRestoring =
+    viewMode === "chat" && activeConversation.restoreState === "restoring";
+
+  useEffect(() => {
+    debugRestore("active_restore_render_state", {
+      conversationId: activeConversation.id,
+      sessionId: activeConversation.sessionId,
+      restoreState: activeConversation.restoreState,
+      viewMode,
+      chatWorkspaceRestoring,
+      messageCount: activeMessages.length,
+      status,
+    });
+  }, [
+    activeConversation.id,
+    activeConversation.restoreState,
+    activeConversation.sessionId,
+    activeMessages.length,
+    chatWorkspaceRestoring,
+    debugRestore,
+    status,
+    viewMode,
+  ]);
+
   const busyConversationIds = new Set(pendingTurns);
   permissionRequests.forEach((request) => {
     busyConversationIds.add(request.conversationId);
@@ -798,6 +1006,33 @@ export function App() {
     canInspectSessionMetadata,
     status,
     viewMode,
+  ]);
+
+  useEffect(() => {
+    if (status !== "connected") return;
+    if (!canInspectSessionMetadata) return;
+    if (activeConversation.restoreState !== "restoring") return;
+    if (!activeConversation.sessionId) return;
+    const conversationId = activeConversation.id;
+    const sessionId = activeConversation.sessionId;
+    const requestStatus = () => {
+      debugRestore("restore_status_poll", { conversationId, sessionId });
+      clientRef.current?.requestSessionStatus(conversationId, sessionId);
+    };
+    requestStatus();
+    const interval = window.setInterval(
+      requestStatus,
+      SESSION_METADATA_POLL_MS,
+    );
+    return () => window.clearInterval(interval);
+  }, [
+    activeConversation.id,
+    activeConversation.restoreState,
+    activeConversation.sessionId,
+    canInspectSessionMetadata,
+    debugRestore,
+    restoreStatusPollVersion,
+    status,
   ]);
 
   function openSettings() {
@@ -884,30 +1119,80 @@ export function App() {
     client: AcpClient,
   ) {
     for (const effect of effects) {
+      debugRestore("effect", effect);
       switch (effect.type) {
         case "list_sessions":
           client.listSessions(effect.cwd);
           break;
         case "update_row_restore_state":
-          setConversations((prev) => applyRowRestoreEffect(prev, effect));
+          debugRestore("restore_state_update", effect);
+          {
+            const updateRestoreState = () => {
+              updateConversationsCommitted((prev) =>
+                applyRowRestoreEffect(prev, effect),
+              );
+            };
+            if (effect.restoreState === "restoring") {
+              flushSync(updateRestoreState);
+            } else {
+              updateRestoreState();
+            }
+          }
           break;
         case "remove_transcript":
+          {
+            const conversation = conversationsRef.current.find(
+              (item) => item.id === effect.conversationId,
+            );
+            if (conversation?.sessionId) {
+              loadedTranscriptSessionIdsRef.current.delete(
+                conversation.sessionId,
+              );
+            }
+          }
           client.resetConversationRuntime(effect.conversationId);
-          setMessages((prev) => applyTranscriptEffect(prev, effect));
+          updateMessagesCommitted((prev) =>
+            applyTranscriptEffect(prev, effect),
+          );
           break;
         case "activate_loaded_session":
           client.setActiveSession(effect.conversationId, effect.sessionId);
           break;
         case "resume_session":
-          client.resumeSession(
-            effect.conversationId,
-            effect.sessionId,
-            effect.cwd,
-            effect.mcpServers,
-            effect.additionalDirectories,
-          );
+          if (
+            hasCloudAgentRuntimeEnsureReadyMethod(capabilitiesRef.current)
+          ) {
+            debugRestore("call_runtime_ensure_ready", {
+              conversationId: effect.conversationId,
+              sessionId: effect.sessionId,
+              cwd: effect.cwd,
+            });
+            client.ensureRuntimeReady(
+              effect.conversationId,
+              effect.sessionId,
+              effect.cwd,
+            );
+          } else {
+            debugRestore("call_session_resume", {
+              conversationId: effect.conversationId,
+              sessionId: effect.sessionId,
+              cwd: effect.cwd,
+            });
+            client.resumeSession(
+              effect.conversationId,
+              effect.sessionId,
+              effect.cwd,
+              effect.mcpServers,
+              effect.additionalDirectories,
+            );
+          }
           break;
         case "load_session":
+          debugRestore("call_session_load", {
+            conversationId: effect.conversationId,
+            sessionId: effect.sessionId,
+            cwd: effect.cwd,
+          });
           client.loadSession(
             effect.conversationId,
             effect.sessionId,
@@ -987,6 +1272,16 @@ export function App() {
           activeConversation.sessionId,
         ),
       ),
+      transcriptLoaded: Boolean(
+        activeConversation.sessionId &&
+        loadedTranscriptSessionIdsRef.current.has(activeConversation.sessionId),
+      ),
+    });
+    debugRestore("send_plan", {
+      activeConversationId,
+      effects: plan.effects,
+      queuePrompt: Boolean(plan.queuePrompt),
+      clearComposer: plan.clearComposer,
     });
     if (plan.queuePrompt) {
       const queuedPrompt = {
@@ -994,7 +1289,10 @@ export function App() {
         optimisticMessageId: crypto.randomUUID(),
       };
       pendingPromptsRef.current.set(queuedPrompt.conversationId, queuedPrompt);
-      setMessages((prev) => [...prev, promptToUserMessage(queuedPrompt)]);
+      updateMessagesCommitted((prev) => [
+        ...prev,
+        promptToUserMessage(queuedPrompt),
+      ]);
     }
     executeSessionEffects(plan.effects, client);
     if (plan.clearComposer) {
@@ -1117,7 +1415,7 @@ export function App() {
   }
 
   function selectConversation(conversationId: string) {
-    setActiveConversationId(conversationId);
+    commitActiveConversationId(conversationId);
     if (isMobile) setSidebarOpen(false);
     const conversation = conversations.find(
       (item) => item.id === conversationId,
@@ -1133,6 +1431,14 @@ export function App() {
         conversation.sessionId &&
         client.hasActiveSession(conversation.id, conversation.sessionId),
       ),
+      transcriptLoaded: Boolean(
+        conversation.sessionId &&
+        loadedTranscriptSessionIdsRef.current.has(conversation.sessionId),
+      ),
+    });
+    debugRestore("select_plan", {
+      conversationId,
+      effects: plan.effects,
     });
     executeSessionEffects(plan.effects, client);
   }
@@ -1144,8 +1450,8 @@ export function App() {
       status,
       restoreEnvironment: ACP_RESTORE_ENVIRONMENT,
     });
-    setConversations((prev) => [plan.conversation, ...prev]);
-    setActiveConversationId(id);
+    updateConversationsCommitted((prev) => [plan.conversation, ...prev]);
+    commitActiveConversationId(id);
     if (isMobile) setSidebarOpen(false);
     setInput("");
     setAttachments([]);
@@ -1208,7 +1514,7 @@ export function App() {
 
   function reportError(conversationId: string, content: string) {
     setLastError(content);
-    setMessages((prev) => [
+    updateMessagesCommitted((prev) => [
       ...prev,
       {
         id: crypto.randomUUID(),
@@ -1332,10 +1638,15 @@ export function App() {
                     gatewayURL={appliedGatewayURL || undefined}
                     onBack={() => setViewMode("chat")}
                   />
-                ) : activeMessages.length === 0 ? (
+                ) : activeMessages.length === 0 && !chatWorkspaceRestoring ? (
                   <EmptyState gatewayLabel={resolvedGatewayURL} />
                 ) : (
-                  <MessageStream messages={activeMessages} />
+                  <div className="space-y-8">
+                    {activeMessages.length > 0 && (
+                      <MessageStream messages={activeMessages} />
+                    )}
+                    {chatWorkspaceRestoring && <WorkspaceRestoreNotice />}
+                  </div>
                 )}
               </div>
             </ConversationContent>
@@ -1534,12 +1845,25 @@ export function SessionPage({
   const runtimeRows = [
     ["Connection", formatConnectionStatus(status)],
     ["Binding", session.sessionId ? "Session-bound" : "Draft session"],
-    ["Runtime", session.restoreState === "live" ? "Live" : "Unknown"],
+    ["Runtime", metadata?.runtimeStatus ?? "Unknown"],
+    ["Runtime Source", metadata?.runtimeStatusSource ?? "Unknown"],
+    ["Restore", formatRestoreState(session.restoreState)],
   ];
   const metadataRows = metadataAvailable
     ? [
         ["Backend", metadata?.sandbox?.backend ?? "Unknown"],
-        ["Template ID", metadata?.sandbox?.sandboxTemplateId ?? "Unknown"],
+        ["Outer Runtime", metadata?.sandbox?.outerRuntime ?? "Unknown"],
+        ["Runtime Recovery", metadata?.sandbox?.runtimeRecovery ?? "Unknown"],
+        ["Agent Version", metadata?.sandbox?.agentVersion ?? "Unknown"],
+        [
+          "Agent Template ID",
+          metadata?.sandbox?.agentTemplateId ?? "Unknown",
+        ],
+        ["Workspace Version", metadata?.sandbox?.workspaceVersion ?? "Unknown"],
+        [
+          "Workspace Template ID",
+          metadata?.sandbox?.workspaceTemplateId ?? "Unknown",
+        ],
         ["Runtime ID", metadata?.sandbox?.runtimeId ?? "Unknown"],
         [
           "Outer Sandbox ID",
@@ -1556,9 +1880,31 @@ export function SessionPage({
         ],
         ["Session Proxy ID", metadata?.sessionProxyID ?? "Not created"],
         ["Envd Proxy", envdProxyBaseURL ?? "Not configured"],
+        [
+          "Runtime Restorable",
+          formatOptionalBoolean(metadata?.runtimeRestorable),
+        ],
+        [
+          "Workspace Persistent",
+          formatOptionalBoolean(metadata?.workspacePersistent),
+        ],
         ["Last Refreshed", formatTimestamp(metadata?.receivedAt)],
         ["Closed", formatOptionalBoolean(metadata?.closed)],
         ["Prompt In Flight", formatOptionalBoolean(metadata?.promptInFlight)],
+        ["Runtime Status Error", metadata?.runtimeStatusError ?? "None"],
+        ["Runtime Store Load", metadata?.runtimeStoreLoad ?? "Unknown"],
+        ["Runtime Runs", formatOptionalNumber(metadata?.runCount)],
+        ["Runtime Transcript", formatOptionalNumber(metadata?.transcriptCount)],
+        ["Last User Hash", metadata?.lastUserHash ?? "None"],
+        ["Last Assistant Hash", metadata?.lastAssistantHash ?? "None"],
+        ["Active Run", metadata?.activeRunId ?? "None"],
+        ["Pending Runs", formatOptionalNumber(metadata?.pendingRunCount)],
+        [
+          "Pending By Mode",
+          formatPendingByMode(metadata?.pendingByMode),
+        ],
+        ["Last Run Status", metadata?.lastRunStatus ?? "Unknown"],
+        ["Run Ledger Tail", formatRunLedgerTail(metadata?.runLedgerTail)],
         ["Cleanup Pending", formatOptionalBoolean(metadata?.cleanupPending)],
         ["Last Runtime Error", metadata?.lastRuntimeError ?? "None"],
       ]
@@ -1813,6 +2159,33 @@ function formatOptionalNumber(value: number | undefined) {
   return value === undefined ? "Unknown" : String(value);
 }
 
+function formatPendingByMode(
+  value: CloudAgentSessionStatus["pendingByMode"] | undefined,
+) {
+  if (!value) return "Unknown";
+  return [
+    `prompt ${value.prompt ?? 0}`,
+    `steer ${value.steer ?? 0}`,
+    `follow_up ${value.followUp ?? 0}`,
+  ].join(" / ");
+}
+
+function formatRunLedgerTail(
+  value: CloudAgentSessionStatus["runLedgerTail"] | undefined,
+) {
+  if (!value || value.length === 0) return "Empty";
+  return value
+    .slice(0, 3)
+    .map((record) => {
+      const status = record.status ?? "unknown";
+      const mode = record.inboxMode ? `/${record.inboxMode}` : "";
+      const reason =
+        record.reconciledReason ?? record.blockedReason ?? record.errorMessage;
+      return reason ? `${status}${mode}: ${reason}` : `${status}${mode}`;
+    })
+    .join(" | ");
+}
+
 function formatTimestamp(value: string | undefined) {
   if (!value) return "Unknown";
   const timestamp = new Date(value);
@@ -1871,6 +2244,12 @@ function hasCloudAgentMethod(
   method: string,
 ) {
   return capabilities._meta?.cloudagent?.methods?.includes(method) === true;
+}
+
+function hasCloudAgentRuntimeEnsureReadyMethod(
+  capabilities: AgentCapabilities,
+) {
+  return hasCloudAgentMethod(capabilities, CLOUDAGENT_RUNTIME_ENSURE_READY_METHOD);
 }
 
 function Sidebar({
@@ -2267,10 +2646,28 @@ function MessageStream({ messages }: { messages: ChatMessage[] }) {
   );
 }
 
+export function WorkspaceRestoreNotice() {
+  return (
+    <div
+      data-testid="workspace-restore-spinner"
+      role="status"
+      aria-live="polite"
+      className="mx-auto flex w-full max-w-[900px] items-center gap-3 rounded-lg border border-border bg-panel/70 px-4 py-3 text-sm text-muted"
+    >
+      <Loader2 className="h-4 w-4 animate-spin text-green" />
+      <span>正在恢复 Workspace...</span>
+    </div>
+  );
+}
+
 function MessageGroup({ message }: { message: ChatMessage }) {
   const sections = getMessageSections(message);
   return (
-    <article className="grid grid-cols-[44px_minmax(0,1fr)] gap-4">
+    <article
+      data-testid="chat-message"
+      data-role={message.role}
+      className="grid grid-cols-[44px_minmax(0,1fr)] gap-4"
+    >
       <Avatar variant={message.role === "user" ? "user" : "agent"} />
       <div className="min-w-0">
         <div className="flex items-center gap-2">
@@ -2308,6 +2705,7 @@ function MessageGroup({ message }: { message: ChatMessage }) {
                   fallback={<PlainTextContent text={section.text} />}
                 >
                   <MarkdownContent
+                    key={`${section.id ?? "content"}:${message.streaming === true ? "streaming" : "static"}`}
                     isAnimating={message.streaming === true}
                     text={section.text}
                   />
@@ -2591,6 +2989,7 @@ function Composer({
           </Attachments>
         )}
         <Textarea
+          data-testid="prompt-input"
           value={input}
           onChange={(event) => setInput(event.target.value)}
           onKeyDown={(event) => {
@@ -2699,6 +3098,7 @@ function Composer({
             <ChevronDown className="h-4 w-4 text-muted" />
           </label>
           <Button
+            data-testid="send-button"
             onClick={onSend}
             disabled={!canSend}
             className={cn(
@@ -2814,6 +3214,66 @@ function appendVoiceTranscript(baseInput: string, transcript: string) {
   return /\s$/.test(baseInput) ? `${baseInput}${next}` : `${baseInput} ${next}`;
 }
 
+function pushCloudAgentDebugEvent(
+  scope: string,
+  event: string,
+  data: unknown,
+) {
+  if (typeof window === "undefined") return;
+  const debugWindow = window as Window & {
+    __cloudagentDebugEvents?: Array<{
+      at: string;
+      scope: string;
+      event: string;
+      data: unknown;
+    }>;
+  };
+  const events = debugWindow.__cloudagentDebugEvents ?? [];
+  events.push({ at: new Date().toISOString(), scope, event, data });
+  if (events.length > 500) events.splice(0, events.length - 500);
+  debugWindow.__cloudagentDebugEvents = events;
+}
+
+function exposeCloudAgentMessages(messages: ChatMessage[]) {
+  if (typeof window === "undefined") return;
+  if (!isRestoreDebugEnabled() && !isLiveDebugEnabled()) return;
+  const debugWindow = window as Window & {
+    __cloudagentMessages?: Array<{
+      id: string;
+      conversationId: string;
+      role: ChatMessage["role"];
+      content: string;
+      streaming?: boolean;
+      sections: Array<{ id?: string; type: string; text?: string }>;
+    }>;
+  };
+  debugWindow.__cloudagentMessages = messages.map((message) => ({
+    id: message.id,
+    conversationId: message.conversationId,
+    role: message.role,
+    content: message.content,
+    streaming: message.streaming,
+    sections: getMessageSections(message).map((section) => ({
+      id: section.id,
+      type: section.type,
+      text: "text" in section ? section.text : undefined,
+    })),
+  }));
+}
+
+function isLiveDebugEnabled() {
+  if (typeof window === "undefined") return false;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    return (
+      params.get("cloudagent_live_debug") === "1" ||
+      window.localStorage.getItem("cloudagent.liveDebug") === "1"
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function parseSessionCreateMetaJSON(raw: string): {
   value?: Record<string, unknown>;
   error?: string;
@@ -2836,12 +3296,19 @@ export function parseSessionCreateMetaJSON(raw: string): {
 export function summarizeSessionCreateMeta(meta?: Record<string, unknown>) {
   const cloudagent = readRecord(meta?._meta)?.cloudagent;
   const backend = readRecord(cloudagent)?.sandbox_backend;
-  const templateID = readRecord(cloudagent)?.sandbox_template_id;
+  const agentVersion = readRecord(cloudagent)?.agent_version;
+  const workspaceVersion = readRecord(cloudagent)?.workspace_version;
   if (typeof backend === "string" && backend.trim()) {
-    if (typeof templateID === "string" && templateID.trim()) {
-      return `Backend: ${backend.trim()} · template ${templateID.trim().slice(0, 8)}`;
+    if (typeof agentVersion === "string" && agentVersion.trim()) {
+      return `Backend: ${backend.trim()} · agent ${agentVersion.trim()}`;
     }
     return `Backend: ${backend.trim()}`;
+  }
+  if (typeof agentVersion === "string" && agentVersion.trim()) {
+    if (typeof workspaceVersion === "string" && workspaceVersion.trim()) {
+      return `Agent ${agentVersion.trim()} · workspace ${workspaceVersion.trim()}`;
+    }
+    return `Agent ${agentVersion.trim()}`;
   }
   if (!meta || Object.keys(meta).length === 0) return "Default";
   return "Custom params";
@@ -2875,7 +3342,8 @@ function initialSessionCreateMetaJSON(state: StoredUiState) {
   return state.sessionCreateMetaJSON ?? SESSION_META_TEMPLATES[0].json;
 }
 
-export function resolveInitialGatewayURL(_storedGatewayURL?: string) {
+export function resolveInitialGatewayURL(storedGatewayURL?: string) {
+  void storedGatewayURL;
   const urlGateway = normalizeGatewayURL(readGatewayURLFromLocation());
   return urlGateway || DEFAULT_GATEWAY_URL;
 }
@@ -2892,6 +3360,19 @@ function readGatewayURLFromLocation() {
     return new URLSearchParams(window.location.search).get("acp_url")?.trim() ?? "";
   } catch {
     return "";
+  }
+}
+
+function isRestoreDebugEnabled() {
+  if (typeof window === "undefined") return false;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    return (
+      params.get(RESTORE_DEBUG_QUERY_KEY) === "1" ||
+      window.localStorage.getItem(RESTORE_DEBUG_STORAGE_KEY) === "1"
+    );
+  } catch {
+    return false;
   }
 }
 

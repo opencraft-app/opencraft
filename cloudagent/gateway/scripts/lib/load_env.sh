@@ -14,9 +14,16 @@ load_cloudagent_env() {
       . "$candidate"
       set +a
       export CLOUDAGENT_ENV_FILE="$candidate"
+      if [ -z "${GATEWAY_AGS_TEMPLATE:-}" ] && [ -n "${RESPONSES_WRAPPER_AGS_TEMPLATE:-}" ]; then
+        export GATEWAY_AGS_TEMPLATE="$RESPONSES_WRAPPER_AGS_TEMPLATE"
+      fi
       return 0
     fi
   done
+
+  if [ -z "${GATEWAY_AGS_TEMPLATE:-}" ] && [ -n "${RESPONSES_WRAPPER_AGS_TEMPLATE:-}" ]; then
+    export GATEWAY_AGS_TEMPLATE="$RESPONSES_WRAPPER_AGS_TEMPLATE"
+  fi
 
   return 0
 }

@@ -49,7 +49,7 @@ Before opening a PR:
 
 - Preserve the canonical message model: messages contain typed blocks such as text, attachment, reasoning, tool call, and artifact.
 - Do not synthesize attachment text fallbacks when the file upload path fails.
-- Treat `replay_done` as the end of session load replay.
+- Treat `_cloudagent.session.replay_done` as the end of session load replay.
 - Avoid introducing UI behavior that depends on timing instead of explicit protocol events.
 
 ## Secrets

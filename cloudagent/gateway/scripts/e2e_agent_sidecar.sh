@@ -197,6 +197,14 @@ assert_log_since_not() {
   fi
 }
 
+assert_log_since_inner_sandbox_id() {
+  local start_line="$1"
+  awk -v start="$start_line" '
+    NR >= start && index($0, "inner_sandbox_id=\"") && !index($0, "inner_sandbox_id=\"\"") { found = 1 }
+    END { exit found ? 0 : 1 }
+  ' "$SERVER_LOG"
+}
+
 log "build server and CloudAgent sidecar"
 make cloudagent-sidecar-linux server
 make test
@@ -245,12 +253,12 @@ GATEWAY_SANDBOX_HOST_SHA256="$SANDBOX_HOST_SHA256" \
 SERVER_PID="$!"
 
 for _ in $(seq 1 50); do
-  if grep -q "listening on 127.0.0.1:${PORT}" "$SERVER_LOG"; then
+  if grep -q "gateway.listening" "$SERVER_LOG"; then
     break
   fi
   sleep 0.1
 done
-grep -q "listening on 127.0.0.1:${PORT}" "$SERVER_LOG"
+grep -q "gateway.listening" "$SERVER_LOG"
 
 log "test 1/3: Chinese chat should not start inner sandbox"
 chat_start="$(($(wc -l <"$SERVER_LOG") + 1))"
@@ -260,8 +268,9 @@ CHAT_PARSED="$(parse_sse "$WORK_DIR/chat.sse")"
 chat_download_start="$(($(wc -l <"$SERVER_LOG") + 1))"
 download_first_artifact "$CHAT_PARSED" "$WORK_DIR/chat-artifact.txt"
 assert_log_since "$chat_start" "event=response_completed"
-assert_log_since "$chat_start" "inner_not_started"
-assert_log_since_not "$chat_start" "tool_exec_start"
+assert_log_since "$chat_start" "inner_sandbox_id=\"\""
+assert_log_since_not "$chat_start" "kind=tool_call"
+assert_log_since_not "$chat_start" "runtime_event=inner_shutdown_done"
 assert_log_since "$chat_download_start" "event=file_download_done"
 assert_log_since "$chat_start" "event=sidecar_download_start"
 assert_log_since "$chat_start" "event=sidecar_download_done"
@@ -276,13 +285,10 @@ tool_download_start="$(($(wc -l <"$SERVER_LOG") + 1))"
 download_first_artifact "$TOOL_PARSED" "$WORK_DIR/tool-artifact.txt"
 grep -q "你好！" "$WORK_DIR/tool-artifact.txt"
 assert_log_since "$tool_start" "event=response_completed"
-assert_log_since "$tool_start" "event=inner_create_start"
-assert_log_since "$tool_start" "event=inner_ready"
-assert_log_since "$tool_start" "event=sandbox_host_ready"
-assert_log_since "$tool_start" "tool_exec_start"
-assert_log_since "$tool_start" "tool_exec_done"
-assert_log_since "$tool_start" "event=inner_shutdown_done"
-assert_log_since_not "$tool_start" "inner_not_started"
+assert_log_since "$tool_start" "kind=tool_call"
+assert_log_since "$tool_start" "kind=tool_call_update"
+assert_log_since "$tool_start" "runtime_event=inner_shutdown_done"
+assert_log_since_inner_sandbox_id "$tool_start"
 assert_log_since "$tool_download_start" "event=file_download_done"
 assert_log_since "$tool_start" "event=sidecar_download_start"
 assert_log_since "$tool_start" "event=sidecar_download_done"
@@ -312,14 +318,12 @@ file_download_start="$(($(wc -l <"$SERVER_LOG") + 1))"
 download_first_artifact "$FILE_PARSED" "$WORK_DIR/file-artifact.txt"
 grep -q "hello from uploaded file" "$WORK_DIR/file-artifact.txt"
 assert_log_since "$file_start" "event=response_completed"
-assert_log_since "$file_start" "input_loaded"
-assert_log_since "$file_start" "event=inner_create_start"
-assert_log_since "$file_start" "event=inner_ready"
-assert_log_since "$file_start" "event=sandbox_host_ready"
-assert_log_since "$file_start" "tool_exec_start"
-assert_log_since "$file_start" "tool_exec_done"
-assert_log_since "$file_start" "event=inner_shutdown_done"
-assert_log_since_not "$file_start" "inner_not_started"
+assert_log_since "$file_start" "event=stage_inputs_done"
+assert_log_since "$file_start" "count=1"
+assert_log_since "$file_start" "kind=tool_call"
+assert_log_since "$file_start" "kind=tool_call_update"
+assert_log_since "$file_start" "runtime_event=inner_shutdown_done"
+assert_log_since_inner_sandbox_id "$file_start"
 assert_log_since "$file_download_start" "event=file_download_done"
 assert_log_since "$file_start" "event=sidecar_download_start"
 assert_log_since "$file_start" "event=sidecar_download_done"

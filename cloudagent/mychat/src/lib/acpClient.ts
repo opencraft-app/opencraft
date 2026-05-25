@@ -21,6 +21,8 @@ export interface ChatMessage {
   attachments?: PromptDisplayAttachment[];
   thought?: string;
   timelineBlocks?: MessageTimelineBlock[];
+  snapshot?: boolean;
+  replace?: boolean;
 }
 
 export interface ToolCall {
@@ -35,8 +37,8 @@ export interface ToolCall {
 }
 
 export type MessageTimelineBlock =
-  | { id: string; type: "content"; text: string }
-  | { id: string; type: "thought"; text: string }
+  | { id: string; type: "content"; text: string; snapshot?: boolean; replace?: boolean }
+  | { id: string; type: "thought"; text: string; snapshot?: boolean; replace?: boolean }
   | {
       id: string;
       type: "attachments";
@@ -84,6 +86,25 @@ export interface CloudAgentSessionStatus {
   model?: string;
   currentResponseId?: string;
   promptInFlight?: boolean;
+  runtimeStatus?: string;
+  runtimeStatusSource?: string;
+  runtimeStatusError?: string;
+  runtimeStoreLoad?: string;
+  activeRunId?: string;
+  pendingRunCount?: number;
+  pendingByMode?: {
+    prompt?: number;
+    steer?: number;
+    followUp?: number;
+  };
+  lastRunStatus?: string;
+  runCount?: number;
+  transcriptCount?: number;
+  lastUserHash?: string;
+  lastAssistantHash?: string;
+  runLedgerTail?: CloudAgentRunRecord[];
+  runtimeRestorable?: boolean;
+  workspacePersistent?: boolean;
   runtimeGeneration?: number;
   sessionProxyID?: string;
   envdProxyDomain?: string;
@@ -91,7 +112,12 @@ export interface CloudAgentSessionStatus {
   lastRuntimeError?: string;
   sandbox?: {
     backend?: string;
-    sandboxTemplateId?: string;
+    outerRuntime?: string;
+    runtimeRecovery?: string;
+    agentVersion?: string;
+    agentTemplateId?: string;
+    workspaceVersion?: string;
+    workspaceTemplateId?: string;
     runtimeId?: string;
     outerSandboxId?: string;
     outerSandboxDomain?: string;
@@ -101,6 +127,19 @@ export interface CloudAgentSessionStatus {
     hasOuterEnvdAccessToken?: boolean;
     hasOuterTrafficToken?: boolean;
   };
+}
+
+export interface CloudAgentRunRecord {
+  runId?: string;
+  turnId?: string;
+  inboxMode?: string;
+  status?: string;
+  createdAtMs?: number;
+  startedAtMs?: number;
+  completedAtMs?: number;
+  errorMessage?: string;
+  blockedReason?: string;
+  reconciledReason?: string;
 }
 
 export interface ListedSession {
@@ -182,6 +221,11 @@ type RequestContext =
       sessionId: string;
     }
   | {
+      type: "cloudagent/runtime/ensure_ready";
+      conversationId: string;
+      sessionId: string;
+    }
+  | {
       type: "session/prompt";
       conversationId: string;
       runtimeGeneration: number;
@@ -202,6 +246,18 @@ export const DEFAULT_GATEWAY_IDENTITY_HEADERS = {
   "X-Tenant-ID": "tenant-live",
   "X-Project-ID": "project-live",
 };
+
+const CLOUDAGENT_RUNTIME_ENSURE_READY_METHOD =
+  "_cloudagent.runtime.ensure_ready";
+
+function isRuntimeEnsureReadyContext(
+  context: RequestContext | undefined,
+): context is Extract<
+  RequestContext,
+  { type: "cloudagent/runtime/ensure_ready" }
+> {
+  return context?.type === "cloudagent/runtime/ensure_ready";
+}
 
 type AcpTransportMode = "app" | "raw";
 
@@ -591,6 +647,21 @@ export class AcpClient {
     return true;
   }
 
+  ensureRuntimeReady(conversationId: string, sessionId: string, cwd = "/") {
+    if (!sessionId) return false;
+    this.bindSession(conversationId, sessionId);
+    this.sendRequest(
+      {
+        type: "cloudagent/runtime/ensure_ready",
+        conversationId,
+        sessionId,
+      },
+      CLOUDAGENT_RUNTIME_ENSURE_READY_METHOD,
+      { session_id: sessionId, cwd },
+    );
+    return true;
+  }
+
   private initialize() {
     this.sendRequest({ type: "initialize" }, "initialize", {
       protocolVersion: 1,
@@ -655,6 +726,7 @@ export class AcpClient {
     if (
       context.type === "session/load" ||
       context.type === "session/resume" ||
+      isRuntimeEnsureReadyContext(context) ||
       context.type === "session/close" ||
       context.type === "session/delete"
     ) {
@@ -786,6 +858,13 @@ export class AcpClient {
       if (conversationId) this.handleUpdate(conversationId, params?.update);
       return;
     }
+    if (
+      typeof message.method === "string" &&
+      message.method.startsWith("_cloudagent.")
+    ) {
+      this.handleCloudAgentNotification(message);
+      return;
+    }
     const id =
       typeof message.id === "number" || typeof message.id === "string"
         ? String(message.id)
@@ -800,18 +879,25 @@ export class AcpClient {
       this.handleRPCError(context, message.error);
       return;
     }
-    if (context?.type === "session/prompt") {
-      if (this.isCurrentRuntime(context)) {
-        this.clearConversationRuntime(context.conversationId);
-        this.events.onTurn?.(context.conversationId, "completed");
-      }
-    }
     const result =
       "result" in message &&
       message.result &&
       typeof message.result === "object"
         ? (message.result as Record<string, unknown>)
         : {};
+    if (context?.type === "session/prompt") {
+      const stopReason = readString(result.stopReason);
+      if (this.isCurrentRuntime(context)) {
+        this.clearConversationRuntime(context.conversationId);
+        this.events.onTurn?.(
+          context.conversationId,
+          stopReason === "cancelled" || stopReason === "refusal"
+            ? "failed"
+            : "completed",
+        );
+      }
+      return;
+    }
     if (context?.type === "initialize") {
       this.capabilities = (result.agentCapabilities ?? {}) as AgentCapabilities;
       this.events.onReady(this.capabilities);
@@ -830,25 +916,42 @@ export class AcpClient {
     ) {
       const conversationId = context.conversationId;
       this.setActiveSession(conversationId, result.sessionId);
-      const configOptions = Array.isArray(result.configOptions)
-        ? (result.configOptions as ConfigOption[])
-        : [];
-      this.events.onSession({
-        conversationId,
-        sessionId: result.sessionId,
-        configOptions,
-        restoreSource: "new",
-      });
+	      const configOptions = Array.isArray(result.configOptions)
+	        ? (result.configOptions as ConfigOption[])
+	        : [];
+	      const cloudAgentMeta = readCloudAgentMeta(result);
+	      this.events.onSession({
+	        conversationId,
+	        sessionId: result.sessionId,
+	        configOptions,
+	        restoreSource: "new",
+	        readOnly: readBoolean(cloudAgentMeta?.read_only),
+	        readOnlyReason: readString(cloudAgentMeta?.read_only_reason),
+	      });
       return;
     }
     if (
       context &&
-      (context.type === "session/load" || context.type === "session/resume")
+      (context.type === "session/load" ||
+        context.type === "session/resume" ||
+        isRuntimeEnsureReadyContext(context))
     ) {
       const configOptions = Array.isArray(result.configOptions)
         ? (result.configOptions as ConfigOption[])
         : [];
-      if (context.type === "session/resume")
+      const cloudAgentMeta = readCloudAgentMeta(result);
+      const readOnly =
+        isRuntimeEnsureReadyContext(context)
+          ? readBoolean(result.read_only)
+          : readBoolean(cloudAgentMeta?.read_only);
+      const readOnlyReason =
+        isRuntimeEnsureReadyContext(context)
+          ? readString(result.read_only_reason)
+          : readString(cloudAgentMeta?.read_only_reason);
+      if (
+        context.type === "session/resume" ||
+        isRuntimeEnsureReadyContext(context)
+      )
         this.setActiveSession(context.conversationId, context.sessionId);
       else this.bindSession(context.conversationId, context.sessionId);
       this.events.onSession({
@@ -856,19 +959,14 @@ export class AcpClient {
         sessionId: context.sessionId,
         configOptions,
         restoreSource: context.type === "session/load" ? "load" : "resume",
-        readOnly:
-          typeof result.readOnly === "boolean"
-            ? result.readOnly
-            : typeof result.read_only === "boolean"
-              ? result.read_only
-              : undefined,
-        readOnlyReason:
-          typeof result.readOnlyReason === "string"
-            ? result.readOnlyReason
-            : typeof result.read_only_reason === "string"
-              ? result.read_only_reason
-            : undefined,
+        readOnly,
+        readOnlyReason,
       });
+      if (isRuntimeEnsureReadyContext(context)) {
+        const status = readCloudAgentSessionStatus(result, context.sessionId);
+        if (status)
+          this.events.onSessionStatus?.(context.conversationId, status);
+      }
       return;
     }
     if (context?.type === "session/close") {
@@ -895,6 +993,73 @@ export class AcpClient {
     }
   }
 
+  private handleCloudAgentNotification(message: Record<string, unknown>) {
+    const params = readRecord(message.params);
+    const sessionId = readString(params?.session_id);
+    const conversationId = sessionId
+      ? this.sessionToConversation.get(sessionId)
+      : undefined;
+    if (!conversationId) return;
+    if (message.method === "_cloudagent.session.replay_done") {
+      this.events.onReplayDone?.(conversationId);
+      return;
+    }
+    if (message.method === "_cloudagent.session.replay_gap") {
+      const dropped = readNumber(params?.dropped) ?? 0;
+      this.events.onError({
+        code: "replay_gap",
+        kind: "stream_replay_gap",
+        message:
+          dropped > 0
+            ? `Session replay missed ${dropped} live update(s); reload to resync.`
+            : "Session replay missed live updates; reload to resync.",
+        conversationId,
+      });
+      return;
+    }
+    if (message.method === "_cloudagent.turn.status") {
+      const status = readString(params?.status);
+      if (status === "completed") {
+        this.settleStreamingMessage(conversationId);
+        if (!this.hasActivePromptRequest(conversationId)) {
+          this.events.onTurn?.(conversationId, "completed");
+        }
+        return;
+      }
+      if (status === "failed") {
+        this.settleStreamingMessage(conversationId);
+        this.events.onTurn?.(conversationId, "failed");
+        const error = readRecord(params?.error);
+        this.events.onError({
+          code: readString(error?.code) ?? "provider_rejected",
+          kind: "provider_error",
+          message:
+            readString(error?.message) ??
+            readString(params?.message) ??
+            "Agent error",
+          conversationId,
+        });
+        return;
+      }
+      if (status === "cancelled" || status === "interrupted") {
+        this.settleStreamingMessage(conversationId);
+        this.events.onTurn?.(conversationId, "failed");
+      }
+    }
+  }
+
+  private hasActivePromptRequest(conversationId: string) {
+    for (const context of this.requestContexts.values()) {
+      if (
+        context.type === "session/prompt" &&
+        context.conversationId === conversationId
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   private handleRPCError(context: RequestContext | undefined, error: unknown) {
     const rpcError = error as { message?: string; data?: Record<string, unknown> };
     if (context?.type === "cloudagent/session/status") {
@@ -912,12 +1077,14 @@ export class AcpClient {
     if (
       context?.type === "session/resume" ||
       context?.type === "session/load" ||
+      (context !== undefined && isRuntimeEnsureReadyContext(context)) ||
       context?.type === "session/close" ||
       context?.type === "session/delete"
     ) {
       if (
         context.type === "session/resume" ||
         context.type === "session/load" ||
+        isRuntimeEnsureReadyContext(context) ||
         context.type === "session/delete"
       ) {
         this.clearSessionBinding(context.conversationId, context.sessionId);
@@ -1021,7 +1188,29 @@ export class AcpClient {
     update?: Record<string, unknown>,
   ) {
     if (!update) return;
-    if (update.sessionUpdate === "replay_done") {
+    const snapshot = readBoolean(update.replay) === true;
+    const updateMeta = readRecord(update._meta);
+    const cloudAgentMeta = readRecord(updateMeta?.cloudagent);
+    const accumulatedText = readString(cloudAgentMeta?.accumulated_text);
+    const replace =
+      snapshot ||
+      accumulatedText !== undefined ||
+      readBoolean(cloudAgentMeta?.accumulated) === true ||
+      readBoolean(cloudAgentMeta?.replace) === true ||
+      readBoolean(update.accumulated) === true ||
+      readBoolean(update.replace) === true;
+    debugLiveMessage("session_update", {
+      conversationId,
+      sessionUpdate: readString(update.sessionUpdate) ?? "",
+      snapshot,
+      replace,
+      messageId: readString(update.messageId) ?? readString(update.message_id) ?? "",
+      blockId: readString(update.blockId) ?? readString(update.block_id) ?? "",
+      eventSeq: readNumber(update.eventSeq) ?? readNumber(update.event_seq) ?? 0,
+    });
+    const sessionUpdate =
+      readString(update.sessionUpdate) ?? readString(update.session_update);
+    if (sessionUpdate === "replay_done") {
       this.events.onReplayDone?.(conversationId);
       return;
     }
@@ -1074,6 +1263,7 @@ export class AcpClient {
           sender: "meo",
           time: timeLabel(),
           content: text,
+          snapshot,
         });
       }
     }
@@ -1118,15 +1308,25 @@ export class AcpClient {
     }
     if (update.sessionUpdate === "agent_message_chunk") {
       const content = update.content as { text?: string } | undefined;
-      const text = content?.text ?? "";
+      const text = accumulatedText ?? content?.text ?? "";
       const wireMessageId = readChunkMessageId(update);
+      const wireBlockId = readChunkBlockId(update);
       const existingId =
         this.resolveAssistantMessageId(conversationId, wireMessageId) ??
         this.pendingAgentMessageId.get(conversationId);
+      debugLiveMessage("agent_message_chunk", {
+        conversationId,
+        wireMessageId,
+        wireBlockId,
+        existingId,
+        text,
+        replace,
+      });
       if (!existingId) {
         const id = crypto.randomUUID();
         this.pendingAgentMessageId.set(conversationId, id);
-        this.activateStreamingMessage(conversationId, id);
+        if (!snapshot) this.activateStreamingMessage(conversationId, id);
+        this.rememberAssistantMessageId(conversationId, wireMessageId, id);
         this.events.onMessage({
           id,
           conversationId,
@@ -1134,18 +1334,29 @@ export class AcpClient {
           sender: "主AGENTS",
           time: timeLabel(),
           content: text,
-          streaming: true,
+          streaming: !snapshot,
+          snapshot,
+          replace,
           timelineBlocks: [
             {
-              id: this.resolveTimelineBlockId(conversationId, id, "content"),
+              id:
+                wireBlockId ??
+                this.resolveTimelineBlockId(conversationId, id, "content"),
               type: "content",
               text,
+              snapshot,
+              replace,
             },
           ],
         });
       } else {
         this.pendingAgentMessageId.set(conversationId, existingId);
-        this.activateStreamingMessage(conversationId, existingId);
+        if (!snapshot) this.activateStreamingMessage(conversationId, existingId);
+        this.rememberAssistantMessageId(
+          conversationId,
+          wireMessageId,
+          existingId,
+        );
         this.events.onMessage({
           id: existingId,
           conversationId,
@@ -1153,16 +1364,22 @@ export class AcpClient {
           sender: "主AGENTS",
           time: timeLabel(),
           content: text,
-          streaming: true,
+          streaming: !snapshot,
+          snapshot,
+          replace,
           timelineBlocks: [
             {
-              id: this.resolveTimelineBlockId(
-                conversationId,
-                existingId,
-                "content",
-              ),
+              id:
+                wireBlockId ??
+                this.resolveTimelineBlockId(
+                  conversationId,
+                  existingId,
+                  "content",
+                ),
               type: "content",
               text,
+              snapshot,
+              replace,
             },
           ],
         });
@@ -1170,18 +1387,28 @@ export class AcpClient {
     }
     if (update.sessionUpdate === "agent_thought_chunk") {
       const content = update.content as { text?: string } | undefined;
-      const text = content?.text ?? "";
+      const text = accumulatedText ?? content?.text ?? "";
       if (!text) return;
       const wireMessageId = readChunkMessageId(update);
+      const wireBlockId = readChunkBlockId(update);
       const existingId =
         this.resolveAssistantMessageId(conversationId, wireMessageId) ??
         this.pendingThoughtMessageId.get(conversationId) ??
         this.pendingAgentMessageId.get(conversationId);
+      debugLiveMessage("agent_thought_chunk", {
+        conversationId,
+        wireMessageId,
+        wireBlockId,
+        existingId,
+        text,
+        replace,
+      });
       if (!existingId) {
         const id = crypto.randomUUID();
         this.pendingThoughtMessageId.set(conversationId, id);
         this.pendingAgentMessageId.set(conversationId, id);
-        this.activateStreamingMessage(conversationId, id);
+        this.rememberAssistantMessageId(conversationId, wireMessageId, id);
+        if (!snapshot) this.activateStreamingMessage(conversationId, id);
         this.events.onMessage({
           id,
           conversationId,
@@ -1189,20 +1416,31 @@ export class AcpClient {
           sender: "主AGENTS",
           time: timeLabel(),
           content: "",
-          streaming: true,
+          streaming: !snapshot,
           thought: text,
+          snapshot,
+          replace,
           timelineBlocks: [
             {
-              id: this.resolveTimelineBlockId(conversationId, id, "thought"),
+              id:
+                wireBlockId ??
+                this.resolveTimelineBlockId(conversationId, id, "thought"),
               type: "thought",
               text,
+              snapshot,
+              replace,
             },
           ],
         });
       } else {
         this.pendingThoughtMessageId.set(conversationId, existingId);
         this.pendingAgentMessageId.set(conversationId, existingId);
-        this.activateStreamingMessage(conversationId, existingId);
+        this.rememberAssistantMessageId(
+          conversationId,
+          wireMessageId,
+          existingId,
+        );
+        if (!snapshot) this.activateStreamingMessage(conversationId, existingId);
         this.events.onMessage({
           id: existingId,
           conversationId,
@@ -1210,17 +1448,23 @@ export class AcpClient {
           sender: "主AGENTS",
           time: timeLabel(),
           content: "",
-          streaming: true,
+          streaming: !snapshot,
           thought: text,
+          snapshot,
+          replace,
           timelineBlocks: [
             {
-              id: this.resolveTimelineBlockId(
-                conversationId,
-                existingId,
-                "thought",
-              ),
+              id:
+                wireBlockId ??
+                this.resolveTimelineBlockId(
+                  conversationId,
+                  existingId,
+                  "thought",
+                ),
               type: "thought",
               text,
+              snapshot,
+              replace,
             },
           ],
         });
@@ -1403,6 +1647,15 @@ export class AcpClient {
     return toolFirstMessageId;
   }
 
+  private rememberAssistantMessageId(
+    conversationId: string,
+    wireMessageId: string | undefined,
+    messageId: string,
+  ) {
+    const aliasKey = this.resolveWireMessageId(conversationId, wireMessageId);
+    if (aliasKey) this.messageIdAliases.set(aliasKey, messageId);
+  }
+
   private resolveWireMessageId(conversationId: string, wireMessageId?: string) {
     if (!wireMessageId) return undefined;
     const generation = this.runtimeGenerations.get(conversationId) ?? 0;
@@ -1542,11 +1795,14 @@ export function mergeChatMessage(
   existing: ChatMessage,
   incoming: ChatMessage,
 ): ChatMessage {
+  const replaceText = incoming.snapshot === true || incoming.replace === true;
   return {
     ...existing,
     time: incoming.time || existing.time,
     content: incoming.content
-      ? existing.content + incoming.content
+      ? replaceText
+        ? incoming.content
+        : existing.content + incoming.content
       : existing.content,
     toolCalls: incoming.toolCalls
       ? mergeToolCalls(existing.toolCalls, incoming.toolCalls)
@@ -1555,7 +1811,9 @@ export function mergeChatMessage(
       ? mergeAttachments(existing.attachments ?? [], incoming.attachments)
       : existing.attachments,
     thought: incoming.thought
-      ? `${existing.thought ?? ""}${incoming.thought}`
+      ? replaceText
+        ? incoming.thought
+        : `${existing.thought ?? ""}${incoming.thought}`
       : existing.thought,
     timelineBlocks: incoming.timelineBlocks
       ? mergeTimelineBlocks(existing.timelineBlocks, incoming.timelineBlocks)
@@ -1585,9 +1843,11 @@ function mergeTimelineBlocks(
     }
     const current = merged[index];
     if (current.type === "content" && block.type === "content") {
-      merged[index] = { ...current, text: current.text + block.text };
+      const replaceBlock = block.snapshot === true || block.replace === true;
+      merged[index] = { ...current, text: replaceBlock ? block.text : current.text + block.text };
     } else if (current.type === "thought" && block.type === "thought") {
-      merged[index] = { ...current, text: current.text + block.text };
+      const replaceBlock = block.snapshot === true || block.replace === true;
+      merged[index] = { ...current, text: replaceBlock ? block.text : current.text + block.text };
     } else if (current.type === "tools" && block.type === "tools") {
       merged[index] = {
         ...current,
@@ -1771,12 +2031,97 @@ function readString(value: unknown) {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
+function readRecord(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    return undefined;
+  return value as Record<string, unknown>;
+}
+
 function readBoolean(value: unknown) {
   return typeof value === "boolean" ? value : undefined;
 }
 
 function readNumber(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function debugLiveMessage(event: string, data: Record<string, unknown>) {
+  if (typeof window === "undefined") return;
+  try {
+    pushCloudAgentDebugEvent("live", event, data);
+    const params = new URLSearchParams(window.location.search);
+    if (
+      params.get("cloudagent_live_debug") !== "1" &&
+      window.localStorage.getItem("cloudagent.liveDebug") !== "1"
+    )
+      return;
+    console.log(`[cloudagent:live] ${event}`, data);
+  } catch {
+    // Debug logging must never affect ACP message handling.
+  }
+}
+
+function pushCloudAgentDebugEvent(
+  scope: string,
+  event: string,
+  data: unknown,
+) {
+  const debugWindow = window as Window & {
+    __cloudagentDebugEvents?: Array<{
+      at: string;
+      scope: string;
+      event: string;
+      data: unknown;
+    }>;
+  };
+  const events = debugWindow.__cloudagentDebugEvents ?? [];
+  events.push({ at: new Date().toISOString(), scope, event, data });
+  if (events.length > 500) events.splice(0, events.length - 500);
+  debugWindow.__cloudagentDebugEvents = events;
+}
+
+function readPendingByMode(value: unknown): CloudAgentSessionStatus["pendingByMode"] {
+  if (!value || typeof value !== "object") return undefined;
+  const object = value as Record<string, unknown>;
+  const pending = {
+    prompt: readNumber(object.prompt),
+    steer: readNumber(object.steer),
+    followUp: readNumber(object.follow_up),
+  };
+  return pending.prompt !== undefined ||
+    pending.steer !== undefined ||
+    pending.followUp !== undefined
+    ? pending
+    : undefined;
+}
+
+function readRunLedgerTail(value: unknown): CloudAgentRunRecord[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const row = item as Record<string, unknown>;
+    return [
+      {
+        runId: readString(row.run_id),
+        turnId: readString(row.turn_id),
+        inboxMode: readString(row.inbox_mode),
+        status: readString(row.status),
+        createdAtMs: readNumber(row.created_at_ms),
+        startedAtMs: readNumber(row.started_at_ms),
+        completedAtMs: readNumber(row.completed_at_ms),
+        errorMessage: readString(row.error_message),
+        blockedReason: readString(row.blocked_reason),
+        reconciledReason: readString(row.reconciled_reason),
+      },
+    ];
+  });
+}
+
+function readCloudAgentMeta(
+  result: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  const meta = readRecord(result._meta);
+  return readRecord(meta?.cloudagent);
 }
 
 function readCloudAgentSessionStatus(
@@ -1799,6 +2144,21 @@ function readCloudAgentSessionStatus(
     model: readString(result.model),
     currentResponseId: readString(result.current_response_id),
     promptInFlight: readBoolean(result.prompt_in_flight),
+    runtimeStatus: readString(result.runtime_status),
+    runtimeStatusSource: readString(result.runtime_status_source),
+    runtimeStatusError: readString(result.runtime_status_error),
+    runtimeStoreLoad: readString(result.runtime_store_load),
+    activeRunId: readString(result.active_run_id),
+    pendingRunCount: readNumber(result.pending_run_count),
+    pendingByMode: readPendingByMode(result.pending_by_mode),
+    runCount: readNumber(result.run_count),
+    transcriptCount: readNumber(result.transcript_count),
+    lastUserHash: readString(result.last_user_hash),
+    lastAssistantHash: readString(result.last_assistant_hash),
+    lastRunStatus: readString(result.last_run_status),
+    runLedgerTail: readRunLedgerTail(result.run_ledger_tail),
+    runtimeRestorable: readBoolean(result.runtime_restorable),
+    workspacePersistent: readBoolean(result.workspace_persistent),
     runtimeGeneration: readNumber(result.runtime_generation),
     sessionProxyID: readString(result.session_proxy_id),
     envdProxyDomain: readString(result.envd_proxy_domain),
@@ -1807,7 +2167,12 @@ function readCloudAgentSessionStatus(
     sandbox: sandbox
       ? {
           backend: readString(sandbox.backend),
-          sandboxTemplateId: readString(sandbox.sandbox_template_id),
+          outerRuntime: readString(sandbox.outer_runtime),
+          runtimeRecovery: readString(sandbox.runtime_recovery),
+          agentVersion: readString(sandbox.agent_version),
+          agentTemplateId: readString(sandbox.agent_template_id),
+          workspaceVersion: readString(sandbox.workspace_version),
+          workspaceTemplateId: readString(sandbox.workspace_template_id),
           runtimeId: readString(sandbox.runtime_id),
           outerSandboxId: readString(sandbox.outer_sandbox_id),
           outerSandboxDomain: readString(sandbox.outer_sandbox_domain),
@@ -1827,6 +2192,10 @@ function readChunkMessageId(update: Record<string, unknown>) {
   return readString(update.messageId) ?? readString(update.message_id);
 }
 
+function readChunkBlockId(update: Record<string, unknown>) {
+  return readString(update.blockId) ?? readString(update.block_id);
+}
+
 function readPermissionOption(value: unknown): PermissionOption[] {
   if (!value || typeof value !== "object") return [];
   const option = value as Record<string, unknown>;
@@ -1841,6 +2210,7 @@ function readListedSession(value: unknown): ListedSession[] {
   if (!value || typeof value !== "object") return [];
   const session = value as Partial<ListedSession> & Record<string, unknown>;
   if (typeof session.sessionId !== "string") return [];
+  const cloudAgentMeta = readCloudAgentMeta(session);
   return [
     {
       sessionId: session.sessionId,
@@ -1848,19 +2218,9 @@ function readListedSession(value: unknown): ListedSession[] {
       title: typeof session.title === "string" ? session.title : undefined,
       updatedAt:
         typeof session.updatedAt === "string" ? session.updatedAt : undefined,
-      state: typeof session.state === "string" ? session.state : undefined,
-      readOnly:
-        typeof session.readOnly === "boolean"
-          ? session.readOnly
-          : typeof session.read_only === "boolean"
-            ? session.read_only
-            : undefined,
-      readOnlyReason:
-        typeof session.readOnlyReason === "string"
-          ? session.readOnlyReason
-          : typeof session.read_only_reason === "string"
-            ? session.read_only_reason
-          : undefined,
+      state: readString(cloudAgentMeta?.state),
+      readOnly: readBoolean(cloudAgentMeta?.read_only),
+      readOnlyReason: readString(cloudAgentMeta?.read_only_reason),
       additionalDirectories: Array.isArray(session.additionalDirectories)
         ? session.additionalDirectories.filter(
             (item): item is string => typeof item === "string",

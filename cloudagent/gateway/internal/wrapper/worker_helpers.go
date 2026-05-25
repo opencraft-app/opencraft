@@ -1,22 +1,13 @@
 package wrapper
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 	"time"
 )
-
-type remoteInputFile struct {
-	FileID     string `json:"file_id"`
-	Filename   string `json:"filename"`
-	RemotePath string `json:"remote_path"`
-	SHA256     string `json:"sha256"`
-}
 
 type agentRunEnvelope struct {
 	OutputText           string `json:"output_text"`
@@ -31,14 +22,6 @@ func parseAgentOutput(stdout string) string {
 		return envelope.OutputText
 	}
 	return strings.TrimSpace(stdout)
-}
-
-func marshalInputManifest(inputs []remoteInputFile) (string, error) {
-	raw, err := json.Marshal(inputs)
-	if err != nil {
-		return "", err
-	}
-	return string(raw), nil
 }
 
 func shellQuote(value string) string {
@@ -70,27 +53,6 @@ func quoteTimelineField(value string) string {
 	return string(raw)
 }
 
-func uploadWorkerInputs(ctx context.Context, client *AGSClient, sb AGSSandbox, job workerJob) ([]remoteInputFile, error) {
-	out := make([]remoteInputFile, 0, len(job.InputFiles))
-	for _, input := range job.InputFiles {
-		content, err := os.ReadFile(input.Path)
-		if err != nil {
-			return nil, err
-		}
-		remotePath := path.Join("/tmp/gateway", job.JobID, "inputs", sanitizeRemoteName(input.Filename))
-		if err := client.UploadFile(ctx, sb, remotePath, input.Filename, content); err != nil {
-			return nil, err
-		}
-		out = append(out, remoteInputFile{
-			FileID:     input.FileID,
-			Filename:   input.Filename,
-			RemotePath: remotePath,
-			SHA256:     input.SHA256,
-		})
-	}
-	return out, nil
-}
-
 func writeWorkerArtifact(content []byte) (string, error) {
 	path := filepath.Join(os.TempDir(), "ags-worker-"+randomHex(10)+".artifact")
 	if err := os.WriteFile(path, content, 0o600); err != nil {
@@ -118,6 +80,15 @@ func envInt(key string, fallback int) int {
 		return fallback
 	}
 	return parsed
+}
+
+func envFlagEnabled(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func envDurationSeconds(key string, fallback time.Duration) time.Duration {

@@ -34,6 +34,34 @@ describe('reopen decisions', () => {
     })).toMatchObject({ action: 'load', replay: true });
   });
 
+  it('does not treat a live transport binding as restored transcript after browser refresh', () => {
+    expect(decideReopen({
+      liveConnection: true,
+      transcriptLoaded: false,
+      listedByAgent: true,
+      listSupported: true,
+      loadSupported: true,
+      hasSessionId: true,
+      hasCwd: true,
+      mcpServersAuthoritative: true,
+      requiredRootsAuthoritative: true,
+    })).toMatchObject({ action: 'load', replay: true });
+  });
+
+  it('rebinds live sessions only after their transcript is already loaded locally', () => {
+    expect(decideReopen({
+      liveConnection: true,
+      transcriptLoaded: true,
+      listedByAgent: true,
+      listSupported: true,
+      loadSupported: true,
+      hasSessionId: true,
+      hasCwd: true,
+      mcpServersAuthoritative: true,
+      requiredRootsAuthoritative: true,
+    })).toMatchObject({ action: 'rebind', replay: false });
+  });
+
   it('blocks stored sessions when session/list is unavailable', () => {
     expect(decideReopen({
       liveConnection: false,
@@ -282,6 +310,7 @@ describe('live-path contract examples', () => {
     });
     const reopened = decideReopen({
       liveConnection: true,
+      transcriptLoaded: true,
       listedByAgent: false,
       listSupported: false,
       loadSupported: false,

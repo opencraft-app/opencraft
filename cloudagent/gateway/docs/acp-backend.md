@@ -47,6 +47,57 @@ ACP 入口：
 - `GET /v1/files/:id/content`
 - `GET /v1/models`
 
+## Streaming update contract
+
+`session/prompt` 运行时，gateway 通过 JSON-RPC notification 持续发送：
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+    "sessionId": "session_xxx",
+    "update": {
+      "sessionUpdate": "agent_message_chunk",
+      "messageId": "message_xxx",
+      "blockId": "block_xxx",
+      "content": { "text": "ER_FINAL_123" },
+      "_meta": {
+        "cloudagent": {
+          "accumulated": true,
+          "accumulated_text": "BROWSER_FINAL_123"
+        }
+      }
+    }
+  }
+}
+```
+
+协议面约束：
+
+- `session/update` 必须保持流式 notification，一次 worker delta 对应一次 live update，不能等 final replay 再补。
+- `content.text` 保持 ACP chunk/delta 语义；普通 ACP 客户端按顺序 append 仍可得到完整文本。
+- CloudAgent/MyChat 为了抵抗浏览器重连、React 渲染中断或首包丢失，会读取 `_meta.cloudagent.accumulated_text` 作为当前 block 的幂等累计快照，并用同一个 `messageId` + `blockId` 做 replace 渲染。
+- CloudAgent 私有字段只放在 `_meta.cloudagent`，不要新增顶层私有字段污染标准 ACP update。
+
+## ACP Well-Done Contract
+
+CloudAgent 客户端不能只靠 WebSocket close、RPC response arrival 或 UI timeout 判断一段工作完成。协议面有三类显式 well-done signal：
+
+| 场景 | Well-done signal | 客户端动作 |
+| --- | --- | --- |
+| Transcript replay | 收到 `_cloudagent.session.replay_done`，且随后收到对应 `session/load` response | 可以认为历史回放完整；历史错误不得作为标准 `session/update` error 重放 |
+| Workspace/runtime restore | `_cloudagent.runtime.ensure_ready` response 中 `ok=true`、`state="ready"`、`read_only=false`，且 `runtime_status` 为 `attached/ready/idle/running/recovered/restored` 之一；或者 `_cloudagent.session.status` 返回同等字段 | 可以解除“正在恢复 Workspace”，将 session 标记为可写 live session |
+| Prompt turn | 收到 `_cloudagent.turn.status`，`status` 为 `completed/failed/cancelled/interrupted/ownership_lost`，再收到对应 `session/prompt` response | 可以结束当前 turn UI；失败类状态需要展示错误或取消态 |
+
+约束：
+
+- `session/load` 只负责 transcript replay，不启动 runtime，也不等价于 workspace ready。
+- `_cloudagent.runtime.ensure_ready` 不回放消息，只负责恢复 runtime host。
+- `_cloudagent.session.status` 是 runtime ensure-ready 的幂等观测面；如果 ensure-ready RPC response 因浏览器刷新或连接切换丢失，客户端可以用 status 的 ready 字段收敛 UI。
+- 私有 lifecycle marker 必须使用 `_cloudagent.*` notification；不得再塞进标准 `session/update.sessionUpdate` 枚举。
+- 标准 ACP 方法和字段保持 ACP 命名；CloudAgent 自有状态只放 `_meta.cloudagent`，扩展方法输入/输出统一使用 `snake_case`。
+
 ## 启动
 
 从 `gateway` 目录启动：
@@ -276,15 +327,25 @@ Workspace runtime：
         "currentValue": "agent-sidecar-chat",
         "options": []
       }
-    ]
+    ],
+    "_meta": {
+      "cloudagent": {
+        "state": "ready",
+        "read_only": false,
+        "read_only_reason": "",
+        "session_proxy_id": "proxy_xxx"
+      }
+    }
   }
 }
 ```
 
+标准客户端只需要读取 `sessionId` 和 `configOptions`。CloudAgent/MyChat 需要的运行态、只读态和 proxy id 必须从 `_meta.cloudagent` 读取；不得在 `session/new`、`session/load`、`session/resume` 或 `session/list` 顶层新增 `readOnly`、`readOnlyReason`、`session_proxy_id` 这类私有字段。
+
 ### _cloudagent.session.status
 
 CloudAgent 私有扩展方法，用于会话运行时自省。扩展方法名使用点分隔，
-扩展字段使用 `snake_case`，不混用 ACP 标准字段里的 camelCase。
+扩展输入和输出字段都使用 `snake_case`，不支持 camelCase alias，也不混用 ACP 标准字段里的 camelCase。
 
 ```json
 {
@@ -381,11 +442,12 @@ CloudAgent 私有扩展方法，用于会话运行时自省。扩展方法名使
 ```json
 {
   "jsonrpc": "2.0",
-  "id": 4,
   "method": "session/cancel",
   "params": {"sessionId": "session_xxx"}
 }
 ```
+
+`session/cancel` 按 ACP 作为 JSON-RPC notification 处理，不返回独立响应；取消结果通过原 `session/prompt` 请求的 `stopReason: "cancelled"` 收敛。
 
 ### session/close
 
@@ -404,7 +466,7 @@ close 后直接 `session/prompt` 会失败，必须先 `session/resume`。
 
 ### session/resume
 
-恢复已 close/cancel 或运行态丢失的 session。wrapper 会重新创建 outer sandbox、启动 sidecar daemon，并把历史 bootstrap 进去。
+恢复已 close/cancel 或运行态丢失的 session。wrapper 会重新创建 outer sandbox、启动 sidecar daemon，并调用 runtime `session-create` 重新绑定会话；agent transcript/run ledger 以 runtime store 为准，不再由 Gateway history bootstrap。
 
 ```json
 {
@@ -418,16 +480,102 @@ close 后直接 `session/prompt` 会失败，必须先 `session/resume`。
 }
 ```
 
-### session/load
+返回与 `session/load` 一样，不在顶层返回 `sessionId`；CloudAgent 状态放在 `_meta.cloudagent`：
 
-加载已有 session，并回放历史到客户端。用于 UI 切换会话时恢复展示。
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 6,
+  "result": {
+    "configOptions": [],
+    "_meta": {
+      "cloudagent": {
+        "state": "ready",
+        "read_only": false,
+        "read_only_reason": "",
+        "session_proxy_id": "proxy_xxx"
+      }
+    }
+  }
+}
+```
+
+### _cloudagent.runtime.ensure_ready
+
+CloudAgent ACP 扩展方法。用于 UI 在 `session/load` 回放 transcript 后恢复 workspace/runtime host；语义是“确保这个 session 的 runtime host 可用”，但不回放消息。
+
+优先使用这个扩展来恢复 runtime；不支持该扩展时再退回 `session/resume`。
 
 ```json
 {
   "jsonrpc": "2.0",
   "id": 7,
+  "method": "_cloudagent.runtime.ensure_ready",
+  "params": {
+    "session_id": "session_xxx",
+    "cwd": "/workspace"
+  }
+}
+```
+
+返回包含 `_cloudagent.session.status` 的状态字段，并额外包含：
+
+```json
+{
+  "ok": true,
+  "restore_source": "runtime_ensure_ready",
+  "runtime_ensure_ready": {
+    "changed": true,
+    "previous_runtime_id": "rt_old",
+    "previous_outer_sandbox_id": "outer_old",
+    "runtime_id": "rt_new",
+    "outer_sandbox_id": "outer_new"
+  }
+}
+```
+
+### session/load
+
+加载已有 session，并回放历史到客户端。用于 UI 切换会话时恢复展示。回放时先发送历史 `session/update`，再发送 CloudAgent 扩展通知 `_cloudagent.session.replay_done`，最后返回 `session/load` 响应；`session/load` 本身不启动 runtime。
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 8,
   "method": "session/load",
   "params": {"sessionId": "session_xxx"}
+}
+```
+
+CloudAgent 私有回放完成通知：
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "_cloudagent.session.replay_done",
+  "params": {"session_id": "session_xxx", "last_event_seq": 42}
+}
+```
+
+如果 load 期间的 live buffer 发生丢弃，会发送 `_cloudagent.session.replay_gap`。这些 `_cloudagent.*` 方法是显式扩展，不是 ACP `session/update.sessionUpdate` 标准枚举。
+
+`session/load` 响应本身只返回标准配置和 CloudAgent `_meta`，不会在顶层补 `sessionId` 或私有只读字段：
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 8,
+  "result": {
+    "configOptions": [],
+    "_meta": {
+      "cloudagent": {
+        "state": "ready",
+        "read_only": false,
+        "read_only_reason": "",
+        "session_proxy_id": "proxy_xxx"
+      }
+    }
+  }
 }
 ```
 
@@ -437,6 +585,32 @@ close 后直接 `session/prompt` 会失败，必须先 `session/resume`。
 
 ```json
 {"jsonrpc":"2.0","id":8,"method":"session/list","params":{"cwd":"/"}}
+```
+
+返回行的标准字段保留在顶层，CloudAgent 状态放进 `_meta.cloudagent`：
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 8,
+  "result": {
+    "sessions": [
+      {
+        "sessionId": "session_xxx",
+        "cwd": "/workspace",
+        "title": "session_xxx",
+        "updatedAt": 1779693974,
+        "_meta": {
+          "cloudagent": {
+            "state": "ready",
+            "read_only": false,
+            "read_only_reason": ""
+          }
+        }
+      }
+    ]
+  }
+}
 ```
 
 ### session/delete
@@ -547,7 +721,7 @@ cd /Users/skipzhang/cloudagent/gateway
 
 - `session/new` 创建 outer runtime。
 - `session/prompt` 可流式返回。
-- `session/cancel` 可以取消正在执行的 prompt。
+- `session/cancel` notification 可以取消正在执行的 prompt。
 - `session/resume` 会重新创建 outer runtime。
 - 工具问题至少创建一次 inner sandbox。
 - `session/close` 后不能直接 prompt。
@@ -571,10 +745,8 @@ wrapper 和 sidecar 都向 stderr 打 timeline。常用事件：
   一轮 ACP prompt 开始/完成。
 - `inner_sandbox_id=...`
   本轮最终记录到的 inner sandbox id。空值表示本轮没有使用工具。
-- `inner_create_start` / `inner_ready`
-  Hermes 创建 inner AGS。
-- `tool_exec_start` / `tool_exec_done`
-  Hermes 工具调用开始/结束。
+- `kind=tool_call` / `kind=tool_call_update`
+  Hermes 工具调用开始/结束的协议投影。
 - `acp_runtime_close_start` / `acp_runtime_close_done`
   close 释放运行态。
 - `acp_runtime_cancel_start` / `acp_runtime_cancel_done`
@@ -586,7 +758,7 @@ wrapper 和 sidecar 都向 stderr 打 timeline。常用事件：
 
 1. `acp_runtime_outer_create_done` 有 outer sandbox id。
 2. 工具问题里 `inner_sandbox_id` 非空。
-3. sidecar stderr 有 `inner_ready` 和 `tool_exec_done`。
+3. wrapper 事件流里有 `kind=tool_call` 和 `kind=tool_call_update`。
 
 ## 常见错误
 
@@ -608,7 +780,7 @@ AGS 对已 `STOPPED` 实例再次 delete/stop 返回 400。对 ACP cleanup 来�
 
 ### `ags http 404: The requested resource does not exist`
 
-通常表示旧 outer sandbox 已被云端回收或不存在。`session/prompt` 会触发 runtime recover：重新创建 outer sandbox、启动 daemon、bootstrap 历史并重试当前 prompt。
+通常表示旧 outer sandbox 已被云端回收或不存在。`session/prompt` 会触发 runtime recover：重新创建 outer sandbox、启动 daemon、`session-create` 绑定 runtime store 并重试当前 prompt。
 
 ### 日期回答不对
 

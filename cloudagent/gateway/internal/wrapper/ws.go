@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 )
 
 const websocketGUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
@@ -71,7 +72,7 @@ func (c *WSConn) ReadText() ([]byte, error) {
 		case 0x8:
 			return nil, io.EOF
 		case 0x9:
-			_ = c.writeFrame(0xA, payload)
+			_ = c.writeFrame(0xA, payload, 0)
 		case 0xA:
 			continue
 		default:
@@ -81,11 +82,15 @@ func (c *WSConn) ReadText() ([]byte, error) {
 }
 
 func (c *WSConn) WriteText(data []byte) error {
-	return c.writeFrame(0x1, data)
+	return c.writeFrame(0x1, data, 0)
+}
+
+func (c *WSConn) WriteTextWithin(data []byte, timeout time.Duration) error {
+	return c.writeFrame(0x1, data, timeout)
 }
 
 func (c *WSConn) Close() error {
-	_ = c.writeFrame(0x8, nil)
+	_ = c.writeFrame(0x8, nil, 0)
 	return c.conn.Close()
 }
 
@@ -132,9 +137,15 @@ func (c *WSConn) readFrame() (byte, []byte, error) {
 	return opcode, payload, nil
 }
 
-func (c *WSConn) writeFrame(opcode byte, data []byte) error {
+func (c *WSConn) writeFrame(opcode byte, data []byte, timeout time.Duration) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if timeout > 0 {
+		if err := c.conn.SetWriteDeadline(time.Now().Add(timeout)); err != nil {
+			return err
+		}
+		defer c.conn.SetWriteDeadline(time.Time{})
+	}
 
 	header := []byte{0x80 | opcode}
 	length := len(data)

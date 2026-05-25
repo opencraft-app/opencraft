@@ -128,6 +128,7 @@ type workerJob struct {
 	CorrelationID         string             `json:"correlation_id"`
 	ACPSessionID          string             `json:"acp_session_id,omitempty"`
 	ACPSessionGeneration  int64              `json:"acp_session_generation,omitempty"`
+	ACPInboxMode          string             `json:"acp_inbox_mode,omitempty"`
 	ACPSessionRuntime     ACPSessionRuntime  `json:"-"`
 }
 

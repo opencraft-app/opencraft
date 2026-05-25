@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"strconv"
@@ -122,8 +123,14 @@ func StartAgent(ctx context.Context, argv []string, env []string) (*Conn, error)
 
 // ConnectWS 通过 WebSocket 连接远程 ACP 服务（替代子进程 stdio 方式）。
 func ConnectWS(ctx context.Context, url string) (*Conn, error) {
+	return ConnectWSWithHeaders(ctx, url, nil)
+}
+
+// ConnectWSWithHeaders connects to a remote ACP WebSocket service with optional
+// HTTP headers such as Authorization or tenant/project scope headers.
+func ConnectWSWithHeaders(ctx context.Context, url string, headers http.Header) (*Conn, error) {
 	dialer := ws.Dialer{}
-	wsConn, _, err := dialer.DialContext(ctx, url, nil)
+	wsConn, _, err := dialer.DialContext(ctx, url, headers)
 	if err != nil {
 		return nil, fmt.Errorf("websocket dial %s: %w", url, err)
 	}

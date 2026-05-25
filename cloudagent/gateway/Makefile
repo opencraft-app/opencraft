@@ -28,7 +28,10 @@ CLOUDAGENT_SIDECAR_CARGO_PROFILE_RELEASE_STRIP ?= true
 ifeq ($(CN_MIRRORS),1)
 CLOUDAGENT_SIDECAR_DEBIAN_MIRROR ?= mirrors.tuna.tsinghua.edu.cn
 CLOUDAGENT_SIDECAR_CARGO_USE_MIRROR ?= 1
-CLOUDAGENT_SIDECAR_CARGO_REGISTRY_MIRROR ?= https://rsproxy.cn
+# Use rsproxy's sparse registry root so Cargo also gets rsproxy's crate
+# download endpoint from config.json. Some index mirrors still point dl at
+# static.crates.io, which does not fix slow .crate tarball downloads.
+CLOUDAGENT_SIDECAR_CARGO_REGISTRY_MIRROR ?= sparse+https://rsproxy.cn/index/
 else
 CLOUDAGENT_SIDECAR_DEBIAN_MIRROR ?=
 CLOUDAGENT_SIDECAR_CARGO_USE_MIRROR ?= 0

@@ -65,6 +65,21 @@ func TestSidecarStdoutParserHandlesReasoningAndToolEvents(t *testing.T) {
 	}
 }
 
+func TestSidecarStdoutParserHandlesRuntimeHostEvents(t *testing.T) {
+	var parser sidecarStdoutParser
+	events := parser.Feed(`WRAPPER_EVENT_JSON={"type":"runtime_host","event":"inner_shutdown_done","session_id":"session_1","sandbox_id":"inner_1","workspace_root":"/workspace/session_1"}` + "\n")
+	if len(events) != 1 {
+		t.Fatalf("events=%v", events)
+	}
+	if events[0].Type != "runtime_host" || events[0].Event != "inner_shutdown_done" || events[0].SandboxID != "inner_1" {
+		t.Fatalf("runtime host event=%+v", events[0])
+	}
+	workerEvent, textDelta := workerEventFromSidecarEvent("job_1", 3, events[0])
+	if textDelta || workerEvent.Kind != "" {
+		t.Fatalf("runtime host events should stay timeline-only, worker=%+v textDelta=%t", workerEvent, textDelta)
+	}
+}
+
 func TestMissingFinalDeltaReturnsUnstreamedSuffix(t *testing.T) {
 	if got := missingFinalDelta("OK_DONE full sentence complete.", "OK_DONE f"); got != "ull sentence complete." {
 		t.Fatalf("missingFinalDelta returned %q", got)

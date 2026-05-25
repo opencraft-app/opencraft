@@ -10,6 +10,7 @@ import {
   resolveAcpWebSocketURL,
   stripDataURLPrefix,
   type AcpClientEvents,
+  type AgentCapabilities,
   type ChatMessage,
   type PermissionRequest,
   type SessionState,
@@ -460,6 +461,229 @@ describe("ACP tool call updates", () => {
     });
   });
 
+  it("treats accumulated live chunks as replace updates from ACP", () => {
+    const messages: ChatMessage[] = [];
+    const client = new AcpClient({
+      onStatus: () => undefined,
+      onReady: () => undefined,
+      onMessage: (message) => messages.push(message),
+      onSession: () => undefined,
+      onSessionList: () => undefined,
+      onControlOptions: () => undefined,
+      onError: () => undefined,
+      onTrace: () => undefined,
+    });
+
+    const handleUpdate = (update: Record<string, unknown>) => {
+      (
+        client as unknown as {
+          handleUpdate(
+            conversationId: string,
+            update: Record<string, unknown>,
+          ): void;
+        }
+      ).handleUpdate("conv-1", update);
+    };
+
+    handleUpdate({
+      sessionUpdate: "agent_message_chunk",
+      messageId: "message-a",
+      blockId: "block-a",
+      _meta: { cloudagent: { accumulated: true, accumulated_text: "BROWS" } },
+      content: { type: "text", text: "BROWS" },
+    });
+    handleUpdate({
+      sessionUpdate: "agent_message_chunk",
+      messageId: "message-a",
+      blockId: "block-a",
+      _meta: {
+        cloudagent: {
+          accumulated: true,
+          accumulated_text: "BROWSER_FINAL_123",
+        },
+      },
+      content: { type: "text", text: "ER_FINAL_123" },
+    });
+
+    expect(messages).toHaveLength(2);
+    expect(messages[1]?.content).toBe("BROWSER_FINAL_123");
+    const merged = messages.reduce((current, incoming) =>
+      mergeChatMessage(current, incoming),
+    );
+    expect(merged.content).toBe("BROWSER_FINAL_123");
+    expect(merged.streaming).toBe(true);
+    expect(merged.timelineBlocks?.[0]).toMatchObject({
+      id: "block-a",
+      type: "content",
+      text: "BROWSER_FINAL_123",
+    });
+  });
+
+  it("renders the accumulated ACP extension if an earlier live chunk was missed", () => {
+    const messages: ChatMessage[] = [];
+    const client = new AcpClient({
+      onStatus: () => undefined,
+      onReady: () => undefined,
+      onMessage: (message) => messages.push(message),
+      onSession: () => undefined,
+      onSessionList: () => undefined,
+      onControlOptions: () => undefined,
+      onError: () => undefined,
+      onTrace: () => undefined,
+    });
+
+    (
+      client as unknown as {
+        handleUpdate(
+          conversationId: string,
+          update: Record<string, unknown>,
+        ): void;
+      }
+    ).handleUpdate("conv-1", {
+      sessionUpdate: "agent_message_chunk",
+      messageId: "message-a",
+      blockId: "block-a",
+      _meta: {
+        cloudagent: {
+          accumulated: true,
+          accumulated_text: "BROWSER_FINAL_123",
+        },
+      },
+      content: { type: "text", text: "ER_FINAL_123" },
+    });
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.content).toBe("BROWSER_FINAL_123");
+    expect(messages[0]?.timelineBlocks?.[0]).toMatchObject({
+      id: "block-a",
+      type: "content",
+      text: "BROWSER_FINAL_123",
+      replace: true,
+    });
+  });
+
+  it("replaces matching text blocks when replay sends a snapshot", () => {
+    const merged = mergeChatMessage(
+      {
+        id: "message-a",
+        conversationId: "conv-1",
+        role: "agent",
+        sender: "主AGENTS",
+        time: "10:00",
+        content: "hello",
+        timelineBlocks: [{ id: "block-a", type: "content", text: "hello" }],
+      },
+      {
+        id: "message-a",
+        conversationId: "conv-1",
+        role: "agent",
+        sender: "主AGENTS",
+        time: "10:00",
+        content: "hello world",
+        snapshot: true,
+        timelineBlocks: [
+          {
+            id: "block-a",
+            type: "content",
+            text: "hello world",
+            snapshot: true,
+          },
+        ],
+      },
+    );
+
+    expect(merged.content).toBe("hello world");
+    expect(merged.timelineBlocks?.[0]).toMatchObject({
+      id: "block-a",
+      type: "content",
+      text: "hello world",
+    });
+  });
+
+  it("replaces matching text blocks for accumulated live chunks without settling streaming", () => {
+    const first: ChatMessage = {
+      id: "message-a",
+      conversationId: "conv-1",
+      role: "agent",
+      sender: "主AGENTS",
+      time: "10:00",
+      content: "BROWS",
+      streaming: true,
+      replace: true,
+      timelineBlocks: [
+        {
+          id: "block-a",
+          type: "content",
+          text: "BROWS",
+          replace: true,
+        },
+      ],
+    };
+    const second: ChatMessage = {
+      ...first,
+      content: "BROWSER_FINAL_123",
+      timelineBlocks: [
+        {
+          id: "block-a",
+          type: "content",
+          text: "BROWSER_FINAL_123",
+          replace: true,
+        },
+      ],
+    };
+
+    const merged = mergeChatMessage(first, second);
+
+    expect(merged.content).toBe("BROWSER_FINAL_123");
+    expect(merged.streaming).toBe(true);
+    expect(merged.timelineBlocks?.[0]).toMatchObject({
+      id: "block-a",
+      type: "content",
+      text: "BROWSER_FINAL_123",
+    });
+  });
+
+  it("does not mark replayed assistant snapshots as actively streaming", () => {
+    const messages: ChatMessage[] = [];
+    const client = new AcpClient({
+      onStatus: () => undefined,
+      onReady: () => undefined,
+      onMessage: (message) => messages.push(message),
+      onSession: () => undefined,
+      onSessionList: () => undefined,
+      onControlOptions: () => undefined,
+      onError: () => undefined,
+      onTrace: () => undefined,
+    });
+
+    (
+      client as unknown as {
+        handleUpdate(
+          conversationId: string,
+          update: Record<string, unknown>,
+        ): void;
+      }
+    ).handleUpdate("conv-1", {
+      sessionUpdate: "agent_message_chunk",
+      replay: true,
+      messageId: "message-a",
+      blockId: "block-a",
+      content: { type: "text", text: "complete answer" },
+    });
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({
+      id: expect.stringContaining("message-a"),
+      streaming: false,
+      content: "complete answer",
+    });
+    expect(
+      (
+        client as unknown as { activeStreamingMessageIds: Map<string, string> }
+      ).activeStreamingMessageIds.has("conv-1"),
+    ).toBe(false);
+  });
+
   it("marks the active assistant message streaming and settles it on prompt completion", () => {
     const messages: ChatMessage[] = [];
     const turns: Array<[string, string]> = [];
@@ -527,6 +751,84 @@ describe("ACP tool call updates", () => {
       ["conv-1", "started"],
       ["conv-1", "completed"],
     ]);
+  });
+
+  it("settles reconnected streaming messages from terminal turn updates", () => {
+    const messages: ChatMessage[] = [];
+    const turns: Array<[string, string]> = [];
+    const client = new AcpClient({
+      onStatus: () => undefined,
+      onReady: () => undefined,
+      onMessage: (message) => messages.push(message),
+      onSession: () => undefined,
+      onSessionList: () => undefined,
+      onControlOptions: () => undefined,
+      onError: () => undefined,
+      onTrace: () => undefined,
+      onTurn: (conversationId, state) => turns.push([conversationId, state]),
+    });
+    client.setActiveSession("conv-1", "session-1");
+    (
+      client as unknown as {
+        handleUpdate(
+          conversationId: string,
+          update: Record<string, unknown>,
+        ): void;
+      }
+    ).handleUpdate("conv-1", {
+      sessionUpdate: "agent_message_chunk",
+      messageId: "message-a",
+      blockId: "block-a",
+      content: { type: "text", text: "tail" },
+    });
+    (
+      client as unknown as { handleAcp(message: Record<string, unknown>): void }
+    ).handleAcp({
+      jsonrpc: "2.0",
+	      method: "_cloudagent.turn.status",
+	      params: {
+	        session_id: "session-1",
+	        status: "completed",
+	        message_id: "message-a",
+	      },
+	    });
+
+    expect(messages.map((message) => message.streaming)).toEqual([
+      true,
+      false,
+    ]);
+    expect(turns).toEqual([["conv-1", "completed"]]);
+  });
+
+  it("surfaces replay_gap instead of silently ignoring dropped replay updates", () => {
+    const errors: Array<{ code: string; kind: string; message?: string }> = [];
+	    const client = new AcpClient({
+      onStatus: () => undefined,
+      onReady: () => undefined,
+      onMessage: () => undefined,
+      onSession: () => undefined,
+      onSessionList: () => undefined,
+      onControlOptions: () => undefined,
+      onError: (error) => errors.push(error),
+	      onTrace: () => undefined,
+	    });
+    client.setActiveSession("conv-1", "session-1");
+
+    (
+      client as unknown as { handleAcp(message: Record<string, unknown>): void }
+    ).handleAcp({
+	      jsonrpc: "2.0",
+	      method: "_cloudagent.session.replay_gap",
+	      params: { session_id: "session-1", dropped: 3 },
+	    });
+
+    expect(errors).toMatchObject([
+      {
+        code: "replay_gap",
+        kind: "stream_replay_gap",
+      },
+    ]);
+    expect(errors[0].message).toContain("3");
   });
 
   it("keeps tool-first streaming ownership on the generated UI message id", () => {
@@ -894,6 +1196,166 @@ describe("ACP gateway envelope handling", () => {
 });
 
 describe("ACP session restore responses", () => {
+  it("parses cloudagent runtime run ledger status", () => {
+    const statuses: unknown[] = [];
+    const sent: unknown[] = [];
+    const client = new AcpClient({
+      onStatus: () => undefined,
+      onReady: () => undefined,
+      onMessage: () => undefined,
+      onSession: () => undefined,
+      onSessionList: () => undefined,
+      onControlOptions: () => undefined,
+      onError: () => undefined,
+      onTrace: () => undefined,
+      onSessionStatus: (_conversationId, status) => statuses.push(status),
+    });
+    (globalThis as unknown as { WebSocket: { OPEN: number } }).WebSocket = {
+      OPEN: 1,
+    };
+    (
+      client as unknown as {
+        ws: { readyState: number; send(message: string): void };
+      }
+    ).ws = {
+      readyState: 1,
+      send: (message: string) => sent.push(JSON.parse(message)),
+    };
+
+    expect(client.requestSessionStatus("conv-1", "session-1")).toBe(true);
+    expect(sent).toHaveLength(1);
+    (
+      client as unknown as { handleAcp(message: Record<string, unknown>): void }
+    ).handleAcp({
+      jsonrpc: "2.0",
+      id: 1,
+      result: {
+        session_id: "session-1",
+        runtime_status: "idle",
+        runtime_status_source: "runtime",
+        runtime_status_error: "",
+        runtime_store_load: "Restored",
+        run_count: 2,
+        transcript_count: 4,
+        last_user_hash: "userhash",
+        last_assistant_hash: "assisthash",
+        run_ledger_tail: [
+          {
+            run_id: "run-1",
+            turn_id: "turn-1",
+            inbox_mode: "steer",
+            status: "canceled",
+            created_at_ms: 10,
+            started_at_ms: 11,
+            completed_at_ms: 12,
+            reconciled_reason: "runtime restored with active run in progress",
+          },
+        ],
+      },
+    });
+
+    expect(statuses).toEqual([
+      expect.objectContaining({
+        sessionId: "session-1",
+        runtimeStatus: "idle",
+        runtimeStatusSource: "runtime",
+        runtimeStatusError: undefined,
+        runtimeStoreLoad: "Restored",
+        runCount: 2,
+        transcriptCount: 4,
+        lastUserHash: "userhash",
+        lastAssistantHash: "assisthash",
+        runLedgerTail: [
+          expect.objectContaining({
+            runId: "run-1",
+            turnId: "turn-1",
+            inboxMode: "steer",
+            status: "canceled",
+            createdAtMs: 10,
+            startedAtMs: 11,
+            completedAtMs: 12,
+            reconciledReason: "runtime restored with active run in progress",
+          }),
+        ],
+      }),
+    ]);
+  });
+
+  it("prefers the runtime ensure_ready extension and treats the result as a live session", () => {
+    const sessions: unknown[] = [];
+    const statuses: unknown[] = [];
+    const sent: unknown[] = [];
+    const client = new AcpClient({
+      onStatus: () => undefined,
+      onReady: () => undefined,
+      onMessage: () => undefined,
+      onSession: (session) => sessions.push(session),
+      onSessionList: () => undefined,
+      onControlOptions: () => undefined,
+      onError: () => undefined,
+      onTrace: () => undefined,
+      onSessionStatus: (_conversationId, status) => statuses.push(status),
+    });
+    (globalThis as unknown as { WebSocket: { OPEN: number } }).WebSocket = {
+      OPEN: 1,
+    };
+    (
+      client as unknown as {
+        ws: { readyState: number; send(message: string): void };
+      }
+    ).ws = {
+      readyState: 1,
+      send: (message: string) => sent.push(JSON.parse(message)),
+    };
+    (client as unknown as { capabilities: AgentCapabilities }).capabilities = {
+      _meta: {
+        cloudagent: {
+          methods: ["_cloudagent.runtime.ensure_ready"],
+        },
+      },
+    };
+
+	    expect(client.ensureRuntimeReady("conv-1", "session-1", "/workspace")).toBe(
+	      true,
+	    );
+    expect(sent[0]).toMatchObject({
+      type: "acp",
+      message: {
+        jsonrpc: "2.0",
+        method: "_cloudagent.runtime.ensure_ready",
+        params: { session_id: "session-1", cwd: "/workspace" },
+      },
+    });
+    (
+      client as unknown as { handleAcp(message: Record<string, unknown>): void }
+    ).handleAcp({
+      jsonrpc: "2.0",
+      id: 1,
+	      result: {
+	        session_id: "session-1",
+	        configOptions: [{ id: "model", type: "select", currentValue: "m" }],
+	        state: "ready",
+        runtime_status: "idle",
+        workspace_persistent: true,
+      },
+    });
+
+    expect(sessions).toEqual([
+      expect.objectContaining({
+        conversationId: "conv-1",
+        sessionId: "session-1",
+        restoreSource: "resume",
+      }),
+    ]);
+    expect(statuses).toEqual([
+      expect.objectContaining({
+        sessionId: "session-1",
+        runtimeStatus: "idle",
+        workspacePersistent: true,
+      }),
+    ]);
+  });
+
   it("parses session/list metadata into listed sessions", () => {
     const listed: unknown[] = [];
     const client = new AcpClient({
@@ -931,8 +1393,12 @@ describe("ACP session restore responses", () => {
             title: "Real history",
             cwd: "/tmp",
             updatedAt: "2026-05-09T03:00:00Z",
-            readOnly: true,
-            readOnlyReason: "runtime_not_recovered",
+            _meta: {
+              cloudagent: {
+                read_only: true,
+                read_only_reason: "runtime_not_recovered",
+              },
+            },
             additionalDirectories: ["/tmp/extra"],
           },
         ],
@@ -1123,11 +1589,53 @@ describe("ACP session restore responses", () => {
     (
       client as unknown as { handleAcp(message: Record<string, unknown>): void }
     ).handleAcp({
+	      jsonrpc: "2.0",
+	      method: "_cloudagent.session.replay_done",
+	      params: { session_id: "session-1" },
+	    });
+
+    expect(replayDone).toEqual(["conv-1"]);
+    expect(messages).toEqual([]);
+  });
+
+  it("emits replay_done from standard session/update without creating a chat message", () => {
+    const messages: ChatMessage[] = [];
+    const replayDone: string[] = [];
+    const client = new AcpClient({
+      onStatus: () => undefined,
+      onReady: () => undefined,
+      onMessage: (message) => messages.push(message),
+      onSession: () => undefined,
+      onSessionList: () => undefined,
+      onControlOptions: () => undefined,
+      onError: () => undefined,
+      onTrace: () => undefined,
+      onReplayDone: (conversationId) => replayDone.push(conversationId),
+    });
+    (globalThis as unknown as { WebSocket: { OPEN: number } }).WebSocket = {
+      OPEN: 1,
+    };
+    (
+      client as unknown as {
+        ws: { readyState: number; send(message: string): void };
+      }
+    ).ws = {
+      readyState: 1,
+      send: () => undefined,
+    };
+
+    client.loadSession("conv-1", "session-1", "/tmp", []);
+    (
+      client as unknown as { handleAcp(message: Record<string, unknown>): void }
+    ).handleAcp({
       jsonrpc: "2.0",
       method: "session/update",
       params: {
         sessionId: "session-1",
-        update: { sessionUpdate: "replay_done" },
+        update: {
+          sessionUpdate: "replay_done",
+          lastEventSeq: 9,
+        },
       },
     });
 
@@ -1599,6 +2107,66 @@ describe("ACP session restore responses", () => {
     expect(mergeChatMessage(messages[0], messages[1]).content).toBe(
       "hello world",
     );
+  });
+
+  it("uses ACP blockId to merge live content and thought chunks like replay", () => {
+    const messages: ChatMessage[] = [];
+    const client = new AcpClient({
+      onStatus: () => undefined,
+      onReady: () => undefined,
+      onMessage: (message) => messages.push(message),
+      onSession: () => undefined,
+      onSessionList: () => undefined,
+      onControlOptions: () => undefined,
+      onError: () => undefined,
+      onTrace: () => undefined,
+    });
+    client.setActiveSession("conv-1", "session-1");
+
+    for (const update of [
+      {
+        sessionUpdate: "agent_thought_chunk",
+        messageId: "message-a",
+        blockId: "block-thinking",
+        content: { type: "text", text: "think " },
+      },
+      {
+        sessionUpdate: "agent_thought_chunk",
+        messageId: "message-a",
+        blockId: "block-thinking",
+        content: { type: "text", text: "more" },
+      },
+      {
+        sessionUpdate: "agent_message_chunk",
+        messageId: "message-a",
+        blockId: "block-answer",
+        content: { type: "text", text: "hello " },
+      },
+      {
+        sessionUpdate: "agent_message_chunk",
+        messageId: "message-a",
+        blockId: "block-answer",
+        content: { type: "text", text: "world" },
+      },
+    ]) {
+      (
+        client as unknown as {
+          handleAcp(message: Record<string, unknown>): void;
+        }
+      ).handleAcp({
+        jsonrpc: "2.0",
+        method: "session/update",
+        params: { sessionId: "session-1", update },
+      });
+    }
+
+    const merged = messages.reduce((current, incoming) =>
+      mergeChatMessage(current, incoming),
+    );
+    expect(merged.timelineBlocks).toMatchObject([
+      { id: "block-thinking", type: "thought", text: "think more" },
+      { id: "block-answer", type: "content", text: "hello world" },
+    ]);
   });
 });
 
@@ -2318,6 +2886,122 @@ describe("ACP session lifecycle controls", () => {
         client as unknown as { activeStreamingMessageIds: Map<string, string> }
       ).activeStreamingMessageIds.has("conv-1"),
     ).toBe(false);
+  });
+
+  it("surfaces CloudAgent turn status failures and settles the active turn", () => {
+    const messages: ChatMessage[] = [];
+    const errors: unknown[] = [];
+    const turns: Array<[string, string]> = [];
+    const sent: unknown[] = [];
+    const client = new AcpClient({
+      onStatus: () => undefined,
+      onReady: () => undefined,
+      onMessage: (message) => messages.push(message),
+      onSession: () => undefined,
+      onSessionList: () => undefined,
+      onControlOptions: () => undefined,
+      onError: (error) => errors.push(error),
+      onTrace: () => undefined,
+      onTurn: (conversationId, state) => turns.push([conversationId, state]),
+    });
+    (globalThis as unknown as { WebSocket: { OPEN: number } }).WebSocket = {
+      OPEN: 1,
+    };
+    (
+      client as unknown as {
+        ws: { readyState: number; send(message: string): void };
+      }
+    ).ws = {
+      readyState: 1,
+      send: (message: string) => sent.push(JSON.parse(message)),
+    };
+    client.setActiveSession("conv-1", "session-1");
+
+    client.sendPrompt("conv-1", "convert timestamp", [], { optimistic: false });
+    (
+      client as unknown as { handleAcp(message: Record<string, unknown>): void }
+    ).handleAcp({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-1",
+        update: {
+          sessionUpdate: "agent_thought_chunk",
+          messageId: "message-a",
+          content: { text: "thinking" },
+        },
+      },
+    });
+    (
+      client as unknown as { handleAcp(message: Record<string, unknown>): void }
+    ).handleAcp({
+      jsonrpc: "2.0",
+	      method: "_cloudagent.turn.status",
+	      params: {
+	        session_id: "session-1",
+	        status: "failed",
+	        message_id: "message-a",
+	        error: {
+          code: "provider_error",
+          message: "Sandbox instance quota exceeded",
+        },
+      },
+    });
+
+    expect(messages.map((message) => message.streaming)).toEqual([
+      true,
+      false,
+    ]);
+    expect(errors).toEqual([
+      expect.objectContaining({
+        code: "provider_error",
+        kind: "provider_error",
+        message: "Sandbox instance quota exceeded",
+        conversationId: "conv-1",
+      }),
+    ]);
+    expect(turns).toEqual([
+      ["conv-1", "started"],
+      ["conv-1", "failed"],
+    ]);
+  });
+
+  it("ignores non-standard ACP session error updates", () => {
+    const errors: unknown[] = [];
+    const turns: Array<[string, string]> = [];
+    const client = new AcpClient({
+      onStatus: () => undefined,
+      onReady: () => undefined,
+      onMessage: () => undefined,
+      onSession: () => undefined,
+      onSessionList: () => undefined,
+      onControlOptions: () => undefined,
+      onError: (error) => errors.push(error),
+      onTrace: () => undefined,
+      onTurn: (conversationId, state) => turns.push([conversationId, state]),
+    });
+    client.setActiveSession("conv-1", "session-1");
+
+    (
+      client as unknown as { handleAcp(message: Record<string, unknown>): void }
+    ).handleAcp({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-1",
+        update: {
+          sessionUpdate: "error",
+          messageId: "message-a",
+          error: {
+            code: "provider_error",
+            message: "old stream error",
+          },
+        },
+      },
+    });
+
+    expect(errors).toEqual([]);
+    expect(turns).toEqual([]);
   });
 
   it("sends session/delete and removes the full binding on success", () => {

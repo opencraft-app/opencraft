@@ -9,6 +9,7 @@ import {
   planSendPrompt,
   planSessionList,
   planSessionReady,
+  planSessionStatusReady,
   planTransportLoss,
   type AcpRestoreEnvironment,
   type PendingPrompt,
@@ -101,6 +102,41 @@ describe('ACP session coordinator open decisions', () => {
     expect(result.effects).toEqual([]);
   });
 
+  it('skips a stored read-only row when a recoverable session is available', () => {
+    const result = planSessionList({
+      sessions: [
+        {
+          sessionId: 'session-readonly',
+          title: 'Old hard failure',
+          cwd: restoreEnvironment.cwd,
+          readOnly: true,
+          readOnlyReason: 'runtime_not_recovered',
+        },
+        {
+          sessionId: 'session-recoverable',
+          title: 'Recoverable Wisp',
+          cwd: restoreEnvironment.cwd,
+          state: 'closed',
+        },
+      ],
+      previousRows: [],
+      defaultCwd: restoreEnvironment.cwd,
+      pendingOpenAfterList: 'first',
+      storedActiveSessionId: 'session-readonly',
+      activeConversationId: '',
+      capabilities: listCapable,
+      restoreEnvironment,
+      activeLiveConnection: true,
+    });
+
+    expect(result.activeConversationId).toBe('session-recoverable');
+    expect(result.effects).toMatchObject([
+      { type: 'remove_transcript', conversationId: 'session-recoverable' },
+      { type: 'update_row_restore_state', conversationId: 'session-recoverable', restoreState: 'restoring' },
+      { type: 'load_session', conversationId: 'session-recoverable', sessionId: 'session-recoverable' },
+    ]);
+  });
+
   it('rebinds an already-live session without replaying history', () => {
     const row = rowFromSession('session-1');
 
@@ -110,9 +146,27 @@ describe('ACP session coordinator open decisions', () => {
       listedSessions: [{ sessionId: 'session-1' }],
       restoreEnvironment,
       liveConnection: true,
+      transcriptLoaded: true,
     }).effects).toEqual([
       { type: 'update_row_restore_state', conversationId: 'session-1', restoreState: 'live' },
       { type: 'activate_loaded_session', conversationId: 'session-1', sessionId: 'session-1' },
+    ]);
+  });
+
+  it('loads a live-bound session when the browser has not replayed its transcript yet', () => {
+    const row = rowFromSession('session-1');
+
+    expect(planOpenConversation({
+      conversation: row,
+      capabilities: listCapable,
+      listedSessions: [{ sessionId: 'session-1', state: 'ready' }],
+      restoreEnvironment,
+      liveConnection: true,
+      transcriptLoaded: false,
+    }).effects).toMatchObject([
+      { type: 'remove_transcript', conversationId: 'session-1' },
+      { type: 'update_row_restore_state', conversationId: 'session-1', restoreState: 'restoring' },
+      { type: 'load_session', conversationId: 'session-1', sessionId: 'session-1' },
     ]);
   });
 
@@ -191,6 +245,7 @@ describe('ACP session coordinator send decisions', () => {
       listedSessions: [{ sessionId: 'session-1' }],
       restoreEnvironment,
       liveConnection: true,
+      transcriptLoaded: true,
     })).toEqual({
       queuePrompt: undefined,
       clearComposer: true,
@@ -347,6 +402,57 @@ describe('ACP session coordinator lifecycle transitions', () => {
     ]);
   });
 
+  it('marks restoring sessions live when runtime status proves recovery', () => {
+    const row = updateRowRestoreState([rowFromSession('session-1')], 'session-1', 'restoring')[0];
+
+    expect(planSessionStatusReady({
+      conversationId: 'session-1',
+      status: {
+        sessionId: 'session-1',
+        runtimeStatus: 'attached',
+      },
+      conversations: [row],
+      transcriptLoaded: true,
+    }).effects).toEqual([
+      { type: 'update_row_restore_state', conversationId: 'session-1', restoreState: 'live' },
+      { type: 'activate_loaded_session', conversationId: 'session-1', sessionId: 'session-1' },
+      { type: 'clear_load_replay', conversationId: 'session-1' },
+      { type: 'flush_pending_prompt', conversationId: 'session-1' },
+    ]);
+  });
+
+  it('keeps restoring sessions restoring when runtime status arrives before replay settles', () => {
+    const row = updateRowRestoreState([rowFromSession('session-1')], 'session-1', 'restoring')[0];
+
+    expect(planSessionStatusReady({
+      conversationId: 'session-1',
+      status: {
+        sessionId: 'session-1',
+        runtimeStatus: 'attached',
+      },
+      conversations: [row],
+      transcriptLoaded: false,
+    }).effects).toEqual([]);
+  });
+
+  it('blocks restoring sessions when runtime status reports read-only recovery failure', () => {
+    const row = updateRowRestoreState([rowFromSession('session-1')], 'session-1', 'restoring')[0];
+
+    expect(planSessionStatusReady({
+      conversationId: 'session-1',
+      status: {
+        sessionId: 'session-1',
+        readOnly: true,
+        readOnlyReason: 'runtime_not_recovered',
+      },
+      conversations: [row],
+    }).effects).toEqual([
+      { type: 'update_row_restore_state', conversationId: 'session-1', restoreState: 'blocked' },
+      { type: 'report_error', conversationId: 'session-1', content: 'session_read_only/runtime_not_recovered' },
+      { type: 'clear_load_replay', conversationId: 'session-1' },
+    ]);
+  });
+
   it('keeps read-only loaded sessions blocked after replay settlement', () => {
     const row = rowFromSession('session-1', {
       readOnly: true,
@@ -389,6 +495,33 @@ describe('ACP session coordinator lifecycle transitions', () => {
       { type: 'clear_load_replay', conversationId: 'session-1' },
       { type: 'flush_pending_prompt', conversationId: 'session-1' },
     ]);
+  });
+
+  it('clears stale read-only reason after a recoverable session resumes writable', () => {
+    const row = rowFromSession('session-1', {
+      readOnly: true,
+      readOnlyReason: 'runtime_not_recovered',
+    });
+    const state: SessionState = {
+      conversationId: 'session-1',
+      sessionId: 'session-1',
+      configOptions: [],
+      restoreSource: 'resume',
+      readOnly: false,
+    };
+
+    const result = planSessionReady({
+      state,
+      conversations: [row],
+      activeConversationId: 'session-1',
+      messages: [],
+      pendingTurns: new Set(),
+      pendingPrompts: new Map(),
+    });
+
+    expect(result.conversations[0].readOnly).toBe(false);
+    expect(result.conversations[0].readOnlyReason).toBeUndefined();
+    expect(result.conversations[0].restoreState).toBe('live');
   });
 
   it('clears pending state and marks rows disconnected on transport loss', () => {

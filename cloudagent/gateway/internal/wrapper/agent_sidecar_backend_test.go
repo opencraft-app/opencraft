@@ -64,6 +64,118 @@ func TestAgentSidecarWorkerRejectsTalosModelWithoutBackend(t *testing.T) {
 	}
 }
 
+func TestAgentSidecarWorkerConfiguresWispOuterRuntime(t *testing.T) {
+	worker, err := NewAgentSidecarWorker(AgentSidecarWorkerConfig{
+		Client:               &AGSClient{apiKey: "ags-key", apiURL: "https://api.ap-shanghai.tencentags.com", domain: "ap-shanghai.tencentags.com"},
+		OuterTemplateID:      "ags-outer",
+		InnerTemplateID:      "ags-inner",
+		SidecarURL:           "https://example.com/cloudagent-sidecar",
+		TokenHubAPIKey:       "tokenhub-key",
+		OuterRuntime:         "wisp",
+		WispPackageURL:       "https://example.com/wisp.tar.gz",
+		WispRootUpperSize:    "5G",
+		WispJFSPrefix:        "agent-test",
+		WispSMHLibraryID:     "library",
+		WispSMHAccessDomain:  "https://library.example.com/",
+		WispSMHLibrarySecret: "secret",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if worker.outerRuntime != outerRuntimeWisp {
+		t.Fatalf("outerRuntime=%q, want wisp", worker.outerRuntime)
+	}
+	if worker.wispSMHAccessDomain != "https://library.example.com" {
+		t.Fatalf("wispSMHAccessDomain=%q", worker.wispSMHAccessDomain)
+	}
+}
+
+func TestAgentSidecarWorkerDefaultsToWispOuterRuntime(t *testing.T) {
+	worker, err := NewAgentSidecarWorker(AgentSidecarWorkerConfig{
+		Client:          &AGSClient{apiKey: "ags-key", apiURL: "https://api.ap-shanghai.tencentags.com", domain: "ap-shanghai.tencentags.com"},
+		OuterTemplateID: "ags-outer",
+		InnerTemplateID: "ags-inner",
+		SidecarURL:      "https://example.com/cloudagent-sidecar",
+		TokenHubAPIKey:  "tokenhub-key",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if worker.outerRuntime != outerRuntimeWisp {
+		t.Fatalf("outerRuntime=%q, want default wisp", worker.outerRuntime)
+	}
+	if worker.wispPackageURL != defaultWispPackageURL {
+		t.Fatalf("wispPackageURL=%q, want default package URL", worker.wispPackageURL)
+	}
+	if normalizeOuterRuntime("") != outerRuntimeWisp {
+		t.Fatalf("empty outer runtime should normalize to wisp")
+	}
+}
+
+func TestAgentSidecarWorkerRejectsUnsupportedOuterRuntime(t *testing.T) {
+	_, err := NewAgentSidecarWorker(AgentSidecarWorkerConfig{
+		Client:          &AGSClient{apiKey: "ags-key", apiURL: "https://api.ap-shanghai.tencentags.com", domain: "ap-shanghai.tencentags.com"},
+		OuterTemplateID: "ags-outer",
+		InnerTemplateID: "ags-inner",
+		SidecarURL:      "https://example.com/cloudagent-sidecar",
+		TokenHubAPIKey:  "tokenhub-key",
+		OuterRuntime:    "unknown",
+	})
+	if err == nil {
+		t.Fatal("expected unsupported outer runtime to fail")
+	}
+}
+
+func TestWispOuterRuntimeWrapsCommandWithEnvironment(t *testing.T) {
+	runtime := ACPSessionRuntime{
+		OuterRuntime:   outerRuntimeWisp,
+		WispName:       "agent-session",
+		WispClientPath: "/tmp/wisp/install/bin/wispclient",
+	}
+	command := runtime.wrapWispShellCommand("echo \"$TOKENHUB_MODEL\"", map[string]string{
+		"TOKENHUB_MODEL": "minimax-m2.7",
+		"bad-name":       "ignored",
+	})
+	for _, want := range []string{
+		"'/tmp/wisp/install/bin/wispclient'",
+		"exec --stream 'agent-session'",
+		"export TOKENHUB_MODEL=",
+		"minimax-m2.7",
+		"echo \"$TOKENHUB_MODEL\"",
+	} {
+		if !strings.Contains(command, want) {
+			t.Fatalf("wrapped command missing %q: %s", want, command)
+		}
+	}
+	if strings.Contains(command, "bad-name") {
+		t.Fatalf("wrapped command leaked invalid env name: %s", command)
+	}
+}
+
+func TestWispOuterStopCommandStopsHostRuntime(t *testing.T) {
+	runtime := ACPSessionRuntime{
+		OuterRuntime:   outerRuntimeWisp,
+		WispName:       "agent-session",
+		WispClientPath: "/tmp/wisp/install/bin/wispclient",
+		RemoteBinary:   "/tmp/cloudagent-session/hermes-sidecar",
+	}
+	command := wispOuterStopCommand(runtime)
+	for _, want := range []string{
+		"'/tmp/wisp/install/bin/wispclient'",
+		"stop \"$name\"",
+		"agent-session",
+		"CLOUDAGENT_WISP_STOPPED",
+		"wispclient-daemon.log",
+	} {
+		if !strings.Contains(command, want) {
+			t.Fatalf("stop command missing %q: %s", want, command)
+		}
+	}
+	if strings.Contains(command, "exec --stream") {
+		t.Fatalf("stop command must run on the outer host, not inside the wisp runtime: %s", command)
+	}
+}
+
 func TestAgentSidecarWorkerEnsureInnerCommandForcesWhenInnerIdentityMissing(t *testing.T) {
 	worker, err := NewAgentSidecarWorker(AgentSidecarWorkerConfig{
 		Client:          &AGSClient{apiKey: "ags-key", apiURL: "https://api.ap-beijing.tencentags.com", domain: "ap-beijing.tencentags.com"},

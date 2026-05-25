@@ -154,6 +154,43 @@ func TestAGSClientDeleteSandboxReturnsUnexpectedError(t *testing.T) {
 	}
 }
 
+func TestAGSClientRefreshSandboxTimeoutUsesE2BShape(t *testing.T) {
+	var gotPath string
+	var gotAPIKey string
+	var gotBody map[string]any
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotAPIKey = r.Header.Get("X-API-Key")
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatal(err)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer api.Close()
+
+	client, err := NewAGSClient(AGSClientConfig{
+		Domain:     "ap-beijing.tencentags.com",
+		APIURL:     api.URL,
+		APIKey:     "key",
+		HTTPClient: api.Client(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.RefreshSandboxTimeout(context.Background(), "sb_keepalive", 300); err != nil {
+		t.Fatal(err)
+	}
+	if gotPath != "/sandboxes/sb_keepalive/timeout" {
+		t.Fatalf("path=%s", gotPath)
+	}
+	if gotAPIKey != "key" {
+		t.Fatalf("api key header=%q", gotAPIKey)
+	}
+	if gotBody["timeout"] != float64(300) {
+		t.Fatalf("body=%#v", gotBody)
+	}
+}
+
 func TestAGSClientAuthErrorIncludesOperationContext(t *testing.T) {
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
@@ -223,7 +260,7 @@ PY`, nil, nil, nil)
 	}
 }
 
-func TestAgentSidecarWorkerRunsSidecarBinaryDirectly(t *testing.T) {
+func TestAgentSidecarWorkerRunsResponseThroughRuntimeSession(t *testing.T) {
 	worker, err := NewAgentSidecarWorker(AgentSidecarWorkerConfig{
 		Client:          &AGSClient{apiKey: "test", domain: "example.com"},
 		OuterTemplateID: "outer-template",
@@ -235,12 +272,34 @@ func TestAgentSidecarWorkerRunsSidecarBinaryDirectly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	command := worker.sidecarCommand("/tmp/hermes-sidecar")
-	if strings.Contains(command, "python3 ") {
-		t.Fatalf("sidecar command must not use python runner: %s", command)
+	command, err := worker.responseRuntimeCommand(
+		"/tmp/hermes-sidecar",
+		worker.defaultSidecarArtifact(),
+		agentSidecarBackend{
+			name:            "default",
+			client:          &AGSClient{envdUser: "user"},
+			outerTemplateID: "outer-template",
+			innerTemplateID: "inner-template",
+		},
+		workerJob{JobID: "job_1", ResponseID: "resp_1", Instruction: "hello"},
+		sidecarStageFilesManifest{SessionID: "response_resp_1", WorkspaceRoot: acpRuntimeCWD},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(command, "python3 /tmp/hermes-sidecar") || strings.Contains(command, "python /tmp/hermes-sidecar") {
+		t.Fatalf("sidecar command must execute the sidecar binary directly, not through a python runner: %s", command)
 	}
 	if !strings.Contains(command, "/tmp/hermes-sidecar") {
 		t.Fatalf("expected binary path in command: %s", command)
+	}
+	for _, want := range []string{"daemon", "session-create", "session-input", "--session-id", "response_resp_1"} {
+		if !strings.Contains(command, want) {
+			t.Fatalf("expected %q in runtime command: %s", want, command)
+		}
+	}
+	if strings.Contains(command, "&& exit 0") {
+		t.Fatalf("inline health check must not exit before session-input: %s", command)
 	}
 	if !strings.Contains(command, "sha256sum -c -") {
 		t.Fatalf("expected sidecar sha256 verification in command: %s", command)
