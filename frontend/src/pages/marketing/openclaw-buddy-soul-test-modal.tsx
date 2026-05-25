@@ -28,6 +28,7 @@ interface SoulTestModalProps {
   souls: SkillHubSoul[];
   maxDrawsReached: boolean;
   drawnSlugs: string[];
+  saveDisabledReason?: string | null;
   onClose: () => void;
   onUseSoul: (soul: SkillHubSoul) => boolean;
 }
@@ -37,6 +38,7 @@ export function SoulTestModal({
   souls,
   maxDrawsReached,
   drawnSlugs,
+  saveDisabledReason,
   onClose,
   onUseSoul,
 }: SoulTestModalProps) {
@@ -132,13 +134,17 @@ export function SoulTestModal({
 
   const handleUseSoul = useCallback(() => {
     if (!recommendedSoul) return;
+    if (saveDisabledReason) {
+      setUseError(saveDisabledReason);
+      return;
+    }
     if (maxDrawsReached && !drawnSlugs.includes(recommendedSoul.slug)) {
       setUseError(t("卡槽已满，请先删除一张人设，再使用测试推荐"));
       return;
     }
     const accepted = onUseSoul(recommendedSoul);
     if (accepted) onClose();
-  }, [drawnSlugs, maxDrawsReached, onClose, onUseSoul, recommendedSoul, t]);
+  }, [drawnSlugs, maxDrawsReached, onClose, onUseSoul, recommendedSoul, saveDisabledReason, t]);
 
   if (!open) return null;
 

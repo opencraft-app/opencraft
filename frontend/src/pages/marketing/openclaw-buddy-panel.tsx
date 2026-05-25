@@ -147,6 +147,14 @@ export function BuddyPanel({
 
   const handleUseTestSoul = useCallback(
     (soul: SkillHubSoul) => {
+      if (loadStatus !== "loaded") {
+        showToast({
+          kind: "error",
+          message: t("搭子状态未加载成功，暂时无法保存推荐人设，请先重试加载状态"),
+        });
+        return false;
+      }
+
       const alreadyDrawn = drawnSouls.some((item) => item.slug === soul.slug);
       if (!alreadyDrawn && drawnSouls.length >= MAX_DRAWS) {
         showToast({ kind: "error", message: t("卡槽已满，请先删除一张人设，再使用测试推荐") });
@@ -163,7 +171,7 @@ export function BuddyPanel({
       setSelectedSlug(soul.slug);
       return true;
     },
-    [drawnSouls, showToast, t],
+    [drawnSouls, loadStatus, showToast, t],
   );
 
   /** 重抽某张已抽到的卡：复用抽卡 modal 流程（翻牌动画 → reveal → 替换原位） */
@@ -174,6 +182,7 @@ export function BuddyPanel({
 
   /** 重抽时是否可用：候选池非空才允许 */
   const canReroll = souls.length > drawnSouls.length;
+  const canOpenSoulTest = souls.length > 0;
 
   /** 选中态（单选）：选中后右上角显示勾，可"应用到 Agent" */
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
@@ -554,7 +563,7 @@ export function BuddyPanel({
           <UnauthorizedState />
         ) : loadStatus === "error" ? (
           <ErrorState
-            message={t("加载搭子状态失败，请检查网络后重试")}
+            message={t("搭子状态加载失败，抽卡和注入暂不可用，但仍可先做人格测试")}
             onRetry={() => {
               // 触发 useEffect 重跑：直接 ++reqId 不行（不会触发 effect），用 botId-tick
               // 兜底：直接刷一次页面对应的 effect 依赖
@@ -616,7 +625,7 @@ export function BuddyPanel({
         <button
           type="button"
           onClick={() => setSoulTestOpen(true)}
-          disabled={souls.length === 0 || loadStatus !== "loaded"}
+          disabled={!canOpenSoulTest}
           className="inline-flex items-center gap-2 rounded-full px-5 py-2 text-sm font-medium transition-all hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none"
           style={{
             background: "linear-gradient(95deg, rgba(255,166,0,0.16) 0%, rgba(107,79,224,0.14) 100%)",
@@ -707,6 +716,11 @@ export function BuddyPanel({
         souls={souls}
         maxDrawsReached={isAtMax}
         drawnSlugs={drawnSlugs}
+        saveDisabledReason={
+          loadStatus === "loaded"
+            ? null
+            : t("搭子状态未加载成功，暂时无法保存推荐人设，请先重试加载状态")
+        }
         onClose={() => setSoulTestOpen(false)}
         onUseSoul={handleUseTestSoul}
       />
