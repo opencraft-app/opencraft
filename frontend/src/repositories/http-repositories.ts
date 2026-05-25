@@ -35,6 +35,7 @@ import type {
 interface SessionPayload {
   session: {
     user: User;
+    impersonated?: boolean;
     authenticatedAt?: string;
     sessionToken?: string;
   };
@@ -201,11 +202,20 @@ export const bootstrapStoredAuthTokenFromLocation = () => {
 const mapSession = (payload: SessionPayload): AuthSessionSnapshot => ({
   user: payload.session.user,
   currentSubscription: null,
+  impersonated: payload.session.impersonated === true,
   authenticatedAt: payload.session.authenticatedAt,
   sessionToken: payload.session.sessionToken,
 });
 
 const buildUrl = (baseUrl: string, path: string) => `${baseUrl}${path}`;
+
+const configuredOAuthRelayIssuerBaseURL = (): string | null => {
+  const configured = import.meta.env.VITE_OAUTH_RELAY_ISSUER_BASE_URL?.trim();
+  if (!configured) {
+    return null;
+  }
+  return configured.replace(/\/$/, "");
+};
 
 const currentOAuthReturnTo = (): string | null => {
   if (typeof window === "undefined" || !window.location) {
@@ -476,17 +486,25 @@ const writeBotDrafts = (drafts: Record<string, BotDraft>) => {
 };
 
 const mapInstanceStatusToBotStatus = (status: string): Bot["status"] => {
-  switch (status) {
-    case "Creating":
+  switch (status.trim().toLowerCase()) {
+    case "creating":
+    case "provisioning":
+    case "pending":
+    case "queued":
       return "provisioning";
-    case "Paused":
+    case "paused":
       return "paused";
-    case "Running":
+    case "running":
+    case "active":
+    case "ready":
+    case "succeeded":
+    case "success":
       return "active";
-    case "Failed":
+    case "failed":
+    case "error":
       return "failed";
-    case "Deleting":
-    case "Deleted":
+    case "deleting":
+    case "deleted":
       return "deleting";
     default:
       return "draft";
@@ -1000,6 +1018,11 @@ const createHttpAuthRepository = (baseUrl: string): AuthRepository => ({
   },
   getOAuthStartUrl(provider) {
     const startURL = new URL(buildUrl(baseUrl, `/auth/oauth/${provider}/start`));
+    const relayIssuerBaseURL = configuredOAuthRelayIssuerBaseURL();
+    if (relayIssuerBaseURL) {
+      startURL.searchParams.set("relay_mode", "issuer");
+      startURL.searchParams.set("issuer_redirect_uri", buildUrl(relayIssuerBaseURL, `/auth/oauth/${provider}/callback`));
+    }
     const returnTo = currentOAuthReturnTo();
     if (returnTo) {
       startURL.searchParams.set("return_to", returnTo);

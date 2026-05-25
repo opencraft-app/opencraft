@@ -46,6 +46,53 @@ ci_arch_name() {
   esac
 }
 
+ci_tune_staticpages_upload_tcp() {
+  if [[ "${CI_STATICPAGES_TCP_TUNING:-1}" == "0" ]]; then
+    ci_log "staticpages tcp tuning disabled by CI_STATICPAGES_TCP_TUNING=0"
+    return 0
+  fi
+
+  if [[ "$(ci_os_name)" != "linux" ]]; then
+    ci_log "staticpages tcp tuning skipped on non-linux host"
+    return 0
+  fi
+
+  if [[ "$(id -u)" -ne 0 ]]; then
+    ci_log "staticpages tcp tuning skipped because current user is not root"
+    return 0
+  fi
+
+  local conf_path="${CI_STATICPAGES_TCP_SYSCTL_CONF:-/etc/sysctl.d/99-lightclaw-ci-tcp-upload.conf}"
+  local qdisc="${CI_STATICPAGES_TCP_QDISC:-fq}"
+  local congestion="${CI_STATICPAGES_TCP_CONGESTION:-bbr}"
+  local buffer_max="${CI_STATICPAGES_TCP_BUFFER_MAX:-134217728}"
+
+  if [[ "$congestion" == "bbr" ]] && command -v modprobe >/dev/null 2>&1; then
+    modprobe tcp_bbr >/dev/null 2>&1 || ci_log "tcp_bbr module is not loadable; sysctl will keep the current congestion control if bbr is unavailable"
+  fi
+
+  mkdir -p "$(dirname "$conf_path")"
+  cat > "$conf_path" <<EOF
+# LightClaw CI: improve long-RTT StaticPages archive uploads to Beijing.
+net.core.rmem_max = ${buffer_max}
+net.core.wmem_max = ${buffer_max}
+net.ipv4.tcp_rmem = 4096 87380 ${buffer_max}
+net.ipv4.tcp_wmem = 4096 65536 ${buffer_max}
+net.core.default_qdisc = ${qdisc}
+net.ipv4.tcp_congestion_control = ${congestion}
+net.ipv4.tcp_mtu_probing = 1
+net.ipv4.tcp_slow_start_after_idle = 0
+EOF
+
+  if sysctl -p "$conf_path"; then
+    ci_log "staticpages tcp tuning applied from ${conf_path}"
+    return 0
+  fi
+
+  ci_log "staticpages tcp tuning failed to apply from ${conf_path}; continuing without blocking preview build"
+  return 0
+}
+
 ci_is_unexpanded_setting() {
   [[ "$1" == *'${{'*'settings.'*'}}'* ]]
 }
@@ -68,6 +115,17 @@ ci_export_gongfeng_defaults() {
   export GIT_WOA_API_BASE="${GIT_WOA_API_BASE:-https://git.woa.com/api/v3}"
   export GITOPS_PROJECT_ID="${GITOPS_PROJECT_ID:-1731878}"
   export GITOPS_REPO_PATH="${GITOPS_REPO_PATH:-wisp/mono2}"
+}
+
+ci_create_runtime_snapshot() {
+  local source_ci_dir="${1:-${REPO_ROOT:-$(git rev-parse --show-toplevel)}/.ci}"
+  local snapshot_dir
+  snapshot_dir="$(mktemp -d)"
+
+  mkdir -p "$snapshot_dir/.ci"
+  cp "$source_ci_dir/init.sh" "$snapshot_dir/.ci/init.sh"
+  cp -R "$source_ci_dir/runtime" "$snapshot_dir/.ci/runtime"
+  printf '%s\n' "$snapshot_dir"
 }
 
 ci_require_gitops_validation_tools() {
@@ -510,6 +568,34 @@ ci_load_cloudflare_credentials() {
   fi
 }
 
+ci_load_tencentcloud_credentials() {
+  local secret_id_file="${TENCENTCLOUD_SECRET_ID_FILE:-/etc/lightclaw-ci/tencentcloud_secret_id}"
+  local secret_key_file="${TENCENTCLOUD_SECRET_KEY_FILE:-/etc/lightclaw-ci/tencentcloud_secret_key}"
+  local raw_secret_id=""
+  local raw_secret_key=""
+  local secret_id=""
+  local secret_key=""
+
+  if [[ ! -r "$secret_id_file" || ! -r "$secret_key_file" ]]; then
+    echo "missing Tencent Cloud credentials: provide ${secret_id_file} and ${secret_key_file}" >&2
+    return 1
+  fi
+
+  raw_secret_id="$(cat "$secret_id_file")"
+  raw_secret_key="$(cat "$secret_key_file")"
+  secret_id="$(printf '%s' "$raw_secret_id" | ci_read_secret_value)"
+  secret_key="$(printf '%s' "$raw_secret_key" | ci_read_secret_value)"
+
+  if [[ -z "$secret_id" || -z "$secret_key" ]]; then
+    echo "Tencent Cloud credentials loaded from files but at least one value is empty after trimming" >&2
+    return 1
+  fi
+
+  export TENCENTCLOUD_SECRET_ID="$secret_id"
+  export TENCENTCLOUD_SECRET_KEY="$secret_key"
+  ci_log "Tencent Cloud credentials loaded from local files (secret_id_len=${#secret_id}, secret_id_fingerprint=$(printf '%s' "$secret_id" | ci_fingerprint_secret), secret_key_len=${#secret_key}, secret_key_fingerprint=$(printf '%s' "$secret_key" | ci_fingerprint_secret))"
+}
+
 ci_load_edgeone_credentials() {
   local api_token_file="${EDGEONE_API_TOKEN_FILE:-/etc/lightclaw-ci/edgeone_api_token}"
   local raw_token=""
@@ -631,6 +717,7 @@ ci_load_registry_password() {
   local beijing_file="${TCR_BEIJING_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_beijing_password}"
   local beijing2_file="${TCR_BEIJING_SANDBOX2_PASSWORD_FILE:-${TCR_BEIJING_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_beijing_password}}"
   local shprod_file="${TCR_SHPROD_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_shprod_password}"
+  local sgprod_file="${TCR_SGPROD_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_sgprod_password}"
   local password_var=""
   local password_file=""
 
@@ -639,13 +726,17 @@ ci_load_registry_password() {
       password_var="${TCR_BEIJING_PASSWORD:-}"
       password_file="$beijing_file"
       ;;
-    beijing-sandbox-2)
+    beijing-sandbox-2|sandbox-bj-*)
       password_var="${TCR_BEIJING_SANDBOX2_PASSWORD:-${TCR_BEIJING_PASSWORD:-}}"
       password_file="$beijing2_file"
       ;;
     shprod)
       password_var="${TCR_SHPROD_PASSWORD:-}"
       password_file="$shprod_file"
+      ;;
+    sgprod)
+      password_var="${TCR_SGPROD_PASSWORD:-}"
+      password_file="$sgprod_file"
       ;;
     *)
       return 1
@@ -670,6 +761,7 @@ ci_set_registry_credentials() {
   local beijing_file="${TCR_BEIJING_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_beijing_password}"
   local beijing2_file="${TCR_BEIJING_SANDBOX2_PASSWORD_FILE:-${TCR_BEIJING_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_beijing_password}}"
   local shprod_file="${TCR_SHPROD_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_shprod_password}"
+  local sgprod_file="${TCR_SGPROD_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_sgprod_password}"
   local tcr_username="${TCR_USERNAME:-100045199955}"
   local raw_password=""
   local password=""
@@ -687,7 +779,7 @@ ci_set_registry_credentials() {
           source="env:TCR_BEIJING_PASSWORD"
         fi
         ;;
-      beijing-sandbox-2)
+      beijing-sandbox-2|sandbox-bj-*)
         if [[ -r "$beijing2_file" ]]; then
           source="file:$beijing2_file"
         elif [[ -n "${TCR_BEIJING_SANDBOX2_PASSWORD:-}" ]]; then
@@ -701,6 +793,13 @@ ci_set_registry_credentials() {
           source="file:$shprod_file"
         else
           source="env:TCR_SHPROD_PASSWORD"
+        fi
+        ;;
+      sgprod)
+        if [[ -r "$sgprod_file" ]]; then
+          source="file:$sgprod_file"
+        else
+          source="env:TCR_SGPROD_PASSWORD"
         fi
         ;;
     esac
@@ -748,6 +847,83 @@ ci_install_oras() {
   tar -xzf "${cache_root}/${archive}" -C "$install_dir" oras
   chmod +x "${install_dir}/oras"
   ci_log "installed oras at ${install_dir}/oras"
+}
+
+ci_ensure_tccli() {
+  if command -v tccli >/dev/null 2>&1; then
+    ci_log "tccli already present at $(command -v tccli)"
+    return 0
+  fi
+
+  ci_require_commands python3
+
+  local version="${TCCLI_VERSION_OVERRIDE:-3.1.90.1}"
+  local cache_root="${HOME}/.cache/lightclaw-ci/tccli"
+  local install_dir="${cache_root}/v${version}"
+  local bin="${install_dir}/venv/bin/tccli"
+
+  if [[ ! -x "$bin" ]]; then
+    ci_with_lock "tccli-${version}" ci_install_tccli "$version" "$install_dir"
+  else
+    ci_log "tccli ${version} already present at ${bin}"
+  fi
+
+  export PATH="${install_dir}/venv/bin:${PATH}"
+  export TCCLI_BIN="$bin"
+}
+
+ci_install_tccli() {
+  local version="$1"
+  local install_dir="$2"
+
+  mkdir -p "$install_dir"
+  ci_log "installing tccli ${version} into ${install_dir}"
+  rm -rf "${install_dir}/venv"
+  python3 -m venv "${install_dir}/venv" || return $?
+  "${install_dir}/venv/bin/python" -m pip install --upgrade pip || return $?
+  "${install_dir}/venv/bin/python" -m pip install "tccli==${version}" || return $?
+  chmod +x "${install_dir}/venv/bin/tccli" || return $?
+  ci_log "installed tccli at ${install_dir}/venv/bin/tccli"
+}
+
+ci_ensure_go() {
+  ci_require_commands curl tar
+
+  local version="${GO_VERSION_OVERRIDE:-1.25.4}"
+  local os arch archive cache_root install_dir bin url
+
+  os="$(ci_os_name)"
+  arch="$(ci_arch_name)"
+  archive="go${version}.${os}-${arch}.tar.gz"
+  cache_root="${HOME}/.cache/lightclaw-ci/go"
+  install_dir="${cache_root}/go${version}.${os}-${arch}"
+  bin="${install_dir}/bin/go"
+  url="https://go.dev/dl/${archive}"
+
+  if [[ ! -x "$bin" ]]; then
+    ci_with_lock "go-${version}-${os}-${arch}" ci_install_go "$url" "$archive" "$cache_root" "$install_dir"
+  else
+    ci_log "go ${version} already present at ${bin}"
+  fi
+
+  export PATH="${install_dir}/bin:${PATH}"
+  export GO_BIN="$bin"
+  export GOTOOLCHAIN=local
+  ci_log "go ready at ${GO_BIN} ($("$GO_BIN" version))"
+}
+
+ci_install_go() {
+  local url="$1"
+  local archive="$2"
+  local cache_root="$3"
+  local install_dir="$4"
+
+  rm -rf "$install_dir"
+  mkdir -p "$cache_root" "$install_dir"
+  ci_download_file "$url" "${cache_root}/${archive}"
+  tar -xzf "${cache_root}/${archive}" -C "$install_dir" --strip-components=1
+  chmod +x "${install_dir}/bin/go"
+  ci_log "installed go at ${install_dir}/bin/go"
 }
 
 ci_ensure_node() {

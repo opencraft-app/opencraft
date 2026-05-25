@@ -17,6 +17,7 @@
 #   --remote-dir <path>      可选，远端工作目录，默认 /opt/lightclaw-image
 #   --version <ver>          可选，传给 build.sh 的 openclaw 版本
 #   --runtime <kind>         可选，运行时类型：openclaw | hermes
+#   --hermes-version <ver>   可选，Hermes COS 版本，如 hermes-agent-v20260520；默认由 build.sh 读取 latest.json
 #   --envd-only              可选，仅安装 envd 及 systemd 服务
 #   --upload-only            可选，仅上传构建材料，不在远端执行 build.sh
 #   --skip-build-agent       可选，跳过本地构建，直接使用现有二进制
@@ -57,6 +58,7 @@ Options:
   --remote-dir <path>      Remote working directory. Default: /opt/lightclaw-image
   --version <ver>          Optional openclaw version forwarded to build.sh
   --runtime <kind>         Runtime flavor: openclaw | hermes (default: openclaw)
+  --hermes-version <ver>   Hermes COS version, for example hermes-agent-v20260520 (default: latest.json)
   --envd-only              Install only the envd daemon and its systemd service
   --upload-only            Upload build materials only; do not execute build.sh remotely
   --base-only              Install only the system base layer (node, python, chromium, etc.)
@@ -99,6 +101,7 @@ APP_ONLY=false
 ONLY_PLUGINS=""
 QQBOT_VERSION=""
 WEIXIN_VERSION=""
+HERMES_VERSION=""
 SKILLS_MODE=""
 CUSTOM_SKILLS=""
 SKIP_BUILD_AGENT=false
@@ -150,6 +153,10 @@ while [ $# -gt 0 ]; do
       ;;
     --runtime)
       RUNTIME_KIND="$2"
+      shift 2
+      ;;
+    --hermes-version)
+      HERMES_VERSION="$2"
       shift 2
       ;;
     --envd-only)
@@ -282,6 +289,9 @@ if [ -n "${OPENCLAW_VERSION}" ]; then
 fi
 if [ "${RUNTIME_KIND}" != "openclaw" ]; then
   REMOTE_CMD="${REMOTE_CMD} --runtime '${RUNTIME_KIND}'"
+fi
+if [ -n "${HERMES_VERSION}" ]; then
+  REMOTE_CMD="${REMOTE_CMD} --hermes-version '${HERMES_VERSION}'"
 fi
 if [ "${ENVD_ONLY}" = true ]; then
   REMOTE_CMD="${REMOTE_CMD} --envd-only"

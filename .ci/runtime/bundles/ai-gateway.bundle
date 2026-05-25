@@ -22,6 +22,7 @@ bundles:
     - ai-gateway/k8s/overlays/beijing-sandbox
     - ai-gateway/k8s/overlays/beijing-sandbox-2
     - ai-gateway/k8s/overlays/shprod
+    - ai-gateway/k8s/overlays/sgprod
     - ai-gateway/deploy/Dockerfile
     - ai-gateway/openapi.yaml
     exit_condition: Can be removed only after the deployable contract moves to an
@@ -57,3 +58,4 @@ bundles:
       beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/ai-gateway
       beijing-sandbox-2: lightclaw-bj8.tencentcloudcr.com/lightclaw/ai-gateway
       shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/ai-gateway
+      sgprod: lightclaw-sgprod.tencentcloudcr.com/lightclaw/ai-gateway

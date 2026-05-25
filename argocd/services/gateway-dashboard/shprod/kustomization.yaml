@@ -98,3 +98,13 @@ replacements:
           name: gateway-dashboard
         fieldPaths:
           - spec.template.metadata.annotations.[gateway-dashboard.clawhub.dev/redeploy-at]
+  - source:
+      kind: ConfigMap
+      name: gateway-dashboard-platform-values
+      fieldPath: data.GATEWAY_DASHBOARD_CLS_TOPIC_ID
+    targets:
+      - select:
+          kind: LogConfig
+          name: gateway-dashboard-runtime
+        fieldPaths:
+          - spec.clsDetail.topicId

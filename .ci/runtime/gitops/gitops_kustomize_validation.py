@@ -21,7 +21,7 @@ from support.yaml import load_mapping
 CATALOG_DIR_TEMPLATE = "argocd/catalogs/sandbox/{env}"
 PLAYGROUND_CATALOG_DIR_TEMPLATE = "argocd/catalogs/playground/beijing-playground/{env}"
 SUPPORTED_SANDBOX_ENVS = {"beijing-sandbox", "beijing-sandbox-2"}
-SUPPORTED_DIRECT_APP_ENVS = {"shprod"}
+SUPPORTED_DIRECT_APP_ENVS = {"shprod", "sgprod"}
 PLACEHOLDER_RE = re.compile(r"\bREPLACE_[A-Z0-9_]+\b")
 
 
@@ -39,6 +39,11 @@ def load_targets(repo_root: Path, env: str, changed_only: bool = False) -> list[
     if env not in SUPPORTED_SANDBOX_ENVS and not is_playground_env(env):
         raise ValueError(f"unsupported env for strict kustomize validation: {env}")
 
+    changed_services = changed_catalog_services(repo_root, env) if changed_only else None
+    return load_catalog_targets(repo_root, env, changed_services)
+
+
+def load_catalog_targets(repo_root: Path, env: str, service_names: set[str] | None = None) -> list[KustomizeTarget]:
     catalog_dir_rel = catalog_dir_for_env(env)
     catalog_dir = repo_root / catalog_dir_rel
     if not catalog_dir.is_dir():
@@ -52,10 +57,12 @@ def load_targets(repo_root: Path, env: str, changed_only: bool = False) -> list[
         source_path = str(data.get("sourcePath", "")).strip()
         if not service or catalog_env != env or not source_path:
             raise ValueError(f"{catalog_file}: missing service/env/sourcePath for {env}")
+        if service_names is not None and service not in service_names:
+            continue
         if not (repo_root / source_path / "kustomization.yaml").is_file():
             raise ValueError(f"{catalog_file}: missing kustomization.yaml under {source_path}")
         targets.append(KustomizeTarget(app_name=f"{service}-{env}", source_path=source_path))
-    if not targets:
+    if not targets and service_names is None:
         raise ValueError(f"no catalog files found under {catalog_dir_rel}")
     return targets
 
@@ -71,6 +78,40 @@ def catalog_dir_for_env(env: str) -> str:
 
 
 def changed_direct_app_services(repo_root: Path, env: str) -> set[str]:
+    paths = changed_files(repo_root, env)
+    services: set[str] = set()
+    service_prefix = "argocd/services/"
+    app_prefix = f"argocd/apps/{env}/"
+    for path in paths:
+        if path.startswith(service_prefix):
+            parts = path.split("/")
+            if len(parts) >= 4 and parts[3] == env:
+                services.add(parts[2])
+        elif path.startswith(app_prefix) and path.endswith(".yaml"):
+            services.add(Path(path).stem)
+    return services
+
+
+def changed_catalog_services(repo_root: Path, env: str) -> set[str]:
+    paths = changed_files(repo_root, env)
+    services: set[str] = set()
+    service_prefix = "argocd/services/"
+    catalog_prefix = f"{catalog_dir_for_env(env)}/"
+    for path in paths:
+        if path.startswith(service_prefix):
+            parts = path.split("/")
+            if len(parts) >= 4 and (parts[3] == env or parts[3] in {"common", "profiles"}):
+                services.add(parts[2])
+        elif path.startswith(catalog_prefix) and path.endswith(".yaml"):
+            services.add(Path(path).stem)
+        else:
+            source_service = source_service_for_path(path)
+            if source_service:
+                services.add(source_service)
+    return services
+
+
+def changed_files(repo_root: Path, env: str) -> list[str]:
     result = subprocess.run(
         ["git", "diff", "--name-only", "HEAD~1..HEAD"],
         cwd=repo_root,
@@ -88,19 +129,29 @@ def changed_direct_app_services(repo_root: Path, env: str) -> set[str]:
         )
     if result.returncode != 0:
         raise ValueError(f"failed to inspect changed files for {env}: {stderr_summary(result.stderr)}")
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
 
-    services: set[str] = set()
-    service_prefix = "argocd/services/"
-    app_prefix = f"argocd/apps/{env}/"
-    for raw_path in result.stdout.splitlines():
-        path = raw_path.strip()
-        if path.startswith(service_prefix):
-            parts = path.split("/")
-            if len(parts) >= 4 and parts[3] == env:
-                services.add(parts[2])
-        elif path.startswith(app_prefix) and path.endswith(".yaml"):
-            services.add(Path(path).stem)
-    return services
+
+def source_service_for_path(path: str) -> str:
+    if path.startswith("user/auth/"):
+        return "lightclaw-auth"
+    first = path.split("/", 1)[0]
+    if first in {
+        "admin-gateway",
+        "ai-gateway",
+        "ctl",
+        "frontend",
+        "gateway-dashboard",
+        "nextgen-dashboard",
+        "payment",
+        "sandbox",
+        "service-gateway",
+        "session",
+        "subscription",
+        "trade",
+    }:
+        return first
+    return ""
 
 
 def load_direct_app_targets(repo_root: Path, env: str, service_names: set[str] | None = None) -> list[KustomizeTarget]:
@@ -200,7 +251,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--changed-only",
         action="store_true",
-        help="For direct Application envs, validate only apps touched by the current HEAD commit.",
+        help="Validate only apps touched by the current HEAD commit for direct app and catalog environments.",
     )
     return parser.parse_args()
 

@@ -4,7 +4,9 @@ name: GitOps 验收与自动合并
 on:
   push:
     branches:
-      - promote-*
+      - promote-beijing-sandbox-*
+      - promote-beijing-sandbox-2-*
+      - promote-sandbox-bj-*
 
 stages:
   - name: GitOps MR 前置验收
@@ -20,7 +22,7 @@ stages:
           - checkout: self
             name: 拉取代码
             with:
-              fetchDepth: 50
+              fetchDepth: 0
           - name: 校验 promote 分支
             shell: bash
             env:
@@ -60,7 +62,7 @@ stages:
           - checkout: self
             name: 拉取代码
             with:
-              fetchDepth: 50
+              fetchDepth: 0
           - name: 按环境策略自动合并 GitOps MR
             shell: bash
             run: |
@@ -90,7 +92,7 @@ stages:
           - checkout: self
             name: 拉取代码
             with:
-              fetchDepth: 50
+              fetchDepth: 0
           - name: 校验 GitOps 合并状态并评论 MR
             shell: bash
             run: |
@@ -120,7 +122,7 @@ stages:
           - checkout: self
             name: 拉取代码
             with:
-              fetchDepth: 50
+              fetchDepth: 0
           - name: 清理北京发布分支
             shell: bash
             run: |

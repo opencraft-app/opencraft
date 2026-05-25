@@ -7,6 +7,7 @@ bundles:
     allowed_paths:
     - frontend/k8s/base
     - frontend/k8s/overlays/shprod
+    - frontend/k8s/overlays/sgprod
     - frontend/deploy/Dockerfile
     exit_condition: Can be removed only after the deployable contract moves to an
       explicit imported package path.
@@ -18,5 +19,7 @@ bundles:
     dockerfile: frontend/deploy/Dockerfile
     build_context: frontend
     image_repo:
+      beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/frontend
       shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/frontend
+      sgprod: lightclaw-sgprod.tencentcloudcr.com/lightclaw/frontend
     publish_paths_by_env: {}

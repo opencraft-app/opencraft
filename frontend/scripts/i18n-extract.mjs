@@ -50,11 +50,13 @@ function listSourceFiles(dir) {
 }
 
 /**
- * 从源码里提取 t("中文") / t('中文') / t(`中文`) 调用。
+ * 从源码里提取 t("中文") / t('中文') / t(`中文`) / rawT("中文") 调用。
  * 为避免误匹配其他同名 t（比如 mathjs 之类），要求整段字符串**包含至少一个汉字**。
+ * 说明：rawT 是 i18n 模块导出的命令式翻译函数（用于非 React 上下文），
+ * 与 React Hook 的 t 语义一致，必须一并被字典收录。
  */
 const CJK_RE = /[\u4e00-\u9fff]/;
-const T_CALL_RE = /(?<![\w$])t\(\s*(["'`])((?:\\.|(?!\1)[\s\S])*?)\1/g;
+const T_CALL_RE = /(?<![\w$])(?:rawT|t)\(\s*(["'`])((?:\\.|(?!\1)[\s\S])*?)\1/g;
 
 function extractFromFile(file) {
   const content = readFileSync(file, "utf8");

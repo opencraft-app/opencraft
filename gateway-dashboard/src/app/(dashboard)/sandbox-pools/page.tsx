@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -52,8 +52,10 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { DataTable } from "@/components/shared/data-table";
 import { PageHeader } from "@/components/shared/page-header";
+import { ensureItems } from "@/lib/page-null-guards";
 import { formatDateTime } from "@/lib/utils";
 import {
+  isLegacySandboxPool,
   useCreateSandboxPool,
   useSandboxPoolInstanceSummaries,
   useSandboxPoolInstances,
@@ -145,6 +147,47 @@ function poolStatusBadge(status: SandboxPool["status"]) {
   return <Badge variant="secondary">paused</Badge>;
 }
 
+function poolCapacityStateBadge(state?: SandboxPool["capacity_state"]) {
+  switch (state) {
+    case "active":
+      return <Badge variant="default">active</Badge>;
+    case "draining":
+    case "retiring":
+      return <Badge variant="secondary">{state}</Badge>;
+    case "paused":
+    case "quarantined":
+      return <Badge variant="destructive">{state}</Badge>;
+    case "":
+    case undefined:
+      return <Badge variant="outline">unknown</Badge>;
+    default:
+      return <Badge variant="outline">{state}</Badge>;
+  }
+}
+
+function PoolBindingCell({ pool }: { pool: SandboxPool }) {
+  if (isLegacySandboxPool(pool)) {
+    return (
+      <div className="space-y-1">
+        <Badge variant="outline">legacy</Badge>
+        <p className="max-w-[220px] text-xs leading-5 text-muted-foreground">
+          未绑定 Template Class / SKU，创建时应走 legacy pool 模式。
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-1">
+      <Badge variant="secondary">SKU 绑定</Badge>
+      <div className="space-y-0.5 font-mono text-xs">
+        <div>tc: {pool.template_class_id || "-"}</div>
+        <div>sku: {pool.sku_id || "-"}</div>
+      </div>
+    </div>
+  );
+}
+
 function PauseReasonCell({ reason }: { reason?: string }) {
   const normalized = reason?.trim();
   if (!normalized) {
@@ -195,7 +238,7 @@ function PoolInstancesDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const { data, isLoading, refetch, isFetching } = useSandboxPoolInstances(pool?.id ?? null, open);
-  const items = data ?? [];
+  const items = ensureItems(data);
 
   const columns = useMemo<ColumnDef<SandboxPoolInstance>[]>(
     () => [
@@ -254,7 +297,8 @@ export default function SandboxPoolsPage() {
   const [instancesPool, setInstancesPool] = useState<SandboxPool | null>(null);
   const [statusUpdatingPoolID, setStatusUpdatingPoolID] = useState<string | null>(null);
 
-  const { data: pools = [], isLoading, refetch } = useSandboxPools();
+  const { data: poolsData, isLoading, refetch } = useSandboxPools();
+  const pools = ensureItems(poolsData);
   const createPool = useCreateSandboxPool();
   const updatePool = useUpdateSandboxPool();
   const instanceQueries = useSandboxPoolInstanceSummaries(pools.map((pool) => pool.id));
@@ -267,7 +311,7 @@ export default function SandboxPoolsPage() {
   const instanceSummaryByPoolId = useMemo(() => {
     return pools.reduce<Record<string, Record<string, number>>>((acc, pool, index) => {
       const counts: Record<string, number> = {};
-      const instances = instanceQueries[index]?.data ?? [];
+      const instances = ensureItems(instanceQueries[index]?.data);
       for (const instance of instances) {
         counts[instance.state] = (counts[instance.state] ?? 0) + 1;
       }
@@ -282,11 +326,11 @@ export default function SandboxPoolsPage() {
     setDialogOpen(true);
   }
 
-  function openEdit(pool: SandboxPool) {
+  const openEdit = useCallback((pool: SandboxPool) => {
     setEditingPool(pool);
     form.reset(poolToFormValues(pool));
     setDialogOpen(true);
-  }
+  }, [form]);
 
   async function onSubmit(values: PoolFormValues) {
     try {
@@ -307,7 +351,7 @@ export default function SandboxPoolsPage() {
     }
   }
 
-  async function updatePoolStatus(pool: SandboxPool, status: SandboxPool["status"]) {
+  const updatePoolStatus = useCallback(async (pool: SandboxPool, status: SandboxPool["status"]) => {
     try {
       setStatusUpdatingPoolID(pool.id);
       await updatePool.mutateAsync({
@@ -334,7 +378,7 @@ export default function SandboxPoolsPage() {
     } finally {
       setStatusUpdatingPoolID(null);
     }
-  }
+  }, [updatePool]);
 
   const columns = useMemo<ColumnDef<SandboxPool>[]>(
     () => [
@@ -350,6 +394,23 @@ export default function SandboxPoolsPage() {
               <p className="max-w-[220px] line-clamp-2 text-xs leading-5 text-muted-foreground">
                 {row.original.pause_reason?.trim() || "暂停中，未记录原因"}
               </p>
+            ) : null}
+          </div>
+        ),
+      },
+      {
+        id: "binding",
+        header: "Template / SKU",
+        cell: ({ row }) => <PoolBindingCell pool={row.original} />,
+      },
+      {
+        accessorKey: "capacity_state",
+        header: "容量状态",
+        cell: ({ row }) => (
+          <div className="space-y-1">
+            {poolCapacityStateBadge(row.original.capacity_state)}
+            {typeof row.original.max_capacity === "number" && row.original.max_capacity > 0 ? (
+              <p className="text-xs text-muted-foreground">max {row.original.max_capacity}</p>
             ) : null}
           </div>
         ),
@@ -443,7 +504,7 @@ export default function SandboxPoolsPage() {
         ),
       },
     ],
-    [instanceSummaryByPoolId, statusUpdatingPoolID]
+    [instanceSummaryByPoolId, openEdit, statusUpdatingPoolID, updatePoolStatus]
   );
 
   return (

@@ -46,6 +46,16 @@ replacements:
   - source:
       kind: ConfigMap
       name: auth-platform-values
+      fieldPath: data.AUTH_OAUTH_RETURN_TO_ALLOWED_HOSTS
+    targets:
+      - select:
+          kind: ConfigMap
+          name: lightclaw-auth-config
+        fieldPaths:
+          - data.LIGHTCLAW_OAUTH_RETURN_TO_ALLOWED_HOSTS
+  - source:
+      kind: ConfigMap
+      name: auth-platform-values
       fieldPath: data.AUTH_QQ_APP_ID
     targets:
       - select:

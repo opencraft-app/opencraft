@@ -4,12 +4,17 @@ namespace: ctl
 components:
 - ../common
 - ../profiles/sandbox
+resources:
+- ctl-conf-rewrite.yaml
 generators:
 - ksops-assets-generator.yaml
 configMapGenerator:
 - name: ctl-platform-values
   envs:
   - ctl-platform.env
+- name: ctl-conf-common
+  files:
+  - server_conf.toml=conf/server_conf.toml
 - name: ctl-soul-templates
   files:
   - SOUL-gentle.md=souls/SOUL-gentle.md

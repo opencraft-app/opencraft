@@ -12,11 +12,15 @@ import subprocess
 import sys
 from pathlib import Path
 
-from contracts.bundles import ImageTarget, load_bundle, load_manifest, require_build_metadata
+from contracts.bundles import ImageTarget, is_playground_env, load_bundle, load_manifest, require_build_metadata
 
 
 RUNTIME_DIR = Path(__file__).resolve().parents[1]
 REPO_ROOT = RUNTIME_DIR.parents[1]
+
+
+def playground_frontend_auth_api_base_url(env: str) -> str:
+    return f"https://api-{env}.lightclaw.tech"
 
 
 def parse_args() -> argparse.Namespace:
@@ -79,8 +83,13 @@ def single_target_from_bundle(service: str, dockerfile: str, build_context: str,
     )
 
 
-def build_target(target: ImageTarget, tag: str, platform: str, push: bool) -> str:
-    image = f"{target.image_repo}:{tag}"
+def resolve_docker_build_args(service: str, env: str) -> dict[str, str]:
+    if service == "frontend" and is_playground_env(env):
+        return {"VITE_AUTH_API_BASE_URL": playground_frontend_auth_api_base_url(env)}
+    return {}
+
+
+def docker_build_command(target: ImageTarget, image: str, platform: str, build_args: dict[str, str]) -> list[str]:
     cmd = [
         "docker",
         "build",
@@ -90,8 +99,19 @@ def build_target(target: ImageTarget, tag: str, platform: str, push: bool) -> st
         target.dockerfile,
         "-t",
         image,
-        target.build_context,
     ]
+    for key, value in sorted(build_args.items()):
+        cmd.extend(["--build-arg", f"{key}={value}"])
+    cmd.append(target.build_context)
+    return cmd
+
+
+def build_target(target: ImageTarget, tag: str, platform: str, push: bool, build_args: dict[str, str]) -> str:
+    image = f"{target.image_repo}:{tag}"
+    cmd = docker_build_command(target, image, platform, build_args)
+    if build_args:
+        rendered_args = " ".join(f"{key}={value}" for key, value in sorted(build_args.items()))
+        print(f"docker build args: {rendered_args}")
     subprocess.run(cmd, cwd=REPO_ROOT, check=True)
     if push:
         docker_login(target.image_repo)
@@ -115,9 +135,10 @@ def main() -> int:
         single_target_from_bundle(args.service, bundle.dockerfile or "", bundle.build_context or "", bundle.image_repo or "")
     ]
 
+    build_args = resolve_docker_build_args(args.service, args.env)
     built: dict[str, str] = {}
     for target in targets:
-        image = build_target(target, args.tag, args.platform, args.push)
+        image = build_target(target, args.tag, args.platform, args.push, build_args)
         built[target.image_key or f"{args.service.upper().replace('-', '_')}_IMAGE"] = image
 
     output = next(iter(built.values())) if len(built) == 1 and not bundle.image_targets else encode_image_payload(built)

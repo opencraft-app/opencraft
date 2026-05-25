@@ -1,0 +1,142 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cloudagent
+  labels:
+    cloudagent.dev/environment: shprod
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gateway-config
+  namespace: cloudagent
+  labels:
+    cloudagent.dev/environment: shprod
+data:
+  GATEWAY_ADDR: ":8080"
+  GATEWAY_DATA_DIR: "/tmp/gateway-data"
+  GATEWAY_WORKER_MODE: "agent_injected"
+  GATEWAY_AGS_REQUEST_TIMEOUT_SECONDS: "300"
+  GATEWAY_DEFAULT_TENANT_ID: "tenant-live"
+  GATEWAY_DEFAULT_PROJECT_ID: "project-live"
+  TOKENHUB_MODEL: "minimax-m2.7"
+  GATEWAY_AGS_DOMAIN: "ap-shanghai.tencentags.com"
+  GATEWAY_AGS_API_URL: "https://api.ap-shanghai.tencentags.com"
+  E2B_DOMAIN: "ap-shanghai.tencentags.com"
+  GATEWAY_AGS_TEMPLATE: "REPLACE_ME_SHPROD_AGS_TEMPLATE"
+  GATEWAY_AGENT_SIDECAR_INNER_TEMPLATE: "REPLACE_ME_SHPROD_AGS_TEMPLATE"
+  GATEWAY_AGENT_SIDECAR_URL: "REPLACE_ME_SHPROD_CLOUDAGENT_SIDECAR_URL"
+  GATEWAY_AGENT_SIDECAR_SHA256: "REPLACE_ME_SHPROD_CLOUDAGENT_SIDECAR_SHA256"
+  GATEWAY_SANDBOX_HOST_URL: "REPLACE_ME_SHPROD_SANDBOX_HOST_URL"
+  GATEWAY_SANDBOX_HOST_SHA256: "REPLACE_ME_SHPROD_SANDBOX_HOST_SHA256"
+  GATEWAY_TALOS_TEMPLATE: "498c6c11-74d7-426e-bdb1-13d8aa73997e"
+  CLOUDAGENT_WEB_SEARCH_PROVIDER: "tencent_wsa"
+  TENCENTCLOUD_WSA_ENDPOINT: "https://api.wsa.cloud.tencent.com/SearchPro"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: cloudagent
+  labels:
+    app.kubernetes.io/name: gateway
+    cloudagent.dev/environment: shprod
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: gateway
+        cloudagent.dev/environment: shprod
+    spec:
+      imagePullSecrets:
+        - name: tcr-regcred
+      containers:
+        - name: gateway
+          image: IMAGE_PLACEHOLDER
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: gateway-config
+          env:
+            - name: GATEWAY_AGS_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: gateway-runtime-secrets
+                  key: GATEWAY_AGS_API_KEY
+            - name: GATEWAY_TOKENHUB_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: gateway-runtime-secrets
+                  key: GATEWAY_TOKENHUB_API_KEY
+            - name: GATEWAY_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: gateway-runtime-secrets
+                  key: GATEWAY_API_KEY
+                  optional: true
+            - name: GATEWAY_TALOS_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: gateway-runtime-secrets
+                  key: GATEWAY_TALOS_API_KEY
+                  optional: true
+            - name: TENCENTCLOUD_WSA_APIKEY
+              valueFrom:
+                secretKeyRef:
+                  name: cloudagent-wsa-search-secrets
+                  key: TENCENTCLOUD_WSA_APIKEY
+                  optional: true
+          readinessProbe:
+            httpGet:
+              path: /v1/models
+              port: http
+              httpHeaders:
+                - name: X-Tenant-ID
+                  value: tenant-live
+                - name: X-Project-ID
+                  value: project-live
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          startupProbe:
+            httpGet:
+              path: /v1/models
+              port: http
+              httpHeaders:
+                - name: X-Tenant-ID
+                  value: tenant-live
+                - name: X-Project-ID
+                  value: project-live
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 24
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+  namespace: cloudagent
+  labels:
+    app.kubernetes.io/name: gateway
+    cloudagent.dev/environment: shprod
+spec:
+  type: LoadBalancer
+  selector:
+    app.kubernetes.io/name: gateway
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

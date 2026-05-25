@@ -1,0 +1,159 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: ai-gateway
+
+resources:
+  - ../../../../ai-gateway/k8s/base
+  - model-public-ingress.yaml
+  - tls-secrets.yaml
+
+patches:
+  - path: delete-namespace.yaml
+  - path: delete-default-serviceaccount.yaml
+
+generators:
+  - ksops-secret-generator.yaml
+
+generatorOptions:
+  disableNameSuffixHash: true
+
+configMapGenerator:
+  - name: ai-gateway-platform-values
+    envs:
+      - ai-gateway-platform.env
+  - name: gateway-backend-config
+    files:
+      - config.yaml=config.yaml
+
+replacements:
+  - source:
+      kind: ConfigMap
+      name: ai-gateway-platform-values
+      fieldPath: data.AI_GATEWAY_MYSQL_HOST
+    targets:
+      - select:
+          kind: ConfigMap
+          name: ai-gateway-runtime-config
+        fieldPaths:
+          - data.MYSQL_HOST
+  - source:
+      kind: ConfigMap
+      name: ai-gateway-platform-values
+      fieldPath: data.AI_GATEWAY_MYSQL_PORT
+    targets:
+      - select:
+          kind: ConfigMap
+          name: ai-gateway-runtime-config
+        fieldPaths:
+          - data.MYSQL_PORT
+  - source:
+      kind: ConfigMap
+      name: ai-gateway-platform-values
+      fieldPath: data.AI_GATEWAY_REDIS_ADDR
+    targets:
+      - select:
+          kind: ConfigMap
+          name: ai-gateway-runtime-config
+        fieldPaths:
+          - data.REDIS_ADDR
+  - source:
+      kind: ConfigMap
+      name: ai-gateway-platform-values
+      fieldPath: data.AI_GATEWAY_MODEL_INTERNAL_LB_ID
+    targets:
+      - select:
+          kind: Ingress
+          name: gateway-model-internal
+        fieldPaths:
+          - metadata.annotations.[kubernetes.io/ingress.existLbId]
+        options:
+          create: true
+  - source:
+      kind: ConfigMap
+      name: ai-gateway-platform-values
+      fieldPath: data.AI_GATEWAY_MODEL_PUBLIC_HOST
+    targets:
+      - select:
+          kind: Ingress
+          name: gateway-model-public
+        fieldPaths:
+          - spec.tls.0.hosts.0
+          - spec.rules.0.host
+      - select:
+          kind: TkeServiceConfig
+          name: gateway-model-public-config
+        fieldPaths:
+          - spec.loadBalancer.l7Listeners.0.domains.0.domain
+          - spec.loadBalancer.l7Listeners.0.domains.0.rules.0.healthCheck.httpCheckDomain
+          - spec.loadBalancer.l7Listeners.0.domains.0.rules.1.healthCheck.httpCheckDomain
+          - spec.loadBalancer.l7Listeners.0.domains.0.rules.2.healthCheck.httpCheckDomain
+          - spec.loadBalancer.l7Listeners.0.domains.0.rules.3.healthCheck.httpCheckDomain
+          - spec.loadBalancer.l7Listeners.1.defaultServer
+          - spec.loadBalancer.l7Listeners.1.domains.0.domain
+          - spec.loadBalancer.l7Listeners.1.domains.0.rules.0.healthCheck.httpCheckDomain
+          - spec.loadBalancer.l7Listeners.1.domains.0.rules.1.healthCheck.httpCheckDomain
+          - spec.loadBalancer.l7Listeners.1.domains.0.rules.2.healthCheck.httpCheckDomain
+          - spec.loadBalancer.l7Listeners.1.domains.0.rules.3.healthCheck.httpCheckDomain
+  - source:
+      kind: ConfigMap
+      name: ai-gateway-platform-values
+      fieldPath: data.AI_GATEWAY_MODEL_PUBLIC_TLS_SECRET_NAME
+    targets:
+      - select:
+          kind: Ingress
+          name: gateway-model-public
+        fieldPaths:
+          - spec.tls.0.secretName
+  - source:
+      kind: ConfigMap
+      name: ai-gateway-platform-values
+      fieldPath: data.AI_GATEWAY_MODEL_PUBLIC_TLS_CERT_ID
+    targets:
+      - select:
+          kind: Secret
+          name: llm-lightvela-ai-tls
+        fieldPaths:
+          - metadata.annotations.qcloud_cert_id
+          - stringData.qcloud_cert_id
+  - source:
+      kind: ConfigMap
+      name: ai-gateway-platform-values
+      fieldPath: data.AI_GATEWAY_NODE_POOL
+    targets:
+      - select:
+          kind: Deployment
+          name: gateway-backend
+        fieldPaths:
+          - spec.template.spec.nodeSelector.pool
+  - source:
+      kind: ConfigMap
+      name: ai-gateway-platform-values
+      fieldPath: data.AI_GATEWAY_IMAGE
+    targets:
+      - select:
+          kind: Deployment
+          name: gateway-backend
+        fieldPaths:
+          - spec.template.spec.containers.0.image
+          - spec.template.spec.containers.1.image
+  - source:
+      kind: ConfigMap
+      name: ai-gateway-platform-values
+      fieldPath: data.AI_GATEWAY_DEPLOYED_AT
+    targets:
+      - select:
+          kind: Deployment
+          name: gateway-backend
+        fieldPaths:
+          - spec.template.metadata.annotations.[ai-gateway.clawhub.dev/redeploy-at]
+  - source:
+      kind: ConfigMap
+      name: ai-gateway-platform-values
+      fieldPath: data.AI_GATEWAY_INTERNAL_SUBNET_ID
+    targets:
+      - select:
+          kind: Service
+          name: gateway-internal
+        fieldPaths:
+          - metadata.annotations.[service.kubernetes.io/qcloud-loadbalancer-internal-subnetid]

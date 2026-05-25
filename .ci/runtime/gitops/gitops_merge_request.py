@@ -127,8 +127,8 @@ def is_auto_mergeable(mr: Dict[str, Any]) -> bool:
 
 
 def next_stage_after_merge(source_branch: str) -> str:
-    if source_branch.startswith("promote-shprod-"):
-        return "- 下一阶段：上海生产进入待同步状态；人工确认 DB readiness 后执行 Argo sync"
+    if source_branch.startswith(("promote-shprod-", "promote-sgprod-")):
+        return "- 下一阶段：生产环境进入待同步状态；人工确认 DB readiness 后执行 Argo sync"
     return "- 下一阶段：等待 Argo CD 收敛并校验 live workload image"
 
 

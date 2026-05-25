@@ -22,7 +22,6 @@
 
 - `admin-gateway-runtime-secrets.sops.yaml`
 - `ai-gateway-runtime-secrets.sops.yaml`
-- `ctl-conf-common.sops.yaml`
 - `ctl-conf-rewrite.sops.yaml`
 - `ctl-runtime-secrets.sops.yaml`
 - `gateway-dashboard-runtime-secrets.sops.yaml`

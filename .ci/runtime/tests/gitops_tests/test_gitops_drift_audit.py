@@ -20,6 +20,7 @@ from gitops.gitops_drift_audit import (
     ExpectedApp,
     build_alert_content,
     evaluate_drift,
+    expected_inventory_drifts,
     load_expected_apps,
     notify_if_needed,
     resolve_wework_webhook,
@@ -254,6 +255,32 @@ class GitOpsDriftAuditTests(unittest.TestCase):
             self.assertEqual(apps[0].project, "beijing-sandbox-2")
             self.assertEqual(apps[0].destination_name, "beijing-sandbox-2")
             self.assertEqual(apps[0].expected_images, ("example.com/ctl:sandbox2",))
+
+    def test_missing_sandbox2_catalog_is_reported_as_inventory_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "README.md").write_text("gitops\n")
+            git(repo, "init")
+            git(repo, "config", "user.email", "ci@example.com")
+            git(repo, "config", "user.name", "CI")
+            git(repo, "add", ".")
+            git(repo, "commit", "-m", "gitops")
+
+            apps = load_expected_apps(repo, "beijing-sandbox-2", "HEAD")
+            drifts = expected_inventory_drifts("beijing-sandbox-2", "HEAD", apps)
+
+            self.assertEqual(apps, [])
+            self.assertEqual(
+                drifts,
+                [
+                    Drift(
+                        "beijing-sandbox-2/catalog",
+                        "gitops.catalog",
+                        "argocd/catalogs/sandbox/beijing-sandbox-2/*.yaml",
+                        "missing at HEAD",
+                    )
+                ],
+            )
 
     def test_no_drift_does_not_send_wework_alert(self) -> None:
         called = False

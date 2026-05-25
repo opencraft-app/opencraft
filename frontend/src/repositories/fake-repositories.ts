@@ -56,6 +56,7 @@ const mockUser = (input: { email?: string; phone?: string; name?: string }): Use
 const toSessionSnapshot = (user: User): AuthSessionSnapshot => ({
   user,
   currentSubscription: null,
+  impersonated: false,
   authenticatedAt: nowIso(),
 });
 

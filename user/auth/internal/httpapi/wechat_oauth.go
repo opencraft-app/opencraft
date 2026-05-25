@@ -96,15 +96,20 @@ func (h *Handler) StartWeChatOAuth(ctx *gin.Context) {
 		return
 	}
 
-	state, err := newOAuthState()
+	nonce, err := newOAuthState()
 	if err != nil {
 		ctx.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+	startState, err := buildOAuthStartState(ctx.Request, "wechat", wechatOAuthStateCookiePath, h.wechatOAuth.redirectURIForRequest(ctx.Request), nonce)
+	if err != nil {
+		ctx.AbortWithStatus(http.StatusBadRequest)
 		return
 	}
 
 	http.SetCookie(ctx.Writer, &http.Cookie{
 		Name:     wechatOAuthStateCookieName,
-		Value:    state,
+		Value:    startState.CookieValue,
 		Path:     wechatOAuthStateCookiePath,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
@@ -113,12 +118,50 @@ func (h *Handler) StartWeChatOAuth(ctx *gin.Context) {
 	})
 	setOAuthReturnToCookie(ctx, wechatOAuthReturnToCookieName, wechatOAuthStateCookiePath, readReturnToFromRequest(ctx.Request), h.cookieSecure, h.wechatOAuth.stateTTL, h.validatedReturnToURL)
 
-	ctx.Redirect(http.StatusTemporaryRedirect, h.wechatOAuth.authorizeURL(state, h.wechatOAuth.redirectURIForRequest(ctx.Request)))
+	ctx.Redirect(http.StatusTemporaryRedirect, h.wechatOAuth.authorizeURL(startState.StateParam, startState.RedirectURI))
 }
 
 func (h *Handler) HandleWeChatOAuthCallback(ctx *gin.Context) {
 	if h.wechatOAuth == nil {
 		ctx.AbortWithStatus(http.StatusNotFound)
+		return
+	}
+
+	code := strings.TrimSpace(ctx.Query("code"))
+	state := strings.TrimSpace(ctx.Query("state"))
+	logger := requestLogger(ctx, nil)
+	exchangeRedirectURI := h.wechatOAuth.redirectURIForRequest(ctx.Request)
+
+	if relayState, ok := parseOAuthRelayState(state); ok {
+		if err := validateOAuthRelayStateForProvider("wechat", relayState); err != nil {
+			logger.Warn("wechat oauth callback failed", "stage", "relay_state_validation", "err", err)
+			ctx.Redirect(http.StatusTemporaryRedirect, h.wechatOAuth.frontendURL(ctx.Request, "/?oauth_error=wechat_state_mismatch"))
+			return
+		}
+		if isOAuthRelayIssuerCallback(ctx.Request, relayState) {
+			target, err := relayCallbackURLWithOriginalQuery(relayState.TargetCallbackURI, ctx.Request.URL.RawQuery)
+			if err != nil {
+				logger.Warn("wechat oauth relay callback failed", "stage", "target_query", "err", err)
+				ctx.Redirect(http.StatusTemporaryRedirect, h.wechatOAuth.frontendURL(ctx.Request, "/?oauth_error=wechat_state_mismatch"))
+				return
+			}
+			ctx.Redirect(http.StatusTemporaryRedirect, target)
+			return
+		}
+		if !isOAuthRelayTargetCallback(ctx.Request, relayState) {
+			logger.Warn("wechat oauth callback failed", "stage", "relay_target_mismatch")
+			ctx.Redirect(http.StatusTemporaryRedirect, h.wechatOAuth.frontendURL(ctx.Request, "/?oauth_error=wechat_state_mismatch"))
+			return
+		}
+		exchangeRedirectURI = relayState.IssuerRedirectURI
+		expectedState := ""
+		if cookie, err := ctx.Request.Cookie(wechatOAuthStateCookieName); err == nil {
+			expectedState = strings.TrimSpace(cookie.Value)
+		}
+		returnTo := readOAuthReturnToCookie(ctx.Request, wechatOAuthReturnToCookieName)
+		h.clearWeChatOAuthStateCookie(ctx)
+		clearOAuthReturnToCookie(ctx, wechatOAuthReturnToCookieName, wechatOAuthStateCookiePath, h.cookieSecure)
+		h.handleWeChatOAuthCallbackAfterState(ctx, code, relayState.Nonce, expectedState, returnTo, exchangeRedirectURI, logger)
 		return
 	}
 
@@ -129,10 +172,14 @@ func (h *Handler) HandleWeChatOAuthCallback(ctx *gin.Context) {
 	returnTo := readOAuthReturnToCookie(ctx.Request, wechatOAuthReturnToCookieName)
 	h.clearWeChatOAuthStateCookie(ctx)
 	clearOAuthReturnToCookie(ctx, wechatOAuthReturnToCookieName, wechatOAuthStateCookiePath, h.cookieSecure)
+	h.handleWeChatOAuthCallbackAfterState(ctx, code, state, expectedState, returnTo, exchangeRedirectURI, logger)
+}
 
-	code := strings.TrimSpace(ctx.Query("code"))
-	state := strings.TrimSpace(ctx.Query("state"))
-	logger := requestLogger(ctx, nil)
+func (h *Handler) handleWeChatOAuthCallbackAfterState(ctx *gin.Context, code string, state string, expectedState string, returnTo string, exchangeRedirectURI string, logger interface {
+	Warn(msg string, keysAndValues ...any)
+	Error(msg string, keysAndValues ...any)
+	Info(msg string, keysAndValues ...any)
+}) {
 	if code == "" || state == "" || expectedState == "" || state != expectedState {
 		logger.Warn(
 			"wechat oauth callback failed",
@@ -146,7 +193,7 @@ func (h *Handler) HandleWeChatOAuthCallback(ctx *gin.Context) {
 	}
 
 	requestCtx := ctx.Request.Context()
-	token, err := h.wechatOAuth.client.ExchangeCode(requestCtx, code, h.wechatOAuth.redirectURIForRequest(ctx.Request))
+	token, err := h.wechatOAuth.client.ExchangeCode(requestCtx, code, exchangeRedirectURI)
 	if err != nil || strings.TrimSpace(token.AccessToken) == "" {
 		logger.Error("wechat oauth callback failed", "stage", "exchange", "err", err)
 		ctx.Redirect(http.StatusTemporaryRedirect, h.wechatOAuth.frontendURL(ctx.Request, "/?oauth_error=wechat_exchange_failed"))

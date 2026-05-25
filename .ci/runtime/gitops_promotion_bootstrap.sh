@@ -127,7 +127,11 @@ ci_bootstrap_gitops_promotion_runtime() {
   mkdir -p "${runtime_dir}/.ci" "${runtime_dir}/.ci/runtime"
 
   ci_bootstrap_prepare_runtime_ref "$runtime_ref"
-  git show "${CI_RUNTIME_COMMIT}:.ci/init.sh" > "${runtime_dir}/.ci/init.sh"
+  if ! git show "${CI_RUNTIME_COMMIT}:.ci/init.sh" > "${runtime_dir}/.ci/init.sh"; then
+    ci_bootstrap_log "runtime commit ${CI_RUNTIME_COMMIT} does not contain .ci/init.sh; falling back to ${CI_RUNTIME_FALLBACK_REF:-origin/master}"
+    ci_bootstrap_prepare_runtime_ref "${CI_RUNTIME_FALLBACK_REF:-origin/master}"
+    git show "${CI_RUNTIME_COMMIT}:.ci/init.sh" > "${runtime_dir}/.ci/init.sh"
+  fi
   # shellcheck disable=SC1091
   source "${runtime_dir}/.ci/init.sh"
   ci_export_gongfeng_defaults

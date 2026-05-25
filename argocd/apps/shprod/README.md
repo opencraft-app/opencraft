@@ -25,10 +25,12 @@
 
 - `admin-gateway`
 - `ai-gateway`
+- `cloudagent-gateway`
 - `ctl`
 - `frontend`
 - `gateway-dashboard`
 - `lightclaw-auth`
+- `vibebase`
 - `nextgen-dashboard`
 - `payment`
 - `sandbox`
@@ -42,10 +44,12 @@
 - leaf projects:
   - `shprod-admin-gateway`
   - `shprod-ai-gateway`
+  - `shprod-cloudagent-gateway`
   - `shprod-ctl`
   - `shprod-frontend`
   - `shprod-gateway-dashboard`
   - `shprod-lightclaw-auth`
+  - `shprod-vibebase`
   - `shprod-payment`
   - `shprod-sandbox`
   - `shprod-service-gateway`

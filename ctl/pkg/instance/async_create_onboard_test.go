@@ -56,6 +56,7 @@ func (s *createTaskInstanceDaoStub) UpdateWithStatusPrecondition(_ pctx.Context,
 
 type createTaskSandboxAdapterStub struct {
 	createResp     *psandbox.Sandbox
+	pools          []psandbox.Pool
 	processBatches [][]psandbox.ProcessStreamEvent
 	processCalls   []psandbox.ProcessStartRequest
 	deletedIDs     []string
@@ -96,6 +97,9 @@ func (s *createTaskSandboxAdapterStub) ListSandboxes(context.Context, *psandbox.
 	return nil, nil
 }
 func (s *createTaskSandboxAdapterStub) ListPools(context.Context) ([]psandbox.Pool, error) {
+	if s.pools != nil {
+		return s.pools, nil
+	}
 	return nil, nil
 }
 func (s *createTaskSandboxAdapterStub) ListPoolInstances(context.Context, string) ([]psandbox.PoolInstance, error) {
@@ -132,7 +136,8 @@ type createTaskAiGatewayAdapterStub struct {
 		userID   string
 		nickname string
 	}
-	revoked []string
+	revokeErrByKeyID map[string]error
+	revoked          []string
 }
 
 func (s *createTaskAiGatewayAdapterStub) CreateApiKey(_ context.Context, _ string, _ string) (*paigateway.CreateApiKeyResponse, error) {
@@ -154,6 +159,11 @@ func (s *createTaskAiGatewayAdapterStub) EnsureUser(_ context.Context, userID st
 }
 func (s *createTaskAiGatewayAdapterStub) RevokeApiKey(_ context.Context, keyID string) error {
 	s.revoked = append(s.revoked, keyID)
+	if s.revokeErrByKeyID != nil {
+		if err := s.revokeErrByKeyID[keyID]; err != nil {
+			return err
+		}
+	}
 	return nil
 }
 func (s *createTaskAiGatewayAdapterStub) GetUserUsage(_ context.Context, _ string) (*paigateway.UserUsageResponse, error) {
@@ -193,6 +203,7 @@ func TestRunCreateInstanceTaskProvisionsAiGatewayOnCreate(t *testing.T) {
 	}
 	sandboxAdapter := &createTaskSandboxAdapterStub{
 		createResp: &psandbox.Sandbox{SandboxID: "sbx-create-onboard", TemplateID: "tpl-create"},
+		pools:      []psandbox.Pool{{ID: "tpl-create", Status: "active", CapacityState: "active"}},
 		processBatches: [][]psandbox.ProcessStreamEvent{
 			{{Stdout: "install ok", Status: "running"}, {Ended: true, ExitCode: 0, Status: "SUCCESS"}},
 			{{Stdout: "model set ok", Status: "running"}, {Ended: true, ExitCode: 0, Status: "SUCCESS"}},
@@ -232,15 +243,29 @@ func TestRunCreateInstanceTaskProvisionsAiGatewayOnCreate(t *testing.T) {
 		t.Fatalf("expected ensure user to run once before key creation, got %+v", aiGatewayAdapter.ensureCalls)
 	}
 	if len(sandboxAdapter.processCalls) != 2 {
-		t.Fatalf("expected install + model set process calls, got %d", len(sandboxAdapter.processCalls))
+		t.Fatalf("expected model cli ensure + model set process calls, got %d", len(sandboxAdapter.processCalls))
 	}
-	if !strings.Contains(sandboxAdapter.processCalls[0].Args[2], "curl -fsSL -z /usr/local/bin/harness") {
-		t.Fatalf("expected first process call to install harness, got %q", sandboxAdapter.processCalls[0].Args[2])
+	if !strings.Contains(sandboxAdapter.processCalls[0].Args[2], "command -v acli") || !strings.Contains(sandboxAdapter.processCalls[0].Args[2], "curl -fsSL -z /usr/local/bin/harness") {
+		t.Fatalf("expected first process call to prefer acli and fall back to harness install, got %q", sandboxAdapter.processCalls[0].Args[2])
 	}
-	if !strings.Contains(sandboxAdapter.processCalls[1].Args[2], "target_user='agentuser'") || !strings.Contains(sandboxAdapter.processCalls[1].Args[2], "harness model set") {
-		t.Fatalf("expected second process call to run harness model set as agentuser, got %q", sandboxAdapter.processCalls[1].Args[2])
+	if !strings.Contains(sandboxAdapter.processCalls[1].Args[2], "target_user='agentuser'") ||
+		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "acli provider save") ||
+		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "harness model set") {
+		t.Fatalf("expected second process call to prefer acli provider save and fall back to harness model set as agentuser, got %q", sandboxAdapter.processCalls[1].Args[2])
 	}
-	if !strings.Contains(sandboxAdapter.processCalls[1].Args[2], "--name") || !strings.Contains(sandboxAdapter.processCalls[1].Args[2], "custom") {
+	if !strings.Contains(sandboxAdapter.processCalls[1].Args[2], "--name") ||
+		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "acli model switch --model") ||
+		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "--model-name") ||
+		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "kimi-k2.5") ||
+		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "switch_model=") ||
+		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "model_name") ||
+		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "--model \"$switch_model\"") ||
+		strings.Contains(sandboxAdapter.processCalls[1].Args[2], "--agent") ||
+		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "--api") ||
+		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "--api-key \"$ACLI_SECRET_API_KEY\"") ||
+		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "--model-id") ||
+		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "--model-name") ||
+		!strings.Contains(sandboxAdapter.processCalls[1].Args[2], "custom") {
 		t.Fatalf("expected hermes provider name to stay fixed as custom, got %q", sandboxAdapter.processCalls[1].Args[2])
 	}
 	if sandboxAdapter.processCalls[1].Env["HOME"] != "/home/agentuser" {
@@ -264,6 +289,7 @@ func TestRunCreateInstanceTaskFailsWhenAiGatewayOnboardFails(t *testing.T) {
 	}
 	sandboxAdapter := &createTaskSandboxAdapterStub{
 		createResp: &psandbox.Sandbox{SandboxID: "sbx-create-onboard-fail", TemplateID: "tpl-create"},
+		pools:      []psandbox.Pool{{ID: "tpl-create", Status: "active", CapacityState: "active"}},
 		processBatches: [][]psandbox.ProcessStreamEvent{
 			{{Stdout: "install ok", Status: "running"}, {Ended: true, ExitCode: 0, Status: "SUCCESS"}},
 			{{Stderr: "model set failed", Status: "running"}, {Ended: true, ExitCode: 1, Status: "FAILED", Error: "exit status 1"}},
@@ -314,6 +340,7 @@ func TestRunCreateInstanceTaskFailsWhenEnsureAiGatewayUserFails(t *testing.T) {
 	}
 	sandboxAdapter := &createTaskSandboxAdapterStub{
 		createResp: &psandbox.Sandbox{SandboxID: "sbx-create-ensure-user-fail", TemplateID: "tpl-create"},
+		pools:      []psandbox.Pool{{ID: "tpl-create", Status: "active", CapacityState: "active"}},
 	}
 	aiGatewayAdapter := &createTaskAiGatewayAdapterStub{
 		ensureErr: errors.New("ensure user failed"),

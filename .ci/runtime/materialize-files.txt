@@ -13,6 +13,7 @@
 .ci/runtime/commands/create_playground_environment.py
 .ci/runtime/commands/configure_playground_dns.py
 .ci/runtime/commands/diagnose_playground_environment.py
+.ci/runtime/commands/detect_deployed_at_only_diff.py
 .ci/runtime/commands/describe_gitops_promotion.py
 .ci/runtime/commands/ensure_playground_frontend_image.py
 .ci/runtime/commands/generate_release_bundle_manifest.py
@@ -23,10 +24,13 @@
 .ci/runtime/commands/onboard_argocd_target_cluster.py
 .ci/runtime/commands/plan_release_gates.py
 .ci/runtime/commands/project_release_bundle.py
+.ci/runtime/commands/resolve_prod_promote_envs.py
 .ci/runtime/commands/resolve_release_bundle.py
 .ci/runtime/commands/run_release_gates.py
 .ci/runtime/commands/run_changed_guards.py
 .ci/runtime/commands/run_gitops_db_job.py
+.ci/runtime/commands/run_prod_db_migration.py
+.ci/runtime/commands/trigger_frontend_edgeone_releases.py
 .ci/runtime/commands/update_image_pin.py
 .ci/runtime/commands/upload_staticpages_preview.py
 .ci/runtime/commands/validate_gitops_promotion.py
@@ -49,6 +53,7 @@
 .ci/runtime/bundles/_catalogs.bundle
 .ci/runtime/bundles/admin-gateway.bundle
 .ci/runtime/bundles/ai-gateway.bundle
+.ci/runtime/bundles/cloudagent-gateway.bundle
 .ci/runtime/bundles/ctl.bundle
 .ci/runtime/bundles/frontend-ds.bundle
 .ci/runtime/bundles/frontend.bundle
@@ -60,10 +65,12 @@
 .ci/runtime/bundles/session.bundle
 .ci/runtime/bundles/staticpages.bundle
 .ci/runtime/bundles/subscription.bundle
+.ci/runtime/bundles/vibebase.bundle
 .ci/runtime/bundles/user-auth.bundle
 .ci/runtime/gitops/__init__.py
 .ci/runtime/gitops/argocd.py
 .ci/runtime/gitops/argocd_target_cluster.py
+.ci/runtime/gitops/deployed_at_diff.py
 .ci/runtime/gitops/gitops_cleanup_source_branch.py
 .ci/runtime/gitops/gitops_drift_audit.py
 .ci/runtime/gitops/gitops_kustomize_validation.py
@@ -102,6 +109,9 @@
 .ci/runtime/guards/changed_guards.py
 .ci/runtime/harness_ci/__init__.py
 .ci/runtime/harness_ci/db_job.py
+.ci/runtime/harness_ci/frontend_edgeone_release_trigger.py
+.ci/runtime/harness_ci/prod_envs.py
+.ci/runtime/harness_ci/prod_db_migration.py
 .ci/runtime/harness_ci/secrets.py
 .ci/runtime/support/__init__.py
 .ci/runtime/support/logging.py

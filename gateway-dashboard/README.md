@@ -4,7 +4,19 @@
 
 Trigger note:
 
+- 2026-05-15: README-only no-op change to rerun gateway-dashboard after promote bundle command snapshot fix.
+- 2026-05-15: README-only no-op change to rerun gateway-dashboard after pin script REPO_ROOT inheritance fix.
+- 2026-05-15: README-only no-op change to rerun gateway-dashboard after stable production promote runtime snapshot.
+- 2026-05-15: README-only no-op change to rerun gateway-dashboard after simplifying production stage guards.
+- 2026-05-15: README-only no-op change to rerun gateway-dashboard after splitting Beijing DB gate into its own CI step.
+- 2026-05-15: README-only no-op change to rerun gateway-dashboard after moving production check-in gates off PIPELINE_MODE.
+- 2026-05-15: README-only no-op change to rerun gateway-dashboard after DB gate visibility landed.
+- 2026-05-15: README-only no-op change to rerun gateway-dashboard after switching check-in conditions to BK-CI envs.
+- 2026-05-15: README-only no-op change to rerun gateway-dashboard after check-in condition syntax probe.
 - 2026-05-08: README-only change to rerun gateway-dashboard release after GitOps gate stdout and promote lease fixes.
+- 2026-05-15: README-only no-op change to exercise the gateway-dashboard release trigger path.
+- 2026-05-15: README-only no-op change to rerun gateway-dashboard after service-release production promote check-in landed.
+- 2026-05-15: README-only no-op change to verify environment-aware release hints in gateway-dashboard CI.
 
 公网 `CVM -> dashboard -> ai-gateway` 专用模式下，当前保证可用的页面收敛为：
 
@@ -111,3 +123,13 @@ KUBECONFIG="${DEPLOY_KUBECONFIG}" kubectl -n ai-gateway port-forward svc/gateway
 ```text
 http://127.0.0.1:31300/admin/gateway/login
 ```
+
+<!-- ci: rerun gateway-dashboard after production promote runtime snapshot init fix (2026-05-15) -->
+
+<!-- ci: rerun gateway-dashboard after shared runtime snapshot helper fix (2026-05-15) -->
+
+<!-- ci: rerun gateway-dashboard after release gate runtime init fix (2026-05-15) -->
+
+<!-- ci: rerun gateway-dashboard after gitops promote runtime seed fallback fix (2026-05-15) -->
+
+<!-- ci: rerun gateway-dashboard final promote verification after sgprod promote branch seed fix (2026-05-15) -->

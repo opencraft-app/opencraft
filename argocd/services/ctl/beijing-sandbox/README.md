@@ -13,9 +13,9 @@
 - `kustomization.yaml`
 - `ksops-assets-generator.yaml`
 - `ctl-platform.env`
+- `conf/server_conf.toml`
 - `souls/`
-- `../../../secrets/beijing-sandbox/ctl-conf-common.sops.yaml`
-- `../../../secrets/beijing-sandbox/ctl-conf-rewrite.sops.yaml`
+- `ctl-conf-rewrite.yaml`
 - `../../../secrets/beijing-sandbox/ctl-runtime-secrets.sops.yaml`
 
 ## Current Runtime Contract
@@ -31,13 +31,18 @@
 
 加密资源（通过标准 `sops` 文件下发）：
 
-- `ConfigMap/ctl-conf-common`
-- `ConfigMap/ctl-conf-rewrite`
-- `Secret/ctl-runtime-secrets`
+- `Secret/ctl-runtime-secrets`（包含 `CTL_MQ_STREAM_KEY`、`CTL_AIGATEWAY_*`、`AGENTCHAT_*` 等运行时密文）
 
 普通资源：
 
+- `ConfigMap/ctl-conf-common`
 - `ConfigMap/ctl-soul-templates`
+
+明文资源：
+
+- `ConfigMap/ctl-conf-rewrite`
+
+`ctl-conf-rewrite.yaml` 只放环境策略和非敏感连接信息。DB password、Redis password 等敏感值必须通过 `ctl-runtime-secrets` 注入，不要再写回 rewrite TOML。
 
 ## Note
 

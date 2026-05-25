@@ -179,8 +179,9 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def load_platform_env(env_name: str) -> dict[str, str]:
-    path = REPO_ROOT / "deploy" / "envs" / env_name / "platform.env"
+def load_platform_env(env_name: str, repo_root: Path | None = None) -> dict[str, str]:
+    root = repo_root or REPO_ROOT
+    path = root / "deploy" / "envs" / env_name / "platform.env"
     if not path.is_file():
         return {"PULUMI_ENV_NAME": env_name}
     return load_env_file(path)
@@ -647,8 +648,9 @@ def main() -> int:
         print(f"unsupported service/operation combination: {args.service}/{args.operation}", file=sys.stderr)
         return 1
 
-    platform_env = load_platform_env(args.env)
-    kubeconfig, temp_path = resolve_kubeconfig(platform_env, args.kubeconfig_b64_env, args.env)
+    platform_env = load_platform_env(args.env, deploy_root)
+    kubeconfig = ""
+    temp_path: Path | None = None
     requested_by = os.environ.get("GITLAB_USER_LOGIN") or os.environ.get("USER") or "unknown"
     bundle_service = args.bundle_service.strip() or args.service
     db_contract = load_job_db_contract(Path(args.bundle_manifest).resolve(), bundle_service, args.env)
@@ -663,6 +665,8 @@ def main() -> int:
             spec["namespace"] = namespace_override
         require_repo_payload_revision(spec, args.revision)
         service_platform_env = load_service_platform_env(spec, args.env, deploy_root)
+        if args.apply or not (args.image_override.strip() or spec.get("image") or spec.get("image_env_key")):
+            kubeconfig, temp_path = resolve_kubeconfig(platform_env, args.kubeconfig_b64_env, args.env)
         image = resolve_job_image(args, spec, kubeconfig, service_platform_env)
         job_name = generate_job_name(args.service, args.operation)
         extra_resources: list[dict[str, Any]] = []

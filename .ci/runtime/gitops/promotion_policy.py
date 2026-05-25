@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+import re
 
 
 class KustomizeMode(str, Enum):
@@ -41,14 +42,14 @@ class PromotionPolicy:
 
     @property
     def merge_title(self) -> str:
-        if self.env == "shprod":
-            return "自动合并上海生产 GitOps 待同步 MR"
+        if self.required_argo_sync == "manual":
+            return f"自动合并{self.display_name} GitOps 待同步 MR"
         return "自动合并北京 GitOps 发布 MR"
 
     @property
     def merge_description(self) -> str:
-        if self.env == "shprod":
-            return "promote 分支检查通过后自动合并到 gitops；上海生产仅进入待同步状态，不执行 Argo 自动 sync。"
+        if self.required_argo_sync == "manual":
+            return f"promote 分支检查通过后自动合并到 gitops；{self.display_name}仅进入待同步状态，不执行 Argo 自动 sync。"
         return "promote 分支检查通过后自动合并到 gitops，并进入 Argo 收敛验收。"
 
     @property
@@ -99,12 +100,45 @@ PROMOTION_POLICIES: tuple[PromotionPolicy, ...] = (
         gate_denied_behavior=GateDeniedBehavior.SKIP,
         required_argo_sync="manual",
     ),
+    PromotionPolicy(
+        env="sgprod",
+        branch_prefix="promote-sgprod-",
+        display_name="新加坡生产",
+        auto_merge=True,
+        auto_sync=False,
+        cleanup_source_branch=False,
+        verify_mode=VerifyMode.MERGE_ONLY,
+        kustomize_mode=KustomizeMode.CHANGED_ONLY,
+        gate_denied_behavior=GateDeniedBehavior.SKIP,
+        required_argo_sync="manual",
+    ),
 )
+
+
+def _playground_policy_for_branch(source_branch: str) -> PromotionPolicy | None:
+    match = re.match(r"^promote-(sandbox-bj-\d+)-", source_branch)
+    if not match:
+        return None
+    env = match.group(1)
+    return PromotionPolicy(
+        env=env,
+        branch_prefix=f"promote-{env}-",
+        display_name=f"北京 Playground {env}",
+        auto_merge=True,
+        auto_sync=True,
+        cleanup_source_branch=True,
+        verify_mode=VerifyMode.ARGO_CONVERGENCE,
+        kustomize_mode=KustomizeMode.CHANGED_ONLY,
+        gate_denied_behavior=GateDeniedBehavior.FAIL,
+    )
 
 
 def policy_for_branch(source_branch: str) -> PromotionPolicy | None:
     """Return the policy for a promote source branch, if supported."""
 
+    playground_policy = _playground_policy_for_branch(source_branch)
+    if playground_policy is not None:
+        return playground_policy
     for policy in sorted(PROMOTION_POLICIES, key=lambda item: len(item.branch_prefix), reverse=True):
         if source_branch.startswith(policy.branch_prefix):
             return policy
@@ -114,6 +148,6 @@ def policy_for_branch(source_branch: str) -> PromotionPolicy | None:
 def require_policy_for_branch(source_branch: str) -> PromotionPolicy:
     policy = policy_for_branch(source_branch)
     if policy is None:
-        supported = ", ".join(policy.branch_prefix + "*" for policy in PROMOTION_POLICIES)
+        supported = ", ".join([*(policy.branch_prefix + "*" for policy in PROMOTION_POLICIES), "promote-sandbox-bj-<N>-*"])
         raise ValueError(f"unsupported promote branch {source_branch!r}; supported patterns: {supported}")
     return policy

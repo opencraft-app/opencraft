@@ -93,6 +93,53 @@ func TestPublicAllowBypassesAuth(t *testing.T) {
 	}
 }
 
+func TestAgentChatIntrospectPublicRouteBypassesAuth(t *testing.T) {
+	upstreamCalls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		if got := r.Header.Get("X-Lightclaw-User-ID"); got != "" {
+			t.Fatalf("expected no identity header on public callback, got %q", got)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+
+	authCalls := 0
+	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authCalls++
+		http.Error(w, "should not be called", http.StatusTeapot)
+	}))
+	defer auth.Close()
+
+	handler, err := NewHandler(Config{
+		AuthServiceURL: auth.URL,
+		Routes: []Route{{
+			Name:     "ctl-agentchat-introspect",
+			Prefix:   "/v1/integrations/agentchat",
+			Methods:  []string{http.MethodPost, http.MethodOptions},
+			Upstream: upstream.URL,
+			Access:   AccessPublic,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/integrations/agentchat/introspect", strings.NewReader(`{}`))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if upstreamCalls != 1 {
+		t.Fatalf("expected upstream call once, got %d", upstreamCalls)
+	}
+	if authCalls != 0 {
+		t.Fatalf("expected auth introspection to be skipped, got %d calls", authCalls)
+	}
+}
+
 func TestAuthenticatedRouteRequiresToken(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("upstream should not be called without auth token")
@@ -351,6 +398,52 @@ func TestRealnameRequiredWriteBlocksUnverifiedSession(t *testing.T) {
 	}
 }
 
+func TestAgentChatLaunchTokenStaysBehindRealnameWall(t *testing.T) {
+	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"session": map[string]any{
+				"user": map[string]any{
+					"id":               "usr_unverified",
+					"realnameVerified": false,
+				},
+			},
+		})
+	}))
+	defer auth.Close()
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("upstream should not be called when realname is required")
+	}))
+	defer upstream.Close()
+
+	handler, err := NewHandler(Config{
+		AuthServiceURL: auth.URL,
+		Routes: []Route{{
+			Name:            "ctl",
+			Prefix:          "/v1/instances",
+			Upstream:        upstream.URL,
+			Access:          AccessAuthenticated,
+			RequireRealname: true,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/instances/ins-1/agentchat/launch-token", nil)
+	req.Header.Set("Authorization", "Bearer tok-123")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "realname_required") {
+		t.Fatalf("expected realname_required body, got %s", rec.Body.String())
+	}
+}
+
 func TestRealnameWallDisabledAllowsUnverifiedWrite(t *testing.T) {
 	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -452,6 +545,67 @@ func TestRealnameRequiredWriteAllowsVerifiedSession(t *testing.T) {
 	}
 	if upstreamCalls != 1 {
 		t.Fatalf("expected one upstream call, got %d", upstreamCalls)
+	}
+}
+
+func TestInstancesPrefixAllowsNestedConfigResetWithoutDedicatedRoute(t *testing.T) {
+	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"session": map[string]any{
+				"user": map[string]any{
+					"id":               "usr_verified",
+					"email":            "verified@example.com",
+					"realnameVerified": true,
+				},
+			},
+		})
+	}))
+	defer auth.Close()
+
+	upstreamCalls := 0
+	var upstreamPath string
+	var upstreamMethod string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		upstreamPath = r.URL.Path
+		upstreamMethod = r.Method
+		if got := r.Header.Get("X-Lightclaw-User-ID"); got != "usr_verified" {
+			t.Fatalf("expected injected user id, got %q", got)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer upstream.Close()
+
+	handler, err := NewHandler(Config{
+		AuthServiceURL: auth.URL,
+		Routes: []Route{{
+			Name:            "ctl",
+			Prefix:          "/v1/instances",
+			Methods:         []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodOptions},
+			Upstream:        upstream.URL,
+			Access:          AccessAuthenticated,
+			RequireRealname: true,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/instances/ins-1/config/reset", nil)
+	req.Header.Set("Authorization", "Bearer tok-123")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if upstreamCalls != 1 {
+		t.Fatalf("expected one upstream call, got %d", upstreamCalls)
+	}
+	if upstreamMethod != http.MethodPost || upstreamPath != "/v1/instances/ins-1/config/reset" {
+		t.Fatalf("unexpected upstream request: %s %s", upstreamMethod, upstreamPath)
 	}
 }
 
@@ -2231,61 +2385,6 @@ func TestAdminRouteRequiresBridgeSecretWhenConfigured(t *testing.T) {
 	}
 }
 
-func TestAdminRouteBridgeCookieKeepsUpstreamBearerInjection(t *testing.T) {
-	t.Setenv("SERVICE_GATEWAY_TEST_ADMIN_UPSTREAM_TOKEN", "inner-admin-token")
-
-	callCount := 0
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		callCount++
-		if got := r.Header.Get("Authorization"); got != "Bearer inner-admin-token" {
-			t.Fatalf("expected injected bearer token, got %q", got)
-		}
-		w.WriteHeader(http.StatusNoContent)
-	}))
-	defer upstream.Close()
-
-	handler, err := NewHandler(Config{
-		AuthServiceURL: "http://auth.invalid",
-		Routes: []Route{{
-			Name:                   "admin",
-			Prefix:                 "/admin",
-			Upstream:               upstream.URL,
-			Access:                 AccessAdmin,
-			UpstreamBearerTokenEnv: "SERVICE_GATEWAY_TEST_ADMIN_UPSTREAM_TOKEN",
-		}},
-	},
-		WithAdminBasicAuth("skipzhang", "secret"),
-		WithAdminBridgeCookie(AdminBridgeCookieConfig{
-			Secret: "bridge-secret",
-			Hosts:  []string{"admin.lightclaw.tech"},
-			Secure: true,
-		}),
-	)
-	if err != nil {
-		t.Fatalf("new handler: %v", err)
-	}
-
-	firstReq := httptest.NewRequest(http.MethodGet, "https://admin.lightclaw.tech/admin", nil)
-	firstReq.Host = "admin.lightclaw.tech"
-	firstReq.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("skipzhang:secret")))
-	firstRec := httptest.NewRecorder()
-	handler.ServeHTTP(firstRec, firstReq)
-	bridgeCookie := findCookieByName(t, firstRec.Result(), defaultAdminBridgeCookieName)
-
-	req := httptest.NewRequest(http.MethodGet, "https://admin.lightclaw.tech/admin", nil)
-	req.Host = "admin.lightclaw.tech"
-	req.AddCookie(bridgeCookie)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("expected 204, got %d body=%s", rec.Code, rec.Body.String())
-	}
-	if callCount != 2 {
-		t.Fatalf("expected two upstream calls, got %d", callCount)
-	}
-}
-
 func TestAdminRouteDoesNotIssueBridgeCookieForNonEligibleHost(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
@@ -2328,43 +2427,6 @@ func TestAdminRouteDoesNotIssueBridgeCookieForNonEligibleHost(t *testing.T) {
 	}
 }
 
-func TestAdminRouteInjectsUpstreamBearerTokenWhenConfigured(t *testing.T) {
-	t.Setenv("SERVICE_GATEWAY_TEST_ADMIN_UPSTREAM_TOKEN", "inner-admin-token")
-
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.Header.Get("Authorization"); got != "Bearer inner-admin-token" {
-			t.Fatalf("expected injected bearer token, got %q", got)
-		}
-		w.WriteHeader(http.StatusNoContent)
-	}))
-	defer upstream.Close()
-
-	handler, err := NewHandler(Config{
-		AuthServiceURL: "http://auth.invalid",
-		Routes: []Route{
-			{
-				Name:                   "admin",
-				Prefix:                 "/api/admin",
-				Upstream:               upstream.URL,
-				Access:                 AccessAdmin,
-				UpstreamBearerTokenEnv: "SERVICE_GATEWAY_TEST_ADMIN_UPSTREAM_TOKEN",
-			},
-		},
-	}, WithAdminBasicAuth("admin", "secret"))
-	if err != nil {
-		t.Fatalf("new handler: %v", err)
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/api/admin/users", nil)
-	req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("admin:secret")))
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("expected 204, got %d body=%s", rec.Code, rec.Body.String())
-	}
-}
-
 func TestAdminRouteRequiresConfiguredCredentials(t *testing.T) {
 	_, err := NewHandler(Config{
 		AuthServiceURL: "http://auth.invalid",
@@ -2404,5 +2466,94 @@ func TestUnmatchedRootReturnsNotFoundWithoutCatchAllRoute(t *testing.T) {
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAuthenticatedRouteCanInjectUpstreamBearerToken(t *testing.T) {
+	t.Setenv("SERVICE_GATEWAY_TEST_UPSTREAM_TOKEN", "internal-secret")
+	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"session": map[string]any{
+				"user": map[string]any{"id": "usr_123", "email": "user@example.com"},
+			},
+		})
+	}))
+	defer auth.Close()
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer internal-secret" {
+			t.Fatalf("expected upstream bearer token, got %q", got)
+		}
+		if got := r.Header.Get("X-Lightclaw-User-ID"); got != "usr_123" {
+			t.Fatalf("expected injected user id, got %q", got)
+		}
+		if got := r.Header.Get("Cookie"); got != "" {
+			t.Fatalf("expected user cookies to be stripped before internal upstream, got %q", got)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer upstream.Close()
+
+	handler, err := NewHandler(Config{
+		AuthServiceURL: auth.URL,
+		Routes: []Route{{
+			Name:                   "vibebase",
+			Prefix:                 "/v1/vibebase",
+			RewritePrefix:          "/v1",
+			Upstream:               upstream.URL,
+			UpstreamBearerTokenEnv: "SERVICE_GATEWAY_TEST_UPSTREAM_TOKEN",
+			Access:                 AccessAuthenticated,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/vibebase/namespaces/prefs/kv/theme", nil)
+	req.Header.Set("Authorization", "Bearer user-token")
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "user-session"})
+	req.AddCookie(&http.Cookie{Name: "analytics", Value: "tracking"})
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected upstream status, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAuthenticatedRouteFailsClosedWhenUpstreamBearerTokenMissing(t *testing.T) {
+	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"session": map[string]any{
+				"user": map[string]any{"id": "usr_123", "email": "user@example.com"},
+			},
+		})
+	}))
+	defer auth.Close()
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("upstream should not be called when internal token env is missing")
+	}))
+	defer upstream.Close()
+
+	handler, err := NewHandler(Config{
+		AuthServiceURL: auth.URL,
+		Routes: []Route{{
+			Name:                   "vibebase",
+			Prefix:                 "/v1/vibebase",
+			Upstream:               upstream.URL,
+			UpstreamBearerTokenEnv: "SERVICE_GATEWAY_TEST_MISSING_TOKEN",
+			Access:                 AccessAuthenticated,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/vibebase/namespaces/prefs/kv/theme", nil)
+	req.Header.Set("Authorization", "Bearer user-token")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("expected bad gateway, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }

@@ -4,7 +4,9 @@ name: 发布 frontend 分支预览
 on:
   push:
     branches:
+      - master
       - frontsandbox/*
+      - playground/sandbox-bj-*
     paths:
       - frontend/**
     paths-ignore:
@@ -40,7 +42,7 @@ stages:
           - checkout: self
             name: 拉取代码
             with:
-              fetchDepth: 50
+              fetchDepth: 1
           - name: 打印 frontend 预览上下文
             shell: bash
             run: |
@@ -51,40 +53,30 @@ stages:
           - name: 构建并上传 frontend 预览站点
             shell: bash
             env:
-              VITE_AUTH_API_BASE_URL: https://lightclaw.tech
               STATICPAGES_API_URL: ${{ variables.STATICPAGES_API_URL }}
             run: |
               echo "============================================================"
               echo "frontend 预览发布决策：进入 StaticPages 分支预览流程"
               echo "触发分支：${{ ci.branch }}"
-              echo "目标规则：frontsandbox/<name> -> https://<name>.preview.lightclaw.tech"
-              echo "发布方式：构建 frontend dist-cn 后上传到 StaticPages，不创建 GitOps MR"
+              echo "目标规则：master -> https://master.preview.lightclaw.tech 和 https://intl-master.preview.lightclaw.tech"
+              echo "目标规则：frontsandbox/<name> -> https://<name>.preview.lightclaw.tech 和 https://intl-<name>.preview.lightclaw.tech"
+              echo "目标规则：playground/sandbox-bj-N -> https://sandbox-bj-N.preview.lightclaw.tech 和 https://intl-sandbox-bj-N.preview.lightclaw.tech"
+              echo "发布方式：构建 frontend dist-cn + dist-global 后顺序上传到 StaticPages，不创建 GitOps MR"
               echo "============================================================"
-              source .ci/init.sh
-              ci_init_repo_root
-              ci_ensure_node
-              ci_ensure_pnpm
+              set -euo pipefail
 
-              cd "$REPO_ROOT/frontend"
-              rm -rf node_modules dist-cn
-              "$PNPM_BIN" install --frozen-lockfile
-              "$PNPM_BIN" build:cn
+              FRONTEND_PREVIEW_RUNTIME_REF="${FRONTEND_PREVIEW_RUNTIME_REF:-origin/master}"
+              FRONTEND_PREVIEW_RUNTIME_DIR="$(mktemp -d)"
+              cleanup_frontend_preview_runtime() {
+                rm -rf "$FRONTEND_PREVIEW_RUNTIME_DIR"
+              }
+              trap cleanup_frontend_preview_runtime EXIT
 
-              cd "$REPO_ROOT"
-              if [[ -z "${STATICPAGES_UPLOAD_TOKEN:-}" ]] || ci_is_unexpanded_setting "$STATICPAGES_UPLOAD_TOKEN"; then
-                echo "STATICPAGES_UPLOAD_TOKEN not provided by CI settings; decrypting GitOps StaticPages runtime secret"
-                ci_ensure_sops
-                ci_prepare_sops_age_key
-                STATICPAGES_UPLOAD_TOKEN="$(sops --decrypt --extract '["stringData"]["STATICPAGES_UPLOAD_TOKEN"]' argocd/secrets/beijing-sandbox/staticpages-runtime-secrets.sops.yaml | ci_read_secret_value)"
-                export STATICPAGES_UPLOAD_TOKEN
-                echo "STATICPAGES_UPLOAD_TOKEN source=argocd/secrets/beijing-sandbox/staticpages-runtime-secrets.sops.yaml fingerprint=$(printf '%s' "$STATICPAGES_UPLOAD_TOKEN" | ci_fingerprint_secret)"
-              else
-                echo "STATICPAGES_UPLOAD_TOKEN source=ci-settings fingerprint=$(printf '%s' "$STATICPAGES_UPLOAD_TOKEN" | ci_fingerprint_secret)"
-              fi
+              echo "frontend 预览发布器来源：${FRONTEND_PREVIEW_RUNTIME_REF}"
+              git fetch --no-tags --depth=1 origin master:refs/remotes/origin/master
+              git archive --format=tar "$FRONTEND_PREVIEW_RUNTIME_REF" .ci | tar -xf - -C "$FRONTEND_PREVIEW_RUNTIME_DIR"
+              FRONTEND_PREVIEW_RUNTIME_CI_DIR="$FRONTEND_PREVIEW_RUNTIME_DIR/.ci"
 
-              python3 .ci/runtime/commands/upload_staticpages_preview.py \
-                --artifact-dir frontend/dist-cn \
-                --api-url "$STATICPAGES_API_URL" \
-                --repository wisp/mono2 \
-                --source-branch "${{ ci.branch }}" \
-                --sha "${{ ci.sha }}"
+              export FRONTEND_PREVIEW_BRANCH="${{ ci.branch }}"
+              export FRONTEND_PREVIEW_SHA="${{ ci.sha }}"
+              bash "$FRONTEND_PREVIEW_RUNTIME_CI_DIR/runtime/commands/publish_frontend_preview.sh"

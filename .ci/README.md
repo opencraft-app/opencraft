@@ -21,9 +21,23 @@
 - 默认 `PIPELINE_MODE=build`
   - 运行构建
   - 北京自动 promote MR + auto-merge
+  - 上海 / 新加坡正式环境在构建完成后进入人工确认；确认通过后自动创建对应 GitOps promote MR
+- 北京沙箱 DB 变更跟随 GitOps release gate：
+  - 构建脚本 auto-pin 北京沙箱镜像后，promote 分支的 release gate 会自动执行受控 DB job
+  - DB job 后继续执行 DB readiness 只读校验
+  - 门禁通过后自动合并并按北京沙箱策略收敛
 - 手动把 `PIPELINE_MODE` 改成 `promote`
   - 只执行 `手动发布 <service> 到 GitOps` 对应步骤
   - 需要同时提供 `SOURCE_SHA`
+- 如果本次包含 DB 结构或 migration 变更，先手动执行 `生产 DB migration`：
+  - `SERVICE=<service>`
+  - `TARGET_ENV=shprod` 或 `sgprod`
+  - `SOURCE_SHA=<本次构建输出的 SOURCE_SHA>`
+  - `TIMEOUT_SECONDS` 可不填，默认 `1800`
+- playground 分支只展示 playground 自身的 auto-pin / bootstrap 后续，不展示生产人工审批或生产 DB migration 参数。
+- BK-CI `check-in` 审核页不要依赖 `ci.*` 运行时上下文渲染；审核说明里使用静态文字或模板参数，真实 `SOURCE_SHA` 以构建日志和执行阶段日志为准。
+- 生产人工审核 stage 的可见性只依赖模板开关；分支和 `PIPELINE_MODE` 全部由脚本 guard，避免 Stream stage `if` 运行时上下文不可用导致误跳过。
+- 北京测试 auto-pin 拆成独立 `北京测试 DB 变更检查与 GitOps auto-pin` step；DB job / DB readiness 仍由 release gate 执行，但不再混在镜像构建 step 里。
 ## Service Release Template
 
 标准服务构建发布入口正在从“每个 `.ci/<service>.yml` 复制完整 stages”演进为根级 `extends` 模板模型。
@@ -41,12 +55,16 @@
 - `.ci/service-gateway.yml`
 - `.ci/staticpages.yml`
 - `.ci/subscription.yml`
+- `.ci/trade.yml`
 
 独立验证入口：
 
 - `.ci/cloudladdergateway.yml`
   - 当前只运行 `go test ./...` 和 Docker 镜像构建验证。
   - 该服务暂未接入 GitOps release bundle，因此不使用 `.ci/templates/service-release.yml`，也不会自动 promote/pin。
+- `.ci/hermes-image.yml`
+  - 用 `images/build-image.py --runtime hermes --base-image-id img-id352nof --with-verify` 构建、验证并同步 Hermes CVM 镜像。
+  - 腾讯云凭据只从构建机本地 `/etc/lightclaw-ci/tencentcloud_secret_id` 和 `/etc/lightclaw-ci/tencentcloud_secret_key` 读取，不通过流水线启动变量传入。
 
 这些入口保留 `name` / `on.push.paths` / `manual` / `extends`，并通过统一模板传入
 `SERVICE` / `BUNDLE` / `DISPLAY_NAME`。服务级变更仍由对应 `.ci/<service>.yml`
@@ -59,7 +77,7 @@
 公共模板：
 
 - `.ci/templates/service-release.yml`
-  - 统一承载 service release 的启动变量、checkout、build、北京自动 pin、手动 promote 逻辑
+  - 统一承载 service release 的启动变量、checkout、build、北京自动 pin、生产人工确认后自动 promote、手动 promote 逻辑
   - 继续调用 `.ci/runtime/build_and_promote_to_gitops.sh` 与 `.ci/runtime/promote_bundle_image_to_gitops.sh`
 
 约束：
@@ -72,6 +90,7 @@
 - 非流水线配置不要使用 `.yaml` 后缀放在 `.ci/**` 下；蓝盾会把 `.ci/**/*.yaml` 误识别成流水线候选。Guard 注册表用 `.ci/guards.manifest`，release bundle 源用 `.ci/runtime/bundles/*.bundle`。
 - `frontend`、`frontend-edgeone-*`、`gitops-*`、`ci-runtime`、`mr-placeholder` 不属于这批标准 service release 入口，不使用该模板。
 - `cloudladdergateway` 当前只有独立验证入口，不属于标准 service release 入口；等补齐 GitOps closure 和 release bundle 后再迁入模板。
+- `trade`、`staticpages` 当前 master 构建矩阵不包含 `shprod` / `sgprod`，因此显式设置 `ENABLE_MASTER_PROD_PROMOTE=false`，避免没有正式产物时卡人工确认。
 
 ### Release 并发模型
 

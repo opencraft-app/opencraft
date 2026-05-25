@@ -120,7 +120,7 @@ func (s *MemoryStore) ListInstances(_ context.Context, poolID string) ([]core.In
 	if _, ok := s.pools[poolID]; !ok {
 		return nil, core.ErrPoolNotFound
 	}
-	var res []core.Instance
+	res := make([]core.Instance, 0)
 	for _, inst := range s.instances {
 		if inst.PoolID == poolID {
 			res = append(res, inst)

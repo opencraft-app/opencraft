@@ -18,8 +18,8 @@ LightClaw 镜像全自动构建流水线（主入口）
   6. 执行正式 deploy-build.sh 构建镜像内容
   7. 创建自定义镜像 (CreateImage)
   8. 等待镜像创建完成
-  9. 跨地域复制到北京 (SyncImages) — 基础镜像模式下跳过
-  10. 等待复制完成，输出北京镜像 ID
+  9. 跨地域并发复制到目标地域 (SyncImages) — 基础镜像模式下跳过
+  10. 等待复制完成，输出目标地域镜像 ID
 
 构建模式:
   - 全量构建（默认）: 从 Ubuntu 24.04 公网镜像开始完整安装，创建镜像并跨地域复制
@@ -58,6 +58,7 @@ LightClaw 镜像全自动构建流水线（主入口）
 """
 
 import argparse
+import concurrent.futures
 import json
 import os
 import re
@@ -136,6 +137,7 @@ BUILD_MANIFEST = load_build_manifest()
 DEFAULT_INSTANCE_ID = "ins-mqekt5jt"
 DEFAULT_SOURCE_REGION = BUILD_MANIFEST["base_image"]["source_region"]
 DEFAULT_TARGET_REGION = BUILD_MANIFEST["base_image"]["target_region"]
+DEFAULT_TARGET_REGIONS = BUILD_MANIFEST["base_image"].get("target_regions") or [DEFAULT_TARGET_REGION]
 DEFAULT_RUNTIME_USER = os.environ.get("LIGHTCLAW_RUNTIME_USER", "lightclaw")
 DEFAULT_SSH_HOST = "ubuntu@119.28.239.108"
 DEFAULT_SSH_PORT = "22"
@@ -147,6 +149,9 @@ DEFAULT_WEIXIN_VERSION = BUILD_MANIFEST["runtime"].get("weixin_version", "2.1.1"
 DEFAULT_HERMES_RUNTIME_USER = BUILD_MANIFEST.get("runtime_hermes", {}).get("runtime_user", "agentuser")
 DEFAULT_HERMES_NODE_MAJOR = str(BUILD_MANIFEST.get("runtime_hermes", {}).get("node_major", "22"))
 DEFAULT_HERMES_QWEN_CODE_VERSION = BUILD_MANIFEST.get("runtime_hermes", {}).get("qwen_code_version", "latest")
+DEFAULT_HERMES_VERSION = BUILD_MANIFEST.get("runtime_hermes", {}).get("version", "")
+DEFAULT_HERMES_SRC_VERSION = BUILD_MANIFEST.get("runtime_hermes", {}).get("src_version", "")
+DEFAULT_HERMES_GIT_COMMIT = BUILD_MANIFEST.get("runtime_hermes", {}).get("git_commit", "")
 BOOTSTRAP_SSH_USERS = ("ubuntu",)
 VERSION_QUERY_TIMEOUT = 15
 
@@ -185,6 +190,22 @@ def log_step(step_num, total, msg):
     print(f"\n{'='*60}", flush=True)
     log(f"Step {step_num}/{total}: {msg}")
     print(f"{'='*60}", flush=True)
+
+
+def parse_csv_list(value):
+    items = []
+    if value is None:
+        return items
+    raw_items = value if isinstance(value, (list, tuple)) else str(value).split(",")
+    for item in raw_items:
+        text = str(item).strip()
+        if text and text not in items:
+            items.append(text)
+    return items
+
+
+def format_region_list(regions):
+    return ",".join(regions) if regions else "(none)"
 
 
 def fetch_json(url):
@@ -994,6 +1015,7 @@ def run_remote_shell_via_ssh(ssh_host, ssh_port, remote_shell, check=True):
 
 
 def build_image_metadata(args, image_name, image_version, build_mode, verify_suites):
+    target_regions = getattr(args, "target_regions", None) or [args.target_region]
     return {
         "image_version": image_version,
         "generated_at": iso_timestamp(),
@@ -1003,6 +1025,7 @@ def build_image_metadata(args, image_name, image_version, build_mode, verify_sui
         "instance_id": args.instance_id,
         "source_region": args.source_region,
         "target_region": args.target_region,
+        "target_regions": target_regions,
         "base_image_id": args.base_image_id,
         "openclaw_version": args.openclaw_version,
         "with_verify": args.with_verify,
@@ -1012,6 +1035,9 @@ def build_image_metadata(args, image_name, image_version, build_mode, verify_sui
         "weixin_version": args.weixin_version,
         "hermes_runtime_user": args.runtime_user if args.runtime == "hermes" else "",
         "hermes_node_major": DEFAULT_HERMES_NODE_MAJOR if args.runtime == "hermes" else "",
+        "hermes_version": args.hermes_version if args.runtime == "hermes" else "",
+        "hermes_src_version": DEFAULT_HERMES_SRC_VERSION if args.runtime == "hermes" else "",
+        "hermes_git_commit": DEFAULT_HERMES_GIT_COMMIT if args.runtime == "hermes" else "",
         "hermes_qwen_code_version": DEFAULT_HERMES_QWEN_CODE_VERSION if args.runtime == "hermes" else "",
         "skills_mode": args.skills,
         "custom_skills": args.custom_skills,
@@ -1393,6 +1419,7 @@ def terminate_instance(instance_id, region, dry_run=False):
 
 def step_deploy_build(ssh_host, ssh_port, openclaw_version=None, build_mode=None,
                       runtime_kind="openclaw",
+                      hermes_version=None,
                       only_plugins=None, qqbot_version=None, weixin_version=None,
                       skills_mode="essential", custom_skills=None,
                       runtime_user=DEFAULT_RUNTIME_USER,
@@ -1410,6 +1437,8 @@ def step_deploy_build(ssh_host, ssh_port, openclaw_version=None, build_mode=None
     build_args = []
     if runtime_kind and runtime_kind != "openclaw":
         build_args.extend(["--runtime", runtime_kind])
+    if runtime_kind == "hermes" and hermes_version:
+        build_args.extend(["--hermes-version", hermes_version])
     if runtime_kind == "openclaw" and openclaw_version:
         build_args.append(openclaw_version)
     if build_mode == "base-only":
@@ -1616,7 +1645,7 @@ def step_sync_image(image_id, source_region, target_region, image_name, dry_run=
     log(f"复制镜像 {image_id}: {source_region} → {target_region}")
     if dry_run:
         log("[DRY-RUN] 跳过 SyncImages 调用")
-        return "img-dry-run-target"
+        return f"img-dry-run-{target_region}"
 
     resp = run_tccli("cvm", "SyncImages", source_region, [
         "--ImageIds", json.dumps([image_id]),
@@ -1686,6 +1715,46 @@ def step_sync_image(image_id, source_region, target_region, image_name, dry_run=
         time.sleep(POLL_INTERVAL_IMAGE)
 
 
+def step_sync_images(image_id, source_region, target_regions, image_name, dry_run=False):
+    """并发复制镜像到多个目标地域，返回 {region: image_id}。"""
+    regions = parse_csv_list(target_regions)
+    if not regions:
+        log("未配置目标地域，跳过跨地域复制")
+        return {}
+
+    log(f"并发同步镜像到目标地域: {format_region_list(regions)}")
+    results = {}
+    failures = {}
+    max_workers = max(1, len(regions))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_region = {
+            executor.submit(
+                step_sync_image,
+                image_id,
+                source_region,
+                region,
+                image_name,
+                dry_run,
+            ): region
+            for region in regions
+        }
+        for future in concurrent.futures.as_completed(future_to_region):
+            region = future_to_region[future]
+            try:
+                target_image_id = future.result()
+            except Exception as exc:
+                failures[region] = exc
+                log(f"目标地域同步失败: {region}: {exc}")
+                continue
+            results[region] = target_image_id
+            log(f"目标地域同步完成: {region}: {target_image_id}")
+
+    if failures:
+        detail = "; ".join(f"{region}: {exc}" for region, exc in failures.items())
+        raise RuntimeError(f"镜像跨地域同步失败: {detail}")
+    return {region: results[region] for region in regions if region in results}
+
+
 # ============================================================
 # 主流程
 # ============================================================
@@ -1735,6 +1804,10 @@ def main():
         help=f"目标地域 (default: {DEFAULT_TARGET_REGION})",
     )
     parser.add_argument(
+        "--target-regions", default=None,
+        help="目标地域列表，逗号分隔；设置后覆盖 --target-region，例如 ap-beijing,ap-shanghai,ap-singapore",
+    )
+    parser.add_argument(
         "--ssh-host", default=DEFAULT_SSH_HOST,
         help=f"SSH 目标 (default: {DEFAULT_SSH_HOST})",
     )
@@ -1749,6 +1822,10 @@ def main():
     parser.add_argument(
         "--runtime", default="openclaw", choices=["openclaw", "hermes"],
         help="应用层运行时：openclaw | hermes (default: openclaw)",
+    )
+    parser.add_argument(
+        "--hermes-version", default=DEFAULT_HERMES_VERSION,
+        help=f"Hermes COS 版本，例如 hermes-agent-v20260520 (default: {DEFAULT_HERMES_VERSION or 'latest.json'})",
     )
     parser.add_argument(
         "--remote-build-dir", default=DEFAULT_REMOTE_BUILD_DIR,
@@ -1837,6 +1914,15 @@ def main():
     if args.command == "versions":
         print_version_report(BUILD_MANIFEST, args.format)
         return
+
+    args.target_regions = (
+        parse_csv_list(args.target_regions)
+        if args.target_regions is not None
+        else [args.target_region]
+    )
+    if not args.target_regions:
+        raise ValueError("至少需要一个目标地域")
+    args.target_region = args.target_regions[0]
 
     if args.runtime == "hermes" and args.runtime_user == DEFAULT_RUNTIME_USER:
         args.runtime_user = DEFAULT_HERMES_RUNTIME_USER
@@ -1942,7 +2028,7 @@ def main():
     log("=" * 60)
     log(f"  实例 ID:      {args.instance_id}")
     log(f"  源地域:       {args.source_region}")
-    log(f"  目标地域:     {args.target_region}")
+    log(f"  目标地域:     {format_region_list(args.target_regions)}")
     log(f"  SSH:          {args.ssh_host}:{args.ssh_port}")
     log(f"  远端目录:     {args.remote_build_dir}")
     log(f"  基础镜像:     {args.base_image_id}")
@@ -1951,6 +2037,8 @@ def main():
     if args.runtime == "hermes":
         log(f"  Hermes 用户:  {args.runtime_user}")
         log(f"  Hermes Node:  {DEFAULT_HERMES_NODE_MAJOR}")
+        log(f"  Hermes 版本:  {args.hermes_version or 'latest.json'}")
+        log(f"  Hermes 源版本: {DEFAULT_HERMES_SRC_VERSION or '未知'}")
         log(f"  Qwen Code:    {DEFAULT_HERMES_QWEN_CODE_VERSION}")
     else:
         log(f"  OpenClaw:     {args.openclaw_version or '默认'}")
@@ -1984,6 +2072,7 @@ def main():
     temporary_key_id = None
     source_image_id = None
     target_image_id = None
+    target_image_ids = {}
 
     def prepare_temp_instance(step_title, image_id):
         nonlocal current_build_instance_id, current_ssh_host, current_ssh_port
@@ -2027,6 +2116,7 @@ def main():
                 openclaw_version=args.openclaw_version,
                 build_mode="base-only",
                 runtime_kind=args.runtime,
+                hermes_version=args.hermes_version,
                 runtime_user=args.runtime_user,
                 remote_dir=args.remote_build_dir,
                 dry_run=args.dry_run,
@@ -2069,6 +2159,7 @@ def main():
                     openclaw_version=args.openclaw_version,
                     build_mode=build_mode,
                     runtime_kind=args.runtime,
+                    hermes_version=args.hermes_version,
                     only_plugins=args.only_plugins,
                     qqbot_version=args.qqbot_version,
                     weixin_version=args.weixin_version,
@@ -2106,10 +2197,11 @@ def main():
             current_step += 1
 
             if not args.skip_sync_image:
-                log_step(current_step, total_steps, f"跨地域复制到 {args.target_region}")
-                target_image_id = step_sync_image(source_image_id, args.source_region, args.target_region, image_name, dry_run=args.dry_run)
+                log_step(current_step, total_steps, f"跨地域并发复制到 {format_region_list(args.target_regions)}")
+                target_image_ids = step_sync_images(source_image_id, args.source_region, args.target_regions, image_name, dry_run=args.dry_run)
+                target_image_id = next(iter(target_image_ids.values()), None)
             else:
-                log(f"\n跳过 Step {current_step} (跨地域复制到 {args.target_region})")
+                log(f"\n跳过 Step {current_step} (跨地域复制到 {format_region_list(args.target_regions)})")
         else:
             if not args.skip_reset:
                 prepare_temp_instance("验证阶段: 创建临时构建机", args.base_image_id)
@@ -2124,6 +2216,7 @@ def main():
                 openclaw_version=args.openclaw_version,
                 build_mode=build_mode,
                 runtime_kind=args.runtime,
+                hermes_version=args.hermes_version,
                 only_plugins=args.only_plugins,
                 qqbot_version=args.qqbot_version,
                 weixin_version=args.weixin_version,
@@ -2157,6 +2250,7 @@ def main():
                 openclaw_version=args.openclaw_version,
                 build_mode=build_mode,
                 runtime_kind=args.runtime,
+                hermes_version=args.hermes_version,
                 only_plugins=args.only_plugins,
                 qqbot_version=args.qqbot_version,
                 weixin_version=args.weixin_version,
@@ -2192,10 +2286,11 @@ def main():
             current_step += 1
 
             if not args.skip_sync_image:
-                log_step(current_step, total_steps, f"跨地域复制到 {args.target_region}")
-                target_image_id = step_sync_image(source_image_id, args.source_region, args.target_region, image_name, dry_run=args.dry_run)
+                log_step(current_step, total_steps, f"跨地域并发复制到 {format_region_list(args.target_regions)}")
+                target_image_ids = step_sync_images(source_image_id, args.source_region, args.target_regions, image_name, dry_run=args.dry_run)
+                target_image_id = next(iter(target_image_ids.values()), None)
             else:
-                log(f"\n跳过 Step {current_step} (跨地域复制到 {args.target_region})")
+                log(f"\n跳过 Step {current_step} (跨地域复制到 {format_region_list(args.target_regions)})")
 
         pipeline_elapsed = time.time() - pipeline_start
         minutes = int(pipeline_elapsed // 60)
@@ -2210,7 +2305,11 @@ def main():
             log(f"  源镜像 ID:      {source_image_id} ({args.source_region})")
         else:
             log("  源镜像 ID:      (本次已跳过创建)")
-        if target_image_id:
+        if target_image_ids:
+            for region in args.target_regions:
+                if region in target_image_ids:
+                    log(f"  目标镜像 ID:    {target_image_ids[region]} ({region})")
+        elif target_image_id:
             log(f"  目标镜像 ID:    {target_image_id} ({args.target_region})")
         elif args.build_base:
             log("  目标镜像 ID:    (基础镜像模式不跨地域复制)")
@@ -2245,7 +2344,11 @@ def main():
         log(f"  源镜像 ID:      {source_image_id} ({args.source_region})")
     else:
         log("  源镜像 ID:      (本次已跳过创建)")
-    if target_image_id:
+    if target_image_ids:
+        for region in args.target_regions:
+            if region in target_image_ids:
+                log(f"  目标镜像 ID:    {target_image_ids[region]} ({region})")
+    elif target_image_id:
         log(f"  目标镜像 ID:    {target_image_id} ({args.target_region})")
     elif args.build_base:
         log(f"  (基础镜像模式，未跨地域复制)")
@@ -2265,7 +2368,20 @@ def main():
             args.source_region,
             args.target_region,
         )
-    if output_id:
+    if target_image_ids:
+        print(
+            "\n" + json.dumps(
+                {
+                    "source_region": args.source_region,
+                    "source_image_id": source_image_id,
+                    "target_image_ids": target_image_ids,
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
+            flush=True,
+        )
+    elif output_id:
         print(f"\n{output_id}", flush=True)
     return 0
 

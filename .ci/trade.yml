@@ -5,10 +5,12 @@ on:
   push:
     branches:
       - master
+      - playground/sandbox-bj-*
     paths:
       - trade/**
       - argocd/services/trade/**
       - argocd/catalogs/sandbox/beijing-sandbox/trade.yaml
+      - argocd/catalogs/playground/beijing-playground/*/trade.yaml
       - argocd/secrets/*/trade-runtime-secrets.sops.yaml
     paths-ignore:
       - OWNERS
@@ -23,6 +25,7 @@ concurrency:
 
 extends:
   template: service-release.yml
+  # Refresh compiled Stream pipeline after service-release template changes.
   parameters:
     SERVICE: trade
     BUNDLE: trade
@@ -30,5 +33,6 @@ extends:
     DEFAULT_TARGET_ENV: beijing-sandbox
     MASTER_BUILD_ENVS: beijing-sandbox
     MASTER_AUTO_PIN_ENVS: none
-    PLAYGROUND_BUILD_ENVS: ""
-    PLAYGROUND_AUTO_PIN_ENVS: none
+    ENABLE_MASTER_PROD_PROMOTE: false
+    PLAYGROUND_BUILD_ENVS: auto
+    PLAYGROUND_AUTO_PIN_ENVS: auto

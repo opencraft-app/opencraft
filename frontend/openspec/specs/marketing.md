@@ -98,7 +98,6 @@
 | `cta-footer-section.tsx` | 页脚 CTA |
 | `landing-navbar.tsx` | 导航栏（含登录入口、`<LanguageSwitcher>` 仅国际站挂载） |
 | `particle-grid-canvas.tsx` | 粒子背景 Canvas |
-| `starfield-canvas.tsx` | 星空背景 Canvas |
 | `constants.ts` | Landing 页共享常量（配色、时长、动效参数；**不再承载中文文案**，文案走 `useT()`） |
 
 ### OpenClaw 向导/设置页

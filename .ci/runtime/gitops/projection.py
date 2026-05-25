@@ -9,7 +9,7 @@ import fnmatch
 import sys
 from pathlib import PurePosixPath
 
-from contracts.bundles import load_bundle, parse_manifest_text
+from contracts.bundles import is_playground_env, load_bundle, parse_manifest_text
 from contracts.release_bundle_manifest import dump_manifest, merge_bundle_source_documents
 from gitops.git import list_files as git_list_files
 from gitops.git import run as git_run
@@ -61,11 +61,18 @@ def batched(paths: list[str], size: int = 200) -> list[list[str]]:
     return [paths[index:index + size] for index in range(0, len(paths), size)]
 
 
-def sync_publish_subset(repo_root: str, source_ref: str, target_ref: str, patterns: list[str]) -> tuple[int, int]:
+def sync_publish_subset(
+    repo_root: str,
+    source_ref: str,
+    target_ref: str,
+    patterns: list[str],
+    *,
+    preserve_target_only: bool = False,
+) -> tuple[int, int]:
     source_files = select_matching_files(list_tracked_files(repo_root, source_ref), patterns)
     target_files = select_matching_files(list_tracked_files(repo_root, target_ref), patterns)
 
-    to_delete = sorted(target_files - source_files)
+    to_delete = [] if preserve_target_only else sorted(target_files - source_files)
     to_checkout = sorted(source_files)
 
     for chunk in batched(to_delete):
@@ -108,6 +115,7 @@ def main() -> int:
         source_ref=args.source_ref,
         target_ref=args.target_ref,
         patterns=bundle.publish_paths,
+        preserve_target_only=is_playground_env(args.env),
     )
     print(f"projected {projected} files, deleted {deleted} stale files")
     return 0

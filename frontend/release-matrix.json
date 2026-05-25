@@ -76,7 +76,7 @@
       "requiredSecretEnv": [
         "EDGEONE_API_TOKEN"
       ],
-      "authApiBaseUrl": "https://lightclaw.tech",
+      "authApiBaseUrl": "https://api.lightvela.ai",
       "outputDir": "dist-global",
       "observability": {
         "aegis": {

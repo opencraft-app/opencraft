@@ -801,43 +801,44 @@ func TestConfigureOnboardUsesProcessStream(t *testing.T) {
 	if len(adapter.processCalls) != 2 {
 		t.Fatalf("expected two process calls, got %d", len(adapter.processCalls))
 	}
-	req := adapter.processCalls[0]
-	if req.Cmd != "/bin/bash" {
-		t.Fatalf("expected bash process, got %q", req.Cmd)
+	ensureReq := adapter.processCalls[0]
+	if ensureReq.Cmd != "/bin/bash" {
+		t.Fatalf("expected bash process, got %q", ensureReq.Cmd)
 	}
-	if len(req.Args) != 3 || req.Args[0] != "-l" || req.Args[1] != "-c" {
-		t.Fatalf("expected bash -l -c args, got %#v", req.Args)
+	if len(ensureReq.Args) != 3 || ensureReq.Args[0] != "-l" || ensureReq.Args[1] != "-c" {
+		t.Fatalf("expected bash -l -c args, got %#v", ensureReq.Args)
 	}
-	if !strings.Contains(req.Args[2], "openclaw onboard") {
-		t.Fatalf("expected onboard command, got %q", req.Args[2])
+	if !strings.Contains(ensureReq.Args[2], "command -v acli") || !strings.Contains(ensureReq.Args[2], "curl -fsSL -z /usr/local/bin/harness") {
+		t.Fatalf("expected model cli ensure command, got %q", ensureReq.Args[2])
 	}
-	if !strings.Contains(req.Args[2], "--custom-api-key 'sk-test'") {
-		t.Fatalf("expected api key flag in command, got %q", req.Args[2])
+	modelReq := adapter.processCalls[1]
+	if modelReq.Cmd != "/bin/bash" {
+		t.Fatalf("expected bash process for model set, got %q", modelReq.Cmd)
 	}
-	if !strings.Contains(req.Args[2], "--gateway-token 'gw-token-test'") {
-		t.Fatalf("expected gateway token flag in command, got %q", req.Args[2])
+	if !strings.Contains(modelReq.Args[2], "acli provider save") || !strings.Contains(modelReq.Args[2], "harness model set") {
+		t.Fatalf("expected acli-first provider save command, got %q", modelReq.Args[2])
 	}
-	if !strings.Contains(req.Args[2], "--gateway-bind loopback") {
-		t.Fatalf("expected onboard loopback bootstrap before patch, got %q", req.Args[2])
+	if !strings.Contains(modelReq.Args[2], "ACLI_SECRET_API_KEY=") ||
+		!strings.Contains(modelReq.Args[2], "sk-test") ||
+		!strings.Contains(modelReq.Args[2], "--api-key \"$ACLI_SECRET_API_KEY\"") {
+		t.Fatalf("expected api key flag in command, got %q", modelReq.Args[2])
 	}
-	patchReq := adapter.processCalls[1]
-	if patchReq.Cmd != "/bin/bash" {
-		t.Fatalf("expected bash process for patch, got %q", patchReq.Cmd)
+	if !strings.Contains(modelReq.Args[2], "--name") ||
+		!strings.Contains(modelReq.Args[2], "acli model switch --model") ||
+		!strings.Contains(modelReq.Args[2], "--model-name") ||
+		!strings.Contains(modelReq.Args[2], "kimi-k2.5") ||
+		!strings.Contains(modelReq.Args[2], "switch_model=") ||
+		!strings.Contains(modelReq.Args[2], "model_name") ||
+		!strings.Contains(modelReq.Args[2], "--model \"$switch_model\"") ||
+		strings.Contains(modelReq.Args[2], "--agent") ||
+		!strings.Contains(modelReq.Args[2], "--api") ||
+		!strings.Contains(modelReq.Args[2], "--model-id") ||
+		!strings.Contains(modelReq.Args[2], "--model-name") ||
+		!strings.Contains(modelReq.Args[2], "custom") {
+		t.Fatalf("expected fixed custom provider in command, got %q", modelReq.Args[2])
 	}
-	if !strings.Contains(patchReq.Args[2], `config.gateway.bind = "lan";`) {
-		t.Fatalf("expected gateway bind lan in patch command, got %q", patchReq.Args[2])
-	}
-	if !strings.Contains(patchReq.Args[2], `config.gateway.auth.mode = "trusted-proxy";`) {
-		t.Fatalf("expected trusted-proxy auth in patch command, got %q", patchReq.Args[2])
-	}
-	if !strings.Contains(patchReq.Args[2], `config.gateway.auth.token = gatewayToken;`) {
-		t.Fatalf("expected gateway token assignment in patch command, got %q", patchReq.Args[2])
-	}
-	if !strings.Contains(patchReq.Args[2], `config.gateway.auth.trustedProxy.userHeader = "Host";`) {
-		t.Fatalf("expected Host user header in patch command, got %q", patchReq.Args[2])
-	}
-	if !strings.Contains(patchReq.Args[2], `config.gateway.trustedProxies = ["0.0.0.0/0"];`) {
-		t.Fatalf("expected trusted proxies wildcard in patch command, got %q", patchReq.Args[2])
+	if modelReq.Env["HOME"] != "/home/agentuser" {
+		t.Fatalf("expected HOME env for agentuser, got %+v", modelReq.Env)
 	}
 }
 
@@ -1204,7 +1205,7 @@ func TestConfigureQQChannelEnsuresPluginBeforeAdd(t *testing.T) {
 	if !strings.Contains(pluginCmd, `openclaw plugins list`) {
 		t.Fatalf("expected qqbot plugin list preflight, got %s", pluginCmd)
 	}
-	if !strings.Contains(pluginCmd, `grep -Fq 'openclaw-qqbot'`) {
+	if !strings.Contains(pluginCmd, `grep -Fq`) || !strings.Contains(pluginCmd, `openclaw-qqbot`) {
 		t.Fatalf("expected qqbot plugin runtime id check, got %s", pluginCmd)
 	}
 	if !strings.Contains(pluginCmd, `openclaw plugins install @tencent-connect/openclaw-qqbot`) {

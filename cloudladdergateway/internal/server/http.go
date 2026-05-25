@@ -14,6 +14,8 @@ import (
 
 func NewGinRouter(engine *proxy.Engine, authenticator *auth.Authenticator, maxBodyBytes int64) *gin.Engine {
 	router := gin.New()
+	router.UseEscapedPath = true
+	router.UnescapePathValues = false
 	router.Use(gin.Recovery())
 
 	router.GET("/healthz", func(c *gin.Context) {

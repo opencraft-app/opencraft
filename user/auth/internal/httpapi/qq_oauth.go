@@ -95,15 +95,20 @@ func (h *Handler) StartQQOAuth(ctx *gin.Context) {
 		return
 	}
 
-	state, err := newOAuthState()
+	nonce, err := newOAuthState()
 	if err != nil {
 		ctx.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+	startState, err := buildOAuthStartState(ctx.Request, "qq", qqOAuthStateCookiePath, h.qqOAuth.redirectURIForRequest(ctx.Request), nonce)
+	if err != nil {
+		ctx.AbortWithStatus(http.StatusBadRequest)
 		return
 	}
 
 	http.SetCookie(ctx.Writer, &http.Cookie{
 		Name:     qqOAuthStateCookieName,
-		Value:    state,
+		Value:    startState.CookieValue,
 		Path:     qqOAuthStateCookiePath,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
@@ -112,12 +117,50 @@ func (h *Handler) StartQQOAuth(ctx *gin.Context) {
 	})
 	setOAuthReturnToCookie(ctx, qqOAuthReturnToCookieName, qqOAuthStateCookiePath, readReturnToFromRequest(ctx.Request), h.cookieSecure, h.qqOAuth.stateTTL, h.validatedReturnToURL)
 
-	ctx.Redirect(http.StatusTemporaryRedirect, h.qqOAuth.authorizeURL(state, h.qqOAuth.redirectURIForRequest(ctx.Request)))
+	ctx.Redirect(http.StatusTemporaryRedirect, h.qqOAuth.authorizeURL(startState.StateParam, startState.RedirectURI))
 }
 
 func (h *Handler) HandleQQOAuthCallback(ctx *gin.Context) {
 	if h.qqOAuth == nil {
 		ctx.AbortWithStatus(http.StatusNotFound)
+		return
+	}
+
+	code := strings.TrimSpace(ctx.Query("code"))
+	state := strings.TrimSpace(ctx.Query("state"))
+	logger := requestLogger(ctx, nil)
+	exchangeRedirectURI := h.qqOAuth.redirectURIForRequest(ctx.Request)
+
+	if relayState, ok := parseOAuthRelayState(state); ok {
+		if err := validateOAuthRelayStateForProvider("qq", relayState); err != nil {
+			logger.Warn("qq oauth callback failed", "stage", "relay_state_validation", "err", err)
+			ctx.Redirect(http.StatusTemporaryRedirect, h.qqOAuth.frontendURL(ctx.Request, "/?oauth_error=qq_state_mismatch"))
+			return
+		}
+		if isOAuthRelayIssuerCallback(ctx.Request, relayState) {
+			target, err := relayCallbackURLWithOriginalQuery(relayState.TargetCallbackURI, ctx.Request.URL.RawQuery)
+			if err != nil {
+				logger.Warn("qq oauth relay callback failed", "stage", "target_query", "err", err)
+				ctx.Redirect(http.StatusTemporaryRedirect, h.qqOAuth.frontendURL(ctx.Request, "/?oauth_error=qq_state_mismatch"))
+				return
+			}
+			ctx.Redirect(http.StatusTemporaryRedirect, target)
+			return
+		}
+		if !isOAuthRelayTargetCallback(ctx.Request, relayState) {
+			logger.Warn("qq oauth callback failed", "stage", "relay_target_mismatch")
+			ctx.Redirect(http.StatusTemporaryRedirect, h.qqOAuth.frontendURL(ctx.Request, "/?oauth_error=qq_state_mismatch"))
+			return
+		}
+		exchangeRedirectURI = relayState.IssuerRedirectURI
+		expectedState := ""
+		if cookie, err := ctx.Request.Cookie(qqOAuthStateCookieName); err == nil {
+			expectedState = strings.TrimSpace(cookie.Value)
+		}
+		returnTo := readOAuthReturnToCookie(ctx.Request, qqOAuthReturnToCookieName)
+		h.clearQQOAuthStateCookie(ctx)
+		clearOAuthReturnToCookie(ctx, qqOAuthReturnToCookieName, qqOAuthStateCookiePath, h.cookieSecure)
+		h.handleQQOAuthCallbackAfterState(ctx, code, relayState.Nonce, expectedState, returnTo, exchangeRedirectURI, logger)
 		return
 	}
 
@@ -128,10 +171,14 @@ func (h *Handler) HandleQQOAuthCallback(ctx *gin.Context) {
 	returnTo := readOAuthReturnToCookie(ctx.Request, qqOAuthReturnToCookieName)
 	h.clearQQOAuthStateCookie(ctx)
 	clearOAuthReturnToCookie(ctx, qqOAuthReturnToCookieName, qqOAuthStateCookiePath, h.cookieSecure)
+	h.handleQQOAuthCallbackAfterState(ctx, code, state, expectedState, returnTo, exchangeRedirectURI, logger)
+}
 
-	code := strings.TrimSpace(ctx.Query("code"))
-	state := strings.TrimSpace(ctx.Query("state"))
-	logger := requestLogger(ctx, nil)
+func (h *Handler) handleQQOAuthCallbackAfterState(ctx *gin.Context, code string, state string, expectedState string, returnTo string, exchangeRedirectURI string, logger interface {
+	Warn(msg string, keysAndValues ...any)
+	Error(msg string, keysAndValues ...any)
+	Info(msg string, keysAndValues ...any)
+}) {
 	if code == "" || state == "" || expectedState == "" || state != expectedState {
 		logger.Warn(
 			"qq oauth callback failed",
@@ -145,7 +192,7 @@ func (h *Handler) HandleQQOAuthCallback(ctx *gin.Context) {
 	}
 
 	requestCtx := ctx.Request.Context()
-	token, err := h.qqOAuth.client.ExchangeCode(requestCtx, code, h.qqOAuth.redirectURIForRequest(ctx.Request))
+	token, err := h.qqOAuth.client.ExchangeCode(requestCtx, code, exchangeRedirectURI)
 	if err != nil || strings.TrimSpace(token.AccessToken) == "" {
 		logger.Error("qq oauth callback failed", "stage", "exchange", "err", err)
 		ctx.Redirect(http.StatusTemporaryRedirect, h.qqOAuth.frontendURL(ctx.Request, "/?oauth_error=qq_exchange_failed"))

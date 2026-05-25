@@ -432,6 +432,8 @@ export default defineConfig(({ mode }) => {
     "lightclaw.pages.dev",
     ".pages.dev",
     "lightvela.tencent.com",
+    "lightvela.ai",
+    "lightvela.com",
     "lightclaw.site",
     ".lightclaw.site",
   ];
@@ -553,6 +555,13 @@ export default defineConfig(({ mode }) => {
       port: devPort,
       ...(allowedHosts.length > 0 ? { allowedHosts } : {}),
       ...(hmr ? { hmr } : {}),
+      proxy: {
+        "/__skillhub": {
+          target: "https://lightmake.cloud",
+          changeOrigin: true,
+          rewrite: (url) => url.replace(/^\/__skillhub/, ""),
+        },
+      },
       fs: {
         // Allow Vite to serve files from the sibling SDK checkout when linked.
         // 如需恢复 AgentChat-web 本地联调，需在此追加 AGENTCHAT_WEB_ROOT。

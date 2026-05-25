@@ -37,10 +37,6 @@ Admin bridge cookie:
 - cookie-authorized admin requests do not synthesize a Basic `Authorization` header upstream; route-level bearer injection still works as configured
 - deployment wiring uses `SERVICE_GATEWAY_ADMIN_BRIDGE_COOKIE_SECRET`
 
-For downstreams that still require their own admin bearer token, `service-gateway`
-can inject a route-specific upstream `Authorization` header via
-`upstream_bearer_token_env`.
-
 Route configs can set `rewrite_prefix` to rewrite the matched public prefix
 before proxying to an upstream. Existing routes without `rewrite_prefix` keep
 the original request path.
@@ -96,3 +92,4 @@ CI note:
 - 2026-04-26 trigger 13: README-only change to rerun after GitOps MR token fallback fix
 - 2026-04-26 trigger 14: README-only change to rerun after preferring the host-local Git token file
 - 2026-05-08 trigger: README-only change to rerun after latest GitOps gate output and promote branch lease fixes
+- 2026-05-15 trigger: README-only change to rerun service-gateway after latest CI/runtime fixes

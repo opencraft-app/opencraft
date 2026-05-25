@@ -1,0 +1,63 @@
+version: v2.0
+name: 构建 Hermes CVM 镜像
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - images/**
+    paths-ignore:
+      - OWNERS
+      - "**/OWNERS"
+  manual: enabled
+
+concurrency:
+  group: mono2-hermes-cvm-image
+  cancel-in-progress: false
+  queue-length: 1
+  queue-timeout-minutes: 480
+
+stages:
+  - name: 构建 Hermes CVM 镜像
+    jobs:
+      build:
+        name: 构建、验证并同步 Hermes CVM 镜像
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - checkout: self
+            name: 拉取代码
+            with:
+              fetchDepth: 1
+          - name: 打印 Hermes 镜像构建上下文
+            shell: bash
+            run: |
+              echo "ci.event=${{ ci.event }}"
+              echo "ci.branch=${{ ci.branch }}"
+              CI_SHA_FOR_LOG='${{ ci.sha }}'
+              echo "ci.sha=${CI_SHA_FOR_LOG}"
+              echo "runtime=hermes"
+              echo "base_image_id=img-id352nof"
+              echo "target_regions=ap-beijing,ap-shanghai,ap-singapore"
+          - name: 构建 Hermes CVM 镜像
+            shell: bash
+            run: |
+              set -euo pipefail
+              source .ci/init.sh
+              ci_init_repo_root
+              ci_require_commands python3 bash curl tar ssh scp ssh-keygen
+              ci_ensure_tccli
+              ci_require_command tccli
+              ci_ensure_go
+              ci_require_command go
+              ci_load_tencentcloud_credentials
+
+              bash -n images/build.sh images/deploy-build.sh images/tests/test-hermes-build-script.sh images/tests/test-hermes-runtime.sh
+              python3 -m py_compile images/build-image.py
+              python3 images/build-image.py \
+                --runtime hermes \
+                --base-image-id img-id352nof \
+                --target-regions ap-beijing,ap-shanghai,ap-singapore \
+                --with-verify

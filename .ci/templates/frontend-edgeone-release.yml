@@ -1,0 +1,75 @@
+version: v2.0
+
+parameters:
+  - name: COMBO
+    type: string
+  - name: DISPLAY_NAME
+    type: string
+
+variables:
+  FRONTEND_EDGEONE_ARTIFACT_SOURCE_SHA:
+    value: ""
+    readonly: false
+    allow-modify-at-startup: true
+  FRONTEND_EDGEONE_ARTIFACT_REF:
+    value: ""
+    readonly: false
+    allow-modify-at-startup: true
+
+stages:
+  - name: 确认发布 ${{ parameters.DISPLAY_NAME }}
+    check-in:
+      reviews:
+        flows:
+          - name: frontend EdgeOne 正式发布确认
+            reviewers: [ "skipzhang" ]
+        description: |
+          本次流水线会发布单个 frontend EdgeOne 正式站。
+
+          默认发布当前手动流水线所在 commit 对应的 frontend artifact。
+          回放历史 artifact 时，可填写其中一个输入：
+          - FRONTEND_EDGEONE_ARTIFACT_SOURCE_SHA：构建 frontend 中归档 artifact 的源码 SHA
+          - FRONTEND_EDGEONE_ARTIFACT_REF：高级覆盖，完整 OCI artifact ref
+
+          点击通过后会从已归档 frontend artifact 发布到 EdgeOne 正式项目。
+      timeout-hours: 24
+    jobs:
+      approve:
+        name: 等待人工确认 ${{ parameters.DISPLAY_NAME }}
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - name: frontend EdgeOne 发布已确认
+            shell: bash
+            run: |
+              echo "frontend EdgeOne release approved: ${{ parameters.COMBO }}"
+
+  - name: 发布 ${{ parameters.DISPLAY_NAME }}
+    jobs:
+      release:
+        name: 发布 ${{ parameters.DISPLAY_NAME }}
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        env:
+          EDGEONE_API_TOKEN_REQUIRED: "1"
+          EDGEONE_LIGHTVELA_PROD_TOKEN: ${{ settings.EDGEONE_LIGHTVELA_PROD_TOKEN }}
+          EDGEONE_LIGHTVELA_INTL_PROD_TOKEN: ${{ settings.EDGEONE_LIGHTVELA_INTL_PROD_TOKEN }}
+          TCR_SHPROD_PASSWORD: ${{ settings.TCR_SHPROD_PASSWORD }}
+          FRONTEND_ARTIFACT_REPOSITORY: lightclaw-shprod.tencentcloudcr.com/lightclaw/frontend-pages
+        steps:
+          - checkout: self
+            name: 拉取代码
+            with:
+              fetchDepth: 50
+          - name: 发布 frontend EdgeOne 正式站
+            shell: bash
+            run: |
+              export FRONTEND_EDGEONE_CI_BRANCH="${{ ci.branch }}"
+              export FRONTEND_EDGEONE_CI_SHA="${{ ci.sha }}"
+              export FRONTEND_EDGEONE_COMBO="${{ parameters.COMBO }}"
+              export FRONTEND_EDGEONE_DISPLAY_NAME="${{ parameters.DISPLAY_NAME }}"
+              export FRONTEND_EDGEONE_ARTIFACT_REF="${{ variables.FRONTEND_EDGEONE_ARTIFACT_REF }}"
+              export FRONTEND_EDGEONE_ARTIFACT_SOURCE_SHA="${{ variables.FRONTEND_EDGEONE_ARTIFACT_SOURCE_SHA }}"
+              bash .ci/runtime/commands/release_frontend_edgeone_artifact.sh

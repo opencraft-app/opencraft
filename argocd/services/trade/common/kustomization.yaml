@@ -54,5 +54,52 @@ replacements:
           name: trade
         fieldPaths:
           - spec.template.spec.containers.0.image
+  # ===========================================================================
+  # jifei CGW 出向真值（v1.7.10 D9，测试 / 现网按环境特化）
+  #
+  # 设计稿真源：.tmp/integration-plan-2026-05-18.md §10 Q-INT-10 ~ Q-INT-12
+  # 协议参考：  .tmp/交易环境&公共参数.pdf §国内站 测试环境-业务提测
+  #
+  # 三个 env 的语义：
+  #   - JIFEI_CGW_GATEWAY_URL：trade → clgateway 出向地址
+  #     (sandbox-bj-7 联调期 = http://clgateway.test.polaris:8095/v1/proxy/jifei-test/...)
+  #   - JIFEI_CGW_HOST_HEADER：v1.7.2 Q-INT-11=b 拍板由 clgateway upstream.headers.Host
+  #     重写覆盖（依赖 v1.7.6 B0 commit 0b60ac3d 修复），trade 端不再主动注入；env 留空
+  #   - JIFEI_CGW_X_QCLOUD_USER_ID：v1.7.4 Q-INT-12 拍板，仅测试环境带（uin 700000164995），
+  #     现网由部署侧出口 IP 鉴权不带；jifeiclient.do 在空字符串时跳过 header 注入
+  #
+  # 各引用本 component 的环境必须在自己的 trade-platform.env 里声明这 3 个字段
+  # （即使是空字符串），否则 kustomize build 会因找不到 replacement source 字段而失败。
+  # ===========================================================================
+  - source:
+      kind: ConfigMap
+      name: trade-platform-values
+      fieldPath: data.JIFEI_CGW_GATEWAY_URL
+    targets:
+      - select:
+          kind: ConfigMap
+          name: trade-config
+        fieldPaths:
+          - data.JIFEI_CGW_GATEWAY_URL
+  - source:
+      kind: ConfigMap
+      name: trade-platform-values
+      fieldPath: data.JIFEI_CGW_HOST_HEADER
+    targets:
+      - select:
+          kind: ConfigMap
+          name: trade-config
+        fieldPaths:
+          - data.JIFEI_CGW_HOST_HEADER
+  - source:
+      kind: ConfigMap
+      name: trade-platform-values
+      fieldPath: data.JIFEI_CGW_X_QCLOUD_USER_ID
+    targets:
+      - select:
+          kind: ConfigMap
+          name: trade-config
+        fieldPaths:
+          - data.JIFEI_CGW_X_QCLOUD_USER_ID
 resources:
   - ../../../../trade/k8s/base

@@ -1,0 +1,39 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: sgprod
+  namespace: argocd
+spec:
+  description: GitOps project for Singapore production environment.
+  sourceRepos:
+    - git@git.woa.com:wisp/mono2.git
+  destinations:
+    - namespace: '*'
+      name: sgprod
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  roles:
+    - name: mono-observe
+      description: Read access for mono leaf apps in Singapore production.
+      groups:
+        - mono-release-groups/mono-sgprod-release
+        - mono-release-groups/mono-sgprod-readonly
+      policies:
+        - p, proj:sgprod:mono-observe, applications, get, sgprod/*, allow
+    - name: mono-logs
+      description: Log access for mono leaf apps in Singapore production.
+      groups:
+        - mono-release-groups/mono-sgprod-release
+        - mono-release-groups/mono-sgprod-readonly
+      policies:
+        - p, proj:sgprod:mono-logs, logs, get, sgprod/*, allow
+    - name: mono-sync
+      description: Sync access for mono leaf apps in Singapore production.
+      groups:
+        - mono-release-groups/mono-sgprod-release
+      policies:
+        - p, proj:sgprod:mono-sync, applications, sync, sgprod/*, allow

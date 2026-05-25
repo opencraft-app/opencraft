@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: ingressproxy-router
+  namespace: sandbox
+  annotations:
+    service.cloud.tencent.com/direct-access: "true"
+    service.cloud.tencent.com/modification-protection: "true"
+    service.kubernetes.io/loadbalance-id: lb-ohkm8fm5
+spec:
+  allocateLoadBalancerNodePorts: false
+  type: LoadBalancer

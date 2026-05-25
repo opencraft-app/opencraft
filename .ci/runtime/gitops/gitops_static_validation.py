@@ -24,7 +24,7 @@ APPS_DIR_REL = "argocd/apps/beijing-sandbox"
 CATALOG_DIR_TEMPLATE = "argocd/catalogs/sandbox/{env}"
 PLAYGROUND_CATALOG_DIR_TEMPLATE = "argocd/catalogs/playground/beijing-playground/{env}"
 SUPPORTED_SANDBOX_ENVS = {"beijing-sandbox", "beijing-sandbox-2"}
-SUPPORTED_DIRECT_APP_ENVS = {"shprod"}
+SUPPORTED_DIRECT_APP_ENVS = {"shprod", "sgprod"}
 ALLOWED_BEIJING_APP_FILES = {"argocd-runtime.yaml", "sandbox-family-appset.yaml"}
 REQUIRED_CATALOG_FIELDS = {
     "service",
@@ -219,7 +219,9 @@ def env_publish_paths(manifest: dict[str, Any], env: str) -> dict[str, list[str]
     for bundle_name, bundle_data in sorted((manifest.get("bundles") or {}).items()):
         if env not in (bundle_data.get("publish_paths_by_env") or {}):
             continue
-        paths_by_bundle[bundle_name] = load_bundle(manifest, bundle_name, env).publish_paths
+        publish_paths = load_bundle(manifest, bundle_name, env).publish_paths
+        if publish_paths:
+            paths_by_bundle[bundle_name] = publish_paths
     return paths_by_bundle
 
 

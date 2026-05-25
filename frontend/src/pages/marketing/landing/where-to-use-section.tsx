@@ -122,10 +122,17 @@ function useCnCards(): UseCaseCard[] {
   ];
 }
 
-/* ── 国际站卡片生成（Telegram / WhatsApp / Discord / Slack，真·品牌 Logo） ── */
+/* ── 国际站卡片生成（WeChat / Telegram / WhatsApp / Discord，真·品牌 Logo） ── */
 function useGlobalCards(): UseCaseCard[] {
   const t = useT();
   return [
+    {
+      key: "wechat",
+      glow: "#10CC42",
+      icon: { kind: "img", src: assetUrl("/assets/landing/where-to-use/wechat-logo-550dda.png"), alt: "WeChat" },
+      title: t("WeChat"),
+      desc: t("迅速连接微信会话，随时随地保持联系。"),
+    },
     {
       key: "telegram",
       glow: "#229ED9",
@@ -137,22 +144,15 @@ function useGlobalCards(): UseCaseCard[] {
       key: "whatsapp",
       glow: "#25D366",
       icon: { kind: "img", src: assetUrl("/assets/landing/where-to-use/whatsapp-logo.png"), alt: "WhatsApp" },
-      title: t("WhatsApp（即将支持）"),
+      title: t("WhatsApp"),
       desc: t("快速连接 WhatsApp 聊天，日常联系与消息处理更便捷。"),
     },
     {
       key: "discord",
       glow: "#5865F2",
       icon: { kind: "img", src: assetUrl("/assets/landing/where-to-use/discord-logo.png"), alt: "Discord" },
-      title: t("Discord（即将支持）"),
+      title: t("Discord"),
       desc: t("连接 Discord 社群频道，让实时交流与协作更加自由。"),
-    },
-    {
-      key: "slack",
-      glow: "#ECB22E",
-      icon: { kind: "img", src: assetUrl("/assets/landing/where-to-use/slack-logo.png"), alt: "Slack" },
-      title: t("Slack（即将支持）"),
-      desc: t("高效连接 Slack 协作，团队沟通与工作流即将无缝接入。"),
     },
   ];
 }
@@ -216,7 +216,9 @@ export function WhereToUseSection() {
     <section
       id="where-to-use"
       className="relative z-[1] overflow-hidden"
-      style={{ backgroundColor: "#FFFFFF", borderRadius: "61px 61px 0 0" }}
+      /* 刻意不设置 backgroundColor：依赖外层页面白底（避免遮挡 hero 区背景图末端的色调过渡）。
+         若未来 hero 背景延伸到此区域，请改为 transparent 或重新评估色调衔接。 */
+      style={{ borderRadius: "61px 61px 0 0" }}
     >
       <div className="mx-auto w-full max-w-[1200px] px-6 pb-[64px] pt-[56px] md:px-10 md:pb-[120px] md:pt-[88px]">
         {/* 头部：Badge + 标题（左对齐） */}
@@ -252,7 +254,7 @@ export function WhereToUseSection() {
         </motion.div>
 
         {/* 四卡片区域：移动端 1列 → 平板 2列 → 桌面 4列
-         * 数据按区域（isGlobal）选择：国内站 QQ/微信/飞书/企微，国际站 Telegram/WhatsApp/Discord/Slack */}
+         * 数据按区域（isGlobal）选择：国内站 QQ/微信/飞书/企微，国际站 WeChat/Telegram/WhatsApp/Discord */}
         <motion.div
           variants={staggerContainer}
           initial="hidden"

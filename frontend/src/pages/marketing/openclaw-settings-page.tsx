@@ -1,13 +1,18 @@
-// ⚠️ 必须最先 import：在 tea-app 模块加载前设置 window.VERSION，
-// 否则 tea-app 的 i18next lng 会固定为 "zh"。
-// 纯 side-effect import——只关心 module 顶层 `(window as any).VERSION = "en"` 的赋值，
-// 不使用其导出的 isEnglishEnv 值（SDK initI18n 签名 () => void，不接收词条参数）。
+// ⚠️ 必须最先 import：本模块在加载时同步完成两件事：
+//   1. 设置 `window.VERSION = "en"`（tea-app i18n 模块加载时据此决定 lng）
+//   2. 同步调用 SDK 的 `initI18n({ translation })` 注入词条
+// 这两步必须在任何 SDK 组件渲染之前完成，否则 SDK 内部的模块级缓存
+// （如 `cachedI18nList`、`MODEL_PROVIDER_LIST` 首次访问）会在 i18next
+// 未 init 状态下调用 t() 得到 undefined，被 ChannelPanel 的过滤逻辑剔除。
+// 语言由 @/lib/region 的 isGlobal + localStorage('lw-locale') 决定。
 import "@/lib/i18n-env";
 
 import { LegalFooter } from "@/components/site/legal-footer";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowRight,
+  BrainCircuit,
+  ChevronDown,
   Check,
   MessageCircle,
   MessageSquare,
@@ -23,15 +28,15 @@ import {
   Crown,
   TerminalSquare,
   Download,
-  Pencil,
+  Plus,
   Trash2,
+  UserRound,
   Wand2,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { deserialize } from "bson";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
@@ -39,8 +44,11 @@ import { cn } from "@/lib/utils";
 import { assetUrl } from "@/lib/asset-url";
 import { useOpenClaw, type OpenClawBot } from "@/contexts/openclaw-context";
 import { useRepositories } from "@/contexts/repository-context";
-import type { BotTerminalSession } from "@/domain/types";
+import type { TencentPtyClient, TencentPtyConnectionState } from "@/lib/tencent-pty-client";
 import { BrandMark } from "@/components/site/brand-mark";
+import { LanguageSwitcher } from "@/components/site/language-switcher";
+import { useT, t as rawT } from "@/i18n/t";
+import { isGlobal } from "@/lib/region";
 import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
 import { useSession } from "@/contexts/session-context";
 import { avatarImageUrl } from "@/lib/avatar-image";
@@ -52,14 +60,15 @@ import {
   SkillPanel,
   createLighthouseConfig,
   createLightClawScripts,
-  initI18n,
   type IInstanceInfo,
   type IFeatureFlags,
+  type IProductConfig,
 } from "@tencent/tea-sdk-lightclaw";
 import { createMonoDebugExecAdapter } from "@/pages/marketing/openclaw-tat-adapter";
 import { createLightVelaCommandExecutor } from "@/pages/marketing/openclaw-command-executor";
 import { installOpenClawConsoleHelpers } from "@/pages/marketing/openclaw-console-helpers";
-import { getOpenClawCreateLimitMessage } from "@/pages/marketing/openclaw-create-availability";
+import { BuddyPanel } from "@/pages/marketing/openclaw-buddy-panel";
+import { findCompletedCreatingBot, getOpenClawCreateLimitMessage } from "@/pages/marketing/openclaw-create-availability";
 import {
   getRestartBlockReason,
   isActiveBotRestarting as computeIsActiveBotRestarting,
@@ -72,15 +81,6 @@ import {
 import "@tencent/tea-sdk-lightclaw/styles";
 // LightVela 对话面板（npm 包 @tencent/agentchat-lightvela-panel@0.2.5-beta.0）
 import { LightVelaPanel } from "@tencent/agentchat-lightvela-panel";
-
-const DEFAULT_TAT_TERMINAL_TIMEOUT_SECONDS = 3600;
-
-// Vite 生产构建（Rollup）会 tree-shake 掉 SDK 的自动 i18n.init()，
-// 导致 t() 返回空字符串。
-// SDK 的 initI18n 签名为 () => void，不接收词条参数；语言切换由
-// @/lib/i18n-env 在 import 时副作用写入 window.VERSION 完成，
-// tea-app 模块加载时读取此值决定 lng，SDK 内部会自己挂载对应词条。
-initI18n();
 
 /* ─── Types ─── */
 
@@ -99,44 +99,50 @@ interface Persona {
 
 /* ─── Data ─── */
 
-const personas: Persona[] = [
-  {
-    id: "jarvis",
-    name: "贾维斯",
-    nameEn: "Jarvis",
-    desc: "冷静理性的全能AI管家，高效精准地完成每一项任务",
-    icon: "🤖",
-    skills: [
-      { name: "Task Schedule", desc: "智能日程管理与任务调度，自动规划每日待办并发送提醒", icon: <Calendar className="h-5 w-5" /> },
-      { name: "Email Assistant", desc: "邮件智能撰写，分类归档与定时发送", icon: <Mail className="h-5 w-5" /> },
-      { name: "Data Pipeline", desc: "ETL 数据管道自动化，多源数据聚合清洗与报表生成", icon: <Database className="h-5 w-5" /> },
-    ],
-  },
-  {
-    id: "luna",
-    name: "露娜",
-    nameEn: "Luna",
-    desc: "温柔体贴的月光精灵，用温柔话语治愈你的每一天",
-    icon: "🌙",
-    skills: [
-      { name: "Task Schedule", desc: "智能日程管理与任务调度，自动规划每日待办并发送提醒", icon: <Calendar className="h-5 w-5" /> },
-      { name: "Email Assistant", desc: "邮件智能撰写，分类归档与定时发送", icon: <Mail className="h-5 w-5" /> },
-      { name: "Data Pipeline", desc: "ETL 数据管道自动化，多源数据聚合清洗与报表生成", icon: <Database className="h-5 w-5" /> },
-    ],
-  },
-  {
-    id: "spark",
-    name: "火花",
-    nameEn: "Spark",
-    desc: "充满激情的创意伙伴，总能带来意想不到的灵感碰撞",
-    icon: "🔥",
-    skills: [
-      { name: "Task Schedule", desc: "智能日程管理与任务调度，自动规划每日待办并发送提醒", icon: <Calendar className="h-5 w-5" /> },
-      { name: "Email Assistant", desc: "邮件智能撰写，分类归档与定时发送", icon: <Mail className="h-5 w-5" /> },
-      { name: "Data Pipeline", desc: "ETL 数据管道自动化，多源数据聚合清洗与报表生成", icon: <Database className="h-5 w-5" /> },
-    ],
-  },
-];
+// 工厂函数：在调用时才读取 i18n 词条，避免模块加载顺序问题
+function makePersonas(): Persona[] {
+  const taskSchedule = {
+    name: "Task Schedule",
+    desc: rawT("智能日程管理与任务调度，自动规划每日待办并发送提醒"),
+    icon: <Calendar className="h-5 w-5" />,
+  };
+  const emailAssistant = {
+    name: "Email Assistant",
+    desc: rawT("邮件智能撰写，分类归档与定时发送"),
+    icon: <Mail className="h-5 w-5" />,
+  };
+  const dataPipeline = {
+    name: "Data Pipeline",
+    desc: rawT("ETL 数据管道自动化，多源数据聚合清洗与报表生成"),
+    icon: <Database className="h-5 w-5" />,
+  };
+  return [
+    {
+      id: "jarvis",
+      name: rawT("贾维斯"),
+      nameEn: "Jarvis",
+      desc: rawT("冷静理性的全能AI管家，高效精准地完成每一项任务"),
+      icon: "🤖",
+      skills: [taskSchedule, emailAssistant, dataPipeline],
+    },
+    {
+      id: "luna",
+      name: rawT("露娜"),
+      nameEn: "Luna",
+      desc: rawT("温柔体贴的月光精灵，用温柔话语治愈你的每一天"),
+      icon: "🌙",
+      skills: [taskSchedule, emailAssistant, dataPipeline],
+    },
+    {
+      id: "spark",
+      name: rawT("火花"),
+      nameEn: "Spark",
+      desc: rawT("充满激情的创意伙伴，总能带来意想不到的灵感碰撞"),
+      icon: "🔥",
+      skills: [taskSchedule, emailAssistant, dataPipeline],
+    },
+  ];
+}
 
 /* ─── animation variants ─── */
 
@@ -155,18 +161,24 @@ void _staggerContainer;
 
 const SettingsNavbar = () => {
   const { isAuthenticated: isLoggedIn } = useSession();
+  const t = useT();
   return (
     <header
-      className="fixed inset-x-0 top-0 z-50 border-b border-black/5 bg-white/90 backdrop-blur-[20px]"
+      className="lw-fixed-top fixed inset-x-0 z-50 border-b border-black/5 bg-white/90 backdrop-blur-[20px]"
     >
-      <div className="mx-auto flex h-[60px] items-center justify-between max-w-[1440px] px-6 md:px-[80px]">
+      <div className="lw-settings-topbar-inner flex h-[60px] items-center justify-between px-6 md:px-[80px]">
         <BrandMark to="/" />
         <div className="flex items-center gap-3">
+          {/* 语言切换器：仅国际站展示。
+              ⚠️ settings 页内嵌 @tencent/tea-sdk-lightclaw（基于 tea-app i18n），
+              而 tea-app i18n 是 init-once 设计，运行时无法热切换 lng；
+              因此切换语言后必须刷新页面才能让 SDK 区域同步更新文案。 */}
+          {isGlobal && <LanguageSwitcher reloadAfterSwitch />}
           <Link
             to="/"
             className="inline-flex items-center justify-center h-[36px] px-5 bg-[#F5F5F5] text-black/90 rounded-[100px] border border-[#E6E9EF] shadow-[0_2px_0_rgba(187,187,187,0.05)] hover:bg-black/5 transition-colors font-heading text-sm font-medium"
           >
-            返回首页
+            {t("返回首页")}
           </Link>
           {isLoggedIn && <UserAvatarMenu />}
         </div>
@@ -175,127 +187,139 @@ const SettingsNavbar = () => {
   );
 };
 
-/* ─── 实例配置子页面类型（模型 / 通道 / 技能 / 对话，放在单个 bot 内部切换） ─── */
+/* ─── 实例配置子页面类型（通道 / 模型 / 技能 / 人设 / 对话，放在单个 bot 内部切换） ─── */
 
-type SettingsSectionId = "model" | "channel" | "skill" | "chat";
+type SettingsSectionId = "channel" | "model" | "skill" | "buddy" | "chat";
 
 /* ─── Section Card Wrapper ─── */
 
-export const _SectionCard = ({ title, icon, headerRight, children }: { title: string; icon: React.ReactNode; headerRight?: React.ReactNode; children: React.ReactNode }) => (
-  <motion.div
-    variants={fadeIn}
-    className="overflow-hidden rounded-2xl"
-    style={{
-      border: "1px solid rgba(0,0,0,0.06)",
-      background: "#ffffff",
-      boxShadow: "0 4px 24px rgba(0,0,0,0.03), 0 1px 2px rgba(0,0,0,0.02)",
-    }}
-  >
-    <div className="flex items-center gap-3 px-6 py-4" style={{ borderBottom: "1px solid rgba(0,0,0,0.05)" }}>
-      <div className="flex h-8 w-8 items-center justify-center rounded-xl" style={{ background: "rgba(0,0,0,0.04)", color: "rgba(0,0,0,0.90)" }}>
-        {icon}
+export const _SectionCard = ({ title, icon, headerRight, children }: { title: string; icon: React.ReactNode; headerRight?: React.ReactNode; children: React.ReactNode }) => {
+  if (isGlobal) return null;
+  return (
+    <motion.div
+      variants={fadeIn}
+      className="overflow-hidden rounded-2xl"
+      style={{
+        border: "1px solid rgba(0,0,0,0.06)",
+        background: "#ffffff",
+        boxShadow: "0 4px 24px rgba(0,0,0,0.03), 0 1px 2px rgba(0,0,0,0.02)",
+      }}
+    >
+      <div className="flex items-center gap-3 px-6 py-4" style={{ borderBottom: "1px solid rgba(0,0,0,0.05)" }}>
+        <div className="flex h-8 w-8 items-center justify-center rounded-xl" style={{ background: "rgba(0,0,0,0.04)", color: "rgba(0,0,0,0.90)" }}>
+          {icon}
+        </div>
+        <h3 className="flex-1 text-base font-semibold" style={{ color: "rgba(0,0,0,0.90)", letterSpacing: "-0.2px" }}>{title}</h3>
+        {headerRight}
       </div>
-      <h3 className="flex-1 text-base font-semibold" style={{ color: "rgba(0,0,0,0.90)", letterSpacing: "-0.2px" }}>{title}</h3>
-      {headerRight}
-    </div>
-    <div className="p-6">
-      {children}
-    </div>
-  </motion.div>
-);
+      <div className="p-6">
+        {children}
+      </div>
+    </motion.div>
+  );
+}
 
 /* ─── Delete Confirm Dialog ─── */
 
-export const _DeleteConfirmDialog = ({ botName, onConfirm, onCancel }: { botName: string; onConfirm: () => void; onCancel: () => void }) => (
-  <motion.div
-    initial={{ opacity: 0 }}
-    animate={{ opacity: 1 }}
-    exit={{ opacity: 0 }}
-    className="fixed inset-0 z-50 flex items-center justify-center"
-    style={{ backgroundColor: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}
-    onClick={onCancel}
-  >
+export const _DeleteConfirmDialog = ({ botName, onConfirm, onCancel }: { botName: string; onConfirm: () => void; onCancel: () => void }) => {
+  const t = useT();
+  if (isGlobal) return null;
+  return (
     <motion.div
-      initial={{ opacity: 0, y: 20, scale: 0.95 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: 20, scale: 0.95 }}
-      transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
-      className="relative mx-4 flex w-full max-w-sm flex-col items-center rounded-[1.75rem] border p-8 shadow-2xl"
-      style={{ background: "rgba(255,255,255,0.98)", borderColor: "rgba(0,0,0,0.06)" }}
-      onClick={(e) => e.stopPropagation()}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      style={{ backgroundColor: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}
+      onClick={onCancel}
     >
-      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl" style={{ background: "rgba(207,61,76,0.08)" }}>
-        <AlertTriangle className="h-6 w-6" style={{ color: "#cf3d4c" }} />
-      </div>
-      <h3 className="mb-1.5 text-lg font-bold" style={{ color: "var(--lw-fg)" }}>确认删除</h3>
-      <p className="mb-6 text-center text-sm leading-relaxed text-[var(--text-secondary)]">
-        确定要删除龙虾 <span className="font-semibold text-[var(--text-primary)]">"{botName}"</span> 吗？此操作不可撤销。
-      </p>
-      <div className="flex w-full gap-3">
-        <button
-          onClick={onCancel}
-          className="flex-1 rounded-full border px-4 py-2.5 text-sm font-medium transition-colors hover:bg-[var(--surface-muted)]"
-          style={{ borderColor: "rgba(0,0,0,0.08)", color: "#666" }}
-        >
-          取消
-        </button>
-        <button
-          onClick={onConfirm}
-          className="flex-1 rounded-full px-4 py-2.5 text-sm font-bold text-white transition-colors hover:opacity-90"
-          style={{ background: "#cf3d4c" }}
-        >
-          确认删除
-        </button>
-      </div>
+      <motion.div
+        initial={{ opacity: 0, y: 20, scale: 0.95 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 20, scale: 0.95 }}
+        transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
+        className="relative mx-4 flex w-full max-w-sm flex-col items-center rounded-[1.75rem] border p-8 shadow-2xl"
+        style={{ background: "rgba(255,255,255,0.98)", borderColor: "rgba(0,0,0,0.06)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl" style={{ background: "rgba(207,61,76,0.08)" }}>
+          <AlertTriangle className="h-6 w-6" style={{ color: "#cf3d4c" }} />
+        </div>
+        <h3 className="mb-1.5 text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("确认删除")}</h3>
+        <p className="mb-6 text-center text-sm leading-relaxed text-[var(--text-secondary)]">
+          {t("确定要删除龙虾 {{name}} 吗？此操作不可撤销。", { name: `"${botName}"` })}
+        </p>
+        <div className="flex w-full gap-3">
+          <button
+            onClick={onCancel}
+            className="flex-1 rounded-full border px-4 py-2.5 text-sm font-medium transition-colors hover:bg-[var(--surface-muted)]"
+            style={{ borderColor: "rgba(0,0,0,0.08)", color: "#666" }}
+          >
+            {t("取消")}
+          </button>
+          <button
+            onClick={onConfirm}
+            className="flex-1 rounded-full px-4 py-2.5 text-sm font-bold text-white transition-colors hover:opacity-90"
+            style={{ background: "#cf3d4c" }}
+          >
+            {t("确认删除")}
+          </button>
+        </div>
+      </motion.div>
     </motion.div>
-  </motion.div>
-);
+  );
+};
 
 /* ─── Limit Reached Dialog ─── */
 
-export const _LimitReachedDialog = ({ maxBots, planName, onClose }: { maxBots: number; planName: string; onClose: () => void }) => (
-  <motion.div
-    initial={{ opacity: 0 }}
-    animate={{ opacity: 1 }}
-    exit={{ opacity: 0 }}
-    className="fixed inset-0 z-50 flex items-center justify-center"
-    style={{ backgroundColor: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}
-    onClick={onClose}
-  >
+export const _LimitReachedDialog = ({ maxBots, planName, onClose }: { maxBots: number; planName: string; onClose: () => void }) => {
+  const t = useT();
+  if (isGlobal) return null;
+  return (
     <motion.div
-      initial={{ opacity: 0, y: 20, scale: 0.95 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: 20, scale: 0.95 }}
-      transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
-      className="relative mx-4 flex w-full max-w-sm flex-col items-center rounded-[1.75rem] border p-8 shadow-2xl"
-      style={{ background: "rgba(255,255,255,0.98)", borderColor: "rgba(0,0,0,0.06)" }}
-      onClick={(e) => e.stopPropagation()}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      style={{ backgroundColor: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}
+      onClick={onClose}
     >
-      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl" style={{ background: "rgba(230,111,98,0.08)" }}>
-        <Crown className="h-6 w-6" style={{ color: "var(--lw-accent)" }} />
-      </div>
-      <h3 className="mb-1.5 text-lg font-bold" style={{ color: "var(--lw-fg)" }}>已达创建上限</h3>
-      <p className="mb-2 text-center text-sm leading-relaxed text-[var(--text-secondary)]">
-        当前 <span className="font-semibold text-[var(--text-primary)]">{planName}</span> 套餐最多可创建 <span className="font-bold" style={{ color: "var(--lw-accent)" }}>{maxBots} 只</span>龙虾，你已达到上限。
-      </p>
-      <div className="flex w-full gap-3" style={{ marginTop: 25 }}>
-        <button
-          onClick={onClose}
-          className="flex-1 rounded-full border px-4 py-2.5 text-sm font-medium transition-colors hover:bg-[var(--surface-muted)]"
-          style={{ borderColor: "rgba(0,0,0,0.08)", color: "#666" }}
-        >
-          我知道了
-        </button>
-      </div>
+      <motion.div
+        initial={{ opacity: 0, y: 20, scale: 0.95 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 20, scale: 0.95 }}
+        transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
+        className="relative mx-4 flex w-full max-w-sm flex-col items-center rounded-[1.75rem] border p-8 shadow-2xl"
+        style={{ background: "rgba(255,255,255,0.98)", borderColor: "rgba(0,0,0,0.06)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl" style={{ background: "rgba(230,111,98,0.08)" }}>
+          <Crown className="h-6 w-6" style={{ color: "var(--lw-accent)" }} />
+        </div>
+        <h3 className="mb-1.5 text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("已达创建上限")}</h3>
+        <p className="mb-2 text-center text-sm leading-relaxed text-[var(--text-secondary)]">
+          {t("当前 {{plan}} 套餐最多可创建 {{max}} 只龙虾，你已达到上限。", { plan: planName, max: String(maxBots) })}
+        </p>
+        <div className="flex w-full gap-3" style={{ marginTop: 25 }}>
+          <button
+            onClick={onClose}
+            className="flex-1 rounded-full border px-4 py-2.5 text-sm font-medium transition-colors hover:bg-[var(--surface-muted)]"
+            style={{ borderColor: "rgba(0,0,0,0.08)", color: "#666" }}
+          >
+            {t("我知道了")}
+          </button>
+        </div>
+      </motion.div>
     </motion.div>
-  </motion.div>
-);
+  );
+};
 
 /* ─── Channel Section ─── */
 
 type WeixinSessionStatus = "idle" | "creating" | "starting" | "waiting_qr" | "scanned" | "success" | "failed" | "expired" | "cancelled" | "timeout";
 
 export const ChannelSection = () => {
+  const t = useT();
   const repositories = useRepositories();
   const { bots, updateBot } = useOpenClaw();
   const configurableBots = useMemo(
@@ -359,7 +383,7 @@ export const ChannelSection = () => {
   /* ── 启动微信扫码流程 ── */
   const handleWechatAuth = useCallback(async () => {
     if (!selectedBot) {
-      setChannelNotice("请先创建并选择一个 Hermes，再接入通道。");
+      setChannelNotice(t("请先创建并选择一个 Hermes，再接入通道。"));
       return;
     }
 
@@ -438,7 +462,7 @@ export const ChannelSection = () => {
     } catch (err) {
       if ((err as Error).name !== "AbortError") {
         setWxStatus("failed");
-        setWxError(err instanceof Error ? err.message : "微信登录会话创建失败");
+        setWxError(err instanceof Error ? err.message : t("微信登录会话创建失败"));
       }
     }
   }, [selectedBot, repositories.bots, updateBot]);
@@ -512,9 +536,9 @@ export const ChannelSection = () => {
       setQqAppId("");
       setQqAppSecret("");
       setQqAccount("");
-      setChannelNotice(result.gatewayRestarted ? "QQ channel 已配置，gateway 已重启。" : "QQ channel 已配置，但 gateway 未确认重启。");
+      setChannelNotice(result.gatewayRestarted ? t("QQ channel 已配置，gateway 已重启。") : t("QQ channel 已配置，但 gateway 未确认重启。"));
     } catch (error) {
-      setChannelNotice(error instanceof Error ? error.message : "QQ channel 配置失败");
+      setChannelNotice(error instanceof Error ? error.message : t("QQ channel 配置失败"));
     } finally {
       setSubmitting(false);
     }
@@ -522,16 +546,19 @@ export const ChannelSection = () => {
 
   /* ── 微信扫码状态对应的 UI 文案 ── */
   const wxStatusLabel: Record<string, { text: string; color: string }> = {
-    creating: { text: "正在创建登录会话…", color: "#999" },
-    starting: { text: "正在启动微信登录…", color: "#999" },
-    waiting_qr: { text: "请使用微信扫描二维码", color: "#07C160" },
-    scanned: { text: "已扫码，正在确认登录…", color: "#07C160" },
-    success: { text: "微信通道接入成功！", color: "#07C160" },
-    failed: { text: "登录失败", color: "#cf3d4c" },
-    expired: { text: "二维码已过期", color: "#C67B1E" },
-    cancelled: { text: "已取消", color: "#999" },
-    timeout: { text: "登录超时", color: "#C67B1E" },
+    creating: { text: t("正在创建登录会话…"), color: "#999" },
+    starting: { text: t("正在启动微信登录…"), color: "#999" },
+    waiting_qr: { text: t("请使用微信扫描二维码"), color: "#07C160" },
+    scanned: { text: t("已扫码，正在确认登录…"), color: "#07C160" },
+    success: { text: t("微信通道接入成功！"), color: "#07C160" },
+    failed: { text: t("登录失败"), color: "#cf3d4c" },
+    expired: { text: t("二维码已过期"), color: "#C67B1E" },
+    cancelled: { text: t("已取消"), color: "#999" },
+    timeout: { text: t("登录超时"), color: "#C67B1E" },
   };
+
+  // 国内站封存组件：所有 hooks 调用完毕后再做国际站短路（遵循 React Hooks 调用顺序规则）
+  if (isGlobal) return null;
 
   return (
     <>
@@ -568,11 +595,11 @@ export const ChannelSection = () => {
                   <ScanLine className="h-6 w-6" style={{ color: "#07C160" }} />
                 )}
               </div>
-              <h3 className="mb-1.5 text-lg font-bold" style={{ color: "var(--lw-fg)" }}>微信扫码接入</h3>
+              <h3 className="mb-1.5 text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("微信扫码接入")}</h3>
 
               {/* 状态提示 */}
               <p className="mb-4 text-center text-sm font-medium" style={{ color: wxStatusLabel[wxStatus]?.color ?? "#999" }}>
-                {wxStatusLabel[wxStatus]?.text ?? "准备中…"}
+                {wxStatusLabel[wxStatus]?.text ?? t("准备中…")}
               </p>
 
               {/* 二维码区域 */}
@@ -583,19 +610,19 @@ export const ChannelSection = () => {
                 {wxQrUrl ? (
                   <img
                     src={wxQrUrl}
-                    alt="微信登录二维码"
+                    alt={t("微信登录二维码")}
                     className="h-44 w-44 rounded-lg"
                   />
                 ) : wxStatus === "success" ? (
                   <div className="flex flex-col items-center gap-2">
                     <Check className="h-12 w-12" style={{ color: "#07C160" }} />
-                    <span className="text-sm font-medium" style={{ color: "#07C160" }}>接入成功</span>
+                    <span className="text-sm font-medium" style={{ color: "#07C160" }}>{t("接入成功")}</span>
                   </div>
                 ) : ["failed", "expired", "timeout"].includes(wxStatus) ? (
                   <div className="flex flex-col items-center gap-2">
                     <X className="h-12 w-12" style={{ color: "#cf3d4c" }} />
                     <span className="text-xs text-center leading-relaxed" style={{ color: "#cf3d4c" }}>
-                      {wxError || "请重试"}
+                      {wxError || t("请重试")}
                     </span>
                   </div>
                 ) : (
@@ -611,20 +638,20 @@ export const ChannelSection = () => {
               {/* 操作按钮 */}
               {wxStatus === "success" ? (
                 <button onClick={closeQrModal} className="lw-btn-primary w-full">
-                  <Check className="h-4 w-4" /> 完成
+                  <Check className="h-4 w-4" /> {t("完成")}
                 </button>
               ) : ["failed", "expired", "timeout"].includes(wxStatus) ? (
                 <div className="flex w-full gap-3">
                   <button onClick={closeQrModal} className="flex-1 rounded-full border px-4 py-2.5 text-sm font-medium transition-colors hover:bg-[var(--surface-muted)]" style={{ borderColor: "rgba(0,0,0,0.08)", color: "#666" }}>
-                    关闭
+                    {t("关闭")}
                   </button>
                   <button onClick={() => void handleWechatAuth()} className="lw-btn-primary flex-1">
-                    重试
+                    {t("重试")}
                   </button>
                 </div>
               ) : (
                 <button onClick={closeQrModal} className="w-full rounded-full border px-4 py-2.5 text-sm font-medium transition-colors hover:bg-[var(--surface-muted)]" style={{ borderColor: "rgba(0,0,0,0.08)", color: "#666" }}>
-                  取消
+                  {t("取消")}
                 </button>
               )}
             </motion.div>
@@ -642,7 +669,7 @@ export const ChannelSection = () => {
                 <img src="https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/aef7d749-cabe-48dc-938b-11f1f50980c8.png" alt="微信" className="h-5 w-5 object-contain" />
                 <span className="flex-1 text-sm font-semibold" style={{ color: "var(--lw-fg)" }}>微信</span>
                 <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold" style={{ background: "rgba(7,193,96,0.1)", color: "#07C160" }}>
-                  <Check className="h-3 w-3" /> 已接入
+                  <Check className="h-3 w-3" /> {t("已接入")}
                 </span>
               </div>
             )}
@@ -809,6 +836,8 @@ export const ChannelSection = () => {
 /* ─── Skill Section ─── */
 
 const SkillSection = () => {
+  const t = useT();
+  const personas = useMemo(() => makePersonas(), []);
   const [selectedPersona, setSelectedPersona] = useState<Persona | null>(null);
   const [installing, setInstalling] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -850,7 +879,7 @@ const SkillSection = () => {
               <p className="text-xs text-[var(--text-secondary)]">{selectedPersona.desc}</p>
             </div>
             <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold" style={{ background: "rgba(230,111,98,0.08)", color: "var(--lw-accent)" }}>
-              <Check className="h-3 w-3" /> 已安装
+              <Check className="h-3 w-3" /> {t("已安装")}
             </span>
           </div>
           <div className="space-y-2">
@@ -870,7 +899,7 @@ const SkillSection = () => {
             onClick={() => { setInstalled(false); setSelectedPersona(null); setProgress(0); }}
             className="lw-back-link mt-3"
           >
-            重新选择技能专家
+            {t("重新选择技能专家")}
           </button>
         </div>
       ) : installing && selectedPersona ? (
@@ -878,10 +907,10 @@ const SkillSection = () => {
         <div className="text-center">
           <div className="mx-auto mb-4 text-3xl">{selectedPersona.icon}</div>
           <p className="mb-4 text-sm font-semibold" style={{ color: "var(--lw-fg)" }}>
-            正在安装 {selectedPersona.name} {selectedPersona.nameEn}...
+            {t("正在安装 {{name}} {{nameEn}}...", { name: selectedPersona.name, nameEn: selectedPersona.nameEn })}
           </p>
           <div className="mb-2 flex items-center justify-between">
-            <span className="text-xs font-bold" style={{ color: "var(--lw-fg)" }}>安装进度</span>
+            <span className="text-xs font-bold" style={{ color: "var(--lw-fg)" }}>{t("安装进度")}</span>
             <span className="text-xs font-bold" style={{ color: "var(--lw-accent)" }}>{Math.round(progress)}%</span>
           </div>
           <div className="h-2.5 overflow-hidden rounded-full" style={{ background: "#eee" }}>
@@ -897,7 +926,7 @@ const SkillSection = () => {
       ) : (
         /* Selection state */
         <>
-          <p className="text-sm text-[var(--text-secondary)]">选择一个技能专家，让你的龙虾技能增强</p>
+          <p className="text-sm text-[var(--text-secondary)]">{t("选择一个技能专家，让你的龙虾技能增强")}</p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             {personas.map((persona) => (
               <button
@@ -932,7 +961,7 @@ const SkillSection = () => {
                 className="overflow-hidden"
               >
                 <div className="space-y-2 rounded-xl p-4" style={{ background: "rgba(245,243,239,0.5)" }}>
-                  <p className="mb-3 text-xs font-bold text-[var(--text-tertiary)]">预装 Agent Skills</p>
+                  <p className="mb-3 text-xs font-bold text-[var(--text-tertiary)]">{t("预装 Agent Skills")}</p>
                   {selectedPersona.skills.map((skill, idx) => (
                     <div key={idx} className="flex items-start gap-3">
                       <div className="lw-setup-icon-container flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg">
@@ -947,7 +976,7 @@ const SkillSection = () => {
                 </div>
                 <div className="mt-4 text-center">
                   <button onClick={handleInstall} className="lw-btn-primary">
-                    开始安装 <Sparkles className="h-4 w-4" />
+                    {t("开始安装")} <Sparkles className="h-4 w-4" />
                   </button>
                 </div>
               </motion.div>
@@ -963,72 +992,34 @@ void SkillSection;
 
 /* ─── Terminal Utilities ─── */
 
-const decodeBase64 = (value: string) => {
-  const binary = atob(value);
-  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
-  return new TextDecoder().decode(bytes);
-};
-
-const encodeBase64 = (value: string) => {
-  const bytes = new TextEncoder().encode(value);
-  let binary = "";
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-  return btoa(binary);
-};
-
-const decodeFrame = async (frame: string | Blob | ArrayBuffer) => {
-  if (typeof frame === "string") {
-    return JSON.parse(frame);
-  }
-  if (frame instanceof Blob) {
-    return decodeFrame(await frame.arrayBuffer());
-  }
-  const bytes = new Uint8Array(frame);
-  try {
-    return deserialize(bytes);
-  } catch {
-    return JSON.parse(new TextDecoder().decode(bytes));
-  }
-};
-
-const extractTerminalOutput = (message: any): string => {
-  const payload = message?.Data;
-  if (!payload || typeof payload !== "object") {
-    return "";
-  }
-  const candidates = [payload.Output, payload.Data, payload?.Data?.Output, payload?.Data?.Data];
-  for (const candidate of candidates) {
-    if (typeof candidate === "string") {
-      try {
-        return decodeBase64(candidate);
-      } catch {
-        return candidate;
-      }
-    }
-    if (candidate instanceof Uint8Array) {
-      return new TextDecoder().decode(candidate);
-    }
-    if (candidate instanceof ArrayBuffer) {
-      return new TextDecoder().decode(candidate);
-    }
-  }
-  return "";
-};
-
 type ConnectionState = "loading" | "bootstrapping" | "authenticating" | "connected" | "closed" | "error";
+
+const mapPtyState = (state: TencentPtyConnectionState): ConnectionState => {
+  switch (state) {
+    case "idle":
+    case "connecting":
+      return "bootstrapping";
+    case "authenticating":
+    case "starting":
+      return "authenticating";
+    case "ready":
+      return "connected";
+    case "closed":
+      return "closed";
+    case "error":
+      return "error";
+  }
+};
 
 /* ─── Terminal Modal ─── */
 
 const TerminalModal = ({ botId, botName, onClose }: { botId: string; botName: string; onClose: () => void }) => {
+  const t = useT();
   const repositories = useRepositories();
   const terminalContainerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
-  const socketRef = useRef<WebSocket | null>(null);
-  const authTimerRef = useRef<number | null>(null);
-  const sessionRef = useRef<BotTerminalSession | null>(null);
+  const ptyClientRef = useRef<TencentPtyClient | null>(null);
 
   const [connectionState, setConnectionState] = useState<ConnectionState>("loading");
   const [error, setError] = useState<string | null>(null);
@@ -1079,28 +1070,12 @@ const TerminalModal = ({ botId, botName, onClose }: { botId: string; botName: st
     terminal.writeln("");
 
     terminal.onData((data) => {
-      const activeSession = sessionRef.current;
-      const socket = socketRef.current;
-      if (!activeSession || !socket || socket.readyState !== WebSocket.OPEN) {
-        return;
-      }
-      socket.send(JSON.stringify({
-        Type: "PtyInput",
-        Data: { SessionId: activeSession.sessionId, Input: encodeBase64(data) },
-      }));
+      ptyClientRef.current?.sendInput(data);
     });
 
     const handleResize = () => {
       fitAddon.fit();
-      const activeSession = sessionRef.current;
-      const socket = socketRef.current;
-      if (!activeSession || !socket || socket.readyState !== WebSocket.OPEN) {
-        return;
-      }
-      socket.send(JSON.stringify({
-        Type: "PtyResize",
-        Data: { SessionId: activeSession.sessionId, Cols: terminal.cols, Rows: terminal.rows },
-      }));
+      ptyClientRef.current?.resize(terminal.cols, terminal.rows);
     };
 
     window.addEventListener("resize", handleResize);
@@ -1120,17 +1095,8 @@ const TerminalModal = ({ botId, botName, onClose }: { botId: string; botName: st
     let cancelled = false;
 
     const closeSocket = () => {
-      const activeSession = sessionRef.current;
-      const socket = socketRef.current;
-      if (authTimerRef.current !== null) {
-        window.clearTimeout(authTimerRef.current);
-        authTimerRef.current = null;
-      }
-      if (activeSession && socket && socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ Type: "PtyStop", Data: { SessionId: activeSession.sessionId } }));
-      }
-      socket?.close();
-      socketRef.current = null;
+      ptyClientRef.current?.close();
+      ptyClientRef.current = null;
     };
 
     const connect = async () => {
@@ -1141,95 +1107,54 @@ const TerminalModal = ({ botId, botName, onClose }: { botId: string; botName: st
         if (cancelled) {
           return;
         }
-        sessionRef.current = bootstrap;
 
         terminalRef.current?.reset();
         terminalRef.current?.writeln(`Connecting ${botName} (${botId})...`);
         fitAddonRef.current?.fit();
 
-        const socket = new WebSocket(bootstrap.wsUrl);
-        socket.binaryType = "arraybuffer";
-        socketRef.current = socket;
-
-        socket.onopen = () => {
-          setConnectionState("authenticating");
-          socket.send(JSON.stringify({
-            Type: "SessionAuth",
-            Data: {
-              Uin: bootstrap.ownerUin,
-              AppId: bootstrap.appId,
-              InstanceId: bootstrap.instanceId,
-              SessionId: bootstrap.sessionId,
-            },
-          }));
-          authTimerRef.current = window.setTimeout(() => {
-            const timeoutSeconds = bootstrap.timeoutSeconds ?? DEFAULT_TAT_TERMINAL_TIMEOUT_SECONDS;
-            socket.send(JSON.stringify({
-              Type: "PtyStart",
-              Data: {
-                SessionId: bootstrap.sessionId,
-                Cols: terminalRef.current?.cols ?? bootstrap.cols,
-                Rows: terminalRef.current?.rows ?? bootstrap.rows,
-                MaxIdleTime: timeoutSeconds,
-              },
-            }));
-          }, 1000);
-        };
-
-        socket.onmessage = async (event) => {
-          try {
-            const message = await decodeFrame(event.data);
-            switch (message?.Type) {
-              case "PtyReady":
-                setConnectionState("connected");
-                terminalRef.current?.focus();
-                return;
-              case "PtyOutput": {
-                const output = extractTerminalOutput(message);
-                if (output) {
-                  terminalRef.current?.write(output);
-                }
-                return;
-              }
-              case "PtyError":
-              case "Error": {
-                const messageText = message?.Data?.Message || "terminal error";
-                setConnectionState("error");
-                setError(messageText);
-                terminalRef.current?.writeln(`\r\n[error] ${messageText}`);
-                return;
-              }
-              default: {
-                const output = extractTerminalOutput(message);
-                if (output) {
-                  terminalRef.current?.write(output);
-                }
-              }
+        const { TencentPtyClient } = await import("@/lib/tencent-pty-client");
+        if (cancelled) {
+          return;
+        }
+        const ptyClient = new TencentPtyClient(bootstrap, {
+          getDimensions: () => ({
+            cols: terminalRef.current?.cols ?? bootstrap.cols,
+            rows: terminalRef.current?.rows ?? bootstrap.rows,
+          }),
+          onStateChange: (state) => {
+            if (!cancelled) {
+              setConnectionState(mapPtyState(state));
             }
-          } catch (decodeError) {
+          },
+          onReady: () => {
+            terminalRef.current?.focus();
+          },
+          onOutput: (output) => {
+            terminalRef.current?.write(output);
+          },
+          onError: (message) => {
+            if (!cancelled) {
+              setError(message);
+              terminalRef.current?.writeln(`\r\n[error] ${message}`);
+            }
+          },
+          onDecodeError: (decodeError) => {
             terminalRef.current?.writeln(`\r\n[decode-error] ${String(decodeError)}`);
-          }
-        };
-
-        socket.onerror = () => {
-          setConnectionState("error");
-          setError("websocket error");
-          terminalRef.current?.writeln("\r\n[error] websocket error");
-        };
-
-        socket.onclose = (event) => {
-          if (cancelled) {
-            return;
-          }
-          setConnectionState("closed");
-          terminalRef.current?.writeln(`\r\n[closed] code=${event.code}`);
-        };
+          },
+          onClose: (event) => {
+            if (!cancelled) {
+              terminalRef.current?.writeln(`\r\n[closed] code=${event.code}`);
+            }
+          },
+        });
+        ptyClientRef.current = ptyClient;
+        ptyClient.connect();
       } catch (connectError) {
         if (cancelled) {
           return;
         }
         setConnectionState("error");
-        setError(connectError instanceof Error ? connectError.message : "终端连接失败");
+        setError(connectError instanceof Error ? connectError.message : t("终端连接失败"));
       }
     };
 
@@ -1238,17 +1163,16 @@ const TerminalModal = ({ botId, botName, onClose }: { botId: string; botName: st
     return () => {
       cancelled = true;
       closeSocket();
-      sessionRef.current = null;
     };
   }, [botId, botName, repositories.bots]);
 
   const stateLabel: Record<ConnectionState, string> = {
-    loading: "初始化...",
-    bootstrapping: "获取会话...",
-    authenticating: "认证中...",
-    connected: "已连接",
-    closed: "已断开",
-    error: "连接失败",
+    loading: t("初始化..."),
+    bootstrapping: t("获取会话..."),
+    authenticating: t("认证中..."),
+    connected: t("已连接"),
+    closed: t("已断开"),
+    error: t("连接失败"),
   };
 
   const stateColor: Record<ConnectionState, string> = {
@@ -1299,7 +1223,7 @@ const TerminalModal = ({ botId, botName, onClose }: { botId: string; botName: st
           <button
             onClick={onClose}
             className="flex h-7 w-7 items-center justify-center rounded-lg transition-colors hover:bg-[rgba(255,255,255,0.1)] text-[var(--text-tertiary)]"
-            title="关闭终端"
+            title={t("关闭终端")}
           >
             <X className="h-4 w-4" />
           </button>
@@ -1353,6 +1277,7 @@ const BirthCertificateModal = ({
   bot: { id: string; name: string; createdAt: string };
   onClose: () => void;
 }) => {
+  const t = useT();
   const repositories = useRepositories();
   const certificateRef = useRef<HTMLDivElement>(null);
   const [downloading, setDownloading] = useState(false);
@@ -1379,7 +1304,7 @@ const BirthCertificateModal = ({
         if (cancelled) {
           return;
         }
-        const message = error instanceof Error ? error.message : "出生证明加载失败";
+        const message = error instanceof Error ? error.message : t("出生证明加载失败");
         setBornCardError(message);
         setBornCardOrder(null);
         setBornCardCreatedAt(bot.createdAt);
@@ -2228,6 +2153,10 @@ export const _BotInfoCard = ({ bot, index, onDelete, onTerminal }: { bot: { id: 
   const [deleting, setDeleting] = useState(false);
   const [deleteErr, setDeleteErr] = useState<string | null>(null);
   const { deleteBot } = useOpenClaw();
+  const t = useT();
+
+  // 国内站封存组件：所有 hooks 调用完毕后再做国际站短路（遵循 React Hooks 调用顺序规则）
+  if (isGlobal) return null;
 
   // 获取该 bot 的固定头像
   const avatarUrl = getAvatarForBot(bot.id);
@@ -2329,25 +2258,25 @@ export const _BotInfoCard = ({ bot, index, onDelete, onTerminal }: { bot: { id: 
               <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "rgba(220,38,38,0.08)" }}>
                 <AlertTriangle className="h-5 w-5" style={{ color: "#DC2626" }} />
               </div>
-              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>确认删除</h3>
+              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("确认删除")}</h3>
             </div>
             {/* 风险说明 */}
             <p style={{ color: "#666", fontSize: "14px", lineHeight: 1.6, marginBottom: "12px" }}>
-              删除后会话将立即断开，数据将无法恢复。
+              {t("删除后会话将立即断开，数据将无法恢复。")}
             </p>
             {/* 操作引导 */}
             <p style={{ color: "var(--lw-fg)", fontSize: "14px", lineHeight: 1.6, marginBottom: "10px" }}>
-              如确认删除，请输入 Hermes 的名称 <strong>{bot.name}</strong>：
+              {t("如确认删除，请输入名称 {{name}}：", { name: bot.name })}
             </p>
-            <input type="text" placeholder={`请输入 ${bot.name}`} value={deleteInput} onChange={(e) => setDeleteInput(e.target.value)} className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition-all focus:border-[#DC2626]" style={{ borderColor: "var(--lw-border)", color: "var(--lw-fg)", marginBottom: "20px" }} />
+            <input type="text" placeholder={t("请输入 {{name}}", { name: bot.name })} value={deleteInput} onChange={(e) => setDeleteInput(e.target.value)} className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition-all focus:border-[#DC2626]" style={{ borderColor: "var(--lw-border)", color: "var(--lw-fg)", marginBottom: "20px" }} />
             {deleteErr && <p className="text-xs" style={{ color: "#DC2626", marginBottom: "12px" }}>{deleteErr}</p>}
             {/* 按钮组：上下排列 */}
             <div className="flex flex-col gap-2">
-              <button onClick={async () => { setDeleting(true); setDeleteErr(null); try { await deleteBot(bot.id); setShowDeleteConfirm(false); } catch (e) { setDeleteErr(e instanceof Error ? e.message : "删除失败"); } finally { setDeleting(false); } }} disabled={deleteInput !== bot.name || deleting} className="w-full rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-all" style={{ backgroundColor: deleteInput === bot.name && !deleting ? "#DC2626" : "#E5E7EB", cursor: deleteInput === bot.name && !deleting ? "pointer" : "not-allowed" }}>
-                {deleting ? "删除中..." : "确认删除"}
+              <button onClick={async () => { setDeleting(true); setDeleteErr(null); try { await deleteBot(bot.id); setShowDeleteConfirm(false); } catch (e) { setDeleteErr(e instanceof Error ? e.message : t("删除失败")); } finally { setDeleting(false); } }} disabled={deleteInput !== bot.name || deleting} className="w-full rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-all" style={{ backgroundColor: deleteInput === bot.name && !deleting ? "#DC2626" : "#E5E7EB", cursor: deleteInput === bot.name && !deleting ? "pointer" : "not-allowed" }}>
+                {deleting ? t("删除中...") : t("确认删除")}
               </button>
               <button onClick={() => setShowDeleteConfirm(false)} className="py-2 text-sm transition-colors hover:opacity-70" style={{ color: "#999", background: "none", border: "none", cursor: "pointer" }}>
-                取消
+                {t("取消")}
               </button>
             </div>
           </div>
@@ -2360,11 +2289,11 @@ export const _BotInfoCard = ({ bot, index, onDelete, onTerminal }: { bot: { id: 
 
 /* ─── Creating Loading Animation ─── */
 
-const CREATING_TEXT = "正在给 Hermes Agent 喂咖啡，唤醒大脑中";
 const CREATING_POLL_INTERVAL_MS = 3000;
 const CREATING_MAX_WAIT_MS = 15 * 60 * 1000;
 
 const CreatingLoadingView = ({ errorMessage }: { errorMessage?: string | null }) => {
+  const t = useT();
   /* 动态 "..." 计数：0 -> 1 -> 2 -> 3 -> 0 ... 每 450ms 切换 */
   const [dotCount, setDotCount] = useState(1);
 
@@ -2416,7 +2345,7 @@ const CreatingLoadingView = ({ errorMessage }: { errorMessage?: string | null })
           errorMessage
         ) : (
           <>
-            {CREATING_TEXT}
+            {t("正在给 Hermes Agent 喂咖啡，唤醒大脑中")}
             <span className="inline-block" style={{ width: "1.5em", textAlign: "left" }}>
               {dots}
             </span>
@@ -2435,12 +2364,12 @@ const getBotStatusColor = (status: OpenClawBot["status"]) => {
 };
 
 const getBotStatusLabel = (status: OpenClawBot["status"]) => {
-  if (status === "running") return "运行中";
-  if (status === "paused") return "已暂停";
-  if (status === "failed") return "创建失败";
-  if (status === "deleting") return "删除中";
-  if (status === "provisioning") return "创建中";
-  return "草稿";
+  if (status === "running") return rawT("运行中");
+  if (status === "paused") return rawT("已暂停");
+  if (status === "failed") return rawT("创建失败");
+  if (status === "deleting") return rawT("删除中");
+  if (status === "provisioning") return rawT("创建中");
+  return rawT("草稿");
 };
 
 /* ─── Main Settings Page ─── */
@@ -2448,15 +2377,23 @@ const getBotStatusLabel = (status: OpenClawBot["status"]) => {
 const hermesGatewayCommands = createLightClawScripts({ regionShortName: "gz", agentType: "hermes" }).hermes.gateway;
 
 export const OpenClawSettingsPage = () => {
+  const t = useT();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const creatingParam = searchParams.get("creating")?.trim() ?? "";
   const requestedCreatingBotId = creatingParam && creatingParam !== "true" ? creatingParam : "";
-  const { bots, botsLoading, deleteBot, updateBot, user, refreshBots, isSubscribed, addBot } = useOpenClaw();
+  const { bots, botsLoading, deleteBot, user, refreshBots, isSubscribed, addBot } = useOpenClaw();
   const repositories = useRepositories();
   // 账号 id：来自 /auth/profile 下发的 session.user.id，用于 LightVelaPanel.userId 等场景
   const { session } = useSession();
   const accountId = session.user?.id ?? "";
+
+  useEffect(() => {
+    document.documentElement.classList.add("lw-settings-scrollbar-stable");
+    return () => {
+      document.documentElement.classList.remove("lw-settings-scrollbar-stable");
+    };
+  }, []);
 
   /* 创建 loading 状态 */
   const [isCreating, setIsCreating] = useState(Boolean(creatingParam));
@@ -2480,13 +2417,18 @@ export const OpenClawSettingsPage = () => {
     }
     return bots.find((bot) => bot.status === "provisioning") ?? null;
   }, [bots, requestedCreatingBotId]);
+  const completedCreatingBot = useMemo(
+    () => findCompletedCreatingBot(visibleBots, requestedCreatingBotId),
+    [visibleBots, requestedCreatingBotId],
+  );
 
 
-  /* 实例内部的子页面切换：通道 / 模型 / 技能（通道置顶，作为默认进入项） */
-  const [activeSection, setActiveSection] = useState<SettingsSectionId>("chat");
+  /* 实例内部的子页面切换：通道 / 模型 / 技能 / 人设 / 对话（通道置顶，作为默认进入项） */
+  const [activeSection, setActiveSection] = useState<SettingsSectionId>("channel");
 
   /* Tab 切换 */
   const [activeTabId, setActiveTabId] = useState((visibleBots[0]?.id ?? requestedCreatingBotId) || "creating");
+  const [isAgentMenuOpen, setIsAgentMenuOpen] = useState(false);
   // bots 异步加载完成后，若当前 tab 无效则自动切换到第一个可展示 bot
   useEffect(() => {
     if (isCreating) return;
@@ -2673,39 +2615,6 @@ export const OpenClawSettingsPage = () => {
     [repositories, activeBotId],
   );
 
-  /* 改名相关 */
-  const [isEditing, setIsEditing] = useState(false);
-  const [editName, setEditName] = useState("");
-  const nameInputRef = useRef<HTMLInputElement>(null);
-
-  const handleStartRename = () => {
-    if (!activeBot) return;
-    setEditName(activeBot.name);
-    setIsEditing(true);
-    setTimeout(() => nameInputRef.current?.focus(), 0);
-  };
-
-  const handleSaveRename = async () => {
-    const trimmed = editName.trim();
-    // 与后端 maxInstanceDisplayNameRunes = 64 保持一致，按 Unicode 码点计数
-    if (!activeBot || !trimmed || trimmed === activeBot.name || Array.from(trimmed).length > 64) {
-      setIsEditing(false);
-      return;
-    }
-    try {
-      await repositories.bots.renameBot(activeBot.id, trimmed);
-      updateBot(activeBot.id, { name: trimmed });
-    } catch (err) {
-      console.error("rename failed:", err);
-    }
-    setIsEditing(false);
-  };
-
-  const handleRenameKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") handleSaveRename();
-    if (e.key === "Escape") setIsEditing(false);
-  };
-
   /* 删除相关 */
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteInput, setDeleteInput] = useState("");
@@ -2719,7 +2628,7 @@ export const OpenClawSettingsPage = () => {
       setShowDeleteConfirm(false);
       setDeleteInput("");
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : "删除失败，请稍后重试。");
+      setDeleteError(err instanceof Error ? err.message : t("删除失败，请稍后重试。"));
     }
   };
 
@@ -2762,7 +2671,7 @@ export const OpenClawSettingsPage = () => {
         setRestartingBotIds((prev) => { const next = new Set(prev); next.delete(targetBotId); return next; });
       }, RESTART_FEEDBACK_MS);
     } catch (err) {
-      setRestartErrors((prev) => setErrorForBot(prev, targetBotId, err instanceof Error ? err.message : "重启失败"));
+      setRestartErrors((prev) => setErrorForBot(prev, targetBotId, err instanceof Error ? err.message : t("重启失败")));
       setRestartingBotIds((prev) => { const next = new Set(prev); next.delete(targetBotId); return next; });
     }
   };
@@ -2781,6 +2690,13 @@ export const OpenClawSettingsPage = () => {
 
   useEffect(() => {
     if (!creatingParam) return;
+    if (completedCreatingBot) {
+      setIsCreating(false);
+      setCreationError(null);
+      setActiveTabId(completedCreatingBot.id);
+      navigate("/dashboard/settings", { replace: true });
+      return;
+    }
     if (creatingParam === "true" && !requestedCreatingBotId && !provisioningBot && !botsLoading) {
       setIsCreating(false);
       setCreationError(null);
@@ -2796,11 +2712,14 @@ export const OpenClawSettingsPage = () => {
     if (provisioningBot) {
       setActiveTabId(provisioningBot.id);
     }
-  }, [creatingParam, requestedCreatingBotId, provisioningBot, botsLoading, navigate]);
+  }, [creatingParam, requestedCreatingBotId, provisioningBot, completedCreatingBot, botsLoading, navigate]);
 
   /*
-   * 刷新恢复：如果用户刷新后 URL 参数丢失，但后端仍有 Creating 实例，
-   * 继续回到创建等待页，避免把未就绪 bot 当作可用 bot 交付。
+   * 刷新恢复：URL 丢 creating 参数但后端仍有 provisioning bot 时，把用户带回等待页。
+   *
+   * 与下方「兜底退出」存在 race：polling 退出后 URL 被清，期间「兜底退出」会主动
+   * setIsCreating(false)；本 effect 若同帧把它翻回 true，下一帧「兜底退出」再翻
+   * 回 false，最终收敛到非 loading 态。短暂闪烁可接受。
    */
   useEffect(() => {
     if (creatingParam || isCreating || botsLoading || !provisioningBot) return;
@@ -2809,6 +2728,35 @@ export const OpenClawSettingsPage = () => {
     setActiveTabId(provisioningBot.id);
     navigate(`/dashboard/settings?creating=${encodeURIComponent(provisioningBot.id)}`, { replace: true });
   }, [creatingParam, isCreating, botsLoading, provisioningBot, navigate]);
+
+  /*
+   * 兜底退出 loading：只看 bots 列表证据主动 setIsCreating(false)，收敛 polling
+   * cleanup race（polling effect 在 await refreshBots 期间被自身 cleanup 抛弃，
+   * setIsCreating(false) 永远没执行）。
+   *
+   *   模式 A：URL 携带 botId —— 只看该 botId，天然支持多 bot 并发，不误伤其他 provisioning。
+   *   模式 B：URL 不指定 botId —— 无 provisioning bot 且有可见 bot 时退出。
+   *
+   * 不放 botsLoading 在 deps 里 —— refreshBots 期间必须能继续兜底，否则错过时机。
+   */
+  useEffect(() => {
+    if (!isCreating || creationError) return;
+    if (requestedCreatingBotId) {
+      const targetBot = bots.find((b) => b.id === requestedCreatingBotId);
+      if (targetBot && targetBot.status !== "provisioning" && targetBot.status !== "deleting") {
+        setIsCreating(false);
+        setCreationError(null);
+        setActiveTabId(targetBot.id);
+        navigate("/dashboard/settings", { replace: true });
+      }
+      return;
+    }
+    if (!provisioningBot && bots.some((b) => b.status !== "provisioning" && b.status !== "deleting")) {
+      setIsCreating(false);
+      setCreationError(null);
+      navigate("/dashboard/settings", { replace: true });
+    }
+  }, [isCreating, creationError, requestedCreatingBotId, bots, provisioningBot, navigate]);
 
   /* 创建态只以后端真实状态为准：Running 才进入设置页，Failed/Deleting 停在错误态。 */
   useEffect(() => {
@@ -2828,33 +2776,51 @@ export const OpenClawSettingsPage = () => {
       }
 
       try {
-        const snapshot = await repositories.bots.getSettingsSnapshot(targetBotId);
+        const targetBot = await (async () => {
+          try {
+            const snapshot = await repositories.bots.getSettingsSnapshot(targetBotId);
+            return snapshot.bot;
+          } catch (detailError) {
+            const dashboard = await repositories.bots.getDashboardSnapshot("live");
+            const listedBot = dashboard.bots.find((bot) => bot.id === targetBotId);
+            if (listedBot) return listedBot;
+            throw detailError;
+          }
+        })();
         if (cancelled) return;
 
-        if (snapshot.bot.status === "active") {
-          await refreshBots();
-          if (cancelled) return;
-          setActiveTabId(targetBotId);
-          setCreationError(null);
+        if (targetBot.status === "active") {
           setIsCreating(false);
+          setCreationError(null);
+          setActiveTabId(targetBotId);
           navigate("/dashboard/settings", { replace: true });
+          await refreshBots();
           return;
         }
 
-        if (snapshot.bot.status === "failed") {
-          await refreshBots();
-          if (cancelled) return;
-          setActiveTabId(targetBotId);
-          setCreationError(null);
+        if (targetBot.status === "failed") {
           setIsCreating(false);
+          setCreationError(null);
+          setActiveTabId(targetBotId);
           navigate("/dashboard/settings", { replace: true });
+          await refreshBots();
           return;
         }
 
-        if (snapshot.bot.status === "deleting") {
+        if (targetBot.status === "deleting") {
+          setIsCreating(false);
+          setCreationError(null);
+          navigate("/dashboard/settings", { replace: true });
           await refreshBots();
-          if (cancelled) return;
-          setCreationError("Hermes 正在删除中，请稍后刷新页面查看状态。");
+          return;
+        }
+
+        if (targetBot.status !== "provisioning") {
+          setIsCreating(false);
+          setCreationError(null);
+          setActiveTabId(targetBotId);
+          navigate("/dashboard/settings", { replace: true });
+          await refreshBots();
           return;
         }
       } catch (err) {
@@ -2864,7 +2830,7 @@ export const OpenClawSettingsPage = () => {
       if (cancelled) return;
 
       if (Date.now() - startedAt >= CREATING_MAX_WAIT_MS) {
-        setCreationError("Hermes 仍在创建中，请稍后刷新页面查看状态。");
+        setCreationError(t("Hermes 仍在创建中，请稍后刷新页面查看状态。"));
         return;
       }
 
@@ -2886,7 +2852,6 @@ export const OpenClawSettingsPage = () => {
     creationError,
     requestedCreatingBotId,
     provisioningBot?.id,
-    botsLoading,
     repositories.bots,
     refreshBots,
     navigate,
@@ -2912,8 +2877,8 @@ export const OpenClawSettingsPage = () => {
     setDirectCreateError(null);
     try {
       const newBot = await addBot({
-        name: "我的Hermes",
-        personality: "默认设定",
+        name: t("我的Hermes"),
+        personality: t("默认设定"),
         personalityEmoji: "✨",
         intro: "",
         soulTemplateId: undefined,
@@ -2928,15 +2893,15 @@ export const OpenClawSettingsPage = () => {
       // 将后端错误映射为用户友好文案
       let friendlyMsg: string;
       if (/quota|limit|exceed/i.test(raw)) {
-        friendlyMsg = "当前套餐的 Agent 配额已满，请升级套餐或删除现有 Agent 后重试。";
+        friendlyMsg = t("当前套餐的 Agent 配额已满，请升级套餐或删除现有 Agent 后重试。");
       } else if (/resource|sandbox|pool|exhaust/i.test(raw)) {
-        friendlyMsg = "云端资源暂时紧张，请稍后再试。";
+        friendlyMsg = t("云端资源暂时紧张，请稍后再试。");
       } else if (/timeout|timed?\s*out/i.test(raw)) {
-        friendlyMsg = "创建超时，请稍后重试。";
+        friendlyMsg = t("创建超时，请稍后重试。");
       } else if (/network|fetch|connect/i.test(raw)) {
-        friendlyMsg = "网络异常，请检查网络后重试。";
+        friendlyMsg = t("网络异常，请检查网络后重试。");
       } else {
-        friendlyMsg = raw || "创建失败，请稍后重试。";
+        friendlyMsg = raw || t("创建失败，请稍后重试。");
       }
       setDirectCreateError(friendlyMsg);
     } finally {
@@ -2967,17 +2932,17 @@ export const OpenClawSettingsPage = () => {
               <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "rgba(220,38,38,0.08)" }}>
                 <AlertTriangle className="h-5 w-5" style={{ color: "#DC2626" }} />
               </div>
-              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>确认删除</h3>
+              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("确认删除")}</h3>
             </div>
             <p style={{ color: "#666", fontSize: "14px", lineHeight: 1.6, marginBottom: "12px" }}>
-              删除后会话将立即断开，数据将无法恢复。
+              {t("删除后会话将立即断开，数据将无法恢复。")}
             </p>
             <p style={{ color: "var(--lw-fg)", fontSize: "14px", lineHeight: 1.6, marginBottom: "10px" }}>
-              如确认删除，请输入名称 <strong>{activeBot.name}</strong>：
+              {t("如确认删除，请输入名称 {{name}}：", { name: activeBot.name })}
             </p>
             <input
               type="text"
-              placeholder={`请输入 ${activeBot.name}`}
+              placeholder={t("请输入 {{name}}", { name: activeBot.name })}
               value={deleteInput}
               onChange={(e) => setDeleteInput(e.target.value)}
               className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition-all focus:border-[#DC2626]"
@@ -2994,10 +2959,10 @@ export const OpenClawSettingsPage = () => {
                   cursor: deleteInput === activeBot.name ? "pointer" : "not-allowed",
                 }}
               >
-                确认删除
+                {t("确认删除")}
               </button>
               <button onClick={() => setShowDeleteConfirm(false)} className="py-2 text-sm transition-colors hover:opacity-70" style={{ color: "#999", background: "none", border: "none", cursor: "pointer" }}>
-                取消
+                {t("取消")}
               </button>
             </div>
           </motion.div>
@@ -3022,10 +2987,10 @@ export const OpenClawSettingsPage = () => {
               <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "rgba(7,193,96,0.08)" }}>
                 <Sparkles className="h-5 w-5" style={{ color: "#07C160" }} />
               </div>
-              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>创建新智能体</h3>
+              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("创建新智能体")}</h3>
             </div>
             <p style={{ color: "#666", fontSize: "14px", lineHeight: 1.6, marginBottom: "20px" }}>
-              即刻创建全新的 Hermes Agent
+              {t("即刻创建全新的 Hermes Agent")}
             </p>
             {directCreateError && <p className="text-xs" style={{ color: "#DC2626", marginBottom: "12px" }}>{directCreateError}</p>}
             <div className="flex flex-col gap-2">
@@ -3039,7 +3004,7 @@ export const OpenClawSettingsPage = () => {
                 }}
               >
                 {directCreating && <Loader2 className="h-4 w-4 animate-spin" />}
-                {directCreating ? "创建中..." : directCreateError ? "重试" : "确认创建"}
+                {directCreating ? t("创建中...") : directCreateError ? t("重试") : t("确认创建")}
               </button>
               <button
                 onClick={() => setShowCreateConfirm(false)}
@@ -3047,7 +3012,7 @@ export const OpenClawSettingsPage = () => {
                 className="py-2 text-sm transition-colors hover:opacity-70"
                 style={{ color: "#999", background: "none", border: "none", cursor: directCreating ? "not-allowed" : "pointer" }}
               >
-                取消
+                {t("取消")}
               </button>
             </div>
           </motion.div>
@@ -3077,101 +3042,13 @@ export const OpenClawSettingsPage = () => {
         )}
       </AnimatePresence>
 
-      <main className="flex-grow px-6 pb-16 pt-24 md:px-8">
-        <section className="mx-auto" style={{ maxWidth: 1200 }}>
-          {/* Page Header */}
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
-            className="mb-6 flex items-center justify-between gap-4"
-          >
-            <h1
-              className="font-heading font-semibold"
-              style={{
-                fontSize: "clamp(1.5rem, 3vw, 2rem)",
-                letterSpacing: "-0.5px",
-                lineHeight: 1.2,
-                color: "rgba(0,0,0,0.90)",
-              }}
-            >
-              我的智能体伙伴
-            </h1>
-            {!isCreating && visibleBots.length > 0 && canCreateBot && (
-              <button
-                onClick={handleCreateNew}
-                className="flex items-center gap-2 rounded-full bg-black/90 px-5 py-2 text-base font-medium leading-normal text-white transition-all hover:opacity-90 active:scale-[0.98]"
-              >
-                立即创建
-              </button>
-            )}
-          </motion.div>
-
-          {/* ── Tab Bar: 切换不同 Hermes ── */}
-          <div
-            className="mb-8 flex items-center gap-0.5"
-            style={{ borderBottom: "1px solid rgba(0,0,0,0.05)" }}
-          >
-            {/* 正在创建中的 Hermes Agent tab */}
-            {isCreating && (
-              <button
-                className="relative flex items-center gap-2 px-4 py-3 text-sm font-medium"
-                style={{
-                  color: "var(--text-primary, #141414)",
-                  background: "transparent",
-                  border: "none",
-                  cursor: "default",
-                }}
-              >
-                <Loader2 className="h-4 w-4 animate-spin" style={{ color: "var(--text-primary, #141414)" }} />
-                <span>Hermes Agent</span>
-                <motion.div
-                  layoutId="tab-indicator"
-                  className="absolute bottom-0 left-0 right-0 h-0.5 rounded-full"
-                  style={{ background: "var(--text-primary, #141414)" }}
-                  transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                />
-              </button>
-            )}
-            {/* 创建过程中只展示占位 tab，隐藏其它已有 bot tab，避免出现「两个 tab」 */}
-            {!isCreating && visibleBots.map((bot) => {
-              const isActive = bot.id === activeTabId;
-              const tabAvatar = getAvatarForBot(bot.id);
-              return (
-                <button
-                  key={bot.id}
-                  onClick={() => {
-                    setActiveTabId(bot.id);
-                    setIsEditing(false);
-                  }}
-                  className="relative flex items-center gap-2 px-4 py-3 text-sm font-medium transition-all"
-                  style={{
-                    color: isActive ? "var(--text-primary, #141414)" : "#999",
-                    background: "transparent",
-                    border: "none",
-                    cursor: "pointer",
-                  }}
-                >
-                  <img src={tabAvatar} alt="" className="h-5 w-5 rounded-full object-contain" />
-                  <span title={bot.name}>{truncateBotName(bot.name)}</span>
-                  {isActive && (
-                    <motion.div
-                      layoutId="tab-indicator"
-                      className="absolute bottom-0 left-0 right-0 h-0.5 rounded-full"
-                      style={{ background: "var(--text-primary, #141414)" }}
-                      transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                    />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-
+      <main className="lw-app-top-pad flex-grow bg-[#F7F8FA] px-6 pb-12 md:px-[80px]">
+        <section className="mx-auto" style={{ maxWidth: 1440 }}>
           {/* ── Loading 状态 ── */}
           {botsLoading && !isCreating && (
             <div className="flex items-center justify-center py-20">
               <Loader2 className="h-6 w-6 animate-spin" style={{ color: "rgba(55,53,47,0.2)" }} />
-              <span className="ml-3 text-sm" style={{ color: "rgba(0,0,0,0.40)" }}>加载中...</span>
+              <span className="ml-3 text-sm" style={{ color: "rgba(0,0,0,0.40)" }}>{t("加载中...")}</span>
             </div>
           )}
 
@@ -3182,311 +3059,300 @@ export const OpenClawSettingsPage = () => {
 
           {/* ── 设置区域 ── */}
           {!isCreating && !botsLoading && activeBot && (
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={activeBot.id}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.25 }}
-                className="space-y-8"
-              >
-                {/* ─ 基本信息 ─ */}
-                <div>
-                  <div className="flex items-center gap-4">
-                    <div
-                      className="flex h-14 w-14 flex-shrink-0 items-center justify-center overflow-hidden rounded-2xl"
-                      style={{ background: "rgba(0,0,0,0.03)", border: "1px solid rgba(0,0,0,0.06)" }}
-                    >
-                      <img src={avatarUrl} alt="" className="h-11 w-11 object-contain" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      {isEditing ? (
-                        <div className="flex items-center gap-2">
-                          <input
-                            ref={nameInputRef}
-                            type="text"
-                            value={editName}
-                            maxLength={64}
-                            onChange={(e) => setEditName(e.target.value)}
-                            onKeyDown={handleRenameKeyDown}
-                            onBlur={handleSaveRename}
-                            className="rounded-full border px-3 py-1.5 text-base font-bold outline-none transition-all focus:border-black/30"
-                            style={{ color: "rgba(0,0,0,0.90)", borderColor: "rgba(0,0,0,0.10)", maxWidth: 240 }}
+            (() => {
+              const sdkInstance: IInstanceInfo = {
+                InstanceId: activeBot.id,
+                RegionId: 1,
+              };
+              const sdkRegionShortName = "gz";
+              const sdkFeatureFlags: IFeatureFlags = {
+                gateway: true,
+                channel: true,
+                wecomChannel: true,
+                adpChannel: false,
+                wecomLongConn: true,
+                yuanbaoChannel: false,
+                weixinChannel: true,
+                qrConfig: true,
+                skills: true,
+                webUI: false,
+                memoryManagement: false,
+                memoryV2: false,
+                qqbotplugin: false,
+              };
+              const sdkProductConfig: IProductConfig = {
+                ...createLighthouseConfig({
+                  agentType: "hermes",
+                  supportsTencentCloudApi: false,
+                  isI18n: isGlobal,
+                }),
+                runCommand: commandAdapter.runCommand,
+                getInvocationTask: commandAdapter.getInvocationTask,
+              };
+              const settingsSections: { id: SettingsSectionId; label: string; icon: React.ReactNode; badge?: string }[] = [
+                { id: "channel", label: t("通道"), icon: <MessageCircle className="h-4 w-4" /> },
+                { id: "model", label: t("模型"), icon: <BrainCircuit className="h-4 w-4" /> },
+                { id: "skill", label: t("技能"), icon: <Wand2 className="h-4 w-4" /> },
+                ...(!isGlobal
+                  ? [{ id: "buddy" as const, label: t("人设"), icon: <UserRound className="h-4 w-4" />, badge: "NEW" }]
+                  : []),
+                { id: "chat", label: t("对话"), icon: <MessageSquare className="h-4 w-4" /> },
+              ];
+              const isRestartDisabled = isActiveBotRestarting || activeBot.status !== "running";
+
+              return (
+                <div className="grid items-start gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
+                  <aside className="lg:sticky lg:top-[84px]">
+                    <div className="rounded-lg border border-black/[0.06] bg-white p-3 shadow-[0_8px_28px_rgba(15,23,42,0.04)]">
+                      <div className="px-1 pb-2 text-xs font-medium text-black/35">
+                        {t("选择 Agent")}
+                      </div>
+                      <div
+                        role={visibleBots.length > 1 ? "button" : undefined}
+                        tabIndex={visibleBots.length > 1 ? 0 : undefined}
+                        onClick={() => {
+                          if (visibleBots.length > 1) setIsAgentMenuOpen((open) => !open);
+                        }}
+                        onKeyDown={(event) => {
+                          if (visibleBots.length <= 1) return;
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            setIsAgentMenuOpen((open) => !open);
+                          }
+                        }}
+                        className={cn(
+                          "flex w-full items-center gap-3 rounded-md px-2.5 py-2.5 text-left transition-colors",
+                          visibleBots.length > 1 ? "hover:bg-black/[0.035]" : "cursor-default",
+                        )}
+                        aria-expanded={visibleBots.length > 1 ? isAgentMenuOpen : undefined}
+                      >
+                        <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-md border border-black/[0.06] bg-black/[0.03]">
+                          <img src={avatarUrl} alt="" className="h-8 w-8 object-contain" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-semibold text-black/90" title={activeBot.name}>
+                            {truncateBotName(activeBot.name)}
+                          </span>
+                          <span className="mt-1 flex items-center gap-1.5 text-xs text-black/45">
+                            {isActiveBotRestarting ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <span
+                                className="inline-block h-1.5 w-1.5 rounded-full"
+                                style={{ background: getBotStatusColor(activeBot.status) }}
+                              />
+                            )}
+                            {isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                if (!isRestartDisabled) void handleRestartGateway();
+                              }}
+                              aria-disabled={isRestartDisabled}
+                              aria-label={t("重启")}
+                              className={cn(
+                                "ml-1 inline-flex h-5 items-center rounded px-1.5 text-xs font-medium transition-colors",
+                                isRestartDisabled
+                                  ? "cursor-not-allowed text-black/25"
+                                  : "text-black/45 hover:bg-black/[0.06] hover:text-black/80",
+                              )}
+                              title={isActiveBotRestarting ? t("正在重启中") : t("重启 Hermes Agent 网关")}
+                            >
+                              {t("重启")}
+                            </button>
+                          </span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setDeleteInput("");
+                            setShowDeleteConfirm(true);
+                          }}
+                          aria-label={t("删除")}
+                          className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md text-red-500 transition-colors hover:bg-red-500/10"
+                          title={t("删除此 Hermes")}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                        {visibleBots.length > 1 && (
+                          <ChevronDown
+                            className={cn("h-4 w-4 flex-shrink-0 text-black/35 transition-transform", isAgentMenuOpen && "rotate-180")}
                           />
-                          <span className="text-xs" style={{ color: "rgba(0,0,0,0.35)" }}>按 Enter 保存</span>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-lg font-bold" style={{ color: "rgba(0,0,0,0.90)" }} title={activeBot.name}>{truncateBotName(activeBot.name)}</h3>
-                          <button
-                            onClick={handleStartRename}
-                            className="flex h-7 w-7 items-center justify-center rounded-full transition-all hover:bg-black/5"
-                            style={{ color: "#bbb", border: "none", background: "transparent", cursor: "pointer" }}
-                            title="重命名"
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </button>
+                        )}
+                      </div>
+
+                      {visibleBots.length > 1 && isAgentMenuOpen && (
+                        <div className="mt-1 rounded-md bg-black/[0.025] p-1">
+                          {visibleBots.map((bot) => {
+                            const isActive = bot.id === activeTabId;
+                            return (
+                              <button
+                                key={bot.id}
+                                type="button"
+                                onClick={() => {
+                                  setActiveTabId(bot.id);
+                                  setIsAgentMenuOpen(false);
+                                }}
+                                className={cn(
+                                  "flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm transition-colors",
+                                  isActive ? "bg-white text-black/90 shadow-sm" : "text-black/55 hover:bg-white/70 hover:text-black/80",
+                                )}
+                              >
+                                <img src={getAvatarForBot(bot.id)} alt="" className="h-5 w-5 flex-shrink-0 rounded object-contain" />
+                                <span className="min-w-0 flex-1 truncate" title={bot.name}>
+                                  {truncateBotName(bot.name)}
+                                </span>
+                                {isActive && <Check className="h-3.5 w-3.5 text-black/55" />}
+                              </button>
+                            );
+                          })}
                         </div>
                       )}
-                      <div className="mt-1.5 flex flex-wrap items-center gap-x-5 gap-y-1">
-                        <div className="flex items-center gap-1.5">
-                          {isActiveBotRestarting ? (
-                            <Loader2 className="h-3 w-3 animate-spin" style={{ color: "rgba(0,0,0,0.45)" }} />
-                          ) : (
-                            <span
-                              className="inline-block h-2 w-2 rounded-full"
-                              style={{ background: getBotStatusColor(activeBot.status) }}
+
+                      {activeBotRestartError && (
+                        <p className="mt-2 px-1 text-xs leading-relaxed text-red-500">{activeBotRestartError}</p>
+                      )}
+
+                      {canCreateBot && (
+                        <button
+                          type="button"
+                          onClick={handleCreateNew}
+                          className="mt-3 flex w-full items-center justify-center gap-2 rounded-md border border-black/[0.08] bg-white px-3 py-2 text-sm font-medium text-black/70 transition-colors hover:bg-black/[0.035] hover:text-black/90"
+                        >
+                          <Plus className="h-4 w-4" />
+                          {t("立即创建")}
+                        </button>
+                      )}
+                    </div>
+
+                    <nav
+                      aria-label={t("实例配置导航")}
+                      className="mt-4 rounded-lg border border-black/[0.06] bg-white p-2 shadow-[0_8px_28px_rgba(15,23,42,0.04)]"
+                    >
+                      {settingsSections.map((section) => {
+                        const isActive = section.id === activeSection;
+                        return (
+                          <button
+                            key={section.id}
+                            type="button"
+                            onClick={() => setActiveSection(section.id)}
+                            aria-current={isActive ? "page" : undefined}
+                            className={cn(
+                              "flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 text-sm font-medium transition-colors",
+                              isActive
+                                ? "bg-black/[0.06] text-black/90"
+                                : "text-black/55 hover:bg-black/[0.035] hover:text-black/85",
+                            )}
+                          >
+                            <span className="flex h-5 w-5 items-center justify-center">{section.icon}</span>
+                            <span className="flex-1 text-left">{section.label}</span>
+                            {section.badge && (
+                              <span className="rounded-full bg-black/90 px-1.5 py-0.5 text-[9px] font-bold leading-none text-white">
+                                {section.badge}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </nav>
+                  </aside>
+
+                  <section className="min-w-0">
+                    <AnimatePresence mode="wait">
+                      <motion.div
+                        key={`${activeBot.id}-${activeSection}`}
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -8 }}
+                        transition={{ duration: 0.22 }}
+                        className="_lh-claw-bot-panel"
+                      >
+                        <div className="_lh-claw-bot-panel__cards min-w-0">
+                          {activeSection === "channel" && (
+                            <ChannelPanel
+                              instance={sdkInstance}
+                              regionShortName={sdkRegionShortName}
+                              featureFlags={sdkFeatureFlags}
+                              productConfig={sdkProductConfig}
                             />
                           )}
-                          <span className="font-medium" style={{ color: "rgba(0,0,0,0.60)", fontSize: 12 }}>
-                            {isActiveBotRestarting ? "重启中..." : getBotStatusLabel(activeBot.status)}
-                          </span>
-                        </div>
-                        {/* 重启链接 */}
-                        <button
-                          onClick={handleRestartGateway}
-                          disabled={isActiveBotRestarting || activeBot.status !== "running"}
-                          className="group transition-colors"
-                          style={{
-                            fontSize: 12,
-                            color: isActiveBotRestarting || activeBot.status !== "running" ? "rgba(0,0,0,0.25)" : "var(--lw-accent)",
-                            cursor: isActiveBotRestarting || activeBot.status !== "running" ? "not-allowed" : "pointer",
-                            background: "none",
-                            border: "none",
-                            padding: 0,
-                            position: "relative",
-                          }}
-                          title={isActiveBotRestarting ? "正在重启中" : "重启 Hermes Agent 网关"}
-                        >
-                          重启
-                          {isActiveBotRestarting && (
-                            <span
-                              className="pointer-events-none absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap rounded px-2 py-0.5 text-[10px] text-white opacity-0 transition-opacity group-hover:opacity-100"
-                              style={{ background: "rgba(0,0,0,0.75)" }}
-                            >
-                              正在重启中
-                            </span>
+                          {activeSection === "model" && (
+                            <ModelPanel
+                              instance={sdkInstance}
+                              regionShortName={sdkRegionShortName}
+                              featureFlags={sdkFeatureFlags}
+                              productConfig={sdkProductConfig}
+                            />
                           )}
-                        </button>
-                        <span style={{ color: "rgba(0,0,0,0.40)", fontSize: 12 }}>
-                          创建于 {new Date(activeBot.createdAt).toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric" })}
-                        </span>
-                      </div>
-                      {activeBotRestartError && (
-                        <p className="mt-1 text-xs" style={{ color: "#DC2626" }}>{activeBotRestartError}</p>
-                      )}
-                    </div>
-                    <button
-                      onClick={() => { setDeleteInput(""); setShowDeleteConfirm(true); }}
-                      className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full transition-all hover:bg-[rgba(220,38,38,0.08)]"
-                      style={{ color: "#ccc", border: "none", background: "transparent", cursor: "pointer" }}
-                      title="删除此 Hermes"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* 分割线 */}
-                <div style={{ borderTop: "1px solid rgba(0,0,0,0.05)" }} />
-
-                {/* ─ 使用设置：三列卡片 ─ */}
-                <div>
-                  {(() => {
-                    // --- tea-sdk-lightclaw props ---
-                    //
-                    // 关键设计：直接把 `activeBot.id`（mono 业务的 botId）作为
-                    // SDK 的 `InstanceId` 使用。
-                    //
-                    // SDK 内部 `executor.ts` 会把 `instance.InstanceId` 原样
-                    // 塞进请求的 `InstanceIds[0]`。我们通过自定义 `runCommand`
-                    // 拦截这个请求，转发到 `POST /v1/instances/:botId/debug/exec`
-                    // （和 mono 存量业务一致的 envd process stream 通道）。
-                    //
-                    // 因此 SDK 拿到的 `InstanceId` 只需是 botId，后端会自动
-                    // 解析到对应的 sandbox，前端完全不感知 sandboxId、region
-                    // 等沙箱层概念。
-                    //
-                    // 如果 bot 尚未就绪（状态非 running），后端 debug/exec 会
-                    // 返回 `ErrDebugNotSupported`，由 SDK 以命令执行错误的形式
-                    // 反馈到 UI。
-                    const sdkInstance: IInstanceInfo = {
-                      InstanceId: activeBot.id,
-                      // RegionId 对 mono 路径而言是**无用字段**：原本用于
-                      // SDK 默认调用腾讯云 TAT OpenAPI 时选取 region 端点，
-                      // 但我们通过自定义 runCommand 完全接管了命令下发，
-                      // 请求不走腾讯云。给个任意合法数字即可。
-                      RegionId: 1,
-                    };
-                    // regionShortName 仅被 SDK 用来拼接 COS 脚本下载 URL：
-                    //   https://lightclaw-dashboard-xxx.cos.accelerate.myqcloud.com/
-                    //     <regionShortName>/lightclaw/<script-path>
-                    // COS 用的是全球加速域名，实际 region 对可达性影响很小。
-                    // 先统一用 "gz"。
-                    const sdkRegionShortName = "gz";
-                    const sdkFeatureFlags: IFeatureFlags = {
-                      gateway: true,
-                      channel: true,
-                      wecomChannel: true,
-                      adpChannel: false,
-                      wecomLongConn: true,
-                      yuanbaoChannel: false,
-                      weixinChannel: true,
-                      qrConfig: true,
-                      skills: true,
-                      webUI: false,
-                      memoryManagement: false,
-                      memoryV2: false,
-                      qqbotplugin: false,
-                    };
-                    // 注入 runCommand / getInvocationTask，让 SDK 的命令
-                    // 执行器走 mono 后端 `/v1/instances/:botId/debug/exec`
-                    // （envd process stream），而不是默认的腾讯云 TAT OpenAPI。
-                    //
-                    // supportsTencentCloudApi: false
-                    //   mono 没有腾讯云账号体系，SDK 会自动从模型列表中过滤掉
-                    //   依赖腾讯云 CAPI 拉 API Key 的 provider：
-                    //     - hunyuan / qcloud_lkeap
-                    //     - tencent_coding_plan / tencent_token_plan
-                    //   这些 provider 在 mono 下无法自动获取 API Key（调不通
-                    //   QueryHunyuanUserStatus / ListCodingPlanAPIKey 等），
-                    //   下拉里直接不展示。
-                    const sdkProductConfig = {
-                      ...createLighthouseConfig({
-                        agentType: "hermes",
-                        supportsTencentCloudApi: false,
-                      }),
-                      runCommand: commandAdapter.runCommand,
-                      getInvocationTask: commandAdapter.getInvocationTask,
-                    };
-                    // 操作禁用 / 数据加载相关 prop 全部走 SDK 默认值：
-                    //   isOperationDisabled=false / operationDisabledContent=""
-                    //   operationDisabledTip="" / isDataReady=true
-                    // 默认允许 UI 交互且立即拉数据，bot 不在线时由后端返回错误，
-                    // 由 SDK 以命令执行失败的形式反馈到 UI。
-
-                    const sections: { id: SettingsSectionId; label: string; icon: React.ReactNode }[] = [
-                      { id: "chat", label: "对话", icon: <MessageSquare className="h-4 w-4" /> },
-                      { id: "channel", label: "通道", icon: <MessageCircle className="h-4 w-4" /> },
-                      { id: "model", label: "模型", icon: <Sparkles className="h-4 w-4" /> },
-                      { id: "skill", label: "技能", icon: <Wand2 className="h-4 w-4" /> },
-                    ];
-
-                    return (
-                      <div className="_lh-claw-bot-panel tea-mt-4n">
-                        <div className="flex flex-col gap-4 md:flex-row md:gap-6">
-                          {/* 左侧：竖向 tab 列表（仅在本实例内切换子页面） */}
-                          <nav
-                            aria-label="实例配置导航"
-                            className="flex flex-row gap-1 overflow-x-auto md:w-[160px] md:flex-shrink-0 md:flex-col md:overflow-visible"
-                          >
-                            {sections.map((section) => {
-                              const isActive = section.id === activeSection;
-                              return (
-                                <button
-                                  key={section.id}
-                                  type="button"
-                                  onClick={() => setActiveSection(section.id)}
-                                  aria-current={isActive ? "page" : undefined}
-                                  className={cn(
-                                    "flex flex-shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                                    "md:w-full",
-                                    isActive
-                                      ? "bg-black/[0.06] text-black/90"
-                                      : "text-black/60 hover:bg-black/[0.04] hover:text-black/90",
-                                  )}
-                                >
-                                  <span className="flex h-5 w-5 items-center justify-center">{section.icon}</span>
-                                  <span>{section.label}</span>
-                                </button>
-                              );
-                            })}
-                          </nav>
-
-                          {/* 右侧：当前选中的配置卡片（单卡撑满） */}
-                          <div className="_lh-claw-bot-panel__cards min-w-0 flex-1">
-                            {activeSection === "model" && (
-                              <ModelPanel
-                                instance={sdkInstance}
-                                regionShortName={sdkRegionShortName}
-                                featureFlags={sdkFeatureFlags}
-                                productConfig={sdkProductConfig}
-                              />
-                            )}
-                            {activeSection === "channel" && (
-                              <ChannelPanel
-                                instance={sdkInstance}
-                                regionShortName={sdkRegionShortName}
-                                featureFlags={sdkFeatureFlags}
-                                productConfig={sdkProductConfig}
-                              />
-                            )}
-                            {activeSection === "skill" && (
-                              <SkillPanel
-                                instance={sdkInstance}
-                                regionShortName={sdkRegionShortName}
-                                featureFlags={sdkFeatureFlags}
-                                productConfig={sdkProductConfig}
-                              />
-                            )}
-                            {activeSection === "chat" && (
-                              <div className="overflow-hidden rounded-lg border border-black/[0.08] bg-white">
-                                {(launchTokenStatus === "idle" || launchTokenStatus === "loading") && (
-                                  <div className="p-6 text-sm text-black/60">
-                                    正在获取 AgentChat 启动 token…
-                                  </div>
-                                )}
-                                {launchTokenStatus === "error" && (
-                                  <div className="p-6 text-sm">
-                                    <p className="text-red-500">
-                                      获取 AgentChat 启动 token 失败：{launchTokenError || "未知错误"}
-                                    </p>
-                                    <button
-                                      type="button"
-                                      onClick={retryLaunchToken}
-                                      className="mt-3 inline-flex items-center rounded-md border border-black/[0.12] bg-white px-3 py-1.5 text-xs font-medium text-black/80 hover:bg-black/[0.04]"
-                                    >
-                                      重试
-                                    </button>
-                                  </div>
-                                )}
-                                {launchTokenStatus === "ready" && launchToken && accountId && (
-                                  <LightVelaPanel
-                                    isHermesBlueprint={true}
-                                    instanceIds={[sdkInstance.InstanceId]}
-                                    instanceId={sdkInstance.InstanceId}
-                                    region="ap-guangzhou"
-                                    userId={accountId}
-                                    product="lightvela"
-                                    lightvelaApiParams={{ 
-                                      businessCode: 'lightvela',
-                                      token: launchToken 
-                                    }}
-                                    commandExecutor={lightvelaCommandExecutor}
-                                    features={{
-                                      autoActivate: true,
-                                      nativeWsGray: true,
-                                    }}
-                                  />
-                                )}
-                              </div>
-                            )}
-                          </div>
+                          {activeSection === "skill" && (
+                            <SkillPanel
+                              instance={sdkInstance}
+                              regionShortName={sdkRegionShortName}
+                              featureFlags={sdkFeatureFlags}
+                              productConfig={sdkProductConfig}
+                            />
+                          )}
+                          {activeSection === "buddy" && !isGlobal && (
+                            <BuddyPanel botId={activeBot.id} />
+                          )}
+                          {activeSection === "chat" && (
+                            <div className="h-[clamp(516px,calc(100vh-220px),960px)] overflow-hidden rounded-lg border border-black/[0.08] bg-white [&>*]:h-full">
+                              {(launchTokenStatus === "idle" || launchTokenStatus === "loading") && (
+                                <div className="flex h-full items-center justify-center p-6 text-sm text-black/60">
+                                  {t("正在获取 AgentChat 启动 token…")}
+                                </div>
+                              )}
+                              {launchTokenStatus === "error" && (
+                                <div className="flex h-full flex-col items-center justify-center p-6 text-center text-sm">
+                                  <p className="text-red-500">
+                                    {t("获取 AgentChat 启动 token 失败：{{message}}", { message: launchTokenError || t("未知错误") })}
+                                  </p>
+                                  <button
+                                    type="button"
+                                    onClick={retryLaunchToken}
+                                    className="mt-3 inline-flex items-center rounded-md border border-black/[0.12] bg-white px-3 py-1.5 text-xs font-medium text-black/80 hover:bg-black/[0.04]"
+                                  >
+                                    {t("重试")}
+                                  </button>
+                                </div>
+                              )}
+                              {launchTokenStatus === "ready" && launchToken && accountId && (
+                                <LightVelaPanel
+                                  isHermesBlueprint={true}
+                                  instanceIds={[sdkInstance.InstanceId]}
+                                  instanceId={sdkInstance.InstanceId}
+                                  region="ap-guangzhou"
+                                  userId={accountId}
+                                  product="lightvela"
+                                  lightvelaApiParams={{
+                                    businessCode: "lightvela",
+                                    token: launchToken,
+                                  }}
+                                  commandExecutor={lightvelaCommandExecutor}
+                                  features={{
+                                    autoActivate: true,
+                                    nativeWsGray: true,
+                                  }}
+                                />
+                              )}
+                            </div>
+                          )}
                         </div>
-                      </div>
-                    );
-                  })()}
+                      </motion.div>
+                    </AnimatePresence>
+                  </section>
                 </div>
-              </motion.div>
-            </AnimatePresence>
+              );
+            })()
           )}
 
           {/* 空状态 */}
           {
             !isCreating && !botsLoading && visibleBots.length === 0 && (
               <div className="flex flex-col items-center justify-center py-20 text-center">
-                <p className="text-sm" style={{ color: "rgba(0,0,0,0.40)" }}>即刻创建你的第一个云端智能体伙伴</p>
+                <p className="text-sm" style={{ color: "rgba(0,0,0,0.40)" }}>{t("即刻创建你的第一个云端智能体伙伴")}</p>
                 {createLimitMessage && (
                   <p className="mt-3 max-w-sm text-xs leading-relaxed" style={{ color: "rgba(0,0,0,0.48)" }}>
                     {createLimitMessage}
@@ -3502,7 +3368,7 @@ export const OpenClawSettingsPage = () => {
                       : "cursor-not-allowed bg-black/30",
                   )}
                 >
-                  {canCreateBot ? "立即创建" : "暂不可创建"}
+                  {canCreateBot ? t("立即创建") : t("暂不可创建")}
                 </button>
               </div>
             )

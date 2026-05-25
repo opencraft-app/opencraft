@@ -30,6 +30,9 @@ type stubLogic struct {
 	updateResp                             *transport.InstanceResponse
 	updateErr                              error
 	updateReq                              *transport.UpdateInstanceRequest
+	resetConfigResp                        *transport.InstanceConfigResetResponse
+	resetConfigErr                         error
+	resetConfigInstanceID                  string
 	listSoulResp                           *transport.ListSoulTemplatesResponse
 	listSoulErr                            error
 	usageResp                              *transport.UserUsageResponse
@@ -74,6 +77,12 @@ type stubLogic struct {
 	chatClawRuntimeBootstrapResp           *transport.ChatClawRuntimeBootstrapResponse
 	chatClawRuntimeBootstrapErr            error
 	chatClawRuntimeBootstrapConversationID string
+	agentChatLaunchTokenResp               *transport.AgentChatLaunchTokenResponse
+	agentChatLaunchTokenErr                error
+	agentChatLaunchTokenInstanceID         string
+	agentChatIntrospectReq                 *transport.AgentChatIntrospectRequest
+	agentChatIntrospectResp                *transport.AgentChatIntrospectResponse
+	agentChatIntrospectErr                 error
 	createAgentReq                         *transport.CreateChatClawAgentRequest
 	createAgentResp                        *transport.ChatClawAgentResponse
 	createAgentErr                         error
@@ -126,6 +135,14 @@ func (s *stubLogic) UpdateInstance(ctx pctx.Context, instanceID string, req *tra
 	}
 	if s.updateResp != nil || s.updateErr != nil {
 		return s.updateResp, s.updateErr
+	}
+	return nil, errors.New("unexpected call")
+}
+
+func (s *stubLogic) ResetInstanceConfig(ctx pctx.Context, instanceID string) (*transport.InstanceConfigResetResponse, error) {
+	s.resetConfigInstanceID = instanceID
+	if s.resetConfigResp != nil || s.resetConfigErr != nil {
+		return s.resetConfigResp, s.resetConfigErr
 	}
 	return nil, errors.New("unexpected call")
 }
@@ -340,6 +357,25 @@ func (s *stubLogic) GetChatClawRuntimeBootstrap(ctx pctx.Context, instanceID, co
 	return nil, errors.New("unexpected call")
 }
 
+func (s *stubLogic) CreateAgentChatLaunchToken(ctx pctx.Context, instanceID string) (*transport.AgentChatLaunchTokenResponse, error) {
+	if s.agentChatLaunchTokenResp != nil || s.agentChatLaunchTokenErr != nil {
+		s.agentChatLaunchTokenInstanceID = instanceID
+		return s.agentChatLaunchTokenResp, s.agentChatLaunchTokenErr
+	}
+	return nil, errors.New("unexpected call")
+}
+
+func (s *stubLogic) IntrospectAgentChatLaunchToken(ctx pctx.Context, req *transport.AgentChatIntrospectRequest) (*transport.AgentChatIntrospectResponse, error) {
+	if s.agentChatIntrospectResp != nil || s.agentChatIntrospectErr != nil {
+		if req != nil {
+			cloned := *req
+			s.agentChatIntrospectReq = &cloned
+		}
+		return s.agentChatIntrospectResp, s.agentChatIntrospectErr
+	}
+	return nil, errors.New("unexpected call")
+}
+
 func (s *stubLogic) CreateChatClawAgent(ctx pctx.Context, instanceID string, req *transport.CreateChatClawAgentRequest) (*transport.ChatClawAgentResponse, error) {
 	if s.createAgentResp != nil || s.createAgentErr != nil {
 		if req != nil {
@@ -534,6 +570,52 @@ func TestUpdateInstanceUsesSuccessEnvelope(t *testing.T) {
 	}
 }
 
+func TestResetInstanceConfigUsesSuccessEnvelope(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/v1/instances/ins-1/config/reset", nil)
+	req.Header.Set(headerUserID, "user-1")
+	rec := httptest.NewRecorder()
+
+	handler := &instanceHandler{logic: &stubLogic{
+		resetConfigResp: &transport.InstanceConfigResetResponse{
+			KeyID:     "key-new",
+			KeyPrefix: "sk-new",
+			Config: &transport.InstanceConfigResetProvider{
+				ProviderName: "custom",
+				BaseURL:      "https://model.internal/v1",
+				ModelID:      "kimi-k2.5",
+				API:          "chat_completions",
+				APIKey:       "sk-new-secret",
+			},
+		},
+	}}
+	newRouter(handler, &bundleHandler{}, &passHandler{}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var payload struct {
+		Code    string                                `json:"code"`
+		Message string                                `json:"message"`
+		Data    transport.InstanceConfigResetResponse `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload.Code != "OK" || payload.Message != "success" {
+		t.Fatalf("unexpected envelope: %s", rec.Body.String())
+	}
+	if payload.Data.KeyID != "key-new" || payload.Data.KeyPrefix != "sk-new" {
+		t.Fatalf("unexpected key data: %+v", payload.Data)
+	}
+	if payload.Data.Config == nil || payload.Data.Config.APIKey != "sk-new-secret" || payload.Data.Config.API != "chat_completions" {
+		t.Fatalf("unexpected config data: %+v", payload.Data.Config)
+	}
+	if handler.logic.(*stubLogic).resetConfigInstanceID != "ins-1" {
+		t.Fatalf("expected instance id to be forwarded, got %q", handler.logic.(*stubLogic).resetConfigInstanceID)
+	}
+}
+
 func TestGetWorkspaceFilesUsesSuccessEnvelope(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/v1/instances/ins-1/workspace/files?name=SOUL.md", nil)
 	req.Header.Set(headerUserID, "user-1")
@@ -699,6 +781,70 @@ func TestInternalChatClawRuntimeBootstrapRequiresInternalBearerWhenConfigured(t 
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestCreateAgentChatLaunchTokenRequiresUserAndReturnsToken(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/v1/instances/ins-1/agentchat/launch-token", nil)
+	req.Header.Set(headerUserID, "user-1")
+	rec := httptest.NewRecorder()
+
+	handler := &instanceHandler{logic: &stubLogic{
+		agentChatLaunchTokenResp: &transport.AgentChatLaunchTokenResponse{
+			LaunchToken: "launch-token",
+			ExpiresAt:   1_800_000_300,
+		},
+	}}
+	newRouter(handler, &bundleHandler{}, &passHandler{}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("unexpected status: %d body=%s", rec.Code, rec.Body.String())
+	}
+	if handler.logic.(*stubLogic).agentChatLaunchTokenInstanceID != "ins-1" {
+		t.Fatalf("expected instance id to be forwarded, got %q", handler.logic.(*stubLogic).agentChatLaunchTokenInstanceID)
+	}
+}
+
+func TestCreateAgentChatLaunchTokenRejectsAnonymousUser(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/v1/instances/ins-1/agentchat/launch-token", nil)
+	rec := httptest.NewRecorder()
+
+	handler := &instanceHandler{logic: &stubLogic{}}
+	newRouter(handler, &bundleHandler{}, &passHandler{}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAgentChatIntrospectAcceptsPublicCallback(t *testing.T) {
+	body := `{"launch_token":"token-1","businessCode":"lightvela","timestamp":1800000000,"sign":"abc123"}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/integrations/agentchat/introspect", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+
+	handler := &instanceHandler{logic: &stubLogic{
+		agentChatIntrospectResp: &transport.AgentChatIntrospectResponse{
+			UserID:     "user-1",
+			InstanceID: "ins-1",
+		},
+	}}
+	newRouter(handler, &bundleHandler{}, &passHandler{}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", rec.Code, rec.Body.String())
+	}
+	forwarded := handler.logic.(*stubLogic).agentChatIntrospectReq
+	if forwarded == nil || forwarded.LaunchToken != "token-1" || forwarded.BusinessCode != "lightvela" {
+		t.Fatalf("unexpected forwarded request: %+v", forwarded)
+	}
+}
+
+func TestNormalizePathIncludesAgentChatRoutes(t *testing.T) {
+	if got := normalizePath("/v1/integrations/agentchat/introspect"); got != "/v1/integrations/agentchat/introspect" {
+		t.Fatalf("unexpected introspect route: %q", got)
+	}
+	if got := normalizePath("/v1/instances/ins-1/agentchat/launch-token"); got != "/v1/instances/{id}/agentchat/launch-token" {
+		t.Fatalf("unexpected launch token route: %q", got)
 	}
 }
 
@@ -1554,4 +1700,3 @@ func TestInternalListPassesMethodNotAllowed(t *testing.T) {
 		t.Fatalf("expected Allow=GET, got %q", got)
 	}
 }
-

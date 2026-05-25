@@ -4,8 +4,10 @@ FROM golang:1.26-bookworm AS builder
 WORKDIR /src/cloudladdergateway
 
 COPY cloudladdergateway/go.mod cloudladdergateway/go.sum ./
+COPY shared/cloudladdertransport/go.mod /src/shared/cloudladdertransport/go.mod
 RUN go mod download
 
+COPY shared/cloudladdertransport/ /src/shared/cloudladdertransport/
 COPY cloudladdergateway/ ./
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/cloudladdergateway ./cmd/cloudladdergateway
 

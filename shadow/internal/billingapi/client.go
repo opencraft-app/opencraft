@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"time"
 
 	billingv20180709 "git.woa.com/tencentcloud-internal/tencentcloud-sdk-go/tencentcloud/billing/v20180709"
@@ -12,6 +13,7 @@ import (
 	"git.woa.com/tencentcloud-internal/tencentcloud-sdk-go/tencentcloud/common/profile"
 	otellog "go.opentelemetry.io/otel/log"
 
+	"shadow/internal/cloudladder"
 	"shadow/internal/telemetry"
 )
 
@@ -31,6 +33,7 @@ type Options struct {
 	Region         string
 	SecretID       string
 	SecretKey      string
+	CloudLadder    cloudladder.Options
 	RequestTimeout time.Duration
 }
 
@@ -50,6 +53,12 @@ func NewTencentClient(opts Options) (*TencentClient, error) {
 	}
 	if opts.RequestTimeout == 0 {
 		opts.RequestTimeout = 10 * time.Second
+	}
+	if err := opts.CloudLadder.Validate(); err != nil {
+		return nil, err
+	}
+	if _, err := opts.CloudLadder.ValidateEndpoint(opts.Endpoint); err != nil {
+		return nil, err
 	}
 	return &TencentClient{opts: opts}, nil
 }
@@ -91,6 +100,9 @@ func (c *TencentClient) DescribeDealsByCond(ctx context.Context, req DescribeDea
 		c.profile(),
 	)
 	if err != nil {
+		return DescribeDealsByCondResponse{}, err
+	}
+	if err := c.attachTransport(client); err != nil {
 		return DescribeDealsByCondResponse{}, err
 	}
 	request := billingv20180709.NewDescribeDealsByCondRequest()
@@ -142,6 +154,9 @@ func (c *TencentClient) sendCommon(ctx context.Context, action string, req any, 
 		c.opts.Region,
 		c.profile(),
 	)
+	if err := c.attachTransport(client); err != nil {
+		return err
+	}
 	request := tchttp.NewCommonRequest(billingService, billingVersion, action)
 	request.SetContext(ctx)
 	if err := request.SetActionParameters(mustMarshal(req)); err != nil {
@@ -152,6 +167,19 @@ func (c *TencentClient) sendCommon(ctx context.Context, action string, req any, 
 		return err
 	}
 	return json.Unmarshal(response.GetBody(), out)
+}
+
+func (c *TencentClient) attachTransport(client interface {
+	WithHttpTransport(http.RoundTripper) *common.Client
+}) error {
+	transport, err := c.opts.CloudLadder.TransportForEndpoint(c.opts.Endpoint)
+	if err != nil {
+		return err
+	}
+	if transport != nil {
+		client.WithHttpTransport(transport)
+	}
+	return nil
 }
 
 func (c *TencentClient) profile() *profile.ClientProfile {

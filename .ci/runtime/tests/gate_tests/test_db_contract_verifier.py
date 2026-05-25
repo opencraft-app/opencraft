@@ -13,6 +13,7 @@ if str(RUNTIME_DIR) not in sys.path:
 from gates.db_contract_verifier import (  # noqa: E402
     build_check_script,
     build_job_manifest,
+    main,
     max_migration_version,
     resolve_runtime_env,
 )
@@ -145,6 +146,67 @@ class DbContractVerifierTests(unittest.TestCase):
         self.assertEqual(env_values["MYSQL_HOST"], "10.15.224.4")
         self.assertNotIn("CTL_DB_PASSWORD", env_values)
         self.assertEqual(env_secret_values["CTL_DB_PASSWORD"], "test-password")
+
+    def test_main_can_read_migrations_from_source_root_and_env_from_deploy_root(self) -> None:
+        with tempfile.TemporaryDirectory() as source_tmp, tempfile.TemporaryDirectory() as deploy_tmp:
+            source_root = Path(source_tmp)
+            deploy_root = Path(deploy_tmp)
+            migrations = source_root / "payment" / "migrations"
+            migrations.mkdir(parents=True)
+            (migrations / "000012_add_index.up.sql").write_text("select 1;\n")
+
+            platform_env = deploy_root / "argocd/services/payment/shprod/payment-platform.env"
+            platform_env.parent.mkdir(parents=True)
+            platform_env.write_text(
+                "MYSQL_HOST=10.0.0.1\n"
+                "MYSQL_PORT=3306\n"
+                "PAYMENT_DB=payment\n"
+                "PAYMENT_DB_USER=payment\n"
+                "PAYMENT_DB_PASSWORD=secret\n"
+            )
+            output = source_root / "summary.json"
+            bundle = mock.Mock(
+                db_contract={
+                    "mode": "migration",
+                    "expected_migration_source": "payment/migrations",
+                    "verifier": {
+                        "namespace": "user-auth",
+                        "service_platform_env_file": "argocd/services/payment/{env}/payment-platform.env",
+                        "database_env": "PAYMENT_DB",
+                        "user_env": "PAYMENT_DB_USER",
+                        "password_env": "PAYMENT_DB_PASSWORD",
+                        "env_from_service_platform": {
+                            "MYSQL_HOST": "MYSQL_HOST",
+                            "MYSQL_PORT": "MYSQL_PORT",
+                            "PAYMENT_DB": "PAYMENT_DB",
+                            "PAYMENT_DB_USER": "PAYMENT_DB_USER",
+                            "PAYMENT_DB_PASSWORD": "PAYMENT_DB_PASSWORD",
+                        },
+                    },
+                }
+            )
+
+            with mock.patch("sys.argv", [
+                "verify_db_contract.py",
+                "--repo-root",
+                str(source_root),
+                "--deploy-root",
+                str(deploy_root),
+                "--service",
+                "payment",
+                "--env",
+                "shprod",
+                "--output-json",
+                str(output),
+            ]), mock.patch("gates.db_contract_verifier.load_manifest", return_value={}), mock.patch(
+                "gates.db_contract_verifier.load_bundle",
+                return_value=bundle,
+            ):
+                self.assertEqual(main(), 0)
+
+            summary = json.loads(output.read_text())
+            self.assertEqual(summary["expected_schema_version"], 12)
+            self.assertEqual(summary["status"], "rendered")
 
     def test_job_manifest_supports_runtime_env_and_host_network(self) -> None:
         verifier = {

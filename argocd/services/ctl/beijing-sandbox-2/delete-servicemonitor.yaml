@@ -2,5 +2,5 @@ apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   name: ctl-workloads
-namespace: kube-system
+  namespace: kube-system
 $patch: delete

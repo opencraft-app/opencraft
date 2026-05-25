@@ -26,6 +26,7 @@ bundles:
     - subscription/k8s/base
     - subscription/k8s/overlays/beijing-sandbox
     - subscription/k8s/overlays/shprod
+    - subscription/k8s/overlays/sgprod
     - subscription/Dockerfile
     - subscription/migrations
     exit_condition: Can be removed only after the deployable contract moves to an
@@ -61,4 +62,5 @@ bundles:
     image_repo:
       beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/subscription
       shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/subscription
+      sgprod: lightclaw-sgprod.tencentcloudcr.com/lightclaw/subscription
       beijing-sandbox-2: lightclaw-bj8.tencentcloudcr.com/lightclaw/subscription

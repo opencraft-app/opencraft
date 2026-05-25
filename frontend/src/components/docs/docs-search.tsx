@@ -17,10 +17,16 @@
  */
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Search, FileText, Hash, CornerDownLeft } from "lucide-react";
-import { SIDEBAR } from "@/config/docs-sidebar";
+import {
+  SLUG_TO_FILE,
+  getLocalizedSidebar,
+  isEnglishLocale,
+} from "@/config/docs-sidebar";
+import { isGlobal } from "@/lib/region";
 import { overlayBackdropClass } from "@/components/ui/control-shell";
 import { cn } from "@/lib/utils";
 
@@ -77,9 +83,11 @@ function slugify(text: string): string {
 }
 
 /** 只构建一次，生命周期为模块级别。 */
-function buildIndex(): SearchEntry[] {
+function buildIndex(locale?: string): SearchEntry[] {
   const entries: SearchEntry[] = [];
-  for (const group of SIDEBAR) {
+  const sidebar = getLocalizedSidebar(locale);
+  const useEnglish = isEnglishLocale(locale);
+  for (const group of sidebar) {
     for (const item of group.items) {
       // 跳过没有对应文档的分组表头（如"配置通道"）
       if (item.slug === null) continue;
@@ -94,27 +102,24 @@ function buildIndex(): SearchEntry[] {
         lcDocTitle: item.title.toLowerCase(),
       });
 
-      // 尝试用 slug 反推文件路径：slug 里可能是 "configuration/model"，
-      // 对应的文件可能是 `configuration/model.md` 或带数字前缀的 `01-overview.md`。
-      // 这里遍历所有 md 模块找 title 能对上的最稳妥，但成本太高 ——
-      // 更简单的是复用 SIDEBAR 对应文件映射，再直接 extractH2。
-      // 由于 SLUG_TO_FILE 已经有，这里重新 import 避免循环依赖，就直接走 markdownModules key 匹配：
-      const tryKeys = [
-        `/src/content/docs/${item.slug}.md`,
-        // 带数字前缀的 overview / quickstart / faq 等，硬编码映射
-      ];
-      // 数字前缀兜底（和 docs-loader 里 `SLUG_TO_FILE` 保持一致）
-      const numericMap: Record<string, string> = {
-        overview: "01-overview.md",
-        quickstart: "02-quickstart.md",
-        account: "03-account.md",
-        "core-concepts": "04-core-concepts.md",
-        configuration: "05-configuration.md",
-        faq: "07-faq.md",
-      };
-      if (numericMap[item.slug]) {
-        tryKeys.unshift(`/src/content/docs/${numericMap[item.slug]}`);
+      const filePath = SLUG_TO_FILE[item.slug];
+      // 路径解析与 docs-loader.ts 对齐：
+      //   - 国内站 (isCN)：              docs/<file>
+      //   - 国际站 (isGlobal) + 英文：   docs/en/<file>
+      //   - 国际站 (isGlobal) + 中文：   docs/global/<file>
+      // 严格区分语言/区域：缺失时不 fallback 到其他语言/区域，避免搜索结果
+      // 出现"标题英文 + 章节中文"等混杂。仅打 warn 提醒维护者补齐。
+      let tryKey: string | null = null;
+      if (filePath) {
+        if (isGlobal) {
+          tryKey = useEnglish
+            ? `/src/content/docs/en/${filePath}`
+            : `/src/content/docs/global/${filePath}`;
+        } else {
+          tryKey = `/src/content/docs/${filePath}`;
+        }
       }
+      const tryKeys = tryKey ? [tryKey] : [];
 
       let raw: string | undefined;
       for (const k of tryKeys) {
@@ -123,7 +128,17 @@ function buildIndex(): SearchEntry[] {
           break;
         }
       }
-      if (!raw) continue;
+      if (!raw) {
+        if (filePath && tryKey && import.meta.env.DEV && (useEnglish || isGlobal)) {
+          // 仅在国际站 / 英文环境 + 开发模式下提醒，避免线上控制台噪音
+          console.warn(
+            `[docs-search] missing markdown for slug "${item.slug}" ` +
+              `(expected ${tryKey}); ` +
+              `section index skipped to avoid mixed-language/region results.`,
+          );
+        }
+        continue;
+      }
 
       for (const h of extractH2(raw)) {
         entries.push({
@@ -140,8 +155,6 @@ function buildIndex(): SearchEntry[] {
   }
   return entries;
 }
-
-const SEARCH_INDEX: SearchEntry[] = buildIndex();
 
 // ── 搜索打分 ────────────────────────────────────────────────────
 
@@ -164,12 +177,12 @@ function scoreEntry(entry: SearchEntry, tokens: string[]): number {
 }
 
 /** 取分 > 0 的条目，按分降序取前 N 条。 */
-function runSearch(query: string, limit = 20): SearchEntry[] {
+function runSearch(query: string, searchIndex: SearchEntry[], limit = 20): SearchEntry[] {
   const q = query.trim().toLowerCase();
   if (!q) return [];
   const tokens = q.split(/\s+/).filter(Boolean);
   if (!tokens.length) return [];
-  const scored = SEARCH_INDEX.map((e) => ({ e, s: scoreEntry(e, tokens) })).filter(
+  const scored = searchIndex.map((e) => ({ e, s: scoreEntry(e, tokens) })).filter(
     (x) => x.s > 0,
   );
   scored.sort((a, b) => b.s - a.s);
@@ -183,10 +196,13 @@ export function DocsSearch() {
   const [query, setQuery] = useState("");
   const [activeIdx, setActiveIdx] = useState(0);
   const navigate = useNavigate();
+  const { i18n } = useTranslation();
+  const isEnglish = isEnglishLocale(i18n.language);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
 
-  const results = useMemo(() => runSearch(query), [query]);
+  const searchIndex = useMemo(() => buildIndex(i18n.language), [i18n.language]);
+  const results = useMemo(() => runSearch(query, searchIndex), [query, searchIndex]);
 
   // 全局热键：Cmd/Ctrl+K 或 `/`（焦点不在可编辑元素时）打开
   useEffect(() => {
@@ -318,7 +334,7 @@ export function DocsSearch() {
                   setActiveIdx(0);
                 }}
                 onKeyDown={onInputKeyDown}
-                placeholder="搜索文档标题或章节…"
+                placeholder={isEnglish ? "Search doc titles or sections…" : "搜索文档标题或章节…"}
                 className="flex-1 bg-transparent outline-none text-sm placeholder:text-[var(--text-tertiary)]"
               />
               <kbd className="hidden sm:inline-flex px-1.5 py-0.5 rounded border border-[var(--border-subtle)] bg-[var(--surface-muted)] text-[10px] font-mono text-[var(--text-tertiary)]">
@@ -329,10 +345,10 @@ export function DocsSearch() {
             {/* 结果区 */}
             <div className="max-h-[60vh] overflow-y-auto">
               {query.trim() === "" ? (
-                <EmptyHint />
+                <EmptyHint locale={i18n.language} />
               ) : results.length === 0 ? (
                 <div className="px-4 py-8 text-center text-sm text-[var(--text-tertiary)]">
-                  没有找到匹配的文档
+                  {isEnglish ? "No matching docs found" : "没有找到匹配的文档"}
                 </div>
               ) : (
                 <ul ref={listRef} className="py-1">
@@ -384,15 +400,15 @@ export function DocsSearch() {
               <span className="inline-flex items-center gap-1">
                 <KbdMini>↑</KbdMini>
                 <KbdMini>↓</KbdMini>
-                选择
+                {isEnglish ? "Select" : "选择"}
               </span>
               <span className="inline-flex items-center gap-1">
                 <KbdMini>↵</KbdMini>
-                跳转
+                {isEnglish ? "Go" : "跳转"}
               </span>
               <span className="inline-flex items-center gap-1">
                 <KbdMini>esc</KbdMini>
-                关闭
+                {isEnglish ? "Close" : "关闭"}
               </span>
             </div>
           </DialogPrimitive.Content>
@@ -411,10 +427,11 @@ function KbdMini({ children }: { children: React.ReactNode }) {
 }
 
 /** 未输入时的首屏提示 —— 简略分组罗列，便于浏览式进入。 */
-function EmptyHint() {
+function EmptyHint({ locale }: { locale?: string }) {
+  const sidebar = getLocalizedSidebar(locale);
   return (
     <div className="py-2">
-      {SIDEBAR.map((group) => (
+      {sidebar.map((group) => (
         <Fragment key={group.title}>
           <div className="px-4 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--text-tertiary)]">
             {group.title}

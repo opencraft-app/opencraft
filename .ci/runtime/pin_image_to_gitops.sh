@@ -2,8 +2,10 @@
 
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-source "${REPO_ROOT}/.ci/init.sh"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="${REPO_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
+CI_INIT_SCRIPT="${CI_INIT_SCRIPT:-$SCRIPT_DIR/../init.sh}"
+source "$CI_INIT_SCRIPT"
 REMOTE_NAME="${REMOTE_NAME:-origin}"
 REMOTE_URL="${REMOTE_URL:-}"
 GITOPS_BRANCH="${GITOPS_BRANCH:-gitops}"
@@ -42,6 +44,7 @@ env_display_name() {
   case "$1" in
     beijing-sandbox) printf '北京测试' ;;
     beijing-sandbox-2) printf '北京测试2' ;;
+    sandbox-bj-*) printf '北京 Playground %s' "$1" ;;
     shprod) printf '上海正式' ;;
     sgprod) printf '新加坡正式' ;;
     *) printf '%s' "$1" ;;
@@ -60,6 +63,25 @@ else:
     for item in items:
         print(f"- {item}")
 PY
+}
+
+green_log() {
+  printf '\033[32m%s\033[0m\n' "$*"
+}
+
+gitops_skip_notice() {
+  local reason="$1"
+
+  green_log "============================================================"
+  green_log "GitOps promote 跳过：${reason}"
+  green_log "目标服务：${SERVICE_ARG}"
+  green_log "目标环境：${ENV_DISPLAY_NAME} (${ENV_NAME})"
+  green_log "目标镜像：${IMAGE}"
+  green_log "GitOps pin 镜像：${PIN_IMAGE}"
+  green_log "源代码 revision：${SOURCE_REF}"
+  green_log "promote 分支：${PROMOTE_BRANCH}"
+  green_log "处理结果：不会创建 GitOps promote MR，也不会触发 Argo sync。"
+  green_log "============================================================"
 }
 
 validate_gate_env_file() {
@@ -189,7 +211,10 @@ trap cleanup EXIT
 
 mkdir -p "$bootstrap_dir/.ci"
 rm -rf "$bootstrap_dir/.ci/runtime"
-cp -R "$REPO_ROOT/.ci/runtime" "$bootstrap_dir/.ci/runtime"
+runtime_source_ci_dir="$(cd "$SCRIPT_DIR/.." && pwd)"
+runtime_snapshot="$(ci_create_runtime_snapshot "$runtime_source_ci_dir")"
+rm -rf "$bootstrap_dir"
+bootstrap_dir="$runtime_snapshot"
 RUNTIME_COMMAND_DIR="$bootstrap_dir/.ci/runtime/commands"
 
 if [[ -n "$REMOTE_URL" ]]; then
@@ -212,7 +237,7 @@ ENV_DISPLAY_NAME="$(env_display_name "$ENV_NAME")"
 RELEASE_ID="${ENV_NAME}/${SERVICE_ARG}/${SOURCE_SHORT}/${IMAGE_TAG}"
 
 echo "============================================================"
-if [[ "$ENV_NAME" == "shprod" ]]; then
+if [[ "$ENV_NAME" == "shprod" || "$ENV_NAME" == "sgprod" ]]; then
   echo "GitOps 待同步意图：准备把镜像 desired state 推进到 ${ENV_DISPLAY_NAME}"
 else
   echo "GitOps 发布意图：准备把镜像推进到 ${ENV_DISPLAY_NAME}"
@@ -236,8 +261,15 @@ git -C "$REPO_ROOT" config user.email "$COMMITTER_EMAIL"
 
 project_and_pin_gitops_state "$REPO_ROOT" true
 
+deployed_at_only_diff="$(python3 "$RUNTIME_COMMAND_DIR/detect_deployed_at_only_diff.py" --repo-root "$REPO_ROOT")"
+if [[ "$deployed_at_only_diff" == "true" ]]; then
+  gitops_skip_notice "仅 *_DEPLOYED_AT 时间戳变化，镜像 pin 与 deploy-facing 配置未变化。"
+  git -C "$REPO_ROOT" reset --hard "$REMOTE_NAME/$GITOPS_BRANCH" >/dev/null
+  exit 0
+fi
+
 if git -C "$REPO_ROOT" diff --cached --quiet; then
-  echo "no gitops pin changes detected"
+  gitops_skip_notice "投影后没有 GitOps staged diff。"
   exit 0
 fi
 
@@ -264,7 +296,7 @@ Release-gate-dependency-changed: ${GATE_RELEASE_DEPENDENCY_CHANGED}
 Source-revision: ${SOURCE_REF}
 EOF
 )"
-if [[ "$ENV_NAME" == "shprod" ]]; then
+if [[ "$ENV_NAME" == "shprod" || "$ENV_NAME" == "sgprod" ]]; then
   COMMIT_TITLE="进入${ENV_DISPLAY_NAME}待同步状态：${SERVICE_ARG}"
   MR_TITLE="进入${ENV_DISPLAY_NAME}待同步状态：${SERVICE_ARG}"
   MR_DESCRIPTION_HEADER="自动化 GitOps 待同步变更。"

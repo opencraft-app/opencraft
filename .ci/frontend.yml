@@ -3,7 +3,9 @@ name: 构建 frontend
 
 on:
   push:
-    branches: [ master ]
+    branches:
+      - master
+      - playground/sandbox-bj-*
     paths:
       - frontend/**
       - argocd/services/frontend/**
@@ -70,13 +72,25 @@ stages:
             name: 准备 frontend 构建标签
             shell: bash
             run: |
-              if [[ "${{ variables.PIPELINE_MODE }}" == "promote" ]]; then
-                echo "skip build step because PIPELINE_MODE=promote"
+              if [[ "${{ variables.PIPELINE_MODE }}" == "promote" || "${{ variables.PIPELINE_MODE }}" == "edgeone-release" ]]; then
+                echo "skip build tag step because PIPELINE_MODE=${{ variables.PIPELINE_MODE }}"
                 exit 0
               fi
-              SHORT_SHA="${{ ci.sha }}"
-              SHORT_SHA="${SHORT_SHA:0:12}"
-              echo "::set-output name=tag::frontend-${SHORT_SHA}"
+              SHORT_SHA='${{ ci.sha }}'
+              if [[ -z "$SHORT_SHA" || "$SHORT_SHA" == *'${{'* ]]; then
+                SHORT_SHA="${BK_CI_GIT_HEAD_COMMITS%%,*}"
+              fi
+              SHORT_SHA="$(printf '%.12s' "$SHORT_SHA")"
+              case "${{ ci.branch }}" in
+                playground/sandbox-bj-*)
+                  PLAYGROUND_ENV="${{ ci.branch }}"
+                  PLAYGROUND_ENV="${PLAYGROUND_ENV#playground/}"
+                  echo "::set-output name=tag::frontend-${PLAYGROUND_ENV}-${SHORT_SHA}"
+                  ;;
+                *)
+                  echo "::set-output name=tag::frontend-${SHORT_SHA}"
+                  ;;
+              esac
           - name: 构建 frontend artifact 全矩阵
             shell: bash
             env:
@@ -87,8 +101,8 @@ stages:
               FRONTEND_ARTIFACT_REPOSITORY: lightclaw-shprod.tencentcloudcr.com/lightclaw/frontend-pages
               FRONTEND_ARTIFACT_SOURCE_SHA: ${{ ci.sha }}
             run: |
-              if [[ "${{ variables.PIPELINE_MODE }}" == "promote" ]]; then
-                echo "skip artifact build step because PIPELINE_MODE=promote"
+              if [[ "${{ variables.PIPELINE_MODE }}" == "promote" || "${{ variables.PIPELINE_MODE }}" == "edgeone-release" ]]; then
+                echo "skip artifact build step because PIPELINE_MODE=${{ variables.PIPELINE_MODE }}"
                 exit 0
               fi
               echo "============================================================"
@@ -127,8 +141,8 @@ stages:
               FRONTEND_ARTIFACT_REPOSITORY: lightclaw-shprod.tencentcloudcr.com/lightclaw/frontend-pages
               FRONTEND_ARTIFACT_SOURCE_SHA: ${{ ci.sha }}
             run: |
-              if [[ "${{ variables.PIPELINE_MODE }}" == "promote" ]]; then
-                echo "skip Cloudflare artifact release step because PIPELINE_MODE=promote"
+              if [[ "${{ variables.PIPELINE_MODE }}" == "promote" || "${{ variables.PIPELINE_MODE }}" == "edgeone-release" ]]; then
+                echo "skip Cloudflare artifact release step because PIPELINE_MODE=${{ variables.PIPELINE_MODE }}"
                 exit 0
               fi
               echo "============================================================"
@@ -176,9 +190,10 @@ stages:
             env:
               TCR_BEIJING_PASSWORD: ${{ settings.TCR_BEIJING_PASSWORD }}
               TCR_SHPROD_PASSWORD: ${{ settings.TCR_SHPROD_PASSWORD }}
+              TCR_SGPROD_PASSWORD: ${{ settings.TCR_SGPROD_PASSWORD }}
             run: |
-              if [[ "${{ variables.PIPELINE_MODE }}" == "promote" ]]; then
-                echo "skip build step because PIPELINE_MODE=promote"
+              if [[ "${{ variables.PIPELINE_MODE }}" == "promote" || "${{ variables.PIPELINE_MODE }}" == "edgeone-release" ]]; then
+                echo "skip GitOps image build step because PIPELINE_MODE=${{ variables.PIPELINE_MODE }}"
                 exit 0
               fi
               source .ci/init.sh
@@ -188,10 +203,29 @@ stages:
               GITOPS_BRANCH=gitops
               BUILD_TAG_OVERRIDE="${{ steps.prepare.outputs.tag }}"
               export REMOTE_URL GITOPS_BRANCH BUILD_TAG_OVERRIDE
+              resolve_playground_envs() {
+                local configured="$1"
+                local branch_env="$2"
+                case "$configured" in
+                  ""|auto|__branch__)
+                    printf '%s' "$branch_env"
+                    ;;
+                  *)
+                    printf '%s' "$configured"
+                    ;;
+                esac
+              }
               case "${{ ci.branch }}" in
                 master)
-                  BUILD_ENVS="shprod"
+                  BUILD_ENVS="shprod,sgprod"
                   AUTO_PIN_ENVS="none"
+                  ;;
+                playground/sandbox-bj-*)
+                  PLAYGROUND_ENV="${{ ci.branch }}"
+                  PLAYGROUND_ENV="${PLAYGROUND_ENV#playground/}"
+                  BUILD_ENVS="$(resolve_playground_envs "auto" "$PLAYGROUND_ENV")"
+                  AUTO_PIN_ENVS="$(resolve_playground_envs "auto" "$PLAYGROUND_ENV")"
+                  echo "Playground 发布决策：分支 ${{ ci.branch }} 自动映射目标环境 ${PLAYGROUND_ENV}"
                   ;;
                 *)
                   echo "unsupported source branch for release: ${{ ci.branch }}" >&2
@@ -214,8 +248,14 @@ stages:
                   ;;
               esac
               SOURCE_SHA="${{ variables.SOURCE_SHA }}"
+              CI_SHA_VALUE='${{ ci.sha }}'
+              if [[ -z "$CI_SHA_VALUE" || "$CI_SHA_VALUE" == *'${{'* ]]; then
+                CI_SHA_VALUE="${BK_CI_GIT_HEAD_COMMITS%%,*}"
+              fi
+              SOURCE_SHA_ORIGIN="variables.SOURCE_SHA"
               if [ -z "$SOURCE_SHA" ]; then
-                SOURCE_SHA="${{ ci.sha }}"
+                SOURCE_SHA="$CI_SHA_VALUE"
+                SOURCE_SHA_ORIGIN="ci.sha"
               fi
               if [ -z "$SOURCE_SHA" ]; then
                 echo "SOURCE_SHA 为空，且 ci.sha 不可用；无法手动发布 frontend 到 GitOps。" >&2
@@ -223,10 +263,13 @@ stages:
               fi
               echo "============================================================"
               echo "frontend 发布决策：进入 GitOps 手动发布流程"
-              echo "触发原因：PIPELINE_MODE=${{ variables.PIPELINE_MODE }}，满足 promote 发布条件"
+              echo "触发原因：PIPELINE_MODE=${PIPELINE_MODE_VALUE}，满足 promote 发布条件"
               echo "目标环境：${{ variables.TARGET_ENV }}"
               echo "源码提交：$SOURCE_SHA"
-              echo "提交来源：SOURCE_SHA 为空时自动回退到本次手动选择的 ci.sha=${{ ci.sha }}"
+              echo "提交来源：${SOURCE_SHA_ORIGIN}"
+              if [ "$SOURCE_SHA_ORIGIN" = "ci.sha" ]; then
+                echo "SOURCE_SHA 为空，已回退到本次手动选择的 ci.sha"
+              fi
               echo "注意：promote 模式只投影已存在镜像到 GitOps，不构建 TCR 镜像"
               echo "下一步：把 frontend 镜像发布内容投影到 gitops 并创建发布 MR"
               echo "============================================================"
@@ -236,3 +279,93 @@ stages:
               REMOTE_URL="$(ci_gitops_remote_url)" \
               GITOPS_BRANCH=gitops \
               bash .ci/runtime/promote_bundle_image_to_gitops.sh frontend frontend "${{ variables.TARGET_ENV }}" "$SOURCE_SHA"
+
+  - name: 确认发起 frontend EdgeOne 正式站发布候选
+    if: "${{ variables.PIPELINE_MODE }} == build && ${{ ci.branch }} == master"
+    check-in:
+      reviews:
+        flows:
+          - name: 确认发起 frontend EdgeOne 正式站发布候选
+            reviewers: [ "skipzhang" ]
+        description: |
+          本阶段确认是否允许本次 frontend 构建发起 EdgeOne 正式站发布候选。
+
+          点击通过后，流水线会并行发起两个独立的 EdgeOne 正式站发布子流水线：
+          - 发布 frontend EdgeOne 国内正式站
+          - 发布 frontend EdgeOne 国际正式站
+
+          子流水线仍会各自执行正式发布前的 check-in；本阶段只控制是否允许从本次构建发起生产发布候选。
+      timeout-hours: 24
+    jobs:
+      approve:
+        name: 等待确认发起 frontend EdgeOne 正式站发布候选
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - name: frontend EdgeOne 正式站发布候选已确认
+            shell: bash
+            run: |
+              echo "frontend EdgeOne production release candidate fan-out approved"
+
+  - name: 自动发起 frontend EdgeOne 正式站发布候选
+    if: "${{ variables.PIPELINE_MODE }} == build && ${{ ci.branch }} == master"
+    jobs:
+      plan:
+        name: 打印 frontend EdgeOne 子流水线调用计划
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - name: 打印调用计划
+            shell: bash
+            run: |
+              ARTIFACT_SOURCE_SHA='${{ ci.sha }}'
+              if [[ -z "$ARTIFACT_SOURCE_SHA" || "$ARTIFACT_SOURCE_SHA" == *'${{'* ]]; then
+                ARTIFACT_SOURCE_SHA="${BK_CI_GIT_HEAD_COMMITS%%,*}"
+              fi
+              echo "============================================================"
+              echo "frontend 发布决策：原生 Stream 子流水线发起 EdgeOne 正式站发布候选"
+              echo "artifact source sha：${ARTIFACT_SOURCE_SHA}"
+              echo "fan-out：cn / intl 两个 job 并行调用两个独立发布流水线"
+              echo "独立审批：由两个目标发布流水线各自 check-in，互不阻塞"
+              echo "发布动作：本阶段只发起子流水线，不直接发布 EdgeOne"
+              echo "============================================================"
+
+      cn:
+        name: 发起 frontend EdgeOne 国内正式站发布候选
+        depend-on:
+          - plan
+        steps:
+          - name: 调用 frontend EdgeOne 国内正式站子流水线
+            uses: "SubPipelineExecStream@1.*"
+            with:
+              repositoryType: "URL"
+              repositoryFromUrl: "https://git.woa.com/wisp/mono2.git"
+              targetBranchFromUrl: "master"
+              targetPathFromUrl: ".ci/frontend-edgeone-lightvela.yml"
+              buildInfo: ""
+              paramsInput:
+                - key: "FRONTEND_EDGEONE_ARTIFACT_SOURCE_SHA"
+                  value: "${{ ci.sha }}"
+                - key: "FRONTEND_EDGEONE_ARTIFACT_REF"
+                  value: ""
+
+      intl:
+        name: 发起 frontend EdgeOne 国际正式站发布候选
+        depend-on:
+          - plan
+        steps:
+          - name: 调用 frontend EdgeOne 国际正式站子流水线
+            uses: "SubPipelineExecStream@1.*"
+            with:
+              repositoryType: "URL"
+              repositoryFromUrl: "https://git.woa.com/wisp/mono2.git"
+              targetBranchFromUrl: "master"
+              targetPathFromUrl: ".ci/frontend-edgeone-lightvela-intl.yml"
+              buildInfo: ""
+              paramsInput:
+                - key: "FRONTEND_EDGEONE_ARTIFACT_SOURCE_SHA"
+                  value: "${{ ci.sha }}"
+                - key: "FRONTEND_EDGEONE_ARTIFACT_REF"
+                  value: ""

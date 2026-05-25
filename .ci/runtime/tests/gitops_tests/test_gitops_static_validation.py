@@ -98,6 +98,31 @@ class GitOpsStaticValidationTests(unittest.TestCase):
 
             self.assertTrue(any("catalog is not covered" in error for error in errors))
 
+    def test_empty_env_publish_paths_skip_bundle_closure(self) -> None:
+        with self.repo() as tmp:
+            repo = self.write_valid_repo(tmp)
+            manifest = (repo / ".ci/runtime/release-bundles.manifest").read_text()
+            manifest += textwrap.dedent(
+                """\
+                  disabled:
+                    owner: disabled
+                    source: disabled
+                    reason: disabled
+                    allowed_paths:
+                      - disabled/k8s/base
+                    exit_condition: never
+                    publish_paths:
+                      - argocd/catalogs/playground/beijing-playground/{env}/disabled.yaml
+                    publish_paths_by_env:
+                      beijing-sandbox: []
+                """
+            )
+            (repo / ".ci/runtime/release-bundles.manifest").write_text(manifest)
+
+            errors = validate(repo, "beijing-sandbox", repo / ".ci/runtime/release-bundles.manifest")
+
+            self.assertEqual(errors, [])
+
     def test_appset_reserved_path_template_fails(self) -> None:
         with self.repo() as tmp:
             repo = self.write_valid_repo(tmp)
@@ -161,6 +186,34 @@ class GitOpsStaticValidationTests(unittest.TestCase):
             errors = validate(repo, "beijing-sandbox", repo / ".ci/runtime/release-bundles.manifest")
 
             self.assertTrue(any("forbids business hand-written leaf apps" in error for error in errors))
+
+    def test_sgprod_direct_app_passes(self) -> None:
+        with self.repo() as tmp:
+            repo = Path(tmp)
+            (repo / "argocd/apps/sgprod").mkdir(parents=True)
+            (repo / "argocd/services/demo/sgprod").mkdir(parents=True)
+            (repo / "argocd/services/demo/sgprod/kustomization.yaml").write_text(
+                "apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\n"
+            )
+            (repo / "argocd/apps/sgprod/demo.yaml").write_text(
+                textwrap.dedent(
+                    """\
+                    apiVersion: argoproj.io/v1alpha1
+                    kind: Application
+                    spec:
+                      source:
+                        repoURL: git@git.woa.com:wisp/mono2.git
+                        targetRevision: gitops
+                        path: argocd/services/demo/sgprod
+                      destination:
+                        name: sgprod
+                    """
+                )
+            )
+
+            errors = validate(repo, "sgprod", repo / ".ci/runtime/release-bundles.manifest")
+
+            self.assertEqual(errors, [])
 
     def repo(self) -> tempfile.TemporaryDirectory[str]:
         return tempfile.TemporaryDirectory()

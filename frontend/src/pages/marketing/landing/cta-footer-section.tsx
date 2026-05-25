@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowUpRight } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 import { fadeInUp, staggerContainer, titleReveal, viewportConfig } from "./constants";
 import { BEIAN_URL, ICP_LICENSE, shouldShowICP } from "@/constants/legal";
 import { useT } from "@/i18n/t";
+import { isGlobal } from "@/lib/region";
 
 export function CTAFooterSection({
   onLoginClick,
@@ -21,6 +22,7 @@ export function CTAFooterSection({
   const navigate = useNavigate();
   const t = useT();
   const [showQR, setShowQR] = useState(false);
+  const footerLinkClass = "lw-site-link lw-site-link--muted transition-colors";
 
   const handleCreateClick = () => {
     if (!isLoggedIn) {
@@ -105,20 +107,34 @@ export function CTAFooterSection({
               {shouldShowICP() && (
                 <>
                   {" "}
-                  <a href={BEIAN_URL} target="_blank" rel="noopener noreferrer" className="transition-colors hover:text-black">
+                  <a href={BEIAN_URL} target="_blank" rel="noopener noreferrer" className={footerLinkClass}>
                     {ICP_LICENSE}
                   </a>
                 </>
               )}
             </span>
             <span>
-              <a href="https://cloud.tencent.com/document/product/301/11470" target="_blank" rel="noopener noreferrer" className="transition-colors hover:text-black">
-                {t("隐私政策")}
-              </a>
+              {isGlobal ? (
+                <Link to="/privacy-policy" className={footerLinkClass}>
+                  {t("隐私政策")}
+                </Link>
+              ) : (
+                <a href="https://cloud.tencent.com/document/product/301/11470" target="_blank" rel="noopener noreferrer" className={footerLinkClass}>
+                  {t("隐私政策")}
+                </a>
+              )}
               ·
-              <a href="https://cloud.tencent.com/document/product/301/48034" target="_blank" rel="noopener noreferrer" className="transition-colors hover:text-black">
+              <a href="https://cloud.tencent.com/document/product/301/48034" target="_blank" rel="noopener noreferrer" className={footerLinkClass}>
                 {t("服务条款")}
               </a>
+              {isGlobal ? (
+                <>
+                  ·
+                  <Link to="/open-source-licenses" className={footerLinkClass}>
+                    {t("开源声明")}
+                  </Link>
+                </>
+              ) : null}
             </span>
             {/* 加入交流群 — hover 展示二维码 */}
             <span
@@ -140,12 +156,12 @@ export function CTAFooterSection({
                     style={{ width: "200px" }}
                   >
                     <img
-                      src="/assets/landing/about/community-qr.png"
+                      src={isGlobal ? "/assets/landing/about/International-Discord.png" : "/assets/landing/about/community-qr.png"}
                       alt="加入交流群"
                       className="rounded-lg"
                       style={{ width: "168px", height: "168px" }}
                     />
-                    <span className="whitespace-nowrap text-[11px] tracking-wider text-black/50">{t("扫码加入交流群")}</span>
+                    <span className="whitespace-nowrap text-[11px] tracking-wider text-black/50">{isGlobal ? t("扫码加入Discord交流群") : t("扫码加入交流群")}</span>
                   </motion.div>
                 )}
               </AnimatePresence>

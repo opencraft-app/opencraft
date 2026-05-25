@@ -10,9 +10,8 @@ import { useRepositories } from "@/contexts/repository-context";
 import { BrandMark } from "@/components/site/brand-mark";
 import { InviteCodeModal } from "@/components/site/login-modal";
 import { RepositoryError } from "@/repositories/http-repositories";
-import { useT } from "@/i18n/t";
-import { t as staticT } from "@/i18n/t";
 import type { Bundle } from "@/domain/types";
+import { useT } from "@/i18n/t";
 import { isGlobal } from "@/lib/region";
 
 /* ─── Notion DESIGN.md Tokens ─── */
@@ -114,6 +113,14 @@ const iconMap: Record<IconKey, React.ReactNode> = {
 /**
  * 将后端 Bundle 映射成前端 PlanInfo。
  * 接收 t 函数以确保所有用户可见文案都走 i18n。
+ *
+ * 后端 bundle_name / description.Key 目前返回的是中文（或中英混排）原文，
+ * 这里一律交给 t() 按当前 locale 查字典：
+ *   - zh-CN：字典里中文翻译与原文一致，回显原文
+ *   - en-US：字典里填入对应英文（如 `启航 Launch` → Launch）
+ *   - 字典未命中：t() 内部会回显中文原文，不会白屏
+ * 如此中英切换、国际站中文模式都能交给 i18n 运行时自然处理，
+ * 后续后端支持国际化字段后只要后端返中文、前端不需任何改动。
  */
 const iconForKey = (key: string): React.ReactNode => {
   const k = key.toLowerCase();
@@ -125,7 +132,23 @@ const iconForKey = (key: string): React.ReactNode => {
   return iconMap.check;
 };
 
+/**
+ * i18n 静态标记块：后端返回的 bundle_name 与 description.Key 是动态字符串，
+ * extract 脚本只能扫到 `t("...")` 字面量调用，无法跟踪 `t(bundle.bundle_name)`。
+ * 这里把后端目前会下发的中文原文静态列举出来，仅供脚本扫描使用：
+ *   - 运行时 void 调用一次，结果丢弃，不影响逻辑
+ *   - 后续后端返回字串变化时，只需同步更新本表
+ */
+const __markBundleBackendStringsForI18n = (t: (zh: string, opts?: Record<string, unknown>) => string): void => {
+  /* bundle_name */
+  void t("启航 Launch");
+  /* description.Key */
+  void t("7*24小时在线");
+};
+
 const mapBundleToPlan = (bundle: Bundle, index: number, t: (zh: string, opts?: Record<string, unknown>) => string): PlanInfo => {
+  /* 静态标记，运行时一次性调用以让字典加载后端下发中文的翻译 */
+  __markBundleBackendStringsForI18n(t);
   const features: PlanFeature[] = [];
 
   /* agent_quota 打头阵 */
@@ -138,24 +161,28 @@ const mapBundleToPlan = (bundle: Bundle, index: number, t: (zh: string, opts?: R
   let storageFeature: PlanFeature | null = null;
   const otherFeatures: PlanFeature[] = [];
   for (const entry of bundle.description ?? []) {
-    const k = (entry.Key ?? "").toLowerCase();
+    const rawKey = entry.Key ?? "";
+    const k = rawKey.toLowerCase();
     if (k.includes("agent") || k.includes("积分") || k.includes("credit")) continue;
+    /* 统一走 i18n 字典：当前语言是 en-US 则查英文，zh-CN 则回显原文。
+       动态参数 extract 脚本扫不到，为此在 __markBundleBackendStringsForI18n 中静态列举。 */
+    const label = t(rawKey);
     /* 「独立环境」统一前端展示规格，避免后端 Value 为空导致卡片露馅 */
-    if (entry.Key === "独立环境") {
-      envFeature = { icon: iconForKey(entry.Key), label: t("独立环境"), value: t("2核 4G 内存") };
+    if (rawKey === "独立环境") {
+      envFeature = { icon: iconForKey(rawKey), label, value: t("2核 4G 内存") };
       continue;
     }
     /* 「专属云端存储」前端统一展示容量，避免后端缺值 */
-    if (entry.Key === "专属云端存储") {
-      storageFeature = { icon: iconMap.hardDrive, label: t("专属云端存储"), value: "50G" };
+    if (rawKey === "专属云端存储") {
+      storageFeature = { icon: iconMap.hardDrive, label, value: "50G" };
       continue;
     }
     /* 后端 Value 为空时，用右侧勾替代，避免卡片右侧空白 */
     if (!entry.Value) {
-      otherFeatures.push({ icon: iconForKey(entry.Key), label: t(entry.Key), hasCheck: true });
+      otherFeatures.push({ icon: iconForKey(rawKey), label, hasCheck: true });
       continue;
     }
-    otherFeatures.push({ icon: iconForKey(entry.Key), label: t(entry.Key), value: entry.Value });
+    otherFeatures.push({ icon: iconForKey(rawKey), label, value: entry.Value });
   }
   /* 顺序：独立环境 → 专属云端存储 → 模型积分 → 其他描述项 */
   if (envFeature) features.push(envFeature);
@@ -179,6 +206,9 @@ const mapBundleToPlan = (bundle: Bundle, index: number, t: (zh: string, opts?: R
   if (features.length < 4 && !features.some((f) => f.label === t("7×24 在线"))) {
     features.push({ icon: iconMap.clock, label: t("7×24 在线"), hasCheck: true });
   }
+  if (isGlobal && !features.some((f) => f.label === t("极简配置面板"))) {
+    features.push({ icon: iconMap.settings, label: t("极简配置面板"), hasCheck: true });
+  }
 
   /* 内测期间：无论后端是否返回 price，前端统一当免费版展示，价格右侧用 promoTag 标出"限时免费"。
      credit 是积分数量，与价格无关；price 字段待后续订阅变现时再恢复取用。 */
@@ -187,12 +217,14 @@ const mapBundleToPlan = (bundle: Bundle, index: number, t: (zh: string, opts?: R
 
   return {
     id: bundle.bundle_id,
-    name: bundle.bundle_name,
+    /* 统一走 i18n 字典：当前语言是 en-US 则查英文（如 `启航 Launch` → Launch），
+       zh-CN 则回显后端原文。 */
+    name: t(bundle.bundle_name),
     badge: soldOut ? t("已售罄") : undefined,
     badgeStyle: soldOut ? "tag" : undefined,
-    price: "¥49",
-    priceUnit: t("/ 月"),
-    /* 价格右侧的促销小徽章：告知用户当前为内测限时免费，避免误会为永久免费 */
+    price: isGlobal ? "$7.5" : "¥49",
+    priceUnit: isGlobal ? "/ month" : t("/ 月"),
+    /* 国际站中英文都展示促销标签：英文为 Limited free，中文为限时免费；国内站保持原有中文标签。 */
     promoTag: soldOut ? undefined : t("限时免费"),
     description: t("尝鲜体验，从一个 Agent 开始"),
     features,
@@ -240,7 +272,9 @@ interface PlaceholderPlanDef {
   id: string;
   name: string;
   price: string;
+  priceGlobal: string;
   priceUnit: string;
+  priceUnitGlobal: string;
   description: string;
   features: PlaceholderFeatureDef[];
   ctaLabel: string;
@@ -255,7 +289,9 @@ const PLACEHOLDER_PLAN_DEFS: PlaceholderPlanDef[] = [
     id: "placeholder-starter",
     name: "巡游 Cruise",
     price: "¥99",
+    priceGlobal: "$15",
     priceUnit: "/ 月",
+    priceUnitGlobal: "/ month",
     description: "日常主力，让智能化成为习惯",
     features: [
       { iconKey: "user", label: "Agent", value: "1 个" },
@@ -275,7 +311,9 @@ const PLACEHOLDER_PLAN_DEFS: PlaceholderPlanDef[] = [
     id: "placeholder-pro",
     name: "远航 Voyage",
     price: "¥279",
+    priceGlobal: "$42",
     priceUnit: "/ 月",
+    priceUnitGlobal: "/ month",
     description: "体验进阶，把效率拉满",
     features: [
       { iconKey: "user", label: "Agent", value: "3 个" },
@@ -294,13 +332,36 @@ const PLACEHOLDER_PLAN_DEFS: PlaceholderPlanDef[] = [
   },
 ];
 
+/**
+ * i18n 静态标记块：占位套餐的中文字面量定义在 PLACEHOLDER_PLAN_DEFS 数据里，
+ * extract 脚本只能扫到 `t("...")` 字面量调用，无法跟踪 `t(def.name)` 这种动态参数。
+ * 因此在这里把所有占位套餐里出现过的中文，以一次性 `t("...")` 调用的形式声明出来，
+ * 既不影响运行时（这次调用结果被丢弃），又能保证 i18n-extract 把它们收录进字典。
+ *
+ * ⚠️ 修改 PLACEHOLDER_PLAN_DEFS 时请同步更新此处。
+ */
+const __markPlaceholderPlansForI18n = (t: (zh: string, opts?: Record<string, unknown>) => string): void => {
+  void t("免费试用 7天");
+  void t("巡游 Cruise");
+  void t("远航 Voyage");
+  void t("日常主力，让智能化成为习惯");
+  void t("体验进阶，把效率拉满");
+  void t("1 个");
+  void t("3 个");
+  void t("4核 8G 内存");
+  void t("极简配置面板");
+  void t("新功能优先体验");
+};
+
 /** 将纯数据占位套餐转为带 JSX + i18n 的 PlanInfo */
-const buildPlaceholderPlans = (t: (zh: string, opts?: Record<string, unknown>) => string): PlanInfo[] =>
-  PLACEHOLDER_PLAN_DEFS.map((def) => ({
+const buildPlaceholderPlans = (t: (zh: string, opts?: Record<string, unknown>) => string): PlanInfo[] => {
+  /* 静态标记，运行时一次性调用以让字典加载它们的翻译 */
+  __markPlaceholderPlansForI18n(t);
+  return PLACEHOLDER_PLAN_DEFS.map((def) => ({
     id: def.id,
     name: t(def.name),
-    price: def.price,
-    priceUnit: t(def.priceUnit),
+    price: isGlobal ? def.priceGlobal : def.price,
+    priceUnit: isGlobal ? def.priceUnitGlobal : t(def.priceUnit),
     description: t(def.description),
     features: def.features.map((f) => ({
       icon: iconMap[f.iconKey],
@@ -314,6 +375,7 @@ const buildPlaceholderPlans = (t: (zh: string, opts?: Record<string, unknown>) =
     comingSoon: def.comingSoon,
     raw: makePlaceholderBundle(def.id, def.name, def.agentQuota),
   }));
+};
 
 /**
  * 后端错误码 → 用户提示文案映射（与 frontend-bundle-pass-integration.md 对齐）
@@ -344,6 +406,7 @@ const mapPassErrorToMessage = (code: string | undefined, fallback: string, t: (z
 /* ─── Notion-style Navbar ─── */
 
 const SubscribeNavbar = () => {
+  const t = useT();
   return (
     <header
       style={{
@@ -382,7 +445,7 @@ const SubscribeNavbar = () => {
           onMouseEnter={(e) => { e.currentTarget.style.color = colors.primary; }}
           onMouseLeave={(e) => { e.currentTarget.style.color = colors.warmGray500; }}
         >
-          {staticT("返回首页")}
+          {t("返回首页")}
         </Link>
       </div>
     </header>
@@ -397,15 +460,14 @@ const PlanCard = ({
   onSubscribe,
   subscribing,
   currentBots,
-  t,
 }: {
   plan: PlanInfo;
   index: number;
   onSubscribe: () => void;
   subscribing: boolean;
   currentBots: number;
-  t: (zh: string, opts?: Record<string, unknown>) => string;
 }) => {
+  const t = useT();
   const quotaWouldExceed = currentBots >= plan.maxBots;
   const isFeatured = plan.featured;
   const isSoldOut = plan.soldOut === true;
@@ -522,7 +584,7 @@ const PlanCard = ({
                 color: colors.warmGray500,
               }}
             >
-              敬请期待
+              {t("敬请期待")}
             </span>
           </div>
         ) : isSoldOut ? (
@@ -540,7 +602,7 @@ const PlanCard = ({
             </span>
           </div>
         ) : plan.price ? (
-          <div style={{ display: "flex", alignItems: "baseline", gap: 2, marginBottom: 8, flexWrap: "wrap", rowGap: 6 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 2, marginBottom: 8, flexWrap: isGlobal ? "nowrap" : "wrap", rowGap: 6 }}>
             <span
               style={{
                 fontSize: 48,
@@ -569,15 +631,15 @@ const PlanCard = ({
             {plan.promoTag && (
               <span
                 style={{
-                  fontSize: 12,
+                  fontSize: isGlobal ? 11 : 12,
                   fontWeight: 600,
                   lineHeight: 1,
                   color: "#D14081",
                   background: "#FDE7F0",
                   border: "1px solid #F7B8D2",
                   borderRadius: 999,
-                  padding: "4px 10px",
-                  marginLeft: 8,
+                  padding: isGlobal ? "3px 8px" : "4px 10px",
+                  marginLeft: isGlobal ? 6 : 8,
                   whiteSpace: "nowrap",
                   alignSelf: "center",
                 }}
@@ -597,14 +659,13 @@ const PlanCard = ({
               fontSize: 12,
               fontWeight: 500,
               color: plan.availableCount <= 5 ? "#C67B1E" : colors.warmGray500,
-              marginTop: -20,
-              marginBottom: 20,
+              marginTop: isGlobal ? 6 : -20,
+              marginBottom: isGlobal ? 18 : 20,
             }}
           >
             {t("今日剩余 {{available}}/{{total}} 份", { available: plan.availableCount, total: plan.totalCount })}
           </p>
         )}
-
         {/* Divider */}
         <div style={{ height: 1, background: colors.border, marginBottom: 24 }} />
 
@@ -828,13 +889,13 @@ const ConfirmOrderModal = ({
   plan,
   onCancel,
   onPay,
-  t,
 }: {
   plan: PlanInfo;
   onCancel: () => void;
   onPay: () => void;
-  t: (zh: string, opts?: Record<string, unknown>) => string;
 }) => {
+  const t = useT();
+  const currencySymbol = plan.price.trim().startsWith("$") ? "$" : "¥";
   const priceNum = plan.price.replace(/[^0-9.]/g, "");
 
   return (
@@ -879,7 +940,7 @@ const ConfirmOrderModal = ({
           >
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, fontSize: 14, color: colors.warmGray500 }}>
               <span>{plan.name}{t("订阅")}</span>
-              <span style={{ fontWeight: 600, color: colors.black }}>¥{priceNum}</span>
+              <span style={{ fontWeight: 600, color: colors.black }}>{currencySymbol}{priceNum}</span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16, fontSize: 14, color: colors.warmGray500 }}>
               <span>{t("订阅周期")}</span>
@@ -888,7 +949,7 @@ const ConfirmOrderModal = ({
             <div style={{ height: 1, background: colors.border, margin: "0 0 16px" }} />
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
               <span style={{ fontSize: 14, color: colors.warmGray500 }}>{t("总计:")}</span>
-              <span style={{ fontSize: 28, fontWeight: 700, color: colors.black, letterSpacing: "-1px" }}>¥{priceNum}</span>
+              <span style={{ fontSize: 28, fontWeight: 700, color: colors.black, letterSpacing: "-1px" }}>{currencySymbol}{priceNum}</span>
             </div>
           </div>
 
@@ -962,7 +1023,7 @@ const ConfirmOrderModal = ({
               onMouseEnter={(e) => { e.currentTarget.style.background = colors.primaryHover; }}
               onMouseLeave={(e) => { e.currentTarget.style.background = colors.primary; }}
             >
-              {t("支付")} ¥{priceNum}
+              {t("支付")} {currencySymbol}{priceNum}
             </button>
           </div>
         </div>
@@ -977,13 +1038,12 @@ const WechatQRModal = ({
   onClose,
   onComplete,
   submitting,
-  t,
 }: {
   onClose: () => void;
   onComplete: () => void;
   submitting: boolean;
-  t: (zh: string) => string;
 }) => {
+  const t = useT();
   const [refreshKey, setRefreshKey] = useState(0);
   const mockQrValue = `https://lightclaw.tech/pay/mock?t=${Date.now()}&k=${refreshKey}`;
 
@@ -1105,11 +1165,11 @@ type SubscribeError = {
 };
 
 export const SubscribePage = () => {
+  const t = useT();
   const navigate = useNavigate();
   const { isLoggedIn, login, isSubscribed, subscribe, addBot, bots, user, refreshPasses } = useOpenClaw();
   const { session } = useSession();
   const repositories = useRepositories();
-  const t = useT();
   const [subscribingPlanId, setSubscribingPlanId] = useState<string | null>(null);
   const [error, setError] = useState<SubscribeError | null>(null);
   const [modalStep, setModalStep] = useState<ModalStep>("closed");
@@ -1189,8 +1249,8 @@ export const SubscribePage = () => {
       }
       /* 2. 调用后端创建实例资源 */
       const createdBot = await addBot({
-        name: "我的Hermes",
-        personality: "默认设定",
+        name: t("我的Hermes"),
+        personality: t("默认设定"),
         personalityEmoji: "✨",
         intro: "",
         soulTemplateId: undefined,
@@ -1436,14 +1496,14 @@ export const SubscribePage = () => {
               >
                 {!isGlobal && error.code === "realname_required" ? (
                   <>
-                    请前往{" "}
+                    {t("请前往")}{" "}
                     <Link
                       to="/account"
                       style={{ color: "#cf3d4c", fontWeight: 700, textDecoration: "underline", textUnderlineOffset: 3 }}
                     >
-                      我的账号
+                      {t("我的账号")}
                     </Link>{" "}
-                    进行实名。
+                    {t("进行实名。")}
                   </>
                 ) : error.message}
               </p>
@@ -1467,7 +1527,7 @@ export const SubscribePage = () => {
                 }}
                 style={{ padding: "8px 20px", borderRadius: 8, border: `1px solid ${colors.border}`, background: colors.white, color: colors.black, fontSize: 14, fontWeight: 600, cursor: "pointer" }}
               >
-                重试
+                {t("重试")}
               </button>
             </div>
           ) : planList.length === 0 ? (
@@ -1496,7 +1556,6 @@ export const SubscribePage = () => {
                   onSubscribe={() => void handleSubscribe(plan.id)}
                   subscribing={subscribingPlanId === plan.id}
                   currentBots={bots.length}
-                  t={t}
                 />
               ))}
             </motion.div>
@@ -1514,7 +1573,6 @@ export const SubscribePage = () => {
             plan={selectedPlan}
             onCancel={handleCloseModal}
             onPay={handlePay}
-            t={t}
           />
         )}
         {modalStep === "qrcode" && (
@@ -1523,7 +1581,6 @@ export const SubscribePage = () => {
             onClose={handleCloseModal}
             onComplete={() => void handleComplete()}
             submitting={subscribingPlanId !== null}
-            t={t}
           />
         )}
       </AnimatePresence>

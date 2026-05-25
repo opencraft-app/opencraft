@@ -141,9 +141,8 @@ func WithAdminBridgeCookie(cfg AdminBridgeCookieConfig) Option {
 }
 
 type compiledRoute struct {
-	route                 Route
-	proxy                 *httputil.ReverseProxy
-	upstreamAuthorization string
+	route Route
+	proxy *httputil.ReverseProxy
 }
 
 type sessionEnvelope struct {
@@ -189,19 +188,9 @@ func NewHandler(cfg Config, opts ...Option) (http.Handler, error) {
 			return nil, fmt.Errorf("route %s response_header_timeout: %w", route.Name, err)
 		}
 
-		upstreamAuthorization := ""
-		if envKey := strings.TrimSpace(route.UpstreamBearerTokenEnv); envKey != "" {
-			token := strings.TrimSpace(os.Getenv(envKey))
-			if token == "" {
-				return nil, fmt.Errorf("route %s upstream bearer token env %q is empty", route.Name, envKey)
-			}
-			upstreamAuthorization = "Bearer " + token
-		}
-
 		routes = append(routes, compiledRoute{
-			route:                 route,
-			proxy:                 newSingleHostReverseProxy(target, newUpstreamTransport(responseHeaderTimeout), upstreamAuthorization, route.Prefix, route.RewritePrefix),
-			upstreamAuthorization: upstreamAuthorization,
+			route: route,
+			proxy: newSingleHostReverseProxy(target, newUpstreamTransport(responseHeaderTimeout), route.Prefix, route.RewritePrefix, route.UpstreamBearerTokenEnv),
 		})
 		if subscriptionServiceURL == "" && hasRoutePrefix("/subscriptions/current", route.Prefix) {
 			subscriptionServiceURL = strings.TrimRight(target.String(), "/")
@@ -303,6 +292,9 @@ func validateRoute(route Route) error {
 	}
 	if rewritePrefix := strings.TrimSpace(route.RewritePrefix); rewritePrefix != "" && !strings.HasPrefix(rewritePrefix, "/") {
 		return fmt.Errorf("route %s rewrite_prefix must start with /", route.Name)
+	}
+	if tokenEnv := strings.TrimSpace(route.UpstreamBearerTokenEnv); tokenEnv != "" && strings.ContainsAny(tokenEnv, " \t\r\n=") {
+		return fmt.Errorf("route %s upstream_bearer_token_env is invalid", route.Name)
 	}
 	switch route.Access {
 	case AccessPublic, AccessAdmin, AccessAuthenticated, AccessInternalOnly:
@@ -1089,23 +1081,42 @@ func (h *Handler) observeRequest(start time.Time, route string, r *http.Request,
 	h.metrics.ObserveRequest(r.Method, route, r.URL.Path, status, time.Since(start))
 }
 
-func newSingleHostReverseProxy(target *url.URL, transport http.RoundTripper, upstreamAuthorization string, routePrefix string, rewritePrefix string) *httputil.ReverseProxy {
+func newSingleHostReverseProxy(target *url.URL, transport http.RoundTripper, routePrefix string, rewritePrefix string, upstreamBearerTokenEnv string) *httputil.ReverseProxy {
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	originalDirector := proxy.Director
 	proxy.Director = func(req *http.Request) {
 		originalDirector(req)
 		req.URL.Path = rewriteRoutePath(req.URL.Path, routePrefix, rewritePrefix)
 		req.URL.RawPath = ""
-		if upstreamAuthorization != "" {
-			req.Header.Set("Authorization", upstreamAuthorization)
-		}
 	}
-	proxy.Transport = transport
+	proxy.Transport = withUpstreamBearerToken(transport, upstreamBearerTokenEnv)
 	proxy.ModifyResponse = func(resp *http.Response) error {
 		stripUpstreamCORSHeaders(resp.Header)
 		return nil
 	}
 	return proxy
+}
+
+func withUpstreamBearerToken(base http.RoundTripper, tokenEnv string) http.RoundTripper {
+	tokenEnv = strings.TrimSpace(tokenEnv)
+	if tokenEnv == "" {
+		return base
+	}
+	return roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		token := strings.TrimSpace(os.Getenv(tokenEnv))
+		if token == "" {
+			return nil, fmt.Errorf("upstream bearer token env %s is empty", tokenEnv)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Del("Cookie")
+		return base.RoundTrip(req)
+	})
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
 }
 
 func rewriteRoutePath(requestPath string, routePrefix string, rewritePrefix string) string {

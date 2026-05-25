@@ -15,7 +15,14 @@ class ImageGateResult:
     digests_json: str
 
 
-def run_image_gate(*, repo_root: Path, runtime_command_dir: Path, env: str, image: str) -> ImageGateResult:
+def run_image_gate(
+    *,
+    repo_root: Path,
+    runtime_repo_root: Path,
+    runtime_command_dir: Path,
+    env: str,
+    image: str,
+) -> ImageGateResult:
     print("============================================================", file=sys.stderr)
     print("GitOps 发布门禁：校验目标镜像是否已存在", file=sys.stderr)
     print(f"目标环境：{env}", file=sys.stderr)
@@ -24,12 +31,13 @@ def run_image_gate(*, repo_root: Path, runtime_command_dir: Path, env: str, imag
     print("============================================================", file=sys.stderr)
 
     script = (
+        "set -euo pipefail\n"
         'source "$1/.ci/init.sh"\n'
         'ci_set_registry_credentials "$2"\n'
         'python3 "$3/verify_image_exists.py" --image "$4" --format dotenv\n'
     )
     result = subprocess.run(
-        ["bash", "-c", script, "bash", str(repo_root), env, str(runtime_command_dir), image],
+        ["bash", "-c", script, "bash", str(runtime_repo_root), env, str(runtime_command_dir), image],
         cwd=repo_root,
         text=True,
         capture_output=True,

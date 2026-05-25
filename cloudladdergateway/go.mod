@@ -5,6 +5,7 @@ go 1.26
 require (
 	connectrpc.com/connect v1.19.1
 	github.com/gin-gonic/gin v1.12.0
+	github.com/openclaw/openclaw/mono/shared/cloudladdertransport v0.0.0
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.19.0
 	go.opentelemetry.io/otel/log v0.19.0
@@ -14,6 +15,8 @@ require (
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1
 )
+
+replace github.com/openclaw/openclaw/mono/shared/cloudladdertransport => ../shared/cloudladdertransport
 
 require (
 	github.com/bytedance/gopkg v0.1.3 // indirect

@@ -4,6 +4,22 @@ export interface OpenClawCreateAvailabilityBot {
   status: OpenClawCreateAvailabilityStatus;
 }
 
+export interface OpenClawCreateStatusBot extends OpenClawCreateAvailabilityBot {
+  id: string;
+}
+
+export const findCompletedCreatingBot = <T extends OpenClawCreateStatusBot>(
+  bots: readonly T[],
+  requestedBotId: string,
+): T | null => {
+  if (!requestedBotId) return null;
+  return bots.find((bot) => (
+    bot.id === requestedBotId
+    && bot.status !== "provisioning"
+    && bot.status !== "deleting"
+  )) ?? null;
+};
+
 export const getOpenClawCreateLimitMessage = (
   bots: readonly OpenClawCreateAvailabilityBot[],
   maxBots: number,

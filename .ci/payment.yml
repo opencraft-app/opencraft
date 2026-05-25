@@ -5,7 +5,7 @@ on:
   push:
     branches:
       - master
-      - playground/sandbox-bj-2
+      - playground/sandbox-bj-*
     paths:
       - payment/**
       - argocd/services/payment/**
@@ -24,12 +24,14 @@ concurrency:
 
 extends:
   template: service-release.yml
+  # Refresh compiled Stream pipeline after service-release template changes.
   parameters:
     SERVICE: payment
     BUNDLE: payment
     DISPLAY_NAME: payment
     DEFAULT_TARGET_ENV: shprod
-    MASTER_BUILD_ENVS: beijing-sandbox,shprod
+    MASTER_BUILD_ENVS: beijing-sandbox,shprod,sgprod
     MASTER_AUTO_PIN_ENVS: beijing-sandbox
-    PLAYGROUND_BUILD_ENVS: beijing-sandbox-2
-    PLAYGROUND_AUTO_PIN_ENVS: beijing-sandbox-2
+    ENABLE_MASTER_PROD_DB_MIGRATION: true
+    PLAYGROUND_BUILD_ENVS: auto
+    PLAYGROUND_AUTO_PIN_ENVS: auto

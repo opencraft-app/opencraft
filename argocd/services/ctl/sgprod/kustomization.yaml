@@ -1,0 +1,129 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: ctl
+
+resources:
+  - ../../../../ctl/k8s/base
+  - ctl-conf-rewrite.yaml
+
+patches:
+  - path: delete-migration-job.yaml
+  - path: delete-servicemonitor.yaml
+  - target:
+      kind: Deployment
+      name: ctl-api
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/containers/0/volumeMounts/2
+      - op: remove
+        path: /spec/template/spec/volumes/2
+  - target:
+      kind: Deployment
+      name: ctl-service
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/containers/0/volumeMounts/2
+      - op: remove
+        path: /spec/template/spec/volumes/2
+  - target:
+      kind: Deployment
+      name: ctl-bypass
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/containers/0/volumeMounts/2
+      - op: remove
+        path: /spec/template/spec/volumes/2
+
+generators:
+  - ksops-assets-generator.yaml
+
+generatorOptions:
+  disableNameSuffixHash: true
+
+configMapGenerator:
+  - name: ctl-platform-values
+    envs:
+      - ctl-platform.env
+
+replacements:
+  - source:
+      kind: ConfigMap
+      name: ctl-platform-values
+      fieldPath: data.CTL_NODE_POOL
+    targets:
+      - select:
+          kind: Deployment
+          name: ctl-api
+        fieldPaths:
+          - spec.template.spec.nodeSelector.pool
+      - select:
+          kind: Deployment
+          name: ctl-service
+        fieldPaths:
+          - spec.template.spec.nodeSelector.pool
+      - select:
+          kind: Deployment
+          name: ctl-bypass
+        fieldPaths:
+          - spec.template.spec.nodeSelector.pool
+  - source:
+      kind: ConfigMap
+      name: ctl-platform-values
+      fieldPath: data.CTL_IMAGE
+    targets:
+      - select:
+          kind: Deployment
+          name: ctl-api
+        fieldPaths:
+          - spec.template.spec.containers.0.image
+      - select:
+          kind: Deployment
+          name: ctl-service
+        fieldPaths:
+          - spec.template.spec.containers.0.image
+      - select:
+          kind: Deployment
+          name: ctl-bypass
+        fieldPaths:
+          - spec.template.spec.containers.0.image
+  - source:
+      kind: ConfigMap
+      name: ctl-platform-values
+      fieldPath: data.CTL_DEPLOYED_AT
+    targets:
+      - select:
+          kind: Deployment
+          name: ctl-api
+        fieldPaths:
+          - spec.template.metadata.annotations.[ctl.clawhub.dev/redeploy-at]
+      - select:
+          kind: Deployment
+          name: ctl-service
+        fieldPaths:
+          - spec.template.metadata.annotations.[ctl.clawhub.dev/redeploy-at]
+      - select:
+          kind: Deployment
+          name: ctl-bypass
+        fieldPaths:
+          - spec.template.metadata.annotations.[ctl.clawhub.dev/redeploy-at]
+  - source:
+      kind: ConfigMap
+      name: ctl-platform-values
+      fieldPath: data.CTL_INTERNAL_SUBNET_ID
+    targets:
+      - select:
+          kind: Service
+          name: ctl-api-internal
+        fieldPaths:
+          - metadata.annotations.[service.kubernetes.io/qcloud-loadbalancer-internal-subnetid]
+  - source:
+      kind: ConfigMap
+      name: ctl-platform-values
+      fieldPath: data.CTL_CLS_TOPIC_ID
+    targets:
+      - select:
+          kind: LogConfig
+          name: ctl-runtime
+        fieldPaths:
+          - spec.clsDetail.topicId

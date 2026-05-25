@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"os"
 	"time"
+
+	"shadow/internal/cloudladder"
 )
 
 type Config struct {
@@ -19,6 +21,7 @@ type Config struct {
 	STSEndpoint     string
 	SecretID        string
 	SecretKey       string
+	CloudLadder     cloudladder.Options
 
 	BillingMode         string
 	BillingEndpoint     string
@@ -80,17 +83,23 @@ func Load() Config {
 	}
 
 	return Config{
-		HTTPAddr:            envOrDefault("SHADOW_HTTP_ADDR", ":8080"),
-		Provider:            envOrDefault("SHADOW_PROVIDER", "fake"),
-		ShadowPlatform:      envOrDefault("SHADOW_PLATFORM", "shadow_test"),
-		StorageDriver:       envOrDefault("SHADOW_STORAGE_DRIVER", "sqlite"),
-		StorageDSN:          envOrDefault("SHADOW_STORAGE_DSN", "file:shadow.db?_pragma=busy_timeout(5000)"),
-		Region:              envOrDefault("SHADOW_REGION", "ap-guangzhou"),
-		AccountEndpoint:     os.Getenv("SHADOW_ACCOUNT_ENDPOINT"),
-		CAMEndpoint:         os.Getenv("SHADOW_CAM_ENDPOINT"),
-		STSEndpoint:         os.Getenv("SHADOW_STS_ENDPOINT"),
-		SecretID:            os.Getenv("SHADOW_SECRET_ID"),
-		SecretKey:           os.Getenv("SHADOW_SECRET_KEY"),
+		HTTPAddr:        envOrDefault("SHADOW_HTTP_ADDR", ":8080"),
+		Provider:        envOrDefault("SHADOW_PROVIDER", "fake"),
+		ShadowPlatform:  envOrDefault("SHADOW_PLATFORM", "shadow_test"),
+		StorageDriver:   envOrDefault("SHADOW_STORAGE_DRIVER", "sqlite"),
+		StorageDSN:      envOrDefault("SHADOW_STORAGE_DSN", "file:shadow.db?_pragma=busy_timeout(5000)"),
+		Region:          envOrDefault("SHADOW_REGION", "ap-guangzhou"),
+		AccountEndpoint: os.Getenv("SHADOW_ACCOUNT_ENDPOINT"),
+		CAMEndpoint:     os.Getenv("SHADOW_CAM_ENDPOINT"),
+		STSEndpoint:     os.Getenv("SHADOW_STS_ENDPOINT"),
+		SecretID:        os.Getenv("SHADOW_SECRET_ID"),
+		SecretKey:       os.Getenv("SHADOW_SECRET_KEY"),
+		CloudLadder: cloudladder.Options{
+			Enabled:        boolFromEnv("SHADOW_CLOUDLADDER_ENABLED"),
+			GatewayBaseURL: os.Getenv("SHADOW_CLOUDLADDER_GATEWAY_BASE_URL"),
+			Caller:         cloudLadderCaller(),
+			Secret:         cloudLadderSecret(),
+		},
 		BillingMode:         envOrDefault("SHADOW_BILLING_MODE", "fake"),
 		BillingEndpoint:     os.Getenv("SHADOW_BILLING_ENDPOINT"),
 		DianshiEndpoint:     os.Getenv("SHADOW_DIANSHI_ENDPOINT"),
@@ -112,11 +121,37 @@ func Load() Config {
 	}
 }
 
+func cloudLadderCaller() string {
+	if value := os.Getenv("SHADOW_CLOUDLADDER_CALLER"); value != "" {
+		return value
+	}
+	if boolFromEnv("SHADOW_CLOUDLADDER_ENABLED") {
+		return "shadow"
+	}
+	return ""
+}
+
+func cloudLadderSecret() string {
+	if value := os.Getenv("SHADOW_CLOUDLADDER_HMAC_SECRET"); value != "" {
+		return value
+	}
+	return os.Getenv("CLOUDLADDER_SHADOW_HMAC_SECRET")
+}
+
 func envOrDefault(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
 	}
 	return fallback
+}
+
+func boolFromEnv(key string) bool {
+	switch os.Getenv(key) {
+	case "1", "true", "TRUE", "True", "yes", "YES", "on", "ON":
+		return true
+	default:
+		return false
+	}
 }
 
 func durationOrDefault(key string, fallback time.Duration) time.Duration {

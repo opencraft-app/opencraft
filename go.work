@@ -9,7 +9,10 @@ use (
 	./nextgen-dashboard-client
 	./payment
 	./service-gateway
+	./shared/cloudladdertransport
 	./subscription
 	./third_party/staticpages
 	./trade
+	./vibebase
+	./cloudagent/acp-client
 )

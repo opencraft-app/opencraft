@@ -12,11 +12,9 @@ bundles:
       db_job_secret_resolver: ctl_db_password
       secret_resolvers:
         ctl_db_password:
-          type: sops_toml
-          file: argocd/secrets/{env}/ctl-conf-rewrite.sops.yaml
-          data_key: server_conf_rewrite.toml
-          toml_path: db.password
-          transform: ctl_legacy_aes_decrypt
+          type: sops_yaml
+          file: argocd/secrets/{env}/ctl-runtime-secrets.sops.yaml
+          yaml_path: stringData.CTL_DB_PASSWORD
       verifier:
         namespace: ctl
         image: mysql:8.0
@@ -41,6 +39,7 @@ bundles:
     - ctl/k8s/base
     - ctl/k8s/overlays/beijing-sandbox
     - ctl/k8s/overlays/shprod
+    - ctl/k8s/overlays/sgprod
     - ctl/Dockerfile
     exit_condition: Can be removed only after the deployable contract moves to an
       explicit imported package path.
@@ -48,7 +47,6 @@ bundles:
     - argocd/services/ctl/{env}/**
     - argocd/apps/{env}/ctl.yaml
     - argocd/secrets/{env}/ctl-conf-common.sops.yaml
-    - argocd/secrets/{env}/ctl-conf-rewrite.sops.yaml
     - argocd/secrets/{env}/ctl-runtime-secrets.sops.yaml
     - ctl/k8s/base/**
     - ctl/k8s/overlays/{env}/**
@@ -60,7 +58,6 @@ bundles:
       - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
       - argocd/catalogs/sandbox/beijing-sandbox/ctl.yaml
       - argocd/secrets/beijing-sandbox/ctl-conf-common.sops.yaml
-      - argocd/secrets/beijing-sandbox/ctl-conf-rewrite.sops.yaml
       - argocd/secrets/beijing-sandbox/ctl-runtime-secrets.sops.yaml
       - ctl/k8s/base/**
       - ctl/k8s/overlays/beijing-sandbox/**
@@ -71,7 +68,6 @@ bundles:
       - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
       - argocd/catalogs/sandbox/beijing-sandbox-2/ctl.yaml
       - argocd/secrets/beijing-sandbox-2/ctl-conf-common.sops.yaml
-      - argocd/secrets/beijing-sandbox-2/ctl-conf-rewrite.sops.yaml
       - argocd/secrets/beijing-sandbox-2/ctl-runtime-secrets.sops.yaml
       - ctl/k8s/base/**
       - ctl/k8s/overlays/beijing-sandbox-2/**
@@ -81,4 +77,5 @@ bundles:
     image_repo:
       beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/ctl
       shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/ctl
+      sgprod: lightclaw-sgprod.tencentcloudcr.com/lightclaw/ctl
       beijing-sandbox-2: lightclaw-bj8.tencentcloudcr.com/lightclaw/ctl

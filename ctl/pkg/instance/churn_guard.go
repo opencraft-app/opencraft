@@ -406,7 +406,7 @@ func (g *createChurnGuard) recordLifecycleEvent(ctx pctx.Context, eventType, ins
 func RefreshPoolPressureSnapshot(ctx pctx.Context, adapter poolPressureFetcher) (*poolPressureSnapshot, error) {
 	conf := currentInstanceAPIConfig()
 	refresher := newPoolPressureRefresher(conf, adapter, ctx.Logger())
-	return refresher.Refresh(ctx, configuredCandidatePools(conf))
+	return refresher.Refresh(ctx, nil)
 }
 
 func (r *poolPressureRefresher) Refresh(ctx pctx.Context, candidatePools []string) (*poolPressureSnapshot, error) {
@@ -417,15 +417,17 @@ func (r *poolPressureRefresher) Refresh(ctx pctx.Context, candidatePools []strin
 		return nil, nil
 	}
 
-	candidatePools = uniqueNonEmptyStrings(candidatePools)
-	if len(candidatePools) == 0 {
-		return nil, nil
-	}
-
 	now := time.Now().UTC()
 	allPools, err := r.fetcher.ListPools(ctx)
 	if err != nil {
 		return nil, err
+	}
+	candidatePools = uniqueNonEmptyStrings(candidatePools)
+	if len(candidatePools) == 0 {
+		candidatePools = listPoolIDs(allPools, "", "")
+	}
+	if len(candidatePools) == 0 {
+		return nil, nil
 	}
 	poolByID := make(map[string]psandbox.Pool, len(allPools))
 	for _, pool := range allPools {
@@ -523,13 +525,6 @@ func publishPoolPressureMetrics(snapshot *poolPressureSnapshot) {
 		metric.OpenClawInstancePoolPressureResetting.WithLabelValues(pool.PoolID).Set(float64(pool.Resetting))
 		metric.OpenClawInstancePoolPressureDesired.WithLabelValues(pool.PoolID).Set(float64(pool.DesiredCapacity))
 	}
-}
-
-func configuredCandidatePools(conf *config.InstanceAPIConfig) []string {
-	if conf == nil {
-		return nil
-	}
-	return uniqueNonEmptyStringsPreserveOrder(append([]string{conf.DefaultTemplateID}, conf.CandidateTemplateIDs...))
 }
 
 func orderCandidatePoolsForCreate(conf *config.InstanceAPIConfig, now time.Time, candidatePools []string, snapshot *poolPressureSnapshot) orderedCandidatePools {
@@ -877,11 +872,15 @@ func maxInt(a, b int) int {
 	return b
 }
 
-func (l *logic) evaluateCreateChurnGuard(ctx pctx.Context) (churnGuardDecision, error) {
+func (l *logic) evaluateCreateChurnGuard(ctx pctx.Context, skuID string) (churnGuardDecision, error) {
 	if l == nil || l.churnGuard == nil {
 		return churnGuardDecision{Allow: true}, nil
 	}
-	return l.churnGuard.EvaluateCreate(ctx, l.templateCandidates())
+	candidates, err := l.resolveCreateCandidatePools(ctx, skuID)
+	if err != nil {
+		return churnGuardDecision{}, err
+	}
+	return l.churnGuard.EvaluateCreate(ctx, candidates)
 }
 
 func (l *logic) recordCreateSuccessEvent(ctx pctx.Context, instanceID string) {

@@ -21,9 +21,14 @@
   "runtime_hermes": {
     "runtime_user": "agentuser",
     "node_major": "22",
+    "cos_base": "https://hermes-code-1325194254.cos.ap-guangzhou.myqcloud.com/hermes",
+    "version": "",
+    "src_version": "",
+    "git_commit": "",
     "install_script_url": "https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh",
     "install_args": "--skip-setup",
-    "qwen_code_version": "latest"
+    "qwen_code_version": "latest",
+    "acli_install_url": "https://acli-1325194254.cos.accelerate.myqcloud.com/acli/install.sh"
   },
   "artifacts": {
     "node_tarball_url": "",

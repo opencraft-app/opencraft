@@ -1,5 +1,16 @@
 @import "tailwindcss";
 
+/* 造字工房 创际黑体（自托管，避开跨域字体被浏览器拒绝渲染的问题）
+ * woff2 优先（压缩高、所有现代浏览器支持）；otf 作为老浏览器兜底。 */
+@font-face {
+  font-family: "ChuangJiHei";
+  src: url("/fonts/chuangji-hei.woff2") format("woff2"),
+       url("/fonts/chuangji-hei.otf") format("opentype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   --app-background: #ffffff;
   --bg-app: #ffffff;
@@ -34,6 +45,7 @@
     "SF Mono", "JetBrains Mono", ui-monospace, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   --font-handwriting: "Kalam", cursive;
   --font-display-num: "Alimama ShuHeiTi", var(--font-heading);
+  --font-chuangji: "ChuangJiHei", -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
 }
 
 * {
@@ -44,6 +56,17 @@ html,
 body,
 #root {
   min-height: 100%;
+}
+
+html.lw-settings-scrollbar-stable {
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.lw-settings-topbar-inner {
+  width: min(1440px, 100vw);
+  margin-left: max(0px, calc((100vw - 1440px) / 2));
+  margin-right: max(0px, calc((100vw - 1440px) / 2));
 }
 
 body {
@@ -74,6 +97,49 @@ p {
 a {
   color: inherit;
   text-decoration: none;
+}
+
+.lw-site-link {
+  color: var(--lw-site-link-color, inherit);
+  text-decoration: none;
+}
+
+.lw-site-link:visited {
+  color: var(--lw-site-link-color, inherit);
+}
+
+.lw-site-link:hover {
+  color: var(--lw-site-link-hover-color, var(--lw-site-link-color, inherit));
+}
+
+.lw-site-link--muted {
+  --lw-site-link-color: rgb(0 0 0 / 0.5);
+  --lw-site-link-hover-color: rgb(0 0 0);
+}
+
+.lw-site-link--nav {
+  --lw-site-link-color: rgb(0 0 0 / 0.9);
+  --lw-site-link-hover-color: rgb(0 0 0 / 0.9);
+}
+
+.lw-landing-navbar {
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.lw-landing-navbar .lw-landing-navbar__nav {
+  display: none;
+}
+
+@media (min-width: 768px) {
+  .lw-landing-navbar .lw-landing-navbar__nav {
+    display: flex;
+    flex: 1 1 0%;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+  }
 }
 
 button,
@@ -338,25 +404,6 @@ code {
   );
 }
 
-/* Hero 底部浅冷淡紫光晕（参考 Figma / 设计图的淡雪青色调）
- * - 高明度 + 低饱和，R<B 让色相带一点冷，接近"接近白的淡薰衣草"
- * - 使用单一色相纯 alpha 渐变，避免多色相 RGB 插值产生 color banding（横条纹）
- * - 最大不透明度 0.28，整体更通透、更淡
- * - mask-image 让上下两端软淡出，防止被 overflow-clip 容器在边界硬切形成直线
- */
-.lw-hero-glow {
-  background: linear-gradient(
-    180deg,
-    rgba(215, 210, 240, 0) 0%,
-    rgba(215, 210, 240, 0.14) 30%,
-    rgba(200, 195, 235, 0.28) 70%,
-    rgba(185, 180, 225, 0) 100%
-  );
-  filter: blur(60px);
-  -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 35%, #000 75%, transparent 100%);
-          mask-image: linear-gradient(180deg, transparent 0%, #000 35%, #000 75%, transparent 100%);
-}
-
 /* 聊天气泡圆角 */
 .lw-bubble-user {
   border-radius: 18px 18px 4px 18px;
@@ -389,35 +436,6 @@ code {
   border-radius: 2.25rem;
   border: 6px solid #1d1d1f;
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.12), 0 8px 24px rgba(0, 0, 0, 0.06);
-}
-
-/* ── Hero 小动物持续悬浮浮动（使用 translateY + GPU 加速，丝滑无抖动） ── */
-.lw-hero-float-1,
-.lw-hero-float-2,
-.lw-hero-float-3 {
-  will-change: transform;
-}
-.lw-hero-float-1 {
-  animation: lw-float-1 4s ease-in-out 3.0s infinite;
-}
-.lw-hero-float-2 {
-  animation: lw-float-2 4.5s ease-in-out 3.2s infinite;
-}
-.lw-hero-float-3 {
-  animation: lw-float-3 3.8s ease-in-out 3.4s infinite;
-}
-
-@keyframes lw-float-1 {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-12px); }
-}
-@keyframes lw-float-2 {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-10px); }
-}
-@keyframes lw-float-3 {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-14px); }
 }
 
 /* ── lightclaw-web landing page tokens ── */
@@ -1189,4 +1207,37 @@ code {
 }
 .prose-doc .prose-link:hover {
   text-decoration-color: var(--text-primary);
+}
+
+/* ─── 临时维护公告条 ─────────────────────────────────────────────────────────
+ * 公告条本身用 `fixed top-0` 占据 viewport 顶端 36px。
+ * 当公告条挂载时（见 maintenance-announcement-banner.tsx），<body> 被加上
+ * `lw-has-announcement` class，下面这两条规则会把页面其它 fixed top-0 的
+ * 元素和 hero 顶部 padding 整体下移 36px，避免被公告条覆盖。
+ *
+ * 用法：
+ *   navbar:    className="... lw-fixed-top ..."（仍然 fixed top-0）
+ *   hero pad:  className="... lw-hero-top-pad ..."（替换原来的 pt-[60px]）
+ *
+ * class 始终存在；只在 body.lw-has-announcement 时触发偏移。
+ */
+.lw-fixed-top {
+  top: 0;
+}
+body.lw-has-announcement .lw-fixed-top {
+  top: 36px;
+}
+.lw-hero-top-pad {
+  padding-top: 60px;
+}
+body.lw-has-announcement .lw-hero-top-pad {
+  padding-top: 96px; /* 60px navbar + 36px announcement */
+}
+/* settings 页 main 原 pt-24 (96px) = navbar 60 + 留 36 间距；
+ * 公告条状态下整体再下推 36 → 132px */
+.lw-app-top-pad {
+  padding-top: 96px;
+}
+body.lw-has-announcement .lw-app-top-pad {
+  padding-top: 132px;
 }

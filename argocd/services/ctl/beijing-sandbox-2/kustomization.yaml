@@ -4,6 +4,8 @@ namespace: ctl
 components:
 - ../common
 - ../profiles/sandbox
+resources:
+- ctl-conf-rewrite.yaml
 generators:
 - ksops-assets-generator.yaml
 configMapGenerator:

@@ -1,0 +1,20 @@
+defaults:
+  region: ap-shanghai
+  version_id: SSM_Current
+  age_recipients:
+    - age1q4s9kt3h5n0fgmez4kyp7tsahgjhuxpyeteye8lp46kqkyvardusctl258
+items:
+  - id: cloudagent-wsa-search-secrets
+    secret_name: mono-shprod-cloudagent-wsa-search-secrets
+    namespace: cloudagent
+    kubernetes_resource_name: cloudagent-wsa-search-secrets
+    kubernetes_resource_kind: Secret
+    output_path: gateway/deploy/gitops/secrets/shprod/cloudagent-wsa-search-secrets.sops.yaml
+    string_key: TENCENTCLOUD_WSA_APIKEY
+    secret_type: Opaque
+    labels:
+      app.kubernetes.io/name: gateway
+      app.kubernetes.io/managed-by: argocd
+      cloudagent.dev/environment: shprod
+    annotations:
+      managed-by: export_ssm_to_sops.py

@@ -1,0 +1,11 @@
+*
+!research/
+!research/hermes-rs/
+!research/hermes-rs/**
+!agent-loader/
+!agent-loader/**
+research/hermes-rs/target
+research/hermes-rs/.git
+research/hermes-rs/.github
+research/hermes-rs/assets
+agent-loader/target

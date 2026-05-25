@@ -17,16 +17,27 @@ RUNTIME_HOME="${TMPDIR}/home/${RUNTIME_USER}"
 mkdir -p "${RUNTIME_HOME}"
 HOME="${RUNTIME_HOME}"
 export HOME
+REAL_RUNTIME_HOME="$(readlink -f "${RUNTIME_HOME}" 2>/dev/null || printf '%s\n' "${RUNTIME_HOME}")"
 
 HERMES_INSTALL_SCRIPT_URL="https://example.com/install.sh"
 HERMES_INSTALL_ARGS="--skip-setup"
+HERMES_COS_BASE="https://example.com/hermes"
+HERMES_VERSION=""
+HERMES_SRC_VERSION=""
+HERMES_GIT_COMMIT=""
 HERMES_QWEN_CODE_VERSION="latest"
+HERMES_ACLI_INSTALL_URL="https://example.com/acli/install.sh"
 SKILLHUB_INSTALL_URL="https://example.com/skillhub.sh"
 HERMES_ENV_PROFILE_PATH="${TMPDIR}/etc/profile.d/hermes-env.sh"
+HERMES_SYSTEM_BIN_DIR="${TMPDIR}/usr-local-bin"
+HERMES_SYSTEM_LINK_DIR="${TMPDIR}/usr-bin"
+ACLI_IDENTITY_PATH="${TMPDIR}/etc/acli/identity.yaml"
+export ACLI_IDENTITY_PATH
 
 LOG_FILE="${TMPDIR}/calls.log"
 PROFILE_FILE="${HERMES_ENV_PROFILE_PATH}"
 INSTALLER_PAYLOAD="${TMPDIR}/installer-payload.sh"
+HERMES_TARBALL="${TMPDIR}/hermes-agent.tar.gz"
 
 log_call() {
   printf '%s\n' "$*" >>"${LOG_FILE}"
@@ -51,20 +62,47 @@ run_as_runtime_user() {
 
 cat <<'EOF' >"${INSTALLER_PAYLOAD}"
 #!/usr/bin/env bash
-mkdir -p "$HOME/.hermes/hermes-agent/venv/bin"
 cat >"$HOME/.hermes/hermes-agent/venv/bin/hermes-agent" <<'INNER'
 #!/usr/bin/env bash
 exit 0
 INNER
+cat >"$HOME/.hermes/hermes-agent/venv/bin/hermes" <<'INNER'
+#!/usr/bin/env bash
+echo "0.14.0"
+INNER
 chmod +x "$HOME/.hermes/hermes-agent/venv/bin/hermes-agent"
+chmod +x "$HOME/.hermes/hermes-agent/venv/bin/hermes"
 exit 0
 EOF
 chmod +x "${INSTALLER_PAYLOAD}"
 
+mkdir -p "${TMPDIR}/hermes-src/hermes-agent/venv/bin"
+cat >"${TMPDIR}/hermes-src/hermes-agent/README.md" <<'EOF'
+hermes fixture
+EOF
+tar -czf "${HERMES_TARBALL}" -C "${TMPDIR}/hermes-src" hermes-agent
+
 curl() {
+  if [[ "${1:-}" == "-fsSL" && "${2:-}" == "${HERMES_COS_BASE}/latest.json" ]]; then
+    cat <<'EOF'
+{
+  "version": "hermes-agent-v20260520",
+  "src_version": "0.14.0",
+  "git_commit": "main",
+  "git_commit_full": "main"
+}
+EOF
+    log_call "curl-hermes-latest"
+    return 0
+  fi
+  if [[ "${1:-}" == "-fsSL" && "${2:-}" == "${HERMES_COS_BASE}/hermes-agent-v20260520/hermes-agent.tar.gz" && "${3:-}" == "-o" ]]; then
+    cp "${HERMES_TARBALL}" "${4}"
+    log_call "curl-hermes-tarball ${4}"
+    return 0
+  fi
   if [[ "${1:-}" == "-fsSL" && "${2:-}" == "${HERMES_INSTALL_SCRIPT_URL}" && "${3:-}" == "-o" ]]; then
     cp "${INSTALLER_PAYLOAD}" "${4}"
-    log_call "curl-download ${4}"
+    log_call "curl-installer ${4}"
     return 0
   fi
   if [[ "${1:-}" == "-fsSL" && "${2:-}" == "${SKILLHUB_INSTALL_URL}" ]]; then
@@ -73,6 +111,25 @@ curl() {
 exit 0
 EOF
     log_call "curl-skillhub"
+    return 0
+  fi
+  if [[ "${1:-}" == "-fsSL" && "${2:-}" == "${HERMES_ACLI_INSTALL_URL}" ]]; then
+    cat <<'EOF'
+#!/usr/bin/env bash
+[ "${ACLI_PRODUCT:-}" = "lightvela" ] || exit 41
+[ "${ACLI_RUN_AS:-}" = "${LIGHTCLAW_RUNTIME_USER:-agentuser}" ] || exit 42
+mkdir -p "$(dirname "${ACLI_IDENTITY_PATH:-/etc/acli/identity.yaml}")"
+cat >"${ACLI_IDENTITY_PATH:-/etc/acli/identity.yaml}" <<IDENTITY
+product: common
+run_as: root
+runtime: hermes
+runtime_bin: /usr/local/bin/hermes
+runtime_home: /root/.hermes
+runtime_version: 0.10.0
+IDENTITY
+exit 0
+EOF
+    log_call "curl-acli"
     return 0
   fi
   command curl "$@"
@@ -108,6 +165,11 @@ sudo() {
   command sudo "$@"
 }
 
+acli() {
+  log_call "acli $*"
+  return 0
+}
+
 command() {
   if [[ "${1:-}" == "-v" && "${2:-}" == "skillhub" ]]; then
     return 1
@@ -131,22 +193,31 @@ ln() {
   log_call "ln $*"
 }
 
-grep() {
-  if [[ "${1:-}" == "-q" && "${2:-}" == "npm prefix -g" ]]; then
-    return 1
-  fi
-  command grep "$@"
-}
-
 mkdir -p "${HOME}/.local/bin" "${HOME}/.config/systemd/user"
 
 install_hermes_runtime
 install_hermes_extra_tools
+install_hermes_acli
 
-grep -q "curl-download" "${LOG_FILE}"
+grep -q "curl-hermes-latest" "${LOG_FILE}"
+grep -q "curl-hermes-tarball" "${LOG_FILE}"
+grep -q "curl-installer" "${LOG_FILE}"
 grep -q "npm-install @qwen-code/qwen-code@latest" "${LOG_FILE}"
 grep -q "curl-skillhub" "${LOG_FILE}"
+grep -q "curl-acli" "${LOG_FILE}"
+grep -q "run_as_runtime_user acli --help" "${LOG_FILE}"
+grep -q "acli doctor" "${LOG_FILE}"
 grep -q '\$HOME/.hermes/hermes-agent/venv/bin' "${PROFILE_FILE}"
 grep -q '\$HOME/.local/bin:\$PATH' "${PROFILE_FILE}"
+grep -q '^YUANBAO_ALLOW_ALL_USERS=true$' "${HOME}/.hermes/.env"
+grep -q '^product: lightvela$' "${ACLI_IDENTITY_PATH}"
+grep -q '^run_as: agentuser$' "${ACLI_IDENTITY_PATH}"
+grep -q "^runtime_bin: ${RUNTIME_HOME}/.hermes/hermes-agent/venv/bin/hermes$" "${ACLI_IDENTITY_PATH}"
+grep -q "^runtime_home: ${RUNTIME_HOME}/.hermes$" "${ACLI_IDENTITY_PATH}"
+grep -q '^runtime_version: 0.14.0$' "${ACLI_IDENTITY_PATH}"
+grep -q "exec ${REAL_RUNTIME_HOME}/.hermes/hermes-agent/venv/bin/hermes " "${HERMES_SYSTEM_BIN_DIR}/hermes"
+grep -q "exec ${REAL_RUNTIME_HOME}/.hermes/hermes-agent/venv/bin/hermes-agent " "${HERMES_SYSTEM_BIN_DIR}/hermes-agent"
+! grep -q "ln -sfn ${HOME}/.hermes/hermes-agent/venv/bin/hermes ${HERMES_SYSTEM_BIN_DIR}/hermes" "${LOG_FILE}"
+! grep -q "ln -sfn ${HOME}/.local/bin/hermes ${HERMES_SYSTEM_BIN_DIR}/hermes" "${LOG_FILE}"
 
 echo "ok"

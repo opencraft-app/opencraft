@@ -31,9 +31,14 @@ def resolve_contract_secret_values(repo_root: Path, env: str, contract: Mapping[
 
 def resolve_secret_value(repo_root: Path, env: str, config: Mapping[str, Any]) -> str:
     resolver_type = str(config.get("type") or "").strip()
-    if resolver_type != "sops_toml":
-        raise ValueError(f"unsupported secret resolver type: {resolver_type or '<empty>'}")
+    if resolver_type == "sops_toml":
+        return resolve_sops_toml_secret(repo_root, env, config)
+    if resolver_type == "sops_yaml":
+        return resolve_sops_yaml_secret(repo_root, env, config)
+    raise ValueError(f"unsupported secret resolver type: {resolver_type or '<empty>'}")
 
+
+def resolve_sops_toml_secret(repo_root: Path, env: str, config: Mapping[str, Any]) -> str:
     relative_file = str(config.get("file") or "").strip()
     data_key = str(config.get("data_key") or "").strip()
     toml_path = str(config.get("toml_path") or "").strip()
@@ -46,6 +51,17 @@ def resolve_secret_value(repo_root: Path, env: str, config: Mapping[str, Any]) -
         raise ValueError(f"missing {data_key} in decrypted {relative_file}")
 
     value = value_at_path(tomllib.loads(raw_toml), toml_path)
+    return transform_secret(str(value), str(config.get("transform") or "").strip())
+
+
+def resolve_sops_yaml_secret(repo_root: Path, env: str, config: Mapping[str, Any]) -> str:
+    relative_file = str(config.get("file") or "").strip()
+    yaml_path = str(config.get("yaml_path") or config.get("path") or "").strip()
+    if not relative_file or not yaml_path:
+        raise ValueError("sops_yaml resolver requires file and yaml_path")
+
+    decrypted = decrypt_sops_yaml(repo_root / relative_file.format(env=env))
+    value = value_at_path(decrypted, yaml_path)
     return transform_secret(str(value), str(config.get("transform") or "").strip())
 
 

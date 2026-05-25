@@ -24,6 +24,18 @@ class RunGitopsDbJobTests(unittest.TestCase):
                 {"PULUMI_ENV_NAME": "beijing-sandbox"},
             )
 
+    def test_platform_env_can_be_loaded_from_explicit_deploy_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            deploy_root = Path(tmp)
+            platform_env = deploy_root / "deploy/envs/sgprod/platform.env"
+            platform_env.parent.mkdir(parents=True)
+            platform_env.write_text("PULUMI_ENV_NAME=sgprod\nDEPLOY_KUBECONFIG=/tmp/kubeconfig\n")
+
+            self.assertEqual(
+                db_job.load_platform_env("sgprod", deploy_root),
+                {"PULUMI_ENV_NAME": "sgprod", "DEPLOY_KUBECONFIG": "/tmp/kubeconfig"},
+            )
+
     def test_resolve_kubeconfig_prefers_explicit_file_without_platform_env(self) -> None:
         with tempfile.NamedTemporaryFile() as kubeconfig:
             with mock.patch.dict(os.environ, {"DB_JOB_KUBECONFIG_FILE": kubeconfig.name}, clear=True):

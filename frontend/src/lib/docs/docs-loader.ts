@@ -10,7 +10,8 @@
  * 行为和现有文档站一致。
  */
 
-import { SLUG_TO_FILE } from "@/config/docs-sidebar";
+import { SLUG_TO_FILE, isEnglishLocale } from "@/config/docs-sidebar";
+import { isGlobal } from "@/lib/region";
 
 // ── markdown 原文 ────────────────────────────────────────────────
 const markdownModules = import.meta.glob("/src/content/docs/**/*.md", {
@@ -25,28 +26,70 @@ const imageUrls = import.meta.glob("/src/content/docs/images/*.{png,jpg,jpeg,web
   import: "default",
 }) as Record<string, string>;
 
-/** 根据 slug 拿到对应 markdown 的原始文本，找不到返回 null。 */
-export function getDocBySlug(slug: string): string | null {
+/**
+ * 根据 slug 拿到对应 markdown 的原始文本，找不到返回 null。
+ *
+ * 加载优先级（区域严格隔离，不跨区域 fallback）：
+ *   - 国内站 (isCN)：             `docs/<file>`
+ *   - 国际站 (isGlobal) + 英文：  `docs/en/<file>`（缺失则降级 `docs/global/<file>`）
+ *   - 国际站 (isGlobal) + 中文：  `docs/global/<file>`
+ *
+ * 重要：国际站绝不读取 `docs/<file>`，避免国内站独有内容（飞书/QQ/实名认证等）
+ * 意外出现在国际站。如果某 slug 在国际站有路由但缺少 markdown，应在 sidebar 配置里
+ * 把该 slug 移除或补齐对应文件。
+ */
+export function getDocBySlug(slug: string, locale?: string): string | null {
   const filePath = SLUG_TO_FILE[slug];
   if (!filePath) return null;
-  const key = `/src/content/docs/${filePath}`;
-  return markdownModules[key] ?? null;
+
+  const cnKey = `/src/content/docs/${filePath}`;
+  const globalKey = `/src/content/docs/global/${filePath}`;
+  const enKey = `/src/content/docs/en/${filePath}`;
+
+  if (isGlobal) {
+    if (isEnglishLocale(locale)) {
+      return markdownModules[enKey] ?? markdownModules[globalKey] ?? null;
+    }
+    return markdownModules[globalKey] ?? null;
+  }
+
+  // 国内站：仅加载国内站文档
+  return markdownModules[cnKey] ?? null;
 }
 
 /**
  * 把 markdown 里的本地图片路径改写为 Vite 构建后的 URL。
- * 识别 `./images/xxx`、`../images/xxx`、`images/xxx` 三种写法。
+ * 识别 `![](./images/xxx)`、`![](../images/xxx)`、`![](images/xxx)` 三种写法，
+ * 以及内联 HTML `<img src="../images/xxx" ...>`（用于需要 width 等属性的场景）。
+ * 英文环境下若存在同名 `-en` 图片，则只替换英文版图片，中文版仍使用原图。
  */
-export function rewriteImagePaths(md: string): string {
-  return md.replace(
-    /!\[([^\]]*)\]\((?:\.\/|\.\.\/)?images\/([^)]+)\)/g,
-    (match, alt: string, fname: string) => {
-      const key = `/src/content/docs/images/${fname}`;
-      const url = imageUrls[key];
-      if (!url) return match; // 找不到的保留原样，方便排查
-      return `![${alt}](${url})`;
-    },
-  );
+export function rewriteImagePaths(md: string, locale?: string): string {
+  const resolveUrl = (fname: string): string | undefined => {
+    const key = `/src/content/docs/images/${fname}`;
+    const localizedName = locale?.startsWith("en")
+      ? fname.replace(/(\.[^.]+)$/, "-en$1")
+      : fname;
+    const localizedKey = `/src/content/docs/images/${localizedName}`;
+    return imageUrls[localizedKey] ?? imageUrls[key];
+  };
+
+  return md
+    .replace(
+      /!\[([^\]]*)\]\((?:\.\/|\.\.\/)?images\/([^)]+)\)/g,
+      (match, alt: string, fname: string) => {
+        const url = resolveUrl(fname);
+        if (!url) return match; // 找不到的保留原样，方便排查
+        return `![${alt}](${url})`;
+      },
+    )
+    .replace(
+      /<img\b([^>]*?)\bsrc="(?:\.\/|\.\.\/)?images\/([^"]+)"([^>]*)>/g,
+      (match, before: string, fname: string, after: string) => {
+        const url = resolveUrl(fname);
+        if (!url) return match;
+        return `<img${before}src="${url}"${after}>`;
+      },
+    );
 }
 
 /**

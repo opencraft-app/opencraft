@@ -33,6 +33,15 @@ patches:
         path: /spec/loadBalancer/l7Listeners/0/domains/0/rules/1/healthCheck/httpCheckDomain
         value: admin.lightclaw.site
       - op: replace
+        path: /spec/loadBalancer/l7Listeners/0/domains/0/rules/2/healthCheck/httpCheckDomain
+        value: admin.lightclaw.site
+      - op: replace
+        path: /spec/loadBalancer/l7Listeners/0/domains/0/rules/3/healthCheck/httpCheckDomain
+        value: admin.lightclaw.site
+      - op: replace
+        path: /spec/loadBalancer/l7Listeners/0/domains/0/rules/4/healthCheck/httpCheckDomain
+        value: admin.lightclaw.site
+      - op: replace
         path: /spec/loadBalancer/l7Listeners/1/defaultServer
         value: admin.lightclaw.site
       - op: replace
@@ -43,6 +52,15 @@ patches:
         value: admin.lightclaw.site
       - op: replace
         path: /spec/loadBalancer/l7Listeners/1/domains/0/rules/1/healthCheck/httpCheckDomain
+        value: admin.lightclaw.site
+      - op: replace
+        path: /spec/loadBalancer/l7Listeners/1/domains/0/rules/2/healthCheck/httpCheckDomain
+        value: admin.lightclaw.site
+      - op: replace
+        path: /spec/loadBalancer/l7Listeners/1/domains/0/rules/3/healthCheck/httpCheckDomain
+        value: admin.lightclaw.site
+      - op: replace
+        path: /spec/loadBalancer/l7Listeners/1/domains/0/rules/4/healthCheck/httpCheckDomain
         value: admin.lightclaw.site
 
 configMapGenerator:

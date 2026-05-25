@@ -5,6 +5,7 @@ import { RootLayout } from "@/layouts/root-layout";
 import { LandingPage } from "@/pages/marketing/landing-page";
 import { lazyNamed, lazyRoute } from "@/router/lazy-page";
 import { AppAccessGuard, AuthenticatedGuard, AuthRouteGuard, MarketingAuthGuard, PlanGuard } from "@/router/guards";
+import { isGlobal } from "@/lib/region";
 
 const InvitePage = lazyNamed(() => import("@/pages/auth/invite-page"), "InvitePage");
 const SignInPage = lazyNamed(() => import("@/pages/auth/sign-in-page"), "SignInPage");
@@ -17,6 +18,9 @@ const StyleLabPage = lazyNamed(() => import("@/pages/app/style-lab-page"), "Styl
 const WorkspacePage = lazyNamed(() => import("@/pages/app/workspace-page"), "WorkspacePage");
 const CreateOpenClawPage = lazyNamed(() => import("@/pages/marketing/create-openclaw-page"), "CreateOpenClawPage");
 const SubscribePage = lazyNamed(() => import("@/pages/marketing/subscribe-page"), "SubscribePage");
+const PrivacyPolicyPage = lazyNamed(() => import("@/pages/marketing/privacy-policy-page"), "PrivacyPolicyPage");
+const CookiePolicyPage = lazyNamed(() => import("@/pages/marketing/cookie-policy-page"), "CookiePolicyPage");
+const OpenSourceLicensesPage = lazyNamed(() => import("@/pages/marketing/open-source-licenses-page"), "OpenSourceLicensesPage");
 const OpenClawSetupPage = lazyNamed(() => import("@/pages/marketing/openclaw-setup-page"), "OpenClawSetupPage");
 const OpenClawSuccessPage = lazyNamed(() => import("@/pages/marketing/openclaw-success-page"), "OpenClawSuccessPage");
 const OpenClawSettingsPage = lazyNamed(() => import("@/pages/marketing/openclaw-settings-page"), "OpenClawSettingsPage");
@@ -72,6 +76,22 @@ export const router = createBrowserRouter([
           },
         ],
       },
+      ...(isGlobal
+        ? [
+            {
+              path: "privacy-policy",
+              element: lazyRoute(PrivacyPolicyPage),
+            },
+            {
+              path: "cookie-policy",
+              element: lazyRoute(CookiePolicyPage),
+            },
+            {
+              path: "open-source-licenses",
+              element: lazyRoute(OpenSourceLicensesPage),
+            },
+          ]
+        : []),
       {
         element: <MarketingAuthGuard />,
         children: [

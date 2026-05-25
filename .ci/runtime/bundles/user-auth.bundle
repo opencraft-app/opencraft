@@ -23,6 +23,7 @@ bundles:
     - user/auth/k8s/base
     - user/auth/k8s/overlays/beijing-sandbox
     - user/auth/k8s/overlays/shprod
+    - user/auth/k8s/overlays/sgprod
     - user/auth/Dockerfile
     - user/auth/migrations
     exit_condition: Can be removed only after the deployable contract moves to an
@@ -58,4 +59,5 @@ bundles:
     image_repo:
       beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/lightclaw-auth
       shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/lightclaw-auth
+      sgprod: lightclaw-sgprod.tencentcloudcr.com/lightclaw/lightclaw-auth
       beijing-sandbox-2: lightclaw-bj8.tencentcloudcr.com/lightclaw/lightclaw-auth

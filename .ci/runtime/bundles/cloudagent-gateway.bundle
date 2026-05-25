@@ -1,0 +1,22 @@
+bundles:
+  cloudagent-gateway:
+    owner: cloudagent
+    source: cloudagent/gateway
+    db_contract: none
+    reason: CloudAgent gateway formal release bundle for Shanghai Argo-managed rollout.
+    allowed_paths:
+    - cloudagent/gateway
+    - cloudagent/sandbox-host
+    exit_condition: Can be removed only after CloudAgent gateway is folded into a
+      different release unit.
+    publish_paths:
+    - argocd/services/cloudagent-gateway/{env}/**
+    - argocd/apps/{env}/cloudagent-gateway.yaml
+    - argocd/secrets/{env}/cloudagent-gateway-runtime-secrets.sops.yaml
+    - argocd/secrets/{env}/cloudagent-wsa-search-secrets.sops.yaml
+    - cloudagent/gateway/**
+    - cloudagent/sandbox-host/**
+    dockerfile: cloudagent/gateway/build/server/Dockerfile
+    build_context: cloudagent/gateway
+    image_repo:
+      shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/cloudagent-gateway

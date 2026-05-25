@@ -1,77 +1,17 @@
 version: v2.0
-name: 发布 frontend eo:global-lightvela-intl-prod
+name: 发布 frontend EdgeOne 国际正式站
 
 on:
   manual: enabled
 
 concurrency:
-  group: mono2-frontend-edgeone-lightvela-intl-prod-release
+  group: mono2-frontend-edgeone-lightvela-intl
   cancel-in-progress: false
-  queue-length: 5
-  queue-timeout-minutes: 240
+  queue-length: 10
+  queue-timeout-minutes: 480
 
-variables:
-  FRONTEND_RELEASE_MATRIX:
-    value: eo:global-lightvela-intl-prod
-    readonly: true
-    allow-modify-at-startup: false
-  FRONTEND_ARTIFACT_SOURCE_SHA:
-    value: ""
-    readonly: false
-    allow-modify-at-startup: true
-  FRONTEND_ARTIFACT_REF:
-    value: ""
-    readonly: false
-    allow-modify-at-startup: true
-
-stages:
-  - name: 发布 frontend eo:global-lightvela-intl-prod
-    jobs:
-      release:
-        name: 发布 EdgeOne lightvela-intl 正式项目
-        runs-on:
-          self-hosted: true
-          pool-name: env
-        steps:
-          - checkout: self
-            name: 拉取代码
-            with:
-              fetchDepth: 50
-          - name: 发布 frontend 到 EdgeOne lightvela-intl 正式项目
-            shell: bash
-            env:
-              EDGEONE_API_TOKEN_FILE: /etc/lightclaw-ci/edgeone_lightvela_intl_prod_token
-              EDGEONE_API_TOKEN_REQUIRED: "1"
-              EDGEONE_API_TOKEN: ${{ settings.EDGEONE_LIGHTVELA_INTL_PROD_TOKEN }}
-              TCR_SHPROD_PASSWORD: ${{ settings.TCR_SHPROD_PASSWORD }}
-              FRONTEND_RELEASE_MATRIX: ${{ variables.FRONTEND_RELEASE_MATRIX }}
-              FRONTEND_ARTIFACT_REPOSITORY: lightclaw-shprod.tencentcloudcr.com/lightclaw/frontend-pages
-              FRONTEND_ARTIFACT_SOURCE_SHA: ${{ variables.FRONTEND_ARTIFACT_SOURCE_SHA }}
-              FRONTEND_ARTIFACT_REF: ${{ variables.FRONTEND_ARTIFACT_REF }}
-            run: |
-              echo "============================================================"
-              echo "frontend 发布决策：进入 EdgeOne lightvela-intl artifact 发布流程"
-              echo "发布矩阵：${FRONTEND_RELEASE_MATRIX}"
-              echo "发布项目：eo:global-lightvela-intl-prod"
-              echo "artifact 仓库：${FRONTEND_ARTIFACT_REPOSITORY}"
-              echo "artifact source sha：${FRONTEND_ARTIFACT_SOURCE_SHA}"
-              echo "artifact ref override：${FRONTEND_ARTIFACT_REF}"
-              echo "发布来源：branch=${{ ci.branch }} sha=${{ ci.sha }}"
-              echo "下一步：拉取并校验 artifact 后执行 pnpm release:eo:artifact"
-              echo "============================================================"
-              source .ci/init.sh
-              ci_init_repo_root
-              ci_load_edgeone_credentials
-              ci_set_registry_credentials shprod
-              ci_ensure_oras
-              ci_ensure_node
-              ci_ensure_pnpm
-
-              "$NODE_BIN" --version
-              "$NPM_BIN" --version
-
-              cd "$REPO_ROOT/frontend"
-              rm -rf node_modules
-              "$PNPM_BIN" --version
-              "$PNPM_BIN" install --frozen-lockfile
-              "$PNPM_BIN" release:eo:artifact
+extends:
+  template: frontend-edgeone-release.yml
+  parameters:
+    COMBO: eo:global-lightvela-intl-prod
+    DISPLAY_NAME: frontend EdgeOne 国际正式站

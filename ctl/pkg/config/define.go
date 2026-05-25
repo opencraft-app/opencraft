@@ -89,7 +89,7 @@ type APIConfig struct {
 type InstanceAPIConfig struct {
 	DefaultTemplateClassID    string   `toml:"default_template_class_id"`
 	DefaultTemplateID         string   `toml:"default_template_id"`
-	DefaultSKUID             string   `toml:"default_sku_id"`
+	DefaultSKUID              string   `toml:"default_sku_id"`
 	CandidateTemplateIDs      []string `toml:"candidate_template_ids"`
 	CreatePoolMaxAttempts     int      `toml:"create_pool_max_attempts"`
 	SoulTemplateDir           string   `toml:"soul_template_dir"`
@@ -147,10 +147,10 @@ type SandboxConfig struct {
 
 // AiGatewayConfig AI-Gateway 适配器配置
 type AiGatewayConfig struct {
-	BaseURL              string `toml:"base_url"`              // K8s 内部地址，如 http://gateway.ai-gateway.svc.cluster.local
-	AdminToken           string `toml:"admin_token"`           // 可选：admin API 的 Bearer Token
+	BaseURL              string `toml:"base_url"`               // K8s 内部地址，如 http://gateway.ai-gateway.svc.cluster.local
+	AdminToken           string `toml:"admin_token"`            // 可选：admin API 的 Bearer Token
 	InternalServiceToken string `toml:"internal_service_token"` // Internal API 的 Bearer Token（Plan/Subscription 联动）
-	Timeout              int    `toml:"timeout"`               // 请求超时（秒），默认 10
+	Timeout              int    `toml:"timeout"`                // 请求超时（秒），默认 10
 	// 以下为技术债：等 ai-gateway 响应完善后从响应读取，届时移除这些配置
 	DefaultBaseURL       string `toml:"default_base_url"`      // 临时：大模型 API Base URL
 	DefaultModelID       string `toml:"default_model_id"`      // 临时：模型 ID
@@ -289,6 +289,15 @@ type GlobalQuotaConfig struct {
 	ResourceDefaultQuotas    map[string]int64 `toml:"resource_default_quotas"`
 }
 
+type AgentChatConfig struct {
+	BusinessCode          string `toml:"business_code"`
+	SecretID              string `toml:"secret_id"`
+	SecretKey             string `toml:"secret_key"`
+	LaunchTokenSecret     string `toml:"launch_token_secret"`
+	LaunchTokenTTLSeconds int    `toml:"launch_token_ttl_seconds"`
+	TimestampSkewSeconds  int    `toml:"timestamp_skew_seconds"`
+}
+
 // GlobalConfig ...
 type GlobalConfig struct {
 	APIConfig *APIConfig `toml:"api"`
@@ -339,5 +348,6 @@ type GlobalConfig struct {
 
 	GlobalQuotaConfig *GlobalQuotaConfig `toml:"global_quota"`
 
-	Bundle *BundleConfig `toml:"bundle"`
+	Bundle    *BundleConfig    `toml:"bundle"`
+	AgentChat *AgentChatConfig `toml:"agentchat"`
 }

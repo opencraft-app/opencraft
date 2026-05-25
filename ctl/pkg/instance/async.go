@@ -278,7 +278,10 @@ func (l *logic) RunCreateInstanceTask(ctx pctx.Context, payload *CreateInstanceT
 		return errcode.ErrInstanceStatusInvalid
 	}
 
-	candidates := l.templateCandidates()
+	candidates, err := l.resolveCreateCandidatePools(ctx, payload.SKUID)
+	if err != nil {
+		return err
+	}
 	selection := l.selectCreateCandidatePools(ctx, candidates)
 	l.logger.Info("selected sandbox candidate pools for create",
 		zap.String("instance_id", entity.InstanceId),
@@ -371,7 +374,7 @@ func (l *logic) FinalizeCreateInstanceTaskFailure(ctx pctx.Context, payload *Cre
 	}
 	entity, err := l.instanceDao.GetByInstanceID(ctx, payload.InstanceID)
 	if err == nil && entity.Status == modelinstance.InstanceStatusCreating {
-		metric.RecordInstanceCreate("fail", firstTemplateOrUnknown(l.templateCandidates()), time.Since(entity.CreatedAt).Seconds())
+		metric.RecordInstanceCreate("fail", "unknown", time.Since(entity.CreatedAt).Seconds())
 		if updateErr := l.instanceDao.UpdateStatus(ctx, entity.Id, modelinstance.InstanceStatusFailed); updateErr != nil {
 			l.logger.Warn("update create task instance failed state failed",
 				zap.Error(updateErr),
@@ -743,9 +746,10 @@ const hermesDefaultProviderName = "custom"
 
 // configureOnboard 通过 envd process 在沙箱中完成 Hermes 的默认模型初始化。
 //
-// 当前路径遵循 tea-sdk-lightclaw 的 Hermes 语义：
-// 1. 先由 root 安装/更新 harness CLI 到 /usr/local/bin/harness
-// 2. 再由 agentuser 执行 `harness model set ...`
+// 当前路径遵循 Hermes 镜像演进语义：
+// 1. 镜像内置 acli 时优先使用 acli
+// 2. 老镜像没有 acli 时，由 root 动态安装/更新 harness CLI 到 /usr/local/bin/harness
+// 3. 再由 agentuser 执行模型配置命令
 //
 // 历史上这里走的是 `openclaw onboard` + gateway config patch；那套逻辑已保留在
 // legacy helper 中，仅作回滚/排障参考，不再作为 Hermes create-time 初始化路径。
@@ -766,19 +770,22 @@ func (l *logic) configureOnboard(ctx pctx.Context, sandboxID string, apiKey stri
 		return fmt.Errorf("default_base_url or default_model_id not configured")
 	}
 
-	// Hermes 当前只接受固定 provider 名 `custom`，不能使用随机 provider id。
+	// Keep the provider identity stable with the legacy harness setup. The
+	// environment config decides the endpoint/model; provider naming is not a
+	// separate deploy-time default.
 	providerID := hermesDefaultProviderName
+	l.logHermesModelSetInput(sandboxID, providerID, modelID, baseURL, compat, apiKey)
 
-	installResult, err := l.execSandboxProcessCommand(ctx, sandboxID, "hermes_install_harness", &psandbox.ProcessStartRequest{
+	installResult, err := l.execSandboxProcessCommand(ctx, sandboxID, "hermes_ensure_model_cli", &psandbox.ProcessStartRequest{
 		Cmd:  "/bin/bash",
-		Args: []string{"-l", "-c", renderHermesInstallHarnessCommand()},
+		Args: []string{"-l", "-c", renderHermesEnsureModelCLICommand()},
 	}, 60)
-	l.logHermesCommandResult("hermes_install_harness", sandboxID, installResult, err)
+	l.logHermesCommandResult("hermes_ensure_model_cli", sandboxID, installResult, err)
 	if err != nil {
-		return fmt.Errorf("exec install harness command: %w", err)
+		return fmt.Errorf("exec ensure hermes model cli command: %w", err)
 	}
 	if !sandboxCommandSucceeded(installResult) {
-		return fmt.Errorf("install harness command failed: %s", sandboxCommandFailureDetail(installResult))
+		return fmt.Errorf("ensure hermes model cli command failed: %s", sandboxCommandFailureDetail(installResult))
 	}
 
 	modelSetCommand := shellUserCommand(hermesRuntimeUser, renderHermesModelSetCommand(
@@ -786,7 +793,7 @@ func (l *logic) configureOnboard(ctx pctx.Context, sandboxID string, apiKey stri
 		providerID,
 		baseURL,
 		apiKey,
-		mapHermesAPIMode(compat),
+		compat,
 	))
 	modelSetResult, err := l.execSandboxProcessCommand(ctx, sandboxID, "hermes_model_set", &psandbox.ProcessStartRequest{
 		Cmd:  "/bin/bash",
@@ -809,8 +816,11 @@ func (l *logic) configureOnboard(ctx pctx.Context, sandboxID string, apiKey stri
 	return nil
 }
 
-func renderHermesInstallHarnessCommand() string {
+func renderHermesEnsureModelCLICommand() string {
 	return strings.Join([]string{
+		`if command -v acli >/dev/null 2>&1; then`,
+		`  exit 0`,
+		`fi`,
 		`sudo curl -fsSL -z /usr/local/bin/harness -o /tmp/harness "https://agentone-1388575217.cos.ap-guangzhou.myqcloud.com/harness-linux-amd64"`,
 		`if [ -s /tmp/harness ]; then`,
 		`  sudo mv /tmp/harness /usr/local/bin/harness`,
@@ -818,6 +828,7 @@ func renderHermesInstallHarnessCommand() string {
 		`else`,
 		`  rm -f /tmp/harness`,
 		`fi`,
+		`command -v harness >/dev/null 2>&1`,
 	}, "\n")
 }
 
@@ -845,6 +856,22 @@ func (l *logic) logHermesCommandResult(commandKind string, sandboxID string, res
 		return
 	}
 	l.logger.Info("hermes command finished", fields...)
+}
+
+func (l *logic) logHermesModelSetInput(sandboxID, providerID, modelID, baseURL, compat, apiKey string) {
+	if l.logger == nil {
+		return
+	}
+	l.logger.Info("hermes model set input",
+		zap.String("sandbox_id", sandboxID),
+		zap.String("provider_id", providerID),
+		zap.String("model_id", modelID),
+		zap.String("base_url", baseURL),
+		zap.String("compatibility", compat),
+		zap.String("api_mode", mapHermesAPIMode(compat)),
+		zap.Bool("api_key_present", strings.TrimSpace(apiKey) != ""),
+		zap.Int("api_key_length", len(strings.TrimSpace(apiKey))),
+	)
 }
 
 func (l *logic) logCreateOnboardPersistenceFailure(ctx pctx.Context, stage string, entity *modelinstance.Entity, sandboxID, keyID string, err error) {
@@ -885,23 +912,100 @@ func truncateForLog(value string, max int) string {
 	return value[len(value)-max:]
 }
 
-func renderHermesModelSetCommand(modelID, providerName, baseURL, apiKey, apiMode string) string {
-	parts := []string{
-		`command -v harness >/dev/null 2>&1`,
-		`&& harness model set`,
+func renderHermesModelSetCommand(modelID, providerName, baseURL, apiKey, compat string) string {
+	modelName := hermesModelName(modelID)
+	acliParts := []string{
+		fmt.Sprintf(`--name %s`, shellQuoteArg(providerName)),
+	}
+	harnessParts := []string{
 		fmt.Sprintf(`--model %s`, shellQuoteArg(modelID)),
 		fmt.Sprintf(`--name %s`, shellQuoteArg(providerName)),
 	}
 	if strings.TrimSpace(baseURL) != "" {
-		parts = append(parts, fmt.Sprintf(`--base-url %s`, shellQuoteArg(baseURL)))
+		acliParts = append(acliParts, fmt.Sprintf(`--base-url %s`, shellQuoteArg(baseURL)))
+		harnessParts = append(harnessParts, fmt.Sprintf(`--base-url %s`, shellQuoteArg(baseURL)))
 	}
 	if strings.TrimSpace(apiKey) != "" {
-		parts = append(parts, fmt.Sprintf(`--api-key %s`, shellQuoteArg(apiKey)))
+		harnessParts = append(harnessParts, fmt.Sprintf(`--api-key %s`, shellQuoteArg(apiKey)))
 	}
-	if strings.TrimSpace(apiMode) != "" {
-		parts = append(parts, fmt.Sprintf(`--api-mode %s`, shellQuoteArg(apiMode)))
+	if api := mapHermesProviderAPI(compat); strings.TrimSpace(api) != "" {
+		acliParts = append(acliParts, fmt.Sprintf(`--api %s`, shellQuoteArg(api)))
 	}
-	return strings.Join(parts, " ")
+	if strings.TrimSpace(apiKey) != "" {
+		acliParts = append(acliParts, `--api-key "$ACLI_SECRET_API_KEY"`)
+	}
+	if strings.TrimSpace(modelID) != "" {
+		acliParts = append(acliParts, fmt.Sprintf(`--model-id %s`, shellQuoteArg(modelID)))
+	}
+	if strings.TrimSpace(modelName) != "" {
+		acliParts = append(acliParts, fmt.Sprintf(`--model-name %s`, shellQuoteArg(modelName)))
+	}
+	if harnessAPIMode := mapHermesAPIMode(compat); strings.TrimSpace(harnessAPIMode) != "" {
+		harnessParts = append(harnessParts, fmt.Sprintf(`--api-mode %s`, shellQuoteArg(harnessAPIMode)))
+	}
+	acliArgs := strings.Join(acliParts, " ")
+	harnessArgs := strings.Join(harnessParts, " ")
+	secretExport := `ACLI_SECRET_API_KEY=` + shellQuoteArg(apiKey)
+	lines := []string{
+		`if command -v acli >/dev/null 2>&1; then`,
+		`  ` + secretExport,
+		fmt.Sprintf(`  save_output="$(acli provider save %s)"`, acliArgs),
+		`  printf '%s\n' "$save_output"`,
+		`  switch_model="$(printf '%s\n' "$save_output" | python3 -c 'import json,re,sys`,
+		`raw=sys.stdin.read()`,
+		`match=re.search(r"\{.*\}", raw, re.S)`,
+		`if not match:`,
+		`    raise SystemExit("provider save did not return JSON")`,
+		`payload=json.loads(match.group(0))`,
+		`data=payload.get("data", payload) if isinstance(payload, dict) else {}`,
+		`def pick(*keys):`,
+		`    for key in keys:`,
+		`        value=data.get(key) if isinstance(data, dict) else None`,
+		`        if isinstance(value, str) and value.strip():`,
+		`            return value.strip()`,
+		`    return ""`,
+		`model=pick("model", "model_name", "modelName", "default_model", "defaultModel")`,
+		`provider=pick("provider", "provider_name", "providerName", "name")`,
+		`if "/" in model:`,
+		`    print(model)`,
+		`elif provider and model:`,
+		`    print(provider + "/" + model)`,
+		`else:`,
+		`    raise SystemExit("provider save output missing switch model")`,
+		`')"`,
+		`  acli model switch --model "$switch_model"`,
+	}
+	lines = append(lines,
+		`elif command -v harness >/dev/null 2>&1; then`,
+		fmt.Sprintf(`  harness model set %s`, harnessArgs),
+		`else`,
+		`  echo "neither acli nor harness found" >&2`,
+		`  exit 127`,
+		`fi`,
+	)
+	return strings.Join(lines, "\n")
+}
+
+func hermesModelName(modelID string) string {
+	modelID = strings.TrimSpace(modelID)
+	if modelID == "" {
+		return ""
+	}
+	if idx := strings.LastIndex(modelID, "/"); idx >= 0 && idx+1 < len(modelID) {
+		return modelID[idx+1:]
+	}
+	return modelID
+}
+
+func mapHermesProviderAPI(compat string) string {
+	switch strings.TrimSpace(strings.ToLower(compat)) {
+	case "", "openai", "openai-completions", "openai-compatible", "chat_completions", "chat-completions":
+		return "chat_completions"
+	case "anthropic", "anthropic-messages":
+		return "anthropic_messages"
+	default:
+		return compat
+	}
 }
 
 func mapHermesAPIMode(compat string) string {

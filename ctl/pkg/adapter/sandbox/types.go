@@ -165,6 +165,9 @@ type Pool struct {
 	SubnetID                  string   `json:"subnet_id"`
 	Zone                      string   `json:"zone"`
 	SecurityGroups            []string `json:"security_groups,omitempty"`
+	TemplateClassID           string   `json:"template_class_id,omitempty"`
+	SKUID                     string   `json:"sku_id,omitempty"`
+	CapacityState             string   `json:"capacity_state,omitempty"`
 }
 
 type PoolInstance struct {

@@ -29,6 +29,7 @@ bundles:
     - sandbox/k8s/base
     - sandbox/k8s/overlays/beijing-sandbox
     - sandbox/k8s/overlays/shprod
+    - sandbox/k8s/overlays/sgprod
     - sandbox/config
     - sandbox/migrations
     exit_condition: Can be removed only after the deployable contract moves to an
@@ -40,6 +41,13 @@ bundles:
     - sandbox/k8s/base/**
     - sandbox/k8s/overlays/{env}/**
     publish_paths_by_env:
+      shprod:
+      - argocd/services/sandbox/shprod/**
+      - argocd/apps/shprod/sandbox.yaml
+      - argocd/secrets/shprod/sandbox-runtime-secrets.sops.yaml
+      - sandbox/k8s/base/**
+      - sandbox/k8s/overlays/shprod/**
+      - sandbox/k8s/overlays/sgprod/**
       beijing-sandbox:
       - argocd/services/sandbox/beijing-sandbox/**
       - argocd/services/sandbox/common/**
@@ -67,6 +75,8 @@ bundles:
       image_repo:
         beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/sandbox-api
         beijing-sandbox-2: lightclaw-bj8.tencentcloudcr.com/lightclaw/sandbox-api
+        shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/sandbox-api
+        sgprod: lightclaw-sgprod.tencentcloudcr.com/lightclaw/sandbox-api
     - name: migrate
       image_key: SANDBOX_MIGRATE_IMAGE
       dockerfile: sandbox/Dockerfile.migrate
@@ -74,6 +84,8 @@ bundles:
       image_repo:
         beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/sandbox-migrate
         beijing-sandbox-2: lightclaw-bj8.tencentcloudcr.com/lightclaw/sandbox-migrate
+        shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/sandbox-migrate
+        sgprod: lightclaw-sgprod.tencentcloudcr.com/lightclaw/sandbox-migrate
     - name: worker
       image_key: SANDBOX_WORKER_IMAGE
       dockerfile: sandbox/Dockerfile.worker
@@ -81,6 +93,8 @@ bundles:
       image_repo:
         beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/sandbox-worker
         beijing-sandbox-2: lightclaw-bj8.tencentcloudcr.com/lightclaw/sandbox-worker
+        shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/sandbox-worker
+        sgprod: lightclaw-sgprod.tencentcloudcr.com/lightclaw/sandbox-worker
     - name: ingressproxy-router
       image_key: SANDBOX_INGRESSPROXY_ROUTER_IMAGE
       dockerfile: sandbox/Dockerfile.ingressproxy-router
@@ -88,6 +102,8 @@ bundles:
       image_repo:
         beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/sandbox-ingressproxy-router
         beijing-sandbox-2: lightclaw-bj8.tencentcloudcr.com/lightclaw/sandbox-ingressproxy-router
+        shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/sandbox-ingressproxy-router
+        sgprod: lightclaw-sgprod.tencentcloudcr.com/lightclaw/sandbox-ingressproxy-router
     - name: ingressproxy-shard
       image_key: SANDBOX_INGRESSPROXY_SHARD_IMAGE
       dockerfile: sandbox/Dockerfile.ingressproxy-shard
@@ -95,3 +111,5 @@ bundles:
       image_repo:
         beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/sandbox-ingressproxy-shard
         beijing-sandbox-2: lightclaw-bj8.tencentcloudcr.com/lightclaw/sandbox-ingressproxy-shard
+        shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/sandbox-ingressproxy-shard
+        sgprod: lightclaw-sgprod.tencentcloudcr.com/lightclaw/sandbox-ingressproxy-shard

@@ -58,6 +58,22 @@ type SetTimeoutRequest struct {
 	Timeout *int32 `json:"timeout" example:"1800"`
 }
 
+// InstanceConfigResetProvider 返回给前端的一次性配置下发材料。
+type InstanceConfigResetProvider struct {
+	ProviderName string `json:"provider_name" example:"custom"`
+	BaseURL      string `json:"base_url" example:"https://api.lightvela.ai/v1"`
+	ModelID      string `json:"model_id" example:"lightvela/default"`
+	API          string `json:"api" example:"chat_completions"`
+	APIKey       string `json:"api_key" example:"sk-xxxx"`
+}
+
+// InstanceConfigResetResponse 实例配置重置准备响应。
+type InstanceConfigResetResponse struct {
+	KeyID     string                       `json:"key_id" example:"550e8400-e29b-41d4-a716-446655440000"`
+	KeyPrefix string                       `json:"key_prefix" example:"sk-abcd1"`
+	Config    *InstanceConfigResetProvider `json:"config"`
+}
+
 // PaginationParams 分页参数
 type PaginationParams struct {
 	// 页码，从 1 开始，默认 1
@@ -267,18 +283,35 @@ type ChatClawConversationResponse struct {
 }
 
 type ChatClawRuntimeBootstrapResponse struct {
-	UserID             string `json:"user_id" example:"usr_123"`
-	InstanceID         string `json:"instance_id" example:"ins_123"`
-	ConversationID     string `json:"conversation_id" example:"conv_123"`
-	ConversationKind   string `json:"conversation_kind" example:"conversation"`
-	AgentID            string `json:"agent_id,omitempty" example:"main"`
-	TeamID             string `json:"team_id,omitempty" example:"team_123"`
+	UserID             string   `json:"user_id" example:"usr_123"`
+	InstanceID         string   `json:"instance_id" example:"ins_123"`
+	ConversationID     string   `json:"conversation_id" example:"conv_123"`
+	ConversationKind   string   `json:"conversation_kind" example:"conversation"`
+	AgentID            string   `json:"agent_id,omitempty" example:"main"`
+	TeamID             string   `json:"team_id,omitempty" example:"team_123"`
 	TeamAgentIDs       []string `json:"team_agent_ids,omitempty"`
-	SessionID          string `json:"session_id" example:"ses_123"`
-	SessionTitle       string `json:"session_title" example:"New conversation"`
-	UpstreamSessionKey string `json:"upstream_session_key" example:"agent:main:chatclaw:123"`
-	GatewayURL         string `json:"gateway_url" example:"wss://18789-sandbox-123.sandbox.lightclaw.tech"`
-	GatewayToken       string `json:"gateway_token" example:"gw_123"`
+	SessionID          string   `json:"session_id" example:"ses_123"`
+	SessionTitle       string   `json:"session_title" example:"New conversation"`
+	UpstreamSessionKey string   `json:"upstream_session_key" example:"agent:main:chatclaw:123"`
+	GatewayURL         string   `json:"gateway_url" example:"wss://18789-sandbox-123.sandbox.lightclaw.tech"`
+	GatewayToken       string   `json:"gateway_token" example:"gw_123"`
+}
+
+type AgentChatLaunchTokenResponse struct {
+	LaunchToken string `json:"launch_token" example:"eyJ1c2VyX2lkIjoi..."`
+	ExpiresAt   int64  `json:"expires_at" example:"1800000300"`
+}
+
+type AgentChatIntrospectRequest struct {
+	LaunchToken  string `json:"launch_token"`
+	BusinessCode string `json:"businessCode"`
+	Timestamp    int64  `json:"timestamp"`
+	Sign         string `json:"sign"`
+}
+
+type AgentChatIntrospectResponse struct {
+	UserID     string `json:"user_id" example:"usr_123"`
+	InstanceID string `json:"instance_id" example:"ins_123"`
 }
 
 type ChatClawStateResponse struct {

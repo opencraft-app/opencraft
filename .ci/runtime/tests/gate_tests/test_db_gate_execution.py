@@ -1,4 +1,6 @@
 import unittest
+from contextlib import redirect_stderr
+from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -21,10 +23,12 @@ class DbGateExecutionTests(unittest.TestCase):
         passed = self.plan(env="shprod", db_status="passed")
 
         with mock.patch("gates.db.load_plan", side_effect=[initial, passed]), \
-            mock.patch("gates.db.run_logged", side_effect=lambda command, cwd: command_calls.append((command, cwd))):
+            mock.patch("gates.db.run_logged", side_effect=lambda command, cwd: command_calls.append((command, cwd))), \
+            redirect_stderr(StringIO()):
             status, plan = run_db_gate(
                 repo_root=repo_root,
                 gitops_worktree=gitops_worktree,
+                runtime_repo_root=RUNTIME_DIR.parent.parent,
                 runtime_command_dir=RUNTIME_DIR / "commands",
                 bundle_manifest=RUNTIME_DIR / "release-bundles.manifest",
                 service="payment",
@@ -42,8 +46,8 @@ class DbGateExecutionTests(unittest.TestCase):
         self.assertNotIn("run_gitops_db_job.py", rendered_commands)
         verify_command = next(command for command in commands if any("verify_db_contract.py" in part for part in command))
         self.assertIn(str(gitops_worktree), verify_command)
-        self.assertIn(str(repo_root), verify_command)
         self.assertIn("ci_ensure_db_job_tools", verify_command[2])
+        self.assertIn("set -euo pipefail", verify_command[2])
         self.assertIn((verify_command, gitops_worktree), command_calls)
 
     def test_beijing_readiness_runs_controlled_db_job_when_required(self) -> None:
@@ -54,10 +58,12 @@ class DbGateExecutionTests(unittest.TestCase):
         passed = self.plan(env="beijing-sandbox", db_status="passed")
 
         with mock.patch("gates.db.load_plan", side_effect=[initial, passed]), \
-            mock.patch("gates.db.run_logged", side_effect=lambda command, cwd: command_calls.append((command, cwd))):
+            mock.patch("gates.db.run_logged", side_effect=lambda command, cwd: command_calls.append((command, cwd))), \
+            redirect_stderr(StringIO()) as stderr:
             status, plan = run_db_gate(
                 repo_root=repo_root,
                 gitops_worktree=gitops_worktree,
+                runtime_repo_root=RUNTIME_DIR.parent.parent,
                 runtime_command_dir=RUNTIME_DIR / "commands",
                 bundle_manifest=RUNTIME_DIR / "release-bundles.manifest",
                 service="payment",
@@ -78,16 +84,25 @@ class DbGateExecutionTests(unittest.TestCase):
         self.assertEqual(db_job_command[0], "bash")
         self.assertIn("ci_ensure_db_job_tools", db_job_command[2])
         self.assertIn("ci_ensure_db_job_tools", verify_command[2])
+        self.assertIn("set -euo pipefail", db_job_command[2])
+        self.assertIn("set -euo pipefail", verify_command[2])
         self.assertIn(str(repo_root), db_job_command)
         self.assertIn(str(gitops_worktree), db_job_command)
         self.assertIn(str(gitops_worktree), verify_command)
         self.assertIn((db_job_command, gitops_worktree), command_calls)
         self.assertIn((verify_command, gitops_worktree), command_calls)
+        output = stderr.getvalue()
+        self.assertIn("北京自动发布 DB gate 可视化", output)
+        self.assertIn("受控 DB job：will_run=true", output)
+        self.assertIn("DB readiness：will_run=true", output)
+        self.assertIn("run_gitops_db_job.py --service payment --operation migration --env beijing-sandbox --revision abc123 --apply --wait", output)
+        self.assertIn("verify_db_contract.py --service payment --env beijing-sandbox --apply --wait", output)
 
     def plan(self, *, env: str, db_status: str) -> SimpleNamespace:
         return SimpleNamespace(
             service="payment",
             env=env,
+            source_sha="abc123",
             db_status=db_status,
             db_mode="migration",
             migration_changed=False,

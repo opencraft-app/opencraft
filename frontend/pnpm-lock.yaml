@@ -33,8 +33,8 @@ importers:
         specifier: 0.2.9
         version: 0.2.9(@types/hoist-non-react-statics@3.3.7(@types/react@19.2.14))(@types/node@24.12.0)(@types/react@19.2.14)(axios@1.15.2)(dagre@0.8.5)(moment@2.30.1)(prop-types@15.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(slate-history@0.100.0(slate@0.94.0))(slate-react@0.99.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(slate@0.94.0))(slate@0.94.0)
       '@tencent/tea-sdk-lightclaw':
-        specifier: ^1.0.34
-        version: 1.0.34(@tencent/qcloud-iaas-api@1.0.1)(@types/react@19.2.14)(fast-deep-equal@3.1.3)(lodash.merge@4.6.2)(path-to-regexp@2.4.0)(prop-types@15.8.1)(redux-logger@3.0.6)(redux-saga@0.16.2)(redux@4.2.1)(reselect@4.1.8)(saga-duck@3.4.8(react-redux@7.2.9(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(redux-saga@0.16.2)(redux@4.2.1))(semaphore-async-await@1.5.1)(tencentcloud-sdk-nodejs@4.1.217)(typescript@5.9.3)
+        specifier: ^1.0.39
+        version: 1.0.39(@tencent/qcloud-iaas-api@1.0.1)(@types/react@19.2.14)(fast-deep-equal@3.1.3)(lodash.merge@4.6.2)(path-to-regexp@2.4.0)(prop-types@15.8.1)(redux-logger@3.0.6)(redux-saga@0.16.2)(redux@4.2.1)(reselect@4.1.8)(saga-duck@3.4.8(react-redux@7.2.9(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(redux-saga@0.16.2)(redux@4.2.1))(semaphore-async-await@1.5.1)(tencentcloud-sdk-nodejs@4.1.217)(typescript@5.9.3)
       '@xterm/addon-fit':
         specifier: ^0.11.0
         version: 0.11.0
@@ -313,12 +313,12 @@ packages:
     peerDependencies:
       '@babel/core': ^7.0.0-0
 
-  '@babel/runtime-corejs2@7.29.2':
-    resolution: {integrity: sha512-+FqVkbqWaDleqS9fgzFypApKoPvmGFgk5X2lGXbL9wgz6tf88qt2HEUuEn9E3yBeLt7p8pIgODbJ5icVRALKhQ==}
+  '@babel/runtime-corejs2@7.29.7':
+    resolution: {integrity: sha512-5GidEBf/rOQlv4sUknPRgboZEvzt/je7CpbkCZ2o7ojs9JbldxdXJinGLYE0sYR9mfPpRz3Q3D7rP+oSCal70g==}
     engines: {node: '>=6.9.0'}
 
-  '@babel/runtime-corejs3@7.29.2':
-    resolution: {integrity: sha512-Lc94FOD5+0aXhdb0Tdg3RUtqT6yWbI/BbFWvlaSJ3gAb9Ks+99nHRDKADVqC37er4eCB0fHyWT+y+K3QOvJKbw==}
+  '@babel/runtime-corejs3@7.29.7':
+    resolution: {integrity: sha512-ppj9ouYku+RX0ljtgZd+KMO5mkM2bCqg8H2PYAFWnLsHEIKIdRojqbJ2i3eVHrisuxy7nOFCmngTDdWtUCdXUQ==}
     engines: {node: '>=6.9.0'}
 
   '@babel/runtime@7.29.2':
@@ -1222,7 +1222,6 @@ packages:
 
   '@rollup/rollup-darwin-arm64@4.60.0':
     resolution: {integrity: sha512-qEF7CsKKzSRc20Ciu2Zw1wRrBz4g56F7r/vRwY430UPp/nt1x21Q/fpJ9N5l47WWvJlkNCPJz3QRVw008fi7yA==}
-    cpu: [arm64]
     os: [darwin]
 
   '@rollup/rollup-darwin-x64@4.59.0':
@@ -1232,7 +1231,6 @@ packages:
 
   '@rollup/rollup-darwin-x64@4.60.0':
     resolution: {integrity: sha512-WADYozJ4QCnXCH4wPB+3FuGmDPoFseVCUrANmA5LWwGmC6FL14BWC7pcq+FstOZv3baGX65tZ378uT6WG8ynTw==}
-    cpu: [x64]
     os: [darwin]
 
   '@rollup/rollup-freebsd-arm64@4.59.0':
@@ -1299,7 +1297,6 @@ packages:
     resolution: {integrity: sha512-oF87Ie3uAIvORFBpwnCvUzdeYUqi2wY6jRFWJAy1qus/udHFYIkplYRW+wo+GRUP4sKzYdmE1Y3+rY5Gc4ZO+w==}
     cpu: [s390x]
     os: [linux]
-    libc: [glibc]
 
   '@rollup/rollup-linux-x64-gnu@4.59.0':
     resolution: {integrity: sha512-3AHmtQq/ppNuUspKAlvA8HtLybkDflkMuLK4DPo77DfthRb71V84/c4MlWJXixZz4uruIH4uaa07IqoAkG64fg==}
@@ -1557,8 +1554,8 @@ packages:
       axios: '>=1.0.0'
       react: '>=16.8.0'
 
-  '@tencent/qcact-dss@2.6.0':
-    resolution: {integrity: sha512-STEzsmMQjky7/+hzt9ltw3w1vjhRSJcQkzeEftjoE5pgRtYmr7m/8TXoF9wjeHSELhvS3qweTd+gqji/KhNQfQ==, tarball: https://mirrors.tencent.com/npm/@tencent/qcact-dss/-/@tencent/qcact-dss-2.6.0.tgz}
+  '@tencent/qcact-dss@2.7.0':
+    resolution: {integrity: sha512-KHLTmgShTXpbhp2KTE1JLdKtM5z7fWJ08w6rGUKoMFVVFx/dQvofIvCp/14VN2l6uhMI1iLA3Ly66gbGb6E0SQ==, tarball: https://mirrors.tencent.com/npm/@tencent/qcact-dss/-/@tencent/qcact-dss-2.7.0.tgz}
 
   '@tencent/qcloud-iaas-api@1.0.1':
     resolution: {integrity: sha512-bsMqRrdD974QeotJ7f2YSdAr9EruDK2LEL+HRzHVLhXuFoZotCU8odcjig1KApVO3VMRss3htznqa3z9DvrhUw==, tarball: https://mirrors.tencent.com/npm/@tencent/qcloud-iaas-api/-/@tencent/qcloud-iaas-api-1.0.1.tgz}
@@ -1605,8 +1602,8 @@ packages:
       react: '>=16.13.1'
       react-dom: '>=16.13.1'
 
-  '@tencent/tea-sdk-lightclaw@1.0.34':
-    resolution: {integrity: sha512-sKWw8GK4wmv7rA1wc0yAKwvY5NuH/PAcHCl5nzVVxc9zVaqJd10XuiIngpCd67Pqnapdxrfpk/Qr7esT1NwXMA==, tarball: https://mirrors.tencent.com/npm/@tencent/tea-sdk-lightclaw/-/@tencent/tea-sdk-lightclaw-1.0.34.tgz}
+  '@tencent/tea-sdk-lightclaw@1.0.39':
+    resolution: {integrity: sha512-RfYzedjvKHunN3da0/O+3hcwnWOpLKA74jfVjMK8QCo0ZZbr1YpZz2X54zUTqKcs7pOwUM3MYNcip2R+hdgVkQ==, tarball: https://mirrors.tencent.com/npm/@tencent/tea-sdk-lightclaw/-/@tencent/tea-sdk-lightclaw-1.0.39.tgz}
     engines: {typescript: '>3.3'}
 
   '@tencent/tea-style-lighthouse@1.0.371':
@@ -2592,6 +2589,7 @@ packages:
 
   deep-diff@0.3.8:
     resolution: {integrity: sha512-yVn6RZmHiGnxRKR9sJb3iVV2XTF1Ghh2DiWRZ3dMnGc43yUdWWF/kX6lQyk3+P84iprfWKU/8zFTrlkvtFm1ug==}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
 
   deep-equal@1.1.2:
     resolution: {integrity: sha512-5tdhKF6DbU7iIzrIOa1AOUt39ZRm13cmL1cGEh//aqR8x9+tNfbywRf0n5FD/18OKMdo7DNEtrX2t22ZAkI+eg==}
@@ -2709,8 +2707,8 @@ packages:
     resolution: {integrity: sha512-j6vWzfrGVfyXxge+O0x5sh6cvxAog0a/4Rdd2K36zCMV5eJ+/+tOAngRO8cODMNWbVRdVlmGZQL2YS3yR8bIUA==}
     engines: {node: '>= 0.4'}
 
-  es-toolkit@1.46.1:
-    resolution: {integrity: sha512-5eNtXOs3tbfxXOj04tjjseeWkRWaoCjdEI+96DgwzZoe6c9juL49pXlzAFTI72aWC9Y8p7168g6XIKjh7k6pyQ==}
+  es-toolkit@1.47.0:
+    resolution: {integrity: sha512-n1GuoD0WEQZMBk5tttoZSqwgyLx01oqa5XsBmCHwPyNe1S9jPBEmtR2pSgp2kJuWE3ciFZ6yRHmY4pM4C3OOkw==}
 
   esbuild@0.27.4:
     resolution: {integrity: sha512-Rq4vbHnYkK5fws5NF7MYTU68FPRE1ajX7heQ/8QXXWqNgqqJ/GkmmyxIzUnf2Sr/bakf8l54716CcMGHYhMrrQ==}
@@ -3312,8 +3310,8 @@ packages:
   lines-and-columns@1.2.4:
     resolution: {integrity: sha512-7ylylesZQ/PV29jhEDl3Ufjo6ZX7gCqJr5F7PKrqc93v7fzSymt1BpwEU8nAUXs8qzzvqhbjhK5QZg6Mt/HkBg==}
 
-  linkify-it@5.0.0:
-    resolution: {integrity: sha512-5aHCbzQRADcdP+ATqnDuhhJ/MRIqDkZX5pyjFHRRysS8vZ5AbqGEoFIb6pYHPZ+L/OC2Lc+xT8uHVVR5CAK/wQ==}
+  linkify-it@5.0.1:
+    resolution: {integrity: sha512-wVoTjP4Q6R0NW5hiZkVJaFZPWgtXfoGF+6LucL3/FtiNjmcHhYjEr5f1Kqjirc1nBW07J/ZuRFumqr2oqccEWg==}
 
   localforage@1.10.0:
     resolution: {integrity: sha512-14/H1aX7hzBBmmh7sGPd+AOMkkIrHM3Z1PAyGgZigA1H1p5O5ANnMyWzvpAETtG68/dC4pC0ncy3+PPGzXZHPg==}
@@ -3374,8 +3372,8 @@ packages:
   magic-string@0.30.21:
     resolution: {integrity: sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ==}
 
-  markdown-it@14.1.1:
-    resolution: {integrity: sha512-BuU2qnTti9YKgK5N+IeMubp14ZUKUUw7yeJbkjtosvHiP0AZ5c8IAgEMk79D0eC8F23r4Ac/q8cAIFdm2FtyoA==}
+  markdown-it@14.2.0:
+    resolution: {integrity: sha512-1TGiQiJVRQ3NPmZH6sx5Cfnmg6GQm9jvC1ch4TK511NjSJvjzKLzn5pPfZRNZkRPZP0HqCioSndqH8v2nRaWVQ==}
     hasBin: true
 
   markdown-table@3.0.4:
@@ -4889,6 +4887,7 @@ packages:
 
   uuid@9.0.1:
     resolution: {integrity: sha512-b+1eJOlsR9K8HJpow9Ok3fiWOWSIcIzXodvv0rQjVoOVNpWMpxf1wZNpt4y9h10odCNrqnYp1OBzRktckBe3sA==}
+    deprecated: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
     hasBin: true
 
   uvu@0.5.6:
@@ -5408,12 +5407,12 @@ snapshots:
       '@babel/core': 7.29.0
       '@babel/helper-plugin-utils': 7.28.6
 
-  '@babel/runtime-corejs2@7.29.2':
+  '@babel/runtime-corejs2@7.29.7':
     dependencies:
       core-js: 2.6.12
     optional: true
 
-  '@babel/runtime-corejs3@7.29.2':
+  '@babel/runtime-corejs3@7.29.7':
     dependencies:
       core-js-pure: 3.49.0
 
@@ -6368,7 +6367,7 @@ snapshots:
     dependencies:
       '@ant-design/icons': 6.2.3(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       '@ant-design/x': 1.6.1(antd@5.29.3(moment@2.30.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
-      '@babel/runtime-corejs3': 7.29.2
+      '@babel/runtime-corejs3': 7.29.7
       '@tencent/agentchat-claw-hooks': 0.2.9(react@19.2.4)
       '@tencent/cloud-chat-ui': 0.10.12(@tencent/tea-component@2.8.6-react18.3(@types/react@19.2.14)(prop-types@15.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(@types/hoist-non-react-statics@3.3.7(@types/react@19.2.14))(@types/node@24.12.0)(@types/react@19.2.14)(axios@1.15.2)(dagre@0.8.5)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(slate-history@0.100.0(slate@0.94.0))(slate-react@0.99.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(slate@0.94.0))(slate@0.94.0)
       '@tencent/lightai-types': 0.12.6
@@ -6377,7 +6376,7 @@ snapshots:
       '@tencent/lightai-web-utils': 0.4.9-next.27
       '@tencent/tea-component': 2.8.6-react18.3(@types/react@19.2.14)(prop-types@15.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       antd: 5.29.3(moment@2.30.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
-      markdown-it: 14.1.1
+      markdown-it: 14.2.0
       react: 19.2.4
       react-dom: 19.2.4(react@19.2.4)
       react-error-boundary: 5.0.0(react@19.2.4)
@@ -6404,7 +6403,7 @@ snapshots:
 
   '@tencent/agentchat-claw-hooks@0.2.9(react@19.2.4)':
     dependencies:
-      '@babel/runtime-corejs3': 7.29.2
+      '@babel/runtime-corejs3': 7.29.7
       '@tencent/lightai-constants': 0.9.5
       '@tencent/lightai-types': 0.12.6
       '@tencent/lightai-utils': 0.12.7
@@ -6419,7 +6418,7 @@ snapshots:
 
   '@tencent/agentchat-claw-panel@0.2.9(@types/hoist-non-react-statics@3.3.7(@types/react@19.2.14))(@types/node@24.12.0)(@types/react@19.2.14)(axios@1.15.2)(dagre@0.8.5)(moment@2.30.1)(prop-types@15.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(slate-history@0.100.0(slate@0.94.0))(slate-react@0.99.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(slate@0.94.0))(slate@0.94.0)':
     dependencies:
-      '@babel/runtime-corejs3': 7.29.2
+      '@babel/runtime-corejs3': 7.29.7
       '@tencent/agentchat-claw-components': 0.2.9(@types/hoist-non-react-statics@3.3.7(@types/react@19.2.14))(@types/node@24.12.0)(@types/react@19.2.14)(axios@1.15.2)(dagre@0.8.5)(moment@2.30.1)(prop-types@15.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(slate-history@0.100.0(slate@0.94.0))(slate-react@0.99.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(slate@0.94.0))(slate@0.94.0)
       '@tencent/agentchat-claw-hooks': 0.2.9(react@19.2.4)
       '@tencent/lightai-types': 0.12.6
@@ -6562,7 +6561,7 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@tencent/iaas-component@0.2.105(de4d6eba59a75489f6351bc8200c54ce)':
+  '@tencent/iaas-component@0.2.105(mqooydjfdj6kahvvge3jzxbp2y)':
     dependencies:
       '@tencent/iaas-common': 3.8.38(@tencent/tea-app@2.1.25(@tencent/tea-component@2.8.6-beta.35(@types/react@19.2.14)(prop-types@15.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(moment@2.30.1)(react-dom@16.14.0(react@16.14.0))(react@16.14.0)(tencentcloud-sdk-nodejs@4.1.217))(@tencent/tea-component@2.8.6-beta.35(@types/react@19.2.14)(prop-types@15.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(classnames@2.2.6)(fast-deep-equal@3.1.3)(lodash.merge@4.6.2)(moment@2.30.1)(path-to-regexp@2.4.0)(react-dom@19.2.4(react@19.2.4))(react-redux@7.2.9(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(react@19.2.4)(redux-logger@3.0.6)(redux-saga@0.16.2)(redux@4.2.1)(reselect@4.1.8)(saga-duck@3.4.8(react-redux@7.2.9(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(redux-saga@0.16.2)(redux@4.2.1))(semaphore-async-await@1.5.1)(typescript@5.9.3)
       '@tencent/qcloud-iaas-api': 1.0.1
@@ -6587,20 +6586,20 @@ snapshots:
 
   '@tencent/lightai-constants@0.9.5':
     dependencies:
-      '@babel/runtime-corejs3': 7.29.2
+      '@babel/runtime-corejs3': 7.29.7
       '@tencent/lightai-types': 0.13.0
 
   '@tencent/lightai-types@0.12.6':
     dependencies:
-      '@babel/runtime-corejs3': 7.29.2
+      '@babel/runtime-corejs3': 7.29.7
 
   '@tencent/lightai-types@0.13.0':
     dependencies:
-      '@babel/runtime-corejs3': 7.29.2
+      '@babel/runtime-corejs3': 7.29.7
 
   '@tencent/lightai-utils@0.12.7':
     dependencies:
-      '@babel/runtime-corejs3': 7.29.2
+      '@babel/runtime-corejs3': 7.29.7
       '@tencent/lightai-constants': 0.9.5
       '@tencent/lightai-types': 0.13.0
       fast-safe-stringify: 2.1.1
@@ -6610,7 +6609,7 @@ snapshots:
 
   '@tencent/lightai-web-hooks@0.12.10-next.26(react@19.2.4)':
     dependencies:
-      '@babel/runtime-corejs3': 7.29.2
+      '@babel/runtime-corejs3': 7.29.7
       '@tencent/lightai-constants': 0.9.5
       '@tencent/lightai-types': 0.12.6
       '@tencent/lightai-utils': 0.12.7
@@ -6625,11 +6624,11 @@ snapshots:
 
   '@tencent/lightai-web-utils@0.4.9-next.27':
     dependencies:
-      '@babel/runtime-corejs3': 7.29.2
+      '@babel/runtime-corejs3': 7.29.7
       '@tencent/lightai-constants': 0.9.5
       '@tencent/lightai-types': 0.12.6
       '@tencent/lightai-utils': 0.12.7
-      '@tencent/qcact-dss': 2.6.0
+      '@tencent/qcact-dss': 2.7.0
       js-cookie: 3.0.7
       localforage: 1.10.0
 
@@ -6656,7 +6655,7 @@ snapshots:
       - react-native
     optional: true
 
-  '@tencent/qcact-dss@2.6.0':
+  '@tencent/qcact-dss@2.7.0':
     dependencies:
       '@babel/runtime': 7.29.2
       crypto-js: 4.2.0
@@ -6682,8 +6681,8 @@ snapshots:
     dependencies:
       '@antv/layout': 0.3.25(dagre@0.8.5)
       '@babel/runtime': 7.29.2
-      '@babel/runtime-corejs2': 7.29.2
-      '@babel/runtime-corejs3': 7.29.2
+      '@babel/runtime-corejs2': 7.29.7
+      '@babel/runtime-corejs3': 7.29.7
       '@tencent/tvision-token': 0.5.2
       proj4: 2.20.8
       tslib: 2.8.1
@@ -6795,7 +6794,7 @@ snapshots:
       '@types/hoist-non-react-statics': 3.3.7(@types/react@19.2.14)
       '@types/react-window': 1.8.8
       change-case: 4.1.2
-      classnames: 2.5.1
+      classnames: 2.2.6
       clone: 2.1.2
       eventemitter3: 4.0.7
       hoist-non-react-statics: 3.3.2
@@ -6832,10 +6831,10 @@ snapshots:
       react: 19.2.4
       react-dom: 19.2.4(react@19.2.4)
 
-  '@tencent/tea-sdk-lightclaw@1.0.34(@tencent/qcloud-iaas-api@1.0.1)(@types/react@19.2.14)(fast-deep-equal@3.1.3)(lodash.merge@4.6.2)(path-to-regexp@2.4.0)(prop-types@15.8.1)(redux-logger@3.0.6)(redux-saga@0.16.2)(redux@4.2.1)(reselect@4.1.8)(saga-duck@3.4.8(react-redux@7.2.9(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(redux-saga@0.16.2)(redux@4.2.1))(semaphore-async-await@1.5.1)(tencentcloud-sdk-nodejs@4.1.217)(typescript@5.9.3)':
+  '@tencent/tea-sdk-lightclaw@1.0.39(@tencent/qcloud-iaas-api@1.0.1)(@types/react@19.2.14)(fast-deep-equal@3.1.3)(lodash.merge@4.6.2)(path-to-regexp@2.4.0)(prop-types@15.8.1)(redux-logger@3.0.6)(redux-saga@0.16.2)(redux@4.2.1)(reselect@4.1.8)(saga-duck@3.4.8(react-redux@7.2.9(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(redux-saga@0.16.2)(redux@4.2.1))(semaphore-async-await@1.5.1)(tencentcloud-sdk-nodejs@4.1.217)(typescript@5.9.3)':
     dependencies:
       '@tencent/iaas-common': 3.8.38(@tencent/tea-app@2.1.25(@tencent/tea-component@2.8.6-beta.35(@types/react@19.2.14)(prop-types@15.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(moment@2.30.1)(react-dom@16.14.0(react@16.14.0))(react@16.14.0)(tencentcloud-sdk-nodejs@4.1.217))(@tencent/tea-component@2.8.6-beta.35(@types/react@19.2.14)(prop-types@15.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(classnames@2.2.6)(fast-deep-equal@3.1.3)(lodash.merge@4.6.2)(moment@2.30.1)(path-to-regexp@2.4.0)(react-dom@19.2.4(react@19.2.4))(react-redux@7.2.9(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(react@19.2.4)(redux-logger@3.0.6)(redux-saga@0.16.2)(redux@4.2.1)(reselect@4.1.8)(saga-duck@3.4.8(react-redux@7.2.9(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(redux-saga@0.16.2)(redux@4.2.1))(semaphore-async-await@1.5.1)(typescript@5.9.3)
-      '@tencent/iaas-component': 0.2.105(de4d6eba59a75489f6351bc8200c54ce)
+      '@tencent/iaas-component': 0.2.105(mqooydjfdj6kahvvge3jzxbp2y)
       '@tencent/iaas-workbench-api-client': 1.0.20
       '@tencent/tea-app': 2.1.25(@tencent/tea-component@2.8.6-beta.35(@types/react@19.2.14)(prop-types@15.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(moment@2.30.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(tencentcloud-sdk-nodejs@4.1.217)
       '@tencent/tea-chart': 2.5.1(react-dom@16.14.0(react@16.14.0))(react@16.14.0)
@@ -8219,7 +8218,7 @@ snapshots:
       has-tostringtag: 1.0.2
       hasown: 2.0.3
 
-  es-toolkit@1.46.1: {}
+  es-toolkit@1.47.0: {}
 
   esbuild@0.27.4:
     optionalDependencies:
@@ -8937,7 +8936,7 @@ snapshots:
 
   lines-and-columns@1.2.4: {}
 
-  linkify-it@5.0.0:
+  linkify-it@5.0.1:
     dependencies:
       uc.micro: 2.1.0
 
@@ -8992,11 +8991,11 @@ snapshots:
     dependencies:
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  markdown-it@14.1.1:
+  markdown-it@14.2.0:
     dependencies:
       argparse: 2.0.1
       entities: 4.5.0
-      linkify-it: 5.0.0
+      linkify-it: 5.0.1
       mdurl: 2.0.0
       punycode.js: 2.3.1
       uc.micro: 2.1.0
@@ -9294,7 +9293,7 @@ snapshots:
       dagre-d3-es: 7.0.14
       dayjs: 1.11.20
       dompurify: 3.4.5
-      es-toolkit: 1.46.1
+      es-toolkit: 1.47.0
       katex: 0.16.47
       khroma: 2.1.0
       marked: 16.4.2

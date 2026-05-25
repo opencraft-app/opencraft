@@ -157,6 +157,7 @@ func newRouter(handler *instanceHandler, bh *bundleHandler, ph *passHandler) htt
 	mux.HandleFunc("/internal/bots", handler.handleInternalBots)
 	mux.HandleFunc("/internal/bots/", handler.handleInternalBotSubresource)
 	mux.HandleFunc("/internal/instances/", handler.handleInternalInstanceSubresource)
+	mux.HandleFunc("/v1/integrations/agentchat/introspect", handler.handleAgentChatIntrospect)
 	mux.HandleFunc("/v1/instances", handler.handleInstances)
 	mux.HandleFunc("/v1/instances/", handler.handleInstance)
 	mux.HandleFunc("/v1/soul-templates", handler.handleSoulTemplates)
@@ -293,6 +294,7 @@ func normalizePath(path string) string {
 	switch path {
 	case "/health", "/metrics", "/internal/bots", "/v1/soul-templates", "/v1/me/usage",
 		"/v1/bundles", "/v1/passes", "/v1/passes/order", "/v1/passes/order-and-pay",
+		"/v1/integrations/agentchat/introspect",
 		"/admin/api/ctl/bundles", "/admin/api/ctl/passes", "/admin/api/ctl/passes/order",
 		"/admin/api/ctl/passes/order-and-pay",
 		"/internal/ctl/passes",
@@ -406,6 +408,31 @@ func (h *instanceHandler) handleMeUsage(w http.ResponseWriter, r *http.Request) 
 	writeSuccess(w, r, http.StatusOK, resp)
 }
 
+func (h *instanceHandler) handleAgentChatIntrospect(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
+		return
+	}
+	ctx, ok := requestContextFromRequest(r)
+	if !ok {
+		ctx = pctx.NewContext(r.Context()).WithRegion(config.ServerConf.MiscConfig.Region)
+		ctx.SetAction(strings.TrimSpace(r.Method + " " + r.URL.Path))
+		ctx.SetRequestId(canonicalRequestID(r))
+	}
+	var req transport.AgentChatIntrospectRequest
+	if err := decodeJSONBody(r, &req); err != nil {
+		writeHTTPError(w, r, errcode.Wrap(errcode.ErrInvalidParam, "%s", err.Error()))
+		return
+	}
+	resp, err := h.logic.IntrospectAgentChatLaunchToken(ctx, &req)
+	if err != nil {
+		writeHTTPError(w, r, err)
+		return
+	}
+	writeSuccess(w, r, http.StatusOK, resp)
+}
+
 func (h *instanceHandler) handleInstance(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/v1/instances/")
 	parts := strings.Split(strings.Trim(path, "/"), "/")
@@ -456,6 +483,18 @@ func (h *instanceHandler) handleInstance(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		resp, err := h.logic.UpdateInstance(ctx, instanceID, &req)
+		if err != nil {
+			writeHTTPError(w, r, err)
+			return
+		}
+		writeSuccess(w, r, http.StatusOK, resp)
+	case len(parts) == 3 && parts[1] == "config" && parts[2] == "reset" && r.Method == http.MethodPost:
+		ctx, ok := newRequestContext(r)
+		if !ok {
+			writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
+			return
+		}
+		resp, err := h.logic.ResetInstanceConfig(ctx, instanceID)
 		if err != nil {
 			writeHTTPError(w, r, err)
 			return
@@ -561,6 +600,18 @@ func (h *instanceHandler) handleInstance(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		writeSuccess(w, r, http.StatusOK, resp)
+	case len(parts) == 3 && parts[1] == "agentchat" && parts[2] == "launch-token" && r.Method == http.MethodPost:
+		ctx, ok := newRequestContext(r)
+		if !ok {
+			writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
+			return
+		}
+		resp, err := h.logic.CreateAgentChatLaunchToken(ctx, instanceID)
+		if err != nil {
+			writeHTTPError(w, r, err)
+			return
+		}
+		writeSuccess(w, r, http.StatusCreated, resp)
 	case len(parts) == 3 && parts[1] == "chatclaw" && parts[2] == "sync" && r.Method == http.MethodPost:
 		ctx, ok := newRequestContext(r)
 		if !ok {

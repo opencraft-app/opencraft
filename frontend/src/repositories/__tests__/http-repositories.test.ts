@@ -12,6 +12,7 @@ const AUTH_TOKEN_STORAGE_KEY = "lightclaw-auth-token-v1";
 describe("http repositories auth token bootstrap", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.stubEnv("VITE_OAUTH_RELAY_ISSUER_BASE_URL", "");
     const values = new Map<string, string>();
     vi.stubGlobal("localStorage", {
       getItem: (key: string) => values.get(key) ?? null,
@@ -66,6 +67,7 @@ describe("http repositories auth token bootstrap", () => {
                 inviteRequired: false,
                 createdAt: "2026-03-20T00:00:00Z",
               },
+              impersonated: true,
               sessionToken: "persisted-bearer-token",
             },
           }),
@@ -89,8 +91,9 @@ describe("http repositories auth token bootstrap", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const repositories = createHttpRepositories("https://lightclaw.tech");
-    await repositories.auth.getSession();
+    const session = await repositories.auth.getSession();
 
+    expect(session?.impersonated).toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(2);
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const headers = new Headers(init.headers);
@@ -285,6 +288,46 @@ describe("http repositories auth token bootstrap", () => {
         method: "GET",
       }),
     );
+  });
+
+  it("normalizes ctl instance status variants", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          code: "OK",
+          message: "success",
+          data: {
+            total: 5,
+            page: 1,
+            page_size: 20,
+            items: [
+              { instance_id: "ins_running_lower", status: "running", created_at: "2026-03-24T00:00:00Z" },
+              { instance_id: "ins_active", status: "active", created_at: "2026-03-24T00:00:00Z" },
+              { instance_id: "ins_succeeded", status: "Succeeded", created_at: "2026-03-24T00:00:00Z" },
+              { instance_id: "ins_queued", status: "queued", created_at: "2026-03-24T00:00:00Z" },
+              { instance_id: "ins_deleted_lower", status: "deleted", created_at: "2026-03-24T00:00:00Z" },
+            ],
+          },
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    const snapshot = await repositories.bots.getDashboardSnapshot("live");
+
+    expect(snapshot.bots.map((bot) => [bot.id, bot.status])).toEqual([
+      ["ins_running_lower", "active"],
+      ["ins_active", "active"],
+      ["ins_succeeded", "active"],
+      ["ins_queued", "provisioning"],
+      ["ins_deleted_lower", "deleting"],
+    ]);
   });
 
   it("creates bots through ctl instances", async () => {
@@ -660,6 +703,19 @@ describe("http repositories auth token bootstrap", () => {
       "https://lightclaw.tech/auth/oauth/wechat/start",
       "https://lightclaw.pages.dev/auth/sign-in",
     );
+  });
+
+  it("adds relay params without changing the target auth backend when relay issuer is configured", () => {
+    vi.stubEnv("VITE_OAUTH_RELAY_ISSUER_BASE_URL", "https://lightclaw.tech/");
+    stubHostname("intl-sandbox-bj-7.preview.lightclaw.tech");
+
+    const repositories = createHttpRepositories("https://api-sandbox-bj-7.lightclaw.tech");
+    const parsed = new URL(repositories.auth.getOAuthStartUrl("qq")!);
+
+    expect(`${parsed.origin}${parsed.pathname}`).toBe("https://api-sandbox-bj-7.lightclaw.tech/auth/oauth/qq/start");
+    expect(parsed.searchParams.get("relay_mode")).toBe("issuer");
+    expect(parsed.searchParams.get("issuer_redirect_uri")).toBe("https://lightclaw.tech/auth/oauth/qq/callback");
+    expect(parsed.searchParams.get("return_to")).toBe("https://intl-sandbox-bj-7.preview.lightclaw.tech/auth/sign-in");
   });
 
   it("uses the live auth backend on the primary site domain even without an explicit env var", () => {

@@ -10,6 +10,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -362,6 +363,11 @@ def collect_job_logs(kubeconfig: str, namespace: str, name: str, secret_values: 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Verify a service DB contract with a read-only Kubernetes Job.")
     parser.add_argument("--repo-root", default=".")
+    parser.add_argument(
+        "--deploy-root",
+        default="",
+        help="Deploy-facing GitOps checkout root used for argocd/services and deploy/envs files. Defaults to repo root.",
+    )
     parser.add_argument("--bundle-manifest", default=str(DEFAULT_MANIFEST_PATH))
     parser.add_argument("--service", required=True)
     parser.add_argument("--env", required=True)
@@ -384,6 +390,7 @@ def write_summary(path: str, summary: dict[str, Any]) -> None:
 def main() -> int:
     args = build_parser().parse_args()
     repo_root = Path(args.repo_root).resolve()
+    deploy_root = Path(args.deploy_root).resolve() if args.deploy_root.strip() else repo_root
     manifest = load_manifest(Path(args.bundle_manifest).resolve())
     bundle = load_bundle(manifest, args.service, args.env)
     contract = bundle.db_contract
@@ -396,7 +403,7 @@ def main() -> int:
     if not verifier:
         raise ValueError(f"bundle {args.service} does not define db_contract.verifier")
     expected_version = max_migration_version(repo_root, str(contract.get("expected_migration_source") or ""))
-    env_values, node_selector, env_secret_values = resolve_runtime_env(repo_root, args.env, verifier, contract)
+    env_values, node_selector, env_secret_values = resolve_runtime_env(deploy_root, args.env, verifier, contract)
     secret_name = ""
     env_secret_refs: dict[str, tuple[str, str]] = {}
     secret_manifest: dict[str, Any] | None = None
@@ -440,7 +447,7 @@ def main() -> int:
     temp_path: Path | None = None
     try:
         if args.apply:
-            kubeconfig, temp_path = resolve_kubeconfig(repo_root, args.env, args.kubeconfig_b64_env)
+            kubeconfig, temp_path = resolve_kubeconfig(deploy_root, args.env, args.kubeconfig_b64_env)
             apply_manifest(kubeconfig, apply_manifest_doc)
             summary["status"] = "applied"
             if args.wait:
