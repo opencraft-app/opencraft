@@ -30,8 +30,8 @@ importers:
         specifier: ^4.60.0
         version: 4.60.0
       '@tencent/agentchat-lightvela-panel':
-        specifier: 0.2.5-beta.0
-        version: 0.2.5-beta.0(@types/hoist-non-react-statics@3.3.7(@types/react@19.2.14))(@types/node@24.12.0)(@types/react@19.2.14)(axios@1.15.2)(dagre@0.8.5)(moment@2.30.1)(prop-types@15.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(slate-history@0.100.0(slate@0.94.0))(slate-react@0.99.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(slate@0.94.0))(slate@0.94.0)
+        specifier: 0.2.9
+        version: 0.2.9(@types/hoist-non-react-statics@3.3.7(@types/react@19.2.14))(@types/node@24.12.0)(@types/react@19.2.14)(axios@1.15.2)(dagre@0.8.5)(moment@2.30.1)(prop-types@15.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(slate-history@0.100.0(slate@0.94.0))(slate-react@0.99.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(slate@0.94.0))(slate@0.94.0)
       '@tencent/tea-sdk-lightclaw':
         specifier: ^1.0.34
         version: 1.0.34(@tencent/qcloud-iaas-api@1.0.1)(@types/react@19.2.14)(fast-deep-equal@3.1.3)(lodash.merge@4.6.2)(path-to-regexp@2.4.0)(prop-types@15.8.1)(redux-logger@3.0.6)(redux-saga@0.16.2)(redux@4.2.1)(reselect@4.1.8)(saga-duck@3.4.8(react-redux@7.2.9(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(redux-saga@0.16.2)(redux@4.2.1))(semaphore-async-await@1.5.1)(tencentcloud-sdk-nodejs@4.1.217)(typescript@5.9.3)
@@ -1437,25 +1437,25 @@ packages:
     peerDependencies:
       vite: ^5.2.0 || ^6 || ^7
 
-  '@tencent/agentchat-claw-components@0.2.5-beta.0':
-    resolution: {integrity: sha512-93ztgbPJxSEDmiy+JDczQAmqVtTrFGL4zYBgSBIBcPZeMHSZDpu2h+GXWm7lShv4JquTYSIPmdNMT2uQWvUHFg==, tarball: https://mirrors.tencent.com/npm/@tencent/agentchat-claw-components/-/@tencent/agentchat-claw-components-0.2.5-beta.0.tgz}
+  '@tencent/agentchat-claw-components@0.2.9':
+    resolution: {integrity: sha512-WX7oNmdszPhrCVDnGB5otkv/3wyfU7cGFWMiCHk3X3wQ3Ayx5julu+rPcV4hKyvT4CeiK8ewBSm+h6PWrIUS+g==, tarball: https://mirrors.tencent.com/npm/@tencent/agentchat-claw-components/-/@tencent/agentchat-claw-components-0.2.9.tgz}
     peerDependencies:
       react: '>=16.8.0'
       react-dom: '>=16.8.0'
 
-  '@tencent/agentchat-claw-hooks@0.2.5-beta.0':
-    resolution: {integrity: sha512-d/cYuiHDAQMW3y5RhGb7Zg2D6AJfYdikUlwQL5xkBwvJb9FMtS2rXj5Gqyp2YuUPEV9yekfw37EHxA7OSah2fQ==, tarball: https://mirrors.tencent.com/npm/@tencent/agentchat-claw-hooks/-/@tencent/agentchat-claw-hooks-0.2.5-beta.0.tgz}
+  '@tencent/agentchat-claw-hooks@0.2.9':
+    resolution: {integrity: sha512-n2c4P87wwjdNKdMorZ1SdenBLnH/0dqyJbiY7K0TRs1zo09pjBEfVpRShwcb6tybjUQRFcqAYWZgV7Dt9quMJg==, tarball: https://mirrors.tencent.com/npm/@tencent/agentchat-claw-hooks/-/@tencent/agentchat-claw-hooks-0.2.9.tgz}
     peerDependencies:
       react: '>=16.8.0'
 
-  '@tencent/agentchat-claw-panel@0.2.5-beta.0':
-    resolution: {integrity: sha512-/K0upqROXVTcoo0/c4hIp3kVoL8+xSIqb2HCP6qhOMVULoTUDe8RFLTZqKEcbxeGzNp4rv2WUCutTbYVSSpn5Q==, tarball: https://mirrors.tencent.com/npm/@tencent/agentchat-claw-panel/-/@tencent/agentchat-claw-panel-0.2.5-beta.0.tgz}
+  '@tencent/agentchat-claw-panel@0.2.9':
+    resolution: {integrity: sha512-voozB2rx0HyGajRnULJcHp9x9gvIJbwjFEag56xNe1jGtcgGN3yXYEwcPyVGCNiyrPwISNgtU+KHlaY0UjP1QA==, tarball: https://mirrors.tencent.com/npm/@tencent/agentchat-claw-panel/-/@tencent/agentchat-claw-panel-0.2.9.tgz}
     peerDependencies:
       react: ^18.0.0 || ^19.0.0
       react-dom: ^18.0.0 || ^19.0.0
 
-  '@tencent/agentchat-lightvela-panel@0.2.5-beta.0':
-    resolution: {integrity: sha512-US6DOvL5flOqbDjLVKqIHukFpkqF/82cD5A0ETuRH2WfxRLBn4UF6PWRP5bL6XsbSFS++rNfG3KcgKv6MZXVtg==, tarball: https://mirrors.tencent.com/npm/@tencent/agentchat-lightvela-panel/-/@tencent/agentchat-lightvela-panel-0.2.5-beta.0.tgz}
+  '@tencent/agentchat-lightvela-panel@0.2.9':
+    resolution: {integrity: sha512-QWMm7gIt4KG+rajvVf8R1b6JTxMiBWbbIk31hxDjg6GaWboLthnGZXfMKXaNlDR+XrLNhHqmD67U6lmHSbPsnQ==, tarball: https://mirrors.tencent.com/npm/@tencent/agentchat-lightvela-panel/-/@tencent/agentchat-lightvela-panel-0.2.9.tgz}
     peerDependencies:
       react: ^18.0.0 || ^19.0.0
       react-dom: ^18.0.0 || ^19.0.0
@@ -6364,12 +6364,12 @@ snapshots:
       tailwindcss: 4.2.1
       vite: 7.3.1(@types/node@24.12.0)(jiti@2.6.1)(lightningcss@1.31.1)
 
-  '@tencent/agentchat-claw-components@0.2.5-beta.0(@types/hoist-non-react-statics@3.3.7(@types/react@19.2.14))(@types/node@24.12.0)(@types/react@19.2.14)(axios@1.15.2)(dagre@0.8.5)(moment@2.30.1)(prop-types@15.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(slate-history@0.100.0(slate@0.94.0))(slate-react@0.99.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(slate@0.94.0))(slate@0.94.0)':
+  '@tencent/agentchat-claw-components@0.2.9(@types/hoist-non-react-statics@3.3.7(@types/react@19.2.14))(@types/node@24.12.0)(@types/react@19.2.14)(axios@1.15.2)(dagre@0.8.5)(moment@2.30.1)(prop-types@15.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(slate-history@0.100.0(slate@0.94.0))(slate-react@0.99.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(slate@0.94.0))(slate@0.94.0)':
     dependencies:
       '@ant-design/icons': 6.2.3(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       '@ant-design/x': 1.6.1(antd@5.29.3(moment@2.30.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       '@babel/runtime-corejs3': 7.29.2
-      '@tencent/agentchat-claw-hooks': 0.2.5-beta.0(react@19.2.4)
+      '@tencent/agentchat-claw-hooks': 0.2.9(react@19.2.4)
       '@tencent/cloud-chat-ui': 0.10.12(@tencent/tea-component@2.8.6-react18.3(@types/react@19.2.14)(prop-types@15.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(@types/hoist-non-react-statics@3.3.7(@types/react@19.2.14))(@types/node@24.12.0)(@types/react@19.2.14)(axios@1.15.2)(dagre@0.8.5)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(slate-history@0.100.0(slate@0.94.0))(slate-react@0.99.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(slate@0.94.0))(slate@0.94.0)
       '@tencent/lightai-types': 0.12.6
       '@tencent/lightai-utils': 0.12.7
@@ -6402,7 +6402,7 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@tencent/agentchat-claw-hooks@0.2.5-beta.0(react@19.2.4)':
+  '@tencent/agentchat-claw-hooks@0.2.9(react@19.2.4)':
     dependencies:
       '@babel/runtime-corejs3': 7.29.2
       '@tencent/lightai-constants': 0.9.5
@@ -6417,11 +6417,11 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@tencent/agentchat-claw-panel@0.2.5-beta.0(@types/hoist-non-react-statics@3.3.7(@types/react@19.2.14))(@types/node@24.12.0)(@types/react@19.2.14)(axios@1.15.2)(dagre@0.8.5)(moment@2.30.1)(prop-types@15.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(slate-history@0.100.0(slate@0.94.0))(slate-react@0.99.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(slate@0.94.0))(slate@0.94.0)':
+  '@tencent/agentchat-claw-panel@0.2.9(@types/hoist-non-react-statics@3.3.7(@types/react@19.2.14))(@types/node@24.12.0)(@types/react@19.2.14)(axios@1.15.2)(dagre@0.8.5)(moment@2.30.1)(prop-types@15.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(slate-history@0.100.0(slate@0.94.0))(slate-react@0.99.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(slate@0.94.0))(slate@0.94.0)':
     dependencies:
       '@babel/runtime-corejs3': 7.29.2
-      '@tencent/agentchat-claw-components': 0.2.5-beta.0(@types/hoist-non-react-statics@3.3.7(@types/react@19.2.14))(@types/node@24.12.0)(@types/react@19.2.14)(axios@1.15.2)(dagre@0.8.5)(moment@2.30.1)(prop-types@15.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(slate-history@0.100.0(slate@0.94.0))(slate-react@0.99.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(slate@0.94.0))(slate@0.94.0)
-      '@tencent/agentchat-claw-hooks': 0.2.5-beta.0(react@19.2.4)
+      '@tencent/agentchat-claw-components': 0.2.9(@types/hoist-non-react-statics@3.3.7(@types/react@19.2.14))(@types/node@24.12.0)(@types/react@19.2.14)(axios@1.15.2)(dagre@0.8.5)(moment@2.30.1)(prop-types@15.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(slate-history@0.100.0(slate@0.94.0))(slate-react@0.99.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(slate@0.94.0))(slate@0.94.0)
+      '@tencent/agentchat-claw-hooks': 0.2.9(react@19.2.4)
       '@tencent/lightai-types': 0.12.6
       '@tencent/lightcloud-auto-tracker': 1.1.2
       react: 19.2.4
@@ -6446,11 +6446,11 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@tencent/agentchat-lightvela-panel@0.2.5-beta.0(@types/hoist-non-react-statics@3.3.7(@types/react@19.2.14))(@types/node@24.12.0)(@types/react@19.2.14)(axios@1.15.2)(dagre@0.8.5)(moment@2.30.1)(prop-types@15.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(slate-history@0.100.0(slate@0.94.0))(slate-react@0.99.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(slate@0.94.0))(slate@0.94.0)':
+  '@tencent/agentchat-lightvela-panel@0.2.9(@types/hoist-non-react-statics@3.3.7(@types/react@19.2.14))(@types/node@24.12.0)(@types/react@19.2.14)(axios@1.15.2)(dagre@0.8.5)(moment@2.30.1)(prop-types@15.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(slate-history@0.100.0(slate@0.94.0))(slate-react@0.99.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(slate@0.94.0))(slate@0.94.0)':
     dependencies:
-      '@tencent/agentchat-claw-components': 0.2.5-beta.0(@types/hoist-non-react-statics@3.3.7(@types/react@19.2.14))(@types/node@24.12.0)(@types/react@19.2.14)(axios@1.15.2)(dagre@0.8.5)(moment@2.30.1)(prop-types@15.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(slate-history@0.100.0(slate@0.94.0))(slate-react@0.99.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(slate@0.94.0))(slate@0.94.0)
-      '@tencent/agentchat-claw-hooks': 0.2.5-beta.0(react@19.2.4)
-      '@tencent/agentchat-claw-panel': 0.2.5-beta.0(@types/hoist-non-react-statics@3.3.7(@types/react@19.2.14))(@types/node@24.12.0)(@types/react@19.2.14)(axios@1.15.2)(dagre@0.8.5)(moment@2.30.1)(prop-types@15.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(slate-history@0.100.0(slate@0.94.0))(slate-react@0.99.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(slate@0.94.0))(slate@0.94.0)
+      '@tencent/agentchat-claw-components': 0.2.9(@types/hoist-non-react-statics@3.3.7(@types/react@19.2.14))(@types/node@24.12.0)(@types/react@19.2.14)(axios@1.15.2)(dagre@0.8.5)(moment@2.30.1)(prop-types@15.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(slate-history@0.100.0(slate@0.94.0))(slate-react@0.99.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(slate@0.94.0))(slate@0.94.0)
+      '@tencent/agentchat-claw-hooks': 0.2.9(react@19.2.4)
+      '@tencent/agentchat-claw-panel': 0.2.9(@types/hoist-non-react-statics@3.3.7(@types/react@19.2.14))(@types/node@24.12.0)(@types/react@19.2.14)(axios@1.15.2)(dagre@0.8.5)(moment@2.30.1)(prop-types@15.8.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(slate-history@0.100.0(slate@0.94.0))(slate-react@0.99.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(slate@0.94.0))(slate@0.94.0)
       react: 19.2.4
       react-dom: 19.2.4(react@19.2.4)
     transitivePeerDependencies:
@@ -6795,7 +6795,7 @@ snapshots:
       '@types/hoist-non-react-statics': 3.3.7(@types/react@19.2.14)
       '@types/react-window': 1.8.8
       change-case: 4.1.2
-      classnames: 2.2.6
+      classnames: 2.5.1
       clone: 2.1.2
       eventemitter3: 4.0.7
       hoist-non-react-statics: 3.3.2
@@ -7960,12 +7960,12 @@ snapshots:
 
   d3-transition@3.0.1(d3-selection@3.0.0):
     dependencies:
-      d3-color: 1.4.1
-      d3-dispatch: 1.0.6
-      d3-ease: 1.0.7
-      d3-interpolate: 1.4.0
+      d3-color: 3.1.0
+      d3-dispatch: 3.0.1
+      d3-ease: 3.0.1
+      d3-interpolate: 3.0.1
       d3-selection: 3.0.0
-      d3-timer: 1.0.10
+      d3-timer: 3.0.1
 
   d3-voronoi@1.1.4: {}
 
