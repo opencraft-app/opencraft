@@ -23,6 +23,7 @@ import { useT } from "@/i18n/t";
 import { useRepositories } from "@/contexts/repository-context";
 import { useAsyncResource } from "@/services/use-async-resource";
 import { DrawSoulModal } from "@/pages/marketing/openclaw-buddy-draw-modal";
+import { SoulTestModal } from "@/pages/marketing/openclaw-buddy-soul-test-modal";
 import {
   CardBack,
   SoulFaceCard,
@@ -71,6 +72,8 @@ export function BuddyPanel({
   const [drawnSouls, setDrawnSouls] = useState<SkillHubSoul[]>([]);
   /** 抽卡弹窗开关 */
   const [drawOpen, setDrawOpen] = useState(false);
+  /** Soul 人格测试弹窗开关 */
+  const [soulTestOpen, setSoulTestOpen] = useState(false);
 
   /** 注入结果 toast。idle 不显示；applying 期间禁掉重复点击。
    *  fallback: botId 缺失 / sandbox 写入失败，降级浏览器下载。
@@ -141,6 +144,27 @@ export function BuddyPanel({
     setRerollingSlug(null); // 普通抽卡前确保清掉重抽标记
     setDrawOpen(true);
   }, [isAtMax]);
+
+  const handleUseTestSoul = useCallback(
+    (soul: SkillHubSoul) => {
+      const alreadyDrawn = drawnSouls.some((item) => item.slug === soul.slug);
+      if (!alreadyDrawn && drawnSouls.length >= MAX_DRAWS) {
+        showToast({ kind: "error", message: t("卡槽已满，请先删除一张人设，再使用测试推荐") });
+        return false;
+      }
+
+      if (!alreadyDrawn) {
+        setDrawnSouls((prev) => {
+          if (prev.some((item) => item.slug === soul.slug)) return prev;
+          if (prev.length >= MAX_DRAWS) return prev;
+          return [...prev, soul];
+        });
+      }
+      setSelectedSlug(soul.slug);
+      return true;
+    },
+    [drawnSouls, showToast, t],
+  );
 
   /** 重抽某张已抽到的卡：复用抽卡 modal 流程（翻牌动画 → reveal → 替换原位） */
   const handleReroll = useCallback((slug: string) => {
@@ -573,8 +597,8 @@ export function BuddyPanel({
         )}
       </div>
 
-      {/* 卡片下方：抽取人设 + 应用到 Agent 双 CTA 居中并排；chip 绝对定位浮于右侧不占位 */}
-      <div className="relative flex items-center justify-center gap-3 px-6 py-5">
+      {/* 卡片下方：抽取人设 + Soul 测试 + 应用到 Agent；小屏时进度操作自然换行 */}
+      <div className="relative flex flex-wrap items-center justify-center gap-3 px-6 py-5">
         <button
           type="button"
           onClick={handleOpenDraw}
@@ -588,6 +612,20 @@ export function BuddyPanel({
         >
           <Dice5 className="h-4 w-4" />
           {isAtMax ? t("已抽满 6 张") : t("抽取人设")}
+        </button>
+        <button
+          type="button"
+          onClick={() => setSoulTestOpen(true)}
+          disabled={souls.length === 0 || loadStatus !== "loaded"}
+          className="inline-flex items-center gap-2 rounded-full px-5 py-2 text-sm font-medium transition-all hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none"
+          style={{
+            background: "linear-gradient(95deg, rgba(255,166,0,0.16) 0%, rgba(107,79,224,0.14) 100%)",
+            color: "rgba(0,0,0,0.85)",
+            border: "1px solid rgba(0,0,0,0.06)",
+          }}
+        >
+          <Sparkles className="h-4 w-4" />
+          {t("Soul人格测试")}
         </button>
         <div className="group relative">
           <button
@@ -646,7 +684,7 @@ export function BuddyPanel({
           )}
         </div>
         {drawnSouls.length > 0 && (
-          <div className="absolute right-6 top-1/2 -translate-y-1/2">
+          <div className="flex items-center gap-2 md:absolute md:right-6 md:top-1/2 md:-translate-y-1/2">
             <ProgressChip drawn={drawnSouls.length} max={MAX_DRAWS} />
           </div>
         )}
@@ -662,6 +700,15 @@ export function BuddyPanel({
           setRerollingSlug(null);
         }}
         onPick={handlePickFromDraw}
+      />
+
+      <SoulTestModal
+        open={soulTestOpen}
+        souls={souls}
+        maxDrawsReached={isAtMax}
+        drawnSlugs={drawnSlugs}
+        onClose={() => setSoulTestOpen(false)}
+        onUseSoul={handleUseTestSoul}
       />
 
       {previewSoulSlug && (
