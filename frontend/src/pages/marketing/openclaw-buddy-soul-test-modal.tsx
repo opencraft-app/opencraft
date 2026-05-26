@@ -403,7 +403,11 @@ function ResultStep({
       <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
         <button
           type="button"
-          onClick={onUseSoul}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onUseSoul();
+          }}
           disabled={!soul}
           className="inline-flex h-[50px] min-w-[168px] items-center justify-center rounded-full bg-black px-8 text-sm font-medium text-white shadow-[0_12px_28px_rgba(0,0,0,0.16)] transition-all hover:-translate-y-0.5 hover:bg-black/85 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
         >
