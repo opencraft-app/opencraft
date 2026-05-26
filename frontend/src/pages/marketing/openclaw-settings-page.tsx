@@ -30,6 +30,7 @@ import {
   Download,
   Plus,
   Trash2,
+  Trophy,
   UserRound,
   Wand2,
   Wrench,
@@ -69,6 +70,7 @@ import { createMonoDebugExecAdapter } from "@/pages/marketing/openclaw-tat-adapt
 import { createLightVelaCommandExecutor } from "@/pages/marketing/openclaw-command-executor";
 import { installOpenClawConsoleHelpers } from "@/pages/marketing/openclaw-console-helpers";
 import { BuddyPanel } from "@/pages/marketing/openclaw-buddy-panel";
+import { AchievementsPanel } from "@/pages/marketing/openclaw-achievements-panel";
 import { findCompletedCreatingBot, getOpenClawCreateLimitMessage } from "@/pages/marketing/openclaw-create-availability";
 import {
   getRestartBlockReason,
@@ -197,9 +199,9 @@ const SettingsNavbar = () => {
   );
 };
 
-/* ─── 实例配置子页面类型（通道 / 模型 / 技能 / 人设 / 对话，放在单个 bot 内部切换） ─── */
+/* ─── 实例配置子页面类型（通道 / 模型 / 技能 / 人设 / 成就 / 对话，放在单个 bot 内部切换） ─── */
 
-type SettingsSectionId = "channel" | "model" | "skill" | "buddy" | "chat";
+type SettingsSectionId = "channel" | "model" | "skill" | "buddy" | "achievement" | "chat";
 
 /* ─── Section Card Wrapper ─── */
 
@@ -2435,7 +2437,7 @@ export const OpenClawSettingsPage = () => {
   );
 
 
-  /* 实例内部的子页面切换：通道 / 模型 / 技能 / 人设 / 对话（通道置顶，作为默认进入项） */
+  /* 实例内部的子页面切换：通道 / 模型 / 技能 / 人设 / 成就 / 对话（通道置顶，作为默认进入项） */
   const [activeSection, setActiveSection] = useState<SettingsSectionId>("channel");
 
   /* Tab 切换 */
@@ -3274,6 +3276,7 @@ export const OpenClawSettingsPage = () => {
                 ...(!isGlobal
                   ? [{ id: "buddy" as const, label: t("人设"), icon: <UserRound className="h-4 w-4" />, badge: "NEW" }]
                   : []),
+                { id: "achievement", label: t("成就"), icon: <Trophy className="h-4 w-4" /> },
                 { id: "chat", label: t("对话"), icon: <MessageSquare className="h-4 w-4" /> },
               ];
               const isRestartDisabled = isActiveBotRestarting || activeBot.status !== "running";
@@ -3501,6 +3504,9 @@ export const OpenClawSettingsPage = () => {
                           )}
                           {activeSection === "buddy" && !isGlobal && (
                             <BuddyPanel botId={activeBot.id} />
+                          )}
+                          {activeSection === "achievement" && (
+                            <AchievementsPanel botId={activeBot.id} botName={activeBot.name} />
                           )}
                           {activeSection === "chat" && (
                             <div className="h-[clamp(516px,calc(100vh-220px),960px)] overflow-hidden rounded-lg border border-black/[0.08] bg-white [&>*]:h-full">
