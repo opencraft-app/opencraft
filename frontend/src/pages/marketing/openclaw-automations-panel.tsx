@@ -404,7 +404,7 @@ function isCronJobPaused(job: CronJob): boolean {
 
 function isCronJobExpired(job: CronJob): boolean {
   const kind = job.schedule.kind.toLowerCase();
-  const display = job.schedule.display || job.schedule.expr || "";
+  const display = (job.schedule.display || job.schedule.expr || "").trim();
   const isOnce = kind === "once" || display.toLowerCase().startsWith("once");
   if (!isOnce) return false;
   const d = parseOnceScheduleDate(display, job.next_run_at);
@@ -421,7 +421,7 @@ function formatScheduleFriendly(
   job: CronJob,
   t: (s: string, vars?: Record<string, unknown>) => string,
 ): string {
-  const display = job.schedule.display || job.schedule.expr || "";
+  const display = (job.schedule.display || job.schedule.expr || "").trim();
   const lower = display.toLowerCase();
 
   // once
@@ -471,9 +471,27 @@ function formatScheduleFriendly(
 }
 
 function parseOnceScheduleDate(display: string, nextRunAt: string | null): Date {
-  if (nextRunAt) return parseCronDate(nextRunAt);
-  const onceMatch = /^once\s+at\s+(\d{4}-\d{2}-\d{2})[ tT](\d{2}:\d{2}(?::\d{2})?)/i.exec(display.trim());
-  if (onceMatch) return parseCronDate(`${onceMatch[1]}T${onceMatch[2]}`);
+  if (nextRunAt) {
+    const d = parseCronDate(nextRunAt);
+    if (!Number.isNaN(d.getTime())) return d;
+  }
+
+  const normalized = display
+    .trim()
+    .replace(/[\u2010-\u2015\u2212]/g, "-")
+    .replace(/\s+/g, " ");
+  const onceMatch = /^once\s+at\s+(\d{4})-(\d{1,2})-(\d{1,2})[ tT]+(\d{1,2}):(\d{2})(?::(\d{2}))?/i.exec(normalized);
+  if (onceMatch) {
+    const [, year, month, day, hour, minute, second] = onceMatch;
+    return new Date(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      Number(hour),
+      Number(minute),
+      second ? Number(second) : 0,
+    );
+  }
   return new Date(Number.NaN);
 }
 
