@@ -244,7 +244,7 @@ function QuestionStep({
           {t("Soul人格测试")}
         </div>
         <h3 className="text-2xl font-semibold tracking-normal text-black/90">
-          {isPersonality ? t("先来了解你的灵魂画像") : t("选择你对 AI 搭子的偏好")}
+          {isPersonality ? t("先来了解你的灵魂画像") : t("选择你对智能体伙伴的偏好")}
         </h3>
       </div>
 
