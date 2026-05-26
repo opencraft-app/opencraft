@@ -488,7 +488,12 @@ class ReleaseBundleContractTests(unittest.TestCase):
             "argocd/secrets/shprod/cloudagent-wsa-search-secrets.sops.yaml",
             bundle.publish_paths,
         )
+        self.assertIn(
+            "argocd/secrets/shprod/cloudagent-wisp-secrets.sops.yaml",
+            bundle.publish_paths,
+        )
         self.assertIn("argocd/secrets/*/cloudagent-wsa-search-secrets.sops.yaml", watched_paths)
+        self.assertIn("argocd/secrets/*/cloudagent-wisp-secrets.sops.yaml", watched_paths)
 
     def test_local_templates_do_not_use_unsupported_top_level_concurrency(self) -> None:
         for template_path in sorted((REPO_ROOT / ".ci/templates").glob("*.yml")):
