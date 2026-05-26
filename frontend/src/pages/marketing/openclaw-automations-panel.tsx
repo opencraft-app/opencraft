@@ -1059,11 +1059,21 @@ function AutomationFormModal({
               {t("如不选，则只会在后台执行任务，不发通知。")}
             </p>
           ) : chatIdPlatforms.length === 0 ? (
-            <p className="text-xs text-black/40">
-              {deliverPlatforms.includes("qqbot")
-                ? t("QQ 需设置 home 对话才能发送通知")
-                : t("微信支持直接配置发送通知")}
-            </p>
+            deliverPlatforms.includes("qqbot") ? (
+              <div className="space-y-1 text-xs leading-6 text-black/40">
+                <p>{t("QQ 需设置 home 对话才能发送通知")}</p>
+                <p>{t("提示：")}</p>
+                <p>
+                  {t("设置 home 对话：在 QQ、飞书应用中，在对话中向智能体发送")}
+                  <InlineCopyText value="/set-home" />
+                  {t("。")}
+                </p>
+              </div>
+            ) : (
+              <p className="text-xs text-black/40">
+                {t("微信支持直接配置发送通知")}
+              </p>
+            )
           ) : (
             <div className="space-y-1 text-xs leading-6 text-black/40">
               <p>{t("提示：")}</p>
