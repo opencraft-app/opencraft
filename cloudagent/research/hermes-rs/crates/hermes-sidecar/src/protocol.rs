@@ -129,6 +129,8 @@ pub(crate) struct WorkspaceBindRequest {
     #[serde(default)]
     pub(crate) command_prefix: Option<String>,
     #[serde(default)]
+    pub(crate) command_shell_prefix: Option<String>,
+    #[serde(default)]
     pub(crate) shutdown_command: Option<String>,
     #[serde(default)]
     pub(crate) replace_existing: bool,

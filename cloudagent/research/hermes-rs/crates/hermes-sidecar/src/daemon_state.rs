@@ -496,16 +496,23 @@ impl DaemonState {
         request: WorkspaceFileDownloadRequest,
     ) -> Result<WorkspaceFileDownloadResponse> {
         let relative_path = self.workspace_relative_path(&request.path)?;
+        let local_path = self.workspace_root.join(&relative_path);
+        let local_content = fs::read(&local_path).ok();
         let content =
             match download_active_session_sandbox_file(&self.workspace_root, &relative_path).await?
             {
-                Some(content) => content,
-                None => {
-                    let local_path = self.workspace_root.join(&relative_path);
-                    fs::read(&local_path).with_context(|| {
-                        format!("failed to read workspace file '{}'", local_path.display())
-                    })?
+                Some(content)
+                    if !content.is_empty()
+                        || local_content
+                            .as_ref()
+                            .map(|local| local.is_empty())
+                            .unwrap_or(true) =>
+                {
+                    content
                 }
+                _ => local_content.with_context(|| {
+                    format!("failed to read workspace file '{}'", local_path.display())
+                })?,
             };
         Ok(WorkspaceFileDownloadResponse {
             ok: true,
@@ -588,6 +595,7 @@ impl DaemonState {
             workspace_root: request.workspace_root.clone(),
             local_workspace_root: self.workspace_root.clone(),
             command_prefix: request.command_prefix.clone(),
+            command_shell_prefix: request.command_shell_prefix.clone(),
             shutdown_command: request.shutdown_command.clone(),
         };
         let identity = self

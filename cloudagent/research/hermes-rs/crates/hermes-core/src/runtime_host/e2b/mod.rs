@@ -124,6 +124,7 @@ pub struct SessionSandbox {
     workspace_root: String,
     local_workspace_root: PathBuf,
     command_prefix: Option<String>,
+    command_shell_prefix: Option<String>,
     shutdown_command: Option<String>,
     native_host_ready: Mutex<bool>,
     inner: Mutex<SessionSandboxInner>,
@@ -145,6 +146,7 @@ pub struct SessionSandboxBinding {
     pub workspace_root: String,
     pub local_workspace_root: PathBuf,
     pub command_prefix: Option<String>,
+    pub command_shell_prefix: Option<String>,
     pub shutdown_command: Option<String>,
 }
 
@@ -245,6 +247,7 @@ pub async fn create_session_sandbox(
         workspace_root,
         local_workspace_root: local_workspace_root.to_path_buf(),
         command_prefix: None,
+        command_shell_prefix: None,
         shutdown_command: None,
         native_host_ready: Mutex::new(false),
         inner: Mutex::new(SessionSandboxInner { client, sandbox }),
@@ -286,6 +289,7 @@ pub async fn bind_session_sandbox(binding: SessionSandboxBinding) -> Result<Arc<
         workspace_root,
         local_workspace_root: binding.local_workspace_root,
         command_prefix: binding.command_prefix,
+        command_shell_prefix: binding.command_shell_prefix,
         shutdown_command: binding.shutdown_command,
         native_host_ready: Mutex::new(false),
         inner: Mutex::new(SessionSandboxInner { client, sandbox }),
@@ -459,6 +463,16 @@ impl SessionSandbox {
             .map(str::trim)
             .is_some_and(|value| !value.is_empty())
         {
+            if let Some(shell_prefix) = self
+                .command_shell_prefix
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
+                return self
+                    .upload_bytes_at_path_via_shell(remote_path, content, shell_prefix)
+                    .await;
+            }
             return self
                 .upload_bytes_at_path_via_command(remote_path, content)
                 .await;
@@ -516,6 +530,70 @@ impl SessionSandbox {
         Ok(())
     }
 
+    async fn upload_bytes_at_path_via_shell(
+        &self,
+        remote_path: &str,
+        content: Vec<u8>,
+        shell_prefix: &str,
+    ) -> Result<()> {
+        let Some(parent) = Path::new(remote_path)
+            .parent()
+            .and_then(|path| path.to_str())
+        else {
+            return Err(Error::Agent(format!(
+                "remote path '{}' has no parent directory",
+                remote_path
+            )));
+        };
+        let host_temp = workspace_file_upload_host_temp_path(remote_path);
+        let host_temp_dir = Path::new(&host_temp)
+            .parent()
+            .and_then(|path| path.to_str())
+            .unwrap_or("/tmp");
+        let inner = self.inner.lock().await;
+        let mkdir = format!("mkdir -p {}", shell_quote(host_temp_dir));
+        let mkdir_result = inner
+            .client
+            .run_command(&inner.sandbox, &mkdir, &HashMap::new())
+            .await?;
+        if mkdir_result.exit_code != 0 {
+            return Err(Error::Agent(format!(
+                "failed to create upload staging directory '{}': exit_code={} stdout={} stderr={}",
+                host_temp_dir, mkdir_result.exit_code, mkdir_result.stdout, mkdir_result.stderr
+            )));
+        }
+        let filename = Path::new(&host_temp)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("upload.bin");
+        inner
+            .client
+            .upload_file(&inner.sandbox, &host_temp, filename, content)
+            .await?;
+        let command =
+            workspace_file_upload_shell_command(shell_prefix, &host_temp, parent, remote_path);
+        let result = inner
+            .client
+            .run_command(&inner.sandbox, &command, &HashMap::new())
+            .await;
+        let _ = inner
+            .client
+            .run_command(
+                &inner.sandbox,
+                &format!("rm -f {}", shell_quote(&host_temp)),
+                &HashMap::new(),
+            )
+            .await;
+        let result = result?;
+        if result.exit_code != 0 {
+            return Err(Error::Agent(format!(
+                "failed to upload file '{}' through workspace shell: exit_code={} stdout={} stderr={}",
+                remote_path, result.exit_code, result.stdout, result.stderr
+            )));
+        }
+        Ok(())
+    }
+
     pub async fn download_bytes(&self, relative_path: &str) -> Result<Vec<u8>> {
         let remote_path = self.remote_path(relative_path);
         self.download_bytes_at_path(&remote_path).await
@@ -537,15 +615,13 @@ impl SessionSandbox {
                 )));
             }
             let encoded = workspace_file_download_base64_output(&result.stdout);
-            return STANDARD
-                .decode(encoded.as_bytes())
-                .map_err(|error| {
-                    Error::ParseResponse(format!(
-                        "{}; workspace download stdout={}",
-                        error,
-                        preview_for_error(&result.stdout)
-                    ))
-                });
+            return STANDARD.decode(encoded.as_bytes()).map_err(|error| {
+                Error::ParseResponse(format!(
+                    "{}; workspace download stdout={}",
+                    error,
+                    preview_for_error(&result.stdout)
+                ))
+            });
         }
         let inner = self.inner.lock().await;
         inner
@@ -811,6 +887,37 @@ fn workspace_file_upload_command(parent: &str, remote_path: &str, content: &[u8]
     )
 }
 
+fn workspace_file_upload_shell_command(
+    shell_prefix: &str,
+    host_temp: &str,
+    parent: &str,
+    remote_path: &str,
+) -> String {
+    let inner_script_prefix = format!(
+        "mkdir -p {}\nbase64 -d > {} <<'CLOUDAGENT_UPLOAD_B64'\n",
+        shell_quote(parent),
+        shell_quote(remote_path)
+    );
+    format!(
+        "set -euo pipefail\nhost_temp={host_temp}\n{{\n  printf '%s' {script_prefix}\n  base64 \"$host_temp\"\n  printf '\\nCLOUDAGENT_UPLOAD_B64\\nexit\\n'\n}} | {shell_prefix} >/dev/null\n",
+        host_temp = shell_quote(host_temp),
+        script_prefix = shell_quote(&inner_script_prefix),
+        shell_prefix = shell_prefix,
+    )
+}
+
+fn workspace_file_upload_host_temp_path(remote_path: &str) -> String {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or(0);
+    let basename = Path::new(remote_path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("upload.bin");
+    format!("/tmp/hermes-workspace-upload/{}-{}", now, basename)
+}
+
 fn workspace_file_download_command(remote_path: &str) -> String {
     format!(
         "set -e\npath={path}\ntest -f \"$path\"\nbase64 \"$path\" | tr -d '\\n'\n",
@@ -825,7 +932,11 @@ fn workspace_file_download_base64_output(stdout: &str) -> String {
     }
     let mut streamed = String::new();
     let mut saw_json_line = false;
-    for line in trimmed.lines().map(str::trim).filter(|line| !line.is_empty()) {
+    for line in trimmed
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+    {
         if let Ok(value) = serde_json::from_str::<serde_json::Value>(line) {
             saw_json_line = true;
             if let Some(chunk) = workspace_file_download_value_output(&value) {
@@ -938,6 +1049,7 @@ pub(crate) fn test_session_sandbox(
         workspace_root: workspace_root.to_string(),
         local_workspace_root: PathBuf::from(local_workspace_root),
         command_prefix: None,
+        command_shell_prefix: None,
         shutdown_command: None,
         native_host_ready: Mutex::new(false),
         inner: Mutex::new(SessionSandboxInner {

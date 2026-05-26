@@ -701,6 +701,7 @@ func (w *AgentSidecarWorker) attachSessionWorkspaceRuntime(ctx context.Context, 
 	}
 	workspaceRuntimeID := firstNonEmpty(runtime.WorkspaceRuntimeID, "workspace_"+newACPSessionRuntimeID(req.SessionID, req.Generation))
 	commandPrefix := ""
+	commandShellPrefix := ""
 	shutdownCommand := ""
 	if runtime.isWispOuterRuntime() {
 		token, err := w.issueWispSMHToken(ctx, firstNonEmpty(runtime.WispSMHSpaceID, workspaceID), "admin")
@@ -733,6 +734,9 @@ func (w *AgentSidecarWorker) attachSessionWorkspaceRuntime(ctx context.Context, 
 			" -server " + shellQuote(defaultWispOuterAdminAddr) +
 			" exec --stream " + shellQuote(prepared.WispName) +
 			" -- /bin/sh -lc"
+		commandShellPrefix = shellQuote(prepared.WispClientPath) +
+			" -server " + shellQuote(defaultWispOuterAdminAddr) +
+			" shell " + shellQuote(prepared.WispName)
 		shutdownCommand = shellQuote(prepared.WispClientPath) +
 			" -server " + shellQuote(defaultWispOuterAdminAddr) +
 			" stop " + shellQuote(prepared.WispName)
@@ -746,6 +750,7 @@ func (w *AgentSidecarWorker) attachSessionWorkspaceRuntime(ctx context.Context, 
 		"traffic_access_token": sb.TrafficAccessToken,
 		"workspace_root":       acpRuntimeCWD,
 		"command_prefix":       commandPrefix,
+		"command_shell_prefix": commandShellPrefix,
 		"shutdown_command":     shutdownCommand,
 		"replace_existing":     true,
 	})

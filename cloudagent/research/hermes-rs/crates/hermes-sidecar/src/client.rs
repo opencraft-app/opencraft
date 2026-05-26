@@ -54,7 +54,7 @@ pub(crate) enum ClientCommand {
     },
     WorkspaceFileUpload {
         path_b64: String,
-        content_b64: String,
+        content: WorkspaceFileUploadContent,
     },
     WorkspaceFileDownload {
         path_b64: String,
@@ -67,6 +67,12 @@ pub(crate) enum ClientCommand {
     },
     ShutdownInner,
     Shutdown,
+}
+
+#[derive(Debug)]
+pub(crate) enum WorkspaceFileUploadContent {
+    InlineB64(String),
+    FileB64(String),
 }
 
 pub(crate) async fn run_client(args: ClientArgs) -> Result<()> {
@@ -183,10 +189,18 @@ pub(crate) async fn run_client(args: ClientArgs) -> Result<()> {
                 println!("{}", response.body.trim());
             }
         }
-        ClientCommand::WorkspaceFileUpload {
-            path_b64,
-            content_b64,
-        } => {
+        ClientCommand::WorkspaceFileUpload { path_b64, content } => {
+            let content_b64 = match content {
+                WorkspaceFileUploadContent::InlineB64(value) => value,
+                WorkspaceFileUploadContent::FileB64(path_b64) => {
+                    let path = decode_required_b64(&path_b64)
+                        .context("failed to decode workspace file upload content path")?;
+                    let bytes = tokio::fs::read(&path).await.with_context(|| {
+                        format!("failed to read workspace upload content file {}", path)
+                    })?;
+                    STANDARD.encode(bytes)
+                }
+            };
             let request = WorkspaceFileUploadRequest {
                 path: decode_required_b64(&path_b64)
                     .context("failed to decode workspace file path")?,
@@ -334,6 +348,7 @@ pub(crate) fn parse_client_args(args: &[String]) -> Result<ClientArgs> {
 fn parse_client_workspace_file_upload_args(args: &[String]) -> Result<ClientCommand> {
     let mut path_b64 = None;
     let mut content_b64 = None;
+    let mut content_file_b64 = None;
     let mut index = 0;
     while index < args.len() {
         match args[index].as_str() {
@@ -343,14 +358,29 @@ fn parse_client_workspace_file_upload_args(args: &[String]) -> Result<ClientComm
             "--content-b64" => {
                 content_b64 = Some(take_flag_value(args, &mut index, "--content-b64")?);
             }
+            "--content-file-b64" => {
+                content_file_b64 = Some(take_flag_value(args, &mut index, "--content-file-b64")?);
+            }
             other => bail!("unexpected workspace-file-upload argument '{}'", other),
         }
         index += 1;
     }
+    if content_b64.is_some() && content_file_b64.is_some() {
+        bail!(
+            "client workspace-file-upload accepts only one of --content-b64 or --content-file-b64"
+        );
+    }
+    let content = match (content_b64, content_file_b64) {
+        (Some(value), None) => WorkspaceFileUploadContent::InlineB64(value),
+        (None, Some(value)) => WorkspaceFileUploadContent::FileB64(value),
+        (None, None) => bail!(
+            "one of --content-b64 or --content-file-b64 is required for client workspace-file-upload"
+        ),
+        (Some(_), Some(_)) => unreachable!(),
+    };
     Ok(ClientCommand::WorkspaceFileUpload {
         path_b64: path_b64.context("--path-b64 is required for client workspace-file-upload")?,
-        content_b64: content_b64
-            .context("--content-b64 is required for client workspace-file-upload")?,
+        content,
     })
 }
 
