@@ -13,6 +13,7 @@
 ## CI trigger notes
 
 - 2026-05-21: README-only no-op change to rerun cloudagent-gateway after production reviewer override landed.
+- 2026-05-26: README-only no-op change to rerun cloudagent-gateway after Wisp secret projection fix landed.
 
 ## ACP WebSocket
 
