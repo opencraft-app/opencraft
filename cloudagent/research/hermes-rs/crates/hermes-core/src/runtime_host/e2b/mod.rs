@@ -623,6 +623,14 @@ impl SessionSandbox {
                 ))
             });
         }
+        let exists_command = format!("test -f {}", shell_quote(remote_path));
+        let exists = self.run_command(&exists_command, &HashMap::new()).await?;
+        if exists.exit_code != 0 {
+            return Err(Error::Agent(format!(
+                "workspace file not found: {}",
+                remote_path
+            )));
+        }
         let inner = self.inner.lock().await;
         inner
             .client
@@ -920,7 +928,7 @@ fn workspace_file_upload_host_temp_path(remote_path: &str) -> String {
 
 fn workspace_file_download_command(remote_path: &str) -> String {
     format!(
-        "set -e\npath={path}\ntest -f \"$path\"\nbase64 \"$path\" | tr -d '\\n'\n",
+        "set -e\npath={path}\nif ! test -f \"$path\"; then echo \"workspace file not found: $path\" >&2; exit 44; fi\nbase64 \"$path\" | tr -d '\\n'\n",
         path = shell_quote(remote_path)
     )
 }

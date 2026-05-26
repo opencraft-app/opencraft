@@ -3338,6 +3338,51 @@ func TestCloudAgentLiveWorkspaceHTTPTransferPreservesBinaryContent(t *testing.T)
 	deleted = true
 }
 
+func TestCloudAgentLiveWorkspaceHTTPDownloadMissingFileReturnsNotFound(t *testing.T) {
+	client := newLiveCloudAgentClient(t)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), liveTimeout())
+	defer cancel()
+
+	if _, err := client.Initialize(ctx, CloudAgentClientOptions{
+		ClientName:    "cloudagent-acp-live-workspace-http-missing-download-e2e",
+		ClientTitle:   "CloudAgent ACP Live Workspace HTTP Missing Download E2E",
+		ClientVersion: "0.1.0",
+	}); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+
+	session, err := client.NewSession(ctx, CloudAgentSessionOptions{CWD: liveCWD()})
+	if err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	deleted := false
+	defer func() {
+		if !deleted {
+			deleteCtx, deleteCancel := context.WithTimeout(context.Background(), 3*time.Minute)
+			defer deleteCancel()
+			_ = client.DeleteSession(deleteCtx, session.SessionID)
+		}
+	}()
+	waitForLiveEnsureRuntimeReady(t, ctx, client, session.SessionID)
+
+	missingPath := "/workspace/e2e/missing-download/" + strings.ReplaceAll(session.SessionID, "_", "-") + "-does-not-exist.txt"
+	body, err := liveTryDownloadEnvdFile(t, ctx, session.SessionID, missingPath)
+	if err == nil {
+		t.Fatalf("missing workspace file download unexpectedly succeeded with %d bytes", len(body))
+	}
+	errText := err.Error()
+	if !strings.Contains(errText, "status=404") || !strings.Contains(string(body), "workspace_file_not_found") {
+		t.Fatalf("missing workspace file download should return 404 workspace_file_not_found: err=%v body=%s", err, string(body))
+	}
+
+	if err := client.DeleteSession(ctx, session.SessionID); err != nil {
+		t.Fatalf("session/delete: %v", err)
+	}
+	deleted = true
+}
+
 func TestCloudAgentLiveWorkspaceHTTPTransferLargeFiles(t *testing.T) {
 	output := &liveAgentOutput{}
 	client := newLiveCloudAgentClientWithOptions(t, CloudAgentClientOptions{

@@ -173,13 +173,23 @@ func (w *AgentSidecarWorker) DownloadSessionWorkspaceFile(ctx context.Context, r
 		return nil, err
 	}
 	if result.ExitCode != 0 {
+		detail := fmt.Sprintf("stdout=%q stderr=%q", result.Stdout, result.Stderr)
+		if isWorkspaceFileNotFoundText(detail) {
+			return nil, fmt.Errorf("workspace file not found: %s: %s", target, detail)
+		}
 		return nil, fmt.Errorf("workspace download failed exit=%d stdout=%q stderr=%q", result.ExitCode, result.Stdout, result.Stderr)
+	}
+	if isWorkspaceFileNotFoundText(result.Stdout) || isWorkspaceFileNotFoundText(result.Stderr) {
+		return nil, fmt.Errorf("workspace file not found: %s: stdout=%q stderr=%q", target, result.Stdout, result.Stderr)
 	}
 	out, err := parseWorkspaceFileDownloadCommandResponse(result.Stdout)
 	if err != nil {
 		return nil, fmt.Errorf("workspace download returned invalid JSON: %w stdout_tail=%q", err, commandOutputTail(result.Stdout, 800))
 	}
 	if !out.OK {
+		if isWorkspaceFileNotFoundText(result.Stdout) {
+			return nil, fmt.Errorf("workspace file not found: %s", target)
+		}
 		return nil, fmt.Errorf("workspace download returned ok=false")
 	}
 	decoded, err := base64.StdEncoding.DecodeString(out.ContentB64)
@@ -187,6 +197,13 @@ func (w *AgentSidecarWorker) DownloadSessionWorkspaceFile(ctx context.Context, r
 		return nil, fmt.Errorf("workspace download returned invalid base64: %w", err)
 	}
 	return decoded, nil
+}
+
+func isWorkspaceFileNotFoundText(value string) bool {
+	text := strings.ToLower(value)
+	return strings.Contains(text, "workspace file not found") ||
+		strings.Contains(text, "no such file or directory") ||
+		strings.Contains(text, "file does not exist")
 }
 
 func parseWorkspaceFileDownloadCommandResponse(output string) (workspaceFileDownloadCommandResponse, error) {

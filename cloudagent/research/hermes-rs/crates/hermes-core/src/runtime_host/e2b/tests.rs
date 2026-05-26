@@ -208,6 +208,14 @@ fn workspace_file_download_base64_output_extracts_wrapped_stdout() {
 }
 
 #[test]
+fn workspace_file_download_command_reports_missing_file() {
+    let command = workspace_file_download_command("/workspace/missing.txt");
+    assert!(command.contains("test -f"));
+    assert!(command.contains("workspace file not found"));
+    assert!(command.contains("exit 44"));
+}
+
+#[test]
 fn resolve_path_maps_workspace_absolute_paths() {
     let sandbox = SessionSandbox {
         workspace_root: "/workspace/session_1".to_string(),
