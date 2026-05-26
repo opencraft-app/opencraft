@@ -89,7 +89,7 @@ import {
 } from "@/pages/marketing/openclaw-reset-config";
 import { toast } from "@/lib/toast";
 import "@tencent/tea-sdk-lightclaw/styles";
-// LightVela 对话面板（npm 包 @tencent/agentchat-lightvela-panel@0.2.5-beta.0）
+// LightVela 对话面板（npm 包 @tencent/agentchat-lightvela-panel）
 import { LightVelaPanel } from "@tencent/agentchat-lightvela-panel";
 
 /* ─── Types ─── */
@@ -3525,7 +3525,6 @@ export const OpenClawSettingsPage = () => {
                               )}
                               {launchTokenStatus === "ready" && launchToken && accountId && (
                                 <LightVelaPanel
-                                  isHermesBlueprint={true}
                                   instanceIds={[sdkInstance.InstanceId]}
                                   instanceId={sdkInstance.InstanceId}
                                   region="ap-guangzhou"
