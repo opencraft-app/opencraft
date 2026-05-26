@@ -377,6 +377,16 @@ curl -sS \
 
 预期返回 `agent-sidecar-chat`、`agent-sidecar-tool` 等模型。
 
+运行 CloudAgent 自检：
+
+```bash
+curl -sS \
+  -H 'Authorization: Bearer smoke-key' \
+  http://cloudagent.lightvela.com/v1/selfcheck
+```
+
+`/v1/selfcheck` 需要身份信息，返回当前 worker、AGS、agent sidecar artifact、detached signature、Wisp package、SMH 配置的非敏感摘要和逐项检查结果。全部通过时返回 HTTP 200；存在缺失配置或 artifact 不可达时返回 HTTP 503，响应体里的 `checks[]` 会标出失败项。
+
 最小 chat completion：
 
 ```bash

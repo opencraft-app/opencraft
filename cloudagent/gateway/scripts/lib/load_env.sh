@@ -5,6 +5,13 @@ load_cloudagent_env() {
   local repo_root
   local candidate
 
+  if [ "${CLOUDAGENT_SKIP_ENV_FILE:-0}" = "1" ]; then
+    if [ -z "${GATEWAY_AGS_TEMPLATE:-}" ] && [ -n "${RESPONSES_WRAPPER_AGS_TEMPLATE:-}" ]; then
+      export GATEWAY_AGS_TEMPLATE="$RESPONSES_WRAPPER_AGS_TEMPLATE"
+    fi
+    return 0
+  fi
+
   repo_root="$(cd "$caller_root/.." && pwd)"
 
   for candidate in "$repo_root/.env" "$caller_root/.env"; do

@@ -90,8 +90,10 @@ RUN --mount=type=cache,id=hermes-sidecar-cargo-registry,target=/usr/local/cargo/
     && cargo build --locked --release --target-dir /tmp/cargo-target-agent-loader \
     && cd /src/research/hermes-rs \
     && install -D /tmp/cargo-target/${CLOUDAGENT_SIDECAR_RUST_TARGET}/release/hermes-sidecar /out/cloudagent-sidecar-linux-amd64 \
-    && install -D /tmp/cargo-target-agent-loader/release/cloudagent-agent-loader /out/cloudagent-agent-loader-linux-amd64
+    && install -D /tmp/cargo-target-agent-loader/release/cloudagent-agent-loader /out/cloudagent-agent-loader-linux-amd64 \
+    && install -D /tmp/cargo-target-agent-loader/release/cloudagent-agent-sign /out/cloudagent-agent-sign-linux-amd64
 
 FROM scratch AS artifact
 COPY --from=build /out/cloudagent-sidecar-linux-amd64 /cloudagent-sidecar-linux-amd64
 COPY --from=build /out/cloudagent-agent-loader-linux-amd64 /cloudagent-agent-loader-linux-amd64
+COPY --from=build /out/cloudagent-agent-sign-linux-amd64 /cloudagent-agent-sign-linux-amd64

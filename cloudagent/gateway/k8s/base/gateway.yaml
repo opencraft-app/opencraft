@@ -23,12 +23,16 @@ data:
   GATEWAY_AGS_DOMAIN: "ap-shanghai.tencentags.com"
   GATEWAY_AGS_API_URL: "https://api.ap-shanghai.tencentags.com"
   E2B_DOMAIN: "ap-shanghai.tencentags.com"
+  GATEWAY_AGENT_OUTER_RUNTIME: "wisp"
   GATEWAY_AGS_TEMPLATE: "REPLACE_ME_SHPROD_AGS_TEMPLATE"
   GATEWAY_AGENT_SIDECAR_INNER_TEMPLATE: "REPLACE_ME_SHPROD_AGS_TEMPLATE"
   GATEWAY_AGENT_SIDECAR_URL: "REPLACE_ME_SHPROD_CLOUDAGENT_SIDECAR_URL"
   GATEWAY_AGENT_SIDECAR_SHA256: "REPLACE_ME_SHPROD_CLOUDAGENT_SIDECAR_SHA256"
   GATEWAY_SANDBOX_HOST_URL: "REPLACE_ME_SHPROD_SANDBOX_HOST_URL"
   GATEWAY_SANDBOX_HOST_SHA256: "REPLACE_ME_SHPROD_SANDBOX_HOST_SHA256"
+  GATEWAY_WISP_SMH_LIBRARY_ID: "smh37laghvp09llc"
+  GATEWAY_WISP_SMH_ACCESS_DOMAIN: "https://smh37laghvp09llc.ap-shanghai.api.tencentsmh.cn"
+  GATEWAY_WISP_PACKAGE_URL: "http://cloudagent-sidecar-shanghai-1388575217.cos.ap-shanghai.myqcloud.com/workspace/20260524/wisp-linux-amd64-20260524T044223Z-stream.tar.gz"
   GATEWAY_TALOS_TEMPLATE: "498c6c11-74d7-426e-bdb1-13d8aa73997e"
   CLOUDAGENT_WEB_SEARCH_PROVIDER: "tencent_wsa"
   TENCENTCLOUD_WSA_ENDPOINT: "https://api.wsa.cloud.tencent.com/SearchPro"
@@ -176,6 +180,11 @@ spec:
                   name: cloudagent-wsa-search-secrets
                   key: TENCENTCLOUD_WSA_APIKEY
                   optional: true
+            - name: GATEWAY_WISP_SMH_LIBRARY_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: cloudagent-wisp-secrets
+                  key: GATEWAY_WISP_SMH_LIBRARY_SECRET
           readinessProbe:
             httpGet:
               path: /v1/models

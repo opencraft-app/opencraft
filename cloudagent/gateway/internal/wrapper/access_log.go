@@ -68,6 +68,8 @@ func routeForLog(r *http.Request) string {
 		return "GET /healthz"
 	case path == "/v1/models":
 		return "GET /v1/models"
+	case path == "/v1/selfcheck":
+		return "GET /v1/selfcheck"
 	case path == "/v1/files":
 		return "POST /v1/files"
 	case strings.HasPrefix(path, "/v1/files/"):
