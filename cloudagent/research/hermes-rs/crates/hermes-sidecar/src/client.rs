@@ -10,6 +10,7 @@ use tokio::net::TcpStream;
 use crate::protocol::{
     EnsureInnerRequest, PromptResponseLine, RuntimeAbortRequest, RuntimeInputBlock,
     RuntimeInputRequest, SessionCreateRequest, StageFilesManifest, WorkspaceBindRequest,
+    WorkspaceFileDownloadRequest, WorkspaceFileUploadRequest,
 };
 use crate::timeline;
 
@@ -51,12 +52,20 @@ pub(crate) enum ClientCommand {
     StageFiles {
         manifest_b64: String,
     },
+    WorkspaceFileUpload {
+        path_b64: String,
+        content_b64: String,
+    },
+    WorkspaceFileDownload {
+        path_b64: String,
+    },
     WorkspaceBind {
         request_b64: String,
     },
     EnsureInner {
         force: bool,
     },
+    ShutdownInner,
     Shutdown,
 }
 
@@ -174,6 +183,34 @@ pub(crate) async fn run_client(args: ClientArgs) -> Result<()> {
                 println!("{}", response.body.trim());
             }
         }
+        ClientCommand::WorkspaceFileUpload {
+            path_b64,
+            content_b64,
+        } => {
+            let request = WorkspaceFileUploadRequest {
+                path: decode_required_b64(&path_b64)
+                    .context("failed to decode workspace file path")?,
+                content_b64,
+            };
+            let response =
+                http_request_json(&args.addr, "POST", "/workspace/file-upload", &request).await?;
+            ensure_http_ok(&response, "/workspace/file-upload")?;
+            if !response.body.trim().is_empty() {
+                println!("{}", response.body.trim());
+            }
+        }
+        ClientCommand::WorkspaceFileDownload { path_b64 } => {
+            let request = WorkspaceFileDownloadRequest {
+                path: decode_required_b64(&path_b64)
+                    .context("failed to decode workspace file path")?,
+            };
+            let response =
+                http_request_json(&args.addr, "POST", "/workspace/file-download", &request).await?;
+            ensure_http_ok(&response, "/workspace/file-download")?;
+            if !response.body.trim().is_empty() {
+                println!("{}", response.body.trim());
+            }
+        }
         ClientCommand::WorkspaceBind { request_b64 } => {
             let request: WorkspaceBindRequest = decode_json_b64(&request_b64)
                 .context("failed to decode client workspace-bind request")?;
@@ -195,6 +232,28 @@ pub(crate) async fn run_client(args: ClientArgs) -> Result<()> {
             ensure_http_ok(&response, "/ensure-inner")?;
             if !response.body.trim().is_empty() {
                 println!("{}", response.body.trim());
+            }
+        }
+        ClientCommand::ShutdownInner => {
+            let response = http_request(
+                &args.addr,
+                "POST",
+                "/shutdown-inner",
+                Some("{}".to_string()),
+            )
+            .await?;
+            ensure_http_ok(&response, "/shutdown-inner")?;
+            if !response.body.trim().is_empty() {
+                let mut saw_result = false;
+                for line in response.body.lines() {
+                    let line = line.trim();
+                    if !line.is_empty() {
+                        print_prompt_response_line(line, &mut saw_result)?;
+                    }
+                }
+                if !saw_result {
+                    println!("{}", response.body.trim());
+                }
             }
         }
         ClientCommand::Shutdown => {
@@ -225,9 +284,21 @@ pub(crate) fn parse_client_args(args: &[String]) -> Result<ClientArgs> {
             "--addr" => {
                 addr = Some(take_flag_value(args, &mut index, "--addr")?);
             }
-            "health" | "health-json" | "session-create" | "session-input" | "session-abort"
-            | "session-status" | "session-transcript" | "session-run-ledger" | "stage-files"
-            | "workspace-bind" | "ensure-inner" | "shutdown" => {
+            "health"
+            | "health-json"
+            | "session-create"
+            | "session-input"
+            | "session-abort"
+            | "session-status"
+            | "session-transcript"
+            | "session-run-ledger"
+            | "stage-files"
+            | "workspace-file-upload"
+            | "workspace-file-download"
+            | "workspace-bind"
+            | "ensure-inner"
+            | "shutdown-inner"
+            | "shutdown" => {
                 subcommand = Some((args[index].clone(), index + 1));
                 break;
             }
@@ -242,6 +313,7 @@ pub(crate) fn parse_client_args(args: &[String]) -> Result<ClientArgs> {
         "health" => ClientCommand::Health,
         "health-json" => ClientCommand::HealthJson,
         "shutdown" => ClientCommand::Shutdown,
+        "shutdown-inner" => ClientCommand::ShutdownInner,
         "session-create" => parse_client_session_create_args(&args[start..])?,
         "session-input" => parse_client_session_input_args(&args[start..])?,
         "session-abort" => parse_client_session_abort_args(&args[start..])?,
@@ -249,12 +321,54 @@ pub(crate) fn parse_client_args(args: &[String]) -> Result<ClientArgs> {
         "session-transcript" => ClientCommand::SessionTranscript,
         "session-run-ledger" => ClientCommand::SessionRunLedger,
         "workspace-bind" => parse_client_workspace_bind_args(&args[start..])?,
+        "workspace-file-upload" => parse_client_workspace_file_upload_args(&args[start..])?,
+        "workspace-file-download" => parse_client_workspace_file_download_args(&args[start..])?,
         "ensure-inner" => parse_client_ensure_inner_args(&args[start..])?,
         "stage-files" => parse_client_stage_files_args(&args[start..])?,
         _ => unreachable!(),
     };
 
     Ok(ClientArgs { addr, command })
+}
+
+fn parse_client_workspace_file_upload_args(args: &[String]) -> Result<ClientCommand> {
+    let mut path_b64 = None;
+    let mut content_b64 = None;
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--path-b64" => {
+                path_b64 = Some(take_flag_value(args, &mut index, "--path-b64")?);
+            }
+            "--content-b64" => {
+                content_b64 = Some(take_flag_value(args, &mut index, "--content-b64")?);
+            }
+            other => bail!("unexpected workspace-file-upload argument '{}'", other),
+        }
+        index += 1;
+    }
+    Ok(ClientCommand::WorkspaceFileUpload {
+        path_b64: path_b64.context("--path-b64 is required for client workspace-file-upload")?,
+        content_b64: content_b64
+            .context("--content-b64 is required for client workspace-file-upload")?,
+    })
+}
+
+fn parse_client_workspace_file_download_args(args: &[String]) -> Result<ClientCommand> {
+    let mut path_b64 = None;
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--path-b64" => {
+                path_b64 = Some(take_flag_value(args, &mut index, "--path-b64")?);
+            }
+            other => bail!("unexpected workspace-file-download argument '{}'", other),
+        }
+        index += 1;
+    }
+    Ok(ClientCommand::WorkspaceFileDownload {
+        path_b64: path_b64.context("--path-b64 is required for client workspace-file-download")?,
+    })
 }
 
 fn parse_client_workspace_bind_args(args: &[String]) -> Result<ClientCommand> {

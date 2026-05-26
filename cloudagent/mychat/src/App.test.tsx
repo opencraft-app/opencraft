@@ -43,12 +43,26 @@ describe("Header session entry", () => {
 
 describe("SessionPage", () => {
   it("renders a workspace restore spinner for chat recovery", () => {
-    const html = renderToStaticMarkup(<WorkspaceRestoreNotice />);
+    const html = renderToStaticMarkup(
+      <WorkspaceRestoreNotice
+        events={[
+          {
+            sessionId: "session-1",
+            lifecycleId: "restore:session-1:runtime",
+            operation: "restore",
+            phase: "runtime",
+            status: "running",
+            label: "恢复 Runtime Host",
+          },
+        ]}
+      />,
+    );
 
     expect(html).toContain('role="status"');
     expect(html).toContain("workspace-restore-spinner");
     expect(html).toContain("animate-spin");
-    expect(html).toContain("正在恢复 Workspace");
+    expect(html).toContain("Workspace 生命周期");
+    expect(html).toContain("恢复 Runtime Host");
   });
 
   it("renders draft session placeholders without raw JSON", () => {

@@ -41,6 +41,23 @@ fn connect_stream_decodes_stdout_and_end() {
 }
 
 #[test]
+fn workspace_file_upload_command_writes_base64_payload_to_target_path() {
+    let command = workspace_file_upload_command(
+        "/workspace/inputs/docs",
+        "/workspace/inputs/docs/upload-check.txt",
+        b"hello\n",
+    );
+
+    assert!(command.contains("mkdir -p"));
+    assert!(command.contains("/workspace/inputs/docs"));
+    assert!(command.contains("printf %s"));
+    assert!(command.contains("| base64 -d >"));
+    assert!(command.contains("/workspace/inputs/docs/upload-check.txt"));
+    assert!(command.contains("aGVsbG8K"));
+    assert!(command.contains("test -f"));
+}
+
+#[test]
 fn connect_stream_handles_start_and_end_without_exit_code() {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&connect_envelope(

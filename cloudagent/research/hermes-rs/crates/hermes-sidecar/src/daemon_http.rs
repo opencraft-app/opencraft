@@ -14,7 +14,7 @@ use crate::http::{
 use crate::protocol::{
     EnsureInnerRequest, HttpRequest, HttpResponse, PromptOutcome, PromptResponseLine,
     RuntimeAbortRequest, RuntimeInputRequest, SessionCreateRequest, StageFilesManifest,
-    WorkspaceBindRequest,
+    WorkspaceBindRequest, WorkspaceFileDownloadRequest, WorkspaceFileUploadRequest,
 };
 use crate::DaemonState;
 
@@ -121,6 +121,37 @@ async fn route_request(state: Arc<DaemonState>, request: HttpRequest) -> HttpRes
                 }
             }
         }
+        ("POST", "/workspace/file-upload") => {
+            match serde_json::from_slice::<WorkspaceFileUploadRequest>(&request.body) {
+                Ok(body) => match state.workspace_file_upload(body).await {
+                    Ok(response) => json_response(200, response),
+                    Err(error) => {
+                        json_response(400, json!({ "ok": false, "error": error.to_string() }))
+                    }
+                },
+                Err(error) => {
+                    json_response(400, json!({ "ok": false, "error": error.to_string() }))
+                }
+            }
+        }
+        ("POST", "/workspace/file-download") => {
+            match serde_json::from_slice::<WorkspaceFileDownloadRequest>(&request.body) {
+                Ok(body) => match state.workspace_file_download(body).await {
+                    Ok(response) => json_response(
+                        200,
+                        serde_json::to_value(response).unwrap_or_else(
+                            |error| json!({ "ok": false, "error": error.to_string() }),
+                        ),
+                    ),
+                    Err(error) => {
+                        json_response(400, json!({ "ok": false, "error": error.to_string() }))
+                    }
+                },
+                Err(error) => {
+                    json_response(400, json!({ "ok": false, "error": error.to_string() }))
+                }
+            }
+        }
         ("POST", "/ensure-inner") => {
             match serde_json::from_slice::<EnsureInnerRequest>(&request.body) {
                 Ok(body) => match state.ensure_inner(body.force).await {
@@ -137,6 +168,16 @@ async fn route_request(state: Arc<DaemonState>, request: HttpRequest) -> HttpRes
                 Err(error) => {
                     json_response(400, json!({ "ok": false, "error": error.to_string() }))
                 }
+            }
+        }
+        ("POST", "/shutdown-inner") => {
+            let lines = state.shutdown_inner_with_response_lines().await;
+            let body = prompt_response_lines_body(&lines);
+            HttpResponse {
+                status: 200,
+                content_type: "application/x-ndjson",
+                body,
+                shutdown_after_response: false,
             }
         }
         ("POST", "/workspace/bind") => {

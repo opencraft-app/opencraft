@@ -136,6 +136,11 @@ type ACPSessionEnvdRuntimeManager interface {
 	EnsureSessionEnvdRuntime(context.Context, ACPSessionRuntime, ACPSessionRuntimeEnsureRequest) (ACPSessionRuntimeUpdate, error)
 }
 
+type ACPSessionWorkspaceFileManager interface {
+	UploadSessionWorkspaceFile(context.Context, ACPSessionRuntime, string, []byte) error
+	DownloadSessionWorkspaceFile(context.Context, ACPSessionRuntime, string) ([]byte, error)
+}
+
 type ACPSessionRuntimeManager interface {
 	StartSessionRuntime(context.Context, ACPSessionRuntimeStartRequest) (ACPSessionRuntime, error)
 	EnsureSessionRuntime(context.Context, ACPSessionRuntime, ACPSessionRuntimeStartRequest) (ACPSessionRuntime, error)
@@ -149,6 +154,8 @@ type ACPSessionRuntimeManager interface {
 
 type ACPSessionRuntimeFaultInjector interface {
 	KillSessionRuntimeDaemon(context.Context, ACPSessionRuntime) error
+	KillSessionRuntimeOuter(context.Context, ACPSessionRuntime) error
+	KillSessionRuntimeInner(context.Context, ACPSessionRuntime) error
 }
 
 type fakeACPSessionRuntimeManager struct{}

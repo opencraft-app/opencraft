@@ -266,8 +266,10 @@ Transcript 是 agent context 和 UI 展示的持久事实。Gateway 不应该通
   - `RuntimeRecovery`
   - `WispSMHSpaceID`
   - `WispName`
+  - `WorkspaceRecord`
   - `runtimeCanRecreate(...)`
   - `EnsureSessionRuntime(...)`
+- Gateway 恢复判定不能只依赖 `session_runtimes` 中的 Wisp 字段；正式恢复依据包括 workspace store 中 owner_session_id / workspace_id 对应的可恢复 Wisp/SMH `WorkspaceRecord`。
 - `session/load` 会从 `message_blocks` replay UI。
 - `session/resume` 和 prompt preflight 已能通过 `EnsureSessionRuntime` 尝试恢复 Wisp runtime。
 - `session/close` 对 Wisp 会保留可恢复 runtime anchor。

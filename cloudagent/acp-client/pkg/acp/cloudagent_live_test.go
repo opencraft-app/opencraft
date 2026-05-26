@@ -1,10 +1,16 @@
 package acp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
+	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
+	"os/exec"
 	"strings"
 	"sync"
 	"testing"
@@ -460,6 +466,9 @@ func TestCloudAgentLiveCloseResumeFromWorkspace(t *testing.T) {
 	if oldOuter == "" || oldSpace == "" {
 		t.Fatalf("before close missing runtime identity: %s", string(beforeClose.Raw))
 	}
+	if !beforeClose.Sandbox.HasInnerEnvdTarget {
+		t.Fatalf("before close should have inner workspace runtime target: %s", string(beforeClose.Raw))
+	}
 	if !beforeClose.WorkspacePersistent || !beforeClose.RuntimeRestorable {
 		t.Fatalf("before close should be workspace-persistent/restorable: %s", string(beforeClose.Raw))
 	}
@@ -476,6 +485,9 @@ func TestCloudAgentLiveCloseResumeFromWorkspace(t *testing.T) {
 	}
 	if afterClose.Sandbox.OuterSandboxID != "" {
 		t.Fatalf("closed session should not retain outer sandbox id: %s", string(afterClose.Raw))
+	}
+	if afterClose.Sandbox.HasInnerEnvdTarget {
+		t.Fatalf("closed session should not retain inner workspace runtime target: %s", string(afterClose.Raw))
 	}
 	if afterClose.Sandbox.WispSMHSpaceID != oldSpace {
 		t.Fatalf("workspace changed after close: before=%s after=%s raw=%s", oldSpace, afterClose.Sandbox.WispSMHSpaceID, string(afterClose.Raw))
@@ -499,6 +511,9 @@ func TestCloudAgentLiveCloseResumeFromWorkspace(t *testing.T) {
 	if newOuter == "" || newOuter == oldOuter {
 		t.Fatalf("resume should create a different outer sandbox: old=%s new=%s raw=%s", oldOuter, newOuter, string(afterResume.Raw))
 	}
+	if !afterResume.Sandbox.HasInnerEnvdTarget {
+		t.Fatalf("resume should recreate inner workspace runtime target: %s", string(afterResume.Raw))
+	}
 	if afterResume.Sandbox.WispSMHSpaceID != oldSpace {
 		t.Fatalf("resume should keep workspace space: before=%s after=%s raw=%s", oldSpace, afterResume.Sandbox.WispSMHSpaceID, string(afterResume.Raw))
 	}
@@ -512,10 +527,126 @@ func TestCloudAgentLiveCloseResumeFromWorkspace(t *testing.T) {
 	if !strings.Contains(outputText, needle) {
 		t.Fatalf("prompt after resume did not recover runtime transcript: want=%q got=%q raw=%s", needle, outputText, string(recovered.Raw))
 	}
-	if err := client.DeleteSession(ctx, session.SessionID); err != nil {
-		t.Fatalf("session/delete: %v", err)
+	deleteCtx, deleteCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer deleteCancel()
+	if err := client.DeleteSession(deleteCtx, session.SessionID); err == nil {
+		deleted = true
+	} else {
+		t.Logf("session/delete cleanup failed after behavior assertions passed: %v", err)
 	}
-	deleted = true
+}
+
+func TestCloudAgentLiveCloseResumePreservesWorkspaceFiles(t *testing.T) {
+	if !liveBool("CLOUDAGENT_ACP_E2E_RESTORE") {
+		t.Skip("set CLOUDAGENT_ACP_E2E_RESTORE=1 to run workspace file close/resume e2e")
+	}
+	output := &liveAgentOutput{}
+	client := newLiveCloudAgentClientWithOptions(t, CloudAgentClientOptions{OnNotification: output.notification})
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), liveTimeout())
+	defer cancel()
+
+	if _, err := client.Initialize(ctx, CloudAgentClientOptions{
+		ClientName:    "cloudagent-acp-live-file-restore-e2e",
+		ClientTitle:   "CloudAgent ACP Live File Restore E2E",
+		ClientVersion: "0.1.0",
+	}); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+
+	session, err := client.NewSession(ctx, CloudAgentSessionOptions{CWD: liveCWD()})
+	if err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	deleted := false
+	defer func() {
+		if deleted {
+			return
+		}
+		deleteCtx, deleteCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer deleteCancel()
+		_ = client.DeleteSession(deleteCtx, session.SessionID)
+	}()
+
+	needle := "cloudagent-file-restore-" + strings.ReplaceAll(session.SessionID, "_", "-")
+	remotePath := "/workspace/e2e/persist-after-close.txt"
+	create, err := client.Prompt(ctx, session.SessionID, "必须调用 terminal 执行 `mkdir -p /workspace/e2e && printf '"+needle+"\\n' > "+remotePath+" && cat "+remotePath+"`。命令结束后只输出终端里的 cloudagent-file-restore 标记。", CloudAgentPromptOptions{
+		CWD:       liveCWD(),
+		InboxMode: CloudAgentInboxPrompt,
+	})
+	if err != nil {
+		t.Fatalf("create workspace file prompt: %v", err)
+	}
+	if !isNormalStopReason(create.StopReason) {
+		t.Fatalf("unexpected create stopReason %q raw=%s", create.StopReason, string(create.Raw))
+	}
+	if !strings.Contains(output.CombinedString(), needle) {
+		t.Fatalf("create output missing marker %q: got=%q raw=%s", needle, output.CombinedString(), string(create.Raw))
+	}
+	beforeClose, err := client.Status(ctx, session.SessionID)
+	if err != nil {
+		t.Fatalf("status before close: %v", err)
+	}
+	oldOuter := beforeClose.Sandbox.OuterSandboxID
+	oldSpace := beforeClose.Sandbox.WispSMHSpaceID
+	if oldOuter == "" || oldSpace == "" || !beforeClose.Sandbox.HasInnerEnvdTarget {
+		t.Fatalf("before close missing runtime/workspace identity: %s", string(beforeClose.Raw))
+	}
+
+	if err := client.CloseSession(ctx, session.SessionID); err != nil {
+		t.Fatalf("session/close: %v", err)
+	}
+	afterClose, err := client.Status(ctx, session.SessionID)
+	if err != nil {
+		t.Fatalf("status after close: %v", err)
+	}
+	if !afterClose.Closed || afterClose.Sandbox.OuterSandboxID != "" || afterClose.Sandbox.HasInnerEnvdTarget {
+		t.Fatalf("close should clear both live runtime targets: %s", string(afterClose.Raw))
+	}
+	if afterClose.Sandbox.WispSMHSpaceID != oldSpace {
+		t.Fatalf("close should keep Wisp/SMH anchor: before=%s after=%s raw=%s", oldSpace, afterClose.Sandbox.WispSMHSpaceID, string(afterClose.Raw))
+	}
+
+	if _, err := client.ResumeSession(ctx, session.SessionID, CloudAgentSessionOptions{CWD: liveCWD()}); err != nil {
+		t.Fatalf("session/resume: %v", err)
+	}
+	afterResume, err := client.Status(ctx, session.SessionID)
+	if err != nil {
+		t.Fatalf("status after resume: %v", err)
+	}
+	if afterResume.Sandbox.OuterSandboxID == "" || afterResume.Sandbox.OuterSandboxID == oldOuter || !afterResume.Sandbox.HasInnerEnvdTarget {
+		t.Fatalf("resume should recreate both runtime targets: old_outer=%s raw=%s", oldOuter, string(afterResume.Raw))
+	}
+	if afterResume.Sandbox.WispSMHSpaceID != oldSpace {
+		t.Fatalf("resume should keep Wisp/SMH anchor: before=%s after=%s raw=%s", oldSpace, afterResume.Sandbox.WispSMHSpaceID, string(afterResume.Raw))
+	}
+
+	output.Reset()
+	read, err := client.Prompt(ctx, session.SessionID, "必须调用 terminal 执行 `cat "+remotePath+"`。命令结束后只输出终端里的 cloudagent-file-restore 标记。", CloudAgentPromptOptions{
+		CWD:       liveCWD(),
+		InboxMode: CloudAgentInboxPrompt,
+	})
+	if err != nil {
+		t.Fatalf("read restored workspace file prompt: %v", err)
+	}
+	if !isNormalStopReason(read.StopReason) {
+		t.Fatalf("unexpected read stopReason %q raw=%s", read.StopReason, string(read.Raw))
+	}
+	if !strings.Contains(output.CombinedString(), needle) {
+		t.Fatalf("restored prompt output missing marker %q: got=%q raw=%s", needle, output.CombinedString(), string(read.Raw))
+	}
+	if got := string(liveDownloadEnvdFile(t, ctx, session.SessionID, remotePath)); !strings.Contains(got, needle) {
+		t.Fatalf("envd download after restore missing marker %q: got=%q", needle, got)
+	}
+
+	deleteCtx, deleteCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer deleteCancel()
+	if err := client.DeleteSession(deleteCtx, session.SessionID); err == nil {
+		deleted = true
+	} else {
+		t.Logf("session/delete cleanup failed after behavior assertions passed: %v", err)
+	}
 }
 
 func TestCloudAgentLiveLoadClosedRestorableSessionRecoversOnPrompt(t *testing.T) {
@@ -644,6 +775,362 @@ func TestCloudAgentLiveLoadClosedRestorableSessionRecoversOnPrompt(t *testing.T)
 	deleted = true
 }
 
+func TestCloudAgentLiveGatewayRestartLoadsClosedWorkspaceAndRestores(t *testing.T) {
+	if !liveBool("CLOUDAGENT_ACP_E2E_RESTORE") {
+		t.Skip("set CLOUDAGENT_ACP_E2E_RESTORE=1 to run gateway restart restore e2e")
+	}
+	if strings.TrimSpace(os.Getenv("CLOUDAGENT_ACP_E2E_GATEWAY_RESTART_COMMAND")) == "" {
+		t.Skip("set CLOUDAGENT_ACP_E2E_GATEWAY_RESTART_COMMAND to run gateway process restart e2e")
+	}
+	output := &liveAgentOutput{}
+	client := newLiveCloudAgentClientWithOptions(t, CloudAgentClientOptions{OnNotification: output.notification})
+
+	ctx, cancel := context.WithTimeout(context.Background(), liveTimeout())
+	defer cancel()
+
+	if _, err := client.Initialize(ctx, CloudAgentClientOptions{
+		ClientName:    "cloudagent-acp-live-gateway-restart-e2e",
+		ClientTitle:   "CloudAgent ACP Live Gateway Restart E2E",
+		ClientVersion: "0.1.0",
+	}); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	session, err := client.NewSession(ctx, CloudAgentSessionOptions{CWD: liveCWD()})
+	if err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	sessionID := session.SessionID
+	deleted := false
+	defer func() {
+		if deleted {
+			return
+		}
+		cleanupClient := newLiveCloudAgentClient(t)
+		defer cleanupClient.Close()
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer cleanupCancel()
+		_, _ = cleanupClient.Initialize(cleanupCtx, CloudAgentClientOptions{
+			ClientName:    "cloudagent-acp-live-gateway-restart-cleanup",
+			ClientTitle:   "CloudAgent ACP Live Gateway Restart Cleanup",
+			ClientVersion: "0.1.0",
+		})
+		_ = cleanupClient.DeleteSession(cleanupCtx, sessionID)
+	}()
+
+	needle := "cloudagent-gateway-restart-" + strings.ReplaceAll(sessionID, "_", "-")
+	remotePath := "/workspace/e2e/gateway-restart.txt"
+	create, err := client.Prompt(ctx, sessionID, "必须调用 terminal 执行 `mkdir -p /workspace/e2e && printf '"+needle+"\\n' > "+remotePath+" && cat "+remotePath+"`。命令结束后只输出终端里的 cloudagent-gateway-restart 标记。", CloudAgentPromptOptions{
+		CWD:       liveCWD(),
+		InboxMode: CloudAgentInboxPrompt,
+	})
+	if err != nil {
+		t.Fatalf("create file before gateway restart: %v", err)
+	}
+	if !isNormalStopReason(create.StopReason) {
+		t.Fatalf("unexpected create stopReason %q raw=%s", create.StopReason, string(create.Raw))
+	}
+	beforeClose, err := client.Status(ctx, sessionID)
+	if err != nil {
+		t.Fatalf("status before close: %v", err)
+	}
+	oldSpace := beforeClose.Sandbox.WispSMHSpaceID
+	if oldSpace == "" {
+		t.Fatalf("missing Wisp/SMH anchor before gateway restart: %s", string(beforeClose.Raw))
+	}
+	if err := client.CloseSession(ctx, sessionID); err != nil {
+		t.Fatalf("session/close: %v", err)
+	}
+	_ = client.Close()
+
+	liveRestartGateway(t, ctx)
+
+	output.Reset()
+	client = newLiveCloudAgentClientWithOptions(t, CloudAgentClientOptions{OnNotification: output.notification})
+	defer client.Close()
+	if _, err := client.Initialize(ctx, CloudAgentClientOptions{
+		ClientName:    "cloudagent-acp-live-gateway-restart-reconnect",
+		ClientTitle:   "CloudAgent ACP Live Gateway Restart Reconnect",
+		ClientVersion: "0.1.0",
+	}); err != nil {
+		t.Fatalf("initialize after gateway restart: %v", err)
+	}
+	if _, err := client.LoadSession(ctx, sessionID, CloudAgentSessionOptions{CWD: liveCWD()}); err != nil {
+		t.Fatalf("session/load after gateway restart: %v", err)
+	}
+	ready, err := client.EnsureRuntimeReady(ctx, sessionID, CloudAgentSessionOptions{CWD: liveCWD()})
+	if err != nil {
+		t.Fatalf("ensure_ready after gateway restart: %v", err)
+	}
+	if ready.Sandbox.OuterSandboxID == "" || ready.Sandbox.WispSMHSpaceID != oldSpace {
+		t.Fatalf("ensure_ready after gateway restart should restore same workspace anchor: before=%s raw=%s", oldSpace, string(ready.Raw))
+	}
+	read, err := client.Prompt(ctx, sessionID, "必须调用 terminal 执行 `cat "+remotePath+"`。命令结束后只输出终端里的 cloudagent-gateway-restart 标记。", CloudAgentPromptOptions{
+		CWD:       liveCWD(),
+		InboxMode: CloudAgentInboxPrompt,
+	})
+	if err != nil {
+		t.Fatalf("prompt after gateway restart restore: %v", err)
+	}
+	if !isNormalStopReason(read.StopReason) {
+		t.Fatalf("unexpected read stopReason %q raw=%s", read.StopReason, string(read.Raw))
+	}
+	if !strings.Contains(output.CombinedString(), needle) {
+		t.Fatalf("prompt after gateway restart missing marker %q: got=%q raw=%s", needle, output.CombinedString(), string(read.Raw))
+	}
+	if err := client.DeleteSession(ctx, sessionID); err != nil {
+		t.Fatalf("session/delete after gateway restart: %v", err)
+	}
+	deleted = true
+}
+
+func TestCloudAgentLiveCloseAndDeleteHaveDifferentRecoverySemantics(t *testing.T) {
+	if !liveBool("CLOUDAGENT_ACP_E2E_RESTORE") {
+		t.Skip("set CLOUDAGENT_ACP_E2E_RESTORE=1 to run close/delete semantic split e2e")
+	}
+	client := newLiveCloudAgentClient(t)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), liveTimeout())
+	defer cancel()
+
+	if _, err := client.Initialize(ctx, CloudAgentClientOptions{
+		ClientName:    "cloudagent-acp-live-close-delete-e2e",
+		ClientTitle:   "CloudAgent ACP Live Close Delete E2E",
+		ClientVersion: "0.1.0",
+	}); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	session, err := client.NewSession(ctx, CloudAgentSessionOptions{CWD: liveCWD()})
+	if err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	deleted := false
+	defer func() {
+		if deleted {
+			return
+		}
+		deleteCtx, deleteCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer deleteCancel()
+		_ = client.DeleteSession(deleteCtx, session.SessionID)
+	}()
+
+	if err := client.CloseSession(ctx, session.SessionID); err != nil {
+		t.Fatalf("session/close: %v", err)
+	}
+	closed, err := client.Status(ctx, session.SessionID)
+	if err != nil {
+		t.Fatalf("status after close: %v", err)
+	}
+	if !closed.Closed || !closed.RuntimeRestorable || !closed.WorkspacePersistent {
+		t.Fatalf("session/close should leave a restorable workspace: %s", string(closed.Raw))
+	}
+	if _, err := client.ResumeSession(ctx, session.SessionID, CloudAgentSessionOptions{CWD: liveCWD()}); err != nil {
+		t.Fatalf("session/resume after close: %v", err)
+	}
+	resumed, err := client.Status(ctx, session.SessionID)
+	if err != nil {
+		t.Fatalf("status after resume: %v", err)
+	}
+	if resumed.Closed || resumed.ReadOnly || resumed.Sandbox.OuterSandboxID == "" {
+		t.Fatalf("resume should make closed session live again: %s", string(resumed.Raw))
+	}
+
+	if err := client.DeleteSession(ctx, session.SessionID); err != nil {
+		t.Fatalf("session/delete: %v", err)
+	}
+	deleted = true
+	if _, err := client.Status(ctx, session.SessionID); err == nil {
+		t.Fatalf("status should fail after session/delete")
+	}
+	if _, err := client.ResumeSession(ctx, session.SessionID, CloudAgentSessionOptions{CWD: liveCWD()}); err == nil {
+		t.Fatalf("session/resume should fail after session/delete")
+	}
+}
+
+func TestCloudAgentLiveConcurrentEnsureReadyConvergesAfterClose(t *testing.T) {
+	if !liveBool("CLOUDAGENT_ACP_E2E_RESTORE") {
+		t.Skip("set CLOUDAGENT_ACP_E2E_RESTORE=1 to run concurrent ensure_ready restore e2e")
+	}
+	client := newLiveCloudAgentClient(t)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), liveTimeout())
+	defer cancel()
+
+	if _, err := client.Initialize(ctx, CloudAgentClientOptions{
+		ClientName:    "cloudagent-acp-live-concurrent-restore-e2e",
+		ClientTitle:   "CloudAgent ACP Live Concurrent Restore E2E",
+		ClientVersion: "0.1.0",
+	}); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	session, err := client.NewSession(ctx, CloudAgentSessionOptions{CWD: liveCWD()})
+	if err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	deleted := false
+	defer func() {
+		if deleted {
+			return
+		}
+		deleteCtx, deleteCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer deleteCancel()
+		_ = client.DeleteSession(deleteCtx, session.SessionID)
+	}()
+	if err := client.CloseSession(ctx, session.SessionID); err != nil {
+		t.Fatalf("session/close: %v", err)
+	}
+
+	type ensureResult struct {
+		status CloudAgentSessionStatus
+		err    error
+	}
+	runEnsure := func(name string) ensureResult {
+		c := newLiveCloudAgentClient(t)
+		defer c.Close()
+		if _, err := c.Initialize(ctx, CloudAgentClientOptions{
+			ClientName:    name,
+			ClientTitle:   name,
+			ClientVersion: "0.1.0",
+		}); err != nil {
+			return ensureResult{err: err}
+		}
+		status, err := c.EnsureRuntimeReady(ctx, session.SessionID, CloudAgentSessionOptions{CWD: liveCWD()})
+		return ensureResult{status: status, err: err}
+	}
+	results := make(chan ensureResult, 2)
+	go func() { results <- runEnsure("cloudagent-acp-live-concurrent-restore-a") }()
+	go func() { results <- runEnsure("cloudagent-acp-live-concurrent-restore-b") }()
+
+	var successes []CloudAgentSessionStatus
+	var retryableErrors []error
+	for i := 0; i < 2; i++ {
+		select {
+		case result := <-results:
+			if result.err != nil {
+				if strings.Contains(strings.ToLower(result.err.Error()), "ownership") ||
+					strings.Contains(strings.ToLower(result.err.Error()), "held") {
+					retryableErrors = append(retryableErrors, result.err)
+					continue
+				}
+				t.Fatalf("concurrent ensure_ready failed with non-retryable error: %v", result.err)
+			}
+			successes = append(successes, result.status)
+		case <-ctx.Done():
+			t.Fatalf("timed out waiting for concurrent ensure_ready: %v", ctx.Err())
+		}
+	}
+	if len(successes) == 0 {
+		status, err := client.EnsureRuntimeReady(ctx, session.SessionID, CloudAgentSessionOptions{CWD: liveCWD()})
+		if err != nil {
+			t.Fatalf("ensure_ready retry after ownership contention failed; prior=%v retry=%v", retryableErrors, err)
+		}
+		successes = append(successes, status)
+	}
+	finalStatus, err := client.Status(ctx, session.SessionID)
+	if err != nil {
+		t.Fatalf("status after concurrent ensure_ready: %v", err)
+	}
+	if finalStatus.Closed || finalStatus.ReadOnly || finalStatus.Sandbox.OuterSandboxID == "" {
+		t.Fatalf("concurrent ensure_ready should converge to one live runtime: %s", string(finalStatus.Raw))
+	}
+	for _, status := range successes {
+		if status.Sandbox.OuterSandboxID != "" && status.Sandbox.OuterSandboxID != finalStatus.Sandbox.OuterSandboxID {
+			t.Fatalf("concurrent ensure_ready returned divergent outer runtime: success=%s final=%s", string(status.Raw), string(finalStatus.Raw))
+		}
+	}
+	if err := client.DeleteSession(ctx, session.SessionID); err != nil {
+		t.Fatalf("session/delete: %v", err)
+	}
+	deleted = true
+}
+
+func TestCloudAgentLiveCloseDuringActiveToolRunCanResume(t *testing.T) {
+	if !liveBool("CLOUDAGENT_ACP_E2E_RESTORE") {
+		t.Skip("set CLOUDAGENT_ACP_E2E_RESTORE=1 to run active close/resume e2e")
+	}
+	output := &liveAgentOutput{}
+	client := newLiveCloudAgentClientWithOptions(t, CloudAgentClientOptions{OnNotification: output.notification})
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), liveTimeout())
+	defer cancel()
+
+	if _, err := client.Initialize(ctx, CloudAgentClientOptions{
+		ClientName:    "cloudagent-acp-live-active-close-e2e",
+		ClientTitle:   "CloudAgent ACP Live Active Close E2E",
+		ClientVersion: "0.1.0",
+	}); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	session, err := client.NewSession(ctx, CloudAgentSessionOptions{CWD: liveCWD()})
+	if err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	deleted := false
+	defer func() {
+		if deleted {
+			return
+		}
+		deleteCtx, deleteCancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer deleteCancel()
+		_ = client.DeleteSession(deleteCtx, session.SessionID)
+	}()
+
+	promptDone := make(chan error, 1)
+	go func() {
+		_, err := client.Prompt(ctx, session.SessionID, "请先输出 ACTIVE_CLOSE_BEGIN，然后必须调用 terminal 执行 `sleep 20 && echo ACTIVE_CLOSE_TOOL_DONE`。命令结束后只输出终端标记。", CloudAgentPromptOptions{
+			CWD:       liveCWD(),
+			InboxMode: CloudAgentInboxPrompt,
+		})
+		promptDone <- err
+	}()
+	waitForLiveOutputContains(t, ctx, output, "ACTIVE_CLOSE_BEGIN")
+
+	closeClient := newLiveCloudAgentClientWithOptions(t, CloudAgentClientOptions{OnNotification: output.notification})
+	defer closeClient.Close()
+	if _, err := closeClient.Initialize(ctx, CloudAgentClientOptions{
+		ClientName:    "cloudagent-acp-live-active-close-control",
+		ClientTitle:   "CloudAgent ACP Live Active Close Control",
+		ClientVersion: "0.1.0",
+	}); err != nil {
+		t.Fatalf("initialize close client: %v", err)
+	}
+	if err := closeClient.CloseSession(ctx, session.SessionID); err != nil {
+		t.Fatalf("session/close during active prompt: %v", err)
+	}
+	select {
+	case err := <-promptDone:
+		if err != nil && !strings.Contains(strings.ToLower(err.Error()), "closed") && !strings.Contains(strings.ToLower(err.Error()), "cancel") {
+			t.Fatalf("active prompt returned unexpected error after close: %v", err)
+		}
+	case <-time.After(90 * time.Second):
+		t.Fatal("active prompt did not settle after session/close")
+	}
+
+	if _, err := closeClient.ResumeSession(ctx, session.SessionID, CloudAgentSessionOptions{CWD: liveCWD()}); err != nil {
+		t.Fatalf("session/resume after active close: %v", err)
+	}
+	output.Reset()
+	resumed, err := closeClient.Prompt(ctx, session.SessionID, "请只回答 ACTIVE_CLOSE_RESUMED。", CloudAgentPromptOptions{
+		CWD:       liveCWD(),
+		InboxMode: CloudAgentInboxPrompt,
+	})
+	if err != nil {
+		t.Fatalf("prompt after active close resume: %v", err)
+	}
+	if !isNormalStopReason(resumed.StopReason) {
+		t.Fatalf("unexpected resumed stopReason %q raw=%s", resumed.StopReason, string(resumed.Raw))
+	}
+	if !strings.Contains(output.String(), "ACTIVE_CLOSE_RESUMED") {
+		t.Fatalf("prompt after active close resume missing marker: got=%q raw=%s", output.String(), string(resumed.Raw))
+	}
+	if err := closeClient.DeleteSession(ctx, session.SessionID); err != nil {
+		t.Fatalf("session/delete: %v", err)
+	}
+	deleted = true
+}
+
 func TestCloudAgentLiveDaemonKillRestartsInSameOuter(t *testing.T) {
 	if !liveBool("CLOUDAGENT_ACP_E2E_FAULT_INJECTION") {
 		t.Skip("set CLOUDAGENT_ACP_E2E_FAULT_INJECTION=1 to run daemon fault-injection e2e")
@@ -724,9 +1211,589 @@ func TestCloudAgentLiveDaemonKillRestartsInSameOuter(t *testing.T) {
 	deleted = true
 }
 
+func TestCloudAgentLiveOuterKillRecreatesRuntimeAndPreservesWorkspace(t *testing.T) {
+	if !liveBool("CLOUDAGENT_ACP_E2E_FAULT_INJECTION") {
+		t.Skip("set CLOUDAGENT_ACP_E2E_FAULT_INJECTION=1 to run outer fault-injection e2e")
+	}
+	output := &liveAgentOutput{}
+	client := newLiveCloudAgentClientWithOptions(t, CloudAgentClientOptions{OnNotification: output.notification})
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), liveTimeout())
+	defer cancel()
+
+	if _, err := client.Initialize(ctx, CloudAgentClientOptions{
+		ClientName:    "cloudagent-acp-live-outer-fault-e2e",
+		ClientTitle:   "CloudAgent ACP Live Outer Fault E2E",
+		ClientVersion: "0.1.0",
+	}); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	session, err := client.NewSession(ctx, CloudAgentSessionOptions{CWD: liveCWD()})
+	if err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	deleted := false
+	defer func() {
+		if deleted {
+			return
+		}
+		deleteCtx, deleteCancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer deleteCancel()
+		_ = client.DeleteSession(deleteCtx, session.SessionID)
+	}()
+
+	beforeKill, err := client.Status(ctx, session.SessionID)
+	if err != nil {
+		t.Fatalf("status before outer kill: %v", err)
+	}
+	oldOuter := beforeKill.Sandbox.OuterSandboxID
+	oldSpace := beforeKill.Sandbox.WispSMHSpaceID
+	if oldOuter == "" || oldSpace == "" {
+		t.Fatalf("status before outer kill missing runtime/workspace identity: %s", string(beforeKill.Raw))
+	}
+	if err := client.KillRuntimeOuterForFaultInjection(ctx, session.SessionID); err != nil {
+		t.Fatalf("kill outer fault injection: %v", err)
+	}
+
+	output.Reset()
+	readyMarker := "OUTER_RECREATE_READY_" + strings.ReplaceAll(session.SessionID, "_", "-")
+	recovered, err := client.Prompt(ctx, session.SessionID, "请只回答 "+readyMarker+"。", CloudAgentPromptOptions{
+		CWD:       liveCWD(),
+		InboxMode: CloudAgentInboxPrompt,
+	})
+	if err != nil {
+		t.Fatalf("prompt after outer kill: %v", err)
+	}
+	if !isNormalStopReason(recovered.StopReason) {
+		t.Fatalf("unexpected recovered stopReason %q raw=%s", recovered.StopReason, string(recovered.Raw))
+	}
+	if !strings.Contains(output.CombinedString(), readyMarker) {
+		t.Fatalf("prompt after outer recreate missing marker %q: got=%q raw=%s", readyMarker, output.CombinedString(), string(recovered.Raw))
+	}
+	afterRecovery, err := client.Status(ctx, session.SessionID)
+	if err != nil {
+		t.Fatalf("status after outer recreate: %v", err)
+	}
+	if afterRecovery.Sandbox.OuterSandboxID == "" || afterRecovery.Sandbox.OuterSandboxID == oldOuter {
+		t.Fatalf("outer fault should recreate a different outer sandbox: old=%s raw=%s", oldOuter, string(afterRecovery.Raw))
+	}
+	if afterRecovery.Sandbox.WispSMHSpaceID != oldSpace {
+		t.Fatalf("outer fault recovery should keep Wisp/SMH anchor: before=%s after=%s raw=%s", oldSpace, afterRecovery.Sandbox.WispSMHSpaceID, string(afterRecovery.Raw))
+	}
+	needle := "cloudagent-outer-recreate-" + strings.ReplaceAll(session.SessionID, "_", "-")
+	remotePath := "/workspace/e2e/outer-recreate.txt"
+	liveUploadEnvdFile(t, ctx, session.SessionID, remotePath, "text/plain", []byte(needle+"\n"))
+	waitForLiveEnvdFileContains(t, ctx, session.SessionID, remotePath, needle)
+	output.Reset()
+	readBack, err := client.Prompt(ctx, session.SessionID, "必须调用 terminal 执行 `cat "+remotePath+"`。命令结束后只输出终端里的 cloudagent-outer-recreate 标记。", CloudAgentPromptOptions{
+		CWD:       liveCWD(),
+		InboxMode: CloudAgentInboxPrompt,
+	})
+	if err != nil {
+		t.Fatalf("prompt after outer recreate upload: %v", err)
+	}
+	if !isNormalStopReason(readBack.StopReason) {
+		t.Fatalf("unexpected readBack stopReason %q raw=%s", readBack.StopReason, string(readBack.Raw))
+	}
+	if !strings.Contains(output.CombinedString(), needle) {
+		t.Fatalf("prompt after outer recreate upload missing marker %q: got=%q raw=%s", needle, output.CombinedString(), string(readBack.Raw))
+	}
+	if err := client.DeleteSession(ctx, session.SessionID); err != nil {
+		t.Fatalf("session/delete: %v", err)
+	}
+	deleted = true
+}
+
+func TestCloudAgentLiveInnerKillRecreatesWorkspaceRuntime(t *testing.T) {
+	if !liveBool("CLOUDAGENT_ACP_E2E_FAULT_INJECTION") {
+		t.Skip("set CLOUDAGENT_ACP_E2E_FAULT_INJECTION=1 to run inner fault-injection e2e")
+	}
+	output := &liveAgentOutput{}
+	client := newLiveCloudAgentClientWithOptions(t, CloudAgentClientOptions{OnNotification: output.notification})
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), liveTimeout())
+	defer cancel()
+
+	if _, err := client.Initialize(ctx, CloudAgentClientOptions{
+		ClientName:    "cloudagent-acp-live-inner-fault-e2e",
+		ClientTitle:   "CloudAgent ACP Live Inner Fault E2E",
+		ClientVersion: "0.1.0",
+	}); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	session, err := client.NewSession(ctx, CloudAgentSessionOptions{CWD: liveCWD()})
+	if err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	deleted := false
+	defer func() {
+		if deleted {
+			return
+		}
+		deleteCtx, deleteCancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer deleteCancel()
+		_ = client.DeleteSession(deleteCtx, session.SessionID)
+	}()
+
+	needle := "cloudagent-inner-recreate-" + strings.ReplaceAll(session.SessionID, "_", "-")
+	remotePath := "/workspace/e2e/inner-recreate.txt"
+	create, err := client.Prompt(ctx, session.SessionID, "必须调用 terminal 执行 `mkdir -p /workspace/e2e && printf '"+needle+"\\n' > "+remotePath+" && sync && sleep 15 && cat "+remotePath+"`。命令结束后只输出终端里的 cloudagent-inner-recreate 标记。", CloudAgentPromptOptions{
+		CWD:       liveCWD(),
+		InboxMode: CloudAgentInboxPrompt,
+	})
+	if err != nil {
+		t.Fatalf("create inner workspace file prompt: %v", err)
+	}
+	if !isNormalStopReason(create.StopReason) {
+		t.Fatalf("unexpected create stopReason %q raw=%s", create.StopReason, string(create.Raw))
+	}
+	if !strings.Contains(output.CombinedString(), needle) {
+		t.Fatalf("create inner workspace file missing marker %q: got=%q raw=%s", needle, output.CombinedString(), string(create.Raw))
+	}
+	waitForLiveEnvdFileContains(t, ctx, session.SessionID, remotePath, needle)
+	beforeKill, err := client.Status(ctx, session.SessionID)
+	if err != nil {
+		t.Fatalf("status before inner kill: %v", err)
+	}
+	if beforeKill.Sandbox.OuterSandboxID == "" || !beforeKill.Sandbox.HasInnerEnvdTarget {
+		t.Fatalf("status before inner kill missing runtime targets: %s", string(beforeKill.Raw))
+	}
+	if err := client.KillRuntimeInnerForFaultInjection(ctx, session.SessionID); err != nil {
+		t.Fatalf("kill inner fault injection: %v", err)
+	}
+
+	output.Reset()
+	read, err := client.Prompt(ctx, session.SessionID, "必须调用 terminal 执行 `cat "+remotePath+"`。命令结束后只输出终端里的 cloudagent-inner-recreate 标记。", CloudAgentPromptOptions{
+		CWD:       liveCWD(),
+		InboxMode: CloudAgentInboxPrompt,
+	})
+	if err != nil {
+		t.Fatalf("prompt after inner kill: %v", err)
+	}
+	if !isNormalStopReason(read.StopReason) {
+		t.Fatalf("unexpected read stopReason %q raw=%s", read.StopReason, string(read.Raw))
+	}
+	combined := output.CombinedString()
+	if !strings.Contains(combined, needle) {
+		t.Fatalf("prompt after inner recreate missing marker %q: got=%q raw=%s", needle, combined, string(read.Raw))
+	}
+	for _, forbidden := range []string{"HTTP 500", "openresty", "sandbox-host process.exec HTTP transport failed", "sandbox-host fs.list HTTP transport failed"} {
+		if strings.Contains(combined, forbidden) {
+			t.Fatalf("inner recreate surfaced transport failure %q: got=%q raw=%s", forbidden, combined, string(read.Raw))
+		}
+	}
+	afterRecovery, err := client.Status(ctx, session.SessionID)
+	if err != nil {
+		t.Fatalf("status after inner recreate: %v", err)
+	}
+	if afterRecovery.Sandbox.OuterSandboxID != beforeKill.Sandbox.OuterSandboxID || !afterRecovery.Sandbox.HasInnerEnvdTarget {
+		t.Fatalf("inner fault should keep outer and recreate inner target: before=%s after=%s", string(beforeKill.Raw), string(afterRecovery.Raw))
+	}
+	if err := client.DeleteSession(ctx, session.SessionID); err != nil {
+		t.Fatalf("session/delete: %v", err)
+	}
+	deleted = true
+}
+
+func TestCloudAgentLiveWorkspaceToolsReachInnerSandbox(t *testing.T) {
+	output := &liveAgentOutput{}
+	client := newLiveCloudAgentClientWithOptions(t, CloudAgentClientOptions{
+		OnNotification: output.notification,
+	})
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), liveTimeout())
+	defer cancel()
+
+	if _, err := client.Initialize(ctx, CloudAgentClientOptions{
+		ClientName:    "cloudagent-acp-live-workspace-tools-e2e",
+		ClientTitle:   "CloudAgent ACP Live Workspace Tools E2E",
+		ClientVersion: "0.1.0",
+	}); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+
+	session, err := client.NewSession(ctx, CloudAgentSessionOptions{CWD: liveCWD()})
+	if err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	defer func() {
+		deleteCtx, deleteCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer deleteCancel()
+		_ = client.DeleteSession(deleteCtx, session.SessionID)
+	}()
+
+	result, err := client.Prompt(ctx, session.SessionID, "必须调用 terminal 执行 `pwd && echo CLOUDAGENT_WORKSPACE_TOOL_OK`。命令结束后只输出终端里的路径和标记，不要解释。", CloudAgentPromptOptions{
+		CWD:       liveCWD(),
+		InboxMode: CloudAgentInboxPrompt,
+	})
+	if err != nil {
+		t.Fatalf("workspace tool prompt: %v", err)
+	}
+	if !isNormalStopReason(result.StopReason) {
+		t.Fatalf("unexpected workspace tool stopReason %q raw=%s", result.StopReason, string(result.Raw))
+	}
+	outputText := output.String()
+	if strings.Contains(outputText, "sandbox-host") || strings.Contains(outputText, "HTTP 500") || strings.Contains(outputText, "openresty") {
+		t.Fatalf("workspace tool surfaced sandbox-host transport failure: %q raw=%s", outputText, string(result.Raw))
+	}
+	if !strings.Contains(outputText, "CLOUDAGENT_WORKSPACE_TOOL_OK") {
+		t.Fatalf("workspace tool output missing marker: got=%q raw=%s", outputText, string(result.Raw))
+	}
+	if !strings.Contains(outputText, liveCWD()) {
+		t.Fatalf("workspace tool output missing cwd %q: got=%q raw=%s", liveCWD(), outputText, string(result.Raw))
+	}
+}
+
+func TestCloudAgentLiveUploadDownloadAndWorkspaceListBehavior(t *testing.T) {
+	output := &liveAgentOutput{}
+	client := newLiveCloudAgentClientWithOptions(t, CloudAgentClientOptions{
+		OnNotification: output.notification,
+	})
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), liveTimeout())
+	defer cancel()
+
+	if _, err := client.Initialize(ctx, CloudAgentClientOptions{
+		ClientName:    "cloudagent-acp-live-upload-list-e2e",
+		ClientTitle:   "CloudAgent ACP Live Upload List E2E",
+		ClientVersion: "0.1.0",
+	}); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+
+	session, err := client.NewSession(ctx, CloudAgentSessionOptions{CWD: liveCWD()})
+	if err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	defer func() {
+		deleteCtx, deleteCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer deleteCancel()
+		_ = client.DeleteSession(deleteCtx, session.SessionID)
+	}()
+
+	needle := "cloudagent-upload-list-" + strings.ReplaceAll(session.SessionID, "_", "-")
+	uploadedBody := []byte("CLOUDAGENT_UPLOAD_FILE_PRESENT\n" + needle + "\n")
+	fileID := liveUploadFile(t, ctx, "upload-check.txt", "text/plain", uploadedBody)
+	if got := liveDownloadFile(t, ctx, fileID); string(got) != string(uploadedBody) {
+		t.Fatalf("downloaded wrapper file mismatch: want=%q got=%q", string(uploadedBody), string(got))
+	}
+
+	result, err := client.Prompt(ctx, session.SessionID, "", CloudAgentPromptOptions{
+		CWD:       liveCWD(),
+		InboxMode: CloudAgentInboxPrompt,
+		Blocks: []map[string]any{
+			{
+				"type": "text",
+				"text": "必须调用 terminal 执行 `ls -la /workspace/inputs/docs && cat /workspace/inputs/docs/upload-check.txt`。命令结束后只输出终端里看到的文件名和 cloudagent-upload-list- 开头的唯一标记。",
+			},
+			{
+				"type": "resource",
+				"resource": map[string]any{
+					"uri":          "wrapper-file://" + fileID,
+					"mimeType":     "text/plain",
+					"name":         "upload-check.txt",
+					"size":         len(uploadedBody),
+					"relativePath": "docs/upload-check.txt",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("upload/list prompt: %v", err)
+	}
+	if !isNormalStopReason(result.StopReason) {
+		t.Fatalf("unexpected upload/list stopReason %q raw=%s", result.StopReason, string(result.Raw))
+	}
+	outputText := output.CombinedString()
+	for _, want := range []string{"upload-check.txt", "CLOUDAGENT_UPLOAD_FILE_PRESENT", needle} {
+		if !strings.Contains(outputText, want) {
+			t.Fatalf("agent output missing %q: got=%q raw=%s", want, outputText, string(result.Raw))
+		}
+	}
+	for _, forbidden := range []string{"HTTP 500", "openresty"} {
+		if strings.Contains(outputText, forbidden) {
+			t.Fatalf("upload/list surfaced transport failure %q: got=%q raw=%s", forbidden, outputText, string(result.Raw))
+		}
+	}
+}
+
+func TestCloudAgentLiveMultipleResourceFilesNestedWorkspaceListBehavior(t *testing.T) {
+	output := &liveAgentOutput{}
+	client := newLiveCloudAgentClientWithOptions(t, CloudAgentClientOptions{
+		OnNotification: output.notification,
+	})
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), liveTimeout())
+	defer cancel()
+
+	if _, err := client.Initialize(ctx, CloudAgentClientOptions{
+		ClientName:    "cloudagent-acp-live-multi-resource-e2e",
+		ClientTitle:   "CloudAgent ACP Live Multi Resource E2E",
+		ClientVersion: "0.1.0",
+	}); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+
+	session, err := client.NewSession(ctx, CloudAgentSessionOptions{CWD: liveCWD()})
+	if err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	defer func() {
+		deleteCtx, deleteCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer deleteCancel()
+		_ = client.DeleteSession(deleteCtx, session.SessionID)
+	}()
+
+	needle := "cloudagent-multi-resource-" + strings.ReplaceAll(session.SessionID, "_", "-")
+	alphaBody := []byte("CLOUDAGENT_MULTI_RESOURCE_ALPHA\n" + needle + "-alpha\n")
+	betaBody := []byte("CLOUDAGENT_MULTI_RESOURCE_BETA\n" + needle + "-beta\n")
+	alphaID := liveUploadFile(t, ctx, "alpha.txt", "text/plain", alphaBody)
+	betaID := liveUploadFile(t, ctx, "beta.txt", "text/plain", betaBody)
+
+	result, err := client.Prompt(ctx, session.SessionID, "", CloudAgentPromptOptions{
+		CWD:       liveCWD(),
+		InboxMode: CloudAgentInboxPrompt,
+		Blocks: []map[string]any{
+			{
+				"type": "text",
+				"text": "必须调用 terminal 执行 `find /workspace/inputs/multi -maxdepth 3 -type f -print | sort && cat /workspace/inputs/multi/alpha.txt && cat /workspace/inputs/multi/nested/beta.txt`。命令结束后只输出终端里的文件路径和两个 cloudagent-multi-resource 标记。",
+			},
+			{
+				"type": "resource",
+				"resource": map[string]any{
+					"uri":          "wrapper-file://" + alphaID,
+					"mimeType":     "text/plain",
+					"name":         "alpha.txt",
+					"size":         len(alphaBody),
+					"relativePath": "multi/alpha.txt",
+				},
+			},
+			{
+				"type": "resource",
+				"resource": map[string]any{
+					"uri":          "wrapper-file://" + betaID,
+					"mimeType":     "text/plain",
+					"name":         "beta.txt",
+					"size":         len(betaBody),
+					"relativePath": "multi/nested/beta.txt",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("multi-resource prompt: %v", err)
+	}
+	if !isNormalStopReason(result.StopReason) {
+		t.Fatalf("unexpected multi-resource stopReason %q raw=%s", result.StopReason, string(result.Raw))
+	}
+	outputText := output.CombinedString()
+	for _, want := range []string{"multi/alpha.txt", "multi/nested/beta.txt", needle + "-alpha", needle + "-beta"} {
+		if !strings.Contains(outputText, want) {
+			t.Fatalf("agent output missing %q: got=%q raw=%s", want, outputText, string(result.Raw))
+		}
+	}
+}
+
+func TestCloudAgentLiveEnvdUploadDownloadBehavior(t *testing.T) {
+	client := newLiveCloudAgentClient(t)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), liveTimeout())
+	defer cancel()
+
+	if _, err := client.Initialize(ctx, CloudAgentClientOptions{
+		ClientName:    "cloudagent-acp-live-envd-upload-list-e2e",
+		ClientTitle:   "CloudAgent ACP Live Envd Upload List E2E",
+		ClientVersion: "0.1.0",
+	}); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+
+	session, err := client.NewSession(ctx, CloudAgentSessionOptions{CWD: liveCWD()})
+	if err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	defer func() {
+		deleteCtx, deleteCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer deleteCancel()
+		_ = client.DeleteSession(deleteCtx, session.SessionID)
+	}()
+
+	if _, err := client.EnsureRuntimeReady(ctx, session.SessionID, CloudAgentSessionOptions{CWD: liveCWD()}); err != nil {
+		t.Fatalf("ensure runtime ready: %v", err)
+	}
+
+	remotePath := "/workspace/e2e/envd-upload-check.txt"
+	needle := "cloudagent-envd-upload-" + strings.ReplaceAll(session.SessionID, "_", "-")
+	uploadedBody := []byte("CLOUDAGENT_ENVD_UPLOAD_FILE_PRESENT\n" + needle + "\n")
+	liveUploadEnvdFile(t, ctx, session.SessionID, remotePath, "text/plain", uploadedBody)
+	if got := liveDownloadEnvdFile(t, ctx, session.SessionID, remotePath); string(got) != string(uploadedBody) {
+		t.Fatalf("downloaded envd file mismatch: want=%q got=%q", string(uploadedBody), string(got))
+	}
+}
+
+func TestCloudAgentLiveEnvdUploadDownloadThenAgentListBehavior(t *testing.T) {
+	output := &liveAgentOutput{}
+	client := newLiveCloudAgentClientWithOptions(t, CloudAgentClientOptions{
+		OnNotification: output.notification,
+	})
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), liveTimeout())
+	defer cancel()
+
+	if _, err := client.Initialize(ctx, CloudAgentClientOptions{
+		ClientName:    "cloudagent-acp-live-envd-agent-list-e2e",
+		ClientTitle:   "CloudAgent ACP Live Envd Agent List E2E",
+		ClientVersion: "0.1.0",
+	}); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+
+	session, err := client.NewSession(ctx, CloudAgentSessionOptions{CWD: liveCWD()})
+	if err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	defer func() {
+		deleteCtx, deleteCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer deleteCancel()
+		_ = client.DeleteSession(deleteCtx, session.SessionID)
+	}()
+
+	if _, err := client.EnsureRuntimeReady(ctx, session.SessionID, CloudAgentSessionOptions{CWD: liveCWD()}); err != nil {
+		t.Fatalf("ensure runtime ready: %v", err)
+	}
+
+	remotePath := "/workspace/e2e/transfer-visible.txt"
+	needle := "cloudagent-envd-agent-visible-" + strings.ReplaceAll(session.SessionID, "_", "-")
+	uploadedBody := []byte("CLOUDAGENT_ENVD_AGENT_VISIBLE\n" + needle + "\n")
+	liveUploadEnvdFile(t, ctx, session.SessionID, remotePath, "text/plain", uploadedBody)
+	if got := liveDownloadEnvdFile(t, ctx, session.SessionID, remotePath); string(got) != string(uploadedBody) {
+		t.Fatalf("downloaded envd file mismatch: want=%q got=%q", string(uploadedBody), string(got))
+	}
+
+	result, err := client.Prompt(ctx, session.SessionID, "必须调用 terminal 执行 `ls -la /workspace/e2e && cat /workspace/e2e/transfer-visible.txt`。命令结束后只输出终端里的文件名和 cloudagent-envd-agent-visible 标记。", CloudAgentPromptOptions{
+		CWD:       liveCWD(),
+		InboxMode: CloudAgentInboxPrompt,
+	})
+	if err != nil {
+		t.Fatalf("envd agent list prompt: %v", err)
+	}
+	if !isNormalStopReason(result.StopReason) {
+		t.Fatalf("unexpected envd agent list stopReason %q raw=%s", result.StopReason, string(result.Raw))
+	}
+	outputText := output.CombinedString()
+	for _, want := range []string{"transfer-visible.txt", "CLOUDAGENT_ENVD_AGENT_VISIBLE", needle} {
+		if !strings.Contains(outputText, want) {
+			t.Fatalf("agent output missing %q: got=%q raw=%s", want, outputText, string(result.Raw))
+		}
+	}
+	for _, forbidden := range []string{"No such file", "HTTP 500", "openresty"} {
+		if strings.Contains(outputText, forbidden) {
+			t.Fatalf("envd agent list surfaced failure %q: got=%q raw=%s", forbidden, outputText, string(result.Raw))
+		}
+	}
+}
+
+func TestCloudAgentLiveAgentWritesWorkspaceFileThenEnvdDownloadBehavior(t *testing.T) {
+	output := &liveAgentOutput{}
+	client := newLiveCloudAgentClientWithOptions(t, CloudAgentClientOptions{
+		OnNotification: output.notification,
+	})
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), liveTimeout())
+	defer cancel()
+
+	if _, err := client.Initialize(ctx, CloudAgentClientOptions{
+		ClientName:    "cloudagent-acp-live-agent-write-download-e2e",
+		ClientTitle:   "CloudAgent ACP Live Agent Write Download E2E",
+		ClientVersion: "0.1.0",
+	}); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+
+	session, err := client.NewSession(ctx, CloudAgentSessionOptions{CWD: liveCWD()})
+	if err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	deleted := false
+	defer func() {
+		if !deleted {
+			deleteCtx, deleteCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer deleteCancel()
+			_ = client.DeleteSession(deleteCtx, session.SessionID)
+		}
+	}()
+
+	remotePath := "/workspace/generated/agent-output.txt"
+	needle := "cloudagent-agent-write-" + strings.ReplaceAll(session.SessionID, "_", "-")
+	result, err := client.Prompt(ctx, session.SessionID, "必须调用 terminal 执行 `mkdir -p /workspace/generated && printf 'CLOUDAGENT_AGENT_WRITE_FILE_PRESENT\\n"+needle+"\\n' > /workspace/generated/agent-output.txt && ls -la /workspace/generated && cat /workspace/generated/agent-output.txt`。命令结束后只输出终端里的文件名和 cloudagent-agent-write 标记。", CloudAgentPromptOptions{
+		CWD:       liveCWD(),
+		InboxMode: CloudAgentInboxPrompt,
+	})
+	if err != nil {
+		t.Fatalf("agent write prompt: %v", err)
+	}
+	if !isNormalStopReason(result.StopReason) {
+		t.Fatalf("unexpected agent write stopReason %q raw=%s", result.StopReason, string(result.Raw))
+	}
+	outputText := output.CombinedString()
+	for _, want := range []string{"agent-output.txt", "CLOUDAGENT_AGENT_WRITE_FILE_PRESENT", needle} {
+		if !strings.Contains(outputText, want) {
+			t.Fatalf("agent output missing %q: got=%q raw=%s", want, outputText, string(result.Raw))
+		}
+	}
+	downloaded := string(liveDownloadEnvdFile(t, ctx, session.SessionID, remotePath))
+	if !strings.Contains(downloaded, needle) || !strings.Contains(downloaded, "CLOUDAGENT_AGENT_WRITE_FILE_PRESENT") {
+		t.Fatalf("downloaded agent file missing marker: %q", downloaded)
+	}
+
+	if err := client.Close(); err != nil {
+		t.Fatalf("close first connection: %v", err)
+	}
+	output.Reset()
+	client = newLiveCloudAgentClientWithOptions(t, CloudAgentClientOptions{
+		OnNotification: output.notification,
+	})
+	if _, err := client.Initialize(ctx, CloudAgentClientOptions{
+		ClientName:    "cloudagent-acp-live-agent-write-download-e2e",
+		ClientTitle:   "CloudAgent ACP Live Agent Write Download E2E",
+		ClientVersion: "0.1.0",
+	}); err != nil {
+		t.Fatalf("initialize reconnected client: %v", err)
+	}
+	if _, err := client.LoadSession(ctx, session.SessionID, CloudAgentSessionOptions{CWD: liveCWD()}); err != nil {
+		t.Fatalf("session/load: %v", err)
+	}
+	second, err := client.Prompt(ctx, session.SessionID, "必须调用 terminal 执行 `cat /workspace/generated/agent-output.txt`。只输出终端里的 cloudagent-agent-write 标记。", CloudAgentPromptOptions{
+		CWD:       liveCWD(),
+		InboxMode: CloudAgentInboxPrompt,
+	})
+	if err != nil {
+		t.Fatalf("post-load cat prompt: %v", err)
+	}
+	if !isNormalStopReason(second.StopReason) {
+		t.Fatalf("unexpected post-load stopReason %q raw=%s", second.StopReason, string(second.Raw))
+	}
+	if !strings.Contains(output.CombinedString(), needle) {
+		t.Fatalf("post-load agent output missing marker %q: got=%q raw=%s", needle, output.CombinedString(), string(second.Raw))
+	}
+	if err := client.DeleteSession(ctx, session.SessionID); err != nil {
+		t.Fatalf("session/delete: %v", err)
+	}
+	deleted = true
+}
+
 type liveAgentOutput struct {
 	mu     sync.Mutex
 	output strings.Builder
+	tools  strings.Builder
 }
 
 func (c *liveAgentOutput) notification(raw json.RawMessage) error {
@@ -736,30 +1803,46 @@ func (c *liveAgentOutput) notification(raw json.RawMessage) error {
 			Update struct {
 				SessionUpdate string          `json:"sessionUpdate"`
 				Content       json.RawMessage `json:"content"`
+				RawOutput     json.RawMessage `json:"rawOutput"`
 			} `json:"update"`
 		} `json:"params"`
 	}
 	if err := json.Unmarshal(raw, &env); err != nil {
 		return err
 	}
-	if env.Method != "session/update" || env.Params.Update.SessionUpdate != "agent_message_chunk" {
+	if env.Method != "session/update" {
 		return nil
 	}
-	var textContent struct {
-		Text string `json:"text"`
+	switch env.Params.Update.SessionUpdate {
+	case "agent_message_chunk":
+		var textContent struct {
+			Text string `json:"text"`
+		}
+		if err := json.Unmarshal(env.Params.Update.Content, &textContent); err != nil {
+			return nil
+		}
+		c.mu.Lock()
+		c.output.WriteString(textContent.Text)
+		c.mu.Unlock()
+	case "tool_call_update":
+		c.mu.Lock()
+		if len(env.Params.Update.RawOutput) > 0 && string(env.Params.Update.RawOutput) != "null" {
+			c.tools.Write(env.Params.Update.RawOutput)
+			c.tools.WriteByte('\n')
+		}
+		if len(env.Params.Update.Content) > 0 && string(env.Params.Update.Content) != "null" {
+			c.tools.Write(env.Params.Update.Content)
+			c.tools.WriteByte('\n')
+		}
+		c.mu.Unlock()
 	}
-	if err := json.Unmarshal(env.Params.Update.Content, &textContent); err != nil {
-		return nil
-	}
-	c.mu.Lock()
-	c.output.WriteString(textContent.Text)
-	c.mu.Unlock()
 	return nil
 }
 
 func (c *liveAgentOutput) Reset() {
 	c.mu.Lock()
 	c.output.Reset()
+	c.tools.Reset()
 	c.mu.Unlock()
 }
 
@@ -767,6 +1850,32 @@ func (c *liveAgentOutput) String() string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.output.String()
+}
+
+func (c *liveAgentOutput) CombinedString() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.output.String() + c.tools.String()
+}
+
+func waitForLiveOutputContains(t *testing.T, ctx context.Context, output *liveAgentOutput, marker string) {
+	t.Helper()
+	deadline := time.NewTimer(75 * time.Second)
+	defer deadline.Stop()
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if strings.Contains(output.CombinedString(), marker) {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("timed out waiting for output marker %q: %v got=%q", marker, ctx.Err(), output.CombinedString())
+		case <-deadline.C:
+			t.Fatalf("timed out waiting for output marker %q got=%q", marker, output.CombinedString())
+		case <-ticker.C:
+		}
+	}
 }
 
 func newLiveCloudAgentClient(t *testing.T) *CloudAgentClient {
@@ -812,6 +1921,239 @@ func liveHeaders() http.Header {
 	return headers
 }
 
+func liveHTTPBaseURL(t *testing.T) string {
+	t.Helper()
+	rawURL := strings.TrimSpace(firstNonEmptyString(
+		os.Getenv("CLOUDAGENT_ACP_E2E_HTTP_URL"),
+		os.Getenv("CLOUDAGENT_ACP_E2E_URL"),
+		os.Getenv("ACP_CLIENT_URL"),
+	))
+	if rawURL == "" {
+		t.Skip("set CLOUDAGENT_ACP_E2E_URL to run live CloudAgent ACP e2e")
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatalf("parse live ACP URL: %v", err)
+	}
+	switch parsed.Scheme {
+	case "ws":
+		parsed.Scheme = "http"
+	case "wss":
+		parsed.Scheme = "https"
+	case "http", "https":
+	default:
+		t.Fatalf("unsupported live ACP URL scheme %q", parsed.Scheme)
+	}
+	parsed.Path = ""
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return strings.TrimRight(parsed.String(), "/")
+}
+
+func liveRestartGateway(t *testing.T, ctx context.Context) {
+	t.Helper()
+	command := strings.TrimSpace(os.Getenv("CLOUDAGENT_ACP_E2E_GATEWAY_RESTART_COMMAND"))
+	if command == "" {
+		t.Skip("set CLOUDAGENT_ACP_E2E_GATEWAY_RESTART_COMMAND to restart the local gateway")
+	}
+	restartCtx, cancel := context.WithTimeout(ctx, envDuration("CLOUDAGENT_ACP_E2E_GATEWAY_RESTART_TIMEOUT", 90*time.Second))
+	defer cancel()
+	cmd := exec.CommandContext(restartCtx, "/bin/sh", "-lc", command)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("gateway restart command failed: %v output=%s", err, string(output))
+	}
+	baseURL := liveHTTPBaseURL(t)
+	deadline := time.Now().Add(envDuration("CLOUDAGENT_ACP_E2E_GATEWAY_HEALTH_TIMEOUT", 90*time.Second))
+	var lastErr error
+	for time.Now().Before(deadline) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/v1/selfcheck", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for key, values := range liveHeaders() {
+			for _, value := range values {
+				req.Header.Add(key, value)
+			}
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err == nil {
+			raw, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			if resp.StatusCode == http.StatusOK && bytes.Contains(raw, []byte(`"ok":true`)) {
+				return
+			}
+			lastErr = fmt.Errorf("selfcheck status=%d body=%s", resp.StatusCode, string(raw))
+		} else {
+			lastErr = err
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	t.Fatalf("gateway did not become healthy after restart: %v", lastErr)
+}
+
+func liveUploadFile(t *testing.T, ctx context.Context, filename, contentType string, content []byte) string {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", filename)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := part.Write(content); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.WriteField("purpose", "assistants"); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, liveHTTPBaseURL(t)+"/v1/files", &body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key, values := range liveHeaders() {
+		for _, value := range values {
+			req.Header.Add(key, value)
+		}
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	if strings.TrimSpace(contentType) != "" {
+		req.Header.Set("X-CloudAgent-Test-Content-Type", contentType)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("upload file status=%d body=%s", resp.StatusCode, string(raw))
+	}
+	var out struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatalf("decode upload response: %v body=%s", err, string(raw))
+	}
+	if out.ID == "" {
+		t.Fatalf("upload response missing id: %s", string(raw))
+	}
+	return out.ID
+}
+
+func liveDownloadFile(t *testing.T, ctx context.Context, fileID string) []byte {
+	t.Helper()
+	return liveHTTPGetBytes(t, ctx, fmt.Sprintf("%s/v1/files/%s/content", liveHTTPBaseURL(t), url.PathEscape(fileID)))
+}
+
+func liveDownloadEnvdFile(t *testing.T, ctx context.Context, sessionID, remotePath string) []byte {
+	t.Helper()
+	endpoint := fmt.Sprintf("%s/v1/acp/sessions/%s/envd/files?path=%s", liveHTTPBaseURL(t), url.PathEscape(sessionID), url.QueryEscape(remotePath))
+	return liveHTTPGetBytes(t, ctx, endpoint)
+}
+
+func waitForLiveEnvdFileContains(t *testing.T, ctx context.Context, sessionID, remotePath, marker string) {
+	t.Helper()
+	deadline := time.Now().Add(45 * time.Second)
+	var last string
+	var lastErr error
+	var attempts int
+	for {
+		attempts++
+		content, err := liveTryDownloadEnvdFile(t, ctx, sessionID, remotePath)
+		if err != nil {
+			lastErr = err
+			last = ""
+		} else {
+			lastErr = nil
+			last = string(content)
+		}
+		if err == nil && strings.Contains(last, marker) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("envd download missing marker %q after %d attempt(s): got=%q last_err=%v", marker, attempts, last, lastErr)
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("envd download missing marker %q before context done after %d attempt(s): last=%q last_err=%v err=%v", marker, attempts, last, lastErr, ctx.Err())
+		case <-time.After(3 * time.Second):
+		}
+	}
+}
+
+func liveTryDownloadEnvdFile(t *testing.T, ctx context.Context, sessionID, remotePath string) ([]byte, error) {
+	t.Helper()
+	endpoint := fmt.Sprintf("%s/v1/acp/sessions/%s/envd/files?path=%s", liveHTTPBaseURL(t), url.PathEscape(sessionID), url.QueryEscape(remotePath))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	for key, values := range liveHeaders() {
+		for _, value := range values {
+			req.Header.Add(key, value)
+		}
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return raw, fmt.Errorf("GET %s status=%d body=%s", endpoint, resp.StatusCode, string(raw))
+	}
+	return raw, nil
+}
+
+func liveUploadEnvdFile(t *testing.T, ctx context.Context, sessionID, remotePath, contentType string, content []byte) {
+	t.Helper()
+	endpoint := fmt.Sprintf("%s/v1/acp/sessions/%s/envd/files?path=%s", liveHTTPBaseURL(t), url.PathEscape(sessionID), url.QueryEscape(remotePath))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(content))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key, values := range liveHeaders() {
+		for _, value := range values {
+			req.Header.Add(key, value)
+		}
+	}
+	req.Header.Set("Content-Type", firstNonEmptyString(contentType, "application/octet-stream"))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("POST %s status=%d body=%s", endpoint, resp.StatusCode, string(raw))
+	}
+}
+
+func liveHTTPGetBytes(t *testing.T, ctx context.Context, endpoint string) []byte {
+	t.Helper()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key, values := range liveHeaders() {
+		for _, value := range values {
+			req.Header.Add(key, value)
+		}
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET %s status=%d body=%s", endpoint, resp.StatusCode, string(raw))
+	}
+	return raw
+}
+
 func liveCWD() string {
 	return firstNonEmptyString(os.Getenv("CLOUDAGENT_ACP_E2E_CWD"), "/workspace")
 }
@@ -827,6 +2169,15 @@ func liveTimeout() time.Duration {
 		}
 	}
 	return 8 * time.Minute
+}
+
+func envDuration(key string, fallback time.Duration) time.Duration {
+	if raw := strings.TrimSpace(os.Getenv(key)); raw != "" {
+		if value, err := time.ParseDuration(raw); err == nil {
+			return value
+		}
+	}
+	return fallback
 }
 
 func liveBool(key string) bool {

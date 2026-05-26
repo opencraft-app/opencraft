@@ -65,6 +65,8 @@ func (g *ACPGateway) runPromptAsync(ctx context.Context, ws *WSConn, id json.Raw
 		run.interrupt("ownership_lost")
 	})
 	defer stopOwnershipHeartbeat()
+	stopRuntimeRefreshHeartbeat := g.startActiveRuntimeRefreshHeartbeat(ctx, sessionID, run)
+	defer stopRuntimeRefreshHeartbeat()
 	defer g.releaseRuntimeOwnership(run.Ownership)
 	var streamSeq int64
 	emit := func(ev workerEvent) error {
@@ -475,6 +477,7 @@ func (g *ACPGateway) beginPrompt(scope Scope, sessionID string, cancel context.C
 	session.State = acpRuntimeStatePrompting
 	session.CurrentResponseID = responseID
 	session.UpdatedAt = time.Now().UTC()
+	session.LastRuntimeActivityAt = session.UpdatedAt
 	if len(turnRecord.History) > 0 || len(turnRecord.Events) > 0 {
 		session.History = append(session.History, turnRecord.History...)
 		session.Events = append(session.Events, turnRecord.Events...)

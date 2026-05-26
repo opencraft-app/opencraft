@@ -453,6 +453,26 @@ describe('ACP session coordinator lifecycle transitions', () => {
     ]);
   });
 
+  it('blocks restoring sessions when lifecycle contract is terminal even if legacy read-only is absent', () => {
+    const row = updateRowRestoreState([rowFromSession('session-1')], 'session-1', 'restoring')[0];
+
+    expect(planSessionStatusReady({
+      conversationId: 'session-1',
+      status: {
+        sessionId: 'session-1',
+        lifecycleState: 'blocked_terminal',
+        recoverability: 'terminal',
+        recoverabilityNote: 'runtime_not_recovered',
+        readOnlyReason: 'runtime_not_recovered',
+      },
+      conversations: [row],
+    }).effects).toEqual([
+      { type: 'update_row_restore_state', conversationId: 'session-1', restoreState: 'blocked' },
+      { type: 'report_error', conversationId: 'session-1', content: 'session_read_only/runtime_not_recovered' },
+      { type: 'clear_load_replay', conversationId: 'session-1' },
+    ]);
+  });
+
   it('keeps read-only loaded sessions blocked after replay settlement', () => {
     const row = rowFromSession('session-1', {
       readOnly: true,

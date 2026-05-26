@@ -1,12 +1,17 @@
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
+use base64::Engine;
 use hermes_core::{
     client::Role,
-    runtime_host::{sync_active_session_sandbox_files, SessionSandboxBinding},
+    runtime_host::{
+        download_active_session_sandbox_file, sync_active_session_sandbox_files,
+        upload_active_session_sandbox_file, SessionSandboxBinding,
+    },
     AgentRuntime, BehaviorRegistry, BehaviorVersions, Message, RunTurnRequest, RuntimeStore,
     TranscriptBlock, TranscriptRole,
 };
@@ -452,6 +457,105 @@ impl DaemonState {
         }))
     }
 
+    pub(crate) async fn workspace_file_upload(
+        &self,
+        request: WorkspaceFileUploadRequest,
+    ) -> Result<serde_json::Value> {
+        let relative_path = self.workspace_relative_path(&request.path)?;
+        let content = base64::engine::general_purpose::STANDARD
+            .decode(request.content_b64.as_bytes())
+            .context("failed to decode workspace file content")?;
+        let local_path = self.workspace_root.join(&relative_path);
+        if let Some(parent) = local_path.parent() {
+            fs::create_dir_all(parent).with_context(|| {
+                format!(
+                    "failed to create workspace directory '{}'",
+                    parent.display()
+                )
+            })?;
+        }
+        let mut file = fs::File::create(&local_path).with_context(|| {
+            format!("failed to create workspace file '{}'", local_path.display())
+        })?;
+        file.write_all(&content).with_context(|| {
+            format!("failed to write workspace file '{}'", local_path.display())
+        })?;
+        let inner_synced =
+            upload_active_session_sandbox_file(&self.workspace_root, &relative_path, content)
+                .await?;
+        Ok(json!({
+            "ok": true,
+            "path": request.path,
+            "workspace_path": relative_path,
+            "inner_synced": inner_synced,
+        }))
+    }
+
+    pub(crate) async fn workspace_file_download(
+        &self,
+        request: WorkspaceFileDownloadRequest,
+    ) -> Result<WorkspaceFileDownloadResponse> {
+        let relative_path = self.workspace_relative_path(&request.path)?;
+        let content =
+            match download_active_session_sandbox_file(&self.workspace_root, &relative_path).await?
+            {
+                Some(content) => content,
+                None => {
+                    let local_path = self.workspace_root.join(&relative_path);
+                    fs::read(&local_path).with_context(|| {
+                        format!("failed to read workspace file '{}'", local_path.display())
+                    })?
+                }
+            };
+        Ok(WorkspaceFileDownloadResponse {
+            ok: true,
+            path: request.path,
+            bytes: content.len() as u64,
+            content_b64: base64::engine::general_purpose::STANDARD.encode(content),
+        })
+    }
+
+    fn workspace_relative_path(&self, raw: &str) -> Result<String> {
+        let raw = raw.trim();
+        if raw.is_empty() {
+            bail!("workspace file path must not be empty");
+        }
+        if raw.contains('\0') || raw.chars().any(|ch| ch.is_control()) {
+            bail!("workspace file path contains control characters");
+        }
+        let path = Path::new(raw);
+        let relative = if path.is_absolute() {
+            path.strip_prefix(&self.workspace_root)
+                .with_context(|| {
+                    format!(
+                        "workspace file path '{}' is outside workspace '{}'",
+                        raw,
+                        self.workspace_root.display()
+                    )
+                })?
+                .to_path_buf()
+        } else {
+            path.to_path_buf()
+        };
+        let mut parts = Vec::new();
+        for component in relative.components() {
+            match component {
+                std::path::Component::Normal(value) => {
+                    parts.push(value.to_string_lossy().to_string())
+                }
+                std::path::Component::CurDir => {}
+                std::path::Component::ParentDir => {
+                    bail!("workspace file path must not contain '..'")
+                }
+                _ => bail!("workspace file path must be relative to workspace"),
+            }
+        }
+        if parts.is_empty() {
+            bail!("workspace file path must not point to workspace root");
+        }
+        Ok(parts.join("/"))
+    }
+
     pub(crate) async fn ensure_inner(&self, force: bool) -> Result<EnsureInnerResponse> {
         let identity = self
             .agent
@@ -584,6 +688,19 @@ impl DaemonState {
             task.abort();
             let _ = task.await;
         }
+        events
+            .into_iter()
+            .filter_map(runtime_host_line_from_agent_event)
+            .collect()
+    }
+
+    pub(crate) async fn shutdown_inner_with_response_lines(&self) -> Vec<PromptResponseLine> {
+        let _guard = self.serial.lock().await;
+        let sink = hermes_core::AgentEventSink::new();
+        let events = self
+            .agent
+            .shutdown_inner_runtime_with_event_sink(sink)
+            .await;
         events
             .into_iter()
             .filter_map(runtime_host_line_from_agent_event)

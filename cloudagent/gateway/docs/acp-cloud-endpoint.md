@@ -164,6 +164,25 @@ CloudAgent 私有扩展方法，用于查看 session 绑定的 runtime/sandbox �
 
 该接口不会返回 envd token、traffic token、API key 或签名 URL。
 
+CloudAgent session 生命周期字段是客户端判断 UI 状态的主契约：
+
+| 字段 | 含义 |
+| --- | --- |
+| `lifecycle_state` | 标准化会话生命周期：`starting`、`restoring`、`storing`、`prompting`、`live`、`detached`、`stored_restorable`、`restore_failed_retryable`、`blocked_terminal`、`failed`、`closed` |
+| `recoverability` | 标准化恢复能力：`live`、`restorable`、`retryable`、`terminal`、`unknown` |
+| `recoverability_note` | 给 UI/日志使用的短原因，例如 `runtime_attached`、`workspace_persistent`、`runtime_not_recovered` |
+
+客户端应该优先使用这些字段，而不是自行组合 `closed`、`read_only`、`runtime_restorable`、`runtime_restore_in_flight`。旧字段会继续保留用于兼容和调试。`runtime_restorable` 由 gateway 按 session runtime 和 workspace store 共同计算：即使 session runtime 缺少 `wisp_smh_space_id`，只要 workspace store 仍有可恢复的 Wisp/SMH `WorkspaceRecord`，客户端也应认为该会话可恢复。
+
+核心判定：
+
+- `lifecycle_state=live|prompting`：session 可写，可发送 prompt。
+- `lifecycle_state=detached`：gateway 持有上次的 runtime identity，但当前进程尚未验证 runtime；客户端应调用 `_cloudagent.runtime.ensure_ready`。
+- `lifecycle_state=restoring|storing`：session 正在恢复或贮藏，UI 应展示进度并暂缓 prompt。
+- `lifecycle_state=stored_restorable`：workspace 已贮藏，下一次 `session/resume` 或 `_cloudagent.runtime.ensure_ready` 可以恢复。
+- `lifecycle_state=restore_failed_retryable`：最近一次恢复失败，但具备 Wisp workspace 记录，允许重试。
+- `lifecycle_state=blocked_terminal` 或 `recoverability=terminal`：不可自动恢复，UI 应阻止发送并提示用户新建会话。
+
 ### _cloudagent.runtime.ensure_ready
 
 CloudAgent 私有扩展方法，用于在 `session/load` 回放 transcript 后恢复 workspace/runtime host。该方法不回放消息，只确保 session 绑定的 runtime host 可继续执行 prompt、文件和工具能力。
@@ -181,6 +200,28 @@ CloudAgent 私有扩展方法，用于在 `session/load` 回放 transcript 后�
 ```
 
 返回包含 `_cloudagent.session.status` 同款 runtime 状态字段，并额外包含 `restore_source: "runtime_ensure_ready"` 和 `runtime_ensure_ready` 对象。
+
+恢复或贮藏期间会发送 `_cloudagent.workspace.lifecycle` notification，字段全部使用 `snake_case`：
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "_cloudagent.workspace.lifecycle",
+  "params": {
+    "session_id": "session_xxx",
+    "generation": 2,
+    "operation": "restore",
+    "phase": "runtime",
+    "status": "running",
+    "label": "恢复 Runtime Host",
+    "elapsed_ms": 1204,
+    "lifecycle_id": "restore:session_xxx:runtime",
+    "timestamp": "2026-05-26T02:00:00Z"
+  }
+}
+```
+
+`operation=restore` 用于 workspace/runtime 恢复；`operation=storage` 用于 close/delete 时的贮藏或清理展示。标准 ACP 客户端可以忽略该通知。
 
 ### session/load / session/resume / session/list
 
@@ -246,7 +287,7 @@ CloudAgent 私有扩展方法，用于在 `session/load` 回放 transcript 后�
 }
 ```
 
-当前实现里 `close` 会清理对应 session runtime。关闭后不能直接继续 prompt，需要重新创建或恢复可用会话。
+当前实现里 `close` 会清理对应 session runtime。对 Wisp runtime，它会销毁 inner/outer sandbox 并保留可恢复的 Wisp/SMH workspace anchor。贮藏/清理状态通过 `_cloudagent.workspace.lifecycle` 扩展通知展示，不修改 ACP 标准 `session/close` 协议面。关闭后不能直接继续 prompt，需要 `session/resume` 或 `_cloudagent.runtime.ensure_ready` 恢复可用会话。
 
 ### session/delete
 

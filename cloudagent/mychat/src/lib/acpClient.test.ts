@@ -1231,6 +1231,9 @@ describe("ACP session restore responses", () => {
       id: 1,
       result: {
         session_id: "session-1",
+        lifecycle_state: "live",
+        recoverability: "live",
+        recoverability_note: "runtime_attached",
         runtime_status: "idle",
         runtime_status_source: "runtime",
         runtime_status_error: "",
@@ -1257,6 +1260,9 @@ describe("ACP session restore responses", () => {
     expect(statuses).toEqual([
       expect.objectContaining({
         sessionId: "session-1",
+        lifecycleState: "live",
+        recoverability: "live",
+        recoverabilityNote: "runtime_attached",
         runtimeStatus: "idle",
         runtimeStatusSource: "runtime",
         runtimeStatusError: undefined,
@@ -1284,6 +1290,7 @@ describe("ACP session restore responses", () => {
   it("prefers the runtime ensure_ready extension and treats the result as a live session", () => {
     const sessions: unknown[] = [];
     const statuses: unknown[] = [];
+    const lifecycleEvents: unknown[] = [];
     const sent: unknown[] = [];
     const client = new AcpClient({
       onStatus: () => undefined,
@@ -1295,6 +1302,8 @@ describe("ACP session restore responses", () => {
       onError: () => undefined,
       onTrace: () => undefined,
       onSessionStatus: (_conversationId, status) => statuses.push(status),
+      onWorkspaceLifecycle: (_conversationId, event) =>
+        lifecycleEvents.push(event),
     });
     (globalThis as unknown as { WebSocket: { OPEN: number } }).WebSocket = {
       OPEN: 1,
@@ -1330,11 +1339,29 @@ describe("ACP session restore responses", () => {
       client as unknown as { handleAcp(message: Record<string, unknown>): void }
     ).handleAcp({
       jsonrpc: "2.0",
+      method: "_cloudagent.workspace.lifecycle",
+      params: {
+        session_id: "session-1",
+        lifecycle_id: "restore:session-1:runtime",
+        operation: "restore",
+        phase: "runtime",
+        status: "running",
+        label: "恢复 Runtime Host",
+        elapsed_ms: 12,
+      },
+    });
+    (
+      client as unknown as { handleAcp(message: Record<string, unknown>): void }
+    ).handleAcp({
+      jsonrpc: "2.0",
       id: 1,
 	      result: {
 	        session_id: "session-1",
 	        configOptions: [{ id: "model", type: "select", currentValue: "m" }],
 	        state: "ready",
+        lifecycle_state: "live",
+        recoverability: "live",
+        recoverability_note: "runtime_attached",
         runtime_status: "idle",
         workspace_persistent: true,
       },
@@ -1350,10 +1377,81 @@ describe("ACP session restore responses", () => {
     expect(statuses).toEqual([
       expect.objectContaining({
         sessionId: "session-1",
+        lifecycleState: "live",
+        recoverability: "live",
+        recoverabilityNote: "runtime_attached",
         runtimeStatus: "idle",
         workspacePersistent: true,
       }),
     ]);
+    expect(lifecycleEvents).toEqual([
+      expect.objectContaining({
+        sessionId: "session-1",
+        lifecycleId: "restore:session-1:runtime",
+        operation: "restore",
+        phase: "runtime",
+        status: "running",
+        label: "恢复 Runtime Host",
+        elapsedMs: 12,
+      }),
+    ]);
+  });
+
+  it("treats runtime ownership held during ensure_ready as active work instead of restore failure", () => {
+    const errors: unknown[] = [];
+    const sent: unknown[] = [];
+    const client = new AcpClient({
+      onStatus: () => undefined,
+      onReady: () => undefined,
+      onMessage: () => undefined,
+      onSession: () => undefined,
+      onSessionList: () => undefined,
+      onControlOptions: () => undefined,
+      onError: (error) => errors.push(error),
+      onTrace: () => undefined,
+    });
+    (globalThis as unknown as { WebSocket: { OPEN: number } }).WebSocket = {
+      OPEN: 1,
+    };
+    (
+      client as unknown as {
+        ws: { readyState: number; send(message: string): void };
+      }
+    ).ws = {
+      readyState: 1,
+      send: (message: string) => sent.push(JSON.parse(message)),
+    };
+
+    expect(client.ensureRuntimeReady("conv-1", "session-1", "/workspace")).toBe(
+      true,
+    );
+    (
+      client as unknown as { handleAcp(message: Record<string, unknown>): void }
+    ).handleAcp({
+      jsonrpc: "2.0",
+      id: 1,
+      error: {
+        code: -32009,
+        message: "runtime ownership is held",
+        data: {
+          error_code: "runtime_ownership_held",
+          session_id: "session-1",
+          run_id: "job-active",
+          retryable: true,
+        },
+      },
+    });
+
+    expect(errors).toEqual([]);
+    expect(sent).toHaveLength(2);
+    expect(sent[1]).toMatchObject({
+      type: "acp",
+      message: {
+        jsonrpc: "2.0",
+        method: "_cloudagent.session.status",
+        params: { session_id: "session-1" },
+      },
+    });
   });
 
   it("parses session/list metadata into listed sessions", () => {
@@ -1395,6 +1493,9 @@ describe("ACP session restore responses", () => {
             updatedAt: "2026-05-09T03:00:00Z",
             _meta: {
               cloudagent: {
+                lifecycle_state: "blocked_terminal",
+                recoverability: "terminal",
+                recoverability_note: "runtime_not_recovered",
                 read_only: true,
                 read_only_reason: "runtime_not_recovered",
               },
@@ -1411,6 +1512,9 @@ describe("ACP session restore responses", () => {
         title: "Real history",
         cwd: "/tmp",
         updatedAt: "2026-05-09T03:00:00Z",
+        lifecycleState: "blocked_terminal",
+        recoverability: "terminal",
+        recoverabilityNote: "runtime_not_recovered",
         readOnly: true,
         readOnlyReason: "runtime_not_recovered",
         additionalDirectories: ["/tmp/extra"],

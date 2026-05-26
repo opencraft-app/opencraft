@@ -101,7 +101,7 @@ type CloudAgentSessionStatus struct {
 		WorkspaceVersion    string `json:"workspace_version"`
 		RuntimeID           string `json:"runtime_id"`
 		OuterSandboxID      string `json:"outer_sandbox_id"`
-		InnerSandboxID      string `json:"inner_sandbox_id"`
+		HasInnerEnvdTarget  bool   `json:"has_inner_envd_target"`
 		WispName            string `json:"wisp_name"`
 		WispSMHSpaceID      string `json:"wisp_smh_space_id"`
 		HasWorkspaceLease   bool   `json:"has_workspace_lease"`
@@ -318,6 +318,16 @@ func (c *CloudAgentClient) Status(ctx context.Context, sessionID string) (CloudA
 
 func (c *CloudAgentClient) KillRuntimeDaemonForFaultInjection(ctx context.Context, sessionID string) error {
 	_, err := c.conn.Call(ctx, "_cloudagent.runtime.kill_daemon", map[string]any{"session_id": sessionID})
+	return err
+}
+
+func (c *CloudAgentClient) KillRuntimeOuterForFaultInjection(ctx context.Context, sessionID string) error {
+	_, err := c.conn.Call(ctx, "_cloudagent.runtime.kill_outer", map[string]any{"session_id": sessionID})
+	return err
+}
+
+func (c *CloudAgentClient) KillRuntimeInnerForFaultInjection(ctx context.Context, sessionID string) error {
+	_, err := c.conn.Call(ctx, "_cloudagent.runtime.kill_inner", map[string]any{"session_id": sessionID})
 	return err
 }
 

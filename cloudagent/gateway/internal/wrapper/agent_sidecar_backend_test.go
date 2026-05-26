@@ -112,6 +112,56 @@ func TestAgentSidecarWorkerDefaultsToWispOuterRuntime(t *testing.T) {
 	}
 }
 
+func TestAgentSidecarWorkerDefaultsSandboxHostToCLILocalTransport(t *testing.T) {
+	worker, err := NewAgentSidecarWorker(AgentSidecarWorkerConfig{
+		Client:          &AGSClient{apiKey: "ags-key", apiURL: "https://api.ap-shanghai.tencentags.com", domain: "ap-shanghai.tencentags.com"},
+		OuterTemplateID: "ags-outer",
+		InnerTemplateID: "ags-inner",
+		SidecarURL:      "https://example.com/cloudagent-sidecar",
+		SandboxHostURL:  "https://example.com/sandbox-host",
+		TokenHubAPIKey:  "tokenhub-key",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := map[string]string{}
+	worker.addSandboxHostEnv(env)
+	if env["HERMES_SANDBOX_HOST_TRANSPORT"] != "cli" {
+		t.Fatalf("sandbox host transport=%q, want cli", env["HERMES_SANDBOX_HOST_TRANSPORT"])
+	}
+	if env["HERMES_SANDBOX_HOST_ALLOW_CLI_FALLBACK"] != "false" {
+		t.Fatalf("sandbox host cli fallback=%q, want false", env["HERMES_SANDBOX_HOST_ALLOW_CLI_FALLBACK"])
+	}
+	prefix := worker.sandboxHostEnvPrefix()
+	if !strings.Contains(prefix, "HERMES_SANDBOX_HOST_TRANSPORT='cli'") || !strings.Contains(prefix, "HERMES_SANDBOX_HOST_ALLOW_CLI_FALLBACK='false'") {
+		t.Fatalf("sandbox host env prefix missing CLI contract: %s", prefix)
+	}
+}
+
+func TestAgentSidecarWorkerCanExplicitlyUseSandboxHostHTTPWithFallback(t *testing.T) {
+	worker, err := NewAgentSidecarWorker(AgentSidecarWorkerConfig{
+		Client:               &AGSClient{apiKey: "ags-key", apiURL: "https://api.ap-shanghai.tencentags.com", domain: "ap-shanghai.tencentags.com"},
+		OuterTemplateID:      "ags-outer",
+		InnerTemplateID:      "ags-inner",
+		SidecarURL:           "https://example.com/cloudagent-sidecar",
+		SandboxHostURL:       "https://example.com/sandbox-host",
+		SandboxHostTransport: "http",
+		SandboxHostFallback:  "true",
+		TokenHubAPIKey:       "tokenhub-key",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := map[string]string{}
+	worker.addSandboxHostEnv(env)
+	if env["HERMES_SANDBOX_HOST_TRANSPORT"] != "http" {
+		t.Fatalf("sandbox host transport=%q, want http", env["HERMES_SANDBOX_HOST_TRANSPORT"])
+	}
+	if env["HERMES_SANDBOX_HOST_ALLOW_CLI_FALLBACK"] != "true" {
+		t.Fatalf("sandbox host cli fallback=%q, want true", env["HERMES_SANDBOX_HOST_ALLOW_CLI_FALLBACK"])
+	}
+}
+
 func TestAgentSidecarWorkerRejectsUnsupportedOuterRuntime(t *testing.T) {
 	_, err := NewAgentSidecarWorker(AgentSidecarWorkerConfig{
 		Client:          &AGSClient{apiKey: "ags-key", apiURL: "https://api.ap-shanghai.tencentags.com", domain: "ap-shanghai.tencentags.com"},
