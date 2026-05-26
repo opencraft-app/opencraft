@@ -30,6 +30,7 @@ import {
   Trash2,
   UserRound,
   Wand2,
+  Wrench,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
@@ -76,6 +77,15 @@ import {
   clearErrorForBot,
   type RestartErrors,
 } from "@/pages/marketing/openclaw-restart-gateway";
+import {
+  getResetBlockReason,
+  hermesModelName,
+  hermesSwitchModelFullId,
+  isExecCommandSucceeded,
+  truncateExecOutput,
+  RESET_BLOCK_REASON,
+} from "@/pages/marketing/openclaw-reset-config";
+import { toast } from "@/lib/toast";
 import "@tencent/tea-sdk-lightclaw/styles";
 
 /* ─── Types ─── */
@@ -2370,7 +2380,9 @@ const getBotStatusLabel = (status: OpenClawBot["status"]) => {
 
 /* ─── Main Settings Page ─── */
 
-const hermesGatewayCommands = createLightClawScripts({ regionShortName: "gz", agentType: "hermes" }).hermes.gateway;
+const hermesScripts = createLightClawScripts({ regionShortName: "gz", agentType: "hermes" }).hermes;
+const hermesGatewayCommands = hermesScripts.gateway;
+const hermesModelCommands = hermesScripts.model;
 
 export const OpenClawSettingsPage = () => {
   const t = useT();
@@ -2499,6 +2511,144 @@ export const OpenClawSettingsPage = () => {
       setDeleteError(err instanceof Error ? err.message : t("删除失败，请稍后重试。"));
     }
   };
+
+  /*
+   * 重置配置（轮换 API Key）相关
+   * ──────────────────────────────────────────────────────────────
+   * 用户在控制台对当前实例点击"重置配置"按钮 → 二次确认 → 调用
+   * `POST /v1/instances/:botId/config/reset`（无 body）。
+   *
+   * 接口语义：成功返回 = 服务端新 key 已生效、旧 key 已撤销，前端拿到的
+   * `config` 是「需要下发到实例」的新一轮运行时配置。
+   *
+   * 若 ❶ 接口调用失败 → 旧 key 未被撤销，用户可重试。
+   * 若 ❷ 接口成功但下发命令失败 → 旧 key 已撤销，但实例仍在用旧 key；
+   *    本次 config 仅活在当前 try 块的局部变量里，失败后即丢弃（不重用）；
+   *    用户再点一次"重置配置"会触发新一轮 Step 1 重新 rotate key，
+   *    服务端每次 reset 都会重新生成 + 撤销上一轮 key。
+   *    ⚠️ 注意：若用户连续多次点击且均在 Step 2/3 失败，ctl 侧会留存
+   *    多条无效 key 历史；失败期间实例处于无可用 key 状态，需提示用户重试。
+   *
+   * 明文 API Key 只在本次调用链内使用：拿到 `config` 后立即下发到实例，
+   * 不落 React state，避免被 devtools 或后续渲染链路延长保留时间。
+   */
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  /* 失败时把详细 acli output 留在弹窗里展示（pre + monospace），方便用户排查；
+   * 成功 / 失败都额外用顶部 toast 给一个简短反馈，跟"通道断开"的提示风格统一。 */
+  const [resetError, setResetError] = useState<string | null>(null);
+  /* 已经打开过 channel tab 的 bot 集合（per-page、per-bot）。
+   * channel tab mount 时 SDK 会跑 bootstrap → `acli self-update`，把存量
+   * 实例上较老的 acli 升到最新版本，确保 `acli backend reset-config` 等
+   * 较新子命令可用。reset 按钮的启用条件之一即"打开过通道 tab"。 */
+  const [viewedChannelBotIds, setViewedChannelBotIds] = useState<Set<string>>(new Set());
+
+  const handleResetConfig = async () => {
+    const hasViewedChannel = activeBot ? viewedChannelBotIds.has(activeBot.id) : false;
+    if (getResetBlockReason(activeBot, resetting, hasViewedChannel)) return;
+    const targetBotId = activeBot?.id;
+    if (!targetBotId) return;
+    setResetting(true);
+    setResetError(null);
+    try {
+      // ── Step 1: 服务端轮换 API Key（旧 key 立即作废，拿到新的运行时 config）
+      const result = await repositories.bots.resetInstanceConfig(targetBotId);
+
+      // ── Step 2: 清空实例上 acli 后端配置
+      const resetBackendResult = await repositories.bots.execDebugCommand(
+        targetBotId,
+        "acli backend reset-config",
+      );
+      if (!isExecCommandSucceeded(resetBackendResult)) {
+        throw new Error(
+          t("初始化配置文件失败：{{detail}}", {
+            detail: truncateExecOutput(resetBackendResult.output, resetBackendResult.status),
+          }),
+        );
+      }
+
+      // ── Step 3: 复用 instance 创建时"添加默认模型"的命令，把新 config 下发到实例。
+      //
+      //   3a. acli provider save —— upsert provider，含新 api_key + 唯一一条 model
+      //   3b. acli model switch  —— 切换全局生效模型为本 provider 下的该 model
+      //
+      // 等价于 ctl/pkg/instance/async.go: configureOnboard() → renderHermesModelSetCommand()
+      // 的 acli 分支；compat 维度由后端在生成 reset 响应时已映射成 `config.api`，
+      // 前端无需再做 compat → api 转换。
+      const providerSaveCmd = hermesModelCommands.getProviderSaveCommand({
+        name: result.config.providerName,
+        baseUrl: result.config.baseUrl,
+        api: result.config.api,
+        apiKey: result.config.apiKey,
+        models: [{ id: result.config.modelId, name: hermesModelName(result.config.modelId) }],
+      });
+      const providerSaveResult = await repositories.bots.execDebugCommand(targetBotId, providerSaveCmd);
+      if (!isExecCommandSucceeded(providerSaveResult)) {
+        // 脱敏处理：acli 出错时 stderr 可能回显含明文 apiKey 的命令参数，在展示前替换
+        const sanitizedOutput = result.config.apiKey
+          ? providerSaveResult.output.replace(
+              new RegExp(result.config.apiKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"),
+              "sk-***",
+            )
+          : providerSaveResult.output;
+        throw new Error(
+          t("默认模型保存失败：{{detail}}", {
+            detail: truncateExecOutput(sanitizedOutput, providerSaveResult.status),
+          }),
+        );
+      }
+
+      const switchModelCmd = hermesModelCommands.getModelSwitchCommand(
+        hermesSwitchModelFullId(result.config.providerName, result.config.modelId),
+      );
+      const switchModelResult = await repositories.bots.execDebugCommand(targetBotId, switchModelCmd);
+      if (!isExecCommandSucceeded(switchModelResult)) {
+        // 脱敏处理：同 Step 3a，防止 acli 错误输出回显 apiKey
+        const sanitizedSwitchOutput = result.config.apiKey
+          ? switchModelResult.output.replace(
+              new RegExp(result.config.apiKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"),
+              "sk-***",
+            )
+          : switchModelResult.output;
+        throw new Error(
+          t("默认模型切换失败：{{detail}}", {
+            detail: truncateExecOutput(sanitizedSwitchOutput, switchModelResult.status),
+          }),
+        );
+      }
+
+      setShowResetConfirm(false);
+      toast.success(t("重置成功"));
+    } catch (err) {
+      setResetError(err instanceof Error ? err.message : t("重置失败，请重试"));
+      toast.error(t("重置失败，请重试"));
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  /* 当用户切到 channel tab 且有活跃 bot 时，等一个启动 grace 期再把 bot 加入
+   * "已查过通道"集合 —— 给 SDK ChannelPanel 自己的 bootstrap → `acli self-update`
+   * 留时间，确保后续 reset 流程发出的 `acli backend reset-config` 已经能被
+   * 升级后的 acli 识别。
+   *
+   * 期间扳手按钮 tooltip 显示"请稍后"。3 秒是 self-update 常见耗时（拉
+   * COS 二进制 + 替换）的上限观测值；连续在 channel tab 停留 ≥ 3 秒视作 viewed，
+   * 中途切走会清掉 timer，再切回重新计时。 */
+  const CHANNEL_TAB_BOOTSTRAP_GRACE_MS = 3000;
+  useEffect(() => {
+    if (activeSection !== "channel" || !activeBot) return;
+    const botId = activeBot.id;
+    const timer = window.setTimeout(() => {
+      setViewedChannelBotIds((prev) => {
+        if (prev.has(botId)) return prev;
+        const next = new Set(prev);
+        next.add(botId);
+        return next;
+      });
+    }, CHANNEL_TAB_BOOTSTRAP_GRACE_MS);
+    return () => window.clearTimeout(timer);
+  }, [activeSection, activeBot?.id]);
 
   /* 通道弹窗 */
   const [showChannelModal, setShowChannelModal] = useState(false);
@@ -2838,6 +2988,72 @@ export const OpenClawSettingsPage = () => {
         document.body,
       )}
 
+      {/* Reset Config Confirm Dialog */}
+      {showResetConfirm && activeBot && createPortal(
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          onClick={() => { if (!resetting) setShowResetConfirm(false); }}
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            className="mx-4 w-full max-w-sm rounded-2xl border bg-white p-6 shadow-2xl"
+            style={{ borderColor: "var(--tea-color-border-default-alpha4, rgba(238,238,238,0.4))" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3" style={{ marginBottom: "20px" }}>
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "var(--tea-color-warning-default-alpha10, rgba(245,158,11,0.10))" }}>
+                <Wrench className="h-5 w-5" style={{ color: "var(--tea-color-warning-default, #F59E0B)" }} />
+              </div>
+              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("恢复初始设置")}</h3>
+            </div>
+            <p style={{ color: "var(--tea-color-text-secondary, #666)", fontSize: "14px", lineHeight: 1.6, marginBottom: "20px" }}>
+              {t("将保留当前工作空间、记忆和定时任务，并初始化配置文件，模型相关配置不会保留。")}
+            </p>
+            {resetError && (
+              <pre
+                className="text-xs whitespace-pre-wrap break-words rounded-md border px-3 py-2"
+                style={{
+                  color: "var(--tea-color-text-error-default, #DC2626)",
+                  backgroundColor: "var(--tea-color-text-error-default-alpha4, rgba(220,38,38,0.04))",
+                  borderColor: "var(--tea-color-text-error-default-alpha18, rgba(220,38,38,0.18))",
+                  fontFamily:
+                    "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+                  maxHeight: "180px",
+                  overflowY: "auto",
+                  marginBottom: "12px",
+                }}
+              >
+                {resetError}
+              </pre>
+            )}
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => void handleResetConfig()}
+                disabled={resetting}
+                className="flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-all"
+                style={{
+                  backgroundColor: resetting ? "var(--tea-color-bg-disabled, #E5E7EB)" : "var(--tea-color-warning-default, #F59E0B)",
+                  cursor: resetting ? "not-allowed" : "pointer",
+                }}
+              >
+                {resetting && <Loader2 className="h-4 w-4 animate-spin" />}
+                {resetting ? t("恢复中...") : t("确认恢复")}
+              </button>
+              <button
+                onClick={() => setShowResetConfirm(false)}
+                disabled={resetting}
+                className="py-2 text-sm transition-colors hover:opacity-70"
+                style={{ color: "var(--tea-color-text-secondary, #999)", background: "none", border: "none", cursor: resetting ? "not-allowed" : "pointer" }}
+              >
+                {t("取消")}
+              </button>
+            </div>
+          </motion.div>
+        </div>,
+        document.body,
+      )}
+
       {/* Create Confirm Dialog */}
       {showCreateConfirm && createPortal(
         <div
@@ -2857,7 +3073,7 @@ export const OpenClawSettingsPage = () => {
               </div>
               <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("创建新智能体")}</h3>
             </div>
-            <p style={{ color: "#666", fontSize: "14px", lineHeight: 1.6, marginBottom: "20px" }}>
+            <p style={{ color: "var(--tea-color-text-secondary, #666)", fontSize: "14px", lineHeight: 1.6, marginBottom: "20px" }}>
               {t("即刻创建全新的 Hermes Agent")}
             </p>
             {directCreateError && <p className="text-xs" style={{ color: "#DC2626", marginBottom: "12px" }}>{directCreateError}</p>}
@@ -3115,6 +3331,50 @@ export const OpenClawSettingsPage = () => {
                         <p className="mt-1 text-xs" style={{ color: "#DC2626" }}>{activeBotRestartError}</p>
                       )}
                     </div>
+                    {(() => {
+                      const hasViewedChannel = viewedChannelBotIds.has(activeBot.id);
+                      const blockReason = getResetBlockReason(activeBot, resetting, hasViewedChannel);
+                      const resetDisabled = resetting || blockReason !== null;
+                      const resetTooltip =
+                        blockReason === RESET_BLOCK_REASON.NOT_RUNNING || blockReason === RESET_BLOCK_REASON.CHANNEL_NOT_VIEWED
+                          ? t("请稍后")
+                          : t("重置配置");
+                      /* 不用 native `disabled`：Chrome / Safari 对 disabled 元素阻断所有
+                       * pointer events，会让 group-hover tooltip 也跟着失效。
+                       * 改用 aria-disabled + onClick 守卫：视觉照样灰，hover / cursor 全程
+                       * 正常分发，tooltip 立即可见。
+                       *
+                       * onClick 拒绝时直接 return（什么都不做），用户从 tooltip 已经能知道
+                       * 为什么——避免重复弹 toast 噪声。 */
+                      return (
+                        <div className="group relative inline-flex">
+                          <button
+                            onClick={() => {
+                              if (resetDisabled) return;
+                              setResetError(null);
+                              setShowResetConfirm(true);
+                            }}
+                            aria-disabled={resetDisabled}
+                            aria-label={resetTooltip}
+                            className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full transition-all hover:bg-[rgba(245,158,11,0.08)]"
+                            style={{
+                              color: resetDisabled ? "var(--tea-color-text-disabled, rgba(0,0,0,0.20))" : "var(--tea-color-text-placeholder, #ccc)",
+                              border: "none",
+                              background: "transparent",
+                              cursor: resetDisabled ? "not-allowed" : "pointer",
+                            }}
+                          >
+                            {resetting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wrench className="h-4 w-4" />}
+                          </button>
+                          <span
+                            className="pointer-events-none absolute left-1/2 top-full z-10 mt-1 -translate-x-1/2 whitespace-nowrap rounded px-2 py-0.5 text-[11px] text-white opacity-0 transition-opacity group-hover:opacity-100"
+                            style={{ background: "var(--tea-color-bg-tooltip, rgba(0,0,0,0.75))" }}
+                          >
+                            {resetTooltip}
+                          </span>
+                        </div>
+                      );
+                    })()}
                     <button
                       onClick={() => { setDeleteInput(""); setShowDeleteConfirm(true); }}
                       className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full transition-all hover:bg-[rgba(220,38,38,0.08)]"

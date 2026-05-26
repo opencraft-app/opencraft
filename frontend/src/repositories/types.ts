@@ -103,6 +103,35 @@ export interface SoulTemplate {
   description: string;
 }
 
+/**
+ * 重置实例配置 / 轮换 API Key 返回的运行时配置。
+ *
+ * 后端流程：生成新 API Key、持久化新 key_id、撤销旧 key。
+ * 前端拿到 `config` 后需把它下发到实例（具体下发命令由调用方决定）。
+ * 若下发失败，用户可再 reset 一次拿新配置——服务端每次都会重新轮换。
+ */
+export interface BotInstanceConfig {
+  /** 上游模型供应商标识，如 `custom` */
+  providerName: string;
+  /** 上游模型 base URL */
+  baseUrl: string;
+  /** 上游模型 ID */
+  modelId: string;
+  /** API 类型，如 `chat_completions` */
+  api: string;
+  /** 新生成的 API Key 明文（仅本次返回，前端用完即丢，不持久化） */
+  apiKey: string;
+}
+
+export interface BotInstanceConfigResetResult {
+  /** 新 key 的 ID，服务端已持久化 */
+  keyId: string;
+  /** 新 key 的可展示前缀，如 `sk-xxxx` */
+  keyPrefix: string;
+  /** 新一轮的实例运行时配置，调用方需自行下发到实例 */
+  config: BotInstanceConfig;
+}
+
 export interface BotRepository {
   getDashboardSnapshot(mode?: DataMode): Promise<DashboardSnapshot>;
   createBot(input?: { name?: string; soulTemplateId?: string }): Promise<Bot>;
@@ -124,6 +153,15 @@ export interface BotRepository {
   subscribeWeixinLoginSessionEvents(botId: string, sessionId: string, signal?: AbortSignal): AsyncIterable<{ event: string; data: unknown }>;
   listSoulTemplates(): Promise<SoulTemplate[]>;
   execDebugCommand(botId: string, command: string): Promise<{ status: string; exitCode: number; output: string }>;
+  /**
+   * 重置实例配置（轮换 API Key）。
+   *
+   * `POST /v1/instances/:botId/config/reset`，无请求体。
+   *
+   * 该接口保证：成功返回 = 服务端新 key 已生效、旧 key 已撤销。
+   * 前端需把 `config` 下发到实例；下发失败时再次调用即可拿新一轮 config。
+   */
+  resetInstanceConfig(botId: string): Promise<BotInstanceConfigResetResult>;
 }
 
 export interface Repositories {
