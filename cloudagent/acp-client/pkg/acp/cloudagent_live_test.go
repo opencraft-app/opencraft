@@ -649,6 +649,280 @@ func TestCloudAgentLiveCloseResumePreservesWorkspaceFiles(t *testing.T) {
 	}
 }
 
+func TestCloudAgentLiveStreamDisconnectCompletesAndReplays(t *testing.T) {
+	output := &liveAgentOutput{}
+	client := newLiveCloudAgentClientWithOptions(t, CloudAgentClientOptions{OnNotification: output.notification})
+
+	ctx, cancel := context.WithTimeout(context.Background(), liveTimeout())
+	defer cancel()
+
+	if _, err := client.Initialize(ctx, CloudAgentClientOptions{
+		ClientName:    "cloudagent-acp-live-stream-disconnect-e2e",
+		ClientTitle:   "CloudAgent ACP Live Stream Disconnect E2E",
+		ClientVersion: "0.1.0",
+	}); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+
+	session, err := client.NewSession(ctx, CloudAgentSessionOptions{CWD: liveCWD()})
+	if err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	sessionID := session.SessionID
+	deleted := false
+	defer func() {
+		if deleted {
+			return
+		}
+		cleanupClient := newLiveCloudAgentClient(t)
+		defer cleanupClient.Close()
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer cleanupCancel()
+		_, _ = cleanupClient.Initialize(cleanupCtx, CloudAgentClientOptions{
+			ClientName:    "cloudagent-acp-live-stream-disconnect-cleanup",
+			ClientTitle:   "CloudAgent ACP Live Stream Disconnect Cleanup",
+			ClientVersion: "0.1.0",
+		})
+		_ = cleanupClient.DeleteSession(cleanupCtx, sessionID)
+	}()
+
+	needle := "cloudagent-stream-disconnect-" + strings.ReplaceAll(sessionID, "_", "-")
+	promptDone := make(chan error, 1)
+	go func() {
+		_, err := client.Prompt(ctx, sessionID, "请先输出 STREAM_DISCONNECT_BEGIN，然后必须调用 terminal 执行 `sleep 6 && echo "+needle+"`。命令结束后只追加终端输出的 cloudagent-stream-disconnect 标记。", CloudAgentPromptOptions{
+			CWD:       liveCWD(),
+			InboxMode: CloudAgentInboxPrompt,
+		})
+		promptDone <- err
+	}()
+	waitForLiveOutputContains(t, ctx, output, "STREAM_DISCONNECT_BEGIN")
+	_ = client.Close()
+	select {
+	case err := <-promptDone:
+		if err == nil {
+			t.Fatalf("prompt call should end with connection close after client disconnect")
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("prompt call did not unblock after client disconnect")
+	}
+
+	reconnectedOutput := &liveAgentOutput{}
+	reconnected := newLiveCloudAgentClientWithOptions(t, CloudAgentClientOptions{OnNotification: reconnectedOutput.notification})
+	defer reconnected.Close()
+	if _, err := reconnected.Initialize(ctx, CloudAgentClientOptions{
+		ClientName:    "cloudagent-acp-live-stream-disconnect-reconnect",
+		ClientTitle:   "CloudAgent ACP Live Stream Disconnect Reconnect",
+		ClientVersion: "0.1.0",
+	}); err != nil {
+		t.Fatalf("initialize reconnected client: %v", err)
+	}
+	waitForLiveSessionReady(t, ctx, reconnected, sessionID)
+	if _, err := reconnected.LoadSession(ctx, sessionID, CloudAgentSessionOptions{CWD: liveCWD()}); err != nil {
+		t.Fatalf("session/load after stream disconnect: %v", err)
+	}
+	if !strings.Contains(reconnectedOutput.CombinedString(), needle) {
+		t.Fatalf("replayed transcript missing post-disconnect marker %q: got=%q", needle, reconnectedOutput.CombinedString())
+	}
+	if err := reconnected.DeleteSession(ctx, sessionID); err != nil {
+		t.Fatalf("session/delete: %v", err)
+	}
+	deleted = true
+}
+
+func TestCloudAgentLiveCloseThenPromptRestoresAndUsesWorkspaceTool(t *testing.T) {
+	if !liveBool("CLOUDAGENT_ACP_E2E_RESTORE") {
+		t.Skip("set CLOUDAGENT_ACP_E2E_RESTORE=1 to run close then tool restore e2e")
+	}
+	output := &liveAgentOutput{}
+	client := newLiveCloudAgentClientWithOptions(t, CloudAgentClientOptions{OnNotification: output.notification})
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), liveTimeout())
+	defer cancel()
+
+	if _, err := client.Initialize(ctx, CloudAgentClientOptions{
+		ClientName:    "cloudagent-acp-live-close-tool-restore-e2e",
+		ClientTitle:   "CloudAgent ACP Live Close Tool Restore E2E",
+		ClientVersion: "0.1.0",
+	}); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	session, err := client.NewSession(ctx, CloudAgentSessionOptions{CWD: liveCWD()})
+	if err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	deleted := false
+	defer func() {
+		if deleted {
+			return
+		}
+		deleteCtx, deleteCancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer deleteCancel()
+		_ = client.DeleteSession(deleteCtx, session.SessionID)
+	}()
+
+	needle := "cloudagent-close-tool-restore-" + strings.ReplaceAll(session.SessionID, "_", "-")
+	remotePath := "/workspace/e2e/close-tool-restore.txt"
+	liveUploadEnvdFile(t, ctx, session.SessionID, remotePath, "text/plain", []byte(needle+"\n"))
+	waitForLiveEnvdFileContains(t, ctx, session.SessionID, remotePath, needle)
+	beforeClose, err := client.Status(ctx, session.SessionID)
+	if err != nil {
+		t.Fatalf("status before close: %v", err)
+	}
+	oldSpace := beforeClose.Sandbox.WispSMHSpaceID
+	if oldSpace == "" || beforeClose.Sandbox.OuterSandboxID == "" || !beforeClose.Sandbox.HasInnerEnvdTarget {
+		t.Fatalf("before close missing runtime/workspace identity: %s", string(beforeClose.Raw))
+	}
+	if err := client.CloseSession(ctx, session.SessionID); err != nil {
+		t.Fatalf("session/close: %v", err)
+	}
+	afterClose, err := client.Status(ctx, session.SessionID)
+	if err != nil {
+		t.Fatalf("status after close: %v", err)
+	}
+	if !afterClose.Closed || afterClose.Sandbox.OuterSandboxID != "" || afterClose.Sandbox.HasInnerEnvdTarget {
+		t.Fatalf("closed session should have no live runtime targets: %s", string(afterClose.Raw))
+	}
+
+	output.Reset()
+	result, err := client.Prompt(ctx, session.SessionID, "必须调用 terminal 执行 `ls -la /workspace/e2e && cat "+remotePath+"`。命令结束后只输出终端里的文件名和 cloudagent-close-tool-restore 标记。", CloudAgentPromptOptions{
+		CWD:       liveCWD(),
+		InboxMode: CloudAgentInboxPrompt,
+	})
+	if err != nil {
+		t.Fatalf("prompt should restore closed session and run workspace tool: %v", err)
+	}
+	if !isNormalStopReason(result.StopReason) {
+		t.Fatalf("unexpected restore tool stopReason %q raw=%s", result.StopReason, string(result.Raw))
+	}
+	outputText := output.CombinedString()
+	for _, want := range []string{"close-tool-restore.txt", needle} {
+		if !strings.Contains(outputText, want) {
+			t.Fatalf("restored tool output missing %q: got=%q raw=%s", want, outputText, string(result.Raw))
+		}
+	}
+	for _, forbidden := range []string{"runtime_not_recovered", "HTTP 500", "openresty", "sandbox-host process.exec HTTP transport failed", "sandbox-host fs.list HTTP transport failed"} {
+		if strings.Contains(outputText, forbidden) {
+			t.Fatalf("restored tool prompt surfaced forbidden failure %q: got=%q raw=%s", forbidden, outputText, string(result.Raw))
+		}
+	}
+	afterPrompt, err := client.Status(ctx, session.SessionID)
+	if err != nil {
+		t.Fatalf("status after restore prompt: %v", err)
+	}
+	if afterPrompt.Closed || afterPrompt.ReadOnly || afterPrompt.Sandbox.OuterSandboxID == "" || !afterPrompt.Sandbox.HasInnerEnvdTarget {
+		t.Fatalf("restore prompt should leave session writable with both runtime targets: %s", string(afterPrompt.Raw))
+	}
+	if afterPrompt.Sandbox.WispSMHSpaceID != oldSpace {
+		t.Fatalf("restore prompt should keep workspace anchor: before=%s after=%s raw=%s", oldSpace, afterPrompt.Sandbox.WispSMHSpaceID, string(afterPrompt.Raw))
+	}
+	if err := client.DeleteSession(ctx, session.SessionID); err != nil {
+		t.Fatalf("session/delete: %v", err)
+	}
+	deleted = true
+}
+
+func TestCloudAgentLiveRepeatedCloseResumeKeepsWorkspaceAnchor(t *testing.T) {
+	if !liveBool("CLOUDAGENT_ACP_E2E_RESTORE") {
+		t.Skip("set CLOUDAGENT_ACP_E2E_RESTORE=1 to run repeated close/resume e2e")
+	}
+	output := &liveAgentOutput{}
+	client := newLiveCloudAgentClientWithOptions(t, CloudAgentClientOptions{OnNotification: output.notification})
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), liveTimeout())
+	defer cancel()
+
+	if _, err := client.Initialize(ctx, CloudAgentClientOptions{
+		ClientName:    "cloudagent-acp-live-repeat-close-resume-e2e",
+		ClientTitle:   "CloudAgent ACP Live Repeat Close Resume E2E",
+		ClientVersion: "0.1.0",
+	}); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	session, err := client.NewSession(ctx, CloudAgentSessionOptions{CWD: liveCWD()})
+	if err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	deleted := false
+	defer func() {
+		if deleted {
+			return
+		}
+		deleteCtx, deleteCancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer deleteCancel()
+		_ = client.DeleteSession(deleteCtx, session.SessionID)
+	}()
+
+	needle := "cloudagent-repeat-close-resume-" + strings.ReplaceAll(session.SessionID, "_", "-")
+	remotePath := "/workspace/e2e/repeated-close-resume.txt"
+	create, err := client.Prompt(ctx, session.SessionID, "必须调用 terminal 执行 `mkdir -p /workspace/e2e && printf '"+needle+"\\n' > "+remotePath+" && cat "+remotePath+"`。命令结束后只输出终端里的 cloudagent-repeat-close-resume 标记。", CloudAgentPromptOptions{
+		CWD:       liveCWD(),
+		InboxMode: CloudAgentInboxPrompt,
+	})
+	if err != nil {
+		t.Fatalf("create repeated restore file: %v", err)
+	}
+	if !isNormalStopReason(create.StopReason) {
+		t.Fatalf("unexpected create stopReason %q raw=%s", create.StopReason, string(create.Raw))
+	}
+	before, err := client.Status(ctx, session.SessionID)
+	if err != nil {
+		t.Fatalf("status before repeated close/resume: %v", err)
+	}
+	workspaceAnchor := before.Sandbox.WispSMHSpaceID
+	seenOuters := map[string]bool{before.Sandbox.OuterSandboxID: true}
+	if workspaceAnchor == "" || before.Sandbox.OuterSandboxID == "" {
+		t.Fatalf("initial session missing runtime/workspace identity: %s", string(before.Raw))
+	}
+
+	for i := 1; i <= 2; i++ {
+		if err := client.CloseSession(ctx, session.SessionID); err != nil {
+			t.Fatalf("session/close round %d: %v", i, err)
+		}
+		closed, err := client.Status(ctx, session.SessionID)
+		if err != nil {
+			t.Fatalf("status after close round %d: %v", i, err)
+		}
+		if !closed.Closed || closed.Sandbox.OuterSandboxID != "" || closed.Sandbox.HasInnerEnvdTarget || closed.Sandbox.WispSMHSpaceID != workspaceAnchor {
+			t.Fatalf("close round %d should clear live targets and preserve anchor: %s", i, string(closed.Raw))
+		}
+		if _, err := client.ResumeSession(ctx, session.SessionID, CloudAgentSessionOptions{CWD: liveCWD()}); err != nil {
+			t.Fatalf("session/resume round %d: %v", i, err)
+		}
+		resumed, err := client.Status(ctx, session.SessionID)
+		if err != nil {
+			t.Fatalf("status after resume round %d: %v", i, err)
+		}
+		if resumed.Closed || resumed.ReadOnly || resumed.Sandbox.OuterSandboxID == "" || !resumed.Sandbox.HasInnerEnvdTarget || resumed.Sandbox.WispSMHSpaceID != workspaceAnchor {
+			t.Fatalf("resume round %d should restore writable runtime with same anchor: %s", i, string(resumed.Raw))
+		}
+		if seenOuters[resumed.Sandbox.OuterSandboxID] {
+			t.Fatalf("resume round %d reused outer sandbox %s; seen=%#v raw=%s", i, resumed.Sandbox.OuterSandboxID, seenOuters, string(resumed.Raw))
+		}
+		seenOuters[resumed.Sandbox.OuterSandboxID] = true
+		output.Reset()
+		read, err := client.Prompt(ctx, session.SessionID, "必须调用 terminal 执行 `cat "+remotePath+"`。命令结束后只输出终端里的 cloudagent-repeat-close-resume 标记。", CloudAgentPromptOptions{
+			CWD:       liveCWD(),
+			InboxMode: CloudAgentInboxPrompt,
+		})
+		if err != nil {
+			t.Fatalf("read after resume round %d: %v", i, err)
+		}
+		if !isNormalStopReason(read.StopReason) {
+			t.Fatalf("unexpected read round %d stopReason %q raw=%s", i, read.StopReason, string(read.Raw))
+		}
+		if !strings.Contains(output.CombinedString(), needle) {
+			t.Fatalf("read after resume round %d missing marker %q: got=%q raw=%s", i, needle, output.CombinedString(), string(read.Raw))
+		}
+	}
+
+	if err := client.DeleteSession(ctx, session.SessionID); err != nil {
+		t.Fatalf("session/delete: %v", err)
+	}
+	deleted = true
+}
+
 func TestCloudAgentLiveLoadClosedRestorableSessionRecoversOnPrompt(t *testing.T) {
 	if !liveBool("CLOUDAGENT_ACP_E2E_RESTORE") {
 		t.Skip("set CLOUDAGENT_ACP_E2E_RESTORE=1 to run closed session/load restore e2e")
@@ -743,6 +1017,16 @@ func TestCloudAgentLiveLoadClosedRestorableSessionRecoversOnPrompt(t *testing.T)
 	}
 	if loaded.ReadOnly {
 		t.Fatalf("session/load should keep closed restorable session writable: %+v", loaded)
+	}
+	afterLoad, err := client.Status(ctx, session.SessionID)
+	if err != nil {
+		t.Fatalf("status after loading closed restorable session: %v", err)
+	}
+	if !afterLoad.Closed || afterLoad.Sandbox.OuterSandboxID != "" || afterLoad.Sandbox.HasInnerEnvdTarget {
+		t.Fatalf("session/load must not restore runtime targets: %s", string(afterLoad.Raw))
+	}
+	if afterLoad.Sandbox.WispSMHSpaceID != oldSpace {
+		t.Fatalf("session/load should keep workspace anchor without restore: before=%s after=%s raw=%s", oldSpace, afterLoad.Sandbox.WispSMHSpaceID, string(afterLoad.Raw))
 	}
 
 	recovered, err := client.Prompt(ctx, session.SessionID, "请查看本对话历史，复制其中以 cloudagent-load-closed- 开头的唯一标记。不要解释，只输出标记本身。", CloudAgentPromptOptions{CWD: liveCWD()})
@@ -879,6 +1163,72 @@ func TestCloudAgentLiveGatewayRestartLoadsClosedWorkspaceAndRestores(t *testing.
 	}
 	if err := client.DeleteSession(ctx, sessionID); err != nil {
 		t.Fatalf("session/delete after gateway restart: %v", err)
+	}
+	deleted = true
+}
+
+func TestCloudAgentLiveWorkspaceLifecycleNotificationsForCloseAndRestore(t *testing.T) {
+	if !liveBool("CLOUDAGENT_ACP_E2E_RESTORE") {
+		t.Skip("set CLOUDAGENT_ACP_E2E_RESTORE=1 to run workspace lifecycle notification e2e")
+	}
+	events := &liveCloudAgentEvents{}
+	client := newLiveCloudAgentClientWithOptions(t, CloudAgentClientOptions{OnNotification: events.notification})
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), liveTimeout())
+	defer cancel()
+
+	if _, err := client.Initialize(ctx, CloudAgentClientOptions{
+		ClientName:    "cloudagent-acp-live-lifecycle-e2e",
+		ClientTitle:   "CloudAgent ACP Live Lifecycle E2E",
+		ClientVersion: "0.1.0",
+	}); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	session, err := client.NewSession(ctx, CloudAgentSessionOptions{CWD: liveCWD()})
+	if err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	deleted := false
+	defer func() {
+		if deleted {
+			return
+		}
+		deleteCtx, deleteCancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer deleteCancel()
+		_ = client.DeleteSession(deleteCtx, session.SessionID)
+	}()
+
+	if err := client.CloseSession(ctx, session.SessionID); err != nil {
+		t.Fatalf("session/close: %v", err)
+	}
+	storageDone := events.waitLifecycle(t, ctx, session.SessionID, "storage", "cleanup", "done")
+	if storageDone["lifecycle_id"] != "storage:"+session.SessionID+":cleanup" {
+		t.Fatalf("unexpected storage lifecycle id: %#v", storageDone)
+	}
+	if storageDone["elapsed_ms"] == nil || storageDone["timestamp"] == "" {
+		t.Fatalf("storage lifecycle should include timing fields: %#v", storageDone)
+	}
+
+	ready, err := client.EnsureRuntimeReady(ctx, session.SessionID, CloudAgentSessionOptions{CWD: liveCWD()})
+	if err != nil {
+		t.Fatalf("ensure_ready after close: %v", err)
+	}
+	if !isCloudAgentWorkspaceWellDone(ready) {
+		t.Fatalf("ensure_ready should return workspace well-done status: %s", string(ready.Raw))
+	}
+	events.assertLifecycleSeen(t, session.SessionID, "restore", "start", "running")
+	events.assertLifecycleSeen(t, session.SessionID, "restore", "lease_wait", "running")
+	events.assertLifecycleSeen(t, session.SessionID, "restore", "lease_wait", "done")
+	events.assertLifecycleSeen(t, session.SessionID, "restore", "runtime", "running")
+	events.assertLifecycleSeen(t, session.SessionID, "restore", "runtime", "done")
+	restoreDone := events.waitLifecycle(t, ctx, session.SessionID, "restore", "ready", "done")
+	if restoreDone["lifecycle_id"] != "restore:"+session.SessionID+":ready" {
+		t.Fatalf("unexpected restore lifecycle id: %#v", restoreDone)
+	}
+
+	if err := client.DeleteSession(ctx, session.SessionID); err != nil {
+		t.Fatalf("session/delete: %v", err)
 	}
 	deleted = true
 }
@@ -1447,6 +1797,68 @@ func TestCloudAgentLiveWorkspaceToolsReachInnerSandbox(t *testing.T) {
 	}
 }
 
+func TestCloudAgentLiveConsecutiveWorkspaceToolPromptsStayWritable(t *testing.T) {
+	output := &liveAgentOutput{}
+	client := newLiveCloudAgentClientWithOptions(t, CloudAgentClientOptions{
+		OnNotification: output.notification,
+	})
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), liveTimeout())
+	defer cancel()
+
+	if _, err := client.Initialize(ctx, CloudAgentClientOptions{
+		ClientName:    "cloudagent-acp-live-consecutive-tool-e2e",
+		ClientTitle:   "CloudAgent ACP Live Consecutive Tool E2E",
+		ClientVersion: "0.1.0",
+	}); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+
+	session, err := client.NewSession(ctx, CloudAgentSessionOptions{CWD: liveCWD()})
+	if err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	defer func() {
+		deleteCtx, deleteCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer deleteCancel()
+		_ = client.DeleteSession(deleteCtx, session.SessionID)
+	}()
+
+	for i := 1; i <= 2; i++ {
+		output.Reset()
+		marker := fmt.Sprintf("CONSECUTIVE_WORKSPACE_TOOL_OK_%d", i)
+		result, err := client.Prompt(ctx, session.SessionID, "必须调用 terminal 执行 `pwd && ls -la /workspace && df -h && echo "+marker+"`。命令结束后只输出终端里的 workspace、df 信息和 "+marker+"，不要解释。", CloudAgentPromptOptions{
+			CWD:       liveCWD(),
+			InboxMode: CloudAgentInboxPrompt,
+		})
+		if err != nil {
+			t.Fatalf("workspace/df prompt round %d failed: %v", i, err)
+		}
+		if !isNormalStopReason(result.StopReason) {
+			t.Fatalf("unexpected workspace/df round %d stopReason %q raw=%s", i, result.StopReason, string(result.Raw))
+		}
+		outputText := output.CombinedString()
+		for _, want := range []string{liveCWD(), marker} {
+			if !strings.Contains(outputText, want) {
+				t.Fatalf("workspace/df round %d output missing %q: got=%q raw=%s", i, want, outputText, string(result.Raw))
+			}
+		}
+		for _, forbidden := range []string{"restore_failed", "session_read_only", "runtime_not_recovered", "HTTP 500", "openresty", "sandbox-host process.exec HTTP transport failed", "sandbox-host fs.list HTTP transport failed"} {
+			if strings.Contains(outputText, forbidden) {
+				t.Fatalf("workspace/df round %d surfaced forbidden failure %q: got=%q raw=%s", i, forbidden, outputText, string(result.Raw))
+			}
+		}
+		status, err := client.Status(ctx, session.SessionID)
+		if err != nil {
+			t.Fatalf("status after workspace/df round %d: %v", i, err)
+		}
+		if status.Closed || status.ReadOnly || status.ReadOnlyReason != "" || status.Sandbox.OuterSandboxID == "" || !status.Sandbox.HasInnerEnvdTarget {
+			t.Fatalf("session should stay writable after workspace/df round %d: %s", i, string(status.Raw))
+		}
+	}
+}
+
 func TestCloudAgentLiveUploadDownloadAndWorkspaceListBehavior(t *testing.T) {
 	output := &liveAgentOutput{}
 	client := newLiveCloudAgentClientWithOptions(t, CloudAgentClientOptions{
@@ -1796,6 +2208,84 @@ type liveAgentOutput struct {
 	tools  strings.Builder
 }
 
+type liveCloudAgentEvents struct {
+	mu        sync.Mutex
+	lifecycle []map[string]any
+}
+
+func (e *liveCloudAgentEvents) notification(raw json.RawMessage) error {
+	var env struct {
+		Method string         `json:"method"`
+		Params map[string]any `json:"params"`
+	}
+	if err := json.Unmarshal(raw, &env); err != nil {
+		return err
+	}
+	if env.Method != "_cloudagent.workspace.lifecycle" {
+		return nil
+	}
+	e.mu.Lock()
+	e.lifecycle = append(e.lifecycle, cloneStringAnyMap(env.Params))
+	e.mu.Unlock()
+	return nil
+}
+
+func (e *liveCloudAgentEvents) waitLifecycle(t *testing.T, ctx context.Context, sessionID, operation, phase, status string) map[string]any {
+	t.Helper()
+	deadline := time.NewTimer(90 * time.Second)
+	defer deadline.Stop()
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if event, ok := e.findLifecycle(sessionID, operation, phase, status); ok {
+			return event
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("timed out waiting for lifecycle %s/%s/%s: %v seen=%#v", operation, phase, status, ctx.Err(), e.snapshot())
+		case <-deadline.C:
+			t.Fatalf("timed out waiting for lifecycle %s/%s/%s seen=%#v", operation, phase, status, e.snapshot())
+		case <-ticker.C:
+		}
+	}
+}
+
+func (e *liveCloudAgentEvents) assertLifecycleSeen(t *testing.T, sessionID, operation, phase, status string) {
+	t.Helper()
+	if _, ok := e.findLifecycle(sessionID, operation, phase, status); !ok {
+		t.Fatalf("missing lifecycle %s/%s/%s seen=%#v", operation, phase, status, e.snapshot())
+	}
+}
+
+func (e *liveCloudAgentEvents) findLifecycle(sessionID, operation, phase, status string) (map[string]any, bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for _, event := range e.lifecycle {
+		if event["session_id"] == sessionID && event["operation"] == operation && event["phase"] == phase && event["status"] == status {
+			return cloneStringAnyMap(event), true
+		}
+	}
+	return nil, false
+}
+
+func (e *liveCloudAgentEvents) snapshot() []map[string]any {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	out := make([]map[string]any, 0, len(e.lifecycle))
+	for _, event := range e.lifecycle {
+		out = append(out, cloneStringAnyMap(event))
+	}
+	return out
+}
+
+func cloneStringAnyMap(in map[string]any) map[string]any {
+	out := make(map[string]any, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
 func (c *liveAgentOutput) notification(raw json.RawMessage) error {
 	var env struct {
 		Method string `json:"method"`
@@ -1874,6 +2364,35 @@ func waitForLiveOutputContains(t *testing.T, ctx context.Context, output *liveAg
 		case <-deadline.C:
 			t.Fatalf("timed out waiting for output marker %q got=%q", marker, output.CombinedString())
 		case <-ticker.C:
+		}
+	}
+}
+
+func waitForLiveSessionReady(t *testing.T, ctx context.Context, client *CloudAgentClient, sessionID string) CloudAgentSessionStatus {
+	t.Helper()
+	deadline := time.Now().Add(90 * time.Second)
+	var lastStatus CloudAgentSessionStatus
+	var lastErr error
+	for {
+		status, err := client.Status(ctx, sessionID)
+		if err == nil {
+			lastStatus = status
+			if isCloudAgentWorkspaceWellDone(status) {
+				return status
+			}
+		} else {
+			lastErr = err
+		}
+		if time.Now().After(deadline) {
+			if lastErr != nil {
+				t.Fatalf("session %s did not become ready: last_status=%s last_err=%v", sessionID, string(lastStatus.Raw), lastErr)
+			}
+			t.Fatalf("session %s did not become ready: last_status=%s", sessionID, string(lastStatus.Raw))
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("session %s did not become ready before context done: last_status=%s last_err=%v err=%v", sessionID, string(lastStatus.Raw), lastErr, ctx.Err())
+		case <-time.After(1 * time.Second):
 		}
 	}
 }

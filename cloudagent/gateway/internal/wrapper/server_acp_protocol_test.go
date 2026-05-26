@@ -10,6 +10,8 @@ import (
 )
 
 func TestACPProtocolInitializeAdvertisesCloudAgentExtensionNotifications(t *testing.T) {
+	t.Setenv("GATEWAY_ACP_FAULT_INJECTION", "")
+	t.Setenv("CLOUDAGENT_ACP_E2E_FAULT_INJECTION", "")
 	srv, _ := newTestServer(t, FakeWorker{OutputText: "hello"})
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
@@ -31,6 +33,12 @@ func TestACPProtocolInitializeAdvertisesCloudAgentExtensionNotifications(t *test
 	assertStringSetContains(t, notifications, cloudAgentReplayDoneMethod)
 	assertStringSetContains(t, notifications, cloudAgentReplayGapMethod)
 	assertStringSetContains(t, notifications, cloudAgentTurnStatusMethod)
+	methods := cloudAgent["methods"].([]any)
+	assertStringSetContains(t, methods, cloudAgentSessionStatusMethod)
+	assertStringSetContains(t, methods, cloudAgentRuntimeEnsureReadyMethod)
+	assertStringSetNotContains(t, methods, cloudAgentRuntimeKillDaemonMethod)
+	assertStringSetNotContains(t, methods, cloudAgentRuntimeKillOuterMethod)
+	assertStringSetNotContains(t, methods, cloudAgentRuntimeKillInnerMethod)
 }
 
 func TestACPProtocolSessionResultsUseStandardRootsAndCloudAgentMeta(t *testing.T) {
@@ -460,6 +468,37 @@ func TestACPProtocolCloudAgentExtensionsRejectCamelCaseInput(t *testing.T) {
 	}
 }
 
+func TestACPProtocolFaultInjectionMethodsArePrivateAndDisabledByDefault(t *testing.T) {
+	t.Setenv("GATEWAY_ACP_FAULT_INJECTION", "")
+	t.Setenv("CLOUDAGENT_ACP_E2E_FAULT_INJECTION", "")
+	manager := &recordingACPRuntimeManager{}
+	srv := newACPTestServerWithRuntime(t, manager)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	client := dialACPWS(t, "ws"+trimHTTPPrefix(ts.URL)+"/acp", map[string]string{"Authorization": "Bearer test-key"})
+	defer client.close()
+	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{}})
+	initResp := waitForRPCID(t, client, float64(1))
+	methods := initResp["result"].(map[string]any)["agentCapabilities"].(map[string]any)["_meta"].(map[string]any)["cloudagent"].(map[string]any)["methods"].([]any)
+	assertStringSetNotContains(t, methods, cloudAgentRuntimeKillDaemonMethod)
+	assertStringSetNotContains(t, methods, cloudAgentRuntimeKillOuterMethod)
+	assertStringSetNotContains(t, methods, cloudAgentRuntimeKillInnerMethod)
+
+	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 2, "method": "session/new", "params": map[string]any{"cwd": "/workspace"}})
+	sessionID := waitForRPCID(t, client, float64(2))["result"].(map[string]any)["sessionId"].(string)
+	client.writeJSON(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      3,
+		"method":  cloudAgentRuntimeKillOuterMethod,
+		"params":  map[string]any{"session_id": sessionID},
+	})
+	errResp := waitForRPCID(t, client, float64(3))["error"].(map[string]any)
+	if !strings.Contains(fmt.Sprint(errResp["message"]), "fault injection is disabled") {
+		t.Fatalf("disabled fault injection should reject kill methods explicitly, got %#v", errResp)
+	}
+}
+
 func TestACPProtocolCancelNotificationCancelsPromptAndKeepsConnectionUsable(t *testing.T) {
 	manager := newBlockingACPRuntimeManager()
 	srv := newACPTestServerWithRuntime(t, manager)
@@ -578,6 +617,15 @@ func assertStringSetContains(t *testing.T, values []any, expected string) {
 		}
 	}
 	t.Fatalf("expected %q in %#v", expected, values)
+}
+
+func assertStringSetNotContains(t *testing.T, values []any, expected string) {
+	t.Helper()
+	for _, value := range values {
+		if value == expected {
+			t.Fatalf("did not expect %q in %#v", expected, values)
+		}
+	}
 }
 
 func assertSessionUpdateKindFrame(t *testing.T, msg map[string]any, sessionID, kind string) {
