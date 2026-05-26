@@ -182,7 +182,7 @@ export function BuddyPanel({
 
   /** 重抽时是否可用：候选池非空才允许 */
   const canReroll = souls.length > drawnSouls.length;
-  const canOpenSoulTest = souls.length > 0;
+  const canOpenSoulTest = souls.length > 0 && !isAtMax;
 
   /** 选中态（单选）：选中后右上角显示勾，可"应用到 Agent" */
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
@@ -634,7 +634,7 @@ export function BuddyPanel({
           }}
         >
           <Sparkles className="h-4 w-4" />
-          {t("Soul人格测试")}
+          {t("测试人格")}
         </button>
         <div className="group relative">
           <button
