@@ -846,7 +846,7 @@ function AutomationFormModal({
   const schedule = useMemo(() => buildScheduleString({
     kind, period, time, weekday, monthday, intervalNum, intervalUnit, onceDate,
   }), [kind, period, time, weekday, monthday, intervalNum, intervalUnit, onceDate]);
-  const chatIdPlatforms = deliverPlatforms.filter((p) => p !== "weixin");
+  const chatIdPlatforms = deliverPlatforms.filter((p) => p === "feishu");
 
   const canSubmit = !submitting && name.trim().length > 0 && prompt.trim().length > 0 && schedule.length > 0;
 
@@ -866,7 +866,7 @@ function AutomationFormModal({
         ? "local"
         : deliverPlatforms
             .map((p) => {
-              if (p === "weixin") return p;
+              if (p !== "feishu") return p;
               const chatId = (deliverChatIds[p] || "").trim();
               return chatId ? `${p}:${chatId}` : p;
             })
@@ -1028,14 +1028,14 @@ function AutomationFormModal({
               );
             })}
           </div>
-          {/* 为需要 chat_id 的平台展开可选输入框；微信可直接发送，不需要填写 */}
+          {/* 为需要 chat_id 的平台展开可选输入框；微信和 QQ 可直接发送，不需要填写 */}
           {chatIdPlatforms.length > 0 && (
             <div className="mt-2 space-y-1.5">
               {chatIdPlatforms.map((p) => {
                 return (
                   <div key={p} className="flex items-center gap-1">
                     <span className="w-20 shrink-0 text-xs text-black/50">
-                      {p === "qqbot" ? t("QQ 对话 ID") : t("飞书对话 ID")}
+                      {t("飞书对话 ID")}
                     </span>
                     <input
                       type="text"
@@ -1060,7 +1060,7 @@ function AutomationFormModal({
             </p>
           ) : chatIdPlatforms.length === 0 ? (
             <p className="text-xs text-black/40">
-              {t("微信支持直接配置发送通知")}
+              {t("已选通知方式支持直接发送通知")}
             </p>
           ) : (
             <div className="space-y-1 text-xs leading-6 text-black/40">
