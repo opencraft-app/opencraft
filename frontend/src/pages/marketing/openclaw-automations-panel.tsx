@@ -66,6 +66,7 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
   const [jobs, setJobs] = useState<CronJob[]>([]);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [confirmCreateOverLimit, setConfirmCreateOverLimit] = useState(false);
   const [viewingJob, setViewingJob] = useState<CronJob | null>(null);
   /** 正在编辑的 job；非空时弹编辑表单 */
   const [editingJob, setEditingJob] = useState<CronJob | null>(null);
@@ -77,9 +78,6 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
   const [listError, setListError] = useState<string | null>(null);
   const errorTimerRef = useRef<number | null>(null);
   const jobLimitReached = jobs.length >= MAX_CRON_JOBS_PER_BOT;
-  const jobLimitMessage = t("定时任务数量已达上限（最多{{max}}个），请先删除不需要的任务后再添加。", {
-    max: MAX_CRON_JOBS_PER_BOT,
-  });
 
   const showError = useCallback((message: string) => {
     if (errorTimerRef.current) {
@@ -161,23 +159,20 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
             {t("让你的智能体伙伴按计划自动执行任务")}
           </p>
         </div>
-        <div className="group relative inline-flex">
+        <div className="inline-flex">
           <button
             type="button"
-            disabled={jobLimitReached}
             onClick={() => {
-              if (jobLimitReached) return;
+              if (jobLimitReached) {
+                setConfirmCreateOverLimit(true);
+                return;
+              }
               setCreating(true);
             }}
-            className="inline-flex min-w-[72px] items-center justify-center gap-1 rounded-lg bg-black px-3 py-1.5 text-xs font-medium text-white transition hover:bg-black/85 disabled:cursor-not-allowed disabled:bg-black/25 disabled:hover:bg-black/25"
+            className="inline-flex min-w-[72px] items-center justify-center gap-1 rounded-lg bg-black px-3 py-1.5 text-xs font-medium text-white transition hover:bg-black/85"
           >
             {t("添加")}
           </button>
-          {jobLimitReached && (
-            <div className="pointer-events-none absolute right-0 top-full z-20 mt-2 hidden w-max max-w-[360px] rounded-lg bg-black px-3 py-2 text-xs font-medium leading-relaxed text-white shadow-lg group-hover:block">
-              {jobLimitMessage}
-            </div>
-          )}
         </div>
       </div>
 
@@ -240,6 +235,16 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
             await refresh();
           }}
           onError={showError}
+        />
+      )}
+
+      {confirmCreateOverLimit && (
+        <ConfirmCreateOverLimitModal
+          onCancel={() => setConfirmCreateOverLimit(false)}
+          onConfirm={() => {
+            setConfirmCreateOverLimit(false);
+            setCreating(true);
+          }}
         />
       )}
 
@@ -635,6 +640,51 @@ function ConfirmDeleteModal({
   );
 }
 
+function ConfirmCreateOverLimitModal({
+  onCancel,
+  onConfirm,
+}: {
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const t = useT();
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[210] flex items-center justify-center bg-black/40 px-4 py-8"
+      role="dialog"
+      aria-modal="true"
+      onClick={onCancel}
+    >
+      <div
+        className="relative w-full max-w-[420px] rounded-2xl bg-white p-6 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="text-base font-semibold text-black/90">{t("定时任务数量提醒")}</h3>
+        <p className="mt-2 text-sm leading-relaxed text-black/65">
+          {t("定时任务数量已经达到20个以上，建议你删除不需要的任务后再继续。")}
+        </p>
+        <div className="mt-5 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-lg border border-black/10 px-4 py-1.5 text-sm font-medium text-black/70 transition hover:bg-black/[0.04]"
+          >
+            {t("取消")}
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="rounded-lg bg-black px-4 py-1.5 text-sm font-medium text-white transition hover:bg-black/85"
+          >
+            {t("继续添加")}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 function formatTime(iso: string): string {
   const d = parseCronDate(iso);
   if (Number.isNaN(d.getTime())) return iso;
@@ -771,15 +821,6 @@ function AutomationFormModal({
     }
     setSubmitting(true);
     try {
-      if (mode === "create") {
-        const currentJobs = await listCronJobs(botId);
-        if (currentJobs.length >= MAX_CRON_JOBS_PER_BOT) {
-          onError(t("每个智能体最多可创建 {{max}} 个定时任务，请先删除已创建的任务后再添加。", {
-            max: MAX_CRON_JOBS_PER_BOT,
-          }));
-          return;
-        }
-      }
       const deliver = deliverPlatforms.length === 0
         ? "local"
         : deliverPlatforms
