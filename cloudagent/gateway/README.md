@@ -13,6 +13,7 @@
 ## CI trigger notes
 
 - 2026-05-21: README-only no-op change to rerun cloudagent-gateway after production reviewer override landed.
+- 2026-05-26: README-only no-op change to rerun cloudagent-gateway after Wisp secret projection fix landed.
 
 ## ACP WebSocket
 
@@ -23,12 +24,13 @@
 - `/acp`: raw JSON-RPC 2.0 over WebSocket，不带额外 envelope
 - `/ws`: MyChat 兼容的 app envelope WebSocket，消息形态和 `/Users/skipzhang/code/mychat/internal/gateway` 一致
 
-当前 ACP shim 仍然走现有真实执行链路：
+当前 ACP adapter 走沙箱内 CloudAgent Runtime 执行链路：
 
 1. 浏览器或客户端连到 wrapper 的 `/ws` 或 `/acp`
-2. wrapper 在内存里维护 ACP `sessionId`
-3. `session/prompt` 会调用现有 `Worker.Run(...)`
-4. 后端继续进入 AGS sandbox + CloudAgent sidecar
+2. wrapper 做鉴权、scope、文件和协议投影
+3. 一个 ACP `sessionId` 绑定一个沙箱内 runtime session
+4. `session/prompt` 调用 runtime `session-input`，由 runtime inbox + pump + run ledger 串行执行
+5. 后端继续进入外层 runtime host；工具、文件和 shell 能力由 sidecar/runtime host 执行
 
 第一阶段已实现的 ACP 能力：
 
@@ -168,6 +170,31 @@ make e2e-agent-sidecar
 make publish-cloudagent-sidecar
 ```
 
+如果要走 CI 的上海 COS 签名发布路径，使用独立流水线 `.ci/cloudagent-agent-artifact.yml`。
+它只构建 Rust Agent artifact，不发布 gateway 服务；流程是：
+
+- Docker 构建 `cloudagent-sidecar-linux-amd64`
+- Docker 构建 `cloudagent-agent-sign-linux-amd64`
+- 使用 Ed25519 detached `.sig` 签名
+- 上传 binary 和 `.sig` 到 `cloudagent-sidecar-shanghai-1388575217 / ap-shanghai`
+- 输出 `cloudagent-agent-version-registry.json`
+
+CI 需要配置这些 settings：
+
+- `CLOUDAGENT_AGENT_COS_SECRET_ID`
+- `CLOUDAGENT_AGENT_COS_SECRET_KEY`
+- `CLOUDAGENT_AGENT_RELEASE_ED25519_SEED_B64`
+
+本地 dry-run 可以用：
+
+```bash
+CLOUDAGENT_SIGNUPLOAD_DRY_RUN=1 \
+  CLOUDAGENT_AGENT_COS_SECRET_ID=fake \
+  CLOUDAGENT_AGENT_COS_SECRET_KEY=fake \
+  CLOUDAGENT_AGENT_RELEASE_ED25519_SEED_B64=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= \
+  make ci-signupload-cloudagent-sidecar-shanghai
+```
+
 如果你想让本地服务也走这条自动发布流程，直接跑：
 
 ```bash
@@ -197,10 +224,10 @@ make start-agent-sidecar-server
 
 当前 `make e2e-agent-sidecar` 已按 CloudAgent sidecar 的真实信号做断言。脚本会校验：
 
-- 纯聊天：有 `inner_not_started`，没有 `tool_exec_start`
-- COS 下载：有 `sidecar_download_start` / `sidecar_download_done`，并且 outer sandbox 内还能看到 `source=sidecar_boot event=download_start` / `download_done`
-- 工具调用：有 `inner_create_start`、`inner_ready`、`tool_exec_done`、`inner_shutdown_done`
-- 文件链路：有 `input_loaded`，并且 artifact 下载阶段有 `file_download_done`
+- 纯聊天：最终 `inner_sandbox_id=""`，没有 `kind=tool_call`
+- COS 下载：wrapper 日志有 `sidecar_download_start` / `sidecar_download_done`
+- 工具调用：有 `kind=tool_call` / `kind=tool_call_update`，最终 `inner_sandbox_id` 非空
+- 文件链路：有 `stage_inputs_done count=1`，回答 artifact 可下载且包含上传文件内容
 
 CloudAgent sidecar 现在已经真正支持流式透传：sidecar 会把 Hermes 的 `AgentEvent::Content` 逐段输出成 wrapper 事件，wrapper 再转成 `response.output_text.delta` SSE。也就是说，`stream:true` 不再只是“最后一次性吐完整答案再包装成流”。
 
@@ -347,7 +374,7 @@ GATEWAY_DATA_DIR=/tmp/gateway-agent-data \
 
 ## 玩法 1：纯聊天
 
-纯聊天不会启动内层 AGS。日志里应该能看到 `inner_not_started`，看不到 `inner_create_start`。
+纯聊天不会启动内层 AGS。日志里应该能看到最终 `inner_sandbox_id=""`，看不到工具调用事件。
 
 ```bash
 curl -sS -N -X POST http://127.0.0.1:18094/v1/responses \
@@ -360,8 +387,8 @@ curl -sS -N -X POST http://127.0.0.1:18094/v1/responses \
 预期现象：
 
 - 返回很快
-- 日志里有 `inner_not_started`
-- 没有 `tool_exec_start`
+- 日志里有 `inner_sandbox_id=""`
+- 没有 `kind=tool_call`
 - 仍然会有 outer sandbox 和 sidecar 下载日志，因为当前 agent 是运行在外层 AGS 里的
 
 ## 玩法 2：让 Agent 用 bash 工具
@@ -379,11 +406,9 @@ curl -sS -N -X POST http://127.0.0.1:18094/v1/responses \
 预期日志：
 
 ```text
-inner_create_start
-inner_ready
-tool_exec_start
-tool_exec_done
-inner_shutdown_done
+kind=tool_call
+kind=tool_call_update
+inner_sandbox_id="..."
 ```
 
 如果你想更直观地确认 workspace，推荐直接用这个：
@@ -399,8 +424,8 @@ curl -sS -N -X POST http://127.0.0.1:18094/v1/responses \
 预期现象：
 
 - 返回里会出现 `你好！`
-- `pwd` 会落在 inner workspace，例如 `/tmp/hermes-e2b/session_xxx`
-- 日志里会出现 `inner_create_start -> inner_ready -> tool_exec_start -> tool_exec_done -> inner_shutdown_done`
+- `pwd` 会落在 workspace，例如 `/workspace`
+- 日志里会出现 `kind=tool_call` / `kind=tool_call_update`，并且最终 `inner_sandbox_id` 非空
 
 ## 玩法 3：上传文件再提问
 
@@ -438,16 +463,16 @@ curl -sS -N -X POST http://127.0.0.1:18094/v1/responses \
 文件输入会强制走 sandbox 工具。日志里应有：
 
 ```text
-input_loaded
-inner_create_start
-tool_exec_done
+stage_inputs_done count=1
+kind=tool_call
+inner_sandbox_id="..."
 ```
 
 预期现象：
 
 - 日志里先有 `file_upload_done`
-- 请求阶段有 `input_loaded`
-- 一般会看到 `tool_exec_start tool="file_read"`
+- 请求阶段有 `stage_inputs_done count=1`
+- 一般会看到 `kind=tool_call`
 - 回答内容里会复述上传文件的内容
 
 ## 下载产物
@@ -471,18 +496,12 @@ curl -sS http://127.0.0.1:18094/v1/files/$ARTIFACT_FILE_ID/content \
 
 关键日志：
 
-- `inner_not_started`：纯聊，没有创建内层 AGS
+- `inner_sandbox_id=""`：纯聊，没有创建内层 AGS
 - `sidecar_download_start`：wrapper 已在外层 sandbox 内准备下载 CloudAgent sidecar
-- `source=sidecar_boot event=download_start`：外层 sandbox 里开始从 COS 下载 sidecar
-- `source=sidecar_boot event=download_done`：COS 下载完成
-- `source=sidecar_boot event=exec_start`：sidecar 二进制即将启动
 - `source=hermes_sidecar event=process_start`：Rust sidecar 已进入 `main`
-- `source=hermes_sidecar event=agent_run_start`：Hermes 即将发起首个 LLM 请求
-- `inner_create_start`：开始创建内层 AGS
-- `inner_ready`：内层 AGS ready
-- `tool_exec_start`：开始执行 bash
-- `tool_exec_done`：bash 执行完成
-- `inner_shutdown_done`：内层 AGS 已释放
+- `kind=tool_call`：模型发起工具调用
+- `kind=tool_call_update`：工具调用完成并回传结果
+- `inner_sandbox_id="..."`：本轮确实创建了内层 AGS workspace
 - `file_download_done`：artifact 已从 wrapper 下载出来
 
 如果你只想验证路由是否正确，看这几个事件就够了。
@@ -495,45 +514,39 @@ curl -sS http://127.0.0.1:18094/v1/files/$ARTIFACT_FILE_ID/content \
 response_request_start
 outer_create_done
 sidecar_download_start
-source=sidecar_boot event=download_start
-source=sidecar_boot event=download_done
-source=sidecar_boot event=exec_start
 source=hermes_sidecar event=process_start
-source=hermes_sidecar event=agent_run_start
 ...
-source=hermes_sidecar event=response_done
+sidecar_result_envelope inner_sandbox_id=""
 response_completed
 ```
 
 如果是工具请求，还会夹着：
 
 ```text
-inner_create_start
-inner_ready
-tool_exec_start
-tool_exec_done
-inner_shutdown_done
+kind=tool_call
+kind=tool_call_update
+sidecar_result_envelope inner_sandbox_id="..."
 ```
 
 ## 性能参考
 
-2026-05-16 北京实测，使用 CloudAgent Rust sidecar、真实 COS 公有 URL、真实 E2B/TokenHub：
+2026-05-24 北京实测，使用本地 gateway、CloudAgent Rust sidecar、真实 COS 公有 URL、真实 AGS/TokenHub：
 
 - `make e2e-agent-sidecar` 全量通过
-- 非流式总耗时基线：纯聊 `3.83s`，terminal 工具 `7.43s`，上传文件 + `file_read` + artifact 下载 `7.32s`
-- 流式首个 `response.output_text.delta`：短纯聊约 `5.73s`，terminal 工具约 `6.06s`
-- 一次较长纯聊样本：首个 delta `9.57s`，完整结束 `13.96s`
+- 纯聊：`3.52s`
+- terminal 工具：`7.87s`
+- 上传文件 + sandbox 工具读取 + artifact 下载：`13.96s`
 
 按当前打点拆开，大致可以看成：
 
-- 纯聊：外层 AGS 创建约 `0.19s`，COS 下载约 `0.31s`，sidecar `exec_start -> process_start` 约 `0.01s`，`process_start -> agent_run_start` 约 `0.008s`
-- terminal 工具：外层 AGS 创建约 `0.11s`，COS 下载约 `0.37s`，`process_start -> agent_run_start` 约 `0.001s`，`agent_run_start -> response_done` 约 `6.14s`
-- 文件读取：外层 AGS 创建约 `0.08s`，上传输入到 outer sandbox 约 `0.14s`，COS 下载约 `0.35s`，`process_start -> agent_run_start` 约 `0.006s`，`agent_run_start -> response_done` 约 `6.11s`
+- 纯聊：外层 AGS 创建、COS 下载、daemon health、`session-input` 推理，最后 `sidecar_result_envelope inner_sandbox_id=""`
+- terminal 工具：外层 AGS 创建、COS 下载、daemon health、`session-input` 推理，期间有 `kind=tool_call` / `kind=tool_call_update`
+- 文件读取：先上传 input file，再 staging 到 outer workspace，随后工具调用读取 `/workspace/inputs/...`
 
 如果只看 Rust sidecar 冷启动本身：
 
-- `source=sidecar_boot event=exec_start -> source=hermes_sidecar event=process_start` 约 `3-11ms`
-- `source=hermes_sidecar event=process_start -> agent_run_start` 约 `1-8ms`
+- `source=hermes_sidecar event=process_start` 出现后，sidecar 已进入 daemon/client 主程序
+- `sidecar_result_envelope` 是 wrapper 看到的本轮最终运行结果
 
 所以当前主要固定成本已经不在 Rust 进程本身，而在：
 
@@ -545,14 +558,10 @@ inner_shutdown_done
 如果你要盯技术指标，最值得看的就是这几段：
 
 - `outer_create_start -> outer_create_done`：外层 AGS 创建耗时
-- `source=sidecar_boot event=download_start -> download_done`：从 COS 下载 sidecar 耗时
-- `source=sidecar_boot event=exec_start -> source=hermes_sidecar event=process_start`：Rust 二进制启动耗时
-- `source=hermes_sidecar event=process_start -> agent_run_start`：sidecar 初始化耗时
-- `agent_run_start -> 第一条 response.output_text.delta`：真实首 token / 首段可见延迟
-- `agent_run_start -> response_done`：LLM 推理 + 工具决策主耗时
-- `inner_create_start -> inner_ready`：inner sandbox 可用耗时
-- `tool_exec_start -> tool_exec_done`：具体工具执行耗时
-- `response_done -> inner_shutdown_done`：收尾释放耗时
+- `sidecar_download_start -> sidecar_download_done`：从 COS 下载 sidecar 耗时
+- `sidecar_command_start -> 第一条 response.output_text.delta`：daemon health、session 创建和模型首段输出耗时
+- `kind=tool_call -> kind=tool_call_update`：工具调用往返耗时
+- `sidecar_result_envelope`：本轮最终结果、stdout 规模、是否创建 inner sandbox
 
 ## 常见问题
 
@@ -571,7 +580,7 @@ inner_shutdown_done
 要注意两个现实约束：
 
 - 纯聊天场景，流式主要受模型首段输出时间影响，现在已经能看到多段 delta。
-- 工具场景，模型通常要先决定工具、等待 inner sandbox 执行并拿到结果，所以首个可见 delta 往往会晚于 `tool_exec_done`，这不是 wrapper 卡住，而是 Agent 在拿到工具结果前通常没有可展示的最终自然语言内容。
+- 工具场景，模型通常要先决定工具、等待 inner sandbox 执行并拿到结果，所以首个可见最终文本 delta 往往会晚于 `kind=tool_call_update`，这不是 wrapper 卡住，而是 Agent 在拿到工具结果前通常没有可展示的最终自然语言内容。
 
 ### 为什么现在更快
 

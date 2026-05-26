@@ -1,22 +1,13 @@
 package wrapper
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 	"time"
 )
-
-type remoteInputFile struct {
-	FileID     string `json:"file_id"`
-	Filename   string `json:"filename"`
-	RemotePath string `json:"remote_path"`
-	SHA256     string `json:"sha256"`
-}
 
 type agentRunEnvelope struct {
 	OutputText           string `json:"output_text"`
@@ -33,14 +24,6 @@ func parseAgentOutput(stdout string) string {
 	return strings.TrimSpace(stdout)
 }
 
-func marshalInputManifest(inputs []remoteInputFile) (string, error) {
-	raw, err := json.Marshal(inputs)
-	if err != nil {
-		return "", err
-	}
-	return string(raw), nil
-}
-
 func shellQuote(value string) string {
 	if value == "" {
 		return "''"
@@ -54,6 +37,7 @@ func logRemoteStderr(start time.Time, job workerJob, text string) {
 		if line == "" {
 			continue
 		}
+		line = redactCommandOutput(line)
 		fmt.Fprintf(
 			os.Stderr,
 			"timeline source=outer_stderr t=%.3fs event=stderr job_id=%s response_id=%s message=%s\n",
@@ -68,27 +52,6 @@ func logRemoteStderr(start time.Time, job workerJob, text string) {
 func quoteTimelineField(value string) string {
 	raw, _ := json.Marshal(value)
 	return string(raw)
-}
-
-func uploadWorkerInputs(ctx context.Context, client *AGSClient, sb AGSSandbox, job workerJob) ([]remoteInputFile, error) {
-	out := make([]remoteInputFile, 0, len(job.InputFiles))
-	for _, input := range job.InputFiles {
-		content, err := os.ReadFile(input.Path)
-		if err != nil {
-			return nil, err
-		}
-		remotePath := path.Join("/tmp/gateway", job.JobID, "inputs", sanitizeRemoteName(input.Filename))
-		if err := client.UploadFile(ctx, sb, remotePath, input.Filename, content); err != nil {
-			return nil, err
-		}
-		out = append(out, remoteInputFile{
-			FileID:     input.FileID,
-			Filename:   input.Filename,
-			RemotePath: remotePath,
-			SHA256:     input.SHA256,
-		})
-	}
-	return out, nil
 }
 
 func writeWorkerArtifact(content []byte) (string, error) {
@@ -118,6 +81,15 @@ func envInt(key string, fallback int) int {
 		return fallback
 	}
 	return parsed
+}
+
+func envFlagEnabled(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func envDurationSeconds(key string, fallback time.Duration) time.Duration {

@@ -32,6 +32,7 @@ import {
   Trash2,
   UserRound,
   Wand2,
+  Wrench,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
@@ -78,6 +79,15 @@ import {
   clearErrorForBot,
   type RestartErrors,
 } from "@/pages/marketing/openclaw-restart-gateway";
+import {
+  getResetBlockReason,
+  hermesModelName,
+  hermesSwitchModelFullId,
+  isExecCommandSucceeded,
+  truncateExecOutput,
+  RESET_BLOCK_REASON,
+} from "@/pages/marketing/openclaw-reset-config";
+import { toast } from "@/lib/toast";
 import "@tencent/tea-sdk-lightclaw/styles";
 // LightVela 对话面板（npm 包 @tencent/agentchat-lightvela-panel@0.2.5-beta.0）
 import { LightVelaPanel } from "@tencent/agentchat-lightvela-panel";
@@ -2374,7 +2384,9 @@ const getBotStatusLabel = (status: OpenClawBot["status"]) => {
 
 /* ─── Main Settings Page ─── */
 
-const hermesGatewayCommands = createLightClawScripts({ regionShortName: "gz", agentType: "hermes" }).hermes.gateway;
+const hermesScripts = createLightClawScripts({ regionShortName: "gz", agentType: "hermes" }).hermes;
+const hermesGatewayCommands = hermesScripts.gateway;
+const hermesModelCommands = hermesScripts.model;
 
 export const OpenClawSettingsPage = () => {
   const t = useT();
@@ -2631,6 +2643,106 @@ export const OpenClawSettingsPage = () => {
       setDeleteError(err instanceof Error ? err.message : t("删除失败，请稍后重试。"));
     }
   };
+
+  /*
+   * 重置配置（轮换 API Key）相关
+   * ──────────────────────────────────────────────────────────────
+   * 服务端 reset 成功后旧 key 立即作废；前端必须把本次返回的新运行时
+   * config 立刻下发到实例。若后续 acli 命令失败，用户再次重置会重新
+   * rotate key，因此明文 apiKey 只保存在本次 try 块内，不进入 React state。
+   */
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [viewedChannelBotIds, setViewedChannelBotIds] = useState<Set<string>>(new Set());
+
+  const handleResetConfig = async () => {
+    const hasViewedChannel = activeBot ? viewedChannelBotIds.has(activeBot.id) : false;
+    if (getResetBlockReason(activeBot, resetting, hasViewedChannel)) return;
+    const targetBotId = activeBot?.id;
+    if (!targetBotId) return;
+
+    setResetting(true);
+    setResetError(null);
+    try {
+      const result = await repositories.bots.resetInstanceConfig(targetBotId);
+
+      const resetBackendResult = await repositories.bots.execDebugCommand(
+        targetBotId,
+        "acli backend reset-config",
+      );
+      if (!isExecCommandSucceeded(resetBackendResult)) {
+        throw new Error(
+          t("初始化配置文件失败：{{detail}}", {
+            detail: truncateExecOutput(resetBackendResult.output, resetBackendResult.status),
+          }),
+        );
+      }
+
+      const providerSaveCmd = hermesModelCommands.getProviderSaveCommand({
+        name: result.config.providerName,
+        baseUrl: result.config.baseUrl,
+        api: result.config.api,
+        apiKey: result.config.apiKey,
+        models: [{ id: result.config.modelId, name: hermesModelName(result.config.modelId) }],
+      });
+      const providerSaveResult = await repositories.bots.execDebugCommand(targetBotId, providerSaveCmd);
+      if (!isExecCommandSucceeded(providerSaveResult)) {
+        const sanitizedOutput = result.config.apiKey
+          ? providerSaveResult.output.replace(
+              new RegExp(result.config.apiKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"),
+              "sk-***",
+            )
+          : providerSaveResult.output;
+        throw new Error(
+          t("默认模型保存失败：{{detail}}", {
+            detail: truncateExecOutput(sanitizedOutput, providerSaveResult.status),
+          }),
+        );
+      }
+
+      const switchModelCmd = hermesModelCommands.getModelSwitchCommand(
+        hermesSwitchModelFullId(result.config.providerName, result.config.modelId),
+      );
+      const switchModelResult = await repositories.bots.execDebugCommand(targetBotId, switchModelCmd);
+      if (!isExecCommandSucceeded(switchModelResult)) {
+        const sanitizedSwitchOutput = result.config.apiKey
+          ? switchModelResult.output.replace(
+              new RegExp(result.config.apiKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"),
+              "sk-***",
+            )
+          : switchModelResult.output;
+        throw new Error(
+          t("默认模型切换失败：{{detail}}", {
+            detail: truncateExecOutput(sanitizedSwitchOutput, switchModelResult.status),
+          }),
+        );
+      }
+
+      setShowResetConfirm(false);
+      toast.success(t("重置成功"));
+    } catch (err) {
+      setResetError(err instanceof Error ? err.message : t("重置失败，请重试"));
+      toast.error(t("重置失败，请重试"));
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  const CHANNEL_TAB_BOOTSTRAP_GRACE_MS = 3000;
+  useEffect(() => {
+    if (activeSection !== "channel" || !activeBot) return;
+    const botId = activeBot.id;
+    const timer = window.setTimeout(() => {
+      setViewedChannelBotIds((prev) => {
+        if (prev.has(botId)) return prev;
+        const next = new Set(prev);
+        next.add(botId);
+        return next;
+      });
+    }, CHANNEL_TAB_BOOTSTRAP_GRACE_MS);
+    return () => window.clearTimeout(timer);
+  }, [activeSection, activeBot?.id]);
 
   /* 通道弹窗 */
   const [showChannelModal, setShowChannelModal] = useState(false);
@@ -2970,6 +3082,72 @@ export const OpenClawSettingsPage = () => {
         document.body,
       )}
 
+      {/* Reset Config Confirm Dialog */}
+      {showResetConfirm && activeBot && createPortal(
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          onClick={() => { if (!resetting) setShowResetConfirm(false); }}
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            className="mx-4 w-full max-w-sm rounded-2xl border bg-white p-6 shadow-2xl"
+            style={{ borderColor: "var(--tea-color-border-default-alpha4, rgba(238,238,238,0.4))" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3" style={{ marginBottom: "20px" }}>
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "var(--tea-color-warning-default-alpha10, rgba(245,158,11,0.10))" }}>
+                <Wrench className="h-5 w-5" style={{ color: "var(--tea-color-warning-default, #F59E0B)" }} />
+              </div>
+              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("恢复初始设置")}</h3>
+            </div>
+            <p style={{ color: "var(--tea-color-text-secondary, #666)", fontSize: "14px", lineHeight: 1.6, marginBottom: "20px" }}>
+              {t("将保留当前工作空间、记忆和定时任务，并初始化配置文件，模型相关配置不会保留。")}
+            </p>
+            {resetError && (
+              <pre
+                className="whitespace-pre-wrap break-words rounded-md border px-3 py-2 text-xs"
+                style={{
+                  color: "var(--tea-color-text-error-default, #DC2626)",
+                  backgroundColor: "var(--tea-color-text-error-default-alpha4, rgba(220,38,38,0.04))",
+                  borderColor: "var(--tea-color-text-error-default-alpha18, rgba(220,38,38,0.18))",
+                  fontFamily:
+                    "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+                  maxHeight: "180px",
+                  overflowY: "auto",
+                  marginBottom: "12px",
+                }}
+              >
+                {resetError}
+              </pre>
+            )}
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => void handleResetConfig()}
+                disabled={resetting}
+                className="flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-all"
+                style={{
+                  backgroundColor: resetting ? "var(--tea-color-bg-disabled, #E5E7EB)" : "var(--tea-color-warning-default, #F59E0B)",
+                  cursor: resetting ? "not-allowed" : "pointer",
+                }}
+              >
+                {resetting && <Loader2 className="h-4 w-4 animate-spin" />}
+                {resetting ? t("恢复中...") : t("确认恢复")}
+              </button>
+              <button
+                onClick={() => setShowResetConfirm(false)}
+                disabled={resetting}
+                className="py-2 text-sm transition-colors hover:opacity-70"
+                style={{ color: "var(--tea-color-text-secondary, #999)", background: "none", border: "none", cursor: resetting ? "not-allowed" : "pointer" }}
+              >
+                {t("取消")}
+              </button>
+            </div>
+          </motion.div>
+        </div>,
+        document.body,
+      )}
+
       {/* Create Confirm Dialog */}
       {showCreateConfirm && createPortal(
         <div
@@ -3099,6 +3277,13 @@ export const OpenClawSettingsPage = () => {
                 { id: "chat", label: t("对话"), icon: <MessageSquare className="h-4 w-4" /> },
               ];
               const isRestartDisabled = isActiveBotRestarting || activeBot.status !== "running";
+              const hasViewedChannel = viewedChannelBotIds.has(activeBot.id);
+              const resetBlockReason = getResetBlockReason(activeBot, resetting, hasViewedChannel);
+              const resetDisabled = resetting || resetBlockReason !== null;
+              const resetTooltip =
+                resetBlockReason === RESET_BLOCK_REASON.NOT_RUNNING || resetBlockReason === RESET_BLOCK_REASON.CHANNEL_NOT_VIEWED
+                  ? t("请稍后")
+                  : t("重置配置");
 
               return (
                 <div className="grid items-start gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
@@ -3163,6 +3348,26 @@ export const OpenClawSettingsPage = () => {
                             </button>
                           </span>
                         </span>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            if (resetDisabled) return;
+                            setResetError(null);
+                            setShowResetConfirm(true);
+                          }}
+                          aria-disabled={resetDisabled}
+                          aria-label={resetTooltip}
+                          className={cn(
+                            "inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md transition-colors",
+                            resetDisabled
+                              ? "cursor-not-allowed text-black/20"
+                              : "text-black/35 hover:bg-amber-500/10 hover:text-amber-600",
+                          )}
+                          title={resetTooltip}
+                        >
+                          {resetting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wrench className="h-4 w-4" />}
+                        </button>
                         <button
                           type="button"
                           onClick={(event) => {
@@ -3240,14 +3445,14 @@ export const OpenClawSettingsPage = () => {
                             onClick={() => setActiveSection(section.id)}
                             aria-current={isActive ? "page" : undefined}
                             className={cn(
-                              "flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 text-sm font-medium transition-colors",
+                              "lw-settings-nav-item flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 font-medium transition-colors",
                               isActive
                                 ? "bg-black/[0.06] text-black/90"
                                 : "text-black/55 hover:bg-black/[0.035] hover:text-black/85",
                             )}
                           >
                             <span className="flex h-5 w-5 items-center justify-center">{section.icon}</span>
-                            <span className="flex-1 text-left">{section.label}</span>
+                            <span className="flex-1 text-left text-[15px]">{section.label}</span>
                             {section.badge && (
                               <span className="rounded-full bg-black/90 px-1.5 py-0.5 text-[9px] font-bold leading-none text-white">
                                 {section.badge}

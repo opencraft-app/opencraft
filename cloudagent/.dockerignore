@@ -4,6 +4,8 @@
 !research/hermes-rs/**
 !agent-loader/
 !agent-loader/**
+!cargo-vendor/
+!cargo-vendor/**
 research/hermes-rs/target
 research/hermes-rs/.git
 research/hermes-rs/.github

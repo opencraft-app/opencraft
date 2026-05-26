@@ -12,6 +12,8 @@ import (
 	"path"
 	"strings"
 	"time"
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 type Server struct {
@@ -27,6 +29,7 @@ func NewServer(store *Store, worker Worker) *Server {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
+	mux.HandleFunc("GET /v1/selfcheck", s.handleSelfCheck)
 	mux.HandleFunc("GET /v1/models", s.handleListModels)
 	mux.HandleFunc("POST /v1/files", s.handleCreateFile)
 	mux.HandleFunc("GET /v1/files/", s.handleGetFileContent)
@@ -36,12 +39,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/acp/sessions/", s.handleSessionEnvdProxy)
 	mux.HandleFunc("/acp", s.handleRawACP)
 	mux.HandleFunc("/ws", s.handleAppWS)
-	return withCORS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := withCORS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.serveMaybeEnvdProxy(w, r) {
 			return
 		}
 		mux.ServeHTTP(w, r)
 	}))
+	return otelhttp.NewHandler(withOTELAccessLog(handler), "cloudagent-gateway")
 }
 
 func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {

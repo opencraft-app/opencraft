@@ -64,6 +64,206 @@ func TestAgentSidecarWorkerRejectsTalosModelWithoutBackend(t *testing.T) {
 	}
 }
 
+func TestAgentSidecarWorkerConfiguresWispOuterRuntime(t *testing.T) {
+	worker, err := NewAgentSidecarWorker(AgentSidecarWorkerConfig{
+		Client:               &AGSClient{apiKey: "ags-key", apiURL: "https://api.ap-shanghai.tencentags.com", domain: "ap-shanghai.tencentags.com"},
+		OuterTemplateID:      "ags-outer",
+		InnerTemplateID:      "ags-inner",
+		SidecarURL:           "https://example.com/cloudagent-sidecar",
+		TokenHubAPIKey:       "tokenhub-key",
+		OuterRuntime:         "wisp",
+		WispPackageURL:       "https://example.com/wisp.tar.gz",
+		WispRootUpperSize:    "5G",
+		WispJFSPrefix:        "agent-test",
+		WispSMHLibraryID:     "library",
+		WispSMHAccessDomain:  "https://library.example.com/",
+		WispSMHLibrarySecret: "secret",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if worker.outerRuntime != outerRuntimeWisp {
+		t.Fatalf("outerRuntime=%q, want wisp", worker.outerRuntime)
+	}
+	if worker.wispSMHAccessDomain != "https://library.example.com" {
+		t.Fatalf("wispSMHAccessDomain=%q", worker.wispSMHAccessDomain)
+	}
+}
+
+func TestAgentSidecarWorkerDefaultsToWispOuterRuntime(t *testing.T) {
+	worker, err := NewAgentSidecarWorker(AgentSidecarWorkerConfig{
+		Client:          &AGSClient{apiKey: "ags-key", apiURL: "https://api.ap-shanghai.tencentags.com", domain: "ap-shanghai.tencentags.com"},
+		OuterTemplateID: "ags-outer",
+		InnerTemplateID: "ags-inner",
+		SidecarURL:      "https://example.com/cloudagent-sidecar",
+		TokenHubAPIKey:  "tokenhub-key",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if worker.outerRuntime != outerRuntimeWisp {
+		t.Fatalf("outerRuntime=%q, want default wisp", worker.outerRuntime)
+	}
+	if worker.wispPackageURL != defaultWispPackageURL {
+		t.Fatalf("wispPackageURL=%q, want default package URL", worker.wispPackageURL)
+	}
+	if normalizeOuterRuntime("") != outerRuntimeWisp {
+		t.Fatalf("empty outer runtime should normalize to wisp")
+	}
+}
+
+func TestAgentSidecarWorkerDefaultsSandboxHostToCLILocalTransport(t *testing.T) {
+	worker, err := NewAgentSidecarWorker(AgentSidecarWorkerConfig{
+		Client:          &AGSClient{apiKey: "ags-key", apiURL: "https://api.ap-shanghai.tencentags.com", domain: "ap-shanghai.tencentags.com"},
+		OuterTemplateID: "ags-outer",
+		InnerTemplateID: "ags-inner",
+		SidecarURL:      "https://example.com/cloudagent-sidecar",
+		SandboxHostURL:  "https://example.com/sandbox-host",
+		TokenHubAPIKey:  "tokenhub-key",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := map[string]string{}
+	worker.addSandboxHostEnv(env)
+	if env["HERMES_SANDBOX_HOST_TRANSPORT"] != "cli" {
+		t.Fatalf("sandbox host transport=%q, want cli", env["HERMES_SANDBOX_HOST_TRANSPORT"])
+	}
+	if env["HERMES_SANDBOX_HOST_ALLOW_CLI_FALLBACK"] != "false" {
+		t.Fatalf("sandbox host cli fallback=%q, want false", env["HERMES_SANDBOX_HOST_ALLOW_CLI_FALLBACK"])
+	}
+	prefix := worker.sandboxHostEnvPrefix()
+	if !strings.Contains(prefix, "HERMES_SANDBOX_HOST_TRANSPORT='cli'") || !strings.Contains(prefix, "HERMES_SANDBOX_HOST_ALLOW_CLI_FALLBACK='false'") {
+		t.Fatalf("sandbox host env prefix missing CLI contract: %s", prefix)
+	}
+}
+
+func TestAgentSidecarWorkerCanExplicitlyUseSandboxHostHTTPWithFallback(t *testing.T) {
+	worker, err := NewAgentSidecarWorker(AgentSidecarWorkerConfig{
+		Client:               &AGSClient{apiKey: "ags-key", apiURL: "https://api.ap-shanghai.tencentags.com", domain: "ap-shanghai.tencentags.com"},
+		OuterTemplateID:      "ags-outer",
+		InnerTemplateID:      "ags-inner",
+		SidecarURL:           "https://example.com/cloudagent-sidecar",
+		SandboxHostURL:       "https://example.com/sandbox-host",
+		SandboxHostTransport: "http",
+		SandboxHostFallback:  "true",
+		TokenHubAPIKey:       "tokenhub-key",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := map[string]string{}
+	worker.addSandboxHostEnv(env)
+	if env["HERMES_SANDBOX_HOST_TRANSPORT"] != "http" {
+		t.Fatalf("sandbox host transport=%q, want http", env["HERMES_SANDBOX_HOST_TRANSPORT"])
+	}
+	if env["HERMES_SANDBOX_HOST_ALLOW_CLI_FALLBACK"] != "true" {
+		t.Fatalf("sandbox host cli fallback=%q, want true", env["HERMES_SANDBOX_HOST_ALLOW_CLI_FALLBACK"])
+	}
+}
+
+func TestAgentSidecarWorkerRejectsUnsupportedOuterRuntime(t *testing.T) {
+	_, err := NewAgentSidecarWorker(AgentSidecarWorkerConfig{
+		Client:          &AGSClient{apiKey: "ags-key", apiURL: "https://api.ap-shanghai.tencentags.com", domain: "ap-shanghai.tencentags.com"},
+		OuterTemplateID: "ags-outer",
+		InnerTemplateID: "ags-inner",
+		SidecarURL:      "https://example.com/cloudagent-sidecar",
+		TokenHubAPIKey:  "tokenhub-key",
+		OuterRuntime:    "unknown",
+	})
+	if err == nil {
+		t.Fatal("expected unsupported outer runtime to fail")
+	}
+}
+
+func TestWorkspaceWispNameFromSessionIsShortAndStable(t *testing.T) {
+	sessionID := "session_4c7055cd94970a97f79ae711e3f8e39e"
+	first := workspaceWispNameFromSession(sessionID)
+	second := workspaceWispNameFromSession(sessionID)
+	if first != second {
+		t.Fatalf("workspace wisp name not stable: %q != %q", first, second)
+	}
+	if len(first) > 48 {
+		t.Fatalf("workspace wisp name too long: %q len=%d", first, len(first))
+	}
+	if !strings.HasPrefix(first, "workspace-") {
+		t.Fatalf("workspace wisp name should be recognizable, got %q", first)
+	}
+	if first == wispNameFromRuntime(sessionID) {
+		t.Fatalf("workspace wisp name should be distinct from outer runtime name: %q", first)
+	}
+}
+
+func TestWorkspaceWispJFSPrefixIsWorkspaceScoped(t *testing.T) {
+	prefix := workspaceWispJFSPrefix("cloudagent-agent-live", "space_ABC/123")
+	if prefix == "cloudagent-agent-live" {
+		t.Fatal("workspace prefix must not reuse outer runtime prefix")
+	}
+	if !strings.HasPrefix(prefix, "cloudagent-agent-live/workspace/") {
+		t.Fatalf("workspace prefix=%q, want workspace-scoped prefix", prefix)
+	}
+	if strings.Contains(prefix, "//") {
+		t.Fatalf("workspace prefix should not contain duplicate slashes: %q", prefix)
+	}
+	if prefix != workspaceWispJFSPrefix("cloudagent-agent-live", "space_ABC/123") {
+		t.Fatalf("workspace prefix should be stable: %q", prefix)
+	}
+	if got := workspaceWispJFSPrefix("cloudagent-agent-live/workspace/space-x", "ignored"); got != "cloudagent-agent-live/workspace/space-x" {
+		t.Fatalf("already scoped workspace prefix changed: %q", got)
+	}
+}
+
+func TestWispOuterRuntimeWrapsCommandWithEnvironment(t *testing.T) {
+	runtime := ACPSessionRuntime{
+		OuterRuntime:   outerRuntimeWisp,
+		WispName:       "agent-session",
+		WispClientPath: "/tmp/wisp/install/bin/wispclient",
+	}
+	command := runtime.wrapWispShellCommand("echo \"$TOKENHUB_MODEL\"", map[string]string{
+		"TOKENHUB_MODEL": "minimax-m2.7",
+		"bad-name":       "ignored",
+	})
+	for _, want := range []string{
+		"'/tmp/wisp/install/bin/wispclient'",
+		"exec --stream 'agent-session'",
+		"export TOKENHUB_MODEL=",
+		"minimax-m2.7",
+		"echo \"$TOKENHUB_MODEL\"",
+	} {
+		if !strings.Contains(command, want) {
+			t.Fatalf("wrapped command missing %q: %s", want, command)
+		}
+	}
+	if strings.Contains(command, "bad-name") {
+		t.Fatalf("wrapped command leaked invalid env name: %s", command)
+	}
+}
+
+func TestWispOuterStopCommandStopsHostRuntime(t *testing.T) {
+	runtime := ACPSessionRuntime{
+		OuterRuntime:   outerRuntimeWisp,
+		WispName:       "agent-session",
+		WispClientPath: "/tmp/wisp/install/bin/wispclient",
+		WispInstallDir: "/tmp/wisp/install",
+		RemoteBinary:   "/tmp/cloudagent-session/hermes-sidecar",
+	}
+	command := wispOuterStopCommand(runtime)
+	for _, want := range []string{
+		"'/tmp/wisp/install/bin/wispclient'",
+		"stop \"$name\"",
+		"agent-session",
+		"CLOUDAGENT_WISP_STOPPED",
+		"/tmp/wisp/daemon.log",
+	} {
+		if !strings.Contains(command, want) {
+			t.Fatalf("stop command missing %q: %s", want, command)
+		}
+	}
+	if strings.Contains(command, "exec --stream") {
+		t.Fatalf("stop command must run on the outer host, not inside the wisp runtime: %s", command)
+	}
+}
+
 func TestAgentSidecarWorkerEnsureInnerCommandForcesWhenInnerIdentityMissing(t *testing.T) {
 	worker, err := NewAgentSidecarWorker(AgentSidecarWorkerConfig{
 		Client:          &AGSClient{apiKey: "ags-key", apiURL: "https://api.ap-beijing.tencentags.com", domain: "ap-beijing.tencentags.com"},

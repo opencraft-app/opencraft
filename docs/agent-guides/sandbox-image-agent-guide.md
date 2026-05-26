@@ -30,6 +30,7 @@
   - 默认运行用户为 `agentuser`
   - 默认 Hermes 产物来自内部 COS pin 版本：`hermes-agent-v20260506` / `0.12.0`
   - 镜像内安装 `acli` 并跑 `acli doctor`；CTL 初始化优先走 `acli model set`，旧镜像回退动态注入 `harness`
+  - 镜像内为 `agentuser` 的 Hermes WhatsApp bridge 预装 Baileys / QR / Express / Pino 依赖
   - 默认验证套件为 `runtime-hermes`
 
 ## 2. 关键不变量

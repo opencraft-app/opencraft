@@ -215,6 +215,21 @@ else
   echo "${SKILLHUB_OUTPUT}"
 fi
 
+info "checking WhatsApp bridge Node dependencies"
+WHATSAPP_BRIDGE_OUTPUT="$(remote_exec_runtime 'set -euo pipefail; export HOME='"${RUNTIME_HOME}"'; export HERMES_HOME='"${RUNTIME_HOME}"'/.hermes; cd '"${RUNTIME_HOME}"'/.hermes/hermes-agent/scripts/whatsapp-bridge; node -e '"'"'for (const m of ["@whiskeysockets/baileys","qrcode-terminal","express","pino"]) console.log(m, require.resolve(m))'"'" 2>&1 || true)"
+info "whatsapp bridge dependency output:"
+printf '%s\n' "${WHATSAPP_BRIDGE_OUTPUT}"
+if echo "${WHATSAPP_BRIDGE_OUTPUT}" | grep -q '@whiskeysockets/baileys' \
+  && echo "${WHATSAPP_BRIDGE_OUTPUT}" | grep -q 'qrcode-terminal' \
+  && echo "${WHATSAPP_BRIDGE_OUTPUT}" | grep -q 'express' \
+  && echo "${WHATSAPP_BRIDGE_OUTPUT}" | grep -q 'pino' \
+  && ! echo "${WHATSAPP_BRIDGE_OUTPUT}" | grep -Eqi 'cannot find module|error|no such file'; then
+  pass "WhatsApp bridge Node dependencies are available"
+else
+  fail "WhatsApp bridge Node dependencies are not available"
+  echo "${WHATSAPP_BRIDGE_OUTPUT}"
+fi
+
 info "checking acli command"
 ACLI_OUTPUT="$(remote_exec_runtime "if command -v acli >/dev/null 2>&1; then acli --help >/dev/null && acli doctor; else echo MISSING; exit 1; fi" 2>&1 || true)"
 if echo "${ACLI_OUTPUT}" | grep -Eqi 'error|failed|missing'; then

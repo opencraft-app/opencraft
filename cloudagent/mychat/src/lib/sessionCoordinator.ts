@@ -1,4 +1,11 @@
-import type { AgentCapabilities, ChatMessage, ListedSession, PermissionRequest, SessionState } from './acpClient';
+import type {
+  AgentCapabilities,
+  ChatMessage,
+  CloudAgentSessionStatus,
+  ListedSession,
+  PermissionRequest,
+  SessionState,
+} from './acpClient';
 import { decideReopen, type PromptAttachment } from './protocol';
 import {
   createDraftRow,
@@ -87,6 +94,7 @@ export function planSessionList(input: {
   capabilities: AgentCapabilities;
   restoreEnvironment: AcpRestoreEnvironment;
   activeLiveConnection: boolean;
+  transcriptLoadedSessionIds?: ReadonlySet<string>;
 }) {
   const listedRows = rowsFromListedSessions(input.sessions, input.previousRows, input.defaultCwd);
   const createdEmptyDraft = listedRows.length === 0;
@@ -94,7 +102,7 @@ export function planSessionList(input: {
     ? listedRows
     : [createDraftRow(input.emptyDraftId ?? 'conv-empty-draft', input.defaultCwd, input.restoreEnvironment.mcpServers)];
   const preferred = input.pendingOpenAfterList === 'first' ? input.storedActiveSessionId : input.pendingOpenAfterList;
-  const activeConversationId = resolveActiveRowId(conversations, preferred ?? input.activeConversationId);
+  const activeConversationId = resolveOpenableRowId(conversations, preferred ?? input.activeConversationId);
   const activeConversation = conversations.find((row) => row.id === activeConversationId);
   const effects = activeConversation && !createdEmptyDraft
     ? planOpenConversation({
@@ -103,6 +111,7 @@ export function planSessionList(input: {
       listedSessions: input.sessions,
       restoreEnvironment: input.restoreEnvironment,
       liveConnection: input.activeLiveConnection,
+      transcriptLoaded: Boolean(activeConversation.sessionId && input.transcriptLoadedSessionIds?.has(activeConversation.sessionId)),
     }).effects
     : [];
   return {
@@ -115,12 +124,19 @@ export function planSessionList(input: {
   };
 }
 
+function resolveOpenableRowId(rows: SessionRow[], preferredId?: string): string {
+  const preferred = preferredId ? rows.find((row) => row.id === preferredId) : undefined;
+  if (preferred && !preferred.readOnly) return preferred.id;
+  return rows.find((row) => !row.readOnly)?.id ?? resolveActiveRowId(rows, preferredId);
+}
+
 export function planOpenConversation(input: {
   conversation: SessionRow;
   capabilities: AgentCapabilities;
   listedSessions: ListedSession[];
   restoreEnvironment: AcpRestoreEnvironment;
   liveConnection: boolean;
+  transcriptLoaded?: boolean;
 }) {
   const { conversation, capabilities, listedSessions, restoreEnvironment } = input;
   const effects: SessionCoordinatorEffect[] = [];
@@ -132,6 +148,7 @@ export function planOpenConversation(input: {
   const listedByAgent = Boolean(listedSession);
   if (
     input.liveConnection &&
+    input.transcriptLoaded &&
     conversation.sessionId &&
     !listedSession?.readOnly &&
     (listedSession?.state === 'ready' || listedSession?.state === 'prompting')
@@ -144,6 +161,7 @@ export function planOpenConversation(input: {
   }
   const decision = decideReopen({
     liveConnection: input.liveConnection,
+    transcriptLoaded: input.transcriptLoaded,
     listedByAgent,
     listSupported: Boolean(capabilities.sessionCapabilities?.list),
     loadSupported: capabilities.loadSession === true,
@@ -197,6 +215,7 @@ export function planSendPrompt(input: {
   listedSessions: ListedSession[];
   restoreEnvironment: AcpRestoreEnvironment;
   liveConnection: boolean;
+  transcriptLoaded?: boolean;
 }) {
   const { prompt, activeConversation } = input;
   if (activeConversation.readOnly) {
@@ -227,6 +246,7 @@ export function planSendPrompt(input: {
       listedSessions: input.listedSessions,
       restoreEnvironment: input.restoreEnvironment,
       liveConnection: input.liveConnection,
+      transcriptLoaded: input.transcriptLoaded,
     }).effects
     : canStartSessionOpen(activeConversation)
       ? [
@@ -274,7 +294,10 @@ export function planSessionReady(input: {
       ? {
           ...row,
           readOnly: input.state.readOnly ?? row.readOnly,
-          readOnlyReason: input.state.readOnlyReason ?? row.readOnlyReason,
+          readOnlyReason:
+            input.state.readOnly === false
+              ? undefined
+              : input.state.readOnlyReason ?? row.readOnlyReason,
         }
       : row,
   );
@@ -363,6 +386,83 @@ export function planLoadReplaySettled(input: {
     });
   }
   return { effects };
+}
+
+export function planSessionStatusReady(input: {
+  conversationId: string;
+  status: CloudAgentSessionStatus;
+  conversations: SessionRow[];
+  transcriptLoaded?: boolean;
+}) {
+  const conversation = input.conversations.find((row) => row.id === input.conversationId);
+  if (!conversation?.sessionId) return { effects: [] as SessionCoordinatorEffect[] };
+  if (conversation.sessionId !== input.status.sessionId) return { effects: [] as SessionCoordinatorEffect[] };
+  if (conversation.restoreState !== 'restoring') return { effects: [] as SessionCoordinatorEffect[] };
+
+  if (isRuntimeTerminal(input.status)) {
+    return {
+      effects: [
+        { type: 'update_row_restore_state', conversationId: input.conversationId, restoreState: 'blocked' },
+        {
+          type: 'report_error',
+          conversationId: input.conversationId,
+          content: `session_read_only/${input.status.readOnlyReason ?? 'runtime_not_recovered'}`,
+        },
+        { type: 'clear_load_replay', conversationId: input.conversationId },
+      ] satisfies SessionCoordinatorEffect[],
+    };
+  }
+
+  if (!isRuntimeStatusReady(input.status)) return { effects: [] as SessionCoordinatorEffect[] };
+  if (!input.transcriptLoaded) return { effects: [] as SessionCoordinatorEffect[] };
+  return {
+    effects: [
+      { type: 'update_row_restore_state', conversationId: input.conversationId, restoreState: 'live' },
+      {
+        type: 'activate_loaded_session',
+        conversationId: input.conversationId,
+        sessionId: conversation.sessionId,
+      },
+      { type: 'clear_load_replay', conversationId: input.conversationId },
+      { type: 'flush_pending_prompt', conversationId: input.conversationId },
+    ] satisfies SessionCoordinatorEffect[],
+  };
+}
+
+function isRuntimeStatusReady(status: CloudAgentSessionStatus) {
+  const lifecycleState = status.lifecycleState?.toLowerCase();
+  if (lifecycleState === 'live' || lifecycleState === 'prompting') return true;
+  if (
+    lifecycleState === 'restoring' ||
+    lifecycleState === 'storing' ||
+    lifecycleState === 'detached' ||
+    lifecycleState === 'stored_restorable' ||
+    lifecycleState === 'restore_failed_retryable' ||
+    lifecycleState === 'blocked_terminal'
+  ) {
+    return false;
+  }
+  if (status.readOnly === false) return true;
+  const runtimeStatus = status.runtimeStatus?.toLowerCase();
+  if (
+    runtimeStatus === 'attached' ||
+    runtimeStatus === 'ready' ||
+    runtimeStatus === 'idle' ||
+    runtimeStatus === 'running' ||
+    runtimeStatus === 'recovered' ||
+    runtimeStatus === 'restored'
+  ) {
+    return true;
+  }
+  return Boolean(status.sandbox?.daemonAddr);
+}
+
+function isRuntimeTerminal(status: CloudAgentSessionStatus) {
+  return (
+    status.readOnly === true ||
+    status.recoverability?.toLowerCase() === 'terminal' ||
+    status.lifecycleState?.toLowerCase() === 'blocked_terminal'
+  );
 }
 
 export function replacePendingTurn(turns: Set<string>, previousId: string, nextId: string) {

@@ -6,6 +6,8 @@ license = "MIT OR Apache-2.0"
 rust-version = "1.86"
 description = "Trusted loader for signed CloudAgent artifacts"
 
+[workspace]
+
 [[bin]]
 name = "cloudagent-agent-loader"
 path = "src/main.rs"

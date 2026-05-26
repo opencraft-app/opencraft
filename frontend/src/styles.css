@@ -132,6 +132,10 @@ a {
   display: none;
 }
 
+.lw-settings-nav-item + .lw-settings-nav-item {
+  margin-top: 4px;
+}
+
 @media (min-width: 768px) {
   .lw-landing-navbar .lw-landing-navbar__nav {
     display: flex;

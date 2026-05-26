@@ -1,7 +1,5 @@
 import { cjk } from "@streamdown/cjk";
-import { code } from "@streamdown/code";
 import { math } from "@streamdown/math";
-import { mermaid } from "@streamdown/mermaid";
 import { Streamdown, type Components } from "streamdown";
 import { useMemo } from "react";
 
@@ -19,7 +17,7 @@ export interface MarkdownContentProps {
   text: string;
 }
 
-const streamdownPlugins = { cjk, code, math, mermaid };
+const streamdownPlugins = { cjk, math };
 
 export function MarkdownContent({
   isAnimating,
@@ -34,7 +32,7 @@ export function MarkdownContent({
 
   return (
     <Streamdown
-      animated
+      animated={false}
       className={cn(
         "mt-1 min-w-0 break-words text-[17px] leading-8 [overflow-wrap:anywhere]",
         "[&_a]:text-accent [&_a]:underline [&_a]:underline-offset-4",

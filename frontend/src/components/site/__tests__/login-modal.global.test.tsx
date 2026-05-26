@@ -6,6 +6,7 @@
  *   因此把国际站用例放在独立文件，通过文件顶层 `vi.mock` 生效。
  */
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setGitHubLoginVisible } from "@/lib/github-login-visibility";
 import * as oauthModule from "@/lib/oauth";
@@ -48,6 +49,12 @@ vi.mock("@/contexts/session-context", () => ({
   }),
 }));
 
+const renderLoginModal = () => render(
+  <MemoryRouter>
+    <LoginModal open onClose={vi.fn()} />
+  </MemoryRouter>,
+);
+
 describe("LoginModal (国际站 isGlobal=true)", () => {
   beforeEach(() => {
     setGitHubLoginVisible(false);
@@ -58,7 +65,7 @@ describe("LoginModal (国际站 isGlobal=true)", () => {
   });
 
   it("仅展示 Google / GitHub 入口，隐藏 QQ / 微信", () => {
-    render(<LoginModal open onClose={vi.fn()} />);
+    renderLoginModal();
 
     /* 国际站 i18n locale = en-US，按钮文案转为英文 */
     expect(screen.getByRole("button", { name: "Sign in with Google" })).toBeInTheDocument();
@@ -70,7 +77,7 @@ describe("LoginModal (国际站 isGlobal=true)", () => {
   it("勾选协议后点击 Google / GitHub 跳转后端下发的 start URL", () => {
     const redirectSpy = vi.spyOn(oauthModule, "redirectToOAuthStart").mockImplementation(() => undefined);
 
-    render(<LoginModal open onClose={vi.fn()} />);
+    renderLoginModal();
 
     const [agreeCheckbox] = screen.getAllByRole("checkbox");
     expect(agreeCheckbox).toBeDefined();

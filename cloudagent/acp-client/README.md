@@ -144,6 +144,32 @@ go run ./cmd/acp-client -listen 127.0.0.1:8765
 
 前端为原生 **ESM**，修改 `web/static/` 后刷新页面即可（无需单独打包步骤）。
 
+### CloudAgent 真实服务 E2E
+
+`pkg/acp` 内置 CloudAgent typed primitives 和真实 ACP server e2e。默认 `go test ./...`
+不会创建云资源；显式提供 `CLOUDAGENT_ACP_E2E_URL` 后才会连接真实服务并创建 AGS/Wisp/COS runtime。
+
+```bash
+CLOUDAGENT_ACP_E2E_URL=http://127.0.0.1:18094/acp \
+GATEWAY_API_KEY="$GATEWAY_API_KEY" \
+go test ./pkg/acp -run TestCloudAgentLiveSessionLifecycle -count=1 -timeout 10m -v
+```
+
+恢复链路会执行 `session/close -> session/resume -> prompt`，验证 outer sandbox
+销毁后仍可通过 workspace 记录重建会话：
+
+```bash
+CLOUDAGENT_ACP_E2E_URL=http://127.0.0.1:18094/acp \
+CLOUDAGENT_ACP_E2E_RESTORE=1 \
+GATEWAY_API_KEY="$GATEWAY_API_KEY" \
+go test ./pkg/acp -run TestCloudAgentLive -count=1 -timeout 15m -v
+```
+
+可选环境变量：`CLOUDAGENT_ACP_E2E_BEARER` / `CLOUDAGENT_ACP_E2E_AUTHORIZATION`、
+`CLOUDAGENT_ACP_E2E_TENANT_ID`、`CLOUDAGENT_ACP_E2E_PROJECT_ID`、
+`CLOUDAGENT_ACP_E2E_CWD`、`CLOUDAGENT_ACP_E2E_AGENT_VERSION`、
+`CLOUDAGENT_ACP_E2E_WORKSPACE_VERSION`、`CLOUDAGENT_ACP_E2E_TIMEOUT`。
+
 ## 参考
 
 - [Cursor 文档 · Agent Client Protocol (ACP)](https://cursor.com/cn/docs/cli/acp)

@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { streamdownProps } = vi.hoisted(() => ({
   streamdownProps: [] as Array<{
+    animated?: boolean;
     children: ReactNode;
     isAnimating?: boolean;
     mode?: string;
@@ -13,6 +14,7 @@ const { streamdownProps } = vi.hoisted(() => ({
 
 vi.mock("streamdown", () => ({
   Streamdown: (props: {
+    animated?: boolean;
     children: ReactNode;
     isAnimating?: boolean;
     mode?: string;
@@ -31,21 +33,20 @@ describe("MarkdownContent", () => {
     streamdownProps.length = 0;
   });
 
-  it("passes streaming state and the full Streamdown plugin set", () => {
+  it("passes streaming state and the default Streamdown plugin set", () => {
     renderToStaticMarkup(
       <MarkdownContent isAnimating text="```ts\nconst ok = true\n```" />,
     );
 
     expect(streamdownProps).toHaveLength(1);
     expect(streamdownProps[0]).toMatchObject({
+      animated: false,
       isAnimating: true,
       mode: "streaming",
     });
     expect(Object.keys(streamdownProps[0].plugins ?? {}).sort()).toEqual([
       "cjk",
-      "code",
       "math",
-      "mermaid",
     ]);
   });
 

@@ -58,7 +58,6 @@ LightClaw 镜像全自动构建流水线（主入口）
 """
 
 import argparse
-import concurrent.futures
 import json
 import os
 import re
@@ -1715,39 +1714,62 @@ def step_sync_image(image_id, source_region, target_region, image_name, dry_run=
         time.sleep(POLL_INTERVAL_IMAGE)
 
 
+def wait_for_source_image_sync_ready(image_id, source_region, dry_run=False):
+    """Wait until the source image can accept another SyncImages request."""
+    if dry_run:
+        return
+
+    start = time.time()
+    while True:
+        elapsed = time.time() - start
+        if elapsed > POLL_TIMEOUT_IMAGE_SYNC:
+            raise TimeoutError(
+                f"源镜像 {image_id} 在 {POLL_TIMEOUT_IMAGE_SYNC}s 内未恢复可同步状态"
+            )
+        resp = run_tccli("cvm", "DescribeImages", source_region, [
+            "--ImageIds", json.dumps([image_id]),
+        ])
+        if resp.get("TotalCount", 0) < 1 or not resp.get("ImageSet"):
+            raise RuntimeError(f"源镜像不存在: {image_id}")
+        state = resp["ImageSet"][0].get("ImageState", "UNKNOWN")
+        if state == "NORMAL":
+            return
+        if state in ("CREATE_FAILED", "DELETED"):
+            raise RuntimeError(f"源镜像状态异常: {state}")
+        log(f"  源镜像 {image_id} 状态: {state}, 等待下一次同步 ({int(elapsed)}s)")
+        time.sleep(POLL_INTERVAL_IMAGE)
+
+
 def step_sync_images(image_id, source_region, target_regions, image_name, dry_run=False):
-    """并发复制镜像到多个目标地域，返回 {region: image_id}。"""
+    """复制镜像到多个目标地域，返回 {region: image_id}。"""
     regions = parse_csv_list(target_regions)
     if not regions:
         log("未配置目标地域，跳过跨地域复制")
         return {}
 
-    log(f"并发同步镜像到目标地域: {format_region_list(regions)}")
+    log(f"顺序同步镜像到目标地域: {format_region_list(regions)}")
     results = {}
     failures = {}
-    max_workers = max(1, len(regions))
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_region = {
-            executor.submit(
-                step_sync_image,
+    for region in regions:
+        try:
+            wait_for_source_image_sync_ready(
+                image_id,
+                source_region,
+                dry_run=dry_run,
+            )
+            target_image_id = step_sync_image(
                 image_id,
                 source_region,
                 region,
                 image_name,
                 dry_run,
-            ): region
-            for region in regions
-        }
-        for future in concurrent.futures.as_completed(future_to_region):
-            region = future_to_region[future]
-            try:
-                target_image_id = future.result()
-            except Exception as exc:
-                failures[region] = exc
-                log(f"目标地域同步失败: {region}: {exc}")
-                continue
-            results[region] = target_image_id
-            log(f"目标地域同步完成: {region}: {target_image_id}")
+            )
+        except Exception as exc:
+            failures[region] = exc
+            log(f"目标地域同步失败: {region}: {exc}")
+            continue
+        results[region] = target_image_id
+        log(f"目标地域同步完成: {region}: {target_image_id}")
 
     if failures:
         detail = "; ".join(f"{region}: {exc}" for region, exc in failures.items())
@@ -2011,12 +2033,12 @@ def main():
         build_mode = "app-only"
         total_steps = 5
         if args.with_verify:
-            total_steps = 8
+            total_steps = 9
     else:
         build_mode = None  # 全量
         total_steps = 5
         if args.with_verify:
-            total_steps = 8
+            total_steps = 9
 
     image_version = make_image_version(build_mode, runtime_kind=args.runtime)
     image_metadata = build_image_metadata(
