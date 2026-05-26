@@ -680,7 +680,7 @@ function ConfirmCreateOverLimitModal({
       >
         <h3 className="text-base font-semibold text-black/90">{t("定时任务数量提醒")}</h3>
         <p className="mt-2 text-sm leading-relaxed text-black/65">
-          {t("定时任务数量已经达到20个以上，建议你删除不需要的任务后再继续。")}
+          {t("当前生效中的定时任务数量已经达到 20 个以上，建议你删除不需要的任务后再继续。")}
         </p>
         <div className="mt-5 flex items-center justify-end gap-2">
           <button
