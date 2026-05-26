@@ -1031,7 +1031,7 @@ function AutomationFormModal({
                       onChange={(e) =>
                         setDeliverChatIds((prev) => ({ ...prev, [p]: e.target.value }))
                       }
-                      placeholder={t("选填，留空默认在 home 对话（如已设置）中发送通知；也可指定Chat ID 发送通知")}
+                      placeholder={t("选填，留空则在home对话(如已设置)中通知；也可指定Chat ID通知")}
                       className="flex-1 rounded-lg border border-black/10 bg-white px-3 py-1.5 text-xs placeholder:text-xs placeholder:text-black/35 focus:border-black/30 focus:outline-none"
                       style={{ fontSize: 12, lineHeight: "16px" }}
                     />
