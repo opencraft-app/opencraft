@@ -565,7 +565,7 @@ function DeliverDetailRow({ deliver }: { deliver: string | undefined }) {
       <div>
         <dt className="text-xs text-black/50">{t("通知方式")}</dt>
         <dd className="mt-0.5 text-sm text-black/85 break-words">
-          {deliver && deliver !== "local" ? deliver : t("不通知，仅写日志")}
+          {formatDeliverFallback(deliver || "", t)}
         </dd>
       </div>
     );
@@ -587,6 +587,18 @@ function DeliverDetailRow({ deliver }: { deliver: string | undefined }) {
       </dd>
     </div>
   );
+}
+
+function formatDeliverFallback(deliver: string, t: ReturnType<typeof useT>): string {
+  const trimmed = deliver.trim();
+  if (!trimmed || trimmed === "local") return t("不通知，仅写日志");
+  if (trimmed === "origin") return t("原对话（创建任务的聊天通道）");
+  if (trimmed.startsWith("origin:")) {
+    const chatId = trimmed.slice("origin:".length).trim();
+    if (chatId) return t("{{platform}}（Chat ID：{{chatId}}）", { platform: t("原对话"), chatId });
+    return t("原对话（创建任务的聊天通道）");
+  }
+  return trimmed;
 }
 
 function getDeliverPlatformLabel(platform: string, t: ReturnType<typeof useT>): string {
