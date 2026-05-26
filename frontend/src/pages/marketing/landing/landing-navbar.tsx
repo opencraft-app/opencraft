@@ -83,18 +83,18 @@ export function LandingNavbar({
 
   return (
     <header
-      className="lw-fixed-top fixed inset-x-0 z-50 border-b bg-white/90 backdrop-blur-[20px] border-black/5"
+      className="lw-landing-navbar lw-fixed-top fixed inset-x-0 z-50 border-b bg-white/90 backdrop-blur-[20px] border-black/5"
     >
       <div className="mx-auto flex items-center h-[60px] max-w-[1440px] px-6 md:px-10 lg:px-[80px]">
         {/* Logo — 统一使用 BrandMark 组件，保持跨页面视觉一致 */}
         <BrandMark to="/" />
 
         {/* Desktop Nav — centered */}
-        <nav className="hidden flex-1 items-center justify-center gap-6 md:flex">
+        <nav className="lw-landing-navbar__nav hidden flex-1 items-center justify-center gap-6 md:flex">
           {navLinks.map((link) => {
             const active = isLinkActive(link.href, location.pathname);
             const { label } = link;
-            const className = `inline-flex items-center gap-1.5 text-[14px] transition-all duration-250 ease-out hover:text-black/90 hover:-translate-y-[2px] ${
+            const className = `lw-site-link lw-site-link--nav inline-flex items-center gap-1.5 text-[14px] transition-all duration-250 ease-out hover:-translate-y-[2px] ${
               active ? "font-semibold text-black/90" : "font-normal text-black/90"
             }`;
             const content = (
@@ -187,7 +187,7 @@ export function LandingNavbar({
               {navLinks.map((link) => {
                 const active = isLinkActive(link.href, location.pathname);
                 const { label } = link;
-                const className = `inline-flex items-center gap-2 rounded-full px-4 py-3 text-sm transition-all duration-250 hover:bg-black/5 ${
+                const className = `lw-site-link lw-site-link--nav inline-flex items-center gap-2 rounded-full px-4 py-3 text-sm transition-all duration-250 hover:bg-black/5 ${
                   active ? "font-semibold text-black/90" : "font-normal text-black/90"
                 }`;
                 const content = (

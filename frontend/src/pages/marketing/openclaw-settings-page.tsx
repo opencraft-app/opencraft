@@ -12,8 +12,10 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowRight,
   BrainCircuit,
+  ChevronDown,
   Check,
   MessageCircle,
+  MessageSquare,
   Loader2,
   Calendar,
   Mail,
@@ -26,7 +28,7 @@ import {
   Crown,
   TerminalSquare,
   Download,
-  Pencil,
+  Plus,
   Trash2,
   UserRound,
   Wand2,
@@ -47,7 +49,6 @@ import type { TencentPtyClient, TencentPtyConnectionState } from "@/lib/tencent-
 import { BrandMark } from "@/components/site/brand-mark";
 import { LanguageSwitcher } from "@/components/site/language-switcher";
 import { useT, t as rawT } from "@/i18n/t";
-import { useTranslation } from "react-i18next";
 import { isGlobal } from "@/lib/region";
 import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
 import { useSession } from "@/contexts/session-context";
@@ -65,6 +66,7 @@ import {
   type IProductConfig,
 } from "@tencent/tea-sdk-lightclaw";
 import { createMonoDebugExecAdapter } from "@/pages/marketing/openclaw-tat-adapter";
+import { createLightVelaCommandExecutor } from "@/pages/marketing/openclaw-command-executor";
 import { installOpenClawConsoleHelpers } from "@/pages/marketing/openclaw-console-helpers";
 import { BuddyPanel } from "@/pages/marketing/openclaw-buddy-panel";
 import { findCompletedCreatingBot, getOpenClawCreateLimitMessage } from "@/pages/marketing/openclaw-create-availability";
@@ -87,6 +89,8 @@ import {
 } from "@/pages/marketing/openclaw-reset-config";
 import { toast } from "@/lib/toast";
 import "@tencent/tea-sdk-lightclaw/styles";
+// LightVela 对话面板（npm 包 @tencent/agentchat-lightvela-panel）
+import { LightVelaPanel } from "@tencent/agentchat-lightvela-panel";
 
 /* ─── Types ─── */
 
@@ -172,7 +176,7 @@ const SettingsNavbar = () => {
     <header
       className="lw-fixed-top fixed inset-x-0 z-50 border-b border-black/5 bg-white/90 backdrop-blur-[20px]"
     >
-      <div className="mx-auto flex h-[60px] items-center justify-between max-w-[1440px] px-6 md:px-[80px]">
+      <div className="lw-settings-topbar-inner flex h-[60px] items-center justify-between px-6 md:px-[80px]">
         <BrandMark to="/" />
         <div className="flex items-center gap-3">
           {/* 语言切换器：仅国际站展示。
@@ -193,9 +197,9 @@ const SettingsNavbar = () => {
   );
 };
 
-/* ─── 实例配置子页面类型（模型 / 通道 / 技能，放在单个 bot 内部切换） ─── */
+/* ─── 实例配置子页面类型（通道 / 模型 / 技能 / 人设 / 对话，放在单个 bot 内部切换） ─── */
 
-type SettingsSectionId = "model" | "channel" | "skill" | "buddy";
+type SettingsSectionId = "channel" | "model" | "skill" | "buddy" | "chat";
 
 /* ─── Section Card Wrapper ─── */
 
@@ -2386,14 +2390,22 @@ const hermesModelCommands = hermesScripts.model;
 
 export const OpenClawSettingsPage = () => {
   const t = useT();
-  const { i18n: i18nInstance } = useTranslation();
-  const i18nLanguage = i18nInstance.language;
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const creatingParam = searchParams.get("creating")?.trim() ?? "";
   const requestedCreatingBotId = creatingParam && creatingParam !== "true" ? creatingParam : "";
-  const { bots, botsLoading, deleteBot, updateBot, user, refreshBots, isSubscribed, addBot } = useOpenClaw();
+  const { bots, botsLoading, deleteBot, user, refreshBots, isSubscribed, addBot } = useOpenClaw();
   const repositories = useRepositories();
+  // 账号 id：来自 /auth/profile 下发的 session.user.id，用于 LightVelaPanel.userId 等场景
+  const { session } = useSession();
+  const accountId = session.user?.id ?? "";
+
+  useEffect(() => {
+    document.documentElement.classList.add("lw-settings-scrollbar-stable");
+    return () => {
+      document.documentElement.classList.remove("lw-settings-scrollbar-stable");
+    };
+  }, []);
 
   /* 创建 loading 状态 */
   const [isCreating, setIsCreating] = useState(Boolean(creatingParam));
@@ -2423,11 +2435,12 @@ export const OpenClawSettingsPage = () => {
   );
 
 
-  /* 实例内部的子页面切换：通道 / 模型 / 技能（通道置顶，作为默认进入项） */
+  /* 实例内部的子页面切换：通道 / 模型 / 技能 / 人设 / 对话（通道置顶，作为默认进入项） */
   const [activeSection, setActiveSection] = useState<SettingsSectionId>("channel");
 
   /* Tab 切换 */
   const [activeTabId, setActiveTabId] = useState((visibleBots[0]?.id ?? requestedCreatingBotId) || "creating");
+  const [isAgentMenuOpen, setIsAgentMenuOpen] = useState(false);
   // bots 异步加载完成后，若当前 tab 无效则自动切换到第一个可展示 bot
   useEffect(() => {
     if (isCreating) return;
@@ -2436,6 +2449,137 @@ export const OpenClawSettingsPage = () => {
     }
   }, [visibleBots, activeTabId, isCreating]);
   const activeBot = visibleBots.find((b) => b.id === activeTabId) ?? visibleBots[0];
+
+  /**
+   * AgentChat（LightVela）启动 token：
+   * - 接口：`POST /v1/instances/:instanceId/agentchat/launch-token`，需带 LightClaw Bearer 登录态
+   * - TTL：300 秒；过期前 60 秒自动续期
+   * - 仅在用户进入 chat tab 且 activeBot 存在时拉取，避免无意义请求
+   * - 401 / 网络错误：状态置为 error，由 chat tab UI 提示并提供重试
+   */
+  const [launchToken, setLaunchToken] = useState<string | null>(null);
+  const [launchTokenStatus, setLaunchTokenStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [launchTokenError, setLaunchTokenError] = useState<string | null>(null);
+  const [launchTokenRefreshTick, setLaunchTokenRefreshTick] = useState(0);
+
+  const activeBotId = activeBot?.id;
+
+  useEffect(() => {
+    // 仅在 chat tab 激活、activeBot 已就位、用户已登录（拿到账号 id）时拉取
+    if (activeSection !== "chat" || !activeBotId) {
+      return;
+    }
+    if (!accountId) {
+      setLaunchTokenStatus("error");
+      setLaunchTokenError("未登录，无法获取账号 id");
+      return;
+    }
+
+    const baseUrl = resolveConfiguredAuthApiBaseUrl();
+    if (!baseUrl) {
+      setLaunchTokenStatus("error");
+      setLaunchTokenError("未配置后端地址（VITE_AUTH_API_BASE_URL）");
+      return;
+    }
+
+    const authToken = readStoredAuthToken();
+    if (!authToken) {
+      setLaunchTokenStatus("error");
+      setLaunchTokenError("未登录，无法获取 AgentChat 启动 token");
+      return;
+    }
+
+    const controller = new AbortController();
+    let cancelled = false;
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const fetchLaunchToken = async () => {
+      setLaunchTokenStatus("loading");
+      setLaunchTokenError(null);
+      try {
+        const url = `${baseUrl.replace(/\/$/, "")}/v1/instances/${encodeURIComponent(activeBotId)}/agentchat/launch-token`;
+        const response = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${authToken}`,
+          },
+          body: "{}",
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          if (cancelled) return;
+          let detail = `HTTP ${response.status}`;
+          try {
+            const body = await response.json() as { code?: string; message?: string };
+            if (body?.message) detail = `${body.code ?? response.status}: ${body.message}`;
+          } catch {
+            // 忽略响应体解析错误
+          }
+          setLaunchTokenStatus("error");
+          setLaunchTokenError(detail);
+          return;
+        }
+
+        const json = await response.json() as {
+          code?: string;
+          data?: { launch_token?: string; expires_at?: number };
+          message?: string;
+        };
+        if (cancelled) return;
+
+        const token = json?.data?.launch_token;
+        const expiresAt = json?.data?.expires_at;
+        if (!token) {
+          setLaunchTokenStatus("error");
+          setLaunchTokenError(json?.message || "返回数据缺少 launch_token");
+          return;
+        }
+
+        setLaunchToken(token);
+        setLaunchTokenStatus("ready");
+
+        // 过期前 60s 触发续期；若返回的 expires_at 不可信则按 4 分钟兜底
+        const now = Math.floor(Date.now() / 1000);
+        const ttlSeconds = typeof expiresAt === "number" && expiresAt > now
+          ? expiresAt - now
+          : 300;
+        const refreshAfterMs = Math.max(30, ttlSeconds - 60) * 1000;
+        refreshTimer = setTimeout(() => {
+          if (!cancelled) {
+            setLaunchTokenRefreshTick((tick) => tick + 1);
+          }
+        }, refreshAfterMs);
+      } catch (e) {
+        if (cancelled || (e as Error)?.name === "AbortError") return;
+        setLaunchTokenStatus("error");
+        setLaunchTokenError((e as Error)?.message || "请求失败");
+      }
+    };
+
+    fetchLaunchToken();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+      if (refreshTimer) clearTimeout(refreshTimer);
+    };
+  }, [activeSection, activeBotId, accountId, launchTokenRefreshTick]);
+
+  // 切到非 chat tab 或换 bot 时，清空已缓存的 token，避免泄露给下个 bot
+  useEffect(() => {
+    if (activeSection !== "chat") {
+      setLaunchToken(null);
+      setLaunchTokenStatus("idle");
+      setLaunchTokenError(null);
+    }
+  }, [activeSection, activeBotId]);
+
+  const retryLaunchToken = useCallback(() => {
+    setLaunchTokenRefreshTick((tick) => tick + 1);
+  }, []);
+
 
   /**
    * tea-sdk-lightclaw 的 ModelCard / ChannelCard / SkillCard 内部通过
@@ -2462,38 +2606,26 @@ export const OpenClawSettingsPage = () => {
     [],
   );
 
-  /* 改名相关 */
-  const [isEditing, setIsEditing] = useState(false);
-  const [editName, setEditName] = useState("");
-  const nameInputRef = useRef<HTMLInputElement>(null);
-
-  const handleStartRename = () => {
-    if (!activeBot) return;
-    setEditName(activeBot.name);
-    setIsEditing(true);
-    setTimeout(() => nameInputRef.current?.focus(), 0);
-  };
-
-  const handleSaveRename = async () => {
-    const trimmed = editName.trim();
-    // 与后端 maxInstanceDisplayNameRunes = 64 保持一致，按 Unicode 码点计数
-    if (!activeBot || !trimmed || trimmed === activeBot.name || Array.from(trimmed).length > 64) {
-      setIsEditing(false);
-      return;
-    }
-    try {
-      await repositories.bots.renameBot(activeBot.id, trimmed);
-      updateBot(activeBot.id, { name: trimmed });
-    } catch (err) {
-      console.error("rename failed:", err);
-    }
-    setIsEditing(false);
-  };
-
-  const handleRenameKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") handleSaveRename();
-    if (e.key === "Escape") setIsEditing(false);
-  };
+  /**
+   * LightVelaPanel 用的 commandExecutor。
+   *
+   * 与上方 `commandAdapter`（给 `@tencent/tea-sdk-lightclaw` SDK 走 TAT 协议
+   * 的适配器）不同，LightVelaPanel 接受的是 ClawPanel 公共层定义的更直接的
+   * `CommandExecutor` 契约（`(options) => Promise<{ taskStatus, exitCode, output, ... }>`）。
+   *
+   * 两者底层都走 mono debug/exec，但接口形状不同：
+   *   - commandAdapter：runCommand → getInvocationTask 两步式（兼容 SDK 的 TAT 模型）
+   *   - lightvelaCommandExecutor：单步同步返回（贴近 LightVelaPanel 期望）
+   *
+   * 仅在 activeBot 存在时构造；切换到无 bot 状态会传 undefined，让 panel
+   * 内部 fallback 到默认 TAT 通道（实际 lightvela 场景不会走到）。
+   */
+  const lightvelaCommandExecutor = useMemo(
+    () => activeBotId
+      ? createLightVelaCommandExecutor(repositories, activeBotId)
+      : undefined,
+    [repositories, activeBotId],
+  );
 
   /* 删除相关 */
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -2515,32 +2647,13 @@ export const OpenClawSettingsPage = () => {
   /*
    * 重置配置（轮换 API Key）相关
    * ──────────────────────────────────────────────────────────────
-   * 用户在控制台对当前实例点击"重置配置"按钮 → 二次确认 → 调用
-   * `POST /v1/instances/:botId/config/reset`（无 body）。
-   *
-   * 接口语义：成功返回 = 服务端新 key 已生效、旧 key 已撤销，前端拿到的
-   * `config` 是「需要下发到实例」的新一轮运行时配置。
-   *
-   * 若 ❶ 接口调用失败 → 旧 key 未被撤销，用户可重试。
-   * 若 ❷ 接口成功但下发命令失败 → 旧 key 已撤销，但实例仍在用旧 key；
-   *    本次 config 仅活在当前 try 块的局部变量里，失败后即丢弃（不重用）；
-   *    用户再点一次"重置配置"会触发新一轮 Step 1 重新 rotate key，
-   *    服务端每次 reset 都会重新生成 + 撤销上一轮 key。
-   *    ⚠️ 注意：若用户连续多次点击且均在 Step 2/3 失败，ctl 侧会留存
-   *    多条无效 key 历史；失败期间实例处于无可用 key 状态，需提示用户重试。
-   *
-   * 明文 API Key 只在本次调用链内使用：拿到 `config` 后立即下发到实例，
-   * 不落 React state，避免被 devtools 或后续渲染链路延长保留时间。
+   * 服务端 reset 成功后旧 key 立即作废；前端必须把本次返回的新运行时
+   * config 立刻下发到实例。若后续 acli 命令失败，用户再次重置会重新
+   * rotate key，因此明文 apiKey 只保存在本次 try 块内，不进入 React state。
    */
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [resetting, setResetting] = useState(false);
-  /* 失败时把详细 acli output 留在弹窗里展示（pre + monospace），方便用户排查；
-   * 成功 / 失败都额外用顶部 toast 给一个简短反馈，跟"通道断开"的提示风格统一。 */
   const [resetError, setResetError] = useState<string | null>(null);
-  /* 已经打开过 channel tab 的 bot 集合（per-page、per-bot）。
-   * channel tab mount 时 SDK 会跑 bootstrap → `acli self-update`，把存量
-   * 实例上较老的 acli 升到最新版本，确保 `acli backend reset-config` 等
-   * 较新子命令可用。reset 按钮的启用条件之一即"打开过通道 tab"。 */
   const [viewedChannelBotIds, setViewedChannelBotIds] = useState<Set<string>>(new Set());
 
   const handleResetConfig = async () => {
@@ -2548,13 +2661,12 @@ export const OpenClawSettingsPage = () => {
     if (getResetBlockReason(activeBot, resetting, hasViewedChannel)) return;
     const targetBotId = activeBot?.id;
     if (!targetBotId) return;
+
     setResetting(true);
     setResetError(null);
     try {
-      // ── Step 1: 服务端轮换 API Key（旧 key 立即作废，拿到新的运行时 config）
       const result = await repositories.bots.resetInstanceConfig(targetBotId);
 
-      // ── Step 2: 清空实例上 acli 后端配置
       const resetBackendResult = await repositories.bots.execDebugCommand(
         targetBotId,
         "acli backend reset-config",
@@ -2567,14 +2679,6 @@ export const OpenClawSettingsPage = () => {
         );
       }
 
-      // ── Step 3: 复用 instance 创建时"添加默认模型"的命令，把新 config 下发到实例。
-      //
-      //   3a. acli provider save —— upsert provider，含新 api_key + 唯一一条 model
-      //   3b. acli model switch  —— 切换全局生效模型为本 provider 下的该 model
-      //
-      // 等价于 ctl/pkg/instance/async.go: configureOnboard() → renderHermesModelSetCommand()
-      // 的 acli 分支；compat 维度由后端在生成 reset 响应时已映射成 `config.api`，
-      // 前端无需再做 compat → api 转换。
       const providerSaveCmd = hermesModelCommands.getProviderSaveCommand({
         name: result.config.providerName,
         baseUrl: result.config.baseUrl,
@@ -2584,7 +2688,6 @@ export const OpenClawSettingsPage = () => {
       });
       const providerSaveResult = await repositories.bots.execDebugCommand(targetBotId, providerSaveCmd);
       if (!isExecCommandSucceeded(providerSaveResult)) {
-        // 脱敏处理：acli 出错时 stderr 可能回显含明文 apiKey 的命令参数，在展示前替换
         const sanitizedOutput = result.config.apiKey
           ? providerSaveResult.output.replace(
               new RegExp(result.config.apiKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"),
@@ -2603,7 +2706,6 @@ export const OpenClawSettingsPage = () => {
       );
       const switchModelResult = await repositories.bots.execDebugCommand(targetBotId, switchModelCmd);
       if (!isExecCommandSucceeded(switchModelResult)) {
-        // 脱敏处理：同 Step 3a，防止 acli 错误输出回显 apiKey
         const sanitizedSwitchOutput = result.config.apiKey
           ? switchModelResult.output.replace(
               new RegExp(result.config.apiKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"),
@@ -2627,14 +2729,6 @@ export const OpenClawSettingsPage = () => {
     }
   };
 
-  /* 当用户切到 channel tab 且有活跃 bot 时，等一个启动 grace 期再把 bot 加入
-   * "已查过通道"集合 —— 给 SDK ChannelPanel 自己的 bootstrap → `acli self-update`
-   * 留时间，确保后续 reset 流程发出的 `acli backend reset-config` 已经能被
-   * 升级后的 acli 识别。
-   *
-   * 期间扳手按钮 tooltip 显示"请稍后"。3 秒是 self-update 常见耗时（拉
-   * COS 二进制 + 替换）的上限观测值；连续在 channel tab 停留 ≥ 3 秒视作 viewed，
-   * 中途切走会清掉 timer，再切回重新计时。 */
   const CHANNEL_TAB_BOOTSTRAP_GRACE_MS = 3000;
   useEffect(() => {
     if (activeSection !== "channel" || !activeBot) return;
@@ -3012,7 +3106,7 @@ export const OpenClawSettingsPage = () => {
             </p>
             {resetError && (
               <pre
-                className="text-xs whitespace-pre-wrap break-words rounded-md border px-3 py-2"
+                className="whitespace-pre-wrap break-words rounded-md border px-3 py-2 text-xs"
                 style={{
                   color: "var(--tea-color-text-error-default, #DC2626)",
                   backgroundColor: "var(--tea-color-text-error-default-alpha4, rgba(220,38,38,0.04))",
@@ -3073,7 +3167,7 @@ export const OpenClawSettingsPage = () => {
               </div>
               <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("创建新智能体")}</h3>
             </div>
-            <p style={{ color: "var(--tea-color-text-secondary, #666)", fontSize: "14px", lineHeight: 1.6, marginBottom: "20px" }}>
+            <p style={{ color: "#666", fontSize: "14px", lineHeight: 1.6, marginBottom: "20px" }}>
               {t("即刻创建全新的 Hermes Agent")}
             </p>
             {directCreateError && <p className="text-xs" style={{ color: "#DC2626", marginBottom: "12px" }}>{directCreateError}</p>}
@@ -3126,96 +3220,8 @@ export const OpenClawSettingsPage = () => {
         )}
       </AnimatePresence>
 
-      <main className="lw-app-top-pad flex-grow px-6 pb-16 md:px-8">
-        <section className="mx-auto" style={{ maxWidth: 1200 }}>
-          {/* Page Header */}
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
-            className="mb-6 flex items-center justify-between gap-4"
-          >
-            <h1
-              className="font-heading font-semibold"
-              style={{
-                fontSize: "clamp(1.5rem, 3vw, 2rem)",
-                letterSpacing: "-0.5px",
-                lineHeight: 1.2,
-                color: "rgba(0,0,0,0.90)",
-              }}
-            >
-              {t("我的智能体伙伴")}
-            </h1>
-            {!isCreating && visibleBots.length > 0 && canCreateBot && (
-              <button
-                onClick={handleCreateNew}
-                className="flex items-center gap-2 rounded-full bg-black/90 px-5 py-2 text-base font-medium leading-normal text-white transition-all hover:opacity-90 active:scale-[0.98]"
-              >
-                {t("立即创建")}
-              </button>
-            )}
-          </motion.div>
-
-          {/* ── Tab Bar: 切换不同 Hermes ── */}
-          <div
-            className="mb-8 flex items-center gap-0.5"
-            style={{ borderBottom: "1px solid rgba(0,0,0,0.05)" }}
-          >
-            {/* 正在创建中的 Hermes Agent tab */}
-            {isCreating && (
-              <button
-                className="relative flex items-center gap-2 px-4 py-3 text-sm font-medium"
-                style={{
-                  color: "var(--text-primary, #141414)",
-                  background: "transparent",
-                  border: "none",
-                  cursor: "default",
-                }}
-              >
-                <Loader2 className="h-4 w-4 animate-spin" style={{ color: "var(--text-primary, #141414)" }} />
-                <span>{t("Hermes Agent")}</span>
-                <motion.div
-                  layoutId="tab-indicator"
-                  className="absolute bottom-0 left-0 right-0 h-0.5 rounded-full"
-                  style={{ background: "var(--text-primary, #141414)" }}
-                  transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                />
-              </button>
-            )}
-            {/* 创建过程中只展示占位 tab，隐藏其它已有 bot tab，避免出现「两个 tab」 */}
-            {!isCreating && visibleBots.map((bot) => {
-              const isActive = bot.id === activeTabId;
-              const tabAvatar = getAvatarForBot(bot.id);
-              return (
-                <button
-                  key={bot.id}
-                  onClick={() => {
-                    setActiveTabId(bot.id);
-                    setIsEditing(false);
-                  }}
-                  className="relative flex items-center gap-2 px-4 py-3 text-sm font-medium transition-all"
-                  style={{
-                    color: isActive ? "var(--text-primary, #141414)" : "#999",
-                    background: "transparent",
-                    border: "none",
-                    cursor: "pointer",
-                  }}
-                >
-                  <img src={tabAvatar} alt="" className="h-5 w-5 rounded-full object-contain" />
-                  <span title={bot.name}>{truncateBotName(bot.name)}</span>
-                  {isActive && (
-                    <motion.div
-                      layoutId="tab-indicator"
-                      className="absolute bottom-0 left-0 right-0 h-0.5 rounded-full"
-                      style={{ background: "var(--text-primary, #141414)" }}
-                      transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                    />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-
+      <main className="lw-app-top-pad flex-grow bg-[#F7F8FA] px-6 pb-12 md:px-[80px]">
+        <section className="mx-auto" style={{ maxWidth: 1440 }}>
           {/* ── Loading 状态 ── */}
           {botsLoading && !isCreating && (
             <div className="flex items-center justify-center py-20">
@@ -3231,330 +3237,319 @@ export const OpenClawSettingsPage = () => {
 
           {/* ── 设置区域 ── */}
           {!isCreating && !botsLoading && activeBot && (
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={activeBot.id}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.25 }}
-                className="space-y-8"
-              >
-                {/* ─ 基本信息 ─ */}
-                <div>
-                  <div className="flex items-center gap-4">
-                    <div
-                      className="flex h-14 w-14 flex-shrink-0 items-center justify-center overflow-hidden rounded-2xl"
-                      style={{ background: "rgba(0,0,0,0.03)", border: "1px solid rgba(0,0,0,0.06)" }}
-                    >
-                      <img src={avatarUrl} alt="" className="h-11 w-11 object-contain" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      {isEditing ? (
-                        <div className="flex items-center gap-2">
-                          <input
-                            ref={nameInputRef}
-                            type="text"
-                            value={editName}
-                            maxLength={64}
-                            onChange={(e) => setEditName(e.target.value)}
-                            onKeyDown={handleRenameKeyDown}
-                            onBlur={handleSaveRename}
-                            className="rounded-full border px-3 py-1.5 text-base font-bold outline-none transition-all focus:border-black/30"
-                            style={{ color: "rgba(0,0,0,0.90)", borderColor: "rgba(0,0,0,0.10)", maxWidth: 240 }}
+            (() => {
+              const sdkInstance: IInstanceInfo = {
+                InstanceId: activeBot.id,
+                RegionId: 1,
+              };
+              const sdkRegionShortName = "gz";
+              const sdkFeatureFlags: IFeatureFlags = {
+                gateway: true,
+                channel: true,
+                wecomChannel: true,
+                adpChannel: false,
+                wecomLongConn: true,
+                yuanbaoChannel: false,
+                weixinChannel: true,
+                qrConfig: true,
+                skills: true,
+                webUI: false,
+                memoryManagement: false,
+                memoryV2: false,
+                qqbotplugin: false,
+              };
+              const sdkProductConfig: IProductConfig = {
+                ...createLighthouseConfig({
+                  agentType: "hermes",
+                  supportsTencentCloudApi: false,
+                  isI18n: isGlobal,
+                }),
+                runCommand: commandAdapter.runCommand,
+                getInvocationTask: commandAdapter.getInvocationTask,
+              };
+              const settingsSections: { id: SettingsSectionId; label: string; icon: React.ReactNode; badge?: string }[] = [
+                { id: "channel", label: t("通道"), icon: <MessageCircle className="h-4 w-4" /> },
+                { id: "model", label: t("模型"), icon: <BrainCircuit className="h-4 w-4" /> },
+                { id: "skill", label: t("技能"), icon: <Wand2 className="h-4 w-4" /> },
+                ...(!isGlobal
+                  ? [{ id: "buddy" as const, label: t("人设"), icon: <UserRound className="h-4 w-4" />, badge: "NEW" }]
+                  : []),
+                { id: "chat", label: t("对话"), icon: <MessageSquare className="h-4 w-4" /> },
+              ];
+              const isRestartDisabled = isActiveBotRestarting || activeBot.status !== "running";
+              const hasViewedChannel = viewedChannelBotIds.has(activeBot.id);
+              const resetBlockReason = getResetBlockReason(activeBot, resetting, hasViewedChannel);
+              const resetDisabled = resetting || resetBlockReason !== null;
+              const resetTooltip =
+                resetBlockReason === RESET_BLOCK_REASON.NOT_RUNNING || resetBlockReason === RESET_BLOCK_REASON.CHANNEL_NOT_VIEWED
+                  ? t("请稍后")
+                  : t("重置配置");
+
+              return (
+                <div className="grid items-start gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
+                  <aside className="lg:sticky lg:top-[84px]">
+                    <div className="rounded-lg border border-black/[0.06] bg-white p-3 shadow-[0_8px_28px_rgba(15,23,42,0.04)]">
+                      <div className="px-1 pb-2 text-xs font-medium text-black/35">
+                        {t("选择 Agent")}
+                      </div>
+                      <div
+                        role={visibleBots.length > 1 ? "button" : undefined}
+                        tabIndex={visibleBots.length > 1 ? 0 : undefined}
+                        onClick={() => {
+                          if (visibleBots.length > 1) setIsAgentMenuOpen((open) => !open);
+                        }}
+                        onKeyDown={(event) => {
+                          if (visibleBots.length <= 1) return;
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            setIsAgentMenuOpen((open) => !open);
+                          }
+                        }}
+                        className={cn(
+                          "flex w-full items-center gap-3 rounded-md px-2.5 py-2.5 text-left transition-colors",
+                          visibleBots.length > 1 ? "hover:bg-black/[0.035]" : "cursor-default",
+                        )}
+                        aria-expanded={visibleBots.length > 1 ? isAgentMenuOpen : undefined}
+                      >
+                        <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-md border border-black/[0.06] bg-black/[0.03]">
+                          <img src={avatarUrl} alt="" className="h-8 w-8 object-contain" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-semibold text-black/90" title={activeBot.name}>
+                            {truncateBotName(activeBot.name)}
+                          </span>
+                          <span className="mt-1 flex items-center gap-1.5 text-xs text-black/45">
+                            {isActiveBotRestarting ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <span
+                                className="inline-block h-1.5 w-1.5 rounded-full"
+                                style={{ background: getBotStatusColor(activeBot.status) }}
+                              />
+                            )}
+                            {isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                if (!isRestartDisabled) void handleRestartGateway();
+                              }}
+                              aria-disabled={isRestartDisabled}
+                              aria-label={t("重启")}
+                              className={cn(
+                                "ml-1 inline-flex h-5 items-center rounded px-1.5 text-xs font-medium transition-colors",
+                                isRestartDisabled
+                                  ? "cursor-not-allowed text-black/25"
+                                  : "text-black/45 hover:bg-black/[0.06] hover:text-black/80",
+                              )}
+                              title={isActiveBotRestarting ? t("正在重启中") : t("重启 Hermes Agent 网关")}
+                            >
+                              {t("重启")}
+                            </button>
+                          </span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            if (resetDisabled) return;
+                            setResetError(null);
+                            setShowResetConfirm(true);
+                          }}
+                          aria-disabled={resetDisabled}
+                          aria-label={resetTooltip}
+                          className={cn(
+                            "inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md transition-colors",
+                            resetDisabled
+                              ? "cursor-not-allowed text-black/20"
+                              : "text-black/35 hover:bg-amber-500/10 hover:text-amber-600",
+                          )}
+                          title={resetTooltip}
+                        >
+                          {resetting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wrench className="h-4 w-4" />}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setDeleteInput("");
+                            setShowDeleteConfirm(true);
+                          }}
+                          aria-label={t("删除")}
+                          className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md text-red-500 transition-colors hover:bg-red-500/10"
+                          title={t("删除此 Hermes")}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                        {visibleBots.length > 1 && (
+                          <ChevronDown
+                            className={cn("h-4 w-4 flex-shrink-0 text-black/35 transition-transform", isAgentMenuOpen && "rotate-180")}
                           />
-                          <span className="text-xs" style={{ color: "rgba(0,0,0,0.35)" }}>{t("按 Enter 保存")}</span>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-lg font-bold" style={{ color: "rgba(0,0,0,0.90)" }} title={activeBot.name}>{truncateBotName(activeBot.name)}</h3>
-                          <button
-                            onClick={handleStartRename}
-                            className="flex h-7 w-7 items-center justify-center rounded-full transition-all hover:bg-black/5"
-                            style={{ color: "#bbb", border: "none", background: "transparent", cursor: "pointer" }}
-                            title={t("重命名")}
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </button>
+                        )}
+                      </div>
+
+                      {visibleBots.length > 1 && isAgentMenuOpen && (
+                        <div className="mt-1 rounded-md bg-black/[0.025] p-1">
+                          {visibleBots.map((bot) => {
+                            const isActive = bot.id === activeTabId;
+                            return (
+                              <button
+                                key={bot.id}
+                                type="button"
+                                onClick={() => {
+                                  setActiveTabId(bot.id);
+                                  setIsAgentMenuOpen(false);
+                                }}
+                                className={cn(
+                                  "flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm transition-colors",
+                                  isActive ? "bg-white text-black/90 shadow-sm" : "text-black/55 hover:bg-white/70 hover:text-black/80",
+                                )}
+                              >
+                                <img src={getAvatarForBot(bot.id)} alt="" className="h-5 w-5 flex-shrink-0 rounded object-contain" />
+                                <span className="min-w-0 flex-1 truncate" title={bot.name}>
+                                  {truncateBotName(bot.name)}
+                                </span>
+                                {isActive && <Check className="h-3.5 w-3.5 text-black/55" />}
+                              </button>
+                            );
+                          })}
                         </div>
                       )}
-                      <div className="mt-1.5 flex flex-wrap items-center gap-x-5 gap-y-1">
-                        <div className="flex items-center gap-1.5">
-                          {isActiveBotRestarting ? (
-                            <Loader2 className="h-3 w-3 animate-spin" style={{ color: "rgba(0,0,0,0.45)" }} />
-                          ) : (
-                            <span
-                              className="inline-block h-2 w-2 rounded-full"
-                              style={{ background: getBotStatusColor(activeBot.status) }}
+
+                      {activeBotRestartError && (
+                        <p className="mt-2 px-1 text-xs leading-relaxed text-red-500">{activeBotRestartError}</p>
+                      )}
+
+                      {canCreateBot && (
+                        <button
+                          type="button"
+                          onClick={handleCreateNew}
+                          className="mt-3 flex w-full items-center justify-center gap-2 rounded-md border border-black/[0.08] bg-white px-3 py-2 text-sm font-medium text-black/70 transition-colors hover:bg-black/[0.035] hover:text-black/90"
+                        >
+                          <Plus className="h-4 w-4" />
+                          {t("立即创建")}
+                        </button>
+                      )}
+                    </div>
+
+                    <nav
+                      aria-label={t("实例配置导航")}
+                      className="mt-4 rounded-lg border border-black/[0.06] bg-white p-2 shadow-[0_8px_28px_rgba(15,23,42,0.04)]"
+                    >
+                      {settingsSections.map((section) => {
+                        const isActive = section.id === activeSection;
+                        return (
+                          <button
+                            key={section.id}
+                            type="button"
+                            onClick={() => setActiveSection(section.id)}
+                            aria-current={isActive ? "page" : undefined}
+                            className={cn(
+                              "lw-settings-nav-item flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 font-medium transition-colors",
+                              isActive
+                                ? "bg-black/[0.06] text-black/90"
+                                : "text-black/55 hover:bg-black/[0.035] hover:text-black/85",
+                            )}
+                          >
+                            <span className="flex h-5 w-5 items-center justify-center">{section.icon}</span>
+                            <span className="flex-1 text-left text-[15px]">{section.label}</span>
+                            {section.badge && (
+                              <span className="rounded-full bg-black/90 px-1.5 py-0.5 text-[9px] font-bold leading-none text-white">
+                                {section.badge}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </nav>
+                  </aside>
+
+                  <section className="min-w-0">
+                    <AnimatePresence mode="wait">
+                      <motion.div
+                        key={`${activeBot.id}-${activeSection}`}
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -8 }}
+                        transition={{ duration: 0.22 }}
+                        className="_lh-claw-bot-panel"
+                      >
+                        <div className="_lh-claw-bot-panel__cards min-w-0">
+                          {activeSection === "channel" && (
+                            <ChannelPanel
+                              instance={sdkInstance}
+                              regionShortName={sdkRegionShortName}
+                              featureFlags={sdkFeatureFlags}
+                              productConfig={sdkProductConfig}
                             />
                           )}
-                          <span className="font-medium" style={{ color: "rgba(0,0,0,0.60)", fontSize: 12 }}>
-                            {isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}
-                          </span>
-                        </div>
-                        {/* 重启链接 */}
-                        <button
-                          onClick={handleRestartGateway}
-                          disabled={isActiveBotRestarting || activeBot.status !== "running"}
-                          className="group transition-colors"
-                          style={{
-                            fontSize: 12,
-                            color: isActiveBotRestarting || activeBot.status !== "running" ? "rgba(0,0,0,0.25)" : "var(--lw-accent)",
-                            cursor: isActiveBotRestarting || activeBot.status !== "running" ? "not-allowed" : "pointer",
-                            background: "none",
-                            border: "none",
-                            padding: 0,
-                            position: "relative",
-                          }}
-                          title={isActiveBotRestarting ? t("正在重启中") : t("重启 Hermes Agent 网关")}
-                        >
-                          {t("重启")}
-                          {isActiveBotRestarting && (
-                            <span
-                              className="pointer-events-none absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap rounded px-2 py-0.5 text-[10px] text-white opacity-0 transition-opacity group-hover:opacity-100"
-                              style={{ background: "rgba(0,0,0,0.75)" }}
-                            >
-                              {t("正在重启中")}
-                            </span>
+                          {activeSection === "model" && (
+                            <ModelPanel
+                              instance={sdkInstance}
+                              regionShortName={sdkRegionShortName}
+                              featureFlags={sdkFeatureFlags}
+                              productConfig={sdkProductConfig}
+                            />
                           )}
-                        </button>
-                        <span style={{ color: "rgba(0,0,0,0.40)", fontSize: 12 }}>
-                          {t("创建于 {{date}}", {
-                            date: new Date(activeBot.createdAt).toLocaleDateString(
-                              i18nLanguage?.startsWith("en") ? "en-US" : "zh-CN",
-                              { year: "numeric", month: "long", day: "numeric" },
-                            ),
-                          })}
-                        </span>
-                      </div>
-                      {activeBotRestartError && (
-                        <p className="mt-1 text-xs" style={{ color: "#DC2626" }}>{activeBotRestartError}</p>
-                      )}
-                    </div>
-                    {(() => {
-                      const hasViewedChannel = viewedChannelBotIds.has(activeBot.id);
-                      const blockReason = getResetBlockReason(activeBot, resetting, hasViewedChannel);
-                      const resetDisabled = resetting || blockReason !== null;
-                      const resetTooltip =
-                        blockReason === RESET_BLOCK_REASON.NOT_RUNNING || blockReason === RESET_BLOCK_REASON.CHANNEL_NOT_VIEWED
-                          ? t("请稍后")
-                          : t("重置配置");
-                      /* 不用 native `disabled`：Chrome / Safari 对 disabled 元素阻断所有
-                       * pointer events，会让 group-hover tooltip 也跟着失效。
-                       * 改用 aria-disabled + onClick 守卫：视觉照样灰，hover / cursor 全程
-                       * 正常分发，tooltip 立即可见。
-                       *
-                       * onClick 拒绝时直接 return（什么都不做），用户从 tooltip 已经能知道
-                       * 为什么——避免重复弹 toast 噪声。 */
-                      return (
-                        <div className="group relative inline-flex">
-                          <button
-                            onClick={() => {
-                              if (resetDisabled) return;
-                              setResetError(null);
-                              setShowResetConfirm(true);
-                            }}
-                            aria-disabled={resetDisabled}
-                            aria-label={resetTooltip}
-                            className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full transition-all hover:bg-[rgba(245,158,11,0.08)]"
-                            style={{
-                              color: resetDisabled ? "var(--tea-color-text-disabled, rgba(0,0,0,0.20))" : "var(--tea-color-text-placeholder, #ccc)",
-                              border: "none",
-                              background: "transparent",
-                              cursor: resetDisabled ? "not-allowed" : "pointer",
-                            }}
-                          >
-                            {resetting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wrench className="h-4 w-4" />}
-                          </button>
-                          <span
-                            className="pointer-events-none absolute left-1/2 top-full z-10 mt-1 -translate-x-1/2 whitespace-nowrap rounded px-2 py-0.5 text-[11px] text-white opacity-0 transition-opacity group-hover:opacity-100"
-                            style={{ background: "var(--tea-color-bg-tooltip, rgba(0,0,0,0.75))" }}
-                          >
-                            {resetTooltip}
-                          </span>
+                          {activeSection === "skill" && (
+                            <SkillPanel
+                              instance={sdkInstance}
+                              regionShortName={sdkRegionShortName}
+                              featureFlags={sdkFeatureFlags}
+                              productConfig={sdkProductConfig}
+                            />
+                          )}
+                          {activeSection === "buddy" && !isGlobal && (
+                            <BuddyPanel botId={activeBot.id} />
+                          )}
+                          {activeSection === "chat" && (
+                            <div className="h-[clamp(516px,calc(100vh-220px),960px)] overflow-hidden rounded-lg border border-black/[0.08] bg-white [&>*]:h-full">
+                              {(launchTokenStatus === "idle" || launchTokenStatus === "loading") && (
+                                <div className="flex h-full items-center justify-center p-6 text-sm text-black/60">
+                                  {t("正在获取 AgentChat 启动 token…")}
+                                </div>
+                              )}
+                              {launchTokenStatus === "error" && (
+                                <div className="flex h-full flex-col items-center justify-center p-6 text-center text-sm">
+                                  <p className="text-red-500">
+                                    {t("获取 AgentChat 启动 token 失败：{{message}}", { message: launchTokenError || t("未知错误") })}
+                                  </p>
+                                  <button
+                                    type="button"
+                                    onClick={retryLaunchToken}
+                                    className="mt-3 inline-flex items-center rounded-md border border-black/[0.12] bg-white px-3 py-1.5 text-xs font-medium text-black/80 hover:bg-black/[0.04]"
+                                  >
+                                    {t("重试")}
+                                  </button>
+                                </div>
+                              )}
+                              {launchTokenStatus === "ready" && launchToken && accountId && (
+                                <LightVelaPanel
+                                  instanceIds={[sdkInstance.InstanceId]}
+                                  instanceId={sdkInstance.InstanceId}
+                                  region="ap-guangzhou"
+                                  userId={accountId}
+                                  product="lightvela"
+                                  lightvelaApiParams={{
+                                    businessCode: "lightvela",
+                                    token: launchToken,
+                                  }}
+                                  commandExecutor={lightvelaCommandExecutor}
+                                  features={{
+                                    autoActivate: true,
+                                    nativeWsGray: true,
+                                  }}
+                                />
+                              )}
+                            </div>
+                          )}
                         </div>
-                      );
-                    })()}
-                    <button
-                      onClick={() => { setDeleteInput(""); setShowDeleteConfirm(true); }}
-                      className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full transition-all hover:bg-[rgba(220,38,38,0.08)]"
-                      style={{ color: "#ccc", border: "none", background: "transparent", cursor: "pointer" }}
-                      title={t("删除此 Hermes")}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
+                      </motion.div>
+                    </AnimatePresence>
+                  </section>
                 </div>
-
-                {/* 分割线 */}
-                <div style={{ borderTop: "1px solid rgba(0,0,0,0.05)" }} />
-
-                {/* ─ 使用设置：三列卡片 ─ */}
-                <div>
-                  {(() => {
-                    // --- tea-sdk-lightclaw props ---
-                    //
-                    // 关键设计：直接把 `activeBot.id`（mono 业务的 botId）作为
-                    // SDK 的 `InstanceId` 使用。
-                    //
-                    // SDK 内部 `executor.ts` 会把 `instance.InstanceId` 原样
-                    // 塞进请求的 `InstanceIds[0]`。我们通过自定义 `runCommand`
-                    // 拦截这个请求，转发到 `POST /v1/instances/:botId/debug/exec`
-                    // （和 mono 存量业务一致的 envd process stream 通道）。
-                    //
-                    // 因此 SDK 拿到的 `InstanceId` 只需是 botId，后端会自动
-                    // 解析到对应的 sandbox，前端完全不感知 sandboxId、region
-                    // 等沙箱层概念。
-                    //
-                    // 如果 bot 尚未就绪（状态非 running），后端 debug/exec 会
-                    // 返回 `ErrDebugNotSupported`，由 SDK 以命令执行错误的形式
-                    // 反馈到 UI。
-                    const sdkInstance: IInstanceInfo = {
-                      InstanceId: activeBot.id,
-                      // RegionId 对 mono 路径而言是**无用字段**：原本用于
-                      // SDK 默认调用腾讯云 TAT OpenAPI 时选取 region 端点，
-                      // 但我们通过自定义 runCommand 完全接管了命令下发，
-                      // 请求不走腾讯云。给个任意合法数字即可。
-                      RegionId: 1,
-                    };
-                    // regionShortName 仅被 SDK 用来拼接 COS 脚本下载 URL：
-                    //   https://lightclaw-dashboard-xxx.cos.accelerate.myqcloud.com/
-                    //     <regionShortName>/lightclaw/<script-path>
-                    // COS 用的是全球加速域名，实际 region 对可达性影响很小。
-                    // 先统一用 "gz"。
-                    const sdkRegionShortName = "gz";
-                    const sdkFeatureFlags: IFeatureFlags = {
-                      gateway: true,
-                      channel: true,
-                      wecomChannel: true,
-                      adpChannel: false,
-                      wecomLongConn: true,
-                      yuanbaoChannel: false,
-                      weixinChannel: true,
-                      qrConfig: true,
-                      skills: true,
-                      webUI: false,
-                      memoryManagement: false,
-                      memoryV2: false,
-                      qqbotplugin: false,
-                    };
-                    // 注入 runCommand / getInvocationTask，让 SDK 的命令
-                    // 执行器走 mono 后端 `/v1/instances/:botId/debug/exec`
-                    // （envd process stream），而不是默认的腾讯云 TAT OpenAPI。
-                    //
-                    // supportsTencentCloudApi: false
-                    //   mono 没有腾讯云账号体系，SDK 会自动从模型列表中过滤掉
-                    //   依赖腾讯云 CAPI 拉 API Key 的 provider：
-                    //     - hunyuan / qcloud_lkeap
-                    //     - tencent_coding_plan / tencent_token_plan
-                    //   这些 provider 在 mono 下无法自动获取 API Key（调不通
-                    //   QueryHunyuanUserStatus / ListCodingPlanAPIKey 等），
-                    //   下拉里直接不展示。
-                    const sdkProductConfig: IProductConfig = {
-                      ...createLighthouseConfig({
-                        agentType: "hermes",
-                        supportsTencentCloudApi: false,
-                        isI18n: isGlobal,
-                      }),
-                      runCommand: commandAdapter.runCommand,
-                      getInvocationTask: commandAdapter.getInvocationTask,
-                    };
-                    // 操作禁用 / 数据加载相关 prop 全部走 SDK 默认值：
-                    //   isOperationDisabled=false / operationDisabledContent=""
-                    //   operationDisabledTip="" / isDataReady=true
-                    // 默认允许 UI 交互且立即拉数据，bot 不在线时由后端返回错误，
-                    // 由 SDK 以命令执行失败的形式反馈到 UI。
-
-                    const sections: { id: SettingsSectionId; label: string; icon: React.ReactNode; badge?: string }[] = [
-                      { id: "channel", label: t("通道"), icon: <MessageCircle className="h-4 w-4" /> },
-                      { id: "model", label: t("模型"), icon: <BrainCircuit className="h-4 w-4" /> },
-                      { id: "skill", label: t("技能"), icon: <Wand2 className="h-4 w-4" /> },
-                      // AI 搭子（人设抽卡）当前仅国内站上线；国际站隐藏入口
-                      ...(!isGlobal
-                        ? [{ id: "buddy" as const, label: t("人设"), icon: <UserRound className="h-4 w-4" />, badge: "NEW" }]
-                        : []),
-                    ];
-
-                    return (
-                      <div className="_lh-claw-bot-panel tea-mt-4n">
-                        <div className="flex flex-col gap-4 md:flex-row md:gap-6">
-                          {/* 左侧：竖向 tab 列表（仅在本实例内切换子页面） */}
-                          <nav
-                            aria-label={t("实例配置导航")}
-                            className="flex flex-row gap-1 overflow-x-auto md:w-[160px] md:flex-shrink-0 md:flex-col md:overflow-visible"
-                          >
-                            {sections.map((section) => {
-                              const isActive = section.id === activeSection;
-                              return (
-                                <button
-                                  key={section.id}
-                                  type="button"
-                                  onClick={() => setActiveSection(section.id)}
-                                  aria-current={isActive ? "page" : undefined}
-                                  className={cn(
-                                    "flex flex-shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                                    "md:w-full",
-                                    isActive
-                                      ? "bg-black/[0.06] text-black/90"
-                                      : "text-black/60 hover:bg-black/[0.04] hover:text-black/90",
-                                  )}
-                                >
-                                  <span className="flex h-5 w-5 items-center justify-center">{section.icon}</span>
-                                  <span>{section.label}</span>
-                                  {section.badge && (
-                                    <span
-                                      className="ml-0.5 rounded-full px-1.5 py-0.5 text-[9px] font-bold leading-none tracking-wide"
-                                      style={{
-                                        background:
-                                          "linear-gradient(95deg, #6B4FE0, #F4B43A)",
-                                        color: "#ffffff",
-                                      }}
-                                    >
-                                      {section.badge}
-                                    </span>
-                                  )}
-                                </button>
-                              );
-                            })}
-                          </nav>
-
-                          {/* 右侧：当前选中的配置卡片（单卡撑满） */}
-                          <div className="_lh-claw-bot-panel__cards min-w-0 flex-1">
-                            {activeSection === "model" && (
-                              <ModelPanel
-                                instance={sdkInstance}
-                                regionShortName={sdkRegionShortName}
-                                featureFlags={sdkFeatureFlags}
-                                productConfig={sdkProductConfig}
-                              />
-                            )}
-                            {activeSection === "channel" && (
-                              <ChannelPanel
-                                instance={sdkInstance}
-                                regionShortName={sdkRegionShortName}
-                                featureFlags={sdkFeatureFlags}
-                                productConfig={sdkProductConfig}
-                              />
-                            )}
-                            {activeSection === "skill" && (
-                              <SkillPanel
-                                instance={sdkInstance}
-                                regionShortName={sdkRegionShortName}
-                                featureFlags={sdkFeatureFlags}
-                                productConfig={sdkProductConfig}
-                              />
-                            )}
-                            {activeSection === "buddy" && !isGlobal && (
-                              <BuddyPanel botId={activeBot?.id ?? null} />
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
-              </motion.div>
-            </AnimatePresence>
+              );
+            })()
           )}
 
           {/* 空状态 */}
