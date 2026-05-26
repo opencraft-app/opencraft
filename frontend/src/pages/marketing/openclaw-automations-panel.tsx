@@ -405,8 +405,8 @@ function isCronJobExpired(job: CronJob): boolean {
   const kind = job.schedule.kind.toLowerCase();
   const display = job.schedule.display || job.schedule.expr || "";
   const isOnce = kind === "once" || display.toLowerCase().startsWith("once");
-  if (!isOnce || !job.next_run_at) return false;
-  const d = new Date(job.next_run_at);
+  if (!isOnce) return false;
+  const d = parseOnceScheduleDate(display, job.next_run_at);
   return !Number.isNaN(d.getTime()) && d.getTime() < Date.now();
 }
 
@@ -424,8 +424,8 @@ function formatScheduleFriendly(
   const lower = display.toLowerCase();
 
   // once
-  if (lower.startsWith("once") && job.next_run_at) {
-    const d = new Date(job.next_run_at);
+  if (lower.startsWith("once")) {
+    const d = parseOnceScheduleDate(display, job.next_run_at);
     if (!Number.isNaN(d.getTime())) {
       const yyyy = d.getFullYear();
       const md = `${yyyy}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -467,6 +467,13 @@ function formatScheduleFriendly(
   }
 
   return display || job.schedule.expr || "";
+}
+
+function parseOnceScheduleDate(display: string, nextRunAt: string | null): Date {
+  if (nextRunAt) return parseCronDate(nextRunAt);
+  const onceMatch = /^once\s+at\s+(\d{4}-\d{2}-\d{2})[ tT](\d{2}:\d{2}(?::\d{2})?)/i.exec(display.trim());
+  if (onceMatch) return parseCronDate(`${onceMatch[1]}T${onceMatch[2]}`);
+  return new Date(Number.NaN);
 }
 
 function CronJobDetailModal({ job, onClose }: { job: CronJob; onClose: () => void }) {
