@@ -80,10 +80,6 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
   const jobLimitMessage = t("定时任务数量已达上限（最多{{max}}个），请先删除不需要的任务后再添加。", {
     max: MAX_CRON_JOBS_PER_BOT,
   });
-  const visibleJobs = useMemo(
-    () => jobs.filter((job) => !(isCronJobPaused(job) && isCronJobExpired(job))),
-    [jobs],
-  );
 
   const showError = useCallback((message: string) => {
     if (errorTimerRef.current) {
@@ -185,7 +181,7 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
         </div>
       </div>
 
-      <div className={loading || listError || visibleJobs.length === 0 ? "rounded-xl p-4" : ""} style={loading || listError || visibleJobs.length === 0 ? PANEL_CARD_STYLE : undefined}>
+      <div className={loading || listError || jobs.length === 0 ? "rounded-xl p-4" : ""} style={loading || listError || jobs.length === 0 ? PANEL_CARD_STYLE : undefined}>
         {loading ? (
           <div className="flex items-center justify-center py-8 text-sm text-black/50">
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -204,14 +200,14 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
               {t("重试")}
             </button>
           </div>
-        ) : visibleJobs.length === 0 ? (
+        ) : jobs.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-10 text-sm text-black/50">
             <Clock className="mb-2 h-6 w-6 opacity-50" />
             {t("还没有定时任务")}
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {[...visibleJobs]
+            {[...jobs]
               .sort((a, b) => {
                 // 最新创建在前；缺 created_at 的丢到末尾
                 const ta = a.created_at ? Date.parse(a.created_at) : 0;
