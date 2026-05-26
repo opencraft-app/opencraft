@@ -176,6 +176,36 @@ fn sandbox_http_url_includes_access_token_for_proxy_auth() {
 }
 
 #[test]
+fn workspace_file_download_base64_output_accepts_raw_stdout() {
+    assert_eq!(
+        workspace_file_download_base64_output("  AAECf4D/ \n"),
+        "AAECf4D/"
+    );
+}
+
+#[test]
+fn workspace_file_download_base64_output_extracts_wrapped_stdout() {
+    assert_eq!(
+        workspace_file_download_base64_output(r#"{"stdout":"AAECf4D/\n","stderr":"","exit_code":0}"#),
+        "AAECf4D/"
+    );
+    assert_eq!(
+        workspace_file_download_base64_output(r#"{"result":{"stdout":"AAECf4D/"}}"#),
+        "AAECf4D/"
+    );
+    assert_eq!(
+        workspace_file_download_base64_output(r#"{"exit":0,"output":"AAECf4D/"}"#),
+        "AAECf4D/"
+    );
+    assert_eq!(
+        workspace_file_download_base64_output(
+            "{\"event\":{\"data\":{\"output\":\"AAEC\"}}}\n{\"event\":{\"data\":{\"output\":\"f4D/\"}}}"
+        ),
+        "AAECf4D/"
+    );
+}
+
+#[test]
 fn resolve_path_maps_workspace_absolute_paths() {
     let sandbox = SessionSandbox {
         workspace_root: "/workspace/session_1".to_string(),
