@@ -126,6 +126,24 @@ func TestAgentSidecarWorkerRejectsUnsupportedOuterRuntime(t *testing.T) {
 	}
 }
 
+func TestWorkspaceWispNameFromSessionIsShortAndStable(t *testing.T) {
+	sessionID := "session_4c7055cd94970a97f79ae711e3f8e39e"
+	first := workspaceWispNameFromSession(sessionID)
+	second := workspaceWispNameFromSession(sessionID)
+	if first != second {
+		t.Fatalf("workspace wisp name not stable: %q != %q", first, second)
+	}
+	if len(first) > 48 {
+		t.Fatalf("workspace wisp name too long: %q len=%d", first, len(first))
+	}
+	if !strings.HasPrefix(first, "workspace-") {
+		t.Fatalf("workspace wisp name should be recognizable, got %q", first)
+	}
+	if first == wispNameFromRuntime(sessionID) {
+		t.Fatalf("workspace wisp name should be distinct from outer runtime name: %q", first)
+	}
+}
+
 func TestWispOuterRuntimeWrapsCommandWithEnvironment(t *testing.T) {
 	runtime := ACPSessionRuntime{
 		OuterRuntime:   outerRuntimeWisp,

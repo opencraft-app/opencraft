@@ -265,7 +265,13 @@ func runtimeEnsureChanged(next, original ACPSessionRuntime) bool {
 		next.SessionProxyID != original.SessionProxyID ||
 		next.WispLeaseID != original.WispLeaseID ||
 		next.WispLeaseFence != original.WispLeaseFence ||
-		!next.WispLeaseUntil.Equal(original.WispLeaseUntil)
+		!next.WispLeaseUntil.Equal(original.WispLeaseUntil) ||
+		next.WorkspaceID != original.WorkspaceID ||
+		next.WorkspaceRuntimeID != original.WorkspaceRuntimeID ||
+		next.WorkspaceLeaseID != original.WorkspaceLeaseID ||
+		next.WorkspaceFence != original.WorkspaceFence ||
+		!next.WorkspaceLeaseUntil.Equal(original.WorkspaceLeaseUntil) ||
+		next.WorkspaceAttachState != original.WorkspaceAttachState
 }
 
 func (g *ACPGateway) markPromptRuntimeUnavailable(sessionID string, generation int64, runtime ACPSessionRuntime, cause error) error {
@@ -341,6 +347,11 @@ func runtimeAfterClose(runtime ACPSessionRuntime) ACPSessionRuntime {
 	runtime.WispLeaseID = ""
 	runtime.WispLeaseFence = 0
 	runtime.WispLeaseUntil = time.Time{}
+	runtime.WorkspaceRuntimeID = ""
+	runtime.WorkspaceLeaseID = ""
+	runtime.WorkspaceFence = 0
+	runtime.WorkspaceLeaseUntil = time.Time{}
+	runtime.WorkspaceAttachState = ""
 	return runtime
 }
 func isRecoverablePromptRuntimeError(err error) bool {
@@ -445,6 +456,7 @@ func (g *ACPGateway) beginRuntimeCleanup(scope Scope, sessionID, reason string) 
 	cleanup := &acpRuntimeCleanup{
 		Runtime:    runtime,
 		Generation: session.RuntimeGeneration,
+		Reason:     reason,
 		Done:       make(chan struct{}),
 	}
 	g.cleanups[sessionID] = cleanup
@@ -462,6 +474,10 @@ func (g *ACPGateway) completeRuntimeCleanup(sessionID string, cleanup *acpRuntim
 		session.UpdatedAt = time.Now().UTC()
 		if err != nil {
 			session.LastRuntimeError = err.Error()
+			if cleanup.Reason == "closed" && runtimeCanRecreate(cleanup.Runtime) {
+				session.Runtime = runtimeAfterClose(cleanup.Runtime)
+				session.ReadOnlyReason = ""
+			}
 		} else {
 			session.Runtime = runtimeAfterClose(cleanup.Runtime)
 			session.LastRuntimeError = ""

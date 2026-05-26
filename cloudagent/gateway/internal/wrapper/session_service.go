@@ -372,7 +372,11 @@ func (g *ACPGateway) cloudAgentEnsureRuntimeReady(scope Scope, req acpCloudAgent
 	return status, nil
 }
 func (g *ACPGateway) closeSession(scope Scope, sessionID string) error {
-	_, _, _, err := g.cleanupSessionRuntime(scope, sessionID, "closed")
+	runtime, _, _, err := g.cleanupSessionRuntime(scope, sessionID, "closed")
+	if err != nil && runtimeNeedsCleanup(runtime) {
+		fmt.Fprintf(os.Stderr, "timeline source=server event=acp_session_close_cleanup_deferred session_id=%s error=%s\n", sessionID, quoteServerField(err.Error()))
+		return nil
+	}
 	return err
 }
 func (g *ACPGateway) deleteSession(scope Scope, sessionID string) error {

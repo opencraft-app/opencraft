@@ -18,6 +18,7 @@ use tracing::{info, warn};
 
 use crate::config::{runtime_config, E2BToolSettings};
 use crate::error::{Error, Result};
+use crate::workspace::{WorkspaceIdentity, WorkspaceRuntime};
 
 use self::connect_stream::{connect_envelope, read_connect_command_stream};
 use self::path_sync::{normalize_absolute_path, normalize_relative_path, should_skip_path};
@@ -119,6 +120,8 @@ pub struct CommandResult {
 pub struct SessionSandbox {
     workspace_root: String,
     local_workspace_root: PathBuf,
+    command_prefix: Option<String>,
+    shutdown_command: Option<String>,
     native_host_ready: Mutex<bool>,
     inner: Mutex<SessionSandboxInner>,
 }
@@ -128,6 +131,18 @@ pub struct SessionSandboxEnvdIdentity {
     pub sandbox_id: String,
     pub domain: String,
     pub envd_access_token: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct SessionSandboxBinding {
+    pub sandbox_id: String,
+    pub domain: String,
+    pub envd_access_token: String,
+    pub traffic_access_token: String,
+    pub workspace_root: String,
+    pub local_workspace_root: PathBuf,
+    pub command_prefix: Option<String>,
+    pub shutdown_command: Option<String>,
 }
 
 #[derive(Debug)]
@@ -226,6 +241,8 @@ pub async fn create_session_sandbox(
     let session = Arc::new(SessionSandbox {
         workspace_root,
         local_workspace_root: local_workspace_root.to_path_buf(),
+        command_prefix: None,
+        shutdown_command: None,
         native_host_ready: Mutex::new(false),
         inner: Mutex::new(SessionSandboxInner { client, sandbox }),
     });
@@ -233,6 +250,44 @@ pub async fn create_session_sandbox(
     session.ensure_workspace().await?;
     session.sync_dir(local_workspace_root).await?;
     info!(event = "inner_ready", session_id = %session_id, workspace_root = %session.workspace_root(), sandbox_id = %sandbox_id);
+    Ok(session)
+}
+
+pub async fn bind_session_sandbox(binding: SessionSandboxBinding) -> Result<Arc<SessionSandbox>> {
+    if binding.sandbox_id.trim().is_empty() {
+        return Err(Error::Agent("workspace sandbox_id is required".to_string()));
+    }
+    if binding.domain.trim().is_empty() {
+        return Err(Error::Agent(
+            "workspace sandbox domain is required".to_string(),
+        ));
+    }
+    if binding.envd_access_token.trim().is_empty() {
+        return Err(Error::Agent(
+            "workspace envd access token is required".to_string(),
+        ));
+    }
+    let client = build_client()?;
+    let sandbox = E2BSandbox {
+        sandbox_id: binding.sandbox_id,
+        domain: binding.domain,
+        envd_access_token: binding.envd_access_token,
+        traffic_access_token: binding.traffic_access_token,
+    };
+    let workspace_root = if binding.workspace_root.trim().is_empty() {
+        "/workspace".to_string()
+    } else {
+        binding.workspace_root
+    };
+    let session = Arc::new(SessionSandbox {
+        workspace_root,
+        local_workspace_root: binding.local_workspace_root,
+        command_prefix: binding.command_prefix,
+        shutdown_command: binding.shutdown_command,
+        native_host_ready: Mutex::new(false),
+        inner: Mutex::new(SessionSandboxInner { client, sandbox }),
+    });
+    register_active_session_sandbox(&session);
     Ok(session)
 }
 
@@ -319,6 +374,12 @@ impl SessionSandbox {
         envs: &HashMap<String, String>,
     ) -> Result<CommandResult> {
         let command = format!("cd {} && {}", shell_quote(&self.workspace_root), command);
+        let command = match self.command_prefix.as_deref() {
+            Some(prefix) if !prefix.trim().is_empty() => {
+                format!("{prefix} {}", shell_quote(&command))
+            }
+            _ => command,
+        };
         let inner = self.inner.lock().await;
         inner
             .client
@@ -491,6 +552,35 @@ impl SessionSandbox {
     pub async fn shutdown(&self) -> Result<()> {
         let inner = self.inner.lock().await;
         info!(event = "inner_shutdown_start", sandbox_id = %inner.sandbox.sandbox_id);
+        if let Some(command) = self
+            .shutdown_command
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            info!(event = "workspace_runtime_shutdown_start", sandbox_id = %inner.sandbox.sandbox_id);
+            match inner
+                .client
+                .run_command(&inner.sandbox, command, &HashMap::new())
+                .await
+            {
+                Ok(result) if result.exit_code == 0 => {
+                    info!(event = "workspace_runtime_shutdown_done", sandbox_id = %inner.sandbox.sandbox_id);
+                }
+                Ok(result) => {
+                    warn!(
+                        event = "workspace_runtime_shutdown_failed",
+                        sandbox_id = %inner.sandbox.sandbox_id,
+                        exit_code = result.exit_code,
+                        stdout = %result.stdout,
+                        stderr = %result.stderr
+                    );
+                }
+                Err(error) => {
+                    warn!(event = "workspace_runtime_shutdown_failed", sandbox_id = %inner.sandbox.sandbox_id, error = %error);
+                }
+            }
+        }
         let result = inner.client.delete_sandbox(&inner.sandbox.sandbox_id).await;
         match &result {
             Ok(_) => info!(event = "inner_shutdown_done", sandbox_id = %inner.sandbox.sandbox_id),
@@ -635,6 +725,53 @@ impl SessionSandbox {
     }
 }
 
+#[async_trait::async_trait]
+impl WorkspaceRuntime for SessionSandbox {
+    async fn identity(&self) -> Result<WorkspaceIdentity> {
+        Ok(WorkspaceIdentity {
+            workspace_id: Some(self.workspace_root().to_string()),
+            sandbox_id: Some(self.sandbox_id().await),
+            template_id: e2b_template(),
+        })
+    }
+
+    async fn runtime_id(&self) -> Result<String> {
+        Ok(self.sandbox_id().await)
+    }
+
+    fn workspace_root(&self) -> &str {
+        SessionSandbox::workspace_root(self)
+    }
+
+    fn resolve_path(&self, path: &str) -> Result<String> {
+        SessionSandbox::resolve_path(self, path)
+    }
+
+    fn resolve_working_dir(&self, path: Option<&str>) -> Result<String> {
+        SessionSandbox::resolve_working_dir(self, path)
+    }
+
+    fn display_path(&self, remote_path: &str) -> String {
+        SessionSandbox::display_path(self, remote_path)
+    }
+
+    fn native_host_configured(&self) -> bool {
+        SessionSandbox::native_host_configured(self)
+    }
+
+    async fn run_command(
+        &self,
+        command: &str,
+        envs: &HashMap<String, String>,
+    ) -> Result<CommandResult> {
+        SessionSandbox::run_command(self, command, envs).await
+    }
+
+    async fn native_call(&self, method: &str, params: Value) -> Result<Value> {
+        SessionSandbox::native_call(self, method, params).await
+    }
+}
+
 pub fn session_id() -> String {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -650,6 +787,8 @@ pub(crate) fn test_session_sandbox(
     SessionSandbox {
         workspace_root: workspace_root.to_string(),
         local_workspace_root: PathBuf::from(local_workspace_root),
+        command_prefix: None,
+        shutdown_command: None,
         native_host_ready: Mutex::new(false),
         inner: Mutex::new(SessionSandboxInner {
             client: E2BClient {

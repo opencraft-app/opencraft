@@ -1226,6 +1226,18 @@ func TestACPSessionRuntimeStartsOnNewAndPromptsAreIncremental(t *testing.T) {
 	if len(prompts) != 2 || prompts[0] != "first" || prompts[1] != "second" {
 		t.Fatalf("expected incremental prompts only, got %#v", prompts)
 	}
+	jobs := manager.recordedWorkerJobs()
+	if len(jobs) != 2 {
+		t.Fatalf("expected two worker jobs, got %d", len(jobs))
+	}
+	if len(jobs[0].ACPSessionHistory) != 0 {
+		t.Fatalf("first prompt must not seed synthetic history: %#v", jobs[0].ACPSessionHistory)
+	}
+	if got := jobs[1].ACPSessionHistory; len(got) != 2 ||
+		got[0] != (runtimeHistoryEntry{Role: "user", Text: "first"}) ||
+		got[1] != (runtimeHistoryEntry{Role: "assistant", Text: "answer: first"}) {
+		t.Fatalf("second prompt should seed prior session history, got %#v", got)
+	}
 }
 
 func TestACPPromptRefreshesOuterAndInnerRuntimeAfterIdleUserGap(t *testing.T) {
@@ -1959,7 +1971,7 @@ func TestACPSameConnectionCloseAndDeleteInterruptPrompt(t *testing.T) {
 	}
 }
 
-func TestACPResumeRetriesPendingRuntimeCleanup(t *testing.T) {
+func TestACPResumeRetriesDeferredRuntimeCleanup(t *testing.T) {
 	manager := &recordingACPRuntimeManager{closeFailures: 1}
 	srv := newACPTestServerWithRuntime(t, manager)
 	ts := httptest.NewServer(srv.Handler())
@@ -1981,9 +1993,9 @@ func TestACPResumeRetriesPendingRuntimeCleanup(t *testing.T) {
 	sessionID := waitForRPCID(t, client, float64(2))["result"].(map[string]any)["sessionId"].(string)
 
 	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 3, "method": "session/close", "params": map[string]any{"sessionId": sessionID}})
-	closeErr := waitForRPCID(t, client, float64(3))
-	if _, ok := closeErr["error"].(map[string]any); !ok {
-		t.Fatalf("expected close error: %#v", closeErr)
+	closeResp := waitForRPCID(t, client, float64(3))
+	if _, ok := closeResp["result"].(map[string]any); !ok {
+		t.Fatalf("session/close should acknowledge closed state even when runtime cleanup is deferred: %#v", closeResp)
 	}
 
 	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 4, "method": "session/resume", "params": map[string]any{"sessionId": sessionID}})
@@ -1997,9 +2009,9 @@ func TestACPResumeRetriesPendingRuntimeCleanup(t *testing.T) {
 	}
 
 	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 5, "method": "session/close", "params": map[string]any{"sessionId": sessionID}})
-	closeResp := waitForRPCID(t, client, float64(5))
-	if _, ok := closeResp["result"].(map[string]any); !ok {
-		t.Fatalf("expected retry close to succeed: %#v", closeResp)
+	retryCloseResp := waitForRPCID(t, client, float64(5))
+	if _, ok := retryCloseResp["result"].(map[string]any); !ok {
+		t.Fatalf("expected retry close to succeed: %#v", retryCloseResp)
 	}
 	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 6, "method": "session/resume", "params": map[string]any{"sessionId": sessionID}})
 	secondResumeResp := waitForRPCID(t, client, float64(6))

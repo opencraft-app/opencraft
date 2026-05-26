@@ -5,8 +5,10 @@ use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
 use hermes_core::{
-    runtime_host::sync_active_session_sandbox_files, AgentRuntime, BehaviorRegistry,
-    BehaviorVersions, RunTurnRequest, RuntimeStore, TranscriptBlock, TranscriptRole,
+    client::Role,
+    runtime_host::{sync_active_session_sandbox_files, SessionSandboxBinding},
+    AgentRuntime, BehaviorRegistry, BehaviorVersions, Message, RunTurnRequest, RuntimeStore,
+    TranscriptBlock, TranscriptRole,
 };
 use serde_json::json;
 use tokio::sync::{mpsc, oneshot, Mutex, Notify};
@@ -192,6 +194,18 @@ impl DaemonState {
             .clone()
             .filter(|value| !value.trim().is_empty())
             .unwrap_or_else(next_input_id);
+        let history_seed = runtime_history_to_messages(&request.history);
+        if !history_seed.is_empty() {
+            let seeded = self.agent.seed_history_if_empty(history_seed).await?;
+            timeline(
+                "session_history_seed_done",
+                [
+                    ("session_id", self.session_id.clone()),
+                    ("input_id", input_id.clone()),
+                    ("seeded", seeded.to_string()),
+                ],
+            );
+        }
         let inbox_mode = parse_inbox_mode(request.inbox_mode.as_deref())?;
         let prompt = runtime_input_blocks_to_text(&request.blocks)?;
         timeline(
@@ -458,6 +472,43 @@ impl DaemonState {
         })
     }
 
+    pub(crate) async fn bind_workspace(
+        &self,
+        request: WorkspaceBindRequest,
+    ) -> Result<WorkspaceBindResponse> {
+        let binding = SessionSandboxBinding {
+            sandbox_id: request.sandbox_id.clone(),
+            domain: request.domain.clone(),
+            envd_access_token: request.envd_access_token.clone(),
+            traffic_access_token: request.traffic_access_token.clone(),
+            workspace_root: request.workspace_root.clone(),
+            local_workspace_root: self.workspace_root.clone(),
+            command_prefix: request.command_prefix.clone(),
+            shutdown_command: request.shutdown_command.clone(),
+        };
+        let identity = self
+            .agent
+            .bind_session_sandbox(binding, request.replace_existing)
+            .await?;
+        timeline(
+            "workspace_bind_done",
+            [
+                ("session_id", self.session_id.clone()),
+                ("workspace_id", request.workspace_id.clone()),
+                ("workspace_runtime_id", request.workspace_runtime_id.clone()),
+                ("sandbox_id", identity.sandbox_id.clone()),
+                ("workspace_root", request.workspace_root.clone()),
+            ],
+        );
+        Ok(WorkspaceBindResponse {
+            ok: true,
+            workspace_id: request.workspace_id,
+            workspace_runtime_id: request.workspace_runtime_id,
+            sandbox_id: identity.sandbox_id,
+            workspace_root: request.workspace_root,
+        })
+    }
+
     async fn active_prompt_health(&self) -> Option<ActivePromptHealth> {
         let active_run_id = self.agent.active_run_id().await;
         self.active_prompts.health(active_run_id).await
@@ -544,6 +595,24 @@ impl DaemonState {
             self.shutdown.notify_waiters();
         }
     }
+}
+
+fn runtime_history_to_messages(entries: &[RuntimeInputHistoryEntry]) -> Vec<Message> {
+    entries
+        .iter()
+        .filter_map(|entry| {
+            let text = entry.text.trim();
+            if text.is_empty() {
+                return None;
+            }
+            match entry.role.trim().to_ascii_lowercase().as_str() {
+                "system" => Some(Message::new(Role::System, text.to_string())),
+                "user" => Some(Message::user(text.to_string())),
+                "assistant" => Some(Message::assistant(text.to_string())),
+                _ => None,
+            }
+        })
+        .collect()
 }
 
 fn last_transcript_text_hash(

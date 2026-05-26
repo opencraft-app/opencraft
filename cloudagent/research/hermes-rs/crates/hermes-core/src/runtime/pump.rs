@@ -207,7 +207,7 @@ mod tests {
     use std::time::Duration;
 
     use crate::behavior::BehaviorVersions;
-    use crate::client::{ClientConfig, OpenAIClient, Role};
+    use crate::client::{ClientConfig, Message, OpenAIClient, Role};
     use crate::error::Error;
     use crate::runtime::agent::{AgentConfig, AgentExecutor};
     use crate::runtime::ids::tests::test_runtime;
@@ -373,6 +373,36 @@ mod tests {
         assert_eq!(restored_history[1].content, "你好，我记住了。");
         assert_eq!(restored_history[2].content, "我刚刚和你打过招呼吗");
         assert_eq!(restored_history[3].content, "打过，你刚刚说了你好。");
+    }
+
+    #[tokio::test]
+    async fn seed_history_if_empty_imports_gateway_projection_once() {
+        let store = RuntimeStore::new(std::env::temp_dir().join(format!(
+            "hermes-runtime-seed-history-test-{}",
+            std::process::id()
+        )));
+        let _ = std::fs::remove_dir_all(store.root());
+        let runtime = test_runtime(1).with_store(store);
+
+        let seeded = runtime
+            .seed_history_if_empty(vec![
+                Message::user("cloudagent-restart-restore-marker"),
+                Message::assistant("我记住了。"),
+            ])
+            .await
+            .expect("history seeded");
+        assert_eq!(seeded, 2);
+        let conversation = runtime.conversation().await;
+        assert_eq!(conversation.len(), 2);
+        assert_eq!(conversation[0].content, "cloudagent-restart-restore-marker");
+
+        let skipped = runtime
+            .seed_history_if_empty(vec![Message::user("duplicate")])
+            .await
+            .expect("second seed skipped");
+        assert_eq!(skipped, 0);
+        let conversation = runtime.conversation().await;
+        assert_eq!(conversation.len(), 2);
     }
 
     #[tokio::test]

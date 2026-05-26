@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"net/http"
 	"net/url"
@@ -64,6 +65,10 @@ func (w *AgentSidecarWorker) prepareWispOuterRuntime(ctx context.Context, client
 }
 
 func (w *AgentSidecarWorker) prepareWispOuterRuntimeWithSpace(ctx context.Context, client *AGSClient, sb AGSSandbox, runtime ACPSessionRuntime, req ACPSessionRuntimeStartRequest, space agentWispSMHSpace) (ACPSessionRuntime, error) {
+	return w.prepareWispRuntimeWithSpace(ctx, client, sb, runtime, req, space, true)
+}
+
+func (w *AgentSidecarWorker) prepareWispRuntimeWithSpace(ctx context.Context, client *AGSClient, sb AGSSandbox, runtime ACPSessionRuntime, req ACPSessionRuntimeStartRequest, space agentWispSMHSpace, acquireLease bool) (ACPSessionRuntime, error) {
 	runtime.WispName = firstNonEmpty(runtime.WispName, wispNameFromRuntime(req.SessionID))
 	runtime.WispWorkspaceID = firstNonEmpty(runtime.WispWorkspaceID, space.SpaceID)
 	runtime.WispSMHSpaceID = space.SpaceID
@@ -73,19 +78,22 @@ func (w *AgentSidecarWorker) prepareWispOuterRuntimeWithSpace(ctx context.Contex
 	runtime.WispRootUpperSize = firstNonEmpty(runtime.WispRootUpperSize, w.wispRootUpperSize)
 	runtime.WispInstallDir = firstNonEmpty(runtime.WispInstallDir, path.Join("/tmp/cloudagent-wisp", req.SessionID, "install"))
 	runtime.WispClientPath = firstNonEmpty(runtime.WispClientPath, path.Join(runtime.WispInstallDir, "bin", "wispclient"))
-	var err error
-	runtime, err = w.acquireWispWorkspaceLease(ctx, runtime)
-	if err != nil {
-		return ACPSessionRuntime{}, err
-	}
-	releaseLease := true
-	defer func() {
-		if releaseLease {
-			releaseCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-			_ = w.releaseWispWorkspaceLease(releaseCtx, runtime)
+	releaseLease := false
+	if acquireLease {
+		var err error
+		runtime, err = w.acquireWispWorkspaceLease(ctx, runtime)
+		if err != nil {
+			return ACPSessionRuntime{}, err
 		}
-	}()
+		releaseLease = true
+		defer func() {
+			if releaseLease {
+				releaseCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				_ = w.releaseWispWorkspaceLease(releaseCtx, runtime)
+			}
+		}()
+	}
 	env := map[string]string{
 		"WISP_PACKAGE_URL":                    runtime.WispPackageURL,
 		"WISP_PACKAGE_FORMAT":                 firstEnv("GATEWAY_WISP_PACKAGE_FORMAT", "WISP_PACKAGE_FORMAT"),
@@ -115,7 +123,9 @@ func (w *AgentSidecarWorker) prepareWispOuterRuntimeWithSpace(ctx context.Contex
 	if result.ExitCode != 0 || !strings.Contains(result.Stdout, "WISP_OUTER_READY") {
 		return ACPSessionRuntime{}, fmt.Errorf("prepare wisp outer runtime failed session_id=%s outer_sandbox_id=%s exit=%d stdout=%q stderr=%q", req.SessionID, sb.SandboxID, result.ExitCode, redactWispOuterSecrets(result.Stdout), redactWispOuterSecrets(result.Stderr))
 	}
-	releaseLease = false
+	if acquireLease {
+		releaseLease = false
+	}
 	return runtime, nil
 }
 
@@ -414,6 +424,14 @@ func wispNameFromRuntime(sessionID string) string {
 		out = out[:48]
 	}
 	return "agent-" + out
+}
+
+func workspaceWispNameFromSession(sessionID string) string {
+	trimmed := strings.TrimSpace(sessionID)
+	if trimmed == "" {
+		trimmed = "session-" + randomHex(6)
+	}
+	return fmt.Sprintf("workspace-%08x", crc32.ChecksumIEEE([]byte(trimmed)))
 }
 
 func wispOuterPrepareScript() string {

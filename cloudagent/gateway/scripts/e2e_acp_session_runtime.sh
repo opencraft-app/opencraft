@@ -253,7 +253,7 @@ send(sock, {
     },
 })
 time.sleep(1)
-rpc(4, "session/cancel", {"sessionId": session_id})
+send(sock, {"jsonrpc": "2.0", "method": "session/cancel", "params": {"sessionId": session_id}})
 cancelled_prompt = wait_id(3)
 responses[3] = cancelled_prompt
 if cancelled_prompt.get("result", {}).get("stopReason") != "cancelled":
@@ -434,13 +434,13 @@ def streamed_text():
             parts.append(content["text"])
     return "".join(parts)
 
-	rpc(1, "initialize", {})
-	loaded = rpc(2, "session/load", {"sessionId": session_id, "cwd": "/workspace"})
-	loaded_cloud = (loaded.get("_meta") or {}).get("cloudagent") or {}
-	if "sessionId" in loaded or "readOnly" in loaded or "readOnlyReason" in loaded:
-	    raise RuntimeError(f"session/load returned non-standard root fields: {loaded}")
-	if loaded_cloud.get("read_only"):
-	    raise RuntimeError(f"unexpected load result after restart: {loaded}")
+rpc(1, "initialize", {})
+loaded = rpc(2, "session/load", {"sessionId": session_id, "cwd": "/workspace"})
+loaded_cloud = (loaded.get("_meta") or {}).get("cloudagent") or {}
+if "sessionId" in loaded or "readOnly" in loaded or "readOnlyReason" in loaded:
+    raise RuntimeError(f"session/load returned non-standard root fields: {loaded}")
+if loaded_cloud.get("read_only"):
+    raise RuntimeError(f"unexpected load result after restart: {loaded}")
 after_load_status = rpc(3, "_cloudagent.session.status", {"session_id": session_id})
 after_load_sandbox = after_load_status.get("sandbox", {})
 if after_load_status.get("read_only"):
@@ -498,6 +498,15 @@ require_log() {
   fi
 }
 
+require_log_regex() {
+  local pattern="$1"
+  if ! grep -Eq "$pattern" "$SERVER_LOG"; then
+    printf 'missing log regex: %s\n' "$pattern" >&2
+    tail -n 200 "$SERVER_LOG" >&2
+    exit 1
+  fi
+}
+
 require_log 'event=acp_runtime_outer_create_done'
 require_log 'event=acp_runtime_daemon_done'
 require_log 'event=acp_runtime_prompt_done'
@@ -506,7 +515,10 @@ require_log 'event=acp_runtime_cleanup_done reason=closed'
 require_log 'event=acp_runtime_restore_outer_create_done'
 require_log 'event=acp_runtime_restore_wisp_prepare_done'
 require_log 'event=acp_runtime_restore_daemon_done'
-require_log 'event=acp_runtime_wisp_stop_done'
+require_log 'event=acp_runtime_wisp_stop_start'
+require_log_regex 'event=acp_runtime_wisp_stop_(done|failed)'
+require_log 'workspace_runtime_shutdown_done'
+require_log_regex 'event=session_history_seed_done .*seeded=\\"2\\"'
 if grep -q 'event=acp_session_persist_failed' "$SERVER_LOG"; then
   printf 'session persistence failed during restore e2e\n' >&2
   tail -n 240 "$SERVER_LOG" >&2

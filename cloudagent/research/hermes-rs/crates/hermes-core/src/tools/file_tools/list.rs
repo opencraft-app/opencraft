@@ -187,10 +187,10 @@ async fn list_files_with_session_sandbox(args: Value, context: ToolContext) -> T
         "entries": payload.get("entries").cloned().unwrap_or_else(|| Value::Array(Vec::new())),
         "count": payload.get("entries").and_then(Value::as_array).map(|entries| entries.len()).unwrap_or(0),
     });
-    add_session_sandbox_metadata(
-        &mut content,
-        sandbox.sandbox_id().await,
-        sandbox.workspace_root(),
-    );
+    let runtime_id = match sandbox.runtime_id().await {
+        Ok(value) => value,
+        Err(error) => return ToolResult::error("file_list", error.to_string()),
+    };
+    add_session_sandbox_metadata(&mut content, runtime_id, sandbox.workspace_root());
     ToolResult::success("file_list", content)
 }

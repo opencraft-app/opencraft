@@ -92,6 +92,7 @@ type acpSessionSubscriber struct {
 type acpRuntimeCleanup struct {
 	Runtime    ACPSessionRuntime
 	Generation int64
+	Reason     string
 	Done       chan struct{}
 	Err        error
 }

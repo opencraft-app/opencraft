@@ -200,6 +200,22 @@ impl AgentSession {
         );
     }
 
+    pub fn append_restored_message(
+        &mut self,
+        role: TranscriptRole,
+        content: impl Into<String>,
+        index: usize,
+    ) {
+        self.append_transcript_entry(
+            format!("turn_restored_{index}"),
+            format!("run_restored_{index}"),
+            role,
+            vec![TranscriptBlock::Text {
+                text: content.into(),
+            }],
+        );
+    }
+
     pub fn replace_transcript(&mut self, transcript: Vec<TranscriptEntry>) {
         self.leaf_entry_id = transcript.last().map(|entry| entry.entry_id.clone());
         self.transcript = transcript;

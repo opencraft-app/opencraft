@@ -175,6 +175,8 @@ mod tests {
             STANDARD.encode("hello"),
             "--cwd-b64".to_string(),
             STANDARD.encode("/workspace"),
+            "--history-b64".to_string(),
+            STANDARD.encode(r#"[{"role":"user","text":"previous"}]"#),
         ];
         match parse_command_mode(&args).unwrap() {
             CommandMode::Client(client) => match client.command {
@@ -184,12 +186,17 @@ mod tests {
                     inbox_mode,
                     text_b64,
                     cwd_b64,
+                    history_b64,
                 } => {
                     assert_eq!(session_id, "session_123");
                     assert_eq!(input_id.as_deref(), Some("job_1"));
                     assert_eq!(inbox_mode, "steer");
                     assert_eq!(text_b64, STANDARD.encode("hello"));
                     assert_eq!(cwd_b64, Some(STANDARD.encode("/workspace")));
+                    assert_eq!(
+                        history_b64,
+                        Some(STANDARD.encode(r#"[{"role":"user","text":"previous"}]"#))
+                    );
                 }
                 other => panic!("expected client session-input command, got {:?}", other),
             },
@@ -382,6 +389,38 @@ mod tests {
                     assert_eq!(manifest_b64, STANDARD.encode(manifest));
                 }
                 other => panic!("expected client stage-files command, got {:?}", other),
+            },
+            other => panic!("expected client mode, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_client_workspace_bind_subcommand() {
+        let request = json!({
+            "workspace_id": "workspace_1",
+            "workspace_runtime_id": "runtime_1",
+            "sandbox_id": "sandbox_1",
+            "domain": "example.com",
+            "envd_access_token": "token",
+            "workspace_root": "/workspace",
+            "replace_existing": true
+        })
+        .to_string();
+        let args = vec![
+            "hermes-sidecar".to_string(),
+            "client".to_string(),
+            "--addr".to_string(),
+            "http://127.0.0.1:49999".to_string(),
+            "workspace-bind".to_string(),
+            "--request-b64".to_string(),
+            STANDARD.encode(&request),
+        ];
+        match parse_command_mode(&args).unwrap() {
+            CommandMode::Client(client) => match client.command {
+                ClientCommand::WorkspaceBind { request_b64 } => {
+                    assert_eq!(request_b64, STANDARD.encode(request));
+                }
+                other => panic!("expected client workspace-bind command, got {:?}", other),
             },
             other => panic!("expected client mode, got {:?}", other),
         }

@@ -29,15 +29,33 @@ func (e WorkspaceLeaseHeldError) Is(target error) bool {
 type WorkspaceService interface {
 	EnsureWorkspace(ctx context.Context, rec WorkspaceRecord) error
 	AcquireLease(ctx context.Context, req WorkspaceLeaseRequest) (WorkspaceLease, error)
+	RenewLease(ctx context.Context, lease WorkspaceLease, ttl time.Duration) (WorkspaceLease, error)
 	ReleaseLease(ctx context.Context, lease WorkspaceLease) error
 	GetLease(ctx context.Context, workspaceID string) (WorkspaceLease, bool, error)
 }
 
 type WorkspaceRecord struct {
-	WorkspaceID         string
-	Backend             string
-	ProviderWorkspaceID string
-	State               string
+	WorkspaceID           string
+	Backend               string
+	ProviderWorkspaceID   string
+	State                 string
+	OwnerSessionID        string
+	WorkspaceVersion      string
+	ProviderRegion        string
+	WispName              string
+	WispSMHSpaceID        string
+	WispOwnsSMHSpace      bool
+	WispPackageURL        string
+	WispJFSPrefix         string
+	WispRootUpperSize     string
+	CleanupState          string
+	LastCleanupError      string
+	CleanupRetryAfter     time.Time
+	DeleteState           string
+	LastDeleteError       string
+	DeleteRetryAfter      time.Time
+	OuterCleanupPending   bool
+	LastOuterCleanupError string
 }
 
 type WorkspaceLeaseRequest struct {

@@ -56,7 +56,7 @@ impl ToolHandler for TerminalTool {
                 return ToolResult::error(self.name(), format!("Invalid arguments: {}", error))
             }
         };
-        let command = match build_command(&args, &sandbox) {
+        let command = match build_command(&args, sandbox.as_ref()) {
             Ok(command) => command,
             Err(error) => return ToolResult::error(self.name(), error.to_string()),
         };
@@ -131,7 +131,7 @@ impl ToolHandler for TerminalTool {
 
 fn build_command(
     args: &TerminalArgs,
-    sandbox: &crate::runtime_host::SessionSandbox,
+    sandbox: &dyn crate::workspace::WorkspaceRuntime,
 ) -> crate::error::Result<String> {
     let working_dir = match args.working_dir.as_deref() {
         Some(path) => {

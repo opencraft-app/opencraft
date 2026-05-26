@@ -240,11 +240,11 @@ async fn read_file_with_session_sandbox(args: Value, context: ToolContext) -> To
         .unwrap_or_default()
         .to_string();
     let mut content = file_read_result(&args.path, content, &payload);
-    add_session_sandbox_metadata(
-        &mut content,
-        sandbox.sandbox_id().await,
-        sandbox.workspace_root(),
-    );
+    let runtime_id = match sandbox.runtime_id().await {
+        Ok(value) => value,
+        Err(error) => return ToolResult::error("file_read", error.to_string()),
+    };
+    add_session_sandbox_metadata(&mut content, runtime_id, sandbox.workspace_root());
     ToolResult::success("file_read", content)
 }
 
@@ -316,11 +316,11 @@ async fn write_file_with_session_sandbox(args: Value, context: ToolContext) -> T
         "bytes_written": payload.get("bytes").and_then(Value::as_u64).unwrap_or(0),
         "file_size": payload.get("file_size").and_then(Value::as_u64).unwrap_or(0),
     });
-    add_session_sandbox_metadata(
-        &mut content,
-        sandbox.sandbox_id().await,
-        sandbox.workspace_root(),
-    );
+    let runtime_id = match sandbox.runtime_id().await {
+        Ok(value) => value,
+        Err(error) => return ToolResult::error("file_write", error.to_string()),
+    };
+    add_session_sandbox_metadata(&mut content, runtime_id, sandbox.workspace_root());
     ToolResult::success("file_write", content)
 }
 
@@ -754,11 +754,11 @@ async fn search_files_with_session_sandbox(args: Value, context: ToolContext) ->
         "truncated": payload.get("truncated").and_then(Value::as_bool).unwrap_or(false),
         "next_offset": payload.get("next_offset").cloned().unwrap_or(Value::Null),
     });
-    add_session_sandbox_metadata(
-        &mut content,
-        sandbox.sandbox_id().await,
-        sandbox.workspace_root(),
-    );
+    let runtime_id = match sandbox.runtime_id().await {
+        Ok(value) => value,
+        Err(error) => return ToolResult::error("file_search", error.to_string()),
+    };
+    add_session_sandbox_metadata(&mut content, runtime_id, sandbox.workspace_root());
     ToolResult::success("file_search", content)
 }
 
@@ -789,12 +789,12 @@ pub(super) fn session_sandbox_required(tool_name: &str) -> ToolResult {
 
 pub(super) fn add_session_sandbox_metadata(
     value: &mut Value,
-    sandbox_id: String,
+    runtime_id: String,
     workspace_root: &str,
 ) {
     if let Some(object) = value.as_object_mut() {
         object.insert("runtime".to_string(), json!("sandbox-host"));
-        object.insert("sandbox_id".to_string(), json!(sandbox_id));
+        object.insert("workspace_runtime_id".to_string(), json!(runtime_id));
         object.insert("workspace_root".to_string(), json!(workspace_root));
     }
 }

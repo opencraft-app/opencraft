@@ -452,6 +452,7 @@ func (g *ACPGateway) beginPrompt(scope Scope, sessionID string, cancel context.C
 	if cwd != "" {
 		session.CWD = defaultSessionCWD(cwd)
 	}
+	historySeed := runtimeHistorySeed(session.History)
 	var turnRecord acpPromptTurnRecord
 	if g.store != nil {
 		var err error
@@ -496,9 +497,29 @@ func (g *ACPGateway) beginPrompt(scope Scope, sessionID string, cancel context.C
 		ACPSessionID:          session.SessionID,
 		ACPSessionGeneration:  session.RuntimeGeneration,
 		ACPSessionRuntime:     session.Runtime,
+		ACPSessionHistory:     historySeed,
 	}
 	g.persistSession(session)
 	return run, job, nil
+}
+
+func runtimeHistorySeed(history []acpHistoryEntry) []runtimeHistoryEntry {
+	if len(history) == 0 {
+		return nil
+	}
+	seed := make([]runtimeHistoryEntry, 0, len(history))
+	for _, entry := range history {
+		role := strings.TrimSpace(strings.ToLower(entry.Role))
+		if role != "user" && role != "assistant" && role != "system" {
+			continue
+		}
+		text := strings.TrimSpace(entry.Text)
+		if text == "" {
+			continue
+		}
+		seed = append(seed, runtimeHistoryEntry{Role: role, Text: text})
+	}
+	return seed
 }
 func (g *ACPGateway) promptCanEmit(sessionID string, run *acpPromptRun) bool {
 	g.mu.Lock()

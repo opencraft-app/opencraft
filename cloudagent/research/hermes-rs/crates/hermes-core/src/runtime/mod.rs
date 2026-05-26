@@ -25,12 +25,12 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::behavior::{BehaviorRegistry, BehaviorVersions, ResolvedBehavior};
-use crate::client::Message;
+use crate::client::{Message, Role};
 use crate::error::Result;
 use crate::events::{AgentEvent, AgentEventSink};
 use crate::runtime::agent::AgentExecutor;
 use crate::runtime::store::RuntimeStore;
-use crate::session::AgentSession;
+use crate::session::{AgentSession, TranscriptRole};
 use serde::{Deserialize, Serialize};
 
 pub use actor::{
@@ -150,6 +150,61 @@ impl AgentRuntime {
         self.agent.replace_history(messages).await;
     }
 
+    pub async fn seed_history_if_empty(&self, messages: Vec<Message>) -> Result<usize> {
+        let restored_messages: Vec<Message> = messages
+            .into_iter()
+            .filter(|message| {
+                matches!(message.role, Role::System | Role::User | Role::Assistant)
+                    && !message.content.trim().is_empty()
+            })
+            .collect();
+        if restored_messages.is_empty() {
+            return Ok(0);
+        }
+
+        let existing = self.agent.conversation().await;
+        if existing.iter().any(|message| {
+            matches!(message.role, Role::User | Role::Assistant)
+                && !message.content.trim().is_empty()
+        }) {
+            return Ok(0);
+        }
+
+        {
+            let mut session = self.session.lock().await;
+            let has_visible_transcript = session.transcript.iter().any(|entry| {
+                matches!(entry.role, TranscriptRole::User | TranscriptRole::Assistant)
+                    && entry.blocks.iter().any(|block| match block {
+                        crate::session::TranscriptBlock::Text { text }
+                        | crate::session::TranscriptBlock::Reasoning { text } => {
+                            !text.trim().is_empty()
+                        }
+                        _ => false,
+                    })
+            });
+            if has_visible_transcript {
+                self.agent
+                    .replace_history(crate::runtime::transcript::transcript_to_messages(
+                        &session.transcript,
+                    ))
+                    .await;
+                return Ok(0);
+            }
+            for (index, message) in restored_messages.iter().enumerate() {
+                let role = match message.role {
+                    Role::System => TranscriptRole::System,
+                    Role::User => TranscriptRole::User,
+                    Role::Assistant => TranscriptRole::Assistant,
+                    Role::Tool => continue,
+                };
+                session.append_restored_message(role, message.content.clone(), index + 1);
+            }
+        }
+        self.agent.replace_history(restored_messages.clone()).await;
+        self.persist_state().await?;
+        Ok(restored_messages.len())
+    }
+
     pub async fn shutdown(&self) {
         self.agent.shutdown().await;
     }
@@ -172,6 +227,16 @@ impl AgentRuntime {
         force: bool,
     ) -> Result<crate::runtime_host::SessionSandboxEnvdIdentity> {
         self.agent.ensure_session_sandbox_envd_identity(force).await
+    }
+
+    pub async fn bind_session_sandbox(
+        &self,
+        binding: crate::runtime_host::SessionSandboxBinding,
+        replace_existing: bool,
+    ) -> Result<crate::runtime_host::SessionSandboxEnvdIdentity> {
+        self.agent
+            .bind_session_sandbox(binding, replace_existing)
+            .await
     }
 
     pub async fn test_tool_context(&self) -> Result<crate::tools::ToolContext> {

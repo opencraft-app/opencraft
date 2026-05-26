@@ -5,7 +5,8 @@ use crate::error::{Error, Result};
 use crate::events::{AgentEvent, RuntimeHostEvent};
 use crate::runtime::agent::AgentExecutor;
 use crate::runtime_host::{
-    create_session_sandbox, e2b_enabled, SessionSandbox, SessionSandboxEnvdIdentity,
+    bind_session_sandbox, create_session_sandbox, e2b_enabled, SessionSandbox,
+    SessionSandboxBinding, SessionSandboxEnvdIdentity,
 };
 use crate::tools::ToolContext;
 
@@ -83,6 +84,31 @@ impl AgentExecutor {
         }
         *slot = Some(sandbox.clone());
         Ok(sandbox)
+    }
+
+    pub async fn bind_session_sandbox(
+        &self,
+        binding: SessionSandboxBinding,
+        replace_existing: bool,
+    ) -> Result<SessionSandboxEnvdIdentity> {
+        if replace_existing {
+            self.shutdown_session_sandbox().await;
+        }
+        let sandbox = bind_session_sandbox(binding).await?;
+        let identity = sandbox.envd_identity().await;
+        {
+            let mut slot = self.session_sandbox.write().await;
+            *slot = Some(sandbox);
+        }
+        self.emit(AgentEvent::RuntimeHost(RuntimeHostEvent {
+            event: "workspace_bind_done".to_string(),
+            session_id: Some(self.session_id.clone()),
+            sandbox_id: Some(identity.sandbox_id.clone()),
+            workspace_root: Some("/workspace".to_string()),
+            ..RuntimeHostEvent::default()
+        }))
+        .await;
+        Ok(identity)
     }
 
     pub(crate) async fn shutdown_session_sandbox(&self) {

@@ -2,15 +2,16 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::runtime_host::SessionSandbox;
+use crate::workspace::WorkspaceRuntime;
 
 /// Context passed to tool execution.
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct ToolContext {
     /// Additional metadata about the execution.
     pub metadata: HashMap<String, String>,
-    /// Optional session-scoped sandbox workspace.
-    pub session_sandbox: Option<Arc<SessionSandbox>>,
-    /// Whether filesystem/process tools must use a session-scoped sandbox.
+    /// Optional session-scoped workspace runtime.
+    pub workspace: Option<Arc<dyn WorkspaceRuntime>>,
+    /// Whether filesystem/process tools must use a session-scoped workspace.
     pub require_session_sandbox: bool,
 }
 
@@ -28,7 +29,13 @@ impl ToolContext {
 
     /// Attach a session-scoped sandbox.
     pub fn with_session_sandbox(mut self, sandbox: Arc<SessionSandbox>) -> Self {
-        self.session_sandbox = Some(sandbox);
+        self.workspace = Some(sandbox);
+        self
+    }
+
+    /// Attach a session-scoped workspace runtime.
+    pub fn with_workspace_runtime(mut self, workspace: Arc<dyn WorkspaceRuntime>) -> Self {
+        self.workspace = Some(workspace);
         self
     }
 
@@ -38,9 +45,15 @@ impl ToolContext {
         self
     }
 
-    /// Get the session-scoped sandbox if present.
-    pub fn sandbox(&self) -> Option<Arc<SessionSandbox>> {
-        self.session_sandbox.clone()
+    /// Get the session-scoped workspace if present.
+    pub fn workspace(&self) -> Option<Arc<dyn WorkspaceRuntime>> {
+        self.workspace.clone()
+    }
+
+    /// Backwards-compatible accessor for existing tool code while it migrates
+    /// from sandbox naming to workspace naming.
+    pub fn sandbox(&self) -> Option<Arc<dyn WorkspaceRuntime>> {
+        self.workspace()
     }
 
     /// Whether tools must execute through the session-scoped sandbox.

@@ -27,12 +27,20 @@ pub(crate) struct RuntimeInputRequest {
     pub(crate) blocks: Vec<RuntimeInputBlock>,
     #[serde(default)]
     pub(crate) cwd: Option<String>,
+    #[serde(default)]
+    pub(crate) history: Vec<RuntimeInputHistoryEntry>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub(crate) enum RuntimeInputBlock {
     Text { text: String },
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub(crate) struct RuntimeInputHistoryEntry {
+    pub(crate) role: String,
+    pub(crate) text: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -105,6 +113,29 @@ pub(crate) struct RuntimeRunLedgerResponse {
 pub(crate) struct EnsureInnerRequest {
     #[serde(default)]
     pub(crate) force: bool,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub(crate) struct WorkspaceBindRequest {
+    pub(crate) workspace_id: String,
+    pub(crate) workspace_runtime_id: String,
+    pub(crate) sandbox_id: String,
+    pub(crate) domain: String,
+    pub(crate) envd_access_token: String,
+    #[serde(default)]
+    pub(crate) traffic_access_token: String,
+    #[serde(default = "default_workspace_root")]
+    pub(crate) workspace_root: String,
+    #[serde(default)]
+    pub(crate) command_prefix: Option<String>,
+    #[serde(default)]
+    pub(crate) shutdown_command: Option<String>,
+    #[serde(default)]
+    pub(crate) replace_existing: bool,
+}
+
+fn default_workspace_root() -> String {
+    "/workspace".to_string()
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -224,6 +255,15 @@ pub(crate) struct EnsureInnerResponse {
     pub(crate) inner_sandbox_id: String,
     pub(crate) inner_sandbox_domain: String,
     pub(crate) inner_envd_access_token: String,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct WorkspaceBindResponse {
+    pub(crate) ok: bool,
+    pub(crate) workspace_id: String,
+    pub(crate) workspace_runtime_id: String,
+    pub(crate) sandbox_id: String,
+    pub(crate) workspace_root: String,
 }
 
 #[derive(Debug)]

@@ -14,6 +14,7 @@ use crate::http::{
 use crate::protocol::{
     EnsureInnerRequest, HttpRequest, HttpResponse, PromptOutcome, PromptResponseLine,
     RuntimeAbortRequest, RuntimeInputRequest, SessionCreateRequest, StageFilesManifest,
+    WorkspaceBindRequest,
 };
 use crate::DaemonState;
 
@@ -123,6 +124,24 @@ async fn route_request(state: Arc<DaemonState>, request: HttpRequest) -> HttpRes
         ("POST", "/ensure-inner") => {
             match serde_json::from_slice::<EnsureInnerRequest>(&request.body) {
                 Ok(body) => match state.ensure_inner(body.force).await {
+                    Ok(response) => json_response(
+                        200,
+                        serde_json::to_value(response).unwrap_or_else(
+                            |error| json!({ "ok": false, "error": error.to_string() }),
+                        ),
+                    ),
+                    Err(error) => {
+                        json_response(500, json!({ "ok": false, "error": error.to_string() }))
+                    }
+                },
+                Err(error) => {
+                    json_response(400, json!({ "ok": false, "error": error.to_string() }))
+                }
+            }
+        }
+        ("POST", "/workspace/bind") => {
+            match serde_json::from_slice::<WorkspaceBindRequest>(&request.body) {
+                Ok(body) => match state.bind_workspace(body).await {
                     Ok(response) => json_response(
                         200,
                         serde_json::to_value(response).unwrap_or_else(

@@ -9,7 +9,7 @@ use tokio::net::TcpStream;
 
 use crate::protocol::{
     EnsureInnerRequest, PromptResponseLine, RuntimeAbortRequest, RuntimeInputBlock,
-    RuntimeInputRequest, SessionCreateRequest, StageFilesManifest,
+    RuntimeInputRequest, SessionCreateRequest, StageFilesManifest, WorkspaceBindRequest,
 };
 use crate::timeline;
 
@@ -37,6 +37,7 @@ pub(crate) enum ClientCommand {
         inbox_mode: String,
         text_b64: String,
         cwd_b64: Option<String>,
+        history_b64: Option<String>,
     },
     SessionAbort {
         session_id: String,
@@ -49,6 +50,9 @@ pub(crate) enum ClientCommand {
     SessionRunLedger,
     StageFiles {
         manifest_b64: String,
+    },
+    WorkspaceBind {
+        request_b64: String,
     },
     EnsureInner {
         force: bool,
@@ -101,6 +105,7 @@ pub(crate) async fn run_client(args: ClientArgs) -> Result<()> {
             inbox_mode,
             text_b64,
             cwd_b64,
+            history_b64,
         } => {
             let request = RuntimeInputRequest {
                 session_id,
@@ -111,6 +116,12 @@ pub(crate) async fn run_client(args: ClientArgs) -> Result<()> {
                         .context("failed to decode client session input text")?,
                 }],
                 cwd: cwd_b64.as_deref().and_then(decode_inline_b64),
+                history: history_b64
+                    .as_deref()
+                    .map(decode_json_b64)
+                    .transpose()
+                    .context("failed to decode client session input history")?
+                    .unwrap_or_default(),
             };
             stream_runtime_input_response_lines(&args.addr, &request).await?;
         }
@@ -163,6 +174,16 @@ pub(crate) async fn run_client(args: ClientArgs) -> Result<()> {
                 println!("{}", response.body.trim());
             }
         }
+        ClientCommand::WorkspaceBind { request_b64 } => {
+            let request: WorkspaceBindRequest = decode_json_b64(&request_b64)
+                .context("failed to decode client workspace-bind request")?;
+            let response =
+                http_request_json(&args.addr, "POST", "/workspace/bind", &request).await?;
+            ensure_http_ok(&response, "/workspace/bind")?;
+            if !response.body.trim().is_empty() {
+                println!("{}", response.body.trim());
+            }
+        }
         ClientCommand::EnsureInner { force } => {
             let response = http_request_json(
                 &args.addr,
@@ -206,7 +227,7 @@ pub(crate) fn parse_client_args(args: &[String]) -> Result<ClientArgs> {
             }
             "health" | "health-json" | "session-create" | "session-input" | "session-abort"
             | "session-status" | "session-transcript" | "session-run-ledger" | "stage-files"
-            | "ensure-inner" | "shutdown" => {
+            | "workspace-bind" | "ensure-inner" | "shutdown" => {
                 subcommand = Some((args[index].clone(), index + 1));
                 break;
             }
@@ -227,12 +248,30 @@ pub(crate) fn parse_client_args(args: &[String]) -> Result<ClientArgs> {
         "session-status" => ClientCommand::SessionStatus,
         "session-transcript" => ClientCommand::SessionTranscript,
         "session-run-ledger" => ClientCommand::SessionRunLedger,
+        "workspace-bind" => parse_client_workspace_bind_args(&args[start..])?,
         "ensure-inner" => parse_client_ensure_inner_args(&args[start..])?,
         "stage-files" => parse_client_stage_files_args(&args[start..])?,
         _ => unreachable!(),
     };
 
     Ok(ClientArgs { addr, command })
+}
+
+fn parse_client_workspace_bind_args(args: &[String]) -> Result<ClientCommand> {
+    let mut request_b64 = None;
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--request-b64" => {
+                request_b64 = Some(take_flag_value(args, &mut index, "--request-b64")?);
+            }
+            other => bail!("unexpected workspace-bind argument '{}'", other),
+        }
+        index += 1;
+    }
+    Ok(ClientCommand::WorkspaceBind {
+        request_b64: request_b64.context("--request-b64 is required")?,
+    })
 }
 
 pub(crate) fn classify_error_code(message: &str) -> &'static str {
@@ -630,6 +669,7 @@ fn parse_client_session_input_args(args: &[String]) -> Result<ClientCommand> {
     let mut inbox_mode = Some("prompt".to_string());
     let mut text_b64 = None;
     let mut cwd_b64 = None;
+    let mut history_b64 = None;
     let mut index = 0;
     while index < args.len() {
         match args[index].as_str() {
@@ -648,6 +688,9 @@ fn parse_client_session_input_args(args: &[String]) -> Result<ClientCommand> {
             "--cwd-b64" => {
                 cwd_b64 = Some(take_flag_value(args, &mut index, "--cwd-b64")?);
             }
+            "--history-b64" => {
+                history_b64 = Some(take_flag_value(args, &mut index, "--history-b64")?);
+            }
             other => bail!("unexpected session-input argument '{}'", other),
         }
         index += 1;
@@ -659,6 +702,7 @@ fn parse_client_session_input_args(args: &[String]) -> Result<ClientCommand> {
         inbox_mode: inbox_mode.unwrap_or_else(|| "prompt".to_string()),
         text_b64: text_b64.context("--text-b64 is required for client session-input")?,
         cwd_b64,
+        history_b64,
     })
 }
 

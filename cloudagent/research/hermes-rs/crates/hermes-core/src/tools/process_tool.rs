@@ -67,13 +67,13 @@ impl ToolHandler for ProcessTool {
         let action = args.action.as_str();
         let result = match action {
             "list" => sandbox.native_call("process.list", json!({})).await,
-            "poll" => call_with_id(&sandbox, "process.poll", &args).await,
-            "log" => call_with_id(&sandbox, "process.log", &args).await,
-            "kill" => call_with_id(&sandbox, "process.kill", &args).await,
-            "close" => call_with_id(&sandbox, "process.close", &args).await,
-            "write" => write_to_process(&sandbox, &args, false).await,
-            "submit" => write_to_process(&sandbox, &args, true).await,
-            "wait" => wait_for_process(&sandbox, &args).await,
+            "poll" => call_with_id(sandbox.as_ref(), "process.poll", &args).await,
+            "log" => call_with_id(sandbox.as_ref(), "process.log", &args).await,
+            "kill" => call_with_id(sandbox.as_ref(), "process.kill", &args).await,
+            "close" => call_with_id(sandbox.as_ref(), "process.close", &args).await,
+            "write" => write_to_process(sandbox.as_ref(), &args, false).await,
+            "submit" => write_to_process(sandbox.as_ref(), &args, true).await,
+            "wait" => wait_for_process(sandbox.as_ref(), &args).await,
             other => Err(crate::error::Error::InvalidToolArgs {
                 name: self.name().to_string(),
                 details: format!("unsupported process action: {other}"),
@@ -103,7 +103,7 @@ impl ProcessArgsExt for ProcessArgs {
 }
 
 async fn call_with_id(
-    sandbox: &crate::runtime_host::SessionSandbox,
+    sandbox: &dyn crate::workspace::WorkspaceRuntime,
     method: &str,
     args: &ProcessArgs,
 ) -> crate::error::Result<Value> {
@@ -127,7 +127,7 @@ async fn call_with_id(
 }
 
 async fn write_to_process(
-    sandbox: &crate::runtime_host::SessionSandbox,
+    sandbox: &dyn crate::workspace::WorkspaceRuntime,
     args: &ProcessArgs,
     append_newline: bool,
 ) -> crate::error::Result<Value> {
@@ -150,7 +150,7 @@ async fn write_to_process(
 }
 
 async fn wait_for_process(
-    sandbox: &crate::runtime_host::SessionSandbox,
+    sandbox: &dyn crate::workspace::WorkspaceRuntime,
     args: &ProcessArgs,
 ) -> crate::error::Result<Value> {
     let process_id = args.process_id_or_error()?.to_string();
