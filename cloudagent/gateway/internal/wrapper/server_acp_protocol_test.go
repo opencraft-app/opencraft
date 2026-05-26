@@ -345,9 +345,12 @@ func TestACPProtocolWorkspaceWellDoneIsObservableByRestoreAndStatus(t *testing.T
 	defer client.close()
 	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{}})
 	initResp := waitForRPCID(t, client, float64(1))
-	methods := initResp["result"].(map[string]any)["agentCapabilities"].(map[string]any)["_meta"].(map[string]any)["cloudagent"].(map[string]any)["methods"].([]any)
+	cloudagentMeta := initResp["result"].(map[string]any)["agentCapabilities"].(map[string]any)["_meta"].(map[string]any)["cloudagent"].(map[string]any)
+	methods := cloudagentMeta["methods"].([]any)
 	assertStringSetContains(t, methods, cloudAgentRuntimeEnsureReadyMethod)
 	assertStringSetContains(t, methods, cloudAgentSessionStatusMethod)
+	notifications := cloudagentMeta["notifications"].([]any)
+	assertStringSetContains(t, notifications, cloudAgentWorkspaceLifecycleMethod)
 
 	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 2, "method": "session/new", "params": map[string]any{"cwd": "/workspace"}})
 	sessionID := waitForRPCID(t, client, float64(2))["result"].(map[string]any)["sessionId"].(string)
@@ -360,6 +363,13 @@ func TestACPProtocolWorkspaceWellDoneIsObservableByRestoreAndStatus(t *testing.T
 		"method":  cloudAgentRuntimeEnsureReadyMethod,
 		"params":  map[string]any{"session_id": sessionID, "cwd": "/workspace"},
 	})
+	lifecycle := waitForWorkspaceLifecycleOperation(t, client, "restore")
+	if lifecycle["session_id"] != sessionID || lifecycle["operation"] != "restore" {
+		t.Fatalf("unexpected workspace lifecycle notification: %#v", lifecycle)
+	}
+	if _, hasCamel := lifecycle["sessionId"]; hasCamel {
+		t.Fatalf("workspace lifecycle extension must use snake_case fields: %#v", lifecycle)
+	}
 	restoreResult := waitForRPCID(t, client, float64(4))["result"].(map[string]any)
 	assertACPWorkspaceWellDone(t, restoreResult, sessionID)
 	if restoreResult["ok"] != true || restoreResult["restore_source"] != "runtime_ensure_ready" {
@@ -374,6 +384,44 @@ func TestACPProtocolWorkspaceWellDoneIsObservableByRestoreAndStatus(t *testing.T
 	})
 	statusResult := waitForRPCID(t, client, float64(5))["result"].(map[string]any)
 	assertACPWorkspaceWellDone(t, statusResult, sessionID)
+}
+
+func waitForWorkspaceLifecycleOperation(t *testing.T, client *acpWSClient, operation string) map[string]any {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		msg := client.readJSON(t)
+		if got, ok := msg["method"].(string); !ok || got != cloudAgentWorkspaceLifecycleMethod {
+			continue
+		}
+		params := msg["params"].(map[string]any)
+		if params["operation"] == operation {
+			return params
+		}
+	}
+	t.Fatalf("timed out waiting for workspace lifecycle operation %s", operation)
+	return nil
+}
+
+func TestACPProtocolRuntimeOwnershipHeldErrorIsStructuredRetryable(t *testing.T) {
+	code, message, data := acpJSONRPCError(RuntimeOwnershipHeldError{
+		SessionID:  "session_active",
+		Generation: 2,
+		RunID:      "job_active",
+		OwnerID:    "gateway_active",
+		Operation:  "prompt",
+		ExpiresAt:  time.Date(2026, 5, 26, 2, 9, 54, 0, time.UTC),
+	})
+	if code != -32009 || message != "runtime ownership is held" {
+		t.Fatalf("unexpected ownership error code/message: code=%d message=%q", code, message)
+	}
+	fields := data.(map[string]any)
+	if fields["error_code"] != "runtime_ownership_held" || fields["retryable"] != true {
+		t.Fatalf("ownership error should be structured retryable data: %#v", fields)
+	}
+	if fields["session_id"] != "session_active" || fields["run_id"] != "job_active" || fields["operation"] != "prompt" {
+		t.Fatalf("ownership error should preserve owner diagnostics: %#v", fields)
+	}
 }
 
 func TestACPProtocolCloudAgentExtensionsRejectCamelCaseInput(t *testing.T) {

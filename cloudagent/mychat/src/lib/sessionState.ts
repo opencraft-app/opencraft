@@ -16,6 +16,9 @@ export interface SessionRow {
   subtitle: string;
   sessionId?: string;
   cwd: string;
+  lifecycleState?: string;
+  recoverability?: string;
+  recoverabilityNote?: string;
   readOnly?: boolean;
   readOnlyReason?: string;
   additionalDirectories?: string[];
@@ -57,6 +60,9 @@ export function rowsFromListedSessions(
         : cwd || "ACP session",
       sessionId: session.sessionId,
       cwd,
+      lifecycleState: session.lifecycleState,
+      recoverability: session.recoverability,
+      recoverabilityNote: session.recoverabilityNote,
       readOnly: session.readOnly,
       readOnlyReason: session.readOnlyReason,
       additionalDirectories:
@@ -66,7 +72,7 @@ export function rowsFromListedSessions(
         : undefined,
       mcpServersAuthoritative: previous?.mcpServersAuthoritative ?? false,
       configOptions: previous?.configOptions ?? [],
-      restoreState: session.readOnly
+      restoreState: session.readOnly || session.recoverability === "terminal"
         ? "blocked"
         : previous?.restoreState === "live"
           ? "live"

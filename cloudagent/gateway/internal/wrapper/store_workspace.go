@@ -297,6 +297,25 @@ func (s *Store) LoadWorkspace(ctx context.Context, workspaceID string) (Workspac
 	FROM workspaces WHERE workspace_id = ?`, workspaceID))
 }
 
+func (s *Store) LoadWorkspaceForSession(ctx context.Context, sessionID string) (WorkspaceRecord, bool, error) {
+	if s == nil || sessionID == "" {
+		return WorkspaceRecord{}, false, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return scanWorkspaceRecord(s.db.QueryRowContext(ctx, `
+	SELECT workspace_id, backend, provider_workspace_id, state,
+	       owner_session_id, workspace_version, provider_region, wisp_name, wisp_smh_space_id,
+	       wisp_owns_smh_space, wisp_package_url, wisp_jfs_prefix, wisp_root_upper_size,
+	       cleanup_state, last_cleanup_error, cleanup_retry_after,
+	       delete_state, last_delete_error, delete_retry_after,
+	       outer_cleanup_pending, last_outer_cleanup_error
+	FROM workspaces
+	WHERE owner_session_id = ? AND deleted_at IS NULL
+	ORDER BY updated_at DESC
+	LIMIT 1`, sessionID))
+}
+
 func (s *Store) UpdateWorkspaceLifecycle(ctx context.Context, workspaceID, state, cleanupState, cleanupError, deleteState, deleteError string, outerCleanupPending bool) error {
 	if s == nil {
 		return nil

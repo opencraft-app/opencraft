@@ -209,6 +209,20 @@ impl AgentRuntime {
         self.agent.shutdown().await;
     }
 
+    pub async fn shutdown_inner_runtime(&self) {
+        self.agent.shutdown_inner_runtime().await;
+    }
+
+    pub async fn shutdown_inner_runtime_with_event_sink(
+        &self,
+        sink: AgentEventSink,
+    ) -> Vec<AgentEvent> {
+        self.agent
+            .shutdown_inner_runtime_with_event_sink(sink.clone())
+            .await;
+        sink.events().await
+    }
+
     pub async fn shutdown_with_event_sink(&self, sink: AgentEventSink) -> Vec<AgentEvent> {
         self.agent.shutdown_with_event_sink(sink.clone()).await;
         sink.events().await

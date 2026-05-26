@@ -199,6 +199,22 @@ impl AgentExecutor {
         self.shutdown_session_sandbox().await;
     }
 
+    pub async fn shutdown_inner_runtime(&self) {
+        self.shutdown_session_sandbox().await;
+    }
+
+    pub async fn shutdown_inner_runtime_with_event_sink(&self, sink: AgentEventSink) {
+        let previous = {
+            let mut current = self.event_sink.write().await;
+            current.replace(sink)
+        };
+        self.shutdown_inner_runtime().await;
+        {
+            let mut current = self.event_sink.write().await;
+            *current = previous;
+        }
+    }
+
     pub async fn shutdown_with_event_sink(&self, sink: AgentEventSink) {
         let previous = {
             let mut current = self.event_sink.write().await;

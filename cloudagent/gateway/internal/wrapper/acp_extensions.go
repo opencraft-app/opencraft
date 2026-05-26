@@ -3,6 +3,10 @@ package wrapper
 const (
 	cloudAgentSessionStatusMethod      = "_cloudagent.session.status"
 	cloudAgentRuntimeEnsureReadyMethod = "_cloudagent.runtime.ensure_ready"
+	cloudAgentRuntimeKillDaemonMethod  = "_cloudagent.runtime.kill_daemon"
+	cloudAgentRuntimeKillOuterMethod   = "_cloudagent.runtime.kill_outer"
+	cloudAgentRuntimeKillInnerMethod   = "_cloudagent.runtime.kill_inner"
+	cloudAgentWorkspaceLifecycleMethod = "_cloudagent.workspace.lifecycle"
 	cloudAgentReplayDoneMethod         = "_cloudagent.session.replay_done"
 	cloudAgentReplayGapMethod          = "_cloudagent.session.replay_gap"
 	cloudAgentTurnStatusMethod         = "_cloudagent.turn.status"

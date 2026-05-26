@@ -173,6 +173,25 @@ pub(crate) struct StageFilesState {
     pub(crate) generation: Option<u64>,
 }
 
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub(crate) struct WorkspaceFileUploadRequest {
+    pub(crate) path: String,
+    pub(crate) content_b64: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub(crate) struct WorkspaceFileDownloadRequest {
+    pub(crate) path: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub(crate) struct WorkspaceFileDownloadResponse {
+    pub(crate) ok: bool,
+    pub(crate) path: String,
+    pub(crate) bytes: u64,
+    pub(crate) content_b64: String,
+}
+
 #[derive(Debug, Serialize)]
 pub(crate) struct HealthJsonResponse {
     pub(crate) ok: bool,

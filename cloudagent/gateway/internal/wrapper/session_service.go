@@ -39,16 +39,23 @@ func (g *ACPGateway) listSessions(scope Scope) []acpSessionListItem {
 		if session.State == acpRuntimeStateStarting || session.State == acpRuntimeStateClosing {
 			continue
 		}
-		readOnly, readOnlyReason := acpSessionReadOnlyState(session)
+		recovery := g.runtimeRecoverySnapshot(context.Background(), session.SessionID, session.Runtime)
+		statusSession := *session
+		statusSession.Runtime = recovery.Runtime
+		readOnly, readOnlyReason := acpSessionReadOnlyStateWithRestorable(&statusSession, recovery.Restorable)
+		lifecycle := sessionLifecycleContract(&statusSession, false, false, recovery.Restorable)
 		items = append(items, acpSessionListItem{
 			SessionID: session.SessionID,
 			CWD:       session.CWD,
 			Title:     sessionTitle(session),
 			UpdatedAt: session.UpdatedAt.Format(time.RFC3339),
 			Meta: cloudAgentMetaBox(acpCloudAgentSessionResultMeta{
-				State:          string(session.State),
-				ReadOnly:       readOnly,
-				ReadOnlyReason: readOnlyReason,
+				State:              string(session.State),
+				LifecycleState:     lifecycle.LifecycleState,
+				Recoverability:     lifecycle.Recoverability,
+				RecoverabilityNote: lifecycle.RecoverabilityNote,
+				ReadOnly:           readOnly,
+				ReadOnlyReason:     readOnlyReason,
 			}),
 		})
 	}
@@ -79,27 +86,73 @@ func acpLoadedSessionResultFor(session *acpSession) acpLoadedSessionResult {
 	}
 }
 
+func (g *ACPGateway) acpNewSessionResultFor(session *acpSession) acpNewSessionResult {
+	if session == nil {
+		return acpNewSessionResult{}
+	}
+	return acpNewSessionResult{
+		SessionID:     session.SessionID,
+		ConfigOptions: cloneConfigOptions(session.ConfigOptions),
+		Meta:          g.acpSessionResultMeta(session),
+	}
+}
+
+func (g *ACPGateway) acpLoadedSessionResultFor(session *acpSession) acpLoadedSessionResult {
+	if session == nil {
+		return acpLoadedSessionResult{}
+	}
+	return acpLoadedSessionResult{
+		ConfigOptions: cloneConfigOptions(session.ConfigOptions),
+		Meta:          g.acpSessionResultMeta(session),
+	}
+}
+
 func acpSessionResultMeta(session *acpSession) *acpCloudAgentMetaBox {
 	readOnly, readOnlyReason := acpSessionReadOnlyState(session)
+	lifecycle := sessionLifecycleContract(session, false, false, runtimeCanRecreate(session.Runtime))
 	return cloudAgentMetaBox(acpCloudAgentSessionResultMeta{
-		State:          string(session.State),
-		ReadOnly:       readOnly,
-		ReadOnlyReason: readOnlyReason,
-		SessionProxyID: session.Runtime.SessionProxyID,
+		State:              string(session.State),
+		LifecycleState:     lifecycle.LifecycleState,
+		Recoverability:     lifecycle.Recoverability,
+		RecoverabilityNote: lifecycle.RecoverabilityNote,
+		ReadOnly:           readOnly,
+		ReadOnlyReason:     readOnlyReason,
+		SessionProxyID:     session.Runtime.SessionProxyID,
+	})
+}
+
+func (g *ACPGateway) acpSessionResultMeta(session *acpSession) *acpCloudAgentMetaBox {
+	recovery := g.runtimeRecoverySnapshot(context.Background(), session.SessionID, session.Runtime)
+	statusSession := *session
+	statusSession.Runtime = recovery.Runtime
+	readOnly, readOnlyReason := acpSessionReadOnlyStateWithRestorable(&statusSession, recovery.Restorable)
+	lifecycle := sessionLifecycleContract(&statusSession, false, false, recovery.Restorable)
+	return cloudAgentMetaBox(acpCloudAgentSessionResultMeta{
+		State:              string(session.State),
+		LifecycleState:     lifecycle.LifecycleState,
+		Recoverability:     lifecycle.Recoverability,
+		RecoverabilityNote: lifecycle.RecoverabilityNote,
+		ReadOnly:           readOnly,
+		ReadOnlyReason:     readOnlyReason,
+		SessionProxyID:     session.Runtime.SessionProxyID,
 	})
 }
 
 func cloudAgentMetaBox(meta acpCloudAgentSessionResultMeta) *acpCloudAgentMetaBox {
-	if meta.State == "" && !meta.ReadOnly && meta.ReadOnlyReason == "" && meta.SessionProxyID == "" {
+	if meta.State == "" && meta.LifecycleState == "" && meta.Recoverability == "" && meta.RecoverabilityNote == "" && !meta.ReadOnly && meta.ReadOnlyReason == "" && meta.SessionProxyID == "" {
 		return nil
 	}
 	return &acpCloudAgentMetaBox{CloudAgent: meta}
 }
 func acpSessionReadOnlyState(session *acpSession) (bool, string) {
+	return acpSessionReadOnlyStateWithRestorable(session, session != nil && runtimeCanRecreate(session.Runtime))
+}
+
+func acpSessionReadOnlyStateWithRestorable(session *acpSession, runtimeRestorable bool) (bool, string) {
 	if session == nil || session.ReadOnlyReason == "" {
 		return false, ""
 	}
-	if runtimeCanRecreate(session.Runtime) {
+	if runtimeRestorable {
 		return false, ""
 	}
 	return true, session.ReadOnlyReason
@@ -157,6 +210,7 @@ func (g *ACPGateway) createSession(ctx context.Context, scope Scope, req acpSess
 		g.ensureRuntimeProxyIDLocked(current)
 		current.State = acpRuntimeStateReady
 		current.Closed = false
+		current.RuntimeVerified = true
 		g.persistSession(current)
 		return cloneSession(current), nil
 	}
@@ -265,6 +319,11 @@ func (g *ACPGateway) resumeSession(scope Scope, sessionID, cwd string) (*acpSess
 		g.mu.Unlock()
 		return out, nil
 	}
+	recovery := g.runtimeRecoverySnapshot(context.Background(), sessionID, session.Runtime)
+	if recovery.Restorable && runtimeEnsureChanged(recovery.Runtime, session.Runtime) {
+		session.Runtime = recovery.Runtime
+		g.persistSession(session)
+	}
 	runtime := session.Runtime
 	if !runtimeNeedsCleanup(runtime) {
 		session.ReadOnlyReason = acpReadOnlyRuntimeNotRecovered
@@ -290,13 +349,14 @@ func (g *ACPGateway) resumeSession(scope Scope, sessionID, cwd string) (*acpSess
 		g.ensureRuntimeProxyIDLocked(current)
 		current.State = acpRuntimeStateReady
 		current.Closed = false
+		current.RuntimeVerified = true
 		current.LastRuntimeError = ""
 		current.ReadOnlyReason = ""
 		current.UpdatedAt = time.Now().UTC()
 		g.persistSession(current)
 		return nil
 	}
-	reattached, err := g.ensureSessionRuntime(sessionID, generation, runtime, startReq, commit)
+	reattached, err := g.ensureSessionRuntime(sessionID, generation, runtime, startReq, commit, true)
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	current, ok := g.sessions[sessionID]
@@ -319,6 +379,7 @@ func (g *ACPGateway) resumeSession(scope Scope, sessionID, cwd string) (*acpSess
 	g.ensureRuntimeProxyIDLocked(current)
 	current.State = acpRuntimeStateReady
 	current.Closed = false
+	current.RuntimeVerified = true
 	current.LastRuntimeError = ""
 	current.ReadOnlyReason = ""
 	g.persistSession(current)
@@ -329,20 +390,28 @@ func (g *ACPGateway) cloudAgentRuntimeEnsureReady(scope Scope, req acpCloudAgent
 }
 
 func (g *ACPGateway) cloudAgentEnsureRuntimeReady(scope Scope, req acpCloudAgentRuntimeEnsureReadyRequest, source string) (map[string]any, error) {
+	startedAt := time.Now().UTC()
 	sessionID := strings.TrimSpace(req.SessionID)
 	if sessionID == "" {
 		return nil, fmt.Errorf("session_id is required")
 	}
+	fmt.Fprintf(os.Stderr, "timeline source=server event=acp_runtime_ensure_ready_start session_id=%s source=%s cwd=%s\n", sessionID, source, quoteServerField(req.CWD))
 	before, err := g.getSession(scope, sessionID)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "timeline source=server event=acp_runtime_ensure_ready_failed session_id=%s source=%s elapsed_ms=%d error=%s\n", sessionID, source, elapsedMillis(startedAt), quoteServerField(err.Error()))
 		return nil, err
 	}
 	beforeRuntimeID := before.Runtime.RuntimeID
 	beforeOuterSandboxID := before.Runtime.OuterSandboxID
 	beforeGeneration := before.RuntimeGeneration
+	g.broadcastWorkspaceLifecycle(scope, sessionID, beforeGeneration, "restore", "start", "running", "开始恢复 Workspace", startedAt, map[string]any{
+		"runtime_id":       beforeRuntimeID,
+		"outer_sandbox_id": beforeOuterSandboxID,
+	})
 	runID := "restore_" + randomHex(12)
 	ownership, err := g.acquireRuntimeOwnership(context.Background(), sessionID, beforeGeneration, runID, "restore")
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "timeline source=server event=acp_runtime_ensure_ready_failed session_id=%s source=%s generation=%d elapsed_ms=%d error=%s\n", sessionID, source, beforeGeneration, elapsedMillis(startedAt), quoteServerField(err.Error()))
 		return nil, err
 	}
 	stopOwnershipHeartbeat := g.startRuntimeOwnershipHeartbeat(context.Background(), ownership, nil)
@@ -350,10 +419,12 @@ func (g *ACPGateway) cloudAgentEnsureRuntimeReady(scope Scope, req acpCloudAgent
 	defer g.releaseRuntimeOwnership(ownership)
 	session, err := g.resumeSession(scope, sessionID, req.CWD)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "timeline source=server event=acp_runtime_ensure_ready_failed session_id=%s source=%s generation=%d elapsed_ms=%d error=%s\n", sessionID, source, beforeGeneration, elapsedMillis(startedAt), quoteServerField(err.Error()))
 		return nil, err
 	}
 	status, err := g.cloudAgentSessionStatus(scope, sessionID)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "timeline source=server event=acp_runtime_ensure_ready_failed session_id=%s source=%s generation=%d elapsed_ms=%d error=%s\n", sessionID, source, beforeGeneration, elapsedMillis(startedAt), quoteServerField(err.Error()))
 		return nil, err
 	}
 	status["configOptions"] = cloneConfigOptions(session.ConfigOptions)
@@ -369,6 +440,7 @@ func (g *ACPGateway) cloudAgentEnsureRuntimeReady(scope Scope, req acpCloudAgent
 		"outer_sandbox_id":          session.Runtime.OuterSandboxID,
 	}
 	status["runtime_ensure_ready"] = restore
+	fmt.Fprintf(os.Stderr, "timeline source=server event=acp_runtime_ensure_ready_done session_id=%s source=%s generation=%d elapsed_ms=%d ok=%t changed=%t runtime_id=%s outer_sandbox_id=%s\n", sessionID, source, beforeGeneration, elapsedMillis(startedAt), status["ok"] == true, restore["changed"] == true, session.Runtime.RuntimeID, session.Runtime.OuterSandboxID)
 	return status, nil
 }
 func (g *ACPGateway) closeSession(scope Scope, sessionID string) error {

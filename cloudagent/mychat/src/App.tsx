@@ -59,6 +59,7 @@ import {
   type AgentCapabilities,
   type ChatMessage,
   type CloudAgentSessionStatus,
+  type CloudAgentWorkspaceLifecycleEvent,
   type ListedSession,
   type PermissionRequest,
   type ToolCall,
@@ -268,6 +269,8 @@ export function App() {
   >({});
   const [sessionStatusByConversation, setSessionStatusByConversation] =
     useState<Record<string, SessionStatusSnapshot>>({});
+  const [workspaceLifecycleByConversation, setWorkspaceLifecycleByConversation] =
+    useState<Record<string, CloudAgentWorkspaceLifecycleEvent[]>>({});
   const [restoreStatusPollVersion, setRestoreStatusPollVersion] = useState(0);
   const [commandsByConversation, setCommandsByConversation] = useState<
     Record<string, unknown[]>
@@ -699,6 +702,9 @@ export function App() {
             runtimeStatus: sessionStatus.runtimeStatus,
             runtimeStatusSource: sessionStatus.runtimeStatusSource,
             runtimeStatusError: sessionStatus.runtimeStatusError,
+            runtimeRestoreInFlight: sessionStatus.runtimeRestoreInFlight,
+            runtimeRestoreStartedAt: sessionStatus.runtimeRestoreStartedAt,
+            runtimeRestoreElapsedMs: sessionStatus.runtimeRestoreElapsedMs,
             workspacePersistent: sessionStatus.workspacePersistent,
             runtimeRestorable: sessionStatus.runtimeRestorable,
           });
@@ -719,6 +725,27 @@ export function App() {
             ),
           });
           executeSessionEffects(plan.effects, client);
+        },
+        onWorkspaceLifecycle: (conversationId, event) => {
+          debugRestore("workspace_lifecycle", { conversationId, event });
+          setWorkspaceLifecycleByConversation((prev) => {
+            const current =
+              event.phase === "start" && event.status === "running"
+                ? (prev[conversationId] ?? []).filter(
+                    (item) => item.operation !== event.operation,
+                  )
+                : prev[conversationId] ?? [];
+            const index = current.findIndex(
+              (item) => item.lifecycleId === event.lifecycleId,
+            );
+            const next =
+              index === -1
+                ? [...current, event]
+                : current.map((item, itemIndex) =>
+                    itemIndex === index ? { ...item, ...event } : item,
+                  );
+            return { ...prev, [conversationId]: next.slice(-8) };
+          });
         },
         onTurn: (conversationId, turnState) => {
           setPendingTurns((prev) => {
@@ -922,6 +949,8 @@ export function App() {
   const activeCommands = commandsByConversation[activeConversationId] ?? [];
   const activeSessionStatus =
     sessionStatusByConversation[activeConversation.id];
+  const activeWorkspaceLifecycle =
+    workspaceLifecycleByConversation[activeConversation.id] ?? [];
   const sessionCreateMeta = useMemo(
     () => parseSessionCreateMetaJSON(sessionCreateMetaJSON),
     [sessionCreateMetaJSON],
@@ -1645,7 +1674,9 @@ export function App() {
                     {activeMessages.length > 0 && (
                       <MessageStream messages={activeMessages} />
                     )}
-                    {chatWorkspaceRestoring && <WorkspaceRestoreNotice />}
+                    {chatWorkspaceRestoring && (
+                      <WorkspaceRestoreNotice events={activeWorkspaceLifecycle} />
+                    )}
                   </div>
                 )}
               </div>
@@ -1847,6 +1878,12 @@ export function SessionPage({
     ["Binding", session.sessionId ? "Session-bound" : "Draft session"],
     ["Runtime", metadata?.runtimeStatus ?? "Unknown"],
     ["Runtime Source", metadata?.runtimeStatusSource ?? "Unknown"],
+    [
+      "Runtime Restore",
+      metadata?.runtimeRestoreInFlight
+        ? `In flight · ${formatOptionalNumber(metadata.runtimeRestoreElapsedMs)}ms`
+        : "Idle",
+    ],
     ["Restore", formatRestoreState(session.restoreState)],
   ];
   const metadataRows = metadataAvailable
@@ -1891,6 +1928,16 @@ export function SessionPage({
         ["Last Refreshed", formatTimestamp(metadata?.receivedAt)],
         ["Closed", formatOptionalBoolean(metadata?.closed)],
         ["Prompt In Flight", formatOptionalBoolean(metadata?.promptInFlight)],
+        [
+          "Runtime Restore Started",
+          formatTimestamp(metadata?.runtimeRestoreStartedAt),
+        ],
+        [
+          "Runtime Restore Elapsed",
+          metadata?.runtimeRestoreInFlight
+            ? `${formatOptionalNumber(metadata.runtimeRestoreElapsedMs)}ms`
+            : "0ms",
+        ],
         ["Runtime Status Error", metadata?.runtimeStatusError ?? "None"],
         ["Runtime Store Load", metadata?.runtimeStoreLoad ?? "Unknown"],
         ["Runtime Runs", formatOptionalNumber(metadata?.runCount)],
@@ -2646,18 +2693,99 @@ function MessageStream({ messages }: { messages: ChatMessage[] }) {
   );
 }
 
-export function WorkspaceRestoreNotice() {
+export function WorkspaceRestoreNotice({
+  events = [],
+}: {
+  events?: CloudAgentWorkspaceLifecycleEvent[];
+}) {
+  const steps = normalizeWorkspaceLifecycleEvents(events);
+  const active = [...steps]
+    .reverse()
+    .find((event) => event.status === "running") ?? steps[steps.length - 1];
   return (
     <div
       data-testid="workspace-restore-spinner"
       role="status"
       aria-live="polite"
-      className="mx-auto flex w-full max-w-[900px] items-center gap-3 rounded-lg border border-border bg-panel/70 px-4 py-3 text-sm text-muted"
+      className="mx-auto w-full max-w-[900px] rounded-lg border border-border bg-panel/70 px-4 py-3 text-sm text-muted"
     >
-      <Loader2 className="h-4 w-4 animate-spin text-green" />
-      <span>正在恢复 Workspace...</span>
+      <div className="flex min-w-0 items-center gap-3">
+        <Loader2 className="h-4 w-4 shrink-0 animate-spin text-green" />
+        <span className="font-medium text-text">Workspace 生命周期</span>
+        <span className="min-w-0 truncate">{active?.label ?? "正在恢复 Workspace..."}</span>
+      </div>
+      <div className="mt-3 flex items-center">
+        {steps.map((event, index) => (
+          <div
+            key={event.lifecycleId}
+            className={cn("flex items-center", index < steps.length - 1 && "flex-1")}
+          >
+            <span
+              className={cn(
+                "h-2.5 w-2.5 shrink-0 rounded-full border",
+                event.status === "failed"
+                  ? "border-[#d27777] bg-[#d27777]"
+                  : event.status === "done"
+                    ? "border-green bg-green"
+                    : "border-green bg-panel",
+              )}
+              title={event.label}
+            />
+            {index < steps.length - 1 && (
+              <span
+                className={cn(
+                  "mx-2 h-px flex-1",
+                  event.status === "done" ? "bg-green/70" : "bg-border",
+                )}
+              />
+            )}
+          </div>
+        ))}
+      </div>
+      <div className="mt-2 grid gap-1 text-xs text-muted sm:grid-cols-4">
+        {steps.map((event) => (
+          <div key={`${event.lifecycleId}:label`} className="min-w-0 truncate">
+            {event.label}
+          </div>
+        ))}
+      </div>
     </div>
   );
+}
+
+function normalizeWorkspaceLifecycleEvents(
+  events: CloudAgentWorkspaceLifecycleEvent[],
+) {
+  const visible = events.filter(
+    (event) => event.operation === "restore" || event.operation === "storage",
+  );
+  if (visible.length > 0) return visible;
+  return [
+    {
+      sessionId: "",
+      lifecycleId: "restore:fallback:start",
+      operation: "restore",
+      phase: "start",
+      status: "done",
+      label: "准备恢复",
+    },
+    {
+      sessionId: "",
+      lifecycleId: "restore:fallback:runtime",
+      operation: "restore",
+      phase: "runtime",
+      status: "running",
+      label: "正在恢复 Workspace",
+    },
+    {
+      sessionId: "",
+      lifecycleId: "restore:fallback:ready",
+      operation: "restore",
+      phase: "ready",
+      status: "running",
+      label: "等待就绪",
+    },
+  ] satisfies CloudAgentWorkspaceLifecycleEvent[];
 }
 
 function MessageGroup({ message }: { message: ChatMessage }) {

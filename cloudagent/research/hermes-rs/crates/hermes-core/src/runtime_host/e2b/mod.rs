@@ -23,7 +23,10 @@ use crate::workspace::{WorkspaceIdentity, WorkspaceRuntime};
 use self::connect_stream::{connect_envelope, read_connect_command_stream};
 use self::path_sync::{normalize_absolute_path, normalize_relative_path, should_skip_path};
 use self::registry::register_active_session_sandbox;
-pub use self::registry::sync_active_session_sandbox_files;
+pub use self::registry::{
+    download_active_session_sandbox_file, sync_active_session_sandbox_files,
+    upload_active_session_sandbox_file,
+};
 #[cfg(test)]
 use self::sandbox_host::parse_host_port;
 use self::sandbox_host::{
@@ -448,6 +451,16 @@ impl SessionSandbox {
     }
 
     pub async fn upload_bytes_at_path(&self, remote_path: &str, content: Vec<u8>) -> Result<()> {
+        if self
+            .command_prefix
+            .as_deref()
+            .map(str::trim)
+            .is_some_and(|value| !value.is_empty())
+        {
+            return self
+                .upload_bytes_at_path_via_command(remote_path, content)
+                .await;
+        }
         if let Some(parent) = Path::new(remote_path)
             .parent()
             .and_then(|path| path.to_str())
@@ -465,12 +478,67 @@ impl SessionSandbox {
             .await
     }
 
+    async fn upload_bytes_at_path_via_command(
+        &self,
+        remote_path: &str,
+        content: Vec<u8>,
+    ) -> Result<()> {
+        if let Ok(text) = String::from_utf8(content.clone()) {
+            self.native_call(
+                "fs.write",
+                serde_json::json!({
+                    "path": remote_path,
+                    "content": text,
+                }),
+            )
+            .await?;
+            return Ok(());
+        }
+        let Some(parent) = Path::new(remote_path)
+            .parent()
+            .and_then(|path| path.to_str())
+        else {
+            return Err(Error::Agent(format!(
+                "remote path '{}' has no parent directory",
+                remote_path
+            )));
+        };
+        let command = workspace_file_upload_command(parent, remote_path, &content);
+        let result = self.run_command(&command, &HashMap::new()).await?;
+        if result.exit_code != 0 {
+            return Err(Error::Agent(format!(
+                "failed to upload file '{}' through workspace command: exit_code={} stdout={} stderr={}",
+                remote_path, result.exit_code, result.stdout, result.stderr
+            )));
+        }
+        Ok(())
+    }
+
     pub async fn download_bytes(&self, relative_path: &str) -> Result<Vec<u8>> {
         let remote_path = self.remote_path(relative_path);
         self.download_bytes_at_path(&remote_path).await
     }
 
     pub async fn download_bytes_at_path(&self, remote_path: &str) -> Result<Vec<u8>> {
+        if self
+            .command_prefix
+            .as_deref()
+            .map(str::trim)
+            .is_some_and(|value| !value.is_empty())
+        {
+            let command = workspace_file_download_command(remote_path);
+            let result = self.run_command(&command, &HashMap::new()).await?;
+            if result.exit_code != 0 {
+                return Err(Error::Agent(format!(
+                    "failed to download file '{}' through workspace command: exit_code={} stdout={} stderr={}",
+                    remote_path, result.exit_code, result.stdout, result.stderr
+                )));
+            }
+            let encoded = result.stdout.trim();
+            return STANDARD
+                .decode(encoded)
+                .map_err(|error| Error::ParseResponse(error.to_string()));
+        }
         let inner = self.inner.lock().await;
         inner
             .client
@@ -723,6 +791,23 @@ impl SessionSandbox {
         let cleaned = relative_path.trim_start_matches('/');
         format!("{}/{}", self.workspace_root, cleaned)
     }
+}
+
+fn workspace_file_upload_command(parent: &str, remote_path: &str, content: &[u8]) -> String {
+    format!(
+        "mkdir -p {} && printf %s {} | base64 -d > {} && test -f {}",
+        shell_quote(parent),
+        shell_quote(&STANDARD.encode(content)),
+        shell_quote(remote_path),
+        shell_quote(remote_path)
+    )
+}
+
+fn workspace_file_download_command(remote_path: &str) -> String {
+    format!(
+        "set -e\npath={path}\ntest -f \"$path\"\nbase64 \"$path\" | tr -d '\\n'\n",
+        path = shell_quote(remote_path)
+    )
 }
 
 #[async_trait::async_trait]

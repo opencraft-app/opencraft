@@ -678,6 +678,9 @@ func TestACPRestartedSessionsLoadReadOnlyAndRejectPrompt(t *testing.T) {
 	if row["sessionId"] != sessionID || rowMeta["read_only"] != true || rowMeta["read_only_reason"] != acpReadOnlyRuntimeNotRecovered {
 		t.Fatalf("unexpected read-only list row: %#v", row)
 	}
+	if rowMeta["lifecycle_state"] != acpLifecycleBlockedTerminal || rowMeta["recoverability"] != acpRecoverabilityTerminal {
+		t.Fatalf("read-only list row should expose terminal lifecycle contract: %#v", rowMeta)
+	}
 
 	restartedClient.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 3, "method": "session/load", "params": map[string]any{"sessionId": sessionID}})
 	waitForMethod(t, restartedClient, "session/update")
@@ -688,6 +691,9 @@ func TestACPRestartedSessionsLoadReadOnlyAndRejectPrompt(t *testing.T) {
 	loadMeta := cloudAgentResultMeta(t, loadResult)
 	if loadMeta["read_only"] != true || loadMeta["read_only_reason"] != acpReadOnlyRuntimeNotRecovered {
 		t.Fatalf("unexpected read-only load result: %#v", loadResult)
+	}
+	if loadMeta["lifecycle_state"] != acpLifecycleBlockedTerminal || loadMeta["recoverability"] != acpRecoverabilityTerminal {
+		t.Fatalf("read-only load result should expose terminal lifecycle contract: %#v", loadMeta)
 	}
 
 	restartedClient.writeJSON(t, map[string]any{
@@ -745,8 +751,12 @@ func TestACPRestartedWispSessionCanRecreateRuntime(t *testing.T) {
 	restartedClient.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 2, "method": "session/list", "params": map[string]any{}})
 	listResp := waitForRPCID(t, restartedClient, float64(2))
 	row := listResp["result"].(map[string]any)["sessions"].([]any)[0].(map[string]any)
-	if row["sessionId"] != sessionID || cloudAgentResultMeta(t, row)["read_only"] == true {
+	rowMeta := cloudAgentResultMeta(t, row)
+	if row["sessionId"] != sessionID || rowMeta["read_only"] == true {
 		t.Fatalf("wisp session should remain resumable after restart: %#v", row)
+	}
+	if rowMeta["lifecycle_state"] != acpLifecycleDetached || rowMeta["recoverability"] != acpRecoverabilityLive {
+		t.Fatalf("persisted wisp runtime should expose detached lifecycle until resume verifies it: %#v", rowMeta)
 	}
 	restartedClient.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 3, "method": "session/resume", "params": map[string]any{"sessionId": sessionID}})
 	resumeResp := waitForRPCID(t, restartedClient, float64(3))
@@ -759,6 +769,109 @@ func TestACPRestartedWispSessionCanRecreateRuntime(t *testing.T) {
 	starts := restartedManager.recordedStarts()
 	if starts[0].OuterRuntime != outerRuntimeWisp || starts[0].RuntimeRecovery != runtimeRecoveryReattachOrRecreate {
 		t.Fatalf("restore start lost wisp recovery fields: %#v", starts[0])
+	}
+}
+
+func TestACPRestartedSessionRecoversFromWorkspaceRecordWhenRuntimeSMHMissing(t *testing.T) {
+	root := t.TempDir()
+	store, err := NewStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager := &recordingACPRuntimeManager{}
+	srv := NewServer(store, FakeWorker{OutputText: "unused"})
+	srv.acpGate.runtimeManager = manager
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	client := dialACPWS(t, "ws"+trimHTTPPrefix(ts.URL)+"/acp", map[string]string{"Authorization": "Bearer test-key"})
+	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{}})
+	waitForRPCID(t, client, float64(1))
+	client.writeJSON(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      2,
+		"method":  "session/new",
+		"params":  map[string]any{"cwd": "/workspace", "_meta": map[string]any{"cloudagent": map[string]any{"outer_runtime": "wisp"}}},
+	})
+	sessionID := waitForRPCID(t, client, float64(2))["result"].(map[string]any)["sessionId"].(string)
+	client.close()
+
+	spaceID := "space_" + sessionID
+	if err := store.EnsureWorkspace(context.Background(), WorkspaceRecord{
+		WorkspaceID:           spaceID,
+		Backend:               "wisp",
+		ProviderWorkspaceID:   spaceID,
+		State:                 "active",
+		OwnerSessionID:        sessionID,
+		WorkspaceVersion:      defaultWorkspaceVersion,
+		WispName:              "persisted-wisp",
+		WispSMHSpaceID:        spaceID,
+		WispOwnsSMHSpace:      true,
+		WispPackageURL:        "https://example.com/wisp.tgz",
+		WispJFSPrefix:         "jfs-prefix",
+		WispRootUpperSize:     "10G",
+		CleanupState:          "active",
+		DeleteState:           "",
+		OuterCleanupPending:   false,
+		LastOuterCleanupError: "",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	persisted, err := store.LoadACPSession(Scope{TenantID: "default", ProjectID: "default"}, sessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	persisted.Runtime.WispWorkspaceID = ""
+	persisted.Runtime.WispSMHSpaceID = ""
+	persisted.Runtime.WorkspaceID = ""
+	persisted.Runtime.WispName = ""
+	persisted.Runtime.WispPackageURL = ""
+	persisted.Runtime.WispJFSPrefix = ""
+	persisted.Runtime.WispRootUpperSize = ""
+	if err := store.SaveACPSession(persisted); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	restartedStore, err := NewStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restartedManager := &recordingACPRuntimeManager{reattachErr: fmt.Errorf("old outer gone")}
+	restarted := NewServer(restartedStore, FakeWorker{OutputText: "unused"})
+	restarted.acpGate.runtimeManager = restartedManager
+	restartedTS := httptest.NewServer(restarted.Handler())
+	defer restartedTS.Close()
+	restartedClient := dialACPWS(t, "ws"+trimHTTPPrefix(restartedTS.URL)+"/acp", map[string]string{"Authorization": "Bearer test-key"})
+	defer restartedClient.close()
+	restartedClient.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{}})
+	waitForRPCID(t, restartedClient, float64(1))
+
+	restartedClient.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 2, "method": "_cloudagent.session.status", "params": map[string]any{"session_id": sessionID}})
+	status := waitForRPCID(t, restartedClient, float64(2))["result"].(map[string]any)
+	if status["runtime_restorable"] != true || status["workspace_persistent"] != true || status["workspace_id"] != spaceID {
+		t.Fatalf("workspace record should make stripped runtime restorable: %#v", status)
+	}
+
+	restartedClient.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 3, "method": "session/resume", "params": map[string]any{"sessionId": sessionID}})
+	resumeResp := waitForRPCID(t, restartedClient, float64(3))
+	if cloudAgentResultMeta(t, resumeResp["result"].(map[string]any))["read_only"] == true {
+		t.Fatalf("workspace-backed session should resume writable: %#v", resumeResp)
+	}
+	if restartedManager.startCount() != 1 {
+		t.Fatalf("workspace-backed resume should start replacement runtime, got %d", restartedManager.startCount())
+	}
+	starts := restartedManager.recordedStarts()
+	if starts[0].OuterRuntime != outerRuntimeWisp || starts[0].RuntimeRecovery != runtimeRecoveryReattachOrRecreate {
+		t.Fatalf("workspace-backed restore lost recovery request fields: %#v", starts[0])
+	}
+	restartedClient.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 4, "method": "_cloudagent.session.status", "params": map[string]any{"session_id": sessionID}})
+	restoredStatus := waitForRPCID(t, restartedClient, float64(4))["result"].(map[string]any)
+	sandbox := restoredStatus["sandbox"].(map[string]any)
+	if sandbox["wisp_smh_space_id"] != spaceID || sandbox["wisp_package_url"] != "https://example.com/wisp.tgz" {
+		t.Fatalf("restored runtime should be hydrated from workspace record: %#v", sandbox)
 	}
 }
 
@@ -1295,6 +1408,50 @@ func TestACPPromptSkipsRuntimeRefreshWhenPreviousUserMessageIsRecent(t *testing.
 	sendACPPrompt(t, client, sessionID, 3, "do not refresh yet")
 	if refreshes := manager.recordedRefreshes(); len(refreshes) != 0 {
 		t.Fatalf("recent prompt must not refresh runtime, got %#v", refreshes)
+	}
+}
+
+func TestACPPromptRefreshesRuntimeWhileActive(t *testing.T) {
+	t.Setenv("GATEWAY_ACP_RUNTIME_REFRESH_ACTIVE_SECONDS", "1")
+	manager := newBlockingACPRuntimeManager()
+	srv := newACPTestServerWithRuntime(t, manager)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	client := dialACPWS(t, "ws"+trimHTTPPrefix(ts.URL)+"/acp", map[string]string{"Authorization": "Bearer test-key"})
+	defer client.close()
+	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{}})
+	waitForRPCID(t, client, float64(1))
+	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 2, "method": "session/new", "params": map[string]any{"cwd": "/workspace"}})
+	sessionID := waitForRPCID(t, client, float64(2))["result"].(map[string]any)["sessionId"].(string)
+
+	srv.acpGate.mu.Lock()
+	session := srv.acpGate.sessions[sessionID]
+	session.Runtime.InnerSandboxID = "inner_active_1"
+	session.Runtime.InnerSandboxDomain = "mock.example"
+	session.Runtime.InnerEnvdAccessToken = "inner_token"
+	srv.acpGate.persistSession(session)
+	srv.acpGate.mu.Unlock()
+
+	client.writeJSON(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      3,
+		"method":  "session/prompt",
+		"params": map[string]any{
+			"sessionId": sessionID,
+			"prompt":    []any{map[string]any{"type": "text", "text": "long running"}},
+		},
+	})
+	manager.waitStarted(t)
+	manager.waitRefreshCount(t, 1)
+	refreshes := manager.recordedRefreshes()
+	if refreshes[0].OuterSandboxID == "" || refreshes[0].InnerSandboxID != "inner_active_1" {
+		t.Fatalf("active refresh must include both outer and inner sandbox identity: %#v", refreshes[0])
+	}
+	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "method": "session/cancel", "params": map[string]any{"sessionId": sessionID}})
+	promptResp := waitForRPCID(t, client, float64(3))
+	if stop := promptResp["result"].(map[string]any)["stopReason"]; stop != "cancelled" {
+		t.Fatalf("expected cancelled stopReason, got %#v", promptResp)
 	}
 }
 
@@ -2091,12 +2248,12 @@ func TestACPRuntimeEnsureSingleflight(t *testing.T) {
 	}
 	results := make(chan ensureResult, 2)
 	go func() {
-		checked, err := gateway.ensureSessionRuntime(req.SessionID, req.Generation, runtime, req, nil)
+		checked, err := gateway.ensureSessionRuntime(req.SessionID, req.Generation, runtime, req, nil, false)
 		results <- ensureResult{runtime: checked, err: err}
 	}()
 	manager.waitStarted(t)
 	go func() {
-		checked, err := gateway.ensureSessionRuntime(req.SessionID, req.Generation, runtime, req, nil)
+		checked, err := gateway.ensureSessionRuntime(req.SessionID, req.Generation, runtime, req, nil, false)
 		results <- ensureResult{runtime: checked, err: err}
 	}()
 	time.Sleep(20 * time.Millisecond)
@@ -2120,6 +2277,64 @@ func TestACPRuntimeEnsureSingleflight(t *testing.T) {
 	}
 	if manager.ensureCount() != 1 {
 		t.Fatalf("expected one runtime ensure, got %d", manager.ensureCount())
+	}
+}
+
+func TestACPSessionStatusReportsRuntimeRestoreInFlight(t *testing.T) {
+	manager := newBlockingEnsureACPRuntimeManager()
+	gateway := NewACPGateway(nil, nil)
+	gateway.runtimeManager = manager
+	scope := Scope{TenantID: "tenant-live", ProjectID: "project-live"}
+	session, err := gateway.createSession(context.Background(), scope, acpSessionRequest{
+		CWD: "/workspace",
+		Meta: acpSessionMeta{CloudAgent: acpCloudAgentSessionMeta{
+			OuterRuntime:     outerRuntimeWisp,
+			RuntimeRecovery:  runtimeRecoveryReattachOrRecreate,
+			WorkspaceVersion: defaultWorkspaceVersion,
+			AgentVersion:     defaultAgentVersion,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := sessionRuntimeStartRequest(session)
+	result := make(chan error, 1)
+	go func() {
+		_, err := gateway.ensureSessionRuntime(session.SessionID, session.RuntimeGeneration, session.Runtime, req, nil, false)
+		result <- err
+	}()
+	manager.waitStarted(t)
+
+	status, err := gateway.cloudAgentSessionStatus(scope, session.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status["runtime_restore_in_flight"] != true {
+		t.Fatalf("status should expose in-flight runtime restore: %#v", status)
+	}
+	if status["runtime_restore_started_at"] == "" {
+		t.Fatalf("status should expose restore start time: %#v", status)
+	}
+	elapsed, ok := status["runtime_restore_elapsed_ms"].(int64)
+	if !ok || elapsed < 0 {
+		t.Fatalf("status should expose restore elapsed milliseconds: %#v", status)
+	}
+
+	manager.releaseAll()
+	select {
+	case err := <-result:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for runtime ensure")
+	}
+	status, err = gateway.cloudAgentSessionStatus(scope, session.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status["runtime_restore_in_flight"] != false {
+		t.Fatalf("status should clear in-flight runtime restore after ensure exits: %#v", status)
 	}
 }
 
@@ -2192,12 +2407,12 @@ func TestACPRuntimeEnsureSQLiteLockAcrossGateways(t *testing.T) {
 	}
 	results := make(chan ensureResult, 2)
 	go func() {
-		checked, err := gatewayA.ensureSessionRuntime(req.SessionID, req.Generation, runtime, req, makeCommit(gatewayA))
+		checked, err := gatewayA.ensureSessionRuntime(req.SessionID, req.Generation, runtime, req, makeCommit(gatewayA), false)
 		results <- ensureResult{runtime: checked, err: err}
 	}()
 	manager.waitStarted(t)
 	go func() {
-		checked, err := gatewayB.ensureSessionRuntime(req.SessionID, req.Generation, runtime, req, makeCommit(gatewayB))
+		checked, err := gatewayB.ensureSessionRuntime(req.SessionID, req.Generation, runtime, req, makeCommit(gatewayB), false)
 		results <- ensureResult{runtime: checked, err: err}
 	}()
 	time.Sleep(50 * time.Millisecond)
@@ -2373,6 +2588,9 @@ func TestACPCloudAgentSessionStatus(t *testing.T) {
 	}
 	if result["state"] != "ready" || result["runtime_generation"] != float64(1) || result["cleanup_pending"] != false {
 		t.Fatalf("unexpected status result: %#v", result)
+	}
+	if result["lifecycle_state"] != acpLifecycleLive || result["recoverability"] != acpRecoverabilityLive {
+		t.Fatalf("status should expose live lifecycle contract: %#v", result)
 	}
 	if result["runtime_status_source"] != "runtime" || result["runtime_status_error"] != "" {
 		t.Fatalf("unexpected runtime status source/error: %#v", result)
@@ -2705,6 +2923,23 @@ func (m *recordingACPRuntimeManager) recordedRefreshes() []ACPSessionRuntime {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return append([]ACPSessionRuntime(nil), m.refreshes...)
+}
+
+func (m *recordingACPRuntimeManager) waitRefreshCount(t *testing.T, want int) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		m.mu.Lock()
+		got := len(m.refreshes)
+		m.mu.Unlock()
+		if got >= want {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("runtime refresh count = %d, want >= %d", got, want)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 func (m *recordingACPRuntimeManager) waitCloseCount(t *testing.T, want int) {

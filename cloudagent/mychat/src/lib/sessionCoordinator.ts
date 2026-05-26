@@ -399,7 +399,7 @@ export function planSessionStatusReady(input: {
   if (conversation.sessionId !== input.status.sessionId) return { effects: [] as SessionCoordinatorEffect[] };
   if (conversation.restoreState !== 'restoring') return { effects: [] as SessionCoordinatorEffect[] };
 
-  if (input.status.readOnly) {
+  if (isRuntimeTerminal(input.status)) {
     return {
       effects: [
         { type: 'update_row_restore_state', conversationId: input.conversationId, restoreState: 'blocked' },
@@ -430,6 +430,18 @@ export function planSessionStatusReady(input: {
 }
 
 function isRuntimeStatusReady(status: CloudAgentSessionStatus) {
+  const lifecycleState = status.lifecycleState?.toLowerCase();
+  if (lifecycleState === 'live' || lifecycleState === 'prompting') return true;
+  if (
+    lifecycleState === 'restoring' ||
+    lifecycleState === 'storing' ||
+    lifecycleState === 'detached' ||
+    lifecycleState === 'stored_restorable' ||
+    lifecycleState === 'restore_failed_retryable' ||
+    lifecycleState === 'blocked_terminal'
+  ) {
+    return false;
+  }
   if (status.readOnly === false) return true;
   const runtimeStatus = status.runtimeStatus?.toLowerCase();
   if (
@@ -443,6 +455,14 @@ function isRuntimeStatusReady(status: CloudAgentSessionStatus) {
     return true;
   }
   return Boolean(status.sandbox?.daemonAddr);
+}
+
+function isRuntimeTerminal(status: CloudAgentSessionStatus) {
+  return (
+    status.readOnly === true ||
+    status.recoverability?.toLowerCase() === 'terminal' ||
+    status.lifecycleState?.toLowerCase() === 'blocked_terminal'
+  );
 }
 
 export function replacePendingTurn(turns: Set<string>, previousId: string, nextId: string) {

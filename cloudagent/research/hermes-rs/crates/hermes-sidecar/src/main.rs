@@ -427,6 +427,59 @@ mod tests {
     }
 
     #[test]
+    fn parse_client_workspace_file_transfer_subcommands() {
+        let upload_args = vec![
+            "hermes-sidecar".to_string(),
+            "client".to_string(),
+            "--addr".to_string(),
+            "http://127.0.0.1:49999".to_string(),
+            "workspace-file-upload".to_string(),
+            "--path-b64".to_string(),
+            STANDARD.encode("/workspace/a.txt"),
+            "--content-b64".to_string(),
+            STANDARD.encode("hello"),
+        ];
+        match parse_command_mode(&upload_args).unwrap() {
+            CommandMode::Client(client) => match client.command {
+                ClientCommand::WorkspaceFileUpload {
+                    path_b64,
+                    content_b64,
+                } => {
+                    assert_eq!(path_b64, STANDARD.encode("/workspace/a.txt"));
+                    assert_eq!(content_b64, STANDARD.encode("hello"));
+                }
+                other => panic!(
+                    "expected client workspace-file-upload command, got {:?}",
+                    other
+                ),
+            },
+            other => panic!("expected client mode, got {:?}", other),
+        }
+
+        let download_args = vec![
+            "hermes-sidecar".to_string(),
+            "client".to_string(),
+            "--addr".to_string(),
+            "http://127.0.0.1:49999".to_string(),
+            "workspace-file-download".to_string(),
+            "--path-b64".to_string(),
+            STANDARD.encode("/workspace/a.txt"),
+        ];
+        match parse_command_mode(&download_args).unwrap() {
+            CommandMode::Client(client) => match client.command {
+                ClientCommand::WorkspaceFileDownload { path_b64 } => {
+                    assert_eq!(path_b64, STANDARD.encode("/workspace/a.txt"));
+                }
+                other => panic!(
+                    "expected client workspace-file-download command, got {:?}",
+                    other
+                ),
+            },
+            other => panic!("expected client mode, got {:?}", other),
+        }
+    }
+
+    #[test]
     fn validate_stage_files_manifest_accepts_staged_workspace_file() {
         let workspace = unique_test_dir("stage-ok");
         let inputs = workspace.join("inputs");

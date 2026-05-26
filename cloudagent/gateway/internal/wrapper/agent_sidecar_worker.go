@@ -38,6 +38,8 @@ type AgentSidecarWorkerConfig struct {
 	AgentLoaderPath       string
 	SandboxHostURL        string
 	SandboxHostSHA256     string
+	SandboxHostTransport  string
+	SandboxHostFallback   string
 	TokenHubAPIKey        string
 	TokenHubModel         string
 	ForceInnerCommand     string
@@ -81,6 +83,8 @@ type AgentSidecarWorker struct {
 	agentLoaderPath       string
 	sandboxHostURL        string
 	sandboxHostSHA256     string
+	sandboxHostTransport  string
+	sandboxHostFallback   string
 	tokenHubAPIKey        string
 	tokenHubModel         string
 	forceInnerCommand     string
@@ -177,6 +181,8 @@ func NewAgentSidecarWorker(cfg AgentSidecarWorkerConfig) (*AgentSidecarWorker, e
 		agentLoaderPath:       firstNonEmpty(cfg.AgentLoaderPath, "/usr/local/bin/cloudagent-agent-loader"),
 		sandboxHostURL:        strings.TrimSpace(cfg.SandboxHostURL),
 		sandboxHostSHA256:     strings.TrimSpace(cfg.SandboxHostSHA256),
+		sandboxHostTransport:  normalizeSandboxHostTransport(cfg.SandboxHostTransport),
+		sandboxHostFallback:   normalizeSandboxHostBool(cfg.SandboxHostFallback),
 		tokenHubAPIKey:        cfg.TokenHubAPIKey,
 		tokenHubModel:         model,
 		forceInnerCommand:     cfg.ForceInnerCommand,
@@ -240,6 +246,8 @@ func NewAgentSidecarWorkerFromEnvWithWorkspaceService(workspaceService Workspace
 		AgentLoaderPath:       firstEnv("GATEWAY_AGENT_LOADER_PATH", "AGENT_LOADER_PATH"),
 		SandboxHostURL:        firstEnv("GATEWAY_SANDBOX_HOST_URL", "HERMES_SANDBOX_HOST_URL", "SANDBOX_HOST_URL"),
 		SandboxHostSHA256:     firstEnv("GATEWAY_SANDBOX_HOST_SHA256", "HERMES_SANDBOX_HOST_SHA256", "SANDBOX_HOST_SHA256"),
+		SandboxHostTransport:  firstEnv("GATEWAY_SANDBOX_HOST_TRANSPORT", "HERMES_SANDBOX_HOST_TRANSPORT", "SANDBOX_HOST_TRANSPORT"),
+		SandboxHostFallback:   firstEnv("GATEWAY_SANDBOX_HOST_ALLOW_CLI_FALLBACK", "HERMES_SANDBOX_HOST_ALLOW_CLI_FALLBACK", "SANDBOX_HOST_ALLOW_CLI_FALLBACK"),
 		TokenHubAPIKey:        firstEnv("GATEWAY_TOKENHUB_API_KEY", "TOKENHUB_API_KEY"),
 		TokenHubModel:         firstEnv("GATEWAY_TOKENHUB_MODEL", "TOKENHUB_MODEL"),
 		ForceInnerCommand:     os.Getenv("GATEWAY_AGENT_FORCE_COMMAND"),
@@ -488,6 +496,8 @@ func (w *AgentSidecarWorker) EnsureSessionRuntime(ctx context.Context, runtime A
 			if cleanupErr := w.CloseSessionRuntime(ctx, runtime); cleanupErr != nil {
 				return ACPSessionRuntime{}, fmt.Errorf("cleanup stale runtime before recreate: %w", cleanupErr)
 			}
+			runtime = runtimeAfterClose(runtime)
+			runtime.WispName = wispNameFromRuntime(req.SessionID) + "-recover-" + randomHex(4)
 		}
 	}
 	if !runtimeCanRecreate(runtime) {
@@ -700,6 +710,9 @@ func (w *AgentSidecarWorker) attachSessionWorkspaceRuntime(ctx context.Context, 
 		workspaceWisp := runtime
 		workspaceWisp.RuntimeID = workspaceRuntimeID
 		workspaceWisp.WispName = workspaceWispNameFromSession(req.SessionID)
+		if strings.Contains(runtime.WispName, "-recover-") {
+			workspaceWisp.WispName += "-recover-" + randomHex(4)
+		}
 		workspaceWisp.WispWorkspaceID = workspaceID
 		workspaceWisp.WispSMHSpaceID = firstNonEmpty(runtime.WispSMHSpaceID, workspaceID)
 		workspaceWisp.WispOwnsSMHSpace = false
@@ -1223,6 +1236,45 @@ func (w *AgentSidecarWorker) KillSessionRuntimeDaemon(ctx context.Context, runti
 			"else pkill -TERM -f " + shellQuote(runtime.RemoteBinary+" daemon") + " || true; fi"
 	}
 	_, err = w.runOuterCommand(ctx, backend.client, sb, runtime, command, nil, nil, nil)
+	return err
+}
+
+func (w *AgentSidecarWorker) KillSessionRuntimeOuter(ctx context.Context, runtime ACPSessionRuntime) error {
+	if runtime.OuterSandboxID == "" {
+		return fmt.Errorf("runtime outer sandbox identity is missing")
+	}
+	backend, err := w.backendForRuntime(runtime)
+	if err != nil {
+		return err
+	}
+	return backend.client.DeleteSandbox(ctx, runtime.OuterSandboxID)
+}
+
+func (w *AgentSidecarWorker) KillSessionRuntimeInner(ctx context.Context, runtime ACPSessionRuntime) error {
+	if runtime.OuterSandboxID == "" || runtime.RemoteBinary == "" || runtime.DaemonAddr == "" {
+		return fmt.Errorf("runtime identity is missing")
+	}
+	backend, err := w.backendForRuntime(runtime)
+	if err != nil {
+		return err
+	}
+	sb := runtimeOuterSandbox(runtime)
+	command := shellQuote(runtime.RemoteBinary) + " client --addr " + shellQuote(runtime.DaemonAddr) + " shutdown-inner"
+	start := time.Now()
+	stdoutParser := &sidecarStdoutParser{}
+	logRuntimeHostEvents := func(events []sidecarStdoutEvent) {
+		for _, event := range events {
+			if event.Type != "runtime_host" {
+				continue
+			}
+			fmt.Fprintf(os.Stderr, "timeline source=go t=%.3fs event=runtime_host_event mode=acp_session_runtime_fault runtime_id=%s outer_sandbox_id=%s runtime_event=%s sandbox_id=%s\n", time.Since(start).Seconds(), runtime.RuntimeID, runtime.OuterSandboxID, event.Event, event.SandboxID)
+		}
+	}
+	_, err = w.runOuterCommand(ctx, backend.client, sb, runtime, command, nil, func(text string) error {
+		logRuntimeHostEvents(stdoutParser.Feed(text))
+		return nil
+	}, nil)
+	logRuntimeHostEvents(stdoutParser.Finish())
 	return err
 }
 
@@ -2156,6 +2208,10 @@ func (w *AgentSidecarWorker) addSandboxHostEnv(env map[string]string) {
 	if w.sandboxHostSHA256 != "" {
 		env["HERMES_SANDBOX_HOST_SHA256"] = w.sandboxHostSHA256
 	}
+	if w.sandboxHostURL != "" {
+		env["HERMES_SANDBOX_HOST_TRANSPORT"] = w.sandboxHostTransport
+		env["HERMES_SANDBOX_HOST_ALLOW_CLI_FALLBACK"] = w.sandboxHostFallback
+	}
 }
 
 func addWebSearchEnv(env map[string]string) {
@@ -2178,10 +2234,36 @@ func (w *AgentSidecarWorker) sandboxHostEnvPrefix() string {
 	if w.sandboxHostSHA256 != "" {
 		exports = append(exports, "export HERMES_SANDBOX_HOST_SHA256="+shellQuote(w.sandboxHostSHA256))
 	}
+	if w.sandboxHostURL != "" {
+		exports = append(exports, "export HERMES_SANDBOX_HOST_TRANSPORT="+shellQuote(w.sandboxHostTransport))
+		exports = append(exports, "export HERMES_SANDBOX_HOST_ALLOW_CLI_FALLBACK="+shellQuote(w.sandboxHostFallback))
+	}
 	if len(exports) == 0 {
 		return ""
 	}
 	return strings.Join(exports, " && ") + " && "
+}
+
+func normalizeSandboxHostTransport(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "":
+		return "cli"
+	case "http":
+		return "http"
+	case "cli":
+		return "cli"
+	default:
+		return strings.ToLower(strings.TrimSpace(value))
+	}
+}
+
+func normalizeSandboxHostBool(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes", "on":
+		return "true"
+	default:
+		return "false"
+	}
 }
 
 var sensitiveQueryPattern = regexp.MustCompile(`(?i)(q-ak|sign|signature|token|key|secret|x-cos-security-token)=([^&]+)`)

@@ -19,7 +19,16 @@ func (g *ACPGateway) cloudAgentSessionStatus(scope Scope, sessionID string) (map
 	session, ok := g.sessions[sessionID]
 	if !ok {
 		g.mu.Unlock()
-		return nil, fmt.Errorf("session not found")
+		if g.store == nil {
+			return nil, fmt.Errorf("session not found")
+		}
+		loaded, err := g.store.LoadACPSession(scope, sessionID)
+		if err != nil {
+			return nil, err
+		}
+		g.mu.Lock()
+		g.sessions[sessionID] = loaded
+		session = loaded
 	}
 	if !sameScope(scope, session.Scope) {
 		g.mu.Unlock()
@@ -36,12 +45,28 @@ func (g *ACPGateway) cloudAgentSessionStatus(scope Scope, sessionID string) (map
 	cleanupPending := g.cleanups[sessionID] != nil
 	messageCount := len(session.History)
 	eventCount := len(session.Events)
+	restoreInFlight := false
+	restoreStartedAt := time.Time{}
+	if call := g.runtimeEnsures[runtimeEnsureKey(sessionID, session.RuntimeGeneration)]; call != nil {
+		restoreInFlight = true
+		restoreStartedAt = call.startedAt
+	}
 	g.persistSession(session)
 	g.mu.Unlock()
 
+	recovery := g.runtimeRecoverySnapshot(context.Background(), statusSession.SessionID, statusSession.Runtime)
+	statusSession.Runtime = recovery.Runtime
 	runtime := statusSession.Runtime
 	runtimeSnapshot, hasRuntimeSnapshot, runtimeSnapshotErr := g.sessionRuntimeStatusSnapshot(statusSession.SessionID, runtime, statusSession.Closed)
-	runtimeStatusValue := runtimeStatus(&statusSession)
+	if hasRuntimeSnapshot {
+		statusSession.RuntimeVerified = true
+		g.mu.Lock()
+		if current, ok := g.sessions[sessionID]; ok && current.RuntimeGeneration == statusSession.RuntimeGeneration {
+			current.RuntimeVerified = true
+		}
+		g.mu.Unlock()
+	}
+	runtimeStatusValue := runtimeStatusWithRestorable(&statusSession, recovery.Restorable)
 	if hasRuntimeSnapshot && strings.TrimSpace(runtimeSnapshot.Status) != "" {
 		runtimeStatusValue = runtimeSnapshot.Status
 	}
@@ -49,46 +74,54 @@ func (g *ACPGateway) cloudAgentSessionStatus(scope Scope, sessionID string) (map
 	if hasRuntimeSnapshot {
 		runtimeStatusSource = "runtime"
 	}
-	readOnly, readOnlyReason := acpSessionReadOnlyState(&statusSession)
+	readOnly, readOnlyReason := acpSessionReadOnlyStateWithRestorable(&statusSession, recovery.Restorable)
+	lifecycle := sessionLifecycleContract(&statusSession, restoreInFlight, cleanupPending, recovery.Restorable)
 	backend := runtime.SandboxBackend
 	if backend == "" && runtimeNeedsCleanup(runtime) {
 		backend = "ags"
 	}
 	status := map[string]any{
-		"session_id":         statusSession.SessionID,
-		"state":              string(statusSession.State),
-		"closed":             statusSession.Closed,
-		"read_only":          readOnly,
-		"read_only_reason":   readOnlyReason,
-		"runtime_restorable": runtimeCanRecreate(runtime),
-		"workspace_persistent": runtime.isWispOuterRuntime() &&
-			strings.TrimSpace(runtime.WispSMHSpaceID) != "",
-		"runtime_status":        runtimeStatusValue,
-		"runtime_status_source": runtimeStatusSource,
-		"runtime_status_error":  runtimeSnapshotErr,
-		"runtime_store_load":    runtimeSnapshot.RuntimeStoreLoad,
-		"active_run_id":         runtimeSnapshot.ActiveRunID,
-		"pending_run_count":     runtimeSnapshot.PendingRunCount,
-		"pending_by_mode":       runtimeSnapshot.PendingByMode,
-		"run_count":             runtimeSnapshot.RunCount,
-		"transcript_count":      runtimeSnapshot.TranscriptCount,
-		"last_user_hash":        runtimeSnapshot.LastUserHash,
-		"last_assistant_hash":   runtimeSnapshot.LastAssistantHash,
-		"last_run_status":       runtimeSnapshot.LastRunStatus,
-		"run_ledger_tail":       runtimeSnapshot.RunLedgerTail,
-		"cwd":                   statusSession.CWD,
-		"model":                 statusSession.Model,
-		"current_response_id":   statusSession.CurrentResponseID,
-		"prompt_in_flight":      sessionHasPromptRuns(&statusSession),
-		"runtime_generation":    statusSession.RuntimeGeneration,
-		"session_proxy_id":      runtime.SessionProxyID,
-		"envd_proxy_domain":     envdProxyDomain(),
-		"cleanup_pending":       cleanupPending,
-		"last_runtime_error":    statusSession.LastRuntimeError,
-		"created_at":            statusSession.CreatedAt.Format(time.RFC3339Nano),
-		"updated_at":            statusSession.UpdatedAt.Format(time.RFC3339Nano),
-		"message_count":         messageCount,
-		"event_count":           eventCount,
+		"session_id":                 statusSession.SessionID,
+		"state":                      string(statusSession.State),
+		"lifecycle_state":            lifecycle.LifecycleState,
+		"recoverability":             lifecycle.Recoverability,
+		"recoverability_note":        lifecycle.RecoverabilityNote,
+		"closed":                     statusSession.Closed,
+		"read_only":                  readOnly,
+		"read_only_reason":           readOnlyReason,
+		"runtime_restorable":         recovery.Restorable,
+		"workspace_persistent":       recovery.WorkspacePersistent || (runtime.isWispOuterRuntime() && strings.TrimSpace(runtime.WispSMHSpaceID) != ""),
+		"workspace_id":               recovery.WorkspaceID,
+		"workspace_note":             recovery.WorkspaceNote,
+		"runtime_status":             runtimeStatusValue,
+		"runtime_status_source":      runtimeStatusSource,
+		"runtime_status_error":       runtimeSnapshotErr,
+		"runtime_store_load":         runtimeSnapshot.RuntimeStoreLoad,
+		"active_run_id":              runtimeSnapshot.ActiveRunID,
+		"pending_run_count":          runtimeSnapshot.PendingRunCount,
+		"pending_by_mode":            runtimeSnapshot.PendingByMode,
+		"run_count":                  runtimeSnapshot.RunCount,
+		"transcript_count":           runtimeSnapshot.TranscriptCount,
+		"last_user_hash":             runtimeSnapshot.LastUserHash,
+		"last_assistant_hash":        runtimeSnapshot.LastAssistantHash,
+		"last_run_status":            runtimeSnapshot.LastRunStatus,
+		"run_ledger_tail":            runtimeSnapshot.RunLedgerTail,
+		"cwd":                        statusSession.CWD,
+		"model":                      statusSession.Model,
+		"current_response_id":        statusSession.CurrentResponseID,
+		"prompt_in_flight":           sessionHasPromptRuns(&statusSession),
+		"runtime_restore_in_flight":  restoreInFlight,
+		"runtime_restore_started_at": formatOptionalTime(restoreStartedAt),
+		"runtime_restore_elapsed_ms": elapsedMillis(restoreStartedAt),
+		"runtime_generation":         statusSession.RuntimeGeneration,
+		"session_proxy_id":           runtime.SessionProxyID,
+		"envd_proxy_domain":          envdProxyDomain(),
+		"cleanup_pending":            cleanupPending,
+		"last_runtime_error":         statusSession.LastRuntimeError,
+		"created_at":                 statusSession.CreatedAt.Format(time.RFC3339Nano),
+		"updated_at":                 statusSession.UpdatedAt.Format(time.RFC3339Nano),
+		"message_count":              messageCount,
+		"event_count":                eventCount,
 		"sandbox": map[string]any{
 			"backend":                     backend,
 			"outer_runtime":               runtime.OuterRuntime,
@@ -119,7 +152,7 @@ func (g *ACPGateway) cloudAgentSessionStatus(scope Scope, sessionID string) (map
 	g.persistSession(session)
 	return status, nil
 }
-func (g *ACPGateway) killRuntimeDaemonForFaultInjection(ctx context.Context, scope Scope, sessionID string) (map[string]any, error) {
+func (g *ACPGateway) killRuntimeForFaultInjection(ctx context.Context, scope Scope, sessionID, target string) (map[string]any, error) {
 	if !acpFaultInjectionEnabled() {
 		return nil, fmt.Errorf("cloudagent runtime fault injection is disabled")
 	}
@@ -145,14 +178,26 @@ func (g *ACPGateway) killRuntimeDaemonForFaultInjection(ctx context.Context, sco
 	if runtime.OuterSandboxID == "" || runtime.RemoteBinary == "" || runtime.DaemonAddr == "" {
 		return nil, fmt.Errorf("runtime identity is missing")
 	}
-	fmt.Fprintf(os.Stderr, "timeline source=server event=acp_runtime_fault_kill_daemon_start session_id=%s outer_sandbox_id=%s\n", sessionID, runtime.OuterSandboxID)
-	if err := injector.KillSessionRuntimeDaemon(ctx, runtime); err != nil {
-		fmt.Fprintf(os.Stderr, "timeline source=server event=acp_runtime_fault_kill_daemon_failed session_id=%s outer_sandbox_id=%s error=%s\n", sessionID, runtime.OuterSandboxID, quoteServerField(err.Error()))
+	var err error
+	fmt.Fprintf(os.Stderr, "timeline source=server event=acp_runtime_fault_kill_%s_start session_id=%s outer_sandbox_id=%s\n", target, sessionID, runtime.OuterSandboxID)
+	switch target {
+	case "daemon":
+		err = injector.KillSessionRuntimeDaemon(ctx, runtime)
+	case "outer":
+		err = injector.KillSessionRuntimeOuter(ctx, runtime)
+	case "inner":
+		err = injector.KillSessionRuntimeInner(ctx, runtime)
+	default:
+		return nil, fmt.Errorf("unsupported runtime fault target %q", target)
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "timeline source=server event=acp_runtime_fault_kill_%s_failed session_id=%s outer_sandbox_id=%s error=%s\n", target, sessionID, runtime.OuterSandboxID, quoteServerField(err.Error()))
 		return nil, err
 	}
-	fmt.Fprintf(os.Stderr, "timeline source=server event=acp_runtime_fault_kill_daemon_done session_id=%s outer_sandbox_id=%s\n", sessionID, runtime.OuterSandboxID)
+	fmt.Fprintf(os.Stderr, "timeline source=server event=acp_runtime_fault_kill_%s_done session_id=%s outer_sandbox_id=%s\n", target, sessionID, runtime.OuterSandboxID)
 	return map[string]any{
 		"ok":               true,
+		"target":           target,
 		"session_id":       sessionID,
 		"outer_sandbox_id": runtime.OuterSandboxID,
 	}, nil
@@ -173,13 +218,17 @@ func (g *ACPGateway) sessionRuntimeStatusSnapshot(sessionID string, runtime ACPS
 	return status, true, ""
 }
 func runtimeStatus(session *acpSession) string {
+	return runtimeStatusWithRestorable(session, session != nil && runtimeCanRecreate(session.Runtime))
+}
+
+func runtimeStatusWithRestorable(session *acpSession, runtimeRestorable bool) string {
 	if session == nil {
 		return "unknown"
 	}
 	if sessionHasPromptRuns(session) {
 		return "prompting"
 	}
-	if session.Closed && runtimeCanRecreate(session.Runtime) {
+	if session.Closed && runtimeRestorable {
 		return "closed_restorable"
 	}
 	if session.ReadOnlyReason != "" {

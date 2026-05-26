@@ -43,23 +43,25 @@ type acpAppError struct {
 }
 
 type acpSession struct {
-	SessionID         string
-	Scope             Scope
-	Model             string
-	CWD               string
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
-	Closed            bool
-	State             acpRuntimeState
-	RuntimeGeneration int64
-	Runtime           ACPSessionRuntime
-	PromptRuns        map[string]*acpPromptRun
-	LastRuntimeError  string
-	CurrentResponseID string
-	ReadOnlyReason    string
-	ConfigOptions     []ConfigOption
-	History           []acpHistoryEntry
-	Events            []acpSessionEvent
+	SessionID             string
+	Scope                 Scope
+	Model                 string
+	CWD                   string
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
+	Closed                bool
+	State                 acpRuntimeState
+	RuntimeGeneration     int64
+	Runtime               ACPSessionRuntime
+	PromptRuns            map[string]*acpPromptRun
+	LastRuntimeActivityAt time.Time
+	RuntimeVerified       bool
+	LastRuntimeError      string
+	CurrentResponseID     string
+	ReadOnlyReason        string
+	ConfigOptions         []ConfigOption
+	History               []acpHistoryEntry
+	Events                []acpSessionEvent
 }
 
 type acpPromptRun struct {
@@ -98,9 +100,10 @@ type acpRuntimeCleanup struct {
 }
 
 type acpRuntimeEnsureCall struct {
-	done    chan struct{}
-	runtime ACPSessionRuntime
-	err     error
+	done      chan struct{}
+	startedAt time.Time
+	runtime   ACPSessionRuntime
+	err       error
 }
 
 type acpHistoryEntry struct {
@@ -257,10 +260,13 @@ type acpCloudAgentMetaBox struct {
 }
 
 type acpCloudAgentSessionResultMeta struct {
-	State          string `json:"state,omitempty"`
-	ReadOnly       bool   `json:"read_only,omitempty"`
-	ReadOnlyReason string `json:"read_only_reason,omitempty"`
-	SessionProxyID string `json:"session_proxy_id,omitempty"`
+	State              string `json:"state,omitempty"`
+	LifecycleState     string `json:"lifecycle_state,omitempty"`
+	Recoverability     string `json:"recoverability,omitempty"`
+	RecoverabilityNote string `json:"recoverability_note,omitempty"`
+	ReadOnly           bool   `json:"read_only,omitempty"`
+	ReadOnlyReason     string `json:"read_only_reason,omitempty"`
+	SessionProxyID     string `json:"session_proxy_id,omitempty"`
 }
 
 type acpListSessionsResult struct {
@@ -407,7 +413,11 @@ func (g *ACPGateway) handleRequest(ctx context.Context, ws *WSConn, scope Scope,
 			cloudAgentRuntimeEnsureReadyMethod,
 		}
 		if acpFaultInjectionEnabled() {
-			methods = append(methods, "_cloudagent.runtime.kill_daemon")
+			methods = append(methods,
+				cloudAgentRuntimeKillDaemonMethod,
+				cloudAgentRuntimeKillOuterMethod,
+				cloudAgentRuntimeKillInnerMethod,
+			)
 		}
 		result := map[string]any{
 			"protocolVersion": 1,
@@ -432,6 +442,7 @@ func (g *ACPGateway) handleRequest(ctx context.Context, ws *WSConn, scope Scope,
 					"cloudagent": map[string]any{
 						"methods": methods,
 						"notifications": []string{
+							cloudAgentWorkspaceLifecycleMethod,
 							cloudAgentReplayDoneMethod,
 							cloudAgentReplayGapMethod,
 							cloudAgentTurnStatusMethod,
@@ -455,7 +466,7 @@ func (g *ACPGateway) handleRequest(ctx context.Context, ws *WSConn, scope Scope,
 			return err
 		}
 		g.subscribeSession(scope, session.SessionID, ws, appEnvelope)
-		return g.writeResponse(ws, appEnvelope, mustJSONRPCResult(msg.ID, acpNewSessionResultFor(session)))
+		return g.writeResponse(ws, appEnvelope, mustJSONRPCResult(msg.ID, g.acpNewSessionResultFor(session)))
 	case "session/load":
 		var req acpSessionRequest
 		if err := decodeJSONRPCParams(msg.Params, &req); err != nil {
@@ -472,7 +483,7 @@ func (g *ACPGateway) handleRequest(ctx context.Context, ws *WSConn, scope Scope,
 		if err := g.flushReplayBufferedUpdates(session.SessionID, ws, appEnvelope); err != nil {
 			return err
 		}
-		return g.writeResponse(ws, appEnvelope, mustJSONRPCResult(msg.ID, acpLoadedSessionResultFor(session)))
+		return g.writeResponse(ws, appEnvelope, mustJSONRPCResult(msg.ID, g.acpLoadedSessionResultFor(session)))
 	case "session/resume":
 		var req acpSessionRequest
 		if err := decodeJSONRPCParams(msg.Params, &req); err != nil {
@@ -483,7 +494,7 @@ func (g *ACPGateway) handleRequest(ctx context.Context, ws *WSConn, scope Scope,
 			return err
 		}
 		g.subscribeSession(scope, session.SessionID, ws, appEnvelope)
-		return g.writeResponse(ws, appEnvelope, mustJSONRPCResult(msg.ID, acpLoadedSessionResultFor(session)))
+		return g.writeResponse(ws, appEnvelope, mustJSONRPCResult(msg.ID, g.acpLoadedSessionResultFor(session)))
 	case "session/set_config_option":
 		var req acpSetConfigOptionRequest
 		if err := decodeJSONRPCParams(msg.Params, &req); err != nil {
@@ -522,18 +533,38 @@ func (g *ACPGateway) handleRequest(ctx context.Context, ws *WSConn, scope Scope,
 		if err := decodeJSONRPCParams(msg.Params, &req); err != nil {
 			return err
 		}
+		g.subscribeSession(scope, req.SessionID, ws, appEnvelope)
 		result, err := g.cloudAgentRuntimeEnsureReady(scope, req)
 		if err != nil {
 			return err
 		}
-		g.subscribeSession(scope, req.SessionID, ws, appEnvelope)
 		return g.writeResponse(ws, appEnvelope, mustJSONRPCResult(msg.ID, result))
-	case "_cloudagent.runtime.kill_daemon":
+	case cloudAgentRuntimeKillDaemonMethod:
 		var req acpCloudAgentSessionRequest
 		if err := decodeJSONRPCParams(msg.Params, &req); err != nil {
 			return err
 		}
-		result, err := g.killRuntimeDaemonForFaultInjection(ctx, scope, req.SessionID)
+		result, err := g.killRuntimeForFaultInjection(ctx, scope, req.SessionID, "daemon")
+		if err != nil {
+			return err
+		}
+		return g.writeResponse(ws, appEnvelope, mustJSONRPCResult(msg.ID, result))
+	case cloudAgentRuntimeKillOuterMethod:
+		var req acpCloudAgentSessionRequest
+		if err := decodeJSONRPCParams(msg.Params, &req); err != nil {
+			return err
+		}
+		result, err := g.killRuntimeForFaultInjection(ctx, scope, req.SessionID, "outer")
+		if err != nil {
+			return err
+		}
+		return g.writeResponse(ws, appEnvelope, mustJSONRPCResult(msg.ID, result))
+	case cloudAgentRuntimeKillInnerMethod:
+		var req acpCloudAgentSessionRequest
+		if err := decodeJSONRPCParams(msg.Params, &req); err != nil {
+			return err
+		}
+		result, err := g.killRuntimeForFaultInjection(ctx, scope, req.SessionID, "inner")
 		if err != nil {
 			return err
 		}
@@ -547,12 +578,14 @@ func (g *ACPGateway) handleRequest(ctx context.Context, ws *WSConn, scope Scope,
 		if err != nil {
 			return err
 		}
-		if session.ReadOnlyReason != "" && !runtimeCanRecreate(session.Runtime) {
+		recovery := g.runtimeRecoverySnapshot(context.Background(), session.SessionID, session.Runtime)
+		if session.ReadOnlyReason != "" && !recovery.Restorable {
 			return g.writeResponse(ws, appEnvelope, mustJSONRPCErrorFromError(msg.ID, acpReadOnlyError{Reason: session.ReadOnlyReason}))
 		}
-		if session.Closed && !runtimeCanRecreate(session.Runtime) {
+		if session.Closed && !recovery.Restorable {
 			return fmt.Errorf("session is closed; load or resume it before prompting")
 		}
+		session.Runtime = recovery.Runtime
 		g.subscribeSession(scope, session.SessionID, ws, appEnvelope)
 		return g.startPrompt(ws, msg.ID, session, req, appEnvelope)
 	case "session/close":
@@ -560,6 +593,7 @@ func (g *ACPGateway) handleRequest(ctx context.Context, ws *WSConn, scope Scope,
 		if err := decodeJSONRPCParams(msg.Params, &req); err != nil {
 			return err
 		}
+		g.subscribeSession(scope, req.SessionID, ws, appEnvelope)
 		heldRun := g.holdPromptInterruptResponse(scope, req.SessionID)
 		if err := g.closeSession(scope, req.SessionID); err != nil {
 			releasePromptInterruptResponse(heldRun)
@@ -573,6 +607,7 @@ func (g *ACPGateway) handleRequest(ctx context.Context, ws *WSConn, scope Scope,
 		if err := decodeJSONRPCParams(msg.Params, &req); err != nil {
 			return err
 		}
+		g.subscribeSession(scope, req.SessionID, ws, appEnvelope)
 		heldRun := g.holdPromptInterruptResponse(scope, req.SessionID)
 		if err := g.deleteSession(scope, req.SessionID); err != nil {
 			releasePromptInterruptResponse(heldRun)
@@ -719,6 +754,32 @@ func acpJSONRPCError(err error) (int, string, any) {
 			data["detail"] = runtimeUnavailable.Detail
 		}
 		return -32003, "session runtime is unavailable", data
+	}
+	var ownershipHeld RuntimeOwnershipHeldError
+	if errors.As(err, &ownershipHeld) || errors.Is(err, ErrRuntimeOwnershipHeld) {
+		data := map[string]any{
+			"error_code": "runtime_ownership_held",
+			"retryable":  true,
+		}
+		if ownershipHeld.SessionID != "" {
+			data["session_id"] = ownershipHeld.SessionID
+		}
+		if ownershipHeld.Generation != 0 {
+			data["generation"] = ownershipHeld.Generation
+		}
+		if ownershipHeld.RunID != "" {
+			data["run_id"] = ownershipHeld.RunID
+		}
+		if ownershipHeld.OwnerID != "" {
+			data["owner_id"] = ownershipHeld.OwnerID
+		}
+		if ownershipHeld.Operation != "" {
+			data["operation"] = ownershipHeld.Operation
+		}
+		if !ownershipHeld.ExpiresAt.IsZero() {
+			data["expires_at"] = ownershipHeld.ExpiresAt.UTC().Format(time.RFC3339Nano)
+		}
+		return -32009, "runtime ownership is held", data
 	}
 	var failure *workerFailure
 	if errors.As(err, &failure) {

@@ -72,6 +72,9 @@ export interface SessionState {
   sessionId: string;
   configOptions: ConfigOption[];
   restoreSource: "new" | "load" | "resume";
+  lifecycleState?: string;
+  recoverability?: string;
+  recoverabilityNote?: string;
   readOnly?: boolean;
   readOnlyReason?: string;
 }
@@ -79,6 +82,9 @@ export interface SessionState {
 export interface CloudAgentSessionStatus {
   sessionId: string;
   state?: string;
+  lifecycleState?: string;
+  recoverability?: string;
+  recoverabilityNote?: string;
   closed?: boolean;
   readOnly?: boolean;
   readOnlyReason?: string;
@@ -86,6 +92,9 @@ export interface CloudAgentSessionStatus {
   model?: string;
   currentResponseId?: string;
   promptInFlight?: boolean;
+  runtimeRestoreInFlight?: boolean;
+  runtimeRestoreStartedAt?: string;
+  runtimeRestoreElapsedMs?: number;
   runtimeStatus?: string;
   runtimeStatusSource?: string;
   runtimeStatusError?: string;
@@ -129,6 +138,22 @@ export interface CloudAgentSessionStatus {
   };
 }
 
+export interface CloudAgentWorkspaceLifecycleEvent {
+  sessionId: string;
+  lifecycleId: string;
+  operation?: string;
+  phase?: string;
+  status?: "running" | "done" | "failed";
+  label?: string;
+  generation?: number;
+  elapsedMs?: number;
+  timestamp?: string;
+  runtimeId?: string;
+  outerSandboxId?: string;
+  reason?: string;
+  error?: string;
+}
+
 export interface CloudAgentRunRecord {
   runId?: string;
   turnId?: string;
@@ -148,6 +173,9 @@ export interface ListedSession {
   title?: string;
   updatedAt?: string;
   state?: string;
+  lifecycleState?: string;
+  recoverability?: string;
+  recoverabilityNote?: string;
   readOnly?: boolean;
   readOnlyReason?: string;
   additionalDirectories?: string[];
@@ -204,6 +232,10 @@ export interface AcpClientEvents {
   onSessionStatus?(
     conversationId: string,
     status: CloudAgentSessionStatus,
+  ): void;
+  onWorkspaceLifecycle?(
+    conversationId: string,
+    event: CloudAgentWorkspaceLifecycleEvent,
   ): void;
 }
 
@@ -925,6 +957,9 @@ export class AcpClient {
 	        sessionId: result.sessionId,
 	        configOptions,
 	        restoreSource: "new",
+	        lifecycleState: readString(cloudAgentMeta?.lifecycle_state),
+	        recoverability: readString(cloudAgentMeta?.recoverability),
+	        recoverabilityNote: readString(cloudAgentMeta?.recoverability_note),
 	        readOnly: readBoolean(cloudAgentMeta?.read_only),
 	        readOnlyReason: readString(cloudAgentMeta?.read_only_reason),
 	      });
@@ -948,6 +983,15 @@ export class AcpClient {
         isRuntimeEnsureReadyContext(context)
           ? readString(result.read_only_reason)
           : readString(cloudAgentMeta?.read_only_reason);
+      const lifecycleState = isRuntimeEnsureReadyContext(context)
+        ? readString(result.lifecycle_state)
+        : readString(cloudAgentMeta?.lifecycle_state);
+      const recoverability = isRuntimeEnsureReadyContext(context)
+        ? readString(result.recoverability)
+        : readString(cloudAgentMeta?.recoverability);
+      const recoverabilityNote = isRuntimeEnsureReadyContext(context)
+        ? readString(result.recoverability_note)
+        : readString(cloudAgentMeta?.recoverability_note);
       if (
         context.type === "session/resume" ||
         isRuntimeEnsureReadyContext(context)
@@ -959,6 +1003,9 @@ export class AcpClient {
         sessionId: context.sessionId,
         configOptions,
         restoreSource: context.type === "session/load" ? "load" : "resume",
+        lifecycleState,
+        recoverability,
+        recoverabilityNote,
         readOnly,
         readOnlyReason,
       });
@@ -996,10 +1043,16 @@ export class AcpClient {
   private handleCloudAgentNotification(message: Record<string, unknown>) {
     const params = readRecord(message.params);
     const sessionId = readString(params?.session_id);
+    if (!sessionId) return;
     const conversationId = sessionId
       ? this.sessionToConversation.get(sessionId)
       : undefined;
     if (!conversationId) return;
+    if (message.method === "_cloudagent.workspace.lifecycle") {
+      const event = readCloudAgentWorkspaceLifecycle(params, sessionId);
+      if (event) this.events.onWorkspaceLifecycle?.(conversationId, event);
+      return;
+    }
     if (message.method === "_cloudagent.session.replay_done") {
       this.events.onReplayDone?.(conversationId);
       return;
@@ -1081,6 +1134,15 @@ export class AcpClient {
       context?.type === "session/close" ||
       context?.type === "session/delete"
     ) {
+      if (
+        isRuntimeOwnershipHeldRPCError(rpcError) &&
+        (context.type === "session/resume" ||
+          context.type === "session/load" ||
+          isRuntimeEnsureReadyContext(context))
+      ) {
+        this.requestSessionStatus(context.conversationId, context.sessionId);
+        return;
+      }
       if (
         context.type === "session/resume" ||
         context.type === "session/load" ||
@@ -2080,6 +2142,53 @@ function pushCloudAgentDebugEvent(
   debugWindow.__cloudagentDebugEvents = events;
 }
 
+function readCloudAgentWorkspaceLifecycle(
+  result: Record<string, unknown> | undefined,
+  fallbackSessionId: string,
+): CloudAgentWorkspaceLifecycleEvent | undefined {
+  if (!result) return undefined;
+  const sessionId = readString(result.session_id) ?? fallbackSessionId;
+  const phase = readString(result.phase);
+  const operation = readString(result.operation);
+  const lifecycleId =
+    readString(result.lifecycle_id) ??
+    `${operation ?? "workspace"}:${sessionId}:${phase ?? "event"}`;
+  return {
+    sessionId,
+    lifecycleId,
+    operation,
+    phase,
+    status: readWorkspaceLifecycleStatus(result.status),
+    label: readString(result.label),
+    generation: readNumber(result.generation),
+    elapsedMs: readNumber(result.elapsed_ms),
+    timestamp: readString(result.timestamp),
+    runtimeId: readString(result.runtime_id),
+    outerSandboxId: readString(result.outer_sandbox_id),
+    reason: readString(result.reason),
+    error: readString(result.error),
+  };
+}
+
+function readWorkspaceLifecycleStatus(
+  value: unknown,
+): CloudAgentWorkspaceLifecycleEvent["status"] | undefined {
+  if (value === "running" || value === "done" || value === "failed")
+    return value;
+  return undefined;
+}
+
+function isRuntimeOwnershipHeldRPCError(error: {
+  message?: string;
+  data?: Record<string, unknown>;
+}) {
+  return (
+    readString(error.data?.error_code) === "runtime_ownership_held" ||
+    readString(error.data?.code) === "runtime_ownership_held" ||
+    error.message?.includes("runtime ownership for session") === true
+  );
+}
+
 function readPendingByMode(value: unknown): CloudAgentSessionStatus["pendingByMode"] {
   if (!value || typeof value !== "object") return undefined;
   const object = value as Record<string, unknown>;
@@ -2137,6 +2246,9 @@ function readCloudAgentSessionStatus(
   return {
     sessionId,
     state: readString(result.state),
+    lifecycleState: readString(result.lifecycle_state),
+    recoverability: readString(result.recoverability),
+    recoverabilityNote: readString(result.recoverability_note),
     closed: readBoolean(result.closed),
     readOnly: readBoolean(result.read_only),
     readOnlyReason: readString(result.read_only_reason),
@@ -2144,6 +2256,9 @@ function readCloudAgentSessionStatus(
     model: readString(result.model),
     currentResponseId: readString(result.current_response_id),
     promptInFlight: readBoolean(result.prompt_in_flight),
+    runtimeRestoreInFlight: readBoolean(result.runtime_restore_in_flight),
+    runtimeRestoreStartedAt: readString(result.runtime_restore_started_at),
+    runtimeRestoreElapsedMs: readNumber(result.runtime_restore_elapsed_ms),
     runtimeStatus: readString(result.runtime_status),
     runtimeStatusSource: readString(result.runtime_status_source),
     runtimeStatusError: readString(result.runtime_status_error),
@@ -2219,6 +2334,9 @@ function readListedSession(value: unknown): ListedSession[] {
       updatedAt:
         typeof session.updatedAt === "string" ? session.updatedAt : undefined,
       state: readString(cloudAgentMeta?.state),
+      lifecycleState: readString(cloudAgentMeta?.lifecycle_state),
+      recoverability: readString(cloudAgentMeta?.recoverability),
+      recoverabilityNote: readString(cloudAgentMeta?.recoverability_note),
       readOnly: readBoolean(cloudAgentMeta?.read_only),
       readOnlyReason: readString(cloudAgentMeta?.read_only_reason),
       additionalDirectories: Array.isArray(session.additionalDirectories)

@@ -260,3 +260,24 @@ func (g *ACPGateway) broadcastCloudAgentNotification(scope Scope, sessionID stri
 	}
 	return delivered, failed
 }
+
+func (g *ACPGateway) broadcastWorkspaceLifecycle(scope Scope, sessionID string, generation int64, operation, phase, status, label string, startedAt time.Time, fields map[string]any) {
+	if sessionID == "" {
+		return
+	}
+	params := map[string]any{
+		"session_id":   sessionID,
+		"generation":   generation,
+		"operation":    operation,
+		"phase":        phase,
+		"status":       status,
+		"label":        label,
+		"elapsed_ms":   elapsedMillis(startedAt),
+		"lifecycle_id": operation + ":" + sessionID + ":" + phase,
+		"timestamp":    time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	for key, value := range fields {
+		params[key] = value
+	}
+	g.broadcastCloudAgentNotification(scope, sessionID, nil, cloudAgentWorkspaceLifecycleMethod, params)
+}

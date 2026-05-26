@@ -98,6 +98,37 @@ CloudAgent 客户端不能只靠 WebSocket close、RPC response arrival 或 UI t
 - 私有 lifecycle marker 必须使用 `_cloudagent.*` notification；不得再塞进标准 `session/update.sessionUpdate` 枚举。
 - 标准 ACP 方法和字段保持 ACP 命名；CloudAgent 自有状态只放 `_meta.cloudagent`，扩展方法输入/输出统一使用 `snake_case`。
 
+## Session Lifecycle Contract
+
+Gateway 对外暴露的会话生命周期以 `_cloudagent.session.status` 的 `lifecycle_state`、`recoverability`、`recoverability_note` 为准；`state`、`closed`、`read_only`、`runtime_restorable` 只是兼容和调试字段。`runtime_restorable=true` 的正式依据是 “session runtime 字段可重建” 或 “workspace store 中存在可恢复的 Wisp/SMH `WorkspaceRecord`”，不要只看 `session_runtimes.wisp_smh_space_id`。
+
+状态枚举：
+
+| `lifecycle_state` | `recoverability` | 语义 |
+| --- | --- | --- |
+| `starting` | `unknown/restorable` | session 正在首次创建 runtime |
+| `restoring` | `restorable/retryable` | runtime/workspace 正在恢复 |
+| `storing` | `restorable/unknown` | close/delete 正在贮藏或清理 workspace/runtime |
+| `prompting` | `live` | runtime 存活且有 active prompt |
+| `live` | `live` | runtime attached，可写 |
+| `detached` | `live/restorable/unknown` | gateway 有持久化 runtime identity，但当前进程尚未验证；客户端应调用 ensure-ready |
+| `stored_restorable` | `restorable` | outer/inner sandbox 已释放，但 Wisp workspace 记录足够恢复 |
+| `restore_failed_retryable` | `retryable` | 最近一次恢复失败，但保留可恢复 workspace anchor |
+| `blocked_terminal` | `terminal` | 缺少恢复 anchor 或 runtime identity，不允许继续写 |
+| `failed` | `unknown/retryable/terminal` | runtime 创建或执行失败，需看 `recoverability` |
+| `closed` | `terminal/unknown` | 非 Wisp 或缺少恢复信息的关闭态 |
+
+编码约束：
+
+- prompt 入口、restore 入口和 MyChat UI 都必须优先读 `lifecycle_state/recoverability`。
+- 只有 `live` 和 `prompting` 是可写态。
+- `detached` 不是错误，也不是可写态；它是“需要 ensure-ready 验证或恢复”的中间态。
+- `stored_restorable` 不是错误，必须允许 `session/resume` / `_cloudagent.runtime.ensure_ready`。
+- `restore_failed_retryable` 不是终态，UI 可以提示重试。
+- `blocked_terminal` 是终态；不要再反复自动 restore。
+- `runtime_not_recovered` 只能作为 `recoverability_note` 或兼容 `read_only_reason`，不能单独当状态机使用。
+- gateway 恢复前必须先用 `WorkspaceRecord` 补齐 runtime 的 `OuterRuntime`、`RuntimeRecovery`、`WispWorkspaceID`、`WispSMHSpaceID` 和 Wisp 参数；否则旧 outer sandbox 丢失后会误判成 terminal。
+
 ## 启动
 
 从 `gateway` 目录启动：
@@ -382,11 +413,11 @@ CloudAgent 私有扩展方法，用于会话运行时自省。扩展方法名使
       "runtime_id": "rt_session_xxx_1",
       "outer_sandbox_id": "outer_xxx",
       "outer_sandbox_domain": "ap-beijing.tencentags.com",
-      "inner_sandbox_id": "",
       "daemon_addr": "http://127.0.0.1:38xxx",
       "remote_binary": "/tmp/gateway/sessions/session_xxx/hermes-sidecar",
       "has_outer_envd_access_token": true,
-      "has_outer_traffic_token": false
+      "has_outer_traffic_token": false,
+      "has_inner_envd_target": false
     }
   }
 }
@@ -451,7 +482,7 @@ CloudAgent 私有扩展方法，用于会话运行时自省。扩展方法名使
 
 ### session/close
 
-关闭会话运行态。当前实现会释放 sandbox；历史仍保留在 wrapper 内存中。
+关闭会话运行态。对 Wisp runtime，这个标准 ACP 方法就是 CloudAgent 的“主动贮藏”入口：Gateway 会关闭 sidecar、销毁 inner/outer sandbox，释放 lease，但保留可恢复的 Wisp/SMH workspace anchor、runtime store 和 transcript。标准 ACP 语义仍然只是 close；贮藏进度通过 CloudAgent 扩展通知 `_cloudagent.workspace.lifecycle` 投影，标准客户端可以忽略。
 
 ```json
 {
@@ -462,7 +493,7 @@ CloudAgent 私有扩展方法，用于会话运行时自省。扩展方法名使
 }
 ```
 
-close 后直接 `session/prompt` 会失败，必须先 `session/resume`。
+close 后直接 `session/prompt` 会失败，必须先 `session/resume` 或 `_cloudagent.runtime.ensure_ready`。恢复会新建 outer sandbox 和 inner workspace runtime，并绑定回同一个 Wisp/SMH workspace anchor。
 
 ### session/resume
 
@@ -533,6 +564,28 @@ CloudAgent ACP 扩展方法。用于 UI 在 `session/load` 回放 transcript 后
   }
 }
 ```
+
+恢复或贮藏期间 Gateway 会发送低频 CloudAgent 扩展通知 `_cloudagent.workspace.lifecycle`。该通知只用于 UI 展示和诊断，不属于标准 `session/update`，不得作为 transcript 回放消息持久展示：
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "_cloudagent.workspace.lifecycle",
+  "params": {
+    "session_id": "session_xxx",
+    "generation": 2,
+    "operation": "restore",
+    "phase": "runtime",
+    "status": "running",
+    "label": "恢复 Runtime Host",
+    "elapsed_ms": 1204,
+    "lifecycle_id": "restore:session_xxx:runtime",
+    "timestamp": "2026-05-26T02:00:00Z"
+  }
+}
+```
+
+`operation` 目前为 `restore` 或 `storage`；`status` 为 `running/done/failed`。关闭或删除 session 时，贮藏/清理阶段也会通过同一通知投影。
 
 ### session/load
 
