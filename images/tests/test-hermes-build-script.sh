@@ -77,8 +77,12 @@ EOF
 chmod +x "${INSTALLER_PAYLOAD}"
 
 mkdir -p "${TMPDIR}/hermes-src/hermes-agent/venv/bin"
+mkdir -p "${TMPDIR}/hermes-src/hermes-agent/scripts/whatsapp-bridge"
 cat >"${TMPDIR}/hermes-src/hermes-agent/README.md" <<'EOF'
 hermes fixture
+EOF
+cat >"${TMPDIR}/hermes-src/hermes-agent/scripts/whatsapp-bridge/package.json" <<'EOF'
+{"private":true,"name":"whatsapp-bridge-fixture"}
 EOF
 tar -czf "${HERMES_TARBALL}" -C "${TMPDIR}/hermes-src" hermes-agent
 
@@ -162,12 +166,33 @@ sudo() {
     log_call "sudo-npm-install ${4:-}"
     return 0
   fi
+  if [[ "${1:-}" == "-u" && "${2:-}" == "${RUNTIME_USER}" && "${3:-}" == "-H" && "${4:-}" == "bash" && "${5:-}" == "-lc" ]]; then
+    log_call "sudo-user ${2} ${6:-}"
+    if [[ "${6:-}" == *"pnpm add --config.block-exotic-subdeps=false --config.dangerously-allow-all-builds=true @whiskeysockets/baileys@7.0.0-rc.9 qrcode-terminal express pino"* ]]; then
+      log_call "pnpm-add-whatsapp-bridge"
+    fi
+    if [[ "${6:-}" == *"require.resolve"* && "${6:-}" == *"@whiskeysockets/baileys"* ]]; then
+      log_call "node-resolve-whatsapp-bridge"
+    fi
+    return 0
+  fi
   command sudo "$@"
 }
 
 acli() {
   log_call "acli $*"
   return 0
+}
+
+id() {
+  if [[ "${1:-}" == "${RUNTIME_USER}" ]]; then
+    return 0
+  fi
+  if [[ "${1:-}" == "-u" && "${2:-}" == "${RUNTIME_USER}" ]]; then
+    printf '1000\n'
+    return 0
+  fi
+  command id "$@"
 }
 
 command() {
@@ -196,6 +221,7 @@ ln() {
 mkdir -p "${HOME}/.local/bin" "${HOME}/.config/systemd/user"
 
 install_hermes_runtime
+install_hermes_whatsapp_bridge_deps
 install_hermes_extra_tools
 install_hermes_acli
 
@@ -203,6 +229,10 @@ grep -q "curl-hermes-latest" "${LOG_FILE}"
 grep -q "curl-hermes-tarball" "${LOG_FILE}"
 grep -q "curl-installer" "${LOG_FILE}"
 grep -q "npm-install @qwen-code/qwen-code@latest" "${LOG_FILE}"
+grep -q "sudo-npm-install pnpm" "${LOG_FILE}"
+grep -q "sudo-user agentuser" "${LOG_FILE}"
+grep -q "pnpm-add-whatsapp-bridge" "${LOG_FILE}"
+grep -q "node-resolve-whatsapp-bridge" "${LOG_FILE}"
 grep -q "curl-skillhub" "${LOG_FILE}"
 grep -q "curl-acli" "${LOG_FILE}"
 grep -q "run_as_runtime_user acli --help" "${LOG_FILE}"

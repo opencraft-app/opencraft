@@ -49,6 +49,8 @@ HERMES_GIT_COMMIT=""
 HERMES_ACLI_INSTALL_URL=""
 HERMES_SYSTEM_BIN_DIR="${HERMES_SYSTEM_BIN_DIR:-/usr/local/bin}"
 HERMES_SYSTEM_LINK_DIR="${HERMES_SYSTEM_LINK_DIR:-/usr/bin}"
+HERMES_WHATSAPP_BRIDGE_USER="${HERMES_WHATSAPP_BRIDGE_USER:-}"
+HERMES_WHATSAPP_BRIDGE_HOME="${HERMES_WHATSAPP_BRIDGE_HOME:-}"
 ACLI_IDENTITY_PATH="${ACLI_IDENTITY_PATH:-/etc/acli/identity.yaml}"
 NODE_VERSION=""
 PNPM_VERSION=""
@@ -836,6 +838,54 @@ install_hermes_extra_tools() {
   fi
 }
 
+install_hermes_whatsapp_bridge_deps() {
+  local bridge_user="${HERMES_WHATSAPP_BRIDGE_USER:-${RUNTIME_USER}}"
+  local bridge_home="${HERMES_WHATSAPP_BRIDGE_HOME:-${RUNTIME_HOME}}"
+  local bridge_dir="${bridge_home}/.hermes/hermes-agent/scripts/whatsapp-bridge"
+  local runtime_bridge_dir="${RUNTIME_HOME}/.hermes/hermes-agent/scripts/whatsapp-bridge"
+  local bridge_home_escaped=""
+  local hermes_home_escaped=""
+  local bridge_dir_escaped=""
+  local resolve_js=""
+  local resolve_js_escaped=""
+  local bridge_cmd=""
+
+  log_info "installing Hermes WhatsApp bridge deps for ${bridge_user}"
+
+  if ! id "${bridge_user}" >/dev/null 2>&1; then
+    log_error "Hermes WhatsApp bridge user is missing: ${bridge_user}"
+    return 1
+  fi
+
+  if [ ! -d "${bridge_dir}" ]; then
+    if [ ! -d "${runtime_bridge_dir}" ]; then
+      log_error "Hermes WhatsApp bridge source directory not found: ${runtime_bridge_dir}"
+      return 1
+    fi
+    mkdir -p "$(dirname "${bridge_dir}")"
+    cp -a "${runtime_bridge_dir}" "${bridge_dir}"
+  fi
+  chown -R "${bridge_user}:${bridge_user}" "${bridge_home}/.hermes"
+
+  sudo npm install -g pnpm
+
+  resolve_js='for (const m of ["@whiskeysockets/baileys","qrcode-terminal","express","pino"]) console.log(m, require.resolve(m))'
+  printf -v bridge_home_escaped '%q' "${bridge_home}"
+  printf -v hermes_home_escaped '%q' "${bridge_home}/.hermes"
+  printf -v bridge_dir_escaped '%q' "${bridge_dir}"
+  printf -v resolve_js_escaped '%q' "${resolve_js}"
+  bridge_cmd="$(cat <<EOF
+set -euo pipefail
+export HOME=${bridge_home_escaped}
+export HERMES_HOME=${hermes_home_escaped}
+cd ${bridge_dir_escaped}
+pnpm add --config.block-exotic-subdeps=false --config.dangerously-allow-all-builds=true @whiskeysockets/baileys@7.0.0-rc.9 qrcode-terminal express pino
+node -e ${resolve_js_escaped}
+EOF
+)"
+  sudo -u "${bridge_user}" -H bash -lc "${bridge_cmd}"
+}
+
 ensure_hermes_acli_identity() {
   local identity="${ACLI_IDENTITY_PATH}"
   local runtime_version="${HERMES_SRC_VERSION}"
@@ -1500,6 +1550,7 @@ build_app_layer() {
   resolve_runtime_home
   if [ "${RUNTIME_KIND}" = "hermes" ]; then
     install_hermes_runtime
+    install_hermes_whatsapp_bridge_deps
     ensure_hermes_gateway_service
     install_hermes_extra_tools
     install_hermes_acli
