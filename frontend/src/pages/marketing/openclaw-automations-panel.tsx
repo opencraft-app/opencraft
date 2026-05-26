@@ -1060,7 +1060,9 @@ function AutomationFormModal({
             </p>
           ) : chatIdPlatforms.length === 0 ? (
             <p className="text-xs text-black/40">
-              {t("已选通知方式支持直接发送通知")}
+              {deliverPlatforms.includes("qqbot")
+                ? t("QQ 需设置 home 对话才能发送通知")
+                : t("微信支持直接配置发送通知")}
             </p>
           ) : (
             <div className="space-y-1 text-xs leading-6 text-black/40">
