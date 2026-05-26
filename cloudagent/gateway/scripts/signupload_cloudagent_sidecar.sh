@@ -50,9 +50,9 @@ URL_FILE="${GATEWAY_AGENT_SIDECAR_URL_FILE:-/tmp/agent-sidecar-url.clean}"
 SHA_FILE="${GATEWAY_AGENT_SIDECAR_SHA256_FILE:-/tmp/agent-sidecar-sha256.clean}"
 SIG_URL_FILE="${GATEWAY_AGENT_SIDECAR_SIG_URL_FILE:-/tmp/agent-sidecar-sig-url.clean}"
 DRY_RUN="${CLOUDAGENT_SIGNUPLOAD_DRY_RUN:-0}"
+SIGN_BIN="${CLOUDAGENT_AGENT_SIGN_BIN:-}"
 
 require_cmd "$COSCMD_BIN"
-require_cmd cargo
 require_cmd make
 require_cmd shasum
 
@@ -85,10 +85,6 @@ PUBLIC_SIG_URL="${PUBLIC_BASE_URL%/}/${SIDECAR_SIG_OBJECT#/}"
 AGENT_VERSION="${CLOUDAGENT_AGENT_VERSION:-${AGENT_VERSION_PREFIX}-${SIDECAR_SHA:0:12}}"
 
 sign_args=(
-  run --quiet
-  --manifest-path "$CLOUDAGENT_DIR/agent-loader/Cargo.toml"
-  --bin cloudagent-agent-sign
-  --
   --key-id "$SIGNING_KEY_ID"
   --artifact "$SIDECAR_LOCAL_PATH"
   --output "$SIDECAR_SIG_LOCAL_PATH"
@@ -98,7 +94,19 @@ if [ -n "${CLOUDAGENT_AGENT_RELEASE_ED25519_SEED_FILE:-}" ]; then
 fi
 
 printf '[signupload] sign %s -> %s key_id=%s\n' "$SIDECAR_LOCAL_PATH" "$SIDECAR_SIG_LOCAL_PATH" "$SIGNING_KEY_ID" >&2
-PUBLIC_KEY_B64="$(cargo "${sign_args[@]}")"
+if [ -n "$SIGN_BIN" ]; then
+  if [ ! -x "$SIGN_BIN" ]; then
+    printf 'CLOUDAGENT_AGENT_SIGN_BIN is not executable: %s\n' "$SIGN_BIN" >&2
+    exit 2
+  fi
+  PUBLIC_KEY_B64="$("$SIGN_BIN" "${sign_args[@]}")"
+else
+  require_cmd cargo
+  PUBLIC_KEY_B64="$(cargo run --quiet \
+    --manifest-path "$CLOUDAGENT_DIR/agent-loader/Cargo.toml" \
+    --bin cloudagent-agent-sign \
+    -- "${sign_args[@]}")"
+fi
 
 if [ "$DRY_RUN" = "1" ]; then
   printf '[signupload] dry-run enabled; skip COS upload and HEAD checks\n' >&2
