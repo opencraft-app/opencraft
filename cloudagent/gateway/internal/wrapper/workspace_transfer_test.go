@@ -51,3 +51,20 @@ func chunkedText(body string, sizes ...int) string {
 	out.WriteString("0\r\n\r\n")
 	return out.String()
 }
+
+func TestWispRuntimeRootfsHostPathMapsRuntimePath(t *testing.T) {
+	got, err := wispRuntimeRootfsHostPath("agent-session_abc", "/tmp/gateway/sessions/s1/upload.bin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "/var/lib/wisp-runtime/agent-session_abc/rootfs/tmp/gateway/sessions/s1/upload.bin"
+	if got != want {
+		t.Fatalf("path = %q, want %q", got, want)
+	}
+}
+
+func TestWispRuntimeRootfsHostPathRejectsUnsafeName(t *testing.T) {
+	if _, err := wispRuntimeRootfsHostPath("../bad", "/tmp/file"); err == nil {
+		t.Fatal("expected invalid wisp runtime name")
+	}
+}
