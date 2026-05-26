@@ -12,6 +12,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowRight,
   BrainCircuit,
+  CalendarClock,
   Check,
   MessageCircle,
   Loader2,
@@ -66,6 +67,7 @@ import {
 import { createMonoDebugExecAdapter } from "@/pages/marketing/openclaw-tat-adapter";
 import { installOpenClawConsoleHelpers } from "@/pages/marketing/openclaw-console-helpers";
 import { BuddyPanel } from "@/pages/marketing/openclaw-buddy-panel";
+import { AutomationsPanel } from "@/pages/marketing/openclaw-automations-panel";
 import { findCompletedCreatingBot, getOpenClawCreateLimitMessage } from "@/pages/marketing/openclaw-create-availability";
 import {
   getRestartBlockReason,
@@ -185,7 +187,7 @@ const SettingsNavbar = () => {
 
 /* ─── 实例配置子页面类型（模型 / 通道 / 技能，放在单个 bot 内部切换） ─── */
 
-type SettingsSectionId = "model" | "channel" | "skill" | "buddy";
+type SettingsSectionId = "model" | "channel" | "skill" | "buddy" | "automations";
 
 /* ─── Section Card Wrapper ─── */
 
@@ -3211,8 +3213,9 @@ export const OpenClawSettingsPage = () => {
                       { id: "skill", label: t("技能"), icon: <Wand2 className="h-4 w-4" /> },
                       // AI 搭子（人设抽卡）当前仅国内站上线；国际站隐藏入口
                       ...(!isGlobal
-                        ? [{ id: "buddy" as const, label: t("人设"), icon: <UserRound className="h-4 w-4" />, badge: "NEW" }]
+                        ? [{ id: "buddy" as const, label: t("人设"), icon: <UserRound className="h-4 w-4" /> }]
                         : []),
+                      { id: "automations", label: t("定时任务"), icon: <CalendarClock className="h-4 w-4" /> },
                     ];
 
                     return (
@@ -3286,6 +3289,9 @@ export const OpenClawSettingsPage = () => {
                             )}
                             {activeSection === "buddy" && !isGlobal && (
                               <BuddyPanel botId={activeBot?.id ?? null} />
+                            )}
+                            {activeSection === "automations" && (
+                              <AutomationsPanel botId={activeBot?.id ?? null} />
                             )}
                           </div>
                         </div>
