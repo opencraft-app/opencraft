@@ -275,7 +275,11 @@ export function parseCronListOutput(text: string): CronJob[] {
     else if (key === "schedule") {
       current.schedule = { kind: detectScheduleKind(value), expr: value, display: value };
     } else if (key === "next run") current.next_run_at = value;
-    else if (key === "last run") current.last_run_at = value;
+    else if (key === "last run") {
+      const parsed = splitLastRunValue(value);
+      current.last_run_at = parsed.lastRunAt;
+      if (parsed.lastStatus) current.last_status = parsed.lastStatus;
+    }
     else if (key === "last status") current.last_status = value;
     else if (key === "deliver") current.deliver = value;
     else if (key === "skills" || key === "skill") {
@@ -285,6 +289,13 @@ export function parseCronListOutput(text: string): CronJob[] {
   }
   flush();
   return jobs;
+}
+
+function splitLastRunValue(value: string): { lastRunAt: string; lastStatus: string | null } {
+  const trimmed = value.trim();
+  const match = /^(.+?(?:Z|[+-]\d{2}:?\d{2}))(?:\s+(.+))?$/.exec(trimmed);
+  if (!match) return { lastRunAt: trimmed, lastStatus: null };
+  return { lastRunAt: match[1] || trimmed, lastStatus: (match[2] || "").trim() || null };
 }
 
 function detectScheduleKind(display: string): string {
