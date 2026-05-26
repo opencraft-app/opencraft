@@ -109,35 +109,44 @@ func stageWorkspaceUploadContentOnHost(ctx context.Context, client *AGSClient, s
 }
 
 func stageWorkspaceUploadContentIntoWisp(ctx context.Context, client *AGSClient, sb AGSSandbox, runtime ACPSessionRuntime, hostTempPath, wispTempPath string) error {
-	clientPath := runtime.WispClientPath
-	if strings.TrimSpace(clientPath) == "" && runtime.WispInstallDir != "" {
-		clientPath = path.Join(runtime.WispInstallDir, "bin", "wispclient")
-	}
-	if strings.TrimSpace(clientPath) == "" {
-		clientPath = "/tmp/cloudagent-wisp/*/install/bin/wispclient"
-	}
-	innerDir := path.Dir(wispTempPath)
-	innerScriptPrefix := "mkdir -p " + shellQuote(innerDir) +
-		"\nbase64 -d > " + shellQuote(wispTempPath) + " <<'CLOUDAGENT_UPLOAD_B64'\n"
-	command := "set -euo pipefail\n" +
-		"client=" + shellQuote(clientPath) + "\n" +
-		"name=" + shellQuote(runtime.WispName) + "\n" +
-		"host_temp=" + shellQuote(hostTempPath) + "\n" +
-		"{\n" +
-		"  printf '%s' " + shellQuote(innerScriptPrefix) + "\n" +
-		"  base64 \"$host_temp\"\n" +
-		"  printf '\\nCLOUDAGENT_UPLOAD_B64\\nexit\\n'\n" +
-		"} | \"$client\" -server " + shellQuote(defaultWispOuterAdminAddr) + " shell \"$name\" >/dev/null\n" +
-		"\"$client\" -server " + shellQuote(defaultWispOuterAdminAddr) + " exec \"$name\" -- /bin/sh -lc 'test -s \"$1\" || [ -f \"$1\" ]' sh " + shellQuote(wispTempPath) + " >/dev/null\n" +
-		"echo CLOUDAGENT_WISP_UPLOAD_STAGED\n"
-	result, err := client.RunCommand(ctx, sb, command, nil, nil, nil)
+	hostRootfsPath, err := wispRuntimeRootfsHostPath(runtime.WispName, wispTempPath)
 	if err != nil {
-		return fmt.Errorf("workspace upload wisp staging failed: %w", err)
+		return err
+	}
+	command := "set -euo pipefail\n" +
+		"host_temp=" + shellQuote(hostTempPath) + "\n" +
+		"rootfs_temp=" + shellQuote(hostRootfsPath) + "\n" +
+		"sudo -n mkdir -p \"$(dirname \"$rootfs_temp\")\"\n" +
+		"sudo -n cp \"$host_temp\" \"$rootfs_temp\"\n" +
+		"sudo -n chmod 0644 \"$rootfs_temp\" || true\n" +
+		"sudo -n test -f \"$rootfs_temp\"\n" +
+		"echo CLOUDAGENT_WISP_UPLOAD_STAGED\n"
+	result, err := client.RunCommand(ctx, sb, command, nil, nil, func(text string) error {
+		logRemoteStderr(time.Now(), workerJob{JobID: "workspace_upload_wisp_stage", ResponseID: runtime.RuntimeID}, text)
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("workspace upload wisp staging failed: %w stdout=%q stderr=%q", err, result.Stdout, result.Stderr)
 	}
 	if result.ExitCode != 0 {
 		return fmt.Errorf("workspace upload wisp staging failed exit=%d stdout=%q stderr=%q", result.ExitCode, result.Stdout, result.Stderr)
 	}
 	return nil
+}
+
+func wispRuntimeRootfsHostPath(wispName, runtimePath string) (string, error) {
+	wispName = strings.TrimSpace(wispName)
+	if wispName == "" {
+		return "", fmt.Errorf("wisp runtime name is required")
+	}
+	if strings.Contains(wispName, "/") || strings.Contains(wispName, "..") {
+		return "", fmt.Errorf("invalid wisp runtime name %q", wispName)
+	}
+	runtimePath = path.Clean("/" + strings.TrimSpace(runtimePath))
+	if runtimePath == "/" {
+		return "", fmt.Errorf("runtime path is required")
+	}
+	return path.Join("/var/lib/wisp-runtime", wispName, "rootfs", runtimePath), nil
 }
 
 func cleanupWorkspaceUploadHostContent(ctx context.Context, client *AGSClient, sb AGSSandbox, tempPath string) {

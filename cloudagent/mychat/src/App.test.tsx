@@ -152,7 +152,7 @@ describe("SessionPage", () => {
           lastRuntimeError: "ags http 404: The requested resource does not exist",
           sandbox: {
             backend: "ags",
-            agentTemplateId: "498c6c11-74d7-426e-bdb1-13d8aa73997e",
+            agentTemplateId: "tpl-pool-s3h-ivanbgliu-1",
             runtimeId: "rt_session_meta_2",
             outerSandboxId: "outer_sandbox_123",
             innerSandboxId: "inner_sandbox_456",
@@ -166,7 +166,7 @@ describe("SessionPage", () => {
 
     expect(html).toContain("Metadata");
     expect(html).toContain("outer_sandbox_123");
-    expect(html).toContain("498c6c11-74d7-426e-bdb1-13d8aa73997e");
+    expect(html).toContain("tpl-pool-s3h-ivanbgliu-1");
     expect(html).toContain("inner_sandbox_456");
     expect(html).toContain("rt_session_meta_2");
     expect(html).toContain("spx-sessionmeta");

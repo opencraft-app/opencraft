@@ -145,7 +145,7 @@ export PROJECT_ID='project-live'
 export GATEWAY_TALOS_API_KEY='talos_...'
 export GATEWAY_TALOS_API_URL='https://api.talos.ren'
 export GATEWAY_TALOS_DOMAIN='api.talos.ren'
-export GATEWAY_TALOS_TEMPLATE='498c6c11-74d7-426e-bdb1-13d8aa73997e'
+export GATEWAY_TALOS_TEMPLATE='tpl-pool-s3h-ivanbgliu-1'
 ```
 
 配置 Talos 后，`/v1/models` 会额外暴露 `agent-sidecar-talos*` 模型；只有这些模型会显式路由到 Talos backend。原来的 `agent-sidecar-chat`、`agent-sidecar-tool` 等模型仍走老 AGS backend。

@@ -163,7 +163,7 @@ func (c *AGSClient) DeleteSandbox(ctx context.Context, sandboxID string) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("X-API-Key", c.apiKey)
+	c.applyControlAuth(req)
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return err
@@ -227,12 +227,7 @@ func (c *AGSClient) RunCommand(ctx context.Context, sb AGSSandbox, command strin
 	req.Header.Set("Connect-Protocol-Version", "1")
 	req.Header.Set("Connect-Content-Encoding", "identity")
 	req.Header.Set("Connect-Timeout-Ms", strconv.FormatInt(int64(c.requestTimeout/time.Millisecond), 10))
-	if sb.EnvdAccessToken != "" {
-		req.Header.Set("X-Access-Token", sb.EnvdAccessToken)
-	}
-	if c.envdUser != "" {
-		req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(c.envdUser+":")))
-	}
+	c.applyDataAuth(req, sb)
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return CommandResult{}, fmt.Errorf("ags run_command transport sandbox_id=%s domain=%s: %w", sb.SandboxID, sandboxDomain(sb, c.domain), err)
@@ -263,9 +258,7 @@ func (c *AGSClient) UploadFile(ctx context.Context, sb AGSSandbox, remotePath, f
 		return err
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
-	if sb.EnvdAccessToken != "" {
-		req.Header.Set("X-Access-Token", sb.EnvdAccessToken)
-	}
+	c.applyDataAuth(req, sb)
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("ags upload_file transport sandbox_id=%s domain=%s remote_path=%s: %w", sb.SandboxID, sandboxDomain(sb, c.domain), remotePath, err)
@@ -283,9 +276,7 @@ func (c *AGSClient) DownloadFile(ctx context.Context, sb AGSSandbox, remotePath 
 	if err != nil {
 		return nil, err
 	}
-	if sb.EnvdAccessToken != "" {
-		req.Header.Set("X-Access-Token", sb.EnvdAccessToken)
-	}
+	c.applyDataAuth(req, sb)
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("ags download_file transport sandbox_id=%s domain=%s remote_path=%s: %w", sb.SandboxID, sandboxDomain(sb, c.domain), remotePath, err)
@@ -304,7 +295,7 @@ func (c *AGSClient) sandboxURL(sb AGSSandbox) string {
 func (c *AGSClient) fileURL(sb AGSSandbox, remotePath string) string {
 	values := url.Values{}
 	values.Set("path", remotePath)
-	if c.envdUser != "" {
+	if c.envdUser != "" && !c.usesTalosAuth() {
 		values.Set("username", c.envdUser)
 	}
 	return c.sandboxURL(sb) + "/files?" + values.Encode()
@@ -320,7 +311,7 @@ func (c *AGSClient) doJSON(ctx context.Context, method, endpoint string, body an
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-API-Key", c.apiKey)
+	c.applyControlAuth(req)
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("ags %s transport: %w", op, err)
@@ -334,6 +325,46 @@ func (c *AGSClient) doJSON(ctx context.Context, method, endpoint string, body an
 		return nil
 	}
 	return json.NewDecoder(resp.Body).Decode(out)
+}
+
+func (c *AGSClient) applyControlAuth(req *http.Request) {
+	applySandboxAPIAuth(req, c.apiKey)
+}
+
+func (c *AGSClient) applyDataAuth(req *http.Request, sb AGSSandbox) {
+	if sb.EnvdAccessToken != "" {
+		req.Header.Set("X-Access-Token", sb.EnvdAccessToken)
+		if c.envdUser != "" && !c.usesTalosAuth() {
+			req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(c.envdUser+":")))
+		}
+		return
+	}
+	if c.usesTalosAuth() {
+		applySandboxAPIAuth(req, c.apiKey)
+		return
+	}
+	if c.envdUser != "" {
+		req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(c.envdUser+":")))
+	}
+}
+
+func (c *AGSClient) usesTalosAuth() bool {
+	key := strings.TrimSpace(c.apiKey)
+	return strings.HasPrefix(key, "talos_") ||
+		strings.HasPrefix(key, "sk_talos_") ||
+		strings.HasPrefix(key, "admin_talos_")
+}
+
+func applySandboxAPIAuth(req *http.Request, apiKey string) {
+	key := strings.TrimSpace(apiKey)
+	switch {
+	case strings.HasPrefix(key, "sk_talos_"):
+		req.Header.Set("Authorization", "Bearer "+key)
+	case strings.HasPrefix(key, "admin_talos_"):
+		req.Header.Set("X-Admin-Token", key)
+	default:
+		req.Header.Set("X-API-Key", key)
+	}
 }
 
 func sandboxDomain(sb AGSSandbox, fallback string) string {

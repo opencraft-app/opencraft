@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-const defaultTalosTemplateID = "498c6c11-74d7-426e-bdb1-13d8aa73997e"
+const defaultTalosTemplateID = "tpl-pool-s3h-ivanbgliu-1"
 
 const (
 	defaultAgentVersion     = "builtin.v1"
