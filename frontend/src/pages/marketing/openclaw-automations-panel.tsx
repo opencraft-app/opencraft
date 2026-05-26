@@ -38,6 +38,7 @@ const PANEL_CARD_STYLE: React.CSSProperties = {
   boxShadow: "0 4px 24px rgba(0,0,0,0.03), 0 1px 2px rgba(0,0,0,0.02)",
 };
 const MAX_CRON_JOBS_PER_BOT = 20;
+const EXPIRED_CRON_JOB_HIDE_AFTER_MS = 2 * 60 * 1000;
 
 /** 顶部红色 toast；与 settings 主页 SkillInstallToast 视觉一致 */
 function ErrorToast({ message, onClose }: { message: string; onClose: () => void }) {
@@ -77,7 +78,7 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
   /** 列表加载失败的 inline 错误（与 toast 分离：list 失败不 toast，避免首屏刷屏） */
   const [listError, setListError] = useState<string | null>(null);
   const errorTimerRef = useRef<number | null>(null);
-  const visibleJobs = useMemo(() => jobs.filter((job) => !isCronJobExpired(job)), [jobs]);
+  const visibleJobs = useMemo(() => jobs.filter((job) => !isCronJobExpiredBeyondGrace(job)), [jobs]);
   const jobLimitReached = visibleJobs.length >= MAX_CRON_JOBS_PER_BOT;
 
   const showError = useCallback((message: string) => {
@@ -410,6 +411,15 @@ function isCronJobExpired(job: CronJob): boolean {
   if (!isOnce) return false;
   const d = parseOnceScheduleDate(display, job.next_run_at);
   return !Number.isNaN(d.getTime()) && d.getTime() < Date.now();
+}
+
+function isCronJobExpiredBeyondGrace(job: CronJob): boolean {
+  const kind = job.schedule.kind.toLowerCase();
+  const display = (job.schedule.display || job.schedule.expr || "").trim();
+  const isOnce = kind === "once" || display.toLowerCase().startsWith("once");
+  if (!isOnce) return false;
+  const d = parseOnceScheduleDate(display, job.next_run_at);
+  return !Number.isNaN(d.getTime()) && Date.now() - d.getTime() > EXPIRED_CRON_JOB_HIDE_AFTER_MS;
 }
 
 /** 把 cron schedule + next_run_at 翻译成人话。
