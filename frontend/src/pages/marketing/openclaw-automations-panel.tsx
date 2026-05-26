@@ -1066,12 +1066,12 @@ function AutomationFormModal({
             <div className="space-y-1 text-xs leading-6 text-black/40">
               <p>{t("提示：")}</p>
               <p>
-                {t("1. 设置 home 对话：在QQ、飞书软件中，在对话中向智能体发送")}
+                {t("1. 设置 home 对话：在QQ、飞书应用中，在对话中向智能体发送")}
                 <InlineCopyText value="/set-home" />
                 {t("。如未在上面输入框中指定 Chat ID，则默认通过 home 对话发送通知。")}
               </p>
               <p>
-                {t("2. 获取对话 ID：在QQ、飞书软件中，找到希望发送通知的对话，向智能体发送提示词")}
+                {t("2. 获取对话 ID：在QQ、飞书应用中，找到希望发送通知的对话，向智能体发送提示词")}
                 <InlineCopyText value={t("当前Chat ID是什么")} />
                 {t("。在上面输入框中输入Chat ID，即可指定该对话来通知。")}
               </p>
