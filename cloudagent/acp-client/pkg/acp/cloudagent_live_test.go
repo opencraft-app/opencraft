@@ -1125,6 +1125,162 @@ func TestCloudAgentLiveRepeatedCloseResumeKeepsWorkspaceAnchor(t *testing.T) {
 	deleted = true
 }
 
+func TestCloudAgentLiveMultiTurnRepeatedCloseResumeKeepsHistoryAndWorkspace(t *testing.T) {
+	if !liveBool("CLOUDAGENT_ACP_E2E_RESTORE") {
+		t.Skip("set CLOUDAGENT_ACP_E2E_RESTORE=1 to run multi-turn repeated close/resume e2e")
+	}
+	output := &liveAgentOutput{}
+	client := newLiveCloudAgentClientWithOptions(t, CloudAgentClientOptions{OnNotification: output.notification})
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), liveTimeout())
+	defer cancel()
+
+	if _, err := client.Initialize(ctx, CloudAgentClientOptions{
+		ClientName:    "cloudagent-acp-live-multiturn-repeated-restore-e2e",
+		ClientTitle:   "CloudAgent ACP Live MultiTurn Repeated Restore E2E",
+		ClientVersion: "0.1.0",
+	}); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	session, err := client.NewSession(ctx, CloudAgentSessionOptions{CWD: liveCWD()})
+	if err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	deleted := false
+	defer func() {
+		if deleted {
+			return
+		}
+		deleteCtx, deleteCancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer deleteCancel()
+		_ = client.DeleteSession(deleteCtx, session.SessionID)
+	}()
+
+	base := "cloudagent-multiturn-restore-" + strings.ReplaceAll(session.SessionID, "_", "-")
+	firstMarker := base + "-turn1"
+	secondMarker := base + "-turn2"
+	filePath := "/workspace/e2e/multiturn-repeated-restore.txt"
+
+	first, err := client.Prompt(ctx, session.SessionID, "第一轮：请只回答 MULTITURN_TURN1_READY。请记住唯一标记 "+firstMarker+"。", CloudAgentPromptOptions{
+		CWD:       liveCWD(),
+		InboxMode: CloudAgentInboxPrompt,
+	})
+	if err != nil {
+		t.Fatalf("turn1 prompt: %v", err)
+	}
+	if !isNormalStopReason(first.StopReason) {
+		t.Fatalf("unexpected turn1 stopReason %q raw=%s", first.StopReason, string(first.Raw))
+	}
+	beforeClose, err := client.Status(ctx, session.SessionID)
+	if err != nil {
+		t.Fatalf("status before first close: %v", err)
+	}
+	workspaceAnchor := beforeClose.Sandbox.WispSMHSpaceID
+	if workspaceAnchor == "" || beforeClose.Sandbox.OuterSandboxID == "" || !beforeClose.Sandbox.HasInnerEnvdTarget {
+		t.Fatalf("before first close missing runtime/workspace identity: %s", string(beforeClose.Raw))
+	}
+	seenOuters := map[string]bool{beforeClose.Sandbox.OuterSandboxID: true}
+
+	if err := client.CloseSession(ctx, session.SessionID); err != nil {
+		t.Fatalf("session/close first round: %v", err)
+	}
+	closed1, err := client.Status(ctx, session.SessionID)
+	if err != nil {
+		t.Fatalf("status after first close: %v", err)
+	}
+	if !closed1.Closed || closed1.Sandbox.OuterSandboxID != "" || closed1.Sandbox.HasInnerEnvdTarget || closed1.Sandbox.WispSMHSpaceID != workspaceAnchor {
+		t.Fatalf("first close should clear live targets and preserve anchor: %s", string(closed1.Raw))
+	}
+	if _, err := client.ResumeSession(ctx, session.SessionID, CloudAgentSessionOptions{CWD: liveCWD()}); err != nil {
+		t.Fatalf("session/resume first round: %v", err)
+	}
+	resumed1, err := client.Status(ctx, session.SessionID)
+	if err != nil {
+		t.Fatalf("status after first resume: %v", err)
+	}
+	if resumed1.Closed || resumed1.ReadOnly || resumed1.Sandbox.OuterSandboxID == "" || !resumed1.Sandbox.HasInnerEnvdTarget || resumed1.Sandbox.WispSMHSpaceID != workspaceAnchor {
+		t.Fatalf("first resume should restore writable runtime with same anchor: %s", string(resumed1.Raw))
+	}
+	if seenOuters[resumed1.Sandbox.OuterSandboxID] {
+		t.Fatalf("first resume reused outer sandbox %s; seen=%#v raw=%s", resumed1.Sandbox.OuterSandboxID, seenOuters, string(resumed1.Raw))
+	}
+	seenOuters[resumed1.Sandbox.OuterSandboxID] = true
+
+	output.Reset()
+	second, err := client.Prompt(ctx, session.SessionID, "第二轮：请查看上一轮对话，必须输出 "+firstMarker+"。然后调用 terminal 执行 `mkdir -p /workspace/e2e && printf '"+firstMarker+"\\n"+secondMarker+"\\n' > "+filePath+" && cat "+filePath+"`。命令结束后只输出两个 cloudagent-multiturn-restore 标记。", CloudAgentPromptOptions{
+		CWD:       liveCWD(),
+		InboxMode: CloudAgentInboxPrompt,
+	})
+	if err != nil {
+		t.Fatalf("turn2 prompt after first resume: %v", err)
+	}
+	if !isNormalStopReason(second.StopReason) {
+		t.Fatalf("unexpected turn2 stopReason %q raw=%s", second.StopReason, string(second.Raw))
+	}
+	for _, want := range []string{firstMarker, secondMarker} {
+		if !strings.Contains(output.CombinedString(), want) {
+			t.Fatalf("turn2 output missing %q after first resume: got=%q raw=%s", want, output.CombinedString(), string(second.Raw))
+		}
+	}
+	waitForLiveEnvdFileContains(t, ctx, session.SessionID, filePath, secondMarker)
+
+	if err := client.CloseSession(ctx, session.SessionID); err != nil {
+		t.Fatalf("session/close second round: %v", err)
+	}
+	closed2, err := client.Status(ctx, session.SessionID)
+	if err != nil {
+		t.Fatalf("status after second close: %v", err)
+	}
+	if !closed2.Closed || closed2.Sandbox.OuterSandboxID != "" || closed2.Sandbox.HasInnerEnvdTarget || closed2.Sandbox.WispSMHSpaceID != workspaceAnchor {
+		t.Fatalf("second close should clear live targets and preserve anchor: %s", string(closed2.Raw))
+	}
+	if _, err := client.ResumeSession(ctx, session.SessionID, CloudAgentSessionOptions{CWD: liveCWD()}); err != nil {
+		t.Fatalf("session/resume second round: %v", err)
+	}
+	resumed2, err := client.Status(ctx, session.SessionID)
+	if err != nil {
+		t.Fatalf("status after second resume: %v", err)
+	}
+	if resumed2.Closed || resumed2.ReadOnly || resumed2.Sandbox.OuterSandboxID == "" || !resumed2.Sandbox.HasInnerEnvdTarget || resumed2.Sandbox.WispSMHSpaceID != workspaceAnchor {
+		t.Fatalf("second resume should restore writable runtime with same anchor: %s", string(resumed2.Raw))
+	}
+	if seenOuters[resumed2.Sandbox.OuterSandboxID] {
+		t.Fatalf("second resume reused outer sandbox %s; seen=%#v raw=%s", resumed2.Sandbox.OuterSandboxID, seenOuters, string(resumed2.Raw))
+	}
+
+	output.Reset()
+	third, err := client.Prompt(ctx, session.SessionID, "第三轮：请查看完整对话历史，并调用 terminal 执行 `cat "+filePath+"`。最终只输出 "+firstMarker+" 和 "+secondMarker+"，不要解释。", CloudAgentPromptOptions{
+		CWD:       liveCWD(),
+		InboxMode: CloudAgentInboxPrompt,
+	})
+	if err != nil {
+		t.Fatalf("turn3 prompt after second resume: %v", err)
+	}
+	if !isNormalStopReason(third.StopReason) {
+		t.Fatalf("unexpected turn3 stopReason %q raw=%s", third.StopReason, string(third.Raw))
+	}
+	combined := output.CombinedString()
+	for _, want := range []string{firstMarker, secondMarker} {
+		if !strings.Contains(combined, want) {
+			t.Fatalf("turn3 output missing %q after repeated restore: got=%q raw=%s", want, combined, string(third.Raw))
+		}
+	}
+	for _, forbidden := range []string{"runtime_not_recovered", "session_read_only", "HTTP 500", "openresty", "No such file"} {
+		if strings.Contains(combined, forbidden) {
+			t.Fatalf("turn3 surfaced forbidden restore/workspace failure %q: got=%q raw=%s", forbidden, combined, string(third.Raw))
+		}
+	}
+	if downloaded := string(liveDownloadEnvdFile(t, ctx, session.SessionID, filePath)); !strings.Contains(downloaded, firstMarker) || !strings.Contains(downloaded, secondMarker) {
+		t.Fatalf("downloaded workspace file after repeated restore missing markers: %q", downloaded)
+	}
+
+	if err := client.DeleteSession(ctx, session.SessionID); err != nil {
+		t.Fatalf("session/delete: %v", err)
+	}
+	deleted = true
+}
+
 func TestCloudAgentLiveLoadClosedRestorableSessionRecoversOnPrompt(t *testing.T) {
 	if !liveBool("CLOUDAGENT_ACP_E2E_RESTORE") {
 		t.Skip("set CLOUDAGENT_ACP_E2E_RESTORE=1 to run closed session/load restore e2e")
