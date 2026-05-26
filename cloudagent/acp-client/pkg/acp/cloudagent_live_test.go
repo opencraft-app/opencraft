@@ -413,6 +413,208 @@ func TestCloudAgentLiveUnknownVersionsRejected(t *testing.T) {
 	}
 }
 
+func TestCloudAgentLiveStatusExtensionUsesSnakeCaseFields(t *testing.T) {
+	client := newLiveCloudAgentClient(t)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), liveTimeout())
+	defer cancel()
+
+	if _, err := client.Initialize(ctx, CloudAgentClientOptions{
+		ClientName:    "cloudagent-acp-live-snake-case-e2e",
+		ClientTitle:   "CloudAgent ACP Live Snake Case E2E",
+		ClientVersion: "0.1.0",
+	}); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+
+	session, err := client.NewSession(ctx, CloudAgentSessionOptions{CWD: liveCWD()})
+	if err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	defer func() {
+		deleteCtx, deleteCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer deleteCancel()
+		_ = client.DeleteSession(deleteCtx, session.SessionID)
+	}()
+
+	status, err := client.Status(ctx, session.SessionID)
+	if err != nil {
+		t.Fatalf("_cloudagent.session.status: %v", err)
+	}
+	raw := string(status.Raw)
+	for _, want := range []string{
+		`"session_id"`,
+		`"read_only"`,
+		`"runtime_status"`,
+		`"runtime_status_source"`,
+		`"runtime_restorable"`,
+		`"workspace_persistent"`,
+		`"outer_sandbox_id"`,
+		`"wisp_smh_space_id"`,
+	} {
+		if !strings.Contains(raw, want) {
+			t.Fatalf("status extension missing snake_case field %s: %s", want, raw)
+		}
+	}
+	for _, forbidden := range []string{
+		`"sessionId"`,
+		`"readOnly"`,
+		`"runtimeStatus"`,
+		`"runtimeStatusSource"`,
+		`"runtimeRestorable"`,
+		`"workspacePersistent"`,
+		`"outerSandboxId"`,
+		`"wispSmhSpaceId"`,
+	} {
+		if strings.Contains(raw, forbidden) {
+			t.Fatalf("status extension leaked camelCase field %s: %s", forbidden, raw)
+		}
+	}
+}
+
+func TestCloudAgentLivePromptAfterDeleteReturnsProtocolError(t *testing.T) {
+	client := newLiveCloudAgentClient(t)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), liveTimeout())
+	defer cancel()
+
+	if _, err := client.Initialize(ctx, CloudAgentClientOptions{
+		ClientName:    "cloudagent-acp-live-delete-error-e2e",
+		ClientTitle:   "CloudAgent ACP Live Delete Error E2E",
+		ClientVersion: "0.1.0",
+	}); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	session, err := client.NewSession(ctx, CloudAgentSessionOptions{CWD: liveCWD()})
+	if err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	if err := client.DeleteSession(ctx, session.SessionID); err != nil {
+		t.Fatalf("session/delete: %v", err)
+	}
+	if _, err := client.Prompt(ctx, session.SessionID, "请只回答 SHOULD_NOT_RUN。", CloudAgentPromptOptions{
+		CWD:       liveCWD(),
+		InboxMode: CloudAgentInboxPrompt,
+	}); err == nil {
+		t.Fatalf("session/prompt should fail after session/delete")
+	} else if !strings.Contains(strings.ToLower(err.Error()), "rpc error") {
+		t.Fatalf("prompt after delete should return JSON-RPC error, got: %v", err)
+	}
+	if _, err := client.Status(ctx, session.SessionID); err == nil {
+		t.Fatalf("status should fail after session/delete")
+	}
+}
+
+func TestCloudAgentLiveInvalidInboxModeRejected(t *testing.T) {
+	client := newLiveCloudAgentClient(t)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), liveTimeout())
+	defer cancel()
+
+	if _, err := client.Initialize(ctx, CloudAgentClientOptions{
+		ClientName:    "cloudagent-acp-live-invalid-inbox-e2e",
+		ClientTitle:   "CloudAgent ACP Live Invalid Inbox E2E",
+		ClientVersion: "0.1.0",
+	}); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	session, err := client.NewSession(ctx, CloudAgentSessionOptions{CWD: liveCWD()})
+	if err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	defer func() {
+		deleteCtx, deleteCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer deleteCancel()
+		_ = client.DeleteSession(deleteCtx, session.SessionID)
+	}()
+
+	_, err = client.conn.Call(ctx, "session/prompt", map[string]any{
+		"sessionId": session.SessionID,
+		"cwd":       liveCWD(),
+		"prompt":    []map[string]any{{"type": "text", "text": "请只回答 SHOULD_NOT_RUN。"}},
+		"_meta": map[string]any{
+			"cloudagent": map[string]any{"inbox_mode": "invalid_mode"},
+		},
+	})
+	if err == nil {
+		t.Fatal("session/prompt should reject invalid _meta.cloudagent.inbox_mode")
+	}
+	lower := strings.ToLower(err.Error())
+	if !strings.Contains(lower, "inbox") && !strings.Contains(lower, "invalid") {
+		t.Fatalf("invalid inbox error should mention inbox/invalid mode, got: %v", err)
+	}
+	status, err := client.Status(ctx, session.SessionID)
+	if err != nil {
+		t.Fatalf("status after invalid inbox: %v", err)
+	}
+	if status.Closed || status.ReadOnly || status.RuntimeStatus == "prompting" {
+		t.Fatalf("invalid inbox request should not leave session unusable: %s", string(status.Raw))
+	}
+}
+
+func TestCloudAgentLiveLoadReplayDoesNotDuplicateFinalAssistantMessage(t *testing.T) {
+	output := &liveAgentOutput{}
+	client := newLiveCloudAgentClientWithOptions(t, CloudAgentClientOptions{OnNotification: output.notification})
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), liveTimeout())
+	defer cancel()
+
+	if _, err := client.Initialize(ctx, CloudAgentClientOptions{
+		ClientName:    "cloudagent-acp-live-replay-dedupe-e2e",
+		ClientTitle:   "CloudAgent ACP Live Replay Dedupe E2E",
+		ClientVersion: "0.1.0",
+	}); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	session, err := client.NewSession(ctx, CloudAgentSessionOptions{CWD: liveCWD()})
+	if err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	defer func() {
+		deleteCtx, deleteCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer deleteCancel()
+		_ = client.DeleteSession(deleteCtx, session.SessionID)
+	}()
+
+	needle := "REPLAY_DEDUPE_" + strings.ReplaceAll(session.SessionID, "_", "-")
+	result, err := client.Prompt(ctx, session.SessionID, "请只输出 "+needle+"，不要输出其它文字。", CloudAgentPromptOptions{
+		CWD:       liveCWD(),
+		InboxMode: CloudAgentInboxPrompt,
+	})
+	if err != nil {
+		t.Fatalf("seed prompt: %v", err)
+	}
+	if !isNormalStopReason(result.StopReason) {
+		t.Fatalf("unexpected seed stopReason %q raw=%s", result.StopReason, string(result.Raw))
+	}
+
+	for i := 1; i <= 2; i++ {
+		if err := client.Close(); err != nil {
+			t.Fatalf("close connection before load round %d: %v", i, err)
+		}
+		output = &liveAgentOutput{}
+		client = newLiveCloudAgentClientWithOptions(t, CloudAgentClientOptions{OnNotification: output.notification})
+		if _, err := client.Initialize(ctx, CloudAgentClientOptions{
+			ClientName:    fmt.Sprintf("cloudagent-acp-live-replay-dedupe-load-%d", i),
+			ClientTitle:   "CloudAgent ACP Live Replay Dedupe Load",
+			ClientVersion: "0.1.0",
+		}); err != nil {
+			t.Fatalf("initialize load round %d: %v", i, err)
+		}
+		if _, err := client.LoadSession(ctx, session.SessionID, CloudAgentSessionOptions{CWD: liveCWD()}); err != nil {
+			t.Fatalf("session/load round %d: %v", i, err)
+		}
+		got := output.String()
+		if count := strings.Count(got, needle); count != 1 {
+			t.Fatalf("session/load round %d should replay final assistant message once; count=%d want=1 got=%q", i, count, got)
+		}
+	}
+}
+
 func TestCloudAgentLiveCloseResumeFromWorkspace(t *testing.T) {
 	if !liveBool("CLOUDAGENT_ACP_E2E_RESTORE") {
 		t.Skip("set CLOUDAGENT_ACP_E2E_RESTORE=1 to run close/resume restore e2e")
@@ -1390,6 +1592,182 @@ func TestCloudAgentLiveConcurrentEnsureReadyConvergesAfterClose(t *testing.T) {
 		}
 	}
 	if err := client.DeleteSession(ctx, session.SessionID); err != nil {
+		t.Fatalf("session/delete: %v", err)
+	}
+	deleted = true
+}
+
+func TestCloudAgentLiveFollowUpQueuesBehindActivePrompt(t *testing.T) {
+	if !liveBool("CLOUDAGENT_ACP_E2E_INBOX") {
+		t.Skip("set CLOUDAGENT_ACP_E2E_INBOX=1 to run live inbox queue e2e")
+	}
+	activeOutput := &liveAgentOutput{}
+	activeClient := newLiveCloudAgentClientWithOptions(t, CloudAgentClientOptions{OnNotification: activeOutput.notification})
+	defer activeClient.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), liveTimeout())
+	defer cancel()
+
+	if _, err := activeClient.Initialize(ctx, CloudAgentClientOptions{
+		ClientName:    "cloudagent-acp-live-followup-active-e2e",
+		ClientTitle:   "CloudAgent ACP Live FollowUp Active E2E",
+		ClientVersion: "0.1.0",
+	}); err != nil {
+		t.Fatalf("initialize active client: %v", err)
+	}
+	session, err := activeClient.NewSession(ctx, CloudAgentSessionOptions{CWD: liveCWD()})
+	if err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	deleted := false
+	defer func() {
+		if deleted {
+			return
+		}
+		deleteCtx, deleteCancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer deleteCancel()
+		_ = activeClient.DeleteSession(deleteCtx, session.SessionID)
+	}()
+
+	activeMarker := "INBOX_ACTIVE_DONE_" + strings.ReplaceAll(session.SessionID, "_", "-")
+	followMarker := "INBOX_FOLLOWUP_DONE_" + strings.ReplaceAll(session.SessionID, "_", "-")
+	activeDone := make(chan error, 1)
+	go func() {
+		_, err := activeClient.Prompt(ctx, session.SessionID, "请先输出 INBOX_ACTIVE_BEGIN，然后必须调用 terminal 执行 `sleep 6 && echo "+activeMarker+"`。命令结束后只输出终端标记。", CloudAgentPromptOptions{
+			CWD:       liveCWD(),
+			InboxMode: CloudAgentInboxPrompt,
+		})
+		activeDone <- err
+	}()
+	waitForLiveOutputContains(t, ctx, activeOutput, "INBOX_ACTIVE_BEGIN")
+
+	followOutput := &liveAgentOutput{}
+	followClient := newLiveCloudAgentClientWithOptions(t, CloudAgentClientOptions{OnNotification: followOutput.notification})
+	defer followClient.Close()
+	if _, err := followClient.Initialize(ctx, CloudAgentClientOptions{
+		ClientName:    "cloudagent-acp-live-followup-queued-e2e",
+		ClientTitle:   "CloudAgent ACP Live FollowUp Queued E2E",
+		ClientVersion: "0.1.0",
+	}); err != nil {
+		t.Fatalf("initialize followup client: %v", err)
+	}
+	followDone := make(chan error, 1)
+	go func() {
+		result, err := followClient.FollowUp(ctx, session.SessionID, "请只回答 "+followMarker+"。")
+		if err == nil && !isNormalStopReason(result.StopReason) {
+			err = fmt.Errorf("unexpected follow_up stopReason %q raw=%s", result.StopReason, string(result.Raw))
+		}
+		followDone <- err
+	}()
+
+	select {
+	case err := <-activeDone:
+		if err != nil {
+			t.Fatalf("active prompt failed: %v", err)
+		}
+	case <-ctx.Done():
+		t.Fatalf("active prompt did not finish: %v", ctx.Err())
+	}
+	if !strings.Contains(activeOutput.CombinedString(), activeMarker) {
+		t.Fatalf("active prompt missing marker %q: got=%q", activeMarker, activeOutput.CombinedString())
+	}
+	select {
+	case err := <-followDone:
+		if err != nil {
+			t.Fatalf("follow_up prompt failed: %v", err)
+		}
+	case <-ctx.Done():
+		t.Fatalf("follow_up prompt did not finish after active prompt: %v", ctx.Err())
+	}
+	if !strings.Contains(followOutput.CombinedString(), followMarker) {
+		t.Fatalf("follow_up output missing marker %q: got=%q", followMarker, followOutput.CombinedString())
+	}
+	status, err := activeClient.Status(ctx, session.SessionID)
+	if err != nil {
+		t.Fatalf("status after follow_up queue: %v", err)
+	}
+	if status.Closed || status.ReadOnly || status.RuntimeStatus == "prompting" {
+		t.Fatalf("follow_up queue should leave session ready/writable: %s", string(status.Raw))
+	}
+	if err := activeClient.DeleteSession(ctx, session.SessionID); err != nil {
+		t.Fatalf("session/delete: %v", err)
+	}
+	deleted = true
+}
+
+func TestCloudAgentLiveCancelActivePromptSettlesSession(t *testing.T) {
+	if !liveBool("CLOUDAGENT_ACP_E2E_INBOX") {
+		t.Skip("set CLOUDAGENT_ACP_E2E_INBOX=1 to run live cancel inbox e2e")
+	}
+	output := &liveAgentOutput{}
+	client := newLiveCloudAgentClientWithOptions(t, CloudAgentClientOptions{OnNotification: output.notification})
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), liveTimeout())
+	defer cancel()
+
+	if _, err := client.Initialize(ctx, CloudAgentClientOptions{
+		ClientName:    "cloudagent-acp-live-cancel-active-e2e",
+		ClientTitle:   "CloudAgent ACP Live Cancel Active E2E",
+		ClientVersion: "0.1.0",
+	}); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	session, err := client.NewSession(ctx, CloudAgentSessionOptions{CWD: liveCWD()})
+	if err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	deleted := false
+	defer func() {
+		if deleted {
+			return
+		}
+		deleteCtx, deleteCancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer deleteCancel()
+		_ = client.DeleteSession(deleteCtx, session.SessionID)
+	}()
+
+	promptDone := make(chan error, 1)
+	go func() {
+		_, err := client.Prompt(ctx, session.SessionID, "请先输出 INBOX_CANCEL_BEGIN，然后必须调用 terminal 执行 `sleep 30 && echo INBOX_CANCEL_SHOULD_NOT_FINISH`。命令结束后只输出终端标记。", CloudAgentPromptOptions{
+			CWD:       liveCWD(),
+			InboxMode: CloudAgentInboxPrompt,
+		})
+		promptDone <- err
+	}()
+	waitForLiveOutputContains(t, ctx, output, "INBOX_CANCEL_BEGIN")
+
+	control := newLiveCloudAgentClient(t)
+	defer control.Close()
+	if _, err := control.Initialize(ctx, CloudAgentClientOptions{
+		ClientName:    "cloudagent-acp-live-cancel-control-e2e",
+		ClientTitle:   "CloudAgent ACP Live Cancel Control E2E",
+		ClientVersion: "0.1.0",
+	}); err != nil {
+		t.Fatalf("initialize control client: %v", err)
+	}
+	if err := control.AbortSession(ctx, session.SessionID); err != nil {
+		t.Fatalf("session/cancel active prompt: %v", err)
+	}
+	select {
+	case err := <-promptDone:
+		if err != nil {
+			lower := strings.ToLower(err.Error())
+			if !strings.Contains(lower, "cancel") && !strings.Contains(lower, "abort") && !strings.Contains(lower, "closed") {
+				t.Fatalf("active prompt returned unexpected cancel error: %v", err)
+			}
+		}
+	case <-time.After(90 * time.Second):
+		t.Fatal("active prompt did not settle after session/cancel")
+	}
+	if strings.Contains(output.CombinedString(), "INBOX_CANCEL_SHOULD_NOT_FINISH") {
+		t.Fatalf("cancelled prompt still completed long-running command: %q", output.CombinedString())
+	}
+	ready := waitForLiveSessionReady(t, ctx, control, session.SessionID)
+	if ready.Closed || ready.ReadOnly || ready.RuntimeStatus == "prompting" {
+		t.Fatalf("cancel should settle session back to writable ready state: %s", string(ready.Raw))
+	}
+	if err := control.DeleteSession(ctx, session.SessionID); err != nil {
 		t.Fatalf("session/delete: %v", err)
 	}
 	deleted = true
