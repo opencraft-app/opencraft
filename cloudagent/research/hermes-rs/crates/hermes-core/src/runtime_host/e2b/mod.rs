@@ -376,12 +376,14 @@ impl SessionSandbox {
         command: &str,
         envs: &HashMap<String, String>,
     ) -> Result<CommandResult> {
-        let command = format!("cd {} && {}", shell_quote(&self.workspace_root), command);
         let command = match self.command_prefix.as_deref() {
             Some(prefix) if !prefix.trim().is_empty() => {
+                // command_prefix is a capability host boundary such as Wisp exec.
+                // The target runtime may not expose the outer /workspace path, so
+                // prefixed commands must rely on their own absolute paths.
                 format!("{prefix} {}", shell_quote(&command))
             }
-            _ => command,
+            _ => format!("cd {} && {}", shell_quote(&self.workspace_root), command),
         };
         let inner = self.inner.lock().await;
         inner
@@ -534,10 +536,16 @@ impl SessionSandbox {
                     remote_path, result.exit_code, result.stdout, result.stderr
                 )));
             }
-            let encoded = result.stdout.trim();
+            let encoded = workspace_file_download_base64_output(&result.stdout);
             return STANDARD
-                .decode(encoded)
-                .map_err(|error| Error::ParseResponse(error.to_string()));
+                .decode(encoded.as_bytes())
+                .map_err(|error| {
+                    Error::ParseResponse(format!(
+                        "{}; workspace download stdout={}",
+                        error,
+                        preview_for_error(&result.stdout)
+                    ))
+                });
         }
         let inner = self.inner.lock().await;
         inner
@@ -808,6 +816,63 @@ fn workspace_file_download_command(remote_path: &str) -> String {
         "set -e\npath={path}\ntest -f \"$path\"\nbase64 \"$path\" | tr -d '\\n'\n",
         path = shell_quote(remote_path)
     )
+}
+
+fn workspace_file_download_base64_output(stdout: &str) -> String {
+    let trimmed = stdout.trim();
+    if let Some(output) = workspace_file_download_json_output(trimmed) {
+        return output;
+    }
+    let mut streamed = String::new();
+    let mut saw_json_line = false;
+    for line in trimmed.lines().map(str::trim).filter(|line| !line.is_empty()) {
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(line) {
+            saw_json_line = true;
+            if let Some(chunk) = workspace_file_download_value_output(&value) {
+                streamed.push_str(chunk.trim());
+            }
+        }
+    }
+    if saw_json_line && !streamed.is_empty() {
+        return streamed;
+    }
+    trimmed.to_string()
+}
+
+fn workspace_file_download_json_output(trimmed: &str) -> Option<String> {
+    let value = serde_json::from_str::<serde_json::Value>(trimmed).ok()?;
+    workspace_file_download_value_output(&value).map(|value| value.trim().to_string())
+}
+
+fn workspace_file_download_value_output(value: &serde_json::Value) -> Option<&str> {
+    for pointer in [
+        "/stdout",
+        "/output",
+        "/result/stdout",
+        "/result/output",
+        "/data/stdout",
+        "/data/output",
+        "/event/data/stdout",
+        "/event/data/output",
+    ] {
+        if let Some(value) = value.pointer(pointer).and_then(|value| value.as_str()) {
+            return Some(value);
+        }
+    }
+    None
+}
+
+fn preview_for_error(value: &str) -> String {
+    const LIMIT: usize = 512;
+    let mut preview = value.trim().chars().take(LIMIT).collect::<String>();
+    preview = preview
+        .replace('\r', "\\r")
+        .replace('\n', "\\n")
+        .replace('\t', "\\t");
+    if value.chars().count() > LIMIT {
+        preview.push_str("...");
+    }
+    preview
 }
 
 #[async_trait::async_trait]

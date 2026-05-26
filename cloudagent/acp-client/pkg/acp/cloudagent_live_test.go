@@ -3,6 +3,7 @@ package acp
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -2646,6 +2647,697 @@ func TestCloudAgentLiveEnvdUploadDownloadThenAgentListBehavior(t *testing.T) {
 	}
 }
 
+func TestCloudAgentLiveWorkspaceHTTPTransferRoundTripWithAgentInnerSandbox(t *testing.T) {
+	output := &liveAgentOutput{}
+	client := newLiveCloudAgentClientWithOptions(t, CloudAgentClientOptions{
+		OnNotification: output.notification,
+	})
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), liveTimeout())
+	defer cancel()
+
+	if _, err := client.Initialize(ctx, CloudAgentClientOptions{
+		ClientName:    "cloudagent-acp-live-workspace-http-transfer-e2e",
+		ClientTitle:   "CloudAgent ACP Live Workspace HTTP Transfer E2E",
+		ClientVersion: "0.1.0",
+	}); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+
+	session, err := client.NewSession(ctx, CloudAgentSessionOptions{CWD: liveCWD()})
+	if err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	deleted := false
+	defer func() {
+		if !deleted {
+			deleteCtx, deleteCancel := context.WithTimeout(context.Background(), 3*time.Minute)
+			defer deleteCancel()
+			_ = client.DeleteSession(deleteCtx, session.SessionID)
+		}
+	}()
+
+	uploadPath := "/workspace/e2e/http-upload-visible.txt"
+	uploadMarker := "cloudagent-http-upload-visible-" + strings.ReplaceAll(session.SessionID, "_", "-")
+	uploadBody := []byte("CLOUDAGENT_HTTP_UPLOAD_VISIBLE\n" + uploadMarker + "\n")
+	liveUploadEnvdFile(t, ctx, session.SessionID, uploadPath, "text/plain", uploadBody)
+	if got := string(liveDownloadEnvdFile(t, ctx, session.SessionID, uploadPath)); got != string(uploadBody) {
+		t.Fatalf("HTTP download of HTTP-uploaded file mismatch: want=%q got=%q", string(uploadBody), got)
+	}
+	afterUpload, err := client.Status(ctx, session.SessionID)
+	if err != nil {
+		t.Fatalf("status after HTTP upload/download: %v", err)
+	}
+	assertLiveWispWorkspaceStatus(t, afterUpload, "after HTTP upload/download")
+	if !afterUpload.Sandbox.HasInnerEnvdTarget {
+		t.Fatalf("HTTP workspace upload should ensure an inner workspace runtime target: %s", string(afterUpload.Raw))
+	}
+
+	result, err := client.Prompt(ctx, session.SessionID, "必须调用 terminal 执行 `ls -la /workspace/e2e && cat "+uploadPath+"`。命令结束后只输出终端里的文件名和 cloudagent-http-upload-visible 标记。", CloudAgentPromptOptions{
+		CWD:       liveCWD(),
+		InboxMode: CloudAgentInboxPrompt,
+	})
+	if err != nil {
+		t.Fatalf("agent list/cat HTTP-uploaded workspace file: %v", err)
+	}
+	if !isNormalStopReason(result.StopReason) {
+		t.Fatalf("unexpected upload-visible stopReason %q raw=%s", result.StopReason, string(result.Raw))
+	}
+	outputText := output.CombinedString()
+	for _, want := range []string{"http-upload-visible.txt", "CLOUDAGENT_HTTP_UPLOAD_VISIBLE", uploadMarker} {
+		if !strings.Contains(outputText, want) {
+			t.Fatalf("agent could not see HTTP-uploaded workspace file %q: got=%q raw=%s", want, outputText, string(result.Raw))
+		}
+	}
+	for _, forbidden := range []string{"No such file", "HTTP 500", "openresty", "sandbox-host process.exec HTTP transport failed", "sandbox-host fs.list HTTP transport failed"} {
+		if strings.Contains(outputText, forbidden) {
+			t.Fatalf("HTTP upload visibility surfaced failure %q: got=%q raw=%s", forbidden, outputText, string(result.Raw))
+		}
+	}
+	afterAgentRead, err := client.Status(ctx, session.SessionID)
+	if err != nil {
+		t.Fatalf("status after agent reads HTTP-uploaded file: %v", err)
+	}
+	assertLiveWispWorkspaceStatus(t, afterAgentRead, "after agent reads HTTP-uploaded file")
+	if !afterAgentRead.Sandbox.HasInnerEnvdTarget {
+		t.Fatalf("agent file read should bind an inner workspace runtime: %s", string(afterAgentRead.Raw))
+	}
+
+	output.Reset()
+	downloadPath := "/workspace/e2e/http-download-from-agent.txt"
+	downloadMarker := "cloudagent-http-download-visible-" + strings.ReplaceAll(session.SessionID, "_", "-")
+	write, err := client.Prompt(ctx, session.SessionID, "必须调用 terminal 执行 `printf 'CLOUDAGENT_HTTP_DOWNLOAD_VISIBLE\\n"+downloadMarker+"\\n' > "+downloadPath+" && sync && ls -la /workspace/e2e && cat "+downloadPath+"`。命令结束后只输出终端里的文件名和 cloudagent-http-download-visible 标记。", CloudAgentPromptOptions{
+		CWD:       liveCWD(),
+		InboxMode: CloudAgentInboxPrompt,
+	})
+	if err != nil {
+		t.Fatalf("agent write workspace file for HTTP download: %v", err)
+	}
+	if !isNormalStopReason(write.StopReason) {
+		t.Fatalf("unexpected download-visible stopReason %q raw=%s", write.StopReason, string(write.Raw))
+	}
+	if !strings.Contains(output.CombinedString(), downloadMarker) {
+		t.Fatalf("agent write output missing marker %q: got=%q raw=%s", downloadMarker, output.CombinedString(), string(write.Raw))
+	}
+	downloaded := string(liveDownloadEnvdFile(t, ctx, session.SessionID, downloadPath))
+	for _, want := range []string{"CLOUDAGENT_HTTP_DOWNLOAD_VISIBLE", downloadMarker} {
+		if !strings.Contains(downloaded, want) {
+			t.Fatalf("HTTP download could not read agent-written workspace file %q: got=%q", want, downloaded)
+		}
+	}
+
+	if err := client.DeleteSession(ctx, session.SessionID); err != nil {
+		t.Fatalf("session/delete: %v", err)
+	}
+	deleted = true
+}
+
+func TestCloudAgentLiveWorkspaceHTTPTransferPersistsAcrossWispRestore(t *testing.T) {
+	if !liveBool("CLOUDAGENT_ACP_E2E_RESTORE") {
+		t.Skip("set CLOUDAGENT_ACP_E2E_RESTORE=1 to run Wisp-backed workspace transfer restore e2e")
+	}
+	output := &liveAgentOutput{}
+	client := newLiveCloudAgentClientWithOptions(t, CloudAgentClientOptions{
+		OnNotification: output.notification,
+	})
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), liveTimeout())
+	defer cancel()
+
+	if _, err := client.Initialize(ctx, CloudAgentClientOptions{
+		ClientName:    "cloudagent-acp-live-workspace-http-transfer-restore-e2e",
+		ClientTitle:   "CloudAgent ACP Live Workspace HTTP Transfer Restore E2E",
+		ClientVersion: "0.1.0",
+	}); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+
+	session, err := client.NewSession(ctx, CloudAgentSessionOptions{CWD: liveCWD()})
+	if err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	deleted := false
+	defer func() {
+		if !deleted {
+			deleteCtx, deleteCancel := context.WithTimeout(context.Background(), 3*time.Minute)
+			defer deleteCancel()
+			_ = client.DeleteSession(deleteCtx, session.SessionID)
+		}
+	}()
+
+	uploadPath := "/workspace/e2e/wisp-restore-http-upload.txt"
+	uploadMarker := "cloudagent-wisp-restore-http-upload-" + strings.ReplaceAll(session.SessionID, "_", "-")
+	liveUploadEnvdFile(t, ctx, session.SessionID, uploadPath, "text/plain", []byte("CLOUDAGENT_WISP_RESTORE_HTTP_UPLOAD\n"+uploadMarker+"\n"))
+	waitForLiveEnvdFileContains(t, ctx, session.SessionID, uploadPath, uploadMarker)
+
+	agentPath := "/workspace/e2e/wisp-restore-agent-write.txt"
+	agentMarker := "cloudagent-wisp-restore-agent-write-" + strings.ReplaceAll(session.SessionID, "_", "-")
+	write, err := client.Prompt(ctx, session.SessionID, "必须调用 terminal 执行 `printf 'CLOUDAGENT_WISP_RESTORE_AGENT_WRITE\\n"+agentMarker+"\\n' > "+agentPath+" && sync && cat "+uploadPath+" && cat "+agentPath+"`。命令结束后只输出终端里的两个 cloudagent-wisp-restore 标记。", CloudAgentPromptOptions{
+		CWD:       liveCWD(),
+		InboxMode: CloudAgentInboxPrompt,
+	})
+	if err != nil {
+		t.Fatalf("agent write before Wisp restore: %v", err)
+	}
+	if !isNormalStopReason(write.StopReason) {
+		t.Fatalf("unexpected pre-restore write stopReason %q raw=%s", write.StopReason, string(write.Raw))
+	}
+	outputText := output.CombinedString()
+	for _, want := range []string{uploadMarker, agentMarker} {
+		if !strings.Contains(outputText, want) {
+			t.Fatalf("pre-restore agent output missing %q: got=%q raw=%s", want, outputText, string(write.Raw))
+		}
+	}
+
+	beforeClose, err := client.Status(ctx, session.SessionID)
+	if err != nil {
+		t.Fatalf("status before Wisp restore close: %v", err)
+	}
+	assertLiveWispWorkspaceStatus(t, beforeClose, "before Wisp restore close")
+	oldOuter := beforeClose.Sandbox.OuterSandboxID
+	oldSpace := beforeClose.Sandbox.WispSMHSpaceID
+	if oldOuter == "" || oldSpace == "" || !beforeClose.Sandbox.HasInnerEnvdTarget {
+		t.Fatalf("before close missing live Wisp/inner identity: %s", string(beforeClose.Raw))
+	}
+
+	if err := client.CloseSession(ctx, session.SessionID); err != nil {
+		t.Fatalf("session/close before Wisp restore: %v", err)
+	}
+	afterClose, err := client.Status(ctx, session.SessionID)
+	if err != nil {
+		t.Fatalf("status after Wisp restore close: %v", err)
+	}
+	if !afterClose.Closed || afterClose.Sandbox.OuterSandboxID != "" || afterClose.Sandbox.HasInnerEnvdTarget {
+		t.Fatalf("close should clear live sandbox targets: %s", string(afterClose.Raw))
+	}
+	if afterClose.Sandbox.WispSMHSpaceID != oldSpace || !afterClose.WorkspacePersistent {
+		t.Fatalf("close should keep Wisp workspace anchor: before_space=%s raw=%s", oldSpace, string(afterClose.Raw))
+	}
+
+	if _, err := client.ResumeSession(ctx, session.SessionID, CloudAgentSessionOptions{CWD: liveCWD()}); err != nil {
+		t.Fatalf("session/resume after Wisp restore close: %v", err)
+	}
+	afterResume := waitForLiveEnsureRuntimeReady(t, ctx, client, session.SessionID)
+	assertLiveWispWorkspaceStatus(t, afterResume, "after Wisp restore resume")
+	if afterResume.Sandbox.OuterSandboxID == "" || afterResume.Sandbox.OuterSandboxID == oldOuter || !afterResume.Sandbox.HasInnerEnvdTarget {
+		t.Fatalf("resume should recreate outer and inner runtime targets: old_outer=%s raw=%s", oldOuter, string(afterResume.Raw))
+	}
+	if afterResume.Sandbox.WispSMHSpaceID != oldSpace {
+		t.Fatalf("resume should keep Wisp workspace anchor: before_space=%s raw=%s", oldSpace, string(afterResume.Raw))
+	}
+
+	for _, check := range []struct {
+		path   string
+		marker string
+	}{
+		{path: uploadPath, marker: uploadMarker},
+		{path: agentPath, marker: agentMarker},
+	} {
+		if got := string(liveDownloadEnvdFile(t, ctx, session.SessionID, check.path)); !strings.Contains(got, check.marker) {
+			t.Fatalf("HTTP download after Wisp restore missing marker %q from %s: got=%q", check.marker, check.path, got)
+		}
+	}
+
+	output.Reset()
+	read, err := client.Prompt(ctx, session.SessionID, "必须调用 terminal 执行 `cat "+uploadPath+" && cat "+agentPath+"`。命令结束后只输出终端里的两个 cloudagent-wisp-restore 标记。", CloudAgentPromptOptions{
+		CWD:       liveCWD(),
+		InboxMode: CloudAgentInboxPrompt,
+	})
+	if err != nil {
+		t.Fatalf("agent read after Wisp restore: %v", err)
+	}
+	if !isNormalStopReason(read.StopReason) {
+		t.Fatalf("unexpected post-restore read stopReason %q raw=%s", read.StopReason, string(read.Raw))
+	}
+	outputText = output.CombinedString()
+	for _, want := range []string{uploadMarker, agentMarker} {
+		if !strings.Contains(outputText, want) {
+			t.Fatalf("post-restore agent output missing %q: got=%q raw=%s", want, outputText, string(read.Raw))
+		}
+	}
+	for _, forbidden := range []string{"No such file", "runtime_not_recovered", "HTTP 500", "openresty", "sandbox-host process.exec HTTP transport failed", "sandbox-host fs.list HTTP transport failed"} {
+		if strings.Contains(outputText, forbidden) {
+			t.Fatalf("post-restore transfer surfaced forbidden failure %q: got=%q raw=%s", forbidden, outputText, string(read.Raw))
+		}
+	}
+
+	if err := client.DeleteSession(ctx, session.SessionID); err != nil {
+		t.Fatalf("session/delete: %v", err)
+	}
+	deleted = true
+}
+
+func TestCloudAgentLiveWorkspaceHTTPUploadVisibleToFileTools(t *testing.T) {
+	output := &liveAgentOutput{}
+	client := newLiveCloudAgentClientWithOptions(t, CloudAgentClientOptions{
+		OnNotification: output.notification,
+	})
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), liveTimeout())
+	defer cancel()
+
+	if _, err := client.Initialize(ctx, CloudAgentClientOptions{
+		ClientName:    "cloudagent-acp-live-workspace-http-file-tools-e2e",
+		ClientTitle:   "CloudAgent ACP Live Workspace HTTP File Tools E2E",
+		ClientVersion: "0.1.0",
+	}); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+
+	session, err := client.NewSession(ctx, CloudAgentSessionOptions{CWD: liveCWD()})
+	if err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	deleted := false
+	defer func() {
+		if !deleted {
+			deleteCtx, deleteCancel := context.WithTimeout(context.Background(), 3*time.Minute)
+			defer deleteCancel()
+			_ = client.DeleteSession(deleteCtx, session.SessionID)
+		}
+	}()
+
+	remotePath := "/workspace/e2e/list-tool-visible/nested/file-list-visible.txt"
+	marker := "cloudagent-file-list-visible-" + strings.ReplaceAll(session.SessionID, "_", "-")
+	body := []byte("CLOUDAGENT_FILE_LIST_VISIBLE\n" + marker + "\n")
+	liveUploadEnvdFile(t, ctx, session.SessionID, remotePath, "text/plain", body)
+	if got := string(liveDownloadEnvdFile(t, ctx, session.SessionID, remotePath)); got != string(body) {
+		t.Fatalf("HTTP download of file-tools upload mismatch: want=%q got=%q", string(body), got)
+	}
+	afterUpload, err := client.Status(ctx, session.SessionID)
+	if err != nil {
+		t.Fatalf("status after file-tools upload: %v", err)
+	}
+	assertLiveWispWorkspaceStatus(t, afterUpload, "after file-tools upload")
+	if !afterUpload.Sandbox.HasInnerEnvdTarget {
+		t.Fatalf("HTTP upload should ensure inner runtime before file tools read it: %s", string(afterUpload.Raw))
+	}
+
+	result, err := client.Prompt(ctx, session.SessionID, "必须先调用 file_list 工具，参数 path=/workspace/e2e/list-tool-visible、recursive=true、includeHidden=true；然后调用 file_read 工具读取 /workspace/e2e/list-tool-visible/nested/file-list-visible.txt。最后只输出工具看到的文件名和 cloudagent-file-list-visible 标记，不要用 terminal。", CloudAgentPromptOptions{
+		CWD:       liveCWD(),
+		InboxMode: CloudAgentInboxPrompt,
+	})
+	if err != nil {
+		t.Fatalf("file tools prompt for HTTP-uploaded workspace file: %v", err)
+	}
+	if !isNormalStopReason(result.StopReason) {
+		t.Fatalf("unexpected file-tools stopReason %q raw=%s", result.StopReason, string(result.Raw))
+	}
+	outputText := output.CombinedString()
+	for _, want := range []string{"file_list", "file-list-visible.txt", "CLOUDAGENT_FILE_LIST_VISIBLE", marker} {
+		if !strings.Contains(outputText, want) {
+			t.Fatalf("file tools output missing %q: got=%q raw=%s", want, outputText, string(result.Raw))
+		}
+	}
+	if !strings.Contains(outputText, "file_read") && !strings.Contains(outputText, "read_file") {
+		t.Fatalf("file tools output missing file_read/read_file tool call: got=%q raw=%s", outputText, string(result.Raw))
+	}
+	for _, forbidden := range []string{"No such file", "Path does not exist", "Session sandbox is not available", "HTTP 500", "openresty", "sandbox-host fs.list HTTP transport failed"} {
+		if strings.Contains(outputText, forbidden) {
+			t.Fatalf("file tools surfaced forbidden failure %q: got=%q raw=%s", forbidden, outputText, string(result.Raw))
+		}
+	}
+
+	if err := client.DeleteSession(ctx, session.SessionID); err != nil {
+		t.Fatalf("session/delete: %v", err)
+	}
+	deleted = true
+}
+
+func TestCloudAgentLiveWorkspaceHTTPTransferPreservesEscapedPathTextContent(t *testing.T) {
+	output := &liveAgentOutput{}
+	client := newLiveCloudAgentClientWithOptions(t, CloudAgentClientOptions{
+		OnNotification: output.notification,
+	})
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), liveTimeout())
+	defer cancel()
+
+	if _, err := client.Initialize(ctx, CloudAgentClientOptions{
+		ClientName:    "cloudagent-acp-live-workspace-http-escaped-path-e2e",
+		ClientTitle:   "CloudAgent ACP Live Workspace HTTP Escaped Path E2E",
+		ClientVersion: "0.1.0",
+	}); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+
+	session, err := client.NewSession(ctx, CloudAgentSessionOptions{CWD: liveCWD()})
+	if err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	deleted := false
+	defer func() {
+		if !deleted {
+			deleteCtx, deleteCancel := context.WithTimeout(context.Background(), 3*time.Minute)
+			defer deleteCancel()
+			_ = client.DeleteSession(deleteCtx, session.SessionID)
+		}
+	}()
+
+	remotePath := "/workspace/e2e/path with spaces/text-data.txt"
+	marker := "cloudagent-escaped-path-" + strings.ReplaceAll(session.SessionID, "_", "-")
+	body := []byte("CLOUDAGENT_ESCAPED_PATH\n" + marker + "\n")
+	liveUploadEnvdFile(t, ctx, session.SessionID, remotePath, "text/plain", body)
+	if got := liveDownloadEnvdFile(t, ctx, session.SessionID, remotePath); !bytes.Equal(got, body) {
+		t.Fatalf("escaped path HTTP round trip mismatch: want=%q got=%q", string(body), string(got))
+	}
+	afterUpload, err := client.Status(ctx, session.SessionID)
+	if err != nil {
+		t.Fatalf("status after escaped path upload: %v", err)
+	}
+	assertLiveWispWorkspaceStatus(t, afterUpload, "after escaped path upload")
+	if !afterUpload.Sandbox.HasInnerEnvdTarget {
+		t.Fatalf("escaped path HTTP upload should ensure an inner workspace runtime target: %s", string(afterUpload.Raw))
+	}
+
+	result, err := client.Prompt(ctx, session.SessionID, "必须调用 terminal 执行 `ls -la '/workspace/e2e/path with spaces' && cat '/workspace/e2e/path with spaces/text-data.txt'`。命令结束后只输出终端里的 text-data.txt 文件名和 cloudagent-escaped-path 标记。", CloudAgentPromptOptions{
+		CWD:       liveCWD(),
+		InboxMode: CloudAgentInboxPrompt,
+	})
+	if err != nil {
+		t.Fatalf("agent read escaped path HTTP-uploaded workspace file: %v", err)
+	}
+	if !isNormalStopReason(result.StopReason) {
+		t.Fatalf("unexpected escaped path stopReason %q raw=%s", result.StopReason, string(result.Raw))
+	}
+	outputText := output.CombinedString()
+	for _, want := range []string{"text-data.txt", "CLOUDAGENT_ESCAPED_PATH", marker} {
+		if !strings.Contains(outputText, want) {
+			t.Fatalf("escaped path agent output missing %q: got=%q raw=%s", want, outputText, string(result.Raw))
+		}
+	}
+	for _, forbidden := range []string{"No such file", "HTTP 500", "openresty", "sandbox-host process.exec HTTP transport failed"} {
+		if strings.Contains(outputText, forbidden) {
+			t.Fatalf("escaped path transfer surfaced forbidden failure %q: got=%q raw=%s", forbidden, outputText, string(result.Raw))
+		}
+	}
+
+	if err := client.DeleteSession(ctx, session.SessionID); err != nil {
+		t.Fatalf("session/delete: %v", err)
+	}
+	deleted = true
+}
+
+func TestCloudAgentLiveWorkspaceHTTPUploadOverwritesActiveInnerFile(t *testing.T) {
+	output := &liveAgentOutput{}
+	client := newLiveCloudAgentClientWithOptions(t, CloudAgentClientOptions{
+		OnNotification: output.notification,
+	})
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), liveTimeout())
+	defer cancel()
+
+	if _, err := client.Initialize(ctx, CloudAgentClientOptions{
+		ClientName:    "cloudagent-acp-live-workspace-http-overwrite-e2e",
+		ClientTitle:   "CloudAgent ACP Live Workspace HTTP Overwrite E2E",
+		ClientVersion: "0.1.0",
+	}); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+
+	session, err := client.NewSession(ctx, CloudAgentSessionOptions{CWD: liveCWD()})
+	if err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	deleted := false
+	defer func() {
+		if !deleted {
+			deleteCtx, deleteCancel := context.WithTimeout(context.Background(), 3*time.Minute)
+			defer deleteCancel()
+			_ = client.DeleteSession(deleteCtx, session.SessionID)
+		}
+	}()
+
+	remotePath := "/workspace/e2e/overwrite-active-inner.txt"
+	oldMarker := "cloudagent-overwrite-old-" + strings.ReplaceAll(session.SessionID, "_", "-")
+	newMarker := "cloudagent-overwrite-new-" + strings.ReplaceAll(session.SessionID, "_", "-")
+	create, err := client.Prompt(ctx, session.SessionID, "必须调用 terminal 执行 `mkdir -p /workspace/e2e && printf 'CLOUDAGENT_OVERWRITE_OLD\\n"+oldMarker+"\\n' > "+remotePath+" && cat "+remotePath+"`。命令结束后只输出终端里的 cloudagent-overwrite-old 标记。", CloudAgentPromptOptions{
+		CWD:       liveCWD(),
+		InboxMode: CloudAgentInboxPrompt,
+	})
+	if err != nil {
+		t.Fatalf("agent create file before HTTP overwrite: %v", err)
+	}
+	if !isNormalStopReason(create.StopReason) {
+		t.Fatalf("unexpected overwrite-create stopReason %q raw=%s", create.StopReason, string(create.Raw))
+	}
+	if !strings.Contains(output.CombinedString(), oldMarker) {
+		t.Fatalf("pre-overwrite agent output missing old marker %q: got=%q raw=%s", oldMarker, output.CombinedString(), string(create.Raw))
+	}
+	beforeUpload, err := client.Status(ctx, session.SessionID)
+	if err != nil {
+		t.Fatalf("status before HTTP overwrite: %v", err)
+	}
+	assertLiveWispWorkspaceStatus(t, beforeUpload, "before HTTP overwrite")
+	if !beforeUpload.Sandbox.HasInnerEnvdTarget {
+		t.Fatalf("pre-overwrite prompt should have active inner runtime: %s", string(beforeUpload.Raw))
+	}
+
+	newBody := []byte("CLOUDAGENT_OVERWRITE_NEW\n" + newMarker + "\n")
+	liveUploadEnvdFile(t, ctx, session.SessionID, remotePath, "text/plain", newBody)
+	if got := string(liveDownloadEnvdFile(t, ctx, session.SessionID, remotePath)); got != string(newBody) {
+		t.Fatalf("HTTP download after overwrite mismatch: want=%q got=%q", string(newBody), got)
+	}
+
+	output.Reset()
+	read, err := client.Prompt(ctx, session.SessionID, "必须调用 terminal 执行 `cat "+remotePath+"`。命令结束后只输出终端里的 cloudagent-overwrite-new 标记。", CloudAgentPromptOptions{
+		CWD:       liveCWD(),
+		InboxMode: CloudAgentInboxPrompt,
+	})
+	if err != nil {
+		t.Fatalf("agent read after HTTP overwrite: %v", err)
+	}
+	if !isNormalStopReason(read.StopReason) {
+		t.Fatalf("unexpected overwrite-read stopReason %q raw=%s", read.StopReason, string(read.Raw))
+	}
+	outputText := output.CombinedString()
+	if !strings.Contains(outputText, newMarker) {
+		t.Fatalf("post-overwrite agent output missing new marker %q: got=%q raw=%s", newMarker, outputText, string(read.Raw))
+	}
+	if strings.Contains(outputText, oldMarker) {
+		t.Fatalf("post-overwrite agent output still contains old marker %q: got=%q raw=%s", oldMarker, outputText, string(read.Raw))
+	}
+	for _, forbidden := range []string{"No such file", "HTTP 500", "openresty", "sandbox-host process.exec HTTP transport failed"} {
+		if strings.Contains(outputText, forbidden) {
+			t.Fatalf("overwrite surfaced forbidden failure %q: got=%q raw=%s", forbidden, outputText, string(read.Raw))
+		}
+	}
+
+	if err := client.DeleteSession(ctx, session.SessionID); err != nil {
+		t.Fatalf("session/delete: %v", err)
+	}
+	deleted = true
+}
+
+func TestCloudAgentLiveWorkspaceHTTPTransferSurvivesSessionLoadReconnect(t *testing.T) {
+	output := &liveAgentOutput{}
+	client := newLiveCloudAgentClientWithOptions(t, CloudAgentClientOptions{
+		OnNotification: output.notification,
+	})
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), liveTimeout())
+	defer cancel()
+
+	if _, err := client.Initialize(ctx, CloudAgentClientOptions{
+		ClientName:    "cloudagent-acp-live-workspace-http-load-reconnect-e2e",
+		ClientTitle:   "CloudAgent ACP Live Workspace HTTP Load Reconnect E2E",
+		ClientVersion: "0.1.0",
+	}); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+
+	session, err := client.NewSession(ctx, CloudAgentSessionOptions{CWD: liveCWD()})
+	if err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	deleted := false
+	defer func() {
+		if !deleted {
+			deleteCtx, deleteCancel := context.WithTimeout(context.Background(), 3*time.Minute)
+			defer deleteCancel()
+			_ = client.DeleteSession(deleteCtx, session.SessionID)
+		}
+	}()
+
+	uploadPath := "/workspace/e2e/load-reconnect-http-upload.txt"
+	uploadMarker := "cloudagent-load-reconnect-upload-" + strings.ReplaceAll(session.SessionID, "_", "-")
+	liveUploadEnvdFile(t, ctx, session.SessionID, uploadPath, "text/plain", []byte("CLOUDAGENT_LOAD_RECONNECT_UPLOAD\n"+uploadMarker+"\n"))
+
+	agentPath := "/workspace/e2e/load-reconnect-agent-write.txt"
+	agentMarker := "cloudagent-load-reconnect-agent-" + strings.ReplaceAll(session.SessionID, "_", "-")
+	write, err := client.Prompt(ctx, session.SessionID, "必须调用 terminal 执行 `printf 'CLOUDAGENT_LOAD_RECONNECT_AGENT\\n"+agentMarker+"\\n' > "+agentPath+" && sync && cat "+uploadPath+" && cat "+agentPath+"`。命令结束后只输出终端里的两个 cloudagent-load-reconnect 标记。", CloudAgentPromptOptions{
+		CWD:       liveCWD(),
+		InboxMode: CloudAgentInboxPrompt,
+	})
+	if err != nil {
+		t.Fatalf("agent write before session/load reconnect: %v", err)
+	}
+	if !isNormalStopReason(write.StopReason) {
+		t.Fatalf("unexpected load-reconnect write stopReason %q raw=%s", write.StopReason, string(write.Raw))
+	}
+	outputText := output.CombinedString()
+	for _, want := range []string{uploadMarker, agentMarker} {
+		if !strings.Contains(outputText, want) {
+			t.Fatalf("pre-load reconnect output missing %q: got=%q raw=%s", want, outputText, string(write.Raw))
+		}
+	}
+	beforeLoad, err := client.Status(ctx, session.SessionID)
+	if err != nil {
+		t.Fatalf("status before load reconnect: %v", err)
+	}
+	assertLiveWispWorkspaceStatus(t, beforeLoad, "before load reconnect")
+	if !beforeLoad.Sandbox.HasInnerEnvdTarget {
+		t.Fatalf("pre-load reconnect should have active inner runtime: %s", string(beforeLoad.Raw))
+	}
+
+	reconnectedOutput := &liveAgentOutput{}
+	reconnected := newLiveCloudAgentClientWithOptions(t, CloudAgentClientOptions{
+		OnNotification: reconnectedOutput.notification,
+	})
+	defer reconnected.Close()
+	if _, err := reconnected.Initialize(ctx, CloudAgentClientOptions{
+		ClientName:    "cloudagent-acp-live-workspace-http-load-reconnect-client",
+		ClientTitle:   "CloudAgent ACP Live Workspace HTTP Load Reconnect Client",
+		ClientVersion: "0.1.0",
+	}); err != nil {
+		t.Fatalf("initialize reconnect client: %v", err)
+	}
+	if _, err := reconnected.LoadSession(ctx, session.SessionID, CloudAgentSessionOptions{CWD: liveCWD()}); err != nil {
+		t.Fatalf("session/load reconnect: %v", err)
+	}
+	afterLoad, err := reconnected.Status(ctx, session.SessionID)
+	if err != nil {
+		t.Fatalf("status after load reconnect: %v", err)
+	}
+	assertLiveWispWorkspaceStatus(t, afterLoad, "after load reconnect")
+	if afterLoad.Closed || afterLoad.ReadOnly || !afterLoad.Sandbox.HasInnerEnvdTarget {
+		t.Fatalf("session/load reconnect should keep live workspace writable: %s", string(afterLoad.Raw))
+	}
+	if afterLoad.Sandbox.WispSMHSpaceID != beforeLoad.Sandbox.WispSMHSpaceID {
+		t.Fatalf("session/load reconnect should keep Wisp anchor: before=%s raw=%s", beforeLoad.Sandbox.WispSMHSpaceID, string(afterLoad.Raw))
+	}
+
+	for _, check := range []struct {
+		path   string
+		marker string
+	}{
+		{path: uploadPath, marker: uploadMarker},
+		{path: agentPath, marker: agentMarker},
+	} {
+		if got := string(liveDownloadEnvdFile(t, ctx, session.SessionID, check.path)); !strings.Contains(got, check.marker) {
+			t.Fatalf("HTTP download after session/load reconnect missing marker %q from %s: got=%q", check.marker, check.path, got)
+		}
+	}
+
+	read, err := reconnected.Prompt(ctx, session.SessionID, "必须调用 terminal 执行 `cat "+uploadPath+" && cat "+agentPath+"`。命令结束后只输出终端里的两个 cloudagent-load-reconnect 标记。", CloudAgentPromptOptions{
+		CWD:       liveCWD(),
+		InboxMode: CloudAgentInboxPrompt,
+	})
+	if err != nil {
+		t.Fatalf("agent read after session/load reconnect: %v", err)
+	}
+	if !isNormalStopReason(read.StopReason) {
+		t.Fatalf("unexpected load-reconnect read stopReason %q raw=%s", read.StopReason, string(read.Raw))
+	}
+	outputText = reconnectedOutput.CombinedString()
+	for _, want := range []string{uploadMarker, agentMarker} {
+		if !strings.Contains(outputText, want) {
+			t.Fatalf("post-load reconnect output missing %q: got=%q raw=%s", want, outputText, string(read.Raw))
+		}
+	}
+	for _, forbidden := range []string{"No such file", "runtime_not_recovered", "HTTP 500", "openresty", "sandbox-host process.exec HTTP transport failed"} {
+		if strings.Contains(outputText, forbidden) {
+			t.Fatalf("load reconnect surfaced forbidden failure %q: got=%q raw=%s", forbidden, outputText, string(read.Raw))
+		}
+	}
+
+	if err := reconnected.DeleteSession(ctx, session.SessionID); err != nil {
+		t.Fatalf("session/delete: %v", err)
+	}
+	deleted = true
+}
+
+func TestCloudAgentLiveWorkspaceHTTPTransferPreservesBinaryContent(t *testing.T) {
+	output := &liveAgentOutput{}
+	client := newLiveCloudAgentClientWithOptions(t, CloudAgentClientOptions{
+		OnNotification: output.notification,
+	})
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), liveTimeout())
+	defer cancel()
+
+	if _, err := client.Initialize(ctx, CloudAgentClientOptions{
+		ClientName:    "cloudagent-acp-live-workspace-http-binary-e2e",
+		ClientTitle:   "CloudAgent ACP Live Workspace HTTP Binary E2E",
+		ClientVersion: "0.1.0",
+	}); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+
+	session, err := client.NewSession(ctx, CloudAgentSessionOptions{CWD: liveCWD()})
+	if err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	deleted := false
+	defer func() {
+		if !deleted {
+			deleteCtx, deleteCancel := context.WithTimeout(context.Background(), 3*time.Minute)
+			defer deleteCancel()
+			_ = client.DeleteSession(deleteCtx, session.SessionID)
+		}
+	}()
+
+	remotePath := "/workspace/e2e/binary-data.bin"
+	body := append([]byte{0x00, 0x01, 0x02, 0x7f, 0x80, 0xff}, []byte("CLOUDAGENT_BINARY_TRANSFER_"+session.SessionID)...)
+	expectedHash := fmt.Sprintf("%x", sha256.Sum256(body))
+	liveUploadEnvdFile(t, ctx, session.SessionID, remotePath, "application/octet-stream", body)
+	if got := liveDownloadEnvdFile(t, ctx, session.SessionID, remotePath); !bytes.Equal(got, body) {
+		t.Fatalf("binary HTTP round trip mismatch: want=%x got=%x", body, got)
+	}
+	afterUpload, err := client.Status(ctx, session.SessionID)
+	if err != nil {
+		t.Fatalf("status after binary upload: %v", err)
+	}
+	assertLiveWispWorkspaceStatus(t, afterUpload, "after binary upload")
+	if !afterUpload.Sandbox.HasInnerEnvdTarget {
+		t.Fatalf("binary HTTP upload should ensure an inner workspace runtime target: %s", string(afterUpload.Raw))
+	}
+
+	result, err := client.Prompt(ctx, session.SessionID, "必须调用 terminal 执行 `sha256sum /workspace/e2e/binary-data.bin && ls -la /workspace/e2e/binary-data.bin`。命令结束后只输出终端里的 sha256 和 binary-data.bin 文件名。", CloudAgentPromptOptions{
+		CWD:       liveCWD(),
+		InboxMode: CloudAgentInboxPrompt,
+	})
+	if err != nil {
+		t.Fatalf("agent hash binary HTTP-uploaded workspace file: %v", err)
+	}
+	if !isNormalStopReason(result.StopReason) {
+		t.Fatalf("unexpected binary hash stopReason %q raw=%s", result.StopReason, string(result.Raw))
+	}
+	outputText := output.CombinedString()
+	for _, want := range []string{expectedHash, "binary-data.bin"} {
+		if !strings.Contains(outputText, want) {
+			t.Fatalf("binary agent output missing %q: got=%q raw=%s", want, outputText, string(result.Raw))
+		}
+	}
+	for _, forbidden := range []string{"No such file", "HTTP 500", "openresty", "sandbox-host process.exec HTTP transport failed"} {
+		if strings.Contains(outputText, forbidden) {
+			t.Fatalf("binary transfer surfaced forbidden failure %q: got=%q raw=%s", forbidden, outputText, string(result.Raw))
+		}
+	}
+
+	if err := client.DeleteSession(ctx, session.SessionID); err != nil {
+		t.Fatalf("session/delete: %v", err)
+	}
+	deleted = true
+}
+
 func TestCloudAgentLiveAgentWritesWorkspaceFileThenEnvdDownloadBehavior(t *testing.T) {
 	output := &liveAgentOutput{}
 	client := newLiveCloudAgentClientWithOptions(t, CloudAgentClientOptions{
@@ -2826,6 +3518,7 @@ func (c *liveAgentOutput) notification(raw json.RawMessage) error {
 		Params struct {
 			Update struct {
 				SessionUpdate string          `json:"sessionUpdate"`
+				Name          string          `json:"name"`
 				Content       json.RawMessage `json:"content"`
 				RawOutput     json.RawMessage `json:"rawOutput"`
 			} `json:"update"`
@@ -2850,6 +3543,10 @@ func (c *liveAgentOutput) notification(raw json.RawMessage) error {
 		c.mu.Unlock()
 	case "tool_call_update":
 		c.mu.Lock()
+		if env.Params.Update.Name != "" {
+			c.tools.WriteString(env.Params.Update.Name)
+			c.tools.WriteByte('\n')
+		}
 		if len(env.Params.Update.RawOutput) > 0 && string(env.Params.Update.RawOutput) != "null" {
 			c.tools.Write(env.Params.Update.RawOutput)
 			c.tools.WriteByte('\n')
@@ -2927,6 +3624,35 @@ func waitForLiveSessionReady(t *testing.T, ctx context.Context, client *CloudAge
 		case <-ctx.Done():
 			t.Fatalf("session %s did not become ready before context done: last_status=%s last_err=%v err=%v", sessionID, string(lastStatus.Raw), lastErr, ctx.Err())
 		case <-time.After(1 * time.Second):
+		}
+	}
+}
+
+func waitForLiveEnsureRuntimeReady(t *testing.T, ctx context.Context, client *CloudAgentClient, sessionID string) CloudAgentSessionStatus {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Minute)
+	var lastStatus CloudAgentSessionStatus
+	var lastErr error
+	for {
+		status, err := client.EnsureRuntimeReady(ctx, sessionID, CloudAgentSessionOptions{CWD: liveCWD()})
+		if err == nil {
+			lastStatus = status
+			if isCloudAgentWorkspaceWellDone(status) {
+				return status
+			}
+		} else {
+			lastErr = err
+		}
+		if time.Now().After(deadline) {
+			if lastErr != nil {
+				t.Fatalf("session %s did not ensure ready: last_status=%s last_err=%v", sessionID, string(lastStatus.Raw), lastErr)
+			}
+			t.Fatalf("session %s did not ensure ready: last_status=%s", sessionID, string(lastStatus.Raw))
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("session %s did not ensure ready before context done: last_status=%s last_err=%v err=%v", sessionID, string(lastStatus.Raw), lastErr, ctx.Err())
+		case <-time.After(3 * time.Second):
 		}
 	}
 }
@@ -3260,5 +3986,18 @@ func isCloudAgentWorkspaceWellDone(status CloudAgentSessionStatus) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func assertLiveWispWorkspaceStatus(t *testing.T, status CloudAgentSessionStatus, where string) {
+	t.Helper()
+	if status.Sandbox.OuterRuntime != "wisp" {
+		t.Fatalf("%s: expected Wisp outer runtime: %s", where, string(status.Raw))
+	}
+	if !status.WorkspacePersistent || !status.RuntimeRestorable {
+		t.Fatalf("%s: expected persistent/restorable Wisp workspace: %s", where, string(status.Raw))
+	}
+	if status.Sandbox.WispSMHSpaceID == "" {
+		t.Fatalf("%s: expected Wisp/SMH workspace anchor: %s", where, string(status.Raw))
 	}
 }

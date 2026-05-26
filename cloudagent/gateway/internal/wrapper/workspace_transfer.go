@@ -5,10 +5,18 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http/httputil"
 	"path"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
+
+type workspaceFileDownloadCommandResponse struct {
+	OK         bool   `json:"ok"`
+	ContentB64 string `json:"content_b64"`
+}
 
 func (w *AgentSidecarWorker) UploadSessionWorkspaceFile(ctx context.Context, runtime ACPSessionRuntime, remotePath string, content []byte) error {
 	target, err := normalizeWorkspaceTransferPath(remotePath)
@@ -71,12 +79,9 @@ func (w *AgentSidecarWorker) DownloadSessionWorkspaceFile(ctx context.Context, r
 	if result.ExitCode != 0 {
 		return nil, fmt.Errorf("workspace download failed exit=%d stdout=%q stderr=%q", result.ExitCode, result.Stdout, result.Stderr)
 	}
-	var out struct {
-		OK         bool   `json:"ok"`
-		ContentB64 string `json:"content_b64"`
-	}
-	if err := json.Unmarshal([]byte(lastJSONLine(result.Stdout)), &out); err != nil {
-		return nil, fmt.Errorf("workspace download returned invalid JSON: %w", err)
+	out, err := parseWorkspaceFileDownloadCommandResponse(result.Stdout)
+	if err != nil {
+		return nil, fmt.Errorf("workspace download returned invalid JSON: %w stdout_tail=%q", err, commandOutputTail(result.Stdout, 800))
 	}
 	if !out.OK {
 		return nil, fmt.Errorf("workspace download returned ok=false")
@@ -86,6 +91,89 @@ func (w *AgentSidecarWorker) DownloadSessionWorkspaceFile(ctx context.Context, r
 		return nil, fmt.Errorf("workspace download returned invalid base64: %w", err)
 	}
 	return decoded, nil
+}
+
+func parseWorkspaceFileDownloadCommandResponse(output string) (workspaceFileDownloadCommandResponse, error) {
+	var lastErr error
+	for _, candidate := range workspaceDownloadJSONCandidates(output) {
+		var out workspaceFileDownloadCommandResponse
+		if err := json.Unmarshal([]byte(candidate), &out); err != nil {
+			lastErr = err
+			continue
+		}
+		return out, nil
+	}
+	if lastErr != nil {
+		return workspaceFileDownloadCommandResponse{}, lastErr
+	}
+	return workspaceFileDownloadCommandResponse{}, fmt.Errorf("no JSON object found")
+}
+
+func workspaceDownloadJSONCandidates(output string) []string {
+	var candidates []string
+	seen := map[string]bool{}
+	add := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			return
+		}
+		seen[value] = true
+		candidates = append(candidates, value)
+	}
+	add(lastJSONLine(output))
+	if decoded, ok := decodeChunkedWorkspaceCommandOutput(output); ok {
+		add(lastJSONLine(decoded))
+		add(decoded)
+	}
+	return candidates
+}
+
+func decodeChunkedWorkspaceCommandOutput(output string) (string, bool) {
+	text := strings.TrimLeft(output, " \t\r\n")
+	if text == "" {
+		return "", false
+	}
+	starts := []int{0}
+	for offset := 0; offset < len(text); {
+		lineEnd := strings.IndexByte(text[offset:], '\n')
+		if lineEnd < 0 {
+			break
+		}
+		line := strings.TrimSpace(strings.TrimSuffix(text[offset:offset+lineEnd], "\r"))
+		if isHTTPChunkSizeLine(line) {
+			starts = append(starts, offset)
+		}
+		offset += lineEnd + 1
+	}
+	for _, start := range starts {
+		decoded, err := io.ReadAll(httputil.NewChunkedReader(strings.NewReader(text[start:])))
+		if err == nil && len(decoded) > 0 {
+			return string(decoded), true
+		}
+	}
+	return "", false
+}
+
+func isHTTPChunkSizeLine(line string) bool {
+	if line == "" || len(line) > 16 {
+		return false
+	}
+	if semi := strings.IndexByte(line, ';'); semi >= 0 {
+		line = line[:semi]
+	}
+	if line == "" {
+		return false
+	}
+	if _, err := strconv.ParseInt(line, 16, 64); err != nil {
+		return false
+	}
+	for _, ch := range line {
+		if (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F') {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func lastJSONLine(output string) string {
