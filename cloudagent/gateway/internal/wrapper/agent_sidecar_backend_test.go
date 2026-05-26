@@ -194,6 +194,25 @@ func TestWorkspaceWispNameFromSessionIsShortAndStable(t *testing.T) {
 	}
 }
 
+func TestWorkspaceWispJFSPrefixIsWorkspaceScoped(t *testing.T) {
+	prefix := workspaceWispJFSPrefix("cloudagent-agent-live", "space_ABC/123")
+	if prefix == "cloudagent-agent-live" {
+		t.Fatal("workspace prefix must not reuse outer runtime prefix")
+	}
+	if !strings.HasPrefix(prefix, "cloudagent-agent-live/workspace/") {
+		t.Fatalf("workspace prefix=%q, want workspace-scoped prefix", prefix)
+	}
+	if strings.Contains(prefix, "//") {
+		t.Fatalf("workspace prefix should not contain duplicate slashes: %q", prefix)
+	}
+	if prefix != workspaceWispJFSPrefix("cloudagent-agent-live", "space_ABC/123") {
+		t.Fatalf("workspace prefix should be stable: %q", prefix)
+	}
+	if got := workspaceWispJFSPrefix("cloudagent-agent-live/workspace/space-x", "ignored"); got != "cloudagent-agent-live/workspace/space-x" {
+		t.Fatalf("already scoped workspace prefix changed: %q", got)
+	}
+}
+
 func TestWispOuterRuntimeWrapsCommandWithEnvironment(t *testing.T) {
 	runtime := ACPSessionRuntime{
 		OuterRuntime:   outerRuntimeWisp,
@@ -225,6 +244,7 @@ func TestWispOuterStopCommandStopsHostRuntime(t *testing.T) {
 		OuterRuntime:   outerRuntimeWisp,
 		WispName:       "agent-session",
 		WispClientPath: "/tmp/wisp/install/bin/wispclient",
+		WispInstallDir: "/tmp/wisp/install",
 		RemoteBinary:   "/tmp/cloudagent-session/hermes-sidecar",
 	}
 	command := wispOuterStopCommand(runtime)
@@ -233,7 +253,7 @@ func TestWispOuterStopCommandStopsHostRuntime(t *testing.T) {
 		"stop \"$name\"",
 		"agent-session",
 		"CLOUDAGENT_WISP_STOPPED",
-		"wispclient-daemon.log",
+		"/tmp/wisp/daemon.log",
 	} {
 		if !strings.Contains(command, want) {
 			t.Fatalf("stop command missing %q: %s", want, command)

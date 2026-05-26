@@ -660,6 +660,7 @@ func (w *AgentSidecarWorker) attachSessionWorkspaceRuntime(ctx context.Context, 
 		return runtime, nil
 	}
 	workspaceID := firstNonEmpty(runtime.WorkspaceID, runtime.WispWorkspaceID, runtime.WispSMHSpaceID, "workspace_"+req.SessionID)
+	workspaceJFSPrefix := workspaceWispJFSPrefix(runtime.WispJFSPrefix, workspaceID)
 	if w.workspaceService != nil {
 		if err := w.workspaceService.EnsureWorkspace(ctx, WorkspaceRecord{
 			WorkspaceID:           workspaceID,
@@ -672,7 +673,7 @@ func (w *AgentSidecarWorker) attachSessionWorkspaceRuntime(ctx context.Context, 
 			WispSMHSpaceID:        runtime.WispSMHSpaceID,
 			WispOwnsSMHSpace:      runtime.WispOwnsSMHSpace,
 			WispPackageURL:        runtime.WispPackageURL,
-			WispJFSPrefix:         runtime.WispJFSPrefix,
+			WispJFSPrefix:         workspaceJFSPrefix,
 			WispRootUpperSize:     runtime.WispRootUpperSize,
 			CleanupState:          "active",
 			DeleteState:           "",
@@ -716,6 +717,7 @@ func (w *AgentSidecarWorker) attachSessionWorkspaceRuntime(ctx context.Context, 
 		workspaceWisp.WispWorkspaceID = workspaceID
 		workspaceWisp.WispSMHSpaceID = firstNonEmpty(runtime.WispSMHSpaceID, workspaceID)
 		workspaceWisp.WispOwnsSMHSpace = false
+		workspaceWisp.WispJFSPrefix = workspaceJFSPrefix
 		workspaceWisp.WispInstallDir = path.Join("/tmp/cloudagent-workspace-wisp", req.SessionID, "install")
 		workspaceWisp.WispClientPath = path.Join(workspaceWisp.WispInstallDir, "bin", "wispclient")
 		prepared, err := w.prepareWispRuntimeWithSpace(ctx, backend.client, sb, workspaceWisp, req, agentWispSMHSpace{
@@ -1119,7 +1121,7 @@ func (w *AgentSidecarWorker) CloseSessionRuntime(ctx context.Context, runtime AC
 	}
 	if runtime.OuterSandboxID != "" && runtime.isWispOuterRuntime() && runtime.WispName != "" {
 		sb := runtimeOuterSandbox(runtime)
-		stopCtx, stopCancel := context.WithTimeout(ctx, envDurationSeconds("GATEWAY_WISP_STOP_TIMEOUT_SECONDS", 25*time.Second))
+		stopCtx, stopCancel := context.WithTimeout(ctx, envDurationSeconds("GATEWAY_WISP_STOP_TIMEOUT_SECONDS", 60*time.Second))
 		fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_wisp_stop_start runtime_id=%s outer_sandbox_id=%s wisp_name=%s\n", runtime.RuntimeID, runtime.OuterSandboxID, quoteServerField(runtime.WispName))
 		if err := w.stopWispOuterRuntime(stopCtx, backend.client, sb, runtime); err != nil {
 			gracefulStopErr = fmt.Errorf("stop wisp outer runtime %s: %w", runtime.WispName, err)
@@ -1146,7 +1148,7 @@ func (w *AgentSidecarWorker) CloseSessionRuntime(ctx context.Context, runtime AC
 			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("delete outer sandbox %s: %w", runtime.OuterSandboxID, err))
 		}
 	}
-	if cleanupErr == nil && gracefulStopErr != nil && !runtimeCanRecreate(runtime) {
+	if gracefulStopErr != nil {
 		cleanupErr = errors.Join(cleanupErr, gracefulStopErr)
 	}
 	return cleanupErr
@@ -1922,7 +1924,7 @@ func commandFailureDetail(err error, result CommandResult) string {
 	if err == nil {
 		return ""
 	}
-	parts := []string{err.Error()}
+	parts := []string{redactCommandOutput(err.Error())}
 	if stderr := commandOutputTail(result.Stderr, 2000); stderr != "" {
 		parts = append(parts, "stderr="+fmt.Sprintf("%q", redactCommandOutput(stderr)))
 	}
@@ -1943,7 +1945,7 @@ func commandOutputTail(value string, limit int) string {
 	return "...[truncated]\n" + value[len(value)-limit:]
 }
 
-var commandOutputSensitivePattern = regexp.MustCompile(`(?i)(envd_access_token|traffic_access_token|api[_-]?key|access[_-]?token)(["'=:\s]+)([^"',\s}]+)`)
+var commandOutputSensitivePattern = regexp.MustCompile(`(?i)(envd_access_token|traffic_access_token|api[_-]?key|access[_-]?token|library[_-]?secret|secret[_-]?id|secret[_-]?key)(["'=:\s]+)([^&"',\s}]+)`)
 
 func redactCommandOutput(value string) string {
 	return commandOutputSensitivePattern.ReplaceAllString(value, `$1$2<redacted>`)

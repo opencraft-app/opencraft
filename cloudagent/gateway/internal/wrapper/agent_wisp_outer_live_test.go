@@ -20,61 +20,7 @@ func TestLiveACPWispOuterSession(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
 	defer cancel()
 
-	apiKey := firstEnv("GATEWAY_AGS_API_KEY", "E2B_API_KEY")
-	tokenHubAPIKey := firstEnv("GATEWAY_TOKENHUB_API_KEY", "TOKENHUB_API_KEY")
-	smhSecret := firstEnv("GATEWAY_WISP_SMH_LIBRARY_SECRET", "SMH_LIBRARY_SECRET")
-	if apiKey == "" || tokenHubAPIKey == "" || smhSecret == "" {
-		t.Skip("GATEWAY_AGS_API_KEY/E2B_API_KEY, TOKENHUB_API_KEY, and SMH_LIBRARY_SECRET are required")
-	}
-
-	sidecarURL := firstNonEmpty(firstEnv("GATEWAY_AGENT_SIDECAR_URL", "AGENT_SIDECAR_URL"), readTrimmedTestFile("/tmp/agent-sidecar-url.clean"))
-	if sidecarURL == "" {
-		t.Skip("GATEWAY_AGENT_SIDECAR_URL or /tmp/agent-sidecar-url.clean is required")
-	}
-	sidecarSHA256 := firstNonEmpty(firstEnv("GATEWAY_AGENT_SIDECAR_SHA256", "AGENT_SIDECAR_SHA256"), readTrimmedTestFile("/tmp/agent-sidecar-sha256.clean"))
-
-	templateID := firstNonEmpty(
-		firstEnv("GATEWAY_AGENT_SIDECAR_OUTER_TEMPLATE", "GATEWAY_AGS_TEMPLATE", "OUTER_SANDBOX_TEMPLATE"),
-		"sdt-hwd907s8",
-	)
-	innerTemplateID := firstNonEmpty(firstEnv("GATEWAY_AGENT_SIDECAR_INNER_TEMPLATE", "INNER_SANDBOX_TEMPLATE"), templateID)
-	client, err := NewAGSClient(AGSClientConfig{
-		APIKey:         apiKey,
-		Domain:         firstNonEmpty(firstEnv("GATEWAY_AGS_DOMAIN", "E2B_DOMAIN"), "ap-shanghai.tencentags.com"),
-		APIURL:         firstNonEmpty(firstEnv("GATEWAY_AGS_API_URL", "E2B_API_URL"), "https://api.ap-shanghai.tencentags.com"),
-		RequestTimeout: requestTimeout,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	store, err := NewStore(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	worker, err := NewAgentSidecarWorker(AgentSidecarWorkerConfig{
-		Client:                client,
-		OuterTemplateID:       templateID,
-		InnerTemplateID:       innerTemplateID,
-		SidecarURL:            sidecarURL,
-		SidecarSHA256:         sidecarSHA256,
-		SandboxHostURL:        firstEnv("GATEWAY_SANDBOX_HOST_URL", "HERMES_SANDBOX_HOST_URL", "SANDBOX_HOST_URL"),
-		SandboxHostSHA256:     firstEnv("GATEWAY_SANDBOX_HOST_SHA256", "HERMES_SANDBOX_HOST_SHA256", "SANDBOX_HOST_SHA256"),
-		TokenHubAPIKey:        tokenHubAPIKey,
-		TokenHubModel:         firstEnv("GATEWAY_TOKENHUB_MODEL", "TOKENHUB_MODEL"),
-		SandboxTimeoutSeconds: envInt("GATEWAY_AGENT_SIDECAR_OUTER_TIMEOUT_SECONDS", 900),
-		DeleteSandbox:         true,
-		OuterRuntime:          outerRuntimeWisp,
-		WispPackageURL:        firstNonEmpty(firstEnv("GATEWAY_WISP_PACKAGE_URL", "WISP_SDK_PACKAGE_URL", "WISP_FAST_PACKAGE_URL", "WISP_PACKAGE_URL"), defaultLiveWispFastPackageURL),
-		WispRootUpperSize:     firstNonEmpty(firstEnv("GATEWAY_WISP_ROOT_UPPER_SIZE", "WISP_ROOT_UPPER_SIZE", "ROOT_UPPER_SIZE"), "5G"),
-		WispJFSPrefix:         firstNonEmpty(firstEnv("GATEWAY_WISP_JFS_PREFIX", "WISP_JFS_PREFIX", "JFS_PREFIX"), "cloudagent-agent-live"),
-		WispSMHLibraryID:      firstNonEmpty(firstEnv("GATEWAY_WISP_SMH_LIBRARY_ID", "SMH_LIBRARY_ID"), "smh37laghvp09llc"),
-		WispSMHAccessDomain:   firstNonEmpty(firstEnv("GATEWAY_WISP_SMH_ACCESS_DOMAIN", "SMH_ACCESS_DOMAIN"), "https://smh37laghvp09llc.ap-shanghai.api.tencentsmh.cn"),
-		WispSMHLibrarySecret:  smhSecret,
-		WorkspaceService:      store,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	client, worker := newLiveWispWorker(t, requestTimeout)
 
 	sessionID := "session_live_wisp_" + randomHex(8)
 	runtime, err := worker.StartSessionRuntime(ctx, ACPSessionRuntimeStartRequest{
@@ -166,6 +112,124 @@ func TestLiveACPWispOuterSession(t *testing.T) {
 		t.Fatalf("inner sandbox identity incomplete: %#v", update)
 	}
 	t.Logf("inner sandbox ok inner=%s domain=%s", update.InnerSandboxID, update.InnerSandboxDomain)
+}
+
+func TestLiveACPWispOuterCloseCheckpoints(t *testing.T) {
+	if os.Getenv("RUN_LIVE_ACP_WISP_OUTER") != "1" {
+		t.Skip("set RUN_LIVE_ACP_WISP_OUTER=1 to run live Shanghai AGS + SMH + Wisp outer ACP session")
+	}
+
+	scope := Scope{TenantID: "tenant-live", ProjectID: "project-live"}
+	requestTimeout := liveDurationEnv("LIVE_ACP_WISP_OUTER_TIMEOUT", 20*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
+	defer cancel()
+
+	_, worker := newLiveWispWorker(t, requestTimeout)
+	sessionID := "session_live_wisp_close_" + randomHex(8)
+	runtime, err := worker.StartSessionRuntime(ctx, ACPSessionRuntimeStartRequest{
+		SessionID:        sessionID,
+		Scope:            scope,
+		CWD:              acpRuntimeCWD,
+		Generation:       1,
+		SandboxBackend:   "ags",
+		AgentVersion:     defaultAgentVersion,
+		WorkspaceVersion: defaultWorkspaceVersion,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	closed := false
+	closeAttempted := false
+	t.Cleanup(func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cleanupCancel()
+		if closed || closeAttempted {
+			if runtime.WispOwnsSMHSpace && runtime.WispSMHSpaceID != "" {
+				if err := worker.deleteWispSMHSpace(cleanupCtx, runtime.WispSMHSpaceID); err != nil {
+					t.Logf("cleanup wisp SMH space %s: %v", runtime.WispSMHSpaceID, err)
+				}
+			}
+			return
+		}
+		if err := worker.DeleteSessionRuntime(cleanupCtx, runtime); err != nil {
+			t.Logf("cleanup runtime outer=%s smh_space=%s: %v", runtime.OuterSandboxID, runtime.WispSMHSpaceID, err)
+		}
+	})
+	if runtime.WorkspaceRuntimeID == "" || runtime.InnerSandboxID == "" {
+		t.Fatalf("workspace Wisp runtime was not bound: workspace_runtime_id=%q inner_sandbox_id=%q", runtime.WorkspaceRuntimeID, runtime.InnerSandboxID)
+	}
+
+	closeCtx, closeCancel := context.WithTimeout(ctx, liveDurationEnv("LIVE_ACP_WISP_CLOSE_TIMEOUT", 3*time.Minute))
+	defer closeCancel()
+	closeAttempted = true
+	if err := worker.DeleteSessionRuntime(closeCtx, runtime); err != nil {
+		if strings.Contains(err.Error(), "checkpoint cut failed") || strings.Contains(err.Error(), "meta-barrier") {
+			t.Fatalf("wisp close checkpoint failed: %v", err)
+		}
+		t.Fatalf("wisp close failed before checkpoint well-done: %v", err)
+	}
+	closed = true
+	t.Logf("wisp close checkpoint ok session=%s outer=%s inner=%s smh_space=%s", sessionID, runtime.OuterSandboxID, runtime.InnerSandboxID, runtime.WispSMHSpaceID)
+}
+
+func newLiveWispWorker(t *testing.T, requestTimeout time.Duration) (*AGSClient, *AgentSidecarWorker) {
+	t.Helper()
+	apiKey := firstEnv("GATEWAY_AGS_API_KEY", "E2B_API_KEY")
+	tokenHubAPIKey := firstEnv("GATEWAY_TOKENHUB_API_KEY", "TOKENHUB_API_KEY")
+	smhSecret := firstEnv("GATEWAY_WISP_SMH_LIBRARY_SECRET", "SMH_LIBRARY_SECRET")
+	if apiKey == "" || tokenHubAPIKey == "" || smhSecret == "" {
+		t.Skip("GATEWAY_AGS_API_KEY/E2B_API_KEY, TOKENHUB_API_KEY, and SMH_LIBRARY_SECRET are required")
+	}
+
+	sidecarURL := firstNonEmpty(firstEnv("GATEWAY_AGENT_SIDECAR_URL", "AGENT_SIDECAR_URL"), readTrimmedTestFile("/tmp/agent-sidecar-url.clean"))
+	if sidecarURL == "" {
+		t.Skip("GATEWAY_AGENT_SIDECAR_URL or /tmp/agent-sidecar-url.clean is required")
+	}
+	sidecarSHA256 := firstNonEmpty(firstEnv("GATEWAY_AGENT_SIDECAR_SHA256", "AGENT_SIDECAR_SHA256"), readTrimmedTestFile("/tmp/agent-sidecar-sha256.clean"))
+
+	templateID := firstNonEmpty(
+		firstEnv("GATEWAY_AGENT_SIDECAR_OUTER_TEMPLATE", "GATEWAY_AGS_TEMPLATE", "OUTER_SANDBOX_TEMPLATE"),
+		"sdt-hwd907s8",
+	)
+	innerTemplateID := firstNonEmpty(firstEnv("GATEWAY_AGENT_SIDECAR_INNER_TEMPLATE", "INNER_SANDBOX_TEMPLATE"), templateID)
+	client, err := NewAGSClient(AGSClientConfig{
+		APIKey:         apiKey,
+		Domain:         firstNonEmpty(firstEnv("GATEWAY_AGS_DOMAIN", "E2B_DOMAIN"), "ap-shanghai.tencentags.com"),
+		APIURL:         firstNonEmpty(firstEnv("GATEWAY_AGS_API_URL", "E2B_API_URL"), "https://api.ap-shanghai.tencentags.com"),
+		RequestTimeout: requestTimeout,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker, err := NewAgentSidecarWorker(AgentSidecarWorkerConfig{
+		Client:                client,
+		OuterTemplateID:       templateID,
+		InnerTemplateID:       innerTemplateID,
+		SidecarURL:            sidecarURL,
+		SidecarSHA256:         sidecarSHA256,
+		SandboxHostURL:        firstEnv("GATEWAY_SANDBOX_HOST_URL", "HERMES_SANDBOX_HOST_URL", "SANDBOX_HOST_URL"),
+		SandboxHostSHA256:     firstEnv("GATEWAY_SANDBOX_HOST_SHA256", "HERMES_SANDBOX_HOST_SHA256", "SANDBOX_HOST_SHA256"),
+		TokenHubAPIKey:        tokenHubAPIKey,
+		TokenHubModel:         firstEnv("GATEWAY_TOKENHUB_MODEL", "TOKENHUB_MODEL"),
+		SandboxTimeoutSeconds: envInt("GATEWAY_AGENT_SIDECAR_OUTER_TIMEOUT_SECONDS", 900),
+		DeleteSandbox:         true,
+		OuterRuntime:          outerRuntimeWisp,
+		WispPackageURL:        firstNonEmpty(firstEnv("GATEWAY_WISP_PACKAGE_URL", "WISP_SDK_PACKAGE_URL", "WISP_FAST_PACKAGE_URL", "WISP_PACKAGE_URL"), defaultLiveWispFastPackageURL),
+		WispRootUpperSize:     firstNonEmpty(firstEnv("GATEWAY_WISP_ROOT_UPPER_SIZE", "WISP_ROOT_UPPER_SIZE", "ROOT_UPPER_SIZE"), "5G"),
+		WispJFSPrefix:         firstNonEmpty(firstEnv("GATEWAY_WISP_JFS_PREFIX", "WISP_JFS_PREFIX", "JFS_PREFIX"), "cloudagent-agent-live"),
+		WispSMHLibraryID:      firstNonEmpty(firstEnv("GATEWAY_WISP_SMH_LIBRARY_ID", "SMH_LIBRARY_ID"), "smh37laghvp09llc"),
+		WispSMHAccessDomain:   firstNonEmpty(firstEnv("GATEWAY_WISP_SMH_ACCESS_DOMAIN", "SMH_ACCESS_DOMAIN"), "https://smh37laghvp09llc.ap-shanghai.api.tencentsmh.cn"),
+		WispSMHLibrarySecret:  smhSecret,
+		WorkspaceService:      store,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return client, worker
 }
 
 func runLiveWispPrompt(t *testing.T, ctx context.Context, worker *AgentSidecarWorker, runtime ACPSessionRuntime, scope Scope, sessionID, label, instruction string, files []materializedFile) workerResult {
