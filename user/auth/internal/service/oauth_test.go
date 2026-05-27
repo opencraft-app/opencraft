@@ -279,6 +279,40 @@ func TestOAuthSignInDoesNotLinkUnverifiedEmailToExistingUser(t *testing.T) {
 	}
 }
 
+func TestOAuthSignInLinksGitHubEmailToExistingUserWithoutVerifiedFlag(t *testing.T) {
+	t.Parallel()
+
+	store := NewMemoryStore(StoreOptions{
+		Now:                fixedNow,
+		SeedDefaultInvites: true,
+	})
+	svc := NewWithStore(store, Options{Now: fixedNow})
+
+	passwordSession, err := svc.SignUpWithPassword(context.Background(), PasswordSignUpInput{
+		Email:      "github-user@lightvela.ai",
+		Password:   "secure2026!",
+		Name:       "GitHub User",
+		InviteCode: "VALID2026",
+	})
+	if err != nil {
+		t.Fatalf("password sign-up failed: %v", err)
+	}
+
+	githubSession, err := svc.SignInWithOAuth(context.Background(), OAuthSignInInput{
+		Provider:        "github",
+		ProviderSubject: "123456",
+		Email:           "github-user@lightvela.ai",
+		EmailVerified:   false,
+		Name:            "GitHub Profile",
+	})
+	if err != nil {
+		t.Fatalf("github oauth sign-in failed: %v", err)
+	}
+	if githubSession.User.ID != passwordSession.User.ID {
+		t.Fatalf("expected github sign-in to reuse existing user, got %q then %q", passwordSession.User.ID, githubSession.User.ID)
+	}
+}
+
 func TestOAuthSignInUsesWeChatFallbackName(t *testing.T) {
 	t.Parallel()
 

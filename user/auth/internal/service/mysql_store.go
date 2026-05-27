@@ -1154,7 +1154,7 @@ func (s *MySQLStore) findOrCreateOAuthUserTx(ctx context.Context, tx *sql.Tx, in
 			return User{}, false, err
 		}
 		if found {
-			if !input.EmailVerified {
+			if !canAutoLinkOAuthEmail(input) {
 				return User{}, false, newError("oauth_email_conflict", "第三方账号邮箱已被使用，请先使用已有方式登录后再绑定。", 409)
 			}
 			if err := insertOAuthIdentityTx(ctx, tx, existingUser.ID, input, now); err != nil {

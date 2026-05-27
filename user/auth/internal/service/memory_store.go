@@ -149,7 +149,7 @@ func (s *MemoryStore) CreateOAuthSession(_ context.Context, input OAuthSignInInp
 			user, ok := s.usersByID[userID]
 			if !ok {
 				delete(s.usersByEmail, input.Email)
-			} else if input.EmailVerified {
+			} else if canAutoLinkOAuthEmail(input) {
 				s.oauthUsers[key] = user.ID
 				return s.createSessionLocked(user, now, sessionTTL)
 			} else {
