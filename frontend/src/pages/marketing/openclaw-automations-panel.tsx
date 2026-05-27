@@ -14,7 +14,7 @@
  * - 占位字段（工作空间 / 生效日期区间 / 推送 WorkBuddy）按截图渲染但 disabled
  */
 
-import { AlertTriangle, ChevronDown, Clock, Eye, Loader2, Pause, Pencil, Play, Plus, Trash2, X } from "lucide-react";
+import { AlertTriangle, ChevronDown, CircleHelp, Clock, Eye, Loader2, Pause, Pencil, Play, Plus, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { parseHermesChannelList } from "@tencent/tea-sdk-lightclaw";
@@ -39,8 +39,9 @@ const PANEL_CARD_STYLE: React.CSSProperties = {
 };
 const MAX_CRON_JOBS_PER_BOT = 20;
 const MODAL_CONTROL_TEXT_STYLE: React.CSSProperties = { fontSize: 16, lineHeight: "24px" };
-const MODAL_HELP_TEXT_STYLE: React.CSSProperties = { fontSize: 14, lineHeight: "22px" };
+const MODAL_HELP_TEXT_STYLE: React.CSSProperties = { fontSize: 13, lineHeight: "20px" };
 const EXPIRED_CRON_JOB_HIDE_AFTER_MS = 2 * 60 * 1000;
+const CRON_JOB_CARD_TITLE_MAX_WIDTH = 12;
 
 /** 顶部红色 toast；与 settings 主页 SkillInstallToast 视觉一致 */
 function ErrorToast({ message, onClose }: { message: string; onClose: () => void }) {
@@ -308,8 +309,8 @@ function CronJobCard({
   const paused = isCronJobPaused(job);
   const expired = isCronJobExpired(job);
   const fullName = job.name || t("未命名任务");
-  // 卡片标题最多 12 个字符，超过用 … 省略；hover title 显示全名
-  const displayName = fullName.length > 12 ? `${fullName.slice(0, 12)}…` : fullName;
+  // 中文标题约 8 个字、英文标题约 12 个字，超过用 … 省略；hover title 显示全名
+  const displayName = truncateCronJobCardTitle(fullName);
   return (
     <div
       className="flex flex-col rounded-xl bg-white p-4 transition hover:shadow-md"
@@ -401,6 +402,20 @@ function CronJobCard({
       </div>
     </div>
   );
+}
+
+function truncateCronJobCardTitle(name: string): string {
+  let width = 0;
+  let output = "";
+  for (const char of Array.from(name)) {
+    const charWidth = /[\u3400-\u9FFF\uF900-\uFAFF]/.test(char) ? 1.5 : 1;
+    if (width + charWidth > CRON_JOB_CARD_TITLE_MAX_WIDTH) {
+      return `${output}…`;
+    }
+    width += charWidth;
+    output += char;
+  }
+  return name;
 }
 
 function isCronJobPaused(job: CronJob): boolean {
@@ -541,7 +556,7 @@ function CronJobDetailModal({ job, onClose }: { job: CronJob; onClose: () => voi
           )}
         </div>
 
-        <dl className="mt-6 space-y-3 text-sm">
+        <dl className="space-y-3 text-sm" style={{ marginTop: 16 }}>
           <DetailRow label={t("任务说明")} value={job.prompt || "—"} pre />
           <DetailRow label={t("执行时间")} value={formatScheduleFriendly(job, t)} />
           {job.next_run_at && <DetailRow label={t("下次执行")} value={formatTime(job.next_run_at)} />}
@@ -635,7 +650,7 @@ function DetailRow({ label, value, pre }: { label: string; value: string; pre?: 
 
 function InlineCopyText({ value }: { value: string }) {
   return (
-    <code className="mx-1 inline-flex select-all align-baseline rounded-md border border-black/10 bg-[#D1D5DB] px-2 py-0.5 font-mono text-[11px] leading-[18px] text-black/80">
+    <code className="mx-1 inline-flex select-all align-baseline rounded-md bg-[#E5E7EB] px-2 py-0.5 font-mono text-[11px] leading-[18px] text-black/80">
       {value}
     </code>
   );
@@ -935,7 +950,7 @@ function AutomationFormModal({
             maxLength={60}
             placeholder={t("请输入定时任务名称")}
             className="mt-1.5 w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-base placeholder:text-base placeholder:text-black/35 focus:border-black/30 focus:outline-none"
-            style={MODAL_CONTROL_TEXT_STYLE}
+            style={{ ...MODAL_CONTROL_TEXT_STYLE, marginTop: 6 }}
           />
         </div>
 
@@ -994,8 +1009,8 @@ function AutomationFormModal({
             rows={5}
             maxLength={800}
             placeholder={t("请用提示词的形式描述需要执行的任务，比如：提醒我喝水")}
-            className="mt-3 w-full resize-none rounded-lg border border-black/10 bg-white px-3 py-2 text-base placeholder:text-base placeholder:text-black/35 focus:border-black/30 focus:outline-none"
-            style={{ ...MODAL_CONTROL_TEXT_STYLE, marginTop: 12 }}
+            className="mt-1.5 w-full resize-none rounded-lg border border-black/10 bg-white px-3 py-2 text-base placeholder:text-base placeholder:text-black/35 focus:border-black/30 focus:outline-none"
+            style={{ ...MODAL_CONTROL_TEXT_STYLE, marginTop: 6 }}
           />
         </div>
 
@@ -1039,13 +1054,13 @@ function AutomationFormModal({
                     </span>
                     {selected && key === "qqbot" && (
                       <span className="inline-flex items-center text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
-                        {t("QQ 需设置 home 对话才能发送通知（在 QQ 对话中发送")}
+                        {t("需设置 home 对话才能发送通知（在 QQ 对话中发送")}
                         <InlineCopyText value="/set-home" />
                         {t("给机器人）")}
                       </span>
                     )}
                     {selected && key === "feishu" && (
-                      <span className="text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>{t("飞书支持通过 home 对话或指定 Chat ID发送通知")}</span>
+                      <span className="text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>{t("支持通过 home 对话或指定 Chat ID 发送通知")}</span>
                     )}
                   </label>
 
@@ -1060,21 +1075,33 @@ function AutomationFormModal({
                             setDeliverChatIds((prev) => ({ ...prev, [key]: e.target.value }))
                           }
                           placeholder={t("如已设置home对话，可留空，默认走home对话通知；也可指定Chat ID通知")}
-                          className="min-w-0 flex-[1.1] rounded-lg border border-black/10 bg-white px-3 py-1.5 text-sm placeholder:text-sm placeholder:text-black/35 focus:border-black/30 focus:outline-none"
-                          style={MODAL_HELP_TEXT_STYLE}
+                          className="min-w-0 flex-[1.1] rounded-lg border border-black/10 bg-white px-3 py-1.5 text-[12px] placeholder:text-[12px] placeholder:text-black/35 focus:border-black/30 focus:outline-none"
+                          style={{ fontSize: 12, lineHeight: "18px" }}
                         />
                       </div>
-                      <div className="space-y-1 text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
-                        <p>
-                          {t("1. 设置 home 对话：在飞书应用中，在对话中向智能体发送")}
-                          <InlineCopyText value="/set-home" />
-                          {t("。")}
-                        </p>
-                        <p>
-                          {t("2. 获取 Chat ID：在飞书应用中，找到希望发送通知的对话，向智能体发送提示词")}
-                          <InlineCopyText value={t("当前Chat ID是什么")} />
-                          {t("，正常会回复前缀为oc_的一串字符。")}
-                        </p>
+                      <div className="space-y-2 text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <CircleHelp className="h-3.5 w-3.5 shrink-0 text-black/35" />
+                            <span>{t("如何设置 home 对话？")}</span>
+                          </div>
+                          <p className="mt-1 pl-5">
+                            {t("在飞书应用中，在对话中向机器人发送")}
+                            <InlineCopyText value="/set-home" />
+                            {t("。")}
+                          </p>
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <CircleHelp className="h-3.5 w-3.5 shrink-0 text-black/35" />
+                            <span>{t("如何获取 Chat ID？")}</span>
+                          </div>
+                          <p className="mt-1 pl-5">
+                            {t("在飞书应用中，找到希望发送通知的对话，向机器人发送提示词")}
+                            <InlineCopyText value={t("当前Chat ID是什么")} />
+                            {t("，正常会回复前缀为oc_的一长串字符。")}
+                          </p>
+                        </div>
                       </div>
                     </div>
                   )}
