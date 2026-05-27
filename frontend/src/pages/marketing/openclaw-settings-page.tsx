@@ -201,6 +201,8 @@ const SettingsNavbar = () => {
 
 type SettingsSectionId = "channel" | "model" | "skill" | "buddy" | "chat";
 
+const SHOW_AGENTCHAT_ENTRY = false;
+
 /* ─── Section Card Wrapper ─── */
 
 export const _SectionCard = ({ title, icon, headerRight, children }: { title: string; icon: React.ReactNode; headerRight?: React.ReactNode; children: React.ReactNode }) => {
@@ -3274,7 +3276,9 @@ export const OpenClawSettingsPage = () => {
                 ...(!isGlobal
                   ? [{ id: "buddy" as const, label: t("人设"), icon: <UserRound className="h-4 w-4" />, badge: "NEW" }]
                   : []),
-                { id: "chat", label: t("对话"), icon: <MessageSquare className="h-4 w-4" /> },
+                ...(SHOW_AGENTCHAT_ENTRY
+                  ? [{ id: "chat" as const, label: t("对话"), icon: <MessageSquare className="h-4 w-4" /> }]
+                  : []),
               ];
               const isRestartDisabled = isActiveBotRestarting || activeBot.status !== "running";
               const hasViewedChannel = viewedChannelBotIds.has(activeBot.id);
