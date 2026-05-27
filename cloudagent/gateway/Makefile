@@ -57,6 +57,8 @@ help:
 		'  init-cloudagent-signing-key      create local Ed25519 release key in ignored .env and print trusted keys JSON' \
 		'  signupload-cloudagent-sidecar    build, sign, upload sidecar and print registry JSON' \
 		'  ci-signupload-cloudagent-sidecar-shanghai build, sign, upload sidecar to Shanghai COS for CI' \
+		'  publish-wisp-package             build and upload Wisp runtime package to COS' \
+		'  ci-publish-cloudagent-artifacts-shanghai build and upload sidecar + Wisp package to Shanghai COS' \
 		'  publish-sandbox-host         build and upload sandbox-host to COS as public-read' \
 		'  start-agent-sidecar-server   publish sidecar if needed, then start local wrapper server' \
 		'  deploy-eksci-inplace         update Beijing EKS CI in-place without changing EIP' \
@@ -167,6 +169,14 @@ signupload-cloudagent-sidecar: $(CLOUDAGENT_SIDECAR_LINUX)
 .PHONY: ci-signupload-cloudagent-sidecar-shanghai
 ci-signupload-cloudagent-sidecar-shanghai:
 	./scripts/ci_signupload_cloudagent_sidecar_shanghai.sh
+
+.PHONY: publish-wisp-package
+publish-wisp-package:
+	./scripts/publish_cloudagent_wisp_package.sh
+
+.PHONY: ci-publish-cloudagent-artifacts-shanghai
+ci-publish-cloudagent-artifacts-shanghai:
+	./scripts/ci_publish_cloudagent_artifacts_shanghai.sh
 
 .PHONY: publish-sandbox-host
 publish-sandbox-host:
