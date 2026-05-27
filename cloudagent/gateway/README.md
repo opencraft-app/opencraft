@@ -170,7 +170,7 @@ make e2e-agent-sidecar
 make publish-cloudagent-sidecar
 ```
 
-如果要走 CI 的上海 COS 发布路径，使用独立流水线 `.ci/cloudagent-runtime-artifacts.yml`。
+如果要走 CI 的上海 COS 发布路径，使用独立流水线 `.ci/cloudagent-agent-artifact.yml`。
 它构建 CloudAgent runtime artifacts，不发布 gateway 服务；流程是：
 
 - Docker 构建 `cloudagent-sidecar-linux-amd64`
