@@ -523,12 +523,12 @@ export function BuddyPanel({
   const isApplied = selectedSlug !== null && selectedSlug === appliedSlug;
 
   return (
-    <div className="relative overflow-hidden rounded-2xl" style={PANEL_CARD_STYLE}>
+    <div className="lv-buddy-panel relative overflow-hidden rounded-2xl" style={PANEL_CARD_STYLE}>
       <InjectToast state={toast} onClose={() => setToast({ kind: "idle" })} t={t} />
       {/* 顶部标题 slogan + 右上角 SkillHub 入口 */}
-      <div className="relative flex items-center justify-center px-6 pt-5 pb-3">
+      <div className="lv-buddy-panel__header relative flex items-center justify-center px-6 pt-5 pb-3">
         <h2
-          className="flex items-center gap-2 text-xl font-semibold"
+          className="lv-buddy-panel__title flex items-center gap-2 text-xl font-semibold"
           style={{
             letterSpacing: "-0.2px",
             backgroundImage:
@@ -549,7 +549,7 @@ export function BuddyPanel({
           href="https://skillhub.cn/hermes"
           target="_blank"
           rel="noopener noreferrer"
-          className="absolute right-6 inline-flex shrink-0 items-center gap-1.5 text-xs font-medium transition-colors hover:opacity-80"
+          className="lv-buddy-panel__source absolute right-6 inline-flex shrink-0 items-center gap-1.5 text-xs font-medium transition-colors hover:opacity-80"
           style={{ color: "rgba(0,0,0,0.55)", top: "50%", transform: "translateY(calc(-50% + 6px))" }}
         >
           {t("灵感来自 SkillHub")}
@@ -558,7 +558,7 @@ export function BuddyPanel({
       </div>
 
       {/* 内容区：6 格抽卡槽，下方接进度 chip 靠右展示，避免覆盖卡片本身 */}
-      <div className="px-6 pt-2 pb-2">
+      <div className="lv-buddy-panel__body px-6 pt-2 pb-2">
         {loadStatus === "unauthorized" ? (
           <UnauthorizedState />
         ) : loadStatus === "error" ? (
@@ -607,7 +607,7 @@ export function BuddyPanel({
       </div>
 
       {/* 卡片下方：抽取人设 + Soul 测试 + 应用到 Agent；小屏时进度操作自然换行 */}
-      <div className="relative flex flex-wrap items-center justify-center gap-3 px-6 py-5">
+      <div className="lv-buddy-panel__actions relative flex flex-wrap items-center justify-center gap-3 px-6 py-5">
         <button
           type="button"
           onClick={handleOpenDraw}
@@ -693,7 +693,7 @@ export function BuddyPanel({
           )}
         </div>
         {drawnSouls.length > 0 && (
-          <div className="flex items-center gap-2 md:absolute md:right-6 md:top-1/2 md:-translate-y-1/2">
+          <div className="lv-buddy-panel__progress flex items-center gap-2 md:absolute md:right-6 md:top-1/2 md:-translate-y-1/2">
             <ProgressChip drawn={drawnSouls.length} max={MAX_DRAWS} />
           </div>
         )}
@@ -878,7 +878,7 @@ function SoulSlotGrid({
   return (
     // 网格 max-w 锁在 1120px 居中，6 列下单卡 ≈ 175×245，单行展示 6 张抽卡槽。
     // 容器在更窄视口里会自然缩小，cell 跟着变小。
-    <div className="mx-auto grid max-w-[1120px] grid-cols-6 gap-4">
+    <div className="lv-buddy-panel__grid mx-auto grid max-w-[1120px] grid-cols-6 gap-4">
       {Array.from({ length: MAX_DRAWS }).map((_, i) => {
         const soul = drawnSouls[i];
         if (soul) {
