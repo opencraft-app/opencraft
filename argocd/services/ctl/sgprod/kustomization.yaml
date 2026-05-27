@@ -18,6 +18,11 @@ patches:
         path: /spec/template/spec/containers/0/volumeMounts/2
       - op: remove
         path: /spec/template/spec/volumes/2
+      - op: add
+        path: /spec/template/spec/containers/0/envFrom/-
+        value:
+          secretRef:
+            name: ctl-agentchat-secrets
   - target:
       kind: Deployment
       name: ctl-service
@@ -26,6 +31,11 @@ patches:
         path: /spec/template/spec/containers/0/volumeMounts/2
       - op: remove
         path: /spec/template/spec/volumes/2
+      - op: add
+        path: /spec/template/spec/containers/0/envFrom/-
+        value:
+          secretRef:
+            name: ctl-agentchat-secrets
   - target:
       kind: Deployment
       name: ctl-bypass
@@ -34,6 +44,11 @@ patches:
         path: /spec/template/spec/containers/0/volumeMounts/2
       - op: remove
         path: /spec/template/spec/volumes/2
+      - op: add
+        path: /spec/template/spec/containers/0/envFrom/-
+        value:
+          secretRef:
+            name: ctl-agentchat-secrets
 
 generators:
   - ksops-assets-generator.yaml

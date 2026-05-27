@@ -222,6 +222,25 @@ func TestWispOuterStopCommandCollectsHostDiagnosticsOnFailure(t *testing.T) {
 	}
 }
 
+func TestWispWorkspaceStopCommandRunsBarrierBeforeStop(t *testing.T) {
+	command := wispWorkspaceStopCommand(ACPSessionRuntime{
+		WispClientPath: "/tmp/cloudagent-workspace-wisp/install/bin/wispclient",
+		WispInstallDir: "/tmp/cloudagent-workspace-wisp/install",
+		WispName:       "workspace-12345678",
+	})
+	barrierIndex := strings.Index(command, "writeback-cut-barrier")
+	stopIndex := strings.Index(command, "stop \"$name\"")
+	if barrierIndex < 0 || stopIndex < 0 {
+		t.Fatalf("workspace stop command missing barrier or stop: %s", command)
+	}
+	if barrierIndex > stopIndex {
+		t.Fatalf("workspace stop command must run writeback barrier before stop: %s", command)
+	}
+	if !strings.Contains(command, "CLOUDAGENT_WISP_STOPPED") {
+		t.Fatalf("workspace stop command missing completion marker: %s", command)
+	}
+}
+
 func TestWispOuterPrepareScriptPropagatesLitestreamTrace(t *testing.T) {
 	script := wispOuterPrepareScript()
 	for _, want := range []string{

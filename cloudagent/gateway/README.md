@@ -170,14 +170,17 @@ make e2e-agent-sidecar
 make publish-cloudagent-sidecar
 ```
 
-如果要走 CI 的上海 COS 签名发布路径，使用独立流水线 `.ci/cloudagent-agent-artifact.yml`。
-它只构建 Rust Agent artifact，不发布 gateway 服务；流程是：
+如果要走 CI 的上海 COS 发布路径，使用独立流水线 `.ci/cloudagent-agent-artifact.yml`。
+它构建 CloudAgent runtime artifacts，不发布 gateway 服务；流程是：
 
 - Docker 构建 `cloudagent-sidecar-linux-amd64`
 - Docker 构建 `cloudagent-agent-sign-linux-amd64`
 - 使用 Ed25519 detached `.sig` 签名
 - 上传 binary 和 `.sig` 到 `cloudagent-sidecar-shanghai-1388575217 / ap-shanghai`
 - 输出 `cloudagent-agent-version-registry.json`
+- 从 `cloudagent/wisp` 构建 Wisp package
+- 上传 Wisp package 到同一个上海 COS bucket
+- 输出 `cloudagent-workspace-version-registry.json` 和合并后的 `cloudagent-artifacts-registry.json`
 
 CI 需要配置这些 settings：
 
@@ -188,11 +191,12 @@ CI 需要配置这些 settings：
 本地 dry-run 可以用：
 
 ```bash
-CLOUDAGENT_SIGNUPLOAD_DRY_RUN=1 \
+CLOUDAGENT_ARTIFACTS_DRY_RUN=1 \
   CLOUDAGENT_AGENT_COS_SECRET_ID=fake \
   CLOUDAGENT_AGENT_COS_SECRET_KEY=fake \
   CLOUDAGENT_AGENT_RELEASE_ED25519_SEED_B64=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= \
-  make ci-signupload-cloudagent-sidecar-shanghai
+  CLOUDAGENT_WISP_PACKAGE_ARTIFACT=/path/to/wisp-linux-amd64-test.tar.gz \
+  make ci-publish-cloudagent-artifacts-shanghai
 ```
 
 如果你想让本地服务也走这条自动发布流程，直接跑：

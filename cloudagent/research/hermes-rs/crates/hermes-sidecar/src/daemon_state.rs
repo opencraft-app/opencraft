@@ -8,10 +8,7 @@ use anyhow::{bail, Context, Result};
 use base64::Engine;
 use hermes_core::{
     client::Role,
-    runtime_host::{
-        download_active_session_sandbox_file, sync_active_session_sandbox_files,
-        upload_active_session_sandbox_file, SessionSandboxBinding,
-    },
+    runtime_host::{sync_active_session_sandbox_files, SessionSandboxBinding},
     AgentRuntime, BehaviorRegistry, BehaviorVersions, Message, RunTurnRequest, RuntimeStore,
     TranscriptBlock, TranscriptRole,
 };
@@ -480,9 +477,16 @@ impl DaemonState {
         file.write_all(&content).with_context(|| {
             format!("failed to write workspace file '{}'", local_path.display())
         })?;
-        let inner_synced =
-            upload_active_session_sandbox_file(&self.workspace_root, &relative_path, content)
-                .await?;
+        let inner_synced = self
+            .agent
+            .upload_session_sandbox_file(&relative_path, content)
+            .await?;
+        if !inner_synced {
+            bail!(
+                "workspace upload did not sync to the bound inner workspace runtime: {}",
+                request.path
+            );
+        }
         Ok(json!({
             "ok": true,
             "path": request.path,
@@ -506,11 +510,10 @@ impl DaemonState {
                 });
             }
         };
-        let sandbox_content = match download_active_session_sandbox_file(
-            &self.workspace_root,
-            &relative_path,
-        )
-        .await
+        let sandbox_content = match self
+            .agent
+            .download_session_sandbox_file(&relative_path)
+            .await
         {
             Ok(content) => content,
             Err(_) if local_content.is_some() => None,

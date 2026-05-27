@@ -51,6 +51,8 @@ HERMES_SYSTEM_BIN_DIR="${HERMES_SYSTEM_BIN_DIR:-/usr/local/bin}"
 HERMES_SYSTEM_LINK_DIR="${HERMES_SYSTEM_LINK_DIR:-/usr/bin}"
 HERMES_WHATSAPP_BRIDGE_USER="${HERMES_WHATSAPP_BRIDGE_USER:-}"
 HERMES_WHATSAPP_BRIDGE_HOME="${HERMES_WHATSAPP_BRIDGE_HOME:-}"
+HERMES_PYPI_INDEX_URL="${HERMES_PYPI_INDEX_URL:-https://mirrors.tencent.com/pypi/simple}"
+HERMES_PYPI_EXTRA_INDEX_URL="${HERMES_PYPI_EXTRA_INDEX_URL:-https://mirrors.cloud.tencent.com/pypi/simple}"
 ACLI_IDENTITY_PATH="${ACLI_IDENTITY_PATH:-/etc/acli/identity.yaml}"
 NODE_VERSION=""
 PNPM_VERSION=""
@@ -825,6 +827,27 @@ EOF
   chmod 0644 "${HERMES_ENV_PROFILE_PATH}"
 }
 
+configure_hermes_python_mirrors() {
+  local pip_config_dir="${RUNTIME_HOME}/.config/pip"
+  local uv_config_dir="${RUNTIME_HOME}/.config/uv"
+
+  log_info "configuring Hermes Python package mirrors for ${RUNTIME_USER}"
+  mkdir -p "${pip_config_dir}" "${uv_config_dir}"
+  cat > "${pip_config_dir}/pip.conf" <<EOF
+[global]
+index-url = ${HERMES_PYPI_INDEX_URL}
+extra-index-url =
+    ${HERMES_PYPI_EXTRA_INDEX_URL}
+timeout = 300
+disable-pip-version-check = true
+EOF
+  cat > "${uv_config_dir}/uv.toml" <<EOF
+index-url = "${HERMES_PYPI_INDEX_URL}"
+extra-index-url = ["${HERMES_PYPI_EXTRA_INDEX_URL}"]
+EOF
+  chown -R "${RUNTIME_USER}:${RUNTIME_USER}" "${pip_config_dir}" "${uv_config_dir}" 2>/dev/null || true
+}
+
 install_hermes_extra_tools() {
   local skillhub_url_escaped=""
   log_info "installing hermes extra tools"
@@ -884,6 +907,19 @@ node -e ${resolve_js_escaped}
 EOF
 )"
   sudo -u "${bridge_user}" -H bash -lc "${bridge_cmd}"
+}
+
+install_hermes_python_deps() {
+  local hermes_python="${RUNTIME_HOME}/.hermes/hermes-agent/venv/bin/python"
+
+  log_info "installing Hermes Python integration deps"
+  if [ ! -x "${hermes_python}" ]; then
+    log_error "Hermes venv python not found: ${hermes_python}"
+    return 1
+  fi
+
+  run_as_runtime_user "export HOME='${RUNTIME_HOME}'; export XDG_CONFIG_HOME='${RUNTIME_HOME}/.config'; export PATH='${RUNTIME_HOME}/.local/bin:${RUNTIME_HOME}/.cargo/bin:'\"\$PATH\"; uv pip install --index-url '${HERMES_PYPI_INDEX_URL}' --extra-index-url '${HERMES_PYPI_EXTRA_INDEX_URL}' --python '${hermes_python}' lark-oapi==1.5.3 qrcode==7.4.2"
+  run_as_runtime_user "'${hermes_python}' -c 'import lark_oapi, qrcode; print(\"hermes-python-deps-ok\")'"
 }
 
 ensure_hermes_acli_identity() {
@@ -1550,6 +1586,8 @@ build_app_layer() {
   resolve_runtime_home
   if [ "${RUNTIME_KIND}" = "hermes" ]; then
     install_hermes_runtime
+    configure_hermes_python_mirrors
+    install_hermes_python_deps
     install_hermes_whatsapp_bridge_deps
     ensure_hermes_gateway_service
     install_hermes_extra_tools

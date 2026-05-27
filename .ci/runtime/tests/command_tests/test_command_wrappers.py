@@ -9,6 +9,23 @@ ALLOWED_MAIN_MODULE_PREFIXES = ("contracts.", "gitops.", "gates.", "guards.", "s
 
 
 class CommandWrapperTests(unittest.TestCase):
+    def test_cloudagent_artifact_ci_uses_local_secret_file_fallback(self) -> None:
+        script_paths = [
+            REPO_ROOT / "cloudagent/gateway/scripts/ci_publish_cloudagent_artifacts_shanghai.sh",
+            REPO_ROOT / "cloudagent/gateway/scripts/ci_signupload_cloudagent_sidecar_shanghai.sh",
+        ]
+
+        for path in script_paths:
+            with self.subTest(path=path.name):
+                source = path.read_text()
+                self.assertIn("is_unexpanded_setting", source)
+                self.assertIn("/etc/lightclaw-ci/tencentcloud_secret_id", source)
+                self.assertIn("/etc/lightclaw-ci/tencentcloud_secret_key", source)
+                self.assertIn("/etc/lightclaw-ci/cloudagent_agent_release_ed25519_seed_b64", source)
+                self.assertIn("first_secret_value CLOUDAGENT_AGENT_COS_SECRET_ID", source)
+                self.assertIn("first_secret_value CLOUDAGENT_AGENT_COS_SECRET_KEY", source)
+                self.assertIn("first_secret_value CLOUDAGENT_AGENT_RELEASE_ED25519_SEED_B64", source)
+
     def test_materialize_manifest_covers_runtime_python_without_local_secrets(self) -> None:
         manifest_path = RUNTIME_DIR / "materialize-files.txt"
         manifest_entries = {

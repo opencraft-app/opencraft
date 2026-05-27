@@ -32,6 +32,50 @@ first_env() {
   return 1
 }
 
+first_file_value() {
+  local path value
+  for path in "$@"; do
+    if [ -n "$path" ] && [ -f "$path" ]; then
+      value="$(tr -d '\r\n' <"$path")"
+      if [ -n "$value" ]; then
+        printf '%s\n' "$value"
+        return 0
+      fi
+    fi
+  done
+  return 1
+}
+
+first_secret_value() {
+  local env_value file_value
+  # Devcloud Stream settings are optional; CI runners also provide local secret files.
+  env_value="$(first_env "$@" || true)"
+  if [ -n "$env_value" ]; then
+    printf '%s\n' "$env_value"
+    return 0
+  fi
+
+  case "$1" in
+    CLOUDAGENT_AGENT_COS_SECRET_ID)
+      file_value="$(first_file_value "${CLOUDAGENT_AGENT_COS_SECRET_ID_FILE:-}" /etc/lightclaw-ci/tencentcloud_secret_id || true)"
+      ;;
+    CLOUDAGENT_AGENT_COS_SECRET_KEY)
+      file_value="$(first_file_value "${CLOUDAGENT_AGENT_COS_SECRET_KEY_FILE:-}" /etc/lightclaw-ci/tencentcloud_secret_key || true)"
+      ;;
+    CLOUDAGENT_AGENT_RELEASE_ED25519_SEED_B64)
+      file_value="$(first_file_value "${CLOUDAGENT_AGENT_RELEASE_ED25519_SEED_B64_FILE:-}" /etc/lightclaw-ci/cloudagent_agent_release_ed25519_seed_b64 || true)"
+      ;;
+    *)
+      file_value=""
+      ;;
+  esac
+  if [ -n "$file_value" ]; then
+    printf '%s\n' "$file_value"
+    return 0
+  fi
+  return 1
+}
+
 require_env_value() {
   local name="$1"
   local value="$2"
@@ -76,9 +120,9 @@ if [ "$COS_REGION" != "ap-shanghai" ] && [ "${CLOUDAGENT_AGENT_COS_ALLOW_NON_SHA
   exit 2
 fi
 
-COS_SECRET_ID="$(first_env CLOUDAGENT_AGENT_COS_SECRET_ID COS_SECRETID COS_SECRET_ID TENCENTCLOUD_SECRET_ID AWS_ACCESS_KEY_ID || true)"
-COS_SECRET_KEY="$(first_env CLOUDAGENT_AGENT_COS_SECRET_KEY COS_SECRETKEY COS_SECRET_KEY TENCENTCLOUD_SECRET_KEY AWS_SECRET_ACCESS_KEY || true)"
-SIGNING_SEED="$(first_env CLOUDAGENT_AGENT_RELEASE_ED25519_SEED_B64 || true)"
+COS_SECRET_ID="$(first_secret_value CLOUDAGENT_AGENT_COS_SECRET_ID COS_SECRETID COS_SECRET_ID TENCENTCLOUD_SECRET_ID AWS_ACCESS_KEY_ID || true)"
+COS_SECRET_KEY="$(first_secret_value CLOUDAGENT_AGENT_COS_SECRET_KEY COS_SECRETKEY COS_SECRET_KEY TENCENTCLOUD_SECRET_KEY AWS_SECRET_ACCESS_KEY || true)"
+SIGNING_SEED="$(first_secret_value CLOUDAGENT_AGENT_RELEASE_ED25519_SEED_B64 || true)"
 
 require_env_value CLOUDAGENT_AGENT_COS_SECRET_ID "$COS_SECRET_ID"
 require_env_value CLOUDAGENT_AGENT_COS_SECRET_KEY "$COS_SECRET_KEY"

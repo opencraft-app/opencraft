@@ -68,3 +68,24 @@ func TestWispRuntimeRootfsHostPathRejectsUnsafeName(t *testing.T) {
 		t.Fatal("expected invalid wisp runtime name")
 	}
 }
+
+func TestShouldUseWorkspaceWispTransferDoesNotRequireClientPath(t *testing.T) {
+	runtime := ACPSessionRuntime{
+		OuterRuntime:        outerRuntimeWisp,
+		WorkspaceWispName:   "workspace-12345678",
+		WorkspaceWispClient: "",
+	}
+	if !shouldUseWorkspaceWispTransfer(runtime) {
+		t.Fatal("workspace Wisp transfer should not require a stored wispclient path")
+	}
+}
+
+func TestShouldUseWorkspaceWispTransferRequiresWorkspaceName(t *testing.T) {
+	runtime := ACPSessionRuntime{
+		OuterRuntime:        outerRuntimeWisp,
+		WorkspaceWispClient: "/tmp/cloudagent-workspace-wisp/session/install/bin/wispclient",
+	}
+	if shouldUseWorkspaceWispTransfer(runtime) {
+		t.Fatal("workspace Wisp transfer without workspace Wisp name would target the wrong runtime")
+	}
+}

@@ -518,7 +518,12 @@ require_log 'event=acp_runtime_restore_daemon_done'
 require_log 'event=acp_runtime_wisp_stop_start'
 require_log_regex 'event=acp_runtime_wisp_stop_(done|failed)'
 require_log 'workspace_runtime_shutdown_done'
-require_log_regex 'event=session_history_seed_done .*seeded=\\"2\\"'
+if ! grep -Eq 'event=session_history_seed_done .*seeded=\\"2\\"' "$SERVER_LOG" &&
+   ! grep -q 'event=acp_runtime_restore_bootstrap_skipped mode=acp_session_runtime_restore' "$SERVER_LOG"; then
+  printf 'expected restored model context from either gateway history seed or authoritative runtime store\n' >&2
+  tail -n 240 "$SERVER_LOG" >&2
+  exit 1
+fi
 if grep -q 'event=acp_session_persist_failed' "$SERVER_LOG"; then
   printf 'session persistence failed during restore e2e\n' >&2
   tail -n 240 "$SERVER_LOG" >&2

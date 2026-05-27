@@ -187,6 +187,132 @@ func TestBindOAuthToCurrentSessionReusesExistingRegisteredUserWithoutInvite(t *t
 	}
 }
 
+func TestOAuthSignInLinksVerifiedEmailToExistingUser(t *testing.T) {
+	t.Parallel()
+
+	store := NewMemoryStore(StoreOptions{
+		Now:                fixedNow,
+		SeedDefaultInvites: true,
+	})
+	svc := NewWithStore(store, Options{Now: fixedNow})
+
+	passwordSession, err := svc.SignUpWithPassword(context.Background(), PasswordSignUpInput{
+		Email:      "same-user@lightvela.ai",
+		Password:   "secure2026!",
+		Name:       "Lightvela User",
+		InviteCode: "VALID2026",
+	})
+	if err != nil {
+		t.Fatalf("password sign-up failed: %v", err)
+	}
+
+	googleSession, err := svc.SignInWithOAuth(context.Background(), OAuthSignInInput{
+		Provider:        "google",
+		ProviderSubject: "google-sub-same-user",
+		Email:           "same-user@lightvela.ai",
+		EmailVerified:   true,
+		Name:            "Google Profile",
+	})
+	if err != nil {
+		t.Fatalf("google oauth sign-in failed: %v", err)
+	}
+	if googleSession.User.ID != passwordSession.User.ID {
+		t.Fatalf("expected google sign-in to reuse existing user, got %q then %q", passwordSession.User.ID, googleSession.User.ID)
+	}
+	if googleSession.User.Name != passwordSession.User.Name {
+		t.Fatalf("expected existing user profile to be preserved, got %q", googleSession.User.Name)
+	}
+
+	returningSession, err := svc.SignInWithOAuth(context.Background(), OAuthSignInInput{
+		Provider:        "google",
+		ProviderSubject: "google-sub-same-user",
+		Email:           "same-user@lightvela.ai",
+		EmailVerified:   true,
+		Name:            "Google Profile Updated",
+	})
+	if err != nil {
+		t.Fatalf("returning google oauth sign-in failed: %v", err)
+	}
+	if returningSession.User.ID != passwordSession.User.ID {
+		t.Fatalf("expected returning google sign-in to reuse existing user, got %q then %q", passwordSession.User.ID, returningSession.User.ID)
+	}
+}
+
+func TestOAuthSignInDoesNotLinkUnverifiedEmailToExistingUser(t *testing.T) {
+	t.Parallel()
+
+	store := NewMemoryStore(StoreOptions{
+		Now:                fixedNow,
+		SeedDefaultInvites: true,
+	})
+	svc := NewWithStore(store, Options{Now: fixedNow})
+
+	passwordSession, err := svc.SignUpWithPassword(context.Background(), PasswordSignUpInput{
+		Email:      "unverified@lightvela.ai",
+		Password:   "secure2026!",
+		Name:       "Existing User",
+		InviteCode: "VALID2026",
+	})
+	if err != nil {
+		t.Fatalf("password sign-up failed: %v", err)
+	}
+
+	_, err = svc.SignInWithOAuth(context.Background(), OAuthSignInInput{
+		Provider:        "google",
+		ProviderSubject: "google-sub-unverified-email",
+		Email:           "unverified@lightvela.ai",
+		EmailVerified:   false,
+		Name:            "Unverified Profile",
+	})
+	if err == nil {
+		t.Fatal("expected unverified oauth email conflict")
+	}
+	authErr, ok := err.(*Error)
+	if !ok {
+		t.Fatalf("expected service error, got %T", err)
+	}
+	if authErr.Code != "oauth_email_conflict" {
+		t.Fatalf("expected oauth_email_conflict, got %q", authErr.Code)
+	}
+	if passwordSession.User.ID == "" {
+		t.Fatal("expected existing user to remain available")
+	}
+}
+
+func TestOAuthSignInLinksGitHubEmailToExistingUserWithoutVerifiedFlag(t *testing.T) {
+	t.Parallel()
+
+	store := NewMemoryStore(StoreOptions{
+		Now:                fixedNow,
+		SeedDefaultInvites: true,
+	})
+	svc := NewWithStore(store, Options{Now: fixedNow})
+
+	passwordSession, err := svc.SignUpWithPassword(context.Background(), PasswordSignUpInput{
+		Email:      "github-user@lightvela.ai",
+		Password:   "secure2026!",
+		Name:       "GitHub User",
+		InviteCode: "VALID2026",
+	})
+	if err != nil {
+		t.Fatalf("password sign-up failed: %v", err)
+	}
+
+	githubSession, err := svc.SignInWithOAuth(context.Background(), OAuthSignInInput{
+		Provider:        "github",
+		ProviderSubject: "123456",
+		Email:           "github-user@lightvela.ai",
+		EmailVerified:   false,
+		Name:            "GitHub Profile",
+	})
+	if err != nil {
+		t.Fatalf("github oauth sign-in failed: %v", err)
+	}
+	if githubSession.User.ID != passwordSession.User.ID {
+		t.Fatalf("expected github sign-in to reuse existing user, got %q then %q", passwordSession.User.ID, githubSession.User.ID)
+	}
+}
+
 func TestOAuthSignInUsesWeChatFallbackName(t *testing.T) {
 	t.Parallel()
 
