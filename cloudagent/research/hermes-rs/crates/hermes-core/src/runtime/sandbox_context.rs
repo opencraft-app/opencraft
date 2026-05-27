@@ -20,6 +20,30 @@ impl AgentExecutor {
         Some(sandbox.sandbox_id().await)
     }
 
+    pub async fn upload_session_sandbox_file(
+        &self,
+        workspace_path: &str,
+        content: Vec<u8>,
+    ) -> Result<bool> {
+        let Some(sandbox) = self.session_sandbox.read().await.clone() else {
+            return Ok(false);
+        };
+        let remote_path = sandbox.resolve_path(workspace_path)?;
+        sandbox.upload_bytes_at_path(&remote_path, content).await?;
+        Ok(true)
+    }
+
+    pub async fn download_session_sandbox_file(
+        &self,
+        workspace_path: &str,
+    ) -> Result<Option<Vec<u8>>> {
+        let Some(sandbox) = self.session_sandbox.read().await.clone() else {
+            return Ok(None);
+        };
+        let remote_path = sandbox.resolve_path(workspace_path)?;
+        sandbox.download_bytes_at_path(&remote_path).await.map(Some)
+    }
+
     pub async fn test_tool_context(&self) -> Result<ToolContext> {
         self.tool_context().await
     }

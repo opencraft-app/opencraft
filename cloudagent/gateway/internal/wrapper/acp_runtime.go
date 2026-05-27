@@ -61,6 +61,8 @@ type ACPSessionRuntime struct {
 	WispLeaseUntil       time.Time
 	WorkspaceID          string
 	WorkspaceRuntimeID   string
+	WorkspaceWispName    string
+	WorkspaceWispClient  string
 	WorkspaceLeaseID     string
 	WorkspaceFence       int64
 	WorkspaceLeaseUntil  time.Time

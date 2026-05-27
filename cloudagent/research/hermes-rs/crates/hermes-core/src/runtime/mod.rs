@@ -236,6 +236,25 @@ impl AgentRuntime {
         self.agent.session_sandbox_id().await
     }
 
+    pub async fn upload_session_sandbox_file(
+        &self,
+        workspace_path: &str,
+        content: Vec<u8>,
+    ) -> Result<bool> {
+        self.agent
+            .upload_session_sandbox_file(workspace_path, content)
+            .await
+    }
+
+    pub async fn download_session_sandbox_file(
+        &self,
+        workspace_path: &str,
+    ) -> Result<Option<Vec<u8>>> {
+        self.agent
+            .download_session_sandbox_file(workspace_path)
+            .await
+    }
+
     pub async fn ensure_session_sandbox_envd_identity(
         &self,
         force: bool,

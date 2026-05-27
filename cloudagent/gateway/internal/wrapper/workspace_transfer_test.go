@@ -51,3 +51,41 @@ func chunkedText(body string, sizes ...int) string {
 	out.WriteString("0\r\n\r\n")
 	return out.String()
 }
+
+func TestWispRuntimeRootfsHostPathMapsRuntimePath(t *testing.T) {
+	got, err := wispRuntimeRootfsHostPath("agent-session_abc", "/tmp/gateway/sessions/s1/upload.bin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "/var/lib/wisp-runtime/agent-session_abc/rootfs/tmp/gateway/sessions/s1/upload.bin"
+	if got != want {
+		t.Fatalf("path = %q, want %q", got, want)
+	}
+}
+
+func TestWispRuntimeRootfsHostPathRejectsUnsafeName(t *testing.T) {
+	if _, err := wispRuntimeRootfsHostPath("../bad", "/tmp/file"); err == nil {
+		t.Fatal("expected invalid wisp runtime name")
+	}
+}
+
+func TestShouldUseWorkspaceWispTransferDoesNotRequireClientPath(t *testing.T) {
+	runtime := ACPSessionRuntime{
+		OuterRuntime:        outerRuntimeWisp,
+		WorkspaceWispName:   "workspace-12345678",
+		WorkspaceWispClient: "",
+	}
+	if !shouldUseWorkspaceWispTransfer(runtime) {
+		t.Fatal("workspace Wisp transfer should not require a stored wispclient path")
+	}
+}
+
+func TestShouldUseWorkspaceWispTransferRequiresWorkspaceName(t *testing.T) {
+	runtime := ACPSessionRuntime{
+		OuterRuntime:        outerRuntimeWisp,
+		WorkspaceWispClient: "/tmp/cloudagent-workspace-wisp/session/install/bin/wispclient",
+	}
+	if shouldUseWorkspaceWispTransfer(runtime) {
+		t.Fatal("workspace Wisp transfer without workspace Wisp name would target the wrong runtime")
+	}
+}

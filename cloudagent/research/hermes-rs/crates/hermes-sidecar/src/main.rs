@@ -29,7 +29,7 @@ mod telemetry;
 use cli::{parse_command_mode, CommandMode, DaemonArgs};
 use client::run_client;
 #[cfg(test)]
-use client::{classify_error_code, ClientCommand};
+use client::{classify_error_code, ClientCommand, WorkspaceFileUploadContent};
 #[cfg(test)]
 use config_bootstrap::build_runtime_config;
 use daemon_http::handle_connection;
@@ -441,12 +441,47 @@ mod tests {
         ];
         match parse_command_mode(&upload_args).unwrap() {
             CommandMode::Client(client) => match client.command {
-                ClientCommand::WorkspaceFileUpload {
-                    path_b64,
-                    content_b64,
-                } => {
+                ClientCommand::WorkspaceFileUpload { path_b64, content } => {
                     assert_eq!(path_b64, STANDARD.encode("/workspace/a.txt"));
-                    assert_eq!(content_b64, STANDARD.encode("hello"));
+                    match content {
+                        WorkspaceFileUploadContent::InlineB64(content_b64) => {
+                            assert_eq!(content_b64, STANDARD.encode("hello"));
+                        }
+                        other => panic!("expected inline upload content, got {:?}", other),
+                    }
+                }
+                other => panic!(
+                    "expected client workspace-file-upload command, got {:?}",
+                    other
+                ),
+            },
+            other => panic!("expected client mode, got {:?}", other),
+        }
+
+        let upload_file_args = vec![
+            "hermes-sidecar".to_string(),
+            "client".to_string(),
+            "--addr".to_string(),
+            "http://127.0.0.1:49999".to_string(),
+            "workspace-file-upload".to_string(),
+            "--path-b64".to_string(),
+            STANDARD.encode("/workspace/a.txt"),
+            "--content-file-b64".to_string(),
+            STANDARD.encode("/tmp/upload-content.bin"),
+        ];
+        match parse_command_mode(&upload_file_args).unwrap() {
+            CommandMode::Client(client) => match client.command {
+                ClientCommand::WorkspaceFileUpload { path_b64, content } => {
+                    assert_eq!(path_b64, STANDARD.encode("/workspace/a.txt"));
+                    match content {
+                        WorkspaceFileUploadContent::FileB64(content_file_b64) => {
+                            assert_eq!(
+                                content_file_b64,
+                                STANDARD.encode("/tmp/upload-content.bin")
+                            );
+                        }
+                        other => panic!("expected file upload content, got {:?}", other),
+                    }
                 }
                 other => panic!(
                     "expected client workspace-file-upload command, got {:?}",

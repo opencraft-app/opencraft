@@ -230,6 +230,16 @@ else
   echo "${WHATSAPP_BRIDGE_OUTPUT}"
 fi
 
+info "checking Hermes Python integration dependencies"
+HERMES_PYTHON_DEPS_OUTPUT="$(remote_exec_runtime 'set -euo pipefail; '"${RUNTIME_HOME}"'/.hermes/hermes-agent/venv/bin/python -c '"'"'import lark_oapi, qrcode; print("hermes-python-deps-ok")'"'" 2>&1 || true)"
+if echo "${HERMES_PYTHON_DEPS_OUTPUT}" | grep -q 'hermes-python-deps-ok' \
+  && ! echo "${HERMES_PYTHON_DEPS_OUTPUT}" | grep -Eqi 'moduleNotFoundError|importError|no such file|error'; then
+  pass "Hermes Python integration dependencies are available"
+else
+  fail "Hermes Python integration dependencies are not available"
+  echo "${HERMES_PYTHON_DEPS_OUTPUT}"
+fi
+
 info "checking acli command"
 ACLI_OUTPUT="$(remote_exec_runtime "if command -v acli >/dev/null 2>&1; then acli --help >/dev/null && acli doctor; else echo MISSING; exit 1; fi" 2>&1 || true)"
 if echo "${ACLI_OUTPUT}" | grep -Eqi 'error|failed|missing'; then

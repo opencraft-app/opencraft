@@ -277,6 +277,8 @@ func migrateStore(db *sql.DB) error {
 		`ALTER TABLE session_runtimes ADD COLUMN wisp_lease_until TEXT`,
 		`ALTER TABLE session_runtimes ADD COLUMN workspace_id TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE session_runtimes ADD COLUMN workspace_runtime_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE session_runtimes ADD COLUMN workspace_wisp_name TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE session_runtimes ADD COLUMN workspace_wisp_client TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE session_runtimes ADD COLUMN workspace_lease_id TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE session_runtimes ADD COLUMN workspace_fence INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE session_runtimes ADD COLUMN workspace_lease_until TEXT`,

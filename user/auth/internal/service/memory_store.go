@@ -144,6 +144,20 @@ func (s *MemoryStore) CreateOAuthSession(_ context.Context, input OAuthSignInInp
 		}
 	}
 
+	if strings.TrimSpace(input.Email) != "" {
+		if userID, exists := s.usersByEmail[input.Email]; exists {
+			user, ok := s.usersByID[userID]
+			if !ok {
+				delete(s.usersByEmail, input.Email)
+			} else if canAutoLinkOAuthEmail(input) {
+				s.oauthUsers[key] = user.ID
+				return s.createSessionLocked(user, now, sessionTTL)
+			} else {
+				return nil, newError("oauth_email_conflict", "第三方账号邮箱已被使用，请先使用已有方式登录后再绑定。", 409)
+			}
+		}
+	}
+
 	user := s.newUserWithInviteRequirementLocked(input.Name, input.Email, "", false, now)
 	s.oauthUsers[key] = user.ID
 	return s.createSessionLocked(user, now, sessionTTL)

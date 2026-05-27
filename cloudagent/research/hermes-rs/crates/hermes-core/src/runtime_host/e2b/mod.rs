@@ -9,7 +9,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use base64::{engine::general_purpose::STANDARD, Engine as _};
 use reqwest::{multipart, Client};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -145,6 +144,7 @@ pub struct SessionSandboxBinding {
     pub workspace_root: String,
     pub local_workspace_root: PathBuf,
     pub command_prefix: Option<String>,
+    pub command_shell_prefix: Option<String>,
     pub shutdown_command: Option<String>,
 }
 
@@ -460,7 +460,7 @@ impl SessionSandbox {
             .is_some_and(|value| !value.is_empty())
         {
             return self
-                .upload_bytes_at_path_via_command(remote_path, content)
+                .upload_bytes_at_path_via_native_host(remote_path, content)
                 .await;
         }
         if let Some(parent) = Path::new(remote_path)
@@ -480,40 +480,18 @@ impl SessionSandbox {
             .await
     }
 
-    async fn upload_bytes_at_path_via_command(
+    async fn upload_bytes_at_path_via_native_host(
         &self,
         remote_path: &str,
         content: Vec<u8>,
     ) -> Result<()> {
-        if let Ok(text) = String::from_utf8(content.clone()) {
-            self.native_call(
-                "fs.write",
-                serde_json::json!({
-                    "path": remote_path,
-                    "content": text,
-                }),
-            )
-            .await?;
-            return Ok(());
-        }
-        let Some(parent) = Path::new(remote_path)
-            .parent()
-            .and_then(|path| path.to_str())
-        else {
-            return Err(Error::Agent(format!(
-                "remote path '{}' has no parent directory",
-                remote_path
-            )));
-        };
-        let command = workspace_file_upload_command(parent, remote_path, &content);
-        let result = self.run_command(&command, &HashMap::new()).await?;
-        if result.exit_code != 0 {
-            return Err(Error::Agent(format!(
-                "failed to upload file '{}' through workspace command: exit_code={} stdout={} stderr={}",
-                remote_path, result.exit_code, result.stdout, result.stderr
-            )));
-        }
-        Ok(())
+        self.ensure_native_host().await?;
+        let port = sandbox_host_port()?;
+        let inner = self.inner.lock().await;
+        inner
+            .client
+            .native_host_write_file(&inner.sandbox, port, remote_path, content)
+            .await
     }
 
     pub async fn download_bytes(&self, relative_path: &str) -> Result<Vec<u8>> {
@@ -528,29 +506,24 @@ impl SessionSandbox {
             .map(str::trim)
             .is_some_and(|value| !value.is_empty())
         {
-            let command = workspace_file_download_command(remote_path);
-            let result = self.run_command(&command, &HashMap::new()).await?;
-            if result.exit_code != 0 {
-                return Err(Error::Agent(format!(
-                    "failed to download file '{}' through workspace command: exit_code={} stdout={} stderr={}",
-                    remote_path, result.exit_code, result.stdout, result.stderr
-                )));
-            }
-            let encoded = workspace_file_download_base64_output(&result.stdout);
-            return STANDARD
-                .decode(encoded.as_bytes())
-                .map_err(|error| {
-                    Error::ParseResponse(format!(
-                        "{}; workspace download stdout={}",
-                        error,
-                        preview_for_error(&result.stdout)
-                    ))
-                });
+            return self
+                .download_bytes_at_path_via_native_host(remote_path)
+                .await;
         }
         let inner = self.inner.lock().await;
         inner
             .client
             .download_file(&inner.sandbox, remote_path)
+            .await
+    }
+
+    async fn download_bytes_at_path_via_native_host(&self, remote_path: &str) -> Result<Vec<u8>> {
+        self.ensure_native_host().await?;
+        let port = sandbox_host_port()?;
+        let inner = self.inner.lock().await;
+        inner
+            .client
+            .native_host_read_file(&inner.sandbox, port, remote_path)
             .await
     }
 
@@ -799,80 +772,6 @@ impl SessionSandbox {
         let cleaned = relative_path.trim_start_matches('/');
         format!("{}/{}", self.workspace_root, cleaned)
     }
-}
-
-fn workspace_file_upload_command(parent: &str, remote_path: &str, content: &[u8]) -> String {
-    format!(
-        "mkdir -p {} && printf %s {} | base64 -d > {} && test -f {}",
-        shell_quote(parent),
-        shell_quote(&STANDARD.encode(content)),
-        shell_quote(remote_path),
-        shell_quote(remote_path)
-    )
-}
-
-fn workspace_file_download_command(remote_path: &str) -> String {
-    format!(
-        "set -e\npath={path}\ntest -f \"$path\"\nbase64 \"$path\" | tr -d '\\n'\n",
-        path = shell_quote(remote_path)
-    )
-}
-
-fn workspace_file_download_base64_output(stdout: &str) -> String {
-    let trimmed = stdout.trim();
-    if let Some(output) = workspace_file_download_json_output(trimmed) {
-        return output;
-    }
-    let mut streamed = String::new();
-    let mut saw_json_line = false;
-    for line in trimmed.lines().map(str::trim).filter(|line| !line.is_empty()) {
-        if let Ok(value) = serde_json::from_str::<serde_json::Value>(line) {
-            saw_json_line = true;
-            if let Some(chunk) = workspace_file_download_value_output(&value) {
-                streamed.push_str(chunk.trim());
-            }
-        }
-    }
-    if saw_json_line && !streamed.is_empty() {
-        return streamed;
-    }
-    trimmed.to_string()
-}
-
-fn workspace_file_download_json_output(trimmed: &str) -> Option<String> {
-    let value = serde_json::from_str::<serde_json::Value>(trimmed).ok()?;
-    workspace_file_download_value_output(&value).map(|value| value.trim().to_string())
-}
-
-fn workspace_file_download_value_output(value: &serde_json::Value) -> Option<&str> {
-    for pointer in [
-        "/stdout",
-        "/output",
-        "/result/stdout",
-        "/result/output",
-        "/data/stdout",
-        "/data/output",
-        "/event/data/stdout",
-        "/event/data/output",
-    ] {
-        if let Some(value) = value.pointer(pointer).and_then(|value| value.as_str()) {
-            return Some(value);
-        }
-    }
-    None
-}
-
-fn preview_for_error(value: &str) -> String {
-    const LIMIT: usize = 512;
-    let mut preview = value.trim().chars().take(LIMIT).collect::<String>();
-    preview = preview
-        .replace('\r', "\\r")
-        .replace('\n', "\\n")
-        .replace('\t', "\\t");
-    if value.chars().count() > LIMIT {
-        preview.push_str("...");
-    }
-    preview
 }
 
 #[async_trait::async_trait]

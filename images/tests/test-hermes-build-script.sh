@@ -70,8 +70,13 @@ cat >"$HOME/.hermes/hermes-agent/venv/bin/hermes" <<'INNER'
 #!/usr/bin/env bash
 echo "0.14.0"
 INNER
+cat >"$HOME/.hermes/hermes-agent/venv/bin/python" <<'INNER'
+#!/usr/bin/env bash
+exit 0
+INNER
 chmod +x "$HOME/.hermes/hermes-agent/venv/bin/hermes-agent"
 chmod +x "$HOME/.hermes/hermes-agent/venv/bin/hermes"
+chmod +x "$HOME/.hermes/hermes-agent/venv/bin/python"
 exit 0
 EOF
 chmod +x "${INSTALLER_PAYLOAD}"
@@ -152,6 +157,14 @@ npm() {
   command npm "$@"
 }
 
+uv() {
+  if [[ "${1:-}" == "pip" && "${2:-}" == "install" ]]; then
+    log_call "uv-pip-install $*"
+    return 0
+  fi
+  command uv "$@"
+}
+
 su() {
   if [[ "${1:-}" == "-" && "${2:-}" == "${RUNTIME_USER}" && "${3:-}" == "-c" ]]; then
     log_call "su ${4:-}"
@@ -221,6 +234,8 @@ ln() {
 mkdir -p "${HOME}/.local/bin" "${HOME}/.config/systemd/user"
 
 install_hermes_runtime
+configure_hermes_python_mirrors
+install_hermes_python_deps
 install_hermes_whatsapp_bridge_deps
 install_hermes_extra_tools
 install_hermes_acli
@@ -229,6 +244,11 @@ grep -q "curl-hermes-latest" "${LOG_FILE}"
 grep -q "curl-hermes-tarball" "${LOG_FILE}"
 grep -q "curl-installer" "${LOG_FILE}"
 grep -q "npm-install @qwen-code/qwen-code@latest" "${LOG_FILE}"
+grep -q "uv-pip-install pip install --index-url https://mirrors.tencent.com/pypi/simple --extra-index-url https://mirrors.cloud.tencent.com/pypi/simple --python ${RUNTIME_HOME}/.hermes/hermes-agent/venv/bin/python lark-oapi==1.5.3 qrcode==7.4.2" "${LOG_FILE}"
+grep -Fq "index-url = https://mirrors.tencent.com/pypi/simple" "${RUNTIME_HOME}/.config/pip/pip.conf"
+grep -Fq "https://mirrors.cloud.tencent.com/pypi/simple" "${RUNTIME_HOME}/.config/pip/pip.conf"
+grep -Fq 'index-url = "https://mirrors.tencent.com/pypi/simple"' "${RUNTIME_HOME}/.config/uv/uv.toml"
+grep -Fq 'extra-index-url = ["https://mirrors.cloud.tencent.com/pypi/simple"]' "${RUNTIME_HOME}/.config/uv/uv.toml"
 grep -q "sudo-npm-install pnpm" "${LOG_FILE}"
 grep -q "sudo-user agentuser" "${LOG_FILE}"
 grep -q "pnpm-add-whatsapp-bridge" "${LOG_FILE}"

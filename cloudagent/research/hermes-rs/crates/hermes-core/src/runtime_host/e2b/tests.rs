@@ -1,4 +1,5 @@
 use super::*;
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 
 fn test_client() -> E2BClient {
     E2BClient {
@@ -38,23 +39,6 @@ fn connect_stream_decodes_stdout_and_end() {
     assert_eq!(result.stdout, "hello\n");
     assert_eq!(result.exit_code, 0);
     assert!(result.exited);
-}
-
-#[test]
-fn workspace_file_upload_command_writes_base64_payload_to_target_path() {
-    let command = workspace_file_upload_command(
-        "/workspace/inputs/docs",
-        "/workspace/inputs/docs/upload-check.txt",
-        b"hello\n",
-    );
-
-    assert!(command.contains("mkdir -p"));
-    assert!(command.contains("/workspace/inputs/docs"));
-    assert!(command.contains("printf %s"));
-    assert!(command.contains("| base64 -d >"));
-    assert!(command.contains("/workspace/inputs/docs/upload-check.txt"));
-    assert!(command.contains("aGVsbG8K"));
-    assert!(command.contains("test -f"));
 }
 
 #[test]
@@ -176,32 +160,19 @@ fn sandbox_http_url_includes_access_token_for_proxy_auth() {
 }
 
 #[test]
-fn workspace_file_download_base64_output_accepts_raw_stdout() {
+fn sandbox_fs_blob_url_encodes_remote_path_and_traffic_token() {
+    let client = test_client();
+    let sandbox = E2BSandbox {
+        sandbox_id: "sbx_1".to_string(),
+        envd_access_token: "token".to_string(),
+        traffic_access_token: "traffic-token".to_string(),
+        domain: "example.com".to_string(),
+    };
     assert_eq!(
-        workspace_file_download_base64_output("  AAECf4D/ \n"),
-        "AAECf4D/"
-    );
-}
-
-#[test]
-fn workspace_file_download_base64_output_extracts_wrapped_stdout() {
-    assert_eq!(
-        workspace_file_download_base64_output(r#"{"stdout":"AAECf4D/\n","stderr":"","exit_code":0}"#),
-        "AAECf4D/"
-    );
-    assert_eq!(
-        workspace_file_download_base64_output(r#"{"result":{"stdout":"AAECf4D/"}}"#),
-        "AAECf4D/"
-    );
-    assert_eq!(
-        workspace_file_download_base64_output(r#"{"exit":0,"output":"AAECf4D/"}"#),
-        "AAECf4D/"
-    );
-    assert_eq!(
-        workspace_file_download_base64_output(
-            "{\"event\":{\"data\":{\"output\":\"AAEC\"}}}\n{\"event\":{\"data\":{\"output\":\"f4D/\"}}}"
-        ),
-        "AAECf4D/"
+        client
+            .sandbox_fs_blob_url(&sandbox, 19091, "/workspace/a b.bin")
+            .unwrap(),
+        "https://19091-sbx_1.example.com/v1/fs/blob?path=%2Fworkspace%2Fa+b.bin&access_token=traffic-token"
     );
 }
 
