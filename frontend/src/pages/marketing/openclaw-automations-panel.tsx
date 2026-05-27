@@ -983,7 +983,8 @@ function AutomationFormModal({
             rows={5}
             maxLength={800}
             placeholder={t("请用提示词的形式描述需要执行的任务，比如：提醒我喝水")}
-            className="mt-1.5 w-full resize-none rounded-lg border border-black/10 bg-white px-3 py-2 text-sm placeholder:text-sm placeholder:text-black/35 focus:border-black/30 focus:outline-none"
+            className="mt-3 w-full resize-none rounded-lg border border-black/10 bg-white px-3 py-2 text-sm placeholder:text-sm placeholder:text-black/35 focus:border-black/30 focus:outline-none"
+            style={{ marginTop: 12 }}
           />
         </div>
 
@@ -1079,14 +1080,14 @@ function AutomationFormModal({
             <div className="space-y-1 text-xs leading-6 text-black/40">
               <p>{t("提示：")}</p>
               <p>
-                {t("1. 设置 home 对话：在QQ、飞书应用中，在对话中向智能体发送")}
+                {t("1. 设置 home 对话：在飞书应用中，在对话中向智能体发送")}
                 <InlineCopyText value="/set-home" />
                 {t("。如未在上面输入框中指定 Chat ID，则默认通过 home 对话发送通知。")}
               </p>
               <p>
-                {t("2. 获取对话 ID：在QQ、飞书应用中，找到希望发送通知的对话，向智能体发送提示词")}
+                {t("2. 获取对话 ID：在飞书应用中，找到希望发送通知的对话，向智能体发送提示词")}
                 <InlineCopyText value={t("当前Chat ID是什么")} />
-                {t("。在上面输入框中输入Chat ID，即可指定该对话来通知。")}
+                {t("。在上面输入框中输入Chat ID（前缀为oc_的一串字符），指定该对话来通知。")}
               </p>
             </div>
           )}
