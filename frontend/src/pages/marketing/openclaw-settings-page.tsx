@@ -66,7 +66,10 @@ import {
   type IFeatureFlags,
   type IProductConfig,
 } from "@tencent/tea-sdk-lightclaw";
-import { createMonoDebugExecAdapter } from "@/pages/marketing/openclaw-tat-adapter";
+import {
+  createMonoDebugExecAdapter,
+  LIGHTVELA_SKIP_HERMES_PROVIDER_LIST_COMMAND,
+} from "@/pages/marketing/openclaw-tat-adapter";
 import { createLightVelaCommandExecutor } from "@/pages/marketing/openclaw-command-executor";
 import { installOpenClawConsoleHelpers } from "@/pages/marketing/openclaw-console-helpers";
 import { BuddyPanel } from "@/pages/marketing/openclaw-buddy-panel";
@@ -2386,7 +2389,18 @@ const getBotStatusLabel = (status: OpenClawBot["status"]) => {
 
 /* ─── Main Settings Page ─── */
 
-const hermesScripts = createLightClawScripts({ regionShortName: "gz", agentType: "hermes" }).hermes;
+const lightVelaHermesScripts = createLightClawScripts({ regionShortName: "gz", agentType: "hermes" });
+const channelOnlyHermesScripts = {
+  ...lightVelaHermesScripts,
+  hermes: {
+    ...lightVelaHermesScripts.hermes,
+    model: {
+      ...lightVelaHermesScripts.hermes.model,
+      getListCommand: () => LIGHTVELA_SKIP_HERMES_PROVIDER_LIST_COMMAND,
+    },
+  },
+};
+const hermesScripts = lightVelaHermesScripts.hermes;
 const hermesGatewayCommands = hermesScripts.gateway;
 const hermesModelCommands = hermesScripts.model;
 
@@ -3482,6 +3496,7 @@ export const OpenClawSettingsPage = () => {
                             <ChannelPanel
                               instance={sdkInstance}
                               regionShortName={sdkRegionShortName}
+                              scriptCommands={channelOnlyHermesScripts}
                               featureFlags={sdkFeatureFlags}
                               productConfig={sdkProductConfig}
                             />

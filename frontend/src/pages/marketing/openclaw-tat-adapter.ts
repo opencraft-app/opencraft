@@ -103,6 +103,19 @@ interface CachedInvocationResult {
   base64Output: string;
 }
 
+export const LIGHTVELA_SKIP_HERMES_PROVIDER_LIST_COMMAND =
+  "__LIGHTVELA_SKIP_HERMES_PROVIDER_LIST__";
+
+const EMPTY_HERMES_PROVIDER_LIST_OUTPUT = JSON.stringify({
+  success: true,
+  data: {
+    default_provider: "",
+    default_model: "",
+    providers: [],
+  },
+  error: null,
+});
+
 export interface CreateMonoDebugExecAdapterOptions {
   /**
    * 后端地址前缀。通常来自 `resolveConfiguredAuthApiBaseUrl()`，
@@ -343,6 +356,13 @@ export function createMonoDebugExecAdapter(
     const pending = pendingCommands.get(invocationId);
     if (pending) {
       pendingCommands.delete(invocationId);
+
+      if (pending.command === LIGHTVELA_SKIP_HERMES_PROVIDER_LIST_COMMAND) {
+        return {
+          TaskStatus: "SUCCESS",
+          TaskResult: { Output: b64.encode(EMPTY_HERMES_PROVIDER_LIST_OUTPUT) },
+        };
+      }
 
       if (pollingOptions?.onProgress) {
         // 有 onProgress → 走 SSE 流式模式，实时推送每个 stdout chunk
