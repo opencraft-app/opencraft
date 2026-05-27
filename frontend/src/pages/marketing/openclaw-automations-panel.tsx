@@ -541,7 +541,7 @@ function CronJobDetailModal({ job, onClose }: { job: CronJob; onClose: () => voi
           )}
         </div>
 
-        <dl className="mt-4 space-y-3 text-sm">
+        <dl className="mt-6 space-y-3 text-sm">
           <DetailRow label={t("任务说明")} value={job.prompt || "—"} pre />
           <DetailRow label={t("执行时间")} value={formatScheduleFriendly(job, t)} />
           {job.next_run_at && <DetailRow label={t("下次执行")} value={formatTime(job.next_run_at)} />}
@@ -567,8 +567,8 @@ function DeliverDetailRow({ deliver }: { deliver: string | undefined }) {
     return (
       <div>
         <dt className="text-xs text-black/50">{t("通知方式")}</dt>
-        <dd className="mt-0.5 text-sm text-black/85 break-words">
-          {formatDeliverFallback(deliver || "", t)}
+        <dd className="mt-1 text-sm text-black/85 break-words">
+          <DetailBulletItem>{formatDeliverFallback(deliver || "", t)}</DetailBulletItem>
         </dd>
       </div>
     );
@@ -577,17 +577,26 @@ function DeliverDetailRow({ deliver }: { deliver: string | undefined }) {
   return (
     <div>
       <dt className="text-xs text-black/50">{t("通知方式")}</dt>
-      <dd className="mt-0.5 space-y-1 text-sm text-black/85 break-words">
+      <dd className="mt-1 space-y-1.5 text-sm text-black/85 break-words">
         {parsed.platforms.map((platform) => {
           const label = getDeliverPlatformLabel(platform, t);
           const chatId = parsed.chatIds[platform];
           return (
-            <div key={platform}>
+            <DetailBulletItem key={platform}>
               {chatId ? t("{{platform}}（Chat ID：{{chatId}}）", { platform: label, chatId }) : label}
-            </div>
+            </DetailBulletItem>
           );
         })}
       </dd>
+    </div>
+  );
+}
+
+function DetailBulletItem({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex items-start gap-2">
+      <span className="mt-[0.55em] h-1.5 w-1.5 shrink-0 rounded-full bg-black/35" aria-hidden="true" />
+      <span>{children}</span>
     </div>
   );
 }
