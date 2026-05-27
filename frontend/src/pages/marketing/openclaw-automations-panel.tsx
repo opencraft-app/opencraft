@@ -1401,6 +1401,7 @@ export function parseInitialSchedule(display: string): {
  * - "local" / "" → 不通知
  * - "feishu" → 平台多选含 feishu
  * - "feishu:oc_xxx,weixin" → 平台 + chat_id 解析
+ * - "origin:xxx" / 未知平台 → 原样保留，避免编辑时丢失 CLI 创建任务的通知目标
  */
 export function parseInitialDeliver(deliver: string): {
   platforms: string[];
@@ -1410,14 +1411,13 @@ export function parseInitialDeliver(deliver: string): {
   if (!deliver || deliver === "local") return empty;
   const platforms: string[] = [];
   const chatIds: Record<string, string> = {};
-  const known = new Set(["weixin", "qqbot", "feishu"]);
   for (const raw of deliver.split(",")) {
     const tok = raw.trim();
     if (!tok) continue;
     const idx = tok.indexOf(":");
-    const platform = idx >= 0 ? tok.slice(0, idx) : tok;
-    const chatId = idx >= 0 ? tok.slice(idx + 1) : "";
-    if (!known.has(platform)) continue;
+    const platform = (idx >= 0 ? tok.slice(0, idx) : tok).trim();
+    const chatId = idx >= 0 ? tok.slice(idx + 1).trim() : "";
+    if (!platform || platform === "local") continue;
     if (!platforms.includes(platform)) platforms.push(platform);
     if (chatId) chatIds[platform] = chatId;
   }

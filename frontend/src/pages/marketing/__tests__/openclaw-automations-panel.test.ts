@@ -97,15 +97,15 @@ describe("parseInitialDeliver", () => {
     });
   });
 
-  it("ignores unknown deliver targets", () => {
-    expect(parseInitialDeliver("origin,telegram,weixin")).toEqual({
-      platforms: ["weixin"],
-      chatIds: {},
+  it("preserves origin and unknown deliver targets as passthrough platforms", () => {
+    expect(parseInitialDeliver("origin:oc_123,telegram:tg_123,weixin")).toEqual({
+      platforms: ["origin", "telegram", "weixin"],
+      chatIds: { origin: "oc_123", telegram: "tg_123" },
     });
   });
 
   it("round-trips chat ids for every supported platform", () => {
-    const deliver = "weixin:wx_123,qqbot:qq_123,feishu:oc_123";
+    const deliver = "weixin:wx_123,qqbot:qq_123,feishu:oc_123,origin:oc_origin";
     const parsed = parseInitialDeliver(deliver);
 
     expect(buildDeliverString(parsed.platforms, parsed.chatIds)).toBe(deliver);
