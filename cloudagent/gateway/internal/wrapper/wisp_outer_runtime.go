@@ -309,6 +309,14 @@ func (w *AgentSidecarWorker) runOuterCommand(ctx context.Context, client *AGSCli
 	return client.RunCommand(ctx, sb, command, env, onStdout, onStderr)
 }
 
+func (w *AgentSidecarWorker) runOuterControlCommand(ctx context.Context, client *AGSClient, sb AGSSandbox, runtime ACPSessionRuntime, command string, env map[string]string) (CommandResult, error) {
+	if runtime.isWispOuterRuntime() {
+		command = runtime.wrapWispShellCommandBuffered(command, env)
+		env = nil
+	}
+	return client.RunCommand(ctx, sb, command, env, nil, nil)
+}
+
 func (w *AgentSidecarWorker) stopWispOuterRuntime(ctx context.Context, client *AGSClient, sb AGSSandbox, runtime ACPSessionRuntime) error {
 	if !runtime.isWispOuterRuntime() || strings.TrimSpace(runtime.WispName) == "" {
 		return nil
@@ -327,6 +335,14 @@ func (w *AgentSidecarWorker) stopWispOuterRuntime(ctx context.Context, client *A
 }
 
 func wispOuterStopCommand(runtime ACPSessionRuntime) string {
+	return wispStopCommand(runtime)
+}
+
+func wispWorkspaceStopCommand(runtime ACPSessionRuntime) string {
+	return wispStopCommand(runtime)
+}
+
+func wispStopCommand(runtime ACPSessionRuntime) string {
 	clientPath := runtime.WispClientPath
 	if strings.TrimSpace(clientPath) == "" && runtime.WispInstallDir != "" {
 		clientPath = path.Join(runtime.WispInstallDir, "bin", "wispclient")
@@ -412,6 +428,14 @@ func wispOuterStopCommand(runtime ACPSessionRuntime) string {
 }
 
 func (runtime ACPSessionRuntime) wrapWispShellCommand(command string, env map[string]string) string {
+	return runtime.wrapWispShellCommandWithStream(command, env, true)
+}
+
+func (runtime ACPSessionRuntime) wrapWispShellCommandBuffered(command string, env map[string]string) string {
+	return runtime.wrapWispShellCommandWithStream(command, env, false)
+}
+
+func (runtime ACPSessionRuntime) wrapWispShellCommandWithStream(command string, env map[string]string, stream bool) string {
 	clientPath := runtime.WispClientPath
 	if strings.TrimSpace(clientPath) == "" && runtime.WispInstallDir != "" {
 		clientPath = path.Join(runtime.WispInstallDir, "bin", "wispclient")
@@ -420,9 +444,13 @@ func (runtime ACPSessionRuntime) wrapWispShellCommand(command string, env map[st
 		clientPath = "/tmp/cloudagent-wisp/*/install/bin/wispclient"
 	}
 	inner := shellEnvPrefix(env) + command
-	return shellQuote(clientPath) +
+	args := shellQuote(clientPath) +
 		" -server " + shellQuote(defaultWispOuterAdminAddr) +
-		" exec --stream " + shellQuote(runtime.WispName) +
+		" exec "
+	if stream {
+		args += "--stream "
+	}
+	return args + shellQuote(runtime.WispName) +
 		" -- /bin/sh -lc " + shellQuote(inner)
 }
 

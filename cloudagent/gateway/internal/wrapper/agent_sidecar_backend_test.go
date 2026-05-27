@@ -239,6 +239,27 @@ func TestWispOuterRuntimeWrapsCommandWithEnvironment(t *testing.T) {
 	}
 }
 
+func TestWispOuterRuntimeWrapsControlCommandWithoutStream(t *testing.T) {
+	runtime := ACPSessionRuntime{
+		OuterRuntime:   outerRuntimeWisp,
+		WispName:       "agent-session",
+		WispClientPath: "/tmp/wisp/install/bin/wispclient",
+	}
+	command := runtime.wrapWispShellCommandBuffered("agent client session-status", nil)
+	for _, want := range []string{
+		"'/tmp/wisp/install/bin/wispclient'",
+		"exec 'agent-session'",
+		"agent client session-status",
+	} {
+		if !strings.Contains(command, want) {
+			t.Fatalf("buffered command missing %q: %s", want, command)
+		}
+	}
+	if strings.Contains(command, "--stream") {
+		t.Fatalf("buffered control command should not use stream mode: %s", command)
+	}
+}
+
 func TestWispOuterStopCommandStopsHostRuntime(t *testing.T) {
 	runtime := ACPSessionRuntime{
 		OuterRuntime:   outerRuntimeWisp,
