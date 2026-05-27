@@ -29,6 +29,7 @@ import {
   TerminalSquare,
   Download,
   Plus,
+  RefreshCw,
   Trash2,
   UserRound,
   Wand2,
@@ -68,6 +69,14 @@ import {
 import { createMonoDebugExecAdapter } from "@/pages/marketing/openclaw-tat-adapter";
 import { createLightVelaCommandExecutor } from "@/pages/marketing/openclaw-command-executor";
 import { installOpenClawConsoleHelpers } from "@/pages/marketing/openclaw-console-helpers";
+import {
+  buildHermesMemoryReadCommand,
+  getMemoryUsagePercent,
+  parseHermesMemorySnapshot,
+  splitHermesMemoryEntries,
+  toSingleLineMemoryEntry,
+  type HermesMemorySnapshot,
+} from "@/pages/marketing/openclaw-memory";
 import { BuddyPanel } from "@/pages/marketing/openclaw-buddy-panel";
 import { findCompletedCreatingBot, getOpenClawCreateLimitMessage } from "@/pages/marketing/openclaw-create-availability";
 import {
@@ -97,6 +106,8 @@ import { LightVelaPanel } from "@tencent/agentchat-lightvela-panel";
 type Channel = "wechat" | "qq" | null;
 type ConnectedChannel = Exclude<Channel, null>;
 type PersonaId = "jarvis" | "luna" | "spark";
+type MemoryTabId = "memory" | "user";
+type MemoryLoadStatus = "idle" | "loading" | "ready" | "error";
 
 interface Persona {
   id: PersonaId;
@@ -197,9 +208,9 @@ const SettingsNavbar = () => {
   );
 };
 
-/* ─── 实例配置子页面类型（通道 / 模型 / 技能 / 人设 / 对话，放在单个 bot 内部切换） ─── */
+/* ─── 实例配置子页面类型（通道 / 模型 / 技能 / 人设 / 对话 / 记忆，放在单个 bot 内部切换） ─── */
 
-type SettingsSectionId = "channel" | "model" | "skill" | "buddy" | "chat";
+type SettingsSectionId = "channel" | "model" | "skill" | "buddy" | "chat" | "memory";
 
 /* ─── Section Card Wrapper ─── */
 
@@ -228,6 +239,188 @@ export const _SectionCard = ({ title, icon, headerRight, children }: { title: st
     </motion.div>
   );
 }
+
+const MemoryLimitCard = ({
+  title,
+  used,
+  limit,
+  t,
+}: {
+  title: string;
+  used: number;
+  limit: number;
+  t: (zh: string, options?: Record<string, unknown>) => string;
+}) => {
+  const percent = getMemoryUsagePercent(used, limit);
+  return (
+    <div className="rounded-lg border border-black/[0.06] bg-white p-4 shadow-[0_8px_28px_rgba(15,23,42,0.04)]">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-black/85">{title}</p>
+        </div>
+        <span className="rounded-full bg-black/[0.05] px-2 py-1 text-xs font-medium text-black/60">
+          {percent}%
+        </span>
+      </div>
+      <div className="mt-4 text-xs text-black/45">{t("当前占用 / 字符限额")}</div>
+      <div className="mt-1 flex items-end gap-1">
+        <span className="text-2xl font-semibold tabular-nums text-black/90">{used}</span>
+        <span className="pb-1 text-sm tabular-nums text-black/45">/ {limit} chars</span>
+      </div>
+      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-black/[0.06]">
+        <div
+          className="h-full rounded-full bg-black/80 transition-[width]"
+          style={{ width: `${percent}%` }}
+        />
+      </div>
+    </div>
+  );
+};
+
+const MemoryEntries = ({
+  entries,
+  emptyText,
+}: {
+  entries: string[];
+  emptyText: string;
+}) => {
+  if (entries.length === 0) {
+    return (
+      <div className="flex min-h-40 items-center justify-center rounded-lg border border-dashed border-black/[0.10] bg-black/[0.015] px-6 text-center text-sm text-black/45">
+        {emptyText}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {entries.map((entry, index) => {
+        const preview = toSingleLineMemoryEntry(entry);
+        return (
+          <div
+            key={`${index}-${preview.slice(0, 24)}`}
+            title={entry}
+            className="flex min-h-11 items-center rounded-md border border-black/[0.06] bg-white px-3 text-sm text-black/75 shadow-[0_1px_2px_rgba(15,23,42,0.02)]"
+          >
+            <span className="min-w-0 flex-1 truncate">{preview}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+const MemoryPanel = ({
+  status,
+  snapshot,
+  error,
+  activeTab,
+  onTabChange,
+  onRefresh,
+  t,
+}: {
+  status: MemoryLoadStatus;
+  snapshot: HermesMemorySnapshot | null;
+  error: string | null;
+  activeTab: MemoryTabId;
+  onTabChange: (tab: MemoryTabId) => void;
+  onRefresh: () => void;
+  t: (zh: string, options?: Record<string, unknown>) => string;
+}) => {
+  const memoryEntries = splitHermesMemoryEntries(snapshot?.memoryText ?? "");
+  const userEntries = splitHermesMemoryEntries(snapshot?.userText ?? "");
+  const visibleEntries = activeTab === "memory" ? memoryEntries : userEntries;
+  const isLoading = status === "loading";
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold text-black/90">{t("记忆")}</h2>
+          <p className="mt-1 text-sm text-black/45">{t("查看当前 Hermes 的记忆、用户画像和字符占用。")}</p>
+        </div>
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={isLoading}
+          className={cn(
+            "inline-flex h-9 items-center gap-2 rounded-md border border-black/[0.08] bg-white px-3 text-sm font-medium text-black/70 transition-colors hover:bg-black/[0.035] hover:text-black/90",
+            isLoading && "cursor-not-allowed opacity-60",
+          )}
+        >
+          {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+          {t("刷新")}
+        </button>
+      </div>
+
+      {status === "error" && (
+        <div className="rounded-lg border border-red-500/15 bg-red-500/[0.04] px-4 py-3 text-sm leading-relaxed text-red-600">
+          {error || t("记忆读取失败，请稍后重试。")}
+        </div>
+      )}
+
+      {isLoading && !snapshot && (
+        <div className="flex min-h-64 items-center justify-center rounded-lg border border-black/[0.06] bg-white text-sm text-black/50">
+          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          {t("正在读取记忆...")}
+        </div>
+      )}
+
+      {snapshot && (
+        <>
+          <div className="grid gap-3 md:grid-cols-2">
+            <MemoryLimitCard
+              title={t("记忆字符限额")}
+              used={snapshot.memoryChars}
+              limit={snapshot.memoryCharLimit}
+              t={t}
+            />
+            <MemoryLimitCard
+              title={t("用户字符限额")}
+              used={snapshot.userChars}
+              limit={snapshot.userCharLimit}
+              t={t}
+            />
+          </div>
+
+          {snapshot.usedFallbackLimits && (
+            <p className="text-xs text-black/40">
+              {t("未读取到完整限额配置，当前展示默认值。")}
+            </p>
+          )}
+
+          <div className="rounded-lg border border-black/[0.06] bg-white p-3 shadow-[0_8px_28px_rgba(15,23,42,0.04)]">
+            <div className="mb-3 inline-flex rounded-lg bg-black/[0.04] p-1">
+              {([
+                ["memory", t("记忆")],
+                ["user", t("用户")],
+              ] as const).map(([tab, label]) => {
+                const isActive = activeTab === tab;
+                return (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => onTabChange(tab)}
+                    className={cn(
+                      "rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
+                      isActive ? "bg-white text-black/90 shadow-sm" : "text-black/50 hover:text-black/80",
+                    )}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+            <MemoryEntries
+              entries={visibleEntries}
+              emptyText={activeTab === "memory" ? t("暂无 Agent 记忆。") : t("暂无用户画像。")}
+            />
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
 
 /* ─── Delete Confirm Dialog ─── */
 
@@ -2449,6 +2642,7 @@ export const OpenClawSettingsPage = () => {
     }
   }, [visibleBots, activeTabId, isCreating]);
   const activeBot = visibleBots.find((b) => b.id === activeTabId) ?? visibleBots[0];
+  const activeBotStatus = activeBot?.status;
 
   /**
    * AgentChat（LightVela）启动 token：
@@ -2579,6 +2773,57 @@ export const OpenClawSettingsPage = () => {
   const retryLaunchToken = useCallback(() => {
     setLaunchTokenRefreshTick((tick) => tick + 1);
   }, []);
+
+  const [memoryStatus, setMemoryStatus] = useState<MemoryLoadStatus>("idle");
+  const [memorySnapshot, setMemorySnapshot] = useState<HermesMemorySnapshot | null>(null);
+  const [memoryError, setMemoryError] = useState<string | null>(null);
+  const [activeMemoryTab, setActiveMemoryTab] = useState<MemoryTabId>("memory");
+  const memoryRequestIdRef = useRef(0);
+
+  const loadHermesMemory = useCallback(async () => {
+    const requestId = memoryRequestIdRef.current + 1;
+    memoryRequestIdRef.current = requestId;
+
+    if (!activeBotId) {
+      setMemorySnapshot(null);
+      setMemoryStatus("error");
+      setMemoryError(rawT("未找到当前 Hermes 实例。"));
+      return;
+    }
+
+    if (activeBotStatus !== "running") {
+      setMemorySnapshot(null);
+      setMemoryStatus("error");
+      setMemoryError(rawT("实例运行后才能读取记忆。"));
+      return;
+    }
+
+    setMemorySnapshot(null);
+    setMemoryStatus("loading");
+    setMemoryError(null);
+    try {
+      const result = await repositories.bots.execDebugCommand(activeBotId, buildHermesMemoryReadCommand());
+      if (memoryRequestIdRef.current !== requestId) return;
+      if (!isExecCommandSucceeded(result)) {
+        throw new Error(
+          rawT("记忆读取命令执行失败：{{detail}}", {
+            detail: truncateExecOutput(result.output, result.status),
+          }),
+        );
+      }
+      setMemorySnapshot(parseHermesMemorySnapshot(result.output));
+      setMemoryStatus("ready");
+    } catch (err) {
+      if (memoryRequestIdRef.current !== requestId) return;
+      setMemoryStatus("error");
+      setMemoryError(err instanceof Error ? err.message : rawT("记忆读取失败，请稍后重试。"));
+    }
+  }, [activeBotId, activeBotStatus, repositories]);
+
+  useEffect(() => {
+    if (activeSection !== "memory") return;
+    void loadHermesMemory();
+  }, [activeSection, activeBotId, loadHermesMemory]);
 
 
   /**
@@ -3275,6 +3520,7 @@ export const OpenClawSettingsPage = () => {
                   ? [{ id: "buddy" as const, label: t("人设"), icon: <UserRound className="h-4 w-4" />, badge: "NEW" }]
                   : []),
                 { id: "chat", label: t("对话"), icon: <MessageSquare className="h-4 w-4" /> },
+                { id: "memory", label: t("记忆"), icon: <Database className="h-4 w-4" /> },
               ];
               const isRestartDisabled = isActiveBotRestarting || activeBot.status !== "running";
               const hasViewedChannel = viewedChannelBotIds.has(activeBot.id);
@@ -3542,6 +3788,17 @@ export const OpenClawSettingsPage = () => {
                                 />
                               )}
                             </div>
+                          )}
+                          {activeSection === "memory" && (
+                            <MemoryPanel
+                              status={memoryStatus}
+                              snapshot={memorySnapshot}
+                              error={memoryError}
+                              activeTab={activeMemoryTab}
+                              onTabChange={setActiveMemoryTab}
+                              onRefresh={loadHermesMemory}
+                              t={t}
+                            />
                           )}
                         </div>
                       </motion.div>
