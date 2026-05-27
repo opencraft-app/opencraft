@@ -4,4 +4,5 @@ metadata:
   name: ctl-runtime-assets
 files:
   - ../../../secrets/sgprod/ctl-conf-common.sops.yaml
+  - ../../../secrets/sgprod/ctl-agentchat-secrets.sops.yaml
   - ../../../secrets/sgprod/ctl-runtime-secrets.sops.yaml
