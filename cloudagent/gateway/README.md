@@ -199,6 +199,23 @@ CLOUDAGENT_ARTIFACTS_DRY_RUN=1 \
   make ci-publish-cloudagent-artifacts-shanghai
 ```
 
+发给别人本地真实发布时，使用这个入口：
+
+```bash
+cloudagent/gateway/scripts/local_publish_cloudagent_artifacts_shanghai.sh \
+  --env-file /path/to/cloudagent-release.env
+```
+
+`cloudagent-release.env` 只需要放发布密钥，不要提交：
+
+```bash
+CLOUDAGENT_AGENT_COS_SECRET_ID=AKID...
+CLOUDAGENT_AGENT_COS_SECRET_KEY=...
+CLOUDAGENT_AGENT_RELEASE_ED25519_SEED_B64=...
+```
+
+这个入口和 CI 走同一个构建、签名、上传脚本；默认上传到上海桶。
+
 如果你想让本地服务也走这条自动发布流程，直接跑：
 
 ```bash

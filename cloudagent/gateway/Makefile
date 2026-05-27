@@ -178,6 +178,10 @@ publish-wisp-package:
 ci-publish-cloudagent-artifacts-shanghai:
 	./scripts/ci_publish_cloudagent_artifacts_shanghai.sh
 
+.PHONY: local-publish-cloudagent-artifacts-shanghai
+local-publish-cloudagent-artifacts-shanghai:
+	./scripts/local_publish_cloudagent_artifacts_shanghai.sh
+
 .PHONY: publish-sandbox-host
 publish-sandbox-host:
 	../sandbox-host/scripts/publish_sandbox_host.sh
