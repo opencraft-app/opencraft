@@ -1148,6 +1148,22 @@ func (s *MySQLStore) findOrCreateOAuthUserTx(ctx context.Context, tx *sql.Tx, in
 		return User{}, false, fmt.Errorf("query oauth identity: %w", err)
 	}
 
+	if strings.TrimSpace(input.Email) != "" {
+		existingUser, found, err := findUserByEmailTx(ctx, tx, input.Email)
+		if err != nil {
+			return User{}, false, err
+		}
+		if found {
+			if !input.EmailVerified {
+				return User{}, false, newError("oauth_email_conflict", "第三方账号邮箱已被使用，请先使用已有方式登录后再绑定。", 409)
+			}
+			if err := insertOAuthIdentityTx(ctx, tx, existingUser.ID, input, now); err != nil {
+				return User{}, false, err
+			}
+			return existingUser, false, nil
+		}
+	}
+
 	userID, err := newPrefixedID("usr")
 	if err != nil {
 		return User{}, false, fmt.Errorf("generate oauth user id: %w", err)
@@ -1173,9 +1189,17 @@ func (s *MySQLStore) findOrCreateOAuthUserTx(ctx context.Context, tx *sql.Tx, in
 		return User{}, false, fmt.Errorf("insert oauth user: %w", err)
 	}
 
+	if err := insertOAuthIdentityTx(ctx, tx, user.ID, input, now); err != nil {
+		return User{}, false, err
+	}
+
+	return user, true, nil
+}
+
+func insertOAuthIdentityTx(ctx context.Context, tx *sql.Tx, userID string, input OAuthSignInInput, now time.Time) error {
 	identityID, err := newPrefixedID("oid")
 	if err != nil {
-		return User{}, false, fmt.Errorf("generate oauth identity id: %w", err)
+		return fmt.Errorf("generate oauth identity id: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO oauth_identities (
@@ -1190,14 +1214,13 @@ func (s *MySQLStore) findOrCreateOAuthUserTx(ctx context.Context, tx *sql.Tx, in
 			created_at,
 			updated_at
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, identityID, user.ID, input.Provider, input.ProviderSubject, nullableString(input.Email), input.EmailVerified, nullableString(input.Name), nullableString(input.AvatarURL), now, now); err != nil {
+	`, identityID, userID, input.Provider, input.ProviderSubject, nullableString(input.Email), input.EmailVerified, nullableString(input.Name), nullableString(input.AvatarURL), now, now); err != nil {
 		if isMySQLDuplicate(err) {
-			return User{}, false, newError("oauth_identity_conflict", "第三方账号绑定冲突，请稍后重试。", 409)
+			return newError("oauth_identity_conflict", "第三方账号绑定冲突，请稍后重试。", 409)
 		}
-		return User{}, false, fmt.Errorf("insert oauth identity: %w", err)
+		return fmt.Errorf("insert oauth identity: %w", err)
 	}
-
-	return user, true, nil
+	return nil
 }
 
 func createSessionTx(ctx context.Context, tx *sql.Tx, user User, now time.Time, sessionTTL time.Duration) (*AuthSession, error) {
@@ -1305,6 +1328,53 @@ func loadUserByIDTx(ctx context.Context, tx *sql.Tx, userID string) (User, error
 	user.AvatarSource = avatarSource.String
 	user.RealnameVerified = realnameVerifiedAt.Valid
 	return user, nil
+}
+
+func findUserByEmailTx(ctx context.Context, tx *sql.Tx, email string) (User, bool, error) {
+	row := tx.QueryRowContext(ctx, `
+		SELECT
+			id,
+			name,
+			email,
+			phone,
+			avatar_object_key,
+			avatar_source,
+			invite_required,
+			realname_verified_at,
+			created_at
+		FROM users
+		WHERE email = ?
+		FOR UPDATE
+	`, strings.TrimSpace(email))
+
+	var user User
+	var emailValue sql.NullString
+	var phoneValue sql.NullString
+	var avatarObjectKey sql.NullString
+	var avatarSource sql.NullString
+	var realnameVerifiedAt sql.NullTime
+	if err := row.Scan(
+		&user.ID,
+		&user.Name,
+		&emailValue,
+		&phoneValue,
+		&avatarObjectKey,
+		&avatarSource,
+		&user.InviteRequired,
+		&realnameVerifiedAt,
+		&user.CreatedAt,
+	); errors.Is(err, sql.ErrNoRows) {
+		return User{}, false, nil
+	} else if err != nil {
+		return User{}, false, fmt.Errorf("query user by email: %w", err)
+	}
+
+	user.Email = emailValue.String
+	user.Phone = phoneValue.String
+	user.AvatarObjectKey = avatarObjectKey.String
+	user.AvatarSource = avatarSource.String
+	user.RealnameVerified = realnameVerifiedAt.Valid
+	return user, true, nil
 }
 
 func currentSessionUserIDTx(ctx context.Context, tx *sql.Tx, token string, now time.Time) (string, error) {
