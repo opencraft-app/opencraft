@@ -69,6 +69,8 @@ export interface BotTerminalSession {
   cols: number;
   rows: number;
   timeoutSeconds?: number;
+  username?: string;
+  workingDirectory?: string;
 }
 
 export interface BotChannelConfigResult {
