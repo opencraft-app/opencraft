@@ -22,6 +22,11 @@ type workspaceFileDownloadCommandResponse struct {
 	ContentB64 string `json:"content_b64"`
 }
 
+type workspaceFileUploadCommandResponse struct {
+	OK          bool `json:"ok"`
+	InnerSynced bool `json:"inner_synced"`
+}
+
 func (w *AgentSidecarWorker) UploadSessionWorkspaceFile(ctx context.Context, runtime ACPSessionRuntime, remotePath string, content []byte) error {
 	target, err := normalizeWorkspaceTransferPath(remotePath)
 	if err != nil {
@@ -38,6 +43,26 @@ func (w *AgentSidecarWorker) UploadSessionWorkspaceFile(ctx context.Context, run
 	sb := runtimeOuterSandbox(runtime)
 	start := time.Now()
 	fmt.Fprintf(os.Stderr, "timeline source=server event=workspace_upload_stage_start session_runtime=%s target=%q bytes=%d wisp=%t\n", runtime.RuntimeID, target, len(content), runtime.isWispOuterRuntime())
+	if shouldUseWorkspaceWispTransfer(runtime) {
+		workspaceSandbox, err := runtimeWorkspaceSandbox(runtime)
+		if err != nil {
+			return err
+		}
+		hostTempPath := workspaceTransferHostTempPath(runtime, "upload", target)
+		if err := stageWorkspaceUploadContentOnHost(ctx, backend.client, workspaceSandbox, hostTempPath, content); err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stderr, "timeline source=server event=workspace_upload_host_stage_done session_runtime=%s target=%q elapsed_ms=%d\n", runtime.RuntimeID, target, time.Since(start).Milliseconds())
+		defer cleanupWorkspaceUploadHostContent(context.Background(), backend.client, workspaceSandbox, hostTempPath)
+		workspaceRuntime := runtime
+		workspaceRuntime.WispName = runtime.WorkspaceWispName
+		workspaceRuntime.WispClientPath = ""
+		if err := stageWorkspaceUploadContentIntoWisp(ctx, backend.client, workspaceSandbox, workspaceRuntime, hostTempPath, target); err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stderr, "timeline source=server event=workspace_upload_workspace_wisp_done session_runtime=%s workspace_wisp=%q target=%q elapsed_ms=%d\n", runtime.RuntimeID, runtime.WorkspaceWispName, target, time.Since(start).Milliseconds())
+		return nil
+	}
 	if runtime.isWispOuterRuntime() {
 		hostTempPath := workspaceUploadHostContentTempPath(runtime, target, content)
 		if err := stageWorkspaceUploadContentOnHost(ctx, backend.client, sb, hostTempPath, content); err != nil {
@@ -75,6 +100,16 @@ func (w *AgentSidecarWorker) UploadSessionWorkspaceFile(ctx context.Context, run
 	if result.ExitCode != 0 {
 		return fmt.Errorf("workspace upload failed exit=%d stdout=%q stderr=%q", result.ExitCode, result.Stdout, result.Stderr)
 	}
+	var uploadResponse workspaceFileUploadCommandResponse
+	if err := json.Unmarshal([]byte(strings.TrimSpace(result.Stdout)), &uploadResponse); err != nil {
+		return fmt.Errorf("workspace upload returned invalid JSON stdout=%q stderr=%q: %w", result.Stdout, result.Stderr, err)
+	}
+	if !uploadResponse.OK {
+		return fmt.Errorf("workspace upload returned ok=false stdout=%q stderr=%q", result.Stdout, result.Stderr)
+	}
+	if !uploadResponse.InnerSynced {
+		return fmt.Errorf("workspace upload did not sync to inner workspace runtime stdout=%q stderr=%q", result.Stdout, result.Stderr)
+	}
 	fmt.Fprintf(os.Stderr, "timeline source=server event=workspace_upload_sidecar_done session_runtime=%s target=%q elapsed_ms=%d\n", runtime.RuntimeID, target, time.Since(start).Milliseconds())
 	return nil
 }
@@ -108,7 +143,51 @@ func stageWorkspaceUploadContentOnHost(ctx context.Context, client *AGSClient, s
 	return nil
 }
 
+func stageWorkspaceRuntimeContent(ctx context.Context, client *AGSClient, runtime ACPSessionRuntime, target string, content []byte) error {
+	workspaceSandbox, err := runtimeWorkspaceSandbox(runtime)
+	if err != nil {
+		return err
+	}
+	hostTempPath := workspaceTransferHostTempPath(runtime, "stage", target)
+	if err := stageWorkspaceUploadContentOnHost(ctx, client, workspaceSandbox, hostTempPath, content); err != nil {
+		return err
+	}
+	defer cleanupWorkspaceUploadHostContent(context.Background(), client, workspaceSandbox, hostTempPath)
+	return stageWorkspaceUploadContentIntoWisp(ctx, client, workspaceSandbox, runtime, hostTempPath, target)
+}
+
 func stageWorkspaceUploadContentIntoWisp(ctx context.Context, client *AGSClient, sb AGSSandbox, runtime ACPSessionRuntime, hostTempPath, wispTempPath string) error {
+	if strings.TrimSpace(runtime.WispClientPath) != "" {
+		targetB64 := base64.StdEncoding.EncodeToString([]byte(wispTempPath))
+		command := "set -euo pipefail\n" +
+			"client=" + shellQuote(runtime.WispClientPath) + "\n" +
+			"name=" + shellQuote(runtime.WispName) + "\n" +
+			"host_temp=" + shellQuote(hostTempPath) + "\n" +
+			"target_b64=" + shellQuote(targetB64) + "\n" +
+			"{\n" +
+			"  printf '%s\\n' 'set -euo pipefail'\n" +
+			"  printf 'target=$(printf %s " + shellQuote(targetB64) + " | base64 -d)\\n'\n" +
+			"  printf '%s\\n' 'mkdir -p \"$(dirname \"$target\")\"'\n" +
+			"  printf '%s\\n' 'base64 -d > \"$target\" <<CLOUDAGENT_WISP_FILE_B64'\n" +
+			"  base64 \"$host_temp\"\n" +
+			"  printf '%s\\n' 'CLOUDAGENT_WISP_FILE_B64'\n" +
+			"  printf '%s\\n' 'chmod 0644 \"$target\" || true'\n" +
+			"} | \"$client\" -server " + shellQuote(defaultWispOuterAdminAddr) + " exec --stream \"$name\" -- /bin/sh >/dev/null\n" +
+			"target=\"$(printf '%s' \"$target_b64\" | base64 -d)\"\n" +
+			"\"$client\" -server " + shellQuote(defaultWispOuterAdminAddr) + " exec \"$name\" -- /bin/sh -lc 'test -f \"$1\" && wc -c \"$1\" >&2' sh \"$target\" >/dev/null\n" +
+			"echo CLOUDAGENT_WISP_UPLOAD_STAGED\n"
+		result, err := client.RunCommand(ctx, sb, command, nil, nil, func(text string) error {
+			logRemoteStderr(time.Now(), workerJob{JobID: "workspace_upload_wisp_stage", ResponseID: runtime.RuntimeID}, text)
+			return nil
+		})
+		if err != nil {
+			return fmt.Errorf("workspace upload wisp shell staging failed: %w stdout=%q stderr=%q", err, result.Stdout, result.Stderr)
+		}
+		if result.ExitCode != 0 || !strings.Contains(result.Stdout, "CLOUDAGENT_WISP_UPLOAD_STAGED") {
+			return fmt.Errorf("workspace upload wisp shell staging failed exit=%d stdout=%q stderr=%q", result.ExitCode, result.Stdout, result.Stderr)
+		}
+		return nil
+	}
 	hostRootfsPath, err := wispRuntimeRootfsHostPath(runtime.WispName, wispTempPath)
 	if err != nil {
 		return err
@@ -168,6 +247,16 @@ func (w *AgentSidecarWorker) DownloadSessionWorkspaceFile(ctx context.Context, r
 	if runtime.OuterSandboxID == "" || runtime.OuterEnvdAccessToken == "" {
 		return nil, fmt.Errorf("runtime outer sandbox identity is incomplete")
 	}
+	if shouldUseWorkspaceWispTransfer(runtime) {
+		workspaceSandbox, err := runtimeWorkspaceSandbox(runtime)
+		if err != nil {
+			return nil, err
+		}
+		workspaceRuntime := runtime
+		workspaceRuntime.WispName = runtime.WorkspaceWispName
+		workspaceRuntime.WispClientPath = ""
+		return w.downloadSessionWorkspaceFileFromWisp(ctx, backend.client, workspaceSandbox, workspaceRuntime, target)
+	}
 	command := sidecarPlainCommand(
 		runtime.RemoteBinary,
 		"client",
@@ -206,6 +295,108 @@ func (w *AgentSidecarWorker) DownloadSessionWorkspaceFile(ctx context.Context, r
 		return nil, fmt.Errorf("workspace download returned invalid base64: %w", err)
 	}
 	return decoded, nil
+}
+
+func (w *AgentSidecarWorker) downloadSessionWorkspaceFileFromWisp(ctx context.Context, client *AGSClient, sb AGSSandbox, runtime ACPSessionRuntime, target string) ([]byte, error) {
+	if strings.TrimSpace(runtime.WispClientPath) != "" {
+		tempPath := workspaceTransferHostTempPath(runtime, "download", target)
+		b64Path := tempPath + ".b64"
+		command := "set -euo pipefail\n" +
+			"client=" + shellQuote(runtime.WispClientPath) + "\n" +
+			"name=" + shellQuote(runtime.WorkspaceWispName) + "\n" +
+			"target=" + shellQuote(target) + "\n" +
+			"host_temp=" + shellQuote(tempPath) + "\n" +
+			"host_b64=" + shellQuote(b64Path) + "\n" +
+			"mkdir -p \"$(dirname \"$host_temp\")\"\n" +
+			"set +e\n" +
+			"\"$client\" -server " + shellQuote(defaultWispOuterAdminAddr) + " exec \"$name\" -- /bin/sh -lc 'test -f \"$1\" || exit 44; base64 \"$1\"' sh \"$target\" >\"$host_b64\"\n" +
+			"code=$?\n" +
+			"set -e\n" +
+			"if [ \"$code\" = 44 ]; then echo CLOUDAGENT_WISP_DOWNLOAD_NOT_FOUND; exit 44; fi\n" +
+			"if [ \"$code\" != 0 ]; then echo CLOUDAGENT_WISP_DOWNLOAD_FAILED exit=$code >&2; exit \"$code\"; fi\n" +
+			"base64 -d \"$host_b64\" >\"$host_temp\"\n" +
+			"echo CLOUDAGENT_WISP_DOWNLOAD_STAGED\n"
+		result, err := client.RunCommand(ctx, sb, command, nil, nil, func(text string) error {
+			logRemoteStderr(time.Now(), workerJob{JobID: "workspace_download_wisp_stage", ResponseID: runtime.RuntimeID}, text)
+			return nil
+		})
+		defer cleanupWorkspaceUploadHostContent(context.Background(), client, sb, tempPath)
+		defer cleanupWorkspaceUploadHostContent(context.Background(), client, sb, b64Path)
+		if err != nil {
+			if result.ExitCode == 44 || strings.Contains(result.Stdout, "CLOUDAGENT_WISP_DOWNLOAD_NOT_FOUND") {
+				return nil, fmt.Errorf("workspace file not found: %s", target)
+			}
+			return nil, fmt.Errorf("workspace download wisp shell staging failed: %w stdout=%q stderr=%q", err, result.Stdout, result.Stderr)
+		}
+		if result.ExitCode == 44 || strings.Contains(result.Stdout, "CLOUDAGENT_WISP_DOWNLOAD_NOT_FOUND") {
+			return nil, fmt.Errorf("workspace file not found: %s", target)
+		}
+		if result.ExitCode != 0 || !strings.Contains(result.Stdout, "CLOUDAGENT_WISP_DOWNLOAD_STAGED") {
+			return nil, fmt.Errorf("workspace download wisp shell staging failed exit=%d stdout=%q stderr=%q", result.ExitCode, result.Stdout, result.Stderr)
+		}
+		content, err := client.DownloadFile(ctx, sb, tempPath)
+		if err != nil {
+			return nil, fmt.Errorf("workspace download staged content failed: %w", err)
+		}
+		return content, nil
+	}
+	hostPath, err := wispRuntimeRootfsHostPath(firstNonEmpty(runtime.WorkspaceWispName, runtime.WispName), target)
+	if err != nil {
+		return nil, err
+	}
+	tempPath := workspaceTransferHostTempPath(runtime, "download", target)
+	command := "set -euo pipefail\n" +
+		"rootfs_path=" + shellQuote(hostPath) + "\n" +
+		"host_temp=" + shellQuote(tempPath) + "\n" +
+		"if ! sudo -n test -f \"$rootfs_path\"; then echo CLOUDAGENT_WISP_DOWNLOAD_NOT_FOUND; exit 44; fi\n" +
+		"sudo -n mkdir -p \"$(dirname \"$host_temp\")\"\n" +
+		"sudo -n cp \"$rootfs_path\" \"$host_temp\"\n" +
+		"sudo -n chmod 0644 \"$host_temp\" || true\n" +
+		"echo CLOUDAGENT_WISP_DOWNLOAD_STAGED\n"
+	result, err := client.RunCommand(ctx, sb, command, nil, nil, func(text string) error {
+		logRemoteStderr(time.Now(), workerJob{JobID: "workspace_download_wisp_stage", ResponseID: runtime.RuntimeID}, text)
+		return nil
+	})
+	defer cleanupWorkspaceUploadHostContent(context.Background(), client, sb, tempPath)
+	if err != nil {
+		if result.ExitCode == 44 || strings.Contains(result.Stdout, "CLOUDAGENT_WISP_DOWNLOAD_NOT_FOUND") {
+			return nil, fmt.Errorf("workspace file not found: %s", target)
+		}
+		return nil, fmt.Errorf("workspace download wisp staging failed: %w stdout=%q stderr=%q", err, result.Stdout, result.Stderr)
+	}
+	if result.ExitCode == 44 || strings.Contains(result.Stdout, "CLOUDAGENT_WISP_DOWNLOAD_NOT_FOUND") {
+		return nil, fmt.Errorf("workspace file not found: %s", target)
+	}
+	if result.ExitCode != 0 {
+		return nil, fmt.Errorf("workspace download wisp staging failed exit=%d stdout=%q stderr=%q", result.ExitCode, result.Stdout, result.Stderr)
+	}
+	content, err := client.DownloadFile(ctx, sb, tempPath)
+	if err != nil {
+		return nil, fmt.Errorf("workspace download staged content failed: %w", err)
+	}
+	return content, nil
+}
+
+func workspaceTransferHostTempPath(runtime ACPSessionRuntime, prefix, target string) string {
+	root := firstNonEmpty(runtime.WorkspaceRuntimeID, runtime.RuntimeID, "workspace-runtime")
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%s:%s:%d", prefix, target, time.Now().UnixNano())))
+	name := prefix + "-" + hex.EncodeToString(sum[:8]) + ".bin"
+	return path.Join("/tmp/cloudagent-workspace-transfer", root, name)
+}
+
+func shouldUseWorkspaceWispTransfer(runtime ACPSessionRuntime) bool {
+	return runtime.isWispOuterRuntime() && strings.TrimSpace(runtime.WorkspaceWispName) != ""
+}
+
+func runtimeWorkspaceSandbox(runtime ACPSessionRuntime) (AGSSandbox, error) {
+	if runtime.InnerSandboxID == "" || runtime.InnerEnvdAccessToken == "" {
+		return AGSSandbox{}, fmt.Errorf("runtime inner sandbox identity is incomplete")
+	}
+	return AGSSandbox{
+		SandboxID:       runtime.InnerSandboxID,
+		Domain:          runtime.InnerSandboxDomain,
+		EnvdAccessToken: runtime.InnerEnvdAccessToken,
+	}, nil
 }
 
 func isWorkspaceFileNotFoundText(value string) bool {
