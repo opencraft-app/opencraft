@@ -1025,7 +1025,7 @@ function AutomationFormModal({
                       {!configured && <span className="ml-0.5 text-[10px]">{t("（未配置）")}</span>}
                     </span>
                     {selected && key === "qqbot" && (
-                      <span className="text-xs text-black/40">
+                      <span className="inline-flex items-center text-xs leading-5 text-black/40">
                         {t("QQ 需设置 home 对话才能发送通知（在 QQ 对话中发送")}
                         <InlineCopyText value="/set-home" />
                         {t("给机器人）")}
