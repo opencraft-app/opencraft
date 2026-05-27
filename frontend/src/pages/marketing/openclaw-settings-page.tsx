@@ -12,6 +12,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowRight,
   BrainCircuit,
+  CalendarClock,
   ChevronDown,
   Check,
   MessageCircle,
@@ -65,10 +66,14 @@ import {
   type IFeatureFlags,
   type IProductConfig,
 } from "@tencent/tea-sdk-lightclaw";
-import { createMonoDebugExecAdapter } from "@/pages/marketing/openclaw-tat-adapter";
+import {
+  createMonoDebugExecAdapter,
+  LIGHTVELA_SKIP_HERMES_PROVIDER_LIST_COMMAND,
+} from "@/pages/marketing/openclaw-tat-adapter";
 import { createLightVelaCommandExecutor } from "@/pages/marketing/openclaw-command-executor";
 import { installOpenClawConsoleHelpers } from "@/pages/marketing/openclaw-console-helpers";
 import { BuddyPanel } from "@/pages/marketing/openclaw-buddy-panel";
+import { AutomationsPanel } from "@/pages/marketing/openclaw-automations-panel";
 import { findCompletedCreatingBot, getOpenClawCreateLimitMessage } from "@/pages/marketing/openclaw-create-availability";
 import {
   getRestartBlockReason,
@@ -199,7 +204,7 @@ const SettingsNavbar = () => {
 
 /* ─── 实例配置子页面类型（通道 / 模型 / 技能 / 人设 / 对话，放在单个 bot 内部切换） ─── */
 
-type SettingsSectionId = "channel" | "model" | "skill" | "buddy" | "chat";
+type SettingsSectionId = "channel" | "model" | "skill" | "buddy" | "automations" | "chat";
 
 const SHOW_AGENTCHAT_ENTRY = false;
 
@@ -2386,7 +2391,18 @@ const getBotStatusLabel = (status: OpenClawBot["status"]) => {
 
 /* ─── Main Settings Page ─── */
 
-const hermesScripts = createLightClawScripts({ regionShortName: "gz", agentType: "hermes" }).hermes;
+const lightVelaHermesScripts = createLightClawScripts({ regionShortName: "gz", agentType: "hermes" });
+const channelOnlyHermesScripts = {
+  ...lightVelaHermesScripts,
+  hermes: {
+    ...lightVelaHermesScripts.hermes,
+    model: {
+      ...lightVelaHermesScripts.hermes.model,
+      getListCommand: () => LIGHTVELA_SKIP_HERMES_PROVIDER_LIST_COMMAND,
+    },
+  },
+};
+const hermesScripts = lightVelaHermesScripts.hermes;
 const hermesGatewayCommands = hermesScripts.gateway;
 const hermesModelCommands = hermesScripts.model;
 
@@ -3104,7 +3120,7 @@ export const OpenClawSettingsPage = () => {
               <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("恢复初始设置")}</h3>
             </div>
             <p style={{ color: "var(--tea-color-text-secondary, #666)", fontSize: "14px", lineHeight: 1.6, marginBottom: "20px" }}>
-              {t("将保留当前工作空间、记忆和定时任务，并初始化配置文件，模型相关配置不会保留。")}
+              {t("将保留当前工作空间、记忆和自动任务，并初始化配置文件，模型相关配置不会保留。")}
             </p>
             {resetError && (
               <pre
@@ -3274,10 +3290,11 @@ export const OpenClawSettingsPage = () => {
                 { id: "model", label: t("模型"), icon: <BrainCircuit className="h-4 w-4" /> },
                 { id: "skill", label: t("技能"), icon: <Wand2 className="h-4 w-4" /> },
                 ...(!isGlobal
-                  ? [{ id: "buddy" as const, label: t("人设"), icon: <UserRound className="h-4 w-4" />, badge: "NEW" }]
+                  ? [{ id: "buddy" as const, label: t("人设"), icon: <UserRound className="h-4 w-4" /> }]
                   : []),
+                { id: "automations", label: t("自动任务"), icon: <CalendarClock className="h-4 w-4" />, badge: "NEW" },
                 ...(SHOW_AGENTCHAT_ENTRY
-                  ? [{ id: "chat" as const, label: t("对话"), icon: <MessageSquare className="h-4 w-4" /> }]
+                  ? [{ id: "chat" as const, label: t("对话"), icon: <MessageSquare className="h-4 w-4" />, badge: "NEW" }]
                   : []),
               ];
               const isRestartDisabled = isActiveBotRestarting || activeBot.status !== "running";
@@ -3483,6 +3500,7 @@ export const OpenClawSettingsPage = () => {
                             <ChannelPanel
                               instance={sdkInstance}
                               regionShortName={sdkRegionShortName}
+                              scriptCommands={channelOnlyHermesScripts}
                               featureFlags={sdkFeatureFlags}
                               productConfig={sdkProductConfig}
                             />
@@ -3505,6 +3523,9 @@ export const OpenClawSettingsPage = () => {
                           )}
                           {activeSection === "buddy" && !isGlobal && (
                             <BuddyPanel botId={activeBot.id} />
+                          )}
+                          {activeSection === "automations" && (
+                            <AutomationsPanel botId={activeBot.id} />
                           )}
                           {activeSection === "chat" && (
                             <div className="h-[clamp(516px,calc(100vh-220px),960px)] overflow-hidden rounded-lg border border-black/[0.08] bg-white [&>*]:h-full">
