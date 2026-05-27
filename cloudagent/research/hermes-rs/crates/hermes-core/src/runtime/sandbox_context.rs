@@ -148,7 +148,51 @@ impl AgentExecutor {
                 ..RuntimeHostEvent::default()
             }))
             .await;
-            match sandbox.shutdown().await {
+            let has_workspace_shutdown = sandbox.has_shutdown_command();
+            if has_workspace_shutdown {
+                self.emit(AgentEvent::RuntimeHost(RuntimeHostEvent {
+                    event: "workspace_runtime_shutdown_start".to_string(),
+                    session_id: Some(self.session_id.clone()),
+                    sandbox_id: Some(sandbox_id.clone()),
+                    workspace_root: Some(workspace_root.clone()),
+                    ..RuntimeHostEvent::default()
+                }))
+                .await;
+            }
+            if let Err(error) = sandbox.shutdown_workspace_runtime().await {
+                if has_workspace_shutdown {
+                    self.emit(AgentEvent::RuntimeHost(RuntimeHostEvent {
+                        event: "workspace_runtime_shutdown_failed".to_string(),
+                        session_id: Some(self.session_id.clone()),
+                        sandbox_id: Some(sandbox_id.clone()),
+                        workspace_root: Some(workspace_root.clone()),
+                        error: Some(error.to_string()),
+                        ..RuntimeHostEvent::default()
+                    }))
+                    .await;
+                }
+                self.emit(AgentEvent::RuntimeHost(RuntimeHostEvent {
+                    event: "inner_shutdown_failed".to_string(),
+                    session_id: Some(self.session_id.clone()),
+                    sandbox_id: Some(sandbox_id),
+                    workspace_root: Some(workspace_root),
+                    error: Some(error.to_string()),
+                    ..RuntimeHostEvent::default()
+                }))
+                .await;
+                return;
+            }
+            if has_workspace_shutdown {
+                self.emit(AgentEvent::RuntimeHost(RuntimeHostEvent {
+                    event: "workspace_runtime_shutdown_done".to_string(),
+                    session_id: Some(self.session_id.clone()),
+                    sandbox_id: Some(sandbox_id.clone()),
+                    workspace_root: Some(workspace_root.clone()),
+                    ..RuntimeHostEvent::default()
+                }))
+                .await;
+            }
+            match sandbox.delete_sandbox().await {
                 Ok(_) => {
                     self.emit(AgentEvent::RuntimeHost(RuntimeHostEvent {
                         event: "inner_shutdown_done".to_string(),

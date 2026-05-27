@@ -741,9 +741,7 @@ func (w *AgentSidecarWorker) attachSessionWorkspaceRuntime(ctx context.Context, 
 		commandShellPrefix = shellQuote(prepared.WispClientPath) +
 			" -server " + shellQuote(defaultWispOuterAdminAddr) +
 			" shell " + shellQuote(prepared.WispName)
-		shutdownCommand = shellQuote(prepared.WispClientPath) +
-			" -server " + shellQuote(defaultWispOuterAdminAddr) +
-			" stop " + shellQuote(prepared.WispName)
+		shutdownCommand = wispWorkspaceStopCommand(prepared)
 	}
 	payload, err := json.Marshal(map[string]any{
 		"workspace_id":         workspaceID,
@@ -954,10 +952,7 @@ func (w *AgentSidecarWorker) EnsureSessionEnvdRuntime(ctx context.Context, runti
 	sb := runtimeOuterSandbox(runtime)
 	command := w.ensureInnerCommand(runtime, req.Force)
 	fmt.Fprintf(os.Stderr, "timeline source=go event=ensure_inner_envd_command_start mode=acp_session_runtime session_id=%s generation=%d outer_sandbox_id=%s force=%t has_inner_target=%t daemon_addr=%s\n", req.SessionID, req.Generation, runtime.OuterSandboxID, req.Force, runtime.hasInnerEnvdTarget(), quoteTimelineField(runtime.DaemonAddr))
-	result, err := w.runOuterCommand(ctx, backend.client, sb, runtime, command, nil, nil, func(text string) error {
-		logRemoteStderr(time.Now(), workerJob{JobID: "acp_ensure_inner", ResponseID: req.SessionID}, text)
-		return nil
-	})
+	result, err := w.runOuterControlCommand(ctx, backend.client, sb, runtime, command, nil)
 	if err != nil {
 		detail := commandFailureDetail(err, result)
 		fmt.Fprintf(os.Stderr, "timeline source=go event=ensure_inner_envd_command_failed mode=acp_session_runtime session_id=%s generation=%d outer_sandbox_id=%s stdout_bytes=%d stderr_bytes=%d error=%s\n", req.SessionID, req.Generation, runtime.OuterSandboxID, len(result.Stdout), len(result.Stderr), quoteTimelineField(detail))
@@ -1118,12 +1113,16 @@ func (w *AgentSidecarWorker) CloseSessionRuntime(ctx context.Context, runtime AC
 		shutdownCtx, shutdownCancel := context.WithTimeout(ctx, envDurationSeconds("GATEWAY_SIDECAR_SHUTDOWN_TIMEOUT_SECONDS", 45*time.Second))
 		start := time.Now()
 		stdoutParser := &sidecarStdoutParser{}
+		var runtimeHostShutdownErr error
 		logRuntimeHostEvents := func(events []sidecarStdoutEvent) {
 			for _, event := range events {
 				if event.Type != "runtime_host" {
 					continue
 				}
 				fmt.Fprintf(os.Stderr, "timeline source=go t=%.3fs event=runtime_host_event mode=acp_session_runtime runtime_id=%s outer_sandbox_id=%s runtime_event=%s sandbox_id=%s\n", time.Since(start).Seconds(), runtime.RuntimeID, runtime.OuterSandboxID, event.Event, event.SandboxID)
+				if event.Event == "inner_shutdown_failed" || event.Event == "workspace_runtime_shutdown_failed" {
+					runtimeHostShutdownErr = fmt.Errorf("runtime host %s sandbox_id=%s error=%s", event.Event, event.SandboxID, event.Error)
+				}
 			}
 		}
 		_, shutdownErr := w.runOuterCommand(shutdownCtx, backend.client, sb, runtime, shellQuote(runtime.RemoteBinary)+" client --addr "+shellQuote(runtime.DaemonAddr)+" shutdown", nil, func(text string) error {
@@ -1131,9 +1130,16 @@ func (w *AgentSidecarWorker) CloseSessionRuntime(ctx context.Context, runtime AC
 			return nil
 		}, nil)
 		logRuntimeHostEvents(stdoutParser.Finish())
-		if shutdownErr == nil {
+		if shutdownErr == nil && runtimeHostShutdownErr == nil {
 			innerDeleteFallback = false
 		} else {
+			if shutdownErr == nil {
+				shutdownErr = runtimeHostShutdownErr
+			}
+			if runtime.isWispOuterRuntime() {
+				innerDeleteFallback = false
+				gracefulStopErr = errors.Join(gracefulStopErr, fmt.Errorf("shutdown inner workspace runtime: %w", shutdownErr))
+			}
 			fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_sidecar_shutdown_failed runtime_id=%s outer_sandbox_id=%s error=%s\n", runtime.RuntimeID, runtime.OuterSandboxID, quoteServerField(shutdownErr.Error()))
 		}
 		shutdownCancel()
@@ -1213,7 +1219,7 @@ func (w *AgentSidecarWorker) SessionRuntimeStatus(ctx context.Context, runtime A
 	}
 	sb := runtimeOuterSandbox(runtime)
 	command := shellQuote(runtime.RemoteBinary) + " client --addr " + shellQuote(runtime.DaemonAddr) + " session-status"
-	result, err := w.runOuterCommand(ctx, backend.client, sb, runtime, command, nil, nil, nil)
+	result, err := w.runOuterControlCommand(ctx, backend.client, sb, runtime, command, nil)
 	if err != nil {
 		return ACPSessionRuntimeStatusSnapshot{}, err
 	}
