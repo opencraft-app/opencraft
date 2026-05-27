@@ -117,9 +117,9 @@ func (s *Store) saveACPRuntimeLocked(session *acpSession) error {
 	wisp_name, wisp_workspace_id, wisp_smh_space_id, wisp_owns_smh_space,
 	wisp_package_url, wisp_install_dir, wisp_client_path, wisp_jfs_prefix, wisp_root_upper_size,
 	wisp_lease_id, wisp_lease_fence, wisp_lease_until,
-	workspace_id, workspace_runtime_id, workspace_lease_id, workspace_fence, workspace_lease_until,
+	workspace_id, workspace_runtime_id, workspace_wisp_name, workspace_wisp_client, workspace_lease_id, workspace_fence, workspace_lease_until,
 	workspace_attach_state, health_state, cleanup_state, last_cleanup_error
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	ON CONFLICT(session_id, generation) DO UPDATE SET
 		sandbox_backend = excluded.sandbox_backend,
 		outer_runtime = excluded.outer_runtime,
@@ -157,6 +157,8 @@ func (s *Store) saveACPRuntimeLocked(session *acpSession) error {
 	wisp_lease_until = excluded.wisp_lease_until,
 	workspace_id = excluded.workspace_id,
 	workspace_runtime_id = excluded.workspace_runtime_id,
+	workspace_wisp_name = excluded.workspace_wisp_name,
+	workspace_wisp_client = excluded.workspace_wisp_client,
 	workspace_lease_id = excluded.workspace_lease_id,
 	workspace_fence = excluded.workspace_fence,
 	workspace_lease_until = excluded.workspace_lease_until,
@@ -173,7 +175,9 @@ func (s *Store) saveACPRuntimeLocked(session *acpSession) error {
 		runtime.WispSMHSpaceID, wispOwnsSMHSpace, runtime.WispPackageURL, runtime.WispInstallDir,
 		runtime.WispClientPath, runtime.WispJFSPrefix, runtime.WispRootUpperSize,
 		runtime.WispLeaseID, runtime.WispLeaseFence, wispLeaseUntil,
-		runtime.WorkspaceID, runtime.WorkspaceRuntimeID, runtime.WorkspaceLeaseID, runtime.WorkspaceFence,
+		runtime.WorkspaceID, runtime.WorkspaceRuntimeID, runtime.WorkspaceWispName,
+		runtime.WorkspaceWispClient,
+		runtime.WorkspaceLeaseID, runtime.WorkspaceFence,
 		workspaceLeaseUntil, runtime.WorkspaceAttachState, string(session.State), "", session.LastRuntimeError)
 	return err
 }
@@ -334,7 +338,7 @@ SELECT runtime_id, outer_sandbox_id, outer_sandbox_domain, outer_envd_access_tok
        wisp_name, wisp_workspace_id, wisp_smh_space_id, wisp_owns_smh_space,
        wisp_package_url, wisp_install_dir, wisp_client_path, wisp_jfs_prefix, wisp_root_upper_size,
        wisp_lease_id, wisp_lease_fence, wisp_lease_until,
-       workspace_id, workspace_runtime_id, workspace_lease_id, workspace_fence, workspace_lease_until,
+       workspace_id, workspace_runtime_id, workspace_wisp_name, workspace_wisp_client, workspace_lease_id, workspace_fence, workspace_lease_until,
        workspace_attach_state
 FROM session_runtimes WHERE session_id = ? AND generation = ?`, sessionID, generation).Scan(
 		&runtime.RuntimeID, &runtime.OuterSandboxID, &runtime.OuterSandboxDomain,
@@ -348,7 +352,9 @@ FROM session_runtimes WHERE session_id = ? AND generation = ?`, sessionID, gener
 		&runtime.WispPackageURL, &runtime.WispInstallDir, &runtime.WispClientPath,
 		&runtime.WispJFSPrefix, &runtime.WispRootUpperSize,
 		&runtime.WispLeaseID, &runtime.WispLeaseFence, &wispLeaseUntil,
-		&runtime.WorkspaceID, &runtime.WorkspaceRuntimeID, &runtime.WorkspaceLeaseID,
+		&runtime.WorkspaceID, &runtime.WorkspaceRuntimeID, &runtime.WorkspaceWispName,
+		&runtime.WorkspaceWispClient,
+		&runtime.WorkspaceLeaseID,
 		&runtime.WorkspaceFence, &workspaceLeaseUntil, &runtime.WorkspaceAttachState,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
