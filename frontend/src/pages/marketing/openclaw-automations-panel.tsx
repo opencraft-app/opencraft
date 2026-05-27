@@ -1036,28 +1036,18 @@ function AutomationFormModal({
                     )}
                   </label>
 
-                  {selected && key === "qqbot" && (
-                    <p className="mt-1.5 pl-5 text-xs leading-6 text-black/40">
-                      {t("设置 home 对话：在 QQ 应用中，在对话中向智能体发送")}
-                      <InlineCopyText value="/set-home" />
-                      {t("。")}
-                    </p>
-                  )}
-
                   {selected && key === "feishu" && (
                     <div className="mt-1.5 space-y-1.5 pl-5">
                       <div className="flex items-center gap-1">
-                        <span className="w-20 shrink-0 text-xs text-black/50">
-                          {t("飞书对话 ID")}
-                        </span>
+                        <span className="w-14 shrink-0 text-xs text-black/50">{t("Chat ID")}</span>
                         <input
                           type="text"
                           value={deliverChatIds[key] ?? ""}
                           onChange={(e) =>
                             setDeliverChatIds((prev) => ({ ...prev, [key]: e.target.value }))
                           }
-                          placeholder={t("选填，留空则在home对话(如已设置)中通知；也可指定Chat ID通知")}
-                          className="flex-1 rounded-lg border border-black/10 bg-white px-3 py-1.5 text-xs placeholder:text-xs placeholder:text-black/35 focus:border-black/30 focus:outline-none"
+                          placeholder={t("如已设置home对话，可留空，默认走home对话通知；也可指定Chat ID通知")}
+                          className="min-w-0 flex-[1.1] rounded-lg border border-black/10 bg-white px-3 py-1.5 text-xs placeholder:text-xs placeholder:text-black/35 focus:border-black/30 focus:outline-none"
                           style={{ fontSize: 12, lineHeight: "16px" }}
                         />
                       </div>
@@ -1065,12 +1055,12 @@ function AutomationFormModal({
                         <p>
                           {t("1. 设置 home 对话：在飞书应用中，在对话中向智能体发送")}
                           <InlineCopyText value="/set-home" />
-                          {t("。如未在上面输入框中指定 Chat ID，则默认通过 home 对话发送通知。")}
+                          {t("。")}
                         </p>
                         <p>
-                          {t("2. 获取对话 ID：在飞书应用中，找到希望发送通知的对话，向智能体发送提示词")}
+                          {t("2. 获取 Chat ID：在飞书应用中，找到希望发送通知的对话，向智能体发送提示词")}
                           <InlineCopyText value={t("当前Chat ID是什么")} />
-                          {t("，正常会回复前缀为oc_的一串字符。在上面输入框中输入Chat ID，指定该对话来通知。")}
+                          {t("，正常会回复前缀为oc_的一串字符。")}
                         </p>
                       </div>
                     </div>
