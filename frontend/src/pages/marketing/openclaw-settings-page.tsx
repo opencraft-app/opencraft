@@ -3274,10 +3274,10 @@ export const OpenClawSettingsPage = () => {
                 { id: "model", label: t("模型"), icon: <BrainCircuit className="h-4 w-4" /> },
                 { id: "skill", label: t("技能"), icon: <Wand2 className="h-4 w-4" /> },
                 ...(!isGlobal
-                  ? [{ id: "buddy" as const, label: t("人设"), icon: <UserRound className="h-4 w-4" />, badge: "NEW" }]
+                  ? [{ id: "buddy" as const, label: t("人设"), icon: <UserRound className="h-4 w-4" /> }]
                   : []),
-                { id: "automations", label: t("定时任务"), icon: <CalendarClock className="h-4 w-4" /> },
-                { id: "chat", label: t("对话"), icon: <MessageSquare className="h-4 w-4" /> },
+                { id: "automations", label: t("定时任务"), icon: <CalendarClock className="h-4 w-4" />, badge: "NEW" },
+                { id: "chat", label: t("对话"), icon: <MessageSquare className="h-4 w-4" />, badge: "NEW" },
               ];
               const isRestartDisabled = isActiveBotRestarting || activeBot.status !== "running";
               const hasViewedChannel = viewedChannelBotIds.has(activeBot.id);

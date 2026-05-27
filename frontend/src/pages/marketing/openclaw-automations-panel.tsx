@@ -14,7 +14,7 @@
  * - 占位字段（工作空间 / 生效日期区间 / 推送 WorkBuddy）按截图渲染但 disabled
  */
 
-import { AlertTriangle, ChevronDown, Clock, Eye, Loader2, Pause, Pencil, Play, Trash2, X } from "lucide-react";
+import { AlertTriangle, ChevronDown, Clock, Eye, Loader2, Pause, Pencil, Play, Plus, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { parseHermesChannelList } from "@tencent/tea-sdk-lightclaw";
@@ -171,9 +171,10 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
               }
               setCreating(true);
             }}
-            className="inline-flex min-w-[72px] items-center justify-center gap-1 rounded-lg bg-black px-3 py-1.5 text-xs font-medium text-white transition hover:bg-black/85"
+            className="inline-flex min-w-[72px] items-center justify-center gap-1.5 rounded-lg bg-black px-3.5 py-1.5 text-white transition hover:bg-black/85"
           >
-            {t("添加")}
+            <Plus className="h-4 w-4" />
+            <span className="text-sm font-semibold leading-none">{t("添加")}</span>
           </button>
         </div>
       </div>
