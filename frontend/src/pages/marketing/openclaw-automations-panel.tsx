@@ -430,17 +430,17 @@ function isCronJobExpired(job: CronJob): boolean {
   const kind = job.schedule.kind.toLowerCase();
   const display = (job.schedule.display || job.schedule.expr || "").trim();
   const isOnce = kind === "once" || display.toLowerCase().startsWith("once");
-  if (!isOnce) return false;
-  const d = parseOnceScheduleDate(display, job.next_run_at);
+  if (!isOnce || !job.next_run_at) return false;
+  const d = parseCronDate(job.next_run_at);
   return !Number.isNaN(d.getTime()) && d.getTime() < Date.now();
 }
 
-function isCronJobExpiredBeyondGrace(job: CronJob): boolean {
+export function isCronJobExpiredBeyondGrace(job: CronJob): boolean {
   const kind = job.schedule.kind.toLowerCase();
   const display = (job.schedule.display || job.schedule.expr || "").trim();
   const isOnce = kind === "once" || display.toLowerCase().startsWith("once");
-  if (!isOnce) return false;
-  const d = parseOnceScheduleDate(display, job.next_run_at);
+  if (!isOnce || !job.next_run_at) return false;
+  const d = parseCronDate(job.next_run_at);
   return !Number.isNaN(d.getTime()) && Date.now() - d.getTime() > EXPIRED_CRON_JOB_HIDE_AFTER_MS;
 }
 
@@ -503,7 +503,7 @@ function formatScheduleFriendly(
   return display || job.schedule.expr || "";
 }
 
-function parseOnceScheduleDate(display: string, nextRunAt: string | null): Date {
+export function parseOnceScheduleDate(display: string, nextRunAt: string | null): Date {
   if (nextRunAt) {
     const d = parseCronDate(nextRunAt);
     if (!Number.isNaN(d.getTime())) return d;
@@ -763,9 +763,31 @@ function formatTime(iso: string): string {
   return d.toLocaleString();
 }
 
-function parseCronDate(value: string): Date {
+export function parseCronDate(value: string): Date {
   // Hermes may return nanosecond-style fractional seconds; JS Date only needs milliseconds.
-  return new Date(value.replace(/\.(\d{3})\d+(?=Z|[+-]\d{2}:?\d{2}$)/, ".$1"));
+  const normalized = value
+    .trim()
+    .replace(/[\u2010-\u2015\u2212]/g, "-")
+    .replace(/\.(\d{3})\d+(?=(?:Z|[+-]\d{2}:?\d{2})?$)/, ".$1");
+  if (/(?:Z|[+-]\d{2}:?\d{2})$/i.test(normalized)) {
+    return new Date(normalized);
+  }
+
+  const localMatch = /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ tT]+(\d{1,2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?)?$/.exec(normalized);
+  if (localMatch) {
+    const [, year, month, day, hour = "0", minute = "0", second = "0", ms = "0"] = localMatch;
+    return new Date(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      Number(hour),
+      Number(minute),
+      Number(second),
+      Number(ms.padEnd(3, "0")),
+    );
+  }
+
+  return new Date(normalized);
 }
 
 function formatLastRun(iso: string, status: string | null, t: ReturnType<typeof useT>): string {

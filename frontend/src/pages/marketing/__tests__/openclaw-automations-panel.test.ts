@@ -1,12 +1,20 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   buildDeliverString,
   buildScheduleString,
+  isCronJobExpiredBeyondGrace,
+  parseCronDate,
   parseInitialDeliver,
   parseInitialSchedule,
+  parseOnceScheduleDate,
   truncateCronJobCardTitle,
 } from "../openclaw-automations-panel";
+import type { CronJob } from "@/lib/hermes-cron-client";
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe("buildScheduleString and parseInitialSchedule", () => {
   it("round-trips daily schedules", () => {
@@ -117,6 +125,52 @@ describe("parseInitialDeliver", () => {
     expect(buildDeliverString(["weixin", "feishu"], parsed.chatIds)).toBe("weixin:wx_123,feishu:oc_123");
   });
 });
+
+describe("cron date parsing and expiration filtering", () => {
+  it("parses timezone-less cron dates as local time explicitly", () => {
+    const parsed = parseCronDate("2026-05-26T09:00:00.471081");
+
+    expect(parsed.getTime()).toBe(new Date(2026, 4, 26, 9, 0, 0, 471).getTime());
+  });
+
+  it("keeps explicit timezone cron dates on their absolute instant", () => {
+    const parsed = parseCronDate("2026-05-26T09:00:00.471081+08:00");
+
+    expect(parsed.getTime()).toBe(new Date("2026-05-26T09:00:00.471+08:00").getTime());
+  });
+
+  it("parses once display fallback as local display time", () => {
+    const parsed = parseOnceScheduleDate("once at 2026-05-26 09:00", null);
+
+    expect(parsed.getTime()).toBe(new Date(2026, 4, 26, 9, 0).getTime());
+  });
+
+  it("does not hide once jobs from display-only fallback dates", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-26T10:05:00+08:00"));
+
+    expect(isCronJobExpiredBeyondGrace(makeCronJob({ next_run_at: null }))).toBe(false);
+    expect(isCronJobExpiredBeyondGrace(makeCronJob({ next_run_at: "2026-05-26T09:00:00+08:00" }))).toBe(true);
+  });
+});
+
+function makeCronJob(overrides: Partial<CronJob>): CronJob {
+  return {
+    id: "job-1",
+    name: "提醒",
+    prompt: "提醒我喝水",
+    schedule: { kind: "once", expr: "once at 2026-05-26 09:00", display: "once at 2026-05-26 09:00" },
+    skills: [],
+    enabled: true,
+    state: "",
+    deliver: "local",
+    next_run_at: null,
+    last_run_at: null,
+    last_status: null,
+    created_at: null,
+    ...overrides,
+  };
+}
 
 describe("truncateCronJobCardTitle", () => {
   it("keeps short Chinese and English titles unchanged", () => {
