@@ -112,16 +112,33 @@ func (w *AgentSidecarWorker) prepareWispRuntimeWithSpace(ctx context.Context, cl
 		"JFS_MOUNT_MIN_FREE_BYTES":            firstNonEmpty(firstEnv("GATEWAY_WISP_MOUNT_MIN_FREE_BYTES", "JFS_MOUNT_MIN_FREE_BYTES"), "200M"),
 		"JFS_WRITEBACK_BARRIER_POLL_INTERVAL": firstNonEmpty(firstEnv("GATEWAY_WISP_WRITEBACK_BARRIER_POLL_INTERVAL", "JFS_WRITEBACK_BARRIER_POLL_INTERVAL"), "30ms"),
 		"SMH_HTTP_TRACE":                      firstEnv("GATEWAY_WISP_SMH_HTTP_TRACE", "SMH_HTTP_TRACE"),
+		"JFS_LITESTREAM_TRACE":                firstEnv("GATEWAY_WISP_LITESTREAM_TRACE", "JFS_LITESTREAM_TRACE"),
 	}
 	result, err := client.RunCommand(ctx, sb, wispOuterPrepareScript(), env, nil, func(text string) error {
 		logRemoteStderr(time.Now(), workerJob{JobID: "wisp_outer_prepare", ResponseID: req.SessionID}, text)
 		return nil
 	})
 	if err != nil {
-		return ACPSessionRuntime{}, fmt.Errorf("prepare wisp outer runtime session_id=%s outer_sandbox_id=%s: %w", req.SessionID, sb.SandboxID, err)
+		return ACPSessionRuntime{}, fmt.Errorf(
+			"prepare wisp outer runtime session_id=%s outer_sandbox_id=%s wisp_name=%s smh_space_id=%s package_url=%s: %s",
+			req.SessionID,
+			sb.SandboxID,
+			runtime.WispName,
+			space.SpaceID,
+			runtime.WispPackageURL,
+			wispCommandFailureDetail(err, result),
+		)
 	}
 	if result.ExitCode != 0 || !strings.Contains(result.Stdout, "WISP_OUTER_READY") {
-		return ACPSessionRuntime{}, fmt.Errorf("prepare wisp outer runtime failed session_id=%s outer_sandbox_id=%s exit=%d stdout=%q stderr=%q", req.SessionID, sb.SandboxID, result.ExitCode, redactWispOuterSecrets(result.Stdout), redactWispOuterSecrets(result.Stderr))
+		return ACPSessionRuntime{}, fmt.Errorf(
+			"prepare wisp outer runtime failed session_id=%s outer_sandbox_id=%s wisp_name=%s smh_space_id=%s package_url=%s: %s",
+			req.SessionID,
+			sb.SandboxID,
+			runtime.WispName,
+			space.SpaceID,
+			runtime.WispPackageURL,
+			wispCommandFailureDetail(nil, result),
+		)
 	}
 	if acquireLease {
 		releaseLease = false
@@ -301,10 +318,10 @@ func (w *AgentSidecarWorker) stopWispOuterRuntime(ctx context.Context, client *A
 		return nil
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("wisp stop failed runtime_id=%s outer_sandbox_id=%s wisp_name=%s: %s", runtime.RuntimeID, sb.SandboxID, runtime.WispName, wispCommandFailureDetail(err, result))
 	}
 	if result.ExitCode != 0 || !strings.Contains(result.Stdout, "CLOUDAGENT_WISP_STOPPED") {
-		return fmt.Errorf("wisp stop failed exit=%d stdout=%q stderr=%q", result.ExitCode, result.Stdout, result.Stderr)
+		return fmt.Errorf("wisp stop failed runtime_id=%s outer_sandbox_id=%s wisp_name=%s: %s", runtime.RuntimeID, sb.SandboxID, runtime.WispName, wispCommandFailureDetail(nil, result))
 	}
 	return nil
 }
@@ -315,27 +332,82 @@ func wispOuterStopCommand(runtime ACPSessionRuntime) string {
 		clientPath = path.Join(runtime.WispInstallDir, "bin", "wispclient")
 	}
 	hostLog := ""
-	if strings.TrimSpace(runtime.RemoteBinary) != "" {
+	if strings.TrimSpace(runtime.WispInstallDir) != "" {
+		hostLog = path.Join(path.Dir(runtime.WispInstallDir), "daemon.log")
+	} else if strings.TrimSpace(runtime.RemoteBinary) != "" {
 		hostLog = path.Join(path.Dir(runtime.RemoteBinary), "wispclient-daemon.log")
 	}
+	writebackCutTimeout := envDurationSeconds("GATEWAY_WISP_WRITEBACK_CUT_TIMEOUT_SECONDS", 20*time.Second).String()
 	return "set -euo pipefail\n" +
 		"client=" + shellQuote(clientPath) + "\n" +
 		"name=" + shellQuote(runtime.WispName) + "\n" +
 		"server=" + shellQuote(defaultWispOuterAdminAddr) + "\n" +
 		"log=" + shellQuote(hostLog) + "\n" +
+		"writeback_cut_timeout=" + shellQuote(writebackCutTimeout) + "\n" +
+		"redact_line() {\n" +
+		"  sed -E \"s/(SMH_ACCESS_TOKEN=)[^[:space:]]+/\\1<redacted>/Ig; s/(access[_-]?token=)[^[:space:]]+/\\1<redacted>/Ig; s/(api[_-]?key=)[^[:space:]]+/\\1<redacted>/Ig; s/(library[_-]?secret=)[^[:space:]]+/\\1<redacted>/Ig; s/(secret[_-]?key=)[^[:space:]]+/\\1<redacted>/Ig\"\n" +
+		"}\n" +
+		"tail_safe_log() {\n" +
+		"  grep -aE 'timeline source=hermes_sidecar|runtime_host_event|workspace_runtime_shutdown|inner_shutdown|checkpoint_manifest_durable|writeback_cut_barrier|meta_barrier|litestream .*barrier|litestream checkpoint|checkpoint cut|sqlite_litestream_trace|smh_http |ERROR|WARN|error=|event=' \"$log\" 2>/dev/null | tail -n 260 | redact_line || true\n" +
+		"}\n" +
+		"tail_juicefs_log() {\n" +
+		"  local assert_log=/tmp/juicefs-assertmount.log\n" +
+		"  if [[ -f \"$assert_log\" ]]; then\n" +
+		"    grep -aE 'checkpoint cut|litestream .*barrier|litestream checkpoint|sqlite_litestream_trace|smh_http |cos_http |writeback barrier|file barrier|ERROR|WARN|error' \"$assert_log\" 2>/dev/null | tail -n 260 | redact_line || true\n" +
+		"  fi\n" +
+		"}\n" +
 		"if [[ -z \"$client\" || ! -x \"$client\" ]]; then\n" +
 		"  client=\"$(ls -1 /tmp/cloudagent-wisp/*/install/bin/wispclient 2>/dev/null | head -1 || true)\"\n" +
 		"fi\n" +
 		"if [[ -z \"$client\" || ! -x \"$client\" ]]; then echo \"wispclient missing\" >&2; exit 127; fi\n" +
+		"jfs=\"$(dirname \"$client\")/juicefs-smount\"\n" +
+		"if [[ -x \"$jfs\" ]]; then\n" +
+		"  echo \"wisp writeback-cut-barrier start timeout=$writeback_cut_timeout\" >&2\n" +
+		"  barrier_stdout=\"$(mktemp)\"\n" +
+		"  barrier_stderr=\"$(mktemp)\"\n" +
+		"  set +e\n" +
+		"  if command -v sudo >/dev/null 2>&1; then\n" +
+		"    sudo -n \"$jfs\" writeback-cut-barrier /mnt/cloudagent-wisp --timeout \"$writeback_cut_timeout\" --poll-interval 30ms >\"$barrier_stdout\" 2>\"$barrier_stderr\"\n" +
+		"  else\n" +
+		"    \"$jfs\" writeback-cut-barrier /mnt/cloudagent-wisp --timeout \"$writeback_cut_timeout\" --poll-interval 30ms >\"$barrier_stdout\" 2>\"$barrier_stderr\"\n" +
+		"  fi\n" +
+		"  barrier_code=$?\n" +
+		"  set -e\n" +
+		"  cat \"$barrier_stderr\" | redact_line >&2 || true\n" +
+		"  cat \"$barrier_stdout\" | redact_line >&2 || true\n" +
+		"  rm -f \"$barrier_stdout\" \"$barrier_stderr\"\n" +
+		"  if [[ \"$barrier_code\" != 0 ]]; then\n" +
+		"    echo \"wisp writeback-cut-barrier failed exit=$barrier_code\" >&2\n" +
+		"    exit \"$barrier_code\"\n" +
+		"  fi\n" +
+		"  echo \"wisp writeback-cut-barrier done\" >&2\n" +
+		"else\n" +
+		"  echo \"wisp writeback-cut-barrier skipped: juicefs-smount missing path=$jfs\" >&2\n" +
+		"fi\n" +
+		"stop_stdout=\"$(mktemp)\"\n" +
+		"stop_stderr=\"$(mktemp)\"\n" +
+		"trap 'rm -f \"$stop_stdout\" \"$stop_stderr\"' EXIT\n" +
 		"set +e\n" +
-		"\"$client\" -server \"$server\" stop \"$name\"\n" +
+		"\"$client\" -server \"$server\" stop \"$name\" >\"$stop_stdout\" 2>\"$stop_stderr\"\n" +
 		"code=$?\n" +
 		"set -e\n" +
 		"if [[ \"$code\" != 0 ]]; then\n" +
 		"  echo \"wispclient stop failed exit=$code\" >&2\n" +
-		"  if [[ -n \"$log\" && -f \"$log\" ]]; then tail -n 200 \"$log\" >&2 || true; fi\n" +
+		"  echo \"wispclient stop stderr:\" >&2\n" +
+		"  tail -n 120 \"$stop_stderr\" | redact_line >&2 || true\n" +
+		"  echo \"wispclient stop stdout:\" >&2\n" +
+		"  tail -n 80 \"$stop_stdout\" | redact_line >&2 || true\n" +
+		"  echo \"wisp stop diagnostics: mount\" >&2\n" +
+		"  mount | grep -aE 'cloudagent-wisp|juicefs|/mnt/cloudagent-wisp' | redact_line >&2 || true\n" +
+		"  echo \"wisp stop diagnostics: df\" >&2\n" +
+		"  df -h /mnt/cloudagent-wisp /tmp 2>&1 | redact_line >&2 || true\n" +
+		"  echo \"wisp stop diagnostics: process\" >&2\n" +
+		"  ps -ef | grep -aE 'wisp|juicefs|smount' | grep -av grep | redact_line >&2 || true\n" +
+		"  if [[ -n \"$log\" && -f \"$log\" ]]; then tail_safe_log >&2 || true; fi\n" +
+		"  tail_juicefs_log >&2 || true\n" +
 		"  exit \"$code\"\n" +
 		"fi\n" +
+		"cat \"$stop_stdout\" || true\n" +
 		"echo CLOUDAGENT_WISP_STOPPED\n"
 }
 
@@ -434,6 +506,40 @@ func workspaceWispNameFromSession(sessionID string) string {
 	return fmt.Sprintf("workspace-%08x", crc32.ChecksumIEEE([]byte(trimmed)))
 }
 
+func workspaceWispJFSPrefix(base, workspaceID string) string {
+	normalizedBase := strings.Trim(strings.TrimSpace(base), "/")
+	if normalizedBase == "" {
+		normalizedBase = "cloudagent-agent"
+	}
+	if strings.Contains(normalizedBase, "/workspace/") {
+		return normalizedBase
+	}
+	workspaceSegment := sanitizeWispPrefixSegment(workspaceID)
+	if workspaceSegment == "" {
+		workspaceSegment = "default"
+	}
+	return normalizedBase + "/workspace/" + workspaceSegment
+}
+
+func sanitizeWispPrefixSegment(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	var b strings.Builder
+	prevDash := false
+	for _, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+			prevDash = false
+		default:
+			if !prevDash {
+				b.WriteByte('-')
+				prevDash = true
+			}
+		}
+	}
+	return strings.Trim(b.String(), "-")
+}
+
 func wispOuterPrepareScript() string {
 	return `
 	set -euo pipefail
@@ -467,7 +573,7 @@ func wispOuterPrepareScript() string {
 	  total="$(wc -l <"$log" | tr -d ' ')"
 	  if [[ "$total" -ge "$daemon_log_line" ]]; then
 	    sed -n "${daemon_log_line},${total}p" "$log" \
-	      | grep -aE 'bootstrap-global|bootstrap step=|ensure_cos_root (assertmount|wait_mount|usable_check|mounted|already_mounted)|ensure_workspace_ready|pre_start_recovery|active_image_valid|Restored active image|ensure_active_image|start step=|checkpoint_manifest_durable|mount_runtime|runtime.start_container|runtime.start.crun_run|crun container|SUMMARY (bootstrap|bootstrap-global|ensure_workspace_ready|ensure_active_image|mount_runtime|start)|HUMAN (bootstrap|start)|assertmount_detail |mount_target_timing |litestream barrier|checkpoint cut|file barrier|writeback barrier|smh_http |cos_http |sqlite_litestream_trace |s3_litestream_trace ' \
+	      | grep -aE 'bootstrap-global|bootstrap step=|ensure_cos_root (assertmount|wait_mount|usable_check|mounted|already_mounted)|ensure_workspace_ready|pre_start_recovery|active_image_valid|Restored active image|ensure_active_image|start step=|checkpoint_manifest_durable|writeback_cut_barrier|meta_barrier|mount_runtime|runtime.start_container|runtime.start.crun_run|crun container|SUMMARY (bootstrap|bootstrap-global|ensure_workspace_ready|ensure_active_image|mount_runtime|start)|HUMAN (bootstrap|start)|assertmount_detail |mount_target_timing |litestream .*barrier|litestream checkpoint|checkpoint cut|file barrier|writeback barrier|smh_http |cos_http |sqlite_litestream_trace |s3_litestream_trace ' \
 	      | redact_line \
 	      | sed "s/^/DAEMON_TRACE label=$label /" >&2 || true
 	    daemon_log_line=$((total + 1))
@@ -574,6 +680,7 @@ export WISPENV_BINARY="$install/bin/wispenv"
 export WISP_FS_AGENT_BINARY="$install/bin/wisp-fs-agent"
 export TINI_BINARY="$install/assets/bin/tini/tini"
 export ADMIN_LISTEN_ADDR="127.0.0.1:8520"
+export JFS_LITESTREAM_TRACE="${JFS_LITESTREAM_TRACE:-}"
 
 	step_start wisp_daemon_spawn
 	sudo -n env \
@@ -606,6 +713,7 @@ export ADMIN_LISTEN_ADDR="127.0.0.1:8520"
   SMH_SPACE_ID="$SMH_SPACE_ID" \
   SMH_ACCESS_TOKEN="$SMH_ACCESS_TOKEN" \
   SMH_HTTP_TRACE="$SMH_HTTP_TRACE" \
+  JFS_LITESTREAM_TRACE="$JFS_LITESTREAM_TRACE" \
   JFS_MOUNT_WRITEBACK="$JFS_MOUNT_WRITEBACK" \
   JFS_MOUNT_UPLOAD_DELAY="$JFS_MOUNT_UPLOAD_DELAY" \
   JFS_MOUNT_MAX_UPLOADS="$JFS_MOUNT_MAX_UPLOADS" \
@@ -645,25 +753,43 @@ export ADMIN_LISTEN_ADDR="127.0.0.1:8520"
 }
 
 func redactWispOuterSecrets(text string) string {
-	for _, marker := range []string{"access_token=", "library_secret="} {
-		for {
-			idx := strings.Index(strings.ToLower(text), marker)
-			if idx < 0 {
-				break
-			}
-			start := idx + len(marker)
-			end := start
-			for end < len(text) {
-				ch := text[end]
-				if ch == '&' || ch == '\n' || ch == '\r' || ch == ' ' || ch == '"' || ch == '\'' {
-					break
-				}
-				end++
-			}
-			text = text[:start] + "<redacted>" + text[end:]
-		}
+	return redactCommandOutput(text)
+}
+
+func wispCommandFailureDetail(err error, result CommandResult) string {
+	parts := []string{
+		fmt.Sprintf("exit=%d", result.ExitCode),
+		fmt.Sprintf("exited=%t", result.Exited),
+		fmt.Sprintf("stdout_bytes=%d", len(result.Stdout)),
+		fmt.Sprintf("stderr_bytes=%d", len(result.Stderr)),
 	}
-	return text
+	if strings.TrimSpace(result.Status) != "" {
+		parts = append(parts, "status="+fmt.Sprintf("%q", result.Status))
+	}
+	if err != nil {
+		parts = append(parts, "error="+fmt.Sprintf("%q", redactCommandOutput(redactWispOuterSecrets(err.Error()))))
+	}
+	if stderrHead := commandOutputHead(result.Stderr, 1500); stderrHead != "" && len(strings.TrimSpace(result.Stderr)) > 3000 {
+		parts = append(parts, "stderr_head="+fmt.Sprintf("%q", redactCommandOutput(redactWispOuterSecrets(stderrHead))))
+	}
+	if stderrTail := commandOutputTail(result.Stderr, 3000); stderrTail != "" {
+		parts = append(parts, "stderr_tail="+fmt.Sprintf("%q", redactCommandOutput(redactWispOuterSecrets(stderrTail))))
+	}
+	if stdout := commandOutputTail(result.Stdout, 1500); stdout != "" {
+		parts = append(parts, "stdout_tail="+fmt.Sprintf("%q", redactCommandOutput(redactWispOuterSecrets(stdout))))
+	}
+	return strings.Join(parts, " ")
+}
+
+func commandOutputHead(value string, limit int) string {
+	value = strings.TrimSpace(value)
+	if value == "" || limit <= 0 {
+		return ""
+	}
+	if len(value) <= limit {
+		return value
+	}
+	return value[:limit] + "\n...[truncated]"
 }
 
 func base64DecodeToFileCommand(targetPath string, content []byte) string {

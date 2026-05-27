@@ -75,7 +75,7 @@ pub async fn download_active_session_sandbox_file(
     workspace_path: &str,
 ) -> Result<Option<Vec<u8>>> {
     let matches = matching_session_sandboxes(local_workspace_root);
-    let Some(sandbox) = matches.into_iter().next() else {
+    let Some(sandbox) = matches.into_iter().last() else {
         return Ok(None);
     };
     let remote_path = sandbox.resolve_path(workspace_path)?;

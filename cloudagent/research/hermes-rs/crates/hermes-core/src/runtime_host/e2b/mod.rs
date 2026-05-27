@@ -9,7 +9,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use base64::{engine::general_purpose::STANDARD, Engine as _};
 use reqwest::{multipart, Client};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -145,6 +144,7 @@ pub struct SessionSandboxBinding {
     pub workspace_root: String,
     pub local_workspace_root: PathBuf,
     pub command_prefix: Option<String>,
+    pub command_shell_prefix: Option<String>,
     pub shutdown_command: Option<String>,
 }
 
@@ -376,12 +376,14 @@ impl SessionSandbox {
         command: &str,
         envs: &HashMap<String, String>,
     ) -> Result<CommandResult> {
-        let command = format!("cd {} && {}", shell_quote(&self.workspace_root), command);
         let command = match self.command_prefix.as_deref() {
             Some(prefix) if !prefix.trim().is_empty() => {
+                // command_prefix is a capability host boundary such as Wisp exec.
+                // The target runtime may not expose the outer /workspace path, so
+                // prefixed commands must rely on their own absolute paths.
                 format!("{prefix} {}", shell_quote(&command))
             }
-            _ => command,
+            _ => format!("cd {} && {}", shell_quote(&self.workspace_root), command),
         };
         let inner = self.inner.lock().await;
         inner
@@ -458,7 +460,7 @@ impl SessionSandbox {
             .is_some_and(|value| !value.is_empty())
         {
             return self
-                .upload_bytes_at_path_via_command(remote_path, content)
+                .upload_bytes_at_path_via_native_host(remote_path, content)
                 .await;
         }
         if let Some(parent) = Path::new(remote_path)
@@ -478,40 +480,18 @@ impl SessionSandbox {
             .await
     }
 
-    async fn upload_bytes_at_path_via_command(
+    async fn upload_bytes_at_path_via_native_host(
         &self,
         remote_path: &str,
         content: Vec<u8>,
     ) -> Result<()> {
-        if let Ok(text) = String::from_utf8(content.clone()) {
-            self.native_call(
-                "fs.write",
-                serde_json::json!({
-                    "path": remote_path,
-                    "content": text,
-                }),
-            )
-            .await?;
-            return Ok(());
-        }
-        let Some(parent) = Path::new(remote_path)
-            .parent()
-            .and_then(|path| path.to_str())
-        else {
-            return Err(Error::Agent(format!(
-                "remote path '{}' has no parent directory",
-                remote_path
-            )));
-        };
-        let command = workspace_file_upload_command(parent, remote_path, &content);
-        let result = self.run_command(&command, &HashMap::new()).await?;
-        if result.exit_code != 0 {
-            return Err(Error::Agent(format!(
-                "failed to upload file '{}' through workspace command: exit_code={} stdout={} stderr={}",
-                remote_path, result.exit_code, result.stdout, result.stderr
-            )));
-        }
-        Ok(())
+        self.ensure_native_host().await?;
+        let port = sandbox_host_port()?;
+        let inner = self.inner.lock().await;
+        inner
+            .client
+            .native_host_write_file(&inner.sandbox, port, remote_path, content)
+            .await
     }
 
     pub async fn download_bytes(&self, relative_path: &str) -> Result<Vec<u8>> {
@@ -526,23 +506,24 @@ impl SessionSandbox {
             .map(str::trim)
             .is_some_and(|value| !value.is_empty())
         {
-            let command = workspace_file_download_command(remote_path);
-            let result = self.run_command(&command, &HashMap::new()).await?;
-            if result.exit_code != 0 {
-                return Err(Error::Agent(format!(
-                    "failed to download file '{}' through workspace command: exit_code={} stdout={} stderr={}",
-                    remote_path, result.exit_code, result.stdout, result.stderr
-                )));
-            }
-            let encoded = result.stdout.trim();
-            return STANDARD
-                .decode(encoded)
-                .map_err(|error| Error::ParseResponse(error.to_string()));
+            return self
+                .download_bytes_at_path_via_native_host(remote_path)
+                .await;
         }
         let inner = self.inner.lock().await;
         inner
             .client
             .download_file(&inner.sandbox, remote_path)
+            .await
+    }
+
+    async fn download_bytes_at_path_via_native_host(&self, remote_path: &str) -> Result<Vec<u8>> {
+        self.ensure_native_host().await?;
+        let port = sandbox_host_port()?;
+        let inner = self.inner.lock().await;
+        inner
+            .client
+            .native_host_read_file(&inner.sandbox, port, remote_path)
             .await
     }
 
@@ -791,23 +772,6 @@ impl SessionSandbox {
         let cleaned = relative_path.trim_start_matches('/');
         format!("{}/{}", self.workspace_root, cleaned)
     }
-}
-
-fn workspace_file_upload_command(parent: &str, remote_path: &str, content: &[u8]) -> String {
-    format!(
-        "mkdir -p {} && printf %s {} | base64 -d > {} && test -f {}",
-        shell_quote(parent),
-        shell_quote(&STANDARD.encode(content)),
-        shell_quote(remote_path),
-        shell_quote(remote_path)
-    )
-}
-
-fn workspace_file_download_command(remote_path: &str) -> String {
-    format!(
-        "set -e\npath={path}\ntest -f \"$path\"\nbase64 \"$path\" | tr -d '\\n'\n",
-        path = shell_quote(remote_path)
-    )
 }
 
 #[async_trait::async_trait]

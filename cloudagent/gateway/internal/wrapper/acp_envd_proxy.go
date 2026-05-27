@@ -353,6 +353,10 @@ func (g *ACPGateway) handleSessionWorkspaceFileTransfer(w http.ResponseWriter, r
 		fmt.Fprintf(os.Stderr, "timeline source=server event=workspace_file_download_start session_id=%s generation=%d path=%s\n", session.SessionID, generation, quoteServerField(workspacePath))
 		content, err := manager.DownloadSessionWorkspaceFile(r.Context(), runtime, workspacePath)
 		if err != nil {
+			if isWorkspaceFileNotFoundText(err.Error()) {
+				writeError(w, http.StatusNotFound, "workspace_file_not_found", err.Error())
+				return true
+			}
 			writeError(w, http.StatusBadGateway, "workspace_file_download_failed", err.Error())
 			return true
 		}

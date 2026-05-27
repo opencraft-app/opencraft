@@ -10,6 +10,7 @@ export const LegalFooter = () => {
   const t = useT();
   const showICP = shouldShowICP();
   const [showQR, setShowQR] = useState(false);
+  const footerLinkClass = "lw-site-link lw-site-link--muted transition-colors";
 
   return (
     <footer className="border-t border-black/8 bg-white">
@@ -27,7 +28,7 @@ export const LegalFooter = () => {
                   href={BEIAN_URL}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="transition-colors hover:text-black"
+                  className={footerLinkClass}
                 >
                   {ICP_LICENSE}
                 </a>
@@ -36,7 +37,7 @@ export const LegalFooter = () => {
           </span>
           <span>
             {isGlobal ? (
-              <Link to="/privacy-policy" className="transition-colors hover:text-black">
+              <Link to="/privacy-policy" className={footerLinkClass}>
                 {t("隐私政策")}
               </Link>
             ) : (
@@ -44,7 +45,7 @@ export const LegalFooter = () => {
                 href="https://cloud.tencent.com/document/product/301/11470"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="transition-colors hover:text-black"
+                className={footerLinkClass}
               >
                 {t("隐私政策")}
               </a>
@@ -54,14 +55,14 @@ export const LegalFooter = () => {
               href="https://cloud.tencent.com/document/product/301/48034"
               target="_blank"
               rel="noopener noreferrer"
-              className="transition-colors hover:text-black"
+              className={footerLinkClass}
             >
               {t("服务条款")}
             </a>
             {isGlobal ? (
               <>
                 ·
-                <Link to="/open-source-licenses" className="transition-colors hover:text-black">
+                <Link to="/open-source-licenses" className={footerLinkClass}>
                   {t("开源声明")}
                 </Link>
               </>

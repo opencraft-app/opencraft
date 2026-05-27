@@ -37,6 +37,7 @@ func logRemoteStderr(start time.Time, job workerJob, text string) {
 		if line == "" {
 			continue
 		}
+		line = redactCommandOutput(line)
 		fmt.Fprintf(
 			os.Stderr,
 			"timeline source=outer_stderr t=%.3fs event=stderr job_id=%s response_id=%s message=%s\n",

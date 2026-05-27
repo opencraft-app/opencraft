@@ -1,4 +1,5 @@
 use super::*;
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 
 fn test_client() -> E2BClient {
     E2BClient {
@@ -38,23 +39,6 @@ fn connect_stream_decodes_stdout_and_end() {
     assert_eq!(result.stdout, "hello\n");
     assert_eq!(result.exit_code, 0);
     assert!(result.exited);
-}
-
-#[test]
-fn workspace_file_upload_command_writes_base64_payload_to_target_path() {
-    let command = workspace_file_upload_command(
-        "/workspace/inputs/docs",
-        "/workspace/inputs/docs/upload-check.txt",
-        b"hello\n",
-    );
-
-    assert!(command.contains("mkdir -p"));
-    assert!(command.contains("/workspace/inputs/docs"));
-    assert!(command.contains("printf %s"));
-    assert!(command.contains("| base64 -d >"));
-    assert!(command.contains("/workspace/inputs/docs/upload-check.txt"));
-    assert!(command.contains("aGVsbG8K"));
-    assert!(command.contains("test -f"));
 }
 
 #[test]
@@ -172,6 +156,23 @@ fn sandbox_http_url_includes_access_token_for_proxy_auth() {
             .sandbox_http_url(&sandbox, 19091, "/v1/native")
             .unwrap(),
         "https://19091-sbx_1.example.com/v1/native?access_token=traffic-token"
+    );
+}
+
+#[test]
+fn sandbox_fs_blob_url_encodes_remote_path_and_traffic_token() {
+    let client = test_client();
+    let sandbox = E2BSandbox {
+        sandbox_id: "sbx_1".to_string(),
+        envd_access_token: "token".to_string(),
+        traffic_access_token: "traffic-token".to_string(),
+        domain: "example.com".to_string(),
+    };
+    assert_eq!(
+        client
+            .sandbox_fs_blob_url(&sandbox, 19091, "/workspace/a b.bin")
+            .unwrap(),
+        "https://19091-sbx_1.example.com/v1/fs/blob?path=%2Fworkspace%2Fa+b.bin&access_token=traffic-token"
     );
 }
 

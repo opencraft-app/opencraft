@@ -1,5 +1,5 @@
 use std::fs;
-use std::io::Write;
+use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -496,17 +496,45 @@ impl DaemonState {
         request: WorkspaceFileDownloadRequest,
     ) -> Result<WorkspaceFileDownloadResponse> {
         let relative_path = self.workspace_relative_path(&request.path)?;
-        let content =
-            match download_active_session_sandbox_file(&self.workspace_root, &relative_path).await?
+        let local_path = self.workspace_root.join(&relative_path);
+        let local_content = match fs::read(&local_path) {
+            Ok(content) => Some(content),
+            Err(error) if error.kind() == ErrorKind::NotFound => None,
+            Err(error) => {
+                return Err(error).with_context(|| {
+                    format!("failed to read workspace file '{}'", local_path.display())
+                });
+            }
+        };
+        let sandbox_content = match download_active_session_sandbox_file(
+            &self.workspace_root,
+            &relative_path,
+        )
+        .await
+        {
+            Ok(content) => content,
+            Err(_) if local_content.is_some() => None,
+            Err(error) => {
+                bail!(
+                    "failed to download workspace file '{}': {}",
+                    request.path,
+                    error
+                );
+            }
+        };
+        let content = match sandbox_content {
+            Some(content)
+                if !content.is_empty()
+                    || local_content
+                        .as_ref()
+                        .map(|local| local.is_empty())
+                        .unwrap_or(false) =>
             {
-                Some(content) => content,
-                None => {
-                    let local_path = self.workspace_root.join(&relative_path);
-                    fs::read(&local_path).with_context(|| {
-                        format!("failed to read workspace file '{}'", local_path.display())
-                    })?
-                }
-            };
+                content
+            }
+            Some(_) | None => local_content
+                .with_context(|| format!("workspace file not found: {}", request.path))?,
+        };
         Ok(WorkspaceFileDownloadResponse {
             ok: true,
             path: request.path,
@@ -588,6 +616,7 @@ impl DaemonState {
             workspace_root: request.workspace_root.clone(),
             local_workspace_root: self.workspace_root.clone(),
             command_prefix: request.command_prefix.clone(),
+            command_shell_prefix: request.command_shell_prefix.clone(),
             shutdown_command: request.shutdown_command.clone(),
         };
         let identity = self

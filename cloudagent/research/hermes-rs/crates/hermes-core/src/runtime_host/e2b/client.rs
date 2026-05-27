@@ -1,4 +1,5 @@
 use super::*;
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 
 impl E2BClient {
     pub fn from_settings(settings: &E2BToolSettings) -> Result<Self> {
@@ -158,6 +159,65 @@ impl E2BClient {
         parse_native_host_response(method, &body)
     }
 
+    pub async fn native_host_write_file(
+        &self,
+        sandbox: &E2BSandbox,
+        port: u16,
+        remote_path: &str,
+        content: Vec<u8>,
+    ) -> Result<()> {
+        let response = self
+            .http_client
+            .put(self.sandbox_fs_blob_url(sandbox, port, remote_path)?)
+            .header("Content-Type", "application/octet-stream")
+            .header("X-Access-Token", &sandbox.envd_access_token)
+            .header("e2b-traffic-access-token", sandbox.proxy_access_token())
+            .header("Authorization", self.basic_user_header()?)
+            .body(content)
+            .send()
+            .await
+            .map_err(Error::Network)?;
+        let status = response.status();
+        let body = response.text().await.map_err(Error::Network)?;
+        if status.is_success() {
+            return Ok(());
+        }
+        Err(Error::Agent(format!(
+            "sandbox-host fs.blob write HTTP transport failed: HTTP {}: {}",
+            status, body
+        )))
+    }
+
+    pub async fn native_host_read_file(
+        &self,
+        sandbox: &E2BSandbox,
+        port: u16,
+        remote_path: &str,
+    ) -> Result<Vec<u8>> {
+        let response = self
+            .http_client
+            .get(self.sandbox_fs_blob_url(sandbox, port, remote_path)?)
+            .header("X-Access-Token", &sandbox.envd_access_token)
+            .header("e2b-traffic-access-token", sandbox.proxy_access_token())
+            .header("Authorization", self.basic_user_header()?)
+            .send()
+            .await
+            .map_err(Error::Network)?;
+        let status = response.status();
+        if status.is_success() {
+            return response
+                .bytes()
+                .await
+                .map(|bytes| bytes.to_vec())
+                .map_err(Error::Network);
+        }
+        let body = response.text().await.map_err(Error::Network)?;
+        Err(Error::Agent(format!(
+            "sandbox-host fs.blob read HTTP transport failed: HTTP {}: {}",
+            status, body
+        )))
+    }
+
     pub async fn run_command(
         &self,
         sandbox: &E2BSandbox,
@@ -225,6 +285,25 @@ impl E2BClient {
         if !sandbox.proxy_access_token().is_empty() {
             url.query_pairs_mut()
                 .append_pair("access_token", sandbox.proxy_access_token());
+        }
+        Ok(url.to_string())
+    }
+
+    pub(super) fn sandbox_fs_blob_url(
+        &self,
+        sandbox: &E2BSandbox,
+        port: u16,
+        remote_path: &str,
+    ) -> Result<String> {
+        let mut url = reqwest::Url::parse(&self.sandbox_port_url(sandbox, port))
+            .map_err(|error| Error::ParseResponse(error.to_string()))?;
+        url.set_path("/v1/fs/blob");
+        {
+            let mut query = url.query_pairs_mut();
+            query.append_pair("path", remote_path);
+            if !sandbox.proxy_access_token().is_empty() {
+                query.append_pair("access_token", sandbox.proxy_access_token());
+            }
         }
         Ok(url.to_string())
     }

@@ -25,6 +25,12 @@ import type {
 const NETWORK_DELAY_MS = 320;
 const FAKE_AUTH_STORAGE_KEY = "lightclaw-fake-auth-v1";
 
+// 重置配置相关的假数据常量
+const FAKE_RESET_PROVIDER_NAME = "custom";
+const FAKE_RESET_BASE_URL = "https://api.example.invalid";
+const FAKE_RESET_MODEL_ID = "fake-model";
+const FAKE_RESET_API = "chat_completions";
+
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const nowIso = () => new Date().toISOString();
@@ -828,6 +834,22 @@ const createBotRepository = (): BotRepository => {
         };
       }
       return { status: "Succeeded", exitCode: 0, output: "" };
+    },
+
+    async resetInstanceConfig(_botId) {
+      await wait(NETWORK_DELAY_MS);
+      const fakeKey = `sk-fake-${Math.random().toString(36).slice(2, 10)}`;
+      return {
+        keyId: `key-fake-${Math.random().toString(36).slice(2, 10)}`,
+        keyPrefix: fakeKey.slice(0, 6),
+        config: {
+          providerName: FAKE_RESET_PROVIDER_NAME,
+          baseUrl: FAKE_RESET_BASE_URL,
+          modelId: FAKE_RESET_MODEL_ID,
+          api: FAKE_RESET_API,
+          apiKey: fakeKey,
+        },
+      };
     },
   };
 };

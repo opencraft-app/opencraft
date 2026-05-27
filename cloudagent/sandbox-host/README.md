@@ -6,6 +6,8 @@ It runs inside the sandbox, listens on localhost, and exposes a small HTTP JSON 
 
 - `fs.read`
 - `fs.write`
+- `fs.stat`
+- `fs.blob` (raw HTTP file upload/download)
 - `fs.list`
 - `fs.search`
 - `fs.patch`
@@ -47,7 +49,7 @@ sandbox-host call --url http://127.0.0.1:19091 --method process.list --json '{}'
 - `output_mode:"content"` returns line matches and supports `context` lines before/after each match.
 - `output_mode:"files_only"` returns matching file paths, and `output_mode:"count"` returns per-file match counts.
 
-`fs.read` refuses binary-looking files and device/special files. `fs.write` and `fs.patch` refuse sensitive system paths when the workspace policy would otherwise allow them.
+`fs.read` refuses binary-looking files and device/special files. `fs.blob` is the binary-safe file transfer surface for runtime upload/download and still refuses workspace escapes, device/special reads, and sensitive system writes. `fs.write` and `fs.patch` refuse sensitive system paths when the workspace policy would otherwise allow them.
 
 Large model-facing outputs are bounded by default:
 
@@ -66,7 +68,7 @@ Content-Type: application/json
 {"method":"fs.read","params":{"path":"hello.txt"}}
 ```
 
-Hermes sidecar calls this endpoint through the CLI transport by default: each tool call uses AGS envd `run_command` to execute `sandbox-host call ...` inside the inner sandbox, and that short-lived CLI talks to the long-lived local daemon over HTTP.
+Hermes sidecar should prefer direct sandbox port-proxy HTTP transport for runtime file transfer. The CLI transport remains a diagnostic compatibility path for JSON native calls, but runtime upload/download should use the raw blob endpoint instead of shelling out to `test`, `cp`, or `base64`.
 
 The daemon listen address comes from `HERMES_SANDBOX_HOST_ADDR` / `SANDBOX_HOST_ADDR` (default `0.0.0.0:19091`). Local readiness probes and CLI calls use `127.0.0.1` when the daemon binds an unspecified address. Direct AGS/E2B port-proxy HTTP transport is experimental and must be explicitly enabled:
 
@@ -89,9 +91,12 @@ Compatibility endpoints are also available:
 - `POST /v1/process/close`
 - `POST /v1/fs/read`
 - `POST /v1/fs/write`
+- `POST /v1/fs/stat`
 - `POST /v1/fs/list`
 - `POST /v1/fs/search`
 - `POST /v1/fs/patch`
+- `PUT /v1/fs/blob?path=<workspace-path>` writes raw request bytes to a file.
+- `GET /v1/fs/blob?path=<workspace-path>` reads raw file bytes.
 
 Every response uses:
 

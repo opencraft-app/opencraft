@@ -253,6 +253,49 @@ func TestSessionScopedWispWorkspaceDownloadUsesWorkspaceManager(t *testing.T) {
 	}
 }
 
+func TestSessionScopedWispWorkspaceDownloadMissingFileReturnsNotFound(t *testing.T) {
+	var sawInner bool
+	inner := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawInner = true
+		http.Error(w, "inner envd should not receive Wisp workspace transfer", http.StatusTeapot)
+	}))
+	defer inner.Close()
+
+	manager := &envdProxyRuntimeManager{innerDomain: inner.URL}
+	srv := newACPTestServerWithRuntime(t, manager)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	client := dialACPWS(t, "ws"+trimHTTPPrefix(ts.URL)+"/acp", nil)
+	defer client.close()
+	client.writeJSON(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "session/new",
+		"params":  map[string]any{"_meta": map[string]any{"cloudagent": map[string]any{"outer_runtime": "wisp"}}},
+	})
+	result := waitForRPCID(t, client, float64(1))["result"].(map[string]any)
+	sessionID := result["sessionId"].(string)
+
+	req, err := http.NewRequest(http.MethodGet, ts.URL+"/v1/acp/sessions/"+sessionID+"/envd/files?path=/workspace/missing.txt", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer test-key")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusNotFound || !strings.Contains(string(body), "workspace_file_not_found") {
+		t.Fatalf("status=%d body=%s", resp.StatusCode, string(body))
+	}
+	if sawInner {
+		t.Fatal("Wisp workspace download was incorrectly proxied to inner envd")
+	}
+}
+
 func TestEnvdProxyFailsClosedWhenDomainUnset(t *testing.T) {
 	t.Setenv("ACP_ENVD_PROXY_DOMAIN", "")
 	srv, _ := newTestServer(t, FakeWorker{OutputText: "unused"})

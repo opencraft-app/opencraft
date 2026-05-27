@@ -228,6 +228,7 @@ Expected behavior in Wisp mode:
   - `wisp_smh_space_id` remains stable
   - workspace record remains restorable
 - Session becomes `stored_restorable` when cleanup succeeds and workspace metadata is sufficient.
+- Wisp stop/checkpoint is part of cleanup success. If the outer Wisp `stop` path fails its JuiceFS `meta-barrier` / checkpoint cut, close is not well-done and must surface a runtime-host failure instead of silently claiming `stored_restorable`.
 - Later `session/resume` or `_cloudagent.runtime.ensure_ready` may create new outer and inner runtime targets.
 
 File persistence guarantee:
@@ -421,6 +422,10 @@ The P0 live suite runs against real local gateway, real AGS, and real COS.
 | `TestCloudAgentLiveCloseDuringActiveToolRunCanResume` | Close during active tool run settles and session can resume. |
 | `TestCloudAgentLiveOuterKillRecreatesRuntimeAndPreservesWorkspace` | Abrupt outer deletion recreates runtime, preserves Wisp/SMH anchor, and workspace tools/file transfer work after recovery. |
 | `TestCloudAgentLiveInnerKillRecreatesWorkspaceRuntime` | Inner runtime deletion recreates inner workspace runtime without surfacing transport errors. |
+| `TestCloudAgentLiveLoadClosedRestorableSessionRecoversOnPrompt` | `session/load` only replays transcript and status; it must not recreate outer/inner runtime targets before the next prompt/ensure-ready. |
+| `TestCloudAgentLiveWorkspaceLifecycleNotificationsForCloseAndRestore` | `session/close` and `_cloudagent.runtime.ensure_ready` emit observable `_cloudagent.workspace.lifecycle` storage/restore phases with timing fields. |
+| `TestCloudAgentLiveConsecutiveWorkspaceToolPromptsStayWritable` | Two consecutive workspace/`df -h` tool prompts on one live session must keep the session writable and must not surface `runtime_not_recovered` or sandbox-host transport failures. |
+| `TestLiveACPWispOuterCloseCheckpoints` | Direct runtime-host e2e: close starts both Wisp layers, shuts down inner workspace runtime, and requires outer Wisp stop/checkpoint to succeed; JuiceFS `checkpoint cut failed` is surfaced as the failure cause. |
 
 Required verification commands:
 

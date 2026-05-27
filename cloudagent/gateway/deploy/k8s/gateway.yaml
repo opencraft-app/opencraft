@@ -17,7 +17,7 @@ data:
   GATEWAY_DEFAULT_PROJECT_ID: "project-live"
   TOKENHUB_MODEL: "minimax-m2.7"
   E2B_DOMAIN: "ap-beijing.tencentags.com"
-  GATEWAY_TALOS_TEMPLATE: "498c6c11-74d7-426e-bdb1-13d8aa73997e"
+  GATEWAY_TALOS_TEMPLATE: "tpl-pool-s3h-ivanbgliu-1"
 ---
 apiVersion: apps/v1
 kind: Deployment

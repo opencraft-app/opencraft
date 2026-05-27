@@ -10,6 +10,29 @@
       "@/*": ["src/*"],
       "@tencent/tea-sdk-lightclaw": ["../../tea-sdk-lightclaw/src/index.ts"],
       "@tencent/tea-sdk-lightclaw/*": ["../../tea-sdk-lightclaw/src/*"]
+      // ──────────────────────────────────────────────────────────────────
+      // AgentChat-web 本地源码联调映射（已停用）
+      //
+      // 现已通过 npm 包 @tencent/agentchat-lightvela-panel 引入，
+      // 走正常的 node_modules 解析。
+      //
+      // 如需切换回本地源码联调（pnpm dev:local-agentchat），需同步打开：
+      //   1. 下方 4 个 paths 映射
+      //   2. tsconfig.app.json 中对应的 paths
+      //   3. vite.config.ts 中的 alias 和 optimizeDeps.exclude
+      // ──────────────────────────────────────────────────────────────────
+      // "@tencent/agentchat-lightvela-panel": [
+      //   "../../AgentChat-web/packages/lightvela-panel/src/index.tsx"
+      // ],
+      // "@tencent/agentchat-claw-panel": [
+      //   "../../AgentChat-web/packages/claw-panel/src/index.ts"
+      // ],
+      // "@tencent/agentchat-claw-hooks": [
+      //   "../../AgentChat-web/packages/claw-hooks/src/index.ts"
+      // ],
+      // "@tencent/agentchat-claw-components": [
+      //   "../../AgentChat-web/packages/claw-components/src/index.ts"
+      // ]
     }
   }
 }
