@@ -847,8 +847,6 @@ function AutomationFormModal({
   const schedule = useMemo(() => buildScheduleString({
     kind, period, time, weekday, monthday, intervalNum, intervalUnit, onceDate,
   }), [kind, period, time, weekday, monthday, intervalNum, intervalUnit, onceDate]);
-  const chatIdPlatforms = deliverPlatforms.filter((p) => p === "feishu");
-
   const canSubmit = !submitting && name.trim().length > 0 && prompt.trim().length > 0 && schedule.length > 0;
 
   const handleSubmit = useCallback(async () => {
@@ -993,7 +991,7 @@ function AutomationFormModal({
           <label className="block text-sm font-medium text-black/80">
             {t("通知方式")}<span className="ml-1 text-xs font-normal text-black/40">{t("（可选）")}</span>
           </label>
-          <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-2">
+          <div className="mt-2 space-y-2">
             {(
               [
                 { key: "weixin", label: t("微信") },
@@ -1004,93 +1002,89 @@ function AutomationFormModal({
               const configured = enabledChannels === null || enabledChannels.has(key);
               const selected = deliverPlatforms.includes(key);
               return (
-                <label
-                  key={key}
-                  className={
-                    "inline-flex items-center gap-1.5 text-sm " +
-                    (configured ? "cursor-pointer text-black/80" : "cursor-not-allowed text-black/30")
-                  }
-                >
-                  <input
-                    type="checkbox"
-                    checked={selected}
-                    disabled={!configured}
-                    onChange={() =>
-                      setDeliverPlatforms((prev) =>
-                        prev.includes(key) ? prev.filter((p) => p !== key) : [...prev, key],
-                      )
+                <div key={key}>
+                  <label
+                    className={
+                      "inline-flex items-center gap-1.5 text-sm " +
+                      (configured ? "cursor-pointer text-black/80" : "cursor-not-allowed text-black/30")
                     }
-                    className="h-4 w-4 cursor-pointer rounded border-black/20 accent-black disabled:cursor-not-allowed"
-                  />
-                  <span>
-                    {label}
-                    {!configured && <span className="ml-0.5 text-[10px]">{t("（未配置）")}</span>}
-                  </span>
-                </label>
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selected}
+                      disabled={!configured}
+                      onChange={() =>
+                        setDeliverPlatforms((prev) =>
+                          prev.includes(key) ? prev.filter((p) => p !== key) : [...prev, key],
+                        )
+                      }
+                      className="h-4 w-4 cursor-pointer rounded border-black/20 accent-black disabled:cursor-not-allowed"
+                    />
+                    <span>
+                      {label}
+                      {!configured && <span className="ml-0.5 text-[10px]">{t("（未配置）")}</span>}
+                    </span>
+                    {selected && key === "weixin" && (
+                      <span className="text-xs text-black/40">{t("微信支持直接配置发送通知")}</span>
+                    )}
+                    {selected && key === "qqbot" && (
+                      <span className="text-xs text-black/40">{t("QQ 需设置 home 对话才能发送通知")}</span>
+                    )}
+                    {selected && key === "feishu" && (
+                      <span className="text-xs text-black/40">{t("飞书支持通过 home 对话或指定 Chat ID发送通知")}</span>
+                    )}
+                  </label>
+
+                  {selected && key === "qqbot" && (
+                    <p className="mt-1.5 pl-5 text-xs leading-6 text-black/40">
+                      {t("设置 home 对话：在 QQ 应用中，在对话中向智能体发送")}
+                      <InlineCopyText value="/set-home" />
+                      {t("。")}
+                    </p>
+                  )}
+
+                  {selected && key === "feishu" && (
+                    <div className="mt-1.5 space-y-1.5 pl-5">
+                      <div className="flex items-center gap-1">
+                        <span className="w-20 shrink-0 text-xs text-black/50">
+                          {t("飞书对话 ID")}
+                        </span>
+                        <input
+                          type="text"
+                          value={deliverChatIds[key] ?? ""}
+                          onChange={(e) =>
+                            setDeliverChatIds((prev) => ({ ...prev, [key]: e.target.value }))
+                          }
+                          placeholder={t("选填，留空则在home对话(如已设置)中通知；也可指定Chat ID通知")}
+                          className="flex-1 rounded-lg border border-black/10 bg-white px-3 py-1.5 text-xs placeholder:text-xs placeholder:text-black/35 focus:border-black/30 focus:outline-none"
+                          style={{ fontSize: 12, lineHeight: "16px" }}
+                        />
+                      </div>
+                      <div className="space-y-1 text-xs leading-6 text-black/40">
+                        <p>
+                          {t("1. 设置 home 对话：在飞书应用中，在对话中向智能体发送")}
+                          <InlineCopyText value="/set-home" />
+                          {t("。如未在上面输入框中指定 Chat ID，则默认通过 home 对话发送通知。")}
+                        </p>
+                        <p>
+                          {t("2. 获取对话 ID：在飞书应用中，找到希望发送通知的对话，向智能体发送提示词")}
+                          <InlineCopyText value={t("当前Chat ID是什么")} />
+                          {t("，正常会回复前缀为oc_的一串字符。在上面输入框中输入Chat ID，指定该对话来通知。")}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
               );
             })}
           </div>
-          {/* 为需要 chat_id 的平台展开可选输入框；微信和 QQ 可直接发送，不需要填写 */}
-          {chatIdPlatforms.length > 0 && (
-            <div className="mt-2 space-y-1.5">
-              {chatIdPlatforms.map((p) => {
-                return (
-                  <div key={p} className="flex items-center gap-1">
-                    <span className="w-20 shrink-0 text-xs text-black/50">
-                      {t("飞书对话 ID")}
-                    </span>
-                    <input
-                      type="text"
-                      value={deliverChatIds[p] ?? ""}
-                      onChange={(e) =>
-                        setDeliverChatIds((prev) => ({ ...prev, [p]: e.target.value }))
-                      }
-                      placeholder={t("选填，留空则在home对话(如已设置)中通知；也可指定Chat ID通知")}
-                      className="flex-1 rounded-lg border border-black/10 bg-white px-3 py-1.5 text-xs placeholder:text-xs placeholder:text-black/35 focus:border-black/30 focus:outline-none"
-                      style={{ fontSize: 12, lineHeight: "16px" }}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          )}
           {/* 间距用 div 显式 spacer 拉开，避免 mt-* 被 layout 影响 */}
           <div aria-hidden="true" style={{ height: 10 }} />
           {deliverPlatforms.length === 0 ? (
             <p className="text-xs text-black/40">
               {t("如不选，则只会在后台执行任务，不发通知。")}
             </p>
-          ) : chatIdPlatforms.length === 0 ? (
-            deliverPlatforms.includes("qqbot") ? (
-              <div className="space-y-1 text-xs leading-6 text-black/40">
-                <p>{t("QQ 需设置 home 对话才能发送通知")}</p>
-                <p>{t("提示：")}</p>
-                <p>
-                  {t("设置 home 对话：在 QQ、飞书应用中，在对话中向智能体发送")}
-                  <InlineCopyText value="/set-home" />
-                  {t("。")}
-                </p>
-              </div>
-            ) : (
-              <p className="text-xs text-black/40">
-                {t("微信支持直接配置发送通知")}
-              </p>
-            )
-          ) : (
-            <div className="space-y-1 text-xs leading-6 text-black/40">
-              <p>{t("提示：")}</p>
-              <p>
-                {t("1. 设置 home 对话：在飞书应用中，在对话中向智能体发送")}
-                <InlineCopyText value="/set-home" />
-                {t("。如未在上面输入框中指定 Chat ID，则默认通过 home 对话发送通知。")}
-              </p>
-              <p>
-                {t("2. 获取对话 ID：在飞书应用中，找到希望发送通知的对话，向智能体发送提示词")}
-                <InlineCopyText value={t("当前Chat ID是什么")} />
-                {t("。在上面输入框中输入Chat ID（前缀为oc_的一串字符），指定该对话来通知。")}
-              </p>
-            </div>
-          )}
+          ) : null}
         </div>
 
         {/* 操作 */}
