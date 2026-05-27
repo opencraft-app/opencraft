@@ -286,7 +286,7 @@ stages:
       reviews:
         flows:
           - name: 确认发起 frontend EdgeOne 正式站发布候选
-            reviewers: [ "skipzhang" ]
+            reviewers: [ "skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang" ]
         description: |
           本阶段确认是否允许本次 frontend 构建发起 EdgeOne 正式站发布候选。
 
