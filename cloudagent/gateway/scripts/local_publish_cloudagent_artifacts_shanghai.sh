@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO_ROOT="$(cd "$ROOT_DIR/../.." && pwd)"
+CALLER_DIR="$(pwd)"
 cd "$ROOT_DIR"
 
 usage() {
@@ -114,7 +115,10 @@ while [ "$#" -gt 0 ]; do
         printf 'missing value for --wisp-package\n' >&2
         exit 2
       fi
-      export CLOUDAGENT_WISP_PACKAGE_ARTIFACT="$2"
+      case "$2" in
+        /*) export CLOUDAGENT_WISP_PACKAGE_ARTIFACT="$2" ;;
+        *) export CLOUDAGENT_WISP_PACKAGE_ARTIFACT="$CALLER_DIR/$2" ;;
+      esac
       shift 2
       ;;
     --help|-h)
@@ -130,6 +134,10 @@ while [ "$#" -gt 0 ]; do
 done
 
 if [ -n "$ENV_FILE" ]; then
+  case "$ENV_FILE" in
+    /*) ;;
+    *) ENV_FILE="$CALLER_DIR/$ENV_FILE" ;;
+  esac
   if [ ! -f "$ENV_FILE" ]; then
     printf 'env file does not exist: %s\n' "$ENV_FILE" >&2
     exit 2

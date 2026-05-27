@@ -74,6 +74,7 @@ CRUN_BINARY="${WISP_CRUN_BINARY:-$WISP_DIR/assets/bin/crun/crun-$GOARCH}"
 TINI_BINARY="${WISP_TINI_BINARY:-$WISP_DIR/assets/bin/tini/tini-$GOARCH}"
 ROOTFS_IMAGE="${WISP_ROOTFS_IMAGE:-$WISP_DIR/assets/rootfs/images/alpine-$GOARCH.img}"
 package_output=""
+package_marker=""
 
 mkdir -p "$ROOT_DIR/dist"
 
@@ -94,6 +95,7 @@ else
   fi
 
   log "package Wisp runtime"
+  package_marker="$(mktemp)"
   package_output="$(
     cd "$WISP_DIR"
     WISP_CRUN_BINARY="$CRUN_BINARY" \
@@ -104,6 +106,19 @@ else
       ./hack/release/package-tarball.sh
   )"
   artifact="$(printf '%s\n' "$package_output" | awk '/\\.tar\\.gz$/ { path=$0 } END { print path }')"
+fi
+if [ -z "$artifact" ] || [ ! -f "$artifact" ]; then
+  if [ -n "$package_marker" ] && [ -f "$package_marker" ]; then
+    latest_artifact="$(find "$WISP_DIR/dist-release" -maxdepth 1 -type f -name "wisp-${GOOS}-${GOARCH}-*.tar.gz" -newer "$package_marker" -print 2>/dev/null | sort | tail -n 1 || true)"
+    rm -f "$package_marker"
+  else
+    latest_artifact=""
+  fi
+  if [ -n "$latest_artifact" ] && [ -f "$latest_artifact" ]; then
+    artifact="$latest_artifact"
+  fi
+elif [ -n "$package_marker" ] && [ -f "$package_marker" ]; then
+  rm -f "$package_marker"
 fi
 if [ -z "$artifact" ] || [ ! -f "$artifact" ]; then
   printf 'Wisp package script did not produce a tarball. output=%s\n' "$package_output" >&2
