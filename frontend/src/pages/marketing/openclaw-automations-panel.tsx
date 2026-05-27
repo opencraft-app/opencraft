@@ -159,7 +159,7 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
 
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-base font-semibold text-black/90">{t("定时任务")}</h3>
+          <h3 className="text-base font-semibold text-black/90">{t("自动任务")}</h3>
           <p className="mt-0.5 text-xs text-black/50">
             {t("让你的智能体伙伴按计划自动执行任务")}
           </p>
@@ -191,7 +191,7 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
         ) : listError ? (
           <div className="flex flex-col items-center justify-center py-10 text-sm">
             <AlertTriangle className="mb-2 h-6 w-6 text-[#B91C1C] opacity-80" />
-            <p className="text-black/70">{t("加载定时任务失败")}</p>
+            <p className="text-black/70">{t("加载自动任务失败")}</p>
             <p className="mt-1 max-w-md break-all px-4 text-center text-xs text-black/40">{listError}</p>
             <button
               type="button"
@@ -204,7 +204,7 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
         ) : visibleJobs.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-10 text-sm text-black/50">
             <Clock className="mb-2 h-6 w-6 opacity-50" />
-            {t("还没有定时任务")}
+            {t("还没有自动任务")}
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -679,7 +679,7 @@ function ConfirmDeleteModal({
         className="relative w-full max-w-[400px] rounded-2xl bg-white p-6 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="text-base font-semibold text-black/90">{t("删除定时任务")}</h3>
+        <h3 className="text-base font-semibold text-black/90">{t("删除自动任务")}</h3>
         <p className="mt-2 text-sm text-black/65">
           {t("确定要删除「{{name}}」吗？此操作无法恢复。", { name: jobName || t("未命名任务") })}
         </p>
@@ -727,9 +727,9 @@ function ConfirmCreateOverLimitModal({
         className="relative w-full max-w-[420px] rounded-2xl bg-white p-6 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="text-base font-semibold text-black/90">{t("定时任务数量提醒")}</h3>
+        <h3 className="text-base font-semibold text-black/90">{t("自动任务数量提醒")}</h3>
         <p className="mt-2 text-sm leading-relaxed text-black/65">
-          {t("当前生效中的定时任务数量已经达到 20 个以上，建议你删除不需要的任务后再继续。")}
+          {t("当前生效中的自动任务数量已经达到 20 个以上，建议你删除不需要的任务后再继续。")}
         </p>
         <div className="mt-5 flex items-center justify-end gap-2">
           <button
@@ -916,8 +916,8 @@ function AutomationFormModal({
       const message = err instanceof CronCommandError ? err.message : err instanceof Error ? err.message : String(err);
       onError(
         mode === "create"
-          ? t("创建定时任务失败：{{message}}", { message })
-          : t("编辑定时任务失败：{{message}}", { message }),
+          ? t("创建自动任务失败：{{message}}", { message })
+          : t("编辑自动任务失败：{{message}}", { message }),
       );
     } finally {
       setSubmitting(false);
@@ -937,7 +937,7 @@ function AutomationFormModal({
         </button>
 
         <h2 className="text-lg font-semibold text-black/90">
-          {mode === "create" ? t("添加定时任务") : t("编辑定时任务")}
+          {mode === "create" ? t("添加自动任务") : t("编辑自动任务")}
         </h2>
 
         {/* 名称 */}
@@ -948,7 +948,7 @@ function AutomationFormModal({
             value={name}
             onChange={(e) => setName(e.target.value.slice(0, 60))}
             maxLength={60}
-            placeholder={t("请输入定时任务名称")}
+            placeholder={t("请输入自动任务名称")}
             className="mt-1.5 w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-base placeholder:text-base placeholder:text-black/35 focus:border-black/30 focus:outline-none"
             style={{ ...MODAL_CONTROL_TEXT_STYLE, marginTop: 6 }}
           />

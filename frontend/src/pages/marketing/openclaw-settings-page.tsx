@@ -3104,7 +3104,7 @@ export const OpenClawSettingsPage = () => {
               <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("恢复初始设置")}</h3>
             </div>
             <p style={{ color: "var(--tea-color-text-secondary, #666)", fontSize: "14px", lineHeight: 1.6, marginBottom: "20px" }}>
-              {t("将保留当前工作空间、记忆和定时任务，并初始化配置文件，模型相关配置不会保留。")}
+              {t("将保留当前工作空间、记忆和自动任务，并初始化配置文件，模型相关配置不会保留。")}
             </p>
             {resetError && (
               <pre
@@ -3276,7 +3276,7 @@ export const OpenClawSettingsPage = () => {
                 ...(!isGlobal
                   ? [{ id: "buddy" as const, label: t("人设"), icon: <UserRound className="h-4 w-4" /> }]
                   : []),
-                { id: "automations", label: t("定时任务"), icon: <CalendarClock className="h-4 w-4" />, badge: "NEW" },
+                { id: "automations", label: t("自动任务"), icon: <CalendarClock className="h-4 w-4" />, badge: "NEW" },
                 { id: "chat", label: t("对话"), icon: <MessageSquare className="h-4 w-4" />, badge: "NEW" },
               ];
               const isRestartDisabled = isActiveBotRestarting || activeBot.status !== "running";
