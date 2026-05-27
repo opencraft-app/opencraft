@@ -39,6 +39,7 @@ const PANEL_CARD_STYLE: React.CSSProperties = {
 };
 const MAX_CRON_JOBS_PER_BOT = 20;
 const MODAL_CONTROL_TEXT_STYLE: React.CSSProperties = { fontSize: 16, lineHeight: "24px" };
+const MODAL_HELP_TEXT_STYLE: React.CSSProperties = { fontSize: 14, lineHeight: "22px" };
 const EXPIRED_CRON_JOB_HIDE_AFTER_MS = 2 * 60 * 1000;
 
 /** 顶部红色 toast；与 settings 主页 SkillInstallToast 视觉一致 */
@@ -924,7 +925,8 @@ function AutomationFormModal({
             onChange={(e) => setName(e.target.value.slice(0, 60))}
             maxLength={60}
             placeholder={t("请输入定时任务名称")}
-            className="mt-1.5 w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm placeholder:text-sm placeholder:text-black/35 focus:border-black/30 focus:outline-none"
+            className="mt-1.5 w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-base placeholder:text-base placeholder:text-black/35 focus:border-black/30 focus:outline-none"
+            style={MODAL_CONTROL_TEXT_STYLE}
           />
         </div>
 
@@ -983,8 +985,8 @@ function AutomationFormModal({
             rows={5}
             maxLength={800}
             placeholder={t("请用提示词的形式描述需要执行的任务，比如：提醒我喝水")}
-            className="mt-3 w-full resize-none rounded-lg border border-black/10 bg-white px-3 py-2 text-sm placeholder:text-sm placeholder:text-black/35 focus:border-black/30 focus:outline-none"
-            style={{ marginTop: 12 }}
+            className="mt-3 w-full resize-none rounded-lg border border-black/10 bg-white px-3 py-2 text-base placeholder:text-base placeholder:text-black/35 focus:border-black/30 focus:outline-none"
+            style={{ ...MODAL_CONTROL_TEXT_STYLE, marginTop: 12 }}
           />
         </div>
 
@@ -1022,26 +1024,26 @@ function AutomationFormModal({
                       }
                       className="h-4 w-4 cursor-pointer rounded border-black/20 accent-black disabled:cursor-not-allowed"
                     />
-                    <span>
+                    <span className="text-base leading-6">
                       {label}
                       {!configured && <span className="ml-0.5 text-[10px]">{t("（未配置）")}</span>}
                     </span>
                     {selected && key === "qqbot" && (
-                      <span className="inline-flex items-center text-xs leading-5 text-black/40">
+                      <span className="inline-flex items-center text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
                         {t("QQ 需设置 home 对话才能发送通知（在 QQ 对话中发送")}
                         <InlineCopyText value="/set-home" />
                         {t("给机器人）")}
                       </span>
                     )}
                     {selected && key === "feishu" && (
-                      <span className="text-xs text-black/40">{t("飞书支持通过 home 对话或指定 Chat ID发送通知")}</span>
+                      <span className="text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>{t("飞书支持通过 home 对话或指定 Chat ID发送通知")}</span>
                     )}
                   </label>
 
                   {selected && key === "feishu" && (
                     <div className="mt-1.5 space-y-1.5 pl-5">
                       <div className="flex items-center gap-1">
-                        <span className="w-14 shrink-0 text-xs text-black/50">{t("Chat ID")}</span>
+                        <span className="w-14 shrink-0 text-sm text-black/50" style={MODAL_HELP_TEXT_STYLE}>{t("Chat ID")}</span>
                         <input
                           type="text"
                           value={deliverChatIds[key] ?? ""}
@@ -1049,11 +1051,11 @@ function AutomationFormModal({
                             setDeliverChatIds((prev) => ({ ...prev, [key]: e.target.value }))
                           }
                           placeholder={t("如已设置home对话，可留空，默认走home对话通知；也可指定Chat ID通知")}
-                          className="min-w-0 flex-[1.1] rounded-lg border border-black/10 bg-white px-3 py-1.5 text-xs placeholder:text-xs placeholder:text-black/35 focus:border-black/30 focus:outline-none"
-                          style={{ fontSize: 12, lineHeight: "16px" }}
+                          className="min-w-0 flex-[1.1] rounded-lg border border-black/10 bg-white px-3 py-1.5 text-sm placeholder:text-sm placeholder:text-black/35 focus:border-black/30 focus:outline-none"
+                          style={MODAL_HELP_TEXT_STYLE}
                         />
                       </div>
-                      <div className="space-y-1 text-xs leading-6 text-black/40">
+                      <div className="space-y-1 text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
                         <p>
                           {t("1. 设置 home 对话：在飞书应用中，在对话中向智能体发送")}
                           <InlineCopyText value="/set-home" />
@@ -1074,7 +1076,7 @@ function AutomationFormModal({
           {/* 间距用 div 显式 spacer 拉开，避免 mt-* 被 layout 影响 */}
           <div aria-hidden="true" style={{ height: 10 }} />
           {deliverPlatforms.length === 0 ? (
-            <p className="text-xs text-black/40">
+            <p className="text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
               {t("如不选，则只会在后台执行任务，不发通知。")}
             </p>
           ) : null}
