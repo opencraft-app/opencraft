@@ -402,6 +402,7 @@
   "k_cc9ccdc4": "Day {{n}}",
   "k_ccf125df": "Join Discord communities and channels for freer, real-time collaboration.",
   "k_cf115266": "QQ channel configured, but gateway restart not confirmed.",
+  "k_cf175a98": "The current schedule expression {{expr}} is not supported for UI editing. Use the hermes CLI to modify it.",
   "k_cfbf6f4c": "WeChat",
   "k_cfedacdb": "Launch",
   "k_d050a028": "Account ID",

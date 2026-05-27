@@ -20,7 +20,11 @@ import { createPortal } from "react-dom";
 import { parseHermesChannelList } from "@tencent/tea-sdk-lightclaw";
 import { useT } from "@/i18n/t";
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
-import { readStoredAuthToken } from "@/repositories/http-repositories";
+import {
+  AUTH_UNAUTHORIZED_EVENT,
+  readStoredAuthToken,
+  writeStoredAuthToken,
+} from "@/repositories/http-repositories";
 import {
   CronCommandError,
   createCronJob,
@@ -404,7 +408,7 @@ function CronJobCard({
   );
 }
 
-function truncateCronJobCardTitle(name: string): string {
+export function truncateCronJobCardTitle(name: string): string {
   let width = 0;
   let output = "";
   for (const char of Array.from(name)) {
@@ -802,7 +806,16 @@ function AutomationFormModal({
   const [name, setName] = useState(initialJob?.name ?? "");
   const [prompt, setPrompt] = useState(initialJob?.prompt ?? "");
 
-  const initial = useMemo(() => parseInitialSchedule(initialJob?.schedule.display || initialJob?.schedule.expr || ""), [initialJob]);
+  const initialScheduleSource = useMemo(
+    () => (initialJob?.schedule.display || initialJob?.schedule.expr || "").trim(),
+    [initialJob],
+  );
+  const originalSchedule = useMemo(
+    () => (initialJob?.schedule.expr || initialJob?.schedule.display || "").trim(),
+    [initialJob],
+  );
+  const initial = useMemo(() => parseInitialSchedule(initialScheduleSource), [initialScheduleSource]);
+  const scheduleUneditable = mode === "edit" && !!initialJob && initial === null && initialScheduleSource.length > 0;
   const defaultScheduleDate = useMemo(() => new Date(Date.now() + 60_000), []);
   const [kind, setKind] = useState<FrequencyKind>(initial?.kind ?? "recurring");
   // 周期态
@@ -856,7 +869,13 @@ function AutomationFormModal({
             body: JSON.stringify({ command: "acli channel status", run_as_user: "agentuser" }),
           },
         );
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        if (!resp.ok) {
+          if (resp.status === 401 || resp.status === 403) {
+            writeStoredAuthToken(null);
+            window.dispatchEvent(new Event(AUTH_UNAUTHORIZED_EVENT));
+          }
+          throw new Error(`HTTP ${resp.status}`);
+        }
         const envelope = (await resp.json()) as { data?: { output?: string } };
         const output = envelope.data?.output ?? "";
         const entries = parseHermesChannelList(output);
@@ -864,7 +883,7 @@ function AutomationFormModal({
         setEnabledChannels(new Set(entries.filter((e) => e.enabled).map((e) => e.channel)));
       } catch {
         // 拉失败不阻塞表单；保留 null（视为未知 → 全部 enabled，让 hermes 自己报错）
-        if (!cancelled) setEnabledChannels(new Set());
+        if (!cancelled) setEnabledChannels(null);
       }
     })();
     return () => { cancelled = true; };
@@ -873,14 +892,21 @@ function AutomationFormModal({
   const schedule = useMemo(() => buildScheduleString({
     kind, period, time, weekday, monthday, intervalNum, intervalUnit, onceDate,
   }), [kind, period, time, weekday, monthday, intervalNum, intervalUnit, onceDate]);
-  const canSubmit = !submitting && name.trim().length > 0 && prompt.trim().length > 0 && schedule.length > 0;
+  const canSubmit = !submitting
+    && name.trim().length > 0
+    && (mode === "edit" || prompt.trim().length > 0)
+    && (scheduleUneditable || schedule.length > 0);
 
   const handleSubmit = useCallback(async () => {
     if (!canSubmit) return;
-    // 单次任务必须晚于当前时间
-    if (kind === "once") {
+    const scheduleChanged = mode === "create"
+      || (!scheduleUneditable && (kind === "once" ? onceDate !== initial?.onceDate : schedule !== originalSchedule));
+    // 单次任务必须晚于当前时间；编辑已过期单次任务但未改时间时不阻断其它字段保存。
+    if (!scheduleUneditable && kind === "once" && scheduleChanged) {
       const t0 = new Date(onceDate).getTime();
-      if (!Number.isNaN(t0) && t0 <= Date.now()) {
+      const initialT0 = mode === "edit" && initial?.onceDate ? new Date(initial.onceDate).getTime() : Number.NaN;
+      const onceUnchanged = !Number.isNaN(initialT0) && t0 === initialT0;
+      if (!onceUnchanged && !Number.isNaN(t0) && t0 <= Date.now()) {
         onError(t("不能选择早于当前的时间"));
         return;
       }
@@ -904,12 +930,16 @@ function AutomationFormModal({
           deliver,
         });
       } else if (initialJob) {
-        await editCronJob(botId, initialJob.id, {
-          name: name.trim(),
-          prompt: prompt.trim(),
-          schedule,
-          deliver,
-        });
+        const patch: Parameters<typeof editCronJob>[2] = {};
+        const nextName = name.trim();
+        const nextPrompt = prompt.trim();
+        if (nextName !== initialJob.name) patch.name = nextName;
+        if (nextPrompt !== (initialJob.prompt ?? "")) patch.prompt = nextPrompt;
+        if (!scheduleUneditable && schedule !== originalSchedule) patch.schedule = schedule;
+        if (deliver !== (initialJob.deliver || "")) patch.deliver = deliver;
+        if (Object.keys(patch).length > 0) {
+          await editCronJob(botId, initialJob.id, patch);
+        }
       }
       onSaved();
     } catch (err) {
@@ -922,7 +952,7 @@ function AutomationFormModal({
     } finally {
       setSubmitting(false);
     }
-  }, [botId, canSubmit, mode, initialJob, name, prompt, schedule, kind, onceDate, deliverPlatforms, deliverChatIds, onSaved, onError, t]);
+  }, [botId, canSubmit, mode, initialJob, name, prompt, schedule, scheduleUneditable, originalSchedule, kind, onceDate, initial, deliverPlatforms, deliverChatIds, onSaved, onError, t]);
 
   return createPortal(
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 px-4 py-8" role="dialog" aria-modal="true">
@@ -962,18 +992,25 @@ function AutomationFormModal({
               <button
                 key={k}
                 type="button"
-                onClick={() => setKind(k)}
+                onClick={() => {
+                  if (!scheduleUneditable) setKind(k);
+                }}
+                disabled={scheduleUneditable}
                 style={MODAL_CONTROL_TEXT_STYLE}
                 className={`rounded-md px-3 py-1 text-base font-medium transition ${
                   kind === k ? "bg-white text-black/90 shadow-sm" : "text-black/50 hover:text-black/80"
-                }`}
+                } ${scheduleUneditable ? "cursor-not-allowed opacity-60" : ""}`}
               >
                 {k === "recurring" ? t("周期") : k === "interval" ? t("按间隔") : t("单次")}
               </button>
             ))}
           </div>
           <div className="mt-3">
-            {kind === "recurring" && (
+            {scheduleUneditable ? (
+              <div className="rounded-lg bg-[#FFF7E6] px-3 py-2 text-xs leading-relaxed text-[#8A5A00]">
+                {t("当前调度表达式 {{expr}} 暂不支持在 UI 编辑，如需修改请使用 hermes CLI", { expr: initialScheduleSource })}
+              </div>
+            ) : kind === "recurring" && (
               <RecurringPicker
                 period={period}
                 time={time}
@@ -985,7 +1022,7 @@ function AutomationFormModal({
                 onMonthday={setMonthday}
               />
             )}
-            {kind === "interval" && (
+            {!scheduleUneditable && kind === "interval" && (
               <IntervalPicker
                 num={intervalNum}
                 unit={intervalUnit}
@@ -993,7 +1030,7 @@ function AutomationFormModal({
                 onUnit={setIntervalUnit}
               />
             )}
-            {kind === "once" && <OncePicker value={onceDate} onChange={setOnceDate} />}
+            {!scheduleUneditable && kind === "once" && <OncePicker value={onceDate} onChange={setOnceDate} />}
           </div>
         </div>
 
@@ -1309,7 +1346,7 @@ export function buildScheduleString(args: {
  * 反向解析 schedule 字符串为表单初始值（编辑场景）。
  * 解析失败返回 null，调用方走默认值。
  */
-function parseInitialSchedule(display: string): {
+export function parseInitialSchedule(display: string): {
   kind: FrequencyKind;
   period?: RecurringPeriod;
   time?: string;
@@ -1346,7 +1383,7 @@ function parseInitialSchedule(display: string): {
   const cronMatch = /^(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)$/.exec(display.trim());
   if (cronMatch) {
     const [, mn, hr, dom, mon, dow] = cronMatch;
-    if (!/^\d+$/.test(mn ?? "") || !/^\d+$/.test(hr ?? "")) return { kind: "recurring" };
+    if (!/^\d+$/.test(mn ?? "") || !/^\d+$/.test(hr ?? "")) return null;
     const time = `${String(hr).padStart(2, "0")}:${String(mn).padStart(2, "0")}`;
     if (dom === "*" && mon === "*" && dow === "*") {
       return { kind: "recurring", period: "daily", time };
@@ -1368,7 +1405,7 @@ function parseInitialSchedule(display: string): {
  * - "feishu" → 平台多选含 feishu
  * - "feishu:oc_xxx,weixin" → 平台 + chat_id 解析
  */
-function parseInitialDeliver(deliver: string): {
+export function parseInitialDeliver(deliver: string): {
   platforms: string[];
   chatIds: Record<string, string>;
 } {

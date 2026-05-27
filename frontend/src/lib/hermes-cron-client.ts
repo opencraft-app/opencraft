@@ -13,7 +13,11 @@
  * - 不解析 list 文本输出；优先 `--json`，失败直接抛错让 toast 展示原始 stderr。
  */
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
-import { readStoredAuthToken } from "@/repositories/http-repositories";
+import {
+  AUTH_UNAUTHORIZED_EVENT,
+  readStoredAuthToken,
+  writeStoredAuthToken,
+} from "@/repositories/http-repositories";
 
 /** Hermes 单个 cron job（只挑 UI 需要的字段，多余字段忽略） */
 export interface CronJob {
@@ -85,7 +89,7 @@ function buildErrorMessage(output: string, status: string): string {
 }
 
 /** 单个 shell 参数加引号（仅处理单引号，足够给 hermes cron 用） */
-function shellQuote(value: string): string {
+export function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
@@ -128,6 +132,18 @@ async function execCommand(botId: string, command: string): Promise<DebugExecPay
     body: JSON.stringify({ command, run_as_user: "agentuser" }),
   });
   if (!resp.ok) {
+    if (resp.status === 401 || resp.status === 403) {
+      writeStoredAuthToken(null);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event(AUTH_UNAUTHORIZED_EVENT));
+      }
+      throw new CronCommandError({
+        command,
+        output: "登录已过期，请重新登录",
+        status: `HTTP ${resp.status}`,
+        exitCode: -1,
+      });
+    }
     let detail = "";
     try {
       const errBody = (await resp.json()) as { message?: string; error?: string };
@@ -291,7 +307,7 @@ export function parseCronListOutput(text: string): CronJob[] {
   return jobs;
 }
 
-function splitLastRunValue(value: string): { lastRunAt: string; lastStatus: string | null } {
+export function splitLastRunValue(value: string): { lastRunAt: string; lastStatus: string | null } {
   const trimmed = value.trim();
   const match = /^(.+?(?:Z|[+-]\d{2}:?\d{2}))(?:\s+(.+))?$/.exec(trimmed);
   if (!match) return { lastRunAt: trimmed, lastStatus: null };

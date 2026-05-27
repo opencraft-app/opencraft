@@ -402,6 +402,7 @@
   "k_cc9ccdc4": "{{n}} 日",
   "k_ccf125df": "连接 Discord 社群频道，让实时交流与协作更加自由。",
   "k_cf115266": "QQ channel 已配置，但 gateway 未确认重启。",
+  "k_cf175a98": "当前调度表达式 {{expr}} 暂不支持在 UI 编辑，如需修改请使用 hermes CLI",
   "k_cfbf6f4c": "微信",
   "k_cfedacdb": "启航 Launch",
   "k_d050a028": "账号 ID",
