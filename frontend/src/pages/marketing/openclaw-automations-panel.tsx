@@ -913,15 +913,7 @@ function AutomationFormModal({
     }
     setSubmitting(true);
     try {
-      const deliver = deliverPlatforms.length === 0
-        ? "local"
-        : deliverPlatforms
-            .map((p) => {
-              if (p !== "feishu") return p;
-              const chatId = (deliverChatIds[p] || "").trim();
-              return chatId ? `${p}:${chatId}` : p;
-            })
-            .join(",");
+      const deliver = buildDeliverString(deliverPlatforms, deliverChatIds);
       if (mode === "create") {
         await createCronJob(botId, {
           name: name.trim(),
@@ -1078,11 +1070,16 @@ function AutomationFormModal({
                       type="checkbox"
                       checked={selected}
                       disabled={!configured}
-                      onChange={() =>
-                        setDeliverPlatforms((prev) =>
-                          prev.includes(key) ? prev.filter((p) => p !== key) : [...prev, key],
-                        )
-                      }
+                      onChange={() => {
+                        setDeliverPlatforms((prev) => {
+                          if (!prev.includes(key)) return [...prev, key];
+                          setDeliverChatIds((ids) => {
+                            const { [key]: _removed, ...rest } = ids;
+                            return rest;
+                          });
+                          return prev.filter((p) => p !== key);
+                        });
+                      }}
                       className="h-4 w-4 cursor-pointer rounded border-black/20 accent-black disabled:cursor-not-allowed"
                     />
                     <span className="text-base leading-6">
@@ -1425,4 +1422,14 @@ export function parseInitialDeliver(deliver: string): {
     if (chatId) chatIds[platform] = chatId;
   }
   return { platforms, chatIds };
+}
+
+export function buildDeliverString(platforms: string[], chatIds: Record<string, string>): string {
+  if (platforms.length === 0) return "local";
+  return platforms
+    .map((platform) => {
+      const chatId = (chatIds[platform] || "").trim();
+      return chatId ? `${platform}:${chatId}` : platform;
+    })
+    .join(",");
 }

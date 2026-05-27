@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildDeliverString,
   buildScheduleString,
   parseInitialDeliver,
   parseInitialSchedule,
@@ -90,9 +91,9 @@ describe("parseInitialDeliver", () => {
   });
 
   it("parses platform list and chat ids", () => {
-    expect(parseInitialDeliver("weixin,feishu:oc_123,qqbot")).toEqual({
+    expect(parseInitialDeliver("weixin:wx_123,feishu:oc_123,qqbot:qq_123")).toEqual({
       platforms: ["weixin", "feishu", "qqbot"],
-      chatIds: { feishu: "oc_123" },
+      chatIds: { weixin: "wx_123", feishu: "oc_123", qqbot: "qq_123" },
     });
   });
 
@@ -101,6 +102,19 @@ describe("parseInitialDeliver", () => {
       platforms: ["weixin"],
       chatIds: {},
     });
+  });
+
+  it("round-trips chat ids for every supported platform", () => {
+    const deliver = "weixin:wx_123,qqbot:qq_123,feishu:oc_123";
+    const parsed = parseInitialDeliver(deliver);
+
+    expect(buildDeliverString(parsed.platforms, parsed.chatIds)).toBe(deliver);
+  });
+
+  it("omits chat ids for unchecked platforms", () => {
+    const parsed = parseInitialDeliver("weixin:wx_123,qqbot:qq_123,feishu:oc_123");
+
+    expect(buildDeliverString(["weixin", "feishu"], parsed.chatIds)).toBe("weixin:wx_123,feishu:oc_123");
   });
 });
 
