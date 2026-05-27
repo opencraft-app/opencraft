@@ -38,6 +38,7 @@ const PANEL_CARD_STYLE: React.CSSProperties = {
   boxShadow: "0 4px 24px rgba(0,0,0,0.03), 0 1px 2px rgba(0,0,0,0.02)",
 };
 const MAX_CRON_JOBS_PER_BOT = 20;
+const MODAL_CONTROL_TEXT_STYLE: React.CSSProperties = { fontSize: 16, lineHeight: "24px" };
 const EXPIRED_CRON_JOB_HIDE_AFTER_MS = 2 * 60 * 1000;
 
 /** 顶部红色 toast；与 settings 主页 SkillInstallToast 视觉一致 */
@@ -936,7 +937,8 @@ function AutomationFormModal({
                 key={k}
                 type="button"
                 onClick={() => setKind(k)}
-                className={`rounded-md px-3 py-1 text-sm font-medium transition ${
+                style={MODAL_CONTROL_TEXT_STYLE}
+                className={`rounded-md px-3 py-1 text-base font-medium transition ${
                   kind === k ? "bg-white text-black/90 shadow-sm" : "text-black/50 hover:text-black/80"
                 }`}
               >
@@ -1083,7 +1085,8 @@ function AutomationFormModal({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg border border-black/10 px-4 py-2 text-sm font-medium text-black/70 transition hover:bg-black/[0.04]"
+            style={MODAL_CONTROL_TEXT_STYLE}
+            className="rounded-lg border border-black/10 px-4 py-2 text-base font-medium text-black/70 transition hover:bg-black/[0.04]"
           >
             {t("取消")}
           </button>
@@ -1091,7 +1094,8 @@ function AutomationFormModal({
             type="button"
             disabled={!canSubmit}
             onClick={handleSubmit}
-            className="inline-flex min-w-[72px] items-center justify-center gap-1.5 rounded-lg bg-black px-4 py-2 text-sm font-medium text-white transition hover:bg-black/85 disabled:cursor-not-allowed disabled:opacity-40"
+            style={MODAL_CONTROL_TEXT_STYLE}
+            className="inline-flex min-w-[72px] items-center justify-center gap-1.5 rounded-lg bg-black px-4 py-2 text-base font-medium text-white transition hover:bg-black/85 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             {mode === "create" ? t("添加") : t("保存")}
@@ -1130,7 +1134,8 @@ function RecurringPicker({
         <select
           value={period}
           onChange={(e) => onPeriod(e.target.value as RecurringPeriod)}
-          className="w-full appearance-none rounded-lg border border-black/10 bg-white px-3 py-2 pr-10 text-sm focus:border-black/30 focus:outline-none"
+          style={MODAL_CONTROL_TEXT_STYLE}
+          className="w-full appearance-none rounded-lg border border-black/10 bg-white px-3 py-2 pr-10 text-base focus:border-black/30 focus:outline-none"
         >
           <option value="daily">{t("每天")}</option>
           <option value="weekly">{t("每周")}</option>
@@ -1143,7 +1148,8 @@ function RecurringPicker({
           <select
             value={weekday}
             onChange={(e) => onWeekday(Number(e.target.value))}
-            className="w-full appearance-none rounded-lg border border-black/10 bg-white px-3 py-2 pr-10 text-sm focus:border-black/30 focus:outline-none"
+            style={MODAL_CONTROL_TEXT_STYLE}
+            className="w-full appearance-none rounded-lg border border-black/10 bg-white px-3 py-2 pr-10 text-base focus:border-black/30 focus:outline-none"
           >
             {weekdayLabels.map((label, idx) => (
               <option key={idx} value={idx}>{label}</option>
@@ -1157,7 +1163,8 @@ function RecurringPicker({
           <select
             value={monthday}
             onChange={(e) => onMonthday(Number(e.target.value))}
-            className="w-full appearance-none rounded-lg border border-black/10 bg-white px-3 py-2 pr-10 text-sm focus:border-black/30 focus:outline-none"
+            style={MODAL_CONTROL_TEXT_STYLE}
+            className="w-full appearance-none rounded-lg border border-black/10 bg-white px-3 py-2 pr-10 text-base focus:border-black/30 focus:outline-none"
           >
             {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
               <option key={d} value={d}>{t("{{n}} 日", { n: d })}</option>
@@ -1170,7 +1177,8 @@ function RecurringPicker({
         type="time"
         value={time}
         onChange={(e) => onTime(e.target.value)}
-        className="rounded-lg border border-black/10 bg-white px-3 py-2 text-sm focus:border-black/30 focus:outline-none"
+        style={MODAL_CONTROL_TEXT_STYLE}
+        className="rounded-lg border border-black/10 bg-white px-3 py-2 text-base focus:border-black/30 focus:outline-none"
       />
     </div>
   );
@@ -1190,19 +1198,21 @@ function IntervalPicker({
   const t = useT();
   return (
     <div className="flex items-center gap-2">
-      <span className="text-sm text-black/60">{t("每")}</span>
+      <span className="text-base text-black/60" style={MODAL_CONTROL_TEXT_STYLE}>{t("每")}</span>
       <input
         type="number"
         min={1}
         value={num}
         onChange={(e) => onNum(Math.max(1, Number(e.target.value) || 1))}
-        className="w-20 rounded-lg border border-black/10 bg-white px-3 py-2 text-sm focus:border-black/30 focus:outline-none"
+        style={MODAL_CONTROL_TEXT_STYLE}
+        className="w-20 rounded-lg border border-black/10 bg-white px-3 py-2 text-base focus:border-black/30 focus:outline-none"
       />
       <div className="relative w-[124px]">
         <select
           value={unit}
           onChange={(e) => onUnit(e.target.value as "m" | "h" | "d")}
-          className="w-full appearance-none rounded-lg border border-black/10 bg-white px-3 py-2 pr-10 text-sm focus:border-black/30 focus:outline-none"
+          style={MODAL_CONTROL_TEXT_STYLE}
+          className="w-full appearance-none rounded-lg border border-black/10 bg-white px-3 py-2 pr-10 text-base focus:border-black/30 focus:outline-none"
         >
           <option value="m">{t("分钟")}</option>
           <option value="h">{t("小时")}</option>
@@ -1220,7 +1230,8 @@ function OncePicker({ value, onChange }: { value: string; onChange: (v: string) 
       type="datetime-local"
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="rounded-lg border border-black/10 bg-white px-3 py-2 text-sm focus:border-black/30 focus:outline-none"
+      style={MODAL_CONTROL_TEXT_STYLE}
+      className="rounded-lg border border-black/10 bg-white px-3 py-2 text-base focus:border-black/30 focus:outline-none"
     />
   );
 }
