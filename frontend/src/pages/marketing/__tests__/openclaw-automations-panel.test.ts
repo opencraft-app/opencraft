@@ -8,6 +8,7 @@ import {
   parseInitialDeliver,
   parseInitialSchedule,
   parseOnceScheduleDate,
+  shouldRejectPastOnceSchedule,
   truncateCronJobCardTitle,
 } from "../openclaw-automations-panel";
 import type { CronJob } from "@/lib/hermes-cron-client";
@@ -152,7 +153,75 @@ describe("cron date parsing and expiration filtering", () => {
     expect(isCronJobExpiredBeyondGrace(makeCronJob({ next_run_at: null }))).toBe(false);
     expect(isCronJobExpiredBeyondGrace(makeCronJob({ next_run_at: "2026-05-26T09:00:00+08:00" }))).toBe(true);
   });
+
+  it("keeps recently expired once jobs visible during the grace window", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-26T10:05:00+08:00"));
+
+    expect(isCronJobExpiredBeyondGrace(makeCronJob({ next_run_at: "2026-05-26T09:56:00+08:00" }))).toBe(false);
+    expect(isCronJobExpiredBeyondGrace(makeCronJob({ next_run_at: "2026-05-26T09:54:00+08:00" }))).toBe(true);
+  });
 });
+
+describe("once schedule validation", () => {
+  const now = new Date(2026, 4, 26, 10, 0).getTime();
+
+  it("rejects creating a once task in the past", () => {
+    expect(shouldRejectPastOnceSchedule(makeScheduleCheck({
+      mode: "create",
+      onceDate: "2026-05-26T09:59",
+      schedule: "2026-05-26T09:59",
+      now,
+    }))).toBe(true);
+  });
+
+  it("allows editing an unchanged once task even if its time is already past", () => {
+    expect(shouldRejectPastOnceSchedule(makeScheduleCheck({
+      mode: "edit",
+      onceDate: "2026-05-26T09:59",
+      initialOnceDate: "2026-05-26T09:59",
+      schedule: "2026-05-26T09:59",
+      originalSchedule: "once at 2026-05-26 09:59",
+      now,
+    }))).toBe(false);
+  });
+
+  it("rejects editing a once task to an earlier past time", () => {
+    expect(shouldRejectPastOnceSchedule(makeScheduleCheck({
+      mode: "edit",
+      onceDate: "2026-05-26T09:58",
+      initialOnceDate: "2026-05-26T09:59",
+      schedule: "2026-05-26T09:58",
+      originalSchedule: "once at 2026-05-26 09:59",
+      now,
+    }))).toBe(true);
+  });
+
+  it("allows editing a once task to a future time", () => {
+    expect(shouldRejectPastOnceSchedule(makeScheduleCheck({
+      mode: "edit",
+      onceDate: "2026-05-26T10:10",
+      initialOnceDate: "2026-05-26T09:59",
+      schedule: "2026-05-26T10:10",
+      originalSchedule: "once at 2026-05-26 09:59",
+      now,
+    }))).toBe(false);
+  });
+});
+
+function makeScheduleCheck(overrides: Partial<Parameters<typeof shouldRejectPastOnceSchedule>[0]>): Parameters<typeof shouldRejectPastOnceSchedule>[0] {
+  return {
+    mode: "edit",
+    scheduleUneditable: false,
+    kind: "once",
+    onceDate: "2026-05-26T10:10",
+    initialOnceDate: "2026-05-26T09:59",
+    schedule: "2026-05-26T10:10",
+    originalSchedule: "2026-05-26T09:59",
+    now: new Date(2026, 4, 26, 10, 0).getTime(),
+    ...overrides,
+  };
+}
 
 function makeCronJob(overrides: Partial<CronJob>): CronJob {
   return {

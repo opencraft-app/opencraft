@@ -44,7 +44,7 @@ const PANEL_CARD_STYLE: React.CSSProperties = {
 const MAX_CRON_JOBS_PER_BOT = 20;
 const MODAL_CONTROL_TEXT_STYLE: React.CSSProperties = { fontSize: 16, lineHeight: "24px" };
 const MODAL_HELP_TEXT_STYLE: React.CSSProperties = { fontSize: 13, lineHeight: "20px" };
-const EXPIRED_CRON_JOB_HIDE_AFTER_MS = 2 * 60 * 1000;
+const EXPIRED_CRON_JOB_HIDE_AFTER_MS = 10 * 60 * 1000;
 const CRON_JOB_CARD_TITLE_MAX_WIDTH = 12;
 
 /** 顶部红色 toast；与 settings 主页 SkillInstallToast 视觉一致 */
@@ -809,6 +809,16 @@ function formatLastStatus(status: string | null, t: ReturnType<typeof useT>): st
 type FrequencyKind = "recurring" | "interval" | "once";
 type RecurringPeriod = "daily" | "weekly" | "monthly";
 
+interface ScheduleChangeCheck {
+  mode: "create" | "edit";
+  scheduleUneditable: boolean;
+  kind: FrequencyKind;
+  onceDate: string;
+  initialOnceDate?: string;
+  schedule: string;
+  originalSchedule: string;
+}
+
 function AutomationFormModal({
   botId,
   mode,
@@ -914,6 +924,15 @@ function AutomationFormModal({
   const schedule = useMemo(() => buildScheduleString({
     kind, period, time, weekday, monthday, intervalNum, intervalUnit, onceDate,
   }), [kind, period, time, weekday, monthday, intervalNum, intervalUnit, onceDate]);
+  const scheduleChanged = useMemo(() => isScheduleEffectivelyChanged({
+    mode,
+    scheduleUneditable,
+    kind,
+    onceDate,
+    initialOnceDate: initial?.onceDate,
+    schedule,
+    originalSchedule,
+  }), [mode, scheduleUneditable, kind, onceDate, initial?.onceDate, schedule, originalSchedule]);
   const canSubmit = !submitting
     && name.trim().length > 0
     && (mode === "edit" || prompt.trim().length > 0)
@@ -921,17 +940,19 @@ function AutomationFormModal({
 
   const handleSubmit = useCallback(async () => {
     if (!canSubmit) return;
-    const scheduleChanged = mode === "create"
-      || (!scheduleUneditable && (kind === "once" ? onceDate !== initial?.onceDate : schedule !== originalSchedule));
     // 单次任务必须晚于当前时间；编辑已过期单次任务但未改时间时不阻断其它字段保存。
-    if (!scheduleUneditable && kind === "once" && scheduleChanged) {
-      const t0 = new Date(onceDate).getTime();
-      const initialT0 = mode === "edit" && initial?.onceDate ? new Date(initial.onceDate).getTime() : Number.NaN;
-      const onceUnchanged = !Number.isNaN(initialT0) && t0 === initialT0;
-      if (!onceUnchanged && !Number.isNaN(t0) && t0 <= Date.now()) {
-        onError(t("不能选择早于当前的时间"));
-        return;
-      }
+    if (shouldRejectPastOnceSchedule({
+      mode,
+      scheduleUneditable,
+      kind,
+      onceDate,
+      initialOnceDate: initial?.onceDate,
+      schedule,
+      originalSchedule,
+      now: Date.now(),
+    })) {
+      onError(t("不能选择早于当前的时间"));
+      return;
     }
     setSubmitting(true);
     try {
@@ -949,7 +970,7 @@ function AutomationFormModal({
         const nextPrompt = prompt.trim();
         if (nextName !== initialJob.name) patch.name = nextName;
         if (nextPrompt !== (initialJob.prompt ?? "")) patch.prompt = nextPrompt;
-        if (!scheduleUneditable && schedule !== originalSchedule) patch.schedule = schedule;
+        if (!scheduleUneditable && scheduleChanged) patch.schedule = schedule;
         if (deliver !== (initialJob.deliver || "")) patch.deliver = deliver;
         if (Object.keys(patch).length > 0) {
           await editCronJob(botId, initialJob.id, patch);
@@ -966,7 +987,7 @@ function AutomationFormModal({
     } finally {
       setSubmitting(false);
     }
-  }, [botId, canSubmit, mode, initialJob, name, prompt, schedule, scheduleUneditable, originalSchedule, kind, onceDate, initial, deliverPlatforms, deliverChatIds, onSaved, onError, t]);
+  }, [botId, canSubmit, mode, initialJob, name, prompt, schedule, scheduleUneditable, originalSchedule, kind, onceDate, initial, scheduleChanged, deliverPlatforms, deliverChatIds, onSaved, onError, t]);
 
   return createPortal(
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 px-4 py-3" role="dialog" aria-modal="true">
@@ -1359,6 +1380,23 @@ export function buildScheduleString(args: {
   if (args.period === "daily") return `${m} ${h} * * *`;
   if (args.period === "weekly") return `${m} ${h} * * ${args.weekday}`;
   return `${m} ${h} ${args.monthday} * *`;
+}
+
+export function isScheduleEffectivelyChanged(args: ScheduleChangeCheck): boolean {
+  if (args.mode === "create") return true;
+  if (args.scheduleUneditable) return false;
+  if (args.kind === "once") {
+    if (args.initialOnceDate) return args.onceDate !== args.initialOnceDate;
+    return args.schedule !== args.originalSchedule;
+  }
+  return args.schedule !== args.originalSchedule;
+}
+
+export function shouldRejectPastOnceSchedule(args: ScheduleChangeCheck & { now: number }): boolean {
+  if (args.scheduleUneditable || args.kind !== "once") return false;
+  if (!isScheduleEffectivelyChanged(args)) return false;
+  const t0 = parseCronDate(args.onceDate).getTime();
+  return !Number.isNaN(t0) && t0 <= args.now;
 }
 
 /**
