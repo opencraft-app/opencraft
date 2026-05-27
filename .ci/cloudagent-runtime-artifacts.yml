@@ -22,7 +22,7 @@ on:
   manual: enabled
 
 concurrency:
-  group: mono2-cloudagent-agent-artifact-shanghai
+  group: mono2-cloudagent-runtime-artifacts-shanghai
   cancel-in-progress: false
   queue-length: 3
   queue-timeout-minutes: 480
