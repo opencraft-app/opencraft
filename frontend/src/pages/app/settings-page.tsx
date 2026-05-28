@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { MessageCircleMore } from "lucide-react";
+import { Files, MessageCircleMore } from "lucide-react";
 import { ConfigSection } from "@/components/domain/config-section";
+import { TatFileManagerPanel } from "@/components/domain/tat-file-manager-panel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -90,52 +91,62 @@ export const SettingsPage = () => {
           </GrammarSectionCard>
 
           {snapshot.data ? (
-            <ConfigSection
-              title="QQ Channel"
-              description="把 Bot 接到 QQ 机器人通道。前端会把 App ID 和 App Secret 组装成 ctl 需要的 token。"
-              icon={<MessageCircleMore className="size-4 text-[var(--brand-600)]" />}
-            >
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="qq-app-id">QQ App ID</Label>
-                  <Input
-                    id="qq-app-id"
-                    value={qqAppId}
-                    onChange={(event) => setQqAppId(event.target.value)}
-                    placeholder="请输入 QQ 机器人的 App ID"
-                  />
+            <>
+              <ConfigSection
+                title="QQ Channel"
+                description="把 Bot 接到 QQ 机器人通道。前端会把 App ID 和 App Secret 组装成 ctl 需要的 token。"
+                icon={<MessageCircleMore className="size-4 text-[var(--brand-600)]" />}
+              >
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="qq-app-id">QQ App ID</Label>
+                    <Input
+                      id="qq-app-id"
+                      value={qqAppId}
+                      onChange={(event) => setQqAppId(event.target.value)}
+                      placeholder="请输入 QQ 机器人的 App ID"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="qq-app-secret">QQ App Secret</Label>
+                    <Input
+                      id="qq-app-secret"
+                      type="password"
+                      value={qqAppSecret}
+                      onChange={(event) => setQqAppSecret(event.target.value)}
+                      placeholder="请输入 QQ 机器人的 App Secret"
+                    />
+                  </div>
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label htmlFor="qq-account">QQ Account（可选）</Label>
+                    <Input
+                      id="qq-account"
+                      value={qqAccount}
+                      onChange={(event) => setQqAccount(event.target.value)}
+                      placeholder="同通道多账号时可填写 bot1 之类的标识"
+                    />
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="qq-app-secret">QQ App Secret</Label>
-                  <Input
-                    id="qq-app-secret"
-                    type="password"
-                    value={qqAppSecret}
-                    onChange={(event) => setQqAppSecret(event.target.value)}
-                    placeholder="请输入 QQ 机器人的 App Secret"
-                  />
-                </div>
-                <div className="space-y-2 sm:col-span-2">
-                  <Label htmlFor="qq-account">QQ Account（可选）</Label>
-                  <Input
-                    id="qq-account"
-                    value={qqAccount}
-                    onChange={(event) => setQqAccount(event.target.value)}
-                    placeholder="同通道多账号时可填写 bot1 之类的标识"
-                  />
-                </div>
-              </div>
 
-              <div className="mt-4 flex flex-wrap items-center gap-3">
-                <Button onClick={saveQQChannel} disabled={channelSaving || !qqAppId.trim() || !qqAppSecret.trim()}>
-                  {channelSaving ? "配置中..." : "保存 QQ Channel"}
-                </Button>
-                <Button asChild variant="outline">
-                  <a href="https://q.qq.com/qqbot/openclaw/login.html" target="_blank" rel="noreferrer">查看 QQ 开放平台</a>
-                </Button>
-                {channelNotice ? <p className="text-sm text-[var(--lw-fg-secondary)]">{channelNotice}</p> : null}
-              </div>
-            </ConfigSection>
+                <div className="mt-4 flex flex-wrap items-center gap-3">
+                  <Button onClick={saveQQChannel} disabled={channelSaving || !qqAppId.trim() || !qqAppSecret.trim()}>
+                    {channelSaving ? "配置中..." : "保存 QQ Channel"}
+                  </Button>
+                  <Button asChild variant="outline">
+                    <a href="https://q.qq.com/qqbot/openclaw/login.html" target="_blank" rel="noreferrer">查看 QQ 开放平台</a>
+                  </Button>
+                  {channelNotice ? <p className="text-sm text-[var(--lw-fg-secondary)]">{channelNotice}</p> : null}
+                </div>
+              </ConfigSection>
+
+              <ConfigSection
+                title="文件管理"
+                description="通过 TAT tssh 文件通道管理实例文件。适合拉日志、上传配置、处理运行态材料。"
+                icon={<Files className="size-4 text-[var(--brand-600)]" />}
+              >
+                <TatFileManagerPanel botId={botId} />
+              </ConfigSection>
+            </>
           ) : null}
         </div>
       </GrammarCanvas>
