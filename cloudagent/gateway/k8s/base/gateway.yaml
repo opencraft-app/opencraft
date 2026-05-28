@@ -32,7 +32,7 @@ data:
   GATEWAY_SANDBOX_HOST_SHA256: "REPLACE_ME_SHPROD_SANDBOX_HOST_SHA256"
   GATEWAY_WISP_SMH_LIBRARY_ID: "smh37laghvp09llc"
   GATEWAY_WISP_SMH_ACCESS_DOMAIN: "https://smh37laghvp09llc.ap-shanghai.api.tencentsmh.cn"
-  GATEWAY_WISP_PACKAGE_URL: "http://cloudagent-sidecar-shanghai-1388575217.cos.ap-shanghai.myqcloud.com/workspace/20260524/wisp-linux-amd64-20260524T044223Z-stream.tar.gz"
+  GATEWAY_WISP_PACKAGE_URL: "https://cloudagent-sidecar-shanghai-1388575217.cos.ap-shanghai.myqcloud.com/workspace/20260528/wisp-linux-amd64-20260528T061826Z-8ceda87c563b.erofs"
   GATEWAY_TALOS_TEMPLATE: "tpl-pool-s3h-ivanbgliu-1"
   CLOUDAGENT_WEB_SEARCH_PROVIDER: "tencent_wsa"
   TENCENTCLOUD_WSA_ENDPOINT: "https://api.wsa.cloud.tencent.com/SearchPro"

@@ -77,6 +77,7 @@ type ACPSessionRuntimeStartRequest struct {
 	Scope            Scope
 	CWD              string
 	Generation       int64
+	OwnerID          string
 	SandboxBackend   string
 	OuterRuntime     string
 	RuntimeRecovery  string

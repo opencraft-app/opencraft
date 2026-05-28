@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-const defaultWispPackageURL = "http://cloudagent-sidecar-shanghai-1388575217.cos.ap-shanghai.myqcloud.com/workspace/20260522/wisp-linux-amd64-20260522T181421Z-7826101eb1c5.tar.gz"
+const defaultWispPackageURL = "https://cloudagent-sidecar-shanghai-1388575217.cos.ap-shanghai.myqcloud.com/workspace/20260528/wisp-linux-amd64-20260528T061826Z-8ceda87c563b.erofs"
 
 type WispEnvironmentSDK struct {
 	ags        *AGSClient
@@ -529,7 +529,9 @@ local projectRoot = "$install";
   JFS_BUILD: "0",
   JFS_SMOUNT_SCRIPT: projectRoot + "/juicefs/hack/smount.sh",
   JFS_SFORMAT_SCRIPT: projectRoot + "/juicefs/hack/sformat.sh",
-  BASE_ROOTFS_IMG: projectRoot + "/assets/rootfs/images/plucky-amd64.img",
+  LOWER_SYSTEM_BASE: projectRoot + "/assets/rootfs/rootfs",
+  BASE_ROOTFS_DIR: projectRoot + "/assets/rootfs/rootfs",
+  BASE_ROOTFS_IMG: "",
   CRUN_BINARY: projectRoot + "/assets/bin/crun/crun-amd64",
   WISPENV_BINARY: projectRoot + "/bin/wispenv",
   WISP_FS_AGENT_BINARY: projectRoot + "/bin/wisp-fs-agent",
@@ -559,7 +561,8 @@ export JFS_BIN="$install/bin/juicefs-smount"
 export JFS_BUILD=0
 export JFS_SMOUNT_SCRIPT="$install/juicefs/hack/smount.sh"
 export JFS_SFORMAT_SCRIPT="$install/juicefs/hack/sformat.sh"
-export BASE_ROOTFS_IMG="$install/assets/rootfs/images/plucky-amd64.img"
+export BASE_ROOTFS_DIR="$install/assets/rootfs/rootfs"
+export BASE_ROOTFS_IMG=""
 export CRUN_BINARY="$install/assets/bin/crun/crun-amd64"
 export CRUN_BINARY_PATH="/var/lib/wisp/shared/tools/crun"
 export WISPENV_BINARY="$install/bin/wispenv"
@@ -580,6 +583,7 @@ sudo -n env \
   JFS_BUILD="$JFS_BUILD" \
   JFS_SMOUNT_SCRIPT="$JFS_SMOUNT_SCRIPT" \
   JFS_SFORMAT_SCRIPT="$JFS_SFORMAT_SCRIPT" \
+  BASE_ROOTFS_DIR="$BASE_ROOTFS_DIR" \
   BASE_ROOTFS_IMG="$BASE_ROOTFS_IMG" \
   CRUN_BINARY="$CRUN_BINARY" \
   CRUN_BINARY_PATH="$CRUN_BINARY_PATH" \

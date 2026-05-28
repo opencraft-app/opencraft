@@ -50,6 +50,11 @@ func main() {
 		if err != nil {
 			log.Fatalf("init agent sidecar worker: %v", err)
 		}
+		go func() {
+			if err := agentSidecarWorker.CleanupStaleRuntimeResources(context.Background(), 100); err != nil {
+				log.Printf("cleanup stale runtime resources: %v", err)
+			}
+		}()
 		worker = agentSidecarWorker
 	default:
 		log.Fatalf("GATEWAY_WORKER_MODE must be set to fake or agent_injected")

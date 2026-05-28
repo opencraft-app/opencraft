@@ -269,6 +269,27 @@ func TestWispOuterPrepareScriptPropagatesLitestreamTrace(t *testing.T) {
 	}
 }
 
+func TestWispOuterPrepareScriptUsesFlattenedEROFSRootfs(t *testing.T) {
+	if !strings.HasSuffix(defaultWispPackageURL, ".erofs") {
+		t.Fatalf("default Wisp package must be the flattened EROFS artifact, got %q", defaultWispPackageURL)
+	}
+	script := wispOuterPrepareScript()
+	for _, want := range []string{
+		`*.erofs) pkg_format="${pkg_format:-erofs}"`,
+		`sudo -n mount -t erofs -o loop,ro "$pkg" "$install"`,
+		`LOWER_SYSTEM_BASE: projectRoot + "/assets/rootfs/rootfs"`,
+		`BASE_ROOTFS_DIR: projectRoot + "/assets/rootfs/rootfs"`,
+		`BASE_ROOTFS_IMG: ""`,
+		`export BASE_ROOTFS_DIR="$install/assets/rootfs/rootfs"`,
+		`export BASE_ROOTFS_IMG=""`,
+		`export PATH="$install/assets/bin/e2fsprogs/bin:$PATH"`,
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("flattened EROFS prepare script missing %q: %s", want, script)
+		}
+	}
+}
+
 func TestRuntimeClockEnvUsesShanghaiDate(t *testing.T) {
 	env := runtimeClockEnv(time.Unix(1779062400, 0))
 	if env["HERMES_CURRENT_UNIX_SECONDS"] != "1779062400" {
