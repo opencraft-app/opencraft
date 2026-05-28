@@ -45,7 +45,6 @@ const MAX_CRON_JOBS_PER_BOT = 20;
 const MODAL_CONTROL_TEXT_STYLE: React.CSSProperties = { fontSize: 16, lineHeight: "24px" };
 const MODAL_HELP_TEXT_STYLE: React.CSSProperties = { fontSize: 13, lineHeight: "20px" };
 const EXPIRED_CRON_JOB_HIDE_AFTER_MS = 10 * 60 * 1000;
-const CRON_JOB_CARD_TITLE_MAX_WIDTH = 12;
 
 /** 顶部红色 toast；与 settings 主页 SkillInstallToast 视觉一致 */
 function ErrorToast({ message, onClose }: { message: string; onClose: () => void }) {
@@ -313,18 +312,16 @@ function CronJobCard({
   const paused = isCronJobPaused(job);
   const expired = isCronJobExpired(job);
   const fullName = job.name || t("未命名任务");
-  // 中文标题约 8 个字、英文标题约 12 个字，超过用 … 省略；hover title 显示全名
-  const displayName = truncateCronJobCardTitle(fullName);
   return (
     <div
       className="flex flex-col rounded-xl bg-white p-4 transition hover:shadow-md"
       style={{ ...PANEL_CARD_STYLE, minHeight: 178 }}
     >
       <div className="flex items-start justify-between gap-2 pb-2">
-        <div className="flex min-w-0 items-center gap-1.5">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
           <Clock className="h-4 w-4 shrink-0 text-black/40" />
-          <span className="text-sm font-medium text-black/90" title={fullName}>
-            {displayName}
+          <span className="min-w-0 truncate text-sm font-medium text-black/90" title={fullName}>
+            {fullName}
           </span>
         </div>
         {(expired || paused) && (
@@ -406,20 +403,6 @@ function CronJobCard({
       </div>
     </div>
   );
-}
-
-export function truncateCronJobCardTitle(name: string): string {
-  let width = 0;
-  let output = "";
-  for (const char of Array.from(name)) {
-    const charWidth = /[\u3400-\u9FFF\uF900-\uFAFF]/.test(char) ? 1.5 : 1;
-    if (width + charWidth > CRON_JOB_CARD_TITLE_MAX_WIDTH) {
-      return `${output}…`;
-    }
-    width += charWidth;
-    output += char;
-  }
-  return name;
 }
 
 function isCronJobPaused(job: CronJob): boolean {
@@ -848,13 +831,13 @@ function AutomationFormModal({
   );
   const initial = useMemo(() => parseInitialSchedule(initialScheduleSource), [initialScheduleSource]);
   const scheduleUneditable = mode === "edit" && !!initialJob && initial === null && initialScheduleSource.length > 0;
-  const defaultScheduleDate = useMemo(() => new Date(Date.now() + 60_000), []);
+  const defaultScheduleDate = useMemo(() => new Date(Date.now() + 2 * 60_000), []);
   const [kind, setKind] = useState<FrequencyKind>(initial?.kind ?? "recurring");
   // 周期态
   const [period, setPeriod] = useState<RecurringPeriod>(initial?.period ?? "daily");
   const [time, setTime] = useState(() => {
     if (initial?.time) return initial.time;
-    // 默认取打开弹窗时的下一分钟（minute 精度，跟 cron 表达式粒度一致）
+    // 默认取打开弹窗时的两分钟后（minute 精度，跟 cron 表达式粒度一致）
     const d = defaultScheduleDate;
     return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
   });
@@ -867,7 +850,7 @@ function AutomationFormModal({
   const [onceDate, setOnceDate] = useState(() => {
     if (initial?.onceDate) return initial.onceDate;
     // datetime-local 期望 "YYYY-MM-DDTHH:MM" 本地时间字符串。
-    // 默认取打开弹窗时的下一分钟（与「周期」默认值一致）；submit 时才校验是否过期。
+    // 默认取打开弹窗时的两分钟后（与「周期」默认值一致）；submit 时才校验是否过期。
     const d = defaultScheduleDate;
     const pad = (n: number) => String(n).padStart(2, "0");
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
@@ -1131,9 +1114,9 @@ function AutomationFormModal({
                     </span>
                     {selected && key === "qqbot" && (
                       <span className="inline-flex items-center text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
-                        {t("需设置 home 对话才能发送通知（在 QQ 对话中发送")}
+                        {t("如未生效，可在 QQ 对话中发送")}
                         <InlineCopyText value="/set-home" />
-                        {t("给机器人）")}
+                        {t("给机器人")}
                       </span>
                     )}
                     {selected && key === "feishu" && (
