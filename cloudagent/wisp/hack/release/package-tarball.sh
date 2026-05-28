@@ -21,16 +21,24 @@ crun_source="${WISP_CRUN_BINARY:-$repo_root/assets/bin/crun/crun-${goarch}}"
 e2fsprogs_source="${WISP_E2FSPROGS_DIR:-$repo_root/assets/bin/e2fsprogs/$goarch}"
 tini_source="${WISP_TINI_BINARY:-$repo_root/assets/bin/tini/tini-${goarch}}"
 rootfs_image="${WISP_ROOTFS_IMAGE:-$repo_root/assets/rootfs/images/plucky-${goarch}.img}"
+rootfs_dir="${WISP_ROOTFS_DIR:-$repo_root/assets/rootfs/rootfs/alpine-${goarch}}"
 tar_bin="${TAR_BIN:-tar}"
 package_with_docker="${WISP_PACKAGE_WITH_DOCKER:-0}"
 build_with_docker="${WISP_BUILD_WITH_DOCKER:-$package_with_docker}"
 go_image="${WISP_GO_IMAGE:-golang:1.25-bookworm}"
 package_erofs="${WISP_PACKAGE_EROFS:-0}"
+package_tar_gz="${WISP_PACKAGE_TAR_GZ:-1}"
+flatten_rootfs="${WISP_PACKAGE_FLATTEN_ROOTFS:-$package_erofs}"
 erofs_image="${WISP_EROFS_IMAGE:-alpine:3.23}"
 erofs_apk_repository="${WISP_EROFS_APK_REPOSITORY:-https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.23}"
 
+if [[ "$package_erofs" != "1" && "$package_tar_gz" != "1" ]]; then
+  echo "at least one package format must be enabled: WISP_PACKAGE_EROFS=1 or WISP_PACKAGE_TAR_GZ=1" >&2
+  exit 2
+fi
+
 rm -rf "$stage"
-mkdir -p "$stage/bin" "$stage/assets/bin/crun" "$stage/assets/bin/e2fsprogs" "$stage/assets/bin/tini" "$stage/assets/rootfs/images" "$stage/juicefs/hack" "$stage/config" "$stage/scripts"
+mkdir -p "$stage/bin" "$stage/assets/bin/crun" "$stage/assets/bin/e2fsprogs" "$stage/assets/bin/tini" "$stage/assets/rootfs/images" "$stage/assets/rootfs/rootfs" "$stage/juicefs/hack" "$stage/config" "$stage/scripts"
 
 copy_sparse() {
   local src="$1"
@@ -83,7 +91,15 @@ fi
 if [[ -f "$tini_source" ]]; then
   cp "$tini_source" "$stage/assets/bin/tini/tini"
 fi
-copy_sparse "$rootfs_image" "$stage/assets/rootfs/images/plucky-${goarch}.img"
+if [[ "$flatten_rootfs" == "1" ]]; then
+  if [[ ! -d "$rootfs_dir" ]]; then
+    echo "missing WISP_ROOTFS_DIR for flattened package: $rootfs_dir" >&2
+    exit 2
+  fi
+  cp -R "$rootfs_dir/." "$stage/assets/rootfs/rootfs/"
+else
+  copy_sparse "$rootfs_image" "$stage/assets/rootfs/images/plucky-${goarch}.img"
+fi
 cp "$repo_root/juicefs/hack/smount.sh" "$stage/juicefs/hack/"
 cp "$repo_root/juicefs/hack/sformat.sh" "$stage/juicefs/hack/"
 cp "$repo_root/config.jsonnet.example" "$stage/config/config.jsonnet.example"
@@ -96,24 +112,28 @@ chmod +x \
   "$stage/juicefs/hack/"*.sh
 
 mkdir -p "$out_dir"
-if [[ "$package_with_docker" == "1" ]]; then
-  set +e
-  docker run --rm --platform "linux/$goarch" -v "$repo_root:/src" -w /src \
-    debian:bookworm-slim tar --sparse --warning=no-file-changed -C dist-release -czf "dist-release/$pkg.tar.gz" "$pkg"
-  tar_status=$?
-  set -e
-  if [[ "$tar_status" -ne 0 ]]; then
-    if [[ "$tar_status" -ne 1 || ! -s "$out_dir/$pkg.tar.gz" ]]; then
-      exit "$tar_status"
+tar_out=""
+if [[ "$package_tar_gz" == "1" ]]; then
+  tar_out="$out_dir/$pkg.tar.gz"
+  if [[ "$package_with_docker" == "1" ]]; then
+    set +e
+    docker run --rm --platform "linux/$goarch" -v "$repo_root:/src" -w /src \
+      debian:bookworm-slim tar --sparse --warning=no-file-changed -C dist-release -czf "dist-release/$pkg.tar.gz" "$pkg"
+    tar_status=$?
+    set -e
+    if [[ "$tar_status" -ne 0 ]]; then
+      if [[ "$tar_status" -ne 1 || ! -s "$tar_out" ]]; then
+        exit "$tar_status"
+      fi
+      "$tar_bin" -tzf "$tar_out" >/dev/null
     fi
-    "$tar_bin" -tzf "$out_dir/$pkg.tar.gz" >/dev/null
+  else
+    tar_args=(-C "$out_dir" -czf "$tar_out" "$pkg")
+    if "$tar_bin" --version 2>/dev/null | grep -qi 'GNU tar'; then
+      tar_args=(--sparse "${tar_args[@]}")
+    fi
+    "$tar_bin" "${tar_args[@]}"
   fi
-else
-  tar_args=(-C "$out_dir" -czf "$out_dir/$pkg.tar.gz" "$pkg")
-  if "$tar_bin" --version 2>/dev/null | grep -qi 'GNU tar'; then
-    tar_args=(--sparse "${tar_args[@]}")
-  fi
-  "$tar_bin" "${tar_args[@]}"
 fi
 
 erofs_out=""
@@ -129,7 +149,9 @@ if [[ "$package_erofs" == "1" ]]; then
     '
 fi
 
-echo "$out_dir/$pkg.tar.gz"
+if [[ -n "$tar_out" ]]; then
+  echo "$tar_out"
+fi
 if [[ -n "$erofs_out" ]]; then
   echo "$erofs_out"
 fi

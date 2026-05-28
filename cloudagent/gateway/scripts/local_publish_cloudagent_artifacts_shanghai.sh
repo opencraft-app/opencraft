@@ -14,7 +14,7 @@ Usage:
 Options:
   --env-file PATH       Load release secrets from PATH before publishing.
   --dry-run             Build/sign locally but do not upload to COS.
-  --wisp-package PATH   Use an existing Wisp package tarball instead of building one.
+  --wisp-package PATH   Use an existing Wisp package artifact instead of building one.
   --help                Show this help.
 
 Required credentials can come from the env file, process environment, or
@@ -41,7 +41,7 @@ Dry-run example:
   cloudagent/gateway/scripts/local_publish_cloudagent_artifacts_shanghai.sh \
     --env-file /path/to/cloudagent-release.env \
     --dry-run \
-    --wisp-package /tmp/wisp-linux-amd64-test.tar.gz
+    --wisp-package /tmp/wisp-linux-amd64-test.erofs
 EOF
 }
 

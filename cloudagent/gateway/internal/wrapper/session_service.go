@@ -179,6 +179,7 @@ func (g *ACPGateway) createSession(ctx context.Context, scope Scope, req acpSess
 		Scope:            session.Scope,
 		CWD:              sidecarRequestCWD(),
 		Generation:       session.RuntimeGeneration,
+		OwnerID:          g.ownerID,
 		SandboxBackend:   strings.ToLower(strings.TrimSpace(req.Meta.CloudAgent.SandboxBackend)),
 		OuterRuntime:     strings.ToLower(strings.TrimSpace(req.Meta.CloudAgent.OuterRuntime)),
 		RuntimeRecovery:  strings.TrimSpace(req.Meta.CloudAgent.RuntimeRecovery),

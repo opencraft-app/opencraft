@@ -2039,6 +2039,10 @@ func (r *Runtime) requireBootstrapReady() error {
 func (r *Runtime) ensureBaseRootfs(ctx context.Context) (bool, error) {
 	sentinel := filepath.Join(r.cfg.LowerSystemBase, ".wisp-base-ready")
 	if _, err := os.Stat(sentinel); err == nil {
+		if samePath(r.cfg.LowerSystemBase, r.cfg.BaseRootFSDir) {
+			r.log("Using packaged base rootfs directory directly: %s", r.cfg.LowerSystemBase)
+			return true, nil
+		}
 		return r.isMountpoint(ctx, r.cfg.LowerSystemBase), nil
 	}
 
@@ -2061,6 +2065,23 @@ func (r *Runtime) ensureBaseRootfs(ctx context.Context) (bool, error) {
 	}
 
 	return false, os.WriteFile(sentinel, []byte{}, 0o644)
+}
+
+func samePath(a, b string) bool {
+	a = strings.TrimSpace(a)
+	b = strings.TrimSpace(b)
+	if a == "" || b == "" {
+		return false
+	}
+	aa, errA := filepath.Abs(a)
+	bb, errB := filepath.Abs(b)
+	if errA == nil {
+		a = aa
+	}
+	if errB == nil {
+		b = bb
+	}
+	return filepath.Clean(a) == filepath.Clean(b)
 }
 
 func (r *Runtime) ensureMountedBaseRootfs(ctx context.Context, imagePath string) (bool, error) {

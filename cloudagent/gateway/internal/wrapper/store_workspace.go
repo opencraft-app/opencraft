@@ -9,6 +9,7 @@ import (
 )
 
 var _ WorkspaceService = (*Store)(nil)
+var _ RuntimeResourceLedger = (*Store)(nil)
 
 func (s *Store) EnsureWorkspace(ctx context.Context, rec WorkspaceRecord) error {
 	if s == nil {
@@ -281,6 +282,126 @@ func (s *Store) GetLease(ctx context.Context, workspaceID string) (WorkspaceLeas
 	return loadWorkspaceLease(ctx, s.db, workspaceID)
 }
 
+func (s *Store) UpsertRuntimeResource(ctx context.Context, rec RuntimeResourceRecord) error {
+	if s == nil {
+		return nil
+	}
+	if rec.SessionID == "" {
+		return errors.New("session id is required")
+	}
+	if rec.Generation <= 0 {
+		return errors.New("generation is required")
+	}
+	if rec.State == "" {
+		rec.State = "creating"
+	}
+	now := time.Now().UTC()
+	createdAt := rec.CreatedAt
+	if createdAt.IsZero() {
+		createdAt = now
+	}
+	updatedAt := rec.UpdatedAt
+	if updatedAt.IsZero() {
+		updatedAt = now
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, err := s.db.ExecContext(ctx, `
+INSERT INTO runtime_resources (
+	session_id, generation, runtime_id, owner_id, sandbox_backend, state,
+	outer_sandbox_id, inner_sandbox_id, last_error, expires_at, created_at, updated_at
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(session_id, generation) DO UPDATE SET
+	runtime_id = COALESCE(NULLIF(excluded.runtime_id, ''), runtime_resources.runtime_id),
+	owner_id = COALESCE(NULLIF(excluded.owner_id, ''), runtime_resources.owner_id),
+	sandbox_backend = COALESCE(NULLIF(excluded.sandbox_backend, ''), runtime_resources.sandbox_backend),
+	state = excluded.state,
+	outer_sandbox_id = COALESCE(NULLIF(excluded.outer_sandbox_id, ''), runtime_resources.outer_sandbox_id),
+	inner_sandbox_id = COALESCE(NULLIF(excluded.inner_sandbox_id, ''), runtime_resources.inner_sandbox_id),
+	last_error = excluded.last_error,
+	expires_at = COALESCE(NULLIF(excluded.expires_at, ''), runtime_resources.expires_at),
+	updated_at = excluded.updated_at`,
+		rec.SessionID, rec.Generation, rec.RuntimeID, rec.OwnerID, rec.SandboxBackend, rec.State,
+		rec.OuterSandboxID, rec.InnerSandboxID, rec.LastError, formatOptionalWorkspaceTime(rec.ExpiresAt),
+		createdAt.Format(time.RFC3339Nano), updatedAt.Format(time.RFC3339Nano))
+	return err
+}
+
+func (s *Store) MarkRuntimeResourceState(ctx context.Context, sessionID string, generation int64, state string, lastError string) error {
+	if s == nil {
+		return nil
+	}
+	if sessionID == "" {
+		return errors.New("session id is required")
+	}
+	if generation <= 0 {
+		return errors.New("generation is required")
+	}
+	if state == "" {
+		return errors.New("state is required")
+	}
+	now := time.Now().UTC()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, err := s.db.ExecContext(ctx, `
+UPDATE runtime_resources
+SET state = ?, last_error = ?, updated_at = ?
+WHERE session_id = ? AND generation = ?`,
+		state, lastError, now.Format(time.RFC3339Nano), sessionID, generation)
+	return err
+}
+
+func (s *Store) LoadRuntimeResource(ctx context.Context, sessionID string, generation int64) (RuntimeResourceRecord, bool, error) {
+	if s == nil || sessionID == "" || generation <= 0 {
+		return RuntimeResourceRecord{}, false, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return scanRuntimeResource(s.db.QueryRowContext(ctx, `
+SELECT session_id, generation, runtime_id, owner_id, sandbox_backend, state,
+       outer_sandbox_id, inner_sandbox_id, last_error, expires_at, created_at, updated_at
+FROM runtime_resources
+WHERE session_id = ? AND generation = ?`, sessionID, generation))
+}
+
+func (s *Store) ListStaleRuntimeResources(ctx context.Context, now time.Time, limit int) ([]RuntimeResourceRecord, error) {
+	if s == nil {
+		return nil, nil
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rows, err := s.db.QueryContext(ctx, `
+SELECT session_id, generation, runtime_id, owner_id, sandbox_backend, state,
+       outer_sandbox_id, inner_sandbox_id, last_error, expires_at, created_at, updated_at
+FROM runtime_resources
+WHERE state IN ('creating', 'failed')
+  AND expires_at IS NOT NULL
+  AND expires_at <> ''
+  AND expires_at <= ?
+ORDER BY updated_at ASC
+LIMIT ?`, now.UTC().Format(time.RFC3339Nano), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var records []RuntimeResourceRecord
+	for rows.Next() {
+		rec, err := scanRuntimeResourceRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		records = append(records, rec)
+	}
+	return records, rows.Err()
+}
+
 func (s *Store) LoadWorkspace(ctx context.Context, workspaceID string) (WorkspaceRecord, bool, error) {
 	if s == nil {
 		return WorkspaceRecord{}, false, nil
@@ -403,6 +524,78 @@ func scanWorkspaceRecord(row *sql.Row) (WorkspaceRecord, bool, error) {
 		return WorkspaceRecord{}, false, parseErr
 	}
 	return rec, true, nil
+}
+
+func scanRuntimeResource(row *sql.Row) (RuntimeResourceRecord, bool, error) {
+	var rec RuntimeResourceRecord
+	var expiresAt, createdAt, updatedAt string
+	err := row.Scan(
+		&rec.SessionID,
+		&rec.Generation,
+		&rec.RuntimeID,
+		&rec.OwnerID,
+		&rec.SandboxBackend,
+		&rec.State,
+		&rec.OuterSandboxID,
+		&rec.InnerSandboxID,
+		&rec.LastError,
+		&expiresAt,
+		&createdAt,
+		&updatedAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return RuntimeResourceRecord{}, false, nil
+	}
+	if err != nil {
+		return RuntimeResourceRecord{}, false, err
+	}
+	var parseErr error
+	if rec.ExpiresAt, parseErr = parseOptionalWorkspaceTime("runtime resource expires_at", expiresAt); parseErr != nil {
+		return RuntimeResourceRecord{}, false, parseErr
+	}
+	if rec.CreatedAt, parseErr = parseOptionalWorkspaceTime("runtime resource created_at", createdAt); parseErr != nil {
+		return RuntimeResourceRecord{}, false, parseErr
+	}
+	if rec.UpdatedAt, parseErr = parseOptionalWorkspaceTime("runtime resource updated_at", updatedAt); parseErr != nil {
+		return RuntimeResourceRecord{}, false, parseErr
+	}
+	return rec, true, nil
+}
+
+type runtimeResourceScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanRuntimeResourceRows(row runtimeResourceScanner) (RuntimeResourceRecord, error) {
+	var rec RuntimeResourceRecord
+	var expiresAt, createdAt, updatedAt string
+	if err := row.Scan(
+		&rec.SessionID,
+		&rec.Generation,
+		&rec.RuntimeID,
+		&rec.OwnerID,
+		&rec.SandboxBackend,
+		&rec.State,
+		&rec.OuterSandboxID,
+		&rec.InnerSandboxID,
+		&rec.LastError,
+		&expiresAt,
+		&createdAt,
+		&updatedAt,
+	); err != nil {
+		return RuntimeResourceRecord{}, err
+	}
+	var parseErr error
+	if rec.ExpiresAt, parseErr = parseOptionalWorkspaceTime("runtime resource expires_at", expiresAt); parseErr != nil {
+		return RuntimeResourceRecord{}, parseErr
+	}
+	if rec.CreatedAt, parseErr = parseOptionalWorkspaceTime("runtime resource created_at", createdAt); parseErr != nil {
+		return RuntimeResourceRecord{}, parseErr
+	}
+	if rec.UpdatedAt, parseErr = parseOptionalWorkspaceTime("runtime resource updated_at", updatedAt); parseErr != nil {
+		return RuntimeResourceRecord{}, parseErr
+	}
+	return rec, nil
 }
 
 func loadWorkspaceLease(ctx context.Context, db *sql.DB, workspaceID string) (WorkspaceLease, bool, error) {

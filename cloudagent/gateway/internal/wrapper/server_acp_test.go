@@ -1135,6 +1135,7 @@ func TestACPPromptRecoversRunCommandAuthFailure(t *testing.T) {
 		},
 	}
 	srv := newACPTestServerWithRuntime(t, manager)
+	srv.acpGate.ownerID = "gateway_owner_recover"
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -1164,6 +1165,9 @@ func TestACPPromptRecoversRunCommandAuthFailure(t *testing.T) {
 	starts := manager.recordedStarts()
 	if starts[1].SidecarArtifact.URL != "https://example.com/recover-sidecar" || starts[1].SidecarArtifact.SHA256 != strings.Repeat("b", 64) {
 		t.Fatalf("prompt recovery lost sidecar artifact: %#v", starts[1].SidecarArtifact)
+	}
+	if starts[0].OwnerID != "gateway_owner_recover" || starts[1].OwnerID != "gateway_owner_recover" {
+		t.Fatalf("prompt recovery must preserve gateway owner across replacement start: %#v", starts)
 	}
 	if got := len(manager.promptTexts()); got != 2 {
 		t.Fatalf("expected prompt retry after recover, got %d prompts", got)
@@ -1889,6 +1893,7 @@ func TestACPSessionNewFailureDoesNotLeaveListedSession(t *testing.T) {
 func TestACPSessionNewPassesAgentAndWorkspaceVersions(t *testing.T) {
 	manager := &recordingACPRuntimeManager{}
 	srv := newACPTestServerWithRuntime(t, manager)
+	srv.acpGate.ownerID = "gateway_owner_session_new"
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -1919,6 +1924,9 @@ func TestACPSessionNewPassesAgentAndWorkspaceVersions(t *testing.T) {
 	start := starts[0]
 	if start.AgentVersion != "builtin.v1" || start.WorkspaceVersion != "builtin.v1" {
 		t.Fatalf("unexpected version selection: %#v", start)
+	}
+	if start.OwnerID != "gateway_owner_session_new" {
+		t.Fatalf("session/new must bind runtime start to gateway owner, got %#v", start)
 	}
 }
 
