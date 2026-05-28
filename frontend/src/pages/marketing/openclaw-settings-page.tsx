@@ -15,7 +15,6 @@ import {
   CalendarClock,
   ChevronDown,
   Check,
-  Info,
   MessageCircle,
   MessageSquare,
   Loader2,
@@ -266,25 +265,17 @@ const MemoryLimitCard = ({
     <div className="rounded-lg border border-black/[0.06] bg-white p-4 shadow-[0_8px_28px_rgba(15,23,42,0.04)]">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="flex items-center gap-1.5">
-            <p className="text-sm font-semibold text-black/85">{title}</p>
-            <span
-              aria-label={description}
-              title={description}
-              className="inline-flex h-4 w-4 items-center justify-center text-black/35"
-            >
-              <Info className="h-3.5 w-3.5" />
-            </span>
-          </div>
+          <p className="text-sm font-semibold text-black/85">{title}</p>
+          <p className="mt-1 max-w-[28rem] text-xs leading-relaxed text-black/45">{description}</p>
         </div>
         <span className="rounded-full bg-black/[0.05] px-2 py-1 text-xs font-medium text-black/60">
           {percent}%
         </span>
       </div>
-      <div className="mt-4 text-xs text-black/45">{t("当前占用 / 字符限额")}</div>
-      <div className="mt-1 flex items-end gap-1">
+      <div className="mt-4 flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <span className="text-2xl font-semibold tabular-nums text-black/90">{used}</span>
-        <span className="pb-1 text-sm tabular-nums text-black/45">/ {limit} chars</span>
+        <span className="pb-1 text-sm tabular-nums text-black/45">/ {limit} {t("字符")}</span>
+        <span className="text-xs text-black/45">{t("当前占用 / 字符限额")}</span>
       </div>
       <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-black/[0.06]">
         <div
@@ -390,14 +381,14 @@ const MemoryPanel = ({
           <div className="grid gap-3 md:grid-cols-2">
             <MemoryLimitCard
               title={t("记忆统计")}
-              description={t("对应文件：{{path}}", { path: "MEMORY.md" })}
+              description={t("MEMORY.md：帮 Agent 长期记住项目背景、运行环境和常用约定。")}
               used={snapshot.memoryChars}
               limit={snapshot.memoryCharLimit}
               t={t}
             />
             <MemoryLimitCard
               title={t("用户画像统计")}
-              description={t("对应文件：{{path}}", { path: "USER.md" })}
+              description={t("USER.md：帮 Agent 长期记住你的偏好、使用习惯和沟通方式。")}
               used={snapshot.userChars}
               limit={snapshot.userCharLimit}
               t={t}
