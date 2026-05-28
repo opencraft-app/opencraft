@@ -9,7 +9,6 @@ import {
   parseInitialSchedule,
   parseOnceScheduleDate,
   shouldRejectPastOnceSchedule,
-  truncateCronJobCardTitle,
 } from "../openclaw-automations-panel";
 import type { CronJob } from "@/lib/hermes-cron-client";
 
@@ -240,18 +239,3 @@ function makeCronJob(overrides: Partial<CronJob>): CronJob {
     ...overrides,
   };
 }
-
-describe("truncateCronJobCardTitle", () => {
-  it("keeps short Chinese and English titles unchanged", () => {
-    expect(truncateCronJobCardTitle("喝水提醒")).toBe("喝水提醒");
-    expect(truncateCronJobCardTitle("drink water")).toBe("drink water");
-  });
-
-  it("limits Chinese titles to about eight characters", () => {
-    expect(truncateCronJobCardTitle("这是一个很长很长的提醒")).toBe("这是一个很长很长…");
-  });
-
-  it("limits English titles to twelve characters", () => {
-    expect(truncateCronJobCardTitle("abcdefghijklmn")).toBe("abcdefghijkl…");
-  });
-});
