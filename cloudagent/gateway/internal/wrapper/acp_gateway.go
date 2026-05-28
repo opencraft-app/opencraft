@@ -17,6 +17,7 @@ type ACPGateway struct {
 	runtimeManager   ACPSessionRuntimeManager
 	runtimeLock      RuntimeEnsureLocker
 	runtimeOwnership RuntimeOwnershipStore
+	workspaceService WorkspaceService
 	ownerID          string
 	mu               sync.Mutex
 	sessions         map[string]*acpSession
@@ -314,6 +315,7 @@ func NewACPGateway(store *Store, worker Worker) *ACPGateway {
 	if store != nil {
 		gateway.runtimeLock = store
 		gateway.runtimeOwnership = store
+		gateway.workspaceService = store
 	}
 	return gateway
 }

@@ -494,7 +494,10 @@ func (w *AgentSidecarWorker) EnsureSessionRuntime(ctx context.Context, runtime A
 		fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_daemon_restart_failed session_id=%s outer_sandbox_id=%s error=%s\n", req.SessionID, runtime.OuterSandboxID, quoteTimelineField(restartErr.Error()))
 		if runtimeCanRecreate(runtime) {
 			if cleanupErr := w.CloseSessionRuntime(ctx, runtime); cleanupErr != nil {
-				return ACPSessionRuntime{}, fmt.Errorf("cleanup stale runtime before recreate: %w", cleanupErr)
+				if !isNonBlockingStaleRuntimeCleanupError(cleanupErr) {
+					return ACPSessionRuntime{}, fmt.Errorf("cleanup stale runtime before recreate: %w", cleanupErr)
+				}
+				fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_stale_cleanup_ignored session_id=%s outer_sandbox_id=%s error=%s\n", req.SessionID, runtime.OuterSandboxID, quoteTimelineField(cleanupErr.Error()))
 			}
 			runtime = runtimeAfterClose(runtime)
 			runtime.WispName = wispNameFromRuntime(req.SessionID) + "-recover-" + randomHex(4)
@@ -504,6 +507,24 @@ func (w *AgentSidecarWorker) EnsureSessionRuntime(ctx context.Context, runtime A
 		return ACPSessionRuntime{}, fmt.Errorf("runtime is not restorable")
 	}
 	return w.recreateWispSessionRuntime(ctx, runtime, req)
+}
+
+func isNonBlockingStaleRuntimeCleanupError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	if strings.Contains(message, "ags http 401") &&
+		strings.Contains(message, "op=run_command") &&
+		strings.Contains(message, "authentication_failed") {
+		return true
+	}
+	if strings.Contains(message, "ags http 404") ||
+		strings.Contains(message, "http 404") && strings.Contains(message, "requested resource does not exist") {
+		return true
+	}
+	return strings.Contains(message, "unsupportedoperation.sandboxinstance") &&
+		strings.Contains(message, "stopped state")
 }
 
 func (w *AgentSidecarWorker) restartSessionRuntimeDaemon(ctx context.Context, runtime ACPSessionRuntime, req ACPSessionRuntimeStartRequest) (ACPSessionRuntime, error) {

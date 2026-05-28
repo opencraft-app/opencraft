@@ -63,6 +63,8 @@ help:
 		'  start-agent-sidecar-server   publish sidecar if needed, then start local wrapper server' \
 		'  deploy-eksci-inplace         update Beijing EKS CI in-place without changing EIP' \
 		'  e2e-agent-sidecar           run live Beijing AGS + COS + TokenHub e2e checks' \
+		'  e2e-session-run-lease-multiprocess run multi-process ACP session run lease e2e' \
+		'  e2e-workspace-lease-multiprocess legacy alias for session run lease e2e' \
 		'  server                       build local wrapper server' \
 		'  test                         run Go tests' \
 		'  clean                        remove dist/'
@@ -200,6 +202,13 @@ deploy-eksci-inplace:
 .PHONY: e2e-agent-sidecar
 e2e-agent-sidecar:
 	./scripts/e2e_agent_sidecar.sh
+
+.PHONY: e2e-session-run-lease-multiprocess
+e2e-session-run-lease-multiprocess:
+	./scripts/e2e_session_run_lease_multiprocess.sh
+
+.PHONY: e2e-workspace-lease-multiprocess
+e2e-workspace-lease-multiprocess: e2e-session-run-lease-multiprocess
 
 .PHONY: clean
 clean:

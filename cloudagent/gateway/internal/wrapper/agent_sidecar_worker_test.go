@@ -241,6 +241,20 @@ func TestWispWorkspaceStopCommandRunsBarrierBeforeStop(t *testing.T) {
 	}
 }
 
+func TestStaleRuntimeCleanupAuthFailureIsNonBlockingForRecreate(t *testing.T) {
+	err := errors.New(`stop wisp outer runtime agent-session_1: wisp stop failed runtime_id=rt_1 outer_sandbox_id=outer_1 wisp_name=agent-session_1: exit=0 exited=false stdout_bytes=0 stderr_bytes=0 error="ags http 401 op=run_command sandbox_id=outer_1 domain=ap-shanghai.tencentags.com envd_port=49983: map[code:AUTHENTICATION_FAILED message:Authentication failed]"`)
+	if !isNonBlockingStaleRuntimeCleanupError(err) {
+		t.Fatalf("expected stale auth cleanup failure to be non-blocking: %v", err)
+	}
+}
+
+func TestStaleRuntimeCleanupCheckpointFailureStillBlocksRecreate(t *testing.T) {
+	err := errors.New(`stop wisp outer runtime agent-session_1: wispclient: http 500: {"error":"juicefs-smount meta-barrier /mnt/cloudagent-wisp: checkpoint cut failed: input/output error"}`)
+	if isNonBlockingStaleRuntimeCleanupError(err) {
+		t.Fatalf("checkpoint failure must not be ignored: %v", err)
+	}
+}
+
 func TestWispOuterPrepareScriptPropagatesLitestreamTrace(t *testing.T) {
 	script := wispOuterPrepareScript()
 	for _, want := range []string{
