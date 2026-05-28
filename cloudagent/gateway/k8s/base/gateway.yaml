@@ -32,7 +32,7 @@ data:
   GATEWAY_SANDBOX_HOST_SHA256: "REPLACE_ME_SHPROD_SANDBOX_HOST_SHA256"
   GATEWAY_WISP_SMH_LIBRARY_ID: "smh37laghvp09llc"
   GATEWAY_WISP_SMH_ACCESS_DOMAIN: "https://smh37laghvp09llc.ap-shanghai.api.tencentsmh.cn"
-  GATEWAY_WISP_PACKAGE_URL: "http://cloudagent-sidecar-shanghai-1388575217.cos.ap-shanghai.myqcloud.com/workspace/20260524/wisp-linux-amd64-20260524T044223Z-stream.tar.gz"
+  GATEWAY_WISP_PACKAGE_URL: "https://cloudagent-sidecar-shanghai-1388575217.cos.ap-shanghai.myqcloud.com/workspace/20260528/wisp-linux-amd64-20260528T061826Z-8ceda87c563b.erofs"
   GATEWAY_TALOS_TEMPLATE: "tpl-pool-s3h-ivanbgliu-1"
   CLOUDAGENT_WEB_SEARCH_PROVIDER: "tencent_wsa"
   TENCENTCLOUD_WSA_ENDPOINT: "https://api.wsa.cloud.tencent.com/SearchPro"
@@ -84,6 +84,13 @@ spec:
                 name: gateway
                 port:
                   number: 80
+          - path: /readyz
+            pathType: Exact
+            backend:
+              service:
+                name: gateway
+                port:
+                  number: 80
 ---
 apiVersion: cloud.tencent.com/v1alpha1
 kind: TkeServiceConfig
@@ -106,7 +113,7 @@ spec:
                   timeout: 5
                   healthNum: 2
                   unHealthNum: 2
-                  httpCheckPath: /healthz
+                  httpCheckPath: /readyz
                   httpCheckDomain: REPLACE_CLOUDAGENT_GATEWAY_PUBLIC_HOST
                   httpCheckMethod: GET
                   httpCode: 2
@@ -117,6 +124,9 @@ spec:
                 forwardType: HTTP
                 healthCheck: *cloudagentGatewayHealthCheck
               - url: =/healthz
+                forwardType: HTTP
+                healthCheck: *cloudagentGatewayHealthCheck
+              - url: =/readyz
                 forwardType: HTTP
                 healthCheck: *cloudagentGatewayHealthCheck
 ---
@@ -187,13 +197,8 @@ spec:
                   key: GATEWAY_WISP_SMH_LIBRARY_SECRET
           readinessProbe:
             httpGet:
-              path: /v1/models
+              path: /readyz
               port: http
-              httpHeaders:
-                - name: X-Tenant-ID
-                  value: tenant-live
-                - name: X-Project-ID
-                  value: project-live
             initialDelaySeconds: 5
             periodSeconds: 10
             timeoutSeconds: 3
@@ -205,13 +210,8 @@ spec:
             periodSeconds: 20
           startupProbe:
             httpGet:
-              path: /v1/models
+              path: /readyz
               port: http
-              httpHeaders:
-                - name: X-Tenant-ID
-                  value: tenant-live
-                - name: X-Project-ID
-                  value: project-live
             periodSeconds: 5
             timeoutSeconds: 3
             failureThreshold: 24

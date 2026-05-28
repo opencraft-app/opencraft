@@ -213,6 +213,18 @@ func TestWorkspaceWispJFSPrefixIsWorkspaceScoped(t *testing.T) {
 	}
 }
 
+func TestWorkspaceIDForRuntimePrefersStableSessionWorkspace(t *testing.T) {
+	req := ACPSessionRuntimeStartRequest{SessionID: "session_stable"}
+	runtime := ACPSessionRuntime{
+		WorkspaceID:     defaultWorkspaceID(req),
+		WispWorkspaceID: "space_later",
+		WispSMHSpaceID:  "space_later",
+	}
+	if got := workspaceIDForRuntime(runtime, req); got != "workspace_session_stable" {
+		t.Fatalf("workspace id should stay session-scoped after SMH space resolves, got %q", got)
+	}
+}
+
 func TestWispOuterRuntimeWrapsCommandWithEnvironment(t *testing.T) {
 	runtime := ACPSessionRuntime{
 		OuterRuntime:   outerRuntimeWisp,

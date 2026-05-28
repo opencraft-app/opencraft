@@ -260,7 +260,23 @@ for _ in $(seq 1 50); do
 done
 grep -q "gateway.listening" "$SERVER_LOG"
 
-log "test 1/3: Chinese chat should not start inner sandbox"
+log "test 1/4: missing artifact download must fail, not return empty 200"
+missing_download_start="$(($(wc -l <"$SERVER_LOG") + 1))"
+missing_body="$WORK_DIR/missing-download.json"
+missing_code="$(curl -sS "http://127.0.0.1:${PORT}/v1/files/file_missing_live_e2e/content" \
+  -H "X-Tenant-ID: ${TENANT_ID}" \
+  -H "X-Project-ID: ${PROJECT_ID}" \
+  -o "$missing_body" \
+  -w '%{http_code}')"
+if [ "$missing_code" = "200" ]; then
+  printf 'missing file download unexpectedly returned HTTP 200\n' >&2
+  exit 1
+fi
+test -s "$missing_body"
+grep -Eq 'file_not_found|not found' "$missing_body"
+assert_log_since "$missing_download_start" "event=file_download_failed"
+
+log "test 2/4: Chinese chat should not start inner sandbox"
 chat_start="$(($(wc -l <"$SERVER_LOG") + 1))"
 json_payload "$WORK_DIR/chat.json" "你是哪个模型？用一句话回答。"
 post_response "$WORK_DIR/chat.json" "$WORK_DIR/chat.sse" "$WORK_DIR/chat.metrics"
@@ -276,7 +292,7 @@ assert_log_since "$chat_start" "event=sidecar_download_start"
 assert_log_since "$chat_start" "event=sidecar_download_done"
 log "chat metrics: $(tr '\n' ' ' <"$WORK_DIR/chat.metrics")"
 
-log "test 2/3: terminal tool should execute inside Hermes workspace"
+log "test 3/4: terminal tool should execute inside Hermes workspace"
 tool_start="$(($(wc -l <"$SERVER_LOG") + 1))"
 json_payload "$WORK_DIR/tool.json" "请使用 terminal 工具执行：pwd && printf '你好！' > hello.txt && cat hello.txt。然后用简洁中文说明你做了什么。"
 post_response "$WORK_DIR/tool.json" "$WORK_DIR/tool.sse" "$WORK_DIR/tool.metrics"
@@ -294,7 +310,7 @@ assert_log_since "$tool_start" "event=sidecar_download_start"
 assert_log_since "$tool_start" "event=sidecar_download_done"
 log "tool metrics: $(tr '\n' ' ' <"$WORK_DIR/tool.metrics")"
 
-log "test 3/3: upload file, inspect via sandbox tool, and download artifact"
+log "test 4/4: upload file, inspect via sandbox tool, and download artifact"
 printf 'FILE_KIND_AGENT_SANDBOX_NOTE\nhello from uploaded file\n' >"$WORK_DIR/input-note.txt"
 UPLOAD_JSON="$WORK_DIR/upload.json"
 upload_start="$(($(wc -l <"$SERVER_LOG") + 1))"

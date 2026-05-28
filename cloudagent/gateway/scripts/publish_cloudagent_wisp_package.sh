@@ -73,7 +73,10 @@ export GOOS GOARCH
 CRUN_BINARY="${WISP_CRUN_BINARY:-$WISP_DIR/assets/bin/crun/crun-$GOARCH}"
 TINI_BINARY="${WISP_TINI_BINARY:-$WISP_DIR/assets/bin/tini/tini-$GOARCH}"
 ROOTFS_IMAGE="${WISP_ROOTFS_IMAGE:-$WISP_DIR/assets/rootfs/images/alpine-$GOARCH.img}"
+ROOTFS_DIR="${WISP_ROOTFS_DIR:-$WISP_DIR/assets/rootfs/rootfs/alpine-$GOARCH}"
+E2FSPROGS_DIR="${WISP_E2FSPROGS_DIR:-$WISP_DIR/assets/bin/e2fsprogs/$GOARCH}"
 package_output=""
+package_marker=""
 
 mkdir -p "$ROOT_DIR/dist"
 
@@ -88,25 +91,72 @@ else
     log "prepare tini"
     WISP_TINI_BINARY="$TINI_BINARY" "$WISP_DIR/hack/release/prepare-tini.sh" >&2
   fi
-  if [ ! -f "$ROOTFS_IMAGE" ]; then
+  if [ ! -f "$ROOTFS_DIR/.wisp-base-ready" ]; then
+    log "prepare alpine rootfs directory"
+    GOARCH="$GOARCH" DST_ROOTFS_DIR="$ROOTFS_DIR" "$WISP_DIR/hack/release/prepare-alpine-rootfs-dir.sh" >&2
+  fi
+  if [ "${WISP_PACKAGE_FLATTEN_ROOTFS:-1}" != "1" ] && [ ! -f "$ROOTFS_IMAGE" ]; then
     log "prepare alpine rootfs image"
     DST_ROOTFS_IMAGE="$ROOTFS_IMAGE" "$WISP_DIR/hack/release/prepare-alpine-rootfs.sh" >&2
   fi
+  if [ ! -x "$E2FSPROGS_DIR/bin/mke2fs" ] || [ ! -x "$E2FSPROGS_DIR/bin/e2fsck" ]; then
+    log "prepare e2fsprogs"
+    GOARCH="$GOARCH" WISP_E2FSPROGS_DIR="$E2FSPROGS_DIR" "$WISP_DIR/hack/release/prepare-e2fsprogs.sh" >&2
+  fi
 
   log "package Wisp runtime"
+  package_marker="$(mktemp)"
   package_output="$(
     cd "$WISP_DIR"
-    WISP_CRUN_BINARY="$CRUN_BINARY" \
+      WISP_CRUN_BINARY="$CRUN_BINARY" \
       WISP_TINI_BINARY="$TINI_BINARY" \
       WISP_ROOTFS_IMAGE="$ROOTFS_IMAGE" \
+      WISP_ROOTFS_DIR="$ROOTFS_DIR" \
+      WISP_E2FSPROGS_DIR="$E2FSPROGS_DIR" \
       WISP_BUILD_WITH_DOCKER="${WISP_BUILD_WITH_DOCKER:-1}" \
       WISP_PACKAGE_WITH_DOCKER="${WISP_PACKAGE_WITH_DOCKER:-1}" \
+      WISP_PACKAGE_EROFS="${WISP_PACKAGE_EROFS:-1}" \
+      WISP_PACKAGE_TAR_GZ="${WISP_PACKAGE_TAR_GZ:-0}" \
+      WISP_PACKAGE_FLATTEN_ROOTFS="${WISP_PACKAGE_FLATTEN_ROOTFS:-1}" \
       ./hack/release/package-tarball.sh
   )"
-  artifact="$(printf '%s\n' "$package_output" | awk '/\\.tar\\.gz$/ { path=$0 } END { print path }')"
+  artifact="$(printf '%s\n' "$package_output" | awk '
+    /\.erofs$/ { erofs=$0 }
+    /\.tar\.gz$/ { tarball=$0 }
+    END {
+      if (erofs != "") {
+        print erofs
+      } else {
+        print tarball
+      }
+    }
+  ')"
 fi
 if [ -z "$artifact" ] || [ ! -f "$artifact" ]; then
-  printf 'Wisp package script did not produce a tarball. output=%s\n' "$package_output" >&2
+  if [ -n "$package_marker" ] && [ -f "$package_marker" ]; then
+    latest_artifact="$(find "$WISP_DIR/dist-release" -maxdepth 1 -type f \( -name "wisp-${GOOS}-${GOARCH}-*.erofs" -o -name "wisp-${GOOS}-${GOARCH}-*.tar.gz" \) -newer "$package_marker" -print 2>/dev/null | sort | awk '
+      /\.erofs$/ { erofs=$0 }
+      /\.tar\.gz$/ { tarball=$0 }
+      END {
+        if (erofs != "") {
+          print erofs
+        } else {
+          print tarball
+        }
+      }
+    ' || true)"
+    rm -f "$package_marker"
+  else
+    latest_artifact=""
+  fi
+  if [ -n "$latest_artifact" ] && [ -f "$latest_artifact" ]; then
+    artifact="$latest_artifact"
+  fi
+elif [ -n "$package_marker" ] && [ -f "$package_marker" ]; then
+  rm -f "$package_marker"
+fi
+if [ -z "$artifact" ] || [ ! -f "$artifact" ]; then
+  printf 'Wisp package script did not produce a package artifact. output=%s\n' "$package_output" >&2
   exit 1
 fi
 

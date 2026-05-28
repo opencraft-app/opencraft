@@ -69,6 +69,63 @@ func (s *Server) handleSelfCheck(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, status, resp)
 }
 
+func (s *Server) handleReadyz(w http.ResponseWriter, _ *http.Request) {
+	failures := s.readinessFailures()
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	if len(failures) > 0 {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte("not ready\n"))
+		for _, failure := range failures {
+			_, _ = w.Write([]byte("- " + failure + "\n"))
+		}
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("ok\n"))
+}
+
+func (s *Server) readinessFailures() []string {
+	switch worker := s.worker.(type) {
+	case *AgentSidecarWorker:
+		return worker.readinessFailures()
+	case FakeWorker, *FakeWorker:
+		return nil
+	case nil:
+		return []string{"worker is not configured"}
+	default:
+		return nil
+	}
+}
+
+func (w *AgentSidecarWorker) readinessFailures() []string {
+	var failures []string
+	add := func(ok bool, message string) {
+		if !ok {
+			failures = append(failures, message)
+		}
+	}
+	outerRuntime := normalizeOuterRuntime(w.outerRuntime)
+	add(w.client != nil, "AGS client is not configured")
+	if w.client != nil {
+		add(w.client.apiKey != "", "GATEWAY_AGS_API_KEY is not configured")
+		add(w.client.domain != "", "GATEWAY_AGS_DOMAIN is not configured")
+		add(w.client.apiURL != "", "GATEWAY_AGS_API_URL is not configured")
+	}
+	add(strings.TrimSpace(w.outerTemplateID) != "", "GATEWAY_AGS_TEMPLATE is not configured")
+	add(strings.TrimSpace(w.innerTemplateID) != "", "GATEWAY_AGENT_SIDECAR_INNER_TEMPLATE or INNER_SANDBOX_TEMPLATE is not configured")
+	add(strings.TrimSpace(w.tokenHubAPIKey) != "", "GATEWAY_TOKENHUB_API_KEY is not configured")
+	add(strings.TrimSpace(w.sidecarURL) != "" || strings.TrimSpace(w.sidecarBinaryPath) != "", "GATEWAY_AGENT_SIDECAR_URL or GATEWAY_AGENT_SIDECAR_BINARY is not configured")
+	add(strings.TrimSpace(w.sidecarSHA256) == "" || isSHA256Hex(w.sidecarSHA256), "GATEWAY_AGENT_SIDECAR_SHA256 is not a valid sha256 hex string")
+	add(outerRuntime == outerRuntimeAGS || outerRuntime == outerRuntimeWisp, "GATEWAY_AGENT_OUTER_RUNTIME is not supported")
+	if outerRuntime == outerRuntimeWisp {
+		add(strings.TrimSpace(w.wispPackageURL) != "", "GATEWAY_WISP_PACKAGE_URL is not configured")
+		add(strings.TrimSpace(w.wispSMHLibraryID) != "", "GATEWAY_WISP_SMH_LIBRARY_ID is not configured")
+		add(strings.TrimSpace(w.wispSMHAccessDomain) != "", "GATEWAY_WISP_SMH_ACCESS_DOMAIN is not configured")
+		add(strings.TrimSpace(w.wispSMHLibrarySecret) != "", "GATEWAY_WISP_SMH_LIBRARY_SECRET is not configured")
+	}
+	return failures
+}
+
 func (s *Server) selfCheck(ctx context.Context) selfCheckResponse {
 	resp := selfCheckResponse{
 		Object:      "cloudagent.selfcheck",

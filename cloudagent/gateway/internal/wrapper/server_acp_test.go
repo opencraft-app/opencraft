@@ -772,6 +772,78 @@ func TestACPRestartedWispSessionCanRecreateRuntime(t *testing.T) {
 	}
 }
 
+func TestACPRestartedWispSessionIgnoresStaleCleanupAuthFailureWhenRecreating(t *testing.T) {
+	root := t.TempDir()
+	store, err := NewStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager := &recordingACPRuntimeManager{}
+	srv := NewServer(store, FakeWorker{OutputText: "unused"})
+	srv.acpGate.runtimeManager = manager
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	client := dialACPWS(t, "ws"+trimHTTPPrefix(ts.URL)+"/acp", map[string]string{"Authorization": "Bearer test-key"})
+	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{}})
+	waitForRPCID(t, client, float64(1))
+	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 2, "method": "session/new", "params": map[string]any{"cwd": "/workspace"}})
+	sessionID := waitForRPCID(t, client, float64(2))["result"].(map[string]any)["sessionId"].(string)
+	client.close()
+	persisted, err := store.LoadACPSession(Scope{TenantID: "default", ProjectID: "default"}, sessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	persisted.Runtime.RuntimeID = "old_rt"
+	persisted.Runtime.OuterSandboxID = "old_outer"
+	if err := store.SaveACPSession(persisted); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	restartedStore, err := NewStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restartedManager := &recordingACPRuntimeManager{
+		reattachErr:         fmt.Errorf("old outer gone"),
+		closeBeforeRecreate: true,
+		closeErr:            errors.New(`stop wisp outer runtime agent-session_1: wisp stop failed runtime_id=rt_1 outer_sandbox_id=outer_1 wisp_name=agent-session_1: exit=0 exited=false stdout_bytes=0 stderr_bytes=0 error="ags http 401 op=run_command sandbox_id=outer_1 domain=ap-shanghai.tencentags.com envd_port=49983: map[code:AUTHENTICATION_FAILED message:Authentication failed]"`),
+	}
+	restarted := NewServer(restartedStore, FakeWorker{OutputText: "unused"})
+	restarted.acpGate.runtimeManager = restartedManager
+	restartedTS := httptest.NewServer(restarted.Handler())
+	defer restartedTS.Close()
+	restartedClient := dialACPWS(t, "ws"+trimHTTPPrefix(restartedTS.URL)+"/acp", map[string]string{"Authorization": "Bearer test-key"})
+	defer restartedClient.close()
+	restartedClient.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{}})
+	waitForRPCID(t, restartedClient, float64(1))
+
+	restartedClient.writeJSON(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      2,
+		"method":  cloudAgentRuntimeEnsureReadyMethod,
+		"params":  map[string]any{"session_id": sessionID, "cwd": "/workspace"},
+	})
+	restoreResp := waitForRPCID(t, restartedClient, float64(2))
+	result := restoreResp["result"].(map[string]any)
+	if result["ok"] != true || result["state"] != "ready" || result["read_only"] == true {
+		t.Fatalf("stale cleanup auth failure should not leave session read-only: %#v", restoreResp)
+	}
+	if result["last_runtime_error"] != "" {
+		t.Fatalf("successful recreate should clear stale runtime error: %#v", result)
+	}
+	restore := result["runtime_ensure_ready"].(map[string]any)
+	if restore["changed"] != true || restore["outer_sandbox_id"] == restore["previous_outer_sandbox_id"] {
+		t.Fatalf("runtime ensure_ready should report replacement runtime: %#v", restore)
+	}
+	if restartedManager.closeCount() != 1 || restartedManager.startCount() != 1 {
+		t.Fatalf("expected one stale cleanup attempt and one replacement runtime, closes=%d starts=%d", restartedManager.closeCount(), restartedManager.startCount())
+	}
+}
+
 func TestACPRestartedSessionRecoversFromWorkspaceRecordWhenRuntimeSMHMissing(t *testing.T) {
 	root := t.TempDir()
 	store, err := NewStore(root)
@@ -1063,6 +1135,7 @@ func TestACPPromptRecoversRunCommandAuthFailure(t *testing.T) {
 		},
 	}
 	srv := newACPTestServerWithRuntime(t, manager)
+	srv.acpGate.ownerID = "gateway_owner_recover"
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -1092,6 +1165,9 @@ func TestACPPromptRecoversRunCommandAuthFailure(t *testing.T) {
 	starts := manager.recordedStarts()
 	if starts[1].SidecarArtifact.URL != "https://example.com/recover-sidecar" || starts[1].SidecarArtifact.SHA256 != strings.Repeat("b", 64) {
 		t.Fatalf("prompt recovery lost sidecar artifact: %#v", starts[1].SidecarArtifact)
+	}
+	if starts[0].OwnerID != "gateway_owner_recover" || starts[1].OwnerID != "gateway_owner_recover" {
+		t.Fatalf("prompt recovery must preserve gateway owner across replacement start: %#v", starts)
 	}
 	if got := len(manager.promptTexts()); got != 2 {
 		t.Fatalf("expected prompt retry after recover, got %d prompts", got)
@@ -1385,6 +1461,224 @@ func TestACPPromptRefreshesOuterAndInnerRuntimeAfterIdleUserGap(t *testing.T) {
 	}
 }
 
+func TestACPRuntimeRefreshRenewsSessionRunLease(t *testing.T) {
+	t.Setenv("GATEWAY_ACP_RUNTIME_REFRESH_IDLE_SECONDS", "1")
+	store, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager := &recordingACPRuntimeManager{}
+	srv := newACPTestServerWithRuntimeAndStore(store, manager)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	client := dialACPWS(t, "ws"+trimHTTPPrefix(ts.URL)+"/acp", map[string]string{"Authorization": "Bearer test-key"})
+	defer client.close()
+	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{}})
+	waitForRPCID(t, client, float64(1))
+	client.writeJSON(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      2,
+		"method":  "session/new",
+		"params":  map[string]any{"cwd": "/workspace", "_meta": map[string]any{"cloudagent": map[string]any{"outer_runtime": outerRuntimeWisp}}},
+	})
+	sessionID := waitForRPCID(t, client, float64(2))["result"].(map[string]any)["sessionId"].(string)
+
+	workspaceID := "lease_bug_" + sessionID
+	lease, err := store.AcquireLease(context.Background(), WorkspaceLeaseRequest{
+		WorkspaceID: workspaceID,
+		RuntimeID:   "lease_owner_runtime",
+		Provider:    "ags",
+		TTL:         time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.acpGate.mu.Lock()
+	session := srv.acpGate.sessions[sessionID]
+	session.History = append(session.History, acpHistoryEntry{Role: "user", Text: "old prompt", At: time.Now().Add(-2 * time.Second)})
+	session.Runtime.RuntimeID = lease.RuntimeID
+	session.Runtime.OuterRuntime = outerRuntimeWisp
+	session.Runtime.RuntimeRecovery = runtimeRecoveryReattachOrRecreate
+	session.Runtime.WispWorkspaceID = workspaceID
+	session.Runtime.WispSMHSpaceID = workspaceID
+	session.Runtime.WispLeaseID = lease.LeaseID
+	session.Runtime.WispLeaseFence = lease.FencingToken
+	session.Runtime.WispLeaseUntil = lease.ExpiresAt
+	session.Runtime.InnerSandboxID = "inner_lease_bug"
+	srv.acpGate.persistSession(session)
+	srv.acpGate.mu.Unlock()
+
+	time.Sleep(500 * time.Millisecond)
+	sendACPPrompt(t, client, sessionID, 3, "refresh should renew session run lease")
+	if refreshes := manager.recordedRefreshes(); len(refreshes) != 1 {
+		t.Fatalf("expected one runtime refresh before prompt, got %#v", refreshes)
+	}
+	time.Sleep(time.Until(lease.ExpiresAt) + 250*time.Millisecond)
+	stolen, err := store.AcquireLease(context.Background(), WorkspaceLeaseRequest{
+		WorkspaceID: workspaceID,
+		RuntimeID:   "lease_thief_runtime",
+		Provider:    "ags",
+		TTL:         time.Minute,
+	})
+	if err == nil {
+		_ = store.ReleaseLease(context.Background(), stolen)
+		t.Fatalf("session run lease was stealable after active runtime refresh; refresh did not renew lease (original_expires_at=%s stolen=%+v)", lease.ExpiresAt.Format(time.RFC3339Nano), stolen)
+	}
+	if !errors.Is(err, ErrWorkspaceLeaseHeld) {
+		t.Fatalf("expected session run lease to remain held after refresh, got %v", err)
+	}
+}
+
+func TestACPActivePromptLostSessionRunLeaseInterruptsRun(t *testing.T) {
+	t.Setenv("GATEWAY_ACP_RUNTIME_REFRESH_ACTIVE_SECONDS", "1")
+	t.Setenv("GATEWAY_ACP_RUNTIME_REFRESH_TIMEOUT_SECONDS", "2")
+	store, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager := newBlockingACPRuntimeManager()
+	srv := newACPTestServerWithRuntimeAndStore(store, manager)
+	scope := Scope{TenantID: "tenant-owner", ProjectID: "project-owner"}
+	sessionID := "session_lost_session_run_lease"
+	now := time.Now().UTC()
+	workspaceID := "workspace_lost_session_run_lease"
+	lease, err := store.AcquireLease(context.Background(), WorkspaceLeaseRequest{
+		WorkspaceID: workspaceID,
+		RuntimeID:   "runtime_lost_session_run_lease",
+		Provider:    "ags",
+		TTL:         time.Minute,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := &acpSession{
+		SessionID:         sessionID,
+		Scope:             scope,
+		Model:             defaultACPModel(),
+		CWD:               "/workspace",
+		State:             acpRuntimeStateReady,
+		RuntimeGeneration: 1,
+		Runtime: ACPSessionRuntime{
+			RuntimeID:          "runtime_lost_session_run_lease",
+			SandboxBackend:     "ags",
+			OuterRuntime:       outerRuntimeWisp,
+			RuntimeRecovery:    runtimeRecoveryReattachOrRecreate,
+			OuterSandboxID:     "outer_lost_session_run_lease",
+			DaemonAddr:         "fake",
+			RemoteBinary:       "/tmp/hermes-sidecar",
+			WispWorkspaceID:    workspaceID,
+			WispSMHSpaceID:     workspaceID,
+			WispLeaseID:        lease.LeaseID,
+			WispLeaseFence:     lease.FencingToken,
+			WispLeaseUntil:     lease.ExpiresAt,
+			WorkspaceID:        workspaceID,
+			WorkspaceRuntimeID: "workspace_runtime_lost_session_run_lease",
+			InnerSandboxID:     "inner_lost_session_run_lease",
+		},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := store.SaveACPSession(session); err != nil {
+		t.Fatal(err)
+	}
+	srv.acpGate.sessions[sessionID] = cloneSession(session)
+
+	req := acpPromptRequest{Prompt: []acpPromptBlock{{Type: "text", Text: "hold until lease loss"}}}
+	if err := srv.acpGate.startPrompt(nil, nil, cloneSession(session), req, false); err != nil {
+		t.Fatalf("start prompt: %v", err)
+	}
+	manager.waitStarted(t)
+	if err := store.ReleaseLease(context.Background(), lease); err != nil {
+		t.Fatal(err)
+	}
+	thief, err := store.AcquireLease(context.Background(), WorkspaceLeaseRequest{
+		WorkspaceID: workspaceID,
+		RuntimeID:   "runtime_lost_session_run_lease_thief",
+		Provider:    "ags",
+		TTL:         time.Minute,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.ReleaseLease(context.Background(), thief)
+
+	deadline := time.Now().Add(4 * time.Second)
+	for {
+		srv.acpGate.mu.Lock()
+		current := srv.acpGate.sessions[sessionID]
+		state := current.State
+		hasRuns := sessionHasPromptRuns(current)
+		lastErr := current.LastRuntimeError
+		srv.acpGate.mu.Unlock()
+		if state == acpRuntimeStateReady && !hasRuns && strings.Contains(lastErr, "workspace_lost_session_run_lease") {
+			if refreshes := manager.recordedRefreshes(); len(refreshes) != 0 {
+				t.Fatalf("lost session run lease must stop before sandbox refresh side effects, got refreshes=%#v", refreshes)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("active prompt was not interrupted after session run lease loss state=%s has_runs=%t last_err=%q", state, hasRuns, lastErr)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func TestACPFastRetryAfterLostSessionRunLeaseIsRejectedBeforeRuntimeRun(t *testing.T) {
+	store, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager := &recordingACPRuntimeManager{}
+	srv := newACPTestServerWithRuntimeAndStore(store, manager)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	client := dialACPWS(t, "ws"+trimHTTPPrefix(ts.URL)+"/acp", map[string]string{"Authorization": "Bearer test-key"})
+	defer client.close()
+	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{}})
+	waitForRPCID(t, client, float64(1))
+	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 2, "method": "session/new", "params": map[string]any{"cwd": "/workspace"}})
+	sessionID := waitForRPCID(t, client, float64(2))["result"].(map[string]any)["sessionId"].(string)
+
+	srv.acpGate.mu.Lock()
+	session := srv.acpGate.sessions[sessionID]
+	session.Runtime.RuntimeID = "runtime_fast_retry_lost_lease"
+	session.Runtime.OuterRuntime = outerRuntimeWisp
+	session.Runtime.RuntimeRecovery = runtimeRecoveryReattachOrRecreate
+	session.Runtime.OuterSandboxID = "outer_fast_retry_lost_lease"
+	session.Runtime.WispWorkspaceID = "workspace_fast_retry_lost_lease"
+	session.Runtime.WispSMHSpaceID = "workspace_fast_retry_lost_lease"
+	session.Runtime.WispLeaseID = "lease_not_owned"
+	session.Runtime.WispLeaseFence = 9
+	session.Runtime.WispLeaseUntil = time.Now().UTC().Add(time.Minute)
+	srv.acpGate.persistSession(session)
+	srv.acpGate.mu.Unlock()
+
+	client.writeJSON(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      3,
+		"method":  "session/prompt",
+		"params":  map[string]any{"sessionId": sessionID, "prompt": []any{map[string]any{"type": "text", "text": "should not run"}}},
+	})
+	resp := waitForRPCID(t, client, float64(3))
+	if _, ok := resp["error"].(map[string]any); !ok {
+		t.Fatalf("expected prompt rejection after lost session run lease, got %#v", resp)
+	}
+	if got := len(manager.promptTexts()); got != 0 {
+		t.Fatalf("lost session run lease must reject before worker run, got prompts=%d", got)
+	}
+	if refreshes := manager.recordedRefreshes(); len(refreshes) != 0 {
+		t.Fatalf("lost session run lease must reject before runtime refresh, got refreshes=%#v", refreshes)
+	}
+}
+
+func TestSessionRunLeaseLostErrorIncludesRuntimeOwnership(t *testing.T) {
+	if !isSessionRunLeaseLostError(RuntimeOwnershipHeldError{SessionID: "session_1"}) {
+		t.Fatal("runtime ownership held must be classified as session run lease loss")
+	}
+}
+
 func TestACPPromptSkipsRuntimeRefreshWhenPreviousUserMessageIsRecent(t *testing.T) {
 	manager := &recordingACPRuntimeManager{}
 	srv := newACPTestServerWithRuntime(t, manager)
@@ -1599,6 +1893,7 @@ func TestACPSessionNewFailureDoesNotLeaveListedSession(t *testing.T) {
 func TestACPSessionNewPassesAgentAndWorkspaceVersions(t *testing.T) {
 	manager := &recordingACPRuntimeManager{}
 	srv := newACPTestServerWithRuntime(t, manager)
+	srv.acpGate.ownerID = "gateway_owner_session_new"
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
@@ -1629,6 +1924,9 @@ func TestACPSessionNewPassesAgentAndWorkspaceVersions(t *testing.T) {
 	start := starts[0]
 	if start.AgentVersion != "builtin.v1" || start.WorkspaceVersion != "builtin.v1" {
 		t.Fatalf("unexpected version selection: %#v", start)
+	}
+	if start.OwnerID != "gateway_owner_session_new" {
+		t.Fatalf("session/new must bind runtime start to gateway owner, got %#v", start)
 	}
 }
 
@@ -2613,6 +2911,57 @@ func TestACPCloudAgentSessionStatus(t *testing.T) {
 	}
 }
 
+func TestACPCloudAgentSessionStatusProjectsSessionRunLease(t *testing.T) {
+	scope := Scope{TenantID: "tenant-owner", ProjectID: "project-owner"}
+	sessionID := "session_status_session_run_lease"
+	leaseUntil := time.Date(2026, 5, 28, 1, 2, 3, 0, time.UTC)
+	gateway := &ACPGateway{
+		runtimeManager: &recordingACPRuntimeManager{},
+		sessions: map[string]*acpSession{
+			sessionID: {
+				SessionID:         sessionID,
+				Scope:             scope,
+				Model:             defaultACPModel(),
+				CWD:               "/workspace",
+				State:             acpRuntimeStateReady,
+				RuntimeGeneration: 1,
+				Runtime: ACPSessionRuntime{
+					RuntimeID:        "runtime_status",
+					SandboxBackend:   "ags",
+					OuterRuntime:     outerRuntimeWisp,
+					RuntimeRecovery:  runtimeRecoveryReattachOrRecreate,
+					OuterSandboxID:   "outer_status",
+					DaemonAddr:       "fake",
+					RemoteBinary:     "/tmp/hermes-sidecar",
+					WispWorkspaceID:  "workspace_status",
+					WispSMHSpaceID:   "workspace_status",
+					WispLeaseID:      "lease_status",
+					WispLeaseFence:   17,
+					WispLeaseUntil:   leaseUntil,
+					WorkspaceID:      "workspace_status",
+					InnerSandboxID:   "inner_status",
+					SessionProxyID:   "spx_status",
+					AgentVersion:     defaultAgentVersion,
+					WorkspaceVersion: defaultWorkspaceVersion,
+				},
+				CreatedAt: time.Now().UTC(),
+				UpdatedAt: time.Now().UTC(),
+			},
+		},
+	}
+	status, err := gateway.cloudAgentSessionStatus(scope, sessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sandbox := status["sandbox"].(map[string]any)
+	if sandbox["has_session_run_lease"] != true || sandbox["session_run_lease_fence"] != int64(17) || sandbox["session_run_lease_until"] == "" {
+		t.Fatalf("status missing session run lease projection: %#v", sandbox)
+	}
+	if sandbox["has_workspace_lease"] != true || sandbox["workspace_lease_fence"] != int64(17) {
+		t.Fatalf("legacy workspace lease fields should mirror session run lease: %#v", sandbox)
+	}
+}
+
 func TestACPCloudAgentSessionStatusReportsRuntimeSnapshotError(t *testing.T) {
 	manager := &recordingACPRuntimeManager{statusErr: fmt.Errorf("runtime status timeout")}
 	srv := newACPTestServerWithRuntime(t, manager)
@@ -2661,10 +3010,11 @@ func newACPTestServerWithRuntimeAndStore(store *Store, manager ACPSessionRuntime
 		store:  store,
 		worker: worker,
 		acpGate: &ACPGateway{
-			store:          store,
-			worker:         worker,
-			runtimeManager: manager,
-			sessions:       map[string]*acpSession{},
+			store:            store,
+			worker:           worker,
+			runtimeManager:   manager,
+			workspaceService: store,
+			sessions:         map[string]*acpSession{},
 		},
 	}
 }
@@ -2709,25 +3059,27 @@ func waitForACPSessionState(t *testing.T, gateway *ACPGateway, sessionID string,
 }
 
 type recordingACPRuntimeManager struct {
-	mu              sync.Mutex
-	starts          []ACPSessionRuntimeStartRequest
-	workerJobs      []workerJob
-	cancels         []ACPSessionRuntime
-	refreshes       []ACPSessionRuntime
-	closes          []ACPSessionRuntime
-	deletes         []ACPSessionRuntime
-	events          []workerEvent
-	resultText      string
-	promptErr       error
-	promptErrs      []error
-	reattachErr     error
-	closeFailures   int
-	closeDelay      time.Duration
-	status          ACPSessionRuntimeStatusSnapshot
-	statusErr       error
-	startErr        error
-	afterFirstEvent chan struct{}
-	continueEvents  chan struct{}
+	mu                  sync.Mutex
+	starts              []ACPSessionRuntimeStartRequest
+	workerJobs          []workerJob
+	cancels             []ACPSessionRuntime
+	refreshes           []ACPSessionRuntime
+	closes              []ACPSessionRuntime
+	deletes             []ACPSessionRuntime
+	events              []workerEvent
+	resultText          string
+	promptErr           error
+	promptErrs          []error
+	reattachErr         error
+	closeBeforeRecreate bool
+	closeErr            error
+	closeFailures       int
+	closeDelay          time.Duration
+	status              ACPSessionRuntimeStatusSnapshot
+	statusErr           error
+	startErr            error
+	afterFirstEvent     chan struct{}
+	continueEvents      chan struct{}
 }
 
 func (m *recordingACPRuntimeManager) StartSessionRuntime(ctx context.Context, req ACPSessionRuntimeStartRequest) (ACPSessionRuntime, error) {
@@ -2777,6 +3129,11 @@ func (m *recordingACPRuntimeManager) EnsureSessionRuntime(ctx context.Context, r
 		return reattached, nil
 	}
 	if runtimeCanRecreate(runtime) {
+		if m.closeBeforeRecreate {
+			if cleanupErr := m.CloseSessionRuntime(ctx, runtime); cleanupErr != nil && !isNonBlockingStaleRuntimeCleanupError(cleanupErr) {
+				return ACPSessionRuntime{}, cleanupErr
+			}
+		}
 		return m.StartSessionRuntime(ctx, req)
 	}
 	return ACPSessionRuntime{}, err
@@ -2880,6 +3237,9 @@ func (m *recordingACPRuntimeManager) CloseSessionRuntime(ctx context.Context, ru
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.closeErr != nil {
+		return m.closeErr
+	}
 	if m.closeFailures > 0 {
 		m.closeFailures--
 		return fmt.Errorf("injected close failure")

@@ -16,8 +16,8 @@ import (
 )
 
 const (
-	defaultLiveWispFastPackageURL    = "http://cloudagent-sidecar-shanghai-1388575217.cos.ap-shanghai.myqcloud.com/workspace/20260521/wisp-linux-amd64-20260521T033911Z-8ec9dbe9cae3.tar.gz"
-	defaultLiveWispFastPackageSHA256 = "8ec9dbe9cae3013bef93d7cf6e4cee7ef8b09bb274bec40b7b2e8f57c987947e"
+	defaultLiveWispFastPackageURL    = "https://cloudagent-sidecar-shanghai-1388575217.cos.ap-shanghai.myqcloud.com/workspace/20260528/wisp-linux-amd64-20260528T061826Z-8ceda87c563b.erofs"
+	defaultLiveWispFastPackageSHA256 = "8ceda87c563b684037ff390977e18e47f13bf215af0f262c82ea99316b73b67c"
 )
 
 func TestLiveAGSSMHMountSmoke(t *testing.T) {
@@ -82,11 +82,14 @@ func TestLiveAGSSMHMountSmoke(t *testing.T) {
 	command := `
 set -euo pipefail
 work="$(mktemp -d /tmp/wisp-smh-smoke.XXXXXX)"
-pkg="$work/wisp.tar.gz"
+pkg="$work/wisp-package"
 curl -fsSL "$WISP_PACKAGE_URL" -o "$pkg"
 printf '%s  %s\n' "$WISP_PACKAGE_SHA256" "$pkg" | sha256sum -c -
 mkdir -p "$work/root"
-tar -xzf "$pkg" -C "$work/root" --strip-components=1
+case "$WISP_PACKAGE_URL" in
+  *.erofs) sudo -n mount -t erofs -o loop,ro "$pkg" "$work/root" ;;
+  *) tar -xzf "$pkg" -C "$work/root" --strip-components=1 ;;
+esac
 root="$work/root"
 workspace="smh-smoke-$(date +%s)"
 mountpoint="$work/mount"
@@ -224,7 +227,7 @@ ts() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 step() { echo "TIMELINE $(ts) $*"; }
 
 work="$(mktemp -d /tmp/wisp-console-full.XXXXXX)"
-pkg="$work/wisp.tar.gz"
+pkg="$work/wisp-package"
 install="$work/install"
 wisp_name="full-$(date +%s)"
 log="$work/daemon.log"
@@ -236,8 +239,10 @@ step download_package_done
 
 step install_package_start
 mkdir -p "$install"
-tar -xzf "$pkg" -C "$install" --strip-components=1
-"$install/scripts/install.sh" "$install" >/dev/null
+case "$WISP_PACKAGE_URL" in
+  *.erofs) sudo -n mount -t erofs -o loop,ro "$pkg" "$install" ;;
+  *) tar -xzf "$pkg" -C "$install" --strip-components=1; "$install/scripts/install.sh" "$install" >/dev/null ;;
+esac
 cat >"$install/config/config.jsonnet" <<EOF
 local projectRoot = "$install";
 {
@@ -257,7 +262,9 @@ local projectRoot = "$install";
   JFS_BUILD: "0",
   JFS_SMOUNT_SCRIPT: projectRoot + "/juicefs/hack/smount.sh",
   JFS_SFORMAT_SCRIPT: projectRoot + "/juicefs/hack/sformat.sh",
-  BASE_ROOTFS_IMG: projectRoot + "/assets/rootfs/images/plucky-amd64.img",
+  LOWER_SYSTEM_BASE: projectRoot + "/assets/rootfs/rootfs",
+  BASE_ROOTFS_DIR: projectRoot + "/assets/rootfs/rootfs",
+  BASE_ROOTFS_IMG: "",
   CRUN_BINARY: projectRoot + "/assets/bin/crun/crun-amd64",
   WISPENV_BINARY: projectRoot + "/bin/wispenv",
   WISP_FS_AGENT_BINARY: projectRoot + "/bin/wisp-fs-agent",
@@ -315,7 +322,8 @@ export JFS_BIN="$install/bin/juicefs-smount"
 export JFS_BUILD=0
 export JFS_SMOUNT_SCRIPT="$install/juicefs/hack/smount.sh"
 export JFS_SFORMAT_SCRIPT="$install/juicefs/hack/sformat.sh"
-export BASE_ROOTFS_IMG="$install/assets/rootfs/images/plucky-amd64.img"
+export BASE_ROOTFS_DIR="$install/assets/rootfs/rootfs"
+export BASE_ROOTFS_IMG=""
 export CRUN_BINARY="$install/assets/bin/crun/crun-amd64"
 export CRUN_BINARY_PATH="/var/lib/wisp/shared/tools/crun"
 export WISPENV_BINARY="$install/bin/wispenv"
@@ -330,28 +338,12 @@ export SMH_ACCESS_TOKEN
 export SMH_HTTP_TRACE="${SMH_HTTP_TRACE:-}"
 
 step base_rootfs_probe_start
-ls -lh "$BASE_ROOTFS_IMG"
-if ! e2fsck -fn "$BASE_ROOTFS_IMG"; then
-  echo "base_rootfs_probe: e2fsck failed" >&2
+ls -la "$BASE_ROOTFS_DIR" | head
+if [[ ! -f "$BASE_ROOTFS_DIR/.wisp-base-ready" ]]; then
+  echo "base_rootfs_probe: missing .wisp-base-ready in $BASE_ROOTFS_DIR" >&2
   exit 1
 fi
-base_probe_mnt="$work/base-rootfs-probe-mnt"
-base_probe_loop=""
-mkdir -p "$base_probe_mnt"
-base_probe_loop="$(sudo -n losetup --find --show -r "$BASE_ROOTFS_IMG")"
-if sudo -n mount -t ext4 -o ro "$base_probe_loop" "$base_probe_mnt"; then
-  echo "base_rootfs_probe: ok loop=$base_probe_loop"
-  ls -la "$base_probe_mnt" | head
-  test -e "$base_probe_mnt/.wisp-base-ready"
-  sudo -n umount "$base_probe_mnt"
-  sudo -n losetup -d "$base_probe_loop"
-  base_probe_loop=""
-else
-  echo "base_rootfs_probe: failed loop=$base_probe_loop" >&2
-  dmesg | tail -80 >&2 || true
-  sudo -n losetup -d "$base_probe_loop" >/dev/null 2>&1 || true
-  exit 1
-fi
+echo "base_rootfs_probe: direct_dir_ok path=$BASE_ROOTFS_DIR"
 step base_rootfs_probe_done
 
 step daemon_start
@@ -368,6 +360,7 @@ sudo -n env \
   JFS_BUILD="$JFS_BUILD" \
   JFS_SMOUNT_SCRIPT="$JFS_SMOUNT_SCRIPT" \
   JFS_SFORMAT_SCRIPT="$JFS_SFORMAT_SCRIPT" \
+  BASE_ROOTFS_DIR="$BASE_ROOTFS_DIR" \
   BASE_ROOTFS_IMG="$BASE_ROOTFS_IMG" \
   CRUN_BINARY="$CRUN_BINARY" \
   CRUN_BINARY_PATH="$CRUN_BINARY_PATH" \
@@ -576,7 +569,7 @@ ts() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 step() { echo "TIMELINE $(ts) $*"; }
 
 work="$(mktemp -d /tmp/wisp-console-fast.XXXXXX)"
-pkg="$work/wisp.tar.gz"
+pkg="$work/wisp-package"
 install="$work/install"
 wisp_name="${WISP_FAST_NAME:-fast-$(date +%s)}"
 log="$work/daemon.log"
@@ -588,8 +581,10 @@ step download_done
 
 step install_start
 mkdir -p "$install"
-tar -xzf "$pkg" -C "$install" --strip-components=1
-"$install/scripts/install.sh" "$install" >/dev/null
+case "$WISP_PACKAGE_URL" in
+  *.erofs) sudo -n mount -t erofs -o loop,ro "$pkg" "$install" ;;
+  *) tar -xzf "$pkg" -C "$install" --strip-components=1; "$install/scripts/install.sh" "$install" >/dev/null ;;
+esac
 backend="${WISP_REMOTE_BACKEND:-smh}"
 jfs_prefix="${JFS_PREFIX_OVERRIDE:-workspace-fast}"
 wisp_user="${WISP_FAST_WISP_USER:-wisp}"
@@ -635,7 +630,9 @@ local projectRoot = "$install";
   JFS_BUILD: "0",
   JFS_SMOUNT_SCRIPT: projectRoot + "/juicefs/hack/smount.sh",
   JFS_SFORMAT_SCRIPT: projectRoot + "/juicefs/hack/sformat.sh",
-  BASE_ROOTFS_IMG: projectRoot + "/assets/rootfs/images/plucky-amd64.img",
+  LOWER_SYSTEM_BASE: projectRoot + "/assets/rootfs/rootfs",
+  BASE_ROOTFS_DIR: projectRoot + "/assets/rootfs/rootfs",
+  BASE_ROOTFS_IMG: "",
   CRUN_BINARY: projectRoot + "/assets/bin/crun/crun-amd64",
   WISPENV_BINARY: projectRoot + "/bin/wispenv",
   WISP_FS_AGENT_BINARY: projectRoot + "/bin/wisp-fs-agent",
@@ -670,7 +667,8 @@ export JFS_BIN="$install/bin/juicefs-smount"
 export JFS_BUILD=0
 export JFS_SMOUNT_SCRIPT="$install/juicefs/hack/smount.sh"
 export JFS_SFORMAT_SCRIPT="$install/juicefs/hack/sformat.sh"
-export BASE_ROOTFS_IMG="$install/assets/rootfs/images/plucky-amd64.img"
+export BASE_ROOTFS_DIR="$install/assets/rootfs/rootfs"
+export BASE_ROOTFS_IMG=""
 export CRUN_BINARY="$install/assets/bin/crun/crun-amd64"
 export CRUN_BINARY_PATH="/var/lib/wisp/shared/tools/crun"
 export WISPENV_BINARY="$install/bin/wispenv"
@@ -712,6 +710,7 @@ sudo -n env \
   JFS_BUILD="$JFS_BUILD" \
   JFS_SMOUNT_SCRIPT="$JFS_SMOUNT_SCRIPT" \
   JFS_SFORMAT_SCRIPT="$JFS_SFORMAT_SCRIPT" \
+  BASE_ROOTFS_DIR="$BASE_ROOTFS_DIR" \
   BASE_ROOTFS_IMG="$BASE_ROOTFS_IMG" \
   CRUN_BINARY="$CRUN_BINARY" \
   CRUN_BINARY_PATH="$CRUN_BINARY_PATH" \
@@ -818,6 +817,7 @@ if [[ "${WISP_FAST_WARM_REBOOT:-}" == "1" ]]; then
     JFS_BUILD="$JFS_BUILD" \
     JFS_SMOUNT_SCRIPT="$JFS_SMOUNT_SCRIPT" \
     JFS_SFORMAT_SCRIPT="$JFS_SFORMAT_SCRIPT" \
+    BASE_ROOTFS_DIR="$BASE_ROOTFS_DIR" \
     BASE_ROOTFS_IMG="$BASE_ROOTFS_IMG" \
     CRUN_BINARY="$CRUN_BINARY" \
     CRUN_BINARY_PATH="$CRUN_BINARY_PATH" \
