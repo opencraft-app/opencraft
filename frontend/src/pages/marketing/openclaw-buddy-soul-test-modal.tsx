@@ -81,12 +81,6 @@ export function SoulTestModal({
   const spec = matchedSoulId ? getSoulSpec(matchedSoulId) : null;
   const prefScores = useMemo(() => calculatePrefScores(answers), [answers]);
   const prefCategories = useMemo(() => categorizePrefScores(prefScores), [prefScores]);
-  const topTags = useMemo(() => {
-    return PREF_TAGS
-      .filter((tag) => prefScores[tag] > 0)
-      .sort((left, right) => prefScores[right] - prefScores[left])
-      .slice(0, 4);
-  }, [prefScores]);
   const profileText = useMemo(() => generatePersonalityProfile(answers), [answers]);
 
   const handleSelect = useCallback(
@@ -202,7 +196,6 @@ export function SoulTestModal({
               soul={recommendedSoul}
               spec={spec}
               profileText={profileText}
-              topTags={topTags}
               prefCategories={prefCategories}
               useError={useError}
               onUseSoul={handleUseSoul}
@@ -317,7 +310,6 @@ function ResultStep({
   soul,
   spec,
   profileText,
-  topTags,
   prefCategories,
   useError,
   onUseSoul,
@@ -327,7 +319,6 @@ function ResultStep({
   soul: SkillHubSoul | null;
   spec: SoulSpec | null;
   profileText: string;
-  topTags: PrefTag[];
   prefCategories: Record<PrefTag, "high" | "mid" | "low">;
   useError: string | null;
   onUseSoul: () => void;
@@ -335,7 +326,6 @@ function ResultStep({
 }) {
   const t = useT();
   const [soulInfoOpen, setSoulInfoOpen] = useState(false);
-  const interpretation = spec?.interpretation.split("\n")[0] ?? "";
 
   useEffect(() => {
     setSoulInfoOpen(false);
@@ -344,10 +334,6 @@ function ResultStep({
   return (
     <div className="relative max-h-[88vh] overflow-y-auto px-7 pb-7 pt-8 sm:px-10">
       <div className="mb-6 text-center">
-        <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-black/10 bg-white/70 px-3 py-1 text-xs font-medium text-black/55">
-          <Sparkles className="h-3.5 w-3.5 text-[#FFA600]" />
-          {t("测试完成")}
-        </div>
         <h3 className="text-2xl font-semibold tracking-normal text-black/90">
           {t("为你推荐的智能体伙伴 Soul 是")}
         </h3>
@@ -366,7 +352,7 @@ function ResultStep({
                 {soulInfoOpen ? (
                   <SoulSpecPanel spec={spec} />
                 ) : (
-                  <p className="text-sm leading-relaxed text-black/62">{t(interpretation)}</p>
+                  <SoulInterpretationSummary interpretation={spec.interpretation} />
                 )}
                 <button
                   type="button"
@@ -380,31 +366,43 @@ function ResultStep({
               </section>
             )}
 
-            {profileText && (
-              <section className="rounded-2xl border border-black/8 bg-white p-5 shadow-[0_16px_40px_rgba(0,0,0,0.04)]">
-                <h4 className="text-sm font-semibold text-black/85">{t("你的灵魂画像")}</h4>
-                <div aria-hidden="true" style={{ height: "12px" }} />
-                <p className="text-sm leading-relaxed text-black/62">{t(profileText)}</p>
-              </section>
-            )}
-
-            <section className="rounded-2xl border border-black/8 bg-white p-5 shadow-[0_16px_40px_rgba(0,0,0,0.04)]">
-              <h4 className="text-sm font-semibold text-black/85">{t("推荐原因")}</h4>
-              <div aria-hidden="true" style={{ height: "12px" }} />
-              <div className="flex flex-col gap-3">
-                <div className="flex flex-wrap gap-2">
-                  {(topTags.length > 0 ? topTags : PREF_TAGS.slice(0, 3)).map((tag) => (
-                    <span
-                      key={tag}
-                      className="rounded-full border border-black/8 bg-black/[0.03] px-3 py-1 text-xs font-medium text-black/62"
-                    >
-                      {t(tag)} · {t(categoryLabel(prefCategories[tag]))}
-                    </span>
-                  ))}
+            <section className="rounded-2xl border border-black/8 bg-white p-5 shadow-[0_16px_40px_rgba(0,0,0,0.04)] sm:p-6">
+              <h4 className="text-xl font-semibold text-black/90">{t("推荐原因")}</h4>
+              {profileText && (
+                <div className="mt-7">
+                  <h5 className="text-base font-semibold text-black/85">{t("你的灵魂画像")}</h5>
+                  <div aria-hidden="true" style={{ height: "12px" }} />
+                  <p className="rounded-2xl bg-black/[0.03] px-5 py-4 text-sm leading-relaxed text-black/62">
+                    {t(profileText)}
+                  </p>
                 </div>
-                <p className="text-sm leading-relaxed text-black/55">
-                  {t("系统根据你的 10 道偏好题计算 8 维偏好分数，并与 16 张 Soul 的权重做相似度匹配。")}
-                </p>
+              )}
+              <div className="mt-4">
+                <h5 className="text-base font-semibold text-black/85">{t("你对 Soul 的偏好")}</h5>
+                <div aria-hidden="true" style={{ height: "12px" }} />
+                <div className="flex flex-wrap gap-2 rounded-2xl bg-black/[0.03] px-5 py-4">
+                  {PREF_TAGS.map((tag) => {
+                    const category = prefCategories[tag];
+                    return (
+                      <span
+                        key={tag}
+                        className="inline-flex items-center gap-2 rounded-full border border-black/8 bg-white px-3 py-1.5 text-sm font-medium text-black/68 shadow-[0_1px_2px_rgba(0,0,0,0.03)]"
+                      >
+                        {t(tag)}
+                        <span
+                          className={cn(
+                            "inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-xs font-semibold",
+                            category === "high" && "bg-[#FFF0D9] text-[#FF8A00]",
+                            category === "mid" && "bg-[#FFF7E8] text-[#FF9A00]",
+                            category === "low" && "bg-black/[0.05] text-black/45",
+                          )}
+                        >
+                          {t(categoryLabel(category))}
+                        </span>
+                      </span>
+                    );
+                  })}
+                </div>
               </div>
             </section>
           </div>
@@ -431,7 +429,7 @@ function ResultStep({
           }}
           disabled={!soul}
           style={{ fontSize: "16px" }}
-          className="inline-flex h-[54px] min-w-[184px] items-center justify-center rounded-full bg-black px-9 font-semibold leading-none text-white shadow-[0_12px_28px_rgba(0,0,0,0.16)] transition-all hover:-translate-y-0.5 hover:bg-black/85 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
+          className="inline-flex h-12 min-w-40 items-center justify-center rounded-full bg-black px-7 font-semibold leading-none text-white shadow-[0_12px_28px_rgba(0,0,0,0.16)] transition-all hover:-translate-y-0.5 hover:bg-black/85 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
         >
           {t("使用该 Soul")}
         </button>
@@ -439,7 +437,7 @@ function ResultStep({
           type="button"
           onClick={onRetry}
           style={{ fontSize: "16px" }}
-          className="inline-flex h-[54px] items-center justify-center gap-2.5 rounded-full border border-black/8 bg-white px-9 font-semibold leading-none text-black/70 transition-all hover:-translate-y-0.5 hover:bg-black/[0.03]"
+          className="inline-flex h-12 items-center justify-center gap-2 rounded-full border border-black/8 bg-white px-7 font-semibold leading-none text-black/70 transition-all hover:-translate-y-0.5 hover:bg-black/[0.03]"
         >
           <RotateCcw className="h-[18px] w-[18px]" />
           {t("重新测试")}
@@ -451,6 +449,21 @@ function ResultStep({
 
 function buildQuestions(): SoulTestQuestion[] {
   return [...shuffleArray(personalityQuestions), ...shuffleArray(prefQuestions)];
+}
+
+function SoulInterpretationSummary({ interpretation }: { interpretation: string }) {
+  const t = useT();
+  const lastNewline = interpretation.lastIndexOf("\n");
+  const body = lastNewline === -1 ? interpretation : interpretation.slice(0, lastNewline);
+  const cta = lastNewline === -1 ? "" : interpretation.slice(lastNewline + 1);
+
+  return (
+    <p className="whitespace-pre-wrap text-sm leading-relaxed text-black/62">
+      {t(body)}
+      {cta ? "\n" : ""}
+      {cta && <span className="font-semibold text-black/70">{t(cta)}</span>}
+    </p>
+  );
 }
 
 function categoryLabel(category: "high" | "mid" | "low"): string {
