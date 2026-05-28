@@ -42,6 +42,9 @@ func (g *ACPGateway) startPrompt(ws *WSConn, id json.RawMessage, session *acpSes
 	if err := g.preflightPromptRuntime(session.Scope, session.SessionID); err != nil {
 		return err
 	}
+	if err := g.validatePromptSessionRunLease(session.Scope, session.SessionID); err != nil {
+		return err
+	}
 	if err := g.refreshPromptRuntimeIfIdle(session.Scope, session.SessionID); err != nil {
 		return err
 	}
@@ -586,10 +589,8 @@ func (g *ACPGateway) finishInterruptedPrompt(ws *WSConn, id json.RawMessage, app
 	if session, ok := g.sessions[sessionID]; ok && sessionPromptRun(session, run) && session.RuntimeGeneration == run.Generation {
 		removeSessionPromptRun(session, run)
 		session.CurrentResponseID = ""
-		if reason == "cancelled" && !sessionHasPromptRuns(session) {
-			if !sessionHasPromptRuns(session) {
-				session.State = acpRuntimeStateReady
-			}
+		if !sessionHasPromptRuns(session) && session.State == acpRuntimeStatePrompting {
+			session.State = acpRuntimeStateReady
 		}
 		session.UpdatedAt = time.Now().UTC()
 		if g.store != nil && run.TurnID != "" && run.AssistantMessageID != "" {
