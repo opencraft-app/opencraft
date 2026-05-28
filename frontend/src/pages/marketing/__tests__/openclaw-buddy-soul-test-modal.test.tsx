@@ -47,7 +47,7 @@ describe("SoulTestModal", () => {
         vi.advanceTimersByTime(300);
       });
       if (index === 4) {
-        expect(screen.getByText("选择你对智能体伙伴的偏好")).toBeInTheDocument();
+        expect(screen.getByText("第二部分：选择你对智能体伙伴的偏好")).toBeInTheDocument();
       }
     }
 

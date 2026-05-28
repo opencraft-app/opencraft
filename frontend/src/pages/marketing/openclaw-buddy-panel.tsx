@@ -15,7 +15,7 @@
  * 注：AI 搭子当前仅保留 Soul（人设）浏览与抽卡能力。
  */
 
-import { AlertCircle, AlertTriangle, Check, Dice5, Download, ExternalLink, Loader2, RotateCcw, Sparkles, Trash2, X, Zap } from "lucide-react";
+import { AlertCircle, AlertTriangle, Check, ClipboardCheck, Dice5, Download, ExternalLink, Loader2, RotateCcw, Sparkles, Trash2, X, Zap } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
@@ -521,6 +521,7 @@ export function BuddyPanel({
   );
 
   const isApplied = selectedSlug !== null && selectedSlug === appliedSlug;
+  const isApplyDisabled = !selectedSlug || toast.kind === "applying" || loadStatus !== "loaded";
 
   return (
     <div className="lv-buddy-panel relative overflow-hidden rounded-2xl" style={PANEL_CARD_STYLE}>
@@ -633,24 +634,28 @@ export function BuddyPanel({
             border: "1px solid rgba(0,0,0,0.06)",
           }}
         >
-          <Sparkles className="h-4 w-4" />
-          {t("测试人格")}
+          <ClipboardCheck className="h-4 w-4" />
+          {t("测试人设")}
         </button>
         <div className="group relative">
           <button
             type="button"
             onClick={handleApply}
-            disabled={
-              !selectedSlug
-              || toast.kind === "applying"
-              || loadStatus !== "loaded"
-            }
+            disabled={isApplyDisabled}
             className="inline-flex cursor-pointer items-center gap-2 rounded-full px-5 py-2 text-sm font-medium transition-all hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none"
-            style={{
-              background: "rgba(0,0,0,0.90)",
-              color: "#ffffff",
-              boxShadow: "0 4px 12px rgba(0,0,0,0.10)",
-            }}
+            style={
+              isApplyDisabled
+                ? {
+                    background: "rgba(0,0,0,0.04)",
+                    color: "rgba(0,0,0,0.85)",
+                    border: "1px solid rgba(0,0,0,0.06)",
+                  }
+                : {
+                    background: "rgba(0,0,0,0.90)",
+                    color: "#ffffff",
+                    boxShadow: "0 4px 12px rgba(0,0,0,0.10)",
+                  }
+            }
           >
             {toast.kind === "applying" ? (
               <Loader2 className="h-4 w-4 animate-spin" />

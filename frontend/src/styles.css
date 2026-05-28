@@ -1255,6 +1255,7 @@ body.lw-has-announcement .lw-app-top-pad {
   min-width: 0;
   max-width: min(100%, 720px);
   text-align: center;
+  font-size: 1.0625rem;
   line-height: 1.35;
 }
 
@@ -1266,16 +1267,28 @@ body.lw-has-announcement .lw-app-top-pad {
   grid-template-columns: repeat(6, minmax(0, 1fr));
 }
 
-@container (max-width: 980px) {
+.lv-buddy-panel__actions > button,
+.lv-buddy-panel__actions > .group > button {
+  font-size: 0.9375rem;
+  line-height: 1.35;
+}
+
+.lv-buddy-panel__actions > button > svg,
+.lv-buddy-panel__actions > .group > button > svg {
+  height: 1.125rem;
+  width: 1.125rem;
+}
+
+@container (max-width: 1180px) {
   .lv-buddy-panel__header {
     align-items: flex-start;
-    justify-content: space-between;
+    justify-content: center;
     gap: 0.75rem 1rem;
   }
 
   .lv-buddy-panel__title {
-    flex: 1 1 24rem;
-    text-align: left;
+    flex: 1 1 100%;
+    text-align: center;
   }
 
   .lv-buddy-panel__source {
@@ -1310,7 +1323,7 @@ body.lw-has-announcement .lw-app-top-pad {
 
   .lv-buddy-panel__title {
     flex-basis: 100%;
-    font-size: 1rem;
+    font-size: 0.8875rem;
   }
 
   .lv-buddy-panel__source {

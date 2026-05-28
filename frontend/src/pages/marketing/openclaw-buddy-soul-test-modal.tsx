@@ -1,11 +1,12 @@
-import { ChevronLeft, RotateCcw, Sparkles, X } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronUp, RotateCcw, Sparkles, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { useT } from "@/i18n/t";
+import { SoulSpecPanel } from "@/components/soul-spec-panel";
 import { cn } from "@/lib/utils";
 import type { SkillHubSoul } from "@/lib/skillhub-api";
-import { getSoulSpec } from "@/lib/soul-interpretations";
+import { getSoulSpec, type SoulSpec } from "@/lib/soul-interpretations";
 import { SoulFaceCard } from "@/pages/marketing/openclaw-buddy-cards";
 import {
   PREF_TAGS,
@@ -199,7 +200,7 @@ export function SoulTestModal({
             <ResultStep
               matchedSoulId={matchedSoulId}
               soul={recommendedSoul}
-              specText={spec?.interpretation ?? null}
+              spec={spec}
               profileText={profileText}
               topTags={topTags}
               prefCategories={prefCategories}
@@ -244,7 +245,9 @@ function QuestionStep({
           {t("Soul人格测试")}
         </div>
         <h3 className="text-2xl font-semibold tracking-normal text-black/90">
-          {isPersonality ? t("先来了解你的灵魂画像") : t("选择你对智能体伙伴的偏好")}
+          {isPersonality
+            ? t("第一部分：了解你的灵魂画像")
+            : t("第二部分：选择你对智能体伙伴的偏好")}
         </h3>
       </div>
 
@@ -277,8 +280,8 @@ function QuestionStep({
           </div>
         </div>
 
-        <div className="rounded-2xl border border-black/8 bg-white p-6 shadow-[0_16px_40px_rgba(0,0,0,0.04)] sm:p-8">
-          <h4 className="mb-7 text-lg font-medium leading-relaxed text-black/90">
+        <div className="flex flex-col gap-4 rounded-2xl border border-black/8 bg-white p-6 shadow-[0_16px_40px_rgba(0,0,0,0.04)] sm:p-8">
+          <h4 className="text-lg font-medium leading-relaxed text-black/90">
             {t(question.text)}
           </h4>
           <div className="flex flex-col gap-3">
@@ -289,8 +292,9 @@ function QuestionStep({
                   key={option.key}
                   type="button"
                   onClick={() => onSelect(option.key)}
+                  style={{ fontSize: "14px" }}
                   className={cn(
-                    "w-full rounded-[10px] border px-5 py-4 text-left text-[15px] leading-relaxed transition-all duration-200",
+                    "w-full rounded-[10px] border px-5 py-4 text-left text-lg leading-relaxed transition-all duration-200",
                     isSelected
                       ? "border-black bg-black text-white shadow-[0_10px_26px_rgba(0,0,0,0.16)]"
                       : "border-black/8 bg-white text-black/70 hover:border-black/18 hover:bg-black/[0.03]",
@@ -311,7 +315,7 @@ function QuestionStep({
 function ResultStep({
   matchedSoulId,
   soul,
-  specText,
+  spec,
   profileText,
   topTags,
   prefCategories,
@@ -321,7 +325,7 @@ function ResultStep({
 }: {
   matchedSoulId: string | null;
   soul: SkillHubSoul | null;
-  specText: string | null;
+  spec: SoulSpec | null;
   profileText: string;
   topTags: PrefTag[];
   prefCategories: Record<PrefTag, "high" | "mid" | "low">;
@@ -330,7 +334,12 @@ function ResultStep({
   onRetry: () => void;
 }) {
   const t = useT();
-  const interpretation = specText?.split("\n")[0] ?? "";
+  const [soulInfoOpen, setSoulInfoOpen] = useState(false);
+  const interpretation = spec?.interpretation.split("\n")[0] ?? "";
+
+  useEffect(() => {
+    setSoulInfoOpen(false);
+  }, [soul?.slug]);
 
   return (
     <div className="relative max-h-[88vh] overflow-y-auto px-7 pb-7 pt-8 sm:px-10">
@@ -340,52 +349,64 @@ function ResultStep({
           {t("测试完成")}
         </div>
         <h3 className="text-2xl font-semibold tracking-normal text-black/90">
-          {t("为你推荐的 Soul 是")}
+          {t("为你推荐的智能体伙伴 Soul 是")}
         </h3>
       </div>
 
       {soul ? (
-        <div className="grid gap-7 lg:grid-cols-[260px_1fr]">
+        <div className="flex flex-col gap-7">
           <div className="flex justify-center">
             <SoulFaceCard soul={soul} size="large" />
           </div>
-          <div className="space-y-4">
-            <section className="rounded-2xl border border-black/8 bg-white p-5 shadow-[0_16px_40px_rgba(0,0,0,0.04)]">
-              <p className="mb-1 text-xs font-medium text-black/45">{t("匹配结果")}</p>
-              <h4 className="mb-2 text-2xl font-semibold text-black/90">{soul.displayName}</h4>
-              <p className="text-sm leading-relaxed text-black/62">{soul.summary}</p>
-            </section>
+          <div className="mx-auto w-full max-w-[680px] space-y-4">
+            {spec && (
+              <section className="rounded-2xl border border-black/8 bg-white p-5 shadow-[0_16px_40px_rgba(0,0,0,0.04)]">
+                <h4 className="text-sm font-semibold text-black/85">{t("Soul 设定解读")}</h4>
+                <div aria-hidden="true" style={{ height: "12px" }} />
+                {soulInfoOpen ? (
+                  <SoulSpecPanel spec={spec} />
+                ) : (
+                  <p className="text-sm leading-relaxed text-black/62">{t(interpretation)}</p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setSoulInfoOpen((open) => !open)}
+                  className="mt-4 inline-flex items-center gap-1.5 font-medium text-blue-600 transition-colors hover:text-blue-700"
+                  style={{ fontSize: "14px" }}
+                >
+                  {soulInfoOpen ? t("收起 Soul 详情") : t("查看 Soul 详情")}
+                  {soulInfoOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                </button>
+              </section>
+            )}
 
             {profileText && (
               <section className="rounded-2xl border border-black/8 bg-white p-5 shadow-[0_16px_40px_rgba(0,0,0,0.04)]">
-                <h4 className="mb-2 text-sm font-semibold text-black/85">{t("你的灵魂画像")}</h4>
+                <h4 className="text-sm font-semibold text-black/85">{t("你的灵魂画像")}</h4>
+                <div aria-hidden="true" style={{ height: "12px" }} />
                 <p className="text-sm leading-relaxed text-black/62">{t(profileText)}</p>
               </section>
             )}
 
             <section className="rounded-2xl border border-black/8 bg-white p-5 shadow-[0_16px_40px_rgba(0,0,0,0.04)]">
-              <h4 className="mb-3 text-sm font-semibold text-black/85">{t("推荐原因")}</h4>
-              <div className="mb-3 flex flex-wrap gap-2">
-                {(topTags.length > 0 ? topTags : PREF_TAGS.slice(0, 3)).map((tag) => (
-                  <span
-                    key={tag}
-                    className="rounded-full border border-black/8 bg-black/[0.03] px-3 py-1 text-xs font-medium text-black/62"
-                  >
-                    {t(tag)} · {t(categoryLabel(prefCategories[tag]))}
-                  </span>
-                ))}
+              <h4 className="text-sm font-semibold text-black/85">{t("推荐原因")}</h4>
+              <div aria-hidden="true" style={{ height: "12px" }} />
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-wrap gap-2">
+                  {(topTags.length > 0 ? topTags : PREF_TAGS.slice(0, 3)).map((tag) => (
+                    <span
+                      key={tag}
+                      className="rounded-full border border-black/8 bg-black/[0.03] px-3 py-1 text-xs font-medium text-black/62"
+                    >
+                      {t(tag)} · {t(categoryLabel(prefCategories[tag]))}
+                    </span>
+                  ))}
+                </div>
+                <p className="text-sm leading-relaxed text-black/55">
+                  {t("系统根据你的 10 道偏好题计算 8 维偏好分数，并与 16 张 Soul 的权重做相似度匹配。")}
+                </p>
               </div>
-              <p className="text-sm leading-relaxed text-black/55">
-                {t("系统根据你的 10 道偏好题计算 8 维偏好分数，并与 16 张 Soul 的权重做相似度匹配。")}
-              </p>
             </section>
-
-            {interpretation && (
-              <section className="rounded-2xl border border-black/8 bg-white p-5 shadow-[0_16px_40px_rgba(0,0,0,0.04)]">
-                <h4 className="mb-2 text-sm font-semibold text-black/85">{t("Soul设定解读")}</h4>
-                <p className="line-clamp-4 text-sm leading-relaxed text-black/62">{t(interpretation)}</p>
-              </section>
-            )}
           </div>
         </div>
       ) : (
@@ -409,16 +430,18 @@ function ResultStep({
             onUseSoul();
           }}
           disabled={!soul}
-          className="inline-flex h-[50px] min-w-[168px] items-center justify-center rounded-full bg-black px-8 text-sm font-medium text-white shadow-[0_12px_28px_rgba(0,0,0,0.16)] transition-all hover:-translate-y-0.5 hover:bg-black/85 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
+          style={{ fontSize: "16px" }}
+          className="inline-flex h-[54px] min-w-[184px] items-center justify-center rounded-full bg-black px-9 font-semibold leading-none text-white shadow-[0_12px_28px_rgba(0,0,0,0.16)] transition-all hover:-translate-y-0.5 hover:bg-black/85 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
         >
           {t("使用该 Soul")}
         </button>
         <button
           type="button"
           onClick={onRetry}
-          className="inline-flex h-[50px] items-center justify-center gap-2 rounded-full border border-black/8 bg-white px-8 text-sm font-medium text-black/70 transition-all hover:-translate-y-0.5 hover:bg-black/[0.03]"
+          style={{ fontSize: "16px" }}
+          className="inline-flex h-[54px] items-center justify-center gap-2.5 rounded-full border border-black/8 bg-white px-9 font-semibold leading-none text-black/70 transition-all hover:-translate-y-0.5 hover:bg-black/[0.03]"
         >
-          <RotateCcw className="h-4 w-4" />
+          <RotateCcw className="h-[18px] w-[18px]" />
           {t("重新测试")}
         </button>
       </div>

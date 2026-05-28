@@ -100,6 +100,7 @@ export function SoulFaceCard({
       style={{
         width: isSlot ? "100%" : isLarge ? 240 : 156,
         aspectRatio: isLarge ? "240 / 338" : "112 / 157",
+        containerType: isSlot ? "inline-size" : undefined,
         background: visuals.bgUrl
           ? `url(${visuals.bgUrl}) center/cover no-repeat`
           : "#f0f0f0",
@@ -113,17 +114,23 @@ export function SoulFaceCard({
       <div className="absolute inset-x-3 bottom-3 flex flex-col gap-0.5">
         <div
           className={`text-center font-normal text-black ${
-            isLarge ? "text-[20px] leading-[1.4em]" : "text-[15px] leading-[1.4em]"
+            isLarge ? "leading-[1.4em]" : "leading-[1.25em]"
           }`}
-          style={{ fontFamily: "var(--font-chuangji)" }}
+          style={{
+            fontFamily: "var(--font-chuangji)",
+            fontSize: isLarge ? 20 : isSlot ? "clamp(10px, 13cqw, 15px)" : 15,
+          }}
         >
           {soul.displayName}
         </div>
         <p
           className={`line-clamp-2 leading-[1.5em] ${
-            isLarge ? "text-center text-[13px]" : "text-left text-[11px]"
+            isLarge ? "text-center" : "text-left"
           }`}
-          style={{ color: "rgba(0,0,0,0.7)" }}
+          style={{
+            color: "rgba(0,0,0,0.7)",
+            fontSize: isLarge ? 13 : isSlot ? "clamp(8px, 9.5cqw, 11px)" : 11,
+          }}
         >
           {soul.summary}
         </p>
