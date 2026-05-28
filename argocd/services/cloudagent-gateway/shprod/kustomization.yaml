@@ -67,6 +67,7 @@ replacements:
           - spec.loadBalancer.l7Listeners.0.domains.0.rules.1.healthCheck.httpCheckDomain
           - spec.loadBalancer.l7Listeners.0.domains.0.rules.2.healthCheck.httpCheckDomain
           - spec.loadBalancer.l7Listeners.0.domains.0.rules.3.healthCheck.httpCheckDomain
+          - spec.loadBalancer.l7Listeners.0.domains.0.rules.4.healthCheck.httpCheckDomain
   - source:
       kind: ConfigMap
       name: cloudagent-gateway-platform-values
