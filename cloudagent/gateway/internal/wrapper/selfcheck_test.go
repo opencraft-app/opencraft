@@ -19,6 +19,58 @@ func TestSelfCheckRequiresIdentity(t *testing.T) {
 	assertErrorCode(t, resp.Body.Bytes(), "identity_missing")
 }
 
+func TestReadyzAllowsUnauthenticatedProbe(t *testing.T) {
+	srv, _ := newTestServer(t, FakeWorker{})
+	resp := request(t, srv, http.MethodGet, "/readyz", "", "", nil, "")
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("readyz status=%d body=%s", resp.Code, resp.Body.String())
+	}
+	if got := resp.Body.String(); got != "ok\n" {
+		t.Fatalf("readyz body=%q", got)
+	}
+}
+
+func TestReadyzAgentSidecarRequiresWispConfig(t *testing.T) {
+	agsClient := &AGSClient{
+		apiKey:         "ags-key",
+		apiURL:         "https://api.ap-shanghai.tencentags.com",
+		domain:         "ap-shanghai.tencentags.com",
+		httpClient:     http.DefaultClient,
+		requestTimeout: time.Second,
+	}
+	worker, err := NewAgentSidecarWorker(AgentSidecarWorkerConfig{
+		Client:           agsClient,
+		OuterTemplateID:  "outer-template",
+		InnerTemplateID:  "inner-template",
+		SidecarURL:       "https://example.invalid/sidecar",
+		SidecarSHA256:    strings.Repeat("a", 64),
+		TokenHubAPIKey:   "tokenhub-key",
+		OuterRuntime:     outerRuntimeWisp,
+		WispPackageURL:   "https://example.invalid/wisp.tgz",
+		WispSMHLibraryID: "smh-library",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv, _ := newTestServer(t, worker)
+
+	resp := request(t, srv, http.MethodGet, "/readyz", "", "", nil, "")
+
+	if resp.Code != http.StatusServiceUnavailable {
+		t.Fatalf("readyz status=%d body=%s", resp.Code, resp.Body.String())
+	}
+	body := resp.Body.String()
+	for _, want := range []string{
+		"GATEWAY_WISP_SMH_ACCESS_DOMAIN is not configured",
+		"GATEWAY_WISP_SMH_LIBRARY_SECRET is not configured",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("readyz body missing %q: %s", want, body)
+		}
+	}
+}
+
 func TestSelfCheckFakeWorkerPasses(t *testing.T) {
 	srv, _ := newTestServer(t, FakeWorker{})
 	resp := request(t, srv, http.MethodGet, "/v1/selfcheck", "tenant-a", "project-a", nil, "")

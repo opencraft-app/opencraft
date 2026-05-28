@@ -52,13 +52,8 @@ spec:
                 name: gateway-runtime
           readinessProbe:
             httpGet:
-              path: /v1/models
+              path: /readyz
               port: http
-              httpHeaders:
-                - name: X-Tenant-ID
-                  value: tenant-live
-                - name: X-Project-ID
-                  value: project-live
             initialDelaySeconds: 5
             periodSeconds: 10
             timeoutSeconds: 3
@@ -70,13 +65,8 @@ spec:
             periodSeconds: 20
           startupProbe:
             httpGet:
-              path: /v1/models
+              path: /readyz
               port: http
-              httpHeaders:
-                - name: X-Tenant-ID
-                  value: tenant-live
-                - name: X-Project-ID
-                  value: project-live
             periodSeconds: 5
             timeoutSeconds: 3
             failureThreshold: 24

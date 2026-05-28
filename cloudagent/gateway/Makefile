@@ -3,6 +3,7 @@ SHELL := /bin/sh
 GO ?= go
 GOWORK ?= off
 DOCKER ?= docker
+DOCKER_COMPOSE ?= docker compose
 UPX ?= upx
 STRIP ?= strip
 
@@ -60,6 +61,10 @@ help:
 		'  publish-wisp-package             build and upload Wisp runtime package to COS' \
 		'  ci-publish-cloudagent-artifacts-shanghai build and upload sidecar + Wisp package to Shanghai COS' \
 		'  publish-sandbox-host         build and upload sandbox-host to COS as public-read' \
+		'  compose-up                   start local Docker Compose gateway in AGS mode' \
+		'  compose-up-ui                start local Docker Compose gateway + MyChat UI' \
+		'  compose-up-multi             start two local gateway processes sharing one store' \
+		'  compose-down                 stop local Docker Compose environment' \
 		'  start-agent-sidecar-server   publish sidecar if needed, then start local wrapper server' \
 		'  deploy-eksci-inplace         update Beijing EKS CI in-place without changing EIP' \
 		'  e2e-agent-sidecar           run live Beijing AGS + COS + TokenHub e2e checks' \
@@ -187,6 +192,22 @@ local-publish-cloudagent-artifacts-shanghai:
 .PHONY: publish-sandbox-host
 publish-sandbox-host:
 	../sandbox-host/scripts/publish_sandbox_host.sh
+
+.PHONY: compose-up
+compose-up:
+	$(DOCKER_COMPOSE) up --build gateway-a
+
+.PHONY: compose-up-ui
+compose-up-ui:
+	$(DOCKER_COMPOSE) --profile ui up --build gateway-a mychat
+
+.PHONY: compose-up-multi
+compose-up-multi:
+	$(DOCKER_COMPOSE) --profile multi up --build gateway-a gateway-b
+
+.PHONY: compose-down
+compose-down:
+	$(DOCKER_COMPOSE) --profile ui --profile multi down --remove-orphans
 
 .PHONY: start-agent-sidecar-server
 start-agent-sidecar-server: $(SERVER) $(CLOUDAGENT_SIDECAR_LINUX)
