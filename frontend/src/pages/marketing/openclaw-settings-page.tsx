@@ -268,13 +268,31 @@ const MemoryLimitCard = ({
         <div>
           <div className="flex items-center gap-1.5">
             <p className="text-sm font-semibold text-black/85">{title}</p>
-            <span
+            <button
+              type="button"
               aria-label={description}
-              title={description}
-              className="inline-flex h-4 w-4 items-center justify-center text-black/35"
+              className="group relative inline-flex h-4 w-4 items-center justify-center text-black/35 outline-none transition-colors hover:text-black/55 focus-visible:text-black/55"
             >
               <Info className="h-3.5 w-3.5" />
-            </span>
+              <span
+                role="tooltip"
+                className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md px-3 py-1.5 text-[11px] font-medium text-white opacity-0 shadow-[0_4px_12px_rgba(0,0,0,0.15)] transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
+                style={{ background: "rgba(0,0,0,0.85)" }}
+              >
+                {description}
+                <span
+                  className="absolute left-1/2 top-full -translate-x-1/2"
+                  style={{
+                    width: 0,
+                    height: 0,
+                    borderLeft: "5px solid transparent",
+                    borderRight: "5px solid transparent",
+                    borderTop: "5px solid rgba(0,0,0,0.85)",
+                  }}
+                  aria-hidden
+                />
+              </span>
+            </button>
           </div>
         </div>
         <span className="rounded-full bg-black/[0.05] px-2 py-1 text-xs font-medium text-black/60">
