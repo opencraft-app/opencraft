@@ -222,6 +222,39 @@ func TestWispOuterStopCommandCollectsHostDiagnosticsOnFailure(t *testing.T) {
 	}
 }
 
+func TestWispWorkspaceStopCommandRunsBarrierBeforeStop(t *testing.T) {
+	command := wispWorkspaceStopCommand(ACPSessionRuntime{
+		WispClientPath: "/tmp/cloudagent-workspace-wisp/install/bin/wispclient",
+		WispInstallDir: "/tmp/cloudagent-workspace-wisp/install",
+		WispName:       "workspace-12345678",
+	})
+	barrierIndex := strings.Index(command, "writeback-cut-barrier")
+	stopIndex := strings.Index(command, "stop \"$name\"")
+	if barrierIndex < 0 || stopIndex < 0 {
+		t.Fatalf("workspace stop command missing barrier or stop: %s", command)
+	}
+	if barrierIndex > stopIndex {
+		t.Fatalf("workspace stop command must run writeback barrier before stop: %s", command)
+	}
+	if !strings.Contains(command, "CLOUDAGENT_WISP_STOPPED") {
+		t.Fatalf("workspace stop command missing completion marker: %s", command)
+	}
+}
+
+func TestStaleRuntimeCleanupAuthFailureIsNonBlockingForRecreate(t *testing.T) {
+	err := errors.New(`stop wisp outer runtime agent-session_1: wisp stop failed runtime_id=rt_1 outer_sandbox_id=outer_1 wisp_name=agent-session_1: exit=0 exited=false stdout_bytes=0 stderr_bytes=0 error="ags http 401 op=run_command sandbox_id=outer_1 domain=ap-shanghai.tencentags.com envd_port=49983: map[code:AUTHENTICATION_FAILED message:Authentication failed]"`)
+	if !isNonBlockingStaleRuntimeCleanupError(err) {
+		t.Fatalf("expected stale auth cleanup failure to be non-blocking: %v", err)
+	}
+}
+
+func TestStaleRuntimeCleanupCheckpointFailureStillBlocksRecreate(t *testing.T) {
+	err := errors.New(`stop wisp outer runtime agent-session_1: wispclient: http 500: {"error":"juicefs-smount meta-barrier /mnt/cloudagent-wisp: checkpoint cut failed: input/output error"}`)
+	if isNonBlockingStaleRuntimeCleanupError(err) {
+		t.Fatalf("checkpoint failure must not be ignored: %v", err)
+	}
+}
+
 func TestWispOuterPrepareScriptPropagatesLitestreamTrace(t *testing.T) {
 	script := wispOuterPrepareScript()
 	for _, want := range []string{
@@ -232,6 +265,27 @@ func TestWispOuterPrepareScriptPropagatesLitestreamTrace(t *testing.T) {
 	} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("prepare script missing %q: %s", want, script)
+		}
+	}
+}
+
+func TestWispOuterPrepareScriptUsesFlattenedEROFSRootfs(t *testing.T) {
+	if !strings.HasSuffix(defaultWispPackageURL, ".erofs") {
+		t.Fatalf("default Wisp package must be the flattened EROFS artifact, got %q", defaultWispPackageURL)
+	}
+	script := wispOuterPrepareScript()
+	for _, want := range []string{
+		`*.erofs) pkg_format="${pkg_format:-erofs}"`,
+		`sudo -n mount -t erofs -o loop,ro "$pkg" "$install"`,
+		`LOWER_SYSTEM_BASE: projectRoot + "/assets/rootfs/rootfs"`,
+		`BASE_ROOTFS_DIR: projectRoot + "/assets/rootfs/rootfs"`,
+		`BASE_ROOTFS_IMG: ""`,
+		`export BASE_ROOTFS_DIR="$install/assets/rootfs/rootfs"`,
+		`export BASE_ROOTFS_IMG=""`,
+		`export PATH="$install/assets/bin/e2fsprogs/bin:$PATH"`,
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("flattened EROFS prepare script missing %q: %s", want, script)
 		}
 	}
 }

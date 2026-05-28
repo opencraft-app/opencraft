@@ -3,6 +3,7 @@ SHELL := /bin/sh
 GO ?= go
 GOWORK ?= off
 DOCKER ?= docker
+DOCKER_COMPOSE ?= docker compose
 UPX ?= upx
 STRIP ?= strip
 
@@ -57,10 +58,18 @@ help:
 		'  init-cloudagent-signing-key      create local Ed25519 release key in ignored .env and print trusted keys JSON' \
 		'  signupload-cloudagent-sidecar    build, sign, upload sidecar and print registry JSON' \
 		'  ci-signupload-cloudagent-sidecar-shanghai build, sign, upload sidecar to Shanghai COS for CI' \
+		'  publish-wisp-package             build and upload Wisp runtime package to COS' \
+		'  ci-publish-cloudagent-artifacts-shanghai build and upload sidecar + Wisp package to Shanghai COS' \
 		'  publish-sandbox-host         build and upload sandbox-host to COS as public-read' \
+		'  compose-up                   start local Docker Compose gateway in AGS mode' \
+		'  compose-up-ui                start local Docker Compose gateway + MyChat UI' \
+		'  compose-up-multi             start two local gateway processes sharing one store' \
+		'  compose-down                 stop local Docker Compose environment' \
 		'  start-agent-sidecar-server   publish sidecar if needed, then start local wrapper server' \
 		'  deploy-eksci-inplace         update Beijing EKS CI in-place without changing EIP' \
 		'  e2e-agent-sidecar           run live Beijing AGS + COS + TokenHub e2e checks' \
+		'  e2e-session-run-lease-multiprocess run multi-process ACP session run lease e2e' \
+		'  e2e-workspace-lease-multiprocess legacy alias for session run lease e2e' \
 		'  server                       build local wrapper server' \
 		'  test                         run Go tests' \
 		'  clean                        remove dist/'
@@ -168,9 +177,37 @@ signupload-cloudagent-sidecar: $(CLOUDAGENT_SIDECAR_LINUX)
 ci-signupload-cloudagent-sidecar-shanghai:
 	./scripts/ci_signupload_cloudagent_sidecar_shanghai.sh
 
+.PHONY: publish-wisp-package
+publish-wisp-package:
+	./scripts/publish_cloudagent_wisp_package.sh
+
+.PHONY: ci-publish-cloudagent-artifacts-shanghai
+ci-publish-cloudagent-artifacts-shanghai:
+	./scripts/ci_publish_cloudagent_artifacts_shanghai.sh
+
+.PHONY: local-publish-cloudagent-artifacts-shanghai
+local-publish-cloudagent-artifacts-shanghai:
+	./scripts/local_publish_cloudagent_artifacts_shanghai.sh
+
 .PHONY: publish-sandbox-host
 publish-sandbox-host:
 	../sandbox-host/scripts/publish_sandbox_host.sh
+
+.PHONY: compose-up
+compose-up:
+	$(DOCKER_COMPOSE) up --build gateway-a
+
+.PHONY: compose-up-ui
+compose-up-ui:
+	$(DOCKER_COMPOSE) --profile ui up --build gateway-a mychat
+
+.PHONY: compose-up-multi
+compose-up-multi:
+	$(DOCKER_COMPOSE) --profile multi up --build gateway-a gateway-b
+
+.PHONY: compose-down
+compose-down:
+	$(DOCKER_COMPOSE) --profile ui --profile multi down --remove-orphans
 
 .PHONY: start-agent-sidecar-server
 start-agent-sidecar-server: $(SERVER) $(CLOUDAGENT_SIDECAR_LINUX)
@@ -186,6 +223,13 @@ deploy-eksci-inplace:
 .PHONY: e2e-agent-sidecar
 e2e-agent-sidecar:
 	./scripts/e2e_agent_sidecar.sh
+
+.PHONY: e2e-session-run-lease-multiprocess
+e2e-session-run-lease-multiprocess:
+	./scripts/e2e_session_run_lease_multiprocess.sh
+
+.PHONY: e2e-workspace-lease-multiprocess
+e2e-workspace-lease-multiprocess: e2e-session-run-lease-multiprocess
 
 .PHONY: clean
 clean:

@@ -15,15 +15,18 @@ fi
 usage() {
   cat <<'EOF'
 Usage:
-  scripts/update-sandbox-pool-image.sh <image-id> [pool-id]
+  scripts/update-sandbox-pool-image.sh <image-id> [pool-id ...]
 
 Examples:
   scripts/update-sandbox-pool-image.sh img-xxxxxxxx
   scripts/update-sandbox-pool-image.sh img-xxxxxxxx pool-c3
+  scripts/update-sandbox-pool-image.sh img-xxxxxxxx pool-c2 pool-c3 pool-c4 pool-c5
 
 Environment:
-  SANDBOX_API_BASE       Default: http://sandbox-api.sandbox.svc.cluster.local
+  SANDBOX_API_BASE       Default: http://sandbox-api.sandbox.svc.cluster.local/internal
   MARK_CLEAN_AS_DRY      Default: true
+  POOL_PATCH_INTERVAL_SECONDS
+                         Default: 20. Sleep between pool patches.
   ENV_FILE               Optional .env file path. Default: <repo>/.env
 EOF
 }
@@ -34,9 +37,10 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
 fi
 
 IMAGE_ID="${1:-}"
-POOL_ID="${2:-}"
-API_BASE="${SANDBOX_API_BASE:-http://sandbox-api.sandbox.svc.cluster.local}"
+shift || true
+API_BASE="${SANDBOX_API_BASE:-http://sandbox-api.sandbox.svc.cluster.local/internal}"
 MARK_CLEAN_AS_DRY="${MARK_CLEAN_AS_DRY:-true}"
+POOL_PATCH_INTERVAL_SECONDS="${POOL_PATCH_INTERVAL_SECONDS:-20}"
 
 if [[ -z "${IMAGE_ID}" ]]; then
   echo "missing image id" >&2
@@ -87,8 +91,21 @@ patch_pool() {
   fi
 }
 
-if [[ -n "${POOL_ID}" ]]; then
-  patch_pool "${POOL_ID}"
+patch_pools() {
+  local first=1
+  local id
+  for id in "$@"; do
+    if [[ "${first}" -eq 0 && "${POOL_PATCH_INTERVAL_SECONDS}" != "0" ]]; then
+      echo "waiting ${POOL_PATCH_INTERVAL_SECONDS}s before next pool"
+      sleep "${POOL_PATCH_INTERVAL_SECONDS}"
+    fi
+    first=0
+    patch_pool "${id}"
+  done
+}
+
+if [[ "$#" -gt 0 ]]; then
+  patch_pools "$@"
   exit 0
 fi
 
@@ -99,6 +116,4 @@ if [[ "${#POOL_IDS[@]}" -eq 0 ]]; then
 fi
 
 echo "patching all pools: ${POOL_IDS[*]}"
-for id in "${POOL_IDS[@]}"; do
-  patch_pool "${id}"
-done
+patch_pools "${POOL_IDS[@]}"

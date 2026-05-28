@@ -50,6 +50,86 @@ func TestStoreWorkspaceLeaseAcquireConflictRelease(t *testing.T) {
 	}
 }
 
+func TestStoreRuntimeResourceLedgerPersistsPendingSandboxes(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	store, err := NewStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expiresAt := time.Now().UTC().Add(time.Minute).Truncate(time.Second)
+	if err := store.UpsertRuntimeResource(ctx, RuntimeResourceRecord{
+		SessionID:      "session_resource",
+		Generation:     3,
+		RuntimeID:      "runtime_3",
+		OwnerID:        "gateway_a",
+		SandboxBackend: "ags",
+		State:          "creating",
+		InnerSandboxID: "inner_1",
+		ExpiresAt:      expiresAt,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpsertRuntimeResource(ctx, RuntimeResourceRecord{
+		SessionID:      "session_resource",
+		Generation:     3,
+		RuntimeID:      "runtime_3",
+		OwnerID:        "gateway_a",
+		SandboxBackend: "ags",
+		State:          "creating",
+		OuterSandboxID: "outer_1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.MarkRuntimeResourceState(ctx, "session_resource", 3, "bound", ""); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := NewStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, ok, err := reopened.LoadRuntimeResource(ctx, "session_resource", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("runtime resource not loaded")
+	}
+	if loaded.State != "bound" ||
+		loaded.OwnerID != "gateway_a" ||
+		loaded.SandboxBackend != "ags" ||
+		loaded.RuntimeID != "runtime_3" ||
+		loaded.OuterSandboxID != "outer_1" ||
+		loaded.InnerSandboxID != "inner_1" {
+		t.Fatalf("unexpected runtime resource: %+v", loaded)
+	}
+	if !loaded.ExpiresAt.Equal(expiresAt) {
+		t.Fatalf("expires_at mismatch: got %s want %s", loaded.ExpiresAt, expiresAt)
+	}
+	expiredAt := time.Now().UTC().Add(-time.Minute).Truncate(time.Second)
+	if err := reopened.UpsertRuntimeResource(ctx, RuntimeResourceRecord{
+		SessionID:      "session_stale",
+		Generation:     1,
+		RuntimeID:      "runtime_stale",
+		OwnerID:        "gateway_a",
+		SandboxBackend: "ags",
+		State:          "failed",
+		OuterSandboxID: "outer_stale",
+		InnerSandboxID: "inner_stale",
+		ExpiresAt:      expiredAt,
+		LastError:      "boot failed",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	stale, err := reopened.ListStaleRuntimeResources(ctx, time.Now().UTC(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stale) != 1 || stale[0].SessionID != "session_stale" || stale[0].OuterSandboxID != "outer_stale" || stale[0].InnerSandboxID != "inner_stale" {
+		t.Fatalf("unexpected stale resources: %+v", stale)
+	}
+}
+
 func TestStoreWorkspaceAuthoritativeMetadataAndLifecycle(t *testing.T) {
 	ctx := context.Background()
 	store, err := NewStore(t.TempDir())

@@ -2,6 +2,7 @@ package wrapper
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -75,6 +76,10 @@ func (g *ACPGateway) startActiveRuntimeRefreshHeartbeat(ctx context.Context, ses
 			case <-timer.C:
 				if err := g.refreshActivePromptRuntime(sessionID, run, "active_prompt"); err != nil {
 					fmt.Fprintf(os.Stderr, "timeline source=server event=acp_runtime_refresh_active_failed session_id=%s generation=%d job_id=%s error=%s\n", sessionID, run.Generation, run.JobID, quoteServerField(err.Error()))
+					if isSessionRunLeaseLostError(err) {
+						run.interrupt("session_run_lease_lost")
+						return
+					}
 				}
 				timer.Reset(interval)
 			}
@@ -106,17 +111,110 @@ func (g *ACPGateway) refreshActivePromptRuntime(sessionID string, run *acpPrompt
 func (g *ACPGateway) refreshRuntimeNow(sessionID string, generation int64, runtime ACPSessionRuntime, reason string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), acpRuntimeRefreshTimeout())
 	defer cancel()
-	if err := g.runtimeManager.RefreshSessionRuntime(ctx, runtime, sessionID); err != nil {
-		g.mu.Lock()
-		if current, ok := g.sessions[sessionID]; ok && current.RuntimeGeneration == generation {
-			current.LastRuntimeError = err.Error()
-			g.persistSession(current)
-		}
-		g.mu.Unlock()
+	refreshed, err := g.renewSessionRunLease(ctx, sessionID, generation, runtime)
+	if err != nil {
+		g.recordRuntimeRefreshError(sessionID, generation, err)
 		return err
 	}
-	fmt.Fprintf(os.Stderr, "timeline source=server event=acp_runtime_refresh_done reason=%s session_id=%s generation=%d outer_sandbox_id=%s inner_sandbox_id=%s\n", quoteTimelineField(reason), sessionID, generation, runtime.OuterSandboxID, runtime.InnerSandboxID)
+	if err := g.runtimeManager.RefreshSessionRuntime(ctx, refreshed, sessionID); err != nil {
+		g.recordRuntimeRefreshError(sessionID, generation, err)
+		return err
+	}
+	fmt.Fprintf(os.Stderr, "timeline source=server event=acp_runtime_refresh_done reason=%s session_id=%s generation=%d outer_sandbox_id=%s inner_sandbox_id=%s session_run_lease_until=%s\n", quoteTimelineField(reason), sessionID, generation, refreshed.OuterSandboxID, refreshed.InnerSandboxID, formatOptionalTime(refreshed.WispLeaseUntil))
 	return nil
+}
+
+func (g *ACPGateway) recordRuntimeRefreshError(sessionID string, generation int64, err error) {
+	g.mu.Lock()
+	if current, ok := g.sessions[sessionID]; ok && current.RuntimeGeneration == generation {
+		current.LastRuntimeError = err.Error()
+		g.persistSession(current)
+	}
+	g.mu.Unlock()
+}
+
+func (g *ACPGateway) renewSessionRunLease(ctx context.Context, sessionID string, generation int64, runtime ACPSessionRuntime) (ACPSessionRuntime, error) {
+	if g.workspaceService == nil {
+		return runtime, nil
+	}
+	ttl := envDurationSeconds("GATEWAY_WISP_WORKSPACE_LEASE_TTL_SECONDS", defaultWorkspaceLeaseTTL)
+	refreshed := runtime
+	renewed := false
+	renewedByKey := map[string]WorkspaceLease{}
+	renew := func(label string, workspaceID string, runtimeID string, leaseID string, fence int64, expiresAt time.Time) (WorkspaceLease, bool, error) {
+		if workspaceID == "" || runtimeID == "" || leaseID == "" || fence == 0 {
+			return WorkspaceLease{}, false, nil
+		}
+		key := workspaceID + "\x00" + runtimeID + "\x00" + leaseID
+		if lease, ok := renewedByKey[key]; ok {
+			return lease, true, nil
+		}
+		lease, err := g.workspaceService.RenewLease(ctx, WorkspaceLease{
+			WorkspaceID:  workspaceID,
+			RuntimeID:    runtimeID,
+			LeaseID:      leaseID,
+			FencingToken: fence,
+			ExpiresAt:    expiresAt,
+		}, ttl)
+		if err != nil {
+			return WorkspaceLease{}, false, fmt.Errorf("renew %s session run lease %s: %w", label, workspaceID, err)
+		}
+		renewedByKey[key] = lease
+		fmt.Fprintf(os.Stderr, "timeline source=server event=acp_runtime_session_run_lease_renewed session_id=%s generation=%d label=%s workspace_id=%s runtime_id=%s lease_id=%s expires_at=%s\n", sessionID, generation, quoteTimelineField(label), workspaceID, runtimeID, leaseID, lease.ExpiresAt.Format(time.RFC3339Nano))
+		return lease, true, nil
+	}
+	if lease, ok, err := renew("session_run", firstNonEmpty(runtime.WispWorkspaceID, runtime.WispSMHSpaceID, runtime.WorkspaceID), runtime.RuntimeID, runtime.WispLeaseID, runtime.WispLeaseFence, runtime.WispLeaseUntil); err != nil {
+		return runtime, err
+	} else if ok {
+		refreshed.WispLeaseID = lease.LeaseID
+		refreshed.WispLeaseFence = lease.FencingToken
+		refreshed.WispLeaseUntil = lease.ExpiresAt
+		renewed = true
+	}
+	if !renewed {
+		return runtime, nil
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	current, ok := g.sessions[sessionID]
+	if !ok || current.RuntimeGeneration != generation {
+		return refreshed, nil
+	}
+	if current.Runtime.WispLeaseID == runtime.WispLeaseID && current.Runtime.WispLeaseFence == runtime.WispLeaseFence {
+		current.Runtime.WispLeaseID = refreshed.WispLeaseID
+		current.Runtime.WispLeaseFence = refreshed.WispLeaseFence
+		current.Runtime.WispLeaseUntil = refreshed.WispLeaseUntil
+	}
+	current.UpdatedAt = time.Now().UTC()
+	g.persistSession(current)
+	return current.Runtime, nil
+}
+
+func isSessionRunLeaseLostError(err error) bool {
+	return errors.Is(err, ErrRuntimeOwnershipHeld) || errors.Is(err, ErrWorkspaceLeaseHeld)
+}
+
+func (g *ACPGateway) validatePromptSessionRunLease(scope Scope, sessionID string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), acpRuntimeRefreshTimeout())
+	defer cancel()
+	g.mu.Lock()
+	session, ok := g.sessions[sessionID]
+	if !ok {
+		g.mu.Unlock()
+		return fmt.Errorf("session not found")
+	}
+	if !sameScope(scope, session.Scope) {
+		g.mu.Unlock()
+		return fmt.Errorf("session is outside caller scope")
+	}
+	runtime := session.Runtime
+	generation := session.RuntimeGeneration
+	g.mu.Unlock()
+	_, err := g.renewSessionRunLease(ctx, sessionID, generation, runtime)
+	if err != nil {
+		g.recordRuntimeRefreshError(sessionID, generation, err)
+	}
+	return err
 }
 
 func (g *ACPGateway) noteRuntimeActivity(scope Scope, sessionID string, generation int64, reason string) {

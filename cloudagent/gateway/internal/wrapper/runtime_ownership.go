@@ -11,6 +11,12 @@ const defaultRuntimeOwnershipTTL = 10 * time.Minute
 
 var ErrRuntimeOwnershipHeld = errors.New("runtime ownership held")
 
+// SessionRunLease is the gateway-level single-writer lease for one ACP session
+// runtime group. In v1 it protects both outer and inner runtime hosts.
+type SessionRunLease = RuntimeOwnershipLease
+
+type SessionRunLeaseStore = RuntimeOwnershipStore
+
 type RuntimeOwnershipStore interface {
 	AcquireRuntimeOwnership(ctx context.Context, req RuntimeOwnershipRequest) (RuntimeOwnershipLease, error)
 	RenewRuntimeOwnership(ctx context.Context, lease RuntimeOwnershipLease, ttl time.Duration) error

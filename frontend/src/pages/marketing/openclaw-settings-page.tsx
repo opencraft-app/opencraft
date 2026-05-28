@@ -12,8 +12,10 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowRight,
   BrainCircuit,
+  CalendarClock,
   ChevronDown,
   Check,
+  Info,
   MessageCircle,
   MessageSquare,
   Loader2,
@@ -66,7 +68,10 @@ import {
   type IFeatureFlags,
   type IProductConfig,
 } from "@tencent/tea-sdk-lightclaw";
-import { createMonoDebugExecAdapter } from "@/pages/marketing/openclaw-tat-adapter";
+import {
+  createMonoDebugExecAdapter,
+  LIGHTVELA_SKIP_HERMES_PROVIDER_LIST_COMMAND,
+} from "@/pages/marketing/openclaw-tat-adapter";
 import { createLightVelaCommandExecutor } from "@/pages/marketing/openclaw-command-executor";
 import { installOpenClawConsoleHelpers } from "@/pages/marketing/openclaw-console-helpers";
 import {
@@ -78,6 +83,7 @@ import {
   type HermesMemorySnapshot,
 } from "@/pages/marketing/openclaw-memory";
 import { BuddyPanel } from "@/pages/marketing/openclaw-buddy-panel";
+import { AutomationsPanel } from "@/pages/marketing/openclaw-automations-panel";
 import { findCompletedCreatingBot, getOpenClawCreateLimitMessage } from "@/pages/marketing/openclaw-create-availability";
 import {
   getRestartBlockReason,
@@ -208,9 +214,11 @@ const SettingsNavbar = () => {
   );
 };
 
-/* ─── 实例配置子页面类型（通道 / 模型 / 技能 / 人设 / 对话 / 记忆，放在单个 bot 内部切换） ─── */
+/* ─── 实例配置子页面类型（通道 / 模型 / 技能 / 人设 / 自动任务 / 记忆 / 对话，放在单个 bot 内部切换） ─── */
 
-type SettingsSectionId = "channel" | "model" | "skill" | "buddy" | "chat" | "memory";
+type SettingsSectionId = "channel" | "model" | "skill" | "buddy" | "automations" | "memory" | "chat";
+
+const SHOW_AGENTCHAT_ENTRY = true;
 
 /* ─── Section Card Wrapper ─── */
 
@@ -242,11 +250,13 @@ export const _SectionCard = ({ title, icon, headerRight, children }: { title: st
 
 const MemoryLimitCard = ({
   title,
+  description,
   used,
   limit,
   t,
 }: {
   title: string;
+  description: string;
   used: number;
   limit: number;
   t: (zh: string, options?: Record<string, unknown>) => string;
@@ -256,7 +266,16 @@ const MemoryLimitCard = ({
     <div className="rounded-lg border border-black/[0.06] bg-white p-4 shadow-[0_8px_28px_rgba(15,23,42,0.04)]">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold text-black/85">{title}</p>
+          <div className="flex items-center gap-1.5">
+            <p className="text-sm font-semibold text-black/85">{title}</p>
+            <span
+              aria-label={description}
+              title={description}
+              className="inline-flex h-4 w-4 items-center justify-center text-black/35"
+            >
+              <Info className="h-3.5 w-3.5" />
+            </span>
+          </div>
         </div>
         <span className="rounded-full bg-black/[0.05] px-2 py-1 text-xs font-medium text-black/60">
           {percent}%
@@ -370,13 +389,15 @@ const MemoryPanel = ({
         <>
           <div className="grid gap-3 md:grid-cols-2">
             <MemoryLimitCard
-              title={t("记忆字符限额")}
+              title={t("记忆统计")}
+              description={t("对应文件：{{path}}", { path: "MEMORY.md" })}
               used={snapshot.memoryChars}
               limit={snapshot.memoryCharLimit}
               t={t}
             />
             <MemoryLimitCard
-              title={t("用户字符限额")}
+              title={t("用户画像统计")}
+              description={t("对应文件：{{path}}", { path: "USER.md" })}
               used={snapshot.userChars}
               limit={snapshot.userCharLimit}
               t={t}
@@ -393,7 +414,7 @@ const MemoryPanel = ({
             <div className="mb-3 inline-flex rounded-lg bg-black/[0.04] p-1">
               {([
                 ["memory", t("记忆")],
-                ["user", t("用户")],
+                ["user", t("用户画像")],
               ] as const).map(([tab, label]) => {
                 const isActive = activeTab === tab;
                 return (
@@ -2577,7 +2598,18 @@ const getBotStatusLabel = (status: OpenClawBot["status"]) => {
 
 /* ─── Main Settings Page ─── */
 
-const hermesScripts = createLightClawScripts({ regionShortName: "gz", agentType: "hermes" }).hermes;
+const lightVelaHermesScripts = createLightClawScripts({ regionShortName: "gz", agentType: "hermes" });
+const channelOnlyHermesScripts = {
+  ...lightVelaHermesScripts,
+  hermes: {
+    ...lightVelaHermesScripts.hermes,
+    model: {
+      ...lightVelaHermesScripts.hermes.model,
+      getListCommand: () => LIGHTVELA_SKIP_HERMES_PROVIDER_LIST_COMMAND,
+    },
+  },
+};
+const hermesScripts = lightVelaHermesScripts.hermes;
 const hermesGatewayCommands = hermesScripts.gateway;
 const hermesModelCommands = hermesScripts.model;
 
@@ -3347,7 +3379,7 @@ export const OpenClawSettingsPage = () => {
               <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("恢复初始设置")}</h3>
             </div>
             <p style={{ color: "var(--tea-color-text-secondary, #666)", fontSize: "14px", lineHeight: 1.6, marginBottom: "20px" }}>
-              {t("将保留当前工作空间、记忆和定时任务，并初始化配置文件，模型相关配置不会保留。")}
+              {t("将保留当前工作空间、记忆和自动任务，并初始化配置文件，模型相关配置不会保留。")}
             </p>
             {resetError && (
               <pre
@@ -3517,10 +3549,13 @@ export const OpenClawSettingsPage = () => {
                 { id: "model", label: t("模型"), icon: <BrainCircuit className="h-4 w-4" /> },
                 { id: "skill", label: t("技能"), icon: <Wand2 className="h-4 w-4" /> },
                 ...(!isGlobal
-                  ? [{ id: "buddy" as const, label: t("人设"), icon: <UserRound className="h-4 w-4" />, badge: "NEW" }]
+                  ? [{ id: "buddy" as const, label: t("人设"), icon: <UserRound className="h-4 w-4" /> }]
                   : []),
-                { id: "chat", label: t("对话"), icon: <MessageSquare className="h-4 w-4" /> },
-                { id: "memory", label: t("记忆"), icon: <Database className="h-4 w-4" /> },
+                { id: "automations", label: t("自动任务"), icon: <CalendarClock className="h-4 w-4" />, badge: "NEW" },
+                { id: "memory", label: t("记忆"), icon: <Database className="h-4 w-4" />, badge: "NEW" },
+                ...(SHOW_AGENTCHAT_ENTRY
+                  ? [{ id: "chat" as const, label: t("对话"), icon: <MessageSquare className="h-4 w-4" />, badge: "NEW" }]
+                  : []),
               ];
               const isRestartDisabled = isActiveBotRestarting || activeBot.status !== "running";
               const hasViewedChannel = viewedChannelBotIds.has(activeBot.id);
@@ -3725,6 +3760,7 @@ export const OpenClawSettingsPage = () => {
                             <ChannelPanel
                               instance={sdkInstance}
                               regionShortName={sdkRegionShortName}
+                              scriptCommands={channelOnlyHermesScripts}
                               featureFlags={sdkFeatureFlags}
                               productConfig={sdkProductConfig}
                             />
@@ -3747,6 +3783,9 @@ export const OpenClawSettingsPage = () => {
                           )}
                           {activeSection === "buddy" && !isGlobal && (
                             <BuddyPanel botId={activeBot.id} />
+                          )}
+                          {activeSection === "automations" && (
+                            <AutomationsPanel botId={activeBot.id} />
                           )}
                           {activeSection === "chat" && (
                             <div className="h-[clamp(516px,calc(100vh-220px),960px)] overflow-hidden rounded-lg border border-black/[0.08] bg-white [&>*]:h-full">

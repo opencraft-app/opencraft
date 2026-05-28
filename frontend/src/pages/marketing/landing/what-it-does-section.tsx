@@ -18,7 +18,7 @@ function buildTagRows(t: ReturnType<typeof useT>): TagItem[][] {
       { icon: `${TAG_ICON_BASE}/analysis.png`, label: t("行业分析") },
       { icon: `${TAG_ICON_BASE}/email.png`, label: t("处理邮件") },
       { icon: `${TAG_ICON_BASE}/health.png`, label: t("健康追踪") },
-      { icon: `${TAG_ICON_BASE}/timer.png`, label: t("定时任务") },
+      { icon: `${TAG_ICON_BASE}/timer.png`, label: t("自动任务") },
     ],
     [
       { icon: `${TAG_ICON_BASE}/product-compare.png`, label: t("选品竞品") },

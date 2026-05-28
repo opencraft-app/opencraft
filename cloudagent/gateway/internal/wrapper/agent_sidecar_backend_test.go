@@ -213,6 +213,18 @@ func TestWorkspaceWispJFSPrefixIsWorkspaceScoped(t *testing.T) {
 	}
 }
 
+func TestWorkspaceIDForRuntimePrefersStableSessionWorkspace(t *testing.T) {
+	req := ACPSessionRuntimeStartRequest{SessionID: "session_stable"}
+	runtime := ACPSessionRuntime{
+		WorkspaceID:     defaultWorkspaceID(req),
+		WispWorkspaceID: "space_later",
+		WispSMHSpaceID:  "space_later",
+	}
+	if got := workspaceIDForRuntime(runtime, req); got != "workspace_session_stable" {
+		t.Fatalf("workspace id should stay session-scoped after SMH space resolves, got %q", got)
+	}
+}
+
 func TestWispOuterRuntimeWrapsCommandWithEnvironment(t *testing.T) {
 	runtime := ACPSessionRuntime{
 		OuterRuntime:   outerRuntimeWisp,
@@ -236,6 +248,27 @@ func TestWispOuterRuntimeWrapsCommandWithEnvironment(t *testing.T) {
 	}
 	if strings.Contains(command, "bad-name") {
 		t.Fatalf("wrapped command leaked invalid env name: %s", command)
+	}
+}
+
+func TestWispOuterRuntimeWrapsControlCommandWithoutStream(t *testing.T) {
+	runtime := ACPSessionRuntime{
+		OuterRuntime:   outerRuntimeWisp,
+		WispName:       "agent-session",
+		WispClientPath: "/tmp/wisp/install/bin/wispclient",
+	}
+	command := runtime.wrapWispShellCommandBuffered("agent client session-status", nil)
+	for _, want := range []string{
+		"'/tmp/wisp/install/bin/wispclient'",
+		"exec 'agent-session'",
+		"agent client session-status",
+	} {
+		if !strings.Contains(command, want) {
+			t.Fatalf("buffered command missing %q: %s", want, command)
+		}
+	}
+	if strings.Contains(command, "--stream") {
+		t.Fatalf("buffered control command should not use stream mode: %s", command)
 	}
 }
 

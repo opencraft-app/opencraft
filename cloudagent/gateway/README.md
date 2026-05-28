@@ -19,6 +19,8 @@
 
 完整接入文档见 [docs/acp-backend.md](docs/acp-backend.md)。
 
+本地 Docker Compose 开发/测试环境见 [docs/local-docker-compose.md](docs/local-docker-compose.md)。Compose 只保留真实 AGS 路径，默认跑 `agent_injected`。
+
 除了 OpenAI 兼容的 `/v1/responses` 之外，wrapper 现在也暴露 ACP over WebSocket：
 
 - `/acp`: raw JSON-RPC 2.0 over WebSocket，不带额外 envelope
@@ -170,14 +172,17 @@ make e2e-agent-sidecar
 make publish-cloudagent-sidecar
 ```
 
-如果要走 CI 的上海 COS 签名发布路径，使用独立流水线 `.ci/cloudagent-agent-artifact.yml`。
-它只构建 Rust Agent artifact，不发布 gateway 服务；流程是：
+如果要走 CI 的上海 COS 发布路径，使用独立流水线 `.ci/cloudagent-agent-artifact.yml`。
+它构建 CloudAgent runtime artifacts，不发布 gateway 服务；流程是：
 
 - Docker 构建 `cloudagent-sidecar-linux-amd64`
 - Docker 构建 `cloudagent-agent-sign-linux-amd64`
 - 使用 Ed25519 detached `.sig` 签名
 - 上传 binary 和 `.sig` 到 `cloudagent-sidecar-shanghai-1388575217 / ap-shanghai`
 - 输出 `cloudagent-agent-version-registry.json`
+- 从 `cloudagent/wisp` 构建 Wisp package
+- 上传 Wisp package 到同一个上海 COS bucket
+- 输出 `cloudagent-workspace-version-registry.json` 和合并后的 `cloudagent-artifacts-registry.json`
 
 CI 需要配置这些 settings：
 
@@ -188,12 +193,30 @@ CI 需要配置这些 settings：
 本地 dry-run 可以用：
 
 ```bash
-CLOUDAGENT_SIGNUPLOAD_DRY_RUN=1 \
+CLOUDAGENT_ARTIFACTS_DRY_RUN=1 \
   CLOUDAGENT_AGENT_COS_SECRET_ID=fake \
   CLOUDAGENT_AGENT_COS_SECRET_KEY=fake \
   CLOUDAGENT_AGENT_RELEASE_ED25519_SEED_B64=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= \
-  make ci-signupload-cloudagent-sidecar-shanghai
+  CLOUDAGENT_WISP_PACKAGE_ARTIFACT=/path/to/wisp-linux-amd64-test.tar.gz \
+  make ci-publish-cloudagent-artifacts-shanghai
 ```
+
+发给别人本地真实发布时，使用这个入口：
+
+```bash
+cloudagent/gateway/scripts/local_publish_cloudagent_artifacts_shanghai.sh \
+  --env-file /path/to/cloudagent-release.env
+```
+
+`cloudagent-release.env` 只需要放发布密钥，不要提交：
+
+```bash
+CLOUDAGENT_AGENT_COS_SECRET_ID=AKID...
+CLOUDAGENT_AGENT_COS_SECRET_KEY=...
+CLOUDAGENT_AGENT_RELEASE_ED25519_SEED_B64=...
+```
+
+这个入口和 CI 走同一个构建、签名、上传脚本；默认上传到上海桶。
 
 如果你想让本地服务也走这条自动发布流程，直接跑：
 

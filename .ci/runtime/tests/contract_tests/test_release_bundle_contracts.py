@@ -232,7 +232,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(approval_stage.get("if"), prod_edgeone_if)
         self.assertEqual(fanout_stage.get("if"), prod_edgeone_if)
         self.assertEqual(approval_reviews.get("name"), "确认发起 frontend EdgeOne 正式站发布候选")
-        self.assertEqual(approval_reviews.get("reviewers"), ["skipzhang"])
+        self.assertEqual(approval_reviews.get("reviewers"), ["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang"])
         self.assertIn("本阶段确认是否允许本次 frontend 构建发起 EdgeOne 正式站发布候选", workflow_text)
         self.assertIn("本阶段只控制是否允许从本次构建发起生产发布候选", workflow_text)
         self.assertIn("自动发起 frontend EdgeOne 正式站发布候选", workflow_text)

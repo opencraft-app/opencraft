@@ -66,6 +66,8 @@ func routeForLog(r *http.Request) string {
 	switch {
 	case path == "/healthz":
 		return "GET /healthz"
+	case path == "/readyz":
+		return "GET /readyz"
 	case path == "/v1/models":
 		return "GET /v1/models"
 	case path == "/v1/selfcheck":

@@ -1,0 +1,68 @@
+name: cloudagent-gateway
+
+services:
+  gateway-a:
+    build:
+      context: .
+      dockerfile: build/server/Dockerfile
+    image: cloudagent-gateway:local
+    env_file:
+      - path: ${CLOUDAGENT_GATEWAY_ENV_FILE:-.env.compose.local}
+        required: true
+    ports:
+      - "${GATEWAY_A_PORT:-18094}:8080"
+    environment:
+      GATEWAY_ADDR: ":8080"
+      GATEWAY_DATA_DIR: /data/gateway
+      GATEWAY_WORKER_MODE: agent_injected
+      GATEWAY_API_KEY: ${GATEWAY_API_KEY:-local-dev-key}
+      GATEWAY_DEFAULT_TENANT_ID: ${GATEWAY_DEFAULT_TENANT_ID:-tenant-local}
+      GATEWAY_DEFAULT_PROJECT_ID: ${GATEWAY_DEFAULT_PROJECT_ID:-project-local}
+      GATEWAY_ACP_RUNTIME_REFRESH_IDLE_SECONDS: ${GATEWAY_ACP_RUNTIME_REFRESH_IDLE_SECONDS:-45}
+      GATEWAY_ACP_RUNTIME_REFRESH_TIMEOUT_SECONDS: ${GATEWAY_ACP_RUNTIME_REFRESH_TIMEOUT_SECONDS:-15}
+      GATEWAY_AGS_REQUEST_TIMEOUT_SECONDS: ${GATEWAY_AGS_REQUEST_TIMEOUT_SECONDS:-300}
+    volumes:
+      - gateway-data:/data/gateway
+
+  gateway-b:
+    image: cloudagent-gateway:local
+    profiles:
+      - multi
+    build:
+      context: .
+      dockerfile: build/server/Dockerfile
+    env_file:
+      - path: ${CLOUDAGENT_GATEWAY_ENV_FILE:-.env.compose.local}
+        required: true
+    ports:
+      - "${GATEWAY_B_PORT:-18095}:8080"
+    environment:
+      GATEWAY_ADDR: ":8080"
+      GATEWAY_DATA_DIR: /data/gateway
+      GATEWAY_WORKER_MODE: agent_injected
+      GATEWAY_API_KEY: ${GATEWAY_API_KEY:-local-dev-key}
+      GATEWAY_DEFAULT_TENANT_ID: ${GATEWAY_DEFAULT_TENANT_ID:-tenant-local}
+      GATEWAY_DEFAULT_PROJECT_ID: ${GATEWAY_DEFAULT_PROJECT_ID:-project-local}
+      GATEWAY_ACP_RUNTIME_REFRESH_IDLE_SECONDS: ${GATEWAY_ACP_RUNTIME_REFRESH_IDLE_SECONDS:-45}
+      GATEWAY_ACP_RUNTIME_REFRESH_TIMEOUT_SECONDS: ${GATEWAY_ACP_RUNTIME_REFRESH_TIMEOUT_SECONDS:-15}
+      GATEWAY_AGS_REQUEST_TIMEOUT_SECONDS: ${GATEWAY_AGS_REQUEST_TIMEOUT_SECONDS:-300}
+    volumes:
+      - gateway-data:/data/gateway
+
+  mychat:
+    image: node:22-bookworm-slim
+    profiles:
+      - ui
+    working_dir: /app
+    command: sh -lc "corepack enable && pnpm install --frozen-lockfile && pnpm dev --host 0.0.0.0 --port 5173"
+    ports:
+      - "${MYCHAT_PORT:-5173}:5173"
+    volumes:
+      - ../mychat:/app
+      - mychat-node-modules:/app/node_modules
+      - mychat-pnpm-store:/root/.local/share/pnpm/store
+
+volumes:
+  gateway-data:
+  mychat-node-modules:
+  mychat-pnpm-store:

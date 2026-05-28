@@ -22,7 +22,7 @@ stages:
       reviews:
         flows:
           - name: frontend EdgeOne 正式发布确认
-            reviewers: [ "skipzhang" ]
+            reviewers: [ "skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang" ]
         description: |
           本次流水线会发布单个 frontend EdgeOne 正式站。
 

@@ -18,7 +18,7 @@ import (
 
 const (
 	defaultWispOuterAdminAddr = "http://127.0.0.1:8520"
-	defaultWispPackageURL     = "http://cloudagent-sidecar-shanghai-1388575217.cos.ap-shanghai.myqcloud.com/workspace/20260522/wisp-linux-amd64-20260522T181421Z-7826101eb1c5.tar.gz"
+	defaultWispPackageURL     = "https://cloudagent-sidecar-shanghai-1388575217.cos.ap-shanghai.myqcloud.com/workspace/20260528/wisp-linux-amd64-20260528T061826Z-8ceda87c563b.erofs"
 )
 
 type agentWispSMHSpace struct {
@@ -68,7 +68,7 @@ func (w *AgentSidecarWorker) prepareWispOuterRuntimeWithSpace(ctx context.Contex
 	return w.prepareWispRuntimeWithSpace(ctx, client, sb, runtime, req, space, true)
 }
 
-func (w *AgentSidecarWorker) prepareWispRuntimeWithSpace(ctx context.Context, client *AGSClient, sb AGSSandbox, runtime ACPSessionRuntime, req ACPSessionRuntimeStartRequest, space agentWispSMHSpace, acquireLease bool) (ACPSessionRuntime, error) {
+func (w *AgentSidecarWorker) resolveWispRuntimeForSpace(ctx context.Context, runtime ACPSessionRuntime, req ACPSessionRuntimeStartRequest, space agentWispSMHSpace, acquireLease bool) (ACPSessionRuntime, error) {
 	runtime.WispName = firstNonEmpty(runtime.WispName, wispNameFromRuntime(req.SessionID))
 	runtime.WispWorkspaceID = firstNonEmpty(runtime.WispWorkspaceID, space.SpaceID)
 	runtime.WispSMHSpaceID = space.SpaceID
@@ -78,13 +78,20 @@ func (w *AgentSidecarWorker) prepareWispRuntimeWithSpace(ctx context.Context, cl
 	runtime.WispRootUpperSize = firstNonEmpty(runtime.WispRootUpperSize, w.wispRootUpperSize)
 	runtime.WispInstallDir = firstNonEmpty(runtime.WispInstallDir, path.Join("/tmp/cloudagent-wisp", req.SessionID, "install"))
 	runtime.WispClientPath = firstNonEmpty(runtime.WispClientPath, path.Join(runtime.WispInstallDir, "bin", "wispclient"))
+	if !acquireLease {
+		return runtime, nil
+	}
+	return w.acquireWispWorkspaceLease(ctx, runtime)
+}
+
+func (w *AgentSidecarWorker) prepareWispRuntimeWithSpace(ctx context.Context, client *AGSClient, sb AGSSandbox, runtime ACPSessionRuntime, req ACPSessionRuntimeStartRequest, space agentWispSMHSpace, acquireLease bool) (ACPSessionRuntime, error) {
+	var err error
+	runtime, err = w.resolveWispRuntimeForSpace(ctx, runtime, req, space, acquireLease)
+	if err != nil {
+		return ACPSessionRuntime{}, err
+	}
 	releaseLease := false
 	if acquireLease {
-		var err error
-		runtime, err = w.acquireWispWorkspaceLease(ctx, runtime)
-		if err != nil {
-			return ACPSessionRuntime{}, err
-		}
 		releaseLease = true
 		defer func() {
 			if releaseLease {
@@ -309,6 +316,14 @@ func (w *AgentSidecarWorker) runOuterCommand(ctx context.Context, client *AGSCli
 	return client.RunCommand(ctx, sb, command, env, onStdout, onStderr)
 }
 
+func (w *AgentSidecarWorker) runOuterControlCommand(ctx context.Context, client *AGSClient, sb AGSSandbox, runtime ACPSessionRuntime, command string, env map[string]string) (CommandResult, error) {
+	if runtime.isWispOuterRuntime() {
+		command = runtime.wrapWispShellCommandBuffered(command, env)
+		env = nil
+	}
+	return client.RunCommand(ctx, sb, command, env, nil, nil)
+}
+
 func (w *AgentSidecarWorker) stopWispOuterRuntime(ctx context.Context, client *AGSClient, sb AGSSandbox, runtime ACPSessionRuntime) error {
 	if !runtime.isWispOuterRuntime() || strings.TrimSpace(runtime.WispName) == "" {
 		return nil
@@ -327,6 +342,14 @@ func (w *AgentSidecarWorker) stopWispOuterRuntime(ctx context.Context, client *A
 }
 
 func wispOuterStopCommand(runtime ACPSessionRuntime) string {
+	return wispStopCommand(runtime)
+}
+
+func wispWorkspaceStopCommand(runtime ACPSessionRuntime) string {
+	return wispStopCommand(runtime)
+}
+
+func wispStopCommand(runtime ACPSessionRuntime) string {
 	clientPath := runtime.WispClientPath
 	if strings.TrimSpace(clientPath) == "" && runtime.WispInstallDir != "" {
 		clientPath = path.Join(runtime.WispInstallDir, "bin", "wispclient")
@@ -412,6 +435,14 @@ func wispOuterStopCommand(runtime ACPSessionRuntime) string {
 }
 
 func (runtime ACPSessionRuntime) wrapWispShellCommand(command string, env map[string]string) string {
+	return runtime.wrapWispShellCommandWithStream(command, env, true)
+}
+
+func (runtime ACPSessionRuntime) wrapWispShellCommandBuffered(command string, env map[string]string) string {
+	return runtime.wrapWispShellCommandWithStream(command, env, false)
+}
+
+func (runtime ACPSessionRuntime) wrapWispShellCommandWithStream(command string, env map[string]string, stream bool) string {
 	clientPath := runtime.WispClientPath
 	if strings.TrimSpace(clientPath) == "" && runtime.WispInstallDir != "" {
 		clientPath = path.Join(runtime.WispInstallDir, "bin", "wispclient")
@@ -420,9 +451,13 @@ func (runtime ACPSessionRuntime) wrapWispShellCommand(command string, env map[st
 		clientPath = "/tmp/cloudagent-wisp/*/install/bin/wispclient"
 	}
 	inner := shellEnvPrefix(env) + command
-	return shellQuote(clientPath) +
+	args := shellQuote(clientPath) +
 		" -server " + shellQuote(defaultWispOuterAdminAddr) +
-		" exec --stream " + shellQuote(runtime.WispName) +
+		" exec "
+	if stream {
+		args += "--stream "
+	}
+	return args + shellQuote(runtime.WispName) +
 		" -- /bin/sh -lc " + shellQuote(inner)
 }
 
@@ -640,7 +675,9 @@ local projectRoot = "$install";
   JFS_BUILD: "0",
   JFS_SMOUNT_SCRIPT: projectRoot + "/juicefs/hack/smount.sh",
   JFS_SFORMAT_SCRIPT: projectRoot + "/juicefs/hack/sformat.sh",
-  BASE_ROOTFS_IMG: projectRoot + "/assets/rootfs/images/plucky-amd64.img",
+  LOWER_SYSTEM_BASE: projectRoot + "/assets/rootfs/rootfs",
+  BASE_ROOTFS_DIR: projectRoot + "/assets/rootfs/rootfs",
+  BASE_ROOTFS_IMG: "",
   CRUN_BINARY: projectRoot + "/assets/bin/crun/crun-amd64",
   WISPENV_BINARY: projectRoot + "/bin/wispenv",
   WISP_FS_AGENT_BINARY: projectRoot + "/bin/wisp-fs-agent",
@@ -673,7 +710,8 @@ export JFS_BIN="$install/bin/juicefs-smount"
 export JFS_BUILD=0
 export JFS_SMOUNT_SCRIPT="$install/juicefs/hack/smount.sh"
 export JFS_SFORMAT_SCRIPT="$install/juicefs/hack/sformat.sh"
-export BASE_ROOTFS_IMG="$install/assets/rootfs/images/plucky-amd64.img"
+export BASE_ROOTFS_DIR="$install/assets/rootfs/rootfs"
+export BASE_ROOTFS_IMG=""
 export CRUN_BINARY="$install/assets/bin/crun/crun-amd64"
 export CRUN_BINARY_PATH="/var/lib/wisp/shared/tools/crun"
 export WISPENV_BINARY="$install/bin/wispenv"
@@ -695,6 +733,7 @@ export JFS_LITESTREAM_TRACE="${JFS_LITESTREAM_TRACE:-}"
   JFS_BUILD="$JFS_BUILD" \
   JFS_SMOUNT_SCRIPT="$JFS_SMOUNT_SCRIPT" \
   JFS_SFORMAT_SCRIPT="$JFS_SFORMAT_SCRIPT" \
+  BASE_ROOTFS_DIR="$BASE_ROOTFS_DIR" \
   BASE_ROOTFS_IMG="$BASE_ROOTFS_IMG" \
   CRUN_BINARY="$CRUN_BINARY" \
   CRUN_BINARY_PATH="$CRUN_BINARY_PATH" \
