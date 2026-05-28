@@ -14,7 +14,7 @@
  * - 占位字段（工作空间 / 生效日期区间 / 推送 WorkBuddy）按截图渲染但 disabled
  */
 
-import { AlertTriangle, ChevronDown, CircleHelp, Clock, Eye, Loader2, Pause, Pencil, Play, Plus, Trash2, X } from "lucide-react";
+import { AlertTriangle, ChevronDown, CircleHelp, Clock, Eye, LayoutTemplate, Loader2, Pause, Pencil, Play, Plus, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { parseHermesChannelList } from "@tencent/tea-sdk-lightclaw";
@@ -73,6 +73,9 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
   const [jobs, setJobs] = useState<CronJob[]>([]);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
+  const [creatingFromTemplate, setCreatingFromTemplate] = useState<AutomationTemplate | null>(null);
+  const [pendingCreateMode, setPendingCreateMode] = useState<"blank" | "template" | null>(null);
   const [confirmCreateOverLimit, setConfirmCreateOverLimit] = useState(false);
   const [viewingJob, setViewingJob] = useState<CronJob | null>(null);
   /** 正在编辑的 job；非空时弹编辑表单 */
@@ -86,6 +89,17 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
   const errorTimerRef = useRef<number | null>(null);
   const visibleJobs = useMemo(() => jobs.filter((job) => !isCronJobExpiredBeyondGrace(job)), [jobs]);
   const jobLimitReached = visibleJobs.length >= MAX_CRON_JOBS_PER_BOT;
+  const templates = useMemo(() => getAutomationTemplates(t), [t]);
+
+  const requestCreate = useCallback((mode: "blank" | "template") => {
+    if (jobLimitReached) {
+      setPendingCreateMode(mode);
+      setConfirmCreateOverLimit(true);
+      return;
+    }
+    if (mode === "template") setTemplatePickerOpen(true);
+    else setCreating(true);
+  }, [jobLimitReached]);
 
   const showError = useCallback((message: string) => {
     if (errorTimerRef.current) {
@@ -167,16 +181,18 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
             {t("让你的智能体伙伴按计划自动执行任务")}
           </p>
         </div>
-        <div className="inline-flex">
+        <div className="inline-flex items-center gap-2">
           <button
             type="button"
-            onClick={() => {
-              if (jobLimitReached) {
-                setConfirmCreateOverLimit(true);
-                return;
-              }
-              setCreating(true);
-            }}
+            onClick={() => requestCreate("template")}
+            className="inline-flex min-w-[84px] items-center justify-center gap-1.5 rounded-lg border border-black/10 bg-white px-3.5 py-1.5 text-black/75 transition hover:bg-black/[0.04]"
+          >
+            <LayoutTemplate className="h-4 w-4" />
+            <span className="text-sm font-semibold leading-none">{t("模板")}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => requestCreate("blank")}
             className="inline-flex min-w-[72px] items-center justify-center gap-1.5 rounded-lg bg-black px-3.5 py-1.5 text-white transition hover:bg-black/85"
           >
             <Plus className="h-4 w-4" />
@@ -247,12 +263,43 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
         />
       )}
 
+      {templatePickerOpen && (
+        <AutomationTemplateModal
+          templates={templates}
+          onClose={() => setTemplatePickerOpen(false)}
+          onSelect={(template) => {
+            setTemplatePickerOpen(false);
+            setCreatingFromTemplate(template);
+          }}
+        />
+      )}
+
+      {creatingFromTemplate && (
+        <AutomationFormModal
+          botId={botId}
+          mode="create"
+          template={creatingFromTemplate}
+          onClose={() => setCreatingFromTemplate(null)}
+          onSaved={async () => {
+            setCreatingFromTemplate(null);
+            await refresh();
+          }}
+          onError={showError}
+        />
+      )}
+
       {confirmCreateOverLimit && (
         <ConfirmCreateOverLimitModal
-          onCancel={() => setConfirmCreateOverLimit(false)}
+          onCancel={() => {
+            setConfirmCreateOverLimit(false);
+            setPendingCreateMode(null);
+          }}
           onConfirm={() => {
             setConfirmCreateOverLimit(false);
-            setCreating(true);
+            const mode = pendingCreateMode ?? "blank";
+            setPendingCreateMode(null);
+            if (mode === "template") setTemplatePickerOpen(true);
+            else setCreating(true);
           }}
         />
       )}
@@ -643,6 +690,83 @@ function InlineCopyText({ value }: { value: string }) {
   );
 }
 
+function AutomationTemplateModal({
+  templates,
+  onClose,
+  onSelect,
+}: {
+  templates: AutomationTemplate[];
+  onClose: () => void;
+  onSelect: (template: AutomationTemplate) => void;
+}) {
+  const t = useT();
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[210] flex items-center justify-center bg-black/40 px-4 py-6"
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+    >
+      <div
+        className="relative w-full max-w-[680px] rounded-2xl bg-white p-6 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute right-4 top-4 inline-flex h-7 w-7 items-center justify-center rounded-full text-black/50 transition hover:bg-black/[0.04] hover:text-black/80"
+          aria-label={t("关闭")}
+        >
+          <X className="h-4 w-4" />
+        </button>
+        <div className="pr-8">
+          <h3 className="text-lg font-semibold leading-10 text-black/90">{t("自动任务示例模板")}</h3>
+        </div>
+        <div className="mt-5 grid grid-cols-1 items-start gap-3 sm:grid-cols-2">
+          {templates.map((template) => (
+            <button
+              key={template.id}
+              type="button"
+              onClick={() => onSelect(template)}
+              className="flex min-h-[100px] flex-col justify-start rounded-lg border border-black/10 bg-white p-4 text-left transition hover:border-black/20 hover:bg-black/[0.02]"
+            >
+              <div className="flex h-7 items-start justify-between gap-3">
+                <div className="truncate text-sm font-semibold text-black/85">{template.name}</div>
+                <span className="shrink-0 rounded-full bg-black/[0.04] px-2 py-0.5 text-[11px] text-black/55">
+                  {formatTemplateSchedule(template, t)}
+                </span>
+              </div>
+              <p className="mt-2 line-clamp-3 text-xs leading-relaxed text-black/55">
+                {template.prompt}
+              </p>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+function formatTemplateSchedule(template: AutomationTemplate, t: ReturnType<typeof useT>): string {
+  const schedule = template.schedule;
+  if (schedule.kind === "interval") {
+    const unitLabel = schedule.intervalUnit === "m" ? t("分钟") : schedule.intervalUnit === "d" ? t("天") : t("小时");
+    return t("每 {{num}} {{unit}}", { num: String(schedule.intervalNum ?? 1), unit: unitLabel });
+  }
+  if (schedule.kind === "recurring") {
+    if (schedule.period === "weekly") {
+      const labels = [t("周日"), t("周一"), t("周二"), t("周三"), t("周四"), t("周五"), t("周六")];
+      return t("每{{weekday}} {{time}}", {
+        weekday: labels[schedule.weekday ?? 1] ?? t("周一"),
+        time: schedule.time ?? "09:00",
+      });
+    }
+    return t("每天 {{time}}", { time: schedule.time ?? "09:00" });
+  }
+  return t("单次");
+}
+
 function ConfirmDeleteModal({
   jobName,
   busy,
@@ -791,6 +915,83 @@ function formatLastStatus(status: string | null, t: ReturnType<typeof useT>): st
 
 type FrequencyKind = "recurring" | "interval" | "once";
 type RecurringPeriod = "daily" | "weekly" | "monthly";
+type IntervalUnit = "m" | "h" | "d";
+
+interface AutomationTemplate {
+  id: string;
+  name: string;
+  description: string;
+  prompt: string;
+  schedule: {
+    kind: FrequencyKind;
+    period?: RecurringPeriod;
+    time?: string;
+    weekday?: number;
+    intervalNum?: number;
+    intervalUnit?: IntervalUnit;
+  };
+}
+
+function getAutomationTemplates(t: ReturnType<typeof useT>): AutomationTemplate[] {
+  return [
+    {
+      id: "daily-summary",
+      name: t("每日总结"),
+      description: t("每天晚上整理今天的进展和明天优先级"),
+      prompt: t("请回顾今天的重要事项，帮我整理一份简短总结，并提醒我明天优先处理的 3 件事。"),
+      schedule: { kind: "recurring", period: "daily", time: "21:30" },
+    },
+    {
+      id: "water-break",
+      name: t("喝水提醒"),
+      description: t("每隔一段时间提醒补水和短暂休息"),
+      prompt: t("提醒我喝水，并用一句轻松的话鼓励我保持状态。"),
+      schedule: { kind: "interval", intervalNum: 2, intervalUnit: "h" },
+    },
+    {
+      id: "morning-start",
+      name: t("起床提醒"),
+      description: t("每天早上给一个温和的启动提醒"),
+      prompt: t("提醒我起床，简单说一下今天可以先做的一件小事。"),
+      schedule: { kind: "recurring", period: "daily", time: "07:30" },
+    },
+    {
+      id: "weekly-review",
+      name: t("周五复盘"),
+      description: t("每周五下班前回顾本周事项"),
+      prompt: t("帮我做一次本周复盘：总结完成事项、遗留问题和下周建议。"),
+      schedule: { kind: "recurring", period: "weekly", weekday: 5, time: "18:00" },
+    },
+    {
+      id: "task-tidy",
+      name: t("资料整理"),
+      description: t("每天提醒整理待办、文档和消息"),
+      prompt: t("提醒我整理最近的待办、文档和消息，把需要跟进的事项列出来。"),
+      schedule: { kind: "recurring", period: "daily", time: "10:00" },
+    },
+    {
+      id: "stretch",
+      name: t("活动一下"),
+      description: t("定时提醒站起来活动，放松肩颈和眼睛"),
+      prompt: t("提醒我不要久坐，站起来活动一下，放松肩颈和眼睛。"),
+      schedule: { kind: "interval", intervalNum: 1, intervalUnit: "h" },
+    },
+    {
+      id: "stock-watch",
+      name: t("股票盯盘"),
+      description: t("交易时段定时关注自选股行情变化"),
+      prompt: t("提醒我关注自选股行情变化，整理涨跌幅、成交量和需要留意的市场消息。"),
+      schedule: { kind: "recurring", period: "daily", time: "10:00" },
+    },
+    {
+      id: "news-digest",
+      name: t("AI 新闻推送"),
+      description: t("每天推送关心领域的重要新闻摘要"),
+      prompt: t("提醒我查看今天的重要新闻，按科技、财经和本地资讯各总结 3 条要点。"),
+      schedule: { kind: "recurring", period: "daily", time: "08:30" },
+    },
+  ];
+}
 
 interface ScheduleChangeCheck {
   mode: "create" | "edit";
@@ -806,6 +1007,7 @@ function AutomationFormModal({
   botId,
   mode,
   initialJob,
+  template,
   onClose,
   onSaved,
   onError,
@@ -813,13 +1015,15 @@ function AutomationFormModal({
   botId: string;
   mode: "create" | "edit";
   initialJob?: CronJob;
+  template?: AutomationTemplate;
   onClose: () => void;
   onSaved: () => void;
   onError: (message: string) => void;
 }) {
   const t = useT();
-  const [name, setName] = useState(initialJob?.name ?? "");
-  const [prompt, setPrompt] = useState(initialJob?.prompt ?? "");
+  const templateSchedule = mode === "create" ? template?.schedule : undefined;
+  const [name, setName] = useState(initialJob?.name ?? template?.name ?? "");
+  const [prompt, setPrompt] = useState(initialJob?.prompt ?? template?.prompt ?? "");
 
   const initialScheduleSource = useMemo(
     () => (initialJob?.schedule.display || initialJob?.schedule.expr || "").trim(),
@@ -832,20 +1036,21 @@ function AutomationFormModal({
   const initial = useMemo(() => parseInitialSchedule(initialScheduleSource), [initialScheduleSource]);
   const scheduleUneditable = mode === "edit" && !!initialJob && initial === null && initialScheduleSource.length > 0;
   const defaultScheduleDate = useMemo(() => new Date(Date.now() + 2 * 60_000), []);
-  const [kind, setKind] = useState<FrequencyKind>(initial?.kind ?? "recurring");
+  const [kind, setKind] = useState<FrequencyKind>(initial?.kind ?? templateSchedule?.kind ?? "recurring");
   // 周期态
-  const [period, setPeriod] = useState<RecurringPeriod>(initial?.period ?? "daily");
+  const [period, setPeriod] = useState<RecurringPeriod>(initial?.period ?? templateSchedule?.period ?? "daily");
   const [time, setTime] = useState(() => {
     if (initial?.time) return initial.time;
+    if (templateSchedule?.time) return templateSchedule.time;
     // 默认取打开弹窗时的两分钟后（minute 精度，跟 cron 表达式粒度一致）
     const d = defaultScheduleDate;
     return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
   });
-  const [weekday, setWeekday] = useState(initial?.weekday ?? 1); // 周一
+  const [weekday, setWeekday] = useState(initial?.weekday ?? templateSchedule?.weekday ?? 1); // 周一
   const [monthday, setMonthday] = useState(initial?.monthday ?? 1);
   // 按间隔态
-  const [intervalNum, setIntervalNum] = useState(initial?.intervalNum ?? 1);
-  const [intervalUnit, setIntervalUnit] = useState<"m" | "h" | "d">(initial?.intervalUnit ?? "h");
+  const [intervalNum, setIntervalNum] = useState(initial?.intervalNum ?? templateSchedule?.intervalNum ?? 1);
+  const [intervalUnit, setIntervalUnit] = useState<IntervalUnit>(initial?.intervalUnit ?? templateSchedule?.intervalUnit ?? "h");
   // 单次态
   const [onceDate, setOnceDate] = useState(() => {
     if (initial?.onceDate) return initial.onceDate;
@@ -1112,6 +1317,11 @@ function AutomationFormModal({
                       {label}
                       {!configured && <span className="ml-0.5 text-[10px]">{t("（未配置）")}</span>}
                     </span>
+                    {selected && key === "weixin" && (
+                      <span className="text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
+                        {t("注意：请避免设置太频繁的提醒，否则可能会被微信限流，无法接收通知")}
+                      </span>
+                    )}
                     {selected && key === "qqbot" && (
                       <span className="inline-flex items-center text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
                         {t("如未生效，可在 QQ 对话中发送")}
