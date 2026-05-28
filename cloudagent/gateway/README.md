@@ -19,6 +19,8 @@
 
 完整接入文档见 [docs/acp-backend.md](docs/acp-backend.md)。
 
+本地 Docker Compose 开发/测试环境见 [docs/local-docker-compose.md](docs/local-docker-compose.md)。Compose 只保留真实 AGS 路径，默认跑 `agent_injected`。
+
 除了 OpenAI 兼容的 `/v1/responses` 之外，wrapper 现在也暴露 ACP over WebSocket：
 
 - `/acp`: raw JSON-RPC 2.0 over WebSocket，不带额外 envelope
