@@ -81,6 +81,9 @@ const parseFirstBsonFrame = (socket: FakeWebSocket) => {
   return parseBsonFrame(socket, index);
 };
 
+const parseBsonFrames = (socket: FakeWebSocket) =>
+  socket.sent.filter((frame): frame is Uint8Array => frame instanceof Uint8Array).map((frame) => deserialize(frame) as Record<string, unknown>);
+
 const requestIdOf = (frame: Record<string, unknown>) => {
   const data = frame.Data as Record<string, unknown>;
   return String(data.CustomData);
@@ -97,6 +100,12 @@ const bsonResponse = (type: string, requestId: string, data: Record<string, unkn
     },
   });
 
+const flushPromises = async (times = 5) => {
+  for (let index = 0; index < times; index += 1) {
+    await Promise.resolve();
+  }
+};
+
 beforeEach(() => {
   FakeWebSocket.instances = [];
   vi.useFakeTimers();
@@ -111,6 +120,7 @@ describe("TencentTsshFileClient", () => {
     const client = new TencentTsshFileClient(bootstrap, {
       WebSocketImpl,
       startDelayMs: 50,
+      userName: "agentuser",
     });
     const ready = client.connect();
     const socket = FakeWebSocket.instances[0]!;
@@ -132,6 +142,7 @@ describe("TencentTsshFileClient", () => {
       Data: {
         SessionId: "session-1",
         ChannelId: "file-session-1",
+        UserName: "agentuser",
         NoShell: true,
       },
     });
@@ -216,5 +227,104 @@ describe("TencentTsshFileClient", () => {
     expect(joinTsshPath("/tmp/", "app.log")).toBe("/tmp/app.log");
     expect(parentTsshPath("/tmp/app.log")).toBe("/tmp");
     expect(parentTsshPath("/tmp")).toBe("/");
+  });
+
+  it("continues downloading after a full-size read block", async () => {
+    const client = new TencentTsshFileClient(bootstrap, { WebSocketImpl, startDelayMs: 0, readSizeBytes: 8 });
+    const downloadPromise = client.downloadFile("/tmp/big.log");
+    const socket = FakeWebSocket.instances[0]!;
+    socket.open();
+    vi.advanceTimersByTime(0);
+    socket.receive(JSON.stringify({ Type: "PtyReady" }));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const firstRequest = parseFirstBsonFrame(socket);
+    expect(firstRequest).toMatchObject({
+      Type: "PtyReadFile",
+      Data: {
+        Data: {
+          Path: "/tmp/big.log",
+          Offset: 0,
+          Size: 8,
+        },
+      },
+    });
+
+    socket.receive(bsonResponse("PtyReadFile", requestIdOf(firstRequest), {
+      Data: new TextEncoder().encode("abcdefgh"),
+      Offset: 0,
+      Length: 8,
+      IsLast: true,
+    }));
+    await flushPromises();
+
+    const secondRequest = parseBsonFrames(socket).at(-1)!;
+    expect(secondRequest).toMatchObject({
+      Type: "PtyReadFile",
+      Data: {
+        Data: {
+          Path: "/tmp/big.log",
+          Offset: 8,
+          Size: 8,
+        },
+      },
+    });
+
+    socket.receive(bsonResponse("PtyReadFile", requestIdOf(secondRequest), {
+      Data: new TextEncoder().encode("ij"),
+      Offset: 8,
+      Length: 2,
+      IsLast: true,
+    }));
+
+    await expect(downloadPromise.then((blob) => blob.text())).resolves.toBe("abcdefghij");
+  });
+
+  it("streams downloaded chunks to a writable stream and closes it", async () => {
+    const client = new TencentTsshFileClient(bootstrap, { WebSocketImpl, startDelayMs: 0, readSizeBytes: 8 });
+    const written: Uint8Array[] = [];
+    let closed = false;
+    const stream = new WritableStream<Uint8Array>({
+      write(chunk) {
+        written.push(chunk.slice());
+      },
+      close() {
+        closed = true;
+      },
+    });
+    const downloadPromise = client.downloadFileToStream("/tmp/stream.log", stream);
+    const socket = FakeWebSocket.instances[0]!;
+    socket.open();
+    vi.advanceTimersByTime(0);
+    socket.receive(JSON.stringify({ Type: "PtyReady" }));
+    await flushPromises();
+
+    const firstRequest = parseFirstBsonFrame(socket);
+    socket.receive(bsonResponse("PtyReadFile", requestIdOf(firstRequest), {
+      Data: new TextEncoder().encode("abcdefgh"),
+      Offset: 0,
+      Length: 8,
+      IsLast: true,
+    }));
+    await flushPromises();
+
+    const secondRequest = parseBsonFrames(socket).at(-1)!;
+    socket.receive(bsonResponse("PtyReadFile", requestIdOf(secondRequest), {
+      Data: new TextEncoder().encode("ij"),
+      Offset: 8,
+      Length: 2,
+      IsLast: true,
+    }));
+
+    await expect(downloadPromise).resolves.toBeUndefined();
+    const merged = new Uint8Array(written.reduce((sum, chunk) => sum + chunk.byteLength, 0));
+    let offset = 0;
+    for (const chunk of written) {
+      merged.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    expect(new TextDecoder().decode(merged)).toBe("abcdefghij");
+    expect(closed).toBe(true);
   });
 });

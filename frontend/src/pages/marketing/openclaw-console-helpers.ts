@@ -1,6 +1,7 @@
 type ConsoleHelperHost = {
   console: Console;
   help?: unknown;
+  show?: unknown;
   terminal?: unknown;
 };
 
@@ -11,18 +12,22 @@ type HelpCommand = {
 
 const HELP_COMMANDS: HelpCommand[] = [
   { name: "help()", description: "输出当前页面支持的 console 命令列表" },
+  { name: "show()", description: "显示隐藏的 WebUI 和终端入口" },
   { name: "terminal()", description: "输出当前 bot 的终端页面 URL" },
 ];
 
 export const installOpenClawConsoleHelpers = ({
   host,
   getTerminalPath,
+  onShowHiddenTools,
 }: {
   host: ConsoleHelperHost;
   getTerminalPath: () => string | null;
+  onShowHiddenTools?: () => void;
 }) => {
   const originalConsole = host.console;
   const originalHelp = host.help;
+  const originalShow = host.show;
   const originalTerminal = host.terminal;
 
   const helpFn = () => {
@@ -41,6 +46,12 @@ export const installOpenClawConsoleHelpers = ({
     return HELP_COMMANDS;
   };
 
+  const showFn = () => {
+    onShowHiddenTools?.();
+    originalConsole.info("隐藏功能已显示。");
+    return true;
+  };
+
   const terminalFn = () => {
     const currentPath = getTerminalPath();
     if (!currentPath) {
@@ -52,6 +63,7 @@ export const installOpenClawConsoleHelpers = ({
     return currentPath;
   };
   host.help = helpFn;
+  host.show = showFn;
   host.terminal = terminalFn;
 
   return () => {
@@ -59,6 +71,12 @@ export const installOpenClawConsoleHelpers = ({
       delete host.help;
     } else {
       host.help = originalHelp;
+    }
+
+    if (originalShow === undefined) {
+      delete host.show;
+    } else {
+      host.show = originalShow;
     }
 
     if (originalTerminal === undefined) {

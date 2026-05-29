@@ -34,6 +34,7 @@ type PendingRequest =
 
 export interface TsshFileClientOptions {
   channelId?: string;
+  userName?: string;
   startDelayMs?: number;
   requestTimeoutMs?: number;
   uploadChunkBytes?: number;
@@ -72,6 +73,10 @@ export interface TsshUploadProgress {
   sentBytes: number;
   totalBytes: number;
   chunks: number;
+}
+
+export interface TsshDownloadChunkSink {
+  write(chunk: Uint8Array, offset: number): Promise<void> | void;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === "object";
@@ -160,6 +165,7 @@ export class TencentTsshFileClient {
   private rejectReady: ((error: Error) => void) | null = null;
   private readonly pending = new Map<string, PendingRequest>();
   private readonly channelId: string;
+  private readonly userName: string;
   private readonly startDelayMs: number;
   private readonly requestTimeoutMs: number;
   private readonly uploadChunkBytes: number;
@@ -171,6 +177,7 @@ export class TencentTsshFileClient {
     private readonly options: TsshFileClientOptions = {},
   ) {
     this.channelId = options.channelId ?? `file-${bootstrap.sessionId}`;
+    this.userName = options.userName ?? "";
     this.startDelayMs = options.startDelayMs ?? DEFAULT_TSSH_START_DELAY_MS;
     this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
     this.uploadChunkBytes = options.uploadChunkBytes ?? DEFAULT_UPLOAD_CHUNK_BYTES;
@@ -282,31 +289,53 @@ export class TencentTsshFileClient {
   }
 
   async downloadFile(path: string, onProgress?: (progress: TsshDownloadProgress) => void) {
+    const parts: Uint8Array[] = [];
+    await this.downloadFileToSink(path, {
+      write: (chunk) => {
+        parts.push(chunk.slice());
+      },
+    }, onProgress);
+
+    return new Blob(parts.map((part) => part.buffer.slice(part.byteOffset, part.byteOffset + part.byteLength) as ArrayBuffer));
+  }
+
+  async downloadFileToStream(path: string, stream: WritableStream<Uint8Array>, onProgress?: (progress: TsshDownloadProgress) => void) {
+    const writer = stream.getWriter();
+    try {
+      await this.downloadFileToSink(path, {
+        write: (chunk) => writer.write(chunk),
+      }, onProgress);
+      await writer.close();
+    } finally {
+      writer.releaseLock();
+    }
+  }
+
+  async downloadFileToSink(path: string, sink: TsshDownloadChunkSink, onProgress?: (progress: TsshDownloadProgress) => void) {
     let offset = 0;
     let chunks = 0;
-    const parts: Uint8Array[] = [];
 
     while (true) {
       const responseChunks = await this.readFile(path, offset, this.readSizeBytes);
       if (responseChunks.length === 0) {
         break;
       }
-
-      let reachedLast = false;
+      let batchBytes = 0;
       for (const chunk of responseChunks) {
-        parts.push(chunk.data);
+        if (chunk.length > 0) {
+          const data = chunk.data.byteLength === chunk.length ? chunk.data : chunk.data.slice(0, chunk.length);
+          await sink.write(data, chunk.offset);
+        }
+        batchBytes += chunk.length;
         chunks += 1;
         offset = chunk.offset + chunk.length;
-        reachedLast = chunk.isLast;
         onProgress?.({ receivedBytes: offset, chunks });
       }
 
-      if (reachedLast) {
+      if (batchBytes === 0 || batchBytes < this.readSizeBytes) {
         break;
       }
     }
-
-    return new Blob(parts.map((part) => part.buffer.slice(part.byteOffset, part.byteOffset + part.byteLength) as ArrayBuffer));
   }
 
   async writeFile(path: string, data: Uint8Array, offset?: number) {
@@ -368,6 +397,7 @@ export class TencentTsshFileClient {
       Data: {
         SessionId: this.bootstrap.sessionId,
         ChannelId: this.channelId,
+        UserName: this.userName,
         NoShell: true,
         MaxIdleTime: this.bootstrap.timeoutSeconds ?? DEFAULT_TAT_FILE_TIMEOUT_SECONDS,
       },
