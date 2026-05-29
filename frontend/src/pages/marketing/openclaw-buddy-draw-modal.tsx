@@ -441,8 +441,13 @@ function RevealPanel({
           <button
             type="button"
             onClick={onConfirm}
-            className="h-14 w-full rounded-full text-base font-semibold transition-colors hover:bg-black"
-            style={{ background: "#202020", color: "#ffffff", boxShadow: "0 14px 28px rgba(0,0,0,0.10)" }}
+            className="h-14 w-full rounded-full font-semibold transition-colors hover:bg-black"
+            style={{
+              background: "#202020",
+              color: "#ffffff",
+              boxShadow: "0 14px 28px rgba(0,0,0,0.10)",
+              fontSize: "14px",
+            }}
           >
             {t("添加此人设")}
           </button>

@@ -15,7 +15,7 @@
  * 注：AI 搭子当前仅保留 Soul（人设）浏览与抽卡能力。
  */
 
-import { AlertCircle, AlertTriangle, Check, Dice5, Download, ExternalLink, Loader2, RotateCcw, Sparkles, Trash2, X, Zap } from "lucide-react";
+import { AlertCircle, AlertTriangle, Check, ClipboardCheck, Dice5, Download, ExternalLink, Loader2, RotateCcw, Sparkles, Trash2, X, Zap } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
@@ -23,6 +23,7 @@ import { useT } from "@/i18n/t";
 import { useRepositories } from "@/contexts/repository-context";
 import { useAsyncResource } from "@/services/use-async-resource";
 import { DrawSoulModal } from "@/pages/marketing/openclaw-buddy-draw-modal";
+import { SoulTestModal } from "@/pages/marketing/openclaw-buddy-soul-test-modal";
 import {
   CardBack,
   SoulFaceCard,
@@ -71,6 +72,8 @@ export function BuddyPanel({
   const [drawnSouls, setDrawnSouls] = useState<SkillHubSoul[]>([]);
   /** 抽卡弹窗开关 */
   const [drawOpen, setDrawOpen] = useState(false);
+  /** Soul 人格测试弹窗开关 */
+  const [soulTestOpen, setSoulTestOpen] = useState(false);
 
   /** 注入结果 toast。idle 不显示；applying 期间禁掉重复点击。
    *  fallback: botId 缺失 / sandbox 写入失败，降级浏览器下载。
@@ -142,6 +145,35 @@ export function BuddyPanel({
     setDrawOpen(true);
   }, [isAtMax]);
 
+  const handleUseTestSoul = useCallback(
+    (soul: SkillHubSoul) => {
+      if (loadStatus !== "loaded") {
+        showToast({
+          kind: "error",
+          message: t("搭子状态未加载成功，暂时无法保存推荐人设，请先重试加载状态"),
+        });
+        return false;
+      }
+
+      const alreadyDrawn = drawnSouls.some((item) => item.slug === soul.slug);
+      if (!alreadyDrawn && drawnSouls.length >= MAX_DRAWS) {
+        showToast({ kind: "error", message: t("卡槽已满，请先删除一张人设，再使用测试推荐") });
+        return false;
+      }
+
+      if (!alreadyDrawn) {
+        setDrawnSouls((prev) => {
+          if (prev.some((item) => item.slug === soul.slug)) return prev;
+          if (prev.length >= MAX_DRAWS) return prev;
+          return [...prev, soul];
+        });
+      }
+      setSelectedSlug(soul.slug);
+      return true;
+    },
+    [drawnSouls, loadStatus, showToast, t],
+  );
+
   /** 重抽某张已抽到的卡：复用抽卡 modal 流程（翻牌动画 → reveal → 替换原位） */
   const handleReroll = useCallback((slug: string) => {
     setRerollingSlug(slug);
@@ -150,6 +182,7 @@ export function BuddyPanel({
 
   /** 重抽时是否可用：候选池非空才允许 */
   const canReroll = souls.length > drawnSouls.length;
+  const canOpenSoulTest = !isAtMax;
 
   /** 选中态（单选）：选中后右上角显示勾，可"应用到 Agent" */
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
@@ -488,14 +521,15 @@ export function BuddyPanel({
   );
 
   const isApplied = selectedSlug !== null && selectedSlug === appliedSlug;
+  const isApplyDisabled = !selectedSlug || toast.kind === "applying" || loadStatus !== "loaded";
 
   return (
-    <div className="relative overflow-hidden rounded-2xl" style={PANEL_CARD_STYLE}>
+    <div className="lv-buddy-panel relative overflow-hidden rounded-2xl" style={PANEL_CARD_STYLE}>
       <InjectToast state={toast} onClose={() => setToast({ kind: "idle" })} t={t} />
       {/* 顶部标题 slogan + 右上角 SkillHub 入口 */}
-      <div className="relative flex items-center justify-center px-6 pt-5 pb-3">
+      <div className="lv-buddy-panel__header relative flex items-center justify-center px-6 pt-5 pb-3">
         <h2
-          className="flex items-center gap-2 text-xl font-semibold"
+          className="lv-buddy-panel__title flex items-center gap-2 text-xl font-semibold"
           style={{
             letterSpacing: "-0.2px",
             backgroundImage:
@@ -516,7 +550,7 @@ export function BuddyPanel({
           href="https://skillhub.cn/hermes"
           target="_blank"
           rel="noopener noreferrer"
-          className="absolute right-6 inline-flex shrink-0 items-center gap-1.5 text-xs font-medium transition-colors hover:opacity-80"
+          className="lv-buddy-panel__source absolute right-6 inline-flex shrink-0 items-center gap-1.5 text-xs font-medium transition-colors hover:opacity-80"
           style={{ color: "rgba(0,0,0,0.55)", top: "50%", transform: "translateY(calc(-50% + 6px))" }}
         >
           {t("灵感来自 SkillHub")}
@@ -525,12 +559,12 @@ export function BuddyPanel({
       </div>
 
       {/* 内容区：6 格抽卡槽，下方接进度 chip 靠右展示，避免覆盖卡片本身 */}
-      <div className="px-6 pt-2 pb-2">
+      <div className="lv-buddy-panel__body px-6 pt-2 pb-2">
         {loadStatus === "unauthorized" ? (
           <UnauthorizedState />
         ) : loadStatus === "error" ? (
           <ErrorState
-            message={t("加载搭子状态失败，请检查网络后重试")}
+            message={t("搭子状态加载失败，抽卡和注入暂不可用，但仍可先做人格测试")}
             onRetry={() => {
               // 触发 useEffect 重跑：直接 ++reqId 不行（不会触发 effect），用 botId-tick
               // 兜底：直接刷一次页面对应的 effect 依赖
@@ -573,8 +607,8 @@ export function BuddyPanel({
         )}
       </div>
 
-      {/* 卡片下方：抽取人设 + 应用到 Agent 双 CTA 居中并排；chip 绝对定位浮于右侧不占位 */}
-      <div className="relative flex items-center justify-center gap-3 px-6 py-5">
+      {/* 卡片下方：抽取人设 + Soul 测试 + 应用到 Agent；小屏时进度操作自然换行 */}
+      <div className="lv-buddy-panel__actions relative flex flex-wrap items-center justify-center gap-3 px-6 py-5">
         <button
           type="button"
           onClick={handleOpenDraw}
@@ -587,23 +621,41 @@ export function BuddyPanel({
           }}
         >
           <Dice5 className="h-4 w-4" />
-          {isAtMax ? t("已抽满 6 张") : t("抽取人设")}
+          {isAtMax ? t("已抽满 6 张") : t("随机抽取人设")}
+        </button>
+        <button
+          type="button"
+          onClick={() => setSoulTestOpen(true)}
+          disabled={!canOpenSoulTest}
+          className="inline-flex items-center gap-2 rounded-full px-5 py-2 text-sm font-medium transition-all hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none"
+          style={{
+            background: "linear-gradient(95deg, rgba(255,166,0,0.16) 0%, rgba(107,79,224,0.14) 100%)",
+            color: "rgba(0,0,0,0.85)",
+            border: "1px solid rgba(0,0,0,0.06)",
+          }}
+        >
+          <ClipboardCheck className="h-4 w-4" />
+          {t("答题测试人设")}
         </button>
         <div className="group relative">
           <button
             type="button"
             onClick={handleApply}
-            disabled={
-              !selectedSlug
-              || toast.kind === "applying"
-              || loadStatus !== "loaded"
-            }
+            disabled={isApplyDisabled}
             className="inline-flex cursor-pointer items-center gap-2 rounded-full px-5 py-2 text-sm font-medium transition-all hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none"
-            style={{
-              background: "rgba(0,0,0,0.90)",
-              color: "#ffffff",
-              boxShadow: "0 4px 12px rgba(0,0,0,0.10)",
-            }}
+            style={
+              isApplyDisabled
+                ? {
+                    background: "rgba(0,0,0,0.04)",
+                    color: "rgba(0,0,0,0.85)",
+                    border: "1px solid rgba(0,0,0,0.06)",
+                  }
+                : {
+                    background: "rgba(0,0,0,0.90)",
+                    color: "#ffffff",
+                    boxShadow: "0 4px 12px rgba(0,0,0,0.10)",
+                  }
+            }
           >
             {toast.kind === "applying" ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -646,7 +698,7 @@ export function BuddyPanel({
           )}
         </div>
         {drawnSouls.length > 0 && (
-          <div className="absolute right-6 top-1/2 -translate-y-1/2">
+          <div className="lv-buddy-panel__progress flex items-center gap-2 md:absolute md:right-6 md:top-1/2 md:-translate-y-1/2">
             <ProgressChip drawn={drawnSouls.length} max={MAX_DRAWS} />
           </div>
         )}
@@ -662,6 +714,20 @@ export function BuddyPanel({
           setRerollingSlug(null);
         }}
         onPick={handlePickFromDraw}
+      />
+
+      <SoulTestModal
+        open={soulTestOpen}
+        souls={souls}
+        maxDrawsReached={isAtMax}
+        drawnSlugs={drawnSlugs}
+        saveDisabledReason={
+          loadStatus === "loaded"
+            ? null
+            : t("搭子状态未加载成功，暂时无法保存推荐人设，请先重试加载状态")
+        }
+        onClose={() => setSoulTestOpen(false)}
+        onUseSoul={handleUseTestSoul}
       />
 
       {previewSoulSlug && (
@@ -817,7 +883,7 @@ function SoulSlotGrid({
   return (
     // 网格 max-w 锁在 1120px 居中，6 列下单卡 ≈ 175×245，单行展示 6 张抽卡槽。
     // 容器在更窄视口里会自然缩小，cell 跟着变小。
-    <div className="mx-auto grid max-w-[1120px] grid-cols-6 gap-4">
+    <div className="lv-buddy-panel__grid mx-auto grid max-w-[1120px] grid-cols-6 gap-4">
       {Array.from({ length: MAX_DRAWS }).map((_, i) => {
         const soul = drawnSouls[i];
         if (soul) {
