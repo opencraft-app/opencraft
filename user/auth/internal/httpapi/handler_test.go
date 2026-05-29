@@ -17,6 +17,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/openclaw/openclaw/mono/backend/auth/internal/avatar"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/service"
 )
 
@@ -553,10 +554,37 @@ func TestPutProfileAvatarRejectsPayloadLargerThanLimit(t *testing.T) {
 	})
 	sessionCookie := sessionCookieFromRecorder(t, signUp)
 
-	oversized := bytes.Repeat([]byte("a"), 200*1024+1)
+	oversized := bytes.Repeat([]byte("a"), int(avatar.MaxBytes)+1)
 	recorder := performMultipartAvatarUploadRequest(t, router, "/auth/profile/avatar", sessionCookie, oversized)
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 from oversized avatar upload, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+
+	var response errorResponseBody
+	decodeJSONResponse(t, recorder, &response)
+	if response.Code != "avatar_too_large" {
+		t.Fatalf("expected avatar_too_large, got %q", response.Code)
+	}
+}
+
+func TestPutProfileAvatarReturnsTooLargeWhenNormalizedAvatarExceedsLimit(t *testing.T) {
+	t.Parallel()
+
+	router := newAuthTestRouterWithAvatarStore(&stubAvatarStore{
+		storeErr: avatar.ErrAvatarTooLarge,
+	})
+
+	signUp := performJSONRequest(t, router, http.MethodPost, "/auth/password/sign-up", map[string]any{
+		"name":       "头像用户",
+		"email":      "avatar-normalized-limit@example.com",
+		"password":   "password123",
+		"inviteCode": "VALID2026",
+	})
+	sessionCookie := sessionCookieFromRecorder(t, signUp)
+
+	recorder := performMultipartAvatarUploadRequest(t, router, "/auth/profile/avatar", sessionCookie, testPNGBytes(t))
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 from normalized oversized avatar upload, got %d: %s", recorder.Code, recorder.Body.String())
 	}
 
 	var response errorResponseBody
@@ -1267,6 +1295,7 @@ func testPNGBytes(t *testing.T) []byte {
 type stubAvatarStore struct {
 	objectKey            string
 	signedURL            string
+	storeErr             error
 	lastUploadedUserID   string
 	lastRemoteUserID     string
 	lastRemoteURL        string
@@ -1286,6 +1315,9 @@ func (httpStubRealnameCipher) Encrypt(plaintext string) (string, error) {
 }
 
 func (s *stubAvatarStore) StoreAvatar(_ context.Context, userID string, _ []byte) (string, error) {
+	if s.storeErr != nil {
+		return "", s.storeErr
+	}
 	s.lastUploadedUserID = userID
 	if s.objectKey == "" {
 		s.objectKey = "avatars/" + userID + "/current.jpg"

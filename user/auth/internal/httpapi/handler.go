@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/api"
+	"github.com/openclaw/openclaw/mono/backend/auth/internal/avatar"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/service"
 )
 
@@ -350,17 +351,17 @@ func (h *Handler) UpdateProfileAvatar(ctx context.Context, request api.UpdatePro
 		})}, nil
 	}
 
-	content, err := io.ReadAll(io.LimitReader(part, 200*1024+1))
+	content, err := io.ReadAll(io.LimitReader(part, avatar.MaxBytes+1))
 	if err != nil {
 		return api.UpdateProfileAvatar400JSONResponse{ErrorResponseJSONResponse: api.ErrorResponseJSONResponse(api.ErrorResponse{
 			Code:    "avatar_invalid",
 			Message: "头像文件读取失败。",
 		})}, nil
 	}
-	if len(content) > 200*1024 {
+	if int64(len(content)) > avatar.MaxBytes {
 		return api.UpdateProfileAvatar400JSONResponse{ErrorResponseJSONResponse: api.ErrorResponseJSONResponse(api.ErrorResponse{
 			Code:    "avatar_too_large",
-			Message: "头像文件不能超过 200KB。",
+			Message: "头像文件不能超过 800KB。",
 		})}, nil
 	}
 
@@ -375,6 +376,12 @@ func (h *Handler) UpdateProfileAvatar(ctx context.Context, request api.UpdatePro
 	objectKey, err := h.avatarStore.StoreAvatar(ctx, session.User.ID, content)
 	if err != nil {
 		logger.Error("profile avatar store failed", "user_id", session.User.ID, "err", err)
+		if errors.Is(err, avatar.ErrAvatarTooLarge) {
+			return api.UpdateProfileAvatar400JSONResponse{ErrorResponseJSONResponse: api.ErrorResponseJSONResponse(api.ErrorResponse{
+				Code:    "avatar_too_large",
+				Message: "头像文件不能超过 800KB。",
+			})}, nil
+		}
 		return nil, &service.Error{Code: "avatar_store_failed", Message: "头像保存失败。", Status: http.StatusInternalServerError}
 	}
 	user, err := h.service.SetUserAvatar(ctx, session.User.ID, objectKey, "upload")
