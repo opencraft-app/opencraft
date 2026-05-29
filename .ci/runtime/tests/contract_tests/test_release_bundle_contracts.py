@@ -232,7 +232,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(approval_stage.get("if"), prod_edgeone_if)
         self.assertEqual(fanout_stage.get("if"), prod_edgeone_if)
         self.assertEqual(approval_reviews.get("name"), "确认发起 frontend EdgeOne 正式站发布候选")
-        self.assertEqual(approval_reviews.get("reviewers"), ["skipzhang"])
+        self.assertEqual(approval_reviews.get("reviewers"), ["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang"])
         self.assertIn("本阶段确认是否允许本次 frontend 构建发起 EdgeOne 正式站发布候选", workflow_text)
         self.assertIn("本阶段只控制是否允许从本次构建发起生产发布候选", workflow_text)
         self.assertIn("自动发起 frontend EdgeOne 正式站发布候选", workflow_text)
@@ -476,10 +476,24 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 )
 
     def test_cloudagent_gateway_adds_service_prod_reviewers(self) -> None:
+        manifest = load_manifest()
+        bundle = load_bundle(manifest, "cloudagent-gateway", "shprod")
         workflow = yaml.safe_load((REPO_ROOT / ".ci/cloudagent-gateway.yml").read_text())
         parameters = (workflow.get("extends") or {}).get("parameters") or {}
+        on_config = workflow.get("on") or workflow.get(True) or {}
+        watched_paths = ((on_config.get("push") or {}).get("paths") or [])
 
         self.assertEqual(parameters.get("PROD_REVIEWERS"), '["skipzhang", "roberttwang", "cocofhu"]')
+        self.assertIn(
+            "argocd/secrets/shprod/cloudagent-wsa-search-secrets.sops.yaml",
+            bundle.publish_paths,
+        )
+        self.assertIn(
+            "argocd/secrets/shprod/cloudagent-wisp-secrets.sops.yaml",
+            bundle.publish_paths,
+        )
+        self.assertIn("argocd/secrets/*/cloudagent-wsa-search-secrets.sops.yaml", watched_paths)
+        self.assertIn("argocd/secrets/*/cloudagent-wisp-secrets.sops.yaml", watched_paths)
 
     def test_local_templates_do_not_use_unsupported_top_level_concurrency(self) -> None:
         for template_path in sorted((REPO_ROOT / ".ci/templates").glob("*.yml")):

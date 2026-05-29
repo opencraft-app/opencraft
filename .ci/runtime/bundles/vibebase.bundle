@@ -7,6 +7,8 @@ bundles:
     allowed_paths:
     - vibebase/k8s/base
     - vibebase/k8s/overlays/beijing-sandbox
+    - vibebase/k8s/overlays/shprod
+    - vibebase/k8s/overlays/sgprod
     - vibebase/Dockerfile
     exit_condition: Can be removed only after Vibebase is folded into a different durable state service.
     publish_paths:
@@ -29,7 +31,25 @@ bundles:
       - vibebase/k8s/base/**
       - vibebase/k8s/overlays/beijing-sandbox/**
       - service-gateway/k8s/base/**
+      shprod:
+      - argocd/apps/shprod/vibebase.yaml
+      - argocd/projects/shprod-vibebase.yaml
+      - argocd/services/vibebase/shprod/**
+      - argocd/services/vibebase/common/**
+      - argocd/secrets/shprod/vibebase-runtime-secrets.sops.yaml
+      - vibebase/k8s/base/**
+      - vibebase/k8s/overlays/shprod/**
+      sgprod:
+      - argocd/apps/sgprod/vibebase.yaml
+      - argocd/projects/sgprod-vibebase.yaml
+      - argocd/services/vibebase/sgprod/**
+      - argocd/services/vibebase/common/**
+      - argocd/secrets/sgprod/vibebase-runtime-secrets.sops.yaml
+      - vibebase/k8s/base/**
+      - vibebase/k8s/overlays/sgprod/**
     dockerfile: vibebase/Dockerfile
     build_context: vibebase
     image_repo:
       beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/vibebase
+      shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/vibebase
+      sgprod: lightclaw-sgprod.tencentcloudcr.com/lightclaw/vibebase

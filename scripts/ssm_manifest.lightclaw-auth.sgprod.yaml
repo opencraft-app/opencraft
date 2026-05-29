@@ -9,6 +9,9 @@ items:
   # Required real-name keys in SSM payload:
   # TENCENT_REALNAME_SECRET_ID, TENCENT_REALNAME_SECRET_KEY,
   # TENCENT_REALNAME_ENDPOINT, REALNAME_ENCRYPTION_KEY.
+  # Google OAuth keys in SSM payload:
+  # LIGHTCLAW_GOOGLE_CLIENT_ID, LIGHTCLAW_GOOGLE_CLIENT_SECRET,
+  # LIGHTCLAW_GOOGLE_REDIRECT_URI.
   namespace: user-auth
   kubernetes_resource_name: lightclaw-auth-secrets
   kubernetes_resource_kind: Secret

@@ -197,12 +197,20 @@ assert_log_since_not() {
   fi
 }
 
-log "build server and Hermes sidecar"
-make hermes-sidecar-linux server
+assert_log_since_inner_sandbox_id() {
+  local start_line="$1"
+  awk -v start="$start_line" '
+    NR >= start && index($0, "inner_sandbox_id=\"") && !index($0, "inner_sandbox_id=\"\"") { found = 1 }
+    END { exit found ? 0 : 1 }
+  ' "$SERVER_LOG"
+}
+
+log "build server and CloudAgent sidecar"
+make cloudagent-sidecar-linux server
 make test
 
-SIDECAR_SHA="$(shasum -a 256 dist/hermes-sidecar-linux-amd64 | awk '{print $1}')"
-SIDECAR_OBJECT="${COS_OBJECT_PREFIX%/}/hermes-sidecar-linux-amd64-${SIDECAR_SHA:0:12}"
+SIDECAR_SHA="$(shasum -a 256 dist/cloudagent-sidecar-linux-amd64 | awk '{print $1}')"
+SIDECAR_OBJECT="${COS_OBJECT_PREFIX%/}/cloudagent-sidecar-linux-amd64-${SIDECAR_SHA:0:12}"
 PUBLIC_URL_FILE="$WORK_DIR/sidecar-url.clean"
 
 COS_BUCKET="${COS_BUCKET:-$(awk -F '=' '/^[[:space:]]*bucket[[:space:]]*=/{gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2); print $2; exit}' "$COSCMD_CONFIG")}"
@@ -214,8 +222,8 @@ fi
 PUBLIC_BASE_URL="${COS_PUBLIC_BASE_URL:-https://${COS_BUCKET}.cos.${COS_REGION}.myqcloud.com}"
 PUBLIC_URL="${PUBLIC_BASE_URL%/}/${SIDECAR_OBJECT#/}"
 
-log "upload Hermes sidecar to COS object=${SIDECAR_OBJECT}"
-"$COSCMD_BIN" -c "$COSCMD_CONFIG" upload -f -y dist/hermes-sidecar-linux-amd64 "$SIDECAR_OBJECT"
+log "upload CloudAgent sidecar to COS object=${SIDECAR_OBJECT}"
+"$COSCMD_BIN" -c "$COSCMD_CONFIG" upload -f -y dist/cloudagent-sidecar-linux-amd64 "$SIDECAR_OBJECT"
 "$COSCMD_BIN" -c "$COSCMD_CONFIG" putobjectacl "$SIDECAR_OBJECT" --grant-read anyone
 printf '%s\n' "$PUBLIC_URL" >"$PUBLIC_URL_FILE"
 curl -fsSI --connect-timeout 10 --max-time 30 "$PUBLIC_URL" >/dev/null
@@ -236,7 +244,7 @@ INNER_SANDBOX_TEMPLATE="$INNER_TEMPLATE" \
 TOKENHUB_API_KEY="$TOKENHUB_API_KEY" \
 TOKENHUB_MODEL="$TOKENHUB_MODEL" \
 GATEWAY_AGS_REQUEST_TIMEOUT_SECONDS=300 \
-GATEWAY_AGENT_SIDECAR_BINARY="$ROOT_DIR/dist/hermes-sidecar-linux-amd64" \
+GATEWAY_AGENT_SIDECAR_BINARY="$ROOT_DIR/dist/cloudagent-sidecar-linux-amd64" \
 GATEWAY_AGENT_SIDECAR_URL="$(cat "$PUBLIC_URL_FILE")" \
 GATEWAY_AGENT_SIDECAR_SHA256="$SIDECAR_SHA" \
 GATEWAY_SANDBOX_HOST_URL="$SANDBOX_HOST_URL" \
@@ -245,14 +253,30 @@ GATEWAY_SANDBOX_HOST_SHA256="$SANDBOX_HOST_SHA256" \
 SERVER_PID="$!"
 
 for _ in $(seq 1 50); do
-  if grep -q "listening on 127.0.0.1:${PORT}" "$SERVER_LOG"; then
+  if grep -q "gateway.listening" "$SERVER_LOG"; then
     break
   fi
   sleep 0.1
 done
-grep -q "listening on 127.0.0.1:${PORT}" "$SERVER_LOG"
+grep -q "gateway.listening" "$SERVER_LOG"
 
-log "test 1/3: Chinese chat should not start inner sandbox"
+log "test 1/4: missing artifact download must fail, not return empty 200"
+missing_download_start="$(($(wc -l <"$SERVER_LOG") + 1))"
+missing_body="$WORK_DIR/missing-download.json"
+missing_code="$(curl -sS "http://127.0.0.1:${PORT}/v1/files/file_missing_live_e2e/content" \
+  -H "X-Tenant-ID: ${TENANT_ID}" \
+  -H "X-Project-ID: ${PROJECT_ID}" \
+  -o "$missing_body" \
+  -w '%{http_code}')"
+if [ "$missing_code" = "200" ]; then
+  printf 'missing file download unexpectedly returned HTTP 200\n' >&2
+  exit 1
+fi
+test -s "$missing_body"
+grep -Eq 'file_not_found|not found' "$missing_body"
+assert_log_since "$missing_download_start" "event=file_download_failed"
+
+log "test 2/4: Chinese chat should not start inner sandbox"
 chat_start="$(($(wc -l <"$SERVER_LOG") + 1))"
 json_payload "$WORK_DIR/chat.json" "你是哪个模型？用一句话回答。"
 post_response "$WORK_DIR/chat.json" "$WORK_DIR/chat.sse" "$WORK_DIR/chat.metrics"
@@ -260,14 +284,15 @@ CHAT_PARSED="$(parse_sse "$WORK_DIR/chat.sse")"
 chat_download_start="$(($(wc -l <"$SERVER_LOG") + 1))"
 download_first_artifact "$CHAT_PARSED" "$WORK_DIR/chat-artifact.txt"
 assert_log_since "$chat_start" "event=response_completed"
-assert_log_since "$chat_start" "inner_not_started"
-assert_log_since_not "$chat_start" "tool_exec_start"
+assert_log_since "$chat_start" "inner_sandbox_id=\"\""
+assert_log_since_not "$chat_start" "kind=tool_call"
+assert_log_since_not "$chat_start" "runtime_event=inner_shutdown_done"
 assert_log_since "$chat_download_start" "event=file_download_done"
 assert_log_since "$chat_start" "event=sidecar_download_start"
 assert_log_since "$chat_start" "event=sidecar_download_done"
 log "chat metrics: $(tr '\n' ' ' <"$WORK_DIR/chat.metrics")"
 
-log "test 2/3: terminal tool should execute inside Hermes workspace"
+log "test 3/4: terminal tool should execute inside Hermes workspace"
 tool_start="$(($(wc -l <"$SERVER_LOG") + 1))"
 json_payload "$WORK_DIR/tool.json" "请使用 terminal 工具执行：pwd && printf '你好！' > hello.txt && cat hello.txt。然后用简洁中文说明你做了什么。"
 post_response "$WORK_DIR/tool.json" "$WORK_DIR/tool.sse" "$WORK_DIR/tool.metrics"
@@ -276,19 +301,16 @@ tool_download_start="$(($(wc -l <"$SERVER_LOG") + 1))"
 download_first_artifact "$TOOL_PARSED" "$WORK_DIR/tool-artifact.txt"
 grep -q "你好！" "$WORK_DIR/tool-artifact.txt"
 assert_log_since "$tool_start" "event=response_completed"
-assert_log_since "$tool_start" "event=inner_create_start"
-assert_log_since "$tool_start" "event=inner_ready"
-assert_log_since "$tool_start" "event=sandbox_host_ready"
-assert_log_since "$tool_start" "tool_exec_start"
-assert_log_since "$tool_start" "tool_exec_done"
-assert_log_since "$tool_start" "event=inner_shutdown_done"
-assert_log_since_not "$tool_start" "inner_not_started"
+assert_log_since "$tool_start" "kind=tool_call"
+assert_log_since "$tool_start" "kind=tool_call_update"
+assert_log_since "$tool_start" "runtime_event=inner_shutdown_done"
+assert_log_since_inner_sandbox_id "$tool_start"
 assert_log_since "$tool_download_start" "event=file_download_done"
 assert_log_since "$tool_start" "event=sidecar_download_start"
 assert_log_since "$tool_start" "event=sidecar_download_done"
 log "tool metrics: $(tr '\n' ' ' <"$WORK_DIR/tool.metrics")"
 
-log "test 3/3: upload file, inspect via sandbox tool, and download artifact"
+log "test 4/4: upload file, inspect via sandbox tool, and download artifact"
 printf 'FILE_KIND_AGENT_SANDBOX_NOTE\nhello from uploaded file\n' >"$WORK_DIR/input-note.txt"
 UPLOAD_JSON="$WORK_DIR/upload.json"
 upload_start="$(($(wc -l <"$SERVER_LOG") + 1))"
@@ -312,14 +334,12 @@ file_download_start="$(($(wc -l <"$SERVER_LOG") + 1))"
 download_first_artifact "$FILE_PARSED" "$WORK_DIR/file-artifact.txt"
 grep -q "hello from uploaded file" "$WORK_DIR/file-artifact.txt"
 assert_log_since "$file_start" "event=response_completed"
-assert_log_since "$file_start" "input_loaded"
-assert_log_since "$file_start" "event=inner_create_start"
-assert_log_since "$file_start" "event=inner_ready"
-assert_log_since "$file_start" "event=sandbox_host_ready"
-assert_log_since "$file_start" "tool_exec_start"
-assert_log_since "$file_start" "tool_exec_done"
-assert_log_since "$file_start" "event=inner_shutdown_done"
-assert_log_since_not "$file_start" "inner_not_started"
+assert_log_since "$file_start" "event=stage_inputs_done"
+assert_log_since "$file_start" "count=1"
+assert_log_since "$file_start" "kind=tool_call"
+assert_log_since "$file_start" "kind=tool_call_update"
+assert_log_since "$file_start" "runtime_event=inner_shutdown_done"
+assert_log_since_inner_sandbox_id "$file_start"
 assert_log_since "$file_download_start" "event=file_download_done"
 assert_log_since "$file_start" "event=sidecar_download_start"
 assert_log_since "$file_start" "event=sidecar_download_done"

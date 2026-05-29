@@ -40,6 +40,7 @@ stages:
               echo "ci.sha=${CI_SHA_FOR_LOG}"
               echo "runtime=hermes"
               echo "base_image_id=img-id352nof"
+              echo "target_regions=ap-beijing,ap-shanghai,ap-singapore"
           - name: 构建 Hermes CVM 镜像
             shell: bash
             run: |
@@ -55,7 +56,9 @@ stages:
 
               bash -n images/build.sh images/deploy-build.sh images/tests/test-hermes-build-script.sh images/tests/test-hermes-runtime.sh
               python3 -m py_compile images/build-image.py
+              python3 images/tests/test-build-image-sync.py
               python3 images/build-image.py \
                 --runtime hermes \
                 --base-image-id img-id352nof \
+                --target-regions ap-beijing,ap-shanghai,ap-singapore \
                 --with-verify

@@ -9,7 +9,7 @@ The project is now part of the `cloudagent` monorepo. External reference reposit
 - Connects the browser to an ACP backend over WebSocket.
 - Supports session list, new, load, resume, close, delete, prompt, and cancel flows.
 - Renders assistant text, reasoning, tool calls, attachments, and artifacts as timeline blocks.
-- Treats `replay_done` as the explicit end of session replay.
+- Treats `_cloudagent.session.replay_done` as the explicit end of session replay.
 - Uploads files through `/v1/files` and passes uploaded file references into ACP prompts.
 - Includes a Go local gateway for app-envelope WebSocket compatibility and optional `/v1/*` file API proxying.
 
@@ -34,6 +34,8 @@ http://127.0.0.1:5173/
 ```
 
 When targeting a local gateway, override it with `?acp_url=http://127.0.0.1:18094/acp`.
+For production CloudAgent auth and session workspace upload/download details,
+see [`docs/cloudagent-auth-and-files.md`](docs/cloudagent-auth-and-files.md).
 
 Run the optional Go gateway:
 

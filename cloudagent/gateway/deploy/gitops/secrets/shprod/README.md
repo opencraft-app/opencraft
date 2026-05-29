@@ -4,16 +4,16 @@ Production credentials are sourced from Tencent Cloud SSM and exported to a
 SOPS-encrypted Kubernetes Secret artifact. Do not commit plaintext secret
 values in this directory.
 
-Expected SSM secret name:
+Expected SSM secret names:
 
 ```text
-mono-shprod-cloudagent-gateway-runtime-secrets
+mono-shprod-cloudagent-wsa-search-secrets
 ```
 
 The generated encrypted artifact should be:
 
 ```text
-gateway/deploy/gitops/secrets/shprod/gateway-runtime-secrets.sops.yaml
+gateway/deploy/gitops/secrets/shprod/cloudagent-wsa-search-secrets.sops.yaml
 ```
 
 Required keys:
@@ -22,6 +22,16 @@ Required keys:
 GATEWAY_AGS_API_KEY
 GATEWAY_TOKENHUB_API_KEY
 ```
+
+Search provider keys:
+
+```text
+TENCENTCLOUD_WSA_APIKEY
+```
+
+`TENCENTCLOUD_WSA_APIKEY` is intentionally sourced from a separate SSM secret
+and Kubernetes Secret (`cloudagent-wsa-search-secrets`) so search-provider
+credentials cannot overwrite the core gateway runtime credentials.
 
 Optional keys:
 

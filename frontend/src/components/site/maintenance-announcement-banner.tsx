@@ -1,15 +1,15 @@
 /**
- * 临时维护公告条（北京时间 2026-05-19 06:00 自动撤下）
+ * 临时维护公告条（北京时间 2026-05-25 06:00 自动撤下）
  *
  * 显示位置：仅 landing（"/"）和 settings（"/dashboard/settings"）页顶部。
  * 显示条件：国内站（isCN）且未到撤下时刻、且用户未点击关闭。
  *
  * 关闭行为：localStorage key 带版本号，下次新公告换 ID 即可重新弹。
  *
- * 过期处理：构建期常量 EXPIRES_AT 是北京时间 2026-05-19 06:00 (UTC+8)
+ * 过期处理：构建期常量 EXPIRES_AT 是北京时间 2026-05-25 06:00 (UTC+8)
  * 对应的 Unix 毫秒，到期后无论 localStorage 状态都不再显示。
  *
- * 注意：升级窗口是 0:00-3:00，公告撤下时间是 06:00，留 3 小时缓冲让
+ * 注意：升级窗口是 23:00-次日 03:00，公告撤下时间是 06:00，留 3 小时缓冲让
  * 错过升级窗口刚醒来的用户也能看到说明。
  */
 
@@ -20,12 +20,12 @@ import { useT } from "@/i18n/t";
 import { isCN } from "@/lib/region";
 
 /** 这条公告的唯一 ID。下一次发新公告时改这个 key（例如 "0601"），让用户重新看到。 */
-const ANNOUNCEMENT_ID = "0518-hermes-upgrade";
+const ANNOUNCEMENT_ID = "0524-hermes-upgrade";
 
 const STORAGE_KEY = `lw-announcement-dismissed:${ANNOUNCEMENT_ID}`;
 
-/** 北京时间 2026-05-19 06:00:00 = UTC 2026-05-18 22:00:00 */
-const EXPIRES_AT = Date.UTC(2026, 4 /* 0-indexed: May */, 18, 22, 0, 0);
+/** 北京时间 2026-05-25 06:00:00 = UTC 2026-05-24 22:00:00 */
+const EXPIRES_AT = Date.UTC(2026, 4 /* 0-indexed: May */, 24, 22, 0, 0);
 
 /** 显示的路径白名单 */
 const VISIBLE_PATHS = new Set<string>(["/", "/dashboard/settings"]);
@@ -102,7 +102,7 @@ export function MaintenanceAnnouncementBanner() {
         <span className="inline-flex items-center gap-2 pr-8 leading-9">
           <Megaphone className="h-4 w-4 shrink-0" aria-hidden="true" />
           {t(
-            "通知：我们将于北京时间2026年5月19日0点～3点，对存量的 Hermes Agent 版本进行后台自动升级，升级期间可能导致智能体对话或任务执行短暂中止，带来不便尽请谅解。",
+            "通知：我们将于北京时间2026年5月24日23点～25日凌晨3点，对存量的 Hermes Agent 版本进行后台自动升级，升级期间可能导致智能体对话或任务执行短暂中止，带来不便尽请谅解。",
           )}
         </span>
       </div>

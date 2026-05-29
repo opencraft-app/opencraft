@@ -3,6 +3,7 @@ package wrapper
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -265,11 +266,15 @@ func parseSessionEnvdProxyPath(requestPath string) (string, string, bool) {
 }
 
 func (g *ACPGateway) proxyEnvd(w http.ResponseWriter, r *http.Request, envdPath string, session *acpSession, generation int64, proxyID string, runtime ACPSessionRuntime, start time.Time, allowRetry bool) bool {
+	if g.handleSessionWorkspaceFileTransfer(w, r, envdPath, session, generation, runtime, start) {
+		return false
+	}
 	target, err := innerEnvdURL(runtime)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "inner_envd_unavailable", err.Error())
 		return false
 	}
+	g.noteRuntimeActivity(session.Scope, session.SessionID, generation, "envd_proxy")
 	fmt.Fprintf(os.Stderr, "timeline source=server event=envd_proxy_start session_id=%s generation=%d session_proxy_id=%s inner_sandbox_id=%s path=%s\n", session.SessionID, generation, proxyID, runtime.InnerSandboxID, envdPath)
 	shouldRetry := false
 	proxy := &httputil.ReverseProxy{
@@ -310,6 +315,87 @@ func (g *ACPGateway) proxyEnvd(w http.ResponseWriter, r *http.Request, envdPath 
 	}
 	proxy.ServeHTTP(w, r)
 	return shouldRetry
+}
+
+func (g *ACPGateway) handleSessionWorkspaceFileTransfer(w http.ResponseWriter, r *http.Request, envdPath string, session *acpSession, generation int64, runtime ACPSessionRuntime, start time.Time) bool {
+	if !strings.HasPrefix(r.URL.Path, acpSessionEnvdProxyPrefix) || envdPath != "/files" || !runtime.isWispOuterRuntime() {
+		return false
+	}
+	manager, ok := g.runtimeManager.(ACPSessionWorkspaceFileManager)
+	if !ok {
+		writeError(w, http.StatusNotImplemented, "workspace_transfer_unavailable", "workspace file transfer is not supported by this runtime")
+		return true
+	}
+	workspacePath := strings.TrimSpace(r.URL.Query().Get("path"))
+	if workspacePath == "" {
+		writeError(w, http.StatusBadRequest, "invalid_workspace_path", "path query is required")
+		return true
+	}
+	switch r.Method {
+	case http.MethodPost:
+		content, err := readWorkspaceTransferUploadBody(r)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_upload_body", err.Error())
+			return true
+		}
+		g.noteRuntimeActivity(session.Scope, session.SessionID, generation, "workspace_file_upload")
+		fmt.Fprintf(os.Stderr, "timeline source=server event=workspace_file_upload_start session_id=%s generation=%d path=%s bytes=%d\n", session.SessionID, generation, quoteServerField(workspacePath), len(content))
+		if err := manager.UploadSessionWorkspaceFile(r.Context(), runtime, workspacePath, content); err != nil {
+			writeError(w, http.StatusBadGateway, "workspace_file_upload_failed", err.Error())
+			return true
+		}
+		fmt.Fprintf(os.Stderr, "timeline source=server event=workspace_file_upload_done session_id=%s generation=%d path=%s elapsed_ms=%d\n", session.SessionID, generation, quoteServerField(workspacePath), time.Since(start).Milliseconds())
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "path": workspacePath})
+		return true
+	case http.MethodGet:
+		g.noteRuntimeActivity(session.Scope, session.SessionID, generation, "workspace_file_download")
+		fmt.Fprintf(os.Stderr, "timeline source=server event=workspace_file_download_start session_id=%s generation=%d path=%s\n", session.SessionID, generation, quoteServerField(workspacePath))
+		content, err := manager.DownloadSessionWorkspaceFile(r.Context(), runtime, workspacePath)
+		if err != nil {
+			if isWorkspaceFileNotFoundText(err.Error()) {
+				writeError(w, http.StatusNotFound, "workspace_file_not_found", err.Error())
+				return true
+			}
+			writeError(w, http.StatusBadGateway, "workspace_file_download_failed", err.Error())
+			return true
+		}
+		fmt.Fprintf(os.Stderr, "timeline source=server event=workspace_file_download_done session_id=%s generation=%d path=%s bytes=%d elapsed_ms=%d\n", session.SessionID, generation, quoteServerField(workspacePath), len(content), time.Since(start).Milliseconds())
+		w.Header().Set("Content-Type", "application/octet-stream")
+		_, _ = w.Write(content)
+		return true
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "workspace file transfer supports GET and POST")
+		return true
+	}
+}
+
+func readWorkspaceTransferUploadBody(r *http.Request) ([]byte, error) {
+	contentType := strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Type")))
+	if strings.HasPrefix(contentType, "multipart/form-data") {
+		reader, err := r.MultipartReader()
+		if err != nil {
+			return nil, err
+		}
+		for {
+			part, err := reader.NextPart()
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			if err != nil {
+				return nil, err
+			}
+			if part.FileName() == "" && part.FormName() != "file" {
+				continue
+			}
+			return io.ReadAll(part)
+		}
+		return nil, fmt.Errorf("multipart upload missing file part")
+	}
+	if r.Body == nil || r.Body == http.NoBody {
+		return []byte{}, nil
+	}
+	return io.ReadAll(r.Body)
 }
 
 func stripUpstreamCORSHeaders(h http.Header) {
@@ -482,7 +568,25 @@ func (g *ACPGateway) ensureInnerEnvdTarget(ctx context.Context, sessionID string
 			}
 		}
 		if session.Runtime.hasInnerEnvdTarget() && !effectiveForce {
-			runtime := session.Runtime
+			g.mu.Unlock()
+			if err := g.refreshSessionRuntimeIfIdle(scope, sessionID, "envd_proxy"); err != nil {
+				return ACPSessionRuntime{}, err
+			}
+			g.mu.Lock()
+			current, ok := g.sessions[sessionID]
+			if !ok {
+				g.mu.Unlock()
+				return ACPSessionRuntime{}, fmt.Errorf("session not found")
+			}
+			if !sameScope(scope, current.Scope) {
+				g.mu.Unlock()
+				return ACPSessionRuntime{}, sessionScopeError{}
+			}
+			if current.RuntimeGeneration != generation || current.Closed || current.State == acpRuntimeStateClosing || current.State == acpRuntimeStateClosed {
+				g.mu.Unlock()
+				return ACPSessionRuntime{}, staleSessionProxyError{}
+			}
+			runtime := current.Runtime
 			g.mu.Unlock()
 			return runtime, nil
 		}
@@ -512,6 +616,7 @@ func (g *ACPGateway) ensureInnerEnvdTarget(ctx context.Context, sessionID string
 		g.envdEnsures[key] = call
 		g.mu.Unlock()
 
+		fmt.Fprintf(os.Stderr, "timeline source=server event=inner_envd_ensure_start session_id=%s generation=%d outer_sandbox_id=%s force=%t cached_target=%t\n", sessionID, generation, runtime.OuterSandboxID, effectiveForce, runtime.hasInnerEnvdTarget())
 		update, err := manager.EnsureSessionEnvdRuntime(ctx, runtime, ACPSessionRuntimeEnsureRequest{
 			SessionID:  sessionID,
 			Scope:      scope,
@@ -553,6 +658,7 @@ func (g *ACPGateway) ensureInnerEnvdTarget(ctx context.Context, sessionID string
 		close(call.done)
 		g.mu.Unlock()
 		if err != nil {
+			fmt.Fprintf(os.Stderr, "timeline source=server event=inner_envd_ensure_failed session_id=%s generation=%d outer_sandbox_id=%s error=%s\n", sessionID, generation, runtime.OuterSandboxID, quoteServerField(err.Error()))
 			return ACPSessionRuntime{}, err
 		}
 		return ensuredRuntime, nil

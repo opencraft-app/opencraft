@@ -130,6 +130,7 @@ function isModeOption(option: ConfigOption) {
 
 export interface ReopenInput {
   liveConnection: boolean;
+  transcriptLoaded?: boolean;
   listedByAgent: boolean;
   listSupported: boolean;
   loadSupported: boolean;
@@ -149,7 +150,7 @@ export function decideReopen(input: ReopenInput): ReopenDecision {
   if (!input.requiredRootsAuthoritative) {
     return { action: 'blocked', replay: false, errorKind: 'additional_roots_missing' };
   }
-  if (input.liveConnection && input.hasSessionId) {
+  if (input.liveConnection && input.hasSessionId && input.transcriptLoaded) {
     return { action: 'rebind', replay: false };
   }
   if (input.hasSessionId && !input.listSupported) {

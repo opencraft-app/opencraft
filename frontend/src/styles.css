@@ -58,6 +58,17 @@ body,
   min-height: 100%;
 }
 
+html.lw-settings-scrollbar-stable {
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.lw-settings-topbar-inner {
+  width: min(1440px, 100vw);
+  margin-left: max(0px, calc((100vw - 1440px) / 2));
+  margin-right: max(0px, calc((100vw - 1440px) / 2));
+}
+
 body {
   margin: 0;
   min-height: 100dvh;
@@ -86,6 +97,53 @@ p {
 a {
   color: inherit;
   text-decoration: none;
+}
+
+.lw-site-link {
+  color: var(--lw-site-link-color, inherit);
+  text-decoration: none;
+}
+
+.lw-site-link:visited {
+  color: var(--lw-site-link-color, inherit);
+}
+
+.lw-site-link:hover {
+  color: var(--lw-site-link-hover-color, var(--lw-site-link-color, inherit));
+}
+
+.lw-site-link--muted {
+  --lw-site-link-color: rgb(0 0 0 / 0.5);
+  --lw-site-link-hover-color: rgb(0 0 0);
+}
+
+.lw-site-link--nav {
+  --lw-site-link-color: rgb(0 0 0 / 0.9);
+  --lw-site-link-hover-color: rgb(0 0 0 / 0.9);
+}
+
+.lw-landing-navbar {
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.lw-landing-navbar .lw-landing-navbar__nav {
+  display: none;
+}
+
+.lw-settings-nav-item + .lw-settings-nav-item {
+  margin-top: 4px;
+}
+
+@media (min-width: 768px) {
+  .lw-landing-navbar .lw-landing-navbar__nav {
+    display: flex;
+    flex: 1 1 0%;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+  }
 }
 
 button,

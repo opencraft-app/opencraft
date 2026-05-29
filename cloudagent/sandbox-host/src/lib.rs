@@ -152,6 +152,8 @@ impl Host {
                     "host.info",
                     "fs.read",
                     "fs.write",
+                    "fs.stat",
+                    "fs.blob",
                     "fs.list",
                     "fs.search",
                     "fs.patch",
@@ -169,6 +171,7 @@ impl Host {
             })),
             "fs.read" | "native.fs.read" => self.fs.read(params),
             "fs.write" | "native.fs.write" => self.fs.write(params),
+            "fs.stat" | "native.fs.stat" => self.fs.stat(params),
             "fs.list" | "native.fs.list" => self.fs.list(params),
             "fs.search" | "native.fs.search" => self.fs.search(params),
             "fs.patch" | "native.fs.patch" => self.fs.patch(params),
@@ -192,6 +195,26 @@ impl Host {
 
     fn handle_stream(&self, mut stream: TcpStream) -> Result<(), ApiError> {
         let req = read_http_request(&mut stream)?;
+        let (path, query) = split_path_query(&req.path);
+        if path == "/v1/fs/blob" {
+            return match req.method.as_str() {
+                "GET" => {
+                    let raw = self.fs.read_blob_from_query(query);
+                    write_blob_http_response(&mut stream, raw)
+                }
+                "PUT" | "POST" => {
+                    let result = self.fs.write_blob_from_query(query, &req.body);
+                    write_http_response(&mut stream, result)
+                }
+                _ => write_http_response(
+                    &mut stream,
+                    Err(ApiError::new(
+                        "not_found",
+                        format!("unknown endpoint {} {}", req.method, req.path),
+                    )),
+                ),
+            };
+        }
         let response = match (req.method.as_str(), req.path.as_str()) {
             ("GET", "/health") => Ok(json!({"status": "ok"})),
             ("GET", "/v1/host") => self.dispatch("host.info", json!({})),
@@ -406,6 +429,48 @@ impl SandboxFs {
             "bytes": content.len(),
             "file_size": file_size,
             "append": append
+        }))
+    }
+
+    fn stat(&self, params: Value) -> ApiResult {
+        let raw_path = str_param(&params, "path")
+            .ok_or_else(|| ApiError::new("invalid_request", "missing path"))?;
+        let path = self.resolve_existing(raw_path)?;
+        let metadata = fs::metadata(&path).map_err(io_api_error)?;
+        Ok(json!({
+            "path": self.display_path(&path),
+            "is_file": metadata.is_file(),
+            "is_dir": metadata.is_dir(),
+            "is_symlink": fs::symlink_metadata(&path)
+                .map(|metadata| metadata.file_type().is_symlink())
+                .unwrap_or(false),
+            "size": metadata.len(),
+            "readonly": metadata.permissions().readonly()
+        }))
+    }
+
+    fn read_blob_from_query(&self, query: Option<&str>) -> Result<Vec<u8>, ApiError> {
+        let raw_path = query_param(query, "path")
+            .ok_or_else(|| ApiError::new("invalid_request", "missing path"))?;
+        let path = self.resolve_existing(&raw_path)?;
+        self.ensure_readable_regular_file(&path)?;
+        fs::read(path).map_err(io_api_error)
+    }
+
+    fn write_blob_from_query(&self, query: Option<&str>, body: &[u8]) -> ApiResult {
+        let raw_path = query_param(query, "path")
+            .ok_or_else(|| ApiError::new("invalid_request", "missing path"))?;
+        let path = self.resolve_for_write(&raw_path)?;
+        self.ensure_safe_write_path(&path)?;
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(io_api_error)?;
+        }
+        fs::write(&path, body).map_err(io_api_error)?;
+        let file_size = fs::metadata(&path).map_err(io_api_error)?.len();
+        Ok(json!({
+            "path": self.display_path(&path),
+            "bytes": body.len(),
+            "file_size": file_size
         }))
     }
 
@@ -924,6 +989,10 @@ impl SandboxFs {
     }
 
     fn ensure_readable_text_file(&self, path: &Path) -> Result<(), ApiError> {
+        self.ensure_readable_regular_file(path)
+    }
+
+    fn ensure_readable_regular_file(&self, path: &Path) -> Result<(), ApiError> {
         let metadata = fs::metadata(path).map_err(io_api_error)?;
         if is_device_path(path) || is_special_file(&metadata) {
             return Err(ApiError::new(
@@ -1406,6 +1475,7 @@ fn path_method(path: &str) -> Result<&'static str, ApiError> {
         "/v1/process/close" => Ok("process.close"),
         "/v1/fs/read" => Ok("fs.read"),
         "/v1/fs/write" => Ok("fs.write"),
+        "/v1/fs/stat" => Ok("fs.stat"),
         "/v1/fs/list" => Ok("fs.list"),
         "/v1/fs/search" => Ok("fs.search"),
         "/v1/fs/patch" => Ok("fs.patch"),
@@ -1413,6 +1483,13 @@ fn path_method(path: &str) -> Result<&'static str, ApiError> {
             "not_found",
             format!("unknown endpoint {path}"),
         )),
+    }
+}
+
+fn split_path_query(path: &str) -> (&str, Option<&str>) {
+    match path.split_once('?') {
+        Some((path, query)) => (path, Some(query)),
+        None => (path, None),
     }
 }
 
@@ -1505,6 +1582,24 @@ fn write_http_response(stream: &mut TcpStream, result: ApiResult) -> Result<(), 
     stream.write_all(b"\n").map_err(io_api_error)
 }
 
+fn write_blob_http_response(
+    stream: &mut TcpStream,
+    result: Result<Vec<u8>, ApiError>,
+) -> Result<(), ApiError> {
+    match result {
+        Ok(body) => {
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            )
+            .map_err(io_api_error)?;
+            stream.write_all(&body).map_err(io_api_error)
+        }
+        Err(error) => write_http_response(stream, Err(error)),
+    }
+}
+
 fn http_post(url: &str, body: &[u8]) -> Result<(u16, Vec<u8>), ApiError> {
     let url = url
         .strip_prefix("http://")
@@ -1547,7 +1642,7 @@ fn status_for_error(error: &ApiError) -> &'static str {
     match error.code.as_str() {
         "bad_request" | "invalid_json" | "invalid_request" | "invalid_flag" => "400 Bad Request",
         "not_found" | "unknown_process" => "404 Not Found",
-        "path_outside_workspace" => "403 Forbidden",
+        "path_outside_workspace" | "permission_denied" => "403 Forbidden",
         _ => "500 Internal Server Error",
     }
 }
@@ -1559,6 +1654,54 @@ fn decode_params(body: &[u8]) -> Result<Value, ApiError> {
     let raw: Value = serde_json::from_slice(body)
         .map_err(|err| ApiError::new("invalid_json", err.to_string()))?;
     Ok(raw.get("params").cloned().unwrap_or(raw))
+}
+
+fn query_param(query: Option<&str>, name: &str) -> Option<String> {
+    let query = query?;
+    for pair in query.split('&') {
+        let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+        if percent_decode_query_component(key).ok().as_deref() == Some(name) {
+            return percent_decode_query_component(value).ok();
+        }
+    }
+    None
+}
+
+fn percent_decode_query_component(input: &str) -> Result<String, ApiError> {
+    let mut out = Vec::with_capacity(input.len());
+    let bytes = input.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'+' => {
+                out.push(b' ');
+                index += 1;
+            }
+            b'%' if index + 2 < bytes.len() => {
+                let hi = hex_value(bytes[index + 1])
+                    .ok_or_else(|| ApiError::new("invalid_request", "invalid percent escape"))?;
+                let lo = hex_value(bytes[index + 2])
+                    .ok_or_else(|| ApiError::new("invalid_request", "invalid percent escape"))?;
+                out.push((hi << 4) | lo);
+                index += 3;
+            }
+            b'%' => return Err(ApiError::new("invalid_request", "truncated percent escape")),
+            other => {
+                out.push(other);
+                index += 1;
+            }
+        }
+    }
+    String::from_utf8(out).map_err(|err| ApiError::new("invalid_request", err.to_string()))
+}
+
+fn hex_value(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
 }
 
 fn find_header_end(buf: &[u8]) -> Option<usize> {
@@ -1793,7 +1936,11 @@ fn is_help(arg: &str) -> bool {
 }
 
 fn io_api_error(err: std::io::Error) -> ApiError {
-    ApiError::new("io_error", err.to_string())
+    match err.kind() {
+        std::io::ErrorKind::NotFound => ApiError::new("not_found", err.to_string()),
+        std::io::ErrorKind::PermissionDenied => ApiError::new("permission_denied", err.to_string()),
+        _ => ApiError::new("io_error", err.to_string()),
+    }
 }
 
 fn anyhow_api_error(err: anyhow::Error) -> ApiError {
@@ -1885,6 +2032,33 @@ mod tests {
         assert_eq!(read["content"], "alpha\nbeta");
         let escaped = host.dispatch("fs.read", json!({"path": "../outside"}));
         assert_eq!(escaped.unwrap_err().code, "path_outside_workspace");
+    }
+
+    #[test]
+    fn fs_stat_and_blob_round_trip_binary_without_text_read() {
+        let host = host();
+        let payload = vec![0_u8, 1, 2, 3, 255];
+        let written = host
+            .fs
+            .write_blob_from_query(Some("path=bin%2Fblob.bin"), &payload)
+            .unwrap();
+        assert_eq!(written["path"], "bin/blob.bin");
+        assert_eq!(written["bytes"], payload.len());
+
+        let stat = host
+            .dispatch("fs.stat", json!({"path": "bin/blob.bin"}))
+            .unwrap();
+        assert_eq!(stat["is_file"], true);
+        assert_eq!(stat["size"], payload.len());
+
+        let read = host
+            .fs
+            .read_blob_from_query(Some("path=bin%2Fblob.bin"))
+            .unwrap();
+        assert_eq!(read, payload);
+
+        let text_read = host.dispatch("fs.read", json!({"path": "bin/blob.bin"}));
+        assert_eq!(text_read.unwrap_err().code, "binary_file");
     }
 
     #[test]

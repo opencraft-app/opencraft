@@ -219,7 +219,7 @@ describe("stored UI state", () => {
       gatewayURL: "ws://127.0.0.1:18094/acp",
       sessionMetaTemplateId: "talos",
       sessionCreateMetaJSON:
-        '{"_meta":{"cloudagent":{"sandbox_backend":"talos","sandbox_template_id":"498c6c11-74d7-426e-bdb1-13d8aa73997e"}}}',
+        '{"_meta":{"cloudagent":{"sandbox_backend":"talos","agent_version":"builtin.v1","workspace_version":"builtin.v1"}}}',
     });
 
     expect(stored).toEqual({
@@ -227,7 +227,7 @@ describe("stored UI state", () => {
       gatewayURL: "ws://127.0.0.1:18094/acp",
       sessionMetaTemplateId: "talos",
       sessionCreateMetaJSON:
-        '{"_meta":{"cloudagent":{"sandbox_backend":"talos","sandbox_template_id":"498c6c11-74d7-426e-bdb1-13d8aa73997e"}}}',
+        '{"_meta":{"cloudagent":{"sandbox_backend":"talos","agent_version":"builtin.v1","workspace_version":"builtin.v1"}}}',
     });
   });
 });

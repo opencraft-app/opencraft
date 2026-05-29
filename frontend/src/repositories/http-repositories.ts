@@ -850,18 +850,108 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
     },
 
     async execDebugCommand(botId, command) {
-      const payload = await requestEnvelope<{
+      // debug/exec 协议：命令执行失败时后端会返回 HTTP 500，但 body.details
+      // 里仍带有完整的命令结果（status/exit_code/output），需要把这种「业务
+      // 失败但有结果」的情况和真正的「接口错误」区分开。
+      //
+      // - 200 + envelope.data：命令成功，按原逻辑返回
+      // - 5xx + body.details：命令执行失败，但 details.output 含业务结果（如
+      //   hermes_version_too_old），上层据此解析友好提示
+      // - 5xx 无 details：真正的接口错误，按通用 RepositoryError 抛出
+      const path = `/v1/instances/${encodeURIComponent(botId)}/debug/exec`;
+      const headers = new Headers({ "Content-Type": "application/json" });
+      const authToken = readStoredAuthToken();
+      if (authToken) {
+        headers.set("Authorization", `Bearer ${authToken}`);
+      }
+
+      let response: Response;
+      try {
+        response = await fetch(buildUrl(baseUrl, path), {
+          method: "POST",
+          credentials: "include",
+          headers,
+          body: JSON.stringify({ command, run_as_user: "agentuser" }),
+        });
+      } catch {
+        throw new RepositoryError("认证服务不可用，请先启动 Go auth 服务。", 0, "network_error");
+      }
+
+      let body: unknown = null;
+      try {
+        body = await response.json();
+      } catch {
+        body = null;
+      }
+
+      // 优先识别 details 字段：只要带 details.output / details.exit_code，
+      // 就视为命令已经执行过，返回标准化结果让上层解析。
+      const details = (body as {
+        details?: { status?: string; exit_code?: number; output?: string };
+      } | null)?.details;
+      if (details && (typeof details.output === "string" || typeof details.exit_code === "number")) {
+        return {
+          status: details.status ?? "",
+          exitCode: typeof details.exit_code === "number" ? details.exit_code : -1,
+          output: details.output ?? "",
+        };
+      }
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          broadcastUnauthorized();
+        }
+        const errPayload = body as ApiErrorPayload | null;
+        const code = errPayload?.code?.trim() || errPayload?.error?.trim();
+        const requestId = errPayload?.request_id?.trim() || errPayload?.requestId?.trim();
+        const detail = [code, requestId ? `request_id=${requestId}` : ""].filter(Boolean).join(", ");
+        const message = errPayload?.message?.trim() || errPayload?.error?.trim() || `请求失败（${response.status}）`;
+        throw new RepositoryError(
+          detail ? `${message}（${detail}）` : message,
+          response.status,
+          code,
+          errPayload?.retryAfterSeconds,
+        );
+      }
+
+      // 200 走正常 envelope 解析
+      const envelope = body as APIEnvelope<{
         status: string;
         exit_code: number;
         output: string;
-      }>(baseUrl, `/v1/instances/${encodeURIComponent(botId)}/debug/exec`, {
+      }> | null;
+      const data = envelope?.data;
+      return {
+        status: data?.status ?? "",
+        exitCode: data?.exit_code ?? -1,
+        output: data?.output ?? "",
+      };
+    },
+
+    async resetInstanceConfig(botId: string) {
+      const payload = await requestEnvelope<{
+        key_id: string;
+        key_prefix: string;
+        config: {
+          provider_name: string;
+          base_url: string;
+          model_id: string;
+          api: string;
+          api_key: string;
+        };
+      }>(baseUrl, `/v1/instances/${encodeURIComponent(botId)}/config/reset`, {
         method: "POST",
-        body: { command, run_as_user: "agentuser" },
       });
       return {
-        status: payload.status,
-        exitCode: payload.exit_code,
-        output: payload.output,
+        keyId: payload?.key_id,
+        keyPrefix: payload?.key_prefix,
+        config: {
+          providerName: payload?.config?.provider_name,
+          baseUrl: payload?.config?.base_url,
+          modelId: payload?.config?.model_id,
+          api: payload?.config?.api,
+          apiKey: payload?.config?.api_key,
+        },
       };
     },
   };
@@ -954,7 +1044,11 @@ const createHttpAuthRepository = (baseUrl: string): AuthRepository => ({
     });
   },
   getOAuthStartUrl(provider) {
-    const startURL = new URL(buildUrl(baseUrl, `/auth/oauth/${provider}/start`));
+    // local-proxy 模式 baseUrl 是空字符串，buildUrl 拼出来是相对路径 `/auth/...`。
+    // URL 构造器不接受相对路径，所以传 window.location.origin 当 base；
+    // 当 baseUrl 是绝对 URL（如 https://lightclaw.tech）时，第二个参数会被忽略。
+    const base = typeof window !== "undefined" ? window.location.origin : "https://lightclaw.tech";
+    const startURL = new URL(buildUrl(baseUrl, `/auth/oauth/${provider}/start`), base);
     const relayIssuerBaseURL = configuredOAuthRelayIssuerBaseURL();
     if (relayIssuerBaseURL) {
       startURL.searchParams.set("relay_mode", "issuer");

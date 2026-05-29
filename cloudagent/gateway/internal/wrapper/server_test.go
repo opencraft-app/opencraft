@@ -10,6 +10,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"cloudagent/gateway/internal/telemetry"
 )
 
 func TestUploadStreamGetResponseAndDownloadArtifact(t *testing.T) {
@@ -90,6 +92,45 @@ func TestBrowserFileUploadPreflightAllowsMyChatHeaders(t *testing.T) {
 	}
 	if got := strings.ToLower(resp.Header().Get("Access-Control-Allow-Headers")); !strings.Contains(got, "x-tenant-id") || !strings.Contains(got, "x-project-id") {
 		t.Fatalf("allow headers=%q", got)
+	}
+}
+
+func TestGatewayEmitsOTELAccessLog(t *testing.T) {
+	var logs bytes.Buffer
+	shutdown, err := telemetry.Init(telemetry.Options{
+		ServiceName: "cloudagent-gateway-test",
+		Writer:      &logs,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv, _ := newTestServer(t, FakeWorker{})
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	req.Header.Set("X-Request-ID", "req-test")
+	req.Header.Set("X-Forwarded-For", "203.0.113.10, 10.0.0.1")
+	req.Header.Set("Traceparent", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
+	resp := httptest.NewRecorder()
+
+	srv.Handler().ServeHTTP(resp, req)
+	if err := shutdown(); err != nil {
+		t.Fatal(err)
+	}
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+	}
+	got := logs.String()
+	for _, want := range []string{
+		"gateway.http_request",
+		"cloudagent-gateway-test",
+		"http.response.status_code",
+		"req-test",
+		"203.0.113.10",
+		"4bf92f3577b34da6a3ce929d0e0e4736",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("OTEL log missing %q in:\n%s", want, got)
+		}
 	}
 }
 

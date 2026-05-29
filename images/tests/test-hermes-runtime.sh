@@ -137,11 +137,41 @@ HERMES_OUTPUT="$(remote_exec_runtime '
     exit 1
   fi
 ' 2>&1 || true)"
+HERMES_COMMAND_PATHS="$(remote_exec_runtime '
+  export HOME='"${RUNTIME_HOME}"'
+  export USER='"${RUNTIME_USER}"'
+  export PATH=/usr/local/bin:/usr/bin:/bin:$HOME/.local/bin:$HOME/.cargo/bin:$HOME/.hermes/hermes-agent/venv/bin
+  command -v hermes || true
+  command -v hermes-agent || true
+' 2>&1 || true)"
+info "hermes command paths:"
+printf '%s\n' "${HERMES_COMMAND_PATHS}"
 if echo "${HERMES_OUTPUT}" | grep -q 'MISSING'; then
   fail "hermes command is not available"
   echo "${HERMES_OUTPUT}"
 else
   pass "hermes runtime command is available"
+fi
+
+info "checking hermes runtime version"
+HERMES_VERSION_OUTPUT="$(remote_exec_runtime '
+  export HOME='"${RUNTIME_HOME}"'
+  export USER='"${RUNTIME_USER}"'
+  export PATH=/usr/local/bin:/usr/bin:/bin:$HOME/.local/bin:$HOME/.cargo/bin:$HOME/.hermes/hermes-agent/venv/bin
+  hermes --version
+' 2>&1 || true)"
+HERMES_BIN_VERSION="$(printf '%s\n' "${HERMES_VERSION_OUTPUT}" | grep -Eo '[0-9]+(\.[0-9]+){1,2}' | head -1 || true)"
+HERMES_IDENTITY_VERSION="$(remote_exec "awk -F': *' '/^runtime_version:/ {print \$2}' /etc/acli/identity.yaml 2>/dev/null" 2>&1 || true)"
+info "hermes --version output: ${HERMES_VERSION_OUTPUT}"
+info "parsed hermes version: ${HERMES_BIN_VERSION}"
+info "identity runtime_version: ${HERMES_IDENTITY_VERSION}"
+if [ -n "${HERMES_BIN_VERSION}" ] && [ -n "${HERMES_IDENTITY_VERSION}" ] && [ "${HERMES_BIN_VERSION}" = "${HERMES_IDENTITY_VERSION}" ]; then
+  pass "hermes runtime version matches identity: ${HERMES_BIN_VERSION}"
+else
+  fail "hermes runtime version does not match identity"
+  echo "hermes --version output: ${HERMES_VERSION_OUTPUT}"
+  echo "parsed hermes version: ${HERMES_BIN_VERSION}"
+  echo "identity runtime_version: ${HERMES_IDENTITY_VERSION}"
 fi
 
 info "checking hermes command topology"
@@ -158,6 +188,8 @@ HERMES_TOPOLOGY_OUTPUT="$(remote_exec_runtime '
   head -1 "$HOME/.hermes/hermes-agent/venv/bin/hermes"
   head -1 "$HOME/.hermes/hermes-agent/venv/bin/hermes-agent"
 ' 2>&1 || true)"
+info "hermes topology output:"
+printf '%s\n' "${HERMES_TOPOLOGY_OUTPUT}"
 if echo "${HERMES_TOPOLOGY_OUTPUT}" | grep -q '^#!.*python'; then
   pass "hermes command topology is standardized"
 else
@@ -183,6 +215,31 @@ else
   echo "${SKILLHUB_OUTPUT}"
 fi
 
+info "checking WhatsApp bridge Node dependencies"
+WHATSAPP_BRIDGE_OUTPUT="$(remote_exec_runtime 'set -euo pipefail; export HOME='"${RUNTIME_HOME}"'; export HERMES_HOME='"${RUNTIME_HOME}"'/.hermes; cd '"${RUNTIME_HOME}"'/.hermes/hermes-agent/scripts/whatsapp-bridge; node -e '"'"'for (const m of ["@whiskeysockets/baileys","qrcode-terminal","express","pino"]) console.log(m, require.resolve(m))'"'" 2>&1 || true)"
+info "whatsapp bridge dependency output:"
+printf '%s\n' "${WHATSAPP_BRIDGE_OUTPUT}"
+if echo "${WHATSAPP_BRIDGE_OUTPUT}" | grep -q '@whiskeysockets/baileys' \
+  && echo "${WHATSAPP_BRIDGE_OUTPUT}" | grep -q 'qrcode-terminal' \
+  && echo "${WHATSAPP_BRIDGE_OUTPUT}" | grep -q 'express' \
+  && echo "${WHATSAPP_BRIDGE_OUTPUT}" | grep -q 'pino' \
+  && ! echo "${WHATSAPP_BRIDGE_OUTPUT}" | grep -Eqi 'cannot find module|error|no such file'; then
+  pass "WhatsApp bridge Node dependencies are available"
+else
+  fail "WhatsApp bridge Node dependencies are not available"
+  echo "${WHATSAPP_BRIDGE_OUTPUT}"
+fi
+
+info "checking Hermes Python integration dependencies"
+HERMES_PYTHON_DEPS_OUTPUT="$(remote_exec_runtime 'set -euo pipefail; '"${RUNTIME_HOME}"'/.hermes/hermes-agent/venv/bin/python -c '"'"'import lark_oapi, qrcode; print("hermes-python-deps-ok")'"'" 2>&1 || true)"
+if echo "${HERMES_PYTHON_DEPS_OUTPUT}" | grep -q 'hermes-python-deps-ok' \
+  && ! echo "${HERMES_PYTHON_DEPS_OUTPUT}" | grep -Eqi 'moduleNotFoundError|importError|no such file|error'; then
+  pass "Hermes Python integration dependencies are available"
+else
+  fail "Hermes Python integration dependencies are not available"
+  echo "${HERMES_PYTHON_DEPS_OUTPUT}"
+fi
+
 info "checking acli command"
 ACLI_OUTPUT="$(remote_exec_runtime "if command -v acli >/dev/null 2>&1; then acli --help >/dev/null && acli doctor; else echo MISSING; exit 1; fi" 2>&1 || true)"
 if echo "${ACLI_OUTPUT}" | grep -Eqi 'error|failed|missing'; then
@@ -194,6 +251,8 @@ fi
 
 info "checking acli identity"
 ACLI_IDENTITY_OUTPUT="$(remote_exec "test -f /etc/acli/identity.yaml && grep -E '^(product|run_as|runtime|runtime_bin|runtime_home|runtime_version):' /etc/acli/identity.yaml" 2>&1 || true)"
+info "acli identity runtime fields:"
+printf '%s\n' "${ACLI_IDENTITY_OUTPUT}"
 if echo "${ACLI_IDENTITY_OUTPUT}" | grep -q '^product: lightvela$' \
   && echo "${ACLI_IDENTITY_OUTPUT}" | grep -q '^run_as: '"${RUNTIME_USER}"'$' \
   && echo "${ACLI_IDENTITY_OUTPUT}" | grep -q '^runtime: hermes$' \

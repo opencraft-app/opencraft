@@ -704,3 +704,13 @@ func oauthFallbackName(provider string) string {
 		return "新用户"
 	}
 }
+
+func canAutoLinkOAuthEmail(input OAuthSignInInput) bool {
+	if strings.TrimSpace(input.Email) == "" {
+		return false
+	}
+	if input.EmailVerified {
+		return true
+	}
+	return strings.EqualFold(strings.TrimSpace(input.Provider), "github")
+}

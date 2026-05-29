@@ -33,6 +33,7 @@
 - `sandbox`
 - `service-gateway`
 - `subscription`
+- `vibebase`
 
 当前新加坡项目模型：
 
@@ -50,6 +51,7 @@
   - `sgprod-sandbox`
   - `sgprod-service-gateway`
   - `sgprod-subscription`
+  - `sgprod-vibebase`
 
 当前已有 deploy-facing 目录但尚未接入 live leaf app：
 

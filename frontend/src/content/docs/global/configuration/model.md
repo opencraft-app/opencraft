@@ -206,6 +206,4 @@
     
 - [配置通道 - Discord](./configuration/channel-discord.md)
     
-- [配置通道 - Slack](./configuration/channel-slack.md)
-    
 - [配置技能](./configuration/skill.md)

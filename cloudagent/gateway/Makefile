@@ -3,6 +3,7 @@ SHELL := /bin/sh
 GO ?= go
 GOWORK ?= off
 DOCKER ?= docker
+DOCKER_COMPOSE ?= docker compose
 UPX ?= upx
 STRIP ?= strip
 
@@ -14,43 +15,61 @@ UPX_FLAGS ?= --best --lzma
 CN_MIRRORS ?= 1
 
 SERVER_PKG := ./cmd/server
-HERMES_SIDECAR_SOURCES := $(shell find ../research/hermes-rs \( -path '../research/hermes-rs/target' -o -path '../research/hermes-rs/.git' \) -prune -o -type f -print)
+CLOUDAGENT_SIDECAR_SOURCES := $(shell find ../research/hermes-rs \( -path '../research/hermes-rs/target' -o -path '../research/hermes-rs/.git' \) -prune -o -type f -print)
 
-HERMES_SIDECAR_RUST_BASE_IMAGE ?= rust:1.86-bookworm
-HERMES_SIDECAR_CARGO_NET_RETRY ?= 10
-HERMES_SIDECAR_CARGO_HTTP_TIMEOUT ?= 120
-HERMES_SIDECAR_CARGO_HTTP_MULTIPLEXING ?= false
-HERMES_SIDECAR_CARGO_INCREMENTAL ?= 1
-HERMES_SIDECAR_CARGO_PROFILE_RELEASE_LTO ?= false
-HERMES_SIDECAR_CARGO_PROFILE_RELEASE_CODEGEN_UNITS ?= 16
-HERMES_SIDECAR_CARGO_PROFILE_RELEASE_STRIP ?= true
+CLOUDAGENT_SIDECAR_RUST_BASE_IMAGE ?= rust:1.86-bookworm
+CLOUDAGENT_SIDECAR_CARGO_NET_RETRY ?= 10
+CLOUDAGENT_SIDECAR_CARGO_HTTP_TIMEOUT ?= 120
+CLOUDAGENT_SIDECAR_CARGO_HTTP_MULTIPLEXING ?= false
+CLOUDAGENT_SIDECAR_CARGO_INCREMENTAL ?= 1
+CLOUDAGENT_SIDECAR_CARGO_PROFILE_RELEASE_LTO ?= false
+CLOUDAGENT_SIDECAR_CARGO_PROFILE_RELEASE_CODEGEN_UNITS ?= 16
+CLOUDAGENT_SIDECAR_CARGO_PROFILE_RELEASE_STRIP ?= true
 
 ifeq ($(CN_MIRRORS),1)
-HERMES_SIDECAR_DEBIAN_MIRROR ?= mirrors.tuna.tsinghua.edu.cn
-HERMES_SIDECAR_CARGO_USE_MIRROR ?= 1
-HERMES_SIDECAR_CARGO_REGISTRY_MIRROR ?= https://rsproxy.cn
+CLOUDAGENT_SIDECAR_DEBIAN_MIRROR ?= mirrors.tuna.tsinghua.edu.cn
+CLOUDAGENT_SIDECAR_CARGO_USE_MIRROR ?= 1
+# Use rsproxy's sparse registry root so Cargo also gets rsproxy's crate
+# download endpoint from config.json. Some index mirrors still point dl at
+# static.crates.io, which does not fix slow .crate tarball downloads.
+CLOUDAGENT_SIDECAR_CARGO_REGISTRY_MIRROR ?= sparse+https://rsproxy.cn/index/
 else
-HERMES_SIDECAR_DEBIAN_MIRROR ?=
-HERMES_SIDECAR_CARGO_USE_MIRROR ?= 0
-HERMES_SIDECAR_CARGO_REGISTRY_MIRROR ?=
+CLOUDAGENT_SIDECAR_DEBIAN_MIRROR ?=
+CLOUDAGENT_SIDECAR_CARGO_USE_MIRROR ?= 0
+CLOUDAGENT_SIDECAR_CARGO_REGISTRY_MIRROR ?=
 endif
 
-HERMES_SIDECAR_IMAGE ?= gateway-hermes-sidecar-builder:local
-HERMES_SIDECAR_LINUX := $(DIST_DIR)/hermes-sidecar-linux-amd64
-HERMES_SIDECAR_LINUX_PACKED := $(DIST_DIR)/hermes-sidecar-linux-amd64.upx
+CLOUDAGENT_SIDECAR_IMAGE ?= gateway-cloudagent-sidecar-builder:local
+CLOUDAGENT_SIDECAR_LINUX := $(DIST_DIR)/cloudagent-sidecar-linux-amd64
+CLOUDAGENT_SIDECAR_LINUX_PACKED := $(DIST_DIR)/cloudagent-sidecar-linux-amd64.upx
+CLOUDAGENT_AGENT_LOADER_LINUX := $(DIST_DIR)/cloudagent-agent-loader-linux-amd64
+CLOUDAGENT_AGENT_SIGN_LINUX := $(DIST_DIR)/cloudagent-agent-sign-linux-amd64
 SERVER := $(DIST_DIR)/gateway-server
 
 .PHONY: help
 help:
 	@printf '%s\n' \
 		'Targets:' \
-		'  hermes-sidecar-linux         build Hermes Rust Linux sidecar' \
-		'  hermes-sidecar-linux-upx     build and UPX-pack Hermes Rust sidecar' \
-		'  publish-hermes-sidecar       upload Hermes sidecar to COS as public-read and print URL' \
+		'  cloudagent-sidecar-linux         build CloudAgent Rust Linux sidecar' \
+		'  cloudagent-agent-loader-linux build CloudAgent trusted agent loader' \
+		'  cloudagent-agent-sign-linux   build CloudAgent release signing helper' \
+		'  cloudagent-sidecar-linux-upx     build and UPX-pack CloudAgent Rust sidecar' \
+		'  publish-cloudagent-sidecar       upload CloudAgent sidecar to COS as public-read and print URL' \
+		'  init-cloudagent-signing-key      create local Ed25519 release key in ignored .env and print trusted keys JSON' \
+		'  signupload-cloudagent-sidecar    build, sign, upload sidecar and print registry JSON' \
+		'  ci-signupload-cloudagent-sidecar-shanghai build, sign, upload sidecar to Shanghai COS for CI' \
+		'  publish-wisp-package             build and upload Wisp runtime package to COS' \
+		'  ci-publish-cloudagent-artifacts-shanghai build and upload sidecar + Wisp package to Shanghai COS' \
 		'  publish-sandbox-host         build and upload sandbox-host to COS as public-read' \
+		'  compose-up                   start local Docker Compose gateway in AGS mode' \
+		'  compose-up-ui                start local Docker Compose gateway + MyChat UI' \
+		'  compose-up-multi             start two local gateway processes sharing one store' \
+		'  compose-down                 stop local Docker Compose environment' \
 		'  start-agent-sidecar-server   publish sidecar if needed, then start local wrapper server' \
 		'  deploy-eksci-inplace         update Beijing EKS CI in-place without changing EIP' \
 		'  e2e-agent-sidecar           run live Beijing AGS + COS + TokenHub e2e checks' \
+		'  e2e-session-run-lease-multiprocess run multi-process ACP session run lease e2e' \
+		'  e2e-workspace-lease-multiprocess legacy alias for session run lease e2e' \
 		'  server                       build local wrapper server' \
 		'  test                         run Go tests' \
 		'  clean                        remove dist/'
@@ -58,33 +77,77 @@ help:
 $(DIST_DIR):
 	mkdir -p $(DIST_DIR)
 
-.PHONY: hermes-sidecar-linux
-hermes-sidecar-linux: $(HERMES_SIDECAR_LINUX)
+.PHONY: cloudagent-sidecar-linux
+cloudagent-sidecar-linux: $(CLOUDAGENT_SIDECAR_LINUX)
 
-$(HERMES_SIDECAR_LINUX): $(DIST_DIR) build/hermes-sidecar/Dockerfile $(HERMES_SIDECAR_SOURCES)
+$(CLOUDAGENT_SIDECAR_LINUX): $(DIST_DIR) build/cloudagent-sidecar/Dockerfile $(CLOUDAGENT_SIDECAR_SOURCES)
 	$(DOCKER) build --platform $(DOCKER_PLATFORM) \
-		--build-arg RUST_BASE_IMAGE=$(HERMES_SIDECAR_RUST_BASE_IMAGE) \
-		--build-arg DEBIAN_MIRROR=$(HERMES_SIDECAR_DEBIAN_MIRROR) \
-		--build-arg CARGO_USE_MIRROR=$(HERMES_SIDECAR_CARGO_USE_MIRROR) \
-		--build-arg CARGO_REGISTRY_MIRROR=$(HERMES_SIDECAR_CARGO_REGISTRY_MIRROR) \
-		--build-arg CARGO_NET_RETRY=$(HERMES_SIDECAR_CARGO_NET_RETRY) \
-		--build-arg CARGO_HTTP_TIMEOUT=$(HERMES_SIDECAR_CARGO_HTTP_TIMEOUT) \
-		--build-arg CARGO_HTTP_MULTIPLEXING=$(HERMES_SIDECAR_CARGO_HTTP_MULTIPLEXING) \
-		--build-arg CARGO_INCREMENTAL=$(HERMES_SIDECAR_CARGO_INCREMENTAL) \
-		--build-arg CARGO_PROFILE_RELEASE_LTO=$(HERMES_SIDECAR_CARGO_PROFILE_RELEASE_LTO) \
-		--build-arg CARGO_PROFILE_RELEASE_CODEGEN_UNITS=$(HERMES_SIDECAR_CARGO_PROFILE_RELEASE_CODEGEN_UNITS) \
-		--build-arg CARGO_PROFILE_RELEASE_STRIP=$(HERMES_SIDECAR_CARGO_PROFILE_RELEASE_STRIP) \
-		-f build/hermes-sidecar/Dockerfile --target artifact -t $(HERMES_SIDECAR_IMAGE) ..
-	container_id="$$( $(DOCKER) create $(HERMES_SIDECAR_IMAGE) /hermes-sidecar-linux-amd64 )"; \
+		--build-arg RUST_BASE_IMAGE=$(CLOUDAGENT_SIDECAR_RUST_BASE_IMAGE) \
+		--build-arg DEBIAN_MIRROR=$(CLOUDAGENT_SIDECAR_DEBIAN_MIRROR) \
+		--build-arg CARGO_USE_MIRROR=$(CLOUDAGENT_SIDECAR_CARGO_USE_MIRROR) \
+		--build-arg CARGO_REGISTRY_MIRROR=$(CLOUDAGENT_SIDECAR_CARGO_REGISTRY_MIRROR) \
+		--build-arg CARGO_NET_RETRY=$(CLOUDAGENT_SIDECAR_CARGO_NET_RETRY) \
+		--build-arg CARGO_HTTP_TIMEOUT=$(CLOUDAGENT_SIDECAR_CARGO_HTTP_TIMEOUT) \
+		--build-arg CARGO_HTTP_MULTIPLEXING=$(CLOUDAGENT_SIDECAR_CARGO_HTTP_MULTIPLEXING) \
+		--build-arg CARGO_INCREMENTAL=$(CLOUDAGENT_SIDECAR_CARGO_INCREMENTAL) \
+		--build-arg CARGO_PROFILE_RELEASE_LTO=$(CLOUDAGENT_SIDECAR_CARGO_PROFILE_RELEASE_LTO) \
+		--build-arg CARGO_PROFILE_RELEASE_CODEGEN_UNITS=$(CLOUDAGENT_SIDECAR_CARGO_PROFILE_RELEASE_CODEGEN_UNITS) \
+		--build-arg CARGO_PROFILE_RELEASE_STRIP=$(CLOUDAGENT_SIDECAR_CARGO_PROFILE_RELEASE_STRIP) \
+		-f build/cloudagent-sidecar/Dockerfile --target artifact -t $(CLOUDAGENT_SIDECAR_IMAGE) ..
+	container_id="$$( $(DOCKER) create $(CLOUDAGENT_SIDECAR_IMAGE) /cloudagent-sidecar-linux-amd64 )"; \
 	trap '$(DOCKER) rm -f "$$container_id" >/dev/null 2>&1 || true' EXIT; \
-	$(DOCKER) cp "$$container_id:/hermes-sidecar-linux-amd64" $@
+	$(DOCKER) cp "$$container_id:/cloudagent-sidecar-linux-amd64" $@
 	@chmod +x $@
 
-.PHONY: hermes-sidecar-linux-upx
-hermes-sidecar-linux-upx: $(HERMES_SIDECAR_LINUX_PACKED)
+.PHONY: cloudagent-agent-loader-linux
+cloudagent-agent-loader-linux: $(CLOUDAGENT_AGENT_LOADER_LINUX)
 
-$(HERMES_SIDECAR_LINUX_PACKED): $(HERMES_SIDECAR_LINUX)
-	cp $(HERMES_SIDECAR_LINUX) $@
+$(CLOUDAGENT_AGENT_LOADER_LINUX): $(DIST_DIR) build/cloudagent-sidecar/Dockerfile $(CLOUDAGENT_SIDECAR_SOURCES) $(shell find ../agent-loader -type f -print)
+	$(DOCKER) build --platform $(DOCKER_PLATFORM) \
+		--build-arg RUST_BASE_IMAGE=$(CLOUDAGENT_SIDECAR_RUST_BASE_IMAGE) \
+		--build-arg DEBIAN_MIRROR=$(CLOUDAGENT_SIDECAR_DEBIAN_MIRROR) \
+		--build-arg CARGO_USE_MIRROR=$(CLOUDAGENT_SIDECAR_CARGO_USE_MIRROR) \
+		--build-arg CARGO_REGISTRY_MIRROR=$(CLOUDAGENT_SIDECAR_CARGO_REGISTRY_MIRROR) \
+		--build-arg CARGO_NET_RETRY=$(CLOUDAGENT_SIDECAR_CARGO_NET_RETRY) \
+		--build-arg CARGO_HTTP_TIMEOUT=$(CLOUDAGENT_SIDECAR_CARGO_HTTP_TIMEOUT) \
+		--build-arg CARGO_HTTP_MULTIPLEXING=$(CLOUDAGENT_SIDECAR_CARGO_HTTP_MULTIPLEXING) \
+		--build-arg CARGO_INCREMENTAL=$(CLOUDAGENT_SIDECAR_CARGO_INCREMENTAL) \
+		--build-arg CARGO_PROFILE_RELEASE_LTO=$(CLOUDAGENT_SIDECAR_CARGO_PROFILE_RELEASE_LTO) \
+		--build-arg CARGO_PROFILE_RELEASE_CODEGEN_UNITS=$(CLOUDAGENT_SIDECAR_CARGO_PROFILE_RELEASE_CODEGEN_UNITS) \
+		--build-arg CARGO_PROFILE_RELEASE_STRIP=$(CLOUDAGENT_SIDECAR_CARGO_PROFILE_RELEASE_STRIP) \
+		-f build/cloudagent-sidecar/Dockerfile --target artifact -t $(CLOUDAGENT_SIDECAR_IMAGE) ..
+	container_id="$$( $(DOCKER) create $(CLOUDAGENT_SIDECAR_IMAGE) /cloudagent-agent-loader-linux-amd64 )"; \
+	trap '$(DOCKER) rm -f "$$container_id" >/dev/null 2>&1 || true' EXIT; \
+	$(DOCKER) cp "$$container_id:/cloudagent-agent-loader-linux-amd64" $@
+	@chmod +x $@
+
+.PHONY: cloudagent-agent-sign-linux
+cloudagent-agent-sign-linux: $(CLOUDAGENT_AGENT_SIGN_LINUX)
+
+$(CLOUDAGENT_AGENT_SIGN_LINUX): $(DIST_DIR) build/cloudagent-sidecar/Dockerfile $(CLOUDAGENT_SIDECAR_SOURCES) $(shell find ../agent-loader -type f -print)
+	$(DOCKER) build --platform $(DOCKER_PLATFORM) \
+		--build-arg RUST_BASE_IMAGE=$(CLOUDAGENT_SIDECAR_RUST_BASE_IMAGE) \
+		--build-arg DEBIAN_MIRROR=$(CLOUDAGENT_SIDECAR_DEBIAN_MIRROR) \
+		--build-arg CARGO_USE_MIRROR=$(CLOUDAGENT_SIDECAR_CARGO_USE_MIRROR) \
+		--build-arg CARGO_REGISTRY_MIRROR=$(CLOUDAGENT_SIDECAR_CARGO_REGISTRY_MIRROR) \
+		--build-arg CARGO_NET_RETRY=$(CLOUDAGENT_SIDECAR_CARGO_NET_RETRY) \
+		--build-arg CARGO_HTTP_TIMEOUT=$(CLOUDAGENT_SIDECAR_CARGO_HTTP_TIMEOUT) \
+		--build-arg CARGO_HTTP_MULTIPLEXING=$(CLOUDAGENT_SIDECAR_CARGO_HTTP_MULTIPLEXING) \
+		--build-arg CARGO_INCREMENTAL=$(CLOUDAGENT_SIDECAR_CARGO_INCREMENTAL) \
+		--build-arg CARGO_PROFILE_RELEASE_LTO=$(CLOUDAGENT_SIDECAR_CARGO_PROFILE_RELEASE_LTO) \
+		--build-arg CARGO_PROFILE_RELEASE_CODEGEN_UNITS=$(CLOUDAGENT_SIDECAR_CARGO_PROFILE_RELEASE_CODEGEN_UNITS) \
+		--build-arg CARGO_PROFILE_RELEASE_STRIP=$(CLOUDAGENT_SIDECAR_CARGO_PROFILE_RELEASE_STRIP) \
+		-f build/cloudagent-sidecar/Dockerfile --target artifact -t $(CLOUDAGENT_SIDECAR_IMAGE) ..
+	container_id="$$( $(DOCKER) create $(CLOUDAGENT_SIDECAR_IMAGE) /cloudagent-agent-sign-linux-amd64 )"; \
+	trap '$(DOCKER) rm -f "$$container_id" >/dev/null 2>&1 || true' EXIT; \
+	$(DOCKER) cp "$$container_id:/cloudagent-agent-sign-linux-amd64" $@
+	@chmod +x $@
+
+.PHONY: cloudagent-sidecar-linux-upx
+cloudagent-sidecar-linux-upx: $(CLOUDAGENT_SIDECAR_LINUX_PACKED)
+
+$(CLOUDAGENT_SIDECAR_LINUX_PACKED): $(CLOUDAGENT_SIDECAR_LINUX)
+	cp $(CLOUDAGENT_SIDECAR_LINUX) $@
 	$(UPX) $(UPX_FLAGS) $@
 	@chmod +x $@
 
@@ -98,18 +161,58 @@ $(SERVER): $(DIST_DIR) $(shell find cmd internal -name '*.go')
 test:
 	GOWORK=$(GOWORK) $(GO) test ./...
 
-.PHONY: publish-hermes-sidecar
-publish-hermes-sidecar: $(HERMES_SIDECAR_LINUX)
-	./scripts/publish_hermes_sidecar.sh
+.PHONY: publish-cloudagent-sidecar
+publish-cloudagent-sidecar: $(CLOUDAGENT_SIDECAR_LINUX)
+	./scripts/publish_cloudagent_sidecar.sh
+
+.PHONY: init-cloudagent-signing-key
+init-cloudagent-signing-key:
+	./scripts/init_cloudagent_signing_key.sh
+
+.PHONY: signupload-cloudagent-sidecar
+signupload-cloudagent-sidecar: $(CLOUDAGENT_SIDECAR_LINUX)
+	./scripts/signupload_cloudagent_sidecar.sh
+
+.PHONY: ci-signupload-cloudagent-sidecar-shanghai
+ci-signupload-cloudagent-sidecar-shanghai:
+	./scripts/ci_signupload_cloudagent_sidecar_shanghai.sh
+
+.PHONY: publish-wisp-package
+publish-wisp-package:
+	./scripts/publish_cloudagent_wisp_package.sh
+
+.PHONY: ci-publish-cloudagent-artifacts-shanghai
+ci-publish-cloudagent-artifacts-shanghai:
+	./scripts/ci_publish_cloudagent_artifacts_shanghai.sh
+
+.PHONY: local-publish-cloudagent-artifacts-shanghai
+local-publish-cloudagent-artifacts-shanghai:
+	./scripts/local_publish_cloudagent_artifacts_shanghai.sh
 
 .PHONY: publish-sandbox-host
 publish-sandbox-host:
 	../sandbox-host/scripts/publish_sandbox_host.sh
 
+.PHONY: compose-up
+compose-up:
+	$(DOCKER_COMPOSE) up --build gateway-a
+
+.PHONY: compose-up-ui
+compose-up-ui:
+	$(DOCKER_COMPOSE) --profile ui up --build gateway-a mychat
+
+.PHONY: compose-up-multi
+compose-up-multi:
+	$(DOCKER_COMPOSE) --profile multi up --build gateway-a gateway-b
+
+.PHONY: compose-down
+compose-down:
+	$(DOCKER_COMPOSE) --profile ui --profile multi down --remove-orphans
+
 .PHONY: start-agent-sidecar-server
-start-agent-sidecar-server: $(SERVER) $(HERMES_SIDECAR_LINUX)
+start-agent-sidecar-server: $(SERVER) $(CLOUDAGENT_SIDECAR_LINUX)
 	@if [ -z "$$GATEWAY_AGENT_SIDECAR_URL" ] && [ ! -f "$${GATEWAY_AGENT_SIDECAR_URL_FILE:-/tmp/agent-sidecar-url.clean}" ]; then \
-		$(MAKE) publish-hermes-sidecar; \
+		$(MAKE) publish-cloudagent-sidecar; \
 	fi
 	./scripts/start_agent_sidecar_server.sh
 
@@ -120,6 +223,13 @@ deploy-eksci-inplace:
 .PHONY: e2e-agent-sidecar
 e2e-agent-sidecar:
 	./scripts/e2e_agent_sidecar.sh
+
+.PHONY: e2e-session-run-lease-multiprocess
+e2e-session-run-lease-multiprocess:
+	./scripts/e2e_session_run_lease_multiprocess.sh
+
+.PHONY: e2e-workspace-lease-multiprocess
+e2e-workspace-lease-multiprocess: e2e-session-run-lease-multiprocess
 
 .PHONY: clean
 clean:

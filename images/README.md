@@ -97,9 +97,11 @@ python3 images/build-image.py --runtime hermes --base-image-id img-id352nof --wi
 当前 Hermes 路径：
 
 - 默认运行用户：`agentuser`
-- 从 `runtime_hermes.cos_base` 下载 pin 版本 Hermes tarball；当前为 `hermes-agent-v20260506` / `0.12.0`
+- 默认从 `runtime_hermes.cos_base` 的 `latest.json` 解析 Hermes tarball 和源版本；可用 `--hermes-version` 临时 pin 到指定 COS 目录
 - 解压到 `~/.hermes/hermes-agent`，伪造成本地 git repo 后复用官方 `install.sh --skip-setup --branch main`
 - 安装 `@qwen-code/qwen-code`
+- 为 `agentuser` 固化 PyPI mirror：`mirrors.tencent.com` 为 primary，`mirrors.cloud.tencent.com` 为 extra，并预装 `lark-oapi==1.5.3`、`qrcode==7.4.2`
+- 为 `agentuser` 的 `~/.hermes/hermes-agent/scripts/whatsapp-bridge` 预装 `@whiskeysockets/baileys@7.0.0-rc.9`、`qrcode-terminal`、`express`、`pino`
 - 安装 `skillhub --cli-only`
 - 安装 `acli` 并以 `acli doctor` 作为 gate
 - 默认验证套件：`runtime-hermes`
@@ -108,10 +110,18 @@ python3 images/build-image.py --runtime hermes --base-image-id img-id352nof --wi
 CI 入口：
 
 - `master` 上 `.ci/hermes-image.yml`、`.ci/init.sh` 或 `images/**` 变更会触发 `.ci/hermes-image.yml`
-- CI 使用 `python3 images/build-image.py --runtime hermes --base-image-id img-id352nof --with-verify`
+- CI 使用 `python3 images/build-image.py --runtime hermes --base-image-id img-id352nof --target-regions ap-beijing,ap-shanghai,ap-singapore --with-verify`
+- CI 会在验证日志中打印 Hermes 命令路径、`hermes --version` 输出、解析版本和 `acli` identity runtime 字段
+- CI 会验证 `agentuser` 下 WhatsApp bridge 的 Node 依赖可被 `require.resolve` 找到
+- CI 会验证 `agentuser` 的 Hermes venv 可以 import `lark_oapi` 和 `qrcode`
+- Hermes CI 镜像会并发同步到北京、上海和新加坡
 - 腾讯云凭据从构建机本地 `/etc/lightclaw-ci/tencentcloud_secret_id` 和 `/etc/lightclaw-ci/tencentcloud_secret_key` 读取
 - CI 会自动安装并缓存 `tccli`，不要求构建机预装腾讯云 CLI
 - CI 会自动安装并缓存 Go，用于上传前本地编译 `images/bin/envd`
+
+存量 Hermes 机器修复：
+
+- `images/helpers/config-hermes-python-mirrors.sh` 可通过 TAT/debug exec 下发到存量机器，只修复 `agentuser` 的 pip/uv mirror 配置，不安装依赖
 
 ### Full Build
 
@@ -164,7 +174,7 @@ python3 images/build-image.py --openclaw-version 2026.3.24 --qqbot-version 1.6.6
 
 ```bash
 python3 images/build-image.py --runtime hermes
-python3 images/build-image.py --runtime hermes --hermes-version hermes-agent-v20260506
+python3 images/build-image.py --runtime hermes --hermes-version hermes-agent-v20260520
 ```
 
 ## Manual Build

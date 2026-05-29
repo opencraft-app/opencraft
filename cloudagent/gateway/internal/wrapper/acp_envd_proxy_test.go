@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 type envdProxyRuntimeManager struct {
@@ -20,6 +21,14 @@ type envdProxyRuntimeManager struct {
 	ensures      int
 	forceCalls   []bool
 	lastRuntime  ACPSessionRuntime
+	workspace    map[string][]byte
+}
+
+func (m *envdProxyRuntimeManager) StartSessionRuntime(ctx context.Context, req ACPSessionRuntimeStartRequest) (ACPSessionRuntime, error) {
+	if strings.TrimSpace(req.OuterRuntime) == "" {
+		req.OuterRuntime = outerRuntimeAGS
+	}
+	return m.recordingACPRuntimeManager.StartSessionRuntime(ctx, req)
 }
 
 func (m *envdProxyRuntimeManager) EnsureSessionEnvdRuntime(ctx context.Context, runtime ACPSessionRuntime, req ACPSessionRuntimeEnsureRequest) (ACPSessionRuntimeUpdate, error) {
@@ -38,6 +47,34 @@ func (m *envdProxyRuntimeManager) EnsureSessionEnvdRuntime(ctx context.Context, 
 		InnerSandboxDomain:   domain,
 		InnerEnvdAccessToken: "inner-token",
 	}, nil
+}
+
+func (m *envdProxyRuntimeManager) UploadSessionWorkspaceFile(ctx context.Context, runtime ACPSessionRuntime, remotePath string, content []byte) error {
+	normalized, err := normalizeWorkspaceTransferPath(remotePath)
+	if err != nil {
+		return err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.workspace == nil {
+		m.workspace = map[string][]byte{}
+	}
+	m.workspace[normalized] = append([]byte(nil), content...)
+	return nil
+}
+
+func (m *envdProxyRuntimeManager) DownloadSessionWorkspaceFile(ctx context.Context, runtime ACPSessionRuntime, remotePath string) ([]byte, error) {
+	normalized, err := normalizeWorkspaceTransferPath(remotePath)
+	if err != nil {
+		return nil, err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	content, ok := m.workspace[normalized]
+	if !ok {
+		return nil, fmt.Errorf("workspace file not found: %s", normalized)
+	}
+	return append([]byte(nil), content...), nil
 }
 
 func TestEnvdProxyEnsuresInnerAndRewritesAuth(t *testing.T) {
@@ -80,9 +117,14 @@ func TestEnvdProxyEnsuresInnerAndRewritesAuth(t *testing.T) {
 
 	client := dialACPWS(t, "ws"+trimHTTPPrefix(ts.URL)+"/acp", map[string]string{"Authorization": "Bearer test-key"})
 	defer client.close()
-	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "session/new", "params": map[string]any{}})
+	client.writeJSON(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "session/new",
+		"params":  map[string]any{"_meta": map[string]any{"cloudagent": map[string]any{"outer_runtime": "wisp"}}},
+	})
 	result := waitForRPCID(t, client, float64(1))["result"].(map[string]any)
-	proxyID, _ := result["session_proxy_id"].(string)
+	proxyID, _ := cloudAgentResultMeta(t, result)["session_proxy_id"].(string)
 	if proxyID == "" {
 		t.Fatalf("session/new did not return session_proxy_id: %#v", result)
 	}
@@ -112,6 +154,145 @@ func TestEnvdProxyEnsuresInnerAndRewritesAuth(t *testing.T) {
 	manager.mu.Unlock()
 	if ensures != 1 {
 		t.Fatalf("ensure calls = %d, want 1", ensures)
+	}
+}
+
+func TestSessionScopedWispWorkspaceUploadUsesWorkspaceManager(t *testing.T) {
+	var sawInner bool
+	inner := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawInner = true
+		http.Error(w, "inner envd should not receive Wisp workspace transfer", http.StatusTeapot)
+	}))
+	defer inner.Close()
+
+	manager := &envdProxyRuntimeManager{innerDomain: inner.URL}
+	srv := newACPTestServerWithRuntime(t, manager)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	client := dialACPWS(t, "ws"+trimHTTPPrefix(ts.URL)+"/acp", nil)
+	defer client.close()
+	client.writeJSON(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "session/new",
+		"params":  map[string]any{"_meta": map[string]any{"cloudagent": map[string]any{"outer_runtime": "wisp"}}},
+	})
+	result := waitForRPCID(t, client, float64(1))["result"].(map[string]any)
+	sessionID := result["sessionId"].(string)
+
+	req, err := http.NewRequest(http.MethodPost, ts.URL+"/v1/acp/sessions/"+sessionID+"/envd/files?path=/workspace/upload.txt", bytes.NewBufferString("upload-body"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer test-key")
+	req.Header.Set("Content-Type", "application/octet-stream")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d body=%s", resp.StatusCode, string(body))
+	}
+	if sawInner {
+		t.Fatal("Wisp workspace upload was incorrectly proxied to inner envd")
+	}
+	manager.mu.Lock()
+	got := string(manager.workspace["/workspace/upload.txt"])
+	manager.mu.Unlock()
+	if got != "upload-body" {
+		t.Fatalf("workspace upload body = %q", got)
+	}
+}
+
+func TestSessionScopedWispWorkspaceDownloadUsesWorkspaceManager(t *testing.T) {
+	var sawInner bool
+	inner := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawInner = true
+		http.Error(w, "inner envd should not receive Wisp workspace transfer", http.StatusTeapot)
+	}))
+	defer inner.Close()
+
+	manager := &envdProxyRuntimeManager{
+		innerDomain: inner.URL,
+		workspace:   map[string][]byte{"/workspace/download.txt": []byte("download-body")},
+	}
+	srv := newACPTestServerWithRuntime(t, manager)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	client := dialACPWS(t, "ws"+trimHTTPPrefix(ts.URL)+"/acp", nil)
+	defer client.close()
+	client.writeJSON(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "session/new",
+		"params":  map[string]any{"_meta": map[string]any{"cloudagent": map[string]any{"outer_runtime": "wisp"}}},
+	})
+	result := waitForRPCID(t, client, float64(1))["result"].(map[string]any)
+	sessionID := result["sessionId"].(string)
+
+	req, err := http.NewRequest(http.MethodGet, ts.URL+"/v1/acp/sessions/"+sessionID+"/envd/files?path=/workspace/download.txt", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer test-key")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK || string(body) != "download-body" {
+		t.Fatalf("status=%d body=%q", resp.StatusCode, string(body))
+	}
+	if sawInner {
+		t.Fatal("Wisp workspace download was incorrectly proxied to inner envd")
+	}
+}
+
+func TestSessionScopedWispWorkspaceDownloadMissingFileReturnsNotFound(t *testing.T) {
+	var sawInner bool
+	inner := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawInner = true
+		http.Error(w, "inner envd should not receive Wisp workspace transfer", http.StatusTeapot)
+	}))
+	defer inner.Close()
+
+	manager := &envdProxyRuntimeManager{innerDomain: inner.URL}
+	srv := newACPTestServerWithRuntime(t, manager)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	client := dialACPWS(t, "ws"+trimHTTPPrefix(ts.URL)+"/acp", nil)
+	defer client.close()
+	client.writeJSON(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "session/new",
+		"params":  map[string]any{"_meta": map[string]any{"cloudagent": map[string]any{"outer_runtime": "wisp"}}},
+	})
+	result := waitForRPCID(t, client, float64(1))["result"].(map[string]any)
+	sessionID := result["sessionId"].(string)
+
+	req, err := http.NewRequest(http.MethodGet, ts.URL+"/v1/acp/sessions/"+sessionID+"/envd/files?path=/workspace/missing.txt", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer test-key")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusNotFound || !strings.Contains(string(body), "workspace_file_not_found") {
+		t.Fatalf("status=%d body=%s", resp.StatusCode, string(body))
+	}
+	if sawInner {
+		t.Fatal("Wisp workspace download was incorrectly proxied to inner envd")
 	}
 }
 
@@ -217,7 +398,7 @@ func TestEnvdProxyRejectsScopeMismatch(t *testing.T) {
 	defer client.close()
 	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "session/new", "params": map[string]any{}})
 	result := waitForRPCID(t, client, float64(1))["result"].(map[string]any)
-	proxyID := result["session_proxy_id"].(string)
+	proxyID := cloudAgentResultMeta(t, result)["session_proxy_id"].(string)
 
 	req, err := http.NewRequest(http.MethodGet, ts.URL+"/files?path=/workspace/a.txt", nil)
 	if err != nil {
@@ -285,6 +466,117 @@ func TestSessionScopedEnvdProxyForwardsFilesAPI(t *testing.T) {
 	}
 	if !sawInner {
 		t.Fatal("inner envd was not called")
+	}
+}
+
+func TestSessionScopedEnvdProxyRefreshesCachedInnerRuntimeAfterIdle(t *testing.T) {
+	var sawInner bool
+	inner := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawInner = true
+		if r.URL.Path != "/files" {
+			t.Fatalf("inner path = %s", r.URL.Path)
+		}
+		if got := r.Header.Get("X-Access-Token"); got != "cached-token" {
+			t.Fatalf("inner X-Access-Token = %q", got)
+		}
+		_, _ = w.Write([]byte("cached-file-body"))
+	}))
+	defer inner.Close()
+
+	manager := &envdProxyRuntimeManager{innerDomain: inner.URL}
+	srv := newACPTestServerWithRuntime(t, manager)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	client := dialACPWS(t, "ws"+trimHTTPPrefix(ts.URL)+"/acp", map[string]string{"Authorization": "Bearer test-key"})
+	defer client.close()
+	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "session/new", "params": map[string]any{}})
+	result := waitForRPCID(t, client, float64(1))["result"].(map[string]any)
+	sessionID := result["sessionId"].(string)
+
+	srv.acpGate.mu.Lock()
+	session := srv.acpGate.sessions[sessionID]
+	idleAt := time.Now().Add(-46 * time.Second)
+	session.History = append(session.History, acpHistoryEntry{Role: "user", Text: "old prompt", At: idleAt})
+	session.LastRuntimeActivityAt = idleAt
+	session.Runtime.InnerSandboxID = "inner_cached_1"
+	session.Runtime.InnerSandboxDomain = inner.URL
+	session.Runtime.InnerEnvdAccessToken = "cached-token"
+	srv.acpGate.persistSession(session)
+	srv.acpGate.mu.Unlock()
+
+	req, err := http.NewRequest(http.MethodGet, ts.URL+"/v1/acp/sessions/"+sessionID+"/envd/files?path=/workspace/a.txt", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer test-key")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK || string(body) != "cached-file-body" {
+		t.Fatalf("status=%d body=%s", resp.StatusCode, string(body))
+	}
+	if !sawInner {
+		t.Fatal("inner envd was not called")
+	}
+	refreshes := manager.recordedRefreshes()
+	if len(refreshes) != 1 || refreshes[0].InnerSandboxID != "inner_cached_1" {
+		t.Fatalf("expected cached inner runtime refresh, got %#v", refreshes)
+	}
+	manager.mu.Lock()
+	ensures := manager.ensures
+	manager.mu.Unlock()
+	if ensures != 0 {
+		t.Fatalf("cached target should not force ensure, got ensures=%d", ensures)
+	}
+}
+
+func TestSessionScopedEnvdProxySkipsRefreshWhenEnvdActivityIsRecent(t *testing.T) {
+	inner := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("recent-file-body"))
+	}))
+	defer inner.Close()
+
+	manager := &envdProxyRuntimeManager{innerDomain: inner.URL}
+	srv := newACPTestServerWithRuntime(t, manager)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	client := dialACPWS(t, "ws"+trimHTTPPrefix(ts.URL)+"/acp", map[string]string{"Authorization": "Bearer test-key"})
+	defer client.close()
+	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "session/new", "params": map[string]any{}})
+	result := waitForRPCID(t, client, float64(1))["result"].(map[string]any)
+	sessionID := result["sessionId"].(string)
+
+	srv.acpGate.mu.Lock()
+	session := srv.acpGate.sessions[sessionID]
+	session.History = append(session.History, acpHistoryEntry{Role: "user", Text: "old prompt", At: time.Now().Add(-46 * time.Second)})
+	session.LastRuntimeActivityAt = time.Now().Add(-10 * time.Second)
+	session.Runtime.InnerSandboxID = "inner_recent_api_1"
+	session.Runtime.InnerSandboxDomain = inner.URL
+	session.Runtime.InnerEnvdAccessToken = "cached-token"
+	srv.acpGate.persistSession(session)
+	srv.acpGate.mu.Unlock()
+
+	req, err := http.NewRequest(http.MethodGet, ts.URL+"/v1/acp/sessions/"+sessionID+"/envd/files?path=/workspace/a.txt", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer test-key")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status=%d body=%s", resp.StatusCode, string(body))
+	}
+	if refreshes := manager.recordedRefreshes(); len(refreshes) != 0 {
+		t.Fatalf("recent envd activity must not refresh runtime, got %#v", refreshes)
 	}
 }
 
@@ -441,7 +733,7 @@ func TestEnvdProxyRetriesStaleAuthOnce(t *testing.T) {
 	defer client.close()
 	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "session/new", "params": map[string]any{}})
 	result := waitForRPCID(t, client, float64(1))["result"].(map[string]any)
-	proxyID := result["session_proxy_id"].(string)
+	proxyID := cloudAgentResultMeta(t, result)["session_proxy_id"].(string)
 
 	req, err := http.NewRequest(http.MethodPost, ts.URL+"/process.Process/Start", nil)
 	if err != nil {
@@ -490,7 +782,7 @@ func TestEnvdProxyDoesNotRetryBodyRequest(t *testing.T) {
 	defer client.close()
 	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "session/new", "params": map[string]any{}})
 	result := waitForRPCID(t, client, float64(1))["result"].(map[string]any)
-	proxyID := result["session_proxy_id"].(string)
+	proxyID := cloudAgentResultMeta(t, result)["session_proxy_id"].(string)
 
 	req, err := http.NewRequest(http.MethodPost, ts.URL+"/process.Process/Start", strings.NewReader("body"))
 	if err != nil {
@@ -570,7 +862,7 @@ func TestEnvdProxyInvalidationSurvivesGatewayRestart(t *testing.T) {
 	defer client.close()
 	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "session/new", "params": map[string]any{}})
 	result := waitForRPCID(t, client, float64(1))["result"].(map[string]any)
-	proxyID := result["session_proxy_id"].(string)
+	proxyID := cloudAgentResultMeta(t, result)["session_proxy_id"].(string)
 
 	req, err := http.NewRequest(http.MethodPost, ts.URL+"/process.Process/Start", strings.NewReader("body"))
 	if err != nil {
@@ -640,7 +932,7 @@ func TestEnvdProxyPassesThroughFilesNotFoundWithoutRetry(t *testing.T) {
 	defer client.close()
 	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "session/new", "params": map[string]any{}})
 	result := waitForRPCID(t, client, float64(1))["result"].(map[string]any)
-	proxyID := result["session_proxy_id"].(string)
+	proxyID := cloudAgentResultMeta(t, result)["session_proxy_id"].(string)
 
 	req, err := http.NewRequest(http.MethodGet, ts.URL+"/files?path=/workspace/missing.txt", nil)
 	if err != nil {
@@ -677,7 +969,7 @@ func TestEnvdProxyStaleHostReturnsGone(t *testing.T) {
 	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "session/new", "params": map[string]any{}})
 	result := waitForRPCID(t, client, float64(1))["result"].(map[string]any)
 	sessionID := result["sessionId"].(string)
-	proxyID := result["session_proxy_id"].(string)
+	proxyID := cloudAgentResultMeta(t, result)["session_proxy_id"].(string)
 
 	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 2, "method": "session/close", "params": map[string]any{"sessionId": sessionID}})
 	_ = waitForRPCID(t, client, float64(2))
@@ -726,7 +1018,7 @@ func TestEnvdProxyDeletedSessionStaysGoneAfterReload(t *testing.T) {
 	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "session/new", "params": map[string]any{}})
 	result := waitForRPCID(t, client, float64(1))["result"].(map[string]any)
 	sessionID := result["sessionId"].(string)
-	proxyID := result["session_proxy_id"].(string)
+	proxyID := cloudAgentResultMeta(t, result)["session_proxy_id"].(string)
 	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 2, "method": "session/delete", "params": map[string]any{"sessionId": sessionID}})
 	_ = waitForRPCID(t, client, float64(2))
 	client.close()

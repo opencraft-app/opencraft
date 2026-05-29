@@ -22,9 +22,9 @@ REAL_RUNTIME_HOME="$(readlink -f "${RUNTIME_HOME}" 2>/dev/null || printf '%s\n' 
 HERMES_INSTALL_SCRIPT_URL="https://example.com/install.sh"
 HERMES_INSTALL_ARGS="--skip-setup"
 HERMES_COS_BASE="https://example.com/hermes"
-HERMES_VERSION="hermes-agent-v20260506"
-HERMES_SRC_VERSION="0.12.0"
-HERMES_GIT_COMMIT="eda80e0b"
+HERMES_VERSION=""
+HERMES_SRC_VERSION=""
+HERMES_GIT_COMMIT=""
 HERMES_QWEN_CODE_VERSION="latest"
 HERMES_ACLI_INSTALL_URL="https://example.com/acli/install.sh"
 SKILLHUB_INSTALL_URL="https://example.com/skillhub.sh"
@@ -68,22 +68,43 @@ exit 0
 INNER
 cat >"$HOME/.hermes/hermes-agent/venv/bin/hermes" <<'INNER'
 #!/usr/bin/env bash
-echo "0.12.0"
+echo "0.14.0"
+INNER
+cat >"$HOME/.hermes/hermes-agent/venv/bin/python" <<'INNER'
+#!/usr/bin/env bash
+exit 0
 INNER
 chmod +x "$HOME/.hermes/hermes-agent/venv/bin/hermes-agent"
 chmod +x "$HOME/.hermes/hermes-agent/venv/bin/hermes"
+chmod +x "$HOME/.hermes/hermes-agent/venv/bin/python"
 exit 0
 EOF
 chmod +x "${INSTALLER_PAYLOAD}"
 
 mkdir -p "${TMPDIR}/hermes-src/hermes-agent/venv/bin"
+mkdir -p "${TMPDIR}/hermes-src/hermes-agent/scripts/whatsapp-bridge"
 cat >"${TMPDIR}/hermes-src/hermes-agent/README.md" <<'EOF'
 hermes fixture
+EOF
+cat >"${TMPDIR}/hermes-src/hermes-agent/scripts/whatsapp-bridge/package.json" <<'EOF'
+{"private":true,"name":"whatsapp-bridge-fixture"}
 EOF
 tar -czf "${HERMES_TARBALL}" -C "${TMPDIR}/hermes-src" hermes-agent
 
 curl() {
-  if [[ "${1:-}" == "-fsSL" && "${2:-}" == "${HERMES_COS_BASE}/${HERMES_VERSION}/hermes-agent.tar.gz" && "${3:-}" == "-o" ]]; then
+  if [[ "${1:-}" == "-fsSL" && "${2:-}" == "${HERMES_COS_BASE}/latest.json" ]]; then
+    cat <<'EOF'
+{
+  "version": "hermes-agent-v20260520",
+  "src_version": "0.14.0",
+  "git_commit": "main",
+  "git_commit_full": "main"
+}
+EOF
+    log_call "curl-hermes-latest"
+    return 0
+  fi
+  if [[ "${1:-}" == "-fsSL" && "${2:-}" == "${HERMES_COS_BASE}/hermes-agent-v20260520/hermes-agent.tar.gz" && "${3:-}" == "-o" ]]; then
     cp "${HERMES_TARBALL}" "${4}"
     log_call "curl-hermes-tarball ${4}"
     return 0
@@ -136,6 +157,14 @@ npm() {
   command npm "$@"
 }
 
+uv() {
+  if [[ "${1:-}" == "pip" && "${2:-}" == "install" ]]; then
+    log_call "uv-pip-install $*"
+    return 0
+  fi
+  command uv "$@"
+}
+
 su() {
   if [[ "${1:-}" == "-" && "${2:-}" == "${RUNTIME_USER}" && "${3:-}" == "-c" ]]; then
     log_call "su ${4:-}"
@@ -150,12 +179,33 @@ sudo() {
     log_call "sudo-npm-install ${4:-}"
     return 0
   fi
+  if [[ "${1:-}" == "-u" && "${2:-}" == "${RUNTIME_USER}" && "${3:-}" == "-H" && "${4:-}" == "bash" && "${5:-}" == "-lc" ]]; then
+    log_call "sudo-user ${2} ${6:-}"
+    if [[ "${6:-}" == *"pnpm add --config.block-exotic-subdeps=false --config.dangerously-allow-all-builds=true @whiskeysockets/baileys@7.0.0-rc.9 qrcode-terminal express pino"* ]]; then
+      log_call "pnpm-add-whatsapp-bridge"
+    fi
+    if [[ "${6:-}" == *"require.resolve"* && "${6:-}" == *"@whiskeysockets/baileys"* ]]; then
+      log_call "node-resolve-whatsapp-bridge"
+    fi
+    return 0
+  fi
   command sudo "$@"
 }
 
 acli() {
   log_call "acli $*"
   return 0
+}
+
+id() {
+  if [[ "${1:-}" == "${RUNTIME_USER}" ]]; then
+    return 0
+  fi
+  if [[ "${1:-}" == "-u" && "${2:-}" == "${RUNTIME_USER}" ]]; then
+    printf '1000\n'
+    return 0
+  fi
+  command id "$@"
 }
 
 command() {
@@ -184,12 +234,25 @@ ln() {
 mkdir -p "${HOME}/.local/bin" "${HOME}/.config/systemd/user"
 
 install_hermes_runtime
+configure_hermes_python_mirrors
+install_hermes_python_deps
+install_hermes_whatsapp_bridge_deps
 install_hermes_extra_tools
 install_hermes_acli
 
+grep -q "curl-hermes-latest" "${LOG_FILE}"
 grep -q "curl-hermes-tarball" "${LOG_FILE}"
 grep -q "curl-installer" "${LOG_FILE}"
 grep -q "npm-install @qwen-code/qwen-code@latest" "${LOG_FILE}"
+grep -q "uv-pip-install pip install --index-url https://mirrors.tencent.com/pypi/simple --extra-index-url https://mirrors.cloud.tencent.com/pypi/simple --python ${RUNTIME_HOME}/.hermes/hermes-agent/venv/bin/python lark-oapi==1.5.3 qrcode==7.4.2" "${LOG_FILE}"
+grep -Fq "index-url = https://mirrors.tencent.com/pypi/simple" "${RUNTIME_HOME}/.config/pip/pip.conf"
+grep -Fq "https://mirrors.cloud.tencent.com/pypi/simple" "${RUNTIME_HOME}/.config/pip/pip.conf"
+grep -Fq 'index-url = "https://mirrors.tencent.com/pypi/simple"' "${RUNTIME_HOME}/.config/uv/uv.toml"
+grep -Fq 'extra-index-url = ["https://mirrors.cloud.tencent.com/pypi/simple"]' "${RUNTIME_HOME}/.config/uv/uv.toml"
+grep -q "sudo-npm-install pnpm" "${LOG_FILE}"
+grep -q "sudo-user agentuser" "${LOG_FILE}"
+grep -q "pnpm-add-whatsapp-bridge" "${LOG_FILE}"
+grep -q "node-resolve-whatsapp-bridge" "${LOG_FILE}"
 grep -q "curl-skillhub" "${LOG_FILE}"
 grep -q "curl-acli" "${LOG_FILE}"
 grep -q "run_as_runtime_user acli --help" "${LOG_FILE}"
@@ -201,7 +264,7 @@ grep -q '^product: lightvela$' "${ACLI_IDENTITY_PATH}"
 grep -q '^run_as: agentuser$' "${ACLI_IDENTITY_PATH}"
 grep -q "^runtime_bin: ${RUNTIME_HOME}/.hermes/hermes-agent/venv/bin/hermes$" "${ACLI_IDENTITY_PATH}"
 grep -q "^runtime_home: ${RUNTIME_HOME}/.hermes$" "${ACLI_IDENTITY_PATH}"
-grep -q '^runtime_version: 0.12.0$' "${ACLI_IDENTITY_PATH}"
+grep -q '^runtime_version: 0.14.0$' "${ACLI_IDENTITY_PATH}"
 grep -q "exec ${REAL_RUNTIME_HOME}/.hermes/hermes-agent/venv/bin/hermes " "${HERMES_SYSTEM_BIN_DIR}/hermes"
 grep -q "exec ${REAL_RUNTIME_HOME}/.hermes/hermes-agent/venv/bin/hermes-agent " "${HERMES_SYSTEM_BIN_DIR}/hermes-agent"
 ! grep -q "ln -sfn ${HOME}/.hermes/hermes-agent/venv/bin/hermes ${HERMES_SYSTEM_BIN_DIR}/hermes" "${LOG_FILE}"

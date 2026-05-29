@@ -8,7 +8,7 @@ export type MessageSection =
 
 export function getMessageSections(message: ChatMessage): MessageSection[] {
   if (message.timelineBlocks?.length) {
-    return message.timelineBlocks.map((block) => {
+    const sections: MessageSection[] = message.timelineBlocks.map((block) => {
       if (block.type === 'content') {
         return { id: block.id, type: 'content', text: block.text };
       }
@@ -20,6 +20,19 @@ export function getMessageSections(message: ChatMessage): MessageSection[] {
       }
       return { id: block.id, type: 'tools', toolCalls: block.toolCalls };
     });
+    if (message.content.trim() && !sections.some((section) => section.type === 'content')) {
+      sections.push({ type: 'content', text: message.content });
+    }
+    if (message.thought && !sections.some((section) => section.type === 'thought')) {
+      sections.push({ type: 'thought', text: message.thought });
+    }
+    if (message.attachments?.length && !sections.some((section) => section.type === 'attachments')) {
+      sections.push({ type: 'attachments', attachments: message.attachments });
+    }
+    if (message.toolCalls?.length && !sections.some((section) => section.type === 'tools')) {
+      sections.push({ type: 'tools', toolCalls: message.toolCalls });
+    }
+    return sections;
   }
 
   const sections: MessageSection[] = [];

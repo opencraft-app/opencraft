@@ -20,11 +20,15 @@ GATEWAY_AGS_API_KEY
 GATEWAY_TOKENHUB_API_KEY
 GATEWAY_API_KEY
 GATEWAY_TALOS_API_KEY
+TENCENTCLOUD_WSA_APIKEY
 ```
 
 Only `GATEWAY_AGS_API_KEY` and `GATEWAY_TOKENHUB_API_KEY` are required. The
-Deployment references all keys explicitly with `secretKeyRef`; do not replace
-that with `envFrom.secretRef`.
+core gateway runtime keys stay in `gateway-runtime-secrets`.
+`TENCENTCLOUD_WSA_APIKEY` stays in `cloudagent-wsa-search-secrets`; keep search
+provider credentials split so they cannot overwrite the runtime secret.
+The Deployment references all keys explicitly with `secretKeyRef`; do not
+replace that with `envFrom.secretRef`.
 
 Non-secret values such as sandbox template ids, sidecar URLs, and checksums
 belong in `cloudagent-gateway-platform.env` and should be updated by release

@@ -8,7 +8,7 @@
  *   按 AGENTS.md 第 252 行规范，国内 / 国际站 sidebar 用数组/常量驱动，按
  *   `isGlobal` 编译期切换数据源，terser 会消除未选中的一支为死代码。
  *   - 国内站（CN_SIDEBAR）：微信 / 飞书 / QQ
- *   - 国际站（GLOBAL_SIDEBAR）：WeChat / Telegram / WhatsApp / Discord / Slack
+ *   - 国际站（GLOBAL_SIDEBAR）：WeChat / Telegram / WhatsApp / Discord
  */
 
 import { isGlobal } from "@/lib/region";
@@ -70,7 +70,7 @@ const CN_SIDEBAR: DocGroup[] = [
   },
 ];
 
-/** 国际站 sidebar：WeChat / Telegram / WhatsApp / Discord / Slack */
+/** 国际站 sidebar：WeChat / Telegram / WhatsApp / Discord */
 const GLOBAL_SIDEBAR: DocGroup[] = [
   {
     title: "开始使用",
@@ -92,7 +92,6 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
       { slug: "configuration/channel-telegram", title: "Telegram", indent: true },
       { slug: "configuration/channel-whatsapp", title: "WhatsApp", indent: true },
       { slug: "configuration/channel-discord", title: "Discord", indent: true },
-      { slug: "configuration/channel-slack", title: "Slack", indent: true },
       { slug: "configuration/skill", title: "配置技能", titleEn: "Configure Skills" },
     ],
   },
@@ -141,7 +140,6 @@ const GLOBAL_SLUG_TO_FILE: Record<string, string> = {
   "configuration/channel-telegram": "configuration/channel-telegram.md",
   "configuration/channel-whatsapp": "configuration/channel-whatsapp.md",
   "configuration/channel-discord": "configuration/channel-discord.md",
-  "configuration/channel-slack": "configuration/channel-slack.md",
   "configuration/skill": "configuration/skill.md",
   faq: "07-faq.md",
   "faq/using-lightvela-safely": "faq/using-lightvela-safely.md",

@@ -98,7 +98,7 @@ func Load() Config {
 			Enabled:        boolFromEnv("SHADOW_CLOUDLADDER_ENABLED"),
 			GatewayBaseURL: os.Getenv("SHADOW_CLOUDLADDER_GATEWAY_BASE_URL"),
 			Caller:         cloudLadderCaller(),
-			Secret:         os.Getenv("SHADOW_CLOUDLADDER_HMAC_SECRET"),
+			Secret:         cloudLadderSecret(),
 		},
 		BillingMode:         envOrDefault("SHADOW_BILLING_MODE", "fake"),
 		BillingEndpoint:     os.Getenv("SHADOW_BILLING_ENDPOINT"),
@@ -129,6 +129,13 @@ func cloudLadderCaller() string {
 		return "shadow"
 	}
 	return ""
+}
+
+func cloudLadderSecret() string {
+	if value := os.Getenv("SHADOW_CLOUDLADDER_HMAC_SECRET"); value != "" {
+		return value
+	}
+	return os.Getenv("CLOUDLADDER_SHADOW_HMAC_SECRET")
 }
 
 func envOrDefault(key, fallback string) string {

@@ -1,6 +1,6 @@
 # ACP Backend Integration
 
-本文档说明 `gateway` 的 ACP 后端怎么接入、启动、验证和排障。这里的 ACP 后端指本地 Go wrapper 暴露的 WebSocket JSON-RPC 服务；它内部会按会话拉起外层腾讯云 AGS sandbox，并在外层常驻 Hermes sidecar daemon。
+本文档说明 `gateway` 的 ACP 后端怎么接入、启动、验证和排障。这里的 ACP 后端指本地 Go wrapper 暴露的 WebSocket JSON-RPC 服务；它内部会按会话拉起外层腾讯云 AGS sandbox，并在外层常驻 CloudAgent sidecar daemon。
 
 ## 架构
 
@@ -10,14 +10,14 @@
 ACP client
   -> gateway Go server
   -> outer AGS sandbox
-  -> Hermes Rust sidecar daemon
+  -> CloudAgent Rust sidecar daemon
   -> TokenHub Chat Completions
   -> inner AGS sandbox, only when Hermes tools are used
 ```
 
 关键语义：
 
-- `session/new` 会立即创建 outer AGS sandbox，并在 outer 里后台启动一个常驻 Hermes sidecar daemon。
+- `session/new` 会立即创建 outer AGS sandbox，并在 outer 里后台启动一个常驻 CloudAgent sidecar daemon。
 - 纯聊天只走 outer daemon + TokenHub，不创建 inner sandbox。
 - 当模型决定使用 `terminal`、`file_read`、`file_list`、`file_search` 等 Hermes 工具时，Hermes 会在同一个 outer daemon 里创建会话级 inner AGS sandbox。
 - inner sandbox id 会由 sidecar 回传给 wrapper，wrapper 记录在 ACP runtime 上，便于 close/delete/cancel 清理。
@@ -47,6 +47,88 @@ ACP 入口：
 - `GET /v1/files/:id/content`
 - `GET /v1/models`
 
+## Streaming update contract
+
+`session/prompt` 运行时，gateway 通过 JSON-RPC notification 持续发送：
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "session/update",
+  "params": {
+    "sessionId": "session_xxx",
+    "update": {
+      "sessionUpdate": "agent_message_chunk",
+      "messageId": "message_xxx",
+      "blockId": "block_xxx",
+      "content": { "text": "ER_FINAL_123" },
+      "_meta": {
+        "cloudagent": {
+          "accumulated": true,
+          "accumulated_text": "BROWSER_FINAL_123"
+        }
+      }
+    }
+  }
+}
+```
+
+协议面约束：
+
+- `session/update` 必须保持流式 notification，一次 worker delta 对应一次 live update，不能等 final replay 再补。
+- `content.text` 保持 ACP chunk/delta 语义；普通 ACP 客户端按顺序 append 仍可得到完整文本。
+- CloudAgent/MyChat 为了抵抗浏览器重连、React 渲染中断或首包丢失，会读取 `_meta.cloudagent.accumulated_text` 作为当前 block 的幂等累计快照，并用同一个 `messageId` + `blockId` 做 replace 渲染。
+- CloudAgent 私有字段只放在 `_meta.cloudagent`，不要新增顶层私有字段污染标准 ACP update。
+
+## ACP Well-Done Contract
+
+CloudAgent 客户端不能只靠 WebSocket close、RPC response arrival 或 UI timeout 判断一段工作完成。协议面有三类显式 well-done signal：
+
+| 场景 | Well-done signal | 客户端动作 |
+| --- | --- | --- |
+| Transcript replay | 收到 `_cloudagent.session.replay_done`，且随后收到对应 `session/load` response | 可以认为历史回放完整；历史错误不得作为标准 `session/update` error 重放 |
+| Workspace/runtime restore | `_cloudagent.runtime.ensure_ready` response 中 `ok=true`、`state="ready"`、`read_only=false`，且 `runtime_status` 为 `attached/ready/idle/running/recovered/restored` 之一；或者 `_cloudagent.session.status` 返回同等字段 | 可以解除“正在恢复 Workspace”，将 session 标记为可写 live session |
+| Prompt turn | 收到 `_cloudagent.turn.status`，`status` 为 `completed/failed/cancelled/interrupted/ownership_lost`，再收到对应 `session/prompt` response | 可以结束当前 turn UI；失败类状态需要展示错误或取消态 |
+
+约束：
+
+- `session/load` 只负责 transcript replay，不启动 runtime，也不等价于 workspace ready。
+- `_cloudagent.runtime.ensure_ready` 不回放消息，只负责恢复 runtime host。
+- `_cloudagent.session.status` 是 runtime ensure-ready 的幂等观测面；如果 ensure-ready RPC response 因浏览器刷新或连接切换丢失，客户端可以用 status 的 ready 字段收敛 UI。
+- 私有 lifecycle marker 必须使用 `_cloudagent.*` notification；不得再塞进标准 `session/update.sessionUpdate` 枚举。
+- 标准 ACP 方法和字段保持 ACP 命名；CloudAgent 自有状态只放 `_meta.cloudagent`，扩展方法输入/输出统一使用 `snake_case`。
+
+## Session Lifecycle Contract
+
+Gateway 对外暴露的会话生命周期以 `_cloudagent.session.status` 的 `lifecycle_state`、`recoverability`、`recoverability_note` 为准；`state`、`closed`、`read_only`、`runtime_restorable` 只是兼容和调试字段。`runtime_restorable=true` 的正式依据是 “session runtime 字段可重建” 或 “workspace store 中存在可恢复的 Wisp/SMH `WorkspaceRecord`”，不要只看 `session_runtimes.wisp_smh_space_id`。
+
+状态枚举：
+
+| `lifecycle_state` | `recoverability` | 语义 |
+| --- | --- | --- |
+| `starting` | `unknown/restorable` | session 正在首次创建 runtime |
+| `restoring` | `restorable/retryable` | runtime/workspace 正在恢复 |
+| `storing` | `restorable/unknown` | close/delete 正在贮藏或清理 workspace/runtime |
+| `prompting` | `live` | runtime 存活且有 active prompt |
+| `live` | `live` | runtime attached，可写 |
+| `detached` | `live/restorable/unknown` | gateway 有持久化 runtime identity，但当前进程尚未验证；客户端应调用 ensure-ready |
+| `stored_restorable` | `restorable` | outer/inner sandbox 已释放，但 Wisp workspace 记录足够恢复 |
+| `restore_failed_retryable` | `retryable` | 最近一次恢复失败，但保留可恢复 workspace anchor |
+| `blocked_terminal` | `terminal` | 缺少恢复 anchor 或 runtime identity，不允许继续写 |
+| `failed` | `unknown/retryable/terminal` | runtime 创建或执行失败，需看 `recoverability` |
+| `closed` | `terminal/unknown` | 非 Wisp 或缺少恢复信息的关闭态 |
+
+编码约束：
+
+- prompt 入口、restore 入口和 MyChat UI 都必须优先读 `lifecycle_state/recoverability`。
+- 只有 `live` 和 `prompting` 是可写态。
+- `detached` 不是错误，也不是可写态；它是“需要 ensure-ready 验证或恢复”的中间态。
+- `stored_restorable` 不是错误，必须允许 `session/resume` / `_cloudagent.runtime.ensure_ready`。
+- `restore_failed_retryable` 不是终态，UI 可以提示重试。
+- `blocked_terminal` 是终态；不要再反复自动 restore。
+- `runtime_not_recovered` 只能作为 `recoverability_note` 或兼容 `read_only_reason`，不能单独当状态机使用。
+- gateway 恢复前必须先用 `WorkspaceRecord` 补齐 runtime 的 `OuterRuntime`、`RuntimeRecovery`、`WispWorkspaceID`、`WispSMHSpaceID` 和 Wisp 参数；否则旧 outer sandbox 丢失后会误判成 terminal。
+
 ## 启动
 
 从 `gateway` 目录启动：
@@ -60,7 +142,7 @@ make server
 脚本会自动：
 
 - 从仓库 `.env` 加载配置。
-- 读取或发布 Hermes sidecar 到 COS。
+- 读取或发布 CloudAgent sidecar 到 COS。
 - 把 sidecar URL 和 SHA256 注入 wrapper。
 - 启动 `dist/gateway-server`。
 
@@ -73,6 +155,7 @@ GATEWAY_DATA_DIR=/tmp/gateway-agent-data \
 ```
 
 重新发布 sidecar 后必须重启 wrapper。wrapper 只在启动时读取 `GATEWAY_AGENT_SIDECAR_URL` 和 `GATEWAY_AGENT_SIDECAR_SHA256`。
+指定 `agent_version` 时，客户端仍然只能传版本号；实际 sidecar COS URL/SHA 由服务端 allowlist registry 解析，不能由客户端直接传 URL。
 
 ## 必需配置
 
@@ -88,6 +171,63 @@ export INNER_SANDBOX_TEMPLATE="$GATEWAY_AGS_TEMPLATE"
 export COSCMD_CONFIG='/tmp/cos-agent-sidecar.conf'
 export COSCMD_BIN='/tmp/coscmd-venv/bin/coscmd'
 ```
+
+可选的 Agent 版本 registry：
+
+```bash
+export GATEWAY_AGENT_VERSION_REGISTRY_JSON='{
+  "builtin.v1-54ecc6642308": {
+    "sidecar_url": "https://cloudagent-sidecar-shanghai-1388575217.cos.ap-shanghai.myqcloud.com/agent-sidecar/20260522/cloudagent-sidecar-linux-amd64-54ecc6642308",
+    "signing_key_id": "cloudagent-agent-release-v1"
+  }
+}'
+```
+
+`builtin.v1` 保持兼容：继续使用全局 `GATEWAY_AGENT_SIDECAR_URL` / `GATEWAY_AGENT_SIDECAR_SHA256`，或者本地上传 binary。
+registry 里的版本是服务端 allowlist；如果配置了 `sidecar_url`，`sidecar_sig_url` 可省略并默认拼成 `${sidecar_url}.sig`，`signing_key_id` 可省略并默认使用 `cloudagent-agent-release-v1`。`sidecar_sha256` 也可省略，loader 会从验签通过的 detached `.sig` envelope 里读取 sha256，再校验 ELF bytes。签名版本不会走 `curl && chmod +x && exec`，而是调用预置在外层 sandbox template 里的 Rust loader：
+
+```bash
+/usr/local/bin/cloudagent-agent-loader \
+  --url "$sidecar_url" \
+  --output /tmp/gateway/sessions/session_xxx/hermes-sidecar \
+  --sig-url "$sidecar_sig_url" \
+  --key-id "$signing_key_id" \
+  -- daemon --addr 127.0.0.1:38000 --session-id session_xxx
+```
+
+loader 默认从 `/etc/cloudagent/agent-loader-keys.json` 读取可信 Ed25519 公钥，也可用 `GATEWAY_AGENT_LOADER_PATH` 覆盖 loader 路径。公钥文件必须由 sandbox template 预置，不能从 COS 动态下载：
+
+```json
+{
+  "keys": {
+    "cloudagent-agent-release-v1": "base64-ed25519-public-key"
+  }
+}
+```
+
+客户端也可以在创建 session 时直接传 signed artifact URL；服务端会按同样规则拼 `.sig` 并走 loader 验签：
+
+```json
+{
+  "cwd": "/workspace",
+  "_meta": {
+    "cloudagent": {
+      "sidecar_url": "https://bucket.cos.ap-shanghai.myqcloud.com/agent-sidecar/cloudagent-sidecar-linux-amd64-custom"
+    }
+  }
+}
+```
+
+发布签名版本：
+
+```bash
+make init-cloudagent-signing-key
+make signupload-cloudagent-sidecar
+```
+
+`init-cloudagent-signing-key` 会把私钥 seed 写入被 git ignore 的 `.env`，并只输出公钥形式的 `trusted_keys_json`。公钥可以进入 sandbox template 的 `/etc/cloudagent/agent-loader-keys.json`；私钥 seed 只留在本地发布环境，不进入仓库、COS、gateway registry 或 sandbox。
+
+`signupload-cloudagent-sidecar` 会执行 `build -> sign detached .sig -> upload binary + .sig -> print registry JSON`。签名私钥从 `.env` 中的 `CLOUDAGENT_AGENT_RELEASE_ED25519_SEED_B64` 或 `CLOUDAGENT_AGENT_RELEASE_ED25519_SEED_FILE` 读取。脚本 stderr 也会输出对应的 `trusted_keys_json`，用于写入 sandbox template 的 `/etc/cloudagent/agent-loader-keys.json`。
 
 常用可选项：
 
@@ -177,6 +317,30 @@ ACP 当前主要是会话型协议，租户/项目治理还不是最终形态。
 }
 ```
 
+可通过 CloudAgent 私有 `_meta.cloudagent` 为单个会话选择 Agent runtime host 和
+Workspace runtime：
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "session/new",
+  "params": {
+    "cwd": "/workspace",
+    "_meta": {
+      "cloudagent": {
+        "sandbox_backend": "talos",
+        "agent_version": "builtin.v1",
+        "workspace_version": "builtin.v1"
+      }
+    }
+  }
+}
+```
+
+`agent_version` 控制外层 Agent runtime host 的灰度版本，版本内部决定外层模板、初始化脚本插件，以及可选的 sidecar COS artifact。
+`workspace_version` 控制 inner workspace runtime 的灰度版本，版本内部决定内层模板和行为配置。
+
 返回：
 
 ```json
@@ -194,15 +358,25 @@ ACP 当前主要是会话型协议，租户/项目治理还不是最终形态。
         "currentValue": "agent-sidecar-chat",
         "options": []
       }
-    ]
+    ],
+    "_meta": {
+      "cloudagent": {
+        "state": "ready",
+        "read_only": false,
+        "read_only_reason": "",
+        "session_proxy_id": "proxy_xxx"
+      }
+    }
   }
 }
 ```
 
+标准客户端只需要读取 `sessionId` 和 `configOptions`。CloudAgent/MyChat 需要的运行态、只读态和 proxy id 必须从 `_meta.cloudagent` 读取；不得在 `session/new`、`session/load`、`session/resume` 或 `session/list` 顶层新增 `readOnly`、`readOnlyReason`、`session_proxy_id` 这类私有字段。
+
 ### _cloudagent.session.status
 
 CloudAgent 私有扩展方法，用于会话运行时自省。扩展方法名使用点分隔，
-扩展字段使用 `snake_case`，不混用 ACP 标准字段里的 camelCase。
+扩展输入和输出字段都使用 `snake_case`，不支持 camelCase alias，也不混用 ACP 标准字段里的 camelCase。
 
 ```json
 {
@@ -239,11 +413,11 @@ CloudAgent 私有扩展方法，用于会话运行时自省。扩展方法名使
       "runtime_id": "rt_session_xxx_1",
       "outer_sandbox_id": "outer_xxx",
       "outer_sandbox_domain": "ap-beijing.tencentags.com",
-      "inner_sandbox_id": "",
       "daemon_addr": "http://127.0.0.1:38xxx",
       "remote_binary": "/tmp/gateway/sessions/session_xxx/hermes-sidecar",
       "has_outer_envd_access_token": true,
-      "has_outer_traffic_token": false
+      "has_outer_traffic_token": false,
+      "has_inner_envd_target": false
     }
   }
 }
@@ -299,15 +473,16 @@ CloudAgent 私有扩展方法，用于会话运行时自省。扩展方法名使
 ```json
 {
   "jsonrpc": "2.0",
-  "id": 4,
   "method": "session/cancel",
   "params": {"sessionId": "session_xxx"}
 }
 ```
 
+`session/cancel` 按 ACP 作为 JSON-RPC notification 处理，不返回独立响应；取消结果通过原 `session/prompt` 请求的 `stopReason: "cancelled"` 收敛。
+
 ### session/close
 
-关闭会话运行态。当前实现会释放 sandbox；历史仍保留在 wrapper 内存中。
+关闭会话运行态。对 Wisp runtime，这个标准 ACP 方法就是 CloudAgent 的“主动贮藏”入口：Gateway 会关闭 sidecar、销毁 inner/outer sandbox，释放 lease，但保留可恢复的 Wisp/SMH workspace anchor、runtime store 和 transcript。标准 ACP 语义仍然只是 close；贮藏进度通过 CloudAgent 扩展通知 `_cloudagent.workspace.lifecycle` 投影，标准客户端可以忽略。
 
 ```json
 {
@@ -318,11 +493,11 @@ CloudAgent 私有扩展方法，用于会话运行时自省。扩展方法名使
 }
 ```
 
-close 后直接 `session/prompt` 会失败，必须先 `session/resume`。
+close 后直接 `session/prompt` 会失败，必须先 `session/resume` 或 `_cloudagent.runtime.ensure_ready`。恢复会新建 outer sandbox 和 inner workspace runtime，并绑定回同一个 Wisp/SMH workspace anchor。
 
 ### session/resume
 
-恢复已 close/cancel 或运行态丢失的 session。wrapper 会重新创建 outer sandbox、启动 sidecar daemon，并把历史 bootstrap 进去。
+恢复已 close/cancel 或运行态丢失的 session。wrapper 会重新创建 outer sandbox、启动 sidecar daemon，并调用 runtime `session-create` 重新绑定会话；agent transcript/run ledger 以 runtime store 为准，不再由 Gateway history bootstrap。
 
 ```json
 {
@@ -336,16 +511,124 @@ close 后直接 `session/prompt` 会失败，必须先 `session/resume`。
 }
 ```
 
-### session/load
+返回与 `session/load` 一样，不在顶层返回 `sessionId`；CloudAgent 状态放在 `_meta.cloudagent`：
 
-加载已有 session，并回放历史到客户端。用于 UI 切换会话时恢复展示。
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 6,
+  "result": {
+    "configOptions": [],
+    "_meta": {
+      "cloudagent": {
+        "state": "ready",
+        "read_only": false,
+        "read_only_reason": "",
+        "session_proxy_id": "proxy_xxx"
+      }
+    }
+  }
+}
+```
+
+### _cloudagent.runtime.ensure_ready
+
+CloudAgent ACP 扩展方法。用于 UI 在 `session/load` 回放 transcript 后恢复 workspace/runtime host；语义是“确保这个 session 的 runtime host 可用”，但不回放消息。
+
+优先使用这个扩展来恢复 runtime；不支持该扩展时再退回 `session/resume`。
 
 ```json
 {
   "jsonrpc": "2.0",
   "id": 7,
+  "method": "_cloudagent.runtime.ensure_ready",
+  "params": {
+    "session_id": "session_xxx",
+    "cwd": "/workspace"
+  }
+}
+```
+
+返回包含 `_cloudagent.session.status` 的状态字段，并额外包含：
+
+```json
+{
+  "ok": true,
+  "restore_source": "runtime_ensure_ready",
+  "runtime_ensure_ready": {
+    "changed": true,
+    "previous_runtime_id": "rt_old",
+    "previous_outer_sandbox_id": "outer_old",
+    "runtime_id": "rt_new",
+    "outer_sandbox_id": "outer_new"
+  }
+}
+```
+
+恢复或贮藏期间 Gateway 会发送低频 CloudAgent 扩展通知 `_cloudagent.workspace.lifecycle`。该通知只用于 UI 展示和诊断，不属于标准 `session/update`，不得作为 transcript 回放消息持久展示：
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "_cloudagent.workspace.lifecycle",
+  "params": {
+    "session_id": "session_xxx",
+    "generation": 2,
+    "operation": "restore",
+    "phase": "runtime",
+    "status": "running",
+    "label": "恢复 Runtime Host",
+    "elapsed_ms": 1204,
+    "lifecycle_id": "restore:session_xxx:runtime",
+    "timestamp": "2026-05-26T02:00:00Z"
+  }
+}
+```
+
+`operation` 目前为 `restore` 或 `storage`；`status` 为 `running/done/failed`。关闭或删除 session 时，贮藏/清理阶段也会通过同一通知投影。
+
+### session/load
+
+加载已有 session，并回放历史到客户端。用于 UI 切换会话时恢复展示。回放时先发送历史 `session/update`，再发送 CloudAgent 扩展通知 `_cloudagent.session.replay_done`，最后返回 `session/load` 响应；`session/load` 本身不启动 runtime。
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 8,
   "method": "session/load",
   "params": {"sessionId": "session_xxx"}
+}
+```
+
+CloudAgent 私有回放完成通知：
+
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "_cloudagent.session.replay_done",
+  "params": {"session_id": "session_xxx", "last_event_seq": 42}
+}
+```
+
+如果 load 期间的 live buffer 发生丢弃，会发送 `_cloudagent.session.replay_gap`。这些 `_cloudagent.*` 方法是显式扩展，不是 ACP `session/update.sessionUpdate` 标准枚举。
+
+`session/load` 响应本身只返回标准配置和 CloudAgent `_meta`，不会在顶层补 `sessionId` 或私有只读字段：
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 8,
+  "result": {
+    "configOptions": [],
+    "_meta": {
+      "cloudagent": {
+        "state": "ready",
+        "read_only": false,
+        "read_only_reason": "",
+        "session_proxy_id": "proxy_xxx"
+      }
+    }
+  }
 }
 ```
 
@@ -355,6 +638,32 @@ close 后直接 `session/prompt` 会失败，必须先 `session/resume`。
 
 ```json
 {"jsonrpc":"2.0","id":8,"method":"session/list","params":{"cwd":"/"}}
+```
+
+返回行的标准字段保留在顶层，CloudAgent 状态放进 `_meta.cloudagent`：
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 8,
+  "result": {
+    "sessions": [
+      {
+        "sessionId": "session_xxx",
+        "cwd": "/workspace",
+        "title": "session_xxx",
+        "updatedAt": 1779693974,
+        "_meta": {
+          "cloudagent": {
+            "state": "ready",
+            "read_only": false,
+            "read_only_reason": ""
+          }
+        }
+      }
+    ]
+  }
+}
 ```
 
 ### session/delete
@@ -465,7 +774,7 @@ cd /Users/skipzhang/cloudagent/gateway
 
 - `session/new` 创建 outer runtime。
 - `session/prompt` 可流式返回。
-- `session/cancel` 可以取消正在执行的 prompt。
+- `session/cancel` notification 可以取消正在执行的 prompt。
 - `session/resume` 会重新创建 outer runtime。
 - 工具问题至少创建一次 inner sandbox。
 - `session/close` 后不能直接 prompt。
@@ -484,15 +793,13 @@ wrapper 和 sidecar 都向 stderr 打 timeline。常用事件：
 - `acp_runtime_outer_create_start` / `acp_runtime_outer_create_done`
   外层 AGS 创建开始/完成。
 - `acp_runtime_daemon_done`
-  outer 里的 Hermes sidecar daemon 已启动并通过 health check。
+  outer 里的 CloudAgent sidecar daemon 已启动并通过 health check。
 - `acp_runtime_prompt_start` / `acp_runtime_prompt_done`
   一轮 ACP prompt 开始/完成。
 - `inner_sandbox_id=...`
   本轮最终记录到的 inner sandbox id。空值表示本轮没有使用工具。
-- `inner_create_start` / `inner_ready`
-  Hermes 创建 inner AGS。
-- `tool_exec_start` / `tool_exec_done`
-  Hermes 工具调用开始/结束。
+- `kind=tool_call` / `kind=tool_call_update`
+  Hermes 工具调用开始/结束的协议投影。
 - `acp_runtime_close_start` / `acp_runtime_close_done`
   close 释放运行态。
 - `acp_runtime_cancel_start` / `acp_runtime_cancel_done`
@@ -504,7 +811,7 @@ wrapper 和 sidecar 都向 stderr 打 timeline。常用事件：
 
 1. `acp_runtime_outer_create_done` 有 outer sandbox id。
 2. 工具问题里 `inner_sandbox_id` 非空。
-3. sidecar stderr 有 `inner_ready` 和 `tool_exec_done`。
+3. wrapper 事件流里有 `kind=tool_call` 和 `kind=tool_call_update`。
 
 ## 常见错误
 
@@ -526,7 +833,7 @@ AGS 对已 `STOPPED` 实例再次 delete/stop 返回 400。对 ACP cleanup 来�
 
 ### `ags http 404: The requested resource does not exist`
 
-通常表示旧 outer sandbox 已被云端回收或不存在。`session/prompt` 会触发 runtime recover：重新创建 outer sandbox、启动 daemon、bootstrap 历史并重试当前 prompt。
+通常表示旧 outer sandbox 已被云端回收或不存在。`session/prompt` 会触发 runtime recover：重新创建 outer sandbox、启动 daemon、`session-create` 绑定 runtime store 并重试当前 prompt。
 
 ### 日期回答不对
 

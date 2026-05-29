@@ -20,6 +20,7 @@ dist/
 build/
 !gateway/build/
 !gateway/build/**
+cargo-vendor/
 *.log
 
 # Local OS/editor noise
@@ -28,4 +29,3 @@ build/
 # Large upstream research checkouts kept as local references.
 research/LibreChat/
 research/open-webui/
-research/hermes-rs/

@@ -116,15 +116,26 @@ type materializedFile struct {
 }
 
 type workerJob struct {
-	WorkerContractVersion string             `json:"worker_contract_version"`
-	JobID                 string             `json:"job_id"`
-	ResponseID            string             `json:"response_id"`
-	Model                 string             `json:"model,omitempty"`
-	Scope                 Scope              `json:"scope"`
-	Instruction           string             `json:"instruction"`
-	InputFiles            []materializedFile `json:"input_files"`
-	TimeoutSeconds        int                `json:"timeout_seconds"`
-	CorrelationID         string             `json:"correlation_id"`
+	WorkerContractVersion string                `json:"worker_contract_version"`
+	JobID                 string                `json:"job_id"`
+	ResponseID            string                `json:"response_id"`
+	Model                 string                `json:"model,omitempty"`
+	Scope                 Scope                 `json:"scope"`
+	CWD                   string                `json:"cwd,omitempty"`
+	Instruction           string                `json:"instruction"`
+	InputFiles            []materializedFile    `json:"input_files"`
+	TimeoutSeconds        int                   `json:"timeout_seconds"`
+	CorrelationID         string                `json:"correlation_id"`
+	ACPSessionID          string                `json:"acp_session_id,omitempty"`
+	ACPSessionGeneration  int64                 `json:"acp_session_generation,omitempty"`
+	ACPInboxMode          string                `json:"acp_inbox_mode,omitempty"`
+	ACPSessionRuntime     ACPSessionRuntime     `json:"-"`
+	ACPSessionHistory     []runtimeHistoryEntry `json:"-"`
+}
+
+type runtimeHistoryEntry struct {
+	Role string `json:"role"`
+	Text string `json:"text"`
 }
 
 type workerEvent struct {
@@ -156,10 +167,11 @@ type artifactDescriptor struct {
 }
 
 type workerResult struct {
-	WorkerContractVersion string               `json:"worker_contract_version"`
-	JobID                 string               `json:"job_id"`
-	Status                string               `json:"status"`
-	OutputText            string               `json:"output_text"`
-	Artifacts             []artifactDescriptor `json:"artifacts,omitempty"`
-	AdvisoryLog           []string             `json:"advisory_log,omitempty"`
+	WorkerContractVersion string                  `json:"worker_contract_version"`
+	JobID                 string                  `json:"job_id"`
+	Status                string                  `json:"status"`
+	OutputText            string                  `json:"output_text"`
+	Artifacts             []artifactDescriptor    `json:"artifacts,omitempty"`
+	AdvisoryLog           []string                `json:"advisory_log,omitempty"`
+	RuntimeUpdate         ACPSessionRuntimeUpdate `json:"-"`
 }

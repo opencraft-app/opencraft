@@ -25,11 +25,13 @@ data:
   E2B_DOMAIN: "ap-shanghai.tencentags.com"
   GATEWAY_AGS_TEMPLATE: "REPLACE_ME_SHPROD_AGS_TEMPLATE"
   GATEWAY_AGENT_SIDECAR_INNER_TEMPLATE: "REPLACE_ME_SHPROD_AGS_TEMPLATE"
-  GATEWAY_AGENT_SIDECAR_URL: "REPLACE_ME_SHPROD_HERMES_SIDECAR_URL"
-  GATEWAY_AGENT_SIDECAR_SHA256: "REPLACE_ME_SHPROD_HERMES_SIDECAR_SHA256"
+  GATEWAY_AGENT_SIDECAR_URL: "REPLACE_ME_SHPROD_CLOUDAGENT_SIDECAR_URL"
+  GATEWAY_AGENT_SIDECAR_SHA256: "REPLACE_ME_SHPROD_CLOUDAGENT_SIDECAR_SHA256"
   GATEWAY_SANDBOX_HOST_URL: "REPLACE_ME_SHPROD_SANDBOX_HOST_URL"
   GATEWAY_SANDBOX_HOST_SHA256: "REPLACE_ME_SHPROD_SANDBOX_HOST_SHA256"
-  GATEWAY_TALOS_TEMPLATE: "498c6c11-74d7-426e-bdb1-13d8aa73997e"
+  GATEWAY_TALOS_TEMPLATE: "tpl-pool-s3h-ivanbgliu-1"
+  CLOUDAGENT_WEB_SEARCH_PROVIDER: "tencent_wsa"
+  TENCENTCLOUD_WSA_ENDPOINT: "https://api.wsa.cloud.tencent.com/SearchPro"
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -85,15 +87,16 @@ spec:
                   name: gateway-runtime-secrets
                   key: GATEWAY_TALOS_API_KEY
                   optional: true
+            - name: TENCENTCLOUD_WSA_APIKEY
+              valueFrom:
+                secretKeyRef:
+                  name: cloudagent-wsa-search-secrets
+                  key: TENCENTCLOUD_WSA_APIKEY
+                  optional: true
           readinessProbe:
             httpGet:
-              path: /v1/models
+              path: /readyz
               port: http
-              httpHeaders:
-                - name: X-Tenant-ID
-                  value: tenant-live
-                - name: X-Project-ID
-                  value: project-live
             initialDelaySeconds: 5
             periodSeconds: 10
             timeoutSeconds: 3
@@ -105,13 +108,8 @@ spec:
             periodSeconds: 20
           startupProbe:
             httpGet:
-              path: /v1/models
+              path: /readyz
               port: http
-              httpHeaders:
-                - name: X-Tenant-ID
-                  value: tenant-live
-                - name: X-Project-ID
-                  value: project-live
             periodSeconds: 5
             timeoutSeconds: 3
             failureThreshold: 24

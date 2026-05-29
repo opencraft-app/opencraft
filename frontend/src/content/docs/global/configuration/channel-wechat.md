@@ -28,7 +28,7 @@ WeChat 通道采用扫码接入方式，为所有通道中配置最简单的一�
 
 ### 2. 选择 WeChat 通道
 
-点击下拉框，选择「WeChat」。下方显示 WeChat 通道介绍与「查看详情」链接。
+找到 WeChat 模块，点击「+连接」。
 
 ### 3. 点击「授权接入」
 
@@ -135,7 +135,5 @@ WeChat 通道采用扫码接入方式，为所有通道中配置最简单的一�
 - [配置通道 - WhatsApp](./configuration/channel-whatsapp.md) — 国际用户沟通、客户服务与通知提醒场景
     
 - [配置通道 - Discord](./configuration/channel-discord.md) — 社群运营、开发者社区与兴趣群组互动
-    
-- [配置通道 - Slack](./configuration/channel-slack.md) — 企业办公协作、团队通知与工作流自动化
     
 - [配置技能](./configuration/skill.md) — 扩展 Hermes 能力

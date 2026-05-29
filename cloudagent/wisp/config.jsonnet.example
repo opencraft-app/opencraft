@@ -1,0 +1,183 @@
+local projectRoot = "/path/to/wisp";
+local workspace = "default";
+local containerID = "wisp-" + workspace;
+
+local paths = {
+  remote: {
+    root: "/mnt/cos-workspace",
+    state: "/mnt/cos-workspace/wisp/" + workspace,
+    active: "/mnt/cos-workspace/wisp/" + workspace + "/active",
+    checkpoints: "/mnt/cos-workspace/wisp/" + workspace + "/checkpoints",
+    policy: "/mnt/cos-workspace/wisp/" + workspace + "/policy",
+  },
+  host: {
+    root: "/var/lib/wisp",
+    workspace: "/var/lib/wisp/" + workspace,
+    shared: "/var/lib/wisp/shared",
+  },
+  runtime: {
+    root: "/var/lib/wisp-runtime/" + workspace,
+    bundle: "/var/lib/wisp-runtime/" + workspace + "/bundle",
+  },
+  control: {
+    adminRoot: "/run/envd",
+    envSocket: "/.wisp/api.sock",
+    legacyRuntimeRoot: "/run/wisp/" + workspace,
+  },
+  cgroup: {
+    root: "/sys/fs/cgroup/wisp",
+    parent: "/sys/fs/cgroup/wisp/" + workspace,
+    userParent: "/sys/fs/cgroup/wisp/" + workspace + "/user",
+    runtimeParent: "/sys/fs/cgroup/wisp/" + workspace + "/runtime",
+  },
+};
+
+local derived = {
+  remote: paths.remote + {
+    image: paths.remote.active + "/root-upper.img",
+  },
+  host: paths.host + {
+    tmp: paths.host.workspace + "/tmp",
+    docker: paths.host.workspace + "/var-lib-docker",
+    logs: paths.host.workspace + "/logs",
+    tools: paths.host.workspace + "/tools",
+    lower: paths.host.shared + "/lower",
+  },
+  runtime: paths.runtime + {
+    rootfs: paths.runtime.root + "/rootfs",
+    upperMount: paths.runtime.root + "/root-upper-rw",
+    loopFile: paths.runtime.root + "/loop-device",
+    pidFile: paths.runtime.root + "/enter.pid",
+    crunState: paths.runtime.root + "/.crun",
+  },
+};
+
+local lower = {
+  root: derived.host.lower,
+  languages: derived.host.lower + "/languages-image",
+  system: derived.host.lower + "/system",
+  systemBase: derived.host.lower + "/system-base",
+};
+
+local tools = {
+  root: paths.host.shared + "/tools",
+  crun: paths.host.shared + "/tools/crun",
+};
+
+local bundle = {
+  root: paths.runtime.bundle,
+  rootfs: paths.runtime.bundle + "/rootfs",
+};
+
+local control = {
+  adminRoot: paths.control.adminRoot,
+  adminSocket: paths.control.adminRoot + "/admin.sock",
+  daemonLock: paths.control.adminRoot + "/wisp.lock",
+  envSocket: paths.control.envSocket,
+  envSocketHost: paths.runtime.root + "/api.sock",
+  legacyRuntimeRoot: paths.control.legacyRuntimeRoot,
+};
+
+local cgroup = paths.cgroup + {
+  userContainer: paths.cgroup.userParent + "/" + containerID,
+};
+
+{
+  WISP_NAME: workspace,
+  REMOTE_BACKEND: "cos",
+  COS_WORKSPACE: workspace,
+
+  JFS_ROOT: paths.remote.root,
+  STATE_ROOT: paths.remote.state,
+  ACTIVE_ROOT: paths.remote.active,
+  ACTIVE_IMG: derived.remote.image,
+  CHECKPOINTS_ROOT: paths.remote.checkpoints,
+  POLICY_ROOT: paths.remote.policy,
+
+  TEMP_ROOT: paths.host.workspace,
+  TMP_ROOT: derived.host.tmp,
+  DOCKER_ROOT: derived.host.docker,
+  LOG_ROOT: derived.host.logs,
+  CRUN_BINARY_PATH: tools.crun,
+
+  LOWER_ROOT: lower.root,
+  LOWER_LANGUAGES: lower.languages,
+  LOWER_SYSTEM: lower.system,
+  LOWER_SYSTEM_BASE: lower.systemBase,
+
+  RUNTIME_ROOT: paths.runtime.root,
+  ROOTFS_MOUNT: derived.runtime.rootfs,
+  UPPER_IMAGE_MOUNT: derived.runtime.upperMount,
+  ACTIVE_VIEW_MOUNT: derived.runtime.rootfs + "/.wisp/checkpoints/active",
+  LOOP_DEVICE_FILE: derived.runtime.loopFile,
+  PID_FILE: derived.runtime.pidFile,
+  CRUN_STATE_ROOT: derived.runtime.crunState,
+  CRUN_BUNDLE_ROOT: bundle.root,
+  CRUN_BUNDLE_ROOTFS: bundle.rootfs,
+  LEGACY_RUNTIME_ROOT: control.legacyRuntimeRoot,
+
+  ADMIN_ROOT: control.adminRoot,
+  ADMIN_SOCKET_PATH: control.adminSocket,
+  ADMIN_LISTEN_ADDR: "0.0.0.0:8520",
+  DAEMON_LOCK_FILE: control.daemonLock,
+  ENV_SOCKET_PATH: control.envSocket,
+  ENV_SOCKET_HOST_PATH: control.envSocketHost,
+  CONTAINER_ID: containerID,
+
+  CGROUP_ROOT: cgroup.root,
+  CGROUP_PARENT: cgroup.parent,
+  CGROUP_USER_PARENT: cgroup.userParent,
+  CGROUP_RUNTIME_PARENT: cgroup.runtimeParent,
+  CGROUP_USER_CONTAINER: cgroup.userContainer,
+
+  COS_ENABLED: true,
+  COS_BUCKET: "workspace-1388575217",
+  COS_REGION: "ap-singapore",
+  COS_ENDPOINT: "http://cos.ap-singapore.myqcloud.com",
+  SMH_ENABLED: false,
+  SMH_LIBRARY_ID: "",
+  SMH_ACCESS_DOMAIN: "",
+  SMH_SPACE_ID: "",
+  SMH_TOKEN_TTL_SECONDS: 86400,
+
+  JFS_LOCAL_ROOT: "",
+  JFS_PREFIX: "workspace",
+  JFS_BIN: projectRoot + "/bin/juicefs-smount",
+  JFS_BUILD: "1",
+  JUICEFS_REPO_ROOT: "",
+  JFS_SMOUNT_SCRIPT: projectRoot + "/juicefs/hack/smount.sh",
+  JFS_SFORMAT_SCRIPT: projectRoot + "/juicefs/hack/sformat.sh",
+  JFS_META_URL: "",
+  JFS_BUCKET_URL: "",
+
+  ROOT_UPPER_SIZE: "20G",
+  WISP_USER: "wisp",
+  WISP_UID: 1001,
+  WISP_GID: 1001,
+  SHELL_PATH: "/bin/bash",
+
+  BASE_ROOTFS_DIR: "",
+  BASE_ROOTFS_IMG: projectRoot + "/assets/rootfs/images/plucky-amd64.img",
+  CRUN_BINARY: projectRoot + "/assets/bin/crun/crun-amd64",
+  WISPENV_BINARY: projectRoot + "/bin/wispenv",
+  WISP_FS_AGENT_BINARY: projectRoot + "/bin/wisp-fs-agent",
+  TINI_BINARY: "",
+  TINI_VERSION: "v0.19.0",
+
+  WISP_PATH: "/home/wisp/.local/bin:/.wisp/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+  WISP_LANG: "en_US.UTF-8",
+  WISP_BROWSER: "/.wisp/bin/wisp-browser",
+  WISP_DEBIAN_FRONTEND: "noninteractive",
+  RESOLV_NAMESERVERS: "114.114.114.114",
+
+  MEMORY_RESERVE_MB: 512,
+  MEMORY_HIGH_PERCENT: 90,
+  USER_MEMORY_MAX_BYTES: "",
+  USER_MEMORY_HIGH_BYTES: "",
+  CPU_RESERVE_MILLICORES: 500,
+  USER_CPU_MAX_MILLICORES: "",
+  CPU_PERIOD_US: 100000,
+  TOTAL_PIDS_BUDGET: "",
+  RUNTIME_PIDS_RESERVE: 128,
+  USER_PIDS_MAX: "",
+}

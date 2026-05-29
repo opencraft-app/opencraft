@@ -46,10 +46,10 @@ csighub-public:
 	@echo "pushed $(CSIGHUB_PUBLIC_REGISTRY)/$(IMAGE):$(TAG)"
 
 run-image:
-	@test -n "$$CLOUDLADDER_PAYMENT_HMAC_SECRET" || (echo "CLOUDLADDER_PAYMENT_HMAC_SECRET is required at runtime"; exit 1)
-	@printf 'CLOUDLADDER_PAYMENT_HMAC_SECRET set=true length=%s fingerprint=%s\n' \
-		"$${#CLOUDLADDER_PAYMENT_HMAC_SECRET}" \
-		"$$(printf '%s' "$$CLOUDLADDER_PAYMENT_HMAC_SECRET" | shasum -a 256 | awk '{print substr($$1,1,12)}')"
+	@test -n "$$CLOUDLADDER_SHADOW_HMAC_SECRET" || (echo "CLOUDLADDER_SHADOW_HMAC_SECRET is required at runtime"; exit 1)
+	@printf 'CLOUDLADDER_SHADOW_HMAC_SECRET set=true length=%s fingerprint=%s\n' \
+		"$${#CLOUDLADDER_SHADOW_HMAC_SECRET}" \
+		"$$(printf '%s' "$$CLOUDLADDER_SHADOW_HMAC_SECRET" | shasum -a 256 | awk '{print substr($$1,1,12)}')"
 	docker run --rm -p 8095:8095 \
-		-e CLOUDLADDER_PAYMENT_HMAC_SECRET \
+		-e CLOUDLADDER_SHADOW_HMAC_SECRET \
 		"$(REGISTRY)/$(IMAGE):$(TAG)"

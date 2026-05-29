@@ -12,8 +12,11 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowRight,
   BrainCircuit,
+  CalendarClock,
+  ChevronDown,
   Check,
   MessageCircle,
+  MessageSquare,
   Loader2,
   Calendar,
   Mail,
@@ -26,10 +29,12 @@ import {
   Crown,
   TerminalSquare,
   Download,
-  Pencil,
+  Plus,
+  RefreshCw,
   Trash2,
   UserRound,
   Wand2,
+  Wrench,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
@@ -46,7 +51,6 @@ import type { TencentPtyClient, TencentPtyConnectionState } from "@/lib/tencent-
 import { BrandMark } from "@/components/site/brand-mark";
 import { LanguageSwitcher } from "@/components/site/language-switcher";
 import { useT, t as rawT } from "@/i18n/t";
-import { useTranslation } from "react-i18next";
 import { isGlobal } from "@/lib/region";
 import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
 import { useSession } from "@/contexts/session-context";
@@ -63,10 +67,23 @@ import {
   type IFeatureFlags,
   type IProductConfig,
 } from "@tencent/tea-sdk-lightclaw";
-import { createMonoDebugExecAdapter } from "@/pages/marketing/openclaw-tat-adapter";
+import {
+  createMonoDebugExecAdapter,
+  LIGHTVELA_SKIP_HERMES_PROVIDER_LIST_COMMAND,
+} from "@/pages/marketing/openclaw-tat-adapter";
+import { createLightVelaCommandExecutor } from "@/pages/marketing/openclaw-command-executor";
 import { installOpenClawConsoleHelpers } from "@/pages/marketing/openclaw-console-helpers";
+import {
+  buildHermesMemoryReadCommand,
+  getMemoryUsagePercent,
+  parseHermesMemorySnapshot,
+  splitHermesMemoryEntries,
+  toSingleLineMemoryEntry,
+  type HermesMemorySnapshot,
+} from "@/pages/marketing/openclaw-memory";
 import { BuddyPanel } from "@/pages/marketing/openclaw-buddy-panel";
-import { getOpenClawCreateLimitMessage } from "@/pages/marketing/openclaw-create-availability";
+import { AutomationsPanel } from "@/pages/marketing/openclaw-automations-panel";
+import { findCompletedCreatingBot, getOpenClawCreateLimitMessage } from "@/pages/marketing/openclaw-create-availability";
 import {
   getRestartBlockReason,
   isActiveBotRestarting as computeIsActiveBotRestarting,
@@ -76,13 +93,26 @@ import {
   clearErrorForBot,
   type RestartErrors,
 } from "@/pages/marketing/openclaw-restart-gateway";
+import {
+  getResetBlockReason,
+  hermesModelName,
+  hermesSwitchModelFullId,
+  isExecCommandSucceeded,
+  truncateExecOutput,
+  RESET_BLOCK_REASON,
+} from "@/pages/marketing/openclaw-reset-config";
+import { toast } from "@/lib/toast";
 import "@tencent/tea-sdk-lightclaw/styles";
+// LightVela 对话面板（npm 包 @tencent/agentchat-lightvela-panel）
+import { LightVelaPanel } from "@tencent/agentchat-lightvela-panel";
 
 /* ─── Types ─── */
 
 type Channel = "wechat" | "qq" | null;
 type ConnectedChannel = Exclude<Channel, null>;
 type PersonaId = "jarvis" | "luna" | "spark";
+type MemoryTabId = "memory" | "user";
+type MemoryLoadStatus = "idle" | "loading" | "ready" | "error";
 
 interface Persona {
   id: PersonaId;
@@ -162,7 +192,7 @@ const SettingsNavbar = () => {
     <header
       className="lw-fixed-top fixed inset-x-0 z-50 border-b border-black/5 bg-white/90 backdrop-blur-[20px]"
     >
-      <div className="mx-auto flex h-[60px] items-center justify-between max-w-[1440px] px-6 md:px-[80px]">
+      <div className="lw-settings-topbar-inner flex h-[60px] items-center justify-between px-6 md:px-[80px]">
         <BrandMark to="/" />
         <div className="flex items-center gap-3">
           {/* 语言切换器：仅国际站展示。
@@ -183,9 +213,11 @@ const SettingsNavbar = () => {
   );
 };
 
-/* ─── 实例配置子页面类型（模型 / 通道 / 技能，放在单个 bot 内部切换） ─── */
+/* ─── 实例配置子页面类型（通道 / 模型 / 技能 / 人设 / 自动任务 / 记忆 / 对话，放在单个 bot 内部切换） ─── */
 
-type SettingsSectionId = "model" | "channel" | "skill" | "buddy";
+type SettingsSectionId = "channel" | "model" | "skill" | "buddy" | "automations" | "memory" | "chat";
+
+const SHOW_AGENTCHAT_ENTRY = true;
 
 /* ─── Section Card Wrapper ─── */
 
@@ -214,6 +246,193 @@ export const _SectionCard = ({ title, icon, headerRight, children }: { title: st
     </motion.div>
   );
 }
+
+const MemoryLimitCard = ({
+  title,
+  description,
+  used,
+  limit,
+  t,
+}: {
+  title: string;
+  description: string;
+  used: number;
+  limit: number;
+  t: (zh: string, options?: Record<string, unknown>) => string;
+}) => {
+  const percent = getMemoryUsagePercent(used, limit);
+  return (
+    <div className="rounded-lg border border-black/[0.06] bg-white p-4 shadow-[0_8px_28px_rgba(15,23,42,0.04)]">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-black/85">{title}</p>
+          <p className="mt-1 max-w-[28rem] text-xs leading-relaxed text-black/45">{description}</p>
+        </div>
+        <span className="rounded-full bg-black/[0.05] px-2 py-1 text-xs font-medium text-black/60">
+          {percent}%
+        </span>
+      </div>
+      <div className="mt-4 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <span className="text-2xl font-semibold tabular-nums text-black/90">{used}</span>
+        <span className="pb-1 text-sm tabular-nums text-black/45">/ {limit} {t("字符")}</span>
+        <span className="text-xs text-black/45">{t("当前占用 / 字符限额")}</span>
+      </div>
+      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-black/[0.06]">
+        <div
+          className="h-full rounded-full bg-black/80 transition-[width]"
+          style={{ width: `${percent}%` }}
+        />
+      </div>
+    </div>
+  );
+};
+
+const MemoryEntries = ({
+  entries,
+  emptyText,
+}: {
+  entries: string[];
+  emptyText: string;
+}) => {
+  if (entries.length === 0) {
+    return (
+      <div className="flex min-h-40 items-center justify-center rounded-lg border border-dashed border-black/[0.10] bg-black/[0.015] px-6 text-center text-sm text-black/45">
+        {emptyText}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {entries.map((entry, index) => {
+        const preview = toSingleLineMemoryEntry(entry);
+        return (
+          <div
+            key={`${index}-${preview.slice(0, 24)}`}
+            title={entry}
+            className="flex min-h-11 items-center rounded-md border border-black/[0.06] bg-white px-3 text-sm text-black/75 shadow-[0_1px_2px_rgba(15,23,42,0.02)]"
+          >
+            <span className="min-w-0 flex-1 truncate">{preview}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+const MemoryPanel = ({
+  status,
+  snapshot,
+  error,
+  activeTab,
+  onTabChange,
+  onRefresh,
+  t,
+}: {
+  status: MemoryLoadStatus;
+  snapshot: HermesMemorySnapshot | null;
+  error: string | null;
+  activeTab: MemoryTabId;
+  onTabChange: (tab: MemoryTabId) => void;
+  onRefresh: () => void;
+  t: (zh: string, options?: Record<string, unknown>) => string;
+}) => {
+  const memoryEntries = splitHermesMemoryEntries(snapshot?.memoryText ?? "");
+  const userEntries = splitHermesMemoryEntries(snapshot?.userText ?? "");
+  const visibleEntries = activeTab === "memory" ? memoryEntries : userEntries;
+  const isLoading = status === "loading";
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold text-black/90">{t("记忆")}</h2>
+          <p className="mt-1 text-sm text-black/45">{t("查看当前 Hermes 的记忆、用户画像和字符占用。")}</p>
+        </div>
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={isLoading}
+          className={cn(
+            "inline-flex h-9 items-center gap-2 rounded-md border border-black/[0.08] bg-white px-3 text-sm font-medium text-black/70 transition-colors hover:bg-black/[0.035] hover:text-black/90",
+            isLoading && "cursor-not-allowed opacity-60",
+          )}
+        >
+          {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+          {t("刷新")}
+        </button>
+      </div>
+
+      {status === "error" && (
+        <div className="rounded-lg border border-red-500/15 bg-red-500/[0.04] px-4 py-3 text-sm leading-relaxed text-red-600">
+          {error || t("记忆读取失败，请稍后重试。")}
+        </div>
+      )}
+
+      {isLoading && !snapshot && (
+        <div className="flex min-h-64 items-center justify-center rounded-lg border border-black/[0.06] bg-white text-sm text-black/50">
+          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          {t("正在读取记忆...")}
+        </div>
+      )}
+
+      {snapshot && (
+        <>
+          <div className="grid gap-3 md:grid-cols-2">
+            <MemoryLimitCard
+              title={t("记忆统计")}
+              description={t("MEMORY.md：帮 Agent 长期记住项目背景、运行环境和常用约定。")}
+              used={snapshot.memoryChars}
+              limit={snapshot.memoryCharLimit}
+              t={t}
+            />
+            <MemoryLimitCard
+              title={t("用户画像统计")}
+              description={t("USER.md：帮 Agent 长期记住你的偏好、使用习惯和沟通方式。")}
+              used={snapshot.userChars}
+              limit={snapshot.userCharLimit}
+              t={t}
+            />
+          </div>
+
+          {snapshot.usedFallbackLimits && (
+            <p className="text-xs text-black/40">
+              {t("未读取到完整限额配置，当前展示默认值。")}
+            </p>
+          )}
+
+          <div className="rounded-lg border border-black/[0.06] bg-white p-3 shadow-[0_8px_28px_rgba(15,23,42,0.04)]">
+            <div className="mb-3 inline-flex rounded-lg bg-black/[0.04] p-1">
+              {([
+                ["memory", t("记忆")],
+                ["user", t("用户画像")],
+              ] as const).map(([tab, label]) => {
+                const isActive = activeTab === tab;
+                return (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => onTabChange(tab)}
+                    className={cn(
+                      "rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
+                      isActive ? "bg-white text-black/90 shadow-sm" : "text-black/50 hover:text-black/80",
+                    )}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+            <MemoryEntries
+              entries={visibleEntries}
+              emptyText={activeTab === "memory" ? t("暂无 Agent 记忆。") : t("暂无用户画像。")}
+            />
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
 
 /* ─── Delete Confirm Dialog ─── */
 
@@ -2370,18 +2589,39 @@ const getBotStatusLabel = (status: OpenClawBot["status"]) => {
 
 /* ─── Main Settings Page ─── */
 
-const hermesGatewayCommands = createLightClawScripts({ regionShortName: "gz", agentType: "hermes" }).hermes.gateway;
+const lightVelaHermesScripts = createLightClawScripts({ regionShortName: "gz", agentType: "hermes" });
+const channelOnlyHermesScripts = {
+  ...lightVelaHermesScripts,
+  hermes: {
+    ...lightVelaHermesScripts.hermes,
+    model: {
+      ...lightVelaHermesScripts.hermes.model,
+      getListCommand: () => LIGHTVELA_SKIP_HERMES_PROVIDER_LIST_COMMAND,
+    },
+  },
+};
+const hermesScripts = lightVelaHermesScripts.hermes;
+const hermesGatewayCommands = hermesScripts.gateway;
+const hermesModelCommands = hermesScripts.model;
 
 export const OpenClawSettingsPage = () => {
   const t = useT();
-  const { i18n: i18nInstance } = useTranslation();
-  const i18nLanguage = i18nInstance.language;
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const creatingParam = searchParams.get("creating")?.trim() ?? "";
   const requestedCreatingBotId = creatingParam && creatingParam !== "true" ? creatingParam : "";
-  const { bots, botsLoading, deleteBot, updateBot, user, refreshBots, isSubscribed, addBot } = useOpenClaw();
+  const { bots, botsLoading, deleteBot, user, refreshBots, isSubscribed, addBot } = useOpenClaw();
   const repositories = useRepositories();
+  // 账号 id：来自 /auth/profile 下发的 session.user.id，用于 LightVelaPanel.userId 等场景
+  const { session } = useSession();
+  const accountId = session.user?.id ?? "";
+
+  useEffect(() => {
+    document.documentElement.classList.add("lw-settings-scrollbar-stable");
+    return () => {
+      document.documentElement.classList.remove("lw-settings-scrollbar-stable");
+    };
+  }, []);
 
   /* 创建 loading 状态 */
   const [isCreating, setIsCreating] = useState(Boolean(creatingParam));
@@ -2405,13 +2645,18 @@ export const OpenClawSettingsPage = () => {
     }
     return bots.find((bot) => bot.status === "provisioning") ?? null;
   }, [bots, requestedCreatingBotId]);
+  const completedCreatingBot = useMemo(
+    () => findCompletedCreatingBot(visibleBots, requestedCreatingBotId),
+    [visibleBots, requestedCreatingBotId],
+  );
 
 
-  /* 实例内部的子页面切换：通道 / 模型 / 技能（通道置顶，作为默认进入项） */
+  /* 实例内部的子页面切换：通道 / 模型 / 技能 / 人设 / 对话（通道置顶，作为默认进入项） */
   const [activeSection, setActiveSection] = useState<SettingsSectionId>("channel");
 
   /* Tab 切换 */
   const [activeTabId, setActiveTabId] = useState((visibleBots[0]?.id ?? requestedCreatingBotId) || "creating");
+  const [isAgentMenuOpen, setIsAgentMenuOpen] = useState(false);
   // bots 异步加载完成后，若当前 tab 无效则自动切换到第一个可展示 bot
   useEffect(() => {
     if (isCreating) return;
@@ -2420,6 +2665,189 @@ export const OpenClawSettingsPage = () => {
     }
   }, [visibleBots, activeTabId, isCreating]);
   const activeBot = visibleBots.find((b) => b.id === activeTabId) ?? visibleBots[0];
+  const activeBotStatus = activeBot?.status;
+
+  /**
+   * AgentChat（LightVela）启动 token：
+   * - 接口：`POST /v1/instances/:instanceId/agentchat/launch-token`，需带 LightClaw Bearer 登录态
+   * - TTL：300 秒；过期前 60 秒自动续期
+   * - 仅在用户进入 chat tab 且 activeBot 存在时拉取，避免无意义请求
+   * - 401 / 网络错误：状态置为 error，由 chat tab UI 提示并提供重试
+   */
+  const [launchToken, setLaunchToken] = useState<string | null>(null);
+  const [launchTokenStatus, setLaunchTokenStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [launchTokenError, setLaunchTokenError] = useState<string | null>(null);
+  const [launchTokenRefreshTick, setLaunchTokenRefreshTick] = useState(0);
+
+  const activeBotId = activeBot?.id;
+
+  useEffect(() => {
+    // 仅在 chat tab 激活、activeBot 已就位、用户已登录（拿到账号 id）时拉取
+    if (activeSection !== "chat" || !activeBotId) {
+      return;
+    }
+    if (!accountId) {
+      setLaunchTokenStatus("error");
+      setLaunchTokenError("未登录，无法获取账号 id");
+      return;
+    }
+
+    const baseUrl = resolveConfiguredAuthApiBaseUrl();
+    if (!baseUrl) {
+      setLaunchTokenStatus("error");
+      setLaunchTokenError("未配置后端地址（VITE_AUTH_API_BASE_URL）");
+      return;
+    }
+
+    const authToken = readStoredAuthToken();
+    if (!authToken) {
+      setLaunchTokenStatus("error");
+      setLaunchTokenError("未登录，无法获取 AgentChat 启动 token");
+      return;
+    }
+
+    const controller = new AbortController();
+    let cancelled = false;
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const fetchLaunchToken = async () => {
+      setLaunchTokenStatus("loading");
+      setLaunchTokenError(null);
+      try {
+        const url = `${baseUrl.replace(/\/$/, "")}/v1/instances/${encodeURIComponent(activeBotId)}/agentchat/launch-token`;
+        const response = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${authToken}`,
+          },
+          body: "{}",
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          if (cancelled) return;
+          let detail = `HTTP ${response.status}`;
+          try {
+            const body = await response.json() as { code?: string; message?: string };
+            if (body?.message) detail = `${body.code ?? response.status}: ${body.message}`;
+          } catch {
+            // 忽略响应体解析错误
+          }
+          setLaunchTokenStatus("error");
+          setLaunchTokenError(detail);
+          return;
+        }
+
+        const json = await response.json() as {
+          code?: string;
+          data?: { launch_token?: string; expires_at?: number };
+          message?: string;
+        };
+        if (cancelled) return;
+
+        const token = json?.data?.launch_token;
+        const expiresAt = json?.data?.expires_at;
+        if (!token) {
+          setLaunchTokenStatus("error");
+          setLaunchTokenError(json?.message || "返回数据缺少 launch_token");
+          return;
+        }
+
+        setLaunchToken(token);
+        setLaunchTokenStatus("ready");
+
+        // 过期前 60s 触发续期；若返回的 expires_at 不可信则按 4 分钟兜底
+        const now = Math.floor(Date.now() / 1000);
+        const ttlSeconds = typeof expiresAt === "number" && expiresAt > now
+          ? expiresAt - now
+          : 300;
+        const refreshAfterMs = Math.max(30, ttlSeconds - 60) * 1000;
+        refreshTimer = setTimeout(() => {
+          if (!cancelled) {
+            setLaunchTokenRefreshTick((tick) => tick + 1);
+          }
+        }, refreshAfterMs);
+      } catch (e) {
+        if (cancelled || (e as Error)?.name === "AbortError") return;
+        setLaunchTokenStatus("error");
+        setLaunchTokenError((e as Error)?.message || "请求失败");
+      }
+    };
+
+    fetchLaunchToken();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+      if (refreshTimer) clearTimeout(refreshTimer);
+    };
+  }, [activeSection, activeBotId, accountId, launchTokenRefreshTick]);
+
+  // 切到非 chat tab 或换 bot 时，清空已缓存的 token，避免泄露给下个 bot
+  useEffect(() => {
+    if (activeSection !== "chat") {
+      setLaunchToken(null);
+      setLaunchTokenStatus("idle");
+      setLaunchTokenError(null);
+    }
+  }, [activeSection, activeBotId]);
+
+  const retryLaunchToken = useCallback(() => {
+    setLaunchTokenRefreshTick((tick) => tick + 1);
+  }, []);
+
+  const [memoryStatus, setMemoryStatus] = useState<MemoryLoadStatus>("idle");
+  const [memorySnapshot, setMemorySnapshot] = useState<HermesMemorySnapshot | null>(null);
+  const [memoryError, setMemoryError] = useState<string | null>(null);
+  const [activeMemoryTab, setActiveMemoryTab] = useState<MemoryTabId>("memory");
+  const memoryRequestIdRef = useRef(0);
+
+  const loadHermesMemory = useCallback(async () => {
+    const requestId = memoryRequestIdRef.current + 1;
+    memoryRequestIdRef.current = requestId;
+
+    if (!activeBotId) {
+      setMemorySnapshot(null);
+      setMemoryStatus("error");
+      setMemoryError(rawT("未找到当前 Hermes 实例。"));
+      return;
+    }
+
+    if (activeBotStatus !== "running") {
+      setMemorySnapshot(null);
+      setMemoryStatus("error");
+      setMemoryError(rawT("实例运行后才能读取记忆。"));
+      return;
+    }
+
+    setMemorySnapshot(null);
+    setMemoryStatus("loading");
+    setMemoryError(null);
+    try {
+      const result = await repositories.bots.execDebugCommand(activeBotId, buildHermesMemoryReadCommand());
+      if (memoryRequestIdRef.current !== requestId) return;
+      if (!isExecCommandSucceeded(result)) {
+        throw new Error(
+          rawT("记忆读取命令执行失败：{{detail}}", {
+            detail: truncateExecOutput(result.output, result.status),
+          }),
+        );
+      }
+      setMemorySnapshot(parseHermesMemorySnapshot(result.output));
+      setMemoryStatus("ready");
+    } catch (err) {
+      if (memoryRequestIdRef.current !== requestId) return;
+      setMemoryStatus("error");
+      setMemoryError(err instanceof Error ? err.message : rawT("记忆读取失败，请稍后重试。"));
+    }
+  }, [activeBotId, activeBotStatus, repositories]);
+
+  useEffect(() => {
+    if (activeSection !== "memory") return;
+    void loadHermesMemory();
+  }, [activeSection, activeBotId, loadHermesMemory]);
+
 
   /**
    * tea-sdk-lightclaw 的 ModelCard / ChannelCard / SkillCard 内部通过
@@ -2446,38 +2874,26 @@ export const OpenClawSettingsPage = () => {
     [],
   );
 
-  /* 改名相关 */
-  const [isEditing, setIsEditing] = useState(false);
-  const [editName, setEditName] = useState("");
-  const nameInputRef = useRef<HTMLInputElement>(null);
-
-  const handleStartRename = () => {
-    if (!activeBot) return;
-    setEditName(activeBot.name);
-    setIsEditing(true);
-    setTimeout(() => nameInputRef.current?.focus(), 0);
-  };
-
-  const handleSaveRename = async () => {
-    const trimmed = editName.trim();
-    // 与后端 maxInstanceDisplayNameRunes = 64 保持一致，按 Unicode 码点计数
-    if (!activeBot || !trimmed || trimmed === activeBot.name || Array.from(trimmed).length > 64) {
-      setIsEditing(false);
-      return;
-    }
-    try {
-      await repositories.bots.renameBot(activeBot.id, trimmed);
-      updateBot(activeBot.id, { name: trimmed });
-    } catch (err) {
-      console.error("rename failed:", err);
-    }
-    setIsEditing(false);
-  };
-
-  const handleRenameKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") handleSaveRename();
-    if (e.key === "Escape") setIsEditing(false);
-  };
+  /**
+   * LightVelaPanel 用的 commandExecutor。
+   *
+   * 与上方 `commandAdapter`（给 `@tencent/tea-sdk-lightclaw` SDK 走 TAT 协议
+   * 的适配器）不同，LightVelaPanel 接受的是 ClawPanel 公共层定义的更直接的
+   * `CommandExecutor` 契约（`(options) => Promise<{ taskStatus, exitCode, output, ... }>`）。
+   *
+   * 两者底层都走 mono debug/exec，但接口形状不同：
+   *   - commandAdapter：runCommand → getInvocationTask 两步式（兼容 SDK 的 TAT 模型）
+   *   - lightvelaCommandExecutor：单步同步返回（贴近 LightVelaPanel 期望）
+   *
+   * 仅在 activeBot 存在时构造；切换到无 bot 状态会传 undefined，让 panel
+   * 内部 fallback 到默认 TAT 通道（实际 lightvela 场景不会走到）。
+   */
+  const lightvelaCommandExecutor = useMemo(
+    () => activeBotId
+      ? createLightVelaCommandExecutor(repositories, activeBotId)
+      : undefined,
+    [repositories, activeBotId],
+  );
 
   /* 删除相关 */
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -2495,6 +2911,106 @@ export const OpenClawSettingsPage = () => {
       setDeleteError(err instanceof Error ? err.message : t("删除失败，请稍后重试。"));
     }
   };
+
+  /*
+   * 重置配置（轮换 API Key）相关
+   * ──────────────────────────────────────────────────────────────
+   * 服务端 reset 成功后旧 key 立即作废；前端必须把本次返回的新运行时
+   * config 立刻下发到实例。若后续 acli 命令失败，用户再次重置会重新
+   * rotate key，因此明文 apiKey 只保存在本次 try 块内，不进入 React state。
+   */
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [viewedChannelBotIds, setViewedChannelBotIds] = useState<Set<string>>(new Set());
+
+  const handleResetConfig = async () => {
+    const hasViewedChannel = activeBot ? viewedChannelBotIds.has(activeBot.id) : false;
+    if (getResetBlockReason(activeBot, resetting, hasViewedChannel)) return;
+    const targetBotId = activeBot?.id;
+    if (!targetBotId) return;
+
+    setResetting(true);
+    setResetError(null);
+    try {
+      const result = await repositories.bots.resetInstanceConfig(targetBotId);
+
+      const resetBackendResult = await repositories.bots.execDebugCommand(
+        targetBotId,
+        "acli backend reset-config",
+      );
+      if (!isExecCommandSucceeded(resetBackendResult)) {
+        throw new Error(
+          t("初始化配置文件失败：{{detail}}", {
+            detail: truncateExecOutput(resetBackendResult.output, resetBackendResult.status),
+          }),
+        );
+      }
+
+      const providerSaveCmd = hermesModelCommands.getProviderSaveCommand({
+        name: result.config.providerName,
+        baseUrl: result.config.baseUrl,
+        api: result.config.api,
+        apiKey: result.config.apiKey,
+        models: [{ id: result.config.modelId, name: hermesModelName(result.config.modelId) }],
+      });
+      const providerSaveResult = await repositories.bots.execDebugCommand(targetBotId, providerSaveCmd);
+      if (!isExecCommandSucceeded(providerSaveResult)) {
+        const sanitizedOutput = result.config.apiKey
+          ? providerSaveResult.output.replace(
+              new RegExp(result.config.apiKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"),
+              "sk-***",
+            )
+          : providerSaveResult.output;
+        throw new Error(
+          t("默认模型保存失败：{{detail}}", {
+            detail: truncateExecOutput(sanitizedOutput, providerSaveResult.status),
+          }),
+        );
+      }
+
+      const switchModelCmd = hermesModelCommands.getModelSwitchCommand(
+        hermesSwitchModelFullId(result.config.providerName, result.config.modelId),
+      );
+      const switchModelResult = await repositories.bots.execDebugCommand(targetBotId, switchModelCmd);
+      if (!isExecCommandSucceeded(switchModelResult)) {
+        const sanitizedSwitchOutput = result.config.apiKey
+          ? switchModelResult.output.replace(
+              new RegExp(result.config.apiKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"),
+              "sk-***",
+            )
+          : switchModelResult.output;
+        throw new Error(
+          t("默认模型切换失败：{{detail}}", {
+            detail: truncateExecOutput(sanitizedSwitchOutput, switchModelResult.status),
+          }),
+        );
+      }
+
+      setShowResetConfirm(false);
+      toast.success(t("重置成功"));
+    } catch (err) {
+      setResetError(err instanceof Error ? err.message : t("重置失败，请重试"));
+      toast.error(t("重置失败，请重试"));
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  const CHANNEL_TAB_BOOTSTRAP_GRACE_MS = 3000;
+  useEffect(() => {
+    if (activeSection !== "channel" || !activeBot) return;
+    const botId = activeBot.id;
+    const timer = window.setTimeout(() => {
+      setViewedChannelBotIds((prev) => {
+        if (prev.has(botId)) return prev;
+        const next = new Set(prev);
+        next.add(botId);
+        return next;
+      });
+    }, CHANNEL_TAB_BOOTSTRAP_GRACE_MS);
+    return () => window.clearTimeout(timer);
+  }, [activeSection, activeBot?.id]);
 
   /* 通道弹窗 */
   const [showChannelModal, setShowChannelModal] = useState(false);
@@ -2554,6 +3070,13 @@ export const OpenClawSettingsPage = () => {
 
   useEffect(() => {
     if (!creatingParam) return;
+    if (completedCreatingBot) {
+      setIsCreating(false);
+      setCreationError(null);
+      setActiveTabId(completedCreatingBot.id);
+      navigate("/dashboard/settings", { replace: true });
+      return;
+    }
     if (creatingParam === "true" && !requestedCreatingBotId && !provisioningBot && !botsLoading) {
       setIsCreating(false);
       setCreationError(null);
@@ -2569,11 +3092,14 @@ export const OpenClawSettingsPage = () => {
     if (provisioningBot) {
       setActiveTabId(provisioningBot.id);
     }
-  }, [creatingParam, requestedCreatingBotId, provisioningBot, botsLoading, navigate]);
+  }, [creatingParam, requestedCreatingBotId, provisioningBot, completedCreatingBot, botsLoading, navigate]);
 
   /*
-   * 刷新恢复：如果用户刷新后 URL 参数丢失，但后端仍有 Creating 实例，
-   * 继续回到创建等待页，避免把未就绪 bot 当作可用 bot 交付。
+   * 刷新恢复：URL 丢 creating 参数但后端仍有 provisioning bot 时，把用户带回等待页。
+   *
+   * 与下方「兜底退出」存在 race：polling 退出后 URL 被清，期间「兜底退出」会主动
+   * setIsCreating(false)；本 effect 若同帧把它翻回 true，下一帧「兜底退出」再翻
+   * 回 false，最终收敛到非 loading 态。短暂闪烁可接受。
    */
   useEffect(() => {
     if (creatingParam || isCreating || botsLoading || !provisioningBot) return;
@@ -2582,6 +3108,35 @@ export const OpenClawSettingsPage = () => {
     setActiveTabId(provisioningBot.id);
     navigate(`/dashboard/settings?creating=${encodeURIComponent(provisioningBot.id)}`, { replace: true });
   }, [creatingParam, isCreating, botsLoading, provisioningBot, navigate]);
+
+  /*
+   * 兜底退出 loading：只看 bots 列表证据主动 setIsCreating(false)，收敛 polling
+   * cleanup race（polling effect 在 await refreshBots 期间被自身 cleanup 抛弃，
+   * setIsCreating(false) 永远没执行）。
+   *
+   *   模式 A：URL 携带 botId —— 只看该 botId，天然支持多 bot 并发，不误伤其他 provisioning。
+   *   模式 B：URL 不指定 botId —— 无 provisioning bot 且有可见 bot 时退出。
+   *
+   * 不放 botsLoading 在 deps 里 —— refreshBots 期间必须能继续兜底，否则错过时机。
+   */
+  useEffect(() => {
+    if (!isCreating || creationError) return;
+    if (requestedCreatingBotId) {
+      const targetBot = bots.find((b) => b.id === requestedCreatingBotId);
+      if (targetBot && targetBot.status !== "provisioning" && targetBot.status !== "deleting") {
+        setIsCreating(false);
+        setCreationError(null);
+        setActiveTabId(targetBot.id);
+        navigate("/dashboard/settings", { replace: true });
+      }
+      return;
+    }
+    if (!provisioningBot && bots.some((b) => b.status !== "provisioning" && b.status !== "deleting")) {
+      setIsCreating(false);
+      setCreationError(null);
+      navigate("/dashboard/settings", { replace: true });
+    }
+  }, [isCreating, creationError, requestedCreatingBotId, bots, provisioningBot, navigate]);
 
   /* 创建态只以后端真实状态为准：Running 才进入设置页，Failed/Deleting 停在错误态。 */
   useEffect(() => {
@@ -2795,6 +3350,72 @@ export const OpenClawSettingsPage = () => {
         document.body,
       )}
 
+      {/* Reset Config Confirm Dialog */}
+      {showResetConfirm && activeBot && createPortal(
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          onClick={() => { if (!resetting) setShowResetConfirm(false); }}
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            className="mx-4 w-full max-w-sm rounded-2xl border bg-white p-6 shadow-2xl"
+            style={{ borderColor: "var(--tea-color-border-default-alpha4, rgba(238,238,238,0.4))" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3" style={{ marginBottom: "20px" }}>
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "var(--tea-color-warning-default-alpha10, rgba(245,158,11,0.10))" }}>
+                <Wrench className="h-5 w-5" style={{ color: "var(--tea-color-warning-default, #F59E0B)" }} />
+              </div>
+              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("恢复初始设置")}</h3>
+            </div>
+            <p style={{ color: "var(--tea-color-text-secondary, #666)", fontSize: "14px", lineHeight: 1.6, marginBottom: "20px" }}>
+              {t("将保留当前工作空间、记忆和自动任务，并初始化配置文件，模型相关配置不会保留。")}
+            </p>
+            {resetError && (
+              <pre
+                className="whitespace-pre-wrap break-words rounded-md border px-3 py-2 text-xs"
+                style={{
+                  color: "var(--tea-color-text-error-default, #DC2626)",
+                  backgroundColor: "var(--tea-color-text-error-default-alpha4, rgba(220,38,38,0.04))",
+                  borderColor: "var(--tea-color-text-error-default-alpha18, rgba(220,38,38,0.18))",
+                  fontFamily:
+                    "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+                  maxHeight: "180px",
+                  overflowY: "auto",
+                  marginBottom: "12px",
+                }}
+              >
+                {resetError}
+              </pre>
+            )}
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => void handleResetConfig()}
+                disabled={resetting}
+                className="flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-all"
+                style={{
+                  backgroundColor: resetting ? "var(--tea-color-bg-disabled, #E5E7EB)" : "var(--tea-color-warning-default, #F59E0B)",
+                  cursor: resetting ? "not-allowed" : "pointer",
+                }}
+              >
+                {resetting && <Loader2 className="h-4 w-4 animate-spin" />}
+                {resetting ? t("恢复中...") : t("确认恢复")}
+              </button>
+              <button
+                onClick={() => setShowResetConfirm(false)}
+                disabled={resetting}
+                className="py-2 text-sm transition-colors hover:opacity-70"
+                style={{ color: "var(--tea-color-text-secondary, #999)", background: "none", border: "none", cursor: resetting ? "not-allowed" : "pointer" }}
+              >
+                {t("取消")}
+              </button>
+            </div>
+          </motion.div>
+        </div>,
+        document.body,
+      )}
+
       {/* Create Confirm Dialog */}
       {showCreateConfirm && createPortal(
         <div
@@ -2867,96 +3488,8 @@ export const OpenClawSettingsPage = () => {
         )}
       </AnimatePresence>
 
-      <main className="lw-app-top-pad flex-grow px-6 pb-16 md:px-8">
-        <section className="mx-auto" style={{ maxWidth: 1200 }}>
-          {/* Page Header */}
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
-            className="mb-6 flex items-center justify-between gap-4"
-          >
-            <h1
-              className="font-heading font-semibold"
-              style={{
-                fontSize: "clamp(1.5rem, 3vw, 2rem)",
-                letterSpacing: "-0.5px",
-                lineHeight: 1.2,
-                color: "rgba(0,0,0,0.90)",
-              }}
-            >
-              {t("我的智能体伙伴")}
-            </h1>
-            {!isCreating && visibleBots.length > 0 && canCreateBot && (
-              <button
-                onClick={handleCreateNew}
-                className="flex items-center gap-2 rounded-full bg-black/90 px-5 py-2 text-base font-medium leading-normal text-white transition-all hover:opacity-90 active:scale-[0.98]"
-              >
-                {t("立即创建")}
-              </button>
-            )}
-          </motion.div>
-
-          {/* ── Tab Bar: 切换不同 Hermes ── */}
-          <div
-            className="mb-8 flex items-center gap-0.5"
-            style={{ borderBottom: "1px solid rgba(0,0,0,0.05)" }}
-          >
-            {/* 正在创建中的 Hermes Agent tab */}
-            {isCreating && (
-              <button
-                className="relative flex items-center gap-2 px-4 py-3 text-sm font-medium"
-                style={{
-                  color: "var(--text-primary, #141414)",
-                  background: "transparent",
-                  border: "none",
-                  cursor: "default",
-                }}
-              >
-                <Loader2 className="h-4 w-4 animate-spin" style={{ color: "var(--text-primary, #141414)" }} />
-                <span>{t("Hermes Agent")}</span>
-                <motion.div
-                  layoutId="tab-indicator"
-                  className="absolute bottom-0 left-0 right-0 h-0.5 rounded-full"
-                  style={{ background: "var(--text-primary, #141414)" }}
-                  transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                />
-              </button>
-            )}
-            {/* 创建过程中只展示占位 tab，隐藏其它已有 bot tab，避免出现「两个 tab」 */}
-            {!isCreating && visibleBots.map((bot) => {
-              const isActive = bot.id === activeTabId;
-              const tabAvatar = getAvatarForBot(bot.id);
-              return (
-                <button
-                  key={bot.id}
-                  onClick={() => {
-                    setActiveTabId(bot.id);
-                    setIsEditing(false);
-                  }}
-                  className="relative flex items-center gap-2 px-4 py-3 text-sm font-medium transition-all"
-                  style={{
-                    color: isActive ? "var(--text-primary, #141414)" : "#999",
-                    background: "transparent",
-                    border: "none",
-                    cursor: "pointer",
-                  }}
-                >
-                  <img src={tabAvatar} alt="" className="h-5 w-5 rounded-full object-contain" />
-                  <span title={bot.name}>{truncateBotName(bot.name)}</span>
-                  {isActive && (
-                    <motion.div
-                      layoutId="tab-indicator"
-                      className="absolute bottom-0 left-0 right-0 h-0.5 rounded-full"
-                      style={{ background: "var(--text-primary, #141414)" }}
-                      transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                    />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-
+      <main className="lw-app-top-pad flex-grow bg-[#F7F8FA] px-6 pb-12 md:px-[80px]">
+        <section className="mx-auto" style={{ maxWidth: 1440 }}>
           {/* ── Loading 状态 ── */}
           {botsLoading && !isCreating && (
             <div className="flex items-center justify-center py-20">
@@ -2972,286 +3505,338 @@ export const OpenClawSettingsPage = () => {
 
           {/* ── 设置区域 ── */}
           {!isCreating && !botsLoading && activeBot && (
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={activeBot.id}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.25 }}
-                className="space-y-8"
-              >
-                {/* ─ 基本信息 ─ */}
-                <div>
-                  <div className="flex items-center gap-4">
-                    <div
-                      className="flex h-14 w-14 flex-shrink-0 items-center justify-center overflow-hidden rounded-2xl"
-                      style={{ background: "rgba(0,0,0,0.03)", border: "1px solid rgba(0,0,0,0.06)" }}
-                    >
-                      <img src={avatarUrl} alt="" className="h-11 w-11 object-contain" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      {isEditing ? (
-                        <div className="flex items-center gap-2">
-                          <input
-                            ref={nameInputRef}
-                            type="text"
-                            value={editName}
-                            maxLength={64}
-                            onChange={(e) => setEditName(e.target.value)}
-                            onKeyDown={handleRenameKeyDown}
-                            onBlur={handleSaveRename}
-                            className="rounded-full border px-3 py-1.5 text-base font-bold outline-none transition-all focus:border-black/30"
-                            style={{ color: "rgba(0,0,0,0.90)", borderColor: "rgba(0,0,0,0.10)", maxWidth: 240 }}
+            (() => {
+              const sdkInstance: IInstanceInfo = {
+                InstanceId: activeBot.id,
+                RegionId: 1,
+              };
+              const sdkRegionShortName = "gz";
+              const sdkFeatureFlags: IFeatureFlags = {
+                gateway: true,
+                channel: true,
+                wecomChannel: true,
+                adpChannel: false,
+                wecomLongConn: true,
+                yuanbaoChannel: false,
+                weixinChannel: true,
+                qrConfig: true,
+                skills: true,
+                webUI: false,
+                memoryManagement: false,
+                memoryV2: false,
+                qqbotplugin: false,
+              };
+              const sdkProductConfig: IProductConfig = {
+                ...createLighthouseConfig({
+                  agentType: "hermes",
+                  supportsTencentCloudApi: false,
+                  isI18n: isGlobal,
+                }),
+                runCommand: commandAdapter.runCommand,
+                getInvocationTask: commandAdapter.getInvocationTask,
+              };
+              const settingsSections: { id: SettingsSectionId; label: string; icon: React.ReactNode; badge?: string }[] = [
+                { id: "channel", label: t("通道"), icon: <MessageCircle className="h-4 w-4" /> },
+                { id: "model", label: t("模型"), icon: <BrainCircuit className="h-4 w-4" /> },
+                { id: "skill", label: t("技能"), icon: <Wand2 className="h-4 w-4" /> },
+                ...(!isGlobal
+                  ? [{ id: "buddy" as const, label: t("人设"), icon: <UserRound className="h-4 w-4" /> }]
+                  : []),
+                { id: "automations", label: t("自动任务"), icon: <CalendarClock className="h-4 w-4" />, badge: "NEW" },
+                { id: "memory", label: t("记忆"), icon: <Database className="h-4 w-4" />, badge: "NEW" },
+                ...(SHOW_AGENTCHAT_ENTRY
+                  ? [{ id: "chat" as const, label: t("对话"), icon: <MessageSquare className="h-4 w-4" />, badge: "NEW" }]
+                  : []),
+              ];
+              const isRestartDisabled = isActiveBotRestarting || activeBot.status !== "running";
+              const hasViewedChannel = viewedChannelBotIds.has(activeBot.id);
+              const resetBlockReason = getResetBlockReason(activeBot, resetting, hasViewedChannel);
+              const resetDisabled = resetting || resetBlockReason !== null;
+              const resetTooltip =
+                resetBlockReason === RESET_BLOCK_REASON.NOT_RUNNING || resetBlockReason === RESET_BLOCK_REASON.CHANNEL_NOT_VIEWED
+                  ? t("请稍后")
+                  : t("重置配置");
+
+              return (
+                <div className="grid items-start gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
+                  <aside className="lg:sticky lg:top-[84px]">
+                    <div className="rounded-lg border border-black/[0.06] bg-white p-3 shadow-[0_8px_28px_rgba(15,23,42,0.04)]">
+                      <div className="px-1 pb-2 text-xs font-medium text-black/35">
+                        {t("选择 Agent")}
+                      </div>
+                      <div
+                        role={visibleBots.length > 1 ? "button" : undefined}
+                        tabIndex={visibleBots.length > 1 ? 0 : undefined}
+                        onClick={() => {
+                          if (visibleBots.length > 1) setIsAgentMenuOpen((open) => !open);
+                        }}
+                        onKeyDown={(event) => {
+                          if (visibleBots.length <= 1) return;
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            setIsAgentMenuOpen((open) => !open);
+                          }
+                        }}
+                        className={cn(
+                          "flex w-full items-center gap-3 rounded-md px-2.5 py-2.5 text-left transition-colors",
+                          visibleBots.length > 1 ? "hover:bg-black/[0.035]" : "cursor-default",
+                        )}
+                        aria-expanded={visibleBots.length > 1 ? isAgentMenuOpen : undefined}
+                      >
+                        <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-md border border-black/[0.06] bg-black/[0.03]">
+                          <img src={avatarUrl} alt="" className="h-8 w-8 object-contain" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-semibold text-black/90" title={activeBot.name}>
+                            {truncateBotName(activeBot.name)}
+                          </span>
+                          <span className="mt-1 flex items-center gap-1.5 text-xs text-black/45">
+                            {isActiveBotRestarting ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <span
+                                className="inline-block h-1.5 w-1.5 rounded-full"
+                                style={{ background: getBotStatusColor(activeBot.status) }}
+                              />
+                            )}
+                            {isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                if (!isRestartDisabled) void handleRestartGateway();
+                              }}
+                              aria-disabled={isRestartDisabled}
+                              aria-label={t("重启")}
+                              className={cn(
+                                "ml-1 inline-flex h-5 items-center rounded px-1.5 text-xs font-medium transition-colors",
+                                isRestartDisabled
+                                  ? "cursor-not-allowed text-black/25"
+                                  : "text-black/45 hover:bg-black/[0.06] hover:text-black/80",
+                              )}
+                              title={isActiveBotRestarting ? t("正在重启中") : t("重启 Hermes Agent 网关")}
+                            >
+                              {t("重启")}
+                            </button>
+                          </span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            if (resetDisabled) return;
+                            setResetError(null);
+                            setShowResetConfirm(true);
+                          }}
+                          aria-disabled={resetDisabled}
+                          aria-label={resetTooltip}
+                          className={cn(
+                            "inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md transition-colors",
+                            resetDisabled
+                              ? "cursor-not-allowed text-black/20"
+                              : "text-black/35 hover:bg-amber-500/10 hover:text-amber-600",
+                          )}
+                          title={resetTooltip}
+                        >
+                          {resetting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wrench className="h-4 w-4" />}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setDeleteInput("");
+                            setShowDeleteConfirm(true);
+                          }}
+                          aria-label={t("删除")}
+                          className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md text-red-500 transition-colors hover:bg-red-500/10"
+                          title={t("删除此 Hermes")}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                        {visibleBots.length > 1 && (
+                          <ChevronDown
+                            className={cn("h-4 w-4 flex-shrink-0 text-black/35 transition-transform", isAgentMenuOpen && "rotate-180")}
                           />
-                          <span className="text-xs" style={{ color: "rgba(0,0,0,0.35)" }}>{t("按 Enter 保存")}</span>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-lg font-bold" style={{ color: "rgba(0,0,0,0.90)" }} title={activeBot.name}>{truncateBotName(activeBot.name)}</h3>
-                          <button
-                            onClick={handleStartRename}
-                            className="flex h-7 w-7 items-center justify-center rounded-full transition-all hover:bg-black/5"
-                            style={{ color: "#bbb", border: "none", background: "transparent", cursor: "pointer" }}
-                            title={t("重命名")}
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </button>
+                        )}
+                      </div>
+
+                      {visibleBots.length > 1 && isAgentMenuOpen && (
+                        <div className="mt-1 rounded-md bg-black/[0.025] p-1">
+                          {visibleBots.map((bot) => {
+                            const isActive = bot.id === activeTabId;
+                            return (
+                              <button
+                                key={bot.id}
+                                type="button"
+                                onClick={() => {
+                                  setActiveTabId(bot.id);
+                                  setIsAgentMenuOpen(false);
+                                }}
+                                className={cn(
+                                  "flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm transition-colors",
+                                  isActive ? "bg-white text-black/90 shadow-sm" : "text-black/55 hover:bg-white/70 hover:text-black/80",
+                                )}
+                              >
+                                <img src={getAvatarForBot(bot.id)} alt="" className="h-5 w-5 flex-shrink-0 rounded object-contain" />
+                                <span className="min-w-0 flex-1 truncate" title={bot.name}>
+                                  {truncateBotName(bot.name)}
+                                </span>
+                                {isActive && <Check className="h-3.5 w-3.5 text-black/55" />}
+                              </button>
+                            );
+                          })}
                         </div>
                       )}
-                      <div className="mt-1.5 flex flex-wrap items-center gap-x-5 gap-y-1">
-                        <div className="flex items-center gap-1.5">
-                          {isActiveBotRestarting ? (
-                            <Loader2 className="h-3 w-3 animate-spin" style={{ color: "rgba(0,0,0,0.45)" }} />
-                          ) : (
-                            <span
-                              className="inline-block h-2 w-2 rounded-full"
-                              style={{ background: getBotStatusColor(activeBot.status) }}
+
+                      {activeBotRestartError && (
+                        <p className="mt-2 px-1 text-xs leading-relaxed text-red-500">{activeBotRestartError}</p>
+                      )}
+
+                      {canCreateBot && (
+                        <button
+                          type="button"
+                          onClick={handleCreateNew}
+                          className="mt-3 flex w-full items-center justify-center gap-2 rounded-md border border-black/[0.08] bg-white px-3 py-2 text-sm font-medium text-black/70 transition-colors hover:bg-black/[0.035] hover:text-black/90"
+                        >
+                          <Plus className="h-4 w-4" />
+                          {t("立即创建")}
+                        </button>
+                      )}
+                    </div>
+
+                    <nav
+                      aria-label={t("实例配置导航")}
+                      className="mt-4 rounded-lg border border-black/[0.06] bg-white p-2 shadow-[0_8px_28px_rgba(15,23,42,0.04)]"
+                    >
+                      {settingsSections.map((section) => {
+                        const isActive = section.id === activeSection;
+                        return (
+                          <button
+                            key={section.id}
+                            type="button"
+                            onClick={() => setActiveSection(section.id)}
+                            aria-current={isActive ? "page" : undefined}
+                            className={cn(
+                              "lw-settings-nav-item flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 font-medium transition-colors",
+                              isActive
+                                ? "bg-black/[0.06] text-black/90"
+                                : "text-black/55 hover:bg-black/[0.035] hover:text-black/85",
+                            )}
+                          >
+                            <span className="flex h-5 w-5 items-center justify-center">{section.icon}</span>
+                            <span className="flex-1 text-left text-[15px]">{section.label}</span>
+                            {section.badge && (
+                              <span className="rounded-full bg-black/90 px-1.5 py-0.5 text-[9px] font-bold leading-none text-white">
+                                {section.badge}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </nav>
+                  </aside>
+
+                  <section className="min-w-0">
+                    <AnimatePresence mode="wait">
+                      <motion.div
+                        key={`${activeBot.id}-${activeSection}`}
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -8 }}
+                        transition={{ duration: 0.22 }}
+                        className="_lh-claw-bot-panel"
+                      >
+                        <div className="_lh-claw-bot-panel__cards min-w-0">
+                          {activeSection === "channel" && (
+                            <ChannelPanel
+                              instance={sdkInstance}
+                              regionShortName={sdkRegionShortName}
+                              scriptCommands={channelOnlyHermesScripts}
+                              featureFlags={sdkFeatureFlags}
+                              productConfig={sdkProductConfig}
                             />
                           )}
-                          <span className="font-medium" style={{ color: "rgba(0,0,0,0.60)", fontSize: 12 }}>
-                            {isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}
-                          </span>
-                        </div>
-                        {/* 重启链接 */}
-                        <button
-                          onClick={handleRestartGateway}
-                          disabled={isActiveBotRestarting || activeBot.status !== "running"}
-                          className="group transition-colors"
-                          style={{
-                            fontSize: 12,
-                            color: isActiveBotRestarting || activeBot.status !== "running" ? "rgba(0,0,0,0.25)" : "var(--lw-accent)",
-                            cursor: isActiveBotRestarting || activeBot.status !== "running" ? "not-allowed" : "pointer",
-                            background: "none",
-                            border: "none",
-                            padding: 0,
-                            position: "relative",
-                          }}
-                          title={isActiveBotRestarting ? t("正在重启中") : t("重启 Hermes Agent 网关")}
-                        >
-                          {t("重启")}
-                          {isActiveBotRestarting && (
-                            <span
-                              className="pointer-events-none absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap rounded px-2 py-0.5 text-[10px] text-white opacity-0 transition-opacity group-hover:opacity-100"
-                              style={{ background: "rgba(0,0,0,0.75)" }}
-                            >
-                              {t("正在重启中")}
-                            </span>
+                          {activeSection === "model" && (
+                            <ModelPanel
+                              instance={sdkInstance}
+                              regionShortName={sdkRegionShortName}
+                              featureFlags={sdkFeatureFlags}
+                              productConfig={sdkProductConfig}
+                            />
                           )}
-                        </button>
-                        <span style={{ color: "rgba(0,0,0,0.40)", fontSize: 12 }}>
-                          {t("创建于 {{date}}", {
-                            date: new Date(activeBot.createdAt).toLocaleDateString(
-                              i18nLanguage?.startsWith("en") ? "en-US" : "zh-CN",
-                              { year: "numeric", month: "long", day: "numeric" },
-                            ),
-                          })}
-                        </span>
-                      </div>
-                      {activeBotRestartError && (
-                        <p className="mt-1 text-xs" style={{ color: "#DC2626" }}>{activeBotRestartError}</p>
-                      )}
-                    </div>
-                    <button
-                      onClick={() => { setDeleteInput(""); setShowDeleteConfirm(true); }}
-                      className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full transition-all hover:bg-[rgba(220,38,38,0.08)]"
-                      style={{ color: "#ccc", border: "none", background: "transparent", cursor: "pointer" }}
-                      title={t("删除此 Hermes")}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* 分割线 */}
-                <div style={{ borderTop: "1px solid rgba(0,0,0,0.05)" }} />
-
-                {/* ─ 使用设置：三列卡片 ─ */}
-                <div>
-                  {(() => {
-                    // --- tea-sdk-lightclaw props ---
-                    //
-                    // 关键设计：直接把 `activeBot.id`（mono 业务的 botId）作为
-                    // SDK 的 `InstanceId` 使用。
-                    //
-                    // SDK 内部 `executor.ts` 会把 `instance.InstanceId` 原样
-                    // 塞进请求的 `InstanceIds[0]`。我们通过自定义 `runCommand`
-                    // 拦截这个请求，转发到 `POST /v1/instances/:botId/debug/exec`
-                    // （和 mono 存量业务一致的 envd process stream 通道）。
-                    //
-                    // 因此 SDK 拿到的 `InstanceId` 只需是 botId，后端会自动
-                    // 解析到对应的 sandbox，前端完全不感知 sandboxId、region
-                    // 等沙箱层概念。
-                    //
-                    // 如果 bot 尚未就绪（状态非 running），后端 debug/exec 会
-                    // 返回 `ErrDebugNotSupported`，由 SDK 以命令执行错误的形式
-                    // 反馈到 UI。
-                    const sdkInstance: IInstanceInfo = {
-                      InstanceId: activeBot.id,
-                      // RegionId 对 mono 路径而言是**无用字段**：原本用于
-                      // SDK 默认调用腾讯云 TAT OpenAPI 时选取 region 端点，
-                      // 但我们通过自定义 runCommand 完全接管了命令下发，
-                      // 请求不走腾讯云。给个任意合法数字即可。
-                      RegionId: 1,
-                    };
-                    // regionShortName 仅被 SDK 用来拼接 COS 脚本下载 URL：
-                    //   https://lightclaw-dashboard-xxx.cos.accelerate.myqcloud.com/
-                    //     <regionShortName>/lightclaw/<script-path>
-                    // COS 用的是全球加速域名，实际 region 对可达性影响很小。
-                    // 先统一用 "gz"。
-                    const sdkRegionShortName = "gz";
-                    const sdkFeatureFlags: IFeatureFlags = {
-                      gateway: true,
-                      channel: true,
-                      wecomChannel: true,
-                      adpChannel: false,
-                      wecomLongConn: true,
-                      yuanbaoChannel: false,
-                      weixinChannel: true,
-                      qrConfig: true,
-                      skills: true,
-                      webUI: false,
-                      memoryManagement: false,
-                      memoryV2: false,
-                      qqbotplugin: false,
-                    };
-                    // 注入 runCommand / getInvocationTask，让 SDK 的命令
-                    // 执行器走 mono 后端 `/v1/instances/:botId/debug/exec`
-                    // （envd process stream），而不是默认的腾讯云 TAT OpenAPI。
-                    //
-                    // supportsTencentCloudApi: false
-                    //   mono 没有腾讯云账号体系，SDK 会自动从模型列表中过滤掉
-                    //   依赖腾讯云 CAPI 拉 API Key 的 provider：
-                    //     - hunyuan / qcloud_lkeap
-                    //     - tencent_coding_plan / tencent_token_plan
-                    //   这些 provider 在 mono 下无法自动获取 API Key（调不通
-                    //   QueryHunyuanUserStatus / ListCodingPlanAPIKey 等），
-                    //   下拉里直接不展示。
-                    const sdkProductConfig: IProductConfig = {
-                      ...createLighthouseConfig({
-                        agentType: "hermes",
-                        supportsTencentCloudApi: false,
-                        isI18n: isGlobal,
-                      }),
-                      runCommand: commandAdapter.runCommand,
-                      getInvocationTask: commandAdapter.getInvocationTask,
-                    };
-                    // 操作禁用 / 数据加载相关 prop 全部走 SDK 默认值：
-                    //   isOperationDisabled=false / operationDisabledContent=""
-                    //   operationDisabledTip="" / isDataReady=true
-                    // 默认允许 UI 交互且立即拉数据，bot 不在线时由后端返回错误，
-                    // 由 SDK 以命令执行失败的形式反馈到 UI。
-
-                    const sections: { id: SettingsSectionId; label: string; icon: React.ReactNode; badge?: string }[] = [
-                      { id: "channel", label: t("通道"), icon: <MessageCircle className="h-4 w-4" /> },
-                      { id: "model", label: t("模型"), icon: <BrainCircuit className="h-4 w-4" /> },
-                      { id: "skill", label: t("技能"), icon: <Wand2 className="h-4 w-4" /> },
-                      // AI 搭子（人设抽卡）当前仅国内站上线；国际站隐藏入口
-                      ...(!isGlobal
-                        ? [{ id: "buddy" as const, label: t("人设"), icon: <UserRound className="h-4 w-4" />, badge: "NEW" }]
-                        : []),
-                    ];
-
-                    return (
-                      <div className="_lh-claw-bot-panel tea-mt-4n">
-                        <div className="flex flex-col gap-4 md:flex-row md:gap-6">
-                          {/* 左侧：竖向 tab 列表（仅在本实例内切换子页面） */}
-                          <nav
-                            aria-label={t("实例配置导航")}
-                            className="flex flex-row gap-1 overflow-x-auto md:w-[160px] md:flex-shrink-0 md:flex-col md:overflow-visible"
-                          >
-                            {sections.map((section) => {
-                              const isActive = section.id === activeSection;
-                              return (
-                                <button
-                                  key={section.id}
-                                  type="button"
-                                  onClick={() => setActiveSection(section.id)}
-                                  aria-current={isActive ? "page" : undefined}
-                                  className={cn(
-                                    "flex flex-shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                                    "md:w-full",
-                                    isActive
-                                      ? "bg-black/[0.06] text-black/90"
-                                      : "text-black/60 hover:bg-black/[0.04] hover:text-black/90",
-                                  )}
-                                >
-                                  <span className="flex h-5 w-5 items-center justify-center">{section.icon}</span>
-                                  <span>{section.label}</span>
-                                  {section.badge && (
-                                    <span
-                                      className="ml-0.5 rounded-full px-1.5 py-0.5 text-[9px] font-bold leading-none tracking-wide"
-                                      style={{
-                                        background:
-                                          "linear-gradient(95deg, #6B4FE0, #F4B43A)",
-                                        color: "#ffffff",
-                                      }}
-                                    >
-                                      {section.badge}
-                                    </span>
-                                  )}
-                                </button>
-                              );
-                            })}
-                          </nav>
-
-                          {/* 右侧：当前选中的配置卡片（单卡撑满） */}
-                          <div className="_lh-claw-bot-panel__cards min-w-0 flex-1">
-                            {activeSection === "model" && (
-                              <ModelPanel
-                                instance={sdkInstance}
-                                regionShortName={sdkRegionShortName}
-                                featureFlags={sdkFeatureFlags}
-                                productConfig={sdkProductConfig}
-                              />
-                            )}
-                            {activeSection === "channel" && (
-                              <ChannelPanel
-                                instance={sdkInstance}
-                                regionShortName={sdkRegionShortName}
-                                featureFlags={sdkFeatureFlags}
-                                productConfig={sdkProductConfig}
-                              />
-                            )}
-                            {activeSection === "skill" && (
-                              <SkillPanel
-                                instance={sdkInstance}
-                                regionShortName={sdkRegionShortName}
-                                featureFlags={sdkFeatureFlags}
-                                productConfig={sdkProductConfig}
-                              />
-                            )}
-                            {activeSection === "buddy" && !isGlobal && (
-                              <BuddyPanel botId={activeBot?.id ?? null} />
-                            )}
-                          </div>
+                          {activeSection === "skill" && (
+                            <SkillPanel
+                              instance={sdkInstance}
+                              regionShortName={sdkRegionShortName}
+                              featureFlags={sdkFeatureFlags}
+                              productConfig={sdkProductConfig}
+                            />
+                          )}
+                          {activeSection === "buddy" && !isGlobal && (
+                            <BuddyPanel botId={activeBot.id} />
+                          )}
+                          {activeSection === "automations" && (
+                            <AutomationsPanel botId={activeBot.id} />
+                          )}
+                          {activeSection === "chat" && (
+                            <div className="h-[clamp(516px,calc(100vh-220px),960px)] overflow-hidden rounded-lg border border-black/[0.08] bg-white [&>*]:h-full">
+                              {(launchTokenStatus === "idle" || launchTokenStatus === "loading") && (
+                                <div className="flex h-full items-center justify-center p-6 text-sm text-black/60">
+                                  {t("正在获取 AgentChat 启动 token…")}
+                                </div>
+                              )}
+                              {launchTokenStatus === "error" && (
+                                <div className="flex h-full flex-col items-center justify-center p-6 text-center text-sm">
+                                  <p className="text-red-500">
+                                    {t("获取 AgentChat 启动 token 失败：{{message}}", { message: launchTokenError || t("未知错误") })}
+                                  </p>
+                                  <button
+                                    type="button"
+                                    onClick={retryLaunchToken}
+                                    className="mt-3 inline-flex items-center rounded-md border border-black/[0.12] bg-white px-3 py-1.5 text-xs font-medium text-black/80 hover:bg-black/[0.04]"
+                                  >
+                                    {t("重试")}
+                                  </button>
+                                </div>
+                              )}
+                              {launchTokenStatus === "ready" && launchToken && accountId && (
+                                <LightVelaPanel
+                                  instanceIds={[sdkInstance.InstanceId]}
+                                  instanceId={sdkInstance.InstanceId}
+                                  region="ap-guangzhou"
+                                  userId={accountId}
+                                  product="lightvela"
+                                  lightvelaApiParams={{
+                                    businessCode: "lightvela",
+                                    token: launchToken,
+                                  }}
+                                  commandExecutor={lightvelaCommandExecutor}
+                                  features={{
+                                    autoActivate: true,
+                                    nativeWsGray: true,
+                                  }}
+                                />
+                              )}
+                            </div>
+                          )}
+                          {activeSection === "memory" && (
+                            <MemoryPanel
+                              status={memoryStatus}
+                              snapshot={memorySnapshot}
+                              error={memoryError}
+                              activeTab={activeMemoryTab}
+                              onTabChange={setActiveMemoryTab}
+                              onRefresh={loadHermesMemory}
+                              t={t}
+                            />
+                          )}
                         </div>
-                      </div>
-                    );
-                  })()}
+                      </motion.div>
+                    </AnimatePresence>
+                  </section>
                 </div>
-              </motion.div>
-            </AnimatePresence>
+              );
+            })()
           )}
 
           {/* 空状态 */}

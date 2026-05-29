@@ -9,7 +9,7 @@
 # 参数定义:
 #   [openclaw_version]         可选，OpenClaw 版本；默认从 build-manifest.json 读取
 #   --runtime <kind>           openclaw | hermes，默认 openclaw
-#   --hermes-version <ver>     Hermes COS 版本；默认从 build-manifest.json 读取
+#   --hermes-version <ver>     Hermes COS 版本；默认从 runtime_hermes.cos_base/latest.json 读取
 #   --envd-only                仅安装 envd
 #   --base-only                仅安装基础层（Node/Python/Playwright/系统依赖）
 #   --app-only                 仅安装应用层（OpenClaw/plugins/skills/gateway）
@@ -49,6 +49,10 @@ HERMES_GIT_COMMIT=""
 HERMES_ACLI_INSTALL_URL=""
 HERMES_SYSTEM_BIN_DIR="${HERMES_SYSTEM_BIN_DIR:-/usr/local/bin}"
 HERMES_SYSTEM_LINK_DIR="${HERMES_SYSTEM_LINK_DIR:-/usr/bin}"
+HERMES_WHATSAPP_BRIDGE_USER="${HERMES_WHATSAPP_BRIDGE_USER:-}"
+HERMES_WHATSAPP_BRIDGE_HOME="${HERMES_WHATSAPP_BRIDGE_HOME:-}"
+HERMES_PYPI_INDEX_URL="${HERMES_PYPI_INDEX_URL:-https://mirrors.tencent.com/pypi/simple}"
+HERMES_PYPI_EXTRA_INDEX_URL="${HERMES_PYPI_EXTRA_INDEX_URL:-https://mirrors.cloud.tencent.com/pypi/simple}"
 ACLI_IDENTITY_PATH="${ACLI_IDENTITY_PATH:-/etc/acli/identity.yaml}"
 NODE_VERSION=""
 PNPM_VERSION=""
@@ -102,7 +106,7 @@ Options:
   --base-only              Install only the base layer
   --app-only               Install only the application layer
   --runtime <kind>         Runtime flavor: openclaw | hermes (default: openclaw)
-  --hermes-version <ver>   Hermes COS version, for example hermes-agent-v20260506
+  --hermes-version <ver>   Hermes COS version, for example hermes-agent-v20260520 (default: latest.json)
   --only-plugins <list>    Only install the specified plugins (comma-separated)
   --qqbot-version <ver>    QQBot plugin version (default: build-manifest.json runtime.qqbot_version)
   --weixin-version <ver>   Weixin plugin version (default: build-manifest.json runtime.weixin_version)
@@ -823,6 +827,27 @@ EOF
   chmod 0644 "${HERMES_ENV_PROFILE_PATH}"
 }
 
+configure_hermes_python_mirrors() {
+  local pip_config_dir="${RUNTIME_HOME}/.config/pip"
+  local uv_config_dir="${RUNTIME_HOME}/.config/uv"
+
+  log_info "configuring Hermes Python package mirrors for ${RUNTIME_USER}"
+  mkdir -p "${pip_config_dir}" "${uv_config_dir}"
+  cat > "${pip_config_dir}/pip.conf" <<EOF
+[global]
+index-url = ${HERMES_PYPI_INDEX_URL}
+extra-index-url =
+    ${HERMES_PYPI_EXTRA_INDEX_URL}
+timeout = 300
+disable-pip-version-check = true
+EOF
+  cat > "${uv_config_dir}/uv.toml" <<EOF
+index-url = "${HERMES_PYPI_INDEX_URL}"
+extra-index-url = ["${HERMES_PYPI_EXTRA_INDEX_URL}"]
+EOF
+  chown -R "${RUNTIME_USER}:${RUNTIME_USER}" "${pip_config_dir}" "${uv_config_dir}" 2>/dev/null || true
+}
+
 install_hermes_extra_tools() {
   local skillhub_url_escaped=""
   log_info "installing hermes extra tools"
@@ -834,6 +859,67 @@ install_hermes_extra_tools() {
   if [ -x "${RUNTIME_HOME}/.local/bin/skillhub" ]; then
     install -m 0755 "${RUNTIME_HOME}/.local/bin/skillhub" /usr/local/bin/skillhub
   fi
+}
+
+install_hermes_whatsapp_bridge_deps() {
+  local bridge_user="${HERMES_WHATSAPP_BRIDGE_USER:-${RUNTIME_USER}}"
+  local bridge_home="${HERMES_WHATSAPP_BRIDGE_HOME:-${RUNTIME_HOME}}"
+  local bridge_dir="${bridge_home}/.hermes/hermes-agent/scripts/whatsapp-bridge"
+  local runtime_bridge_dir="${RUNTIME_HOME}/.hermes/hermes-agent/scripts/whatsapp-bridge"
+  local bridge_home_escaped=""
+  local hermes_home_escaped=""
+  local bridge_dir_escaped=""
+  local resolve_js=""
+  local resolve_js_escaped=""
+  local bridge_cmd=""
+
+  log_info "installing Hermes WhatsApp bridge deps for ${bridge_user}"
+
+  if ! id "${bridge_user}" >/dev/null 2>&1; then
+    log_error "Hermes WhatsApp bridge user is missing: ${bridge_user}"
+    return 1
+  fi
+
+  if [ ! -d "${bridge_dir}" ]; then
+    if [ ! -d "${runtime_bridge_dir}" ]; then
+      log_error "Hermes WhatsApp bridge source directory not found: ${runtime_bridge_dir}"
+      return 1
+    fi
+    mkdir -p "$(dirname "${bridge_dir}")"
+    cp -a "${runtime_bridge_dir}" "${bridge_dir}"
+  fi
+  chown -R "${bridge_user}:${bridge_user}" "${bridge_home}/.hermes"
+
+  sudo npm install -g pnpm
+
+  resolve_js='for (const m of ["@whiskeysockets/baileys","qrcode-terminal","express","pino"]) console.log(m, require.resolve(m))'
+  printf -v bridge_home_escaped '%q' "${bridge_home}"
+  printf -v hermes_home_escaped '%q' "${bridge_home}/.hermes"
+  printf -v bridge_dir_escaped '%q' "${bridge_dir}"
+  printf -v resolve_js_escaped '%q' "${resolve_js}"
+  bridge_cmd="$(cat <<EOF
+set -euo pipefail
+export HOME=${bridge_home_escaped}
+export HERMES_HOME=${hermes_home_escaped}
+cd ${bridge_dir_escaped}
+pnpm add --config.block-exotic-subdeps=false --config.dangerously-allow-all-builds=true @whiskeysockets/baileys@7.0.0-rc.9 qrcode-terminal express pino
+node -e ${resolve_js_escaped}
+EOF
+)"
+  sudo -u "${bridge_user}" -H bash -lc "${bridge_cmd}"
+}
+
+install_hermes_python_deps() {
+  local hermes_python="${RUNTIME_HOME}/.hermes/hermes-agent/venv/bin/python"
+
+  log_info "installing Hermes Python integration deps"
+  if [ ! -x "${hermes_python}" ]; then
+    log_error "Hermes venv python not found: ${hermes_python}"
+    return 1
+  fi
+
+  run_as_runtime_user "export HOME='${RUNTIME_HOME}'; export XDG_CONFIG_HOME='${RUNTIME_HOME}/.config'; export PATH='${RUNTIME_HOME}/.local/bin:${RUNTIME_HOME}/.cargo/bin:'\"\$PATH\"; uv pip install --index-url '${HERMES_PYPI_INDEX_URL}' --extra-index-url '${HERMES_PYPI_EXTRA_INDEX_URL}' --python '${hermes_python}' lark-oapi==1.5.3 qrcode==7.4.2"
+  run_as_runtime_user "'${hermes_python}' -c 'import lark_oapi, qrcode; print(\"hermes-python-deps-ok\")'"
 }
 
 ensure_hermes_acli_identity() {
@@ -909,6 +995,7 @@ install_hermes_runtime() {
     return 1
   fi
 
+  ensure_hermes_version_resolved
   hermes_cos_dir="$(resolve_hermes_cos_dir)"
   hermes_tarball_url="${HERMES_COS_BASE%/}/${hermes_cos_dir}/hermes-agent.tar.gz"
   log_info "installing Hermes ${HERMES_VERSION:-${hermes_cos_dir}} from ${hermes_tarball_url}"
@@ -959,30 +1046,57 @@ EOF
   ensure_yuanbao_allow_all_users
 }
 
-fetch_latest_hermes_version() {
+fetch_latest_hermes_metadata() {
   local meta=""
   meta="$(curl -fsSL "${HERMES_COS_BASE%/}/latest.json" 2>/dev/null || true)"
   if [ -z "${meta}" ]; then
     return 1
   fi
-  printf '%s' "${meta}" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("version",""))' 2>/dev/null
+  eval "$(
+    printf '%s' "${meta}" | python3 -c '
+import json
+import shlex
+import sys
+
+data = json.load(sys.stdin)
+version = data.get("version", "")
+if not version:
+    raise SystemExit(1)
+
+values = {
+    "HERMES_VERSION": version,
+    "HERMES_SRC_VERSION": data.get("src_version", ""),
+    "HERMES_GIT_COMMIT": data.get("git_commit_full") or data.get("git_commit", ""),
+}
+for key, value in values.items():
+    if value:
+        print(f"{key}={shlex.quote(str(value))}")
+' 2>/dev/null
+  )"
+  [ -n "${HERMES_VERSION}" ]
 }
 
 resolve_hermes_cos_dir() {
   local version="${HERMES_VERSION}"
+  case "${version}" in
+    hermes-agent-*) printf '%s\n' "${version}" ;;
+    *) printf 'hermes-agent-%s\n' "${version}" ;;
+  esac
+}
+
+ensure_hermes_version_resolved() {
+  local version="${HERMES_VERSION}"
   if [ -z "${version}" ]; then
-    log_info "No Hermes version specified, fetching latest from ${HERMES_COS_BASE%/}/latest.json"
-    version="$(fetch_latest_hermes_version || true)"
+    log_info "No Hermes version specified, fetching latest from ${HERMES_COS_BASE%/}/latest.json" >&2
+    fetch_latest_hermes_metadata || true
+    version="${HERMES_VERSION}"
   fi
   if [ -z "${version}" ]; then
     log_error "failed to resolve Hermes version"
     return 1
   fi
   HERMES_VERSION="${version}"
-  case "${version}" in
-    hermes-agent-*) printf '%s\n' "${version}" ;;
-    *) printf 'hermes-agent-%s\n' "${version}" ;;
-  esac
+  log_info "Resolved Hermes metadata: version=${HERMES_VERSION} src_version=${HERMES_SRC_VERSION:-unknown} git_commit=${HERMES_GIT_COMMIT:-unknown}"
 }
 
 ensure_yuanbao_allow_all_users() {
@@ -1472,6 +1586,9 @@ build_app_layer() {
   resolve_runtime_home
   if [ "${RUNTIME_KIND}" = "hermes" ]; then
     install_hermes_runtime
+    configure_hermes_python_mirrors
+    install_hermes_python_deps
+    install_hermes_whatsapp_bridge_deps
     ensure_hermes_gateway_service
     install_hermes_extra_tools
     install_hermes_acli

@@ -65,6 +65,19 @@ describe('message presentation sections', () => {
     expect(sections.map((section) => section.id)).toEqual(['thought-1', 'tools-1', 'content-1']);
   });
 
+  it('falls back to message content when live timeline misses the answer block', () => {
+    const sections = getMessageSections({
+      ...baseMessage,
+      content: 'TAILFIX_OK',
+      timelineBlocks: [{ id: 'thought-1', type: 'thought', text: 'thinking' }],
+    });
+
+    expect(sections).toEqual([
+      { id: 'thought-1', type: 'thought', text: 'thinking' },
+      { type: 'content', text: 'TAILFIX_OK' },
+    ]);
+  });
+
   it('summarizes mixed tool groups for collapsed display', () => {
     expect(getToolGroupSummary([
       { id: 'search-1', name: 'web_search', status: 'done', kind: 'search' },
