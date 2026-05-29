@@ -42,12 +42,12 @@ describe("buildScheduleString and parseInitialSchedule", () => {
       kind: "recurring",
       period: "weekly",
       time: "18:30",
-      weekday: 3,
+      weekdays: [1, 3, 5],
       monthday: 1,
       intervalNum: 1,
       intervalUnit: "h",
       onceDate: "",
-    }))).toMatchObject({ kind: "recurring", period: "weekly", time: "18:30", weekday: 3 });
+    }))).toMatchObject({ kind: "recurring", period: "weekly", time: "18:30", weekday: 1, weekdays: [1, 3, 5] });
 
     expect(parseInitialSchedule(buildScheduleString({
       kind: "recurring",
@@ -87,8 +87,18 @@ describe("buildScheduleString and parseInitialSchedule", () => {
 
   it("does not coerce unsupported cron expressions into editable defaults", () => {
     expect(parseInitialSchedule("*/5 * * * *")).toBeNull();
-    expect(parseInitialSchedule("0 9 * * 1,3,5")).toBeNull();
+    expect(parseInitialSchedule("0 9 * * 1-5")).toBeNull();
     expect(parseInitialSchedule("0 9-18 * * *")).toBeNull();
+  });
+
+  it("parses comma-separated weekly cron weekdays", () => {
+    expect(parseInitialSchedule("0 9 * * 1,3,4,5,6,0")).toMatchObject({
+      kind: "recurring",
+      period: "weekly",
+      time: "09:00",
+      weekday: 1,
+      weekdays: [1, 3, 4, 5, 6, 0],
+    });
   });
 });
 

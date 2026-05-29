@@ -477,7 +477,7 @@ export function isCronJobExpiredBeyondGrace(job: CronJob): boolean {
 /** 把 cron schedule + next_run_at 翻译成人话。
  *  - once：输出「单次 2026-05-26 09:00」，过期状态由卡片标签展示
  *  - interval：every 30m → 每 30 分钟；every 60m → 每 1 小时
- *  - cron：`0 9 * * *` → 每天 09:00；`0 9 * * 1` → 每周一 09:00；`0 9 1 * *` → 每月 1 日 09:00
+ *  - cron：`0 9 * * *` → 每天 09:00；`0 9 * * 1,3` → 每周一、周三 09:00；`0 9 1 * *` → 每月 1 日 09:00
  *  - 其它复杂 cron 表达式：原样返回
  */
 function formatScheduleFriendly(
@@ -520,10 +520,11 @@ function formatScheduleFriendly(
     const mm = String(mn).padStart(2, "0");
     const at = `${hh}:${mm}`;
     if (dom === "*" && mon === "*" && dow === "*") return t("每天 {{at}}", { at });
-    if (dom === "*" && mon === "*" && dow !== "*" && /^\d+$/.test(dow ?? "")) {
-      const labels = [t("周日"), t("周一"), t("周二"), t("周三"), t("周四"), t("周五"), t("周六")];
-      const w = Number(dow);
-      if (w >= 0 && w <= 6) return t("每{{w}} {{at}}", { w: labels[w], at });
+    if (dom === "*" && mon === "*" && dow !== "*") {
+      const weekdays = parseCronWeekdays(dow ?? "");
+      if (weekdays.length > 0) {
+        return t("每{{w}} {{at}}", { w: formatWeekdays(weekdays, t), at });
+      }
     }
     if (mon === "*" && dow === "*" && /^\d+$/.test(dom ?? "")) {
       return t("每月 {{d}} 日 {{at}}", { d: dom, at });
@@ -756,9 +757,8 @@ function formatTemplateSchedule(template: AutomationTemplate, t: ReturnType<type
   }
   if (schedule.kind === "recurring") {
     if (schedule.period === "weekly") {
-      const labels = [t("周日"), t("周一"), t("周二"), t("周三"), t("周四"), t("周五"), t("周六")];
       return t("每{{weekday}} {{time}}", {
-        weekday: labels[schedule.weekday ?? 1] ?? t("周一"),
+        weekday: formatWeekdays(schedule.weekdays ?? [schedule.weekday ?? 1], t),
         time: schedule.time ?? "09:00",
       });
     }
@@ -917,6 +917,38 @@ type FrequencyKind = "recurring" | "interval" | "once";
 type RecurringPeriod = "daily" | "weekly" | "monthly";
 type IntervalUnit = "m" | "h" | "d";
 
+const WEEKDAY_VALUES = [1, 2, 3, 4, 5, 6, 0] as const;
+
+function getWeekdayLabels(t: ReturnType<typeof useT>): Record<number, string> {
+  return {
+    0: t("周日"),
+    1: t("周一"),
+    2: t("周二"),
+    3: t("周三"),
+    4: t("周四"),
+    5: t("周五"),
+    6: t("周六"),
+  };
+}
+
+function normalizeWeekdays(values: readonly number[] | undefined): number[] {
+  const unique = Array.from(new Set((values ?? []).filter((v) => Number.isInteger(v) && v >= 0 && v <= 6)));
+  const sorted = WEEKDAY_VALUES.filter((v) => unique.includes(v));
+  return sorted.length > 0 ? sorted : [1];
+}
+
+function parseCronWeekdays(value: string): number[] {
+  if (!/^\d+(,\d+)*$/.test(value)) return [];
+  const days = value.split(",").map((v) => Number(v));
+  if (days.some((v) => !Number.isInteger(v) || v < 0 || v > 6)) return [];
+  return normalizeWeekdays(days);
+}
+
+function formatWeekdays(values: readonly number[], t: ReturnType<typeof useT>): string {
+  const labels = getWeekdayLabels(t);
+  return normalizeWeekdays(values).map((v) => labels[v]).join("、");
+}
+
 interface AutomationTemplate {
   id: string;
   name: string;
@@ -927,6 +959,7 @@ interface AutomationTemplate {
     period?: RecurringPeriod;
     time?: string;
     weekday?: number;
+    weekdays?: number[];
     intervalNum?: number;
     intervalUnit?: IntervalUnit;
   };
@@ -1046,7 +1079,11 @@ function AutomationFormModal({
     const d = defaultScheduleDate;
     return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
   });
-  const [weekday, setWeekday] = useState(initial?.weekday ?? templateSchedule?.weekday ?? 1); // 周一
+  const [weekdays, setWeekdays] = useState(() => normalizeWeekdays(
+    initial?.weekdays
+      ?? templateSchedule?.weekdays
+      ?? [initial?.weekday ?? templateSchedule?.weekday ?? 1],
+  ));
   const [monthday, setMonthday] = useState(initial?.monthday ?? 1);
   // 按间隔态
   const [intervalNum, setIntervalNum] = useState(initial?.intervalNum ?? templateSchedule?.intervalNum ?? 1);
@@ -1110,8 +1147,8 @@ function AutomationFormModal({
   }, [botId]);
 
   const schedule = useMemo(() => buildScheduleString({
-    kind, period, time, weekday, monthday, intervalNum, intervalUnit, onceDate,
-  }), [kind, period, time, weekday, monthday, intervalNum, intervalUnit, onceDate]);
+    kind, period, time, weekdays, monthday, intervalNum, intervalUnit, onceDate,
+  }), [kind, period, time, weekdays, monthday, intervalNum, intervalUnit, onceDate]);
   const scheduleChanged = useMemo(() => isScheduleEffectivelyChanged({
     mode,
     scheduleUneditable,
@@ -1237,11 +1274,11 @@ function AutomationFormModal({
               <RecurringPicker
                 period={period}
                 time={time}
-                weekday={weekday}
+                weekdays={weekdays}
                 monthday={monthday}
                 onPeriod={setPeriod}
                 onTime={setTime}
-                onWeekday={setWeekday}
+                onWeekdays={setWeekdays}
                 onMonthday={setMonthday}
               />
             )}
@@ -1418,24 +1455,44 @@ function AutomationFormModal({
 function RecurringPicker({
   period,
   time,
-  weekday,
+  weekdays,
   monthday,
   onPeriod,
   onTime,
-  onWeekday,
+  onWeekdays,
   onMonthday,
 }: {
   period: RecurringPeriod;
   time: string;
-  weekday: number;
+  weekdays: number[];
   monthday: number;
   onPeriod: (v: RecurringPeriod) => void;
   onTime: (v: string) => void;
-  onWeekday: (v: number) => void;
+  onWeekdays: (v: number[]) => void;
   onMonthday: (v: number) => void;
 }) {
   const t = useT();
-  const weekdayLabels = [t("周日"), t("周一"), t("周二"), t("周三"), t("周四"), t("周五"), t("周六")];
+  const [weekdayPickerOpen, setWeekdayPickerOpen] = useState(false);
+  const weekdayPickerRef = useRef<HTMLDivElement | null>(null);
+  const weekdayLabels = getWeekdayLabels(t);
+  const selectedWeekdays = normalizeWeekdays(weekdays);
+  useEffect(() => {
+    if (!weekdayPickerOpen) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (weekdayPickerRef.current?.contains(target)) return;
+      setWeekdayPickerOpen(false);
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [weekdayPickerOpen]);
+  const toggleWeekday = useCallback((day: number) => {
+    const next = selectedWeekdays.includes(day)
+      ? selectedWeekdays.filter((v) => v !== day)
+      : [...selectedWeekdays, day];
+    onWeekdays(normalizeWeekdays(next));
+  }, [onWeekdays, selectedWeekdays]);
   return (
     <div className="flex flex-wrap items-center gap-2">
       <div className="relative w-[112px]">
@@ -1452,18 +1509,55 @@ function RecurringPicker({
         <ChevronDown className="pointer-events-none absolute right-5 top-1/2 h-4 w-4 -translate-y-1/2 text-black/80" />
       </div>
       {period === "weekly" && (
-        <div className="relative w-[112px]">
-          <select
-            value={weekday}
-            onChange={(e) => onWeekday(Number(e.target.value))}
+        <div ref={weekdayPickerRef} className="relative min-w-[220px] max-w-full">
+          <button
+            type="button"
+            onClick={() => setWeekdayPickerOpen((open) => !open)}
             style={MODAL_CONTROL_TEXT_STYLE}
-            className="w-full appearance-none rounded-lg border border-black/10 bg-white px-3 py-2 pr-10 text-base focus:border-black/30 focus:outline-none"
+            className="flex min-h-[42px] w-full items-center gap-1.5 rounded-lg border border-black/10 bg-white px-2.5 py-1.5 pr-9 text-left text-base focus:border-black/30 focus:outline-none"
+            aria-haspopup="listbox"
+            aria-expanded={weekdayPickerOpen}
           >
-            {weekdayLabels.map((label, idx) => (
-              <option key={idx} value={idx}>{label}</option>
-            ))}
-          </select>
-          <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-black/80" />
+            <span className="flex flex-wrap items-center gap-1.5">
+              {selectedWeekdays.map((day) => (
+                <span
+                  key={day}
+                  className="inline-flex h-7 items-center rounded-full bg-black px-3 text-sm font-medium leading-none text-white"
+                >
+                  {weekdayLabels[day]}
+                </span>
+              ))}
+            </span>
+          </button>
+          <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-black/80" />
+          {weekdayPickerOpen && (
+            <div
+              className="absolute left-0 top-[calc(100%+6px)] z-10 w-[260px] rounded-xl border border-black/10 bg-white p-2 shadow-xl"
+              role="listbox"
+              aria-multiselectable="true"
+            >
+              {WEEKDAY_VALUES.map((day) => {
+                const checked = selectedWeekdays.includes(day);
+                return (
+                  <button
+                    key={day}
+                    type="button"
+                    onClick={() => toggleWeekday(day)}
+                    className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm text-black/80 transition hover:bg-black/[0.04]"
+                    role="option"
+                    aria-selected={checked}
+                  >
+                    <span>{weekdayLabels[day]}</span>
+                    <span className={`inline-flex h-4 w-4 items-center justify-center rounded border ${
+                      checked ? "border-black bg-black" : "border-black/20 bg-white"
+                    }`}>
+                      {checked && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
       {period === "monthly" && (
@@ -1555,7 +1649,8 @@ export function buildScheduleString(args: {
   kind: FrequencyKind;
   period: RecurringPeriod;
   time: string;
-  weekday: number;
+  weekdays?: number[];
+  weekday?: number;
   monthday: number;
   intervalNum: number;
   intervalUnit: "m" | "h" | "d";
@@ -1571,7 +1666,10 @@ export function buildScheduleString(args: {
   const h = Number(hh);
   const m = Number(mm);
   if (args.period === "daily") return `${m} ${h} * * *`;
-  if (args.period === "weekly") return `${m} ${h} * * ${args.weekday}`;
+  if (args.period === "weekly") {
+    const weekdays = normalizeWeekdays(args.weekdays ?? [args.weekday ?? 1]);
+    return `${m} ${h} * * ${weekdays.join(",")}`;
+  }
   return `${m} ${h} ${args.monthday} * *`;
 }
 
@@ -1601,6 +1699,7 @@ export function parseInitialSchedule(display: string): {
   period?: RecurringPeriod;
   time?: string;
   weekday?: number;
+  weekdays?: number[];
   monthday?: number;
   intervalNum?: number;
   intervalUnit?: "m" | "h" | "d";
@@ -1638,8 +1737,11 @@ export function parseInitialSchedule(display: string): {
     if (dom === "*" && mon === "*" && dow === "*") {
       return { kind: "recurring", period: "daily", time };
     }
-    if (dom === "*" && mon === "*" && /^\d+$/.test(dow ?? "")) {
-      return { kind: "recurring", period: "weekly", time, weekday: Number(dow) };
+    if (dom === "*" && mon === "*") {
+      const weekdays = parseCronWeekdays(dow ?? "");
+      if (weekdays.length > 0) {
+        return { kind: "recurring", period: "weekly", time, weekday: weekdays[0], weekdays };
+      }
     }
     if (mon === "*" && dow === "*" && /^\d+$/.test(dom ?? "")) {
       return { kind: "recurring", period: "monthly", time, monthday: Number(dom) };
