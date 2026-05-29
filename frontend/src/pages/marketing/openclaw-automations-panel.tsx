@@ -939,7 +939,11 @@ function normalizeWeekdays(values: readonly number[] | undefined): number[] {
 
 function parseCronWeekdays(value: string): number[] {
   if (!/^\d+(,\d+)*$/.test(value)) return [];
-  const days = value.split(",").map((v) => Number(v));
+  // cron 标准里 0 和 7 都代表周日，统一归一为 0
+  const days = value.split(",").map((v) => {
+    const n = Number(v);
+    return n === 7 ? 0 : n;
+  });
   if (days.some((v) => !Number.isInteger(v) || v < 0 || v > 6)) return [];
   return normalizeWeekdays(days);
 }
@@ -1488,6 +1492,8 @@ function RecurringPicker({
     return () => document.removeEventListener("pointerdown", handlePointerDown);
   }, [weekdayPickerOpen]);
   const toggleWeekday = useCallback((day: number) => {
+    // 至少保留 1 天：取消最后一个选中项时直接忽略，避免 normalizeWeekdays 静默兜底为周一
+    if (selectedWeekdays.length === 1 && selectedWeekdays[0] === day) return;
     const next = selectedWeekdays.includes(day)
       ? selectedWeekdays.filter((v) => v !== day)
       : [...selectedWeekdays, day];
@@ -1538,14 +1544,23 @@ function RecurringPicker({
             >
               {WEEKDAY_VALUES.map((day) => {
                 const checked = selectedWeekdays.includes(day);
+                // 唯一选中项不允许取消，按钮置灰提示「至少保留 1 天」
+                const isLastSelected = checked && selectedWeekdays.length === 1;
                 return (
                   <button
                     key={day}
                     type="button"
                     onClick={() => toggleWeekday(day)}
-                    className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm text-black/80 transition hover:bg-black/[0.04]"
+                    disabled={isLastSelected}
+                    className={
+                      "flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm transition " +
+                      (isLastSelected
+                        ? "cursor-not-allowed text-black/40"
+                        : "text-black/80 hover:bg-black/[0.04]")
+                    }
                     role="option"
                     aria-selected={checked}
+                    title={isLastSelected ? t("至少保留 1 天") : undefined}
                   >
                     <span>{weekdayLabels[day]}</span>
                     <span className={`inline-flex h-4 w-4 items-center justify-center rounded border ${
@@ -1668,7 +1683,10 @@ export function buildScheduleString(args: {
   if (args.period === "daily") return `${m} ${h} * * *`;
   if (args.period === "weekly") {
     const weekdays = normalizeWeekdays(args.weekdays ?? [args.weekday ?? 1]);
-    return `${m} ${h} * * ${weekdays.join(",")}`;
+    // cron 输出走升序（0~6），UI 顺序（周一开头）跟 cron 字符串顺序解耦，
+    // 避免老式 cron 解析器对 "1,0" 这种非升序逗号列表的兼容问题
+    const sortedForCron = [...weekdays].sort((a, b) => a - b);
+    return `${m} ${h} * * ${sortedForCron.join(",")}`;
   }
   return `${m} ${h} ${args.monthday} * *`;
 }

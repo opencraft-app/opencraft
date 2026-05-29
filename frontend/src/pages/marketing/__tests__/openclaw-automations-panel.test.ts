@@ -49,6 +49,18 @@ describe("buildScheduleString and parseInitialSchedule", () => {
       onceDate: "",
     }))).toMatchObject({ kind: "recurring", period: "weekly", time: "18:30", weekday: 1, weekdays: [1, 3, 5] });
 
+    // 单日 weekly 也需 round-trip：避免 buildScheduleString 单元素分支退化
+    expect(parseInitialSchedule(buildScheduleString({
+      kind: "recurring",
+      period: "weekly",
+      time: "09:00",
+      weekdays: [3],
+      monthday: 1,
+      intervalNum: 1,
+      intervalUnit: "h",
+      onceDate: "",
+    }))).toMatchObject({ kind: "recurring", period: "weekly", time: "09:00", weekday: 3, weekdays: [3] });
+
     expect(parseInitialSchedule(buildScheduleString({
       kind: "recurring",
       period: "monthly",
@@ -98,6 +110,15 @@ describe("buildScheduleString and parseInitialSchedule", () => {
       time: "09:00",
       weekday: 1,
       weekdays: [1, 3, 4, 5, 6, 0],
+    });
+  });
+
+  it("treats cron weekday 7 as Sunday (0)", () => {
+    expect(parseInitialSchedule("0 9 * * 7")).toMatchObject({
+      kind: "recurring",
+      period: "weekly",
+      time: "09:00",
+      weekdays: [0],
     });
   });
 });
