@@ -33,6 +33,7 @@
  */
 
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
+import { readStoredAuthToken } from "@/repositories/http-repositories";
 
 /** Vibebase 路径前缀（拼到 `authApiBase` 之后）。 */
 const PATH_PREFIX = "/v1/vibebase";
@@ -202,7 +203,12 @@ async function fetchVibebase(
 ): Promise<Response> {
   let res: Response;
   try {
-    res = await fetch(url, { ...init, credentials: "include" });
+    const headers = new Headers(init.headers);
+    const authToken = readStoredAuthToken();
+    if (authToken && !headers.has("Authorization")) {
+      headers.set("Authorization", `Bearer ${authToken}`);
+    }
+    res = await fetch(url, { ...init, headers, credentials: "include" });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     throw new VibebaseError(
