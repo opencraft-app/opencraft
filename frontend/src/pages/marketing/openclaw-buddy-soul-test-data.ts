@@ -262,6 +262,25 @@ export const PREF_TAGS: PrefTag[] = [
   "行动力",
 ];
 
+function calculatePrefTagMaxScores(): Record<PrefTag, number> {
+  const maxScores = Object.fromEntries(PREF_TAGS.map((tag) => [tag, 0])) as Record<PrefTag, number>;
+
+  for (const question of prefQuestions) {
+    for (const tag of PREF_TAGS) {
+      const maxForQuestion = Math.max(
+        ...question.options.map(
+          (option) => (option.primary === tag ? 2 : 0) + (option.secondary === tag ? 1 : 0),
+        ),
+      );
+      maxScores[tag] += maxForQuestion;
+    }
+  }
+
+  return maxScores;
+}
+
+export const PREF_TAG_MAX_SCORES = calculatePrefTagMaxScores();
+
 export function isPersonalityQuestion(question: SoulTestQuestion): question is PersonalityQuestion {
   return question.id.startsWith("p");
 }
@@ -325,7 +344,8 @@ export function categorizePrefScores(scores: Record<PrefTag, number>): Record<Pr
   const result = {} as Record<PrefTag, PrefCategory>;
 
   for (const tag of PREF_TAGS) {
-    const ratio = scores[tag] / 20;
+    const maxScore = PREF_TAG_MAX_SCORES[tag];
+    const ratio = maxScore > 0 ? scores[tag] / maxScore : 0;
     if (ratio >= 0.6) {
       result[tag] = "high";
     } else if (ratio >= 0.3) {

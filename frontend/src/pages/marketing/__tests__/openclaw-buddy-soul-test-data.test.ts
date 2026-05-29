@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  PREF_TAG_MAX_SCORES,
   PREF_TAGS,
   calculateMatchedSoul,
   calculatePrefScores,
@@ -37,6 +38,19 @@ describe("openclaw-buddy-soul-test-data", () => {
     expect(calculateMatchedSoul(answers)).toBe("YYDS");
   });
 
+  it("derives each preference tag's maximum score from the question set", () => {
+    expect(PREF_TAG_MAX_SCORES).toEqual({
+      主导性: 18,
+      安抚性: 20,
+      活跃性: 11,
+      玩趣性: 19,
+      锋利性: 11,
+      严谨性: 19,
+      浪漫性: 10,
+      行动力: 12,
+    });
+  });
+
   it("builds the five-dimension personality profile", () => {
     const answers = Object.fromEntries(personalityQuestions.map((question) => [question.id, "A"]));
     const profile = generatePersonalityProfile(answers);
@@ -54,11 +68,17 @@ describe("openclaw-buddy-soul-test-data", () => {
     scores["主导性"] = 12;
     scores["安抚性"] = 6;
     scores["严谨性"] = 5;
+    scores["浪漫性"] = 6;
+    scores["活跃性"] = 4;
+    scores["锋利性"] = 3;
 
     expect(categorizePrefScores(scores)).toMatchObject({
       主导性: "high",
       安抚性: "mid",
       严谨性: "low",
+      浪漫性: "high",
+      活跃性: "mid",
+      锋利性: "low",
     });
   });
 });
