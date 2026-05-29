@@ -217,7 +217,7 @@ const SettingsNavbar = () => {
 
 type SettingsSectionId = "channel" | "model" | "skill" | "buddy" | "automations" | "memory" | "chat";
 
-const SHOW_AGENTCHAT_ENTRY = true;
+const SHOW_AGENTCHAT_ENTRY = false;
 
 /* ─── Section Card Wrapper ─── */
 
