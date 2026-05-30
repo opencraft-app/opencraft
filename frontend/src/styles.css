@@ -1253,7 +1253,10 @@ body.lw-has-announcement .lw-app-top-pad {
 
 .lv-buddy-panel__title {
   min-width: 0;
+  width: 100%;
   max-width: min(100%, 720px);
+  justify-content: center;
+  margin: 0 auto;
   text-align: center;
   font-size: 1.0625rem;
   line-height: 1.35;
