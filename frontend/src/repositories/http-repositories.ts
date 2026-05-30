@@ -29,6 +29,7 @@ import type {
   RealnameVerifyResult,
   Repositories,
   SettingsSnapshot,
+  TatDeviceBindResult,
   WorkspaceSnapshot,
 } from "@/repositories/types";
 
@@ -60,6 +61,21 @@ interface CurrentSubscriptionPayload {
     updatedAt?: string;
     createdAt?: string;
   } | null;
+}
+
+interface TatDeviceBindPayload {
+  status: string;
+  ticket: string;
+  callback_url: string;
+  redirect_url: string;
+  expires_at: string;
+  registration_code?: string | null;
+  registration?: {
+    region: string;
+    register_code_id: string;
+    register_code_value: string;
+    request_id: string;
+  };
 }
 
 interface APIEnvelope<T> {
@@ -1042,6 +1058,31 @@ const createHttpAuthRepository = (baseUrl: string): AuthRepository => ({
       method: "POST",
       body: input,
     });
+  },
+  async createTatDeviceBind(input): Promise<TatDeviceBindResult> {
+    const response = await request<TatDeviceBindPayload>(baseUrl, "/auth/tat/device-bind", {
+      method: "POST",
+      body: {
+        callback_url: input.callbackUrl,
+        device_name: input.deviceName,
+      },
+    });
+    return {
+      status: response.status,
+      ticket: response.ticket,
+      callbackUrl: response.callback_url,
+      redirectUrl: response.redirect_url,
+      expiresAt: response.expires_at,
+      registrationCode: response.registration_code ?? null,
+      registration: response.registration
+        ? {
+            region: response.registration.region,
+            registerCodeId: response.registration.register_code_id,
+            registerCodeValue: response.registration.register_code_value,
+            requestId: response.registration.request_id,
+          }
+        : undefined,
+    };
   },
   getOAuthStartUrl(provider) {
     // local-proxy 模式 baseUrl 是空字符串，buildUrl 拼出来是相对路径 `/auth/...`。

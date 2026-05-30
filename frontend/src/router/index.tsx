@@ -26,6 +26,7 @@ const OpenClawSuccessPage = lazyNamed(() => import("@/pages/marketing/openclaw-s
 const OpenClawSettingsPage = lazyNamed(() => import("@/pages/marketing/openclaw-settings-page"), "OpenClawSettingsPage");
 const AccountPage = lazyNamed(() => import("@/pages/marketing/account-page"), "AccountPage");
 const AccountOrdersPage = lazyNamed(() => import("@/pages/marketing/account-orders-page"), "AccountOrdersPage");
+const TATDeviceBindPage = lazyNamed(() => import("@/pages/marketing/tat-device-bind-page"), "TATDeviceBindPage");
 const AboutPage = lazyNamed(() => import("@/pages/marketing/about-page"), "AboutPage");
 const ChangelogPage = lazyNamed(() => import("@/pages/marketing/changelog-page"), "ChangelogPage");
 const DocsPage = lazyNamed(() => import("@/pages/docs/docs-page"), "DocsPage");
@@ -122,6 +123,10 @@ export const router = createBrowserRouter([
           {
             path: "account/orders",
             element: lazyRoute(AccountOrdersPage),
+          },
+          {
+            path: "tat/device-bind",
+            element: lazyRoute(TATDeviceBindPage),
           },
           /* ── /dashboard 裸路径兜底：SPA 内部 navigate("/dashboard") 或用户手敲时，
              统一导向 /dashboard/settings，避免命中外层 NotFound。 ── */

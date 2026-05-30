@@ -11,6 +11,7 @@
 | 变量 | 说明 | 示例 |
 |------|------|------|
 | `LIGHTCLAW_ADMIN_TOKEN` | 管理接口鉴权 token，用于创建/禁用邀请码等后台操作 | 随机生成的强密码 |
+| `LIGHTCLAW_DEVICE_BIND_TOKEN_SECRET` | 设备绑定短 token 的 HMAC 签名密钥，用于 OAuth 登录后给 Mac 客户端换取一次性 TAT 注册码 | 随机生成的 32 字节以上强密钥 |
 | `LIGHTCLAW_MYSQL_DSN` 或 `MYSQL_DSN` | MySQL 连接串。**不填则使用内存存储（重启丢数据，仅限本地开发）** | `user:pass@tcp(host:3306)/dbname?parseTime=true` |
 
 ---
@@ -23,6 +24,7 @@
 | `LIGHTCLAW_PUBLIC_BASE_URL` | `https://lightclaw.tech` | 后端 API 对外域名，用于拼接 OAuth Redirect URI |
 | `LIGHTCLAW_FRONTEND_BASE_URL` | `https://lightclaw.pages.dev` | 前端域名，OAuth 回调后重定向到此地址 |
 | `LIGHTCLAW_OAUTH_RETURN_TO_ALLOWED_HOSTS` | 内置 Lightclaw 主域名 | 允许 OAuth `return_to` 回跳的 host 白名单，测试环境可显式加入 `*.pages.dev` |
+| `LIGHTCLAW_DEVICE_BIND_TOKEN_TTL_SECONDS` | `600` | Mac 设备绑定短 token 有效期；token 只允许调用 `/auth/tat/device-bind` |
 
 ---
 
@@ -95,6 +97,22 @@
 
 ---
 
+## TAT 设备绑定（不填则禁用 Mac 设备绑定）
+
+| 变量 | 说明 | 默认值 |
+|------|------|--------|
+| `TENCENT_TAT_SECRET_ID` | 腾讯云 TAT API 密钥 ID，需允许 `tat:CreateRegisterCode` | - |
+| `TENCENT_TAT_SECRET_KEY` | 腾讯云 TAT API 密钥 Key | - |
+| `TENCENT_TAT_REGION` | 注册码所属地域 | `ap-guangzhou` |
+| `TENCENT_TAT_ENDPOINT` | TAT endpoint | `tat.tencentcloudapi.com` |
+| `TENCENT_TAT_REGISTER_EFFECTIVE_HOURS` | 注册码有效时间，单位小时 | `24` |
+| `TENCENT_TAT_INSTANCE_NAME_PREFIX` | 注册出来的托管实例名前缀，最长 32 字符 | `lightvela-mac` |
+| `TENCENT_TAT_REGISTER_IP_RANGE` | 可选公网出口 IP/CIDR 限制；留空则不限制 | - |
+
+后端会固定把 `RegisterLimit` 设为 `1`，即每个注册码只能注册一台设备。
+
+---
+
 ## 仅开发环境
 
 | 变量 | 说明 |
@@ -116,12 +134,20 @@ LIGHTCLAW_PUBLIC_BASE_URL=https://lightclaw.tech
 LIGHTCLAW_FRONTEND_BASE_URL=https://lightclaw.pages.dev
 LIGHTCLAW_COOKIE_SECURE=true
 LIGHTCLAW_ADMIN_TOKEN=<随机生成的强密码>
+LIGHTCLAW_DEVICE_BIND_TOKEN_SECRET=<随机生成的32字节以上强密钥>
 
 # 实名认证
 TENCENT_REALNAME_SECRET_ID=xxx
 TENCENT_REALNAME_SECRET_KEY=xxx
 TENCENT_REALNAME_ENDPOINT=faceid.tencentcloudapi.com
 REALNAME_ENCRYPTION_KEY=<32字节base64密钥>
+
+# TAT 设备绑定
+TENCENT_TAT_SECRET_ID=xxx
+TENCENT_TAT_SECRET_KEY=xxx
+TENCENT_TAT_REGION=ap-guangzhou
+TENCENT_TAT_ENDPOINT=tat.tencentcloudapi.com
+TENCENT_TAT_REGISTER_EFFECTIVE_HOURS=24
 
 # Google OAuth
 LIGHTCLAW_GOOGLE_CLIENT_ID=xxx.apps.googleusercontent.com

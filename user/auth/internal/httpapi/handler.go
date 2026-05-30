@@ -13,6 +13,7 @@ import (
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/api"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/avatar"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/service"
+	"github.com/openclaw/openclaw/mono/backend/auth/internal/tat"
 )
 
 const (
@@ -22,17 +23,19 @@ const (
 )
 
 type Handler struct {
-	service        *service.Service
-	cookieSecure   bool
-	cookieSameSite http.SameSite
-	sessionTTL     time.Duration
-	returnToAllow  oauthReturnToAllowlist
-	qqOAuth        *qqOAuth
-	googleOAuth    *googleOAuth
-	githubOAuth    *githubOAuth
-	wechatOAuth    *wechatOAuth
-	avatarStore    AvatarStore
-	publicBaseURL  string
+	service           *service.Service
+	cookieSecure      bool
+	cookieSameSite    http.SameSite
+	sessionTTL        time.Duration
+	returnToAllow     oauthReturnToAllowlist
+	qqOAuth           *qqOAuth
+	googleOAuth       *googleOAuth
+	githubOAuth       *githubOAuth
+	wechatOAuth       *wechatOAuth
+	avatarStore       AvatarStore
+	tatRegisterIssuer tat.RegisterCodeIssuer
+	deviceBindTokens  *deviceBindTokenCodec
+	publicBaseURL     string
 }
 
 type invitePrepareRequest struct {

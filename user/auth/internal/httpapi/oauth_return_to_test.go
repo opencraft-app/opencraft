@@ -1,6 +1,13 @@
 package httpapi
 
-import "testing"
+import (
+	"net/url"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/openclaw/openclaw/mono/backend/auth/internal/service"
+)
 
 func TestValidatedReturnToURL(t *testing.T) {
 	t.Parallel()
@@ -119,5 +126,41 @@ func TestAppendSessionTokenToReturnTo(t *testing.T) {
 	want := "https://preview.foo.lightclaw.cn/dashboard/settings?tab=1#wechat&session_token=session-123"
 	if got != want {
 		t.Fatalf("appendSessionTokenToReturnTo() = %q, want %q", got, want)
+	}
+}
+
+func TestOAuthSuccessRedirectForDeviceBindUsesShortToken(t *testing.T) {
+	t.Parallel()
+
+	codec := newDeviceBindTokenCodec("device-bind-secret", 10*time.Minute)
+	codec.now = func() time.Time { return time.Unix(1000, 0).UTC() }
+	handler := &Handler{
+		returnToAllow:    buildOAuthReturnToAllowlist([]string{"127.0.0.1"}),
+		deviceBindTokens: codec,
+	}
+	returnTo := "http://127.0.0.1:17631/lightvela/auth-callback?device_nonce=nonce-123"
+
+	redirectURL := handler.oauthSuccessRedirectURL(nil, returnTo, "https://lightclaw.pages.dev/#session_token=session-123", &service.AuthSession{
+		Token: "session-123",
+		User:  service.User{ID: "user-123"},
+	})
+
+	parsed, err := url.Parse(redirectURL)
+	if err != nil {
+		t.Fatalf("parse redirect: %v", err)
+	}
+	token := parsed.Query().Get("device_bind_token")
+	if token == "" {
+		t.Fatalf("expected device_bind_token in redirect, got %q", redirectURL)
+	}
+	if strings.Contains(redirectURL, "session_token") {
+		t.Fatalf("device bind redirect must not expose session_token: %q", redirectURL)
+	}
+	claims, err := codec.Verify(token)
+	if err != nil {
+		t.Fatalf("verify device token: %v", err)
+	}
+	if claims.UserID != "user-123" || claims.DeviceNonce != "nonce-123" || claims.Scope != deviceBindTokenScope {
+		t.Fatalf("claims = %+v", claims)
 	}
 }

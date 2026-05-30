@@ -375,6 +375,33 @@ export const createFakeRepositories = (): Repositories => {
           requestId: "fake-realname",
         };
       },
+      async createTatDeviceBind({ callbackUrl }) {
+        await wait(NETWORK_DELAY_MS);
+        const session = readStoredAuthSession();
+        if (!session) {
+          throw new Error("未登录或登录已失效。");
+        }
+        const redirectUrl = new URL(callbackUrl);
+        redirectUrl.searchParams.set("ticket", "fake-register-code-id");
+        redirectUrl.searchParams.set("region", "ap-guangzhou");
+        redirectUrl.searchParams.set("register_code_id", "fake-register-code-id");
+        redirectUrl.searchParams.set("register_code_value", "fake-register-code-value");
+        redirectUrl.searchParams.set("registration_code", "fake-register-code-value");
+        return {
+          status: "register_code_issued",
+          ticket: "fake-register-code-id",
+          callbackUrl,
+          redirectUrl: redirectUrl.toString(),
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          registrationCode: "fake-register-code-value",
+          registration: {
+            region: "ap-guangzhou",
+            registerCodeId: "fake-register-code-id",
+            registerCodeValue: "fake-register-code-value",
+            requestId: "fake-tat-request-id",
+          },
+        };
+      },
       getOAuthStartUrl(provider: OAuthProvider) {
         return fakeOAuthStartURL(provider);
       },

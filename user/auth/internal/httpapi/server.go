@@ -12,21 +12,25 @@ import (
 
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/api"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/service"
+	"github.com/openclaw/openclaw/mono/backend/auth/internal/tat"
 )
 
 type ServerConfig struct {
-	CookieSecure   bool
-	CookieSameSite http.SameSite
-	SessionTTL     time.Duration
+	CookieSecure              bool
+	CookieSameSite            http.SameSite
+	SessionTTL                time.Duration
 	OAuthReturnToAllowedHosts []string
-	QQOAuth        *QQOAuthConfig
-	GoogleOAuth    *GoogleOAuthConfig
-	GitHubOAuth    *GitHubOAuthConfig
-	WeChatOAuth    *WeChatOAuthConfig
-	AvatarStore    AvatarStore
-	Logger         *slog.Logger
-	PublicBaseURL  string
-	AdminToken     string
+	QQOAuth                   *QQOAuthConfig
+	GoogleOAuth               *GoogleOAuthConfig
+	GitHubOAuth               *GitHubOAuthConfig
+	WeChatOAuth               *WeChatOAuthConfig
+	AvatarStore               AvatarStore
+	TATRegisterIssuer         tat.RegisterCodeIssuer
+	DeviceBindTokenSecret     string
+	DeviceBindTokenTTL        time.Duration
+	Logger                    *slog.Logger
+	PublicBaseURL             string
+	AdminToken                string
 }
 
 func NewRouter(authService *service.Service, config ServerConfig) *gin.Engine {
@@ -43,7 +47,10 @@ func NewRouter(authService *service.Service, config ServerConfig) *gin.Engine {
 
 	handler := NewHandler(authService, config.CookieSecure, config.CookieSameSite, config.SessionTTL, config.QQOAuth, config.GoogleOAuth, config.GitHubOAuth, config.WeChatOAuth, config.PublicBaseURL, config.OAuthReturnToAllowedHosts)
 	handler.avatarStore = config.AvatarStore
+	handler.tatRegisterIssuer = config.TATRegisterIssuer
+	handler.deviceBindTokens = newDeviceBindTokenCodec(config.DeviceBindTokenSecret, config.DeviceBindTokenTTL)
 	registerOAuthRoutes(router, handler)
+	router.POST("/auth/tat/device-bind", handler.CreateTATDeviceBind)
 	router.POST("/auth/invite/prepare", handler.PrepareInvite)
 	router.GET("/users/:userID/avatar", handler.GetUserAvatar)
 	router.DELETE("/auth/profile", handler.DeleteProfile)

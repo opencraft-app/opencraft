@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/logging"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/realname"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/service"
+	"github.com/openclaw/openclaw/mono/backend/auth/internal/tat"
 )
 
 func main() {
@@ -32,18 +34,21 @@ func main() {
 	avatarStore := buildAvatarStore(logger)
 
 	router := httpapi.NewRouter(authService, httpapi.ServerConfig{
-		CookieSecure:   envOrDefault("LIGHTCLAW_COOKIE_SECURE", "false") == "true",
-		CookieSameSite: parseSameSite(envOrDefault("LIGHTCLAW_COOKIE_SAME_SITE", "lax")),
-		SessionTTL:     sessionTTL,
+		CookieSecure:              envOrDefault("LIGHTCLAW_COOKIE_SECURE", "false") == "true",
+		CookieSameSite:            parseSameSite(envOrDefault("LIGHTCLAW_COOKIE_SAME_SITE", "lax")),
+		SessionTTL:                sessionTTL,
 		OAuthReturnToAllowedHosts: parseCSVEnv("LIGHTCLAW_OAUTH_RETURN_TO_ALLOWED_HOSTS"),
-		QQOAuth:        buildQQOAuthConfig(),
-		GoogleOAuth:    buildGoogleOAuthConfig(),
-		GitHubOAuth:    buildGitHubOAuthConfig(),
-		WeChatOAuth:    buildWeChatOAuthConfig(),
-		AvatarStore:    avatarStore,
-		Logger:         logger,
-		PublicBaseURL:  envOrDefault("LIGHTCLAW_PUBLIC_BASE_URL", "https://lightclaw.tech"),
-		AdminToken:     envOrDefault("LIGHTCLAW_ADMIN_TOKEN", ""),
+		QQOAuth:                   buildQQOAuthConfig(),
+		GoogleOAuth:               buildGoogleOAuthConfig(),
+		GitHubOAuth:               buildGitHubOAuthConfig(),
+		WeChatOAuth:               buildWeChatOAuthConfig(),
+		AvatarStore:               avatarStore,
+		TATRegisterIssuer:         buildTATRegisterIssuer(logger),
+		DeviceBindTokenSecret:     envOrDefault("LIGHTCLAW_DEVICE_BIND_TOKEN_SECRET", ""),
+		DeviceBindTokenTTL:        time.Duration(envInt64OrDefault("LIGHTCLAW_DEVICE_BIND_TOKEN_TTL_SECONDS", 600)) * time.Second,
+		Logger:                    logger,
+		PublicBaseURL:             envOrDefault("LIGHTCLAW_PUBLIC_BASE_URL", "https://lightclaw.tech"),
+		AdminToken:                envOrDefault("LIGHTCLAW_ADMIN_TOKEN", ""),
 	})
 
 	address := envOrDefault("LIGHTCLAW_AUTH_ADDR", ":8081")
@@ -58,6 +63,19 @@ func main() {
 		slog.Error("lightclaw auth exited unexpectedly", "err", err)
 		os.Exit(1)
 	}
+}
+
+func envInt64OrDefault(key string, fallback int64) int64 {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback
+	}
+	value, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		slog.Warn("invalid integer env, using fallback", "key", key, "value", raw, "fallback", fallback)
+		return fallback
+	}
+	return value
 }
 
 func newStore() service.Store {
@@ -211,6 +229,31 @@ func buildRealnameVerifier(logger *slog.Logger) service.RealnameVerifier {
 		return nil
 	}
 	logger.Info("realname verifier enabled")
+	return client
+}
+
+func buildTATRegisterIssuer(logger *slog.Logger) tat.RegisterCodeIssuer {
+	secretID := strings.TrimSpace(os.Getenv("TENCENT_TAT_SECRET_ID"))
+	secretKey := strings.TrimSpace(os.Getenv("TENCENT_TAT_SECRET_KEY"))
+	if secretID == "" || secretKey == "" {
+		logger.Warn("tat register issuer disabled due to incomplete Tencent TAT config")
+		return nil
+	}
+
+	client, err := tat.New(tat.Config{
+		SecretID:           secretID,
+		SecretKey:          secretKey,
+		Region:             envOrDefault("TENCENT_TAT_REGION", "ap-guangzhou"),
+		Endpoint:           envOrDefault("TENCENT_TAT_ENDPOINT", "tat.tencentcloudapi.com"),
+		EffectiveTimeHours: envInt64OrDefault("TENCENT_TAT_REGISTER_EFFECTIVE_HOURS", 24),
+		InstanceNamePrefix: envOrDefault("TENCENT_TAT_INSTANCE_NAME_PREFIX", "lightvela-mac"),
+		IpAddressRange:     strings.TrimSpace(os.Getenv("TENCENT_TAT_REGISTER_IP_RANGE")),
+	})
+	if err != nil {
+		logger.Error("init tat register issuer failed", "err", err)
+		return nil
+	}
+	logger.Info("tat register issuer enabled", "region", envOrDefault("TENCENT_TAT_REGION", "ap-guangzhou"))
 	return client
 }
 

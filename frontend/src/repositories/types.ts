@@ -33,6 +33,21 @@ export interface RealnameVerifyResult {
   requestId: string;
 }
 
+export interface TatDeviceBindResult {
+  status: string;
+  ticket: string;
+  callbackUrl: string;
+  redirectUrl: string;
+  expiresAt: string;
+  registrationCode?: string | null;
+  registration?: {
+    region: string;
+    registerCodeId: string;
+    registerCodeValue: string;
+    requestId: string;
+  };
+}
+
 export interface AuthRepository {
   signInWithCode(input: { phone: string; code?: string; inviteCode?: string }): Promise<AuthSessionSnapshot>;
   prepareInviteCode(code: string): Promise<void>;
@@ -51,6 +66,7 @@ export interface AuthRepository {
   deleteAccount(): Promise<void>;
   /** 实名认证：POST /auth/realname/verify */
   verifyRealname(input: { name: string; idCard: string }): Promise<RealnameVerifyResult>;
+  createTatDeviceBind(input: { callbackUrl: string; deviceName?: string }): Promise<TatDeviceBindResult>;
   getOAuthStartUrl(provider: OAuthProvider): string | null;
   signInAsGuest(): Promise<AuthSessionSnapshot>;
   signOut(): Promise<void>;

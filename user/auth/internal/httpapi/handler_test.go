@@ -19,9 +19,13 @@ import (
 
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/avatar"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/service"
+	"github.com/openclaw/openclaw/mono/backend/auth/internal/tat"
 )
 
-const testAdminToken = "test-admin-secret"
+const (
+	testAdminToken       = "test-admin-secret"
+	testDeviceBindSecret = "test-device-bind-secret"
+)
 
 func TestSetSessionCookieUsesConfiguredCrossSiteAttributes(t *testing.T) {
 	t.Parallel()
@@ -142,6 +146,151 @@ func TestGetCurrentSessionDoesNotExposePlanSelection(t *testing.T) {
 	decodeJSONResponse(t, current, &response)
 	if response.Session.PlanSelection != nil {
 		t.Fatal("expected planSelection to be omitted from current session")
+	}
+}
+
+func TestCreateTATDeviceBindIssuesLoopbackTicket(t *testing.T) {
+	t.Parallel()
+
+	issuer := &httpStubTATRegisterIssuer{
+		result: tat.RegisterCode{
+			Region:             "ap-guangzhou",
+			RegisterCodeID:     "reg-code-id",
+			RegisterCodeValue:  "reg-code-value",
+			RequestID:          "request-id",
+			EffectiveTimeHours: 24,
+		},
+	}
+	router := newAuthTestRouterWithTATRegisterIssuer(issuer)
+	signUp := performJSONRequest(t, router, http.MethodPost, "/auth/password/sign-up", map[string]any{
+		"name":       "Mac Operator",
+		"email":      "mac-operator@example.com",
+		"password":   "password123",
+		"inviteCode": "VALID2026",
+	})
+	sessionCookie := sessionCookieFromRecorder(t, signUp)
+
+	recorder := performJSONRequest(t, router, http.MethodPost, "/auth/tat/device-bind", map[string]any{
+		"callback_url": "http://127.0.0.1:17631/lightvela/callback",
+		"device_name":  "mac-2.local",
+	}, sessionCookie)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+
+	var response struct {
+		Status       string `json:"status"`
+		Ticket       string `json:"ticket"`
+		CallbackURL  string `json:"callback_url"`
+		RedirectURL  string `json:"redirect_url"`
+		Registration struct {
+			Region            string `json:"region"`
+			RegisterCodeID    string `json:"register_code_id"`
+			RegisterCodeValue string `json:"register_code_value"`
+			RequestID         string `json:"request_id"`
+		} `json:"registration"`
+	}
+	decodeJSONResponse(t, recorder, &response)
+	if response.Status != "register_code_issued" {
+		t.Fatalf("status: got %q", response.Status)
+	}
+	if response.Ticket != "reg-code-id" {
+		t.Fatalf("ticket: got %q", response.Ticket)
+	}
+	if response.CallbackURL != "http://127.0.0.1:17631/lightvela/callback" {
+		t.Fatalf("callback_url: got %q", response.CallbackURL)
+	}
+	if !strings.Contains(response.RedirectURL, "register_code_id=reg-code-id") || !strings.Contains(response.RedirectURL, "register_code_value=reg-code-value") {
+		t.Fatalf("redirect_url should contain registration code, got %q", response.RedirectURL)
+	}
+	if response.Registration.Region != "ap-guangzhou" || response.Registration.RegisterCodeID != "reg-code-id" || response.Registration.RegisterCodeValue != "reg-code-value" {
+		t.Fatalf("registration: got %+v", response.Registration)
+	}
+	if len(issuer.requests) != 1 {
+		t.Fatalf("expected one TAT register request, got %d", len(issuer.requests))
+	}
+	if issuer.requests[0].RegisterLimit != 1 {
+		t.Fatalf("RegisterLimit = %d, want 1", issuer.requests[0].RegisterLimit)
+	}
+}
+
+func TestCreateTATDeviceBindRequiresConfiguredTATIssuer(t *testing.T) {
+	t.Parallel()
+
+	router := newAuthTestRouter()
+	signUp := performJSONRequest(t, router, http.MethodPost, "/auth/password/sign-up", map[string]any{
+		"name":       "Mac Operator",
+		"email":      "mac-no-tat@example.com",
+		"password":   "password123",
+		"inviteCode": "VALID2026",
+	})
+	sessionCookie := sessionCookieFromRecorder(t, signUp)
+
+	recorder := performJSONRequest(t, router, http.MethodPost, "/auth/tat/device-bind", map[string]any{
+		"callback_url": "http://127.0.0.1:17631/lightvela/callback",
+	}, sessionCookie)
+
+	if recorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestCreateTATDeviceBindAcceptsDeviceBindToken(t *testing.T) {
+	t.Parallel()
+
+	issuer := &httpStubTATRegisterIssuer{
+		result: tat.RegisterCode{
+			Region:             "ap-beijing",
+			RegisterCodeID:     "device-reg-id",
+			RegisterCodeValue:  "device-reg-value",
+			RequestID:          "device-request-id",
+			EffectiveTimeHours: 24,
+		},
+	}
+	router := newAuthTestRouterWithTATRegisterIssuer(issuer)
+	codec := newDeviceBindTokenCodec(testDeviceBindSecret, 10*time.Minute)
+	token, _, err := codec.Issue(&service.AuthSession{User: service.User{ID: "device-user-id"}}, "http://127.0.0.1:17631/lightvela/auth-callback?device_nonce=device-nonce")
+	if err != nil {
+		t.Fatalf("issue device bind token: %v", err)
+	}
+
+	recorder := performJSONRequestWithHeaders(t, router, http.MethodPost, "/auth/tat/device-bind", map[string]any{
+		"callback_url": "http://127.0.0.1:17631/lightvela/callback",
+		"device_name":  "mac-2.local",
+	}, map[string]string{
+		"Authorization": "Bearer " + token,
+	})
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if len(issuer.requests) != 1 {
+		t.Fatalf("expected one TAT register request, got %d", len(issuer.requests))
+	}
+	if !strings.Contains(issuer.requests[0].Description, "device-user-id") {
+		t.Fatalf("description should include device token user id, got %q", issuer.requests[0].Description)
+	}
+}
+
+func TestCreateTATDeviceBindRejectsExternalCallback(t *testing.T) {
+	t.Parallel()
+
+	router := newAuthTestRouterWithTATRegisterIssuer(&httpStubTATRegisterIssuer{})
+	signUp := performJSONRequest(t, router, http.MethodPost, "/auth/password/sign-up", map[string]any{
+		"name":       "Mac Operator",
+		"email":      "mac-callback@example.com",
+		"password":   "password123",
+		"inviteCode": "VALID2026",
+	})
+	sessionCookie := sessionCookieFromRecorder(t, signUp)
+
+	recorder := performJSONRequest(t, router, http.MethodPost, "/auth/tat/device-bind", map[string]any{
+		"callback_url": "https://evil.example.com/lightvela/callback",
+	}, sessionCookie)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", recorder.Code, recorder.Body.String())
 	}
 }
 
@@ -1120,6 +1269,27 @@ func newAuthTestRouterWithAvatarStore(avatarStore AvatarStore) *gin.Engine {
 	return newAuthTestRouterWithOptions(avatarStore, "")
 }
 
+func newAuthTestRouterWithTATRegisterIssuer(issuer tat.RegisterCodeIssuer) *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	store := service.NewMemoryStore(service.StoreOptions{
+		Now:                fixedHTTPTestNow,
+		SeedDefaultInvites: true,
+	})
+	svc := service.NewWithStore(store, service.Options{
+		Now:        fixedHTTPTestNow,
+		SessionTTL: 30 * 24 * time.Hour,
+	})
+	return NewRouter(svc, ServerConfig{
+		CookieSecure:          true,
+		CookieSameSite:        http.SameSiteNoneMode,
+		SessionTTL:            30 * 24 * time.Hour,
+		PublicBaseURL:         "https://lightclaw.tech",
+		AdminToken:            testAdminToken,
+		TATRegisterIssuer:     issuer,
+		DeviceBindTokenSecret: testDeviceBindSecret,
+	})
+}
+
 func newAuthTestRouterWithOptions(avatarStore AvatarStore, adminToken string) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	store := service.NewMemoryStore(service.StoreOptions{
@@ -1183,6 +1353,42 @@ func performJSONRequest(
 	req := httptest.NewRequest(method, path, bytes.NewReader(payload))
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
+	}
+	for _, cookie := range cookies {
+		req.AddCookie(cookie)
+	}
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, req)
+	return recorder
+}
+
+func performJSONRequestWithHeaders(
+	t *testing.T,
+	router http.Handler,
+	method string,
+	path string,
+	body map[string]any,
+	headers map[string]string,
+	cookies ...*http.Cookie,
+) *httptest.ResponseRecorder {
+	t.Helper()
+
+	var payload []byte
+	if body != nil {
+		var err error
+		payload, err = json.Marshal(body)
+		if err != nil {
+			t.Fatalf("marshal request body: %v", err)
+		}
+	}
+
+	req := httptest.NewRequest(method, path, bytes.NewReader(payload))
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	for key, value := range headers {
+		req.Header.Set(key, value)
 	}
 	for _, cookie := range cookies {
 		req.AddCookie(cookie)
@@ -1312,6 +1518,29 @@ type httpStubRealnameCipher struct{}
 
 func (httpStubRealnameCipher) Encrypt(plaintext string) (string, error) {
 	return "enc(" + plaintext + ")", nil
+}
+
+type httpStubTATRegisterIssuer struct {
+	requests []tat.CreateRegisterCodeInput
+	result   tat.RegisterCode
+	err      error
+}
+
+func (s *httpStubTATRegisterIssuer) CreateRegisterCode(_ context.Context, request tat.CreateRegisterCodeInput) (tat.RegisterCode, error) {
+	s.requests = append(s.requests, request)
+	if s.err != nil {
+		return tat.RegisterCode{}, s.err
+	}
+	if s.result.RegisterCodeID != "" {
+		return s.result, nil
+	}
+	return tat.RegisterCode{
+		Region:             "ap-guangzhou",
+		RegisterCodeID:     "stub-register-code-id",
+		RegisterCodeValue:  "stub-register-code-value",
+		RequestID:          "stub-request-id",
+		EffectiveTimeHours: 24,
+	}, nil
 }
 
 func (s *stubAvatarStore) StoreAvatar(_ context.Context, userID string, _ []byte) (string, error) {
