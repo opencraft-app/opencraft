@@ -47,3 +47,4 @@
 ## CI Trigger Notes
 
 - 2026-05-17T19:51:27Z: trigger ctl release pipeline after runtime DB secret plaintext fix.
+- 2026-05-30T03:36:00Z: trigger ctl release pipeline for reset-config backend rollout.

@@ -94,9 +94,37 @@ describe("TencentPtyClient", () => {
         Cols: 120,
         Rows: 40,
         MaxIdleTime: 3600,
+        Username: "agentuser",
+        WorkingDirectory: "/home/agentuser",
       },
     });
     expect(states).toEqual(["connecting", "authenticating", "starting"]);
+  });
+
+  it("allows the PTY start user, working directory, and timeout to be overridden by bootstrap data", () => {
+    const client = new TencentPtyClient(
+      {
+        ...bootstrap,
+        timeoutSeconds: 1800,
+        username: "deploy",
+        workingDirectory: "/srv/app",
+      },
+      { WebSocketImpl, startDelayMs: 0 },
+    );
+
+    client.connect();
+    const socket = FakeWebSocket.instances[0]!;
+    socket.open();
+    vi.advanceTimersByTime(0);
+
+    expect(parseSentFrame(socket, 1)).toMatchObject({
+      Type: "PtyStart",
+      Data: {
+        MaxIdleTime: 1800,
+        Username: "deploy",
+        WorkingDirectory: "/srv/app",
+      },
+    });
   });
 
   it("does not send input before PtyReady, then sends base64 input after ready", async () => {

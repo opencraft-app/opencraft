@@ -98,6 +98,7 @@ import {
   hermesModelName,
   hermesSwitchModelFullId,
   isExecCommandSucceeded,
+  isResetConfigRouteMissingError,
   truncateExecOutput,
   RESET_BLOCK_REASON,
 } from "@/pages/marketing/openclaw-reset-config";
@@ -2467,30 +2468,33 @@ export const _BotInfoCard = ({ bot, index, onDelete, onTerminal }: { bot: { id: 
           className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm"
           onClick={() => setShowDeleteConfirm(false)}
         >
-          <div className="mx-4 w-full max-w-sm rounded-2xl border bg-white p-6 shadow-2xl" style={{ borderColor: "rgba(238,238,238,0.4)" }} onClick={(e) => e.stopPropagation()}>
+          <div className="mx-4 w-full max-w-[26.4rem] rounded-2xl border bg-white p-6 shadow-2xl" style={{ borderColor: "rgba(238,238,238,0.4)" }} onClick={(e) => e.stopPropagation()}>
             {/* 头部 */}
             <div className="flex items-center gap-3" style={{ marginBottom: "20px" }}>
               <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "rgba(220,38,38,0.08)" }}>
                 <AlertTriangle className="h-5 w-5" style={{ color: "#DC2626" }} />
               </div>
-              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("确认删除")}</h3>
+              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("删除智能体")}</h3>
             </div>
             {/* 风险说明 */}
             <p style={{ color: "#666", fontSize: "14px", lineHeight: 1.6, marginBottom: "12px" }}>
-              {t("删除后会话将立即断开，数据将无法恢复。")}
+              {t("删除后会话将立即断开，数据将无法恢复。请谨慎操作！")}
             </p>
             {/* 操作引导 */}
             <p style={{ color: "var(--lw-fg)", fontSize: "14px", lineHeight: 1.6, marginBottom: "10px" }}>
-              {t("如确认删除，请输入名称 {{name}}：", { name: bot.name })}
+              {t("如确认删除，请输入名称")}{" "}
+              <span className="select-all rounded-md bg-red-50 px-1.5 py-0.5 font-semibold text-red-600">
+                {bot.name}
+              </span>
             </p>
             <input type="text" placeholder={t("请输入 {{name}}", { name: bot.name })} value={deleteInput} onChange={(e) => setDeleteInput(e.target.value)} className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition-all focus:border-[#DC2626]" style={{ borderColor: "var(--lw-border)", color: "var(--lw-fg)", marginBottom: "20px" }} />
             {deleteErr && <p className="text-xs" style={{ color: "#DC2626", marginBottom: "12px" }}>{deleteErr}</p>}
             {/* 按钮组：上下排列 */}
             <div className="flex flex-col gap-2">
-              <button onClick={async () => { setDeleting(true); setDeleteErr(null); try { await deleteBot(bot.id); setShowDeleteConfirm(false); } catch (e) { setDeleteErr(e instanceof Error ? e.message : t("删除失败")); } finally { setDeleting(false); } }} disabled={deleteInput !== bot.name || deleting} className="w-full rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-all" style={{ backgroundColor: deleteInput === bot.name && !deleting ? "#DC2626" : "#E5E7EB", cursor: deleteInput === bot.name && !deleting ? "pointer" : "not-allowed" }}>
+              <button onClick={async () => { setDeleting(true); setDeleteErr(null); try { await deleteBot(bot.id); setShowDeleteConfirm(false); } catch (e) { setDeleteErr(e instanceof Error ? e.message : t("删除失败")); } finally { setDeleting(false); } }} disabled={deleteInput !== bot.name || deleting} className="w-full rounded-xl px-4 py-2.5 text-[16px] font-semibold text-white transition-all" style={{ backgroundColor: deleteInput === bot.name && !deleting ? "#DC2626" : "#E5E7EB", cursor: deleteInput === bot.name && !deleting ? "pointer" : "not-allowed", fontSize: "16px" }}>
                 {deleting ? t("删除中...") : t("确认删除")}
               </button>
-              <button onClick={() => setShowDeleteConfirm(false)} className="py-2 text-sm transition-colors hover:opacity-70" style={{ color: "#999", background: "none", border: "none", cursor: "pointer" }}>
+              <button onClick={() => setShowDeleteConfirm(false)} className="py-2 text-[16px] transition-colors hover:opacity-70" style={{ color: "#999", background: "none", border: "none", cursor: "pointer", fontSize: "16px" }}>
                 {t("取消")}
               </button>
             </div>
@@ -2990,8 +2994,12 @@ export const OpenClawSettingsPage = () => {
       setShowResetConfirm(false);
       toast.success(t("重置成功"));
     } catch (err) {
-      setResetError(err instanceof Error ? err.message : t("重置失败，请重试"));
-      toast.error(t("重置失败，请重试"));
+      const fallbackMessage = t("重置失败，请重试");
+      const message = isResetConfigRouteMissingError(err)
+        ? t("当前后端服务暂不支持重置配置，请稍后再试。")
+        : err instanceof Error ? err.message : fallbackMessage;
+      setResetError(message);
+      toast.error(message);
     } finally {
       setResetting(false);
     }
@@ -3023,6 +3031,7 @@ export const OpenClawSettingsPage = () => {
 
   /* ── 重启 Gateway ── */
   // restartingBotIds: 正在重启的 bot ID 集合，支持多 bot 并行重启
+  const [showRestartConfirm, setShowRestartConfirm] = useState(false);
   const [restartingBotIds, setRestartingBotIds] = useState<Set<string>>(new Set());
   // 错误按 bot 维度存储，多 bot 并行失败时各自保留错误信息
   const [restartErrors, setRestartErrors] = useState<RestartErrors>(new Map());
@@ -3304,7 +3313,7 @@ export const OpenClawSettingsPage = () => {
           <motion.div
             initial={{ opacity: 0, y: 20, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            className="mx-4 w-full max-w-sm rounded-2xl border bg-white p-6 shadow-2xl"
+            className="mx-4 w-full max-w-[26.4rem] rounded-2xl border bg-white p-6 shadow-2xl"
             style={{ borderColor: "rgba(238,238,238,0.4)" }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -3312,13 +3321,16 @@ export const OpenClawSettingsPage = () => {
               <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "rgba(220,38,38,0.08)" }}>
                 <AlertTriangle className="h-5 w-5" style={{ color: "#DC2626" }} />
               </div>
-              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("确认删除")}</h3>
+              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("删除智能体")}</h3>
             </div>
             <p style={{ color: "#666", fontSize: "14px", lineHeight: 1.6, marginBottom: "12px" }}>
-              {t("删除后会话将立即断开，数据将无法恢复。")}
+              {t("删除后会话将立即断开，数据将无法恢复。请谨慎操作！")}
             </p>
             <p style={{ color: "var(--lw-fg)", fontSize: "14px", lineHeight: 1.6, marginBottom: "10px" }}>
-              {t("如确认删除，请输入名称 {{name}}：", { name: activeBot.name })}
+              {t("如确认删除，请输入名称")}{" "}
+              <span className="select-all rounded-md bg-red-50 px-1.5 py-0.5 font-semibold text-red-600">
+                {activeBot.name}
+              </span>
             </p>
             <input
               type="text"
@@ -3333,15 +3345,69 @@ export const OpenClawSettingsPage = () => {
               <button
                 onClick={() => void handleDelete()}
                 disabled={deleteInput !== activeBot.name}
-                className="w-full rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-all"
+                className="w-full rounded-xl px-4 py-2.5 text-[16px] font-semibold text-white transition-all"
                 style={{
                   backgroundColor: deleteInput === activeBot.name ? "#DC2626" : "#E5E7EB",
                   cursor: deleteInput === activeBot.name ? "pointer" : "not-allowed",
+                  fontSize: "16px",
                 }}
               >
                 {t("确认删除")}
               </button>
-              <button onClick={() => setShowDeleteConfirm(false)} className="py-2 text-sm transition-colors hover:opacity-70" style={{ color: "#999", background: "none", border: "none", cursor: "pointer" }}>
+              <button onClick={() => setShowDeleteConfirm(false)} className="py-2 text-[16px] transition-colors hover:opacity-70" style={{ color: "#999", background: "none", border: "none", cursor: "pointer", fontSize: "16px" }}>
+                {t("取消")}
+              </button>
+            </div>
+          </motion.div>
+        </div>,
+        document.body,
+      )}
+
+      {/* Restart Gateway Confirm Dialog */}
+      {showRestartConfirm && activeBot && createPortal(
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          onClick={() => { if (!isActiveBotRestarting) setShowRestartConfirm(false); }}
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            className="mx-4 w-full max-w-sm rounded-2xl border bg-white p-6 shadow-2xl"
+            style={{ borderColor: "var(--tea-color-border-default-alpha4, rgba(238,238,238,0.4))" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3" style={{ marginBottom: "20px" }}>
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "rgba(0,0,0,0.04)" }}>
+                <RefreshCw className="h-5 w-5" style={{ color: "rgba(0,0,0,0.62)" }} />
+              </div>
+              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("重启 Hermes Agent 网关")}</h3>
+            </div>
+            <p style={{ color: "var(--tea-color-text-secondary, #666)", fontSize: "14px", lineHeight: 1.6, marginBottom: "20px" }}>
+              {t("重启期间 Agent 可能会短暂不可用，对话会短暂断开，确认重启？")}
+            </p>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => {
+                  if (isActiveBotRestarting) return;
+                  setShowRestartConfirm(false);
+                  void handleRestartGateway();
+                }}
+                disabled={isActiveBotRestarting}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-black/90 px-4 py-2.5 text-[16px] font-semibold text-white transition-all hover:opacity-90"
+                style={{
+                  cursor: isActiveBotRestarting ? "not-allowed" : "pointer",
+                  fontSize: "16px",
+                }}
+              >
+                {isActiveBotRestarting && <Loader2 className="h-4 w-4 animate-spin" />}
+                {isActiveBotRestarting ? t("重启中...") : t("确认重启")}
+              </button>
+              <button
+                onClick={() => setShowRestartConfirm(false)}
+                disabled={isActiveBotRestarting}
+                className="py-2 text-[16px] transition-colors hover:opacity-70"
+                style={{ color: "var(--tea-color-text-secondary, #999)", background: "none", border: "none", cursor: isActiveBotRestarting ? "not-allowed" : "pointer", fontSize: "16px" }}
+              >
                 {t("取消")}
               </button>
             </div>
@@ -3367,7 +3433,7 @@ export const OpenClawSettingsPage = () => {
               <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "var(--tea-color-warning-default-alpha10, rgba(245,158,11,0.10))" }}>
                 <Wrench className="h-5 w-5" style={{ color: "var(--tea-color-warning-default, #F59E0B)" }} />
               </div>
-              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("恢复初始设置")}</h3>
+              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("重置 Hermes Agent 配置")}</h3>
             </div>
             <p style={{ color: "var(--tea-color-text-secondary, #666)", fontSize: "14px", lineHeight: 1.6, marginBottom: "20px" }}>
               {t("将保留当前工作空间、记忆和自动任务，并初始化配置文件，模型相关配置不会保留。")}
@@ -3393,20 +3459,21 @@ export const OpenClawSettingsPage = () => {
               <button
                 onClick={() => void handleResetConfig()}
                 disabled={resetting}
-                className="flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-all"
+                className="flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-[16px] font-semibold text-white transition-all"
                 style={{
                   backgroundColor: resetting ? "var(--tea-color-bg-disabled, #E5E7EB)" : "var(--tea-color-warning-default, #F59E0B)",
                   cursor: resetting ? "not-allowed" : "pointer",
+                  fontSize: "16px",
                 }}
               >
                 {resetting && <Loader2 className="h-4 w-4 animate-spin" />}
-                {resetting ? t("恢复中...") : t("确认恢复")}
+                {resetting ? t("恢复中...") : t("确认重置")}
               </button>
               <button
                 onClick={() => setShowResetConfirm(false)}
                 disabled={resetting}
-                className="py-2 text-sm transition-colors hover:opacity-70"
-                style={{ color: "var(--tea-color-text-secondary, #999)", background: "none", border: "none", cursor: resetting ? "not-allowed" : "pointer" }}
+                className="py-2 text-[16px] transition-colors hover:opacity-70"
+                style={{ color: "var(--tea-color-text-secondary, #999)", background: "none", border: "none", cursor: resetting ? "not-allowed" : "pointer", fontSize: "16px" }}
               >
                 {t("取消")}
               </button>
@@ -3561,9 +3628,6 @@ export const OpenClawSettingsPage = () => {
                 <div className="grid items-start gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
                   <aside className="lg:sticky lg:top-[84px]">
                     <div className="rounded-lg border border-black/[0.06] bg-white p-3 shadow-[0_8px_28px_rgba(15,23,42,0.04)]">
-                      <div className="px-1 pb-2 text-xs font-medium text-black/35">
-                        {t("选择 Agent")}
-                      </div>
                       <div
                         role={visibleBots.length > 1 ? "button" : undefined}
                         tabIndex={visibleBots.length > 1 ? 0 : undefined}
@@ -3600,59 +3664,85 @@ export const OpenClawSettingsPage = () => {
                               />
                             )}
                             {isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}
+                          </span>
+                        </span>
+                        <div className="-mr-1.5 ml-auto flex flex-shrink-0 items-center gap-0">
+                          <span className="group relative inline-flex">
                             <button
                               type="button"
                               onClick={(event) => {
                                 event.stopPropagation();
-                                if (!isRestartDisabled) void handleRestartGateway();
+                                if (!isRestartDisabled) setShowRestartConfirm(true);
                               }}
                               aria-disabled={isRestartDisabled}
                               aria-label={t("重启")}
                               className={cn(
-                                "ml-1 inline-flex h-5 items-center rounded px-1.5 text-xs font-medium transition-colors",
+                                "inline-flex h-8 w-6 flex-shrink-0 items-center justify-center rounded-md transition-colors",
                                 isRestartDisabled
-                                  ? "cursor-not-allowed text-black/25"
-                                  : "text-black/45 hover:bg-black/[0.06] hover:text-black/80",
+                                  ? "cursor-not-allowed text-black/20"
+                                  : "text-black/35 hover:bg-black/[0.06] hover:text-black/80",
                               )}
-                              title={isActiveBotRestarting ? t("正在重启中") : t("重启 Hermes Agent 网关")}
+                            >
+                              {isActiveBotRestarting ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                            </button>
+                            <span
+                              role="tooltip"
+                              className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-md bg-black/80 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-sm transition-opacity duration-75 group-focus-within:opacity-100 group-hover:opacity-100"
                             >
                               {t("重启")}
-                            </button>
+                              <span className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-x-[4px] border-t-[4px] border-x-transparent border-t-black/80" />
+                            </span>
                           </span>
-                        </span>
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            if (resetDisabled) return;
-                            setResetError(null);
-                            setShowResetConfirm(true);
-                          }}
-                          aria-disabled={resetDisabled}
-                          aria-label={resetTooltip}
-                          className={cn(
-                            "inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md transition-colors",
-                            resetDisabled
-                              ? "cursor-not-allowed text-black/20"
-                              : "text-black/35 hover:bg-amber-500/10 hover:text-amber-600",
-                          )}
-                          title={resetTooltip}
-                        >
-                          {resetting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wrench className="h-4 w-4" />}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setDeleteInput("");
-                            setShowDeleteConfirm(true);
-                          }}
-                          aria-label={t("删除")}
-                          className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md text-red-500 transition-colors hover:bg-red-500/10"
-                          title={t("删除此 Hermes")}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                          <span className="group relative inline-flex">
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                if (resetDisabled) return;
+                                setResetError(null);
+                                setShowResetConfirm(true);
+                              }}
+                              aria-disabled={resetDisabled}
+                              aria-label={resetTooltip}
+                              className={cn(
+                                "inline-flex h-8 w-6 flex-shrink-0 items-center justify-center rounded-md transition-colors",
+                                resetDisabled
+                                  ? "cursor-not-allowed text-black/20"
+                                  : "text-black/35 hover:bg-amber-500/10 hover:text-amber-600",
+                              )}
+                            >
+                              {resetting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wrench className="h-4 w-4" />}
+                            </button>
+                            <span
+                              role="tooltip"
+                              className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-md bg-black/80 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-sm transition-opacity duration-75 group-focus-within:opacity-100 group-hover:opacity-100"
+                            >
+                              {resetTooltip}
+                              <span className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-x-[4px] border-t-[4px] border-x-transparent border-t-black/80" />
+                            </span>
+                          </span>
+                          <span className="group relative inline-flex">
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setDeleteInput("");
+                                setShowDeleteConfirm(true);
+                              }}
+                              aria-label={t("删除")}
+                              className="inline-flex h-8 w-6 flex-shrink-0 items-center justify-center rounded-md text-black/35 transition-colors hover:bg-red-500/10 hover:text-red-500"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                            <span
+                              role="tooltip"
+                              className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-md bg-black/80 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-sm transition-opacity duration-75 group-focus-within:opacity-100 group-hover:opacity-100"
+                            >
+                              {t("删除")}
+                              <span className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-x-[4px] border-t-[4px] border-x-transparent border-t-black/80" />
+                            </span>
+                          </span>
+                        </div>
                         {visibleBots.length > 1 && (
                           <ChevronDown
                             className={cn("h-4 w-4 flex-shrink-0 text-black/35 transition-transform", isAgentMenuOpen && "rotate-180")}
@@ -3868,7 +3958,7 @@ export const OpenClawSettingsPage = () => {
         </section>
       </main>
 
-      <LegalFooter />
+      <LegalFooter icpPlacement="right" />
     </div>
   );
 };
