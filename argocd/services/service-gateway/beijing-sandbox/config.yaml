@@ -98,6 +98,8 @@ routes:
         path: /auth/invite/validate
       - method: POST
         path: /auth/invite/prepare
+      - method: POST
+        path: /auth/tat/device-bind
       - method: GET
         path: /auth/oauth/qq/start
       - method: GET
