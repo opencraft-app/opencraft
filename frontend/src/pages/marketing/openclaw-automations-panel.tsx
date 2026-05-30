@@ -181,22 +181,22 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
             {t("让你的智能体伙伴按计划自动执行任务")}
           </p>
         </div>
-        <div className="inline-flex items-center gap-2">
+        <div className="inline-flex items-center gap-2.5">
           <button
             type="button"
             onClick={() => requestCreate("template")}
-            className="inline-flex min-w-[84px] items-center justify-center gap-1.5 rounded-lg border border-black/10 bg-white px-3.5 py-1.5 text-black/75 transition hover:bg-black/[0.04]"
+            className="inline-flex min-w-[96px] items-center justify-center gap-2 rounded-lg border border-black/10 bg-white px-4 py-2 text-black/75 transition hover:bg-black/[0.04]"
           >
-            <LayoutTemplate className="h-4 w-4" />
-            <span className="text-sm font-semibold leading-none">{t("模板")}</span>
+            <LayoutTemplate className="h-5 w-5" />
+            <span className="text-base font-semibold leading-none">{t("模板")}</span>
           </button>
           <button
             type="button"
             onClick={() => requestCreate("blank")}
-            className="inline-flex min-w-[72px] items-center justify-center gap-1.5 rounded-lg bg-black px-3.5 py-1.5 text-white transition hover:bg-black/85"
+            className="inline-flex min-w-[88px] items-center justify-center gap-2 rounded-lg bg-black px-4 py-2 text-white transition hover:bg-black/85"
           >
-            <Plus className="h-4 w-4" />
-            <span className="text-sm font-semibold leading-none">{t("添加")}</span>
+            <Plus className="h-5 w-5" />
+            <span className="text-base font-semibold leading-none">{t("添加")}</span>
           </button>
         </div>
       </div>
@@ -223,7 +223,16 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
         ) : visibleJobs.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-10 text-sm text-black/50">
             <Clock className="mb-2 h-6 w-6 opacity-50" />
-            {t("还没有自动任务")}
+            <p>
+              {t("暂无自动任务，")}
+              <button
+                type="button"
+                onClick={() => requestCreate("template")}
+                className="font-medium text-black/80 underline decoration-black/30 underline-offset-4 transition hover:text-black"
+              >
+                {t("参考模板添加")}
+              </button>
+            </p>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -359,6 +368,7 @@ function CronJobCard({
   const paused = isCronJobPaused(job);
   const expired = isCronJobExpired(job);
   const fullName = job.name || t("未命名任务");
+  const scheduleLabel = formatScheduleFriendly(job, t);
   return (
     <div
       className="flex flex-col rounded-xl bg-white p-4 transition hover:shadow-md"
@@ -390,8 +400,8 @@ function CronJobCard({
       <p className="line-clamp-4 min-h-[6.5em] flex-1 text-xs leading-relaxed text-black/55">{job.prompt}</p>
 
       <div className="mt-3 flex items-center justify-between gap-2 border-t border-black/[0.04] pt-2.5">
-        <span className="line-clamp-1 text-xs text-black/55">
-          {formatScheduleFriendly(job, t)}
+        <span className="line-clamp-1 text-xs text-black/55" title={scheduleLabel} aria-label={scheduleLabel}>
+          {scheduleLabel}
         </span>
         <div className="flex shrink-0 items-center gap-1">
           <button
@@ -799,7 +809,8 @@ function ConfirmDeleteModal({
             type="button"
             onClick={onCancel}
             disabled={busy}
-            className="rounded-lg border border-black/10 px-4 py-1.5 text-sm font-medium text-black/70 transition hover:bg-black/[0.04] disabled:opacity-40"
+            className="rounded-lg border border-black/10 px-4 py-1.5 font-medium text-black/70 transition hover:bg-black/[0.04] disabled:opacity-40"
+            style={MODAL_CONTROL_TEXT_STYLE}
           >
             {t("取消")}
           </button>
@@ -807,7 +818,8 @@ function ConfirmDeleteModal({
             type="button"
             onClick={onConfirm}
             disabled={busy}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-[#B91C1C] px-4 py-1.5 text-sm font-medium text-white transition hover:bg-[#991B1B] disabled:opacity-40"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-[#B91C1C] px-4 py-1.5 font-medium text-white transition hover:bg-[#991B1B] disabled:opacity-40"
+            style={MODAL_CONTROL_TEXT_STYLE}
           >
             {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             {t("删除")}
