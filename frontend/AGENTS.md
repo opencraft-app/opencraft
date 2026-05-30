@@ -165,7 +165,7 @@ frontend/src/
 - **JSX**：`react-jsx`（无需 `import React`）；**ESM**：`"type": "module"` + `moduleResolution: Bundler`
 - **命名**：组件 `PascalCase.tsx`；Hook `use-*.ts`（kebab 文件名 + camelCase 导出）；常量 `SCREAMING_SNAKE_CASE`；工具/类型 `kebab-case.ts`
 - **样式**：Tailwind utility 优先，配合 `cn()` 与 CVA 多变体
-- **按钮文案字号**：LightVela 项目内按钮文案默认使用 `16px`；除非需求或设计明确要求，不要随意改成其他字号。
+- **按钮文案字号**：LightVela 项目内按钮文案默认使用 `16px`；可以根据具体设计需求自定义按钮字号，不作为强制限制，但不要无理由随意改动。
 
 > ⚠️ 修改 CSS 前先确认选择器优先级。`.landing-page span` 这类全局选择器会覆盖 Tailwind utility（如 `font-semibold`）。
 
