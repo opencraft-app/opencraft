@@ -546,17 +546,17 @@ export function BuddyPanel({
           />
           {t("为你的 Agent 解锁独特灵魂，让它从此与众不同")}
         </h2>
-        <a
-          href="https://skillhub.cn/hermes"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="lv-buddy-panel__source absolute right-6 inline-flex shrink-0 items-center gap-1.5 text-xs font-medium transition-colors hover:opacity-80"
-          style={{ color: "rgba(0,0,0,0.55)", top: "50%", transform: "translateY(calc(-50% + 6px))" }}
-        >
-          {t("灵感来自 SkillHub")}
-          <ExternalLink className="h-3 w-3" />
-        </a>
       </div>
+      <a
+        href="https://skillhub.cn/hermes"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="lv-buddy-panel__source inline-flex shrink-0 items-center gap-1.5 text-xs font-medium transition-colors hover:opacity-80"
+        style={{ color: "rgba(0,0,0,0.55)" }}
+      >
+        {t("灵感来自 SkillHub")}
+        <ExternalLink className="h-3 w-3" />
+      </a>
 
       {/* 内容区：6 格抽卡槽，下方接进度 chip 靠右展示，避免覆盖卡片本身 */}
       <div className="lv-buddy-panel__body px-6 pt-2 pb-2">

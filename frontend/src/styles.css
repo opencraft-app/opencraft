@@ -1253,13 +1253,20 @@ body.lw-has-announcement .lw-app-top-pad {
 
 .lv-buddy-panel__title {
   min-width: 0;
+  width: 100%;
   max-width: min(100%, 720px);
+  justify-content: center;
+  margin: 0 auto;
   text-align: center;
   font-size: 1.0625rem;
   line-height: 1.35;
 }
 
 .lv-buddy-panel__source {
+  position: absolute;
+  top: 1.75rem;
+  right: 2rem;
+  z-index: 2;
   white-space: nowrap;
 }
 
@@ -1292,9 +1299,8 @@ body.lw-has-announcement .lw-app-top-pad {
   }
 
   .lv-buddy-panel__source {
-    position: static;
-    transform: none !important;
-    margin-top: 0.375rem;
+    top: 1.5rem;
+    right: 1.5rem;
   }
 
   .lv-buddy-panel__grid {
@@ -1313,6 +1319,15 @@ body.lw-has-announcement .lw-app-top-pad {
   }
 }
 
+@container (max-width: 820px) {
+  .lv-buddy-panel__source {
+    position: static;
+    display: flex;
+    width: max-content;
+    margin: 0.25rem 1.5rem 0 auto;
+  }
+}
+
 @container (max-width: 560px) {
   .lv-buddy-panel__header,
   .lv-buddy-panel__body,
@@ -1327,7 +1342,7 @@ body.lw-has-announcement .lw-app-top-pad {
   }
 
   .lv-buddy-panel__source {
-    margin-top: 0;
+    margin-right: 1rem;
   }
 
   .lv-buddy-panel__grid {
