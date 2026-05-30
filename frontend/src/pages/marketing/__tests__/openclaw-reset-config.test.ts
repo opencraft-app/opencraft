@@ -5,6 +5,7 @@ import {
   hermesModelName,
   hermesSwitchModelFullId,
   isExecCommandSucceeded,
+  isResetConfigRouteMissingError,
   truncateExecOutput,
   type ResettableBot,
 } from "../openclaw-reset-config";
@@ -166,5 +167,34 @@ describe("truncateExecOutput", () => {
   it("preserves multi-line output verbatim (caller renders with whitespace-pre-wrap)", () => {
     const multiline = "error: top\n  at frame1\n  at frame2";
     expect(truncateExecOutput(multiline, "FAILED")).toBe(multiline);
+  });
+});
+
+describe("isResetConfigRouteMissingError", () => {
+  it("detects old CTL route-missing NOT_FOUND errors", () => {
+    const err = Object.assign(
+      new Error("resource not found（NOT_FOUND, request_id=abc）"),
+      { status: 404, code: "NOT_FOUND" },
+    );
+
+    expect(isResetConfigRouteMissingError(err)).toBe(true);
+  });
+
+  it("does not treat other 404 errors as old CTL route misses", () => {
+    const err = Object.assign(
+      new Error("instance not found（NOT_FOUND, request_id=abc）"),
+      { status: 404, code: "NOT_FOUND" },
+    );
+
+    expect(isResetConfigRouteMissingError(err)).toBe(false);
+  });
+
+  it("requires the NOT_FOUND code", () => {
+    const err = Object.assign(
+      new Error("resource not found"),
+      { status: 404, code: "SOME_OTHER_CODE" },
+    );
+
+    expect(isResetConfigRouteMissingError(err)).toBe(false);
   });
 });

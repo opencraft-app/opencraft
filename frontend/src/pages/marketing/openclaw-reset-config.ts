@@ -112,3 +112,16 @@ export function truncateExecOutput(
   if (trimmed.length <= maxBytes) return trimmed;
   return "…" + trimmed.slice(-maxBytes);
 }
+
+/**
+ * 现网 CTL 版本落后于前端时，service-gateway 会把新 reset 路由返回成
+ * `resource not found (NOT_FOUND)`。这和实例不存在不同，后者通常不会用
+ * 这个固定英文文案；因此只把这一类错误翻译成可执行的后端发布提示。
+ */
+export function isResetConfigRouteMissingError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const status = (error as { status?: unknown }).status;
+  const code = String((error as { code?: unknown }).code || "").trim().toUpperCase();
+  const message = error.message.trim().toLowerCase();
+  return status === 404 && code === "NOT_FOUND" && message.includes("resource not found");
+}
