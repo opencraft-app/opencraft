@@ -132,13 +132,28 @@ func TestAppendSessionTokenToReturnTo(t *testing.T) {
 func TestOAuthSuccessRedirectForDeviceBindUsesShortToken(t *testing.T) {
 	t.Parallel()
 
+	for _, returnTo := range []string{
+		"http://127.0.0.1:17631/lightvela/callback?device_nonce=nonce-123",
+		"http://127.0.0.1:17631/lightvela/auth-callback?device_nonce=nonce-123",
+	} {
+		returnTo := returnTo
+		t.Run(returnTo, func(t *testing.T) {
+			t.Parallel()
+
+			assertOAuthDeviceBindRedirectUsesShortToken(t, returnTo)
+		})
+	}
+}
+
+func assertOAuthDeviceBindRedirectUsesShortToken(t *testing.T, returnTo string) {
+	t.Helper()
+
 	codec := newDeviceBindTokenCodec("device-bind-secret", 10*time.Minute)
 	codec.now = func() time.Time { return time.Unix(1000, 0).UTC() }
 	handler := &Handler{
 		returnToAllow:    buildOAuthReturnToAllowlist([]string{"127.0.0.1"}),
 		deviceBindTokens: codec,
 	}
-	returnTo := "http://127.0.0.1:17631/lightvela/auth-callback?device_nonce=nonce-123"
 
 	redirectURL := handler.oauthSuccessRedirectURL(nil, returnTo, "https://lightclaw.pages.dev/#session_token=session-123", &service.AuthSession{
 		Token: "session-123",

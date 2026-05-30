@@ -142,7 +142,7 @@ func isDeviceBindReturnTo(returnTo string) bool {
 	}
 	return strings.EqualFold(parsed.Scheme, "http") &&
 		isLoopbackHost(parsed.Hostname()) &&
-		parsed.Path == "/lightvela/auth-callback"
+		(parsed.Path == "/lightvela/callback" || parsed.Path == "/lightvela/auth-callback")
 }
 
 func appendDeviceBindTokenToReturnTo(rawURL string, token string, expiresAt time.Time) string {
