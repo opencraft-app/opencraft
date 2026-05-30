@@ -1299,8 +1299,10 @@ body.lw-has-announcement .lw-app-top-pad {
   }
 
   .lv-buddy-panel__source {
-    top: 1.5rem;
-    right: 1.5rem;
+    position: static;
+    display: flex;
+    width: max-content;
+    margin: 0.25rem 1.5rem 0 auto;
   }
 
   .lv-buddy-panel__grid {
@@ -1333,8 +1335,7 @@ body.lw-has-announcement .lw-app-top-pad {
   }
 
   .lv-buddy-panel__source {
-    top: 1rem;
-    right: 1rem;
+    margin-right: 1rem;
   }
 
   .lv-buddy-panel__grid {

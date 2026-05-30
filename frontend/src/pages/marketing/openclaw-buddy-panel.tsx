@@ -526,16 +526,6 @@ export function BuddyPanel({
   return (
     <div className="lv-buddy-panel relative overflow-hidden rounded-2xl" style={PANEL_CARD_STYLE}>
       <InjectToast state={toast} onClose={() => setToast({ kind: "idle" })} t={t} />
-      <a
-        href="https://skillhub.cn/hermes"
-        target="_blank"
-        rel="noopener noreferrer"
-        className="lv-buddy-panel__source inline-flex shrink-0 items-center gap-1.5 text-xs font-medium transition-colors hover:opacity-80"
-        style={{ color: "rgba(0,0,0,0.55)" }}
-      >
-        {t("灵感来自 SkillHub")}
-        <ExternalLink className="h-3 w-3" />
-      </a>
       {/* 顶部标题 slogan + 右上角 SkillHub 入口 */}
       <div className="lv-buddy-panel__header relative flex items-center justify-center px-6 pt-5 pb-3">
         <h2
@@ -557,6 +547,16 @@ export function BuddyPanel({
           {t("为你的 Agent 解锁独特灵魂，让它从此与众不同")}
         </h2>
       </div>
+      <a
+        href="https://skillhub.cn/hermes"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="lv-buddy-panel__source inline-flex shrink-0 items-center gap-1.5 text-xs font-medium transition-colors hover:opacity-80"
+        style={{ color: "rgba(0,0,0,0.55)" }}
+      >
+        {t("灵感来自 SkillHub")}
+        <ExternalLink className="h-3 w-3" />
+      </a>
 
       {/* 内容区：6 格抽卡槽，下方接进度 chip 靠右展示，避免覆盖卡片本身 */}
       <div className="lv-buddy-panel__body px-6 pt-2 pb-2">
