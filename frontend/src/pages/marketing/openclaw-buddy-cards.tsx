@@ -159,19 +159,21 @@ export function SoulFaceCard({
           </div>
         )}
         {isLarge && onInterpret && (
-          <button
-            type="button"
-            onClick={onInterpret}
-            className="mt-1 inline-flex items-center gap-1 self-end font-medium underline underline-offset-4 transition-opacity hover:opacity-70"
-            style={{
-              color: "rgba(0,0,0,0.72)",
-              fontSize: 12,
-              lineHeight: "18px",
-            }}
-          >
-            <Eye className="h-3 w-3" />
-            {t("人设解读")}
-          </button>
+          <div className="mt-2 flex justify-end">
+            <button
+              type="button"
+              onClick={onInterpret}
+              className="inline-flex items-center gap-1 font-medium underline underline-offset-4 transition-opacity hover:opacity-70"
+              style={{
+                color: "rgba(0,0,0,0.72)",
+                fontSize: 12,
+                lineHeight: "18px",
+              }}
+            >
+              <Eye className="h-3 w-3" />
+              {t("人设解读")}
+            </button>
+          </div>
         )}
       </div>
     </div>
