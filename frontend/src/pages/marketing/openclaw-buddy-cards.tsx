@@ -111,7 +111,7 @@ export function SoulFaceCard({
       }}
     >
       {/* 底部信息浮层 */}
-      <div className="absolute inset-x-3 bottom-3 flex flex-col gap-0.5">
+      <div className={`absolute inset-x-3 bottom-3 flex flex-col ${isLarge ? "gap-1" : "gap-0.5"}`}>
         <div
           className={`text-center font-normal text-black ${
             isLarge ? "leading-[1.4em]" : "leading-[1.25em]"
@@ -159,19 +159,21 @@ export function SoulFaceCard({
           </div>
         )}
         {isLarge && onInterpret && (
-          <button
-            type="button"
-            onClick={onInterpret}
-            className="ml-auto mt-1 inline-flex items-center gap-1 font-medium underline underline-offset-4 transition-opacity hover:opacity-70"
-            style={{
-              color: "rgba(0,0,0,0.72)",
-              fontSize: 12,
-              lineHeight: "18px",
-            }}
-          >
-            <Eye className="h-3 w-3" />
-            {t("人设解读")}
-          </button>
+          <div className="mt-2 flex justify-end">
+            <button
+              type="button"
+              onClick={onInterpret}
+              className="inline-flex items-center gap-1 font-medium underline underline-offset-4 transition-opacity hover:opacity-70"
+              style={{
+                color: "rgba(0,0,0,0.72)",
+                fontSize: 12,
+                lineHeight: "18px",
+              }}
+            >
+              <Eye className="h-3 w-3" />
+              {t("人设解读")}
+            </button>
+          </div>
         )}
       </div>
     </div>

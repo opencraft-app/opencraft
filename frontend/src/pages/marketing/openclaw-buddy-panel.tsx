@@ -48,8 +48,8 @@ const PANEL_CARD_STYLE: React.CSSProperties = {
   boxShadow: "0 4px 24px rgba(0,0,0,0.03), 0 1px 2px rgba(0,0,0,0.02)",
 };
 
-/** 抽卡槽位数上限（6 列 × 1 行 = 6 张，单行展示） */
-const MAX_DRAWS = 6;
+/** 抽卡槽位数上限（4 列 × 2 行 = 8 张） */
+const MAX_DRAWS = 8;
 
 export function BuddyPanel({
   botId,
@@ -608,97 +608,99 @@ export function BuddyPanel({
       </div>
 
       {/* 卡片下方：抽取人设 + Soul 测试 + 应用到 Agent；小屏时进度操作自然换行 */}
-      <div className="lv-buddy-panel__actions relative flex flex-wrap items-center justify-center gap-3 px-6 py-5">
-        <button
-          type="button"
-          onClick={handleOpenDraw}
-          disabled={souls.length === 0 || isAtMax || loadStatus !== "loaded"}
-          className="inline-flex items-center gap-2 rounded-full px-5 py-2 text-sm font-medium transition-all hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none"
-          style={{
-            background: "rgba(0,0,0,0.04)",
-            color: "rgba(0,0,0,0.85)",
-            border: "1px solid rgba(0,0,0,0.06)",
-          }}
-        >
-          <Dice5 className="h-4 w-4" />
-          {isAtMax ? t("已抽满 6 张") : t("随机抽取人设")}
-        </button>
-        <button
-          type="button"
-          onClick={() => setSoulTestOpen(true)}
-          disabled={!canOpenSoulTest}
-          className="inline-flex items-center gap-2 rounded-full px-5 py-2 text-sm font-medium transition-all hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none"
-          style={{
-            background: "linear-gradient(95deg, rgba(255,166,0,0.16) 0%, rgba(107,79,224,0.14) 100%)",
-            color: "rgba(0,0,0,0.85)",
-            border: "1px solid rgba(0,0,0,0.06)",
-          }}
-        >
-          <ClipboardCheck className="h-4 w-4" />
-          {t("答题测试人设")}
-        </button>
-        <div className="group relative">
+      <div className="lv-buddy-panel__actions relative mx-auto flex max-w-[816px] items-center justify-center gap-3 px-0 py-5">
+        <div className="lv-buddy-panel__action-buttons flex flex-wrap items-center justify-center gap-3">
           <button
             type="button"
-            onClick={handleApply}
-            disabled={isApplyDisabled}
-            className="inline-flex cursor-pointer items-center gap-2 rounded-full px-5 py-2 text-sm font-medium transition-all hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none"
-            style={
-              isApplyDisabled
-                ? {
-                    background: "rgba(0,0,0,0.04)",
-                    color: "rgba(0,0,0,0.85)",
-                    border: "1px solid rgba(0,0,0,0.06)",
-                  }
-                : {
-                    background: "rgba(0,0,0,0.90)",
-                    color: "#ffffff",
-                    boxShadow: "0 4px 12px rgba(0,0,0,0.10)",
-                  }
-            }
+            onClick={handleOpenDraw}
+            disabled={souls.length === 0 || isAtMax || loadStatus !== "loaded"}
+            className="inline-flex items-center gap-2 rounded-full px-5 py-2 text-sm font-medium transition-all hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none"
+            style={{
+              background: "rgba(0,0,0,0.04)",
+              color: "rgba(0,0,0,0.85)",
+              border: "1px solid rgba(0,0,0,0.06)",
+            }}
           >
-            {toast.kind === "applying" ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : isApplied ? (
-              <RotateCcw className="h-4 w-4" />
-            ) : (
-              <Zap className="h-4 w-4" />
-            )}
-            {toast.kind === "applying"
-              ? t("注入中…")
-              : isApplied
-                ? t("再次注入")
-                : t("注入人设")}
+            <Dice5 className="h-4 w-4" />
+            {isAtMax ? t("已抽满 8 张") : t("随机抽取人设")}
           </button>
-          {/* 自定义浮卡：仅 disabled 因「未选中」时立即浮出，避开原生 title 延迟 */}
-          {!selectedSlug && (
-            <div
-              className="pointer-events-none absolute bottom-full left-1/2 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md px-3 py-1.5 text-[11px] font-medium opacity-0 transition-opacity duration-150 group-hover:opacity-100"
-              style={{
-                background: "rgba(0,0,0,0.85)",
-                color: "#ffffff",
-                boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
-              }}
-              role="tooltip"
+          <button
+            type="button"
+            onClick={() => setSoulTestOpen(true)}
+            disabled={!canOpenSoulTest}
+            className="inline-flex items-center gap-2 rounded-full px-5 py-2 text-sm font-medium transition-all hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none"
+            style={{
+              background: "linear-gradient(95deg, rgba(255,166,0,0.16) 0%, rgba(107,79,224,0.14) 100%)",
+              color: "rgba(0,0,0,0.85)",
+              border: "1px solid rgba(0,0,0,0.06)",
+            }}
+          >
+            <ClipboardCheck className="h-4 w-4" />
+            {t("答题测试人设")}
+          </button>
+          <div className="group relative">
+            <button
+              type="button"
+              onClick={handleApply}
+              disabled={isApplyDisabled}
+              className="inline-flex cursor-pointer items-center gap-2 rounded-full px-5 py-2 text-sm font-medium transition-all hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none"
+              style={
+                isApplyDisabled
+                  ? {
+                      background: "rgba(0,0,0,0.04)",
+                      color: "rgba(0,0,0,0.85)",
+                      border: "1px solid rgba(0,0,0,0.06)",
+                    }
+                  : {
+                      background: "rgba(0,0,0,0.90)",
+                      color: "#ffffff",
+                      boxShadow: "0 4px 12px rgba(0,0,0,0.10)",
+                    }
+              }
             >
-              {t("请先选择人设，再注入")}
-              <span
-                className="absolute left-1/2 -translate-x-1/2"
+              {toast.kind === "applying" ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : isApplied ? (
+                <RotateCcw className="h-4 w-4" />
+              ) : (
+                <Zap className="h-4 w-4" />
+              )}
+              {toast.kind === "applying"
+                ? t("注入中…")
+                : isApplied
+                  ? t("再次注入")
+                  : t("注入人设")}
+            </button>
+            {/* 自定义浮卡：仅 disabled 因「未选中」时立即浮出，避开原生 title 延迟 */}
+            {!selectedSlug && (
+              <div
+                className="pointer-events-none absolute bottom-full left-1/2 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md px-3 py-1.5 text-[11px] font-medium opacity-0 transition-opacity duration-150 group-hover:opacity-100"
                 style={{
-                  top: "100%",
-                  width: 0,
-                  height: 0,
-                  borderLeft: "5px solid transparent",
-                  borderRight: "5px solid transparent",
-                  borderTop: "5px solid rgba(0,0,0,0.85)",
+                  background: "rgba(0,0,0,0.85)",
+                  color: "#ffffff",
+                  boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
                 }}
-                aria-hidden
-              />
-            </div>
-          )}
+                role="tooltip"
+              >
+                {t("请先选择人设，再注入")}
+                <span
+                  className="absolute left-1/2 -translate-x-1/2"
+                  style={{
+                    top: "100%",
+                    width: 0,
+                    height: 0,
+                    borderLeft: "5px solid transparent",
+                    borderRight: "5px solid transparent",
+                    borderTop: "5px solid rgba(0,0,0,0.85)",
+                  }}
+                  aria-hidden
+                />
+              </div>
+            )}
+          </div>
         </div>
         {drawnSouls.length > 0 && (
-          <div className="lv-buddy-panel__progress flex items-center gap-2 md:absolute md:right-6 md:top-1/2 md:-translate-y-1/2">
+          <div className="lv-buddy-panel__progress absolute right-0 top-1/2 flex -translate-y-1/2 items-center">
             <ProgressChip drawn={drawnSouls.length} max={MAX_DRAWS} />
           </div>
         )}
@@ -881,9 +883,9 @@ function SoulSlotGrid({
   if (loading) return <CenterLoader />;
   if (error) return <ErrorState message={error} onRetry={onReload} />;
   return (
-    // 网格 max-w 锁在 1120px 居中，6 列下单卡 ≈ 175×245，单行展示 6 张抽卡槽。
+    // 网格 max-w 锁在 816px 居中，4 列下单卡 ≈ 192×269，最多展示 8 张抽卡槽。
     // 容器在更窄视口里会自然缩小，cell 跟着变小。
-    <div className="lv-buddy-panel__grid mx-auto grid max-w-[1120px] grid-cols-6 gap-4">
+    <div className="lv-buddy-panel__grid mx-auto grid max-w-[816px] grid-cols-4 gap-4">
       {Array.from({ length: MAX_DRAWS }).map((_, i) => {
         const soul = drawnSouls[i];
         if (soul) {
@@ -984,25 +986,6 @@ function FilledSlot({
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              onDelete();
-            }}
-            aria-label={t("删除这张人设")}
-            title={t("删除")}
-            className="inline-flex h-6 w-6 items-center justify-center rounded-full"
-            style={{
-              background: "rgba(255,255,255,0.92)",
-              color: "rgba(220,38,38,0.88)",
-              border: "1px solid rgba(220,38,38,0.18)",
-              boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
-              backdropFilter: "blur(4px)",
-            }}
-          >
-            <Trash2 className="h-3 w-3" />
-          </button>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
               if (canReroll) onReroll();
             }}
             disabled={!canReroll}
@@ -1018,6 +1001,25 @@ function FilledSlot({
             }}
           >
             <RotateCcw className="h-3 w-3" />
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+            aria-label={t("删除这张人设")}
+            title={t("删除")}
+            className="inline-flex h-6 w-6 items-center justify-center rounded-full"
+            style={{
+              background: "rgba(255,255,255,0.92)",
+              color: "rgba(220,38,38,0.88)",
+              border: "1px solid rgba(220,38,38,0.18)",
+              boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
+              backdropFilter: "blur(4px)",
+            }}
+          >
+            <Trash2 className="h-3 w-3" />
           </button>
         </div>
       )}
