@@ -150,3 +150,52 @@ func TestRejectsNonUTF8KeyAndValue(t *testing.T) {
 		t.Fatalf("expected bad request for non-UTF-8 value, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestLimitsBuddyDrawnSouls(t *testing.T) {
+	handler := New(Options{Store: &fakeStore{}, InternalServiceToken: "secret", MaxNameBytes: 5000, MaxValueBytes: 5000})
+
+	validPayload := map[string]any{
+		"version":     1,
+		"drawnSouls":  make([]map[string]string, 8),
+		"appliedSlug": nil,
+		"updatedAt":   1,
+	}
+	body, err := json.Marshal(validPayload)
+	if err != nil {
+		t.Fatalf("marshal valid payload: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPut, "/v1/namespaces/agent-state/kv/buddy.ins-1", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer secret")
+	req.Header.Set(identityUserHeader, "user-a")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected created for 8 souls, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	tooManyPayload := map[string]any{
+		"version":     1,
+		"drawnSouls":  make([]map[string]string, 9),
+		"appliedSlug": nil,
+		"updatedAt":   1,
+	}
+	body, err = json.Marshal(tooManyPayload)
+	if err != nil {
+		t.Fatalf("marshal oversized payload: %v", err)
+	}
+	req = httptest.NewRequest(http.MethodPut, "/v1/namespaces/agent-state/kv/buddy.ins-1", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer secret")
+	req.Header.Set(identityUserHeader, "user-a")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected bad request for 9 souls, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if got["error"] != "buddy_drawn_souls_too_many" {
+		t.Fatalf("unexpected error code %q", got["error"])
+	}
+}

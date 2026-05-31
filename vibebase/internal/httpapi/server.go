@@ -20,6 +20,9 @@ import (
 const (
 	identityUserHeader = "X-Lightclaw-User-ID"
 	maxListLimit       = 100
+	buddyNamespace     = "agent-state"
+	buddyKeyPrefix     = "buddy."
+	maxBuddySouls      = 8
 )
 
 type Server struct {
@@ -144,6 +147,10 @@ func (s *Server) put(w http.ResponseWriter, r *http.Request, ownerID string, nam
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if err := validateBuddyStateValue(namespace, key, body); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	entry, created, err := s.store.Put(r.Context(), ownerID, namespace, key, body)
 	if errors.Is(err, store.ErrQuotaExceeded) {
 		writeError(w, http.StatusConflict, "quota_exceeded")
@@ -262,6 +269,22 @@ func validateName(kind string, value string, maxBytes int) error {
 func validateValue(value []byte) error {
 	if !utf8.Valid(value) {
 		return fmt.Errorf("value_invalid_utf8")
+	}
+	return nil
+}
+
+func validateBuddyStateValue(namespace string, key string, value []byte) error {
+	if namespace != buddyNamespace || !strings.HasPrefix(key, buddyKeyPrefix) {
+		return nil
+	}
+	var payload struct {
+		DrawnSouls []json.RawMessage `json:"drawnSouls"`
+	}
+	if err := json.Unmarshal(value, &payload); err != nil {
+		return fmt.Errorf("buddy_state_invalid_json")
+	}
+	if len(payload.DrawnSouls) > maxBuddySouls {
+		return fmt.Errorf("buddy_drawn_souls_too_many")
 	}
 	return nil
 }
