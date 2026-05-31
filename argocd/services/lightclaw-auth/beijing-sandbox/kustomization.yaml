@@ -6,6 +6,7 @@ components:
 - ../profiles/sandbox
 generators:
 - ksops-secret-generator.yaml
+- ksops-content-audit-secret-generator.yaml
 configMapGenerator:
 - name: auth-platform-values
   envs:

@@ -42,6 +42,7 @@ bundles:
       - argocd/apps/beijing-sandbox/sandbox-family-appset.yaml
       - argocd/catalogs/sandbox/beijing-sandbox/lightclaw-auth.yaml
       - argocd/secrets/beijing-sandbox/lightclaw-auth-secrets.sops.yaml
+      - argocd/secrets/beijing-sandbox/lightclaw-auth-content-audit-secrets.sops.yaml
       - user/auth/k8s/base/**
       - user/auth/k8s/overlays/beijing-sandbox/**
       beijing-sandbox-2:
