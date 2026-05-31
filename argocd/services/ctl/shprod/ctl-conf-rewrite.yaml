@@ -18,8 +18,8 @@ data:
     enable_inner_sign = false
 
     [api.instance]
-    default_template_id = "pool-c3"
-    candidate_template_ids = ["pool-c0", "pool-c1", "pool-c2", "pool-c3", "pool-c4", "pool-c5"]
+    default_template_class_id = "hermes"
+    default_sku_id = "sku-hermes-2c4g"
 
     [db]
     host = "10.15.192.13"
