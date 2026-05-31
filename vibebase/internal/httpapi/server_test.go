@@ -199,3 +199,43 @@ func TestLimitsBuddyDrawnSouls(t *testing.T) {
 		t.Fatalf("unexpected error code %q", got["error"])
 	}
 }
+
+// TestBuddySoulCapIgnoresOtherKeys 守门反向用例：
+// 校验仅作用于 namespace=agent-state + key 以 "buddy." 开头的写入；
+// 其他 namespace、或同 namespace 但 key 前缀不同的写入应当完全不被该校验影响。
+// 用大数组 (drawnSouls=100) 故意触发上限，期望仍然 201 通过。
+// 这条测试用来锁住 validateBuddyStateValue 的早返回行为，防止后续重构误伤。
+func TestBuddySoulCapIgnoresOtherKeys(t *testing.T) {
+	handler := New(Options{Store: &fakeStore{}, InternalServiceToken: "secret", MaxNameBytes: 5000, MaxValueBytes: 5000})
+
+	oversizedPayload := map[string]any{
+		"version":    1,
+		"drawnSouls": make([]map[string]string, 100),
+	}
+	body, err := json.Marshal(oversizedPayload)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+
+	cases := []struct {
+		name string
+		path string
+	}{
+		// 不同 namespace：上限不应触发
+		{name: "other_namespace", path: "/v1/namespaces/prefs/kv/buddy.ins-1"},
+		// 同 namespace 但 key 前缀不匹配：上限不应触发
+		{name: "agent_state_non_buddy_key", path: "/v1/namespaces/agent-state/kv/other.ins-1"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPut, tc.path, bytes.NewReader(body))
+			req.Header.Set("Authorization", "Bearer secret")
+			req.Header.Set(identityUserHeader, "user-a")
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if rec.Code != http.StatusCreated {
+				t.Fatalf("expected created (cap should not apply), got %d body=%s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
