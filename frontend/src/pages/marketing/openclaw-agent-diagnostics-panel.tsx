@@ -1,0 +1,371 @@
+import { AlertTriangle, CheckCircle2, ClipboardList, Download, FileText, Loader2, RefreshCw, Stethoscope } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+
+import { useT } from "@/i18n/t";
+import { cn } from "@/lib/utils";
+
+type DiagnosticCommandId = "doctor" | "logs";
+type DiagnosticRunStatus = "idle" | "loading" | "success" | "error";
+
+export interface DebugCommandResult {
+  status: string;
+  exitCode: number;
+  output: string;
+}
+
+export type ExecDebugCommand = (botId: string, command: string) => Promise<DebugCommandResult>;
+
+export interface AgentDiagnosticCommand {
+  id: DiagnosticCommandId;
+  command: string;
+}
+
+export type LogsSinceOption = "1h" | "3h" | "6h" | "12h" | "24h";
+
+export const LOGS_SINCE_OPTIONS: Array<{ value: LogsSinceOption; label: string }> = [
+  { value: "1h", label: "1 小时" },
+  { value: "3h", label: "3 小时" },
+  { value: "6h", label: "6 小时" },
+  { value: "12h", label: "12 小时" },
+  { value: "24h", label: "24 小时" },
+];
+
+const DEFAULT_LOGS_SINCE: LogsSinceOption = "1h";
+const DOCTOR_COMMAND = "hermes doctor --fix";
+
+export function buildLogsCommand(since: LogsSinceOption): string {
+  return `hermes logs --since ${since}`;
+}
+
+export function getAgentDiagnosticCommands(logsSince: LogsSinceOption): AgentDiagnosticCommand[] {
+  return [
+    {
+      id: "doctor",
+      command: DOCTOR_COMMAND,
+    },
+    {
+      id: "logs",
+      command: buildLogsCommand(logsSince),
+    },
+  ];
+}
+
+export const AGENT_DIAGNOSTIC_COMMANDS: AgentDiagnosticCommand[] = getAgentDiagnosticCommands(DEFAULT_LOGS_SINCE);
+
+export function buildDiagnosticLogsFileName(since: LogsSinceOption, date = new Date()): string {
+  const pad = (value: number) => value.toString().padStart(2, "0");
+  const stamp = [
+    date.getFullYear(),
+    pad(date.getMonth() + 1),
+    pad(date.getDate()),
+    "-",
+    pad(date.getHours()),
+    pad(date.getMinutes()),
+    pad(date.getSeconds()),
+  ].join("");
+  return `hermes-logs-${since}-${stamp}.log`;
+}
+
+function downloadDiagnosticLogs(output: string, since: LogsSinceOption) {
+  const blob = new Blob([output], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = buildDiagnosticLogsFileName(since);
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+export function normalizeDiagnosticOutput(output: string | undefined, status: string): string {
+  const trimmed = (output || "").trim();
+  return trimmed || status || "暂无输出";
+}
+
+export function getDiagnosticRunStatus(result: { status: string; exitCode: number }): Exclude<DiagnosticRunStatus, "idle" | "loading"> {
+  return isDiagnosticCommandSucceeded(result) ? "success" : "error";
+}
+
+function isDiagnosticCommandSucceeded(result: { status: string; exitCode: number }): boolean {
+  const status = result.status.toLowerCase();
+  return result.exitCode === 0 && status !== "failed" && status !== "error";
+}
+
+function truncateDiagnosticOutput(output: string, maxLength: number): string {
+  if (output.length <= maxLength) return output;
+  return `${output.slice(0, maxLength)}\n...`;
+}
+
+interface DiagnosticCardState {
+  status: DiagnosticRunStatus;
+  output: string;
+  rawOutput: string;
+}
+
+const DEFAULT_CARD_STATE: DiagnosticCardState = {
+  status: "idle",
+  output: "",
+  rawOutput: "",
+};
+
+export function AgentDiagnosticsPanel({
+  botId,
+  execDebugCommand,
+}: {
+  botId: string;
+  execDebugCommand: ExecDebugCommand;
+}) {
+  const t = useT();
+  const [logsSince, setLogsSince] = useState<LogsSinceOption>(DEFAULT_LOGS_SINCE);
+  const commands = useMemo(() => getAgentDiagnosticCommands(logsSince), [logsSince]);
+  const [states, setStates] = useState<Record<DiagnosticCommandId, DiagnosticCardState>>({
+    doctor: DEFAULT_CARD_STATE,
+    logs: DEFAULT_CARD_STATE,
+  });
+
+  const isRefreshingAll = useMemo(
+    () => commands.some((item) => states[item.id].status === "loading"),
+    [commands, states],
+  );
+
+  const runCommand = useCallback(
+    async (item: AgentDiagnosticCommand) => {
+      setStates((current) => ({
+        ...current,
+        [item.id]: {
+          ...current[item.id],
+          status: "loading",
+        },
+      }));
+
+      try {
+        const result = await execDebugCommand(botId, item.command);
+        const nextStatus = getDiagnosticRunStatus(result);
+        const output = normalizeDiagnosticOutput(result.output, result.status);
+        setStates((current) => ({
+          ...current,
+          [item.id]: {
+            status: nextStatus,
+            output: truncateDiagnosticOutput(output, 8000),
+            rawOutput: output,
+          },
+        }));
+      } catch (error) {
+        const output = error instanceof Error ? error.message : t("命令执行失败");
+        setStates((current) => ({
+          ...current,
+          [item.id]: {
+            status: "error",
+            output,
+            rawOutput: output,
+          },
+        }));
+      }
+    },
+    [botId, execDebugCommand, t],
+  );
+
+  const refreshAll = useCallback(async () => {
+    for (const item of commands) {
+      await runCommand(item);
+    }
+  }, [commands, runCommand]);
+
+  const handleLogsSinceChange = useCallback(
+    (next: LogsSinceOption) => {
+      setLogsSince(next);
+      void runCommand({ id: "logs", command: buildLogsCommand(next) });
+    },
+    [runCommand],
+  );
+
+  useEffect(() => {
+    void refreshAll();
+  }, []);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="text-xl font-semibold text-black/90">{t("诊断中心")}</h2>
+          <p className="mt-1 text-sm leading-6 text-black/50">{t("通过 Hermes doctor 和 logs 快速检查智能体运行状态")}</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => void refreshAll()}
+          disabled={isRefreshingAll}
+          className={cn(
+            "inline-flex items-center justify-center gap-2 rounded-full border border-black/[0.08] bg-white px-4 py-2 text-base font-semibold text-black/80 shadow-sm transition-colors",
+            isRefreshingAll ? "cursor-wait opacity-60" : "hover:bg-black/[0.04] hover:text-black/95",
+          )}
+        >
+          {isRefreshingAll ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+          {t("刷新诊断")}
+        </button>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        {commands.map((item) => (
+          <DiagnosticCard
+            key={item.id}
+            item={item}
+            state={states[item.id]}
+            onRefresh={() => void runCommand(item)}
+            logsSince={item.id === "logs" ? logsSince : undefined}
+            onLogsSinceChange={item.id === "logs" ? handleLogsSinceChange : undefined}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DiagnosticCard({
+  item,
+  state,
+  onRefresh,
+  logsSince,
+  onLogsSinceChange,
+}: {
+  item: AgentDiagnosticCommand;
+  state: DiagnosticCardState;
+  onRefresh: () => void;
+  logsSince?: LogsSinceOption;
+  onLogsSinceChange?: (value: LogsSinceOption) => void;
+}) {
+  const t = useT();
+  const Icon = item.id === "doctor" ? Stethoscope : FileText;
+  const isLoading = state.status === "loading";
+  const title = getCommandTitle(item.id, t);
+  const description = getCommandDescription(item.id, t);
+
+  return (
+    <article className="flex min-h-[360px] flex-col rounded-lg border border-black/[0.08] bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-black/[0.04] text-black/65">
+              <Icon className="h-4 w-4" />
+            </span>
+            <h3 className="truncate text-base font-semibold text-black/90">{title}</h3>
+          </div>
+          <p className="mt-2 text-sm leading-6 text-black/50">{description}</p>
+        </div>
+        <StatusBadge status={state.status} />
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md bg-black/[0.035] px-3 py-2">
+        <code className="truncate font-mono text-xs text-black/55">{item.command}</code>
+        <div className="flex flex-shrink-0 items-center gap-2">
+          {item.id === "logs" && logsSince && onLogsSinceChange && (
+            <>
+              <select
+                value={logsSince}
+                disabled={isLoading}
+                onChange={(event) => onLogsSinceChange(event.target.value as LogsSinceOption)}
+                className={cn(
+                  "h-7 rounded-full border border-black/[0.08] bg-white px-2 text-xs font-medium text-black/60 outline-none transition-colors",
+                  isLoading ? "cursor-wait opacity-60" : "hover:border-black/15 hover:text-black/80",
+                )}
+                aria-label={t("选择日志时间段")}
+              >
+                {LOGS_SINCE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => downloadDiagnosticLogs(state.rawOutput || state.output, logsSince)}
+                disabled={isLoading || !(state.rawOutput || state.output)}
+                className={cn(
+                  "inline-flex h-7 items-center justify-center gap-1 rounded-full px-2 text-xs font-medium text-black/50 transition-colors",
+                  isLoading || !(state.rawOutput || state.output)
+                    ? "cursor-not-allowed opacity-45"
+                    : "hover:bg-white hover:text-black/80",
+                )}
+              >
+                <Download className="h-3.5 w-3.5" />
+                {t("导出")}
+              </button>
+            </>
+          )}
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={isLoading}
+            className={cn(
+              "inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-black/45 transition-colors",
+              isLoading ? "cursor-wait" : "hover:bg-white hover:text-black/80",
+            )}
+            aria-label={t("刷新")}
+          >
+            {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-4 min-h-0 flex-1 rounded-md border border-black/[0.06] bg-black/[0.025]">
+        {state.status === "idle" ? (
+          <div className="flex h-full min-h-[190px] items-center justify-center p-5 text-center text-sm text-black/40">
+            <ClipboardList className="mr-2 h-4 w-4" />
+            {t("点击刷新获取诊断结果")}
+          </div>
+        ) : (
+          <pre className="max-h-[230px] overflow-auto whitespace-pre-wrap break-words p-4 font-mono text-xs leading-5 text-black/70">
+            {state.output}
+          </pre>
+        )}
+      </div>
+
+    </article>
+  );
+}
+
+function StatusBadge({ status }: { status: DiagnosticRunStatus }) {
+  const t = useT();
+  const icon =
+    status === "loading" ? (
+      <Loader2 className="h-3 w-3 animate-spin" />
+    ) : status === "success" ? (
+      <CheckCircle2 className="h-3 w-3" />
+    ) : status === "error" ? (
+      <AlertTriangle className="h-3 w-3" />
+    ) : (
+      <ClipboardList className="h-3 w-3" />
+    );
+
+  return (
+    <span
+      className={cn(
+        "inline-flex flex-shrink-0 items-center gap-1 rounded-full px-2 py-1 text-xs font-medium",
+        status === "success" && "bg-emerald-50 text-emerald-700",
+        status === "error" && "bg-red-50 text-red-600",
+        status === "loading" && "bg-blue-50 text-blue-600",
+        status === "idle" && "bg-black/[0.04] text-black/45",
+      )}
+    >
+      {icon}
+      {getStatusText(status, t)}
+    </span>
+  );
+}
+
+function getCommandTitle(id: DiagnosticCommandId, t: ReturnType<typeof useT>): string {
+  if (id === "doctor") return t("Doctor 自动修复");
+  return t("最近日志");
+}
+
+function getCommandDescription(id: DiagnosticCommandId, t: ReturnType<typeof useT>): string {
+  if (id === "doctor") return t("检查依赖、配置和运行环境是否正常");
+  return t("查看最近 1 小时日志，辅助定位异常");
+}
+
+function getStatusText(status: DiagnosticRunStatus, t: ReturnType<typeof useT>): string {
+  if (status === "loading") return t("执行中");
+  if (status === "success") return t("正常");
+  if (status === "error") return t("异常");
+  return t("待刷新");
+}

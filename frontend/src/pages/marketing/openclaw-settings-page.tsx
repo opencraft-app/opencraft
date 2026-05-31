@@ -34,6 +34,7 @@ import {
   Plus,
   RefreshCw,
   RotateCw,
+  Stethoscope,
   Trash2,
   Trophy,
   UserRound,
@@ -100,6 +101,7 @@ import { AchievementsPanel } from "@/pages/marketing/openclaw-achievements-panel
 import { AutomationsPanel } from "@/pages/marketing/openclaw-automations-panel";
 import { TatFileManagerPanel } from "@/components/domain/tat-file-manager-panel";
 import { TatHermesWebPanel } from "@/components/domain/tat-hermes-web-panel";
+import { AgentDiagnosticsPanel } from "@/pages/marketing/openclaw-agent-diagnostics-panel";
 import { findCompletedCreatingBot, getOpenClawCreateLimitMessage } from "@/pages/marketing/openclaw-create-availability";
 import {
   getRestartBlockReason,
@@ -4275,6 +4277,7 @@ export const OpenClawSettingsPage = () => {
                   ? [{ id: "buddy" as const, label: t("人设"), icon: <UserRound className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.buddy }]
                   : []),
                 { id: "automations", label: t("自动任务"), icon: <CalendarClock className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.automations },
+                { id: "diagnostics", label: t("诊断中心"), icon: <Stethoscope className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.diagnostics, badge: "NEW" },
                 { id: "memory", label: t("记忆"), icon: <Database className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.memory },
                 { id: "achievement", label: t("成就"), icon: <Trophy className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.achievement, badge: "NEW" },
                 { id: "files", label: t("云存储"), icon: <Files className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.files, badge: "NEW" },
@@ -4610,6 +4613,9 @@ export const OpenClawSettingsPage = () => {
                           )}
                           {activeSection === "automations" && (
                             <AutomationsPanel botId={activeBot.id} />
+                          )}
+                          {activeSection === "diagnostics" && (
+                            <AgentDiagnosticsPanel botId={activeBot.id} execDebugCommand={repositories.bots.execDebugCommand} />
                           )}
                           {activeSection === "chat" && (
                             <div className="h-[clamp(516px,calc(100vh-220px),960px)] overflow-hidden rounded-lg border border-black/[0.08] bg-white [&>*]:h-full">

@@ -969,6 +969,31 @@ describe("http repositories auth token bootstrap", () => {
     );
   });
 
+  it("uses the same-origin auth proxy on localhost even without an explicit env var", () => {
+    vi.stubEnv("VITE_AUTH_API_BASE_URL", "");
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: {
+        ...window.location,
+        hostname: "127.0.0.1",
+        host: "127.0.0.1:5173",
+        origin: "http://127.0.0.1:5173",
+        protocol: "http:",
+        pathname: "/auth/sign-in",
+        search: "",
+        hash: "",
+      },
+    });
+
+    const repositories = createRepositories();
+
+    expectOAuthStartURL(
+      repositories.auth.getOAuthStartUrl("qq"),
+      "http://127.0.0.1:5173/auth/oauth/qq/start",
+      "http://127.0.0.1:5173/auth/sign-in",
+    );
+  });
+
   it("adds relay params without changing the target auth backend when relay issuer is configured", () => {
     vi.stubEnv("VITE_OAUTH_RELAY_ISSUER_BASE_URL", "https://lightclaw.tech/");
     stubHostname("intl-sandbox-bj-7.preview.lightclaw.tech");
