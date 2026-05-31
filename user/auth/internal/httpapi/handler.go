@@ -299,6 +299,19 @@ func (h *Handler) UpdateProfile(ctx context.Context, request api.UpdateProfileRe
 	return api.UpdateProfile200JSONResponse(profileResponse{User: h.toAPIUser(ctx, user)}), nil
 }
 
+func (h *Handler) ContentAuditCallback(ctx *gin.Context) {
+	body, err := io.ReadAll(io.LimitReader(ctx.Request.Body, 1<<20))
+	if err != nil {
+		requestLogger(ctx, nil).Warn("content audit callback read failed", "err", err)
+		ctx.JSON(http.StatusOK, gin.H{"iRetCode": 0, "strRetMsg": "success"})
+		return
+	}
+	if err := h.service.HandleContentAuditCallback(ctx.Request.Context(), body); err != nil {
+		requestLogger(ctx, nil).Warn("content audit callback handling failed", "err", err)
+	}
+	ctx.JSON(http.StatusOK, gin.H{"iRetCode": 0, "strRetMsg": "success"})
+}
+
 func (h *Handler) DeleteProfile(ctx *gin.Context) {
 	user, err := h.service.CurrentProfile(ctx, tokenFromContext(ctx))
 	if err != nil {
@@ -606,6 +619,13 @@ func (h *Handler) toAPIUser(ctx context.Context, user service.User) api.User {
 	}
 	if user.Email != "" {
 		response.Email = &user.Email
+	}
+	if strings.TrimSpace(user.PendingName) != "" {
+		response.PendingName = &user.PendingName
+	}
+	if strings.TrimSpace(user.NameAuditStatus) != "" {
+		status := api.UserNameAuditStatus(user.NameAuditStatus)
+		response.NameAuditStatus = &status
 	}
 	if user.Phone != "" {
 		response.Phone = &user.Phone

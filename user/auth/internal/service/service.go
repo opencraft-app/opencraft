@@ -28,6 +28,7 @@ type Options struct {
 	SeedDemoUser     bool
 	RealnameVerifier RealnameVerifier
 	RealnameCipher   RealnameCipher
+	ContentAudit     ContentAuditConfig
 }
 
 type Error struct {
@@ -44,6 +45,8 @@ func (e *Error) Error() string {
 type User struct {
 	ID               string
 	Name             string
+	PendingName      string
+	NameAuditStatus  string
 	Email            string
 	Phone            string
 	AvatarObjectKey  string
@@ -78,6 +81,19 @@ type RealnameVerifier interface {
 
 type RealnameCipher interface {
 	Encrypt(plaintext string) (string, error)
+}
+
+type ContentAuditConfig struct {
+	Enabled   bool
+	ProductID string
+	UserSID   string
+}
+
+func (c ContentAuditConfig) ready() bool {
+	if !c.Enabled {
+		return false
+	}
+	return strings.TrimSpace(c.ProductID) != "" && strings.TrimSpace(c.UserSID) != ""
 }
 
 type UpdateRealnameInput struct {
@@ -181,6 +197,7 @@ type Service struct {
 	store            Store
 	realnameVerifier RealnameVerifier
 	realnameCipher   RealnameCipher
+	contentAudit     ContentAuditConfig
 }
 
 type smsChallenge struct {
@@ -229,6 +246,7 @@ func NewWithStore(store Store, opts Options) *Service {
 		store:            store,
 		realnameVerifier: opts.RealnameVerifier,
 		realnameCipher:   opts.RealnameCipher,
+		contentAudit:     opts.ContentAudit,
 	}
 }
 
@@ -446,6 +464,16 @@ func (s *Service) UpdateProfile(ctx context.Context, token string, name string) 
 	if len([]rune(trimmed)) > 40 {
 		return User{}, newError("invalid_name", "昵称不能超过 40 个字符。", 400)
 	}
+	if s.contentAudit.Enabled {
+		if !s.contentAudit.ready() {
+			return User{}, newError("content_audit_unavailable", "昵称审核服务暂不可用。", http.StatusServiceUnavailable)
+		}
+		return s.store.QueueNameAudit(ctx, token, CreateNameAuditInput{
+			Name:      trimmed,
+			ProductID: strings.TrimSpace(s.contentAudit.ProductID),
+			SID:       strings.TrimSpace(s.contentAudit.UserSID),
+		}, s.now())
+	}
 	return s.store.UpdateProfile(ctx, token, trimmed, s.now())
 }
 
@@ -567,6 +595,44 @@ func defaultDuration(value time.Duration, fallback time.Duration) time.Duration 
 		return value
 	}
 	return fallback
+}
+
+func isActiveAuditStatus(status string) bool {
+	switch strings.TrimSpace(status) {
+	case "pending", "submitted", "error":
+		return true
+	default:
+		return false
+	}
+}
+
+func isTerminalAuditStatus(status string) bool {
+	switch strings.TrimSpace(status) {
+	case "cancelled", "passed", "failed":
+		return true
+	default:
+		return false
+	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func truncateString(value string, maxRunes int) string {
+	if maxRunes <= 0 {
+		return ""
+	}
+	runes := []rune(value)
+	if len(runes) <= maxRunes {
+		return value
+	}
+	return string(runes[:maxRunes])
 }
 
 func newOpaqueToken() (string, error) {

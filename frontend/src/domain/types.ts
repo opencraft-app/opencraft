@@ -23,6 +23,8 @@ export type WorkspaceMessageRole = "user" | "assistant" | "system";
 export interface User {
   id: string;
   name: string;
+  pendingName?: string;
+  nameAuditStatus?: "pending" | "passed" | "failed";
   email?: string;
   phone?: string;
   avatarUrl?: string;

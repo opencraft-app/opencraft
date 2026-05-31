@@ -26,6 +26,8 @@ type MemoryStore struct {
 	invites         map[string]memoryInviteRecord
 	realnames       map[string]UpdateRealnameInput
 	realnameHistory map[string][]UpdateRealnameInput
+	nextAuditTaskID int64
+	auditTasks      map[int64]*ContentAuditTask
 }
 
 type memoryInviteRecord struct {
@@ -58,6 +60,7 @@ func NewMemoryStore(opts StoreOptions) *MemoryStore {
 		invites:         make(map[string]memoryInviteRecord),
 		realnames:       make(map[string]UpdateRealnameInput),
 		realnameHistory: make(map[string][]UpdateRealnameInput),
+		auditTasks:      make(map[int64]*ContentAuditTask),
 	}
 	if opts.SeedDefaultInvites {
 		store.seedDefaultInvites()
@@ -286,6 +289,166 @@ func (s *MemoryStore) UpdateProfile(_ context.Context, token string, name string
 	user.Name = strings.TrimSpace(name)
 	s.usersByID[user.ID] = user
 	return user, nil
+}
+
+func (s *MemoryStore) QueueNameAudit(_ context.Context, token string, input CreateNameAuditInput, now time.Time) (User, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	record, err := s.getSessionRecordLocked(token, now)
+	if err != nil {
+		return User{}, err
+	}
+	user, exists := s.usersByID[record.UserID]
+	if !exists {
+		return User{}, newError("unauthorized", "未登录或登录已失效。", 401)
+	}
+	for _, task := range s.auditTasks {
+		if task.BizType == "user_name" && task.BizID == user.ID && isActiveAuditStatus(task.Status) {
+			task.Status = "cancelled"
+			task.UpdatedAt = now
+		}
+	}
+	user.PendingName = strings.TrimSpace(input.Name)
+	user.NameAuditStatus = "pending"
+	s.usersByID[user.ID] = user
+
+	s.nextAuditTaskID++
+	task := &ContentAuditTask{
+		ID:          s.nextAuditTaskID,
+		BizType:     "user_name",
+		BizID:       user.ID,
+		BizDetail:   "name",
+		ProductID:   strings.TrimSpace(input.ProductID),
+		SID:         strings.TrimSpace(input.SID),
+		ContentText: user.PendingName,
+		Status:      "pending",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	s.auditTasks[task.ID] = task
+	return user, nil
+}
+
+func (s *MemoryStore) ListPendingContentAuditTasks(_ context.Context, limit int) ([]ContentAuditTask, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if limit <= 0 {
+		limit = 20
+	}
+	var tasks []ContentAuditTask
+	for _, task := range s.auditTasks {
+		if (task.Status == "pending" || task.Status == "error") && task.Attempts < 3 {
+			tasks = append(tasks, *task)
+		}
+	}
+	sort.Slice(tasks, func(i, j int) bool { return tasks[i].CreatedAt.Before(tasks[j].CreatedAt) })
+	if len(tasks) > limit {
+		tasks = tasks[:limit]
+	}
+	return tasks, nil
+}
+
+func (s *MemoryStore) ListTimeoutContentAuditTasks(_ context.Context, cutoff time.Time, limit int) ([]ContentAuditTask, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if limit <= 0 {
+		limit = 100
+	}
+	var tasks []ContentAuditTask
+	for _, task := range s.auditTasks {
+		if task.Status == "submitted" && task.SubmittedAt != nil && task.SubmittedAt.Before(cutoff) {
+			tasks = append(tasks, *task)
+		}
+	}
+	sort.Slice(tasks, func(i, j int) bool { return tasks[i].SubmittedAt.Before(*tasks[j].SubmittedAt) })
+	if len(tasks) > limit {
+		tasks = tasks[:limit]
+	}
+	return tasks, nil
+}
+
+func (s *MemoryStore) FindContentAuditTaskByRequestID(_ context.Context, requestID string) (*ContentAuditTask, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, task := range s.auditTasks {
+		if task.RequestID == strings.TrimSpace(requestID) {
+			copy := *task
+			return &copy, nil
+		}
+	}
+	return nil, nil
+}
+
+func (s *MemoryStore) MarkContentAuditTaskSubmitted(_ context.Context, taskID int64, requestID string, now time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	task, ok := s.auditTasks[taskID]
+	if !ok {
+		return nil
+	}
+	task.Status = "submitted"
+	task.RequestID = strings.TrimSpace(requestID)
+	task.Attempts++
+	task.LastError = ""
+	task.SubmittedAt = &now
+	task.UpdatedAt = now
+	return nil
+}
+
+func (s *MemoryStore) MarkContentAuditTaskPassed(_ context.Context, taskID int64, requestID string, passSource string, now time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	task, ok := s.auditTasks[taskID]
+	if !ok || isTerminalAuditStatus(task.Status) {
+		return nil
+	}
+	task.Status = "passed"
+	task.RequestID = firstNonEmpty(strings.TrimSpace(requestID), task.RequestID)
+	task.PassSource = strings.TrimSpace(passSource)
+	task.UpdatedAt = now
+	if user, exists := s.usersByID[task.BizID]; exists && user.PendingName == task.ContentText {
+		user.Name = task.ContentText
+		user.PendingName = ""
+		user.NameAuditStatus = "passed"
+		s.usersByID[user.ID] = user
+	}
+	return nil
+}
+
+func (s *MemoryStore) MarkContentAuditTaskFailed(_ context.Context, taskID int64, requestID string, resultCode int, resultType int, resultDetail string, now time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	task, ok := s.auditTasks[taskID]
+	if !ok || isTerminalAuditStatus(task.Status) {
+		return nil
+	}
+	task.Status = "failed"
+	task.RequestID = firstNonEmpty(strings.TrimSpace(requestID), task.RequestID)
+	task.ResultCode = resultCode
+	task.ResultType = resultType
+	task.ResultDetail = resultDetail
+	task.UpdatedAt = now
+	if user, exists := s.usersByID[task.BizID]; exists && user.PendingName == task.ContentText {
+		user.PendingName = ""
+		user.NameAuditStatus = "failed"
+		s.usersByID[user.ID] = user
+	}
+	return nil
+}
+
+func (s *MemoryStore) MarkContentAuditTaskError(_ context.Context, taskID int64, errMsg string, now time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	task, ok := s.auditTasks[taskID]
+	if !ok {
+		return nil
+	}
+	task.Status = "error"
+	task.Attempts++
+	task.LastError = truncateString(errMsg, 512)
+	task.UpdatedAt = now
+	return nil
 }
 
 func (s *MemoryStore) SetUserAvatar(_ context.Context, userID string, objectKey string, source string, _ time.Time) (User, error) {

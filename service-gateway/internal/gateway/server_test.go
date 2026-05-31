@@ -93,6 +93,58 @@ func TestPublicAllowBypassesAuth(t *testing.T) {
 	}
 }
 
+func TestContentAuditCallbackRouteBypassesAuth(t *testing.T) {
+	upstreamCalls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		if r.URL.Path != "/contentaudit/callback" {
+			t.Fatalf("upstream path = %q", r.URL.Path)
+		}
+		if got := r.Header.Get("X-Lightclaw-User-ID"); got != "" {
+			t.Fatalf("expected no identity header on content audit callback, got %q", got)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+
+	authCalls := 0
+	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authCalls++
+		http.Error(w, "should not be called", http.StatusTeapot)
+	}))
+	defer auth.Close()
+
+	handler, err := NewHandler(Config{
+		AuthServiceURL: auth.URL,
+		Routes: []Route{
+			{
+				Name:     "content-audit-callback",
+				Prefix:   "/contentaudit/callback",
+				Methods:  []string{http.MethodPost, http.MethodOptions},
+				Upstream: upstream.URL,
+				Access:   AccessPublic,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/contentaudit/callback", strings.NewReader("{}"))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if upstreamCalls != 1 {
+		t.Fatalf("expected upstream to be called once, got %d", upstreamCalls)
+	}
+	if authCalls != 0 {
+		t.Fatalf("expected auth introspection to be skipped, got %d calls", authCalls)
+	}
+}
+
 func TestAgentChatIntrospectPublicRouteBypassesAuth(t *testing.T) {
 	upstreamCalls := 0
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

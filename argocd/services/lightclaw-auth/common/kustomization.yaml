@@ -104,6 +104,11 @@ replacements:
       name: lightclaw-auth
     fieldPaths:
     - spec.template.spec.nodeSelector.pool
+  - select:
+      kind: Deployment
+      name: lightclaw-auth-content-audit-worker
+    fieldPaths:
+    - spec.template.spec.nodeSelector.pool
 - source:
     kind: ConfigMap
     name: auth-platform-values
@@ -112,6 +117,11 @@ replacements:
   - select:
       kind: Deployment
       name: lightclaw-auth
+    fieldPaths:
+    - spec.template.spec.containers.0.image
+  - select:
+      kind: Deployment
+      name: lightclaw-auth-content-audit-worker
     fieldPaths:
     - spec.template.spec.containers.0.image
 - source:
@@ -124,6 +134,31 @@ replacements:
       name: lightclaw-auth
     fieldPaths:
     - spec.template.metadata.annotations.[lightclaw-auth.clawhub.dev/redeploy-at]
+  - select:
+      kind: Deployment
+      name: lightclaw-auth-content-audit-worker
+    fieldPaths:
+    - spec.template.metadata.annotations.[lightclaw-auth.clawhub.dev/redeploy-at]
+- source:
+    kind: ConfigMap
+    name: auth-platform-values
+    fieldPath: data.AUTH_CONTENT_AUDIT_WORKER_REPLICAS
+  targets:
+  - select:
+      kind: Deployment
+      name: lightclaw-auth-content-audit-worker
+    fieldPaths:
+    - spec.replicas
+- source:
+    kind: ConfigMap
+    name: auth-platform-values
+    fieldPath: data.AUTH_CONTENT_AUDIT_ENABLED
+  targets:
+  - select:
+      kind: ConfigMap
+      name: lightclaw-auth-config
+    fieldPaths:
+    - data.CONTENT_AUDIT_ENABLED
 - source:
     kind: ConfigMap
     name: auth-platform-values

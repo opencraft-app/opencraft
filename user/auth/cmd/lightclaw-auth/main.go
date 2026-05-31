@@ -24,12 +24,14 @@ func main() {
 	slog.SetDefault(logger)
 
 	sessionTTL := 30 * 24 * time.Hour
-	authStore := newStore()
+	contentAuditConfig := buildContentAuditConfig(logger)
+	authStore := newStore(contentAuditConfig.Enabled)
 	authService := service.NewWithStore(authStore, service.Options{
 		SessionTTL:       sessionTTL,
 		DefaultSMSCode:   envOrDefault("LIGHTCLAW_DEV_SMS_CODE", ""),
 		RealnameVerifier: buildRealnameVerifier(logger),
 		RealnameCipher:   buildRealnameCipher(logger),
+		ContentAudit:     contentAuditConfig,
 	})
 	avatarStore := buildAvatarStore(logger)
 
@@ -78,7 +80,26 @@ func envInt64OrDefault(key string, fallback int64) int64 {
 	return value
 }
 
-func newStore() service.Store {
+func buildContentAuditConfig(logger *slog.Logger) service.ContentAuditConfig {
+	enabled := envOrDefault("CONTENT_AUDIT_ENABLED", "false") == "true"
+	cfg := service.ContentAuditConfig{
+		Enabled:   enabled,
+		ProductID: strings.TrimSpace(os.Getenv("CONTENT_AUDIT_PRODUCT_ID")),
+		UserSID:   strings.TrimSpace(os.Getenv("CONTENT_AUDIT_USER_SID")),
+	}
+	if !enabled {
+		logger.Info("content audit disabled")
+		return cfg
+	}
+	if cfg.ProductID == "" || cfg.UserSID == "" {
+		logger.Warn("content audit enabled but config is incomplete")
+		return cfg
+	}
+	logger.Info("content audit enabled")
+	return cfg
+}
+
+func newStore(contentAuditEnabled bool) service.Store {
 	dsn := strings.TrimSpace(os.Getenv("LIGHTCLAW_MYSQL_DSN"))
 	if dsn == "" {
 		dsn = strings.TrimSpace(os.Getenv("MYSQL_DSN"))
@@ -86,14 +107,16 @@ func newStore() service.Store {
 	if dsn == "" {
 		slog.Info("lightclaw auth using in-memory store")
 		return service.NewMemoryStore(service.StoreOptions{
-			SeedDefaultInvites: true,
-			SeedDemoUser:       envOrDefault("LIGHTCLAW_SEED_DEMO_USER", "false") == "true",
+			SeedDefaultInvites:  true,
+			SeedDemoUser:        envOrDefault("LIGHTCLAW_SEED_DEMO_USER", "false") == "true",
+			ContentAuditEnabled: contentAuditEnabled,
 		})
 	}
 
 	store, err := service.NewMySQLStore(dsn, service.StoreOptions{
-		SeedDefaultInvites: false,
-		SeedDemoUser:       false,
+		SeedDefaultInvites:  false,
+		SeedDemoUser:        false,
+		ContentAuditEnabled: contentAuditEnabled,
 	})
 	if err != nil {
 		slog.Error("init mysql store failed", "err", err)

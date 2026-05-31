@@ -319,6 +319,16 @@ components:
           type: string
         name:
           type: string
+        pendingName:
+          type: string
+          description: Pending nickname waiting for content safety approval.
+        nameAuditStatus:
+          type: string
+          description: Nickname content safety status.
+          enum:
+            - pending
+            - passed
+            - failed
         email:
           type: string
         phone:

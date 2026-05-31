@@ -1191,9 +1191,11 @@ type sessionResponseBody struct {
 
 type profileResponseBody struct {
 	User *struct {
-		Name           string `json:"name"`
-		AvatarURL      string `json:"avatarUrl"`
-		InviteRequired bool   `json:"inviteRequired"`
+		Name            string `json:"name"`
+		PendingName     string `json:"pendingName"`
+		NameAuditStatus string `json:"nameAuditStatus"`
+		AvatarURL       string `json:"avatarUrl"`
+		InviteRequired  bool   `json:"inviteRequired"`
 	} `json:"user"`
 }
 

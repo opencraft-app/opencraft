@@ -13,7 +13,8 @@ import (
 )
 
 type MySQLStore struct {
-	db *sql.DB
+	db                  *sql.DB
+	contentAuditEnabled bool
 }
 
 func NewMySQLStore(dsn string, opts StoreOptions) (*MySQLStore, error) {
@@ -30,7 +31,7 @@ func NewMySQLStore(dsn string, opts StoreOptions) (*MySQLStore, error) {
 		return nil, fmt.Errorf("ping mysql: %w", err)
 	}
 
-	store := &MySQLStore{db: db}
+	store := &MySQLStore{db: db, contentAuditEnabled: opts.ContentAuditEnabled}
 	if opts.SeedDefaultInvites {
 		if err := store.seedDefaultInvites(opts.Now); err != nil {
 			_ = db.Close()
@@ -44,6 +45,82 @@ func NewMySQLStore(dsn string, opts StoreOptions) (*MySQLStore, error) {
 		}
 	}
 	return store, nil
+}
+
+type sqlScanner interface {
+	Scan(dest ...any) error
+}
+
+func mysqlUserSelectColumns(prefix string, includeAudit bool) string {
+	columns := []string{
+		prefix + "id",
+		prefix + "name",
+	}
+	if includeAudit {
+		columns = append(columns, prefix+"pending_name", prefix+"name_audit_status")
+	}
+	columns = append(columns,
+		prefix+"email",
+		prefix+"phone",
+		prefix+"avatar_object_key",
+		prefix+"avatar_source",
+		prefix+"invite_required",
+		prefix+"realname_verified_at",
+		prefix+"created_at",
+	)
+	return strings.Join(columns, ",\n\t\t\t")
+}
+
+func mysqlUserScanDest(user *User, includeAudit bool, pendingName *sql.NullString, nameAuditStatus *sql.NullString, emailValue *sql.NullString, phoneValue *sql.NullString, avatarObjectKey *sql.NullString, avatarSource *sql.NullString, realnameVerifiedAt *sql.NullTime) []any {
+	dest := []any{&user.ID, &user.Name}
+	if includeAudit {
+		dest = append(dest, pendingName, nameAuditStatus)
+	}
+	dest = append(dest,
+		emailValue,
+		phoneValue,
+		avatarObjectKey,
+		avatarSource,
+		&user.InviteRequired,
+		realnameVerifiedAt,
+		&user.CreatedAt,
+	)
+	return dest
+}
+
+func applyMySQLUserFields(user *User, includeAudit bool, pendingName sql.NullString, nameAuditStatus sql.NullString, emailValue sql.NullString, phoneValue sql.NullString, avatarObjectKey sql.NullString, avatarSource sql.NullString, realnameVerifiedAt sql.NullTime) {
+	user.Email = emailValue.String
+	if includeAudit {
+		user.PendingName = pendingName.String
+		user.NameAuditStatus = nameAuditStatus.String
+	}
+	user.Phone = phoneValue.String
+	user.AvatarObjectKey = avatarObjectKey.String
+	user.AvatarSource = avatarSource.String
+	user.RealnameVerified = realnameVerifiedAt.Valid
+}
+
+func (s *MySQLStore) scanUserRow(row sqlScanner) (User, error) {
+	var user User
+	var pendingName sql.NullString
+	var nameAuditStatus sql.NullString
+	var emailValue sql.NullString
+	var phoneValue sql.NullString
+	var avatarObjectKey sql.NullString
+	var avatarSource sql.NullString
+	var realnameVerifiedAt sql.NullTime
+	if err := row.Scan(mysqlUserScanDest(&user, s.contentAuditEnabled, &pendingName, &nameAuditStatus, &emailValue, &phoneValue, &avatarObjectKey, &avatarSource, &realnameVerifiedAt)...); err != nil {
+		return User{}, err
+	}
+	applyMySQLUserFields(&user, s.contentAuditEnabled, pendingName, nameAuditStatus, emailValue, phoneValue, avatarObjectKey, avatarSource, realnameVerifiedAt)
+	return user, nil
+}
+
+func (s *MySQLStore) requireContentAuditEnabled() error {
+	if !s.contentAuditEnabled {
+		return newError("content_audit_disabled", "内容安全审核未启用。", 400)
+	}
+	return nil
 }
 
 func (s *MySQLStore) ValidateInvite(ctx context.Context, code string) (InviteValidation, error) {
@@ -185,51 +262,32 @@ func (s *MySQLStore) CreatePasswordSession(ctx context.Context, input PasswordSi
 }
 
 func (s *MySQLStore) GetPasswordUser(ctx context.Context, email string) (User, []byte, error) {
-	row := s.db.QueryRowContext(ctx, `
+	row := s.db.QueryRowContext(ctx, fmt.Sprintf(`
 		SELECT
-			u.id,
-			u.name,
-			u.email,
-			u.phone,
-			u.avatar_object_key,
-			u.avatar_source,
-			u.invite_required,
-			u.realname_verified_at,
-			u.created_at,
+			%s,
 			pc.password_hash
 		FROM users u
 		INNER JOIN password_credentials pc ON pc.user_id = u.id
 		WHERE u.email = ?
-	`, email)
+	`, mysqlUserSelectColumns("u.", s.contentAuditEnabled)), email)
 
 	var user User
+	var pendingName sql.NullString
+	var nameAuditStatus sql.NullString
 	var emailValue sql.NullString
 	var phoneValue sql.NullString
 	var avatarObjectKey sql.NullString
 	var avatarSource sql.NullString
 	var realnameVerifiedAt sql.NullTime
 	var hash []byte
-	if err := row.Scan(
-		&user.ID,
-		&user.Name,
-		&emailValue,
-		&phoneValue,
-		&avatarObjectKey,
-		&avatarSource,
-		&user.InviteRequired,
-		&realnameVerifiedAt,
-		&user.CreatedAt,
-		&hash,
-	); errors.Is(err, sql.ErrNoRows) {
+	dest := mysqlUserScanDest(&user, s.contentAuditEnabled, &pendingName, &nameAuditStatus, &emailValue, &phoneValue, &avatarObjectKey, &avatarSource, &realnameVerifiedAt)
+	dest = append(dest, &hash)
+	if err := row.Scan(dest...); errors.Is(err, sql.ErrNoRows) {
 		return User{}, nil, newError("invalid_credentials", "账号或密码不正确。", 401)
 	} else if err != nil {
 		return User{}, nil, fmt.Errorf("query password user: %w", err)
 	}
-	user.Email = emailValue.String
-	user.Phone = phoneValue.String
-	user.AvatarObjectKey = avatarObjectKey.String
-	user.AvatarSource = avatarSource.String
-	user.RealnameVerified = realnameVerifiedAt.Valid
+	applyMySQLUserFields(&user, s.contentAuditEnabled, pendingName, nameAuditStatus, emailValue, phoneValue, avatarObjectKey, avatarSource, realnameVerifiedAt)
 	return user, hash, nil
 }
 
@@ -269,7 +327,7 @@ func (s *MySQLStore) ActivateInviteForCurrentUser(ctx context.Context, token str
 	if err != nil {
 		return User{}, err
 	}
-	user, err := loadUserByIDTx(ctx, tx, userID)
+	user, err := s.loadUserByIDTx(ctx, tx, userID)
 	if err != nil {
 		return User{}, err
 	}
@@ -300,7 +358,7 @@ func (s *MySQLStore) BindOAuthSession(ctx context.Context, token string, input O
 	if err != nil {
 		return nil, err
 	}
-	user, err := loadUserByIDTx(ctx, tx, userID)
+	user, err := s.loadUserByIDTx(ctx, tx, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -397,26 +455,18 @@ func (s *MySQLStore) CreateImpersonationSession(ctx context.Context, user User, 
 }
 
 func (s *MySQLStore) CurrentSession(ctx context.Context, token string, now time.Time) (*AuthSession, error) {
-	row := s.db.QueryRowContext(ctx, `
+	row := s.db.QueryRowContext(ctx, fmt.Sprintf(`
 		SELECT
 			s.token,
 			s.authenticated_at,
 			s.expires_at,
 			s.impersonated,
 			s.impersonation_reason,
-			u.id,
-			u.name,
-			u.email,
-			u.phone,
-			u.avatar_object_key,
-			u.avatar_source,
-			u.invite_required,
-			u.realname_verified_at,
-			u.created_at
+			%s
 		FROM auth_sessions s
 		INNER JOIN users u ON u.id = s.user_id
 		WHERE s.token = ?
-	`, strings.TrimSpace(token))
+	`, mysqlUserSelectColumns("u.", s.contentAuditEnabled)), strings.TrimSpace(token))
 
 	var sessionToken string
 	var authenticatedAt time.Time
@@ -424,28 +474,23 @@ func (s *MySQLStore) CurrentSession(ctx context.Context, token string, now time.
 	var impersonated bool
 	var impersonationReason sql.NullString
 	var user User
+	var pendingName sql.NullString
+	var nameAuditStatus sql.NullString
 	var emailValue sql.NullString
 	var phoneValue sql.NullString
 	var avatarObjectKey sql.NullString
 	var avatarSource sql.NullString
 	var realnameVerifiedAt sql.NullTime
 
-	err := row.Scan(
+	dest := []any{
 		&sessionToken,
 		&authenticatedAt,
 		&expiresAt,
 		&impersonated,
 		&impersonationReason,
-		&user.ID,
-		&user.Name,
-		&emailValue,
-		&phoneValue,
-		&avatarObjectKey,
-		&avatarSource,
-		&user.InviteRequired,
-		&realnameVerifiedAt,
-		&user.CreatedAt,
-	)
+	}
+	dest = append(dest, mysqlUserScanDest(&user, s.contentAuditEnabled, &pendingName, &nameAuditStatus, &emailValue, &phoneValue, &avatarObjectKey, &avatarSource, &realnameVerifiedAt)...)
+	err := row.Scan(dest...)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, newError("unauthorized", "未登录或登录已失效。", 401)
 	}
@@ -459,11 +504,7 @@ func (s *MySQLStore) CurrentSession(ctx context.Context, token string, now time.
 		return nil, newError("session_expired", "登录已过期，请重新登录。", 401)
 	}
 
-	user.Email = emailValue.String
-	user.Phone = phoneValue.String
-	user.AvatarObjectKey = avatarObjectKey.String
-	user.AvatarSource = avatarSource.String
-	user.RealnameVerified = realnameVerifiedAt.Valid
+	applyMySQLUserFields(&user, s.contentAuditEnabled, pendingName, nameAuditStatus, emailValue, phoneValue, avatarObjectKey, avatarSource, realnameVerifiedAt)
 	session := &AuthSession{
 		Token:               sessionToken,
 		User:                user,
@@ -486,7 +527,7 @@ func (s *MySQLStore) CurrentProfile(ctx context.Context, token string, now time.
 	if err != nil {
 		return User{}, err
 	}
-	user, err := loadUserByIDTx(ctx, tx, userID)
+	user, err := s.loadUserByIDTx(ctx, tx, userID)
 	if err != nil {
 		return User{}, err
 	}
@@ -503,7 +544,7 @@ func (s *MySQLStore) FindUserByID(ctx context.Context, userID string) (User, err
 	}
 	defer rollback(tx)
 
-	user, err := loadUserByIDTx(ctx, tx, strings.TrimSpace(userID))
+	user, err := s.loadUserByIDTx(ctx, tx, strings.TrimSpace(userID))
 	if err != nil {
 		return User{}, err
 	}
@@ -580,7 +621,7 @@ func (s *MySQLStore) UpdateProfile(ctx context.Context, token string, name strin
 	`, strings.TrimSpace(name), now, userID); err != nil {
 		return User{}, fmt.Errorf("update profile: %w", err)
 	}
-	user, err := loadUserByIDTx(ctx, tx, userID)
+	user, err := s.loadUserByIDTx(ctx, tx, userID)
 	if err != nil {
 		return User{}, err
 	}
@@ -588,6 +629,205 @@ func (s *MySQLStore) UpdateProfile(ctx context.Context, token string, name strin
 		return User{}, fmt.Errorf("commit profile update: %w", err)
 	}
 	return user, nil
+}
+
+func (s *MySQLStore) QueueNameAudit(ctx context.Context, token string, input CreateNameAuditInput, now time.Time) (User, error) {
+	if err := s.requireContentAuditEnabled(); err != nil {
+		return User{}, err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return User{}, fmt.Errorf("begin tx: %w", err)
+	}
+	defer rollback(tx)
+
+	userID, err := currentSessionUserIDTx(ctx, tx, strings.TrimSpace(token), now)
+	if err != nil {
+		return User{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE content_audit_tasks
+		SET status = 'cancelled', updated_at = ?
+		WHERE biz_type = 'user_name' AND biz_id = ? AND status IN ('pending', 'submitted', 'error')
+	`, now, userID); err != nil {
+		return User{}, fmt.Errorf("cancel previous name audit tasks: %w", err)
+	}
+	name := strings.TrimSpace(input.Name)
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE users
+		SET pending_name = ?, name_audit_status = 'pending', updated_at = ?
+		WHERE id = ?
+	`, name, now, userID); err != nil {
+		return User{}, fmt.Errorf("queue pending name: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO content_audit_tasks (
+			biz_type, biz_id, biz_detail, product_id, sid, content_digest, content_text,
+			status, created_at, updated_at
+		) VALUES ('user_name', ?, 'name', ?, ?, ?, ?, 'pending', ?, ?)
+	`, userID, strings.TrimSpace(input.ProductID), strings.TrimSpace(input.SID), truncateString(name, 200), name, now, now); err != nil {
+		return User{}, fmt.Errorf("create name audit task: %w", err)
+	}
+	user, err := s.loadUserByIDTx(ctx, tx, userID)
+	if err != nil {
+		return User{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return User{}, fmt.Errorf("commit name audit queue: %w", err)
+	}
+	return user, nil
+}
+
+func (s *MySQLStore) ListPendingContentAuditTasks(ctx context.Context, limit int) ([]ContentAuditTask, error) {
+	if err := s.requireContentAuditEnabled(); err != nil {
+		return nil, err
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, biz_type, biz_id, COALESCE(biz_detail, ''), product_id, sid,
+		       COALESCE(content_text, ''), status, COALESCE(request_id, ''),
+		       COALESCE(result_code, 0), COALESCE(result_type, 0), attempts,
+		       COALESCE(last_error, ''), submitted_at, created_at, updated_at
+		FROM content_audit_tasks
+		WHERE status IN ('pending', 'error') AND attempts < 3
+		ORDER BY created_at ASC
+		LIMIT ?
+	`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list pending content audit tasks: %w", err)
+	}
+	defer rows.Close()
+	return scanContentAuditTasks(rows)
+}
+
+func (s *MySQLStore) ListTimeoutContentAuditTasks(ctx context.Context, cutoff time.Time, limit int) ([]ContentAuditTask, error) {
+	if err := s.requireContentAuditEnabled(); err != nil {
+		return nil, err
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, biz_type, biz_id, COALESCE(biz_detail, ''), product_id, sid,
+		       COALESCE(content_text, ''), status, COALESCE(request_id, ''),
+		       COALESCE(result_code, 0), COALESCE(result_type, 0), attempts,
+		       COALESCE(last_error, ''), submitted_at, created_at, updated_at
+		FROM content_audit_tasks
+		WHERE status = 'submitted' AND submitted_at IS NOT NULL AND submitted_at < ?
+		ORDER BY submitted_at ASC
+		LIMIT ?
+	`, cutoff, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list timeout content audit tasks: %w", err)
+	}
+	defer rows.Close()
+	return scanContentAuditTasks(rows)
+}
+
+func (s *MySQLStore) FindContentAuditTaskByRequestID(ctx context.Context, requestID string) (*ContentAuditTask, error) {
+	if err := s.requireContentAuditEnabled(); err != nil {
+		return nil, err
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, biz_type, biz_id, COALESCE(biz_detail, ''), product_id, sid,
+		       COALESCE(content_text, ''), status, COALESCE(request_id, ''),
+		       COALESCE(result_code, 0), COALESCE(result_type, 0), attempts,
+		       COALESCE(last_error, ''), submitted_at, created_at, updated_at
+		FROM content_audit_tasks
+		WHERE request_id = ?
+		LIMIT 1
+	`, strings.TrimSpace(requestID))
+	if err != nil {
+		return nil, fmt.Errorf("find content audit task: %w", err)
+	}
+	defer rows.Close()
+	tasks, err := scanContentAuditTasks(rows)
+	if err != nil {
+		return nil, err
+	}
+	if len(tasks) == 0 {
+		return nil, nil
+	}
+	return &tasks[0], nil
+}
+
+func (s *MySQLStore) MarkContentAuditTaskSubmitted(ctx context.Context, taskID int64, requestID string, now time.Time) error {
+	if err := s.requireContentAuditEnabled(); err != nil {
+		return err
+	}
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE content_audit_tasks
+		SET status = 'submitted', request_id = ?, attempts = attempts + 1,
+		    last_error = NULL, submitted_at = ?, updated_at = ?
+		WHERE id = ?
+	`, strings.TrimSpace(requestID), now, now, taskID)
+	if err != nil {
+		return fmt.Errorf("mark content audit submitted: %w", err)
+	}
+	return nil
+}
+
+func (s *MySQLStore) MarkContentAuditTaskPassed(ctx context.Context, taskID int64, requestID string, passSource string, now time.Time) error {
+	return s.finishContentAuditTask(ctx, taskID, func(tx *sql.Tx, task ContentAuditTask) error {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE content_audit_tasks
+			SET status = 'passed', request_id = COALESCE(NULLIF(?, ''), request_id),
+			    result_code = 2, pass_source = ?, audited_at = ?, updated_at = ?
+			WHERE id = ? AND status IN ('pending', 'submitted', 'error')
+		`, strings.TrimSpace(requestID), strings.TrimSpace(passSource), now, now, taskID); err != nil {
+			return fmt.Errorf("mark content audit passed: %w", err)
+		}
+		if task.BizType == "user_name" {
+			if _, err := tx.ExecContext(ctx, `
+				UPDATE users
+				SET name = ?, pending_name = NULL, name_audit_status = 'passed', updated_at = ?
+				WHERE id = ? AND pending_name = ?
+			`, task.ContentText, now, task.BizID, task.ContentText); err != nil {
+				return fmt.Errorf("apply passed name audit: %w", err)
+			}
+		}
+		return nil
+	})
+}
+
+func (s *MySQLStore) MarkContentAuditTaskFailed(ctx context.Context, taskID int64, requestID string, resultCode int, resultType int, resultDetail string, now time.Time) error {
+	return s.finishContentAuditTask(ctx, taskID, func(tx *sql.Tx, task ContentAuditTask) error {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE content_audit_tasks
+			SET status = 'failed', request_id = COALESCE(NULLIF(?, ''), request_id),
+			    result_code = ?, result_type = ?, result_detail = ?, audited_at = ?, updated_at = ?
+			WHERE id = ? AND status IN ('pending', 'submitted', 'error')
+		`, strings.TrimSpace(requestID), resultCode, resultType, truncateString(resultDetail, 512), now, now, taskID); err != nil {
+			return fmt.Errorf("mark content audit failed: %w", err)
+		}
+		if task.BizType == "user_name" {
+			if _, err := tx.ExecContext(ctx, `
+				UPDATE users
+				SET pending_name = NULL, name_audit_status = 'failed', updated_at = ?
+				WHERE id = ? AND pending_name = ?
+			`, now, task.BizID, task.ContentText); err != nil {
+				return fmt.Errorf("apply failed name audit: %w", err)
+			}
+		}
+		return nil
+	})
+}
+
+func (s *MySQLStore) MarkContentAuditTaskError(ctx context.Context, taskID int64, errMsg string, now time.Time) error {
+	if err := s.requireContentAuditEnabled(); err != nil {
+		return err
+	}
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE content_audit_tasks
+		SET status = 'error', attempts = attempts + 1, last_error = ?, updated_at = ?
+		WHERE id = ?
+	`, truncateString(errMsg, 512), now, taskID)
+	if err != nil {
+		return fmt.Errorf("mark content audit error: %w", err)
+	}
+	return nil
 }
 
 func (s *MySQLStore) SetUserAvatar(ctx context.Context, userID string, objectKey string, source string, now time.Time) (User, error) {
@@ -604,7 +844,7 @@ func (s *MySQLStore) SetUserAvatar(ctx context.Context, userID string, objectKey
 	`, strings.TrimSpace(objectKey), strings.TrimSpace(source), now, strings.TrimSpace(userID)); err != nil {
 		return User{}, fmt.Errorf("update user avatar: %w", err)
 	}
-	user, err := loadUserByIDTx(ctx, tx, strings.TrimSpace(userID))
+	user, err := s.loadUserByIDTx(ctx, tx, strings.TrimSpace(userID))
 	if err != nil {
 		return User{}, err
 	}
@@ -1015,28 +1255,26 @@ func (s *MySQLStore) consumeInviteTx(ctx context.Context, tx *sql.Tx, code strin
 }
 
 func (s *MySQLStore) findOrCreatePhoneUserTx(ctx context.Context, tx *sql.Tx, phone string, name string, now time.Time) (User, bool, error) {
-	row := tx.QueryRowContext(ctx, `
-		SELECT id, name, email, phone, invite_required, realname_verified_at, created_at
-		, avatar_object_key, avatar_source
+	row := tx.QueryRowContext(ctx, fmt.Sprintf(`
+		SELECT
+			%s
 		FROM users
 		WHERE phone = ?
 		FOR UPDATE
-	`, phone)
+	`, mysqlUserSelectColumns("", s.contentAuditEnabled)), phone)
 
 	var user User
+	var pendingName sql.NullString
+	var nameAuditStatus sql.NullString
 	var emailValue sql.NullString
 	var phoneValue sql.NullString
 	var realnameVerifiedAt sql.NullTime
 	var avatarObjectKey sql.NullString
 	var avatarSource sql.NullString
-	err := row.Scan(&user.ID, &user.Name, &emailValue, &phoneValue, &user.InviteRequired, &realnameVerifiedAt, &user.CreatedAt, &avatarObjectKey, &avatarSource)
+	err := row.Scan(mysqlUserScanDest(&user, s.contentAuditEnabled, &pendingName, &nameAuditStatus, &emailValue, &phoneValue, &avatarObjectKey, &avatarSource, &realnameVerifiedAt)...)
 	switch {
 	case err == nil:
-		user.Email = emailValue.String
-		user.Phone = phoneValue.String
-		user.RealnameVerified = realnameVerifiedAt.Valid
-		user.AvatarObjectKey = avatarObjectKey.String
-		user.AvatarSource = avatarSource.String
+		applyMySQLUserFields(&user, s.contentAuditEnabled, pendingName, nameAuditStatus, emailValue, phoneValue, avatarObjectKey, avatarSource, realnameVerifiedAt)
 		if user.InviteRequired {
 			if _, updateErr := tx.ExecContext(ctx, `
 				UPDATE users
@@ -1095,37 +1333,27 @@ func (s *MySQLStore) findOrCreatePhoneUserTx(ctx context.Context, tx *sql.Tx, ph
 }
 
 func (s *MySQLStore) findOrCreateOAuthUserTx(ctx context.Context, tx *sql.Tx, input OAuthSignInInput, now time.Time) (User, bool, error) {
-	row := tx.QueryRowContext(ctx, `
+	row := tx.QueryRowContext(ctx, fmt.Sprintf(`
 		SELECT
-			u.id,
-			u.name,
-			u.email,
-			u.phone,
-			u.avatar_object_key,
-			u.avatar_source,
-			u.invite_required,
-			u.realname_verified_at,
-			u.created_at
+			%s
 		FROM oauth_identities oi
 		INNER JOIN users u ON u.id = oi.user_id
 		WHERE oi.provider = ? AND oi.provider_subject = ?
 		FOR UPDATE
-	`, input.Provider, input.ProviderSubject)
+	`, mysqlUserSelectColumns("u.", s.contentAuditEnabled)), input.Provider, input.ProviderSubject)
 
 	var user User
+	var pendingName sql.NullString
+	var nameAuditStatus sql.NullString
 	var emailValue sql.NullString
 	var phoneValue sql.NullString
 	var avatarObjectKey sql.NullString
 	var avatarSource sql.NullString
 	var realnameVerifiedAt sql.NullTime
-	err := row.Scan(&user.ID, &user.Name, &emailValue, &phoneValue, &avatarObjectKey, &avatarSource, &user.InviteRequired, &realnameVerifiedAt, &user.CreatedAt)
+	err := row.Scan(mysqlUserScanDest(&user, s.contentAuditEnabled, &pendingName, &nameAuditStatus, &emailValue, &phoneValue, &avatarObjectKey, &avatarSource, &realnameVerifiedAt)...)
 	switch {
 	case err == nil:
-		user.Email = emailValue.String
-		user.Phone = phoneValue.String
-		user.AvatarObjectKey = avatarObjectKey.String
-		user.AvatarSource = avatarSource.String
-		user.RealnameVerified = realnameVerifiedAt.Valid
+		applyMySQLUserFields(&user, s.contentAuditEnabled, pendingName, nameAuditStatus, emailValue, phoneValue, avatarObjectKey, avatarSource, realnameVerifiedAt)
 		if user.InviteRequired {
 			if _, updateErr := tx.ExecContext(ctx, `
 				UPDATE users
@@ -1283,50 +1511,100 @@ func loadPlanSelectionTx(ctx context.Context, tx *sql.Tx, userID string) (*PlanS
 	}, nil
 }
 
-func loadUserByIDTx(ctx context.Context, tx *sql.Tx, userID string) (User, error) {
-	row := tx.QueryRowContext(ctx, `
+func scanContentAuditTasks(rows *sql.Rows) ([]ContentAuditTask, error) {
+	var tasks []ContentAuditTask
+	for rows.Next() {
+		var task ContentAuditTask
+		var submittedAt sql.NullTime
+		if err := rows.Scan(
+			&task.ID,
+			&task.BizType,
+			&task.BizID,
+			&task.BizDetail,
+			&task.ProductID,
+			&task.SID,
+			&task.ContentText,
+			&task.Status,
+			&task.RequestID,
+			&task.ResultCode,
+			&task.ResultType,
+			&task.Attempts,
+			&task.LastError,
+			&submittedAt,
+			&task.CreatedAt,
+			&task.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan content audit task: %w", err)
+		}
+		if submittedAt.Valid {
+			task.SubmittedAt = &submittedAt.Time
+		}
+		tasks = append(tasks, task)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate content audit tasks: %w", err)
+	}
+	return tasks, nil
+}
+
+func (s *MySQLStore) finishContentAuditTask(ctx context.Context, taskID int64, finish func(*sql.Tx, ContentAuditTask) error) error {
+	if err := s.requireContentAuditEnabled(); err != nil {
+		return err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer rollback(tx)
+
+	rows, err := tx.QueryContext(ctx, `
+		SELECT id, biz_type, biz_id, COALESCE(biz_detail, ''), product_id, sid,
+		       COALESCE(content_text, ''), status, COALESCE(request_id, ''),
+		       COALESCE(result_code, 0), COALESCE(result_type, 0), attempts,
+		       COALESCE(last_error, ''), submitted_at, created_at, updated_at
+		FROM content_audit_tasks
+		WHERE id = ?
+		FOR UPDATE
+	`, taskID)
+	if err != nil {
+		return fmt.Errorf("query content audit task: %w", err)
+	}
+	tasks, scanErr := scanContentAuditTasks(rows)
+	closeErr := rows.Close()
+	if scanErr != nil {
+		return scanErr
+	}
+	if closeErr != nil {
+		return fmt.Errorf("close content audit task rows: %w", closeErr)
+	}
+	if len(tasks) == 0 || isTerminalAuditStatus(tasks[0].Status) {
+		return nil
+	}
+	if err := finish(tx, tasks[0]); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit content audit task: %w", err)
+	}
+	return nil
+}
+
+func (s *MySQLStore) loadUserByIDTx(ctx context.Context, tx *sql.Tx, userID string) (User, error) {
+	row := tx.QueryRowContext(ctx, fmt.Sprintf(`
 		SELECT
-			id,
-			name,
-			email,
-			phone,
-			avatar_object_key,
-			avatar_source,
-			invite_required,
-			realname_verified_at,
-			created_at
+			%s
 		FROM users
 		WHERE id = ?
 		FOR UPDATE
-	`, userID)
+	`, mysqlUserSelectColumns("", s.contentAuditEnabled)), userID)
 
-	var user User
-	var emailValue sql.NullString
-	var phoneValue sql.NullString
-	var avatarObjectKey sql.NullString
-	var avatarSource sql.NullString
-	var realnameVerifiedAt sql.NullTime
-	if err := row.Scan(
-		&user.ID,
-		&user.Name,
-		&emailValue,
-		&phoneValue,
-		&avatarObjectKey,
-		&avatarSource,
-		&user.InviteRequired,
-		&realnameVerifiedAt,
-		&user.CreatedAt,
-	); errors.Is(err, sql.ErrNoRows) {
+	user, err := s.scanUserRow(row)
+	if errors.Is(err, sql.ErrNoRows) {
 		return User{}, newError("user_not_found", "用户不存在。", 404)
 	} else if err != nil {
 		return User{}, fmt.Errorf("query user: %w", err)
 	}
 
-	user.Email = emailValue.String
-	user.Phone = phoneValue.String
-	user.AvatarObjectKey = avatarObjectKey.String
-	user.AvatarSource = avatarSource.String
-	user.RealnameVerified = realnameVerifiedAt.Valid
 	return user, nil
 }
 

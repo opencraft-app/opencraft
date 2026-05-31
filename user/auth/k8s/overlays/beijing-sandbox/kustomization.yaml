@@ -110,6 +110,11 @@ replacements:
           name: lightclaw-auth
         fieldPaths:
           - spec.template.spec.nodeSelector.pool
+      - select:
+          kind: Deployment
+          name: lightclaw-auth-content-audit-worker
+        fieldPaths:
+          - spec.template.spec.nodeSelector.pool
   - source:
       kind: ConfigMap
       name: auth-platform-values
@@ -120,6 +125,11 @@ replacements:
           name: lightclaw-auth
         fieldPaths:
           - spec.template.spec.containers.0.image
+      - select:
+          kind: Deployment
+          name: lightclaw-auth-content-audit-worker
+        fieldPaths:
+          - spec.template.spec.containers.0.image
   - source:
       kind: ConfigMap
       name: auth-platform-values
@@ -128,6 +138,11 @@ replacements:
       - select:
           kind: Deployment
           name: lightclaw-auth
+        fieldPaths:
+          - spec.template.metadata.annotations.[lightclaw-auth.clawhub.dev/redeploy-at]
+      - select:
+          kind: Deployment
+          name: lightclaw-auth-content-audit-worker
         fieldPaths:
           - spec.template.metadata.annotations.[lightclaw-auth.clawhub.dev/redeploy-at]
   - source:

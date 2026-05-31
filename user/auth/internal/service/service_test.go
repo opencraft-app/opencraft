@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/openclaw/openclaw/mono/backend/auth/internal/contentaudit"
 )
 
 func TestSharedStoreEnforcesCooldownAcrossServiceInstances(t *testing.T) {
@@ -530,6 +532,152 @@ func TestUpdateProfileRenamesCurrentUser(t *testing.T) {
 	}
 }
 
+func TestUpdateProfileQueuesNameAuditWhenEnabled(t *testing.T) {
+	store := NewMemoryStore(StoreOptions{
+		Now:                fixedNow,
+		SeedDefaultInvites: true,
+	})
+	svc := NewWithStore(store, Options{
+		Now: fixedNow,
+		ContentAudit: ContentAuditConfig{
+			Enabled:   true,
+			ProductID: "30003",
+			UserSID:   "300025",
+		},
+	})
+
+	session, err := svc.SignUpWithPassword(context.Background(), PasswordSignUpInput{
+		Name:       "旧昵称",
+		Email:      "profile-audit@example.com",
+		Password:   "password123",
+		InviteCode: "VALID2026",
+	})
+	if err != nil {
+		t.Fatalf("sign up failed: %v", err)
+	}
+
+	user, err := svc.UpdateProfile(context.Background(), session.Token, "新昵称")
+	if err != nil {
+		t.Fatalf("update profile failed: %v", err)
+	}
+	if user.Name != "旧昵称" || user.PendingName != "新昵称" || user.NameAuditStatus != "pending" {
+		t.Fatalf("expected pending audit without replacing official name, got %+v", user)
+	}
+
+	current, err := svc.CurrentSession(context.Background(), session.Token)
+	if err != nil {
+		t.Fatalf("load session failed: %v", err)
+	}
+	if current.User.Name != "旧昵称" || current.User.PendingName != "新昵称" {
+		t.Fatalf("expected session to keep official name and expose pending name, got %+v", current.User)
+	}
+}
+
+func TestUpdateProfileBypassesNameAuditWhenDisabled(t *testing.T) {
+	store := NewMemoryStore(StoreOptions{
+		Now:                fixedNow,
+		SeedDefaultInvites: true,
+	})
+	svc := NewWithStore(store, Options{
+		Now: fixedNow,
+		ContentAudit: ContentAuditConfig{
+			Enabled:   false,
+			ProductID: "30003",
+			UserSID:   "300025",
+		},
+	})
+
+	session, err := svc.SignUpWithPassword(context.Background(), PasswordSignUpInput{
+		Name:       "旧昵称",
+		Email:      "profile-audit-disabled@example.com",
+		Password:   "password123",
+		InviteCode: "VALID2026",
+	})
+	if err != nil {
+		t.Fatalf("sign up failed: %v", err)
+	}
+
+	user, err := svc.UpdateProfile(context.Background(), session.Token, "新昵称")
+	if err != nil {
+		t.Fatalf("update profile failed: %v", err)
+	}
+	if user.Name != "新昵称" || user.PendingName != "" || user.NameAuditStatus != "" {
+		t.Fatalf("expected disabled audit to rename directly, got %+v", user)
+	}
+}
+
+func TestContentAuditWorkerAppliesPassedName(t *testing.T) {
+	store := NewMemoryStore(StoreOptions{
+		Now:                fixedNow,
+		SeedDefaultInvites: true,
+	})
+	cfg := ContentAuditConfig{Enabled: true, ProductID: "30003", UserSID: "300025"}
+	svc := NewWithStore(store, Options{Now: fixedNow, ContentAudit: cfg})
+	session, err := svc.SignUpWithPassword(context.Background(), PasswordSignUpInput{
+		Name:       "旧昵称",
+		Email:      "profile-audit-pass@example.com",
+		Password:   "password123",
+		InviteCode: "VALID2026",
+	})
+	if err != nil {
+		t.Fatalf("sign up failed: %v", err)
+	}
+	if _, err := svc.UpdateProfile(context.Background(), session.Token, "新昵称"); err != nil {
+		t.Fatalf("queue audit failed: %v", err)
+	}
+
+	worker := NewContentAuditWorker(store, stubContentAuditClient{
+		result: &contentaudit.ResponseResult{ResultCode: contentaudit.ResultCodePass},
+	}, cfg, ContentAuditWorkerOptions{Now: fixedNow})
+	if err := worker.RunOnce(context.Background(), 20); err != nil {
+		t.Fatalf("run worker: %v", err)
+	}
+
+	current, err := svc.CurrentSession(context.Background(), session.Token)
+	if err != nil {
+		t.Fatalf("load session failed: %v", err)
+	}
+	if current.User.Name != "新昵称" || current.User.PendingName != "" || current.User.NameAuditStatus != "passed" {
+		t.Fatalf("expected passed audit to apply pending name, got %+v", current.User)
+	}
+}
+
+func TestContentAuditWorkerRejectsMaliciousName(t *testing.T) {
+	store := NewMemoryStore(StoreOptions{
+		Now:                fixedNow,
+		SeedDefaultInvites: true,
+	})
+	cfg := ContentAuditConfig{Enabled: true, ProductID: "30003", UserSID: "300025"}
+	svc := NewWithStore(store, Options{Now: fixedNow, ContentAudit: cfg})
+	session, err := svc.SignUpWithPassword(context.Background(), PasswordSignUpInput{
+		Name:       "旧昵称",
+		Email:      "profile-audit-fail@example.com",
+		Password:   "password123",
+		InviteCode: "VALID2026",
+	})
+	if err != nil {
+		t.Fatalf("sign up failed: %v", err)
+	}
+	if _, err := svc.UpdateProfile(context.Background(), session.Token, "违规昵称"); err != nil {
+		t.Fatalf("queue audit failed: %v", err)
+	}
+
+	worker := NewContentAuditWorker(store, stubContentAuditClient{
+		result: &contentaudit.ResponseResult{ResultCode: contentaudit.ResultCodeMalicious, ResultType: 20007},
+	}, cfg, ContentAuditWorkerOptions{Now: fixedNow})
+	if err := worker.RunOnce(context.Background(), 20); err != nil {
+		t.Fatalf("run worker: %v", err)
+	}
+
+	current, err := svc.CurrentSession(context.Background(), session.Token)
+	if err != nil {
+		t.Fatalf("load session failed: %v", err)
+	}
+	if current.User.Name != "旧昵称" || current.User.PendingName != "" || current.User.NameAuditStatus != "failed" {
+		t.Fatalf("expected failed audit to keep official name, got %+v", current.User)
+	}
+}
+
 func TestSetUserAvatarPersistsAcrossSessions(t *testing.T) {
 	store := NewMemoryStore(StoreOptions{
 		Now:                fixedNow,
@@ -722,4 +870,22 @@ type stubRealnameCipher struct{}
 
 func (stubRealnameCipher) Encrypt(plaintext string) (string, error) {
 	return fmt.Sprintf("enc(%s)", plaintext), nil
+}
+
+type stubContentAuditClient struct {
+	result *contentaudit.ResponseResult
+	err    error
+}
+
+func (s stubContentAuditClient) CreateTextTask(_ context.Context, _ contentaudit.CreateTextTaskRequest) (*contentaudit.CreateTextTaskResponse, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	return &contentaudit.CreateTextTaskResponse{
+		Response: contentaudit.CreateTextTaskResponseBody{
+			Data: &contentaudit.CreateTextTaskResponseData{
+				Result: s.result,
+			},
+		},
+	}, nil
 }

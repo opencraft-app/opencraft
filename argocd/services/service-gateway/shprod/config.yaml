@@ -60,6 +60,11 @@ routes:
     upstream_bearer_token_env: SERVICE_GATEWAY_VIBEBASE_INTERNAL_TOKEN
     access: authenticated
     auth_strategy: session
+  - name: content-audit-callback
+    prefix: /contentaudit/callback
+    methods: [POST, OPTIONS]
+    upstream: http://lightclaw-auth.user-auth.svc.cluster.local
+    access: public
   - name: auth
     prefix: /auth
     methods: [GET, POST, PUT, DELETE, OPTIONS]

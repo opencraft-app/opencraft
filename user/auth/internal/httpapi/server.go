@@ -53,6 +53,7 @@ func NewRouter(authService *service.Service, config ServerConfig) *gin.Engine {
 	router.POST("/auth/tat/device-bind", handler.CreateTATDeviceBind)
 	router.POST("/auth/invite/prepare", handler.PrepareInvite)
 	router.GET("/users/:userID/avatar", handler.GetUserAvatar)
+	router.POST("/contentaudit/callback", handler.ContentAuditCallback)
 	router.DELETE("/auth/profile", handler.DeleteProfile)
 	api.RegisterHandlers(router, api.NewStrictHandler(handler, nil))
 
