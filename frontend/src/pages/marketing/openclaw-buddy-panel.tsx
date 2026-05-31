@@ -610,34 +610,64 @@ export function BuddyPanel({
       {/* 卡片下方：抽取人设 + Soul 测试 + 应用到 Agent；小屏时进度操作自然换行 */}
       <div className="lv-buddy-panel__actions relative mx-auto flex max-w-[816px] items-center justify-center gap-3 px-0 py-5">
         <div className="lv-buddy-panel__action-buttons flex flex-wrap items-center justify-center gap-3">
-          <button
-            type="button"
-            onClick={handleOpenDraw}
-            disabled={souls.length === 0 || isAtMax || loadStatus !== "loaded"}
-            className="inline-flex items-center gap-2 rounded-full px-5 py-2 text-sm font-medium transition-all hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none"
-            style={{
-              background: "rgba(0,0,0,0.04)",
-              color: "rgba(0,0,0,0.85)",
-              border: "1px solid rgba(0,0,0,0.06)",
-            }}
-          >
-            <Dice5 className="h-4 w-4" />
-            {isAtMax ? t("已抽满 8 张") : t("随机抽取人设")}
-          </button>
-          <button
-            type="button"
-            onClick={() => setSoulTestOpen(true)}
-            disabled={!canOpenSoulTest}
-            className="inline-flex items-center gap-2 rounded-full px-5 py-2 text-sm font-medium transition-all hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none"
-            style={{
-              background: "linear-gradient(95deg, rgba(255,166,0,0.16) 0%, rgba(107,79,224,0.14) 100%)",
-              color: "rgba(0,0,0,0.85)",
-              border: "1px solid rgba(0,0,0,0.06)",
-            }}
-          >
-            <ClipboardCheck className="h-4 w-4" />
-            {t("答题测试人设")}
-          </button>
+          <div className="group relative inline-flex">
+            <button
+              type="button"
+              onClick={handleOpenDraw}
+              disabled={souls.length === 0 || isAtMax || loadStatus !== "loaded"}
+              className="inline-flex items-center gap-2 rounded-full px-5 py-2 text-sm font-medium transition-all hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none"
+              style={{
+                background: "rgba(0,0,0,0.04)",
+                color: "rgba(0,0,0,0.85)",
+                border: "1px solid rgba(0,0,0,0.06)",
+              }}
+            >
+              <Dice5 className="h-4 w-4" />
+              {t("随机抽取人设")}
+            </button>
+            {isAtMax && (
+              <div
+                className="pointer-events-none absolute bottom-full left-1/2 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md px-3 py-1.5 text-[11px] font-medium opacity-0 transition-opacity duration-150 group-hover:opacity-100"
+                style={{ background: "rgba(0,0,0,0.85)", color: "#ffffff", boxShadow: "0 4px 12px rgba(0,0,0,0.15)" }}
+                role="tooltip"
+              >
+                {t("已抽满 8 张")}
+                <span
+                  className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45"
+                  style={{ background: "rgba(0,0,0,0.85)" }}
+                />
+              </div>
+            )}
+          </div>
+          <div className="group relative inline-flex">
+            <button
+              type="button"
+              onClick={() => setSoulTestOpen(true)}
+              disabled={!canOpenSoulTest}
+              className="inline-flex items-center gap-2 rounded-full px-5 py-2 text-sm font-medium transition-all hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-none"
+              style={{
+                background: "linear-gradient(95deg, rgba(255,166,0,0.16) 0%, rgba(107,79,224,0.14) 100%)",
+                color: "rgba(0,0,0,0.85)",
+                border: "1px solid rgba(0,0,0,0.06)",
+              }}
+            >
+              <ClipboardCheck className="h-4 w-4" />
+              {t("答题测试人设")}
+            </button>
+            {isAtMax && (
+              <div
+                className="pointer-events-none absolute bottom-full left-1/2 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md px-3 py-1.5 text-[11px] font-medium opacity-0 transition-opacity duration-150 group-hover:opacity-100"
+                style={{ background: "rgba(0,0,0,0.85)", color: "#ffffff", boxShadow: "0 4px 12px rgba(0,0,0,0.15)" }}
+                role="tooltip"
+              >
+                {t("已抽满 8 张")}
+                <span
+                  className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45"
+                  style={{ background: "rgba(0,0,0,0.85)" }}
+                />
+              </div>
+            )}
+          </div>
           <div className="group relative">
             <button
               type="button"
@@ -1276,16 +1306,16 @@ function ConfirmDialog({
           <button
             type="button"
             onClick={onCancel}
-            className="flex-1 rounded-full border px-4 py-2.5 text-sm font-medium transition-colors hover:bg-[rgba(0,0,0,0.04)]"
-            style={{ borderColor: "rgba(0,0,0,0.08)", color: "#666" }}
+            className="flex-1 rounded-full border px-4 py-2.5 font-medium transition-colors hover:bg-[rgba(0,0,0,0.04)]"
+            style={{ borderColor: "rgba(0,0,0,0.08)", color: "#666", fontSize: "16px" }}
           >
             {t("取消")}
           </button>
           <button
             type="button"
             onClick={onConfirm}
-            className="flex-1 rounded-full px-4 py-2.5 text-sm font-bold text-white transition-colors hover:opacity-90"
-            style={{ background: "#cf3d4c" }}
+            className="flex-1 rounded-full px-4 py-2.5 font-bold text-white transition-colors hover:opacity-90"
+            style={{ background: "#cf3d4c", fontSize: "16px" }}
           >
             {confirmLabel}
           </button>
