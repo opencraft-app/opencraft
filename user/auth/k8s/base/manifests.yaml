@@ -171,6 +171,9 @@ spec:
                 name: lightclaw-auth-config
             - secretRef:
                 name: lightclaw-auth-secrets
+            - secretRef:
+                name: lightclaw-auth-content-audit-secrets
+                optional: true
           env:
             - name: CONTENT_AUDIT_ENABLED
               valueFrom:
