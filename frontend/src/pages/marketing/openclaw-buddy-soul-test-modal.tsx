@@ -431,7 +431,7 @@ function ResultStep({
           style={{ fontSize: "16px" }}
           className="inline-flex h-12 min-w-40 items-center justify-center rounded-full bg-black px-7 font-semibold leading-none text-white shadow-[0_12px_28px_rgba(0,0,0,0.16)] transition-all hover:-translate-y-0.5 hover:bg-black/85 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
         >
-          {t("使用该 Soul")}
+          {t("添加该人设")}
         </button>
         <button
           type="button"

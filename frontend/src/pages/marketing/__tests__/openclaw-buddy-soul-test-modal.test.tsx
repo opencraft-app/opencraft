@@ -53,7 +53,7 @@ describe("SoulTestModal", () => {
 
     expect(screen.getByText("为你推荐的智能体伙伴 Soul 是")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "使用该 Soul" }));
+    fireEvent.click(screen.getByRole("button", { name: "添加该人设" }));
 
     expect(onUseSoul).toHaveBeenCalledWith(yydsSoul);
     expect(onClose).toHaveBeenCalledTimes(1);
