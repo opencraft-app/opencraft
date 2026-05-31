@@ -259,6 +259,17 @@ export function BuddyPanel({
             setLoadStatus("unauthorized");
             return;
           }
+          // 服务端守门：buddy 抽卡上限（≥9 张），落地为友好中文 toast
+          if (
+            err instanceof VibebaseError &&
+            err.code === "buddy_drawn_souls_too_many"
+          ) {
+            showToast({
+              kind: "error",
+              message: t("最多保留 8 张人设卡片，请先丢弃几张再试"),
+            });
+            return;
+          }
           // eslint-disable-next-line no-console
           console.error("[buddy] saveBuddyState failed:", err);
           showToast({

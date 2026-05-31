@@ -150,3 +150,92 @@ func TestRejectsNonUTF8KeyAndValue(t *testing.T) {
 		t.Fatalf("expected bad request for non-UTF-8 value, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestLimitsBuddyDrawnSouls(t *testing.T) {
+	handler := New(Options{Store: &fakeStore{}, InternalServiceToken: "secret", MaxNameBytes: 5000, MaxValueBytes: 5000})
+
+	validPayload := map[string]any{
+		"version":     1,
+		"drawnSouls":  make([]map[string]string, 8),
+		"appliedSlug": nil,
+		"updatedAt":   1,
+	}
+	body, err := json.Marshal(validPayload)
+	if err != nil {
+		t.Fatalf("marshal valid payload: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPut, "/v1/namespaces/agent-state/kv/buddy.ins-1", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer secret")
+	req.Header.Set(identityUserHeader, "user-a")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected created for 8 souls, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	tooManyPayload := map[string]any{
+		"version":     1,
+		"drawnSouls":  make([]map[string]string, 9),
+		"appliedSlug": nil,
+		"updatedAt":   1,
+	}
+	body, err = json.Marshal(tooManyPayload)
+	if err != nil {
+		t.Fatalf("marshal oversized payload: %v", err)
+	}
+	req = httptest.NewRequest(http.MethodPut, "/v1/namespaces/agent-state/kv/buddy.ins-1", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer secret")
+	req.Header.Set(identityUserHeader, "user-a")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected bad request for 9 souls, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var got map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if got["error"] != "buddy_drawn_souls_too_many" {
+		t.Fatalf("unexpected error code %q", got["error"])
+	}
+}
+
+// TestBuddySoulCapIgnoresOtherKeys 守门反向用例：
+// 校验仅作用于 namespace=agent-state + key 以 "buddy." 开头的写入；
+// 其他 namespace、或同 namespace 但 key 前缀不同的写入应当完全不被该校验影响。
+// 用大数组 (drawnSouls=100) 故意触发上限，期望仍然 201 通过。
+// 这条测试用来锁住 validateBuddyStateValue 的早返回行为，防止后续重构误伤。
+func TestBuddySoulCapIgnoresOtherKeys(t *testing.T) {
+	handler := New(Options{Store: &fakeStore{}, InternalServiceToken: "secret", MaxNameBytes: 5000, MaxValueBytes: 5000})
+
+	oversizedPayload := map[string]any{
+		"version":    1,
+		"drawnSouls": make([]map[string]string, 100),
+	}
+	body, err := json.Marshal(oversizedPayload)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+
+	cases := []struct {
+		name string
+		path string
+	}{
+		// 不同 namespace：上限不应触发
+		{name: "other_namespace", path: "/v1/namespaces/prefs/kv/buddy.ins-1"},
+		// 同 namespace 但 key 前缀不匹配：上限不应触发
+		{name: "agent_state_non_buddy_key", path: "/v1/namespaces/agent-state/kv/other.ins-1"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPut, tc.path, bytes.NewReader(body))
+			req.Header.Set("Authorization", "Bearer secret")
+			req.Header.Set(identityUserHeader, "user-a")
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if rec.Code != http.StatusCreated {
+				t.Fatalf("expected created (cap should not apply), got %d body=%s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
