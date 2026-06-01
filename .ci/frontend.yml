@@ -50,7 +50,7 @@ stages:
         name: 构建 frontend
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         env:
           GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}
         steps:
@@ -301,7 +301,7 @@ stages:
         name: 等待确认发起 frontend EdgeOne 正式站发布候选
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         steps:
           - name: frontend EdgeOne 正式站发布候选已确认
             shell: bash
@@ -315,7 +315,7 @@ stages:
         name: 打印 frontend EdgeOne 子流水线调用计划
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         steps:
           - name: 打印调用计划
             shell: bash
