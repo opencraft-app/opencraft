@@ -73,7 +73,7 @@ stages:
               trap cleanup_frontend_preview_runtime EXIT
 
               echo "frontend 预览发布器来源：${FRONTEND_PREVIEW_RUNTIME_REF}"
-              git fetch --no-tags --depth=1 origin master:refs/remotes/origin/master
+              git fetch --no-tags --depth=1 origin +master:refs/remotes/origin/master
               git archive --format=tar "$FRONTEND_PREVIEW_RUNTIME_REF" .ci | tar -xf - -C "$FRONTEND_PREVIEW_RUNTIME_DIR"
               FRONTEND_PREVIEW_RUNTIME_CI_DIR="$FRONTEND_PREVIEW_RUNTIME_DIR/.ci"
 
