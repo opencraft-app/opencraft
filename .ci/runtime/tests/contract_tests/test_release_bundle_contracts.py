@@ -323,8 +323,10 @@ class ReleaseBundleContractTests(unittest.TestCase):
 
         self.assertEqual(package_json["scripts"]["check"], "tsc -b")
         self.assertIn('"$PNPM_BIN" check', guard_text)
-        self.assertIn('VITE_AUTH_API_BASE_URL=https://api.lightvela.ai "$PNPM_BIN" exec vite build --mode cn --outDir dist-ci-cn', guard_text)
-        self.assertIn('VITE_AUTH_API_BASE_URL=https://lightclaw.tech "$PNPM_BIN" exec vite build --mode global --outDir dist-ci-global', guard_text)
+        self.assertIn('FRONTEND_GUARD_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/lightclaw-frontend-guard.XXXXXX")"', guard_text)
+        self.assertIn('VITE_BIN="$FRONTEND_GUARD_DIR/node_modules/.bin/vite"', guard_text)
+        self.assertIn('VITE_AUTH_API_BASE_URL=https://api.lightvela.ai "$VITE_BIN" build --mode cn --outDir dist-ci-cn', guard_text)
+        self.assertIn('VITE_AUTH_API_BASE_URL=https://lightclaw.tech "$VITE_BIN" build --mode global --outDir dist-ci-global', guard_text)
         self.assertIn("rm -rf dist-ci-cn dist-ci-global", guard_text)
 
     def test_prod_db_migration_workflow_is_manual_dry_run_then_check_in_then_apply(self) -> None:
