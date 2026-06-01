@@ -5,7 +5,7 @@ import { useT } from "@/i18n/t";
 
 const isWeChatBrowser = (userAgent: string) => userAgent.toLowerCase().includes("micromessenger");
 
-const OPEN_ID_PARAM_NAMES = ["openid", "open_id", "openId"];
+const OPEN_ID_PARAM_NAMES = ["openid", "open_id", "openId", "wx_openid", "wxOpenId"];
 
 const readOpenIdFromParams = (params: URLSearchParams) => {
   for (const name of OPEN_ID_PARAM_NAMES) {

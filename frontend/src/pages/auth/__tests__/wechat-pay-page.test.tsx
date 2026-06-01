@@ -53,6 +53,17 @@ describe("WeChatPayPage", () => {
     expect(screen.getByText("o-lightvela-hash")).toBeInTheDocument();
   });
 
+  it("兼容微信命名的 OpenID 参数", () => {
+    Object.defineProperty(window.navigator, "userAgent", {
+      value: "Mozilla/5.0 iPhone MicroMessenger/8.0.49",
+      configurable: true,
+    });
+
+    renderPage("/auth/wechat-pay?wx_openid=o-lightvela-wx");
+
+    expect(screen.getByText("o-lightvela-wx")).toBeInTheDocument();
+  });
+
   it("普通浏览器提示在微信内打开", () => {
     Object.defineProperty(window.navigator, "userAgent", {
       value: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) Mobile/15E148 Safari/604.1",
