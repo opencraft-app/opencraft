@@ -505,6 +505,20 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("argocd/secrets/*/lightclaw-auth-content-audit-secrets.sops.yaml", watched_paths)
         self.assertIn("argocd/secrets/*/lightvela-e2e-auth-secrets.sops.yaml", watched_paths)
 
+    def test_beijing_lightclaw_auth_keeps_official_account_config(self) -> None:
+        env_path = REPO_ROOT / "argocd/services/lightclaw-auth/beijing-sandbox/auth-platform.env"
+        values = dict(
+            line.split("=", 1)
+            for line in env_path.read_text().splitlines()
+            if line and not line.startswith("#")
+        )
+
+        self.assertEqual(values["AUTH_WECHAT_OFFICIAL_ACCOUNT_APP_ID"], "wxf95ea3ae45d5304f")
+        self.assertEqual(
+            values["AUTH_WECHAT_OFFICIAL_ACCOUNT_REDIRECT_URI"],
+            "https://lightclaw.tech/auth/oauth/wechat/callback",
+        )
+
     def test_local_templates_do_not_use_unsupported_top_level_concurrency(self) -> None:
         for template_path in sorted((REPO_ROOT / ".ci/templates").glob("*.yml")):
             with self.subTest(template=template_path.name):
