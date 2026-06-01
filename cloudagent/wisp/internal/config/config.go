@@ -82,11 +82,15 @@ type Config struct {
 	DockerRoot string
 	LogRoot    string
 
-	RootUpperSize string
-	WispUser      string
-	WispUID       int
-	WispGID       int
-	ShellPath     string
+	RootUpperSize        string
+	DefaultRootUpperSize string
+	BlankRootUpperSparse string
+	BlankRootUpperImage  string
+	BlankRootUpperTar    string
+	WispUser             string
+	WispUID              int
+	WispGID              int
+	ShellPath            string
 
 	CrunBinary        string
 	WispEnvBinary     string
@@ -232,7 +236,11 @@ func loadWithOverlay(path, overlayPath string) (Config, error) {
 	cfg.CgroupUserParent = get(env, "CGROUP_USER_PARENT", filepath.Join(cfg.CgroupParent, "user"))
 	cfg.CgroupRuntimeParent = get(env, "CGROUP_RUNTIME_PARENT", filepath.Join(cfg.CgroupParent, "runtime"))
 	cfg.CgroupUserContainer = get(env, "CGROUP_USER_CONTAINER", filepath.Join(cfg.CgroupUserParent, cfg.ContainerID))
-	cfg.RootUpperSize = get(env, "ROOT_UPPER_SIZE", "100G")
+	cfg.RootUpperSize = get(env, "ROOT_UPPER_SIZE", "")
+	cfg.DefaultRootUpperSize = get(env, "DEFAULT_ROOT_UPPER_SIZE", "5G")
+	cfg.BlankRootUpperSparse = get(env, "BLANK_ROOT_UPPER_SPARSE", "")
+	cfg.BlankRootUpperImage = get(env, "BLANK_ROOT_UPPER_IMG", "")
+	cfg.BlankRootUpperTar = get(env, "BLANK_ROOT_UPPER_TAR", "")
 	cfg.WispUser = get(env, "WISP_USER", "wisp")
 	cfg.WispUID = getInt(env, "WISP_UID", 1001)
 	cfg.WispGID = getInt(env, "WISP_GID", 1001)

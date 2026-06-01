@@ -60,6 +60,7 @@ help:
 		'  ci-signupload-cloudagent-sidecar-shanghai build, sign, upload sidecar to Shanghai COS for CI' \
 		'  publish-wisp-package             build and upload Wisp runtime package to COS' \
 		'  ci-publish-cloudagent-artifacts-shanghai build and upload sidecar + Wisp package to Shanghai COS' \
+		'  cloudagent-single-host-linux-tar.gz build Linux single-host ACP gateway + Wisp package' \
 		'  publish-sandbox-host         build and upload sandbox-host to COS as public-read' \
 		'  compose-up                   start local Docker Compose gateway in AGS mode' \
 		'  compose-up-ui                start local Docker Compose gateway + MyChat UI' \
@@ -68,6 +69,9 @@ help:
 		'  start-agent-sidecar-server   publish sidecar if needed, then start local wrapper server' \
 		'  deploy-eksci-inplace         update Beijing EKS CI in-place without changing EIP' \
 		'  e2e-agent-sidecar           run live Beijing AGS + COS + TokenHub e2e checks' \
+		'  e2e-local-runtime-host      run local_wisp RuntimeHost against a Linux runner' \
+		'  e2e-local-docker-wisp-smh   run local_wisp Docker + live Shanghai SMH/Wisp e2e' \
+		'  e2e-local-orbstack-wisp-smh run local_wisp OrbStack + live Shanghai SMH/Wisp e2e' \
 		'  e2e-session-run-lease-multiprocess run multi-process ACP session run lease e2e' \
 		'  e2e-workspace-lease-multiprocess legacy alias for session run lease e2e' \
 		'  server                       build local wrapper server' \
@@ -189,6 +193,10 @@ ci-publish-cloudagent-artifacts-shanghai:
 local-publish-cloudagent-artifacts-shanghai:
 	./scripts/local_publish_cloudagent_artifacts_shanghai.sh
 
+.PHONY: cloudagent-single-host-linux-tar.gz
+cloudagent-single-host-linux-tar.gz:
+	./scripts/package_cloudagent_single_host_linux.sh
+
 .PHONY: publish-sandbox-host
 publish-sandbox-host:
 	../sandbox-host/scripts/publish_sandbox_host.sh
@@ -223,6 +231,18 @@ deploy-eksci-inplace:
 .PHONY: e2e-agent-sidecar
 e2e-agent-sidecar:
 	./scripts/e2e_agent_sidecar.sh
+
+.PHONY: e2e-local-runtime-host
+e2e-local-runtime-host:
+	./scripts/e2e_local_runtime_host.sh
+
+.PHONY: e2e-local-docker-wisp-smh
+e2e-local-docker-wisp-smh:
+	./scripts/e2e_local_docker_wisp_smh.sh
+
+.PHONY: e2e-local-orbstack-wisp-smh
+e2e-local-orbstack-wisp-smh:
+	./scripts/e2e_local_orbstack_wisp_smh.sh
 
 .PHONY: e2e-session-run-lease-multiprocess
 e2e-session-run-lease-multiprocess:

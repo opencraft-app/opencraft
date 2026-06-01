@@ -22,6 +22,8 @@ e2fsprogs_source="${WISP_E2FSPROGS_DIR:-$repo_root/assets/bin/e2fsprogs/$goarch}
 tini_source="${WISP_TINI_BINARY:-$repo_root/assets/bin/tini/tini-${goarch}}"
 rootfs_image="${WISP_ROOTFS_IMAGE:-$repo_root/assets/rootfs/images/plucky-${goarch}.img}"
 rootfs_dir="${WISP_ROOTFS_DIR:-$repo_root/assets/rootfs/rootfs/alpine-${goarch}}"
+blank_root_upper_enabled="${WISP_BLANK_ROOT_UPPER_TEMPLATE:-1}"
+blank_root_upper_size="${WISP_BLANK_ROOT_UPPER_SIZE:-5G}"
 tar_bin="${TAR_BIN:-tar}"
 package_with_docker="${WISP_PACKAGE_WITH_DOCKER:-0}"
 build_with_docker="${WISP_BUILD_WITH_DOCKER:-$package_with_docker}"
@@ -31,6 +33,7 @@ package_tar_gz="${WISP_PACKAGE_TAR_GZ:-1}"
 flatten_rootfs="${WISP_PACKAGE_FLATTEN_ROOTFS:-$package_erofs}"
 erofs_image="${WISP_EROFS_IMAGE:-alpine:3.23}"
 erofs_apk_repository="${WISP_EROFS_APK_REPOSITORY:-https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.23}"
+erofs_compression="${WISP_EROFS_COMPRESSION:-lz4}"
 
 if [[ "$package_erofs" != "1" && "$package_tar_gz" != "1" ]]; then
   echo "at least one package format must be enabled: WISP_PACKAGE_EROFS=1 or WISP_PACKAGE_TAR_GZ=1" >&2
@@ -38,7 +41,7 @@ if [[ "$package_erofs" != "1" && "$package_tar_gz" != "1" ]]; then
 fi
 
 rm -rf "$stage"
-mkdir -p "$stage/bin" "$stage/assets/bin/crun" "$stage/assets/bin/e2fsprogs" "$stage/assets/bin/tini" "$stage/assets/rootfs/images" "$stage/assets/rootfs/rootfs" "$stage/juicefs/hack" "$stage/config" "$stage/scripts"
+mkdir -p "$stage/bin" "$stage/assets/bin/crun" "$stage/assets/bin/e2fsprogs" "$stage/assets/bin/tini" "$stage/assets/rootfs/images" "$stage/assets/rootfs/rootfs" "$stage/assets/rootfs/blank-ext4" "$stage/juicefs/hack" "$stage/config" "$stage/scripts"
 
 copy_sparse() {
   local src="$1"
@@ -47,6 +50,81 @@ copy_sparse() {
     return 0
   fi
   cp "$src" "$dst"
+}
+
+make_blank_root_upper_template() {
+  local dir="$stage/assets/rootfs/blank-ext4"
+  local img="$dir/root-upper-default.img"
+  local out="$dir/root-upper-default.sparse"
+  if [[ "$blank_root_upper_enabled" != "1" ]]; then
+    return 0
+  fi
+  rm -f "$img" "$out" "$dir/root-upper-default.tar"
+  if command -v mke2fs >/dev/null 2>&1 && command -v truncate >/dev/null 2>&1; then
+    truncate -s "$blank_root_upper_size" "$img"
+    mke2fs -F -t ext4 -m 0 -J size=16 -E stride=1024,stripe-width=1024,lazy_itable_init=1,lazy_journal_init=1,assume_storage_prezeroed=1 -O sparse_super2,^64bit,^metadata_csum "$img" >/dev/null
+  elif command -v docker >/dev/null 2>&1; then
+    docker run --rm --platform "linux/$goarch" -v "$stage:/stage" debian:bookworm-slim bash -ceu '
+      command -v mke2fs >/dev/null 2>&1 || {
+        apt-get update -qq
+        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends e2fsprogs coreutils >/dev/null
+      }
+      cd /stage/assets/rootfs/blank-ext4
+      truncate -s "'"$blank_root_upper_size"'" root-upper-default.img
+      mke2fs -F -t ext4 -m 0 -J size=16 -E stride=1024,stripe-width=1024,lazy_itable_init=1,lazy_journal_init=1,assume_storage_prezeroed=1 -O sparse_super2,^64bit,^metadata_csum root-upper-default.img >/dev/null
+    '
+  else
+    echo "cannot create blank root-upper template: mke2fs/truncate or docker is required" >&2
+    exit 2
+  fi
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "cannot create sparse root-upper template: python3 is required" >&2
+    exit 2
+  fi
+  python3 - "$img" "$out" <<'PY'
+import json
+import os
+import sys
+
+src, dst = sys.argv[1], sys.argv[2]
+size = os.path.getsize(src)
+extents = []
+with open(src, "rb") as f:
+    offset = 0
+    while offset < size:
+        try:
+            data = os.lseek(f.fileno(), offset, os.SEEK_DATA)
+        except OSError:
+            break
+        try:
+            hole = os.lseek(f.fileno(), data, os.SEEK_HOLE)
+        except OSError:
+            hole = size
+        if hole > size:
+            hole = size
+        extents.append((data, hole - data))
+        offset = hole
+
+with open(src, "rb") as f, open(dst, "wb") as out:
+    out.write(b"WISP_SPARSE_ROOT_UPPER_V1\n")
+    out.write(json.dumps({
+        "size": size,
+        "extents": [{"offset": o, "length": n} for o, n in extents],
+        "meta": {"source": "blank-ext4"},
+    }, separators=(",", ":")).encode("utf-8"))
+    out.write(b"\n")
+    for offset, length in extents:
+        f.seek(offset)
+        remaining = length
+        while remaining:
+            chunk = f.read(min(1024 * 1024, remaining))
+            if not chunk:
+                raise RuntimeError("unexpected EOF while reading sparse extent")
+            out.write(chunk)
+            remaining -= len(chunk)
+PY
+  rm -f "$img"
+  printf "%s\n" "$blank_root_upper_size" > "$dir/root-upper-default.size"
 }
 
 if [[ "$build_with_docker" == "1" ]]; then
@@ -91,6 +169,7 @@ fi
 if [[ -f "$tini_source" ]]; then
   cp "$tini_source" "$stage/assets/bin/tini/tini"
 fi
+make_blank_root_upper_template
 if [[ "$flatten_rootfs" == "1" ]]; then
   if [[ ! -d "$rootfs_dir" ]]; then
     echo "missing WISP_ROOTFS_DIR for flattened package: $rootfs_dir" >&2
@@ -102,7 +181,7 @@ else
 fi
 cp "$repo_root/juicefs/hack/smount.sh" "$stage/juicefs/hack/"
 cp "$repo_root/juicefs/hack/sformat.sh" "$stage/juicefs/hack/"
-cp "$repo_root/config.jsonnet.example" "$stage/config/config.jsonnet.example"
+cp "$repo_root/packaging/config.single-host-smh.jsonnet.example" "$stage/config/config.jsonnet.example"
 cp "$repo_root/packaging/install.sh" "$stage/scripts/install.sh"
 cp "$repo_root/packaging/README.md" "$stage/README.md"
 
@@ -142,10 +221,11 @@ if [[ "$package_erofs" == "1" ]]; then
   rm -f "$erofs_out"
   docker run --rm --platform "linux/$goarch" \
     -v "$out_dir:/dist" \
+    -e WISP_EROFS_COMPRESSION="$erofs_compression" \
     "$erofs_image" sh -ceu '
       printf "%s\n%s\n" "'"$erofs_apk_repository"'/main" "'"$erofs_apk_repository"'/community" > /etc/apk/repositories
       apk add --no-cache erofs-utils >/dev/null
-      mkfs.erofs -zlz4hc,9 "/dist/'"$pkg"'.erofs" "/dist/'"$pkg"'" >/dev/null
+      mkfs.erofs -z"$WISP_EROFS_COMPRESSION" "/dist/'"$pkg"'.erofs" "/dist/'"$pkg"'" >/dev/null
     '
 fi
 

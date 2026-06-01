@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -138,6 +139,69 @@ func TestSelfCheckAgentSidecarReportsArtifactReachability(t *testing.T) {
 	assertSelfCheckItem(t, out.Checks, "agent.sidecar_url_reachable", "fail", http.StatusForbidden)
 	assertSelfCheckItem(t, out.Checks, "agent.sidecar_sig_url_reachable", "pass", http.StatusOK)
 	assertSelfCheckItem(t, out.Checks, "wisp.package_url_reachable", "pass", http.StatusOK)
+}
+
+func TestSelfCheckLocalRuntimeHostReportsLocalBackend(t *testing.T) {
+	artifactServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/wisp.erofs":
+			w.WriteHeader(http.StatusOK)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer artifactServer.Close()
+	sidecarPath := t.TempDir() + "/cloudagent-sidecar"
+	if err := os.WriteFile(sidecarPath, []byte("sidecar"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	localHost, err := NewLocalRuntimeHost(LocalRuntimeHostConfig{
+		Root:           t.TempDir(),
+		CommandPrefix:  "ssh orb /bin/bash -lc",
+		AllowHostPaths: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker, err := NewAgentSidecarWorker(AgentSidecarWorkerConfig{
+		RuntimeHost:           localHost,
+		RuntimeHostName:       runtimeHostTypeLocalWisp,
+		OuterTemplateID:       "local-agent",
+		InnerTemplateID:       "local-workspace",
+		SidecarBinaryPath:     sidecarPath,
+		TokenHubAPIKey:        "tokenhub-key",
+		OuterRuntime:          outerRuntimeWisp,
+		WispPackageURL:        artifactServer.URL + "/wisp.erofs",
+		WispSMHLibraryID:      "smh-library",
+		WispSMHAccessDomain:   "https://smh.example.com",
+		WispSMHLibrarySecret:  "smh-secret",
+		SandboxTimeoutSeconds: 60,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv, _ := newTestServer(t, worker)
+
+	resp := request(t, srv, http.MethodGet, "/v1/selfcheck", "tenant-a", "project-a", nil, "")
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", resp.Code, resp.Body.String())
+	}
+	var out selfCheckResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if !out.OK || out.Summary.RuntimeHost != runtimeHostTypeLocalWisp {
+		t.Fatalf("unexpected selfcheck response=%+v", out)
+	}
+	if out.Summary.AGSAPIKeyConfigured {
+		t.Fatalf("local_wisp selfcheck must not require AGS credentials: %+v", out.Summary)
+	}
+	if out.Summary.LocalRuntimeRoot == "" || !out.Summary.LocalRuntimeCommandProxy || !out.Summary.LocalRuntimeAllowPaths {
+		t.Fatalf("local runtime summary missing expected fields: %+v", out.Summary)
+	}
+	assertSelfCheckItem(t, out.Checks, "runtime_host.local_wisp", "pass", 0)
+	assertSelfCheckItem(t, out.Checks, "runtime_host.local_wisp.root_writable", "pass", 0)
+	assertSelfCheckItem(t, out.Checks, "runtime_host.local_wisp.command_prefix", "pass", 0)
 }
 
 func assertSelfCheckItem(t *testing.T, checks []selfCheckItem, name, status string, httpStatus int) {

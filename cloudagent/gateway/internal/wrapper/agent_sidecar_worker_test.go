@@ -1,7 +1,9 @@
 package wrapper
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -241,6 +243,217 @@ func TestWispWorkspaceStopCommandRunsBarrierBeforeStop(t *testing.T) {
 	}
 }
 
+func TestWispSessionDaemonHostCommandWritesInnerDaemonPID(t *testing.T) {
+	runtime := ACPSessionRuntime{
+		RemoteBinary:   "/tmp/gateway/sessions/session_1/hermes-sidecar",
+		WispClientPath: "/tmp/cloudagent-wisp/install/bin/wispclient",
+		WispName:       "agent-session-1",
+	}
+	command := wispSessionDaemonHostCommand(runtime, []string{"daemon", "--addr", "127.0.0.1:37001"}, "/workspace", "/workspace/.cloudagent/sessions/session_1/hermes", "/tmp/gateway/sessions/session_1/daemon.log", nil)
+	for _, want := range []string{
+		"echo $$ >",
+		"/tmp/gateway/sessions/session_1/daemon.pid",
+		"trap",
+		"exec",
+		"/tmp/gateway/sessions/session_1/hermes-sidecar",
+	} {
+		if !strings.Contains(command, want) {
+			t.Fatalf("wisp daemon command missing %q: %s", want, command)
+		}
+	}
+}
+
+func TestSidecarDaemonTerminateCommandUsesPIDFileWithoutPkillByDefault(t *testing.T) {
+	t.Setenv("GATEWAY_ACP_FAULT_INJECTION_PKILL_FALLBACK", "")
+	command := sidecarDaemonTerminateCommand("/tmp/gateway/sessions/session_1/daemon.pid", "/tmp/gateway/sessions/session_1/hermes-sidecar daemon")
+	for _, want := range []string{
+		"cat '/tmp/gateway/sessions/session_1/daemon.pid'",
+		"kill -TERM \"$pid\"",
+		"CLOUDAGENT_DAEMON_PID_MISSING",
+	} {
+		if !strings.Contains(command, want) {
+			t.Fatalf("terminate command missing %q: %s", want, command)
+		}
+	}
+	if strings.Contains(command, "pkill") {
+		t.Fatalf("pkill fallback must be opt-in, got: %s", command)
+	}
+}
+
+func TestKillSessionRuntimeDaemonUsesWispPIDFileInsteadOfProcessName(t *testing.T) {
+	t.Setenv("GATEWAY_ACP_FAULT_INJECTION_PKILL_FALLBACK", "")
+	host := &recordingRuntimeHost{}
+	worker := &AgentSidecarWorker{
+		backends: map[string]agentSidecarBackend{
+			"": {host: host},
+		},
+	}
+	runtime := ACPSessionRuntime{
+		RuntimeID:          "rt_1",
+		OuterRuntime:       outerRuntimeWisp,
+		OuterSandboxID:     "outer_1",
+		OuterSandboxDomain: runtimeHostTypeLocalWisp,
+		RemoteBinary:       "/tmp/gateway/sessions/session_1/hermes-sidecar",
+		DaemonAddr:         "http://127.0.0.1:37001",
+		WispName:           "agent-session-1",
+		WispClientPath:     "/tmp/cloudagent-wisp/install/bin/wispclient",
+	}
+
+	if err := worker.KillSessionRuntimeDaemon(context.Background(), runtime); err != nil {
+		t.Fatalf("KillSessionRuntimeDaemon returned error: %v", err)
+	}
+	command := strings.Join(host.commands, "\n")
+	if !strings.Contains(command, "daemon.pid") || !strings.Contains(command, "kill -TERM") {
+		t.Fatalf("daemon fault injection should use pid file: %s", command)
+	}
+	if strings.Contains(command, "pkill") {
+		t.Fatalf("daemon fault injection should not use process-name pkill by default: %s", command)
+	}
+}
+
+func TestKillSessionRuntimeDaemonUsesRuntimeHostProcessController(t *testing.T) {
+	host := &processControlRuntimeHost{}
+	worker := &AgentSidecarWorker{
+		backends: map[string]agentSidecarBackend{
+			"": {host: host},
+		},
+	}
+	runtime := ACPSessionRuntime{
+		RuntimeID:            "rt_1",
+		OuterSandboxID:       "outer_1",
+		OuterEnvdAccessToken: "token",
+		RemoteBinary:         "/tmp/gateway/sessions/session_1/hermes-sidecar",
+		DaemonAddr:           "http://127.0.0.1:37001",
+	}
+
+	if err := worker.KillSessionRuntimeDaemon(context.Background(), runtime); err != nil {
+		t.Fatalf("KillSessionRuntimeDaemon returned error: %v", err)
+	}
+	if len(host.killRequests) != 1 {
+		t.Fatalf("expected one process controller request, got %#v", host.killRequests)
+	}
+	if host.killTargets[0] != "outer_1" {
+		t.Fatalf("kill target=%q", host.killTargets[0])
+	}
+	req := host.killRequests[0]
+	if req.PIDFile != "/tmp/gateway/sessions/session_1/daemon.pid" || req.ProcessPattern != "/tmp/gateway/sessions/session_1/hermes-sidecar daemon" {
+		t.Fatalf("unexpected kill request: %#v", req)
+	}
+	if req.AllowProcessNameFallback {
+		t.Fatalf("process-name fallback must be disabled by default")
+	}
+}
+
+func TestCloseSessionRuntimeDoesNotDoubleStopWorkspaceAfterSidecarShutdown(t *testing.T) {
+	host := &recordingRuntimeHost{
+		runCommand: func(target RuntimeHostTarget, command string, env map[string]string, onStdout func(string) error, onStderr func(string) error) (CommandResult, error) {
+			if target.ID == "inner_1" {
+				return CommandResult{}, fmt.Errorf("inner runtime should not receive command after sidecar shutdown: %s", command)
+			}
+			if strings.Contains(command, " client --addr ") && strings.Contains(command, " shutdown") {
+				if onStdout != nil {
+					events := strings.Join([]string{
+						`WRAPPER_EVENT_JSON={"type":"runtime_host","event":"workspace_runtime_shutdown_done","sandbox_id":"inner_1"}`,
+						`WRAPPER_EVENT_JSON={"type":"runtime_host","event":"inner_shutdown_done","sandbox_id":"inner_1"}`,
+						"",
+					}, "\n")
+					if err := onStdout(events); err != nil {
+						return CommandResult{}, err
+					}
+				}
+				return CommandResult{ExitCode: 0, Exited: true, Status: "exited"}, nil
+			}
+			if strings.Contains(command, "agent-wisp-1") {
+				return CommandResult{ExitCode: 0, Exited: true, Status: "exited", Stdout: "CLOUDAGENT_WISP_STOPPED\n"}, nil
+			}
+			return CommandResult{ExitCode: 0, Exited: true, Status: "exited"}, nil
+		},
+	}
+	worker := &AgentSidecarWorker{
+		backends: map[string]agentSidecarBackend{
+			"": {host: host},
+		},
+	}
+	runtime := ACPSessionRuntime{
+		RuntimeID:           "rt_1",
+		OuterRuntime:        outerRuntimeWisp,
+		OuterSandboxID:      "outer_1",
+		OuterSandboxDomain:  runtimeHostTypeLocalWisp,
+		InnerSandboxID:      "inner_1",
+		RemoteBinary:        "/tmp/gateway/sessions/session_1/hermes-sidecar",
+		DaemonAddr:          "http://127.0.0.1:37001",
+		WispName:            "agent-wisp-1",
+		WispClientPath:      "/tmp/cloudagent-wisp/install/bin/wispclient",
+		WorkspaceWispName:   "workspace-wisp-1",
+		WorkspaceWispClient: "/tmp/cloudagent-workspace-wisp/install/bin/wispclient",
+	}
+
+	if err := worker.CloseSessionRuntime(context.Background(), runtime); err != nil {
+		t.Fatalf("CloseSessionRuntime returned error: %v", err)
+	}
+	if got := strings.Join(host.deleted, ","); got != "outer_1" {
+		t.Fatalf("deleted sandboxes=%q, want only outer_1", got)
+	}
+}
+
+type recordingRuntimeHost struct {
+	commands   []string
+	targets    []string
+	deleted    []string
+	runCommand func(RuntimeHostTarget, string, map[string]string, func(string) error, func(string) error) (CommandResult, error)
+}
+
+var _ RuntimeHost = (*recordingRuntimeHost)(nil)
+
+func (h *recordingRuntimeHost) CreateSandbox(context.Context, CreateSandboxOptions) (RuntimeHostTarget, error) {
+	return RuntimeHostTarget{}, fmt.Errorf("CreateSandbox is not implemented in recordingRuntimeHost")
+}
+
+func (h *recordingRuntimeHost) DeleteSandbox(_ context.Context, id string) error {
+	h.deleted = append(h.deleted, id)
+	return nil
+}
+
+func (h *recordingRuntimeHost) RefreshSandboxTimeout(context.Context, string, int) error {
+	return nil
+}
+
+func (h *recordingRuntimeHost) RunCommand(_ context.Context, target RuntimeHostTarget, command string, env map[string]string, onStdout func(string) error, onStderr func(string) error) (CommandResult, error) {
+	h.targets = append(h.targets, target.ID)
+	h.commands = append(h.commands, command)
+	if h.runCommand != nil {
+		return h.runCommand(target, command, env, onStdout, onStderr)
+	}
+	return CommandResult{ExitCode: 0, Exited: true, Status: "exited"}, nil
+}
+
+func (h *recordingRuntimeHost) UploadFile(context.Context, RuntimeHostTarget, string, string, []byte) error {
+	return nil
+}
+
+func (h *recordingRuntimeHost) DownloadFile(context.Context, RuntimeHostTarget, string) ([]byte, error) {
+	return nil, fmt.Errorf("DownloadFile is not implemented in recordingRuntimeHost")
+}
+
+func (h *recordingRuntimeHost) RuntimeHostEnv() RuntimeHostEnv {
+	return RuntimeHostEnv{}
+}
+
+type processControlRuntimeHost struct {
+	recordingRuntimeHost
+	killTargets    []string
+	killRequests   []RuntimeHostProcessGroupKillRequest
+	killRequestErr error
+}
+
+var _ RuntimeHostProcessController = (*processControlRuntimeHost)(nil)
+
+func (h *processControlRuntimeHost) KillTargetProcessGroup(_ context.Context, target RuntimeHostTarget, req RuntimeHostProcessGroupKillRequest) error {
+	h.killTargets = append(h.killTargets, target.ID)
+	h.killRequests = append(h.killRequests, req)
+	return h.killRequestErr
+}
+
 func TestStaleRuntimeCleanupAuthFailureIsNonBlockingForRecreate(t *testing.T) {
 	err := errors.New(`stop wisp outer runtime agent-session_1: wisp stop failed runtime_id=rt_1 outer_sandbox_id=outer_1 wisp_name=agent-session_1: exit=0 exited=false stdout_bytes=0 stderr_bytes=0 error="ags http 401 op=run_command sandbox_id=outer_1 domain=ap-shanghai.tencentags.com envd_port=49983: map[code:AUTHENTICATION_FAILED message:Authentication failed]"`)
 	if !isNonBlockingStaleRuntimeCleanupError(err) {
@@ -280,9 +493,12 @@ func TestWispOuterPrepareScriptUsesFlattenedEROFSRootfs(t *testing.T) {
 		`LOWER_SYSTEM_BASE: projectRoot + "/assets/rootfs/rootfs"`,
 		`BASE_ROOTFS_DIR: projectRoot + "/assets/rootfs/rootfs"`,
 		`BASE_ROOTFS_IMG: ""`,
+		`BLANK_ROOT_UPPER_SPARSE: "$blank_root_upper_sparse"`,
 		`export BASE_ROOTFS_DIR="$install/assets/rootfs/rootfs"`,
 		`export BASE_ROOTFS_IMG=""`,
+		`export BLANK_ROOT_UPPER_SPARSE="$blank_root_upper_sparse"`,
 		`export PATH="$install/assets/bin/e2fsprogs/bin:$PATH"`,
+		`WISP_USE_HOST_CRUN=1`,
 	} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("flattened EROFS prepare script missing %q: %s", want, script)

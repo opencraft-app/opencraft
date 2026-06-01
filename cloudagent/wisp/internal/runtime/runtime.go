@@ -1956,7 +1956,7 @@ func (r *Runtime) EnsureWorkspaceReady(ctx context.Context) error {
 	ctx, span := r.startSpan(ctx, "runtime.ensure_workspace_ready")
 	defer span.End()
 	startedAt := time.Now()
-	var ensureCOSDur, ensureDirsDur, recoveryDur, ensureImgDur time.Duration
+	var ensureCOSDur, ensureDirsDur, cleanupDur, recoveryDur, ensureImgDur time.Duration
 	if err := requireRoot(); err != nil {
 		recordSpanErr(span, err)
 		return err
@@ -1986,6 +1986,16 @@ func (r *Runtime) EnsureWorkspaceReady(ctx context.Context) error {
 	ensureDirsDur = time.Since(stepStarted)
 	r.log("ensure_workspace_ready step=done ensure_dirs container=%s duration=%s", r.cfg.WispName, humanDuration(ensureDirsDur))
 	stepStarted = time.Now()
+	r.log("ensure_workspace_ready step=start cleanup_inactive_runtime_mounts container=%s runtime_root=%s", r.cfg.WispName, r.cfg.RuntimeRoot)
+	if err := r.traceStep(ctx, "runtime.cleanup_inactive_runtime_mounts", func(ctx context.Context) error {
+		return r.cleanupInactiveRuntimeMounts(ctx)
+	}); err != nil {
+		recordSpanErr(span, err)
+		return err
+	}
+	cleanupDur = time.Since(stepStarted)
+	r.log("ensure_workspace_ready step=done cleanup_inactive_runtime_mounts container=%s duration=%s", r.cfg.WispName, humanDuration(cleanupDur))
+	stepStarted = time.Now()
 	r.log("ensure_workspace_ready step=start pre_start_recovery container=%s", r.cfg.WispName)
 	if err := r.traceStep(ctx, "runtime.pre_start_recovery", func(ctx context.Context) error {
 		return r.preStartRecovery(ctx)
@@ -2005,11 +2015,12 @@ func (r *Runtime) EnsureWorkspaceReady(ctx context.Context) error {
 	}
 	ensureImgDur = time.Since(stepStarted)
 	r.log("ensure_workspace_ready step=done ensure_active_image container=%s duration=%s", r.cfg.WispName, humanDuration(ensureImgDur))
-	r.log("SUMMARY ensure_workspace_ready container=%s total=%s ensure_cos=%s ensure_dirs=%s pre_start_recovery=%s ensure_active_image=%s",
-		r.cfg.WispName, humanDuration(time.Since(startedAt)), humanDuration(ensureCOSDur), humanDuration(ensureDirsDur), humanDuration(recoveryDur), humanDuration(ensureImgDur))
+	r.log("SUMMARY ensure_workspace_ready container=%s total=%s ensure_cos=%s ensure_dirs=%s cleanup_inactive_runtime_mounts=%s pre_start_recovery=%s ensure_active_image=%s",
+		r.cfg.WispName, humanDuration(time.Since(startedAt)), humanDuration(ensureCOSDur), humanDuration(ensureDirsDur), humanDuration(cleanupDur), humanDuration(recoveryDur), humanDuration(ensureImgDur))
 	r.log("%s", humanOpSummary("ensure_workspace_ready", r.cfg.WispName, time.Since(startedAt),
 		timedStep{name: "ensure_cos", dur: ensureCOSDur},
 		timedStep{name: "ensure_dirs", dur: ensureDirsDur},
+		timedStep{name: "cleanup_inactive_runtime_mounts", dur: cleanupDur},
 		timedStep{name: "pre_start_recovery", dur: recoveryDur},
 		timedStep{name: "ensure_active_image", dur: ensureImgDur},
 	))
@@ -2314,10 +2325,26 @@ func (r *Runtime) ensureActiveImage(ctx context.Context) error {
 		return nil
 	}
 	startedAt := time.Now()
-	r.log("ensure_active_image create_start active_img=%s size=%s", r.cfg.ActiveImg, r.cfg.RootUpperSize)
-	sizeBytes, err := parseByteSize(r.cfg.RootUpperSize)
+	requestedSize := strings.TrimSpace(r.cfg.RootUpperSize)
+	r.log("ensure_active_image create_start active_img=%s size=%s blank_template_sparse=%s blank_template=%s blank_template_tar=%s", r.cfg.ActiveImg, requestedSize, r.cfg.BlankRootUpperSparse, r.cfg.BlankRootUpperImage, r.cfg.BlankRootUpperTar)
+	if requestedSize == "" {
+		copied, err := r.copyBlankActiveImageTemplate(ctx)
+		if err != nil {
+			return err
+		}
+		if copied {
+			r.log("SUMMARY ensure_active_image active_img=%s total=%s source=blank_template", r.cfg.ActiveImg, humanDuration(time.Since(startedAt)))
+			return nil
+		}
+		requestedSize = strings.TrimSpace(r.cfg.DefaultRootUpperSize)
+		r.log("ensure_active_image blank_template_unavailable active_img=%s fallback_size=%s", r.cfg.ActiveImg, requestedSize)
+	}
+	sizeBytes, err := parseByteSize(requestedSize)
 	if err != nil {
-		return fmt.Errorf("parse ROOT_UPPER_SIZE %q: %w", r.cfg.RootUpperSize, err)
+		return fmt.Errorf("parse ROOT_UPPER_SIZE %q: %w", requestedSize, err)
+	}
+	if err := os.MkdirAll(filepath.Dir(r.cfg.ActiveImg), 0o755); err != nil {
+		return err
 	}
 	openStart := time.Now()
 	f, err := os.OpenFile(r.cfg.ActiveImg, os.O_CREATE|os.O_RDWR, 0o644)
@@ -2349,6 +2376,273 @@ func (r *Runtime) ensureActiveImage(ctx context.Context) error {
 	return nil
 }
 
+func (r *Runtime) copyBlankActiveImageTemplate(ctx context.Context) (bool, error) {
+	if strings.TrimSpace(r.cfg.BlankRootUpperSparse) != "" {
+		return r.extractBlankActiveImageTemplateSparse(ctx)
+	}
+	if strings.TrimSpace(r.cfg.BlankRootUpperTar) != "" {
+		return r.extractBlankActiveImageTemplateTar(ctx)
+	}
+	src := strings.TrimSpace(r.cfg.BlankRootUpperImage)
+	if src == "" {
+		return false, nil
+	}
+	st, err := os.Stat(src)
+	if err != nil {
+		if os.IsNotExist(err) {
+			r.log("ensure_active_image blank_template_missing path=%s", src)
+			return false, nil
+		}
+		return false, fmt.Errorf("stat BLANK_ROOT_UPPER_IMG %s: %w", src, err)
+	}
+	if !st.Mode().IsRegular() || st.Size() <= 0 {
+		return false, fmt.Errorf("BLANK_ROOT_UPPER_IMG is not a non-empty regular file: %s", src)
+	}
+	if err := os.MkdirAll(filepath.Dir(r.cfg.ActiveImg), 0o755); err != nil {
+		return false, err
+	}
+	startedAt := time.Now()
+	r.log("ensure_active_image blank_template_copy_start src=%s dst=%s bytes=%d", src, r.cfg.ActiveImg, st.Size())
+	if err := sparseCopyFile(src, r.cfg.ActiveImg); err != nil {
+		_ = os.Remove(r.cfg.ActiveImg)
+		return false, fmt.Errorf("copy blank root-upper template %s -> %s: %w", src, r.cfg.ActiveImg, err)
+	}
+	r.log("ensure_active_image blank_template_copy_done src=%s dst=%s bytes=%d duration=%s", src, r.cfg.ActiveImg, st.Size(), humanDuration(time.Since(startedAt)))
+	return true, nil
+}
+
+const sparseRootUpperMagic = "WISP_SPARSE_ROOT_UPPER_V1"
+
+type sparseRootUpperManifest struct {
+	Size    int64                      `json:"size"`
+	Extents []sparseRootUpperExtent    `json:"extents"`
+	Meta    map[string]json.RawMessage `json:"meta,omitempty"`
+}
+
+type sparseRootUpperExtent struct {
+	Offset int64 `json:"offset"`
+	Length int64 `json:"length"`
+}
+
+func (r *Runtime) extractBlankActiveImageTemplateSparse(ctx context.Context) (bool, error) {
+	_ = ctx
+	src := strings.TrimSpace(r.cfg.BlankRootUpperSparse)
+	st, err := os.Stat(src)
+	if err != nil {
+		if os.IsNotExist(err) {
+			r.log("ensure_active_image blank_template_sparse_missing path=%s", src)
+			return false, nil
+		}
+		return false, fmt.Errorf("stat BLANK_ROOT_UPPER_SPARSE %s: %w", src, err)
+	}
+	if !st.Mode().IsRegular() || st.Size() <= 0 {
+		return false, fmt.Errorf("BLANK_ROOT_UPPER_SPARSE is not a non-empty regular file: %s", src)
+	}
+	in, err := os.Open(src)
+	if err != nil {
+		return false, err
+	}
+	defer in.Close()
+	reader := bufio.NewReader(in)
+	magic, err := reader.ReadString('\n')
+	if err != nil {
+		return false, fmt.Errorf("read sparse root-upper magic: %w", err)
+	}
+	if strings.TrimSpace(magic) != sparseRootUpperMagic {
+		return false, fmt.Errorf("invalid sparse root-upper magic in %s", src)
+	}
+	manifestLine, err := reader.ReadString('\n')
+	if err != nil {
+		return false, fmt.Errorf("read sparse root-upper manifest: %w", err)
+	}
+	var manifest sparseRootUpperManifest
+	if err := json.Unmarshal([]byte(manifestLine), &manifest); err != nil {
+		return false, fmt.Errorf("parse sparse root-upper manifest: %w", err)
+	}
+	if manifest.Size <= 0 {
+		return false, fmt.Errorf("invalid sparse root-upper size %d", manifest.Size)
+	}
+	if err := os.MkdirAll(filepath.Dir(r.cfg.ActiveImg), 0o755); err != nil {
+		return false, err
+	}
+	out, err := os.OpenFile(r.cfg.ActiveImg, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0o644)
+	if err != nil {
+		return false, err
+	}
+	defer func() {
+		_ = out.Close()
+	}()
+	startedAt := time.Now()
+	r.log("ensure_active_image blank_template_sparse_extract_start src=%s dst=%s bytes=%d logical_size=%d extents=%d", src, r.cfg.ActiveImg, st.Size(), manifest.Size, len(manifest.Extents))
+	for _, extent := range manifest.Extents {
+		if extent.Offset < 0 || extent.Length < 0 || extent.Offset+extent.Length > manifest.Size {
+			_ = os.Remove(r.cfg.ActiveImg)
+			return false, fmt.Errorf("invalid sparse root-upper extent offset=%d length=%d size=%d", extent.Offset, extent.Length, manifest.Size)
+		}
+		if _, err := out.Seek(extent.Offset, io.SeekStart); err != nil {
+			_ = os.Remove(r.cfg.ActiveImg)
+			return false, err
+		}
+		if _, err := io.CopyN(out, reader, extent.Length); err != nil {
+			_ = os.Remove(r.cfg.ActiveImg)
+			return false, err
+		}
+	}
+	if err := out.Truncate(manifest.Size); err != nil {
+		_ = os.Remove(r.cfg.ActiveImg)
+		return false, err
+	}
+	r.log("ensure_active_image blank_template_sparse_extract_done src=%s dst=%s logical_size=%d extents=%d duration=%s", src, r.cfg.ActiveImg, manifest.Size, len(manifest.Extents), humanDuration(time.Since(startedAt)))
+	return true, nil
+}
+
+func (r *Runtime) extractBlankActiveImageTemplateTar(ctx context.Context) (bool, error) {
+	src := strings.TrimSpace(r.cfg.BlankRootUpperTar)
+	st, err := os.Stat(src)
+	if err != nil {
+		if os.IsNotExist(err) {
+			r.log("ensure_active_image blank_template_tar_missing path=%s", src)
+			return false, nil
+		}
+		return false, fmt.Errorf("stat BLANK_ROOT_UPPER_TAR %s: %w", src, err)
+	}
+	if !st.Mode().IsRegular() || st.Size() <= 0 {
+		return false, fmt.Errorf("BLANK_ROOT_UPPER_TAR is not a non-empty regular file: %s", src)
+	}
+	if err := os.MkdirAll(filepath.Dir(r.cfg.ActiveImg), 0o755); err != nil {
+		return false, err
+	}
+	tmpDir, err := os.MkdirTemp(filepath.Dir(r.cfg.ActiveImg), ".blank-root-upper-")
+	if err != nil {
+		return false, err
+	}
+	defer os.RemoveAll(tmpDir)
+	startedAt := time.Now()
+	r.log("ensure_active_image blank_template_tar_extract_start src=%s dst=%s bytes=%d", src, r.cfg.ActiveImg, st.Size())
+	cmd := exec.CommandContext(ctx, "tar", "--sparse", "-xf", src, "-C", tmpDir)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if msg != "" {
+			return false, fmt.Errorf("extract blank root-upper template %s: %s: %w", src, msg, err)
+		}
+		return false, fmt.Errorf("extract blank root-upper template %s: %w", src, err)
+	}
+	extracted := filepath.Join(tmpDir, "root-upper-default.img")
+	if _, err := os.Stat(extracted); err != nil {
+		return false, fmt.Errorf("extract blank root-upper template %s: missing root-upper-default.img: %w", src, err)
+	}
+	if err := os.Rename(extracted, r.cfg.ActiveImg); err != nil {
+		return false, err
+	}
+	r.log("ensure_active_image blank_template_tar_extract_done src=%s dst=%s duration=%s", src, r.cfg.ActiveImg, humanDuration(time.Since(startedAt)))
+	return true, nil
+}
+
+func sparseCopyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0o644)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = out.Close()
+	}()
+	st, err := in.Stat()
+	if err != nil {
+		return err
+	}
+	if err := sparseCopyDataRanges(in, out, st.Size()); err == nil {
+		return out.Truncate(st.Size())
+	} else if !errors.Is(err, errSparseSeekUnsupported) {
+		return err
+	}
+	buf := make([]byte, 1024*1024)
+	for {
+		n, readErr := in.Read(buf)
+		if n > 0 {
+			chunk := buf[:n]
+			if isZeroChunk(chunk) {
+				if _, err := out.Seek(int64(n), io.SeekCurrent); err != nil {
+					return err
+				}
+			} else if _, err := out.Write(chunk); err != nil {
+				return err
+			}
+		}
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			return readErr
+		}
+	}
+	size, err := in.Seek(0, io.SeekEnd)
+	if err != nil {
+		return err
+	}
+	return out.Truncate(size)
+}
+
+var errSparseSeekUnsupported = errors.New("sparse seek unsupported")
+
+func sparseCopyDataRanges(in *os.File, out *os.File, size int64) error {
+	if size == 0 {
+		return nil
+	}
+	offset := int64(0)
+	for offset < size {
+		data, err := unix.Seek(int(in.Fd()), offset, unix.SEEK_DATA)
+		if err != nil {
+			if errors.Is(err, unix.ENXIO) {
+				return nil
+			}
+			if errors.Is(err, unix.EINVAL) {
+				return errSparseSeekUnsupported
+			}
+			return err
+		}
+		if data >= size {
+			return nil
+		}
+		hole, err := unix.Seek(int(in.Fd()), data, unix.SEEK_HOLE)
+		if err != nil {
+			if errors.Is(err, unix.EINVAL) {
+				return errSparseSeekUnsupported
+			}
+			return err
+		}
+		if hole > size {
+			hole = size
+		}
+		if _, err := in.Seek(data, io.SeekStart); err != nil {
+			return err
+		}
+		if _, err := out.Seek(data, io.SeekStart); err != nil {
+			return err
+		}
+		if _, err := io.CopyN(out, in, hole-data); err != nil {
+			return err
+		}
+		offset = hole
+	}
+	return nil
+}
+
+func isZeroChunk(chunk []byte) bool {
+	for _, b := range chunk {
+		if b != 0 {
+			return false
+		}
+	}
+	return true
+}
+
 func activeImageMke2fsArgs(sizeBytes int64, imagePath string) []string {
 	journalMB := int64(128)
 	switch {
@@ -2360,6 +2654,7 @@ func activeImageMke2fsArgs(sizeBytes int64, imagePath string) []string {
 		journalMB = 64
 	}
 	return []string{
+		"-F",
 		"-F",
 		"-t", "ext4",
 		"-m", "0",
@@ -2744,13 +3039,7 @@ func (r *Runtime) CleanupStaleRuntimeRoots(ctx context.Context) error {
 	}
 
 	var errs []string
-	for _, root := range r.staleRuntimeRoots(filepath.Dir(r.cfg.RuntimeRoot), r.cfg.RuntimeRoot) {
-		if err := r.cleanupRuntimeRoot(ctx, root); err != nil {
-			errs = append(errs, err.Error())
-		}
-	}
-	currentLegacy := strings.TrimSpace(r.cfg.LegacyRuntimeRoot)
-	for _, root := range r.staleRuntimeRoots(filepath.Dir(currentLegacy), currentLegacy) {
+	for _, root := range r.staleRuntimeRootsForCleanup() {
 		if err := r.cleanupRuntimeRoot(ctx, root); err != nil {
 			errs = append(errs, err.Error())
 		}
@@ -2759,6 +3048,51 @@ func (r *Runtime) CleanupStaleRuntimeRoots(ctx context.Context) error {
 		return errors.New(strings.Join(errs, "; "))
 	}
 	return nil
+}
+
+func (r *Runtime) staleRuntimeRootsForCleanup() []string {
+	var roots []string
+	runtimeRoot := strings.TrimSpace(r.cfg.RuntimeRoot)
+	if runtimeRoot != "" {
+		roots = append(roots, r.staleRuntimeRoots(filepath.Dir(runtimeRoot), runtimeRoot)...)
+	}
+	currentLegacy := strings.TrimSpace(r.cfg.LegacyRuntimeRoot)
+	if currentLegacy != "" {
+		roots = append(roots, r.staleRuntimeRoots(filepath.Dir(currentLegacy), currentLegacy)...)
+	}
+	return roots
+}
+
+func (r *Runtime) cleanupInactiveRuntimeMounts(ctx context.Context) error {
+	exists, err := r.containerExists(ctx)
+	if err != nil {
+		r.log("cleanup_inactive_runtime_mounts container_exists_error container=%s err=%v", r.cfg.WispName, err)
+	}
+	if exists {
+		r.log("cleanup_inactive_runtime_mounts skip container=%s reason=container_exists", r.cfg.WispName)
+		return nil
+	}
+	if !r.hasRuntimeMountState(ctx) {
+		return nil
+	}
+	r.log("cleanup_inactive_runtime_mounts reset_start container=%s runtime_root=%s", r.cfg.WispName, r.cfg.RuntimeRoot)
+	if err := r.resetRuntime(ctx); err != nil {
+		return err
+	}
+	r.log("cleanup_inactive_runtime_mounts reset_done container=%s runtime_root=%s", r.cfg.WispName, r.cfg.RuntimeRoot)
+	return nil
+}
+
+func (r *Runtime) hasRuntimeMountState(ctx context.Context) bool {
+	for _, target := range r.runtimeUnmountTargets(r.cfg.RuntimeRoot, r.cfg.LegacyRuntimeRoot) {
+		if r.isMountpoint(ctx, target.path) {
+			return true
+		}
+	}
+	if dev := strings.TrimSpace(string(readFileBestEffort(r.cfg.LoopDeviceFile))); dev != "" {
+		return true
+	}
+	return false
 }
 
 func (r *Runtime) staleRuntimeRoots(parent, current string) []string {

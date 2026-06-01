@@ -1,0 +1,110 @@
+local projectRoot = "/path/to/wisp";
+local workspace = "default";
+local containerID = "wisp-" + workspace;
+
+local localRoot = "/var/lib/wisp-smh/" + workspace;
+local hostRoot = "/var/lib/wisp/" + workspace;
+local sharedRoot = "/var/lib/wisp/shared";
+local runtimeRoot = "/var/lib/wisp-runtime/" + workspace;
+local jfsRoot = "/mnt/wisp-smh/" + workspace;
+
+{
+  WISP_NAME: workspace,
+  REMOTE_BACKEND: "smh",
+
+  JFS_ROOT: jfsRoot,
+  STATE_ROOT: jfsRoot + "/wisp/" + workspace,
+  ACTIVE_ROOT: jfsRoot + "/wisp/" + workspace + "/active",
+  ACTIVE_IMG: jfsRoot + "/wisp/" + workspace + "/active/root-upper.img",
+  CHECKPOINTS_ROOT: jfsRoot + "/wisp/" + workspace + "/checkpoints",
+  POLICY_ROOT: jfsRoot + "/wisp/" + workspace + "/policy",
+
+  TEMP_ROOT: hostRoot,
+  TMP_ROOT: hostRoot + "/tmp",
+  DOCKER_ROOT: hostRoot + "/var-lib-docker",
+  LOG_ROOT: hostRoot + "/logs",
+
+  LOWER_ROOT: sharedRoot + "/lower",
+  LOWER_LANGUAGES: sharedRoot + "/lower/languages-image",
+  LOWER_SYSTEM: sharedRoot + "/lower/system",
+  LOWER_SYSTEM_BASE: sharedRoot + "/lower/system-base",
+
+  RUNTIME_ROOT: runtimeRoot,
+  ROOTFS_MOUNT: runtimeRoot + "/rootfs",
+  UPPER_IMAGE_MOUNT: runtimeRoot + "/root-upper-rw",
+  ACTIVE_VIEW_MOUNT: runtimeRoot + "/rootfs/.wisp/checkpoints/active",
+  LOOP_DEVICE_FILE: runtimeRoot + "/loop-device",
+  PID_FILE: runtimeRoot + "/enter.pid",
+  CRUN_STATE_ROOT: runtimeRoot + "/.crun",
+  CRUN_BUNDLE_ROOT: runtimeRoot + "/bundle",
+  CRUN_BUNDLE_ROOTFS: runtimeRoot + "/bundle/rootfs",
+  LEGACY_RUNTIME_ROOT: "/run/wisp/" + workspace,
+
+  ADMIN_ROOT: "/run/envd",
+  ADMIN_SOCKET_PATH: "/run/envd/admin.sock",
+  ADMIN_LISTEN_ADDR: "0.0.0.0:8520",
+  DAEMON_LOCK_FILE: "/run/envd/wisp.lock",
+  ENV_SOCKET_PATH: "/.wisp/api.sock",
+  ENV_SOCKET_HOST_PATH: runtimeRoot + "/api.sock",
+  CONTAINER_ID: containerID,
+
+  CGROUP_ROOT: "/sys/fs/cgroup/wisp",
+  CGROUP_PARENT: "/sys/fs/cgroup/wisp/" + workspace,
+  CGROUP_USER_PARENT: "/sys/fs/cgroup/wisp/" + workspace + "/user",
+  CGROUP_RUNTIME_PARENT: "/sys/fs/cgroup/wisp/" + workspace + "/runtime",
+  CGROUP_USER_CONTAINER: "/sys/fs/cgroup/wisp/" + workspace + "/user/" + containerID,
+
+  COS_ENABLED: false,
+  COS_BUCKET: "",
+  COS_REGION: "",
+  COS_ENDPOINT: "",
+  SMH_ENABLED: true,
+  SMH_LIBRARY_ID: "",
+  SMH_ACCESS_DOMAIN: "",
+  SMH_SPACE_ID: "",
+  SMH_TOKEN_TTL_SECONDS: 86400,
+
+  JFS_LOCAL_ROOT: localRoot + "/juicefs",
+  JFS_PREFIX: "workspace",
+  JFS_BIN: projectRoot + "/bin/juicefs-smount",
+  JFS_BUILD: "0",
+  JUICEFS_REPO_ROOT: "",
+  JFS_SMOUNT_SCRIPT: projectRoot + "/juicefs/hack/smount.sh",
+  JFS_SFORMAT_SCRIPT: projectRoot + "/juicefs/hack/sformat.sh",
+  JFS_META_URL: "",
+  JFS_BUCKET_URL: "",
+
+  ROOT_UPPER_SIZE: "5G",
+  DEFAULT_ROOT_UPPER_SIZE: "5G",
+  BLANK_ROOT_UPPER_SPARSE: projectRoot + "/assets/rootfs/blank-ext4/root-upper-default.sparse",
+  WISP_USER: "wisp",
+  WISP_UID: 1001,
+  WISP_GID: 1001,
+  SHELL_PATH: "/bin/sh",
+
+  BASE_ROOTFS_DIR: projectRoot + "/assets/rootfs/rootfs",
+  BASE_ROOTFS_IMG: "",
+  CRUN_BINARY: projectRoot + "/assets/bin/crun/crun-amd64",
+  CRUN_BINARY_PATH: sharedRoot + "/tools/crun",
+  WISPENV_BINARY: projectRoot + "/bin/wispenv",
+  WISP_FS_AGENT_BINARY: projectRoot + "/bin/wisp-fs-agent",
+  TINI_BINARY: projectRoot + "/assets/bin/tini/tini",
+  TINI_VERSION: "v0.19.0",
+
+  WISP_PATH: "/home/wisp/.local/bin:/.wisp/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+  WISP_LANG: "en_US.UTF-8",
+  WISP_BROWSER: "/.wisp/bin/wisp-browser",
+  WISP_DEBIAN_FRONTEND: "noninteractive",
+  RESOLV_NAMESERVERS: "114.114.114.114",
+
+  MEMORY_RESERVE_MB: 512,
+  MEMORY_HIGH_PERCENT: 90,
+  USER_MEMORY_MAX_BYTES: "",
+  USER_MEMORY_HIGH_BYTES: "",
+  CPU_RESERVE_MILLICORES: 500,
+  USER_CPU_MAX_MILLICORES: "",
+  CPU_PERIOD_US: 100000,
+  TOTAL_PIDS_BUDGET: "",
+  RUNTIME_PIDS_RESERVE: 128,
+  USER_PIDS_MAX: "",
+}

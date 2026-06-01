@@ -44,6 +44,9 @@ func TestLoadAppliesDefaultsAndOverrides(t *testing.T) {
 	if cfg.RootUpperSize != "2G" {
 		t.Fatalf("RootUpperSize=%q", cfg.RootUpperSize)
 	}
+	if cfg.DefaultRootUpperSize != "5G" {
+		t.Fatalf("DefaultRootUpperSize=%q", cfg.DefaultRootUpperSize)
+	}
 	if cfg.WispUID != 2001 {
 		t.Fatalf("WispUID=%d", cfg.WispUID)
 	}
@@ -58,6 +61,71 @@ func TestLoadAppliesDefaultsAndOverrides(t *testing.T) {
 	}
 	if cfg.DaemonLockFile != "/run/envd/wisp.lock" {
 		t.Fatalf("DaemonLockFile=%q", cfg.DaemonLockFile)
+	}
+}
+
+func TestLoadDerivesPerWorkspaceCgroupPaths(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.jsonnet")
+	content := "{\n" +
+		"  \"WISP_NAME\": \"agent-session-a\",\n" +
+		"  \"JFS_ROOT\": \"/jfs\"\n" +
+		"}\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+
+	if cfg.CgroupParent != "/sys/fs/cgroup/wisp/agent-session-a" {
+		t.Fatalf("CgroupParent=%q", cfg.CgroupParent)
+	}
+	if cfg.CgroupUserParent != "/sys/fs/cgroup/wisp/agent-session-a/user" {
+		t.Fatalf("CgroupUserParent=%q", cfg.CgroupUserParent)
+	}
+	if cfg.CgroupRuntimeParent != "/sys/fs/cgroup/wisp/agent-session-a/runtime" {
+		t.Fatalf("CgroupRuntimeParent=%q", cfg.CgroupRuntimeParent)
+	}
+	if cfg.CgroupUserContainer != "/sys/fs/cgroup/wisp/agent-session-a/user/wisp-agent-session-a" {
+		t.Fatalf("CgroupUserContainer=%q", cfg.CgroupUserContainer)
+	}
+}
+
+func TestPackagedSingleHostConfigUsesSMHAndPackagedAssets(t *testing.T) {
+	path := filepath.Join("..", "..", "packaging", "config.single-host-smh.jsonnet.example")
+	t.Setenv("SMH_LIBRARY_ID", "lib-test")
+	t.Setenv("SMH_ACCESS_DOMAIN", "https://example.api.tencentsmh.cn")
+	t.Setenv("SMH_LIBRARY_SECRET", "secret-test")
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("load package config: %v", err)
+	}
+	if cfg.RemoteBackend != "smh" {
+		t.Fatalf("RemoteBackend=%q", cfg.RemoteBackend)
+	}
+	if cfg.COSEnabled {
+		t.Fatalf("COSEnabled=true")
+	}
+	if !cfg.SMHEnabled {
+		t.Fatalf("SMHEnabled=false")
+	}
+	if cfg.SMHLibraryID != "lib-test" || cfg.SMHAccessDomain != "https://example.api.tencentsmh.cn" || cfg.SMHLibrarySecret != "secret-test" {
+		t.Fatalf("SMH config mismatch: id=%q domain=%q secret=%q", cfg.SMHLibraryID, cfg.SMHAccessDomain, cfg.SMHLibrarySecret)
+	}
+	if !strings.HasSuffix(cfg.BaseRootFSDir, "/assets/rootfs/rootfs") {
+		t.Fatalf("BaseRootFSDir=%q", cfg.BaseRootFSDir)
+	}
+	if cfg.BaseRootFSImage != "" {
+		t.Fatalf("BaseRootFSImage=%q", cfg.BaseRootFSImage)
+	}
+	if !strings.HasSuffix(cfg.BlankRootUpperSparse, "/assets/rootfs/blank-ext4/root-upper-default.sparse") {
+		t.Fatalf("BlankRootUpperSparse=%q", cfg.BlankRootUpperSparse)
+	}
+	if !strings.HasSuffix(cfg.TiniBinary, "/assets/bin/tini/tini") {
+		t.Fatalf("TiniBinary=%q", cfg.TiniBinary)
 	}
 }
 

@@ -413,6 +413,7 @@ func (g *ACPGateway) cloudAgentEnsureRuntimeReady(scope Scope, req acpCloudAgent
 	ownership, err := g.acquireRuntimeOwnership(context.Background(), sessionID, beforeGeneration, runID, "restore")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "timeline source=server event=acp_runtime_ensure_ready_failed session_id=%s source=%s generation=%d elapsed_ms=%d error=%s\n", sessionID, source, beforeGeneration, elapsedMillis(startedAt), quoteServerField(err.Error()))
+		g.broadcastWorkspaceLifecycle(scope, sessionID, beforeGeneration, "restore", "lease_wait", "failed", "获取 Runtime 所有权失败", startedAt, cloudAgentErrorLifecycleFields(err))
 		return nil, err
 	}
 	stopOwnershipHeartbeat := g.startRuntimeOwnershipHeartbeat(context.Background(), ownership, nil)
@@ -421,11 +422,13 @@ func (g *ACPGateway) cloudAgentEnsureRuntimeReady(scope Scope, req acpCloudAgent
 	session, err := g.resumeSession(scope, sessionID, req.CWD)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "timeline source=server event=acp_runtime_ensure_ready_failed session_id=%s source=%s generation=%d elapsed_ms=%d error=%s\n", sessionID, source, beforeGeneration, elapsedMillis(startedAt), quoteServerField(err.Error()))
+		g.broadcastWorkspaceLifecycle(scope, sessionID, beforeGeneration, "restore", "ready", "failed", "Workspace 恢复失败", startedAt, cloudAgentErrorLifecycleFields(err))
 		return nil, err
 	}
 	status, err := g.cloudAgentSessionStatus(scope, sessionID)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "timeline source=server event=acp_runtime_ensure_ready_failed session_id=%s source=%s generation=%d elapsed_ms=%d error=%s\n", sessionID, source, beforeGeneration, elapsedMillis(startedAt), quoteServerField(err.Error()))
+		g.broadcastWorkspaceLifecycle(scope, sessionID, beforeGeneration, "restore", "ready", "failed", "Workspace 状态读取失败", startedAt, cloudAgentErrorLifecycleFields(err))
 		return nil, err
 	}
 	status["configOptions"] = cloneConfigOptions(session.ConfigOptions)
@@ -444,9 +447,42 @@ func (g *ACPGateway) cloudAgentEnsureRuntimeReady(scope Scope, req acpCloudAgent
 	fmt.Fprintf(os.Stderr, "timeline source=server event=acp_runtime_ensure_ready_done session_id=%s source=%s generation=%d elapsed_ms=%d ok=%t changed=%t runtime_id=%s outer_sandbox_id=%s\n", sessionID, source, beforeGeneration, elapsedMillis(startedAt), status["ok"] == true, restore["changed"] == true, session.Runtime.RuntimeID, session.Runtime.OuterSandboxID)
 	return status, nil
 }
+
+func cloudAgentErrorLifecycleFields(err error) map[string]any {
+	fields := map[string]any{}
+	if err != nil {
+		fields["error"] = err.Error()
+	}
+	code, message, data := acpJSONRPCError(err)
+	fields["jsonrpc_code"] = code
+	fields["message"] = message
+	if dataMap, ok := data.(map[string]any); ok {
+		for key, value := range dataMap {
+			if cloudAgentLifecycleReservedField(key) {
+				fields["error_"+key] = value
+				continue
+			}
+			fields[key] = value
+		}
+	}
+	return fields
+}
+
+func cloudAgentLifecycleReservedField(key string) bool {
+	switch key {
+	case "session_id", "generation", "operation", "phase", "status", "label", "elapsed_ms", "lifecycle_id", "timestamp", "message", "error":
+		return true
+	default:
+		return false
+	}
+}
+
 func (g *ACPGateway) closeSession(scope Scope, sessionID string) error {
 	runtime, _, _, err := g.cleanupSessionRuntime(scope, sessionID, "closed")
 	if err != nil && runtimeNeedsCleanup(runtime) {
+		if runtime.isWispOuterRuntime() {
+			return err
+		}
 		fmt.Fprintf(os.Stderr, "timeline source=server event=acp_session_close_cleanup_deferred session_id=%s error=%s\n", sessionID, quoteServerField(err.Error()))
 		return nil
 	}
