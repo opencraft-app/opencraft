@@ -96,6 +96,30 @@ func TestWeChatOAuthStartSupportsOfficialAccountMode(t *testing.T) {
 	}
 }
 
+func TestWeChatOAuthStartSupportsOfficialAccountBaseScope(t *testing.T) {
+	t.Parallel()
+
+	router := newAuthTestRouterWithWeChatApps(&stubWeChatOAuthClient{}, &stubWeChatOAuthClient{})
+
+	recorder := performJSONRequest(t, router, http.MethodGet, "/auth/oauth/wechat/start?mode=official_account&scope=base", nil)
+	if recorder.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("expected 307 from wechat oauth start, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+
+	location := recorder.Header().Get("Location")
+	parsed, err := url.Parse(location)
+	if err != nil {
+		t.Fatalf("parse redirect location: %v", err)
+	}
+	if got := parsed.Query().Get("scope"); got != "snsapi_base" {
+		t.Fatalf("expected scope=snsapi_base, got %q", got)
+	}
+	scopeCookie := cookieFromRecorderByName(t, recorder, wechatOAuthScopeCookieName)
+	if got := scopeCookie.Value; got != "snsapi_base" {
+		t.Fatalf("expected base scope cookie, got %q", got)
+	}
+}
+
 func TestWeChatOAuthStartDefaultsToOfficialAccountInsideWeChat(t *testing.T) {
 	t.Parallel()
 
@@ -112,6 +136,65 @@ func TestWeChatOAuthStartDefaultsToOfficialAccountInsideWeChat(t *testing.T) {
 	location := recorder.Header().Get("Location")
 	if !strings.HasPrefix(location, "https://open.weixin.qq.com/connect/oauth2/authorize?") {
 		t.Fatalf("expected official account authorize redirect, got %q", location)
+	}
+}
+
+func TestWeChatOAuthOfficialAccountBaseCallbackReturnsOpenIDToPaymentPage(t *testing.T) {
+	t.Parallel()
+
+	websiteClient := &stubWeChatOAuthClient{}
+	officialAccountClient := &stubWeChatOAuthClient{}
+	router := newAuthTestRouterWithWeChatApps(websiteClient, officialAccountClient)
+
+	returnTo := "https://master.preview.lightclaw.tech/auth/wechat-pay?plan=lite#cashier"
+	start := performJSONRequest(
+		t,
+		router,
+		http.MethodGet,
+		"/auth/oauth/wechat/start?mode=official_account&scope=base&return_to="+url.QueryEscape(returnTo),
+		nil,
+	)
+	startLocation, err := url.Parse(start.Header().Get("Location"))
+	if err != nil {
+		t.Fatalf("parse start location: %v", err)
+	}
+	stateCookie := cookieFromRecorderByName(t, start, wechatOAuthStateCookieName)
+	modeCookie := cookieFromRecorderByName(t, start, wechatOAuthModeCookieName)
+	scopeCookie := cookieFromRecorderByName(t, start, wechatOAuthScopeCookieName)
+	returnToCookie := cookieFromRecorderByName(t, start, wechatOAuthReturnToCookieName)
+
+	callback := performJSONRequest(
+		t,
+		router,
+		http.MethodGet,
+		"/auth/oauth/wechat/callback?code=pay-code-123&state="+url.QueryEscape(startLocation.Query().Get("state")),
+		nil,
+		stateCookie,
+		modeCookie,
+		scopeCookie,
+		returnToCookie,
+	)
+	if callback.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("expected 307 from wechat oauth callback, got %d: %s", callback.Code, callback.Body.String())
+	}
+	redirected, err := url.Parse(callback.Header().Get("Location"))
+	if err != nil {
+		t.Fatalf("parse callback location: %v", err)
+	}
+	if got := redirected.Query().Get("openid"); got != "openid-from-pay-code-123" {
+		t.Fatalf("expected openid on payment return_to, got %q from %q", got, callback.Header().Get("Location"))
+	}
+	if got := redirected.Query().Get("plan"); got != "lite" {
+		t.Fatalf("expected existing query to be preserved, got %q", got)
+	}
+	if redirected.Fragment != "cashier" {
+		t.Fatalf("expected fragment to be preserved, got %q", redirected.Fragment)
+	}
+	if strings.Contains(callback.Header().Get("Location"), "session_token=") {
+		t.Fatalf("payment OpenID callback must not expose session token: %q", callback.Header().Get("Location"))
+	}
+	if officialAccountClient.resolveCalls != 0 {
+		t.Fatalf("base scope callback must not resolve login identity, got %d calls", officialAccountClient.resolveCalls)
 	}
 }
 
@@ -1292,6 +1375,7 @@ type stubWeChatOAuthClient struct {
 	resolveErr          error
 	exchangeRedirectURI string
 	exchangeCalls       int
+	resolveCalls        int
 }
 
 func (s *stubWeChatOAuthClient) ExchangeCode(_ context.Context, code string, redirectURI string) (*WeChatOAuthToken, error) {
@@ -1308,6 +1392,7 @@ func (s *stubWeChatOAuthClient) ExchangeCode(_ context.Context, code string, red
 }
 
 func (s *stubWeChatOAuthClient) ResolveIdentity(_ context.Context, _ *WeChatOAuthToken) (service.OAuthSignInInput, error) {
+	s.resolveCalls++
 	if s.resolveErr != nil {
 		return service.OAuthSignInInput{}, s.resolveErr
 	}

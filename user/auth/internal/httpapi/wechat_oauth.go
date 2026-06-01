@@ -19,6 +19,7 @@ import (
 const wechatOAuthStateCookieName = "lc_wechat_oauth_state"
 const wechatOAuthStateCookiePath = "/auth/oauth/wechat/callback"
 const wechatOAuthModeCookieName = "lc_wechat_oauth_mode"
+const wechatOAuthScopeCookieName = "lc_wechat_oauth_scope"
 const wechatOAuthReturnToCookieName = "lc_wechat_oauth_return_to"
 
 type wechatOAuthMode string
@@ -155,6 +156,11 @@ func (h *Handler) StartWeChatOAuth(ctx *gin.Context) {
 		ctx.AbortWithStatus(http.StatusNotFound)
 		return
 	}
+	scope, err := requestedWeChatOAuthScope(ctx.Request, app)
+	if err != nil {
+		ctx.AbortWithStatus(http.StatusBadRequest)
+		return
+	}
 
 	nonce, err := newOAuthState()
 	if err != nil {
@@ -185,9 +191,18 @@ func (h *Handler) StartWeChatOAuth(ctx *gin.Context) {
 		Secure:   h.cookieSecure,
 		MaxAge:   int(h.wechatOAuth.stateTTL / time.Second),
 	})
+	http.SetCookie(ctx.Writer, &http.Cookie{
+		Name:     wechatOAuthScopeCookieName,
+		Value:    scope,
+		Path:     wechatOAuthStateCookiePath,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   h.cookieSecure,
+		MaxAge:   int(h.wechatOAuth.stateTTL / time.Second),
+	})
 	setOAuthReturnToCookie(ctx, wechatOAuthReturnToCookieName, wechatOAuthStateCookiePath, readReturnToFromRequest(ctx.Request), h.cookieSecure, h.wechatOAuth.stateTTL, h.validatedReturnToURL)
 
-	ctx.Redirect(http.StatusTemporaryRedirect, app.authorizeURL(startState.StateParam, startState.RedirectURI))
+	ctx.Redirect(http.StatusTemporaryRedirect, app.authorizeURL(startState.StateParam, startState.RedirectURI, scope))
 }
 
 func (h *Handler) HandleWeChatOAuthCallback(ctx *gin.Context) {
@@ -233,10 +248,12 @@ func (h *Handler) HandleWeChatOAuthCallback(ctx *gin.Context) {
 			expectedState = strings.TrimSpace(cookie.Value)
 		}
 		returnTo := readOAuthReturnToCookie(ctx.Request, wechatOAuthReturnToCookieName)
+		scope := readWeChatOAuthScopeCookie(ctx.Request, app.scope)
 		h.clearWeChatOAuthStateCookie(ctx)
 		h.clearWeChatOAuthModeCookie(ctx)
+		h.clearWeChatOAuthScopeCookie(ctx)
 		clearOAuthReturnToCookie(ctx, wechatOAuthReturnToCookieName, wechatOAuthStateCookiePath, h.cookieSecure)
-		h.handleWeChatOAuthCallbackAfterState(ctx, app, code, relayState.Nonce, expectedState, returnTo, exchangeRedirectURI, logger)
+		h.handleWeChatOAuthCallbackAfterState(ctx, app, scope, code, relayState.Nonce, expectedState, returnTo, exchangeRedirectURI, logger)
 		return
 	}
 
@@ -245,13 +262,15 @@ func (h *Handler) HandleWeChatOAuthCallback(ctx *gin.Context) {
 		expectedState = strings.TrimSpace(cookie.Value)
 	}
 	returnTo := readOAuthReturnToCookie(ctx.Request, wechatOAuthReturnToCookieName)
+	scope := readWeChatOAuthScopeCookie(ctx.Request, app.scope)
 	h.clearWeChatOAuthStateCookie(ctx)
 	h.clearWeChatOAuthModeCookie(ctx)
+	h.clearWeChatOAuthScopeCookie(ctx)
 	clearOAuthReturnToCookie(ctx, wechatOAuthReturnToCookieName, wechatOAuthStateCookiePath, h.cookieSecure)
-	h.handleWeChatOAuthCallbackAfterState(ctx, app, code, state, expectedState, returnTo, exchangeRedirectURI, logger)
+	h.handleWeChatOAuthCallbackAfterState(ctx, app, scope, code, state, expectedState, returnTo, exchangeRedirectURI, logger)
 }
 
-func (h *Handler) handleWeChatOAuthCallbackAfterState(ctx *gin.Context, app *wechatOAuthApp, code string, state string, expectedState string, returnTo string, exchangeRedirectURI string, logger interface {
+func (h *Handler) handleWeChatOAuthCallbackAfterState(ctx *gin.Context, app *wechatOAuthApp, scope string, code string, state string, expectedState string, returnTo string, exchangeRedirectURI string, logger interface {
 	Warn(msg string, keysAndValues ...any)
 	Error(msg string, keysAndValues ...any)
 	Info(msg string, keysAndValues ...any)
@@ -277,6 +296,20 @@ func (h *Handler) handleWeChatOAuthCallbackAfterState(ctx *gin.Context, app *wec
 	if err != nil || strings.TrimSpace(token.AccessToken) == "" {
 		logger.Error("wechat oauth callback failed", "stage", "exchange", "err", err)
 		ctx.Redirect(http.StatusTemporaryRedirect, h.wechatOAuth.frontendURL(ctx.Request, "/?oauth_error=wechat_exchange_failed"))
+		return
+	}
+	if isWeChatOAuthBaseScope(scope) {
+		openID := strings.TrimSpace(token.OpenID)
+		if openID == "" {
+			logger.Error("wechat oauth callback failed", "stage", "openid", "err", "missing_openid")
+			ctx.Redirect(http.StatusTemporaryRedirect, h.wechatOAuth.frontendURL(ctx.Request, "/auth/wechat-pay?oauth_error=wechat_openid_failed"))
+			return
+		}
+		redirectURL := h.wechatOAuth.frontendURL(ctx.Request, "/auth/wechat-pay")
+		if validated := h.validatedReturnToURL(returnTo); validated != "" {
+			redirectURL = validated
+		}
+		ctx.Redirect(http.StatusTemporaryRedirect, appendQueryParamToReturnTo(redirectURL, "openid", openID))
 		return
 	}
 
@@ -330,6 +363,18 @@ func (h *Handler) clearWeChatOAuthStateCookie(ctx *gin.Context) {
 func (h *Handler) clearWeChatOAuthModeCookie(ctx *gin.Context) {
 	http.SetCookie(ctx.Writer, &http.Cookie{
 		Name:     wechatOAuthModeCookieName,
+		Value:    "",
+		Path:     wechatOAuthStateCookiePath,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   h.cookieSecure,
+		MaxAge:   -1,
+	})
+}
+
+func (h *Handler) clearWeChatOAuthScopeCookie(ctx *gin.Context) {
+	http.SetCookie(ctx.Writer, &http.Cookie{
+		Name:     wechatOAuthScopeCookieName,
 		Value:    "",
 		Path:     wechatOAuthStateCookiePath,
 		HttpOnly: true,
@@ -400,6 +445,52 @@ func requestedWeChatOAuthMode(request *http.Request) (wechatOAuthMode, error) {
 	}
 }
 
+func requestedWeChatOAuthScope(request *http.Request, app *wechatOAuthApp) (string, error) {
+	if app == nil {
+		return "", errors.New("missing wechat oauth app")
+	}
+	requested := ""
+	if request != nil && request.URL != nil {
+		requested = strings.TrimSpace(request.URL.Query().Get("scope"))
+	}
+	switch requested {
+	case "":
+		return app.scope, nil
+	case "base", "snsapi_base":
+		if app.mode != wechatOAuthModeOfficialAccount {
+			return "", fmt.Errorf("unsupported wechat oauth base scope for mode %q", app.mode)
+		}
+		return "snsapi_base", nil
+	case "userinfo", "snsapi_userinfo":
+		if app.mode != wechatOAuthModeOfficialAccount {
+			return "", fmt.Errorf("unsupported wechat oauth userinfo scope for mode %q", app.mode)
+		}
+		return "snsapi_userinfo", nil
+	case "login", "snsapi_login":
+		if app.mode != wechatOAuthModeWebsite {
+			return "", fmt.Errorf("unsupported wechat oauth login scope for mode %q", app.mode)
+		}
+		return "snsapi_login", nil
+	default:
+		return "", fmt.Errorf("unsupported wechat oauth scope %q", requested)
+	}
+}
+
+func readWeChatOAuthScopeCookie(request *http.Request, fallback string) string {
+	if request == nil {
+		return strings.TrimSpace(fallback)
+	}
+	cookie, err := request.Cookie(wechatOAuthScopeCookieName)
+	if err != nil || strings.TrimSpace(cookie.Value) == "" {
+		return strings.TrimSpace(fallback)
+	}
+	return strings.TrimSpace(cookie.Value)
+}
+
+func isWeChatOAuthBaseScope(scope string) bool {
+	return strings.TrimSpace(scope) == "snsapi_base"
+}
+
 func isWeChatInAppBrowser(request *http.Request) bool {
 	if request == nil {
 		return false
@@ -407,12 +498,15 @@ func isWeChatInAppBrowser(request *http.Request) bool {
 	return strings.Contains(strings.ToLower(request.UserAgent()), "micromessenger")
 }
 
-func (w *wechatOAuthApp) authorizeURL(state string, redirectURI string) string {
+func (w *wechatOAuthApp) authorizeURL(state string, redirectURI string, scope string) string {
 	query := url.Values{}
 	query.Set("appid", w.appID)
 	query.Set("redirect_uri", strings.TrimSpace(redirectURI))
 	query.Set("response_type", "code")
-	query.Set("scope", w.scope)
+	if strings.TrimSpace(scope) == "" {
+		scope = w.scope
+	}
+	query.Set("scope", strings.TrimSpace(scope))
 	query.Set("state", state)
 	return w.authorizeBaseURL + "?" + query.Encode() + "#wechat_redirect"
 }
