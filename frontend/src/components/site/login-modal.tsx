@@ -11,6 +11,7 @@ import {
   ALLOW_GITHUB_EASTER_EGG,
   redirectToOAuthStart,
   VISIBLE_OAUTH_PROVIDERS,
+  wechatOAuthStartTargetForUserAgent,
   type OAuthProvider,
 } from "@/lib/oauth";
 import { assetUrl } from "@/lib/asset-url";
@@ -140,12 +141,6 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
   const { session } = useSession();
   const t = useT();
   const showGitHubLogin = useGitHubLoginVisibility();
-  const oauthLoginUrls: Record<OAuthProvider, string | null> = {
-    qq: repositories.auth.getOAuthStartUrl("qq"),
-    wechat: repositories.auth.getOAuthStartUrl("wechat"),
-    google: repositories.auth.getOAuthStartUrl("google"),
-    github: repositories.auth.getOAuthStartUrl("github"),
-  };
 
   const [agreed, setAgreed] = useState(false);
   const [showAgreeHint, setShowAgreeHint] = useState(false);
@@ -175,10 +170,25 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
     return true;
   };
 
+  const getOAuthStartUrlForProvider = (provider: OAuthProvider) => {
+    if (provider !== "wechat") {
+      return repositories.auth.getOAuthStartUrl(provider);
+    }
+    const target = wechatOAuthStartTargetForUserAgent(window.navigator.userAgent);
+    if (target === "unsupported_mobile_browser") {
+      return null;
+    }
+    return repositories.auth.getOAuthStartUrl("wechat", { wechatMode: target });
+  };
+
   /* 统一的 OAuth 登录跳转入口 */
   const handleOAuthLogin = (provider: OAuthProvider) => {
     if (!checkAgreed()) return;
-    const loginUrl = oauthLoginUrls[provider];
+    if (provider === "wechat" && wechatOAuthStartTargetForUserAgent(window.navigator.userAgent) === "unsupported_mobile_browser") {
+      setError(t("请在微信中打开当前页面后继续登录。"));
+      return;
+    }
+    const loginUrl = getOAuthStartUrlForProvider(provider);
     if (!loginUrl) return;
     setError(null);
     redirectToOAuthStart(loginUrl);
@@ -248,7 +258,7 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
                   providers.push("github");
                 }
                 return providers.map((provider) => {
-                  if (!oauthLoginUrls[provider]) return null;
+                  if (provider !== "wechat" && !getOAuthStartUrlForProvider(provider)) return null;
                   const visual = PROVIDER_BUTTON_VISUALS[provider];
                   return (
                     <button

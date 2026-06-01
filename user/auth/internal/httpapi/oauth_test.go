@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -59,6 +60,102 @@ func TestQQOAuthStartRedirectsToAuthorizeAndSetsStateCookie(t *testing.T) {
 	}
 }
 
+func TestWeChatOAuthStartSupportsOfficialAccountMode(t *testing.T) {
+	t.Parallel()
+
+	router := newAuthTestRouterWithWeChatApps(&stubWeChatOAuthClient{}, &stubWeChatOAuthClient{})
+
+	recorder := performJSONRequest(t, router, http.MethodGet, "/auth/oauth/wechat/start?mode=official_account", nil)
+	if recorder.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("expected 307 from wechat oauth start, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+
+	location := recorder.Header().Get("Location")
+	if !strings.HasPrefix(location, "https://open.weixin.qq.com/connect/oauth2/authorize?") {
+		t.Fatalf("expected official account authorize redirect, got %q", location)
+	}
+
+	parsed, err := url.Parse(location)
+	if err != nil {
+		t.Fatalf("parse redirect location: %v", err)
+	}
+	query := parsed.Query()
+	if query.Get("appid") != "wx-official-account" {
+		t.Fatalf("expected official account app id in redirect, got %q", query.Get("appid"))
+	}
+	if query.Get("scope") != "snsapi_userinfo" {
+		t.Fatalf("expected scope=snsapi_userinfo, got %q", query.Get("scope"))
+	}
+	if query.Get("redirect_uri") != "https://lightclaw.tech/auth/oauth/wechat/callback" {
+		t.Fatalf("expected redirect_uri in redirect, got %q", query.Get("redirect_uri"))
+	}
+
+	modeCookie := cookieFromRecorderByName(t, recorder, wechatOAuthModeCookieName)
+	if got := modeCookie.Value; got != string(wechatOAuthModeOfficialAccount) {
+		t.Fatalf("expected official account mode cookie, got %q", got)
+	}
+}
+
+func TestWeChatOAuthStartDefaultsToOfficialAccountInsideWeChat(t *testing.T) {
+	t.Parallel()
+
+	router := newAuthTestRouterWithWeChatApps(&stubWeChatOAuthClient{}, &stubWeChatOAuthClient{})
+
+	request := httptest.NewRequest(http.MethodGet, "/auth/oauth/wechat/start", nil)
+	request.Header.Set("User-Agent", "Mozilla/5.0 iPhone MicroMessenger/8.0.49")
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("expected 307 from wechat oauth start, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	location := recorder.Header().Get("Location")
+	if !strings.HasPrefix(location, "https://open.weixin.qq.com/connect/oauth2/authorize?") {
+		t.Fatalf("expected official account authorize redirect, got %q", location)
+	}
+}
+
+func TestWeChatOAuthCallbackUsesModeCookieClient(t *testing.T) {
+	t.Parallel()
+
+	websiteClient := &stubWeChatOAuthClient{}
+	officialAccountClient := &stubWeChatOAuthClient{
+		identity: service.OAuthSignInInput{
+			Provider:        "wechat",
+			ProviderSubject: "unionid-official-account",
+			Name:            "微信服务号用户",
+		},
+	}
+	router := newAuthTestRouterWithWeChatApps(websiteClient, officialAccountClient)
+
+	start := performJSONRequest(t, router, http.MethodGet, "/auth/oauth/wechat/start?mode=official_account", nil)
+	startLocation, err := url.Parse(start.Header().Get("Location"))
+	if err != nil {
+		t.Fatalf("parse start location: %v", err)
+	}
+	stateCookie := cookieFromRecorderByName(t, start, wechatOAuthStateCookieName)
+	modeCookie := cookieFromRecorderByName(t, start, wechatOAuthModeCookieName)
+
+	callback := performJSONRequest(
+		t,
+		router,
+		http.MethodGet,
+		"/auth/oauth/wechat/callback?code=wechat-code-official&state="+url.QueryEscape(startLocation.Query().Get("state")),
+		nil,
+		stateCookie,
+		modeCookie,
+	)
+	if callback.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("expected 307 from wechat oauth callback, got %d: %s", callback.Code, callback.Body.String())
+	}
+	if websiteClient.exchangeCalls != 0 {
+		t.Fatalf("expected website client not to exchange, got %d calls", websiteClient.exchangeCalls)
+	}
+	if officialAccountClient.exchangeCalls != 1 {
+		t.Fatalf("expected official account client to exchange once, got %d calls", officialAccountClient.exchangeCalls)
+	}
+}
+
 func TestWeChatOAuthStartRedirectsToAuthorizeAndSetsStateCookie(t *testing.T) {
 	t.Parallel()
 
@@ -104,6 +201,10 @@ func TestWeChatOAuthStartRedirectsToAuthorizeAndSetsStateCookie(t *testing.T) {
 	}
 	if !stateCookie.HttpOnly {
 		t.Fatal("expected oauth state cookie to be httpOnly")
+	}
+	modeCookie := cookieFromRecorderByName(t, recorder, wechatOAuthModeCookieName)
+	if got := modeCookie.Value; got != string(wechatOAuthModeWebsite) {
+		t.Fatalf("expected website mode cookie, got %q", got)
 	}
 }
 
@@ -510,15 +611,11 @@ func TestWeChatOAuthCallbackCreatesSessionAndRedirectsToDashboard(t *testing.T) 
 	}
 }
 
-func TestWeChatOAuthCallbackFallsBackToOpenIDWhenUnionIDMissing(t *testing.T) {
+func TestWeChatOAuthCallbackRejectsMissingUnionID(t *testing.T) {
 	t.Parallel()
 
 	router := newAuthTestRouterWithWeChat(&stubWeChatOAuthClient{
-		identity: service.OAuthSignInInput{
-			Provider:        "wechat",
-			ProviderSubject: "openid-wechat-fallback",
-			Name:            "微信回退用户",
-		},
+		resolveErr: errors.New("wechat unionid missing"),
 	})
 
 	start := performJSONRequest(t, router, http.MethodGet, "/auth/oauth/wechat/start", nil)
@@ -541,16 +638,12 @@ func TestWeChatOAuthCallbackFallsBackToOpenIDWhenUnionIDMissing(t *testing.T) {
 		t.Fatalf("expected 307 from wechat oauth callback, got %d: %s", callback.Code, callback.Body.String())
 	}
 
-	sessionCookie := sessionCookieFromRecorder(t, callback)
-	current := performJSONRequest(t, router, http.MethodGet, "/auth/session", nil, sessionCookie)
-	if current.Code != http.StatusOK {
-		t.Fatalf("expected 200 from current session, got %d: %s", current.Code, current.Body.String())
+	location, err := url.Parse(callback.Header().Get("Location"))
+	if err != nil {
+		t.Fatalf("parse callback redirect location: %v", err)
 	}
-
-	var response sessionResponseBody
-	decodeJSONResponse(t, current, &response)
-	if response.Session.User == nil || response.Session.User.Name != "微信回退用户" {
-		t.Fatalf("expected wechat callback to create session for fallback user, got %+v", response.Session.User)
+	if got := location.Query().Get("oauth_error"); got != "wechat_identity_failed" {
+		t.Fatalf("expected wechat_identity_failed, got %q from %q", got, callback.Header().Get("Location"))
 	}
 }
 
@@ -1196,6 +1289,7 @@ func (s *stubQQOAuthClient) ResolveIdentity(_ context.Context, accessToken strin
 
 type stubWeChatOAuthClient struct {
 	identity            service.OAuthSignInInput
+	resolveErr          error
 	exchangeRedirectURI string
 	exchangeCalls       int
 }
@@ -1214,6 +1308,9 @@ func (s *stubWeChatOAuthClient) ExchangeCode(_ context.Context, code string, red
 }
 
 func (s *stubWeChatOAuthClient) ResolveIdentity(_ context.Context, _ *WeChatOAuthToken) (service.OAuthSignInInput, error) {
+	if s.resolveErr != nil {
+		return service.OAuthSignInInput{}, s.resolveErr
+	}
 	identity := s.identity
 	if identity.Provider == "" {
 		identity.Provider = "wechat"
@@ -1263,6 +1360,14 @@ func newAuthTestRouterWithWeChat(client WeChatOAuthClient) *gin.Engine {
 }
 
 func newAuthTestRouterWithWeChatAndAvatarStore(client WeChatOAuthClient, avatarStore AvatarStore) *gin.Engine {
+	return newAuthTestRouterWithWeChatAppsAndAvatarStore(client, nil, avatarStore)
+}
+
+func newAuthTestRouterWithWeChatApps(websiteClient WeChatOAuthClient, officialAccountClient WeChatOAuthClient) *gin.Engine {
+	return newAuthTestRouterWithWeChatAppsAndAvatarStore(websiteClient, officialAccountClient, nil)
+}
+
+func newAuthTestRouterWithWeChatAppsAndAvatarStore(websiteClient WeChatOAuthClient, officialAccountClient WeChatOAuthClient, avatarStore AvatarStore) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	store := service.NewMemoryStore(service.StoreOptions{
 		Now:                fixedHTTPTestNow,
@@ -1272,20 +1377,31 @@ func newAuthTestRouterWithWeChatAndAvatarStore(client WeChatOAuthClient, avatarS
 		Now:        fixedHTTPTestNow,
 		SessionTTL: 30 * 24 * time.Hour,
 	})
+	wechatConfig := &WeChatOAuthConfig{
+		Website: WeChatOAuthAppConfig{
+			AppID:       "wx622c70c4608a3b23",
+			AppSecret:   "wechat-app-secret",
+			RedirectURI: "https://lightclaw.tech/auth/oauth/wechat/callback",
+			Client:      websiteClient,
+		},
+		FrontendBaseURL: "https://lightclaw.pages.dev",
+		PublicBaseURL:   "https://lightclaw.tech",
+		StateTTL:        10 * time.Minute,
+	}
+	if officialAccountClient != nil {
+		wechatConfig.OfficialAccount = WeChatOAuthAppConfig{
+			AppID:       "wx-official-account",
+			AppSecret:   "wechat-official-account-secret",
+			RedirectURI: "https://lightclaw.tech/auth/oauth/wechat/callback",
+			Client:      officialAccountClient,
+		}
+	}
 	return NewRouter(svc, ServerConfig{
 		CookieSecure:   true,
 		CookieSameSite: http.SameSiteNoneMode,
 		SessionTTL:     30 * 24 * time.Hour,
 		AvatarStore:    avatarStore,
-		WeChatOAuth: &WeChatOAuthConfig{
-			AppID:           "wx622c70c4608a3b23",
-			AppSecret:       "wechat-app-secret",
-			RedirectURI:     "https://lightclaw.tech/auth/oauth/wechat/callback",
-			FrontendBaseURL: "https://lightclaw.pages.dev",
-			PublicBaseURL:   "https://lightclaw.tech",
-			Client:          client,
-			StateTTL:        10 * time.Minute,
-		},
+		WeChatOAuth:    wechatConfig,
 	})
 }
 

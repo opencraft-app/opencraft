@@ -145,6 +145,15 @@ func boolEnvOrDefault(key string, fallback bool) bool {
 	return value == "true" || value == "1" || strings.EqualFold(value, "yes")
 }
 
+func envFirst(keys ...string) string {
+	for _, key := range keys {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
 func parseCSVEnv(key string) []string {
 	raw := strings.TrimSpace(os.Getenv(key))
 	if raw == "" {
@@ -199,17 +208,35 @@ func buildQQOAuthConfig() *httpapi.QQOAuthConfig {
 }
 
 func buildWeChatOAuthConfig() *httpapi.WeChatOAuthConfig {
-	appID := strings.TrimSpace(os.Getenv("LIGHTCLAW_WECHAT_APP_ID"))
-	appSecret := strings.TrimSpace(os.Getenv("LIGHTCLAW_WECHAT_APP_SECRET"))
-	if appID == "" || appSecret == "" {
+	websiteAppID := envFirst("LIGHTVELA_WECHAT_WEBSITE_APP_ID", "LIGHTCLAW_WECHAT_APP_ID")
+	websiteAppSecret := envFirst("LIGHTVELA_WECHAT_WEBSITE_APP_SECRET", "LIGHTCLAW_WECHAT_APP_SECRET")
+	websiteRedirectURI := envFirst("LIGHTVELA_WECHAT_WEBSITE_REDIRECT_URI", "LIGHTCLAW_WECHAT_REDIRECT_URI")
+	if websiteRedirectURI == "" {
+		websiteRedirectURI = "https://lightclaw.tech/auth/oauth/wechat/callback"
+	}
+
+	officialAccountAppID := envFirst("LIGHTVELA_WECHAT_OFFICIAL_ACCOUNT_APP_ID")
+	officialAccountAppSecret := envFirst("LIGHTVELA_WECHAT_OFFICIAL_ACCOUNT_APP_SECRET")
+	officialAccountRedirectURI := envFirst("LIGHTVELA_WECHAT_OFFICIAL_ACCOUNT_REDIRECT_URI")
+	if officialAccountRedirectURI == "" {
+		officialAccountRedirectURI = websiteRedirectURI
+	}
+	if (websiteAppID == "" || websiteAppSecret == "") && (officialAccountAppID == "" || officialAccountAppSecret == "") {
 		return nil
 	}
 	frontendBaseURL, publicBaseURL := oauthBaseURLs()
 
 	return &httpapi.WeChatOAuthConfig{
-		AppID:           appID,
-		AppSecret:       appSecret,
-		RedirectURI:     envOrDefault("LIGHTCLAW_WECHAT_REDIRECT_URI", "https://lightclaw.tech/auth/oauth/wechat/callback"),
+		Website: httpapi.WeChatOAuthAppConfig{
+			AppID:       websiteAppID,
+			AppSecret:   websiteAppSecret,
+			RedirectURI: websiteRedirectURI,
+		},
+		OfficialAccount: httpapi.WeChatOAuthAppConfig{
+			AppID:       officialAccountAppID,
+			AppSecret:   officialAccountAppSecret,
+			RedirectURI: officialAccountRedirectURI,
+		},
 		FrontendBaseURL: frontendBaseURL,
 		PublicBaseURL:   publicBaseURL,
 	}
