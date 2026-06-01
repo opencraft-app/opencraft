@@ -13,6 +13,7 @@ patches:
 
 generators:
   - ksops-secret-generator.yaml
+  - ksops-content-audit-secret-generator.yaml
 
 generatorOptions:
   disableNameSuffixHash: true
