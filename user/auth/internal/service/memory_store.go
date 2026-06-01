@@ -316,12 +316,51 @@ func (s *MemoryStore) QueueNameAudit(_ context.Context, token string, input Crea
 	s.nextAuditTaskID++
 	task := &ContentAuditTask{
 		ID:          s.nextAuditTaskID,
-		BizType:     "user_name",
+		BizType:     contentauditBizTypeUserName,
 		BizID:       user.ID,
 		BizDetail:   "name",
 		ProductID:   strings.TrimSpace(input.ProductID),
 		SID:         strings.TrimSpace(input.SID),
 		ContentText: user.PendingName,
+		MediaType:   contentauditMediaTypeText,
+		Status:      "pending",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	s.auditTasks[task.ID] = task
+	return user, nil
+}
+
+func (s *MemoryStore) QueueAvatarAudit(_ context.Context, userID string, input CreateAvatarAuditInput, now time.Time) (User, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	user, exists := s.usersByID[strings.TrimSpace(userID)]
+	if !exists {
+		return User{}, newError("user_not_found", "用户不存在。", 404)
+	}
+	for _, task := range s.auditTasks {
+		if task.BizType == contentauditBizTypeUserAvatar && task.BizID == user.ID && isActiveAuditStatus(task.Status) {
+			task.Status = "cancelled"
+			task.UpdatedAt = now
+		}
+	}
+	user.PendingAvatarObjectKey = strings.TrimSpace(input.ObjectKey)
+	user.PendingAvatarSource = strings.TrimSpace(input.Source)
+	user.AvatarAuditStatus = "pending"
+	s.usersByID[user.ID] = user
+
+	s.nextAuditTaskID++
+	task := &ContentAuditTask{
+		ID:          s.nextAuditTaskID,
+		BizType:     contentauditBizTypeUserAvatar,
+		BizID:       user.ID,
+		BizDetail:   "avatar",
+		ProductID:   strings.TrimSpace(input.ProductID),
+		SID:         strings.TrimSpace(input.SID),
+		ContentText: user.PendingAvatarObjectKey,
+		ContentURL:  strings.TrimSpace(input.ContentURL),
+		MediaType:   contentauditMediaTypeImage,
 		Status:      "pending",
 		CreatedAt:   now,
 		UpdatedAt:   now,
@@ -407,11 +446,25 @@ func (s *MemoryStore) MarkContentAuditTaskPassed(_ context.Context, taskID int64
 	task.RequestID = firstNonEmpty(strings.TrimSpace(requestID), task.RequestID)
 	task.PassSource = strings.TrimSpace(passSource)
 	task.UpdatedAt = now
-	if user, exists := s.usersByID[task.BizID]; exists && user.PendingName == task.ContentText {
-		user.Name = task.ContentText
-		user.PendingName = ""
-		user.NameAuditStatus = "passed"
-		s.usersByID[user.ID] = user
+	if user, exists := s.usersByID[task.BizID]; exists {
+		switch task.BizType {
+		case contentauditBizTypeUserName:
+			if user.PendingName == task.ContentText {
+				user.Name = task.ContentText
+				user.PendingName = ""
+				user.NameAuditStatus = "passed"
+				s.usersByID[user.ID] = user
+			}
+		case contentauditBizTypeUserAvatar:
+			if user.PendingAvatarObjectKey == task.ContentText {
+				user.AvatarObjectKey = user.PendingAvatarObjectKey
+				user.AvatarSource = user.PendingAvatarSource
+				user.PendingAvatarObjectKey = ""
+				user.PendingAvatarSource = ""
+				user.AvatarAuditStatus = "passed"
+				s.usersByID[user.ID] = user
+			}
+		}
 	}
 	return nil
 }
@@ -429,10 +482,22 @@ func (s *MemoryStore) MarkContentAuditTaskFailed(_ context.Context, taskID int64
 	task.ResultType = resultType
 	task.ResultDetail = resultDetail
 	task.UpdatedAt = now
-	if user, exists := s.usersByID[task.BizID]; exists && user.PendingName == task.ContentText {
-		user.PendingName = ""
-		user.NameAuditStatus = "failed"
-		s.usersByID[user.ID] = user
+	if user, exists := s.usersByID[task.BizID]; exists {
+		switch task.BizType {
+		case contentauditBizTypeUserName:
+			if user.PendingName == task.ContentText {
+				user.PendingName = ""
+				user.NameAuditStatus = "failed"
+				s.usersByID[user.ID] = user
+			}
+		case contentauditBizTypeUserAvatar:
+			if user.PendingAvatarObjectKey == task.ContentText {
+				user.PendingAvatarObjectKey = ""
+				user.PendingAvatarSource = ""
+				user.AvatarAuditStatus = "failed"
+				s.usersByID[user.ID] = user
+			}
+		}
 	}
 	return nil
 }
@@ -461,6 +526,9 @@ func (s *MemoryStore) SetUserAvatar(_ context.Context, userID string, objectKey 
 	}
 	user.AvatarObjectKey = strings.TrimSpace(objectKey)
 	user.AvatarSource = strings.TrimSpace(source)
+	user.PendingAvatarObjectKey = ""
+	user.PendingAvatarSource = ""
+	user.AvatarAuditStatus = ""
 	s.usersByID[userID] = user
 	return user, nil
 }

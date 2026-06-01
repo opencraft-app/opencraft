@@ -10,7 +10,13 @@ const (
 )
 
 const (
-	BizTypeUserName = "user_name"
+	BizTypeUserName   = "user_name"
+	BizTypeUserAvatar = "user_avatar"
+)
+
+const (
+	MediaTypeText  = "text"
+	MediaTypeImage = "image"
 )
 
 const (

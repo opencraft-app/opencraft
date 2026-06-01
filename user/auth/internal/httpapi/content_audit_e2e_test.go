@@ -192,3 +192,15 @@ func (c *capturingContentAuditClient) CreateTextTask(_ context.Context, req cont
 		},
 	}, nil
 }
+
+func (c *capturingContentAuditClient) CreateImageTask(_ context.Context, req contentaudit.CreateImageTaskRequest) (*contentaudit.CreateTextTaskResponse, error) {
+	c.requestID = req.RequestID
+	return &contentaudit.CreateTextTaskResponse{
+		Response: contentaudit.CreateTextTaskResponseBody{
+			RequestID: req.RequestID,
+			Data: &contentaudit.CreateTextTaskResponseData{
+				Result: &contentaudit.ResponseResult{StdRetMsg: "UNKNOWN"},
+			},
+		},
+	}, nil
+}

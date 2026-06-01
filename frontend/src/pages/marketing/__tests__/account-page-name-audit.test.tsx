@@ -129,4 +129,30 @@ describe("AccountPage nickname audit state", () => {
     expect(screen.getByText("上次昵称修改未通过审核，当前仍使用原昵称。")).toBeInTheDocument();
     expect(screen.queryByText("审核中")).not.toBeInTheDocument();
   });
+
+  it("shows pending avatar audit state without claiming the public avatar changed", () => {
+    currentUser = {
+      ...currentUser,
+      avatarUrl: "/users/usr_profile_audit/avatar",
+      pendingAvatarUrl: "https://example.com/pending-avatar.jpg",
+      avatarAuditStatus: "pending",
+    };
+
+    renderAccountPage();
+
+    expect(screen.getAllByText("审核中").length).toBeGreaterThan(0);
+    expect(screen.getByText("新头像已提交审核，审核通过后将对外生效。")).toBeInTheDocument();
+    expect(screen.getAllByAltText("avatar").some((avatar) => avatar.getAttribute("src") === "https://example.com/pending-avatar.jpg")).toBe(true);
+  });
+
+  it("explains a failed avatar audit", () => {
+    currentUser = {
+      ...currentUser,
+      avatarAuditStatus: "failed",
+    };
+
+    renderAccountPage();
+
+    expect(screen.getByText("上次头像修改未通过审核，当前仍使用原头像。")).toBeInTheDocument();
+  });
 });

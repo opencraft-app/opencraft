@@ -43,17 +43,20 @@ func (e *Error) Error() string {
 }
 
 type User struct {
-	ID               string
-	Name             string
-	PendingName      string
-	NameAuditStatus  string
-	Email            string
-	Phone            string
-	AvatarObjectKey  string
-	AvatarSource     string
-	InviteRequired   bool
-	RealnameVerified bool
-	CreatedAt        time.Time
+	ID                     string
+	Name                   string
+	PendingName            string
+	NameAuditStatus        string
+	Email                  string
+	Phone                  string
+	AvatarObjectKey        string
+	AvatarSource           string
+	PendingAvatarObjectKey string
+	PendingAvatarSource    string
+	AvatarAuditStatus      string
+	InviteRequired         bool
+	RealnameVerified       bool
+	CreatedAt              time.Time
 }
 
 type RealnameVerifyInput struct {
@@ -84,9 +87,11 @@ type RealnameCipher interface {
 }
 
 type ContentAuditConfig struct {
-	Enabled   bool
-	ProductID string
-	UserSID   string
+	Enabled            bool
+	NameAuditEnabled   bool
+	AvatarAuditEnabled bool
+	ProductID          string
+	UserSID            string
 }
 
 func (c ContentAuditConfig) ready() bool {
@@ -94,6 +99,19 @@ func (c ContentAuditConfig) ready() bool {
 		return false
 	}
 	return strings.TrimSpace(c.ProductID) != "" && strings.TrimSpace(c.UserSID) != ""
+}
+
+func (c ContentAuditConfig) nameAuditEnabled() bool {
+	if !c.Enabled {
+		return false
+	}
+	// Backward compatibility: existing tests and deployments used Enabled=true
+	// to mean nickname audit is enabled before per-media switches existed.
+	return c.NameAuditEnabled || !c.AvatarAuditEnabled
+}
+
+func (c ContentAuditConfig) avatarAuditEnabled() bool {
+	return c.Enabled && c.AvatarAuditEnabled
 }
 
 type UpdateRealnameInput struct {
@@ -464,7 +482,7 @@ func (s *Service) UpdateProfile(ctx context.Context, token string, name string) 
 	if len([]rune(trimmed)) > 40 {
 		return User{}, newError("invalid_name", "昵称不能超过 40 个字符。", 400)
 	}
-	if s.contentAudit.Enabled {
+	if s.contentAudit.nameAuditEnabled() {
 		if !s.contentAudit.ready() {
 			return User{}, newError("content_audit_unavailable", "昵称审核服务暂不可用。", http.StatusServiceUnavailable)
 		}
@@ -485,6 +503,36 @@ func (s *Service) SetUserAvatar(ctx context.Context, userID string, objectKey st
 		return User{}, newError("invalid_avatar", "头像信息不完整。", 400)
 	}
 	return s.store.SetUserAvatar(ctx, trimmedUserID, trimmedObjectKey, trimmedSource, s.now())
+}
+
+func (s *Service) AvatarAuditEnabled() bool {
+	if s == nil {
+		return false
+	}
+	return s.contentAudit.avatarAuditEnabled()
+}
+
+func (s *Service) QueueAvatarAudit(ctx context.Context, userID string, objectKey string, source string, contentURL string) (User, error) {
+	trimmedUserID := strings.TrimSpace(userID)
+	trimmedObjectKey := strings.TrimSpace(objectKey)
+	trimmedSource := strings.TrimSpace(source)
+	trimmedContentURL := strings.TrimSpace(contentURL)
+	if trimmedUserID == "" || trimmedObjectKey == "" || trimmedSource == "" || trimmedContentURL == "" {
+		return User{}, newError("invalid_avatar", "头像信息不完整。", 400)
+	}
+	if !s.contentAudit.avatarAuditEnabled() {
+		return s.store.SetUserAvatar(ctx, trimmedUserID, trimmedObjectKey, trimmedSource, s.now())
+	}
+	if !s.contentAudit.ready() {
+		return User{}, newError("content_audit_unavailable", "头像审核服务暂不可用。", http.StatusServiceUnavailable)
+	}
+	return s.store.QueueAvatarAudit(ctx, trimmedUserID, CreateAvatarAuditInput{
+		ObjectKey:  trimmedObjectKey,
+		Source:     trimmedSource,
+		ContentURL: trimmedContentURL,
+		ProductID:  strings.TrimSpace(s.contentAudit.ProductID),
+		SID:        strings.TrimSpace(s.contentAudit.UserSID),
+	}, s.now())
 }
 
 func (s *Service) CurrentSubscription(ctx context.Context, token string) (*PlanSelection, error) {

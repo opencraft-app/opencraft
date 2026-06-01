@@ -39,6 +39,7 @@ data:
   LIGHTCLAW_AUTH_DB: "lightclaw_auth"
   LIGHTCLAW_AUTH_DB_USER: "lightclaw_auth"
   CONTENT_AUDIT_ENABLED: "false"
+  CONTENT_AUDIT_AVATAR_ENABLED: "false"
   CONTENT_AUDIT_WORKER_INTERVAL_SECONDS: "30"
   CONTENT_AUDIT_WORKER_BATCH_SIZE: "20"
   CONTENT_AUDIT_TIMEOUT_MINUTES: "15"
@@ -113,6 +114,11 @@ spec:
                 configMapKeyRef:
                   name: lightclaw-auth-config
                   key: CONTENT_AUDIT_ENABLED
+            - name: CONTENT_AUDIT_AVATAR_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: lightclaw-auth-config
+                  key: CONTENT_AUDIT_AVATAR_ENABLED
             - name: LIGHTCLAW_ADMIN_TOKEN
               valueFrom:
                 secretKeyRef:
@@ -180,6 +186,11 @@ spec:
                 configMapKeyRef:
                   name: lightclaw-auth-config
                   key: CONTENT_AUDIT_ENABLED
+            - name: CONTENT_AUDIT_AVATAR_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: lightclaw-auth-config
+                  key: CONTENT_AUDIT_AVATAR_ENABLED
           resources:
             requests:
               cpu: 25m

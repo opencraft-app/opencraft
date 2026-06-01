@@ -178,3 +178,13 @@ replacements:
           name: lightclaw-auth-config
         fieldPaths:
           - data.CONTENT_AUDIT_ENABLED
+  - source:
+      kind: ConfigMap
+      name: auth-platform-values
+      fieldPath: data.AUTH_CONTENT_AUDIT_AVATAR_ENABLED
+    targets:
+      - select:
+          kind: ConfigMap
+          name: lightclaw-auth-config
+        fieldPaths:
+          - data.CONTENT_AUDIT_AVATAR_ENABLED
