@@ -747,8 +747,21 @@ export const AccountPage = () => {
   const [deleting, setDeleting] = useState(false);
 
   const avatarSrc = avatarImageUrl(user?.avatarUrl ?? null);
+  const pendingName = user?.nameAuditStatus === "pending" ? user.pendingName?.trim() ?? "" : "";
+  const hasPendingNameAudit = pendingName.length > 0;
+  const nameAuditFailed = user?.nameAuditStatus === "failed";
   // 暂时隐藏「登录账号」信息展示，待能区分多渠道登录方式后恢复
   // const loginMethod = (user?.phone ?? "").length > 0 ? "phone" : "wechat";
+
+  const beginNameEdit = () => {
+    setEditName(pendingName || user?.name || "");
+    setIsEditingName(true);
+  };
+
+  const cancelNameEdit = () => {
+    setIsEditingName(false);
+    setEditName(pendingName || user?.name || "");
+  };
 
   const handleSaveName = async () => {
     if (!editName.trim()) return;
@@ -985,7 +998,7 @@ export const AccountPage = () => {
                             )}
                           </button>
                           <button
-                            onClick={() => { setIsEditingName(false); setEditName(user?.name ?? ""); }}
+                            onClick={cancelNameEdit}
                             className="rounded-lg px-3 py-2.5 text-sm transition-colors hover:bg-[rgba(0,0,0,0.03)]"
                             style={{ color: "#aaa" }}
                           >
@@ -994,20 +1007,43 @@ export const AccountPage = () => {
                         </div>
                       </div>
                     ) : (
-                      <div className="flex items-center gap-2">
-                        <p
-                          className="truncate"
-                          style={{ fontSize: 20, fontWeight: 500, color: "rgba(0,0,0,0.9)", lineHeight: 1.6 }}
-                        >
-                          {user?.name || t("未设置")}
-                        </p>
-                        <button
-                          onClick={() => { setEditName(user?.name ?? ""); setIsEditingName(true); }}
-                          className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-[rgba(0,0,0,0.04)]"
-                          style={{ color: "#aaa" }}
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-2">
+                          <p
+                            className="truncate"
+                            style={{ fontSize: 20, fontWeight: 500, color: "rgba(0,0,0,0.9)", lineHeight: 1.6 }}
+                          >
+                            {hasPendingNameAudit ? pendingName : user?.name || t("未设置")}
+                          </p>
+                          {hasPendingNameAudit && (
+                            <span
+                              className="inline-flex flex-shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium"
+                              style={{ background: "rgba(198, 123, 30, 0.12)", color: "#9A5A00" }}
+                            >
+                              {t("审核中")}
+                            </span>
+                          )}
+                          <button
+                            onClick={beginNameEdit}
+                            className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-[rgba(0,0,0,0.04)]"
+                            style={{ color: "#aaa" }}
+                            aria-label={hasPendingNameAudit ? t("修改待审核昵称") : t("修改昵称")}
+                            title={hasPendingNameAudit ? t("修改待审核昵称") : t("修改昵称")}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                        {hasPendingNameAudit && (
+                          <p className="text-xs" style={{ color: "rgba(0,0,0,0.5)", lineHeight: 1.5 }}>
+                            {t("当前对外显示：")}<span style={{ color: "rgba(0,0,0,0.78)" }}>{user?.name || t("未设置")}</span>
+                            {t("，审核通过后将自动生效。")}
+                          </p>
+                        )}
+                        {nameAuditFailed && (
+                          <p className="text-xs" style={{ color: "#cf3d4c", lineHeight: 1.5 }}>
+                            {t("上次昵称修改未通过审核，当前仍使用原昵称。")}
+                          </p>
+                        )}
                       </div>
                     )}
                     {avatarUploadError && (

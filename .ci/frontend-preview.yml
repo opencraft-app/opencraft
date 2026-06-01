@@ -33,7 +33,7 @@ stages:
         name: 构建并上传 frontend 预览站点
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         env:
           STATICPAGES_UPLOAD_TOKEN: ${{ settings.STATICPAGES_UPLOAD_TOKEN }}
           SOPS_AGE_KEY: ${{ settings.SOPS_AGE_KEY }}
