@@ -773,12 +773,12 @@ describe("http repositories auth token bootstrap", () => {
 
     expectOAuthStartURL(
       repositories.auth.getOAuthStartUrl("qq"),
-      "https://api.lightvela.tencent.com/auth/oauth/qq/start",
+      "https://api.lightvela.com/auth/oauth/qq/start",
       "https://lightvela.tencent.com/auth/sign-in",
     );
     expectOAuthStartURL(
       repositories.auth.getOAuthStartUrl("wechat"),
-      "https://api.lightvela.tencent.com/auth/oauth/wechat/start",
+      "https://api.lightvela.com/auth/oauth/wechat/start",
       "https://lightvela.tencent.com/auth/sign-in",
     );
   });

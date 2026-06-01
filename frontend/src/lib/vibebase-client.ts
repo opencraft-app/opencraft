@@ -5,7 +5,7 @@
  *   - `authApiBase` 来自 `resolveConfiguredAuthApiBaseUrl()`：
  *       国内：https://lightclaw.tech
  *       国际：https://api.lightclaw.site
- *       企业：https://api.lightclaw.cn / https://api.lightvela.tencent.com
+ *       企业：https://api.lightclaw.cn / https://api.lightvela.com
  *   - `service-gateway` 配置 `prefix: /v1/vibebase` + `rewrite_prefix: /v1` +
  *     `auth_strategy: session`：自动从 cookie 解出 user_id，注入
  *     `X-Lightclaw-User-ID` + `Authorization: Bearer <internal_token>` 后转发到
