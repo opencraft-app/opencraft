@@ -73,6 +73,7 @@ func mysqlUserSelectColumns(prefix string, includeAudit bool) string {
 		prefix+"invite_required",
 		prefix+"realname_verified_at",
 		prefix+"created_at",
+		prefix+"updated_at",
 	)
 	return strings.Join(columns, ",\n\t\t\t")
 }
@@ -90,6 +91,7 @@ func mysqlUserScanDest(user *User, includeAudit bool, pendingName *sql.NullStrin
 		&user.InviteRequired,
 		realnameVerifiedAt,
 		&user.CreatedAt,
+		&user.UpdatedAt,
 	)
 	return dest
 }
@@ -234,6 +236,7 @@ func (s *MySQLStore) CreatePasswordSession(ctx context.Context, input PasswordSi
 		Email:          input.Email,
 		InviteRequired: false,
 		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO users (
@@ -1410,6 +1413,7 @@ func (s *MySQLStore) findOrCreatePhoneUserTx(ctx context.Context, tx *sql.Tx, ph
 		Phone:          phone,
 		InviteRequired: false,
 		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO users (
@@ -1501,6 +1505,7 @@ func (s *MySQLStore) findOrCreateOAuthUserTx(ctx context.Context, tx *sql.Tx, in
 		Email:          input.Email,
 		InviteRequired: false,
 		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO users (
@@ -1721,7 +1726,8 @@ func findUserByEmailTx(ctx context.Context, tx *sql.Tx, email string) (User, boo
 			avatar_source,
 			invite_required,
 			realname_verified_at,
-			created_at
+			created_at,
+			updated_at
 		FROM users
 		WHERE email = ?
 		FOR UPDATE
@@ -1743,6 +1749,7 @@ func findUserByEmailTx(ctx context.Context, tx *sql.Tx, email string) (User, boo
 		&user.InviteRequired,
 		&realnameVerifiedAt,
 		&user.CreatedAt,
+		&user.UpdatedAt,
 	); errors.Is(err, sql.ErrNoRows) {
 		return User{}, false, nil
 	} else if err != nil {

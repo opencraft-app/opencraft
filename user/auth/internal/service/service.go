@@ -58,6 +58,7 @@ type User struct {
 	InviteRequired         bool
 	RealnameVerified       bool
 	CreatedAt              time.Time
+	UpdatedAt              time.Time
 }
 
 type RealnameVerifyInput struct {

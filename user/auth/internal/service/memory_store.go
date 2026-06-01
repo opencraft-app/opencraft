@@ -289,6 +289,7 @@ func (s *MemoryStore) UpdateProfile(_ context.Context, token string, name string
 	user.Name = strings.TrimSpace(name)
 	user.PendingName = ""
 	user.NameAuditStatus = ""
+	user.UpdatedAt = now
 	s.usersByID[user.ID] = user
 	return user, nil
 }
@@ -313,6 +314,7 @@ func (s *MemoryStore) QueueNameAudit(_ context.Context, token string, input Crea
 	}
 	user.PendingName = strings.TrimSpace(input.Name)
 	user.NameAuditStatus = "pending"
+	user.UpdatedAt = now
 	s.usersByID[user.ID] = user
 
 	s.nextAuditTaskID++
@@ -350,6 +352,7 @@ func (s *MemoryStore) QueueAvatarAudit(_ context.Context, userID string, input C
 	user.PendingAvatarObjectKey = strings.TrimSpace(input.ObjectKey)
 	user.PendingAvatarSource = strings.TrimSpace(input.Source)
 	user.AvatarAuditStatus = "pending"
+	user.UpdatedAt = now
 	s.usersByID[user.ID] = user
 
 	s.nextAuditTaskID++
@@ -455,6 +458,7 @@ func (s *MemoryStore) MarkContentAuditTaskPassed(_ context.Context, taskID int64
 				user.Name = task.ContentText
 				user.PendingName = ""
 				user.NameAuditStatus = "passed"
+				user.UpdatedAt = now
 				s.usersByID[user.ID] = user
 			}
 		case contentauditBizTypeUserAvatar:
@@ -464,6 +468,7 @@ func (s *MemoryStore) MarkContentAuditTaskPassed(_ context.Context, taskID int64
 				user.PendingAvatarObjectKey = ""
 				user.PendingAvatarSource = ""
 				user.AvatarAuditStatus = "passed"
+				user.UpdatedAt = now
 				s.usersByID[user.ID] = user
 			}
 		}
@@ -490,6 +495,7 @@ func (s *MemoryStore) MarkContentAuditTaskFailed(_ context.Context, taskID int64
 			if user.PendingName == task.ContentText {
 				user.PendingName = ""
 				user.NameAuditStatus = "failed"
+				user.UpdatedAt = now
 				s.usersByID[user.ID] = user
 			}
 		case contentauditBizTypeUserAvatar:
@@ -497,6 +503,7 @@ func (s *MemoryStore) MarkContentAuditTaskFailed(_ context.Context, taskID int64
 				user.PendingAvatarObjectKey = ""
 				user.PendingAvatarSource = ""
 				user.AvatarAuditStatus = "failed"
+				user.UpdatedAt = now
 				s.usersByID[user.ID] = user
 			}
 		}
@@ -518,7 +525,7 @@ func (s *MemoryStore) MarkContentAuditTaskError(_ context.Context, taskID int64,
 	return nil
 }
 
-func (s *MemoryStore) SetUserAvatar(_ context.Context, userID string, objectKey string, source string, _ time.Time) (User, error) {
+func (s *MemoryStore) SetUserAvatar(_ context.Context, userID string, objectKey string, source string, now time.Time) (User, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -531,6 +538,7 @@ func (s *MemoryStore) SetUserAvatar(_ context.Context, userID string, objectKey 
 	user.PendingAvatarObjectKey = ""
 	user.PendingAvatarSource = ""
 	user.AvatarAuditStatus = ""
+	user.UpdatedAt = now
 	s.usersByID[userID] = user
 	return user, nil
 }
@@ -908,6 +916,7 @@ func (s *MemoryStore) newUserWithInviteRequirementLocked(name string, email stri
 		Phone:          phone,
 		InviteRequired: inviteRequired,
 		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
 	s.usersByID[user.ID] = user
 	if email != "" {

@@ -272,6 +272,8 @@ func (h *Handler) GetUserAvatar(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, api.ErrorResponse{Code: "avatar_unavailable", Message: "头像暂时不可访问。"})
 		return
 	}
+	ctx.Header("Cache-Control", "no-store")
+	ctx.Header("Pragma", "no-cache")
 	ctx.Redirect(http.StatusFound, signedURL)
 }
 
@@ -449,6 +451,8 @@ func (h *Handler) GetProfileAvatar(ctx context.Context, _ api.GetProfileAvatarRe
 		return nil, &service.Error{Code: "avatar_unavailable", Message: "头像暂时不可访问。", Status: http.StatusInternalServerError}
 	}
 	if gctx != nil {
+		gctx.Header("Cache-Control", "no-store")
+		gctx.Header("Pragma", "no-cache")
 		gctx.Header("Location", signedURL)
 	}
 	return api.GetProfileAvatar302Response{}, nil
@@ -626,7 +630,7 @@ func (h *Handler) toAPIUser(ctx context.Context, user service.User) api.User {
 		RealnameVerified: user.RealnameVerified,
 	}
 	if strings.TrimSpace(user.AvatarObjectKey) != "" {
-		if avatarURL := h.publicAvatarURL(user.ID); avatarURL != "" {
+		if avatarURL := h.publicAvatarURL(user.ID, user.UpdatedAt); avatarURL != "" {
 			response.AvatarUrl = &avatarURL
 		}
 	}
@@ -655,12 +659,16 @@ func (h *Handler) toAPIUser(ctx context.Context, user service.User) api.User {
 	return response
 }
 
-func (h *Handler) publicAvatarURL(userID string) string {
+func (h *Handler) publicAvatarURL(userID string, updatedAt time.Time) string {
 	trimmedUserID := strings.TrimSpace(userID)
 	if trimmedUserID == "" {
 		return ""
 	}
-	return "/users/" + trimmedUserID + "/avatar"
+	url := "/users/" + trimmedUserID + "/avatar"
+	if !updatedAt.IsZero() {
+		return url + "?v=" + updatedAt.UTC().Format("20060102150405.000000000")
+	}
+	return url
 }
 
 func toAPIInviteValidation(validation service.InviteValidation) api.InviteValidation {

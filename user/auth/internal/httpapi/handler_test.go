@@ -382,7 +382,7 @@ func TestGetCurrentSessionReturnsSignedAvatarURL(t *testing.T) {
 
 	var response sessionResponseBody
 	decodeJSONResponse(t, current, &response)
-	wantAvatarURL := "/users/" + signUpBody.Session.User.ID + "/avatar"
+	wantAvatarURL := publicAvatarURLForTest(signUpBody.Session.User.ID)
 	if response.Session.User == nil || response.Session.User.AvatarURL != wantAvatarURL {
 		t.Fatalf("expected fixed avatar path on current session, got %+v", response.Session.User)
 	}
@@ -619,7 +619,7 @@ func TestPutProfileAvatarStoresObjectAndReturnsAvatarURL(t *testing.T) {
 
 	var response profileResponseBody
 	decodeJSONResponse(t, recorder, &response)
-	wantAvatarURL := "/users/" + avatarStore.lastUploadedUserID + "/avatar"
+	wantAvatarURL := publicAvatarURLForTest(avatarStore.lastUploadedUserID)
 	if response.User == nil || response.User.AvatarURL != wantAvatarURL {
 		t.Fatalf("expected uploaded avatar url, got %+v", response.User)
 	}
@@ -694,6 +694,9 @@ func TestGetProfileAvatarRedirectsToSignedURL(t *testing.T) {
 	if location := redirect.Header().Get("Location"); location != avatarStore.signedURL {
 		t.Fatalf("expected redirect to signed url %q, got %q", avatarStore.signedURL, location)
 	}
+	if cacheControl := redirect.Header().Get("Cache-Control"); cacheControl != "no-store" {
+		t.Fatalf("expected no-store cache control on profile avatar redirect, got %q", cacheControl)
+	}
 }
 
 func TestGetUserAvatarRedirectsToSignedURL(t *testing.T) {
@@ -727,6 +730,9 @@ func TestGetUserAvatarRedirectsToSignedURL(t *testing.T) {
 	}
 	if location := redirect.Header().Get("Location"); location != avatarStore.signedURL {
 		t.Fatalf("expected redirect to signed url %q, got %q", avatarStore.signedURL, location)
+	}
+	if cacheControl := redirect.Header().Get("Cache-Control"); cacheControl != "no-store" {
+		t.Fatalf("expected no-store cache control on public avatar redirect, got %q", cacheControl)
 	}
 }
 
@@ -1836,4 +1842,8 @@ func currentSMSCodeFromAdmin(t *testing.T, router http.Handler, phone string) st
 
 func fixedHTTPTestNow() time.Time {
 	return time.Date(2026, 3, 20, 10, 0, 0, 0, time.UTC)
+}
+
+func publicAvatarURLForTest(userID string) string {
+	return "/users/" + userID + "/avatar?v=" + fixedHTTPTestNow().UTC().Format("20060102150405.000000000")
 }

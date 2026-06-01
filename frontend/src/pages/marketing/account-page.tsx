@@ -14,7 +14,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { useState, useRef, useMemo } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useSession } from "@/contexts/session-context";
 import { useRepositories } from "@/contexts/repository-context";
@@ -702,6 +702,7 @@ export const AccountPage = () => {
     signInAsGuest,
     updateProfile,
     uploadAvatar,
+    refreshProfile,
     signOut,
     deleteAccount,
   } = useSession();
@@ -756,6 +757,18 @@ export const AccountPage = () => {
   const pendingName = user?.nameAuditStatus === "pending" ? user.pendingName?.trim() ?? "" : "";
   const hasPendingNameAudit = pendingName.length > 0;
   const nameAuditFailed = user?.nameAuditStatus === "failed";
+
+  useEffect(() => {
+    if (!hasPendingAvatarAudit && !hasPendingNameAudit) return;
+
+    const refreshTimer = window.setInterval(() => {
+      void refreshProfile().catch((err) => {
+        console.warn("Failed to refresh pending profile audit status", err);
+      });
+    }, 3000);
+    return () => window.clearInterval(refreshTimer);
+  }, [hasPendingAvatarAudit, hasPendingNameAudit, refreshProfile]);
+
   // 暂时隐藏「登录账号」信息展示，待能区分多渠道登录方式后恢复
   // const loginMethod = (user?.phone ?? "").length > 0 ? "phone" : "wechat";
 
