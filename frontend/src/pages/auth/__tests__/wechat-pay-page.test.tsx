@@ -30,6 +30,29 @@ describe("WeChatPayPage", () => {
     expect(screen.getByRole("button", { name: "支付能力接入中" })).toBeDisabled();
   });
 
+  it("展示回跳里获取到的 OpenID", () => {
+    Object.defineProperty(window.navigator, "userAgent", {
+      value: "Mozilla/5.0 iPhone MicroMessenger/8.0.49",
+      configurable: true,
+    });
+
+    renderPage("/auth/wechat-pay?openid=o-lightvela-123");
+
+    expect(screen.getByText("当前 OpenID")).toBeInTheDocument();
+    expect(screen.getByText("o-lightvela-123")).toBeInTheDocument();
+  });
+
+  it("兼容 hash 中带回的 OpenID", () => {
+    Object.defineProperty(window.navigator, "userAgent", {
+      value: "Mozilla/5.0 iPhone MicroMessenger/8.0.49",
+      configurable: true,
+    });
+
+    renderPage("/auth/wechat-pay#openid=o-lightvela-hash");
+
+    expect(screen.getByText("o-lightvela-hash")).toBeInTheDocument();
+  });
+
   it("普通浏览器提示在微信内打开", () => {
     Object.defineProperty(window.navigator, "userAgent", {
       value: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) Mobile/15E148 Safari/604.1",
@@ -40,6 +63,7 @@ describe("WeChatPayPage", () => {
 
     expect(screen.getByRole("heading", { name: "请在微信内打开" })).toBeInTheDocument();
     expect(screen.getByText("当前页面需要微信环境来获取 OpenID，请复制链接后在微信中打开。")).toBeInTheDocument();
+    expect(screen.getByText("尚未获取到 OpenID")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "等待微信内打开" })).toBeDisabled();
   });
 });
