@@ -36,7 +36,7 @@ function makeCnManifest(overrides: Record<string, unknown> = {}) {
     },
     bakedEnv: {
       VITE_REGION: "cn",
-      VITE_AUTH_API_BASE_URL: "https://api.lightvela.tencent.com",
+      VITE_AUTH_API_BASE_URL: "https://api.lightvela.com",
       VITE_AEGIS_ENABLED: "true",
       VITE_AEGIS_ID: "4e66EF5XoPEXx3y8lw",
       VITE_AEGIS_HOST_URL: "https://rumt-zh.com",

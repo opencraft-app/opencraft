@@ -52,7 +52,7 @@
       "requiredSecretEnv": [
         "EDGEONE_API_TOKEN"
       ],
-      "authApiBaseUrl": "https://api.lightvela.tencent.com",
+      "authApiBaseUrl": "https://api.lightvela.com",
       "outputDir": "dist-cn",
       "observability": {
         "aegis": {
