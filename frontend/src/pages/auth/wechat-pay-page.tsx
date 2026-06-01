@@ -9,6 +9,7 @@ const isWeChatBrowser = (userAgent: string) => userAgent.toLowerCase().includes(
 
 const OPEN_ID_PARAM_NAMES = ["openid", "open_id", "openId", "wx_openid", "wxOpenId"];
 const DEFAULT_WECHAT_PAY_AUTH_BASE_URL = "https://lightclaw.tech";
+const OPEN_ID_AUTH_ATTEMPTED_PARAM = "openid_auth_attempted";
 
 const readOpenIdFromParams = (params: URLSearchParams) => {
   for (const name of OPEN_ID_PARAM_NAMES) {
@@ -34,10 +35,12 @@ const readOpenId = (search: string, hash: string) => {
 const buildWeChatPayOpenIdStartUrl = (returnTo: string) => {
   const authBaseURL = resolveConfiguredAuthApiBaseUrl() ?? DEFAULT_WECHAT_PAY_AUTH_BASE_URL;
   const base = typeof window !== "undefined" ? window.location.origin : DEFAULT_WECHAT_PAY_AUTH_BASE_URL;
+  const returnToURL = new URL(returnTo, base);
+  returnToURL.searchParams.set(OPEN_ID_AUTH_ATTEMPTED_PARAM, "1");
   const startURL = new URL(`${authBaseURL.replace(/\/$/, "")}/auth/oauth/wechat/start`, base);
   startURL.searchParams.set("mode", "official_account");
   startURL.searchParams.set("scope", "base");
-  startURL.searchParams.set("return_to", returnTo);
+  startURL.searchParams.set("return_to", returnToURL.toString());
   return startURL.toString();
 };
 
@@ -47,13 +50,22 @@ export const WeChatPayPage = () => {
   const inWeChat = useMemo(() => isWeChatBrowser(window.navigator.userAgent), []);
   const openId = useMemo(() => readOpenId(location.search, location.hash), [location.hash, location.search]);
   const oauthError = useMemo(() => new URLSearchParams(location.search).get("oauth_error"), [location.search]);
+  const openIdAuthAttempted = useMemo(
+    () => new URLSearchParams(location.search).get(OPEN_ID_AUTH_ATTEMPTED_PARAM) === "1",
+    [location.search],
+  );
 
   useEffect(() => {
-    if (!inWeChat || openId || oauthError) {
+    if (!inWeChat || openId || oauthError || openIdAuthAttempted) {
       return;
     }
     redirectToOAuthStart(buildWeChatPayOpenIdStartUrl(window.location.href));
-  }, [inWeChat, oauthError, openId]);
+  }, [inWeChat, oauthError, openId, openIdAuthAttempted]);
+
+  const openIdStatusText = openId
+    ?? (inWeChat && openIdAuthAttempted
+      ? t("未能获取到 OpenID，请重新打开支付页面重试。")
+      : t(inWeChat ? "正在获取 OpenID" : "尚未获取到 OpenID"));
 
   return (
     <main className="min-h-dvh bg-[#f4f8f5] px-5 py-6 text-[#17231b]">
@@ -104,7 +116,7 @@ export const WeChatPayPage = () => {
             <div className="mt-4 rounded-2xl border border-[#d8e8dd] bg-[#fbfdfb] px-4 py-3">
               <p className="text-xs font-semibold uppercase tracking-normal text-[#6d7b71]">{t("当前 OpenID")}</p>
               <p className="mt-1 break-all text-sm font-semibold leading-6 text-[#223127]">
-                {openId ?? (inWeChat ? t("正在获取 OpenID") : t("尚未获取到 OpenID"))}
+                {openIdStatusText}
               </p>
             </div>
 

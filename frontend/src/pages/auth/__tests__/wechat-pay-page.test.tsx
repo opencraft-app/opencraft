@@ -44,7 +44,19 @@ describe("WeChatPayPage", () => {
     expect(`${redirected.origin}${redirected.pathname}`).toBe("https://lightclaw.tech/auth/oauth/wechat/start");
     expect(redirected.searchParams.get("mode")).toBe("official_account");
     expect(redirected.searchParams.get("scope")).toBe("base");
-    expect(redirected.searchParams.get("return_to")).toBe("http://localhost:3000/auth/wechat-pay");
+    expect(redirected.searchParams.get("return_to")).toBe("http://localhost:3000/auth/wechat-pay?openid_auth_attempted=1");
+  });
+
+  it("base 授权回跳仍没有 OpenID 时停止自动刷新", () => {
+    Object.defineProperty(window.navigator, "userAgent", {
+      value: "Mozilla/5.0 iPhone MicroMessenger/8.0.49",
+      configurable: true,
+    });
+
+    renderPage("/auth/wechat-pay?openid_auth_attempted=1");
+
+    expect(screen.getByText("未能获取到 OpenID，请重新打开支付页面重试。")).toBeInTheDocument();
+    expect(redirectSpy).not.toHaveBeenCalled();
   });
 
   it("展示回跳里获取到的 OpenID", () => {
