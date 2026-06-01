@@ -1,7 +1,9 @@
-# wisp package
+# wisp single-host package
 
-This package is intended to be copied to another Linux machine and run without
-the full source tree.
+This package is intended to be copied to one Linux machine and run without the
+full source tree. The Linux machine runs the Wisp daemon and containers locally;
+workspace persistence still uses the configured object-storage-compatible
+backend. The default packaged config uses `REMOTE_BACKEND=smh`.
 
 Contents:
 
@@ -22,19 +24,42 @@ Contents:
 - `config/config.jsonnet.example`
 - `scripts/install.sh`
 
-Quick start:
+Build on a development machine:
+
+```bash
+make linux-single-tar.gz
+```
+
+Quick start on the target Linux machine:
 
 1. Extract the tarball.
 2. Run `sudo ./scripts/install.sh /opt/wisp` or install in-place.
-3. Start the daemon with `sudo /opt/wisp/bin/wisp daemon run`.
-4. Run `sudo /opt/wisp/bin/wisp bootstrap`.
+3. Provide SMH credentials in environment variables or edit
+   `/opt/wisp/config/config.jsonnet`:
+
+   ```bash
+   export SMH_LIBRARY_ID=...
+   export SMH_ACCESS_DOMAIN=...
+   export SMH_LIBRARY_SECRET=...
+   ```
+
+4. Start the daemon with `sudo -E /opt/wisp/bin/wisp daemon run`.
+5. Run `sudo -E /opt/wisp/bin/wisp bootstrap`.
+6. Create and start a workspace:
+
+   ```bash
+   sudo -E /opt/wisp/bin/wispclient -server http://127.0.0.1:8520 create demo
+   sudo /opt/wisp/bin/wispclient -server http://127.0.0.1:8520 start demo
+   sudo /opt/wisp/bin/wispclient -server http://127.0.0.1:8520 exec demo -- /bin/sh -lc 'echo hello from wisp && pwd'
+   ```
 
 `bootstrap` now performs host preflight checks automatically before it prepares
 the workspace. A prebaked packaged base image is mounted read-only as the base
 lower layer.
 
-The install script renders `config/config.jsonnet` from the example template and
-replaces the placeholder install root with the target prefix.
+The install script renders `config/config.jsonnet` from the single-host SMH
+example template and replaces the placeholder install root with the target
+prefix.
 
 Host requirements still expected outside the package:
 

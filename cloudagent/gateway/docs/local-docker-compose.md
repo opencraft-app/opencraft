@@ -16,6 +16,53 @@ Compose 只保留一种运行方式：`GATEWAY_WORKER_MODE=agent_injected`。
 
 不再提供 fake worker 作为 Compose 默认路径。需要无云依赖的快速协议测试时，继续使用 Go 单测或 `make e2e-session-run-lease-multiprocess`。
 
+## OrbStack Local Wisp E2E
+
+本机验证 Wisp 不走 Docker-in-Docker。Gateway 仍在 macOS 上跑，Linux runtime host 使用 OrbStack 自带的 Linux VM：
+
+```text
+gateway test process on macOS
+  -> ssh orb /bin/bash -lc ...
+  -> Wisp daemon + crun + JuiceFS/SMH inside OrbStack Linux
+  -> outer Wisp container + inner workspace Wisp container
+```
+
+准备条件：
+
+- OrbStack 已启动，并且 `ssh orb uname -a` 可用。
+- `cloudagent/gateway/.env` 或当前 shell 提供 TokenHub、sidecar、上海 SMH/Wisp 配置；local_wisp 不需要 AGS API credential。
+- OrbStack Linux 允许免交互 sudo；脚本会自动检查 `/dev/fuse`、`fsck.erofs`、`crun`、loop device。
+
+运行：
+
+```bash
+cd cloudagent/gateway
+make e2e-local-orbstack-wisp-smh
+```
+
+如果要验证本地刚构建的 Wisp 包，先在 macOS 上启动一个静态文件服务：
+
+```bash
+cd cloudagent/wisp
+GOOS=linux GOARCH=amd64 WISP_PACKAGE_EROFS=1 WISP_PACKAGE_TAR_GZ=0 WISP_PACKAGE_WITH_DOCKER=1 ./hack/release/package-tarball.sh
+ruby -run -e httpd "$PWD/dist-release" -p 18097
+```
+
+然后用 `host.orb.internal` 传给 OrbStack Linux：
+
+```bash
+cd cloudagent/gateway
+GATEWAY_WISP_PACKAGE_URL=http://host.orb.internal:18097/wisp-linux-amd64-YYYYMMDDTHHMMSSZ.erofs \
+  make e2e-local-orbstack-wisp-smh
+```
+
+实现约束：
+
+- OrbStack 当前按主机级 Wisp daemon 跑，inner/outer 两个 Wisp container 共享同一个 daemon。
+- arm64 Mac 上默认仍可使用 amd64 Wisp 包，但 container runtime 使用 OrbStack Linux 里的原生 `crun`，不要使用包内 amd64 `crun`。
+- active `root-upper.img` 直接在 Wisp/JuiceFS 路径上创建；干净 VM 下 `mke2fs` 本身不是瓶颈。
+- 如果手工中断过 Wisp 启动，OrbStack 里可能残留坏的 mount/loop 现场。新的 session 不应被 sibling runtime root 的旧 loop 阻断；Wisp 只会在当前 session 自己的 runtime root 上做恢复/清理。如果已经出现不可杀 D-state，重启 OrbStack VM 比脚本里强行 `umount` 更可靠。
+
 ## 准备环境文件
 
 复制模板：
@@ -255,3 +302,112 @@ make e2e-session-run-lease-multiprocess
 - `session/close` 会释放 SessionRunLease。
 - WebSocket `session/load` 后断开不会释放 SessionRunLease。
 - 并发 `_cloudagent.runtime.ensure_ready` 只有一个 owner 成功。
+
+## Local Wisp RuntimeHost
+
+除 Compose 的真实 AGS 路径外，gateway 现在有一个一等本地 RuntimeHost 入口：
+
+```bash
+GATEWAY_RUNTIME_HOST=local_wisp
+GATEWAY_LOCAL_RUNTIME_ROOT=/var/lib/cloudagent-local-runtime
+```
+
+这个模式的定位是 **Linux 原生 RuntimeHost**：一台 Linux host/VM 虚拟多台 AGS。不要把 Docker 当成产品运行时边界。
+
+- gateway 仍然创建 outer 和 workspace 两个 runtime target。
+- `CreateSandbox` 返回轻量本地 handle，不调用 AGS control plane。
+- handle 会持久化在 `GATEWAY_LOCAL_RUNTIME_ROOT/handles/*.json`，用于恢复和排障。
+- target 文件根默认在 `GATEWAY_LOCAL_RUNTIME_ROOT/targets/<target-id>`。
+- `DeleteSandbox` 是幂等 bookkeeping；真正的文件系统生命周期仍由 Wisp stop/checkpoint/restore 管。
+- `/readyz` 和 `/v1/selfcheck` 会按 `local_wisp` 语义检查本地 root、command prefix、Wisp/SMH 配置，不要求 AGS credential。
+
+可选项：
+
+```bash
+GATEWAY_LOCAL_RUNTIME_COMMAND_PREFIX='ssh cloudagent-vm -- /bin/sh -lc'
+GATEWAY_LOCAL_RUNTIME_ALLOW_HOST_PATHS=0
+```
+
+`local_wisp` 默认允许 host 绝对路径，因为 gateway 现有 runtime 命令会直接访问 `/tmp/gateway/...`、`/workspace`、Wisp rootfs 等路径；如果 upload/download 被重写到 target root，而命令仍访问真实绝对路径，文件会不可见。只有在纯单测或受控实验里，才建议把 `GATEWAY_LOCAL_RUNTIME_ALLOW_HOST_PATHS=0` 打开，让文件 API 限制在 target root 下。
+
+正常设计里 gateway 本身跑在 Linux 上，可以不配 prefix，命令直接在 gateway host 上执行。`GATEWAY_LOCAL_RUNTIME_COMMAND_PREFIX` 只用于非 Linux 开发机把命令代理到 Linux VM，例如 OrbStack machine 或 SSH；它不是生产设计的一部分。
+
+验证本地 Linux runner：
+
+```bash
+make e2e-local-runtime-host
+```
+
+这个目标默认要求在 Linux 上运行。它会断言 runtime 命令返回 `Linux`，验证 host 上传的文件能在 Linux runtime 的同一路径读到，并锁定 timeout/cancel 不泄漏远端子进程。
+
+如果使用已有 Linux VM，需要确保 `CLOUDAGENT_LOCAL_LINUX_SHARED_ROOT` 在 host 和 VM 中是同一个共享路径：
+
+```bash
+CLOUDAGENT_LOCAL_LINUX_COMMAND_PREFIX='ssh cloudagent-vm' \
+CLOUDAGENT_LOCAL_LINUX_SHARED_ROOT=/mnt/cloudagent-local-runtime \
+make e2e-local-runtime-host
+```
+
+如果确实要在非 Linux 开发机上临时用 Docker 做兼容 runner，必须显式打开：
+
+```bash
+CLOUDAGENT_LOCAL_RUNTIME_HOST_DOCKER=1 make e2e-local-runtime-host
+```
+
+这只用于本地兼容验证，不代表 CloudAgent runtime 设计依赖 Docker。
+
+验证真实上海 SMH + Wisp + 本地 Docker：
+
+```bash
+make e2e-local-docker-wisp-smh
+```
+
+这个目标不是 fake runtime。Docker 只提供本地 Linux 计算环境；Wisp package、SMH space/token、outer Wisp、workspace Wisp 都走真实上海配置。脚本会启动一个 privileged `linux/amd64` Debian 容器，设置 `GATEWAY_RUNTIME_HOST=local_wisp`，然后跑 `TestLiveLocalDockerWispSMHRuntime`：
+
+- 创建 outer local runtime target。
+- 创建 workspace local runtime target。
+- 创建真实 SMH space。
+- 在 Docker Linux 内 prepare outer/inner 两份 Wisp。
+- 启动 sidecar daemon 并绑定 workspace runtime。
+- 刷新 runtime。
+- close 两份 Wisp 并要求 checkpoint/stop 成功。
+
+必需配置：
+
+```bash
+GATEWAY_AGENT_SIDECAR_URL=...
+GATEWAY_WISP_SMH_LIBRARY_SECRET=...
+```
+
+默认会使用上海 SMH library：
+
+```text
+GATEWAY_WISP_SMH_LIBRARY_ID=smh37laghvp09llc
+GATEWAY_WISP_SMH_ACCESS_DOMAIN=https://smh37laghvp09llc.ap-shanghai.api.tencentsmh.cn
+```
+
+在 macOS 上更推荐直接用 OrbStack Linux machine 作为 RuntimeHost，而不是在 Docker 容器里再跑 Wisp 的 `crun`：
+
+```bash
+make e2e-local-orbstack-wisp-smh
+```
+
+这个目标通过 `ssh orb /bin/bash -lc` 执行 runtime 命令，Mac 仍然跑 gateway/test controller，OrbStack machine 负责真实 Linux runtime：
+
+- 不再嵌套 `crun in Docker`。
+- 继续使用真实上海 SMH library、SMH token、Wisp package。
+- outer Wisp 和 workspace Wisp 在同一台 OrbStack VM 上启动，当前共享同一个主机级 Wisp daemon。Wisp daemon 不是按端口多实例模型；不要为了 inner/outer 强行起两个 daemon。
+- 默认复用上海 `linux-amd64` EROFS package，并依赖 OrbStack/Rosetta 的 amd64 ELF 支持；如果后续发布 `linux-arm64` Wisp package，可通过 `GATEWAY_WISP_PACKAGE_URL` 和 `GATEWAY_WISP_PACKAGE_ARCH=arm64` 切换。
+
+必需配置同 Docker 目标：
+
+```bash
+GATEWAY_AGENT_SIDECAR_URL=...
+GATEWAY_WISP_SMH_LIBRARY_SECRET=...
+```
+
+如果 OrbStack SSH target 不是默认 `orb`：
+
+```bash
+CLOUDAGENT_ORBSTACK_SSH_TARGET=root@orb make e2e-local-orbstack-wisp-smh
+```

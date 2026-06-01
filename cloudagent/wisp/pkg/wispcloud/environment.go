@@ -160,9 +160,6 @@ func (s *WispEnvironmentSDK) Create(ctx context.Context, opts WispEnvironmentOpt
 		jfsPrefix = "workspace-wisp-sdk"
 	}
 	rootUpper := strings.TrimSpace(opts.RootUpperSize)
-	if rootUpper == "" {
-		rootUpper = "5G"
-	}
 	timeout := opts.SandboxTimeoutSeconds
 	if timeout == 0 {
 		timeout = 900
@@ -540,6 +537,7 @@ local projectRoot = "$install";
   WISP_UID: 0,
   WISP_GID: 0,
   ROOT_UPPER_SIZE: "$ROOT_UPPER_SIZE",
+  BLANK_ROOT_UPPER_SPARSE: projectRoot + "/assets/rootfs/blank-ext4/root-upper-default.sparse",
   ADMIN_LISTEN_ADDR: "127.0.0.1:8520",
 }
 EOF
@@ -568,6 +566,7 @@ export CRUN_BINARY_PATH="/var/lib/wisp/shared/tools/crun"
 export WISPENV_BINARY="$install/bin/wispenv"
 export WISP_FS_AGENT_BINARY="$install/bin/wisp-fs-agent"
 export TINI_BINARY="$install/assets/bin/tini/tini"
+export BLANK_ROOT_UPPER_SPARSE="$install/assets/rootfs/blank-ext4/root-upper-default.sparse"
 export ADMIN_LISTEN_ADDR="127.0.0.1:8520"
 
 step daemon_start
@@ -590,6 +589,7 @@ sudo -n env \
   WISPENV_BINARY="$WISPENV_BINARY" \
   WISP_FS_AGENT_BINARY="$WISP_FS_AGENT_BINARY" \
   TINI_BINARY="$TINI_BINARY" \
+  BLANK_ROOT_UPPER_SPARSE="$BLANK_ROOT_UPPER_SPARSE" \
   WISP_USER=root \
   WISP_UID=0 \
   WISP_GID=0 \
