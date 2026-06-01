@@ -1,11 +1,14 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useLocation } from "react-router-dom";
 import { CheckCircle2, MessageCircle, ShieldCheck, Smartphone, Wallet } from "lucide-react";
+import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
+import { redirectToOAuthStart } from "@/lib/oauth";
 import { useT } from "@/i18n/t";
 
 const isWeChatBrowser = (userAgent: string) => userAgent.toLowerCase().includes("micromessenger");
 
 const OPEN_ID_PARAM_NAMES = ["openid", "open_id", "openId", "wx_openid", "wxOpenId"];
+const DEFAULT_WECHAT_PAY_AUTH_BASE_URL = "https://lightclaw.tech";
 
 const readOpenIdFromParams = (params: URLSearchParams) => {
   for (const name of OPEN_ID_PARAM_NAMES) {
@@ -28,11 +31,29 @@ const readOpenId = (search: string, hash: string) => {
   return readOpenIdFromParams(new URLSearchParams(hashQuery));
 };
 
+const buildWeChatPayOpenIdStartUrl = (returnTo: string) => {
+  const authBaseURL = resolveConfiguredAuthApiBaseUrl() ?? DEFAULT_WECHAT_PAY_AUTH_BASE_URL;
+  const base = typeof window !== "undefined" ? window.location.origin : DEFAULT_WECHAT_PAY_AUTH_BASE_URL;
+  const startURL = new URL(`${authBaseURL.replace(/\/$/, "")}/auth/oauth/wechat/start`, base);
+  startURL.searchParams.set("mode", "official_account");
+  startURL.searchParams.set("scope", "base");
+  startURL.searchParams.set("return_to", returnTo);
+  return startURL.toString();
+};
+
 export const WeChatPayPage = () => {
   const location = useLocation();
   const t = useT();
   const inWeChat = useMemo(() => isWeChatBrowser(window.navigator.userAgent), []);
   const openId = useMemo(() => readOpenId(location.search, location.hash), [location.hash, location.search]);
+  const oauthError = useMemo(() => new URLSearchParams(location.search).get("oauth_error"), [location.search]);
+
+  useEffect(() => {
+    if (!inWeChat || openId || oauthError) {
+      return;
+    }
+    redirectToOAuthStart(buildWeChatPayOpenIdStartUrl(window.location.href));
+  }, [inWeChat, oauthError, openId]);
 
   return (
     <main className="min-h-dvh bg-[#f4f8f5] px-5 py-6 text-[#17231b]">
@@ -61,7 +82,7 @@ export const WeChatPayPage = () => {
                 </h1>
                 <p className="text-sm leading-7 text-[#5d6b62]">
                   {inWeChat
-                    ? t("支付承接页已就绪，后续会在这里获取 OpenID 并唤起米大师收银台。")
+                    ? t("正在通过微信静默授权获取 OpenID，完成后会回到本页。")
                     : t("当前页面需要微信环境来获取 OpenID，请复制链接后在微信中打开。")}
                 </p>
               </div>
@@ -83,7 +104,7 @@ export const WeChatPayPage = () => {
             <div className="mt-4 rounded-2xl border border-[#d8e8dd] bg-[#fbfdfb] px-4 py-3">
               <p className="text-xs font-semibold uppercase tracking-normal text-[#6d7b71]">{t("当前 OpenID")}</p>
               <p className="mt-1 break-all text-sm font-semibold leading-6 text-[#223127]">
-                {openId ?? t("尚未获取到 OpenID")}
+                {openId ?? (inWeChat ? t("正在获取 OpenID") : t("尚未获取到 OpenID"))}
               </p>
             </div>
 

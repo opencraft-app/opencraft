@@ -1,6 +1,7 @@
 import { MemoryRouter } from "react-router-dom";
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as oauthModule from "@/lib/oauth";
 import { WeChatPayPage } from "@/pages/auth/wechat-pay-page";
 
 const renderPage = (route = "/auth/wechat-pay") => {
@@ -12,12 +13,21 @@ const renderPage = (route = "/auth/wechat-pay") => {
   );
 };
 
+let redirectSpy: ReturnType<typeof vi.spyOn>;
+
 describe("WeChatPayPage", () => {
-  afterEach(() => {
-    cleanup();
+  beforeEach(() => {
+    vi.stubEnv("VITE_AUTH_API_BASE_URL", "https://lightclaw.tech");
+    redirectSpy = vi.spyOn(oauthModule, "redirectToOAuthStart").mockImplementation(() => undefined);
   });
 
-  it("在微信内展示支付承接占位状态", () => {
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  it("在微信内自动发起 base 授权获取 OpenID", () => {
     Object.defineProperty(window.navigator, "userAgent", {
       value: "Mozilla/5.0 iPhone MicroMessenger/8.0.49",
       configurable: true,
@@ -27,7 +37,14 @@ describe("WeChatPayPage", () => {
 
     expect(screen.getByRole("heading", { name: "确认微信支付" })).toBeInTheDocument();
     expect(screen.getByText("等待后端支付参数接入。")).toBeInTheDocument();
+    expect(screen.getByText("正在获取 OpenID")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "支付能力接入中" })).toBeDisabled();
+    expect(redirectSpy).toHaveBeenCalledTimes(1);
+    const redirected = new URL(redirectSpy.mock.calls[0]?.[0] ?? "");
+    expect(`${redirected.origin}${redirected.pathname}`).toBe("https://lightclaw.tech/auth/oauth/wechat/start");
+    expect(redirected.searchParams.get("mode")).toBe("official_account");
+    expect(redirected.searchParams.get("scope")).toBe("base");
+    expect(redirected.searchParams.get("return_to")).toBe("http://localhost:3000/auth/wechat-pay");
   });
 
   it("展示回跳里获取到的 OpenID", () => {
@@ -40,6 +57,7 @@ describe("WeChatPayPage", () => {
 
     expect(screen.getByText("当前 OpenID")).toBeInTheDocument();
     expect(screen.getByText("o-lightvela-123")).toBeInTheDocument();
+    expect(redirectSpy).not.toHaveBeenCalled();
   });
 
   it("兼容 hash 中带回的 OpenID", () => {

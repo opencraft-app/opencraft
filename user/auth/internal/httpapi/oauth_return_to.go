@@ -297,6 +297,25 @@ func appendSessionTokenToReturnTo(rawURL string, sessionToken string) string {
 	return parsed.String()
 }
 
+func appendQueryParamToReturnTo(rawURL string, name string, value string) string {
+	redirectURL := strings.TrimSpace(rawURL)
+	paramName := strings.TrimSpace(name)
+	paramValue := strings.TrimSpace(value)
+	if redirectURL == "" || paramName == "" || paramValue == "" {
+		return redirectURL
+	}
+
+	parsed, err := url.Parse(redirectURL)
+	if err != nil {
+		return redirectURL
+	}
+
+	query := parsed.Query()
+	query.Set(paramName, paramValue)
+	parsed.RawQuery = query.Encode()
+	return parsed.String()
+}
+
 func (h *Handler) oauthSuccessRedirectURL(ctx *gin.Context, returnTo string, defaultRedirectURL string, session *service.AuthSession) string {
 	validated := h.validatedReturnToURL(returnTo)
 	if validated == "" {
