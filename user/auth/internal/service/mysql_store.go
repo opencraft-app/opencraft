@@ -634,7 +634,7 @@ func (s *MySQLStore) UpdateProfile(ctx context.Context, token string, name strin
 	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE users
-		SET name = ?, updated_at = ?
+		SET name = ?, pending_name = NULL, name_audit_status = NULL, updated_at = ?
 		WHERE id = ?
 	`, strings.TrimSpace(name), now, userID); err != nil {
 		return User{}, fmt.Errorf("update profile: %w", err)
