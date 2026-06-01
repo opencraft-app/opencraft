@@ -287,6 +287,8 @@ func (s *MemoryStore) UpdateProfile(_ context.Context, token string, name string
 		return User{}, newError("unauthorized", "未登录或登录已失效。", 401)
 	}
 	user.Name = strings.TrimSpace(name)
+	user.PendingName = ""
+	user.NameAuditStatus = ""
 	s.usersByID[user.ID] = user
 	return user, nil
 }

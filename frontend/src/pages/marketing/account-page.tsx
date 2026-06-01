@@ -712,6 +712,7 @@ export const AccountPage = () => {
   const [isEditingName, setIsEditingName] = useState(false);
   const [editName, setEditName] = useState(user?.name ?? "");
   const [saving, setSaving] = useState(false);
+  const [nameSaveError, setNameSaveError] = useState<string | null>(null);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarUploadError, setAvatarUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -759,11 +760,13 @@ export const AccountPage = () => {
   // const loginMethod = (user?.phone ?? "").length > 0 ? "phone" : "wechat";
 
   const beginNameEdit = () => {
+    setNameSaveError(null);
     setEditName(pendingName || user?.name || "");
     setIsEditingName(true);
   };
 
   const cancelNameEdit = () => {
+    setNameSaveError(null);
     setIsEditingName(false);
     setEditName(pendingName || user?.name || "");
   };
@@ -771,11 +774,13 @@ export const AccountPage = () => {
   const handleSaveName = async () => {
     if (!editName.trim()) return;
     setSaving(true);
+    setNameSaveError(null);
     try {
       await updateProfile({ name: editName.trim() });
       setIsEditingName(false);
     } catch (e) {
       console.error("Failed to update name", e);
+      setNameSaveError(e instanceof Error ? e.message : t("昵称修改失败，请稍后重试。"));
     } finally {
       setSaving(false);
     }
@@ -1022,6 +1027,11 @@ export const AccountPage = () => {
                             {t("取消")}
                           </button>
                         </div>
+                        {nameSaveError && (
+                          <p className="w-full text-xs" style={{ color: "#cf3d4c", lineHeight: 1.5 }}>
+                            {nameSaveError}
+                          </p>
+                        )}
                       </div>
                     ) : (
                       <div className="space-y-1.5">

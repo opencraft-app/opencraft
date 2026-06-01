@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/avatar"
+	"github.com/openclaw/openclaw/mono/backend/auth/internal/contentaudit"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/httpapi"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/logging"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/realname"
@@ -25,13 +26,15 @@ func main() {
 
 	sessionTTL := 30 * 24 * time.Hour
 	contentAuditConfig := buildContentAuditConfig(logger)
+	contentAuditClient := buildContentAuditClient(logger, contentAuditConfig)
 	authStore := newStore(contentAuditConfig.Enabled)
 	authService := service.NewWithStore(authStore, service.Options{
-		SessionTTL:       sessionTTL,
-		DefaultSMSCode:   envOrDefault("LIGHTCLAW_DEV_SMS_CODE", ""),
-		RealnameVerifier: buildRealnameVerifier(logger),
-		RealnameCipher:   buildRealnameCipher(logger),
-		ContentAudit:     contentAuditConfig,
+		SessionTTL:         sessionTTL,
+		DefaultSMSCode:     envOrDefault("LIGHTCLAW_DEV_SMS_CODE", ""),
+		RealnameVerifier:   buildRealnameVerifier(logger),
+		RealnameCipher:     buildRealnameCipher(logger),
+		ContentAudit:       contentAuditConfig,
+		ContentAuditClient: contentAuditClient,
 	})
 	avatarStore := buildAvatarStore(logger)
 
@@ -101,6 +104,27 @@ func buildContentAuditConfig(logger *slog.Logger) service.ContentAuditConfig {
 	}
 	logger.Info("content audit enabled", "name_audit", cfg.NameAuditEnabled, "avatar_audit", cfg.AvatarAuditEnabled)
 	return cfg
+}
+
+func buildContentAuditClient(logger *slog.Logger, cfg service.ContentAuditConfig) service.ContentAuditClient {
+	if !cfg.Ready() {
+		return nil
+	}
+	endpoint := strings.TrimSpace(os.Getenv("CONTENT_AUDIT_ENDPOINT"))
+	if endpoint == "" {
+		logger.Warn("content audit direct client disabled because CONTENT_AUDIT_ENDPOINT is empty")
+		return nil
+	}
+	client, err := contentaudit.New(contentaudit.Config{
+		Endpoint:   endpoint,
+		ProxyToken: os.Getenv("CONTENT_AUDIT_PROXY_TOKEN"),
+	})
+	if err != nil {
+		logger.Warn("content audit direct client disabled", "err", err)
+		return nil
+	}
+	logger.Info("content audit direct client enabled")
+	return client
 }
 
 func newStore(contentAuditEnabled bool) service.Store {

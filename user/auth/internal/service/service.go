@@ -20,15 +20,16 @@ var (
 )
 
 type Options struct {
-	Now              func() time.Time
-	SMSCooldown      time.Duration
-	SMSCodeTTL       time.Duration
-	SessionTTL       time.Duration
-	DefaultSMSCode   string
-	SeedDemoUser     bool
-	RealnameVerifier RealnameVerifier
-	RealnameCipher   RealnameCipher
-	ContentAudit     ContentAuditConfig
+	Now                func() time.Time
+	SMSCooldown        time.Duration
+	SMSCodeTTL         time.Duration
+	SessionTTL         time.Duration
+	DefaultSMSCode     string
+	SeedDemoUser       bool
+	RealnameVerifier   RealnameVerifier
+	RealnameCipher     RealnameCipher
+	ContentAudit       ContentAuditConfig
+	ContentAuditClient ContentAuditClient
 }
 
 type Error struct {
@@ -92,6 +93,11 @@ type ContentAuditConfig struct {
 	AvatarAuditEnabled bool
 	ProductID          string
 	UserSID            string
+}
+
+// Ready reports whether the config has enough information to submit audit requests.
+func (c ContentAuditConfig) Ready() bool {
+	return c.ready()
 }
 
 func (c ContentAuditConfig) ready() bool {
@@ -208,14 +214,15 @@ type OAuthSignInInput struct {
 
 type Service struct {
 	now              func() time.Time
-	smsCooldown      time.Duration
-	smsCodeTTL       time.Duration
-	sessionTTL       time.Duration
-	defaultSMSCode   string
-	store            Store
-	realnameVerifier RealnameVerifier
-	realnameCipher   RealnameCipher
-	contentAudit     ContentAuditConfig
+	smsCooldown        time.Duration
+	smsCodeTTL         time.Duration
+	sessionTTL         time.Duration
+	defaultSMSCode     string
+	store              Store
+	realnameVerifier   RealnameVerifier
+	realnameCipher     RealnameCipher
+	contentAudit       ContentAuditConfig
+	contentAuditClient ContentAuditClient
 }
 
 type smsChallenge struct {
@@ -256,15 +263,16 @@ func NewWithStore(store Store, opts Options) *Service {
 	}
 
 	return &Service{
-		now:              now,
-		smsCooldown:      defaultDuration(opts.SMSCooldown, time.Minute),
-		smsCodeTTL:       defaultDuration(opts.SMSCodeTTL, 5*time.Minute),
-		sessionTTL:       defaultDuration(opts.SessionTTL, 30*24*time.Hour),
-		defaultSMSCode:   normalizeFixedSMSCode(opts.DefaultSMSCode),
-		store:            store,
-		realnameVerifier: opts.RealnameVerifier,
-		realnameCipher:   opts.RealnameCipher,
-		contentAudit:     opts.ContentAudit,
+		now:                now,
+		smsCooldown:        defaultDuration(opts.SMSCooldown, time.Minute),
+		smsCodeTTL:         defaultDuration(opts.SMSCodeTTL, 5*time.Minute),
+		sessionTTL:         defaultDuration(opts.SessionTTL, 30*24*time.Hour),
+		defaultSMSCode:     normalizeFixedSMSCode(opts.DefaultSMSCode),
+		store:              store,
+		realnameVerifier:   opts.RealnameVerifier,
+		realnameCipher:     opts.RealnameCipher,
+		contentAudit:       opts.ContentAudit,
+		contentAuditClient: opts.ContentAuditClient,
 	}
 }
 
@@ -486,6 +494,16 @@ func (s *Service) UpdateProfile(ctx context.Context, token string, name string) 
 		if !s.contentAudit.ready() {
 			return User{}, newError("content_audit_unavailable", "昵称审核服务暂不可用。", http.StatusServiceUnavailable)
 		}
+		if s.contentAuditClient != nil {
+			current, err := s.CurrentProfile(ctx, token)
+			if err != nil {
+				return User{}, err
+			}
+			if err := s.auditNameSynchronously(ctx, current.ID, trimmed); err != nil {
+				return User{}, err
+			}
+			return s.store.UpdateProfile(ctx, token, trimmed, s.now())
+		}
 		return s.store.QueueNameAudit(ctx, token, CreateNameAuditInput{
 			Name:      trimmed,
 			ProductID: strings.TrimSpace(s.contentAudit.ProductID),
@@ -525,6 +543,12 @@ func (s *Service) QueueAvatarAudit(ctx context.Context, userID string, objectKey
 	}
 	if !s.contentAudit.ready() {
 		return User{}, newError("content_audit_unavailable", "头像审核服务暂不可用。", http.StatusServiceUnavailable)
+	}
+	if s.contentAuditClient != nil {
+		if err := s.auditAvatarSynchronously(ctx, trimmedUserID, trimmedObjectKey, trimmedContentURL); err != nil {
+			return User{}, err
+		}
+		return s.store.SetUserAvatar(ctx, trimmedUserID, trimmedObjectKey, trimmedSource, s.now())
 	}
 	return s.store.QueueAvatarAudit(ctx, trimmedUserID, CreateAvatarAuditInput{
 		ObjectKey:  trimmedObjectKey,

@@ -32,6 +32,22 @@ type ContentAuditWorkerOptions struct {
 	TimeoutMinutes int
 }
 
+type contentAuditDecision string
+
+const (
+	contentAuditDecisionPass    contentAuditDecision = "pass"
+	contentAuditDecisionReject  contentAuditDecision = "reject"
+	contentAuditDecisionPending contentAuditDecision = "pending"
+)
+
+type contentAuditSubmitResult struct {
+	Decision   contentAuditDecision
+	RequestID  string
+	ResultCode int
+	ResultType int
+	ResultMsg  string
+}
+
 func NewContentAuditWorker(store Store, client ContentAuditClient, config ContentAuditConfig, opts ContentAuditWorkerOptions) *ContentAuditWorker {
 	now := opts.Now
 	if now == nil {
@@ -105,18 +121,26 @@ func (w *ContentAuditWorker) RunOnce(ctx context.Context, batchSize int) error {
 }
 
 func (w *ContentAuditWorker) submitTask(ctx context.Context, task ContentAuditTask) error {
-	if task.MediaType == contentauditMediaTypeImage || task.BizType == contentauditBizTypeUserAvatar {
-		return w.submitImageTask(ctx, task)
+	result, err := submitContentAuditTask(ctx, w.client, w.now, task)
+	if err != nil {
+		return err
 	}
-	return w.submitTextTask(ctx, task)
+	return w.applySubmitResult(ctx, task, result)
 }
 
-func (w *ContentAuditWorker) submitTextTask(ctx context.Context, task ContentAuditTask) error {
+func submitContentAuditTask(ctx context.Context, client ContentAuditClient, now func() time.Time, task ContentAuditTask) (contentAuditSubmitResult, error) {
+	if task.MediaType == contentauditMediaTypeImage || task.BizType == contentauditBizTypeUserAvatar {
+		return submitImageContentAuditTask(ctx, client, now, task)
+	}
+	return submitTextContentAuditTask(ctx, client, now, task)
+}
+
+func submitTextContentAuditTask(ctx context.Context, client ContentAuditClient, now func() time.Time, task ContentAuditTask) (contentAuditSubmitResult, error) {
 	contentText := strings.TrimSpace(task.ContentText)
 	if contentText == "" {
-		return fmt.Errorf("content audit task %d has empty content", task.ID)
+		return contentAuditSubmitResult{}, fmt.Errorf("content audit task %d has empty content", task.ID)
 	}
-	requestID := fmt.Sprintf("lightclaw-%s-%s-%d", task.BizType, task.BizID, task.ID)
+	requestID := contentAuditTaskRequestID(task)
 	encoded := base64.StdEncoding.EncodeToString([]byte(contentText))
 	req := contentaudit.CreateTextTaskRequest{
 		ProductID: task.ProductID,
@@ -131,26 +155,26 @@ func (w *ContentAuditWorker) submitTextTask(ctx context.Context, task ContentAud
 					UiAcntType: 7,
 					StrNick:    contentText,
 				},
-				Msg: contentaudit.RequestMsg{UiPostTime: uint64(w.now().Unix())},
+				Msg: contentaudit.RequestMsg{UiPostTime: uint64(now().Unix())},
 				Media: contentaudit.RequestMedia{Text: []contentaudit.RequestText{
 					{StrContent: encoded},
 				}},
 			},
 		},
 	}
-	resp, err := w.client.CreateTextTask(ctx, req)
+	resp, err := client.CreateTextTask(ctx, req)
 	if err != nil {
-		return err
+		return contentAuditSubmitResult{}, err
 	}
-	return w.applySubmitResponse(ctx, task, requestID, resp)
+	return classifyContentAuditSubmitResponse(requestID, resp), nil
 }
 
-func (w *ContentAuditWorker) submitImageTask(ctx context.Context, task ContentAuditTask) error {
+func submitImageContentAuditTask(ctx context.Context, client ContentAuditClient, now func() time.Time, task ContentAuditTask) (contentAuditSubmitResult, error) {
 	contentURL := strings.TrimSpace(task.ContentURL)
 	if contentURL == "" {
-		return fmt.Errorf("content audit task %d has empty image url", task.ID)
+		return contentAuditSubmitResult{}, fmt.Errorf("content audit task %d has empty image url", task.ID)
 	}
-	requestID := fmt.Sprintf("lightclaw-%s-%s-%d", task.BizType, task.BizID, task.ID)
+	requestID := contentAuditTaskRequestID(task)
 	req := contentaudit.CreateImageTaskRequest{
 		ProductID: task.ProductID,
 		SID:       task.SID,
@@ -164,31 +188,56 @@ func (w *ContentAuditWorker) submitImageTask(ctx context.Context, task ContentAu
 					UiAcntType: 7,
 					StrHeadUrl: contentURL,
 				},
-				Msg: contentaudit.RequestMsg{UiPostTime: uint64(w.now().Unix())},
+				Msg: contentaudit.RequestMsg{UiPostTime: uint64(now().Unix())},
 				Media: contentaudit.RequestMedia{Pic: []contentaudit.RequestPic{
 					{StrURL: contentURL},
 				}},
 			},
 		},
 	}
-	resp, err := w.client.CreateImageTask(ctx, req)
+	resp, err := client.CreateImageTask(ctx, req)
 	if err != nil {
-		return err
+		return contentAuditSubmitResult{}, err
 	}
-	return w.applySubmitResponse(ctx, task, requestID, resp)
+	return classifyContentAuditSubmitResponse(requestID, resp), nil
 }
 
-func (w *ContentAuditWorker) applySubmitResponse(ctx context.Context, task ContentAuditTask, requestID string, resp *contentaudit.CreateTextTaskResponse) error {
+func contentAuditTaskRequestID(task ContentAuditTask) string {
+	if requestID := strings.TrimSpace(task.RequestID); requestID != "" {
+		return requestID
+	}
+	return fmt.Sprintf("lightclaw-%s-%s-%d", task.BizType, task.BizID, task.ID)
+}
+
+func classifyContentAuditSubmitResponse(requestID string, resp *contentaudit.CreateTextTaskResponse) contentAuditSubmitResult {
+	result := contentAuditSubmitResult{
+		Decision:  contentAuditDecisionPending,
+		RequestID: strings.TrimSpace(requestID),
+	}
 	if resp != nil && resp.Response.Data != nil && resp.Response.Data.Result != nil {
-		result := resp.Response.Data.Result
-		switch result.ResultCode {
+		auditResult := resp.Response.Data.Result
+		result.ResultCode = int(auditResult.ResultCode)
+		result.ResultType = int(auditResult.ResultType)
+		result.ResultMsg = auditResult.ResultMsg
+		switch auditResult.ResultCode {
 		case contentaudit.ResultCodeMalicious:
-			return w.store.MarkContentAuditTaskFailed(ctx, task.ID, requestID, int(result.ResultCode), int(result.ResultType), result.ResultMsg, w.now())
+			result.Decision = contentAuditDecisionReject
 		case contentaudit.ResultCodePass:
-			return w.store.MarkContentAuditTaskPassed(ctx, task.ID, requestID, "sync", w.now())
+			result.Decision = contentAuditDecisionPass
 		}
 	}
-	return w.store.MarkContentAuditTaskSubmitted(ctx, task.ID, requestID, w.now())
+	return result
+}
+
+func (w *ContentAuditWorker) applySubmitResult(ctx context.Context, task ContentAuditTask, result contentAuditSubmitResult) error {
+	switch result.Decision {
+	case contentAuditDecisionReject:
+		return w.store.MarkContentAuditTaskFailed(ctx, task.ID, result.RequestID, result.ResultCode, result.ResultType, result.ResultMsg, w.now())
+	case contentAuditDecisionPass:
+		return w.store.MarkContentAuditTaskPassed(ctx, task.ID, result.RequestID, "sync", w.now())
+	default:
+		return w.store.MarkContentAuditTaskSubmitted(ctx, task.ID, result.RequestID, w.now())
+	}
 }
 
 func (s *Service) HandleContentAuditCallback(ctx context.Context, rawBody []byte) error {
