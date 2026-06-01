@@ -1212,6 +1212,129 @@ func TestAdminCreateImpersonationSessionAllowsStructuredAbsoluteReturnTo(t *test
 	}
 }
 
+func TestAdminE2ESessionMintDisabledByDefault(t *testing.T) {
+	t.Parallel()
+
+	router := newAuthAdminTestRouter("admin-secret")
+	recorder := performAdminJSONRequest(t, router, http.MethodPost, "/admin/e2e/session-mint", map[string]any{
+		"userId": "usr_missing",
+	}, "e2e-secret")
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 when e2e auth is disabled, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestAdminE2ESessionMintRequiresE2EToken(t *testing.T) {
+	t.Parallel()
+
+	router := newAuthE2ETestRouter("admin-secret", "e2e-secret")
+	recorder := performAdminJSONRequest(t, router, http.MethodPost, "/admin/e2e/session-mint", map[string]any{
+		"userId": "usr_missing",
+	}, "admin-secret")
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for non-e2e token, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestAdminE2ESessionMintReturnsNormalSession(t *testing.T) {
+	t.Parallel()
+
+	router := newAuthE2ETestRouter("admin-secret", "e2e-secret")
+	signUp := performJSONRequest(t, router, http.MethodPost, "/auth/password/sign-up", map[string]any{
+		"name":       "E2E User",
+		"email":      "e2e-session-mint@example.com",
+		"password":   "password123",
+		"inviteCode": "VALID2026",
+	})
+	if signUp.Code != http.StatusOK {
+		t.Fatalf("expected 200 from sign up, got %d: %s", signUp.Code, signUp.Body.String())
+	}
+	var signUpBody sessionResponseBody
+	decodeJSONResponse(t, signUp, &signUpBody)
+
+	minted := performAdminJSONRequest(t, router, http.MethodPost, "/admin/e2e/session-mint", map[string]any{
+		"userId":     signUpBody.Session.User.ID,
+		"returnTo":   "https://console.example.com/dashboard#session_token=old&panel=e2e",
+		"ttlSeconds": 900,
+	}, "e2e-secret")
+	if minted.Code != http.StatusOK {
+		t.Fatalf("expected 200 from e2e session mint, got %d: %s", minted.Code, minted.Body.String())
+	}
+	var response adminE2ESessionResponse
+	decodeJSONResponse(t, minted, &response)
+	if response.UserID != signUpBody.Session.User.ID || strings.TrimSpace(response.SessionToken) == "" {
+		t.Fatalf("unexpected e2e session response: %+v", response)
+	}
+	if response.Impersonated {
+		t.Fatal("expected e2e mint to create a normal, non-impersonated session")
+	}
+	if response.ExpiresAt != fixedHTTPTestNow().Add(15*time.Minute).UTC().Format(timeRFC3339Milli) {
+		t.Fatalf("expected requested expiry, got %s", response.ExpiresAt)
+	}
+	cookie := findSetCookie(t, minted, sessionCookieName)
+	if cookie.Value != response.SessionToken || cookie.MaxAge != 900 {
+		t.Fatalf("expected minted session cookie with max-age 900, got value=%q maxAge=%d", cookie.Value, cookie.MaxAge)
+	}
+
+	loginURL, err := url.Parse(response.LoginURL)
+	if err != nil {
+		t.Fatalf("parse login url: %v", err)
+	}
+	fragmentValues, err := url.ParseQuery(loginURL.Fragment)
+	if err != nil {
+		t.Fatalf("parse login fragment: %v", err)
+	}
+	if fragmentValues.Get("session_token") != response.SessionToken || fragmentValues.Get("panel") != "e2e" {
+		t.Fatalf("unexpected login url fragment %q", loginURL.Fragment)
+	}
+
+	current := performJSONRequest(t, router, http.MethodGet, "/auth/session", nil, cookie)
+	if current.Code != http.StatusOK {
+		t.Fatalf("expected 200 from minted current session, got %d: %s", current.Code, current.Body.String())
+	}
+	var currentBody sessionResponseBody
+	decodeJSONResponse(t, current, &currentBody)
+	if currentBody.Session.Impersonated {
+		t.Fatal("expected public current session to remain non-impersonated")
+	}
+}
+
+func TestAdminE2ESessionMintValidatesTTLAndReturnToBeforeMinting(t *testing.T) {
+	t.Parallel()
+
+	router := newAuthE2ETestRouter("admin-secret", "e2e-secret")
+	signUp := performJSONRequest(t, router, http.MethodPost, "/auth/password/sign-up", map[string]any{
+		"name":       "E2E Invalid",
+		"email":      "e2e-session-invalid-input@example.com",
+		"password":   "password123",
+		"inviteCode": "VALID2026",
+	})
+	var signUpBody sessionResponseBody
+	decodeJSONResponse(t, signUp, &signUpBody)
+
+	tooLongTTL := performAdminJSONRequest(t, router, http.MethodPost, "/admin/e2e/session-mint", map[string]any{
+		"userId":     signUpBody.Session.User.ID,
+		"ttlSeconds": int((25 * time.Hour) / time.Second),
+	}, "e2e-secret")
+	if tooLongTTL.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for too long ttl, got %d: %s", tooLongTTL.Code, tooLongTTL.Body.String())
+	}
+	if cookie := cookieByName(tooLongTTL, sessionCookieName); cookie != nil {
+		t.Fatalf("expected no session cookie for invalid ttl, got %+v", cookie)
+	}
+
+	invalidReturnTo := performAdminJSONRequest(t, router, http.MethodPost, "/admin/e2e/session-mint", map[string]any{
+		"userId":   signUpBody.Session.User.ID,
+		"returnTo": "/dashboard",
+	}, "e2e-secret")
+	if invalidReturnTo.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid returnTo, got %d: %s", invalidReturnTo.Code, invalidReturnTo.Body.String())
+	}
+	if cookie := cookieByName(invalidReturnTo, sessionCookieName); cookie != nil {
+		t.Fatalf("expected no session cookie for invalid returnTo, got %+v", cookie)
+	}
+}
+
 type sessionResponseBody struct {
 	Session struct {
 		User *struct {
@@ -1251,6 +1374,28 @@ func newAuthTestRouter() *gin.Engine {
 
 func newAuthAdminTestRouter(adminToken string) *gin.Engine {
 	return newAuthTestRouterWithOptions(nil, adminToken)
+}
+
+func newAuthE2ETestRouter(adminToken string, e2eToken string) *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	store := service.NewMemoryStore(service.StoreOptions{
+		Now:                fixedHTTPTestNow,
+		SeedDefaultInvites: true,
+	})
+	svc := service.NewWithStore(store, service.Options{
+		Now:        fixedHTTPTestNow,
+		SessionTTL: 30 * 24 * time.Hour,
+	})
+	return NewRouter(svc, ServerConfig{
+		CookieSecure:   true,
+		CookieSameSite: http.SameSiteNoneMode,
+		SessionTTL:     30 * 24 * time.Hour,
+		PublicBaseURL:  "https://lightclaw.tech",
+		AdminToken:     adminToken,
+		E2EAuthEnabled: true,
+		E2EAuthToken:   e2eToken,
+		E2ESessionTTL:  2 * time.Hour,
+	})
 }
 
 func newAuthAdminTestRouterWithQQ(adminToken string, client QQOAuthClient) *gin.Engine {
@@ -1649,12 +1794,19 @@ func defaultTestAdminToken(token string) string {
 
 func findSetCookie(t *testing.T, recorder *httptest.ResponseRecorder, name string) *http.Cookie {
 	t.Helper()
+	if cookie := cookieByName(recorder, name); cookie != nil {
+		return cookie
+	}
+	t.Fatalf("expected set-cookie %q, got %v", name, recorder.Result().Cookies())
+	return nil
+}
+
+func cookieByName(recorder *httptest.ResponseRecorder, name string) *http.Cookie {
 	for _, cookie := range recorder.Result().Cookies() {
 		if cookie.Name == name {
 			return cookie
 		}
 	}
-	t.Fatalf("expected set-cookie %q, got %v", name, recorder.Result().Cookies())
 	return nil
 }
 

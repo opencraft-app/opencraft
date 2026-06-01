@@ -419,6 +419,44 @@ func TestCreateImpersonationSessionRequiresReason(t *testing.T) {
 	}
 }
 
+func TestCreateSessionForUserCreatesNormalShortLivedSession(t *testing.T) {
+	svc := New(Options{Now: fixedNow})
+	passwordSession := mustPasswordSession(t, svc, "e2e-session-for-user@example.com")
+
+	session, err := svc.CreateSessionForUser(context.Background(), passwordSession.User.ID, 17*time.Minute)
+	if err != nil {
+		t.Fatalf("create session for user: %v", err)
+	}
+	if session.Impersonated {
+		t.Fatal("expected e2e session mint to create a normal session")
+	}
+	if session.ExpiresAt.Sub(fixedNow()) != 17*time.Minute {
+		t.Fatalf("expected requested ttl, got %s", session.ExpiresAt.Sub(fixedNow()))
+	}
+
+	current, err := svc.CurrentSession(context.Background(), session.Token)
+	if err != nil {
+		t.Fatalf("current minted session: %v", err)
+	}
+	if current.User.ID != passwordSession.User.ID || current.Impersonated {
+		t.Fatalf("unexpected current minted session: user=%q impersonated=%v", current.User.ID, current.Impersonated)
+	}
+}
+
+func TestCreateSessionForUserRejectsInvalidTTL(t *testing.T) {
+	svc := New(Options{Now: fixedNow})
+	session := mustPasswordSession(t, svc, "e2e-session-invalid-ttl@example.com")
+
+	_, err := svc.CreateSessionForUser(context.Background(), session.User.ID, 0)
+	if err == nil {
+		t.Fatal("expected invalid ttl to fail")
+	}
+	var authErr *Error
+	if !errors.As(err, &authErr) || authErr.Code != "invalid_session_ttl" || authErr.Status != 400 {
+		t.Fatalf("expected invalid_session_ttl 400, got %#v", err)
+	}
+}
+
 func TestDeleteCurrentUserRemovesUserSessionsAndSubscription(t *testing.T) {
 	svc := New(Options{Now: fixedNow})
 

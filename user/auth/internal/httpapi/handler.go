@@ -547,15 +547,18 @@ func tokenFromContext(ctx context.Context) string {
 }
 
 func (h *Handler) setSessionCookie(ctx *gin.Context, token string) {
-	maxAge := int(h.sessionTTL / time.Second)
+	setSessionCookie(ctx, sessionCookieName, token, h.cookieSecure, h.cookieSameSite, h.sessionTTL)
+}
+
+func setSessionCookie(ctx *gin.Context, name string, token string, secure bool, sameSite http.SameSite, ttl time.Duration) {
 	http.SetCookie(ctx.Writer, &http.Cookie{
-		Name:     sessionCookieName,
+		Name:     name,
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
-		SameSite: h.cookieSameSite,
-		Secure:   h.cookieSecure,
-		MaxAge:   maxAge,
+		SameSite: sameSite,
+		Secure:   secure,
+		MaxAge:   int(ttl / time.Second),
 	})
 }
 

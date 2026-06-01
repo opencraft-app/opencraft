@@ -213,7 +213,7 @@ type OAuthSignInInput struct {
 }
 
 type Service struct {
-	now              func() time.Time
+	now                func() time.Time
 	smsCooldown        time.Duration
 	smsCodeTTL         time.Duration
 	sessionTTL         time.Duration
@@ -351,6 +351,21 @@ func (s *Service) SignInWithPassword(ctx context.Context, email string, password
 
 func (s *Service) SignInWithOAuth(ctx context.Context, input OAuthSignInInput) (*AuthSession, error) {
 	return s.signInOrBindOAuth(ctx, "", input)
+}
+
+func (s *Service) CreateSessionForUser(ctx context.Context, userID string, ttl time.Duration) (*AuthSession, error) {
+	trimmedUserID := strings.TrimSpace(userID)
+	if trimmedUserID == "" {
+		return nil, newError("invalid_user_id", "用户 ID 不能为空。", http.StatusBadRequest)
+	}
+	if ttl <= 0 {
+		return nil, newError("invalid_session_ttl", "session TTL 必须大于 0。", http.StatusBadRequest)
+	}
+	user, err := s.store.FindUserByID(ctx, trimmedUserID)
+	if err != nil {
+		return nil, err
+	}
+	return s.store.CreateSession(ctx, user, s.now(), ttl)
 }
 
 func (s *Service) BindOAuthToCurrentSession(ctx context.Context, token string, input OAuthSignInInput) (*AuthSession, error) {
