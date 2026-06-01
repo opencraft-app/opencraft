@@ -180,11 +180,12 @@ bash .ci/runtime/check_ci_runtime.sh
 
 ## 实际运行机
 
-当前自有构建池 `env` 的 CI/CD 实际执行位置：
+当前自有构建池 `env` 的 CI/CD 目标执行位置：
 
-- Devcloud CI/CD 构建机：`root@9.208.245.238`
+- Devcloud CI/CD 构建机：`root@9.135.92.56`
 - SSH 端口：`36000`
 - 用途：蓝盾 Stream YAML 中 `runs-on.self-hosted.pool-name: env` 的实际执行节点之一
+- 迁移前旧节点：`root@9.208.245.238 -p 36000`
 
 约束：
 
@@ -298,7 +299,7 @@ TLS 约束：
 只在用户明确提供 secret 并要求写入构建机时执行：
 
 ```bash
-printf '%s' "$SECRET_VALUE" | ssh -p 36000 root@9.208.245.238 '
+printf '%s' "$SECRET_VALUE" | ssh -p 36000 root@9.135.92.56 '
   set -euo pipefail
   umask 077
   mkdir -p /etc/lightclaw-ci
@@ -310,7 +311,7 @@ printf '%s' "$SECRET_VALUE" | ssh -p 36000 root@9.208.245.238 '
 写入后用只读校验确认：
 
 ```bash
-ssh -p 36000 root@9.208.245.238 'python3 - <<'"'"'PY'"'"'
+ssh -p 36000 root@9.135.92.56 'python3 - <<'"'"'PY'"'"'
 import hashlib
 from pathlib import Path
 p = Path("/etc/lightclaw-ci/<secret-file>")
