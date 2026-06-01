@@ -45,6 +45,55 @@ func (r *recordingMetrics) ObserveRequest(method, route, endpoint string, status
 	})
 }
 
+func TestWeChatOAuthVerificationFileIsServedAtRoot(t *testing.T) {
+	metrics := &recordingMetrics{}
+	handler, err := NewHandler(Config{AuthServiceURL: "http://auth.example.test"}, WithMetrics(metrics))
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/MP_verify_pKLUCg80PuWPBYLB.txt", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Body.String(); got != "pKLUCg80PuWPBYLB" {
+		t.Fatalf("unexpected verification content %q", got)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "text/plain; charset=utf-8" {
+		t.Fatalf("unexpected content type %q", got)
+	}
+	if len(metrics.entries) != 1 {
+		t.Fatalf("expected one metric entry, got %d", len(metrics.entries))
+	}
+	if metrics.entries[0].route != "wechat_oauth_verification" || metrics.entries[0].status != http.StatusOK {
+		t.Fatalf("unexpected metric entry %+v", metrics.entries[0])
+	}
+}
+
+func TestWeChatOAuthVerificationFileSupportsHead(t *testing.T) {
+	handler, err := NewHandler(Config{AuthServiceURL: "http://auth.example.test"})
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodHead, "/MP_verify_pKLUCg80PuWPBYLB.txt", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Body.String(); got != "" {
+		t.Fatalf("expected empty HEAD body, got %q", got)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "text/plain; charset=utf-8" {
+		t.Fatalf("unexpected content type %q", got)
+	}
+}
+
 func TestPublicAllowBypassesAuth(t *testing.T) {
 	upstreamCalls := 0
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
