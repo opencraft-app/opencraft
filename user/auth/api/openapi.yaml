@@ -335,6 +335,16 @@ components:
           type: string
         avatarUrl:
           type: string
+        pendingAvatarUrl:
+          type: string
+          description: Pending avatar URL visible only to the current user while waiting for content safety approval.
+        avatarAuditStatus:
+          type: string
+          description: Avatar content safety status.
+          enum:
+            - pending
+            - passed
+            - failed
         inviteRequired:
           type: boolean
         realnameVerified:

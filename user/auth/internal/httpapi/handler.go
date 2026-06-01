@@ -400,7 +400,17 @@ func (h *Handler) UpdateProfileAvatar(ctx context.Context, request api.UpdatePro
 		}
 		return nil, &service.Error{Code: "avatar_store_failed", Message: "头像保存失败。", Status: http.StatusInternalServerError}
 	}
-	user, err := h.service.SetUserAvatar(ctx, session.User.ID, objectKey, "upload")
+	var user service.User
+	if h.service.AvatarAuditEnabled() {
+		auditURL, signErr := h.avatarStore.SignedAvatarURL(ctx, objectKey)
+		if signErr != nil || strings.TrimSpace(auditURL) == "" {
+			logger.Error("profile avatar sign for audit failed", "user_id", session.User.ID, "object_key", objectKey, "err", signErr)
+			return nil, &service.Error{Code: "avatar_unavailable", Message: "头像暂时不可访问。", Status: http.StatusInternalServerError}
+		}
+		user, err = h.service.QueueAvatarAudit(ctx, session.User.ID, objectKey, "upload", auditURL)
+	} else {
+		user, err = h.service.SetUserAvatar(ctx, session.User.ID, objectKey, "upload")
+	}
 	if err != nil {
 		logger.Error("profile avatar persist failed", "user_id", session.User.ID, "object_key", objectKey, "err", err)
 		body, status := toErrorBody(err)
@@ -616,6 +626,15 @@ func (h *Handler) toAPIUser(ctx context.Context, user service.User) api.User {
 		if avatarURL := h.publicAvatarURL(user.ID); avatarURL != "" {
 			response.AvatarUrl = &avatarURL
 		}
+	}
+	if strings.TrimSpace(user.PendingAvatarObjectKey) != "" && h.avatarStore != nil {
+		if pendingAvatarURL, err := h.avatarStore.SignedAvatarURL(ctx, user.PendingAvatarObjectKey); err == nil && strings.TrimSpace(pendingAvatarURL) != "" {
+			response.PendingAvatarUrl = &pendingAvatarURL
+		}
+	}
+	if strings.TrimSpace(user.AvatarAuditStatus) != "" {
+		status := api.UserAvatarAuditStatus(user.AvatarAuditStatus)
+		response.AvatarAuditStatus = &status
 	}
 	if user.Email != "" {
 		response.Email = &user.Email

@@ -712,6 +712,79 @@ func TestSetUserAvatarPersistsAcrossSessions(t *testing.T) {
 	}
 }
 
+func TestQueueAvatarAuditKeepsCurrentAvatarUntilPassed(t *testing.T) {
+	store := NewMemoryStore(StoreOptions{
+		Now:                fixedNow,
+		SeedDefaultInvites: true,
+	})
+	cfg := ContentAuditConfig{
+		Enabled:            true,
+		AvatarAuditEnabled: true,
+		ProductID:          "30018",
+		UserSID:            "300071",
+	}
+	svc := NewWithStore(store, Options{Now: fixedNow, ContentAudit: cfg})
+	session, err := svc.SignUpWithPassword(context.Background(), PasswordSignUpInput{
+		Name:       "头像用户",
+		Email:      "avatar-audit@example.com",
+		Password:   "password123",
+		InviteCode: "VALID2026",
+	})
+	if err != nil {
+		t.Fatalf("sign up failed: %v", err)
+	}
+	if _, err := svc.SetUserAvatar(context.Background(), session.User.ID, "avatars/usr_01/current.jpg", "upload"); err != nil {
+		t.Fatalf("set current avatar failed: %v", err)
+	}
+
+	user, err := svc.QueueAvatarAudit(context.Background(), session.User.ID, "avatars/usr_01/pending.jpg", "upload", "https://example.com/pending.jpg")
+	if err != nil {
+		t.Fatalf("queue avatar audit failed: %v", err)
+	}
+	if user.AvatarObjectKey != "avatars/usr_01/current.jpg" || user.PendingAvatarObjectKey != "avatars/usr_01/pending.jpg" || user.AvatarAuditStatus != "pending" {
+		t.Fatalf("expected pending avatar without replacing current avatar, got %+v", user)
+	}
+
+	worker := NewContentAuditWorker(store, stubContentAuditClient{
+		result: &contentaudit.ResponseResult{ResultCode: contentaudit.ResultCodePass},
+	}, cfg, ContentAuditWorkerOptions{Now: fixedNow})
+	if err := worker.RunOnce(context.Background(), 20); err != nil {
+		t.Fatalf("run worker: %v", err)
+	}
+
+	current, err := svc.CurrentSession(context.Background(), session.Token)
+	if err != nil {
+		t.Fatalf("load session failed: %v", err)
+	}
+	if current.User.AvatarObjectKey != "avatars/usr_01/pending.jpg" || current.User.PendingAvatarObjectKey != "" || current.User.AvatarAuditStatus != "passed" {
+		t.Fatalf("expected passed avatar audit to promote pending avatar, got %+v", current.User)
+	}
+}
+
+func TestQueueAvatarAuditDisabledFallsBackToImmediateAvatar(t *testing.T) {
+	store := NewMemoryStore(StoreOptions{
+		Now:                fixedNow,
+		SeedDefaultInvites: true,
+	})
+	svc := NewWithStore(store, Options{Now: fixedNow, ContentAudit: ContentAuditConfig{Enabled: false}})
+	session, err := svc.SignUpWithPassword(context.Background(), PasswordSignUpInput{
+		Name:       "头像用户",
+		Email:      "avatar-audit-disabled@example.com",
+		Password:   "password123",
+		InviteCode: "VALID2026",
+	})
+	if err != nil {
+		t.Fatalf("sign up failed: %v", err)
+	}
+	user, err := svc.QueueAvatarAudit(context.Background(), session.User.ID, "avatars/usr_01/current.jpg", "upload", "https://example.com/current.jpg")
+	if err != nil {
+		t.Fatalf("queue avatar audit disabled failed: %v", err)
+	}
+	if user.AvatarObjectKey != "avatars/usr_01/current.jpg" || user.PendingAvatarObjectKey != "" || user.AvatarAuditStatus != "" {
+		t.Fatalf("expected immediate avatar when avatar audit is disabled, got %+v", user)
+	}
+}
+
 func TestVerifySMSIgnoresInviteCode(t *testing.T) {
 	svc := New(Options{Now: fixedNow})
 
@@ -880,6 +953,22 @@ type stubContentAuditClient struct {
 func (s stubContentAuditClient) CreateTextTask(_ context.Context, _ contentaudit.CreateTextTaskRequest) (*contentaudit.CreateTextTaskResponse, error) {
 	if s.err != nil {
 		return nil, s.err
+	}
+	return &contentaudit.CreateTextTaskResponse{
+		Response: contentaudit.CreateTextTaskResponseBody{
+			Data: &contentaudit.CreateTextTaskResponseData{
+				Result: s.result,
+			},
+		},
+	}, nil
+}
+
+func (s stubContentAuditClient) CreateImageTask(_ context.Context, req contentaudit.CreateImageTaskRequest) (*contentaudit.CreateTextTaskResponse, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	if req.Data.Content.User.StrHeadUrl == "" || len(req.Data.Content.Media.Pic) != 1 || req.Data.Content.Media.Pic[0].StrURL == "" {
+		return nil, fmt.Errorf("invalid image audit request: %+v", req.Data.Content)
 	}
 	return &contentaudit.CreateTextTaskResponse{
 		Response: contentaudit.CreateTextTaskResponseBody{

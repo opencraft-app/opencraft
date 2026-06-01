@@ -747,6 +747,10 @@ export const AccountPage = () => {
   const [deleting, setDeleting] = useState(false);
 
   const avatarSrc = avatarImageUrl(user?.avatarUrl ?? null);
+  const pendingAvatarSrc = avatarImageUrl(user?.pendingAvatarUrl ?? null);
+  const hasPendingAvatarAudit = user?.avatarAuditStatus === "pending" && Boolean(user.pendingAvatarUrl);
+  const avatarAuditFailed = user?.avatarAuditStatus === "failed";
+  const displayAvatarSrc = hasPendingAvatarAudit ? pendingAvatarSrc : avatarSrc;
   const pendingName = user?.nameAuditStatus === "pending" ? user.pendingName?.trim() ?? "" : "";
   const hasPendingNameAudit = pendingName.length > 0;
   const nameAuditFailed = user?.nameAuditStatus === "failed";
@@ -958,11 +962,23 @@ export const AccountPage = () => {
                       title={avatarUploadError ?? (avatarUploading ? t("头像上传中...") : t("点击更换头像"))}
                     >
                       <img
-                        src={avatarSrc}
+                        src={displayAvatarSrc}
                         alt="avatar"
                         className="h-14 w-14 object-cover"
-                        style={{ border: "1px solid #E6E9EF", borderRadius: "9999px", background: "#F9F8F7" }}
+                        style={{
+                          border: hasPendingAvatarAudit ? "2px solid rgba(198, 123, 30, 0.55)" : "1px solid #E6E9EF",
+                          borderRadius: "9999px",
+                          background: "#F9F8F7",
+                        }}
                       />
+                      {hasPendingAvatarAudit && (
+                        <span
+                          className="absolute -bottom-1 -right-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+                          style={{ background: "#FFF4DE", color: "#9A5A00", border: "1px solid rgba(198, 123, 30, 0.28)" }}
+                        >
+                          {t("审核中")}
+                        </span>
+                      )}
                       <div className="absolute inset-0 flex items-center justify-center bg-black/25 opacity-0 transition-opacity group-hover:opacity-100 disabled:opacity-100" style={{ borderRadius: "9999px" }}>
                         {avatarUploading ? (
                           <Loader2 className="h-4 w-4 animate-spin text-white" />
@@ -1048,6 +1064,16 @@ export const AccountPage = () => {
                     )}
                     {avatarUploadError && (
                       <p className="mt-1 text-xs" style={{ color: "#cf3d4c" }}>{avatarUploadError}</p>
+                    )}
+                    {hasPendingAvatarAudit && (
+                      <p className="mt-1 text-xs" style={{ color: "rgba(0,0,0,0.5)", lineHeight: 1.5 }}>
+                        {t("新头像已提交审核，审核通过后将对外生效。")}
+                      </p>
+                    )}
+                    {avatarAuditFailed && (
+                      <p className="mt-1 text-xs" style={{ color: "#cf3d4c", lineHeight: 1.5 }}>
+                        {t("上次头像修改未通过审核，当前仍使用原头像。")}
+                      </p>
                     )}
                   </div>
                 </div>

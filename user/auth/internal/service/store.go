@@ -12,6 +12,13 @@ type StoreOptions struct {
 	ContentAuditEnabled bool
 }
 
+const (
+	contentauditBizTypeUserName   = "user_name"
+	contentauditBizTypeUserAvatar = "user_avatar"
+	contentauditMediaTypeText     = "text"
+	contentauditMediaTypeImage    = "image"
+)
+
 type Store interface {
 	ValidateInvite(ctx context.Context, code string) (InviteValidation, error)
 	SendVerificationCode(ctx context.Context, phone string, code string, now time.Time, ttl time.Duration, cooldown time.Duration) (time.Duration, error)
@@ -29,6 +36,7 @@ type Store interface {
 	UpdateRealname(ctx context.Context, token string, input UpdateRealnameInput) error
 	UpdateProfile(ctx context.Context, token string, name string, now time.Time) (User, error)
 	QueueNameAudit(ctx context.Context, token string, input CreateNameAuditInput, now time.Time) (User, error)
+	QueueAvatarAudit(ctx context.Context, userID string, input CreateAvatarAuditInput, now time.Time) (User, error)
 	ListPendingContentAuditTasks(ctx context.Context, limit int) ([]ContentAuditTask, error)
 	ListTimeoutContentAuditTasks(ctx context.Context, cutoff time.Time, limit int) ([]ContentAuditTask, error)
 	FindContentAuditTaskByRequestID(ctx context.Context, requestID string) (*ContentAuditTask, error)
@@ -57,6 +65,14 @@ type CreateNameAuditInput struct {
 	SID       string
 }
 
+type CreateAvatarAuditInput struct {
+	ObjectKey  string
+	Source     string
+	ContentURL string
+	ProductID  string
+	SID        string
+}
+
 type ContentAuditTask struct {
 	ID           int64
 	BizType      string
@@ -65,6 +81,8 @@ type ContentAuditTask struct {
 	ProductID    string
 	SID          string
 	ContentText  string
+	ContentURL   string
+	MediaType    string
 	Status       string
 	RequestID    string
 	ResultCode   int

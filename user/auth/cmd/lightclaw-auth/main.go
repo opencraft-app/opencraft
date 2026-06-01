@@ -82,12 +82,16 @@ func envInt64OrDefault(key string, fallback int64) int64 {
 
 func buildContentAuditConfig(logger *slog.Logger) service.ContentAuditConfig {
 	enabled := envOrDefault("CONTENT_AUDIT_ENABLED", "false") == "true"
+	nameAuditEnabled := enabled && boolEnvOrDefault("CONTENT_AUDIT_NAME_ENABLED", true)
+	avatarAuditEnabled := enabled && boolEnvOrDefault("CONTENT_AUDIT_AVATAR_ENABLED", false)
 	cfg := service.ContentAuditConfig{
-		Enabled:   enabled,
-		ProductID: strings.TrimSpace(os.Getenv("CONTENT_AUDIT_PRODUCT_ID")),
-		UserSID:   strings.TrimSpace(os.Getenv("CONTENT_AUDIT_USER_SID")),
+		Enabled:            enabled && (nameAuditEnabled || avatarAuditEnabled),
+		NameAuditEnabled:   nameAuditEnabled,
+		AvatarAuditEnabled: avatarAuditEnabled,
+		ProductID:          strings.TrimSpace(os.Getenv("CONTENT_AUDIT_PRODUCT_ID")),
+		UserSID:            strings.TrimSpace(os.Getenv("CONTENT_AUDIT_USER_SID")),
 	}
-	if !enabled {
+	if !cfg.Enabled {
 		logger.Info("content audit disabled")
 		return cfg
 	}
@@ -95,7 +99,7 @@ func buildContentAuditConfig(logger *slog.Logger) service.ContentAuditConfig {
 		logger.Warn("content audit enabled but config is incomplete")
 		return cfg
 	}
-	logger.Info("content audit enabled")
+	logger.Info("content audit enabled", "name_audit", cfg.NameAuditEnabled, "avatar_audit", cfg.AvatarAuditEnabled)
 	return cfg
 }
 
@@ -131,6 +135,14 @@ func envOrDefault(key string, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func boolEnvOrDefault(key string, fallback bool) bool {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	return value == "true" || value == "1" || strings.EqualFold(value, "yes")
 }
 
 func parseCSVEnv(key string) []string {

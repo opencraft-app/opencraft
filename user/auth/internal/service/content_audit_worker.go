@@ -14,6 +14,7 @@ import (
 
 type ContentAuditClient interface {
 	CreateTextTask(ctx context.Context, req contentaudit.CreateTextTaskRequest) (*contentaudit.CreateTextTaskResponse, error)
+	CreateImageTask(ctx context.Context, req contentaudit.CreateImageTaskRequest) (*contentaudit.CreateTextTaskResponse, error)
 }
 
 type ContentAuditWorker struct {
@@ -104,6 +105,13 @@ func (w *ContentAuditWorker) RunOnce(ctx context.Context, batchSize int) error {
 }
 
 func (w *ContentAuditWorker) submitTask(ctx context.Context, task ContentAuditTask) error {
+	if task.MediaType == contentauditMediaTypeImage || task.BizType == contentauditBizTypeUserAvatar {
+		return w.submitImageTask(ctx, task)
+	}
+	return w.submitTextTask(ctx, task)
+}
+
+func (w *ContentAuditWorker) submitTextTask(ctx context.Context, task ContentAuditTask) error {
 	contentText := strings.TrimSpace(task.ContentText)
 	if contentText == "" {
 		return fmt.Errorf("content audit task %d has empty content", task.ID)
@@ -134,6 +142,43 @@ func (w *ContentAuditWorker) submitTask(ctx context.Context, task ContentAuditTa
 	if err != nil {
 		return err
 	}
+	return w.applySubmitResponse(ctx, task, requestID, resp)
+}
+
+func (w *ContentAuditWorker) submitImageTask(ctx context.Context, task ContentAuditTask) error {
+	contentURL := strings.TrimSpace(task.ContentURL)
+	if contentURL == "" {
+		return fmt.Errorf("content audit task %d has empty image url", task.ID)
+	}
+	requestID := fmt.Sprintf("lightclaw-%s-%s-%d", task.BizType, task.BizID, task.ID)
+	req := contentaudit.CreateImageTaskRequest{
+		ProductID: task.ProductID,
+		SID:       task.SID,
+		RequestID: requestID,
+		Data: contentaudit.CreateTextTaskRequestData{
+			Comm: contentaudit.RequestComm{UlUin: 0},
+			ID:   contentaudit.RequestID{StrMsgID: requestID},
+			Content: contentaudit.RequestContent{
+				User: contentaudit.RequestUser{
+					StrUin:     task.BizID,
+					UiAcntType: 7,
+					StrHeadUrl: contentURL,
+				},
+				Msg: contentaudit.RequestMsg{UiPostTime: uint64(w.now().Unix())},
+				Media: contentaudit.RequestMedia{Pic: []contentaudit.RequestPic{
+					{StrURL: contentURL},
+				}},
+			},
+		},
+	}
+	resp, err := w.client.CreateImageTask(ctx, req)
+	if err != nil {
+		return err
+	}
+	return w.applySubmitResponse(ctx, task, requestID, resp)
+}
+
+func (w *ContentAuditWorker) applySubmitResponse(ctx context.Context, task ContentAuditTask, requestID string, resp *contentaudit.CreateTextTaskResponse) error {
 	if resp != nil && resp.Response.Data != nil && resp.Response.Data.Result != nil {
 		result := resp.Response.Data.Result
 		switch result.ResultCode {

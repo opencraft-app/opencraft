@@ -54,9 +54,11 @@ func main() {
 
 func buildContentAuditConfig() service.ContentAuditConfig {
 	return service.ContentAuditConfig{
-		Enabled:   envOrDefault("CONTENT_AUDIT_ENABLED", "false") == "true",
-		ProductID: strings.TrimSpace(os.Getenv("CONTENT_AUDIT_PRODUCT_ID")),
-		UserSID:   strings.TrimSpace(os.Getenv("CONTENT_AUDIT_USER_SID")),
+		Enabled:            envOrDefault("CONTENT_AUDIT_ENABLED", "false") == "true",
+		NameAuditEnabled:   true,
+		AvatarAuditEnabled: true,
+		ProductID:          strings.TrimSpace(os.Getenv("CONTENT_AUDIT_PRODUCT_ID")),
+		UserSID:            strings.TrimSpace(os.Getenv("CONTENT_AUDIT_USER_SID")),
 	}
 }
 

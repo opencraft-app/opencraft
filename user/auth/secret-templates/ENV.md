@@ -41,8 +41,10 @@
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `CONTENT_AUDIT_ENABLED` | `false` | 是否开启用户昵称内容安全审核 |
-| `CONTENT_AUDIT_ENDPOINT` | 空 | 合规中台 proxy 送审地址，例如 `https://proxy.lightmake.site/contentaudit/submit`；worker 会调用 `<endpoint>/risk-control-forge/content/CreateTextTask` |
+| `CONTENT_AUDIT_ENABLED` | `false` | 是否开启用户资料内容安全审核总开关 |
+| `CONTENT_AUDIT_NAME_ENABLED` | `true` | 总开关开启时是否审核昵称 |
+| `CONTENT_AUDIT_AVATAR_ENABLED` | `false` | 总开关开启时是否审核头像上传 |
+| `CONTENT_AUDIT_ENDPOINT` | 空 | 合规中台 proxy 送审地址，例如 `https://proxy.lightmake.site/contentaudit/submit`；worker 会按任务类型调用 `CreateTextTask` / `CreateImageTask` |
 | `CONTENT_AUDIT_PROXY_TOKEN` | 空 | 可选。Skillhub proxy 开启 `PROXY_ACCESS_TOKEN` 时，worker 会通过 `X-Proxy-Token` 携带该值 |
 | `CONTENT_AUDIT_PRODUCT_ID` | 空 | 合规中台分配的 ProductID |
 | `CONTENT_AUDIT_USER_SID` | 空 | 用户资料/昵称场景 SID |
@@ -51,7 +53,7 @@
 | `CONTENT_AUDIT_WORKER_BATCH_SIZE` | `20` | 单轮处理的审核任务数 |
 
 开启后，`PUT /auth/profile` 不会直接覆盖正式 `name`，而是写入 `pendingName` 并返回 `nameAuditStatus=pending`。
-独立 `lightclaw-auth-content-audit-worker` Deployment 负责送审、处理同步结果和超时通过；审核通过或超时通过后，pending 昵称才会覆盖正式昵称，审核失败则保留原昵称。
+独立 `lightclaw-auth-content-audit-worker` Deployment 负责送审、处理同步结果和超时通过；审核通过或超时通过后，pending 昵称/头像才会覆盖正式资料，审核失败则保留原资料。
 
 ---
 

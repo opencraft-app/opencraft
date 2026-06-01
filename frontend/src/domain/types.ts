@@ -28,6 +28,8 @@ export interface User {
   email?: string;
   phone?: string;
   avatarUrl?: string;
+  pendingAvatarUrl?: string;
+  avatarAuditStatus?: "pending" | "passed" | "failed";
   inviteRequired: boolean;
   /** 是否已完成实名认证，后端 /auth/session /auth/profile 下发 */
   realnameVerified?: boolean;

@@ -625,6 +625,46 @@ func TestPutProfileAvatarStoresObjectAndReturnsAvatarURL(t *testing.T) {
 	}
 }
 
+func TestPutProfileAvatarQueuesAuditWhenEnabled(t *testing.T) {
+	t.Parallel()
+
+	avatarStore := &stubAvatarStore{
+		objectKey: "avatars/usr_01/pending.jpg",
+		signedURL: "https://example.com/signed-pending-avatar.jpg",
+	}
+	router := newAuthTestRouterWithAvatarStoreAndContentAudit(avatarStore, service.ContentAuditConfig{
+		Enabled:            true,
+		AvatarAuditEnabled: true,
+		ProductID:          "30018",
+		UserSID:            "300071",
+	})
+
+	signUp := performJSONRequest(t, router, http.MethodPost, "/auth/password/sign-up", map[string]any{
+		"name":       "头像用户",
+		"email":      "avatar-audit-http@example.com",
+		"password":   "password123",
+		"inviteCode": "VALID2026",
+	})
+	sessionCookie := sessionCookieFromRecorder(t, signUp)
+
+	recorder := performMultipartAvatarUploadRequest(t, router, "/auth/profile/avatar", sessionCookie, testPNGBytes(t))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200 from avatar upload, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+
+	var response profileResponseBody
+	decodeJSONResponse(t, recorder, &response)
+	if response.User == nil {
+		t.Fatal("expected user response")
+	}
+	if response.User.AvatarURL != "" {
+		t.Fatalf("expected active avatar to remain unset before audit pass, got %q", response.User.AvatarURL)
+	}
+	if response.User.PendingAvatarURL != avatarStore.signedURL || response.User.AvatarAuditStatus != "pending" {
+		t.Fatalf("expected pending avatar audit response, got %+v", response.User)
+	}
+}
+
 func TestGetProfileAvatarRedirectsToSignedURL(t *testing.T) {
 	t.Parallel()
 
@@ -1191,11 +1231,13 @@ type sessionResponseBody struct {
 
 type profileResponseBody struct {
 	User *struct {
-		Name            string `json:"name"`
-		PendingName     string `json:"pendingName"`
-		NameAuditStatus string `json:"nameAuditStatus"`
-		AvatarURL       string `json:"avatarUrl"`
-		InviteRequired  bool   `json:"inviteRequired"`
+		Name              string `json:"name"`
+		PendingName       string `json:"pendingName"`
+		NameAuditStatus   string `json:"nameAuditStatus"`
+		AvatarURL         string `json:"avatarUrl"`
+		PendingAvatarURL  string `json:"pendingAvatarUrl"`
+		AvatarAuditStatus string `json:"avatarAuditStatus"`
+		InviteRequired    bool   `json:"inviteRequired"`
 	} `json:"user"`
 }
 
@@ -1269,6 +1311,27 @@ func newAuthAdminTestRouterWithWeChat(adminToken string, client WeChatOAuthClien
 
 func newAuthTestRouterWithAvatarStore(avatarStore AvatarStore) *gin.Engine {
 	return newAuthTestRouterWithOptions(avatarStore, "")
+}
+
+func newAuthTestRouterWithAvatarStoreAndContentAudit(avatarStore AvatarStore, cfg service.ContentAuditConfig) *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	store := service.NewMemoryStore(service.StoreOptions{
+		Now:                fixedHTTPTestNow,
+		SeedDefaultInvites: true,
+	})
+	svc := service.NewWithStore(store, service.Options{
+		Now:          fixedHTTPTestNow,
+		SessionTTL:   30 * 24 * time.Hour,
+		ContentAudit: cfg,
+	})
+	return NewRouter(svc, ServerConfig{
+		CookieSecure:   true,
+		CookieSameSite: http.SameSiteNoneMode,
+		SessionTTL:     30 * 24 * time.Hour,
+		AvatarStore:    avatarStore,
+		PublicBaseURL:  "https://lightclaw.tech",
+		AdminToken:     testAdminToken,
+	})
 }
 
 func newAuthTestRouterWithTATRegisterIssuer(issuer tat.RegisterCodeIssuer) *gin.Engine {

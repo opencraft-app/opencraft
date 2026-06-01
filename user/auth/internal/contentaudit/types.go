@@ -7,6 +7,13 @@ type CreateTextTaskRequest struct {
 	Data      CreateTextTaskRequestData `json:"Data"`
 }
 
+type CreateImageTaskRequest struct {
+	ProductID string                    `json:"ProductID"`
+	SID       string                    `json:"SID"`
+	RequestID string                    `json:"RequestID"`
+	Data      CreateTextTaskRequestData `json:"Data"`
+}
+
 type CreateTextTaskRequestData struct {
 	Comm    RequestComm    `json:"Comm"`
 	ID      RequestID      `json:"ID"`
@@ -42,11 +49,17 @@ type RequestMsg struct {
 }
 
 type RequestMedia struct {
-	Text []RequestText `json:"Text"`
+	Text []RequestText `json:"Text,omitempty"`
+	Pic  []RequestPic  `json:"Pic,omitempty"`
 }
 
 type RequestText struct {
 	StrContent string `json:"StrContent"`
+}
+
+type RequestPic struct {
+	StrContent string `json:"StrContent,omitempty"`
+	StrURL     string `json:"StrURL,omitempty"`
 }
 
 type CreateTextTaskResponse struct {
