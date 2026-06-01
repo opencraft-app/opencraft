@@ -54,6 +54,8 @@ func main() {
 		Logger:                    logger,
 		PublicBaseURL:             envOrDefault("LIGHTCLAW_PUBLIC_BASE_URL", "https://lightclaw.tech"),
 		AdminToken:                envOrDefault("LIGHTCLAW_ADMIN_TOKEN", ""),
+		E2EAuthEnabled:            envOrDefault("LIGHTVELA_E2E_AUTH_ENABLED", "false") == "true",
+		E2EAuthToken:              envOrDefault("LIGHTVELA_E2E_AUTH_TOKEN", ""),
 	})
 
 	address := envOrDefault("LIGHTCLAW_AUTH_ADDR", ":8081")

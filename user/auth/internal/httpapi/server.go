@@ -31,6 +31,9 @@ type ServerConfig struct {
 	Logger                    *slog.Logger
 	PublicBaseURL             string
 	AdminToken                string
+	E2EAuthEnabled            bool
+	E2EAuthToken              string
+	E2ESessionTTL             time.Duration
 }
 
 func NewRouter(authService *service.Service, config ServerConfig) *gin.Engine {
@@ -60,6 +63,10 @@ func NewRouter(authService *service.Service, config ServerConfig) *gin.Engine {
 	if strings.TrimSpace(config.AdminToken) != "" {
 		admin := router.Group("/admin", bearerAdminMiddleware(config.AdminToken))
 		registerAdminRoutes(admin, authService, config.AvatarStore)
+	}
+	if config.E2EAuthEnabled && strings.TrimSpace(config.E2EAuthToken) != "" {
+		e2e := router.Group("/admin/e2e", bearerAdminMiddleware(config.E2EAuthToken))
+		registerAdminE2ERoutes(e2e, authService, config)
 	}
 
 	return router
