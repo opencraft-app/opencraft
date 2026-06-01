@@ -205,7 +205,7 @@ export function AgentDiagnosticsPanel({
         </button>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid gap-4">
         {commands.map((item) => (
           <DiagnosticCard
             key={item.id}
@@ -239,6 +239,12 @@ function DiagnosticCard({
   const isLoading = state.status === "loading";
   const title = getCommandTitle(item.id, t);
   const description = getCommandDescription(item.id, t);
+  const displayOutput =
+    isLoading && !state.output
+      ? item.id === "doctor"
+        ? t("正在执行 hermes doctor --fix，命令完成后会显示完整输出。")
+        : t("正在获取日志，命令完成后会显示完整输出。")
+      : state.output;
 
   return (
     <article className="flex min-h-[360px] flex-col rounded-lg border border-black/[0.08] bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
@@ -315,7 +321,7 @@ function DiagnosticCard({
           </div>
         ) : (
           <pre className="max-h-[230px] overflow-auto whitespace-pre-wrap break-words p-4 font-mono text-xs leading-5 text-black/70">
-            {state.output}
+            {displayOutput}
           </pre>
         )}
       </div>
@@ -359,13 +365,13 @@ function getCommandTitle(id: DiagnosticCommandId, t: ReturnType<typeof useT>): s
 }
 
 function getCommandDescription(id: DiagnosticCommandId, t: ReturnType<typeof useT>): string {
-  if (id === "doctor") return t("检查依赖、配置和运行环境是否正常");
-  return t("查看最近 1 小时日志，辅助定位异常");
+  if (id === "doctor") return t("执行 hermes doctor 命令，检查依赖、配置和运行环境是否正常");
+  return t("查看 Hermes Agent 最近日志，辅助定位问题");
 }
 
 function getStatusText(status: DiagnosticRunStatus, t: ReturnType<typeof useT>): string {
   if (status === "loading") return t("执行中");
   if (status === "success") return t("正常");
-  if (status === "error") return t("异常");
+  if (status === "error") return t("获取失败");
   return t("待刷新");
 }

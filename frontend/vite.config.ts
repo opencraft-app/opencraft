@@ -569,6 +569,10 @@ export default defineConfig(({ mode }) => {
       ...(allowedHosts.length > 0 ? { allowedHosts } : {}),
       ...(hmr ? { hmr } : {}),
       proxy: {
+        "/auth/oauth": {
+          target: "https://lightclaw.tech",
+          changeOrigin: true,
+        },
         "/auth/session": {
           target: "https://lightclaw.tech",
           changeOrigin: true,
