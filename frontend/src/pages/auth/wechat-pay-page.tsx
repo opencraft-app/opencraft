@@ -1,12 +1,38 @@
 import { useMemo } from "react";
+import { useLocation } from "react-router-dom";
 import { CheckCircle2, MessageCircle, ShieldCheck, Smartphone, Wallet } from "lucide-react";
 import { useT } from "@/i18n/t";
 
 const isWeChatBrowser = (userAgent: string) => userAgent.toLowerCase().includes("micromessenger");
 
+const OPEN_ID_PARAM_NAMES = ["openid", "open_id", "openId"];
+
+const readOpenIdFromParams = (params: URLSearchParams) => {
+  for (const name of OPEN_ID_PARAM_NAMES) {
+    const value = params.get(name)?.trim();
+    if (value) {
+      return value;
+    }
+  }
+  return null;
+};
+
+const readOpenId = (search: string, hash: string) => {
+  const fromSearch = readOpenIdFromParams(new URLSearchParams(search));
+  if (fromSearch) {
+    return fromSearch;
+  }
+
+  const rawHash = hash.startsWith("#") ? hash.slice(1) : hash;
+  const hashQuery = rawHash.includes("?") ? rawHash.slice(rawHash.indexOf("?") + 1) : rawHash;
+  return readOpenIdFromParams(new URLSearchParams(hashQuery));
+};
+
 export const WeChatPayPage = () => {
+  const location = useLocation();
   const t = useT();
   const inWeChat = useMemo(() => isWeChatBrowser(window.navigator.userAgent), []);
+  const openId = useMemo(() => readOpenId(location.search, location.hash), [location.hash, location.search]);
 
   return (
     <main className="min-h-dvh bg-[#f4f8f5] px-5 py-6 text-[#17231b]">
@@ -52,6 +78,13 @@ export const WeChatPayPage = () => {
                 <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-[#08a94f]" />
                 <p className="text-sm leading-6 text-[#445249]">{t("等待后端支付参数接入。")}</p>
               </div>
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-[#d8e8dd] bg-[#fbfdfb] px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-normal text-[#6d7b71]">{t("当前 OpenID")}</p>
+              <p className="mt-1 break-all text-sm font-semibold leading-6 text-[#223127]">
+                {openId ?? t("尚未获取到 OpenID")}
+              </p>
             </div>
 
             <button
