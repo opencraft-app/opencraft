@@ -709,7 +709,7 @@ export function BuddyPanel({
               {toast.kind === "applying"
                 ? t("注入中…")
                 : isApplied
-                  ? t("再次注入")
+                  ? t("重新注入")
                   : t("注入人设")}
             </button>
             {/* 自定义浮卡：仅 disabled 因「未选中」时立即浮出，避开原生 title 延迟 */}
@@ -992,22 +992,28 @@ function FilledSlot({
         <SoulFaceCard soul={soul} size="slot" onInterpret={onPreview} />
       </button>
 
-      {/* 左上角：已注入徽章（紫金渐变胶囊 + "已注入"文案）。
-          同一时间只可能 1 张卡有这个徽章（appliedSlug 是单值 state） */}
-      {applied && (
-        <div
-          className="pointer-events-none absolute left-1.5 top-1.5 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold"
-          style={{
-            backgroundImage: "linear-gradient(135deg, #6B4FE0 0%, #F4B43A 100%)",
-            color: "#ffffff",
-            boxShadow: "0 4px 10px rgba(107,79,224,0.32)",
-            letterSpacing: "0.2px",
-          }}
-          aria-label={t("当前已注入到 Bot")}
-        >
-          {t("已注入")}
-        </div>
-      )}
+      {/* 左上角：注入状态徽章。appliedSlug 是单值，同一时间最多 1 张卡显示已注入。 */}
+      <div
+        className="pointer-events-none absolute left-1.5 top-1.5 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold"
+        style={
+          applied
+            ? {
+                backgroundImage: "linear-gradient(135deg, #6B4FE0 0%, #F4B43A 100%)",
+                color: "#ffffff",
+                boxShadow: "0 4px 10px rgba(107,79,224,0.32)",
+                letterSpacing: "0.2px",
+              }
+            : {
+                background: "rgba(255,255,255,0.92)",
+                color: "rgba(0,0,0,0.48)",
+                boxShadow: "0 3px 10px rgba(0,0,0,0.08)",
+                letterSpacing: "0.2px",
+              }
+        }
+        aria-label={applied ? t("当前已注入到 Bot") : t("当前未注入到 Bot")}
+      >
+        {applied ? t("已注入") : t("未注入")}
+      </div>
 
       {/* 右上角：选中态显示「勾」（SkillHub 同款黑底白勾），未选中显示「删除 + 重抽」（hover 浮现） */}
       {selected ? (
