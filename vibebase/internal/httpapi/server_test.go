@@ -58,9 +58,8 @@ func (f *fakeStore) List(_ context.Context, ownerID string, namespace string, _ 
 func (f *fakeStore) Ping(context.Context) error { return nil }
 
 func TestRejectsMissingTrustedIdentity(t *testing.T) {
-	handler := New(Options{Store: &fakeStore{}, InternalServiceToken: "secret", MaxNameBytes: 5000, MaxValueBytes: 5000})
+	handler := New(Options{Store: &fakeStore{}, MaxNameBytes: 5000, MaxValueBytes: 5000})
 	req := httptest.NewRequest(http.MethodPut, "/v1/namespaces/prefs/kv/theme", bytes.NewBufferString("dark"))
-	req.Header.Set("Authorization", "Bearer secret")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnauthorized {
@@ -70,10 +69,10 @@ func TestRejectsMissingTrustedIdentity(t *testing.T) {
 
 func TestStoresUnderInjectedUserOnly(t *testing.T) {
 	backend := &fakeStore{}
-	handler := New(Options{Store: backend, InternalServiceToken: "secret", MaxNameBytes: 5000, MaxValueBytes: 5000})
+	handler := New(Options{Store: backend, MaxNameBytes: 5000, MaxValueBytes: 5000})
 
 	put := httptest.NewRequest(http.MethodPut, "/v1/namespaces/prefs/kv/theme", bytes.NewBufferString("dark"))
-	put.Header.Set("Authorization", "Bearer secret")
+	put.Header.Set("Authorization", "Bearer user-session-token")
 	put.Header.Set(identityUserHeader, "user-a")
 	put.Header.Set("X-User-Id", "attacker")
 	putRec := httptest.NewRecorder()
@@ -83,7 +82,6 @@ func TestStoresUnderInjectedUserOnly(t *testing.T) {
 	}
 
 	get := httptest.NewRequest(http.MethodGet, "/v1/namespaces/prefs/kv/theme", nil)
-	get.Header.Set("Authorization", "Bearer secret")
 	get.Header.Set(identityUserHeader, "user-a")
 	getRec := httptest.NewRecorder()
 	handler.ServeHTTP(getRec, get)
@@ -99,7 +97,6 @@ func TestStoresUnderInjectedUserOnly(t *testing.T) {
 	}
 
 	cross := httptest.NewRequest(http.MethodGet, "/v1/namespaces/prefs/kv/theme", nil)
-	cross.Header.Set("Authorization", "Bearer secret")
 	cross.Header.Set(identityUserHeader, "user-b")
 	crossRec := httptest.NewRecorder()
 	handler.ServeHTTP(crossRec, cross)
@@ -109,9 +106,8 @@ func TestStoresUnderInjectedUserOnly(t *testing.T) {
 }
 
 func TestRejectsOversizedKeyAndValue(t *testing.T) {
-	handler := New(Options{Store: &fakeStore{}, InternalServiceToken: "secret", MaxNameBytes: 4, MaxValueBytes: 3})
+	handler := New(Options{Store: &fakeStore{}, MaxNameBytes: 4, MaxValueBytes: 3})
 	req := httptest.NewRequest(http.MethodPut, "/v1/namespaces/prefs/kv/toolong", bytes.NewBufferString("abc"))
-	req.Header.Set("Authorization", "Bearer secret")
 	req.Header.Set(identityUserHeader, "user-a")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -120,7 +116,6 @@ func TestRejectsOversizedKeyAndValue(t *testing.T) {
 	}
 
 	req = httptest.NewRequest(http.MethodPut, "/v1/namespaces/p/kv/k", bytes.NewBufferString("abcd"))
-	req.Header.Set("Authorization", "Bearer secret")
 	req.Header.Set(identityUserHeader, "user-a")
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -130,10 +125,9 @@ func TestRejectsOversizedKeyAndValue(t *testing.T) {
 }
 
 func TestRejectsNonUTF8KeyAndValue(t *testing.T) {
-	handler := New(Options{Store: &fakeStore{}, InternalServiceToken: "secret", MaxNameBytes: 5000, MaxValueBytes: 5000})
+	handler := New(Options{Store: &fakeStore{}, MaxNameBytes: 5000, MaxValueBytes: 5000})
 
 	req := httptest.NewRequest(http.MethodPut, "/v1/namespaces/prefs/kv/%ff", bytes.NewBufferString("ok"))
-	req.Header.Set("Authorization", "Bearer secret")
 	req.Header.Set(identityUserHeader, "user-a")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -142,7 +136,6 @@ func TestRejectsNonUTF8KeyAndValue(t *testing.T) {
 	}
 
 	req = httptest.NewRequest(http.MethodPut, "/v1/namespaces/prefs/kv/k", bytes.NewBuffer([]byte{0xff, 0xfe, 'a'}))
-	req.Header.Set("Authorization", "Bearer secret")
 	req.Header.Set(identityUserHeader, "user-a")
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -152,7 +145,7 @@ func TestRejectsNonUTF8KeyAndValue(t *testing.T) {
 }
 
 func TestLimitsBuddyDrawnSouls(t *testing.T) {
-	handler := New(Options{Store: &fakeStore{}, InternalServiceToken: "secret", MaxNameBytes: 5000, MaxValueBytes: 5000})
+	handler := New(Options{Store: &fakeStore{}, MaxNameBytes: 5000, MaxValueBytes: 5000})
 
 	validPayload := map[string]any{
 		"version":     1,
@@ -165,7 +158,6 @@ func TestLimitsBuddyDrawnSouls(t *testing.T) {
 		t.Fatalf("marshal valid payload: %v", err)
 	}
 	req := httptest.NewRequest(http.MethodPut, "/v1/namespaces/agent-state/kv/buddy.ins-1", bytes.NewReader(body))
-	req.Header.Set("Authorization", "Bearer secret")
 	req.Header.Set(identityUserHeader, "user-a")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -184,7 +176,6 @@ func TestLimitsBuddyDrawnSouls(t *testing.T) {
 		t.Fatalf("marshal oversized payload: %v", err)
 	}
 	req = httptest.NewRequest(http.MethodPut, "/v1/namespaces/agent-state/kv/buddy.ins-1", bytes.NewReader(body))
-	req.Header.Set("Authorization", "Bearer secret")
 	req.Header.Set(identityUserHeader, "user-a")
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
@@ -206,7 +197,7 @@ func TestLimitsBuddyDrawnSouls(t *testing.T) {
 // 用大数组 (drawnSouls=100) 故意触发上限，期望仍然 201 通过。
 // 这条测试用来锁住 validateBuddyStateValue 的早返回行为，防止后续重构误伤。
 func TestBuddySoulCapIgnoresOtherKeys(t *testing.T) {
-	handler := New(Options{Store: &fakeStore{}, InternalServiceToken: "secret", MaxNameBytes: 5000, MaxValueBytes: 5000})
+	handler := New(Options{Store: &fakeStore{}, MaxNameBytes: 5000, MaxValueBytes: 5000})
 
 	oversizedPayload := map[string]any{
 		"version":    1,
@@ -229,7 +220,6 @@ func TestBuddySoulCapIgnoresOtherKeys(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPut, tc.path, bytes.NewReader(body))
-			req.Header.Set("Authorization", "Bearer secret")
 			req.Header.Set(identityUserHeader, "user-a")
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, req)

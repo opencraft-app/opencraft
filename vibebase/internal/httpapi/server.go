@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,30 +25,27 @@ const (
 )
 
 type Server struct {
-	store                store.KVStore
-	internalServiceToken string
-	maxNameBytes         int
-	maxValueBytes        int
+	store         store.KVStore
+	maxNameBytes  int
+	maxValueBytes int
 }
 
 type Options struct {
-	Store                store.KVStore
-	InternalServiceToken string
-	MaxNameBytes         int
-	MaxValueBytes        int
+	Store         store.KVStore
+	MaxNameBytes  int
+	MaxValueBytes int
 }
 
 func New(opts Options) http.Handler {
 	s := &Server{
-		store:                opts.Store,
-		internalServiceToken: opts.InternalServiceToken,
-		maxNameBytes:         opts.MaxNameBytes,
-		maxValueBytes:        opts.MaxValueBytes,
+		store:         opts.Store,
+		maxNameBytes:  opts.MaxNameBytes,
+		maxValueBytes: opts.MaxValueBytes,
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", s.healthz)
 	mux.HandleFunc("/livez", s.livez)
-	mux.HandleFunc("/v1/namespaces/", s.requireInternalAuth(s.handleKV))
+	mux.HandleFunc("/v1/namespaces/", s.requireTrustedIdentity(s.handleKV))
 	return mux
 }
 
@@ -75,14 +71,8 @@ func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-func (s *Server) requireInternalAuth(next http.HandlerFunc) http.HandlerFunc {
+func (s *Server) requireTrustedIdentity(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		expected := "Bearer " + s.internalServiceToken
-		got := strings.TrimSpace(r.Header.Get("Authorization"))
-		if subtle.ConstantTimeCompare([]byte(got), []byte(expected)) != 1 {
-			writeError(w, http.StatusUnauthorized, "unauthorized")
-			return
-		}
 		if strings.TrimSpace(r.Header.Get(identityUserHeader)) == "" {
 			writeError(w, http.StatusUnauthorized, "missing_user_identity")
 			return

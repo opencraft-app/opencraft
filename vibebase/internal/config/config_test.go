@@ -4,7 +4,6 @@ import "testing"
 
 func TestFromEnvUsesSharedRedisPasswordFallback(t *testing.T) {
 	t.Setenv("VIBEBASE_REDIS_ADDR", "redis:6379")
-	t.Setenv("VIBEBASE_INTERNAL_SERVICE_TOKEN", "token")
 	t.Setenv("REDIS_PASSWORD", "shared")
 	cfg, err := FromEnv()
 	if err != nil {
@@ -17,7 +16,6 @@ func TestFromEnvUsesSharedRedisPasswordFallback(t *testing.T) {
 
 func TestFromEnvPrefersVibebaseRedisPassword(t *testing.T) {
 	t.Setenv("VIBEBASE_REDIS_ADDR", "redis:6379")
-	t.Setenv("VIBEBASE_INTERNAL_SERVICE_TOKEN", "token")
 	t.Setenv("REDIS_PASSWORD", "shared")
 	t.Setenv("VIBEBASE_REDIS_PASSWORD", "vibebase")
 	cfg, err := FromEnv()
@@ -31,7 +29,6 @@ func TestFromEnvPrefersVibebaseRedisPassword(t *testing.T) {
 
 func TestFromEnvUsesMaxNameBytesForNamespaceAndKeyLimit(t *testing.T) {
 	t.Setenv("VIBEBASE_REDIS_ADDR", "redis:6379")
-	t.Setenv("VIBEBASE_INTERNAL_SERVICE_TOKEN", "token")
 	cfg, err := FromEnv()
 	if err != nil {
 		t.Fatalf("FromEnv: %v", err)
@@ -43,7 +40,6 @@ func TestFromEnvUsesMaxNameBytesForNamespaceAndKeyLimit(t *testing.T) {
 
 func TestFromEnvPrefersMaxNameBytesOverLegacyMaxKeyBytes(t *testing.T) {
 	t.Setenv("VIBEBASE_REDIS_ADDR", "redis:6379")
-	t.Setenv("VIBEBASE_INTERNAL_SERVICE_TOKEN", "token")
 	t.Setenv("VIBEBASE_MAX_KEY_BYTES", "256")
 	t.Setenv("VIBEBASE_MAX_NAME_BYTES", "64")
 	cfg, err := FromEnv()
