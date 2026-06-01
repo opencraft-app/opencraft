@@ -497,6 +497,14 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("argocd/secrets/*/cloudagent-wsa-search-secrets.sops.yaml", watched_paths)
         self.assertIn("argocd/secrets/*/cloudagent-wisp-secrets.sops.yaml", watched_paths)
 
+    def test_lightclaw_auth_workflow_watches_release_contract_inputs(self) -> None:
+        workflow = yaml.safe_load((REPO_ROOT / ".ci/lightclaw-auth.yml").read_text())
+        on_config = workflow.get("on") or workflow.get(True) or {}
+        watched_paths = ((on_config.get("push") or {}).get("paths") or [])
+
+        self.assertIn("argocd/secrets/*/lightclaw-auth-content-audit-secrets.sops.yaml", watched_paths)
+        self.assertIn("argocd/secrets/*/lightvela-e2e-auth-secrets.sops.yaml", watched_paths)
+
     def test_local_templates_do_not_use_unsupported_top_level_concurrency(self) -> None:
         for template_path in sorted((REPO_ROOT / ".ci/templates").glob("*.yml")):
             with self.subTest(template=template_path.name):
