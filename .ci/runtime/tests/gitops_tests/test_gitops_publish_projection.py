@@ -45,6 +45,7 @@ class ResolveReleaseBundleTests(unittest.TestCase):
         self.assertIn("argocd/services/lightclaw-auth/profiles/sandbox/**", payload["publish_paths"])
         self.assertIn("argocd/apps/beijing-sandbox/sandbox-family-appset.yaml", payload["publish_paths"])
         self.assertIn("argocd/catalogs/sandbox/beijing-sandbox/lightclaw-auth.yaml", payload["publish_paths"])
+        self.assertIn("argocd/secrets/beijing-sandbox/lightvela-e2e-auth-secrets.sops.yaml", payload["publish_paths"])
         self.assertNotIn("argocd/apps/beijing-sandbox/lightclaw-auth.yaml", payload["publish_paths"])
         self.assertIn("user/auth/k8s/base/**", payload["publish_paths"])
 
