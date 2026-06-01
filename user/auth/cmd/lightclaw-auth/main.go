@@ -35,6 +35,7 @@ func main() {
 		RealnameCipher:     buildRealnameCipher(logger),
 		ContentAudit:       contentAuditConfig,
 		ContentAuditClient: contentAuditClient,
+		Logger:             logger,
 	})
 	avatarStore := buildAvatarStore(logger)
 

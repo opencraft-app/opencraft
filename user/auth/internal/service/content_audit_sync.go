@@ -12,7 +12,7 @@ func (s *Service) auditNameSynchronously(ctx context.Context, userID string, nam
 	if err != nil {
 		return err
 	}
-	result, err := submitContentAuditTask(ctx, s.contentAuditClient, s.now, ContentAuditTask{
+	result, err := submitContentAuditTask(ctx, s.contentAuditClient, s.now, s.logger, "sync-direct", ContentAuditTask{
 		BizType:     contentauditBizTypeUserName,
 		BizID:       strings.TrimSpace(userID),
 		BizDetail:   "name",
@@ -33,7 +33,7 @@ func (s *Service) auditAvatarSynchronously(ctx context.Context, userID string, o
 	if err != nil {
 		return err
 	}
-	result, err := submitContentAuditTask(ctx, s.contentAuditClient, s.now, ContentAuditTask{
+	result, err := submitContentAuditTask(ctx, s.contentAuditClient, s.now, s.logger, "sync-direct", ContentAuditTask{
 		BizType:     contentauditBizTypeUserAvatar,
 		BizID:       strings.TrimSpace(userID),
 		BizDetail:   "avatar",

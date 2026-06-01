@@ -5,6 +5,7 @@ import (
 	cryptorand "crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"strings"
@@ -30,6 +31,7 @@ type Options struct {
 	RealnameCipher     RealnameCipher
 	ContentAudit       ContentAuditConfig
 	ContentAuditClient ContentAuditClient
+	Logger             *slog.Logger
 }
 
 type Error struct {
@@ -224,6 +226,7 @@ type Service struct {
 	realnameCipher     RealnameCipher
 	contentAudit       ContentAuditConfig
 	contentAuditClient ContentAuditClient
+	logger             *slog.Logger
 }
 
 type smsChallenge struct {
@@ -262,6 +265,10 @@ func NewWithStore(store Store, opts Options) *Service {
 	if now == nil {
 		now = time.Now
 	}
+	logger := opts.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
 
 	return &Service{
 		now:                now,
@@ -274,6 +281,7 @@ func NewWithStore(store Store, opts Options) *Service {
 		realnameCipher:     opts.RealnameCipher,
 		contentAudit:       opts.ContentAudit,
 		contentAuditClient: opts.ContentAuditClient,
+		logger:             logger,
 	}
 }
 
