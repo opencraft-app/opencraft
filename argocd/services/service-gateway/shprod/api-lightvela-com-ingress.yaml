@@ -1,0 +1,182 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: api-lightvela-com-public
+  namespace: lightclaw-gateway
+  annotations:
+    kubernetes.io/ingress.class: qcloud
+    ingress.cloud.tencent.com/tke-service-config: api-lightvela-com-public-config
+    ingress.cloud.tencent.com/modification-protection: "false"
+spec:
+  ingressClassName: qcloud
+  tls:
+    - hosts:
+        - api.lightvela.com
+      secretName: api-lightvela-com-tls
+  rules:
+    - host: api.lightvela.com
+      http:
+        paths:
+          - path: /auth
+            pathType: Prefix
+            backend:
+              service:
+                name: service-gateway-ingress
+                port:
+                  number: 80
+          - path: /sandboxes
+            pathType: Prefix
+            backend:
+              service:
+                name: service-gateway-ingress
+                port:
+                  number: 80
+          - path: /v1/chatclaw/runtime
+            pathType: Prefix
+            backend:
+              service:
+                name: service-gateway-ingress
+                port:
+                  number: 80
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: service-gateway-ingress
+                port:
+                  number: 80
+          - path: /healthz
+            pathType: Exact
+            backend:
+              service:
+                name: service-gateway-ingress
+                port:
+                  number: 80
+---
+apiVersion: cloud.tencent.com/v1alpha1
+kind: TkeServiceConfig
+metadata:
+  name: api-lightvela-com-public-config
+  namespace: lightclaw-gateway
+spec:
+  loadBalancer:
+    l7Listeners:
+      - protocol: HTTP
+        port: 80
+        domains:
+          - domain: api.lightvela.com
+            rules:
+              - url: /auth
+                forwardType: HTTP
+                healthCheck:
+                  enable: true
+                  intervalTime: 10
+                  timeout: 5
+                  healthNum: 2
+                  unHealthNum: 2
+                  httpCheckPath: /healthz
+                  httpCheckDomain: api.lightvela.com
+                  httpCheckMethod: HEAD
+                  httpCode: 2
+              - url: /sandboxes
+                forwardType: HTTP
+                healthCheck:
+                  enable: true
+                  intervalTime: 10
+                  timeout: 5
+                  healthNum: 2
+                  unHealthNum: 2
+                  httpCheckPath: /healthz
+                  httpCheckDomain: api.lightvela.com
+                  httpCheckMethod: HEAD
+                  httpCode: 2
+              - url: /v1/chatclaw/runtime
+                forwardType: HTTP
+                healthCheck:
+                  enable: true
+                  intervalTime: 10
+                  timeout: 5
+                  healthNum: 2
+                  unHealthNum: 2
+                  httpCheckPath: /healthz
+                  httpCheckDomain: api.lightvela.com
+                  httpCheckMethod: HEAD
+                  httpCode: 2
+              - url: /
+                forwardType: HTTP
+                healthCheck:
+                  enable: true
+                  intervalTime: 10
+                  timeout: 5
+                  healthNum: 2
+                  unHealthNum: 2
+                  httpCheckPath: /healthz
+                  httpCheckDomain: api.lightvela.com
+                  httpCheckMethod: HEAD
+                  httpCode: 2
+      - protocol: HTTPS
+        port: 443
+        defaultServer: api.lightvela.com
+        domains:
+          - domain: api.lightvela.com
+            rules:
+              - url: /auth
+                forwardType: HTTP
+                healthCheck:
+                  enable: true
+                  intervalTime: 10
+                  timeout: 5
+                  healthNum: 2
+                  unHealthNum: 2
+                  httpCheckPath: /healthz
+                  httpCheckDomain: api.lightvela.com
+                  httpCheckMethod: HEAD
+                  httpCode: 2
+              - url: /sandboxes
+                forwardType: HTTP
+                healthCheck:
+                  enable: true
+                  intervalTime: 10
+                  timeout: 5
+                  healthNum: 2
+                  unHealthNum: 2
+                  httpCheckPath: /healthz
+                  httpCheckDomain: api.lightvela.com
+                  httpCheckMethod: HEAD
+                  httpCode: 2
+              - url: /v1/chatclaw/runtime
+                forwardType: HTTP
+                healthCheck:
+                  enable: true
+                  intervalTime: 10
+                  timeout: 5
+                  healthNum: 2
+                  unHealthNum: 2
+                  httpCheckPath: /healthz
+                  httpCheckDomain: api.lightvela.com
+                  httpCheckMethod: HEAD
+                  httpCode: 2
+              - url: /
+                forwardType: HTTP
+                healthCheck:
+                  enable: true
+                  intervalTime: 10
+                  timeout: 5
+                  healthNum: 2
+                  unHealthNum: 2
+                  httpCheckPath: /healthz
+                  httpCheckDomain: api.lightvela.com
+                  httpCheckMethod: HEAD
+                  httpCode: 2
+              - url: =/healthz
+                forwardType: HTTP
+                healthCheck:
+                  enable: true
+                  intervalTime: 10
+                  timeout: 5
+                  healthNum: 2
+                  unHealthNum: 2
+                  httpCheckPath: /healthz
+                  httpCheckDomain: api.lightvela.com
+                  httpCheckMethod: HEAD
+                  httpCode: 2
