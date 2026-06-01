@@ -27,6 +27,7 @@ import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
 import { useT } from "@/i18n/t";
 import { avatarImageUrl } from "@/lib/avatar-image";
 import { isGlobal } from "@/lib/region";
+import { cn } from "@/lib/utils";
 
 /* ─── animation variants ─── */
 
@@ -964,7 +965,7 @@ export const AccountPage = () => {
                       <img
                         src={displayAvatarSrc}
                         alt="avatar"
-                        className="h-14 w-14 object-cover"
+                        className={cn("h-14 w-14 object-cover transition-[filter,transform]", hasPendingAvatarAudit && "scale-105 blur-sm")}
                         style={{
                           border: hasPendingAvatarAudit ? "2px solid rgba(198, 123, 30, 0.55)" : "1px solid #E6E9EF",
                           borderRadius: "9999px",
@@ -1026,7 +1027,7 @@ export const AccountPage = () => {
                       <div className="space-y-1.5">
                         <div className="flex items-center gap-2">
                           <p
-                            className="truncate"
+                            className={cn("truncate transition-[filter]", hasPendingNameAudit && "select-none blur-sm")}
                             style={{ fontSize: 20, fontWeight: 500, color: "rgba(0,0,0,0.9)", lineHeight: 1.6 }}
                           >
                             {hasPendingNameAudit ? pendingName : user?.name || t("未设置")}

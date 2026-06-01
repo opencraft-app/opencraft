@@ -107,7 +107,7 @@ describe("AccountPage nickname audit state", () => {
 
     renderAccountPage();
 
-    expect(screen.getByText("待审核昵称")).toBeInTheDocument();
+    expect(screen.getByText("待审核昵称")).toHaveClass("blur-sm");
     expect(screen.getByText("审核中")).toBeInTheDocument();
     expect(screen.getByText("旧昵称")).toBeInTheDocument();
     expect(screen.getByText(/当前对外显示：/)).toHaveTextContent("当前对外显示：旧昵称，审核通过后将自动生效。");
@@ -142,7 +142,12 @@ describe("AccountPage nickname audit state", () => {
 
     expect(screen.getAllByText("审核中").length).toBeGreaterThan(0);
     expect(screen.getByText("新头像已提交审核，审核通过后将对外生效。")).toBeInTheDocument();
-    expect(screen.getAllByAltText("avatar").some((avatar) => avatar.getAttribute("src") === "https://example.com/pending-avatar.jpg")).toBe(true);
+    const pendingAvatar = screen
+      .getAllByAltText("avatar")
+      .find((avatar) => avatar.getAttribute("src") === "https://example.com/pending-avatar.jpg");
+
+    expect(pendingAvatar).toBeDefined();
+    expect(pendingAvatar!).toHaveClass("blur-sm");
   });
 
   it("explains a failed avatar audit", () => {
