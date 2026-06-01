@@ -74,7 +74,6 @@ routes:
     rewrite_prefix: /v1
     methods: [GET, PUT, DELETE, OPTIONS]
     upstream: http://vibebase.ai-gateway.svc.cluster.local
-    upstream_bearer_token_env: SERVICE_GATEWAY_VIBEBASE_INTERNAL_TOKEN
     access: authenticated
     auth_strategy: session
   - name: content-audit-callback

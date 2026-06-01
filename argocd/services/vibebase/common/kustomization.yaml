@@ -44,13 +44,3 @@ replacements:
           name: vibebase-config
         fieldPaths:
           - data.VIBEBASE_REDIS_ADDR
-  - source:
-      kind: ConfigMap
-      name: vibebase-platform-values
-      fieldPath: data.VIBEBASE_INTERNAL_SERVICE_TOKEN
-    targets:
-      - select:
-          kind: ConfigMap
-          name: vibebase-config
-        fieldPaths:
-          - data.VIBEBASE_INTERNAL_SERVICE_TOKEN

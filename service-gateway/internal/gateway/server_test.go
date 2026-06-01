@@ -2570,7 +2570,7 @@ func TestUnmatchedRootReturnsNotFoundWithoutCatchAllRoute(t *testing.T) {
 	}
 }
 
-func TestAuthenticatedRouteCanInjectUpstreamBearerToken(t *testing.T) {
+func TestAuthenticatedRouteCanInjectConfiguredUpstreamBearerToken(t *testing.T) {
 	t.Setenv("SERVICE_GATEWAY_TEST_UPSTREAM_TOKEN", "internal-secret")
 	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -2598,8 +2598,8 @@ func TestAuthenticatedRouteCanInjectUpstreamBearerToken(t *testing.T) {
 	handler, err := NewHandler(Config{
 		AuthServiceURL: auth.URL,
 		Routes: []Route{{
-			Name:                   "vibebase",
-			Prefix:                 "/v1/vibebase",
+			Name:                   "internal-api",
+			Prefix:                 "/internal-api",
 			RewritePrefix:          "/v1",
 			Upstream:               upstream.URL,
 			UpstreamBearerTokenEnv: "SERVICE_GATEWAY_TEST_UPSTREAM_TOKEN",
@@ -2610,7 +2610,7 @@ func TestAuthenticatedRouteCanInjectUpstreamBearerToken(t *testing.T) {
 		t.Fatalf("new handler: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/v1/vibebase/namespaces/prefs/kv/theme", nil)
+	req := httptest.NewRequest(http.MethodGet, "/internal-api/namespaces/prefs/kv/theme", nil)
 	req.Header.Set("Authorization", "Bearer user-token")
 	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "user-session"})
 	req.AddCookie(&http.Cookie{Name: "analytics", Value: "tracking"})
@@ -2639,8 +2639,8 @@ func TestAuthenticatedRouteFailsClosedWhenUpstreamBearerTokenMissing(t *testing.
 	handler, err := NewHandler(Config{
 		AuthServiceURL: auth.URL,
 		Routes: []Route{{
-			Name:                   "vibebase",
-			Prefix:                 "/v1/vibebase",
+			Name:                   "internal-api",
+			Prefix:                 "/internal-api",
 			Upstream:               upstream.URL,
 			UpstreamBearerTokenEnv: "SERVICE_GATEWAY_TEST_MISSING_TOKEN",
 			Access:                 AccessAuthenticated,
@@ -2650,7 +2650,7 @@ func TestAuthenticatedRouteFailsClosedWhenUpstreamBearerTokenMissing(t *testing.
 		t.Fatalf("new handler: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/v1/vibebase/namespaces/prefs/kv/theme", nil)
+	req := httptest.NewRequest(http.MethodGet, "/internal-api/namespaces/prefs/kv/theme", nil)
 	req.Header.Set("Authorization", "Bearer user-token")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
