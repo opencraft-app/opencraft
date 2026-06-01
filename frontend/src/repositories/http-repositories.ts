@@ -1084,12 +1084,15 @@ const createHttpAuthRepository = (baseUrl: string): AuthRepository => ({
         : undefined,
     };
   },
-  getOAuthStartUrl(provider) {
+  getOAuthStartUrl(provider, options) {
     // local-proxy 模式 baseUrl 是空字符串，buildUrl 拼出来是相对路径 `/auth/...`。
     // URL 构造器不接受相对路径，所以传 window.location.origin 当 base；
     // 当 baseUrl 是绝对 URL（如 https://lightclaw.tech）时，第二个参数会被忽略。
     const base = typeof window !== "undefined" ? window.location.origin : "https://lightclaw.tech";
     const startURL = new URL(buildUrl(baseUrl, `/auth/oauth/${provider}/start`), base);
+    if (provider === "wechat" && options?.wechatMode) {
+      startURL.searchParams.set("mode", options.wechatMode);
+    }
     const relayIssuerBaseURL = configuredOAuthRelayIssuerBaseURL();
     if (relayIssuerBaseURL) {
       startURL.searchParams.set("relay_mode", "issuer");

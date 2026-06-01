@@ -718,6 +718,17 @@ describe("http repositories auth token bootstrap", () => {
     expect(parsed.searchParams.get("return_to")).toBe("https://intl-sandbox-bj-7.preview.lightclaw.tech/auth/sign-in");
   });
 
+  it("adds the requested WeChat OAuth mode to the start URL", () => {
+    stubHostname("lightclaw.pages.dev");
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    const parsed = new URL(repositories.auth.getOAuthStartUrl("wechat", { wechatMode: "official_account" })!);
+
+    expect(`${parsed.origin}${parsed.pathname}`).toBe("https://lightclaw.tech/auth/oauth/wechat/start");
+    expect(parsed.searchParams.get("mode")).toBe("official_account");
+    expect(parsed.searchParams.get("return_to")).toBe("https://lightclaw.pages.dev/auth/sign-in");
+  });
+
   it("uses the live auth backend on the primary site domain even without an explicit env var", () => {
     vi.stubEnv("VITE_AUTH_API_BASE_URL", "");
     stubHostname("lightclaw.tech");

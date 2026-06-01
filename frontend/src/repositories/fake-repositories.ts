@@ -13,7 +13,7 @@ import type {
   WorkspaceMessage,
 } from "@/domain/types";
 import { planCatalog } from "@/domain/plan-catalog";
-import type { OAuthProvider } from "@/lib/oauth";
+import type { OAuthProvider, WeChatOAuthMode } from "@/lib/oauth";
 import type {
   BotRepository,
   DashboardSnapshot,
@@ -34,8 +34,11 @@ const FAKE_RESET_API = "chat_completions";
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const nowIso = () => new Date().toISOString();
-const fakeOAuthStartURL = (provider: OAuthProvider) => {
+const fakeOAuthStartURL = (provider: OAuthProvider, wechatMode?: WeChatOAuthMode) => {
   const startURL = new URL(`https://lightclaw.tech/auth/oauth/${provider}/start`);
+  if (provider === "wechat" && wechatMode) {
+    startURL.searchParams.set("mode", wechatMode);
+  }
   if (typeof window !== "undefined" && window.location?.href) {
     startURL.searchParams.set("return_to", window.location.href);
   }
@@ -402,8 +405,8 @@ export const createFakeRepositories = (): Repositories => {
           },
         };
       },
-      getOAuthStartUrl(provider: OAuthProvider) {
-        return fakeOAuthStartURL(provider);
+      getOAuthStartUrl(provider: OAuthProvider, options) {
+        return fakeOAuthStartURL(provider, options?.wechatMode);
       },
       async signInAsGuest() {
         await wait(NETWORK_DELAY_MS);

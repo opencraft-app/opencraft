@@ -61,7 +61,7 @@ func TestWeChatOAuthHTTPClientResolveIdentityFallsBackToProfileUnionID(t *testin
 	}
 }
 
-func TestWeChatOAuthHTTPClientResolveIdentityFallsBackToOpenID(t *testing.T) {
+func TestWeChatOAuthHTTPClientResolveIdentityRejectsOpenIDOnlyIdentity(t *testing.T) {
 	t.Parallel()
 
 	client := &wechatOAuthHTTPClient{
@@ -72,21 +72,12 @@ func TestWeChatOAuthHTTPClientResolveIdentityFallsBackToOpenID(t *testing.T) {
 		},
 	}
 
-	identity, err := client.ResolveIdentity(context.Background(), &WeChatOAuthToken{
+	_, err := client.ResolveIdentity(context.Background(), &WeChatOAuthToken{
 		AccessToken: "token-c",
 		OpenID:      "openid-3",
 	})
-	if err != nil {
-		t.Fatalf("resolve identity failed: %v", err)
-	}
-	if identity.ProviderSubject != "openid-3" {
-		t.Fatalf("expected openid fallback subject, got %q", identity.ProviderSubject)
-	}
-	if identity.Name != "微信用户C" {
-		t.Fatalf("expected nickname from profile, got %q", identity.Name)
-	}
-	if identity.AvatarURL != "https://wx.example/avatar-c.jpg" {
-		t.Fatalf("expected avatar from profile, got %q", identity.AvatarURL)
+	if err == nil || !strings.Contains(err.Error(), "unionid missing") {
+		t.Fatalf("expected unionid missing error, got %v", err)
 	}
 }
 

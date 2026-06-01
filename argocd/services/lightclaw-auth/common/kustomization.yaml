@@ -64,6 +64,7 @@ replacements:
       name: lightclaw-auth-config
     fieldPaths:
     - data.LIGHTCLAW_WECHAT_APP_ID
+    - data.LIGHTVELA_WECHAT_WEBSITE_APP_ID
 - source:
     kind: ConfigMap
     name: auth-platform-values
@@ -74,6 +75,27 @@ replacements:
       name: lightclaw-auth-config
     fieldPaths:
     - data.LIGHTCLAW_WECHAT_REDIRECT_URI
+    - data.LIGHTVELA_WECHAT_WEBSITE_REDIRECT_URI
+- source:
+    kind: ConfigMap
+    name: auth-platform-values
+    fieldPath: data.AUTH_WECHAT_OFFICIAL_ACCOUNT_APP_ID
+  targets:
+  - select:
+      kind: ConfigMap
+      name: lightclaw-auth-config
+    fieldPaths:
+    - data.LIGHTVELA_WECHAT_OFFICIAL_ACCOUNT_APP_ID
+- source:
+    kind: ConfigMap
+    name: auth-platform-values
+    fieldPath: data.AUTH_WECHAT_OFFICIAL_ACCOUNT_REDIRECT_URI
+  targets:
+  - select:
+      kind: ConfigMap
+      name: lightclaw-auth-config
+    fieldPaths:
+    - data.LIGHTVELA_WECHAT_OFFICIAL_ACCOUNT_REDIRECT_URI
 - source:
     kind: ConfigMap
     name: auth-platform-values

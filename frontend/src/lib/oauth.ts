@@ -1,6 +1,10 @@
 import { isGlobal } from "@/lib/region";
 
 export type OAuthProvider = "qq" | "wechat" | "google" | "github";
+export type WeChatOAuthMode = "website" | "official_account";
+export type WeChatOAuthStartTarget = WeChatOAuthMode | "unsupported_mobile_browser";
+
+export const WECHAT_MOBILE_BROWSER_PROMPT = "请在微信中打开当前页面后继续登录。";
 
 /**
  * 当前区域允许展示的 OAuth 登录渠道（编译期常量）。
@@ -43,6 +47,17 @@ export const oauthProviderLabel = (provider: OAuthProvider) => OAUTH_PROVIDER_LA
 
 export const redirectToOAuthStart = (url: string) => {
   window.location.assign(url);
+};
+
+export const wechatOAuthStartTargetForUserAgent = (userAgent: string): WeChatOAuthStartTarget => {
+  const normalized = userAgent.toLowerCase();
+  if (normalized.includes("micromessenger")) {
+    return "official_account";
+  }
+  if (/android|iphone|ipad|ipod|mobile|windows phone/.test(normalized)) {
+    return "unsupported_mobile_browser";
+  }
+  return "website";
 };
 
 export const oauthErrorMessage = (oauthError: string | null) => {
