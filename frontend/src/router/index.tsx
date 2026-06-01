@@ -10,6 +10,7 @@ import { isGlobal } from "@/lib/region";
 const InvitePage = lazyNamed(() => import("@/pages/auth/invite-page"), "InvitePage");
 const SignInPage = lazyNamed(() => import("@/pages/auth/sign-in-page"), "SignInPage");
 const SignUpPage = lazyNamed(() => import("@/pages/auth/sign-up-page"), "SignUpPage");
+const WeChatPayPage = lazyNamed(() => import("@/pages/auth/wechat-pay-page"), "WeChatPayPage");
 const AccountProfilePage = lazyNamed(() => import("@/pages/app/account-profile-page"), "AccountProfilePage");
 const BotTerminalPage = lazyNamed(() => import("@/pages/app/bot-terminal-page"), "BotTerminalPage");
 const PlanSelectPage = lazyNamed(() => import("@/pages/app/plan-select-page"), "PlanSelectPage");
@@ -169,6 +170,10 @@ export const router = createBrowserRouter([
             element: <Navigate to="/dashboard/settings" replace />,
           },
         ],
+      },
+      {
+        path: "auth/wechat-pay",
+        element: lazyRoute(WeChatPayPage),
       },
       {
         element: <MarketingLayout />,
