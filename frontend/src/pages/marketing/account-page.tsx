@@ -49,7 +49,7 @@ const AccountNavbar = () => {
 
   return (
     <header className="lw-setup-navbar">
-      <div className="mx-auto flex items-center justify-between px-6 md:px-8" style={{ maxWidth: "var(--lw-max-content)" }}>
+      <div className="mx-auto flex max-w-[1440px] items-center justify-between px-6 md:px-10 lg:px-[80px]">
         <BrandMark to="/" />
         <div className="flex items-center gap-3">
           {/* 语言切换器：仅国际站展示 */}

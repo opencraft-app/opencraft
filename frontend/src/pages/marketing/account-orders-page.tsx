@@ -36,7 +36,7 @@ const OrdersNavbar = () => {
 
   return (
     <header className="lw-setup-navbar">
-      <div className="mx-auto flex items-center justify-between px-6 md:px-8" style={{ maxWidth: "var(--lw-max-content)" }}>
+      <div className="mx-auto flex max-w-[1440px] items-center justify-between px-6 md:px-10 lg:px-[80px]">
         <BrandMark to="/" />
         {isLoggedIn ? (
           <UserAvatarMenu />
