@@ -297,7 +297,7 @@ function DiagnosticCard({
         {state.status === "idle" ? (
           <div className="flex h-full min-h-[190px] items-center justify-center p-5 text-center text-sm text-black/40">
             <ClipboardList className="mr-2 h-4 w-4" />
-            {t("点击执行获取诊断结果")}
+            {item.id === "logs" ? t("点击执行获取最近日志") : t("点击执行获取诊断结果")}
           </div>
         ) : (
           <pre className="lw-diagnostic-output max-h-[230px] overflow-y-scroll whitespace-pre-wrap break-words p-4 font-mono text-xs leading-5 text-black/70">
