@@ -3613,7 +3613,6 @@ export const OpenClawSettingsPage = () => {
               const settingsSections: { id: SettingsSectionId; label: string; icon: React.ReactNode; badge?: string }[] = [
                 { id: "channel", label: t("通道"), icon: <MessageCircle className="h-4 w-4" /> },
                 { id: "model", label: t("模型"), icon: <BrainCircuit className="h-4 w-4" /> },
-                { id: "files", label: t("文件管理"), icon: <Files className="h-4 w-4" /> },
                 ...(showHiddenTools
                   ? [
                       { id: "webui" as const, label: t("WebUI"), icon: <ExternalLink className="h-4 w-4" /> },
@@ -3629,6 +3628,7 @@ export const OpenClawSettingsPage = () => {
                 ...(SHOW_AGENTCHAT_ENTRY
                   ? [{ id: "chat" as const, label: t("对话"), icon: <MessageSquare className="h-4 w-4" />, badge: "NEW" }]
                   : []),
+                { id: "files", label: t("云存储"), icon: <Files className="h-4 w-4" />, badge: "NEW" },
               ];
               const isRestartDisabled = isActiveBotRestarting || activeBot.status !== "running";
               const hasViewedChannel = viewedChannelBotIds.has(activeBot.id);
