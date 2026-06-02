@@ -1,4 +1,4 @@
-import { ClipboardList, Download, FileText, Loader2, Stethoscope } from "lucide-react";
+import { ChevronDown, ClipboardList, Download, FileText, Loader2, Stethoscope } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 
 import { useT } from "@/i18n/t";
@@ -228,11 +228,29 @@ function DiagnosticCard({
   return (
     <article className="flex min-h-[360px] flex-col rounded-lg border border-black/[0.08] bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
       <div>
-        <div className="flex items-center gap-2">
-          <span className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-black/[0.04] text-black/65">
-            <Icon className="h-4 w-4" />
-          </span>
-          <h3 className="truncate text-base font-semibold text-black/90">{title}</h3>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-black/[0.04] text-black/65">
+              <Icon className="h-4 w-4" />
+            </span>
+            <h3 className="truncate text-base font-semibold text-black/90">{title}</h3>
+          </div>
+          {item.id === "logs" && (
+            <button
+              type="button"
+              onClick={() => downloadDiagnosticLogs(state.rawOutput || state.output, logsSince ?? "1h")}
+              disabled={isLoading || !(state.rawOutput || state.output)}
+              className={cn(
+                "inline-flex h-7 flex-shrink-0 items-center justify-center gap-1 rounded-full px-2 text-xs font-medium text-black/50 transition-colors",
+                isLoading || !(state.rawOutput || state.output)
+                  ? "cursor-not-allowed opacity-45"
+                  : "hover:bg-black/[0.04] hover:text-black/80",
+              )}
+            >
+              <Download className="h-3.5 w-3.5" />
+              {t("导出")}
+            </button>
+          )}
         </div>
         <p className="mt-2 text-sm leading-6 text-black/50">{description}</p>
       </div>
@@ -241,13 +259,13 @@ function DiagnosticCard({
         <code className="truncate font-mono text-xs text-black/55">{item.command}</code>
         <div className="flex flex-shrink-0 items-center gap-2">
           {item.id === "logs" && logsSince && onLogsSinceChange && (
-            <>
+            <div className="relative">
               <select
                 value={logsSince}
                 disabled={isLoading}
                 onChange={(event) => onLogsSinceChange(event.target.value as LogsSinceOption)}
                 className={cn(
-                  "h-7 rounded-full border border-black/[0.08] bg-white px-2 text-xs font-medium text-black/60 outline-none transition-colors",
+                  "h-7 appearance-none rounded-full border border-black/[0.08] bg-white pl-3 pr-6 text-xs font-medium text-black/60 outline-none transition-colors",
                   isLoading ? "cursor-wait opacity-60" : "hover:border-black/15 hover:text-black/80",
                 )}
                 aria-label={t("选择日志时间段")}
@@ -258,21 +276,11 @@ function DiagnosticCard({
                   </option>
                 ))}
               </select>
-              <button
-                type="button"
-                onClick={() => downloadDiagnosticLogs(state.rawOutput || state.output, logsSince)}
-                disabled={isLoading || !(state.rawOutput || state.output)}
-                className={cn(
-                  "inline-flex h-7 items-center justify-center gap-1 rounded-full px-2 text-xs font-medium text-black/50 transition-colors",
-                  isLoading || !(state.rawOutput || state.output)
-                    ? "cursor-not-allowed opacity-45"
-                    : "hover:bg-white hover:text-black/80",
-                )}
-              >
-                <Download className="h-3.5 w-3.5" />
-                {t("导出")}
-              </button>
-            </>
+              <ChevronDown
+                aria-hidden
+                className="pointer-events-none absolute right-1.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-black/45"
+              />
+            </div>
           )}
           <button
             type="button"
