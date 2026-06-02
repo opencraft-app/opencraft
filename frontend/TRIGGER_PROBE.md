@@ -28,4 +28,8 @@ Trigger note 5:
 
 - 用于在 CI 展示名中文化后，再次触发 frontend 发布流水线。
 
+Trigger note 6:
+
+- 用于在国内正式 API base 切到 `api.lightvela.com`、master 跳过 GitOps Docker 镜像构建后，再次触发 frontend 发布流水线。
+
 如果只是为了触发前端发布链路，优先更新本文件，而不是混入真实功能改动。
