@@ -4,7 +4,6 @@ const DEFAULT_TAT_TERMINAL_TIMEOUT_SECONDS = 3600;
 const DEFAULT_TAT_TERMINAL_USERNAME = "agentuser";
 const DEFAULT_TAT_TERMINAL_WORKING_DIRECTORY = "/home/agentuser";
 const DEFAULT_PTY_START_DELAY_MS = 1000;
-const DEFAULT_TAT_TERMINAL_USER_NAME = "agentuser";
 
 export type TencentPtyConnectionState = "idle" | "connecting" | "authenticating" | "starting" | "ready" | "closed" | "error";
 
@@ -38,7 +37,6 @@ export interface TencentPtyClientHandlers {
 export interface TencentPtyClientOptions extends TencentPtyClientHandlers {
   getDimensions?: () => Partial<TencentPtyDimensions> | null | undefined;
   startDelayMs?: number;
-  userName?: string;
   WebSocketImpl?: new (url: string | URL, protocols?: string | string[]) => WebSocket;
 }
 
@@ -262,7 +260,6 @@ export class TencentPtyClient {
         SessionId: this.bootstrap.sessionId,
         Cols: this.dimensions.cols,
         Rows: this.dimensions.rows,
-        UserName: this.options.userName ?? DEFAULT_TAT_TERMINAL_USER_NAME,
         MaxIdleTime: this.bootstrap.timeoutSeconds ?? DEFAULT_TAT_TERMINAL_TIMEOUT_SECONDS,
         Username: this.bootstrap.username?.trim() || DEFAULT_TAT_TERMINAL_USERNAME,
         WorkingDirectory: this.bootstrap.workingDirectory?.trim() || DEFAULT_TAT_TERMINAL_WORKING_DIRECTORY,

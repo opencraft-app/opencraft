@@ -90,6 +90,9 @@ export const BotTerminalPage = () => {
       void document.fonts.ready.then(refitTerminal).catch(() => {});
     }
 
+    terminal.writeln("LightVela TAT terminal");
+    terminal.writeln("");
+
     terminal.onData((data) => {
       ptyClientRef.current?.sendInput(data);
     });
@@ -151,6 +154,7 @@ export const BotTerminalPage = () => {
         const terminal = terminalRef.current;
         const fitAddon = fitAddonRef.current;
         terminal?.reset();
+        terminal?.writeln(`Connecting bot ${id}...`);
         fitAddon?.fit();
 
         const { TencentPtyClient } = await import("@/lib/tencent-pty-client");
