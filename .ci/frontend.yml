@@ -217,8 +217,8 @@ stages:
               }
               case "${{ ci.branch }}" in
                 master)
-                  BUILD_ENVS="shprod,sgprod"
-                  AUTO_PIN_ENVS="none"
+                  echo "skip GitOps image build for master: frontend production uses archived EdgeOne artifacts"
+                  exit 0
                   ;;
                 playground/sandbox-bj-*)
                   PLAYGROUND_ENV="${{ ci.branch }}"
