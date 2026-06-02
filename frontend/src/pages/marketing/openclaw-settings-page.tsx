@@ -29,6 +29,7 @@ import {
   Crown,
   TerminalSquare,
   Download,
+  Files,
   Plus,
   RefreshCw,
   RotateCw,
@@ -84,6 +85,7 @@ import {
 } from "@/pages/marketing/openclaw-memory";
 import { BuddyPanel } from "@/pages/marketing/openclaw-buddy-panel";
 import { AutomationsPanel } from "@/pages/marketing/openclaw-automations-panel";
+import { TatFileManagerPanel } from "@/components/domain/tat-file-manager-panel";
 import { findCompletedCreatingBot, getOpenClawCreateLimitMessage } from "@/pages/marketing/openclaw-create-availability";
 import {
   getRestartBlockReason,
@@ -366,7 +368,7 @@ const SettingsNavbar = () => {
 
 /* ─── 实例配置子页面类型（通道 / 模型 / 技能 / 人设 / 自动任务 / 记忆 / 对话，放在单个 bot 内部切换） ─── */
 
-type SettingsSectionId = "channel" | "model" | "skill" | "buddy" | "automations" | "memory" | "chat";
+type SettingsSectionId = "channel" | "model" | "skill" | "buddy" | "automations" | "memory" | "chat" | "files";
 
 const SHOW_AGENTCHAT_ENTRY = true;
 
@@ -3863,6 +3865,7 @@ export const OpenClawSettingsPage = () => {
                 ...(SHOW_AGENTCHAT_ENTRY
                   ? [{ id: "chat" as const, label: t("对话"), icon: <MessageSquare className="h-4 w-4" /> }]
                   : []),
+                { id: "files", label: t("云存储"), icon: <Files className="h-4 w-4" />, badge: "NEW" },
               ];
               const isRestartDisabled = resettingAcli || isActiveBotRestarting || activeBot.status !== "running";
               const restartTooltip = resettingAcli ? t("请稍后") : t("重启");
@@ -4203,6 +4206,9 @@ export const OpenClawSettingsPage = () => {
                               onRefresh={loadHermesMemory}
                               t={t}
                             />
+                          )}
+                          {activeSection === "files" && (
+                            <TatFileManagerPanel botId={activeBot.id} />
                           )}
                         </div>
                       </motion.div>
