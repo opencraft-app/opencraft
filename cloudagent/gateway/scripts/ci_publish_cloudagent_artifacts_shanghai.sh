@@ -48,7 +48,7 @@ first_file_value() {
 
 first_secret_value() {
   local env_value file_value
-  # Devcloud Stream settings are optional; CI runners also provide local secret files.
+  # Devcloud Stream settings are optional; CI runners may also provide local secret files.
   env_value="$(first_env "$@" || true)"
   if [ -n "$env_value" ]; then
     printf '%s\n' "$env_value"
