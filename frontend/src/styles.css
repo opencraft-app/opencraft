@@ -75,13 +75,16 @@ html.lw-settings-scrollbar-stable {
   }
 }
 
-/* 诊断中心卡片输出区滚动条：始终可见，避免 macOS/iOS overlay 滚动条
- * 仅悬停时短暂出现的体验问题。WebKit + Firefox 双声明。 */
+/* 诊断中心卡片输出区滚动条：内容溢出时常驻显示。
+ * macOS Chromium 默认 overlay 滚动条只在 hover/scroll 时短暂出现，
+ * 显式声明 ::-webkit-scrollbar 几何 + display: block 强制经典滚动条。
+ * 是否触发由 .tsx 里的 overflow-y-scroll/auto 切换决定。 */
 .lw-diagnostic-output {
   scrollbar-width: thin;
   scrollbar-color: rgba(0, 0, 0, 0.25) transparent;
 }
 .lw-diagnostic-output::-webkit-scrollbar {
+  display: block;
   width: 8px;
   height: 8px;
 }
