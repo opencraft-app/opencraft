@@ -169,13 +169,9 @@ export function AgentDiagnosticsPanel({
     [botId, execDebugCommand, t],
   );
 
-  const handleLogsSinceChange = useCallback(
-    (next: LogsSinceOption) => {
-      setLogsSince(next);
-      void runCommand({ id: "logs", command: buildLogsCommand(next) });
-    },
-    [runCommand],
-  );
+  const handleLogsSinceChange = useCallback((next: LogsSinceOption) => {
+    setLogsSince(next);
+  }, []);
 
   return (
     <div className="space-y-4">
@@ -287,8 +283,8 @@ function DiagnosticCard({
             onClick={onRefresh}
             disabled={isLoading}
             className={cn(
-              "inline-flex h-7 flex-shrink-0 items-center justify-center gap-1 rounded-full border border-black/[0.08] bg-white px-3 text-xs font-medium text-black/70 transition-colors",
-              isLoading ? "cursor-wait opacity-60" : "hover:border-black/15 hover:text-black/95",
+              "inline-flex h-8 flex-shrink-0 items-center justify-center gap-1.5 rounded-full bg-black px-4 text-sm font-semibold text-white shadow-sm transition-colors",
+              isLoading ? "cursor-wait opacity-60" : "hover:bg-black/85 active:bg-black/95",
             )}
           >
             {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
