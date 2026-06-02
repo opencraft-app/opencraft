@@ -1,5 +1,5 @@
 import { ClipboardList, Download, FileText, Loader2, Stethoscope } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import { useT } from "@/i18n/t";
 import { toast } from "@/lib/toast";
@@ -169,12 +169,6 @@ export function AgentDiagnosticsPanel({
     [botId, execDebugCommand, t],
   );
 
-  const refreshAll = useCallback(async () => {
-    for (const item of commands) {
-      await runCommand(item);
-    }
-  }, [commands, runCommand]);
-
   const handleLogsSinceChange = useCallback(
     (next: LogsSinceOption) => {
       setLogsSince(next);
@@ -182,10 +176,6 @@ export function AgentDiagnosticsPanel({
     },
     [runCommand],
   );
-
-  useEffect(() => {
-    void refreshAll();
-  }, []);
 
   return (
     <div className="space-y-4">
@@ -303,7 +293,7 @@ function DiagnosticCard({
         {state.status === "idle" ? (
           <div className="flex h-full min-h-[190px] items-center justify-center p-5 text-center text-sm text-black/40">
             <ClipboardList className="mr-2 h-4 w-4" />
-            {t("点击刷新获取诊断结果")}
+            {t("点击执行获取诊断结果")}
           </div>
         ) : (
           <pre className="lw-diagnostic-output max-h-[230px] overflow-auto whitespace-pre-wrap break-words p-4 font-mono text-xs leading-5 text-black/70">
