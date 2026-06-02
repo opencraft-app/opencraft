@@ -93,6 +93,7 @@ describe("TencentPtyClient", () => {
         SessionId: "session-1",
         Cols: 120,
         Rows: 40,
+        UserName: "agentuser",
         MaxIdleTime: 3600,
         Username: "agentuser",
         WorkingDirectory: "/home/agentuser",
@@ -163,6 +164,21 @@ describe("TencentPtyClient", () => {
       Data: {
         Cols: 100,
         Rows: 32,
+      },
+    });
+  });
+
+  it("allows callers to override the PTY start user", () => {
+    const client = new TencentPtyClient(bootstrap, { WebSocketImpl, startDelayMs: 0, userName: "root" });
+    client.connect();
+    const socket = FakeWebSocket.instances[0]!;
+    socket.open();
+    vi.advanceTimersByTime(0);
+
+    expect(parseSentFrame(socket, 1)).toMatchObject({
+      Type: "PtyStart",
+      Data: {
+        UserName: "root",
       },
     });
   });

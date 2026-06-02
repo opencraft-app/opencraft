@@ -29,6 +29,7 @@ import {
   Crown,
   TerminalSquare,
   Download,
+  Files,
   Plus,
   RefreshCw,
   Trash2,
@@ -83,6 +84,9 @@ import {
 } from "@/pages/marketing/openclaw-memory";
 import { BuddyPanel } from "@/pages/marketing/openclaw-buddy-panel";
 import { AutomationsPanel } from "@/pages/marketing/openclaw-automations-panel";
+import { TatFileManagerPanel } from "@/components/domain/tat-file-manager-panel";
+import { TatHermesWebPanel } from "@/components/domain/tat-hermes-web-panel";
+import { TatTerminalPanel } from "@/components/domain/tat-terminal-panel";
 import { findCompletedCreatingBot, getOpenClawCreateLimitMessage } from "@/pages/marketing/openclaw-create-availability";
 import {
   getRestartBlockReason,
@@ -193,7 +197,7 @@ const SettingsNavbar = () => {
     <header
       className="lw-fixed-top fixed inset-x-0 z-50 border-b border-black/5 bg-white/90 backdrop-blur-[20px]"
     >
-      <div className="lw-settings-topbar-inner flex h-[60px] items-center justify-between px-6 md:px-[80px]">
+      <div className="lw-settings-shell flex h-[60px] items-center justify-between">
         <BrandMark to="/" />
         <div className="flex items-center gap-3">
           {/* 语言切换器：仅国际站展示。
@@ -216,7 +220,7 @@ const SettingsNavbar = () => {
 
 /* ─── 实例配置子页面类型（通道 / 模型 / 技能 / 人设 / 自动任务 / 记忆 / 对话，放在单个 bot 内部切换） ─── */
 
-type SettingsSectionId = "channel" | "model" | "skill" | "buddy" | "automations" | "memory" | "chat";
+type SettingsSectionId = "channel" | "model" | "files" | "webui" | "terminal" | "skill" | "buddy" | "automations" | "memory" | "chat";
 
 const SHOW_AGENTCHAT_ENTRY = false;
 
@@ -1282,9 +1286,6 @@ const TerminalModal = ({ botId, botName, onClose }: { botId: string; botName: st
     requestAnimationFrame(() => {
       fitAddon.fit();
     });
-    terminal.writeln("LightVela TAT Terminal");
-    terminal.writeln("");
-
     terminal.onData((data) => {
       ptyClientRef.current?.sendInput(data);
     });
@@ -1325,7 +1326,6 @@ const TerminalModal = ({ botId, botName, onClose }: { botId: string; botName: st
         }
 
         terminalRef.current?.reset();
-        terminalRef.current?.writeln(`Connecting ${botName} (${botId})...`);
         fitAddonRef.current?.fit();
 
         const { TencentPtyClient } = await import("@/lib/tencent-pty-client");
@@ -2657,6 +2657,7 @@ export const OpenClawSettingsPage = () => {
 
   /* 实例内部的子页面切换：通道 / 模型 / 技能 / 人设 / 对话（通道置顶，作为默认进入项） */
   const [activeSection, setActiveSection] = useState<SettingsSectionId>("channel");
+  const [showHiddenTools, setShowHiddenTools] = useState(false);
 
   /* Tab 切换 */
   const [activeTabId, setActiveTabId] = useState((visibleBots[0]?.id ?? requestedCreatingBotId) || "creating");
@@ -3072,10 +3073,17 @@ export const OpenClawSettingsPage = () => {
 
   useEffect(() => {
     return installOpenClawConsoleHelpers({
-      host: window as Window & { help?: unknown; terminal?: unknown; console: Console },
+      host: window as Window & { help?: unknown; show?: unknown; terminal?: unknown; console: Console },
       getTerminalPath: () => (activeBot ? `/bots/${activeBot.id}/terminal` : null),
+      onShowHiddenTools: () => setShowHiddenTools(true),
     });
   }, [activeBot]);
+
+  useEffect(() => {
+    if (!showHiddenTools && (activeSection === "webui" || activeSection === "terminal")) {
+      setActiveSection("channel");
+    }
+  }, [activeSection, showHiddenTools]);
 
   useEffect(() => {
     if (!creatingParam) return;
@@ -3555,8 +3563,8 @@ export const OpenClawSettingsPage = () => {
         )}
       </AnimatePresence>
 
-      <main className="lw-app-top-pad flex-grow bg-[#F7F8FA] px-6 pb-12 md:px-[80px]">
-        <section className="mx-auto" style={{ maxWidth: 1440 }}>
+      <main className="lw-app-top-pad flex-grow bg-[#F7F8FA] pb-12">
+        <section className="lw-settings-shell">
           {/* ── Loading 状态 ── */}
           {botsLoading && !isCreating && (
             <div className="flex items-center justify-center py-20">
@@ -3605,6 +3613,12 @@ export const OpenClawSettingsPage = () => {
               const settingsSections: { id: SettingsSectionId; label: string; icon: React.ReactNode; badge?: string }[] = [
                 { id: "channel", label: t("通道"), icon: <MessageCircle className="h-4 w-4" /> },
                 { id: "model", label: t("模型"), icon: <BrainCircuit className="h-4 w-4" /> },
+                ...(showHiddenTools
+                  ? [
+                      { id: "webui" as const, label: t("WebUI"), icon: <ExternalLink className="h-4 w-4" /> },
+                      { id: "terminal" as const, label: t("终端"), icon: <TerminalSquare className="h-4 w-4" /> },
+                    ]
+                  : []),
                 { id: "skill", label: t("技能"), icon: <Wand2 className="h-4 w-4" /> },
                 ...(!isGlobal
                   ? [{ id: "buddy" as const, label: t("人设"), icon: <UserRound className="h-4 w-4" /> }]
@@ -3614,6 +3628,7 @@ export const OpenClawSettingsPage = () => {
                 ...(SHOW_AGENTCHAT_ENTRY
                   ? [{ id: "chat" as const, label: t("对话"), icon: <MessageSquare className="h-4 w-4" />, badge: "NEW" }]
                   : []),
+                { id: "files", label: t("云存储"), icon: <Files className="h-4 w-4" />, badge: "NEW" },
               ];
               const isRestartDisabled = isActiveBotRestarting || activeBot.status !== "running";
               const hasViewedChannel = viewedChannelBotIds.has(activeBot.id);
@@ -3853,6 +3868,15 @@ export const OpenClawSettingsPage = () => {
                               featureFlags={sdkFeatureFlags}
                               productConfig={sdkProductConfig}
                             />
+                          )}
+                          {activeSection === "files" && (
+                            <TatFileManagerPanel botId={activeBot.id} />
+                          )}
+                          {showHiddenTools && activeSection === "webui" && (
+                            <TatHermesWebPanel botId={activeBot.id} />
+                          )}
+                          {showHiddenTools && activeSection === "terminal" && (
+                            <TatTerminalPanel botId={activeBot.id} botName={activeBot.name} />
                           )}
                           {activeSection === "skill" && (
                             <SkillPanel
