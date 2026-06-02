@@ -312,6 +312,6 @@ function getCommandTitle(id: DiagnosticCommandId, t: ReturnType<typeof useT>): s
 }
 
 function getCommandDescription(id: DiagnosticCommandId, t: ReturnType<typeof useT>): string {
-  if (id === "doctor") return t("执行 hermes doctor 命令，检查依赖、配置和运行环境是否正常");
+  if (id === "doctor") return t("执行 hermes doctor 命令，系统将会自动检测问题并尝试修复。");
   return t("查看 Hermes Agent 最近日志，辅助定位问题");
 }
