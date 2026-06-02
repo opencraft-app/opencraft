@@ -391,7 +391,12 @@ func (h *Handler) UpdateProfileAvatar(ctx context.Context, request api.UpdatePro
 		}
 		return api.UpdateProfileAvatar401JSONResponse(body), nil
 	}
-	objectKey, err := h.avatarStore.StoreAvatar(ctx, session.User.ID, content)
+	avatarAuditEnabled := h.service.AvatarAuditEnabled()
+	storeAvatar := h.avatarStore.StoreAvatar
+	if avatarAuditEnabled {
+		storeAvatar = h.avatarStore.StorePendingAvatar
+	}
+	objectKey, err := storeAvatar(ctx, session.User.ID, content)
 	if err != nil {
 		logger.Error("profile avatar store failed", "user_id", session.User.ID, "err", err)
 		if errors.Is(err, avatar.ErrAvatarTooLarge) {
@@ -403,10 +408,11 @@ func (h *Handler) UpdateProfileAvatar(ctx context.Context, request api.UpdatePro
 		return nil, &service.Error{Code: "avatar_store_failed", Message: "头像保存失败。", Status: http.StatusInternalServerError}
 	}
 	var user service.User
-	if h.service.AvatarAuditEnabled() {
+	if avatarAuditEnabled {
 		auditURL, signErr := h.avatarStore.SignedAvatarURL(ctx, objectKey)
 		if signErr != nil || strings.TrimSpace(auditURL) == "" {
 			logger.Error("profile avatar sign for audit failed", "user_id", session.User.ID, "object_key", objectKey, "err", signErr)
+			_ = h.avatarStore.DeleteAvatar(ctx, objectKey)
 			return nil, &service.Error{Code: "avatar_unavailable", Message: "头像暂时不可访问。", Status: http.StatusInternalServerError}
 		}
 		user, err = h.service.QueueAvatarAudit(ctx, session.User.ID, objectKey, "upload", auditURL)
@@ -415,6 +421,9 @@ func (h *Handler) UpdateProfileAvatar(ctx context.Context, request api.UpdatePro
 	}
 	if err != nil {
 		logger.Error("profile avatar persist failed", "user_id", session.User.ID, "object_key", objectKey, "err", err)
+		if avatarAuditEnabled {
+			_ = h.avatarStore.DeleteAvatar(ctx, objectKey)
+		}
 		body, status := toErrorBody(err)
 		if status >= http.StatusInternalServerError {
 			return nil, &service.Error{Code: "avatar_store_failed", Message: "头像保存失败。", Status: http.StatusInternalServerError}

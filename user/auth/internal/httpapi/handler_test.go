@@ -651,6 +651,12 @@ func TestPutProfileAvatarQueuesAuditWhenEnabled(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("expected 200 from avatar upload, got %d: %s", recorder.Code, recorder.Body.String())
 	}
+	if avatarStore.lastPendingUserID == "" {
+		t.Fatal("expected audit-enabled upload to store a pending avatar object")
+	}
+	if avatarStore.lastUploadedUserID != "" {
+		t.Fatalf("audit-enabled upload must not overwrite current avatar object, got current upload for %q", avatarStore.lastUploadedUserID)
+	}
 
 	var response profileResponseBody
 	decodeJSONResponse(t, recorder, &response)
@@ -1719,6 +1725,7 @@ type stubAvatarStore struct {
 	signedURL            string
 	storeErr             error
 	lastUploadedUserID   string
+	lastPendingUserID    string
 	lastRemoteUserID     string
 	lastRemoteURL        string
 	lastDeletedObjectKey string
@@ -1766,6 +1773,17 @@ func (s *stubAvatarStore) StoreAvatar(_ context.Context, userID string, _ []byte
 	s.lastUploadedUserID = userID
 	if s.objectKey == "" {
 		s.objectKey = "avatars/" + userID + "/current.jpg"
+	}
+	return s.objectKey, nil
+}
+
+func (s *stubAvatarStore) StorePendingAvatar(_ context.Context, userID string, _ []byte) (string, error) {
+	if s.storeErr != nil {
+		return "", s.storeErr
+	}
+	s.lastPendingUserID = userID
+	if s.objectKey == "" {
+		s.objectKey = "avatars/" + userID + "/pending/test.jpg"
 	}
 	return s.objectKey, nil
 }

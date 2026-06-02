@@ -44,6 +44,33 @@ func TestStoreAvatarNormalizesAndStoresJPEG(t *testing.T) {
 	}
 }
 
+func TestStorePendingAvatarUsesIsolatedObjectKey(t *testing.T) {
+	t.Parallel()
+
+	client := &stubBucketClient{}
+	store := &Store{
+		client:        client,
+		maxBytes:      200 * 1024,
+		signedURLTTL:  5 * time.Minute,
+		fetchClient:   http.DefaultClient,
+		fetchMaxBytes: 2 << 20,
+	}
+
+	objectKey, err := store.StorePendingAvatar(context.Background(), "usr_123", testAvatarPNG(t))
+	if err != nil {
+		t.Fatalf("store pending avatar failed: %v", err)
+	}
+	if !strings.HasPrefix(objectKey, "avatars/321_rsu/pending/") || !strings.HasSuffix(objectKey, ".jpg") {
+		t.Fatalf("expected pending avatar key to avoid current.jpg, got %q", objectKey)
+	}
+	if objectKey == "avatars/321_rsu/current.jpg" {
+		t.Fatal("pending avatar must not overwrite the current avatar object")
+	}
+	if client.lastObjectKey != objectKey {
+		t.Fatalf("expected pending object key %q to be uploaded, got %q", objectKey, client.lastObjectKey)
+	}
+}
+
 func TestStoreAvatarReturnsTooLargeWhenNormalizedImageExceedsLimit(t *testing.T) {
 	t.Parallel()
 
