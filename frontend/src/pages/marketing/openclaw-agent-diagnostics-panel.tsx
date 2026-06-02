@@ -1,5 +1,5 @@
 import { ClipboardList, Download, FileText, Loader2, Stethoscope } from "lucide-react";
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import { useT } from "@/i18n/t";
 import { toast } from "@/lib/toast";
@@ -225,17 +225,6 @@ function DiagnosticCard({
         : t("正在获取日志，命令完成后会显示完整输出。")
       : state.output;
 
-  /* 仅在内容真正超出可视区时常驻显示滚动条（macOS Chrome/Edge 的
-   * overlay 滚动条在 hover 时才出现）。布局变化后用 useLayoutEffect
-   * 同步检测，避免 paint 后再触发引起一次闪烁。 */
-  const outputRef = useRef<HTMLPreElement>(null);
-  const [isOverflowing, setIsOverflowing] = useState(false);
-  useLayoutEffect(() => {
-    const el = outputRef.current;
-    if (!el) return;
-    setIsOverflowing(el.scrollHeight > el.clientHeight);
-  }, [displayOutput, state.status]);
-
   return (
     <article className="flex min-h-[360px] flex-col rounded-lg border border-black/[0.08] bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
       <div>
@@ -307,13 +296,7 @@ function DiagnosticCard({
             {t("点击执行获取诊断结果")}
           </div>
         ) : (
-          <pre
-            ref={outputRef}
-            className={cn(
-              "lw-diagnostic-output max-h-[230px] whitespace-pre-wrap break-words p-4 font-mono text-xs leading-5 text-black/70",
-              isOverflowing ? "overflow-y-scroll" : "overflow-y-auto",
-            )}
-          >
+          <pre className="lw-diagnostic-output max-h-[230px] overflow-y-scroll whitespace-pre-wrap break-words p-4 font-mono text-xs leading-5 text-black/70">
             {displayOutput}
           </pre>
         )}
