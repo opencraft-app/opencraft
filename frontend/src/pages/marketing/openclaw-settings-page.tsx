@@ -32,6 +32,7 @@ import {
   Files,
   Plus,
   RefreshCw,
+  RotateCcw,
   Trash2,
   UserRound,
   Wand2,
@@ -99,11 +100,13 @@ import {
 } from "@/pages/marketing/openclaw-restart-gateway";
 import {
   getResetBlockReason,
+  getAcliResetBlockReason,
   hermesModelName,
   hermesSwitchModelFullId,
   isExecCommandSucceeded,
   isResetConfigRouteMissingError,
   truncateExecOutput,
+  ACLI_RESET_COMMAND,
   RESET_BLOCK_REASON,
 } from "@/pages/marketing/openclaw-reset-config";
 import { toast } from "@/lib/toast";
@@ -126,6 +129,124 @@ interface Persona {
   desc: string;
   icon: string;
   skills: { name: string; desc: string; icon: React.ReactNode }[];
+}
+
+interface DebugExecStreamResponse {
+  status?: string;
+  exit_code?: number;
+  output?: string;
+}
+
+interface DebugExecStreamEvent {
+  type?: string;
+  stream?: string;
+  chunk?: string;
+  response?: DebugExecStreamResponse;
+}
+
+interface DebugExecStreamResult {
+  status: string;
+  exitCode: number;
+  output: string;
+}
+
+function parseSsePart(part: string): { eventType: string; data: string } | null {
+  const lines = part.split("\n");
+  let eventType = "";
+  const dataLines: string[] = [];
+  for (const rawLine of lines) {
+    const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
+    if (line.startsWith("event: ")) eventType = line.slice(7).trim();
+    if (line.startsWith("data: ")) dataLines.push(line.slice(6));
+  }
+  if (dataLines.length === 0) return null;
+  return { eventType, data: dataLines.join("\n") };
+}
+
+async function execDebugCommandStream(
+  botId: string,
+  command: string,
+  onChunk: (event: { stream: string; chunk: string }) => void,
+): Promise<DebugExecStreamResult> {
+  const baseUrl = resolveConfiguredAuthApiBaseUrl();
+  if (!baseUrl) {
+    throw new Error("Auth service is unavailable.");
+  }
+
+  const headers = new Headers({
+    "Content-Type": "application/json",
+    "Accept": "text/event-stream",
+  });
+  const authToken = readStoredAuthToken();
+  if (authToken) headers.set("Authorization", `Bearer ${authToken}`);
+
+  const response = await fetch(`${baseUrl.replace(/\/+$/, "")}/v1/instances/${encodeURIComponent(botId)}/debug/exec`, {
+    method: "POST",
+    credentials: "include",
+    headers,
+    body: JSON.stringify({ command, "run_as_user": "agentuser" }),
+  });
+
+  if (!response.ok) {
+    let detail = "";
+    try {
+      const body = (await response.json()) as { message?: string; error?: string };
+      detail = body.message?.trim() || body.error?.trim() || "";
+    } catch {
+      detail = "";
+    }
+    throw new Error(detail || `请求失败（${response.status}）`);
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) {
+    throw new Error("Command output stream is not readable.");
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let output = "";
+  let finalResponse: DebugExecStreamResponse | null = null;
+  let sawErrorEvent = false;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split("\n\n");
+    buffer = parts.pop() || "";
+
+    for (const part of parts) {
+      const parsedPart = parseSsePart(part);
+      if (!parsedPart) continue;
+      let event: DebugExecStreamEvent;
+      try {
+        event = JSON.parse(parsedPart.data) as DebugExecStreamEvent;
+      } catch {
+        continue;
+      }
+      const eventType = event.type || parsedPart.eventType;
+      if ((eventType === "stdout" || eventType === "stderr") && event.chunk) {
+        output += event.chunk;
+        onChunk({ stream: event.stream || eventType, chunk: event.chunk });
+      }
+      if ((eventType === "finished" || eventType === "error") && event.response) {
+        finalResponse = event.response;
+      }
+      if (eventType === "error") {
+        sawErrorEvent = true;
+      }
+    }
+  }
+
+  if (finalResponse) {
+    return {
+      status: finalResponse.status || "FAILED",
+      exitCode: typeof finalResponse.exit_code === "number" ? finalResponse.exit_code : -1,
+      output: finalResponse.output || output,
+    };
+  }
+  return { status: output && !sawErrorEvent ? "SUCCESS" : "FAILED", exitCode: output && !sawErrorEvent ? 0 : -1, output };
 }
 
 /* ─── Data ─── */
@@ -2926,8 +3047,23 @@ export const OpenClawSettingsPage = () => {
    */
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [resettingAcli, setResettingAcli] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
+  const [acliResetError, setAcliResetError] = useState<string | null>(null);
+  const [acliResetConsole, setAcliResetConsole] = useState<string[]>([]);
+  const acliResetConsoleRef = useRef<HTMLPreElement | null>(null);
   const [viewedChannelBotIds, setViewedChannelBotIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    setAcliResetError(null);
+    setAcliResetConsole([]);
+  }, [activeBot?.id]);
+
+  useEffect(() => {
+    const consoleEl = acliResetConsoleRef.current;
+    if (!consoleEl) return;
+    consoleEl.scrollTop = consoleEl.scrollHeight;
+  }, [acliResetConsole]);
 
   const handleResetConfig = async () => {
     const hasViewedChannel = activeBot ? viewedChannelBotIds.has(activeBot.id) : false;
@@ -3003,6 +3139,33 @@ export const OpenClawSettingsPage = () => {
       toast.error(message);
     } finally {
       setResetting(false);
+    }
+  };
+
+  const handleResetAcli = async () => {
+    if (getAcliResetBlockReason(activeBot, resettingAcli)) return;
+    const targetBotId = activeBot?.id;
+    if (!targetBotId) return;
+
+    setResettingAcli(true);
+    setAcliResetError(null);
+    setAcliResetConsole([`$ ${ACLI_RESET_COMMAND}`]);
+    try {
+      const result = await execDebugCommandStream(targetBotId, ACLI_RESET_COMMAND, ({ stream, chunk }) => {
+        setAcliResetConsole((prev) => [...prev, `[${stream}] ${chunk}`].slice(-80));
+      });
+      if (!isExecCommandSucceeded(result)) {
+        throw new Error(truncateExecOutput(result.output, result.status));
+      }
+      setAcliResetConsole([]);
+      toast.success(t("Agent 重置成功"));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : t("Agent 重置失败，请重试");
+      setAcliResetError(message);
+      setAcliResetConsole((prev) => [...prev, `[error] ${message}`].slice(-80));
+      toast.error(t("Agent 重置失败，请重试"));
+    } finally {
+      setResettingAcli(false);
     }
   };
 
@@ -3638,6 +3801,12 @@ export const OpenClawSettingsPage = () => {
                 resetBlockReason === RESET_BLOCK_REASON.NOT_RUNNING || resetBlockReason === RESET_BLOCK_REASON.CHANNEL_NOT_VIEWED
                   ? t("请稍后")
                   : t("重置配置");
+              const acliResetBlockReason = getAcliResetBlockReason(activeBot, resettingAcli);
+              const acliResetDisabled = resettingAcli || acliResetBlockReason !== null;
+              const acliResetTooltip =
+                acliResetBlockReason === RESET_BLOCK_REASON.NOT_RUNNING
+                  ? t("请稍后")
+                  : t("重置Agent");
 
               return (
                 <div className="grid items-start gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
@@ -3741,6 +3910,32 @@ export const OpenClawSettingsPage = () => {
                               type="button"
                               onClick={(event) => {
                                 event.stopPropagation();
+                                if (!acliResetDisabled) void handleResetAcli();
+                              }}
+                              aria-disabled={acliResetDisabled}
+                              aria-label={acliResetTooltip}
+                              className={cn(
+                                "inline-flex h-8 w-6 flex-shrink-0 items-center justify-center rounded-md transition-colors",
+                                acliResetDisabled
+                                  ? "cursor-not-allowed text-black/20"
+                                  : "text-black/35 hover:bg-black/[0.06] hover:text-black/80",
+                              )}
+                            >
+                              {resettingAcli ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+                            </button>
+                            <span
+                              role="tooltip"
+                              className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-md bg-black/80 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-sm transition-opacity duration-75 group-focus-within:opacity-100 group-hover:opacity-100"
+                            >
+                              {acliResetTooltip}
+                              <span className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-x-[4px] border-t-[4px] border-x-transparent border-t-black/80" />
+                            </span>
+                          </span>
+                          <span className="group relative inline-flex">
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
                                 setDeleteInput("");
                                 setShowDeleteConfirm(true);
                               }}
@@ -3764,6 +3959,14 @@ export const OpenClawSettingsPage = () => {
                           />
                         )}
                       </div>
+                      {acliResetConsole.length > 0 && (
+                        <pre
+                          ref={acliResetConsoleRef}
+                          className="mt-2 max-h-36 overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-black/[0.08] bg-[#111827] px-2.5 py-2 text-[11px] leading-relaxed text-[#d1d5db]"
+                        >
+                          {acliResetConsole.join("\n")}
+                        </pre>
+                      )}
 
                       {visibleBots.length > 1 && isAgentMenuOpen && (
                         <div className="mt-1 rounded-md bg-black/[0.025] p-1">
@@ -3795,6 +3998,11 @@ export const OpenClawSettingsPage = () => {
 
                       {activeBotRestartError && (
                         <p className="mt-2 px-1 text-xs leading-relaxed text-red-500">{activeBotRestartError}</p>
+                      )}
+                      {acliResetError && (
+                        <p className="mt-2 px-1 text-xs leading-relaxed text-red-500">
+                          {t("Agent 重置失败：{{detail}}", { detail: acliResetError })}
+                        </p>
                       )}
 
                       {canCreateBot && (
