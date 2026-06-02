@@ -1,4 +1,4 @@
-import { ClipboardList, Download, FileText, Loader2, RefreshCw, Stethoscope } from "lucide-react";
+import { ClipboardList, Download, FileText, Loader2, Stethoscope } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useT } from "@/i18n/t";
@@ -289,12 +289,12 @@ function DiagnosticCard({
             onClick={onRefresh}
             disabled={isLoading}
             className={cn(
-              "inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-black/45 transition-colors",
-              isLoading ? "cursor-wait" : "hover:bg-white hover:text-black/80",
+              "inline-flex h-7 flex-shrink-0 items-center justify-center gap-1 rounded-full border border-black/[0.08] bg-white px-3 text-xs font-medium text-black/70 transition-colors",
+              isLoading ? "cursor-wait opacity-60" : "hover:border-black/15 hover:text-black/95",
             )}
-            aria-label={t("刷新")}
           >
-            {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+            {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+            {t("执行")}
           </button>
         </div>
       </div>
@@ -317,7 +317,7 @@ function DiagnosticCard({
 }
 
 function getCommandTitle(id: DiagnosticCommandId, t: ReturnType<typeof useT>): string {
-  if (id === "doctor") return t("Doctor 自动修复");
+  if (id === "doctor") return t("一键修复");
   return t("最近日志");
 }
 
