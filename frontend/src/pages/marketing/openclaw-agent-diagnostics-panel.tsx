@@ -1,5 +1,5 @@
 import { ChevronDown, ClipboardList, Download, FileText, Loader2, Stethoscope } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { useT } from "@/i18n/t";
 import { toast } from "@/lib/toast";
@@ -300,9 +300,7 @@ function DiagnosticCard({
             {item.id === "logs" ? t("点击执行获取最近日志") : t("点击执行获取诊断结果")}
           </div>
         ) : (
-          <pre className="lw-diagnostic-output max-h-[230px] overflow-y-scroll whitespace-pre-wrap break-words p-4 font-mono text-xs leading-5 text-black/70">
-            {displayOutput}
-          </pre>
+          <DiagnosticOutput text={displayOutput} />
         )}
       </div>
 
@@ -318,4 +316,69 @@ function getCommandTitle(id: DiagnosticCommandId, t: ReturnType<typeof useT>): s
 function getCommandDescription(id: DiagnosticCommandId, t: ReturnType<typeof useT>): string {
   if (id === "doctor") return t("执行 hermes doctor 命令，系统将会自动检测问题并尝试修复。");
   return t("查看 Hermes Agent 最近日志，辅助定位问题");
+}
+
+/* 诊断输出区 + 手绘滚动条
+ * ──────────────────────────────────────────────────────────
+ * macOS Chromium overlay 滚动条的"hover 才显"行为受系统偏好控制，
+ * 哪怕 ::-webkit-scrollbar 显式声明几何 + scrollbar-width: thin/auto
+ * 都不一定能强制外显。这里改用纯 React 渲染：
+ *   - <pre> 走 overflow-y: scroll，但 scrollbar-width: none 把原生
+ *     滚动条彻底隐藏（连占位都不留），鼠标滚轮 / 键盘照常工作
+ *   - 右侧 absolute 一根 8px 宽 track + 按比例算的 thumb
+ *   - onScroll 同步 thumb 偏移；ResizeObserver 监听容器 / 内容尺寸
+ *
+ * 不做拖拽 thumb（用户主要靠滚轮，可视化已足够）。 */
+function DiagnosticOutput({ text }: { text: string }) {
+  const preRef = useRef<HTMLPreElement>(null);
+  const [metrics, setMetrics] = useState({ overflow: false, thumbHeight: 0, thumbTop: 0 });
+
+  const recompute = useCallback(() => {
+    const el = preRef.current;
+    if (!el) return;
+    const { scrollHeight, clientHeight, scrollTop } = el;
+    const overflow = scrollHeight > clientHeight + 1;
+    if (!overflow) {
+      setMetrics({ overflow: false, thumbHeight: 0, thumbTop: 0 });
+      return;
+    }
+    const ratio = clientHeight / scrollHeight;
+    const thumbHeight = Math.max(20, clientHeight * ratio);
+    const maxThumbTop = clientHeight - thumbHeight;
+    const scrollRatio = scrollTop / (scrollHeight - clientHeight);
+    setMetrics({ overflow: true, thumbHeight, thumbTop: scrollRatio * maxThumbTop });
+  }, []);
+
+  useLayoutEffect(() => {
+    recompute();
+    const el = preRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(recompute);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [text, recompute]);
+
+  return (
+    <div className="relative">
+      <pre
+        ref={preRef}
+        onScroll={recompute}
+        style={{ scrollbarWidth: "none" }}
+        className="lw-diagnostic-output-native max-h-[230px] overflow-y-scroll whitespace-pre-wrap break-words p-4 pr-5 font-mono text-xs leading-5 text-black/70"
+      >
+        {text}
+      </pre>
+      {metrics.overflow && (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute right-1.5 top-1.5 bottom-1.5 w-1.5 rounded-full bg-black/[0.06]"
+        >
+          <div
+            className="absolute left-0 right-0 rounded-full bg-black/35"
+            style={{ height: metrics.thumbHeight, transform: `translateY(${metrics.thumbTop}px)` }}
+          />
+        </div>
+      )}
+    </div>
+  );
 }

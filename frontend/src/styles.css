@@ -75,35 +75,13 @@ html.lw-settings-scrollbar-stable {
   }
 }
 
-/* 诊断中心卡片输出区滚动条：永久外显（不走 macOS overlay 行为）。
- * 关键：
- *  - .tsx 里 overflow-y: scroll 永远占着滚动槽位
- *  - 不用 scrollbar-width: thin —— 在 macOS Chromium 下 thin 仍可能
- *    回退到 overlay；用默认（auto）尺寸最稳
- *  - ::-webkit-scrollbar { display: block } 显式把伪元素当成真盒子
- *    渲染，避免 macOS 系统偏好把它视为 overlay */
-.lw-diagnostic-output {
-  scrollbar-width: auto;
-  scrollbar-color: rgba(0, 0, 0, 0.3) rgba(0, 0, 0, 0.05);
-}
-.lw-diagnostic-output::-webkit-scrollbar {
-  display: block;
-  width: 10px;
-  height: 10px;
-}
-.lw-diagnostic-output::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.04);
-  border-radius: 5px;
-}
-.lw-diagnostic-output::-webkit-scrollbar-thumb {
-  background-color: rgba(0, 0, 0, 0.3);
-  border-radius: 5px;
-  border: 2px solid transparent;
-  background-clip: content-box;
-}
-.lw-diagnostic-output::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(0, 0, 0, 0.45);
-  background-clip: content-box;
+/* 诊断中心输出区原生滚动条彻底隐藏（视觉滚动条由 React 手绘，
+ * 见 openclaw-agent-diagnostics-panel.tsx 的 DiagnosticOutput）。
+ * Firefox 走元素 inline style scrollbarWidth:none，WebKit 走这条。 */
+.lw-diagnostic-output-native::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 .lw-settings-topbar-inner {
