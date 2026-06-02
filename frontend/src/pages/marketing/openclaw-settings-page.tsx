@@ -197,7 +197,7 @@ const SettingsNavbar = () => {
     <header
       className="lw-fixed-top fixed inset-x-0 z-50 border-b border-black/5 bg-white/90 backdrop-blur-[20px]"
     >
-      <div className="lw-settings-topbar-inner flex h-[60px] items-center justify-between px-6 md:px-[80px]">
+      <div className="lw-settings-shell flex h-[60px] items-center justify-between">
         <BrandMark to="/" />
         <div className="flex items-center gap-3">
           {/* 语言切换器：仅国际站展示。
@@ -3563,8 +3563,8 @@ export const OpenClawSettingsPage = () => {
         )}
       </AnimatePresence>
 
-      <main className="lw-app-top-pad flex-grow bg-[#F7F8FA] px-6 pb-12 md:px-[80px]">
-        <section className="mx-auto" style={{ maxWidth: 1440 }}>
+      <main className="lw-app-top-pad flex-grow bg-[#F7F8FA] pb-12">
+        <section className="lw-settings-shell">
           {/* ── Loading 状态 ── */}
           {botsLoading && !isCreating && (
             <div className="flex items-center justify-center py-20">

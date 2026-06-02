@@ -63,10 +63,16 @@ html.lw-settings-scrollbar-stable {
   scrollbar-gutter: stable;
 }
 
-.lw-settings-topbar-inner {
-  width: min(1440px, 100vw);
-  margin-left: max(0px, calc((100vw - 1440px) / 2));
-  margin-right: max(0px, calc((100vw - 1440px) / 2));
+.lw-settings-shell {
+  width: min(1440px, calc(100vw - 48px));
+  margin-left: auto;
+  margin-right: auto;
+}
+
+@media (min-width: 768px) {
+  .lw-settings-shell {
+    width: min(1440px, calc(100vw - 160px));
+  }
 }
 
 body {
