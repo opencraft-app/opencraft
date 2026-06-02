@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setGitHubLoginVisible } from "@/lib/github-login-visibility";
 import * as oauthModule from "@/lib/oauth";
-import type { OAuthProvider } from "@/lib/oauth";
+import type { OAuthProvider, WeChatOAuthMode } from "@/lib/oauth";
 import { SignInPage } from "@/pages/auth/sign-in-page";
 
 const repositories = {
@@ -33,8 +33,17 @@ vi.mock("@/contexts/repository-context", () => ({
 describe("SignInPage (国内站 默认 isGlobal=false)", () => {
   beforeEach(() => {
     setGitHubLoginVisible(false);
+    Object.defineProperty(window.navigator, "userAgent", {
+      value: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+      configurable: true,
+    });
     repositories.auth.getOAuthStartUrl.mockReset();
-    repositories.auth.getOAuthStartUrl.mockImplementation((provider: OAuthProvider) => oauthStartUrls[provider]);
+    repositories.auth.getOAuthStartUrl.mockImplementation((provider: OAuthProvider, options?: { wechatMode?: WeChatOAuthMode }) => {
+      if (provider === "wechat" && options?.wechatMode) {
+        return `${oauthStartUrls.wechat}?mode=${options.wechatMode}`;
+      }
+      return oauthStartUrls[provider];
+    });
   });
 
   afterEach(() => {
@@ -85,7 +94,27 @@ describe("SignInPage (国内站 默认 isGlobal=false)", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "使用微信登录" })[0]!);
 
     expect(redirectSpy).toHaveBeenNthCalledWith(1, oauthStartUrls.qq);
-    expect(redirectSpy).toHaveBeenNthCalledWith(2, oauthStartUrls.wechat);
+    expect(redirectSpy).toHaveBeenNthCalledWith(2, `${oauthStartUrls.wechat}?mode=website`);
+    redirectSpy.mockRestore();
+  });
+
+  it("普通手机浏览器点击微信时提示在微信中打开，不跳转", () => {
+    Object.defineProperty(window.navigator, "userAgent", {
+      value: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) Mobile/15E148 Safari/604.1",
+      configurable: true,
+    });
+    const redirectSpy = vi.spyOn(oauthModule, "redirectToOAuthStart").mockImplementation(() => undefined);
+
+    render(
+      <MemoryRouter>
+        <SignInPage />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getAllByRole("button", { name: "使用微信登录" })[0]!);
+
+    expect(screen.getByText("请在微信中打开当前页面后继续登录。")).toBeInTheDocument();
+    expect(redirectSpy).not.toHaveBeenCalled();
     redirectSpy.mockRestore();
   });
 });

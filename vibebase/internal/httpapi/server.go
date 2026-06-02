@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,33 +19,33 @@ import (
 const (
 	identityUserHeader = "X-Lightclaw-User-ID"
 	maxListLimit       = 100
+	buddyNamespace     = "agent-state"
+	buddyKeyPrefix     = "buddy."
+	maxBuddySouls      = 8
 )
 
 type Server struct {
-	store                store.KVStore
-	internalServiceToken string
-	maxNameBytes         int
-	maxValueBytes        int
+	store         store.KVStore
+	maxNameBytes  int
+	maxValueBytes int
 }
 
 type Options struct {
-	Store                store.KVStore
-	InternalServiceToken string
-	MaxNameBytes         int
-	MaxValueBytes        int
+	Store         store.KVStore
+	MaxNameBytes  int
+	MaxValueBytes int
 }
 
 func New(opts Options) http.Handler {
 	s := &Server{
-		store:                opts.Store,
-		internalServiceToken: opts.InternalServiceToken,
-		maxNameBytes:         opts.MaxNameBytes,
-		maxValueBytes:        opts.MaxValueBytes,
+		store:         opts.Store,
+		maxNameBytes:  opts.MaxNameBytes,
+		maxValueBytes: opts.MaxValueBytes,
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", s.healthz)
 	mux.HandleFunc("/livez", s.livez)
-	mux.HandleFunc("/v1/namespaces/", s.requireInternalAuth(s.handleKV))
+	mux.HandleFunc("/v1/namespaces/", s.requireTrustedIdentity(s.handleKV))
 	return mux
 }
 
@@ -72,14 +71,8 @@ func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-func (s *Server) requireInternalAuth(next http.HandlerFunc) http.HandlerFunc {
+func (s *Server) requireTrustedIdentity(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		expected := "Bearer " + s.internalServiceToken
-		got := strings.TrimSpace(r.Header.Get("Authorization"))
-		if subtle.ConstantTimeCompare([]byte(got), []byte(expected)) != 1 {
-			writeError(w, http.StatusUnauthorized, "unauthorized")
-			return
-		}
 		if strings.TrimSpace(r.Header.Get(identityUserHeader)) == "" {
 			writeError(w, http.StatusUnauthorized, "missing_user_identity")
 			return
@@ -141,6 +134,10 @@ func (s *Server) put(w http.ResponseWriter, r *http.Request, ownerID string, nam
 		return
 	}
 	if err := validateValue(body); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := validateBuddyStateValue(namespace, key, body); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -262,6 +259,22 @@ func validateName(kind string, value string, maxBytes int) error {
 func validateValue(value []byte) error {
 	if !utf8.Valid(value) {
 		return fmt.Errorf("value_invalid_utf8")
+	}
+	return nil
+}
+
+func validateBuddyStateValue(namespace string, key string, value []byte) error {
+	if namespace != buddyNamespace || !strings.HasPrefix(key, buddyKeyPrefix) {
+		return nil
+	}
+	var payload struct {
+		DrawnSouls []json.RawMessage `json:"drawnSouls"`
+	}
+	if err := json.Unmarshal(value, &payload); err != nil {
+		return fmt.Errorf("buddy_state_invalid_json")
+	}
+	if len(payload.DrawnSouls) > maxBuddySouls {
+		return fmt.Errorf("buddy_drawn_souls_too_many")
 	}
 	return nil
 }

@@ -2,9 +2,11 @@ package runtime
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -186,6 +188,48 @@ func TestStaleRuntimeRootsExcludesCurrentAndFiles(t *testing.T) {
 	}
 }
 
+func TestStaleRuntimeRootsForCleanupSkipsEmptyLegacyRoot(t *testing.T) {
+	root := t.TempDir()
+	runtimeParent := filepath.Join(root, "runtime")
+	current := filepath.Join(runtimeParent, "current")
+	if err := os.MkdirAll(current, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	workspaceDir := filepath.Join(root, "workspace")
+	if err := os.MkdirAll(workspaceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(workspaceDir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = os.Chdir(oldWD)
+	}()
+	for _, dir := range []string{".ssh", ".cache", "code"} {
+		if err := os.MkdirAll(filepath.Join(workspaceDir, dir), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	rt := New(config.Config{
+		RuntimeRoot:       current,
+		LegacyRuntimeRoot: "",
+	})
+	roots := rt.staleRuntimeRootsForCleanup()
+	if len(roots) != 0 {
+		t.Fatalf("stale runtime roots=%v; empty legacy root must not scan cwd", roots)
+	}
+	for _, dir := range []string{".ssh", ".cache", "code"} {
+		if _, err := os.Stat(filepath.Join(workspaceDir, dir)); err != nil {
+			t.Fatalf("cleanup removed cwd dir %s: %v", dir, err)
+		}
+	}
+}
+
 func TestRequireBootstrapReadyReportsMissingPrerequisites(t *testing.T) {
 	root := t.TempDir()
 	cfg := config.Config{
@@ -361,6 +405,102 @@ func TestActiveImageMke2fsArgsScaleJournalSize(t *testing.T) {
 				t.Fatalf("mke2fs args %q must not disable discard for reclaimable workspace images", joined)
 			}
 		})
+	}
+}
+
+func TestEnsureActiveImageUsesBlankTemplateWhenRootUpperSizeUnset(t *testing.T) {
+	root := t.TempDir()
+	template := filepath.Join(root, "package", "assets", "rootfs", "blank-ext4", "root-upper-default.img")
+	if err := os.MkdirAll(filepath.Dir(template), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	want := append([]byte("ext4-seed"), make([]byte, 4096)...)
+	want = append(want, []byte("tail")...)
+	if err := os.WriteFile(template, want, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	active := filepath.Join(root, "state", "active", "root-upper.img")
+	rt := New(config.Config{
+		ActiveImg:            active,
+		RootUpperSize:        "",
+		DefaultRootUpperSize: "5G",
+		BlankRootUpperImage:  template,
+	})
+	if err := rt.ensureActiveImage(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(active)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("active image content mismatch")
+	}
+}
+
+func TestEnsureActiveImageUsesBlankTemplateTarWhenRootUpperSizeUnset(t *testing.T) {
+	root := t.TempDir()
+	tarRoot := filepath.Join(root, "template")
+	if err := os.MkdirAll(tarRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	seed := filepath.Join(tarRoot, "root-upper-default.img")
+	want := []byte("blank-ext4-template")
+	if err := os.WriteFile(seed, want, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tarPath := filepath.Join(root, "root-upper-default.tar")
+	cmd := exec.Command("tar", "-cf", tarPath, "-C", tarRoot, "root-upper-default.img")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("create tar: %v: %s", err, string(out))
+	}
+	active := filepath.Join(root, "state", "active", "root-upper.img")
+	rt := New(config.Config{
+		ActiveImg:            active,
+		RootUpperSize:        "",
+		DefaultRootUpperSize: "5G",
+		BlankRootUpperTar:    tarPath,
+	})
+	if err := rt.ensureActiveImage(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(active)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("active image content mismatch")
+	}
+}
+
+func TestEnsureActiveImageUsesBlankSparseTemplateWhenRootUpperSizeUnset(t *testing.T) {
+	root := t.TempDir()
+	template := filepath.Join(root, "root-upper-default.sparse")
+	payload := sparseRootUpperMagic + "\n" +
+		`{"size":1024,"extents":[{"offset":0,"length":3},{"offset":100,"length":4}]}` + "\n" +
+		"abc" + "tail"
+	if err := os.WriteFile(template, []byte(payload), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	active := filepath.Join(root, "state", "active", "root-upper.img")
+	rt := New(config.Config{
+		ActiveImg:            active,
+		RootUpperSize:        "",
+		DefaultRootUpperSize: "5G",
+		BlankRootUpperSparse: template,
+	})
+	if err := rt.ensureActiveImage(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(active)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1024 {
+		t.Fatalf("active image len=%d want 1024", len(got))
+	}
+	if string(got[:3]) != "abc" || string(got[100:104]) != "tail" {
+		t.Fatalf("sparse extents not restored correctly")
 	}
 }
 
@@ -833,6 +973,51 @@ exit 0
 		calls[2] != "writeback-cut-barrier --timeout 120s --poll-interval 30ms "+jfsRoot ||
 		calls[3] != "meta-barrier "+jfsRoot {
 		t.Fatalf("unexpected restore barrier order: %q", calls)
+	}
+}
+
+func TestWriteOCIConfigUsesPerTargetCgroupPath(t *testing.T) {
+	root := t.TempDir()
+	bundle := filepath.Join(root, "bundle")
+	if err := os.MkdirAll(bundle, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	rt := New(config.Config{
+		WispName:          "agent-session-a",
+		ContainerID:       "wisp-agent-session-a",
+		CrunBundleRoot:    bundle,
+		EnvSocketPath:     "/.wisp/api.sock",
+		EnvSocketHostPath: filepath.Join(root, "api.sock"),
+		WispUser:          "root",
+		WispPath:          "/usr/bin:/bin",
+		WispLang:          "C.UTF-8",
+	})
+
+	if err := rt.writeOCIConfig(); err != nil {
+		t.Fatalf("writeOCIConfig: %v", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(bundle, "config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg map[string]any
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	linux := cfg["linux"].(map[string]any)
+	if linux["cgroupsPath"] != "wisp/agent-session-a/user/wisp-agent-session-a" {
+		t.Fatalf("cgroupsPath=%q", linux["cgroupsPath"])
+	}
+	namespaces := linux["namespaces"].([]any)
+	foundCgroupNamespace := false
+	for _, item := range namespaces {
+		if item.(map[string]any)["type"] == "cgroup" {
+			foundCgroupNamespace = true
+			break
+		}
+	}
+	if !foundCgroupNamespace {
+		t.Fatalf("OCI config should request a cgroup namespace: %#v", linux["namespaces"])
 	}
 }
 

@@ -11,7 +11,9 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/api"
+	"github.com/openclaw/openclaw/mono/backend/auth/internal/avatar"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/service"
+	"github.com/openclaw/openclaw/mono/backend/auth/internal/tat"
 )
 
 const (
@@ -21,17 +23,19 @@ const (
 )
 
 type Handler struct {
-	service        *service.Service
-	cookieSecure   bool
-	cookieSameSite http.SameSite
-	sessionTTL     time.Duration
-	returnToAllow  oauthReturnToAllowlist
-	qqOAuth        *qqOAuth
-	googleOAuth    *googleOAuth
-	githubOAuth    *githubOAuth
-	wechatOAuth    *wechatOAuth
-	avatarStore    AvatarStore
-	publicBaseURL  string
+	service           *service.Service
+	cookieSecure      bool
+	cookieSameSite    http.SameSite
+	sessionTTL        time.Duration
+	returnToAllow     oauthReturnToAllowlist
+	qqOAuth           *qqOAuth
+	googleOAuth       *googleOAuth
+	githubOAuth       *githubOAuth
+	wechatOAuth       *wechatOAuth
+	avatarStore       AvatarStore
+	tatRegisterIssuer tat.RegisterCodeIssuer
+	deviceBindTokens  *deviceBindTokenCodec
+	publicBaseURL     string
 }
 
 type invitePrepareRequest struct {
@@ -268,6 +272,8 @@ func (h *Handler) GetUserAvatar(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, api.ErrorResponse{Code: "avatar_unavailable", Message: "头像暂时不可访问。"})
 		return
 	}
+	ctx.Header("Cache-Control", "no-store")
+	ctx.Header("Pragma", "no-cache")
 	ctx.Redirect(http.StatusFound, signedURL)
 }
 
@@ -293,6 +299,19 @@ func (h *Handler) UpdateProfile(ctx context.Context, request api.UpdateProfileRe
 		}
 	}
 	return api.UpdateProfile200JSONResponse(profileResponse{User: h.toAPIUser(ctx, user)}), nil
+}
+
+func (h *Handler) ContentAuditCallback(ctx *gin.Context) {
+	body, err := io.ReadAll(io.LimitReader(ctx.Request.Body, 1<<20))
+	if err != nil {
+		requestLogger(ctx, nil).Warn("content audit callback read failed", "err", err)
+		ctx.JSON(http.StatusOK, gin.H{"iRetCode": 0, "strRetMsg": "success"})
+		return
+	}
+	if err := h.service.HandleContentAuditCallback(ctx.Request.Context(), body); err != nil {
+		requestLogger(ctx, nil).Warn("content audit callback handling failed", "err", err)
+	}
+	ctx.JSON(http.StatusOK, gin.H{"iRetCode": 0, "strRetMsg": "success"})
 }
 
 func (h *Handler) DeleteProfile(ctx *gin.Context) {
@@ -350,17 +369,17 @@ func (h *Handler) UpdateProfileAvatar(ctx context.Context, request api.UpdatePro
 		})}, nil
 	}
 
-	content, err := io.ReadAll(io.LimitReader(part, 200*1024+1))
+	content, err := io.ReadAll(io.LimitReader(part, avatar.MaxBytes+1))
 	if err != nil {
 		return api.UpdateProfileAvatar400JSONResponse{ErrorResponseJSONResponse: api.ErrorResponseJSONResponse(api.ErrorResponse{
 			Code:    "avatar_invalid",
 			Message: "头像文件读取失败。",
 		})}, nil
 	}
-	if len(content) > 200*1024 {
+	if int64(len(content)) > avatar.MaxBytes {
 		return api.UpdateProfileAvatar400JSONResponse{ErrorResponseJSONResponse: api.ErrorResponseJSONResponse(api.ErrorResponse{
 			Code:    "avatar_too_large",
-			Message: "头像文件不能超过 200KB。",
+			Message: "头像文件不能超过 800KB。",
 		})}, nil
 	}
 
@@ -375,9 +394,25 @@ func (h *Handler) UpdateProfileAvatar(ctx context.Context, request api.UpdatePro
 	objectKey, err := h.avatarStore.StoreAvatar(ctx, session.User.ID, content)
 	if err != nil {
 		logger.Error("profile avatar store failed", "user_id", session.User.ID, "err", err)
+		if errors.Is(err, avatar.ErrAvatarTooLarge) {
+			return api.UpdateProfileAvatar400JSONResponse{ErrorResponseJSONResponse: api.ErrorResponseJSONResponse(api.ErrorResponse{
+				Code:    "avatar_too_large",
+				Message: "头像文件不能超过 800KB。",
+			})}, nil
+		}
 		return nil, &service.Error{Code: "avatar_store_failed", Message: "头像保存失败。", Status: http.StatusInternalServerError}
 	}
-	user, err := h.service.SetUserAvatar(ctx, session.User.ID, objectKey, "upload")
+	var user service.User
+	if h.service.AvatarAuditEnabled() {
+		auditURL, signErr := h.avatarStore.SignedAvatarURL(ctx, objectKey)
+		if signErr != nil || strings.TrimSpace(auditURL) == "" {
+			logger.Error("profile avatar sign for audit failed", "user_id", session.User.ID, "object_key", objectKey, "err", signErr)
+			return nil, &service.Error{Code: "avatar_unavailable", Message: "头像暂时不可访问。", Status: http.StatusInternalServerError}
+		}
+		user, err = h.service.QueueAvatarAudit(ctx, session.User.ID, objectKey, "upload", auditURL)
+	} else {
+		user, err = h.service.SetUserAvatar(ctx, session.User.ID, objectKey, "upload")
+	}
 	if err != nil {
 		logger.Error("profile avatar persist failed", "user_id", session.User.ID, "object_key", objectKey, "err", err)
 		body, status := toErrorBody(err)
@@ -416,6 +451,8 @@ func (h *Handler) GetProfileAvatar(ctx context.Context, _ api.GetProfileAvatarRe
 		return nil, &service.Error{Code: "avatar_unavailable", Message: "头像暂时不可访问。", Status: http.StatusInternalServerError}
 	}
 	if gctx != nil {
+		gctx.Header("Cache-Control", "no-store")
+		gctx.Header("Pragma", "no-cache")
 		gctx.Header("Location", signedURL)
 	}
 	return api.GetProfileAvatar302Response{}, nil
@@ -514,15 +551,18 @@ func tokenFromContext(ctx context.Context) string {
 }
 
 func (h *Handler) setSessionCookie(ctx *gin.Context, token string) {
-	maxAge := int(h.sessionTTL / time.Second)
+	setSessionCookie(ctx, sessionCookieName, token, h.cookieSecure, h.cookieSameSite, h.sessionTTL)
+}
+
+func setSessionCookie(ctx *gin.Context, name string, token string, secure bool, sameSite http.SameSite, ttl time.Duration) {
 	http.SetCookie(ctx.Writer, &http.Cookie{
-		Name:     sessionCookieName,
+		Name:     name,
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
-		SameSite: h.cookieSameSite,
-		Secure:   h.cookieSecure,
-		MaxAge:   maxAge,
+		SameSite: sameSite,
+		Secure:   secure,
+		MaxAge:   int(ttl / time.Second),
 	})
 }
 
@@ -590,12 +630,28 @@ func (h *Handler) toAPIUser(ctx context.Context, user service.User) api.User {
 		RealnameVerified: user.RealnameVerified,
 	}
 	if strings.TrimSpace(user.AvatarObjectKey) != "" {
-		if avatarURL := h.publicAvatarURL(user.ID); avatarURL != "" {
+		if avatarURL := h.publicAvatarURL(user.ID, user.UpdatedAt); avatarURL != "" {
 			response.AvatarUrl = &avatarURL
 		}
 	}
+	if strings.TrimSpace(user.PendingAvatarObjectKey) != "" && h.avatarStore != nil {
+		if pendingAvatarURL, err := h.avatarStore.SignedAvatarURL(ctx, user.PendingAvatarObjectKey); err == nil && strings.TrimSpace(pendingAvatarURL) != "" {
+			response.PendingAvatarUrl = &pendingAvatarURL
+		}
+	}
+	if strings.TrimSpace(user.AvatarAuditStatus) != "" {
+		status := api.UserAvatarAuditStatus(user.AvatarAuditStatus)
+		response.AvatarAuditStatus = &status
+	}
 	if user.Email != "" {
 		response.Email = &user.Email
+	}
+	if strings.TrimSpace(user.PendingName) != "" {
+		response.PendingName = &user.PendingName
+	}
+	if strings.TrimSpace(user.NameAuditStatus) != "" {
+		status := api.UserNameAuditStatus(user.NameAuditStatus)
+		response.NameAuditStatus = &status
 	}
 	if user.Phone != "" {
 		response.Phone = &user.Phone
@@ -603,12 +659,16 @@ func (h *Handler) toAPIUser(ctx context.Context, user service.User) api.User {
 	return response
 }
 
-func (h *Handler) publicAvatarURL(userID string) string {
+func (h *Handler) publicAvatarURL(userID string, updatedAt time.Time) string {
 	trimmedUserID := strings.TrimSpace(userID)
 	if trimmedUserID == "" {
 		return ""
 	}
-	return "/users/" + trimmedUserID + "/avatar"
+	url := "/users/" + trimmedUserID + "/avatar"
+	if !updatedAt.IsZero() {
+		return url + "?v=" + updatedAt.UTC().Format("20060102150405.000000000")
+	}
+	return url
 }
 
 func toAPIInviteValidation(validation service.InviteValidation) api.InviteValidation {

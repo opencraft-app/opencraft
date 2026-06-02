@@ -9,6 +9,8 @@ import {
   oauthErrorMessage,
   redirectToOAuthStart,
   VISIBLE_OAUTH_PROVIDERS,
+  WECHAT_MOBILE_BROWSER_PROMPT,
+  wechatOAuthStartTargetForUserAgent,
   type OAuthProvider,
 } from "@/lib/oauth";
 import { AuthShell } from "@/pages/auth/auth-shell";
@@ -55,25 +57,36 @@ export const SignInPage = () => {
   const repositories = useRepositories();
   const { signInAsGuest } = useSession();
   const showGitHubLoginEgg = useGitHubLoginVisibility();
-  const oauthLoginUrls: Record<OAuthProvider, string | null> = {
-    qq: repositories.auth.getOAuthStartUrl("qq"),
-    wechat: repositories.auth.getOAuthStartUrl("wechat"),
-    google: repositories.auth.getOAuthStartUrl("google"),
-    github: repositories.auth.getOAuthStartUrl("github"),
-  };
   const oauthError = new URLSearchParams(location.search).get("oauth_error");
   const errorMessage = oauthErrorMessage(oauthError);
 
   const [guestLoading, setGuestLoading] = useState(false);
   const [guestError, setGuestError] = useState<string | null>(null);
+  const [oauthPrompt, setOAuthPrompt] = useState<string | null>(null);
 
   useEffect(() => installShowGitHubLoginHelper(), []);
 
+  const getOAuthStartUrlForProvider = (provider: OAuthProvider) => {
+    if (provider !== "wechat") {
+      return repositories.auth.getOAuthStartUrl(provider);
+    }
+    const target = wechatOAuthStartTargetForUserAgent(window.navigator.userAgent);
+    if (target === "unsupported_mobile_browser") {
+      return null;
+    }
+    return repositories.auth.getOAuthStartUrl("wechat", { wechatMode: target });
+  };
+
   const handleOAuthLogin = async (provider: OAuthProvider) => {
-    const loginUrl = oauthLoginUrls[provider];
+    if (provider === "wechat" && wechatOAuthStartTargetForUserAgent(window.navigator.userAgent) === "unsupported_mobile_browser") {
+      setOAuthPrompt(WECHAT_MOBILE_BROWSER_PROMPT);
+      return;
+    }
+    const loginUrl = getOAuthStartUrlForProvider(provider);
     if (!loginUrl) {
       return;
     }
+    setOAuthPrompt(null);
     redirectToOAuthStart(loginUrl);
   };
 
@@ -108,8 +121,7 @@ export const SignInPage = () => {
     <AuthShell title="进入 LightVela" subtitle="选择一种方式开始体验。" showShowcase>
       <div className="space-y-4">
         {providersToRender.map((provider) => {
-          const url = oauthLoginUrls[provider];
-          if (!url) return null;
+          if (provider !== "wechat" && !getOAuthStartUrlForProvider(provider)) return null;
           const visual = PROVIDER_VISUALS[provider];
           return (
             <Button
@@ -136,6 +148,7 @@ export const SignInPage = () => {
         </p>
       </div>
       {errorMessage ? <p className="text-sm text-[var(--danger)]">{errorMessage}</p> : null}
+      {oauthPrompt ? <p className="text-sm text-[var(--danger)]">{oauthPrompt}</p> : null}
       {guestError ? <p className="text-sm text-[var(--danger)]">{guestError}</p> : null}
     </AuthShell>
   );

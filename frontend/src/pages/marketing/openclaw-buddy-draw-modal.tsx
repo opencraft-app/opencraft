@@ -227,8 +227,13 @@ export function DrawSoulModal({ open, souls, drawnSlugs, onClose, onPick }: Draw
                   type="button"
                   onClick={handleStart}
                   disabled={drawablePool.length === 0}
-                  className="rounded-full px-8 py-2.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-                  style={{ background: "rgba(0,0,0,0.90)", color: "#ffffff" }}
+                  className="rounded-full px-8 py-2.5 font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                  style={{
+                    background: "rgba(0,0,0,0.90)",
+                    color: "#ffffff",
+                    fontSize: "16px",
+                    lineHeight: "1.35",
+                  }}
                 >
                   {souls.length === 0
                     ? t("加载中…")
@@ -437,12 +442,17 @@ function RevealPanel({
           onInterpret={() => setInterpretOpen(true)}
         />
 
-        <div className="mt-3 w-full">
+        <div className="mt-3 flex w-full justify-center">
           <button
             type="button"
             onClick={onConfirm}
-            className="h-14 w-full rounded-full text-base font-semibold transition-colors hover:bg-black"
-            style={{ background: "#202020", color: "#ffffff", boxShadow: "0 14px 28px rgba(0,0,0,0.10)" }}
+            className="h-12 w-full max-w-[336px] rounded-full font-semibold transition-colors hover:bg-black"
+            style={{
+              background: "#202020",
+              color: "#ffffff",
+              boxShadow: "0 14px 28px rgba(0,0,0,0.10)",
+              fontSize: "16px",
+            }}
           >
             {t("添加此人设")}
           </button>

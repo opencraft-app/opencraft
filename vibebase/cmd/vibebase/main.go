@@ -33,10 +33,9 @@ func main() {
 	})
 
 	handler := httpapi.New(httpapi.Options{
-		Store:                store,
-		InternalServiceToken: cfg.InternalServiceToken,
-		MaxNameBytes:         cfg.MaxNameBytes,
-		MaxValueBytes:        cfg.MaxValueBytes,
+		Store:         store,
+		MaxNameBytes:  cfg.MaxNameBytes,
+		MaxValueBytes: cfg.MaxValueBytes,
 	})
 	server := &http.Server{Addr: cfg.Addr, Handler: handler}
 

@@ -3,6 +3,7 @@ package avatar
 import (
 	"bytes"
 	"context"
+	"errors"
 	"image"
 	"image/color"
 	"image/png"
@@ -40,6 +41,23 @@ func TestStoreAvatarNormalizesAndStoresJPEG(t *testing.T) {
 	}
 	if len(client.lastContent) > 200*1024 {
 		t.Fatalf("expected normalized avatar to fit limit, got %d bytes", len(client.lastContent))
+	}
+}
+
+func TestStoreAvatarReturnsTooLargeWhenNormalizedImageExceedsLimit(t *testing.T) {
+	t.Parallel()
+
+	store := &Store{
+		client:        &stubBucketClient{},
+		maxBytes:      1,
+		signedURLTTL:  5 * time.Minute,
+		fetchClient:   http.DefaultClient,
+		fetchMaxBytes: 2 << 20,
+	}
+
+	_, err := store.StoreAvatar(context.Background(), "usr_large", testAvatarPNG(t))
+	if !errors.Is(err, ErrAvatarTooLarge) {
+		t.Fatalf("expected ErrAvatarTooLarge, got %v", err)
 	}
 }
 

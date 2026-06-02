@@ -21,7 +21,28 @@ echo "frontend 约束：Node=$("$NODE_BIN" --version) PNPM=$("$PNPM_BIN" --versi
 echo "frontend guard: changed files"
 cat "${GUARD_CHANGED_FILES_FILE:?}"
 
-cd "$REPO_ROOT/frontend"
+FRONTEND_GUARD_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/lightclaw-frontend-guard.XXXXXX")"
+FRONTEND_GUARD_DIR="$FRONTEND_GUARD_ROOT/frontend"
+
+cleanup_frontend_guard_workspace() {
+  if [[ "${KEEP_FRONTEND_GUARD_WORKDIR:-0}" == "1" ]]; then
+    echo "frontend 约束：保留隔离工作目录 ${FRONTEND_GUARD_ROOT}"
+    return 0
+  fi
+  rm -rf "$FRONTEND_GUARD_ROOT"
+}
+trap cleanup_frontend_guard_workspace EXIT
+
+echo "frontend 约束：创建隔离工作目录 ${FRONTEND_GUARD_DIR}"
+tar \
+  --exclude="frontend/node_modules" \
+  --exclude="frontend/dist" \
+  --exclude="frontend/dist-*" \
+  --exclude="frontend/dist-ci-*" \
+  -C "$REPO_ROOT" \
+  -cf - frontend | tar -C "$FRONTEND_GUARD_ROOT" -xf -
+
+cd "$FRONTEND_GUARD_DIR"
 if [[ ! -f pnpm-lock.yaml ]]; then
   echo "frontend 约束：当前分支缺少 frontend/pnpm-lock.yaml"
   echo "处理：从 trusted base ref ${GUARD_BASE_REF:-origin/master} materialize 锁文件，再执行 frozen install"
@@ -69,7 +90,17 @@ echo "frontend 约束：运行国内/国际 Vite 打包"
 echo "目的：MR 阶段真实验证 bundler、动态 import 与区域化编译；跳过图片优化以控制 checker 成本"
 echo "============================================================"
 rm -rf dist-ci-cn dist-ci-global
-VITE_AUTH_API_BASE_URL=https://api.lightvela.ai "$PNPM_BIN" exec vite build --mode cn --outDir dist-ci-cn
-VITE_AUTH_API_BASE_URL=https://lightclaw.tech "$PNPM_BIN" exec vite build --mode global --outDir dist-ci-global
+VITE_BIN="$FRONTEND_GUARD_DIR/node_modules/.bin/vite"
+if [[ ! -x "$VITE_BIN" ]]; then
+  echo "frontend 约束：隔离工作目录缺少本地 vite 可执行文件：${VITE_BIN}" >&2
+  echo "处理：重新执行 frozen install 后再次检查，避免共享 runner 并发清理 node_modules 导致误报" >&2
+  "$PNPM_BIN" install --frozen-lockfile
+fi
+if [[ ! -x "$VITE_BIN" ]]; then
+  echo "frontend 约束：本地 vite 仍不可用：${VITE_BIN}" >&2
+  exit 1
+fi
+VITE_AUTH_API_BASE_URL=https://api.lightvela.ai "$VITE_BIN" build --mode cn --outDir dist-ci-cn
+VITE_AUTH_API_BASE_URL=https://lightclaw.tech "$VITE_BIN" build --mode global --outDir dist-ci-global
 
 echo "frontend 约束：全部通过"

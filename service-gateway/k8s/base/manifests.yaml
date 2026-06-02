@@ -237,12 +237,6 @@ spec:
                   name: service-gateway-platform-values
                   key: SERVICE_GATEWAY_REALNAME_WALL_ENABLED
                   optional: true
-            - name: SERVICE_GATEWAY_VIBEBASE_INTERNAL_TOKEN
-              valueFrom:
-                configMapKeyRef:
-                  name: service-gateway-platform-values
-                  key: SERVICE_GATEWAY_VIBEBASE_INTERNAL_TOKEN
-                  optional: true
             - name: SERVICE_GATEWAY_ADMIN_BASIC_AUTH_USER
               valueFrom:
                 secretKeyRef:

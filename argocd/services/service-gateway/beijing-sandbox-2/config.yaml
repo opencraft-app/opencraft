@@ -108,6 +108,13 @@ routes:
   upstream: http://chatclaw-runtime.chatclaw-runtime.svc.cluster.local
   access: authenticated
   auth_strategy: session
+- name: content-audit-callback
+  prefix: /contentaudit/callback
+  methods:
+  - POST
+  - OPTIONS
+  upstream: http://lightclaw-auth.user-auth.svc.cluster.local
+  access: public
 - name: auth
   prefix: /auth
   methods:

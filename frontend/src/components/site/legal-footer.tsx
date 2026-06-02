@@ -5,12 +5,18 @@ import { BEIAN_URL, ICP_LICENSE, shouldShowICP } from "@/constants/legal";
 import { useT } from "@/i18n/t";
 import { isGlobal } from "@/lib/region";
 
-export const LegalFooter = () => {
+interface LegalFooterProps {
+  icpPlacement?: "inline" | "right";
+}
+
+export const LegalFooter = ({ icpPlacement = "inline" }: LegalFooterProps) => {
   const currentYear = new Date().getFullYear();
   const t = useT();
   const showICP = shouldShowICP();
   const [showQR, setShowQR] = useState(false);
   const footerLinkClass = "lw-site-link lw-site-link--muted transition-colors";
+  const showInlineICP = showICP && icpPlacement === "inline";
+  const showRightICP = showICP && icpPlacement === "right";
 
   return (
     <footer className="border-t border-black/8 bg-white">
@@ -20,8 +26,8 @@ export const LegalFooter = () => {
       >
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] leading-[1.6] tracking-[-0.013em] text-black/50 md:gap-[22px] md:text-xs md:leading-[1.5]">
           <span>
-            {t("© {{year}} LightVela 版权所有，由腾讯轻量云团队出品。", { year: currentYear })}
-            {showICP && (
+            {t("Copyright © {{year}} LightVela 版权所有，腾讯轻量云出品", { year: currentYear })}
+            {showInlineICP && (
               <>
                 {" "}
                 <a
@@ -100,6 +106,16 @@ export const LegalFooter = () => {
               )}
             </AnimatePresence>
           </span>
+          {showRightICP && (
+            <a
+              href={BEIAN_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`${footerLinkClass} ml-auto`}
+            >
+              {ICP_LICENSE}
+            </a>
+          )}
         </div>
       </div>
     </footer>

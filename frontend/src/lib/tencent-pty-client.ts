@@ -1,6 +1,8 @@
 import { deserialize } from "bson";
 
 const DEFAULT_TAT_TERMINAL_TIMEOUT_SECONDS = 3600;
+const DEFAULT_TAT_TERMINAL_USERNAME = "agentuser";
+const DEFAULT_TAT_TERMINAL_WORKING_DIRECTORY = "/home/agentuser";
 const DEFAULT_PTY_START_DELAY_MS = 1000;
 const DEFAULT_TAT_TERMINAL_USER_NAME = "agentuser";
 
@@ -15,6 +17,8 @@ export interface TencentPtyBootstrap {
   cols: number;
   rows: number;
   timeoutSeconds?: number;
+  username?: string;
+  workingDirectory?: string;
 }
 
 export interface TencentPtyDimensions {
@@ -260,6 +264,8 @@ export class TencentPtyClient {
         Rows: this.dimensions.rows,
         UserName: this.options.userName ?? DEFAULT_TAT_TERMINAL_USER_NAME,
         MaxIdleTime: this.bootstrap.timeoutSeconds ?? DEFAULT_TAT_TERMINAL_TIMEOUT_SECONDS,
+        Username: this.bootstrap.username?.trim() || DEFAULT_TAT_TERMINAL_USERNAME,
+        WorkingDirectory: this.bootstrap.workingDirectory?.trim() || DEFAULT_TAT_TERMINAL_WORKING_DIRECTORY,
       },
     });
   }

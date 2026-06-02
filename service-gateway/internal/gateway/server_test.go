@@ -45,6 +45,55 @@ func (r *recordingMetrics) ObserveRequest(method, route, endpoint string, status
 	})
 }
 
+func TestWeChatOAuthVerificationFileIsServedAtRoot(t *testing.T) {
+	metrics := &recordingMetrics{}
+	handler, err := NewHandler(Config{AuthServiceURL: "http://auth.example.test"}, WithMetrics(metrics))
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/MP_verify_pKLUCg80PuWPBYLB.txt", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Body.String(); got != "pKLUCg80PuWPBYLB" {
+		t.Fatalf("unexpected verification content %q", got)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "text/plain; charset=utf-8" {
+		t.Fatalf("unexpected content type %q", got)
+	}
+	if len(metrics.entries) != 1 {
+		t.Fatalf("expected one metric entry, got %d", len(metrics.entries))
+	}
+	if metrics.entries[0].route != "wechat_oauth_verification" || metrics.entries[0].status != http.StatusOK {
+		t.Fatalf("unexpected metric entry %+v", metrics.entries[0])
+	}
+}
+
+func TestWeChatOAuthVerificationFileSupportsHead(t *testing.T) {
+	handler, err := NewHandler(Config{AuthServiceURL: "http://auth.example.test"})
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodHead, "/MP_verify_pKLUCg80PuWPBYLB.txt", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Body.String(); got != "" {
+		t.Fatalf("expected empty HEAD body, got %q", got)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "text/plain; charset=utf-8" {
+		t.Fatalf("unexpected content type %q", got)
+	}
+}
+
 func TestPublicAllowBypassesAuth(t *testing.T) {
 	upstreamCalls := 0
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -84,6 +133,58 @@ func TestPublicAllowBypassesAuth(t *testing.T) {
 
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("expected 204, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if upstreamCalls != 1 {
+		t.Fatalf("expected upstream to be called once, got %d", upstreamCalls)
+	}
+	if authCalls != 0 {
+		t.Fatalf("expected auth introspection to be skipped, got %d calls", authCalls)
+	}
+}
+
+func TestContentAuditCallbackRouteBypassesAuth(t *testing.T) {
+	upstreamCalls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		if r.URL.Path != "/contentaudit/callback" {
+			t.Fatalf("upstream path = %q", r.URL.Path)
+		}
+		if got := r.Header.Get("X-Lightclaw-User-ID"); got != "" {
+			t.Fatalf("expected no identity header on content audit callback, got %q", got)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+
+	authCalls := 0
+	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authCalls++
+		http.Error(w, "should not be called", http.StatusTeapot)
+	}))
+	defer auth.Close()
+
+	handler, err := NewHandler(Config{
+		AuthServiceURL: auth.URL,
+		Routes: []Route{
+			{
+				Name:     "content-audit-callback",
+				Prefix:   "/contentaudit/callback",
+				Methods:  []string{http.MethodPost, http.MethodOptions},
+				Upstream: upstream.URL,
+				Access:   AccessPublic,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/contentaudit/callback", strings.NewReader("{}"))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
 	}
 	if upstreamCalls != 1 {
 		t.Fatalf("expected upstream to be called once, got %d", upstreamCalls)
@@ -2469,7 +2570,7 @@ func TestUnmatchedRootReturnsNotFoundWithoutCatchAllRoute(t *testing.T) {
 	}
 }
 
-func TestAuthenticatedRouteCanInjectUpstreamBearerToken(t *testing.T) {
+func TestAuthenticatedRouteCanInjectConfiguredUpstreamBearerToken(t *testing.T) {
 	t.Setenv("SERVICE_GATEWAY_TEST_UPSTREAM_TOKEN", "internal-secret")
 	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -2497,8 +2598,8 @@ func TestAuthenticatedRouteCanInjectUpstreamBearerToken(t *testing.T) {
 	handler, err := NewHandler(Config{
 		AuthServiceURL: auth.URL,
 		Routes: []Route{{
-			Name:                   "vibebase",
-			Prefix:                 "/v1/vibebase",
+			Name:                   "internal-api",
+			Prefix:                 "/internal-api",
 			RewritePrefix:          "/v1",
 			Upstream:               upstream.URL,
 			UpstreamBearerTokenEnv: "SERVICE_GATEWAY_TEST_UPSTREAM_TOKEN",
@@ -2509,7 +2610,7 @@ func TestAuthenticatedRouteCanInjectUpstreamBearerToken(t *testing.T) {
 		t.Fatalf("new handler: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/v1/vibebase/namespaces/prefs/kv/theme", nil)
+	req := httptest.NewRequest(http.MethodGet, "/internal-api/namespaces/prefs/kv/theme", nil)
 	req.Header.Set("Authorization", "Bearer user-token")
 	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "user-session"})
 	req.AddCookie(&http.Cookie{Name: "analytics", Value: "tracking"})
@@ -2538,8 +2639,8 @@ func TestAuthenticatedRouteFailsClosedWhenUpstreamBearerTokenMissing(t *testing.
 	handler, err := NewHandler(Config{
 		AuthServiceURL: auth.URL,
 		Routes: []Route{{
-			Name:                   "vibebase",
-			Prefix:                 "/v1/vibebase",
+			Name:                   "internal-api",
+			Prefix:                 "/internal-api",
 			Upstream:               upstream.URL,
 			UpstreamBearerTokenEnv: "SERVICE_GATEWAY_TEST_MISSING_TOKEN",
 			Access:                 AccessAuthenticated,
@@ -2549,7 +2650,7 @@ func TestAuthenticatedRouteFailsClosedWhenUpstreamBearerTokenMissing(t *testing.
 		t.Fatalf("new handler: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/v1/vibebase/namespaces/prefs/kv/theme", nil)
+	req := httptest.NewRequest(http.MethodGet, "/internal-api/namespaces/prefs/kv/theme", nil)
 	req.Header.Set("Authorization", "Bearer user-token")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)

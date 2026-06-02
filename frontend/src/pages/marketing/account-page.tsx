@@ -14,7 +14,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { useState, useRef, useMemo } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useSession } from "@/contexts/session-context";
 import { useRepositories } from "@/contexts/repository-context";
@@ -27,6 +27,7 @@ import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
 import { useT } from "@/i18n/t";
 import { avatarImageUrl } from "@/lib/avatar-image";
 import { isGlobal } from "@/lib/region";
+import { cn } from "@/lib/utils";
 
 /* ─── animation variants ─── */
 
@@ -48,7 +49,7 @@ const AccountNavbar = () => {
 
   return (
     <header className="lw-setup-navbar">
-      <div className="mx-auto flex items-center justify-between px-6 md:px-8" style={{ maxWidth: "var(--lw-max-content)" }}>
+      <div className="mx-auto flex max-w-[1440px] items-center justify-between px-6 md:px-10 lg:px-[80px]">
         <BrandMark to="/" />
         <div className="flex items-center gap-3">
           {/* 语言切换器：仅国际站展示 */}
@@ -701,6 +702,7 @@ export const AccountPage = () => {
     signInAsGuest,
     updateProfile,
     uploadAvatar,
+    refreshProfile,
     signOut,
     deleteAccount,
   } = useSession();
@@ -711,6 +713,7 @@ export const AccountPage = () => {
   const [isEditingName, setIsEditingName] = useState(false);
   const [editName, setEditName] = useState(user?.name ?? "");
   const [saving, setSaving] = useState(false);
+  const [nameSaveError, setNameSaveError] = useState<string | null>(null);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [avatarUploadError, setAvatarUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -747,17 +750,50 @@ export const AccountPage = () => {
   const [deleting, setDeleting] = useState(false);
 
   const avatarSrc = avatarImageUrl(user?.avatarUrl ?? null);
+  const pendingAvatarSrc = avatarImageUrl(user?.pendingAvatarUrl ?? null);
+  const hasPendingAvatarAudit = user?.avatarAuditStatus === "pending" && Boolean(user.pendingAvatarUrl);
+  const avatarAuditFailed = user?.avatarAuditStatus === "failed";
+  const displayAvatarSrc = hasPendingAvatarAudit ? pendingAvatarSrc : avatarSrc;
+  const pendingName = user?.nameAuditStatus === "pending" ? user.pendingName?.trim() ?? "" : "";
+  const hasPendingNameAudit = pendingName.length > 0;
+  const nameAuditFailed = user?.nameAuditStatus === "failed";
+
+  useEffect(() => {
+    if (!hasPendingAvatarAudit && !hasPendingNameAudit) return;
+
+    const refreshTimer = window.setInterval(() => {
+      void refreshProfile().catch((err) => {
+        console.warn("Failed to refresh pending profile audit status", err);
+      });
+    }, 3000);
+    return () => window.clearInterval(refreshTimer);
+  }, [hasPendingAvatarAudit, hasPendingNameAudit, refreshProfile]);
+
   // 暂时隐藏「登录账号」信息展示，待能区分多渠道登录方式后恢复
   // const loginMethod = (user?.phone ?? "").length > 0 ? "phone" : "wechat";
+
+  const beginNameEdit = () => {
+    setNameSaveError(null);
+    setEditName(pendingName || user?.name || "");
+    setIsEditingName(true);
+  };
+
+  const cancelNameEdit = () => {
+    setNameSaveError(null);
+    setIsEditingName(false);
+    setEditName(pendingName || user?.name || "");
+  };
 
   const handleSaveName = async () => {
     if (!editName.trim()) return;
     setSaving(true);
+    setNameSaveError(null);
     try {
       await updateProfile({ name: editName.trim() });
       setIsEditingName(false);
     } catch (e) {
       console.error("Failed to update name", e);
+      setNameSaveError(e instanceof Error ? e.message : t("昵称修改失败，请稍后重试。"));
     } finally {
       setSaving(false);
     }
@@ -945,11 +981,23 @@ export const AccountPage = () => {
                       title={avatarUploadError ?? (avatarUploading ? t("头像上传中...") : t("点击更换头像"))}
                     >
                       <img
-                        src={avatarSrc}
+                        src={displayAvatarSrc}
                         alt="avatar"
-                        className="h-14 w-14 object-cover"
-                        style={{ border: "1px solid #E6E9EF", borderRadius: "9999px", background: "#F9F8F7" }}
+                        className={cn("h-14 w-14 object-cover transition-[filter,transform]", hasPendingAvatarAudit && "scale-105 blur-sm")}
+                        style={{
+                          border: hasPendingAvatarAudit ? "2px solid rgba(198, 123, 30, 0.55)" : "1px solid #E6E9EF",
+                          borderRadius: "9999px",
+                          background: "#F9F8F7",
+                        }}
                       />
+                      {hasPendingAvatarAudit && (
+                        <span
+                          className="absolute -bottom-1 -right-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+                          style={{ background: "#FFF4DE", color: "#9A5A00", border: "1px solid rgba(198, 123, 30, 0.28)" }}
+                        >
+                          {t("审核中")}
+                        </span>
+                      )}
                       <div className="absolute inset-0 flex items-center justify-center bg-black/25 opacity-0 transition-opacity group-hover:opacity-100 disabled:opacity-100" style={{ borderRadius: "9999px" }}>
                         {avatarUploading ? (
                           <Loader2 className="h-4 w-4 animate-spin text-white" />
@@ -985,33 +1033,71 @@ export const AccountPage = () => {
                             )}
                           </button>
                           <button
-                            onClick={() => { setIsEditingName(false); setEditName(user?.name ?? ""); }}
+                            onClick={cancelNameEdit}
                             className="rounded-lg px-3 py-2.5 text-sm transition-colors hover:bg-[rgba(0,0,0,0.03)]"
                             style={{ color: "#aaa" }}
                           >
                             {t("取消")}
                           </button>
                         </div>
+                        {nameSaveError && (
+                          <p className="w-full text-xs" style={{ color: "#cf3d4c", lineHeight: 1.5 }}>
+                            {nameSaveError}
+                          </p>
+                        )}
                       </div>
                     ) : (
-                      <div className="flex items-center gap-2">
-                        <p
-                          className="truncate"
-                          style={{ fontSize: 20, fontWeight: 500, color: "rgba(0,0,0,0.9)", lineHeight: 1.6 }}
-                        >
-                          {user?.name || t("未设置")}
-                        </p>
-                        <button
-                          onClick={() => { setEditName(user?.name ?? ""); setIsEditingName(true); }}
-                          className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-[rgba(0,0,0,0.04)]"
-                          style={{ color: "#aaa" }}
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-2">
+                          <p
+                            className={cn("truncate transition-[filter]", hasPendingNameAudit && "select-none blur-sm")}
+                            style={{ fontSize: 20, fontWeight: 500, color: "rgba(0,0,0,0.9)", lineHeight: 1.6 }}
+                          >
+                            {hasPendingNameAudit ? pendingName : user?.name || t("未设置")}
+                          </p>
+                          {hasPendingNameAudit && (
+                            <span
+                              className="inline-flex flex-shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium"
+                              style={{ background: "rgba(198, 123, 30, 0.12)", color: "#9A5A00" }}
+                            >
+                              {t("审核中")}
+                            </span>
+                          )}
+                          <button
+                            onClick={beginNameEdit}
+                            className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-[rgba(0,0,0,0.04)]"
+                            style={{ color: "#aaa" }}
+                            aria-label={hasPendingNameAudit ? t("修改待审核昵称") : t("修改昵称")}
+                            title={hasPendingNameAudit ? t("修改待审核昵称") : t("修改昵称")}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                        {hasPendingNameAudit && (
+                          <p className="text-xs" style={{ color: "rgba(0,0,0,0.5)", lineHeight: 1.5 }}>
+                            {t("当前对外显示：")}<span style={{ color: "rgba(0,0,0,0.78)" }}>{user?.name || t("未设置")}</span>
+                            {t("，审核通过后将自动生效。")}
+                          </p>
+                        )}
+                        {nameAuditFailed && (
+                          <p className="text-xs" style={{ color: "#cf3d4c", lineHeight: 1.5 }}>
+                            {t("上次昵称修改未通过审核，当前仍使用原昵称。")}
+                          </p>
+                        )}
                       </div>
                     )}
                     {avatarUploadError && (
                       <p className="mt-1 text-xs" style={{ color: "#cf3d4c" }}>{avatarUploadError}</p>
+                    )}
+                    {hasPendingAvatarAudit && (
+                      <p className="mt-1 text-xs" style={{ color: "rgba(0,0,0,0.5)", lineHeight: 1.5 }}>
+                        {t("新头像已提交审核，审核通过后将对外生效。")}
+                      </p>
+                    )}
+                    {avatarAuditFailed && (
+                      <p className="mt-1 text-xs" style={{ color: "#cf3d4c", lineHeight: 1.5 }}>
+                        {t("上次头像修改未通过审核，当前仍使用原头像。")}
+                      </p>
                     )}
                   </div>
                 </div>

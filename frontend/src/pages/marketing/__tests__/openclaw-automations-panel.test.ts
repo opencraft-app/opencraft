@@ -9,7 +9,6 @@ import {
   parseInitialSchedule,
   parseOnceScheduleDate,
   shouldRejectPastOnceSchedule,
-  truncateCronJobCardTitle,
 } from "../openclaw-automations-panel";
 import type { CronJob } from "@/lib/hermes-cron-client";
 
@@ -43,12 +42,24 @@ describe("buildScheduleString and parseInitialSchedule", () => {
       kind: "recurring",
       period: "weekly",
       time: "18:30",
-      weekday: 3,
+      weekdays: [1, 3, 5],
       monthday: 1,
       intervalNum: 1,
       intervalUnit: "h",
       onceDate: "",
-    }))).toMatchObject({ kind: "recurring", period: "weekly", time: "18:30", weekday: 3 });
+    }))).toMatchObject({ kind: "recurring", period: "weekly", time: "18:30", weekday: 1, weekdays: [1, 3, 5] });
+
+    // 单日 weekly 也需 round-trip：避免 buildScheduleString 单元素分支退化
+    expect(parseInitialSchedule(buildScheduleString({
+      kind: "recurring",
+      period: "weekly",
+      time: "09:00",
+      weekdays: [3],
+      monthday: 1,
+      intervalNum: 1,
+      intervalUnit: "h",
+      onceDate: "",
+    }))).toMatchObject({ kind: "recurring", period: "weekly", time: "09:00", weekday: 3, weekdays: [3] });
 
     expect(parseInitialSchedule(buildScheduleString({
       kind: "recurring",
@@ -88,8 +99,27 @@ describe("buildScheduleString and parseInitialSchedule", () => {
 
   it("does not coerce unsupported cron expressions into editable defaults", () => {
     expect(parseInitialSchedule("*/5 * * * *")).toBeNull();
-    expect(parseInitialSchedule("0 9 * * 1,3,5")).toBeNull();
+    expect(parseInitialSchedule("0 9 * * 1-5")).toBeNull();
     expect(parseInitialSchedule("0 9-18 * * *")).toBeNull();
+  });
+
+  it("parses comma-separated weekly cron weekdays", () => {
+    expect(parseInitialSchedule("0 9 * * 1,3,4,5,6,0")).toMatchObject({
+      kind: "recurring",
+      period: "weekly",
+      time: "09:00",
+      weekday: 1,
+      weekdays: [1, 3, 4, 5, 6, 0],
+    });
+  });
+
+  it("treats cron weekday 7 as Sunday (0)", () => {
+    expect(parseInitialSchedule("0 9 * * 7")).toMatchObject({
+      kind: "recurring",
+      period: "weekly",
+      time: "09:00",
+      weekdays: [0],
+    });
   });
 });
 
@@ -240,18 +270,3 @@ function makeCronJob(overrides: Partial<CronJob>): CronJob {
     ...overrides,
   };
 }
-
-describe("truncateCronJobCardTitle", () => {
-  it("keeps short Chinese and English titles unchanged", () => {
-    expect(truncateCronJobCardTitle("喝水提醒")).toBe("喝水提醒");
-    expect(truncateCronJobCardTitle("drink water")).toBe("drink water");
-  });
-
-  it("limits Chinese titles to about eight characters", () => {
-    expect(truncateCronJobCardTitle("这是一个很长很长的提醒")).toBe("这是一个很长很长…");
-  });
-
-  it("limits English titles to twelve characters", () => {
-    expect(truncateCronJobCardTitle("abcdefghijklmn")).toBe("abcdefghijkl…");
-  });
-});

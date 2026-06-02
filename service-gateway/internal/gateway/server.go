@@ -26,6 +26,8 @@ import (
 
 const sessionCookieName = "lc_session"
 const defaultAdminBridgeCookieName = "lc_admin_basic_bridge"
+const wechatOAuthVerificationPath = "/MP_verify_pKLUCg80PuWPBYLB.txt"
+const wechatOAuthVerificationContent = "pKLUCg80PuWPBYLB"
 
 const (
 	upstreamDialTimeout           = 10 * time.Second
@@ -307,6 +309,14 @@ func validateRoute(route Route) error {
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 
+	if r.URL.Path == wechatOAuthVerificationPath {
+		rec := newStatusRecorder(w)
+		h.serveWeChatOAuthVerification(rec, r)
+		h.observeRequest(start, "wechat_oauth_verification", r, rec.statusCode())
+		h.logRequest(start, compiledRoute{}, nil, r, rec.statusCode(), "")
+		return
+	}
+
 	if r.URL.Path == "/healthz" {
 		rec := newStatusRecorder(w)
 		writeJSON(rec, http.StatusOK, map[string]string{"status": "ok"})
@@ -437,6 +447,21 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.logRequest(start, matched, nil, r, rec.statusCode(), "")
 		return
 	}
+}
+
+func (h *Handler) serveWeChatOAuthVerification(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.Header().Set("Allow", strings.Join([]string{http.MethodGet, http.MethodHead}, ", "))
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method_not_allowed"})
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=300")
+	w.WriteHeader(http.StatusOK)
+	if r.Method == http.MethodHead {
+		return
+	}
+	_, _ = io.WriteString(w, wechatOAuthVerificationContent)
 }
 
 // requiresActiveSubscription 在 POST /v1/instances 前做订阅资格校验。

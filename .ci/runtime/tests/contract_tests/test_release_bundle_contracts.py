@@ -290,7 +290,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         workflow_text = (REPO_ROOT / ".ci/frontend-preview.yml").read_text()
 
         self.assertIn('FRONTEND_PREVIEW_RUNTIME_REF="${FRONTEND_PREVIEW_RUNTIME_REF:-origin/master}"', workflow_text)
-        self.assertIn("git fetch --no-tags --depth=1 origin master:refs/remotes/origin/master", workflow_text)
+        self.assertIn("git fetch --no-tags --depth=1 origin +master:refs/remotes/origin/master", workflow_text)
         self.assertIn('git archive --format=tar "$FRONTEND_PREVIEW_RUNTIME_REF" .ci', workflow_text)
         self.assertIn('bash "$FRONTEND_PREVIEW_RUNTIME_CI_DIR/runtime/commands/publish_frontend_preview.sh"', workflow_text)
         self.assertNotIn('"$PNPM_BIN" exec vite build', workflow_text)
@@ -323,8 +323,10 @@ class ReleaseBundleContractTests(unittest.TestCase):
 
         self.assertEqual(package_json["scripts"]["check"], "tsc -b")
         self.assertIn('"$PNPM_BIN" check', guard_text)
-        self.assertIn('VITE_AUTH_API_BASE_URL=https://api.lightvela.ai "$PNPM_BIN" exec vite build --mode cn --outDir dist-ci-cn', guard_text)
-        self.assertIn('VITE_AUTH_API_BASE_URL=https://lightclaw.tech "$PNPM_BIN" exec vite build --mode global --outDir dist-ci-global', guard_text)
+        self.assertIn('FRONTEND_GUARD_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/lightclaw-frontend-guard.XXXXXX")"', guard_text)
+        self.assertIn('VITE_BIN="$FRONTEND_GUARD_DIR/node_modules/.bin/vite"', guard_text)
+        self.assertIn('VITE_AUTH_API_BASE_URL=https://api.lightvela.ai "$VITE_BIN" build --mode cn --outDir dist-ci-cn', guard_text)
+        self.assertIn('VITE_AUTH_API_BASE_URL=https://lightclaw.tech "$VITE_BIN" build --mode global --outDir dist-ci-global', guard_text)
         self.assertIn("rm -rf dist-ci-cn dist-ci-global", guard_text)
 
     def test_prod_db_migration_workflow_is_manual_dry_run_then_check_in_then_apply(self) -> None:
@@ -494,6 +496,28 @@ class ReleaseBundleContractTests(unittest.TestCase):
         )
         self.assertIn("argocd/secrets/*/cloudagent-wsa-search-secrets.sops.yaml", watched_paths)
         self.assertIn("argocd/secrets/*/cloudagent-wisp-secrets.sops.yaml", watched_paths)
+
+    def test_lightclaw_auth_workflow_watches_release_contract_inputs(self) -> None:
+        workflow = yaml.safe_load((REPO_ROOT / ".ci/lightclaw-auth.yml").read_text())
+        on_config = workflow.get("on") or workflow.get(True) or {}
+        watched_paths = ((on_config.get("push") or {}).get("paths") or [])
+
+        self.assertIn("argocd/secrets/*/lightclaw-auth-content-audit-secrets.sops.yaml", watched_paths)
+        self.assertIn("argocd/secrets/*/lightvela-e2e-auth-secrets.sops.yaml", watched_paths)
+
+    def test_beijing_lightclaw_auth_keeps_official_account_config(self) -> None:
+        env_path = REPO_ROOT / "argocd/services/lightclaw-auth/beijing-sandbox/auth-platform.env"
+        values = dict(
+            line.split("=", 1)
+            for line in env_path.read_text().splitlines()
+            if line and not line.startswith("#")
+        )
+
+        self.assertEqual(values["AUTH_WECHAT_OFFICIAL_ACCOUNT_APP_ID"], "wxf95ea3ae45d5304f")
+        self.assertEqual(
+            values["AUTH_WECHAT_OFFICIAL_ACCOUNT_REDIRECT_URI"],
+            "https://lightclaw.tech/auth/oauth/wechat/callback",
+        )
 
     def test_local_templates_do_not_use_unsupported_top_level_concurrency(self) -> None:
         for template_path in sorted((REPO_ROOT / ".ci/templates").glob("*.yml")):

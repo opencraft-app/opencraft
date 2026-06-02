@@ -3,6 +3,7 @@ package avatar
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"image"
 	"image/jpeg"
@@ -18,10 +19,13 @@ import (
 )
 
 const (
-	defaultMaxBytes      int64 = 200 * 1024
+	MaxBytes             int64 = 800 * 1024
+	defaultMaxBytes            = MaxBytes
 	defaultFetchMaxBytes int64 = 2 << 20
 	defaultSignedURLTTL        = 5 * time.Minute
 )
+
+var ErrAvatarTooLarge = errors.New("avatar too large")
 
 type BucketClient interface {
 	PutObject(ctx context.Context, objectKey string, content []byte, contentType string) error
@@ -155,7 +159,7 @@ func (s *Store) normalizeAvatar(content []byte) ([]byte, error) {
 	}
 
 	if int64(output.Len()) > limit {
-		return nil, fmt.Errorf("avatar exceeds %d bytes after normalization", limit)
+		return nil, fmt.Errorf("%w: exceeds %d bytes after normalization", ErrAvatarTooLarge, limit)
 	}
 
 	return append([]byte(nil), output.Bytes()...), nil

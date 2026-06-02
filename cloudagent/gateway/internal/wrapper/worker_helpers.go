@@ -92,6 +92,21 @@ func envFlagEnabled(key string) bool {
 	}
 }
 
+func envFlagDefault(key string, fallback bool) bool {
+	value := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
+	if value == "" {
+		return fallback
+	}
+	switch value {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	default:
+		return fallback
+	}
+}
+
 func envDurationSeconds(key string, fallback time.Duration) time.Duration {
 	value := envInt(key, 0)
 	if value <= 0 {

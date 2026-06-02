@@ -43,25 +43,58 @@ const viewportConfig = { once: true, margin: "-40px" as const };
    ═══════════════════════════════════════════════════════════════ */
 
 type ChangelogEntry = {
-  date: string;
   title: string;
   desc?: string;
-  /** 卡片视觉样式：lobster=产品截图 / none=无图 */
-  visual: "lobster" | "none";
+  /** 卡片视觉样式：lobster=上线图 / soul=人设能力图 / schedule=自动任务图 / chat=网页对话图 / memory=记忆页图 / none=无图 */
+  visual: "lobster" | "soul" | "schedule" | "chat" | "memory" | "none";
+};
+
+type ChangelogMonthGroup = {
+  month: string;
+  entries: ChangelogEntry[];
 };
 
 /* ═══════════════════════════════════════════════════════════════
    配图卡片 — 还原 Figma 设计稿中的插图卡片
    ═══════════════════════════════════════════════════════════════ */
 
-function VisualCard({ variant: _variant }: { variant: "lobster" }) {
+function VisualCard({ variant }: { variant: "lobster" | "soul" | "schedule" | "chat" | "memory" }) {
   const t = useT();
   /* 国际站（lightvela.com）始终使用英文版截图（含 Telegram/WhatsApp/Discord/Slack 图标），
      即使用户切换为中文，该配图仍保留英文版——避免同一站点出现国内渠道图标的信息错位；
      国内站则始终使用中文版（含 QQ/微信/飞书图标）。 */
-  const imgPath = isGlobal
-    ? "/assets/changelog/lightvela-launch-en.png"
-    : "/assets/changelog/lightvela-launch.png";
+  const imgPath =
+    variant === "chat"
+      ? "/assets/changelog/agentchat-web-chat.png"
+      : variant === "memory"
+      ? "/assets/changelog/hermes-memory.png"
+      : variant === "schedule"
+      ? "/assets/changelog/scheduled-tasks.png"
+      : variant === "soul"
+      ? "/assets/changelog/soul-persona.png"
+      : isGlobal
+        ? "/assets/changelog/lightvela-launch-en.png"
+        : "/assets/changelog/lightvela-launch.png";
+  const altText =
+    variant === "chat"
+      ? t("LightVela 支持网页内对话")
+      : variant === "memory"
+      ? t("LightVela支持查看Hermes Agent记忆")
+      : variant === "schedule"
+      ? t("LightVela 支持设置自动任务")
+      : variant === "soul"
+        ? t("Soul 人设能力上线")
+        : t("LightVela内测上线");
+  const aspectRatio =
+    variant === "chat"
+      ? "1742 / 903"
+      : variant === "memory"
+      ? "2326 / 1322"
+      : variant === "schedule"
+        ? "1952 / 806"
+        : variant === "soul"
+          ? "2044 / 748"
+          : "710 / 360";
   /* LightVela 正式上线卡片 — 直接使用 Figma 导出的合成图 */
   return (
     <div
@@ -69,14 +102,14 @@ function VisualCard({ variant: _variant }: { variant: "lobster" }) {
       style={{
         width: "100%",
         maxWidth: "710px",
-        aspectRatio: "710 / 360",
+        aspectRatio,
         backgroundColor: "#FFF5EE",
       }}
     >
       <img
         src={assetUrl(imgPath)}
-        alt={t("LightVela 正式上线")}
-        className="absolute inset-0 h-full w-full object-cover"
+        alt={altText}
+        className={`absolute inset-0 h-full w-full ${variant === "lobster" ? "object-cover" : "object-contain"}`}
         loading="lazy"
       />
     </div>
@@ -99,12 +132,45 @@ function ChangelogContent() {
     ? t("支持一键创建云端 Hermes，支持接入 WeChat、Telegram、WhatsApp、Discord 通道")
     : t("支持一键创建云端 Hermes，支持接入 QQ、微信、飞书通道");
 
-  const changelogData: ChangelogEntry[] = [
+  const mayChangelogGroup: ChangelogMonthGroup | null = isGlobal
+    ? null
+    : {
+        month: t("2026 年 5 月"),
+        entries: [
+          {
+            title: t("LightVela 支持网页内对话"),
+            desc: t("无需切换到外部通道，现在可以在 LightVela 网页内基于 AgentChat 直接与 Hermes Agent 对话。"),
+            visual: "chat",
+          },
+          {
+            title: t("LightVela支持查看Hermes Agent记忆"),
+            desc: t("在控制台查看 Hermes Agent 的记忆、用户画像和字符占用，帮助你了解 Agent 当前掌握的上下文。"),
+            visual: "memory",
+          },
+          {
+            title: t("LightVela 支持设置自动任务"),
+            desc: t("为 Agent 设置周期、间隔或单次自动任务，让它按计划执行提醒、总结、通知等日常工作。"),
+            visual: "schedule",
+          },
+          {
+            title: t("Soul 人设能力上线"),
+            desc: t("为 Hermes Agent 抽取并保存专属 Soul 人设，一键注入后通过 /new 开启带有新人设的新会话。"),
+            visual: "soul",
+          },
+        ],
+      };
+
+  const changelogGroups: ChangelogMonthGroup[] = [
+    ...(mayChangelogGroup ? [mayChangelogGroup] : []),
     {
-      date: t("2026 年 4 月 21 日"),
-      title: t("LightVela 正式上线"),
-      desc: launchDesc,
-      visual: "lobster",
+      month: t("2026 年 4 月"),
+      entries: [
+        {
+          title: t("LightVela内测上线"),
+          desc: launchDesc,
+          visual: "lobster",
+        },
+      ],
     },
   ];
 
@@ -156,62 +222,90 @@ function ChangelogContent() {
           viewport={viewportConfig}
           className="space-y-20"
         >
-          {changelogData.map((entry, i) => (
-            <motion.article
-              key={i}
-              variants={fadeInUp}
-              className="grid grid-cols-1 gap-6 md:grid-cols-[140px_1fr] md:gap-16"
-            >
-              {/* 左列：日期 */}
-              <div className="pt-1">
-                <p
-                  style={{
-                    fontSize: "16px",
-                    fontWeight: 400,
-                    color: "rgba(0,0,0,0.5)",
-                    lineHeight: 2,
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {entry.date}
-                </p>
-              </div>
+          {changelogGroups.map((group) => {
+            const showTimeline = group.entries.length > 1;
 
-              {/* 右列：标题 + 描述 + 配图 */}
-              <div>
-                <h2
-                  style={{
-                    fontSize: "24px",
-                    fontWeight: 500,
-                    color: "var(--lw-fg)",
-                    lineHeight: 1.5,
-                    letterSpacing: "-0.01em",
-                    marginBottom: entry.desc ? "20px" : "24px",
-                  }}
-                >
-                  {entry.title}
-                </h2>
-
-                {entry.desc && (
+            return (
+              <motion.section
+                key={group.month}
+                variants={fadeInUp}
+                className="grid grid-cols-1 gap-6 md:grid-cols-[140px_1fr] md:gap-16"
+              >
+                {/* 左列：月份 */}
+                <div className="pt-1">
                   <p
                     style={{
                       fontSize: "16px",
                       fontWeight: 400,
-                      color: "rgba(0,0,0,0.9)",
-                      lineHeight: 1.75,
-                      marginBottom: "24px",
+                      color: "rgba(0,0,0,0.5)",
+                      lineHeight: 2,
+                      whiteSpace: "nowrap",
                     }}
                   >
-                    {entry.desc}
+                    {group.month}
                   </p>
-                )}
+                </div>
 
-                {entry.visual !== "none" && (
-                  <VisualCard variant={entry.visual} />
-                )}
-              </div>
-            </motion.article>
-          ))}
+                {/* 右列：月内条目 */}
+                <div>
+                  {group.entries.map((entry, index) => (
+                    <article
+                      key={`${group.month}-${entry.title}`}
+                      className={showTimeline ? "grid grid-cols-[28px_1fr] gap-4 pb-16 last:pb-0" : ""}
+                    >
+                      {showTimeline && (
+                        <div className="relative flex justify-center pt-2">
+                          {index < group.entries.length - 1 && (
+                            <span
+                              className="absolute left-1/2 top-5 bottom-[-4rem] w-px -translate-x-1/2"
+                              style={{ backgroundColor: "rgba(0,0,0,0.12)" }}
+                            />
+                          )}
+                          <span
+                            className="relative z-10 mt-1 h-2.5 w-2.5 rounded-full"
+                            style={{ backgroundColor: "var(--lw-fg)", boxShadow: "0 0 0 6px var(--lw-bg)" }}
+                          />
+                        </div>
+                      )}
+
+                      <div>
+                        <h2
+                          style={{
+                            fontSize: "24px",
+                            fontWeight: 500,
+                            color: "var(--lw-fg)",
+                            lineHeight: 1.5,
+                            letterSpacing: "-0.01em",
+                            marginBottom: entry.desc ? "20px" : "24px",
+                          }}
+                        >
+                          {entry.title}
+                        </h2>
+
+                        {entry.desc && (
+                          <p
+                            style={{
+                              fontSize: "16px",
+                              fontWeight: 400,
+                              color: "rgba(0,0,0,0.9)",
+                              lineHeight: 1.75,
+                              marginBottom: "24px",
+                            }}
+                          >
+                            {entry.desc}
+                          </p>
+                        )}
+
+                        {entry.visual !== "none" && (
+                          <VisualCard variant={entry.visual} />
+                        )}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </motion.section>
+            );
+          })}
         </motion.div>
       </div>
     </section>

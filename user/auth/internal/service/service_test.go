@@ -1,12 +1,16 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/openclaw/openclaw/mono/backend/auth/internal/contentaudit"
 )
 
 func TestSharedStoreEnforcesCooldownAcrossServiceInstances(t *testing.T) {
@@ -417,6 +421,44 @@ func TestCreateImpersonationSessionRequiresReason(t *testing.T) {
 	}
 }
 
+func TestCreateSessionForUserCreatesNormalShortLivedSession(t *testing.T) {
+	svc := New(Options{Now: fixedNow})
+	passwordSession := mustPasswordSession(t, svc, "e2e-session-for-user@example.com")
+
+	session, err := svc.CreateSessionForUser(context.Background(), passwordSession.User.ID, 17*time.Minute)
+	if err != nil {
+		t.Fatalf("create session for user: %v", err)
+	}
+	if session.Impersonated {
+		t.Fatal("expected e2e session mint to create a normal session")
+	}
+	if session.ExpiresAt.Sub(fixedNow()) != 17*time.Minute {
+		t.Fatalf("expected requested ttl, got %s", session.ExpiresAt.Sub(fixedNow()))
+	}
+
+	current, err := svc.CurrentSession(context.Background(), session.Token)
+	if err != nil {
+		t.Fatalf("current minted session: %v", err)
+	}
+	if current.User.ID != passwordSession.User.ID || current.Impersonated {
+		t.Fatalf("unexpected current minted session: user=%q impersonated=%v", current.User.ID, current.Impersonated)
+	}
+}
+
+func TestCreateSessionForUserRejectsInvalidTTL(t *testing.T) {
+	svc := New(Options{Now: fixedNow})
+	session := mustPasswordSession(t, svc, "e2e-session-invalid-ttl@example.com")
+
+	_, err := svc.CreateSessionForUser(context.Background(), session.User.ID, 0)
+	if err == nil {
+		t.Fatal("expected invalid ttl to fail")
+	}
+	var authErr *Error
+	if !errors.As(err, &authErr) || authErr.Code != "invalid_session_ttl" || authErr.Status != 400 {
+		t.Fatalf("expected invalid_session_ttl 400, got %#v", err)
+	}
+}
+
 func TestDeleteCurrentUserRemovesUserSessionsAndSubscription(t *testing.T) {
 	svc := New(Options{Now: fixedNow})
 
@@ -530,6 +572,284 @@ func TestUpdateProfileRenamesCurrentUser(t *testing.T) {
 	}
 }
 
+func TestUpdateProfileQueuesNameAuditWhenEnabled(t *testing.T) {
+	store := NewMemoryStore(StoreOptions{
+		Now:                fixedNow,
+		SeedDefaultInvites: true,
+	})
+	svc := NewWithStore(store, Options{
+		Now: fixedNow,
+		ContentAudit: ContentAuditConfig{
+			Enabled:   true,
+			ProductID: "30003",
+			UserSID:   "300025",
+		},
+	})
+
+	session, err := svc.SignUpWithPassword(context.Background(), PasswordSignUpInput{
+		Name:       "旧昵称",
+		Email:      "profile-audit@example.com",
+		Password:   "password123",
+		InviteCode: "VALID2026",
+	})
+	if err != nil {
+		t.Fatalf("sign up failed: %v", err)
+	}
+
+	user, err := svc.UpdateProfile(context.Background(), session.Token, "新昵称")
+	if err != nil {
+		t.Fatalf("update profile failed: %v", err)
+	}
+	if user.Name != "旧昵称" || user.PendingName != "新昵称" || user.NameAuditStatus != "pending" {
+		t.Fatalf("expected pending audit without replacing official name, got %+v", user)
+	}
+
+	current, err := svc.CurrentSession(context.Background(), session.Token)
+	if err != nil {
+		t.Fatalf("load session failed: %v", err)
+	}
+	if current.User.Name != "旧昵称" || current.User.PendingName != "新昵称" {
+		t.Fatalf("expected session to keep official name and expose pending name, got %+v", current.User)
+	}
+}
+
+func TestUpdateProfileAuditsNameSynchronouslyWhenClientConfigured(t *testing.T) {
+	store := NewMemoryStore(StoreOptions{
+		Now:                fixedNow,
+		SeedDefaultInvites: true,
+	})
+	cfg := ContentAuditConfig{
+		Enabled:          true,
+		NameAuditEnabled: true,
+		ProductID:        "30018",
+		UserSID:          "300071",
+	}
+	queueSvc := NewWithStore(store, Options{
+		Now:          fixedNow,
+		ContentAudit: cfg,
+	})
+	svc := NewWithStore(store, Options{
+		Now:                fixedNow,
+		ContentAudit:       cfg,
+		ContentAuditClient: stubContentAuditClient{result: &contentaudit.ResponseResult{ResultCode: contentaudit.ResultCodePass}},
+	})
+
+	session, err := queueSvc.SignUpWithPassword(context.Background(), PasswordSignUpInput{
+		Name:       "旧昵称",
+		Email:      "profile-audit-sync@example.com",
+		Password:   "password123",
+		InviteCode: "VALID2026",
+	})
+	if err != nil {
+		t.Fatalf("sign up failed: %v", err)
+	}
+	if pending, err := queueSvc.UpdateProfile(context.Background(), session.Token, "待审核昵称"); err != nil {
+		t.Fatalf("queue pending name failed: %v", err)
+	} else if pending.PendingName != "待审核昵称" || pending.NameAuditStatus != "pending" {
+		t.Fatalf("expected pending name before sync audit, got %+v", pending)
+	}
+
+	user, err := svc.UpdateProfile(context.Background(), session.Token, "新昵称")
+	if err != nil {
+		t.Fatalf("update profile failed: %v", err)
+	}
+	if user.Name != "新昵称" || user.PendingName != "" || user.NameAuditStatus != "" {
+		t.Fatalf("expected direct sync audit to update name without pending task state, got %+v", user)
+	}
+}
+
+func TestUpdateProfileRejectsMaliciousNameSynchronously(t *testing.T) {
+	store := NewMemoryStore(StoreOptions{
+		Now:                fixedNow,
+		SeedDefaultInvites: true,
+	})
+	cfg := ContentAuditConfig{
+		Enabled:          true,
+		NameAuditEnabled: true,
+		ProductID:        "30018",
+		UserSID:          "300071",
+	}
+	svc := NewWithStore(store, Options{
+		Now:                fixedNow,
+		ContentAudit:       cfg,
+		ContentAuditClient: stubContentAuditClient{result: &contentaudit.ResponseResult{ResultCode: contentaudit.ResultCodeMalicious, ResultType: 20007}},
+	})
+
+	session, err := svc.SignUpWithPassword(context.Background(), PasswordSignUpInput{
+		Name:       "旧昵称",
+		Email:      "profile-audit-sync-reject@example.com",
+		Password:   "password123",
+		InviteCode: "VALID2026",
+	})
+	if err != nil {
+		t.Fatalf("sign up failed: %v", err)
+	}
+
+	_, err = svc.UpdateProfile(context.Background(), session.Token, "违规昵称")
+	var serviceErr *Error
+	if !errors.As(err, &serviceErr) || serviceErr.Code != "content_audit_rejected" {
+		t.Fatalf("expected content_audit_rejected error, got %v", err)
+	}
+	current, err := svc.CurrentSession(context.Background(), session.Token)
+	if err != nil {
+		t.Fatalf("load session failed: %v", err)
+	}
+	if current.User.Name != "旧昵称" || current.User.PendingName != "" || current.User.NameAuditStatus != "" {
+		t.Fatalf("expected rejected sync audit to keep current name without pending task state, got %+v", current.User)
+	}
+}
+
+func TestUpdateProfileBypassesNameAuditWhenDisabled(t *testing.T) {
+	store := NewMemoryStore(StoreOptions{
+		Now:                fixedNow,
+		SeedDefaultInvites: true,
+	})
+	svc := NewWithStore(store, Options{
+		Now: fixedNow,
+		ContentAudit: ContentAuditConfig{
+			Enabled:   false,
+			ProductID: "30003",
+			UserSID:   "300025",
+		},
+	})
+
+	session, err := svc.SignUpWithPassword(context.Background(), PasswordSignUpInput{
+		Name:       "旧昵称",
+		Email:      "profile-audit-disabled@example.com",
+		Password:   "password123",
+		InviteCode: "VALID2026",
+	})
+	if err != nil {
+		t.Fatalf("sign up failed: %v", err)
+	}
+
+	user, err := svc.UpdateProfile(context.Background(), session.Token, "新昵称")
+	if err != nil {
+		t.Fatalf("update profile failed: %v", err)
+	}
+	if user.Name != "新昵称" || user.PendingName != "" || user.NameAuditStatus != "" {
+		t.Fatalf("expected disabled audit to rename directly, got %+v", user)
+	}
+}
+
+func TestContentAuditWorkerAppliesPassedName(t *testing.T) {
+	store := NewMemoryStore(StoreOptions{
+		Now:                fixedNow,
+		SeedDefaultInvites: true,
+	})
+	cfg := ContentAuditConfig{Enabled: true, ProductID: "30003", UserSID: "300025"}
+	svc := NewWithStore(store, Options{Now: fixedNow, ContentAudit: cfg})
+	session, err := svc.SignUpWithPassword(context.Background(), PasswordSignUpInput{
+		Name:       "旧昵称",
+		Email:      "profile-audit-pass@example.com",
+		Password:   "password123",
+		InviteCode: "VALID2026",
+	})
+	if err != nil {
+		t.Fatalf("sign up failed: %v", err)
+	}
+	if _, err := svc.UpdateProfile(context.Background(), session.Token, "新昵称"); err != nil {
+		t.Fatalf("queue audit failed: %v", err)
+	}
+
+	worker := NewContentAuditWorker(store, stubContentAuditClient{
+		result: &contentaudit.ResponseResult{ResultCode: contentaudit.ResultCodePass},
+	}, cfg, ContentAuditWorkerOptions{Now: fixedNow})
+	if err := worker.RunOnce(context.Background(), 20); err != nil {
+		t.Fatalf("run worker: %v", err)
+	}
+
+	current, err := svc.CurrentSession(context.Background(), session.Token)
+	if err != nil {
+		t.Fatalf("load session failed: %v", err)
+	}
+	if current.User.Name != "新昵称" || current.User.PendingName != "" || current.User.NameAuditStatus != "passed" {
+		t.Fatalf("expected passed audit to apply pending name, got %+v", current.User)
+	}
+}
+
+func TestContentAuditWorkerLogsAsyncSubmission(t *testing.T) {
+	store := NewMemoryStore(StoreOptions{
+		Now:                fixedNow,
+		SeedDefaultInvites: true,
+	})
+	cfg := ContentAuditConfig{Enabled: true, ProductID: "30003", UserSID: "300025"}
+	svc := NewWithStore(store, Options{Now: fixedNow, ContentAudit: cfg})
+	session, err := svc.SignUpWithPassword(context.Background(), PasswordSignUpInput{
+		Name:       "旧昵称",
+		Email:      "profile-audit-log@example.com",
+		Password:   "password123",
+		InviteCode: "VALID2026",
+	})
+	if err != nil {
+		t.Fatalf("sign up failed: %v", err)
+	}
+	if _, err := svc.UpdateProfile(context.Background(), session.Token, "新昵称"); err != nil {
+		t.Fatalf("queue audit failed: %v", err)
+	}
+
+	var logs bytes.Buffer
+	worker := NewContentAuditWorker(store, stubContentAuditClient{
+		result: &contentaudit.ResponseResult{ResultCode: contentaudit.ResultCodePass},
+	}, cfg, ContentAuditWorkerOptions{
+		Now:    fixedNow,
+		Logger: slog.New(slog.NewTextHandler(&logs, nil)),
+	})
+	if err := worker.RunOnce(context.Background(), 20); err != nil {
+		t.Fatalf("run worker: %v", err)
+	}
+
+	logText := logs.String()
+	for _, want := range []string{
+		"content audit submit started",
+		"content audit submit completed",
+		"mode=async-worker",
+		"biz_type=user_name",
+		"media_type=text",
+		"decision=pass",
+	} {
+		if !strings.Contains(logText, want) {
+			t.Fatalf("expected audit log to contain %q, got:\n%s", want, logText)
+		}
+	}
+}
+
+func TestContentAuditWorkerRejectsMaliciousName(t *testing.T) {
+	store := NewMemoryStore(StoreOptions{
+		Now:                fixedNow,
+		SeedDefaultInvites: true,
+	})
+	cfg := ContentAuditConfig{Enabled: true, ProductID: "30003", UserSID: "300025"}
+	svc := NewWithStore(store, Options{Now: fixedNow, ContentAudit: cfg})
+	session, err := svc.SignUpWithPassword(context.Background(), PasswordSignUpInput{
+		Name:       "旧昵称",
+		Email:      "profile-audit-fail@example.com",
+		Password:   "password123",
+		InviteCode: "VALID2026",
+	})
+	if err != nil {
+		t.Fatalf("sign up failed: %v", err)
+	}
+	if _, err := svc.UpdateProfile(context.Background(), session.Token, "违规昵称"); err != nil {
+		t.Fatalf("queue audit failed: %v", err)
+	}
+
+	worker := NewContentAuditWorker(store, stubContentAuditClient{
+		result: &contentaudit.ResponseResult{ResultCode: contentaudit.ResultCodeMalicious, ResultType: 20007},
+	}, cfg, ContentAuditWorkerOptions{Now: fixedNow})
+	if err := worker.RunOnce(context.Background(), 20); err != nil {
+		t.Fatalf("run worker: %v", err)
+	}
+
+	current, err := svc.CurrentSession(context.Background(), session.Token)
+	if err != nil {
+		t.Fatalf("load session failed: %v", err)
+	}
+	if current.User.Name != "旧昵称" || current.User.PendingName != "" || current.User.NameAuditStatus != "failed" {
+		t.Fatalf("expected failed audit to keep official name, got %+v", current.User)
+	}
+}
+
 func TestSetUserAvatarPersistsAcrossSessions(t *testing.T) {
 	store := NewMemoryStore(StoreOptions{
 		Now:                fixedNow,
@@ -561,6 +881,205 @@ func TestSetUserAvatarPersistsAcrossSessions(t *testing.T) {
 	}
 	if current.User.AvatarObjectKey != "avatars/usr_01/current.jpg" {
 		t.Fatalf("expected current session avatar object key, got %q", current.User.AvatarObjectKey)
+	}
+}
+
+func TestQueueAvatarAuditKeepsCurrentAvatarUntilPassed(t *testing.T) {
+	store := NewMemoryStore(StoreOptions{
+		Now:                fixedNow,
+		SeedDefaultInvites: true,
+	})
+	cfg := ContentAuditConfig{
+		Enabled:            true,
+		AvatarAuditEnabled: true,
+		ProductID:          "30018",
+		UserSID:            "300071",
+	}
+	svc := NewWithStore(store, Options{Now: fixedNow, ContentAudit: cfg})
+	session, err := svc.SignUpWithPassword(context.Background(), PasswordSignUpInput{
+		Name:       "头像用户",
+		Email:      "avatar-audit@example.com",
+		Password:   "password123",
+		InviteCode: "VALID2026",
+	})
+	if err != nil {
+		t.Fatalf("sign up failed: %v", err)
+	}
+	if _, err := svc.SetUserAvatar(context.Background(), session.User.ID, "avatars/usr_01/current.jpg", "upload"); err != nil {
+		t.Fatalf("set current avatar failed: %v", err)
+	}
+
+	user, err := svc.QueueAvatarAudit(context.Background(), session.User.ID, "avatars/usr_01/pending.jpg", "upload", "https://example.com/pending.jpg")
+	if err != nil {
+		t.Fatalf("queue avatar audit failed: %v", err)
+	}
+	if user.AvatarObjectKey != "avatars/usr_01/current.jpg" || user.PendingAvatarObjectKey != "avatars/usr_01/pending.jpg" || user.AvatarAuditStatus != "pending" {
+		t.Fatalf("expected pending avatar without replacing current avatar, got %+v", user)
+	}
+
+	worker := NewContentAuditWorker(store, stubContentAuditClient{
+		result: &contentaudit.ResponseResult{ResultCode: contentaudit.ResultCodePass},
+	}, cfg, ContentAuditWorkerOptions{Now: fixedNow})
+	if err := worker.RunOnce(context.Background(), 20); err != nil {
+		t.Fatalf("run worker: %v", err)
+	}
+
+	current, err := svc.CurrentSession(context.Background(), session.Token)
+	if err != nil {
+		t.Fatalf("load session failed: %v", err)
+	}
+	if current.User.AvatarObjectKey != "avatars/usr_01/pending.jpg" || current.User.PendingAvatarObjectKey != "" || current.User.AvatarAuditStatus != "passed" {
+		t.Fatalf("expected passed avatar audit to promote pending avatar, got %+v", current.User)
+	}
+}
+
+func TestQueueAvatarAuditAuditsSynchronouslyWhenClientConfigured(t *testing.T) {
+	store := NewMemoryStore(StoreOptions{
+		Now:                fixedNow,
+		SeedDefaultInvites: true,
+	})
+	cfg := ContentAuditConfig{
+		Enabled:            true,
+		AvatarAuditEnabled: true,
+		ProductID:          "30018",
+		UserSID:            "300071",
+	}
+	svc := NewWithStore(store, Options{
+		Now:                fixedNow,
+		ContentAudit:       cfg,
+		ContentAuditClient: stubContentAuditClient{result: &contentaudit.ResponseResult{ResultCode: contentaudit.ResultCodePass}},
+	})
+	session, err := svc.SignUpWithPassword(context.Background(), PasswordSignUpInput{
+		Name:       "头像用户",
+		Email:      "avatar-audit-sync@example.com",
+		Password:   "password123",
+		InviteCode: "VALID2026",
+	})
+	if err != nil {
+		t.Fatalf("sign up failed: %v", err)
+	}
+
+	user, err := svc.QueueAvatarAudit(context.Background(), session.User.ID, "avatars/usr_01/current.jpg", "upload", "https://example.com/current.jpg")
+	if err != nil {
+		t.Fatalf("sync avatar audit failed: %v", err)
+	}
+	if user.AvatarObjectKey != "avatars/usr_01/current.jpg" || user.PendingAvatarObjectKey != "" || user.AvatarAuditStatus != "" {
+		t.Fatalf("expected direct sync audit to update avatar without pending task state, got %+v", user)
+	}
+}
+
+func TestQueueAvatarAuditSynchronouslyLogsSubmission(t *testing.T) {
+	store := NewMemoryStore(StoreOptions{
+		Now:                fixedNow,
+		SeedDefaultInvites: true,
+	})
+	cfg := ContentAuditConfig{
+		Enabled:            true,
+		AvatarAuditEnabled: true,
+		ProductID:          "30018",
+		UserSID:            "300071",
+	}
+	var logs bytes.Buffer
+	svc := NewWithStore(store, Options{
+		Now:                fixedNow,
+		ContentAudit:       cfg,
+		ContentAuditClient: stubContentAuditClient{result: &contentaudit.ResponseResult{ResultCode: contentaudit.ResultCodePass}},
+		Logger:             slog.New(slog.NewTextHandler(&logs, nil)),
+	})
+	session, err := svc.SignUpWithPassword(context.Background(), PasswordSignUpInput{
+		Name:       "头像用户",
+		Email:      "avatar-audit-sync-log@example.com",
+		Password:   "password123",
+		InviteCode: "VALID2026",
+	})
+	if err != nil {
+		t.Fatalf("sign up failed: %v", err)
+	}
+
+	if _, err := svc.QueueAvatarAudit(context.Background(), session.User.ID, "avatars/usr_01/current.jpg", "upload", "https://example.com/current.jpg"); err != nil {
+		t.Fatalf("sync avatar audit failed: %v", err)
+	}
+
+	logText := logs.String()
+	for _, want := range []string{
+		"content audit submit started",
+		"content audit submit completed",
+		"mode=sync-direct",
+		"biz_type=user_avatar",
+		"media_type=image",
+		"content_url_present=true",
+		"decision=pass",
+	} {
+		if !strings.Contains(logText, want) {
+			t.Fatalf("expected audit log to contain %q, got:\n%s", want, logText)
+		}
+	}
+}
+
+func TestQueueAvatarAuditRejectsMaliciousAvatarSynchronously(t *testing.T) {
+	store := NewMemoryStore(StoreOptions{
+		Now:                fixedNow,
+		SeedDefaultInvites: true,
+	})
+	cfg := ContentAuditConfig{
+		Enabled:            true,
+		AvatarAuditEnabled: true,
+		ProductID:          "30018",
+		UserSID:            "300071",
+	}
+	svc := NewWithStore(store, Options{
+		Now:                fixedNow,
+		ContentAudit:       cfg,
+		ContentAuditClient: stubContentAuditClient{result: &contentaudit.ResponseResult{ResultCode: contentaudit.ResultCodeMalicious, ResultType: 20002}},
+	})
+	session, err := svc.SignUpWithPassword(context.Background(), PasswordSignUpInput{
+		Name:       "头像用户",
+		Email:      "avatar-audit-sync-reject@example.com",
+		Password:   "password123",
+		InviteCode: "VALID2026",
+	})
+	if err != nil {
+		t.Fatalf("sign up failed: %v", err)
+	}
+	if _, err := svc.SetUserAvatar(context.Background(), session.User.ID, "avatars/usr_01/current.jpg", "upload"); err != nil {
+		t.Fatalf("set current avatar failed: %v", err)
+	}
+
+	_, err = svc.QueueAvatarAudit(context.Background(), session.User.ID, "avatars/usr_01/rejected.jpg", "upload", "https://example.com/rejected.jpg")
+	var serviceErr *Error
+	if !errors.As(err, &serviceErr) || serviceErr.Code != "content_audit_rejected" {
+		t.Fatalf("expected content_audit_rejected error, got %v", err)
+	}
+	current, err := svc.CurrentSession(context.Background(), session.Token)
+	if err != nil {
+		t.Fatalf("load session failed: %v", err)
+	}
+	if current.User.AvatarObjectKey != "avatars/usr_01/current.jpg" || current.User.PendingAvatarObjectKey != "" || current.User.AvatarAuditStatus != "" {
+		t.Fatalf("expected rejected sync audit to keep current avatar without pending task state, got %+v", current.User)
+	}
+}
+
+func TestQueueAvatarAuditDisabledFallsBackToImmediateAvatar(t *testing.T) {
+	store := NewMemoryStore(StoreOptions{
+		Now:                fixedNow,
+		SeedDefaultInvites: true,
+	})
+	svc := NewWithStore(store, Options{Now: fixedNow, ContentAudit: ContentAuditConfig{Enabled: false}})
+	session, err := svc.SignUpWithPassword(context.Background(), PasswordSignUpInput{
+		Name:       "头像用户",
+		Email:      "avatar-audit-disabled@example.com",
+		Password:   "password123",
+		InviteCode: "VALID2026",
+	})
+	if err != nil {
+		t.Fatalf("sign up failed: %v", err)
+	}
+	user, err := svc.QueueAvatarAudit(context.Background(), session.User.ID, "avatars/usr_01/current.jpg", "upload", "https://example.com/current.jpg")
+	if err != nil {
+		t.Fatalf("queue avatar audit disabled failed: %v", err)
+	}
+	if user.AvatarObjectKey != "avatars/usr_01/current.jpg" || user.PendingAvatarObjectKey != "" || user.AvatarAuditStatus != "" {
+		t.Fatalf("expected immediate avatar when avatar audit is disabled, got %+v", user)
 	}
 }
 
@@ -722,4 +1241,41 @@ type stubRealnameCipher struct{}
 
 func (stubRealnameCipher) Encrypt(plaintext string) (string, error) {
 	return fmt.Sprintf("enc(%s)", plaintext), nil
+}
+
+type stubContentAuditClient struct {
+	result *contentaudit.ResponseResult
+	err    error
+}
+
+func (s stubContentAuditClient) CreateTextTask(_ context.Context, req contentaudit.CreateTextTaskRequest) (*contentaudit.CreateTextTaskResponse, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	if req.Data.Content.User.StrNick == "" || len(req.Data.Content.Media.Text) != 1 || req.Data.Content.Media.Text[0].StrContent == "" {
+		return nil, fmt.Errorf("invalid text audit request: %+v", req.Data.Content)
+	}
+	return &contentaudit.CreateTextTaskResponse{
+		Response: contentaudit.CreateTextTaskResponseBody{
+			Data: &contentaudit.CreateTextTaskResponseData{
+				Result: s.result,
+			},
+		},
+	}, nil
+}
+
+func (s stubContentAuditClient) CreateImageTask(_ context.Context, req contentaudit.CreateImageTaskRequest) (*contentaudit.CreateTextTaskResponse, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	if req.Data.Content.User.StrHeadUrl == "" || len(req.Data.Content.Media.Pic) != 1 || req.Data.Content.Media.Pic[0].StrURL == "" {
+		return nil, fmt.Errorf("invalid image audit request: %+v", req.Data.Content)
+	}
+	return &contentaudit.CreateTextTaskResponse{
+		Response: contentaudit.CreateTextTaskResponseBody{
+			Data: &contentaudit.CreateTextTaskResponseData{
+				Result: s.result,
+			},
+		},
+	}, nil
 }

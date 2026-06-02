@@ -31,6 +31,7 @@ import {
   Download,
   Files,
   Plus,
+  RefreshCw,
   Trash2,
   UserRound,
   Wand2,
@@ -73,6 +74,14 @@ import {
 } from "@/pages/marketing/openclaw-tat-adapter";
 import { createLightVelaCommandExecutor } from "@/pages/marketing/openclaw-command-executor";
 import { installOpenClawConsoleHelpers } from "@/pages/marketing/openclaw-console-helpers";
+import {
+  buildHermesMemoryReadCommand,
+  getMemoryUsagePercent,
+  parseHermesMemorySnapshot,
+  splitHermesMemoryEntries,
+  toSingleLineMemoryEntry,
+  type HermesMemorySnapshot,
+} from "@/pages/marketing/openclaw-memory";
 import { BuddyPanel } from "@/pages/marketing/openclaw-buddy-panel";
 import { AutomationsPanel } from "@/pages/marketing/openclaw-automations-panel";
 import { TatFileManagerPanel } from "@/components/domain/tat-file-manager-panel";
@@ -93,6 +102,7 @@ import {
   hermesModelName,
   hermesSwitchModelFullId,
   isExecCommandSucceeded,
+  isResetConfigRouteMissingError,
   truncateExecOutput,
   RESET_BLOCK_REASON,
 } from "@/pages/marketing/openclaw-reset-config";
@@ -106,6 +116,8 @@ import { LightVelaPanel } from "@tencent/agentchat-lightvela-panel";
 type Channel = "wechat" | "qq" | null;
 type ConnectedChannel = Exclude<Channel, null>;
 type PersonaId = "jarvis" | "luna" | "spark";
+type MemoryTabId = "memory" | "user";
+type MemoryLoadStatus = "idle" | "loading" | "ready" | "error";
 
 interface Persona {
   id: PersonaId;
@@ -206,11 +218,11 @@ const SettingsNavbar = () => {
   );
 };
 
-/* ─── 实例配置子页面类型（通道 / 模型 / 技能 / 人设 / 对话，放在单个 bot 内部切换） ─── */
+/* ─── 实例配置子页面类型（通道 / 模型 / 技能 / 人设 / 自动任务 / 记忆 / 对话，放在单个 bot 内部切换） ─── */
 
-type SettingsSectionId = "channel" | "model" | "files" | "webui" | "terminal" | "skill" | "buddy" | "automations" | "chat";
+type SettingsSectionId = "channel" | "model" | "files" | "webui" | "terminal" | "skill" | "buddy" | "automations" | "memory" | "chat";
 
-const SHOW_AGENTCHAT_ENTRY = true;
+const SHOW_AGENTCHAT_ENTRY = false;
 
 /* ─── Section Card Wrapper ─── */
 
@@ -239,6 +251,193 @@ export const _SectionCard = ({ title, icon, headerRight, children }: { title: st
     </motion.div>
   );
 }
+
+const MemoryLimitCard = ({
+  title,
+  description,
+  used,
+  limit,
+  t,
+}: {
+  title: string;
+  description: string;
+  used: number;
+  limit: number;
+  t: (zh: string, options?: Record<string, unknown>) => string;
+}) => {
+  const percent = getMemoryUsagePercent(used, limit);
+  return (
+    <div className="rounded-lg border border-black/[0.06] bg-white p-4 shadow-[0_8px_28px_rgba(15,23,42,0.04)]">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-black/85">{title}</p>
+          <p className="mt-1 max-w-[28rem] text-xs leading-relaxed text-black/45">{description}</p>
+        </div>
+        <span className="rounded-full bg-black/[0.05] px-2 py-1 text-xs font-medium text-black/60">
+          {percent}%
+        </span>
+      </div>
+      <div className="mt-4 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <span className="text-2xl font-semibold tabular-nums text-black/90">{used}</span>
+        <span className="pb-1 text-sm tabular-nums text-black/45">/ {limit} {t("字符")}</span>
+        <span className="text-xs text-black/45">{t("当前占用 / 字符限额")}</span>
+      </div>
+      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-black/[0.06]">
+        <div
+          className="h-full rounded-full bg-black/80 transition-[width]"
+          style={{ width: `${percent}%` }}
+        />
+      </div>
+    </div>
+  );
+};
+
+const MemoryEntries = ({
+  entries,
+  emptyText,
+}: {
+  entries: string[];
+  emptyText: string;
+}) => {
+  if (entries.length === 0) {
+    return (
+      <div className="flex min-h-40 items-center justify-center rounded-lg border border-dashed border-black/[0.10] bg-black/[0.015] px-6 text-center text-sm text-black/45">
+        {emptyText}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {entries.map((entry, index) => {
+        const preview = toSingleLineMemoryEntry(entry);
+        return (
+          <div
+            key={`${index}-${preview.slice(0, 24)}`}
+            title={entry}
+            className="flex min-h-11 items-center rounded-md border border-black/[0.06] bg-white px-3 text-sm text-black/75 shadow-[0_1px_2px_rgba(15,23,42,0.02)]"
+          >
+            <span className="min-w-0 flex-1 truncate">{preview}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+const MemoryPanel = ({
+  status,
+  snapshot,
+  error,
+  activeTab,
+  onTabChange,
+  onRefresh,
+  t,
+}: {
+  status: MemoryLoadStatus;
+  snapshot: HermesMemorySnapshot | null;
+  error: string | null;
+  activeTab: MemoryTabId;
+  onTabChange: (tab: MemoryTabId) => void;
+  onRefresh: () => void;
+  t: (zh: string, options?: Record<string, unknown>) => string;
+}) => {
+  const memoryEntries = splitHermesMemoryEntries(snapshot?.memoryText ?? "");
+  const userEntries = splitHermesMemoryEntries(snapshot?.userText ?? "");
+  const visibleEntries = activeTab === "memory" ? memoryEntries : userEntries;
+  const isLoading = status === "loading";
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold text-black/90">{t("记忆")}</h2>
+          <p className="mt-1 text-sm text-black/45">{t("查看当前 Hermes 的记忆、用户画像和字符占用。")}</p>
+        </div>
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={isLoading}
+          className={cn(
+            "inline-flex h-9 items-center gap-2 rounded-md border border-black/[0.08] bg-white px-3 text-sm font-medium text-black/70 transition-colors hover:bg-black/[0.035] hover:text-black/90",
+            isLoading && "cursor-not-allowed opacity-60",
+          )}
+        >
+          {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+          {t("刷新")}
+        </button>
+      </div>
+
+      {status === "error" && (
+        <div className="rounded-lg border border-red-500/15 bg-red-500/[0.04] px-4 py-3 text-sm leading-relaxed text-red-600">
+          {error || t("记忆读取失败，请稍后重试。")}
+        </div>
+      )}
+
+      {isLoading && !snapshot && (
+        <div className="flex min-h-64 items-center justify-center rounded-lg border border-black/[0.06] bg-white text-sm text-black/50">
+          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          {t("正在读取记忆...")}
+        </div>
+      )}
+
+      {snapshot && (
+        <>
+          <div className="grid gap-3 md:grid-cols-2">
+            <MemoryLimitCard
+              title={t("记忆统计")}
+              description={t("MEMORY.md：帮 Agent 长期记住项目背景、运行环境和常用约定。")}
+              used={snapshot.memoryChars}
+              limit={snapshot.memoryCharLimit}
+              t={t}
+            />
+            <MemoryLimitCard
+              title={t("用户画像统计")}
+              description={t("USER.md：帮 Agent 长期记住你的偏好、使用习惯和沟通方式。")}
+              used={snapshot.userChars}
+              limit={snapshot.userCharLimit}
+              t={t}
+            />
+          </div>
+
+          {snapshot.usedFallbackLimits && (
+            <p className="text-xs text-black/40">
+              {t("未读取到完整限额配置，当前展示默认值。")}
+            </p>
+          )}
+
+          <div className="rounded-lg border border-black/[0.06] bg-white p-3 shadow-[0_8px_28px_rgba(15,23,42,0.04)]">
+            <div className="mb-3 inline-flex rounded-lg bg-black/[0.04] p-1">
+              {([
+                ["memory", t("记忆")],
+                ["user", t("用户画像")],
+              ] as const).map(([tab, label]) => {
+                const isActive = activeTab === tab;
+                return (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => onTabChange(tab)}
+                    className={cn(
+                      "rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
+                      isActive ? "bg-white text-black/90 shadow-sm" : "text-black/50 hover:text-black/80",
+                    )}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+            <MemoryEntries
+              entries={visibleEntries}
+              emptyText={activeTab === "memory" ? t("暂无 Agent 记忆。") : t("暂无用户画像。")}
+            />
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
 
 /* ─── Delete Confirm Dialog ─── */
 
@@ -2269,30 +2468,33 @@ export const _BotInfoCard = ({ bot, index, onDelete, onTerminal }: { bot: { id: 
           className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm"
           onClick={() => setShowDeleteConfirm(false)}
         >
-          <div className="mx-4 w-full max-w-sm rounded-2xl border bg-white p-6 shadow-2xl" style={{ borderColor: "rgba(238,238,238,0.4)" }} onClick={(e) => e.stopPropagation()}>
+          <div className="mx-4 w-full max-w-[26.4rem] rounded-2xl border bg-white p-6 shadow-2xl" style={{ borderColor: "rgba(238,238,238,0.4)" }} onClick={(e) => e.stopPropagation()}>
             {/* 头部 */}
             <div className="flex items-center gap-3" style={{ marginBottom: "20px" }}>
               <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "rgba(220,38,38,0.08)" }}>
                 <AlertTriangle className="h-5 w-5" style={{ color: "#DC2626" }} />
               </div>
-              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("确认删除")}</h3>
+              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("删除智能体")}</h3>
             </div>
             {/* 风险说明 */}
             <p style={{ color: "#666", fontSize: "14px", lineHeight: 1.6, marginBottom: "12px" }}>
-              {t("删除后会话将立即断开，数据将无法恢复。")}
+              {t("删除后会话将立即断开，数据将无法恢复。请谨慎操作！")}
             </p>
             {/* 操作引导 */}
             <p style={{ color: "var(--lw-fg)", fontSize: "14px", lineHeight: 1.6, marginBottom: "10px" }}>
-              {t("如确认删除，请输入名称 {{name}}：", { name: bot.name })}
+              {t("如确认删除，请输入名称")}{" "}
+              <span className="select-all rounded-md bg-red-50 px-1.5 py-0.5 font-semibold text-red-600">
+                {bot.name}
+              </span>
             </p>
             <input type="text" placeholder={t("请输入 {{name}}", { name: bot.name })} value={deleteInput} onChange={(e) => setDeleteInput(e.target.value)} className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition-all focus:border-[#DC2626]" style={{ borderColor: "var(--lw-border)", color: "var(--lw-fg)", marginBottom: "20px" }} />
             {deleteErr && <p className="text-xs" style={{ color: "#DC2626", marginBottom: "12px" }}>{deleteErr}</p>}
             {/* 按钮组：上下排列 */}
             <div className="flex flex-col gap-2">
-              <button onClick={async () => { setDeleting(true); setDeleteErr(null); try { await deleteBot(bot.id); setShowDeleteConfirm(false); } catch (e) { setDeleteErr(e instanceof Error ? e.message : t("删除失败")); } finally { setDeleting(false); } }} disabled={deleteInput !== bot.name || deleting} className="w-full rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-all" style={{ backgroundColor: deleteInput === bot.name && !deleting ? "#DC2626" : "#E5E7EB", cursor: deleteInput === bot.name && !deleting ? "pointer" : "not-allowed" }}>
+              <button onClick={async () => { setDeleting(true); setDeleteErr(null); try { await deleteBot(bot.id); setShowDeleteConfirm(false); } catch (e) { setDeleteErr(e instanceof Error ? e.message : t("删除失败")); } finally { setDeleting(false); } }} disabled={deleteInput !== bot.name || deleting} className="w-full rounded-xl px-4 py-2.5 text-[16px] font-semibold text-white transition-all" style={{ backgroundColor: deleteInput === bot.name && !deleting ? "#DC2626" : "#E5E7EB", cursor: deleteInput === bot.name && !deleting ? "pointer" : "not-allowed", fontSize: "16px" }}>
                 {deleting ? t("删除中...") : t("确认删除")}
               </button>
-              <button onClick={() => setShowDeleteConfirm(false)} className="py-2 text-sm transition-colors hover:opacity-70" style={{ color: "#999", background: "none", border: "none", cursor: "pointer" }}>
+              <button onClick={() => setShowDeleteConfirm(false)} className="py-2 text-[16px] transition-colors hover:opacity-70" style={{ color: "#999", background: "none", border: "none", cursor: "pointer", fontSize: "16px" }}>
                 {t("取消")}
               </button>
             </div>
@@ -2468,6 +2670,7 @@ export const OpenClawSettingsPage = () => {
     }
   }, [visibleBots, activeTabId, isCreating]);
   const activeBot = visibleBots.find((b) => b.id === activeTabId) ?? visibleBots[0];
+  const activeBotStatus = activeBot?.status;
 
   /**
    * AgentChat（LightVela）启动 token：
@@ -2598,6 +2801,57 @@ export const OpenClawSettingsPage = () => {
   const retryLaunchToken = useCallback(() => {
     setLaunchTokenRefreshTick((tick) => tick + 1);
   }, []);
+
+  const [memoryStatus, setMemoryStatus] = useState<MemoryLoadStatus>("idle");
+  const [memorySnapshot, setMemorySnapshot] = useState<HermesMemorySnapshot | null>(null);
+  const [memoryError, setMemoryError] = useState<string | null>(null);
+  const [activeMemoryTab, setActiveMemoryTab] = useState<MemoryTabId>("memory");
+  const memoryRequestIdRef = useRef(0);
+
+  const loadHermesMemory = useCallback(async () => {
+    const requestId = memoryRequestIdRef.current + 1;
+    memoryRequestIdRef.current = requestId;
+
+    if (!activeBotId) {
+      setMemorySnapshot(null);
+      setMemoryStatus("error");
+      setMemoryError(rawT("未找到当前 Hermes 实例。"));
+      return;
+    }
+
+    if (activeBotStatus !== "running") {
+      setMemorySnapshot(null);
+      setMemoryStatus("error");
+      setMemoryError(rawT("实例运行后才能读取记忆。"));
+      return;
+    }
+
+    setMemorySnapshot(null);
+    setMemoryStatus("loading");
+    setMemoryError(null);
+    try {
+      const result = await repositories.bots.execDebugCommand(activeBotId, buildHermesMemoryReadCommand());
+      if (memoryRequestIdRef.current !== requestId) return;
+      if (!isExecCommandSucceeded(result)) {
+        throw new Error(
+          rawT("记忆读取命令执行失败：{{detail}}", {
+            detail: truncateExecOutput(result.output, result.status),
+          }),
+        );
+      }
+      setMemorySnapshot(parseHermesMemorySnapshot(result.output));
+      setMemoryStatus("ready");
+    } catch (err) {
+      if (memoryRequestIdRef.current !== requestId) return;
+      setMemoryStatus("error");
+      setMemoryError(err instanceof Error ? err.message : rawT("记忆读取失败，请稍后重试。"));
+    }
+  }, [activeBotId, activeBotStatus, repositories]);
+
+  useEffect(() => {
+    if (activeSection !== "memory") return;
+    void loadHermesMemory();
+  }, [activeSection, activeBotId, loadHermesMemory]);
 
 
   /**
@@ -2741,8 +2995,12 @@ export const OpenClawSettingsPage = () => {
       setShowResetConfirm(false);
       toast.success(t("重置成功"));
     } catch (err) {
-      setResetError(err instanceof Error ? err.message : t("重置失败，请重试"));
-      toast.error(t("重置失败，请重试"));
+      const fallbackMessage = t("重置失败，请重试");
+      const message = isResetConfigRouteMissingError(err)
+        ? t("当前后端服务暂不支持重置配置，请稍后再试。")
+        : err instanceof Error ? err.message : fallbackMessage;
+      setResetError(message);
+      toast.error(message);
     } finally {
       setResetting(false);
     }
@@ -2774,6 +3032,7 @@ export const OpenClawSettingsPage = () => {
 
   /* ── 重启 Gateway ── */
   // restartingBotIds: 正在重启的 bot ID 集合，支持多 bot 并行重启
+  const [showRestartConfirm, setShowRestartConfirm] = useState(false);
   const [restartingBotIds, setRestartingBotIds] = useState<Set<string>>(new Set());
   // 错误按 bot 维度存储，多 bot 并行失败时各自保留错误信息
   const [restartErrors, setRestartErrors] = useState<RestartErrors>(new Map());
@@ -3062,7 +3321,7 @@ export const OpenClawSettingsPage = () => {
           <motion.div
             initial={{ opacity: 0, y: 20, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            className="mx-4 w-full max-w-sm rounded-2xl border bg-white p-6 shadow-2xl"
+            className="mx-4 w-full max-w-[26.4rem] rounded-2xl border bg-white p-6 shadow-2xl"
             style={{ borderColor: "rgba(238,238,238,0.4)" }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -3070,13 +3329,16 @@ export const OpenClawSettingsPage = () => {
               <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "rgba(220,38,38,0.08)" }}>
                 <AlertTriangle className="h-5 w-5" style={{ color: "#DC2626" }} />
               </div>
-              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("确认删除")}</h3>
+              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("删除智能体")}</h3>
             </div>
             <p style={{ color: "#666", fontSize: "14px", lineHeight: 1.6, marginBottom: "12px" }}>
-              {t("删除后会话将立即断开，数据将无法恢复。")}
+              {t("删除后会话将立即断开，数据将无法恢复。请谨慎操作！")}
             </p>
             <p style={{ color: "var(--lw-fg)", fontSize: "14px", lineHeight: 1.6, marginBottom: "10px" }}>
-              {t("如确认删除，请输入名称 {{name}}：", { name: activeBot.name })}
+              {t("如确认删除，请输入名称")}{" "}
+              <span className="select-all rounded-md bg-red-50 px-1.5 py-0.5 font-semibold text-red-600">
+                {activeBot.name}
+              </span>
             </p>
             <input
               type="text"
@@ -3091,15 +3353,69 @@ export const OpenClawSettingsPage = () => {
               <button
                 onClick={() => void handleDelete()}
                 disabled={deleteInput !== activeBot.name}
-                className="w-full rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-all"
+                className="w-full rounded-xl px-4 py-2.5 text-[16px] font-semibold text-white transition-all"
                 style={{
                   backgroundColor: deleteInput === activeBot.name ? "#DC2626" : "#E5E7EB",
                   cursor: deleteInput === activeBot.name ? "pointer" : "not-allowed",
+                  fontSize: "16px",
                 }}
               >
                 {t("确认删除")}
               </button>
-              <button onClick={() => setShowDeleteConfirm(false)} className="py-2 text-sm transition-colors hover:opacity-70" style={{ color: "#999", background: "none", border: "none", cursor: "pointer" }}>
+              <button onClick={() => setShowDeleteConfirm(false)} className="py-2 text-[16px] transition-colors hover:opacity-70" style={{ color: "#999", background: "none", border: "none", cursor: "pointer", fontSize: "16px" }}>
+                {t("取消")}
+              </button>
+            </div>
+          </motion.div>
+        </div>,
+        document.body,
+      )}
+
+      {/* Restart Gateway Confirm Dialog */}
+      {showRestartConfirm && activeBot && createPortal(
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          onClick={() => { if (!isActiveBotRestarting) setShowRestartConfirm(false); }}
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            className="mx-4 w-full max-w-sm rounded-2xl border bg-white p-6 shadow-2xl"
+            style={{ borderColor: "var(--tea-color-border-default-alpha4, rgba(238,238,238,0.4))" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3" style={{ marginBottom: "20px" }}>
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "rgba(0,0,0,0.04)" }}>
+                <RefreshCw className="h-5 w-5" style={{ color: "rgba(0,0,0,0.62)" }} />
+              </div>
+              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("重启 Hermes Agent 网关")}</h3>
+            </div>
+            <p style={{ color: "var(--tea-color-text-secondary, #666)", fontSize: "14px", lineHeight: 1.6, marginBottom: "20px" }}>
+              {t("重启期间 Agent 可能会短暂不可用，对话会短暂断开，确认重启？")}
+            </p>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => {
+                  if (isActiveBotRestarting) return;
+                  setShowRestartConfirm(false);
+                  void handleRestartGateway();
+                }}
+                disabled={isActiveBotRestarting}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-black/90 px-4 py-2.5 text-[16px] font-semibold text-white transition-all hover:opacity-90"
+                style={{
+                  cursor: isActiveBotRestarting ? "not-allowed" : "pointer",
+                  fontSize: "16px",
+                }}
+              >
+                {isActiveBotRestarting && <Loader2 className="h-4 w-4 animate-spin" />}
+                {isActiveBotRestarting ? t("重启中...") : t("确认重启")}
+              </button>
+              <button
+                onClick={() => setShowRestartConfirm(false)}
+                disabled={isActiveBotRestarting}
+                className="py-2 text-[16px] transition-colors hover:opacity-70"
+                style={{ color: "var(--tea-color-text-secondary, #999)", background: "none", border: "none", cursor: isActiveBotRestarting ? "not-allowed" : "pointer", fontSize: "16px" }}
+              >
                 {t("取消")}
               </button>
             </div>
@@ -3125,7 +3441,7 @@ export const OpenClawSettingsPage = () => {
               <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "var(--tea-color-warning-default-alpha10, rgba(245,158,11,0.10))" }}>
                 <Wrench className="h-5 w-5" style={{ color: "var(--tea-color-warning-default, #F59E0B)" }} />
               </div>
-              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("恢复初始设置")}</h3>
+              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("重置 Hermes Agent 配置")}</h3>
             </div>
             <p style={{ color: "var(--tea-color-text-secondary, #666)", fontSize: "14px", lineHeight: 1.6, marginBottom: "20px" }}>
               {t("将保留当前工作空间、记忆和自动任务，并初始化配置文件，模型相关配置不会保留。")}
@@ -3151,20 +3467,21 @@ export const OpenClawSettingsPage = () => {
               <button
                 onClick={() => void handleResetConfig()}
                 disabled={resetting}
-                className="flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-all"
+                className="flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-[16px] font-semibold text-white transition-all"
                 style={{
                   backgroundColor: resetting ? "var(--tea-color-bg-disabled, #E5E7EB)" : "var(--tea-color-warning-default, #F59E0B)",
                   cursor: resetting ? "not-allowed" : "pointer",
+                  fontSize: "16px",
                 }}
               >
                 {resetting && <Loader2 className="h-4 w-4 animate-spin" />}
-                {resetting ? t("恢复中...") : t("确认恢复")}
+                {resetting ? t("恢复中...") : t("确认重置")}
               </button>
               <button
                 onClick={() => setShowResetConfirm(false)}
                 disabled={resetting}
-                className="py-2 text-sm transition-colors hover:opacity-70"
-                style={{ color: "var(--tea-color-text-secondary, #999)", background: "none", border: "none", cursor: resetting ? "not-allowed" : "pointer" }}
+                className="py-2 text-[16px] transition-colors hover:opacity-70"
+                style={{ color: "var(--tea-color-text-secondary, #999)", background: "none", border: "none", cursor: resetting ? "not-allowed" : "pointer", fontSize: "16px" }}
               >
                 {t("取消")}
               </button>
@@ -3308,6 +3625,7 @@ export const OpenClawSettingsPage = () => {
                   ? [{ id: "buddy" as const, label: t("人设"), icon: <UserRound className="h-4 w-4" /> }]
                   : []),
                 { id: "automations", label: t("自动任务"), icon: <CalendarClock className="h-4 w-4" />, badge: "NEW" },
+                { id: "memory", label: t("记忆"), icon: <Database className="h-4 w-4" />, badge: "NEW" },
                 ...(SHOW_AGENTCHAT_ENTRY
                   ? [{ id: "chat" as const, label: t("对话"), icon: <MessageSquare className="h-4 w-4" />, badge: "NEW" }]
                   : []),
@@ -3325,9 +3643,6 @@ export const OpenClawSettingsPage = () => {
                 <div className="grid items-start gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
                   <aside className="lg:sticky lg:top-[84px]">
                     <div className="rounded-lg border border-black/[0.06] bg-white p-3 shadow-[0_8px_28px_rgba(15,23,42,0.04)]">
-                      <div className="px-1 pb-2 text-xs font-medium text-black/35">
-                        {t("选择 Agent")}
-                      </div>
                       <div
                         role={visibleBots.length > 1 ? "button" : undefined}
                         tabIndex={visibleBots.length > 1 ? 0 : undefined}
@@ -3364,59 +3679,85 @@ export const OpenClawSettingsPage = () => {
                               />
                             )}
                             {isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}
+                          </span>
+                        </span>
+                        <div className="-mr-1.5 ml-auto flex flex-shrink-0 items-center gap-0">
+                          <span className="group relative inline-flex">
                             <button
                               type="button"
                               onClick={(event) => {
                                 event.stopPropagation();
-                                if (!isRestartDisabled) void handleRestartGateway();
+                                if (!isRestartDisabled) setShowRestartConfirm(true);
                               }}
                               aria-disabled={isRestartDisabled}
                               aria-label={t("重启")}
                               className={cn(
-                                "ml-1 inline-flex h-5 items-center rounded px-1.5 text-xs font-medium transition-colors",
+                                "inline-flex h-8 w-6 flex-shrink-0 items-center justify-center rounded-md transition-colors",
                                 isRestartDisabled
-                                  ? "cursor-not-allowed text-black/25"
-                                  : "text-black/45 hover:bg-black/[0.06] hover:text-black/80",
+                                  ? "cursor-not-allowed text-black/20"
+                                  : "text-black/35 hover:bg-black/[0.06] hover:text-black/80",
                               )}
-                              title={isActiveBotRestarting ? t("正在重启中") : t("重启 Hermes Agent 网关")}
+                            >
+                              {isActiveBotRestarting ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                            </button>
+                            <span
+                              role="tooltip"
+                              className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-md bg-black/80 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-sm transition-opacity duration-75 group-focus-within:opacity-100 group-hover:opacity-100"
                             >
                               {t("重启")}
-                            </button>
+                              <span className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-x-[4px] border-t-[4px] border-x-transparent border-t-black/80" />
+                            </span>
                           </span>
-                        </span>
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            if (resetDisabled) return;
-                            setResetError(null);
-                            setShowResetConfirm(true);
-                          }}
-                          aria-disabled={resetDisabled}
-                          aria-label={resetTooltip}
-                          className={cn(
-                            "inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md transition-colors",
-                            resetDisabled
-                              ? "cursor-not-allowed text-black/20"
-                              : "text-black/35 hover:bg-amber-500/10 hover:text-amber-600",
-                          )}
-                          title={resetTooltip}
-                        >
-                          {resetting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wrench className="h-4 w-4" />}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setDeleteInput("");
-                            setShowDeleteConfirm(true);
-                          }}
-                          aria-label={t("删除")}
-                          className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md text-red-500 transition-colors hover:bg-red-500/10"
-                          title={t("删除此 Hermes")}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                          <span className="group relative inline-flex">
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                if (resetDisabled) return;
+                                setResetError(null);
+                                setShowResetConfirm(true);
+                              }}
+                              aria-disabled={resetDisabled}
+                              aria-label={resetTooltip}
+                              className={cn(
+                                "inline-flex h-8 w-6 flex-shrink-0 items-center justify-center rounded-md transition-colors",
+                                resetDisabled
+                                  ? "cursor-not-allowed text-black/20"
+                                  : "text-black/35 hover:bg-amber-500/10 hover:text-amber-600",
+                              )}
+                            >
+                              {resetting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wrench className="h-4 w-4" />}
+                            </button>
+                            <span
+                              role="tooltip"
+                              className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-md bg-black/80 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-sm transition-opacity duration-75 group-focus-within:opacity-100 group-hover:opacity-100"
+                            >
+                              {resetTooltip}
+                              <span className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-x-[4px] border-t-[4px] border-x-transparent border-t-black/80" />
+                            </span>
+                          </span>
+                          <span className="group relative inline-flex">
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setDeleteInput("");
+                                setShowDeleteConfirm(true);
+                              }}
+                              aria-label={t("删除")}
+                              className="inline-flex h-8 w-6 flex-shrink-0 items-center justify-center rounded-md text-black/35 transition-colors hover:bg-red-500/10 hover:text-red-500"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                            <span
+                              role="tooltip"
+                              className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-md bg-black/80 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-sm transition-opacity duration-75 group-focus-within:opacity-100 group-hover:opacity-100"
+                            >
+                              {t("删除")}
+                              <span className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-x-[4px] border-t-[4px] border-x-transparent border-t-black/80" />
+                            </span>
+                          </span>
+                        </div>
                         {visibleBots.length > 1 && (
                           <ChevronDown
                             className={cn("h-4 w-4 flex-shrink-0 text-black/35 transition-transform", isAgentMenuOpen && "rotate-180")}
@@ -3592,6 +3933,17 @@ export const OpenClawSettingsPage = () => {
                               )}
                             </div>
                           )}
+                          {activeSection === "memory" && (
+                            <MemoryPanel
+                              status={memoryStatus}
+                              snapshot={memorySnapshot}
+                              error={memoryError}
+                              activeTab={activeMemoryTab}
+                              onTabChange={setActiveMemoryTab}
+                              onRefresh={loadHermesMemory}
+                              t={t}
+                            />
+                          )}
                         </div>
                       </motion.div>
                     </AnimatePresence>
@@ -3630,7 +3982,7 @@ export const OpenClawSettingsPage = () => {
         </section>
       </main>
 
-      <LegalFooter />
+      <LegalFooter icpPlacement="right" />
     </div>
   );
 };

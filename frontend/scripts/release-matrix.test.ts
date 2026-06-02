@@ -276,7 +276,7 @@ describe("release matrix helpers", () => {
       buildCommand: "build:cn",
       deployCommand: "deploy:eo",
       projectName: "lightvela",
-      authApiBaseUrl: "https://api.lightvela.tencent.com",
+      authApiBaseUrl: "https://api.lightvela.com",
       outputDir: "dist-cn",
       observability: {
         aegis: {

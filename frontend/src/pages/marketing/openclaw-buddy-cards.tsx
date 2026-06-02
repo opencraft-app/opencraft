@@ -100,6 +100,7 @@ export function SoulFaceCard({
       style={{
         width: isSlot ? "100%" : isLarge ? 240 : 156,
         aspectRatio: isLarge ? "240 / 338" : "112 / 157",
+        containerType: isSlot ? "inline-size" : undefined,
         background: visuals.bgUrl
           ? `url(${visuals.bgUrl}) center/cover no-repeat`
           : "#f0f0f0",
@@ -110,20 +111,26 @@ export function SoulFaceCard({
       }}
     >
       {/* 底部信息浮层 */}
-      <div className="absolute inset-x-3 bottom-3 flex flex-col gap-0.5">
+      <div className={`absolute inset-x-3 bottom-3 flex flex-col ${isLarge ? "gap-1" : "gap-0.5"}`}>
         <div
           className={`text-center font-normal text-black ${
-            isLarge ? "text-[20px] leading-[1.4em]" : "text-[15px] leading-[1.4em]"
+            isLarge ? "leading-[1.4em]" : "leading-[1.25em]"
           }`}
-          style={{ fontFamily: "var(--font-chuangji)" }}
+          style={{
+            fontFamily: "var(--font-chuangji)",
+            fontSize: isLarge ? 20 : isSlot ? "clamp(10px, 13cqw, 15px)" : 15,
+          }}
         >
           {soul.displayName}
         </div>
         <p
           className={`line-clamp-2 leading-[1.5em] ${
-            isLarge ? "text-center text-[13px]" : "text-left text-[11px]"
+            isLarge ? "text-center" : "text-left"
           }`}
-          style={{ color: "rgba(0,0,0,0.7)" }}
+          style={{
+            color: "rgba(0,0,0,0.7)",
+            fontSize: isLarge ? 13 : isSlot ? "clamp(8px, 9.5cqw, 11px)" : 11,
+          }}
         >
           {soul.summary}
         </p>
@@ -152,19 +159,21 @@ export function SoulFaceCard({
           </div>
         )}
         {isLarge && onInterpret && (
-          <button
-            type="button"
-            onClick={onInterpret}
-            className="ml-auto mt-1 inline-flex items-center gap-1 font-medium underline underline-offset-4 transition-opacity hover:opacity-70"
-            style={{
-              color: "rgba(0,0,0,0.72)",
-              fontSize: 12,
-              lineHeight: "18px",
-            }}
-          >
-            <Eye className="h-3 w-3" />
-            {t("人设解读")}
-          </button>
+          <div className="mt-2 flex justify-end">
+            <button
+              type="button"
+              onClick={onInterpret}
+              className="inline-flex items-center gap-1 font-medium underline underline-offset-4 transition-opacity hover:opacity-70"
+              style={{
+                color: "rgba(0,0,0,0.72)",
+                fontSize: 12,
+                lineHeight: "18px",
+              }}
+            >
+              <Eye className="h-3 w-3" />
+              {t("人设解读")}
+            </button>
+          </div>
         )}
       </div>
     </div>

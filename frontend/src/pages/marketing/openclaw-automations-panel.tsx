@@ -14,7 +14,7 @@
  * - 占位字段（工作空间 / 生效日期区间 / 推送 WorkBuddy）按截图渲染但 disabled
  */
 
-import { AlertTriangle, ChevronDown, CircleHelp, Clock, Eye, Loader2, Pause, Pencil, Play, Plus, Trash2, X } from "lucide-react";
+import { AlertTriangle, ChevronDown, CircleHelp, Clock, Eye, LayoutTemplate, Loader2, Pause, Pencil, Play, Plus, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { parseHermesChannelList } from "@tencent/tea-sdk-lightclaw";
@@ -45,7 +45,6 @@ const MAX_CRON_JOBS_PER_BOT = 20;
 const MODAL_CONTROL_TEXT_STYLE: React.CSSProperties = { fontSize: 16, lineHeight: "24px" };
 const MODAL_HELP_TEXT_STYLE: React.CSSProperties = { fontSize: 13, lineHeight: "20px" };
 const EXPIRED_CRON_JOB_HIDE_AFTER_MS = 10 * 60 * 1000;
-const CRON_JOB_CARD_TITLE_MAX_WIDTH = 12;
 
 /** 顶部红色 toast；与 settings 主页 SkillInstallToast 视觉一致 */
 function ErrorToast({ message, onClose }: { message: string; onClose: () => void }) {
@@ -74,6 +73,9 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
   const [jobs, setJobs] = useState<CronJob[]>([]);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
+  const [creatingFromTemplate, setCreatingFromTemplate] = useState<AutomationTemplate | null>(null);
+  const [pendingCreateMode, setPendingCreateMode] = useState<"blank" | "template" | null>(null);
   const [confirmCreateOverLimit, setConfirmCreateOverLimit] = useState(false);
   const [viewingJob, setViewingJob] = useState<CronJob | null>(null);
   /** 正在编辑的 job；非空时弹编辑表单 */
@@ -87,6 +89,17 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
   const errorTimerRef = useRef<number | null>(null);
   const visibleJobs = useMemo(() => jobs.filter((job) => !isCronJobExpiredBeyondGrace(job)), [jobs]);
   const jobLimitReached = visibleJobs.length >= MAX_CRON_JOBS_PER_BOT;
+  const templates = useMemo(() => getAutomationTemplates(t), [t]);
+
+  const requestCreate = useCallback((mode: "blank" | "template") => {
+    if (jobLimitReached) {
+      setPendingCreateMode(mode);
+      setConfirmCreateOverLimit(true);
+      return;
+    }
+    if (mode === "template") setTemplatePickerOpen(true);
+    else setCreating(true);
+  }, [jobLimitReached]);
 
   const showError = useCallback((message: string) => {
     if (errorTimerRef.current) {
@@ -168,20 +181,22 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
             {t("让你的智能体伙伴按计划自动执行任务")}
           </p>
         </div>
-        <div className="inline-flex">
+        <div className="inline-flex items-center gap-2.5">
           <button
             type="button"
-            onClick={() => {
-              if (jobLimitReached) {
-                setConfirmCreateOverLimit(true);
-                return;
-              }
-              setCreating(true);
-            }}
-            className="inline-flex min-w-[72px] items-center justify-center gap-1.5 rounded-lg bg-black px-3.5 py-1.5 text-white transition hover:bg-black/85"
+            onClick={() => requestCreate("template")}
+            className="inline-flex min-w-[96px] items-center justify-center gap-2 rounded-lg border border-black/10 bg-white px-4 py-2 text-black/75 transition hover:bg-black/[0.04]"
           >
-            <Plus className="h-4 w-4" />
-            <span className="text-sm font-semibold leading-none">{t("添加")}</span>
+            <LayoutTemplate className="h-5 w-5" />
+            <span className="text-base font-semibold leading-none">{t("模板")}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => requestCreate("blank")}
+            className="inline-flex min-w-[88px] items-center justify-center gap-2 rounded-lg bg-black px-4 py-2 text-white transition hover:bg-black/85"
+          >
+            <Plus className="h-5 w-5" />
+            <span className="text-base font-semibold leading-none">{t("添加")}</span>
           </button>
         </div>
       </div>
@@ -208,7 +223,16 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
         ) : visibleJobs.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-10 text-sm text-black/50">
             <Clock className="mb-2 h-6 w-6 opacity-50" />
-            {t("还没有自动任务")}
+            <p>
+              {t("暂无自动任务，")}
+              <button
+                type="button"
+                onClick={() => requestCreate("template")}
+                className="font-medium text-black/80 underline decoration-black/30 underline-offset-4 transition hover:text-black"
+              >
+                {t("参考模板添加")}
+              </button>
+            </p>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -248,12 +272,43 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
         />
       )}
 
+      {templatePickerOpen && (
+        <AutomationTemplateModal
+          templates={templates}
+          onClose={() => setTemplatePickerOpen(false)}
+          onSelect={(template) => {
+            setTemplatePickerOpen(false);
+            setCreatingFromTemplate(template);
+          }}
+        />
+      )}
+
+      {creatingFromTemplate && (
+        <AutomationFormModal
+          botId={botId}
+          mode="create"
+          template={creatingFromTemplate}
+          onClose={() => setCreatingFromTemplate(null)}
+          onSaved={async () => {
+            setCreatingFromTemplate(null);
+            await refresh();
+          }}
+          onError={showError}
+        />
+      )}
+
       {confirmCreateOverLimit && (
         <ConfirmCreateOverLimitModal
-          onCancel={() => setConfirmCreateOverLimit(false)}
+          onCancel={() => {
+            setConfirmCreateOverLimit(false);
+            setPendingCreateMode(null);
+          }}
           onConfirm={() => {
             setConfirmCreateOverLimit(false);
-            setCreating(true);
+            const mode = pendingCreateMode ?? "blank";
+            setPendingCreateMode(null);
+            if (mode === "template") setTemplatePickerOpen(true);
+            else setCreating(true);
           }}
         />
       )}
@@ -313,18 +368,17 @@ function CronJobCard({
   const paused = isCronJobPaused(job);
   const expired = isCronJobExpired(job);
   const fullName = job.name || t("未命名任务");
-  // 中文标题约 8 个字、英文标题约 12 个字，超过用 … 省略；hover title 显示全名
-  const displayName = truncateCronJobCardTitle(fullName);
+  const scheduleLabel = formatScheduleFriendly(job, t);
   return (
     <div
       className="flex flex-col rounded-xl bg-white p-4 transition hover:shadow-md"
       style={{ ...PANEL_CARD_STYLE, minHeight: 178 }}
     >
       <div className="flex items-start justify-between gap-2 pb-2">
-        <div className="flex min-w-0 items-center gap-1.5">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
           <Clock className="h-4 w-4 shrink-0 text-black/40" />
-          <span className="text-sm font-medium text-black/90" title={fullName}>
-            {displayName}
+          <span className="min-w-0 truncate text-sm font-medium text-black/90" title={fullName}>
+            {fullName}
           </span>
         </div>
         {(expired || paused) && (
@@ -346,8 +400,8 @@ function CronJobCard({
       <p className="line-clamp-4 min-h-[6.5em] flex-1 text-xs leading-relaxed text-black/55">{job.prompt}</p>
 
       <div className="mt-3 flex items-center justify-between gap-2 border-t border-black/[0.04] pt-2.5">
-        <span className="line-clamp-1 text-xs text-black/55">
-          {formatScheduleFriendly(job, t)}
+        <span className="line-clamp-1 text-xs text-black/55" title={scheduleLabel} aria-label={scheduleLabel}>
+          {scheduleLabel}
         </span>
         <div className="flex shrink-0 items-center gap-1">
           <button
@@ -408,20 +462,6 @@ function CronJobCard({
   );
 }
 
-export function truncateCronJobCardTitle(name: string): string {
-  let width = 0;
-  let output = "";
-  for (const char of Array.from(name)) {
-    const charWidth = /[\u3400-\u9FFF\uF900-\uFAFF]/.test(char) ? 1.5 : 1;
-    if (width + charWidth > CRON_JOB_CARD_TITLE_MAX_WIDTH) {
-      return `${output}…`;
-    }
-    width += charWidth;
-    output += char;
-  }
-  return name;
-}
-
 function isCronJobPaused(job: CronJob): boolean {
   return !job.enabled || job.state === "paused";
 }
@@ -447,7 +487,7 @@ export function isCronJobExpiredBeyondGrace(job: CronJob): boolean {
 /** 把 cron schedule + next_run_at 翻译成人话。
  *  - once：输出「单次 2026-05-26 09:00」，过期状态由卡片标签展示
  *  - interval：every 30m → 每 30 分钟；every 60m → 每 1 小时
- *  - cron：`0 9 * * *` → 每天 09:00；`0 9 * * 1` → 每周一 09:00；`0 9 1 * *` → 每月 1 日 09:00
+ *  - cron：`0 9 * * *` → 每天 09:00；`0 9 * * 1,3` → 每周一、周三 09:00；`0 9 1 * *` → 每月 1 日 09:00
  *  - 其它复杂 cron 表达式：原样返回
  */
 function formatScheduleFriendly(
@@ -490,10 +530,11 @@ function formatScheduleFriendly(
     const mm = String(mn).padStart(2, "0");
     const at = `${hh}:${mm}`;
     if (dom === "*" && mon === "*" && dow === "*") return t("每天 {{at}}", { at });
-    if (dom === "*" && mon === "*" && dow !== "*" && /^\d+$/.test(dow ?? "")) {
-      const labels = [t("周日"), t("周一"), t("周二"), t("周三"), t("周四"), t("周五"), t("周六")];
-      const w = Number(dow);
-      if (w >= 0 && w <= 6) return t("每{{w}} {{at}}", { w: labels[w], at });
+    if (dom === "*" && mon === "*" && dow !== "*") {
+      const weekdays = parseCronWeekdays(dow ?? "");
+      if (weekdays.length > 0) {
+        return t("每{{w}} {{at}}", { w: formatWeekdays(weekdays, t), at });
+      }
     }
     if (mon === "*" && dow === "*" && /^\d+$/.test(dom ?? "")) {
       return t("每月 {{d}} 日 {{at}}", { d: dom, at });
@@ -660,6 +701,82 @@ function InlineCopyText({ value }: { value: string }) {
   );
 }
 
+function AutomationTemplateModal({
+  templates,
+  onClose,
+  onSelect,
+}: {
+  templates: AutomationTemplate[];
+  onClose: () => void;
+  onSelect: (template: AutomationTemplate) => void;
+}) {
+  const t = useT();
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[210] flex items-center justify-center bg-black/40 px-4 py-6"
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+    >
+      <div
+        className="relative w-full max-w-[680px] rounded-2xl bg-white p-6 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute right-4 top-4 inline-flex h-7 w-7 items-center justify-center rounded-full text-black/50 transition hover:bg-black/[0.04] hover:text-black/80"
+          aria-label={t("关闭")}
+        >
+          <X className="h-4 w-4" />
+        </button>
+        <div className="pr-8">
+          <h3 className="text-lg font-semibold leading-10 text-black/90">{t("自动任务示例模板")}</h3>
+        </div>
+        <div className="mt-5 grid grid-cols-1 items-start gap-3 sm:grid-cols-2">
+          {templates.map((template) => (
+            <button
+              key={template.id}
+              type="button"
+              onClick={() => onSelect(template)}
+              className="flex min-h-[100px] flex-col justify-start rounded-lg border border-black/10 bg-white p-4 text-left transition hover:border-black/20 hover:bg-black/[0.02]"
+            >
+              <div className="flex h-7 items-start justify-between gap-3">
+                <div className="truncate text-sm font-semibold text-black/85">{template.name}</div>
+                <span className="shrink-0 rounded-full bg-black/[0.04] px-2 py-0.5 text-[11px] text-black/55">
+                  {formatTemplateSchedule(template, t)}
+                </span>
+              </div>
+              <p className="mt-2 line-clamp-3 text-xs leading-relaxed text-black/55">
+                {template.prompt}
+              </p>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+function formatTemplateSchedule(template: AutomationTemplate, t: ReturnType<typeof useT>): string {
+  const schedule = template.schedule;
+  if (schedule.kind === "interval") {
+    const unitLabel = schedule.intervalUnit === "m" ? t("分钟") : schedule.intervalUnit === "d" ? t("天") : t("小时");
+    return t("每 {{num}} {{unit}}", { num: String(schedule.intervalNum ?? 1), unit: unitLabel });
+  }
+  if (schedule.kind === "recurring") {
+    if (schedule.period === "weekly") {
+      return t("每{{weekday}} {{time}}", {
+        weekday: formatWeekdays(schedule.weekdays ?? [schedule.weekday ?? 1], t),
+        time: schedule.time ?? "09:00",
+      });
+    }
+    return t("每天 {{time}}", { time: schedule.time ?? "09:00" });
+  }
+  return t("单次");
+}
+
 function ConfirmDeleteModal({
   jobName,
   busy,
@@ -692,7 +809,8 @@ function ConfirmDeleteModal({
             type="button"
             onClick={onCancel}
             disabled={busy}
-            className="rounded-lg border border-black/10 px-4 py-1.5 text-sm font-medium text-black/70 transition hover:bg-black/[0.04] disabled:opacity-40"
+            className="rounded-lg border border-black/10 px-4 py-1.5 font-medium text-black/70 transition hover:bg-black/[0.04] disabled:opacity-40"
+            style={MODAL_CONTROL_TEXT_STYLE}
           >
             {t("取消")}
           </button>
@@ -700,7 +818,8 @@ function ConfirmDeleteModal({
             type="button"
             onClick={onConfirm}
             disabled={busy}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-[#B91C1C] px-4 py-1.5 text-sm font-medium text-white transition hover:bg-[#991B1B] disabled:opacity-40"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-[#B91C1C] px-4 py-1.5 font-medium text-white transition hover:bg-[#991B1B] disabled:opacity-40"
+            style={MODAL_CONTROL_TEXT_STYLE}
           >
             {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             {t("删除")}
@@ -808,6 +927,120 @@ function formatLastStatus(status: string | null, t: ReturnType<typeof useT>): st
 
 type FrequencyKind = "recurring" | "interval" | "once";
 type RecurringPeriod = "daily" | "weekly" | "monthly";
+type IntervalUnit = "m" | "h" | "d";
+
+const WEEKDAY_VALUES = [1, 2, 3, 4, 5, 6, 0] as const;
+
+function getWeekdayLabels(t: ReturnType<typeof useT>): Record<number, string> {
+  return {
+    0: t("周日"),
+    1: t("周一"),
+    2: t("周二"),
+    3: t("周三"),
+    4: t("周四"),
+    5: t("周五"),
+    6: t("周六"),
+  };
+}
+
+function normalizeWeekdays(values: readonly number[] | undefined): number[] {
+  const unique = Array.from(new Set((values ?? []).filter((v) => Number.isInteger(v) && v >= 0 && v <= 6)));
+  const sorted = WEEKDAY_VALUES.filter((v) => unique.includes(v));
+  return sorted.length > 0 ? sorted : [1];
+}
+
+function parseCronWeekdays(value: string): number[] {
+  if (!/^\d+(,\d+)*$/.test(value)) return [];
+  // cron 标准里 0 和 7 都代表周日，统一归一为 0
+  const days = value.split(",").map((v) => {
+    const n = Number(v);
+    return n === 7 ? 0 : n;
+  });
+  if (days.some((v) => !Number.isInteger(v) || v < 0 || v > 6)) return [];
+  return normalizeWeekdays(days);
+}
+
+function formatWeekdays(values: readonly number[], t: ReturnType<typeof useT>): string {
+  const labels = getWeekdayLabels(t);
+  return normalizeWeekdays(values).map((v) => labels[v]).join("、");
+}
+
+interface AutomationTemplate {
+  id: string;
+  name: string;
+  description: string;
+  prompt: string;
+  schedule: {
+    kind: FrequencyKind;
+    period?: RecurringPeriod;
+    time?: string;
+    weekday?: number;
+    weekdays?: number[];
+    intervalNum?: number;
+    intervalUnit?: IntervalUnit;
+  };
+}
+
+function getAutomationTemplates(t: ReturnType<typeof useT>): AutomationTemplate[] {
+  return [
+    {
+      id: "daily-summary",
+      name: t("每日总结"),
+      description: t("每天晚上整理今天的进展和明天优先级"),
+      prompt: t("请回顾今天的重要事项，帮我整理一份简短总结，并提醒我明天优先处理的 3 件事。"),
+      schedule: { kind: "recurring", period: "daily", time: "21:30" },
+    },
+    {
+      id: "water-break",
+      name: t("喝水提醒"),
+      description: t("每隔一段时间提醒补水和短暂休息"),
+      prompt: t("提醒我喝水，并用一句轻松的话鼓励我保持状态。"),
+      schedule: { kind: "interval", intervalNum: 2, intervalUnit: "h" },
+    },
+    {
+      id: "morning-start",
+      name: t("起床提醒"),
+      description: t("每天早上给一个温和的启动提醒"),
+      prompt: t("提醒我起床，简单说一下今天可以先做的一件小事。"),
+      schedule: { kind: "recurring", period: "daily", time: "07:30" },
+    },
+    {
+      id: "weekly-review",
+      name: t("周五复盘"),
+      description: t("每周五下班前回顾本周事项"),
+      prompt: t("帮我做一次本周复盘：总结完成事项、遗留问题和下周建议。"),
+      schedule: { kind: "recurring", period: "weekly", weekday: 5, time: "18:00" },
+    },
+    {
+      id: "task-tidy",
+      name: t("资料整理"),
+      description: t("每天提醒整理待办、文档和消息"),
+      prompt: t("提醒我整理最近的待办、文档和消息，把需要跟进的事项列出来。"),
+      schedule: { kind: "recurring", period: "daily", time: "10:00" },
+    },
+    {
+      id: "stretch",
+      name: t("活动一下"),
+      description: t("定时提醒站起来活动，放松肩颈和眼睛"),
+      prompt: t("提醒我不要久坐，站起来活动一下，放松肩颈和眼睛。"),
+      schedule: { kind: "interval", intervalNum: 1, intervalUnit: "h" },
+    },
+    {
+      id: "stock-watch",
+      name: t("股票盯盘"),
+      description: t("交易时段定时关注自选股行情变化"),
+      prompt: t("提醒我关注自选股行情变化，整理涨跌幅、成交量和需要留意的市场消息。"),
+      schedule: { kind: "recurring", period: "daily", time: "10:00" },
+    },
+    {
+      id: "news-digest",
+      name: t("AI 新闻推送"),
+      description: t("每天推送关心领域的重要新闻摘要"),
+      prompt: t("提醒我查看今天的重要新闻，按科技、财经和本地资讯各总结 3 条要点。"),
+      schedule: { kind: "recurring", period: "daily", time: "08:30" },
+    },
+  ];
+}
 
 interface ScheduleChangeCheck {
   mode: "create" | "edit";
@@ -823,6 +1056,7 @@ function AutomationFormModal({
   botId,
   mode,
   initialJob,
+  template,
   onClose,
   onSaved,
   onError,
@@ -830,13 +1064,15 @@ function AutomationFormModal({
   botId: string;
   mode: "create" | "edit";
   initialJob?: CronJob;
+  template?: AutomationTemplate;
   onClose: () => void;
   onSaved: () => void;
   onError: (message: string) => void;
 }) {
   const t = useT();
-  const [name, setName] = useState(initialJob?.name ?? "");
-  const [prompt, setPrompt] = useState(initialJob?.prompt ?? "");
+  const templateSchedule = mode === "create" ? template?.schedule : undefined;
+  const [name, setName] = useState(initialJob?.name ?? template?.name ?? "");
+  const [prompt, setPrompt] = useState(initialJob?.prompt ?? template?.prompt ?? "");
 
   const initialScheduleSource = useMemo(
     () => (initialJob?.schedule.display || initialJob?.schedule.expr || "").trim(),
@@ -848,26 +1084,31 @@ function AutomationFormModal({
   );
   const initial = useMemo(() => parseInitialSchedule(initialScheduleSource), [initialScheduleSource]);
   const scheduleUneditable = mode === "edit" && !!initialJob && initial === null && initialScheduleSource.length > 0;
-  const defaultScheduleDate = useMemo(() => new Date(Date.now() + 60_000), []);
-  const [kind, setKind] = useState<FrequencyKind>(initial?.kind ?? "recurring");
+  const defaultScheduleDate = useMemo(() => new Date(Date.now() + 2 * 60_000), []);
+  const [kind, setKind] = useState<FrequencyKind>(initial?.kind ?? templateSchedule?.kind ?? "recurring");
   // 周期态
-  const [period, setPeriod] = useState<RecurringPeriod>(initial?.period ?? "daily");
+  const [period, setPeriod] = useState<RecurringPeriod>(initial?.period ?? templateSchedule?.period ?? "daily");
   const [time, setTime] = useState(() => {
     if (initial?.time) return initial.time;
-    // 默认取打开弹窗时的下一分钟（minute 精度，跟 cron 表达式粒度一致）
+    if (templateSchedule?.time) return templateSchedule.time;
+    // 默认取打开弹窗时的两分钟后（minute 精度，跟 cron 表达式粒度一致）
     const d = defaultScheduleDate;
     return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
   });
-  const [weekday, setWeekday] = useState(initial?.weekday ?? 1); // 周一
+  const [weekdays, setWeekdays] = useState(() => normalizeWeekdays(
+    initial?.weekdays
+      ?? templateSchedule?.weekdays
+      ?? [initial?.weekday ?? templateSchedule?.weekday ?? 1],
+  ));
   const [monthday, setMonthday] = useState(initial?.monthday ?? 1);
   // 按间隔态
-  const [intervalNum, setIntervalNum] = useState(initial?.intervalNum ?? 1);
-  const [intervalUnit, setIntervalUnit] = useState<"m" | "h" | "d">(initial?.intervalUnit ?? "h");
+  const [intervalNum, setIntervalNum] = useState(initial?.intervalNum ?? templateSchedule?.intervalNum ?? 1);
+  const [intervalUnit, setIntervalUnit] = useState<IntervalUnit>(initial?.intervalUnit ?? templateSchedule?.intervalUnit ?? "h");
   // 单次态
   const [onceDate, setOnceDate] = useState(() => {
     if (initial?.onceDate) return initial.onceDate;
     // datetime-local 期望 "YYYY-MM-DDTHH:MM" 本地时间字符串。
-    // 默认取打开弹窗时的下一分钟（与「周期」默认值一致）；submit 时才校验是否过期。
+    // 默认取打开弹窗时的两分钟后（与「周期」默认值一致）；submit 时才校验是否过期。
     const d = defaultScheduleDate;
     const pad = (n: number) => String(n).padStart(2, "0");
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
@@ -922,8 +1163,8 @@ function AutomationFormModal({
   }, [botId]);
 
   const schedule = useMemo(() => buildScheduleString({
-    kind, period, time, weekday, monthday, intervalNum, intervalUnit, onceDate,
-  }), [kind, period, time, weekday, monthday, intervalNum, intervalUnit, onceDate]);
+    kind, period, time, weekdays, monthday, intervalNum, intervalUnit, onceDate,
+  }), [kind, period, time, weekdays, monthday, intervalNum, intervalUnit, onceDate]);
   const scheduleChanged = useMemo(() => isScheduleEffectivelyChanged({
     mode,
     scheduleUneditable,
@@ -1049,11 +1290,11 @@ function AutomationFormModal({
               <RecurringPicker
                 period={period}
                 time={time}
-                weekday={weekday}
+                weekdays={weekdays}
                 monthday={monthday}
                 onPeriod={setPeriod}
                 onTime={setTime}
-                onWeekday={setWeekday}
+                onWeekdays={setWeekdays}
                 onMonthday={setMonthday}
               />
             )}
@@ -1129,11 +1370,16 @@ function AutomationFormModal({
                       {label}
                       {!configured && <span className="ml-0.5 text-[10px]">{t("（未配置）")}</span>}
                     </span>
+                    {selected && key === "weixin" && (
+                      <span className="text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
+                        {t("注意：请避免设置太频繁的提醒，否则可能会被微信限流，无法接收通知")}
+                      </span>
+                    )}
                     {selected && key === "qqbot" && (
                       <span className="inline-flex items-center text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
-                        {t("需设置 home 对话才能发送通知（在 QQ 对话中发送")}
+                        {t("如未生效，可在 QQ 对话中发送")}
                         <InlineCopyText value="/set-home" />
-                        {t("给机器人）")}
+                        {t("给机器人")}
                       </span>
                     )}
                     {selected && key === "feishu" && (
@@ -1225,24 +1471,46 @@ function AutomationFormModal({
 function RecurringPicker({
   period,
   time,
-  weekday,
+  weekdays,
   monthday,
   onPeriod,
   onTime,
-  onWeekday,
+  onWeekdays,
   onMonthday,
 }: {
   period: RecurringPeriod;
   time: string;
-  weekday: number;
+  weekdays: number[];
   monthday: number;
   onPeriod: (v: RecurringPeriod) => void;
   onTime: (v: string) => void;
-  onWeekday: (v: number) => void;
+  onWeekdays: (v: number[]) => void;
   onMonthday: (v: number) => void;
 }) {
   const t = useT();
-  const weekdayLabels = [t("周日"), t("周一"), t("周二"), t("周三"), t("周四"), t("周五"), t("周六")];
+  const [weekdayPickerOpen, setWeekdayPickerOpen] = useState(false);
+  const weekdayPickerRef = useRef<HTMLDivElement | null>(null);
+  const weekdayLabels = getWeekdayLabels(t);
+  const selectedWeekdays = normalizeWeekdays(weekdays);
+  useEffect(() => {
+    if (!weekdayPickerOpen) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (weekdayPickerRef.current?.contains(target)) return;
+      setWeekdayPickerOpen(false);
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [weekdayPickerOpen]);
+  const toggleWeekday = useCallback((day: number) => {
+    // 至少保留 1 天：取消最后一个选中项时直接忽略，避免 normalizeWeekdays 静默兜底为周一
+    if (selectedWeekdays.length === 1 && selectedWeekdays[0] === day) return;
+    const next = selectedWeekdays.includes(day)
+      ? selectedWeekdays.filter((v) => v !== day)
+      : [...selectedWeekdays, day];
+    onWeekdays(normalizeWeekdays(next));
+  }, [onWeekdays, selectedWeekdays]);
   return (
     <div className="flex flex-wrap items-center gap-2">
       <div className="relative w-[112px]">
@@ -1259,18 +1527,64 @@ function RecurringPicker({
         <ChevronDown className="pointer-events-none absolute right-5 top-1/2 h-4 w-4 -translate-y-1/2 text-black/80" />
       </div>
       {period === "weekly" && (
-        <div className="relative w-[112px]">
-          <select
-            value={weekday}
-            onChange={(e) => onWeekday(Number(e.target.value))}
+        <div ref={weekdayPickerRef} className="relative min-w-[220px] max-w-full">
+          <button
+            type="button"
+            onClick={() => setWeekdayPickerOpen((open) => !open)}
             style={MODAL_CONTROL_TEXT_STYLE}
-            className="w-full appearance-none rounded-lg border border-black/10 bg-white px-3 py-2 pr-10 text-base focus:border-black/30 focus:outline-none"
+            className="flex min-h-[42px] w-full items-center gap-1.5 rounded-lg border border-black/10 bg-white px-2.5 py-1.5 pr-9 text-left text-base focus:border-black/30 focus:outline-none"
+            aria-haspopup="listbox"
+            aria-expanded={weekdayPickerOpen}
           >
-            {weekdayLabels.map((label, idx) => (
-              <option key={idx} value={idx}>{label}</option>
-            ))}
-          </select>
-          <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-black/80" />
+            <span className="flex flex-wrap items-center gap-1.5">
+              {selectedWeekdays.map((day) => (
+                <span
+                  key={day}
+                  className="inline-flex h-7 items-center rounded-full bg-black px-3 text-sm font-medium leading-none text-white"
+                >
+                  {weekdayLabels[day]}
+                </span>
+              ))}
+            </span>
+          </button>
+          <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-black/80" />
+          {weekdayPickerOpen && (
+            <div
+              className="absolute left-0 top-[calc(100%+6px)] z-10 w-[260px] rounded-xl border border-black/10 bg-white p-2 shadow-xl"
+              role="listbox"
+              aria-multiselectable="true"
+            >
+              {WEEKDAY_VALUES.map((day) => {
+                const checked = selectedWeekdays.includes(day);
+                // 唯一选中项不允许取消，按钮置灰提示「至少保留 1 天」
+                const isLastSelected = checked && selectedWeekdays.length === 1;
+                return (
+                  <button
+                    key={day}
+                    type="button"
+                    onClick={() => toggleWeekday(day)}
+                    disabled={isLastSelected}
+                    className={
+                      "flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm transition " +
+                      (isLastSelected
+                        ? "cursor-not-allowed text-black/40"
+                        : "text-black/80 hover:bg-black/[0.04]")
+                    }
+                    role="option"
+                    aria-selected={checked}
+                    title={isLastSelected ? t("至少保留 1 天") : undefined}
+                  >
+                    <span>{weekdayLabels[day]}</span>
+                    <span className={`inline-flex h-4 w-4 items-center justify-center rounded border ${
+                      checked ? "border-black bg-black" : "border-black/20 bg-white"
+                    }`}>
+                      {checked && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
       {period === "monthly" && (
@@ -1362,7 +1676,8 @@ export function buildScheduleString(args: {
   kind: FrequencyKind;
   period: RecurringPeriod;
   time: string;
-  weekday: number;
+  weekdays?: number[];
+  weekday?: number;
   monthday: number;
   intervalNum: number;
   intervalUnit: "m" | "h" | "d";
@@ -1378,7 +1693,13 @@ export function buildScheduleString(args: {
   const h = Number(hh);
   const m = Number(mm);
   if (args.period === "daily") return `${m} ${h} * * *`;
-  if (args.period === "weekly") return `${m} ${h} * * ${args.weekday}`;
+  if (args.period === "weekly") {
+    const weekdays = normalizeWeekdays(args.weekdays ?? [args.weekday ?? 1]);
+    // cron 输出走升序（0~6），UI 顺序（周一开头）跟 cron 字符串顺序解耦，
+    // 避免老式 cron 解析器对 "1,0" 这种非升序逗号列表的兼容问题
+    const sortedForCron = [...weekdays].sort((a, b) => a - b);
+    return `${m} ${h} * * ${sortedForCron.join(",")}`;
+  }
   return `${m} ${h} ${args.monthday} * *`;
 }
 
@@ -1408,6 +1729,7 @@ export function parseInitialSchedule(display: string): {
   period?: RecurringPeriod;
   time?: string;
   weekday?: number;
+  weekdays?: number[];
   monthday?: number;
   intervalNum?: number;
   intervalUnit?: "m" | "h" | "d";
@@ -1445,8 +1767,11 @@ export function parseInitialSchedule(display: string): {
     if (dom === "*" && mon === "*" && dow === "*") {
       return { kind: "recurring", period: "daily", time };
     }
-    if (dom === "*" && mon === "*" && /^\d+$/.test(dow ?? "")) {
-      return { kind: "recurring", period: "weekly", time, weekday: Number(dow) };
+    if (dom === "*" && mon === "*") {
+      const weekdays = parseCronWeekdays(dow ?? "");
+      if (weekdays.length > 0) {
+        return { kind: "recurring", period: "weekly", time, weekday: weekdays[0], weekdays };
+      }
     }
     if (mon === "*" && dow === "*" && /^\d+$/.test(dom ?? "")) {
       return { kind: "recurring", period: "monthly", time, monthday: Number(dom) };

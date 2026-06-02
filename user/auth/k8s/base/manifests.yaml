@@ -33,11 +33,20 @@ data:
   LIGHTCLAW_QQ_REDIRECT_URI: "REPLACE_AUTH_QQ_REDIRECT_URI"
   LIGHTCLAW_WECHAT_APP_ID: "REPLACE_AUTH_WECHAT_APP_ID"
   LIGHTCLAW_WECHAT_REDIRECT_URI: "REPLACE_AUTH_WECHAT_REDIRECT_URI"
+  LIGHTVELA_WECHAT_WEBSITE_APP_ID: "REPLACE_AUTH_WECHAT_APP_ID"
+  LIGHTVELA_WECHAT_WEBSITE_REDIRECT_URI: "REPLACE_AUTH_WECHAT_REDIRECT_URI"
+  LIGHTVELA_WECHAT_OFFICIAL_ACCOUNT_APP_ID: "REPLACE_AUTH_WECHAT_OFFICIAL_ACCOUNT_APP_ID"
+  LIGHTVELA_WECHAT_OFFICIAL_ACCOUNT_REDIRECT_URI: "REPLACE_AUTH_WECHAT_OFFICIAL_ACCOUNT_REDIRECT_URI"
   MYSQL_HOST: "REPLACE_AUTH_MYSQL_HOST"
   MYSQL_PORT: "REPLACE_AUTH_MYSQL_PORT"
   MYSQL_ROOT_USER: "root"
   LIGHTCLAW_AUTH_DB: "lightclaw_auth"
   LIGHTCLAW_AUTH_DB_USER: "lightclaw_auth"
+  CONTENT_AUDIT_ENABLED: "false"
+  CONTENT_AUDIT_AVATAR_ENABLED: "false"
+  CONTENT_AUDIT_WORKER_INTERVAL_SECONDS: "30"
+  CONTENT_AUDIT_WORKER_BATCH_SIZE: "20"
+  CONTENT_AUDIT_TIMEOUT_MINUTES: "15"
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -67,6 +76,9 @@ spec:
                 name: lightclaw-auth-config
             - secretRef:
                 name: lightclaw-auth-secrets
+            - secretRef:
+                name: lightclaw-auth-content-audit-secrets
+                optional: true
           command:
             - /bin/sh
             - -c
@@ -97,7 +109,20 @@ spec:
                 name: lightclaw-auth-config
             - secretRef:
                 name: lightclaw-auth-secrets
+            - secretRef:
+                name: lightclaw-auth-content-audit-secrets
+                optional: true
           env:
+            - name: CONTENT_AUDIT_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: lightclaw-auth-config
+                  key: CONTENT_AUDIT_ENABLED
+            - name: CONTENT_AUDIT_AVATAR_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: lightclaw-auth-config
+                  key: CONTENT_AUDIT_AVATAR_ENABLED
             - name: LIGHTCLAW_ADMIN_TOKEN
               valueFrom:
                 secretKeyRef:
@@ -125,6 +150,58 @@ spec:
               port: http
             initialDelaySeconds: 15
             periodSeconds: 20
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lightclaw-auth-content-audit-worker
+  namespace: user-auth
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: lightclaw-auth-content-audit-worker
+  template:
+    metadata:
+      labels:
+        app: lightclaw-auth-content-audit-worker
+      annotations:
+        lightclaw-auth.clawhub.dev/redeploy-at: "REPLACE_AUTH_DEPLOYED_AT"
+    spec:
+      nodeSelector:
+        pool: REPLACE_AUTH_NODE_POOL
+      containers:
+        - name: content-audit-worker
+          image: REPLACE_AUTH_IMAGE
+          imagePullPolicy: Always
+          command:
+            - lightclaw-auth-content-audit-worker
+          envFrom:
+            - configMapRef:
+                name: lightclaw-auth-config
+            - secretRef:
+                name: lightclaw-auth-secrets
+            - secretRef:
+                name: lightclaw-auth-content-audit-secrets
+                optional: true
+          env:
+            - name: CONTENT_AUDIT_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: lightclaw-auth-config
+                  key: CONTENT_AUDIT_ENABLED
+            - name: CONTENT_AUDIT_AVATAR_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: lightclaw-auth-config
+                  key: CONTENT_AUDIT_AVATAR_ENABLED
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
 ---
 apiVersion: v1
 kind: Service

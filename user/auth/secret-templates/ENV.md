@@ -11,6 +11,7 @@
 | 变量 | 说明 | 示例 |
 |------|------|------|
 | `LIGHTCLAW_ADMIN_TOKEN` | 管理接口鉴权 token，用于创建/禁用邀请码等后台操作 | 随机生成的强密码 |
+| `LIGHTCLAW_DEVICE_BIND_TOKEN_SECRET` | 设备绑定短 token 的 HMAC 签名密钥，用于 OAuth 登录后给 Mac 客户端换取一次性 TAT 注册码 | 随机生成的 32 字节以上强密钥 |
 | `LIGHTCLAW_MYSQL_DSN` 或 `MYSQL_DSN` | MySQL 连接串。**不填则使用内存存储（重启丢数据，仅限本地开发）** | `user:pass@tcp(host:3306)/dbname?parseTime=true` |
 
 ---
@@ -23,6 +24,7 @@
 | `LIGHTCLAW_PUBLIC_BASE_URL` | `https://lightclaw.tech` | 后端 API 对外域名，用于拼接 OAuth Redirect URI |
 | `LIGHTCLAW_FRONTEND_BASE_URL` | `https://lightclaw.pages.dev` | 前端域名，OAuth 回调后重定向到此地址 |
 | `LIGHTCLAW_OAUTH_RETURN_TO_ALLOWED_HOSTS` | 内置 Lightclaw 主域名 | 允许 OAuth `return_to` 回跳的 host 白名单，测试环境可显式加入 `*.pages.dev` |
+| `LIGHTCLAW_DEVICE_BIND_TOKEN_TTL_SECONDS` | `600` | Mac 设备绑定短 token 有效期；token 只允许调用 `/auth/tat/device-bind` |
 
 ---
 
@@ -32,6 +34,26 @@
 |------|--------|------|
 | `LIGHTCLAW_COOKIE_SECURE` | `false` | 生产必须设为 `true`（HTTPS 环境） |
 | `LIGHTCLAW_COOKIE_SAME_SITE` | `lax` | 可选 `lax` / `strict` / `none`（跨域场景用 `none`，需同时开启 Secure） |
+
+---
+
+## 内容安全审核（昵称）
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `CONTENT_AUDIT_ENABLED` | `false` | 是否开启用户资料内容安全审核总开关 |
+| `CONTENT_AUDIT_NAME_ENABLED` | `true` | 总开关开启时是否审核昵称 |
+| `CONTENT_AUDIT_AVATAR_ENABLED` | `false` | 总开关开启时是否审核头像上传 |
+| `CONTENT_AUDIT_ENDPOINT` | 空 | 合规中台 proxy 送审地址，例如 `https://proxy.lightmake.site/contentaudit/submit`；主服务和 worker 会按任务类型调用 `CreateTextTask` / `CreateImageTask` |
+| `CONTENT_AUDIT_PROXY_TOKEN` | 空 | 可选。Skillhub proxy 开启 `PROXY_ACCESS_TOKEN` 时，主服务和 worker 会通过 `X-Proxy-Token` 携带该值 |
+| `CONTENT_AUDIT_PRODUCT_ID` | 空 | 合规中台分配的 ProductID |
+| `CONTENT_AUDIT_USER_SID` | 空 | 用户资料/昵称场景 SID |
+| `CONTENT_AUDIT_TIMEOUT_MINUTES` | `15` | 已提交任务超过该时间未收到违规回调时自动通过 |
+| `CONTENT_AUDIT_WORKER_INTERVAL_SECONDS` | `30` | 独立审核 worker 轮询间隔 |
+| `CONTENT_AUDIT_WORKER_BATCH_SIZE` | `20` | 单轮处理的审核任务数 |
+
+开启且主服务可访问 `CONTENT_AUDIT_ENDPOINT` 时，昵称和头像修改会在请求内同步送审；审核通过后直接覆盖正式资料，审核失败则保留原资料。
+独立 `lightclaw-auth-content-audit-worker` Deployment 继续负责兼容历史 pending 任务、无直连 client 部署下的任务送审，以及超时通过。
 
 ---
 
@@ -95,6 +117,22 @@
 
 ---
 
+## TAT 设备绑定（不填则禁用 Mac 设备绑定）
+
+| 变量 | 说明 | 默认值 |
+|------|------|--------|
+| `TENCENT_TAT_SECRET_ID` | 腾讯云 TAT API 密钥 ID，需允许 `tat:CreateRegisterCode` | - |
+| `TENCENT_TAT_SECRET_KEY` | 腾讯云 TAT API 密钥 Key | - |
+| `TENCENT_TAT_REGION` | 注册码所属地域 | `ap-guangzhou` |
+| `TENCENT_TAT_ENDPOINT` | TAT endpoint | `tat.tencentcloudapi.com` |
+| `TENCENT_TAT_REGISTER_EFFECTIVE_HOURS` | 注册码有效时间，单位小时 | `24` |
+| `TENCENT_TAT_INSTANCE_NAME_PREFIX` | 注册出来的托管实例名前缀，最长 32 字符 | `lightvela-mac` |
+| `TENCENT_TAT_REGISTER_IP_RANGE` | 可选公网出口 IP/CIDR 限制；留空则不限制 | - |
+
+后端会固定把 `RegisterLimit` 设为 `1`，即每个注册码只能注册一台设备。
+
+---
+
 ## 仅开发环境
 
 | 变量 | 说明 |
@@ -116,12 +154,20 @@ LIGHTCLAW_PUBLIC_BASE_URL=https://lightclaw.tech
 LIGHTCLAW_FRONTEND_BASE_URL=https://lightclaw.pages.dev
 LIGHTCLAW_COOKIE_SECURE=true
 LIGHTCLAW_ADMIN_TOKEN=<随机生成的强密码>
+LIGHTCLAW_DEVICE_BIND_TOKEN_SECRET=<随机生成的32字节以上强密钥>
 
 # 实名认证
 TENCENT_REALNAME_SECRET_ID=xxx
 TENCENT_REALNAME_SECRET_KEY=xxx
 TENCENT_REALNAME_ENDPOINT=faceid.tencentcloudapi.com
 REALNAME_ENCRYPTION_KEY=<32字节base64密钥>
+
+# TAT 设备绑定
+TENCENT_TAT_SECRET_ID=xxx
+TENCENT_TAT_SECRET_KEY=xxx
+TENCENT_TAT_REGION=ap-guangzhou
+TENCENT_TAT_ENDPOINT=tat.tencentcloudapi.com
+TENCENT_TAT_REGISTER_EFFECTIVE_HOURS=24
 
 # Google OAuth
 LIGHTCLAW_GOOGLE_CLIENT_ID=xxx.apps.googleusercontent.com

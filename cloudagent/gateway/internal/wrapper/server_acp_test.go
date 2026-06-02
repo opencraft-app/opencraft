@@ -2081,6 +2081,84 @@ func TestACPWispCloseResumeRecreatesRuntime(t *testing.T) {
 	}
 }
 
+func TestACPWispSessionSupportsRepeatedCloseResumeAndPromptRestore(t *testing.T) {
+	manager := &recordingACPRuntimeManager{}
+	srv := newACPTestServerWithRuntime(t, manager)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	client := dialACPWS(t, "ws"+trimHTTPPrefix(ts.URL)+"/acp", map[string]string{"Authorization": "Bearer test-key"})
+	defer client.close()
+	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{}})
+	waitForRPCID(t, client, float64(1))
+	client.writeJSON(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      2,
+		"method":  "session/new",
+		"params": map[string]any{
+			"cwd": "/workspace",
+			"_meta": map[string]any{"cloudagent": map[string]any{
+				"outer_runtime": "wisp",
+			}},
+		},
+	})
+	sessionID := waitForRPCID(t, client, float64(2))["result"].(map[string]any)["sessionId"].(string)
+
+	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 3, "method": "session/close", "params": map[string]any{"sessionId": sessionID}})
+	waitForRPCID(t, client, float64(3))
+	if manager.closeCount() != 1 {
+		t.Fatalf("first close should release runtime once, got %d", manager.closeCount())
+	}
+	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 4, "method": "session/resume", "params": map[string]any{"sessionId": sessionID}})
+	firstResume := waitForRPCID(t, client, float64(4))["result"].(map[string]any)
+	if meta := cloudAgentResultMeta(t, firstResume); meta["read_only"] == true || meta["read_only_reason"] != nil {
+		t.Fatalf("first resume should be writable: %#v", firstResume)
+	}
+	if manager.startCount() != 2 {
+		t.Fatalf("first resume should recreate runtime, got starts=%d", manager.startCount())
+	}
+
+	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 5, "method": "session/close", "params": map[string]any{"sessionId": sessionID}})
+	waitForRPCID(t, client, float64(5))
+	if manager.closeCount() != 2 {
+		t.Fatalf("second close should release runtime once, got %d", manager.closeCount())
+	}
+	sendACPPrompt(t, client, sessionID, 6, "restore from prompt after second close")
+	if manager.startCount() != 3 {
+		t.Fatalf("prompt after second close should recreate runtime, got starts=%d", manager.startCount())
+	}
+	jobs := manager.recordedWorkerJobs()
+	if len(jobs) == 0 || jobs[len(jobs)-1].ACPSessionID != sessionID || jobs[len(jobs)-1].Instruction != "restore from prompt after second close" {
+		t.Fatalf("prompt restore did not reach runtime worker: %#v", jobs)
+	}
+
+	client.writeJSON(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      7,
+		"method":  "_cloudagent.session.status",
+		"params":  map[string]any{"session_id": sessionID},
+	})
+	status := waitForRPCID(t, client, float64(7))["result"].(map[string]any)
+	if status["read_only"] == true || status["read_only_reason"] != "" || status["last_runtime_error"] != "" {
+		t.Fatalf("session should remain writable after repeated restore: %#v", status)
+	}
+
+	loader := dialACPWS(t, "ws"+trimHTTPPrefix(ts.URL)+"/acp", map[string]string{"Authorization": "Bearer test-key"})
+	defer loader.close()
+	loader.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 8, "method": "initialize", "params": map[string]any{}})
+	waitForRPCID(t, loader, float64(8))
+	loader.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 9, "method": "session/load", "params": map[string]any{"sessionId": sessionID}})
+	userReplay := loader.readJSON(t)
+	assertSessionUpdateKindFrame(t, userReplay, sessionID, "user_message_chunk")
+	assistantReplay := loader.readJSON(t)
+	assertSessionUpdateKindFrame(t, assistantReplay, sessionID, "agent_message_chunk")
+	assertReplayDone(t, loader, sessionID)
+	waitForRPCID(t, loader, float64(9))
+	if manager.startCount() != 3 {
+		t.Fatalf("session/load after repeated restore must not recreate runtime, got starts=%d", manager.startCount())
+	}
+}
+
 func TestACPWispClosePromptRecreatesRuntime(t *testing.T) {
 	manager := &recordingACPRuntimeManager{}
 	srv := newACPTestServerWithRuntime(t, manager)
@@ -2476,6 +2554,56 @@ func TestACPResumeRetriesDeferredRuntimeCleanup(t *testing.T) {
 	}
 	if manager.startCount() != 1 {
 		t.Fatalf("resume after close must not start a fresh runtime, got starts=%d", manager.startCount())
+	}
+}
+
+func TestACPWispCloseCheckpointFailureReturnsJSONRPCError(t *testing.T) {
+	closeErr := errors.New(`stop wisp outer runtime agent-session_1: wispclient: http 500: {"error":"juicefs-smount meta-barrier /mnt/cloudagent-wisp: checkpoint cut failed: input/output error"}`)
+	manager := &recordingACPRuntimeManager{closeErr: closeErr}
+	srv := newACPTestServerWithRuntime(t, manager)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	client := dialACPWS(t, "ws"+trimHTTPPrefix(ts.URL)+"/acp", map[string]string{"Authorization": "Bearer test-key"})
+	defer client.close()
+	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{}})
+	waitForRPCID(t, client, float64(1))
+	client.writeJSON(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      2,
+		"method":  "session/new",
+		"params": map[string]any{
+			"cwd":   "/workspace",
+			"_meta": map[string]any{"cloudagent": map[string]any{"outer_runtime": "wisp"}},
+		},
+	})
+	sessionID := waitForRPCID(t, client, float64(2))["result"].(map[string]any)["sessionId"].(string)
+
+	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 3, "method": "session/close", "params": map[string]any{"sessionId": sessionID}})
+	closeResp := waitForRPCID(t, client, float64(3))
+	errorObject, ok := closeResp["error"].(map[string]any)
+	if !ok {
+		t.Fatalf("wisp checkpoint failure must not be acknowledged as close success: %#v", closeResp)
+	}
+	if !strings.Contains(fmt.Sprint(errorObject["message"]), "checkpoint cut failed") {
+		t.Fatalf("close error should expose checkpoint failure: %#v", errorObject)
+	}
+	if manager.closeCount() != 1 {
+		t.Fatalf("expected one close attempt, got %d", manager.closeCount())
+	}
+
+	client.writeJSON(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      4,
+		"method":  cloudAgentSessionStatusMethod,
+		"params":  map[string]any{"session_id": sessionID},
+	})
+	status := waitForRPCID(t, client, float64(4))["result"].(map[string]any)
+	if status["lifecycle_state"] != acpLifecycleRestoreFailedRetryable || status["recoverability"] != acpRecoverabilityRetryable {
+		t.Fatalf("failed wisp close should leave an explicit retryable failure state: %#v", status)
+	}
+	if !strings.Contains(fmt.Sprint(status["last_runtime_error"]), "checkpoint cut failed") {
+		t.Fatalf("status should retain checkpoint failure diagnostics: %#v", status)
 	}
 }
 

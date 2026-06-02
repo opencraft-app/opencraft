@@ -10,6 +10,7 @@ import { isGlobal } from "@/lib/region";
 const InvitePage = lazyNamed(() => import("@/pages/auth/invite-page"), "InvitePage");
 const SignInPage = lazyNamed(() => import("@/pages/auth/sign-in-page"), "SignInPage");
 const SignUpPage = lazyNamed(() => import("@/pages/auth/sign-up-page"), "SignUpPage");
+const WeChatPayPage = lazyNamed(() => import("@/pages/auth/wechat-pay-page"), "WeChatPayPage");
 const AccountProfilePage = lazyNamed(() => import("@/pages/app/account-profile-page"), "AccountProfilePage");
 const BotTerminalPage = lazyNamed(() => import("@/pages/app/bot-terminal-page"), "BotTerminalPage");
 const PlanSelectPage = lazyNamed(() => import("@/pages/app/plan-select-page"), "PlanSelectPage");
@@ -26,6 +27,7 @@ const OpenClawSuccessPage = lazyNamed(() => import("@/pages/marketing/openclaw-s
 const OpenClawSettingsPage = lazyNamed(() => import("@/pages/marketing/openclaw-settings-page"), "OpenClawSettingsPage");
 const AccountPage = lazyNamed(() => import("@/pages/marketing/account-page"), "AccountPage");
 const AccountOrdersPage = lazyNamed(() => import("@/pages/marketing/account-orders-page"), "AccountOrdersPage");
+const TATDeviceBindPage = lazyNamed(() => import("@/pages/marketing/tat-device-bind-page"), "TATDeviceBindPage");
 const AboutPage = lazyNamed(() => import("@/pages/marketing/about-page"), "AboutPage");
 const ChangelogPage = lazyNamed(() => import("@/pages/marketing/changelog-page"), "ChangelogPage");
 const DocsPage = lazyNamed(() => import("@/pages/docs/docs-page"), "DocsPage");
@@ -123,6 +125,10 @@ export const router = createBrowserRouter([
             path: "account/orders",
             element: lazyRoute(AccountOrdersPage),
           },
+          {
+            path: "tat/device-bind",
+            element: lazyRoute(TATDeviceBindPage),
+          },
           /* ── /dashboard 裸路径兜底：SPA 内部 navigate("/dashboard") 或用户手敲时，
              统一导向 /dashboard/settings，避免命中外层 NotFound。 ── */
           {
@@ -164,6 +170,10 @@ export const router = createBrowserRouter([
             element: <Navigate to="/dashboard/settings" replace />,
           },
         ],
+      },
+      {
+        path: "auth/wechat-pay",
+        element: lazyRoute(WeChatPayPage),
       },
       {
         element: <MarketingLayout />,

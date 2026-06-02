@@ -12,21 +12,28 @@ import (
 
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/api"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/service"
+	"github.com/openclaw/openclaw/mono/backend/auth/internal/tat"
 )
 
 type ServerConfig struct {
-	CookieSecure   bool
-	CookieSameSite http.SameSite
-	SessionTTL     time.Duration
+	CookieSecure              bool
+	CookieSameSite            http.SameSite
+	SessionTTL                time.Duration
 	OAuthReturnToAllowedHosts []string
-	QQOAuth        *QQOAuthConfig
-	GoogleOAuth    *GoogleOAuthConfig
-	GitHubOAuth    *GitHubOAuthConfig
-	WeChatOAuth    *WeChatOAuthConfig
-	AvatarStore    AvatarStore
-	Logger         *slog.Logger
-	PublicBaseURL  string
-	AdminToken     string
+	QQOAuth                   *QQOAuthConfig
+	GoogleOAuth               *GoogleOAuthConfig
+	GitHubOAuth               *GitHubOAuthConfig
+	WeChatOAuth               *WeChatOAuthConfig
+	AvatarStore               AvatarStore
+	TATRegisterIssuer         tat.RegisterCodeIssuer
+	DeviceBindTokenSecret     string
+	DeviceBindTokenTTL        time.Duration
+	Logger                    *slog.Logger
+	PublicBaseURL             string
+	AdminToken                string
+	E2EAuthEnabled            bool
+	E2EAuthToken              string
+	E2ESessionTTL             time.Duration
 }
 
 func NewRouter(authService *service.Service, config ServerConfig) *gin.Engine {
@@ -43,15 +50,23 @@ func NewRouter(authService *service.Service, config ServerConfig) *gin.Engine {
 
 	handler := NewHandler(authService, config.CookieSecure, config.CookieSameSite, config.SessionTTL, config.QQOAuth, config.GoogleOAuth, config.GitHubOAuth, config.WeChatOAuth, config.PublicBaseURL, config.OAuthReturnToAllowedHosts)
 	handler.avatarStore = config.AvatarStore
+	handler.tatRegisterIssuer = config.TATRegisterIssuer
+	handler.deviceBindTokens = newDeviceBindTokenCodec(config.DeviceBindTokenSecret, config.DeviceBindTokenTTL)
 	registerOAuthRoutes(router, handler)
+	router.POST("/auth/tat/device-bind", handler.CreateTATDeviceBind)
 	router.POST("/auth/invite/prepare", handler.PrepareInvite)
 	router.GET("/users/:userID/avatar", handler.GetUserAvatar)
+	router.POST("/contentaudit/callback", handler.ContentAuditCallback)
 	router.DELETE("/auth/profile", handler.DeleteProfile)
 	api.RegisterHandlers(router, api.NewStrictHandler(handler, nil))
 
 	if strings.TrimSpace(config.AdminToken) != "" {
 		admin := router.Group("/admin", bearerAdminMiddleware(config.AdminToken))
 		registerAdminRoutes(admin, authService, config.AvatarStore)
+	}
+	if config.E2EAuthEnabled && strings.TrimSpace(config.E2EAuthToken) != "" {
+		e2e := router.Group("/admin/e2e", bearerAdminMiddleware(config.E2EAuthToken))
+		registerAdminE2ERoutes(e2e, authService, config)
 	}
 
 	return router

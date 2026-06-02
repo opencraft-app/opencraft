@@ -4,6 +4,7 @@ allowed_origins:
   - https://api.lightclaw.cn
   - https://lightvela.tencent.com
   - https://api.lightvela.tencent.com
+  - https://api.lightvela.com
   - https://lightvela.com
   - https://www.lightvela.com
   - https://lightclaw.site
@@ -57,9 +58,13 @@ routes:
     rewrite_prefix: /v1
     methods: [GET, PUT, DELETE, OPTIONS]
     upstream: http://vibebase.ai-gateway.svc.cluster.local
-    upstream_bearer_token_env: SERVICE_GATEWAY_VIBEBASE_INTERNAL_TOKEN
     access: authenticated
     auth_strategy: session
+  - name: content-audit-callback
+    prefix: /contentaudit/callback
+    methods: [POST, OPTIONS]
+    upstream: http://lightclaw-auth.user-auth.svc.cluster.local
+    access: public
   - name: auth
     prefix: /auth
     methods: [GET, POST, PUT, DELETE, OPTIONS]

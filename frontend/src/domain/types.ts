@@ -23,9 +23,13 @@ export type WorkspaceMessageRole = "user" | "assistant" | "system";
 export interface User {
   id: string;
   name: string;
+  pendingName?: string;
+  nameAuditStatus?: "pending" | "passed" | "failed";
   email?: string;
   phone?: string;
   avatarUrl?: string;
+  pendingAvatarUrl?: string;
+  avatarAuditStatus?: "pending" | "passed" | "failed";
   inviteRequired: boolean;
   /** 是否已完成实名认证，后端 /auth/session /auth/profile 下发 */
   realnameVerified?: boolean;
@@ -69,6 +73,8 @@ export interface BotTerminalSession {
   cols: number;
   rows: number;
   timeoutSeconds?: number;
+  username?: string;
+  workingDirectory?: string;
 }
 
 export interface BotChannelConfigResult {

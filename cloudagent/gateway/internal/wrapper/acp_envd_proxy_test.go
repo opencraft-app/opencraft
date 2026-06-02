@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -293,6 +294,390 @@ func TestSessionScopedWispWorkspaceDownloadMissingFileReturnsNotFound(t *testing
 	}
 	if sawInner {
 		t.Fatal("Wisp workspace download was incorrectly proxied to inner envd")
+	}
+}
+
+func TestSessionScopedWispWorkspaceUploadOverwriteThenDownloadReturnsLatest(t *testing.T) {
+	var sawInner bool
+	inner := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawInner = true
+		http.Error(w, "inner envd should not receive Wisp workspace transfer", http.StatusTeapot)
+	}))
+	defer inner.Close()
+
+	manager := &envdProxyRuntimeManager{innerDomain: inner.URL}
+	srv := newACPTestServerWithRuntime(t, manager)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	client := dialACPWS(t, "ws"+trimHTTPPrefix(ts.URL)+"/acp", nil)
+	defer client.close()
+	client.writeJSON(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "session/new",
+		"params":  map[string]any{"_meta": map[string]any{"cloudagent": map[string]any{"outer_runtime": "wisp"}}},
+	})
+	result := waitForRPCID(t, client, float64(1))["result"].(map[string]any)
+	sessionID := result["sessionId"].(string)
+
+	for _, body := range []string{"old-body", "latest-body"} {
+		req, err := http.NewRequest(http.MethodPost, ts.URL+"/v1/acp/sessions/"+sessionID+"/envd/files?path=/workspace/overwrite.txt", bytes.NewBufferString(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer test-key")
+		req.Header.Set("Content-Type", "application/octet-stream")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		respBody, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("upload body=%q status=%d response=%s", body, resp.StatusCode, string(respBody))
+		}
+	}
+
+	req, err := http.NewRequest(http.MethodGet, ts.URL+"/v1/acp/sessions/"+sessionID+"/envd/files?path=/workspace/overwrite.txt", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer test-key")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK || string(body) != "latest-body" {
+		t.Fatalf("download status=%d body=%q", resp.StatusCode, string(body))
+	}
+	if sawInner {
+		t.Fatal("Wisp workspace overwrite/download was incorrectly proxied to inner envd")
+	}
+}
+
+func TestSessionScopedWispWorkspaceRelativePathNormalizesToWorkspace(t *testing.T) {
+	var sawInner bool
+	inner := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawInner = true
+		http.Error(w, "inner envd should not receive Wisp workspace transfer", http.StatusTeapot)
+	}))
+	defer inner.Close()
+
+	manager := &envdProxyRuntimeManager{innerDomain: inner.URL}
+	srv := newACPTestServerWithRuntime(t, manager)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	client := dialACPWS(t, "ws"+trimHTTPPrefix(ts.URL)+"/acp", nil)
+	defer client.close()
+	client.writeJSON(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "session/new",
+		"params":  map[string]any{"_meta": map[string]any{"cloudagent": map[string]any{"outer_runtime": "wisp"}}},
+	})
+	result := waitForRPCID(t, client, float64(1))["result"].(map[string]any)
+	sessionID := result["sessionId"].(string)
+
+	req, err := http.NewRequest(http.MethodPost, ts.URL+"/v1/acp/sessions/"+sessionID+"/envd/files?path=relative/upload.txt", bytes.NewBufferString("relative-body"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer test-key")
+	req.Header.Set("Content-Type", "application/octet-stream")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	respBody, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("relative upload status=%d body=%s", resp.StatusCode, string(respBody))
+	}
+
+	req, err = http.NewRequest(http.MethodGet, ts.URL+"/v1/acp/sessions/"+sessionID+"/envd/files?path=/workspace/relative/upload.txt", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer test-key")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK || string(body) != "relative-body" {
+		t.Fatalf("relative download status=%d body=%q", resp.StatusCode, string(body))
+	}
+	manager.mu.Lock()
+	got := string(manager.workspace["/workspace/relative/upload.txt"])
+	manager.mu.Unlock()
+	if got != "relative-body" {
+		t.Fatalf("relative upload normalized content=%q", got)
+	}
+	if sawInner {
+		t.Fatal("relative Wisp workspace transfer was incorrectly proxied to inner envd")
+	}
+}
+
+func TestSessionScopedWispWorkspaceMultipartUploadUsesFilePart(t *testing.T) {
+	var sawInner bool
+	inner := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawInner = true
+		http.Error(w, "inner envd should not receive Wisp workspace transfer", http.StatusTeapot)
+	}))
+	defer inner.Close()
+
+	manager := &envdProxyRuntimeManager{innerDomain: inner.URL}
+	srv := newACPTestServerWithRuntime(t, manager)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	client := dialACPWS(t, "ws"+trimHTTPPrefix(ts.URL)+"/acp", nil)
+	defer client.close()
+	client.writeJSON(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "session/new",
+		"params":  map[string]any{"_meta": map[string]any{"cloudagent": map[string]any{"outer_runtime": "wisp"}}},
+	})
+	result := waitForRPCID(t, client, float64(1))["result"].(map[string]any)
+	sessionID := result["sessionId"].(string)
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	_ = writer.WriteField("ignored", "field-value")
+	part, err := writer.CreateFormFile("file", "multipart.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := part.Write([]byte("multipart-body")); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, ts.URL+"/v1/acp/sessions/"+sessionID+"/envd/files?path=/workspace/multipart.txt", &body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer test-key")
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("multipart upload status=%d body=%s", resp.StatusCode, string(respBody))
+	}
+	manager.mu.Lock()
+	got := string(manager.workspace["/workspace/multipart.txt"])
+	manager.mu.Unlock()
+	if got != "multipart-body" {
+		t.Fatalf("multipart upload body=%q", got)
+	}
+	if sawInner {
+		t.Fatal("multipart Wisp workspace transfer was incorrectly proxied to inner envd")
+	}
+}
+
+func TestSessionScopedWispWorkspaceMultipartUploadRejectsMissingFile(t *testing.T) {
+	var sawInner bool
+	inner := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawInner = true
+		http.Error(w, "inner envd should not receive invalid Wisp workspace transfer", http.StatusTeapot)
+	}))
+	defer inner.Close()
+
+	manager := &envdProxyRuntimeManager{innerDomain: inner.URL}
+	srv := newACPTestServerWithRuntime(t, manager)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	client := dialACPWS(t, "ws"+trimHTTPPrefix(ts.URL)+"/acp", nil)
+	defer client.close()
+	client.writeJSON(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "session/new",
+		"params":  map[string]any{"_meta": map[string]any{"cloudagent": map[string]any{"outer_runtime": "wisp"}}},
+	})
+	result := waitForRPCID(t, client, float64(1))["result"].(map[string]any)
+	sessionID := result["sessionId"].(string)
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.WriteField("ignored", "field-value"); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	req, err := http.NewRequest(http.MethodPost, ts.URL+"/v1/acp/sessions/"+sessionID+"/envd/files?path=/workspace/missing-file-part.txt", &body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer test-key")
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusBadRequest || !strings.Contains(string(respBody), "multipart upload missing file part") {
+		t.Fatalf("missing multipart file status=%d body=%s", resp.StatusCode, string(respBody))
+	}
+	if sawInner {
+		t.Fatal("invalid multipart Wisp workspace transfer was incorrectly proxied to inner envd")
+	}
+	manager.mu.Lock()
+	workspaceFiles := len(manager.workspace)
+	manager.mu.Unlock()
+	if workspaceFiles != 0 {
+		t.Fatalf("invalid multipart upload mutated workspace: files=%d", workspaceFiles)
+	}
+}
+
+func TestSessionScopedWispWorkspaceUploadRejectsPathOutsideWorkspace(t *testing.T) {
+	var sawInner bool
+	inner := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawInner = true
+		http.Error(w, "inner envd should not receive invalid Wisp workspace transfer", http.StatusTeapot)
+	}))
+	defer inner.Close()
+
+	manager := &envdProxyRuntimeManager{innerDomain: inner.URL}
+	srv := newACPTestServerWithRuntime(t, manager)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	client := dialACPWS(t, "ws"+trimHTTPPrefix(ts.URL)+"/acp", nil)
+	defer client.close()
+	client.writeJSON(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "session/new",
+		"params":  map[string]any{"_meta": map[string]any{"cloudagent": map[string]any{"outer_runtime": "wisp"}}},
+	})
+	result := waitForRPCID(t, client, float64(1))["result"].(map[string]any)
+	sessionID := result["sessionId"].(string)
+
+	req, err := http.NewRequest(http.MethodPost, ts.URL+"/v1/acp/sessions/"+sessionID+"/envd/files?path=/tmp/outside.txt", bytes.NewBufferString("outside-body"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer test-key")
+	req.Header.Set("Content-Type", "application/octet-stream")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode == http.StatusOK || !strings.Contains(string(body), "workspace path must be under /workspace") {
+		t.Fatalf("invalid workspace path status=%d body=%s", resp.StatusCode, string(body))
+	}
+	if sawInner {
+		t.Fatal("invalid Wisp workspace upload was incorrectly proxied to inner envd")
+	}
+	manager.mu.Lock()
+	workspaceFiles := len(manager.workspace)
+	manager.mu.Unlock()
+	if workspaceFiles != 0 {
+		t.Fatalf("invalid workspace upload mutated workspace: files=%d", workspaceFiles)
+	}
+}
+
+func TestSessionScopedWispWorkspaceDownloadRejectsPathTraversal(t *testing.T) {
+	var sawInner bool
+	inner := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawInner = true
+		http.Error(w, "inner envd should not receive invalid Wisp workspace transfer", http.StatusTeapot)
+	}))
+	defer inner.Close()
+
+	manager := &envdProxyRuntimeManager{innerDomain: inner.URL}
+	srv := newACPTestServerWithRuntime(t, manager)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	client := dialACPWS(t, "ws"+trimHTTPPrefix(ts.URL)+"/acp", nil)
+	defer client.close()
+	client.writeJSON(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "session/new",
+		"params":  map[string]any{"_meta": map[string]any{"cloudagent": map[string]any{"outer_runtime": "wisp"}}},
+	})
+	result := waitForRPCID(t, client, float64(1))["result"].(map[string]any)
+	sessionID := result["sessionId"].(string)
+
+	req, err := http.NewRequest(http.MethodGet, ts.URL+"/v1/acp/sessions/"+sessionID+"/envd/files?path=/workspace/../etc/passwd", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer test-key")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode == http.StatusOK || !strings.Contains(string(body), "workspace path must be under /workspace") {
+		t.Fatalf("path traversal download status=%d body=%s", resp.StatusCode, string(body))
+	}
+	if sawInner {
+		t.Fatal("invalid Wisp workspace download was incorrectly proxied to inner envd")
+	}
+}
+
+func TestSessionScopedWispWorkspaceTransferRejectsUnsupportedMethod(t *testing.T) {
+	var sawInner bool
+	inner := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawInner = true
+		http.Error(w, "inner envd should not receive unsupported Wisp workspace transfer", http.StatusTeapot)
+	}))
+	defer inner.Close()
+
+	manager := &envdProxyRuntimeManager{innerDomain: inner.URL}
+	srv := newACPTestServerWithRuntime(t, manager)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	client := dialACPWS(t, "ws"+trimHTTPPrefix(ts.URL)+"/acp", nil)
+	defer client.close()
+	client.writeJSON(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "session/new",
+		"params":  map[string]any{"_meta": map[string]any{"cloudagent": map[string]any{"outer_runtime": "wisp"}}},
+	})
+	result := waitForRPCID(t, client, float64(1))["result"].(map[string]any)
+	sessionID := result["sessionId"].(string)
+
+	req, err := http.NewRequest(http.MethodDelete, ts.URL+"/v1/acp/sessions/"+sessionID+"/envd/files?path=/workspace/delete.txt", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer test-key")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusMethodNotAllowed || !strings.Contains(string(body), "method_not_allowed") {
+		t.Fatalf("unsupported method status=%d body=%s", resp.StatusCode, string(body))
+	}
+	if sawInner {
+		t.Fatal("unsupported Wisp workspace transfer was incorrectly proxied to inner envd")
 	}
 }
 
