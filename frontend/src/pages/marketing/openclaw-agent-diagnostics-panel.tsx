@@ -1,7 +1,8 @@
-import { AlertTriangle, CheckCircle2, ClipboardList, Download, FileText, Loader2, RefreshCw, Stethoscope } from "lucide-react";
+import { ClipboardList, Download, FileText, Loader2, RefreshCw, Stethoscope } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useT } from "@/i18n/t";
+import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 
 type DiagnosticCommandId = "doctor" | "logs";
@@ -124,11 +125,6 @@ export function AgentDiagnosticsPanel({
     logs: DEFAULT_CARD_STATE,
   });
 
-  const isRefreshingAll = useMemo(
-    () => commands.some((item) => states[item.id].status === "loading"),
-    [commands, states],
-  );
-
   const runCommand = useCallback(
     async (item: AgentDiagnosticCommand) => {
       setStates((current) => ({
@@ -139,6 +135,7 @@ export function AgentDiagnosticsPanel({
         },
       }));
 
+      const title = getCommandTitle(item.id, t);
       try {
         const result = await execDebugCommand(botId, item.command);
         const nextStatus = getDiagnosticRunStatus(result);
@@ -151,6 +148,11 @@ export function AgentDiagnosticsPanel({
             rawOutput: output,
           },
         }));
+        if (nextStatus === "success") {
+          toast.success(`${title}：${t("正常")}`);
+        } else {
+          toast.error(`${title}：${t("获取失败")}`);
+        }
       } catch (error) {
         const output = error instanceof Error ? error.message : t("命令执行失败");
         setStates((current) => ({
@@ -161,6 +163,7 @@ export function AgentDiagnosticsPanel({
             rawOutput: output,
           },
         }));
+        toast.error(`${title}：${t("获取失败")}`);
       }
     },
     [botId, execDebugCommand, t],
@@ -186,23 +189,9 @@ export function AgentDiagnosticsPanel({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h2 className="text-xl font-semibold text-black/90">{t("诊断中心")}</h2>
-          <p className="mt-1 text-sm leading-6 text-black/50">{t("通过 Hermes doctor 和 logs 快速检查智能体运行状态")}</p>
-        </div>
-        <button
-          type="button"
-          onClick={() => void refreshAll()}
-          disabled={isRefreshingAll}
-          className={cn(
-            "inline-flex items-center justify-center gap-2 rounded-full border border-black/[0.08] bg-white px-4 py-2 text-base font-semibold text-black/80 shadow-sm transition-colors",
-            isRefreshingAll ? "cursor-wait opacity-60" : "hover:bg-black/[0.04] hover:text-black/95",
-          )}
-        >
-          {isRefreshingAll ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-          {t("刷新诊断")}
-        </button>
+      <div>
+        <h2 className="text-xl font-semibold text-black/90">{t("诊断中心")}</h2>
+        <p className="mt-1 text-sm leading-6 text-black/50">{t("通过 Hermes doctor 和 logs 快速检查智能体运行状态")}</p>
       </div>
 
       <div className="grid gap-4">
@@ -248,17 +237,14 @@ function DiagnosticCard({
 
   return (
     <article className="flex min-h-[360px] flex-col rounded-lg border border-black/[0.08] bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-black/[0.04] text-black/65">
-              <Icon className="h-4 w-4" />
-            </span>
-            <h3 className="truncate text-base font-semibold text-black/90">{title}</h3>
-          </div>
-          <p className="mt-2 text-sm leading-6 text-black/50">{description}</p>
+      <div>
+        <div className="flex items-center gap-2">
+          <span className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-black/[0.04] text-black/65">
+            <Icon className="h-4 w-4" />
+          </span>
+          <h3 className="truncate text-base font-semibold text-black/90">{title}</h3>
         </div>
-        <StatusBadge status={state.status} />
+        <p className="mt-2 text-sm leading-6 text-black/50">{description}</p>
       </div>
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md bg-black/[0.035] px-3 py-2">
@@ -320,42 +306,13 @@ function DiagnosticCard({
             {t("点击刷新获取诊断结果")}
           </div>
         ) : (
-          <pre className="max-h-[230px] overflow-auto whitespace-pre-wrap break-words p-4 font-mono text-xs leading-5 text-black/70">
+          <pre className="lw-diagnostic-output max-h-[230px] overflow-auto whitespace-pre-wrap break-words p-4 font-mono text-xs leading-5 text-black/70">
             {displayOutput}
           </pre>
         )}
       </div>
 
     </article>
-  );
-}
-
-function StatusBadge({ status }: { status: DiagnosticRunStatus }) {
-  const t = useT();
-  const icon =
-    status === "loading" ? (
-      <Loader2 className="h-3 w-3 animate-spin" />
-    ) : status === "success" ? (
-      <CheckCircle2 className="h-3 w-3" />
-    ) : status === "error" ? (
-      <AlertTriangle className="h-3 w-3" />
-    ) : (
-      <ClipboardList className="h-3 w-3" />
-    );
-
-  return (
-    <span
-      className={cn(
-        "inline-flex flex-shrink-0 items-center gap-1 rounded-full px-2 py-1 text-xs font-medium",
-        status === "success" && "bg-emerald-50 text-emerald-700",
-        status === "error" && "bg-red-50 text-red-600",
-        status === "loading" && "bg-blue-50 text-blue-600",
-        status === "idle" && "bg-black/[0.04] text-black/45",
-      )}
-    >
-      {icon}
-      {getStatusText(status, t)}
-    </span>
   );
 }
 
@@ -367,11 +324,4 @@ function getCommandTitle(id: DiagnosticCommandId, t: ReturnType<typeof useT>): s
 function getCommandDescription(id: DiagnosticCommandId, t: ReturnType<typeof useT>): string {
   if (id === "doctor") return t("执行 hermes doctor 命令，检查依赖、配置和运行环境是否正常");
   return t("查看 Hermes Agent 最近日志，辅助定位问题");
-}
-
-function getStatusText(status: DiagnosticRunStatus, t: ReturnType<typeof useT>): string {
-  if (status === "loading") return t("执行中");
-  if (status === "success") return t("正常");
-  if (status === "error") return t("获取失败");
-  return t("待刷新");
 }
