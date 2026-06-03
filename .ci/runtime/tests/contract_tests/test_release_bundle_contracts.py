@@ -36,6 +36,7 @@ AUTO_RELEASE_WORKFLOWS = {
 BUSINESS_WORKFLOWS = {
     ".ci/admin-gateway.yml",
     ".ci/ai-gateway.yml",
+    ".ci/channelgateway.yml",
     ".ci/cloudagent-gateway.yml",
     ".ci/cloudladdergateway.yml",
     ".ci/ctl.yml",
@@ -545,6 +546,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
 
     def test_cloudagent_gateway_adds_service_prod_reviewers(self) -> None:
         manifest = load_manifest()
+        devcloud_bundle = require_build_metadata(load_bundle(manifest, "cloudagent-gateway", "devcloud-dep"))
         bundle = load_bundle(manifest, "cloudagent-gateway", "shprod")
         workflow = yaml.safe_load((REPO_ROOT / ".ci/cloudagent-gateway.yml").read_text())
         parameters = (workflow.get("extends") or {}).get("parameters") or {}
@@ -552,6 +554,9 @@ class ReleaseBundleContractTests(unittest.TestCase):
         watched_paths = ((on_config.get("push") or {}).get("paths") or [])
 
         self.assertEqual(parameters.get("PROD_REVIEWERS"), '["skipzhang", "roberttwang", "cocofhu"]')
+        self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "devcloud-dep,shprod")
+        self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "devcloud-dep")
+        self.assertEqual(devcloud_bundle.image_repo, "csighub.tencentyun.com/skipzhang/cloudagent-gateway")
         self.assertIn(
             "argocd/secrets/shprod/cloudagent-wsa-search-secrets.sops.yaml",
             bundle.publish_paths,
@@ -562,6 +567,23 @@ class ReleaseBundleContractTests(unittest.TestCase):
         )
         self.assertIn("argocd/secrets/*/cloudagent-wsa-search-secrets.sops.yaml", watched_paths)
         self.assertIn("argocd/secrets/*/cloudagent-wisp-secrets.sops.yaml", watched_paths)
+
+    def test_channelgateway_uses_devcloud_csighub_release_contract(self) -> None:
+        manifest = load_manifest()
+        bundle = require_build_metadata(load_bundle(manifest, "channelgateway", "devcloud-dep"))
+        workflow = yaml.safe_load((REPO_ROOT / ".ci/channelgateway.yml").read_text())
+        parameters = (workflow.get("extends") or {}).get("parameters") or {}
+        on_config = workflow.get("on") or workflow.get(True) or {}
+        watched_paths = ((on_config.get("push") or {}).get("paths") or [])
+
+        self.assertEqual((workflow.get("extends") or {}).get("template"), "service-release.yml")
+        self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "devcloud-dep")
+        self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "devcloud-dep")
+        self.assertEqual(parameters.get("ENABLE_MASTER_PROD_PROMOTE"), False)
+        self.assertEqual(bundle.image_repo, "csighub.tencentyun.com/skipzhang/channelgateway")
+        self.assertIn("argocd/services/channelgateway/devcloud-dep/**", bundle.publish_paths)
+        self.assertIn("cloudagent/acp-client/**", watched_paths)
+        self.assertIn("argocd/services/channelgateway/**", watched_paths)
 
     def test_cloudladdergateway_uses_tkex_template_release_contract(self) -> None:
         manifest = load_manifest()
