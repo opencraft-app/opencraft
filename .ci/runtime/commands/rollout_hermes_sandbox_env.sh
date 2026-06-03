@@ -80,6 +80,8 @@ require_cmd python3
 require_cmd tccli
 
 image_id="$(resolve_image_id_for_region "$region")"
+image_var="HERMES_IMAGE_ID_$(region_env_suffix "$region")"
+export "${image_var}=${image_id}"
 safe_env="$(safe_name "$env_name")"
 output_dir="${OUTPUT_ROOT}/${safe_env}"
 tat_output_dir="${output_dir}/hermes-tat"
