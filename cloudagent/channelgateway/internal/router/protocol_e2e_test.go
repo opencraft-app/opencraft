@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -214,42 +216,68 @@ func TestProtocolE2EConversationReusesACPSessionOnSecondMessage(t *testing.T) {
 	_ = <-startErr
 }
 
-func TestProtocolE2EACPErrorDoesNotSendWeComReply(t *testing.T) {
-	promptSeen := make(chan struct{})
+func TestProtocolE2EResetCommandCreatesFreshACPSessionWithoutPrompt(t *testing.T) {
+	var sessionNewCalls atomic.Int64
+	var sessionLoadCalls atomic.Int64
 	var promptCalls atomic.Int64
-	acpServer := newStatefulFakeACPServer(t, "session-error", nil, nil, &promptCalls, func(conn *websocket.Conn, id int64) {
-		close(promptSeen)
-		writeRouterJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": id, "error": map[string]any{"code": -32000, "message": "model failed"}})
-	})
+	acpServer := newStatefulFakeACPServer(t, "session-reset-new", &sessionNewCalls, &sessionLoadCalls, &promptCalls, nil)
 	defer acpServer.Close()
 	st, err := store.Open(context.Background(), t.TempDir()+"/channelgateway.db")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
 	defer st.Close()
+	lease, err := st.AcquireChannelLease(context.Background(), "wecom-a", "owner-a", time.Minute)
+	if err != nil {
+		t.Fatalf("acquire lease: %v", err)
+	}
+	sessionKey := channel.BuildSessionKey("main", channel.Message{
+		ChannelType:            channel.TypeWeCom,
+		ChatType:               channel.ChatDM,
+		ExternalConversationID: "chat-reset",
+		ExternalUserID:         "user-e2e",
+	}, true, false)
+	if _, err := st.GetOrCreateConversation(context.Background(), store.Conversation{
+		ChannelAccountID:       "wecom-a",
+		ChannelType:            "wecom",
+		ExternalConversationID: "chat-reset",
+		ExternalUserID:         "user-e2e",
+		ChatType:               string(channel.ChatDM),
+		AgentID:                "main",
+		ACPSessionID:           "session-reset-old",
+		SessionKey:             sessionKey,
+	}); err != nil {
+		t.Fatalf("seed conversation: %v", err)
+	}
 
 	wecomReady := make(chan struct{})
-	noReplyDone := make(chan struct{})
+	replyDone := make(chan struct{})
 	wecomServer := newRouterWeComServer(t, func(t *testing.T, conn *websocket.Conn) {
 		expectRouterSubscribe(t, conn)
 		close(wecomReady)
 		writeRouterJSON(t, conn, map[string]any{
 			"cmd":     "aibot_msg_callback",
-			"headers": map[string]any{"req_id": "callback-error"},
+			"headers": map[string]any{"req_id": "callback-reset"},
 			"body": map[string]any{
-				"msgid":   "msg-error",
-				"chatid":  "chat-error",
+				"msgid":   "msg-reset",
+				"chatid":  "chat-reset",
 				"msgtype": "text",
 				"from":    map[string]any{"userid": "user-e2e"},
-				"text":    map[string]any{"content": "ping"},
+				"text":    map[string]any{"content": "/reset"},
 			},
 		})
-		waitRouterClosed(t, promptSeen, "ACP prompt")
-		_ = conn.SetReadDeadline(time.Now().Add(300 * time.Millisecond))
-		if _, _, err := conn.ReadMessage(); err == nil {
-			t.Fatal("ACP prompt error must not produce a WeCom reply frame")
+		frame := readRouterFrame(t, conn)
+		if frame.Cmd != "aibot_respond_msg" || frame.Headers.ReqID != "callback-reset" {
+			t.Fatalf("expected reset respond frame, got %#v", frame)
 		}
-		close(noReplyDone)
+		body := decodeRouterBody(t, frame)
+		stream := body["stream"].(map[string]any)
+		text, _ := stream["content"].(string)
+		if !strings.Contains(text, "重新创建") {
+			t.Fatalf("unexpected reset reply: %#v", body)
+		}
+		writeRouterJSON(t, conn, map[string]any{"headers": map[string]any{"req_id": "callback-reset"}, "errcode": 0})
+		close(replyDone)
 	})
 	defer wecomServer.Close()
 
@@ -265,9 +293,88 @@ func TestProtocolE2EACPErrorDoesNotSendWeComReply(t *testing.T) {
 	startErr := make(chan error, 1)
 	go func() { startErr <- adapter.Start(ctx, dispatcher) }()
 	waitRouterClosed(t, wecomReady, "wecom subscribe")
-	waitRouterClosed(t, noReplyDone, "no reply")
-	if got := promptCalls.Load(); got != 1 {
-		t.Fatalf("expected one failed prompt, got %d", got)
+	drainUntil(t, ctx, st, lease, adapter, 1)
+	waitRouterClosed(t, replyDone, "wecom reset reply")
+	if got := sessionNewCalls.Load(); got != 1 {
+		t.Fatalf("reset should create one ACP session, got %d", got)
+	}
+	if got := sessionLoadCalls.Load(); got != 0 {
+		t.Fatalf("reset should not load old ACP session, got %d", got)
+	}
+	if got := promptCalls.Load(); got != 0 {
+		t.Fatalf("reset should not prompt agent, got %d", got)
+	}
+	cancel()
+	_ = <-startErr
+}
+
+func TestProtocolE2EACPErrorSendsRecoveryFallbackReply(t *testing.T) {
+	promptSeen := make(chan struct{})
+	var promptSeenOnce sync.Once
+	var promptCalls atomic.Int64
+	acpServer := newStatefulFakeACPServer(t, "session-error", nil, nil, &promptCalls, func(conn *websocket.Conn, id int64) {
+		promptSeenOnce.Do(func() { close(promptSeen) })
+		writeRouterJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": id, "error": map[string]any{"code": -32003, "message": "session runtime is unavailable"}})
+	})
+	defer acpServer.Close()
+	st, err := store.Open(context.Background(), t.TempDir()+"/channelgateway.db")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+	lease, err := st.AcquireChannelLease(context.Background(), "wecom-a", "owner-a", time.Minute)
+	if err != nil {
+		t.Fatalf("acquire lease: %v", err)
+	}
+
+	wecomReady := make(chan struct{})
+	replyDone := make(chan struct{})
+	wecomServer := newRouterWeComServer(t, func(t *testing.T, conn *websocket.Conn) {
+		expectRouterSubscribe(t, conn)
+		close(wecomReady)
+		writeRouterJSON(t, conn, map[string]any{
+			"cmd":     "aibot_msg_callback",
+			"headers": map[string]any{"req_id": "callback-error"},
+			"body": map[string]any{
+				"msgid":   "msg-error",
+				"chatid":  "chat-error",
+				"msgtype": "text",
+				"from":    map[string]any{"userid": "user-e2e"},
+				"text":    map[string]any{"content": "ping"},
+			},
+		})
+		waitRouterClosed(t, promptSeen, "ACP prompt")
+		frame := readRouterFrame(t, conn)
+		if frame.Cmd != "aibot_respond_msg" || frame.Headers.ReqID != "callback-error" {
+			t.Fatalf("expected fallback respond frame, got %#v", frame)
+		}
+		body := decodeRouterBody(t, frame)
+		stream := body["stream"].(map[string]any)
+		text, _ := stream["content"].(string)
+		if !strings.Contains(text, "云端会话恢复失败") || !strings.Contains(text, "/reset") {
+			t.Fatalf("unexpected fallback reply: %#v", body)
+		}
+		writeRouterJSON(t, conn, map[string]any{"headers": map[string]any{"req_id": "callback-error"}, "errcode": 0})
+		close(replyDone)
+	})
+	defer wecomServer.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	acpClient := acp.NewClient("ws"+acpServer.URL[len("http"):], nil)
+	defer acpClient.Close()
+	if err := acpClient.Initialize(ctx); err != nil {
+		t.Fatalf("initialize acp: %v", err)
+	}
+	adapter := wecom.NewAdapter(wecom.Config{AccountID: "wecom-a", BotID: "bot", Secret: "secret", WebSocketURL: "ws" + wecomServer.URL[len("http"):]})
+	dispatcher := NewDispatcher(st, store.ChannelAccount{ChannelAccountID: "wecom-a", ChannelType: "wecom", AgentID: "main"}, acpClient, "/workspace")
+	startErr := make(chan error, 1)
+	go func() { startErr <- adapter.Start(ctx, dispatcher) }()
+	waitRouterClosed(t, wecomReady, "wecom subscribe")
+	drainUntil(t, ctx, st, lease, adapter, 1)
+	waitRouterClosed(t, replyDone, "fallback reply")
+	if got := promptCalls.Load(); got != 2 {
+		t.Fatalf("expected failed prompt plus runtime-recovery retry, got %d", got)
 	}
 	cancel()
 	_ = <-startErr

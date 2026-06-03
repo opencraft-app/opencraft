@@ -201,7 +201,13 @@ func (r *accountRunner) run(ctx context.Context) error {
 		return fmt.Errorf("initialize acp: %w", err)
 	}
 	adapter := r.adapterFactory(runtimeCfg)
-	dispatcher := router.NewDispatcher(r.store, r.account, acpClient, "/workspace")
+	dispatcher := router.NewDispatcherWithOptions(
+		r.store,
+		r.account,
+		acpClient,
+		"/workspace",
+		router.DispatcherOptions{RequestTimeout: r.cfg.RequestTimeout},
+	)
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	go r.renewLeaseLoop(runCtx, cancel)
