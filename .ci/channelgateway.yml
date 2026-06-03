@@ -10,6 +10,7 @@ on:
       - cloudagent/acp-client/**
       - argocd/services/channelgateway/**
       - argocd/apps/*/channelgateway.yaml
+      - argocd/secrets/*/channelgateway-runtime-secrets.sops.yaml
       - argocd/secrets/*/channelgateway-wecom-secrets.sops.yaml
     paths-ignore:
       - OWNERS
