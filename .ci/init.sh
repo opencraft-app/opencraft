@@ -716,6 +716,7 @@ ci_load_registry_password() {
   local env_name="$1"
   local beijing_file="${TCR_BEIJING_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_beijing_password}"
   local beijing2_file="${TCR_BEIJING_SANDBOX2_PASSWORD_FILE:-${TCR_BEIJING_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_beijing_password}}"
+  local kr1_file="${TCR_KR1_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_kr1_password}"
   local shprod_file="${TCR_SHPROD_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_shprod_password}"
   local sgprod_file="${TCR_SGPROD_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_sgprod_password}"
   local csighub_file="${CSIGHUB_PASSWORD_FILE:-/etc/lightclaw-ci/csighub_password}"
@@ -730,6 +731,10 @@ ci_load_registry_password() {
     beijing-sandbox-2|sandbox-bj-*)
       password_var="${TCR_BEIJING_SANDBOX2_PASSWORD:-${TCR_BEIJING_PASSWORD:-}}"
       password_file="$beijing2_file"
+      ;;
+    sandbox-kr-*|seoul-sandbox)
+      password_var="${TCR_KR1_PASSWORD:-${TCR_BEIJING_PASSWORD:-}}"
+      password_file="$kr1_file"
       ;;
     shprod)
       password_var="${TCR_SHPROD_PASSWORD:-}"
@@ -781,6 +786,7 @@ ci_set_registry_credentials() {
   local env_name="$1"
   local beijing_file="${TCR_BEIJING_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_beijing_password}"
   local beijing2_file="${TCR_BEIJING_SANDBOX2_PASSWORD_FILE:-${TCR_BEIJING_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_beijing_password}}"
+  local kr1_file="${TCR_KR1_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_kr1_password}"
   local shprod_file="${TCR_SHPROD_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_shprod_password}"
   local sgprod_file="${TCR_SGPROD_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_sgprod_password}"
   local csighub_file="${CSIGHUB_PASSWORD_FILE:-/etc/lightclaw-ci/csighub_password}"
@@ -807,6 +813,15 @@ ci_set_registry_credentials() {
           source="file:$beijing2_file"
         elif [[ -n "${TCR_BEIJING_SANDBOX2_PASSWORD:-}" ]]; then
           source="env:TCR_BEIJING_SANDBOX2_PASSWORD"
+        else
+          source="env:TCR_BEIJING_PASSWORD"
+        fi
+        ;;
+      sandbox-kr-*|seoul-sandbox)
+        if [[ -r "$kr1_file" ]]; then
+          source="file:$kr1_file"
+        elif [[ -n "${TCR_KR1_PASSWORD:-}" ]]; then
+          source="env:TCR_KR1_PASSWORD"
         else
           source="env:TCR_BEIJING_PASSWORD"
         fi

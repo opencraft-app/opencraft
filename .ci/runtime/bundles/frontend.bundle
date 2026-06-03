@@ -22,4 +22,5 @@ bundles:
       beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/frontend
       shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/frontend
       sgprod: lightclaw-sgprod.tencentcloudcr.com/lightclaw/frontend
+      sandbox-kr-*: lightclaw-kr1.tencentcloudcr.com/lightclaw/frontend
     publish_paths_by_env: {}

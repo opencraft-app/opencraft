@@ -63,3 +63,4 @@ bundles:
       shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/lightclaw-auth
       sgprod: lightclaw-sgprod.tencentcloudcr.com/lightclaw/lightclaw-auth
       beijing-sandbox-2: lightclaw-bj8.tencentcloudcr.com/lightclaw/lightclaw-auth
+      sandbox-kr-*: lightclaw-kr1.tencentcloudcr.com/lightclaw/lightclaw-auth

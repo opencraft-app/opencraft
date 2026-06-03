@@ -27,3 +27,4 @@ bundles:
     build_context: trade
     image_repo:
       beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/trade
+      sandbox-kr-*: lightclaw-kr1.tencentcloudcr.com/lightclaw/trade

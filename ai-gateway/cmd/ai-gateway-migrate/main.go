@@ -67,11 +67,13 @@ func main() {
 }
 
 // bootstrapIfNeeded 检测迁移系统状态并自动处理新旧衔接：
-//   - schema_migrations 已存在 → 无需处理，golang-migrate 正常接管
+//   - schema_migrations 已存在且有记录 → 无需处理，golang-migrate 正常接管
+//   - schema_migrations 已存在但为空 + schema_migration_files 存在（旧系统） → 推算版本并写入
 //   - schema_migrations 不存在 + schema_migration_files 存在（旧系统） → 推算版本并写入
 //   - 两张表都不存在（全新环境） → 不做任何操作，golang-migrate 从 1 开始执行
 func bootstrapIfNeeded(db *sql.DB) error {
-	if tableExists(db, "schema_migrations") {
+	hasSchemaMigrations := tableExists(db, "schema_migrations")
+	if hasSchemaMigrations && schemaMigrationsHasRows(db) {
 		log.Printf("schema_migrations table exists, skipping bootstrap")
 		return nil
 	}
@@ -93,14 +95,16 @@ func bootstrapIfNeeded(db *sql.DB) error {
 
 	log.Printf("legacy migration system detected (schema_migration_files), bootstrapping schema_migrations at version %d", version)
 
-	_, err = db.Exec(`
-		CREATE TABLE schema_migrations (
-			version bigint NOT NULL,
-			dirty   tinyint(1) NOT NULL,
-			PRIMARY KEY (version)
-		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`)
-	if err != nil {
-		return fmt.Errorf("create schema_migrations: %w", err)
+	if !hasSchemaMigrations {
+		_, err = db.Exec(`
+			CREATE TABLE schema_migrations (
+				version bigint NOT NULL,
+				dirty   tinyint(1) NOT NULL,
+				PRIMARY KEY (version)
+			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`)
+		if err != nil {
+			return fmt.Errorf("create schema_migrations: %w", err)
+		}
 	}
 
 	_, err = db.Exec("INSERT INTO schema_migrations (version, dirty) VALUES (?, 0)", version)
@@ -148,6 +152,12 @@ func tableExists(db *sql.DB, name string) bool {
 	var n string
 	err := db.QueryRow("SHOW TABLES LIKE ?", name).Scan(&n)
 	return err == nil
+}
+
+func schemaMigrationsHasRows(db *sql.DB) bool {
+	var count int
+	err := db.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&count)
+	return err == nil && count > 0
 }
 
 func buildMigrator(db *sql.DB) (*migrate.Migrate, error) {

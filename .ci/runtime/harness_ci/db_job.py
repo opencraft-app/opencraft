@@ -468,7 +468,7 @@ def build_ctl_dynamic_resources(
 
 
 def default_ctl_database(env_name: str) -> str:
-    if re.fullmatch(r"sandbox-bj-\d+", env_name):
+    if re.fullmatch(r"sandbox-(bj|kr)-\d+", env_name):
         return f"ctl_{env_name.replace('-', '_')}"
     return "ctl"
 

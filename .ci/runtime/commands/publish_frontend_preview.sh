@@ -18,7 +18,7 @@ resolve_preview_auth_api_base_url() {
   local branch="$1"
   local variant="$2"
   case "$branch" in
-    playground/sandbox-bj-*)
+    playground/sandbox-bj-*|playground/sandbox-kr-*)
       local playground_env="${branch#playground/}"
       printf 'https://api-%s.lightclaw.tech' "$playground_env"
       ;;
@@ -44,7 +44,7 @@ PREVIEW_INTL_AUTH_API_BASE_URL="$(resolve_preview_auth_api_base_url "$FRONTEND_P
 echo "预览 API base：cn=${PREVIEW_CN_AUTH_API_BASE_URL}"
 echo "预览 API base：intl=${PREVIEW_INTL_AUTH_API_BASE_URL}"
 case "$FRONTEND_PREVIEW_BRANCH" in
-  playground/sandbox-bj-*)
+  playground/sandbox-bj-*|playground/sandbox-kr-*)
     export VITE_OAUTH_RELAY_ISSUER_BASE_URL="https://lightclaw.tech"
     echo "OAuth relay issuer base：${VITE_OAUTH_RELAY_ISSUER_BASE_URL}"
     ;;

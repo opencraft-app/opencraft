@@ -28,6 +28,10 @@ class BuildReleaseImageTests(unittest.TestCase):
             playground_frontend_auth_api_base_url("sandbox-bj-6"),
             "https://api-sandbox-bj-6.lightclaw.tech",
         )
+        self.assertEqual(
+            playground_frontend_auth_api_base_url("sandbox-kr-1"),
+            "https://api-sandbox-kr-1.lightclaw.tech",
+        )
 
     def test_frontend_non_playground_build_has_no_extra_build_args(self) -> None:
         self.assertEqual(resolve_docker_build_args("frontend", "shprod"), {})
