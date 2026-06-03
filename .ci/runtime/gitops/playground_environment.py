@@ -259,7 +259,7 @@ def env_slug(env: str) -> str:
 
 
 def ctl_database_name(env: str) -> str:
-    if re.fullmatch(r"sandbox-bj-\d+", env):
+    if re.fullmatch(r"sandbox-(bj|kr)-\d+", env):
         return f"ctl_{env_slug(env)}"
     return "ctl"
 
