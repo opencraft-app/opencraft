@@ -41,6 +41,8 @@ const staggerContainer = {
   visible: { opacity: 1, transition: { staggerChildren: 0.08 } },
 };
 
+const UGC_SYSTEM_MAINTENANCE_ENABLED = true;
+
 /* ─── Navbar ─── */
 
 const AccountNavbar = () => {
@@ -757,6 +759,7 @@ export const AccountPage = () => {
   const pendingName = user?.nameAuditStatus === "pending" ? user.pendingName?.trim() ?? "" : "";
   const hasPendingNameAudit = pendingName.length > 0;
   const nameAuditFailed = user?.nameAuditStatus === "failed";
+  const ugcSystemMaintenanceMessage = t("UGC 系统维护中，暂时无法提交昵称或头像修改。");
 
   useEffect(() => {
     if (!hasPendingAvatarAudit && !hasPendingNameAudit) return;
@@ -786,6 +789,10 @@ export const AccountPage = () => {
 
   const handleSaveName = async () => {
     if (!editName.trim()) return;
+    if (UGC_SYSTEM_MAINTENANCE_ENABLED) {
+      setNameSaveError(ugcSystemMaintenanceMessage);
+      return;
+    }
     setSaving(true);
     setNameSaveError(null);
     try {
@@ -803,6 +810,11 @@ export const AccountPage = () => {
     const file = e.target.files?.[0];
     if (!file) return;
     setAvatarUploadError(null);
+    if (UGC_SYSTEM_MAINTENANCE_ENABLED) {
+      setAvatarUploadError(ugcSystemMaintenanceMessage);
+      e.target.value = "";
+      return;
+    }
     setAvatarUploading(true);
     try {
       await uploadAvatar(file);
@@ -1024,6 +1036,7 @@ export const AccountPage = () => {
                           <button
                             onClick={() => void handleSaveName()}
                             disabled={saving || !editName.trim()}
+                            aria-label={t("保存昵称")}
                             className="lw-btn-primary !px-4 !py-2.5 !text-sm !rounded-lg disabled:opacity-60"
                           >
                             {saving ? (

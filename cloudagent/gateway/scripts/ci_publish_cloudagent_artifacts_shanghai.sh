@@ -48,7 +48,7 @@ first_file_value() {
 
 first_secret_value() {
   local env_value file_value
-  # Devcloud Stream settings are optional; CI runners also provide local secret files.
+  # Devcloud Stream settings are optional; CI runners can also provide local secret files.
   env_value="$(first_env "$@" || true)"
   if [ -n "$env_value" ]; then
     printf '%s\n' "$env_value"
@@ -128,6 +128,7 @@ require_env_value CLOUDAGENT_AGENT_COS_SECRET_ID "$COS_SECRET_ID"
 require_env_value CLOUDAGENT_AGENT_COS_SECRET_KEY "$COS_SECRET_KEY"
 require_env_value CLOUDAGENT_AGENT_RELEASE_ED25519_SEED_B64 "$SIGNING_SEED"
 
+export DOCKER_BUILDKIT="${DOCKER_BUILDKIT:-1}"
 ensure_coscmd
 require_cmd docker
 require_cmd make

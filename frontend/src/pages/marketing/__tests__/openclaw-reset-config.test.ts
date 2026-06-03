@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  ACLI_RESET_COMMAND,
+  getAcliResetBlockReason,
   getResetBlockReason,
   hermesModelName,
   hermesSwitchModelFullId,
@@ -51,6 +53,31 @@ describe("getResetBlockReason", () => {
     /* 优先级：no_active_bot > already_resetting > not_running > channel_not_viewed
      * 让用户看到最根本的阻塞原因。 */
     expect(getResetBlockReason(bot("a", "paused"), false, false)).toBe("not_running");
+  });
+});
+
+describe("getAcliResetBlockReason", () => {
+  it("allows acli reset for a running bot when no reset is in progress", () => {
+    expect(getAcliResetBlockReason(bot("a"), false)).toBeNull();
+  });
+
+  it("blocks acli reset when there is no active bot", () => {
+    expect(getAcliResetBlockReason(undefined, false)).toBe("no_active_bot");
+  });
+
+  it("blocks acli reset while another acli reset is running", () => {
+    expect(getAcliResetBlockReason(bot("a"), true)).toBe("already_resetting");
+  });
+
+  it("blocks acli reset for non-running bots", () => {
+    expect(getAcliResetBlockReason(bot("a", "paused"), false)).toBe("not_running");
+    expect(getAcliResetBlockReason(bot("a", "provisioning"), false)).toBe("not_running");
+  });
+});
+
+describe("ACLI_RESET_COMMAND", () => {
+  it("runs the requested backend upgrade command and waits for completion", () => {
+    expect(ACLI_RESET_COMMAND).toBe("acli backend upgrade-start --blueprint-id lhbp-8gsotw6u --wait=true");
   });
 });
 

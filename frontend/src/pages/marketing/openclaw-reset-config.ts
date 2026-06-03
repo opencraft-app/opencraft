@@ -41,6 +41,8 @@ export const RESET_BLOCK_REASON = {
 
 export type ResetBlockReason = (typeof RESET_BLOCK_REASON)[keyof typeof RESET_BLOCK_REASON];
 
+export const ACLI_RESET_COMMAND = "acli backend upgrade-start --blueprint-id lhbp-8gsotw6u --wait=true";
+
 export function getResetBlockReason(
   activeBot: ResettableBot | undefined,
   resetting: boolean,
@@ -50,6 +52,16 @@ export function getResetBlockReason(
   if (resetting) return "already_resetting";
   if (activeBot.status !== "running") return "not_running";
   if (!hasViewedChannel) return "channel_not_viewed";
+  return null;
+}
+
+export function getAcliResetBlockReason(
+  activeBot: ResettableBot | undefined,
+  resetting: boolean,
+): ResetBlockReason | null {
+  if (!activeBot) return "no_active_bot";
+  if (resetting) return "already_resetting";
+  if (activeBot.status !== "running") return "not_running";
   return null;
 }
 

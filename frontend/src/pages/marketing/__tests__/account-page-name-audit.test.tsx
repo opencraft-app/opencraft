@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -79,7 +79,7 @@ vi.mock("@/contexts/session-context", () => ({
 }));
 
 const renderAccountPage = () => {
-  render(
+  return render(
     <MemoryRouter>
       <AccountPage />
     </MemoryRouter>,
@@ -88,6 +88,7 @@ const renderAccountPage = () => {
 
 describe("AccountPage nickname audit state", () => {
   beforeEach(() => {
+    cleanup();
     vi.clearAllMocks();
     currentUser = {
       id: "usr_profile_audit",
@@ -159,5 +160,32 @@ describe("AccountPage nickname audit state", () => {
     renderAccountPage();
 
     expect(screen.getByText("上次头像修改未通过审核，当前仍使用原头像。")).toBeInTheDocument();
+  });
+
+  it("blocks nickname updates while the UGC system is under maintenance", async () => {
+    renderAccountPage();
+
+    await userEvent.click(screen.getByRole("button", { name: "修改昵称" }));
+    await userEvent.clear(screen.getByRole("textbox"));
+    await userEvent.type(screen.getByRole("textbox"), "新昵称");
+    await userEvent.click(screen.getByRole("button", { name: "保存昵称" }));
+
+    expect(screen.getByText("UGC 系统维护中，暂时无法提交昵称或头像修改。")).toBeInTheDocument();
+    expect(updateProfile).not.toHaveBeenCalled();
+  });
+
+  it("blocks avatar uploads while the UGC system is under maintenance", async () => {
+    const { container } = renderAccountPage();
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]');
+
+    expect(fileInput).not.toBeNull();
+
+    await userEvent.upload(
+      fileInput!,
+      new File(["avatar"], "avatar.png", { type: "image/png" }),
+    );
+
+    expect(screen.getByText("UGC 系统维护中，暂时无法提交昵称或头像修改。")).toBeInTheDocument();
+    expect(uploadAvatar).not.toHaveBeenCalled();
   });
 });

@@ -58,5 +58,6 @@ stages:
               export CLOUDAGENT_AGENT_VERSION_PREFIX="${CLOUDAGENT_AGENT_VERSION_PREFIX:-cloudagent.v1}"
               export CLOUDAGENT_WISP_COS_OBJECT_PREFIX="${CLOUDAGENT_WISP_COS_OBJECT_PREFIX:-/workspace/releases}"
               export CLOUDAGENT_WORKSPACE_VERSION_PREFIX="${CLOUDAGENT_WORKSPACE_VERSION_PREFIX:-wisp.v1}"
+              export DOCKER_BUILDKIT=1
 
               cloudagent/gateway/scripts/ci_publish_cloudagent_artifacts_shanghai.sh
