@@ -1,0 +1,96 @@
+apiVersion: platform.stke/v1alpha1
+kind: StatefulSetPlus
+metadata:
+  annotations:
+    deployImageSource: hub
+    enablesystemd: disable
+    platform.tkex/scaleDown-PendingPod-first: 'true'
+    stkeUpateVersionTag: v3
+    tkex-samename-count: '2'
+  labels:
+    clusterId: cls-hq6qk3i6
+    env: production
+    k8s-app: lightvela-proxy
+    moduleFourId: '867795'
+    projectName: prjqt8dd
+    qcloud-app: lightvela-proxy
+    region: ap-singapore
+    workload-kind: statefulsetplus
+  name: lightvela-proxy
+  namespace: ns-prjqt8dd-867795-production
+spec:
+  batchDeployConfig: {}
+  podManagementPolicy: Parallel
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      clusterId: cls-hq6qk3i6
+      env: production
+      k8s-app: lightvela-proxy
+      moduleFourId: '867795'
+      projectName: prjqt8dd
+      qcloud-app: lightvela-proxy
+      region: ap-singapore
+      workload-kind: statefulsetplus
+  serviceName: lightvela-proxy
+  template:
+    metadata:
+      annotations:
+        cloudladdergateway.lightvela.com/redeploy-at: 2026-06-03T00:00:00Z
+        eks.tke.cloud.tencent.com/spec-auto-upgrade: 'true'
+      labels:
+        clusterId: cls-hq6qk3i6
+        env: production
+        k8s-app: lightvela-proxy
+        moduleFourId: '867795'
+        projectName: prjqt8dd
+        qcloud-app: lightvela-proxy
+        region: ap-singapore
+        workload-kind: statefulsetplus
+    spec:
+      affinity: {}
+      containers:
+      - env:
+        - name: CLOUDLADDER_PAYMENT_HMAC_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: cloudladdergateway-runtime-secrets
+              key: CLOUDLADDER_PAYMENT_HMAC_SECRET
+        - name: CLOUDLADDER_SHADOW_HMAC_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: cloudladdergateway-runtime-secrets
+              key: CLOUDLADDER_SHADOW_HMAC_SECRET
+        image: csighub.tencentyun.com/skipzhang/cloudladdergateway:604530a7c2ad
+        imagePullPolicy: Always
+        name: lightvela-proxy
+        resources:
+          limits:
+            cpu: '1'
+            memory: 2Gi
+          requests:
+            cpu: '1'
+            memory: 2Gi
+        securityContext:
+          privileged: false
+        stdin: true
+        volumeMounts:
+        - mountPath: /dev/shm
+          name: shm
+      dnsConfig:
+        options:
+        - name: ndots
+          value: '2'
+      imagePullSecrets:
+      - name: csighub-skipzhang
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - emptyDir:
+          medium: Memory
+        name: shm
+  updateStrategy:
+    rollingUpdate:
+      partition: 0
+    type: RollingUpdate

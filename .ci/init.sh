@@ -718,6 +718,7 @@ ci_load_registry_password() {
   local beijing2_file="${TCR_BEIJING_SANDBOX2_PASSWORD_FILE:-${TCR_BEIJING_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_beijing_password}}"
   local shprod_file="${TCR_SHPROD_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_shprod_password}"
   local sgprod_file="${TCR_SGPROD_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_sgprod_password}"
+  local csighub_file="${CSIGHUB_PASSWORD_FILE:-/etc/lightclaw-ci/csighub_password}"
   local password_var=""
   local password_file=""
 
@@ -738,6 +739,10 @@ ci_load_registry_password() {
       password_var="${TCR_SGPROD_PASSWORD:-}"
       password_file="$sgprod_file"
       ;;
+    tkexgz|tkexsg)
+      password_var="${CSIGHUB_PASSWORD:-}"
+      password_file="$csighub_file"
+      ;;
     *)
       return 1
       ;;
@@ -756,13 +761,31 @@ ci_load_registry_password() {
   return 1
 }
 
+ci_load_csighub_username() {
+  local username_file="${CSIGHUB_USERNAME_FILE:-/etc/lightclaw-ci/csighub_username}"
+
+  if [[ -r "$username_file" ]]; then
+    ci_read_secret_value < "$username_file"
+    return 0
+  fi
+
+  if [[ -n "${CSIGHUB_USERNAME:-}" ]]; then
+    printf '%s' "$CSIGHUB_USERNAME" | ci_read_secret_value
+    return 0
+  fi
+
+  return 1
+}
+
 ci_set_registry_credentials() {
   local env_name="$1"
   local beijing_file="${TCR_BEIJING_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_beijing_password}"
   local beijing2_file="${TCR_BEIJING_SANDBOX2_PASSWORD_FILE:-${TCR_BEIJING_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_beijing_password}}"
   local shprod_file="${TCR_SHPROD_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_shprod_password}"
   local sgprod_file="${TCR_SGPROD_PASSWORD_FILE:-/etc/lightclaw-ci/tcr_sgprod_password}"
+  local csighub_file="${CSIGHUB_PASSWORD_FILE:-/etc/lightclaw-ci/csighub_password}"
   local tcr_username="${TCR_USERNAME:-100045199955}"
+  local registry_username="$tcr_username"
   local raw_password=""
   local password=""
   local source="none"
@@ -802,8 +825,19 @@ ci_set_registry_credentials() {
           source="env:TCR_SGPROD_PASSWORD"
         fi
         ;;
+      tkexgz|tkexsg)
+        if [[ -r "$csighub_file" ]]; then
+          source="file:$csighub_file"
+        else
+          source="env:CSIGHUB_PASSWORD"
+        fi
+        if ! registry_username="$(ci_load_csighub_username)"; then
+          echo "registry credentials for ${env_name} require CSIGHUB_USERNAME or ${CSIGHUB_USERNAME_FILE:-/etc/lightclaw-ci/csighub_username}" >&2
+          return 1
+        fi
+        ;;
     esac
-    export REGISTRY_USERNAME="$tcr_username"
+    export REGISTRY_USERNAME="$registry_username"
     export REGISTRY_PASSWORD="$password"
     export REGISTRY_PASSWORD_SOURCE="$source"
     ci_log "registry credentials for ${env_name} loaded from ${source} (username=${REGISTRY_USERNAME}, raw_password_len=${#raw_password}, password_len=${#REGISTRY_PASSWORD}, password_trimmed=$([[ \"$raw_password\" == \"$password\" ]] && echo no || echo yes), password_fingerprint=$(printf '%s' \"$password\" | ci_fingerprint_secret))"

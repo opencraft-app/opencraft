@@ -47,6 +47,8 @@ env_display_name() {
     sandbox-bj-*) printf '北京 Playground %s' "$1" ;;
     shprod) printf '上海正式' ;;
     sgprod) printf '新加坡正式' ;;
+    tkexgz) printf 'TKEx 广州内网' ;;
+    tkexsg) printf 'TKEx 新加坡内网' ;;
     *) printf '%s' "$1" ;;
   esac
 }

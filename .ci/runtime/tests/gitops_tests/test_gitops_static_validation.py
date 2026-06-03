@@ -215,6 +215,34 @@ class GitOpsStaticValidationTests(unittest.TestCase):
 
             self.assertEqual(errors, [])
 
+    def test_tkex_direct_app_passes(self) -> None:
+        with self.repo() as tmp:
+            repo = Path(tmp)
+            (repo / "argocd/apps/tkexsg").mkdir(parents=True)
+            (repo / "argocd/services/demo/tkexsg").mkdir(parents=True)
+            (repo / "argocd/services/demo/tkexsg/kustomization.yaml").write_text(
+                "apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\n"
+            )
+            (repo / "argocd/apps/tkexsg/demo.yaml").write_text(
+                textwrap.dedent(
+                    """\
+                    apiVersion: argoproj.io/v1alpha1
+                    kind: Application
+                    spec:
+                      source:
+                        repoURL: git@git.woa.com:wisp/mono2.git
+                        targetRevision: gitops
+                        path: argocd/services/demo/tkexsg
+                      destination:
+                        name: tkexsg
+                    """
+                )
+            )
+
+            errors = validate(repo, "tkexsg", repo / ".ci/runtime/release-bundles.manifest")
+
+            self.assertEqual(errors, [])
+
     def repo(self) -> tempfile.TemporaryDirectory[str]:
         return tempfile.TemporaryDirectory()
 

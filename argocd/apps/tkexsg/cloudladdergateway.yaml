@@ -1,0 +1,14 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cloudladdergateway-tkexsg
+  namespace: argocd
+spec:
+  project: tkexsg
+  source:
+    repoURL: git@git.woa.com:wisp/mono2.git
+    targetRevision: gitops
+    path: argocd/services/cloudladdergateway/tkexsg
+  destination:
+    namespace: ns-prjqt8dd-867795-production
+    name: tkexsg
