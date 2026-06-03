@@ -27,7 +27,7 @@ import {
 } from "@/repositories/http-repositories";
 import {
   CronCommandError,
-  createCronJob,
+  createCronJobWithScriptRollback,
   createEffectiveWindowScriptName,
   editCronJob,
   listCronJobs,
@@ -1370,13 +1370,13 @@ function AutomationFormModal({
         if (script && effectiveWindow) {
           await writeEffectiveWindowScript(botId, script, effectiveWindow);
         }
-        await createCronJob(botId, {
+        await createCronJobWithScriptRollback(botId, {
           name: name.trim(),
           prompt: prompt.trim(),
           schedule,
           deliver,
           script,
-        });
+        }, script);
       } else if (initialJob) {
         const patch: Parameters<typeof editCronJob>[2] = {};
         const nextName = name.trim();

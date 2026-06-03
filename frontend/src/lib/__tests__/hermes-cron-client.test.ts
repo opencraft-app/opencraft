@@ -4,6 +4,7 @@ import {
   buildEffectiveWindowScript,
   buildCreateCommand,
   createCronJob,
+  createCronJobWithScriptRollback,
   listCronJobs,
   parseEffectiveWindowScript,
   parseCronListOutput,
@@ -167,6 +168,25 @@ describe("effective window script", () => {
 });
 
 describe("createCronJob auth handling", () => {
+  it("removes a prepared LightVela script when cron create fails", async () => {
+    const script = "lightvela-effective-window-job-1.py";
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(failedExec("invalid cron expression"))
+      .mockResolvedValueOnce(okExec(""));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(createCronJobWithScriptRollback("bot-1", {
+      schedule: "bad schedule",
+      prompt: "hello",
+      name: "test",
+      script,
+    }, script)).rejects.toThrow("invalid cron expression");
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const cleanupBody = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body)) as { command: string };
+    expect(cleanupBody.command).toBe("rm -f ~/.hermes/scripts/lightvela-effective-window-job-1.py");
+  });
+
   it("broadcasts the shared unauthorized event on 401", async () => {
     writeStoredAuthToken("expired-token");
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
@@ -196,6 +216,20 @@ function okExec(output: string) {
       data: {
         status: "SUCCESS",
         exit_code: 0,
+        output,
+      },
+    }),
+  };
+}
+
+function failedExec(output: string) {
+  return {
+    ok: true,
+    status: 200,
+    json: async () => ({
+      data: {
+        status: "FAILED",
+        exit_code: 1,
         output,
       },
     }),

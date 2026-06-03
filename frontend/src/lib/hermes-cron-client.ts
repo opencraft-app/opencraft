@@ -428,6 +428,13 @@ export async function writeEffectiveWindowScript(
   await execCommand(botId, command);
 }
 
+export async function removeEffectiveWindowScript(botId: string, scriptName: string): Promise<void> {
+  if (!isLightVelaEffectiveWindowScript(scriptName)) {
+    throw new Error("invalid LightVela effective window script name");
+  }
+  await execCommand(botId, `rm -f ~/.hermes/scripts/${scriptName}`);
+}
+
 async function readEffectiveWindowScripts(botId: string, scriptNames: string[]): Promise<Map<string, CronEffectiveWindow>> {
   const safeNames = scriptNames.filter(isLightVelaEffectiveWindowScript);
   const result = new Map<string, CronEffectiveWindow>();
@@ -459,6 +466,25 @@ async function hydrateEffectiveWindows(botId: string, jobs: CronJob[]): Promise<
 
 export async function createCronJob(botId: string, input: CreateCronJobInput): Promise<void> {
   await execCommand(botId, buildCreateCommand(input));
+}
+
+export async function createCronJobWithScriptRollback(
+  botId: string,
+  input: CreateCronJobInput,
+  rollbackScript?: string,
+): Promise<void> {
+  try {
+    await createCronJob(botId, input);
+  } catch (err) {
+    if (rollbackScript && isLightVelaEffectiveWindowScript(rollbackScript)) {
+      try {
+        await removeEffectiveWindowScript(botId, rollbackScript);
+      } catch {
+        /* keep the original create error */
+      }
+    }
+    throw err;
+  }
 }
 
 export async function pauseCronJob(botId: string, id: string): Promise<void> {
