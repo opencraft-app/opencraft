@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
 	"strings"
 	"time"
@@ -94,6 +95,9 @@ func (w *AgentSidecarWorker) prepareWispRuntimeWithSpace(ctx context.Context, ho
 	if err != nil {
 		return ACPSessionRuntime{}, err
 	}
+	if err := w.requireWispMountLeaseHeld(ctx, runtime); err != nil {
+		return ACPSessionRuntime{}, err
+	}
 	releaseLease := false
 	if acquireLease {
 		releaseLease = true
@@ -129,11 +133,13 @@ func (w *AgentSidecarWorker) prepareWispRuntimeWithSpace(ctx context.Context, ho
 		"WISP_USE_HOST_E2FSPROGS":             firstEnv("GATEWAY_WISP_USE_HOST_E2FSPROGS", "WISP_USE_HOST_E2FSPROGS"),
 		"WISP_USE_HOST_CRUN":                  firstEnv("GATEWAY_WISP_USE_HOST_CRUN", "WISP_USE_HOST_CRUN"),
 	}
+	w.logWispMountEvent("acp_runtime_wisp_mount_start", req, runtime, sb, space, "")
 	result, err := host.RunCommand(ctx, sb, wispOuterPrepareScript(), env, nil, func(text string) error {
 		logRemoteStderr(time.Now(), workerJob{JobID: "wisp_outer_prepare", ResponseID: req.SessionID}, text)
 		return nil
 	})
 	if err != nil {
+		w.logWispMountEvent("acp_runtime_wisp_mount_failed", req, runtime, sb, space, wispCommandFailureDetail(err, result))
 		return ACPSessionRuntime{}, fmt.Errorf(
 			"prepare wisp outer runtime session_id=%s outer_sandbox_id=%s wisp_name=%s smh_space_id=%s package_url=%s: %s",
 			req.SessionID,
@@ -145,6 +151,7 @@ func (w *AgentSidecarWorker) prepareWispRuntimeWithSpace(ctx context.Context, ho
 		)
 	}
 	if result.ExitCode != 0 || !strings.Contains(result.Stdout, "WISP_OUTER_READY") {
+		w.logWispMountEvent("acp_runtime_wisp_mount_failed", req, runtime, sb, space, wispCommandFailureDetail(nil, result))
 		return ACPSessionRuntime{}, fmt.Errorf(
 			"prepare wisp outer runtime failed session_id=%s outer_sandbox_id=%s wisp_name=%s smh_space_id=%s package_url=%s: %s",
 			req.SessionID,
@@ -158,7 +165,66 @@ func (w *AgentSidecarWorker) prepareWispRuntimeWithSpace(ctx context.Context, ho
 	if acquireLease {
 		releaseLease = false
 	}
+	w.logWispMountEvent("acp_runtime_wisp_mount_done", req, runtime, sb, space, "")
 	return runtime, nil
+}
+
+func (w *AgentSidecarWorker) requireWispMountLeaseHeld(ctx context.Context, runtime ACPSessionRuntime) error {
+	if runtime.WispLeaseID == "" {
+		return fmt.Errorf("wisp mount rejected: missing lease runtime_id=%s wisp_name=%s workspace_id=%s", runtime.RuntimeID, runtime.WispName, firstNonEmpty(runtime.WispWorkspaceID, runtime.WispSMHSpaceID))
+	}
+	if w.workspaceService == nil {
+		return errors.New("workspace service is required to verify wisp mount lease")
+	}
+	workspaceID := firstNonEmpty(runtime.WispWorkspaceID, runtime.WispSMHSpaceID)
+	if strings.TrimSpace(workspaceID) == "" {
+		return errors.New("wisp workspace id is required to verify mount lease")
+	}
+	lease, ok, err := w.workspaceService.GetLease(ctx, workspaceID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("wisp mount rejected: no active lease record workspace_id=%s runtime_id=%s wisp_name=%s", workspaceID, runtime.RuntimeID, runtime.WispName)
+	}
+	if lease.LeaseID != runtime.WispLeaseID ||
+		lease.FencingToken != runtime.WispLeaseFence ||
+		lease.State != "active" ||
+		!lease.ExpiresAt.After(time.Now().UTC()) {
+		return fmt.Errorf(
+			"wisp mount rejected: lease mismatch workspace_id=%s wisp_name=%s expected_lease=%s expected_fence=%d actual_lease=%s actual_runtime=%s actual_fence=%d actual_state=%s actual_until=%s",
+			workspaceID,
+			runtime.WispName,
+			runtime.WispLeaseID,
+			runtime.WispLeaseFence,
+			lease.LeaseID,
+			lease.RuntimeID,
+			lease.FencingToken,
+			lease.State,
+			lease.ExpiresAt.Format(time.RFC3339Nano),
+		)
+	}
+	return nil
+}
+
+func (w *AgentSidecarWorker) logWispMountEvent(event string, req ACPSessionRuntimeStartRequest, runtime ACPSessionRuntime, sb RuntimeHostTarget, space agentWispSMHSpace, errText string) {
+	fields := []string{
+		"timeline source=go",
+		"event=" + event,
+		"session_id=" + req.SessionID,
+		fmt.Sprintf("generation=%d", req.Generation),
+		"runtime_id=" + runtime.RuntimeID,
+		"sandbox_id=" + sb.ID,
+		"wisp_name=" + quoteServerField(runtime.WispName),
+		"smh_space_id=" + quoteServerField(space.SpaceID),
+		"lease_id=" + quoteServerField(runtime.WispLeaseID),
+		fmt.Sprintf("fence=%d", runtime.WispLeaseFence),
+		"lease_until=" + quoteServerField(formatOptionalTime(runtime.WispLeaseUntil)),
+	}
+	if errText != "" {
+		fields = append(fields, "error="+quoteServerField(errText))
+	}
+	fmt.Fprintln(os.Stderr, strings.Join(fields, " "))
 }
 
 func (w *AgentSidecarWorker) acquireWispWorkspaceLease(ctx context.Context, runtime ACPSessionRuntime) (ACPSessionRuntime, error) {
@@ -416,6 +482,7 @@ func wispStopCommand(runtime ACPSessionRuntime) string {
 		"if [[ -z \"$client\" || ! -x \"$client\" ]]; then echo \"wispclient missing\" >&2; exit 127; fi\n" +
 		"jfs=\"$(dirname \"$client\")/juicefs-smount\"\n" +
 		"if [[ -x \"$jfs\" ]]; then\n" +
+		"  echo \"wisp checkpoint_start phase=writeback_cut_barrier timeout=$writeback_cut_timeout\" >&2\n" +
 		"  echo \"wisp writeback-cut-barrier start timeout=$writeback_cut_timeout\" >&2\n" +
 		"  barrier_stdout=\"$(mktemp)\"\n" +
 		"  barrier_stderr=\"$(mktemp)\"\n" +
@@ -435,12 +502,14 @@ func wispStopCommand(runtime ACPSessionRuntime) string {
 		"    exit \"$barrier_code\"\n" +
 		"  fi\n" +
 		"  echo \"wisp writeback-cut-barrier done\" >&2\n" +
+		"  echo \"wisp checkpoint_done phase=writeback_cut_barrier\" >&2\n" +
 		"else\n" +
 		"  echo \"wisp writeback-cut-barrier skipped: juicefs-smount missing path=$jfs\" >&2\n" +
 		"fi\n" +
 		"stop_stdout=\"$(mktemp)\"\n" +
 		"stop_stderr=\"$(mktemp)\"\n" +
 		"trap 'rm -f \"$stop_stdout\" \"$stop_stderr\"' EXIT\n" +
+		"echo \"wisp umount_start name=$name\" >&2\n" +
 		"set +e\n" +
 		"\"$client\" -server \"$server\" stop \"$name\" >\"$stop_stdout\" 2>\"$stop_stderr\"\n" +
 		"code=$?\n" +
@@ -462,6 +531,7 @@ func wispStopCommand(runtime ACPSessionRuntime) string {
 		"  exit \"$code\"\n" +
 		"fi\n" +
 		"cat \"$stop_stdout\" || true\n" +
+		"echo \"wisp umount_done name=$name\" >&2\n" +
 		"echo CLOUDAGENT_WISP_STOPPED\n"
 }
 

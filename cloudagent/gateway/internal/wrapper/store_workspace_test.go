@@ -224,6 +224,75 @@ func TestStoreWorkspaceLeaseRenewRequiresExactFence(t *testing.T) {
 	}
 }
 
+func TestWispMountLeaseVerificationRequiresCurrentFence(t *testing.T) {
+	ctx := context.Background()
+	store, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := store.AcquireLease(ctx, WorkspaceLeaseRequest{
+		WorkspaceID: "space_mount",
+		RuntimeID:   "runtime_mount",
+		Provider:    "ags",
+		TTL:         time.Minute,
+	})
+	if err != nil {
+		t.Fatalf("acquire lease: %v", err)
+	}
+	worker := &AgentSidecarWorker{workspaceService: store}
+	if err := worker.requireWispMountLeaseHeld(ctx, ACPSessionRuntime{
+		RuntimeID:       "runtime_mount",
+		WispName:        "agent-session_mount",
+		WispWorkspaceID: "space_mount",
+	}); err == nil {
+		t.Fatal("missing lease should reject mount")
+	}
+	runtime := ACPSessionRuntime{
+		RuntimeID:       "runtime_mount",
+		WispName:        "agent-session_mount",
+		WispWorkspaceID: "space_mount",
+		WispSMHSpaceID:  "space_mount",
+		WispLeaseID:     lease.LeaseID,
+		WispLeaseFence:  lease.FencingToken,
+		WispLeaseUntil:  lease.ExpiresAt,
+	}
+	if err := worker.requireWispMountLeaseHeld(ctx, runtime); err != nil {
+		t.Fatalf("valid lease should allow mount: %v", err)
+	}
+	workspaceRuntime := runtime
+	workspaceRuntime.RuntimeID = "workspace_runtime_mount"
+	workspaceRuntime.WispName = "workspace_mount"
+	if err := worker.requireWispMountLeaseHeld(ctx, workspaceRuntime); err != nil {
+		t.Fatalf("same lease/fence should protect workspace wisp runtime too: %v", err)
+	}
+	stale := runtime
+	stale.WispLeaseFence++
+	if err := worker.requireWispMountLeaseHeld(ctx, stale); err == nil {
+		t.Fatal("stale fence should reject mount")
+	}
+	if err := store.ReleaseLease(ctx, lease); err != nil {
+		t.Fatalf("release lease: %v", err)
+	}
+	if err := worker.requireWispMountLeaseHeld(ctx, runtime); err == nil {
+		t.Fatal("released lease should reject mount")
+	}
+}
+
+func TestWispLeaseReleaseRequiresConfirmedStop(t *testing.T) {
+	if shouldReleaseWispLeaseAfterClose(true, false, false, false) {
+		t.Fatal("must not release wisp lease when outer stop/checkpoint/umount was not confirmed")
+	}
+	if shouldReleaseWispLeaseAfterClose(true, true, true, false) {
+		t.Fatal("must not release wisp lease when workspace stop/checkpoint/umount was not confirmed")
+	}
+	if !shouldReleaseWispLeaseAfterClose(true, true, true, true) {
+		t.Fatal("confirmed outer and workspace wisp stop should release lease")
+	}
+	if !shouldReleaseWispLeaseAfterClose(false, false, false, false) {
+		t.Fatal("non-wisp close should not be blocked by wisp stop state")
+	}
+}
+
 func TestStoreRuntimeOwnershipAcquireConflictReleaseAndExpire(t *testing.T) {
 	ctx := context.Background()
 	store, err := NewStore(t.TempDir())
