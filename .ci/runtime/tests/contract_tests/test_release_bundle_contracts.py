@@ -343,6 +343,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertNotIn('HERMES_TAT_COMMAND_ID is required for existing Hermes VM upgrade', workflow_text)
         self.assertIn("images/helpers/config-hermes-python-mirrors.sh", workflow_text)
         self.assertNotIn("tccli tat DeleteCommand", workflow_text)
+        self.assertGreaterEqual(workflow_text.count("ci_ensure_jq"), 2)
         self.assertIn('HERMES_TAT_BATCH_SIZE="${HERMES_TAT_BATCH_SIZE:-5}"', workflow_text)
         self.assertIn('HERMES_TAT_SINGLE_ATTEMPTS="${HERMES_TAT_SINGLE_ATTEMPTS:-3}"', workflow_text)
         self.assertIn("不直连数据库，不修改 pool / instance 状态", workflow_text)
