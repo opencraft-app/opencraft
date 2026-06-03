@@ -998,7 +998,7 @@ ensure_hermes_gateway_service() {
   runtime_uid="$(id -u "${RUNTIME_USER}")"
   user_env_prefix="export XDG_RUNTIME_DIR=\"/run/user/${runtime_uid}\"; mkdir -p \"\${XDG_RUNTIME_DIR}\" 2>/dev/null || true;"
   ensure_hermes_linger
-  run_as_runtime_user "${user_env_prefix} hermes gateway install"
+  run_as_runtime_user "${user_env_prefix} printf 'n\n' | hermes gateway install"
   run_as_runtime_user "${user_env_prefix} hermes gateway stop >/dev/null 2>&1 || true"
 }
 
