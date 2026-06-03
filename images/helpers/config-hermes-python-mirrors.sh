@@ -6,6 +6,48 @@ home="$(getent passwd "$user" | cut -d: -f6 || true)"
 [ -n "$home" ] || { echo "skip: user not found: $user" >&2; exit 0; }
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || pwd)"
 blueprint_id_file="${HERMES_BACKEND_BLUEPRINT_ID_FILE:-$script_dir/../hermes-backend-blueprint-id}"
+acli_install_url="${HERMES_ACLI_INSTALL_URL:-${ACLI_INSTALL_URL:-https://acli-1325194254.cos.accelerate.myqcloud.com/acli/install.sh}}"
+
+run_as_target_user() {
+  local command="$1"
+  if [ "$(id -un)" = "$user" ]; then
+    HOME="$home" bash -lc "$command"
+  else
+    sudo -u "$user" -H bash -lc "$command"
+  fi
+}
+
+acli_supports_backend() {
+  run_as_target_user 'command -v acli >/dev/null 2>&1 && acli backend --help >/dev/null 2>&1'
+}
+
+ensure_acli_backend() {
+  local tmp_install=""
+  if acli_supports_backend; then
+    return 0
+  fi
+
+  echo "acli backend command unavailable for $user; attempting acli self-update"
+  run_as_target_user 'command -v acli >/dev/null 2>&1 && acli self-update >/dev/null 2>&1' || true
+  if acli_supports_backend; then
+    echo "ensured acli backend command for $user via self-update"
+    return 0
+  fi
+
+  command -v curl >/dev/null 2>&1 || { echo "missing curl; cannot install acli with backend command" >&2; exit 1; }
+  tmp_install="$(mktemp "${TMPDIR:-/tmp}/acli-install.XXXXXX")"
+  curl -fsSL "$acli_install_url" -o "$tmp_install"
+  ACLI_PRODUCT=lightvela ACLI_RUN_AS="$user" bash "$tmp_install"
+  rm -f "$tmp_install"
+
+  if ! acli_supports_backend; then
+    echo "acli backend command is still unavailable after install: $acli_install_url" >&2
+    run_as_target_user 'acli --help' >&2 || true
+    exit 1
+  fi
+  echo "ensured acli backend command for $user via installer"
+}
+
 config_dir="$home/.config"
 mkdir -p "$config_dir/pip" "$config_dir/uv" "$config_dir/systemd/user"
 printf '[global]\nindex-url = https://mirrors.tencent.com/pypi/simple\nextra-index-url =\n    https://mirrors.cloud.tencent.com/pypi/simple\ntimeout = 300\ndisable-pip-version-check = true\n' >"$home/.config/pip/pip.conf"
@@ -24,9 +66,6 @@ fi
 
 printf -v blueprint_id_escaped '%q' "$blueprint_id"
 upgrade_cmd="acli backend upgrade-start --blueprint-id ${blueprint_id_escaped} --wait=true"
-if [ "$(id -un)" = "$user" ]; then
-  bash -lc "$upgrade_cmd"
-else
-  sudo -u "$user" -H bash -lc "$upgrade_cmd"
-fi
+ensure_acli_backend
+run_as_target_user "$upgrade_cmd"
 echo "upgraded Hermes backend blueprint for $user: $blueprint_id"

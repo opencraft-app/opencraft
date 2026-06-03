@@ -387,6 +387,9 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn('"$config_dir/systemd/user"', repair_script_text)
         self.assertIn('chown "$user:$user" "$config_dir"', repair_script_text)
         self.assertIn('chmod 0700 "$config_dir"', repair_script_text)
+        self.assertIn("acli backend --help", repair_script_text)
+        self.assertIn("acli self-update", repair_script_text)
+        self.assertIn("https://acli-1325194254.cos.accelerate.myqcloud.com/acli/install.sh", repair_script_text)
         self.assertIn("acli backend upgrade-start --blueprint-id", repair_script_text)
 
     def test_frontend_preview_uses_master_runtime(self) -> None:
