@@ -346,6 +346,11 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("invoke_hermes_tat_command.sh", workflow_text)
         self.assertIn("rollout_hermes_sandbox_env.sh", workflow_text)
         self.assertIn("extract_hermes_image_env.py", workflow_text)
+        self.assertIn("resolve_hermes_reuse_image_name", workflow_text)
+        self.assertIn("HERMES_REUSE_IMAGE_NAME", workflow_text)
+        self.assertIn("HERMES_SKIP_IMAGE_BUILD", workflow_text)
+        self.assertIn("--image-name \"$HERMES_IMAGE_NAME\"", workflow_text)
+        self.assertIn("resolve_hermes_image_id.py --region \"$region\" --image-name \"$HERMES_IMAGE_NAME\"", workflow_text)
         self.assertIn("split_hermes_pool_vms_by_region.py", workflow_and_rollout_text)
         self.assertIn("beijing-sandbox:ap-beijing:kubeconfig_beijing_sandbox", workflow_text)
         self.assertIn("shprod:ap-shanghai:kubeconfig_shprod", workflow_text)
@@ -362,17 +367,23 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("批次失败后自动拆成单台重试", workflow_text)
 
         list_script = REPO_ROOT / ".ci/runtime/commands/list_hermes_pool_vms.sh"
+        refresh_script = REPO_ROOT / ".ci/runtime/commands/refresh_hermes_sandbox_pools.sh"
         create_script = REPO_ROOT / ".ci/runtime/commands/create_hermes_tat_command.sh"
         invoke_script = REPO_ROOT / ".ci/runtime/commands/invoke_hermes_tat_command.sh"
         repair_script = REPO_ROOT / "images/helpers/config-hermes-python-mirrors.sh"
         blueprint_id_file = REPO_ROOT / "images/hermes-backend-blueprint-id"
         self.assertTrue(list_script.exists())
+        self.assertTrue(refresh_script.exists())
         self.assertTrue(create_script.exists())
         self.assertTrue(invoke_script.exists())
         self.assertTrue(rollout_script.exists())
         self.assertTrue(blueprint_id_file.exists())
         self.assertEqual(blueprint_id_file.read_text().strip(), "lhbp-8gsotw6u")
         self.assertIn("does not patch pools, update SKUs, invoke TAT, or write database rows", list_script.read_text())
+        self.assertIn('/template-classes/${TEMPLATE_CLASS_ID}/resolve', refresh_script.read_text())
+        self.assertIn('template-classes/{template}/resolve', list_script.read_text())
+        self.assertIn("print_pool_discovery_debug", refresh_script.read_text())
+        self.assertIn("reuse=", (REPO_ROOT / "images/hermes-image-trigger").read_text())
         create_script_text = create_script.read_text()
         self.assertIn("tccli tat CreateCommand", create_script_text)
         self.assertIn("--CommandType SHELL", create_script_text)
