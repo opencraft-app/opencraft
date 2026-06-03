@@ -25,6 +25,9 @@ bundles:
           MYSQL_PORT: "3306"
           CTL_DB: ctl
           CTL_DB_USER: root
+        playground_database:
+          env: CTL_DB
+          prefix: ctl
         env_from_service_platform:
           MYSQL_HOST: CTL_TEST_MYSQL_HOST
         env_from_secret_resolver:
