@@ -54,7 +54,7 @@ stages:
               ci_require_command go
               ci_load_tencentcloud_credentials
 
-              bash -n images/build.sh images/deploy-build.sh images/helpers/config-hermes-python-mirrors.sh images/tests/test-hermes-build-script.sh images/tests/test-hermes-runtime.sh .ci/runtime/commands/refresh_hermes_sandbox_pools.sh .ci/runtime/commands/list_hermes_pool_vms.sh .ci/runtime/commands/create_hermes_tat_command.sh .ci/runtime/commands/invoke_hermes_tat_command.sh .ci/runtime/commands/rollout_hermes_sandbox_env.sh
+              bash -n images/build.sh images/deploy-build.sh images/helpers/config-hermes-python-mirrors.sh images/tests/test-hermes-build-script.sh images/tests/test-hermes-runtime.sh .ci/runtime/commands/refresh_hermes_sandbox_env.sh .ci/runtime/commands/refresh_hermes_sandbox_pools.sh .ci/runtime/commands/repair_hermes_existing_vms.sh .ci/runtime/commands/list_hermes_pool_vms.sh .ci/runtime/commands/create_hermes_tat_command.sh .ci/runtime/commands/invoke_hermes_tat_command.sh .ci/runtime/commands/rollout_hermes_sandbox_env.sh
               python3 -m py_compile images/build-image.py
               python3 images/tests/test-build-image-sync.py
               resolve_hermes_reuse_image_name() {
@@ -135,7 +135,7 @@ stages:
           - 北京旧 sandbox-api 未提供 TemplateClass resolve 时，默认只回退刷新 pool-c2~pool-c5
           - 先更新 Hermes SKU 的 desired image，避免 rollout controller 回写旧镜像
           - 再逐个 patch Hermes pools 的 base_image，并把 CLEAN 库存标记进入重置流程
-          - 然后通过 TAT 修补存量 VM：pip/uv mirror、systemd user 权限、backend blueprint 基线
+          - 后续独立 stage 会通过 TAT 修补存量 VM：pip/uv mirror、systemd user 权限、backend blueprint 基线
           - 不直连数据库，不执行 SQL
       timeout-hours: 24
     jobs:
@@ -150,11 +150,11 @@ stages:
             run: |
               echo "Beijing Hermes sandbox rollout approved"
 
-  - name: 刷新并修补北京主沙箱 Hermes
+  - name: 刷新北京主沙箱 Hermes pools
     if: "${{ ci.branch }} == master"
     jobs:
       refresh:
-        name: 刷新 pools 并通过 TAT 修补北京主沙箱 Hermes VM
+        name: 刷新北京主沙箱 Hermes pools
         runs-on:
           self-hosted: true
           pool-name: env
@@ -163,7 +163,7 @@ stages:
             name: 拉取代码
             with:
               fetchDepth: 1
-          - name: 刷新并修补北京主沙箱 Hermes
+          - name: 刷新北京主沙箱 Hermes pools
             shell: bash
             run: |
               set -euo pipefail
@@ -205,7 +205,42 @@ stages:
               echo "HERMES_ROLLOUT_ENV_SPEC=${HERMES_ROLLOUT_ENV_SPEC}"
               echo "HERMES_LEGACY_POOL_IDS=${HERMES_LEGACY_POOL_IDS}"
 
-              bash .ci/runtime/commands/rollout_hermes_sandbox_env.sh
+              HERMES_REFRESH_ENV_SPEC="$HERMES_ROLLOUT_ENV_SPEC" \
+                bash .ci/runtime/commands/refresh_hermes_sandbox_env.sh
+
+  - name: 升级存量北京主沙箱 Hermes VM
+    if: "${{ ci.branch }} == master"
+    jobs:
+      repair:
+        name: 通过 TAT 升级存量北京主沙箱 Hermes VM
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - checkout: self
+            name: 拉取代码
+            with:
+              fetchDepth: 1
+          - name: 升级存量北京主沙箱 Hermes VM
+            shell: bash
+            run: |
+              set -euo pipefail
+              source .ci/init.sh
+              ci_init_repo_root
+              ci_ensure_tccli
+              ci_require_command tccli
+              ci_ensure_kubectl
+              ci_ensure_jq
+              ci_require_commands bash curl jq python3
+              ci_load_tencentcloud_credentials
+
+              HERMES_REPAIR_ENV_SPEC="${HERMES_BEIJING_HERMES_REPAIR_ENV_SPEC:-beijing-sandbox:ap-beijing:kubeconfig_beijing_sandbox}"
+              HERMES_LEGACY_POOL_IDS="${HERMES_BEIJING_HERMES_LEGACY_POOL_IDS:-pool-c2,pool-c3,pool-c4,pool-c5}"
+              export HERMES_REPAIR_ENV_SPEC HERMES_LEGACY_POOL_IDS
+              echo "HERMES_REPAIR_ENV_SPEC=${HERMES_REPAIR_ENV_SPEC}"
+              echo "HERMES_LEGACY_POOL_IDS=${HERMES_LEGACY_POOL_IDS}"
+
+              bash .ci/runtime/commands/repair_hermes_existing_vms.sh
 
   - name: 确认刷新并修补上海生产 Hermes
     if: "${{ ci.branch }} == master"
@@ -215,14 +250,14 @@ stages:
           - name: 确认刷新并修补上海生产 Hermes
             reviewers: [ "skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang" ]
         description: |
-          北京主沙箱已先完成 Hermes pools 刷新和存量 VM 修补。
+          北京主沙箱已先完成 Hermes pools 刷新和独立存量 VM 修补。
 
           点击通过后，流水线会处理上海生产：
           - 目标：shprod / ap-shanghai
           - 通过 sandbox-api internal API 刷新 Hermes sandbox pools
           - 先更新 Hermes SKU 的 desired image，避免 rollout controller 回写旧镜像
           - 再逐个 patch Hermes pools 的 base_image，并把 CLEAN 库存标记进入重置流程
-          - 然后通过 TAT 修补存量 VM：pip/uv mirror、systemd user 权限、backend blueprint 基线
+          - 后续独立 stage 会通过 TAT 修补存量 VM：pip/uv mirror、systemd user 权限、backend blueprint 基线
           - 不直连数据库，不执行 SQL
           - 从仓库内的 mirror 修补脚本创建腾讯云 TAT Command，不需要手工传 HERMES_TAT_COMMAND_ID
           - 默认 5 台一批串行执行；批次失败后自动拆成单台重试
@@ -239,11 +274,11 @@ stages:
             run: |
               echo "Shanghai Hermes production rollout approved"
 
-  - name: 刷新并修补上海生产 Hermes
+  - name: 刷新上海生产 Hermes pools
     if: "${{ ci.branch }} == master"
     jobs:
-      upgrade:
-        name: 刷新 pools 并通过 TAT 修补上海生产 Hermes VM
+      refresh:
+        name: 刷新上海生产 Hermes pools
         runs-on:
           self-hosted: true
           pool-name: env
@@ -252,7 +287,7 @@ stages:
             name: 拉取代码
             with:
               fetchDepth: 1
-          - name: 刷新并修补上海生产 Hermes
+          - name: 刷新上海生产 Hermes pools
             shell: bash
             run: |
               set -euo pipefail
@@ -291,4 +326,37 @@ stages:
               echo "HERMES_IMAGE_NAME=${HERMES_IMAGE_NAME}"
               echo "HERMES_ROLLOUT_ENV_SPEC=${HERMES_ROLLOUT_ENV_SPEC}"
 
-              bash .ci/runtime/commands/rollout_hermes_sandbox_env.sh
+              HERMES_REFRESH_ENV_SPEC="$HERMES_ROLLOUT_ENV_SPEC" \
+                bash .ci/runtime/commands/refresh_hermes_sandbox_env.sh
+
+  - name: 升级存量上海生产 Hermes VM
+    if: "${{ ci.branch }} == master"
+    jobs:
+      repair:
+        name: 通过 TAT 升级存量上海生产 Hermes VM
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - checkout: self
+            name: 拉取代码
+            with:
+              fetchDepth: 1
+          - name: 升级存量上海生产 Hermes VM
+            shell: bash
+            run: |
+              set -euo pipefail
+              source .ci/init.sh
+              ci_init_repo_root
+              ci_ensure_tccli
+              ci_require_command tccli
+              ci_ensure_kubectl
+              ci_ensure_jq
+              ci_require_commands bash curl jq python3
+              ci_load_tencentcloud_credentials
+
+              HERMES_REPAIR_ENV_SPEC="${HERMES_SHANGHAI_HERMES_REPAIR_ENV_SPEC:-shprod:ap-shanghai:kubeconfig_shprod}"
+              export HERMES_REPAIR_ENV_SPEC
+              echo "HERMES_REPAIR_ENV_SPEC=${HERMES_REPAIR_ENV_SPEC}"
+
+              bash .ci/runtime/commands/repair_hermes_existing_vms.sh
