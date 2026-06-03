@@ -23,10 +23,13 @@ type fakeACP struct {
 	promptCalls int
 	lastPrompt  string
 	sessionID   string
+	sessionIDs  []string
 	reply       string
 	loadErr     error
 	promptErrs  []error
 	newDelay    time.Duration
+	newErr      error
+	waitPrompt  bool
 }
 
 func (f *fakeACP) NewSession(ctx context.Context, _ string) (string, error) {
@@ -40,6 +43,15 @@ func (f *fakeACP) NewSession(ctx context.Context, _ string) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.newCalls++
+	if f.newErr != nil {
+		return "", f.newErr
+	}
+	if len(f.sessionIDs) > 0 {
+		sessionID := f.sessionIDs[0]
+		f.sessionIDs = f.sessionIDs[1:]
+		f.sessionID = sessionID
+		return sessionID, nil
+	}
 	if f.sessionID == "" {
 		f.sessionID = "session-a"
 	}
@@ -53,11 +65,18 @@ func (f *fakeACP) LoadSession(context.Context, string, string) error {
 	return f.loadErr
 }
 
-func (f *fakeACP) Prompt(_ context.Context, _ string, text string) (acp.PromptResult, error) {
+func (f *fakeACP) Prompt(ctx context.Context, _ string, text string) (acp.PromptResult, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.promptCalls++
 	f.lastPrompt = text
+	waitPrompt := f.waitPrompt
+	f.mu.Unlock()
+	if waitPrompt {
+		<-ctx.Done()
+		return acp.PromptResult{}, ctx.Err()
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if len(f.promptErrs) > 0 {
 		err := f.promptErrs[0]
 		f.promptErrs = f.promptErrs[1:]
@@ -305,7 +324,7 @@ func TestDispatcherSerializesSessionCreationForSameConversation(t *testing.T) {
 	}
 }
 
-func TestDispatcherStopsWhenExistingSessionLoadFails(t *testing.T) {
+func TestDispatcherEnqueuesFallbackWhenExistingSessionLoadFails(t *testing.T) {
 	ctx := context.Background()
 	st, err := store.Open(ctx, t.TempDir()+"/channelgateway.db")
 	if err != nil {
@@ -313,6 +332,10 @@ func TestDispatcherStopsWhenExistingSessionLoadFails(t *testing.T) {
 	}
 	defer st.Close()
 	account := store.ChannelAccount{ChannelAccountID: "wecom-a", ChannelType: "wecom", AgentID: "main"}
+	lease, err := st.AcquireChannelLease(ctx, "wecom-a", "owner-a", time.Minute)
+	if err != nil {
+		t.Fatalf("acquire lease: %v", err)
+	}
 	sessionKey := channel.BuildSessionKey("main", channel.Message{
 		ChannelType:            channel.TypeWeCom,
 		ChatType:               channel.ChatDM,
@@ -341,12 +364,16 @@ func TestDispatcherStopsWhenExistingSessionLoadFails(t *testing.T) {
 		Text:                   "hello",
 		Raw:                    json.RawMessage(`{"ok":true}`),
 	})
-	if err == nil {
-		t.Fatal("expected load failure")
+	if err != nil {
+		t.Fatalf("handle inbound should enqueue fallback: %v", err)
 	}
 	_, _, promptCalls, _ := client.snapshot()
 	if promptCalls != 0 {
 		t.Fatalf("prompt must not run after load failure, got %d", promptCalls)
+	}
+	reply := claimOneReply(t, ctx, st, lease)
+	if !strings.Contains(reply.Text, "云端会话恢复失败") || !strings.Contains(reply.Text, "/reset") {
+		t.Fatalf("expected recovery fallback reply, got %#v", reply)
 	}
 }
 
@@ -495,7 +522,7 @@ func TestDispatcherRecreatesAndRetriesWhenRuntimeUnavailable(t *testing.T) {
 	}
 }
 
-func TestDispatcherQueuesFallbackReplyWhenPromptFails(t *testing.T) {
+func TestDispatcherEnqueuesFallbackWhenPromptFails(t *testing.T) {
 	ctx := context.Background()
 	st, err := store.Open(ctx, t.TempDir()+"/channelgateway.db")
 	if err != nil {
@@ -522,14 +549,129 @@ func TestDispatcherQueuesFallbackReplyWhenPromptFails(t *testing.T) {
 		Text:                   "hello",
 		Raw:                    json.RawMessage(`{"ok":true}`),
 	})
-	if err == nil {
-		t.Fatal("expected prompt failure to be returned")
+	if err != nil {
+		t.Fatalf("handle inbound should enqueue fallback: %v", err)
 	}
+	reply := claimOneReply(t, ctx, st, lease)
+	if !strings.Contains(reply.Text, "云端会话恢复失败") || !strings.Contains(reply.Text, "/reset") {
+		t.Fatalf("expected recovery fallback reply, got %#v", reply)
+	}
+}
+
+func TestDispatcherRequestTimeoutEnqueuesFallback(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir()+"/channelgateway.db")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+	account := store.ChannelAccount{ChannelAccountID: "wecom-a", ChannelType: "wecom", AgentID: "main"}
+	lease, err := st.AcquireChannelLease(ctx, "wecom-a", "owner-a", time.Minute)
+	if err != nil {
+		t.Fatalf("acquire lease: %v", err)
+	}
+	client := &fakeACP{sessionID: "session-a", waitPrompt: true}
+	dispatcher := NewDispatcherWithOptions(st, account, client, "/workspace",
+		DispatcherOptions{RequestTimeout: 10 * time.Millisecond},
+	)
+	err = dispatcher.HandleInbound(ctx, channel.Message{
+		ChannelAccountID:       "wecom-a",
+		ChannelType:            channel.TypeWeCom,
+		ExternalMessageID:      "msg-timeout",
+		ExternalConversationID: "chat-a",
+		ChatType:               channel.ChatDM,
+		Kind:                   channel.MessageText,
+		Text:                   "hello",
+		Raw:                    json.RawMessage(`{"ok":true}`),
+	})
+	if err != nil {
+		t.Fatalf("timeout should still enqueue fallback: %v", err)
+	}
+	reply := claimOneReply(t, context.Background(), st, lease)
+	if !strings.Contains(reply.Text, "云端会话恢复失败") {
+		t.Fatalf("expected timeout fallback reply, got %#v", reply)
+	}
+}
+
+func TestDispatcherResetCreatesNewSessionAndDoesNotPrompt(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir()+"/channelgateway.db")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+	account := store.ChannelAccount{ChannelAccountID: "wecom-a", ChannelType: "wecom", AgentID: "main"}
+	lease, err := st.AcquireChannelLease(ctx, "wecom-a", "owner-a", time.Minute)
+	if err != nil {
+		t.Fatalf("acquire lease: %v", err)
+	}
+	sessionKey := channel.BuildSessionKey("main", channel.Message{
+		ChannelType:            channel.TypeWeCom,
+		ChatType:               channel.ChatDM,
+		ExternalConversationID: "chat-a",
+	}, true, false)
+	if _, err := st.GetOrCreateConversation(ctx, store.Conversation{
+		ChannelAccountID:       "wecom-a",
+		ChannelType:            "wecom",
+		ExternalConversationID: "chat-a",
+		ChatType:               string(channel.ChatDM),
+		AgentID:                "main",
+		ACPSessionID:           "session-old",
+		SessionKey:             sessionKey,
+	}); err != nil {
+		t.Fatalf("seed conversation: %v", err)
+	}
+	client := &fakeACP{sessionIDs: []string{"session-new"}, reply: "answer"}
+	dispatcher := NewDispatcher(st, account, client, "/workspace")
+	err = dispatcher.HandleInbound(ctx, channel.Message{
+		ChannelAccountID:       "wecom-a",
+		ChannelType:            channel.TypeWeCom,
+		ExternalMessageID:      "msg-reset",
+		ExternalConversationID: "chat-a",
+		ChatType:               channel.ChatDM,
+		Kind:                   channel.MessageText,
+		Text:                   "/reset",
+		Raw:                    json.RawMessage(`{"ok":true}`),
+	})
+	if err != nil {
+		t.Fatalf("reset inbound: %v", err)
+	}
+	newCalls, loadCalls, promptCalls, _ := client.snapshot()
+	if newCalls != 1 || loadCalls != 0 || promptCalls != 0 {
+		t.Fatalf("reset should only create new session: new=%d load=%d prompt=%d", newCalls, loadCalls, promptCalls)
+	}
+	conversation, err := st.GetOrCreateConversation(ctx, store.Conversation{
+		ChannelAccountID:       "wecom-a",
+		ChannelType:            "wecom",
+		ExternalConversationID: "chat-a",
+		ChatType:               string(channel.ChatDM),
+		AgentID:                "main",
+		SessionKey:             sessionKey,
+	})
+	if err != nil {
+		t.Fatalf("reload conversation: %v", err)
+	}
+	if conversation.ACPSessionID != "session-new" {
+		t.Fatalf("expected reset session binding, got %#v", conversation)
+	}
+	reply := claimOneReply(t, ctx, st, lease)
+	if !strings.Contains(reply.Text, "重新创建") {
+		t.Fatalf("expected reset reply, got %#v", reply)
+	}
+}
+
+func claimOneReply(t *testing.T, ctx context.Context, st *store.Store, lease store.ChannelLease) channel.Reply {
+	t.Helper()
 	items, err := st.ClaimPendingOutbox(ctx, lease, 10)
 	if err != nil {
 		t.Fatalf("claim outbox: %v", err)
 	}
-	if len(items) != 1 || !strings.Contains(items[0].PayloadJSON, "暂时不可用") {
-		t.Fatalf("expected fallback reply, got %#v", items)
+	if len(items) != 1 {
+		t.Fatalf("expected one outbox reply, got %#v", items)
 	}
+	var reply channel.Reply
+	if err := json.Unmarshal([]byte(items[0].PayloadJSON), &reply); err != nil {
+		t.Fatalf("decode reply: %v", err)
+	}
+	return reply
 }

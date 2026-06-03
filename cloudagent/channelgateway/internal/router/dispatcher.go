@@ -19,7 +19,14 @@ type Dispatcher struct {
 	account      store.ChannelAccount
 	acp          ACPClient
 	cwd          string
+	callbacks    ChannelCallbacks
+	timeout      time.Duration
 	sessionLocks sync.Map
+}
+
+type DispatcherOptions struct {
+	Callbacks      ChannelCallbacks
+	RequestTimeout time.Duration
 }
 
 type SessionStore interface {
@@ -42,13 +49,37 @@ type ACPClient interface {
 }
 
 func NewDispatcher(st SessionStore, account store.ChannelAccount, client ACPClient, cwd string) *Dispatcher {
+	return NewDispatcherWithOptions(st, account, client, cwd, DispatcherOptions{})
+}
+
+func NewDispatcherWithOptions(st SessionStore, account store.ChannelAccount, client ACPClient, cwd string, opts DispatcherOptions) *Dispatcher {
 	if strings.TrimSpace(cwd) == "" {
 		cwd = "/workspace"
 	}
-	return &Dispatcher{store: st, account: account, acp: client, cwd: cwd}
+	callbacks := opts.Callbacks
+	if callbacks == nil {
+		callbacks = DefaultChannelCallbacks{}
+	}
+	return &Dispatcher{
+		store:     st,
+		account:   account,
+		acp:       client,
+		cwd:       cwd,
+		callbacks: callbacks,
+		timeout:   opts.RequestTimeout,
+	}
 }
 
 func (d *Dispatcher) HandleInbound(ctx context.Context, msg channel.Message) error {
+	if d != nil && d.timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, d.timeout)
+		defer cancel()
+	}
+	return d.handleInbound(ctx, msg)
+}
+
+func (d *Dispatcher) handleInbound(ctx context.Context, msg channel.Message) error {
 	startedAt := time.Now()
 	if d == nil || d.store == nil || d.acp == nil {
 		return errors.New("dispatcher is not configured")
@@ -108,13 +139,16 @@ func (d *Dispatcher) HandleInbound(ctx context.Context, msg channel.Message) err
 	if err != nil {
 		return err
 	}
+	if command, ok := d.callbacksOrDefault().HandleCommand(msg.Text); ok {
+		return d.handleCommand(ctx, msg, conversation, command)
+	}
 	sessionID := conversation.ACPSessionID
 	if sessionID == "" {
 		log.Printf("channelgateway session_trace account_id=%s agent_id=%s conversation_id=%s session_key=%s action=session_new reason=missing_acp_session",
 			logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(conversation.ConversationID), logValue(conversation.SessionKey))
 		sessionID, err = d.acp.NewSession(ctx, d.cwd)
 		if err != nil {
-			return err
+			return d.handleACPError(ctx, msg, conversation, "", CallbackStageNewSession, err)
 		}
 		if err := d.store.BindACPSession(ctx, conversation.ChannelAccountID, conversation.SessionKey, sessionID); err != nil {
 			return err
@@ -129,14 +163,14 @@ func (d *Dispatcher) HandleInbound(ctx context.Context, msg channel.Message) err
 			logValue(conversation.SessionKey), logValue(sessionID))
 		if err := d.acp.LoadSession(ctx, sessionID, d.cwd); err != nil {
 			if !isMissingACPSessionError(err) {
-				return err
+				return d.handleACPError(ctx, msg, conversation, sessionID, CallbackStageLoadSession, err)
 			}
 			log.Printf("channelgateway session_trace account_id=%s agent_id=%s conversation_id=%s session_key=%s acp_session_id=%s action=session_recreate reason=missing_acp_runtime_session",
 				logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(conversation.ConversationID),
 				logValue(conversation.SessionKey), logValue(sessionID))
 			sessionID, err = d.acp.NewSession(ctx, d.cwd)
 			if err != nil {
-				return err
+				return d.handleACPError(ctx, msg, conversation, sessionID, CallbackStageNewSession, err)
 			}
 			if err := d.store.BindACPSession(ctx, conversation.ChannelAccountID, conversation.SessionKey, sessionID); err != nil {
 				return err
@@ -157,10 +191,7 @@ func (d *Dispatcher) HandleInbound(ctx context.Context, msg channel.Message) err
 			logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(msg.ExternalMessageID),
 			logValue(conversation.ConversationID), logValue(conversation.SessionKey), logValue(sessionID),
 			time.Since(promptStartedAt).Milliseconds(), logValue(err.Error()))
-		if _, enqueueErr := d.enqueueTextReply(ctx, msg, sessionID, "当前会话运行时暂时不可用，我已经记录了这次失败，请稍后再试。"); enqueueErr != nil {
-			return enqueueErr
-		}
-		return err
+		return d.handleACPError(ctx, msg, conversation, sessionID, CallbackStagePrompt, err)
 	}
 	log.Printf("channelgateway business_trace account_id=%s agent_id=%s message_id=%s conversation_id=%s session_key=%s acp_session_id=%s action=acp_prompt_done duration_ms=%d stop_reason=%s output_bytes=%d",
 		logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(msg.ExternalMessageID),
@@ -185,6 +216,59 @@ func (d *Dispatcher) HandleInbound(ctx context.Context, msg channel.Message) err
 		logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(msg.ExternalMessageID),
 		logValue(conversation.ConversationID), logValue(conversation.SessionKey), logValue(sessionID),
 		logValue(outbox.OutboxID), time.Since(startedAt).Milliseconds())
+	return nil
+}
+
+func (d *Dispatcher) callbacksOrDefault() ChannelCallbacks {
+	if d.callbacks != nil {
+		return d.callbacks
+	}
+	return DefaultChannelCallbacks{}
+}
+
+func (d *Dispatcher) handleCommand(ctx context.Context, msg channel.Message, conversation store.Conversation, command CommandCallbackResult) error {
+	switch command.Action {
+	case CommandActionReset:
+		log.Printf("channelgateway session_trace account_id=%s agent_id=%s conversation_id=%s session_key=%s action=session_reset",
+			logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(conversation.ConversationID), logValue(conversation.SessionKey))
+		sessionID, err := d.acp.NewSession(ctx, d.cwd)
+		if err != nil {
+			return d.handleACPError(ctx, msg, conversation, conversation.ACPSessionID, CallbackStageReset, err)
+		}
+		if err := d.store.BindACPSession(ctx, conversation.ChannelAccountID, conversation.SessionKey, sessionID); err != nil {
+			return err
+		}
+		log.Printf("channelgateway session_trace account_id=%s agent_id=%s conversation_id=%s session_key=%s acp_session_id=%s action=session_reset_bound",
+			logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(conversation.ConversationID),
+			logValue(conversation.SessionKey), logValue(sessionID))
+		reply := strings.TrimSpace(command.Reply)
+		if reply == "" {
+			reply = "已重新创建云端会话。你可以继续发送消息。"
+		}
+		_, err = d.enqueueTextReply(ctx, msg, sessionID, reply)
+		return err
+	default:
+		return nil
+	}
+}
+
+func (d *Dispatcher) handleACPError(ctx context.Context, msg channel.Message, conversation store.Conversation, sessionID string, stage CallbackStage, err error) error {
+	log.Printf("channelgateway session_trace account_id=%s agent_id=%s conversation_id=%s session_key=%s acp_session_id=%s action=acp_error stage=%s error=%s",
+		logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(conversation.ConversationID),
+		logValue(conversation.SessionKey), logValue(sessionID), logValue(string(stage)), logValue(err.Error()))
+	reply, ok := d.callbacksOrDefault().HandleACPError(stage, err)
+	if !ok || strings.TrimSpace(reply) == "" {
+		return err
+	}
+	enqueueCtx := ctx
+	var cancel context.CancelFunc
+	if ctx.Err() != nil {
+		enqueueCtx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+	}
+	if _, enqueueErr := d.enqueueTextReply(enqueueCtx, msg, sessionID, reply); enqueueErr != nil {
+		return enqueueErr
+	}
 	return nil
 }
 
