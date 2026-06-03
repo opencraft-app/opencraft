@@ -23,7 +23,7 @@ APPSET_REL = "argocd/apps/beijing-sandbox/sandbox-family-appset.yaml"
 APPS_DIR_REL = "argocd/apps/beijing-sandbox"
 CATALOG_DIR_TEMPLATE = "argocd/catalogs/sandbox/{env}"
 SUPPORTED_SANDBOX_ENVS = {"beijing-sandbox", "beijing-sandbox-2"}
-SUPPORTED_DIRECT_APP_ENVS = {"shprod", "sgprod", "tkexgz", "tkexsg"}
+SUPPORTED_DIRECT_APP_ENVS = {"shprod", "sgprod", "tkexgz", "tkexsg", "devcloud-dep"}
 ALLOWED_BEIJING_APP_FILES = {"argocd-runtime.yaml", "sandbox-family-appset.yaml"}
 REQUIRED_CATALOG_FIELDS = {
     "service",

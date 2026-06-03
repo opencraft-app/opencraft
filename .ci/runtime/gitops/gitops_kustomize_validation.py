@@ -21,7 +21,7 @@ from support.yaml import load_mapping
 
 CATALOG_DIR_TEMPLATE = "argocd/catalogs/sandbox/{env}"
 SUPPORTED_SANDBOX_ENVS = {"beijing-sandbox", "beijing-sandbox-2"}
-SUPPORTED_DIRECT_APP_ENVS = {"shprod", "sgprod", "tkexgz", "tkexsg"}
+SUPPORTED_DIRECT_APP_ENVS = {"shprod", "sgprod", "tkexgz", "tkexsg", "devcloud-dep"}
 PLACEHOLDER_RE = re.compile(r"\bREPLACE_[A-Z0-9_]+\b")
 
 
