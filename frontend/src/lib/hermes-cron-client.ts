@@ -33,6 +33,13 @@ export interface CronJob {
   last_run_at: string | null;
   last_status: string | null;
   created_at: string | null;
+  script: string;
+  effective_window: CronEffectiveWindow | null;
+}
+
+export interface CronEffectiveWindow {
+  start_at: string | null;
+  end_at: string | null;
 }
 
 /** 调用方传给 create() 的入参 */
@@ -47,6 +54,8 @@ export interface CreateCronJobInput {
   skills?: string[];
   /** 可选 deliver target：local（默认）/ weixin / wecom / telegram / origin / 等 */
   deliver?: string;
+  /** 可选 pre-run script 文件名，文件需位于 ~/.hermes/scripts/ */
+  script?: string;
 }
 
 /** 命令失败时抛出，message 已准备好直接进 toast */
@@ -110,6 +119,9 @@ export function buildCreateCommand(input: CreateCronJobInput): string {
   // deliver=local 是 hermes CLI 默认，省略以减少噪声
   if (input.deliver && input.deliver !== "local") {
     parts.push("--deliver", shellQuote(input.deliver));
+  }
+  if (input.script) {
+    parts.push("--script", shellQuote(input.script));
   }
   return parts.join(" ");
 }
@@ -202,8 +214,8 @@ export async function listCronJobs(botId: string): Promise<CronJob[]> {
   // 导致前端暂停操作后整张卡片消失（看起来像被删除）。
   const command = "hermes cron list --all";
   const payload = await execCommand(botId, command);
-  const text = (payload.output || "").trim();
-  if (!text || /no scheduled jobs/i.test(text)) return [];
+  const text = (payload.output || "").trimEnd();
+  if (!text.trim() || /no scheduled jobs/i.test(text)) return [];
   const jobs = parseCronListOutput(text);
   // hermes cron list 文本输出不含 prompt；额外尝试读 jobs.json 补 prompt 字段
   // 文件不存在/读不到时静默跳过，仅影响 prompt 显示，不影响列表本身
@@ -218,6 +230,7 @@ export async function listCronJobs(botId: string): Promise<CronJob[]> {
           : [];
       const promptById = new Map<string, string>();
       const createdAtById = new Map<string, string>();
+      const scriptById = new Map<string, string>();
       for (const raw of arr) {
         const r = raw as Record<string, unknown>;
         const id = String(r.id ?? "");
@@ -226,17 +239,22 @@ export async function listCronJobs(botId: string): Promise<CronJob[]> {
         if (prompt) promptById.set(id, prompt);
         const createdAt = typeof r.created_at === "string" ? r.created_at : "";
         if (createdAt) createdAtById.set(id, createdAt);
+        const script = typeof r.script === "string" ? r.script : "";
+        if (script) scriptById.set(id, script);
       }
       for (const j of jobs) {
         const p = promptById.get(j.id);
         if (p) j.prompt = p;
         const c = createdAtById.get(j.id);
         if (c) j.created_at = c;
+        const script = scriptById.get(j.id);
+        if (script) j.script = script;
       }
     }
   } catch {
     /* 读 jobs.json 失败不阻断列表 */
   }
+  await hydrateEffectiveWindows(botId, jobs);
   return jobs;
 }
 
@@ -298,6 +316,7 @@ export function parseCronListOutput(text: string): CronJob[] {
     }
     else if (key === "last status") current.last_status = value;
     else if (key === "deliver") current.deliver = value;
+    else if (key === "script") current.script = value;
     else if (key === "skills" || key === "skill") {
       const items = value.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
       current.skills = items;
@@ -335,11 +354,137 @@ function finalizeJob(p: Partial<CronJob>): CronJob {
     last_run_at: p.last_run_at || null,
     last_status: p.last_status || null,
     created_at: p.created_at || null,
+    script: p.script || "",
+    effective_window: p.effective_window || null,
   };
+}
+
+export function buildEffectiveWindowScript(args: CronEffectiveWindow): string {
+  const startAt = args.start_at ?? "";
+  const endAt = args.end_at ?? "";
+  return [
+    "#!/usr/bin/env python3",
+    "# lightvela-effective-window",
+    `# start_at=${startAt}`,
+    `# end_at=${endAt}`,
+    "import datetime",
+    "import json",
+    "",
+    `START_AT = ${JSON.stringify(startAt)}`,
+    `END_AT = ${JSON.stringify(endAt)}`,
+    "",
+    "def parse(value):",
+    "    return datetime.datetime.fromisoformat(value) if value else None",
+    "",
+    "now = datetime.datetime.now()",
+    "start_at = parse(START_AT)",
+    "end_at = parse(END_AT)",
+    "wake = True",
+    "if start_at is not None and now < start_at:",
+    "    wake = False",
+    "if end_at is not None and now > end_at:",
+    "    wake = False",
+    "print(json.dumps({\"wakeAgent\": wake}))",
+    "",
+  ].join("\n");
+}
+
+export function parseEffectiveWindowScript(content: string): CronEffectiveWindow | null {
+  if (!content.includes("lightvela-effective-window")) return null;
+  const startAt = /^# start_at=(.*)$/m.exec(content)?.[1]?.trim() ?? "";
+  const endAt = /^# end_at=(.*)$/m.exec(content)?.[1]?.trim() ?? "";
+  if (!startAt && !endAt) return null;
+  return {
+    start_at: startAt || null,
+    end_at: endAt || null,
+  };
+}
+
+export function createEffectiveWindowScriptName(seed: string): string {
+  const normalized = seed.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  const suffix = normalized || "job";
+  return `lightvela-effective-window-${suffix}.py`;
+}
+
+function isLightVelaEffectiveWindowScript(script: string): boolean {
+  return /^lightvela-effective-window-[a-z0-9-]+\.py$/.test(script);
+}
+
+export async function writeEffectiveWindowScript(
+  botId: string,
+  scriptName: string,
+  window: CronEffectiveWindow,
+): Promise<void> {
+  if (!isLightVelaEffectiveWindowScript(scriptName)) {
+    throw new Error("invalid LightVela effective window script name");
+  }
+  const content = buildEffectiveWindowScript(window);
+  const path = `~/.hermes/scripts/${scriptName}`;
+  const command = [
+    "mkdir -p ~/.hermes/scripts",
+    `printf %s ${shellQuote(content)} > ${path}`,
+    `chmod 600 ${path}`,
+  ].join(" && ");
+  await execCommand(botId, command);
+}
+
+export async function removeEffectiveWindowScript(botId: string, scriptName: string): Promise<void> {
+  if (!isLightVelaEffectiveWindowScript(scriptName)) {
+    throw new Error("invalid LightVela effective window script name");
+  }
+  await execCommand(botId, `rm -f ~/.hermes/scripts/${scriptName}`);
+}
+
+async function readEffectiveWindowScripts(botId: string, scriptNames: string[]): Promise<Map<string, CronEffectiveWindow>> {
+  const safeNames = scriptNames.filter(isLightVelaEffectiveWindowScript);
+  const result = new Map<string, CronEffectiveWindow>();
+  for (const scriptName of safeNames) {
+    try {
+      const payload = await execCommand(botId, `cat ~/.hermes/scripts/${scriptName} 2>/dev/null || true`);
+      const parsed = parseEffectiveWindowScript(payload.output || "");
+      if (parsed) result.set(scriptName, parsed);
+    } catch {
+      /* ignore individual script read failures */
+    }
+  }
+  return result;
+}
+
+async function hydrateEffectiveWindows(botId: string, jobs: CronJob[]): Promise<void> {
+  const scriptNames = Array.from(new Set(
+    jobs
+      .map((job) => job.script)
+      .filter(isLightVelaEffectiveWindowScript),
+  ));
+  if (scriptNames.length === 0) return;
+  const windows = await readEffectiveWindowScripts(botId, scriptNames);
+  for (const job of jobs) {
+    const window = windows.get(job.script);
+    if (window) job.effective_window = window;
+  }
 }
 
 export async function createCronJob(botId: string, input: CreateCronJobInput): Promise<void> {
   await execCommand(botId, buildCreateCommand(input));
+}
+
+export async function createCronJobWithScriptRollback(
+  botId: string,
+  input: CreateCronJobInput,
+  rollbackScript?: string,
+): Promise<void> {
+  try {
+    await createCronJob(botId, input);
+  } catch (err) {
+    if (rollbackScript && isLightVelaEffectiveWindowScript(rollbackScript)) {
+      try {
+        await removeEffectiveWindowScript(botId, rollbackScript);
+      } catch {
+        /* keep the original create error */
+      }
+    }
+    throw err;
+  }
 }
 
 export async function pauseCronJob(botId: string, id: string): Promise<void> {
@@ -358,12 +503,13 @@ export async function removeCronJob(botId: string, id: string): Promise<void> {
 export async function editCronJob(
   botId: string,
   id: string,
-  patch: { schedule?: string; prompt?: string; name?: string; deliver?: string },
+  patch: { schedule?: string; prompt?: string; name?: string; deliver?: string; script?: string },
 ): Promise<void> {
   const parts = ["hermes", "cron", "edit", shellQuote(id)];
   if (patch.schedule !== undefined) parts.push("--schedule", shellQuote(patch.schedule));
   if (patch.prompt !== undefined) parts.push("--prompt", shellQuote(patch.prompt));
   if (patch.name !== undefined) parts.push("--name", shellQuote(patch.name));
   if (patch.deliver !== undefined) parts.push("--deliver", shellQuote(patch.deliver));
+  if (patch.script !== undefined) parts.push("--script", shellQuote(patch.script));
   await execCommand(botId, parts.join(" "));
 }

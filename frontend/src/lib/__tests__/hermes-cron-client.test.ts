@@ -1,8 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  buildEffectiveWindowScript,
   buildCreateCommand,
   createCronJob,
+  createCronJobWithScriptRollback,
+  listCronJobs,
+  parseEffectiveWindowScript,
   parseCronListOutput,
   shellQuote,
   splitLastRunValue,
@@ -29,6 +33,17 @@ describe("parseCronListOutput", () => {
     expect(jobs).toHaveLength(1);
     expect(jobs[0]?.last_run_at).toBe("2026-05-26T22:25:31.471081+08:00");
     expect(jobs[0]?.last_status).toBe("ok");
+  });
+
+  it("parses the attached script field when Hermes lists it", () => {
+    const jobs = parseCronListOutput(`
+  6e8b6fc74896 [active]
+    Name:      生效区间任务
+    Schedule:  every 5m
+    Script:    lightvela-effective-window-job-1.py
+`);
+
+    expect(jobs[0]?.script).toBe("lightvela-effective-window-job-1.py");
   });
 
   it("parses empty list output as no jobs", () => {
@@ -98,9 +113,80 @@ describe("buildCreateCommand", () => {
       deliver: "local",
     })).toBe("hermes cron create '0 9 * * *' 'hello' --name 'morning'");
   });
+
+  it("attaches an official cron pre-run script when provided", () => {
+    expect(buildCreateCommand({
+      schedule: "0 9 * * *",
+      prompt: "hello",
+      name: "morning",
+      script: "lightvela-effective-window-job-1.py",
+    })).toBe("hermes cron create '0 9 * * *' 'hello' --name 'morning' --script 'lightvela-effective-window-job-1.py'");
+  });
+});
+
+describe("effective window script", () => {
+  it("round-trips LightVela window metadata", () => {
+    const script = buildEffectiveWindowScript({
+      start_at: "2026-06-10T00:00",
+      end_at: "2026-06-19T23:59",
+    });
+
+    expect(script).toContain("lightvela-effective-window");
+    expect(parseEffectiveWindowScript(script)).toEqual({
+      start_at: "2026-06-10T00:00",
+      end_at: "2026-06-19T23:59",
+    });
+  });
+
+  it("ignores non-LightVela scripts", () => {
+    expect(parseEffectiveWindowScript("print('hello')")).toBeNull();
+  });
+
+  it("hydrates previous effective window from the listed pre-run script", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(okExec(`
+  6e8b6fc74896 [active]
+    Name:      生效区间任务
+    Schedule:  every 5m
+    Script:    lightvela-effective-window-job-1.py
+`))
+      .mockResolvedValueOnce(okExec(""))
+      .mockResolvedValueOnce(okExec(buildEffectiveWindowScript({
+        start_at: "2026-06-10T00:00",
+        end_at: "2026-06-19T23:59",
+      })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const jobs = await listCronJobs("bot-1");
+
+    expect(jobs[0]?.effective_window).toEqual({
+      start_at: "2026-06-10T00:00",
+      end_at: "2026-06-19T23:59",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
 });
 
 describe("createCronJob auth handling", () => {
+  it("removes a prepared LightVela script when cron create fails", async () => {
+    const script = "lightvela-effective-window-job-1.py";
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(failedExec("invalid cron expression"))
+      .mockResolvedValueOnce(okExec(""));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(createCronJobWithScriptRollback("bot-1", {
+      schedule: "bad schedule",
+      prompt: "hello",
+      name: "test",
+      script,
+    }, script)).rejects.toThrow("invalid cron expression");
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const cleanupBody = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body)) as { command: string };
+    expect(cleanupBody.command).toBe("rm -f ~/.hermes/scripts/lightvela-effective-window-job-1.py");
+  });
+
   it("broadcasts the shared unauthorized event on 401", async () => {
     writeStoredAuthToken("expired-token");
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
@@ -121,3 +207,31 @@ describe("createCronJob auth handling", () => {
     window.removeEventListener(AUTH_UNAUTHORIZED_EVENT, listener);
   });
 });
+
+function okExec(output: string) {
+  return {
+    ok: true,
+    status: 200,
+    json: async () => ({
+      data: {
+        status: "SUCCESS",
+        exit_code: 0,
+        output,
+      },
+    }),
+  };
+}
+
+function failedExec(output: string) {
+  return {
+    ok: true,
+    status: 200,
+    json: async () => ({
+      data: {
+        status: "FAILED",
+        exit_code: 1,
+        output,
+      },
+    }),
+  };
+}

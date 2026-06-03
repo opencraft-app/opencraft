@@ -1,9 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  buildEffectiveWindowFromInputs,
   buildDeliverString,
   buildScheduleString,
+  getEffectiveWindowStatus,
   isCronJobExpiredBeyondGrace,
+  isEffectiveWindowRangeInvalid,
+  normalizeEffectiveWindowInput,
   parseCronDate,
   parseInitialDeliver,
   parseInitialSchedule,
@@ -193,6 +197,33 @@ describe("cron date parsing and expiration filtering", () => {
   });
 });
 
+describe("effective window helpers", () => {
+  const now = new Date(2026, 5, 15, 9, 0).getTime();
+
+  it("treats an empty effective window as always active", () => {
+    expect(buildEffectiveWindowFromInputs("", "")).toBeNull();
+    expect(getEffectiveWindowStatus(null, now)).toBe("always");
+  });
+
+  it("normalizes date-time values from either space or T separators", () => {
+    expect(normalizeEffectiveWindowInput("2026-06-10 08:30")).toBe("2026-06-10T08:30");
+    expect(normalizeEffectiveWindowInput("2026-06-10T08:30")).toBe("2026-06-10T08:30");
+  });
+
+  it("reports pending, active and ended windows without mutating the job", () => {
+    expect(getEffectiveWindowStatus({ start_at: "2026-06-16T00:00", end_at: "2026-06-20T00:00" }, now)).toBe("pending");
+    expect(getEffectiveWindowStatus({ start_at: "2026-06-10T00:00", end_at: "2026-06-20T00:00" }, now)).toBe("active");
+    expect(getEffectiveWindowStatus({ start_at: "2026-06-10T00:00", end_at: "2026-06-14T23:59" }, now)).toBe("ended");
+  });
+
+  it("rejects an end time earlier than the start time", () => {
+    expect(isEffectiveWindowRangeInvalid({
+      start_at: "2026-06-20T00:00",
+      end_at: "2026-06-10T00:00",
+    })).toBe(true);
+  });
+});
+
 describe("once schedule validation", () => {
   const now = new Date(2026, 4, 26, 10, 0).getTime();
 
@@ -267,6 +298,8 @@ function makeCronJob(overrides: Partial<CronJob>): CronJob {
     last_run_at: null,
     last_status: null,
     created_at: null,
+    script: "",
+    effective_window: null,
     ...overrides,
   };
 }
