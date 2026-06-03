@@ -744,7 +744,7 @@ ci_load_registry_password() {
       password_var="${TCR_SGPROD_PASSWORD:-}"
       password_file="$sgprod_file"
       ;;
-    tkexgz|tkexsg)
+    devcloud-dep|tkexgz|tkexsg)
       password_var="${CSIGHUB_PASSWORD:-}"
       password_file="$csighub_file"
       ;;
@@ -840,7 +840,7 @@ ci_set_registry_credentials() {
           source="env:TCR_SGPROD_PASSWORD"
         fi
         ;;
-      tkexgz|tkexsg)
+      devcloud-dep|tkexgz|tkexsg)
         if [[ -r "$csighub_file" ]]; then
           source="file:$csighub_file"
         else

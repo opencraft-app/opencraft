@@ -103,6 +103,8 @@ stages:
               TCR_KR1_PASSWORD: ${{ settings.TCR_KR1_PASSWORD }}
               TCR_SHPROD_PASSWORD: ${{ settings.TCR_SHPROD_PASSWORD }}
               TCR_SGPROD_PASSWORD: ${{ settings.TCR_SGPROD_PASSWORD }}
+              CSIGHUB_USERNAME: ${{ settings.CSIGHUB_USERNAME }}
+              CSIGHUB_PASSWORD: ${{ settings.CSIGHUB_PASSWORD }}
             run: |
               if [[ "${{ variables.PIPELINE_MODE }}" == "promote" ]]; then
                 echo "skip build step because PIPELINE_MODE=promote"
@@ -161,6 +163,8 @@ stages:
               TCR_KR1_PASSWORD: ${{ settings.TCR_KR1_PASSWORD }}
               TCR_SHPROD_PASSWORD: ${{ settings.TCR_SHPROD_PASSWORD }}
               TCR_SGPROD_PASSWORD: ${{ settings.TCR_SGPROD_PASSWORD }}
+              CSIGHUB_USERNAME: ${{ settings.CSIGHUB_USERNAME }}
+              CSIGHUB_PASSWORD: ${{ settings.CSIGHUB_PASSWORD }}
             run: |
               if [[ "${{ variables.PIPELINE_MODE }}" == "promote" ]]; then
                 echo "skip Beijing DB change gate / auto-pin because PIPELINE_MODE=promote"

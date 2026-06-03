@@ -934,11 +934,14 @@ class ReleaseBundleContractTests(unittest.TestCase):
             "sandbox-kr-1": "TCR_KR1_PASSWORD",
             "shprod": "TCR_SHPROD_PASSWORD",
             "sgprod": "TCR_SGPROD_PASSWORD",
+            "devcloud-dep": "CSIGHUB_PASSWORD",
         }
         for env_name in {item.strip() for item in build_envs.split(",") if item.strip()}:
             required = required_by_env.get(env_name)
             if required:
                 self.assertIn(required, workflow, f"{env_name} builds require {required} in CI env")
+            if env_name == "devcloud-dep":
+                self.assertIn("CSIGHUB_USERNAME", workflow, "devcloud-dep builds require CSIGHUB_USERNAME in CI env")
 
 
 if __name__ == "__main__":
