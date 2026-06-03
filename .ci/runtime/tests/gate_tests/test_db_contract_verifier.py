@@ -147,6 +147,48 @@ class DbContractVerifierTests(unittest.TestCase):
         self.assertNotIn("CTL_DB_PASSWORD", env_values)
         self.assertEqual(env_secret_values["CTL_DB_PASSWORD"], "test-password")
 
+    def test_ctl_playground_runtime_env_uses_env_scoped_database(self) -> None:
+        verifier = {
+            "service_platform_env_file": "argocd/services/ctl/{env}/ctl-platform.env",
+            "static_env": {
+                "MYSQL_PORT": "3306",
+                "CTL_DB": "ctl",
+                "CTL_DB_USER": "root",
+            },
+            "playground_database": {
+                "env": "CTL_DB",
+                "prefix": "ctl",
+            },
+            "env_from_service_platform": {
+                "MYSQL_HOST": "CTL_TEST_MYSQL_HOST",
+            },
+            "env_from_secret_resolver": {
+                "CTL_DB_PASSWORD": "ctl_db_password",
+            },
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            (repo_root / "argocd/services/ctl/sandbox-kr-1").mkdir(parents=True)
+            (repo_root / "argocd/services/ctl/sandbox-kr-1/ctl-platform.env").write_text(
+                "CTL_TEST_MYSQL_HOST=mysql.lightvela-playground-sandbox-kr-1.svc.cluster.local\n"
+            )
+
+            with mock.patch(
+                "gates.db_contract_verifier.resolve_contract_secret_values",
+                return_value={"ctl_db_password": "test-password"},
+            ):
+                env_values, _node_selector, env_secret_values = resolve_runtime_env(
+                    repo_root,
+                    "sandbox-kr-1",
+                    verifier,
+                    {"secret_resolvers": {"ctl_db_password": {"type": "sops_yaml"}}},
+                )
+
+        self.assertEqual(env_values["CTL_DB"], "ctl_sandbox_kr_1")
+        self.assertEqual(env_values["MYSQL_HOST"], "mysql.lightvela-playground-sandbox-kr-1.svc.cluster.local")
+        self.assertEqual(env_secret_values["CTL_DB_PASSWORD"], "test-password")
+
     def test_main_can_read_migrations_from_source_root_and_env_from_deploy_root(self) -> None:
         with tempfile.TemporaryDirectory() as source_tmp, tempfile.TemporaryDirectory() as deploy_tmp:
             source_root = Path(source_tmp)

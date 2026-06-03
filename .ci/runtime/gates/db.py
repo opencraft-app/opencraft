@@ -173,6 +173,8 @@ def run_db_readiness_flow(
             "python3",
             str(runtime_command_dir / "verify_db_contract.py"),
             "--repo-root",
+            str(repo_root),
+            "--deploy-root",
             str(gitops_worktree),
             "--service",
             plan.service,

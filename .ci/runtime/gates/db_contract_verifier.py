@@ -93,6 +93,30 @@ def copy_env_values(
     return values
 
 
+def playground_database_name(env: str, prefix: str) -> str | None:
+    if not re.fullmatch(r"sandbox-(bj|kr)-\d+", env):
+        return None
+    normalized_prefix = prefix.strip().replace("-", "_")
+    if not normalized_prefix:
+        raise ValueError("verifier.playground_database.prefix must not be empty")
+    return f"{normalized_prefix}_{env.replace('-', '_')}"
+
+
+def apply_playground_database_override(env_values: dict[str, str], env: str, verifier: Mapping[str, Any]) -> None:
+    raw = verifier.get("playground_database")
+    if raw is None:
+        return
+    if not isinstance(raw, Mapping):
+        raise TypeError("verifier.playground_database must be a mapping")
+    target_env = str(raw.get("env") or "").strip()
+    prefix = str(raw.get("prefix") or "").strip()
+    if not target_env:
+        raise ValueError("verifier.playground_database.env must not be empty")
+    database = playground_database_name(env, prefix)
+    if database:
+        env_values[target_env] = database
+
+
 def resolve_runtime_env(
     repo_root: Path,
     env: str,
@@ -120,6 +144,7 @@ def resolve_runtime_env(
             allow_runtime_fallback=True,
         )
     )
+    apply_playground_database_override(env_values, env, verifier)
     env_secret_values: dict[str, str] = {}
     for target_key, resolver_name in required_mapping(
         verifier.get("env_from_secret_resolver"),
