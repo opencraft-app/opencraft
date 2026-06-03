@@ -316,41 +316,49 @@ class ReleaseBundleContractTests(unittest.TestCase):
         stage_by_name = {stage.get("name"): stage for stage in stages}
 
         build_stage = stage_by_name["构建 Hermes CVM 镜像"]
-        refresh_approval_stage = stage_by_name["确认刷新 Hermes sandbox pools"]
-        refresh_stage = stage_by_name["刷新 Hermes sandbox pools"]
-        upgrade_approval_stage = stage_by_name["确认升级存量 Hermes VM"]
-        upgrade_stage = stage_by_name["升级存量 Hermes VM"]
+        beijing_approval_stage = stage_by_name["确认刷新并修补北京主沙箱 Hermes"]
+        beijing_stage = stage_by_name["刷新并修补北京主沙箱 Hermes"]
+        shanghai_approval_stage = stage_by_name["确认刷新并修补上海生产 Hermes"]
+        shanghai_stage = stage_by_name["刷新并修补上海生产 Hermes"]
         prod_if = "${{ ci.branch }} == master"
         reviewers = ["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang"]
-        refresh_reviews = (((refresh_approval_stage.get("check-in") or {}).get("reviews") or {}).get("flows") or [])[0]
-        upgrade_reviews = (((upgrade_approval_stage.get("check-in") or {}).get("reviews") or {}).get("flows") or [])[0]
+        beijing_reviews = (((beijing_approval_stage.get("check-in") or {}).get("reviews") or {}).get("flows") or [])[0]
+        shanghai_reviews = (((shanghai_approval_stage.get("check-in") or {}).get("reviews") or {}).get("flows") or [])[0]
 
-        self.assertEqual(refresh_approval_stage.get("if"), prod_if)
-        self.assertEqual(refresh_stage.get("if"), prod_if)
-        self.assertEqual(upgrade_approval_stage.get("if"), prod_if)
-        self.assertEqual(upgrade_stage.get("if"), prod_if)
-        self.assertEqual(refresh_reviews.get("reviewers"), reviewers)
-        self.assertEqual(upgrade_reviews.get("reviewers"), reviewers)
-        self.assertLess(stages.index(build_stage), stages.index(refresh_approval_stage))
-        self.assertLess(stages.index(refresh_approval_stage), stages.index(refresh_stage))
-        self.assertLess(stages.index(refresh_stage), stages.index(upgrade_approval_stage))
-        self.assertLess(stages.index(upgrade_approval_stage), stages.index(upgrade_stage))
+        self.assertEqual(beijing_approval_stage.get("if"), prod_if)
+        self.assertEqual(beijing_stage.get("if"), prod_if)
+        self.assertEqual(shanghai_approval_stage.get("if"), prod_if)
+        self.assertEqual(shanghai_stage.get("if"), prod_if)
+        self.assertEqual(beijing_reviews.get("reviewers"), reviewers)
+        self.assertEqual(shanghai_reviews.get("reviewers"), reviewers)
+        self.assertLess(stages.index(build_stage), stages.index(beijing_approval_stage))
+        self.assertLess(stages.index(beijing_approval_stage), stages.index(beijing_stage))
+        self.assertLess(stages.index(beijing_stage), stages.index(shanghai_approval_stage))
+        self.assertLess(stages.index(shanghai_approval_stage), stages.index(shanghai_stage))
+
+        rollout_script = REPO_ROOT / ".ci/runtime/commands/rollout_hermes_sandbox_env.sh"
+        rollout_script_text = rollout_script.read_text()
+        workflow_and_rollout_text = workflow_text + rollout_script_text
 
         self.assertIn("refresh_hermes_sandbox_pools.sh", workflow_text)
         self.assertIn("list_hermes_pool_vms.sh", workflow_text)
         self.assertIn("create_hermes_tat_command.sh", workflow_text)
         self.assertIn("invoke_hermes_tat_command.sh", workflow_text)
+        self.assertIn("rollout_hermes_sandbox_env.sh", workflow_text)
         self.assertIn("extract_hermes_image_env.py", workflow_text)
-        self.assertIn("resolve_hermes_image_id.py", workflow_text)
-        self.assertIn("split_hermes_pool_vms_by_region.py", workflow_text)
+        self.assertIn("split_hermes_pool_vms_by_region.py", workflow_and_rollout_text)
+        self.assertIn("beijing-sandbox:ap-beijing:kubeconfig_beijing_sandbox", workflow_text)
+        self.assertIn("shprod:ap-shanghai:kubeconfig_shprod", workflow_text)
+        self.assertLess(workflow_text.index("beijing-sandbox:ap-beijing:kubeconfig_beijing_sandbox"), workflow_text.index("shprod:ap-shanghai:kubeconfig_shprod"))
         self.assertNotIn("<<'PY'", workflow_text)
+        self.assertNotIn("默认目标：shprod", workflow_text)
         self.assertNotIn('HERMES_TAT_COMMAND_ID is required for existing Hermes VM upgrade', workflow_text)
         self.assertIn("images/helpers/config-hermes-python-mirrors.sh", workflow_text)
         self.assertNotIn("tccli tat DeleteCommand", workflow_text)
         self.assertGreaterEqual(workflow_text.count("ci_ensure_jq"), 2)
-        self.assertIn('HERMES_TAT_BATCH_SIZE="${HERMES_TAT_BATCH_SIZE:-5}"', workflow_text)
-        self.assertIn('HERMES_TAT_SINGLE_ATTEMPTS="${HERMES_TAT_SINGLE_ATTEMPTS:-3}"', workflow_text)
-        self.assertIn("不直连数据库，不修改 pool / instance 状态", workflow_text)
+        self.assertIn('HERMES_TAT_BATCH_SIZE="${HERMES_TAT_BATCH_SIZE:-5}"', workflow_and_rollout_text)
+        self.assertIn('HERMES_TAT_SINGLE_ATTEMPTS="${HERMES_TAT_SINGLE_ATTEMPTS:-3}"', workflow_and_rollout_text)
+        self.assertIn("不直连数据库，不执行 SQL", workflow_text)
         self.assertIn("批次失败后自动拆成单台重试", workflow_text)
 
         list_script = REPO_ROOT / ".ci/runtime/commands/list_hermes_pool_vms.sh"
@@ -361,6 +369,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertTrue(list_script.exists())
         self.assertTrue(create_script.exists())
         self.assertTrue(invoke_script.exists())
+        self.assertTrue(rollout_script.exists())
         self.assertTrue(blueprint_id_file.exists())
         self.assertEqual(blueprint_id_file.read_text().strip(), "lhbp-8gsotw6u")
         self.assertIn("does not patch pools, update SKUs, invoke TAT, or write database rows", list_script.read_text())
@@ -372,6 +381,8 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("export HERMES_BACKEND_BLUEPRINT_ID", create_script_text)
         self.assertIn("batches run strictly serially", invoke_script.read_text())
         self.assertIn("batch failed; retrying", invoke_script.read_text())
+        self.assertIn("Refresh then repair one Hermes sandbox environment", rollout_script_text)
+        self.assertIn("resolve_hermes_image_id.py", rollout_script_text)
         repair_script_text = repair_script.read_text()
         self.assertIn('"$config_dir/systemd/user"', repair_script_text)
         self.assertIn('chown "$user:$user" "$config_dir"', repair_script_text)

@@ -16,6 +16,10 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def region_env_suffix(region: str) -> str:
+    return region.replace("-", "_").upper()
+
+
 def find_build_payload(log_path: Path) -> dict[str, Any]:
     payload: dict[str, Any] | None = None
     for line in reversed(log_path.read_text(encoding="utf-8").splitlines()):
@@ -39,13 +43,13 @@ def extract_env_lines(log_path: Path, image_name: str) -> list[str]:
     if not image_name:
         raise RuntimeError("HERMES_IMAGE_NAME is empty")
     payload = find_build_payload(log_path)
-    shanghai_image_id = payload["target_image_ids"].get("ap-shanghai")
-    if not shanghai_image_id:
-        raise RuntimeError("Hermes image result JSON missing target_image_ids.ap-shanghai")
-    return [
-        f"HERMES_IMAGE_ID_AP_SHANGHAI={shanghai_image_id}",
-        f"HERMES_IMAGE_NAME={image_name}",
-    ]
+    target_image_ids = payload["target_image_ids"]
+    lines = [f"HERMES_IMAGE_NAME={image_name}"]
+    for region, image_id in sorted(target_image_ids.items()):
+        if not image_id:
+            raise RuntimeError(f"Hermes image result JSON missing target_image_ids.{region}")
+        lines.append(f"HERMES_IMAGE_ID_{region_env_suffix(region)}={image_id}")
+    return lines
 
 
 def main() -> int:
