@@ -1580,7 +1580,10 @@ func (w *AgentSidecarWorker) CloseSessionRuntime(ctx context.Context, runtime AC
 	var gracefulStopErr error
 	innerDeleteFallback := runtime.InnerSandboxID != ""
 	workspaceWispStopped := false
+	workspaceWispStopRequired := false
 	innerDeletedBySidecar := false
+	outerWispStopRequired := false
+	outerWispStopped := false
 	if runtime.OuterSandboxID != "" && runtime.RemoteBinary != "" && runtime.DaemonAddr != "" {
 		sb := runtimeOuterSandbox(runtime)
 		shutdownCtx, shutdownCancel := context.WithTimeout(ctx, envDurationSeconds("GATEWAY_SIDECAR_SHUTDOWN_TIMEOUT_SECONDS", 45*time.Second))
@@ -1625,27 +1628,30 @@ func (w *AgentSidecarWorker) CloseSessionRuntime(ctx context.Context, runtime AC
 		shutdownCancel()
 	}
 	if runtime.InnerSandboxID != "" && runtime.isWispOuterRuntime() && strings.TrimSpace(runtime.WorkspaceWispName) != "" && !workspaceWispStopped && !innerDeletedBySidecar {
+		workspaceWispStopRequired = true
 		sb := runtimeInnerSandbox(runtime)
 		stopCtx, stopCancel := context.WithTimeout(ctx, envDurationSeconds("GATEWAY_WISP_STOP_TIMEOUT_SECONDS", 60*time.Second))
-		fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_workspace_wisp_stop_start runtime_id=%s inner_sandbox_id=%s wisp_name=%s\n", runtime.RuntimeID, runtime.InnerSandboxID, quoteServerField(runtime.WorkspaceWispName))
+		fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_workspace_wisp_stop_start runtime_id=%s inner_sandbox_id=%s wisp_name=%s lease_id=%s fence=%d\n", runtime.RuntimeID, runtime.InnerSandboxID, quoteServerField(runtime.WorkspaceWispName), quoteServerField(runtime.WispLeaseID), runtime.WispLeaseFence)
 		if err := w.stopWispWorkspaceRuntime(stopCtx, backend.host, sb, runtime); err != nil {
 			gracefulStopErr = errors.Join(gracefulStopErr, fmt.Errorf("stop workspace wisp runtime %s: %w", runtime.WorkspaceWispName, err))
-			fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_workspace_wisp_stop_failed runtime_id=%s inner_sandbox_id=%s wisp_name=%s error=%s\n", runtime.RuntimeID, runtime.InnerSandboxID, quoteServerField(runtime.WorkspaceWispName), quoteServerField(err.Error()))
+			fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_workspace_wisp_stop_failed runtime_id=%s inner_sandbox_id=%s wisp_name=%s lease_id=%s fence=%d error=%s\n", runtime.RuntimeID, runtime.InnerSandboxID, quoteServerField(runtime.WorkspaceWispName), quoteServerField(runtime.WispLeaseID), runtime.WispLeaseFence, quoteServerField(err.Error()))
 		} else {
 			workspaceWispStopped = true
-			fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_workspace_wisp_stop_done runtime_id=%s inner_sandbox_id=%s wisp_name=%s\n", runtime.RuntimeID, runtime.InnerSandboxID, quoteServerField(runtime.WorkspaceWispName))
+			fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_workspace_wisp_stop_done runtime_id=%s inner_sandbox_id=%s wisp_name=%s lease_id=%s fence=%d\n", runtime.RuntimeID, runtime.InnerSandboxID, quoteServerField(runtime.WorkspaceWispName), quoteServerField(runtime.WispLeaseID), runtime.WispLeaseFence)
 		}
 		stopCancel()
 	}
 	if runtime.OuterSandboxID != "" && runtime.isWispOuterRuntime() && runtime.WispName != "" {
+		outerWispStopRequired = true
 		sb := runtimeOuterSandbox(runtime)
 		stopCtx, stopCancel := context.WithTimeout(ctx, envDurationSeconds("GATEWAY_WISP_STOP_TIMEOUT_SECONDS", 60*time.Second))
-		fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_wisp_stop_start runtime_id=%s outer_sandbox_id=%s wisp_name=%s\n", runtime.RuntimeID, runtime.OuterSandboxID, quoteServerField(runtime.WispName))
+		fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_wisp_stop_start runtime_id=%s outer_sandbox_id=%s wisp_name=%s lease_id=%s fence=%d\n", runtime.RuntimeID, runtime.OuterSandboxID, quoteServerField(runtime.WispName), quoteServerField(runtime.WispLeaseID), runtime.WispLeaseFence)
 		if err := w.stopWispOuterRuntime(stopCtx, backend.host, sb, runtime); err != nil {
 			gracefulStopErr = fmt.Errorf("stop wisp outer runtime %s: %w", runtime.WispName, err)
-			fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_wisp_stop_failed runtime_id=%s outer_sandbox_id=%s wisp_name=%s error=%s\n", runtime.RuntimeID, runtime.OuterSandboxID, quoteServerField(runtime.WispName), quoteServerField(err.Error()))
+			fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_wisp_stop_failed runtime_id=%s outer_sandbox_id=%s wisp_name=%s lease_id=%s fence=%d error=%s\n", runtime.RuntimeID, runtime.OuterSandboxID, quoteServerField(runtime.WispName), quoteServerField(runtime.WispLeaseID), runtime.WispLeaseFence, quoteServerField(err.Error()))
 		} else {
-			fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_wisp_stop_done runtime_id=%s outer_sandbox_id=%s wisp_name=%s\n", runtime.RuntimeID, runtime.OuterSandboxID, quoteServerField(runtime.WispName))
+			outerWispStopped = true
+			fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_wisp_stop_done runtime_id=%s outer_sandbox_id=%s wisp_name=%s lease_id=%s fence=%d\n", runtime.RuntimeID, runtime.OuterSandboxID, quoteServerField(runtime.WispName), quoteServerField(runtime.WispLeaseID), runtime.WispLeaseFence)
 		}
 		stopCancel()
 	}
@@ -1658,12 +1664,14 @@ func (w *AgentSidecarWorker) CloseSessionRuntime(ctx context.Context, runtime AC
 			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("delete stopped workspace sandbox %s: %w", runtime.InnerSandboxID, err))
 		}
 	}
-	if runtime.WispLeaseID != "" {
+	if runtime.WispLeaseID != "" && shouldReleaseWispLeaseAfterClose(outerWispStopRequired, outerWispStopped, workspaceWispStopRequired, workspaceWispStopped) {
 		releaseCtx, releaseCancel := context.WithTimeout(context.Background(), envDurationSeconds("GATEWAY_WISP_LEASE_RELEASE_TIMEOUT_SECONDS", 15*time.Second))
 		if err := w.releaseWispWorkspaceLease(releaseCtx, runtime); err != nil {
 			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("release wisp workspace lease %s: %w", runtime.WispLeaseID, err))
 		}
 		releaseCancel()
+	} else if runtime.WispLeaseID != "" {
+		fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_wisp_lease_release_blocked runtime_id=%s outer_sandbox_id=%s inner_sandbox_id=%s wisp_name=%s workspace_wisp_name=%s lease_id=%s fence=%d reason=stop_not_confirmed\n", runtime.RuntimeID, runtime.OuterSandboxID, runtime.InnerSandboxID, quoteServerField(runtime.WispName), quoteServerField(runtime.WorkspaceWispName), quoteServerField(runtime.WispLeaseID), runtime.WispLeaseFence)
 	}
 	if runtime.OuterSandboxID != "" {
 		if err := backend.host.DeleteSandbox(ctx, runtime.OuterSandboxID); err != nil {
@@ -1674,6 +1682,16 @@ func (w *AgentSidecarWorker) CloseSessionRuntime(ctx context.Context, runtime AC
 		cleanupErr = errors.Join(cleanupErr, gracefulStopErr)
 	}
 	return cleanupErr
+}
+
+func shouldReleaseWispLeaseAfterClose(outerRequired, outerStopped, workspaceRequired, workspaceStopped bool) bool {
+	if outerRequired && !outerStopped {
+		return false
+	}
+	if workspaceRequired && !workspaceStopped {
+		return false
+	}
+	return true
 }
 
 func (w *AgentSidecarWorker) DeleteSessionRuntime(ctx context.Context, runtime ACPSessionRuntime) error {
