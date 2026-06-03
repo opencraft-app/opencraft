@@ -226,6 +226,52 @@ ci_install_kubectl() {
   ci_log "installed kubectl at ${install_dir}/kubectl"
 }
 
+ci_ensure_jq() {
+  if command -v jq >/dev/null 2>&1; then
+    ci_log "jq already present at $(command -v jq)"
+    return 0
+  fi
+
+  local version="${JQ_VERSION_OVERRIDE:-1.7.1}"
+  local os arch asset_os asset_arch cache_root install_dir bin url
+
+  os="$(ci_os_name)"
+  arch="$(ci_arch_name)"
+  case "$os" in
+    linux) asset_os="linux" ;;
+    darwin) asset_os="macos" ;;
+    *) echo "unsupported jq os: $os" >&2; return 1 ;;
+  esac
+  case "$arch" in
+    amd64) asset_arch="amd64" ;;
+    arm64) asset_arch="arm64" ;;
+    *) echo "unsupported jq arch: $arch" >&2; return 1 ;;
+  esac
+
+  cache_root="${HOME}/.cache/lightclaw-ci/gitops-tools/jq"
+  install_dir="${cache_root}/v${version}/${os}/${arch}"
+  bin="${install_dir}/jq"
+  url="https://github.com/jqlang/jq/releases/download/jq-${version}/jq-${asset_os}-${asset_arch}"
+
+  if [[ ! -x "$bin" ]]; then
+    ci_with_lock "jq-${version}-${os}-${arch}" ci_install_jq "$url" "$install_dir"
+  else
+    ci_log "jq ${version} already present at ${bin}"
+  fi
+
+  export PATH="${install_dir}:${PATH}"
+}
+
+ci_install_jq() {
+  local url="$1"
+  local install_dir="$2"
+
+  mkdir -p "$install_dir"
+  ci_download_file "$url" "${install_dir}/jq"
+  chmod +x "${install_dir}/jq"
+  ci_log "installed jq at ${install_dir}/jq"
+}
+
 ci_ensure_sops() {
   local version="${SOPS_VERSION_OVERRIDE:-3.9.1}"
   local os arch sops_os sops_arch cache_root install_dir bin url

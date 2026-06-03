@@ -165,6 +165,7 @@ stages:
               ci_ensure_tccli
               ci_require_command tccli
               ci_ensure_kubectl
+              ci_ensure_jq
               ci_require_commands bash curl jq python3
               ci_load_tencentcloud_credentials
 
@@ -281,6 +282,7 @@ stages:
               ci_ensure_tccli
               ci_require_command tccli
               ci_ensure_kubectl
+              ci_ensure_jq
               ci_require_commands bash curl jq python3
               ci_load_tencentcloud_credentials
 
