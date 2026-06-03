@@ -11,6 +11,10 @@ Current shape:
 - multi-tenant runner model: every active `channel_accounts` row gets an independent lease, WeCom WSS adapter, ACP client, dispatcher, and outbox pump
 - release entry: `.ci/channelgateway.yml` extends the shared service-release template
 
+CI trigger notes:
+
+- 2026-06-03: README-only no-op change to rerun channelgateway through the standard Git webhook auto-pin path.
+
 ## Run
 
 ```bash
