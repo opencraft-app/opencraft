@@ -225,7 +225,7 @@ acli() {
   if [[ "${1:-}" == "backend" && "${2:-}" == "--help" && ! -f "${ACLI_BACKEND_MARKER}" ]]; then
     return 1
   fi
-  if [[ "${1:-}" == "self-update" ]]; then
+  if [[ "${1:-}" == "bundle-update" ]]; then
     touch "${ACLI_BACKEND_MARKER}"
   fi
   return 0
@@ -307,7 +307,7 @@ grep -q "curl-acli" "${LOG_FILE}"
 grep -q "run_as_runtime_user acli --help" "${LOG_FILE}"
 grep -q "acli doctor" "${LOG_FILE}"
 grep -q "acli backend --help" "${LOG_FILE}"
-grep -q "acli self-update" "${LOG_FILE}"
+grep -q "acli bundle-update" "${LOG_FILE}"
 grep -q "acli backend upgrade-start --blueprint-id lhbp-8gsotw6u --wait=true" "${LOG_FILE}"
 grep -q '\$HOME/.hermes/hermes-agent/venv/bin' "${PROFILE_FILE}"
 grep -q '\$HOME/.local/bin:\$PATH' "${PROFILE_FILE}"

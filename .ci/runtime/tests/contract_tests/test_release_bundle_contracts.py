@@ -388,7 +388,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn('chown "$user:$user" "$config_dir"', repair_script_text)
         self.assertIn('chmod 0700 "$config_dir"', repair_script_text)
         self.assertIn("acli backend --help", repair_script_text)
-        self.assertIn("acli self-update", repair_script_text)
+        self.assertIn("acli bundle-update", repair_script_text)
         self.assertIn("https://acli-1325194254.cos.accelerate.myqcloud.com/acli/install.sh", repair_script_text)
         self.assertIn("acli backend upgrade-start --blueprint-id", repair_script_text)
 
