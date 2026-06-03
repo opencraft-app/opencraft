@@ -49,6 +49,7 @@ func NewDispatcher(st SessionStore, account store.ChannelAccount, client ACPClie
 }
 
 func (d *Dispatcher) HandleInbound(ctx context.Context, msg channel.Message) error {
+	startedAt := time.Now()
 	if d == nil || d.store == nil || d.acp == nil {
 		return errors.New("dispatcher is not configured")
 	}
@@ -74,12 +75,17 @@ func (d *Dispatcher) HandleInbound(ctx context.Context, msg channel.Message) err
 		return err
 	}
 	if !inserted {
-		log.Printf("channelgateway session_trace account_id=%s agent_id=%s message_id=%s action=dedup_skip",
+		log.Printf("channelgateway business_trace account_id=%s agent_id=%s message_id=%s action=dedup_skip",
 			logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(msg.ExternalMessageID))
 		return nil
 	}
+	log.Printf("channelgateway business_trace account_id=%s agent_id=%s message_id=%s chat_type=%s external_conversation_id=%s external_user_id=%s thread_id=%s action=inbound_received kind=%s",
+		logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(msg.ExternalMessageID),
+		logValue(string(msg.ChatType)), logValue(msg.ExternalConversationID), logValue(msg.ExternalUserID),
+		logValue(msg.ThreadID), logValue(string(msg.Kind)))
 	if msg.Kind != channel.MessageText || strings.TrimSpace(msg.Text) == "" {
-		return d.enqueueTextReply(ctx, msg, "", "暂时只支持文本消息。")
+		_, err := d.enqueueTextReply(ctx, msg, "", "暂时只支持文本消息。")
+		return err
 	}
 	sessionKey := channel.BuildSessionKey(d.account.AgentID, msg, true, false)
 	log.Printf("channelgateway session_trace account_id=%s agent_id=%s message_id=%s chat_type=%s external_conversation_id=%s external_user_id=%s thread_id=%s session_key=%s action=lookup",
@@ -141,18 +147,73 @@ func (d *Dispatcher) HandleInbound(ctx context.Context, msg channel.Message) err
 				logValue(conversation.SessionKey), logValue(sessionID))
 		}
 	}
-	result, err := d.acp.Prompt(ctx, sessionID, msg.Text)
+	promptStartedAt := time.Now()
+	log.Printf("channelgateway business_trace account_id=%s agent_id=%s message_id=%s conversation_id=%s session_key=%s acp_session_id=%s action=acp_prompt_start text_bytes=%d",
+		logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(msg.ExternalMessageID),
+		logValue(conversation.ConversationID), logValue(conversation.SessionKey), logValue(sessionID), len([]byte(msg.Text)))
+	result, sessionID, err := d.promptWithRuntimeRecovery(ctx, conversation, msg, sessionID)
 	if err != nil {
+		log.Printf("channelgateway business_trace account_id=%s agent_id=%s message_id=%s conversation_id=%s session_key=%s acp_session_id=%s action=acp_prompt_failed duration_ms=%d error=%s",
+			logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(msg.ExternalMessageID),
+			logValue(conversation.ConversationID), logValue(conversation.SessionKey), logValue(sessionID),
+			time.Since(promptStartedAt).Milliseconds(), logValue(err.Error()))
+		if _, enqueueErr := d.enqueueTextReply(ctx, msg, sessionID, "当前会话运行时暂时不可用，我已经记录了这次失败，请稍后再试。"); enqueueErr != nil {
+			return enqueueErr
+		}
 		return err
 	}
+	log.Printf("channelgateway business_trace account_id=%s agent_id=%s message_id=%s conversation_id=%s session_key=%s acp_session_id=%s action=acp_prompt_done duration_ms=%d stop_reason=%s output_bytes=%d",
+		logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(msg.ExternalMessageID),
+		logValue(conversation.ConversationID), logValue(conversation.SessionKey), logValue(sessionID),
+		time.Since(promptStartedAt).Milliseconds(), logValue(result.StopReason), len([]byte(result.Text)))
 	replyText := strings.TrimSpace(result.Text)
 	if replyText == "" {
 		replyText = defaultReplyForStopReason(result.StopReason)
 	}
 	if replyText == "" {
+		log.Printf("channelgateway business_trace account_id=%s agent_id=%s message_id=%s conversation_id=%s session_key=%s acp_session_id=%s action=inbound_done result=no_reply duration_ms=%d",
+			logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(msg.ExternalMessageID),
+			logValue(conversation.ConversationID), logValue(conversation.SessionKey), logValue(sessionID),
+			time.Since(startedAt).Milliseconds())
 		return nil
 	}
-	return d.enqueueTextReply(ctx, msg, sessionID, replyText)
+	outbox, err := d.enqueueTextReply(ctx, msg, sessionID, replyText)
+	if err != nil {
+		return err
+	}
+	log.Printf("channelgateway business_trace account_id=%s agent_id=%s message_id=%s conversation_id=%s session_key=%s acp_session_id=%s outbox_id=%s action=inbound_done result=reply_queued duration_ms=%d",
+		logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(msg.ExternalMessageID),
+		logValue(conversation.ConversationID), logValue(conversation.SessionKey), logValue(sessionID),
+		logValue(outbox.OutboxID), time.Since(startedAt).Milliseconds())
+	return nil
+}
+
+func (d *Dispatcher) promptWithRuntimeRecovery(ctx context.Context, conversation store.Conversation, msg channel.Message, sessionID string) (acp.PromptResult, string, error) {
+	result, err := d.acp.Prompt(ctx, sessionID, msg.Text)
+	if err == nil {
+		return result, sessionID, nil
+	}
+	if !isRecoverableRuntimeError(err) {
+		return acp.PromptResult{}, sessionID, err
+	}
+	log.Printf("channelgateway business_trace account_id=%s agent_id=%s message_id=%s conversation_id=%s session_key=%s acp_session_id=%s action=session_recreate reason=runtime_unavailable",
+		logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(msg.ExternalMessageID),
+		logValue(conversation.ConversationID), logValue(conversation.SessionKey), logValue(sessionID))
+	newSessionID, newErr := d.acp.NewSession(ctx, d.cwd)
+	if newErr != nil {
+		return acp.PromptResult{}, sessionID, newErr
+	}
+	if bindErr := d.store.BindACPSession(ctx, conversation.ChannelAccountID, conversation.SessionKey, newSessionID); bindErr != nil {
+		return acp.PromptResult{}, sessionID, bindErr
+	}
+	log.Printf("channelgateway business_trace account_id=%s agent_id=%s message_id=%s conversation_id=%s session_key=%s old_acp_session_id=%s acp_session_id=%s action=session_bound reason=runtime_recreated",
+		logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(msg.ExternalMessageID),
+		logValue(conversation.ConversationID), logValue(conversation.SessionKey), logValue(sessionID), logValue(newSessionID))
+	result, retryErr := d.acp.Prompt(ctx, newSessionID, msg.Text)
+	if retryErr != nil {
+		return acp.PromptResult{}, newSessionID, retryErr
+	}
+	return result, newSessionID, nil
 }
 
 func (d *Dispatcher) lockForSessionKey(sessionKey string) *sync.Mutex {
@@ -165,6 +226,7 @@ func logValue(value string) string {
 	if value == "" {
 		return "-"
 	}
+	value = strings.NewReplacer("\n", "\\n", "\r", "\\r", "\t", "\\t").Replace(value)
 	if len(value) > 160 {
 		return value[:160] + "...[truncated]"
 	}
@@ -178,7 +240,17 @@ func isMissingACPSessionError(err error) bool {
 	return strings.Contains(strings.ToLower(err.Error()), "session not found")
 }
 
-func (d *Dispatcher) enqueueTextReply(ctx context.Context, msg channel.Message, sessionID, text string) error {
+func isRecoverableRuntimeError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "session runtime is unavailable") ||
+		strings.Contains(message, "runtime_not_recovered") ||
+		strings.Contains(message, "runtime unavailable")
+}
+
+func (d *Dispatcher) enqueueTextReply(ctx context.Context, msg channel.Message, sessionID, text string) (store.OutboxRecord, error) {
 	payload, err := json.Marshal(channel.Reply{
 		ChannelAccountID:       msg.ChannelAccountID,
 		ExternalConversationID: msg.ExternalConversationID,
@@ -186,9 +258,9 @@ func (d *Dispatcher) enqueueTextReply(ctx context.Context, msg channel.Message, 
 		Text:                   text,
 	})
 	if err != nil {
-		return err
+		return store.OutboxRecord{}, err
 	}
-	_, err = d.store.EnqueueOutbox(ctx, store.OutboxRecord{
+	outbox, err := d.store.EnqueueOutbox(ctx, store.OutboxRecord{
 		ChannelAccountID:       msg.ChannelAccountID,
 		ChannelType:            string(msg.ChannelType),
 		ExternalConversationID: msg.ExternalConversationID,
@@ -197,7 +269,14 @@ func (d *Dispatcher) enqueueTextReply(ctx context.Context, msg channel.Message, 
 		Status:                 "pending",
 		NextRetryAt:            time.Now().UTC(),
 	})
-	return err
+	if err != nil {
+		return store.OutboxRecord{}, err
+	}
+	log.Printf("channelgateway business_trace account_id=%s agent_id=%s message_id=%s external_conversation_id=%s acp_session_id=%s outbox_id=%s action=outbox_queued payload_bytes=%d text_bytes=%d",
+		logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(msg.ExternalMessageID),
+		logValue(msg.ExternalConversationID), logValue(sessionID), logValue(outbox.OutboxID),
+		len([]byte(outbox.PayloadJSON)), len([]byte(text)))
+	return outbox, nil
 }
 
 func defaultReplyForStopReason(reason string) string {
@@ -226,18 +305,34 @@ func DrainOutbox(ctx context.Context, st OutboxStore, lease store.ChannelLease, 
 	for _, item := range items {
 		var reply channel.Reply
 		if err := json.Unmarshal([]byte(item.PayloadJSON), &reply); err != nil {
+			log.Printf("channelgateway business_trace account_id=%s external_conversation_id=%s acp_session_id=%s outbox_id=%s action=outbox_decode_failed error=%s",
+				logValue(item.ChannelAccountID), logValue(item.ExternalConversationID), logValue(item.ACPSessionID),
+				logValue(item.OutboxID), logValue(err.Error()))
 			_ = st.MarkOutboxFailed(ctx, lease, item.OutboxID, err.Error(), time.Now().UTC().Add(time.Minute))
 			continue
 		}
+		sendStartedAt := time.Now()
+		log.Printf("channelgateway business_trace account_id=%s external_conversation_id=%s acp_session_id=%s outbox_id=%s action=outbox_send_start claim_owner=%s claim_fence=%d retry_count=%d text_bytes=%d",
+			logValue(item.ChannelAccountID), logValue(item.ExternalConversationID), logValue(item.ACPSessionID),
+			logValue(item.OutboxID), logValue(item.ClaimOwnerID), item.ClaimFencingToken, item.RetryCount, len([]byte(reply.Text)))
 		result, err := sender.Send(ctx, reply)
 		if err != nil {
+			log.Printf("channelgateway business_trace account_id=%s external_conversation_id=%s acp_session_id=%s outbox_id=%s action=outbox_send_failed duration_ms=%d error=%s",
+				logValue(item.ChannelAccountID), logValue(item.ExternalConversationID), logValue(item.ACPSessionID),
+				logValue(item.OutboxID), time.Since(sendStartedAt).Milliseconds(), logValue(err.Error()))
 			_ = st.MarkOutboxFailed(ctx, lease, item.OutboxID, err.Error(), time.Now().UTC().Add(retryBackoff(item.RetryCount)))
 			continue
 		}
 		_ = result
 		if err := st.MarkOutboxSent(ctx, lease, item.OutboxID); err != nil {
+			log.Printf("channelgateway business_trace account_id=%s external_conversation_id=%s acp_session_id=%s outbox_id=%s action=outbox_mark_sent_failed duration_ms=%d error=%s",
+				logValue(item.ChannelAccountID), logValue(item.ExternalConversationID), logValue(item.ACPSessionID),
+				logValue(item.OutboxID), time.Since(sendStartedAt).Milliseconds(), logValue(err.Error()))
 			return len(items), err
 		}
+		log.Printf("channelgateway business_trace account_id=%s external_conversation_id=%s acp_session_id=%s outbox_id=%s action=outbox_sent duration_ms=%d",
+			logValue(item.ChannelAccountID), logValue(item.ExternalConversationID), logValue(item.ACPSessionID),
+			logValue(item.OutboxID), time.Since(sendStartedAt).Milliseconds())
 	}
 	return len(items), nil
 }

@@ -1,9 +1,12 @@
 package router
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -22,6 +25,7 @@ type fakeACP struct {
 	sessionID   string
 	reply       string
 	loadErr     error
+	promptErrs  []error
 	newDelay    time.Duration
 }
 
@@ -54,6 +58,13 @@ func (f *fakeACP) Prompt(_ context.Context, _ string, text string) (acp.PromptRe
 	defer f.mu.Unlock()
 	f.promptCalls++
 	f.lastPrompt = text
+	if len(f.promptErrs) > 0 {
+		err := f.promptErrs[0]
+		f.promptErrs = f.promptErrs[1:]
+		if err != nil {
+			return acp.PromptResult{}, err
+		}
+	}
 	return acp.PromptResult{StopReason: "end_turn", Text: f.reply}, nil
 }
 
@@ -61,6 +72,39 @@ func (f *fakeACP) snapshot() (newCalls, loadCalls, promptCalls int, lastPrompt s
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.newCalls, f.loadCalls, f.promptCalls, f.lastPrompt
+}
+
+type fakeReplySender struct {
+	mu   sync.Mutex
+	sent []channel.Reply
+}
+
+func (s *fakeReplySender) Send(_ context.Context, reply channel.Reply) (channel.SendResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sent = append(s.sent, reply)
+	return channel.SendResult{}, nil
+}
+
+func (s *fakeReplySender) count() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.sent)
+}
+
+func captureLogs(t *testing.T, fn func()) string {
+	t.Helper()
+	var buf bytes.Buffer
+	oldWriter := log.Writer()
+	oldFlags := log.Flags()
+	log.SetOutput(&buf)
+	log.SetFlags(0)
+	defer func() {
+		log.SetOutput(oldWriter)
+		log.SetFlags(oldFlags)
+	}()
+	fn()
+	return buf.String()
 }
 
 func TestDispatcherCreatesSessionPromptsAndEnqueuesReply(t *testing.T) {
@@ -108,6 +152,61 @@ func TestDispatcherCreatesSessionPromptsAndEnqueuesReply(t *testing.T) {
 	}
 	if reply.Text != "answer" || reply.ExternalConversationID != "chat-a" {
 		t.Fatalf("unexpected reply: %#v", reply)
+	}
+}
+
+func TestDispatcherEmitsBusinessTraceForSuccessfulInbound(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir()+"/channelgateway.db")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+	account := store.ChannelAccount{ChannelAccountID: "wecom-a", ChannelType: "wecom", AgentID: "main"}
+	lease, err := st.AcquireChannelLease(ctx, "wecom-a", "owner-a", time.Minute)
+	if err != nil {
+		t.Fatalf("acquire lease: %v", err)
+	}
+	client := &fakeACP{reply: "answer"}
+	dispatcher := NewDispatcher(st, account, client, "/workspace")
+	sender := &fakeReplySender{}
+	msg := channel.Message{
+		ChannelAccountID:       "wecom-a",
+		ChannelType:            channel.TypeWeCom,
+		ExternalMessageID:      "msg-trace",
+		ExternalConversationID: "chat-trace",
+		ExternalUserID:         "user-trace",
+		ChatType:               channel.ChatDM,
+		Kind:                   channel.MessageText,
+		Text:                   "hello",
+		Raw:                    json.RawMessage(`{"ok":true}`),
+	}
+	logs := captureLogs(t, func() {
+		if err := dispatcher.HandleInbound(ctx, msg); err != nil {
+			t.Fatalf("handle inbound: %v", err)
+		}
+		if _, err := DrainOutbox(ctx, st, lease, sender, 10); err != nil {
+			t.Fatalf("drain outbox: %v", err)
+		}
+	})
+	if sender.count() != 1 {
+		t.Fatalf("expected one sent reply, got %d", sender.count())
+	}
+	for _, want := range []string{
+		"business_trace",
+		"message_id=msg-trace",
+		"external_conversation_id=chat-trace",
+		"action=inbound_received",
+		"action=acp_prompt_start",
+		"action=acp_prompt_done",
+		"action=outbox_queued",
+		"action=inbound_done result=reply_queued",
+		"action=outbox_send_start",
+		"action=outbox_sent",
+	} {
+		if !strings.Contains(logs, want) {
+			t.Fatalf("expected logs to contain %q, got:\n%s", want, logs)
+		}
 	}
 }
 
@@ -312,5 +411,125 @@ func TestDispatcherRecreatesSessionWhenExistingACPSessionIsMissing(t *testing.T)
 	}
 	if conversation.ACPSessionID != "session-new" {
 		t.Fatalf("expected recreated session binding, got %#v", conversation)
+	}
+}
+
+func TestDispatcherRecreatesAndRetriesWhenRuntimeUnavailable(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir()+"/channelgateway.db")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+	account := store.ChannelAccount{ChannelAccountID: "wecom-a", ChannelType: "wecom", AgentID: "main"}
+	lease, err := st.AcquireChannelLease(ctx, "wecom-a", "owner-a", time.Minute)
+	if err != nil {
+		t.Fatalf("acquire lease: %v", err)
+	}
+	seedMsg := channel.Message{
+		ChannelType:            channel.TypeWeCom,
+		ChatType:               channel.ChatDM,
+		ExternalConversationID: "chat-a",
+	}
+	sessionKey := channel.BuildSessionKey("main", seedMsg, true, false)
+	if _, err := st.GetOrCreateConversation(ctx, store.Conversation{
+		ChannelAccountID:       "wecom-a",
+		ChannelType:            "wecom",
+		ExternalConversationID: "chat-a",
+		ChatType:               string(channel.ChatDM),
+		AgentID:                "main",
+		ACPSessionID:           "session-stale",
+		SessionKey:             sessionKey,
+	}); err != nil {
+		t.Fatalf("seed conversation: %v", err)
+	}
+	client := &fakeACP{
+		promptErrs: []error{errors.New("rpc error -32003: session runtime is unavailable")},
+		reply:      "answer after recreate",
+		sessionID:  "session-new",
+	}
+	dispatcher := NewDispatcher(st, account, client, "/workspace")
+	logs := captureLogs(t, func() {
+		err = dispatcher.HandleInbound(ctx, channel.Message{
+			ChannelAccountID:       "wecom-a",
+			ChannelType:            channel.TypeWeCom,
+			ExternalMessageID:      "msg-a",
+			ExternalConversationID: "chat-a",
+			ChatType:               channel.ChatDM,
+			Kind:                   channel.MessageText,
+			Text:                   "hello",
+			Raw:                    json.RawMessage(`{"ok":true}`),
+		})
+	})
+	if err != nil {
+		t.Fatalf("handle inbound should retry after runtime unavailable: %v", err)
+	}
+	newCalls, loadCalls, promptCalls, _ := client.snapshot()
+	if newCalls != 1 || loadCalls != 1 || promptCalls != 2 {
+		t.Fatalf("unexpected acp calls: new=%d load=%d prompt=%d", newCalls, loadCalls, promptCalls)
+	}
+	conversation, err := st.GetOrCreateConversation(ctx, store.Conversation{
+		ChannelAccountID:       "wecom-a",
+		ChannelType:            "wecom",
+		ExternalConversationID: "chat-a",
+		ChatType:               string(channel.ChatDM),
+		AgentID:                "main",
+		SessionKey:             sessionKey,
+	})
+	if err != nil {
+		t.Fatalf("reload conversation: %v", err)
+	}
+	if conversation.ACPSessionID != "session-new" {
+		t.Fatalf("expected recreated session binding, got %#v", conversation)
+	}
+	if !strings.Contains(logs, "action=session_recreate reason=runtime_unavailable") ||
+		!strings.Contains(logs, "action=session_bound reason=runtime_recreated") {
+		t.Fatalf("expected runtime recovery logs, got:\n%s", logs)
+	}
+	items, err := st.ClaimPendingOutbox(ctx, lease, 10)
+	if err != nil {
+		t.Fatalf("claim outbox: %v", err)
+	}
+	if len(items) != 1 || !strings.Contains(items[0].PayloadJSON, "answer after recreate") {
+		t.Fatalf("expected model reply after recreate, got %#v", items)
+	}
+}
+
+func TestDispatcherQueuesFallbackReplyWhenPromptFails(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir()+"/channelgateway.db")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+	account := store.ChannelAccount{ChannelAccountID: "wecom-a", ChannelType: "wecom", AgentID: "main"}
+	lease, err := st.AcquireChannelLease(ctx, "wecom-a", "owner-a", time.Minute)
+	if err != nil {
+		t.Fatalf("acquire lease: %v", err)
+	}
+	client := &fakeACP{
+		promptErrs: []error{errors.New("model failed")},
+		sessionID:  "session-a",
+	}
+	dispatcher := NewDispatcher(st, account, client, "/workspace")
+	err = dispatcher.HandleInbound(ctx, channel.Message{
+		ChannelAccountID:       "wecom-a",
+		ChannelType:            channel.TypeWeCom,
+		ExternalMessageID:      "msg-a",
+		ExternalConversationID: "chat-a",
+		ChatType:               channel.ChatDM,
+		Kind:                   channel.MessageText,
+		Text:                   "hello",
+		Raw:                    json.RawMessage(`{"ok":true}`),
+	})
+	if err == nil {
+		t.Fatal("expected prompt failure to be returned")
+	}
+	items, err := st.ClaimPendingOutbox(ctx, lease, 10)
+	if err != nil {
+		t.Fatalf("claim outbox: %v", err)
+	}
+	if len(items) != 1 || !strings.Contains(items[0].PayloadJSON, "暂时不可用") {
+		t.Fatalf("expected fallback reply, got %#v", items)
 	}
 }
