@@ -801,7 +801,7 @@ func (w *AgentSidecarWorker) StartSessionRuntime(ctx context.Context, req ACPSes
 			workspacePrepare = w.startWorkspaceRuntimePrepare(ctx, backend, runtime, req, workspaceIDForRuntime(runtime, req), workspaceCreate, timeline)
 		}
 		timeline("acp_runtime_wisp_prepare_start")
-		prepared, err := w.prepareWispRuntimeWithSpace(ctx, backend.host, sb, runtime, req, space, false)
+		prepared, err := w.prepareWispRuntimeWithSpace(ctx, backend.host, sb, runtime, req, space, "outer", false)
 		if err != nil {
 			timeline("acp_runtime_wisp_prepare_failed", "error="+quoteTimelineField(err.Error()))
 			w.markRuntimeResourceState(ctx, req, "failed", err.Error())
@@ -918,7 +918,7 @@ func (w *AgentSidecarWorker) EnsureSessionRuntime(ctx context.Context, runtime A
 		fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_daemon_restart_failed session_id=%s outer_sandbox_id=%s error=%s\n", req.SessionID, runtime.OuterSandboxID, quoteTimelineField(restartErr.Error()))
 		if runtimeCanRecreate(runtime) {
 			if cleanupErr := w.CloseSessionRuntime(ctx, runtime); cleanupErr != nil {
-				if !isNonBlockingStaleRuntimeCleanupError(cleanupErr) {
+				if !isNonBlockingCleanupBeforeRecreate(runtime, cleanupErr) {
 					return ACPSessionRuntime{}, fmt.Errorf("cleanup stale runtime before recreate: %w", cleanupErr)
 				}
 				fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_stale_cleanup_ignored session_id=%s outer_sandbox_id=%s error=%s\n", req.SessionID, runtime.OuterSandboxID, quoteTimelineField(cleanupErr.Error()))
@@ -930,6 +930,26 @@ func (w *AgentSidecarWorker) EnsureSessionRuntime(ctx context.Context, runtime A
 		return ACPSessionRuntime{}, fmt.Errorf("runtime is not restorable")
 	}
 	return w.recreateWispSessionRuntime(ctx, runtime, req)
+}
+
+func isNonBlockingCleanupBeforeRecreate(runtime ACPSessionRuntime, err error) bool {
+	if runtime.isWispOuterRuntime() {
+		return isNonBlockingWispPreMountCleanupError(err)
+	}
+	return isNonBlockingStaleRuntimeCleanupError(err)
+}
+
+func isNonBlockingWispPreMountCleanupError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	if strings.Contains(message, "ags http 404") ||
+		strings.Contains(message, "http 404") && strings.Contains(message, "requested resource does not exist") {
+		return true
+	}
+	return strings.Contains(message, "unsupportedoperation.sandboxinstance") &&
+		strings.Contains(message, "stopped state")
 }
 
 func isNonBlockingStaleRuntimeCleanupError(err error) bool {
@@ -1012,6 +1032,10 @@ func (w *AgentSidecarWorker) recreateWispSessionRuntime(ctx context.Context, run
 		all = append(all, fields...)
 		fmt.Fprintln(os.Stderr, strings.Join(all, " "))
 	}
+	runtime, err = w.cleanupPreviousWispRuntimeBeforeMount(ctx, runtime, req, timeline)
+	if err != nil {
+		return ACPSessionRuntime{}, err
+	}
 	timeline("acp_runtime_restore_outer_create_start", "backend="+backend.name, "template="+backend.outerTemplateID, "smh_space_id="+quoteTimelineField(runtime.WispSMHSpaceID))
 	sb, err := backend.host.CreateSandbox(ctx, CreateSandboxOptions{
 		TemplateID:          backend.outerTemplateID,
@@ -1066,7 +1090,7 @@ func (w *AgentSidecarWorker) recreateWispSessionRuntime(ctx context.Context, run
 	}
 	workspacePrepare := w.startWorkspaceRuntimePrepare(ctx, backend, restored, req, workspaceIDForRuntime(restored, req), nil, timeline)
 	timeline("acp_runtime_restore_wisp_prepare_start", "wisp_name="+quoteTimelineField(restored.WispName))
-	prepared, err := w.prepareWispRuntimeWithSpace(ctx, backend.host, sb, restored, req, space, false)
+	prepared, err := w.prepareWispRuntimeWithSpace(ctx, backend.host, sb, restored, req, space, "outer", false)
 	if err != nil {
 		timeline("acp_runtime_restore_wisp_prepare_failed", "error="+quoteTimelineField(err.Error()))
 		workspacePrepare.cancelAndCleanup(backend.host)
@@ -1110,6 +1134,46 @@ func (w *AgentSidecarWorker) recreateWispSessionRuntime(ctx context.Context, run
 	return restored, nil
 }
 
+func (w *AgentSidecarWorker) cleanupPreviousWispRuntimeBeforeMount(ctx context.Context, runtime ACPSessionRuntime, req ACPSessionRuntimeStartRequest, timeline func(string, ...string)) (ACPSessionRuntime, error) {
+	if !runtime.isWispOuterRuntime() || !runtimeNeedsCleanup(runtime) {
+		return runtime, nil
+	}
+	if runtime.OuterSandboxID == "" && runtime.InnerSandboxID == "" {
+		return runtime, nil
+	}
+	timeline("acp_runtime_restore_premount_cleanup_start",
+		"runtime_id="+quoteTimelineField(runtime.RuntimeID),
+		"outer_sandbox_id="+quoteTimelineField(runtime.OuterSandboxID),
+		"inner_sandbox_id="+quoteTimelineField(runtime.InnerSandboxID),
+		"wisp_name="+quoteTimelineField(runtime.WispName),
+		"workspace_wisp_name="+quoteTimelineField(runtime.WorkspaceWispName),
+	)
+	if err := w.CloseSessionRuntime(ctx, runtime); err != nil {
+		if isNonBlockingWispPreMountCleanupError(err) {
+			timeline("acp_runtime_restore_premount_cleanup_ignored",
+				"runtime_id="+quoteTimelineField(runtime.RuntimeID),
+				"outer_sandbox_id="+quoteTimelineField(runtime.OuterSandboxID),
+				"inner_sandbox_id="+quoteTimelineField(runtime.InnerSandboxID),
+				"error="+quoteTimelineField(err.Error()),
+			)
+			return runtimeAfterStaleCleanup(runtime), nil
+		}
+		timeline("acp_runtime_restore_premount_cleanup_failed",
+			"runtime_id="+quoteTimelineField(runtime.RuntimeID),
+			"outer_sandbox_id="+quoteTimelineField(runtime.OuterSandboxID),
+			"inner_sandbox_id="+quoteTimelineField(runtime.InnerSandboxID),
+			"error="+quoteTimelineField(err.Error()),
+		)
+		return ACPSessionRuntime{}, fmt.Errorf("cleanup previous wisp runtime before mount: %w", err)
+	}
+	timeline("acp_runtime_restore_premount_cleanup_done",
+		"runtime_id="+quoteTimelineField(runtime.RuntimeID),
+		"outer_sandbox_id="+quoteTimelineField(runtime.OuterSandboxID),
+		"inner_sandbox_id="+quoteTimelineField(runtime.InnerSandboxID),
+	)
+	return runtimeAfterStaleCleanup(runtime), nil
+}
+
 func workspaceIDForRuntime(runtime ACPSessionRuntime, req ACPSessionRuntimeStartRequest) string {
 	return firstNonEmpty(runtime.WorkspaceID, runtime.WispWorkspaceID, runtime.WispSMHSpaceID, "workspace_"+req.SessionID)
 }
@@ -1144,7 +1208,7 @@ func (w *AgentSidecarWorker) prepareInnerWorkspaceWispRuntime(ctx context.Contex
 		SpaceID:     workspaceWisp.WispSMHSpaceID,
 		AccessToken: token,
 		Owned:       false,
-	}, false)
+	}, "inner", false)
 	if err != nil {
 		return preparedInnerWorkspaceWispRuntime{}, fmt.Errorf("prepare workspace wisp runtime session_id=%s workspace_sandbox_id=%s: %w", req.SessionID, sb.ID, err)
 	}

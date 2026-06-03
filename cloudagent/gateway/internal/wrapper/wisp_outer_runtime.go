@@ -70,7 +70,7 @@ func (w *AgentSidecarWorker) prepareWispOuterRuntime(ctx context.Context, host R
 }
 
 func (w *AgentSidecarWorker) prepareWispOuterRuntimeWithSpace(ctx context.Context, host RuntimeHost, sb RuntimeHostTarget, runtime ACPSessionRuntime, req ACPSessionRuntimeStartRequest, space agentWispSMHSpace) (ACPSessionRuntime, error) {
-	return w.prepareWispRuntimeWithSpace(ctx, host, sb, runtime, req, space, true)
+	return w.prepareWispRuntimeWithSpace(ctx, host, sb, runtime, req, space, "outer", true)
 }
 
 func (w *AgentSidecarWorker) resolveWispRuntimeForSpace(ctx context.Context, runtime ACPSessionRuntime, req ACPSessionRuntimeStartRequest, space agentWispSMHSpace, acquireLease bool) (ACPSessionRuntime, error) {
@@ -89,7 +89,7 @@ func (w *AgentSidecarWorker) resolveWispRuntimeForSpace(ctx context.Context, run
 	return w.acquireWispWorkspaceLease(ctx, runtime)
 }
 
-func (w *AgentSidecarWorker) prepareWispRuntimeWithSpace(ctx context.Context, host RuntimeHost, sb RuntimeHostTarget, runtime ACPSessionRuntime, req ACPSessionRuntimeStartRequest, space agentWispSMHSpace, acquireLease bool) (ACPSessionRuntime, error) {
+func (w *AgentSidecarWorker) prepareWispRuntimeWithSpace(ctx context.Context, host RuntimeHost, sb RuntimeHostTarget, runtime ACPSessionRuntime, req ACPSessionRuntimeStartRequest, space agentWispSMHSpace, target string, acquireLease bool) (ACPSessionRuntime, error) {
 	var err error
 	runtime, err = w.resolveWispRuntimeForSpace(ctx, runtime, req, space, acquireLease)
 	if err != nil {
@@ -133,13 +133,13 @@ func (w *AgentSidecarWorker) prepareWispRuntimeWithSpace(ctx context.Context, ho
 		"WISP_USE_HOST_E2FSPROGS":             firstEnv("GATEWAY_WISP_USE_HOST_E2FSPROGS", "WISP_USE_HOST_E2FSPROGS"),
 		"WISP_USE_HOST_CRUN":                  firstEnv("GATEWAY_WISP_USE_HOST_CRUN", "WISP_USE_HOST_CRUN"),
 	}
-	w.logWispMountEvent("acp_runtime_wisp_mount_start", req, runtime, sb, space, "")
+	w.logWispMountEvent("acp_runtime_wisp_mount_start", req, runtime, sb, space, target, "")
 	result, err := host.RunCommand(ctx, sb, wispOuterPrepareScript(), env, nil, func(text string) error {
 		logRemoteStderr(time.Now(), workerJob{JobID: "wisp_outer_prepare", ResponseID: req.SessionID}, text)
 		return nil
 	})
 	if err != nil {
-		w.logWispMountEvent("acp_runtime_wisp_mount_failed", req, runtime, sb, space, wispCommandFailureDetail(err, result))
+		w.logWispMountEvent("acp_runtime_wisp_mount_failed", req, runtime, sb, space, target, wispCommandFailureDetail(err, result))
 		return ACPSessionRuntime{}, fmt.Errorf(
 			"prepare wisp outer runtime session_id=%s outer_sandbox_id=%s wisp_name=%s smh_space_id=%s package_url=%s: %s",
 			req.SessionID,
@@ -151,7 +151,7 @@ func (w *AgentSidecarWorker) prepareWispRuntimeWithSpace(ctx context.Context, ho
 		)
 	}
 	if result.ExitCode != 0 || !strings.Contains(result.Stdout, "WISP_OUTER_READY") {
-		w.logWispMountEvent("acp_runtime_wisp_mount_failed", req, runtime, sb, space, wispCommandFailureDetail(nil, result))
+		w.logWispMountEvent("acp_runtime_wisp_mount_failed", req, runtime, sb, space, target, wispCommandFailureDetail(nil, result))
 		return ACPSessionRuntime{}, fmt.Errorf(
 			"prepare wisp outer runtime failed session_id=%s outer_sandbox_id=%s wisp_name=%s smh_space_id=%s package_url=%s: %s",
 			req.SessionID,
@@ -165,7 +165,7 @@ func (w *AgentSidecarWorker) prepareWispRuntimeWithSpace(ctx context.Context, ho
 	if acquireLease {
 		releaseLease = false
 	}
-	w.logWispMountEvent("acp_runtime_wisp_mount_done", req, runtime, sb, space, "")
+	w.logWispMountEvent("acp_runtime_wisp_mount_done", req, runtime, sb, space, target, "")
 	return runtime, nil
 }
 
@@ -207,13 +207,19 @@ func (w *AgentSidecarWorker) requireWispMountLeaseHeld(ctx context.Context, runt
 	return nil
 }
 
-func (w *AgentSidecarWorker) logWispMountEvent(event string, req ACPSessionRuntimeStartRequest, runtime ACPSessionRuntime, sb RuntimeHostTarget, space agentWispSMHSpace, errText string) {
+func (w *AgentSidecarWorker) logWispMountEvent(event string, req ACPSessionRuntimeStartRequest, runtime ACPSessionRuntime, sb RuntimeHostTarget, space agentWispSMHSpace, target string, errText string) {
+	workspaceRuntimeID := runtime.WorkspaceRuntimeID
+	if target == "inner" {
+		workspaceRuntimeID = firstNonEmpty(workspaceRuntimeID, runtime.RuntimeID)
+	}
 	fields := []string{
 		"timeline source=go",
 		"event=" + event,
 		"session_id=" + req.SessionID,
 		fmt.Sprintf("generation=%d", req.Generation),
+		"target=" + quoteServerField(target),
 		"runtime_id=" + runtime.RuntimeID,
+		"workspace_runtime_id=" + quoteServerField(workspaceRuntimeID),
 		"sandbox_id=" + sb.ID,
 		"wisp_name=" + quoteServerField(runtime.WispName),
 		"smh_space_id=" + quoteServerField(space.SpaceID),
