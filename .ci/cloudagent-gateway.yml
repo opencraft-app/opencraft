@@ -31,8 +31,8 @@ extends:
     BUNDLE: cloudagent-gateway
     DISPLAY_NAME: cloudagent-gateway
     DEFAULT_TARGET_ENV: shprod
-    MASTER_BUILD_ENVS: shprod
-    MASTER_AUTO_PIN_ENVS: none
+    MASTER_BUILD_ENVS: devcloud-dep,shprod
+    MASTER_AUTO_PIN_ENVS: devcloud-dep
     PLAYGROUND_BUILD_ENVS: none
     PLAYGROUND_AUTO_PIN_ENVS: none
     PROD_REVIEWERS: '["skipzhang", "roberttwang", "cocofhu"]'

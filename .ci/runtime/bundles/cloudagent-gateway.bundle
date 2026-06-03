@@ -20,4 +20,5 @@ bundles:
     dockerfile: cloudagent/gateway/build/server/Dockerfile
     build_context: cloudagent/gateway
     image_repo:
+      devcloud-dep: csighub.tencentyun.com/skipzhang/cloudagent-gateway
       shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/cloudagent-gateway
