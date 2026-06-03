@@ -849,6 +849,16 @@ EOF
   chown -R "${RUNTIME_USER}:${RUNTIME_USER}" "${pip_config_dir}" "${uv_config_dir}" 2>/dev/null || true
 }
 
+ensure_hermes_user_systemd_dir() {
+  local config_dir="${RUNTIME_HOME}/.config"
+  local systemd_dir="${config_dir}/systemd"
+  local user_unit_dir="${systemd_dir}/user"
+
+  mkdir -p "${user_unit_dir}"
+  chown "${RUNTIME_USER}:${RUNTIME_USER}" "${config_dir}" "${systemd_dir}" "${user_unit_dir}" 2>/dev/null || true
+  chmod 0700 "${config_dir}" "${systemd_dir}" "${user_unit_dir}" 2>/dev/null || true
+}
+
 ensure_hermes_uv() {
   local found_uv=""
   log_info "ensuring uv for ${RUNTIME_USER}"
@@ -998,6 +1008,7 @@ ensure_hermes_gateway_service() {
   runtime_uid="$(id -u "${RUNTIME_USER}")"
   user_env_prefix="export XDG_RUNTIME_DIR=\"/run/user/${runtime_uid}\"; mkdir -p \"\${XDG_RUNTIME_DIR}\" 2>/dev/null || true;"
   ensure_hermes_linger
+  ensure_hermes_user_systemd_dir
   run_as_runtime_user "${user_env_prefix} printf 'n\ny\n' | hermes gateway install"
   run_as_runtime_user "${user_env_prefix} hermes gateway stop >/dev/null 2>&1 || true"
 }

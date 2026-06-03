@@ -261,7 +261,7 @@ ln() {
   log_call "ln $*"
 }
 
-mkdir -p "${HOME}/.local/bin" "${HOME}/.config/systemd/user"
+mkdir -p "${HOME}/.local/bin" "${HOME}/.config"
 
 install_hermes_runtime
 configure_hermes_python_mirrors
@@ -285,6 +285,9 @@ grep -q "sudo-npm-install pnpm" "${LOG_FILE}"
 grep -q "sudo-user agentuser" "${LOG_FILE}"
 grep -q "pnpm-add-whatsapp-bridge" "${LOG_FILE}"
 grep -q "node-resolve-whatsapp-bridge" "${LOG_FILE}"
+test -d "${RUNTIME_HOME}/.config/systemd/user"
+grep -Fq "chown agentuser:agentuser ${RUNTIME_HOME}/.config ${RUNTIME_HOME}/.config/systemd ${RUNTIME_HOME}/.config/systemd/user" "${LOG_FILE}"
+grep -Fq "chmod 0700 ${RUNTIME_HOME}/.config ${RUNTIME_HOME}/.config/systemd ${RUNTIME_HOME}/.config/systemd/user" "${LOG_FILE}"
 grep -q "printf 'n\\\\ny\\\\n' | hermes gateway install" "${LOG_FILE}"
 grep -q "hermes gateway stop" "${LOG_FILE}"
 grep -q "curl-skillhub" "${LOG_FILE}"
