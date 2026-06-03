@@ -57,6 +57,19 @@ stages:
               bash -n images/build.sh images/deploy-build.sh images/helpers/config-hermes-python-mirrors.sh images/tests/test-hermes-build-script.sh images/tests/test-hermes-runtime.sh .ci/runtime/commands/refresh_hermes_sandbox_pools.sh .ci/runtime/commands/list_hermes_pool_vms.sh .ci/runtime/commands/create_hermes_tat_command.sh .ci/runtime/commands/invoke_hermes_tat_command.sh .ci/runtime/commands/rollout_hermes_sandbox_env.sh
               python3 -m py_compile images/build-image.py
               python3 images/tests/test-build-image-sync.py
+              resolve_hermes_reuse_image_name() {
+                if [[ -n "${HERMES_REUSE_IMAGE_NAME:-}" ]]; then
+                  printf '%s\n' "$HERMES_REUSE_IMAGE_NAME"
+                  return
+                fi
+                if [[ "${HERMES_SKIP_IMAGE_BUILD:-false}" == "true" && -n "${HERMES_IMAGE_NAME:-}" ]]; then
+                  printf '%s\n' "$HERMES_IMAGE_NAME"
+                  return
+                fi
+                if [[ -r images/hermes-image-trigger ]]; then
+                  sed -n 's/.*reuse=\([^[:space:]]*\).*/\1/p' images/hermes-image-trigger | tail -1
+                fi
+              }
               resolve_hermes_image_name() {
                 local raw="${BK_CI_BUILD_ID:-}"
                 local sha='${{ ci.sha }}'
@@ -69,9 +82,30 @@ stages:
                 fi
                 printf 'hermes-agent-%s\n' "$raw"
               }
-              HERMES_IMAGE_NAME="$(resolve_hermes_image_name)"
+              HERMES_REUSE_IMAGE_NAME="$(resolve_hermes_reuse_image_name)"
+              if [[ -n "$HERMES_REUSE_IMAGE_NAME" ]]; then
+                HERMES_IMAGE_NAME="$HERMES_REUSE_IMAGE_NAME"
+              else
+                HERMES_IMAGE_NAME="$(resolve_hermes_image_name)"
+              fi
               export HERMES_IMAGE_NAME
               echo "HERMES_IMAGE_NAME=${HERMES_IMAGE_NAME}"
+
+              mkdir -p .ci/.runtime-state /tmp/lightclaw-ci
+              if [[ -n "$HERMES_REUSE_IMAGE_NAME" || "${HERMES_SKIP_IMAGE_BUILD:-false}" == "true" ]]; then
+                echo "Reusing existing Hermes CVM image by exact name: ${HERMES_IMAGE_NAME}"
+                {
+                  echo "HERMES_IMAGE_NAME=${HERMES_IMAGE_NAME}"
+                  for region in ap-beijing ap-shanghai ap-singapore; do
+                    image_id="$(python3 .ci/runtime/commands/resolve_hermes_image_id.py --region "$region" --image-name "$HERMES_IMAGE_NAME")"
+                    suffix="$(printf '%s' "$region" | tr '[:lower:]-' '[:upper:]_')"
+                    echo "HERMES_IMAGE_ID_${suffix}=${image_id}"
+                  done
+                } > .ci/.runtime-state/hermes-image.env
+                cp .ci/.runtime-state/hermes-image.env "/tmp/lightclaw-ci/hermes-image-${BK_CI_BUILD_ID:-manual}.env"
+                cat .ci/.runtime-state/hermes-image.env
+                exit 0
+              fi
 
               HERMES_BUILD_LOG="$(mktemp)"
               python3 images/build-image.py \
@@ -81,7 +115,6 @@ stages:
                 --image-name "$HERMES_IMAGE_NAME" \
                 --with-verify | tee "$HERMES_BUILD_LOG"
 
-              mkdir -p .ci/.runtime-state /tmp/lightclaw-ci
               python3 .ci/runtime/commands/extract_hermes_image_env.py "$HERMES_BUILD_LOG" > .ci/.runtime-state/hermes-image.env
               cp .ci/.runtime-state/hermes-image.env "/tmp/lightclaw-ci/hermes-image-${BK_CI_BUILD_ID:-manual}.env"
               cat .ci/.runtime-state/hermes-image.env

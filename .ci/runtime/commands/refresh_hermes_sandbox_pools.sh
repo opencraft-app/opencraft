@@ -183,12 +183,49 @@ refresh_skus() {
 }
 
 target_pool_ids() {
-  local pools_json="$1"
-  jq -r --arg template "$TEMPLATE_CLASS_ID" '
+  local api_base="$1"
+  local pools_json="$2"
+  local resolved_json resolved_ids fallback_ids
+  if resolved_json="$(api_get "$api_base" "/template-classes/${TEMPLATE_CLASS_ID}/resolve" 2>/dev/null)"; then
+    resolved_ids="$(
+      jq -r '
+        (.pools // [])
+        | .[]
+        | .id
+      ' <<<"$resolved_json" | sort -u
+    )"
+    if [[ -n "$resolved_ids" ]]; then
+      printf '%s\n' "$resolved_ids"
+      return
+    fi
+  fi
+
+  fallback_ids="$(jq -r --arg template "$TEMPLATE_CLASS_ID" '
     .[]
     | select((.template_class_id == $template) or ((.sku_id // "") | startswith("sku-hermes-")))
     | .id
-  ' <<<"$pools_json"
+  ' <<<"$pools_json")"
+  printf '%s\n' "$fallback_ids"
+}
+
+print_pool_discovery_debug() {
+  local api_base="$1"
+  local pools_json="$2"
+  local resolved_json
+  log "available pool summary"
+  jq -r '
+    .[]
+    | [.id,.name,(.template_class_id // ""),(.sku_id // ""),(.base_image // ""),(.status // ""),(.zone // "")]
+    | @tsv
+  ' <<<"$pools_json" >&2
+  if resolved_json="$(api_get "$api_base" "/template-classes/${TEMPLATE_CLASS_ID}/resolve" 2>/dev/null)"; then
+    log "template ${TEMPLATE_CLASS_ID} resolve summary"
+    jq -r '
+      "template_class=" + ((.template_class.id // "")|tostring) + "\tbindings=" + (((.bindings // [])|length)|tostring) + "\tpools=" + (((.pools // [])|length)|tostring)
+    ' <<<"$resolved_json" >&2
+  else
+    log "template ${TEMPLATE_CLASS_ID} resolve endpoint unavailable"
+  fi
 }
 
 patch_pools() {
@@ -216,17 +253,20 @@ verify_refresh() {
   local api_base="$1"
   local image_id="$2"
   local deadline=$((SECONDS + VERIFY_TIMEOUT_SECONDS))
-  local mismatches
+  local mismatches pools_json pool_ids
 
   while true; do
+    pools_json="$(api_get "$api_base" "/pools")"
+    pool_ids="$(target_pool_ids "$api_base" "$pools_json")"
     mismatches="$(
-      api_get "$api_base" "/pools" |
-        jq -r --arg template "$TEMPLATE_CLASS_ID" --arg image "$image_id" '
+      jq -r --arg ids "$pool_ids" --arg image "$image_id" '
+          ($ids | split("\n") | map(select(length > 0))) as $target_ids
+          |
           .[]
-          | select((.template_class_id == $template) or ((.sku_id // "") | startswith("sku-hermes-")))
+          | select(.id as $id | $target_ids | index($id))
           | select(.base_image != $image)
           | "\(.id)=\(.base_image)"
-        '
+        ' <<<"$pools_json"
     )"
     if [[ -z "$mismatches" ]]; then
       return 0
@@ -246,15 +286,17 @@ print_summary() {
   local pools_json pool_ids pool_id instances_json counts
 
   pools_json="$(api_get "$api_base" "/pools")"
+  pool_ids="$(target_pool_ids "$api_base" "$pools_json")"
   log "pool image summary"
-  jq -r --arg template "$TEMPLATE_CLASS_ID" '
+  jq -r --arg ids "$pool_ids" '
+    ($ids | split("\n") | map(select(length > 0))) as $target_ids
+    |
     .[]
-    | select((.template_class_id == $template) or ((.sku_id // "") | startswith("sku-hermes-")))
+    | select(.id as $id | $target_ids | index($id))
     | [.id,.base_image,.status,(.desired_capacity|tostring),(.zone // "")]
     | @tsv
   ' <<<"$pools_json"
 
-  pool_ids="$(target_pool_ids "$pools_json")"
   log "pool instance-state summary"
   while IFS= read -r pool_id; do
     [[ -n "$pool_id" ]] || continue
@@ -303,8 +345,11 @@ refresh_env() {
   fi
 
   pools_json="$(api_get "$api_base" "/pools")"
-  pool_ids="$(target_pool_ids "$pools_json")"
-  [[ -n "$pool_ids" ]] || fail "no Hermes pools found in ${env_name}"
+  pool_ids="$(target_pool_ids "$api_base" "$pools_json")"
+  if [[ -z "$pool_ids" ]]; then
+    print_pool_discovery_debug "$api_base" "$pools_json"
+    fail "no Hermes pools found in ${env_name}"
+  fi
   log "target pools for ${env_name}: ${pool_ids//$'\n'/ }"
 
   refresh_skus "$api_base" "$image_id"

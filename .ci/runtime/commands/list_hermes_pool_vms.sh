@@ -113,17 +113,38 @@ api_get() {
 }
 
 target_pools_jsonl() {
-  local pools_json="$1"
+  local api_base="$1"
+  local pools_json="$2"
   python3 -c '
 import json
 import sys
+import urllib.error
+import urllib.request
 
-template = sys.argv[1]
+api_base, template = sys.argv[1:3]
 pools = json.load(sys.stdin)
+resolved_pool_ids = []
+try:
+    with urllib.request.urlopen(f"{api_base}/template-classes/{template}/resolve", timeout=10) as resp:
+        resolved = json.load(resp)
+    resolved_pool_ids = sorted({str(pool.get("id") or "") for pool in resolved.get("pools") or [] if pool.get("id")})
+    resolved_pools_by_id = {str(pool.get("id") or ""): pool for pool in resolved.get("pools") or [] if pool.get("id")}
+except Exception:
+    resolved_pool_ids = []
+    resolved_pools_by_id = {}
+
+if resolved_pool_ids:
+    by_id = {str(pool.get("id") or ""): pool for pool in pools}
+    for pool_id in resolved_pool_ids:
+        pool = by_id.get(pool_id) or resolved_pools_by_id.get(pool_id)
+        if pool:
+            print(json.dumps(pool, ensure_ascii=False, separators=(",", ":")))
+    raise SystemExit(0)
+
 for pool in pools:
     if pool.get("template_class_id") == template or str(pool.get("sku_id") or "").startswith("sku-hermes-"):
         print(json.dumps(pool, ensure_ascii=False, separators=(",", ":")))
-  ' "$TEMPLATE_CLASS_ID" <<<"$pools_json"
+  ' "$api_base" "$TEMPLATE_CLASS_ID" <<<"$pools_json"
 }
 
 emit_tsv_header() {
@@ -233,7 +254,7 @@ list_env() {
     count="$(count_instances "$instances_json")"
     log "pool ${pool_id}: ${count} VM rows"
     total=$((total + count))
-  done < <(target_pools_jsonl "$pools_json")
+  done < <(target_pools_jsonl "$api_base" "$pools_json")
 
   log "${env_name}: emitted ${total} VM rows"
   kill "$pf_pid" >/dev/null 2>&1 || true
