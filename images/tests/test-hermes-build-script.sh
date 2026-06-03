@@ -281,6 +281,8 @@ grep -Fq "index-url = https://mirrors.tencent.com/pypi/simple" "${RUNTIME_HOME}/
 grep -Fq "https://mirrors.cloud.tencent.com/pypi/simple" "${RUNTIME_HOME}/.config/pip/pip.conf"
 grep -Fq 'index-url = "https://mirrors.tencent.com/pypi/simple"' "${RUNTIME_HOME}/.config/uv/uv.toml"
 grep -Fq 'extra-index-url = ["https://mirrors.cloud.tencent.com/pypi/simple"]' "${RUNTIME_HOME}/.config/uv/uv.toml"
+grep -Fq "chown agentuser:agentuser ${RUNTIME_HOME}/.config" "${LOG_FILE}"
+grep -Fq "chmod 0700 ${RUNTIME_HOME}/.config" "${LOG_FILE}"
 grep -q "sudo-npm-install pnpm" "${LOG_FILE}"
 grep -q "sudo-user agentuser" "${LOG_FILE}"
 grep -q "pnpm-add-whatsapp-bridge" "${LOG_FILE}"

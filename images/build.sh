@@ -829,8 +829,9 @@ EOF
 }
 
 configure_hermes_python_mirrors() {
-  local pip_config_dir="${RUNTIME_HOME}/.config/pip"
-  local uv_config_dir="${RUNTIME_HOME}/.config/uv"
+  local config_dir="${RUNTIME_HOME}/.config"
+  local pip_config_dir="${config_dir}/pip"
+  local uv_config_dir="${config_dir}/uv"
 
   log_info "configuring Hermes Python package mirrors for ${RUNTIME_USER}"
   mkdir -p "${pip_config_dir}" "${uv_config_dir}"
@@ -846,6 +847,8 @@ EOF
 index-url = "${HERMES_PYPI_INDEX_URL}"
 extra-index-url = ["${HERMES_PYPI_EXTRA_INDEX_URL}"]
 EOF
+  chown "${RUNTIME_USER}:${RUNTIME_USER}" "${config_dir}" 2>/dev/null || true
+  chmod 0700 "${config_dir}" 2>/dev/null || true
   chown -R "${RUNTIME_USER}:${RUNTIME_USER}" "${pip_config_dir}" "${uv_config_dir}" 2>/dev/null || true
 }
 
