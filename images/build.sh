@@ -1182,8 +1182,8 @@ install_hermes_acli() {
     return 1
   fi
   if ! run_as_runtime_user "acli backend --help >/dev/null 2>&1"; then
-    log_info "acli backend command unavailable for ${RUNTIME_USER}; attempting self-update"
-    run_as_runtime_user "acli self-update >/dev/null 2>&1" || true
+    log_info "acli backend command unavailable for ${RUNTIME_USER}; attempting bundle-update"
+    run_as_runtime_user "acli bundle-update >/dev/null 2>&1" || true
   fi
   if ! run_as_runtime_user "acli backend --help >/dev/null 2>&1"; then
     log_error "acli backend command is unavailable for ${RUNTIME_USER}"

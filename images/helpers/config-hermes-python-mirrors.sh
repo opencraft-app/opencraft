@@ -27,10 +27,10 @@ ensure_acli_backend() {
     return 0
   fi
 
-  echo "acli backend command unavailable for $user; attempting acli self-update"
-  run_as_target_user 'command -v acli >/dev/null 2>&1 && acli self-update >/dev/null 2>&1' || true
+  echo "acli backend command unavailable for $user; attempting acli bundle-update"
+  run_as_target_user 'command -v acli >/dev/null 2>&1 && acli bundle-update >/dev/null 2>&1' || true
   if acli_supports_backend; then
-    echo "ensured acli backend command for $user via self-update"
+    echo "ensured acli backend command for $user via bundle-update"
     return 0
   fi
 
