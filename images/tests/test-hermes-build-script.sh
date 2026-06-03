@@ -62,6 +62,19 @@ run_as_runtime_user() {
 
 cat <<'EOF' >"${INSTALLER_PAYLOAD}"
 #!/usr/bin/env bash
+mkdir -p "$HOME/.hermes/bin"
+cat >"$HOME/.hermes/bin/uv" <<'INNER'
+#!/usr/bin/env bash
+if [ "${1:-}" = "--version" ]; then
+  echo "uv fixture"
+  exit 0
+fi
+if [ "${1:-}" = "pip" ] && [ "${2:-}" = "install" ]; then
+  echo "uv-pip-install $*" >>"__LOG_FILE__"
+  exit 0
+fi
+exit 0
+INNER
 cat >"$HOME/.hermes/hermes-agent/venv/bin/hermes-agent" <<'INNER'
 #!/usr/bin/env bash
 exit 0
@@ -77,8 +90,16 @@ INNER
 chmod +x "$HOME/.hermes/hermes-agent/venv/bin/hermes-agent"
 chmod +x "$HOME/.hermes/hermes-agent/venv/bin/hermes"
 chmod +x "$HOME/.hermes/hermes-agent/venv/bin/python"
+chmod +x "$HOME/.hermes/bin/uv"
 exit 0
 EOF
+python3 - "${INSTALLER_PAYLOAD}" "${LOG_FILE}" <<'PY'
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+path.write_text(path.read_text().replace("__LOG_FILE__", sys.argv[2]))
+PY
 chmod +x "${INSTALLER_PAYLOAD}"
 
 mkdir -p "${TMPDIR}/hermes-src/hermes-agent/venv/bin"
@@ -244,6 +265,7 @@ grep -q "curl-hermes-latest" "${LOG_FILE}"
 grep -q "curl-hermes-tarball" "${LOG_FILE}"
 grep -q "curl-installer" "${LOG_FILE}"
 grep -q "npm-install @qwen-code/qwen-code@latest" "${LOG_FILE}"
+grep -q ".hermes/bin/uv.*--version" "${LOG_FILE}"
 grep -q "uv-pip-install pip install --index-url https://mirrors.tencent.com/pypi/simple --extra-index-url https://mirrors.cloud.tencent.com/pypi/simple --python ${RUNTIME_HOME}/.hermes/hermes-agent/venv/bin/python lark-oapi==1.5.3 qrcode==7.4.2" "${LOG_FILE}"
 grep -Fq "index-url = https://mirrors.tencent.com/pypi/simple" "${RUNTIME_HOME}/.config/pip/pip.conf"
 grep -Fq "https://mirrors.cloud.tencent.com/pypi/simple" "${RUNTIME_HOME}/.config/pip/pip.conf"
