@@ -39,13 +39,6 @@ spec:
                 name: service-gateway-ingress
                 port:
                   number: 80
-          - path: /sandboxes
-            pathType: Prefix
-            backend:
-              service:
-                name: service-gateway-ingress
-                port:
-                  number: 80
           - path: /v1/chatclaw/runtime
             pathType: Prefix
             backend:
@@ -93,18 +86,6 @@ spec:
                   httpCheckDomain: REPLACE_SERVICE_GATEWAY_PUBLIC_HOST
                   httpCheckMethod: HEAD
                   httpCode: 2
-              - url: /sandboxes
-                forwardType: HTTP
-                healthCheck:
-                  enable: true
-                  intervalTime: 10
-                  timeout: 5
-                  healthNum: 2
-                  unHealthNum: 2
-                  httpCheckPath: /healthz
-                  httpCheckDomain: REPLACE_SERVICE_GATEWAY_PUBLIC_HOST
-                  httpCheckMethod: HEAD
-                  httpCode: 2
               - url: /v1/chatclaw/runtime
                 forwardType: HTTP
                 healthCheck:
@@ -136,18 +117,6 @@ spec:
           - domain: REPLACE_SERVICE_GATEWAY_PUBLIC_HOST
             rules:
               - url: /auth
-                forwardType: HTTP
-                healthCheck:
-                  enable: true
-                  intervalTime: 10
-                  timeout: 5
-                  healthNum: 2
-                  unHealthNum: 2
-                  httpCheckPath: /healthz
-                  httpCheckDomain: REPLACE_SERVICE_GATEWAY_PUBLIC_HOST
-                  httpCheckMethod: HEAD
-                  httpCode: 2
-              - url: /sandboxes
                 forwardType: HTTP
                 healthCheck:
                   enable: true

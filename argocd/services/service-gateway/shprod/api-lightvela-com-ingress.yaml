@@ -24,13 +24,6 @@ spec:
                 name: service-gateway-ingress
                 port:
                   number: 80
-          - path: /sandboxes
-            pathType: Prefix
-            backend:
-              service:
-                name: service-gateway-ingress
-                port:
-                  number: 80
           - path: /v1/chatclaw/runtime
             pathType: Prefix
             backend:
@@ -78,18 +71,6 @@ spec:
                   httpCheckDomain: api.lightvela.com
                   httpCheckMethod: HEAD
                   httpCode: 2
-              - url: /sandboxes
-                forwardType: HTTP
-                healthCheck:
-                  enable: true
-                  intervalTime: 10
-                  timeout: 5
-                  healthNum: 2
-                  unHealthNum: 2
-                  httpCheckPath: /healthz
-                  httpCheckDomain: api.lightvela.com
-                  httpCheckMethod: HEAD
-                  httpCode: 2
               - url: /v1/chatclaw/runtime
                 forwardType: HTTP
                 healthCheck:
@@ -121,18 +102,6 @@ spec:
           - domain: api.lightvela.com
             rules:
               - url: /auth
-                forwardType: HTTP
-                healthCheck:
-                  enable: true
-                  intervalTime: 10
-                  timeout: 5
-                  healthNum: 2
-                  unHealthNum: 2
-                  httpCheckPath: /healthz
-                  httpCheckDomain: api.lightvela.com
-                  httpCheckMethod: HEAD
-                  httpCode: 2
-              - url: /sandboxes
                 forwardType: HTTP
                 healthCheck:
                   enable: true
