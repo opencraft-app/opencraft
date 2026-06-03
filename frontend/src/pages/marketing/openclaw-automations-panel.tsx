@@ -1607,7 +1607,7 @@ function AutomationFormModal({
                     />
                     <span className="text-base leading-6">
                       {label}
-                      {!configured && <span className="ml-0.5 text-[10px]">{t("（未配置）")}</span>}
+                      {!configured && <span className="ml-1 text-xs">{t("（未配置）")}</span>}
                     </span>
                     {selected && key === "weixin" && (
                       <span className="text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
@@ -1674,7 +1674,7 @@ function AutomationFormModal({
           {/* 间距用 div 显式 spacer 拉开，避免 mt-* 被 layout 影响 */}
           <div aria-hidden="true" style={{ height: 10 }} />
           {deliverPlatforms.length === 0 ? (
-            <p className="text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
+            <p className="text-xs text-black/40" style={MODAL_HELP_TEXT_STYLE}>
               {t("如不选，则只会在后台执行任务，不发通知。")}
             </p>
           ) : null}
