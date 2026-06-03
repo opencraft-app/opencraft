@@ -4,6 +4,7 @@ set -euo pipefail
 
 TEMPLATE_CLASS_ID="${HERMES_TEMPLATE_CLASS_ID:-hermes}"
 ENV_SPECS="${HERMES_SANDBOX_POOL_REFRESH_ENVS:-shprod:ap-shanghai:kubeconfig_shprod}"
+LEGACY_POOL_IDS="${HERMES_LEGACY_POOL_IDS:-}"
 KUBECONFIG_ROOT="${HERMES_SANDBOX_KUBECONFIG_ROOT:-/etc/lightclaw-ci}"
 PATCH_INTERVAL_SECONDS="${HERMES_POOL_PATCH_INTERVAL_SECONDS:-20}"
 VERIFY_TIMEOUT_SECONDS="${HERMES_POOL_VERIFY_TIMEOUT_SECONDS:-180}"
@@ -23,6 +24,9 @@ Environment:
       This value should come from the current Hermes image build result, not from a latest-image lookup.
   HERMES_TEMPLATE_CLASS_ID
       Default: hermes
+  HERMES_LEGACY_POOL_IDS
+      Optional comma-separated pool ids used only when sandbox-api has no
+      template-class resolution and pools have no Hermes template/SKU fields.
   HERMES_POOL_PATCH_INTERVAL_SECONDS
       Default: 20
 EOF
@@ -148,7 +152,10 @@ refresh_skus() {
   local image_id="$2"
   local skus_json sku_ids sku_id body
 
-  skus_json="$(api_get "$api_base" "/skus")"
+  if ! skus_json="$(api_get "$api_base" "/skus" 2>/dev/null)"; then
+    log "SKU endpoint unavailable; pool patch will continue"
+    return
+  fi
   sku_ids="$(
     jq -r --arg template "$TEMPLATE_CLASS_ID" '
       .[]
@@ -205,7 +212,19 @@ target_pool_ids() {
     | select((.template_class_id == $template) or ((.sku_id // "") | startswith("sku-hermes-")))
     | .id
   ' <<<"$pools_json")"
-  printf '%s\n' "$fallback_ids"
+  if [[ -n "$fallback_ids" ]]; then
+    printf '%s\n' "$fallback_ids"
+    return
+  fi
+
+  if [[ -n "$LEGACY_POOL_IDS" ]]; then
+    jq -r --arg ids "$LEGACY_POOL_IDS" '
+      ($ids | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))) as $legacy_ids
+      | .[]
+      | select(.id as $id | $legacy_ids | index($id))
+      | .id
+    ' <<<"$pools_json"
+  fi
 }
 
 print_pool_discovery_debug() {
@@ -283,7 +302,7 @@ verify_refresh() {
 print_summary() {
   local api_base="$1"
   local _image_id="$2"
-  local pools_json pool_ids pool_id instances_json counts
+  local pools_json pool_ids pool_id instances_json counts skus_json
 
   pools_json="$(api_get "$api_base" "/pools")"
   pool_ids="$(target_pool_ids "$api_base" "$pools_json")"
@@ -313,13 +332,16 @@ print_summary() {
   done <<<"$pool_ids"
 
   log "SKU summary"
-  api_get "$api_base" "/skus" |
+  if skus_json="$(api_get "$api_base" "/skus" 2>/dev/null)"; then
     jq -r --arg template "$TEMPLATE_CLASS_ID" --arg image "$image_id" '
       .[]
       | select((.template_class_id == $template) or ((.id // "") | startswith("sku-hermes-")))
       | [.id,.base_image,.desired_image_id,.stable_image_id,.rollout_state,(.rollout_cursor_pool_id // ""),((.converged_pool_count // "")|tostring),((.total_pool_count // "")|tostring),((.pools_pending_rollout // "")|tostring)]
       | @tsv
-    '
+    ' <<<"$skus_json"
+  else
+    log "SKU summary unavailable"
+  fi
 }
 
 refresh_env() {

@@ -4,6 +4,7 @@ set -euo pipefail
 
 TEMPLATE_CLASS_ID="${HERMES_TEMPLATE_CLASS_ID:-hermes}"
 ENV_SPECS="${HERMES_POOL_VM_LIST_ENVS:-shprod:ap-shanghai:kubeconfig_shprod}"
+LEGACY_POOL_IDS="${HERMES_LEGACY_POOL_IDS:-}"
 KUBECONFIG_ROOT="${HERMES_SANDBOX_KUBECONFIG_ROOT:-/etc/lightclaw-ci}"
 OUTPUT_FORMAT="${HERMES_POOL_VM_LIST_FORMAT:-jsonl}"
 INCLUDE_EMPTY_CLOUD_ID="${HERMES_POOL_VM_LIST_INCLUDE_EMPTY_CLOUD_ID:-false}"
@@ -23,6 +24,9 @@ Environment:
       Default: shprod:ap-shanghai:kubeconfig_shprod
   HERMES_TEMPLATE_CLASS_ID
       Default: hermes
+  HERMES_LEGACY_POOL_IDS
+      Optional comma-separated pool ids used only when sandbox-api has no
+      template-class resolution and pools have no Hermes template/SKU fields.
   HERMES_SANDBOX_KUBECONFIG_ROOT
       Default: /etc/lightclaw-ci
   HERMES_POOL_VM_LIST_FORMAT
@@ -121,7 +125,8 @@ import sys
 import urllib.error
 import urllib.request
 
-api_base, template = sys.argv[1:3]
+api_base, template, legacy_raw = sys.argv[1:4]
+legacy_ids = [item.strip() for item in legacy_raw.split(",") if item.strip()]
 pools = json.load(sys.stdin)
 resolved_pool_ids = []
 try:
@@ -141,10 +146,21 @@ if resolved_pool_ids:
             print(json.dumps(pool, ensure_ascii=False, separators=(",", ":")))
     raise SystemExit(0)
 
-for pool in pools:
-    if pool.get("template_class_id") == template or str(pool.get("sku_id") or "").startswith("sku-hermes-"):
+direct_pools = [
+    pool for pool in pools
+    if pool.get("template_class_id") == template or str(pool.get("sku_id") or "").startswith("sku-hermes-")
+]
+if direct_pools:
+    for pool in direct_pools:
         print(json.dumps(pool, ensure_ascii=False, separators=(",", ":")))
-  ' "$api_base" "$TEMPLATE_CLASS_ID" <<<"$pools_json"
+    raise SystemExit(0)
+
+by_id = {str(pool.get("id") or ""): pool for pool in pools}
+for pool_id in legacy_ids:
+    pool = by_id.get(pool_id)
+    if pool:
+        print(json.dumps(pool, ensure_ascii=False, separators=(",", ":")))
+  ' "$api_base" "$TEMPLATE_CLASS_ID" "$LEGACY_POOL_IDS" <<<"$pools_json"
 }
 
 emit_tsv_header() {

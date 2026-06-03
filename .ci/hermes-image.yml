@@ -132,6 +132,7 @@ stages:
           点击通过后，流水线会先处理北京主沙箱：
           - 目标：beijing-sandbox / ap-beijing
           - 通过 sandbox-api internal API 刷新 Hermes sandbox pools
+          - 北京旧 sandbox-api 未提供 TemplateClass resolve 时，默认只回退刷新 pool-c2~pool-c5
           - 先更新 Hermes SKU 的 desired image，避免 rollout controller 回写旧镜像
           - 再逐个 patch Hermes pools 的 base_image，并把 CLEAN 库存标记进入重置流程
           - 然后通过 TAT 修补存量 VM：pip/uv mirror、systemd user 权限、backend blueprint 基线
@@ -197,9 +198,12 @@ stages:
               fi
               export HERMES_IMAGE_NAME="${HERMES_IMAGE_NAME:-$(resolve_hermes_image_name)}"
               HERMES_ROLLOUT_ENV_SPEC="${HERMES_BEIJING_HERMES_ROLLOUT_ENV_SPEC:-beijing-sandbox:ap-beijing:kubeconfig_beijing_sandbox}"
+              HERMES_LEGACY_POOL_IDS="${HERMES_BEIJING_HERMES_LEGACY_POOL_IDS:-pool-c2,pool-c3,pool-c4,pool-c5}"
               export HERMES_ROLLOUT_ENV_SPEC
+              export HERMES_LEGACY_POOL_IDS
               echo "HERMES_IMAGE_NAME=${HERMES_IMAGE_NAME}"
               echo "HERMES_ROLLOUT_ENV_SPEC=${HERMES_ROLLOUT_ENV_SPEC}"
+              echo "HERMES_LEGACY_POOL_IDS=${HERMES_LEGACY_POOL_IDS}"
 
               bash .ci/runtime/commands/rollout_hermes_sandbox_env.sh
 
