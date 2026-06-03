@@ -250,3 +250,67 @@ func TestDispatcherStopsWhenExistingSessionLoadFails(t *testing.T) {
 		t.Fatalf("prompt must not run after load failure, got %d", promptCalls)
 	}
 }
+
+func TestDispatcherRecreatesSessionWhenExistingACPSessionIsMissing(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir()+"/channelgateway.db")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+	account := store.ChannelAccount{ChannelAccountID: "wecom-a", ChannelType: "wecom", AgentID: "main"}
+	seedMsg := channel.Message{
+		ChannelType:            channel.TypeWeCom,
+		ChatType:               channel.ChatDM,
+		ExternalConversationID: "chat-a",
+	}
+	sessionKey := channel.BuildSessionKey("main", seedMsg, true, false)
+	if _, err := st.GetOrCreateConversation(ctx, store.Conversation{
+		ChannelAccountID:       "wecom-a",
+		ChannelType:            "wecom",
+		ExternalConversationID: "chat-a",
+		ChatType:               string(channel.ChatDM),
+		AgentID:                "main",
+		ACPSessionID:           "session-stale",
+		SessionKey:             sessionKey,
+	}); err != nil {
+		t.Fatalf("seed conversation: %v", err)
+	}
+	client := &fakeACP{
+		loadErr:   errors.New("rpc error -32000: session not found"),
+		reply:     "answer",
+		sessionID: "session-new",
+	}
+	dispatcher := NewDispatcher(st, account, client, "/workspace")
+	err = dispatcher.HandleInbound(ctx, channel.Message{
+		ChannelAccountID:       "wecom-a",
+		ChannelType:            channel.TypeWeCom,
+		ExternalMessageID:      "msg-a",
+		ExternalConversationID: "chat-a",
+		ChatType:               channel.ChatDM,
+		Kind:                   channel.MessageText,
+		Text:                   "hello",
+		Raw:                    json.RawMessage(`{"ok":true}`),
+	})
+	if err != nil {
+		t.Fatalf("handle inbound should recreate missing session: %v", err)
+	}
+	newCalls, loadCalls, promptCalls, lastPrompt := client.snapshot()
+	if newCalls != 1 || loadCalls != 1 || promptCalls != 1 || lastPrompt != "hello" {
+		t.Fatalf("unexpected acp calls: new=%d load=%d prompt=%d last=%q", newCalls, loadCalls, promptCalls, lastPrompt)
+	}
+	conversation, err := st.GetOrCreateConversation(ctx, store.Conversation{
+		ChannelAccountID:       "wecom-a",
+		ChannelType:            "wecom",
+		ExternalConversationID: "chat-a",
+		ChatType:               string(channel.ChatDM),
+		AgentID:                "main",
+		SessionKey:             sessionKey,
+	})
+	if err != nil {
+		t.Fatalf("reload conversation: %v", err)
+	}
+	if conversation.ACPSessionID != "session-new" {
+		t.Fatalf("expected recreated session binding, got %#v", conversation)
+	}
+}

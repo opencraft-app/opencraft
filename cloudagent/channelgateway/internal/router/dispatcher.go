@@ -122,7 +122,23 @@ func (d *Dispatcher) HandleInbound(ctx context.Context, msg channel.Message) err
 			logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(conversation.ConversationID),
 			logValue(conversation.SessionKey), logValue(sessionID))
 		if err := d.acp.LoadSession(ctx, sessionID, d.cwd); err != nil {
-			return err
+			if !isMissingACPSessionError(err) {
+				return err
+			}
+			log.Printf("channelgateway session_trace account_id=%s agent_id=%s conversation_id=%s session_key=%s acp_session_id=%s action=session_recreate reason=missing_acp_runtime_session",
+				logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(conversation.ConversationID),
+				logValue(conversation.SessionKey), logValue(sessionID))
+			sessionID, err = d.acp.NewSession(ctx, d.cwd)
+			if err != nil {
+				return err
+			}
+			if err := d.store.BindACPSession(ctx, conversation.ChannelAccountID, conversation.SessionKey, sessionID); err != nil {
+				return err
+			}
+			conversation.ACPSessionID = sessionID
+			log.Printf("channelgateway session_trace account_id=%s agent_id=%s conversation_id=%s session_key=%s acp_session_id=%s action=session_bound reason=recreated",
+				logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(conversation.ConversationID),
+				logValue(conversation.SessionKey), logValue(sessionID))
 		}
 	}
 	result, err := d.acp.Prompt(ctx, sessionID, msg.Text)
@@ -153,6 +169,13 @@ func logValue(value string) string {
 		return value[:160] + "...[truncated]"
 	}
 	return value
+}
+
+func isMissingACPSessionError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "session not found")
 }
 
 func (d *Dispatcher) enqueueTextReply(ctx context.Context, msg channel.Message, sessionID, text string) error {
