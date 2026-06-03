@@ -923,8 +923,7 @@ func (w *AgentSidecarWorker) EnsureSessionRuntime(ctx context.Context, runtime A
 				}
 				fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_stale_cleanup_ignored session_id=%s outer_sandbox_id=%s error=%s\n", req.SessionID, runtime.OuterSandboxID, quoteTimelineField(cleanupErr.Error()))
 			}
-			runtime = runtimeAfterClose(runtime)
-			runtime.WispName = wispNameFromRuntime(req.SessionID) + "-recover-" + randomHex(4)
+			runtime = runtimeAfterStaleCleanup(runtime)
 		}
 	}
 	if !runtimeCanRecreate(runtime) {
@@ -1134,10 +1133,7 @@ func (w *AgentSidecarWorker) prepareInnerWorkspaceWispRuntime(ctx context.Contex
 	}
 	workspaceWisp := runtime
 	workspaceWisp.RuntimeID = workspaceRuntimeID
-	workspaceWisp.WispName = workspaceWispNameFromSession(req.SessionID)
-	if strings.Contains(runtime.WispName, "-recover-") {
-		workspaceWisp.WispName += "-recover-" + randomHex(4)
-	}
+	workspaceWisp.WispName = workspaceWispNameForRuntime(req.SessionID, runtime)
 	workspaceWisp.WispWorkspaceID = workspaceID
 	workspaceWisp.WispSMHSpaceID = firstNonEmpty(runtime.WispSMHSpaceID, workspaceID)
 	workspaceWisp.WispOwnsSMHSpace = false

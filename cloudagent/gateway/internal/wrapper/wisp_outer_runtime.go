@@ -572,6 +572,10 @@ func workspaceWispNameFromSession(sessionID string) string {
 	return fmt.Sprintf("workspace-%08x", crc32.ChecksumIEEE([]byte(trimmed)))
 }
 
+func workspaceWispNameForRuntime(sessionID string, _ ACPSessionRuntime) string {
+	return workspaceWispNameFromSession(sessionID)
+}
+
 func workspaceWispJFSPrefix(base, workspaceID string) string {
 	normalizedBase := strings.Trim(strings.TrimSpace(base), "/")
 	if normalizedBase == "" {

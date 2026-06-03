@@ -194,6 +194,40 @@ func TestWorkspaceWispNameFromSessionIsShortAndStable(t *testing.T) {
 	}
 }
 
+func TestRuntimeRecoveryPreservesPersistentWispNames(t *testing.T) {
+	sessionID := "session_4c7055cd94970a97f79ae711e3f8e39e"
+	runtime := ACPSessionRuntime{
+		SandboxBackend:      "ags",
+		OuterRuntime:        "wisp",
+		RuntimeRecovery:     "reattach_or_recreate",
+		WispName:            wispNameFromRuntime(sessionID),
+		WispWorkspaceID:     "space_keep",
+		WispSMHSpaceID:      "space_keep",
+		WorkspaceWispName:   workspaceWispNameFromSession(sessionID),
+		WorkspaceRuntimeID:  "workspace_runtime_old",
+		OuterSandboxID:      "outer_stale",
+		InnerSandboxID:      "inner_stale",
+		RemoteBinary:        "/tmp/hermes-sidecar",
+		DaemonAddr:          "http://127.0.0.1:1234",
+		WispClientPath:      "/tmp/wispclient",
+		WorkspaceWispClient: "/tmp/workspace-wispclient",
+	}
+
+	recovered := runtimeAfterStaleCleanup(runtime)
+	if recovered.WispName != runtime.WispName {
+		t.Fatalf("outer Wisp name changed during stale recovery: got %q want %q", recovered.WispName, runtime.WispName)
+	}
+	if got := workspaceWispNameForRuntime(sessionID, ACPSessionRuntime{WispName: runtime.WispName + "-recover-deadbeef"}); got != runtime.WorkspaceWispName {
+		t.Fatalf("workspace Wisp name changed during recover path: got %q want %q", got, runtime.WorkspaceWispName)
+	}
+	if recovered.WispSMHSpaceID != "space_keep" || recovered.WispWorkspaceID != "space_keep" {
+		t.Fatalf("SMH workspace identity changed during stale recovery: %#v", recovered)
+	}
+	if recovered.OuterSandboxID != "" || recovered.InnerSandboxID != "" || recovered.RuntimeID != "" || recovered.WorkspaceRuntimeID != "" {
+		t.Fatalf("ephemeral host identity was not cleared: %#v", recovered)
+	}
+}
+
 func TestWorkspaceWispJFSPrefixIsWorkspaceScoped(t *testing.T) {
 	prefix := workspaceWispJFSPrefix("cloudagent-agent-live", "space_ABC/123")
 	if prefix == "cloudagent-agent-live" {

@@ -429,6 +429,13 @@ func runtimeAfterClose(runtime ACPSessionRuntime) ACPSessionRuntime {
 	runtime.WorkspaceAttachState = ""
 	return runtime
 }
+
+func runtimeAfterStaleCleanup(runtime ACPSessionRuntime) ACPSessionRuntime {
+	// Host targets and daemon identities are ephemeral. Wisp names and SMH space
+	// IDs are persistent workspace identity and must survive stale-host recovery.
+	return runtimeAfterClose(runtime)
+}
+
 func isRecoverablePromptRuntimeError(err error) bool {
 	if err == nil {
 		return false
