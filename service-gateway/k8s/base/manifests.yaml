@@ -229,6 +229,8 @@ spec:
           env:
             - name: SERVICE_GATEWAY_ADDR
               value: ":8085"
+            - name: SERVICE_GATEWAY_METRICS_ADDR
+              value: ":9090"
             - name: SERVICE_GATEWAY_CONFIG_FILE
               value: /etc/service-gateway/config.yaml
             - name: SERVICE_GATEWAY_REALNAME_WALL_ENABLED
@@ -254,6 +256,8 @@ spec:
           ports:
             - name: http
               containerPort: 8085
+            - name: metrics
+              containerPort: 9090
           resources:
             requests:
               cpu: 50m
@@ -293,6 +297,9 @@ spec:
     - name: http
       port: 80
       targetPort: http
+    - name: metrics
+      port: 9090
+      targetPort: metrics
 ---
 apiVersion: v1
 kind: Service
@@ -322,4 +329,5 @@ spec:
     matchLabels:
       metrics-target: "true"
   endpoints:
-    - port: http
+    - port: metrics
+      path: /metrics
