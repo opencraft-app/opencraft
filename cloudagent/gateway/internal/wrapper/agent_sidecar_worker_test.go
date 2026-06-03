@@ -461,6 +461,27 @@ func TestStaleRuntimeCleanupAuthFailureIsNonBlockingForRecreate(t *testing.T) {
 	}
 }
 
+func TestWispPreMountCleanupAuthFailureBlocksRecreate(t *testing.T) {
+	err := errors.New(`stop wisp outer runtime agent-session_1: wisp stop failed runtime_id=rt_1 outer_sandbox_id=outer_1 wisp_name=agent-session_1: exit=0 exited=false stdout_bytes=0 stderr_bytes=0 error="ags http 401 op=run_command sandbox_id=outer_1 domain=ap-shanghai.tencentags.com envd_port=49983: map[code:AUTHENTICATION_FAILED message:Authentication failed]"`)
+	if isNonBlockingWispPreMountCleanupError(err) {
+		t.Fatalf("wisp pre-mount cleanup must not ignore auth failures because the old writer may still be live: %v", err)
+	}
+	if isNonBlockingCleanupBeforeRecreate(ACPSessionRuntime{OuterRuntime: outerRuntimeWisp}, err) {
+		t.Fatalf("wisp recreate cleanup must not use the generic stale cleanup allowlist: %v", err)
+	}
+}
+
+func TestWispPreMountCleanupMissingOrStoppedSandboxIsNonBlocking(t *testing.T) {
+	for _, err := range []error{
+		errors.New(`delete outer sandbox outer_1: ags http 404 op=delete_sandbox sandbox_id=outer_1: requested resource does not exist`),
+		errors.New(`stop wisp outer runtime agent-session_1: UnsupportedOperation.SandboxInstance in stopped state`),
+	} {
+		if !isNonBlockingWispPreMountCleanupError(err) {
+			t.Fatalf("missing/stopped old sandbox should not block wisp recreate: %v", err)
+		}
+	}
+}
+
 func TestStaleRuntimeCleanupCheckpointFailureStillBlocksRecreate(t *testing.T) {
 	err := errors.New(`stop wisp outer runtime agent-session_1: wispclient: http 500: {"error":"juicefs-smount meta-barrier /mnt/cloudagent-wisp: checkpoint cut failed: input/output error"}`)
 	if isNonBlockingStaleRuntimeCleanupError(err) {

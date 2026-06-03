@@ -3,6 +3,9 @@ package wrapper
 import (
 	"context"
 	"errors"
+	"io"
+	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -278,6 +281,46 @@ func TestWispMountLeaseVerificationRequiresCurrentFence(t *testing.T) {
 	}
 }
 
+func TestWispMountEventLogsTargetAndWorkspaceRuntime(t *testing.T) {
+	worker := &AgentSidecarWorker{}
+	output := captureTestStderr(t, func() {
+		worker.logWispMountEvent(
+			"acp_runtime_wisp_mount_start",
+			ACPSessionRuntimeStartRequest{SessionID: "session_mount_log", Generation: 3},
+			ACPSessionRuntime{
+				RuntimeID:          "workspace_runtime_mount_log",
+				WispName:           "workspace_mount_log",
+				WispSMHSpaceID:     "space_mount_log",
+				WispLeaseID:        "lease_mount_log",
+				WispLeaseFence:     12,
+				WispLeaseUntil:     time.Date(2026, 6, 3, 10, 11, 12, 0, time.UTC),
+				WorkspaceRuntimeID: "workspace_runtime_mount_log",
+			},
+			RuntimeHostTarget{ID: "sandbox_mount_log"},
+			agentWispSMHSpace{SpaceID: "space_mount_log"},
+			"inner",
+			"",
+		)
+	})
+	for _, want := range []string{
+		"event=acp_runtime_wisp_mount_start",
+		"session_id=session_mount_log",
+		"generation=3",
+		`target="inner"`,
+		"runtime_id=workspace_runtime_mount_log",
+		`workspace_runtime_id="workspace_runtime_mount_log"`,
+		"sandbox_id=sandbox_mount_log",
+		`wisp_name="workspace_mount_log"`,
+		`smh_space_id="space_mount_log"`,
+		`lease_id="lease_mount_log"`,
+		"fence=12",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("mount log missing %q in %q", want, output)
+		}
+	}
+}
+
 func TestWispLeaseReleaseRequiresConfirmedStop(t *testing.T) {
 	if shouldReleaseWispLeaseAfterClose(true, false, false, false) {
 		t.Fatal("must not release wisp lease when outer stop/checkpoint/umount was not confirmed")
@@ -291,6 +334,29 @@ func TestWispLeaseReleaseRequiresConfirmedStop(t *testing.T) {
 	if !shouldReleaseWispLeaseAfterClose(false, false, false, false) {
 		t.Fatal("non-wisp close should not be blocked by wisp stop state")
 	}
+}
+
+func captureTestStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	original := os.Stderr
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = writer
+	fn()
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = original
+	output, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := reader.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return string(output)
 }
 
 func TestStoreRuntimeOwnershipAcquireConflictReleaseAndExpire(t *testing.T) {
