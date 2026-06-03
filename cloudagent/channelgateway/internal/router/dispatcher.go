@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	"cloudagent/channelgateway/internal/acp"
@@ -14,10 +15,11 @@ import (
 )
 
 type Dispatcher struct {
-	store   SessionStore
-	account store.ChannelAccount
-	acp     ACPClient
-	cwd     string
+	store        SessionStore
+	account      store.ChannelAccount
+	acp          ACPClient
+	cwd          string
+	sessionLocks sync.Map
 }
 
 type SessionStore interface {
@@ -84,6 +86,9 @@ func (d *Dispatcher) HandleInbound(ctx context.Context, msg channel.Message) err
 		logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(msg.ExternalMessageID),
 		logValue(string(msg.ChatType)), logValue(msg.ExternalConversationID), logValue(msg.ExternalUserID),
 		logValue(msg.ThreadID), logValue(sessionKey))
+	sessionLock := d.lockForSessionKey(sessionKey)
+	sessionLock.Lock()
+	defer sessionLock.Unlock()
 	conversation, err := d.store.GetOrCreateConversation(ctx, store.Conversation{
 		ChannelAccountID:       msg.ChannelAccountID,
 		ChannelType:            string(msg.ChannelType),
@@ -132,6 +137,11 @@ func (d *Dispatcher) HandleInbound(ctx context.Context, msg channel.Message) err
 		return nil
 	}
 	return d.enqueueTextReply(ctx, msg, sessionID, replyText)
+}
+
+func (d *Dispatcher) lockForSessionKey(sessionKey string) *sync.Mutex {
+	lock, _ := d.sessionLocks.LoadOrStore(sessionKey, &sync.Mutex{})
+	return lock.(*sync.Mutex)
 }
 
 func logValue(value string) string {

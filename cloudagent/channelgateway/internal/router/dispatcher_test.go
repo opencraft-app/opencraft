@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 )
 
 type fakeACP struct {
+	mu          sync.Mutex
 	newCalls    int
 	loadCalls   int
 	promptCalls int
@@ -20,9 +22,19 @@ type fakeACP struct {
 	sessionID   string
 	reply       string
 	loadErr     error
+	newDelay    time.Duration
 }
 
-func (f *fakeACP) NewSession(context.Context, string) (string, error) {
+func (f *fakeACP) NewSession(ctx context.Context, _ string) (string, error) {
+	if f.newDelay > 0 {
+		select {
+		case <-time.After(f.newDelay):
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.newCalls++
 	if f.sessionID == "" {
 		f.sessionID = "session-a"
@@ -31,14 +43,24 @@ func (f *fakeACP) NewSession(context.Context, string) (string, error) {
 }
 
 func (f *fakeACP) LoadSession(context.Context, string, string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.loadCalls++
 	return f.loadErr
 }
 
 func (f *fakeACP) Prompt(_ context.Context, _ string, text string) (acp.PromptResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.promptCalls++
 	f.lastPrompt = text
 	return acp.PromptResult{StopReason: "end_turn", Text: f.reply}, nil
+}
+
+func (f *fakeACP) snapshot() (newCalls, loadCalls, promptCalls int, lastPrompt string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.newCalls, f.loadCalls, f.promptCalls, f.lastPrompt
 }
 
 func TestDispatcherCreatesSessionPromptsAndEnqueuesReply(t *testing.T) {
@@ -69,8 +91,9 @@ func TestDispatcherCreatesSessionPromptsAndEnqueuesReply(t *testing.T) {
 	if err := dispatcher.HandleInbound(ctx, msg); err != nil {
 		t.Fatalf("handle inbound: %v", err)
 	}
-	if client.newCalls != 1 || client.promptCalls != 1 || client.lastPrompt != "hello" {
-		t.Fatalf("unexpected acp calls: %#v", client)
+	newCalls, _, promptCalls, lastPrompt := client.snapshot()
+	if newCalls != 1 || promptCalls != 1 || lastPrompt != "hello" {
+		t.Fatalf("unexpected acp calls: new=%d prompt=%d last=%q", newCalls, promptCalls, lastPrompt)
 	}
 	items, err := st.ClaimPendingOutbox(ctx, lease, 10)
 	if err != nil {
@@ -113,8 +136,73 @@ func TestDispatcherDedupsInboundMessage(t *testing.T) {
 	if err := dispatcher.HandleInbound(ctx, msg); err != nil {
 		t.Fatalf("duplicate inbound: %v", err)
 	}
-	if client.promptCalls != 1 {
-		t.Fatalf("duplicate inbound should not prompt again: calls=%d", client.promptCalls)
+	_, _, promptCalls, _ := client.snapshot()
+	if promptCalls != 1 {
+		t.Fatalf("duplicate inbound should not prompt again: calls=%d", promptCalls)
+	}
+}
+
+func TestDispatcherSerializesSessionCreationForSameConversation(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir()+"/channelgateway.db")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+	client := &fakeACP{reply: "answer", sessionID: "session-a", newDelay: 50 * time.Millisecond}
+	dispatcher := NewDispatcher(st, store.ChannelAccount{ChannelAccountID: "wecom-a", ChannelType: "wecom", AgentID: "main"}, client, "/workspace")
+	base := channel.Message{
+		ChannelAccountID:       "wecom-a",
+		ChannelType:            channel.TypeWeCom,
+		ExternalConversationID: "chat-a",
+		ExternalUserID:         "user-a",
+		ChatType:               channel.ChatDM,
+		Kind:                   channel.MessageText,
+		Raw:                    json.RawMessage(`{"ok":true}`),
+	}
+	first := base
+	first.ExternalMessageID = "msg-a"
+	first.Text = "hello"
+	second := base
+	second.ExternalMessageID = "msg-b"
+	second.Text = "again"
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 2)
+	for _, msg := range []channel.Message{first, second} {
+		msg := msg
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs <- dispatcher.HandleInbound(ctx, msg)
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("handle inbound: %v", err)
+		}
+	}
+	newCalls, loadCalls, promptCalls, _ := client.snapshot()
+	if newCalls != 1 || loadCalls != 1 || promptCalls != 2 {
+		t.Fatalf("same conversation should create once then load: new=%d load=%d prompt=%d", newCalls, loadCalls, promptCalls)
+	}
+	sessionKey := channel.BuildSessionKey("main", first, true, false)
+	conversation, err := st.GetOrCreateConversation(ctx, store.Conversation{
+		ChannelAccountID:       "wecom-a",
+		ChannelType:            "wecom",
+		ExternalConversationID: "chat-a",
+		ExternalUserID:         "user-a",
+		ChatType:               string(channel.ChatDM),
+		AgentID:                "main",
+		SessionKey:             sessionKey,
+	})
+	if err != nil {
+		t.Fatalf("load conversation: %v", err)
+	}
+	if conversation.ACPSessionID != "session-a" {
+		t.Fatalf("unexpected bound session: %#v", conversation)
 	}
 }
 
@@ -157,7 +245,8 @@ func TestDispatcherStopsWhenExistingSessionLoadFails(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected load failure")
 	}
-	if client.promptCalls != 0 {
-		t.Fatalf("prompt must not run after load failure, got %d", client.promptCalls)
+	_, _, promptCalls, _ := client.snapshot()
+	if promptCalls != 0 {
+		t.Fatalf("prompt must not run after load failure, got %d", promptCalls)
 	}
 }
