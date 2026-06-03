@@ -54,7 +54,7 @@ stages:
               ci_require_command go
               ci_load_tencentcloud_credentials
 
-              bash -n images/build.sh images/deploy-build.sh images/helpers/config-hermes-python-mirrors.sh images/tests/test-hermes-build-script.sh images/tests/test-hermes-runtime.sh .ci/runtime/commands/refresh_hermes_sandbox_pools.sh .ci/runtime/commands/list_hermes_pool_vms.sh .ci/runtime/commands/create_hermes_tat_command.sh .ci/runtime/commands/invoke_hermes_tat_command.sh
+              bash -n images/build.sh images/deploy-build.sh images/helpers/config-hermes-python-mirrors.sh images/tests/test-hermes-build-script.sh images/tests/test-hermes-runtime.sh .ci/runtime/commands/refresh_hermes_sandbox_pools.sh .ci/runtime/commands/list_hermes_pool_vms.sh .ci/runtime/commands/create_hermes_tat_command.sh .ci/runtime/commands/invoke_hermes_tat_command.sh .ci/runtime/commands/rollout_hermes_sandbox_env.sh
               python3 -m py_compile images/build-image.py
               python3 images/tests/test-build-image-sync.py
               resolve_hermes_image_name() {
@@ -86,39 +86,41 @@ stages:
               cp .ci/.runtime-state/hermes-image.env "/tmp/lightclaw-ci/hermes-image-${BK_CI_BUILD_ID:-manual}.env"
               cat .ci/.runtime-state/hermes-image.env
 
-  - name: 确认刷新 Hermes sandbox pools
+  - name: 确认刷新并修补北京主沙箱 Hermes
     if: "${{ ci.branch }} == master"
     check-in:
       reviews:
         flows:
-          - name: 确认刷新 Hermes sandbox pools
+          - name: 确认刷新并修补北京主沙箱 Hermes
             reviewers: [ "skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang" ]
         description: |
           Hermes CVM 镜像已经构建、验证并同步到目标地域。
 
-          点击通过后，流水线会通过 sandbox-api internal API 刷新 Hermes sandbox pools：
-          - 不直连数据库，不执行 SQL
+          点击通过后，流水线会先处理北京主沙箱：
+          - 目标：beijing-sandbox / ap-beijing
+          - 通过 sandbox-api internal API 刷新 Hermes sandbox pools
           - 先更新 Hermes SKU 的 desired image，避免 rollout controller 回写旧镜像
           - 再逐个 patch Hermes pools 的 base_image，并把 CLEAN 库存标记进入重置流程
-          - 默认目标：shprod
+          - 然后通过 TAT 修补存量 VM：pip/uv mirror、systemd user 权限、backend blueprint 基线
+          - 不直连数据库，不执行 SQL
       timeout-hours: 24
     jobs:
       approve:
-        name: 等待人工确认刷新 Hermes sandbox pools
+        name: 等待人工确认刷新并修补北京主沙箱 Hermes
         runs-on:
           self-hosted: true
           pool-name: env
         steps:
-          - name: Hermes sandbox pool 刷新已确认
+          - name: 北京主沙箱 Hermes 刷新修补已确认
             shell: bash
             run: |
-              echo "Hermes sandbox pool refresh approved"
+              echo "Beijing Hermes sandbox rollout approved"
 
-  - name: 刷新 Hermes sandbox pools
+  - name: 刷新并修补北京主沙箱 Hermes
     if: "${{ ci.branch }} == master"
     jobs:
       refresh:
-        name: 通过 sandbox-api 刷新 Hermes sandbox pools
+        name: 刷新 pools 并通过 TAT 修补北京主沙箱 Hermes VM
         runs-on:
           self-hosted: true
           pool-name: env
@@ -127,7 +129,7 @@ stages:
             name: 拉取代码
             with:
               fetchDepth: 1
-          - name: 刷新 Hermes sandbox pools
+          - name: 刷新并修补北京主沙箱 Hermes
             shell: bash
             run: |
               set -euo pipefail
@@ -160,51 +162,51 @@ stages:
               elif [[ -r "$TMP_RESULT_ENV" ]]; then
                 source "$TMP_RESULT_ENV"
               fi
-              HERMES_IMAGE_NAME="${HERMES_IMAGE_NAME:-$(resolve_hermes_image_name)}"
-              if [[ -z "${HERMES_IMAGE_ID_AP_SHANGHAI:-}" ]]; then
-                echo "resolving HERMES_IMAGE_ID_AP_SHANGHAI by exact image name: ${HERMES_IMAGE_NAME}"
-                HERMES_IMAGE_ID_AP_SHANGHAI="$(python3 .ci/runtime/commands/resolve_hermes_image_id.py --region ap-shanghai --image-name "$HERMES_IMAGE_NAME")"
-              fi
-              export HERMES_IMAGE_ID_AP_SHANGHAI HERMES_IMAGE_NAME
+              export HERMES_IMAGE_NAME="${HERMES_IMAGE_NAME:-$(resolve_hermes_image_name)}"
+              HERMES_ROLLOUT_ENV_SPEC="${HERMES_BEIJING_HERMES_ROLLOUT_ENV_SPEC:-beijing-sandbox:ap-beijing:kubeconfig_beijing_sandbox}"
+              export HERMES_ROLLOUT_ENV_SPEC
               echo "HERMES_IMAGE_NAME=${HERMES_IMAGE_NAME}"
-              echo "HERMES_IMAGE_ID_AP_SHANGHAI=${HERMES_IMAGE_ID_AP_SHANGHAI}"
+              echo "HERMES_ROLLOUT_ENV_SPEC=${HERMES_ROLLOUT_ENV_SPEC}"
 
-              bash .ci/runtime/commands/refresh_hermes_sandbox_pools.sh
+              bash .ci/runtime/commands/rollout_hermes_sandbox_env.sh
 
-  - name: 确认升级存量 Hermes VM
+  - name: 确认刷新并修补上海生产 Hermes
     if: "${{ ci.branch }} == master"
     check-in:
       reviews:
         flows:
-          - name: 确认升级存量 Hermes VM
+          - name: 确认刷新并修补上海生产 Hermes
             reviewers: [ "skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang" ]
         description: |
-          Hermes sandbox pools 已刷新到新 CVM 镜像。
+          北京主沙箱已先完成 Hermes pools 刷新和存量 VM 修补。
 
-          点击通过后，流水线会对 Hermes pool 内已有 CVM 下发按区域创建的 TAT Command：
-          - 只通过 sandbox-api internal API 只读列出目标 VM
-          - 不直连数据库，不修改 pool / instance 状态
+          点击通过后，流水线会处理上海生产：
+          - 目标：shprod / ap-shanghai
+          - 通过 sandbox-api internal API 刷新 Hermes sandbox pools
+          - 先更新 Hermes SKU 的 desired image，避免 rollout controller 回写旧镜像
+          - 再逐个 patch Hermes pools 的 base_image，并把 CLEAN 库存标记进入重置流程
+          - 然后通过 TAT 修补存量 VM：pip/uv mirror、systemd user 权限、backend blueprint 基线
+          - 不直连数据库，不执行 SQL
           - 从仓库内的 mirror 修补脚本创建腾讯云 TAT Command，不需要手工传 HERMES_TAT_COMMAND_ID
-          - 只修补 agentuser 的 pip/uv mirror 配置，不执行 uv/pip 安装
           - 默认 5 台一批串行执行；批次失败后自动拆成单台重试
       timeout-hours: 24
     jobs:
       approve:
-        name: 等待人工确认升级存量 Hermes VM
+        name: 等待人工确认刷新并修补上海生产 Hermes
         runs-on:
           self-hosted: true
           pool-name: env
         steps:
-          - name: 存量 Hermes VM 升级已确认
+          - name: 上海生产 Hermes 刷新修补已确认
             shell: bash
             run: |
-              echo "Hermes existing VM upgrade approved"
+              echo "Shanghai Hermes production rollout approved"
 
-  - name: 升级存量 Hermes VM
+  - name: 刷新并修补上海生产 Hermes
     if: "${{ ci.branch }} == master"
     jobs:
       upgrade:
-        name: 通过 TAT 升级存量 Hermes VM
+        name: 刷新 pools 并通过 TAT 修补上海生产 Hermes VM
         runs-on:
           self-hosted: true
           pool-name: env
@@ -213,7 +215,7 @@ stages:
             name: 拉取代码
             with:
               fetchDepth: 1
-          - name: 升级存量 Hermes VM
+          - name: 刷新并修补上海生产 Hermes
             shell: bash
             run: |
               set -euo pipefail
@@ -226,47 +228,30 @@ stages:
               ci_require_commands bash curl jq python3
               ci_load_tencentcloud_credentials
 
-              mkdir -p .ci/.runtime-state/hermes-tat /tmp/lightclaw-ci
-              TAT_SCRIPT_FILE="${HERMES_TAT_SCRIPT_FILE:-images/helpers/config-hermes-python-mirrors.sh}"
-              [[ -r "$TAT_SCRIPT_FILE" ]] || { echo "TAT script file is not readable: ${TAT_SCRIPT_FILE}" >&2; exit 1; }
-              bash -n "$TAT_SCRIPT_FILE"
+              resolve_hermes_image_name() {
+                local raw="${BK_CI_BUILD_ID:-}"
+                local sha='${{ ci.sha }}'
+                if [[ -z "$raw" || "$raw" == *'${{'* ]]; then
+                  raw="$sha"
+                fi
+                raw="$(printf '%s' "$raw" | tr -cs 'A-Za-z0-9-' '-' | sed -e 's/^-//' -e 's/-$//' | cut -c1-36)"
+                if [[ -z "$raw" ]]; then
+                  raw="$(date +%Y%m%d%H%M%S)"
+                fi
+                printf 'hermes-agent-%s\n' "$raw"
+              }
 
-              VM_LIST=".ci/.runtime-state/hermes-tat/vms.jsonl"
-              HERMES_POOL_VM_LIST_ENVS="${HERMES_POOL_VM_LIST_ENVS:-${HERMES_SANDBOX_POOL_REFRESH_ENVS:-shprod:ap-shanghai:kubeconfig_shprod}}"
-              export HERMES_POOL_VM_LIST_ENVS
-              echo "HERMES_POOL_VM_LIST_ENVS=${HERMES_POOL_VM_LIST_ENVS}"
-              bash .ci/runtime/commands/list_hermes_pool_vms.sh > "$VM_LIST"
-              cp "$VM_LIST" "/tmp/lightclaw-ci/hermes-pool-vms-${BK_CI_BUILD_ID:-manual}.jsonl"
-              echo "Hermes VM list written to ${VM_LIST}"
-              wc -l "$VM_LIST"
-              if [[ ! -s "$VM_LIST" ]]; then
-                echo "no Hermes pool VM rows found; abort existing VM upgrade" >&2
-                exit 1
+              RESULT_ENV=".ci/.runtime-state/hermes-image.env"
+              TMP_RESULT_ENV="/tmp/lightclaw-ci/hermes-image-${BK_CI_BUILD_ID:-manual}.env"
+              if [[ -r "$RESULT_ENV" ]]; then
+                source "$RESULT_ENV"
+              elif [[ -r "$TMP_RESULT_ENV" ]]; then
+                source "$TMP_RESULT_ENV"
               fi
+              export HERMES_IMAGE_NAME="${HERMES_IMAGE_NAME:-$(resolve_hermes_image_name)}"
+              HERMES_ROLLOUT_ENV_SPEC="${HERMES_SHANGHAI_HERMES_ROLLOUT_ENV_SPEC:-shprod:ap-shanghai:kubeconfig_shprod}"
+              export HERMES_ROLLOUT_ENV_SPEC
+              echo "HERMES_IMAGE_NAME=${HERMES_IMAGE_NAME}"
+              echo "HERMES_ROLLOUT_ENV_SPEC=${HERMES_ROLLOUT_ENV_SPEC}"
 
-              REGION_MANIFEST=".ci/.runtime-state/hermes-tat/region-files.tsv"
-              python3 .ci/runtime/commands/split_hermes_pool_vms_by_region.py "$VM_LIST" ".ci/.runtime-state/hermes-tat" > "$REGION_MANIFEST"
-
-              while IFS=$'\t' read -r region region_file count; do
-                [[ -n "$region" ]] || continue
-                command_env_file=".ci/.runtime-state/hermes-tat/command-${region}.env"
-                HERMES_TAT_REGION="$region" \
-                  HERMES_TAT_SCRIPT_FILE="$TAT_SCRIPT_FILE" \
-                  HERMES_TAT_COMMAND_ENV_FILE="$command_env_file" \
-                  bash .ci/runtime/commands/create_hermes_tat_command.sh
-                # shellcheck disable=SC1090
-                source "$command_env_file"
-                [[ -n "${HERMES_TAT_COMMAND_ID:-}" ]] || { echo "failed to create Hermes TAT command for region=${region}" >&2; exit 1; }
-
-                echo "Invoking Hermes TAT command for region=${region} count=${count} command_id=${HERMES_TAT_COMMAND_ID}"
-                HERMES_TAT_REGION="$region" \
-                  HERMES_TAT_COMMAND_ID="$HERMES_TAT_COMMAND_ID" \
-                  HERMES_TAT_INPUT_FILE="$region_file" \
-                  HERMES_TAT_OUTPUT_DIR=".ci/.runtime-state/hermes-tat" \
-                  HERMES_TAT_BATCH_SIZE="${HERMES_TAT_BATCH_SIZE:-5}" \
-                  HERMES_TAT_SINGLE_ATTEMPTS="${HERMES_TAT_SINGLE_ATTEMPTS:-3}" \
-                  bash .ci/runtime/commands/invoke_hermes_tat_command.sh
-              done < "$REGION_MANIFEST"
-
-              cp -R .ci/.runtime-state/hermes-tat "/tmp/lightclaw-ci/hermes-tat-${BK_CI_BUILD_ID:-manual}"
-              find .ci/.runtime-state/hermes-tat -maxdepth 1 -type f -name '*.summary.json' -print -exec cat {} \;
+              bash .ci/runtime/commands/rollout_hermes_sandbox_env.sh
