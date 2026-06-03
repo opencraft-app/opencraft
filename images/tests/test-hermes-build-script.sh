@@ -55,6 +55,10 @@ ensure_global_bin_links() {
   log_call "ensure_global_bin_links"
 }
 
+ensure_hermes_linger() {
+  log_call "ensure_hermes_linger"
+}
+
 run_as_runtime_user() {
   log_call "run_as_runtime_user $*"
   eval "$*"
@@ -218,6 +222,11 @@ acli() {
   return 0
 }
 
+hermes() {
+  log_call "hermes $*"
+  return 0
+}
+
 id() {
   if [[ "${1:-}" == "${RUNTIME_USER}" ]]; then
     return 0
@@ -258,6 +267,7 @@ install_hermes_runtime
 configure_hermes_python_mirrors
 install_hermes_python_deps
 install_hermes_whatsapp_bridge_deps
+ensure_hermes_gateway_service
 install_hermes_extra_tools
 install_hermes_acli
 
@@ -275,6 +285,8 @@ grep -q "sudo-npm-install pnpm" "${LOG_FILE}"
 grep -q "sudo-user agentuser" "${LOG_FILE}"
 grep -q "pnpm-add-whatsapp-bridge" "${LOG_FILE}"
 grep -q "node-resolve-whatsapp-bridge" "${LOG_FILE}"
+grep -q "printf 'n\\\\n' | hermes gateway install" "${LOG_FILE}"
+grep -q "hermes gateway stop" "${LOG_FILE}"
 grep -q "curl-skillhub" "${LOG_FILE}"
 grep -q "curl-acli" "${LOG_FILE}"
 grep -q "run_as_runtime_user acli --help" "${LOG_FILE}"
