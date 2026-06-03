@@ -338,18 +338,27 @@ class ReleaseBundleContractTests(unittest.TestCase):
 
         self.assertIn("refresh_hermes_sandbox_pools.sh", workflow_text)
         self.assertIn("list_hermes_pool_vms.sh", workflow_text)
+        self.assertIn("create_hermes_tat_command.sh", workflow_text)
         self.assertIn("invoke_hermes_tat_command.sh", workflow_text)
-        self.assertIn('HERMES_TAT_COMMAND_ID is required for existing Hermes VM upgrade', workflow_text)
+        self.assertNotIn('HERMES_TAT_COMMAND_ID is required for existing Hermes VM upgrade', workflow_text)
+        self.assertIn("images/helpers/config-hermes-python-mirrors.sh", workflow_text)
+        self.assertNotIn("tccli tat DeleteCommand", workflow_text)
         self.assertIn('HERMES_TAT_BATCH_SIZE="${HERMES_TAT_BATCH_SIZE:-5}"', workflow_text)
         self.assertIn('HERMES_TAT_SINGLE_ATTEMPTS="${HERMES_TAT_SINGLE_ATTEMPTS:-3}"', workflow_text)
         self.assertIn("不直连数据库，不修改 pool / instance 状态", workflow_text)
         self.assertIn("批次失败后自动拆成单台重试", workflow_text)
 
         list_script = REPO_ROOT / ".ci/runtime/commands/list_hermes_pool_vms.sh"
+        create_script = REPO_ROOT / ".ci/runtime/commands/create_hermes_tat_command.sh"
         invoke_script = REPO_ROOT / ".ci/runtime/commands/invoke_hermes_tat_command.sh"
         self.assertTrue(list_script.exists())
+        self.assertTrue(create_script.exists())
         self.assertTrue(invoke_script.exists())
         self.assertIn("does not patch pools, update SKUs, invoke TAT, or write database rows", list_script.read_text())
+        create_script_text = create_script.read_text()
+        self.assertIn("tccli tat CreateCommand", create_script_text)
+        self.assertIn("--CommandType SHELL", create_script_text)
+        self.assertIn("--Content", create_script_text)
         self.assertIn("batches run strictly serially", invoke_script.read_text())
         self.assertIn("batch failed; retrying", invoke_script.read_text())
 

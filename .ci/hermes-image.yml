@@ -54,7 +54,7 @@ stages:
               ci_require_command go
               ci_load_tencentcloud_credentials
 
-              bash -n images/build.sh images/deploy-build.sh images/helpers/config-hermes-python-mirrors.sh images/tests/test-hermes-build-script.sh images/tests/test-hermes-runtime.sh .ci/runtime/commands/refresh_hermes_sandbox_pools.sh .ci/runtime/commands/list_hermes_pool_vms.sh .ci/runtime/commands/invoke_hermes_tat_command.sh
+              bash -n images/build.sh images/deploy-build.sh images/helpers/config-hermes-python-mirrors.sh images/tests/test-hermes-build-script.sh images/tests/test-hermes-runtime.sh .ci/runtime/commands/refresh_hermes_sandbox_pools.sh .ci/runtime/commands/list_hermes_pool_vms.sh .ci/runtime/commands/create_hermes_tat_command.sh .ci/runtime/commands/invoke_hermes_tat_command.sh
               python3 -m py_compile images/build-image.py
               python3 images/tests/test-build-image-sync.py
               resolve_hermes_image_name() {
@@ -240,10 +240,11 @@ stages:
         description: |
           Hermes sandbox pools 已刷新到新 CVM 镜像。
 
-          点击通过后，流水线会对 Hermes pool 内已有 CVM 下发预创建的 TAT Command：
+          点击通过后，流水线会对 Hermes pool 内已有 CVM 下发按区域创建的 TAT Command：
           - 只通过 sandbox-api internal API 只读列出目标 VM
           - 不直连数据库，不修改 pool / instance 状态
-          - 通过 HERMES_TAT_COMMAND_ID 指定预创建的腾讯云 TAT Command
+          - 从仓库内的 mirror 修补脚本创建腾讯云 TAT Command，不需要手工传 HERMES_TAT_COMMAND_ID
+          - 只修补 agentuser 的 pip/uv mirror 配置，不执行 uv/pip 安装
           - 默认 5 台一批串行执行；批次失败后自动拆成单台重试
       timeout-hours: 24
     jobs:
@@ -283,13 +284,11 @@ stages:
               ci_require_commands bash curl jq python3
               ci_load_tencentcloud_credentials
 
-              if [[ -z "${HERMES_TAT_COMMAND_ID:-}" ]]; then
-                echo "HERMES_TAT_COMMAND_ID is required for existing Hermes VM upgrade" >&2
-                exit 1
-              fi
-              export HERMES_TAT_COMMAND_ID
-
               mkdir -p .ci/.runtime-state/hermes-tat /tmp/lightclaw-ci
+              TAT_SCRIPT_FILE="${HERMES_TAT_SCRIPT_FILE:-images/helpers/config-hermes-python-mirrors.sh}"
+              [[ -r "$TAT_SCRIPT_FILE" ]] || { echo "TAT script file is not readable: ${TAT_SCRIPT_FILE}" >&2; exit 1; }
+              bash -n "$TAT_SCRIPT_FILE"
+
               VM_LIST=".ci/.runtime-state/hermes-tat/vms.jsonl"
               HERMES_POOL_VM_LIST_ENVS="${HERMES_POOL_VM_LIST_ENVS:-${HERMES_SANDBOX_POOL_REFRESH_ENVS:-shprod:ap-shanghai:kubeconfig_shprod}}"
               export HERMES_POOL_VM_LIST_ENVS
@@ -333,8 +332,18 @@ stages:
 
               while IFS=$'\t' read -r region region_file count; do
                 [[ -n "$region" ]] || continue
-                echo "Invoking Hermes TAT command for region=${region} count=${count}"
+                command_env_file=".ci/.runtime-state/hermes-tat/command-${region}.env"
                 HERMES_TAT_REGION="$region" \
+                  HERMES_TAT_SCRIPT_FILE="$TAT_SCRIPT_FILE" \
+                  HERMES_TAT_COMMAND_ENV_FILE="$command_env_file" \
+                  bash .ci/runtime/commands/create_hermes_tat_command.sh
+                # shellcheck disable=SC1090
+                source "$command_env_file"
+                [[ -n "${HERMES_TAT_COMMAND_ID:-}" ]] || { echo "failed to create Hermes TAT command for region=${region}" >&2; exit 1; }
+
+                echo "Invoking Hermes TAT command for region=${region} count=${count} command_id=${HERMES_TAT_COMMAND_ID}"
+                HERMES_TAT_REGION="$region" \
+                  HERMES_TAT_COMMAND_ID="$HERMES_TAT_COMMAND_ID" \
                   HERMES_TAT_INPUT_FILE="$region_file" \
                   HERMES_TAT_OUTPUT_DIR=".ci/.runtime-state/hermes-tat" \
                   HERMES_TAT_BATCH_SIZE="${HERMES_TAT_BATCH_SIZE:-5}" \

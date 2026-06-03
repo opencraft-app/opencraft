@@ -54,6 +54,7 @@ HERMES_WHATSAPP_BRIDGE_HOME="${HERMES_WHATSAPP_BRIDGE_HOME:-}"
 HERMES_PYPI_INDEX_URL="${HERMES_PYPI_INDEX_URL:-https://mirrors.tencent.com/pypi/simple}"
 HERMES_PYPI_EXTRA_INDEX_URL="${HERMES_PYPI_EXTRA_INDEX_URL:-https://mirrors.cloud.tencent.com/pypi/simple}"
 ACLI_IDENTITY_PATH="${ACLI_IDENTITY_PATH:-/etc/acli/identity.yaml}"
+HERMES_UV_CMD=""
 NODE_VERSION=""
 PNPM_VERSION=""
 PLAYWRIGHT_VERSION=""
@@ -848,6 +849,38 @@ EOF
   chown -R "${RUNTIME_USER}:${RUNTIME_USER}" "${pip_config_dir}" "${uv_config_dir}" 2>/dev/null || true
 }
 
+ensure_hermes_uv() {
+  local found_uv=""
+  log_info "ensuring uv for ${RUNTIME_USER}"
+  for found_uv in \
+    "${RUNTIME_HOME}/.hermes/bin/uv" \
+    "${RUNTIME_HOME}/.local/bin/uv" \
+    "${RUNTIME_HOME}/.cargo/bin/uv"; do
+    if [ -x "${found_uv}" ]; then
+      HERMES_UV_CMD="${found_uv}"
+      run_as_runtime_user "'${HERMES_UV_CMD}' --version"
+      return 0
+    fi
+  done
+
+  found_uv="$(run_as_runtime_user "export HOME='${RUNTIME_HOME}'; export PATH='${RUNTIME_HOME}/.local/bin:${RUNTIME_HOME}/.cargo/bin:'\"\$PATH\"; command -v uv 2>/dev/null || true")"
+  if [ -n "${found_uv}" ]; then
+    HERMES_UV_CMD="${found_uv}"
+    run_as_runtime_user "'${HERMES_UV_CMD}' --version"
+    return 0
+  fi
+
+  run_as_runtime_user "export HOME='${RUNTIME_HOME}'; export XDG_CONFIG_HOME='${RUNTIME_HOME}/.config'; python3 -m pip install --user --break-system-packages --index-url '${HERMES_PYPI_INDEX_URL}' --extra-index-url '${HERMES_PYPI_EXTRA_INDEX_URL}' uv"
+  if [ -x "${RUNTIME_HOME}/.local/bin/uv" ]; then
+    HERMES_UV_CMD="${RUNTIME_HOME}/.local/bin/uv"
+  else
+    found_uv="$(run_as_runtime_user "export HOME='${RUNTIME_HOME}'; export PATH='${RUNTIME_HOME}/.local/bin:${RUNTIME_HOME}/.cargo/bin:'\"\$PATH\"; command -v uv 2>/dev/null || true")"
+    HERMES_UV_CMD="${found_uv}"
+  fi
+  [ -n "${HERMES_UV_CMD}" ] || { log_error "uv is still missing after install"; return 1; }
+  run_as_runtime_user "'${HERMES_UV_CMD}' --version"
+}
+
 install_hermes_extra_tools() {
   local skillhub_url_escaped=""
   log_info "installing hermes extra tools"
@@ -911,6 +944,7 @@ EOF
 
 install_hermes_python_deps() {
   local hermes_python="${RUNTIME_HOME}/.hermes/hermes-agent/venv/bin/python"
+  local hermes_uv_escaped=""
 
   log_info "installing Hermes Python integration deps"
   if [ ! -x "${hermes_python}" ]; then
@@ -918,7 +952,9 @@ install_hermes_python_deps() {
     return 1
   fi
 
-  run_as_runtime_user "export HOME='${RUNTIME_HOME}'; export XDG_CONFIG_HOME='${RUNTIME_HOME}/.config'; export PATH='${RUNTIME_HOME}/.local/bin:${RUNTIME_HOME}/.cargo/bin:'\"\$PATH\"; uv pip install --index-url '${HERMES_PYPI_INDEX_URL}' --extra-index-url '${HERMES_PYPI_EXTRA_INDEX_URL}' --python '${hermes_python}' lark-oapi==1.5.3 qrcode==7.4.2"
+  ensure_hermes_uv
+  printf -v hermes_uv_escaped '%q' "${HERMES_UV_CMD}"
+  run_as_runtime_user "export HOME='${RUNTIME_HOME}'; export XDG_CONFIG_HOME='${RUNTIME_HOME}/.config'; ${hermes_uv_escaped} pip install --index-url '${HERMES_PYPI_INDEX_URL}' --extra-index-url '${HERMES_PYPI_EXTRA_INDEX_URL}' --python '${hermes_python}' lark-oapi==1.5.3 qrcode==7.4.2"
   run_as_runtime_user "'${hermes_python}' -c 'import lark_oapi, qrcode; print(\"hermes-python-deps-ok\")'"
 }
 
