@@ -100,6 +100,7 @@ stages:
             shell: bash
             env:
               TCR_BEIJING_PASSWORD: ${{ settings.TCR_BEIJING_PASSWORD }}
+              TCR_KR1_PASSWORD: ${{ settings.TCR_KR1_PASSWORD }}
               TCR_SHPROD_PASSWORD: ${{ settings.TCR_SHPROD_PASSWORD }}
               TCR_SGPROD_PASSWORD: ${{ settings.TCR_SGPROD_PASSWORD }}
             run: |
@@ -137,7 +138,7 @@ stages:
                   BUILD_ENVS="${{ parameters.MASTER_BUILD_ENVS }}"
                   AUTO_PIN_ENVS="${{ parameters.MASTER_AUTO_PIN_ENVS }}"
                   ;;
-                playground/sandbox-bj-*)
+                playground/sandbox-bj-*|playground/sandbox-kr-*)
                   PLAYGROUND_ENV="${{ ci.branch }}"
                   PLAYGROUND_ENV="${PLAYGROUND_ENV#playground/}"
                   BUILD_ENVS="$(resolve_playground_envs "${{ parameters.PLAYGROUND_BUILD_ENVS }}" "$PLAYGROUND_ENV")"
@@ -157,6 +158,7 @@ stages:
             env:
               GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}
               TCR_BEIJING_PASSWORD: ${{ settings.TCR_BEIJING_PASSWORD }}
+              TCR_KR1_PASSWORD: ${{ settings.TCR_KR1_PASSWORD }}
               TCR_SHPROD_PASSWORD: ${{ settings.TCR_SHPROD_PASSWORD }}
               TCR_SGPROD_PASSWORD: ${{ settings.TCR_SGPROD_PASSWORD }}
             run: |
@@ -192,7 +194,7 @@ stages:
                   BUILD_ENVS="${{ parameters.MASTER_BUILD_ENVS }}"
                   AUTO_PIN_ENVS="${{ parameters.MASTER_AUTO_PIN_ENVS }}"
                   ;;
-                playground/sandbox-bj-*)
+                playground/sandbox-bj-*|playground/sandbox-kr-*)
                   PLAYGROUND_ENV="${{ ci.branch }}"
                   PLAYGROUND_ENV="${PLAYGROUND_ENV#playground/}"
                   BUILD_ENVS="$(resolve_playground_envs "${{ parameters.PLAYGROUND_BUILD_ENVS }}" "$PLAYGROUND_ENV")"

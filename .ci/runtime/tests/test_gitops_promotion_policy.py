@@ -35,6 +35,17 @@ class PromotionPolicyTests(unittest.TestCase):
         self.assertTrue(policy.auto_sync)
         self.assertTrue(policy.cleanup_source_branch)
 
+    def test_korea_playground_branch_uses_auto_merge_convergence_policy(self) -> None:
+        policy = promotion_policy.policy_for_branch("promote-sandbox-kr-1-service-gateway-abc123")
+
+        self.assertIsNotNone(policy)
+        self.assertEqual(policy.env, "sandbox-kr-1")
+        self.assertEqual(policy.branch_prefix, "promote-sandbox-kr-1-")
+        self.assertEqual(policy.display_name, "韩国 Playground sandbox-kr-1")
+        self.assertEqual(policy.kustomize_mode.value, "changed_only")
+        self.assertTrue(policy.auto_merge)
+        self.assertTrue(policy.auto_sync)
+
     def test_shprod_policy_is_merge_only_changed_only_and_keeps_branch(self) -> None:
         policy = promotion_policy.policy_for_branch("promote-shprod-lightclaw-auth-abc123")
 

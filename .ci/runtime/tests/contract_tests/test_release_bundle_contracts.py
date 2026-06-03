@@ -19,6 +19,7 @@ from contracts.release_bundle_manifest import dump_manifest, merge_bundle_source
 
 SANDBOX_ENV = "beijing-sandbox-2"
 PLAYGROUND_ENV = "sandbox-bj-7"
+KOREA_PLAYGROUND_ENV = "sandbox-kr-1"
 AUTO_RELEASE_WORKFLOWS = {
     "admin-gateway": (".ci/admin-gateway.yml", "beijing-sandbox,shprod,sgprod", "admin-gateway"),
     "ai-gateway": (".ci/ai-gateway.yml", "beijing-sandbox,shprod,sgprod", "ai-gateway"),
@@ -96,6 +97,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 workflow_entry = yaml.safe_load((REPO_ROOT / workflow_path).read_text())
                 self.assertEqual((workflow_entry.get("extends") or {}).get("template"), "service-release.yml")
                 self.assertIn("playground/sandbox-bj-*", (REPO_ROOT / workflow_path).read_text())
+                self.assertIn("playground/sandbox-kr-*", (REPO_ROOT / workflow_path).read_text())
                 self.assert_release_entry_targets(
                     workflow_entry,
                     expected_service=bundle_name,
@@ -122,6 +124,19 @@ class ReleaseBundleContractTests(unittest.TestCase):
         )
         self.assertIn(f"argocd/secrets/{PLAYGROUND_ENV}/ai-gateway-runtime-secrets.sops.yaml", bundle.publish_paths)
         self.assertNotIn("argocd/catalogs/sandbox/beijing-sandbox-2/ai-gateway.yaml", bundle.publish_paths)
+
+    def test_korea_playground_env_uses_kr_registry_and_seoul_catalog_root(self) -> None:
+        manifest = load_manifest()
+
+        bundle = require_build_metadata(load_bundle(manifest, "ai-gateway", KOREA_PLAYGROUND_ENV))
+
+        self.assertEqual(bundle.image_repo, "lightclaw-kr1.tencentcloudcr.com/lightclaw/ai-gateway")
+        self.assertIn(f"argocd/services/ai-gateway/{KOREA_PLAYGROUND_ENV}/**", bundle.publish_paths)
+        self.assertIn(
+            f"argocd/catalogs/playground/seoul-playground/{KOREA_PLAYGROUND_ENV}/ai-gateway.yaml",
+            bundle.publish_paths,
+        )
+        self.assertIn(f"argocd/secrets/{KOREA_PLAYGROUND_ENV}/ai-gateway-runtime-secrets.sops.yaml", bundle.publish_paths)
 
     def test_sandbox2_catalogs_are_promotable_or_explicitly_exempt(self) -> None:
         manifest = load_manifest()
@@ -191,11 +206,15 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(bundle.image_repo, "lightclaw-bj8.tencentcloudcr.com/lightclaw/frontend")
         self.assertIn(f"argocd/services/frontend/{PLAYGROUND_ENV}/**", bundle.publish_paths)
 
+        korea_bundle = require_build_metadata(load_bundle(manifest, "frontend", KOREA_PLAYGROUND_ENV))
+        self.assertEqual(korea_bundle.image_repo, "lightclaw-kr1.tencentcloudcr.com/lightclaw/frontend")
+
     def test_frontend_workflow_supports_playground_branch_release(self) -> None:
         workflow_text = (REPO_ROOT / ".ci/frontend.yml").read_text()
         workflow = yaml.safe_load(workflow_text)
 
         self.assertIn("playground/sandbox-bj-*", workflow_text)
+        self.assertIn("playground/sandbox-kr-*", workflow_text)
         self.assertIn('PLAYGROUND_ENV="${{ ci.branch }}"', workflow_text)
         self.assertIn('PLAYGROUND_ENV="${PLAYGROUND_ENV#playground/}"', workflow_text)
         self.assertIn('BUILD_ENVS="$(resolve_playground_envs "auto" "$PLAYGROUND_ENV")"', workflow_text)
@@ -827,6 +846,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         required_by_env = {
             "beijing-sandbox": "TCR_BEIJING_PASSWORD",
             "beijing-sandbox-2": "TCR_BEIJING_PASSWORD",
+            "sandbox-kr-1": "TCR_KR1_PASSWORD",
             "shprod": "TCR_SHPROD_PASSWORD",
             "sgprod": "TCR_SGPROD_PASSWORD",
         }

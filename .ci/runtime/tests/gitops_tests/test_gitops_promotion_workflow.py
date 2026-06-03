@@ -63,6 +63,15 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
         self.assertEqual(policy.verify_mode.value, "argo_convergence")
         self.assertTrue(policy.auto_merge)
 
+    def test_korea_playground_promote_branches_use_same_auto_policy(self) -> None:
+        policy = policy_for_branch("promote-sandbox-kr-1-service-gateway-tag")
+
+        self.assertIsNotNone(policy)
+        self.assertEqual(policy.env, "sandbox-kr-1")
+        self.assertEqual(policy.display_name, "韩国 Playground sandbox-kr-1")
+        self.assertEqual(policy.kustomize_args, ["--changed-only"])
+        self.assertTrue(policy.auto_merge)
+
     def test_promotion_workflow_uses_shared_bootstrap_helper(self) -> None:
         workflow = (REPO_ROOT / ".ci/gitops-promotion.yml").read_text()
         helper = (REPO_ROOT / ".ci/runtime/gitops_promotion_bootstrap.sh").read_text()
@@ -70,6 +79,7 @@ class GitOpsPromotionWorkflowTests(unittest.TestCase):
         self.assertIn("promote-beijing-sandbox-*", workflow)
         self.assertIn("promote-beijing-sandbox-2-*", workflow)
         self.assertIn("promote-sandbox-bj-*", workflow)
+        self.assertIn("promote-sandbox-kr-*", workflow)
         self.assertNotIn("- promote-*", workflow)
         self.assertNotIn("promote-shprod-*", workflow)
         self.assertNotIn("promote-sgprod-*", workflow)

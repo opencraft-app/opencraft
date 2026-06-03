@@ -15,11 +15,11 @@ from typing import Any
 
 import yaml
 
+from contracts.bundles import playground_catalog_root
 from support.yaml import load_mapping
 
 
 CATALOG_DIR_TEMPLATE = "argocd/catalogs/sandbox/{env}"
-PLAYGROUND_CATALOG_DIR_TEMPLATE = "argocd/catalogs/playground/beijing-playground/{env}"
 SUPPORTED_SANDBOX_ENVS = {"beijing-sandbox", "beijing-sandbox-2"}
 SUPPORTED_DIRECT_APP_ENVS = {"shprod", "sgprod", "tkexgz", "tkexsg"}
 PLACEHOLDER_RE = re.compile(r"\bREPLACE_[A-Z0-9_]+\b")
@@ -75,12 +75,12 @@ def load_catalog_targets(repo_root: Path, env: str, service_names: set[str] | No
 
 
 def is_playground_env(env: str) -> bool:
-    return re.fullmatch(r"sandbox-bj-\d+", env) is not None
+    return re.fullmatch(r"sandbox-(bj|kr)-\d+", env) is not None
 
 
 def catalog_dir_for_env(env: str) -> str:
     if is_playground_env(env):
-        return PLAYGROUND_CATALOG_DIR_TEMPLATE.format(env=env)
+        return f"{playground_catalog_root(env)}/{env}"
     return CATALOG_DIR_TEMPLATE.format(env=env)
 
 
