@@ -11,11 +11,11 @@
  * - 列表（带空态 + 加载态 + 失败 toast）
  * - 创建（截图三态频率：周期 / 按间隔 / 单次）
  * - 暂停 / 恢复 / 删除
- * - 占位字段（工作空间 / 生效日期区间 / 推送 WorkBuddy）按截图渲染但 disabled
+ * - 生效日期区间通过 Hermes 官方 pre-run script gate 实现：区间外返回 wakeAgent=false
  */
 
-import { AlertTriangle, ChevronDown, CircleHelp, Clock, Eye, LayoutTemplate, Loader2, Pause, Pencil, Play, Plus, Trash2, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AlertTriangle, ChevronDown, CircleHelp, Clock, Eraser, Eye, LayoutTemplate, Loader2, Pause, Pencil, Play, Plus, Trash2, X } from "lucide-react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { parseHermesChannelList } from "@tencent/tea-sdk-lightclaw";
 import { useT } from "@/i18n/t";
@@ -28,11 +28,14 @@ import {
 import {
   CronCommandError,
   createCronJob,
+  createEffectiveWindowScriptName,
   editCronJob,
   listCronJobs,
   pauseCronJob,
+  writeEffectiveWindowScript,
   removeCronJob,
   resumeCronJob,
+  type CronEffectiveWindow,
   type CronJob,
 } from "@/lib/hermes-cron-client";
 
@@ -43,6 +46,7 @@ const PANEL_CARD_STYLE: React.CSSProperties = {
 };
 const MAX_CRON_JOBS_PER_BOT = 20;
 const MODAL_CONTROL_TEXT_STYLE: React.CSSProperties = { fontSize: 16, lineHeight: "24px" };
+const MODAL_COMPACT_CONTROL_TEXT_STYLE: React.CSSProperties = { fontSize: 14, lineHeight: "20px" };
 const MODAL_HELP_TEXT_STYLE: React.CSSProperties = { fontSize: 13, lineHeight: "20px" };
 const EXPIRED_CRON_JOB_HIDE_AFTER_MS = 10 * 60 * 1000;
 
@@ -65,6 +69,68 @@ function ErrorToast({ message, onClose }: { message: string; onClose: () => void
       </div>
     </div>,
     document.body,
+  );
+}
+
+function EffectiveWindowTooltip({ message }: { message: string }) {
+  const tooltipId = useId();
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState({ left: 0, top: 0 });
+
+  const updatePosition = useCallback(() => {
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+    const rect = trigger.getBoundingClientRect();
+    setPosition({
+      left: rect.left + rect.width / 2,
+      top: rect.top - 8,
+    });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    updatePosition();
+  }, [open, updatePosition]);
+
+  useEffect(() => {
+    if (!open) return;
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [open, updatePosition]);
+
+  return (
+    <span className="group relative inline-flex">
+      <button
+        ref={triggerRef}
+        type="button"
+        className="inline-flex h-4 w-4 items-center justify-center rounded-full text-black/35 transition hover:text-black/55 focus:outline-none focus-visible:ring-2 focus-visible:ring-black/15"
+        aria-label={message}
+        aria-describedby={open ? tooltipId : undefined}
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+      >
+        <CircleHelp className="h-3.5 w-3.5" aria-hidden="true" />
+      </button>
+      {open && createPortal(
+        <span
+          id={tooltipId}
+          className="pointer-events-none fixed z-[260] w-[280px] max-w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-full rounded-md border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium leading-relaxed text-[var(--text-primary)] opacity-100 shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition-opacity duration-150"
+          style={{ left: position.left, top: position.top }}
+          role="tooltip"
+        >
+          {message}
+          <span className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-[var(--border-subtle)] bg-white" />
+        </span>,
+        document.body,
+      )}
+    </span>
   );
 }
 
@@ -367,6 +433,7 @@ function CronJobCard({
   const t = useT();
   const paused = isCronJobPaused(job);
   const expired = isCronJobExpired(job);
+  const effectiveStatus = getEffectiveWindowStatus(job.effective_window);
   const fullName = job.name || t("未命名任务");
   const scheduleLabel = formatScheduleFriendly(job, t);
   return (
@@ -381,8 +448,23 @@ function CronJobCard({
             {fullName}
           </span>
         </div>
-        {(expired || paused) && (
+        {(expired || paused || effectiveStatus !== "always") && (
           <div className="flex shrink-0 items-center gap-1">
+            {effectiveStatus === "pending" && (
+              <span className="rounded-full bg-[#EEF4FF] px-2 py-0.5 text-xs text-[#3156A3]">
+                {t("未开始")}
+              </span>
+            )}
+            {effectiveStatus === "active" && (
+              <span className="rounded-full bg-[#ECFDF3] px-2 py-0.5 text-xs text-[#287A3E]">
+                {t("生效中")}
+              </span>
+            )}
+            {effectiveStatus === "ended" && (
+              <span className="rounded-full bg-black/[0.08] px-2 py-0.5 text-xs text-black/60">
+                {t("已过生效期")}
+              </span>
+            )}
             {expired && (
               <span className="rounded-full bg-black/[0.08] px-2 py-0.5 text-xs text-black/60">
                 {t("已过期")}
@@ -604,6 +686,7 @@ function CronJobDetailModal({ job, onClose }: { job: CronJob; onClose: () => voi
         <dl className="space-y-3 text-sm" style={{ marginTop: 16 }}>
           <DetailRow label={t("任务说明")} value={job.prompt || "—"} pre />
           <DetailRow label={t("执行时间")} value={formatScheduleFriendly(job, t)} />
+          <DetailRow label={t("生效时间段")} value={formatEffectiveWindow(job.effective_window, t)} />
           {job.next_run_at && <DetailRow label={t("下次执行")} value={formatTime(job.next_run_at)} />}
           {job.last_run_at && (
             <DetailRow
@@ -923,6 +1006,80 @@ function formatLastStatus(status: string | null, t: ReturnType<typeof useT>): st
   return status || "";
 }
 
+type EffectiveWindowStatus = "always" | "pending" | "active" | "ended";
+
+export function normalizeEffectiveWindowInput(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  const isoMatch = /^(\d{4}-\d{2}-\d{2})[ tT](\d{2}:\d{2})/.exec(trimmed);
+  if (isoMatch) return `${isoMatch[1]}T${isoMatch[2]}`;
+  return trimmed;
+}
+
+export function buildEffectiveWindowFromInputs(
+  startAt: string,
+  endAt: string,
+): CronEffectiveWindow | null {
+  const start = normalizeEffectiveWindowInput(startAt);
+  const end = normalizeEffectiveWindowInput(endAt);
+  if (!start && !end) return null;
+  return {
+    start_at: start || null,
+    end_at: end || null,
+  };
+}
+
+export function isEffectiveWindowRangeInvalid(window: CronEffectiveWindow): boolean {
+  if (!window.start_at || !window.end_at) return false;
+  const start = parseCronDate(window.start_at).getTime();
+  const end = parseCronDate(window.end_at).getTime();
+  if (Number.isNaN(start) || Number.isNaN(end)) return false;
+  return end < start;
+}
+
+function areEffectiveWindowsEqual(
+  a: CronEffectiveWindow | null,
+  b: CronEffectiveWindow | null,
+): boolean {
+  return (a?.start_at ?? null) === (b?.start_at ?? null)
+    && (a?.end_at ?? null) === (b?.end_at ?? null);
+}
+
+function isLightVelaEffectiveWindowScriptName(script: string): boolean {
+  return /^lightvela-effective-window-[a-z0-9-]+\.py$/.test(script);
+}
+
+export function getEffectiveWindowStatus(window: CronEffectiveWindow | null, now = Date.now()): EffectiveWindowStatus {
+  if (!window?.start_at && !window?.end_at) return "always";
+  const start = window.start_at ? parseCronDate(window.start_at).getTime() : Number.NaN;
+  const end = window.end_at ? parseCronDate(window.end_at).getTime() : Number.NaN;
+  if (!Number.isNaN(start) && now < start) return "pending";
+  if (!Number.isNaN(end) && now > end) return "ended";
+  return "active";
+}
+
+function formatEffectiveWindow(
+  window: CronEffectiveWindow | null,
+  t: ReturnType<typeof useT>,
+): string {
+  if (!window?.start_at && !window?.end_at) return t("始终生效");
+  const start = window.start_at ? formatEffectiveWindowDate(window.start_at) : t("不限开始时间");
+  const end = window.end_at ? formatEffectiveWindowDate(window.end_at) : t("不限结束时间");
+  const status = getEffectiveWindowStatus(window);
+  const statusLabel = status === "pending"
+    ? t("未开始")
+    : status === "ended"
+      ? t("已过生效期")
+      : t("生效中");
+  return `${start} - ${end} · ${statusLabel}`;
+}
+
+function formatEffectiveWindowDate(value: string): string {
+  const d = parseCronDate(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
 /* ─── Form Modal ─── */
 
 type FrequencyKind = "recurring" | "interval" | "once";
@@ -1118,6 +1275,9 @@ function AutomationFormModal({
   const [deliverPlatforms, setDeliverPlatforms] = useState<string[]>(initialDeliver.platforms);
   /** 每个 platform 的可选 chat_id：填了 → 拼 `<platform>:<id>` 直送；留空 → 走 home */
   const [deliverChatIds, setDeliverChatIds] = useState<Record<string, string>>(initialDeliver.chatIds);
+  const [effectiveStartAt, setEffectiveStartAt] = useState(() => normalizeEffectiveWindowInput(initialJob?.effective_window?.start_at ?? ""));
+  const [effectiveEndAt, setEffectiveEndAt] = useState(() => normalizeEffectiveWindowInput(initialJob?.effective_window?.end_at ?? ""));
+  const canEditEffectiveWindow = !initialJob?.script || isLightVelaEffectiveWindowScriptName(initialJob.script);
   /** 已配置的 channel key 集合（weixin/qqbot/feishu/...）；null = 还没拉 */
   const [enabledChannels, setEnabledChannels] = useState<Set<string> | null>(null);
 
@@ -1181,6 +1341,11 @@ function AutomationFormModal({
 
   const handleSubmit = useCallback(async () => {
     if (!canSubmit) return;
+    const effectiveWindow = buildEffectiveWindowFromInputs(effectiveStartAt, effectiveEndAt);
+    if (effectiveWindow && isEffectiveWindowRangeInvalid(effectiveWindow)) {
+      onError(t("生效结束时间不能早于开始时间"));
+      return;
+    }
     // 单次任务必须晚于当前时间；编辑已过期单次任务但未改时间时不阻断其它字段保存。
     if (shouldRejectPastOnceSchedule({
       mode,
@@ -1199,11 +1364,18 @@ function AutomationFormModal({
     try {
       const deliver = buildDeliverString(deliverPlatforms, deliverChatIds);
       if (mode === "create") {
+        const script = effectiveWindow
+          ? createEffectiveWindowScriptName(`${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
+          : undefined;
+        if (script && effectiveWindow) {
+          await writeEffectiveWindowScript(botId, script, effectiveWindow);
+        }
         await createCronJob(botId, {
           name: name.trim(),
           prompt: prompt.trim(),
           schedule,
           deliver,
+          script,
         });
       } else if (initialJob) {
         const patch: Parameters<typeof editCronJob>[2] = {};
@@ -1213,6 +1385,21 @@ function AutomationFormModal({
         if (nextPrompt !== (initialJob.prompt ?? "")) patch.prompt = nextPrompt;
         if (!scheduleUneditable && scheduleChanged) patch.schedule = schedule;
         if (deliver !== (initialJob.deliver || "")) patch.deliver = deliver;
+        if (canEditEffectiveWindow) {
+          const originalWindow = initialJob.effective_window;
+          const windowChanged = !areEffectiveWindowsEqual(effectiveWindow, originalWindow);
+          if (windowChanged) {
+            if (effectiveWindow) {
+              const script = isLightVelaEffectiveWindowScriptName(initialJob.script)
+                ? initialJob.script
+                : createEffectiveWindowScriptName(initialJob.id);
+              await writeEffectiveWindowScript(botId, script, effectiveWindow);
+              patch.script = script;
+            } else if (isLightVelaEffectiveWindowScriptName(initialJob.script)) {
+              patch.script = "";
+            }
+          }
+        }
         if (Object.keys(patch).length > 0) {
           await editCronJob(botId, initialJob.id, patch);
         }
@@ -1228,7 +1415,7 @@ function AutomationFormModal({
     } finally {
       setSubmitting(false);
     }
-  }, [botId, canSubmit, mode, initialJob, name, prompt, schedule, scheduleUneditable, originalSchedule, kind, onceDate, initial, scheduleChanged, deliverPlatforms, deliverChatIds, onSaved, onError, t]);
+  }, [botId, canSubmit, mode, initialJob, name, prompt, schedule, scheduleUneditable, originalSchedule, kind, onceDate, initial, scheduleChanged, deliverPlatforms, deliverChatIds, effectiveStartAt, effectiveEndAt, canEditEffectiveWindow, onSaved, onError, t]);
 
   return createPortal(
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 px-4 py-3" role="dialog" aria-modal="true">
@@ -1325,6 +1512,58 @@ function AutomationFormModal({
             className="mt-1.5 w-full resize-none rounded-lg border border-black/10 bg-white px-3 py-2 text-base placeholder:text-base placeholder:text-black/35 focus:border-black/30 focus:outline-none"
             style={{ ...MODAL_CONTROL_TEXT_STYLE, marginTop: 6 }}
           />
+        </div>
+
+        {/* 生效时间段 */}
+        <div className="mt-4">
+          <div className="flex items-center gap-1.5">
+            <label className="block text-sm font-medium text-black/80">{t("生效时间段")}</label>
+            <EffectiveWindowTooltip
+              message={canEditEffectiveWindow
+                ? t("超出该时间段时，任务仍保留在列表中，但不会唤醒 Agent 执行。")
+                : t("当前任务使用了自定义 pre-run 脚本，暂不支持在这里修改生效时间段。")}
+            />
+            <span className="text-xs font-normal text-black/40">{t("（可选，留空代表一直生效）")}</span>
+          </div>
+          <div className="mt-1.5 grid grid-cols-1 gap-y-2 sm:grid-cols-[minmax(0,11.25rem)_1.25rem_minmax(0,11.25rem)_auto] sm:items-center sm:gap-x-0">
+            <input
+              type="datetime-local"
+              value={effectiveStartAt}
+              onChange={(e) => setEffectiveStartAt(e.target.value)}
+              disabled={!canEditEffectiveWindow}
+              style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
+              className="min-w-0 rounded-lg border border-black/10 bg-white px-3 py-2 text-sm focus:border-black/30 focus:outline-none disabled:cursor-not-allowed disabled:bg-black/[0.03] disabled:text-black/35 sm:w-full"
+              aria-label={t("生效开始时间")}
+            />
+            <span className="hidden text-center text-sm text-black/35 sm:block">—</span>
+            <input
+              type="datetime-local"
+              value={effectiveEndAt}
+              onChange={(e) => setEffectiveEndAt(e.target.value)}
+              disabled={!canEditEffectiveWindow}
+              style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
+              className="min-w-0 rounded-lg border border-black/10 bg-white px-3 py-2 text-sm focus:border-black/30 focus:outline-none disabled:cursor-not-allowed disabled:bg-black/[0.03] disabled:text-black/35 sm:w-full"
+              aria-label={t("生效结束时间")}
+            />
+            <span className="group relative -ml-1 inline-flex h-10 w-8 items-center justify-center">
+              <button
+                type="button"
+                onClick={() => {
+                  setEffectiveStartAt("");
+                  setEffectiveEndAt("");
+                }}
+                disabled={!canEditEffectiveWindow || (!effectiveStartAt && !effectiveEndAt)}
+                className="inline-flex h-10 w-8 items-center justify-center text-black/50 transition hover:text-black/80 disabled:cursor-not-allowed disabled:opacity-35"
+                aria-label={t("清空")}
+              >
+                <Eraser className="h-4 w-4" />
+              </button>
+              <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium text-[var(--text-primary)] opacity-0 shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100">
+                {t("清空")}
+                <span className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-[var(--border-subtle)] bg-white" />
+              </span>
+            </span>
+          </div>
         </div>
 
         {/* 通知方式（多选；不勾任何 = 仅本地写日志） */}
@@ -1517,8 +1756,8 @@ function RecurringPicker({
         <select
           value={period}
           onChange={(e) => onPeriod(e.target.value as RecurringPeriod)}
-          style={MODAL_CONTROL_TEXT_STYLE}
-          className="w-full appearance-none rounded-lg border border-black/10 bg-white px-3 py-2 pr-10 text-base focus:border-black/30 focus:outline-none"
+          style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
+          className="w-full appearance-none rounded-lg border border-black/10 bg-white px-3 py-2 pr-10 text-sm focus:border-black/30 focus:outline-none"
         >
           <option value="daily">{t("每天")}</option>
           <option value="weekly">{t("每周")}</option>
@@ -1531,8 +1770,8 @@ function RecurringPicker({
           <button
             type="button"
             onClick={() => setWeekdayPickerOpen((open) => !open)}
-            style={MODAL_CONTROL_TEXT_STYLE}
-            className="flex min-h-[42px] w-full items-center gap-1.5 rounded-lg border border-black/10 bg-white px-2.5 py-1.5 pr-9 text-left text-base focus:border-black/30 focus:outline-none"
+            style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
+            className="flex min-h-[42px] w-full items-center gap-1.5 rounded-lg border border-black/10 bg-white px-2.5 py-1.5 pr-9 text-left text-sm focus:border-black/30 focus:outline-none"
             aria-haspopup="listbox"
             aria-expanded={weekdayPickerOpen}
           >
@@ -1592,8 +1831,8 @@ function RecurringPicker({
           <select
             value={monthday}
             onChange={(e) => onMonthday(Number(e.target.value))}
-            style={MODAL_CONTROL_TEXT_STYLE}
-            className="w-full appearance-none rounded-lg border border-black/10 bg-white px-3 py-2 pr-10 text-base focus:border-black/30 focus:outline-none"
+            style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
+            className="w-full appearance-none rounded-lg border border-black/10 bg-white px-3 py-2 pr-10 text-sm focus:border-black/30 focus:outline-none"
           >
             {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
               <option key={d} value={d}>{t("{{n}} 日", { n: d })}</option>
@@ -1606,8 +1845,8 @@ function RecurringPicker({
         type="time"
         value={time}
         onChange={(e) => onTime(e.target.value)}
-        style={MODAL_CONTROL_TEXT_STYLE}
-        className="rounded-lg border border-black/10 bg-white px-3 py-2 text-base focus:border-black/30 focus:outline-none"
+        style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
+        className="rounded-lg border border-black/10 bg-white px-3 py-2 text-sm focus:border-black/30 focus:outline-none"
       />
     </div>
   );
@@ -1633,15 +1872,15 @@ function IntervalPicker({
         min={1}
         value={num}
         onChange={(e) => onNum(Math.max(1, Number(e.target.value) || 1))}
-        style={MODAL_CONTROL_TEXT_STYLE}
-        className="w-20 rounded-lg border border-black/10 bg-white px-3 py-2 text-base focus:border-black/30 focus:outline-none"
+        style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
+        className="w-20 rounded-lg border border-black/10 bg-white px-3 py-2 text-sm focus:border-black/30 focus:outline-none"
       />
       <div className="relative w-[124px]">
         <select
           value={unit}
           onChange={(e) => onUnit(e.target.value as "m" | "h" | "d")}
-          style={MODAL_CONTROL_TEXT_STYLE}
-          className="w-full appearance-none rounded-lg border border-black/10 bg-white px-3 py-2 pr-10 text-base focus:border-black/30 focus:outline-none"
+          style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
+          className="w-full appearance-none rounded-lg border border-black/10 bg-white px-3 py-2 pr-10 text-sm focus:border-black/30 focus:outline-none"
         >
           <option value="m">{t("分钟")}</option>
           <option value="h">{t("小时")}</option>
