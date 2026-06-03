@@ -382,6 +382,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("batches run strictly serially", invoke_script.read_text())
         self.assertIn("batch failed; retrying", invoke_script.read_text())
         self.assertIn("Refresh then repair one Hermes sandbox environment", rollout_script_text)
+        self.assertIn(">&2", rollout_script_text)
         self.assertIn("resolve_hermes_image_id.py", rollout_script_text)
         repair_script_text = repair_script.read_text()
         self.assertIn('"$config_dir/systemd/user"', repair_script_text)
