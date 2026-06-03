@@ -331,6 +331,108 @@ func TestProtocolE2EWeComSendErrorLeavesOutboxPendingForRetry(t *testing.T) {
 	_ = <-startErr
 }
 
+func TestProtocolE2ETwoWeComAccountsUseSeparateSocketsAndOutboxes(t *testing.T) {
+	acpA := newFakeACPServer(t, "session-a", "reply-a")
+	defer acpA.Close()
+	acpB := newFakeACPServer(t, "session-b", "reply-b")
+	defer acpB.Close()
+	st, err := store.Open(context.Background(), t.TempDir()+"/channelgateway.db")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+	leaseA, err := st.AcquireChannelLease(context.Background(), "wecom-a", "owner-a", time.Minute)
+	if err != nil {
+		t.Fatalf("acquire lease a: %v", err)
+	}
+	leaseB, err := st.AcquireChannelLease(context.Background(), "wecom-b", "owner-b", time.Minute)
+	if err != nil {
+		t.Fatalf("acquire lease b: %v", err)
+	}
+	readyA := make(chan struct{})
+	readyB := make(chan struct{})
+	replyA := make(chan struct{})
+	replyB := make(chan struct{})
+	serverA := newRouterWeComServer(t, func(t *testing.T, conn *websocket.Conn) {
+		expectRouterSubscribeWith(t, conn, "bot-a", "secret-a")
+		close(readyA)
+		writeRouterJSON(t, conn, map[string]any{
+			"cmd":     "aibot_msg_callback",
+			"headers": map[string]any{"req_id": "callback-a"},
+			"body": map[string]any{
+				"msgid":   "msg-a",
+				"chatid":  "chat-a",
+				"msgtype": "text",
+				"from":    map[string]any{"userid": "user-a"},
+				"text":    map[string]any{"content": "ping"},
+			},
+		})
+		frame := readRouterFrame(t, conn)
+		body := decodeRouterBody(t, frame)
+		stream := body["stream"].(map[string]any)
+		if frame.Headers.ReqID != "callback-a" || stream["content"] != "reply-a" {
+			t.Fatalf("account a got wrong reply frame=%#v body=%#v", frame, body)
+		}
+		writeRouterJSON(t, conn, map[string]any{"headers": map[string]any{"req_id": "callback-a"}, "errcode": 0})
+		close(replyA)
+	})
+	defer serverA.Close()
+	serverB := newRouterWeComServer(t, func(t *testing.T, conn *websocket.Conn) {
+		expectRouterSubscribeWith(t, conn, "bot-b", "secret-b")
+		close(readyB)
+		writeRouterJSON(t, conn, map[string]any{
+			"cmd":     "aibot_msg_callback",
+			"headers": map[string]any{"req_id": "callback-b"},
+			"body": map[string]any{
+				"msgid":   "msg-b",
+				"chatid":  "chat-b",
+				"msgtype": "text",
+				"from":    map[string]any{"userid": "user-b"},
+				"text":    map[string]any{"content": "ping"},
+			},
+		})
+		frame := readRouterFrame(t, conn)
+		body := decodeRouterBody(t, frame)
+		stream := body["stream"].(map[string]any)
+		if frame.Headers.ReqID != "callback-b" || stream["content"] != "reply-b" {
+			t.Fatalf("account b got wrong reply frame=%#v body=%#v", frame, body)
+		}
+		writeRouterJSON(t, conn, map[string]any{"headers": map[string]any{"req_id": "callback-b"}, "errcode": 0})
+		close(replyB)
+	})
+	defer serverB.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	clientA := acp.NewClient("ws"+acpA.URL[len("http"):], nil)
+	defer clientA.Close()
+	if err := clientA.Initialize(ctx); err != nil {
+		t.Fatalf("initialize acp a: %v", err)
+	}
+	clientB := acp.NewClient("ws"+acpB.URL[len("http"):], nil)
+	defer clientB.Close()
+	if err := clientB.Initialize(ctx); err != nil {
+		t.Fatalf("initialize acp b: %v", err)
+	}
+	adapterA := wecom.NewAdapter(wecom.Config{AccountID: "wecom-a", BotID: "bot-a", Secret: "secret-a", WebSocketURL: "ws" + serverA.URL[len("http"):]})
+	adapterB := wecom.NewAdapter(wecom.Config{AccountID: "wecom-b", BotID: "bot-b", Secret: "secret-b", WebSocketURL: "ws" + serverB.URL[len("http"):]})
+	dispatcherA := NewDispatcher(st, store.ChannelAccount{ChannelAccountID: "wecom-a", ChannelType: "wecom", AgentID: "main-a"}, clientA, "/workspace")
+	dispatcherB := NewDispatcher(st, store.ChannelAccount{ChannelAccountID: "wecom-b", ChannelType: "wecom", AgentID: "main-b"}, clientB, "/workspace")
+	startErrA := make(chan error, 1)
+	startErrB := make(chan error, 1)
+	go func() { startErrA <- adapterA.Start(ctx, dispatcherA) }()
+	go func() { startErrB <- adapterB.Start(ctx, dispatcherB) }()
+	waitRouterClosed(t, readyA, "wecom a subscribe")
+	waitRouterClosed(t, readyB, "wecom b subscribe")
+	drainUntil(t, ctx, st, leaseA, adapterA, 1)
+	drainUntil(t, ctx, st, leaseB, adapterB, 1)
+	waitRouterClosed(t, replyA, "account a reply")
+	waitRouterClosed(t, replyB, "account b reply")
+	cancel()
+	_ = <-startErrA
+	_ = <-startErrB
+}
+
 type noopInboundHandler struct{}
 
 func (noopInboundHandler) HandleInbound(context.Context, channel.Message) error {
@@ -516,12 +618,17 @@ type routerWeComFrame struct {
 
 func expectRouterSubscribe(t *testing.T, conn *websocket.Conn) {
 	t.Helper()
+	expectRouterSubscribeWith(t, conn, "bot", "secret")
+}
+
+func expectRouterSubscribeWith(t *testing.T, conn *websocket.Conn, botID, secret string) {
+	t.Helper()
 	frame := readRouterFrame(t, conn)
 	if frame.Cmd != "aibot_subscribe" {
 		t.Fatalf("expected subscribe frame, got %#v", frame)
 	}
 	body := decodeRouterBody(t, frame)
-	if body["bot_id"] != "bot" || body["secret"] != "secret" {
+	if body["bot_id"] != botID || body["secret"] != secret {
 		t.Fatalf("unexpected subscribe body: %#v", body)
 	}
 	writeRouterJSON(t, conn, map[string]any{"headers": map[string]any{"req_id": frame.Headers.ReqID}, "errcode": 0})

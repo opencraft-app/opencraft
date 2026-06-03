@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -79,6 +80,55 @@ func TestStoreMigrationAccountLeaseAndOutbox(t *testing.T) {
 	}
 	if len(claimed) != 0 {
 		t.Fatalf("sent outbox should not be claimed: %#v", claimed)
+	}
+}
+
+func TestNormalizeDriverAndDSNSupportsMySQL(t *testing.T) {
+	driver, dsn, err := normalizeDriverAndDSN("", "root:pass@tcp(9.135.107.6:3306)/channelgateway")
+	if err != nil {
+		t.Fatalf("normalize tcp dsn: %v", err)
+	}
+	if driver != dialectMySQL || !strings.Contains(dsn, "parseTime=true") {
+		t.Fatalf("unexpected normalized mysql dsn: driver=%s dsn=%s", driver, dsn)
+	}
+	driver, dsn, err = normalizeDriverAndDSN("mysql", "mysql://root:pass@9.135.107.6:3306/channelgateway?charset=utf8mb4")
+	if err != nil {
+		t.Fatalf("normalize mysql url: %v", err)
+	}
+	if driver != dialectMySQL || !strings.HasPrefix(dsn, "root:pass@tcp(9.135.107.6:3306)/channelgateway?") || !strings.Contains(dsn, "charset=utf8mb4") || !strings.Contains(dsn, "parseTime=true") {
+		t.Fatalf("unexpected normalized mysql url: driver=%s dsn=%s", driver, dsn)
+	}
+}
+
+func TestSplitSQLStatementsForMySQLMigrations(t *testing.T) {
+	statements := splitSQLStatements("CREATE TABLE a (id INT); \n CREATE TABLE b (id INT);")
+	if len(statements) != 2 || !strings.HasPrefix(statements[0], "CREATE TABLE a") || !strings.HasPrefix(statements[1], "CREATE TABLE b") {
+		t.Fatalf("unexpected statements: %#v", statements)
+	}
+}
+
+func TestListActiveChannelAccountsFiltersByTypeAndStatus(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(ctx, t.TempDir()+"/channelgateway.db")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+	for _, account := range []ChannelAccount{
+		{ChannelAccountID: "wecom-a", ChannelType: "wecom", AgentID: "agent-a", ConfigJSON: "{}", Status: "active"},
+		{ChannelAccountID: "wecom-b", ChannelType: "wecom", AgentID: "agent-b", ConfigJSON: "{}", Status: "disabled"},
+		{ChannelAccountID: "other-a", ChannelType: "other", AgentID: "agent-c", ConfigJSON: "{}", Status: "active"},
+	} {
+		if err := st.UpsertChannelAccount(ctx, account); err != nil {
+			t.Fatalf("upsert account %s: %v", account.ChannelAccountID, err)
+		}
+	}
+	accounts, err := st.ListActiveChannelAccounts(ctx, "wecom")
+	if err != nil {
+		t.Fatalf("list active accounts: %v", err)
+	}
+	if len(accounts) != 1 || accounts[0].ChannelAccountID != "wecom-a" {
+		t.Fatalf("unexpected accounts: %#v", accounts)
 	}
 }
 
