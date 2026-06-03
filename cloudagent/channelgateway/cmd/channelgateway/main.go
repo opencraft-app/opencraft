@@ -48,9 +48,24 @@ func run() error {
 		_ = httpSrv.Shutdown(shutdownCtx)
 	}()
 
-	log.Printf("channelgateway starting channel supervisors; health addr=%s db=%s seeded_wecom_accounts=%d", cfg.ListenAddr, cfg.DBPath, len(cfg.EnabledWeComAccounts()))
+	log.Printf("channelgateway starting channel supervisors; health addr=%s db_driver=%s db_target=%s seeded_wecom_accounts=%d", cfg.ListenAddr, cfg.DBDriver, redactDBTarget(cfg.DBPath), len(cfg.EnabledWeComAccounts()))
 	supervisor := newWeComSupervisor(cfg, st, runtimeStates)
 	return supervisor.Start(ctx)
+}
+
+func redactDBTarget(raw string) string {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return ""
+	}
+	if parsed, err := url.Parse(value); err == nil && parsed.Scheme != "" && parsed.User != nil {
+		parsed.User = url.UserPassword(parsed.User.Username(), "xxxxx")
+		return parsed.String()
+	}
+	if at := strings.Index(value, "@"); at > 0 {
+		return "xxxxx@" + value[at+1:]
+	}
+	return value
 }
 
 func startHTTPServer(addr string, cfg config.Config, runtimeStates *channelRuntimeStates) *http.Server {
