@@ -352,20 +352,26 @@ class ReleaseBundleContractTests(unittest.TestCase):
         create_script = REPO_ROOT / ".ci/runtime/commands/create_hermes_tat_command.sh"
         invoke_script = REPO_ROOT / ".ci/runtime/commands/invoke_hermes_tat_command.sh"
         repair_script = REPO_ROOT / "images/helpers/config-hermes-python-mirrors.sh"
+        blueprint_id_file = REPO_ROOT / "images/hermes-backend-blueprint-id"
         self.assertTrue(list_script.exists())
         self.assertTrue(create_script.exists())
         self.assertTrue(invoke_script.exists())
+        self.assertTrue(blueprint_id_file.exists())
+        self.assertEqual(blueprint_id_file.read_text().strip(), "lhbp-8gsotw6u")
         self.assertIn("does not patch pools, update SKUs, invoke TAT, or write database rows", list_script.read_text())
         create_script_text = create_script.read_text()
         self.assertIn("tccli tat CreateCommand", create_script_text)
         self.assertIn("--CommandType SHELL", create_script_text)
         self.assertIn("--Content", create_script_text)
+        self.assertIn("images/hermes-backend-blueprint-id", create_script_text)
+        self.assertIn("export HERMES_BACKEND_BLUEPRINT_ID", create_script_text)
         self.assertIn("batches run strictly serially", invoke_script.read_text())
         self.assertIn("batch failed; retrying", invoke_script.read_text())
         repair_script_text = repair_script.read_text()
         self.assertIn('"$config_dir/systemd/user"', repair_script_text)
         self.assertIn('chown "$user:$user" "$config_dir"', repair_script_text)
         self.assertIn('chmod 0700 "$config_dir"', repair_script_text)
+        self.assertIn("acli backend upgrade-start --blueprint-id", repair_script_text)
 
     def test_frontend_preview_uses_master_runtime(self) -> None:
         workflow_text = (REPO_ROOT / ".ci/frontend-preview.yml").read_text()

@@ -47,6 +47,7 @@ HERMES_VERSION=""
 HERMES_SRC_VERSION=""
 HERMES_GIT_COMMIT=""
 HERMES_ACLI_INSTALL_URL=""
+HERMES_BACKEND_BLUEPRINT_ID="${HERMES_BACKEND_BLUEPRINT_ID:-}"
 HERMES_SYSTEM_BIN_DIR="${HERMES_SYSTEM_BIN_DIR:-/usr/local/bin}"
 HERMES_SYSTEM_LINK_DIR="${HERMES_SYSTEM_LINK_DIR:-/usr/bin}"
 HERMES_WHATSAPP_BRIDGE_USER="${HERMES_WHATSAPP_BRIDGE_USER:-}"
@@ -80,6 +81,7 @@ ARG_HERMES_VERSION="${ARG_HERMES_VERSION:-}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || pwd)"
 MANIFEST_PATH="${SCRIPT_DIR}/build-manifest.json"
+HERMES_BACKEND_BLUEPRINT_ID_FILE="${HERMES_BACKEND_BLUEPRINT_ID_FILE:-${SCRIPT_DIR}/hermes-backend-blueprint-id}"
 ENVD_BINARY="/usr/local/bin/envd"
 ENVD_SERVICE="envd.service"
 ENVD_LISTEN_PORT="${ENVD_LISTEN_PORT:-49983}"
@@ -1182,6 +1184,31 @@ install_hermes_acli() {
   ensure_global_bin_links
 }
 
+load_hermes_backend_blueprint_id() {
+  local blueprint_id="${HERMES_BACKEND_BLUEPRINT_ID:-}"
+  if [ -z "${blueprint_id}" ]; then
+    if [ ! -r "${HERMES_BACKEND_BLUEPRINT_ID_FILE}" ]; then
+      log_error "Hermes backend blueprint id file not found: ${HERMES_BACKEND_BLUEPRINT_ID_FILE}"
+      return 1
+    fi
+    blueprint_id="$(tr -d '[:space:]' < "${HERMES_BACKEND_BLUEPRINT_ID_FILE}")"
+  fi
+  if [[ ! "${blueprint_id}" =~ ^lhbp-[A-Za-z0-9_-]+$ ]]; then
+    log_error "invalid Hermes backend blueprint id: ${blueprint_id:-<empty>}"
+    return 1
+  fi
+  HERMES_BACKEND_BLUEPRINT_ID="${blueprint_id}"
+}
+
+upgrade_hermes_backend_blueprint() {
+  local blueprint_id_escaped=""
+
+  load_hermes_backend_blueprint_id
+  printf -v blueprint_id_escaped '%q' "${HERMES_BACKEND_BLUEPRINT_ID}"
+  log_info "upgrading Hermes backend blueprint as ${RUNTIME_USER}: ${HERMES_BACKEND_BLUEPRINT_ID}"
+  run_as_runtime_user "acli backend upgrade-start --blueprint-id ${blueprint_id_escaped} --wait=true"
+}
+
 install_envd_agent() {
   local binary_path="${ENVD_LOCAL_BINARY}"
   local max_attempts=15
@@ -1642,6 +1669,7 @@ build_app_layer() {
     ensure_hermes_gateway_service
     install_hermes_extra_tools
     install_hermes_acli
+    upgrade_hermes_backend_blueprint
   else
     install_openclaw
     install_all_plugins

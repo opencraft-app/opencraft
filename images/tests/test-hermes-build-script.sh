@@ -27,12 +27,14 @@ HERMES_SRC_VERSION=""
 HERMES_GIT_COMMIT=""
 HERMES_QWEN_CODE_VERSION="latest"
 HERMES_ACLI_INSTALL_URL="https://example.com/acli/install.sh"
+HERMES_BACKEND_BLUEPRINT_ID_FILE="${TMPDIR}/hermes-backend-blueprint-id"
 SKILLHUB_INSTALL_URL="https://example.com/skillhub.sh"
 HERMES_ENV_PROFILE_PATH="${TMPDIR}/etc/profile.d/hermes-env.sh"
 HERMES_SYSTEM_BIN_DIR="${TMPDIR}/usr-local-bin"
 HERMES_SYSTEM_LINK_DIR="${TMPDIR}/usr-bin"
 ACLI_IDENTITY_PATH="${TMPDIR}/etc/acli/identity.yaml"
 export ACLI_IDENTITY_PATH
+printf 'lhbp-8gsotw6u\n' >"${HERMES_BACKEND_BLUEPRINT_ID_FILE}"
 
 LOG_FILE="${TMPDIR}/calls.log"
 PROFILE_FILE="${HERMES_ENV_PROFILE_PATH}"
@@ -270,6 +272,7 @@ install_hermes_whatsapp_bridge_deps
 ensure_hermes_gateway_service
 install_hermes_extra_tools
 install_hermes_acli
+upgrade_hermes_backend_blueprint
 
 grep -q "curl-hermes-latest" "${LOG_FILE}"
 grep -q "curl-hermes-tarball" "${LOG_FILE}"
@@ -296,6 +299,7 @@ grep -q "curl-skillhub" "${LOG_FILE}"
 grep -q "curl-acli" "${LOG_FILE}"
 grep -q "run_as_runtime_user acli --help" "${LOG_FILE}"
 grep -q "acli doctor" "${LOG_FILE}"
+grep -q "acli backend upgrade-start --blueprint-id lhbp-8gsotw6u --wait=true" "${LOG_FILE}"
 grep -q '\$HOME/.hermes/hermes-agent/venv/bin' "${PROFILE_FILE}"
 grep -q '\$HOME/.local/bin:\$PATH' "${PROFILE_FILE}"
 grep -q '^YUANBAO_ALLOW_ALL_USERS=true$' "${HOME}/.hermes/.env"

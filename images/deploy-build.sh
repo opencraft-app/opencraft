@@ -111,6 +111,7 @@ HELPERS_DIR="${SCRIPT_DIR}/helpers"
 LIB_DIR="${SCRIPT_DIR}/lib"
 BUILD_SCRIPT="${SCRIPT_DIR}/build.sh"
 BUILD_MANIFEST="${SCRIPT_DIR}/build-manifest.json"
+HERMES_BACKEND_BLUEPRINT_ID_FILE="${SCRIPT_DIR}/hermes-backend-blueprint-id"
 RUNNER_SCRIPT="${SCRIPT_DIR}/remote-build-runner.sh"
 BUILD_AGENT_SCRIPT="${HELPERS_DIR}/build-envd-agent.sh"
 AGENT_BINARY="${SCRIPT_DIR}/bin/envd"
@@ -237,6 +238,11 @@ if [ ! -f "${BUILD_MANIFEST}" ]; then
   exit 1
 fi
 
+if [ ! -f "${HERMES_BACKEND_BLUEPRINT_ID_FILE}" ]; then
+  log_error "Hermes backend blueprint id file not found: ${HERMES_BACKEND_BLUEPRINT_ID_FILE}"
+  exit 1
+fi
+
 if [ ! -f "${RUNNER_SCRIPT}" ]; then
   log_error "remote-build-runner.sh not found: ${RUNNER_SCRIPT}"
   exit 1
@@ -262,14 +268,15 @@ sshlib_ensure_ready
 
 log_info "ensuring remote directory exists: ${REMOTE_DIR}"
 if [ "${SSHLIB_REMOTE_USER:-}" = "root" ]; then
-  sshlib_run_raw_retry_transport_safe "mkdir -p '${REMOTE_DIR}/bin' '${REMOTE_DIR}/runtime'"
+  sshlib_run_raw_retry_transport_safe "mkdir -p '${REMOTE_DIR}/bin' '${REMOTE_DIR}/helpers' '${REMOTE_DIR}/runtime'"
 else
-  sshlib_run_raw_retry_transport_safe "sudo mkdir -p '${REMOTE_DIR}/bin' '${REMOTE_DIR}/runtime'"
+  sshlib_run_raw_retry_transport_safe "sudo mkdir -p '${REMOTE_DIR}/bin' '${REMOTE_DIR}/helpers' '${REMOTE_DIR}/runtime'"
 fi
 
 log_info "uploading build assets"
 upload_file_via_ssh "${BUILD_SCRIPT}" "${REMOTE_DIR}/build.sh"
 upload_file_via_ssh "${BUILD_MANIFEST}" "${REMOTE_DIR}/build-manifest.json"
+upload_file_via_ssh "${HERMES_BACKEND_BLUEPRINT_ID_FILE}" "${REMOTE_DIR}/hermes-backend-blueprint-id"
 upload_file_via_ssh "${RUNNER_SCRIPT}" "${REMOTE_DIR}/remote-build-runner.sh"
 upload_file_via_ssh "${AGENT_BINARY}" "${REMOTE_DIR}/bin/envd"
 upload_file_via_ssh "${WEIXIN_PROTOCOL_SCRIPT}" "${REMOTE_DIR}/runtime/openclaw-weixin-login-session.sh"
