@@ -4,6 +4,7 @@ set -euo pipefail
 
 REGION="${HERMES_TAT_REGION:-ap-shanghai}"
 SCRIPT_FILE="${HERMES_TAT_SCRIPT_FILE:-images/helpers/config-hermes-python-mirrors.sh}"
+BLUEPRINT_ID_FILE="${HERMES_BACKEND_BLUEPRINT_ID_FILE:-images/hermes-backend-blueprint-id}"
 OUTPUT_ENV_FILE="${HERMES_TAT_COMMAND_ENV_FILE:-}"
 COMMAND_NAME_PREFIX="${HERMES_TAT_COMMAND_NAME_PREFIX:-hermes-existing-vm-upgrade}"
 COMMAND_TIMEOUT="${HERMES_TAT_COMMAND_TIMEOUT:-600}"
@@ -24,6 +25,8 @@ Environment:
       Default: ap-shanghai.
   HERMES_TAT_SCRIPT_FILE
       Default: images/helpers/config-hermes-python-mirrors.sh.
+  HERMES_BACKEND_BLUEPRINT_ID_FILE
+      File containing the Hermes backend blueprint id. Default: images/hermes-backend-blueprint-id.
   HERMES_TAT_COMMAND_ENV_FILE
       Optional path to write shell exports for the created command.
   HERMES_TAT_COMMAND_NAME_PREFIX
@@ -56,6 +59,7 @@ require_cmd() {
 }
 
 [[ -r "$SCRIPT_FILE" ]] || fail "script file is not readable: $SCRIPT_FILE"
+[[ -r "$BLUEPRINT_ID_FILE" ]] || fail "Hermes backend blueprint id file is not readable: $BLUEPRINT_ID_FILE"
 [[ "$COMMAND_TIMEOUT" =~ ^[0-9]+$ && "$COMMAND_TIMEOUT" -gt 0 ]] || fail "HERMES_TAT_COMMAND_TIMEOUT must be a positive integer"
 
 require_cmd base64
@@ -64,12 +68,21 @@ require_cmd python3
 require_cmd tccli
 
 bash -n "$SCRIPT_FILE"
+blueprint_id="$(tr -d '[:space:]' < "$BLUEPRINT_ID_FILE")"
+[[ "$blueprint_id" =~ ^lhbp-[A-Za-z0-9_-]+$ ]] || fail "invalid Hermes backend blueprint id: ${blueprint_id:-<empty>}"
+printf -v blueprint_id_quoted '%q' "$blueprint_id"
 
 stamp="$(date +%Y%m%d%H%M%S)"
 command_name="${COMMAND_NAME_PREFIX}-${REGION}-${stamp}"
-content_b64="$(base64 <"$SCRIPT_FILE" | tr -d '\n')"
+content_b64="$(
+  {
+    printf '#!/usr/bin/env bash\n'
+    printf 'export HERMES_BACKEND_BLUEPRINT_ID=%s\n' "$blueprint_id_quoted"
+    sed '1{/^#!/d;}' "$SCRIPT_FILE"
+  } | base64 | tr -d '\n'
+)"
 
-log "creating TAT command region=${REGION} name=${command_name} script=${SCRIPT_FILE}"
+log "creating TAT command region=${REGION} name=${command_name} script=${SCRIPT_FILE} blueprint=${blueprint_id}"
 response="$(
   tccli tat CreateCommand \
     --region "$REGION" \
