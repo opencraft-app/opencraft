@@ -209,22 +209,48 @@ func (c *Client) handleNotification(raw json.RawMessage) error {
 	var params struct {
 		SessionID string `json:"sessionId"`
 		Update    struct {
-			SessionUpdate string `json:"sessionUpdate"`
-			Content       struct {
-				Text string `json:"text"`
-			} `json:"content"`
+			SessionUpdate string          `json:"sessionUpdate"`
+			Content       json.RawMessage `json:"content"`
 		} `json:"update"`
 	}
 	if err := json.Unmarshal(env.Params, &params); err != nil {
 		return err
 	}
-	if params.Update.SessionUpdate != "agent_message_chunk" || params.Update.Content.Text == "" {
+	text := acpContentText(params.Update.Content)
+	if params.Update.SessionUpdate != "agent_message_chunk" || text == "" {
 		return nil
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.current != nil && c.current.sessionID == params.SessionID {
-		_, _ = c.current.text.WriteString(params.Update.Content.Text)
+		_, _ = c.current.text.WriteString(text)
 	}
 	return nil
+}
+
+func acpContentText(raw json.RawMessage) string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return ""
+	}
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		return text
+	}
+	var part struct {
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(raw, &part); err == nil {
+		return part.Text
+	}
+	var parts []struct {
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(raw, &parts); err == nil {
+		var b strings.Builder
+		for _, p := range parts {
+			b.WriteString(p.Text)
+		}
+		return b.String()
+	}
+	return ""
 }
