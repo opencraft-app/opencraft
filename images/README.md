@@ -122,6 +122,7 @@ CI 入口：
 存量 Hermes 机器修复：
 
 - `images/helpers/config-hermes-python-mirrors.sh` 可通过 TAT/debug exec 下发到存量机器，只修复 `agentuser` 的 pip/uv mirror 配置，不安装依赖
+- TAT 建议用 root/default 身份执行；脚本内部通过 `LIGHTCLAW_RUNTIME_USER`（默认 `agentuser`）定位目标用户 home 并修正文件属主
 
 ### Full Build
 
