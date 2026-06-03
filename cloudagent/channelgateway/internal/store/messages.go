@@ -33,12 +33,21 @@ func (s *Store) insertMessage(ctx context.Context, rec MessageRecord) (bool, err
 	now := nowText()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	result, err := s.db.ExecContext(ctx, `
+	query := `
 INSERT OR IGNORE INTO channel_messages (
 	message_id, channel_account_id, channel_type, external_message_id,
 	external_conversation_id, acp_session_id, direction, status, payload_json,
 	created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	if s.dialect == dialectMySQL {
+		query = `
+INSERT IGNORE INTO channel_messages (
+	message_id, channel_account_id, channel_type, external_message_id,
+	external_conversation_id, acp_session_id, direction, status, payload_json,
+	created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	}
+	result, err := s.db.ExecContext(ctx, query,
 		rec.MessageID, rec.ChannelAccountID, rec.ChannelType, rec.ExternalMessageID,
 		rec.ExternalConversationID, rec.ACPSessionID, rec.Direction, rec.Status,
 		rec.PayloadJSON, now, now)

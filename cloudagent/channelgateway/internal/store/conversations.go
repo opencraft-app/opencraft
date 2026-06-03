@@ -19,7 +19,7 @@ func (s *Store) GetOrCreateConversation(ctx context.Context, conv Conversation) 
 	now := nowText()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_, err := s.db.ExecContext(ctx, `
+	query := `
 INSERT INTO channel_conversations (
 	conversation_id, channel_account_id, channel_type, external_conversation_id,
 	external_user_id, external_thread_id, chat_type, agent_id, acp_session_id, session_key, created_at, updated_at
@@ -31,7 +31,23 @@ ON CONFLICT(channel_account_id, session_key) DO UPDATE SET
 	chat_type = excluded.chat_type,
 	agent_id = excluded.agent_id,
 	updated_at = excluded.updated_at,
-	deleted_at = NULL`,
+	deleted_at = NULL`
+	if s.dialect == dialectMySQL {
+		query = `
+INSERT INTO channel_conversations (
+	conversation_id, channel_account_id, channel_type, external_conversation_id,
+	external_user_id, external_thread_id, chat_type, agent_id, acp_session_id, session_key, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON DUPLICATE KEY UPDATE
+	external_conversation_id = VALUES(external_conversation_id),
+	external_user_id = VALUES(external_user_id),
+	external_thread_id = VALUES(external_thread_id),
+	chat_type = VALUES(chat_type),
+	agent_id = VALUES(agent_id),
+	updated_at = VALUES(updated_at),
+	deleted_at = NULL`
+	}
+	_, err := s.db.ExecContext(ctx, query,
 		conv.ConversationID, conv.ChannelAccountID, conv.ChannelType, conv.ExternalConversationID,
 		conv.ExternalUserID, conv.ThreadID, conv.ChatType, conv.AgentID, conv.ACPSessionID, conv.SessionKey, now, now)
 	if err != nil {

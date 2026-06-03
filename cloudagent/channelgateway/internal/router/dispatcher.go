@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"strings"
 	"time"
 
@@ -71,12 +72,18 @@ func (d *Dispatcher) HandleInbound(ctx context.Context, msg channel.Message) err
 		return err
 	}
 	if !inserted {
+		log.Printf("channelgateway session_trace account_id=%s agent_id=%s message_id=%s action=dedup_skip",
+			logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(msg.ExternalMessageID))
 		return nil
 	}
 	if msg.Kind != channel.MessageText || strings.TrimSpace(msg.Text) == "" {
 		return d.enqueueTextReply(ctx, msg, "", "暂时只支持文本消息。")
 	}
 	sessionKey := channel.BuildSessionKey(d.account.AgentID, msg, true, false)
+	log.Printf("channelgateway session_trace account_id=%s agent_id=%s message_id=%s chat_type=%s external_conversation_id=%s external_user_id=%s thread_id=%s session_key=%s action=lookup",
+		logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(msg.ExternalMessageID),
+		logValue(string(msg.ChatType)), logValue(msg.ExternalConversationID), logValue(msg.ExternalUserID),
+		logValue(msg.ThreadID), logValue(sessionKey))
 	conversation, err := d.store.GetOrCreateConversation(ctx, store.Conversation{
 		ChannelAccountID:       msg.ChannelAccountID,
 		ChannelType:            string(msg.ChannelType),
@@ -92,6 +99,8 @@ func (d *Dispatcher) HandleInbound(ctx context.Context, msg channel.Message) err
 	}
 	sessionID := conversation.ACPSessionID
 	if sessionID == "" {
+		log.Printf("channelgateway session_trace account_id=%s agent_id=%s conversation_id=%s session_key=%s action=session_new reason=missing_acp_session",
+			logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(conversation.ConversationID), logValue(conversation.SessionKey))
 		sessionID, err = d.acp.NewSession(ctx, d.cwd)
 		if err != nil {
 			return err
@@ -100,7 +109,13 @@ func (d *Dispatcher) HandleInbound(ctx context.Context, msg channel.Message) err
 			return err
 		}
 		conversation.ACPSessionID = sessionID
+		log.Printf("channelgateway session_trace account_id=%s agent_id=%s conversation_id=%s session_key=%s acp_session_id=%s action=session_bound",
+			logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(conversation.ConversationID),
+			logValue(conversation.SessionKey), logValue(sessionID))
 	} else {
+		log.Printf("channelgateway session_trace account_id=%s agent_id=%s conversation_id=%s session_key=%s acp_session_id=%s action=session_load",
+			logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(conversation.ConversationID),
+			logValue(conversation.SessionKey), logValue(sessionID))
 		if err := d.acp.LoadSession(ctx, sessionID, d.cwd); err != nil {
 			return err
 		}
@@ -117,6 +132,17 @@ func (d *Dispatcher) HandleInbound(ctx context.Context, msg channel.Message) err
 		return nil
 	}
 	return d.enqueueTextReply(ctx, msg, sessionID, replyText)
+}
+
+func logValue(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "-"
+	}
+	if len(value) > 160 {
+		return value[:160] + "...[truncated]"
+	}
+	return value
 }
 
 func (d *Dispatcher) enqueueTextReply(ctx context.Context, msg channel.Message, sessionID, text string) error {

@@ -33,6 +33,9 @@ func (s *Store) AcquireChannelLease(ctx context.Context, channelAccountID, owner
 	if ttl <= 0 {
 		ttl = 90 * time.Second
 	}
+	if s.dialect == dialectMySQL {
+		return s.acquireChannelLeaseMySQL(ctx, channelAccountID, ownerID, ttl)
+	}
 	now := time.Now().UTC()
 	expires := now.Add(ttl)
 	s.mu.Lock()
@@ -77,6 +80,80 @@ WHERE channel_leases.state <> 'active'
 	if !ok {
 		return ChannelLease{}, fmt.Errorf("channel lease %s was not stored", channelAccountID)
 	}
+	return lease, nil
+}
+
+func (s *Store) acquireChannelLeaseMySQL(ctx context.Context, channelAccountID, ownerID string, ttl time.Duration) (ChannelLease, error) {
+	now := time.Now().UTC()
+	expires := now.Add(ttl)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	if err != nil {
+		return ChannelLease{}, err
+	}
+	defer func() {
+		if tx != nil {
+			_ = tx.Rollback()
+		}
+	}()
+	var existing struct {
+		OwnerID      string
+		FencingToken int64
+		State        string
+		ExpiresAt    string
+	}
+	err = tx.QueryRowContext(ctx, `
+SELECT owner_id, fencing_token, state, expires_at
+FROM channel_leases
+WHERE channel_account_id = ?
+FOR UPDATE`, channelAccountID).Scan(&existing.OwnerID, &existing.FencingToken, &existing.State, &existing.ExpiresAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		_, err = tx.ExecContext(ctx, `
+INSERT INTO channel_leases (
+	channel_account_id, owner_id, fencing_token, state, expires_at, heartbeat_at, created_at, updated_at
+) VALUES (?, ?, 1, 'active', ?, ?, ?, ?)`,
+			channelAccountID, ownerID, expires.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano),
+			now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano))
+		if err != nil {
+			return ChannelLease{}, err
+		}
+		lease := ChannelLease{ChannelAccountID: channelAccountID, OwnerID: ownerID, FencingToken: 1, ExpiresAt: expires}
+		if err := tx.Commit(); err != nil {
+			return ChannelLease{}, err
+		}
+		tx = nil
+		return lease, nil
+	}
+	if err != nil {
+		return ChannelLease{}, err
+	}
+	existingExpires, err := parseTime(existing.ExpiresAt)
+	if err != nil {
+		return ChannelLease{}, err
+	}
+	if existing.State == "active" && existingExpires.After(now) && existing.OwnerID != ownerID {
+		return ChannelLease{}, LeaseHeldError{ChannelAccountID: channelAccountID, OwnerID: existing.OwnerID, ExpiresAt: existingExpires}
+	}
+	nextFence := existing.FencingToken + 1
+	_, err = tx.ExecContext(ctx, `
+UPDATE channel_leases
+SET owner_id = ?,
+	fencing_token = ?,
+	state = 'active',
+	expires_at = ?,
+	heartbeat_at = ?,
+	updated_at = ?
+WHERE channel_account_id = ?`,
+		ownerID, nextFence, expires.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano), channelAccountID)
+	if err != nil {
+		return ChannelLease{}, err
+	}
+	lease := ChannelLease{ChannelAccountID: channelAccountID, OwnerID: ownerID, FencingToken: nextFence, ExpiresAt: expires}
+	if err := tx.Commit(); err != nil {
+		return ChannelLease{}, err
+	}
+	tx = nil
 	return lease, nil
 }
 
