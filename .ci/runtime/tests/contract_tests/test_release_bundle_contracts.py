@@ -384,6 +384,8 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("Refresh then repair one Hermes sandbox environment", rollout_script_text)
         self.assertIn(">&2", rollout_script_text)
         self.assertIn("resolve_hermes_image_id.py", rollout_script_text)
+        self.assertIn('image_var="HERMES_IMAGE_ID_$(region_env_suffix "$region")"', rollout_script_text)
+        self.assertIn('export "${image_var}=${image_id}"', rollout_script_text)
         repair_script_text = repair_script.read_text()
         self.assertIn('"$config_dir/systemd/user"', repair_script_text)
         self.assertIn('chown "$user:$user" "$config_dir"', repair_script_text)
