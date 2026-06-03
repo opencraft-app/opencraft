@@ -118,6 +118,7 @@ CI 入口：
 - Hermes CI 镜像会并发同步到北京、上海和新加坡
 - Hermes CI 在人工确认后会从仓库内修补脚本临时创建 TAT Command 修复存量 VM，不要求手工传 `HERMES_TAT_COMMAND_ID`
 - TAT Command 创建脚本会读取 `images/hermes-backend-blueprint-id` 并把 ID 注入到下发脚本环境，目标 VM 不需要携带仓库文件
+- `images/hermes-image-trigger` 是专用触发文件；当只改 `.ci/**` 但需要触发 `.ci/hermes-image.yml` 时，更新这个文件并随 MR 合入
 - 腾讯云凭据从构建机本地 `/etc/lightclaw-ci/tencentcloud_secret_id` 和 `/etc/lightclaw-ci/tencentcloud_secret_key` 读取
 - CI 会自动安装并缓存 `tccli`，不要求构建机预装腾讯云 CLI
 - CI 会自动安装并缓存 Go，用于上传前本地编译 `images/bin/envd`
