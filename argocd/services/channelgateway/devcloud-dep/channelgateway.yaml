@@ -6,7 +6,7 @@ metadata:
     app.kubernetes.io/name: channelgateway
     cloudagent.dev/environment: devcloud-dep
 data:
-  CHANNELGATEWAY_DB_PATH: "/data/channelgateway.db"
+  CHANNELGATEWAY_DB_DRIVER: "mysql"
   CHANNELGATEWAY_ACP_URL: "ws://cloudagent-gateway.dep.svc.cluster.local/acp"
   CHANNELGATEWAY_TENANT_ID: "tenant-devcloud-dep"
   CHANNELGATEWAY_PROJECT_ID: "project-devcloud-dep"
@@ -59,6 +59,11 @@ spec:
             - configMapRef:
                 name: channelgateway-config
           env:
+            - name: CHANNELGATEWAY_DB_PATH
+              valueFrom:
+                secretKeyRef:
+                  name: channelgateway-runtime-secrets
+                  key: CHANNELGATEWAY_DB_PATH
             - name: WECOM_BOT_ID
               valueFrom:
                 secretKeyRef:
@@ -75,9 +80,6 @@ spec:
                   name: channelgateway-wecom-secrets
                   key: CHANNELGATEWAY_ACP_AUTHORIZATION
                   optional: true
-          volumeMounts:
-            - name: channelgateway-data
-              mountPath: /data
           readinessProbe:
             httpGet:
               path: /healthz
@@ -93,9 +95,6 @@ spec:
             initialDelaySeconds: 20
             periodSeconds: 20
             timeoutSeconds: 3
-      volumes:
-        - name: channelgateway-data
-          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

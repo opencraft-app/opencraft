@@ -11,6 +11,7 @@ bundles:
     publish_paths:
     - argocd/services/channelgateway/{env}/**
     - argocd/apps/{env}/channelgateway.yaml
+    - argocd/secrets/{env}/channelgateway-runtime-secrets.sops.yaml
     - argocd/secrets/{env}/channelgateway-wecom-secrets.sops.yaml
     dockerfile: cloudagent/channelgateway/Dockerfile
     build_context: .

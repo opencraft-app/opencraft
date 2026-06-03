@@ -20,7 +20,9 @@ Leaf apps:
   namespace. Runtime credentials are expected as namespace secrets and are not
   stored in this directory.
 - `channelgateway-devcloud-dep`: WeCom channel bridge that connects to the
-  in-cluster CloudAgent ACP service.
+  in-cluster CloudAgent ACP service. Conversation bindings and channel lease
+  state use the shared MySQL database named `wisp`, exposed through
+  `channelgateway-runtime-secrets`.
 
 Constraints:
 
@@ -29,8 +31,7 @@ Constraints:
 - New leaf apps should use `spec.destination.name: devcloud-dep` and the
   `devcloud-dep` project unless a narrower per-service project is introduced.
 - The current target service account can create PVCs, but this cluster has no
-  default StorageClass or available PV. `cloudagent-gateway` and
-  `channelgateway` therefore use `emptyDir` for process-local SQLite state in
-  this first live deployment. Session/workspace durability remains on the
-  CloudAgent Wisp/AGS side; replace `emptyDir` with a real storage class or
-  external store before relying on gateway pod restarts for durable history.
+  default StorageClass or available PV. `cloudagent-gateway` still uses
+  process-local storage in this first live deployment. `channelgateway` uses the
+  external MySQL store so enterprise WeCom `session_key -> acp_session_id`
+  bindings survive pod restarts and multi-pod failover.
