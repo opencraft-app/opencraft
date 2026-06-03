@@ -19,6 +19,40 @@ stages:
           self-hosted: true
           pool-name: env
         steps:
+          - name: 修复复用工作区 Git index
+            shell: bash
+            run: |
+              if [[ ! -d .git ]]; then
+                exit 0
+              fi
+
+              status_log="$(mktemp)"
+              index_needs_repair=false
+              if [[ -f .git/index ]]; then
+                index_size="$(wc -c < .git/index | tr -d '[:space:]')"
+                if [[ "$index_size" =~ ^[0-9]+$ && "$index_size" -eq 0 ]]; then
+                  index_needs_repair=true
+                  echo "detected empty .git/index size: ${index_size} bytes"
+                fi
+              fi
+
+              if [[ "$index_needs_repair" != true ]] && git status --short >/dev/null 2>"$status_log"; then
+                rm -f "$status_log"
+                exit 0
+              fi
+
+              if [[ "$index_needs_repair" == true ]] || grep -Eq 'index file smaller than expected|bad index file|index file corrupt' "$status_log"; then
+                echo "repairing corrupt Git index before checkout"
+                ts="$(date +%Y%m%dT%H%M%S)"
+                mv .git/index ".git/index.corrupt.${ts}" 2>/dev/null || true
+                if git rev-parse --verify HEAD >/dev/null 2>&1 && git reset --mixed HEAD; then
+                  rm -f "$status_log" ".git/index.corrupt.${ts}"
+                  exit 0
+                fi
+                echo "index repair failed; removing .git to force a fresh checkout"
+                rm -rf .git
+              fi
+              rm -f "$status_log"
           - checkout: self
             name: 拉取代码
             with:
