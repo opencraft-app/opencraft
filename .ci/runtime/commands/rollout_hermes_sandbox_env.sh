@@ -29,7 +29,7 @@ EOF
 }
 
 log() {
-  printf '[rollout-hermes-sandbox] %s\n' "$*"
+  printf '[rollout-hermes-sandbox] %s\n' "$*" >&2
 }
 
 fail() {
