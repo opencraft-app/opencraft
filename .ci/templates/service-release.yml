@@ -135,20 +135,32 @@ stages:
                     ;;
                 esac
               }
-              case "${{ ci.branch }}" in
+              resolve_source_branch() {
+                local ci_branch="$1"
+                case "$ci_branch" in
+                  ""|*'${{'*)
+                    printf '%s' "${BK_CI_GIT_REPO_BRANCH:-${DEVOPS_GIT_REPO_BRANCH:-}}"
+                    ;;
+                  *)
+                    printf '%s' "$ci_branch"
+                    ;;
+                esac
+              }
+              SOURCE_BRANCH="$(resolve_source_branch '${{ ci.branch }}')"
+              case "$SOURCE_BRANCH" in
                 master)
                   BUILD_ENVS="${{ parameters.MASTER_BUILD_ENVS }}"
                   AUTO_PIN_ENVS="${{ parameters.MASTER_AUTO_PIN_ENVS }}"
                   ;;
                 playground/sandbox-bj-*|playground/sandbox-kr-*)
-                  PLAYGROUND_ENV="${{ ci.branch }}"
+                  PLAYGROUND_ENV="$SOURCE_BRANCH"
                   PLAYGROUND_ENV="${PLAYGROUND_ENV#playground/}"
                   BUILD_ENVS="$(resolve_playground_envs "${{ parameters.PLAYGROUND_BUILD_ENVS }}" "$PLAYGROUND_ENV")"
                   AUTO_PIN_ENVS="$(resolve_playground_envs "${{ parameters.PLAYGROUND_AUTO_PIN_ENVS }}" "$PLAYGROUND_ENV")"
-                  echo "Playground 发布决策：分支 ${{ ci.branch }} 自动映射目标环境 ${PLAYGROUND_ENV}"
+                  echo "Playground 发布决策：分支 ${SOURCE_BRANCH} 自动映射目标环境 ${PLAYGROUND_ENV}"
                   ;;
                 *)
-                  echo "unsupported source branch for release: ${{ ci.branch }}" >&2
+                  echo "unsupported source branch for release: ${SOURCE_BRANCH:-unknown}" >&2
                   exit 1
                   ;;
               esac
@@ -193,20 +205,32 @@ stages:
                     ;;
                 esac
               }
-              case "${{ ci.branch }}" in
+              resolve_source_branch() {
+                local ci_branch="$1"
+                case "$ci_branch" in
+                  ""|*'${{'*)
+                    printf '%s' "${BK_CI_GIT_REPO_BRANCH:-${DEVOPS_GIT_REPO_BRANCH:-}}"
+                    ;;
+                  *)
+                    printf '%s' "$ci_branch"
+                    ;;
+                esac
+              }
+              SOURCE_BRANCH="$(resolve_source_branch '${{ ci.branch }}')"
+              case "$SOURCE_BRANCH" in
                 master)
                   BUILD_ENVS="${{ parameters.MASTER_BUILD_ENVS }}"
                   AUTO_PIN_ENVS="${{ parameters.MASTER_AUTO_PIN_ENVS }}"
                   ;;
                 playground/sandbox-bj-*|playground/sandbox-kr-*)
-                  PLAYGROUND_ENV="${{ ci.branch }}"
+                  PLAYGROUND_ENV="$SOURCE_BRANCH"
                   PLAYGROUND_ENV="${PLAYGROUND_ENV#playground/}"
                   BUILD_ENVS="$(resolve_playground_envs "${{ parameters.PLAYGROUND_BUILD_ENVS }}" "$PLAYGROUND_ENV")"
                   AUTO_PIN_ENVS="$(resolve_playground_envs "${{ parameters.PLAYGROUND_AUTO_PIN_ENVS }}" "$PLAYGROUND_ENV")"
-                  echo "Playground 发布决策：分支 ${{ ci.branch }} 自动映射目标环境 ${PLAYGROUND_ENV}"
+                  echo "Playground 发布决策：分支 ${SOURCE_BRANCH} 自动映射目标环境 ${PLAYGROUND_ENV}"
                   ;;
                 *)
-                  echo "unsupported source branch for release: ${{ ci.branch }}" >&2
+                  echo "unsupported source branch for release: ${SOURCE_BRANCH:-unknown}" >&2
                   exit 1
                   ;;
               esac

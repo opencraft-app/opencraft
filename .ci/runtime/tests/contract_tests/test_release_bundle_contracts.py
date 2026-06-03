@@ -663,6 +663,18 @@ class ReleaseBundleContractTests(unittest.TestCase):
             r"\$\{\{\s*variables\.(SERVICE|BUNDLE|DISPLAY_NAME|DEFAULT_TARGET_ENV|MASTER_BUILD_ENVS|MASTER_AUTO_PIN_ENVS|PLAYGROUND_BUILD_ENVS|PLAYGROUND_AUTO_PIN_ENVS)\s*\}\}",
         )
 
+    def test_service_release_shell_resolves_branch_for_openapi_manual_start(self) -> None:
+        template_text = (REPO_ROOT / ".ci/templates/service-release.yml").read_text()
+
+        self.assertEqual(template_text.count("resolve_source_branch()"), 2)
+        self.assertEqual(template_text.count("SOURCE_BRANCH=\"$(resolve_source_branch '${{ ci.branch }}')\""), 2)
+        self.assertIn("BK_CI_GIT_REPO_BRANCH:-${DEVOPS_GIT_REPO_BRANCH:-}", template_text)
+        self.assertNotIn('case "${{ ci.branch }}" in', template_text)
+        self.assertNotIn('PLAYGROUND_ENV="${{ ci.branch }}"', template_text)
+        self.assertIn('case "$SOURCE_BRANCH" in', template_text)
+        self.assertIn('PLAYGROUND_ENV="$SOURCE_BRANCH"', template_text)
+        self.assertIn('unsupported source branch for release: ${SOURCE_BRANCH:-unknown}', template_text)
+
     def test_service_release_creates_independent_prod_promote_candidates(self) -> None:
         template_path = REPO_ROOT / ".ci/templates/service-release.yml"
         template_text = template_path.read_text()
