@@ -497,6 +497,28 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn("argocd/secrets/*/cloudagent-wsa-search-secrets.sops.yaml", watched_paths)
         self.assertIn("argocd/secrets/*/cloudagent-wisp-secrets.sops.yaml", watched_paths)
 
+    def test_cloudladdergateway_uses_tkex_template_release_contract(self) -> None:
+        manifest = load_manifest()
+        domestic_bundle = require_build_metadata(load_bundle(manifest, "cloudladdergateway", "tkexgz"))
+        intl_bundle = require_build_metadata(load_bundle(manifest, "cloudladdergateway", "tkexsg"))
+        workflow = yaml.safe_load((REPO_ROOT / ".ci/cloudladdergateway.yml").read_text())
+        parameters = (workflow.get("extends") or {}).get("parameters") or {}
+        on_config = workflow.get("on") or workflow.get(True) or {}
+        watched_paths = ((on_config.get("push") or {}).get("paths") or [])
+
+        self.assertEqual((workflow.get("extends") or {}).get("template"), "service-release.yml")
+        self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "tkexgz,tkexsg")
+        self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "none")
+        self.assertEqual(parameters.get("ENABLE_MASTER_PROD_PROMOTE"), False)
+        self.assertEqual(parameters.get("PLAYGROUND_BUILD_ENVS"), "none")
+        self.assertEqual(parameters.get("PLAYGROUND_AUTO_PIN_ENVS"), "none")
+        self.assertEqual(domestic_bundle.image_repo, "csighub.tencentyun.com/skipzhang/cloudladdergateway")
+        self.assertEqual(intl_bundle.image_repo, "csighub.tencentyun.com/skipzhang/cloudladdergateway")
+        self.assertIn("argocd/services/cloudladdergateway/tkexgz/**", domestic_bundle.publish_paths)
+        self.assertIn("argocd/services/cloudladdergateway/tkexsg/**", intl_bundle.publish_paths)
+        self.assertIn("shared/cloudladdertransport/**", watched_paths)
+        self.assertIn("argocd/services/cloudladdergateway/**", watched_paths)
+
     def test_lightclaw_auth_workflow_watches_release_contract_inputs(self) -> None:
         workflow = yaml.safe_load((REPO_ROOT / ".ci/lightclaw-auth.yml").read_text())
         on_config = workflow.get("on") or workflow.get(True) or {}

@@ -60,8 +60,9 @@
 独立验证入口：
 
 - `.ci/cloudladdergateway.yml`
-  - 当前只运行 `go test ./...` 和 Docker 镜像构建验证。
-  - 该服务暂未接入 GitOps release bundle，因此不使用 `.ci/templates/service-release.yml`，也不会自动 promote/pin。
+  - 内网 TKEx 专用 release 入口，复用 `.ci/templates/service-release.yml` 构建国内站 `tkexgz` 和国际站 `tkexsg` 镜像。
+  - 目标镜像仓库为 `csighub.tencentyun.com/skipzhang/cloudladdergateway`；构建机从 `/etc/lightclaw-ci/csighub_username` 和 `/etc/lightclaw-ci/csighub_password` 读取发布凭据。
+  - 该服务不进入现有 `beijing-sandbox/shprod/sgprod` 自动 pin / 生产 promote 流程；需要发布时使用模板的 `PIPELINE_MODE=promote` 手动创建对应 TKEx GitOps MR。
 - `.ci/hermes-image.yml`
   - 用 `images/build-image.py --runtime hermes --base-image-id img-id352nof --with-verify` 构建、验证并同步 Hermes CVM 镜像。
   - 腾讯云凭据只从构建机本地 `/etc/lightclaw-ci/tencentcloud_secret_id` 和 `/etc/lightclaw-ci/tencentcloud_secret_key` 读取，不通过流水线启动变量传入。
@@ -89,7 +90,7 @@
 - 不要为了 `extends.template.path` 对象写法切到 `version: v3.0`；蓝盾 PAC v3 暂未支持局部模板，`.ci/templates/service-release.yml` 这类本仓库模板应继续走 Stream v2。
 - 非流水线配置不要使用 `.yaml` 后缀放在 `.ci/**` 下；蓝盾会把 `.ci/**/*.yaml` 误识别成流水线候选。Guard 注册表用 `.ci/guards.manifest`，release bundle 源用 `.ci/runtime/bundles/*.bundle`。
 - `frontend`、`frontend-edgeone-*`、`gitops-*`、`ci-runtime`、`mr-placeholder` 不属于这批标准 service release 入口，不使用该模板。
-- `cloudladdergateway` 当前只有独立验证入口，不属于标准 service release 入口；等补齐 GitOps closure 和 release bundle 后再迁入模板。
+- `cloudladdergateway` 属于 TKEx 内网 release 入口，复用 service release 模板，但显式关闭 `ENABLE_MASTER_PROD_PROMOTE`，避免影响现有正式站生产候选链路。
 - `trade`、`staticpages` 当前 master 构建矩阵不包含 `shprod` / `sgprod`，因此显式设置 `ENABLE_MASTER_PROD_PROMOTE=false`，避免没有正式产物时卡人工确认。
 
 ### Release 并发模型

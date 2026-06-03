@@ -1,0 +1,19 @@
+bundles:
+  cloudladdergateway:
+    owner: cloudladdergateway
+    source: cloudladdergateway
+    db_contract: none
+    reason: CloudLadder Gateway TKEx internal release bundle for Guangzhou and Singapore LightVela proxy clusters.
+    allowed_paths:
+    - cloudladdergateway
+    - shared/cloudladdertransport
+    exit_condition: Can be removed only after TKEx cloudladdergateway release is folded into a different release unit.
+    publish_paths:
+    - argocd/services/cloudladdergateway/{env}/**
+    - argocd/apps/{env}/cloudladdergateway.yaml
+    - argocd/secrets/{env}/cloudladdergateway-runtime-secrets.sops.yaml
+    dockerfile: cloudladdergateway/Dockerfile
+    build_context: .
+    image_repo:
+      tkexgz: csighub.tencentyun.com/skipzhang/cloudladdergateway
+      tkexsg: csighub.tencentyun.com/skipzhang/cloudladdergateway
