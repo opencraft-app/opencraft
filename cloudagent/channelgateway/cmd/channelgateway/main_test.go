@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -47,5 +48,43 @@ func TestHealthzReportsCurrentLeaseState(t *testing.T) {
 	secondAccount := secondAccounts[0].(map[string]any)
 	if secondAccount["fencing_token"] != float64(2) || secondAccount["lease_expires_at"] == firstAccount["lease_expires_at"] {
 		t.Fatalf("health response should use current lease state: first=%#v second=%#v", first, second)
+	}
+}
+
+func TestRedactDBTargetMasksCredentials(t *testing.T) {
+	cases := []struct {
+		name      string
+		input     string
+		forbidden string
+		want      string
+	}{
+		{
+			name:      "mysql driver dsn",
+			input:     "root:secret-pass@tcp(9.135.107.6:3306)/wisp?charset=utf8mb4&parseTime=true",
+			forbidden: "secret-pass",
+			want:      "xxxxx@tcp(9.135.107.6:3306)/wisp?charset=utf8mb4&parseTime=true",
+		},
+		{
+			name:      "url dsn",
+			input:     "mysql://root:secret-pass@9.135.107.6:3306/wisp?charset=utf8mb4",
+			forbidden: "secret-pass",
+			want:      "mysql://root:xxxxx@9.135.107.6:3306/wisp?charset=utf8mb4",
+		},
+		{
+			name:  "sqlite path",
+			input: "/data/channelgateway.db",
+			want:  "/data/channelgateway.db",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := redactDBTarget(tc.input)
+			if tc.forbidden != "" && strings.Contains(got, tc.forbidden) {
+				t.Fatalf("redacted target still contains secret: %q", got)
+			}
+			if got != tc.want {
+				t.Fatalf("redactDBTarget() = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
