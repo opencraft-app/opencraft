@@ -232,7 +232,10 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(approval_stage.get("if"), prod_edgeone_if)
         self.assertEqual(fanout_stage.get("if"), prod_edgeone_if)
         self.assertEqual(approval_reviews.get("name"), "确认发起 frontend EdgeOne 正式站发布候选")
-        self.assertEqual(approval_reviews.get("reviewers"), ["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang"])
+        self.assertEqual(
+            approval_reviews.get("reviewers"),
+            ["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang"],
+        )
         self.assertIn("本阶段确认是否允许本次 frontend 构建发起 EdgeOne 正式站发布候选", workflow_text)
         self.assertIn("本阶段只控制是否允许从本次构建发起生产发布候选", workflow_text)
         self.assertIn("自动发起 frontend EdgeOne 正式站发布候选", workflow_text)
@@ -285,6 +288,50 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertFalse((REPO_ROOT / ".ci/subpipeline-call-probe.yml").exists())
         self.assertFalse((REPO_ROOT / ".ci/frontend-edgeone-orchestrator-probe.yml").exists())
         self.assertFalse((REPO_ROOT / ".ci/frontend-edgeone-subpipeline-child-probe.yml").exists())
+
+    def test_hermes_image_workflow_refreshes_pools_and_upgrades_existing_vms_after_approval(self) -> None:
+        workflow_text = (REPO_ROOT / ".ci/hermes-image.yml").read_text()
+        workflow = yaml.safe_load(workflow_text) or {}
+        stages = workflow.get("stages") or []
+        stage_by_name = {stage.get("name"): stage for stage in stages}
+
+        build_stage = stage_by_name["构建 Hermes CVM 镜像"]
+        refresh_approval_stage = stage_by_name["确认刷新 Hermes sandbox pools"]
+        refresh_stage = stage_by_name["刷新 Hermes sandbox pools"]
+        upgrade_approval_stage = stage_by_name["确认升级存量 Hermes VM"]
+        upgrade_stage = stage_by_name["升级存量 Hermes VM"]
+        prod_if = "${{ ci.branch }} == master"
+        reviewers = ["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang"]
+        refresh_reviews = (((refresh_approval_stage.get("check-in") or {}).get("reviews") or {}).get("flows") or [])[0]
+        upgrade_reviews = (((upgrade_approval_stage.get("check-in") or {}).get("reviews") or {}).get("flows") or [])[0]
+
+        self.assertEqual(refresh_approval_stage.get("if"), prod_if)
+        self.assertEqual(refresh_stage.get("if"), prod_if)
+        self.assertEqual(upgrade_approval_stage.get("if"), prod_if)
+        self.assertEqual(upgrade_stage.get("if"), prod_if)
+        self.assertEqual(refresh_reviews.get("reviewers"), reviewers)
+        self.assertEqual(upgrade_reviews.get("reviewers"), reviewers)
+        self.assertLess(stages.index(build_stage), stages.index(refresh_approval_stage))
+        self.assertLess(stages.index(refresh_approval_stage), stages.index(refresh_stage))
+        self.assertLess(stages.index(refresh_stage), stages.index(upgrade_approval_stage))
+        self.assertLess(stages.index(upgrade_approval_stage), stages.index(upgrade_stage))
+
+        self.assertIn("refresh_hermes_sandbox_pools.sh", workflow_text)
+        self.assertIn("list_hermes_pool_vms.sh", workflow_text)
+        self.assertIn("invoke_hermes_tat_command.sh", workflow_text)
+        self.assertIn('HERMES_TAT_COMMAND_ID is required for existing Hermes VM upgrade', workflow_text)
+        self.assertIn('HERMES_TAT_BATCH_SIZE="${HERMES_TAT_BATCH_SIZE:-5}"', workflow_text)
+        self.assertIn('HERMES_TAT_SINGLE_ATTEMPTS="${HERMES_TAT_SINGLE_ATTEMPTS:-3}"', workflow_text)
+        self.assertIn("不直连数据库，不修改 pool / instance 状态", workflow_text)
+        self.assertIn("批次失败后自动拆成单台重试", workflow_text)
+
+        list_script = REPO_ROOT / ".ci/runtime/commands/list_hermes_pool_vms.sh"
+        invoke_script = REPO_ROOT / ".ci/runtime/commands/invoke_hermes_tat_command.sh"
+        self.assertTrue(list_script.exists())
+        self.assertTrue(invoke_script.exists())
+        self.assertIn("does not patch pools, update SKUs, invoke TAT, or write database rows", list_script.read_text())
+        self.assertIn("batches run strictly serially", invoke_script.read_text())
+        self.assertIn("batch failed; retrying", invoke_script.read_text())
 
     def test_frontend_preview_uses_master_runtime(self) -> None:
         workflow_text = (REPO_ROOT / ".ci/frontend-preview.yml").read_text()

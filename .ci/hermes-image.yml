@@ -54,11 +54,293 @@ stages:
               ci_require_command go
               ci_load_tencentcloud_credentials
 
-              bash -n images/build.sh images/deploy-build.sh images/tests/test-hermes-build-script.sh images/tests/test-hermes-runtime.sh
+              bash -n images/build.sh images/deploy-build.sh images/helpers/config-hermes-python-mirrors.sh images/tests/test-hermes-build-script.sh images/tests/test-hermes-runtime.sh .ci/runtime/commands/refresh_hermes_sandbox_pools.sh .ci/runtime/commands/list_hermes_pool_vms.sh .ci/runtime/commands/invoke_hermes_tat_command.sh
               python3 -m py_compile images/build-image.py
               python3 images/tests/test-build-image-sync.py
+              resolve_hermes_image_name() {
+                local raw="${BK_CI_BUILD_ID:-}"
+                local sha='${{ ci.sha }}'
+                if [[ -z "$raw" || "$raw" == *'${{'* ]]; then
+                  raw="$sha"
+                fi
+                raw="$(printf '%s' "$raw" | tr -cs 'A-Za-z0-9-' '-' | sed -e 's/^-//' -e 's/-$//' | cut -c1-36)"
+                if [[ -z "$raw" ]]; then
+                  raw="$(date +%Y%m%d%H%M%S)"
+                fi
+                printf 'hermes-agent-%s\n' "$raw"
+              }
+              HERMES_IMAGE_NAME="$(resolve_hermes_image_name)"
+              export HERMES_IMAGE_NAME
+              echo "HERMES_IMAGE_NAME=${HERMES_IMAGE_NAME}"
+
+              HERMES_BUILD_LOG="$(mktemp)"
               python3 images/build-image.py \
                 --runtime hermes \
                 --base-image-id img-id352nof \
                 --target-regions ap-beijing,ap-shanghai,ap-singapore \
-                --with-verify
+                --image-name "$HERMES_IMAGE_NAME" \
+                --with-verify | tee "$HERMES_BUILD_LOG"
+
+              mkdir -p .ci/.runtime-state /tmp/lightclaw-ci
+              python3 - "$HERMES_BUILD_LOG" > .ci/.runtime-state/hermes-image.env <<'PY'
+              import json
+              import os
+              import sys
+              from pathlib import Path
+
+              log_path = Path(sys.argv[1])
+              payload = None
+              for line in reversed(log_path.read_text(encoding="utf-8").splitlines()):
+                  line = line.strip()
+                  if not line.startswith("{"):
+                      continue
+                  try:
+                      candidate = json.loads(line)
+                  except json.JSONDecodeError:
+                      continue
+                  if isinstance(candidate.get("target_image_ids"), dict):
+                      payload = candidate
+                      break
+
+              if payload is None:
+                  raise SystemExit("failed to find Hermes image result JSON in build log")
+
+              shanghai_image_id = payload["target_image_ids"].get("ap-shanghai")
+              if not shanghai_image_id:
+                  raise SystemExit("Hermes image result JSON missing target_image_ids.ap-shanghai")
+
+              print(f"HERMES_IMAGE_ID_AP_SHANGHAI={shanghai_image_id}")
+              print(f"HERMES_IMAGE_NAME={os.environ['HERMES_IMAGE_NAME']}")
+              PY
+              cp .ci/.runtime-state/hermes-image.env "/tmp/lightclaw-ci/hermes-image-${BK_CI_BUILD_ID:-manual}.env"
+              cat .ci/.runtime-state/hermes-image.env
+
+  - name: 确认刷新 Hermes sandbox pools
+    if: "${{ ci.branch }} == master"
+    check-in:
+      reviews:
+        flows:
+          - name: 确认刷新 Hermes sandbox pools
+            reviewers: [ "skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang" ]
+        description: |
+          Hermes CVM 镜像已经构建、验证并同步到目标地域。
+
+          点击通过后，流水线会通过 sandbox-api internal API 刷新 Hermes sandbox pools：
+          - 不直连数据库，不执行 SQL
+          - 先更新 Hermes SKU 的 desired image，避免 rollout controller 回写旧镜像
+          - 再逐个 patch Hermes pools 的 base_image，并把 CLEAN 库存标记进入重置流程
+          - 默认目标：shprod
+      timeout-hours: 24
+    jobs:
+      approve:
+        name: 等待人工确认刷新 Hermes sandbox pools
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - name: Hermes sandbox pool 刷新已确认
+            shell: bash
+            run: |
+              echo "Hermes sandbox pool refresh approved"
+
+  - name: 刷新 Hermes sandbox pools
+    if: "${{ ci.branch }} == master"
+    jobs:
+      refresh:
+        name: 通过 sandbox-api 刷新 Hermes sandbox pools
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - checkout: self
+            name: 拉取代码
+            with:
+              fetchDepth: 1
+          - name: 刷新 Hermes sandbox pools
+            shell: bash
+            run: |
+              set -euo pipefail
+              source .ci/init.sh
+              ci_init_repo_root
+              ci_ensure_tccli
+              ci_require_command tccli
+              ci_ensure_kubectl
+              ci_require_commands bash curl jq python3
+              ci_load_tencentcloud_credentials
+
+              resolve_hermes_image_name() {
+                local raw="${BK_CI_BUILD_ID:-}"
+                local sha='${{ ci.sha }}'
+                if [[ -z "$raw" || "$raw" == *'${{'* ]]; then
+                  raw="$sha"
+                fi
+                raw="$(printf '%s' "$raw" | tr -cs 'A-Za-z0-9-' '-' | sed -e 's/^-//' -e 's/-$//' | cut -c1-36)"
+                if [[ -z "$raw" ]]; then
+                  raw="$(date +%Y%m%d%H%M%S)"
+                fi
+                printf 'hermes-agent-%s\n' "$raw"
+              }
+
+              RESULT_ENV=".ci/.runtime-state/hermes-image.env"
+              TMP_RESULT_ENV="/tmp/lightclaw-ci/hermes-image-${BK_CI_BUILD_ID:-manual}.env"
+              if [[ -r "$RESULT_ENV" ]]; then
+                source "$RESULT_ENV"
+              elif [[ -r "$TMP_RESULT_ENV" ]]; then
+                source "$TMP_RESULT_ENV"
+              fi
+              HERMES_IMAGE_NAME="${HERMES_IMAGE_NAME:-$(resolve_hermes_image_name)}"
+              if [[ -z "${HERMES_IMAGE_ID_AP_SHANGHAI:-}" ]]; then
+                echo "resolving HERMES_IMAGE_ID_AP_SHANGHAI by exact image name: ${HERMES_IMAGE_NAME}"
+                HERMES_IMAGE_ID_AP_SHANGHAI="$(
+                  python3 - "$HERMES_IMAGE_NAME" <<'PY'
+                  import json
+                  import subprocess
+                  import sys
+
+                  image_name = sys.argv[1]
+                  offset = 0
+                  matches = []
+                  while True:
+                      payload = subprocess.check_output([
+                          "tccli", "cvm", "DescribeImages",
+                          "--region", "ap-shanghai",
+                          "--Filters", json.dumps([{"Name": "image-type", "Values": ["PRIVATE_IMAGE"]}]),
+                          "--Offset", str(offset),
+                          "--Limit", "100",
+                      ], text=True)
+                      data = json.loads(payload)
+                      images = data.get("ImageSet") or []
+                      matches.extend(img for img in images if img.get("ImageName") == image_name)
+                      offset += len(images)
+                      if offset >= int(data.get("TotalCount") or 0) or not images:
+                          break
+
+                  if len(matches) != 1:
+                      raise SystemExit(f"expected exactly one Shanghai private image named {image_name}, got {len(matches)}")
+                  image = matches[0]
+                  if image.get("ImageState") != "NORMAL":
+                      raise SystemExit(f"Shanghai image {image_name} is not NORMAL: {image.get('ImageState')}")
+                  print(image["ImageId"])
+                  PY
+                )"
+              fi
+              export HERMES_IMAGE_ID_AP_SHANGHAI HERMES_IMAGE_NAME
+              echo "HERMES_IMAGE_NAME=${HERMES_IMAGE_NAME}"
+              echo "HERMES_IMAGE_ID_AP_SHANGHAI=${HERMES_IMAGE_ID_AP_SHANGHAI}"
+
+              bash .ci/runtime/commands/refresh_hermes_sandbox_pools.sh
+
+  - name: 确认升级存量 Hermes VM
+    if: "${{ ci.branch }} == master"
+    check-in:
+      reviews:
+        flows:
+          - name: 确认升级存量 Hermes VM
+            reviewers: [ "skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang" ]
+        description: |
+          Hermes sandbox pools 已刷新到新 CVM 镜像。
+
+          点击通过后，流水线会对 Hermes pool 内已有 CVM 下发预创建的 TAT Command：
+          - 只通过 sandbox-api internal API 只读列出目标 VM
+          - 不直连数据库，不修改 pool / instance 状态
+          - 通过 HERMES_TAT_COMMAND_ID 指定预创建的腾讯云 TAT Command
+          - 默认 5 台一批串行执行；批次失败后自动拆成单台重试
+      timeout-hours: 24
+    jobs:
+      approve:
+        name: 等待人工确认升级存量 Hermes VM
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - name: 存量 Hermes VM 升级已确认
+            shell: bash
+            run: |
+              echo "Hermes existing VM upgrade approved"
+
+  - name: 升级存量 Hermes VM
+    if: "${{ ci.branch }} == master"
+    jobs:
+      upgrade:
+        name: 通过 TAT 升级存量 Hermes VM
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - checkout: self
+            name: 拉取代码
+            with:
+              fetchDepth: 1
+          - name: 升级存量 Hermes VM
+            shell: bash
+            run: |
+              set -euo pipefail
+              source .ci/init.sh
+              ci_init_repo_root
+              ci_ensure_tccli
+              ci_require_command tccli
+              ci_ensure_kubectl
+              ci_require_commands bash curl jq python3
+              ci_load_tencentcloud_credentials
+
+              if [[ -z "${HERMES_TAT_COMMAND_ID:-}" ]]; then
+                echo "HERMES_TAT_COMMAND_ID is required for existing Hermes VM upgrade" >&2
+                exit 1
+              fi
+              export HERMES_TAT_COMMAND_ID
+
+              mkdir -p .ci/.runtime-state/hermes-tat /tmp/lightclaw-ci
+              VM_LIST=".ci/.runtime-state/hermes-tat/vms.jsonl"
+              HERMES_POOL_VM_LIST_ENVS="${HERMES_POOL_VM_LIST_ENVS:-${HERMES_SANDBOX_POOL_REFRESH_ENVS:-shprod:ap-shanghai:kubeconfig_shprod}}"
+              export HERMES_POOL_VM_LIST_ENVS
+              echo "HERMES_POOL_VM_LIST_ENVS=${HERMES_POOL_VM_LIST_ENVS}"
+              bash .ci/runtime/commands/list_hermes_pool_vms.sh > "$VM_LIST"
+              cp "$VM_LIST" "/tmp/lightclaw-ci/hermes-pool-vms-${BK_CI_BUILD_ID:-manual}.jsonl"
+              echo "Hermes VM list written to ${VM_LIST}"
+              wc -l "$VM_LIST"
+              if [[ ! -s "$VM_LIST" ]]; then
+                echo "no Hermes pool VM rows found; abort existing VM upgrade" >&2
+                exit 1
+              fi
+
+              REGION_MANIFEST=".ci/.runtime-state/hermes-tat/region-files.tsv"
+              python3 - "$VM_LIST" ".ci/.runtime-state/hermes-tat" > "$REGION_MANIFEST" <<'PY'
+              import json
+              import sys
+              from pathlib import Path
+
+              input_path = Path(sys.argv[1])
+              output_dir = Path(sys.argv[2])
+              by_region = {}
+              with input_path.open(encoding="utf-8") as f:
+                  for line in f:
+                      line = line.strip()
+                      if not line:
+                          continue
+                      row = json.loads(line)
+                      region = row.get("region")
+                      if not region:
+                          raise SystemExit(f"VM row missing region: {line}")
+                      by_region.setdefault(region, []).append(row)
+
+              for region, rows in sorted(by_region.items()):
+                  region_path = output_dir / f"vms-{region}.jsonl"
+                  with region_path.open("w", encoding="utf-8") as f:
+                      for row in rows:
+                          f.write(json.dumps(row, ensure_ascii=False, separators=(",", ":")) + "\n")
+                  print(f"{region}\t{region_path}\t{len(rows)}")
+              PY
+
+              while IFS=$'\t' read -r region region_file count; do
+                [[ -n "$region" ]] || continue
+                echo "Invoking Hermes TAT command for region=${region} count=${count}"
+                HERMES_TAT_REGION="$region" \
+                  HERMES_TAT_INPUT_FILE="$region_file" \
+                  HERMES_TAT_OUTPUT_DIR=".ci/.runtime-state/hermes-tat" \
+                  HERMES_TAT_BATCH_SIZE="${HERMES_TAT_BATCH_SIZE:-5}" \
+                  HERMES_TAT_SINGLE_ATTEMPTS="${HERMES_TAT_SINGLE_ATTEMPTS:-3}" \
+                  bash .ci/runtime/commands/invoke_hermes_tat_command.sh
+              done < "$REGION_MANIFEST"
+
+              cp -R .ci/.runtime-state/hermes-tat "/tmp/lightclaw-ci/hermes-tat-${BK_CI_BUILD_ID:-manual}"
+              find .ci/.runtime-state/hermes-tat -maxdepth 1 -type f -name '*.summary.json' -print -exec cat {} \;
