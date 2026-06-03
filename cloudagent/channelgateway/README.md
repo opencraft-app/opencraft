@@ -9,6 +9,7 @@ Current shape:
 - runtime target: CloudAgent ACP over WebSocket
 - ownership: one channel account connection is held by one process lease owner
 - multi-tenant runner model: every active `channel_accounts` row gets an independent lease, WeCom WSS adapter, ACP client, dispatcher, and outbox pump
+- release entry: `.ci/channelgateway.yml` extends the shared service-release template
 
 ## Run
 
