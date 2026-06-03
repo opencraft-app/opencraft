@@ -829,8 +829,9 @@ EOF
 }
 
 configure_hermes_python_mirrors() {
-  local pip_config_dir="${RUNTIME_HOME}/.config/pip"
-  local uv_config_dir="${RUNTIME_HOME}/.config/uv"
+  local config_dir="${RUNTIME_HOME}/.config"
+  local pip_config_dir="${config_dir}/pip"
+  local uv_config_dir="${config_dir}/uv"
 
   log_info "configuring Hermes Python package mirrors for ${RUNTIME_USER}"
   mkdir -p "${pip_config_dir}" "${uv_config_dir}"
@@ -846,7 +847,19 @@ EOF
 index-url = "${HERMES_PYPI_INDEX_URL}"
 extra-index-url = ["${HERMES_PYPI_EXTRA_INDEX_URL}"]
 EOF
+  chown "${RUNTIME_USER}:${RUNTIME_USER}" "${config_dir}" 2>/dev/null || true
+  chmod 0700 "${config_dir}" 2>/dev/null || true
   chown -R "${RUNTIME_USER}:${RUNTIME_USER}" "${pip_config_dir}" "${uv_config_dir}" 2>/dev/null || true
+}
+
+ensure_hermes_user_systemd_dir() {
+  local config_dir="${RUNTIME_HOME}/.config"
+  local systemd_dir="${config_dir}/systemd"
+  local user_unit_dir="${systemd_dir}/user"
+
+  mkdir -p "${user_unit_dir}"
+  chown "${RUNTIME_USER}:${RUNTIME_USER}" "${config_dir}" "${systemd_dir}" "${user_unit_dir}" 2>/dev/null || true
+  chmod 0700 "${config_dir}" "${systemd_dir}" "${user_unit_dir}" 2>/dev/null || true
 }
 
 ensure_hermes_uv() {
@@ -998,6 +1011,7 @@ ensure_hermes_gateway_service() {
   runtime_uid="$(id -u "${RUNTIME_USER}")"
   user_env_prefix="export XDG_RUNTIME_DIR=\"/run/user/${runtime_uid}\"; mkdir -p \"\${XDG_RUNTIME_DIR}\" 2>/dev/null || true;"
   ensure_hermes_linger
+  ensure_hermes_user_systemd_dir
   run_as_runtime_user "${user_env_prefix} printf 'n\ny\n' | hermes gateway install"
   run_as_runtime_user "${user_env_prefix} hermes gateway stop >/dev/null 2>&1 || true"
 }
