@@ -55,7 +55,8 @@ func (c *Client) Initialize(ctx context.Context) error {
 		return err
 	}
 	_, err = conn.Call(ctx, "initialize", map[string]any{
-		"protocolVersion": "0.1.0",
+		"protocolVersion":    1,
+		"clientCapabilities": map[string]any{},
 		"clientInfo": map[string]any{
 			"name":    "cloudagent-channelgateway",
 			"version": "0.1.0",

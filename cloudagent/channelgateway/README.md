@@ -33,6 +33,7 @@ CHANNELGATEWAY_TENANT_ID=default
 CHANNELGATEWAY_PROJECT_ID=default
 CHANNELGATEWAY_OWNER_ID=channelgateway-local
 CHANNELGATEWAY_LISTEN_ADDR=:8094
+CHANNELGATEWAY_ACP_INITIALIZE_TIMEOUT=15s
 
 CHANNELGATEWAY_WECOM_ENABLED=true
 CHANNELGATEWAY_WECOM_ACCOUNT_ID=wecom-default
@@ -82,7 +83,9 @@ CHANNELGATEWAY_WECOM_ACCOUNTS_JSON='[
 ```
 
 `/healthz` reports the process owner plus per-account runner status, owner, and
-fencing token.
+fencing token. Runner status is intentionally more precise than lease state:
+`leased` means the account owner has been claimed, `initializing_acp` means ACP
+handshake is in progress, and `running` means the WeCom adapter has started.
 
 ## WeCom Handshake Check
 

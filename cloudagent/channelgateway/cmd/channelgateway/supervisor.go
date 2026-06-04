@@ -186,20 +186,39 @@ func (r *accountRunner) run(ctx context.Context) error {
 		return fmt.Errorf("acquire channel lease: %w", err)
 	}
 	r.states.SetLease(lease)
+	log.Printf("channelgateway runtime_trace account_id=%s owner_id=%s fence=%d action=lease_acquired lease_expires_at=%s",
+		runtimeLogValue(lease.ChannelAccountID), runtimeLogValue(lease.OwnerID), lease.FencingToken, lease.ExpiresAt.Format(time.RFC3339Nano))
 	defer func() {
 		releaseCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := r.store.ReleaseChannelLease(releaseCtx, lease); err != nil {
 			log.Printf("release channel lease account=%s: %v", lease.ChannelAccountID, err)
+		} else {
+			log.Printf("channelgateway runtime_trace account_id=%s owner_id=%s fence=%d action=lease_released",
+				runtimeLogValue(lease.ChannelAccountID), runtimeLogValue(lease.OwnerID), lease.FencingToken)
 		}
 		r.states.ClearLease(r.account.ChannelAccountID)
 	}()
 	acpClient := r.acpFactory(r.cfg, r.account)
 	defer acpClient.Close()
-	if err := acpClient.Initialize(ctx); err != nil {
+	initTimeout := r.cfg.ACPInitializeTimeout
+	if initTimeout <= 0 {
+		initTimeout = 15 * time.Second
+	}
+	r.states.SetStatus(r.account.ChannelAccountID, "initializing_acp")
+	initStartedAt := time.Now()
+	log.Printf("channelgateway runtime_trace account_id=%s agent_id=%s action=acp_initialize_start timeout_ms=%d",
+		runtimeLogValue(r.account.ChannelAccountID), runtimeLogValue(r.account.AgentID), initTimeout.Milliseconds())
+	initCtx, initCancel := context.WithTimeout(ctx, initTimeout)
+	defer initCancel()
+	if err := acpClient.Initialize(initCtx); err != nil {
 		r.states.SetError(r.account.ChannelAccountID, err)
+		log.Printf("channelgateway runtime_trace account_id=%s agent_id=%s action=acp_initialize_failed duration_ms=%d error=%s",
+			runtimeLogValue(r.account.ChannelAccountID), runtimeLogValue(r.account.AgentID), time.Since(initStartedAt).Milliseconds(), runtimeLogValue(err.Error()))
 		return fmt.Errorf("initialize acp: %w", err)
 	}
+	log.Printf("channelgateway runtime_trace account_id=%s agent_id=%s action=acp_initialize_done duration_ms=%d",
+		runtimeLogValue(r.account.ChannelAccountID), runtimeLogValue(r.account.AgentID), time.Since(initStartedAt).Milliseconds())
 	adapter := r.adapterFactory(runtimeCfg)
 	dispatcher := router.NewDispatcherWithOptions(
 		r.store,
@@ -213,10 +232,14 @@ func (r *accountRunner) run(ctx context.Context) error {
 	go r.renewLeaseLoop(runCtx, cancel)
 	go r.outboxLoop(runCtx, adapter)
 	r.states.SetStatus(r.account.ChannelAccountID, "running")
+	log.Printf("channelgateway runtime_trace account_id=%s agent_id=%s action=wecom_adapter_start websocket_url=%s",
+		runtimeLogValue(r.account.ChannelAccountID), runtimeLogValue(r.account.AgentID), runtimeLogValue(runtimeCfg.WebSocketURL))
 	err = adapter.Start(runCtx, dispatcher)
 	if err != nil {
 		r.states.SetError(r.account.ChannelAccountID, err)
 	}
+	log.Printf("channelgateway runtime_trace account_id=%s agent_id=%s action=wecom_adapter_stopped error=%s",
+		runtimeLogValue(r.account.ChannelAccountID), runtimeLogValue(r.account.AgentID), runtimeLogValue(errorString(err)))
 	return err
 }
 
@@ -390,7 +413,9 @@ func (s *channelRuntimeStates) SetLease(lease store.ChannelLease) {
 	s.leases[lease.ChannelAccountID] = lease
 	state := s.states[lease.ChannelAccountID]
 	state.AccountID = lease.ChannelAccountID
-	state.Status = "leased"
+	if state.Status == "" || state.Status == "stopped" || state.Status == "error" {
+		state.Status = "leased"
+	}
 	state.OwnerID = lease.OwnerID
 	state.FencingToken = lease.FencingToken
 	state.LeaseExpiresAt = lease.ExpiresAt.Format(time.RFC3339Nano)
@@ -446,4 +471,23 @@ func (s *channelRuntimeStates) Snapshot() []channelRuntimeState {
 		out = append(out, state)
 	}
 	return out
+}
+
+func runtimeLogValue(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "-"
+	}
+	value = strings.NewReplacer("\n", "\\n", "\r", "\\r", "\t", "\\t").Replace(value)
+	if len(value) > 200 {
+		return value[:200] + "...[truncated]"
+	}
+	return value
+}
+
+func errorString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -154,6 +155,76 @@ func TestWeComSupervisorSkipsAccountWhenLeaseHeld(t *testing.T) {
 	}
 }
 
+func TestAccountRunnerACPInitializeTimeoutReleasesLease(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	st, err := store.Open(ctx, t.TempDir()+"/channelgateway.db")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+	account, err := weComChannelAccount(config.WeComConfig{
+		Enabled:   true,
+		AccountID: "wecom-a",
+		BotID:     "bot-a",
+		Secret:    "secret-a",
+		AgentID:   "agent-a",
+	})
+	if err != nil {
+		t.Fatalf("build account: %v", err)
+	}
+	states := newChannelRuntimeStates()
+	started := make(chan string, 1)
+	initializeStarted := make(chan struct{})
+	cfg := config.Config{OwnerID: "owner-a", LeaseTTL: time.Minute, ACPInitializeTimeout: 20 * time.Millisecond}
+	runner := newAccountRunner(
+		cfg,
+		st,
+		states,
+		account,
+		func(config.Config, store.ChannelAccount) acpRuntimeClient {
+			return &fakeACPClient{initialize: func(ctx context.Context) error {
+				close(initializeStarted)
+				<-ctx.Done()
+				return ctx.Err()
+			}}
+		},
+		func(cfg wecom.Config) channelRuntimeAdapter {
+			return &fakeRuntimeAdapter{accountID: cfg.AccountID, started: started}
+		},
+	)
+	runner.Start(ctx)
+	select {
+	case <-initializeStarted:
+	case <-time.After(3 * time.Second):
+		t.Fatal("ACP initialize did not start")
+	}
+	if state := stateForAccount(t, states, "wecom-a"); state.Status != "initializing_acp" {
+		t.Fatalf("expected initializing_acp while initialize is in flight, got %#v", state)
+	}
+	select {
+	case <-runner.done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("runner did not exit after ACP initialize timeout")
+	}
+	select {
+	case accountID := <-started:
+		t.Fatalf("adapter should not start when ACP initialize times out, got %s", accountID)
+	default:
+	}
+	lease, err := st.AcquireChannelLease(ctx, "wecom-a", "owner-b", time.Minute)
+	if err != nil {
+		t.Fatalf("lease should be released after initialize timeout: %v", err)
+	}
+	if lease.OwnerID != "owner-b" {
+		t.Fatalf("unexpected reacquired lease: %#v", lease)
+	}
+	state := stateForAccount(t, states, "wecom-a")
+	if state.Status != "stopped" || !strings.Contains(state.LastError, "context deadline exceeded") {
+		t.Fatalf("expected stopped state with timeout error, got %#v", state)
+	}
+}
+
 type fakeRuntimeAdapter struct {
 	accountID string
 	started   chan<- string
@@ -174,10 +245,17 @@ func (a *fakeRuntimeAdapter) Send(context.Context, channel.Reply) (channel.SendR
 	return channel.SendResult{}, nil
 }
 
-type fakeACPClient struct{}
+type fakeACPClient struct {
+	initialize func(context.Context) error
+}
 
-func (c *fakeACPClient) Initialize(context.Context) error { return nil }
-func (c *fakeACPClient) Close() error                     { return nil }
+func (c *fakeACPClient) Initialize(ctx context.Context) error {
+	if c.initialize != nil {
+		return c.initialize(ctx)
+	}
+	return nil
+}
+func (c *fakeACPClient) Close() error { return nil }
 func (c *fakeACPClient) NewSession(context.Context, string) (string, error) {
 	return "session-test", nil
 }
@@ -198,4 +276,15 @@ func TestACPHeadersForAccountUseAccountScope(t *testing.T) {
 	if headers.Get("X-Tenant-ID") != "tenant-a" || headers.Get("X-Project-ID") != "project-a" {
 		t.Fatalf("account scope should override global scope: %#v", http.Header(headers))
 	}
+}
+
+func stateForAccount(t *testing.T, states *channelRuntimeStates, accountID string) channelRuntimeState {
+	t.Helper()
+	for _, state := range states.Snapshot() {
+		if state.AccountID == accountID {
+			return state
+		}
+	}
+	t.Fatalf("missing state for account %s", accountID)
+	return channelRuntimeState{}
 }
