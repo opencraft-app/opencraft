@@ -61,7 +61,13 @@ docker run --rm --privileged --platform "$platform" \
     mount --rbind /dev "$mnt/dev"
     mount --rbind /sys "$mnt/sys"
     printf "%s\n%s\n" "'"$apk_repository"'/main" "'"$apk_repository"'/community" > "$mnt/etc/apk/repositories"
-    chroot "$mnt" /bin/sh -lc "apk add --no-cache ca-certificates gcompat libc6-compat && update-ca-certificates"
+    chroot "$mnt" /bin/sh -lc "apk add --no-cache \
+        ca-certificates gcompat libc6-compat tzdata \
+        bash coreutils findutils grep sed gawk \
+        curl wget jq git openssl \
+        tar gzip xz zstd unzip \
+        procps-ng iproute2 bind-tools \
+      && update-ca-certificates"
     umount "$mnt/proc"
     umount -l "$mnt/dev"
     umount -l "$mnt/sys"
