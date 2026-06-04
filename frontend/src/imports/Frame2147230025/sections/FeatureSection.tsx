@@ -2566,15 +2566,29 @@ export function CardsSection() {
       <div className="mx-auto px-16" style={{ width: 'min(1440px, calc(100vw - 128px))' }}>
         {/* 标题 */}
         <div className="flex flex-col items-center gap-4 mb-10">
-          <h2
-            className="text-[32px] lw-font-hyruiyisong text-[rgba(0,0,0,0.9)] leading-[48px] text-center lv-reveal"
-            style={{
-              WebkitTextStrokeWidth: '0.6px',
-              WebkitTextStrokeColor: 'var(--color-text-primary, rgba(0, 0, 0, 0.90))',
-            }}
-          >
-            Hermes Agent 云端原生体验
-          </h2>
+          <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+            {/* 左上角装饰 */}
+            <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 8 8" fill="none"
+              style={{ position: 'absolute', left: '-16px', top: '-2px' }}>
+              <rect x="4" width="4" height="4" fill="black"/>
+              <rect width="4" height="8" fill="black"/>
+            </svg>
+            <h2
+              className="text-[32px] lw-font-hyruiyisong text-[rgba(0,0,0,0.9)] leading-[48px] text-center lv-reveal"
+              style={{
+                WebkitTextStrokeWidth: '0.6px',
+                WebkitTextStrokeColor: 'var(--color-text-primary, rgba(0, 0, 0, 0.90))',
+              }}
+            >
+              Hermes Agent 云端原生体验
+            </h2>
+            {/* 右下角装饰 */}
+            <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 8 8" fill="none"
+              style={{ position: 'absolute', right: '-16px', bottom: '-2px', transform: 'rotate(180deg)' }}>
+              <rect x="4" width="4" height="4" fill="black"/>
+              <rect width="4" height="8" fill="black"/>
+            </svg>
+          </div>
           <p className="text-[16px] font-['PingFang_SC:Regular',sans-serif] text-[rgba(0,0,0,0.5)] leading-6 text-center whitespace-nowrap lv-reveal lv-delay-200">
             随时在线，数据由你掌控
           </p>
@@ -2668,15 +2682,29 @@ export default function FeatureSection() {
       <style dangerouslySetInnerHTML={{ __html: marqueeStyle }} />
       {/* 标题 + 描述：1440px 版心 */}
       <div className="mx-auto px-16 mb-10 text-center flex flex-col items-center gap-4" style={{ width: 'min(1440px, calc(100vw - 128px))' }}>
-        <h2
-          className="text-[32px] lw-font-hyruiyisong text-[rgba(0,0,0,0.9)] leading-[48px] text-center lv-reveal"
-          style={{
-            WebkitTextStrokeWidth: '0.6px',
-            WebkitTextStrokeColor: 'var(--color-text-primary, rgba(0, 0, 0, 0.90))',
-          }}
-        >
-          你只管开口，远方的智能伙伴替你抵达
-        </h2>
+        <div className="relative inline-flex items-center">
+          {/* 左上角装饰 */}
+          <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 8 8" fill="none"
+            style={{ position: 'absolute', left: '-16px', top: '-2px' }}>
+            <rect x="4" width="4" height="4" fill="black"/>
+            <rect width="4" height="8" fill="black"/>
+          </svg>
+          <h2
+            className="text-[32px] lw-font-hyruiyisong text-[rgba(0,0,0,0.9)] leading-[48px] text-center lv-reveal"
+            style={{
+              WebkitTextStrokeWidth: '0.6px',
+              WebkitTextStrokeColor: 'var(--color-text-primary, rgba(0, 0, 0, 0.90))',
+            }}
+          >
+            你只管开口，远方的智能伙伴替你抵达
+          </h2>
+          {/* 右下角装饰 */}
+          <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 8 8" fill="none"
+            style={{ position: 'absolute', right: '-16px', bottom: '-2px', transform: 'rotate(180deg)' }}>
+            <rect x="4" width="4" height="4" fill="black"/>
+            <rect width="4" height="8" fill="black"/>
+          </svg>
+        </div>
         <p className="text-[16px] font-['PingFang_SC:Regular',sans-serif] text-[rgba(0,0,0,0.5)] leading-6 text-center whitespace-nowrap lv-reveal lv-delay-200">
           我们把 Hermes Agent 搬上云端，让你无需折腾部署，随时唤醒，对话数据永远只属于你。
         </p>
