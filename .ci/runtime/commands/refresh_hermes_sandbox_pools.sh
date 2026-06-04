@@ -192,39 +192,47 @@ refresh_skus() {
 target_pool_ids() {
   local api_base="$1"
   local pools_json="$2"
-  local resolved_json resolved_ids fallback_ids
-  if resolved_json="$(api_get "$api_base" "/template-classes/${TEMPLATE_CLASS_ID}/resolve" 2>/dev/null)"; then
-    resolved_ids="$(
-      jq -r '
-        (.pools // [])
-        | .[]
-        | .id
-      ' <<<"$resolved_json" | sort -u
-    )"
-    if [[ -n "$resolved_ids" ]]; then
-      printf '%s\n' "$resolved_ids"
-      return
-    fi
-  fi
+  python3 -c '
+import json
+import sys
+import urllib.request
 
-  fallback_ids="$(jq -r --arg template "$TEMPLATE_CLASS_ID" '
-    .[]
-    | select((.template_class_id == $template) or ((.sku_id // "") | startswith("sku-hermes-")))
-    | .id
-  ' <<<"$pools_json")"
-  if [[ -n "$fallback_ids" ]]; then
-    printf '%s\n' "$fallback_ids"
-    return
-  fi
+api_base, template, legacy_raw = sys.argv[1:4]
+legacy_ids = [item.strip() for item in legacy_raw.split(",") if item.strip()]
+pools = json.load(sys.stdin)
+by_id = {str(pool.get("id") or ""): pool for pool in pools}
+selected = []
+seen = set()
 
-  if [[ -n "$LEGACY_POOL_IDS" ]]; then
-    jq -r --arg ids "$LEGACY_POOL_IDS" '
-      ($ids | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0))) as $legacy_ids
-      | .[]
-      | select(.id as $id | $legacy_ids | index($id))
-      | .id
-    ' <<<"$pools_json"
-  fi
+def add(pool_id):
+    pool_id = str(pool_id or "")
+    if not pool_id or pool_id in seen:
+        return
+    if pool_id in by_id:
+        seen.add(pool_id)
+        selected.append(pool_id)
+
+for pool_id in legacy_ids:
+    add(pool_id)
+
+for pool in pools:
+    if pool.get("template_class_id") == template or str(pool.get("sku_id") or "").startswith("sku-hermes-"):
+        add(pool.get("id"))
+
+try:
+    with urllib.request.urlopen(f"{api_base}/template-classes/{template}/resolve", timeout=10) as resp:
+        resolved = json.load(resp)
+    for pool in resolved.get("pools") or []:
+        pool_id = str(pool.get("id") or "")
+        if pool_id and pool_id not in by_id:
+            by_id[pool_id] = pool
+        add(pool_id)
+except Exception:
+    pass
+
+for pool_id in selected:
+    print(pool_id)
+  ' "$api_base" "$TEMPLATE_CLASS_ID" "$LEGACY_POOL_IDS" <<<"$pools_json"
 }
 
 print_pool_discovery_debug() {
