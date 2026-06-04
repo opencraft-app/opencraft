@@ -11,6 +11,21 @@
   font-display: swap;
 }
 
+@font-face {
+  font-family: "HYRuiYiSong:45J";
+  src: url("/fonts/HYRuiYiSong-45J.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+.lw-font-hyruiyisong {
+  font-family: "HYRuiYiSong:45J", sans-serif !important;
+}
+.lw-font-hyruiyisong-no45j {
+  font-family: "HYRuiYiSong", sans-serif !important;
+}
+
 :root {
   --app-background: #ffffff;
   --bg-app: #ffffff;

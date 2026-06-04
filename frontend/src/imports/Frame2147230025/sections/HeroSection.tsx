@@ -113,8 +113,9 @@ export default function HeroSection() {
 
         {/* 按钮 */}
         <div
-          className="pointer-events-auto flex items-center justify-center gap-2 cursor-pointer lv-reveal lv-revealed lv-delay-400 lv-btn-arrow lv-btn-shadow"
+          className="pointer-events-auto flex items-center justify-center gap-2 cursor-pointer lv-reveal lv-revealed lv-delay-400 lv-btn-arrow"
           style={{
+            width: '314px',
             height: '60px',
             padding: '0 32px',
             background: '#1A1A1A',

@@ -1,9 +1,8 @@
-import React from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   svgPaths,
   imgImage4, imgImage4588,
   imgCtaDeco, imgCtaLogo1, imgCtaLogo2,
-  imgImage614591606,
 } from '../assets';
 import '../motion.css';
 import { useScrollReveal } from '../useScrollReveal';
@@ -11,9 +10,9 @@ import { useScrollReveal } from '../useScrollReveal';
 
 function ArrowIcon() {
   return (
-    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-      <path d="M1.5 10.5L10.5 1.5" stroke="black" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M4.5 1.5H10.5V7.5" stroke="black" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <path d="M2 14L14 2" stroke="black" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M6 2H14V10" stroke="black" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -21,9 +20,9 @@ function ArrowIcon() {
 
 function CreateButton() {
   return (
-    <button className="flex items-center gap-2 bg-[#1a1a1a] text-white rounded-full pl-6 pr-2 py-2 h-12 cursor-pointer shrink-0 lv-btn-arrow lv-btn-shadow">
-      <span className="font-['PingFang_SC:Medium',sans-serif] text-[13.5px] leading-[18px] font-medium">立即创建</span>
-      <span className="flex items-center justify-center bg-white rounded-full size-[27px] shrink-0">
+    <button className="flex items-center bg-[#1a1a1a] text-white rounded-full pl-8 pr-3 h-[60px] w-[314px] cursor-pointer shrink-0 lv-btn-arrow">
+      <span className="flex-1 font-['PingFang_SC:Medium',sans-serif] text-[16px] leading-[24px] font-medium text-center">立即创建</span>
+      <span className="flex items-center justify-center bg-white rounded-full w-10 h-10 shrink-0">
         <ArrowIcon />
       </span>
     </button>
@@ -50,19 +49,30 @@ function Ellipse() {
 }
 
 
-function MascotGroup() {
+interface MascotGroupProps {
+  offsetX: number;
+  offsetY: number;
+}
+
+function MascotGroup({ offsetX, offsetY }: MascotGroupProps) {
   return (
-    <div className="absolute pointer-events-none lv-float" style={{ right: -100, top: -20, width: 79, height: 88 }}>
+    <div
+      className="absolute pointer-events-none"
+      style={{ right: -70, top: -50, width: 126, height: 118 }}
+    >
       <div className="flex items-center justify-center w-full h-full">
-        <div style={{ transform: 'rotate(12.96deg)' }}>
-          <div className="relative overflow-hidden" style={{ width: 64, height: 75 }}>
-            <img
-              alt=""
-              src={imgImage614591606}
-              className="absolute max-w-none pointer-events-none"
-              style={{ width: '684.34%', height: '388.21%', left: 0, top: '-137.51%' }}
-            />
-          </div>
+        <div
+          style={{
+            transform: `rotate(12.96deg) translate(${offsetX}px, ${offsetY}px)`,
+            transition: 'transform 200ms ease-out',
+          }}
+        >
+          <img
+            alt=""
+            src="/Slice 1.png"
+            className="pointer-events-none"
+            style={{ width: 126, height: 118 }}
+          />
         </div>
       </div>
     </div>
@@ -70,21 +80,20 @@ function MascotGroup() {
 }
 
 
-function TitleBlock() {
+function TitleBlock({ offsetX, offsetY }: { offsetX: number; offsetY: number }) {
   return (
     <div>
       {/* 开启旅程 — 带吉祥物装饰 */}
       <div className="relative inline-block">
-        <h2 className="font-['HYRuiYiSong:45J',sans-serif] text-[#1a1a1a] whitespace-nowrap" style={{ fontSize: '48px', lineHeight: '64px', width: '256px', height: '64px' }}>
+        <h2 className="text-[#1a1a1a] whitespace-nowrap" style={{ fontFamily: "'HYRuiYiSong:45J', sans-serif", fontSize: '48px', lineHeight: '64px', width: '256px', height: '64px' }}>
           开启旅程
         </h2>
-        <Ellipse />
-        <MascotGroup />
+        <MascotGroup offsetX={offsetX} offsetY={offsetY} />
       </div>
       {/* 准备好开启 探索之旅 了吗？ */}
-      <div className="font-['HYRuiYiSong:45J',sans-serif] text-[#1a1a1a] whitespace-nowrap" style={{ fontSize: '48px', lineHeight: '64px', width: '768px', height: '64px' }}>
+      <div className="text-[#1a1a1a] whitespace-nowrap" style={{ fontFamily: "'HYRuiYiSong:45J', sans-serif", fontSize: '48px', lineHeight: '64px', width: '768px', height: '64px' }}>
         准备好开启
-        <span className="text-transparent bg-clip-text" style={{ backgroundImage: 'linear-gradient(90deg, #3503ff 0%, #D587FF 49.519%, #FFCA80 100%)' }}>
+        <span className="text-transparent bg-clip-text" style={{ backgroundImage: 'linear-gradient(90deg, rgb(53, 3, 255) 0%, rgb(213, 135, 255) 49.519%, rgb(255, 202, 128) 100%)' }}>
           探索之旅
         </span>
         了吗？
@@ -97,8 +106,8 @@ function TitleBlock() {
 function LogoGroup() {
   return (
     <div className="mt-8 flex items-center gap-8">
-      <img alt="Hermes Agent" src="/hermes-agent-logo.png" className="h-10 w-auto" />
-      <img alt="OpenClaw" src="/openclaw-logo.png" className="h-10 w-auto" />
+      <img alt="Hermes Agent" src="/hermes_logo.png" className="h-6 w-auto" />
+      <img alt="OpenClaw" src="/lightclaw-logo.png" className="h-6 w-auto" />
     </div>
   );
 }
@@ -106,8 +115,41 @@ function LogoGroup() {
 
 export default function CtaSection() {
   const ref = useScrollReveal();
+  const sectionRef = useRef<HTMLElement>(null);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!sectionRef.current) return;
+      const rect = sectionRef.current.getBoundingClientRect();
+      // 计算相对于 section 中心的位置
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      const x = (e.clientX - centerX) * 0.015;
+      const y = (e.clientY - centerY) * 0.015;
+      setOffset({ x, y });
+    };
+
+    const handleMouseLeave = () => {
+      setOffset({ x: 0, y: 0 });
+    };
+
+    const section = sectionRef.current;
+    if (section) {
+      section.addEventListener('mousemove', handleMouseMove);
+      section.addEventListener('mouseleave', handleMouseLeave);
+    }
+
+    return () => {
+      if (section) {
+        section.removeEventListener('mousemove', handleMouseMove);
+        section.removeEventListener('mouseleave', handleMouseLeave);
+      }
+    };
+  }, []);
+
   return (
-    <section className="w-full bg-white relative overflow-hidden" ref={ref as React.RefObject<HTMLElement>}>
+    <section ref={sectionRef} className="w-full bg-white relative overflow-hidden">
       {/* 背景装饰光晕 */}
       <img
         src={imgCtaDeco}
@@ -118,13 +160,14 @@ export default function CtaSection() {
 
       {/* 内容区 */}
       <div
+        ref={ref as React.RefObject<HTMLDivElement>}
         className="mx-auto relative"
         style={{ width: 'min(1440px, calc(100vw - 128px))', paddingTop: 80, paddingBottom: 80 }}
       >
         <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-12">
           {/* 左侧 .journey-copy */}
           <div className="flex flex-col lv-reveal">
-            <TitleBlock />
+            <TitleBlock offsetX={offset.x} offsetY={offset.y} />
             {/* 副文案 */}
             <p className="mt-6 text-[14px] font-['PingFang_SC:Regular',sans-serif] leading-6 lv-reveal lv-delay-200" style={{ height: '44px', paddingTop: '12px', paddingBottom: '12px', color: '#00000080' }}>
               隐私政策 · 服务条款 · 加入用户交流群
@@ -134,7 +177,7 @@ export default function CtaSection() {
 
           {/* 右侧 .journey-action */}
           <div className="flex flex-col items-start lg:items-end gap-6 shrink-0 lv-reveal lv-delay-300">
-            <p className="text-[14px] font-['PingFang_SC:Regular',sans-serif] text-[#1a1a1a] leading-6 lg:text-right whitespace-nowrap" style={{ width: '246px' }}>
+            <p className="text-[14px] font-['PingFang_SC:Regular',sans-serif] text-[#1a1a1a] leading-6 lg:text-center whitespace-nowrap" style={{ width: '246px' }}>
               你的 AI 在云端等你，随时随地伴你同行
             </p>
             <CreateButton />

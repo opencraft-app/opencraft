@@ -55,7 +55,7 @@ function Group75() {
 function Group74() {
   return (
     <div className="grid-cols-[max-content] grid-rows-[max-content] inline-grid leading-[0] place-items-start relative shrink-0">
-      <p className="[word-break:break-word] col-1 font-['HYRuiYiSong:45J',sans-serif] leading-[48px] ml-[16px] mt-[2px] not-italic relative row-1 text-[32px] text-[rgba(0,0,0,0.9)] whitespace-nowrap">你只管开口，远方的智能伙伴替你抵达</p>
+      <h2 className="text-[32px] lw-font-hyruiyisong text-[rgba(0,0,0,0.9)] leading-[48px] text-center">Hermes Agent 云端原生体验</h2>
       <Group75 />
     </div>
   );
@@ -64,9 +64,9 @@ function Group74() {
 
 function Frame84() {
   return (
-    <div className="flex flex-col items-center gap-4">
-      <h2 className="text-[32px] font-['HYRuiYiSong:45J',sans-serif] text-[rgba(0,0,0,0.9)] leading-[48px] text-center">Hermes Agent 云端原生体验</h2>
-      <p className="text-[16px] font-['PingFang_SC:Regular',sans-serif] text-[rgba(0,0,0,0.5)] leading-6 text-center">随时在线，数据由你掌控</p>
+    <div className="flex flex-col items-center gap-[16px] w-[645px]">
+      <h2 className="text-[32px] lw-font-hyruiyisong-no45j text-white leading-[48px] text-right w-full">Hermes Agent 云端原生体验</h2>
+      <p className="text-[16px] font-['PingFang_SC',sans-serif] text-[rgba(255,255,255,0.5)] leading-6 text-center w-full">随时在线，数据由你掌控</p>
     </div>
   );
 }
@@ -575,7 +575,7 @@ function Container() {
 function Group76() {
   return (
     <div className="grid-cols-[max-content] grid-rows-[max-content] inline-grid leading-[0] place-items-start relative shrink-0">
-      <p className="[word-break:break-word] col-1 font-['HYRuiYiSong:45J',sans-serif] leading-[48px] ml-[16px] mt-[2px] not-italic relative row-1 text-[32px] text-[rgba(0,0,0,0.9)] whitespace-nowrap">Hermes Agent 云端原生体验</p>
+      <p className="[word-break:break-word] col-1 lw-font-hyruiyisong-no45j leading-[48px] ml-[16px] mt-[2px] not-italic relative row-1 text-[32px] text-[rgba(0,0,0,0.9)] whitespace-nowrap">Hermes Agent 云端原生体验</p>
       <Container />
     </div>
   );
@@ -1870,7 +1870,7 @@ function Container44() {
 function Container47() {
   return (
     <div className="[word-break:break-word] absolute content-stretch flex flex-col gap-[4px] items-start left-[40px] not-italic top-[408px] w-[384.5px]" data-name="Container">
-      <p className="font-['HYRuiYiSong:45J',sans-serif] leading-[48px] relative shrink-0 text-[24px] text-[rgba(0,0,0,0.9)] w-full">原版 Hermes Agent，一键即用</p>
+      <p className="lw-font-hyruiyisong leading-[48px] relative shrink-0 text-[24px] text-[rgba(0,0,0,0.9)] w-full">原版 Hermes Agent，一键即用</p>
       <p className="font-['PingFang_SC:Regular',sans-serif] leading-[28px] relative shrink-0 text-[16px] text-[rgba(0,0,0,0.5)] w-full">无需自己部署、配置环境、折腾 API Key。我们帮你把原汁原味的 Hermes Agent 搬上云端，打开即是完整体验。</p>
     </div>
   );
@@ -2197,7 +2197,7 @@ function Container57() {
 function Container59() {
   return (
     <div className="[word-break:break-word] absolute content-stretch flex flex-col gap-[4px] items-start left-[40px] not-italic top-[408px] w-[384px]" data-name="Container">
-      <p className="font-['HYRuiYiSong:45J',sans-serif] leading-[48px] relative shrink-0 text-[24px] text-[rgba(0,0,0,0.9)] w-full">一随时唤醒， 不消耗你的任何资源</p>
+      <p className="lw-font-hyruiyisong leading-[48px] relative shrink-0 text-[24px] text-[rgba(0,0,0,0.9)] w-full">一随时唤醒， 不消耗你的任何资源</p>
       <p className="font-['PingFang_SC:Regular',sans-serif] leading-[28px] relative shrink-0 text-[16px] text-[rgba(0,0,0,0.5)] w-full">Hermes Agent 运行在专属云端实例上，不消耗你的本地电量和内存。无论手机端还是电脑端，随时呼唤，秒级响应</p>
     </div>
   );
@@ -2476,7 +2476,7 @@ function Container72() {
 function Container77() {
   return (
     <div className="[word-break:break-word] absolute content-stretch flex flex-col gap-[4px] items-start left-[40px] not-italic top-[408px] w-[384px]" data-name="Container">
-      <p className="font-['HYRuiYiSong:45J',sans-serif] leading-[48px] relative shrink-0 text-[24px] text-[rgba(0,0,0,0.9)] w-full">你的对话，只存于专属空间</p>
+      <p className="lw-font-hyruiyisong leading-[48px] relative shrink-0 text-[24px] text-[rgba(0,0,0,0.9)] w-full">你的对话，只存于专属空间</p>
       <p className="font-['PingFang_SC:Regular',sans-serif] leading-[28px] relative shrink-0 text-[16px] text-[rgba(0,0,0,0.5)] w-full">你与 Hermes Agent 的所有对话记录均存储在你的专属服务器中，不共享给任何第三方，随时可管理。你说了算。</p>
     </div>
   );
@@ -2547,7 +2547,7 @@ export function CardsSection() {
       <div className="mx-auto px-16" style={{ width: 'min(1440px, calc(100vw - 128px))' }}>
         {/* 标题 */}
         <div className="flex flex-col items-center gap-4 mb-10">
-          <h2 className="text-[32px] font-['HYRuiYiSong:45J',sans-serif] text-[rgba(0,0,0,0.9)] leading-[48px] text-center">
+          <h2 className="text-[32px] lw-font-hyruiyisong text-[rgba(0,0,0,0.9)] leading-[48px] text-center">
             Hermes Agent 云端原生体验
           </h2>
           <p className="text-[16px] font-['PingFang_SC:Regular',sans-serif] text-[rgba(0,0,0,0.5)] leading-6 text-center">
@@ -2643,10 +2643,10 @@ export default function FeatureSection() {
       <style dangerouslySetInnerHTML={{ __html: marqueeStyle }} />
       {/* 标题 + 描述：1440px 版心 */}
       <div className="mx-auto px-16 mb-10 text-center" style={{ width: 'min(1440px, calc(100vw - 128px))' }}>
-        <h2 className="font-['HYRuiYiSong:45J',sans-serif] text-[rgba(0,0,0,0.9)] mb-2 lv-reveal" style={{ fontSize: '32px', lineHeight: '48px', width: '870px', height: '48px' }}>
-          你只管开口，远方的智能伙伴替你抵达
+        <h2 className="text-[32px] lw-font-hyruiyisong text-[rgba(0,0,0,0.9)] leading-[48px] text-center lv-reveal">
+          Hermes Agent 云端原生体验
         </h2>
-        <p className="text-[16px] font-['PingFang_SC:Regular',sans-serif] text-[rgba(0,0,0,0.5)] leading-6 max-w-[645px] mx-auto lv-reveal lv-delay-200">
+        <p className="text-[16px] font-['PingFang_SC:Regular',sans-serif] text-[rgba(0,0,0,0.5)] leading-6 text-center whitespace-nowrap lv-reveal lv-delay-200">
           我们把 Hermes Agent 搬上云端，让你无需折腾部署，随时唤醒，对话数据永远只属于你。
         </p>
       </div>

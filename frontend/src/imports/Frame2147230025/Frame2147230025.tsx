@@ -1776,7 +1776,7 @@ function Group33() {
 function Frame71() {
   return (
     <div className="-translate-x-1/2 absolute content-stretch flex flex-col gap-[16px] items-center left-[calc(50%+0.5px)] top-[2771px] w-[645px]">
-      <p className="[word-break:break-word] font-['HYRuiYiSong:45J',sans-serif] leading-[48px] not-italic relative shrink-0 text-[32px] text-right text-white whitespace-nowrap">探索lightvela流程</p>
+      <p className="[word-break:break-word] lw-font-hyruiyisong leading-[48px] not-italic relative shrink-0 text-[32px] text-right text-white whitespace-nowrap">探索lightvela流程</p>
       <Group33 />
     </div>
   );
@@ -2078,7 +2078,7 @@ function Group75() {
 function Group74() {
   return (
     <div className="grid-cols-[max-content] grid-rows-[max-content] inline-grid leading-[0] place-items-start relative shrink-0">
-      <p className="[word-break:break-word] col-1 font-['HYRuiYiSong:45J',sans-serif] leading-[48px] ml-[16px] mt-[2px] not-italic relative row-1 text-[32px] text-[rgba(0,0,0,0.9)] whitespace-nowrap">你只管开口，远方的智能伙伴替你抵达</p>
+      <h2 className="text-[32px] lw-font-hyruiyisong text-[rgba(0,0,0,0.9)] leading-[48px] text-center">Hermes Agent 云端原生体验</h2>
       <Group75 />
     </div>
   );
@@ -2086,9 +2086,9 @@ function Group74() {
 
 function Frame84() {
   return (
-    <div className="flex flex-col items-center gap-4">
-      <h2 className="text-[32px] font-['HYRuiYiSong:45J',sans-serif] text-[rgba(0,0,0,0.9)] leading-[48px] text-center">Hermes Agent 云端原生体验</h2>
-      <p className="text-[16px] font-['PingFang_SC:Regular',sans-serif] text-[rgba(0,0,0,0.5)] leading-6 text-center">随时在线，数据由你掌控</p>
+    <div className="flex flex-col items-center gap-[16px] w-[645px]">
+      <h2 className="text-[32px] lw-font-hyruiyisong-no45j text-white leading-[48px] text-right w-full">Hermes Agent 云端原生体验</h2>
+      <p className="text-[16px] font-['PingFang_SC',sans-serif] text-[rgba(255,255,255,0.5)] leading-6 text-center w-full">随时在线，数据由你掌控</p>
     </div>
   );
 }
@@ -2551,7 +2551,7 @@ function Container() {
 function Group76() {
   return (
     <div className="grid-cols-[max-content] grid-rows-[max-content] inline-grid leading-[0] place-items-start relative shrink-0">
-      <p className="[word-break:break-word] col-1 font-['HYRuiYiSong:45J',sans-serif] leading-[48px] ml-[16px] mt-[2px] not-italic relative row-1 text-[32px] text-[rgba(0,0,0,0.9)] whitespace-nowrap">Hermes Agent 云端原生体验</p>
+      <p className="[word-break:break-word] col-1 lw-font-hyruiyisong-no45j leading-[48px] ml-[16px] mt-[2px] not-italic relative row-1 text-[32px] text-[rgba(0,0,0,0.9)] whitespace-nowrap">Hermes Agent 云端原生体验</p>
       <Container />
     </div>
   );
@@ -3751,7 +3751,7 @@ function Container44() {
 function Container47() {
   return (
     <div className="[word-break:break-word] absolute content-stretch flex flex-col gap-[4px] items-start left-[40px] not-italic top-[408px] w-[384.5px]" data-name="Container">
-      <p className="font-['HYRuiYiSong:45J',sans-serif] leading-[48px] relative shrink-0 text-[24px] text-[rgba(0,0,0,0.9)] w-full">原版 Hermes Agent，一键即用</p>
+      <p className="lw-font-hyruiyisong leading-[48px] relative shrink-0 text-[24px] text-[rgba(0,0,0,0.9)] w-full">原版 Hermes Agent，一键即用</p>
       <p className="font-['PingFang_SC:Regular',sans-serif] leading-[28px] relative shrink-0 text-[16px] text-[rgba(0,0,0,0.5)] w-full">无需自己部署、配置环境、折腾 API Key。我们帮你把原汁原味的 Hermes Agent 搬上云端，打开即是完整体验。</p>
     </div>
   );
@@ -4063,7 +4063,7 @@ function Container57() {
 function Container59() {
   return (
     <div className="[word-break:break-word] absolute content-stretch flex flex-col gap-[4px] items-start left-[40px] not-italic top-[408px] w-[384px]" data-name="Container">
-      <p className="font-['HYRuiYiSong:45J',sans-serif] leading-[48px] relative shrink-0 text-[24px] text-[rgba(0,0,0,0.9)] w-full">一随时唤醒， 不消耗你的任何资源</p>
+      <p className="lw-font-hyruiyisong leading-[48px] relative shrink-0 text-[24px] text-[rgba(0,0,0,0.9)] w-full">一随时唤醒， 不消耗你的任何资源</p>
       <p className="font-['PingFang_SC:Regular',sans-serif] leading-[28px] relative shrink-0 text-[16px] text-[rgba(0,0,0,0.5)] w-full">Hermes Agent 运行在专属云端实例上，不消耗你的本地电量和内存。无论手机端还是电脑端，随时呼唤，秒级响应</p>
     </div>
   );
@@ -4323,7 +4323,7 @@ function Container72() {
 function Container77() {
   return (
     <div className="[word-break:break-word] absolute content-stretch flex flex-col gap-[4px] items-start left-[40px] not-italic top-[408px] w-[384px]" data-name="Container">
-      <p className="font-['HYRuiYiSong:45J',sans-serif] leading-[48px] relative shrink-0 text-[24px] text-[rgba(0,0,0,0.9)] w-full">你的对话，只存于专属空间</p>
+      <p className="lw-font-hyruiyisong leading-[48px] relative shrink-0 text-[24px] text-[rgba(0,0,0,0.9)] w-full">你的对话，只存于专属空间</p>
       <p className="font-['PingFang_SC:Regular',sans-serif] leading-[28px] relative shrink-0 text-[16px] text-[rgba(0,0,0,0.5)] w-full">你与 Hermes Agent 的所有对话记录均存储在你的专属服务器中，不共享给任何第三方，随时可管理。你说了算。</p>
     </div>
   );
@@ -4771,9 +4771,9 @@ export default function Frame83() {
       <Group9 />
       <Group10 />
       <Frame72 />
-      <p className="[word-break:break-word] absolute font-['HYRuiYiSong:45J',sans-serif] leading-[32px] left-[calc(50%-664px)] not-italic text-[24px] text-white top-[2999px] whitespace-nowrap">点击「立即创建」</p>
-      <p className="[word-break:break-word] absolute font-['HYRuiYiSong:45J',sans-serif] leading-[32px] left-[calc(50%-664px)] not-italic text-[24px] text-[rgba(255,255,255,0.9)] top-[3198px] whitespace-nowrap">系统自动帮你创建</p>
-      <p className="[word-break:break-word] absolute font-['HYRuiYiSong:45J',sans-serif] leading-[32px] left-[calc(50%-664px)] not-italic text-[24px] text-[rgba(255,255,255,0.9)] top-[3377px] whitespace-nowrap">和智能伙伴开始对话</p>
+      <p className="[word-break:break-word] absolute lw-font-hyruiyisong leading-[32px] left-[calc(50%-664px)] not-italic text-[24px] text-white top-[2999px] whitespace-nowrap">点击「立即创建」</p>
+      <p className="[word-break:break-word] absolute lw-font-hyruiyisong leading-[32px] left-[calc(50%-664px)] not-italic text-[24px] text-[rgba(255,255,255,0.9)] top-[3198px] whitespace-nowrap">系统自动帮你创建</p>
+      <p className="[word-break:break-word] absolute lw-font-hyruiyisong leading-[32px] left-[calc(50%-664px)] not-italic text-[24px] text-[rgba(255,255,255,0.9)] top-[3377px] whitespace-nowrap">和智能伙伴开始对话</p>
       <Frame71 />
       <div className="absolute flex items-center justify-center left-[1202px] size-[314px] top-[3010px]">
         <div className="-scale-y-100 flex-none rotate-180">
@@ -4836,12 +4836,12 @@ export default function Frame83() {
       <Frame85 />
       <Frame87 />
       <Frame7 />
-      <div className="[word-break:break-word] absolute font-['HYRuiYiSong:45J',sans-serif] leading-[0] left-[296px] not-italic text-[48px] text-black top-[3648px] whitespace-nowrap">
+      <div className="[word-break:break-word] absolute leading-[0] left-[296px] not-italic text-[48px] text-black top-[3648px] whitespace-nowrap" style={{ fontFamily: "'HYRuiYiSong:45J', sans-serif" }}>
         <p className="leading-[64px] mb-0">开启旅程</p>
         <p className="leading-[64px]">准备好开启</p>
       </div>
-      <p className="[word-break:break-word] absolute bg-clip-text bg-gradient-to-r font-['HYRuiYiSong:45J',sans-serif] from-[#3503ff] leading-[64px] left-[536px] not-italic text-[48px] text-[transparent] to-[#ffca80] top-[3712px] via-[#d587ff] via-[49.519%] whitespace-nowrap">探索之旅</p>
-      <p className="[word-break:break-word] absolute font-['HYRuiYiSong:45J',sans-serif] leading-[64px] left-[731px] not-italic text-[48px] text-black top-[3712px] whitespace-nowrap">了吗？</p>
+      <p className="[word-break:break-word] absolute bg-clip-text leading-[64px] left-[536px] not-italic text-[48px] text-[transparent] top-[3712px] whitespace-nowrap" style={{ fontFamily: "'HYRuiYiSong:45J', sans-serif", backgroundImage: 'linear-gradient(90deg, rgb(53, 3, 255) 0%, rgb(213, 135, 255) 49.519%, rgb(255, 202, 128) 100%)' }}>探索之旅</p>
+      <p className="[word-break:break-word] absolute leading-[64px] left-[731px] not-italic text-[48px] text-black top-[3712px] whitespace-nowrap" style={{ fontFamily: "'HYRuiYiSong:45J', sans-serif" }}>了吗？</p>
       <Frame73 />
       <Frame74 />
       <Group32 />

@@ -279,7 +279,7 @@ export default function ProcessSection() {
         <img alt="" src={imgImage614591623} className="absolute mix-blend-plus-lighter pointer-events-none lv-float-sm" style={{ left: p(1061), top: p(741, H), width: p(22), objectFit: 'contain', animationDelay: '3s' }} />
         {/* process-title：标题居中 */}
         <div className="absolute left-0 right-0 flex flex-col items-center text-center" style={{ top: '60px', zIndex: 10 }}>
-          <h2 className="font-['HYRuiYiSong:45J',sans-serif] text-white leading-[48px] whitespace-nowrap" style={{ fontSize: '32px' }}>探索 LightVela 流程</h2>
+          <h2 className="lw-font-hyruiyisong text-white leading-[48px] whitespace-nowrap" style={{ fontSize: '32px' }}>探索 LightVela 流程</h2>
           <p className="font-['PingFang_SC:Regular',sans-serif] text-[rgba(255,255,255,0.5)] leading-6 mt-2" style={{ fontSize: '16px', maxWidth: '540px' }}>我们把 Hermes Agent 搬上云端，让你无需折腾部署，随时唤醒，对话数据永远只属于你。</p>
         </div>
         {/* process-grid > steps：左侧步骤列表 */}
@@ -291,7 +291,7 @@ export default function ProcessSection() {
           ].map(({ step, title, desc }, i) => (
             <article key={step} className={`flex flex-col lv-reveal-up lv-delay-${(i + 1) * 200}`} style={{ gap: '6px' }}>
               <StepBadge label={step} />
-              <h3 className="font-['HYRuiYiSong:45J',sans-serif] text-white" style={{ fontSize: '24px', lineHeight: '36px', margin: '4px 0 0' }}>{title}</h3>
+              <h3 className="lw-font-hyruiyisong text-white" style={{ fontSize: '24px', lineHeight: '36px', margin: '4px 0 0' }}>{title}</h3>
               <p className="font-['PingFang_SC:Regular',sans-serif] text-[rgba(255,255,255,0.7)]" style={{ fontSize: '14px', lineHeight: '24px' }}>{desc}</p>
             </article>
           ))}
@@ -324,7 +324,7 @@ export default function ProcessSection() {
       >
         {/* 标题 */}
         <div className="text-center flex flex-col gap-3">
-          <h2 className="font-['HYRuiYiSong:45J',sans-serif] text-white text-[24px] leading-[36px]">探索 LightVela 流程</h2>
+          <h2 className="lw-font-hyruiyisong text-white text-[24px] leading-[36px]">探索 LightVela 流程</h2>
           <p className="font-['PingFang_SC:Regular',sans-serif] text-[rgba(255,255,255,0.5)] text-[14px] leading-6">我们把 Hermes Agent 搬上云端，让你无需折腾部署，随时唤醒，对话数据永远只属于你。</p>
         </div>
         {/* 步骤 */}
@@ -336,7 +336,7 @@ export default function ProcessSection() {
           ].map(({ step, title, desc }) => (
             <article key={step} className="flex flex-col gap-2">
               <StepBadge label={step} />
-              <p className="font-['HYRuiYiSong:45J',sans-serif] text-white text-[20px] leading-[30px] mt-1">{title}</p>
+              <p className="lw-font-hyruiyisong text-white text-[20px] leading-[30px] mt-1">{title}</p>
               <p className="font-['PingFang_SC:Regular',sans-serif] text-[rgba(255,255,255,0.7)] text-[13px] leading-6">{desc}</p>
             </article>
           ))}
