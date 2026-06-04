@@ -216,6 +216,16 @@ func TestStoreConversationAndMessageDedup(t *testing.T) {
 	if conv.ACPSessionID != "session-a" || conv.ChatType != "group" || conv.ThreadID != "thread-a" {
 		t.Fatalf("unexpected conversation: %#v", conv)
 	}
+	bySession, ok, err := st.FindConversationByACPSession(ctx, "wecom-a", "session-a")
+	if err != nil || !ok {
+		t.Fatalf("find conversation by acp session ok=%v err=%v", ok, err)
+	}
+	if bySession.ConversationID != conv.ConversationID || bySession.ExternalConversationID != "chat-a" {
+		t.Fatalf("unexpected conversation by acp session: %#v", bySession)
+	}
+	if _, ok, err := st.FindConversationByACPSession(ctx, "wecom-a", "session-missing"); err != nil || ok {
+		t.Fatalf("missing acp session should not resolve ok=%v err=%v", ok, err)
+	}
 	inserted, err := st.InsertInboundMessage(ctx, MessageRecord{
 		ChannelAccountID:       "wecom-a",
 		ChannelType:            "wecom",

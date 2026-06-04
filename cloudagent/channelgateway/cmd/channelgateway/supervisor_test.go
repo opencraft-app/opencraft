@@ -255,11 +255,15 @@ func (c *fakeACPClient) Initialize(ctx context.Context) error {
 	}
 	return nil
 }
-func (c *fakeACPClient) Close() error { return nil }
+func (c *fakeACPClient) SetWorkspaceLifecycleHandler(acp.WorkspaceLifecycleHandler) {}
+func (c *fakeACPClient) Close() error                                               { return nil }
 func (c *fakeACPClient) NewSession(context.Context, string) (string, error) {
 	return "session-test", nil
 }
 func (c *fakeACPClient) LoadSession(context.Context, string, string) error { return nil }
+func (c *fakeACPClient) EnsureRuntimeReady(context.Context, string, string) (acp.RuntimeReadyResult, error) {
+	return acp.RuntimeReadyResult{}, nil
+}
 func (c *fakeACPClient) Prompt(context.Context, string, string) (acp.PromptResult, error) {
 	return acp.PromptResult{StopReason: "end_turn", Text: "ok"}, nil
 }

@@ -32,6 +32,7 @@ type DispatcherOptions struct {
 type SessionStore interface {
 	InsertInboundMessage(ctx context.Context, rec store.MessageRecord) (bool, error)
 	GetOrCreateConversation(ctx context.Context, conv store.Conversation) (store.Conversation, error)
+	FindConversationByACPSession(ctx context.Context, channelAccountID, acpSessionID string) (store.Conversation, bool, error)
 	BindACPSession(ctx context.Context, channelAccountID, sessionKey, acpSessionID string) error
 	EnqueueOutbox(ctx context.Context, rec store.OutboxRecord) (store.OutboxRecord, error)
 }
@@ -45,6 +46,7 @@ type OutboxStore interface {
 type ACPClient interface {
 	NewSession(ctx context.Context, cwd string) (string, error)
 	LoadSession(ctx context.Context, sessionID, cwd string) error
+	EnsureRuntimeReady(ctx context.Context, sessionID, cwd string) (acp.RuntimeReadyResult, error)
 	Prompt(ctx context.Context, sessionID, text string) (acp.PromptResult, error)
 }
 
@@ -115,7 +117,7 @@ func (d *Dispatcher) handleInbound(ctx context.Context, msg channel.Message) err
 		logValue(string(msg.ChatType)), logValue(msg.ExternalConversationID), logValue(msg.ExternalUserID),
 		logValue(msg.ThreadID), logValue(string(msg.Kind)))
 	if msg.Kind != channel.MessageText || strings.TrimSpace(msg.Text) == "" {
-		_, err := d.enqueueTextReply(ctx, msg, "", "暂时只支持文本消息。")
+		_, err := d.enqueueTextReply(ctx, msg, "", unsupportedMessageReply)
 		return err
 	}
 	sessionKey := channel.BuildSessionKey(d.account.AgentID, msg, true, false)
@@ -179,6 +181,8 @@ func (d *Dispatcher) handleInbound(ctx context.Context, msg channel.Message) err
 			log.Printf("channelgateway session_trace account_id=%s agent_id=%s conversation_id=%s session_key=%s acp_session_id=%s action=session_bound reason=recreated",
 				logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(conversation.ConversationID),
 				logValue(conversation.SessionKey), logValue(sessionID))
+		} else if err := d.ensureRuntimeReady(ctx, msg, conversation, sessionID); err != nil {
+			return d.handleACPError(ctx, msg, conversation, sessionID, CallbackStageLoadSession, err)
 		}
 	}
 	promptStartedAt := time.Now()
@@ -243,7 +247,7 @@ func (d *Dispatcher) handleCommand(ctx context.Context, msg channel.Message, con
 			logValue(conversation.SessionKey), logValue(sessionID))
 		reply := strings.TrimSpace(command.Reply)
 		if reply == "" {
-			reply = "已重新创建云端会话。你可以继续发送消息。"
+			reply = resetSessionReply
 		}
 		_, err = d.enqueueTextReply(ctx, msg, sessionID, reply)
 		return err
@@ -270,6 +274,78 @@ func (d *Dispatcher) handleACPError(ctx context.Context, msg channel.Message, co
 		return enqueueErr
 	}
 	return nil
+}
+
+func (d *Dispatcher) ensureRuntimeReady(ctx context.Context, msg channel.Message, conversation store.Conversation, sessionID string) error {
+	ready, err := d.acp.EnsureRuntimeReady(ctx, sessionID, d.cwd)
+	if err != nil {
+		return err
+	}
+	if !ready.Changed {
+		return nil
+	}
+	log.Printf("channelgateway session_trace account_id=%s agent_id=%s conversation_id=%s session_key=%s acp_session_id=%s action=session_restored runtime_changed=true",
+		logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(conversation.ConversationID),
+		logValue(conversation.SessionKey), logValue(sessionID))
+	reply, ok := d.callbacksOrDefault().HandleSessionRestored(SessionRestoredEvent{
+		ChannelAccountID:       msg.ChannelAccountID,
+		ChannelType:            string(msg.ChannelType),
+		ExternalConversationID: msg.ExternalConversationID,
+		ExternalMessageID:      msg.ExternalMessageID,
+		ConversationID:         conversation.ConversationID,
+		SessionKey:             conversation.SessionKey,
+		ACPSessionID:           sessionID,
+		RuntimeChanged:         ready.Changed,
+	})
+	if !ok || strings.TrimSpace(reply) == "" {
+		return nil
+	}
+	_, err = d.enqueueTextReply(ctx, msg, sessionID, reply)
+	return err
+}
+
+func (d *Dispatcher) HandleWorkspaceLifecycle(ctx context.Context, event acp.WorkspaceLifecycleEvent) error {
+	if d == nil || d.store == nil {
+		return errors.New("dispatcher is not configured")
+	}
+	if event.Operation != "storage" || event.Status != "done" {
+		return nil
+	}
+	conversation, ok, err := d.store.FindConversationByACPSession(ctx, d.account.ChannelAccountID, event.SessionID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		log.Printf("channelgateway session_trace account_id=%s agent_id=%s acp_session_id=%s lifecycle_id=%s action=session_stored_skip reason=conversation_not_found",
+			logValue(d.account.ChannelAccountID), logValue(d.account.AgentID), logValue(event.SessionID), logValue(event.LifecycleID))
+		return nil
+	}
+	log.Printf("channelgateway session_trace account_id=%s agent_id=%s conversation_id=%s session_key=%s acp_session_id=%s lifecycle_id=%s action=session_stored operation=%s phase=%s status=%s",
+		logValue(conversation.ChannelAccountID), logValue(d.account.AgentID), logValue(conversation.ConversationID),
+		logValue(conversation.SessionKey), logValue(event.SessionID), logValue(event.LifecycleID),
+		logValue(event.Operation), logValue(event.Phase), logValue(event.Status))
+	reply, ok := d.callbacksOrDefault().HandleSessionStored(SessionStoredEvent{
+		ChannelAccountID:       conversation.ChannelAccountID,
+		ChannelType:            conversation.ChannelType,
+		ExternalConversationID: conversation.ExternalConversationID,
+		ConversationID:         conversation.ConversationID,
+		SessionKey:             conversation.SessionKey,
+		ACPSessionID:           event.SessionID,
+		Operation:              event.Operation,
+		Phase:                  event.Phase,
+		Status:                 event.Status,
+	})
+	if !ok || strings.TrimSpace(reply) == "" {
+		return nil
+	}
+	msg := channel.Message{
+		ChannelAccountID:       conversation.ChannelAccountID,
+		ChannelType:            channel.Type(conversation.ChannelType),
+		ExternalConversationID: conversation.ExternalConversationID,
+		Kind:                   channel.MessageText,
+	}
+	_, err = d.enqueueTextReply(ctx, msg, event.SessionID, reply)
+	return err
 }
 
 func (d *Dispatcher) promptWithRuntimeRecovery(ctx context.Context, conversation store.Conversation, msg channel.Message, sessionID string) (acp.PromptResult, string, error) {
@@ -368,9 +444,9 @@ func defaultReplyForStopReason(reason string) string {
 	case "", "end_turn":
 		return ""
 	case "cancelled":
-		return "当前任务已取消。"
+		return taskCancelledReply
 	default:
-		return "任务已结束。"
+		return taskEndedReply
 	}
 }
 

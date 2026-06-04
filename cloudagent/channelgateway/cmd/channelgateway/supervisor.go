@@ -22,6 +22,7 @@ import (
 type acpRuntimeClient interface {
 	router.ACPClient
 	Initialize(context.Context) error
+	SetWorkspaceLifecycleHandler(acp.WorkspaceLifecycleHandler)
 	Close() error
 }
 
@@ -201,6 +202,25 @@ func (r *accountRunner) run(ctx context.Context) error {
 	}()
 	acpClient := r.acpFactory(r.cfg, r.account)
 	defer acpClient.Close()
+	adapter := r.adapterFactory(runtimeCfg)
+	dispatcher := router.NewDispatcherWithOptions(
+		r.store,
+		r.account,
+		acpClient,
+		"/workspace",
+		router.DispatcherOptions{RequestTimeout: r.cfg.RequestTimeout},
+	)
+	acpClient.SetWorkspaceLifecycleHandler(func(event acp.WorkspaceLifecycleEvent) {
+		go func() {
+			lifecycleCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := dispatcher.HandleWorkspaceLifecycle(lifecycleCtx, event); err != nil {
+				log.Printf("channelgateway runtime_trace account_id=%s agent_id=%s acp_session_id=%s lifecycle_id=%s action=workspace_lifecycle_failed error=%s",
+					runtimeLogValue(r.account.ChannelAccountID), runtimeLogValue(r.account.AgentID), runtimeLogValue(event.SessionID),
+					runtimeLogValue(event.LifecycleID), runtimeLogValue(err.Error()))
+			}
+		}()
+	})
 	initTimeout := r.cfg.ACPInitializeTimeout
 	if initTimeout <= 0 {
 		initTimeout = 15 * time.Second
@@ -219,14 +239,6 @@ func (r *accountRunner) run(ctx context.Context) error {
 	}
 	log.Printf("channelgateway runtime_trace account_id=%s agent_id=%s action=acp_initialize_done duration_ms=%d",
 		runtimeLogValue(r.account.ChannelAccountID), runtimeLogValue(r.account.AgentID), time.Since(initStartedAt).Milliseconds())
-	adapter := r.adapterFactory(runtimeCfg)
-	dispatcher := router.NewDispatcherWithOptions(
-		r.store,
-		r.account,
-		acpClient,
-		"/workspace",
-		router.DispatcherOptions{RequestTimeout: r.cfg.RequestTimeout},
-	)
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	go r.renewLeaseLoop(runCtx, cancel)
