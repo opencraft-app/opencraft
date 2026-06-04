@@ -116,7 +116,15 @@ GOWORK=off go run ./cmd/wecom-handshake-check --url wss://example.internal/ws
 Inbound message flow:
 
 ```text
-WeCom callback -> message dedup -> conversation/session_key -> ACP session/new or load -> session/prompt -> outbox -> WeCom send
+WeCom callback -> durable inbound job -> conversation/session_key -> ACP session/new or load -> session/prompt -> durable outbox -> WeCom send
 ```
 
 Database migrations live under `internal/store/migrations` and run at process start.
+
+Hot upgrade contract:
+
+- `channel_messages` is the inbound job ledger, not only a dedup table.
+- A runner must claim inbound jobs with the current channel lease fence before calling ACP.
+- Finished jobs are marked `done`; failed or interrupted jobs remain retryable.
+- New owners scan `received`, `failed`, and stale `processing` jobs after acquiring the channel lease.
+- `channel_outbox` remains the durable send ledger, so replies queued before a restart are sent by the next owner.
