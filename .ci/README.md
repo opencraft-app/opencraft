@@ -90,7 +90,7 @@
 - 不要为了 `extends.template.path` 对象写法切到 `version: v3.0`；蓝盾 PAC v3 暂未支持局部模板，`.ci/templates/service-release.yml` 这类本仓库模板应继续走 Stream v2。
 - 非流水线配置不要使用 `.yaml` 后缀放在 `.ci/**` 下；蓝盾会把 `.ci/**/*.yaml` 误识别成流水线候选。Guard 注册表用 `.ci/guards.manifest`，release bundle 源用 `.ci/runtime/bundles/*.bundle`。
 - `frontend`、`frontend-edgeone-*`、`gitops-*`、`ci-runtime`、`mr-placeholder` 不属于这批标准 service release 入口，不使用该模板。
-- `cloudladdergateway` 属于 TKEx 内网 release 入口，复用 service release 模板，但显式关闭 `ENABLE_MASTER_PROD_PROMOTE`，避免影响现有正式站生产候选链路。
+- `cloudladdergateway` 属于 TKEx 内网 release 入口，复用 service release 模板；master 构建会对 `tkexgz,tkexsg` 自动创建 GitOps promote。它仍显式关闭 `ENABLE_MASTER_PROD_PROMOTE`，因为 TKEx 环境不走 `shprod/sgprod` 生产人工审批阶段。
 - `trade`、`staticpages` 当前 master 构建矩阵不包含 `shprod` / `sgprod`，因此显式设置 `ENABLE_MASTER_PROD_PROMOTE=false`，避免没有正式产物时卡人工确认。
 
 ### Release 并发模型

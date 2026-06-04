@@ -682,7 +682,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
 
         self.assertEqual((workflow.get("extends") or {}).get("template"), "service-release.yml")
         self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "tkexgz,tkexsg")
-        self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "none")
+        self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "tkexgz,tkexsg")
         self.assertEqual(parameters.get("ENABLE_MASTER_PROD_PROMOTE"), False)
         self.assertEqual(parameters.get("PLAYGROUND_BUILD_ENVS"), "none")
         self.assertEqual(parameters.get("PLAYGROUND_AUTO_PIN_ENVS"), "none")
