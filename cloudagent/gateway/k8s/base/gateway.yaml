@@ -36,6 +36,7 @@ data:
   GATEWAY_TALOS_TEMPLATE: "tpl-pool-s3h-ivanbgliu-1"
   CLOUDAGENT_WEB_SEARCH_PROVIDER: "tencent_wsa"
   TENCENTCLOUD_WSA_ENDPOINT: "https://api.wsa.cloud.tencent.com/SearchPro"
+  GATEWAY_REDIS_ADDR: "10.5.1.41:6379"
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -195,6 +196,12 @@ spec:
                 secretKeyRef:
                   name: cloudagent-wisp-secrets
                   key: GATEWAY_WISP_SMH_LIBRARY_SECRET
+            - name: GATEWAY_REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: cloudagent-redis-secrets
+                  key: GATEWAY_REDIS_PASSWORD
+                  optional: true
           readinessProbe:
             httpGet:
               path: /readyz
