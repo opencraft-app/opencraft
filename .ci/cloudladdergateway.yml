@@ -11,6 +11,7 @@ on:
       - argocd/services/cloudladdergateway/**
       - argocd/apps/*/cloudladdergateway.yaml
       - argocd/secrets/*/cloudladdergateway-runtime-secrets.sops.yaml
+      - argocd/secrets/*/cloudladdergateway-callback-secrets.sops.yaml
     paths-ignore:
       - OWNERS
       - "**/OWNERS"
