@@ -635,7 +635,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         on_config = workflow.get("on") or workflow.get(True) or {}
         watched_paths = ((on_config.get("push") or {}).get("paths") or [])
 
-        self.assertEqual(parameters.get("PROD_REVIEWERS"), '["skipzhang", "roberttwang", "cocofhu"]')
+        self.assertEqual(parameters.get("PROD_REVIEWERS"), '["skipzhang", "roberttwang", "cocofhu", "lhuigou"]')
         self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "devcloud-dep,shprod")
         self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "devcloud-dep")
         self.assertEqual(devcloud_bundle.image_repo, "csighub.tencentyun.com/skipzhang/cloudagent-gateway")

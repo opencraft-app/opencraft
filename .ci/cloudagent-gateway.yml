@@ -35,4 +35,4 @@ extends:
     MASTER_AUTO_PIN_ENVS: devcloud-dep
     PLAYGROUND_BUILD_ENVS: none
     PLAYGROUND_AUTO_PIN_ENVS: none
-    PROD_REVIEWERS: '["skipzhang", "roberttwang", "cocofhu"]'
+    PROD_REVIEWERS: '["skipzhang", "roberttwang", "cocofhu", "lhuigou"]'
