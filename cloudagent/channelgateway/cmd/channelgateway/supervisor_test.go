@@ -109,7 +109,7 @@ func TestWeComSupervisorUsesStoreRegistryWithoutEnvSeed(t *testing.T) {
 	supervisor.stopAll()
 }
 
-func TestWeComSupervisorSkipsAccountWhenLeaseHeld(t *testing.T) {
+func TestWeComSupervisorStandbyTakesOverWhenLeaseReleased(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	st, err := store.Open(ctx, t.TempDir()+"/channelgateway.db")
@@ -127,7 +127,8 @@ func TestWeComSupervisorSkipsAccountWhenLeaseHeld(t *testing.T) {
 	if err := seedWeComAccounts(ctx, st, cfg); err != nil {
 		t.Fatalf("seed accounts: %v", err)
 	}
-	if _, err := st.AcquireChannelLease(ctx, "wecom-a", "owner-existing", time.Minute); err != nil {
+	existingLease, err := st.AcquireChannelLease(ctx, "wecom-a", "owner-existing", time.Minute)
+	if err != nil {
 		t.Fatalf("pre-acquire lease: %v", err)
 	}
 	started := make(chan string, 1)
@@ -143,17 +144,73 @@ func TestWeComSupervisorSkipsAccountWhenLeaseHeld(t *testing.T) {
 	}
 	runner := supervisor.runners["wecom-a"]
 	if runner == nil {
-		t.Fatal("expected skipped runner to be recorded until next reconcile")
-	}
-	select {
-	case <-runner.done:
-	case <-time.After(3 * time.Second):
-		t.Fatal("lease-held runner did not exit")
+		t.Fatal("expected standby runner to be recorded")
 	}
 	select {
 	case accountID := <-started:
 		t.Fatalf("adapter should not start for held lease, got %s", accountID)
 	default:
+	}
+	state := waitStateForAccount(t, supervisor.states, "wecom-a", func(state channelRuntimeState) bool {
+		return state.Status == "standby_lease_held"
+	})
+	if state.Status != "standby_lease_held" {
+		t.Fatalf("lease-held account should be standby, got %#v", state)
+	}
+	if runner.Done() {
+		t.Fatal("standby runner should keep waiting for lease handoff")
+	}
+	if err := st.ReleaseChannelLease(ctx, existingLease); err != nil {
+		t.Fatalf("release existing lease: %v", err)
+	}
+	select {
+	case accountID := <-started:
+		if accountID != "wecom-a" {
+			t.Fatalf("unexpected account started after lease release: %s", accountID)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("standby runner did not take over after lease release")
+	}
+	supervisor.stopAll()
+}
+
+func TestWeComSupervisorStopAllReleasesLeaseBeforeReturning(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	st, err := store.Open(ctx, t.TempDir()+"/channelgateway.db")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+	cfg := config.Config{
+		OwnerID:  "owner-a",
+		LeaseTTL: time.Minute,
+		WeComAccounts: []config.WeComConfig{
+			{Enabled: true, AccountID: "wecom-a", BotID: "bot-a", Secret: "secret-a", AgentID: "agent-a"},
+		},
+	}
+	if err := seedWeComAccounts(ctx, st, cfg); err != nil {
+		t.Fatalf("seed accounts: %v", err)
+	}
+	started := make(chan string, 1)
+	supervisor := newWeComSupervisor(cfg, st, newChannelRuntimeStates())
+	supervisor.acpFactory = func(cfg config.Config, account store.ChannelAccount) acpRuntimeClient {
+		return &fakeACPClient{}
+	}
+	supervisor.adapterFactory = func(cfg wecom.Config) channelRuntimeAdapter {
+		return &fakeRuntimeAdapter{accountID: cfg.AccountID, started: started}
+	}
+	if err := supervisor.reconcile(ctx); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	select {
+	case <-started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("adapter did not start")
+	}
+	supervisor.stopAll()
+	if _, err := st.AcquireChannelLease(ctx, "wecom-a", "owner-b", time.Minute); err != nil {
+		t.Fatalf("lease should be released before stopAll returns: %v", err)
 	}
 }
 
@@ -358,4 +415,23 @@ func stateForAccount(t *testing.T, states *channelRuntimeStates, accountID strin
 	}
 	t.Fatalf("missing state for account %s", accountID)
 	return channelRuntimeState{}
+}
+
+func waitStateForAccount(t *testing.T, states *channelRuntimeStates, accountID string, match func(channelRuntimeState) bool) channelRuntimeState {
+	t.Helper()
+	deadline := time.After(3 * time.Second)
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		for _, state := range states.Snapshot() {
+			if state.AccountID == accountID && match(state) {
+				return state
+			}
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("timed out waiting for state account=%s snapshot=%#v", accountID, states.Snapshot())
+		case <-ticker.C:
+		}
+	}
 }

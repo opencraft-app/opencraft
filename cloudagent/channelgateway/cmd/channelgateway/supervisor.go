@@ -20,6 +20,8 @@ import (
 )
 
 const inboundRecoveryStaleAfter = 30 * time.Second
+const standbyLeaseRetryAfter = time.Second
+const shutdownWaitTimeout = 20 * time.Second
 
 type acpRuntimeClient interface {
 	router.ACPClient
@@ -118,6 +120,16 @@ func (s *weComSupervisor) stopAll() {
 	for _, runner := range runners {
 		runner.Stop()
 	}
+	deadline := time.NewTimer(shutdownWaitTimeout)
+	defer deadline.Stop()
+	for _, runner := range runners {
+		select {
+		case <-runner.done:
+		case <-deadline.C:
+			log.Printf("wecom supervisor stopAll timed out waiting for account=%s", runner.account.ChannelAccountID)
+			return
+		}
+	}
 }
 
 type accountRunner struct {
@@ -176,16 +188,9 @@ func (r *accountRunner) run(ctx context.Context) error {
 		r.states.SetError(r.account.ChannelAccountID, err)
 		return err
 	}
-	lease, err := r.store.AcquireChannelLease(ctx, r.account.ChannelAccountID, r.cfg.OwnerID, r.cfg.LeaseTTL)
+	lease, err := r.acquireLeaseWithStandby(ctx)
 	if err != nil {
 		r.states.SetError(r.account.ChannelAccountID, err)
-		if errors.Is(err, store.ErrLeaseHeld) {
-			return nil
-		}
-		var held store.LeaseHeldError
-		if errors.As(err, &held) {
-			return nil
-		}
 		return fmt.Errorf("acquire channel lease: %w", err)
 	}
 	r.states.SetLease(lease)
@@ -260,6 +265,40 @@ func (r *accountRunner) run(ctx context.Context) error {
 	log.Printf("channelgateway runtime_trace account_id=%s agent_id=%s action=wecom_adapter_stopped error=%s",
 		runtimeLogValue(r.account.ChannelAccountID), runtimeLogValue(r.account.AgentID), runtimeLogValue(errorString(err)))
 	return err
+}
+
+func (r *accountRunner) acquireLeaseWithStandby(ctx context.Context) (store.ChannelLease, error) {
+	standbyLogged := false
+	for {
+		lease, err := r.store.AcquireChannelLease(ctx, r.account.ChannelAccountID, r.cfg.OwnerID, r.cfg.LeaseTTL)
+		if err == nil {
+			return lease, nil
+		}
+		if !isLeaseHeld(err) {
+			return store.ChannelLease{}, err
+		}
+		r.states.SetStandbyLeaseHeld(r.account.ChannelAccountID, err)
+		if !standbyLogged {
+			log.Printf("channelgateway runtime_trace account_id=%s owner_id=%s action=standby_lease_held error=%s",
+				runtimeLogValue(r.account.ChannelAccountID), runtimeLogValue(r.cfg.OwnerID), runtimeLogValue(err.Error()))
+			standbyLogged = true
+		}
+		timer := time.NewTimer(standbyLeaseRetryAfter)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return store.ChannelLease{}, ctx.Err()
+		case <-timer.C:
+		}
+	}
+}
+
+func isLeaseHeld(err error) bool {
+	if errors.Is(err, store.ErrLeaseHeld) {
+		return true
+	}
+	var held store.LeaseHeldError
+	return errors.As(err, &held)
 }
 
 func (r *accountRunner) inboundRecoveryLoop(ctx context.Context, dispatcher *router.Dispatcher) {
@@ -536,6 +575,21 @@ func (s *channelRuntimeStates) SetError(accountID string, err error) {
 	s.states[accountID] = state
 }
 
+func (s *channelRuntimeStates) SetStandbyLeaseHeld(accountID string, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	state := s.states[accountID]
+	state.AccountID = accountID
+	state.Status = "standby_lease_held"
+	state.OwnerID = ""
+	state.FencingToken = 0
+	state.LeaseExpiresAt = ""
+	if err != nil {
+		state.LastError = err.Error()
+	}
+	s.states[accountID] = state
+}
+
 func (s *channelRuntimeStates) Snapshot() []channelRuntimeState {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -544,6 +598,25 @@ func (s *channelRuntimeStates) Snapshot() []channelRuntimeState {
 		out = append(out, state)
 	}
 	return out
+}
+
+func (s *channelRuntimeStates) HasReadyAccount() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for accountID, state := range s.states {
+		switch state.Status {
+		case "running":
+			lease := s.leases[accountID]
+			if lease.ChannelAccountID != "" && lease.OwnerID != "" && lease.FencingToken > 0 {
+				return true
+			}
+		case "standby_lease_held":
+			return true
+		default:
+			continue
+		}
+	}
+	return false
 }
 
 func runtimeLogValue(value string) string {
