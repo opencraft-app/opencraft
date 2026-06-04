@@ -115,11 +115,15 @@ func (f *fakeACP) ensureSnapshot() int {
 type fakeReplySender struct {
 	mu   sync.Mutex
 	sent []channel.Reply
+	err  error
 }
 
 func (s *fakeReplySender) Send(_ context.Context, reply channel.Reply) (channel.SendResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.err != nil {
+		return channel.SendResult{}, s.err
+	}
 	s.sent = append(s.sent, reply)
 	return channel.SendResult{}, nil
 }
@@ -276,6 +280,124 @@ func TestDispatcherDedupsInboundMessage(t *testing.T) {
 	_, _, promptCalls, _ := client.snapshot()
 	if promptCalls != 1 {
 		t.Fatalf("duplicate inbound should not prompt again: calls=%d", promptCalls)
+	}
+}
+
+func TestDispatcherIgnoresUnsupportedNonTextMessage(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir()+"/channelgateway.db")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+	lease, err := st.AcquireChannelLease(ctx, "wecom-a", "owner-a", time.Minute)
+	if err != nil {
+		t.Fatalf("acquire lease: %v", err)
+	}
+	client := &fakeACP{reply: "answer"}
+	dispatcher := NewDispatcher(st, store.ChannelAccount{ChannelAccountID: "wecom-a", ChannelType: "wecom", AgentID: "main"}, client, "/workspace")
+	msg := channel.Message{
+		ChannelAccountID:       "wecom-a",
+		ChannelType:            channel.TypeWeCom,
+		ExternalMessageID:      "msg-file",
+		ExternalConversationID: "chat-a",
+		ChatType:               channel.ChatDM,
+		Kind:                   channel.MessageFile,
+		Raw:                    json.RawMessage(`{"msgtype":"image"}`),
+	}
+	logs := captureLogs(t, func() {
+		if err := dispatcher.HandleInbound(ctx, msg); err != nil {
+			t.Fatalf("non-text inbound should be ignored without error: %v", err)
+		}
+	})
+	if _, _, promptCalls, _ := client.snapshot(); promptCalls != 0 {
+		t.Fatalf("non-text inbound must not call ACP, got prompt calls=%d", promptCalls)
+	}
+	items, err := st.ClaimPendingOutbox(ctx, lease, 10)
+	if err != nil {
+		t.Fatalf("claim outbox: %v", err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("non-text inbound must not enqueue fallback replies, got %#v", items)
+	}
+	if !strings.Contains(logs, "action=unsupported_message_ignored") {
+		t.Fatalf("expected unsupported message log, got:\n%s", logs)
+	}
+}
+
+func TestDispatcherReplyOutboxIsIdempotentForSameInboundMessage(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir()+"/channelgateway.db")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+	lease, err := st.AcquireChannelLease(ctx, "wecom-a", "owner-a", time.Minute)
+	if err != nil {
+		t.Fatalf("acquire lease: %v", err)
+	}
+	msg := channel.Message{
+		ChannelAccountID:       "wecom-a",
+		ChannelType:            channel.TypeWeCom,
+		ExternalMessageID:      "msg-duplicate",
+		ExternalConversationID: "chat-a",
+		ChatType:               channel.ChatDM,
+		Kind:                   channel.MessageText,
+		Text:                   "hello",
+		Raw:                    json.RawMessage(`{"ok":true}`),
+	}
+	dispatcher := NewDispatcher(st, store.ChannelAccount{ChannelAccountID: "wecom-a", ChannelType: "wecom", AgentID: "main"}, &fakeACP{reply: "answer"}, "/workspace")
+	if _, err := dispatcher.enqueueTextReply(ctx, msg, "session-a", "same answer"); err != nil {
+		t.Fatalf("enqueue first reply: %v", err)
+	}
+	if _, err := dispatcher.enqueueTextReply(ctx, msg, "session-b", "same answer"); err != nil {
+		t.Fatalf("enqueue duplicate reply: %v", err)
+	}
+	items, err := st.ClaimPendingOutbox(ctx, lease, 10)
+	if err != nil {
+		t.Fatalf("claim outbox: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("duplicate replies for one inbound message must collapse to one outbox item, got %#v", items)
+	}
+}
+
+func TestDrainOutboxAbandonsRetryLimitWithoutSending(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir()+"/channelgateway.db")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+	lease, err := st.AcquireChannelLease(ctx, "wecom-a", "owner-a", time.Minute)
+	if err != nil {
+		t.Fatalf("acquire lease: %v", err)
+	}
+	if _, err := st.EnqueueOutbox(ctx, store.OutboxRecord{
+		ChannelAccountID:       "wecom-a",
+		ChannelType:            "wecom",
+		ExternalConversationID: "chat-a",
+		PayloadJSON:            `{"externalConversationID":"chat-a","externalMessageID":"msg-a","text":"retry me"}`,
+		Status:                 "pending",
+		RetryCount:             maxOutboxRetries,
+		NextRetryAt:            time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("enqueue outbox: %v", err)
+	}
+	sender := &fakeReplySender{}
+	n, err := DrainOutbox(ctx, st, lease, sender, 10)
+	if err != nil {
+		t.Fatalf("drain outbox: %v", err)
+	}
+	if n != 1 || sender.count() != 0 {
+		t.Fatalf("retry-limited outbox should be abandoned without sending, drained=%d sent=%d", n, sender.count())
+	}
+	items, err := st.ClaimPendingOutbox(ctx, lease, 10)
+	if err != nil {
+		t.Fatalf("claim after abandon: %v", err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("abandoned outbox must not be pending again, got %#v", items)
 	}
 }
 
@@ -550,8 +672,51 @@ func TestDispatcherEnqueuesSleepNoticeWhenRuntimeStorageCompletes(t *testing.T) 
 		t.Fatalf("handle workspace lifecycle: %v", err)
 	}
 	reply := claimOneReply(t, ctx, st, lease)
-	if reply.Text != sessionStoredReply || reply.ExternalConversationID != "chat-a" || reply.ExternalMessageID != "" {
+	if reply.Text != sessionStoredReply || reply.ExternalConversationID != "chat-a" || reply.ExternalMessageID != "storage:session-existing:cleanup" {
 		t.Fatalf("unexpected storage reply: %#v", reply)
+	}
+}
+
+func TestDispatcherSleepNoticeIsIdempotentPerLifecycleID(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir()+"/channelgateway.db")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+	account := store.ChannelAccount{ChannelAccountID: "wecom-a", ChannelType: "wecom", AgentID: "main"}
+	lease, err := st.AcquireChannelLease(ctx, "wecom-a", "owner-a", time.Minute)
+	if err != nil {
+		t.Fatalf("acquire lease: %v", err)
+	}
+	if _, err := st.GetOrCreateConversation(ctx, store.Conversation{
+		ChannelAccountID:       "wecom-a",
+		ChannelType:            "wecom",
+		ExternalConversationID: "chat-a",
+		ChatType:               string(channel.ChatDM),
+		AgentID:                "main",
+		ACPSessionID:           "session-existing",
+		SessionKey:             "agent:main:wecom:dm:chat-a",
+	}); err != nil {
+		t.Fatalf("seed conversation: %v", err)
+	}
+	dispatcher := NewDispatcher(st, account, &fakeACP{}, "/workspace")
+	events := []acp.WorkspaceLifecycleEvent{
+		{SessionID: "session-existing", Operation: "storage", Phase: "cleanup", Status: "done", LifecycleID: "storage:session-existing:cleanup:1"},
+		{SessionID: "session-existing", Operation: "storage", Phase: "cleanup", Status: "done", LifecycleID: "storage:session-existing:cleanup:1"},
+		{SessionID: "session-existing", Operation: "storage", Phase: "cleanup", Status: "done", LifecycleID: "storage:session-existing:cleanup:2"},
+	}
+	for _, event := range events {
+		if err := dispatcher.HandleWorkspaceLifecycle(ctx, event); err != nil {
+			t.Fatalf("handle workspace lifecycle %#v: %v", event, err)
+		}
+	}
+	items, err := st.ClaimPendingOutbox(ctx, lease, 10)
+	if err != nil {
+		t.Fatalf("claim outbox: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("same lifecycle id should dedupe while later sleeps still notify, got %#v", items)
 	}
 }
 
