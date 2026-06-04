@@ -171,12 +171,16 @@ func (w *AgentSidecarWorker) prepareWispRuntimeWithSpace(ctx context.Context, ho
 
 func (w *AgentSidecarWorker) requireWispMountLeaseHeld(ctx context.Context, runtime ACPSessionRuntime) error {
 	if runtime.WispLeaseID == "" {
-		return fmt.Errorf("wisp mount rejected: missing lease runtime_id=%s wisp_name=%s workspace_id=%s", runtime.RuntimeID, runtime.WispName, firstNonEmpty(runtime.WispWorkspaceID, runtime.WispSMHSpaceID))
+		return fmt.Errorf("wisp mount rejected: missing lease runtime_id=%s wisp_name=%s workspace_id=%s", runtime.RuntimeID, runtime.WispName, firstNonEmpty(runtime.WispSMHSpaceID, runtime.WispWorkspaceID))
 	}
 	if w.workspaceService == nil {
 		return errors.New("workspace service is required to verify wisp mount lease")
 	}
-	workspaceID := firstNonEmpty(runtime.WispWorkspaceID, runtime.WispSMHSpaceID)
+	// The lease is always acquired against the SMH space ID (the outer
+	// runtime's canonical workspace). For inner workspace wisps,
+	// WispWorkspaceID is overridden to "workspace_session_XXX" which differs
+	// from the stored lease key. Prefer WispSMHSpaceID for lookup.
+	workspaceID := firstNonEmpty(runtime.WispSMHSpaceID, runtime.WispWorkspaceID)
 	if strings.TrimSpace(workspaceID) == "" {
 		return errors.New("wisp workspace id is required to verify mount lease")
 	}
