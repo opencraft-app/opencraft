@@ -112,6 +112,14 @@ backends:
       timeout: 10s
       allowed_methods: ["POST"]
 
+  - alias: lightclaw-auth-sandbox-bj-7
+    upstream:
+      base_url: "https://api-sandbox-bj-7.lightclaw.tech"
+      timeout: 10s
+      allowed_methods: ["POST"]
+      headers_from_env:
+        X-Shadow-Callback-Token: CLOUDLADDER_TENCENT_CALLBACK_TOKEN
+
 auth:
   enabled: true
   timestamp_skew: 5m
@@ -126,6 +134,7 @@ auth:
     - billing-trade-intl-pre
     - billing-trade-intl-prod
     - jifei-test
+    - tencentcloud-account-callback-sandbox-bj-7
   callers:
     - id: shadow
       secret_env: CLOUDLADDER_SHADOW_HMAC_SECRET
@@ -149,6 +158,12 @@ audit:
     # endpoint: "otel-collector:4318"
     insecure: true
     timeout: 5s
+
+external_routes:
+  - path: /internal/tencentcloud/account
+    methods: ["POST"]
+    route_id: tencentcloud-account-callback-sandbox-bj-7
+    upstream_path: /auth/internal/tencentcloud/account
 
 routes:
   - id: sandbox-cn
@@ -291,3 +306,9 @@ routes:
     condition: 'request.method == "POST"'
     upstream:
       backend: tcapi-billing-cn-dev
+
+  - id: tencentcloud-account-callback-sandbox-bj-7
+    description: "TencentCloud SaaS account callback compatibility route for sandbox-bj-7."
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: lightclaw-auth-sandbox-bj-7
