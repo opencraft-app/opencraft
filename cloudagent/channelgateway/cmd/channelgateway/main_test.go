@@ -51,6 +51,35 @@ func TestHealthzReportsCurrentLeaseState(t *testing.T) {
 	}
 }
 
+func TestHealthzPreservesRunnerStatusAcrossLeaseRenewal(t *testing.T) {
+	state := newChannelRuntimeStates()
+	state.SetLease(store.ChannelLease{
+		ChannelAccountID: "wecom-a",
+		OwnerID:          "owner-a",
+		FencingToken:     1,
+		ExpiresAt:        time.Date(2026, 6, 3, 1, 0, 0, 0, time.UTC),
+	})
+	state.SetStatus("wecom-a", "running")
+	state.SetLease(store.ChannelLease{
+		ChannelAccountID: "wecom-a",
+		OwnerID:          "owner-a",
+		FencingToken:     1,
+		ExpiresAt:        time.Date(2026, 6, 3, 1, 1, 0, 0, time.UTC),
+	})
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	rec := httptest.NewRecorder()
+	healthHandler(config.Config{OwnerID: "owner-a"}, state).ServeHTTP(rec, req)
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	accounts := body["wecom_accounts"].([]any)
+	account := accounts[0].(map[string]any)
+	if account["status"] != "running" {
+		t.Fatalf("lease renewal should not clobber runner status: %#v", body)
+	}
+}
+
 func TestRedactDBTargetMasksCredentials(t *testing.T) {
 	cases := []struct {
 		name      string

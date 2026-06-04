@@ -10,19 +10,20 @@ import (
 )
 
 type Config struct {
-	DBPath           string
-	DBDriver         string
-	ACPURL           string
-	ACPAuthorization string
-	TenantID         string
-	ProjectID        string
-	OwnerID          string
-	ListenAddr       string
-	LeaseTTL         time.Duration
-	RequestTimeout   time.Duration
-	WeCom            WeComConfig
-	WeComAccounts    []WeComConfig
-	parseErrors      []string
+	DBPath               string
+	DBDriver             string
+	ACPURL               string
+	ACPAuthorization     string
+	TenantID             string
+	ProjectID            string
+	OwnerID              string
+	ListenAddr           string
+	LeaseTTL             time.Duration
+	RequestTimeout       time.Duration
+	ACPInitializeTimeout time.Duration
+	WeCom                WeComConfig
+	WeComAccounts        []WeComConfig
+	parseErrors          []string
 }
 
 type WeComConfig struct {
@@ -60,19 +61,20 @@ func LoadFromEnv() Config {
 		accounts = []WeComConfig{wecom}
 	}
 	return Config{
-		DBPath:           env("CHANNELGATEWAY_DB_PATH", "channelgateway.db"),
-		DBDriver:         env("CHANNELGATEWAY_DB_DRIVER", ""),
-		ACPURL:           env("CHANNELGATEWAY_ACP_URL", "ws://127.0.0.1:18094/acp"),
-		ACPAuthorization: env("CHANNELGATEWAY_ACP_AUTHORIZATION", ""),
-		TenantID:         env("CHANNELGATEWAY_TENANT_ID", "default"),
-		ProjectID:        env("CHANNELGATEWAY_PROJECT_ID", "default"),
-		OwnerID:          env("CHANNELGATEWAY_OWNER_ID", "channelgateway-"+shortHostname()),
-		ListenAddr:       env("CHANNELGATEWAY_LISTEN_ADDR", ":8094"),
-		LeaseTTL:         envDuration("CHANNELGATEWAY_LEASE_TTL", 90*time.Second),
-		RequestTimeout:   envDuration("CHANNELGATEWAY_REQUEST_TIMEOUT", 60*time.Second),
-		WeCom:            wecom,
-		WeComAccounts:    accounts,
-		parseErrors:      parseErrs,
+		DBPath:               env("CHANNELGATEWAY_DB_PATH", "channelgateway.db"),
+		DBDriver:             env("CHANNELGATEWAY_DB_DRIVER", ""),
+		ACPURL:               env("CHANNELGATEWAY_ACP_URL", "ws://127.0.0.1:18094/acp"),
+		ACPAuthorization:     env("CHANNELGATEWAY_ACP_AUTHORIZATION", ""),
+		TenantID:             env("CHANNELGATEWAY_TENANT_ID", "default"),
+		ProjectID:            env("CHANNELGATEWAY_PROJECT_ID", "default"),
+		OwnerID:              env("CHANNELGATEWAY_OWNER_ID", "channelgateway-"+shortHostname()),
+		ListenAddr:           env("CHANNELGATEWAY_LISTEN_ADDR", ":8094"),
+		LeaseTTL:             envDuration("CHANNELGATEWAY_LEASE_TTL", 90*time.Second),
+		RequestTimeout:       envDuration("CHANNELGATEWAY_REQUEST_TIMEOUT", 60*time.Second),
+		ACPInitializeTimeout: envDuration("CHANNELGATEWAY_ACP_INITIALIZE_TIMEOUT", 15*time.Second),
+		WeCom:                wecom,
+		WeComAccounts:        accounts,
+		parseErrors:          parseErrs,
 	}
 }
 

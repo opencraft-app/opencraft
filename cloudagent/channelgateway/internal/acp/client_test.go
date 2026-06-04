@@ -158,6 +158,56 @@ func TestClientCapturesPromptAgentMessageChunksWithArrayContent(t *testing.T) {
 	}
 }
 
+func TestClientInitializeUsesNumericACPProtocolVersion(t *testing.T) {
+	seenParams := make(chan map[string]any, 1)
+	upgrader := websocket.Upgrader{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Errorf("upgrade: %v", err)
+			return
+		}
+		defer conn.Close()
+		_, raw, err := conn.ReadMessage()
+		if err != nil {
+			t.Errorf("read initialize: %v", err)
+			return
+		}
+		var req struct {
+			ID     int64          `json:"id"`
+			Method string         `json:"method"`
+			Params map[string]any `json:"params"`
+		}
+		if err := json.Unmarshal(raw, &req); err != nil {
+			t.Errorf("decode request: %v", err)
+			return
+		}
+		if req.Method != "initialize" {
+			t.Errorf("first request method = %q", req.Method)
+			return
+		}
+		seenParams <- req.Params
+		writeJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{}})
+	}))
+	defer server.Close()
+	client := NewClient("ws"+server.URL[len("http"):], nil)
+	defer client.Close()
+	if err := client.Initialize(context.Background()); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	select {
+	case params := <-seenParams:
+		if params["protocolVersion"] != float64(1) {
+			t.Fatalf("protocolVersion should be numeric ACP v1, got %#v", params["protocolVersion"])
+		}
+		if _, ok := params["clientCapabilities"].(map[string]any); !ok {
+			t.Fatalf("missing clientCapabilities object: %#v", params)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("server did not receive initialize params")
+	}
+}
+
 func TestClientSerializesConcurrentPrompts(t *testing.T) {
 	var activePrompts atomic.Int64
 	var maxActivePrompts atomic.Int64

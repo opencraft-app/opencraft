@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"testing"
+	"time"
 )
 
 func TestWeComWebSocketURLFallbacks(t *testing.T) {
@@ -69,5 +70,15 @@ func TestWeComAccountsJSONRejectsDuplicateAccountID(t *testing.T) {
 	t.Setenv("CHANNELGATEWAY_WECOM_ACCOUNTS_JSON", `[{"account_id":"dup"},{"account_id":"dup"}]`)
 	if err := LoadFromEnv().Validate(); err == nil {
 		t.Fatal("duplicate account_id should fail config validation")
+	}
+}
+
+func TestACPInitializeTimeoutFromEnv(t *testing.T) {
+	if got := LoadFromEnv().ACPInitializeTimeout; got != 15*time.Second {
+		t.Fatalf("default ACP initialize timeout = %s", got)
+	}
+	t.Setenv("CHANNELGATEWAY_ACP_INITIALIZE_TIMEOUT", "250ms")
+	if got := LoadFromEnv().ACPInitializeTimeout; got != 250*time.Millisecond {
+		t.Fatalf("env ACP initialize timeout = %s", got)
 	}
 }
