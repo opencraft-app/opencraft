@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"sync"
@@ -12,6 +13,7 @@ import (
 	"cloudagent/channelgateway/internal/channel"
 	"cloudagent/channelgateway/internal/channel/wecom"
 	"cloudagent/channelgateway/internal/config"
+	"cloudagent/channelgateway/internal/router"
 	"cloudagent/channelgateway/internal/store"
 )
 
@@ -222,6 +224,71 @@ func TestAccountRunnerACPInitializeTimeoutReleasesLease(t *testing.T) {
 	state := stateForAccount(t, states, "wecom-a")
 	if state.Status != "stopped" || !strings.Contains(state.LastError, "context deadline exceeded") {
 		t.Fatalf("expected stopped state with timeout error, got %#v", state)
+	}
+}
+
+func TestAccountRunnerRecoverInboundOnceProcessesPendingJob(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir()+"/channelgateway.db")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+	account := store.ChannelAccount{ChannelAccountID: "wecom-a", ChannelType: "wecom", AgentID: "main"}
+	lease, err := st.AcquireChannelLease(ctx, "wecom-a", "owner-a", time.Minute)
+	if err != nil {
+		t.Fatalf("acquire lease: %v", err)
+	}
+	msg := channel.Message{
+		ChannelAccountID:       "wecom-a",
+		ChannelType:            channel.TypeWeCom,
+		ExternalMessageID:      "msg-recover",
+		ExternalConversationID: "chat-recover",
+		ExternalUserID:         "user-recover",
+		ChatType:               channel.ChatDM,
+		Kind:                   channel.MessageText,
+		Text:                   "hello",
+	}
+	payload, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatalf("marshal message: %v", err)
+	}
+	if _, err := st.InsertInboundMessage(ctx, store.MessageRecord{
+		ChannelAccountID:       "wecom-a",
+		ChannelType:            "wecom",
+		ExternalMessageID:      "msg-recover",
+		ExternalConversationID: "chat-recover",
+		Direction:              "inbound",
+		Status:                 "received",
+		PayloadJSON:            string(payload),
+	}); err != nil {
+		t.Fatalf("insert inbound: %v", err)
+	}
+	states := newChannelRuntimeStates()
+	states.SetLease(lease)
+	client := &fakeACPClient{}
+	dispatcher := router.NewDispatcherWithOptions(st, account, client, "/workspace", router.DispatcherOptions{
+		InboundLease: lease,
+		InboundStale: time.Nanosecond,
+	})
+	runner := newAccountRunner(config.Config{OwnerID: "owner-a", LeaseTTL: time.Minute}, st, states, account, nil, nil)
+	runner.recoverInboundOnce(ctx, dispatcher)
+	items, err := st.ClaimPendingOutbox(ctx, lease, 10)
+	if err != nil {
+		t.Fatalf("claim outbox: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected recovered inbound to enqueue one outbox item, got %#v", items)
+	}
+	if items[0].ExternalConversationID != "chat-recover" || items[0].ACPSessionID != "session-test" {
+		t.Fatalf("unexpected recovered outbox item: %#v", items[0])
+	}
+	_, ok, err := st.ClaimInboundMessage(ctx, lease, "msg-recover", time.Nanosecond)
+	if err != nil {
+		t.Fatalf("reclaim inbound after done: %v", err)
+	}
+	if ok {
+		t.Fatal("done inbound message should not be reclaimable")
 	}
 }
 

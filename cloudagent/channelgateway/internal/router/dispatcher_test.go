@@ -792,7 +792,7 @@ func TestDispatcherRequestTimeoutEnqueuesFallback(t *testing.T) {
 	}
 	client := &fakeACP{sessionID: "session-a", waitPrompt: true}
 	dispatcher := NewDispatcherWithOptions(st, account, client, "/workspace",
-		DispatcherOptions{RequestTimeout: 10 * time.Millisecond},
+		DispatcherOptions{RequestTimeout: 100 * time.Millisecond},
 	)
 	err = dispatcher.HandleInbound(ctx, channel.Message{
 		ChannelAccountID:       "wecom-a",

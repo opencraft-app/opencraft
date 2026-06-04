@@ -186,6 +186,62 @@ func TestStoreOutboxClaimIsFencedAcrossSharedDBConnections(t *testing.T) {
 	}
 }
 
+func TestStoreInboundClaimIsFencedAcrossSharedDBConnections(t *testing.T) {
+	ctx := context.Background()
+	path := t.TempDir() + "/channelgateway.db"
+	first, err := Open(ctx, path)
+	if err != nil {
+		t.Fatalf("open first store: %v", err)
+	}
+	defer first.Close()
+	second, err := Open(ctx, path)
+	if err != nil {
+		t.Fatalf("open second store: %v", err)
+	}
+	defer second.Close()
+	leaseA, err := first.AcquireChannelLease(ctx, "wecom-a", "owner-a", time.Minute)
+	if err != nil {
+		t.Fatalf("acquire owner-a lease: %v", err)
+	}
+	if _, err := first.InsertInboundMessage(ctx, MessageRecord{
+		ChannelAccountID:       "wecom-a",
+		ChannelType:            "wecom",
+		ExternalMessageID:      "msg-a",
+		ExternalConversationID: "chat-a",
+		Direction:              "inbound",
+		PayloadJSON:            `{"Text":"hello"}`,
+	}); err != nil {
+		t.Fatalf("insert inbound: %v", err)
+	}
+	claimedA, ok, err := first.ClaimInboundMessage(ctx, leaseA, "msg-a", time.Minute)
+	if err != nil || !ok {
+		t.Fatalf("owner-a claim ok=%v err=%v", ok, err)
+	}
+	if _, err := first.db.ExecContext(ctx, `UPDATE channel_messages SET claimed_at = ? WHERE message_id = ?`, time.Now().UTC().Add(-time.Minute).Format(time.RFC3339Nano), claimedA.MessageID); err != nil {
+		t.Fatalf("age inbound claim: %v", err)
+	}
+	if err := first.ReleaseChannelLease(ctx, leaseA); err != nil {
+		t.Fatalf("release owner-a lease: %v", err)
+	}
+	leaseB, err := second.AcquireChannelLease(ctx, "wecom-a", "owner-b", time.Minute)
+	if err != nil {
+		t.Fatalf("acquire owner-b lease: %v", err)
+	}
+	claimedB, ok, err := second.ClaimInboundMessage(ctx, leaseB, "msg-a", time.Nanosecond)
+	if err != nil || !ok {
+		t.Fatalf("owner-b reclaim ok=%v err=%v", ok, err)
+	}
+	if claimedB.MessageID != claimedA.MessageID {
+		t.Fatalf("unexpected reclaimed message: %#v", claimedB)
+	}
+	if err := first.MarkInboundMessageDone(ctx, leaseA, claimedA.MessageID, "session-old"); !errors.Is(err, ErrLeaseHeld) {
+		t.Fatalf("old owner must not finish reclaimed inbound, got %v", err)
+	}
+	if err := second.MarkInboundMessageDone(ctx, leaseB, claimedB.MessageID, "session-new"); err != nil {
+		t.Fatalf("new owner should finish reclaimed inbound: %v", err)
+	}
+}
+
 func TestStoreConversationAndMessageDedup(t *testing.T) {
 	ctx := context.Background()
 	st, err := Open(ctx, t.TempDir()+"/channelgateway.db")

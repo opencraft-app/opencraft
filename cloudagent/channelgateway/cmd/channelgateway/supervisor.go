@@ -19,6 +19,8 @@ import (
 	"cloudagent/channelgateway/internal/store"
 )
 
+const inboundRecoveryStaleAfter = 30 * time.Second
+
 type acpRuntimeClient interface {
 	router.ACPClient
 	Initialize(context.Context) error
@@ -208,7 +210,11 @@ func (r *accountRunner) run(ctx context.Context) error {
 		r.account,
 		acpClient,
 		"/workspace",
-		router.DispatcherOptions{RequestTimeout: r.cfg.RequestTimeout},
+		router.DispatcherOptions{
+			RequestTimeout: r.cfg.RequestTimeout,
+			InboundLease:   lease,
+			InboundStale:   inboundRecoveryStaleAfter,
+		},
 	)
 	acpClient.SetWorkspaceLifecycleHandler(func(event acp.WorkspaceLifecycleEvent) {
 		go func() {
@@ -242,6 +248,7 @@ func (r *accountRunner) run(ctx context.Context) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	go r.renewLeaseLoop(runCtx, cancel)
+	go r.inboundRecoveryLoop(runCtx, dispatcher)
 	go r.outboxLoop(runCtx, adapter)
 	r.states.SetStatus(r.account.ChannelAccountID, "running")
 	log.Printf("channelgateway runtime_trace account_id=%s agent_id=%s action=wecom_adapter_start websocket_url=%s",
@@ -253,6 +260,60 @@ func (r *accountRunner) run(ctx context.Context) error {
 	log.Printf("channelgateway runtime_trace account_id=%s agent_id=%s action=wecom_adapter_stopped error=%s",
 		runtimeLogValue(r.account.ChannelAccountID), runtimeLogValue(r.account.AgentID), runtimeLogValue(errorString(err)))
 	return err
+}
+
+func (r *accountRunner) inboundRecoveryLoop(ctx context.Context, dispatcher *router.Dispatcher) {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for {
+		r.recoverInboundOnce(ctx, dispatcher)
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func (r *accountRunner) recoverInboundOnce(ctx context.Context, dispatcher *router.Dispatcher) {
+	lease := r.states.GetLease(r.account.ChannelAccountID)
+	if lease.ChannelAccountID == "" {
+		return
+	}
+	items, err := r.store.ListRecoverableInboundMessages(ctx, lease, 16, inboundRecoveryStaleAfter)
+	if err != nil {
+		log.Printf("recover inbound account=%s failed: %v", lease.ChannelAccountID, err)
+		return
+	}
+	for _, item := range items {
+		var msg channel.Message
+		if err := json.Unmarshal([]byte(item.PayloadJSON), &msg); err != nil {
+			_ = r.store.MarkInboundMessageFailed(ctx, lease, item.MessageID, item.ACPSessionID, fmt.Sprintf("decode inbound payload: %v", err), time.Now().UTC().Add(time.Minute))
+			continue
+		}
+		if strings.TrimSpace(msg.ChannelAccountID) == "" {
+			msg.ChannelAccountID = item.ChannelAccountID
+		}
+		if msg.ChannelType == "" {
+			msg.ChannelType = channel.Type(item.ChannelType)
+		}
+		if strings.TrimSpace(msg.ExternalMessageID) == "" {
+			msg.ExternalMessageID = item.ExternalMessageID
+		}
+		if strings.TrimSpace(msg.ExternalConversationID) == "" {
+			msg.ExternalConversationID = item.ExternalConversationID
+		}
+		log.Printf("channelgateway runtime_trace account_id=%s agent_id=%s message_id=%s action=inbound_recover_start status=%s retry_count=%d",
+			runtimeLogValue(item.ChannelAccountID), runtimeLogValue(r.account.AgentID), runtimeLogValue(item.ExternalMessageID),
+			runtimeLogValue(item.Status), item.RetryCount)
+		if err := dispatcher.HandleInbound(ctx, msg); err != nil {
+			log.Printf("channelgateway runtime_trace account_id=%s agent_id=%s message_id=%s action=inbound_recover_failed error=%s",
+				runtimeLogValue(item.ChannelAccountID), runtimeLogValue(r.account.AgentID), runtimeLogValue(item.ExternalMessageID), runtimeLogValue(err.Error()))
+			continue
+		}
+		log.Printf("channelgateway runtime_trace account_id=%s agent_id=%s message_id=%s action=inbound_recover_done",
+			runtimeLogValue(item.ChannelAccountID), runtimeLogValue(r.account.AgentID), runtimeLogValue(item.ExternalMessageID))
+	}
 }
 
 func (r *accountRunner) renewLeaseLoop(ctx context.Context, cancel context.CancelFunc) {

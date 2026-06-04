@@ -21,16 +21,23 @@ type Dispatcher struct {
 	cwd          string
 	callbacks    ChannelCallbacks
 	timeout      time.Duration
+	inboundLease store.ChannelLease
+	inboundStale time.Duration
 	sessionLocks sync.Map
 }
 
 type DispatcherOptions struct {
 	Callbacks      ChannelCallbacks
 	RequestTimeout time.Duration
+	InboundLease   store.ChannelLease
+	InboundStale   time.Duration
 }
 
 type SessionStore interface {
 	InsertInboundMessage(ctx context.Context, rec store.MessageRecord) (bool, error)
+	ClaimInboundMessage(ctx context.Context, lease store.ChannelLease, externalMessageID string, staleAfter time.Duration) (store.MessageRecord, bool, error)
+	MarkInboundMessageDone(ctx context.Context, lease store.ChannelLease, messageID, acpSessionID string) error
+	MarkInboundMessageFailed(ctx context.Context, lease store.ChannelLease, messageID, acpSessionID, detail string, retryAt time.Time) error
 	GetOrCreateConversation(ctx context.Context, conv store.Conversation) (store.Conversation, error)
 	FindConversationByACPSession(ctx context.Context, channelAccountID, acpSessionID string) (store.Conversation, bool, error)
 	BindACPSession(ctx context.Context, channelAccountID, sessionKey, acpSessionID string) error
@@ -63,12 +70,14 @@ func NewDispatcherWithOptions(st SessionStore, account store.ChannelAccount, cli
 		callbacks = DefaultChannelCallbacks{}
 	}
 	return &Dispatcher{
-		store:     st,
-		account:   account,
-		acp:       client,
-		cwd:       cwd,
-		callbacks: callbacks,
-		timeout:   opts.RequestTimeout,
+		store:        st,
+		account:      account,
+		acp:          client,
+		cwd:          cwd,
+		callbacks:    callbacks,
+		timeout:      opts.RequestTimeout,
+		inboundLease: normalizedInboundLease(account.ChannelAccountID, opts.InboundLease),
+		inboundStale: opts.InboundStale,
 	}
 }
 
@@ -81,7 +90,7 @@ func (d *Dispatcher) HandleInbound(ctx context.Context, msg channel.Message) err
 	return d.handleInbound(ctx, msg)
 }
 
-func (d *Dispatcher) handleInbound(ctx context.Context, msg channel.Message) error {
+func (d *Dispatcher) handleInbound(ctx context.Context, msg channel.Message) (retErr error) {
 	startedAt := time.Now()
 	if d == nil || d.store == nil || d.acp == nil {
 		return errors.New("dispatcher is not configured")
@@ -95,6 +104,10 @@ func (d *Dispatcher) handleInbound(ctx context.Context, msg channel.Message) err
 	if msg.ReceivedAt.IsZero() {
 		msg.ReceivedAt = time.Now().UTC()
 	}
+	payload, err := json.Marshal(msg)
+	if err != nil {
+		return err
+	}
 	inserted, err := d.store.InsertInboundMessage(ctx, store.MessageRecord{
 		ChannelAccountID:       msg.ChannelAccountID,
 		ChannelType:            string(msg.ChannelType),
@@ -102,16 +115,39 @@ func (d *Dispatcher) handleInbound(ctx context.Context, msg channel.Message) err
 		ExternalConversationID: msg.ExternalConversationID,
 		Direction:              "inbound",
 		Status:                 "received",
-		PayloadJSON:            string(msg.Raw),
+		PayloadJSON:            string(payload),
 	})
 	if err != nil {
 		return err
 	}
+	inboundLease := d.inboundLeaseFor(msg.ChannelAccountID)
+	inbound, claimed, err := d.store.ClaimInboundMessage(ctx, inboundLease, msg.ExternalMessageID, d.inboundStale)
+	if err != nil {
+		return err
+	}
 	if !inserted {
-		log.Printf("channelgateway business_trace account_id=%s agent_id=%s message_id=%s action=dedup_skip",
-			logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(msg.ExternalMessageID))
+		if !claimed {
+			log.Printf("channelgateway business_trace account_id=%s agent_id=%s message_id=%s status=%s action=dedup_skip",
+				logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(msg.ExternalMessageID), logValue(inbound.Status))
+			return nil
+		}
+		log.Printf("channelgateway business_trace account_id=%s agent_id=%s message_id=%s status=%s action=inbound_reclaimed",
+			logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(msg.ExternalMessageID), logValue(inbound.Status))
+	}
+	if inserted && !claimed {
+		log.Printf("channelgateway business_trace account_id=%s agent_id=%s message_id=%s status=%s action=inbound_claim_skip",
+			logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(msg.ExternalMessageID), logValue(inbound.Status))
 		return nil
 	}
+	var sessionID string
+	defer func() {
+		if inbound.MessageID == "" {
+			return
+		}
+		if markErr := d.finishInboundMessage(ctx, inboundLease, inbound.MessageID, sessionID, retErr); markErr != nil && retErr == nil {
+			retErr = markErr
+		}
+	}()
 	log.Printf("channelgateway business_trace account_id=%s agent_id=%s message_id=%s chat_type=%s external_conversation_id=%s external_user_id=%s thread_id=%s action=inbound_received kind=%s",
 		logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(msg.ExternalMessageID),
 		logValue(string(msg.ChatType)), logValue(msg.ExternalConversationID), logValue(msg.ExternalUserID),
@@ -144,7 +180,7 @@ func (d *Dispatcher) handleInbound(ctx context.Context, msg channel.Message) err
 	if command, ok := d.callbacksOrDefault().HandleCommand(msg.Text); ok {
 		return d.handleCommand(ctx, msg, conversation, command)
 	}
-	sessionID := conversation.ACPSessionID
+	sessionID = conversation.ACPSessionID
 	if sessionID == "" {
 		log.Printf("channelgateway session_trace account_id=%s agent_id=%s conversation_id=%s session_key=%s action=session_new reason=missing_acp_session",
 			logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(conversation.ConversationID), logValue(conversation.SessionKey))
@@ -228,6 +264,36 @@ func (d *Dispatcher) callbacksOrDefault() ChannelCallbacks {
 		return d.callbacks
 	}
 	return DefaultChannelCallbacks{}
+}
+
+func normalizedInboundLease(accountID string, lease store.ChannelLease) store.ChannelLease {
+	if strings.TrimSpace(lease.ChannelAccountID) == "" {
+		lease.ChannelAccountID = accountID
+	}
+	if strings.TrimSpace(lease.OwnerID) == "" {
+		lease.OwnerID = "local"
+	}
+	if lease.FencingToken <= 0 {
+		lease.FencingToken = 1
+	}
+	return lease
+}
+
+func (d *Dispatcher) inboundLeaseFor(accountID string) store.ChannelLease {
+	return normalizedInboundLease(accountID, d.inboundLease)
+}
+
+func (d *Dispatcher) finishInboundMessage(ctx context.Context, lease store.ChannelLease, messageID, sessionID string, retErr error) error {
+	finishCtx := ctx
+	var cancel context.CancelFunc
+	if ctx.Err() != nil {
+		finishCtx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+	}
+	if retErr != nil {
+		return d.store.MarkInboundMessageFailed(finishCtx, lease, messageID, sessionID, retErr.Error(), time.Now().UTC().Add(retryBackoff(0)))
+	}
+	return d.store.MarkInboundMessageDone(finishCtx, lease, messageID, sessionID)
 }
 
 func (d *Dispatcher) handleCommand(ctx context.Context, msg channel.Message, conversation store.Conversation, command CommandCallbackResult) error {
