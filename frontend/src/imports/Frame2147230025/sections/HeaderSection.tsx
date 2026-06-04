@@ -110,11 +110,11 @@ function Frame14() {
 export default function HeaderSection() {
   return (
     <header className="w-full absolute top-0 left-0 z-20">
-      <div className="mx-auto flex items-center justify-between px-16 py-3" style={{ width: 'min(1440px, calc(100vw - 128px))' }}>
+      <div className="w-full flex items-center justify-between px-16 py-3 relative">
         {/* Logo */}
         <Frame4 />
-        {/* 中间导航：宽度不足时隐藏 */}
-        <nav className="hidden lg:flex gap-8 text-[14px] font-['PingFang_SC:Medium',sans-serif] text-[rgba(0,0,0,0.7)]">
+        {/* 中间导航：绝对居中（仅大屏显示） */}
+        <nav className="hidden lg:flex gap-8 text-[14px] font-['PingFang_SC:Medium',sans-serif] text-[rgba(0,0,0,0.7)] absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
           <span>概览</span>
           <span>更新日志</span>
           <span>产品文档</span>

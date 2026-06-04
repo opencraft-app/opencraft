@@ -1,7 +1,4 @@
-import {
-  svgPaths,
-  imgCtaFooterCopyright,
-} from '../assets';
+import { svgPaths } from '../assets';
 
 
 function LightVelaLogo() {
@@ -35,18 +32,18 @@ export default function FooterSection() {
       }}
     >
       <div
-        className="mx-auto flex items-center justify-between px-[140px]"
+        className="mx-auto flex items-center justify-between px-16"
         style={{ height: 88, maxWidth: 1920 }}
       >
         {/* 左：LightVela SVG logo */}
         <LightVelaLogo />
 
-        {/* 右：版权图片 */}
-        <img
-          alt="© 2026 LightVela 版权所有，由腾讯轻量云团队出品"
-          src={imgCtaFooterCopyright}
-          style={{ width: 461, height: 22, fontSize: 14, lineHeight: '21px', color: '#252525' }}
-        />
+        {/* 右：版权文字 */}
+        <p
+          className="font-['Noto_Sans_SC:Regular',sans-serif] font-normal leading-[22px] text-[14px] text-[rgba(51,65,85,0.7)] whitespace-nowrap"
+        >
+          © 2026 LightVela 版权所有，由腾讯轻量云团队出品
+        </p>
       </div>
     </footer>
   );

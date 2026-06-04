@@ -1,18 +1,42 @@
+import { useRef, useState, useCallback } from 'react';
 import { imgHeroBgNew, imgHeroElement01, imgHeroElement02, imgHeroElement03, imgHeroAvatars } from '../assets';
 import '../motion.css';
 
-// 设计稿基准尺寸 2560 × 1081
-const W = 2560;
-const H = 1081;
-
-function px(n: number) { return `${(n / W) * 100}%`; }
-function py(n: number) { return `${(n / H) * 100}%`; }
+// 设计稿基准尺寸 1894 × 1007（Figma 实际画布）
 
 export default function HeroSection() {
+  const sectionRef = useRef<HTMLElement>(null);
+  const [spotlight, setSpotlight] = useState<{ x: number; y: number; visible: boolean }>({ x: 0, y: 0, visible: false });
+  const [mouse, setMouse] = useState<{ nx: number; ny: number }>({ nx: 0, ny: 0 });
+
+  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLElement>) => {
+    const rect = sectionRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    setSpotlight({ x, y, visible: true });
+    setMouse({ nx: x / rect.width - 0.5, ny: y / rect.height - 0.5 });
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    setSpotlight(s => ({ ...s, visible: false }));
+    setMouse({ nx: 0, ny: 0 });
+  }, []);
+
+  // 视差大小顺序：02最大 > 03中 > 01最小
+  // 02: ±36px  03: ±18px  01: ±6px
+  const offset = (maxPx: number): React.CSSProperties => ({
+    transform: `translate(${mouse.nx * maxPx}px, ${mouse.ny * maxPx}px)`,
+    transition: 'transform 180ms cubic-bezier(0.25, 0.46, 0.45, 0.94)',
+  });
+
   return (
     <section
-      className="relative w-full overflow-hidden"
-      style={{ height: '100vh', minHeight: '600px' }}
+      ref={sectionRef}
+      className="relative w-full"
+      style={{ height: '100vh', minHeight: '600px', overflow: 'hidden' }}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
     >
       {/* ① 背景图 */}
       <img
@@ -22,51 +46,74 @@ export default function HeroSection() {
         draggable={false}
       />
 
+      {/* ① 鼠标光晕层 */}
+      <div
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          background: spotlight.visible
+            ? `radial-gradient(circle 380px at ${spotlight.x}px ${spotlight.y}px, rgba(255,255,255,0.22) 0%, transparent 70%)`
+            : 'none',
+          opacity: spotlight.visible ? 1 : 0,
+          transition: 'opacity 300ms ease',
+          zIndex: 1,
+        }}
+      />
+
       {/* ② 3D 装饰元素 */}
 
-      {/* 首页元素01：机器人趴月球  左下 */}
-      <img
-        alt=""
-        src={imgHeroElement01}
-        className="absolute pointer-events-none select-none lv-float-sm"
-        style={{
-          left: px(0),
-          top: py(689),
-          width: px(765),
-          height: py(392),
-          objectFit: 'cover',
-          objectPosition: 'center top',
-          animationDelay: '0s',
-        }}
-        draggable={false}
-      />
+      {/* 首页元素01：机器人趴月球  左下 — 向内缩10px定位，padding留偏移缓冲 */}
+      <div
+        className="absolute lv-float-sm pointer-events-none"
+        style={{ left: '0', bottom: '0', animationDelay: '0s', zIndex: 2 }}
+      >
+        <img
+          alt=""
+          src={imgHeroElement01}
+          className="select-none block"
+          style={{
+            width: 'min(40.39vw, 71.68vh, 722px)',
+            height: 'auto',
+            objectFit: 'contain',
+            objectPosition: 'left bottom',
+            ...offset(6),
+          }}
+          draggable={false}
+        />
+      </div>
 
       {/* 首页元素02：土星  左侧偏上 */}
-      <img
-        alt=""
-        src={imgHeroElement02}
-        className="absolute pointer-events-none select-none lv-float"
-        style={{
-          left: px(130),
-          top: py(220),
-          width: px(242),
-          height: py(169),
-          objectFit: 'contain',
-          animationDelay: '1.5s',
-        }}
-        draggable={false}
-      />
-
-      {/* 首页元素03：粉紫大球右下角 */}
       <div
-        className="absolute overflow-hidden pointer-events-none lv-float-sm"
-        style={{ right: 0, bottom: 0, width: px(560), height: py(200), animationDelay: '0.8s' }}
+        className="absolute lv-float pointer-events-none"
+        style={{ left: '0', top: '31.43%', animationDelay: '1.5s', zIndex: 2 }}
+      >
+        <img
+          alt=""
+          src={imgHeroElement02}
+          className="select-none block"
+          style={{
+            width: 'min(12.78vw, 24.04vh, 242px)',
+            height: 'auto',
+            objectFit: 'contain',
+            ...offset(36),
+          }}
+          draggable={false}
+        />
+      </div>
+
+      {/* 首页元素03：粉紫大球右下角 — 向内缩44px定位，padding留偏移缓冲 */}
+      <div
+        className="absolute lv-float-sm pointer-events-none"
+        style={{ right: '-18px', bottom: '-18px', animationDelay: '0.8s', zIndex: 2 }}
       >
         <img
           alt=""
           src={imgHeroElement03}
-          className="absolute bottom-0 right-0"
-          style={{ width: px(560) }}
+          className="block select-none"
+          style={{
+            width: 'min(14.52vw, 21.11vh, 213px)',
+            height: 'auto',
+            ...offset(18),
+          }}
           draggable={false}
         />
       </div>
@@ -99,13 +146,14 @@ export default function HeroSection() {
 
         {/* 大标题 */}
         <p
-          className="whitespace-nowrap mb-10 lv-reveal lv-revealed lv-delay-200"
+          className="whitespace-nowrap lv-reveal lv-revealed lv-delay-200"
           style={{
             fontFamily: "'PingFang SC', 'HarmonyOS Sans SC', sans-serif",
             fontWeight: 600,
             fontSize: 'clamp(28px, 4vw, 64px)',
             lineHeight: 1.375,
             color: 'rgba(0,0,0,0.9)',
+            marginBottom: '88px',
           }}
         >
           灵感随时发生，思考自由流动
@@ -113,11 +161,13 @@ export default function HeroSection() {
 
         {/* 按钮 */}
         <div
-          className="pointer-events-auto flex items-center justify-center gap-2 cursor-pointer lv-reveal lv-revealed lv-delay-400 lv-btn-arrow"
+          className="pointer-events-auto relative flex items-center justify-center cursor-pointer lv-reveal lv-revealed lv-delay-400 lv-btn-arrow"
           style={{
-            width: '314px',
+            minWidth: '200px',
+            maxWidth: '314px',
+            width: 'clamp(200px, 40vw, 314px)',
             height: '60px',
-            padding: '0 32px',
+            padding: '0 clamp(16px, 4vw, 32px)',
             background: '#1A1A1A',
             borderRadius: '30px',
           }}
@@ -126,7 +176,7 @@ export default function HeroSection() {
             style={{
               fontFamily: "'PingFang SC', 'HarmonyOS Sans SC', sans-serif",
               fontWeight: 500,
-              fontSize: '18px',
+              fontSize: 'clamp(14px, 2vw, 18px)',
               lineHeight: '24px',
               color: '#fff',
               whiteSpace: 'nowrap',
@@ -134,9 +184,20 @@ export default function HeroSection() {
           >
             立即创建
           </span>
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M2 14L14 2" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-            <path d="M6 2H14V10" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          {/* 右侧 icon，距按钮上/右/下边缘各 12px */}
+          <svg
+            width="36"
+            height="36"
+            viewBox="0 0 36 36"
+            fill="none"
+            style={{
+              position: 'absolute',
+              right: '12px',
+              top: '50%',
+              transform: 'translateY(-50%)',
+            }}
+          >
+            <path d="M18 0C27.9411 0 36 8.05888 36 18C36 27.9411 27.9411 36 18 36C8.05888 36 0 27.9411 0 18C0 8.05888 8.05888 0 18 0ZM16 11C15.4477 11 15 11.4477 15 12C15 12.5523 15.4477 13 16 13H21.5859L11.293 23.293C10.9024 23.6835 10.9024 24.3165 11.293 24.707C11.6835 25.0973 12.3166 25.0975 12.707 24.707L23 14.4141V20C23 20.5523 23.4477 21 24 21C24.5521 20.9998 25 20.5521 25 20V12C25 11.9203 24.9893 11.8429 24.9717 11.7686C24.9668 11.748 24.9622 11.7273 24.9561 11.707C24.9519 11.6934 24.9461 11.6803 24.9414 11.667C24.9149 11.5918 24.8801 11.5186 24.835 11.4502C24.7612 11.3383 24.6652 11.2423 24.5537 11.168C24.5148 11.142 24.474 11.1195 24.4326 11.0996C24.3871 11.0777 24.34 11.0579 24.291 11.043C24.252 11.0311 24.2118 11.0226 24.1719 11.0156C24.1161 11.006 24.0585 11 24 11H16Z" fill="white"/>
           </svg>
         </div>
 

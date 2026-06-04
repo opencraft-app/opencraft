@@ -55,7 +55,13 @@ function Group75() {
 function Group74() {
   return (
     <div className="grid-cols-[max-content] grid-rows-[max-content] inline-grid leading-[0] place-items-start relative shrink-0">
-      <h2 className="text-[32px] lw-font-hyruiyisong text-[rgba(0,0,0,0.9)] leading-[48px] text-center">Hermes Agent 云端原生体验</h2>
+      <h2
+        className="text-[32px] lw-font-hyruiyisong text-[rgba(0,0,0,0.9)] leading-[48px] text-center"
+        style={{
+          WebkitTextStrokeWidth: '0.6px',
+          WebkitTextStrokeColor: 'var(--color-text-primary, rgba(0, 0, 0, 0.90))',
+        }}
+      >Hermes Agent 云端原生体验</h2>
       <Group75 />
     </div>
   );
@@ -65,7 +71,13 @@ function Group74() {
 function Frame84() {
   return (
     <div className="flex flex-col items-center gap-[16px] w-[645px]">
-      <h2 className="text-[32px] lw-font-hyruiyisong-no45j text-white leading-[48px] text-right w-full">Hermes Agent 云端原生体验</h2>
+      <h2
+        className="text-[32px] lw-font-hyruiyisong-no45j text-white leading-[48px] text-right w-full"
+        style={{
+          WebkitTextStrokeWidth: '0.6px',
+          WebkitTextStrokeColor: 'rgba(255, 255, 255, 0.9)',
+        }}
+      >Hermes Agent 云端原生体验</h2>
       <p className="text-[16px] font-['PingFang_SC',sans-serif] text-[rgba(255,255,255,0.5)] leading-6 text-center w-full">随时在线，数据由你掌控</p>
     </div>
   );
@@ -575,7 +587,13 @@ function Container() {
 function Group76() {
   return (
     <div className="grid-cols-[max-content] grid-rows-[max-content] inline-grid leading-[0] place-items-start relative shrink-0">
-      <p className="[word-break:break-word] col-1 lw-font-hyruiyisong-no45j leading-[48px] ml-[16px] mt-[2px] not-italic relative row-1 text-[32px] text-[rgba(0,0,0,0.9)] whitespace-nowrap">Hermes Agent 云端原生体验</p>
+      <p
+        className="[word-break:break-word] col-1 lw-font-hyruiyisong-no45j leading-[48px] ml-[16px] mt-[2px] not-italic relative row-1 text-[32px] text-[rgba(0,0,0,0.9)] whitespace-nowrap"
+        style={{
+          WebkitTextStrokeWidth: '0.6px',
+          WebkitTextStrokeColor: 'var(--color-text-primary, rgba(0, 0, 0, 0.90))',
+        }}
+      >Hermes Agent 云端原生体验</p>
       <Container />
     </div>
   );
@@ -2547,10 +2565,16 @@ export function CardsSection() {
       <div className="mx-auto px-16" style={{ width: 'min(1440px, calc(100vw - 128px))' }}>
         {/* 标题 */}
         <div className="flex flex-col items-center gap-4 mb-10">
-          <h2 className="text-[32px] lw-font-hyruiyisong text-[rgba(0,0,0,0.9)] leading-[48px] text-center">
+          <h2
+            className="text-[32px] lw-font-hyruiyisong text-[rgba(0,0,0,0.9)] leading-[48px] text-center"
+            style={{
+              WebkitTextStrokeWidth: '0.6px',
+              WebkitTextStrokeColor: 'var(--color-text-primary, rgba(0, 0, 0, 0.90))',
+            }}
+          >
             Hermes Agent 云端原生体验
           </h2>
-          <p className="text-[16px] font-['PingFang_SC:Regular',sans-serif] text-[rgba(0,0,0,0.5)] leading-6 text-center">
+          <p className="text-[16px] font-['PingFang_SC:Regular',sans-serif] text-[rgba(0,0,0,0.5)] leading-6 text-center whitespace-nowrap">
             随时在线，数据由你掌控
           </p>
         </div>
@@ -2575,8 +2599,8 @@ const marqueeStyle = `
   0%   { transform: translateX(-50%); }
   100% { transform: translateX(0); }
 }
-.marquee-left  { animation: marquee-left  28s linear infinite; }
-.marquee-right { animation: marquee-right 28s linear infinite; }
+.marquee-left  { animation: marquee-left  40s linear infinite; }
+.marquee-right { animation: marquee-right 40s linear infinite; }
 .marquee-left:hover,
 .marquee-right:hover { animation-play-state: paused; }
 `;
@@ -2642,9 +2666,15 @@ export default function FeatureSection() {
     <section className="w-full py-16 overflow-hidden" ref={ref as React.RefObject<HTMLElement>}>
       <style dangerouslySetInnerHTML={{ __html: marqueeStyle }} />
       {/* 标题 + 描述：1440px 版心 */}
-      <div className="mx-auto px-16 mb-10 text-center" style={{ width: 'min(1440px, calc(100vw - 128px))' }}>
-        <h2 className="text-[32px] lw-font-hyruiyisong text-[rgba(0,0,0,0.9)] leading-[48px] text-center lv-reveal">
-          Hermes Agent 云端原生体验
+      <div className="mx-auto px-16 mb-10 text-center flex flex-col items-center gap-4" style={{ width: 'min(1440px, calc(100vw - 128px))' }}>
+        <h2
+          className="text-[32px] lw-font-hyruiyisong text-[rgba(0,0,0,0.9)] leading-[48px] text-center lv-reveal"
+          style={{
+            WebkitTextStrokeWidth: '0.6px',
+            WebkitTextStrokeColor: 'var(--color-text-primary, rgba(0, 0, 0, 0.90))',
+          }}
+        >
+          你只管开口，远方的智能伙伴替你抵达
         </h2>
         <p className="text-[16px] font-['PingFang_SC:Regular',sans-serif] text-[rgba(0,0,0,0.5)] leading-6 text-center whitespace-nowrap lv-reveal lv-delay-200">
           我们把 Hermes Agent 搬上云端，让你无需折腾部署，随时唤醒，对话数据永远只属于你。
