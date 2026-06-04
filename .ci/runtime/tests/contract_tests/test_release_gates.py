@@ -81,6 +81,24 @@ class ReleaseGatePlannerTests(unittest.TestCase):
         self.assertTrue(plan.auto_merge_allowed)
         self.assertTrue(plan.auto_sync_allowed)
 
+    def test_devcloud_dep_channelgateway_auto_merges_and_syncs(self) -> None:
+        with self._repo_with_commit("cloudagent/channelgateway/README.md") as (repo_root, source_sha):
+            plan = plan_release_gates(
+                repo_root=repo_root,
+                bundle_manifest=REPO_ROOT / ".ci/runtime/release-bundles.manifest",
+                service="channelgateway",
+                env="devcloud-dep",
+                source_sha=source_sha,
+                image="example.com/channelgateway:test",
+                pin_targets="channelgateway",
+            )
+
+        self.assertEqual(plan.argo_sync, "auto")
+        self.assertFalse(plan.requires_db_job)
+        self.assertFalse(plan.requires_db_readiness)
+        self.assertTrue(plan.auto_merge_allowed)
+        self.assertTrue(plan.auto_sync_allowed)
+
     def test_payment_non_migration_change_still_requires_idempotent_db_gate(self) -> None:
         with self._repo_with_commit("payment/internal/api.go") as (repo_root, source_sha):
             plan = plan_release_gates(

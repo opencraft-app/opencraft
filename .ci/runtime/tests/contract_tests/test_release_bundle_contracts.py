@@ -665,9 +665,11 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(bundle.image_repo, "csighub.tencentyun.com/skipzhang/channelgateway")
         self.assertIn("argocd/services/channelgateway/devcloud-dep/**", bundle.publish_paths)
         self.assertIn("argocd/secrets/devcloud-dep/channelgateway-runtime-secrets.sops.yaml", bundle.publish_paths)
+        self.assertIn("argocd/secrets/devcloud-dep/channelgateway-wecom-secrets.sops.yaml", bundle.publish_paths)
         self.assertIn("cloudagent/acp-client/**", watched_paths)
         self.assertIn("argocd/services/channelgateway/**", watched_paths)
         self.assertIn("argocd/secrets/*/channelgateway-runtime-secrets.sops.yaml", watched_paths)
+        self.assertIn("argocd/secrets/*/channelgateway-wecom-secrets.sops.yaml", watched_paths)
 
     def test_cloudladdergateway_uses_tkex_template_release_contract(self) -> None:
         manifest = load_manifest()

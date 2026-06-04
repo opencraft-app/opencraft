@@ -89,6 +89,17 @@ PROMOTION_POLICIES: tuple[PromotionPolicy, ...] = (
         gate_denied_behavior=GateDeniedBehavior.FAIL,
     ),
     PromotionPolicy(
+        env="devcloud-dep",
+        branch_prefix="promote-devcloud-dep-",
+        display_name="DevCloud dep",
+        auto_merge=True,
+        auto_sync=True,
+        cleanup_source_branch=True,
+        verify_mode=VerifyMode.ARGO_CONVERGENCE,
+        kustomize_mode=KustomizeMode.FULL,
+        gate_denied_behavior=GateDeniedBehavior.FAIL,
+    ),
+    PromotionPolicy(
         env="shprod",
         branch_prefix="promote-shprod-",
         display_name="上海生产",
