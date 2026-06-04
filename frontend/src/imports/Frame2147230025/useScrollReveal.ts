@@ -23,11 +23,19 @@ export function useScrollReveal() {
           }
         });
       },
-      { threshold: 0.12 }
+      { threshold: 0.04 }
     );
 
-    targets.forEach((t) => obs.observe(t));
-    return () => obs.disconnect();
+    // 延迟一帧再 observe：确保浏览器先渲染 opacity:0/blur 初始状态，
+    // 再触发 transition，避免页面加载时直接跳到 revealed 状态。
+    const raf = requestAnimationFrame(() => {
+      targets.forEach((t) => obs.observe(t));
+    });
+
+    return () => {
+      cancelAnimationFrame(raf);
+      obs.disconnect();
+    };
   }, []);
 
   return ref;

@@ -253,17 +253,17 @@ export default function ProcessSection() {
             </div>
           </div>
         </div>
-        {/* 轨道圆环：慢速旋转 */}
+        {/* 轨道圆环 */}
         <svg
-          className="absolute pointer-events-none overflow-visible lv-orbit-slow"
-          style={{ left: p(1078), top: p(177, H), width: p(560), height: p(560, H) }}
+          className="absolute pointer-events-none overflow-visible"
+          style={{ left: p(1074), top: p(182, H), width: p(560), height: p(560, H) }}
           viewBox="0 0 560 560"
           fill="none"
         >
           <defs>
             <linearGradient id="orbit-grad" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%" stopColor="white" stopOpacity="0.2" />
-              <stop offset="100%" stopColor="white" stopOpacity="0.5" />
+              <stop offset="0%" stopColor="white" stopOpacity="0.08" />
+              <stop offset="100%" stopColor="white" stopOpacity="0.18" />
             </linearGradient>
           </defs>
           <circle cx="280" cy="280" r="279" stroke="url(#orbit-grad)" strokeWidth="1" strokeDasharray="5 5" />
@@ -278,7 +278,7 @@ export default function ProcessSection() {
         <img alt="" src={imgImage614591622} className="absolute mix-blend-plus-lighter pointer-events-none lv-float" style={{ left: p(1128), top: p(606, H), width: p(99), objectFit: 'contain', animationDelay: '2.5s' }} />
         <img alt="" src={imgImage614591623} className="absolute mix-blend-plus-lighter pointer-events-none lv-float-sm" style={{ left: p(1061), top: p(741, H), width: p(22), objectFit: 'contain', animationDelay: '3s' }} />
         {/* process-title：标题居中 */}
-        <div className="absolute left-0 right-0 flex flex-col items-center text-center gap-4" style={{ top: '60px', zIndex: 10 }}>
+        <div className="absolute left-0 right-0 flex flex-col items-center text-center gap-4 lv-reveal" style={{ top: '60px', zIndex: 10 }}>
           <h2
             className="lw-font-hyruiyisong text-white leading-[48px] whitespace-nowrap"
             style={{
@@ -296,30 +296,30 @@ export default function ProcessSection() {
             { step: 'Step 2', title: '系统自动帮你创建', desc: '无需任何配置，等待片刻即可就绪' },
             { step: 'Step 3', title: '和智能伙伴开始对话', desc: '创建完成后，绑定聊天通道，即刻开始探索之旅' },
           ].map(({ step, title, desc }, i) => (
-            <article key={step} className={`flex flex-col lv-reveal-up lv-delay-${(i + 1) * 200}`} style={{ gap: '6px' }}>
+            <article key={step} className={`flex flex-col lv-reveal lv-delay-${(i + 1) * 200}`} style={{ gap: '6px' }}>
               <StepBadge label={step} />
               <h3 className="lw-font-hyruiyisong text-white" style={{ fontSize: '24px', lineHeight: '36px', margin: '4px 0 0' }}>{title}</h3>
               <p className="font-['PingFang_SC:Regular',sans-serif] text-[rgba(255,255,255,0.7)]" style={{ fontSize: '14px', lineHeight: '24px' }}>{desc}</p>
             </article>
           ))}
         </div>
-        {/* 渐变虚线 */}
-        <div className="absolute" style={{ left: p(406), top: p(249, H), width: p(772) }}>
-          <svg width="100%" height="1" viewBox="0 0 772 1" fill="none" preserveAspectRatio="none">
-            <path d="M772 0.499931L0 0.5" stroke="url(#dash1)" strokeWidth="1" strokeDasharray="5.45 5.45" />
-            <defs><linearGradient id="dash1" x1="0" y1="1" x2="391.414" y2="0.999929" gradientUnits="userSpaceOnUse"><stop stopColor="#FFFFFF" stopOpacity="0" /><stop offset="1" stopColor="#FFFFFF" stopOpacity="0.18" /></linearGradient></defs>
+        {/* 渐变虚线 — left=273px(badge右边缘151+badge宽90+间距32), right挨大圆圈左边缘1078px → width=805px */}
+        <div className="absolute" style={{ left: '273px', top: '236px', width: '805px' }}>
+          <svg width="100%" height="1" viewBox="0 0 805 1" fill="none" preserveAspectRatio="none">
+            <path d="M805 0.5L0 0.5" stroke="url(#dash1)" strokeWidth="1" strokeDasharray="5.45 5.45" />
+            <defs><linearGradient id="dash1" x1="0" y1="1" x2="402.5" y2="0.999929" gradientUnits="userSpaceOnUse"><stop stopColor="#FFFFFF" stopOpacity="0" /><stop offset="0.5" stopColor="#FFFFFF" stopOpacity="0.2" /><stop offset="1" stopColor="#FFFFFF" stopOpacity="0" /></linearGradient></defs>
           </svg>
         </div>
-        <div className="absolute" style={{ left: p(406), top: p(448, H), width: p(672) }}>
-          <svg width="100%" height="1" viewBox="0 0 672 1" fill="none" preserveAspectRatio="none">
-            <path d="M672 0.499931L0 0.5" stroke="url(#dash2)" strokeWidth="1" strokeDasharray="5.45 5.45" />
-            <defs><linearGradient id="dash2" x1="0" y1="1" x2="336" y2="0.999929" gradientUnits="userSpaceOnUse"><stop stopColor="#FFFFFF" stopOpacity="0" /><stop offset="1" stopColor="#FFFFFF" stopOpacity="0.18" /></linearGradient></defs>
+        <div className="absolute" style={{ left: '273px', top: '380px', width: '805px' }}>
+          <svg width="100%" height="1" viewBox="0 0 805 1" fill="none" preserveAspectRatio="none">
+            <path d="M805 0.5L0 0.5" stroke="url(#dash2)" strokeWidth="1" strokeDasharray="5.45 5.45" />
+            <defs><linearGradient id="dash2" x1="0" y1="1" x2="402.5" y2="0.999929" gradientUnits="userSpaceOnUse"><stop stopColor="#FFFFFF" stopOpacity="0" /><stop offset="0.5" stopColor="#FFFFFF" stopOpacity="0.2" /><stop offset="1" stopColor="#FFFFFF" stopOpacity="0" /></linearGradient></defs>
           </svg>
         </div>
-        <div className="absolute" style={{ left: p(406), top: p(627, H), width: p(733) }}>
-          <svg width="100%" height="1" viewBox="0 0 733 1" fill="none" preserveAspectRatio="none">
-            <path d="M733 0.499931L0 0.5" stroke="url(#dash3)" strokeWidth="1" strokeDasharray="5.45 5.45" />
-            <defs><linearGradient id="dash3" x1="0" y1="1" x2="366.5" y2="0.999929" gradientUnits="userSpaceOnUse"><stop stopColor="#FFFFFF" stopOpacity="0" /><stop offset="1" stopColor="#FFFFFF" stopOpacity="0.18" /></linearGradient></defs>
+        <div className="absolute" style={{ left: '273px', top: '524px', width: '805px' }}>
+          <svg width="100%" height="1" viewBox="0 0 805 1" fill="none" preserveAspectRatio="none">
+            <path d="M805 0.5L0 0.5" stroke="url(#dash3)" strokeWidth="1" strokeDasharray="5.45 5.45" />
+            <defs><linearGradient id="dash3" x1="0" y1="1" x2="402.5" y2="0.999929" gradientUnits="userSpaceOnUse"><stop stopColor="#FFFFFF" stopOpacity="0" /><stop offset="0.5" stopColor="#FFFFFF" stopOpacity="0.2" /><stop offset="1" stopColor="#FFFFFF" stopOpacity="0" /></linearGradient></defs>
           </svg>
         </div>
       </div>
@@ -330,12 +330,12 @@ export default function ProcessSection() {
         style={{ backgroundImage: "linear-gradient(178.564deg, rgb(16,14,7) 2.7595%, rgb(21,18,18) 56.147%, rgb(63,52,118) 105.78%)" }}
       >
         {/* 标题 */}
-        <div className="text-center flex flex-col gap-4">
+        <div className="text-center flex flex-col gap-4 lv-reveal">
           <h2 className="lw-font-hyruiyisong text-white text-[24px] leading-[36px]">探索 LightVela 流程</h2>
           <p className="font-['PingFang_SC:Regular',sans-serif] text-[rgba(255,255,255,0.5)] text-[14px] leading-6">我们把 Hermes Agent 搬上云端，让你无需折腾部署，随时唤醒，对话数据永远只属于你。</p>
         </div>
         {/* 步骤 */}
-        <div className="flex flex-col gap-8">
+        <div className="flex flex-col gap-8 lv-reveal lv-delay-200">
           {[
             { step: 'Step 1', title: '点击「立即创建」', desc: '点一下按钮，免费订阅，就这样' },
             { step: 'Step 2', title: '系统自动帮你创建', desc: '无需任何配置，等待片刻即可就绪' },

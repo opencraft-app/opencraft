@@ -34,7 +34,7 @@ export default function HeroSection() {
     <section
       ref={sectionRef}
       className="relative w-full"
-      style={{ height: '100vh', minHeight: '600px', overflow: 'hidden' }}
+      style={{ height: '100vh', minHeight: '600px', overflow: 'hidden', borderRadius: '0 0 48px 48px' }}
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
     >
@@ -122,7 +122,7 @@ export default function HeroSection() {
       <div className="absolute inset-0 flex flex-col items-center justify-center gap-0 z-10 pointer-events-none">
 
         {/* Tagline 行 */}
-        <div className="flex items-center gap-3 mb-6 lv-reveal lv-revealed lv-delay-100">
+        <div className="flex items-center gap-3 mb-6 lv-load-reveal lv-load-d100">
           <img
             alt=""
             src={imgHeroAvatars}
@@ -146,7 +146,7 @@ export default function HeroSection() {
 
         {/* 大标题 */}
         <p
-          className="whitespace-nowrap lv-reveal lv-revealed lv-delay-200"
+          className="whitespace-nowrap lv-load-reveal lv-load-d200"
           style={{
             fontFamily: "'PingFang SC', 'HarmonyOS Sans SC', sans-serif",
             fontWeight: 600,
@@ -161,7 +161,7 @@ export default function HeroSection() {
 
         {/* 按钮 */}
         <div
-          className="pointer-events-auto relative flex items-center justify-center cursor-pointer lv-reveal lv-revealed lv-delay-400 lv-btn-arrow"
+          className="pointer-events-auto relative flex items-center justify-center cursor-pointer lv-load-reveal lv-load-d400 lv-btn-arrow"
           style={{
             minWidth: '200px',
             maxWidth: '314px',

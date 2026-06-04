@@ -1,6 +1,32 @@
 /* ─── LightVela Motion Layer ─── */
 /* prefers-reduced-motion: 全部关闭循环动画，保留基础 reveal */
 
+/* ── Page-load Blur Fade Up (CSS animation, no JS needed) ── */
+@keyframes lv-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0px);
+  }
+}
+
+.lv-load-reveal {
+  opacity: 0;
+  will-change: transform, opacity, filter;
+  animation: lv-fade-up 700ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+.lv-load-reveal.lv-load-d100 { animation-delay: 100ms; }
+.lv-load-reveal.lv-load-d200 { animation-delay: 200ms; }
+.lv-load-reveal.lv-load-d300 { animation-delay: 300ms; }
+.lv-load-reveal.lv-load-d400 { animation-delay: 400ms; }
+.lv-load-reveal.lv-load-d500 { animation-delay: 500ms; }
+.lv-load-reveal.lv-load-d600 { animation-delay: 600ms; }
+
 /* ── Keyframes ── */
 @keyframes lv-float {
   0%, 100% { transform: translateY(0px); }
@@ -62,37 +88,42 @@
 /* ── Reveal base (JS sets .lv-revealed) ── */
 .lv-reveal {
   opacity: 0;
-  transform: translateY(16px);
-  filter: blur(6px);
-  transition: opacity 700ms cubic-bezier(0.22, 1, 0.36, 1),
-              transform 700ms cubic-bezier(0.22, 1, 0.36, 1),
-              filter 700ms cubic-bezier(0.22, 1, 0.36, 1);
+  transform: translateY(12px);
+  filter: blur(8px);
+  will-change: transform, opacity, filter;
+  transition: opacity 560ms cubic-bezier(0.22, 1, 0.36, 1),
+              transform 560ms cubic-bezier(0.22, 1, 0.36, 1),
+              filter 560ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 .lv-reveal.lv-revealed {
   opacity: 1;
   transform: translateY(0);
-  filter: blur(0);
+  filter: blur(0px);
 }
 .lv-reveal-up {
   opacity: 0;
   transform: translateY(24px);
-  transition: opacity 600ms cubic-bezier(0.22, 1, 0.36, 1),
-              transform 600ms cubic-bezier(0.22, 1, 0.36, 1);
+  filter: blur(10px);
+  will-change: transform, opacity, filter;
+  transition: opacity 680ms cubic-bezier(0.22, 1, 0.36, 1),
+              transform 680ms cubic-bezier(0.22, 1, 0.36, 1),
+              filter 680ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 .lv-reveal-up.lv-revealed {
   opacity: 1;
   transform: translateY(0);
+  filter: blur(0px);
 }
 
 /* ── Stagger delays ── */
-.lv-delay-100 { transition-delay: 100ms; }
-.lv-delay-200 { transition-delay: 200ms; }
-.lv-delay-300 { transition-delay: 300ms; }
-.lv-delay-400 { transition-delay: 400ms; }
-.lv-delay-500 { transition-delay: 500ms; }
-.lv-delay-600 { transition-delay: 600ms; }
-.lv-delay-700 { transition-delay: 700ms; }
-.lv-delay-800 { transition-delay: 800ms; }
+.lv-delay-100 { transition-delay: 80ms; }
+.lv-delay-200 { transition-delay: 150ms; }
+.lv-delay-300 { transition-delay: 220ms; }
+.lv-delay-400 { transition-delay: 300ms; }
+.lv-delay-500 { transition-delay: 380ms; }
+.lv-delay-600 { transition-delay: 460ms; }
+.lv-delay-700 { transition-delay: 540ms; }
+.lv-delay-800 { transition-delay: 620ms; }
 
 /* ── CTA gradient text shift ── */
 .lv-gradient-shift {
@@ -125,5 +156,10 @@
     transform: none !important;
     filter: none !important;
     transition: none !important;
+  }
+  .lv-load-reveal {
+    opacity: 1 !important;
+    filter: none !important;
+    animation: none !important;
   }
 }

@@ -2560,13 +2560,14 @@ function CardScaleWrapper({ children }: { children: React.ReactNode }) {
 }
 
 export function CardsSection() {
+  const ref = useScrollReveal();
   return (
-    <section className="w-full py-16">
+    <section className="w-full py-16" ref={ref as React.RefObject<HTMLElement>}>
       <div className="mx-auto px-16" style={{ width: 'min(1440px, calc(100vw - 128px))' }}>
         {/* 标题 */}
         <div className="flex flex-col items-center gap-4 mb-10">
           <h2
-            className="text-[32px] lw-font-hyruiyisong text-[rgba(0,0,0,0.9)] leading-[48px] text-center"
+            className="text-[32px] lw-font-hyruiyisong text-[rgba(0,0,0,0.9)] leading-[48px] text-center lv-reveal"
             style={{
               WebkitTextStrokeWidth: '0.6px',
               WebkitTextStrokeColor: 'var(--color-text-primary, rgba(0, 0, 0, 0.90))',
@@ -2574,15 +2575,15 @@ export function CardsSection() {
           >
             Hermes Agent 云端原生体验
           </h2>
-          <p className="text-[16px] font-['PingFang_SC:Regular',sans-serif] text-[rgba(0,0,0,0.5)] leading-6 text-center whitespace-nowrap">
+          <p className="text-[16px] font-['PingFang_SC:Regular',sans-serif] text-[rgba(0,0,0,0.5)] leading-6 text-center whitespace-nowrap lv-reveal lv-delay-200">
             随时在线，数据由你掌控
           </p>
         </div>
         {/* 3列卡片：桌面3列，小屏1列（无2列过渡）间距 gap-6 对齐参考 */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <CardScaleWrapper><Container4 /></CardScaleWrapper>
-          <CardScaleWrapper><Container48 /></CardScaleWrapper>
-          <CardScaleWrapper><Container60 /></CardScaleWrapper>
+          <div className="lv-reveal lv-delay-100"><CardScaleWrapper><Container4 /></CardScaleWrapper></div>
+          <div className="lv-reveal lv-delay-200"><CardScaleWrapper><Container48 /></CardScaleWrapper></div>
+          <div className="lv-reveal lv-delay-300"><CardScaleWrapper><Container60 /></CardScaleWrapper></div>
         </div>
       </div>
     </section>
@@ -2681,7 +2682,7 @@ export default function FeatureSection() {
         </p>
       </div>
       {/* 跑马灯：全宽，两侧渐变遮罩 */}
-      <div className="relative">
+      <div className="relative lv-reveal lv-delay-300">
         {/* 左侧遮罩 */}
         <div className="pointer-events-none absolute left-0 top-0 bottom-0 w-24 z-10"
           style={{ background: 'linear-gradient(to right, white, transparent)' }} />

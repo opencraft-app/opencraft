@@ -6,15 +6,15 @@ function LightVelaLogo() {
     <div className="h-[26px] relative" style={{ width: 92.7 }}>
       <svg className="absolute block inset-0 size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 92.3494 21.2447">
         <g id="Group 2147208795">
-          <path d={svgPaths.p28e50e80} fill="#1a1a1a" id="Union" />
-          <path d={svgPaths.p8454d00} fill="#1a1a1a" id="Vector" />
-          <path d={svgPaths.p17f91700} fill="#1a1a1a" id="Vector_2" />
-          <path d={svgPaths.p3d1226f0} fill="#1a1a1a" id="Vector_3" />
-          <path d={svgPaths.p15273d80} fill="#1a1a1a" id="Vector_4" />
-          <path d={svgPaths.p20ef8100} fill="#1a1a1a" id="Vector_5" />
-          <path d={svgPaths.p3f75c600} fill="#1a1a1a" id="Vector_6" />
-          <path d={svgPaths.p1e695e00} fill="#1a1a1a" id="Vector_7" />
-          <path d={svgPaths.p39110200} fill="#1a1a1a" id="Vector_8" />
+          <path d={svgPaths.p28e50e80} fill="var(--fill-0, black)" id="Union" />
+          <path d={svgPaths.p8454d00} fill="var(--fill-0, black)" id="Vector" />
+          <path d={svgPaths.p17f91700} fill="var(--fill-0, black)" id="Vector_2" />
+          <path d={svgPaths.p3d1226f0} fill="var(--fill-0, black)" id="Vector_3" />
+          <path d={svgPaths.p15273d80} fill="var(--fill-0, black)" id="Vector_4" />
+          <path d={svgPaths.p20ef8100} fill="var(--fill-0, black)" id="Vector_5" />
+          <path d={svgPaths.p3f75c600} fill="var(--fill-0, black)" id="Vector_6" />
+          <path d={svgPaths.p1e695e00} fill="var(--fill-0, black)" id="Vector_7" />
+          <path d={svgPaths.p39110200} fill="var(--fill-0, black)" id="Vector_8" />
         </g>
       </svg>
     </div>
