@@ -55,9 +55,9 @@ Hermes 会根据对话上下文自动判断是否调用对应技能，无需用�
 
 ---
 
-## Clawhub
+## ClawHub
 
-Clawhub 是 OpenClaw 推出的技能市场：
+ClawHub 是 OpenClaw 推出的技能市场：
 
 🔗 [https://clawhub.ai/](https://clawhub.ai/)
 
@@ -71,9 +71,9 @@ Clawhub 是 OpenClaw 推出的技能市场：
 
 ![](../images/clawhub-overview-global.png)
 
-> 💡 **先在 Clawhub 浏览，再在 LightVela 里安装或使用**
+> 💡 **先在 ClawHub 浏览，再在 LightVela 里安装或使用**
 > 
-> LightVela 采用按名称安装的方式，需先在 Clawhub 确定目标技能的准确名称。
+> LightVela 采用按名称安装的方式，需先在 ClawHub 确定目标技能的准确名称。
 
 ---
 
@@ -81,7 +81,7 @@ Clawhub 是 OpenClaw 推出的技能市场：
 
 LightVela 管理台在「技能」按键中提供可视化的技能配置入口，可在此输入从 ClawHub 查到的技能名称并快速安装。
 
-### 1. 在 Clawhub 确定目标技能
+### 1. 在 ClawHub 确定目标技能
 
 访问 [https://clawhub.ai/](https://clawhub.ai/)，浏览或搜索所需技能。
 
@@ -194,7 +194,7 @@ Hermes 会打开页面并读取内容，以文字形式返回。
 
 该任务包含打开网页、等待加载、输入内容、点击按钮等多步操作，复杂度相对较高。Hermes 会按步骤完成并返回结果。
 
-![](../images/20260424-152321-dqwa.png)
+![](../images/clawhub-browser-example-global.webp)
 
 ---
 
