@@ -2,6 +2,8 @@ package router
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"log"
@@ -46,6 +48,7 @@ type SessionStore interface {
 
 type OutboxStore interface {
 	ClaimPendingOutbox(ctx context.Context, lease store.ChannelLease, limit int) ([]store.OutboxRecord, error)
+	MarkOutboxAbandoned(ctx context.Context, lease store.ChannelLease, outboxID, detail string) error
 	MarkOutboxFailed(ctx context.Context, lease store.ChannelLease, outboxID, detail string, retryAt time.Time) error
 	MarkOutboxSent(ctx context.Context, lease store.ChannelLease, outboxID string) error
 }
@@ -153,8 +156,9 @@ func (d *Dispatcher) handleInbound(ctx context.Context, msg channel.Message) (re
 		logValue(string(msg.ChatType)), logValue(msg.ExternalConversationID), logValue(msg.ExternalUserID),
 		logValue(msg.ThreadID), logValue(string(msg.Kind)))
 	if msg.Kind != channel.MessageText || strings.TrimSpace(msg.Text) == "" {
-		_, err := d.enqueueTextReply(ctx, msg, "", unsupportedMessageReply)
-		return err
+		log.Printf("channelgateway business_trace account_id=%s agent_id=%s message_id=%s kind=%s action=unsupported_message_ignored",
+			logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(msg.ExternalMessageID), logValue(string(msg.Kind)))
+		return nil
 	}
 	sessionKey := channel.BuildSessionKey(d.account.AgentID, msg, true, false)
 	log.Printf("channelgateway session_trace account_id=%s agent_id=%s message_id=%s chat_type=%s external_conversation_id=%s external_user_id=%s thread_id=%s session_key=%s action=lookup",
@@ -490,6 +494,7 @@ func (d *Dispatcher) enqueueTextReply(ctx context.Context, msg channel.Message, 
 		return store.OutboxRecord{}, err
 	}
 	outbox, err := d.store.EnqueueOutbox(ctx, store.OutboxRecord{
+		OutboxID:               replyOutboxID(msg, text),
 		ChannelAccountID:       msg.ChannelAccountID,
 		ChannelType:            string(msg.ChannelType),
 		ExternalConversationID: msg.ExternalConversationID,
@@ -508,6 +513,17 @@ func (d *Dispatcher) enqueueTextReply(ctx context.Context, msg channel.Message, 
 	return outbox, nil
 }
 
+func replyOutboxID(msg channel.Message, text string) string {
+	sum := sha256.Sum256([]byte(strings.Join([]string{
+		msg.ChannelAccountID,
+		string(msg.ChannelType),
+		msg.ExternalConversationID,
+		msg.ExternalMessageID,
+		text,
+	}, "\x00")))
+	return "out_reply_" + hex.EncodeToString(sum[:])[:32]
+}
+
 func defaultReplyForStopReason(reason string) string {
 	switch strings.TrimSpace(reason) {
 	case "", "end_turn":
@@ -522,6 +538,8 @@ func defaultReplyForStopReason(reason string) string {
 type OutboxSender interface {
 	Send(ctx context.Context, reply channel.Reply) (channel.SendResult, error)
 }
+
+const maxOutboxRetries = 6
 
 func DrainOutbox(ctx context.Context, st OutboxStore, lease store.ChannelLease, sender OutboxSender, limit int) (int, error) {
 	if limit <= 0 {
@@ -538,6 +556,13 @@ func DrainOutbox(ctx context.Context, st OutboxStore, lease store.ChannelLease, 
 				logValue(item.ChannelAccountID), logValue(item.ExternalConversationID), logValue(item.ACPSessionID),
 				logValue(item.OutboxID), logValue(err.Error()))
 			_ = st.MarkOutboxFailed(ctx, lease, item.OutboxID, err.Error(), time.Now().UTC().Add(time.Minute))
+			continue
+		}
+		if item.RetryCount >= maxOutboxRetries {
+			log.Printf("channelgateway business_trace account_id=%s external_conversation_id=%s acp_session_id=%s outbox_id=%s action=outbox_abandoned retry_count=%d reason=retry_limit",
+				logValue(item.ChannelAccountID), logValue(item.ExternalConversationID), logValue(item.ACPSessionID),
+				logValue(item.OutboxID), item.RetryCount)
+			_ = st.MarkOutboxAbandoned(ctx, lease, item.OutboxID, "outbox retry limit reached")
 			continue
 		}
 		sendStartedAt := time.Now()
