@@ -129,21 +129,41 @@ api_base, template, legacy_raw = sys.argv[1:4]
 legacy_ids = [item.strip() for item in legacy_raw.split(",") if item.strip()]
 pools = json.load(sys.stdin)
 resolved_pool_ids = []
+def add_pool(pool_id, pools_by_id, output):
+    pool_id = str(pool_id or "")
+    if not pool_id or pool_id in output:
+        return
+    pool = pools_by_id.get(pool_id)
+    if pool:
+        output[pool_id] = pool
+
+by_id = {str(pool.get("id") or ""): pool for pool in pools}
+selected = {}
+
+for pool_id in legacy_ids:
+    add_pool(pool_id, by_id, selected)
+
 try:
     with urllib.request.urlopen(f"{api_base}/template-classes/{template}/resolve", timeout=10) as resp:
         resolved = json.load(resp)
-    resolved_pool_ids = sorted({str(pool.get("id") or "") for pool in resolved.get("pools") or [] if pool.get("id")})
+    resolved_pool_ids = [str(pool.get("id") or "") for pool in resolved.get("pools") or [] if pool.get("id")]
     resolved_pools_by_id = {str(pool.get("id") or ""): pool for pool in resolved.get("pools") or [] if pool.get("id")}
 except Exception:
     resolved_pool_ids = []
     resolved_pools_by_id = {}
 
-if resolved_pool_ids:
-    by_id = {str(pool.get("id") or ""): pool for pool in pools}
-    for pool_id in resolved_pool_ids:
-        pool = by_id.get(pool_id) or resolved_pools_by_id.get(pool_id)
-        if pool:
-            print(json.dumps(pool, ensure_ascii=False, separators=(",", ":")))
+for pool in pools:
+    if pool.get("template_class_id") == template or str(pool.get("sku_id") or "").startswith("sku-hermes-"):
+        add_pool(pool.get("id"), by_id, selected)
+
+for pool_id in resolved_pool_ids:
+    if pool_id and pool_id not in by_id and pool_id in resolved_pools_by_id:
+        by_id[pool_id] = resolved_pools_by_id[pool_id]
+    add_pool(pool_id, by_id, selected)
+
+if selected:
+    for pool in selected.values():
+        print(json.dumps(pool, ensure_ascii=False, separators=(",", ":")))
     raise SystemExit(0)
 
 direct_pools = [

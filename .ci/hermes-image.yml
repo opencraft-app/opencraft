@@ -322,9 +322,12 @@ stages:
               fi
               export HERMES_IMAGE_NAME="${HERMES_IMAGE_NAME:-$(resolve_hermes_image_name)}"
               HERMES_ROLLOUT_ENV_SPEC="${HERMES_SHANGHAI_HERMES_ROLLOUT_ENV_SPEC:-shprod:ap-shanghai:kubeconfig_shprod}"
+              HERMES_LEGACY_POOL_IDS="${HERMES_SHANGHAI_HERMES_LEGACY_POOL_IDS:-pool-bj8,pool-c0,pool-c1,pool-c2,pool-c3,pool-c4,pool-c5}"
               export HERMES_ROLLOUT_ENV_SPEC
+              export HERMES_LEGACY_POOL_IDS
               echo "HERMES_IMAGE_NAME=${HERMES_IMAGE_NAME}"
               echo "HERMES_ROLLOUT_ENV_SPEC=${HERMES_ROLLOUT_ENV_SPEC}"
+              echo "HERMES_LEGACY_POOL_IDS=${HERMES_LEGACY_POOL_IDS}"
 
               HERMES_REFRESH_ENV_SPEC="$HERMES_ROLLOUT_ENV_SPEC" \
                 bash .ci/runtime/commands/refresh_hermes_sandbox_env.sh
@@ -356,7 +359,9 @@ stages:
               ci_load_tencentcloud_credentials
 
               HERMES_REPAIR_ENV_SPEC="${HERMES_SHANGHAI_HERMES_REPAIR_ENV_SPEC:-shprod:ap-shanghai:kubeconfig_shprod}"
-              export HERMES_REPAIR_ENV_SPEC
+              HERMES_LEGACY_POOL_IDS="${HERMES_SHANGHAI_HERMES_LEGACY_POOL_IDS:-pool-bj8,pool-c0,pool-c1,pool-c2,pool-c3,pool-c4,pool-c5}"
+              export HERMES_REPAIR_ENV_SPEC HERMES_LEGACY_POOL_IDS
               echo "HERMES_REPAIR_ENV_SPEC=${HERMES_REPAIR_ENV_SPEC}"
+              echo "HERMES_LEGACY_POOL_IDS=${HERMES_LEGACY_POOL_IDS}"
 
               bash .ci/runtime/commands/repair_hermes_existing_vms.sh
