@@ -7,9 +7,11 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"cloudagent/channelgateway/internal/acp"
 	"cloudagent/channelgateway/internal/channel"
 	"cloudagent/channelgateway/internal/channel/wecom"
 	"cloudagent/channelgateway/internal/config"
@@ -118,6 +120,122 @@ func TestRolloutE2EStandbyPodCanStopWithoutGhostTakeover(t *testing.T) {
 	}
 }
 
+func TestRolloutE2EInFlightInboundRecoveredAfterOldPodDrain(t *testing.T) {
+	ctx := context.Background()
+	path := t.TempDir() + "/channelgateway.db"
+	oldStore := openRolloutStore(t, ctx, path)
+	defer oldStore.Close()
+	newStore := openRolloutStore(t, ctx, path)
+	defer newStore.Close()
+
+	accountCfg := config.WeComConfig{Enabled: true, AccountID: "wecom-a", BotID: "bot-a", Secret: "secret-a", AgentID: "agent-a"}
+	oldCfg := config.Config{OwnerID: "owner-old", LeaseTTL: time.Minute, RequestTimeout: 30 * time.Second, WeComAccounts: []config.WeComConfig{accountCfg}}
+	if err := seedWeComAccounts(ctx, oldStore, oldCfg); err != nil {
+		t.Fatalf("seed accounts: %v", err)
+	}
+
+	inbound := channel.Message{
+		ChannelAccountID:       "wecom-a",
+		ChannelType:            channel.TypeWeCom,
+		ExternalMessageID:      "msg-rollout-inflight",
+		ExternalConversationID: "chat-rollout-inflight",
+		ExternalUserID:         "user-rollout",
+		ChatType:               channel.ChatDM,
+		Kind:                   channel.MessageText,
+		Text:                   "hello during rollout",
+	}
+	started := make(chan rolloutAdapterStart, 4)
+	oldPromptStarted := make(chan struct{})
+	var oldPromptStartedOnce sync.Once
+	oldHandled := make(chan error, 1)
+	oldStates := newChannelRuntimeStates()
+	oldSupervisor := newWeComSupervisor(oldCfg, oldStore, oldStates)
+	oldSupervisor.acpFactory = func(config.Config, store.ChannelAccount) acpRuntimeClient {
+		return &rolloutACPClient{
+			sessionID: "session-rollout",
+			prompt: func(ctx context.Context, _ string, _ string) (string, error) {
+				oldPromptStartedOnce.Do(func() { close(oldPromptStarted) })
+				<-ctx.Done()
+				return "", ctx.Err()
+			},
+		}
+	}
+	oldSupervisor.adapterFactory = func(cfg wecom.Config) channelRuntimeAdapter {
+		return &rolloutInboundAdapter{ownerID: "owner-old", accountID: cfg.AccountID, started: started, inbound: inbound, handled: oldHandled}
+	}
+	if err := oldSupervisor.reconcile(ctx); err != nil {
+		t.Fatalf("old reconcile: %v", err)
+	}
+	expectAdapterStart(t, started, rolloutAdapterStart{OwnerID: "owner-old", AccountID: "wecom-a"})
+	waitClosedRollout(t, oldPromptStarted, "old prompt start")
+
+	newCfg := config.Config{OwnerID: "owner-new", LeaseTTL: time.Minute, RequestTimeout: 30 * time.Second, WeComAccounts: []config.WeComConfig{accountCfg}}
+	recoveredReply := make(chan channel.Reply, 2)
+	newStates := newChannelRuntimeStates()
+	newSupervisor := newWeComSupervisor(newCfg, newStore, newStates)
+	newSupervisor.acpFactory = func(config.Config, store.ChannelAccount) acpRuntimeClient {
+		return &rolloutACPClient{
+			sessionID: "session-rollout",
+			prompt: func(context.Context, string, string) (string, error) {
+				return "recovered after rollout", nil
+			},
+		}
+	}
+	newSupervisor.adapterFactory = func(cfg wecom.Config) channelRuntimeAdapter {
+		return &rolloutRuntimeAdapter{ownerID: "owner-new", accountID: cfg.AccountID, started: started, sent: recoveredReply}
+	}
+	if err := newSupervisor.reconcile(ctx); err != nil {
+		t.Fatalf("new reconcile: %v", err)
+	}
+	waitStateForAccount(t, newStates, "wecom-a", func(state channelRuntimeState) bool {
+		return state.Status == "standby_lease_held"
+	})
+	assertNoAdapterStart(t, started, 200*time.Millisecond)
+
+	oldDrainDone := make(chan struct{})
+	drain := drainHandler(newRuntimeLifecycle(), func(string) {
+		oldSupervisor.stopAll()
+		close(oldDrainDone)
+	})
+	req := httptest.NewRequest(http.MethodPost, "/drainz", nil)
+	req.RemoteAddr = "127.0.0.1:1234"
+	rec := httptest.NewRecorder()
+	drain.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("old drain code=%d body=%s", rec.Code, rec.Body.String())
+	}
+	waitClosedRollout(t, oldDrainDone, "old drain")
+	select {
+	case err := <-oldHandled:
+		if err == nil {
+			t.Fatal("old in-flight handler should be canceled during drain")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("old in-flight handler did not finish after drain")
+	}
+	expectAdapterStart(t, started, rolloutAdapterStart{OwnerID: "owner-new", AccountID: "wecom-a"})
+
+	var reply channel.Reply
+	select {
+	case reply = <-recoveredReply:
+	case <-time.After(8 * time.Second):
+		t.Fatal("new owner did not recover in-flight inbound and send reply")
+	}
+	if reply.ExternalConversationID != inbound.ExternalConversationID || reply.Text != "recovered after rollout" {
+		t.Fatalf("unexpected recovered reply: %#v", reply)
+	}
+	assertNoReply(t, recoveredReply, 500*time.Millisecond)
+	lease := newStates.GetLease("wecom-a")
+	items, err := newStore.ClaimPendingOutbox(ctx, lease, 10)
+	if err != nil {
+		t.Fatalf("claim pending outbox after recovery: %v", err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("recovered reply should have been sent, pending outbox=%#v", items)
+	}
+	newSupervisor.stopAll()
+}
+
 func TestRolloutE2EDrainCommandPostsToLocalEndpoint(t *testing.T) {
 	var gotMethod string
 	called := make(chan struct{})
@@ -189,6 +307,7 @@ type rolloutRuntimeAdapter struct {
 	ownerID   string
 	accountID string
 	started   chan<- rolloutAdapterStart
+	sent      chan<- channel.Reply
 }
 
 func (a *rolloutRuntimeAdapter) Start(ctx context.Context, _ channel.InboundHandler) error {
@@ -199,8 +318,63 @@ func (a *rolloutRuntimeAdapter) Start(ctx context.Context, _ channel.InboundHand
 	return ctx.Err()
 }
 
-func (a *rolloutRuntimeAdapter) Send(context.Context, channel.Reply) (channel.SendResult, error) {
+func (a *rolloutRuntimeAdapter) Send(_ context.Context, reply channel.Reply) (channel.SendResult, error) {
+	if a.sent != nil {
+		a.sent <- reply
+	}
 	return channel.SendResult{}, nil
+}
+
+type rolloutInboundAdapter struct {
+	ownerID   string
+	accountID string
+	started   chan<- rolloutAdapterStart
+	inbound   channel.Message
+	handled   chan<- error
+}
+
+func (a *rolloutInboundAdapter) Start(ctx context.Context, handler channel.InboundHandler) error {
+	if a.started != nil {
+		a.started <- rolloutAdapterStart{OwnerID: a.ownerID, AccountID: a.accountID}
+	}
+	err := handler.HandleInbound(ctx, a.inbound)
+	if a.handled != nil {
+		a.handled <- err
+	}
+	return err
+}
+
+func (a *rolloutInboundAdapter) Send(context.Context, channel.Reply) (channel.SendResult, error) {
+	return channel.SendResult{}, nil
+}
+
+type rolloutACPClient struct {
+	sessionID string
+	prompt    func(context.Context, string, string) (string, error)
+}
+
+func (c *rolloutACPClient) Initialize(context.Context) error                           { return nil }
+func (c *rolloutACPClient) SetWorkspaceLifecycleHandler(acp.WorkspaceLifecycleHandler) {}
+func (c *rolloutACPClient) Close() error                                               { return nil }
+func (c *rolloutACPClient) NewSession(context.Context, string) (string, error) {
+	if c.sessionID == "" {
+		return "session-rollout", nil
+	}
+	return c.sessionID, nil
+}
+func (c *rolloutACPClient) LoadSession(context.Context, string, string) error { return nil }
+func (c *rolloutACPClient) EnsureRuntimeReady(context.Context, string, string) (acp.RuntimeReadyResult, error) {
+	return acp.RuntimeReadyResult{}, nil
+}
+func (c *rolloutACPClient) Prompt(ctx context.Context, sessionID, text string) (acp.PromptResult, error) {
+	if c.prompt != nil {
+		reply, err := c.prompt(ctx, sessionID, text)
+		if err != nil {
+			return acp.PromptResult{}, err
+		}
+		return acp.PromptResult{StopReason: "end_turn", Text: reply}, nil
+	}
+	return acp.PromptResult{StopReason: "end_turn", Text: "ok"}, nil
 }
 
 func openRolloutStore(t *testing.T, ctx context.Context, path string) *store.Store {
@@ -239,6 +413,15 @@ func assertNoAdapterStart(t *testing.T, started <-chan rolloutAdapterStart, wind
 	select {
 	case got := <-started:
 		t.Fatalf("unexpected adapter start: %#v", got)
+	case <-time.After(window):
+	}
+}
+
+func assertNoReply(t *testing.T, replies <-chan channel.Reply, window time.Duration) {
+	t.Helper()
+	select {
+	case got := <-replies:
+		t.Fatalf("unexpected reply: %#v", got)
 	case <-time.After(window):
 	}
 }

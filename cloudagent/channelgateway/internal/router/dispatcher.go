@@ -326,6 +326,9 @@ func (d *Dispatcher) handleACPError(ctx context.Context, msg channel.Message, co
 	log.Printf("channelgateway session_trace account_id=%s agent_id=%s conversation_id=%s session_key=%s acp_session_id=%s action=acp_error stage=%s error=%s",
 		logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(conversation.ConversationID),
 		logValue(conversation.SessionKey), logValue(sessionID), logValue(string(stage)), logValue(err.Error()))
+	if errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
+		return err
+	}
 	reply, ok := d.callbacksOrDefault().HandleACPError(stage, err)
 	if !ok || strings.TrimSpace(reply) == "" {
 		return err
