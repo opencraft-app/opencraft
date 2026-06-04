@@ -22,9 +22,34 @@ type CommandCallbackResult struct {
 	Reply  string
 }
 
+type SessionRestoredEvent struct {
+	ChannelAccountID       string
+	ChannelType            string
+	ExternalConversationID string
+	ExternalMessageID      string
+	ConversationID         string
+	SessionKey             string
+	ACPSessionID           string
+	RuntimeChanged         bool
+}
+
+type SessionStoredEvent struct {
+	ChannelAccountID       string
+	ChannelType            string
+	ExternalConversationID string
+	ConversationID         string
+	SessionKey             string
+	ACPSessionID           string
+	Operation              string
+	Phase                  string
+	Status                 string
+}
+
 type ChannelCallbacks interface {
 	HandleCommand(text string) (CommandCallbackResult, bool)
 	HandleACPError(stage CallbackStage, err error) (reply string, ok bool)
+	HandleSessionRestored(event SessionRestoredEvent) (reply string, ok bool)
+	HandleSessionStored(event SessionStoredEvent) (reply string, ok bool)
 }
 
 type DefaultChannelCallbacks struct{}
@@ -34,7 +59,7 @@ func (DefaultChannelCallbacks) HandleCommand(text string) (CommandCallbackResult
 	case "/reset":
 		return CommandCallbackResult{
 			Action: CommandActionReset,
-			Reply:  "已重新创建云端会话。你可以继续发送消息。",
+			Reply:  resetSessionReply,
 		}, true
 	default:
 		return CommandCallbackResult{}, false
@@ -47,10 +72,24 @@ func (DefaultChannelCallbacks) HandleACPError(stage CallbackStage, err error) (s
 	}
 	switch stage {
 	case CallbackStageLoadSession, CallbackStageNewSession, CallbackStagePrompt, CallbackStageReset:
-		return "云端会话恢复失败，请稍后重试。你也可以发送 /reset 重新创建会话。", true
+		return runtimeRecoveryFailedReply, true
 	default:
 		return "", false
 	}
+}
+
+func (DefaultChannelCallbacks) HandleSessionRestored(event SessionRestoredEvent) (string, bool) {
+	if !event.RuntimeChanged {
+		return "", false
+	}
+	return sessionRestoredReply, true
+}
+
+func (DefaultChannelCallbacks) HandleSessionStored(event SessionStoredEvent) (string, bool) {
+	if event.Operation != "storage" || event.Status != "done" {
+		return "", false
+	}
+	return sessionStoredReply, true
 }
 
 func normalizeCommandText(text string) string {

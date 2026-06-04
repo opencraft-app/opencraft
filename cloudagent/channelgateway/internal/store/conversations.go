@@ -73,6 +73,33 @@ WHERE channel_account_id = ? AND session_key = ? AND deleted_at IS NULL`,
 	return err
 }
 
+func (s *Store) FindConversationByACPSession(ctx context.Context, channelAccountID, acpSessionID string) (Conversation, bool, error) {
+	if s == nil || s.db == nil {
+		return Conversation{}, false, errors.New("store is nil")
+	}
+	if channelAccountID == "" || acpSessionID == "" {
+		return Conversation{}, false, errors.New("channel account id and acp session id are required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var conv Conversation
+	err := s.db.QueryRowContext(ctx, `
+SELECT conversation_id, channel_account_id, channel_type, external_conversation_id,
+	external_user_id, COALESCE(external_thread_id, ''), COALESCE(chat_type, ''), agent_id, acp_session_id, session_key
+FROM channel_conversations
+WHERE channel_account_id = ? AND acp_session_id = ? AND deleted_at IS NULL
+ORDER BY updated_at DESC
+LIMIT 1`,
+		channelAccountID, acpSessionID).Scan(
+		&conv.ConversationID, &conv.ChannelAccountID, &conv.ChannelType, &conv.ExternalConversationID,
+		&conv.ExternalUserID, &conv.ThreadID, &conv.ChatType, &conv.AgentID, &conv.ACPSessionID, &conv.SessionKey,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Conversation{}, false, nil
+	}
+	return conv, err == nil, err
+}
+
 func (s *Store) loadConversationBySessionKeyLocked(ctx context.Context, channelAccountID, sessionKey string) (Conversation, error) {
 	var conv Conversation
 	err := s.db.QueryRowContext(ctx, `
