@@ -1,0 +1,50 @@
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    description: ""
+    service.kubernetes.io/qcloud-loadbalancer-clusterid: cls-hq6qk3i6
+  name: lightvela-proxy-service-testing-intl
+  namespace: ns-prjqt8dd-867795-production
+spec:
+  ports:
+    - name: tcp-8095
+      port: 8095
+      protocol: TCP
+      targetPort: 8095
+  selector:
+    k8s-app: lightvela-proxy-testing
+    qcloud-app: lightvela-proxy-testing
+    region: ap-singapore
+    workload-kind: statefulsetplus
+  sessionAffinity: None
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    description: ""
+    polaris.tkex.cloud.tencentyun.com/namespace: Production
+    polaris.tkex.cloud.tencentyun.com/polaris-site-zone: singapore
+    polaris.tkex.cloud.tencentyun.com/service: clgateway-testing-intl
+    polaris.tkex.cloud.tencentyun.com/sync-mode: general-sync
+    polaris.tkex.cloud.tencentyun.com/weight: "100"
+    polaris.tkex.cloud.tencentyun.com/workloadkind: statefulsetplus
+    polaris.tkex.cloud.tencentyun.com/workloadname: lightvela-proxy-testing
+  name: lightvela-proxy-inner-service-testing-intl
+  namespace: ns-prjqt8dd-867795-production
+spec:
+  clusterIP: None
+  ports:
+    - name: tcp-8095
+      port: 8095
+      protocol: TCP
+      targetPort: 8095
+  selector:
+    k8s-app: lightvela-proxy-testing
+    qcloud-app: lightvela-proxy-testing
+    region: ap-singapore
+    workload-kind: statefulsetplus
+  sessionAffinity: None
+  type: ClusterIP
