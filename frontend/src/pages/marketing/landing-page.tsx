@@ -1,8 +1,6 @@
 /**
  * LightVela 官网落地页
- * 参考设计哲学：「冰火实验室」— 新瑞士主义 × 有机科技感
- * 叙事主线：它是什么 → 能帮我做什么 → 在哪用 → 难不难 → 靠谱吗 → 我要试试
- * Hero 区域采用元素居中结构
+ * UI 实现：feature/iztzhou-lightvela（Figma 导出）
  */
 
 import { useState, useEffect, useMemo, useCallback } from "react";
@@ -13,13 +11,14 @@ import { useSession } from "@/contexts/session-context";
 import { useOpenClaw } from "@/contexts/openclaw-context";
 import { oauthErrorMessage } from "@/lib/oauth";
 
-import { LandingNavbar } from "./landing/landing-navbar";
-import { HeroSection } from "./landing/hero-section";
-import { WhereToUseSection } from "./landing/where-to-use-section";
-import { WhatItDoesSection } from "./landing/what-it-does-section";
-import { HowEasySection } from "./landing/how-easy-section";
-import { WhyTrustSection } from "./landing/why-trust-section";
-import { CTAFooterSection } from "./landing/cta-footer-section";
+import HeaderSection from "@/imports/Frame2147230025/sections/HeaderSection";
+import HeroSection from "@/imports/Frame2147230025/sections/HeroSection";
+import BrandIconsSection from "@/imports/Frame2147230025/sections/BrandIconsSection";
+import FeatureSection, { CardsSection } from "@/imports/Frame2147230025/sections/FeatureSection";
+import ProcessSection from "@/imports/Frame2147230025/sections/ProcessSection";
+import CtaSection from "@/imports/Frame2147230025/sections/CtaSection";
+import FooterSection from "@/imports/Frame2147230025/sections/FooterSection";
+
 export const LandingPage = () => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -51,43 +50,36 @@ export const LandingPage = () => {
 
   const openLogin = () => setShowLogin(true);
 
-  /* ── 全局鼠标跟随微光 ── */
-  const handleGlobalMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    const el = e.currentTarget;
-    el.style.setProperty("--mouse-x", `${e.clientX}px`);
-    el.style.setProperty("--mouse-y", `${e.clientY}px`);
-  }, []);
-
   return (
-    <div
-      className="landing-page relative flex min-h-screen flex-col"
-      style={{ background: "var(--lw-bg)", color: "var(--lw-fg)" }}
-      onMouseMove={handleGlobalMouseMove}
-    >
-      {/* 鼠标跟随微光层 — 暂时隐藏，等颜色确定后再恢复 */}
-      {/* <div className="lw-cursor-glow pointer-events-none fixed inset-0 z-50" aria-hidden /> */}
+    <div className="w-full bg-white overflow-x-hidden">
+      <div className="relative">
+        <HeaderSection />
+        <HeroSection />
+      </div>
+      <BrandIconsSection />
+      <FeatureSection />
+      <CardsSection />
+      <ProcessSection />
+      <CtaSection />
+      <FooterSection />
 
-      <LandingNavbar onLoginClick={openLogin} isLoggedIn={isAuthenticated} />
-
-      <main className="z-10 flex-grow">
-        <HeroSection onLoginClick={openLogin} isLoggedIn={isAuthenticated} hasBots={hasBots} isSubscribed={isSubscribed} />
-        <WhereToUseSection />
-        <WhatItDoesSection />
-        <HowEasySection />
-        <WhyTrustSection />
-        <CTAFooterSection onLoginClick={openLogin} isLoggedIn={isAuthenticated} hasBots={hasBots} isSubscribed={isSubscribed} />
-      </main>
-
-      <LoginModal open={showLogin} onClose={handleCloseLogin} initialError={loginErrorMessage} onSuccess={() => {
-        if (isSubscribed) {
-          /* 已订阅：直接进入我的龙虾页面（无龙虾时自动创建） */
-    navigate(hasBots ? "/dashboard/settings" : "/dashboard/settings?creating=true");
-        } else {
-          /* 未订阅：去选套餐 */
-          navigate("/subscribe");
-        }
-      }} />
-      <InviteCodeModal open={showInviteCode} onClose={() => setShowInviteCode(false)} onSuccess={handleInviteSuccess} />
+      <LoginModal
+        open={showLogin}
+        onClose={handleCloseLogin}
+        initialError={loginErrorMessage}
+        onSuccess={() => {
+          if (isSubscribed) {
+            navigate(hasBots ? "/dashboard/settings" : "/dashboard/settings?creating=true");
+          } else {
+            navigate("/subscribe");
+          }
+        }}
+      />
+      <InviteCodeModal
+        open={showInviteCode}
+        onClose={() => setShowInviteCode(false)}
+        onSuccess={handleInviteSuccess}
+      />
     </div>
   );
 };
