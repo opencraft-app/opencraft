@@ -87,6 +87,14 @@ fencing token. Runner status is intentionally more precise than lease state:
 `leased` means the account owner has been claimed, `initializing_acp` means ACP
 handshake is in progress, and `running` means the WeCom adapter has started.
 
+`/readyz` is the Kubernetes readiness surface. It returns success only when the
+process is not draining and at least one account is either `running` or
+`standby_lease_held`. The standby state is intentional for rolling updates:
+a new pod must be considered ready once it can observe the shared store and is
+ready to take over, even while the old pod still owns the single WeCom lease.
+This avoids deadlocking a one-replica Deployment with `maxUnavailable: 0` while
+still preserving the one-owner channel lease contract.
+
 ## WeCom Handshake Check
 
 Use the standalone handshake checker to verify WeCom AI Bot credentials without
