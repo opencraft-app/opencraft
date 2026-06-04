@@ -123,6 +123,30 @@ PROMOTION_POLICIES: tuple[PromotionPolicy, ...] = (
         gate_denied_behavior=GateDeniedBehavior.SKIP,
         required_argo_sync="manual",
     ),
+    PromotionPolicy(
+        env="tkexgz",
+        branch_prefix="promote-tkexgz-",
+        display_name="TKEx 广州内网",
+        auto_merge=True,
+        auto_sync=False,
+        cleanup_source_branch=False,
+        verify_mode=VerifyMode.MERGE_ONLY,
+        kustomize_mode=KustomizeMode.CHANGED_ONLY,
+        gate_denied_behavior=GateDeniedBehavior.SKIP,
+        required_argo_sync="manual",
+    ),
+    PromotionPolicy(
+        env="tkexsg",
+        branch_prefix="promote-tkexsg-",
+        display_name="TKEx 新加坡内网",
+        auto_merge=True,
+        auto_sync=False,
+        cleanup_source_branch=False,
+        verify_mode=VerifyMode.MERGE_ONLY,
+        kustomize_mode=KustomizeMode.CHANGED_ONLY,
+        gate_denied_behavior=GateDeniedBehavior.SKIP,
+        required_argo_sync="manual",
+    ),
 )
 
 

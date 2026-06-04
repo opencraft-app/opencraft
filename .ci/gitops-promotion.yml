@@ -9,6 +9,8 @@ on:
       - promote-sandbox-bj-*
       - promote-sandbox-kr-*
       - promote-devcloud-dep-*
+      - promote-tkexgz-*
+      - promote-tkexsg-*
 
 stages:
   - name: GitOps MR 前置验收
