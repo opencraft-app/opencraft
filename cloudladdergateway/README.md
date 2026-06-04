@@ -235,6 +235,36 @@ client.WithHttpTransport(transport)
 | `tcapi-cam-cn-test` | `cam.test.tencentcloudapi.com` | `shadow/scripts/start-tencent-test.sh` |
 | `tcapi-sts-cn-test` | `sts.test.tencentcloudapi.com` | `shadow/scripts/start-tencent-test.sh` |
 
+## TencentCloud SaaS callback 兼容入口
+
+腾讯 SaaS 接入工具只支持配置固定 callback URL，例如：
+
+```text
+http://21.215.157.57:8080/internal/tencentcloud/account
+```
+
+这不是 HTTP 302 场景。腾讯会用 `POST` 发送 JSON body，gateway 必须在服务端做 reverse proxy，保留 body、状态码和响应体。配置方式：
+
+```yaml
+external_routes:
+  - path: /internal/tencentcloud/account
+    methods: ["POST"]
+    route_id: tencentcloud-account-callback-sandbox-bj-7
+    upstream_path: /auth/internal/tencentcloud/account
+
+routes:
+  - id: tencentcloud-account-callback-sandbox-bj-7
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "https://api-sandbox-bj-7.lightclaw.tech"
+      timeout: 10s
+      allowed_methods: ["POST"]
+      headers_from_env:
+        X-Shadow-Callback-Token: CLOUDLADDER_TENCENT_CALLBACK_TOKEN
+```
+
+`external_routes` 只注册 exact path，不允许调用方传任意 URL。这个 route 可加入 `auth.allow_unauthenticated`，因为腾讯侧无法生成 CloudLadder HMAC；真实安全边界由固定 upstream 和注入的 `X-Shadow-Callback-Token` 共同保证。`CLOUDLADDER_TENCENT_CALLBACK_TOKEN` 必须和 auth 服务的 `SHADOW_TENCENT_CALLBACK_TOKEN` 保持一致。
+
 ## 上游连接池
 
 上游 HTTP client 默认开启连接池：
