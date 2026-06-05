@@ -4,7 +4,7 @@ Open the "Chat" page to interact with your Hermes agent through a chat window.
 
 > ℹ️ **Heads-up**
 >
-> The current interface is only available in Chinese. An English version is coming soon — stay tuned!
+> AgentChat's interface guide is currently primarily in Chinese; full localization is on the way.
 
 ![](../images/agentchat-1-global-en.png)
 

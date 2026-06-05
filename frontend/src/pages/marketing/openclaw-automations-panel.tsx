@@ -1587,10 +1587,10 @@ function AutomationFormModal({
             {(
               isGlobal
                 ? ([
-                    { key: "weixin", label: "WeChat", comingSoon: false },
                     { key: "telegram", label: "Telegram", comingSoon: false },
                     { key: "whatsapp", label: "WhatsApp", comingSoon: false },
                     { key: "discord", label: "Discord", comingSoon: true },
+                    { key: "weixin", label: "WeChat", comingSoon: false },
                   ] as const)
                 : ([
                     { key: "weixin", label: t("微信"), comingSoon: false },
