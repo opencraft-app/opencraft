@@ -1,5 +1,7 @@
 export const ICP_LICENSE = "京ICP备11018762号-1137";
 export const BEIAN_URL = "https://beian.miit.gov.cn/";
+export const CN_PRIVACY_POLICY_URL =
+  "https://privacy.qq.com/document/preview/a955b796edc34796b6e81d4f4df006f3";
 
 /**
  * 是否需要展示 ICP 备案号。

@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setGitHubLoginVisible } from "@/lib/github-login-visibility";
+import { CN_PRIVACY_POLICY_URL } from "@/constants/legal";
 import * as oauthModule from "@/lib/oauth";
 import { LoginModal } from "@/components/site/login-modal";
 import type { OAuthProvider, WeChatOAuthMode } from "@/lib/oauth";
@@ -55,6 +56,15 @@ describe("LoginModal (国内站 默认 isGlobal=false)", () => {
     expect(screen.getByRole("button", { name: "微信微信账号登录" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "GitHub 登录" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Google 登录" })).not.toBeInTheDocument();
+  });
+
+  it("国内站隐私协议跳转腾讯隐私中心", () => {
+    render(<LoginModal open onClose={vi.fn()} />);
+
+    expect(screen.getByRole("link", { name: "《隐私保护协议》" })).toHaveAttribute(
+      "href",
+      CN_PRIVACY_POLICY_URL,
+    );
   });
 
   it("勾选协议后点击 QQ / 微信 跳转后端下发的 start URL", () => {
