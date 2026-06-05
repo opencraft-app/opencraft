@@ -956,18 +956,32 @@ func isNonBlockingStaleRuntimeCleanupError(err error) bool {
 	if err == nil {
 		return false
 	}
-	message := strings.ToLower(err.Error())
-	if strings.Contains(message, "ags http 401") &&
-		strings.Contains(message, "op=run_command") &&
-		strings.Contains(message, "authentication_failed") {
+	if isStaleRuntimeDataPlaneAuthError(err) {
 		return true
 	}
+	message := strings.ToLower(err.Error())
 	if strings.Contains(message, "ags http 404") ||
 		strings.Contains(message, "http 404") && strings.Contains(message, "requested resource does not exist") {
 		return true
 	}
 	return strings.Contains(message, "unsupportedoperation.sandboxinstance") &&
 		strings.Contains(message, "stopped state")
+}
+
+func isStaleRuntimeDataPlaneAuthError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	if strings.Contains(message, "checkpoint") ||
+		strings.Contains(message, "writeback-cut-barrier") ||
+		strings.Contains(message, "metadata-barrier") ||
+		strings.Contains(message, "input/output error") {
+		return false
+	}
+	return strings.Contains(message, "ags http 401") &&
+		strings.Contains(message, "op=run_command") &&
+		strings.Contains(message, "authentication_failed")
 }
 
 func (w *AgentSidecarWorker) restartSessionRuntimeDaemon(ctx context.Context, runtime ACPSessionRuntime, req ACPSessionRuntimeStartRequest) (ACPSessionRuntime, error) {
@@ -1738,8 +1752,15 @@ func (w *AgentSidecarWorker) CloseSessionRuntime(ctx context.Context, runtime AC
 		fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_wisp_lease_release_blocked runtime_id=%s outer_sandbox_id=%s inner_sandbox_id=%s wisp_name=%s workspace_wisp_name=%s lease_id=%s fence=%d reason=stop_not_confirmed\n", runtime.RuntimeID, runtime.OuterSandboxID, runtime.InnerSandboxID, quoteServerField(runtime.WispName), quoteServerField(runtime.WorkspaceWispName), quoteServerField(runtime.WispLeaseID), runtime.WispLeaseFence)
 	}
 	if runtime.OuterSandboxID != "" {
+		outerDeleted := false
 		if err := backend.host.DeleteSandbox(ctx, runtime.OuterSandboxID); err != nil {
 			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("delete outer sandbox %s: %w", runtime.OuterSandboxID, err))
+		} else {
+			outerDeleted = true
+		}
+		if outerDeleted && isStaleRuntimeDataPlaneAuthError(gracefulStopErr) {
+			fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_stale_dataplane_auth_deleted runtime_id=%s outer_sandbox_id=%s error=%s\n", runtime.RuntimeID, runtime.OuterSandboxID, quoteServerField(gracefulStopErr.Error()))
+			gracefulStopErr = nil
 		}
 	}
 	if gracefulStopErr != nil {
