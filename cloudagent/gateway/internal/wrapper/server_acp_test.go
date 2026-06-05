@@ -994,7 +994,7 @@ func TestACPRuntimeEnsureReadyExtensionRecreatesWispRuntime(t *testing.T) {
 }
 
 func TestACPPromptMaxIterationsReturnsStopReason(t *testing.T) {
-	manager := &recordingACPRuntimeManager{promptErr: workerStop("max_iterations_exceeded", "Max iterations exceeded: 12", "max_turn_requests")}
+	manager := &recordingACPRuntimeManager{promptErr: workerStop("max_iterations_exceeded", "Max iterations exceeded: 256", "max_turn_requests")}
 	srv := newACPTestServerWithRuntime(t, manager)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
@@ -1329,8 +1329,9 @@ func TestACPSessionCloseAndDeleteLifecycle(t *testing.T) {
 
 	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 5, "method": "session/resume", "params": map[string]any{"sessionId": sessionID, "cwd": "/workspace"}})
 	resumeResp := waitForRPCID(t, client, float64(5))
-	resumeResult := resumeResp["result"].(map[string]any)
-	if _, hasSessionID := resumeResult["sessionId"]; hasSessionID || cloudAgentResultMeta(t, resumeResult)["read_only"] != true {
+	resumeErr := resumeResp["error"].(map[string]any)
+	resumeData := resumeErr["data"].(map[string]any)
+	if resumeErr["code"] != float64(-32010) || resumeData["error_code"] != "session_read_only" || resumeData["read_only_reason"] != acpReadOnlyRuntimeNotRecovered {
 		t.Fatalf("unexpected resume response: %#v", resumeResp)
 	}
 
@@ -2004,9 +2005,10 @@ func TestACPLoadDoesNotResumeRuntime(t *testing.T) {
 	}
 	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 6, "method": "session/resume", "params": map[string]any{"sessionId": sessionID}})
 	resumeResp := waitForRPCID(t, client, float64(6))
-	resumeResult := resumeResp["result"].(map[string]any)
-	if cloudAgentResultMeta(t, resumeResult)["read_only"] != true {
-		t.Fatalf("session/resume after close should be read-only, got %#v", resumeResult)
+	resumeErr := resumeResp["error"].(map[string]any)
+	resumeData := resumeErr["data"].(map[string]any)
+	if resumeErr["code"] != float64(-32010) || resumeData["error_code"] != "session_read_only" || resumeData["read_only_reason"] != acpReadOnlyRuntimeNotRecovered {
+		t.Fatalf("session/resume after close should fail read-only, got %#v", resumeResp)
 	}
 	if manager.startCount() != 1 {
 		t.Fatalf("session/resume must not start fresh runtime, got starts=%d", manager.startCount())
@@ -2548,8 +2550,9 @@ func TestACPResumeRetriesDeferredRuntimeCleanup(t *testing.T) {
 	}
 	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 6, "method": "session/resume", "params": map[string]any{"sessionId": sessionID}})
 	secondResumeResp := waitForRPCID(t, client, float64(6))
-	secondResumeResult := secondResumeResp["result"].(map[string]any)
-	if _, hasSessionID := secondResumeResult["sessionId"]; hasSessionID || cloudAgentResultMeta(t, secondResumeResult)["read_only"] != true {
+	secondResumeErr := secondResumeResp["error"].(map[string]any)
+	secondResumeData := secondResumeErr["data"].(map[string]any)
+	if secondResumeErr["code"] != float64(-32010) || secondResumeData["error_code"] != "session_read_only" || secondResumeData["read_only_reason"] != acpReadOnlyRuntimeNotRecovered {
 		t.Fatalf("unexpected resume response: %#v", secondResumeResp)
 	}
 	if manager.startCount() != 1 {
@@ -2624,11 +2627,12 @@ func TestACPCleanupSingleflightAcrossCloseAndResume(t *testing.T) {
 	manager.waitCloseCount(t, 1)
 
 	resumed, err := gateway.resumeSession(scope, session.SessionID, "/workspace")
-	if err != nil {
-		t.Fatal(err)
-	}
 	if resumed.SessionID != session.SessionID {
 		t.Fatalf("unexpected resumed session: %#v", resumed)
+	}
+	var readOnly acpReadOnlyError
+	if !errors.As(err, &readOnly) || readOnly.Reason != acpReadOnlyRuntimeNotRecovered {
+		t.Fatalf("resume during cleanup should fail read-only, got %T %v", err, err)
 	}
 	if !resumed.Closed || resumed.ReadOnlyReason != acpReadOnlyRuntimeNotRecovered {
 		t.Fatalf("resume during cleanup should expose read-only closing state, got %#v", resumed)

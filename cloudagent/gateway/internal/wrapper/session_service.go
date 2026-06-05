@@ -318,7 +318,7 @@ func (g *ACPGateway) resumeSession(scope Scope, sessionID, cwd string) (*acpSess
 		g.persistSession(session)
 		out := cloneSession(session)
 		g.mu.Unlock()
-		return out, nil
+		return out, acpReadOnlyError{Reason: acpReadOnlyRuntimeNotRecovered}
 	}
 	recovery := g.runtimeRecoverySnapshot(context.Background(), sessionID, session.Runtime)
 	if recovery.Restorable && runtimeEnsureChanged(recovery.Runtime, session.Runtime) {
@@ -334,7 +334,7 @@ func (g *ACPGateway) resumeSession(scope Scope, sessionID, cwd string) (*acpSess
 		g.persistSession(session)
 		out := cloneSession(session)
 		g.mu.Unlock()
-		return out, nil
+		return out, acpReadOnlyError{Reason: acpReadOnlyRuntimeNotRecovered}
 	}
 	g.mu.Unlock()
 	startReq := sessionRuntimeStartRequest(session)
@@ -374,7 +374,13 @@ func (g *ACPGateway) resumeSession(scope Scope, sessionID, cwd string) (*acpSess
 		current.LastRuntimeError = err.Error()
 		current.ReadOnlyReason = acpReadOnlyRuntimeNotRecovered
 		g.persistSession(current)
-		return cloneSession(current), nil
+		return cloneSession(current), acpRuntimeUnavailableError{
+			SessionID:      current.SessionID,
+			RuntimeID:      current.Runtime.RuntimeID,
+			OuterSandboxID: current.Runtime.OuterSandboxID,
+			Reason:         acpReadOnlyRuntimeNotRecovered,
+			Detail:         err.Error(),
+		}
 	}
 	current.Runtime = reattached
 	g.ensureRuntimeProxyIDLocked(current)
