@@ -1,0 +1,77 @@
+vitess:
+  images:
+    vtctld: lightclaw-bj82.tencentcloudcr.com/temporal-vitess/vitess-lite:latest
+    vtgate: lightclaw-bj82.tencentcloudcr.com/temporal-vitess/vitess-lite:latest
+    vttablet: lightclaw-bj82.tencentcloudcr.com/temporal-vitess/vitess-lite:latest
+  vschema:
+    image: lightclaw-bj82.tencentcloudcr.com/temporal-vitess/vitess-lite:latest
+  topologyEtcd:
+    enabled: true
+  cluster:
+    globalLockserver:
+      enabled: true
+      implementation: etcd2
+      address: ""
+      rootPath: /vitess/temporal-vitess/global
+
+temporal:
+  server:
+    frontend:
+      readinessProbeOverride:
+        tcpSocket:
+          port: rpc
+    additionalInitContainers:
+      - name: wait-for-vtgate
+        image: busybox:1.36
+        command:
+          - sh
+          - -c
+          - |
+            until nc -z vitess-vtgate-mysql 3306; do
+              echo "waiting for Vitess VTGate"
+              sleep 5
+            done
+      - name: wait-for-temporal-routing
+        image: lightclaw-bj82.tencentcloudcr.com/temporal-vitess/vitess-lite:latest
+        command:
+          - sh
+          - -c
+          - |
+            until /vt/bin/vtctldclient --server=vitess-vtctld:15999 GetRoutingRules | grep -q 'temporal_sharded.executions'; do
+              echo "waiting for Temporal sharded routing rules"
+              sleep 5
+            done
+  admintools:
+    additionalInitContainers:
+      - name: wait-for-vtgate
+        image: busybox:1.36
+        command:
+          - sh
+          - -c
+          - |
+            until nc -z vitess-vtgate-mysql 3306; do
+              echo "waiting for Vitess VTGate before Temporal schema"
+              sleep 5
+            done
+      - name: wait-for-temporal-vschema
+        image: lightclaw-bj82.tencentcloudcr.com/temporal-vitess/vitess-lite:latest
+        command:
+          - sh
+          - -c
+          - |
+            until /vt/bin/vtctldclient --server=vitess-vtctld:15999 GetVSchema temporal_sharded | grep -q '"sharded": true'; do
+              echo "waiting for Temporal sharded VSchema"
+              sleep 5
+            done
+      - name: wait-for-temporal-keyspaces
+        image: lightclaw-bj82.tencentcloudcr.com/temporal-vitess/vitess-lite:latest
+        command:
+          - sh
+          - -c
+          - |
+            for db in temporal temporal_sharded temporal_visibility; do
+              until mysql -h vitess-vtgate-mysql -P 3306 -u user -D "$db" -e 'select 1' >/dev/null 2>&1; do
+                echo "waiting for healthy Vitess primary in $db"
+                sleep 5
+              done
+            done

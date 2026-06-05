@@ -1,0 +1,184 @@
+{{- if and .Values.vitess.cluster.enabled .Values.vitess.vschema.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "temporal-vitess-local.fullname" . }}-vschema
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "temporal-vitess-local.labels" . | nindent 4 }}
+data:
+  vschema.json: |
+    {
+      "sharded": true,
+      "vindexes": {
+        "temporal_xxhash": {
+          "type": "xxhash"
+        }
+      },
+      "tables": {
+        {{- $first := true }}
+        {{- range .Values.vitess.vschema.tables.shardId }}
+        {{- if not $first }},{{ end }}
+        "{{ . }}": {
+          "columnVindexes": [
+            {
+              "column": "shard_id",
+              "name": "temporal_xxhash"
+            }
+          ]
+        }
+        {{- $first = false }}
+        {{- end }}
+        {{- range .Values.vitess.vschema.tables.rangeHash }}
+        {{- if not $first }},{{ end }}
+        "{{ . }}": {
+          "columnVindexes": [
+            {
+              "column": "range_hash",
+              "name": "temporal_xxhash"
+            }
+          ]
+        }
+        {{- $first = false }}
+        {{- end }}
+        {{- range $table, $column := .Values.vitess.vschema.tables.vindexed }}
+        {{- if not $first }},{{ end }}
+        "{{ $table }}": {
+          "columnVindexes": [
+            {
+              "column": "{{ $column }}",
+              "name": "temporal_xxhash"
+            }
+          ]
+        }
+        {{- $first = false }}
+        {{- end }}
+        {{- range .Values.vitess.vschema.tables.reference }}
+        {{- if not $first }},{{ end }}
+        "{{ . }}": {
+          "type": "reference"
+        }
+        {{- $first = false }}
+        {{- end }}
+      }
+    }
+  routing-rules.json: |
+    {
+      "rules": [
+        {{- $firstRule := true }}
+        {{- range concat .Values.vitess.vschema.tables.shardId .Values.vitess.vschema.tables.rangeHash }}
+        {{- if not $firstRule }},{{ end }}
+        {
+          "from_table": "{{ $.Values.vitess.vschema.sourceKeyspace }}.{{ . }}",
+          "to_tables": [
+            "{{ $.Values.vitess.vschema.shardedKeyspace }}.{{ . }}"
+          ]
+        },
+        {
+          "from_table": "{{ . }}",
+          "to_tables": [
+            "{{ $.Values.vitess.vschema.shardedKeyspace }}.{{ . }}"
+          ]
+        }
+        {{- $firstRule = false }}
+        {{- end }}
+      ]
+    }
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "temporal-vitess-local.fullname" . }}-apply-vschema-{{ .Release.Revision }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "temporal-vitess-local.labels" . | nindent 4 }}
+  {{- if or .Values.vitess.vschema.argoHooks.enabled .Values.vitess.vschema.jobAnnotations }}
+  annotations:
+    {{- if .Values.vitess.vschema.argoHooks.enabled }}
+    argocd.argoproj.io/hook: {{ .Values.vitess.vschema.argoHooks.hook | quote }}
+    argocd.argoproj.io/hook-delete-policy: {{ .Values.vitess.vschema.argoHooks.deletePolicy | quote }}
+    argocd.argoproj.io/sync-wave: {{ .Values.vitess.vschema.argoHooks.syncWave | quote }}
+    {{- end }}
+    {{- with .Values.vitess.vschema.jobAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- end }}
+spec:
+  backoffLimit: {{ .Values.vitess.vschema.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.vitess.vschema.activeDeadlineSeconds }}
+  {{- with .Values.vitess.vschema.ttlSecondsAfterFinished }}
+  ttlSecondsAfterFinished: {{ .Values.vitess.vschema.ttlSecondsAfterFinished }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        {{- include "temporal-vitess-local.labels" . | nindent 8 }}
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: apply-vschema
+          image: {{ .Values.vitess.vschema.image | quote }}
+          imagePullPolicy: {{ .Values.vitess.vschema.imagePullPolicy }}
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+
+              until /vt/bin/vtctldclient --server={{ .Values.vitess.vschema.vtctldServer }} GetKeyspace {{ .Values.vitess.vschema.shardedKeyspace }} >/dev/null 2>&1; do
+                echo "waiting for Vitess keyspace {{ .Values.vitess.vschema.shardedKeyspace }}"
+                sleep {{ .Values.vitess.vschema.waitSeconds }}
+              done
+
+              /vt/bin/vtctldclient \
+                --server={{ .Values.vitess.vschema.vtctldServer }} \
+                ApplyVSchema \
+                --strict \
+                --vschema-file=/etc/vitess-vschema/vschema.json \
+                {{ .Values.vitess.vschema.shardedKeyspace }}
+
+              until mysql \
+                -h {{ .Values.vitess.vschema.vtgateHost }} \
+                -P {{ .Values.vitess.vschema.vtgatePort }} \
+                -u {{ .Values.vitess.vschema.mysqlUser }} \
+                -D {{ .Values.vitess.vschema.sourceKeyspace }} \
+                -e "select curr_version from schema_version where curr_version = '{{ .Values.vitess.vschema.temporalSchemaVersion }}'" | grep -q '{{ .Values.vitess.vschema.temporalSchemaVersion }}'; do
+                echo "waiting for Temporal schema {{ .Values.vitess.vschema.temporalSchemaVersion }} in {{ .Values.vitess.vschema.sourceKeyspace }}"
+                sleep {{ .Values.vitess.vschema.waitSeconds }}
+              done
+
+              until mysql \
+                -h {{ .Values.vitess.vschema.vtgateHost }} \
+                -P {{ .Values.vitess.vschema.vtgatePort }} \
+                -u {{ .Values.vitess.vschema.mysqlUser }} \
+                -D {{ .Values.vitess.vschema.shardedKeyspace }} \
+                -e "select curr_version from schema_version where curr_version = '{{ .Values.vitess.vschema.temporalSchemaVersion }}'" | grep -q '{{ .Values.vitess.vschema.temporalSchemaVersion }}'; do
+                echo "waiting for Temporal schema {{ .Values.vitess.vschema.temporalSchemaVersion }} in {{ .Values.vitess.vschema.shardedKeyspace }}"
+                sleep {{ .Values.vitess.vschema.waitSeconds }}
+              done
+
+              until mysql \
+                -h {{ .Values.vitess.vschema.vtgateHost }} \
+                -P {{ .Values.vitess.vschema.vtgatePort }} \
+                -u {{ .Values.vitess.vschema.mysqlUser }} \
+                -D {{ .Values.temporal.server.config.persistence.datastores.visibility.sql.databaseName }} \
+                -e "select curr_version from schema_version where curr_version = '{{ .Values.vitess.vschema.visibilitySchemaVersion }}'" | grep -q '{{ .Values.vitess.vschema.visibilitySchemaVersion }}'; do
+                echo "waiting for Temporal visibility schema {{ .Values.vitess.vschema.visibilitySchemaVersion }}"
+                sleep {{ .Values.vitess.vschema.waitSeconds }}
+              done
+
+              /vt/bin/vtctldclient \
+                --server={{ .Values.vitess.vschema.vtctldServer }} \
+                ApplyRoutingRules \
+                --rules-file=/etc/vitess-vschema/routing-rules.json
+
+              /vt/bin/vtctldclient --server={{ .Values.vitess.vschema.vtctldServer }} GetVSchema {{ .Values.vitess.vschema.shardedKeyspace }}
+              /vt/bin/vtctldclient --server={{ .Values.vitess.vschema.vtctldServer }} GetRoutingRules
+          volumeMounts:
+            - name: vschema
+              mountPath: /etc/vitess-vschema
+      volumes:
+        - name: vschema
+          configMap:
+            name: {{ include "temporal-vitess-local.fullname" . }}-vschema
+{{- end }}

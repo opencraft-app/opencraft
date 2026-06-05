@@ -1,0 +1,14 @@
+Temporal on Vitess local sandbox has been rendered.
+
+Check pods:
+  kubectl get pods,pvc -n {{ .Release.Namespace }}
+
+Port-forward:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ .Values.vitess.vtgateServiceName }} 15306:3306
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ .Values.vitess.vtctldServiceName }} 15000:15000 15999:15999
+  kubectl -n {{ .Release.Namespace }} port-forward svc/temporal-frontend 7233:7233
+  kubectl -n {{ .Release.Namespace }} port-forward svc/temporal-web 8080:8080
+
+Smoke checks:
+  mysql -h 127.0.0.1 -P 15306 -u user -e 'show databases'
+  temporal operator cluster health --address 127.0.0.1:7233
