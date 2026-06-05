@@ -65,6 +65,15 @@ export function getAcliResetBlockReason(
   return null;
 }
 
+export type AcliResetClickAction = "open_confirm" | "blocked";
+
+export function getAcliResetClickAction(
+  activeBot: ResettableBot | undefined,
+  resetting: boolean,
+): AcliResetClickAction {
+  return getAcliResetBlockReason(activeBot, resetting) === null ? "open_confirm" : "blocked";
+}
+
 /**
  * 从完整 model ID 提取 model name —— 与 ctl 后端 `hermesModelName` 行为一致：
  *   - 含 `/` 时取最后一段（去掉 provider 前缀）

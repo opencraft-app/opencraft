@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   ACLI_RESET_COMMAND,
   getAcliResetBlockReason,
+  getAcliResetClickAction,
   getResetBlockReason,
   hermesModelName,
   hermesSwitchModelFullId,
@@ -72,6 +73,17 @@ describe("getAcliResetBlockReason", () => {
   it("blocks acli reset for non-running bots", () => {
     expect(getAcliResetBlockReason(bot("a", "paused"), false)).toBe("not_running");
     expect(getAcliResetBlockReason(bot("a", "provisioning"), false)).toBe("not_running");
+  });
+});
+
+describe("getAcliResetClickAction", () => {
+  it("opens a confirmation dialog instead of executing immediately when reset is allowed", () => {
+    expect(getAcliResetClickAction(bot("a"), false)).toBe("open_confirm");
+  });
+
+  it("keeps disabled reset clicks blocked", () => {
+    expect(getAcliResetClickAction(bot("a", "paused"), false)).toBe("blocked");
+    expect(getAcliResetClickAction(bot("a"), true)).toBe("blocked");
   });
 });
 

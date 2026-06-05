@@ -97,6 +97,7 @@ import {
 import {
   getResetBlockReason,
   getAcliResetBlockReason,
+  getAcliResetClickAction,
   hermesModelName,
   hermesSwitchModelFullId,
   isExecCommandSucceeded,
@@ -3041,6 +3042,7 @@ export const OpenClawSettingsPage = () => {
    * rotate key，因此明文 apiKey 只保存在本次 try 块内，不进入 React state。
    */
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [showAcliResetConfirm, setShowAcliResetConfirm] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [resettingAcli, setResettingAcli] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
@@ -3152,6 +3154,7 @@ export const OpenClawSettingsPage = () => {
       if (!isExecCommandSucceeded(result)) {
         throw new Error(truncateExecOutput(result.output, result.status));
       }
+      setShowAcliResetConfirm(false);
       setAcliResetConsole([]);
       toast.success(t("Agent 重置成功"));
     } catch (err) {
@@ -3595,7 +3598,7 @@ export const OpenClawSettingsPage = () => {
               <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("重置 Hermes Agent 配置")}</h3>
             </div>
             <p style={{ color: "var(--tea-color-text-secondary, #666)", fontSize: "14px", lineHeight: 1.6, marginBottom: "20px" }}>
-              {t("将保留当前工作空间、记忆和自动任务，并初始化配置文件，模型相关配置不会保留。")}
+              {t("将重置 Hermes Agent的配置文件，模型相关配置不会保留，期间 Agent 可能短暂不可用，但工作空间、记忆、通道配置、已安装技能将会保留，确认继续？")}
             </p>
             {resetError && (
               <pre
@@ -3633,6 +3636,56 @@ export const OpenClawSettingsPage = () => {
                 disabled={resetting}
                 className="py-2 text-[16px] transition-colors hover:opacity-70"
                 style={{ color: "var(--tea-color-text-secondary, #999)", background: "none", border: "none", cursor: resetting ? "not-allowed" : "pointer", fontSize: "16px" }}
+              >
+                {t("取消")}
+              </button>
+            </div>
+          </motion.div>
+        </div>,
+        document.body,
+      )}
+
+      {/* Reset Agent Confirm Dialog */}
+      {showAcliResetConfirm && activeBot && createPortal(
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          onClick={() => { if (!resettingAcli) setShowAcliResetConfirm(false); }}
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            className="mx-4 w-full max-w-sm rounded-2xl border bg-white p-6 shadow-2xl"
+            style={{ borderColor: "var(--tea-color-border-default-alpha4, rgba(238,238,238,0.4))" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3" style={{ marginBottom: "20px" }}>
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "var(--tea-color-warning-default-alpha10, rgba(245,158,11,0.10))" }}>
+                <RotateCcw className="h-5 w-5" style={{ color: "var(--tea-color-warning-default, #F59E0B)" }} />
+              </div>
+              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("重置 Hermes Agent")}</h3>
+            </div>
+            <p style={{ color: "var(--tea-color-text-secondary, #666)", fontSize: "14px", lineHeight: 1.6, marginBottom: "20px" }}>
+              {t("将执行 Hermes Agent 后台重置流程，期间 Agent 会短暂不可用，但工作空间、记忆、模型和通道配置、已安装技能将会保留，确认继续？")}
+            </p>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => void handleResetAcli()}
+                disabled={resettingAcli}
+                className="flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-[16px] font-semibold text-white transition-all"
+                style={{
+                  backgroundColor: resettingAcli ? "var(--tea-color-bg-disabled, #E5E7EB)" : "var(--tea-color-warning-default, #F59E0B)",
+                  cursor: resettingAcli ? "not-allowed" : "pointer",
+                  fontSize: "16px",
+                }}
+              >
+                {resettingAcli && <Loader2 className="h-4 w-4 animate-spin" />}
+                {resettingAcli ? t("重置中...") : t("确认重置")}
+              </button>
+              <button
+                onClick={() => setShowAcliResetConfirm(false)}
+                disabled={resettingAcli}
+                className="py-2 text-[16px] transition-colors hover:opacity-70"
+                style={{ color: "var(--tea-color-text-secondary, #999)", background: "none", border: "none", cursor: resettingAcli ? "not-allowed" : "pointer", fontSize: "16px" }}
               >
                 {t("取消")}
               </button>
@@ -3891,7 +3944,10 @@ export const OpenClawSettingsPage = () => {
                               type="button"
                               onClick={(event) => {
                                 event.stopPropagation();
-                                if (!acliResetDisabled) void handleResetAcli();
+                                if (getAcliResetClickAction(activeBot, resettingAcli) === "open_confirm") {
+                                  setAcliResetError(null);
+                                  setShowAcliResetConfirm(true);
+                                }
                               }}
                               aria-disabled={acliResetDisabled}
                               aria-label={acliResetTooltip}
