@@ -31,7 +31,6 @@ import {
   Download,
   Plus,
   RefreshCw,
-  RotateCcw,
   Trash2,
   UserRound,
   Wand2,
@@ -97,6 +96,7 @@ import {
 import {
   getResetBlockReason,
   getAcliResetBlockReason,
+  getAcliResetClickAction,
   hermesModelName,
   hermesSwitchModelFullId,
   isExecCommandSucceeded,
@@ -111,6 +111,19 @@ import "@tencent/tea-sdk-lightclaw/styles";
 import { LightVelaPanel } from "@tencent/agentchat-lightvela-panel";
 
 /* ─── Types ─── */
+
+const RepairToolsIcon = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg viewBox="0 0 1024 1024" aria-hidden="true" fill="none" {...props}>
+    <path
+      d="M258.56 76.8c-28.16 0-53.76 5.12-79.36 17.92-15.36 7.68-20.48 28.16-7.68 40.96l87.04 87.04-30.72 30.72-87.04-87.04c-5.12-5.12-10.24-7.68-17.92-7.68-10.24 0-17.92 5.12-23.04 15.36-33.28 66.56-23.04 151.04 33.28 207.36 35.84 35.84 79.36 51.2 125.44 51.2 20.48 0 40.96-2.56 58.88-10.24l284.16 284.16c-23.04 64-7.68 135.68 40.96 186.88 35.84 35.84 79.36 51.2 125.44 51.2 28.16 0 53.76-5.12 79.36-17.92 15.36-7.68 20.48-28.16 7.68-40.96l-87.04-87.04 30.72-30.72 87.04 87.04c5.12 5.12 10.24 7.68 17.92 7.68 10.24 0 17.92-5.12 23.04-15.36 33.28-66.56 23.04-151.04-33.28-207.36-35.84-35.84-79.36-51.2-125.44-51.2-20.48 0-40.96 2.56-61.44 10.24l-284.16-284.16c23.04-64 7.68-135.68-40.96-186.88-33.28-33.28-76.8-51.2-122.88-51.2z m-33.28 230.4c12.8 0 25.6-5.12 35.84-15.36l30.72-30.72c20.48-20.48 20.48-51.2 0-71.68l-58.88-58.88c7.68 0 15.36-2.56 23.04-2.56 33.28 0 66.56 12.8 89.6 38.4 35.84 35.84 46.08 87.04 30.72 133.12-7.68 17.92-2.56 38.4 12.8 53.76l284.16 284.16c10.24 10.24 23.04 15.36 35.84 15.36 5.12 0 12.8 0 17.92-2.56 12.8-5.12 28.16-7.68 43.52-7.68 33.28 0 66.56 12.8 89.6 38.4 30.72 30.72 43.52 71.68 35.84 112.64l-58.88-58.88c-10.24-10.24-23.04-15.36-35.84-15.36-12.8 0-25.6 5.12-35.84 15.36l-30.72 30.72c-10.24 10.24-15.36 23.04-15.36 35.84s5.12 25.6 15.36 35.84l58.88 58.88c-7.68 0-15.36 2.56-23.04 2.56-33.28 0-66.56-12.8-89.6-38.4-35.84-35.84-46.08-87.04-30.72-133.12 7.68-17.92 2.56-38.4-12.8-53.76l-284.16-284.16c-10.24-10.24-23.04-15.36-35.84-15.36-5.12 0-10.24 0-17.92 2.56-12.8 5.12-28.16 7.68-43.52 7.68-33.28 0-66.56-12.8-89.6-38.4-30.72-30.72-43.52-71.68-35.84-112.64l58.88 58.88c10.24 10.24 23.04 15.36 35.84 15.36z"
+      fill="currentColor"
+    />
+    <path
+      d="M337.92 563.2c-12.8 0-25.6 5.12-35.84 15.36l-184.32 184.32c-20.48 20.48-20.48 51.2 0 71.68l71.68 71.68c10.24 10.24 23.04 15.36 35.84 15.36 12.8 0 25.6-5.12 35.84-15.36l184.32-184.32c20.48-20.48 20.48-51.2 0-71.68l-71.68-71.68c-7.68-10.24-20.48-15.36-35.84-15.36z m-110.08 307.2l-71.68-71.68 184.32-184.32 71.68 71.68-184.32 184.32zM849.92 138.24l35.84 35.84-89.6 89.6-17.92-17.92-17.92-17.92 89.6-89.6m0-61.44c-7.68 0-12.8 2.56-17.92 7.68l-125.44 125.44c-10.24 10.24-10.24 25.6 0 35.84l17.92 17.92-125.44 125.44c-10.24 10.24-10.24 25.6 0 35.84 5.12 5.12 12.8 7.68 17.92 7.68s12.8-2.56 17.92-7.68l125.44-125.44 17.92 17.92c5.12 5.12 12.8 7.68 17.92 7.68s12.8-2.56 17.92-7.68l125.44-125.44c10.24-10.24 10.24-25.6 0-35.84l-71.68-71.68c-2.56-5.12-10.24-7.68-17.92-7.68z"
+      fill="currentColor"
+    />
+  </svg>
+);
 
 type Channel = "wechat" | "qq" | null;
 type ConnectedChannel = Exclude<Channel, null>;
@@ -3041,6 +3054,7 @@ export const OpenClawSettingsPage = () => {
    * rotate key，因此明文 apiKey 只保存在本次 try 块内，不进入 React state。
    */
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [showAcliResetConfirm, setShowAcliResetConfirm] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [resettingAcli, setResettingAcli] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
@@ -3152,6 +3166,7 @@ export const OpenClawSettingsPage = () => {
       if (!isExecCommandSucceeded(result)) {
         throw new Error(truncateExecOutput(result.output, result.status));
       }
+      setShowAcliResetConfirm(false);
       setAcliResetConsole([]);
       toast.success(t("Agent 重置成功"));
     } catch (err) {
@@ -3595,7 +3610,11 @@ export const OpenClawSettingsPage = () => {
               <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("重置 Hermes Agent 配置")}</h3>
             </div>
             <p style={{ color: "var(--tea-color-text-secondary, #666)", fontSize: "14px", lineHeight: 1.6, marginBottom: "20px" }}>
-              {t("将保留当前工作空间、记忆和自动任务，并初始化配置文件，模型相关配置不会保留。")}
+              {t("将重置 Hermes Agent的配置文件，")}
+              <span className="font-semibold" style={{ color: "var(--tea-color-warning-default, #F59E0B)" }}>
+                {t("模型相关配置不会保留。")}
+              </span>
+              {t("期间 Agent 可能短暂不可用，但工作空间、记忆、通道配置、已安装技能将会保留，确认继续？")}
             </p>
             {resetError && (
               <pre
@@ -3633,6 +3652,77 @@ export const OpenClawSettingsPage = () => {
                 disabled={resetting}
                 className="py-2 text-[16px] transition-colors hover:opacity-70"
                 style={{ color: "var(--tea-color-text-secondary, #999)", background: "none", border: "none", cursor: resetting ? "not-allowed" : "pointer", fontSize: "16px" }}
+              >
+                {t("取消")}
+              </button>
+            </div>
+          </motion.div>
+        </div>,
+        document.body,
+      )}
+
+      {/* Reset Agent Confirm Dialog */}
+      {showAcliResetConfirm && activeBot && createPortal(
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          onClick={() => { if (!resettingAcli) setShowAcliResetConfirm(false); }}
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            className="mx-4 w-full max-w-sm rounded-2xl border bg-white p-6 shadow-2xl"
+            style={{ borderColor: "var(--tea-color-border-default-alpha4, rgba(238,238,238,0.4))" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3" style={{ marginBottom: "20px" }}>
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "var(--tea-color-warning-default-alpha10, rgba(245,158,11,0.10))" }}>
+                <RepairToolsIcon className="h-5 w-5" style={{ color: "var(--tea-color-warning-default, #F59E0B)" }} />
+              </div>
+              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("重置 Hermes Agent")}</h3>
+            </div>
+            <p style={{ color: "var(--tea-color-text-secondary, #666)", fontSize: "14px", lineHeight: 1.6, marginBottom: "20px" }}>
+              {t("将执行 Hermes Agent 后台重置流程，")}
+              <span className="font-semibold" style={{ color: "var(--tea-color-warning-default, #F59E0B)" }}>
+                {t("期间 Agent 会有数分钟不可用。")}
+              </span>
+              {t("但工作空间、记忆、模型和通道配置、已安装技能将会保留，确认继续？")}
+            </p>
+            {acliResetError && (
+              <pre
+                className="whitespace-pre-wrap break-words rounded-md border px-3 py-2 text-xs"
+                style={{
+                  color: "var(--tea-color-text-error-default, #DC2626)",
+                  backgroundColor: "var(--tea-color-text-error-default-alpha4, rgba(220,38,38,0.04))",
+                  borderColor: "var(--tea-color-text-error-default-alpha18, rgba(220,38,38,0.18))",
+                  fontFamily:
+                    "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+                  maxHeight: "180px",
+                  overflowY: "auto",
+                  marginBottom: "12px",
+                }}
+              >
+                {acliResetError}
+              </pre>
+            )}
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => void handleResetAcli()}
+                disabled={resettingAcli}
+                className="flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-[16px] font-semibold text-white transition-all"
+                style={{
+                  backgroundColor: resettingAcli ? "var(--tea-color-bg-disabled, #E5E7EB)" : "var(--tea-color-warning-default, #F59E0B)",
+                  cursor: resettingAcli ? "not-allowed" : "pointer",
+                  fontSize: "16px",
+                }}
+              >
+                {resettingAcli && <Loader2 className="h-4 w-4 animate-spin" />}
+                {resettingAcli ? t("重置中...") : t("确认重置")}
+              </button>
+              <button
+                onClick={() => setShowAcliResetConfirm(false)}
+                disabled={resettingAcli}
+                className="py-2 text-[16px] transition-colors hover:opacity-70"
+                style={{ color: "var(--tea-color-text-secondary, #999)", background: "none", border: "none", cursor: resettingAcli ? "not-allowed" : "pointer", fontSize: "16px" }}
               >
                 {t("取消")}
               </button>
@@ -3891,7 +3981,10 @@ export const OpenClawSettingsPage = () => {
                               type="button"
                               onClick={(event) => {
                                 event.stopPropagation();
-                                if (!acliResetDisabled) void handleResetAcli();
+                                if (getAcliResetClickAction(activeBot, resettingAcli) === "open_confirm") {
+                                  setAcliResetError(null);
+                                  setShowAcliResetConfirm(true);
+                                }
                               }}
                               aria-disabled={acliResetDisabled}
                               aria-label={acliResetTooltip}
@@ -3902,7 +3995,7 @@ export const OpenClawSettingsPage = () => {
                                   : "text-black/35 hover:bg-black/[0.06] hover:text-black/80",
                               )}
                             >
-                              {resettingAcli ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+                              {resettingAcli ? <Loader2 className="h-4 w-4 animate-spin" /> : <RepairToolsIcon className="h-4 w-4" />}
                             </button>
                             <span
                               role="tooltip"
