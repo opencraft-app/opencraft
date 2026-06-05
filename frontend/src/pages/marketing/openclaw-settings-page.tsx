@@ -3687,6 +3687,23 @@ export const OpenClawSettingsPage = () => {
               </span>
               {t("但工作空间、记忆、模型和通道配置、已安装技能将会保留，确认继续？")}
             </p>
+            {acliResetError && (
+              <pre
+                className="whitespace-pre-wrap break-words rounded-md border px-3 py-2 text-xs"
+                style={{
+                  color: "var(--tea-color-text-error-default, #DC2626)",
+                  backgroundColor: "var(--tea-color-text-error-default-alpha4, rgba(220,38,38,0.04))",
+                  borderColor: "var(--tea-color-text-error-default-alpha18, rgba(220,38,38,0.18))",
+                  fontFamily:
+                    "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+                  maxHeight: "180px",
+                  overflowY: "auto",
+                  marginBottom: "12px",
+                }}
+              >
+                {acliResetError}
+              </pre>
+            )}
             <div className="flex flex-col gap-2">
               <button
                 onClick={() => void handleResetAcli()}
