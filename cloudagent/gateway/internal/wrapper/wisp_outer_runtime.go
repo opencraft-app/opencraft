@@ -193,6 +193,9 @@ func (w *AgentSidecarWorker) prepareWispHostOnly(ctx context.Context, host Runti
 		logRemoteStderr(time.Now(), workerJob{JobID: firstNonEmpty(jobID, "wisp_host_prepare"), ResponseID: sb.ID}, text)
 		return nil
 	})
+	if strings.Contains(result.Stdout, "WISP_HOST_READY") {
+		return path.Join(installDir, "bin", "wispclient"), nil
+	}
 	if err != nil {
 		return "", fmt.Errorf("prepare warm wisp host sandbox_id=%s install_dir=%s package_url=%s: %s", sb.ID, installDir, packageURL, wispCommandFailureDetail(err, result))
 	}
