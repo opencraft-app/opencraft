@@ -126,6 +126,22 @@ def cluster_payload_from_kubeconfig(kubeconfig_path: Path, cluster_name: str, ex
     }
 
 
+def apply_cluster_scope_options(payload: dict[str, Any], spec: Mapping[str, Any]) -> dict[str, Any]:
+    namespaces = spec.get("namespaces")
+    if namespaces is not None:
+        if not isinstance(namespaces, list) or not all(isinstance(item, str) and item.strip() for item in namespaces):
+            raise ValueError("spec.namespaces must be a non-empty string list when provided")
+        payload["namespaces"] = [item.strip() for item in namespaces]
+
+    if "clusterResources" in spec:
+        cluster_resources = spec["clusterResources"]
+        if not isinstance(cluster_resources, bool):
+            raise ValueError("spec.clusterResources must be a boolean when provided")
+        payload["clusterResources"] = cluster_resources
+
+    return payload
+
+
 def iter_role_policies(project: Mapping[str, Any]) -> list[tuple[str, str]]:
     policies: list[tuple[str, str]] = []
     spec = project.get("spec", {})
@@ -173,6 +189,7 @@ def main() -> int:
     expected_server = str(spec["server"]).strip()
     kubeconfig_path = resolve_kubeconfig_path(repo_root, manifest, args.kubeconfig)
     cluster_payload = cluster_payload_from_kubeconfig(kubeconfig_path, cluster_name, expected_server)
+    cluster_payload = apply_cluster_scope_options(cluster_payload, spec)
 
     project_path = repo_root / str(spec["projectPath"])
     project = load_yaml_mapping(project_path)
@@ -214,4 +231,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
