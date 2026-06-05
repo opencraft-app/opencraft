@@ -53,8 +53,8 @@ const defaultWorkspaceLeaseTTL = 15 * time.Minute
 
 // acquireWorkspaceLeaseScript atomically acquires a workspace lease.
 //
-// KEYS[1] = gw:ws-lease:{workspace_id}
-// KEYS[2] = gw:ws-fence:{workspace_id}
+// KEYS[1] = gw:ws:{workspace_id}:lease
+// KEYS[2] = gw:ws:{workspace_id}:fence
 // ARGV[1] = runtime_id
 // ARGV[2] = lease_id
 // ARGV[3] = now (RFC3339Nano)
@@ -99,7 +99,7 @@ return 'OK:' .. token
 
 // renewWorkspaceLeaseScript extends the TTL of an active workspace lease.
 //
-// KEYS[1] = gw:ws-lease:{workspace_id}
+// KEYS[1] = gw:ws:{workspace_id}:lease
 // ARGV[1] = runtime_id
 // ARGV[2] = lease_id
 // ARGV[3] = fencing_token
@@ -133,7 +133,7 @@ return 'OK'
 
 // releaseWorkspaceLeaseScript marks a workspace lease as released.
 //
-// KEYS[1] = gw:ws-lease:{workspace_id}
+// KEYS[1] = gw:ws:{workspace_id}:lease
 // ARGV[1] = runtime_id
 // ARGV[2] = lease_id
 // ARGV[3] = fencing_token
@@ -176,11 +176,8 @@ func (s *LockStore) AcquireLease(ctx context.Context, req WorkspaceLeaseRequest)
 	expiresAt := now.Add(ttl)
 	leaseID := "lease_" + randomID()
 
-	leaseKey := s.key("ws-lease:", req.WorkspaceID)
-	fenceKey := s.key("ws-fence:", req.WorkspaceID)
-
 	result, err := s.client.Eval(ctx, acquireWorkspaceLeaseScript,
-		[]string{leaseKey, fenceKey},
+		s.keyspace.workspaceAcquireLeaseKeys(req.WorkspaceID),
 		req.RuntimeID,
 		leaseID,
 		formatTime(now),
@@ -241,7 +238,7 @@ func (s *LockStore) RenewLease(ctx context.Context, lease WorkspaceLease, ttl ti
 	now := time.Now().UTC()
 	expiresAt := now.Add(ttl)
 
-	key := s.key("ws-lease:", lease.WorkspaceID)
+	key := s.keyspace.workspaceLease(lease.WorkspaceID)
 	result, err := s.client.Eval(ctx, renewWorkspaceLeaseScript, []string{key},
 		lease.RuntimeID,
 		lease.LeaseID,
@@ -273,7 +270,7 @@ func (s *LockStore) ReleaseLease(ctx context.Context, lease WorkspaceLease) erro
 		return nil
 	}
 	now := time.Now().UTC()
-	key := s.key("ws-lease:", lease.WorkspaceID)
+	key := s.keyspace.workspaceLease(lease.WorkspaceID)
 	_, err := s.client.Eval(ctx, releaseWorkspaceLeaseScript, []string{key},
 		lease.RuntimeID,
 		lease.LeaseID,
@@ -291,7 +288,7 @@ func (s *LockStore) GetLease(ctx context.Context, workspaceID string) (Workspace
 	if workspaceID == "" {
 		return WorkspaceLease{}, false, nil
 	}
-	key := s.key("ws-lease:", workspaceID)
+	key := s.keyspace.workspaceLease(workspaceID)
 	result, err := s.client.HGetAll(ctx, key).Result()
 	if err != nil {
 		return WorkspaceLease{}, false, fmt.Errorf("redis get workspace lease: %w", err)
