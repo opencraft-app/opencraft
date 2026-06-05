@@ -3108,9 +3108,9 @@ export const OpenClawSettingsPage = () => {
       if (!isExecCommandSucceeded(providerSaveResult)) {
         const sanitizedOutput = result.config.apiKey
           ? providerSaveResult.output.replace(
-              new RegExp(result.config.apiKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"),
-              "sk-***",
-            )
+            new RegExp(result.config.apiKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"),
+            "sk-***",
+          )
           : providerSaveResult.output;
         throw new Error(
           t("默认模型保存失败：{{detail}}", {
@@ -3126,9 +3126,9 @@ export const OpenClawSettingsPage = () => {
       if (!isExecCommandSucceeded(switchModelResult)) {
         const sanitizedSwitchOutput = result.config.apiKey
           ? switchModelResult.output.replace(
-              new RegExp(result.config.apiKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"),
-              "sk-***",
-            )
+            new RegExp(result.config.apiKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"),
+            "sk-***",
+          )
           : switchModelResult.output;
         throw new Error(
           t("默认模型切换失败：{{detail}}", {
@@ -3848,6 +3848,7 @@ export const OpenClawSettingsPage = () => {
                   supportsTencentCloudApi: false,
                   isI18n: isGlobal,
                 }),
+                acliProduct: "lightvela",
                 runCommand: commandAdapter.runCommand,
                 getInvocationTask: commandAdapter.getInvocationTask,
               };
