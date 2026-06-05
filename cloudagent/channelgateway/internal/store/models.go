@@ -30,6 +30,8 @@ type Conversation struct {
 	AgentID                string
 	ACPSessionID           string
 	SessionKey             string
+	RuntimeClosedAt        string
+	UpdatedAt              string
 }
 
 type MessageRecord struct {

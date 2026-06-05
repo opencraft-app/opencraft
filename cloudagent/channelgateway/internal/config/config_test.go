@@ -82,3 +82,17 @@ func TestACPInitializeTimeoutFromEnv(t *testing.T) {
 		t.Fatalf("env ACP initialize timeout = %s", got)
 	}
 }
+
+func TestSessionIdleCloseFromEnv(t *testing.T) {
+	if got := LoadFromEnv().SessionIdleClose; got != time.Minute {
+		t.Fatalf("default session idle close = %s", got)
+	}
+	t.Setenv("CHANNELGATEWAY_SESSION_IDLE_CLOSE", "0")
+	if got := LoadFromEnv().SessionIdleClose; got != 0 {
+		t.Fatalf("disabled session idle close = %s", got)
+	}
+	t.Setenv("CHANNELGATEWAY_SESSION_IDLE_CLOSE", "90s")
+	if got := LoadFromEnv().SessionIdleClose; got != 90*time.Second {
+		t.Fatalf("env session idle close = %s", got)
+	}
+}

@@ -20,6 +20,7 @@ type fakeACP struct {
 	mu            sync.Mutex
 	newCalls      int
 	loadCalls     int
+	closeCalls    int
 	promptCalls   int
 	lastPrompt    string
 	sessionID     string
@@ -68,6 +69,13 @@ func (f *fakeACP) LoadSession(context.Context, string, string) error {
 	return f.loadErr
 }
 
+func (f *fakeACP) CloseSession(context.Context, string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.closeCalls++
+	return nil
+}
+
 func (f *fakeACP) EnsureRuntimeReady(context.Context, string, string) (acp.RuntimeReadyResult, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -110,6 +118,12 @@ func (f *fakeACP) ensureSnapshot() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.ensureCalls
+}
+
+func (f *fakeACP) closeSnapshot() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.closeCalls
 }
 
 type fakeReplySender struct {
@@ -759,6 +773,104 @@ func TestDispatcherIgnoresNonTerminalStorageLifecycleForSleepNotice(t *testing.T
 	}
 	if len(items) != 0 {
 		t.Fatalf("non-terminal storage lifecycle should not enqueue sleep notice: %#v", items)
+	}
+}
+
+func TestDispatcherClosesIdleConversationOnce(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir()+"/channelgateway.db")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+	account := store.ChannelAccount{ChannelAccountID: "wecom-a", ChannelType: "wecom", AgentID: "main"}
+	sessionKey := "agent:main:wecom:dm:chat-idle"
+	if _, err := st.GetOrCreateConversation(ctx, store.Conversation{
+		ChannelAccountID:       "wecom-a",
+		ChannelType:            "wecom",
+		ExternalConversationID: "chat-idle",
+		ChatType:               string(channel.ChatDM),
+		AgentID:                "main",
+		ACPSessionID:           "session-idle",
+		SessionKey:             sessionKey,
+	}); err != nil {
+		t.Fatalf("seed conversation: %v", err)
+	}
+	fake := &fakeACP{}
+	dispatcher := NewDispatcher(st, account, fake, "/workspace")
+	time.Sleep(time.Millisecond)
+	closed, err := dispatcher.CloseIdleConversations(ctx, time.Nanosecond, 10)
+	if err != nil {
+		t.Fatalf("close idle conversations: %v", err)
+	}
+	if closed != 1 || fake.closeSnapshot() != 1 {
+		t.Fatalf("expected one idle close, closed=%d closeCalls=%d", closed, fake.closeSnapshot())
+	}
+	closed, err = dispatcher.CloseIdleConversations(ctx, time.Nanosecond, 10)
+	if err != nil {
+		t.Fatalf("close idle conversations again: %v", err)
+	}
+	if closed != 0 || fake.closeSnapshot() != 1 {
+		t.Fatalf("closed conversation should not be closed again, closed=%d closeCalls=%d", closed, fake.closeSnapshot())
+	}
+	conv, err := st.GetOrCreateConversation(ctx, store.Conversation{
+		ChannelAccountID:       "wecom-a",
+		ChannelType:            "wecom",
+		ExternalConversationID: "chat-idle",
+		ChatType:               string(channel.ChatDM),
+		AgentID:                "main",
+		ACPSessionID:           "session-idle",
+		SessionKey:             sessionKey,
+	})
+	if err != nil {
+		t.Fatalf("reactivate conversation: %v", err)
+	}
+	if conv.RuntimeClosedAt != "" {
+		t.Fatalf("inbound activity should clear runtime closed marker: %#v", conv)
+	}
+}
+
+func TestDispatcherDoesNotCloseConversationWithActiveInbound(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir()+"/channelgateway.db")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+	account := store.ChannelAccount{ChannelAccountID: "wecom-a", ChannelType: "wecom", AgentID: "main"}
+	sessionKey := "agent:main:wecom:dm:chat-active"
+	if _, err := st.GetOrCreateConversation(ctx, store.Conversation{
+		ChannelAccountID:       "wecom-a",
+		ChannelType:            "wecom",
+		ExternalConversationID: "chat-active",
+		ChatType:               string(channel.ChatDM),
+		AgentID:                "main",
+		ACPSessionID:           "session-active",
+		SessionKey:             sessionKey,
+	}); err != nil {
+		t.Fatalf("seed conversation: %v", err)
+	}
+	if _, err := st.InsertInboundMessage(ctx, store.MessageRecord{
+		ChannelAccountID:       "wecom-a",
+		ChannelType:            "wecom",
+		ExternalMessageID:      "msg-active",
+		ExternalConversationID: "chat-active",
+		ACPSessionID:           "session-active",
+		Direction:              "inbound",
+		Status:                 "processing",
+		PayloadJSON:            "{}",
+	}); err != nil {
+		t.Fatalf("insert active inbound: %v", err)
+	}
+	fake := &fakeACP{}
+	dispatcher := NewDispatcher(st, account, fake, "/workspace")
+	time.Sleep(time.Millisecond)
+	closed, err := dispatcher.CloseIdleConversations(ctx, time.Nanosecond, 10)
+	if err != nil {
+		t.Fatalf("close idle conversations: %v", err)
+	}
+	if closed != 0 || fake.closeSnapshot() != 0 {
+		t.Fatalf("active inbound must block idle close, closed=%d closeCalls=%d", closed, fake.closeSnapshot())
 	}
 }
 

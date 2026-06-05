@@ -255,6 +255,7 @@ func (r *accountRunner) run(ctx context.Context) error {
 	go r.renewLeaseLoop(runCtx, cancel)
 	go r.inboundRecoveryLoop(runCtx, dispatcher)
 	go r.outboxLoop(runCtx, adapter)
+	go r.sessionIdleCloseLoop(runCtx, dispatcher)
 	r.states.SetStatus(r.account.ChannelAccountID, "running")
 	log.Printf("channelgateway runtime_trace account_id=%s agent_id=%s action=wecom_adapter_start websocket_url=%s",
 		runtimeLogValue(r.account.ChannelAccountID), runtimeLogValue(r.account.AgentID), runtimeLogValue(runtimeCfg.WebSocketURL))
@@ -400,6 +401,53 @@ func (r *accountRunner) outboxLoop(ctx context.Context, sender router.OutboxSend
 			}
 		}
 	}
+}
+
+func (r *accountRunner) sessionIdleCloseLoop(ctx context.Context, dispatcher *router.Dispatcher) {
+	idleClose := r.cfg.SessionIdleClose
+	if idleClose <= 0 {
+		return
+	}
+	interval := idleClose / 2
+	if interval < 5*time.Second {
+		interval = 5 * time.Second
+	}
+	if interval > 30*time.Second {
+		interval = 30 * time.Second
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			lease := r.states.GetLease(r.account.ChannelAccountID)
+			if lease.ChannelAccountID == "" {
+				continue
+			}
+			closeCtx, cancel := context.WithTimeout(ctx, r.idleCloseTimeout())
+			closed, err := dispatcher.CloseIdleConversations(closeCtx, idleClose, 16)
+			cancel()
+			if err != nil {
+				log.Printf("channelgateway runtime_trace account_id=%s agent_id=%s action=session_idle_close_failed error=%s",
+					runtimeLogValue(r.account.ChannelAccountID), runtimeLogValue(r.account.AgentID), runtimeLogValue(err.Error()))
+				continue
+			}
+			if closed > 0 {
+				log.Printf("channelgateway runtime_trace account_id=%s agent_id=%s action=session_idle_close_batch_done closed=%d idle_seconds=%.3f",
+					runtimeLogValue(r.account.ChannelAccountID), runtimeLogValue(r.account.AgentID), closed, idleClose.Seconds())
+			}
+		}
+	}
+}
+
+func (r *accountRunner) idleCloseTimeout() time.Duration {
+	timeout := r.cfg.RequestTimeout
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+	return timeout
 }
 
 func seedWeComAccounts(ctx context.Context, st *store.Store, cfg config.Config) error {
