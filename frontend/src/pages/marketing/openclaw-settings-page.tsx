@@ -3681,7 +3681,11 @@ export const OpenClawSettingsPage = () => {
               <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("重置 Hermes Agent")}</h3>
             </div>
             <p style={{ color: "var(--tea-color-text-secondary, #666)", fontSize: "14px", lineHeight: 1.6, marginBottom: "20px" }}>
-              {t("将执行 Hermes Agent 后台重置流程，期间 Agent 会有数分钟不可用，但工作空间、记忆、模型和通道配置、已安装技能将会保留，确认继续？")}
+              {t("将执行 Hermes Agent 后台重置流程，")}
+              <span className="font-semibold" style={{ color: "var(--tea-color-warning-default, #F59E0B)" }}>
+                {t("期间 Agent 会有数分钟不可用。")}
+              </span>
+              {t("但工作空间、记忆、模型和通道配置、已安装技能将会保留，确认继续？")}
             </p>
             <div className="flex flex-col gap-2">
               <button
