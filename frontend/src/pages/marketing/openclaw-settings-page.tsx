@@ -3687,6 +3687,14 @@ export const OpenClawSettingsPage = () => {
               </span>
               {t("但工作空间、记忆、模型和通道配置、已安装技能将会保留，确认继续？")}
             </p>
+            {acliResetConsole.length > 0 && (
+              <pre
+                ref={acliResetConsoleRef}
+                className="mb-3 max-h-44 overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-black/[0.08] bg-[#111827] px-2.5 py-2 text-[11px] leading-relaxed text-[#d1d5db]"
+              >
+                {acliResetConsole.join("\n")}
+              </pre>
+            )}
             {acliResetError && (
               <pre
                 className="whitespace-pre-wrap break-words rounded-md border px-3 py-2 text-xs"
@@ -4033,14 +4041,6 @@ export const OpenClawSettingsPage = () => {
                           />
                         )}
                       </div>
-                      {acliResetConsole.length > 0 && (
-                        <pre
-                          ref={acliResetConsoleRef}
-                          className="mt-2 max-h-36 overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-black/[0.08] bg-[#111827] px-2.5 py-2 text-[11px] leading-relaxed text-[#d1d5db]"
-                        >
-                          {acliResetConsole.join("\n")}
-                        </pre>
-                      )}
 
                       {visibleBots.length > 1 && isAgentMenuOpen && (
                         <div className="mt-1 rounded-md bg-black/[0.025] p-1">
