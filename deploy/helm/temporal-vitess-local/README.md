@@ -105,6 +105,21 @@ The `values-env-external.yaml` file should normally come from Terraform output.
 For the Beijing validation stack, this is
 `temporal_vitess_helm_values_yaml`.
 
+## Single-MySQL E2E
+
+Before the four-MySQL production-like topology, use
+`values-e2e-single-mysql-template.yaml` to validate the basic chain with one
+external MySQL instance and four schemas:
+
+- `temporal`
+- `temporal_sharded_00_80`
+- `temporal_sharded_80_ff`
+- `temporal_visibility`
+
+This keeps cost low while still exercising the `temporal_sharded` two-keyrange
+shape. See [E2E_SINGLE_MYSQL.md](E2E_SINGLE_MYSQL.md) for bootstrap and smoke
+commands.
+
 ## Smoke checks
 
 ```bash
