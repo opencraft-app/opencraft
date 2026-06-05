@@ -3690,7 +3690,7 @@ export const OpenClawSettingsPage = () => {
             {acliResetConsole.length > 0 && (
               <pre
                 ref={acliResetConsoleRef}
-                className="mb-5 max-h-44 overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-black/[0.08] bg-[#111827] px-2.5 py-2 text-[11px] leading-relaxed text-[#d1d5db]"
+                className="mb-6 max-h-44 overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-black/[0.08] bg-[#111827] px-2.5 py-2 text-[11px] leading-relaxed text-[#d1d5db]"
               >
                 {acliResetConsole.join("\n")}
               </pre>
@@ -3712,7 +3712,7 @@ export const OpenClawSettingsPage = () => {
                 {acliResetError}
               </pre>
             )}
-            <div className="flex flex-col gap-2">
+            <div className="mt-3 flex flex-col gap-2">
               <button
                 onClick={() => void handleResetAcli()}
                 disabled={resettingAcli}
