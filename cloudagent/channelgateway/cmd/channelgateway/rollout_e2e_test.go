@@ -363,6 +363,7 @@ func (c *rolloutACPClient) NewSession(context.Context, string) (string, error) {
 	return c.sessionID, nil
 }
 func (c *rolloutACPClient) LoadSession(context.Context, string, string) error { return nil }
+func (c *rolloutACPClient) CloseSession(context.Context, string) error        { return nil }
 func (c *rolloutACPClient) EnsureRuntimeReady(context.Context, string, string) (acp.RuntimeReadyResult, error) {
 	return acp.RuntimeReadyResult{}, nil
 }

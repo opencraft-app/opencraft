@@ -385,6 +385,7 @@ func (c *fakeACPClient) NewSession(context.Context, string) (string, error) {
 	return "session-test", nil
 }
 func (c *fakeACPClient) LoadSession(context.Context, string, string) error { return nil }
+func (c *fakeACPClient) CloseSession(context.Context, string) error        { return nil }
 func (c *fakeACPClient) EnsureRuntimeReady(context.Context, string, string) (acp.RuntimeReadyResult, error) {
 	return acp.RuntimeReadyResult{}, nil
 }

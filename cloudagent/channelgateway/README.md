@@ -34,6 +34,7 @@ CHANNELGATEWAY_PROJECT_ID=default
 CHANNELGATEWAY_OWNER_ID=channelgateway-local
 CHANNELGATEWAY_LISTEN_ADDR=:8094
 CHANNELGATEWAY_ACP_INITIALIZE_TIMEOUT=15s
+CHANNELGATEWAY_SESSION_IDLE_CLOSE=1m
 
 CHANNELGATEWAY_WECOM_ENABLED=true
 CHANNELGATEWAY_WECOM_ACCOUNT_ID=wecom-default
@@ -94,6 +95,13 @@ a new pod must be considered ready once it can observe the shared store and is
 ready to take over, even while the old pod still owns the single WeCom lease.
 This avoids deadlocking a one-replica Deployment with `maxUnavailable: 0` while
 still preserving the one-owner channel lease contract.
+
+`CHANNELGATEWAY_SESSION_IDLE_CLOSE` controls proactive ACP session storage for
+channel conversations. The default is `1m`: if a conversation has an ACP session
+and no channel activity for that duration, the active channel owner calls
+standard ACP `session/close`. CloudAgent then emits workspace lifecycle storage
+events, and the channel callback may send the configured "sleep" notice. Set it
+to `0` to disable proactive idle close.
 
 ## WeCom Handshake Check
 

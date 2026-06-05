@@ -272,6 +272,61 @@ func TestClientDispatchesWorkspaceLifecycleNotifications(t *testing.T) {
 	}
 }
 
+func TestClientCloseSessionCallsStandardACPMethod(t *testing.T) {
+	seen := make(chan map[string]any, 1)
+	upgrader := websocket.Upgrader{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Errorf("upgrade: %v", err)
+			return
+		}
+		defer conn.Close()
+		for {
+			_, raw, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			var req struct {
+				ID     int64          `json:"id"`
+				Method string         `json:"method"`
+				Params map[string]any `json:"params"`
+			}
+			if err := json.Unmarshal(raw, &req); err != nil {
+				t.Errorf("decode request: %v", err)
+				return
+			}
+			switch req.Method {
+			case "initialize":
+				writeJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{}})
+			case "session/close":
+				seen <- req.Params
+				writeJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{}})
+			default:
+				writeJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32601, "message": "not found"}})
+			}
+		}
+	}))
+	defer server.Close()
+	client := NewClient("ws"+server.URL[len("http"):], nil)
+	defer client.Close()
+	ctx := context.Background()
+	if err := client.Initialize(ctx); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	if err := client.CloseSession(ctx, "session-close"); err != nil {
+		t.Fatalf("close session: %v", err)
+	}
+	select {
+	case params := <-seen:
+		if params["sessionId"] != "session-close" {
+			t.Fatalf("unexpected close params: %#v", params)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("server did not receive session/close")
+	}
+}
+
 func TestClientSerializesConcurrentPrompts(t *testing.T) {
 	var activePrompts atomic.Int64
 	var maxActivePrompts atomic.Int64

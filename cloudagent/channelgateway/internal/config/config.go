@@ -21,6 +21,7 @@ type Config struct {
 	LeaseTTL             time.Duration
 	RequestTimeout       time.Duration
 	ACPInitializeTimeout time.Duration
+	SessionIdleClose     time.Duration
 	WeCom                WeComConfig
 	WeComAccounts        []WeComConfig
 	parseErrors          []string
@@ -72,6 +73,7 @@ func LoadFromEnv() Config {
 		LeaseTTL:             envDuration("CHANNELGATEWAY_LEASE_TTL", 90*time.Second),
 		RequestTimeout:       envDuration("CHANNELGATEWAY_REQUEST_TIMEOUT", 60*time.Second),
 		ACPInitializeTimeout: envDuration("CHANNELGATEWAY_ACP_INITIALIZE_TIMEOUT", 15*time.Second),
+		SessionIdleClose:     envDuration("CHANNELGATEWAY_SESSION_IDLE_CLOSE", time.Minute),
 		WeCom:                wecom,
 		WeComAccounts:        accounts,
 		parseErrors:          parseErrs,

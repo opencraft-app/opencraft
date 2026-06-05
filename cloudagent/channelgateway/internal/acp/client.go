@@ -138,6 +138,24 @@ func (c *Client) LoadSession(ctx context.Context, sessionID, cwd string) error {
 	return err
 }
 
+func (c *Client) CloseSession(ctx context.Context, sessionID string) error {
+	if strings.TrimSpace(sessionID) == "" {
+		return errors.New("missing session id")
+	}
+	c.promptMu.Lock()
+	defer c.promptMu.Unlock()
+	conn, err := c.ensureConn(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = conn.Call(ctx, "session/close", map[string]any{"sessionId": sessionID})
+	if err != nil {
+		c.resetConn(conn)
+		return err
+	}
+	return nil
+}
+
 func (c *Client) EnsureRuntimeReady(ctx context.Context, sessionID, cwd string) (RuntimeReadyResult, error) {
 	if strings.TrimSpace(sessionID) == "" {
 		return RuntimeReadyResult{}, errors.New("missing session id")
