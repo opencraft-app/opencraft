@@ -11,19 +11,29 @@ import (
 	"os"
 	"path"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 type Server struct {
-	store   *Store
-	worker  Worker
-	acpGate *ACPGateway
+	store    *Store
+	worker   Worker
+	acpGate  *ACPGateway
+	draining atomic.Bool
 }
 
 func NewServer(store *Store, worker Worker) *Server {
 	return &Server{store: store, worker: worker, acpGate: NewACPGateway(store, worker)}
+}
+
+func (s *Server) StartDraining() {
+	s.draining.Store(true)
+}
+
+func (s *Server) IsDraining() bool {
+	return s.draining.Load()
 }
 
 func (s *Server) Handler() http.Handler {

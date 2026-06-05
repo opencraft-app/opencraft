@@ -57,6 +57,7 @@ type AgentSidecarWorkerConfig struct {
 	WispSMHSpaceID        string
 	WorkspaceService      WorkspaceService
 	WorkspaceLeaseTTL     time.Duration
+	RuntimePool           RuntimePool
 }
 
 type AgentSidecarBackendConfig struct {
@@ -115,6 +116,7 @@ type AgentSidecarWorker struct {
 	wispSMHSpaceID        string
 	workspaceService      WorkspaceService
 	workspaceLeaseTTL     time.Duration
+	runtimePool           RuntimePool
 }
 
 func NewAgentSidecarWorker(cfg AgentSidecarWorkerConfig) (*AgentSidecarWorker, error) {
@@ -227,6 +229,7 @@ func NewAgentSidecarWorker(cfg AgentSidecarWorkerConfig) (*AgentSidecarWorker, e
 		wispSMHSpaceID:        strings.TrimSpace(cfg.WispSMHSpaceID),
 		workspaceService:      cfg.WorkspaceService,
 		workspaceLeaseTTL:     leaseTTL,
+		runtimePool:           cfg.RuntimePool,
 	}, nil
 }
 
@@ -283,6 +286,12 @@ func agentSidecarWorkerConfigFromEnv(client *AGSClient, runtimeHost RuntimeHost,
 	if runtimeHostName == runtimeHostTypeLocalWisp && innerTemplateID == "" {
 		innerTemplateID = outerTemplateID
 	}
+	var runtimePool RuntimePool
+	if envFlagEnabled("GATEWAY_RUNTIME_WARM_POOL_ENABLED") {
+		if pool, ok := workspaceService.(RuntimePool); ok {
+			runtimePool = pool
+		}
+	}
 	return AgentSidecarWorkerConfig{
 		Client:                client,
 		RuntimeHost:           runtimeHost,
@@ -313,6 +322,7 @@ func agentSidecarWorkerConfigFromEnv(client *AGSClient, runtimeHost RuntimeHost,
 		WispSMHSpaceID:        firstEnv("GATEWAY_WISP_SMH_SPACE_ID", "SMH_SPACE_ID"),
 		WorkspaceService:      workspaceService,
 		WorkspaceLeaseTTL:     time.Duration(envInt("GATEWAY_WISP_WORKSPACE_LEASE_TTL_SECONDS", int(defaultWorkspaceLeaseTTL/time.Second))) * time.Second,
+		RuntimePool:           runtimePool,
 	}
 }
 
@@ -733,6 +743,13 @@ func (w *AgentSidecarWorker) StartSessionRuntime(ctx context.Context, req ACPSes
 		WorkspaceID:         defaultWorkspaceID(req),
 		DaemonAddr:          acpDaemonAddr(req.SessionID),
 		RemoteBinary:        path.Join("/tmp/gateway/sessions", req.SessionID, "hermes-sidecar"),
+	}
+	if claim, ok := w.tryClaimWarmSessionRuntime(ctx, req, backend, runtime, timeline); ok {
+		claimed, err := w.startSessionRuntimeFromWarmClaim(ctx, req, backend, runtime, claim, timeline)
+		if err == nil {
+			return claimed, nil
+		}
+		timeline("acp_runtime_pool_claim_fallback_cold", "item_id="+quoteTimelineField(claim.ItemID), "error="+quoteTimelineField(err.Error()))
 	}
 	workspaceCreate := w.startWorkspaceSandboxCreate(ctx, backend, runtime, req, workspaceIDForRuntime(runtime, req), timeline)
 	timeline("acp_runtime_outer_create_start", "backend="+backend.name, "template="+backend.outerTemplateID, "agent_version="+agentVersion, "workspace_template="+backend.innerTemplateID, "workspace_version="+workspaceVersion)

@@ -169,6 +169,39 @@ func (w *AgentSidecarWorker) prepareWispRuntimeWithSpace(ctx context.Context, ho
 	return runtime, nil
 }
 
+func (w *AgentSidecarWorker) prepareWispHostOnly(ctx context.Context, host RuntimeHost, sb RuntimeHostTarget, installDir string, packageURL string, jobID string) (string, error) {
+	installDir = firstNonEmpty(strings.TrimSpace(installDir), path.Join("/tmp/cloudagent-warm-runtime", randomHex(8), "install"))
+	packageURL = firstNonEmpty(strings.TrimSpace(packageURL), w.wispPackageURL)
+	env := map[string]string{
+		"WISP_HOST_ONLY":                      "1",
+		"WISP_PACKAGE_URL":                    packageURL,
+		"WISP_PACKAGE_FORMAT":                 firstEnv("GATEWAY_WISP_PACKAGE_FORMAT", "WISP_PACKAGE_FORMAT"),
+		"WISP_INSTALL_DIR":                    installDir,
+		"WISP_NAME":                           "warm-host-only",
+		"SMH_LIBRARY_ID":                      w.wispSMHLibraryID,
+		"SMH_ACCESS_DOMAIN":                   w.wispSMHAccessDomain,
+		"SMH_SPACE_ID":                        "warm-host-only",
+		"SMH_ACCESS_TOKEN":                    "warm-host-only",
+		"JFS_PREFIX":                          "warm-host-only",
+		"ROOT_UPPER_SIZE":                     w.wispRootUpperSize,
+		"WISP_PACKAGE_ARCH":                   firstEnv("GATEWAY_WISP_PACKAGE_ARCH", "WISP_PACKAGE_ARCH"),
+		"WISP_USE_HOST_E2FSPROGS":             firstEnv("GATEWAY_WISP_USE_HOST_E2FSPROGS", "WISP_USE_HOST_E2FSPROGS"),
+		"WISP_USE_HOST_CRUN":                  firstEnv("GATEWAY_WISP_USE_HOST_CRUN", "WISP_USE_HOST_CRUN"),
+		"JFS_WRITEBACK_BARRIER_POLL_INTERVAL": "30ms",
+	}
+	result, err := host.RunCommand(ctx, sb, wispOuterPrepareScript(), env, nil, func(text string) error {
+		logRemoteStderr(time.Now(), workerJob{JobID: firstNonEmpty(jobID, "wisp_host_prepare"), ResponseID: sb.ID}, text)
+		return nil
+	})
+	if err != nil {
+		return "", fmt.Errorf("prepare warm wisp host sandbox_id=%s install_dir=%s package_url=%s: %s", sb.ID, installDir, packageURL, wispCommandFailureDetail(err, result))
+	}
+	if result.ExitCode != 0 || !strings.Contains(result.Stdout, "WISP_HOST_READY") {
+		return "", fmt.Errorf("prepare warm wisp host failed sandbox_id=%s install_dir=%s package_url=%s: %s", sb.ID, installDir, packageURL, wispCommandFailureDetail(nil, result))
+	}
+	return path.Join(installDir, "bin", "wispclient"), nil
+}
+
 func (w *AgentSidecarWorker) requireWispMountLeaseHeld(ctx context.Context, runtime ACPSessionRuntime) error {
 	if runtime.WispLeaseID == "" {
 		return fmt.Errorf("wisp mount rejected: missing lease runtime_id=%s wisp_name=%s workspace_id=%s", runtime.RuntimeID, runtime.WispName, firstNonEmpty(runtime.WispSMHSpaceID, runtime.WispWorkspaceID))
@@ -808,11 +841,30 @@ esac
 	  crun_binary_path="/var/lib/wisp/shared/tools/crun"
 	fi
 	blank_root_upper_sparse="$install/assets/rootfs/blank-ext4/root-upper-default.sparse"
-	if [[ ! -f "$blank_root_upper_sparse" ]]; then
-	  blank_root_upper_sparse=""
-	fi
+		if [[ ! -f "$blank_root_upper_sparse" ]]; then
+		  blank_root_upper_sparse=""
+		fi
 
-	step_start wisp_config_write
+		step_start wisp_host_preflight
+		sudo -n chmod 666 /dev/fuse || true
+		if [[ "${WISP_USE_HOST_E2FSPROGS:-0}" != "1" ]]; then
+		  export PATH="$install/assets/bin/e2fsprogs/bin:$PATH"
+		  export LD_LIBRARY_PATH="$install/assets/bin/e2fsprogs/lib:${LD_LIBRARY_PATH:-}"
+		else
+		  export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}"
+		fi
+		step wisp_host_preflight_detail use_host_e2fsprogs="${WISP_USE_HOST_E2FSPROGS:-0}" mke2fs_path="$(command -v mke2fs || true)" e2fsck_path="$(command -v e2fsck || true)" root_upper_size="$ROOT_UPPER_SIZE" blank_root_upper_sparse="$blank_root_upper_sparse"
+		if [[ ! -e /sys/fs/cgroup/cgroup.controllers ]]; then
+		  sudo -n mount -t cgroup2 cgroup2 /sys/fs/cgroup || true
+		fi
+		step_done wisp_host_preflight
+
+		if [[ "${WISP_HOST_ONLY:-}" == "1" ]]; then
+		  echo "WISP_HOST_READY install=$install"
+		  exit 0
+		fi
+
+		step_start wisp_config_write
 	mkdir -p "$(dirname "$config_file")"
 	cat >"$config_file" <<-EOF
 local projectRoot = "$install";
@@ -851,21 +903,7 @@ local projectRoot = "$install";
 	EOF
 	step_done wisp_config_write
 	
-	step_start wisp_host_preflight
-	sudo -n chmod 666 /dev/fuse || true
-	if [[ "${WISP_USE_HOST_E2FSPROGS:-0}" != "1" ]]; then
-	  export PATH="$install/assets/bin/e2fsprogs/bin:$PATH"
-	  export LD_LIBRARY_PATH="$install/assets/bin/e2fsprogs/lib:${LD_LIBRARY_PATH:-}"
-	else
-	  export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}"
-	fi
-	step wisp_host_preflight_detail use_host_e2fsprogs="${WISP_USE_HOST_E2FSPROGS:-0}" mke2fs_path="$(command -v mke2fs || true)" e2fsck_path="$(command -v e2fsck || true)" root_upper_size="$ROOT_UPPER_SIZE" blank_root_upper_sparse="$blank_root_upper_sparse"
-	if [[ ! -e /sys/fs/cgroup/cgroup.controllers ]]; then
-	  sudo -n mount -t cgroup2 cgroup2 /sys/fs/cgroup || true
-	fi
-	step_done wisp_host_preflight
-
-export WISP_CONFIG="$config_file"
+	export WISP_CONFIG="$config_file"
 export REMOTE_BACKEND=smh
 export SMH_ENABLED=true
 export COS_ENABLED=false

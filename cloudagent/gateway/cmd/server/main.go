@@ -6,8 +6,11 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
+	"syscall"
+	"time"
 
 	redisstore "cloudagent/gateway/internal/store/redis"
 	"cloudagent/gateway/internal/store/storebridge"
@@ -93,8 +96,44 @@ func main() {
 		otellog.String("worker_mode", os.Getenv("GATEWAY_WORKER_MODE")),
 		otellog.String("redis_addr", os.Getenv("GATEWAY_REDIS_ADDR")),
 	)
-	if err := http.ListenAndServe(addr, server.Handler()); err != nil {
-		log.Fatal(err)
+	httpServer := &http.Server{
+		Addr:    addr,
+		Handler: server.Handler(),
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- httpServer.ListenAndServe()
+	}()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
+
+	select {
+	case sig := <-sigCh:
+		server.StartDraining()
+		telemetry.Info(context.Background(), telemetry.Logger("cloudagent/gateway/cmd/server"), "gateway.draining",
+			otellog.String("signal", sig.String()),
+			otellog.String("addr", addr),
+		)
+		if delay := drainDelay(); delay > 0 {
+			time.Sleep(delay)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout())
+		defer cancel()
+		if err := httpServer.Shutdown(ctx); err != nil {
+			log.Printf("graceful shutdown failed: %v", err)
+			if closeErr := httpServer.Close(); closeErr != nil {
+				log.Printf("forced shutdown failed: %v", closeErr)
+			}
+		}
+		if err := <-errCh; err != nil && err != http.ErrServerClosed {
+			log.Fatal(err)
+		}
+	case err := <-errCh:
+		if err != nil && err != http.ErrServerClosed {
+			log.Fatal(err)
+		}
 	}
 }
 
@@ -133,4 +172,28 @@ func envDefault(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func shutdownTimeout() time.Duration {
+	value := os.Getenv("GATEWAY_SHUTDOWN_TIMEOUT_SECONDS")
+	if value == "" {
+		return 30 * time.Second
+	}
+	seconds, err := strconv.Atoi(value)
+	if err != nil || seconds <= 0 {
+		return 30 * time.Second
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+func drainDelay() time.Duration {
+	value := os.Getenv("GATEWAY_DRAIN_DELAY_SECONDS")
+	if value == "" {
+		return 5 * time.Second
+	}
+	seconds, err := strconv.Atoi(value)
+	if err != nil || seconds < 0 {
+		return 5 * time.Second
+	}
+	return time.Duration(seconds) * time.Second
 }
