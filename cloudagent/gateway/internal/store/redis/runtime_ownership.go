@@ -91,7 +91,7 @@ func (s *LockStore) AcquireRuntimeOwnership(ctx context.Context, req RuntimeOwne
 		allowSame = "1"
 	}
 
-	key := s.key("rt-own:", req.SessionID)
+	key := s.keyspace.runtimeOwnership(req.SessionID)
 	result, err := s.client.Eval(ctx, acquireRuntimeOwnershipScript, []string{key},
 		formatInt64(req.Generation),
 		req.RunID,
@@ -143,7 +143,7 @@ func (s *LockStore) RenewRuntimeOwnership(ctx context.Context, lease RuntimeOwne
 	now := time.Now().UTC()
 	expiresAt := now.Add(ttl)
 
-	key := s.key("rt-own:", lease.SessionID)
+	key := s.keyspace.runtimeOwnership(lease.SessionID)
 	result, err := s.client.Eval(ctx, renewRuntimeOwnershipScript, []string{key},
 		formatInt64(lease.Generation),
 		lease.RunID,
@@ -174,7 +174,7 @@ func (s *LockStore) ReleaseRuntimeOwnership(ctx context.Context, lease RuntimeOw
 		return nil
 	}
 	now := time.Now().UTC()
-	key := s.key("rt-own:", lease.SessionID)
+	key := s.keyspace.runtimeOwnership(lease.SessionID)
 	_, err := s.client.Eval(ctx, releaseRuntimeOwnershipScript, []string{key},
 		formatInt64(lease.Generation),
 		lease.RunID,
@@ -194,7 +194,7 @@ func (s *LockStore) RuntimeOwnershipHeld(ctx context.Context, lease RuntimeOwner
 		return true, nil
 	}
 	now := time.Now().UTC()
-	key := s.key("rt-own:", lease.SessionID)
+	key := s.keyspace.runtimeOwnership(lease.SessionID)
 	result, err := s.client.Eval(ctx, checkRuntimeOwnershipScript, []string{key},
 		formatInt64(lease.Generation),
 		lease.RunID,

@@ -37,7 +37,7 @@ func (s *LockStore) AcquireRuntimeEnsureLock(ctx context.Context, lockKey string
 		ttl = 30 * time.Second
 	}
 	holderID := randomID()
-	key := s.key("rt-lock:", lockKey)
+	key := s.keyspace.runtimeEnsureLock(lockKey)
 
 	// Retry loop with backoff
 	backoff := 50 * time.Millisecond

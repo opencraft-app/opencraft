@@ -24,8 +24,8 @@ type Config struct {
 // LockStore implements RuntimeOwnershipStore, WorkspaceLeaseStore, and
 // RuntimeEnsureLocker using Redis with Lua scripts for atomicity.
 type LockStore struct {
-	client    *redis.Client
-	keyPrefix string
+	client   *redis.Client
+	keyspace redisKeyspace
 }
 
 // New creates a LockStore connected to the given Redis instance.
@@ -46,7 +46,7 @@ func New(cfg Config) (*LockStore, error) {
 		DB:       cfg.DB,
 		PoolSize: poolSize,
 	})
-	return &LockStore{client: client, keyPrefix: cfg.KeyPrefix}, nil
+	return &LockStore{client: client, keyspace: newRedisKeyspace(cfg.KeyPrefix)}, nil
 }
 
 // Ping verifies the Redis connection is alive.
@@ -60,11 +60,7 @@ func (s *LockStore) Close() error {
 }
 
 func (s *LockStore) key(parts ...string) string {
-	k := s.keyPrefix
-	for _, p := range parts {
-		k += p
-	}
-	return k
+	return s.keyspace.key(parts...)
 }
 
 func randomID() string {
