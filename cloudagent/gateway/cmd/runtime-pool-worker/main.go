@@ -23,7 +23,14 @@ func main() {
 	if err != nil {
 		log.Fatalf("init store: %v", err)
 	}
-	worker, err := wrapper.NewAgentSidecarWorkerFromEnvWithWorkspaceService(store)
+	poolStore, err := wrapper.OpenWarmRuntimePoolStoreFromEnv(context.Background())
+	if err != nil {
+		log.Fatalf("init warm runtime pool store: %v", err)
+	}
+	if poolStore == nil {
+		poolStore = store
+	}
+	worker, err := wrapper.NewAgentSidecarWorkerFromEnvWithServices(store, poolStore)
 	if err != nil {
 		log.Fatalf("init agent sidecar worker: %v", err)
 	}
@@ -63,7 +70,7 @@ func main() {
 		log.Printf("start warm runtime pool workflow: %v", err)
 	}
 	log.Printf("runtime pool worker starting task_queue=%s pool_key=%s desired_ready=%d", envDefault("TEMPORAL_TASK_QUEUE", runtimepool.DefaultTaskQueue), poolKey, input.DesiredReady)
-	if err := runtimepool.Run(ctx, cfg, &runtimepool.Activities{Store: store, Worker: worker}); err != nil {
+	if err := runtimepool.Run(ctx, cfg, &runtimepool.Activities{Store: poolStore, Worker: worker}); err != nil {
 		log.Fatalf("run runtime pool worker: %v", err)
 	}
 }

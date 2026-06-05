@@ -57,13 +57,24 @@ func main() {
 		// EnsureWorkspace (persistence) to the SQLite/MySQL store.
 		workspaceService = storebridge.NewRedisWorkspaceService(redisLockStore, store)
 	}
+	var runtimePool wrapper.RuntimePool
+	if envFlagEnabled("GATEWAY_RUNTIME_WARM_POOL_ENABLED") {
+		poolStore, err := wrapper.OpenWarmRuntimePoolStoreFromEnv(context.Background())
+		if err != nil {
+			log.Fatalf("init warm runtime pool store: %v", err)
+		}
+		if poolStore != nil {
+			runtimePool = poolStore
+			log.Printf("runtime warm pool: using external store")
+		}
+	}
 
 	var worker wrapper.Worker
 	switch os.Getenv("GATEWAY_WORKER_MODE") {
 	case "fake":
 		worker = wrapper.FakeWorker{}
 	case "agent_injected":
-		agentSidecarWorker, err := wrapper.NewAgentSidecarWorkerFromEnvWithWorkspaceService(workspaceService)
+		agentSidecarWorker, err := wrapper.NewAgentSidecarWorkerFromEnvWithServices(workspaceService, runtimePool)
 		if err != nil {
 			log.Fatalf("init agent sidecar worker: %v", err)
 		}
@@ -172,6 +183,15 @@ func envDefault(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func envFlagEnabled(key string) bool {
+	switch os.Getenv(key) {
+	case "1", "true", "TRUE", "yes", "YES", "on", "ON":
+		return true
+	default:
+		return false
+	}
 }
 
 func shutdownTimeout() time.Duration {
