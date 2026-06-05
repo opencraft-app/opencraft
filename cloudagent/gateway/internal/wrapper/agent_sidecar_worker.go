@@ -238,13 +238,17 @@ func NewAgentSidecarWorkerFromEnv() (*AgentSidecarWorker, error) {
 }
 
 func NewAgentSidecarWorkerFromEnvWithWorkspaceService(workspaceService WorkspaceService) (*AgentSidecarWorker, error) {
+	return NewAgentSidecarWorkerFromEnvWithServices(workspaceService, nil)
+}
+
+func NewAgentSidecarWorkerFromEnvWithServices(workspaceService WorkspaceService, runtimePool RuntimePool) (*AgentSidecarWorker, error) {
 	runtimeHostName := strings.ToLower(strings.TrimSpace(firstEnv("GATEWAY_RUNTIME_HOST", "CLOUDAGENT_RUNTIME_HOST")))
 	if runtimeHostName == runtimeHostTypeLocalWisp {
 		localHost, err := NewLocalRuntimeHostFromEnv()
 		if err != nil {
 			return nil, err
 		}
-		return NewAgentSidecarWorker(agentSidecarWorkerConfigFromEnv(nil, localHost, runtimeHostTypeLocalWisp, nil, workspaceService))
+		return NewAgentSidecarWorker(agentSidecarWorkerConfigFromEnv(nil, localHost, runtimeHostTypeLocalWisp, nil, workspaceService, runtimePool))
 	}
 	client, err := NewAGSClient(AGSClientConfig{
 		APIKey:         firstEnv("GATEWAY_AGS_API_KEY", "E2B_API_KEY"),
@@ -274,10 +278,10 @@ func NewAgentSidecarWorkerFromEnvWithWorkspaceService(workspaceService Workspace
 			InnerTemplateID: firstNonEmpty(firstEnv("GATEWAY_TALOS_INNER_TEMPLATE", "TALOS_INNER_TEMPLATE"), talosTemplate),
 		})
 	}
-	return NewAgentSidecarWorker(agentSidecarWorkerConfigFromEnv(client, nil, runtimeHostTypeAGS, additionalBackends, workspaceService))
+	return NewAgentSidecarWorker(agentSidecarWorkerConfigFromEnv(client, nil, runtimeHostTypeAGS, additionalBackends, workspaceService, runtimePool))
 }
 
-func agentSidecarWorkerConfigFromEnv(client *AGSClient, runtimeHost RuntimeHost, runtimeHostName string, additionalBackends []AgentSidecarBackendConfig, workspaceService WorkspaceService) AgentSidecarWorkerConfig {
+func agentSidecarWorkerConfigFromEnv(client *AGSClient, runtimeHost RuntimeHost, runtimeHostName string, additionalBackends []AgentSidecarBackendConfig, workspaceService WorkspaceService, runtimePool RuntimePool) AgentSidecarWorkerConfig {
 	outerTemplateID := firstEnv("GATEWAY_AGENT_SIDECAR_OUTER_TEMPLATE", "GATEWAY_AGS_TEMPLATE", "OUTER_SANDBOX_TEMPLATE")
 	if runtimeHostName == runtimeHostTypeLocalWisp && outerTemplateID == "" {
 		outerTemplateID = runtimeHostTypeLocalWisp
@@ -286,8 +290,7 @@ func agentSidecarWorkerConfigFromEnv(client *AGSClient, runtimeHost RuntimeHost,
 	if runtimeHostName == runtimeHostTypeLocalWisp && innerTemplateID == "" {
 		innerTemplateID = outerTemplateID
 	}
-	var runtimePool RuntimePool
-	if envFlagEnabled("GATEWAY_RUNTIME_WARM_POOL_ENABLED") {
+	if runtimePool == nil && envFlagEnabled("GATEWAY_RUNTIME_WARM_POOL_ENABLED") {
 		if pool, ok := workspaceService.(RuntimePool); ok {
 			runtimePool = pool
 		}
