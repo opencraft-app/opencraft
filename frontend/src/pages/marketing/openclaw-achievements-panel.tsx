@@ -1,5 +1,4 @@
 import { type CSSProperties, useCallback, useEffect, useMemo, useState } from "react";
-import { useTranslation } from "react-i18next";
 import {
   AlertTriangle,
   Anvil,
@@ -59,7 +58,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useRepositories } from "@/contexts/repository-context";
-import { useT } from "@/i18n/t";
+import { t as rawT, useT } from "@/i18n/t";
 import {
   type AchievementSnapshot,
   type AchievementState,
@@ -74,20 +73,15 @@ interface AchievementsPanelProps {
   botName: string;
 }
 
-export const isChineseAchievementLocale = (locale?: string) => (
-  (locale || "").toLowerCase().startsWith("zh")
+type Translate = ReturnType<typeof useT>;
+type AchievementCopyTranslator = (t: Translate) => string;
+
+export const achievementDisplayName = (achievement: HermesAchievement, t: Translate) => (
+  achievementNameTranslations[achievement.id]?.(t) ?? achievement.name
 );
 
-export const achievementDisplayName = (achievement: HermesAchievement, locale?: string) => (
-  isChineseAchievementLocale(locale)
-    ? achievementNameTranslations[achievement.id] ?? achievement.name
-    : achievement.name
-);
-
-export const achievementDisplayDescription = (achievement: HermesAchievement, locale?: string) => (
-  isChineseAchievementLocale(locale)
-    ? achievementDescriptionTranslations[achievement.id] ?? achievement.description
-    : achievement.description
+export const achievementDisplayDescription = (achievement: HermesAchievement, t: Translate) => (
+  achievementDescriptionTranslations[achievement.id]?.(t) ?? achievement.description
 );
 
 const TIER_ORDER = ["Olympian", "Diamond", "Gold", "Silver", "Copper"];
@@ -98,130 +92,130 @@ const achievementGridStyle: CSSProperties = {
   gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 360px), 1fr))",
 };
 
-const achievementNameTranslations: Record<string, string> = {
-  actually_read_the_logs: "真的去读日志了",
-  autonomous_avalanche: "调用狂潮",
-  background_process_enjoyer: "后台进程爱好者",
-  browser_possession: "浏览器原住民",
-  cache_hit_appreciator: "缓存命中达人",
-  citation_goblin: "旁征博引",
-  claude_confidant: "Claude 好基友",
-  codex_conjurer: "Codex 召唤师",
-  config_surgeon: "医术精湛",
-  context_dragon: "上下文狂魔",
-  cron_necromancer: "定时任务唤醒师",
-  css_exorcist: "CSS 驱魔师",
-  dependency_hell_tourist: "装不完，根本装不完",
-  docker_name_collision: "容器名已存在",
-  docs_archaeologist: "文档考古家",
-  file_archaeologist: "文件考古学家",
-  five_model_flight: "模型探索者",
-  forgot_the_env_var: "变量失踪",
-  full_send: "火力全开",
-  gateway_dweller: "网关常驻者",
-  gemini_cartographer: "Gemini 驾驶员",
-  image_whisperer: "造图大师",
-  let_him_cook: "甩手掌柜",
-  marathon_operator: "永动机",
-  memory_keeper: "记忆守望者",
-  memory_palace: "记忆宫殿主",
-  model_hopper: "模型跳跃者",
-  model_sommelier: "模型品鉴师",
-  multi_model_mage: "模型收藏家",
-  night_shift_operator: "夜猫子",
-  one_character_fix: "一字乾坤",
-  one_more_small_change: "再改一个小地方",
-  open_weights_pilgrim: "开源朝圣者",
-  openrouter_enjoyer: "OpenRouter 达人",
-  patch_wizard: "补丁法师",
-  permission_denied_any_percent: "权限速通",
-  pixel_goblin: "超绝强迫症",
-  plugin_goblin: "插件小能手",
-  port_3000_taken: "3000 端口又被占了",
-  provider_polyglot: "大模型海王",
-  rabbit_hole_certified: "深渊探险家",
-  rebase_acrobat: "Rebase 杂技师",
-  red_text_connoisseur: "报错鉴赏家",
-  rollback_wizard: "回滚！回滚！",
-  screenshot_hunter: "截图区 UP 主",
-  ship_first_ask_later: "先发再说",
-  skill_issue_skill_created: "遇事不决写技能",
-  skillsmith: "墨家机关师",
-  stack_trace_sommelier: "堆栈品鉴师",
-  subagent_commander: "甩锅大师",
-  supposed_to_be_quick: "再给我两分钟",
-  terminal_goblin: "终端一开，谁也不爱",
-  test_suite_tamer: "测试之王",
-  the_fix_was_restarting: "重启大法好",
-  toolchain_maxxer: "工具链拉满",
-  toolset_cartographer: "工具集军师",
-  vibe_architect: "氛围工程师",
-  voice_of_the_machine: "机器之声",
-  weekend_warrior: "加班是不可能加班的",
-  yaml_colon_incident: "失之毫厘",
+const achievementNameTranslations: Record<string, AchievementCopyTranslator> = {
+  actually_read_the_logs: (t) => t("真的去读日志了"),
+  autonomous_avalanche: (t) => t("调用狂潮"),
+  background_process_enjoyer: (t) => t("后台进程爱好者"),
+  browser_possession: (t) => t("浏览器原住民"),
+  cache_hit_appreciator: (t) => t("缓存命中达人"),
+  citation_goblin: (t) => t("旁征博引"),
+  claude_confidant: (t) => t("Claude 好基友"),
+  codex_conjurer: (t) => t("Codex 召唤师"),
+  config_surgeon: (t) => t("医术精湛"),
+  context_dragon: (t) => t("上下文狂魔"),
+  cron_necromancer: (t) => t("定时任务唤醒师"),
+  css_exorcist: (t) => t("CSS 驱魔师"),
+  dependency_hell_tourist: (t) => t("装不完，根本装不完"),
+  docker_name_collision: (t) => t("容器名已存在"),
+  docs_archaeologist: (t) => t("文档考古家"),
+  file_archaeologist: (t) => t("文件考古学家"),
+  five_model_flight: (t) => t("模型探索者"),
+  forgot_the_env_var: (t) => t("变量失踪"),
+  full_send: (t) => t("火力全开"),
+  gateway_dweller: (t) => t("网关常驻者"),
+  gemini_cartographer: (t) => t("Gemini 驾驶员"),
+  image_whisperer: (t) => t("造图大师"),
+  let_him_cook: (t) => t("甩手掌柜"),
+  marathon_operator: (t) => t("永动机"),
+  memory_keeper: (t) => t("记忆守望者"),
+  memory_palace: (t) => t("记忆宫殿主"),
+  model_hopper: (t) => t("模型跳跃者"),
+  model_sommelier: (t) => t("模型品鉴师"),
+  multi_model_mage: (t) => t("模型收藏家"),
+  night_shift_operator: (t) => t("夜猫子"),
+  one_character_fix: (t) => t("一字乾坤"),
+  one_more_small_change: (t) => t("再改一个小地方"),
+  open_weights_pilgrim: (t) => t("开源朝圣者"),
+  openrouter_enjoyer: (t) => t("OpenRouter 达人"),
+  patch_wizard: (t) => t("补丁法师"),
+  permission_denied_any_percent: (t) => t("权限速通"),
+  pixel_goblin: (t) => t("超绝强迫症"),
+  plugin_goblin: (t) => t("插件小能手"),
+  port_3000_taken: (t) => t("3000 端口又被占了"),
+  provider_polyglot: (t) => t("大模型海王"),
+  rabbit_hole_certified: (t) => t("深渊探险家"),
+  rebase_acrobat: (t) => t("Rebase 杂技师"),
+  red_text_connoisseur: (t) => t("报错鉴赏家"),
+  rollback_wizard: (t) => t("回滚！回滚！"),
+  screenshot_hunter: (t) => t("截图区 UP 主"),
+  ship_first_ask_later: (t) => t("先发再说"),
+  skill_issue_skill_created: (t) => t("遇事不决写技能"),
+  skillsmith: (t) => t("墨家机关师"),
+  stack_trace_sommelier: (t) => t("堆栈品鉴师"),
+  subagent_commander: (t) => t("甩锅大师"),
+  supposed_to_be_quick: (t) => t("再给我两分钟"),
+  terminal_goblin: (t) => t("终端一开，谁也不爱"),
+  test_suite_tamer: (t) => t("测试之王"),
+  the_fix_was_restarting: (t) => t("重启大法好"),
+  toolchain_maxxer: (t) => t("工具链拉满"),
+  toolset_cartographer: (t) => t("工具集军师"),
+  vibe_architect: (t) => t("氛围工程师"),
+  voice_of_the_machine: (t) => t("机器之声"),
+  weekend_warrior: (t) => t("加班是不可能加班的"),
+  yaml_colon_incident: (t) => t("失之毫厘"),
 };
 
-const achievementDescriptionTranslations: Record<string, string> = {
-  actually_read_the_logs: "多次查看日志，而不是直接猜测问题原因。",
-  autonomous_avalanche: "在多个会话中累计大量 Hermes 工具调用。",
-  background_process_enjoyer: "启动或控制了足够多的长时间运行进程。",
-  browser_possession: "多次通过自动化方式操作浏览器。",
-  cache_hit_appreciator: "注意到或受益于提示词缓存相关行为。",
-  citation_goblin: "提取了足够多的网页内容。",
-  claude_confidant: "多次在工作流中使用 Claude 相关能力。",
-  codex_conjurer: "多次在工作流中使用 Codex 相关能力。",
-  config_surgeon: "处理过真实的配置文件、manifest、环境变量文件或控制台设置。",
-  context_dragon: "多次遇到上下文压缩、大上下文或 token 压力。",
-  cron_necromancer: "多次使用计划任务或自主定时任务。",
-  css_exorcist: "持续处理 CSS 或界面样式相关问题。",
-  dependency_hell_tourist: "遇到过包安装失败，也完成过包安装恢复。",
-  docker_name_collision: "多次遇到 Docker 容器名称冲突。",
-  docs_archaeologist: "多次查阅或检索文档资料。",
-  file_archaeologist: "多次读取、搜索或梳理文件系统内容。",
-  five_model_flight: "使用过至少五种不同的大模型。",
-  forgot_the_env_var: "因缺少环境变量导致过认证或配置失败。",
-  full_send: "在一次任务中同时使用终端、文件和网页或浏览器能力。",
-  gateway_dweller: "多次使用与网关连接相关的 Hermes 工作流。",
-  gemini_cartographer: "多次使用 Gemini 相关工作流。",
-  image_whisperer: "多次使用图像生成或视觉理解工具。",
-  let_him_cook: "让 Hermes 在一次会话中自主完成一条完整工具链。",
-  marathon_operator: "累计了大量 Hermes 会话。",
-  memory_keeper: "使用 memory 或 Mnemosyne 保存长期知识。",
-  memory_palace: "持续写入并沉淀长期记忆。",
-  model_hopper: "多次切换、查看或配置模型与供应商。",
-  model_sommelier: "多次使用不同模型或供应商，逐步形成使用偏好。",
-  multi_model_mage: "在 Hermes 历史中使用过多种不同模型。",
-  night_shift_operator: "多次在深夜时段运行 Hermes 会话。",
-  one_character_fix: "在多次错误之后，通过很小的修改完成修复。",
-  one_more_small_change: "在一次会话中进行了大量文件修改。",
-  open_weights_pilgrim: "通过 Hermes 会话使用过本地模型或开源权重模型。",
-  openrouter_enjoyer: "多次通过 OpenRouter 路由模型任务。",
-  patch_wizard: "多次使用精准补丁修改文件。",
-  permission_denied_any_percent: "多次遇到权限不足或访问被拒绝的问题。",
-  pixel_goblin: "持续进行前端、CSS、SVG 或视觉细节调整。",
-  plugin_goblin: "多次使用或开发插件相关能力。",
-  port_3000_taken: "多次遇到开发服务器端口冲突。",
-  provider_polyglot: "在 Hermes 历史中使用过多个模型供应商。",
-  rabbit_hole_certified: "搜索或提取了大量网页内容用于研究。",
-  rebase_acrobat: "处理过 rebase、冲突、合并、拉取或推送等 Git 历史操作。",
-  red_text_connoisseur: "累计遇到过大量错误信息。",
-  rollback_wizard: "使用过回滚或检查点恢复能力。",
-  screenshot_hunter: "多次截图、检查并打磨视觉效果。",
-  ship_first_ask_later: "在一次较复杂工具链之后进行了 Git 相关操作。",
-  skill_issue_skill_created: "创建或修改可复用技能，减少重复操作。",
-  skillsmith: "多次使用或维护 Hermes Skills。",
-  stack_trace_sommelier: "多次遇到并处理堆栈追踪信息。",
-  subagent_commander: "多次协调委派给其他 Agent 的工作。",
-  supposed_to_be_quick: "一次原本很小的需求发展成了长会话。",
-  terminal_goblin: "大量使用终端或 shell 命令。",
-  test_suite_tamer: "多次运行测试、检查或验证命令。",
-  the_fix_was_restarting: "在多次错误之后通过重启完成恢复。",
-  toolchain_maxxer: "在一次会话中使用了多种不同的 Hermes 工具。",
-  toolset_cartographer: "多次有意识地使用和切换 Hermes 工具集。",
-  vibe_architect: "在一次项目会话中修改或触达了较多文件与模块。",
-  voice_of_the_machine: "多次使用文本转语音或语音相关工具。",
-  weekend_warrior: "多次在周末运行 Hermes 会话。",
-  yaml_colon_incident: "多次遇到 YAML 或配置语法问题。",
+const achievementDescriptionTranslations: Record<string, AchievementCopyTranslator> = {
+  actually_read_the_logs: (t) => t("多次查看日志，而不是直接猜测问题原因。"),
+  autonomous_avalanche: (t) => t("在多个会话中累计大量 Hermes 工具调用。"),
+  background_process_enjoyer: (t) => t("启动或控制了足够多的长时间运行进程。"),
+  browser_possession: (t) => t("多次通过自动化方式操作浏览器。"),
+  cache_hit_appreciator: (t) => t("注意到或受益于提示词缓存相关行为。"),
+  citation_goblin: (t) => t("提取了足够多的网页内容。"),
+  claude_confidant: (t) => t("多次在工作流中使用 Claude 相关能力。"),
+  codex_conjurer: (t) => t("多次在工作流中使用 Codex 相关能力。"),
+  config_surgeon: (t) => t("处理过真实的配置文件、manifest、环境变量文件或控制台设置。"),
+  context_dragon: (t) => t("多次遇到上下文压缩、大上下文或 token 压力。"),
+  cron_necromancer: (t) => t("多次使用计划任务或自主定时任务。"),
+  css_exorcist: (t) => t("持续处理 CSS 或界面样式相关问题。"),
+  dependency_hell_tourist: (t) => t("遇到过包安装失败，也完成过包安装恢复。"),
+  docker_name_collision: (t) => t("多次遇到 Docker 容器名称冲突。"),
+  docs_archaeologist: (t) => t("多次查阅或检索文档资料。"),
+  file_archaeologist: (t) => t("多次读取、搜索或梳理文件系统内容。"),
+  five_model_flight: (t) => t("使用过至少五种不同的大模型。"),
+  forgot_the_env_var: (t) => t("因缺少环境变量导致过认证或配置失败。"),
+  full_send: (t) => t("在一次任务中同时使用终端、文件和网页或浏览器能力。"),
+  gateway_dweller: (t) => t("多次使用与网关连接相关的 Hermes 工作流。"),
+  gemini_cartographer: (t) => t("多次使用 Gemini 相关工作流。"),
+  image_whisperer: (t) => t("多次使用图像生成或视觉理解工具。"),
+  let_him_cook: (t) => t("让 Hermes 在一次会话中自主完成一条完整工具链。"),
+  marathon_operator: (t) => t("累计了大量 Hermes 会话。"),
+  memory_keeper: (t) => t("使用 memory 或 Mnemosyne 保存长期知识。"),
+  memory_palace: (t) => t("持续写入并沉淀长期记忆。"),
+  model_hopper: (t) => t("多次切换、查看或配置模型与供应商。"),
+  model_sommelier: (t) => t("多次使用不同模型或供应商，逐步形成使用偏好。"),
+  multi_model_mage: (t) => t("在 Hermes 历史中使用过多种不同模型。"),
+  night_shift_operator: (t) => t("多次在深夜时段运行 Hermes 会话。"),
+  one_character_fix: (t) => t("在多次错误之后，通过很小的修改完成修复。"),
+  one_more_small_change: (t) => t("在一次会话中进行了大量文件修改。"),
+  open_weights_pilgrim: (t) => t("通过 Hermes 会话使用过本地模型或开源权重模型。"),
+  openrouter_enjoyer: (t) => t("多次通过 OpenRouter 路由模型任务。"),
+  patch_wizard: (t) => t("多次使用精准补丁修改文件。"),
+  permission_denied_any_percent: (t) => t("多次遇到权限不足或访问被拒绝的问题。"),
+  pixel_goblin: (t) => t("持续进行前端、CSS、SVG 或视觉细节调整。"),
+  plugin_goblin: (t) => t("多次使用或开发插件相关能力。"),
+  port_3000_taken: (t) => t("多次遇到开发服务器端口冲突。"),
+  provider_polyglot: (t) => t("在 Hermes 历史中使用过多个模型供应商。"),
+  rabbit_hole_certified: (t) => t("搜索或提取了大量网页内容用于研究。"),
+  rebase_acrobat: (t) => t("处理过 rebase、冲突、合并、拉取或推送等 Git 历史操作。"),
+  red_text_connoisseur: (t) => t("累计遇到过大量错误信息。"),
+  rollback_wizard: (t) => t("使用过回滚或检查点恢复能力。"),
+  screenshot_hunter: (t) => t("多次截图、检查并打磨视觉效果。"),
+  ship_first_ask_later: (t) => t("在一次较复杂工具链之后进行了 Git 相关操作。"),
+  skill_issue_skill_created: (t) => t("创建或修改可复用技能，减少重复操作。"),
+  skillsmith: (t) => t("多次使用或维护 Hermes Skills。"),
+  stack_trace_sommelier: (t) => t("多次遇到并处理堆栈追踪信息。"),
+  subagent_commander: (t) => t("多次协调委派给其他 Agent 的工作。"),
+  supposed_to_be_quick: (t) => t("一次原本很小的需求发展成了长会话。"),
+  terminal_goblin: (t) => t("大量使用终端或 shell 命令。"),
+  test_suite_tamer: (t) => t("多次运行测试、检查或验证命令。"),
+  the_fix_was_restarting: (t) => t("在多次错误之后通过重启完成恢复。"),
+  toolchain_maxxer: (t) => t("在一次会话中使用了多种不同的 Hermes 工具。"),
+  toolset_cartographer: (t) => t("多次有意识地使用和切换 Hermes 工具集。"),
+  vibe_architect: (t) => t("在一次项目会话中修改或触达了较多文件与模块。"),
+  voice_of_the_machine: (t) => t("多次使用文本转语音或语音相关工具。"),
+  weekend_warrior: (t) => t("多次在周末运行 Hermes 会话。"),
+  yaml_colon_incident: (t) => t("多次遇到 YAML 或配置语法问题。"),
 };
 
 const achievementIconMap: Record<string, LucideIcon> = {
@@ -441,14 +435,13 @@ const LoadingGrid = () => (
 
 const AchievementCard = ({ achievement }: { achievement: HermesAchievement }) => {
   const t = useT();
-  const { i18n } = useTranslation();
   const Icon = achievementIcon(achievement);
   const pct = normalizeProgress(achievement);
   const tier = achievement.tier || achievement.next_tier || "";
   const unlockedAt = formatTimestamp(achievement.unlocked_at);
   const displayedTier = tier ? tierLabel(tier, t) : "";
-  const displayName = achievementDisplayName(achievement, i18n.language);
-  const displayDescription = achievementDisplayDescription(achievement, i18n.language);
+  const displayName = achievementDisplayName(achievement, t);
+  const displayDescription = achievementDisplayDescription(achievement, t);
 
   return (
     <article
@@ -457,32 +450,35 @@ const AchievementCard = ({ achievement }: { achievement: HermesAchievement }) =>
         achievement.state === "secret" ? "border-dashed border-black/[0.10]" : "border-black/[0.06]",
       )}
     >
-      <div className="flex items-center gap-3">
+      <div className="grid grid-cols-[48px_minmax(0,1fr)] items-center gap-x-3">
         <span className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-lg border border-black/[0.06] bg-black/[0.03] text-black/70">
           <Icon className="h-5 w-5" />
         </span>
-        <h3 className="min-w-0 flex-1 truncate text-lg font-semibold leading-snug text-black/90">
-          {achievement.state === "secret" ? t("隐藏成就") : displayName}
-        </h3>
-        <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-x-2 gap-y-1.5">
-          <span className={cn("rounded-full px-2.5 py-1.5 text-[11px] font-semibold leading-none", stateBadgeClass(achievement.state))}>
-            {stateLabel(achievement.state, t)}
-          </span>
-          {tier ? (
-            <span className={cn("rounded-full border px-2.5 py-1.5 text-[11px] font-semibold leading-none", tierStyles[tier] ?? "border-black/[0.08] bg-black/[0.03] text-black/50")}>
-              {achievement.tier ? displayedTier : t("目标 {{tier}}", { tier: displayedTier })}
-            </span>
-          ) : null}
+        <div className="min-w-0">
+          <div className="flex min-w-0 items-center gap-3">
+            <h3 className="min-w-0 flex-1 truncate text-lg font-semibold leading-snug text-black/90">
+              {achievement.state === "secret" ? t("隐藏成就") : displayName}
+            </h3>
+            <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-x-2 gap-y-1.5">
+              <span className={cn("rounded-full px-2.5 py-1.5 text-[11px] font-semibold leading-none", stateBadgeClass(achievement.state))}>
+                {stateLabel(achievement.state, t)}
+              </span>
+              {tier ? (
+                <span className={cn("rounded-full border px-2.5 py-1.5 text-[11px] font-semibold leading-none", tierStyles[tier] ?? "border-black/[0.08] bg-black/[0.03] text-black/50")}>
+                  {displayedTier}
+                </span>
+              ) : null}
+            </div>
+          </div>
+          <p className="mt-2 line-clamp-2 text-sm leading-6 text-black/55">
+            {achievement.state === "secret"
+              ? t("继续使用 Hermes，相关行为出现后会揭示条件。")
+              : displayDescription}
+          </p>
         </div>
       </div>
 
-      <p className="mt-4 line-clamp-2 min-h-[44px] text-sm leading-6 text-black/55">
-        {achievement.state === "secret"
-          ? t("继续使用 Hermes，相关行为出现后会揭示条件。")
-          : displayDescription}
-      </p>
-
-      <div className="mt-6">
+      <div className="mt-8">
         <div className="mb-2 flex items-center justify-between gap-3 text-xs text-black/42">
           <span>{progressText(achievement, t)}</span>
           <span>{Math.round(pct)}%</span>
@@ -540,7 +536,7 @@ export const AchievementsPanel = ({ botId, botName }: AchievementsPanelProps) =>
       const next = await fetchHermesAchievements(botsRepository, botId, { forceRescan });
       setSnapshot(next);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "成就数据读取失败");
+      setError(loadError instanceof Error ? loadError.message : rawT("成就数据读取失败"));
     } finally {
       setLoading(false);
       setRefreshing(false);

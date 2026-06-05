@@ -1,8 +1,12 @@
 import type { BotRepository } from "@/repositories/types";
+import {
+  JSON_END,
+  JSON_START,
+  buildHermesAchievementsCommand,
+} from "@/pages/marketing/openclaw-achievements-command";
 import { isExecCommandSucceeded, truncateExecOutput } from "@/pages/marketing/openclaw-reset-config";
 
-const JSON_START = "__LIGHTVELA_ACHIEVEMENTS_JSON_START__";
-const JSON_END = "__LIGHTVELA_ACHIEVEMENTS_JSON_END__";
+export { JSON_END, JSON_START, buildHermesAchievementsCommand } from "@/pages/marketing/openclaw-achievements-command";
 
 export type AchievementState = "unlocked" | "discovered" | "secret";
 
@@ -136,75 +140,6 @@ const normalizeAchievement = (value: unknown): HermesAchievement | null => {
     evidence: normalizeEvidence(value.evidence),
   };
 };
-
-export const buildHermesAchievementsCommand = (forceRescan = false) => String.raw`set -e
-PYTHON_BIN="$HOME/.hermes/hermes-agent/venv/bin/python"
-if [ ! -x "$PYTHON_BIN" ]; then
-  PYTHON_BIN="python3"
-fi
-"$PYTHON_BIN" <<'PY'
-import importlib.util
-import json
-import os
-import sys
-from pathlib import Path
-
-START = "__LIGHTVELA_ACHIEVEMENTS_JSON_START__"
-END = "__LIGHTVELA_ACHIEVEMENTS_JSON_END__"
-force_rescan = ${forceRescan ? "True" : "False"}
-
-home = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes")
-candidates = [
-    home / "hermes-agent" / "plugins" / "hermes-achievements" / "dashboard" / "plugin_api.py",
-    home / "plugins" / "hermes-achievements" / "dashboard" / "plugin_api.py",
-    Path.cwd() / "plugins" / "hermes-achievements" / "dashboard" / "plugin_api.py",
-    Path("/usr/local/lib/hermes-agent/plugins/hermes-achievements/dashboard/plugin_api.py"),
-]
-plugin_path = next((path for path in candidates if path.exists()), None)
-if plugin_path is None:
-    raise SystemExit("hermes-achievements plugin_api.py not found")
-
-repo_root = plugin_path.parents[3] if len(plugin_path.parents) > 3 else plugin_path.parent
-for path in (str(repo_root), str(plugin_path.parent)):
-    if path not in sys.path:
-        sys.path.insert(0, path)
-
-spec = importlib.util.spec_from_file_location("lightvela_hermes_achievements_plugin_api", plugin_path)
-if spec is None or spec.loader is None:
-    raise SystemExit("failed to load hermes-achievements plugin_api.py")
-module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(module)
-
-if force_rescan:
-    data = module.compute_all(progress_every=0)
-else:
-    data = module.load_snapshot()
-    if not isinstance(data, dict):
-        data = module.compute_all(progress_every=0)
-
-payload = {
-    key: data.get(key)
-    for key in [
-        "achievements",
-        "unlocked_count",
-        "discovered_count",
-        "secret_count",
-        "total_count",
-        "error",
-        "generated_at",
-        "scan_meta",
-    ]
-    if key in data
-}
-payload["is_stale"] = module._is_snapshot_stale(data)
-scan_meta = payload.get("scan_meta") if isinstance(payload.get("scan_meta"), dict) else {}
-scan_meta["status"] = module._scan_status_payload()
-payload["scan_meta"] = scan_meta
-
-print(START)
-print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
-print(END)
-PY`;
 
 export const parseHermesAchievementsOutput = (output: string): AchievementSnapshot => {
   const startIndex = output.indexOf(JSON_START);

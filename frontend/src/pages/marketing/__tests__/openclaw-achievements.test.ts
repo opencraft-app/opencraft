@@ -9,7 +9,6 @@ import {
 import {
   achievementDisplayDescription,
   achievementDisplayName,
-  isChineseAchievementLocale,
 } from "@/pages/marketing/openclaw-achievements-panel";
 
 const START = "__LIGHTVELA_ACHIEVEMENTS_JSON_START__";
@@ -23,6 +22,8 @@ describe("openclaw achievements debug exec helpers", () => {
     expect(command).toContain(START);
     expect(command).toContain(END);
     expect(command).toContain("force_rescan = False");
+    expect(command).toContain('getattr(module, "_is_snapshot_stale", None)');
+    expect(command).toContain('getattr(module, "_scan_status_payload", None)');
   });
 
   it("switches the fixed command to force rescan mode", () => {
@@ -112,7 +113,7 @@ describe("openclaw achievements debug exec helpers", () => {
     await expect(fetchHermesAchievements(bots, "bot-1")).rejects.toThrow("plugin not found");
   });
 
-  it("uses localized achievement copy only for Chinese locales", () => {
+  it("routes known achievement fallback copy through i18n", () => {
     const achievement = {
       id: "let_him_cook",
       name: "Let Him Cook",
@@ -121,11 +122,24 @@ describe("openclaw achievements debug exec helpers", () => {
       state: "discovered",
       unlocked: false,
     } as const;
+    const t = (zh: string) => `i18n:${zh}`;
 
-    expect(isChineseAchievementLocale("zh-CN")).toBe(true);
-    expect(achievementDisplayName(achievement, "zh-CN")).toBe("甩手掌柜");
-    expect(achievementDisplayDescription(achievement, "zh-CN")).toBe("让 Hermes 在一次会话中自主完成一条完整工具链。");
-    expect(achievementDisplayName(achievement, "en-US")).toBe("Let Him Cook");
-    expect(achievementDisplayDescription(achievement, "en-US")).toBe("Let Hermes run a serious autonomous tool chain in one session.");
+    expect(achievementDisplayName(achievement, t)).toBe("i18n:甩手掌柜");
+    expect(achievementDisplayDescription(achievement, t)).toBe("i18n:让 Hermes 在一次会话中自主完成一条完整工具链。");
+  });
+
+  it("falls back to backend achievement copy for unknown ids", () => {
+    const achievement = {
+      id: "new_backend_achievement",
+      name: "New Backend Achievement",
+      description: "Fresh copy from the backend plugin.",
+      category: "Agent Autonomy",
+      state: "discovered",
+      unlocked: false,
+    } as const;
+    const t = (zh: string) => `i18n:${zh}`;
+
+    expect(achievementDisplayName(achievement, t)).toBe("New Backend Achievement");
+    expect(achievementDisplayDescription(achievement, t)).toBe("Fresh copy from the backend plugin.");
   });
 });
