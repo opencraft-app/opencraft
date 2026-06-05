@@ -19,6 +19,7 @@ from contracts.release_bundle_manifest import dump_manifest, merge_bundle_source
 
 SANDBOX_ENV = "beijing-sandbox-2"
 PLAYGROUND_ENV = "sandbox-bj-7"
+KOREA_PLAYGROUND_ENV = "sandbox-kr-1"
 AUTO_RELEASE_WORKFLOWS = {
     "admin-gateway": (".ci/admin-gateway.yml", "beijing-sandbox,shprod,sgprod", "admin-gateway"),
     "ai-gateway": (".ci/ai-gateway.yml", "beijing-sandbox,shprod,sgprod", "ai-gateway"),
@@ -35,6 +36,7 @@ AUTO_RELEASE_WORKFLOWS = {
 BUSINESS_WORKFLOWS = {
     ".ci/admin-gateway.yml",
     ".ci/ai-gateway.yml",
+    ".ci/channelgateway.yml",
     ".ci/cloudagent-gateway.yml",
     ".ci/cloudladdergateway.yml",
     ".ci/ctl.yml",
@@ -96,6 +98,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 workflow_entry = yaml.safe_load((REPO_ROOT / workflow_path).read_text())
                 self.assertEqual((workflow_entry.get("extends") or {}).get("template"), "service-release.yml")
                 self.assertIn("playground/sandbox-bj-*", (REPO_ROOT / workflow_path).read_text())
+                self.assertIn("playground/sandbox-kr-*", (REPO_ROOT / workflow_path).read_text())
                 self.assert_release_entry_targets(
                     workflow_entry,
                     expected_service=bundle_name,
@@ -122,6 +125,19 @@ class ReleaseBundleContractTests(unittest.TestCase):
         )
         self.assertIn(f"argocd/secrets/{PLAYGROUND_ENV}/ai-gateway-runtime-secrets.sops.yaml", bundle.publish_paths)
         self.assertNotIn("argocd/catalogs/sandbox/beijing-sandbox-2/ai-gateway.yaml", bundle.publish_paths)
+
+    def test_korea_playground_env_uses_kr_registry_and_seoul_catalog_root(self) -> None:
+        manifest = load_manifest()
+
+        bundle = require_build_metadata(load_bundle(manifest, "ai-gateway", KOREA_PLAYGROUND_ENV))
+
+        self.assertEqual(bundle.image_repo, "lightclaw-kr1.tencentcloudcr.com/lightclaw/ai-gateway")
+        self.assertIn(f"argocd/services/ai-gateway/{KOREA_PLAYGROUND_ENV}/**", bundle.publish_paths)
+        self.assertIn(
+            f"argocd/catalogs/playground/seoul-playground/{KOREA_PLAYGROUND_ENV}/ai-gateway.yaml",
+            bundle.publish_paths,
+        )
+        self.assertIn(f"argocd/secrets/{KOREA_PLAYGROUND_ENV}/ai-gateway-runtime-secrets.sops.yaml", bundle.publish_paths)
 
     def test_sandbox2_catalogs_are_promotable_or_explicitly_exempt(self) -> None:
         manifest = load_manifest()
@@ -191,11 +207,15 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(bundle.image_repo, "lightclaw-bj8.tencentcloudcr.com/lightclaw/frontend")
         self.assertIn(f"argocd/services/frontend/{PLAYGROUND_ENV}/**", bundle.publish_paths)
 
+        korea_bundle = require_build_metadata(load_bundle(manifest, "frontend", KOREA_PLAYGROUND_ENV))
+        self.assertEqual(korea_bundle.image_repo, "lightclaw-kr1.tencentcloudcr.com/lightclaw/frontend")
+
     def test_frontend_workflow_supports_playground_branch_release(self) -> None:
         workflow_text = (REPO_ROOT / ".ci/frontend.yml").read_text()
         workflow = yaml.safe_load(workflow_text)
 
         self.assertIn("playground/sandbox-bj-*", workflow_text)
+        self.assertIn("playground/sandbox-kr-*", workflow_text)
         self.assertIn('PLAYGROUND_ENV="${{ ci.branch }}"', workflow_text)
         self.assertIn('PLAYGROUND_ENV="${PLAYGROUND_ENV#playground/}"', workflow_text)
         self.assertIn('BUILD_ENVS="$(resolve_playground_envs "auto" "$PLAYGROUND_ENV")"', workflow_text)
@@ -232,7 +252,10 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(approval_stage.get("if"), prod_edgeone_if)
         self.assertEqual(fanout_stage.get("if"), prod_edgeone_if)
         self.assertEqual(approval_reviews.get("name"), "确认发起 frontend EdgeOne 正式站发布候选")
-        self.assertEqual(approval_reviews.get("reviewers"), ["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang"])
+        self.assertEqual(
+            approval_reviews.get("reviewers"),
+            ["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang"],
+        )
         self.assertIn("本阶段确认是否允许本次 frontend 构建发起 EdgeOne 正式站发布候选", workflow_text)
         self.assertIn("本阶段只控制是否允许从本次构建发起生产发布候选", workflow_text)
         self.assertIn("自动发起 frontend EdgeOne 正式站发布候选", workflow_text)
@@ -286,11 +309,137 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertFalse((REPO_ROOT / ".ci/frontend-edgeone-orchestrator-probe.yml").exists())
         self.assertFalse((REPO_ROOT / ".ci/frontend-edgeone-subpipeline-child-probe.yml").exists())
 
+    def test_hermes_image_workflow_refreshes_pools_and_upgrades_existing_vms_after_approval(self) -> None:
+        workflow_text = (REPO_ROOT / ".ci/hermes-image.yml").read_text()
+        workflow = yaml.safe_load(workflow_text) or {}
+        stages = workflow.get("stages") or []
+        stage_by_name = {stage.get("name"): stage for stage in stages}
+
+        build_stage = stage_by_name["构建 Hermes CVM 镜像"]
+        beijing_approval_stage = stage_by_name["确认刷新并修补北京主沙箱 Hermes"]
+        beijing_refresh_stage = stage_by_name["刷新北京主沙箱 Hermes pools"]
+        beijing_repair_stage = stage_by_name["升级存量北京主沙箱 Hermes VM"]
+        shanghai_approval_stage = stage_by_name["确认刷新并修补上海生产 Hermes"]
+        shanghai_refresh_stage = stage_by_name["刷新上海生产 Hermes pools"]
+        shanghai_repair_stage = stage_by_name["升级存量上海生产 Hermes VM"]
+        prod_if = "${{ ci.branch }} == master"
+        reviewers = ["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang"]
+        beijing_reviews = (((beijing_approval_stage.get("check-in") or {}).get("reviews") or {}).get("flows") or [])[0]
+        shanghai_reviews = (((shanghai_approval_stage.get("check-in") or {}).get("reviews") or {}).get("flows") or [])[0]
+
+        self.assertEqual(beijing_approval_stage.get("if"), prod_if)
+        self.assertEqual(beijing_refresh_stage.get("if"), prod_if)
+        self.assertEqual(beijing_repair_stage.get("if"), prod_if)
+        self.assertEqual(shanghai_approval_stage.get("if"), prod_if)
+        self.assertEqual(shanghai_refresh_stage.get("if"), prod_if)
+        self.assertEqual(shanghai_repair_stage.get("if"), prod_if)
+        self.assertEqual(beijing_reviews.get("reviewers"), reviewers)
+        self.assertEqual(shanghai_reviews.get("reviewers"), reviewers)
+        self.assertLess(stages.index(build_stage), stages.index(beijing_approval_stage))
+        self.assertLess(stages.index(beijing_approval_stage), stages.index(beijing_refresh_stage))
+        self.assertLess(stages.index(beijing_refresh_stage), stages.index(beijing_repair_stage))
+        self.assertLess(stages.index(beijing_repair_stage), stages.index(shanghai_approval_stage))
+        self.assertLess(stages.index(shanghai_approval_stage), stages.index(shanghai_refresh_stage))
+        self.assertLess(stages.index(shanghai_refresh_stage), stages.index(shanghai_repair_stage))
+
+        rollout_script = REPO_ROOT / ".ci/runtime/commands/rollout_hermes_sandbox_env.sh"
+        refresh_env_script = REPO_ROOT / ".ci/runtime/commands/refresh_hermes_sandbox_env.sh"
+        repair_vm_script = REPO_ROOT / ".ci/runtime/commands/repair_hermes_existing_vms.sh"
+        rollout_script_text = rollout_script.read_text()
+        refresh_env_script_text = refresh_env_script.read_text()
+        repair_vm_script_text = repair_vm_script.read_text()
+        workflow_and_runtime_text = workflow_text + rollout_script_text + refresh_env_script_text + repair_vm_script_text
+
+        self.assertIn("refresh_hermes_sandbox_pools.sh", workflow_text)
+        self.assertIn("refresh_hermes_sandbox_env.sh", workflow_text)
+        self.assertIn("repair_hermes_existing_vms.sh", workflow_text)
+        self.assertNotIn("bash .ci/runtime/commands/rollout_hermes_sandbox_env.sh", workflow_text)
+        self.assertIn("extract_hermes_image_env.py", workflow_text)
+        self.assertIn("resolve_hermes_reuse_image_name", workflow_text)
+        self.assertIn("HERMES_REUSE_IMAGE_NAME", workflow_text)
+        self.assertIn("HERMES_SKIP_IMAGE_BUILD", workflow_text)
+        self.assertIn("--image-name \"$HERMES_IMAGE_NAME\"", workflow_text)
+        self.assertIn("resolve_hermes_image_id.py --region \"$region\" --image-name \"$HERMES_IMAGE_NAME\"", workflow_and_runtime_text)
+        self.assertIn("split_hermes_pool_vms_by_region.py", workflow_and_runtime_text)
+        self.assertIn("HERMES_REFRESH_ENV_SPEC", workflow_text)
+        self.assertIn("HERMES_REPAIR_ENV_SPEC", workflow_text)
+        self.assertIn("beijing-sandbox:ap-beijing:kubeconfig_beijing_sandbox", workflow_text)
+        self.assertIn("HERMES_BEIJING_HERMES_LEGACY_POOL_IDS", workflow_text)
+        self.assertIn("pool-c2,pool-c3,pool-c4,pool-c5", workflow_text)
+        self.assertIn("shprod:ap-shanghai:kubeconfig_shprod", workflow_text)
+        self.assertIn("HERMES_SHANGHAI_HERMES_LEGACY_POOL_IDS", workflow_text)
+        self.assertIn("pool-bj8,pool-c0,pool-c1,pool-c2,pool-c3,pool-c4,pool-c5", workflow_text)
+        self.assertLess(workflow_text.index("beijing-sandbox:ap-beijing:kubeconfig_beijing_sandbox"), workflow_text.index("shprod:ap-shanghai:kubeconfig_shprod"))
+        self.assertNotIn("<<'PY'", workflow_text)
+        self.assertNotIn("默认目标：shprod", workflow_text)
+        self.assertNotIn('HERMES_TAT_COMMAND_ID is required for existing Hermes VM upgrade', workflow_text)
+        self.assertIn("images/helpers/config-hermes-python-mirrors.sh", workflow_text)
+        self.assertNotIn("tccli tat DeleteCommand", workflow_text)
+        self.assertGreaterEqual(workflow_text.count("ci_ensure_jq"), 2)
+        self.assertIn('HERMES_TAT_BATCH_SIZE="${HERMES_TAT_BATCH_SIZE:-5}"', workflow_and_runtime_text)
+        self.assertIn('HERMES_TAT_SINGLE_ATTEMPTS="${HERMES_TAT_SINGLE_ATTEMPTS:-3}"', workflow_and_runtime_text)
+        self.assertIn("不直连数据库，不执行 SQL", workflow_text)
+        self.assertIn("批次失败后自动拆成单台重试", workflow_text)
+
+        list_script = REPO_ROOT / ".ci/runtime/commands/list_hermes_pool_vms.sh"
+        refresh_script = REPO_ROOT / ".ci/runtime/commands/refresh_hermes_sandbox_pools.sh"
+        create_script = REPO_ROOT / ".ci/runtime/commands/create_hermes_tat_command.sh"
+        invoke_script = REPO_ROOT / ".ci/runtime/commands/invoke_hermes_tat_command.sh"
+        repair_script = REPO_ROOT / "images/helpers/config-hermes-python-mirrors.sh"
+        blueprint_id_file = REPO_ROOT / "images/hermes-backend-blueprint-id"
+        self.assertTrue(list_script.exists())
+        self.assertTrue(refresh_script.exists())
+        self.assertTrue(create_script.exists())
+        self.assertTrue(invoke_script.exists())
+        self.assertTrue(rollout_script.exists())
+        self.assertTrue(refresh_env_script.exists())
+        self.assertTrue(repair_vm_script.exists())
+        self.assertTrue(blueprint_id_file.exists())
+        self.assertEqual(blueprint_id_file.read_text().strip(), "lhbp-8gsotw6u")
+        self.assertIn("does not patch pools, update SKUs, invoke TAT, or write database rows", list_script.read_text())
+        self.assertIn('/template-classes/${TEMPLATE_CLASS_ID}/resolve', refresh_script.read_text())
+        self.assertIn('template-classes/{template}/resolve', list_script.read_text())
+        self.assertIn("HERMES_LEGACY_POOL_IDS", refresh_script.read_text())
+        self.assertIn("HERMES_LEGACY_POOL_IDS", list_script.read_text())
+        self.assertIn("selected = {}", list_script.read_text())
+        self.assertIn("selected = []", refresh_script.read_text())
+        self.assertIn("SKU endpoint unavailable; pool patch will continue", refresh_script.read_text())
+        self.assertIn("print_pool_discovery_debug", refresh_script.read_text())
+        self.assertIn("reuse=", (REPO_ROOT / "images/hermes-image-trigger").read_text())
+        create_script_text = create_script.read_text()
+        self.assertIn("tccli tat CreateCommand", create_script_text)
+        self.assertIn("--CommandType SHELL", create_script_text)
+        self.assertIn("--Content", create_script_text)
+        self.assertIn("images/hermes-backend-blueprint-id", create_script_text)
+        self.assertIn("export HERMES_BACKEND_BLUEPRINT_ID", create_script_text)
+        self.assertIn("batches run strictly serially", invoke_script.read_text())
+        self.assertIn("batch failed; retrying", invoke_script.read_text())
+        self.assertIn("refresh_hermes_sandbox_pools.sh", refresh_env_script_text)
+        self.assertIn("resolve_hermes_image_id.py", refresh_env_script_text)
+        self.assertIn('image_var="HERMES_IMAGE_ID_$(region_env_suffix "$region")"', refresh_env_script_text)
+        self.assertIn('export "${image_var}=${image_id}"', refresh_env_script_text)
+        self.assertIn("list_hermes_pool_vms.sh", repair_vm_script_text)
+        self.assertIn("create_hermes_tat_command.sh", repair_vm_script_text)
+        self.assertIn("invoke_hermes_tat_command.sh", repair_vm_script_text)
+        self.assertIn("Repair existing Hermes VM inventory", repair_vm_script_text)
+        self.assertIn("Refresh then repair one Hermes sandbox environment", rollout_script_text)
+        self.assertIn(">&2", rollout_script_text)
+        self.assertIn("refresh_hermes_sandbox_env.sh", rollout_script_text)
+        self.assertIn("repair_hermes_existing_vms.sh", rollout_script_text)
+        repair_script_text = repair_script.read_text()
+        self.assertIn('"$config_dir/systemd/user"', repair_script_text)
+        self.assertIn('chown "$user:$user" "$config_dir"', repair_script_text)
+        self.assertIn('chmod 0700 "$config_dir"', repair_script_text)
+        self.assertIn("acli backend --help", repair_script_text)
+        self.assertIn("acli bundle-update", repair_script_text)
+        self.assertIn("https://acli-1325194254.cos.accelerate.myqcloud.com/acli/install.sh", repair_script_text)
+        self.assertIn("acli backend upgrade-start --blueprint-id", repair_script_text)
+
     def test_frontend_preview_uses_master_runtime(self) -> None:
         workflow_text = (REPO_ROOT / ".ci/frontend-preview.yml").read_text()
 
         self.assertIn('FRONTEND_PREVIEW_RUNTIME_REF="${FRONTEND_PREVIEW_RUNTIME_REF:-origin/master}"', workflow_text)
-        self.assertIn("git fetch --no-tags --depth=1 origin master:refs/remotes/origin/master", workflow_text)
+        self.assertIn("git fetch --no-tags --depth=1 origin +master:refs/remotes/origin/master", workflow_text)
         self.assertIn('git archive --format=tar "$FRONTEND_PREVIEW_RUNTIME_REF" .ci', workflow_text)
         self.assertIn('bash "$FRONTEND_PREVIEW_RUNTIME_CI_DIR/runtime/commands/publish_frontend_preview.sh"', workflow_text)
         self.assertNotIn('"$PNPM_BIN" exec vite build', workflow_text)
@@ -323,8 +472,10 @@ class ReleaseBundleContractTests(unittest.TestCase):
 
         self.assertEqual(package_json["scripts"]["check"], "tsc -b")
         self.assertIn('"$PNPM_BIN" check', guard_text)
-        self.assertIn('VITE_AUTH_API_BASE_URL=https://api.lightvela.ai "$PNPM_BIN" exec vite build --mode cn --outDir dist-ci-cn', guard_text)
-        self.assertIn('VITE_AUTH_API_BASE_URL=https://lightclaw.tech "$PNPM_BIN" exec vite build --mode global --outDir dist-ci-global', guard_text)
+        self.assertIn('FRONTEND_GUARD_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/lightclaw-frontend-guard.XXXXXX")"', guard_text)
+        self.assertIn('VITE_BIN="$FRONTEND_GUARD_DIR/node_modules/.bin/vite"', guard_text)
+        self.assertIn('VITE_AUTH_API_BASE_URL=https://api.lightvela.ai "$VITE_BIN" build --mode cn --outDir dist-ci-cn', guard_text)
+        self.assertIn('VITE_AUTH_API_BASE_URL=https://lightclaw.tech "$VITE_BIN" build --mode global --outDir dist-ci-global', guard_text)
         self.assertIn("rm -rf dist-ci-cn dist-ci-global", guard_text)
 
     def test_prod_db_migration_workflow_is_manual_dry_run_then_check_in_then_apply(self) -> None:
@@ -477,13 +628,17 @@ class ReleaseBundleContractTests(unittest.TestCase):
 
     def test_cloudagent_gateway_adds_service_prod_reviewers(self) -> None:
         manifest = load_manifest()
+        devcloud_bundle = require_build_metadata(load_bundle(manifest, "cloudagent-gateway", "devcloud-dep"))
         bundle = load_bundle(manifest, "cloudagent-gateway", "shprod")
         workflow = yaml.safe_load((REPO_ROOT / ".ci/cloudagent-gateway.yml").read_text())
         parameters = (workflow.get("extends") or {}).get("parameters") or {}
         on_config = workflow.get("on") or workflow.get(True) or {}
         watched_paths = ((on_config.get("push") or {}).get("paths") or [])
 
-        self.assertEqual(parameters.get("PROD_REVIEWERS"), '["skipzhang", "roberttwang", "cocofhu"]')
+        self.assertEqual(parameters.get("PROD_REVIEWERS"), '["skipzhang", "roberttwang", "cocofhu", "lhuigou"]')
+        self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "devcloud-dep,shprod")
+        self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "devcloud-dep")
+        self.assertEqual(devcloud_bundle.image_repo, "csighub.tencentyun.com/skipzhang/cloudagent-gateway")
         self.assertIn(
             "argocd/secrets/shprod/cloudagent-wsa-search-secrets.sops.yaml",
             bundle.publish_paths,
@@ -494,6 +649,71 @@ class ReleaseBundleContractTests(unittest.TestCase):
         )
         self.assertIn("argocd/secrets/*/cloudagent-wsa-search-secrets.sops.yaml", watched_paths)
         self.assertIn("argocd/secrets/*/cloudagent-wisp-secrets.sops.yaml", watched_paths)
+
+    def test_channelgateway_uses_devcloud_csighub_release_contract(self) -> None:
+        manifest = load_manifest()
+        bundle = require_build_metadata(load_bundle(manifest, "channelgateway", "devcloud-dep"))
+        workflow = yaml.safe_load((REPO_ROOT / ".ci/channelgateway.yml").read_text())
+        parameters = (workflow.get("extends") or {}).get("parameters") or {}
+        on_config = workflow.get("on") or workflow.get(True) or {}
+        watched_paths = ((on_config.get("push") or {}).get("paths") or [])
+
+        self.assertEqual((workflow.get("extends") or {}).get("template"), "service-release.yml")
+        self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "devcloud-dep")
+        self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "devcloud-dep")
+        self.assertEqual(parameters.get("ENABLE_MASTER_PROD_PROMOTE"), False)
+        self.assertEqual(bundle.image_repo, "csighub.tencentyun.com/skipzhang/channelgateway")
+        self.assertIn("argocd/services/channelgateway/devcloud-dep/**", bundle.publish_paths)
+        self.assertIn("argocd/secrets/devcloud-dep/channelgateway-runtime-secrets.sops.yaml", bundle.publish_paths)
+        self.assertIn("argocd/secrets/devcloud-dep/channelgateway-wecom-secrets.sops.yaml", bundle.publish_paths)
+        self.assertIn("cloudagent/acp-client/**", watched_paths)
+        self.assertIn("argocd/services/channelgateway/**", watched_paths)
+        self.assertIn("argocd/secrets/*/channelgateway-runtime-secrets.sops.yaml", watched_paths)
+        self.assertIn("argocd/secrets/*/channelgateway-wecom-secrets.sops.yaml", watched_paths)
+
+    def test_cloudladdergateway_uses_tkex_template_release_contract(self) -> None:
+        manifest = load_manifest()
+        domestic_bundle = require_build_metadata(load_bundle(manifest, "cloudladdergateway", "tkexgz"))
+        intl_bundle = require_build_metadata(load_bundle(manifest, "cloudladdergateway", "tkexsg"))
+        workflow = yaml.safe_load((REPO_ROOT / ".ci/cloudladdergateway.yml").read_text())
+        parameters = (workflow.get("extends") or {}).get("parameters") or {}
+        on_config = workflow.get("on") or workflow.get(True) or {}
+        watched_paths = ((on_config.get("push") or {}).get("paths") or [])
+
+        self.assertEqual((workflow.get("extends") or {}).get("template"), "service-release.yml")
+        self.assertEqual(parameters.get("MASTER_BUILD_ENVS"), "tkexgz,tkexsg")
+        self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "tkexgz,tkexsg")
+        self.assertEqual(parameters.get("ENABLE_MASTER_PROD_PROMOTE"), False)
+        self.assertEqual(parameters.get("PLAYGROUND_BUILD_ENVS"), "none")
+        self.assertEqual(parameters.get("PLAYGROUND_AUTO_PIN_ENVS"), "none")
+        self.assertEqual(domestic_bundle.image_repo, "csighub.tencentyun.com/skipzhang/cloudladdergateway")
+        self.assertEqual(intl_bundle.image_repo, "csighub.tencentyun.com/skipzhang/cloudladdergateway")
+        self.assertIn("argocd/services/cloudladdergateway/tkexgz/**", domestic_bundle.publish_paths)
+        self.assertIn("argocd/services/cloudladdergateway/tkexsg/**", intl_bundle.publish_paths)
+        self.assertIn("shared/cloudladdertransport/**", watched_paths)
+        self.assertIn("argocd/services/cloudladdergateway/**", watched_paths)
+
+    def test_lightclaw_auth_workflow_watches_release_contract_inputs(self) -> None:
+        workflow = yaml.safe_load((REPO_ROOT / ".ci/lightclaw-auth.yml").read_text())
+        on_config = workflow.get("on") or workflow.get(True) or {}
+        watched_paths = ((on_config.get("push") or {}).get("paths") or [])
+
+        self.assertIn("argocd/secrets/*/lightclaw-auth-content-audit-secrets.sops.yaml", watched_paths)
+        self.assertIn("argocd/secrets/*/lightvela-e2e-auth-secrets.sops.yaml", watched_paths)
+
+    def test_beijing_lightclaw_auth_keeps_official_account_config(self) -> None:
+        env_path = REPO_ROOT / "argocd/services/lightclaw-auth/beijing-sandbox/auth-platform.env"
+        values = dict(
+            line.split("=", 1)
+            for line in env_path.read_text().splitlines()
+            if line and not line.startswith("#")
+        )
+
+        self.assertEqual(values["AUTH_WECHAT_OFFICIAL_ACCOUNT_APP_ID"], "wxf95ea3ae45d5304f")
+        self.assertEqual(
+            values["AUTH_WECHAT_OFFICIAL_ACCOUNT_REDIRECT_URI"],
+            "https://lightclaw.tech/auth/oauth/wechat/callback",
+        )
 
     def test_local_templates_do_not_use_unsupported_top_level_concurrency(self) -> None:
         for template_path in sorted((REPO_ROOT / ".ci/templates").glob("*.yml")):
@@ -512,6 +732,18 @@ class ReleaseBundleContractTests(unittest.TestCase):
             template_text,
             r"\$\{\{\s*variables\.(SERVICE|BUNDLE|DISPLAY_NAME|DEFAULT_TARGET_ENV|MASTER_BUILD_ENVS|MASTER_AUTO_PIN_ENVS|PLAYGROUND_BUILD_ENVS|PLAYGROUND_AUTO_PIN_ENVS)\s*\}\}",
         )
+
+    def test_service_release_shell_resolves_branch_for_openapi_manual_start(self) -> None:
+        template_text = (REPO_ROOT / ".ci/templates/service-release.yml").read_text()
+
+        self.assertEqual(template_text.count("resolve_source_branch()"), 2)
+        self.assertEqual(template_text.count("SOURCE_BRANCH=\"$(resolve_source_branch '${{ ci.branch }}')\""), 2)
+        self.assertIn("BK_CI_GIT_REPO_BRANCH:-${DEVOPS_GIT_REPO_BRANCH:-}", template_text)
+        self.assertNotIn('case "${{ ci.branch }}" in', template_text)
+        self.assertNotIn('PLAYGROUND_ENV="${{ ci.branch }}"', template_text)
+        self.assertIn('case "$SOURCE_BRANCH" in', template_text)
+        self.assertIn('PLAYGROUND_ENV="$SOURCE_BRANCH"', template_text)
+        self.assertIn('unsupported source branch for release: ${SOURCE_BRANCH:-unknown}', template_text)
 
     def test_service_release_creates_independent_prod_promote_candidates(self) -> None:
         template_path = REPO_ROOT / ".ci/templates/service-release.yml"
@@ -781,13 +1013,17 @@ class ReleaseBundleContractTests(unittest.TestCase):
         required_by_env = {
             "beijing-sandbox": "TCR_BEIJING_PASSWORD",
             "beijing-sandbox-2": "TCR_BEIJING_PASSWORD",
+            "sandbox-kr-1": "TCR_KR1_PASSWORD",
             "shprod": "TCR_SHPROD_PASSWORD",
             "sgprod": "TCR_SGPROD_PASSWORD",
+            "devcloud-dep": "CSIGHUB_PASSWORD",
         }
         for env_name in {item.strip() for item in build_envs.split(",") if item.strip()}:
             required = required_by_env.get(env_name)
             if required:
                 self.assertIn(required, workflow, f"{env_name} builds require {required} in CI env")
+            if env_name == "devcloud-dep":
+                self.assertIn("CSIGHUB_USERNAME", workflow, "devcloud-dep builds require CSIGHUB_USERNAME in CI env")
 
 
 if __name__ == "__main__":

@@ -242,6 +242,23 @@ func migrateStore(db *sql.DB) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS runtime_ownerships_owner_idx ON runtime_ownerships(owner_id, updated_at)`,
 		`CREATE INDEX IF NOT EXISTS runtime_ownerships_expires_idx ON runtime_ownerships(expires_at)`,
+		`CREATE TABLE IF NOT EXISTS runtime_resources (
+			session_id TEXT NOT NULL,
+			generation INTEGER NOT NULL,
+			runtime_id TEXT NOT NULL DEFAULT '',
+			owner_id TEXT NOT NULL DEFAULT '',
+			sandbox_backend TEXT NOT NULL DEFAULT '',
+			state TEXT NOT NULL,
+			outer_sandbox_id TEXT NOT NULL DEFAULT '',
+			inner_sandbox_id TEXT NOT NULL DEFAULT '',
+			last_error TEXT NOT NULL DEFAULT '',
+			expires_at TEXT,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL,
+			PRIMARY KEY(session_id, generation)
+		)`,
+		`CREATE INDEX IF NOT EXISTS runtime_resources_state_idx ON runtime_resources(state, expires_at)`,
+		`CREATE INDEX IF NOT EXISTS runtime_resources_owner_idx ON runtime_resources(owner_id, updated_at)`,
 	}
 	for _, stmt := range statements {
 		if _, err := db.Exec(stmt); err != nil {
@@ -300,6 +317,7 @@ func migrateStore(db *sql.DB) error {
 		`ALTER TABLE workspaces ADD COLUMN delete_retry_after TEXT`,
 		`ALTER TABLE workspaces ADD COLUMN outer_cleanup_pending INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE workspaces ADD COLUMN last_outer_cleanup_error TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE runtime_resources ADD COLUMN sandbox_backend TEXT NOT NULL DEFAULT ''`,
 	} {
 		if _, err := db.Exec(stmt); err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
 			return err

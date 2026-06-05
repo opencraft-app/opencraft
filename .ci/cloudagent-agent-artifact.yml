@@ -1,5 +1,5 @@
 version: v2.0
-name: 构建并发布 CloudAgent Agent Artifact
+name: 构建并发布 CloudAgent Runtime Artifacts
 
 on:
   push:
@@ -8,8 +8,11 @@ on:
     paths:
       - cloudagent/research/hermes-rs/**
       - cloudagent/agent-loader/**
+      - cloudagent/wisp/**
       - cloudagent/gateway/build/cloudagent-sidecar/**
       - cloudagent/gateway/scripts/ci_signupload_cloudagent_sidecar_shanghai.sh
+      - cloudagent/gateway/scripts/ci_publish_cloudagent_artifacts_shanghai.sh
+      - cloudagent/gateway/scripts/publish_cloudagent_wisp_package.sh
       - cloudagent/gateway/scripts/signupload_cloudagent_sidecar.sh
       - cloudagent/gateway/scripts/lib/**
       - cloudagent/gateway/Makefile
@@ -19,16 +22,16 @@ on:
   manual: enabled
 
 concurrency:
-  group: mono2-cloudagent-agent-artifact-shanghai
+  group: mono2-cloudagent-runtime-artifacts-shanghai
   cancel-in-progress: false
   queue-length: 3
   queue-timeout-minutes: 480
 
 stages:
-  - name: 构建并发布 Agent Artifact
+  - name: 构建并发布 Runtime Artifacts
     jobs:
       build:
-        name: 构建 Rust Agent、签名并上传上海 COS
+        name: 构建 Agent + Wisp、签名并上传上海 COS
         runs-on:
           self-hosted: true
           pool-name: env
@@ -53,5 +56,8 @@ stages:
               export CLOUDAGENT_AGENT_COS_REGION="${CLOUDAGENT_AGENT_COS_REGION:-ap-shanghai}"
               export CLOUDAGENT_AGENT_COS_OBJECT_PREFIX="${CLOUDAGENT_AGENT_COS_OBJECT_PREFIX:-/agent-sidecar/releases}"
               export CLOUDAGENT_AGENT_VERSION_PREFIX="${CLOUDAGENT_AGENT_VERSION_PREFIX:-cloudagent.v1}"
+              export CLOUDAGENT_WISP_COS_OBJECT_PREFIX="${CLOUDAGENT_WISP_COS_OBJECT_PREFIX:-/workspace/releases}"
+              export CLOUDAGENT_WORKSPACE_VERSION_PREFIX="${CLOUDAGENT_WORKSPACE_VERSION_PREFIX:-wisp.v1}"
+              export DOCKER_BUILDKIT=1
 
-              cloudagent/gateway/scripts/ci_signupload_cloudagent_sidecar_shanghai.sh
+              cloudagent/gateway/scripts/ci_publish_cloudagent_artifacts_shanghai.sh

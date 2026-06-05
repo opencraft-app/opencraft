@@ -106,7 +106,7 @@ pub(crate) fn build_runtime_config(
     config.client.timeout_secs = 120;
     config.agent = BehaviorSettings {
         model: tokenhub_model.to_string(),
-        max_iterations: 12,
+        max_iterations: 128,
         tool_timeout_secs: 120,
         request_timeout_secs: 180,
         system_prompt: Some(

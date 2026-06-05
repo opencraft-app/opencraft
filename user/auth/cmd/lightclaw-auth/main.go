@@ -4,14 +4,17 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/avatar"
+	"github.com/openclaw/openclaw/mono/backend/auth/internal/contentaudit"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/httpapi"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/logging"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/realname"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/service"
+	"github.com/openclaw/openclaw/mono/backend/auth/internal/tat"
 )
 
 func main() {
@@ -22,28 +25,38 @@ func main() {
 	slog.SetDefault(logger)
 
 	sessionTTL := 30 * 24 * time.Hour
-	authStore := newStore()
+	contentAuditConfig := buildContentAuditConfig(logger)
+	contentAuditClient := buildContentAuditClient(logger, contentAuditConfig)
+	authStore := newStore(contentAuditConfig.Enabled)
 	authService := service.NewWithStore(authStore, service.Options{
-		SessionTTL:       sessionTTL,
-		DefaultSMSCode:   envOrDefault("LIGHTCLAW_DEV_SMS_CODE", ""),
-		RealnameVerifier: buildRealnameVerifier(logger),
-		RealnameCipher:   buildRealnameCipher(logger),
+		SessionTTL:         sessionTTL,
+		DefaultSMSCode:     envOrDefault("LIGHTCLAW_DEV_SMS_CODE", ""),
+		RealnameVerifier:   buildRealnameVerifier(logger),
+		RealnameCipher:     buildRealnameCipher(logger),
+		ContentAudit:       contentAuditConfig,
+		ContentAuditClient: contentAuditClient,
+		Logger:             logger,
 	})
 	avatarStore := buildAvatarStore(logger)
 
 	router := httpapi.NewRouter(authService, httpapi.ServerConfig{
-		CookieSecure:   envOrDefault("LIGHTCLAW_COOKIE_SECURE", "false") == "true",
-		CookieSameSite: parseSameSite(envOrDefault("LIGHTCLAW_COOKIE_SAME_SITE", "lax")),
-		SessionTTL:     sessionTTL,
+		CookieSecure:              envOrDefault("LIGHTCLAW_COOKIE_SECURE", "false") == "true",
+		CookieSameSite:            parseSameSite(envOrDefault("LIGHTCLAW_COOKIE_SAME_SITE", "lax")),
+		SessionTTL:                sessionTTL,
 		OAuthReturnToAllowedHosts: parseCSVEnv("LIGHTCLAW_OAUTH_RETURN_TO_ALLOWED_HOSTS"),
-		QQOAuth:        buildQQOAuthConfig(),
-		GoogleOAuth:    buildGoogleOAuthConfig(),
-		GitHubOAuth:    buildGitHubOAuthConfig(),
-		WeChatOAuth:    buildWeChatOAuthConfig(),
-		AvatarStore:    avatarStore,
-		Logger:         logger,
-		PublicBaseURL:  envOrDefault("LIGHTCLAW_PUBLIC_BASE_URL", "https://lightclaw.tech"),
-		AdminToken:     envOrDefault("LIGHTCLAW_ADMIN_TOKEN", ""),
+		QQOAuth:                   buildQQOAuthConfig(),
+		GoogleOAuth:               buildGoogleOAuthConfig(),
+		GitHubOAuth:               buildGitHubOAuthConfig(),
+		WeChatOAuth:               buildWeChatOAuthConfig(),
+		AvatarStore:               avatarStore,
+		TATRegisterIssuer:         buildTATRegisterIssuer(logger),
+		DeviceBindTokenSecret:     envOrDefault("LIGHTCLAW_DEVICE_BIND_TOKEN_SECRET", ""),
+		DeviceBindTokenTTL:        time.Duration(envInt64OrDefault("LIGHTCLAW_DEVICE_BIND_TOKEN_TTL_SECONDS", 600)) * time.Second,
+		Logger:                    logger,
+		PublicBaseURL:             envOrDefault("LIGHTCLAW_PUBLIC_BASE_URL", "https://lightclaw.tech"),
+		AdminToken:                envOrDefault("LIGHTCLAW_ADMIN_TOKEN", ""),
+		E2EAuthEnabled:            envOrDefault("LIGHTVELA_E2E_AUTH_ENABLED", "false") == "true",
+		E2EAuthToken:              envOrDefault("LIGHTVELA_E2E_AUTH_TOKEN", ""),
 	})
 
 	address := envOrDefault("LIGHTCLAW_AUTH_ADDR", ":8081")
@@ -60,7 +73,64 @@ func main() {
 	}
 }
 
-func newStore() service.Store {
+func envInt64OrDefault(key string, fallback int64) int64 {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback
+	}
+	value, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		slog.Warn("invalid integer env, using fallback", "key", key, "value", raw, "fallback", fallback)
+		return fallback
+	}
+	return value
+}
+
+func buildContentAuditConfig(logger *slog.Logger) service.ContentAuditConfig {
+	enabled := envOrDefault("CONTENT_AUDIT_ENABLED", "false") == "true"
+	nameAuditEnabled := enabled && boolEnvOrDefault("CONTENT_AUDIT_NAME_ENABLED", true)
+	avatarAuditEnabled := enabled && boolEnvOrDefault("CONTENT_AUDIT_AVATAR_ENABLED", false)
+	cfg := service.ContentAuditConfig{
+		Enabled:            enabled && (nameAuditEnabled || avatarAuditEnabled),
+		NameAuditEnabled:   nameAuditEnabled,
+		AvatarAuditEnabled: avatarAuditEnabled,
+		ProductID:          strings.TrimSpace(os.Getenv("CONTENT_AUDIT_PRODUCT_ID")),
+		UserSID:            strings.TrimSpace(os.Getenv("CONTENT_AUDIT_USER_SID")),
+	}
+	if !cfg.Enabled {
+		logger.Info("content audit disabled")
+		return cfg
+	}
+	if cfg.ProductID == "" || cfg.UserSID == "" {
+		logger.Warn("content audit enabled but config is incomplete")
+		return cfg
+	}
+	logger.Info("content audit enabled", "name_audit", cfg.NameAuditEnabled, "avatar_audit", cfg.AvatarAuditEnabled)
+	return cfg
+}
+
+func buildContentAuditClient(logger *slog.Logger, cfg service.ContentAuditConfig) service.ContentAuditClient {
+	if !cfg.Ready() {
+		return nil
+	}
+	endpoint := strings.TrimSpace(os.Getenv("CONTENT_AUDIT_ENDPOINT"))
+	if endpoint == "" {
+		logger.Warn("content audit direct client disabled because CONTENT_AUDIT_ENDPOINT is empty")
+		return nil
+	}
+	client, err := contentaudit.New(contentaudit.Config{
+		Endpoint:   endpoint,
+		ProxyToken: os.Getenv("CONTENT_AUDIT_PROXY_TOKEN"),
+	})
+	if err != nil {
+		logger.Warn("content audit direct client disabled", "err", err)
+		return nil
+	}
+	logger.Info("content audit direct client enabled")
+	return client
+}
+
+func newStore(contentAuditEnabled bool) service.Store {
 	dsn := strings.TrimSpace(os.Getenv("LIGHTCLAW_MYSQL_DSN"))
 	if dsn == "" {
 		dsn = strings.TrimSpace(os.Getenv("MYSQL_DSN"))
@@ -68,14 +138,16 @@ func newStore() service.Store {
 	if dsn == "" {
 		slog.Info("lightclaw auth using in-memory store")
 		return service.NewMemoryStore(service.StoreOptions{
-			SeedDefaultInvites: true,
-			SeedDemoUser:       envOrDefault("LIGHTCLAW_SEED_DEMO_USER", "false") == "true",
+			SeedDefaultInvites:  true,
+			SeedDemoUser:        envOrDefault("LIGHTCLAW_SEED_DEMO_USER", "false") == "true",
+			ContentAuditEnabled: contentAuditEnabled,
 		})
 	}
 
 	store, err := service.NewMySQLStore(dsn, service.StoreOptions{
-		SeedDefaultInvites: false,
-		SeedDemoUser:       false,
+		SeedDefaultInvites:  false,
+		SeedDemoUser:        false,
+		ContentAuditEnabled: contentAuditEnabled,
 	})
 	if err != nil {
 		slog.Error("init mysql store failed", "err", err)
@@ -90,6 +162,23 @@ func envOrDefault(key string, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func boolEnvOrDefault(key string, fallback bool) bool {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	return value == "true" || value == "1" || strings.EqualFold(value, "yes")
+}
+
+func envFirst(keys ...string) string {
+	for _, key := range keys {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func parseCSVEnv(key string) []string {
@@ -146,17 +235,35 @@ func buildQQOAuthConfig() *httpapi.QQOAuthConfig {
 }
 
 func buildWeChatOAuthConfig() *httpapi.WeChatOAuthConfig {
-	appID := strings.TrimSpace(os.Getenv("LIGHTCLAW_WECHAT_APP_ID"))
-	appSecret := strings.TrimSpace(os.Getenv("LIGHTCLAW_WECHAT_APP_SECRET"))
-	if appID == "" || appSecret == "" {
+	websiteAppID := envFirst("LIGHTVELA_WECHAT_WEBSITE_APP_ID", "LIGHTCLAW_WECHAT_APP_ID")
+	websiteAppSecret := envFirst("LIGHTVELA_WECHAT_WEBSITE_APP_SECRET", "LIGHTCLAW_WECHAT_APP_SECRET")
+	websiteRedirectURI := envFirst("LIGHTVELA_WECHAT_WEBSITE_REDIRECT_URI", "LIGHTCLAW_WECHAT_REDIRECT_URI")
+	if websiteRedirectURI == "" {
+		websiteRedirectURI = "https://lightclaw.tech/auth/oauth/wechat/callback"
+	}
+
+	officialAccountAppID := envFirst("LIGHTVELA_WECHAT_OFFICIAL_ACCOUNT_APP_ID")
+	officialAccountAppSecret := envFirst("LIGHTVELA_WECHAT_OFFICIAL_ACCOUNT_APP_SECRET")
+	officialAccountRedirectURI := envFirst("LIGHTVELA_WECHAT_OFFICIAL_ACCOUNT_REDIRECT_URI")
+	if officialAccountRedirectURI == "" {
+		officialAccountRedirectURI = websiteRedirectURI
+	}
+	if (websiteAppID == "" || websiteAppSecret == "") && (officialAccountAppID == "" || officialAccountAppSecret == "") {
 		return nil
 	}
 	frontendBaseURL, publicBaseURL := oauthBaseURLs()
 
 	return &httpapi.WeChatOAuthConfig{
-		AppID:           appID,
-		AppSecret:       appSecret,
-		RedirectURI:     envOrDefault("LIGHTCLAW_WECHAT_REDIRECT_URI", "https://lightclaw.tech/auth/oauth/wechat/callback"),
+		Website: httpapi.WeChatOAuthAppConfig{
+			AppID:       websiteAppID,
+			AppSecret:   websiteAppSecret,
+			RedirectURI: websiteRedirectURI,
+		},
+		OfficialAccount: httpapi.WeChatOAuthAppConfig{
+			AppID:       officialAccountAppID,
+			AppSecret:   officialAccountAppSecret,
+			RedirectURI: officialAccountRedirectURI,
+		},
 		FrontendBaseURL: frontendBaseURL,
 		PublicBaseURL:   publicBaseURL,
 	}
@@ -211,6 +318,31 @@ func buildRealnameVerifier(logger *slog.Logger) service.RealnameVerifier {
 		return nil
 	}
 	logger.Info("realname verifier enabled")
+	return client
+}
+
+func buildTATRegisterIssuer(logger *slog.Logger) tat.RegisterCodeIssuer {
+	secretID := strings.TrimSpace(os.Getenv("TENCENT_TAT_SECRET_ID"))
+	secretKey := strings.TrimSpace(os.Getenv("TENCENT_TAT_SECRET_KEY"))
+	if secretID == "" || secretKey == "" {
+		logger.Warn("tat register issuer disabled due to incomplete Tencent TAT config")
+		return nil
+	}
+
+	client, err := tat.New(tat.Config{
+		SecretID:           secretID,
+		SecretKey:          secretKey,
+		Region:             envOrDefault("TENCENT_TAT_REGION", "ap-guangzhou"),
+		Endpoint:           envOrDefault("TENCENT_TAT_ENDPOINT", "tat.tencentcloudapi.com"),
+		EffectiveTimeHours: envInt64OrDefault("TENCENT_TAT_REGISTER_EFFECTIVE_HOURS", 24),
+		InstanceNamePrefix: envOrDefault("TENCENT_TAT_INSTANCE_NAME_PREFIX", "lightvela-mac"),
+		IpAddressRange:     strings.TrimSpace(os.Getenv("TENCENT_TAT_REGISTER_IP_RANGE")),
+	})
+	if err != nil {
+		logger.Error("init tat register issuer failed", "err", err)
+		return nil
+	}
+	logger.Info("tat register issuer enabled", "region", envOrDefault("TENCENT_TAT_REGION", "ap-guangzhou"))
 	return client
 }
 

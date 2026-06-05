@@ -89,6 +89,17 @@ PROMOTION_POLICIES: tuple[PromotionPolicy, ...] = (
         gate_denied_behavior=GateDeniedBehavior.FAIL,
     ),
     PromotionPolicy(
+        env="devcloud-dep",
+        branch_prefix="promote-devcloud-dep-",
+        display_name="DevCloud dep",
+        auto_merge=True,
+        auto_sync=True,
+        cleanup_source_branch=True,
+        verify_mode=VerifyMode.ARGO_CONVERGENCE,
+        kustomize_mode=KustomizeMode.FULL,
+        gate_denied_behavior=GateDeniedBehavior.FAIL,
+    ),
+    PromotionPolicy(
         env="shprod",
         branch_prefix="promote-shprod-",
         display_name="上海生产",
@@ -112,18 +123,43 @@ PROMOTION_POLICIES: tuple[PromotionPolicy, ...] = (
         gate_denied_behavior=GateDeniedBehavior.SKIP,
         required_argo_sync="manual",
     ),
+    PromotionPolicy(
+        env="tkexgz",
+        branch_prefix="promote-tkexgz-",
+        display_name="TKEx 广州内网",
+        auto_merge=True,
+        auto_sync=False,
+        cleanup_source_branch=False,
+        verify_mode=VerifyMode.MERGE_ONLY,
+        kustomize_mode=KustomizeMode.CHANGED_ONLY,
+        gate_denied_behavior=GateDeniedBehavior.SKIP,
+        required_argo_sync="manual",
+    ),
+    PromotionPolicy(
+        env="tkexsg",
+        branch_prefix="promote-tkexsg-",
+        display_name="TKEx 新加坡内网",
+        auto_merge=True,
+        auto_sync=False,
+        cleanup_source_branch=False,
+        verify_mode=VerifyMode.MERGE_ONLY,
+        kustomize_mode=KustomizeMode.CHANGED_ONLY,
+        gate_denied_behavior=GateDeniedBehavior.SKIP,
+        required_argo_sync="manual",
+    ),
 )
 
 
 def _playground_policy_for_branch(source_branch: str) -> PromotionPolicy | None:
-    match = re.match(r"^promote-(sandbox-bj-\d+)-", source_branch)
+    match = re.match(r"^promote-(sandbox-(bj|kr)-\d+)-", source_branch)
     if not match:
         return None
     env = match.group(1)
+    region_name = {"bj": "北京", "kr": "韩国"}[match.group(2)]
     return PromotionPolicy(
         env=env,
         branch_prefix=f"promote-{env}-",
-        display_name=f"北京 Playground {env}",
+        display_name=f"{region_name} Playground {env}",
         auto_merge=True,
         auto_sync=True,
         cleanup_source_branch=True,
@@ -148,6 +184,12 @@ def policy_for_branch(source_branch: str) -> PromotionPolicy | None:
 def require_policy_for_branch(source_branch: str) -> PromotionPolicy:
     policy = policy_for_branch(source_branch)
     if policy is None:
-        supported = ", ".join([*(policy.branch_prefix + "*" for policy in PROMOTION_POLICIES), "promote-sandbox-bj-<N>-*"])
+        supported = ", ".join(
+            [
+                *(policy.branch_prefix + "*" for policy in PROMOTION_POLICIES),
+                "promote-sandbox-bj-<N>-*",
+                "promote-sandbox-kr-<N>-*",
+            ]
+        )
         raise ValueError(f"unsupported promote branch {source_branch!r}; supported patterns: {supported}")
     return policy

@@ -1,0 +1,98 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: dep
+
+resources:
+  - gateway.yaml
+
+generatorOptions:
+  disableNameSuffixHash: true
+
+configMapGenerator:
+  - name: cloudagent-gateway-platform-values
+    envs:
+      - cloudagent-gateway-platform.env
+
+replacements:
+  - source:
+      kind: ConfigMap
+      name: cloudagent-gateway-platform-values
+      fieldPath: data.CLOUDAGENT_GATEWAY_IMAGE
+    targets:
+      - select:
+          kind: Deployment
+          name: cloudagent-gateway
+        fieldPaths:
+          - spec.template.spec.containers.0.image
+  - source:
+      kind: ConfigMap
+      name: cloudagent-gateway-platform-values
+      fieldPath: data.CLOUDAGENT_GATEWAY_DEPLOYED_AT
+    targets:
+      - select:
+          kind: Deployment
+          name: cloudagent-gateway
+        fieldPaths:
+          - spec.template.metadata.annotations.[cloudagent.dev/redeploy-at]
+  - source:
+      kind: ConfigMap
+      name: cloudagent-gateway-platform-values
+      fieldPath: data.CLOUDAGENT_GATEWAY_AGS_TEMPLATE
+    targets:
+      - select:
+          kind: ConfigMap
+          name: cloudagent-gateway-config
+        fieldPaths:
+          - data.GATEWAY_AGS_TEMPLATE
+          - data.GATEWAY_AGENT_SIDECAR_INNER_TEMPLATE
+  - source:
+      kind: ConfigMap
+      name: cloudagent-gateway-platform-values
+      fieldPath: data.CLOUDAGENT_GATEWAY_WISP_PACKAGE_URL
+    targets:
+      - select:
+          kind: ConfigMap
+          name: cloudagent-gateway-config
+        fieldPaths:
+          - data.GATEWAY_WISP_PACKAGE_URL
+  - source:
+      kind: ConfigMap
+      name: cloudagent-gateway-platform-values
+      fieldPath: data.CLOUDAGENT_GATEWAY_AGENT_SIDECAR_URL
+    targets:
+      - select:
+          kind: ConfigMap
+          name: cloudagent-gateway-config
+        fieldPaths:
+          - data.GATEWAY_AGENT_SIDECAR_URL
+  - source:
+      kind: ConfigMap
+      name: cloudagent-gateway-platform-values
+      fieldPath: data.CLOUDAGENT_GATEWAY_AGENT_SIDECAR_SHA256
+    targets:
+      - select:
+          kind: ConfigMap
+          name: cloudagent-gateway-config
+        fieldPaths:
+          - data.GATEWAY_AGENT_SIDECAR_SHA256
+  - source:
+      kind: ConfigMap
+      name: cloudagent-gateway-platform-values
+      fieldPath: data.CLOUDAGENT_GATEWAY_SANDBOX_HOST_URL
+    targets:
+      - select:
+          kind: ConfigMap
+          name: cloudagent-gateway-config
+        fieldPaths:
+          - data.GATEWAY_SANDBOX_HOST_URL
+  - source:
+      kind: ConfigMap
+      name: cloudagent-gateway-platform-values
+      fieldPath: data.CLOUDAGENT_GATEWAY_SANDBOX_HOST_SHA256
+    targets:
+      - select:
+          kind: ConfigMap
+          name: cloudagent-gateway-config
+        fieldPaths:
+          - data.GATEWAY_SANDBOX_HOST_SHA256

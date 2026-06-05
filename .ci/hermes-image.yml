@@ -54,11 +54,314 @@ stages:
               ci_require_command go
               ci_load_tencentcloud_credentials
 
-              bash -n images/build.sh images/deploy-build.sh images/tests/test-hermes-build-script.sh images/tests/test-hermes-runtime.sh
+              bash -n images/build.sh images/deploy-build.sh images/helpers/config-hermes-python-mirrors.sh images/tests/test-hermes-build-script.sh images/tests/test-hermes-runtime.sh .ci/runtime/commands/refresh_hermes_sandbox_env.sh .ci/runtime/commands/refresh_hermes_sandbox_pools.sh .ci/runtime/commands/repair_hermes_existing_vms.sh .ci/runtime/commands/list_hermes_pool_vms.sh .ci/runtime/commands/create_hermes_tat_command.sh .ci/runtime/commands/invoke_hermes_tat_command.sh .ci/runtime/commands/rollout_hermes_sandbox_env.sh
               python3 -m py_compile images/build-image.py
               python3 images/tests/test-build-image-sync.py
+              resolve_hermes_reuse_image_name() {
+                if [[ -n "${HERMES_REUSE_IMAGE_NAME:-}" ]]; then
+                  printf '%s\n' "$HERMES_REUSE_IMAGE_NAME"
+                  return
+                fi
+                if [[ "${HERMES_SKIP_IMAGE_BUILD:-false}" == "true" && -n "${HERMES_IMAGE_NAME:-}" ]]; then
+                  printf '%s\n' "$HERMES_IMAGE_NAME"
+                  return
+                fi
+                if [[ -r images/hermes-image-trigger ]]; then
+                  sed -n 's/.*reuse=\([^[:space:]]*\).*/\1/p' images/hermes-image-trigger | tail -1
+                fi
+              }
+              resolve_hermes_image_name() {
+                local raw="${BK_CI_BUILD_ID:-}"
+                local sha='${{ ci.sha }}'
+                if [[ -z "$raw" || "$raw" == *'${{'* ]]; then
+                  raw="$sha"
+                fi
+                raw="$(printf '%s' "$raw" | tr -cs 'A-Za-z0-9-' '-' | sed -e 's/^-//' -e 's/-$//' | cut -c1-36)"
+                if [[ -z "$raw" ]]; then
+                  raw="$(date +%Y%m%d%H%M%S)"
+                fi
+                printf 'hermes-agent-%s\n' "$raw"
+              }
+              HERMES_REUSE_IMAGE_NAME="$(resolve_hermes_reuse_image_name)"
+              if [[ -n "$HERMES_REUSE_IMAGE_NAME" ]]; then
+                HERMES_IMAGE_NAME="$HERMES_REUSE_IMAGE_NAME"
+              else
+                HERMES_IMAGE_NAME="$(resolve_hermes_image_name)"
+              fi
+              export HERMES_IMAGE_NAME
+              echo "HERMES_IMAGE_NAME=${HERMES_IMAGE_NAME}"
+
+              mkdir -p .ci/.runtime-state /tmp/lightclaw-ci
+              if [[ -n "$HERMES_REUSE_IMAGE_NAME" || "${HERMES_SKIP_IMAGE_BUILD:-false}" == "true" ]]; then
+                echo "Reusing existing Hermes CVM image by exact name: ${HERMES_IMAGE_NAME}"
+                {
+                  echo "HERMES_IMAGE_NAME=${HERMES_IMAGE_NAME}"
+                  for region in ap-beijing ap-shanghai ap-singapore; do
+                    image_id="$(python3 .ci/runtime/commands/resolve_hermes_image_id.py --region "$region" --image-name "$HERMES_IMAGE_NAME")"
+                    suffix="$(printf '%s' "$region" | tr '[:lower:]-' '[:upper:]_')"
+                    echo "HERMES_IMAGE_ID_${suffix}=${image_id}"
+                  done
+                } > .ci/.runtime-state/hermes-image.env
+                cp .ci/.runtime-state/hermes-image.env "/tmp/lightclaw-ci/hermes-image-${BK_CI_BUILD_ID:-manual}.env"
+                cat .ci/.runtime-state/hermes-image.env
+                exit 0
+              fi
+
+              HERMES_BUILD_LOG="$(mktemp)"
               python3 images/build-image.py \
                 --runtime hermes \
                 --base-image-id img-id352nof \
                 --target-regions ap-beijing,ap-shanghai,ap-singapore \
-                --with-verify
+                --image-name "$HERMES_IMAGE_NAME" \
+                --with-verify | tee "$HERMES_BUILD_LOG"
+
+              python3 .ci/runtime/commands/extract_hermes_image_env.py "$HERMES_BUILD_LOG" > .ci/.runtime-state/hermes-image.env
+              cp .ci/.runtime-state/hermes-image.env "/tmp/lightclaw-ci/hermes-image-${BK_CI_BUILD_ID:-manual}.env"
+              cat .ci/.runtime-state/hermes-image.env
+
+  - name: 确认刷新并修补北京主沙箱 Hermes
+    if: "${{ ci.branch }} == master"
+    check-in:
+      reviews:
+        flows:
+          - name: 确认刷新并修补北京主沙箱 Hermes
+            reviewers: [ "skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang" ]
+        description: |
+          Hermes CVM 镜像已经构建、验证并同步到目标地域。
+
+          点击通过后，流水线会先处理北京主沙箱：
+          - 目标：beijing-sandbox / ap-beijing
+          - 通过 sandbox-api internal API 刷新 Hermes sandbox pools
+          - 北京旧 sandbox-api 未提供 TemplateClass resolve 时，默认只回退刷新 pool-c2~pool-c5
+          - 先更新 Hermes SKU 的 desired image，避免 rollout controller 回写旧镜像
+          - 再逐个 patch Hermes pools 的 base_image，并把 CLEAN 库存标记进入重置流程
+          - 后续独立 stage 会通过 TAT 修补存量 VM：pip/uv mirror、systemd user 权限、backend blueprint 基线
+          - 不直连数据库，不执行 SQL
+      timeout-hours: 24
+    jobs:
+      approve:
+        name: 等待人工确认刷新并修补北京主沙箱 Hermes
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - name: 北京主沙箱 Hermes 刷新修补已确认
+            shell: bash
+            run: |
+              echo "Beijing Hermes sandbox rollout approved"
+
+  - name: 刷新北京主沙箱 Hermes pools
+    if: "${{ ci.branch }} == master"
+    jobs:
+      refresh:
+        name: 刷新北京主沙箱 Hermes pools
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - checkout: self
+            name: 拉取代码
+            with:
+              fetchDepth: 1
+          - name: 刷新北京主沙箱 Hermes pools
+            shell: bash
+            run: |
+              set -euo pipefail
+              source .ci/init.sh
+              ci_init_repo_root
+              ci_ensure_tccli
+              ci_require_command tccli
+              ci_ensure_kubectl
+              ci_ensure_jq
+              ci_require_commands bash curl jq python3
+              ci_load_tencentcloud_credentials
+
+              resolve_hermes_image_name() {
+                local raw="${BK_CI_BUILD_ID:-}"
+                local sha='${{ ci.sha }}'
+                if [[ -z "$raw" || "$raw" == *'${{'* ]]; then
+                  raw="$sha"
+                fi
+                raw="$(printf '%s' "$raw" | tr -cs 'A-Za-z0-9-' '-' | sed -e 's/^-//' -e 's/-$//' | cut -c1-36)"
+                if [[ -z "$raw" ]]; then
+                  raw="$(date +%Y%m%d%H%M%S)"
+                fi
+                printf 'hermes-agent-%s\n' "$raw"
+              }
+
+              RESULT_ENV=".ci/.runtime-state/hermes-image.env"
+              TMP_RESULT_ENV="/tmp/lightclaw-ci/hermes-image-${BK_CI_BUILD_ID:-manual}.env"
+              if [[ -r "$RESULT_ENV" ]]; then
+                source "$RESULT_ENV"
+              elif [[ -r "$TMP_RESULT_ENV" ]]; then
+                source "$TMP_RESULT_ENV"
+              fi
+              export HERMES_IMAGE_NAME="${HERMES_IMAGE_NAME:-$(resolve_hermes_image_name)}"
+              HERMES_ROLLOUT_ENV_SPEC="${HERMES_BEIJING_HERMES_ROLLOUT_ENV_SPEC:-beijing-sandbox:ap-beijing:kubeconfig_beijing_sandbox}"
+              HERMES_LEGACY_POOL_IDS="${HERMES_BEIJING_HERMES_LEGACY_POOL_IDS:-pool-c2,pool-c3,pool-c4,pool-c5}"
+              export HERMES_ROLLOUT_ENV_SPEC
+              export HERMES_LEGACY_POOL_IDS
+              echo "HERMES_IMAGE_NAME=${HERMES_IMAGE_NAME}"
+              echo "HERMES_ROLLOUT_ENV_SPEC=${HERMES_ROLLOUT_ENV_SPEC}"
+              echo "HERMES_LEGACY_POOL_IDS=${HERMES_LEGACY_POOL_IDS}"
+
+              HERMES_REFRESH_ENV_SPEC="$HERMES_ROLLOUT_ENV_SPEC" \
+                bash .ci/runtime/commands/refresh_hermes_sandbox_env.sh
+
+  - name: 升级存量北京主沙箱 Hermes VM
+    if: "${{ ci.branch }} == master"
+    jobs:
+      repair:
+        name: 通过 TAT 升级存量北京主沙箱 Hermes VM
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - checkout: self
+            name: 拉取代码
+            with:
+              fetchDepth: 1
+          - name: 升级存量北京主沙箱 Hermes VM
+            shell: bash
+            run: |
+              set -euo pipefail
+              source .ci/init.sh
+              ci_init_repo_root
+              ci_ensure_tccli
+              ci_require_command tccli
+              ci_ensure_kubectl
+              ci_ensure_jq
+              ci_require_commands bash curl jq python3
+              ci_load_tencentcloud_credentials
+
+              HERMES_REPAIR_ENV_SPEC="${HERMES_BEIJING_HERMES_REPAIR_ENV_SPEC:-beijing-sandbox:ap-beijing:kubeconfig_beijing_sandbox}"
+              HERMES_LEGACY_POOL_IDS="${HERMES_BEIJING_HERMES_LEGACY_POOL_IDS:-pool-c2,pool-c3,pool-c4,pool-c5}"
+              export HERMES_REPAIR_ENV_SPEC HERMES_LEGACY_POOL_IDS
+              echo "HERMES_REPAIR_ENV_SPEC=${HERMES_REPAIR_ENV_SPEC}"
+              echo "HERMES_LEGACY_POOL_IDS=${HERMES_LEGACY_POOL_IDS}"
+
+              bash .ci/runtime/commands/repair_hermes_existing_vms.sh
+
+  - name: 确认刷新并修补上海生产 Hermes
+    if: "${{ ci.branch }} == master"
+    check-in:
+      reviews:
+        flows:
+          - name: 确认刷新并修补上海生产 Hermes
+            reviewers: [ "skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang" ]
+        description: |
+          北京主沙箱已先完成 Hermes pools 刷新和独立存量 VM 修补。
+
+          点击通过后，流水线会处理上海生产：
+          - 目标：shprod / ap-shanghai
+          - 通过 sandbox-api internal API 刷新 Hermes sandbox pools
+          - 先更新 Hermes SKU 的 desired image，避免 rollout controller 回写旧镜像
+          - 再逐个 patch Hermes pools 的 base_image，并把 CLEAN 库存标记进入重置流程
+          - 后续独立 stage 会通过 TAT 修补存量 VM：pip/uv mirror、systemd user 权限、backend blueprint 基线
+          - 不直连数据库，不执行 SQL
+          - 从仓库内的 mirror 修补脚本创建腾讯云 TAT Command，不需要手工传 HERMES_TAT_COMMAND_ID
+          - 默认 5 台一批串行执行；批次失败后自动拆成单台重试
+      timeout-hours: 24
+    jobs:
+      approve:
+        name: 等待人工确认刷新并修补上海生产 Hermes
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - name: 上海生产 Hermes 刷新修补已确认
+            shell: bash
+            run: |
+              echo "Shanghai Hermes production rollout approved"
+
+  - name: 刷新上海生产 Hermes pools
+    if: "${{ ci.branch }} == master"
+    jobs:
+      refresh:
+        name: 刷新上海生产 Hermes pools
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - checkout: self
+            name: 拉取代码
+            with:
+              fetchDepth: 1
+          - name: 刷新上海生产 Hermes pools
+            shell: bash
+            run: |
+              set -euo pipefail
+              source .ci/init.sh
+              ci_init_repo_root
+              ci_ensure_tccli
+              ci_require_command tccli
+              ci_ensure_kubectl
+              ci_ensure_jq
+              ci_require_commands bash curl jq python3
+              ci_load_tencentcloud_credentials
+
+              resolve_hermes_image_name() {
+                local raw="${BK_CI_BUILD_ID:-}"
+                local sha='${{ ci.sha }}'
+                if [[ -z "$raw" || "$raw" == *'${{'* ]]; then
+                  raw="$sha"
+                fi
+                raw="$(printf '%s' "$raw" | tr -cs 'A-Za-z0-9-' '-' | sed -e 's/^-//' -e 's/-$//' | cut -c1-36)"
+                if [[ -z "$raw" ]]; then
+                  raw="$(date +%Y%m%d%H%M%S)"
+                fi
+                printf 'hermes-agent-%s\n' "$raw"
+              }
+
+              RESULT_ENV=".ci/.runtime-state/hermes-image.env"
+              TMP_RESULT_ENV="/tmp/lightclaw-ci/hermes-image-${BK_CI_BUILD_ID:-manual}.env"
+              if [[ -r "$RESULT_ENV" ]]; then
+                source "$RESULT_ENV"
+              elif [[ -r "$TMP_RESULT_ENV" ]]; then
+                source "$TMP_RESULT_ENV"
+              fi
+              export HERMES_IMAGE_NAME="${HERMES_IMAGE_NAME:-$(resolve_hermes_image_name)}"
+              HERMES_ROLLOUT_ENV_SPEC="${HERMES_SHANGHAI_HERMES_ROLLOUT_ENV_SPEC:-shprod:ap-shanghai:kubeconfig_shprod}"
+              HERMES_LEGACY_POOL_IDS="${HERMES_SHANGHAI_HERMES_LEGACY_POOL_IDS:-pool-bj8,pool-c0,pool-c1,pool-c2,pool-c3,pool-c4,pool-c5}"
+              export HERMES_ROLLOUT_ENV_SPEC
+              export HERMES_LEGACY_POOL_IDS
+              echo "HERMES_IMAGE_NAME=${HERMES_IMAGE_NAME}"
+              echo "HERMES_ROLLOUT_ENV_SPEC=${HERMES_ROLLOUT_ENV_SPEC}"
+              echo "HERMES_LEGACY_POOL_IDS=${HERMES_LEGACY_POOL_IDS}"
+
+              HERMES_REFRESH_ENV_SPEC="$HERMES_ROLLOUT_ENV_SPEC" \
+                bash .ci/runtime/commands/refresh_hermes_sandbox_env.sh
+
+  - name: 升级存量上海生产 Hermes VM
+    if: "${{ ci.branch }} == master"
+    jobs:
+      repair:
+        name: 通过 TAT 升级存量上海生产 Hermes VM
+        runs-on:
+          self-hosted: true
+          pool-name: env
+        steps:
+          - checkout: self
+            name: 拉取代码
+            with:
+              fetchDepth: 1
+          - name: 升级存量上海生产 Hermes VM
+            shell: bash
+            run: |
+              set -euo pipefail
+              source .ci/init.sh
+              ci_init_repo_root
+              ci_ensure_tccli
+              ci_require_command tccli
+              ci_ensure_kubectl
+              ci_ensure_jq
+              ci_require_commands bash curl jq python3
+              ci_load_tencentcloud_credentials
+
+              HERMES_REPAIR_ENV_SPEC="${HERMES_SHANGHAI_HERMES_REPAIR_ENV_SPEC:-shprod:ap-shanghai:kubeconfig_shprod}"
+              HERMES_LEGACY_POOL_IDS="${HERMES_SHANGHAI_HERMES_LEGACY_POOL_IDS:-pool-bj8,pool-c0,pool-c1,pool-c2,pool-c3,pool-c4,pool-c5}"
+              export HERMES_REPAIR_ENV_SPEC HERMES_LEGACY_POOL_IDS
+              echo "HERMES_REPAIR_ENV_SPEC=${HERMES_REPAIR_ENV_SPEC}"
+              echo "HERMES_LEGACY_POOL_IDS=${HERMES_LEGACY_POOL_IDS}"
+
+              bash .ci/runtime/commands/repair_hermes_existing_vms.sh

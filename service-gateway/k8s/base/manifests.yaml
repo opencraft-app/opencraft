@@ -39,13 +39,6 @@ spec:
                 name: service-gateway-ingress
                 port:
                   number: 80
-          - path: /sandboxes
-            pathType: Prefix
-            backend:
-              service:
-                name: service-gateway-ingress
-                port:
-                  number: 80
           - path: /v1/chatclaw/runtime
             pathType: Prefix
             backend:
@@ -93,18 +86,6 @@ spec:
                   httpCheckDomain: REPLACE_SERVICE_GATEWAY_PUBLIC_HOST
                   httpCheckMethod: HEAD
                   httpCode: 2
-              - url: /sandboxes
-                forwardType: HTTP
-                healthCheck:
-                  enable: true
-                  intervalTime: 10
-                  timeout: 5
-                  healthNum: 2
-                  unHealthNum: 2
-                  httpCheckPath: /healthz
-                  httpCheckDomain: REPLACE_SERVICE_GATEWAY_PUBLIC_HOST
-                  httpCheckMethod: HEAD
-                  httpCode: 2
               - url: /v1/chatclaw/runtime
                 forwardType: HTTP
                 healthCheck:
@@ -136,18 +117,6 @@ spec:
           - domain: REPLACE_SERVICE_GATEWAY_PUBLIC_HOST
             rules:
               - url: /auth
-                forwardType: HTTP
-                healthCheck:
-                  enable: true
-                  intervalTime: 10
-                  timeout: 5
-                  healthNum: 2
-                  unHealthNum: 2
-                  httpCheckPath: /healthz
-                  httpCheckDomain: REPLACE_SERVICE_GATEWAY_PUBLIC_HOST
-                  httpCheckMethod: HEAD
-                  httpCode: 2
-              - url: /sandboxes
                 forwardType: HTTP
                 healthCheck:
                   enable: true
@@ -229,6 +198,8 @@ spec:
           env:
             - name: SERVICE_GATEWAY_ADDR
               value: ":8085"
+            - name: SERVICE_GATEWAY_METRICS_ADDR
+              value: ":9090"
             - name: SERVICE_GATEWAY_CONFIG_FILE
               value: /etc/service-gateway/config.yaml
             - name: SERVICE_GATEWAY_REALNAME_WALL_ENABLED
@@ -236,12 +207,6 @@ spec:
                 configMapKeyRef:
                   name: service-gateway-platform-values
                   key: SERVICE_GATEWAY_REALNAME_WALL_ENABLED
-                  optional: true
-            - name: SERVICE_GATEWAY_VIBEBASE_INTERNAL_TOKEN
-              valueFrom:
-                configMapKeyRef:
-                  name: service-gateway-platform-values
-                  key: SERVICE_GATEWAY_VIBEBASE_INTERNAL_TOKEN
                   optional: true
             - name: SERVICE_GATEWAY_ADMIN_BASIC_AUTH_USER
               valueFrom:
@@ -260,6 +225,8 @@ spec:
           ports:
             - name: http
               containerPort: 8085
+            - name: metrics
+              containerPort: 9090
           resources:
             requests:
               cpu: 50m
@@ -299,6 +266,9 @@ spec:
     - name: http
       port: 80
       targetPort: http
+    - name: metrics
+      port: 9090
+      targetPort: metrics
 ---
 apiVersion: v1
 kind: Service
@@ -328,4 +298,5 @@ spec:
     matchLabels:
       metrics-target: "true"
   endpoints:
-    - port: http
+    - port: metrics
+      path: /metrics

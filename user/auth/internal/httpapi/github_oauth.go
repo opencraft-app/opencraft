@@ -234,10 +234,7 @@ func (h *Handler) handleGitHubOAuthCallbackAfterState(ctx *gin.Context, code str
 		}
 	}
 	h.setSessionCookie(ctx, session.Token)
-	redirectURL := h.githubOAuth.successFrontendURL(ctx.Request, "/", session.Token)
-	if validated := h.validatedReturnToURL(returnTo); validated != "" {
-		redirectURL = appendSessionTokenToReturnTo(validated, session.Token)
-	}
+	redirectURL := h.oauthSuccessRedirectURL(ctx, returnTo, h.githubOAuth.successFrontendURL(ctx.Request, "/", session.Token), session)
 	ctx.Redirect(http.StatusTemporaryRedirect, redirectURL)
 }
 

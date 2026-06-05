@@ -32,6 +32,7 @@ func (g *ACPGateway) recoverPromptRuntime(ctx context.Context, sessionID string,
 		Scope:            session.Scope,
 		CWD:              sidecarRequestCWD(),
 		Generation:       session.RuntimeGeneration,
+		OwnerID:          g.ownerID,
 		SandboxBackend:   staleRuntime.SandboxBackend,
 		OuterRuntime:     staleRuntime.OuterRuntime,
 		RuntimeRecovery:  staleRuntime.RuntimeRecovery,
@@ -345,9 +346,6 @@ func runtimeEnsureChanged(next, original ACPSessionRuntime) bool {
 		!next.WispLeaseUntil.Equal(original.WispLeaseUntil) ||
 		next.WorkspaceID != original.WorkspaceID ||
 		next.WorkspaceRuntimeID != original.WorkspaceRuntimeID ||
-		next.WorkspaceLeaseID != original.WorkspaceLeaseID ||
-		next.WorkspaceFence != original.WorkspaceFence ||
-		!next.WorkspaceLeaseUntil.Equal(original.WorkspaceLeaseUntil) ||
 		next.WorkspaceAttachState != original.WorkspaceAttachState
 }
 
@@ -431,6 +429,13 @@ func runtimeAfterClose(runtime ACPSessionRuntime) ACPSessionRuntime {
 	runtime.WorkspaceAttachState = ""
 	return runtime
 }
+
+func runtimeAfterStaleCleanup(runtime ACPSessionRuntime) ACPSessionRuntime {
+	// Host targets and daemon identities are ephemeral. Wisp names and SMH space
+	// IDs are persistent workspace identity and must survive stale-host recovery.
+	return runtimeAfterClose(runtime)
+}
+
 func isRecoverablePromptRuntimeError(err error) bool {
 	if err == nil {
 		return false
@@ -494,6 +499,7 @@ func (g *ACPGateway) cleanupSessionRuntime(scope Scope, sessionID, reason string
 		g.completeRuntimeCleanup(sessionID, cleanup, cleanupErr)
 		return runtime, cleanup.Generation, true, cleanupErr
 	}
+	g.releaseClosedSessionRunLease(runtime)
 	g.completeRuntimeCleanup(sessionID, cleanup, nil)
 	fmt.Fprintf(os.Stderr, "timeline source=server event=acp_runtime_cleanup_done reason=%s session_id=%s outer_sandbox_id=%s inner_sandbox_id=%s\n", reason, sessionID, runtime.OuterSandboxID, runtime.InnerSandboxID)
 	g.broadcastWorkspaceLifecycle(scope, sessionID, cleanup.Generation, "storage", "cleanup", "done", "Workspace 已贮藏", cleanupStartedAt, map[string]any{
@@ -502,6 +508,23 @@ func (g *ACPGateway) cleanupSessionRuntime(scope Scope, sessionID, reason string
 		"outer_sandbox_id": runtime.OuterSandboxID,
 	})
 	return runtime, cleanup.Generation, true, nil
+}
+
+func (g *ACPGateway) releaseClosedSessionRunLease(runtime ACPSessionRuntime) {
+	if g.workspaceService == nil || runtime.WispLeaseID == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := g.workspaceService.ReleaseLease(ctx, WorkspaceLease{
+		WorkspaceID:  firstNonEmpty(runtime.WispWorkspaceID, runtime.WispSMHSpaceID, runtime.WorkspaceID),
+		RuntimeID:    runtime.RuntimeID,
+		LeaseID:      runtime.WispLeaseID,
+		FencingToken: runtime.WispLeaseFence,
+		ExpiresAt:    runtime.WispLeaseUntil,
+	}); err != nil {
+		fmt.Fprintf(os.Stderr, "timeline source=server event=acp_session_run_lease_release_failed runtime_id=%s lease_id=%s error=%s\n", runtime.RuntimeID, runtime.WispLeaseID, quoteServerField(err.Error()))
+	}
 }
 func (g *ACPGateway) beginRuntimeCleanup(scope Scope, sessionID, reason string) (*acpRuntimeCleanup, bool, bool, error) {
 	g.mu.Lock()

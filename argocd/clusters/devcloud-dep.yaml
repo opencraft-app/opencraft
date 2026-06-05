@@ -1,0 +1,10 @@
+apiVersion: lightclaw.dev/v1alpha1
+kind: ArgoTargetCluster
+metadata:
+  name: devcloud-dep
+spec:
+  description: Empty DevCloud dep Kubernetes cluster consumed by devcloud-dep Applications.
+  server: https://9.135.130.139
+  projectPath: argocd/projects/devcloud-dep.yaml
+  kubeconfigHint: .secret/devcloud-dep.conf
+  owner: devcloud/dep

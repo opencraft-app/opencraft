@@ -50,7 +50,7 @@ func main() {
 	mux := http.NewServeMux()
 	connectPath, connectHandler := gatewayv1connect.NewCloudLadderGatewayServiceHandler(server.NewConnectService(engine, authenticator))
 	mux.Handle(connectPath, connectHandler)
-	mux.Handle("/", server.NewGinRouter(engine, authenticator, cfg.MaxBodyBytes))
+	mux.Handle("/", server.NewGinRouter(engine, authenticator, cfg.MaxBodyBytes, cfg.External...))
 
 	httpServer := &http.Server{
 		Addr:    cfg.Addr,

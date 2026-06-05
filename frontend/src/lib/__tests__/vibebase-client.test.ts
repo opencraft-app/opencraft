@@ -12,7 +12,12 @@ vi.mock("@/lib/auth-api-base", () => ({
   resolveConfiguredAuthApiBaseUrl: vi.fn(() => "https://lightclaw.tech"),
 }));
 
+vi.mock("@/repositories/http-repositories", () => ({
+  readStoredAuthToken: vi.fn(() => null),
+}));
+
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
+import { readStoredAuthToken } from "@/repositories/http-repositories";
 import {
   deleteValue,
   getJSON,
@@ -55,6 +60,7 @@ describe("vibebase-client", () => {
     vi.mocked(resolveConfiguredAuthApiBaseUrl).mockReturnValue(
       "https://lightclaw.tech",
     );
+    vi.mocked(readStoredAuthToken).mockReturnValue(null);
   });
 
   afterEach(() => {
@@ -104,6 +110,23 @@ describe("vibebase-client", () => {
         "/v1/vibebase/namespaces/ns/kv/k",
         expect.any(Object),
       );
+    });
+
+    it("adds the stored bearer token while keeping credentials", async () => {
+      vi.mocked(readStoredAuthToken).mockReturnValue("stored-session-token");
+      const { fn, lastInit } = mockFetch({
+        namespace: "ns",
+        key: "k",
+        size: 0,
+        updated_at: "2024-01-01T00:00:00Z",
+      });
+      await getValue("ns", "k");
+      expect(fn).toHaveBeenCalledWith(
+        "https://lightclaw.tech/v1/vibebase/namespaces/ns/kv/k",
+        expect.objectContaining({ method: "GET", credentials: "include" }),
+      );
+      const headers = new Headers(lastInit()?.headers);
+      expect(headers.get("Authorization")).toBe("Bearer stored-session-token");
     });
 
     it("throws when api base is not configured (mock mode)", async () => {
@@ -177,9 +200,8 @@ describe("vibebase-client", () => {
         }),
       );
       const init = lastInit();
-      expect(init?.headers).toEqual({
-        "Content-Type": "text/plain; charset=utf-8",
-      });
+      const headers = new Headers(init?.headers);
+      expect(headers.get("Content-Type")).toBe("text/plain; charset=utf-8");
       expect(result).toEqual({
         namespace: "ns",
         key: "k",

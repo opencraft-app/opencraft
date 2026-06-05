@@ -151,6 +151,7 @@ impl E2BClient {
         let status = response.status();
         let body = response.text().await.map_err(Error::Network)?;
         if !status.is_success() {
+            emit_sandbox_host_http_failure(sandbox, port, method, status.as_u16(), &body);
             return Err(Error::Agent(format!(
                 "sandbox-host {method} HTTP transport failed: HTTP {}: {}",
                 status, body
@@ -182,6 +183,7 @@ impl E2BClient {
         if status.is_success() {
             return Ok(());
         }
+        emit_sandbox_host_http_failure(sandbox, port, "fs.blob.write", status.as_u16(), &body);
         Err(Error::Agent(format!(
             "sandbox-host fs.blob write HTTP transport failed: HTTP {}: {}",
             status, body
@@ -212,6 +214,7 @@ impl E2BClient {
                 .map_err(Error::Network);
         }
         let body = response.text().await.map_err(Error::Network)?;
+        emit_sandbox_host_http_failure(sandbox, port, "fs.blob.read", status.as_u16(), &body);
         Err(Error::Agent(format!(
             "sandbox-host fs.blob read HTTP transport failed: HTTP {}: {}",
             status, body
@@ -321,4 +324,42 @@ impl E2BClient {
         let encoded = STANDARD.encode(format!("{}:", self.config.envd_user));
         Ok(format!("Basic {encoded}"))
     }
+}
+
+fn emit_sandbox_host_http_failure(
+    sandbox: &E2BSandbox,
+    port: u16,
+    method: &str,
+    status: u16,
+    body: &str,
+) {
+    let body_tail = tail_chars(body, 1000);
+    sidecar_timeline(
+        "sandbox_host_http_failed",
+        &[
+            ("sandbox_id", sandbox.sandbox_id.clone()),
+            ("domain", sandbox.domain.clone()),
+            ("port", port.to_string()),
+            ("method", method.to_string()),
+            ("status", status.to_string()),
+            ("body_tail", body_tail.clone()),
+        ],
+    );
+    warn!(
+        event = "sandbox_host_http_failed",
+        sandbox_id = %sandbox.sandbox_id,
+        domain = %sandbox.domain,
+        port = port,
+        method = %method,
+        status = status,
+        body_tail = %body_tail
+    );
+}
+
+fn tail_chars(value: &str, max_chars: usize) -> String {
+    let total = value.chars().count();
+    if total <= max_chars {
+        return value.to_string();
+    }
+    value.chars().skip(total - max_chars).collect()
 }

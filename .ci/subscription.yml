@@ -6,6 +6,7 @@ on:
     branches:
       - master
       - playground/sandbox-bj-*
+      - playground/sandbox-kr-*
     paths:
       - subscription/**
       - argocd/services/subscription/**

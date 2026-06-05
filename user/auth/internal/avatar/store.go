@@ -3,6 +3,7 @@ package avatar
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"image"
 	"image/jpeg"
@@ -18,10 +19,13 @@ import (
 )
 
 const (
-	defaultMaxBytes      int64 = 200 * 1024
+	MaxBytes             int64 = 800 * 1024
+	defaultMaxBytes            = MaxBytes
 	defaultFetchMaxBytes int64 = 2 << 20
 	defaultSignedURLTTL        = 5 * time.Minute
 )
+
+var ErrAvatarTooLarge = errors.New("avatar too large")
 
 type BucketClient interface {
 	PutObject(ctx context.Context, objectKey string, content []byte, contentType string) error
@@ -48,15 +52,25 @@ func NewStore(client BucketClient) *Store {
 }
 
 func (s *Store) StoreAvatar(ctx context.Context, userID string, content []byte) (string, error) {
+	return s.storeAvatar(ctx, avatarObjectKey(userID), content)
+}
+
+func (s *Store) StorePendingAvatar(ctx context.Context, userID string, content []byte) (string, error) {
+	return s.storeAvatar(ctx, pendingAvatarObjectKey(userID, time.Now()), content)
+}
+
+func (s *Store) storeAvatar(ctx context.Context, objectKey string, content []byte) (string, error) {
 	if s == nil || s.client == nil {
 		return "", fmt.Errorf("avatar store client is not configured")
+	}
+	if strings.TrimSpace(objectKey) == "" {
+		return "", fmt.Errorf("avatar object key is required")
 	}
 	normalized, err := s.normalizeAvatar(content)
 	if err != nil {
 		return "", err
 	}
 
-	objectKey := avatarObjectKey(userID)
 	if err := s.client.PutObject(ctx, objectKey, normalized, "image/jpeg"); err != nil {
 		return "", err
 	}
@@ -155,7 +169,7 @@ func (s *Store) normalizeAvatar(content []byte) ([]byte, error) {
 	}
 
 	if int64(output.Len()) > limit {
-		return nil, fmt.Errorf("avatar exceeds %d bytes after normalization", limit)
+		return nil, fmt.Errorf("%w: exceeds %d bytes after normalization", ErrAvatarTooLarge, limit)
 	}
 
 	return append([]byte(nil), output.Bytes()...), nil
@@ -163,6 +177,10 @@ func (s *Store) normalizeAvatar(content []byte) ([]byte, error) {
 
 func avatarObjectKey(userID string) string {
 	return fmt.Sprintf("avatars/%s/current.jpg", reverseString(strings.TrimSpace(userID)))
+}
+
+func pendingAvatarObjectKey(userID string, now time.Time) string {
+	return fmt.Sprintf("avatars/%s/pending/%d.jpg", reverseString(strings.TrimSpace(userID)), now.UTC().UnixNano())
 }
 
 func reverseString(value string) string {

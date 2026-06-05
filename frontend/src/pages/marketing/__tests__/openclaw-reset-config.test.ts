@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  ACLI_RESET_COMMAND,
+  getAcliResetBlockReason,
+  getAcliResetClickAction,
   getResetBlockReason,
   hermesModelName,
   hermesSwitchModelFullId,
   isExecCommandSucceeded,
+  isResetConfigRouteMissingError,
   truncateExecOutput,
   type ResettableBot,
 } from "../openclaw-reset-config";
@@ -50,6 +54,42 @@ describe("getResetBlockReason", () => {
     /* 优先级：no_active_bot > already_resetting > not_running > channel_not_viewed
      * 让用户看到最根本的阻塞原因。 */
     expect(getResetBlockReason(bot("a", "paused"), false, false)).toBe("not_running");
+  });
+});
+
+describe("getAcliResetBlockReason", () => {
+  it("allows acli reset for a running bot when no reset is in progress", () => {
+    expect(getAcliResetBlockReason(bot("a"), false)).toBeNull();
+  });
+
+  it("blocks acli reset when there is no active bot", () => {
+    expect(getAcliResetBlockReason(undefined, false)).toBe("no_active_bot");
+  });
+
+  it("blocks acli reset while another acli reset is running", () => {
+    expect(getAcliResetBlockReason(bot("a"), true)).toBe("already_resetting");
+  });
+
+  it("blocks acli reset for non-running bots", () => {
+    expect(getAcliResetBlockReason(bot("a", "paused"), false)).toBe("not_running");
+    expect(getAcliResetBlockReason(bot("a", "provisioning"), false)).toBe("not_running");
+  });
+});
+
+describe("getAcliResetClickAction", () => {
+  it("opens a confirmation dialog instead of executing immediately when reset is allowed", () => {
+    expect(getAcliResetClickAction(bot("a"), false)).toBe("open_confirm");
+  });
+
+  it("keeps disabled reset clicks blocked", () => {
+    expect(getAcliResetClickAction(bot("a", "paused"), false)).toBe("blocked");
+    expect(getAcliResetClickAction(bot("a"), true)).toBe("blocked");
+  });
+});
+
+describe("ACLI_RESET_COMMAND", () => {
+  it("runs the requested backend upgrade command and waits for completion", () => {
+    expect(ACLI_RESET_COMMAND).toBe("acli backend upgrade-start --blueprint-id lhbp-8gsotw6u --wait=true");
   });
 });
 
@@ -166,5 +206,34 @@ describe("truncateExecOutput", () => {
   it("preserves multi-line output verbatim (caller renders with whitespace-pre-wrap)", () => {
     const multiline = "error: top\n  at frame1\n  at frame2";
     expect(truncateExecOutput(multiline, "FAILED")).toBe(multiline);
+  });
+});
+
+describe("isResetConfigRouteMissingError", () => {
+  it("detects old CTL route-missing NOT_FOUND errors", () => {
+    const err = Object.assign(
+      new Error("resource not found（NOT_FOUND, request_id=abc）"),
+      { status: 404, code: "NOT_FOUND" },
+    );
+
+    expect(isResetConfigRouteMissingError(err)).toBe(true);
+  });
+
+  it("does not treat other 404 errors as old CTL route misses", () => {
+    const err = Object.assign(
+      new Error("instance not found（NOT_FOUND, request_id=abc）"),
+      { status: 404, code: "NOT_FOUND" },
+    );
+
+    expect(isResetConfigRouteMissingError(err)).toBe(false);
+  });
+
+  it("requires the NOT_FOUND code", () => {
+    const err = Object.assign(
+      new Error("resource not found"),
+      { status: 404, code: "SOME_OTHER_CODE" },
+    );
+
+    expect(isResetConfigRouteMissingError(err)).toBe(false);
   });
 });

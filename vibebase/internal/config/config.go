@@ -17,16 +17,15 @@ const (
 )
 
 type Config struct {
-	Addr                 string
-	RedisAddr            string
-	RedisUsername        string
-	RedisPassword        string
-	RedisDB              int
-	RedisTimeout         time.Duration
-	InternalServiceToken string
-	MaxKeysPerUser       int
-	MaxNameBytes         int
-	MaxValueBytes        int
+	Addr           string
+	RedisAddr      string
+	RedisUsername  string
+	RedisPassword  string
+	RedisDB        int
+	RedisTimeout   time.Duration
+	MaxKeysPerUser int
+	MaxNameBytes   int
+	MaxValueBytes  int
 }
 
 func FromEnv() (Config, error) {
@@ -40,12 +39,8 @@ func FromEnv() (Config, error) {
 		MaxNameBytes:   defaultMaxNameBytes,
 		MaxValueBytes:  defaultMaxValueBytes,
 	}
-	cfg.InternalServiceToken = strings.TrimSpace(os.Getenv("VIBEBASE_INTERNAL_SERVICE_TOKEN"))
 	if cfg.RedisAddr == "" {
 		return Config{}, fmt.Errorf("VIBEBASE_REDIS_ADDR is required")
-	}
-	if cfg.InternalServiceToken == "" {
-		return Config{}, fmt.Errorf("VIBEBASE_INTERNAL_SERVICE_TOKEN is required")
 	}
 
 	var err error

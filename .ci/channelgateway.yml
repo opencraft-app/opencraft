@@ -1,0 +1,37 @@
+version: v2.0
+name: 构建 channelgateway
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - cloudagent/channelgateway/**
+      - cloudagent/acp-client/**
+      - argocd/services/channelgateway/**
+      - argocd/apps/*/channelgateway.yaml
+      - argocd/secrets/*/channelgateway-runtime-secrets.sops.yaml
+      - argocd/secrets/*/channelgateway-wecom-secrets.sops.yaml
+    paths-ignore:
+      - OWNERS
+      - "**/OWNERS"
+  manual: enabled
+
+concurrency:
+  group: mono2-service-release-channelgateway
+  cancel-in-progress: false
+  queue-length: 20
+  queue-timeout-minutes: 480
+
+extends:
+  template: service-release.yml
+  parameters:
+    SERVICE: channelgateway
+    BUNDLE: channelgateway
+    DISPLAY_NAME: channelgateway
+    DEFAULT_TARGET_ENV: devcloud-dep
+    MASTER_BUILD_ENVS: devcloud-dep
+    MASTER_AUTO_PIN_ENVS: devcloud-dep
+    ENABLE_MASTER_PROD_PROMOTE: false
+    PLAYGROUND_BUILD_ENVS: none
+    PLAYGROUND_AUTO_PIN_ENVS: none

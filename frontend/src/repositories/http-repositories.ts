@@ -29,6 +29,7 @@ import type {
   RealnameVerifyResult,
   Repositories,
   SettingsSnapshot,
+  TatDeviceBindResult,
   WorkspaceSnapshot,
 } from "@/repositories/types";
 
@@ -60,6 +61,21 @@ interface CurrentSubscriptionPayload {
     updatedAt?: string;
     createdAt?: string;
   } | null;
+}
+
+interface TatDeviceBindPayload {
+  status: string;
+  ticket: string;
+  callback_url: string;
+  redirect_url: string;
+  expires_at: string;
+  registration_code?: string | null;
+  registration?: {
+    region: string;
+    register_code_id: string;
+    register_code_value: string;
+    request_id: string;
+  };
 }
 
 interface APIEnvelope<T> {
@@ -1043,12 +1059,40 @@ const createHttpAuthRepository = (baseUrl: string): AuthRepository => ({
       body: input,
     });
   },
-  getOAuthStartUrl(provider) {
+  async createTatDeviceBind(input): Promise<TatDeviceBindResult> {
+    const response = await request<TatDeviceBindPayload>(baseUrl, "/auth/tat/device-bind", {
+      method: "POST",
+      body: {
+        callback_url: input.callbackUrl,
+        device_name: input.deviceName,
+      },
+    });
+    return {
+      status: response.status,
+      ticket: response.ticket,
+      callbackUrl: response.callback_url,
+      redirectUrl: response.redirect_url,
+      expiresAt: response.expires_at,
+      registrationCode: response.registration_code ?? null,
+      registration: response.registration
+        ? {
+            region: response.registration.region,
+            registerCodeId: response.registration.register_code_id,
+            registerCodeValue: response.registration.register_code_value,
+            requestId: response.registration.request_id,
+          }
+        : undefined,
+    };
+  },
+  getOAuthStartUrl(provider, options) {
     // local-proxy 模式 baseUrl 是空字符串，buildUrl 拼出来是相对路径 `/auth/...`。
     // URL 构造器不接受相对路径，所以传 window.location.origin 当 base；
     // 当 baseUrl 是绝对 URL（如 https://lightclaw.tech）时，第二个参数会被忽略。
     const base = typeof window !== "undefined" ? window.location.origin : "https://lightclaw.tech";
     const startURL = new URL(buildUrl(baseUrl, `/auth/oauth/${provider}/start`), base);
+    if (provider === "wechat" && options?.wechatMode) {
+      startURL.searchParams.set("mode", options.wechatMode);
+    }
     const relayIssuerBaseURL = configuredOAuthRelayIssuerBaseURL();
     if (relayIssuerBaseURL) {
       startURL.searchParams.set("relay_mode", "issuer");

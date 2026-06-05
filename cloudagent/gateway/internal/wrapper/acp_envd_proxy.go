@@ -30,9 +30,13 @@ type envdEnsureCall struct {
 }
 
 func (runtime ACPSessionRuntime) hasInnerEnvdTarget() bool {
-	return strings.TrimSpace(runtime.InnerSandboxID) != "" &&
-		strings.TrimSpace(runtime.InnerSandboxDomain) != "" &&
-		strings.TrimSpace(runtime.InnerEnvdAccessToken) != ""
+	if strings.TrimSpace(runtime.InnerSandboxID) == "" || strings.TrimSpace(runtime.InnerSandboxDomain) == "" {
+		return false
+	}
+	if runtimeHostTypeFromRuntime(runtime) == runtimeHostTypeLocalWisp {
+		return true
+	}
+	return strings.TrimSpace(runtime.InnerEnvdAccessToken) != ""
 }
 
 func (g *ACPGateway) ensureRuntimeProxyIDLocked(session *acpSession) {
@@ -670,6 +674,9 @@ func envdEnsureKey(sessionID string, generation int64) string {
 }
 
 func innerEnvdURL(runtime ACPSessionRuntime) (*url.URL, error) {
+	if runtimeHostTypeFromRuntime(runtime) == runtimeHostTypeLocalWisp {
+		return nil, fmt.Errorf("local_wisp envd proxy is not supported")
+	}
 	domain := strings.TrimSpace(runtime.InnerSandboxDomain)
 	if domain == "" || strings.TrimSpace(runtime.InnerSandboxID) == "" {
 		return nil, fmt.Errorf("inner envd target is incomplete")

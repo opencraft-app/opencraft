@@ -5,6 +5,7 @@ import (
 	cryptorand "crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"strings"
@@ -20,14 +21,17 @@ var (
 )
 
 type Options struct {
-	Now              func() time.Time
-	SMSCooldown      time.Duration
-	SMSCodeTTL       time.Duration
-	SessionTTL       time.Duration
-	DefaultSMSCode   string
-	SeedDemoUser     bool
-	RealnameVerifier RealnameVerifier
-	RealnameCipher   RealnameCipher
+	Now                func() time.Time
+	SMSCooldown        time.Duration
+	SMSCodeTTL         time.Duration
+	SessionTTL         time.Duration
+	DefaultSMSCode     string
+	SeedDemoUser       bool
+	RealnameVerifier   RealnameVerifier
+	RealnameCipher     RealnameCipher
+	ContentAudit       ContentAuditConfig
+	ContentAuditClient ContentAuditClient
+	Logger             *slog.Logger
 }
 
 type Error struct {
@@ -42,15 +46,21 @@ func (e *Error) Error() string {
 }
 
 type User struct {
-	ID               string
-	Name             string
-	Email            string
-	Phone            string
-	AvatarObjectKey  string
-	AvatarSource     string
-	InviteRequired   bool
-	RealnameVerified bool
-	CreatedAt        time.Time
+	ID                     string
+	Name                   string
+	PendingName            string
+	NameAuditStatus        string
+	Email                  string
+	Phone                  string
+	AvatarObjectKey        string
+	AvatarSource           string
+	PendingAvatarObjectKey string
+	PendingAvatarSource    string
+	AvatarAuditStatus      string
+	InviteRequired         bool
+	RealnameVerified       bool
+	CreatedAt              time.Time
+	UpdatedAt              time.Time
 }
 
 type RealnameVerifyInput struct {
@@ -78,6 +88,39 @@ type RealnameVerifier interface {
 
 type RealnameCipher interface {
 	Encrypt(plaintext string) (string, error)
+}
+
+type ContentAuditConfig struct {
+	Enabled            bool
+	NameAuditEnabled   bool
+	AvatarAuditEnabled bool
+	ProductID          string
+	UserSID            string
+}
+
+// Ready reports whether the config has enough information to submit audit requests.
+func (c ContentAuditConfig) Ready() bool {
+	return c.ready()
+}
+
+func (c ContentAuditConfig) ready() bool {
+	if !c.Enabled {
+		return false
+	}
+	return strings.TrimSpace(c.ProductID) != "" && strings.TrimSpace(c.UserSID) != ""
+}
+
+func (c ContentAuditConfig) nameAuditEnabled() bool {
+	if !c.Enabled {
+		return false
+	}
+	// Backward compatibility: existing tests and deployments used Enabled=true
+	// to mean nickname audit is enabled before per-media switches existed.
+	return c.NameAuditEnabled || !c.AvatarAuditEnabled
+}
+
+func (c ContentAuditConfig) avatarAuditEnabled() bool {
+	return c.Enabled && c.AvatarAuditEnabled
 }
 
 type UpdateRealnameInput struct {
@@ -173,14 +216,17 @@ type OAuthSignInInput struct {
 }
 
 type Service struct {
-	now              func() time.Time
-	smsCooldown      time.Duration
-	smsCodeTTL       time.Duration
-	sessionTTL       time.Duration
-	defaultSMSCode   string
-	store            Store
-	realnameVerifier RealnameVerifier
-	realnameCipher   RealnameCipher
+	now                func() time.Time
+	smsCooldown        time.Duration
+	smsCodeTTL         time.Duration
+	sessionTTL         time.Duration
+	defaultSMSCode     string
+	store              Store
+	realnameVerifier   RealnameVerifier
+	realnameCipher     RealnameCipher
+	contentAudit       ContentAuditConfig
+	contentAuditClient ContentAuditClient
+	logger             *slog.Logger
 }
 
 type smsChallenge struct {
@@ -219,16 +265,23 @@ func NewWithStore(store Store, opts Options) *Service {
 	if now == nil {
 		now = time.Now
 	}
+	logger := opts.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
 
 	return &Service{
-		now:              now,
-		smsCooldown:      defaultDuration(opts.SMSCooldown, time.Minute),
-		smsCodeTTL:       defaultDuration(opts.SMSCodeTTL, 5*time.Minute),
-		sessionTTL:       defaultDuration(opts.SessionTTL, 30*24*time.Hour),
-		defaultSMSCode:   normalizeFixedSMSCode(opts.DefaultSMSCode),
-		store:            store,
-		realnameVerifier: opts.RealnameVerifier,
-		realnameCipher:   opts.RealnameCipher,
+		now:                now,
+		smsCooldown:        defaultDuration(opts.SMSCooldown, time.Minute),
+		smsCodeTTL:         defaultDuration(opts.SMSCodeTTL, 5*time.Minute),
+		sessionTTL:         defaultDuration(opts.SessionTTL, 30*24*time.Hour),
+		defaultSMSCode:     normalizeFixedSMSCode(opts.DefaultSMSCode),
+		store:              store,
+		realnameVerifier:   opts.RealnameVerifier,
+		realnameCipher:     opts.RealnameCipher,
+		contentAudit:       opts.ContentAudit,
+		contentAuditClient: opts.ContentAuditClient,
+		logger:             logger,
 	}
 }
 
@@ -307,6 +360,21 @@ func (s *Service) SignInWithPassword(ctx context.Context, email string, password
 
 func (s *Service) SignInWithOAuth(ctx context.Context, input OAuthSignInInput) (*AuthSession, error) {
 	return s.signInOrBindOAuth(ctx, "", input)
+}
+
+func (s *Service) CreateSessionForUser(ctx context.Context, userID string, ttl time.Duration) (*AuthSession, error) {
+	trimmedUserID := strings.TrimSpace(userID)
+	if trimmedUserID == "" {
+		return nil, newError("invalid_user_id", "用户 ID 不能为空。", http.StatusBadRequest)
+	}
+	if ttl <= 0 {
+		return nil, newError("invalid_session_ttl", "session TTL 必须大于 0。", http.StatusBadRequest)
+	}
+	user, err := s.store.FindUserByID(ctx, trimmedUserID)
+	if err != nil {
+		return nil, err
+	}
+	return s.store.CreateSession(ctx, user, s.now(), ttl)
 }
 
 func (s *Service) BindOAuthToCurrentSession(ctx context.Context, token string, input OAuthSignInInput) (*AuthSession, error) {
@@ -446,6 +514,26 @@ func (s *Service) UpdateProfile(ctx context.Context, token string, name string) 
 	if len([]rune(trimmed)) > 40 {
 		return User{}, newError("invalid_name", "昵称不能超过 40 个字符。", 400)
 	}
+	if s.contentAudit.nameAuditEnabled() {
+		if !s.contentAudit.ready() {
+			return User{}, newError("content_audit_unavailable", "昵称审核服务暂不可用。", http.StatusServiceUnavailable)
+		}
+		if s.contentAuditClient != nil {
+			current, err := s.CurrentProfile(ctx, token)
+			if err != nil {
+				return User{}, err
+			}
+			if err := s.auditNameSynchronously(ctx, current.ID, trimmed); err != nil {
+				return User{}, err
+			}
+			return s.store.UpdateProfile(ctx, token, trimmed, s.now())
+		}
+		return s.store.QueueNameAudit(ctx, token, CreateNameAuditInput{
+			Name:      trimmed,
+			ProductID: strings.TrimSpace(s.contentAudit.ProductID),
+			SID:       strings.TrimSpace(s.contentAudit.UserSID),
+		}, s.now())
+	}
 	return s.store.UpdateProfile(ctx, token, trimmed, s.now())
 }
 
@@ -457,6 +545,42 @@ func (s *Service) SetUserAvatar(ctx context.Context, userID string, objectKey st
 		return User{}, newError("invalid_avatar", "头像信息不完整。", 400)
 	}
 	return s.store.SetUserAvatar(ctx, trimmedUserID, trimmedObjectKey, trimmedSource, s.now())
+}
+
+func (s *Service) AvatarAuditEnabled() bool {
+	if s == nil {
+		return false
+	}
+	return s.contentAudit.avatarAuditEnabled()
+}
+
+func (s *Service) QueueAvatarAudit(ctx context.Context, userID string, objectKey string, source string, contentURL string) (User, error) {
+	trimmedUserID := strings.TrimSpace(userID)
+	trimmedObjectKey := strings.TrimSpace(objectKey)
+	trimmedSource := strings.TrimSpace(source)
+	trimmedContentURL := strings.TrimSpace(contentURL)
+	if trimmedUserID == "" || trimmedObjectKey == "" || trimmedSource == "" || trimmedContentURL == "" {
+		return User{}, newError("invalid_avatar", "头像信息不完整。", 400)
+	}
+	if !s.contentAudit.avatarAuditEnabled() {
+		return s.store.SetUserAvatar(ctx, trimmedUserID, trimmedObjectKey, trimmedSource, s.now())
+	}
+	if !s.contentAudit.ready() {
+		return User{}, newError("content_audit_unavailable", "头像审核服务暂不可用。", http.StatusServiceUnavailable)
+	}
+	if s.contentAuditClient != nil {
+		if err := s.auditAvatarSynchronously(ctx, trimmedUserID, trimmedObjectKey, trimmedContentURL); err != nil {
+			return User{}, err
+		}
+		return s.store.SetUserAvatar(ctx, trimmedUserID, trimmedObjectKey, trimmedSource, s.now())
+	}
+	return s.store.QueueAvatarAudit(ctx, trimmedUserID, CreateAvatarAuditInput{
+		ObjectKey:  trimmedObjectKey,
+		Source:     trimmedSource,
+		ContentURL: trimmedContentURL,
+		ProductID:  strings.TrimSpace(s.contentAudit.ProductID),
+		SID:        strings.TrimSpace(s.contentAudit.UserSID),
+	}, s.now())
 }
 
 func (s *Service) CurrentSubscription(ctx context.Context, token string) (*PlanSelection, error) {
@@ -567,6 +691,44 @@ func defaultDuration(value time.Duration, fallback time.Duration) time.Duration 
 		return value
 	}
 	return fallback
+}
+
+func isActiveAuditStatus(status string) bool {
+	switch strings.TrimSpace(status) {
+	case "pending", "submitted", "error":
+		return true
+	default:
+		return false
+	}
+}
+
+func isTerminalAuditStatus(status string) bool {
+	switch strings.TrimSpace(status) {
+	case "cancelled", "passed", "failed":
+		return true
+	default:
+		return false
+	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func truncateString(value string, maxRunes int) string {
+	if maxRunes <= 0 {
+		return ""
+	}
+	runes := []rune(value)
+	if len(runes) <= maxRunes {
+		return value
+	}
+	return string(runes[:maxRunes])
 }
 
 func newOpaqueToken() (string, error) {

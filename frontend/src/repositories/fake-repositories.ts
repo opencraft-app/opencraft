@@ -13,7 +13,7 @@ import type {
   WorkspaceMessage,
 } from "@/domain/types";
 import { planCatalog } from "@/domain/plan-catalog";
-import type { OAuthProvider } from "@/lib/oauth";
+import type { OAuthProvider, WeChatOAuthMode } from "@/lib/oauth";
 import type {
   BotRepository,
   DashboardSnapshot,
@@ -36,8 +36,11 @@ const FAKE_ACHIEVEMENTS_JSON_END = "__LIGHTVELA_ACHIEVEMENTS_JSON_END__";
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const nowIso = () => new Date().toISOString();
-const fakeOAuthStartURL = (provider: OAuthProvider) => {
+const fakeOAuthStartURL = (provider: OAuthProvider, wechatMode?: WeChatOAuthMode) => {
   const startURL = new URL(`https://lightclaw.tech/auth/oauth/${provider}/start`);
+  if (provider === "wechat" && wechatMode) {
+    startURL.searchParams.set("mode", wechatMode);
+  }
   if (typeof window !== "undefined" && window.location?.href) {
     startURL.searchParams.set("return_to", window.location.href);
   }
@@ -377,8 +380,35 @@ export const createFakeRepositories = (): Repositories => {
           requestId: "fake-realname",
         };
       },
-      getOAuthStartUrl(provider: OAuthProvider) {
-        return fakeOAuthStartURL(provider);
+      async createTatDeviceBind({ callbackUrl }) {
+        await wait(NETWORK_DELAY_MS);
+        const session = readStoredAuthSession();
+        if (!session) {
+          throw new Error("未登录或登录已失效。");
+        }
+        const redirectUrl = new URL(callbackUrl);
+        redirectUrl.searchParams.set("ticket", "fake-register-code-id");
+        redirectUrl.searchParams.set("region", "ap-guangzhou");
+        redirectUrl.searchParams.set("register_code_id", "fake-register-code-id");
+        redirectUrl.searchParams.set("register_code_value", "fake-register-code-value");
+        redirectUrl.searchParams.set("registration_code", "fake-register-code-value");
+        return {
+          status: "register_code_issued",
+          ticket: "fake-register-code-id",
+          callbackUrl,
+          redirectUrl: redirectUrl.toString(),
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          registrationCode: "fake-register-code-value",
+          registration: {
+            region: "ap-guangzhou",
+            registerCodeId: "fake-register-code-id",
+            registerCodeValue: "fake-register-code-value",
+            requestId: "fake-tat-request-id",
+          },
+        };
+      },
+      getOAuthStartUrl(provider: OAuthProvider, options) {
+        return fakeOAuthStartURL(provider, options?.wechatMode);
       },
       async signInAsGuest() {
         await wait(NETWORK_DELAY_MS);

@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/openclaw/openclaw/mono/backend/auth/internal/service"
 )
 
 var oauthReturnToAllowedBaseDomains = []string{
@@ -156,6 +158,9 @@ func validatedReturnToURLWithAllowlist(rawURL string, allowlist oauthReturnToAll
 	if parsed.User != nil || parsed.Opaque != "" {
 		return ""
 	}
+	if isDeviceBindReturnTo(parsed.String()) {
+		return parsed.String()
+	}
 	if !isAllowedReturnToScheme(parsed.Scheme, parsed.Hostname(), parsed, allowlist) {
 		return ""
 	}
@@ -289,5 +294,57 @@ func appendSessionTokenToReturnTo(rawURL string, sessionToken string) string {
 	}
 
 	parsed.Fragment = parsed.Fragment + "&session_token=" + url.QueryEscape(strings.TrimSpace(sessionToken))
+	return parsed.String()
+}
+
+func appendQueryParamToReturnTo(rawURL string, name string, value string) string {
+	redirectURL := strings.TrimSpace(rawURL)
+	paramName := strings.TrimSpace(name)
+	paramValue := strings.TrimSpace(value)
+	if redirectURL == "" || paramName == "" || paramValue == "" {
+		return redirectURL
+	}
+
+	parsed, err := url.Parse(redirectURL)
+	if err != nil {
+		return redirectURL
+	}
+
+	query := parsed.Query()
+	query.Set(paramName, paramValue)
+	parsed.RawQuery = query.Encode()
+	return parsed.String()
+}
+
+func (h *Handler) oauthSuccessRedirectURL(ctx *gin.Context, returnTo string, defaultRedirectURL string, session *service.AuthSession) string {
+	validated := h.validatedReturnToURL(returnTo)
+	if validated == "" {
+		return defaultRedirectURL
+	}
+	if isDeviceBindReturnTo(validated) {
+		token, expiresAt, err := h.deviceBindTokens.Issue(session, validated)
+		if err != nil {
+			if ctx != nil {
+				requestLogger(ctx, nil).Error("issue device bind token failed", "err", err)
+			}
+			return appendOAuthErrorToReturnTo(validated, "device_bind_token_unavailable")
+		}
+		return appendDeviceBindTokenToReturnTo(validated, token, expiresAt)
+	}
+	if session == nil {
+		return validated
+	}
+	return appendSessionTokenToReturnTo(validated, session.Token)
+}
+
+func appendOAuthErrorToReturnTo(rawURL string, code string) string {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return rawURL
+	}
+	query := parsed.Query()
+	query.Set("oauth_error", strings.TrimSpace(code))
+	parsed.RawQuery = query.Encode()
+	parsed.Fragment = ""
 	return parsed.String()
 }

@@ -1,6 +1,7 @@
 package wrapper
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http/httptest"
@@ -429,6 +430,79 @@ func TestACPProtocolRuntimeOwnershipHeldErrorIsStructuredRetryable(t *testing.T)
 	}
 	if fields["session_id"] != "session_active" || fields["run_id"] != "job_active" || fields["operation"] != "prompt" {
 		t.Fatalf("ownership error should preserve owner diagnostics: %#v", fields)
+	}
+}
+
+func TestACPProtocolEnsureReadyOwnershipFailureEmitsLifecycleFailed(t *testing.T) {
+	store, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager := &recordingACPRuntimeManager{}
+	srv := NewServer(store, manager)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	client := dialACPWS(t, "ws"+trimHTTPPrefix(ts.URL)+"/acp", map[string]string{"Authorization": "Bearer test-key"})
+	defer client.close()
+	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{}})
+	waitForRPCID(t, client, float64(1))
+	client.writeJSON(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      2,
+		"method":  "session/new",
+		"params": map[string]any{
+			"cwd":   "/workspace",
+			"_meta": map[string]any{"cloudagent": map[string]any{"outer_runtime": "wisp"}},
+		},
+	})
+	sessionID := waitForRPCID(t, client, float64(2))["result"].(map[string]any)["sessionId"].(string)
+	if _, err := store.AcquireRuntimeOwnership(context.Background(), RuntimeOwnershipRequest{
+		SessionID:  sessionID,
+		Generation: 1,
+		RunID:      "job_active",
+		OwnerID:    "gateway_other",
+		Operation:  "prompt",
+		TTL:        time.Minute,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	client.writeJSON(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      3,
+		"method":  cloudAgentRuntimeEnsureReadyMethod,
+		"params":  map[string]any{"session_id": sessionID, "cwd": "/workspace"},
+	})
+	var failedLifecycle map[string]any
+	var rpcResp map[string]any
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) && (failedLifecycle == nil || rpcResp == nil) {
+		msg := client.readJSON(t)
+		if got, ok := msg["id"].(float64); ok && got == 3 {
+			rpcResp = msg
+			continue
+		}
+		if msg["method"] != cloudAgentWorkspaceLifecycleMethod {
+			continue
+		}
+		params := msg["params"].(map[string]any)
+		if params["operation"] == "restore" && params["phase"] == "lease_wait" && params["status"] == "failed" {
+			failedLifecycle = params
+		}
+	}
+	if rpcResp == nil || failedLifecycle == nil {
+		t.Fatalf("expected ensure_ready ownership error plus failed lifecycle, resp=%#v lifecycle=%#v", rpcResp, failedLifecycle)
+	}
+	errorObject := rpcResp["error"].(map[string]any)
+	if errorObject["message"] != "runtime ownership is held" {
+		t.Fatalf("unexpected ownership response: %#v", rpcResp)
+	}
+	if failedLifecycle["error_code"] != "runtime_ownership_held" || failedLifecycle["retryable"] != true {
+		t.Fatalf("failed lifecycle should carry structured retryable ownership data: %#v", failedLifecycle)
+	}
+	if failedLifecycle["operation"] != "restore" || failedLifecycle["error_operation"] != "prompt" {
+		t.Fatalf("failed lifecycle should not let error data overwrite lifecycle fields: %#v", failedLifecycle)
 	}
 }
 

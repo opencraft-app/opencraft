@@ -63,6 +63,9 @@ type ACPSessionRuntime struct {
 	WorkspaceRuntimeID   string
 	WorkspaceWispName    string
 	WorkspaceWispClient  string
+	// WorkspaceLease* is a legacy persistence/debug surface. V1 ownership is the
+	// session run lease stored in WispLease* and must not be treated as a second
+	// independent inner/workspace owner.
 	WorkspaceLeaseID     string
 	WorkspaceFence       int64
 	WorkspaceLeaseUntil  time.Time
@@ -74,6 +77,7 @@ type ACPSessionRuntimeStartRequest struct {
 	Scope            Scope
 	CWD              string
 	Generation       int64
+	OwnerID          string
 	SandboxBackend   string
 	OuterRuntime     string
 	RuntimeRecovery  string
@@ -180,6 +184,13 @@ func (m fakeACPSessionRuntimeManager) StartSessionRuntime(ctx context.Context, r
 }
 
 func (m fakeACPSessionRuntimeManager) EnsureSessionRuntime(ctx context.Context, runtime ACPSessionRuntime, req ACPSessionRuntimeStartRequest) (ACPSessionRuntime, error) {
+	if delayMS := envInt("GATEWAY_FAKE_RUNTIME_ENSURE_DELAY_MS", 0); delayMS > 0 {
+		select {
+		case <-ctx.Done():
+			return ACPSessionRuntime{}, ctx.Err()
+		case <-time.After(time.Duration(delayMS) * time.Millisecond):
+		}
+	}
 	return m.ReattachSessionRuntime(ctx, runtime)
 }
 

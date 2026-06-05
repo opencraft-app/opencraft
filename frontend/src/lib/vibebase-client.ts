@@ -5,7 +5,7 @@
  *   - `authApiBase` 来自 `resolveConfiguredAuthApiBaseUrl()`：
  *       国内：https://lightclaw.tech
  *       国际：https://api.lightclaw.site
- *       企业：https://api.lightclaw.cn / https://api.lightvela.tencent.com
+ *       企业：https://api.lightclaw.cn / https://api.lightvela.com
  *   - `service-gateway` 配置 `prefix: /v1/vibebase` + `rewrite_prefix: /v1` +
  *     `auth_strategy: session`：自动从 cookie 解出 user_id，注入
  *     `X-Lightclaw-User-ID` + `Authorization: Bearer <internal_token>` 后转发到
@@ -33,6 +33,7 @@
  */
 
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
+import { readStoredAuthToken } from "@/repositories/http-repositories";
 
 /** Vibebase 路径前缀（拼到 `authApiBase` 之后）。 */
 const PATH_PREFIX = "/v1/vibebase";
@@ -202,7 +203,12 @@ async function fetchVibebase(
 ): Promise<Response> {
   let res: Response;
   try {
-    res = await fetch(url, { ...init, credentials: "include" });
+    const headers = new Headers(init.headers);
+    const authToken = readStoredAuthToken();
+    if (authToken && !headers.has("Authorization")) {
+      headers.set("Authorization", `Bearer ${authToken}`);
+    }
+    res = await fetch(url, { ...init, headers, credentials: "include" });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     throw new VibebaseError(

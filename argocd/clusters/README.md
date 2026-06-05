@@ -19,3 +19,16 @@ python3 .ci/runtime/commands/onboard_argocd_target_cluster.py \
   --argocd-insecure-skip-verify
 ```
 
+For the empty DevCloud dep cluster:
+
+```bash
+mkdir -p .secret
+cp /path/to/dep.conf .secret/devcloud-dep.conf
+python3 .ci/runtime/commands/onboard_argocd_target_cluster.py \
+  --cluster-manifest argocd/clusters/devcloud-dep.yaml \
+  --kubeconfig .secret/devcloud-dep.conf \
+  --argocd-base-url "$ARGOCD_BASE_URL" \
+  --argocd-username "$ARGOCD_USERNAME" \
+  --argocd-password "$ARGOCD_PASSWORD" \
+  --argocd-insecure-skip-verify
+```

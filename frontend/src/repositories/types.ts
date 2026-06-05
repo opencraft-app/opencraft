@@ -23,7 +23,11 @@ import type {
   WeixinLoginSession,
   WorkspaceMessage,
 } from "@/domain/types";
-import type { OAuthProvider } from "@/lib/oauth";
+import type { OAuthProvider, WeChatOAuthMode } from "@/lib/oauth";
+
+export interface OAuthStartOptions {
+  wechatMode?: WeChatOAuthMode;
+}
 
 export interface RealnameVerifyResult {
   ok: boolean;
@@ -31,6 +35,21 @@ export interface RealnameVerifyResult {
   nameMasked: string;
   idCardMasked: string;
   requestId: string;
+}
+
+export interface TatDeviceBindResult {
+  status: string;
+  ticket: string;
+  callbackUrl: string;
+  redirectUrl: string;
+  expiresAt: string;
+  registrationCode?: string | null;
+  registration?: {
+    region: string;
+    registerCodeId: string;
+    registerCodeValue: string;
+    requestId: string;
+  };
 }
 
 export interface AuthRepository {
@@ -51,7 +70,8 @@ export interface AuthRepository {
   deleteAccount(): Promise<void>;
   /** 实名认证：POST /auth/realname/verify */
   verifyRealname(input: { name: string; idCard: string }): Promise<RealnameVerifyResult>;
-  getOAuthStartUrl(provider: OAuthProvider): string | null;
+  createTatDeviceBind(input: { callbackUrl: string; deviceName?: string }): Promise<TatDeviceBindResult>;
+  getOAuthStartUrl(provider: OAuthProvider, options?: OAuthStartOptions): string | null;
   signInAsGuest(): Promise<AuthSessionSnapshot>;
   signOut(): Promise<void>;
 }

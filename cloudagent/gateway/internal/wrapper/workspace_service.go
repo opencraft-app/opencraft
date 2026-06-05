@@ -34,6 +34,13 @@ type WorkspaceService interface {
 	GetLease(ctx context.Context, workspaceID string) (WorkspaceLease, bool, error)
 }
 
+type RuntimeResourceLedger interface {
+	UpsertRuntimeResource(ctx context.Context, rec RuntimeResourceRecord) error
+	MarkRuntimeResourceState(ctx context.Context, sessionID string, generation int64, state string, lastError string) error
+	LoadRuntimeResource(ctx context.Context, sessionID string, generation int64) (RuntimeResourceRecord, bool, error)
+	ListStaleRuntimeResources(ctx context.Context, now time.Time, limit int) ([]RuntimeResourceRecord, error)
+}
+
 type WorkspaceRecord struct {
 	WorkspaceID           string
 	Backend               string
@@ -56,6 +63,21 @@ type WorkspaceRecord struct {
 	DeleteRetryAfter      time.Time
 	OuterCleanupPending   bool
 	LastOuterCleanupError string
+}
+
+type RuntimeResourceRecord struct {
+	SessionID      string
+	Generation     int64
+	RuntimeID      string
+	OwnerID        string
+	SandboxBackend string
+	State          string
+	OuterSandboxID string
+	InnerSandboxID string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	ExpiresAt      time.Time
+	LastError      string
 }
 
 type WorkspaceLeaseRequest struct {

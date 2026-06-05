@@ -14,6 +14,7 @@
 - `ksops-secret-generator.yaml`
 - `service-gateway-platform.env`
 - `config.yaml`
+- `api-lightvela-com-ingress.yaml`
 - `../../../secrets/shprod/service-gateway-runtime-secrets.sops.yaml`
 
 ## Current Runtime Contract
@@ -36,7 +37,8 @@ Secret 键：
 
 ## Note
 
-这只服务是上海公网主入口。第一阶段只让 Argo 接管现网，不主动改变入口路径、LB、域名或 TLS 证书。
+这只服务是上海公网主入口。`api.lightvela.com` 通过独立 Ingress/TkeServiceConfig 接入，
+避免修改现有 `api.lightclaw.cn` 与 `api.lightvela.tencent.com` 入口。
 
 另外，`lightclaw-gateway` namespace 和默认 `ServiceAccount` 当前会被多个 app 共享。
 所以这只 app 会显式删掉：

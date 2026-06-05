@@ -17,10 +17,15 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/openclaw/openclaw/mono/backend/auth/internal/avatar"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/service"
+	"github.com/openclaw/openclaw/mono/backend/auth/internal/tat"
 )
 
-const testAdminToken = "test-admin-secret"
+const (
+	testAdminToken       = "test-admin-secret"
+	testDeviceBindSecret = "test-device-bind-secret"
+)
 
 func TestSetSessionCookieUsesConfiguredCrossSiteAttributes(t *testing.T) {
 	t.Parallel()
@@ -144,6 +149,151 @@ func TestGetCurrentSessionDoesNotExposePlanSelection(t *testing.T) {
 	}
 }
 
+func TestCreateTATDeviceBindIssuesLoopbackTicket(t *testing.T) {
+	t.Parallel()
+
+	issuer := &httpStubTATRegisterIssuer{
+		result: tat.RegisterCode{
+			Region:             "ap-guangzhou",
+			RegisterCodeID:     "reg-code-id",
+			RegisterCodeValue:  "reg-code-value",
+			RequestID:          "request-id",
+			EffectiveTimeHours: 24,
+		},
+	}
+	router := newAuthTestRouterWithTATRegisterIssuer(issuer)
+	signUp := performJSONRequest(t, router, http.MethodPost, "/auth/password/sign-up", map[string]any{
+		"name":       "Mac Operator",
+		"email":      "mac-operator@example.com",
+		"password":   "password123",
+		"inviteCode": "VALID2026",
+	})
+	sessionCookie := sessionCookieFromRecorder(t, signUp)
+
+	recorder := performJSONRequest(t, router, http.MethodPost, "/auth/tat/device-bind", map[string]any{
+		"callback_url": "http://127.0.0.1:17631/lightvela/callback",
+		"device_name":  "mac-2.local",
+	}, sessionCookie)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+
+	var response struct {
+		Status       string `json:"status"`
+		Ticket       string `json:"ticket"`
+		CallbackURL  string `json:"callback_url"`
+		RedirectURL  string `json:"redirect_url"`
+		Registration struct {
+			Region            string `json:"region"`
+			RegisterCodeID    string `json:"register_code_id"`
+			RegisterCodeValue string `json:"register_code_value"`
+			RequestID         string `json:"request_id"`
+		} `json:"registration"`
+	}
+	decodeJSONResponse(t, recorder, &response)
+	if response.Status != "register_code_issued" {
+		t.Fatalf("status: got %q", response.Status)
+	}
+	if response.Ticket != "reg-code-id" {
+		t.Fatalf("ticket: got %q", response.Ticket)
+	}
+	if response.CallbackURL != "http://127.0.0.1:17631/lightvela/callback" {
+		t.Fatalf("callback_url: got %q", response.CallbackURL)
+	}
+	if !strings.Contains(response.RedirectURL, "register_code_id=reg-code-id") || !strings.Contains(response.RedirectURL, "register_code_value=reg-code-value") {
+		t.Fatalf("redirect_url should contain registration code, got %q", response.RedirectURL)
+	}
+	if response.Registration.Region != "ap-guangzhou" || response.Registration.RegisterCodeID != "reg-code-id" || response.Registration.RegisterCodeValue != "reg-code-value" {
+		t.Fatalf("registration: got %+v", response.Registration)
+	}
+	if len(issuer.requests) != 1 {
+		t.Fatalf("expected one TAT register request, got %d", len(issuer.requests))
+	}
+	if issuer.requests[0].RegisterLimit != 1 {
+		t.Fatalf("RegisterLimit = %d, want 1", issuer.requests[0].RegisterLimit)
+	}
+}
+
+func TestCreateTATDeviceBindRequiresConfiguredTATIssuer(t *testing.T) {
+	t.Parallel()
+
+	router := newAuthTestRouter()
+	signUp := performJSONRequest(t, router, http.MethodPost, "/auth/password/sign-up", map[string]any{
+		"name":       "Mac Operator",
+		"email":      "mac-no-tat@example.com",
+		"password":   "password123",
+		"inviteCode": "VALID2026",
+	})
+	sessionCookie := sessionCookieFromRecorder(t, signUp)
+
+	recorder := performJSONRequest(t, router, http.MethodPost, "/auth/tat/device-bind", map[string]any{
+		"callback_url": "http://127.0.0.1:17631/lightvela/callback",
+	}, sessionCookie)
+
+	if recorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestCreateTATDeviceBindAcceptsDeviceBindToken(t *testing.T) {
+	t.Parallel()
+
+	issuer := &httpStubTATRegisterIssuer{
+		result: tat.RegisterCode{
+			Region:             "ap-beijing",
+			RegisterCodeID:     "device-reg-id",
+			RegisterCodeValue:  "device-reg-value",
+			RequestID:          "device-request-id",
+			EffectiveTimeHours: 24,
+		},
+	}
+	router := newAuthTestRouterWithTATRegisterIssuer(issuer)
+	codec := newDeviceBindTokenCodec(testDeviceBindSecret, 10*time.Minute)
+	token, _, err := codec.Issue(&service.AuthSession{User: service.User{ID: "device-user-id"}}, "http://127.0.0.1:17631/lightvela/auth-callback?device_nonce=device-nonce")
+	if err != nil {
+		t.Fatalf("issue device bind token: %v", err)
+	}
+
+	recorder := performJSONRequestWithHeaders(t, router, http.MethodPost, "/auth/tat/device-bind", map[string]any{
+		"callback_url": "http://127.0.0.1:17631/lightvela/callback",
+		"device_name":  "mac-2.local",
+	}, map[string]string{
+		"Authorization": "Bearer " + token,
+	})
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if len(issuer.requests) != 1 {
+		t.Fatalf("expected one TAT register request, got %d", len(issuer.requests))
+	}
+	if !strings.Contains(issuer.requests[0].Description, "device-user-id") {
+		t.Fatalf("description should include device token user id, got %q", issuer.requests[0].Description)
+	}
+}
+
+func TestCreateTATDeviceBindRejectsExternalCallback(t *testing.T) {
+	t.Parallel()
+
+	router := newAuthTestRouterWithTATRegisterIssuer(&httpStubTATRegisterIssuer{})
+	signUp := performJSONRequest(t, router, http.MethodPost, "/auth/password/sign-up", map[string]any{
+		"name":       "Mac Operator",
+		"email":      "mac-callback@example.com",
+		"password":   "password123",
+		"inviteCode": "VALID2026",
+	})
+	sessionCookie := sessionCookieFromRecorder(t, signUp)
+
+	recorder := performJSONRequest(t, router, http.MethodPost, "/auth/tat/device-bind", map[string]any{
+		"callback_url": "https://evil.example.com/lightvela/callback",
+	}, sessionCookie)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestVerifyRealnameRequiresAuth(t *testing.T) {
 	router := newAuthTestRouterWithRealname()
 
@@ -232,7 +382,7 @@ func TestGetCurrentSessionReturnsSignedAvatarURL(t *testing.T) {
 
 	var response sessionResponseBody
 	decodeJSONResponse(t, current, &response)
-	wantAvatarURL := "/users/" + signUpBody.Session.User.ID + "/avatar"
+	wantAvatarURL := publicAvatarURLForTest(signUpBody.Session.User.ID)
 	if response.Session.User == nil || response.Session.User.AvatarURL != wantAvatarURL {
 		t.Fatalf("expected fixed avatar path on current session, got %+v", response.Session.User)
 	}
@@ -469,9 +619,55 @@ func TestPutProfileAvatarStoresObjectAndReturnsAvatarURL(t *testing.T) {
 
 	var response profileResponseBody
 	decodeJSONResponse(t, recorder, &response)
-	wantAvatarURL := "/users/" + avatarStore.lastUploadedUserID + "/avatar"
+	wantAvatarURL := publicAvatarURLForTest(avatarStore.lastUploadedUserID)
 	if response.User == nil || response.User.AvatarURL != wantAvatarURL {
 		t.Fatalf("expected uploaded avatar url, got %+v", response.User)
+	}
+}
+
+func TestPutProfileAvatarQueuesAuditWhenEnabled(t *testing.T) {
+	t.Parallel()
+
+	avatarStore := &stubAvatarStore{
+		objectKey: "avatars/usr_01/pending.jpg",
+		signedURL: "https://example.com/signed-pending-avatar.jpg",
+	}
+	router := newAuthTestRouterWithAvatarStoreAndContentAudit(avatarStore, service.ContentAuditConfig{
+		Enabled:            true,
+		AvatarAuditEnabled: true,
+		ProductID:          "30018",
+		UserSID:            "300071",
+	})
+
+	signUp := performJSONRequest(t, router, http.MethodPost, "/auth/password/sign-up", map[string]any{
+		"name":       "头像用户",
+		"email":      "avatar-audit-http@example.com",
+		"password":   "password123",
+		"inviteCode": "VALID2026",
+	})
+	sessionCookie := sessionCookieFromRecorder(t, signUp)
+
+	recorder := performMultipartAvatarUploadRequest(t, router, "/auth/profile/avatar", sessionCookie, testPNGBytes(t))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200 from avatar upload, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if avatarStore.lastPendingUserID == "" {
+		t.Fatal("expected audit-enabled upload to store a pending avatar object")
+	}
+	if avatarStore.lastUploadedUserID != "" {
+		t.Fatalf("audit-enabled upload must not overwrite current avatar object, got current upload for %q", avatarStore.lastUploadedUserID)
+	}
+
+	var response profileResponseBody
+	decodeJSONResponse(t, recorder, &response)
+	if response.User == nil {
+		t.Fatal("expected user response")
+	}
+	if response.User.AvatarURL != "" {
+		t.Fatalf("expected active avatar to remain unset before audit pass, got %q", response.User.AvatarURL)
+	}
+	if response.User.PendingAvatarURL != avatarStore.signedURL || response.User.AvatarAuditStatus != "pending" {
+		t.Fatalf("expected pending avatar audit response, got %+v", response.User)
 	}
 }
 
@@ -503,6 +699,9 @@ func TestGetProfileAvatarRedirectsToSignedURL(t *testing.T) {
 	}
 	if location := redirect.Header().Get("Location"); location != avatarStore.signedURL {
 		t.Fatalf("expected redirect to signed url %q, got %q", avatarStore.signedURL, location)
+	}
+	if cacheControl := redirect.Header().Get("Cache-Control"); cacheControl != "no-store" {
+		t.Fatalf("expected no-store cache control on profile avatar redirect, got %q", cacheControl)
 	}
 }
 
@@ -538,6 +737,9 @@ func TestGetUserAvatarRedirectsToSignedURL(t *testing.T) {
 	if location := redirect.Header().Get("Location"); location != avatarStore.signedURL {
 		t.Fatalf("expected redirect to signed url %q, got %q", avatarStore.signedURL, location)
 	}
+	if cacheControl := redirect.Header().Get("Cache-Control"); cacheControl != "no-store" {
+		t.Fatalf("expected no-store cache control on public avatar redirect, got %q", cacheControl)
+	}
 }
 
 func TestPutProfileAvatarRejectsPayloadLargerThanLimit(t *testing.T) {
@@ -553,10 +755,37 @@ func TestPutProfileAvatarRejectsPayloadLargerThanLimit(t *testing.T) {
 	})
 	sessionCookie := sessionCookieFromRecorder(t, signUp)
 
-	oversized := bytes.Repeat([]byte("a"), 200*1024+1)
+	oversized := bytes.Repeat([]byte("a"), int(avatar.MaxBytes)+1)
 	recorder := performMultipartAvatarUploadRequest(t, router, "/auth/profile/avatar", sessionCookie, oversized)
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 from oversized avatar upload, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+
+	var response errorResponseBody
+	decodeJSONResponse(t, recorder, &response)
+	if response.Code != "avatar_too_large" {
+		t.Fatalf("expected avatar_too_large, got %q", response.Code)
+	}
+}
+
+func TestPutProfileAvatarReturnsTooLargeWhenNormalizedAvatarExceedsLimit(t *testing.T) {
+	t.Parallel()
+
+	router := newAuthTestRouterWithAvatarStore(&stubAvatarStore{
+		storeErr: avatar.ErrAvatarTooLarge,
+	})
+
+	signUp := performJSONRequest(t, router, http.MethodPost, "/auth/password/sign-up", map[string]any{
+		"name":       "头像用户",
+		"email":      "avatar-normalized-limit@example.com",
+		"password":   "password123",
+		"inviteCode": "VALID2026",
+	})
+	sessionCookie := sessionCookieFromRecorder(t, signUp)
+
+	recorder := performMultipartAvatarUploadRequest(t, router, "/auth/profile/avatar", sessionCookie, testPNGBytes(t))
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 from normalized oversized avatar upload, got %d: %s", recorder.Code, recorder.Body.String())
 	}
 
 	var response errorResponseBody
@@ -995,6 +1224,129 @@ func TestAdminCreateImpersonationSessionAllowsStructuredAbsoluteReturnTo(t *test
 	}
 }
 
+func TestAdminE2ESessionMintDisabledByDefault(t *testing.T) {
+	t.Parallel()
+
+	router := newAuthAdminTestRouter("admin-secret")
+	recorder := performAdminJSONRequest(t, router, http.MethodPost, "/admin/e2e/session-mint", map[string]any{
+		"userId": "usr_missing",
+	}, "e2e-secret")
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 when e2e auth is disabled, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestAdminE2ESessionMintRequiresE2EToken(t *testing.T) {
+	t.Parallel()
+
+	router := newAuthE2ETestRouter("admin-secret", "e2e-secret")
+	recorder := performAdminJSONRequest(t, router, http.MethodPost, "/admin/e2e/session-mint", map[string]any{
+		"userId": "usr_missing",
+	}, "admin-secret")
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for non-e2e token, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestAdminE2ESessionMintReturnsNormalSession(t *testing.T) {
+	t.Parallel()
+
+	router := newAuthE2ETestRouter("admin-secret", "e2e-secret")
+	signUp := performJSONRequest(t, router, http.MethodPost, "/auth/password/sign-up", map[string]any{
+		"name":       "E2E User",
+		"email":      "e2e-session-mint@example.com",
+		"password":   "password123",
+		"inviteCode": "VALID2026",
+	})
+	if signUp.Code != http.StatusOK {
+		t.Fatalf("expected 200 from sign up, got %d: %s", signUp.Code, signUp.Body.String())
+	}
+	var signUpBody sessionResponseBody
+	decodeJSONResponse(t, signUp, &signUpBody)
+
+	minted := performAdminJSONRequest(t, router, http.MethodPost, "/admin/e2e/session-mint", map[string]any{
+		"userId":     signUpBody.Session.User.ID,
+		"returnTo":   "https://console.example.com/dashboard#session_token=old&panel=e2e",
+		"ttlSeconds": 900,
+	}, "e2e-secret")
+	if minted.Code != http.StatusOK {
+		t.Fatalf("expected 200 from e2e session mint, got %d: %s", minted.Code, minted.Body.String())
+	}
+	var response adminE2ESessionResponse
+	decodeJSONResponse(t, minted, &response)
+	if response.UserID != signUpBody.Session.User.ID || strings.TrimSpace(response.SessionToken) == "" {
+		t.Fatalf("unexpected e2e session response: %+v", response)
+	}
+	if response.Impersonated {
+		t.Fatal("expected e2e mint to create a normal, non-impersonated session")
+	}
+	if response.ExpiresAt != fixedHTTPTestNow().Add(15*time.Minute).UTC().Format(timeRFC3339Milli) {
+		t.Fatalf("expected requested expiry, got %s", response.ExpiresAt)
+	}
+	cookie := findSetCookie(t, minted, sessionCookieName)
+	if cookie.Value != response.SessionToken || cookie.MaxAge != 900 {
+		t.Fatalf("expected minted session cookie with max-age 900, got value=%q maxAge=%d", cookie.Value, cookie.MaxAge)
+	}
+
+	loginURL, err := url.Parse(response.LoginURL)
+	if err != nil {
+		t.Fatalf("parse login url: %v", err)
+	}
+	fragmentValues, err := url.ParseQuery(loginURL.Fragment)
+	if err != nil {
+		t.Fatalf("parse login fragment: %v", err)
+	}
+	if fragmentValues.Get("session_token") != response.SessionToken || fragmentValues.Get("panel") != "e2e" {
+		t.Fatalf("unexpected login url fragment %q", loginURL.Fragment)
+	}
+
+	current := performJSONRequest(t, router, http.MethodGet, "/auth/session", nil, cookie)
+	if current.Code != http.StatusOK {
+		t.Fatalf("expected 200 from minted current session, got %d: %s", current.Code, current.Body.String())
+	}
+	var currentBody sessionResponseBody
+	decodeJSONResponse(t, current, &currentBody)
+	if currentBody.Session.Impersonated {
+		t.Fatal("expected public current session to remain non-impersonated")
+	}
+}
+
+func TestAdminE2ESessionMintValidatesTTLAndReturnToBeforeMinting(t *testing.T) {
+	t.Parallel()
+
+	router := newAuthE2ETestRouter("admin-secret", "e2e-secret")
+	signUp := performJSONRequest(t, router, http.MethodPost, "/auth/password/sign-up", map[string]any{
+		"name":       "E2E Invalid",
+		"email":      "e2e-session-invalid-input@example.com",
+		"password":   "password123",
+		"inviteCode": "VALID2026",
+	})
+	var signUpBody sessionResponseBody
+	decodeJSONResponse(t, signUp, &signUpBody)
+
+	tooLongTTL := performAdminJSONRequest(t, router, http.MethodPost, "/admin/e2e/session-mint", map[string]any{
+		"userId":     signUpBody.Session.User.ID,
+		"ttlSeconds": int((25 * time.Hour) / time.Second),
+	}, "e2e-secret")
+	if tooLongTTL.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for too long ttl, got %d: %s", tooLongTTL.Code, tooLongTTL.Body.String())
+	}
+	if cookie := cookieByName(tooLongTTL, sessionCookieName); cookie != nil {
+		t.Fatalf("expected no session cookie for invalid ttl, got %+v", cookie)
+	}
+
+	invalidReturnTo := performAdminJSONRequest(t, router, http.MethodPost, "/admin/e2e/session-mint", map[string]any{
+		"userId":   signUpBody.Session.User.ID,
+		"returnTo": "/dashboard",
+	}, "e2e-secret")
+	if invalidReturnTo.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid returnTo, got %d: %s", invalidReturnTo.Code, invalidReturnTo.Body.String())
+	}
+	if cookie := cookieByName(invalidReturnTo, sessionCookieName); cookie != nil {
+		t.Fatalf("expected no session cookie for invalid returnTo, got %+v", cookie)
+	}
+}
+
 type sessionResponseBody struct {
 	Session struct {
 		User *struct {
@@ -1014,9 +1366,13 @@ type sessionResponseBody struct {
 
 type profileResponseBody struct {
 	User *struct {
-		Name           string `json:"name"`
-		AvatarURL      string `json:"avatarUrl"`
-		InviteRequired bool   `json:"inviteRequired"`
+		Name              string `json:"name"`
+		PendingName       string `json:"pendingName"`
+		NameAuditStatus   string `json:"nameAuditStatus"`
+		AvatarURL         string `json:"avatarUrl"`
+		PendingAvatarURL  string `json:"pendingAvatarUrl"`
+		AvatarAuditStatus string `json:"avatarAuditStatus"`
+		InviteRequired    bool   `json:"inviteRequired"`
 	} `json:"user"`
 }
 
@@ -1030,6 +1386,28 @@ func newAuthTestRouter() *gin.Engine {
 
 func newAuthAdminTestRouter(adminToken string) *gin.Engine {
 	return newAuthTestRouterWithOptions(nil, adminToken)
+}
+
+func newAuthE2ETestRouter(adminToken string, e2eToken string) *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	store := service.NewMemoryStore(service.StoreOptions{
+		Now:                fixedHTTPTestNow,
+		SeedDefaultInvites: true,
+	})
+	svc := service.NewWithStore(store, service.Options{
+		Now:        fixedHTTPTestNow,
+		SessionTTL: 30 * 24 * time.Hour,
+	})
+	return NewRouter(svc, ServerConfig{
+		CookieSecure:   true,
+		CookieSameSite: http.SameSiteNoneMode,
+		SessionTTL:     30 * 24 * time.Hour,
+		PublicBaseURL:  "https://lightclaw.tech",
+		AdminToken:     adminToken,
+		E2EAuthEnabled: true,
+		E2EAuthToken:   e2eToken,
+		E2ESessionTTL:  2 * time.Hour,
+	})
 }
 
 func newAuthAdminTestRouterWithQQ(adminToken string, client QQOAuthClient) *gin.Engine {
@@ -1090,6 +1468,48 @@ func newAuthAdminTestRouterWithWeChat(adminToken string, client WeChatOAuthClien
 
 func newAuthTestRouterWithAvatarStore(avatarStore AvatarStore) *gin.Engine {
 	return newAuthTestRouterWithOptions(avatarStore, "")
+}
+
+func newAuthTestRouterWithAvatarStoreAndContentAudit(avatarStore AvatarStore, cfg service.ContentAuditConfig) *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	store := service.NewMemoryStore(service.StoreOptions{
+		Now:                fixedHTTPTestNow,
+		SeedDefaultInvites: true,
+	})
+	svc := service.NewWithStore(store, service.Options{
+		Now:          fixedHTTPTestNow,
+		SessionTTL:   30 * 24 * time.Hour,
+		ContentAudit: cfg,
+	})
+	return NewRouter(svc, ServerConfig{
+		CookieSecure:   true,
+		CookieSameSite: http.SameSiteNoneMode,
+		SessionTTL:     30 * 24 * time.Hour,
+		AvatarStore:    avatarStore,
+		PublicBaseURL:  "https://lightclaw.tech",
+		AdminToken:     testAdminToken,
+	})
+}
+
+func newAuthTestRouterWithTATRegisterIssuer(issuer tat.RegisterCodeIssuer) *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	store := service.NewMemoryStore(service.StoreOptions{
+		Now:                fixedHTTPTestNow,
+		SeedDefaultInvites: true,
+	})
+	svc := service.NewWithStore(store, service.Options{
+		Now:        fixedHTTPTestNow,
+		SessionTTL: 30 * 24 * time.Hour,
+	})
+	return NewRouter(svc, ServerConfig{
+		CookieSecure:          true,
+		CookieSameSite:        http.SameSiteNoneMode,
+		SessionTTL:            30 * 24 * time.Hour,
+		PublicBaseURL:         "https://lightclaw.tech",
+		AdminToken:            testAdminToken,
+		TATRegisterIssuer:     issuer,
+		DeviceBindTokenSecret: testDeviceBindSecret,
+	})
 }
 
 func newAuthTestRouterWithOptions(avatarStore AvatarStore, adminToken string) *gin.Engine {
@@ -1155,6 +1575,42 @@ func performJSONRequest(
 	req := httptest.NewRequest(method, path, bytes.NewReader(payload))
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
+	}
+	for _, cookie := range cookies {
+		req.AddCookie(cookie)
+	}
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, req)
+	return recorder
+}
+
+func performJSONRequestWithHeaders(
+	t *testing.T,
+	router http.Handler,
+	method string,
+	path string,
+	body map[string]any,
+	headers map[string]string,
+	cookies ...*http.Cookie,
+) *httptest.ResponseRecorder {
+	t.Helper()
+
+	var payload []byte
+	if body != nil {
+		var err error
+		payload, err = json.Marshal(body)
+		if err != nil {
+			t.Fatalf("marshal request body: %v", err)
+		}
+	}
+
+	req := httptest.NewRequest(method, path, bytes.NewReader(payload))
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	for key, value := range headers {
+		req.Header.Set(key, value)
 	}
 	for _, cookie := range cookies {
 		req.AddCookie(cookie)
@@ -1267,7 +1723,9 @@ func testPNGBytes(t *testing.T) []byte {
 type stubAvatarStore struct {
 	objectKey            string
 	signedURL            string
+	storeErr             error
 	lastUploadedUserID   string
+	lastPendingUserID    string
 	lastRemoteUserID     string
 	lastRemoteURL        string
 	lastDeletedObjectKey string
@@ -1285,10 +1743,47 @@ func (httpStubRealnameCipher) Encrypt(plaintext string) (string, error) {
 	return "enc(" + plaintext + ")", nil
 }
 
+type httpStubTATRegisterIssuer struct {
+	requests []tat.CreateRegisterCodeInput
+	result   tat.RegisterCode
+	err      error
+}
+
+func (s *httpStubTATRegisterIssuer) CreateRegisterCode(_ context.Context, request tat.CreateRegisterCodeInput) (tat.RegisterCode, error) {
+	s.requests = append(s.requests, request)
+	if s.err != nil {
+		return tat.RegisterCode{}, s.err
+	}
+	if s.result.RegisterCodeID != "" {
+		return s.result, nil
+	}
+	return tat.RegisterCode{
+		Region:             "ap-guangzhou",
+		RegisterCodeID:     "stub-register-code-id",
+		RegisterCodeValue:  "stub-register-code-value",
+		RequestID:          "stub-request-id",
+		EffectiveTimeHours: 24,
+	}, nil
+}
+
 func (s *stubAvatarStore) StoreAvatar(_ context.Context, userID string, _ []byte) (string, error) {
+	if s.storeErr != nil {
+		return "", s.storeErr
+	}
 	s.lastUploadedUserID = userID
 	if s.objectKey == "" {
 		s.objectKey = "avatars/" + userID + "/current.jpg"
+	}
+	return s.objectKey, nil
+}
+
+func (s *stubAvatarStore) StorePendingAvatar(_ context.Context, userID string, _ []byte) (string, error) {
+	if s.storeErr != nil {
+		return "", s.storeErr
+	}
+	s.lastPendingUserID = userID
+	if s.objectKey == "" {
+		s.objectKey = "avatars/" + userID + "/pending/test.jpg"
 	}
 	return s.objectKey, nil
 }
@@ -1323,12 +1818,19 @@ func defaultTestAdminToken(token string) string {
 
 func findSetCookie(t *testing.T, recorder *httptest.ResponseRecorder, name string) *http.Cookie {
 	t.Helper()
+	if cookie := cookieByName(recorder, name); cookie != nil {
+		return cookie
+	}
+	t.Fatalf("expected set-cookie %q, got %v", name, recorder.Result().Cookies())
+	return nil
+}
+
+func cookieByName(recorder *httptest.ResponseRecorder, name string) *http.Cookie {
 	for _, cookie := range recorder.Result().Cookies() {
 		if cookie.Name == name {
 			return cookie
 		}
 	}
-	t.Fatalf("expected set-cookie %q, got %v", name, recorder.Result().Cookies())
 	return nil
 }
 
@@ -1358,4 +1860,8 @@ func currentSMSCodeFromAdmin(t *testing.T, router http.Handler, phone string) st
 
 func fixedHTTPTestNow() time.Time {
 	return time.Date(2026, 3, 20, 10, 0, 0, 0, time.UTC)
+}
+
+func publicAvatarURLForTest(userID string) string {
+	return "/users/" + userID + "/avatar?v=" + fixedHTTPTestNow().UTC().Format("20060102150405.000000000")
 }

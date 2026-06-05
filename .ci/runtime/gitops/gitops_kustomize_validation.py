@@ -15,13 +15,13 @@ from typing import Any
 
 import yaml
 
+from contracts.bundles import playground_catalog_root
 from support.yaml import load_mapping
 
 
 CATALOG_DIR_TEMPLATE = "argocd/catalogs/sandbox/{env}"
-PLAYGROUND_CATALOG_DIR_TEMPLATE = "argocd/catalogs/playground/beijing-playground/{env}"
 SUPPORTED_SANDBOX_ENVS = {"beijing-sandbox", "beijing-sandbox-2"}
-SUPPORTED_DIRECT_APP_ENVS = {"shprod", "sgprod"}
+SUPPORTED_DIRECT_APP_ENVS = {"shprod", "sgprod", "tkexgz", "tkexsg", "devcloud-dep"}
 PLACEHOLDER_RE = re.compile(r"\bREPLACE_[A-Z0-9_]+\b")
 
 
@@ -32,15 +32,22 @@ class KustomizeTarget:
 
 
 def load_targets(repo_root: Path, env: str, changed_only: bool = False) -> list[KustomizeTarget]:
+    changed_paths = changed_files(repo_root, env) if changed_only else []
     if env in SUPPORTED_DIRECT_APP_ENVS:
-        changed_services = changed_direct_app_services(repo_root, env) if changed_only else None
-        return load_direct_app_targets(repo_root, env, changed_services)
+        changed_services = changed_direct_app_services_from_paths(changed_paths, env) if changed_only else None
+        targets = load_direct_app_targets(repo_root, env, changed_services)
+        if changed_only:
+            targets = merge_targets(targets, shared_component_targets(repo_root, changed_paths))
+        return targets
 
     if env not in SUPPORTED_SANDBOX_ENVS and not is_playground_env(env):
         raise ValueError(f"unsupported env for strict kustomize validation: {env}")
 
-    changed_services = changed_catalog_services(repo_root, env) if changed_only else None
-    return load_catalog_targets(repo_root, env, changed_services)
+    changed_services = changed_catalog_services_from_paths(changed_paths, env) if changed_only else None
+    targets = load_catalog_targets(repo_root, env, changed_services)
+    if changed_only:
+        targets = merge_targets(targets, shared_component_targets(repo_root, changed_paths))
+    return targets
 
 
 def load_catalog_targets(repo_root: Path, env: str, service_names: set[str] | None = None) -> list[KustomizeTarget]:
@@ -68,17 +75,20 @@ def load_catalog_targets(repo_root: Path, env: str, service_names: set[str] | No
 
 
 def is_playground_env(env: str) -> bool:
-    return re.fullmatch(r"sandbox-bj-\d+", env) is not None
+    return re.fullmatch(r"sandbox-(bj|kr)-\d+", env) is not None
 
 
 def catalog_dir_for_env(env: str) -> str:
     if is_playground_env(env):
-        return PLAYGROUND_CATALOG_DIR_TEMPLATE.format(env=env)
+        return f"{playground_catalog_root(env)}/{env}"
     return CATALOG_DIR_TEMPLATE.format(env=env)
 
 
 def changed_direct_app_services(repo_root: Path, env: str) -> set[str]:
-    paths = changed_files(repo_root, env)
+    return changed_direct_app_services_from_paths(changed_files(repo_root, env), env)
+
+
+def changed_direct_app_services_from_paths(paths: list[str], env: str) -> set[str]:
     services: set[str] = set()
     service_prefix = "argocd/services/"
     app_prefix = f"argocd/apps/{env}/"
@@ -93,7 +103,10 @@ def changed_direct_app_services(repo_root: Path, env: str) -> set[str]:
 
 
 def changed_catalog_services(repo_root: Path, env: str) -> set[str]:
-    paths = changed_files(repo_root, env)
+    return changed_catalog_services_from_paths(changed_files(repo_root, env), env)
+
+
+def changed_catalog_services_from_paths(paths: list[str], env: str) -> set[str]:
     services: set[str] = set()
     service_prefix = "argocd/services/"
     catalog_prefix = f"{catalog_dir_for_env(env)}/"
@@ -109,6 +122,40 @@ def changed_catalog_services(repo_root: Path, env: str) -> set[str]:
             if source_service:
                 services.add(source_service)
     return services
+
+
+def shared_component_services(paths: list[str]) -> set[str]:
+    services: set[str] = set()
+    prefix = "argocd/services/"
+    for path in paths:
+        if not path.startswith(prefix):
+            continue
+        parts = path.split("/")
+        if len(parts) >= 4 and parts[3] in {"common", "profiles"}:
+            services.add(parts[2])
+    return services
+
+
+def shared_component_targets(repo_root: Path, paths: list[str]) -> list[KustomizeTarget]:
+    targets: list[KustomizeTarget] = []
+    for service in sorted(shared_component_services(paths)):
+        service_root = repo_root / "argocd" / "services" / service
+        if not service_root.is_dir():
+            continue
+        for kustomization in sorted(service_root.glob("*/kustomization.yaml")):
+            env_name = kustomization.parent.name
+            if env_name in {"common", "profiles"}:
+                continue
+            source_path = kustomization.parent.relative_to(repo_root).as_posix()
+            targets.append(KustomizeTarget(app_name=f"{service}-{env_name}", source_path=source_path))
+    return targets
+
+
+def merge_targets(primary: list[KustomizeTarget], extra: list[KustomizeTarget]) -> list[KustomizeTarget]:
+    merged: dict[str, KustomizeTarget] = {}
+    for target in [*primary, *extra]:
+        merged[target.source_path] = target
+    return [merged[source_path] for source_path in sorted(merged)]
 
 
 def changed_files(repo_root: Path, env: str) -> list[str]:

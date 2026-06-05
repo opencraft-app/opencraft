@@ -12,6 +12,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowRight,
   BrainCircuit,
+  CalendarClock,
   ChevronDown,
   Check,
   MessageCircle,
@@ -29,6 +30,7 @@ import {
   TerminalSquare,
   Download,
   Plus,
+  RefreshCw,
   Trash2,
   Trophy,
   UserRound,
@@ -66,11 +68,23 @@ import {
   type IFeatureFlags,
   type IProductConfig,
 } from "@tencent/tea-sdk-lightclaw";
-import { createMonoDebugExecAdapter } from "@/pages/marketing/openclaw-tat-adapter";
+import {
+  createMonoDebugExecAdapter,
+  LIGHTVELA_SKIP_HERMES_PROVIDER_LIST_COMMAND,
+} from "@/pages/marketing/openclaw-tat-adapter";
 import { createLightVelaCommandExecutor } from "@/pages/marketing/openclaw-command-executor";
 import { installOpenClawConsoleHelpers } from "@/pages/marketing/openclaw-console-helpers";
+import {
+  buildHermesMemoryReadCommand,
+  getMemoryUsagePercent,
+  parseHermesMemorySnapshot,
+  splitHermesMemoryEntries,
+  toSingleLineMemoryEntry,
+  type HermesMemorySnapshot,
+} from "@/pages/marketing/openclaw-memory";
 import { BuddyPanel } from "@/pages/marketing/openclaw-buddy-panel";
 import { AchievementsPanel } from "@/pages/marketing/openclaw-achievements-panel";
+import { AutomationsPanel } from "@/pages/marketing/openclaw-automations-panel";
 import { findCompletedCreatingBot, getOpenClawCreateLimitMessage } from "@/pages/marketing/openclaw-create-availability";
 import {
   getRestartBlockReason,
@@ -83,10 +97,14 @@ import {
 } from "@/pages/marketing/openclaw-restart-gateway";
 import {
   getResetBlockReason,
+  getAcliResetBlockReason,
+  getAcliResetClickAction,
   hermesModelName,
   hermesSwitchModelFullId,
   isExecCommandSucceeded,
+  isResetConfigRouteMissingError,
   truncateExecOutput,
+  ACLI_RESET_COMMAND,
   RESET_BLOCK_REASON,
 } from "@/pages/marketing/openclaw-reset-config";
 import { toast } from "@/lib/toast";
@@ -96,9 +114,24 @@ import { LightVelaPanel } from "@tencent/agentchat-lightvela-panel";
 
 /* ─── Types ─── */
 
+const RepairToolsIcon = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg viewBox="0 0 1024 1024" aria-hidden="true" fill="none" {...props}>
+    <path
+      d="M258.56 76.8c-28.16 0-53.76 5.12-79.36 17.92-15.36 7.68-20.48 28.16-7.68 40.96l87.04 87.04-30.72 30.72-87.04-87.04c-5.12-5.12-10.24-7.68-17.92-7.68-10.24 0-17.92 5.12-23.04 15.36-33.28 66.56-23.04 151.04 33.28 207.36 35.84 35.84 79.36 51.2 125.44 51.2 20.48 0 40.96-2.56 58.88-10.24l284.16 284.16c-23.04 64-7.68 135.68 40.96 186.88 35.84 35.84 79.36 51.2 125.44 51.2 28.16 0 53.76-5.12 79.36-17.92 15.36-7.68 20.48-28.16 7.68-40.96l-87.04-87.04 30.72-30.72 87.04 87.04c5.12 5.12 10.24 7.68 17.92 7.68 10.24 0 17.92-5.12 23.04-15.36 33.28-66.56 23.04-151.04-33.28-207.36-35.84-35.84-79.36-51.2-125.44-51.2-20.48 0-40.96 2.56-61.44 10.24l-284.16-284.16c23.04-64 7.68-135.68-40.96-186.88-33.28-33.28-76.8-51.2-122.88-51.2z m-33.28 230.4c12.8 0 25.6-5.12 35.84-15.36l30.72-30.72c20.48-20.48 20.48-51.2 0-71.68l-58.88-58.88c7.68 0 15.36-2.56 23.04-2.56 33.28 0 66.56 12.8 89.6 38.4 35.84 35.84 46.08 87.04 30.72 133.12-7.68 17.92-2.56 38.4 12.8 53.76l284.16 284.16c10.24 10.24 23.04 15.36 35.84 15.36 5.12 0 12.8 0 17.92-2.56 12.8-5.12 28.16-7.68 43.52-7.68 33.28 0 66.56 12.8 89.6 38.4 30.72 30.72 43.52 71.68 35.84 112.64l-58.88-58.88c-10.24-10.24-23.04-15.36-35.84-15.36-12.8 0-25.6 5.12-35.84 15.36l-30.72 30.72c-10.24 10.24-15.36 23.04-15.36 35.84s5.12 25.6 15.36 35.84l58.88 58.88c-7.68 0-15.36 2.56-23.04 2.56-33.28 0-66.56-12.8-89.6-38.4-35.84-35.84-46.08-87.04-30.72-133.12 7.68-17.92 2.56-38.4-12.8-53.76l-284.16-284.16c-10.24-10.24-23.04-15.36-35.84-15.36-5.12 0-10.24 0-17.92 2.56-12.8 5.12-28.16 7.68-43.52 7.68-33.28 0-66.56-12.8-89.6-38.4-30.72-30.72-43.52-71.68-35.84-112.64l58.88 58.88c10.24 10.24 23.04 15.36 35.84 15.36z"
+      fill="currentColor"
+    />
+    <path
+      d="M337.92 563.2c-12.8 0-25.6 5.12-35.84 15.36l-184.32 184.32c-20.48 20.48-20.48 51.2 0 71.68l71.68 71.68c10.24 10.24 23.04 15.36 35.84 15.36 12.8 0 25.6-5.12 35.84-15.36l184.32-184.32c20.48-20.48 20.48-51.2 0-71.68l-71.68-71.68c-7.68-10.24-20.48-15.36-35.84-15.36z m-110.08 307.2l-71.68-71.68 184.32-184.32 71.68 71.68-184.32 184.32zM849.92 138.24l35.84 35.84-89.6 89.6-17.92-17.92-17.92-17.92 89.6-89.6m0-61.44c-7.68 0-12.8 2.56-17.92 7.68l-125.44 125.44c-10.24 10.24-10.24 25.6 0 35.84l17.92 17.92-125.44 125.44c-10.24 10.24-10.24 25.6 0 35.84 5.12 5.12 12.8 7.68 17.92 7.68s12.8-2.56 17.92-7.68l125.44-125.44 17.92 17.92c5.12 5.12 12.8 7.68 17.92 7.68s12.8-2.56 17.92-7.68l125.44-125.44c10.24-10.24 10.24-25.6 0-35.84l-71.68-71.68c-2.56-5.12-10.24-7.68-17.92-7.68z"
+      fill="currentColor"
+    />
+  </svg>
+);
+
 type Channel = "wechat" | "qq" | null;
 type ConnectedChannel = Exclude<Channel, null>;
 type PersonaId = "jarvis" | "luna" | "spark";
+type MemoryTabId = "memory" | "user";
+type MemoryLoadStatus = "idle" | "loading" | "ready" | "error";
 
 interface Persona {
   id: PersonaId;
@@ -107,6 +140,124 @@ interface Persona {
   desc: string;
   icon: string;
   skills: { name: string; desc: string; icon: React.ReactNode }[];
+}
+
+interface DebugExecStreamResponse {
+  status?: string;
+  exit_code?: number;
+  output?: string;
+}
+
+interface DebugExecStreamEvent {
+  type?: string;
+  stream?: string;
+  chunk?: string;
+  response?: DebugExecStreamResponse;
+}
+
+interface DebugExecStreamResult {
+  status: string;
+  exitCode: number;
+  output: string;
+}
+
+function parseSsePart(part: string): { eventType: string; data: string } | null {
+  const lines = part.split("\n");
+  let eventType = "";
+  const dataLines: string[] = [];
+  for (const rawLine of lines) {
+    const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
+    if (line.startsWith("event: ")) eventType = line.slice(7).trim();
+    if (line.startsWith("data: ")) dataLines.push(line.slice(6));
+  }
+  if (dataLines.length === 0) return null;
+  return { eventType, data: dataLines.join("\n") };
+}
+
+async function execDebugCommandStream(
+  botId: string,
+  command: string,
+  onChunk: (event: { stream: string; chunk: string }) => void,
+): Promise<DebugExecStreamResult> {
+  const baseUrl = resolveConfiguredAuthApiBaseUrl();
+  if (!baseUrl) {
+    throw new Error("Auth service is unavailable.");
+  }
+
+  const headers = new Headers({
+    "Content-Type": "application/json",
+    "Accept": "text/event-stream",
+  });
+  const authToken = readStoredAuthToken();
+  if (authToken) headers.set("Authorization", `Bearer ${authToken}`);
+
+  const response = await fetch(`${baseUrl.replace(/\/+$/, "")}/v1/instances/${encodeURIComponent(botId)}/debug/exec`, {
+    method: "POST",
+    credentials: "include",
+    headers,
+    body: JSON.stringify({ command, "run_as_user": "agentuser" }),
+  });
+
+  if (!response.ok) {
+    let detail = "";
+    try {
+      const body = (await response.json()) as { message?: string; error?: string };
+      detail = body.message?.trim() || body.error?.trim() || "";
+    } catch {
+      detail = "";
+    }
+    throw new Error(detail || `请求失败（${response.status}）`);
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) {
+    throw new Error("Command output stream is not readable.");
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let output = "";
+  let finalResponse: DebugExecStreamResponse | null = null;
+  let sawErrorEvent = false;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split("\n\n");
+    buffer = parts.pop() || "";
+
+    for (const part of parts) {
+      const parsedPart = parseSsePart(part);
+      if (!parsedPart) continue;
+      let event: DebugExecStreamEvent;
+      try {
+        event = JSON.parse(parsedPart.data) as DebugExecStreamEvent;
+      } catch {
+        continue;
+      }
+      const eventType = event.type || parsedPart.eventType;
+      if ((eventType === "stdout" || eventType === "stderr") && event.chunk) {
+        output += event.chunk;
+        onChunk({ stream: event.stream || eventType, chunk: event.chunk });
+      }
+      if ((eventType === "finished" || eventType === "error") && event.response) {
+        finalResponse = event.response;
+      }
+      if (eventType === "error") {
+        sawErrorEvent = true;
+      }
+    }
+  }
+
+  if (finalResponse) {
+    return {
+      status: finalResponse.status || "FAILED",
+      exitCode: typeof finalResponse.exit_code === "number" ? finalResponse.exit_code : -1,
+      output: finalResponse.output || output,
+    };
+  }
+  return { status: output && !sawErrorEvent ? "SUCCESS" : "FAILED", exitCode: output && !sawErrorEvent ? 0 : -1, output };
 }
 
 /* ─── Data ─── */
@@ -178,7 +329,7 @@ const SettingsNavbar = () => {
     <header
       className="lw-fixed-top fixed inset-x-0 z-50 border-b border-black/5 bg-white/90 backdrop-blur-[20px]"
     >
-      <div className="lw-settings-topbar-inner flex h-[60px] items-center justify-between px-6 md:px-[80px]">
+      <div className="lw-settings-shell flex h-[60px] items-center justify-between">
         <BrandMark to="/" />
         <div className="flex items-center gap-3">
           {/* 语言切换器：仅国际站展示。
@@ -199,9 +350,11 @@ const SettingsNavbar = () => {
   );
 };
 
-/* ─── 实例配置子页面类型（通道 / 模型 / 技能 / 人设 / 成就 / 对话，放在单个 bot 内部切换） ─── */
+/* ─── 实例配置子页面类型（通道 / 模型 / 技能 / 人设 / 自动任务 / 记忆 / 成就 / 对话，放在单个 bot 内部切换） ─── */
 
-type SettingsSectionId = "channel" | "model" | "skill" | "buddy" | "achievement" | "chat";
+type SettingsSectionId = "channel" | "model" | "skill" | "buddy" | "automations" | "memory" | "achievement" | "chat";
+
+const SHOW_AGENTCHAT_ENTRY = true;
 
 /* ─── Section Card Wrapper ─── */
 
@@ -230,6 +383,193 @@ export const _SectionCard = ({ title, icon, headerRight, children }: { title: st
     </motion.div>
   );
 }
+
+const MemoryLimitCard = ({
+  title,
+  description,
+  used,
+  limit,
+  t,
+}: {
+  title: string;
+  description: string;
+  used: number;
+  limit: number;
+  t: (zh: string, options?: Record<string, unknown>) => string;
+}) => {
+  const percent = getMemoryUsagePercent(used, limit);
+  return (
+    <div className="rounded-lg border border-black/[0.06] bg-white p-4 shadow-[0_8px_28px_rgba(15,23,42,0.04)]">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-black/85">{title}</p>
+          <p className="mt-1 max-w-[28rem] text-xs leading-relaxed text-black/45">{description}</p>
+        </div>
+        <span className="rounded-full bg-black/[0.05] px-2 py-1 text-xs font-medium text-black/60">
+          {percent}%
+        </span>
+      </div>
+      <div className="mt-4 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <span className="text-2xl font-semibold tabular-nums text-black/90">{used}</span>
+        <span className="pb-1 text-sm tabular-nums text-black/45">/ {limit} {t("字符")}</span>
+        <span className="text-xs text-black/45">{t("当前占用 / 字符限额")}</span>
+      </div>
+      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-black/[0.06]">
+        <div
+          className="h-full rounded-full bg-black/80 transition-[width]"
+          style={{ width: `${percent}%` }}
+        />
+      </div>
+    </div>
+  );
+};
+
+const MemoryEntries = ({
+  entries,
+  emptyText,
+}: {
+  entries: string[];
+  emptyText: string;
+}) => {
+  if (entries.length === 0) {
+    return (
+      <div className="flex min-h-40 items-center justify-center rounded-lg border border-dashed border-black/[0.10] bg-black/[0.015] px-6 text-center text-sm text-black/45">
+        {emptyText}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {entries.map((entry, index) => {
+        const preview = toSingleLineMemoryEntry(entry);
+        return (
+          <div
+            key={`${index}-${preview.slice(0, 24)}`}
+            title={entry}
+            className="flex min-h-11 items-center rounded-md border border-black/[0.06] bg-white px-3 text-sm text-black/75 shadow-[0_1px_2px_rgba(15,23,42,0.02)]"
+          >
+            <span className="min-w-0 flex-1 truncate">{preview}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+const MemoryPanel = ({
+  status,
+  snapshot,
+  error,
+  activeTab,
+  onTabChange,
+  onRefresh,
+  t,
+}: {
+  status: MemoryLoadStatus;
+  snapshot: HermesMemorySnapshot | null;
+  error: string | null;
+  activeTab: MemoryTabId;
+  onTabChange: (tab: MemoryTabId) => void;
+  onRefresh: () => void;
+  t: (zh: string, options?: Record<string, unknown>) => string;
+}) => {
+  const memoryEntries = splitHermesMemoryEntries(snapshot?.memoryText ?? "");
+  const userEntries = splitHermesMemoryEntries(snapshot?.userText ?? "");
+  const visibleEntries = activeTab === "memory" ? memoryEntries : userEntries;
+  const isLoading = status === "loading";
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold text-black/90">{t("记忆")}</h2>
+          <p className="mt-1 text-sm text-black/45">{t("查看当前 Hermes 的记忆、用户画像和字符占用。")}</p>
+        </div>
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={isLoading}
+          className={cn(
+            "inline-flex h-9 items-center gap-2 rounded-md border border-black/[0.08] bg-white px-3 text-sm font-medium text-black/70 transition-colors hover:bg-black/[0.035] hover:text-black/90",
+            isLoading && "cursor-not-allowed opacity-60",
+          )}
+        >
+          {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+          {t("刷新")}
+        </button>
+      </div>
+
+      {status === "error" && (
+        <div className="rounded-lg border border-red-500/15 bg-red-500/[0.04] px-4 py-3 text-sm leading-relaxed text-red-600">
+          {error || t("记忆读取失败，请稍后重试。")}
+        </div>
+      )}
+
+      {isLoading && !snapshot && (
+        <div className="flex min-h-64 items-center justify-center rounded-lg border border-black/[0.06] bg-white text-sm text-black/50">
+          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          {t("正在读取记忆...")}
+        </div>
+      )}
+
+      {snapshot && (
+        <>
+          <div className="grid gap-3 md:grid-cols-2">
+            <MemoryLimitCard
+              title={t("记忆统计")}
+              description={t("MEMORY.md：帮 Agent 长期记住项目背景、运行环境和常用约定。")}
+              used={snapshot.memoryChars}
+              limit={snapshot.memoryCharLimit}
+              t={t}
+            />
+            <MemoryLimitCard
+              title={t("用户画像统计")}
+              description={t("USER.md：帮 Agent 长期记住你的偏好、使用习惯和沟通方式。")}
+              used={snapshot.userChars}
+              limit={snapshot.userCharLimit}
+              t={t}
+            />
+          </div>
+
+          {snapshot.usedFallbackLimits && (
+            <p className="text-xs text-black/40">
+              {t("未读取到完整限额配置，当前展示默认值。")}
+            </p>
+          )}
+
+          <div className="rounded-lg border border-black/[0.06] bg-white p-3 shadow-[0_8px_28px_rgba(15,23,42,0.04)]">
+            <div className="mb-3 inline-flex rounded-lg bg-black/[0.04] p-1">
+              {([
+                ["memory", t("记忆")],
+                ["user", t("用户画像")],
+              ] as const).map(([tab, label]) => {
+                const isActive = activeTab === tab;
+                return (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => onTabChange(tab)}
+                    className={cn(
+                      "rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
+                      isActive ? "bg-white text-black/90 shadow-sm" : "text-black/50 hover:text-black/80",
+                    )}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+            <MemoryEntries
+              entries={visibleEntries}
+              emptyText={activeTab === "memory" ? t("暂无 Agent 记忆。") : t("暂无用户画像。")}
+            />
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
 
 /* ─── Delete Confirm Dialog ─── */
 
@@ -1078,9 +1418,6 @@ const TerminalModal = ({ botId, botName, onClose }: { botId: string; botName: st
     requestAnimationFrame(() => {
       fitAddon.fit();
     });
-    terminal.writeln("LightVela TAT Terminal");
-    terminal.writeln("");
-
     terminal.onData((data) => {
       ptyClientRef.current?.sendInput(data);
     });
@@ -1121,7 +1458,6 @@ const TerminalModal = ({ botId, botName, onClose }: { botId: string; botName: st
         }
 
         terminalRef.current?.reset();
-        terminalRef.current?.writeln(`Connecting ${botName} (${botId})...`);
         fitAddonRef.current?.fit();
 
         const { TencentPtyClient } = await import("@/lib/tencent-pty-client");
@@ -2264,30 +2600,33 @@ export const _BotInfoCard = ({ bot, index, onDelete, onTerminal }: { bot: { id: 
           className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm"
           onClick={() => setShowDeleteConfirm(false)}
         >
-          <div className="mx-4 w-full max-w-sm rounded-2xl border bg-white p-6 shadow-2xl" style={{ borderColor: "rgba(238,238,238,0.4)" }} onClick={(e) => e.stopPropagation()}>
+          <div className="mx-4 w-full max-w-[26.4rem] rounded-2xl border bg-white p-6 shadow-2xl" style={{ borderColor: "rgba(238,238,238,0.4)" }} onClick={(e) => e.stopPropagation()}>
             {/* 头部 */}
             <div className="flex items-center gap-3" style={{ marginBottom: "20px" }}>
               <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "rgba(220,38,38,0.08)" }}>
                 <AlertTriangle className="h-5 w-5" style={{ color: "#DC2626" }} />
               </div>
-              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("确认删除")}</h3>
+              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("删除智能体")}</h3>
             </div>
             {/* 风险说明 */}
             <p style={{ color: "#666", fontSize: "14px", lineHeight: 1.6, marginBottom: "12px" }}>
-              {t("删除后会话将立即断开，数据将无法恢复。")}
+              {t("删除后会话将立即断开，数据将无法恢复。请谨慎操作！")}
             </p>
             {/* 操作引导 */}
             <p style={{ color: "var(--lw-fg)", fontSize: "14px", lineHeight: 1.6, marginBottom: "10px" }}>
-              {t("如确认删除，请输入名称 {{name}}：", { name: bot.name })}
+              {t("如确认删除，请输入名称")}{" "}
+              <span className="select-all rounded-md bg-red-50 px-1.5 py-0.5 font-semibold text-red-600">
+                {bot.name}
+              </span>
             </p>
             <input type="text" placeholder={t("请输入 {{name}}", { name: bot.name })} value={deleteInput} onChange={(e) => setDeleteInput(e.target.value)} className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition-all focus:border-[#DC2626]" style={{ borderColor: "var(--lw-border)", color: "var(--lw-fg)", marginBottom: "20px" }} />
             {deleteErr && <p className="text-xs" style={{ color: "#DC2626", marginBottom: "12px" }}>{deleteErr}</p>}
             {/* 按钮组：上下排列 */}
             <div className="flex flex-col gap-2">
-              <button onClick={async () => { setDeleting(true); setDeleteErr(null); try { await deleteBot(bot.id); setShowDeleteConfirm(false); } catch (e) { setDeleteErr(e instanceof Error ? e.message : t("删除失败")); } finally { setDeleting(false); } }} disabled={deleteInput !== bot.name || deleting} className="w-full rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-all" style={{ backgroundColor: deleteInput === bot.name && !deleting ? "#DC2626" : "#E5E7EB", cursor: deleteInput === bot.name && !deleting ? "pointer" : "not-allowed" }}>
+              <button onClick={async () => { setDeleting(true); setDeleteErr(null); try { await deleteBot(bot.id); setShowDeleteConfirm(false); } catch (e) { setDeleteErr(e instanceof Error ? e.message : t("删除失败")); } finally { setDeleting(false); } }} disabled={deleteInput !== bot.name || deleting} className="w-full rounded-xl px-4 py-2.5 text-[16px] font-semibold text-white transition-all" style={{ backgroundColor: deleteInput === bot.name && !deleting ? "#DC2626" : "#E5E7EB", cursor: deleteInput === bot.name && !deleting ? "pointer" : "not-allowed", fontSize: "16px" }}>
                 {deleting ? t("删除中...") : t("确认删除")}
               </button>
-              <button onClick={() => setShowDeleteConfirm(false)} className="py-2 text-sm transition-colors hover:opacity-70" style={{ color: "#999", background: "none", border: "none", cursor: "pointer" }}>
+              <button onClick={() => setShowDeleteConfirm(false)} className="py-2 text-[16px] transition-colors hover:opacity-70" style={{ color: "#999", background: "none", border: "none", cursor: "pointer", fontSize: "16px" }}>
                 {t("取消")}
               </button>
             </div>
@@ -2386,7 +2725,18 @@ const getBotStatusLabel = (status: OpenClawBot["status"]) => {
 
 /* ─── Main Settings Page ─── */
 
-const hermesScripts = createLightClawScripts({ regionShortName: "gz", agentType: "hermes" }).hermes;
+const lightVelaHermesScripts = createLightClawScripts({ regionShortName: "gz", agentType: "hermes" });
+const channelOnlyHermesScripts = {
+  ...lightVelaHermesScripts,
+  hermes: {
+    ...lightVelaHermesScripts.hermes,
+    model: {
+      ...lightVelaHermesScripts.hermes.model,
+      getListCommand: () => LIGHTVELA_SKIP_HERMES_PROVIDER_LIST_COMMAND,
+    },
+  },
+};
+const hermesScripts = lightVelaHermesScripts.hermes;
 const hermesGatewayCommands = hermesScripts.gateway;
 const hermesModelCommands = hermesScripts.model;
 
@@ -2451,6 +2801,7 @@ export const OpenClawSettingsPage = () => {
     }
   }, [visibleBots, activeTabId, isCreating]);
   const activeBot = visibleBots.find((b) => b.id === activeTabId) ?? visibleBots[0];
+  const activeBotStatus = activeBot?.status;
 
   /**
    * AgentChat（LightVela）启动 token：
@@ -2582,6 +2933,57 @@ export const OpenClawSettingsPage = () => {
     setLaunchTokenRefreshTick((tick) => tick + 1);
   }, []);
 
+  const [memoryStatus, setMemoryStatus] = useState<MemoryLoadStatus>("idle");
+  const [memorySnapshot, setMemorySnapshot] = useState<HermesMemorySnapshot | null>(null);
+  const [memoryError, setMemoryError] = useState<string | null>(null);
+  const [activeMemoryTab, setActiveMemoryTab] = useState<MemoryTabId>("memory");
+  const memoryRequestIdRef = useRef(0);
+
+  const loadHermesMemory = useCallback(async () => {
+    const requestId = memoryRequestIdRef.current + 1;
+    memoryRequestIdRef.current = requestId;
+
+    if (!activeBotId) {
+      setMemorySnapshot(null);
+      setMemoryStatus("error");
+      setMemoryError(rawT("未找到当前 Hermes 实例。"));
+      return;
+    }
+
+    if (activeBotStatus !== "running") {
+      setMemorySnapshot(null);
+      setMemoryStatus("error");
+      setMemoryError(rawT("实例运行后才能读取记忆。"));
+      return;
+    }
+
+    setMemorySnapshot(null);
+    setMemoryStatus("loading");
+    setMemoryError(null);
+    try {
+      const result = await repositories.bots.execDebugCommand(activeBotId, buildHermesMemoryReadCommand());
+      if (memoryRequestIdRef.current !== requestId) return;
+      if (!isExecCommandSucceeded(result)) {
+        throw new Error(
+          rawT("记忆读取命令执行失败：{{detail}}", {
+            detail: truncateExecOutput(result.output, result.status),
+          }),
+        );
+      }
+      setMemorySnapshot(parseHermesMemorySnapshot(result.output));
+      setMemoryStatus("ready");
+    } catch (err) {
+      if (memoryRequestIdRef.current !== requestId) return;
+      setMemoryStatus("error");
+      setMemoryError(err instanceof Error ? err.message : rawT("记忆读取失败，请稍后重试。"));
+    }
+  }, [activeBotId, activeBotStatus, repositories]);
+
+  useEffect(() => {
+    if (activeSection !== "memory") return;
+    void loadHermesMemory();
+  }, [activeSection, activeBotId, loadHermesMemory]);
+
 
   /**
    * tea-sdk-lightclaw 的 ModelCard / ChannelCard / SkillCard 内部通过
@@ -2654,9 +3056,25 @@ export const OpenClawSettingsPage = () => {
    * rotate key，因此明文 apiKey 只保存在本次 try 块内，不进入 React state。
    */
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [showAcliResetConfirm, setShowAcliResetConfirm] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [resettingAcli, setResettingAcli] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
+  const [acliResetError, setAcliResetError] = useState<string | null>(null);
+  const [acliResetConsole, setAcliResetConsole] = useState<string[]>([]);
+  const acliResetConsoleRef = useRef<HTMLPreElement | null>(null);
   const [viewedChannelBotIds, setViewedChannelBotIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    setAcliResetError(null);
+    setAcliResetConsole([]);
+  }, [activeBot?.id]);
+
+  useEffect(() => {
+    const consoleEl = acliResetConsoleRef.current;
+    if (!consoleEl) return;
+    consoleEl.scrollTop = consoleEl.scrollHeight;
+  }, [acliResetConsole]);
 
   const handleResetConfig = async () => {
     const hasViewedChannel = activeBot ? viewedChannelBotIds.has(activeBot.id) : false;
@@ -2692,9 +3110,9 @@ export const OpenClawSettingsPage = () => {
       if (!isExecCommandSucceeded(providerSaveResult)) {
         const sanitizedOutput = result.config.apiKey
           ? providerSaveResult.output.replace(
-              new RegExp(result.config.apiKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"),
-              "sk-***",
-            )
+            new RegExp(result.config.apiKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"),
+            "sk-***",
+          )
           : providerSaveResult.output;
         throw new Error(
           t("默认模型保存失败：{{detail}}", {
@@ -2710,9 +3128,9 @@ export const OpenClawSettingsPage = () => {
       if (!isExecCommandSucceeded(switchModelResult)) {
         const sanitizedSwitchOutput = result.config.apiKey
           ? switchModelResult.output.replace(
-              new RegExp(result.config.apiKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"),
-              "sk-***",
-            )
+            new RegExp(result.config.apiKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"),
+            "sk-***",
+          )
           : switchModelResult.output;
         throw new Error(
           t("默认模型切换失败：{{detail}}", {
@@ -2724,10 +3142,42 @@ export const OpenClawSettingsPage = () => {
       setShowResetConfirm(false);
       toast.success(t("重置成功"));
     } catch (err) {
-      setResetError(err instanceof Error ? err.message : t("重置失败，请重试"));
-      toast.error(t("重置失败，请重试"));
+      const fallbackMessage = t("重置失败，请重试");
+      const message = isResetConfigRouteMissingError(err)
+        ? t("当前后端服务暂不支持重置配置，请稍后再试。")
+        : err instanceof Error ? err.message : fallbackMessage;
+      setResetError(message);
+      toast.error(message);
     } finally {
       setResetting(false);
+    }
+  };
+
+  const handleResetAcli = async () => {
+    if (getAcliResetBlockReason(activeBot, resettingAcli)) return;
+    const targetBotId = activeBot?.id;
+    if (!targetBotId) return;
+
+    setResettingAcli(true);
+    setAcliResetError(null);
+    setAcliResetConsole([`$ ${ACLI_RESET_COMMAND}`]);
+    try {
+      const result = await execDebugCommandStream(targetBotId, ACLI_RESET_COMMAND, ({ stream, chunk }) => {
+        setAcliResetConsole((prev) => [...prev, `[${stream}] ${chunk}`].slice(-80));
+      });
+      if (!isExecCommandSucceeded(result)) {
+        throw new Error(truncateExecOutput(result.output, result.status));
+      }
+      setShowAcliResetConfirm(false);
+      setAcliResetConsole([]);
+      toast.success(t("Agent 重置成功"));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : t("Agent 重置失败，请重试");
+      setAcliResetError(message);
+      setAcliResetConsole((prev) => [...prev, `[error] ${message}`].slice(-80));
+      toast.error(t("Agent 重置失败，请重试"));
+    } finally {
+      setResettingAcli(false);
     }
   };
 
@@ -2757,6 +3207,7 @@ export const OpenClawSettingsPage = () => {
 
   /* ── 重启 Gateway ── */
   // restartingBotIds: 正在重启的 bot ID 集合，支持多 bot 并行重启
+  const [showRestartConfirm, setShowRestartConfirm] = useState(false);
   const [restartingBotIds, setRestartingBotIds] = useState<Set<string>>(new Set());
   // 错误按 bot 维度存储，多 bot 并行失败时各自保留错误信息
   const [restartErrors, setRestartErrors] = useState<RestartErrors>(new Map());
@@ -3038,7 +3489,7 @@ export const OpenClawSettingsPage = () => {
           <motion.div
             initial={{ opacity: 0, y: 20, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            className="mx-4 w-full max-w-sm rounded-2xl border bg-white p-6 shadow-2xl"
+            className="mx-4 w-full max-w-[26.4rem] rounded-2xl border bg-white p-6 shadow-2xl"
             style={{ borderColor: "rgba(238,238,238,0.4)" }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -3046,13 +3497,16 @@ export const OpenClawSettingsPage = () => {
               <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "rgba(220,38,38,0.08)" }}>
                 <AlertTriangle className="h-5 w-5" style={{ color: "#DC2626" }} />
               </div>
-              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("确认删除")}</h3>
+              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("删除智能体")}</h3>
             </div>
             <p style={{ color: "#666", fontSize: "14px", lineHeight: 1.6, marginBottom: "12px" }}>
-              {t("删除后会话将立即断开，数据将无法恢复。")}
+              {t("删除后会话将立即断开，数据将无法恢复。请谨慎操作！")}
             </p>
             <p style={{ color: "var(--lw-fg)", fontSize: "14px", lineHeight: 1.6, marginBottom: "10px" }}>
-              {t("如确认删除，请输入名称 {{name}}：", { name: activeBot.name })}
+              {t("如确认删除，请输入名称")}{" "}
+              <span className="select-all rounded-md bg-red-50 px-1.5 py-0.5 font-semibold text-red-600">
+                {activeBot.name}
+              </span>
             </p>
             <input
               type="text"
@@ -3067,15 +3521,69 @@ export const OpenClawSettingsPage = () => {
               <button
                 onClick={() => void handleDelete()}
                 disabled={deleteInput !== activeBot.name}
-                className="w-full rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-all"
+                className="w-full rounded-xl px-4 py-2.5 text-[16px] font-semibold text-white transition-all"
                 style={{
                   backgroundColor: deleteInput === activeBot.name ? "#DC2626" : "#E5E7EB",
                   cursor: deleteInput === activeBot.name ? "pointer" : "not-allowed",
+                  fontSize: "16px",
                 }}
               >
                 {t("确认删除")}
               </button>
-              <button onClick={() => setShowDeleteConfirm(false)} className="py-2 text-sm transition-colors hover:opacity-70" style={{ color: "#999", background: "none", border: "none", cursor: "pointer" }}>
+              <button onClick={() => setShowDeleteConfirm(false)} className="py-2 text-[16px] transition-colors hover:opacity-70" style={{ color: "#999", background: "none", border: "none", cursor: "pointer", fontSize: "16px" }}>
+                {t("取消")}
+              </button>
+            </div>
+          </motion.div>
+        </div>,
+        document.body,
+      )}
+
+      {/* Restart Gateway Confirm Dialog */}
+      {showRestartConfirm && activeBot && createPortal(
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          onClick={() => { if (!isActiveBotRestarting) setShowRestartConfirm(false); }}
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            className="mx-4 w-full max-w-sm rounded-2xl border bg-white p-6 shadow-2xl"
+            style={{ borderColor: "var(--tea-color-border-default-alpha4, rgba(238,238,238,0.4))" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3" style={{ marginBottom: "20px" }}>
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "rgba(0,0,0,0.04)" }}>
+                <RefreshCw className="h-5 w-5" style={{ color: "rgba(0,0,0,0.62)" }} />
+              </div>
+              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("重启 Hermes Agent 网关")}</h3>
+            </div>
+            <p style={{ color: "var(--tea-color-text-secondary, #666)", fontSize: "14px", lineHeight: 1.6, marginBottom: "20px" }}>
+              {t("重启期间 Agent 可能会短暂不可用，对话会短暂断开，确认重启？")}
+            </p>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => {
+                  if (isActiveBotRestarting) return;
+                  setShowRestartConfirm(false);
+                  void handleRestartGateway();
+                }}
+                disabled={isActiveBotRestarting}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-black/90 px-4 py-2.5 text-[16px] font-semibold text-white transition-all hover:opacity-90"
+                style={{
+                  cursor: isActiveBotRestarting ? "not-allowed" : "pointer",
+                  fontSize: "16px",
+                }}
+              >
+                {isActiveBotRestarting && <Loader2 className="h-4 w-4 animate-spin" />}
+                {isActiveBotRestarting ? t("重启中...") : t("确认重启")}
+              </button>
+              <button
+                onClick={() => setShowRestartConfirm(false)}
+                disabled={isActiveBotRestarting}
+                className="py-2 text-[16px] transition-colors hover:opacity-70"
+                style={{ color: "var(--tea-color-text-secondary, #999)", background: "none", border: "none", cursor: isActiveBotRestarting ? "not-allowed" : "pointer", fontSize: "16px" }}
+              >
                 {t("取消")}
               </button>
             </div>
@@ -3101,10 +3609,14 @@ export const OpenClawSettingsPage = () => {
               <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "var(--tea-color-warning-default-alpha10, rgba(245,158,11,0.10))" }}>
                 <Wrench className="h-5 w-5" style={{ color: "var(--tea-color-warning-default, #F59E0B)" }} />
               </div>
-              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("恢复初始设置")}</h3>
+              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("重置 Hermes Agent 配置")}</h3>
             </div>
             <p style={{ color: "var(--tea-color-text-secondary, #666)", fontSize: "14px", lineHeight: 1.6, marginBottom: "20px" }}>
-              {t("将保留当前工作空间、记忆和定时任务，并初始化配置文件，模型相关配置不会保留。")}
+              {t("将重置 Hermes Agent的配置文件，")}
+              <span className="font-semibold" style={{ color: "var(--tea-color-warning-default, #F59E0B)" }}>
+                {t("模型相关配置不会保留。")}
+              </span>
+              {t("期间 Agent 可能短暂不可用，但工作空间、记忆、通道配置、已安装技能将会保留，确认继续？")}
             </p>
             {resetError && (
               <pre
@@ -3127,20 +3639,92 @@ export const OpenClawSettingsPage = () => {
               <button
                 onClick={() => void handleResetConfig()}
                 disabled={resetting}
-                className="flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-all"
+                className="flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-[16px] font-semibold text-white transition-all"
                 style={{
                   backgroundColor: resetting ? "var(--tea-color-bg-disabled, #E5E7EB)" : "var(--tea-color-warning-default, #F59E0B)",
                   cursor: resetting ? "not-allowed" : "pointer",
+                  fontSize: "16px",
                 }}
               >
                 {resetting && <Loader2 className="h-4 w-4 animate-spin" />}
-                {resetting ? t("恢复中...") : t("确认恢复")}
+                {resetting ? t("恢复中...") : t("确认重置")}
               </button>
               <button
                 onClick={() => setShowResetConfirm(false)}
                 disabled={resetting}
-                className="py-2 text-sm transition-colors hover:opacity-70"
-                style={{ color: "var(--tea-color-text-secondary, #999)", background: "none", border: "none", cursor: resetting ? "not-allowed" : "pointer" }}
+                className="py-2 text-[16px] transition-colors hover:opacity-70"
+                style={{ color: "var(--tea-color-text-secondary, #999)", background: "none", border: "none", cursor: resetting ? "not-allowed" : "pointer", fontSize: "16px" }}
+              >
+                {t("取消")}
+              </button>
+            </div>
+          </motion.div>
+        </div>,
+        document.body,
+      )}
+
+      {/* Reset Agent Confirm Dialog */}
+      {showAcliResetConfirm && activeBot && createPortal(
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          onClick={() => { if (!resettingAcli) setShowAcliResetConfirm(false); }}
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            className="mx-4 w-full max-w-sm rounded-2xl border bg-white p-6 shadow-2xl"
+            style={{ borderColor: "var(--tea-color-border-default-alpha4, rgba(238,238,238,0.4))" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3" style={{ marginBottom: "20px" }}>
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "var(--tea-color-warning-default-alpha10, rgba(245,158,11,0.10))" }}>
+                <RepairToolsIcon className="h-5 w-5" style={{ color: "var(--tea-color-warning-default, #F59E0B)" }} />
+              </div>
+              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("重置 Hermes Agent")}</h3>
+            </div>
+            <p style={{ color: "var(--tea-color-text-secondary, #666)", fontSize: "14px", lineHeight: 1.6, marginBottom: "20px" }}>
+              {t("将执行 Hermes Agent 后台重置流程，")}
+              <span className="font-semibold" style={{ color: "var(--tea-color-warning-default, #F59E0B)" }}>
+                {t("期间 Agent 会有数分钟不可用。")}
+              </span>
+              {t("但工作空间、记忆、模型和通道配置、已安装技能将会保留，确认继续？")}
+            </p>
+            {acliResetError && (
+              <pre
+                className="whitespace-pre-wrap break-words rounded-md border px-3 py-2 text-xs"
+                style={{
+                  color: "var(--tea-color-text-error-default, #DC2626)",
+                  backgroundColor: "var(--tea-color-text-error-default-alpha4, rgba(220,38,38,0.04))",
+                  borderColor: "var(--tea-color-text-error-default-alpha18, rgba(220,38,38,0.18))",
+                  fontFamily:
+                    "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+                  maxHeight: "180px",
+                  overflowY: "auto",
+                  marginBottom: "12px",
+                }}
+              >
+                {acliResetError}
+              </pre>
+            )}
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => void handleResetAcli()}
+                disabled={resettingAcli}
+                className="flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-[16px] font-semibold text-white transition-all"
+                style={{
+                  backgroundColor: resettingAcli ? "var(--tea-color-bg-disabled, #E5E7EB)" : "var(--tea-color-warning-default, #F59E0B)",
+                  cursor: resettingAcli ? "not-allowed" : "pointer",
+                  fontSize: "16px",
+                }}
+              >
+                {resettingAcli && <Loader2 className="h-4 w-4 animate-spin" />}
+                {resettingAcli ? t("重置中...") : t("确认重置")}
+              </button>
+              <button
+                onClick={() => setShowAcliResetConfirm(false)}
+                disabled={resettingAcli}
+                className="py-2 text-[16px] transition-colors hover:opacity-70"
+                style={{ color: "var(--tea-color-text-secondary, #999)", background: "none", border: "none", cursor: resettingAcli ? "not-allowed" : "pointer", fontSize: "16px" }}
               >
                 {t("取消")}
               </button>
@@ -3222,8 +3806,8 @@ export const OpenClawSettingsPage = () => {
         )}
       </AnimatePresence>
 
-      <main className="lw-app-top-pad flex-grow bg-[#F7F8FA] px-6 pb-12 md:px-[80px]">
-        <section className="mx-auto" style={{ maxWidth: 1440 }}>
+      <main className="lw-app-top-pad flex-grow bg-[#F7F8FA] pb-12">
+        <section className="lw-settings-shell">
           {/* ── Loading 状态 ── */}
           {botsLoading && !isCreating && (
             <div className="flex items-center justify-center py-20">
@@ -3266,6 +3850,7 @@ export const OpenClawSettingsPage = () => {
                   supportsTencentCloudApi: false,
                   isI18n: isGlobal,
                 }),
+                acliProduct: "lightvela",
                 runCommand: commandAdapter.runCommand,
                 getInvocationTask: commandAdapter.getInvocationTask,
               };
@@ -3274,10 +3859,14 @@ export const OpenClawSettingsPage = () => {
                 { id: "model", label: t("模型"), icon: <BrainCircuit className="h-4 w-4" /> },
                 { id: "skill", label: t("技能"), icon: <Wand2 className="h-4 w-4" /> },
                 ...(!isGlobal
-                  ? [{ id: "buddy" as const, label: t("人设"), icon: <UserRound className="h-4 w-4" />, badge: "NEW" }]
+                  ? [{ id: "buddy" as const, label: t("人设"), icon: <UserRound className="h-4 w-4" /> }]
                   : []),
+                { id: "automations", label: t("自动任务"), icon: <CalendarClock className="h-4 w-4" />, badge: "NEW" },
+                { id: "memory", label: t("记忆"), icon: <Database className="h-4 w-4" />, badge: "NEW" },
                 { id: "achievement", label: t("成就"), icon: <Trophy className="h-4 w-4" /> },
-                { id: "chat", label: t("对话"), icon: <MessageSquare className="h-4 w-4" /> },
+                ...(SHOW_AGENTCHAT_ENTRY
+                  ? [{ id: "chat" as const, label: t("对话"), icon: <MessageSquare className="h-4 w-4" />, badge: "NEW" }]
+                  : []),
               ];
               const isRestartDisabled = isActiveBotRestarting || activeBot.status !== "running";
               const hasViewedChannel = viewedChannelBotIds.has(activeBot.id);
@@ -3287,14 +3876,17 @@ export const OpenClawSettingsPage = () => {
                 resetBlockReason === RESET_BLOCK_REASON.NOT_RUNNING || resetBlockReason === RESET_BLOCK_REASON.CHANNEL_NOT_VIEWED
                   ? t("请稍后")
                   : t("重置配置");
+              const acliResetBlockReason = getAcliResetBlockReason(activeBot, resettingAcli);
+              const acliResetDisabled = resettingAcli || acliResetBlockReason !== null;
+              const acliResetTooltip =
+                acliResetBlockReason === RESET_BLOCK_REASON.NOT_RUNNING
+                  ? t("请稍后")
+                  : t("重置Agent");
 
               return (
                 <div className="grid items-start gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
                   <aside className="lg:sticky lg:top-[84px]">
                     <div className="rounded-lg border border-black/[0.06] bg-white p-3 shadow-[0_8px_28px_rgba(15,23,42,0.04)]">
-                      <div className="px-1 pb-2 text-xs font-medium text-black/35">
-                        {t("选择 Agent")}
-                      </div>
                       <div
                         role={visibleBots.length > 1 ? "button" : undefined}
                         tabIndex={visibleBots.length > 1 ? 0 : undefined}
@@ -3331,65 +3923,128 @@ export const OpenClawSettingsPage = () => {
                               />
                             )}
                             {isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}
+                          </span>
+                        </span>
+                        <div className="-mr-1.5 ml-auto flex flex-shrink-0 items-center gap-0">
+                          <span className="group relative inline-flex">
                             <button
                               type="button"
                               onClick={(event) => {
                                 event.stopPropagation();
-                                if (!isRestartDisabled) void handleRestartGateway();
+                                if (!isRestartDisabled) setShowRestartConfirm(true);
                               }}
                               aria-disabled={isRestartDisabled}
                               aria-label={t("重启")}
                               className={cn(
-                                "ml-1 inline-flex h-5 items-center rounded px-1.5 text-xs font-medium transition-colors",
+                                "inline-flex h-8 w-6 flex-shrink-0 items-center justify-center rounded-md transition-colors",
                                 isRestartDisabled
-                                  ? "cursor-not-allowed text-black/25"
-                                  : "text-black/45 hover:bg-black/[0.06] hover:text-black/80",
+                                  ? "cursor-not-allowed text-black/20"
+                                  : "text-black/35 hover:bg-black/[0.06] hover:text-black/80",
                               )}
-                              title={isActiveBotRestarting ? t("正在重启中") : t("重启 Hermes Agent 网关")}
+                            >
+                              {isActiveBotRestarting ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                            </button>
+                            <span
+                              role="tooltip"
+                              className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-md bg-black/80 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-sm transition-opacity duration-75 group-focus-within:opacity-100 group-hover:opacity-100"
                             >
                               {t("重启")}
-                            </button>
+                              <span className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-x-[4px] border-t-[4px] border-x-transparent border-t-black/80" />
+                            </span>
                           </span>
-                        </span>
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            if (resetDisabled) return;
-                            setResetError(null);
-                            setShowResetConfirm(true);
-                          }}
-                          aria-disabled={resetDisabled}
-                          aria-label={resetTooltip}
-                          className={cn(
-                            "inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md transition-colors",
-                            resetDisabled
-                              ? "cursor-not-allowed text-black/20"
-                              : "text-black/35 hover:bg-amber-500/10 hover:text-amber-600",
-                          )}
-                          title={resetTooltip}
-                        >
-                          {resetting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wrench className="h-4 w-4" />}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setDeleteInput("");
-                            setShowDeleteConfirm(true);
-                          }}
-                          aria-label={t("删除")}
-                          className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md text-red-500 transition-colors hover:bg-red-500/10"
-                          title={t("删除此 Hermes")}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                          <span className="group relative inline-flex">
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                if (resetDisabled) return;
+                                setResetError(null);
+                                setShowResetConfirm(true);
+                              }}
+                              aria-disabled={resetDisabled}
+                              aria-label={resetTooltip}
+                              className={cn(
+                                "inline-flex h-8 w-6 flex-shrink-0 items-center justify-center rounded-md transition-colors",
+                                resetDisabled
+                                  ? "cursor-not-allowed text-black/20"
+                                  : "text-black/35 hover:bg-amber-500/10 hover:text-amber-600",
+                              )}
+                            >
+                              {resetting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wrench className="h-4 w-4" />}
+                            </button>
+                            <span
+                              role="tooltip"
+                              className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-md bg-black/80 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-sm transition-opacity duration-75 group-focus-within:opacity-100 group-hover:opacity-100"
+                            >
+                              {resetTooltip}
+                              <span className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-x-[4px] border-t-[4px] border-x-transparent border-t-black/80" />
+                            </span>
+                          </span>
+                          <span className="group relative inline-flex">
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                if (getAcliResetClickAction(activeBot, resettingAcli) === "open_confirm") {
+                                  setAcliResetError(null);
+                                  setShowAcliResetConfirm(true);
+                                }
+                              }}
+                              aria-disabled={acliResetDisabled}
+                              aria-label={acliResetTooltip}
+                              className={cn(
+                                "inline-flex h-8 w-6 flex-shrink-0 items-center justify-center rounded-md transition-colors",
+                                acliResetDisabled
+                                  ? "cursor-not-allowed text-black/20"
+                                  : "text-black/35 hover:bg-black/[0.06] hover:text-black/80",
+                              )}
+                            >
+                              {resettingAcli ? <Loader2 className="h-4 w-4 animate-spin" /> : <RepairToolsIcon className="h-4 w-4" />}
+                            </button>
+                            <span
+                              role="tooltip"
+                              className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-md bg-black/80 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-sm transition-opacity duration-75 group-focus-within:opacity-100 group-hover:opacity-100"
+                            >
+                              {acliResetTooltip}
+                              <span className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-x-[4px] border-t-[4px] border-x-transparent border-t-black/80" />
+                            </span>
+                          </span>
+                          <span className="group relative inline-flex">
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setDeleteInput("");
+                                setShowDeleteConfirm(true);
+                              }}
+                              aria-label={t("删除")}
+                              className="inline-flex h-8 w-6 flex-shrink-0 items-center justify-center rounded-md text-black/35 transition-colors hover:bg-red-500/10 hover:text-red-500"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                            <span
+                              role="tooltip"
+                              className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-md bg-black/80 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-sm transition-opacity duration-75 group-focus-within:opacity-100 group-hover:opacity-100"
+                            >
+                              {t("删除")}
+                              <span className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-x-[4px] border-t-[4px] border-x-transparent border-t-black/80" />
+                            </span>
+                          </span>
+                        </div>
                         {visibleBots.length > 1 && (
                           <ChevronDown
                             className={cn("h-4 w-4 flex-shrink-0 text-black/35 transition-transform", isAgentMenuOpen && "rotate-180")}
                           />
                         )}
                       </div>
+                      {acliResetConsole.length > 0 && (
+                        <pre
+                          ref={acliResetConsoleRef}
+                          className="mt-2 max-h-36 overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-black/[0.08] bg-[#111827] px-2.5 py-2 text-[11px] leading-relaxed text-[#d1d5db]"
+                        >
+                          {acliResetConsole.join("\n")}
+                        </pre>
+                      )}
 
                       {visibleBots.length > 1 && isAgentMenuOpen && (
                         <div className="mt-1 rounded-md bg-black/[0.025] p-1">
@@ -3421,6 +4076,11 @@ export const OpenClawSettingsPage = () => {
 
                       {activeBotRestartError && (
                         <p className="mt-2 px-1 text-xs leading-relaxed text-red-500">{activeBotRestartError}</p>
+                      )}
+                      {acliResetError && (
+                        <p className="mt-2 px-1 text-xs leading-relaxed text-red-500">
+                          {t("Agent 重置失败：{{detail}}", { detail: acliResetError })}
+                        </p>
                       )}
 
                       {canCreateBot && (
@@ -3482,6 +4142,7 @@ export const OpenClawSettingsPage = () => {
                             <ChannelPanel
                               instance={sdkInstance}
                               regionShortName={sdkRegionShortName}
+                              scriptCommands={channelOnlyHermesScripts}
                               featureFlags={sdkFeatureFlags}
                               productConfig={sdkProductConfig}
                             />
@@ -3507,6 +4168,9 @@ export const OpenClawSettingsPage = () => {
                           )}
                           {activeSection === "achievement" && (
                             <AchievementsPanel botId={activeBot.id} botName={activeBot.name} />
+                          )}
+                          {activeSection === "automations" && (
+                            <AutomationsPanel botId={activeBot.id} />
                           )}
                           {activeSection === "chat" && (
                             <div className="h-[clamp(516px,calc(100vh-220px),960px)] overflow-hidden rounded-lg border border-black/[0.08] bg-white [&>*]:h-full">
@@ -3549,6 +4213,17 @@ export const OpenClawSettingsPage = () => {
                               )}
                             </div>
                           )}
+                          {activeSection === "memory" && (
+                            <MemoryPanel
+                              status={memoryStatus}
+                              snapshot={memorySnapshot}
+                              error={memoryError}
+                              activeTab={activeMemoryTab}
+                              onTabChange={setActiveMemoryTab}
+                              onRefresh={loadHermesMemory}
+                              t={t}
+                            />
+                          )}
                         </div>
                       </motion.div>
                     </AnimatePresence>
@@ -3577,6 +4252,7 @@ export const OpenClawSettingsPage = () => {
                       ? "bg-black/90 hover:opacity-90"
                       : "cursor-not-allowed bg-black/30",
                   )}
+                  style={{marginTop: 20}}
                 >
                   {canCreateBot ? t("立即创建") : t("暂不可创建")}
                 </button>
@@ -3587,7 +4263,7 @@ export const OpenClawSettingsPage = () => {
         </section>
       </main>
 
-      <LegalFooter />
+      <LegalFooter icpPlacement="right" />
     </div>
   );
 };

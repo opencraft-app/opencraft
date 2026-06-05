@@ -7,6 +7,7 @@ on:
       - master
       - frontsandbox/*
       - playground/sandbox-bj-*
+      - playground/sandbox-kr-*
     paths:
       - frontend/**
     paths-ignore:
@@ -33,7 +34,7 @@ stages:
         name: 构建并上传 frontend 预览站点
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: cn-pool
         env:
           STATICPAGES_UPLOAD_TOKEN: ${{ settings.STATICPAGES_UPLOAD_TOKEN }}
           SOPS_AGE_KEY: ${{ settings.SOPS_AGE_KEY }}
@@ -61,6 +62,7 @@ stages:
               echo "目标规则：master -> https://master.preview.lightclaw.tech 和 https://intl-master.preview.lightclaw.tech"
               echo "目标规则：frontsandbox/<name> -> https://<name>.preview.lightclaw.tech 和 https://intl-<name>.preview.lightclaw.tech"
               echo "目标规则：playground/sandbox-bj-N -> https://sandbox-bj-N.preview.lightclaw.tech 和 https://intl-sandbox-bj-N.preview.lightclaw.tech"
+              echo "目标规则：playground/sandbox-kr-N -> https://sandbox-kr-N.preview.lightclaw.tech 和 https://intl-sandbox-kr-N.preview.lightclaw.tech"
               echo "发布方式：构建 frontend dist-cn + dist-global 后顺序上传到 StaticPages，不创建 GitOps MR"
               echo "============================================================"
               set -euo pipefail
@@ -73,7 +75,7 @@ stages:
               trap cleanup_frontend_preview_runtime EXIT
 
               echo "frontend 预览发布器来源：${FRONTEND_PREVIEW_RUNTIME_REF}"
-              git fetch --no-tags --depth=1 origin master:refs/remotes/origin/master
+              git fetch --no-tags --depth=1 origin +master:refs/remotes/origin/master
               git archive --format=tar "$FRONTEND_PREVIEW_RUNTIME_REF" .ci | tar -xf - -C "$FRONTEND_PREVIEW_RUNTIME_DIR"
               FRONTEND_PREVIEW_RUNTIME_CI_DIR="$FRONTEND_PREVIEW_RUNTIME_DIR/.ci"
 

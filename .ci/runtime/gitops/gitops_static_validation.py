@@ -15,16 +15,15 @@ RUNTIME_DIR = Path(__file__).resolve().parents[1]
 if str(RUNTIME_DIR) not in sys.path:
     sys.path.insert(0, str(RUNTIME_DIR))
 
-from contracts.bundles import load_bundle, load_manifest  # noqa: E402
+from contracts.bundles import load_bundle, load_manifest, playground_catalog_root  # noqa: E402
 from support.yaml import load_mapping  # noqa: E402
 
 
 APPSET_REL = "argocd/apps/beijing-sandbox/sandbox-family-appset.yaml"
 APPS_DIR_REL = "argocd/apps/beijing-sandbox"
 CATALOG_DIR_TEMPLATE = "argocd/catalogs/sandbox/{env}"
-PLAYGROUND_CATALOG_DIR_TEMPLATE = "argocd/catalogs/playground/beijing-playground/{env}"
 SUPPORTED_SANDBOX_ENVS = {"beijing-sandbox", "beijing-sandbox-2"}
-SUPPORTED_DIRECT_APP_ENVS = {"shprod", "sgprod"}
+SUPPORTED_DIRECT_APP_ENVS = {"shprod", "sgprod", "tkexgz", "tkexsg", "devcloud-dep"}
 ALLOWED_BEIJING_APP_FILES = {"argocd-runtime.yaml", "sandbox-family-appset.yaml"}
 REQUIRED_CATALOG_FIELDS = {
     "service",
@@ -69,12 +68,12 @@ def path_is_covered(candidate: str, patterns: Iterable[str]) -> bool:
 
 def catalog_dir_rel(env: str) -> str:
     if is_playground_env(env):
-        return PLAYGROUND_CATALOG_DIR_TEMPLATE.format(env=env)
+        return f"{playground_catalog_root(env)}/{env}"
     return CATALOG_DIR_TEMPLATE.format(env=env)
 
 
 def is_playground_env(env: str) -> bool:
-    return re.fullmatch(r"sandbox-bj-\d+", env) is not None
+    return re.fullmatch(r"sandbox-(bj|kr)-\d+", env) is not None
 
 
 def load_catalogs(repo_root: Path, env: str) -> tuple[list[CatalogEntry], list[str]]:

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -20,6 +21,7 @@ type selfCheckResponse struct {
 
 type selfCheckSummary struct {
 	WorkerKind               string `json:"worker_kind"`
+	RuntimeHost              string `json:"runtime_host,omitempty"`
 	OuterRuntime             string `json:"outer_runtime,omitempty"`
 	AGSAPIURL                string `json:"ags_api_url,omitempty"`
 	AGSDomain                string `json:"ags_domain,omitempty"`
@@ -34,6 +36,9 @@ type selfCheckSummary struct {
 	WispSMHLibraryID         string `json:"wisp_smh_library_id,omitempty"`
 	WispSMHAccessDomain      string `json:"wisp_smh_access_domain,omitempty"`
 	WispSMHSecretConfigured  bool   `json:"wisp_smh_secret_configured,omitempty"`
+	LocalRuntimeRoot         string `json:"local_runtime_root,omitempty"`
+	LocalRuntimeCommandProxy bool   `json:"local_runtime_command_proxy,omitempty"`
+	LocalRuntimeAllowPaths   bool   `json:"local_runtime_allow_host_paths,omitempty"`
 	TokenHubAPIKeyConfigured bool   `json:"tokenhub_api_key_configured,omitempty"`
 	AGSAPIKeyConfigured      bool   `json:"ags_api_key_configured,omitempty"`
 }
@@ -67,6 +72,71 @@ func (s *Server) handleSelfCheck(w http.ResponseWriter, r *http.Request) {
 		"status="+resp.Status,
 	)
 	writeJSON(w, status, resp)
+}
+
+func (s *Server) handleReadyz(w http.ResponseWriter, _ *http.Request) {
+	failures := s.readinessFailures()
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	if len(failures) > 0 {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte("not ready\n"))
+		for _, failure := range failures {
+			_, _ = w.Write([]byte("- " + failure + "\n"))
+		}
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("ok\n"))
+}
+
+func (s *Server) readinessFailures() []string {
+	switch worker := s.worker.(type) {
+	case *AgentSidecarWorker:
+		return worker.readinessFailures()
+	case FakeWorker, *FakeWorker:
+		return nil
+	case nil:
+		return []string{"worker is not configured"}
+	default:
+		return nil
+	}
+}
+
+func (w *AgentSidecarWorker) readinessFailures() []string {
+	var failures []string
+	add := func(ok bool, message string) {
+		if !ok {
+			failures = append(failures, message)
+		}
+	}
+	outerRuntime := normalizeOuterRuntime(w.outerRuntime)
+	localRuntimeHost := w.defaultBackendName == runtimeHostTypeLocalWisp
+	if !localRuntimeHost {
+		add(w.client != nil, "AGS client is not configured")
+	}
+	if !localRuntimeHost && w.client != nil {
+		add(w.client.apiKey != "", "GATEWAY_AGS_API_KEY is not configured")
+		add(w.client.domain != "", "GATEWAY_AGS_DOMAIN is not configured")
+		add(w.client.apiURL != "", "GATEWAY_AGS_API_URL is not configured")
+	}
+	add(strings.TrimSpace(w.outerTemplateID) != "", "outer runtime template is not configured")
+	add(strings.TrimSpace(w.innerTemplateID) != "", "GATEWAY_AGENT_SIDECAR_INNER_TEMPLATE or INNER_SANDBOX_TEMPLATE is not configured")
+	add(strings.TrimSpace(w.tokenHubAPIKey) != "", "GATEWAY_TOKENHUB_API_KEY is not configured")
+	add(strings.TrimSpace(w.sidecarURL) != "" || strings.TrimSpace(w.sidecarBinaryPath) != "", "GATEWAY_AGENT_SIDECAR_URL or GATEWAY_AGENT_SIDECAR_BINARY is not configured")
+	add(strings.TrimSpace(w.sidecarSHA256) == "" || isSHA256Hex(w.sidecarSHA256), "GATEWAY_AGENT_SIDECAR_SHA256 is not a valid sha256 hex string")
+	add(outerRuntime == outerRuntimeAGS || outerRuntime == outerRuntimeWisp, "GATEWAY_AGENT_OUTER_RUNTIME is not supported")
+	if outerRuntime == outerRuntimeWisp {
+		add(strings.TrimSpace(w.wispPackageURL) != "", "GATEWAY_WISP_PACKAGE_URL is not configured")
+		add(strings.TrimSpace(w.wispSMHLibraryID) != "", "GATEWAY_WISP_SMH_LIBRARY_ID is not configured")
+		add(strings.TrimSpace(w.wispSMHAccessDomain) != "", "GATEWAY_WISP_SMH_ACCESS_DOMAIN is not configured")
+		add(strings.TrimSpace(w.wispSMHLibrarySecret) != "", "GATEWAY_WISP_SMH_LIBRARY_SECRET is not configured")
+		if localRuntimeHost {
+			info := w.localRuntimeHostInfo()
+			add(strings.TrimSpace(info.Root) != "", "GATEWAY_LOCAL_RUNTIME_ROOT is not configured")
+			add(runtime.GOOS == "linux" || strings.TrimSpace(info.CommandPrefix) != "", "GATEWAY_LOCAL_RUNTIME_COMMAND_PREFIX is required for local_wisp on non-Linux gateway hosts")
+		}
+	}
+	return failures
 }
 
 func (s *Server) selfCheck(ctx context.Context) selfCheckResponse {
@@ -114,8 +184,10 @@ func (w *AgentSidecarWorker) selfCheckSummary() selfCheckSummary {
 		agsDomain = w.client.domain
 		agsAPIKeyConfigured = w.client.apiKey != ""
 	}
+	localInfo := w.localRuntimeHostInfo()
 	return selfCheckSummary{
 		WorkerKind:               "agent_sidecar",
+		RuntimeHost:              w.defaultBackendName,
 		OuterRuntime:             w.outerRuntime,
 		AGSAPIURL:                agsAPIURL,
 		AGSDomain:                agsDomain,
@@ -130,6 +202,9 @@ func (w *AgentSidecarWorker) selfCheckSummary() selfCheckSummary {
 		WispSMHLibraryID:         w.wispSMHLibraryID,
 		WispSMHAccessDomain:      w.wispSMHAccessDomain,
 		WispSMHSecretConfigured:  w.wispSMHLibrarySecret != "",
+		LocalRuntimeRoot:         localInfo.Root,
+		LocalRuntimeCommandProxy: strings.TrimSpace(localInfo.CommandPrefix) != "",
+		LocalRuntimeAllowPaths:   localInfo.AllowHostPaths,
 		TokenHubAPIKeyConfigured: w.tokenHubAPIKey != "",
 		AGSAPIKeyConfigured:      agsAPIKeyConfigured,
 	}
@@ -137,10 +212,27 @@ func (w *AgentSidecarWorker) selfCheckSummary() selfCheckSummary {
 
 func (w *AgentSidecarWorker) appendSelfChecks(ctx context.Context, resp *selfCheckResponse, add func(selfCheckItem)) {
 	outerRuntime := normalizeOuterRuntime(w.outerRuntime)
-	add(requiredCheck("ags.api_key", "GATEWAY_AGS_API_KEY configured", w.client != nil && w.client.apiKey != ""))
-	add(requiredCheck("ags.domain", "GATEWAY_AGS_DOMAIN configured", w.client != nil && w.client.domain != ""))
-	add(requiredCheck("ags.api_url", "GATEWAY_AGS_API_URL configured", w.client != nil && w.client.apiURL != ""))
-	add(requiredCheck("agent.outer_template", "outer AGS template configured", w.outerTemplateID != ""))
+	localRuntimeHost := w.defaultBackendName == runtimeHostTypeLocalWisp
+	if localRuntimeHost {
+		add(passCheck("runtime_host.local_wisp", "local_wisp runtime host configured"))
+		info := w.localRuntimeHostInfo()
+		add(requiredCheck("runtime_host.local_wisp.root", "GATEWAY_LOCAL_RUNTIME_ROOT configured", strings.TrimSpace(info.Root) != ""))
+		if info.Root != "" {
+			add(dirWritableCheck("runtime_host.local_wisp.root_writable", info.Root))
+		}
+		if runtime.GOOS != "linux" && outerRuntime == outerRuntimeWisp {
+			add(requiredCheck("runtime_host.local_wisp.command_prefix", "GATEWAY_LOCAL_RUNTIME_COMMAND_PREFIX configured for non-Linux Wisp runtime host", strings.TrimSpace(info.CommandPrefix) != ""))
+		} else if strings.TrimSpace(info.CommandPrefix) != "" {
+			add(passCheck("runtime_host.local_wisp.command_prefix", "local runtime commands use command prefix"))
+		} else {
+			add(passCheck("runtime_host.local_wisp.command_prefix", "local runtime commands execute on gateway host"))
+		}
+	} else {
+		add(requiredCheck("ags.api_key", "GATEWAY_AGS_API_KEY configured", w.client != nil && w.client.apiKey != ""))
+		add(requiredCheck("ags.domain", "GATEWAY_AGS_DOMAIN configured", w.client != nil && w.client.domain != ""))
+		add(requiredCheck("ags.api_url", "GATEWAY_AGS_API_URL configured", w.client != nil && w.client.apiURL != ""))
+	}
+	add(requiredCheck("agent.outer_template", "outer runtime template configured", w.outerTemplateID != ""))
 	add(requiredCheck("agent.inner_template", "inner AGS template configured", w.innerTemplateID != ""))
 	add(requiredCheck("agent.tokenhub_api_key", "GATEWAY_TOKENHUB_API_KEY configured", w.tokenHubAPIKey != ""))
 	add(requiredCheck("agent.sidecar_source", "GATEWAY_AGENT_SIDECAR_URL or GATEWAY_AGENT_SIDECAR_BINARY configured", w.sidecarURL != "" || w.sidecarBinaryPath != ""))
@@ -168,6 +260,21 @@ func (w *AgentSidecarWorker) appendSelfChecks(ctx context.Context, resp *selfChe
 	}
 }
 
+func (w *AgentSidecarWorker) localRuntimeHostInfo() LocalRuntimeHostInfo {
+	if w == nil {
+		return LocalRuntimeHostInfo{}
+	}
+	backend, ok := w.backendForName(runtimeHostTypeLocalWisp)
+	if !ok || backend.host == nil {
+		return LocalRuntimeHostInfo{}
+	}
+	localHost, ok := backend.host.(*LocalRuntimeHost)
+	if !ok {
+		return LocalRuntimeHostInfo{}
+	}
+	return localHost.Info()
+}
+
 func requiredCheck(name, message string, ok bool) selfCheckItem {
 	if ok {
 		return passCheck(name, message)
@@ -184,6 +291,26 @@ func fileExistsCheck(name, filePath string) selfCheckItem {
 		return selfCheckItem{Name: name, Status: "fail", URL: filePath, Message: err.Error()}
 	}
 	return selfCheckItem{Name: name, Status: "pass", URL: filePath, Message: "present"}
+}
+
+func dirWritableCheck(name, dirPath string) selfCheckItem {
+	if err := os.MkdirAll(dirPath, 0o755); err != nil {
+		return selfCheckItem{Name: name, Status: "fail", URL: dirPath, Message: err.Error()}
+	}
+	probe, err := os.CreateTemp(dirPath, ".cloudagent-selfcheck-")
+	if err != nil {
+		return selfCheckItem{Name: name, Status: "fail", URL: dirPath, Message: err.Error()}
+	}
+	probePath := probe.Name()
+	closeErr := probe.Close()
+	removeErr := os.Remove(probePath)
+	if closeErr != nil {
+		return selfCheckItem{Name: name, Status: "fail", URL: dirPath, Message: closeErr.Error()}
+	}
+	if removeErr != nil {
+		return selfCheckItem{Name: name, Status: "fail", URL: dirPath, Message: removeErr.Error()}
+	}
+	return selfCheckItem{Name: name, Status: "pass", URL: dirPath, Message: "writable"}
 }
 
 func headURLCheck(ctx context.Context, name, rawURL string, client *AGSClient) selfCheckItem {

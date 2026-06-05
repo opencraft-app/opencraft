@@ -30,6 +30,7 @@ class UploadStaticPagesPreviewTests(unittest.TestCase):
 
     def test_normalize_playground_branch_to_env_preview_name(self) -> None:
         self.assertEqual(normalize_preview_name("playground/sandbox-bj-7"), "sandbox-bj-7")
+        self.assertEqual(normalize_preview_name("playground/sandbox-kr-1"), "sandbox-kr-1")
 
     def test_reject_empty_preview_name(self) -> None:
         with self.assertRaisesRegex(ValueError, "cannot derive preview name"):
@@ -42,6 +43,8 @@ class UploadStaticPagesPreviewTests(unittest.TestCase):
     def test_playground_preview_variant_names_publish_env_pair(self) -> None:
         self.assertEqual(preview_name_for_variant("playground/sandbox-bj-7", "cn"), "sandbox-bj-7")
         self.assertEqual(preview_name_for_variant("playground/sandbox-bj-7", "intl"), "intl-sandbox-bj-7")
+        self.assertEqual(preview_name_for_variant("playground/sandbox-kr-1", "cn"), "sandbox-kr-1")
+        self.assertEqual(preview_name_for_variant("playground/sandbox-kr-1", "intl"), "intl-sandbox-kr-1")
 
     def test_master_branch_publishes_stable_preview_pair(self) -> None:
         self.assertEqual(normalize_preview_name("master"), "master")

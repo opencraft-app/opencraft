@@ -104,6 +104,7 @@ python3 images/build-image.py --runtime hermes --base-image-id img-id352nof --wi
 - 为 `agentuser` 的 `~/.hermes/hermes-agent/scripts/whatsapp-bridge` 预装 `@whiskeysockets/baileys@7.0.0-rc.9`、`qrcode-terminal`、`express`、`pino`
 - 安装 `skillhub --cli-only`
 - 安装 `acli` 并以 `acli doctor` 作为 gate
+- 从 `images/hermes-backend-blueprint-id` 读取 backend blueprint 基线，并以 `agentuser` 执行 `acli backend upgrade-start --blueprint-id <id> --wait=true`
 - 默认验证套件：`runtime-hermes`
 - 不支持 OpenClaw 的插件 / skill 安装参数
 
@@ -115,13 +116,46 @@ CI 入口：
 - CI 会验证 `agentuser` 下 WhatsApp bridge 的 Node 依赖可被 `require.resolve` 找到
 - CI 会验证 `agentuser` 的 Hermes venv 可以 import `lark_oapi` 和 `qrcode`
 - Hermes CI 镜像会并发同步到北京、上海和新加坡
+- Hermes CI 在人工确认后会从仓库内修补脚本临时创建 TAT Command 修复存量 VM，不要求手工传 `HERMES_TAT_COMMAND_ID`
+- TAT Command 创建脚本会读取 `images/hermes-backend-blueprint-id` 并把 ID 注入到下发脚本环境，目标 VM 不需要携带仓库文件
+- `images/hermes-image-trigger` 是专用触发文件；当只改 `.ci/**` 但需要触发 `.ci/hermes-image.yml` 时，更新这个文件并随 MR 合入
 - 腾讯云凭据从构建机本地 `/etc/lightclaw-ci/tencentcloud_secret_id` 和 `/etc/lightclaw-ci/tencentcloud_secret_key` 读取
 - CI 会自动安装并缓存 `tccli`，不要求构建机预装腾讯云 CLI
 - CI 会自动安装并缓存 Go，用于上传前本地编译 `images/bin/envd`
 
 存量 Hermes 机器修复：
 
-- `images/helpers/config-hermes-python-mirrors.sh` 可通过 TAT/debug exec 下发到存量机器，只修复 `agentuser` 的 pip/uv mirror 配置，不安装依赖
+- `images/helpers/config-hermes-python-mirrors.sh` 可通过 TAT/debug exec 下发到存量机器，修复 `agentuser` 的 pip/uv mirror 配置、`~/.config/systemd/user` 权限，并执行同一 backend blueprint 升级基线
+- TAT 建议用 root/default 身份执行；脚本内部通过 `LIGHTCLAW_RUNTIME_USER`（默认 `agentuser`）定位目标用户 home、修正文件属主，并通过 `sudo -u agentuser -H bash -lc` 执行 `acli backend upgrade-start`
+- `acli backend upgrade-start` 命令本身不加 `sudo`，必须以 `agentuser` 身份运行
+
+### Hermes Backend Blueprint Baseline
+
+Hermes backend blueprint 的唯一 Git 维护入口是：
+
+```text
+images/hermes-backend-blueprint-id
+```
+
+这个文件只存一行 blueprint ID，例如：
+
+```text
+lhbp-8gsotw6u
+```
+
+后续升级 Hermes backend baseline 时，只修改这个文件里的 ID，然后提交 MR。不要在 `build.sh`、`deploy-build.sh`、TAT 脚本或前端命令里散写新的 `lhbp-*`。
+
+当前基线命令为：
+
+```bash
+acli backend upgrade-start --blueprint-id "$(cat images/hermes-backend-blueprint-id)" --wait=true
+```
+
+执行身份约束：
+
+- CVM 镜像构建：`images/build.sh` 读取 `images/hermes-backend-blueprint-id`，通过 `run_as_runtime_user` 以 `agentuser` 执行该命令
+- 存量 VM 修复：`.ci/runtime/commands/create_hermes_tat_command.sh` 读取同一个 ID 文件，并把 `HERMES_BACKEND_BLUEPRINT_ID` 注入到 TAT command 内容；目标 VM 上的修补脚本再以 `agentuser` 执行该命令
+- 不要写成 `sudo acli backend upgrade-start ...`；如果 TAT 以 root 执行，只允许用 sudo 切换到 `agentuser`
 
 ### Full Build
 
@@ -191,6 +225,7 @@ bash images/deploy-build.sh ubuntu@<host> --app-only --only-plugins qqbot,weixin
 
 - `build.sh`
 - `build-manifest.json`
+- `hermes-backend-blueprint-id`
 - `bin/envd`
 - `runtime/openclaw-weixin-login-session.sh`
 

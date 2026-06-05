@@ -172,6 +172,163 @@ func TestLiveACPWispOuterCloseCheckpoints(t *testing.T) {
 	t.Logf("wisp close checkpoint ok session=%s outer=%s inner=%s smh_space=%s", sessionID, runtime.OuterSandboxID, runtime.InnerSandboxID, runtime.WispSMHSpaceID)
 }
 
+func TestLiveLocalDockerWispSMHRuntime(t *testing.T) {
+	if os.Getenv("RUN_LIVE_LOCAL_DOCKER_WISP_SMH") != "1" && os.Getenv("RUN_LIVE_LOCAL_WISP_SMH") != "1" {
+		t.Skip("set RUN_LIVE_LOCAL_WISP_SMH=1 to run live Shanghai SMH + Wisp on a local Linux RuntimeHost")
+	}
+	if strings.TrimSpace(os.Getenv("GATEWAY_RUNTIME_HOST")) != runtimeHostTypeLocalWisp {
+		t.Skip("GATEWAY_RUNTIME_HOST=local_wisp is required")
+	}
+	if strings.TrimSpace(os.Getenv("GATEWAY_LOCAL_RUNTIME_COMMAND_PREFIX")) == "" {
+		t.Skip("GATEWAY_LOCAL_RUNTIME_COMMAND_PREFIX is required")
+	}
+	if strings.TrimSpace(os.Getenv("GATEWAY_LOCAL_RUNTIME_ROOT")) == "" {
+		t.Skip("GATEWAY_LOCAL_RUNTIME_ROOT is required")
+	}
+	if strings.TrimSpace(firstEnv("GATEWAY_WISP_SMH_LIBRARY_SECRET", "SMH_LIBRARY_SECRET")) == "" {
+		t.Skip("GATEWAY_WISP_SMH_LIBRARY_SECRET or SMH_LIBRARY_SECRET is required")
+	}
+	if strings.TrimSpace(firstEnv("GATEWAY_AGENT_SIDECAR_URL", "AGENT_SIDECAR_URL")) == "" {
+		t.Skip("GATEWAY_AGENT_SIDECAR_URL or AGENT_SIDECAR_URL is required")
+	}
+
+	scope := Scope{TenantID: "tenant-local-docker", ProjectID: "project-local-docker"}
+	requestTimeout := liveDurationEnv("LIVE_LOCAL_DOCKER_WISP_SMH_TIMEOUT", 12*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
+	defer cancel()
+
+	store, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker, err := NewAgentSidecarWorkerFromEnvWithWorkspaceService(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionID := "session_local_docker_wisp_" + randomHex(8)
+	runtime, err := worker.StartSessionRuntime(ctx, ACPSessionRuntimeStartRequest{
+		SessionID:        sessionID,
+		Scope:            scope,
+		CWD:              acpRuntimeCWD,
+		Generation:       1,
+		SandboxBackend:   runtimeHostTypeLocalWisp,
+		OuterRuntime:     outerRuntimeWisp,
+		RuntimeRecovery:  runtimeRecoveryReattachOrRecreate,
+		AgentVersion:     defaultAgentVersion,
+		WorkspaceVersion: defaultWorkspaceVersion,
+		OwnerID:          "local-docker-e2e",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	closed := false
+	t.Cleanup(func() {
+		if closed {
+			return
+		}
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer cleanupCancel()
+		if err := worker.DeleteSessionRuntime(cleanupCtx, runtime); err != nil {
+			t.Logf("cleanup local docker wisp runtime session=%s outer=%s inner=%s: %v", sessionID, runtime.OuterSandboxID, runtime.InnerSandboxID, err)
+		}
+	})
+	if runtime.SandboxBackend != runtimeHostTypeLocalWisp {
+		t.Fatalf("sandbox backend=%q, want local_wisp", runtime.SandboxBackend)
+	}
+	if runtime.OuterSandboxID == "" || runtime.OuterSandboxDomain != runtimeHostTypeLocalWisp {
+		t.Fatalf("outer local runtime identity incomplete: %#v", runtime)
+	}
+	if runtime.InnerSandboxID == "" || runtime.InnerSandboxDomain != runtimeHostTypeLocalWisp {
+		t.Fatalf("inner local runtime identity incomplete: %#v", runtime)
+	}
+	if runtime.WispSMHSpaceID == "" || runtime.WispName == "" || runtime.WorkspaceWispName == "" || runtime.WorkspaceRuntimeID == "" {
+		t.Fatalf("wisp runtime identity incomplete: %#v", runtime)
+	}
+	localHost := requireLocalRuntimeHost(t, worker, runtime)
+	outerHandleBefore := requireLocalRuntimeHandle(t, localHost, runtime.OuterSandboxID)
+	innerHandleBefore := requireLocalRuntimeHandle(t, localHost, runtime.InnerSandboxID)
+	if outerHandleBefore.TemplateID != worker.outerTemplateID {
+		t.Fatalf("unexpected outer local template: %+v", outerHandleBefore)
+	}
+	if innerHandleBefore.TemplateID != worker.innerTemplateID {
+		t.Fatalf("unexpected inner local template: %+v", innerHandleBefore)
+	}
+	status, err := worker.SessionRuntimeStatus(ctx, runtime, sessionID)
+	if err != nil {
+		t.Fatalf("local wisp runtime status should be readable: %v", err)
+	}
+	if status.SessionID != "" && status.SessionID != sessionID {
+		t.Fatalf("runtime status session mismatch: status=%+v session=%s", status, sessionID)
+	}
+	update, err := worker.EnsureSessionEnvdRuntime(ctx, runtime, ACPSessionRuntimeEnsureRequest{
+		SessionID:  sessionID,
+		Scope:      scope,
+		Generation: 1,
+		Force:      false,
+	})
+	if err != nil {
+		t.Fatalf("ensure existing local workspace runtime: %v", err)
+	}
+	if update.InnerSandboxID != runtime.InnerSandboxID || update.InnerSandboxDomain != runtime.InnerSandboxDomain || update.InnerEnvdAccessToken == "" {
+		t.Fatalf("ensure existing workspace returned different identity: update=%+v runtime=%+v", update, runtime)
+	}
+	if err := worker.RefreshSessionRuntime(ctx, runtime, sessionID); err != nil {
+		t.Fatalf("refresh local docker runtime: %v", err)
+	}
+	if err := worker.RefreshSessionRuntime(ctx, runtime, sessionID); err != nil {
+		t.Fatalf("second refresh local docker runtime: %v", err)
+	}
+	outerHandleAfter := requireLocalRuntimeHandle(t, localHost, runtime.OuterSandboxID)
+	innerHandleAfter := requireLocalRuntimeHandle(t, localHost, runtime.InnerSandboxID)
+	if !outerHandleAfter.ExpiresAt.After(outerHandleBefore.ExpiresAt) {
+		t.Fatalf("outer refresh did not extend local handle expiry: before=%s after=%s", outerHandleBefore.ExpiresAt, outerHandleAfter.ExpiresAt)
+	}
+	if !innerHandleAfter.ExpiresAt.After(innerHandleBefore.ExpiresAt) {
+		t.Fatalf("inner refresh did not extend local handle expiry: before=%s after=%s", innerHandleBefore.ExpiresAt, innerHandleAfter.ExpiresAt)
+	}
+	closeCtx, closeCancel := context.WithTimeout(ctx, liveDurationEnv("LIVE_LOCAL_DOCKER_WISP_CLOSE_TIMEOUT", 3*time.Minute))
+	defer closeCancel()
+	if err := worker.DeleteSessionRuntime(closeCtx, runtime); err != nil {
+		t.Fatalf("close local docker wisp runtime: %v", err)
+	}
+	closed = true
+	assertLocalRuntimeHandleMissing(t, localHost, runtime.OuterSandboxID)
+	assertLocalRuntimeHandleMissing(t, localHost, runtime.InnerSandboxID)
+	if err := worker.RefreshSessionRuntime(ctx, runtime, sessionID); err == nil {
+		t.Fatal("refresh should fail after local runtime handles are deleted")
+	}
+	t.Logf("local docker wisp runtime ok session=%s outer=%s inner=%s smh_space=%s outer_wisp=%s inner_wisp=%s", sessionID, runtime.OuterSandboxID, runtime.InnerSandboxID, runtime.WispSMHSpaceID, runtime.WispName, runtime.WorkspaceWispName)
+}
+
+func requireLocalRuntimeHost(t *testing.T, worker *AgentSidecarWorker, runtime ACPSessionRuntime) *LocalRuntimeHost {
+	t.Helper()
+	backend, err := worker.backendForRuntime(runtime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	localHost, ok := backend.host.(*LocalRuntimeHost)
+	if !ok {
+		t.Fatalf("runtime backend host is %T, want *LocalRuntimeHost", backend.host)
+	}
+	return localHost
+}
+
+func requireLocalRuntimeHandle(t *testing.T, host *LocalRuntimeHost, id string) localRuntimeHostHandle {
+	t.Helper()
+	handle, err := host.readHandle(id)
+	if err != nil {
+		t.Fatalf("read local runtime handle %s: %v", id, err)
+	}
+	return handle
+}
+
+func assertLocalRuntimeHandleMissing(t *testing.T, host *LocalRuntimeHost, id string) {
+	t.Helper()
+	if _, err := host.readHandle(id); err == nil {
+		t.Fatalf("local runtime handle %s still exists after close", id)
+	}
+}
+
 func newLiveWispWorker(t *testing.T, requestTimeout time.Duration) (*AGSClient, *AgentSidecarWorker) {
 	t.Helper()
 	apiKey := firstEnv("GATEWAY_AGS_API_KEY", "E2B_API_KEY")
@@ -219,7 +376,7 @@ func newLiveWispWorker(t *testing.T, requestTimeout time.Duration) (*AGSClient, 
 		DeleteSandbox:         true,
 		OuterRuntime:          outerRuntimeWisp,
 		WispPackageURL:        firstNonEmpty(firstEnv("GATEWAY_WISP_PACKAGE_URL", "WISP_SDK_PACKAGE_URL", "WISP_FAST_PACKAGE_URL", "WISP_PACKAGE_URL"), defaultLiveWispFastPackageURL),
-		WispRootUpperSize:     firstNonEmpty(firstEnv("GATEWAY_WISP_ROOT_UPPER_SIZE", "WISP_ROOT_UPPER_SIZE", "ROOT_UPPER_SIZE"), "5G"),
+		WispRootUpperSize:     firstEnv("GATEWAY_WISP_ROOT_UPPER_SIZE", "WISP_ROOT_UPPER_SIZE", "ROOT_UPPER_SIZE"),
 		WispJFSPrefix:         firstNonEmpty(firstEnv("GATEWAY_WISP_JFS_PREFIX", "WISP_JFS_PREFIX", "JFS_PREFIX"), "cloudagent-agent-live"),
 		WispSMHLibraryID:      firstNonEmpty(firstEnv("GATEWAY_WISP_SMH_LIBRARY_ID", "SMH_LIBRARY_ID"), "smh37laghvp09llc"),
 		WispSMHAccessDomain:   firstNonEmpty(firstEnv("GATEWAY_WISP_SMH_ACCESS_DOMAIN", "SMH_ACCESS_DOMAIN"), "https://smh37laghvp09llc.ap-shanghai.api.tencentsmh.cn"),

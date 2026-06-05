@@ -47,6 +47,7 @@ HERMES_VERSION=""
 HERMES_SRC_VERSION=""
 HERMES_GIT_COMMIT=""
 HERMES_ACLI_INSTALL_URL=""
+HERMES_BACKEND_BLUEPRINT_ID="${HERMES_BACKEND_BLUEPRINT_ID:-}"
 HERMES_SYSTEM_BIN_DIR="${HERMES_SYSTEM_BIN_DIR:-/usr/local/bin}"
 HERMES_SYSTEM_LINK_DIR="${HERMES_SYSTEM_LINK_DIR:-/usr/bin}"
 HERMES_WHATSAPP_BRIDGE_USER="${HERMES_WHATSAPP_BRIDGE_USER:-}"
@@ -54,6 +55,7 @@ HERMES_WHATSAPP_BRIDGE_HOME="${HERMES_WHATSAPP_BRIDGE_HOME:-}"
 HERMES_PYPI_INDEX_URL="${HERMES_PYPI_INDEX_URL:-https://mirrors.tencent.com/pypi/simple}"
 HERMES_PYPI_EXTRA_INDEX_URL="${HERMES_PYPI_EXTRA_INDEX_URL:-https://mirrors.cloud.tencent.com/pypi/simple}"
 ACLI_IDENTITY_PATH="${ACLI_IDENTITY_PATH:-/etc/acli/identity.yaml}"
+HERMES_UV_CMD=""
 NODE_VERSION=""
 PNPM_VERSION=""
 PLAYWRIGHT_VERSION=""
@@ -79,6 +81,7 @@ ARG_HERMES_VERSION="${ARG_HERMES_VERSION:-}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || pwd)"
 MANIFEST_PATH="${SCRIPT_DIR}/build-manifest.json"
+HERMES_BACKEND_BLUEPRINT_ID_FILE="${HERMES_BACKEND_BLUEPRINT_ID_FILE:-${SCRIPT_DIR}/hermes-backend-blueprint-id}"
 ENVD_BINARY="/usr/local/bin/envd"
 ENVD_SERVICE="envd.service"
 ENVD_LISTEN_PORT="${ENVD_LISTEN_PORT:-49983}"
@@ -828,8 +831,9 @@ EOF
 }
 
 configure_hermes_python_mirrors() {
-  local pip_config_dir="${RUNTIME_HOME}/.config/pip"
-  local uv_config_dir="${RUNTIME_HOME}/.config/uv"
+  local config_dir="${RUNTIME_HOME}/.config"
+  local pip_config_dir="${config_dir}/pip"
+  local uv_config_dir="${config_dir}/uv"
 
   log_info "configuring Hermes Python package mirrors for ${RUNTIME_USER}"
   mkdir -p "${pip_config_dir}" "${uv_config_dir}"
@@ -845,7 +849,51 @@ EOF
 index-url = "${HERMES_PYPI_INDEX_URL}"
 extra-index-url = ["${HERMES_PYPI_EXTRA_INDEX_URL}"]
 EOF
+  chown "${RUNTIME_USER}:${RUNTIME_USER}" "${config_dir}" 2>/dev/null || true
+  chmod 0700 "${config_dir}" 2>/dev/null || true
   chown -R "${RUNTIME_USER}:${RUNTIME_USER}" "${pip_config_dir}" "${uv_config_dir}" 2>/dev/null || true
+}
+
+ensure_hermes_user_systemd_dir() {
+  local config_dir="${RUNTIME_HOME}/.config"
+  local systemd_dir="${config_dir}/systemd"
+  local user_unit_dir="${systemd_dir}/user"
+
+  mkdir -p "${user_unit_dir}"
+  chown "${RUNTIME_USER}:${RUNTIME_USER}" "${config_dir}" "${systemd_dir}" "${user_unit_dir}" 2>/dev/null || true
+  chmod 0700 "${config_dir}" "${systemd_dir}" "${user_unit_dir}" 2>/dev/null || true
+}
+
+ensure_hermes_uv() {
+  local found_uv=""
+  log_info "ensuring uv for ${RUNTIME_USER}"
+  for found_uv in \
+    "${RUNTIME_HOME}/.hermes/bin/uv" \
+    "${RUNTIME_HOME}/.local/bin/uv" \
+    "${RUNTIME_HOME}/.cargo/bin/uv"; do
+    if [ -x "${found_uv}" ]; then
+      HERMES_UV_CMD="${found_uv}"
+      run_as_runtime_user "'${HERMES_UV_CMD}' --version"
+      return 0
+    fi
+  done
+
+  found_uv="$(run_as_runtime_user "export HOME='${RUNTIME_HOME}'; export PATH='${RUNTIME_HOME}/.local/bin:${RUNTIME_HOME}/.cargo/bin:'\"\$PATH\"; command -v uv 2>/dev/null || true")"
+  if [ -n "${found_uv}" ]; then
+    HERMES_UV_CMD="${found_uv}"
+    run_as_runtime_user "'${HERMES_UV_CMD}' --version"
+    return 0
+  fi
+
+  run_as_runtime_user "export HOME='${RUNTIME_HOME}'; export XDG_CONFIG_HOME='${RUNTIME_HOME}/.config'; python3 -m pip install --user --break-system-packages --index-url '${HERMES_PYPI_INDEX_URL}' --extra-index-url '${HERMES_PYPI_EXTRA_INDEX_URL}' uv"
+  if [ -x "${RUNTIME_HOME}/.local/bin/uv" ]; then
+    HERMES_UV_CMD="${RUNTIME_HOME}/.local/bin/uv"
+  else
+    found_uv="$(run_as_runtime_user "export HOME='${RUNTIME_HOME}'; export PATH='${RUNTIME_HOME}/.local/bin:${RUNTIME_HOME}/.cargo/bin:'\"\$PATH\"; command -v uv 2>/dev/null || true")"
+    HERMES_UV_CMD="${found_uv}"
+  fi
+  [ -n "${HERMES_UV_CMD}" ] || { log_error "uv is still missing after install"; return 1; }
+  run_as_runtime_user "'${HERMES_UV_CMD}' --version"
 }
 
 install_hermes_extra_tools() {
@@ -911,6 +959,7 @@ EOF
 
 install_hermes_python_deps() {
   local hermes_python="${RUNTIME_HOME}/.hermes/hermes-agent/venv/bin/python"
+  local hermes_uv_escaped=""
 
   log_info "installing Hermes Python integration deps"
   if [ ! -x "${hermes_python}" ]; then
@@ -918,7 +967,9 @@ install_hermes_python_deps() {
     return 1
   fi
 
-  run_as_runtime_user "export HOME='${RUNTIME_HOME}'; export XDG_CONFIG_HOME='${RUNTIME_HOME}/.config'; export PATH='${RUNTIME_HOME}/.local/bin:${RUNTIME_HOME}/.cargo/bin:'\"\$PATH\"; uv pip install --index-url '${HERMES_PYPI_INDEX_URL}' --extra-index-url '${HERMES_PYPI_EXTRA_INDEX_URL}' --python '${hermes_python}' lark-oapi==1.5.3 qrcode==7.4.2"
+  ensure_hermes_uv
+  printf -v hermes_uv_escaped '%q' "${HERMES_UV_CMD}"
+  run_as_runtime_user "export HOME='${RUNTIME_HOME}'; export XDG_CONFIG_HOME='${RUNTIME_HOME}/.config'; ${hermes_uv_escaped} pip install --index-url '${HERMES_PYPI_INDEX_URL}' --extra-index-url '${HERMES_PYPI_EXTRA_INDEX_URL}' --python '${hermes_python}' lark-oapi==1.5.3 qrcode==7.4.2"
   run_as_runtime_user "'${hermes_python}' -c 'import lark_oapi, qrcode; print(\"hermes-python-deps-ok\")'"
 }
 
@@ -962,7 +1013,8 @@ ensure_hermes_gateway_service() {
   runtime_uid="$(id -u "${RUNTIME_USER}")"
   user_env_prefix="export XDG_RUNTIME_DIR=\"/run/user/${runtime_uid}\"; mkdir -p \"\${XDG_RUNTIME_DIR}\" 2>/dev/null || true;"
   ensure_hermes_linger
-  run_as_runtime_user "${user_env_prefix} hermes gateway install"
+  ensure_hermes_user_systemd_dir
+  run_as_runtime_user "${user_env_prefix} printf 'n\ny\n' | hermes gateway install"
   run_as_runtime_user "${user_env_prefix} hermes gateway stop >/dev/null 2>&1 || true"
 }
 
@@ -1129,7 +1181,41 @@ install_hermes_acli() {
     run_as_runtime_user "acli doctor" || true
     return 1
   fi
+  if ! run_as_runtime_user "acli backend --help >/dev/null 2>&1"; then
+    log_info "acli backend command unavailable for ${RUNTIME_USER}; attempting bundle-update"
+    run_as_runtime_user "acli bundle-update >/dev/null 2>&1" || true
+  fi
+  if ! run_as_runtime_user "acli backend --help >/dev/null 2>&1"; then
+    log_error "acli backend command is unavailable for ${RUNTIME_USER}"
+    run_as_runtime_user "acli --help" || true
+    return 1
+  fi
   ensure_global_bin_links
+}
+
+load_hermes_backend_blueprint_id() {
+  local blueprint_id="${HERMES_BACKEND_BLUEPRINT_ID:-}"
+  if [ -z "${blueprint_id}" ]; then
+    if [ ! -r "${HERMES_BACKEND_BLUEPRINT_ID_FILE}" ]; then
+      log_error "Hermes backend blueprint id file not found: ${HERMES_BACKEND_BLUEPRINT_ID_FILE}"
+      return 1
+    fi
+    blueprint_id="$(tr -d '[:space:]' < "${HERMES_BACKEND_BLUEPRINT_ID_FILE}")"
+  fi
+  if [[ ! "${blueprint_id}" =~ ^lhbp-[A-Za-z0-9_-]+$ ]]; then
+    log_error "invalid Hermes backend blueprint id: ${blueprint_id:-<empty>}"
+    return 1
+  fi
+  HERMES_BACKEND_BLUEPRINT_ID="${blueprint_id}"
+}
+
+upgrade_hermes_backend_blueprint() {
+  local blueprint_id_escaped=""
+
+  load_hermes_backend_blueprint_id
+  printf -v blueprint_id_escaped '%q' "${HERMES_BACKEND_BLUEPRINT_ID}"
+  log_info "upgrading Hermes backend blueprint as ${RUNTIME_USER}: ${HERMES_BACKEND_BLUEPRINT_ID}"
+  run_as_runtime_user "acli backend upgrade-start --blueprint-id ${blueprint_id_escaped} --wait=true"
 }
 
 install_envd_agent() {
@@ -1592,6 +1678,7 @@ build_app_layer() {
     ensure_hermes_gateway_service
     install_hermes_extra_tools
     install_hermes_acli
+    upgrade_hermes_backend_blueprint
   else
     install_openclaw
     install_all_plugins

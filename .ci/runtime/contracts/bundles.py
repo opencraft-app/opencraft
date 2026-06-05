@@ -14,9 +14,12 @@ import yaml
 
 RUNTIME_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_MANIFEST_PATH = RUNTIME_DIR / "release-bundles.manifest"
-PLAYGROUND_ENV_RE = re.compile(r"^sandbox-bj-\d+$")
+PLAYGROUND_ENV_RE = re.compile(r"^sandbox-(?:bj|kr)-\d+$")
 PLAYGROUND_TEMPLATE_ENVS = ("beijing-sandbox-2", "beijing-sandbox")
-PLAYGROUND_CATALOG_ROOT = "argocd/catalogs/playground/beijing-playground"
+PLAYGROUND_CATALOG_ROOTS = {
+    "bj": "argocd/catalogs/playground/beijing-playground",
+    "kr": "argocd/catalogs/playground/seoul-playground",
+}
 
 
 @dataclass(frozen=True)
@@ -101,9 +104,27 @@ def is_playground_env(env: str) -> bool:
     return bool(PLAYGROUND_ENV_RE.fullmatch(env))
 
 
+def playground_region(env: str) -> str | None:
+    match = re.fullmatch(r"sandbox-(bj|kr)-\d+", env)
+    if not match:
+        return None
+    return match.group(1)
+
+
+def playground_catalog_root(env: str) -> str:
+    region = playground_region(env)
+    if region and region in PLAYGROUND_CATALOG_ROOTS:
+        return PLAYGROUND_CATALOG_ROOTS[region]
+    return PLAYGROUND_CATALOG_ROOTS["bj"]
+
+
 def _resolve_env_mapping_value(mapping: dict[str, Any], env: str) -> Any:
     if env in mapping:
         return mapping[env]
+    for key, value in mapping.items():
+        key_text = str(key)
+        if key_text.endswith("*") and env.startswith(key_text[:-1]):
+            return value
     if is_playground_env(env):
         for template_env in PLAYGROUND_TEMPLATE_ENVS:
             if template_env in mapping:
@@ -143,7 +164,7 @@ def _resolve_publish_paths(bundle: dict[str, Any], env: str) -> list[str]:
 def _rewrite_playground_publish_path(path: str, source_env: str, env: str) -> str:
     path = path.replace(
         f"argocd/catalogs/sandbox/{source_env}/",
-        f"{PLAYGROUND_CATALOG_ROOT}/{env}/",
+        f"{playground_catalog_root(env)}/{env}/",
     )
     if path.startswith("argocd/services/"):
         path = path.replace(f"/{source_env}/", f"/{env}/")

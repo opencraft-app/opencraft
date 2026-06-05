@@ -22,6 +22,7 @@ type Config struct {
 	Backends     []BackendConfig `yaml:"backends"`
 	Auth         AuthConfig      `yaml:"auth"`
 	Audit        AuditConfig     `yaml:"audit"`
+	External     []ExternalRoute `yaml:"external_routes"`
 	Routes       []RouteConfig   `yaml:"routes"`
 }
 
@@ -95,6 +96,7 @@ type UpstreamConfig struct {
 	Timeout        string                `yaml:"timeout"`
 	AllowedMethods []string              `yaml:"allowed_methods"`
 	Headers        map[string]string     `yaml:"headers"`
+	HeadersFromEnv map[string]string     `yaml:"headers_from_env"`
 }
 
 type PolarisUpstreamConfig struct {
@@ -114,6 +116,13 @@ type WebhookConfig struct {
 	SigningSecretEnv    string            `yaml:"signing_secret_env"`
 	IncludeRequestBody  bool              `yaml:"include_request_body"`
 	IncludeResponseBody bool              `yaml:"include_response_body"`
+}
+
+type ExternalRoute struct {
+	Path         string   `yaml:"path"`
+	Methods      []string `yaml:"methods"`
+	RouteID      string   `yaml:"route_id"`
+	UpstreamPath string   `yaml:"upstream_path"`
 }
 
 func Load(path string) (Config, error) {
@@ -279,6 +288,26 @@ func (c Config) Validate() error {
 			}
 		}
 	}
+	for i, route := range c.External {
+		if strings.TrimSpace(route.Path) == "" {
+			return fmt.Errorf("external_routes[%d].path is required", i)
+		}
+		if !strings.HasPrefix(route.Path, "/") {
+			return fmt.Errorf("external_routes[%d].path must start with /", i)
+		}
+		if strings.Contains(route.Path, ":") || strings.Contains(route.Path, "*") {
+			return fmt.Errorf("external_routes[%d].path must be exact", i)
+		}
+		if strings.TrimSpace(route.RouteID) == "" {
+			return fmt.Errorf("external_routes[%d].route_id is required", i)
+		}
+		if _, ok := seen[route.RouteID]; !ok {
+			return fmt.Errorf("external_routes[%d] references unknown route %q", i, route.RouteID)
+		}
+		if strings.TrimSpace(route.UpstreamPath) != "" && !strings.HasPrefix(route.UpstreamPath, "/") {
+			return fmt.Errorf("external_routes[%d].upstream_path must start with /", i)
+		}
+	}
 	return nil
 }
 
@@ -342,6 +371,16 @@ func (c Config) ResolveUpstream(routeID string, upstream UpstreamConfig) (Upstre
 		}
 		resolved.Headers = headers
 	}
+	if len(upstream.HeadersFromEnv) > 0 {
+		headersFromEnv := map[string]string{}
+		for key, value := range resolved.HeadersFromEnv {
+			headersFromEnv[key] = value
+		}
+		for key, value := range upstream.HeadersFromEnv {
+			headersFromEnv[key] = value
+		}
+		resolved.HeadersFromEnv = headersFromEnv
+	}
 	resolved.Backend = ""
 	return resolved, nil
 }
@@ -370,6 +409,14 @@ func validateConcreteUpstream(label string, upstream UpstreamConfig) error {
 		}
 	default:
 		return fmt.Errorf("%s upstream requires base_url or polaris", label)
+	}
+	for header, envName := range upstream.HeadersFromEnv {
+		if strings.TrimSpace(header) == "" {
+			return fmt.Errorf("%s upstream.headers_from_env contains empty header name", label)
+		}
+		if strings.TrimSpace(envName) == "" {
+			return fmt.Errorf("%s upstream.headers_from_env.%s is required", label, header)
+		}
 	}
 	return nil
 }

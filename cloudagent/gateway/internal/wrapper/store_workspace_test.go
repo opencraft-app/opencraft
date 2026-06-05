@@ -3,6 +3,9 @@ package wrapper
 import (
 	"context"
 	"errors"
+	"io"
+	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -47,6 +50,86 @@ func TestStoreWorkspaceLeaseAcquireConflictRelease(t *testing.T) {
 	}
 	if second.FencingToken != 2 {
 		t.Fatalf("fencing token=%d, want 2", second.FencingToken)
+	}
+}
+
+func TestStoreRuntimeResourceLedgerPersistsPendingSandboxes(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	store, err := NewStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expiresAt := time.Now().UTC().Add(time.Minute).Truncate(time.Second)
+	if err := store.UpsertRuntimeResource(ctx, RuntimeResourceRecord{
+		SessionID:      "session_resource",
+		Generation:     3,
+		RuntimeID:      "runtime_3",
+		OwnerID:        "gateway_a",
+		SandboxBackend: "ags",
+		State:          "creating",
+		InnerSandboxID: "inner_1",
+		ExpiresAt:      expiresAt,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpsertRuntimeResource(ctx, RuntimeResourceRecord{
+		SessionID:      "session_resource",
+		Generation:     3,
+		RuntimeID:      "runtime_3",
+		OwnerID:        "gateway_a",
+		SandboxBackend: "ags",
+		State:          "creating",
+		OuterSandboxID: "outer_1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.MarkRuntimeResourceState(ctx, "session_resource", 3, "bound", ""); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := NewStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, ok, err := reopened.LoadRuntimeResource(ctx, "session_resource", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("runtime resource not loaded")
+	}
+	if loaded.State != "bound" ||
+		loaded.OwnerID != "gateway_a" ||
+		loaded.SandboxBackend != "ags" ||
+		loaded.RuntimeID != "runtime_3" ||
+		loaded.OuterSandboxID != "outer_1" ||
+		loaded.InnerSandboxID != "inner_1" {
+		t.Fatalf("unexpected runtime resource: %+v", loaded)
+	}
+	if !loaded.ExpiresAt.Equal(expiresAt) {
+		t.Fatalf("expires_at mismatch: got %s want %s", loaded.ExpiresAt, expiresAt)
+	}
+	expiredAt := time.Now().UTC().Add(-time.Minute).Truncate(time.Second)
+	if err := reopened.UpsertRuntimeResource(ctx, RuntimeResourceRecord{
+		SessionID:      "session_stale",
+		Generation:     1,
+		RuntimeID:      "runtime_stale",
+		OwnerID:        "gateway_a",
+		SandboxBackend: "ags",
+		State:          "failed",
+		OuterSandboxID: "outer_stale",
+		InnerSandboxID: "inner_stale",
+		ExpiresAt:      expiredAt,
+		LastError:      "boot failed",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	stale, err := reopened.ListStaleRuntimeResources(ctx, time.Now().UTC(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stale) != 1 || stale[0].SessionID != "session_stale" || stale[0].OuterSandboxID != "outer_stale" || stale[0].InnerSandboxID != "inner_stale" {
+		t.Fatalf("unexpected stale resources: %+v", stale)
 	}
 }
 
@@ -142,6 +225,138 @@ func TestStoreWorkspaceLeaseRenewRequiresExactFence(t *testing.T) {
 	if _, err := store.RenewLease(ctx, stale, time.Minute); !errors.Is(err, ErrWorkspaceLeaseHeld) {
 		t.Fatalf("expected stale fence renewal to fail with held error, got %v", err)
 	}
+}
+
+func TestWispMountLeaseVerificationRequiresCurrentFence(t *testing.T) {
+	ctx := context.Background()
+	store, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := store.AcquireLease(ctx, WorkspaceLeaseRequest{
+		WorkspaceID: "space_mount",
+		RuntimeID:   "runtime_mount",
+		Provider:    "ags",
+		TTL:         time.Minute,
+	})
+	if err != nil {
+		t.Fatalf("acquire lease: %v", err)
+	}
+	worker := &AgentSidecarWorker{workspaceService: store}
+	if err := worker.requireWispMountLeaseHeld(ctx, ACPSessionRuntime{
+		RuntimeID:       "runtime_mount",
+		WispName:        "agent-session_mount",
+		WispWorkspaceID: "space_mount",
+	}); err == nil {
+		t.Fatal("missing lease should reject mount")
+	}
+	runtime := ACPSessionRuntime{
+		RuntimeID:       "runtime_mount",
+		WispName:        "agent-session_mount",
+		WispWorkspaceID: "space_mount",
+		WispSMHSpaceID:  "space_mount",
+		WispLeaseID:     lease.LeaseID,
+		WispLeaseFence:  lease.FencingToken,
+		WispLeaseUntil:  lease.ExpiresAt,
+	}
+	if err := worker.requireWispMountLeaseHeld(ctx, runtime); err != nil {
+		t.Fatalf("valid lease should allow mount: %v", err)
+	}
+	workspaceRuntime := runtime
+	workspaceRuntime.RuntimeID = "workspace_runtime_mount"
+	workspaceRuntime.WispName = "workspace_mount"
+	if err := worker.requireWispMountLeaseHeld(ctx, workspaceRuntime); err != nil {
+		t.Fatalf("same lease/fence should protect workspace wisp runtime too: %v", err)
+	}
+	stale := runtime
+	stale.WispLeaseFence++
+	if err := worker.requireWispMountLeaseHeld(ctx, stale); err == nil {
+		t.Fatal("stale fence should reject mount")
+	}
+	if err := store.ReleaseLease(ctx, lease); err != nil {
+		t.Fatalf("release lease: %v", err)
+	}
+	if err := worker.requireWispMountLeaseHeld(ctx, runtime); err == nil {
+		t.Fatal("released lease should reject mount")
+	}
+}
+
+func TestWispMountEventLogsTargetAndWorkspaceRuntime(t *testing.T) {
+	worker := &AgentSidecarWorker{}
+	output := captureTestStderr(t, func() {
+		worker.logWispMountEvent(
+			"acp_runtime_wisp_mount_start",
+			ACPSessionRuntimeStartRequest{SessionID: "session_mount_log", Generation: 3},
+			ACPSessionRuntime{
+				RuntimeID:          "workspace_runtime_mount_log",
+				WispName:           "workspace_mount_log",
+				WispSMHSpaceID:     "space_mount_log",
+				WispLeaseID:        "lease_mount_log",
+				WispLeaseFence:     12,
+				WispLeaseUntil:     time.Date(2026, 6, 3, 10, 11, 12, 0, time.UTC),
+				WorkspaceRuntimeID: "workspace_runtime_mount_log",
+			},
+			RuntimeHostTarget{ID: "sandbox_mount_log"},
+			agentWispSMHSpace{SpaceID: "space_mount_log"},
+			"inner",
+			"",
+		)
+	})
+	for _, want := range []string{
+		"event=acp_runtime_wisp_mount_start",
+		"session_id=session_mount_log",
+		"generation=3",
+		`target="inner"`,
+		"runtime_id=workspace_runtime_mount_log",
+		`workspace_runtime_id="workspace_runtime_mount_log"`,
+		"sandbox_id=sandbox_mount_log",
+		`wisp_name="workspace_mount_log"`,
+		`smh_space_id="space_mount_log"`,
+		`lease_id="lease_mount_log"`,
+		"fence=12",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("mount log missing %q in %q", want, output)
+		}
+	}
+}
+
+func TestWispLeaseReleaseRequiresConfirmedStop(t *testing.T) {
+	if shouldReleaseWispLeaseAfterClose(true, false, false, false) {
+		t.Fatal("must not release wisp lease when outer stop/checkpoint/umount was not confirmed")
+	}
+	if shouldReleaseWispLeaseAfterClose(true, true, true, false) {
+		t.Fatal("must not release wisp lease when workspace stop/checkpoint/umount was not confirmed")
+	}
+	if !shouldReleaseWispLeaseAfterClose(true, true, true, true) {
+		t.Fatal("confirmed outer and workspace wisp stop should release lease")
+	}
+	if !shouldReleaseWispLeaseAfterClose(false, false, false, false) {
+		t.Fatal("non-wisp close should not be blocked by wisp stop state")
+	}
+}
+
+func captureTestStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	original := os.Stderr
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = writer
+	fn()
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = original
+	output, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := reader.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return string(output)
 }
 
 func TestStoreRuntimeOwnershipAcquireConflictReleaseAndExpire(t *testing.T) {

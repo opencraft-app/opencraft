@@ -6,6 +6,24 @@ components:
 - ../profiles/sandbox
 generators:
 - ksops-secret-generator.yaml
+- ksops-content-audit-secret-generator.yaml
+patches:
+- target:
+    kind: ConfigMap
+    name: lightclaw-auth-config
+  patch: |-
+    - op: add
+      path: /data/LIGHTVELA_E2E_AUTH_ENABLED
+      value: "true"
+- target:
+    kind: Deployment
+    name: lightclaw-auth
+  patch: |-
+    - op: add
+      path: /spec/template/spec/containers/0/envFrom/-
+      value:
+        secretRef:
+          name: lightvela-e2e-auth-secrets
 configMapGenerator:
 - name: auth-platform-values
   envs:

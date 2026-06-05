@@ -599,37 +599,67 @@ impl SessionSandbox {
     }
 
     pub async fn shutdown(&self) -> Result<()> {
-        let inner = self.inner.lock().await;
-        info!(event = "inner_shutdown_start", sandbox_id = %inner.sandbox.sandbox_id);
+        self.shutdown_workspace_runtime().await?;
+        self.delete_sandbox().await
+    }
+
+    pub fn has_shutdown_command(&self) -> bool {
         if let Some(command) = self
             .shutdown_command
             .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
         {
-            info!(event = "workspace_runtime_shutdown_start", sandbox_id = %inner.sandbox.sandbox_id);
-            match inner
-                .client
-                .run_command(&inner.sandbox, command, &HashMap::new())
-                .await
-            {
-                Ok(result) if result.exit_code == 0 => {
-                    info!(event = "workspace_runtime_shutdown_done", sandbox_id = %inner.sandbox.sandbox_id);
-                }
-                Ok(result) => {
-                    warn!(
-                        event = "workspace_runtime_shutdown_failed",
-                        sandbox_id = %inner.sandbox.sandbox_id,
-                        exit_code = result.exit_code,
-                        stdout = %result.stdout,
-                        stderr = %result.stderr
-                    );
-                }
-                Err(error) => {
-                    warn!(event = "workspace_runtime_shutdown_failed", sandbox_id = %inner.sandbox.sandbox_id, error = %error);
-                }
+            !command.is_empty()
+        } else {
+            false
+        }
+    }
+
+    pub async fn shutdown_workspace_runtime(&self) -> Result<()> {
+        let Some(command) = self
+            .shutdown_command
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        else {
+            return Ok(());
+        };
+        let inner = self.inner.lock().await;
+        info!(event = "workspace_runtime_shutdown_start", sandbox_id = %inner.sandbox.sandbox_id);
+        match inner
+            .client
+            .run_command(&inner.sandbox, command, &HashMap::new())
+            .await
+        {
+            Ok(result) if result.exit_code == 0 => {
+                info!(event = "workspace_runtime_shutdown_done", sandbox_id = %inner.sandbox.sandbox_id);
+                Ok(())
+            }
+            Ok(result) => {
+                let error = Error::Agent(format!(
+                    "workspace runtime shutdown command failed exit={} stdout={} stderr={}",
+                    result.exit_code, result.stdout, result.stderr
+                ));
+                warn!(
+                    event = "workspace_runtime_shutdown_failed",
+                    sandbox_id = %inner.sandbox.sandbox_id,
+                    exit_code = result.exit_code,
+                    stdout = %result.stdout,
+                    stderr = %result.stderr
+                );
+                return Err(error);
+            }
+            Err(error) => {
+                warn!(event = "workspace_runtime_shutdown_failed", sandbox_id = %inner.sandbox.sandbox_id, error = %error);
+                return Err(error);
             }
         }
+    }
+
+    pub async fn delete_sandbox(&self) -> Result<()> {
+        let inner = self.inner.lock().await;
+        info!(event = "inner_shutdown_start", sandbox_id = %inner.sandbox.sandbox_id);
         let result = inner.client.delete_sandbox(&inner.sandbox.sandbox_id).await;
         match &result {
             Ok(_) => info!(event = "inner_shutdown_done", sandbox_id = %inner.sandbox.sandbox_id),

@@ -20,6 +20,7 @@ import (
 
 func main() {
 	addr := getenv("SERVICE_GATEWAY_ADDR", ":8085")
+	metricsAddr := getenv("SERVICE_GATEWAY_METRICS_ADDR", ":9090")
 	configFile := getenv("SERVICE_GATEWAY_CONFIG_FILE", "/etc/service-gateway/config.yaml")
 	adminUsername := getenv("SERVICE_GATEWAY_ADMIN_BASIC_AUTH_USER", "")
 	adminPassword := getenv("SERVICE_GATEWAY_ADMIN_BASIC_AUTH_PASSWORD", "")
@@ -35,8 +36,6 @@ func main() {
 
 	reg := prometheus.NewRegistry()
 	gatewayMetrics := metrics.NewGatewayMetrics(reg)
-	mux := http.NewServeMux()
-	mux.Handle("/metrics", gatewayMetrics.Handler())
 	opts := []gateway.Option{
 		gateway.WithAccessLogger(accesslog.NewStdoutLogger(os.Stdout)),
 		gateway.WithMetrics(gatewayMetrics),
@@ -58,17 +57,19 @@ func main() {
 	if err != nil {
 		log.Fatalf("build gateway handler with metrics: %v", err)
 	}
-	mux.Handle("/", handlerWithMetrics)
 
-	server := &http.Server{
-		Addr:              addr,
-		Handler:           mux,
-		ReadHeaderTimeout: 10 * time.Second,
-		IdleTimeout:       60 * time.Second,
-	}
+	server := newHTTPServer(addr, buildPublicMux(handlerWithMetrics))
+	metricsServer := newHTTPServer(metricsAddr, buildMetricsMux(gatewayMetrics.Handler()))
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	go func() {
+		log.Printf("service-gateway metrics listening on %s", metricsAddr)
+		if err := metricsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("listen metrics: %v", err)
+		}
+	}()
 
 	go func() {
 		<-ctx.Done()
@@ -77,6 +78,9 @@ func main() {
 
 		if err := server.Shutdown(shutdownCtx); err != nil {
 			log.Printf("shutdown http server: %v", err)
+		}
+		if err := metricsServer.Shutdown(shutdownCtx); err != nil {
+			log.Printf("shutdown metrics server: %v", err)
 		}
 	}()
 
@@ -90,6 +94,27 @@ func main() {
 	)
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("listen: %v", err)
+	}
+}
+
+func buildPublicMux(handler http.Handler) *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.Handle("/", handler)
+	return mux
+}
+
+func buildMetricsMux(handler http.Handler) *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", handler)
+	return mux
+}
+
+func newHTTPServer(addr string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 }
 

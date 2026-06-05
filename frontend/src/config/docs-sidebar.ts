@@ -93,6 +93,8 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
       { slug: "configuration/channel-whatsapp", title: "WhatsApp", indent: true },
       { slug: "configuration/channel-discord", title: "Discord", indent: true },
       { slug: "configuration/skill", title: "配置技能", titleEn: "Configure Skills" },
+      { slug: "configuration/automation", title: "自动任务", titleEn: "Automated Tasks" },
+      { slug: "configuration/agent-chat", title: "对话", titleEn: "Chat" },
     ],
   },
   {
@@ -141,6 +143,8 @@ const GLOBAL_SLUG_TO_FILE: Record<string, string> = {
   "configuration/channel-whatsapp": "configuration/channel-whatsapp.md",
   "configuration/channel-discord": "configuration/channel-discord.md",
   "configuration/skill": "configuration/skill.md",
+  "configuration/automation": "configuration/automation.md",
+  "configuration/agent-chat": "configuration/agent-chat.md",
   faq: "07-faq.md",
   "faq/using-lightvela-safely": "faq/using-lightvela-safely.md",
 };

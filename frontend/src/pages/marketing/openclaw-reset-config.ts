@@ -41,6 +41,8 @@ export const RESET_BLOCK_REASON = {
 
 export type ResetBlockReason = (typeof RESET_BLOCK_REASON)[keyof typeof RESET_BLOCK_REASON];
 
+export const ACLI_RESET_COMMAND = "acli backend upgrade-start --blueprint-id lhbp-8gsotw6u --wait=true";
+
 export function getResetBlockReason(
   activeBot: ResettableBot | undefined,
   resetting: boolean,
@@ -51,6 +53,25 @@ export function getResetBlockReason(
   if (activeBot.status !== "running") return "not_running";
   if (!hasViewedChannel) return "channel_not_viewed";
   return null;
+}
+
+export function getAcliResetBlockReason(
+  activeBot: ResettableBot | undefined,
+  resetting: boolean,
+): ResetBlockReason | null {
+  if (!activeBot) return "no_active_bot";
+  if (resetting) return "already_resetting";
+  if (activeBot.status !== "running") return "not_running";
+  return null;
+}
+
+export type AcliResetClickAction = "open_confirm" | "blocked";
+
+export function getAcliResetClickAction(
+  activeBot: ResettableBot | undefined,
+  resetting: boolean,
+): AcliResetClickAction {
+  return getAcliResetBlockReason(activeBot, resetting) === null ? "open_confirm" : "blocked";
 }
 
 /**
@@ -111,4 +132,17 @@ export function truncateExecOutput(
   if (!trimmed) return status;
   if (trimmed.length <= maxBytes) return trimmed;
   return "…" + trimmed.slice(-maxBytes);
+}
+
+/**
+ * 现网 CTL 版本落后于前端时，service-gateway 会把新 reset 路由返回成
+ * `resource not found (NOT_FOUND)`。这和实例不存在不同，后者通常不会用
+ * 这个固定英文文案；因此只把这一类错误翻译成可执行的后端发布提示。
+ */
+export function isResetConfigRouteMissingError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const status = (error as { status?: unknown }).status;
+  const code = String((error as { code?: unknown }).code || "").trim().toUpperCase();
+  const message = error.message.trim().toLowerCase();
+  return status === 404 && code === "NOT_FOUND" && message.includes("resource not found");
 }

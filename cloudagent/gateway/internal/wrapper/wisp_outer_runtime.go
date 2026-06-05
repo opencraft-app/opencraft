@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
 	"strings"
 	"time"
@@ -18,8 +19,12 @@ import (
 
 const (
 	defaultWispOuterAdminAddr = "http://127.0.0.1:8520"
-	defaultWispPackageURL     = "http://cloudagent-sidecar-shanghai-1388575217.cos.ap-shanghai.myqcloud.com/workspace/20260522/wisp-linux-amd64-20260522T181421Z-7826101eb1c5.tar.gz"
+	defaultWispPackageURL     = "https://cloudagent-sidecar-shanghai-1388575217.cos.ap-shanghai.myqcloud.com/workspace/20260528/wisp-linux-amd64-20260528T061826Z-8ceda87c563b.erofs"
 )
+
+func wispAdminAddr(ACPSessionRuntime) string {
+	return defaultWispOuterAdminAddr
+}
 
 type agentWispSMHSpace struct {
 	SpaceID     string
@@ -40,7 +45,7 @@ func normalizeOuterRuntime(value string) string {
 	}
 }
 
-func (w *AgentSidecarWorker) prepareWispOuterRuntime(ctx context.Context, client *AGSClient, sb AGSSandbox, runtime ACPSessionRuntime, req ACPSessionRuntimeStartRequest) (ACPSessionRuntime, error) {
+func (w *AgentSidecarWorker) prepareWispOuterRuntime(ctx context.Context, host RuntimeHost, sb RuntimeHostTarget, runtime ACPSessionRuntime, req ACPSessionRuntimeStartRequest) (ACPSessionRuntime, error) {
 	if w.wispSMHLibraryID == "" || w.wispSMHAccessDomain == "" || w.wispSMHLibrarySecret == "" {
 		return ACPSessionRuntime{}, errors.New("GATEWAY_WISP_SMH_LIBRARY_ID, GATEWAY_WISP_SMH_ACCESS_DOMAIN, and GATEWAY_WISP_SMH_LIBRARY_SECRET are required for wisp outer runtime")
 	}
@@ -56,7 +61,7 @@ func (w *AgentSidecarWorker) prepareWispOuterRuntime(ctx context.Context, client
 			_ = w.deleteWispSMHSpace(cleanupCtx, space.SpaceID)
 		}
 	}()
-	runtime, err = w.prepareWispOuterRuntimeWithSpace(ctx, client, sb, runtime, req, space)
+	runtime, err = w.prepareWispOuterRuntimeWithSpace(ctx, host, sb, runtime, req, space)
 	if err != nil {
 		return ACPSessionRuntime{}, err
 	}
@@ -64,11 +69,11 @@ func (w *AgentSidecarWorker) prepareWispOuterRuntime(ctx context.Context, client
 	return runtime, nil
 }
 
-func (w *AgentSidecarWorker) prepareWispOuterRuntimeWithSpace(ctx context.Context, client *AGSClient, sb AGSSandbox, runtime ACPSessionRuntime, req ACPSessionRuntimeStartRequest, space agentWispSMHSpace) (ACPSessionRuntime, error) {
-	return w.prepareWispRuntimeWithSpace(ctx, client, sb, runtime, req, space, true)
+func (w *AgentSidecarWorker) prepareWispOuterRuntimeWithSpace(ctx context.Context, host RuntimeHost, sb RuntimeHostTarget, runtime ACPSessionRuntime, req ACPSessionRuntimeStartRequest, space agentWispSMHSpace) (ACPSessionRuntime, error) {
+	return w.prepareWispRuntimeWithSpace(ctx, host, sb, runtime, req, space, "outer", true)
 }
 
-func (w *AgentSidecarWorker) prepareWispRuntimeWithSpace(ctx context.Context, client *AGSClient, sb AGSSandbox, runtime ACPSessionRuntime, req ACPSessionRuntimeStartRequest, space agentWispSMHSpace, acquireLease bool) (ACPSessionRuntime, error) {
+func (w *AgentSidecarWorker) resolveWispRuntimeForSpace(ctx context.Context, runtime ACPSessionRuntime, req ACPSessionRuntimeStartRequest, space agentWispSMHSpace, acquireLease bool) (ACPSessionRuntime, error) {
 	runtime.WispName = firstNonEmpty(runtime.WispName, wispNameFromRuntime(req.SessionID))
 	runtime.WispWorkspaceID = firstNonEmpty(runtime.WispWorkspaceID, space.SpaceID)
 	runtime.WispSMHSpaceID = space.SpaceID
@@ -78,13 +83,23 @@ func (w *AgentSidecarWorker) prepareWispRuntimeWithSpace(ctx context.Context, cl
 	runtime.WispRootUpperSize = firstNonEmpty(runtime.WispRootUpperSize, w.wispRootUpperSize)
 	runtime.WispInstallDir = firstNonEmpty(runtime.WispInstallDir, path.Join("/tmp/cloudagent-wisp", req.SessionID, "install"))
 	runtime.WispClientPath = firstNonEmpty(runtime.WispClientPath, path.Join(runtime.WispInstallDir, "bin", "wispclient"))
+	if !acquireLease {
+		return runtime, nil
+	}
+	return w.acquireWispWorkspaceLease(ctx, runtime)
+}
+
+func (w *AgentSidecarWorker) prepareWispRuntimeWithSpace(ctx context.Context, host RuntimeHost, sb RuntimeHostTarget, runtime ACPSessionRuntime, req ACPSessionRuntimeStartRequest, space agentWispSMHSpace, target string, acquireLease bool) (ACPSessionRuntime, error) {
+	var err error
+	runtime, err = w.resolveWispRuntimeForSpace(ctx, runtime, req, space, acquireLease)
+	if err != nil {
+		return ACPSessionRuntime{}, err
+	}
+	if err := w.requireWispMountLeaseHeld(ctx, runtime); err != nil {
+		return ACPSessionRuntime{}, err
+	}
 	releaseLease := false
 	if acquireLease {
-		var err error
-		runtime, err = w.acquireWispWorkspaceLease(ctx, runtime)
-		if err != nil {
-			return ACPSessionRuntime{}, err
-		}
 		releaseLease = true
 		defer func() {
 			if releaseLease {
@@ -113,16 +128,22 @@ func (w *AgentSidecarWorker) prepareWispRuntimeWithSpace(ctx context.Context, cl
 		"JFS_WRITEBACK_BARRIER_POLL_INTERVAL": firstNonEmpty(firstEnv("GATEWAY_WISP_WRITEBACK_BARRIER_POLL_INTERVAL", "JFS_WRITEBACK_BARRIER_POLL_INTERVAL"), "30ms"),
 		"SMH_HTTP_TRACE":                      firstEnv("GATEWAY_WISP_SMH_HTTP_TRACE", "SMH_HTTP_TRACE"),
 		"JFS_LITESTREAM_TRACE":                firstEnv("GATEWAY_WISP_LITESTREAM_TRACE", "JFS_LITESTREAM_TRACE"),
+		"WISP_ADMIN_LISTEN_ADDR":              strings.TrimPrefix(wispAdminAddr(runtime), "http://"),
+		"WISP_PACKAGE_ARCH":                   firstEnv("GATEWAY_WISP_PACKAGE_ARCH", "WISP_PACKAGE_ARCH"),
+		"WISP_USE_HOST_E2FSPROGS":             firstEnv("GATEWAY_WISP_USE_HOST_E2FSPROGS", "WISP_USE_HOST_E2FSPROGS"),
+		"WISP_USE_HOST_CRUN":                  firstEnv("GATEWAY_WISP_USE_HOST_CRUN", "WISP_USE_HOST_CRUN"),
 	}
-	result, err := client.RunCommand(ctx, sb, wispOuterPrepareScript(), env, nil, func(text string) error {
+	w.logWispMountEvent("acp_runtime_wisp_mount_start", req, runtime, sb, space, target, "")
+	result, err := host.RunCommand(ctx, sb, wispOuterPrepareScript(), env, nil, func(text string) error {
 		logRemoteStderr(time.Now(), workerJob{JobID: "wisp_outer_prepare", ResponseID: req.SessionID}, text)
 		return nil
 	})
 	if err != nil {
+		w.logWispMountEvent("acp_runtime_wisp_mount_failed", req, runtime, sb, space, target, wispCommandFailureDetail(err, result))
 		return ACPSessionRuntime{}, fmt.Errorf(
 			"prepare wisp outer runtime session_id=%s outer_sandbox_id=%s wisp_name=%s smh_space_id=%s package_url=%s: %s",
 			req.SessionID,
-			sb.SandboxID,
+			sb.ID,
 			runtime.WispName,
 			space.SpaceID,
 			runtime.WispPackageURL,
@@ -130,10 +151,11 @@ func (w *AgentSidecarWorker) prepareWispRuntimeWithSpace(ctx context.Context, cl
 		)
 	}
 	if result.ExitCode != 0 || !strings.Contains(result.Stdout, "WISP_OUTER_READY") {
+		w.logWispMountEvent("acp_runtime_wisp_mount_failed", req, runtime, sb, space, target, wispCommandFailureDetail(nil, result))
 		return ACPSessionRuntime{}, fmt.Errorf(
 			"prepare wisp outer runtime failed session_id=%s outer_sandbox_id=%s wisp_name=%s smh_space_id=%s package_url=%s: %s",
 			req.SessionID,
-			sb.SandboxID,
+			sb.ID,
 			runtime.WispName,
 			space.SpaceID,
 			runtime.WispPackageURL,
@@ -143,7 +165,76 @@ func (w *AgentSidecarWorker) prepareWispRuntimeWithSpace(ctx context.Context, cl
 	if acquireLease {
 		releaseLease = false
 	}
+	w.logWispMountEvent("acp_runtime_wisp_mount_done", req, runtime, sb, space, target, "")
 	return runtime, nil
+}
+
+func (w *AgentSidecarWorker) requireWispMountLeaseHeld(ctx context.Context, runtime ACPSessionRuntime) error {
+	if runtime.WispLeaseID == "" {
+		return fmt.Errorf("wisp mount rejected: missing lease runtime_id=%s wisp_name=%s workspace_id=%s", runtime.RuntimeID, runtime.WispName, firstNonEmpty(runtime.WispSMHSpaceID, runtime.WispWorkspaceID))
+	}
+	if w.workspaceService == nil {
+		return errors.New("workspace service is required to verify wisp mount lease")
+	}
+	// The lease is always acquired against the SMH space ID (the outer
+	// runtime's canonical workspace). For inner workspace wisps,
+	// WispWorkspaceID is overridden to "workspace_session_XXX" which differs
+	// from the stored lease key. Prefer WispSMHSpaceID for lookup.
+	workspaceID := firstNonEmpty(runtime.WispSMHSpaceID, runtime.WispWorkspaceID)
+	if strings.TrimSpace(workspaceID) == "" {
+		return errors.New("wisp workspace id is required to verify mount lease")
+	}
+	lease, ok, err := w.workspaceService.GetLease(ctx, workspaceID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("wisp mount rejected: no active lease record workspace_id=%s runtime_id=%s wisp_name=%s", workspaceID, runtime.RuntimeID, runtime.WispName)
+	}
+	if lease.LeaseID != runtime.WispLeaseID ||
+		lease.FencingToken != runtime.WispLeaseFence ||
+		lease.State != "active" ||
+		!lease.ExpiresAt.After(time.Now().UTC()) {
+		return fmt.Errorf(
+			"wisp mount rejected: lease mismatch workspace_id=%s wisp_name=%s expected_lease=%s expected_fence=%d actual_lease=%s actual_runtime=%s actual_fence=%d actual_state=%s actual_until=%s",
+			workspaceID,
+			runtime.WispName,
+			runtime.WispLeaseID,
+			runtime.WispLeaseFence,
+			lease.LeaseID,
+			lease.RuntimeID,
+			lease.FencingToken,
+			lease.State,
+			lease.ExpiresAt.Format(time.RFC3339Nano),
+		)
+	}
+	return nil
+}
+
+func (w *AgentSidecarWorker) logWispMountEvent(event string, req ACPSessionRuntimeStartRequest, runtime ACPSessionRuntime, sb RuntimeHostTarget, space agentWispSMHSpace, target string, errText string) {
+	workspaceRuntimeID := runtime.WorkspaceRuntimeID
+	if target == "inner" {
+		workspaceRuntimeID = firstNonEmpty(workspaceRuntimeID, runtime.RuntimeID)
+	}
+	fields := []string{
+		"timeline source=go",
+		"event=" + event,
+		"session_id=" + req.SessionID,
+		fmt.Sprintf("generation=%d", req.Generation),
+		"target=" + quoteServerField(target),
+		"runtime_id=" + runtime.RuntimeID,
+		"workspace_runtime_id=" + quoteServerField(workspaceRuntimeID),
+		"sandbox_id=" + sb.ID,
+		"wisp_name=" + quoteServerField(runtime.WispName),
+		"smh_space_id=" + quoteServerField(space.SpaceID),
+		"lease_id=" + quoteServerField(runtime.WispLeaseID),
+		fmt.Sprintf("fence=%d", runtime.WispLeaseFence),
+		"lease_until=" + quoteServerField(formatOptionalTime(runtime.WispLeaseUntil)),
+	}
+	if errText != "" {
+		fields = append(fields, "error="+quoteServerField(errText))
+	}
+	fmt.Fprintln(os.Stderr, strings.Join(fields, " "))
 }
 
 func (w *AgentSidecarWorker) acquireWispWorkspaceLease(ctx context.Context, runtime ACPSessionRuntime) (ACPSessionRuntime, error) {
@@ -301,32 +392,71 @@ func (w *AgentSidecarWorker) deleteWispSMHSpace(ctx context.Context, spaceID str
 	return fmt.Errorf("SMH delete space http %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 }
 
-func (w *AgentSidecarWorker) runOuterCommand(ctx context.Context, client *AGSClient, sb AGSSandbox, runtime ACPSessionRuntime, command string, env map[string]string, onStdout func(string) error, onStderr func(string) error) (CommandResult, error) {
+func (w *AgentSidecarWorker) runOuterCommand(ctx context.Context, host RuntimeHost, sb RuntimeHostTarget, runtime ACPSessionRuntime, command string, env map[string]string, onStdout func(string) error, onStderr func(string) error) (CommandResult, error) {
 	if runtime.isWispOuterRuntime() {
 		command = runtime.wrapWispShellCommand(command, env)
 		env = nil
 	}
-	return client.RunCommand(ctx, sb, command, env, onStdout, onStderr)
+	return host.RunCommand(ctx, sb, command, env, onStdout, onStderr)
 }
 
-func (w *AgentSidecarWorker) stopWispOuterRuntime(ctx context.Context, client *AGSClient, sb AGSSandbox, runtime ACPSessionRuntime) error {
+func (w *AgentSidecarWorker) runOuterControlCommand(ctx context.Context, host RuntimeHost, sb RuntimeHostTarget, runtime ACPSessionRuntime, command string, env map[string]string) (CommandResult, error) {
+	if runtime.isWispOuterRuntime() {
+		command = runtime.wrapWispShellCommandBuffered(command, env)
+		env = nil
+	}
+	return host.RunCommand(ctx, sb, command, env, nil, nil)
+}
+
+func (w *AgentSidecarWorker) stopWispOuterRuntime(ctx context.Context, host RuntimeHost, sb RuntimeHostTarget, runtime ACPSessionRuntime) error {
 	if !runtime.isWispOuterRuntime() || strings.TrimSpace(runtime.WispName) == "" {
 		return nil
 	}
-	result, err := client.RunCommand(ctx, sb, wispOuterStopCommand(runtime), nil, nil, func(text string) error {
+	result, err := host.RunCommand(ctx, sb, wispOuterStopCommand(runtime), nil, nil, func(text string) error {
 		logRemoteStderr(time.Now(), workerJob{JobID: "wisp_stop", ResponseID: runtime.RuntimeID}, text)
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("wisp stop failed runtime_id=%s outer_sandbox_id=%s wisp_name=%s: %s", runtime.RuntimeID, sb.SandboxID, runtime.WispName, wispCommandFailureDetail(err, result))
+		return fmt.Errorf("wisp stop failed runtime_id=%s outer_sandbox_id=%s wisp_name=%s: %s", runtime.RuntimeID, sb.ID, runtime.WispName, wispCommandFailureDetail(err, result))
 	}
 	if result.ExitCode != 0 || !strings.Contains(result.Stdout, "CLOUDAGENT_WISP_STOPPED") {
-		return fmt.Errorf("wisp stop failed runtime_id=%s outer_sandbox_id=%s wisp_name=%s: %s", runtime.RuntimeID, sb.SandboxID, runtime.WispName, wispCommandFailureDetail(nil, result))
+		return fmt.Errorf("wisp stop failed runtime_id=%s outer_sandbox_id=%s wisp_name=%s: %s", runtime.RuntimeID, sb.ID, runtime.WispName, wispCommandFailureDetail(nil, result))
+	}
+	return nil
+}
+
+func (w *AgentSidecarWorker) stopWispWorkspaceRuntime(ctx context.Context, host RuntimeHost, sb RuntimeHostTarget, runtime ACPSessionRuntime) error {
+	if !runtime.isWispOuterRuntime() || strings.TrimSpace(runtime.WorkspaceWispName) == "" {
+		return nil
+	}
+	workspaceRuntime := runtime
+	workspaceRuntime.WispName = runtime.WorkspaceWispName
+	workspaceRuntime.WispClientPath = runtime.WorkspaceWispClient
+	if workspaceRuntime.WispClientPath != "" {
+		workspaceRuntime.WispInstallDir = path.Dir(path.Dir(workspaceRuntime.WispClientPath))
+	}
+	result, err := host.RunCommand(ctx, sb, wispWorkspaceStopCommand(workspaceRuntime), nil, nil, func(text string) error {
+		logRemoteStderr(time.Now(), workerJob{JobID: "wisp_workspace_stop", ResponseID: runtime.RuntimeID}, text)
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("workspace wisp stop failed runtime_id=%s inner_sandbox_id=%s wisp_name=%s: %s", runtime.RuntimeID, sb.ID, runtime.WorkspaceWispName, wispCommandFailureDetail(err, result))
+	}
+	if result.ExitCode != 0 || !strings.Contains(result.Stdout, "CLOUDAGENT_WISP_STOPPED") {
+		return fmt.Errorf("workspace wisp stop failed runtime_id=%s inner_sandbox_id=%s wisp_name=%s: %s", runtime.RuntimeID, sb.ID, runtime.WorkspaceWispName, wispCommandFailureDetail(nil, result))
 	}
 	return nil
 }
 
 func wispOuterStopCommand(runtime ACPSessionRuntime) string {
+	return wispStopCommand(runtime)
+}
+
+func wispWorkspaceStopCommand(runtime ACPSessionRuntime) string {
+	return wispStopCommand(runtime)
+}
+
+func wispStopCommand(runtime ACPSessionRuntime) string {
 	clientPath := runtime.WispClientPath
 	if strings.TrimSpace(clientPath) == "" && runtime.WispInstallDir != "" {
 		clientPath = path.Join(runtime.WispInstallDir, "bin", "wispclient")
@@ -341,7 +471,7 @@ func wispOuterStopCommand(runtime ACPSessionRuntime) string {
 	return "set -euo pipefail\n" +
 		"client=" + shellQuote(clientPath) + "\n" +
 		"name=" + shellQuote(runtime.WispName) + "\n" +
-		"server=" + shellQuote(defaultWispOuterAdminAddr) + "\n" +
+		"server=" + shellQuote(wispAdminAddr(runtime)) + "\n" +
 		"log=" + shellQuote(hostLog) + "\n" +
 		"writeback_cut_timeout=" + shellQuote(writebackCutTimeout) + "\n" +
 		"redact_line() {\n" +
@@ -362,6 +492,7 @@ func wispOuterStopCommand(runtime ACPSessionRuntime) string {
 		"if [[ -z \"$client\" || ! -x \"$client\" ]]; then echo \"wispclient missing\" >&2; exit 127; fi\n" +
 		"jfs=\"$(dirname \"$client\")/juicefs-smount\"\n" +
 		"if [[ -x \"$jfs\" ]]; then\n" +
+		"  echo \"wisp checkpoint_start phase=writeback_cut_barrier timeout=$writeback_cut_timeout\" >&2\n" +
 		"  echo \"wisp writeback-cut-barrier start timeout=$writeback_cut_timeout\" >&2\n" +
 		"  barrier_stdout=\"$(mktemp)\"\n" +
 		"  barrier_stderr=\"$(mktemp)\"\n" +
@@ -381,12 +512,14 @@ func wispOuterStopCommand(runtime ACPSessionRuntime) string {
 		"    exit \"$barrier_code\"\n" +
 		"  fi\n" +
 		"  echo \"wisp writeback-cut-barrier done\" >&2\n" +
+		"  echo \"wisp checkpoint_done phase=writeback_cut_barrier\" >&2\n" +
 		"else\n" +
 		"  echo \"wisp writeback-cut-barrier skipped: juicefs-smount missing path=$jfs\" >&2\n" +
 		"fi\n" +
 		"stop_stdout=\"$(mktemp)\"\n" +
 		"stop_stderr=\"$(mktemp)\"\n" +
 		"trap 'rm -f \"$stop_stdout\" \"$stop_stderr\"' EXIT\n" +
+		"echo \"wisp umount_start name=$name\" >&2\n" +
 		"set +e\n" +
 		"\"$client\" -server \"$server\" stop \"$name\" >\"$stop_stdout\" 2>\"$stop_stderr\"\n" +
 		"code=$?\n" +
@@ -408,10 +541,19 @@ func wispOuterStopCommand(runtime ACPSessionRuntime) string {
 		"  exit \"$code\"\n" +
 		"fi\n" +
 		"cat \"$stop_stdout\" || true\n" +
+		"echo \"wisp umount_done name=$name\" >&2\n" +
 		"echo CLOUDAGENT_WISP_STOPPED\n"
 }
 
 func (runtime ACPSessionRuntime) wrapWispShellCommand(command string, env map[string]string) string {
+	return runtime.wrapWispShellCommandWithStream(command, env, true)
+}
+
+func (runtime ACPSessionRuntime) wrapWispShellCommandBuffered(command string, env map[string]string) string {
+	return runtime.wrapWispShellCommandWithStream(command, env, false)
+}
+
+func (runtime ACPSessionRuntime) wrapWispShellCommandWithStream(command string, env map[string]string, stream bool) string {
 	clientPath := runtime.WispClientPath
 	if strings.TrimSpace(clientPath) == "" && runtime.WispInstallDir != "" {
 		clientPath = path.Join(runtime.WispInstallDir, "bin", "wispclient")
@@ -420,9 +562,13 @@ func (runtime ACPSessionRuntime) wrapWispShellCommand(command string, env map[st
 		clientPath = "/tmp/cloudagent-wisp/*/install/bin/wispclient"
 	}
 	inner := shellEnvPrefix(env) + command
-	return shellQuote(clientPath) +
-		" -server " + shellQuote(defaultWispOuterAdminAddr) +
-		" exec --stream " + shellQuote(runtime.WispName) +
+	args := shellQuote(clientPath) +
+		" -server " + shellQuote(wispAdminAddr(runtime)) +
+		" exec "
+	if stream {
+		args += "--stream "
+	}
+	return args + shellQuote(runtime.WispName) +
 		" -- /bin/sh -lc " + shellQuote(inner)
 }
 
@@ -506,6 +652,10 @@ func workspaceWispNameFromSession(sessionID string) string {
 	return fmt.Sprintf("workspace-%08x", crc32.ChecksumIEEE([]byte(trimmed)))
 }
 
+func workspaceWispNameForRuntime(sessionID string, _ ACPSessionRuntime) string {
+	return workspaceWispNameFromSession(sessionID)
+}
+
 func workspaceWispJFSPrefix(base, workspaceID string) string {
 	normalizedBase := strings.Trim(strings.TrimSpace(base), "/")
 	if normalizedBase == "" {
@@ -585,31 +735,43 @@ func wispOuterPrepareScript() string {
 	log="$work/daemon.log"
 	config_file="$work/config/config.jsonnet"
 	jfs_root="/mnt/cloudagent-wisp"
+	admin_listen="${WISP_ADMIN_LISTEN_ADDR:-127.0.0.1:8520}"
+	admin_server="$admin_listen"
+	case "$admin_server" in
+	  http://*|https://*) ;;
+	  *) admin_server="http://$admin_server" ;;
+	esac
 	pkg_format="${WISP_PACKAGE_FORMAT:-}"
 	case "$WISP_PACKAGE_URL" in
 	  *.erofs) pkg_format="${pkg_format:-erofs}" ;;
 	  *) pkg_format="${pkg_format:-tar.gz}" ;;
 	esac
-	case "$pkg_format" in
-	  erofs) pkg="$work/wisp-package.erofs" ;;
-	  tar.gz|tgz) pkg="$work/wisp-package.tar.gz" ;;
-	  *) echo "unsupported WISP_PACKAGE_FORMAT: $pkg_format" >&2; exit 2 ;;
-	esac
+case "$pkg_format" in
+  erofs|erofs-extract) pkg="$work/wisp-package.erofs" ;;
+  tar.gz|tgz) pkg="$work/wisp-package.tar.gz" ;;
+  *) echo "unsupported WISP_PACKAGE_FORMAT: $pkg_format" >&2; exit 2 ;;
+esac
 	
 	mkdir -p "$install"
 	if [[ ! -x "$install/bin/wispclient" ]]; then
 	  step_start wisp_package_download url="$WISP_PACKAGE_URL"
 	  curl -fsSL --retry 3 --retry-delay 1 --connect-timeout 10 "$WISP_PACKAGE_URL" -o "$pkg"
 	  step_done wisp_package_download bytes="$(wc -c <"$pkg" | tr -d ' ')"
-	  if [[ "$pkg_format" == "erofs" ]]; then
-	    rmdir "$install" 2>/dev/null || true
-	    mkdir -p "$install"
-	    step_start wisp_package_mount format=erofs
-	    sudo -n mount -t erofs -o loop,ro "$pkg" "$install"
-	    step_done wisp_package_mount format=erofs
-	  else
-	    step_start wisp_package_extract format=tar.gz
-	    tar -xzf "$pkg" -C "$install" --strip-components=1
+  if [[ "$pkg_format" == "erofs" ]]; then
+    rmdir "$install" 2>/dev/null || true
+    mkdir -p "$install"
+    step_start wisp_package_mount format=erofs
+    sudo -n mount -t erofs -o loop,ro "$pkg" "$install"
+    step_done wisp_package_mount format=erofs
+  elif [[ "$pkg_format" == "erofs-extract" ]]; then
+    rmdir "$install" 2>/dev/null || true
+    mkdir -p "$install"
+    step_start wisp_package_extract format=erofs
+    fsck.erofs --extract="$install" --force --overwrite "$pkg" >/dev/null
+    step_done wisp_package_extract format=erofs
+  else
+    step_start wisp_package_extract format=tar.gz
+    tar -xzf "$pkg" -C "$install" --strip-components=1
 	    step_done wisp_package_extract format=tar.gz
 	    step_start wisp_package_install format="$pkg_format"
 	    "$install/scripts/install.sh" "$install" >/dev/null
@@ -619,6 +781,37 @@ func wispOuterPrepareScript() string {
 	  step wisp_package_cache_hit install="$install"
 	fi
 	
+	pkg_arch="${WISP_PACKAGE_ARCH:-}"
+	if [[ -z "$pkg_arch" ]]; then
+	  case "$(uname -m)" in
+	    x86_64|amd64) pkg_arch=amd64 ;;
+	    aarch64|arm64) pkg_arch=arm64 ;;
+	    *) pkg_arch="$(uname -m)" ;;
+	  esac
+	fi
+	if [[ ! -x "$install/assets/bin/crun/crun-$pkg_arch" && -x "$install/assets/bin/crun/crun-amd64" ]]; then
+	  pkg_arch=amd64
+	fi
+	if [[ "${WISP_USE_HOST_CRUN:-0}" == "1" ]]; then
+	  crun_binary="$(command -v crun || true)"
+	  if [[ -z "$crun_binary" ]]; then
+	    echo "WISP_USE_HOST_CRUN=1 but host crun is not installed" >&2
+	    exit 2
+	  fi
+	  crun_binary_path="$crun_binary"
+	else
+	  crun_binary="$install/assets/bin/crun/crun-$pkg_arch"
+	  if [[ ! -x "$crun_binary" ]]; then
+	    echo "missing packaged crun for arch=$pkg_arch path=$crun_binary" >&2
+	    exit 2
+	  fi
+	  crun_binary_path="/var/lib/wisp/shared/tools/crun"
+	fi
+	blank_root_upper_sparse="$install/assets/rootfs/blank-ext4/root-upper-default.sparse"
+	if [[ ! -f "$blank_root_upper_sparse" ]]; then
+	  blank_root_upper_sparse=""
+	fi
+
 	step_start wisp_config_write
 	mkdir -p "$(dirname "$config_file")"
 	cat >"$config_file" <<-EOF
@@ -640,8 +833,11 @@ local projectRoot = "$install";
   JFS_BUILD: "0",
   JFS_SMOUNT_SCRIPT: projectRoot + "/juicefs/hack/smount.sh",
   JFS_SFORMAT_SCRIPT: projectRoot + "/juicefs/hack/sformat.sh",
-  BASE_ROOTFS_IMG: projectRoot + "/assets/rootfs/images/plucky-amd64.img",
-  CRUN_BINARY: projectRoot + "/assets/bin/crun/crun-amd64",
+  LOWER_SYSTEM_BASE: projectRoot + "/assets/rootfs/rootfs",
+  BASE_ROOTFS_DIR: projectRoot + "/assets/rootfs/rootfs",
+  BASE_ROOTFS_IMG: "",
+  CRUN_BINARY: "$crun_binary",
+  CRUN_BINARY_PATH: "$crun_binary_path",
   WISPENV_BINARY: projectRoot + "/bin/wispenv",
   WISP_FS_AGENT_BINARY: projectRoot + "/bin/wisp-fs-agent",
   TINI_BINARY: projectRoot + "/assets/bin/tini/tini",
@@ -649,15 +845,21 @@ local projectRoot = "$install";
   WISP_UID: 0,
   WISP_GID: 0,
   ROOT_UPPER_SIZE: "$ROOT_UPPER_SIZE",
-  ADMIN_LISTEN_ADDR: "127.0.0.1:8520",
+  BLANK_ROOT_UPPER_SPARSE: "$blank_root_upper_sparse",
+  ADMIN_LISTEN_ADDR: "$admin_listen",
 	}
 	EOF
 	step_done wisp_config_write
 	
 	step_start wisp_host_preflight
 	sudo -n chmod 666 /dev/fuse || true
-	export PATH="$install/assets/bin/e2fsprogs/bin:$PATH"
-	export LD_LIBRARY_PATH="$install/assets/bin/e2fsprogs/lib:${LD_LIBRARY_PATH:-}"
+	if [[ "${WISP_USE_HOST_E2FSPROGS:-0}" != "1" ]]; then
+	  export PATH="$install/assets/bin/e2fsprogs/bin:$PATH"
+	  export LD_LIBRARY_PATH="$install/assets/bin/e2fsprogs/lib:${LD_LIBRARY_PATH:-}"
+	else
+	  export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}"
+	fi
+	step wisp_host_preflight_detail use_host_e2fsprogs="${WISP_USE_HOST_E2FSPROGS:-0}" mke2fs_path="$(command -v mke2fs || true)" e2fsck_path="$(command -v e2fsck || true)" root_upper_size="$ROOT_UPPER_SIZE" blank_root_upper_sparse="$blank_root_upper_sparse"
 	if [[ ! -e /sys/fs/cgroup/cgroup.controllers ]]; then
 	  sudo -n mount -t cgroup2 cgroup2 /sys/fs/cgroup || true
 	fi
@@ -673,13 +875,15 @@ export JFS_BIN="$install/bin/juicefs-smount"
 export JFS_BUILD=0
 export JFS_SMOUNT_SCRIPT="$install/juicefs/hack/smount.sh"
 export JFS_SFORMAT_SCRIPT="$install/juicefs/hack/sformat.sh"
-export BASE_ROOTFS_IMG="$install/assets/rootfs/images/plucky-amd64.img"
-export CRUN_BINARY="$install/assets/bin/crun/crun-amd64"
-export CRUN_BINARY_PATH="/var/lib/wisp/shared/tools/crun"
+export BASE_ROOTFS_DIR="$install/assets/rootfs/rootfs"
+export BASE_ROOTFS_IMG=""
+export CRUN_BINARY="$crun_binary"
+export CRUN_BINARY_PATH="$crun_binary_path"
 export WISPENV_BINARY="$install/bin/wispenv"
 export WISP_FS_AGENT_BINARY="$install/bin/wisp-fs-agent"
 export TINI_BINARY="$install/assets/bin/tini/tini"
-export ADMIN_LISTEN_ADDR="127.0.0.1:8520"
+export BLANK_ROOT_UPPER_SPARSE="$blank_root_upper_sparse"
+export ADMIN_LISTEN_ADDR="$admin_listen"
 export JFS_LITESTREAM_TRACE="${JFS_LITESTREAM_TRACE:-}"
 
 	step_start wisp_daemon_spawn
@@ -695,17 +899,20 @@ export JFS_LITESTREAM_TRACE="${JFS_LITESTREAM_TRACE:-}"
   JFS_BUILD="$JFS_BUILD" \
   JFS_SMOUNT_SCRIPT="$JFS_SMOUNT_SCRIPT" \
   JFS_SFORMAT_SCRIPT="$JFS_SFORMAT_SCRIPT" \
+  BASE_ROOTFS_DIR="$BASE_ROOTFS_DIR" \
   BASE_ROOTFS_IMG="$BASE_ROOTFS_IMG" \
   CRUN_BINARY="$CRUN_BINARY" \
   CRUN_BINARY_PATH="$CRUN_BINARY_PATH" \
   WISPENV_BINARY="$WISPENV_BINARY" \
   WISP_FS_AGENT_BINARY="$WISP_FS_AGENT_BINARY" \
   TINI_BINARY="$TINI_BINARY" \
+  BLANK_ROOT_UPPER_SPARSE="$BLANK_ROOT_UPPER_SPARSE" \
   WISP_USER=root \
   WISP_UID=0 \
   WISP_GID=0 \
   PATH="$PATH" \
   LD_LIBRARY_PATH="$LD_LIBRARY_PATH" \
+  WISP_USE_HOST_E2FSPROGS="${WISP_USE_HOST_E2FSPROGS:-0}" \
   ROOT_UPPER_SIZE="$ROOT_UPPER_SIZE" \
   ADMIN_LISTEN_ADDR="$ADMIN_LISTEN_ADDR" \
   SMH_LIBRARY_ID="$SMH_LIBRARY_ID" \
@@ -725,27 +932,27 @@ export JFS_LITESTREAM_TRACE="${JFS_LITESTREAM_TRACE:-}"
 	
 	step_start wisp_daemon_ready_wait
 	for i in $(seq 1 30); do
-	  if "$install/bin/wispclient" -server http://127.0.0.1:8520 ls >/dev/null 2>&1; then
+	  if "$install/bin/wispclient" -server "$admin_server" ls >/dev/null 2>&1; then
 	    break
 	  fi
 	  sleep 0.5
 	done
-	"$install/bin/wispclient" -server http://127.0.0.1:8520 ls >/dev/null || { echo "wisp daemon did not become ready" >&2; cat "$log" >&2 || true; exit 1; }
+	"$install/bin/wispclient" -server "$admin_server" ls >/dev/null || { echo "wisp daemon did not become ready" >&2; cat "$log" >&2 || true; exit 1; }
 	step_done wisp_daemon_ready_wait
 	flush_daemon_log daemon_ready
 	
 	step_start wisp_bootstrap
-	"$install/bin/wispclient" -server http://127.0.0.1:8520 bootstrap || { echo "daemon log after bootstrap failure:" >&2; cat "$log" >&2 || true; exit 1; }
+	"$install/bin/wispclient" -server "$admin_server" bootstrap || { echo "daemon log after bootstrap failure:" >&2; cat "$log" >&2 || true; exit 1; }
 	step_done wisp_bootstrap
 	flush_daemon_log bootstrap
 	
 	step_start wisp_create
-	"$install/bin/wispclient" -server http://127.0.0.1:8520 create "$WISP_NAME" || { echo "daemon log after create failure:" >&2; cat "$log" >&2 || true; exit 1; }
+	"$install/bin/wispclient" -server "$admin_server" create "$WISP_NAME" || { echo "daemon log after create failure:" >&2; cat "$log" >&2 || true; exit 1; }
 	step_done wisp_create
 	flush_daemon_log create
 	
 	step_start wisp_start
-	"$install/bin/wispclient" -server http://127.0.0.1:8520 start "$WISP_NAME" || { echo "daemon log after start failure:" >&2; cat "$log" >&2 || true; exit 1; }
+	"$install/bin/wispclient" -server "$admin_server" start "$WISP_NAME" || { echo "daemon log after start failure:" >&2; cat "$log" >&2 || true; exit 1; }
 	step_done wisp_start
 	flush_daemon_log start
 	echo "WISP_OUTER_READY name=$WISP_NAME space=$SMH_SPACE_ID"
@@ -800,25 +1007,25 @@ func base64DecodeToFileCommand(targetPath string, content []byte) string {
 		"\nCLOUDAGENT_FILE_B64"
 }
 
-func (w *AgentSidecarWorker) stageSidecarBinaryIntoWisp(ctx context.Context, client *AGSClient, sb AGSSandbox, runtime ACPSessionRuntime, artifact agentSidecarArtifact) error {
+func (w *AgentSidecarWorker) stageSidecarBinaryIntoWisp(ctx context.Context, host RuntimeHost, sb RuntimeHostTarget, runtime ACPSessionRuntime, artifact agentSidecarArtifact) error {
 	command := "set -euo pipefail\n" +
 		"client=" + shellQuote(runtime.WispClientPath) + "\n" +
 		"name=" + shellQuote(runtime.WispName) + "\n" +
 		"target=" + shellQuote(runtime.RemoteBinary) + "\n" +
-		"\"$client\" -server " + shellQuote(defaultWispOuterAdminAddr) +
+		"\"$client\" -server " + shellQuote(wispAdminAddr(runtime)) +
 		" fetch \"$name\" " + shellQuote(artifact.URL) + " \"$target\" --mode 0755 --max-bytes 52428800 --allow-private" + fetchSHAArg(artifact.SHA256) + " >&2\n" +
-		"\"$client\" -server " + shellQuote(defaultWispOuterAdminAddr) + " exec \"$name\" -- /bin/sh -lc 'wc -c \"$1\" >&2; if command -v sha256sum >/dev/null 2>&1; then sha256sum \"$1\" >&2; fi' sh \"$target\" >/dev/null\n" +
-		"\"$client\" -server " + shellQuote(defaultWispOuterAdminAddr) + " exec \"$name\" -- /bin/sh -lc 'set +e; \"$1\" client --addr http://127.0.0.1:1 health >/tmp/cloudagent-sidecar-preflight.log 2>&1; code=$?; cat /tmp/cloudagent-sidecar-preflight.log >&2 || true; if [ \"$code\" = 139 ]; then exit 139; fi; exit 0' sh \"$target\" >/dev/null\n" +
+		"\"$client\" -server " + shellQuote(wispAdminAddr(runtime)) + " exec \"$name\" -- /bin/sh -lc 'wc -c \"$1\" >&2; if command -v sha256sum >/dev/null 2>&1; then sha256sum \"$1\" >&2; fi' sh \"$target\" >/dev/null\n" +
+		"\"$client\" -server " + shellQuote(wispAdminAddr(runtime)) + " exec \"$name\" -- /bin/sh -lc 'set +e; \"$1\" client --addr http://127.0.0.1:1 health >/tmp/cloudagent-sidecar-preflight.log 2>&1; code=$?; cat /tmp/cloudagent-sidecar-preflight.log >&2 || true; if [ \"$code\" = 139 ]; then exit 139; fi; exit 0' sh \"$target\" >/dev/null\n" +
 		"echo CLOUDAGENT_WISP_SIDECAR_STAGED\n"
-	result, err := client.RunCommand(ctx, sb, command, nil, nil, func(text string) error {
+	result, err := host.RunCommand(ctx, sb, command, nil, nil, func(text string) error {
 		logRemoteStderr(time.Now(), workerJob{JobID: "wisp_sidecar_stage", ResponseID: runtime.RuntimeID}, text)
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("stage sidecar into wisp outer runtime session_runtime=%s outer_sandbox_id=%s: %w", runtime.RuntimeID, sb.SandboxID, err)
+		return fmt.Errorf("stage sidecar into wisp outer runtime session_runtime=%s outer_sandbox_id=%s: %w", runtime.RuntimeID, sb.ID, err)
 	}
 	if result.ExitCode != 0 || !strings.Contains(result.Stdout, "CLOUDAGENT_WISP_SIDECAR_STAGED") {
-		return fmt.Errorf("stage sidecar into wisp outer runtime failed session_runtime=%s outer_sandbox_id=%s exit=%d stdout=%q stderr=%q", runtime.RuntimeID, sb.SandboxID, result.ExitCode, result.Stdout, result.Stderr)
+		return fmt.Errorf("stage sidecar into wisp outer runtime failed session_runtime=%s outer_sandbox_id=%s exit=%d stdout=%q stderr=%q", runtime.RuntimeID, sb.ID, result.ExitCode, result.Stdout, result.Stderr)
 	}
 	return nil
 }
@@ -833,15 +1040,20 @@ func fetchSHAArg(sha string) string {
 func wispSessionDaemonHostCommand(runtime ACPSessionRuntime, daemonArgs []string, workspace, memoryDir, logPath string, env map[string]string) string {
 	hostLog := path.Join(path.Dir(runtime.RemoteBinary), "wispclient-daemon.log")
 	hostPID := path.Join(path.Dir(runtime.RemoteBinary), "wispclient-daemon.pid")
-	innerDaemon := "cd " + shellQuote(workspace) + "\n" + shellEnvPrefix(env) + "exec " + sidecarPlainCommand(runtime.RemoteBinary, daemonArgs...)
+	daemonPID := path.Join(path.Dir(runtime.RemoteBinary), "daemon.pid")
+	innerDaemon := "cd " + shellQuote(workspace) + "\n" +
+		"mkdir -p " + shellQuote(path.Dir(daemonPID)) + "\n" +
+		"echo $$ > " + shellQuote(daemonPID) + "\n" +
+		"trap 'rm -f " + shellQuote(daemonPID) + "' EXIT\n" +
+		shellEnvPrefix(env) + "exec " + sidecarPlainCommand(runtime.RemoteBinary, daemonArgs...)
 	return "set -euo pipefail\n" +
 		"client=" + shellQuote(runtime.WispClientPath) + "\n" +
 		"name=" + shellQuote(runtime.WispName) + "\n" +
 		"host_log=" + shellQuote(hostLog) + "\n" +
 		"host_pid=" + shellQuote(hostPID) + "\n" +
 		"mkdir -p \"$(dirname \"$host_log\")\"\n" +
-		"\"$client\" -server " + shellQuote(defaultWispOuterAdminAddr) + " exec \"$name\" -- /bin/sh -lc " + shellQuote("mkdir -p "+shellQuote(workspace)+" "+shellQuote(memoryDir)+" "+shellQuote(path.Dir(logPath))) + " >/dev/null\n" +
-		"( printf '%s\\n' " + shellQuote(innerDaemon) + " | \"$client\" -server " + shellQuote(defaultWispOuterAdminAddr) + " shell \"$name\" >\"$host_log\" 2>&1 & echo $! >\"$host_pid\" )\n" +
+		"\"$client\" -server " + shellQuote(wispAdminAddr(runtime)) + " exec \"$name\" -- /bin/sh -lc " + shellQuote("mkdir -p "+shellQuote(workspace)+" "+shellQuote(memoryDir)+" "+shellQuote(path.Dir(logPath))) + " >/dev/null\n" +
+		"( printf '%s\\n' " + shellQuote(innerDaemon) + " | \"$client\" -server " + shellQuote(wispAdminAddr(runtime)) + " shell \"$name\" >\"$host_log\" 2>&1 & echo $! >\"$host_pid\" )\n" +
 		"echo CLOUDAGENT_WISP_DAEMON_ATTACHED\n"
 }
 
@@ -876,16 +1088,16 @@ func wispHermesBootstrapManifestPath(sessionID string) string {
 	return path.Join(acpRuntimeCWD, ".cloudagent", "sessions", sessionID, "hermes", ".cloudagent-bootstrap.json")
 }
 
-func (w *AgentSidecarWorker) wispHermesBootstrapManifestValid(ctx context.Context, client *AGSClient, sb AGSSandbox, runtime ACPSessionRuntime, req ACPSessionRuntimeStartRequest) bool {
+func (w *AgentSidecarWorker) wispHermesBootstrapManifestValid(ctx context.Context, host RuntimeHost, sb RuntimeHostTarget, runtime ACPSessionRuntime, req ACPSessionRuntimeStartRequest) bool {
 	manifestPath := wispHermesBootstrapManifestPath(req.SessionID)
 	command := "set -euo pipefail\n" +
 		"client=" + shellQuote(runtime.WispClientPath) + "\n" +
 		"name=" + shellQuote(runtime.WispName) + "\n" +
-		"\"$client\" -server " + shellQuote(defaultWispOuterAdminAddr) +
+		"\"$client\" -server " + shellQuote(wispAdminAddr(runtime)) +
 		" exec \"$name\" -- /bin/sh -lc " + shellQuote("cat "+shellQuote(manifestPath)) + "\n"
 	checkCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	result, err := client.RunCommand(checkCtx, sb, command, nil, nil, nil)
+	result, err := host.RunCommand(checkCtx, sb, command, nil, nil, nil)
 	if err != nil || result.ExitCode != 0 {
 		return false
 	}
@@ -896,7 +1108,7 @@ func (w *AgentSidecarWorker) wispHermesBootstrapManifestValid(ctx context.Contex
 	return manifest.matches(runtime, req)
 }
 
-func (w *AgentSidecarWorker) writeWispHermesBootstrapManifest(ctx context.Context, client *AGSClient, sb AGSSandbox, runtime ACPSessionRuntime, req ACPSessionRuntimeStartRequest) error {
+func (w *AgentSidecarWorker) writeWispHermesBootstrapManifest(ctx context.Context, host RuntimeHost, sb RuntimeHostTarget, runtime ACPSessionRuntime, req ACPSessionRuntimeStartRequest) error {
 	manifestPath := wispHermesBootstrapManifestPath(req.SessionID)
 	payload, err := json.Marshal(wispHermesBootstrapManifestFor(runtime, req))
 	if err != nil {
@@ -907,8 +1119,8 @@ func (w *AgentSidecarWorker) writeWispHermesBootstrapManifest(ctx context.Contex
 	command := "set -euo pipefail\n" +
 		"client=" + shellQuote(runtime.WispClientPath) + "\n" +
 		"name=" + shellQuote(runtime.WispName) + "\n" +
-		"\"$client\" -server " + shellQuote(defaultWispOuterAdminAddr) +
+		"\"$client\" -server " + shellQuote(wispAdminAddr(runtime)) +
 		" exec \"$name\" -- /bin/sh -lc " + shellQuote(writeScript) + "\n"
-	_, err = client.RunCommand(ctx, sb, command, nil, nil, nil)
+	_, err = host.RunCommand(ctx, sb, command, nil, nil, nil)
 	return err
 }
