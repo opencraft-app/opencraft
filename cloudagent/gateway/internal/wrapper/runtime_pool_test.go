@@ -214,6 +214,38 @@ func TestWispOuterPrepareScriptSupportsHostOnly(t *testing.T) {
 	}
 }
 
+func TestPrepareWispHostOnlyAcceptsReadyMarkerDespiteCommandError(t *testing.T) {
+	worker := &AgentSidecarWorker{
+		wispPackageURL:    "https://example.invalid/wisp.erofs",
+		wispRootUpperSize: "10G",
+	}
+	host := &recordingRuntimeHost{
+		runCommand: func(_ RuntimeHostTarget, _ string, _ map[string]string, _ func(string) error, _ func(string) error) (CommandResult, error) {
+			return CommandResult{
+				Stdout:   "WISP_HOST_READY install=/tmp/warm/install\n",
+				Stderr:   "TIMELINE warm host ready\n",
+				ExitCode: 1,
+				Exited:   true,
+				Status:   "exit status 1",
+			}, errors.New("process exited with code 1")
+		},
+	}
+	got, err := worker.prepareWispHostOnly(
+		context.Background(),
+		host,
+		RuntimeHostTarget{ID: "sandbox_1"},
+		"/tmp/warm/install",
+		"https://example.invalid/wisp.erofs",
+		"wisp_warm_prepare",
+	)
+	if err != nil {
+		t.Fatalf("prepareWispHostOnly returned error despite ready marker: %v", err)
+	}
+	if got != "/tmp/warm/install/bin/wispclient" {
+		t.Fatalf("wispclient path=%q", got)
+	}
+}
+
 func TestWarmClaimPathAcquiresWispLeaseBeforePrepare(t *testing.T) {
 	source := readTestSource(t, "runtime_pool_attach.go")
 	claimPath := mustContainAfter(t, source, "func (w *AgentSidecarWorker) startSessionRuntimeFromWarmClaim")
