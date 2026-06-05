@@ -4245,6 +4245,7 @@ export const OpenClawSettingsPage = () => {
                       ? "bg-black/90 hover:opacity-90"
                       : "cursor-not-allowed bg-black/30",
                   )}
+                  style={{marginTop: 20}}
                 >
                   {canCreateBot ? t("立即创建") : t("暂不可创建")}
                 </button>
