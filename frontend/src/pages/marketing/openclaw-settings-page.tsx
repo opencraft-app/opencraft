@@ -3847,12 +3847,12 @@ export const OpenClawSettingsPage = () => {
                   ? [{ id: "chat" as const, label: t("对话"), icon: <MessageSquare className="h-4 w-4" />, badge: "NEW" }]
                   : []),
               ];
-              const isRestartDisabled = isActiveBotRestarting || activeBot.status !== "running";
+              const isRestartDisabled = resettingAcli || isActiveBotRestarting || activeBot.status !== "running";
               const hasViewedChannel = viewedChannelBotIds.has(activeBot.id);
               const resetBlockReason = getResetBlockReason(activeBot, resetting, hasViewedChannel);
-              const resetDisabled = resetting || resetBlockReason !== null;
+              const resetDisabled = resettingAcli || resetting || resetBlockReason !== null;
               const resetTooltip =
-                resetBlockReason === RESET_BLOCK_REASON.NOT_RUNNING || resetBlockReason === RESET_BLOCK_REASON.CHANNEL_NOT_VIEWED
+                resettingAcli || resetBlockReason === RESET_BLOCK_REASON.NOT_RUNNING || resetBlockReason === RESET_BLOCK_REASON.CHANNEL_NOT_VIEWED
                   ? t("请稍后")
                   : t("重置配置");
               const acliResetBlockReason = getAcliResetBlockReason(activeBot, resettingAcli);
@@ -3861,6 +3861,7 @@ export const OpenClawSettingsPage = () => {
                 acliResetBlockReason === RESET_BLOCK_REASON.NOT_RUNNING
                   ? t("请稍后")
                   : t("重置Agent");
+              const deleteDisabled = resettingAcli;
 
               return (
                 <div className="grid items-start gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
@@ -3910,7 +3911,8 @@ export const OpenClawSettingsPage = () => {
                               type="button"
                               onClick={(event) => {
                                 event.stopPropagation();
-                                if (!isRestartDisabled) setShowRestartConfirm(true);
+                                if (isRestartDisabled) return;
+                                setShowRestartConfirm(true);
                               }}
                               aria-disabled={isRestartDisabled}
                               aria-label={t("重启")}
@@ -3993,11 +3995,18 @@ export const OpenClawSettingsPage = () => {
                               type="button"
                               onClick={(event) => {
                                 event.stopPropagation();
+                                if (deleteDisabled) return;
                                 setDeleteInput("");
                                 setShowDeleteConfirm(true);
                               }}
+                              aria-disabled={deleteDisabled}
                               aria-label={t("删除")}
-                              className="inline-flex h-8 w-6 flex-shrink-0 items-center justify-center rounded-md text-black/35 transition-colors hover:bg-red-500/10 hover:text-red-500"
+                              className={cn(
+                                "inline-flex h-8 w-6 flex-shrink-0 items-center justify-center rounded-md transition-colors",
+                                deleteDisabled
+                                  ? "cursor-not-allowed text-black/20"
+                                  : "text-black/35 hover:bg-red-500/10 hover:text-red-500",
+                              )}
                             >
                               <Trash2 className="h-4 w-4" />
                             </button>
