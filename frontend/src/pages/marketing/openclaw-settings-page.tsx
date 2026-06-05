@@ -21,7 +21,7 @@ import {
   Calendar,
   Mail,
   Database,
-  Stethoscope,
+  Hammer,
   Sparkles,
   ExternalLink,
   X,
@@ -3664,7 +3664,7 @@ export const OpenClawSettingsPage = () => {
           >
             <div className="flex items-center gap-3" style={{ marginBottom: "20px" }}>
               <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "var(--tea-color-warning-default-alpha10, rgba(245,158,11,0.10))" }}>
-                <Stethoscope className="h-5 w-5" style={{ color: "var(--tea-color-warning-default, #F59E0B)" }} />
+                <Hammer className="h-5 w-5" style={{ color: "var(--tea-color-warning-default, #F59E0B)" }} />
               </div>
               <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("重置 Hermes Agent")}</h3>
             </div>
@@ -3962,7 +3962,7 @@ export const OpenClawSettingsPage = () => {
                                   : "text-black/35 hover:bg-black/[0.06] hover:text-black/80",
                               )}
                             >
-                              {resettingAcli ? <Loader2 className="h-4 w-4 animate-spin" /> : <Stethoscope className="h-4 w-4" />}
+                              {resettingAcli ? <Loader2 className="h-4 w-4 animate-spin" /> : <Hammer className="h-4 w-4" />}
                             </button>
                             <span
                               role="tooltip"
