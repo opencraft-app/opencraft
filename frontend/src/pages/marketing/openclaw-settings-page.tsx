@@ -3159,6 +3159,7 @@ export const OpenClawSettingsPage = () => {
     setResettingAcli(true);
     setAcliResetError(null);
     setAcliResetConsole([`$ ${ACLI_RESET_COMMAND}`]);
+    setShowAcliResetConfirm(false);
     try {
       const result = await execDebugCommandStream(targetBotId, ACLI_RESET_COMMAND, ({ stream, chunk }) => {
         setAcliResetConsole((prev) => [...prev, `[${stream}] ${chunk}`].slice(-80));
@@ -3166,7 +3167,6 @@ export const OpenClawSettingsPage = () => {
       if (!isExecCommandSucceeded(result)) {
         throw new Error(truncateExecOutput(result.output, result.status));
       }
-      setShowAcliResetConfirm(false);
       setAcliResetConsole([]);
       toast.success(t("Agent 重置成功"));
     } catch (err) {
@@ -3687,32 +3687,7 @@ export const OpenClawSettingsPage = () => {
               </span>
               {t("但工作空间、记忆、模型和通道配置、已安装技能将会保留，确认继续？")}
             </p>
-            {acliResetConsole.length > 0 && (
-              <pre
-                ref={acliResetConsoleRef}
-                className="mb-6 max-h-44 overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-black/[0.08] bg-[#111827] px-2.5 py-2 text-[11px] leading-relaxed text-[#d1d5db]"
-              >
-                {acliResetConsole.join("\n")}
-              </pre>
-            )}
-            {acliResetError && (
-              <pre
-                className="whitespace-pre-wrap break-words rounded-md border px-3 py-2 text-xs"
-                style={{
-                  color: "var(--tea-color-text-error-default, #DC2626)",
-                  backgroundColor: "var(--tea-color-text-error-default-alpha4, rgba(220,38,38,0.04))",
-                  borderColor: "var(--tea-color-text-error-default-alpha18, rgba(220,38,38,0.18))",
-                  fontFamily:
-                    "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
-                  maxHeight: "180px",
-                  overflowY: "auto",
-                  marginBottom: "12px",
-                }}
-              >
-                {acliResetError}
-              </pre>
-            )}
-            <div className="mt-3 flex flex-col gap-2">
+            <div className="flex flex-col gap-2">
               <button
                 onClick={() => void handleResetAcli()}
                 disabled={resettingAcli}
@@ -4041,6 +4016,14 @@ export const OpenClawSettingsPage = () => {
                           />
                         )}
                       </div>
+                      {acliResetConsole.length > 0 && (
+                        <pre
+                          ref={acliResetConsoleRef}
+                          className="mt-2 max-h-36 overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-black/[0.08] bg-[#111827] px-2.5 py-2 text-[11px] leading-relaxed text-[#d1d5db]"
+                        >
+                          {acliResetConsole.join("\n")}
+                        </pre>
+                      )}
 
                       {visibleBots.length > 1 && isAgentMenuOpen && (
                         <div className="mt-1 rounded-md bg-black/[0.025] p-1">
