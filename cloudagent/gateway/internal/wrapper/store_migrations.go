@@ -259,6 +259,26 @@ func migrateStore(db *sql.DB) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS runtime_resources_state_idx ON runtime_resources(state, expires_at)`,
 		`CREATE INDEX IF NOT EXISTS runtime_resources_owner_idx ON runtime_resources(owner_id, updated_at)`,
+		`CREATE TABLE IF NOT EXISTS warm_runtime_pool_items (
+			item_id TEXT PRIMARY KEY,
+			pool_key TEXT NOT NULL,
+			state TEXT NOT NULL,
+			owner_id TEXT NOT NULL DEFAULT '',
+			session_id TEXT NOT NULL DEFAULT '',
+			generation INTEGER NOT NULL DEFAULT 0,
+			fencing_token INTEGER NOT NULL DEFAULT 0,
+			lease_until TEXT,
+			host_json TEXT NOT NULL DEFAULT '{}',
+			last_error TEXT NOT NULL DEFAULT '',
+			workflow_id TEXT NOT NULL DEFAULT '',
+			run_id TEXT NOT NULL DEFAULT '',
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL,
+			claimed_at TEXT,
+			discarded_at TEXT
+		)`,
+		`CREATE INDEX IF NOT EXISTS warm_runtime_pool_ready_idx ON warm_runtime_pool_items(pool_key, state, updated_at)`,
+		`CREATE INDEX IF NOT EXISTS warm_runtime_pool_owner_idx ON warm_runtime_pool_items(owner_id, state, updated_at)`,
 	}
 	for _, stmt := range statements {
 		if _, err := db.Exec(stmt); err != nil {
