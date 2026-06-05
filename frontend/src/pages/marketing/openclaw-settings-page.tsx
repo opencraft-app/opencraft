@@ -3848,6 +3848,7 @@ export const OpenClawSettingsPage = () => {
                   : []),
               ];
               const isRestartDisabled = resettingAcli || isActiveBotRestarting || activeBot.status !== "running";
+              const restartTooltip = resettingAcli ? t("请稍后") : t("重启");
               const hasViewedChannel = viewedChannelBotIds.has(activeBot.id);
               const resetBlockReason = getResetBlockReason(activeBot, resetting, hasViewedChannel);
               const resetDisabled = resettingAcli || resetting || resetBlockReason !== null;
@@ -3862,6 +3863,7 @@ export const OpenClawSettingsPage = () => {
                   ? t("请稍后")
                   : t("重置Agent");
               const deleteDisabled = resettingAcli;
+              const deleteTooltip = deleteDisabled ? t("请稍后") : t("删除");
 
               return (
                 <div className="grid items-start gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
@@ -3915,7 +3917,7 @@ export const OpenClawSettingsPage = () => {
                                 setShowRestartConfirm(true);
                               }}
                               aria-disabled={isRestartDisabled}
-                              aria-label={t("重启")}
+                              aria-label={restartTooltip}
                               className={cn(
                                 "inline-flex h-8 w-6 flex-shrink-0 items-center justify-center rounded-md transition-colors",
                                 isRestartDisabled
@@ -3929,7 +3931,7 @@ export const OpenClawSettingsPage = () => {
                               role="tooltip"
                               className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-md bg-black/80 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-sm transition-opacity duration-75 group-focus-within:opacity-100 group-hover:opacity-100"
                             >
-                              {t("重启")}
+                              {restartTooltip}
                               <span className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-x-[4px] border-t-[4px] border-x-transparent border-t-black/80" />
                             </span>
                           </span>
@@ -4000,7 +4002,7 @@ export const OpenClawSettingsPage = () => {
                                 setShowDeleteConfirm(true);
                               }}
                               aria-disabled={deleteDisabled}
-                              aria-label={t("删除")}
+                              aria-label={deleteTooltip}
                               className={cn(
                                 "inline-flex h-8 w-6 flex-shrink-0 items-center justify-center rounded-md transition-colors",
                                 deleteDisabled
@@ -4014,7 +4016,7 @@ export const OpenClawSettingsPage = () => {
                               role="tooltip"
                               className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-md bg-black/80 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-sm transition-opacity duration-75 group-focus-within:opacity-100 group-hover:opacity-100"
                             >
-                              {t("删除")}
+                              {deleteTooltip}
                               <span className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-x-[4px] border-t-[4px] border-x-transparent border-t-black/80" />
                             </span>
                           </span>
