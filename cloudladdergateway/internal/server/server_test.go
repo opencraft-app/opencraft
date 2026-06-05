@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -197,6 +198,75 @@ func TestGinHTTPRejectsUnsignedRequestWhenAuthEnabled(t *testing.T) {
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestGinHTTPExternalRouteForwardsToConfiguredUpstreamPath(t *testing.T) {
+	t.Setenv("TEST_CALLBACK_TOKEN", "callback-token")
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Path; got != "/auth/internal/tencentcloud/account" {
+			t.Fatalf("expected callback upstream path, got %s", got)
+		}
+		if got := r.Header.Get("X-Shadow-Callback-Token"); got != "callback-token" {
+			t.Fatalf("expected callback token header, got %q", got)
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		if got := string(body); got != `{"interface":{"interfaceName":"qcloud.saas.checkSaaSAccountExist"}}` {
+			t.Fatalf("unexpected body %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"returnCode":0}`))
+	}))
+	defer upstream.Close()
+
+	cfg := config.Config{
+		MaxBodyBytes: config.DefaultMaxBodyBytes,
+		Auth: config.AuthConfig{
+			Enabled:              true,
+			TimestampSkew:        "5m",
+			AllowUnauthenticated: []string{"tencentcloud-account-callback-sandbox-bj-7"},
+		},
+		Routes: []config.RouteConfig{{
+			ID: "tencentcloud-account-callback-sandbox-bj-7",
+			Upstream: config.UpstreamConfig{
+				BaseURL:        upstream.URL,
+				AllowedMethods: []string{http.MethodPost},
+				HeadersFromEnv: map[string]string{
+					"X-Shadow-Callback-Token": "TEST_CALLBACK_TOKEN",
+				},
+			},
+		}},
+		External: []config.ExternalRoute{{
+			Path:         "/internal/tencentcloud/account",
+			Methods:      []string{http.MethodPost},
+			RouteID:      "tencentcloud-account-callback-sandbox-bj-7",
+			UpstreamPath: "/auth/internal/tencentcloud/account",
+		}},
+	}
+	engine, err := proxy.NewEngine(cfg)
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+	authenticator, err := auth.New(cfg)
+	if err != nil {
+		t.Fatalf("new authenticator: %v", err)
+	}
+	router := NewGinRouter(engine, authenticator, config.DefaultMaxBodyBytes, cfg.External...)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/internal/tencentcloud/account", strings.NewReader(`{"interface":{"interfaceName":"qcloud.saas.checkSaaSAccountExist"}}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Body.String(); got != `{"returnCode":0}` {
+		t.Fatalf("unexpected body %q", got)
 	}
 }
 

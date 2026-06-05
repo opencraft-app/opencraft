@@ -9,10 +9,11 @@ import (
 	"github.com/gin-gonic/gin"
 	gatewayv1 "github.com/openclaw/openclaw/mono/cloudladdergateway/gen/cloudladdergateway/v1"
 	"github.com/openclaw/openclaw/mono/cloudladdergateway/internal/auth"
+	"github.com/openclaw/openclaw/mono/cloudladdergateway/internal/config"
 	"github.com/openclaw/openclaw/mono/cloudladdergateway/internal/proxy"
 )
 
-func NewGinRouter(engine *proxy.Engine, authenticator *auth.Authenticator, maxBodyBytes int64) *gin.Engine {
+func NewGinRouter(engine *proxy.Engine, authenticator *auth.Authenticator, maxBodyBytes int64, externalRoutes ...config.ExternalRoute) *gin.Engine {
 	router := gin.New()
 	router.UseEscapedPath = true
 	router.UnescapePathValues = false
@@ -26,7 +27,20 @@ func NewGinRouter(engine *proxy.Engine, authenticator *auth.Authenticator, maxBo
 	})
 	router.Any("/v1/proxy/:route_id/*path", invokeHTTP(engine, authenticator, maxBodyBytes))
 	router.Any("/v1/webhook/:route_id/*path", invokeHTTP(engine, authenticator, maxBodyBytes))
+	for _, externalRoute := range externalRoutes {
+		registerExternalRoute(router, externalRoute, invokeExternalHTTP(engine, authenticator, maxBodyBytes, externalRoute))
+	}
 	return router
+}
+
+func registerExternalRoute(router *gin.Engine, externalRoute config.ExternalRoute, handler gin.HandlerFunc) {
+	if len(externalRoute.Methods) == 0 {
+		router.Any(externalRoute.Path, handler)
+		return
+	}
+	for _, method := range externalRoute.Methods {
+		router.Handle(strings.ToUpper(strings.TrimSpace(method)), externalRoute.Path, handler)
+	}
 }
 
 func invokeHTTP(engine *proxy.Engine, authenticator *auth.Authenticator, maxBodyBytes int64) gin.HandlerFunc {
@@ -36,47 +50,65 @@ func invokeHTTP(engine *proxy.Engine, authenticator *auth.Authenticator, maxBody
 			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 			return
 		}
-		body, err := readHTTPBody(c.Request, maxBodyBytes)
-		if err != nil {
-			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": err.Error()})
-			return
-		}
-		if err := authenticator.Verify(auth.RequestFromHTTP(c.Request, routeID, c.Param("path"), body)); err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
-			return
-		}
-		req := proxy.Request{
-			RequestID:  firstHeader(c.Request.Header, "X-Request-ID", "X-CloudLadder-Request-ID"),
-			Caller:     firstHeader(c.Request.Header, "X-CloudLadder-Caller", "X-Caller", "X-Service-Name"),
-			RouteID:    routeID,
-			Method:     c.Request.Method,
-			Path:       c.Param("path"),
-			Query:      c.Request.URL.RawQuery,
-			Headers:    c.Request.Header.Clone(),
-			Body:       body,
-			Attributes: attributesFromHeaders(c.Request.Header),
-		}
-		resp, err := engine.Invoke(c.Request.Context(), req)
-		if err != nil {
-			status := http.StatusBadRequest
-			if errors.Is(err, proxy.ErrNoRoute) {
-				status = http.StatusNotFound
-			}
-			c.JSON(status, gin.H{"error": err.Error()})
-			return
-		}
-		for name, values := range resp.Headers {
-			if strings.EqualFold(name, "Content-Length") {
-				continue
-			}
-			for _, value := range values {
-				c.Writer.Header().Add(name, value)
-			}
-		}
-		c.Writer.Header().Set("X-CloudLadder-Upstream-URL", resp.UpstreamURL)
-		c.Writer.WriteHeader(resp.StatusCode)
-		_, _ = c.Writer.Write(resp.Body)
+		invokeResolvedHTTP(c, engine, authenticator, maxBodyBytes, routeID, c.Param("path"))
 	}
+}
+
+func invokeExternalHTTP(engine *proxy.Engine, authenticator *auth.Authenticator, maxBodyBytes int64, externalRoute config.ExternalRoute) gin.HandlerFunc {
+	upstreamPath := externalRoute.UpstreamPath
+	if upstreamPath == "" {
+		upstreamPath = externalRoute.Path
+	}
+	return func(c *gin.Context) {
+		if !engine.HasRoute(externalRoute.RouteID) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+			return
+		}
+		invokeResolvedHTTP(c, engine, authenticator, maxBodyBytes, externalRoute.RouteID, upstreamPath)
+	}
+}
+
+func invokeResolvedHTTP(c *gin.Context, engine *proxy.Engine, authenticator *auth.Authenticator, maxBodyBytes int64, routeID string, proxyPath string) {
+	body, err := readHTTPBody(c.Request, maxBodyBytes)
+	if err != nil {
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": err.Error()})
+		return
+	}
+	if err := authenticator.Verify(auth.RequestFromHTTP(c.Request, routeID, proxyPath, body)); err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+	req := proxy.Request{
+		RequestID:  firstHeader(c.Request.Header, "X-Request-ID", "X-CloudLadder-Request-ID"),
+		Caller:     firstHeader(c.Request.Header, "X-CloudLadder-Caller", "X-Caller", "X-Service-Name"),
+		RouteID:    routeID,
+		Method:     c.Request.Method,
+		Path:       proxyPath,
+		Query:      c.Request.URL.RawQuery,
+		Headers:    c.Request.Header.Clone(),
+		Body:       body,
+		Attributes: attributesFromHeaders(c.Request.Header),
+	}
+	resp, err := engine.Invoke(c.Request.Context(), req)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, proxy.ErrNoRoute) {
+			status = http.StatusNotFound
+		}
+		c.JSON(status, gin.H{"error": err.Error()})
+		return
+	}
+	for name, values := range resp.Headers {
+		if strings.EqualFold(name, "Content-Length") {
+			continue
+		}
+		for _, value := range values {
+			c.Writer.Header().Add(name, value)
+		}
+	}
+	c.Writer.Header().Set("X-CloudLadder-Upstream-URL", resp.UpstreamURL)
+	c.Writer.WriteHeader(resp.StatusCode)
+	_, _ = c.Writer.Write(resp.Body)
 }
 
 func firstHeader(headers http.Header, names ...string) string {

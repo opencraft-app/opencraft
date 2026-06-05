@@ -301,10 +301,10 @@ export function DocsSearch() {
           "text-sm text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]",
           "hover:border-[var(--border-strong)] transition-colors",
         )}
-        aria-label="搜索文档"
+        aria-label={isEnglish ? "Search Doc" : "搜索文档"}
       >
         <Search className="size-4 shrink-0" />
-        <span className="flex-1 text-left truncate">搜索文档…</span>
+        <span className="flex-1 text-left truncate">{isEnglish ? "Search Doc…" : "搜索文档…"}</span>
         <kbd className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded border border-[var(--border-subtle)] bg-white text-[10px] font-mono text-[var(--text-tertiary)] shrink-0">
           ⌘K
         </kbd>
@@ -321,7 +321,7 @@ export function DocsSearch() {
               "flex flex-col",
             )}
           >
-            <DialogPrimitive.Title className="sr-only">搜索文档</DialogPrimitive.Title>
+            <DialogPrimitive.Title className="sr-only">{isEnglish ? "Search Doc" : "搜索文档"}</DialogPrimitive.Title>
 
             {/* 输入区 */}
             <div className="flex items-center gap-2 px-4 py-3 border-b border-[var(--border-subtle)]">

@@ -34,6 +34,7 @@ CHANNELGATEWAY_PROJECT_ID=default
 CHANNELGATEWAY_OWNER_ID=channelgateway-local
 CHANNELGATEWAY_LISTEN_ADDR=:8094
 CHANNELGATEWAY_ACP_INITIALIZE_TIMEOUT=15s
+CHANNELGATEWAY_SESSION_IDLE_CLOSE=1m
 
 CHANNELGATEWAY_WECOM_ENABLED=true
 CHANNELGATEWAY_WECOM_ACCOUNT_ID=wecom-default
@@ -87,6 +88,21 @@ fencing token. Runner status is intentionally more precise than lease state:
 `leased` means the account owner has been claimed, `initializing_acp` means ACP
 handshake is in progress, and `running` means the WeCom adapter has started.
 
+`/readyz` is the Kubernetes readiness surface. It returns success only when the
+process is not draining and at least one account is either `running` or
+`standby_lease_held`. The standby state is intentional for rolling updates:
+a new pod must be considered ready once it can observe the shared store and is
+ready to take over, even while the old pod still owns the single WeCom lease.
+This avoids deadlocking a one-replica Deployment with `maxUnavailable: 0` while
+still preserving the one-owner channel lease contract.
+
+`CHANNELGATEWAY_SESSION_IDLE_CLOSE` controls proactive ACP session storage for
+channel conversations. The default is `1m`: if a conversation has an ACP session
+and no channel activity for that duration, the active channel owner calls
+standard ACP `session/close`. CloudAgent then emits workspace lifecycle storage
+events, and the channel callback may send the configured "sleep" notice. Set it
+to `0` to disable proactive idle close.
+
 ## WeCom Handshake Check
 
 Use the standalone handshake checker to verify WeCom AI Bot credentials without
@@ -116,7 +132,15 @@ GOWORK=off go run ./cmd/wecom-handshake-check --url wss://example.internal/ws
 Inbound message flow:
 
 ```text
-WeCom callback -> message dedup -> conversation/session_key -> ACP session/new or load -> session/prompt -> outbox -> WeCom send
+WeCom callback -> durable inbound job -> conversation/session_key -> ACP session/new or load -> session/prompt -> durable outbox -> WeCom send
 ```
 
 Database migrations live under `internal/store/migrations` and run at process start.
+
+Hot upgrade contract:
+
+- `channel_messages` is the inbound job ledger, not only a dedup table.
+- A runner must claim inbound jobs with the current channel lease fence before calling ACP.
+- Finished jobs are marked `done`; failed or interrupted jobs remain retryable.
+- New owners scan `received`, `failed`, and stale `processing` jobs after acquiring the channel lease.
+- `channel_outbox` remains the durable send ledger, so replies queued before a restart are sent by the next owner.

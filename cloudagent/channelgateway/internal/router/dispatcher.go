@@ -2,6 +2,8 @@ package router
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"log"
@@ -21,23 +23,36 @@ type Dispatcher struct {
 	cwd          string
 	callbacks    ChannelCallbacks
 	timeout      time.Duration
+	inboundLease store.ChannelLease
+	inboundStale time.Duration
 	sessionLocks sync.Map
 }
 
 type DispatcherOptions struct {
 	Callbacks      ChannelCallbacks
 	RequestTimeout time.Duration
+	InboundLease   store.ChannelLease
+	InboundStale   time.Duration
 }
 
 type SessionStore interface {
 	InsertInboundMessage(ctx context.Context, rec store.MessageRecord) (bool, error)
+	ClaimInboundMessage(ctx context.Context, lease store.ChannelLease, externalMessageID string, staleAfter time.Duration) (store.MessageRecord, bool, error)
+	MarkInboundMessageDone(ctx context.Context, lease store.ChannelLease, messageID, acpSessionID string) error
+	MarkInboundMessageFailed(ctx context.Context, lease store.ChannelLease, messageID, acpSessionID, detail string, retryAt time.Time) error
 	GetOrCreateConversation(ctx context.Context, conv store.Conversation) (store.Conversation, error)
+	LoadConversationBySessionKey(ctx context.Context, channelAccountID, sessionKey string) (store.Conversation, bool, error)
+	ListIdleOpenConversations(ctx context.Context, channelAccountID string, cutoff time.Time, limit int) ([]store.IdleConversation, error)
+	ConversationHasActiveInbound(ctx context.Context, channelAccountID, externalConversationID string) (bool, error)
+	FindConversationByACPSession(ctx context.Context, channelAccountID, acpSessionID string) (store.Conversation, bool, error)
 	BindACPSession(ctx context.Context, channelAccountID, sessionKey, acpSessionID string) error
+	MarkConversationRuntimeClosed(ctx context.Context, channelAccountID, sessionKey, acpSessionID string) error
 	EnqueueOutbox(ctx context.Context, rec store.OutboxRecord) (store.OutboxRecord, error)
 }
 
 type OutboxStore interface {
 	ClaimPendingOutbox(ctx context.Context, lease store.ChannelLease, limit int) ([]store.OutboxRecord, error)
+	MarkOutboxAbandoned(ctx context.Context, lease store.ChannelLease, outboxID, detail string) error
 	MarkOutboxFailed(ctx context.Context, lease store.ChannelLease, outboxID, detail string, retryAt time.Time) error
 	MarkOutboxSent(ctx context.Context, lease store.ChannelLease, outboxID string) error
 }
@@ -45,6 +60,8 @@ type OutboxStore interface {
 type ACPClient interface {
 	NewSession(ctx context.Context, cwd string) (string, error)
 	LoadSession(ctx context.Context, sessionID, cwd string) error
+	CloseSession(ctx context.Context, sessionID string) error
+	EnsureRuntimeReady(ctx context.Context, sessionID, cwd string) (acp.RuntimeReadyResult, error)
 	Prompt(ctx context.Context, sessionID, text string) (acp.PromptResult, error)
 }
 
@@ -61,12 +78,14 @@ func NewDispatcherWithOptions(st SessionStore, account store.ChannelAccount, cli
 		callbacks = DefaultChannelCallbacks{}
 	}
 	return &Dispatcher{
-		store:     st,
-		account:   account,
-		acp:       client,
-		cwd:       cwd,
-		callbacks: callbacks,
-		timeout:   opts.RequestTimeout,
+		store:        st,
+		account:      account,
+		acp:          client,
+		cwd:          cwd,
+		callbacks:    callbacks,
+		timeout:      opts.RequestTimeout,
+		inboundLease: normalizedInboundLease(account.ChannelAccountID, opts.InboundLease),
+		inboundStale: opts.InboundStale,
 	}
 }
 
@@ -79,7 +98,72 @@ func (d *Dispatcher) HandleInbound(ctx context.Context, msg channel.Message) err
 	return d.handleInbound(ctx, msg)
 }
 
-func (d *Dispatcher) handleInbound(ctx context.Context, msg channel.Message) error {
+func (d *Dispatcher) CloseIdleConversations(ctx context.Context, idleFor time.Duration, limit int) (int, error) {
+	if d == nil || d.store == nil || d.acp == nil {
+		return 0, errors.New("dispatcher is not configured")
+	}
+	if idleFor <= 0 {
+		return 0, nil
+	}
+	cutoff := time.Now().UTC().Add(-idleFor)
+	items, err := d.store.ListIdleOpenConversations(ctx, d.account.ChannelAccountID, cutoff, limit)
+	if err != nil {
+		return 0, err
+	}
+	closed := 0
+	for _, item := range items {
+		if strings.TrimSpace(item.SessionKey) == "" || strings.TrimSpace(item.ACPSessionID) == "" {
+			continue
+		}
+		sessionLock := d.lockForSessionKey(item.SessionKey)
+		sessionLock.Lock()
+		ok, err := d.closeIdleConversationLocked(ctx, item, cutoff)
+		sessionLock.Unlock()
+		if err != nil {
+			return closed, err
+		}
+		if ok {
+			closed++
+		}
+	}
+	return closed, nil
+}
+
+func (d *Dispatcher) closeIdleConversationLocked(ctx context.Context, item store.IdleConversation, cutoff time.Time) (bool, error) {
+	current, ok, err := d.store.LoadConversationBySessionKey(ctx, item.ChannelAccountID, item.SessionKey)
+	if err != nil || !ok {
+		return false, err
+	}
+	if current.ACPSessionID != item.ACPSessionID || strings.TrimSpace(current.RuntimeClosedAt) != "" {
+		return false, nil
+	}
+	updatedAt, err := time.Parse(time.RFC3339Nano, current.UpdatedAt)
+	if err != nil || updatedAt.After(cutoff) {
+		return false, nil
+	}
+	active, err := d.store.ConversationHasActiveInbound(ctx, current.ChannelAccountID, current.ExternalConversationID)
+	if err != nil || active {
+		return false, err
+	}
+	log.Printf("channelgateway session_trace account_id=%s agent_id=%s conversation_id=%s session_key=%s acp_session_id=%s idle_seconds=%.3f action=session_idle_close_start",
+		logValue(current.ChannelAccountID), logValue(d.account.AgentID), logValue(current.ConversationID),
+		logValue(current.SessionKey), logValue(current.ACPSessionID), time.Since(updatedAt).Seconds())
+	if err := d.acp.CloseSession(ctx, current.ACPSessionID); err != nil {
+		log.Printf("channelgateway session_trace account_id=%s agent_id=%s conversation_id=%s session_key=%s acp_session_id=%s action=session_idle_close_failed error=%s",
+			logValue(current.ChannelAccountID), logValue(d.account.AgentID), logValue(current.ConversationID),
+			logValue(current.SessionKey), logValue(current.ACPSessionID), logValue(err.Error()))
+		return false, err
+	}
+	if err := d.store.MarkConversationRuntimeClosed(ctx, current.ChannelAccountID, current.SessionKey, current.ACPSessionID); err != nil {
+		return false, err
+	}
+	log.Printf("channelgateway session_trace account_id=%s agent_id=%s conversation_id=%s session_key=%s acp_session_id=%s action=session_idle_close_done",
+		logValue(current.ChannelAccountID), logValue(d.account.AgentID), logValue(current.ConversationID),
+		logValue(current.SessionKey), logValue(current.ACPSessionID))
+	return true, nil
+}
+
+func (d *Dispatcher) handleInbound(ctx context.Context, msg channel.Message) (retErr error) {
 	startedAt := time.Now()
 	if d == nil || d.store == nil || d.acp == nil {
 		return errors.New("dispatcher is not configured")
@@ -93,6 +177,10 @@ func (d *Dispatcher) handleInbound(ctx context.Context, msg channel.Message) err
 	if msg.ReceivedAt.IsZero() {
 		msg.ReceivedAt = time.Now().UTC()
 	}
+	payload, err := json.Marshal(msg)
+	if err != nil {
+		return err
+	}
 	inserted, err := d.store.InsertInboundMessage(ctx, store.MessageRecord{
 		ChannelAccountID:       msg.ChannelAccountID,
 		ChannelType:            string(msg.ChannelType),
@@ -100,23 +188,47 @@ func (d *Dispatcher) handleInbound(ctx context.Context, msg channel.Message) err
 		ExternalConversationID: msg.ExternalConversationID,
 		Direction:              "inbound",
 		Status:                 "received",
-		PayloadJSON:            string(msg.Raw),
+		PayloadJSON:            string(payload),
 	})
 	if err != nil {
 		return err
 	}
+	inboundLease := d.inboundLeaseFor(msg.ChannelAccountID)
+	inbound, claimed, err := d.store.ClaimInboundMessage(ctx, inboundLease, msg.ExternalMessageID, d.inboundStale)
+	if err != nil {
+		return err
+	}
 	if !inserted {
-		log.Printf("channelgateway business_trace account_id=%s agent_id=%s message_id=%s action=dedup_skip",
-			logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(msg.ExternalMessageID))
+		if !claimed {
+			log.Printf("channelgateway business_trace account_id=%s agent_id=%s message_id=%s status=%s action=dedup_skip",
+				logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(msg.ExternalMessageID), logValue(inbound.Status))
+			return nil
+		}
+		log.Printf("channelgateway business_trace account_id=%s agent_id=%s message_id=%s status=%s action=inbound_reclaimed",
+			logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(msg.ExternalMessageID), logValue(inbound.Status))
+	}
+	if inserted && !claimed {
+		log.Printf("channelgateway business_trace account_id=%s agent_id=%s message_id=%s status=%s action=inbound_claim_skip",
+			logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(msg.ExternalMessageID), logValue(inbound.Status))
 		return nil
 	}
+	var sessionID string
+	defer func() {
+		if inbound.MessageID == "" {
+			return
+		}
+		if markErr := d.finishInboundMessage(ctx, inboundLease, inbound.MessageID, sessionID, retErr); markErr != nil && retErr == nil {
+			retErr = markErr
+		}
+	}()
 	log.Printf("channelgateway business_trace account_id=%s agent_id=%s message_id=%s chat_type=%s external_conversation_id=%s external_user_id=%s thread_id=%s action=inbound_received kind=%s",
 		logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(msg.ExternalMessageID),
 		logValue(string(msg.ChatType)), logValue(msg.ExternalConversationID), logValue(msg.ExternalUserID),
 		logValue(msg.ThreadID), logValue(string(msg.Kind)))
 	if msg.Kind != channel.MessageText || strings.TrimSpace(msg.Text) == "" {
-		_, err := d.enqueueTextReply(ctx, msg, "", "暂时只支持文本消息。")
-		return err
+		log.Printf("channelgateway business_trace account_id=%s agent_id=%s message_id=%s kind=%s action=unsupported_message_ignored",
+			logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(msg.ExternalMessageID), logValue(string(msg.Kind)))
+		return nil
 	}
 	sessionKey := channel.BuildSessionKey(d.account.AgentID, msg, true, false)
 	log.Printf("channelgateway session_trace account_id=%s agent_id=%s message_id=%s chat_type=%s external_conversation_id=%s external_user_id=%s thread_id=%s session_key=%s action=lookup",
@@ -142,7 +254,7 @@ func (d *Dispatcher) handleInbound(ctx context.Context, msg channel.Message) err
 	if command, ok := d.callbacksOrDefault().HandleCommand(msg.Text); ok {
 		return d.handleCommand(ctx, msg, conversation, command)
 	}
-	sessionID := conversation.ACPSessionID
+	sessionID = conversation.ACPSessionID
 	if sessionID == "" {
 		log.Printf("channelgateway session_trace account_id=%s agent_id=%s conversation_id=%s session_key=%s action=session_new reason=missing_acp_session",
 			logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(conversation.ConversationID), logValue(conversation.SessionKey))
@@ -179,6 +291,8 @@ func (d *Dispatcher) handleInbound(ctx context.Context, msg channel.Message) err
 			log.Printf("channelgateway session_trace account_id=%s agent_id=%s conversation_id=%s session_key=%s acp_session_id=%s action=session_bound reason=recreated",
 				logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(conversation.ConversationID),
 				logValue(conversation.SessionKey), logValue(sessionID))
+		} else if err := d.ensureRuntimeReady(ctx, msg, conversation, sessionID); err != nil {
+			return d.handleACPError(ctx, msg, conversation, sessionID, CallbackStageLoadSession, err)
 		}
 	}
 	promptStartedAt := time.Now()
@@ -226,6 +340,36 @@ func (d *Dispatcher) callbacksOrDefault() ChannelCallbacks {
 	return DefaultChannelCallbacks{}
 }
 
+func normalizedInboundLease(accountID string, lease store.ChannelLease) store.ChannelLease {
+	if strings.TrimSpace(lease.ChannelAccountID) == "" {
+		lease.ChannelAccountID = accountID
+	}
+	if strings.TrimSpace(lease.OwnerID) == "" {
+		lease.OwnerID = "local"
+	}
+	if lease.FencingToken <= 0 {
+		lease.FencingToken = 1
+	}
+	return lease
+}
+
+func (d *Dispatcher) inboundLeaseFor(accountID string) store.ChannelLease {
+	return normalizedInboundLease(accountID, d.inboundLease)
+}
+
+func (d *Dispatcher) finishInboundMessage(ctx context.Context, lease store.ChannelLease, messageID, sessionID string, retErr error) error {
+	finishCtx := ctx
+	var cancel context.CancelFunc
+	if ctx.Err() != nil {
+		finishCtx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+	}
+	if retErr != nil {
+		return d.store.MarkInboundMessageFailed(finishCtx, lease, messageID, sessionID, retErr.Error(), time.Now().UTC().Add(retryBackoff(0)))
+	}
+	return d.store.MarkInboundMessageDone(finishCtx, lease, messageID, sessionID)
+}
+
 func (d *Dispatcher) handleCommand(ctx context.Context, msg channel.Message, conversation store.Conversation, command CommandCallbackResult) error {
 	switch command.Action {
 	case CommandActionReset:
@@ -243,7 +387,7 @@ func (d *Dispatcher) handleCommand(ctx context.Context, msg channel.Message, con
 			logValue(conversation.SessionKey), logValue(sessionID))
 		reply := strings.TrimSpace(command.Reply)
 		if reply == "" {
-			reply = "已重新创建云端会话。你可以继续发送消息。"
+			reply = resetSessionReply
 		}
 		_, err = d.enqueueTextReply(ctx, msg, sessionID, reply)
 		return err
@@ -256,6 +400,9 @@ func (d *Dispatcher) handleACPError(ctx context.Context, msg channel.Message, co
 	log.Printf("channelgateway session_trace account_id=%s agent_id=%s conversation_id=%s session_key=%s acp_session_id=%s action=acp_error stage=%s error=%s",
 		logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(conversation.ConversationID),
 		logValue(conversation.SessionKey), logValue(sessionID), logValue(string(stage)), logValue(err.Error()))
+	if errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
+		return err
+	}
 	reply, ok := d.callbacksOrDefault().HandleACPError(stage, err)
 	if !ok || strings.TrimSpace(reply) == "" {
 		return err
@@ -270,6 +417,93 @@ func (d *Dispatcher) handleACPError(ctx context.Context, msg channel.Message, co
 		return enqueueErr
 	}
 	return nil
+}
+
+func (d *Dispatcher) ensureRuntimeReady(ctx context.Context, msg channel.Message, conversation store.Conversation, sessionID string) error {
+	ready, err := d.acp.EnsureRuntimeReady(ctx, sessionID, d.cwd)
+	if err != nil {
+		return err
+	}
+	if !ready.Changed {
+		return nil
+	}
+	log.Printf("channelgateway session_trace account_id=%s agent_id=%s conversation_id=%s session_key=%s acp_session_id=%s action=session_restored runtime_changed=true",
+		logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(conversation.ConversationID),
+		logValue(conversation.SessionKey), logValue(sessionID))
+	reply, ok := d.callbacksOrDefault().HandleSessionRestored(SessionRestoredEvent{
+		ChannelAccountID:       msg.ChannelAccountID,
+		ChannelType:            string(msg.ChannelType),
+		ExternalConversationID: msg.ExternalConversationID,
+		ExternalMessageID:      msg.ExternalMessageID,
+		ConversationID:         conversation.ConversationID,
+		SessionKey:             conversation.SessionKey,
+		ACPSessionID:           sessionID,
+		RuntimeChanged:         ready.Changed,
+	})
+	if !ok || strings.TrimSpace(reply) == "" {
+		return nil
+	}
+	_, err = d.enqueueTextReply(ctx, msg, sessionID, reply)
+	return err
+}
+
+func (d *Dispatcher) HandleWorkspaceLifecycle(ctx context.Context, event acp.WorkspaceLifecycleEvent) error {
+	if d == nil || d.store == nil {
+		return errors.New("dispatcher is not configured")
+	}
+	if event.Operation != "storage" || event.Status != "done" {
+		return nil
+	}
+	conversation, ok, err := d.store.FindConversationByACPSession(ctx, d.account.ChannelAccountID, event.SessionID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		log.Printf("channelgateway session_trace account_id=%s agent_id=%s acp_session_id=%s lifecycle_id=%s action=session_stored_skip reason=conversation_not_found",
+			logValue(d.account.ChannelAccountID), logValue(d.account.AgentID), logValue(event.SessionID), logValue(event.LifecycleID))
+		return nil
+	}
+	log.Printf("channelgateway session_trace account_id=%s agent_id=%s conversation_id=%s session_key=%s acp_session_id=%s lifecycle_id=%s action=session_stored operation=%s phase=%s status=%s",
+		logValue(conversation.ChannelAccountID), logValue(d.account.AgentID), logValue(conversation.ConversationID),
+		logValue(conversation.SessionKey), logValue(event.SessionID), logValue(event.LifecycleID),
+		logValue(event.Operation), logValue(event.Phase), logValue(event.Status))
+	reply, ok := d.callbacksOrDefault().HandleSessionStored(SessionStoredEvent{
+		ChannelAccountID:       conversation.ChannelAccountID,
+		ChannelType:            conversation.ChannelType,
+		ExternalConversationID: conversation.ExternalConversationID,
+		ConversationID:         conversation.ConversationID,
+		SessionKey:             conversation.SessionKey,
+		ACPSessionID:           event.SessionID,
+		Operation:              event.Operation,
+		Phase:                  event.Phase,
+		Status:                 event.Status,
+	})
+	if !ok || strings.TrimSpace(reply) == "" {
+		return nil
+	}
+	msg := channel.Message{
+		ChannelAccountID:       conversation.ChannelAccountID,
+		ChannelType:            channel.Type(conversation.ChannelType),
+		ExternalMessageID:      lifecycleMessageID(event),
+		ExternalConversationID: conversation.ExternalConversationID,
+		Kind:                   channel.MessageText,
+	}
+	_, err = d.enqueueTextReply(ctx, msg, event.SessionID, reply)
+	return err
+}
+
+func lifecycleMessageID(event acp.WorkspaceLifecycleEvent) string {
+	if strings.TrimSpace(event.LifecycleID) != "" {
+		return event.LifecycleID
+	}
+	return strings.Join([]string{
+		"lifecycle",
+		event.SessionID,
+		event.Operation,
+		event.Phase,
+		event.Status,
+		event.Timestamp,
+	}, ":")
 }
 
 func (d *Dispatcher) promptWithRuntimeRecovery(ctx context.Context, conversation store.Conversation, msg channel.Message, sessionID string) (acp.PromptResult, string, error) {
@@ -345,6 +579,7 @@ func (d *Dispatcher) enqueueTextReply(ctx context.Context, msg channel.Message, 
 		return store.OutboxRecord{}, err
 	}
 	outbox, err := d.store.EnqueueOutbox(ctx, store.OutboxRecord{
+		OutboxID:               replyOutboxID(msg, text),
 		ChannelAccountID:       msg.ChannelAccountID,
 		ChannelType:            string(msg.ChannelType),
 		ExternalConversationID: msg.ExternalConversationID,
@@ -363,20 +598,33 @@ func (d *Dispatcher) enqueueTextReply(ctx context.Context, msg channel.Message, 
 	return outbox, nil
 }
 
+func replyOutboxID(msg channel.Message, text string) string {
+	sum := sha256.Sum256([]byte(strings.Join([]string{
+		msg.ChannelAccountID,
+		string(msg.ChannelType),
+		msg.ExternalConversationID,
+		msg.ExternalMessageID,
+		text,
+	}, "\x00")))
+	return "out_reply_" + hex.EncodeToString(sum[:])[:32]
+}
+
 func defaultReplyForStopReason(reason string) string {
 	switch strings.TrimSpace(reason) {
 	case "", "end_turn":
 		return ""
 	case "cancelled":
-		return "当前任务已取消。"
+		return taskCancelledReply
 	default:
-		return "任务已结束。"
+		return taskEndedReply
 	}
 }
 
 type OutboxSender interface {
 	Send(ctx context.Context, reply channel.Reply) (channel.SendResult, error)
 }
+
+const maxOutboxRetries = 6
 
 func DrainOutbox(ctx context.Context, st OutboxStore, lease store.ChannelLease, sender OutboxSender, limit int) (int, error) {
 	if limit <= 0 {
@@ -393,6 +641,13 @@ func DrainOutbox(ctx context.Context, st OutboxStore, lease store.ChannelLease, 
 				logValue(item.ChannelAccountID), logValue(item.ExternalConversationID), logValue(item.ACPSessionID),
 				logValue(item.OutboxID), logValue(err.Error()))
 			_ = st.MarkOutboxFailed(ctx, lease, item.OutboxID, err.Error(), time.Now().UTC().Add(time.Minute))
+			continue
+		}
+		if item.RetryCount >= maxOutboxRetries {
+			log.Printf("channelgateway business_trace account_id=%s external_conversation_id=%s acp_session_id=%s outbox_id=%s action=outbox_abandoned retry_count=%d reason=retry_limit",
+				logValue(item.ChannelAccountID), logValue(item.ExternalConversationID), logValue(item.ACPSessionID),
+				logValue(item.OutboxID), item.RetryCount)
+			_ = st.MarkOutboxAbandoned(ctx, lease, item.OutboxID, "outbox retry limit reached")
 			continue
 		}
 		sendStartedAt := time.Now()

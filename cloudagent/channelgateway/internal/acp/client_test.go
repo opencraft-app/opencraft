@@ -208,6 +208,125 @@ func TestClientInitializeUsesNumericACPProtocolVersion(t *testing.T) {
 	}
 }
 
+func TestClientDispatchesWorkspaceLifecycleNotifications(t *testing.T) {
+	upgrader := websocket.Upgrader{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Errorf("upgrade: %v", err)
+			return
+		}
+		defer conn.Close()
+		_, raw, err := conn.ReadMessage()
+		if err != nil {
+			t.Errorf("read initialize: %v", err)
+			return
+		}
+		var req struct {
+			ID     int64  `json:"id"`
+			Method string `json:"method"`
+		}
+		if err := json.Unmarshal(raw, &req); err != nil {
+			t.Errorf("decode request: %v", err)
+			return
+		}
+		if req.Method != "initialize" {
+			t.Errorf("first request method = %q", req.Method)
+			return
+		}
+		writeJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{}})
+		writeJSON(t, conn, map[string]any{
+			"jsonrpc": "2.0",
+			"method":  "_cloudagent.workspace.lifecycle",
+			"params": map[string]any{
+				"session_id":   "session-a",
+				"generation":   2,
+				"operation":    "storage",
+				"phase":        "cleanup",
+				"status":       "done",
+				"label":        "Workspace stored",
+				"elapsed_ms":   123,
+				"lifecycle_id": "storage:session-a:cleanup",
+				"timestamp":    "2026-06-04T00:00:00Z",
+			},
+		})
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+	client := NewClient("ws"+server.URL[len("http"):], nil)
+	defer client.Close()
+	events := make(chan WorkspaceLifecycleEvent, 1)
+	client.SetWorkspaceLifecycleHandler(func(event WorkspaceLifecycleEvent) {
+		events <- event
+	})
+	if err := client.Initialize(context.Background()); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	select {
+	case event := <-events:
+		if event.SessionID != "session-a" || event.Generation != 2 || event.Operation != "storage" || event.Status != "done" || event.LifecycleID != "storage:session-a:cleanup" {
+			t.Fatalf("unexpected lifecycle event: %#v", event)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for lifecycle event")
+	}
+}
+
+func TestClientCloseSessionCallsStandardACPMethod(t *testing.T) {
+	seen := make(chan map[string]any, 1)
+	upgrader := websocket.Upgrader{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Errorf("upgrade: %v", err)
+			return
+		}
+		defer conn.Close()
+		for {
+			_, raw, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			var req struct {
+				ID     int64          `json:"id"`
+				Method string         `json:"method"`
+				Params map[string]any `json:"params"`
+			}
+			if err := json.Unmarshal(raw, &req); err != nil {
+				t.Errorf("decode request: %v", err)
+				return
+			}
+			switch req.Method {
+			case "initialize":
+				writeJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{}})
+			case "session/close":
+				seen <- req.Params
+				writeJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{}})
+			default:
+				writeJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32601, "message": "not found"}})
+			}
+		}
+	}))
+	defer server.Close()
+	client := NewClient("ws"+server.URL[len("http"):], nil)
+	defer client.Close()
+	ctx := context.Background()
+	if err := client.Initialize(ctx); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	if err := client.CloseSession(ctx, "session-close"); err != nil {
+		t.Fatalf("close session: %v", err)
+	}
+	select {
+	case params := <-seen:
+		if params["sessionId"] != "session-close" {
+			t.Fatalf("unexpected close params: %#v", params)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("server did not receive session/close")
+	}
+}
+
 func TestClientSerializesConcurrentPrompts(t *testing.T) {
 	var activePrompts atomic.Int64
 	var maxActivePrompts atomic.Int64

@@ -1,37 +1,49 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - statefulsetplus.yaml
-
+- service.yaml
+- service-testing.yaml
+- ingress.yaml
+- ingress-testing.yaml
+- statefulsetplus.yaml
+- statefulsetplus-testing.yaml
 generators:
-  - ksops-secret-generator.yaml
-
+- ksops-secret-generator.yaml
+- ksops-callback-secret-generator.yaml
 generatorOptions:
   disableNameSuffixHash: true
-
 configMapGenerator:
-  - name: cloudladdergateway-platform-values
-    envs:
-      - cloudladdergateway-platform.env
-
+- name: cloudladdergateway-platform-values
+  envs:
+  - cloudladdergateway-platform.env
 replacements:
-  - source:
-      kind: ConfigMap
-      name: cloudladdergateway-platform-values
-      fieldPath: data.CLOUDLADDERGATEWAY_IMAGE
-    targets:
-      - select:
-          kind: StatefulSetPlus
-          name: lightvela-proxy
-        fieldPaths:
-          - spec.template.spec.containers.0.image
-  - source:
-      kind: ConfigMap
-      name: cloudladdergateway-platform-values
-      fieldPath: data.CLOUDLADDERGATEWAY_DEPLOYED_AT
-    targets:
-      - select:
-          kind: StatefulSetPlus
-          name: lightvela-proxy
-        fieldPaths:
-          - spec.template.metadata.annotations.[cloudladdergateway.lightvela.com/redeploy-at]
+- source:
+    kind: ConfigMap
+    name: cloudladdergateway-platform-values
+    fieldPath: data.CLOUDLADDERGATEWAY_IMAGE
+  targets:
+  - select:
+      kind: StatefulSetPlus
+      name: lightvela-proxy
+    fieldPaths:
+    - spec.template.spec.containers.0.image
+  - select:
+      kind: StatefulSetPlus
+      name: lightvela-proxy-testing
+    fieldPaths:
+    - spec.template.spec.containers.0.image
+- source:
+    kind: ConfigMap
+    name: cloudladdergateway-platform-values
+    fieldPath: data.CLOUDLADDERGATEWAY_DEPLOYED_AT
+  targets:
+  - select:
+      kind: StatefulSetPlus
+      name: lightvela-proxy
+    fieldPaths:
+    - spec.template.metadata.annotations.[cloudladdergateway.lightvela.com/redeploy-at]
+  - select:
+      kind: StatefulSetPlus
+      name: lightvela-proxy-testing
+    fieldPaths:
+    - spec.template.metadata.annotations.[cloudladdergateway.lightvela.com/redeploy-at]

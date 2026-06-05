@@ -35,22 +35,23 @@ func TestExampleConfigLoads(t *testing.T) {
 		t.Fatalf("load example config: %v", err)
 	}
 	wantRoutes := map[string]bool{
-		"billing-trade-cn-test":   false,
-		"billing-trade-cn-pre":    false,
-		"billing-trade-cn-prod":   false,
-		"billing-trade-intl-test": false,
-		"billing-trade-intl-pre":  false,
-		"billing-trade-intl-prod": false,
-		"tcapi-account-cn-dev":    false,
-		"tcapi-billing-cn-dev":    false,
-		"tcapi-account-cn-test":   false,
-		"tcapi-cam-cn-test":       false,
-		"tcapi-sts-cn-test":       false,
-		"jifei-test":              false,
-		"shadow-account-test":     false,
-		"shadow-cam-test":         false,
-		"shadow-sts-test":         false,
-		"shadow-billing-api-test": false,
+		"billing-trade-cn-test":                      false,
+		"billing-trade-cn-pre":                       false,
+		"billing-trade-cn-prod":                      false,
+		"billing-trade-intl-test":                    false,
+		"billing-trade-intl-pre":                     false,
+		"billing-trade-intl-prod":                    false,
+		"tcapi-account-cn-dev":                       false,
+		"tcapi-billing-cn-dev":                       false,
+		"tcapi-account-cn-test":                      false,
+		"tcapi-cam-cn-test":                          false,
+		"tcapi-sts-cn-test":                          false,
+		"jifei-test":                                 false,
+		"shadow-account-test":                        false,
+		"shadow-cam-test":                            false,
+		"shadow-sts-test":                            false,
+		"shadow-billing-api-test":                    false,
+		"tencentcloud-account-callback-sandbox-bj-7": false,
 	}
 	for _, route := range cfg.Routes {
 		if _, ok := wantRoutes[route.ID]; ok {
@@ -67,6 +68,8 @@ func TestExampleConfigLoads(t *testing.T) {
 				wantBackend = "tcapi-sts-cn-test"
 			case "shadow-billing-api-test":
 				wantBackend = "tcapi-billing-cn-dev"
+			case "tencentcloud-account-callback-sandbox-bj-7":
+				wantBackend = "lightclaw-auth-sandbox-bj-7"
 			}
 			if route.Upstream.Backend != wantBackend {
 				t.Fatalf("route %q should use matching backend alias, got %q", route.ID, route.Upstream.Backend)
@@ -80,6 +83,9 @@ func TestExampleConfigLoads(t *testing.T) {
 		if !found {
 			t.Fatalf("example config missing route %q", routeID)
 		}
+	}
+	if len(cfg.External) != 1 || cfg.External[0].Path != "/internal/tencentcloud/account" {
+		t.Fatalf("example config missing TencentCloud callback external route: %+v", cfg.External)
 	}
 }
 

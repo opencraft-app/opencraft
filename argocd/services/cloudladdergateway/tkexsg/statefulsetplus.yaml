@@ -62,6 +62,11 @@ spec:
             secretKeyRef:
               name: cloudladdergateway-runtime-secrets
               key: CLOUDLADDER_SHADOW_HMAC_SECRET
+        - name: CLOUDLADDER_TENCENT_CALLBACK_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: cloudladdergateway-callback-secrets
+              key: CLOUDLADDER_TENCENT_CALLBACK_TOKEN
         image: csighub.tencentyun.com/skipzhang/cloudladdergateway:604530a7c2ad
         imagePullPolicy: Always
         name: lightvela-proxy

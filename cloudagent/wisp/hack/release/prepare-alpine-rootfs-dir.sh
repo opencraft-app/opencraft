@@ -36,7 +36,13 @@ docker run --rm --platform "$platform" \
     apk --root /rootfs --initdb --no-cache \
       --repository "$APK_REPOSITORY/main" \
       --repository "$APK_REPOSITORY/community" \
-      add ca-certificates gcompat libc6-compat >/dev/null
+      add \
+        ca-certificates gcompat libc6-compat tzdata \
+        bash coreutils findutils grep sed gawk \
+        curl wget jq git openssl \
+        tar gzip xz zstd unzip \
+        procps-ng iproute2 bind-tools \
+        >/dev/null
     mkdir -p /rootfs/proc /rootfs/dev/pts /rootfs/dev/shm /rootfs/dev/mqueue /rootfs/sys/fs/cgroup /rootfs/run /rootfs/mnt /rootfs/tmp /rootfs/var/lib/docker /rootfs/root /rootfs/home/root
     chmod 1777 /rootfs/tmp
     cp /etc/resolv.conf /rootfs/etc/resolv.conf

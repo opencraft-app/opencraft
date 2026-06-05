@@ -15,7 +15,7 @@ from typing import Any, Sequence
 from contracts.bundles import DEFAULT_MANIFEST_PATH, is_playground_env, load_bundle, load_manifest
 
 
-PREPROD_AUTO_SYNC_ENVS = {"beijing-sandbox", "beijing-sandbox-2"}
+PREPROD_AUTO_SYNC_ENVS = {"beijing-sandbox", "beijing-sandbox-2", "devcloud-dep"}
 PROD_MANUAL_SYNC_ENVS = {"shprod", "sgprod"}
 DEPENDENCY_CHANGE_IGNORED_BASENAMES = {".ci-trigger"}
 

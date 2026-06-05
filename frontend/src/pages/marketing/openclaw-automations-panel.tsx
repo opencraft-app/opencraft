@@ -20,6 +20,7 @@ import { createPortal } from "react-dom";
 import { parseHermesChannelList } from "@tencent/tea-sdk-lightclaw";
 import { useT } from "@/i18n/t";
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
+import { isGlobal } from "@/lib/region";
 import {
   AUTH_UNAUTHORIZED_EVENT,
   readStoredAuthToken,
@@ -759,7 +760,10 @@ function formatDeliverFallback(deliver: string, t: ReturnType<typeof useT>): str
 function getDeliverPlatformLabel(platform: string, t: ReturnType<typeof useT>): string {
   if (platform === "qqbot") return "QQ";
   if (platform === "feishu") return t("飞书");
-  if (platform === "weixin") return t("微信");
+  if (platform === "weixin") return isGlobal ? "WeChat" : t("微信");
+  if (platform === "telegram") return "Telegram";
+  if (platform === "whatsapp") return "WhatsApp";
+  if (platform === "discord") return "Discord";
   return platform;
 }
 
@@ -1566,20 +1570,36 @@ function AutomationFormModal({
           </div>
         </div>
 
-        {/* 通知方式（多选；不勾任何 = 仅本地写日志） */}
+        {/* 通知方式（多选；不勾任何 = 仅本地写日志）
+         *
+         * 区域可见性：
+         *   - 国内站（isCN）：weixin / qqbot / feishu
+         *   - 国际站（isGlobal）：weixin / telegram / whatsapp / discord(coming soon)
+         *
+         * Discord 在 Hermes runtime 还没有可用的 deliver 通路，先以「即将推出 /
+         * To be released」灰显占位，不允许勾选；后续 runtime 支持后改为可选即可。
+         */}
         <div className="mt-4">
           <label className="block text-sm font-medium text-black/80">
             {t("通知方式")}<span className="ml-1 text-xs font-normal text-black/40">{t("（可选）")}</span>
           </label>
           <div className="mt-2 space-y-2">
             {(
-              [
-                { key: "weixin", label: t("微信") },
-                { key: "qqbot", label: "QQ" },
-                { key: "feishu", label: t("飞书") },
-              ] as const
-            ).map(({ key, label }) => {
-              const configured = enabledChannels === null || enabledChannels.has(key);
+              isGlobal
+                ? ([
+                    { key: "telegram", label: "Telegram", comingSoon: false },
+                    { key: "whatsapp", label: "WhatsApp", comingSoon: false },
+                    { key: "discord", label: "Discord", comingSoon: true },
+                    { key: "weixin", label: "WeChat", comingSoon: false },
+                  ] as const)
+                : ([
+                    { key: "weixin", label: t("微信"), comingSoon: false },
+                    { key: "qqbot", label: "QQ", comingSoon: false },
+                    { key: "feishu", label: t("飞书"), comingSoon: false },
+                  ] as const)
+            ).map(({ key, label, comingSoon }) => {
+              // comingSoon 通道一律强制为「不可配置」，无论 acli channel status 怎么报
+              const configured = !comingSoon && (enabledChannels === null || enabledChannels.has(key));
               const selected = deliverPlatforms.includes(key);
               return (
                 <div key={key}>
@@ -1607,7 +1627,11 @@ function AutomationFormModal({
                     />
                     <span className="text-base leading-6">
                       {label}
-                      {!configured && <span className="ml-1 text-xs">{t("（未配置）")}</span>}
+                      {comingSoon ? (
+                        <span className="ml-1 text-xs">{t("（即将推出）")}</span>
+                      ) : (
+                        !configured && <span className="ml-1 text-xs">{t("（未配置）")}</span>
+                      )}
                     </span>
                     {selected && key === "weixin" && (
                       <span className="text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
@@ -1667,6 +1691,7 @@ function AutomationFormModal({
                       </div>
                     </div>
                   )}
+
                 </div>
               );
             })}

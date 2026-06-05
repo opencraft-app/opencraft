@@ -70,6 +70,11 @@ spec:
             secretKeyRef:
               key: CLOUDLADDER_SHADOW_HMAC_SECRET
               name: cloudladdergateway-runtime-secrets
+        - name: CLOUDLADDER_TENCENT_CALLBACK_TOKEN
+          valueFrom:
+            secretKeyRef:
+              key: CLOUDLADDER_TENCENT_CALLBACK_TOKEN
+              name: cloudladdergateway-callback-secrets
         image: csighub.tencentyun.com/skipzhang/cloudladdergateway:604530a7c2ad
         imagePullPolicy: Always
         name: gateway

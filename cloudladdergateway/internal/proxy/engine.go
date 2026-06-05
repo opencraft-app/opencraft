@@ -64,6 +64,7 @@ type Upstream struct {
 	Timeout        time.Duration
 	AllowedMethods []string
 	Headers        map[string]string
+	HeadersFromEnv map[string]string
 	TrustedHost    string
 	TrustedScheme  string
 }
@@ -109,6 +110,7 @@ func NewEngine(cfg config.Config, opts ...EngineOption) (*Engine, error) {
 			Timeout:        timeout,
 			AllowedMethods: normalizeMethods(upstreamCfg.AllowedMethods),
 			Headers:        cloneStringMap(upstreamCfg.Headers),
+			HeadersFromEnv: cloneStringMap(upstreamCfg.HeadersFromEnv),
 		}
 		upstream.TrustedHost, upstream.TrustedScheme = signedTunnelTrustedHost(upstreamCfg)
 		if upstream.Scheme == "" {
@@ -221,6 +223,9 @@ func (e *Engine) Invoke(ctx context.Context, req Request) (Response, error) {
 	} else {
 		for name, value := range route.Upstream.Headers {
 			setRequestHeader(httpReq, name, value)
+		}
+		for name, envName := range route.Upstream.HeadersFromEnv {
+			setRequestHeader(httpReq, name, os.Getenv(envName))
 		}
 		httpReq.Header.Set("X-CloudLadder-Route", route.ID)
 	}

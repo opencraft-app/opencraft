@@ -16,5 +16,4 @@ use (
 	./vibebase
 	./cloudagent/acp-client
 	./cloudagent/gateway
-	./workspace
 )
