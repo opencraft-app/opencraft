@@ -34,7 +34,13 @@ spec:
           image: "{{ $.Values.admintools.image.repository }}:{{ $.Values.admintools.image.tag }}"
           imagePullPolicy: {{ $.Values.admintools.image.pullPolicy }}
           command: ['/bin/sh', '-c']
-          args: ['temporal operator namespace describe -n {{ $namespace.name }} || temporal operator namespace create -n {{ $namespace.name }}{{- if hasKey $namespace "retention" }} --retention {{ $namespace.retention }}{{- end }}']
+          args:
+            - |
+              until temporal operator cluster health; do
+                echo "waiting for Temporal frontend"
+                sleep 5
+              done
+              temporal operator namespace describe -n {{ $namespace.name }} || temporal operator namespace create -n {{ $namespace.name }}{{- if hasKey $namespace "retention" }} --retention {{ $namespace.retention }}{{- end }}
           env:
             - name: TEMPORAL_ADDRESS
               {{- if (index $.Values.server "internal-frontend").enabled }}

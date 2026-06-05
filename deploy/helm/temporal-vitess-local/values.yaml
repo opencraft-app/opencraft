@@ -210,4 +210,5 @@ temporal:
   web:
     enabled: true
   test:
+    enabled: true
     resources: {}
