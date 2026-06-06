@@ -21,11 +21,12 @@ const (
 )
 
 type TemporalConfig struct {
-	Address   string
-	Namespace string
-	TaskQueue string
-	TLS       bool
-	AuthToken string
+	Address       string
+	Namespace     string
+	TaskQueue     string
+	TLS           bool
+	TLSServerName string
+	AuthToken     string
 }
 
 type ReconcileInput struct {
@@ -51,11 +52,12 @@ type Activities struct {
 
 func ConfigFromEnv() TemporalConfig {
 	return TemporalConfig{
-		Address:   strings.TrimSpace(os.Getenv("TEMPORAL_ADDRESS")),
-		Namespace: firstNonEmptyEnv("TEMPORAL_NAMESPACE", "default"),
-		TaskQueue: firstNonEmptyEnv("TEMPORAL_TASK_QUEUE", DefaultTaskQueue),
-		TLS:       envFlag("TEMPORAL_TLS"),
-		AuthToken: strings.TrimSpace(os.Getenv("TEMPORAL_AUTH_TOKEN")),
+		Address:       strings.TrimSpace(os.Getenv("TEMPORAL_ADDRESS")),
+		Namespace:     firstNonEmptyEnv("TEMPORAL_NAMESPACE", "default"),
+		TaskQueue:     firstNonEmptyEnv("TEMPORAL_TASK_QUEUE", DefaultTaskQueue),
+		TLS:           envFlag("TEMPORAL_TLS"),
+		TLSServerName: strings.TrimSpace(os.Getenv("TEMPORAL_TLS_SERVER_NAME")),
+		AuthToken:     strings.TrimSpace(os.Getenv("TEMPORAL_AUTH_TOKEN")),
 	}
 }
 
@@ -71,7 +73,7 @@ func Dial(ctx context.Context, cfg TemporalConfig) (client.Client, error) {
 		Namespace: cfg.Namespace,
 	}
 	if cfg.TLS {
-		opts.ConnectionOptions.TLS = &tls.Config{MinVersion: tls.VersionTLS12}
+		opts.ConnectionOptions.TLS = &tls.Config{MinVersion: tls.VersionTLS12, ServerName: cfg.TLSServerName}
 	}
 	if cfg.AuthToken != "" {
 		opts.Credentials = client.NewAPIKeyStaticCredentials(cfg.AuthToken)
