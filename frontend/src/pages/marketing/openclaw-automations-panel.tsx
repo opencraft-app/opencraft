@@ -2047,26 +2047,36 @@ function RecurringPicker({
   onMonthdays: (v: number[]) => void;
 }) {
   const t = useT();
+  const [periodPickerOpen, setPeriodPickerOpen] = useState(false);
   const [weekdayPickerOpen, setWeekdayPickerOpen] = useState(false);
   const [monthdayPickerOpen, setMonthdayPickerOpen] = useState(false);
+  const periodPickerRef = useRef<HTMLDivElement | null>(null);
   const weekdayPickerRef = useRef<HTMLDivElement | null>(null);
   const monthdayPickerRef = useRef<HTMLDivElement | null>(null);
+  const periodOptions: Array<{ value: RecurringPeriod; label: string }> = [
+    { value: "daily", label: t("每天") },
+    { value: "weekly", label: t("每周") },
+    { value: "monthly", label: t("每月") },
+  ];
+  const periodLabel = periodOptions.find((option) => option.value === period)?.label ?? t("每天");
   const weekdayLabels = getWeekdayLabels(t);
   const selectedWeekdays = normalizeWeekdays(weekdays);
   const selectedMonthdays = normalizeMonthdays(monthdays);
   useEffect(() => {
-    if (!weekdayPickerOpen && !monthdayPickerOpen) return;
+    if (!periodPickerOpen && !weekdayPickerOpen && !monthdayPickerOpen) return;
     const handlePointerDown = (event: PointerEvent) => {
       const target = event.target;
       if (!(target instanceof Node)) return;
+      if (periodPickerRef.current?.contains(target)) return;
       if (weekdayPickerRef.current?.contains(target)) return;
       if (monthdayPickerRef.current?.contains(target)) return;
+      setPeriodPickerOpen(false);
       setWeekdayPickerOpen(false);
       setMonthdayPickerOpen(false);
     };
     document.addEventListener("pointerdown", handlePointerDown);
     return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, [monthdayPickerOpen, weekdayPickerOpen]);
+  }, [monthdayPickerOpen, periodPickerOpen, weekdayPickerOpen]);
   const toggleWeekday = useCallback((day: number) => {
     // 至少保留 1 天：取消最后一个选中项时直接忽略，避免 normalizeWeekdays 静默兜底为周一
     if (selectedWeekdays.length === 1 && selectedWeekdays[0] === day) return;
@@ -2085,18 +2095,48 @@ function RecurringPicker({
   }, [onMonthdays, selectedMonthdays]);
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <div className="relative w-[112px]">
-        <select
-          value={period}
-          onChange={(e) => onPeriod(e.target.value as RecurringPeriod)}
+      <div ref={periodPickerRef} className="relative w-[112px]">
+        <button
+          type="button"
+          onClick={() => setPeriodPickerOpen((open) => !open)}
           style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
-          className="w-full appearance-none rounded-lg border border-black/10 bg-white px-3 py-2 pr-10 text-sm focus:border-black/30 focus:outline-none"
+          className="flex min-h-[42px] w-full items-center justify-between rounded-lg border border-black/10 bg-white px-3 py-2 text-left text-sm focus:border-black/30 focus:outline-none"
+          aria-haspopup="listbox"
+          aria-expanded={periodPickerOpen}
         >
-          <option value="daily">{t("每天")}</option>
-          <option value="weekly">{t("每周")}</option>
-          <option value="monthly">{t("每月")}</option>
-        </select>
-        <ChevronDown className="pointer-events-none absolute right-5 top-1/2 h-4 w-4 -translate-y-1/2 text-black/80" />
+          <span>{periodLabel}</span>
+          <ChevronDown className="h-4 w-4 text-black/80" />
+        </button>
+        {periodPickerOpen && (
+          <div
+            className="absolute left-0 top-[calc(100%+6px)] z-10 w-[132px] rounded-xl border border-black/10 bg-white p-1.5 shadow-xl"
+            role="listbox"
+          >
+            {periodOptions.map((option) => {
+              const checked = option.value === period;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => {
+                    onPeriod(option.value);
+                    setPeriodPickerOpen(false);
+                  }}
+                  className={
+                    "flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm transition " +
+                    (checked
+                      ? "bg-black text-white"
+                      : "text-black/70 hover:bg-black/[0.04] hover:text-black")
+                  }
+                  role="option"
+                  aria-selected={checked}
+                >
+                  <span>{option.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
       {period === "weekly" && (
         <div ref={weekdayPickerRef} className="relative min-w-[220px] max-w-full">
