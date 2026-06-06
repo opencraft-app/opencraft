@@ -2122,8 +2122,9 @@ function RecurringPicker({
                     onPeriod(option.value);
                     setPeriodPickerOpen(false);
                   }}
+                  style={{ fontSize: "12px", lineHeight: "20px" }}
                   className={
-                    "flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm transition " +
+                    "flex w-full items-center justify-between rounded-lg px-3 py-2 transition " +
                     (checked
                       ? "bg-black text-white"
                       : "text-black/70 hover:bg-black/[0.04] hover:text-black")
