@@ -2100,26 +2100,54 @@ function RecurringPicker({
       </div>
       {period === "weekly" && (
         <div ref={weekdayPickerRef} className="relative min-w-[220px] max-w-full">
-          <button
-            type="button"
-            onClick={() => setWeekdayPickerOpen((open) => !open)}
+          <div
+            className="flex min-h-[42px] w-full items-center gap-1.5 rounded-lg border border-black/10 bg-white px-2.5 py-1.5 pr-9 text-left text-sm focus-within:border-black/30"
             style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
-            className="flex min-h-[42px] w-full items-center gap-1.5 rounded-lg border border-black/10 bg-white px-2.5 py-1.5 pr-9 text-left text-sm focus:border-black/30 focus:outline-none"
-            aria-haspopup="listbox"
-            aria-expanded={weekdayPickerOpen}
           >
-            <span className="flex flex-wrap items-center gap-1.5">
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => setWeekdayPickerOpen((open) => !open)}
+              className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-left focus:outline-none"
+              aria-haspopup="listbox"
+              aria-expanded={weekdayPickerOpen}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter" && event.key !== " ") return;
+                event.preventDefault();
+                setWeekdayPickerOpen((open) => !open);
+              }}
+            >
               {selectedWeekdays.map((day) => (
                 <span
                   key={day}
-                  className="inline-flex h-7 items-center rounded-full bg-black px-3 text-sm font-medium leading-none text-white"
+                  className="inline-flex h-6 items-center gap-1 rounded-full bg-black px-2.5 text-xs font-medium leading-none text-white"
                 >
                   {weekdayLabels[day]}
+                  {selectedWeekdays.length > 1 && (
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      className="-mr-1 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full text-white/80 hover:bg-white/15 hover:text-white"
+                      aria-label={`${weekdayLabels[day]} ×`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        toggleWeekday(day);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key !== "Enter" && event.key !== " ") return;
+                        event.preventDefault();
+                        event.stopPropagation();
+                        toggleWeekday(day);
+                      }}
+                    >
+                      <X className="h-2.5 w-2.5" />
+                    </span>
+                  )}
                 </span>
               ))}
-            </span>
-          </button>
-          <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-black/80" />
+            </div>
+          </div>
+          <ChevronDown className="pointer-events-none absolute right-3 top-[21px] h-4 w-4 -translate-y-1/2 text-black/80" />
           {weekdayPickerOpen && (
             <div
               className="absolute left-0 top-[calc(100%+6px)] z-10 w-[260px] rounded-xl border border-black/10 bg-white p-2 shadow-xl"
