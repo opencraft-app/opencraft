@@ -2139,7 +2139,7 @@ function RecurringPicker({
         )}
       </div>
       {period === "weekly" && (
-        <div ref={weekdayPickerRef} className="relative min-w-[220px] max-w-full">
+        <div ref={weekdayPickerRef} className="relative w-[340px] max-w-full">
           <div
             onClick={() => setWeekdayPickerOpen((open) => !open)}
             className="flex min-h-[42px] w-full items-center gap-1.5 rounded-lg border border-black/10 bg-white px-2.5 py-1.5 pr-9 text-left text-sm focus-within:border-black/30"
@@ -2228,7 +2228,7 @@ function RecurringPicker({
         </div>
       )}
       {period === "monthly" && (
-        <div ref={monthdayPickerRef} className="relative min-w-[300px] max-w-full">
+        <div ref={monthdayPickerRef} className="relative w-[340px] max-w-full">
           <div
             onClick={() => setMonthdayPickerOpen((open) => !open)}
             className="flex min-h-[42px] w-full items-center gap-1.5 rounded-lg border border-black/10 bg-white px-2.5 py-1.5 pr-9 text-left text-sm focus-within:border-black/30"
