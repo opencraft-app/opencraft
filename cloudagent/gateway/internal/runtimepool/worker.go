@@ -2,7 +2,9 @@ package runtimepool
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -46,8 +48,9 @@ type ReconcileStatus struct {
 }
 
 type Activities struct {
-	Store  wrapper.WarmRuntimePoolStore
-	Worker *wrapper.AgentSidecarWorker
+	Store           wrapper.WarmRuntimePoolStore
+	Worker          *wrapper.AgentSidecarWorker
+	ExpectedPoolKey string
 }
 
 func ConfigFromEnv() TemporalConfig {
@@ -84,6 +87,19 @@ func Dial(ctx context.Context, cfg TemporalConfig) (client.Client, error) {
 func Register(w worker.Worker, activities *Activities) {
 	w.RegisterWorkflow(WarmRuntimePoolWorkflow)
 	w.RegisterActivity(activities.EnsureWarmRuntimePool)
+}
+
+func WorkflowIDForPool(base, poolKey string) string {
+	base = strings.TrimSpace(base)
+	if base == "" {
+		base = "cloudagent-runtime-pool"
+	}
+	poolKey = strings.TrimSpace(poolKey)
+	if poolKey == "" {
+		return base
+	}
+	sum := sha256.Sum256([]byte(poolKey))
+	return base + "-" + hex.EncodeToString(sum[:])[:12]
 }
 
 func Run(ctx context.Context, cfg TemporalConfig, activities *Activities) error {
@@ -130,20 +146,30 @@ func WarmRuntimePoolWorkflow(ctx workflow.Context, input ReconcileInput) (Reconc
 }
 
 func (a *Activities) EnsureWarmRuntimePool(ctx context.Context, input ReconcileInput) (ReconcileStatus, error) {
-	if a == nil || a.Store == nil || a.Worker == nil {
-		return ReconcileStatus{}, errors.New("runtime pool activities require store and worker")
+	if a == nil || a.Store == nil {
+		return ReconcileStatus{}, errors.New("runtime pool activities require store")
 	}
 	if input.DesiredReady <= 0 {
 		input.DesiredReady = 1
 	}
 	poolKey := strings.TrimSpace(input.PoolKey)
+	expectedPoolKey := strings.TrimSpace(a.ExpectedPoolKey)
+	if expectedPoolKey != "" && poolKey != "" && poolKey != expectedPoolKey {
+		return ReconcileStatus{PoolKey: poolKey}, nil
+	}
 	if poolKey == "" {
+		if a.Worker == nil {
+			return ReconcileStatus{}, errors.New("runtime pool activities require worker")
+		}
 		key, err := a.Worker.WarmRuntimePoolKey(input.CreateRequest)
 		if err != nil {
 			return ReconcileStatus{}, err
 		}
 		poolKey = key
 		input.CreateRequest.PoolKey = key
+	}
+	if expectedPoolKey != "" && poolKey != expectedPoolKey {
+		return ReconcileStatus{PoolKey: poolKey}, nil
 	}
 	ready, err := a.Store.ListWarmRuntimeItems(ctx, wrapper.WarmRuntimeListRequest{PoolKey: poolKey, State: "ready", Limit: 1000})
 	if err != nil {
