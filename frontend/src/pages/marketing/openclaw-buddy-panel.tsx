@@ -992,24 +992,23 @@ function FilledSlot({
         <SoulFaceCard soul={soul} size="slot" onInterpret={onPreview} />
       </button>
 
-      {/* 左上角：注入状态徽章。appliedSlug 是单值，同一时间最多 1 张卡显示已注入。 */}
+      {/* 左上角：注入状态标签。appliedSlug 是单值，同一时间最多 1 张卡显示已注入。 */}
       <div
-        className="pointer-events-none absolute left-1.5 top-1.5 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold"
+        className="pointer-events-none absolute left-1.5 top-1.5 inline-flex items-center justify-center rounded-full px-2 py-0.5 text-xs font-medium"
         style={
           applied
             ? {
                 backgroundImage: "linear-gradient(135deg, #6B4FE0 0%, #F4B43A 100%)",
                 color: "#ffffff",
                 boxShadow: "0 4px 10px rgba(107,79,224,0.32)",
-                letterSpacing: "0.2px",
               }
             : {
                 background: "rgba(255,255,255,0.92)",
                 color: "rgba(0,0,0,0.48)",
                 boxShadow: "0 3px 10px rgba(0,0,0,0.08)",
-                letterSpacing: "0.2px",
               }
         }
+        title={applied ? t("已注入") : t("未注入")}
         aria-label={applied ? t("当前已注入到 Bot") : t("当前未注入到 Bot")}
       >
         {applied ? t("已注入") : t("未注入")}

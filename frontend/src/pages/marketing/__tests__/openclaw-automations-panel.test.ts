@@ -65,7 +65,7 @@ describe("buildScheduleString and parseInitialSchedule", () => {
       onceDate: "",
     }))).toMatchObject({ kind: "recurring", period: "weekly", time: "09:00", weekday: 3, weekdays: [3] });
 
-    expect(parseInitialSchedule(buildScheduleString({
+    const monthlySchedule = buildScheduleString({
       kind: "recurring",
       period: "monthly",
       time: "07:00",
@@ -74,7 +74,37 @@ describe("buildScheduleString and parseInitialSchedule", () => {
       intervalNum: 1,
       intervalUnit: "h",
       onceDate: "",
-    }))).toMatchObject({ kind: "recurring", period: "monthly", time: "07:00", monthday: 28 });
+    });
+    expect(monthlySchedule).toBe("0 7 28 * *");
+    expect(parseInitialSchedule(monthlySchedule)).toMatchObject({
+      kind: "recurring",
+      period: "monthly",
+      time: "07:00",
+      monthday: 28,
+      monthdays: [28],
+    });
+  });
+
+  it("round-trips monthly schedules with multiple days", () => {
+    const schedule = buildScheduleString({
+      kind: "recurring",
+      period: "monthly",
+      time: "09:00",
+      weekdays: [1],
+      monthdays: [14, 6, 7],
+      intervalNum: 1,
+      intervalUnit: "h",
+      onceDate: "",
+    });
+
+    expect(schedule).toBe("0 9 6,7,14 * *");
+    expect(parseInitialSchedule(schedule)).toMatchObject({
+      kind: "recurring",
+      period: "monthly",
+      time: "09:00",
+      monthday: 6,
+      monthdays: [6, 7, 14],
+    });
   });
 
   it("round-trips interval and once schedules", () => {
