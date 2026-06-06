@@ -129,7 +129,7 @@ export const BotTerminalPage = () => {
 
   useEffect(() => {
     if (!id) {
-      setError("缺少 bot id。");
+      setError("缺少 Agent ID。");
       setConnectionState("error");
       return;
     }
@@ -154,7 +154,7 @@ export const BotTerminalPage = () => {
         const terminal = terminalRef.current;
         const fitAddon = fitAddonRef.current;
         terminal?.reset();
-        terminal?.writeln(`Connecting bot ${id}...`);
+        terminal?.writeln(`Connecting Agent ${id}...`);
         fitAddon?.fit();
 
         const { TencentPtyClient } = await import("@/lib/tencent-pty-client");
@@ -220,7 +220,7 @@ export const BotTerminalPage = () => {
             TAT Console
           </div>
           <div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-[#d7c8b9]">
-            <span className="truncate">{id ?? "unknown bot"}</span>
+            <span className="truncate">{id ?? "unknown Agent"}</span>
             <span className="text-[#6f6258]">/</span>
             <span className="truncate">{session?.sandboxId ?? "waiting sandbox"}</span>
             <span className="hidden text-[#6f6258] sm:inline">/</span>

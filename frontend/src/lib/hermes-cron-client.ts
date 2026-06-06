@@ -102,6 +102,7 @@ interface CronRunFileRow {
   output_path?: unknown;
   mtime_ms?: unknown;
   output_status?: unknown;
+  agent_skipped?: unknown;
   job_name?: unknown;
   job_prompt?: unknown;
   job_schedule?: unknown;
@@ -331,12 +332,18 @@ function buildListRecentCronRunsCommand(limit: number): string {
     "    absorb(json.loads(jobs_path.read_text(encoding='utf-8')))",
     "except Exception:",
     "    pass",
-    "def infer_output_status(path):",
+    "def inspect_output(path):",
     "    try:",
     "        text = path.read_text(encoding='utf-8', errors='ignore')",
     "    except Exception:",
-    "        return ''",
+    "        return {'output_status': '', 'agent_skipped': False}",
     "    lowered = text.lower()",
+    "    compact = ''.join(lowered.split())",
+    "    agent_skipped = any(marker in compact for marker in [",
+    "        '\"wakeagent\":false',",
+    "        \"'wakeagent':false\",",
+    "        'wakeagent=false',",
+    "    ])",
     "    failure_markers = [",
     "        'traceback (most recent call last)',",
     "        'exit_code: 1',",
@@ -347,7 +354,7 @@ function buildListRecentCronRunsCommand(limit: number): string {
     "        'croncommanderror',",
     "    ]",
     "    if any(marker in lowered for marker in failure_markers):",
-    "        return 'failed'",
+    "        return {'output_status': 'failed', 'agent_skipped': agent_skipped}",
     "    success_markers = [",
     "        'status: ok',",
     "        'status: success',",
@@ -356,8 +363,8 @@ function buildListRecentCronRunsCommand(limit: number): string {
     "        'exit code: 0',",
     "    ]",
     "    if any(marker in lowered for marker in success_markers):",
-    "        return 'ok'",
-    "    return 'ok' if text.strip() else ''",
+    "        return {'output_status': 'ok', 'agent_skipped': agent_skipped}",
+    "    return {'output_status': 'ok' if text.strip() else '', 'agent_skipped': agent_skipped}",
     "rows = []",
     "if base.exists():",
     "    for path in base.glob('*/*.md'):",
@@ -365,13 +372,16 @@ function buildListRecentCronRunsCommand(limit: number): string {
     "            stat = path.stat()",
     "        except OSError:",
     "            continue",
+    "        output_info = inspect_output(path)",
+    "        if output_info.get('agent_skipped'):",
+    "            continue",
     "        row = {",
     "            'job_id': path.parent.name,",
     "            'run_at': datetime.datetime.fromtimestamp(stat.st_mtime, datetime.timezone.utc).isoformat(),",
     "            'output_path': str(path),",
     "            'mtime_ms': int(stat.st_mtime * 1000),",
-    "            'output_status': infer_output_status(path),",
     "        }",
+    "        row.update(output_info)",
     "        row.update(jobs_meta.get(path.parent.name, {}))",
     "        rows.append(row)",
     "rows.sort(key=lambda item: item['mtime_ms'], reverse=True)",
@@ -444,6 +454,7 @@ export function parseCronRunFilesOutput(text: string, jobs: CronJob[]): CronRunR
     const runAt = typeof row.run_at === "string" ? row.run_at : "";
     const outputPath = typeof row.output_path === "string" ? row.output_path : "";
     if (!jobId || !runAt || !outputPath) continue;
+    if (row.agent_skipped === true) continue;
     const job = jobsById.get(jobId);
     const rowSchedule = normalizeRunSchedule(row.job_schedule);
     records.push({

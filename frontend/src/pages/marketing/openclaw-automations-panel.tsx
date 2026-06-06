@@ -930,6 +930,7 @@ export function parseOnceScheduleDate(display: string, nextRunAt: string | null)
 function CronJobDetailModal({ job, onClose }: { job: CronJob; onClose: () => void }) {
   const t = useT();
   const paused = !job.enabled || job.state === "paused";
+  const nextRunAt = getEffectiveWindowStatus(job.effective_window) === "ended" ? null : job.next_run_at;
   return createPortal(
     <div
       className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 px-4 py-8"
@@ -963,7 +964,7 @@ function CronJobDetailModal({ job, onClose }: { job: CronJob; onClose: () => voi
           <DetailRow label={t("任务说明")} value={job.prompt || "—"} pre />
           <DetailRow label={t("执行时间")} value={formatScheduleFriendly(job, t)} />
           <DetailRow label={t("生效时间段")} value={formatEffectiveWindow(job.effective_window, t)} />
-          {job.next_run_at && <DetailRow label={t("下次执行")} value={formatTime(job.next_run_at)} />}
+          {nextRunAt && <DetailRow label={t("下次执行")} value={formatTime(nextRunAt)} />}
           {job.last_run_at && (
             <DetailRow
               label={t("上次执行")}
@@ -1943,7 +1944,7 @@ function AutomationFormModal({
                       <span className="inline-flex items-center text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
                         {t("如未生效，可在 QQ 对话中发送")}
                         <InlineCopyText value="/set-home" />
-                        {t("给机器人")}
+                        {t("给 Agent")}
                       </span>
                     )}
                     {selected && key === "feishu" && (
@@ -1984,7 +1985,7 @@ function AutomationFormModal({
                             <span>{t("如何获取 Chat ID？")}</span>
                           </div>
                           <p className="mt-1 pl-5">
-                            {t("在飞书应用中，找到希望发送通知的对话，向机器人发送提示词")}
+                            {t("在飞书应用中，找到希望发送通知的对话，向 Agent 发送提示词")}
                             <InlineCopyText value={t("当前Chat ID是什么")} />
                             {t("，正常会回复前缀为oc_的一长串字符。")}
                           </p>
