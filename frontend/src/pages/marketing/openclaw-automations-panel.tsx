@@ -1943,7 +1943,7 @@ function AutomationFormModal({
                       <span className="inline-flex items-center text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
                         {t("如未生效，可在 QQ 对话中发送")}
                         <InlineCopyText value="/set-home" />
-                        {t("给机器人")}
+                        {t("给 Agent")}
                       </span>
                     )}
                     {selected && key === "feishu" && (
@@ -1984,7 +1984,7 @@ function AutomationFormModal({
                             <span>{t("如何获取 Chat ID？")}</span>
                           </div>
                           <p className="mt-1 pl-5">
-                            {t("在飞书应用中，找到希望发送通知的对话，向机器人发送提示词")}
+                            {t("在飞书应用中，找到希望发送通知的对话，向 Agent 发送提示词")}
                             <InlineCopyText value={t("当前Chat ID是什么")} />
                             {t("，正常会回复前缀为oc_的一长串字符。")}
                           </p>

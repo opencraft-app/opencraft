@@ -48,8 +48,40 @@ const PANEL_CARD_STYLE: React.CSSProperties = {
   boxShadow: "0 4px 24px rgba(0,0,0,0.03), 0 1px 2px rgba(0,0,0,0.02)",
 };
 
+const ACTION_TOOLTIP_CLASS = "pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium text-[var(--text-primary)] opacity-0 shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100";
+
+const ACTION_TOOLTIP_ARROW_CLASS = "absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-[var(--border-subtle)] bg-white";
+
+const UNAPPLIED_TOOLTIP_CLASS = "pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium text-[var(--text-primary)] opacity-0 shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition-opacity duration-150 group-focus-within/unapplied:opacity-100 group-hover/unapplied:opacity-100";
+
 /** 抽卡槽位数上限（4 列 × 2 行 = 8 张） */
 const MAX_DRAWS = 8;
+
+function UnappliedSoulIcon({ className = "h-3 w-3" }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      fill="none"
+      className={className}
+      aria-hidden
+    >
+      <circle
+        cx="8"
+        cy="8"
+        r="5"
+        stroke="currentColor"
+        strokeWidth="1.45"
+        opacity="0.62"
+      />
+      <path
+        d="M4.55 11.45 11.45 4.55"
+        stroke="currentColor"
+        strokeWidth="1.55"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
 
 export function BuddyPanel({
   botId,
@@ -444,8 +476,8 @@ export function BuddyPanel({
     showToast({
       kind: "fallback",
       message: botId
-        ? t("无法写入 Bot 沙箱，已下载 soul.md 到本地")
-        : t("当前未选中 Bot，已下载 soul.md 到本地"),
+        ? t("无法写入 Agent 沙箱，已下载 soul.md 到本地")
+        : t("当前未选中 Agent，已下载 soul.md 到本地"),
     });
   }, [selectedSlug, drawnSouls, botId, repositories, toast.kind, showToast, t]);
 
@@ -638,14 +670,13 @@ export function BuddyPanel({
             </button>
             {isAtMax && (
               <div
-                className="pointer-events-none absolute bottom-full left-1/2 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md px-3 py-1.5 text-[11px] font-medium opacity-0 transition-opacity duration-150 group-hover:opacity-100"
-                style={{ background: "rgba(0,0,0,0.85)", color: "#ffffff", boxShadow: "0 4px 12px rgba(0,0,0,0.15)" }}
+                className={ACTION_TOOLTIP_CLASS}
                 role="tooltip"
               >
                 {t("已抽满 8 张")}
                 <span
-                  className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45"
-                  style={{ background: "rgba(0,0,0,0.85)" }}
+                  className={ACTION_TOOLTIP_ARROW_CLASS}
+                  aria-hidden
                 />
               </div>
             )}
@@ -667,19 +698,18 @@ export function BuddyPanel({
             </button>
             {isAtMax && (
               <div
-                className="pointer-events-none absolute bottom-full left-1/2 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md px-3 py-1.5 text-[11px] font-medium opacity-0 transition-opacity duration-150 group-hover:opacity-100"
-                style={{ background: "rgba(0,0,0,0.85)", color: "#ffffff", boxShadow: "0 4px 12px rgba(0,0,0,0.15)" }}
+                className={ACTION_TOOLTIP_CLASS}
                 role="tooltip"
               >
                 {t("已抽满 8 张")}
                 <span
-                  className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45"
-                  style={{ background: "rgba(0,0,0,0.85)" }}
+                  className={ACTION_TOOLTIP_ARROW_CLASS}
+                  aria-hidden
                 />
               </div>
             )}
           </div>
-          <div className="group relative">
+          <div className="group relative inline-flex">
             <button
               type="button"
               onClick={handleApply}
@@ -715,25 +745,12 @@ export function BuddyPanel({
             {/* 自定义浮卡：仅 disabled 因「未选中」时立即浮出，避开原生 title 延迟 */}
             {!selectedSlug && (
               <div
-                className="pointer-events-none absolute bottom-full left-1/2 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md px-3 py-1.5 text-[11px] font-medium opacity-0 transition-opacity duration-150 group-hover:opacity-100"
-                style={{
-                  background: "rgba(0,0,0,0.85)",
-                  color: "#ffffff",
-                  boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
-                }}
+                className={ACTION_TOOLTIP_CLASS}
                 role="tooltip"
               >
                 {t("请先选择人设，再注入")}
                 <span
-                  className="absolute left-1/2 -translate-x-1/2"
-                  style={{
-                    top: "100%",
-                    width: 0,
-                    height: 0,
-                    borderLeft: "5px solid transparent",
-                    borderRight: "5px solid transparent",
-                    borderTop: "5px solid rgba(0,0,0,0.85)",
-                  }}
+                  className={ACTION_TOOLTIP_ARROW_CLASS}
                   aria-hidden
                 />
               </div>
@@ -993,26 +1010,37 @@ function FilledSlot({
       </button>
 
       {/* 左上角：注入状态标签。appliedSlug 是单值，同一时间最多 1 张卡显示已注入。 */}
-      <div
-        className="pointer-events-none absolute left-1.5 top-1.5 inline-flex items-center justify-center rounded-full px-2 py-0.5 text-xs font-medium"
-        style={
-          applied
-            ? {
-                backgroundImage: "linear-gradient(135deg, #6B4FE0 0%, #F4B43A 100%)",
-                color: "#ffffff",
-                boxShadow: "0 4px 10px rgba(107,79,224,0.32)",
-              }
-            : {
-                background: "rgba(255,255,255,0.92)",
-                color: "rgba(0,0,0,0.48)",
-                boxShadow: "0 3px 10px rgba(0,0,0,0.08)",
-              }
-        }
-        title={applied ? t("已注入") : t("未注入")}
-        aria-label={applied ? t("当前已注入到 Bot") : t("当前未注入到 Bot")}
-      >
-        {applied ? t("已注入") : t("未注入")}
-      </div>
+      {applied ? (
+        <div
+          className="pointer-events-none absolute left-1.5 top-1.5 inline-flex items-center justify-center rounded-full px-2 py-0.5 text-xs font-medium"
+          style={{
+            backgroundImage: "linear-gradient(135deg, #6B4FE0 0%, #F4B43A 100%)",
+            color: "#ffffff",
+            boxShadow: "0 4px 10px rgba(107,79,224,0.32)",
+          }}
+          title={t("已注入")}
+          aria-label={t("当前已注入到 Agent")}
+        >
+          {t("已注入")}
+        </div>
+      ) : (
+        <div
+          className="group/unapplied absolute left-1.5 top-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full border text-xs font-medium"
+          style={{
+            background: "rgba(255,255,255,0.86)",
+            borderColor: "rgba(0,0,0,0.08)",
+            color: "rgba(0,0,0,0.54)",
+            boxShadow: "0 3px 10px rgba(0,0,0,0.06)",
+          }}
+          aria-label={t("当前未注入人设到 Agent")}
+        >
+          <UnappliedSoulIcon className="h-3.5 w-3.5" />
+          <div className={UNAPPLIED_TOOLTIP_CLASS} role="tooltip">
+            {t("未注入人设")}
+            <span className={ACTION_TOOLTIP_ARROW_CLASS} aria-hidden />
+          </div>
+        </div>
+      )}
 
       {/* 右上角：选中态显示「勾」（SkillHub 同款黑底白勾），未选中显示「删除 + 重抽」（hover 浮现） */}
       {selected ? (
@@ -1191,10 +1219,10 @@ function PreviewModal({
           <button
             type="button"
             onClick={onClose}
-            className="text-xs font-medium transition-colors"
-            style={{ color: "rgba(0,0,0,0.60)" }}
+            aria-label={t("关闭")}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-full text-black/55 transition-colors hover:bg-black/[0.05] hover:text-black/85"
           >
-            {t("关闭")}
+            <X className="h-4 w-4" />
           </button>
         </div>
         <div className="flex-1 overflow-y-auto px-6 py-4">{children}</div>

@@ -52,7 +52,7 @@ export const SettingsPage = () => {
         <div className="space-y-8 px-6 py-6 sm:px-8 sm:py-8">
           <GrammarPageIntro
             eyebrow={<p className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={{ color: "var(--lw-fg-tertiary)" }}>Settings</p>}
-            title="Bot 运行设置"
+            title="Agent 运行设置"
             description="当前设置页先保留成轻量入口，但把真实终端操作提前露出来。需要排障或手工运维时，直接跳去 terminal 即可。"
             actions={(
               <>
@@ -66,7 +66,7 @@ export const SettingsPage = () => {
             )}
           />
 
-          {snapshot.loading ? <StatePanel variant="loading" title="加载中" description="正在读取 bot 设置。" /> : null}
+          {snapshot.loading ? <StatePanel variant="loading" title="加载中" description="正在读取 Agent 设置。" /> : null}
 
           {snapshot.error ? (
             <StatePanel
@@ -80,19 +80,19 @@ export const SettingsPage = () => {
           <GrammarSectionCard
             kicker="Current Scope"
             title="设置页暂存位"
-            description="这部分后续会接版本、工具和知识源。终端入口先放在这里，是为了让 bot 的运维动作不再悬空。"
+            description="这部分后续会接版本、工具和知识源。终端入口先放在这里，是为了让 Agent 的运维动作不再悬空。"
           >
             <div className="space-y-3 text-sm leading-7" style={{ color: "var(--lw-fg-secondary)" }}>
-              <p><strong>Bot ID:</strong> {id ?? "-"}</p>
-              <p>终端页面会根据当前 bot 关联的 <code>sandbox_id</code> 调用 <code>/sandboxes/:sandboxID/tat/session</code> 创建腾讯云 TAT PTY 会话。</p>
-              <p>如果 bot 还没分配到 sandbox，终端页会直接报清晰错误，而不是静默失败。</p>
+              <p><strong>Agent ID:</strong> {id ?? "-"}</p>
+              <p>终端页面会根据当前 Agent 关联的 <code>sandbox_id</code> 调用 <code>/sandboxes/:sandboxID/tat/session</code> 创建腾讯云 TAT PTY 会话。</p>
+              <p>如果 Agent 还没分配到 sandbox，终端页会直接报清晰错误，而不是静默失败。</p>
             </div>
           </GrammarSectionCard>
 
           {snapshot.data ? (
             <ConfigSection
               title="QQ Channel"
-              description="把 Bot 接到 QQ 机器人通道。前端会把 App ID 和 App Secret 组装成 ctl 需要的 token。"
+              description="把 Agent 接到 QQ 机器人通道。前端会把 App ID 和 App Secret 组装成 ctl 需要的 token。"
               icon={<MessageCircleMore className="size-4 text-[var(--brand-600)]" />}
             >
               <div className="grid gap-4 sm:grid-cols-2">
@@ -121,7 +121,7 @@ export const SettingsPage = () => {
                     id="qq-account"
                     value={qqAccount}
                     onChange={(event) => setQqAccount(event.target.value)}
-                    placeholder="同通道多账号时可填写 bot1 之类的标识"
+                    placeholder="同通道多账号时可填写 agent1 之类的标识"
                   />
                 </div>
               </div>
