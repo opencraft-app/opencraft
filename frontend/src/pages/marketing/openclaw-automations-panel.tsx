@@ -597,9 +597,15 @@ function RecentCronRunsPanel({ runs }: { runs: CronRunRecord[] }) {
                   )}
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-1.5">
-                  <span className="rounded-full bg-black/[0.06] px-2 py-0.5 text-[11px] text-black/55">
+                  <button
+                    type="button"
+                    onClick={() => setViewingRun(run)}
+                    className="rounded-full bg-black/[0.06] px-2 py-0.5 text-[11px] text-black/55 transition hover:bg-black/[0.1] hover:text-black/75"
+                    aria-label={t("查看任务详情")}
+                    title={t("查看任务详情")}
+                  >
                     {run.status ? formatLastStatus(run.status, t) : t("已执行")}
-                  </span>
+                  </button>
                   <time className="text-right text-xs text-black/55" dateTime={run.run_at}>
                     {formatTime(run.run_at)}
                   </time>
