@@ -2181,14 +2181,14 @@ function RecurringPicker({
               {selectedMonthdays.map((day) => (
                 <span
                   key={day}
-                  className="inline-flex h-7 items-center gap-1 rounded-full bg-black px-3 text-sm font-medium leading-none text-white"
+                  className="inline-flex h-6 items-center gap-1 rounded-full bg-black px-2.5 text-xs font-medium leading-none text-white"
                 >
                   {t("{{n}}日", { n: day })}
                   {selectedMonthdays.length > 1 && (
                     <span
                       role="button"
                       tabIndex={0}
-                      className="-mr-1 inline-flex h-4 w-4 items-center justify-center rounded-full text-white/80 hover:bg-white/15 hover:text-white"
+                      className="-mr-1 inline-flex h-3.5 w-3.5 items-center justify-center rounded-full text-white/80 hover:bg-white/15 hover:text-white"
                       aria-label={t("移除 {{n}} 日", { n: day })}
                       onClick={(event) => {
                         event.stopPropagation();
@@ -2201,7 +2201,7 @@ function RecurringPicker({
                         toggleMonthday(day);
                       }}
                     >
-                      <X className="h-3 w-3" />
+                      <X className="h-2.5 w-2.5" />
                     </span>
                   )}
                 </span>
@@ -2221,11 +2221,11 @@ function RecurringPicker({
           <ChevronDown className="pointer-events-none absolute right-3 top-[21px] h-4 w-4 -translate-y-1/2 text-black/80" />
           {monthdayPickerOpen && (
             <div
-              className="absolute left-0 top-[calc(100%+6px)] z-10 max-h-[236px] w-[318px] max-w-[calc(100vw-32px)] overflow-y-auto rounded-xl border border-black/10 bg-white p-2 shadow-xl"
+              className="absolute left-0 top-[calc(100%+6px)] z-10 max-h-[204px] w-[276px] max-w-[calc(100vw-32px)] overflow-y-auto rounded-xl border border-black/10 bg-white p-2 shadow-xl"
               role="listbox"
               aria-multiselectable="true"
             >
-              <div className="grid grid-cols-4 gap-2">
+              <div className="grid grid-cols-4 gap-1.5">
                 {MONTHDAY_VALUES.map((day) => {
                   const checked = selectedMonthdays.includes(day);
                   const isLastSelected = checked && selectedMonthdays.length === 1;
@@ -2236,7 +2236,7 @@ function RecurringPicker({
                       onClick={() => toggleMonthday(day)}
                       disabled={isLastSelected}
                       className={
-                        "flex h-10 items-center justify-center rounded-lg border text-sm font-medium transition " +
+                        "flex h-8 items-center justify-center rounded-md border text-xs font-medium transition " +
                         (checked
                           ? "border-black bg-black text-white"
                           : isLastSelected
