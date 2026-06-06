@@ -36,8 +36,9 @@ func main() {
 	}
 	cfg := runtimepool.ConfigFromEnv()
 	input := runtimepool.ReconcileInput{
-		DesiredReady:        envInt("GATEWAY_RUNTIME_WARM_POOL_DESIRED_READY", 1),
-		RecheckDelaySeconds: envInt("GATEWAY_RUNTIME_WARM_POOL_RECHECK_SECONDS", 15),
+		DesiredReady:           envInt("GATEWAY_RUNTIME_WARM_POOL_DESIRED_READY", 1),
+		RecheckDelaySeconds:    envInt("GATEWAY_RUNTIME_WARM_POOL_RECHECK_SECONDS", 15),
+		CreatingTimeoutSeconds: envInt("GATEWAY_RUNTIME_WARM_POOL_CREATING_TIMEOUT_SECONDS", 300),
 		CreateRequest: wrapper.WarmRuntimeCreateRequest{
 			OwnerID:          "temporal-runtime-pool-worker",
 			SandboxBackend:   os.Getenv("GATEWAY_RUNTIME_WARM_POOL_SANDBOX_BACKEND"),
