@@ -44,8 +44,6 @@ func main() {
 			OuterRuntime:     os.Getenv("GATEWAY_AGENT_OUTER_RUNTIME"),
 			AgentVersion:     os.Getenv("GATEWAY_RUNTIME_WARM_POOL_AGENT_VERSION"),
 			WorkspaceVersion: os.Getenv("GATEWAY_RUNTIME_WARM_POOL_WORKSPACE_VERSION"),
-			SidecarURL:       os.Getenv("GATEWAY_AGENT_SIDECAR_URL"),
-			SidecarSHA256:    os.Getenv("GATEWAY_AGENT_SIDECAR_SHA256"),
 		},
 	}
 	poolKey, err := worker.WarmRuntimePoolKey(input.CreateRequest)
