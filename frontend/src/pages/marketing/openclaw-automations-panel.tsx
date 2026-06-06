@@ -930,6 +930,7 @@ export function parseOnceScheduleDate(display: string, nextRunAt: string | null)
 function CronJobDetailModal({ job, onClose }: { job: CronJob; onClose: () => void }) {
   const t = useT();
   const paused = !job.enabled || job.state === "paused";
+  const nextRunAt = getEffectiveWindowStatus(job.effective_window) === "ended" ? null : job.next_run_at;
   return createPortal(
     <div
       className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 px-4 py-8"
@@ -963,7 +964,7 @@ function CronJobDetailModal({ job, onClose }: { job: CronJob; onClose: () => voi
           <DetailRow label={t("任务说明")} value={job.prompt || "—"} pre />
           <DetailRow label={t("执行时间")} value={formatScheduleFriendly(job, t)} />
           <DetailRow label={t("生效时间段")} value={formatEffectiveWindow(job.effective_window, t)} />
-          {job.next_run_at && <DetailRow label={t("下次执行")} value={formatTime(job.next_run_at)} />}
+          {nextRunAt && <DetailRow label={t("下次执行")} value={formatTime(nextRunAt)} />}
           {job.last_run_at && (
             <DetailRow
               label={t("上次执行")}
