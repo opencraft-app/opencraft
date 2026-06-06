@@ -184,6 +184,28 @@ describe("parseCronRunFilesOutput", () => {
     expect(runs[0]?.status).toBe("failed");
   });
 
+  it("filters scheduler attempts skipped before waking the Agent", () => {
+    const runs = parseCronRunFilesOutput(JSON.stringify([
+      {
+        job_id: "skipped-window",
+        run_at: "2026-06-06T14:20:37+00:00",
+        output_path: "/home/agentuser/.hermes/cron/output/skipped-window/2026-06-06T14-20-37.md",
+        mtime_ms: 1780755637000,
+        output_status: "ok",
+        agent_skipped: true,
+      },
+      {
+        job_id: "agent-ran",
+        run_at: "2026-06-06T14:10:37+00:00",
+        output_path: "/home/agentuser/.hermes/cron/output/agent-ran/2026-06-06T14-10-37.md",
+        mtime_ms: 1780755037000,
+        output_status: "ok",
+      },
+    ]), []);
+
+    expect(runs.map((run) => run.job_id)).toEqual(["agent-ran"]);
+  });
+
   it("returns an empty list for missing or invalid output", () => {
     expect(parseCronRunFilesOutput("", [])).toEqual([]);
     expect(parseCronRunFilesOutput("not json", [])).toEqual([]);
@@ -278,9 +300,11 @@ describe("createCronJob auth handling", () => {
     expect(runs[0]?.job_id).toBe("job-1");
     const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as { command: string };
 	    expect(body.command).toContain(".hermes");
-	    expect(body.command).toContain("cron");
+    expect(body.command).toContain("cron");
 	    expect(body.command).toContain("output");
 	    expect(body.command).toContain("lightvela-jobs-meta.json");
+    expect(body.command.toLowerCase()).toContain("wakeagent");
+    expect(body.command).toContain("agent_skipped");
 	  });
 
   it("removes a prepared LightVela script when cron create fails", async () => {
