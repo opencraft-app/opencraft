@@ -42,6 +42,18 @@ export interface CronEffectiveWindow {
   end_at: string | null;
 }
 
+export interface CronRunRecord {
+  id: string;
+  job_id: string;
+  job_name: string;
+  job_prompt: string;
+  schedule: CronJob["schedule"] | null;
+  deliver: string;
+  run_at: string;
+  status: string | null;
+  output_path: string;
+}
+
 /** 调用方传给 create() 的入参 */
 export interface CreateCronJobInput {
   /** Hermes schedule 字符串，例：`0 9 * * *` / `every 2h` / `2026-05-26T09:00:00` */
@@ -83,6 +95,19 @@ interface ApiEnvelope<T> {
   code?: number | string;
   data: T;
   message?: string;
+}
+interface CronRunFileRow {
+  job_id?: unknown;
+  run_at?: unknown;
+  output_path?: unknown;
+  mtime_ms?: unknown;
+  output_status?: unknown;
+  job_name?: unknown;
+  job_prompt?: unknown;
+  job_schedule?: unknown;
+  job_deliver?: unknown;
+  job_last_run_at?: unknown;
+  job_last_status?: unknown;
 }
 
 /** 把命令 output 末尾几行清洗成 toast 文案 */
@@ -255,7 +280,219 @@ export async function listCronJobs(botId: string): Promise<CronJob[]> {
     /* 读 jobs.json 失败不阻断列表 */
   }
   await hydrateEffectiveWindows(botId, jobs);
+  await archiveCronJobMetadata(botId);
   return jobs;
+}
+
+export async function listRecentCronRuns(
+  botId: string,
+  jobs: CronJob[],
+  limit = 10,
+): Promise<CronRunRecord[]> {
+  const payload = await execCommand(botId, buildListRecentCronRunsCommand(limit));
+  return parseCronRunFilesOutput(payload.output || "", jobs);
+}
+
+function buildListRecentCronRunsCommand(limit: number): string {
+  const normalizedLimit = Math.max(1, Math.min(50, Math.floor(limit) || 10));
+  const script = [
+    "import datetime, json",
+    "from pathlib import Path",
+    `limit = ${normalizedLimit}`,
+    "base = Path.home() / '.hermes' / 'cron' / 'output'",
+    "jobs_path = Path.home() / '.hermes' / 'cron' / 'jobs.json'",
+    "archive_path = Path.home() / '.hermes' / 'cron' / 'lightvela-jobs-meta.json'",
+    "jobs_meta = {}",
+    "def absorb(raw_jobs):",
+    "    if isinstance(raw_jobs, dict) and 'jobs' not in raw_jobs:",
+    "        raw_jobs = list(raw_jobs.values())",
+    "    elif isinstance(raw_jobs, dict):",
+    "        raw_jobs = raw_jobs.get('jobs', [])",
+    "    if isinstance(raw_jobs, list):",
+    "        for job in raw_jobs:",
+    "            if not isinstance(job, dict):",
+    "                continue",
+    "            job_id = str(job.get('id') or '')",
+    "            if not job_id:",
+    "                continue",
+    "            jobs_meta[job_id] = {",
+    "                'job_name': job.get('name') or job.get('job_name') or '',",
+    "                'job_prompt': job.get('prompt') or job.get('job_prompt') or '',",
+    "                'job_schedule': job.get('schedule') or job.get('job_schedule'),",
+    "                'job_deliver': job.get('deliver') or job.get('job_deliver') or '',",
+    "                'job_last_run_at': job.get('last_run_at') or job.get('job_last_run_at') or '',",
+    "                'job_last_status': job.get('last_status') or job.get('job_last_status') or '',",
+    "            }",
+    "try:",
+    "    absorb(json.loads(archive_path.read_text(encoding='utf-8')))",
+    "except Exception:",
+    "    pass",
+    "try:",
+    "    absorb(json.loads(jobs_path.read_text(encoding='utf-8')))",
+    "except Exception:",
+    "    pass",
+    "def infer_output_status(path):",
+    "    try:",
+    "        text = path.read_text(encoding='utf-8', errors='ignore')",
+    "    except Exception:",
+    "        return ''",
+    "    lowered = text.lower()",
+    "    failure_markers = [",
+    "        'traceback (most recent call last)',",
+    "        'exit_code: 1',",
+    "        'exit code: 1',",
+    "        'status: failed',",
+    "        'status: failure',",
+    "        'status: error',",
+    "        'croncommanderror',",
+    "    ]",
+    "    if any(marker in lowered for marker in failure_markers):",
+    "        return 'failed'",
+    "    success_markers = [",
+    "        'status: ok',",
+    "        'status: success',",
+    "        'status: succeeded',",
+    "        'exit_code: 0',",
+    "        'exit code: 0',",
+    "    ]",
+    "    if any(marker in lowered for marker in success_markers):",
+    "        return 'ok'",
+    "    return 'ok' if text.strip() else ''",
+    "rows = []",
+    "if base.exists():",
+    "    for path in base.glob('*/*.md'):",
+    "        try:",
+    "            stat = path.stat()",
+    "        except OSError:",
+    "            continue",
+    "        row = {",
+    "            'job_id': path.parent.name,",
+    "            'run_at': datetime.datetime.fromtimestamp(stat.st_mtime, datetime.timezone.utc).isoformat(),",
+    "            'output_path': str(path),",
+    "            'mtime_ms': int(stat.st_mtime * 1000),",
+    "            'output_status': infer_output_status(path),",
+    "        }",
+    "        row.update(jobs_meta.get(path.parent.name, {}))",
+    "        rows.append(row)",
+    "rows.sort(key=lambda item: item['mtime_ms'], reverse=True)",
+    "print(json.dumps(rows[:limit], ensure_ascii=False))",
+  ].join("\n");
+  return `python3 -c ${shellQuote(script)}`;
+}
+
+function buildArchiveCronJobMetadataCommand(): string {
+  const script = [
+    "import json",
+    "from pathlib import Path",
+    "cron_dir = Path.home() / '.hermes' / 'cron'",
+    "jobs_path = cron_dir / 'jobs.json'",
+    "archive_path = cron_dir / 'lightvela-jobs-meta.json'",
+    "def load(path, fallback):",
+    "    try:",
+    "        return json.loads(path.read_text(encoding='utf-8'))",
+    "    except Exception:",
+    "        return fallback",
+    "archive_raw = load(archive_path, {})",
+    "archive = archive_raw if isinstance(archive_raw, dict) else {}",
+    "jobs_raw = load(jobs_path, [])",
+    "if isinstance(jobs_raw, dict):",
+    "    jobs_raw = jobs_raw.get('jobs', list(jobs_raw.values()))",
+    "if isinstance(jobs_raw, list):",
+    "    for job in jobs_raw:",
+    "        if not isinstance(job, dict):",
+    "            continue",
+    "        job_id = str(job.get('id') or '')",
+    "        if not job_id:",
+    "            continue",
+    "        archive[job_id] = {",
+    "            'id': job_id,",
+    "            'name': job.get('name') or '',",
+    "            'prompt': job.get('prompt') or '',",
+    "            'schedule': job.get('schedule'),",
+    "            'deliver': job.get('deliver') or '',",
+    "            'last_run_at': job.get('last_run_at') or '',",
+    "            'last_status': job.get('last_status') or '',",
+    "        }",
+    "cron_dir.mkdir(parents=True, exist_ok=True)",
+    "archive_path.write_text(json.dumps(archive, ensure_ascii=False), encoding='utf-8')",
+  ].join("\n");
+  return `python3 -c ${shellQuote(script)}`;
+}
+
+async function archiveCronJobMetadata(botId: string): Promise<void> {
+  try {
+    await execCommand(botId, buildArchiveCronJobMetadataCommand());
+  } catch {
+    /* 元信息归档失败不影响主流程 */
+  }
+}
+
+export function parseCronRunFilesOutput(text: string, jobs: CronJob[]): CronRunRecord[] {
+  if (!text.trim()) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  const jobsById = new Map(jobs.map((job) => [job.id, job]));
+  const records: CronRunRecord[] = [];
+  for (const raw of parsed) {
+    const row = raw as CronRunFileRow;
+    const jobId = typeof row.job_id === "string" ? row.job_id : "";
+    const runAt = typeof row.run_at === "string" ? row.run_at : "";
+    const outputPath = typeof row.output_path === "string" ? row.output_path : "";
+    if (!jobId || !runAt || !outputPath) continue;
+    const job = jobsById.get(jobId);
+    const rowSchedule = normalizeRunSchedule(row.job_schedule);
+    records.push({
+      id: `${jobId}:${outputPath || runAt}`,
+      job_id: jobId,
+      job_name: job?.name || stringValue(row.job_name) || jobId,
+      job_prompt: job?.prompt || stringValue(row.job_prompt),
+      schedule: job?.schedule ?? rowSchedule,
+      deliver: job?.deliver || stringValue(row.job_deliver),
+      run_at: runAt,
+      status: inferRunStatus(row, job),
+      output_path: outputPath,
+    });
+  }
+  return records;
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function normalizeRunSchedule(value: unknown): CronJob["schedule"] | null {
+  if (typeof value === "string") {
+    const display = value.trim();
+    return display ? { kind: detectScheduleKind(display), expr: display, display } : null;
+  }
+  if (!value || typeof value !== "object") return null;
+  const raw = value as Record<string, unknown>;
+  const display = stringValue(raw.display) || stringValue(raw.expr) || stringValue(raw.value);
+  if (!display) return null;
+  const expr = stringValue(raw.expr) || display;
+  return {
+    kind: stringValue(raw.kind) || detectScheduleKind(display),
+    expr,
+    display,
+  };
+}
+
+function inferRunStatus(row: CronRunFileRow, job: CronJob | undefined): string | null {
+  const lastRunAt = job?.last_run_at || stringValue(row.job_last_run_at);
+  const lastStatus = job?.last_status || stringValue(row.job_last_status);
+  if (lastRunAt && lastStatus) {
+    const runMs = typeof row.mtime_ms === "number" ? row.mtime_ms : Date.parse(String(row.run_at ?? ""));
+    const lastRunMs = Date.parse(lastRunAt);
+    if (!Number.isNaN(runMs) && !Number.isNaN(lastRunMs) && Math.abs(runMs - lastRunMs) <= 5 * 60 * 1000) {
+      return lastStatus;
+    }
+  }
+  return stringValue(row.output_status) || null;
 }
 
 /** 兜底读 ~/.hermes/cron/jobs.json，失败返回空字符串 */
@@ -466,6 +703,7 @@ async function hydrateEffectiveWindows(botId: string, jobs: CronJob[]): Promise<
 
 export async function createCronJob(botId: string, input: CreateCronJobInput): Promise<void> {
   await execCommand(botId, buildCreateCommand(input));
+  await archiveCronJobMetadata(botId);
 }
 
 export async function createCronJobWithScriptRollback(

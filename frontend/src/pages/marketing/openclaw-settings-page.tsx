@@ -30,6 +30,7 @@ import {
   TerminalSquare,
   Download,
   Plus,
+  RefreshCcwDot,
   RefreshCw,
   Trash2,
   UserRound,
@@ -124,6 +125,21 @@ const RepairToolsIcon = (props: React.SVGProps<SVGSVGElement>) => (
     />
   </svg>
 );
+
+const SETTINGS_ICON_TOOLTIP_CLASS =
+  "pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium leading-relaxed text-[var(--text-primary)] opacity-0 shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100";
+
+const SETTINGS_ICON_TOOLTIP_ARROW_CLASS =
+  "absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-[var(--border-subtle)] bg-white";
+
+function SettingsIconTooltip({ label }: { label: string }) {
+  return (
+    <span role="tooltip" className={SETTINGS_ICON_TOOLTIP_CLASS}>
+      {label}
+      <span className={SETTINGS_ICON_TOOLTIP_ARROW_CLASS} />
+    </span>
+  );
+}
 
 type Channel = "wechat" | "qq" | null;
 type ConnectedChannel = Exclude<Channel, null>;
@@ -3825,7 +3841,7 @@ export const OpenClawSettingsPage = () => {
                 memoryV2: false,
                 qqbotplugin: false,
               };
-              const sdkProductConfig: IProductConfig = {
+              const sdkProductConfig: IProductConfig & { acliProduct: "lightvela" } = {
                 ...createLighthouseConfig({
                   agentType: "hermes",
                   supportsTencentCloudApi: false,
@@ -3926,15 +3942,9 @@ export const OpenClawSettingsPage = () => {
                                   : "text-black/35 hover:bg-black/[0.06] hover:text-black/80",
                               )}
                             >
-                              {isActiveBotRestarting ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                              {isActiveBotRestarting ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcwDot className="h-4 w-4" />}
                             </button>
-                            <span
-                              role="tooltip"
-                              className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-md bg-black/80 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-sm transition-opacity duration-75 group-focus-within:opacity-100 group-hover:opacity-100"
-                            >
-                              {restartTooltip}
-                              <span className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-x-[4px] border-t-[4px] border-x-transparent border-t-black/80" />
-                            </span>
+                            <SettingsIconTooltip label={restartTooltip} />
                           </span>
                           <span className="group relative inline-flex">
                             <button
@@ -3956,13 +3966,7 @@ export const OpenClawSettingsPage = () => {
                             >
                               {resetting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wrench className="h-4 w-4" />}
                             </button>
-                            <span
-                              role="tooltip"
-                              className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-md bg-black/80 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-sm transition-opacity duration-75 group-focus-within:opacity-100 group-hover:opacity-100"
-                            >
-                              {resetTooltip}
-                              <span className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-x-[4px] border-t-[4px] border-x-transparent border-t-black/80" />
-                            </span>
+                            <SettingsIconTooltip label={resetTooltip} />
                           </span>
                           <span className="group relative inline-flex">
                             <button
@@ -3985,13 +3989,7 @@ export const OpenClawSettingsPage = () => {
                             >
                               {resettingAcli ? <Loader2 className="h-4 w-4 animate-spin" /> : <RepairToolsIcon className="h-4 w-4" />}
                             </button>
-                            <span
-                              role="tooltip"
-                              className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-md bg-black/80 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-sm transition-opacity duration-75 group-focus-within:opacity-100 group-hover:opacity-100"
-                            >
-                              {acliResetTooltip}
-                              <span className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-x-[4px] border-t-[4px] border-x-transparent border-t-black/80" />
-                            </span>
+                            <SettingsIconTooltip label={acliResetTooltip} />
                           </span>
                           <span className="group relative inline-flex">
                             <button
@@ -4013,13 +4011,7 @@ export const OpenClawSettingsPage = () => {
                             >
                               <Trash2 className="h-4 w-4" />
                             </button>
-                            <span
-                              role="tooltip"
-                              className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-md bg-black/80 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-sm transition-opacity duration-75 group-focus-within:opacity-100 group-hover:opacity-100"
-                            >
-                              {deleteTooltip}
-                              <span className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-x-[4px] border-t-[4px] border-x-transparent border-t-black/80" />
-                            </span>
+                            <SettingsIconTooltip label={deleteTooltip} />
                           </span>
                         </div>
                         {visibleBots.length > 1 && (
