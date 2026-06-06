@@ -541,7 +541,11 @@ export function AutomationsPanel({ botId }: { botId: string | null }) {
       )}
 
       {viewingJob && (
-        <CronJobDetailModal job={viewingJob} onClose={() => setViewingJob(null)} />
+        <CronJobDetailModal
+          job={viewingJob}
+          lastAgentRun={getLastAgentRunForJob(viewingJob, recentRuns)}
+          onClose={() => setViewingJob(null)}
+        />
       )}
 
       {confirmDeleteJob && (
@@ -927,7 +931,15 @@ export function parseOnceScheduleDate(display: string, nextRunAt: string | null)
   return new Date(Number.NaN);
 }
 
-function CronJobDetailModal({ job, onClose }: { job: CronJob; onClose: () => void }) {
+function CronJobDetailModal({
+  job,
+  lastAgentRun,
+  onClose,
+}: {
+  job: CronJob;
+  lastAgentRun: CronRunRecord | null;
+  onClose: () => void;
+}) {
   const t = useT();
   const paused = !job.enabled || job.state === "paused";
   const nextRunAt = getEffectiveWindowStatus(job.effective_window) === "ended" ? null : job.next_run_at;
@@ -965,10 +977,10 @@ function CronJobDetailModal({ job, onClose }: { job: CronJob; onClose: () => voi
           <DetailRow label={t("执行时间")} value={formatScheduleFriendly(job, t)} />
           <DetailRow label={t("生效时间段")} value={formatEffectiveWindow(job.effective_window, t)} />
           {nextRunAt && <DetailRow label={t("下次执行")} value={formatTime(nextRunAt)} />}
-          {job.last_run_at && (
+          {lastAgentRun && (
             <DetailRow
               label={t("上次执行")}
-              value={formatLastRun(job.last_run_at, job.last_status, t)}
+              value={formatLastRun(lastAgentRun.run_at, lastAgentRun.status, t)}
             />
           )}
           <DeliverDetailRow deliver={job.deliver} />
@@ -1276,6 +1288,21 @@ export function parseCronDate(value: string): Date {
 function formatLastRun(iso: string, status: string | null, t: ReturnType<typeof useT>): string {
   const friendlyStatus = formatLastStatus(status, t);
   return friendlyStatus ? `${formatTime(iso)} · ${friendlyStatus}` : formatTime(iso);
+}
+
+export function getLastAgentRunForJob(job: CronJob, recentRuns: CronRunRecord[]): CronRunRecord | null {
+  let latest: CronRunRecord | null = null;
+  let latestTime = Number.NEGATIVE_INFINITY;
+  for (const run of recentRuns) {
+    if (run.job_id !== job.id) continue;
+    const time = parseCronDate(run.run_at).getTime();
+    const comparableTime = Number.isNaN(time) ? Number.NEGATIVE_INFINITY : time;
+    if (!latest || comparableTime > latestTime) {
+      latest = run;
+      latestTime = comparableTime;
+    }
+  }
+  return latest;
 }
 
 function formatLastStatus(status: string | null, t: ReturnType<typeof useT>): string {

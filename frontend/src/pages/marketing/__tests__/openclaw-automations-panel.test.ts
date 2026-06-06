@@ -4,6 +4,7 @@ import {
   buildEffectiveWindowFromInputs,
   buildDeliverString,
   buildScheduleString,
+  getLastAgentRunForJob,
   getEffectiveWindowStatus,
   isCronJobExpiredBeyondGrace,
   isEffectiveWindowRangeInvalid,
@@ -14,7 +15,7 @@ import {
   parseOnceScheduleDate,
   shouldRejectPastOnceSchedule,
 } from "../openclaw-automations-panel";
-import type { CronJob } from "@/lib/hermes-cron-client";
+import type { CronJob, CronRunRecord } from "@/lib/hermes-cron-client";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -254,6 +255,33 @@ describe("effective window helpers", () => {
   });
 });
 
+describe("getLastAgentRunForJob", () => {
+  it("uses the latest filtered Agent run instead of Hermes last_run_at", () => {
+    const job = makeCronJob({
+      id: "job-1",
+      last_run_at: "2026-06-06T14:20:37+08:00",
+      last_status: "ok",
+    });
+    const olderAgentRun = makeCronRun({
+      job_id: "job-1",
+      run_at: "2026-06-06T12:20:37+08:00",
+    });
+    const latestAgentRun = makeCronRun({
+      job_id: "job-1",
+      run_at: "2026-06-06T13:20:37+08:00",
+    });
+
+    expect(getLastAgentRunForJob(job, [olderAgentRun, latestAgentRun])?.run_at)
+      .toBe("2026-06-06T13:20:37+08:00");
+  });
+
+  it("returns null when no confirmed Agent run is available for the job", () => {
+    expect(getLastAgentRunForJob(makeCronJob({ id: "job-1" }), [
+      makeCronRun({ job_id: "other-job" }),
+    ])).toBeNull();
+  });
+});
+
 describe("once schedule validation", () => {
   const now = new Date(2026, 4, 26, 10, 0).getTime();
 
@@ -330,6 +358,21 @@ function makeCronJob(overrides: Partial<CronJob>): CronJob {
     created_at: null,
     script: "",
     effective_window: null,
+    ...overrides,
+  };
+}
+
+function makeCronRun(overrides: Partial<CronRunRecord>): CronRunRecord {
+  return {
+    id: "run-1",
+    job_id: "job-1",
+    job_name: "提醒",
+    job_prompt: "提醒我喝水",
+    schedule: { kind: "cron", expr: "0 9 * * *", display: "0 9 * * *" },
+    deliver: "local",
+    run_at: "2026-06-06T09:00:00+08:00",
+    status: "ok",
+    output_path: "/home/agentuser/.hermes/cron/output/job-1/run.md",
     ...overrides,
   };
 }
