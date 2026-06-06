@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 	"time"
@@ -112,6 +113,27 @@ func Run(ctx context.Context, cfg TemporalConfig, activities *Activities) error 
 	w := worker.New(c, taskQueue, worker.Options{})
 	Register(w, activities)
 	return w.Run(worker.InterruptCh())
+}
+
+func RunLocalReconciler(ctx context.Context, activities *Activities, input ReconcileInput) {
+	if input.RecheckDelaySeconds <= 0 {
+		input.RecheckDelaySeconds = 15
+	}
+	ticker := time.NewTicker(time.Duration(input.RecheckDelaySeconds) * time.Second)
+	defer ticker.Stop()
+	for {
+		status, err := activities.EnsureWarmRuntimePool(ctx, input)
+		if err != nil {
+			log.Printf("runtime pool local reconcile failed pool_key=%s error=%v", input.PoolKey, err)
+		} else {
+			log.Printf("runtime pool local reconcile pool_key=%s ready=%d creating=%d created=%d failed=%d", status.PoolKey, status.ReadyCount, status.CreatingCount, status.CreatedCount, status.FailedCount)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
 }
 
 func WarmRuntimePoolWorkflow(ctx workflow.Context, input ReconcileInput) (ReconcileStatus, error) {

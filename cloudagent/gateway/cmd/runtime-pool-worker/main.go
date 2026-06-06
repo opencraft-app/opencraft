@@ -61,15 +61,19 @@ func main() {
 	defer temporalClient.Close()
 	workflowIDBase := envDefault("GATEWAY_RUNTIME_WARM_POOL_WORKFLOW_ID", "cloudagent-runtime-pool")
 	workflowID := runtimepool.WorkflowIDForPool(workflowIDBase, poolKey)
-	_, err = temporalClient.ExecuteWorkflow(ctx, tempclient.StartWorkflowOptions{
+	run, err := temporalClient.ExecuteWorkflow(ctx, tempclient.StartWorkflowOptions{
 		ID:        workflowID,
 		TaskQueue: envDefault("TEMPORAL_TASK_QUEUE", runtimepool.DefaultTaskQueue),
 	}, runtimepool.WarmRuntimePoolWorkflow, input)
 	if err != nil {
-		log.Printf("start warm runtime pool workflow: %v", err)
+		log.Printf("start warm runtime pool workflow workflow_id=%s: %v", workflowID, err)
+	} else {
+		log.Printf("runtime pool workflow requested workflow_id=%s run_id=%s", run.GetID(), run.GetRunID())
 	}
-	log.Printf("runtime pool worker starting task_queue=%s pool_key=%s desired_ready=%d", envDefault("TEMPORAL_TASK_QUEUE", runtimepool.DefaultTaskQueue), poolKey, input.DesiredReady)
-	if err := runtimepool.Run(ctx, cfg, &runtimepool.Activities{Store: poolStore, Worker: worker, ExpectedPoolKey: poolKey}); err != nil {
+	activities := &runtimepool.Activities{Store: poolStore, Worker: worker, ExpectedPoolKey: poolKey}
+	go runtimepool.RunLocalReconciler(ctx, activities, input)
+	log.Printf("runtime pool worker starting task_queue=%s pool_key=%s workflow_id=%s desired_ready=%d", envDefault("TEMPORAL_TASK_QUEUE", runtimepool.DefaultTaskQueue), poolKey, workflowID, input.DesiredReady)
+	if err := runtimepool.Run(ctx, cfg, activities); err != nil {
 		log.Fatalf("run runtime pool worker: %v", err)
 	}
 }
