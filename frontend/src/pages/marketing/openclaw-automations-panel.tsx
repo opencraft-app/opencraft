@@ -2141,13 +2141,13 @@ function RecurringPicker({
       {period === "weekly" && (
         <div ref={weekdayPickerRef} className="relative min-w-[220px] max-w-full">
           <div
+            onClick={() => setWeekdayPickerOpen((open) => !open)}
             className="flex min-h-[42px] w-full items-center gap-1.5 rounded-lg border border-black/10 bg-white px-2.5 py-1.5 pr-9 text-left text-sm focus-within:border-black/30"
             style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
           >
             <div
               role="button"
               tabIndex={0}
-              onClick={() => setWeekdayPickerOpen((open) => !open)}
               className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-left focus:outline-none"
               aria-haspopup="listbox"
               aria-expanded={weekdayPickerOpen}
@@ -2230,13 +2230,13 @@ function RecurringPicker({
       {period === "monthly" && (
         <div ref={monthdayPickerRef} className="relative min-w-[300px] max-w-full">
           <div
+            onClick={() => setMonthdayPickerOpen((open) => !open)}
             className="flex min-h-[42px] w-full items-center gap-1.5 rounded-lg border border-black/10 bg-white px-2.5 py-1.5 pr-9 text-left text-sm focus-within:border-black/30"
             style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
           >
             <div
               role="button"
               tabIndex={0}
-              onClick={() => setMonthdayPickerOpen((open) => !open)}
               className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-left focus:outline-none"
               aria-haspopup="listbox"
               aria-expanded={monthdayPickerOpen}
@@ -2278,7 +2278,10 @@ function RecurringPicker({
             {selectedMonthdays.length > 1 && (
               <button
                 type="button"
-                onClick={() => onMonthdays([selectedMonthdays[0] ?? 1])}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onMonthdays([selectedMonthdays[0] ?? 1]);
+                }}
                 className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-black/45 transition hover:bg-black/[0.04] hover:text-black/70"
                 aria-label={t("清空")}
               >
