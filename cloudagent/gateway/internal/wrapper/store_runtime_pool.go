@@ -213,6 +213,7 @@ func (s *Store) ClaimWarmRuntime(ctx context.Context, req WarmRuntimeClaimReques
 	}
 	now := time.Now().UTC()
 	leaseUntil := now.Add(warmRuntimeClaimTTL(req.TTL))
+	readyCutoff := now.Add(-warmRuntimeReadyTTL(req.MaxReadyAge))
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -220,13 +221,7 @@ func (s *Store) ClaimWarmRuntime(ctx context.Context, req WarmRuntimeClaimReques
 		return WarmRuntimeClaim{}, err
 	}
 	defer tx.Rollback()
-	var itemID string
-	err = tx.QueryRowContext(ctx, `
-SELECT item_id
-FROM warm_runtime_pool_items
-WHERE pool_key = ? AND state = ?
-ORDER BY updated_at ASC
-LIMIT 1`, req.PoolKey, warmRuntimePoolStateReady).Scan(&itemID)
+	itemID, err := selectFreshWarmRuntimeItem(ctx, tx, req.PoolKey, readyCutoff, false)
 	if errors.Is(err, sql.ErrNoRows) {
 		return WarmRuntimeClaim{}, ErrWarmRuntimePoolMiss
 	}
@@ -279,6 +274,40 @@ WHERE item_id = ? AND pool_key = ? AND state = ?`,
 		Host:        item.Host,
 		SourceState: warmRuntimePoolStateReady,
 	}, nil
+}
+
+func selectFreshWarmRuntimeItem(ctx context.Context, q warmRuntimePoolQueryer, poolKey string, readyCutoff time.Time, forUpdate bool) (string, error) {
+	query := `
+SELECT item_id, updated_at
+FROM warm_runtime_pool_items
+WHERE pool_key = ? AND state = ?
+ORDER BY updated_at ASC
+LIMIT 100`
+	if forUpdate {
+		query += "\nFOR UPDATE"
+	}
+	rows, err := q.QueryContext(ctx, query, poolKey, warmRuntimePoolStateReady)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var itemID, updatedAtText string
+		if err := rows.Scan(&itemID, &updatedAtText); err != nil {
+			return "", err
+		}
+		updatedAt, err := parseOptionalWorkspaceTime("warm runtime updated_at", updatedAtText)
+		if err != nil {
+			return "", err
+		}
+		if updatedAt.IsZero() || !updatedAt.Before(readyCutoff) {
+			return itemID, nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return "", err
+	}
+	return "", sql.ErrNoRows
 }
 
 func (s *Store) DiscardWarmRuntime(ctx context.Context, claim WarmRuntimeClaim, reason string) error {

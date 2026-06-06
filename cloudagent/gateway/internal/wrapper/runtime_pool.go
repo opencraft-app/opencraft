@@ -47,11 +47,12 @@ type WarmRuntimeReserveRequest struct {
 }
 
 type WarmRuntimeClaimRequest struct {
-	PoolKey    string
-	OwnerID    string
-	SessionID  string
-	Generation int64
-	TTL        time.Duration
+	PoolKey     string
+	OwnerID     string
+	SessionID   string
+	Generation  int64
+	TTL         time.Duration
+	MaxReadyAge time.Duration
 }
 
 type WarmRuntimeClaim struct {
@@ -171,6 +172,13 @@ func warmRuntimePoolKeyForRuntime(runtime ACPSessionRuntime, backend agentSideca
 }
 
 func warmRuntimeClaimTTL(ttl time.Duration) time.Duration {
+	if ttl <= 0 {
+		return defaultWorkspaceLeaseTTL
+	}
+	return ttl
+}
+
+func warmRuntimeReadyTTL(ttl time.Duration) time.Duration {
 	if ttl <= 0 {
 		return defaultWorkspaceLeaseTTL
 	}
