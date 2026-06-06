@@ -55,9 +55,7 @@ func (w *AgentSidecarWorker) WarmRuntimePoolKey(req WarmRuntimeCreateRequest) (s
 	if err != nil {
 		return "", err
 	}
-	if artifact.URL == "" {
-		artifact = w.defaultSidecarArtifact()
-	}
+	artifact = resolvedSidecarArtifact(artifact, agentPlugin, w.defaultSidecarArtifact())
 	runtime := ACPSessionRuntime{
 		SandboxBackend:      backend.name,
 		OuterRuntime:        normalizeOuterRuntime(firstNonEmpty(req.OuterRuntime, w.outerRuntime)),

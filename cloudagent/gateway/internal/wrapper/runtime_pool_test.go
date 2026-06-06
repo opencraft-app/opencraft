@@ -59,13 +59,24 @@ func TestWarmRuntimePoolKeyMatchesSessionClaimRuntime(t *testing.T) {
 	if err != nil {
 		t.Fatalf("worker warm pool key: %v", err)
 	}
+	agentPlugin, err := agentBehaviorPluginFor("builtin.v1")
+	if err != nil {
+		t.Fatalf("agent behavior plugin: %v", err)
+	}
+	requestArtifact, err := validatedSidecarArtifact("test session sidecar_artifact", agentSidecarArtifact{})
+	if err != nil {
+		t.Fatalf("validate empty artifact: %v", err)
+	}
+	resolvedArtifact := resolvedSidecarArtifact(requestArtifact, agentPlugin, worker.defaultSidecarArtifact())
 	claimRuntime := ACPSessionRuntime{
 		SandboxBackend:      backend.name,
 		OuterRuntime:        outerRuntimeWisp,
 		AgentVersion:        "builtin.v1",
 		AgentTemplateID:     backend.outerTemplateID,
-		SidecarURL:          worker.sidecarURL,
-		SidecarSHA256:       worker.sidecarSHA256,
+		SidecarURL:          resolvedArtifact.URL,
+		SidecarSHA256:       resolvedArtifact.SHA256,
+		SidecarSigURL:       resolvedArtifact.SigURL,
+		SigningKeyID:        resolvedArtifact.SigningKeyID,
 		WorkspaceVersion:    "builtin.v1",
 		WorkspaceTemplateID: backend.innerTemplateID,
 		WispPackageURL:      worker.wispPackageURL,
