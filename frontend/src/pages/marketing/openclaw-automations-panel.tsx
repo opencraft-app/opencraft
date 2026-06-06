@@ -2122,7 +2122,7 @@ function RecurringPicker({
                     onPeriod(option.value);
                     setPeriodPickerOpen(false);
                   }}
-                  style={{ fontSize: "12px", lineHeight: "20px" }}
+                  style={{ fontSize: "14px", lineHeight: "22px" }}
                   className={
                     "flex w-full items-center justify-between rounded-lg px-3 py-2 transition " +
                     (checked
