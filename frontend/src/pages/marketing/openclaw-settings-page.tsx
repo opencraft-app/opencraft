@@ -30,8 +30,8 @@ import {
   TerminalSquare,
   Download,
   Plus,
-  RefreshCcwDot,
   RefreshCw,
+  RotateCw,
   Trash2,
   UserRound,
   Wand2,
@@ -3942,7 +3942,7 @@ export const OpenClawSettingsPage = () => {
                                   : "text-black/35 hover:bg-black/[0.06] hover:text-black/80",
                               )}
                             >
-                              {isActiveBotRestarting ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcwDot className="h-4 w-4" />}
+                              {isActiveBotRestarting ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCw className="h-4 w-4" />}
                             </button>
                             <SettingsIconTooltip label={restartTooltip} />
                           </span>
