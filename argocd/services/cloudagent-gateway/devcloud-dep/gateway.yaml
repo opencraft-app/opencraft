@@ -39,6 +39,7 @@ data:
   GATEWAY_RUNTIME_WARM_POOL_RECHECK_SECONDS: "15"
   GATEWAY_RUNTIME_WARM_POOL_AGENT_VERSION: "builtin.v1"
   GATEWAY_RUNTIME_WARM_POOL_WORKSPACE_VERSION: "builtin.v1"
+  GATEWAY_RUNTIME_WARM_POOL_WORKFLOW_ID: "cloudagent-runtime-pool-devcloud-dep-v6"
   TEMPORAL_ADDRESS: "temporal-frontend.lightclaw.tech:443"
   TEMPORAL_NAMESPACE: "default"
   TEMPORAL_TLS: "true"
