@@ -1806,7 +1806,7 @@ function AutomationFormModal({
             rows={5}
             maxLength={800}
             placeholder={t("请用提示词的形式描述需要执行的任务，比如：提醒我喝水")}
-            className="mt-1.5 w-full resize-none rounded-lg border border-black/10 bg-white px-3 py-2 text-sm placeholder:text-sm placeholder:text-black/35 focus:border-black/30 focus:outline-none"
+            className="mt-1.5 w-full resize-none rounded-md border border-black/10 bg-white px-3 py-2 text-sm placeholder:text-sm placeholder:text-black/35 focus:border-black/30 focus:outline-none"
             style={{ ...MODAL_COMPACT_CONTROL_TEXT_STYLE, marginTop: 6 }}
           />
         </div>
