@@ -703,6 +703,7 @@ func (w *AgentSidecarWorker) StartSessionRuntime(ctx context.Context, req ACPSes
 	if err != nil {
 		return ACPSessionRuntime{}, err
 	}
+	sidecarArtifact = resolvedSidecarArtifact(sidecarArtifact, agentPlugin, w.defaultSidecarArtifact())
 	req.SidecarArtifact = sidecarArtifact
 	workspaceVersion := normalizeRuntimeVersion(req.WorkspaceVersion, defaultWorkspaceVersion)
 	workspaceSpec, err := workspaceRuntimeSpecFor(workspaceVersion)
