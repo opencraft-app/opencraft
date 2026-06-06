@@ -79,6 +79,42 @@ func TestEnsureWarmRuntimePoolExpiresStaleCreatingItems(t *testing.T) {
 	}
 }
 
+func TestEnsureWarmRuntimePoolExpiresStaleReadyItems(t *testing.T) {
+	stale := wrapper.WarmRuntimeItem{
+		ItemID:    "warm_ready_stale",
+		PoolKey:   "runtime_pool.v1.current",
+		State:     "ready",
+		UpdatedAt: time.Now().Add(-10 * time.Minute),
+	}
+	active := wrapper.WarmRuntimeItem{
+		ItemID:    "warm_ready_active",
+		PoolKey:   "runtime_pool.v1.current",
+		State:     "ready",
+		UpdatedAt: time.Now(),
+	}
+	store := &recordingWarmRuntimeStore{itemsByState: map[string][]wrapper.WarmRuntimeItem{
+		"ready": {stale, active},
+	}}
+	activity := &Activities{Store: store, ExpectedPoolKey: "runtime_pool.v1.current"}
+	status, err := activity.EnsureWarmRuntimePool(context.Background(), ReconcileInput{
+		PoolKey:             "runtime_pool.v1.current",
+		DesiredReady:        5,
+		ReadyTimeoutSeconds: 60,
+	})
+	if err != nil {
+		t.Fatalf("ensure pool: %v", err)
+	}
+	if status.ReadyCount != 1 || status.StaleReadyCount != 1 || status.FailedCount != 1 {
+		t.Fatalf("status = %+v, want one active ready and one stale failed", status)
+	}
+	if got := store.markedStates["warm_ready_stale"]; got != "failed" {
+		t.Fatalf("stale ready item marked state = %q, want failed", got)
+	}
+	if _, ok := store.markedStates["warm_ready_active"]; ok {
+		t.Fatalf("active ready item must not be marked stale")
+	}
+}
+
 type recordingWarmRuntimeStore struct {
 	reserveCalls int
 	listCalls    int

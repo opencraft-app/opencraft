@@ -14,11 +14,12 @@ func (w *AgentSidecarWorker) tryClaimWarmSessionRuntime(ctx context.Context, req
 	poolKey := warmRuntimePoolKeyForRuntime(runtime, backend)
 	timeline("acp_runtime_pool_claim_start", "pool_key="+quoteTimelineField(poolKey))
 	claim, err := w.runtimePool.ClaimWarmRuntime(ctx, WarmRuntimeClaimRequest{
-		PoolKey:    poolKey,
-		OwnerID:    runtimeResourceOwnerID(req),
-		SessionID:  req.SessionID,
-		Generation: req.Generation,
-		TTL:        w.workspaceLeaseTTL,
+		PoolKey:     poolKey,
+		OwnerID:     runtimeResourceOwnerID(req),
+		SessionID:   req.SessionID,
+		Generation:  req.Generation,
+		TTL:         w.workspaceLeaseTTL,
+		MaxReadyAge: envDurationSeconds("GATEWAY_RUNTIME_WARM_POOL_READY_TTL_SECONDS", defaultWorkspaceLeaseTTL),
 	})
 	if errors.Is(err, ErrWarmRuntimePoolMiss) {
 		timeline("acp_runtime_pool_claim_miss", "pool_key="+quoteTimelineField(poolKey))

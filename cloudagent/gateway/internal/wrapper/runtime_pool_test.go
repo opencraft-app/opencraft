@@ -142,6 +142,46 @@ func TestWarmRuntimePoolClaimIsSingleWriter(t *testing.T) {
 	}
 }
 
+func TestWarmRuntimePoolClaimSkipsExpiredReadyItem(t *testing.T) {
+	store, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	host := validWarmRuntimeHost()
+	if err := store.UpsertWarmRuntimeItem(ctx, WarmRuntimeItem{
+		ItemID:    "warm_old",
+		PoolKey:   "pool_a",
+		State:     warmRuntimePoolStateReady,
+		Host:      host,
+		UpdatedAt: time.Now().Add(-10 * time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpsertWarmRuntimeItem(ctx, WarmRuntimeItem{
+		ItemID:    "warm_fresh",
+		PoolKey:   "pool_a",
+		State:     warmRuntimePoolStateReady,
+		Host:      host,
+		UpdatedAt: time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	claim, err := store.ClaimWarmRuntime(ctx, WarmRuntimeClaimRequest{
+		PoolKey:     "pool_a",
+		OwnerID:     "gateway_a",
+		SessionID:   "session_a",
+		Generation:  1,
+		MaxReadyAge: time.Minute,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claim.ItemID != "warm_fresh" {
+		t.Fatalf("claimed item = %s, want warm_fresh", claim.ItemID)
+	}
+}
+
 func TestWarmRuntimePoolReserveIsSharedStoreCapacityGate(t *testing.T) {
 	root := t.TempDir()
 	storeA, err := NewStore(root)

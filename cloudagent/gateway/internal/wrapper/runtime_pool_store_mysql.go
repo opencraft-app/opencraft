@@ -293,19 +293,13 @@ func (s *MySQLWarmRuntimePoolStore) ClaimWarmRuntime(ctx context.Context, req Wa
 	}
 	now := time.Now().UTC()
 	leaseUntil := now.Add(warmRuntimeClaimTTL(req.TTL))
+	readyCutoff := now.Add(-warmRuntimeReadyTTL(req.MaxReadyAge))
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return WarmRuntimeClaim{}, err
 	}
 	defer tx.Rollback()
-	var itemID string
-	err = tx.QueryRowContext(ctx, `
-SELECT item_id
-FROM warm_runtime_pool_items
-WHERE pool_key = ? AND state = ?
-ORDER BY updated_at ASC
-LIMIT 1
-FOR UPDATE`, req.PoolKey, warmRuntimePoolStateReady).Scan(&itemID)
+	itemID, err := selectFreshWarmRuntimeItem(ctx, tx, req.PoolKey, readyCutoff, true)
 	if errors.Is(err, sql.ErrNoRows) {
 		return WarmRuntimeClaim{}, ErrWarmRuntimePoolMiss
 	}
@@ -490,6 +484,7 @@ func mysqlURLToDSN(raw string) (string, error) {
 }
 
 type warmRuntimePoolQueryer interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }
 
