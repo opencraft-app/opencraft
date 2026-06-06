@@ -33,19 +33,21 @@ type TemporalConfig struct {
 }
 
 type ReconcileInput struct {
-	PoolKey             string
-	DesiredReady        int
-	RecheckDelaySeconds int
-	MaxIterations       int
-	CreateRequest       wrapper.WarmRuntimeCreateRequest
+	PoolKey                string
+	DesiredReady           int
+	RecheckDelaySeconds    int
+	CreatingTimeoutSeconds int
+	MaxIterations          int
+	CreateRequest          wrapper.WarmRuntimeCreateRequest
 }
 
 type ReconcileStatus struct {
-	PoolKey       string
-	ReadyCount    int
-	CreatingCount int
-	CreatedCount  int
-	FailedCount   int
+	PoolKey            string
+	ReadyCount         int
+	CreatingCount      int
+	CreatedCount       int
+	FailedCount        int
+	StaleCreatingCount int
 }
 
 type Activities struct {
@@ -126,7 +128,7 @@ func RunLocalReconciler(ctx context.Context, activities *Activities, input Recon
 		if err != nil {
 			log.Printf("runtime pool local reconcile failed pool_key=%s error=%v", input.PoolKey, err)
 		} else {
-			log.Printf("runtime pool local reconcile pool_key=%s ready=%d creating=%d created=%d failed=%d", status.PoolKey, status.ReadyCount, status.CreatingCount, status.CreatedCount, status.FailedCount)
+			log.Printf("runtime pool local reconcile pool_key=%s ready=%d creating=%d created=%d failed=%d stale_creating=%d", status.PoolKey, status.ReadyCount, status.CreatingCount, status.CreatedCount, status.FailedCount, status.StaleCreatingCount)
 		}
 		select {
 		case <-ctx.Done():
@@ -139,6 +141,9 @@ func RunLocalReconciler(ctx context.Context, activities *Activities, input Recon
 func WarmRuntimePoolWorkflow(ctx workflow.Context, input ReconcileInput) (ReconcileStatus, error) {
 	if input.DesiredReady <= 0 {
 		input.DesiredReady = 1
+	}
+	if input.CreatingTimeoutSeconds <= 0 {
+		input.CreatingTimeoutSeconds = 300
 	}
 	if input.RecheckDelaySeconds <= 0 {
 		input.RecheckDelaySeconds = 15
@@ -201,11 +206,28 @@ func (a *Activities) EnsureWarmRuntimePool(ctx context.Context, input ReconcileI
 	if err != nil {
 		return ReconcileStatus{}, err
 	}
+	activeCreating := creating[:0]
 	status := ReconcileStatus{
-		PoolKey:       poolKey,
-		ReadyCount:    len(ready),
-		CreatingCount: len(creating),
+		PoolKey:    poolKey,
+		ReadyCount: len(ready),
 	}
+	staleCutoff := time.Now().Add(-time.Duration(input.CreatingTimeoutSeconds) * time.Second)
+	for _, item := range creating {
+		updatedAt := item.UpdatedAt
+		if updatedAt.IsZero() {
+			updatedAt = item.CreatedAt
+		}
+		if !updatedAt.IsZero() && updatedAt.Before(staleCutoff) {
+			status.StaleCreatingCount++
+			status.FailedCount++
+			if err := a.Store.MarkWarmRuntimeItemState(ctx, item.ItemID, "failed", fmt.Sprintf("warm runtime creation exceeded %ds timeout", input.CreatingTimeoutSeconds)); err != nil {
+				return status, err
+			}
+			continue
+		}
+		activeCreating = append(activeCreating, item)
+	}
+	status.CreatingCount = len(activeCreating)
 	for {
 		reserved, ok, err := a.Store.ReserveWarmRuntimeItem(ctx, wrapper.WarmRuntimeReserveRequest{
 			PoolKey:      poolKey,
