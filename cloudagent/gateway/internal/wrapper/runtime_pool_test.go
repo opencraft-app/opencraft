@@ -35,6 +35,54 @@ func TestWarmRuntimePoolKeySeparatesVersionsAndArtifacts(t *testing.T) {
 	}
 }
 
+func TestWarmRuntimePoolKeyMatchesSessionClaimRuntime(t *testing.T) {
+	backend := agentSidecarBackend{
+		name:            "ags",
+		outerTemplateID: "sdt-hwd907s8",
+		innerTemplateID: "sdt-hwd907s8",
+	}
+	worker := &AgentSidecarWorker{
+		backends:           map[string]agentSidecarBackend{"ags": backend},
+		defaultBackendName: "ags",
+		outerRuntime:       outerRuntimeWisp,
+		sidecarURL:         "https://example.com/cloudagent-sidecar",
+		sidecarSHA256:      strings.Repeat("a", 64),
+		wispPackageURL:     "https://example.com/wisp.erofs",
+		wispRootUpperSize:  "10G",
+		wispJFSPrefix:      "cloudagent-devcloud-dep",
+	}
+	workerKey, err := worker.WarmRuntimePoolKey(WarmRuntimeCreateRequest{
+		OuterRuntime:     outerRuntimeWisp,
+		AgentVersion:     "builtin.v1",
+		WorkspaceVersion: "builtin.v1",
+	})
+	if err != nil {
+		t.Fatalf("worker warm pool key: %v", err)
+	}
+	claimRuntime := ACPSessionRuntime{
+		SandboxBackend:      backend.name,
+		OuterRuntime:        outerRuntimeWisp,
+		AgentVersion:        "builtin.v1",
+		AgentTemplateID:     backend.outerTemplateID,
+		SidecarURL:          worker.sidecarURL,
+		SidecarSHA256:       worker.sidecarSHA256,
+		WorkspaceVersion:    "builtin.v1",
+		WorkspaceTemplateID: backend.innerTemplateID,
+		WispPackageURL:      worker.wispPackageURL,
+		WispRootUpperSize:   worker.wispRootUpperSize,
+		WispJFSPrefix:       worker.wispJFSPrefix,
+	}
+	if claimKey := warmRuntimePoolKeyForRuntime(claimRuntime, backend); claimKey != workerKey {
+		t.Fatalf("claim key %s must match worker key %s", claimKey, workerKey)
+	}
+	claimRuntime.WispPackageURL = ""
+	claimRuntime.WispRootUpperSize = ""
+	claimRuntime.WispJFSPrefix = ""
+	if claimKey := warmRuntimePoolKeyForRuntime(claimRuntime, backend); claimKey == workerKey {
+		t.Fatalf("claim key must include Wisp package and storage fields")
+	}
+}
+
 func TestWarmRuntimePoolClaimIsSingleWriter(t *testing.T) {
 	store, err := NewStore(t.TempDir())
 	if err != nil {
