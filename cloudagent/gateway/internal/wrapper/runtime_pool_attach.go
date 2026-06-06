@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -73,13 +74,28 @@ func (w *AgentSidecarWorker) startSessionRuntimeFromWarmClaim(ctx context.Contex
 	if err := w.upsertRuntimeResource(ctx, req, runtime.RuntimeID, claimedBackend.name, "creating", runtime.OuterSandboxID, runtime.InnerSandboxID, ""); err != nil {
 		return ACPSessionRuntime{}, err
 	}
-	spacePrepare := w.startWispSMHSpacePrepare(ctx, timeline)
-	space, err := spacePrepare.await()
-	if err != nil {
-		_ = w.runtimePool.DiscardWarmRuntime(context.Background(), claim, err.Error())
-		return ACPSessionRuntime{}, err
+	var (
+		space        agentWispSMHSpace
+		cleanupSpace bool
+		err          error
+	)
+	if strings.TrimSpace(runtime.WispSMHSpaceID) != "" {
+		var token string
+		token, err = w.issueWispSMHToken(ctx, runtime.WispSMHSpaceID, "admin")
+		if err != nil {
+			_ = w.runtimePool.DiscardWarmRuntime(context.Background(), claim, err.Error())
+			return ACPSessionRuntime{}, err
+		}
+		space = agentWispSMHSpace{SpaceID: runtime.WispSMHSpaceID, AccessToken: token, Owned: false}
+	} else {
+		spacePrepare := w.startWispSMHSpacePrepare(ctx, timeline)
+		space, err = spacePrepare.await()
+		if err != nil {
+			_ = w.runtimePool.DiscardWarmRuntime(context.Background(), claim, err.Error())
+			return ACPSessionRuntime{}, err
+		}
+		cleanupSpace = space.Owned
 	}
-	cleanupSpace := space.Owned
 	defer func() {
 		if cleanupSpace {
 			cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

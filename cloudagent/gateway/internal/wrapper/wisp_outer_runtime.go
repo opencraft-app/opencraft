@@ -26,6 +26,14 @@ func wispAdminAddr(ACPSessionRuntime) string {
 	return defaultWispOuterAdminAddr
 }
 
+func wispInstallDirFromClient(clientPath string) string {
+	clientPath = strings.TrimSpace(clientPath)
+	if clientPath == "" {
+		return ""
+	}
+	return path.Dir(path.Dir(clientPath))
+}
+
 type agentWispSMHSpace struct {
 	SpaceID     string
 	AccessToken string
@@ -862,28 +870,19 @@ esac
 		fi
 		step_done wisp_host_preflight
 
-		if [[ "${WISP_HOST_ONLY:-}" == "1" ]]; then
-		  echo "WISP_HOST_READY install=$install"
-		  exit 0
-		fi
-
 		step_start wisp_config_write
 	mkdir -p "$(dirname "$config_file")"
 	cat >"$config_file" <<-EOF
 local projectRoot = "$install";
 {
   WISP_NAME: "default",
-  REMOTE_BACKEND: "smh",
+  REMOTE_BACKEND: "cos",
   COS_ENABLED: false,
   COS_WORKSPACE: "default",
   JFS_ROOT: "$jfs_root",
-  SMH_ENABLED: true,
-  SMH_LIBRARY_ID: "$SMH_LIBRARY_ID",
-  SMH_ACCESS_DOMAIN: "$SMH_ACCESS_DOMAIN",
-  SMH_SPACE_ID: "$SMH_SPACE_ID",
   SMH_TOKEN_TTL_SECONDS: 3600,
   JFS_LOCAL_ROOT: "$work/jfs-local",
-  JFS_PREFIX: "$JFS_PREFIX",
+  JFS_PREFIX: "host",
   JFS_BIN: projectRoot + "/bin/juicefs-smount",
   JFS_BUILD: "0",
   JFS_SMOUNT_SCRIPT: projectRoot + "/juicefs/hack/smount.sh",
@@ -907,9 +906,6 @@ local projectRoot = "$install";
 	step_done wisp_config_write
 	
 	export WISP_CONFIG="$config_file"
-export REMOTE_BACKEND=smh
-export SMH_ENABLED=true
-export COS_ENABLED=false
 export JFS_ROOT="$jfs_root"
 export JFS_LOCAL_ROOT="$work/jfs-local"
 export JFS_BIN="$install/bin/juicefs-smount"
@@ -927,14 +923,13 @@ export BLANK_ROOT_UPPER_SPARSE="$blank_root_upper_sparse"
 export ADMIN_LISTEN_ADDR="$admin_listen"
 export JFS_LITESTREAM_TRACE="${JFS_LITESTREAM_TRACE:-}"
 
-	step_start wisp_daemon_spawn
-	sudo -n env \
+	if "$install/bin/wispclient" -server "$admin_server" ls >/dev/null 2>&1; then
+	  step wisp_daemon_already_ready
+	else
+	  step_start wisp_daemon_spawn
+	  sudo -n env \
   WISP_CONFIG="$WISP_CONFIG" \
-  REMOTE_BACKEND="$REMOTE_BACKEND" \
-  SMH_ENABLED="$SMH_ENABLED" \
-  COS_ENABLED="$COS_ENABLED" \
   JFS_ROOT="$JFS_ROOT" \
-  JFS_PREFIX="$JFS_PREFIX" \
   JFS_LOCAL_ROOT="$JFS_LOCAL_ROOT" \
   JFS_BIN="$JFS_BIN" \
   JFS_BUILD="$JFS_BUILD" \
@@ -956,11 +951,6 @@ export JFS_LITESTREAM_TRACE="${JFS_LITESTREAM_TRACE:-}"
   WISP_USE_HOST_E2FSPROGS="${WISP_USE_HOST_E2FSPROGS:-0}" \
   ROOT_UPPER_SIZE="$ROOT_UPPER_SIZE" \
   ADMIN_LISTEN_ADDR="$ADMIN_LISTEN_ADDR" \
-  SMH_LIBRARY_ID="$SMH_LIBRARY_ID" \
-  SMH_ACCESS_DOMAIN="$SMH_ACCESS_DOMAIN" \
-  SMH_SPACE_ID="$SMH_SPACE_ID" \
-  SMH_ACCESS_TOKEN="$SMH_ACCESS_TOKEN" \
-  SMH_HTTP_TRACE="$SMH_HTTP_TRACE" \
   JFS_LITESTREAM_TRACE="$JFS_LITESTREAM_TRACE" \
   JFS_MOUNT_WRITEBACK="$JFS_MOUNT_WRITEBACK" \
   JFS_MOUNT_UPLOAD_DELAY="$JFS_MOUNT_UPLOAD_DELAY" \
@@ -968,8 +958,9 @@ export JFS_LITESTREAM_TRACE="${JFS_LITESTREAM_TRACE:-}"
   JFS_MOUNT_CACHE_SIZE="$JFS_MOUNT_CACHE_SIZE" \
   JFS_MOUNT_MIN_FREE_BYTES="$JFS_MOUNT_MIN_FREE_BYTES" \
 	  JFS_WRITEBACK_BARRIER_POLL_INTERVAL="$JFS_WRITEBACK_BARRIER_POLL_INTERVAL" \
-	  "$install/bin/wisp" daemon run --config "$WISP_CONFIG" >"$log" 2>&1 &
-	step_done wisp_daemon_spawn
+  "$install/bin/wisp" daemon run --config "$WISP_CONFIG" >"$log" 2>&1 &
+	  step_done wisp_daemon_spawn
+	fi
 	
 	step_start wisp_daemon_ready_wait
 	for i in $(seq 1 30); do
@@ -986,6 +977,24 @@ export JFS_LITESTREAM_TRACE="${JFS_LITESTREAM_TRACE:-}"
 	"$install/bin/wispclient" -server "$admin_server" bootstrap || { echo "daemon log after bootstrap failure:" >&2; cat "$log" >&2 || true; exit 1; }
 	step_done wisp_bootstrap
 	flush_daemon_log bootstrap
+
+	if [[ "${WISP_HOST_ONLY:-}" == "1" ]]; then
+	  echo "WISP_HOST_DAEMON_READY install=$install"
+	  echo "WISP_HOST_READY install=$install"
+	  exit 0
+	fi
+
+	step_start wisp_bind_backend
+	"$install/bin/wispclient" -server "$admin_server" bind-backend \
+	  -remote-backend smh \
+	  -smh-library-id "$SMH_LIBRARY_ID" \
+	  -smh-access-domain "$SMH_ACCESS_DOMAIN" \
+	  -smh-space-id "$SMH_SPACE_ID" \
+	  -smh-access-token "$SMH_ACCESS_TOKEN" \
+	  -jfs-prefix "$JFS_PREFIX" \
+	  "$WISP_NAME" || { echo "daemon log after backend bind failure:" >&2; cat "$log" >&2 || true; exit 1; }
+	step_done wisp_bind_backend
+	flush_daemon_log bind_backend
 	
 	step_start wisp_create
 	"$install/bin/wispclient" -server "$admin_server" create "$WISP_NAME" || { echo "daemon log after create failure:" >&2; cat "$log" >&2 || true; exit 1; }
