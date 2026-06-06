@@ -39,6 +39,7 @@ type Config struct {
 	SMHLibraryID        string
 	SMHAccessDomain     string
 	SMHLibrarySecret    string
+	SMHAccessToken      string
 	SMHSpaceID          string
 	SMHTokenTTLSeconds  int
 	StateRoot           string
@@ -196,6 +197,7 @@ func loadWithOverlay(path, overlayPath string) (Config, error) {
 	cfg.SMHLibraryID = get(env, "SMH_LIBRARY_ID", "")
 	cfg.SMHAccessDomain = get(env, "SMH_ACCESS_DOMAIN", "")
 	cfg.SMHLibrarySecret = get(env, "SMH_LIBRARY_SECRET", "")
+	cfg.SMHAccessToken = get(env, "SMH_ACCESS_TOKEN", "")
 	cfg.SMHSpaceID = get(env, "SMH_SPACE_ID", "")
 	cfg.SMHTokenTTLSeconds = getInt(env, "SMH_TOKEN_TTL_SECONDS", 86400)
 	cfg.TempRoot = get(env, "TEMP_ROOT", filepath.Join("/var/lib/wisp", cfg.WispName))

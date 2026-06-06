@@ -1074,7 +1074,33 @@ func (w *AgentSidecarWorker) recreateWispSessionRuntime(ctx context.Context, run
 	if err != nil {
 		return ACPSessionRuntime{}, err
 	}
-	timeline("acp_runtime_restore_outer_create_start", "backend="+backend.name, "template="+backend.outerTemplateID, "smh_space_id="+quoteTimelineField(runtime.WispSMHSpaceID))
+	restored := runtime
+	restored.RuntimeID = newACPSessionRuntimeID(req.SessionID, req.Generation)
+	restored.SandboxBackend = backend.name
+	restored.OuterRuntime = outerRuntimeWisp
+	restored.RuntimeRecovery = normalizeRuntimeRecovery(firstNonEmpty(restored.RuntimeRecovery, req.RuntimeRecovery), outerRuntimeWisp)
+	restored.AgentVersion = agentVersion
+	restored.AgentTemplateID = backend.outerTemplateID
+	restored.SidecarURL = artifact.URL
+	restored.SidecarSHA256 = artifact.SHA256
+	restored.SidecarSigURL = artifact.SigURL
+	restored.SigningKeyID = artifact.SigningKeyID
+	restored.WorkspaceVersion = workspaceVersion
+	restored.WorkspaceTemplateID = backend.innerTemplateID
+	restored.WispPackageURL = firstNonEmpty(restored.WispPackageURL, w.wispPackageURL)
+	restored.WispRootUpperSize = firstNonEmpty(restored.WispRootUpperSize, w.wispRootUpperSize)
+	restored.WispJFSPrefix = firstNonEmpty(restored.WispJFSPrefix, w.wispJFSPrefix)
+	restored.DaemonAddr = acpDaemonAddr(req.SessionID)
+	restored.RemoteBinary = path.Join("/tmp/gateway/sessions", req.SessionID, "hermes-sidecar")
+	if claim, ok := w.tryClaimWarmSessionRuntime(ctx, req, backend, restored, timeline); ok {
+		claimed, err := w.startSessionRuntimeFromWarmClaim(ctx, req, backend, restored, claim, timeline)
+		if err == nil {
+			timeline("acp_runtime_restore_pool_claim_done", "item_id="+quoteTimelineField(claim.ItemID), "outer_sandbox_id="+quoteTimelineField(claim.Host.OuterSandboxID), "inner_sandbox_id="+quoteTimelineField(claim.Host.InnerSandboxID))
+			return claimed, nil
+		}
+		timeline("acp_runtime_restore_pool_claim_fallback_cold", "item_id="+quoteTimelineField(claim.ItemID), "error="+quoteTimelineField(err.Error()))
+	}
+	timeline("acp_runtime_restore_outer_create_start", "backend="+backend.name, "template="+backend.outerTemplateID, "smh_space_id="+quoteTimelineField(restored.WispSMHSpaceID))
 	sb, err := backend.host.CreateSandbox(ctx, CreateSandboxOptions{
 		TemplateID:          backend.outerTemplateID,
 		TimeoutSeconds:      w.sandboxTimeoutSeconds,
@@ -1092,19 +1118,6 @@ func (w *AgentSidecarWorker) recreateWispSessionRuntime(ctx context.Context, run
 		return ACPSessionRuntime{}, err
 	}
 	timeline("acp_runtime_restore_outer_create_done", "sandbox_id="+sb.ID)
-	restored := runtime
-	restored.RuntimeID = newACPSessionRuntimeID(req.SessionID, req.Generation)
-	restored.SandboxBackend = backend.name
-	restored.OuterRuntime = outerRuntimeWisp
-	restored.RuntimeRecovery = normalizeRuntimeRecovery(firstNonEmpty(restored.RuntimeRecovery, req.RuntimeRecovery), outerRuntimeWisp)
-	restored.AgentVersion = agentVersion
-	restored.AgentTemplateID = backend.outerTemplateID
-	restored.SidecarURL = artifact.URL
-	restored.SidecarSHA256 = artifact.SHA256
-	restored.SidecarSigURL = artifact.SigURL
-	restored.SigningKeyID = artifact.SigningKeyID
-	restored.WorkspaceVersion = workspaceVersion
-	restored.WorkspaceTemplateID = backend.innerTemplateID
 	restored.OuterSandboxID = sb.ID
 	restored.OuterSandboxDomain = sb.Domain
 	restored.OuterEnvdAccessToken = sb.EnvdAccessToken
@@ -1113,8 +1126,6 @@ func (w *AgentSidecarWorker) recreateWispSessionRuntime(ctx context.Context, run
 	restored.InnerSandboxDomain = ""
 	restored.InnerEnvdAccessToken = ""
 	restored.SessionProxyID = ""
-	restored.DaemonAddr = acpDaemonAddr(req.SessionID)
-	restored.RemoteBinary = path.Join("/tmp/gateway/sessions", req.SessionID, "hermes-sidecar")
 	token, err := w.issueWispSMHToken(ctx, restored.WispSMHSpaceID, "admin")
 	if err != nil {
 		_ = backend.host.DeleteSandbox(context.Background(), sb.ID)
@@ -1240,7 +1251,7 @@ func (w *AgentSidecarWorker) prepareInnerWorkspaceWispRuntime(ctx context.Contex
 	workspaceWisp.WispSMHSpaceID = firstNonEmpty(runtime.WispSMHSpaceID, workspaceID)
 	workspaceWisp.WispOwnsSMHSpace = false
 	workspaceWisp.WispJFSPrefix = workspaceWispJFSPrefix(runtime.WispJFSPrefix, workspaceID)
-	workspaceWisp.WispInstallDir = path.Join("/tmp/cloudagent-workspace-wisp", req.SessionID, "install")
+	workspaceWisp.WispInstallDir = firstNonEmpty(wispInstallDirFromClient(runtime.WorkspaceWispClient), path.Join("/tmp/cloudagent-workspace-wisp", req.SessionID, "install"))
 	workspaceWisp.WispClientPath = path.Join(workspaceWisp.WispInstallDir, "bin", "wispclient")
 	prepared, err := w.prepareWispRuntimeWithSpace(ctx, host, sb, workspaceWisp, req, agentWispSMHSpace{
 		SpaceID:     workspaceWisp.WispSMHSpaceID,

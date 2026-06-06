@@ -194,6 +194,31 @@ func (d *Daemon) handleWispGet(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "wisp": wispResourceFromStatus(rt.cfg.WispName, rt.runtimeStatus(r.Context()))})
 }
 
+func (d *Daemon) handleWispBackendBind(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimSpace(r.PathValue("wisp"))
+	started := d.logRequestStart("wisp.backend_bind", name)
+	var reqErr error
+	defer func() { d.logRequestDone("wisp.backend_bind", name, started, reqErr) }()
+	req, err := decodeBackendBindRequest(r, name)
+	if err != nil {
+		reqErr = err
+		writeError(w, err)
+		return
+	}
+	if err := d.bindWorkspaceBackend(r.Context(), req); err != nil {
+		reqErr = err
+		writeError(w, err)
+		return
+	}
+	rt, err := d.runtimeForWispLocked(name)
+	if err != nil {
+		reqErr = err
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "wisp": wispResourceFromStatus(rt.cfg.WispName, rt.runtimeStatus(r.Context()))})
+}
+
 func (d *Daemon) handleWispStart(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("wisp")
 	unlock := d.lockWisp(name)

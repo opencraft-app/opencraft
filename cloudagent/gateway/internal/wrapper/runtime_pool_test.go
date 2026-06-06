@@ -302,14 +302,26 @@ func TestWarmRuntimePoolConsumeDoesNotMarkDiscarding(t *testing.T) {
 func TestWispOuterPrepareScriptSupportsHostOnly(t *testing.T) {
 	script := wispOuterPrepareScript()
 	hostOnly := `if [[ "${WISP_HOST_ONLY:-}" == "1" ]]; then`
-	if !strings.Contains(script, hostOnly) || !strings.Contains(script, "WISP_HOST_READY") {
-		t.Fatalf("prepare script must expose host-only mode")
+	if !strings.Contains(script, hostOnly) || !strings.Contains(script, "WISP_HOST_DAEMON_READY") {
+		t.Fatalf("prepare script must expose host-daemon-only mode")
 	}
 	if strings.Index(script, "WISP_HOST_READY") > strings.Index(script, "step_start wisp_create") {
 		t.Fatalf("host-only mode must exit before wisp_create")
 	}
-	if strings.Index(script, "WISP_HOST_READY") > strings.Index(script, "step_start wisp_config_write") {
-		t.Fatalf("host-only mode must exit before writing session-bound Wisp config")
+	if strings.Index(script, "WISP_HOST_READY") < strings.Index(script, "step_done wisp_daemon_ready_wait") {
+		t.Fatalf("host-only mode must wait for daemon readiness before returning")
+	}
+	if strings.Index(script, "WISP_HOST_READY") > strings.Index(script, "step_start wisp_bind_backend") {
+		t.Fatalf("host-only mode must exit before binding a session backend")
+	}
+	if strings.Index(script, "step_start wisp_bind_backend") > strings.Index(script, "step_start wisp_create") {
+		t.Fatalf("session backend must be bound before wisp_create")
+	}
+	if strings.Contains(script, `SMH_SPACE_ID="$SMH_SPACE_ID" \`) {
+		t.Fatalf("neutral daemon spawn must not inherit session SMH_SPACE_ID")
+	}
+	if strings.Contains(script, `REMOTE_BACKEND="$REMOTE_BACKEND" \`) || strings.Contains(script, `JFS_PREFIX="$JFS_PREFIX" \`) {
+		t.Fatalf("neutral daemon spawn must not inherit backend config that overrides bound overlays")
 	}
 }
 
@@ -355,6 +367,22 @@ func TestWarmClaimPathAcquiresWispLeaseBeforePrepare(t *testing.T) {
 	}
 	if strings.Index(claimPath, leaseCall) > strings.Index(claimPath, prepareCall) {
 		t.Fatalf("warm claim path must acquire lease before Wisp prepare")
+	}
+}
+
+func TestRestorePathClaimsWarmPoolBeforeColdCreate(t *testing.T) {
+	source := readTestSource(t, "agent_sidecar_worker.go")
+	restorePath := mustContainAfter(t, source, "func (w *AgentSidecarWorker) recreateWispSessionRuntime")
+	claimCall := `tryClaimWarmSessionRuntime(ctx, req, backend, restored, timeline)`
+	coldCreate := `acp_runtime_restore_outer_create_start`
+	if !strings.Contains(restorePath, claimCall) {
+		t.Fatalf("restore path must try warm runtime pool claim with the restored session runtime")
+	}
+	if strings.Index(restorePath, claimCall) > strings.Index(restorePath, coldCreate) {
+		t.Fatalf("restore path must try warm pool before cold outer sandbox create")
+	}
+	if !strings.Contains(restorePath, "acp_runtime_restore_pool_claim_done") {
+		t.Fatalf("restore path must log warm pool restore success")
 	}
 }
 
