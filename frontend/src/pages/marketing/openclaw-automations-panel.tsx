@@ -1920,7 +1920,7 @@ function AutomationFormModal({
                     setEffectiveWindowEnabled((enabled) => !enabled);
                   }}
                   style={{ marginLeft: 10 }}
-                  className={`relative ml-4 inline-flex h-5 w-9 items-center rounded-full transition ${
+                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition ${
                 effectiveWindowEnabled ? "bg-black" : "bg-black/15"
               } ${canEditEffectiveWindow ? "" : "cursor-not-allowed opacity-50"}`}
               aria-label={t("生效时间段")}
