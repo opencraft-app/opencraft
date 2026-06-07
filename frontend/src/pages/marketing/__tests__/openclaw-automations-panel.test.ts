@@ -236,6 +236,15 @@ describe("effective window helpers", () => {
     expect(getEffectiveWindowStatus(null, now)).toBe("always");
   });
 
+  it("builds weekday-only gates for interval schedules", () => {
+    expect(buildEffectiveWindowFromInputs("", "", [5, 6, 0])).toEqual({
+      start_at: null,
+      end_at: null,
+      weekdays: [5, 6, 0],
+    });
+    expect(getEffectiveWindowStatus({ start_at: null, end_at: null, weekdays: [5, 6, 0] }, now)).toBe("active");
+  });
+
   it("normalizes date-time values from either space or T separators", () => {
     expect(normalizeEffectiveWindowInput("2026-06-10 08:30")).toBe("2026-06-10T08:30");
     expect(normalizeEffectiveWindowInput("2026-06-10T08:30")).toBe("2026-06-10T08:30");

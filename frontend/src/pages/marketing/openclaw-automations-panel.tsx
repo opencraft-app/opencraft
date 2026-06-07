@@ -14,7 +14,7 @@
  * - 生效日期区间通过 Hermes 官方 pre-run script gate 实现：区间外返回 wakeAgent=false
  */
 
-import { AlertTriangle, CalendarRange, ChevronDown, CircleHelp, Clock, Eraser, Eye, LayoutTemplate, Loader2, Pause, Pencil, Play, Plus, RefreshCw, Trash2, X } from "lucide-react";
+import { AlertTriangle, Activity, BellRing, BriefcaseBusiness, CalendarRange, ChevronDown, CircleHelp, Clock, Droplets, Eraser, Eye, FolderKanban, LayoutTemplate, Loader2, Newspaper, Pause, Pencil, Play, Plus, RefreshCw, Sunrise, Trash2, TrendingUp, X } from "lucide-react";
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { parseHermesChannelList } from "@tencent/tea-sdk-lightclaw";
@@ -75,73 +75,31 @@ function ErrorToast({ message, onClose }: { message: string; onClose: () => void
   );
 }
 
-function EffectiveWindowTooltip({ message }: { message: string }) {
-  const tooltipId = useId();
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
-  const [open, setOpen] = useState(false);
-  const [position, setPosition] = useState({ left: 0, top: 0 });
-
-  const updatePosition = useCallback(() => {
-    const trigger = triggerRef.current;
-    if (!trigger) return;
-    const rect = trigger.getBoundingClientRect();
-    setPosition({
-      left: rect.left + rect.width / 2,
-      top: rect.top - 8,
-    });
-  }, []);
-
-  useLayoutEffect(() => {
-    if (!open) return;
-    updatePosition();
-  }, [open, updatePosition]);
-
-  useEffect(() => {
-    if (!open) return;
-    window.addEventListener("resize", updatePosition);
-    window.addEventListener("scroll", updatePosition, true);
-    return () => {
-      window.removeEventListener("resize", updatePosition);
-      window.removeEventListener("scroll", updatePosition, true);
-    };
-  }, [open, updatePosition]);
-
-  return (
-    <span className="group relative inline-flex">
-      <button
-        ref={triggerRef}
-        type="button"
-        className="inline-flex h-4 w-4 items-center justify-center rounded-full text-black/35 transition hover:text-black/55 focus:outline-none focus-visible:ring-2 focus-visible:ring-black/15"
-        aria-label={message}
-        aria-describedby={open ? tooltipId : undefined}
-        onMouseEnter={() => setOpen(true)}
-        onMouseLeave={() => setOpen(false)}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setOpen(false)}
-      >
-        <CircleHelp className="h-3.5 w-3.5" aria-hidden="true" />
-      </button>
-      {open && createPortal(
-        <span
-          id={tooltipId}
-          className="pointer-events-none fixed z-[260] w-[280px] max-w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-full rounded-md border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium leading-relaxed text-[var(--text-primary)] opacity-100 shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition-opacity duration-150"
-          style={{ left: position.left, top: position.top }}
-          role="tooltip"
-        >
-          {message}
-          <span className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-[var(--border-subtle)] bg-white" />
-        </span>,
-        document.body,
-      )}
-    </span>
-  );
-}
-
 function EffectiveWindowBadge({ label, message }: { label: string; message: string }) {
   const tooltipId = useId();
   const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const closeTimerRef = useRef<number | null>(null);
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState({ left: 0, top: 0 });
+
+  const cancelClose = useCallback(() => {
+    if (closeTimerRef.current == null) return;
+    window.clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = null;
+  }, []);
+
+  const showTooltip = useCallback(() => {
+    cancelClose();
+    setOpen(true);
+  }, [cancelClose]);
+
+  const scheduleClose = useCallback(() => {
+    cancelClose();
+    closeTimerRef.current = window.setTimeout(() => {
+      setOpen(false);
+      closeTimerRef.current = null;
+    }, 120);
+  }, [cancelClose]);
 
   const updatePosition = useCallback(() => {
     const trigger = triggerRef.current;
@@ -167,6 +125,10 @@ function EffectiveWindowBadge({ label, message }: { label: string; message: stri
       window.removeEventListener("scroll", updatePosition, true);
     };
   }, [open, updatePosition]);
+
+  useEffect(() => {
+    return () => cancelClose();
+  }, [cancelClose]);
 
   return (
     <span className="relative inline-flex shrink-0">
@@ -176,19 +138,21 @@ function EffectiveWindowBadge({ label, message }: { label: string; message: stri
         className="inline-flex h-[18px] w-[18px] cursor-default items-center justify-center rounded-full bg-black/[0.06] text-black/45 transition hover:bg-black/[0.08] hover:text-black/65 focus:outline-none focus-visible:ring-2 focus-visible:ring-black/15"
         aria-label={label}
         aria-describedby={open ? tooltipId : undefined}
-        onMouseEnter={() => setOpen(true)}
-        onMouseLeave={() => setOpen(false)}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setOpen(false)}
+        onMouseEnter={showTooltip}
+        onMouseLeave={scheduleClose}
+        onFocus={showTooltip}
+        onBlur={scheduleClose}
       >
         <CalendarRange className="h-3 w-3" aria-hidden="true" />
       </button>
       {open && createPortal(
         <span
           id={tooltipId}
-          className="pointer-events-none fixed z-[260] max-w-[min(320px,calc(100vw-32px))] -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-md border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium leading-relaxed text-[var(--text-primary)] shadow-[0_8px_24px_rgba(15,23,42,0.12)]"
+          className="pointer-events-auto fixed z-[260] max-w-[min(320px,calc(100vw-32px))] -translate-x-1/2 -translate-y-full select-text whitespace-nowrap rounded-md border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium leading-relaxed text-[var(--text-primary)] shadow-[0_8px_24px_rgba(15,23,42,0.12)]"
           style={{ left: position.left, top: position.top }}
           role="tooltip"
+          onMouseEnter={showTooltip}
+          onMouseLeave={scheduleClose}
         >
           {message}
           <span className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-[var(--border-subtle)] bg-white" />
@@ -813,7 +777,7 @@ function CronActionButton({
       >
         {children}
       </button>
-      <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-md border border-[var(--border-subtle)] bg-white px-2.5 py-1 text-[11px] font-medium leading-4 text-[var(--text-primary)] opacity-0 shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition-opacity duration-75 group-hover:opacity-100 group-focus-within:opacity-100">
+      <span className="pointer-events-auto absolute bottom-full left-1/2 z-20 mb-1.5 -translate-x-1/2 select-text whitespace-nowrap rounded-md border border-[var(--border-subtle)] bg-white px-2.5 py-1 text-[11px] font-medium leading-4 text-[var(--text-primary)] opacity-0 shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition-opacity duration-75 group-hover:opacity-100 group-focus-within:opacity-100">
         {label}
         <span className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-[var(--border-subtle)] bg-white" />
       </span>
@@ -872,13 +836,16 @@ function formatScheduleFriendly(
   if (intervalMatch) {
     const n = Number(intervalMatch[1]);
     const unit = intervalMatch[2];
+    const weekdaySuffix = job.effective_window?.weekdays?.length
+      ? ` · ${formatWeekdays(job.effective_window.weekdays, t)}`
+      : "";
     if (unit === "m") {
-      if (n % 1440 === 0) return t("每 {{n}} 天", { n: String(n / 1440) });
-      if (n % 60 === 0) return t("每 {{n}} 小时", { n: String(n / 60) });
-      return t("每 {{n}} 分钟", { n: String(n) });
+      if (n % 1440 === 0) return t("每 {{n}} 天", { n: String(n / 1440) }) + weekdaySuffix;
+      if (n % 60 === 0) return t("每 {{n}} 小时", { n: String(n / 60) }) + weekdaySuffix;
+      return t("每 {{n}} 分钟", { n: String(n) }) + weekdaySuffix;
     }
-    if (unit === "h") return t("每 {{n}} 小时", { n });
-    if (unit === "d") return t("每 {{n}} 天", { n });
+    if (unit === "h") return t("每 {{n}} 小时", { n }) + weekdaySuffix;
+    if (unit === "d") return t("每 {{n}} 天", { n }) + weekdaySuffix;
   }
 
   // cron: min hour DOM MON DOW
@@ -1110,24 +1077,37 @@ function AutomationTemplateModal({
           <h3 className="text-lg font-semibold leading-10 text-black/90">{t("自动任务示例模板")}</h3>
         </div>
         <div className="mt-5 grid grid-cols-1 items-start gap-3 sm:grid-cols-2">
-          {templates.map((template) => (
-            <button
-              key={template.id}
-              type="button"
-              onClick={() => onSelect(template)}
-              className="flex min-h-[100px] flex-col justify-start rounded-lg border border-black/10 bg-white p-4 text-left transition hover:border-black/20 hover:bg-black/[0.02]"
-            >
-              <div className="flex h-7 items-start justify-between gap-3">
-                <div className="truncate text-sm font-semibold text-black/85">{template.name}</div>
-                <span className="shrink-0 rounded-full bg-black/[0.04] px-2 py-0.5 text-[11px] text-black/55">
-                  {formatTemplateSchedule(template, t)}
-                </span>
-              </div>
-              <p className="mt-2 line-clamp-3 text-xs leading-relaxed text-black/55">
-                {template.prompt}
-              </p>
-            </button>
-          ))}
+          {templates.map((template) => {
+            const tone = AUTOMATION_TEMPLATE_TONES[template.id as keyof typeof AUTOMATION_TEMPLATE_TONES] ?? AUTOMATION_TEMPLATE_TONES["daily-summary"];
+            const TemplateIcon = tone.icon;
+            return (
+              <button
+                key={template.id}
+                type="button"
+                onClick={() => onSelect(template)}
+                className={`group flex min-h-[132px] flex-col rounded-xl border border-l-[3px] border-black/10 ${tone.accentClass} bg-white p-4 text-left shadow-[0_8px_18px_rgba(15,23,42,0.04)] transition-all duration-200 hover:bg-black/[0.015] hover:shadow-[0_12px_24px_rgba(15,23,42,0.07)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/20`}
+              >
+                <div>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <span className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg ${tone.iconClass}`}>
+                        <TemplateIcon className="h-4 w-4" />
+                      </span>
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold text-black/90">{template.name}</div>
+                      </div>
+                    </div>
+                    <span className="shrink-0 rounded-full border border-black/[0.04] bg-black/[0.035] px-2 py-0.5 text-[11px] font-medium text-black/55 transition-colors group-hover:bg-black/[0.055]">
+                      {formatTemplateSchedule(template, t)}
+                    </span>
+                  </div>
+                  <p className="mt-3 line-clamp-3 text-xs leading-relaxed text-black/60">
+                    {template.prompt}
+                  </p>
+                </div>
+              </button>
+            );
+          })}
         </div>
       </div>
     </div>,
@@ -1327,13 +1307,16 @@ export function normalizeEffectiveWindowInput(value: string): string {
 export function buildEffectiveWindowFromInputs(
   startAt: string,
   endAt: string,
+  weekdays?: readonly number[],
 ): CronEffectiveWindow | null {
   const start = normalizeEffectiveWindowInput(startAt);
   const end = normalizeEffectiveWindowInput(endAt);
-  if (!start && !end) return null;
+  const selectedWeekdays = hasWeekdayFilter(weekdays) ? normalizeIntervalWeekdays(weekdays) : null;
+  if (!start && !end && !selectedWeekdays) return null;
   return {
     start_at: start || null,
     end_at: end || null,
+    ...(selectedWeekdays ? { weekdays: selectedWeekdays } : {}),
   };
 }
 
@@ -1349,8 +1332,11 @@ function areEffectiveWindowsEqual(
   a: CronEffectiveWindow | null,
   b: CronEffectiveWindow | null,
 ): boolean {
+  const aWeekdays = a?.weekdays?.length ? normalizeIntervalWeekdays(a.weekdays) : null;
+  const bWeekdays = b?.weekdays?.length ? normalizeIntervalWeekdays(b.weekdays) : null;
   return (a?.start_at ?? null) === (b?.start_at ?? null)
-    && (a?.end_at ?? null) === (b?.end_at ?? null);
+    && (a?.end_at ?? null) === (b?.end_at ?? null)
+    && JSON.stringify(aWeekdays) === JSON.stringify(bWeekdays);
 }
 
 function isLightVelaEffectiveWindowScriptName(script: string): boolean {
@@ -1358,7 +1344,7 @@ function isLightVelaEffectiveWindowScriptName(script: string): boolean {
 }
 
 export function getEffectiveWindowStatus(window: CronEffectiveWindow | null, now = Date.now()): EffectiveWindowStatus {
-  if (!window?.start_at && !window?.end_at) return "always";
+  if (!window?.start_at && !window?.end_at && !window?.weekdays?.length) return "always";
   const start = window.start_at ? parseCronDate(window.start_at).getTime() : Number.NaN;
   const end = window.end_at ? parseCronDate(window.end_at).getTime() : Number.NaN;
   if (!Number.isNaN(start) && now < start) return "pending";
@@ -1370,7 +1356,7 @@ function formatEffectiveWindow(
   window: CronEffectiveWindow | null,
   t: ReturnType<typeof useT>,
 ): string {
-  if (!window?.start_at && !window?.end_at) return t("始终生效");
+  if (!window?.start_at && !window?.end_at && !window?.weekdays?.length) return t("始终生效");
   const start = window.start_at ? formatEffectiveWindowDate(window.start_at) : t("不限开始时间");
   const end = window.end_at ? formatEffectiveWindowDate(window.end_at) : t("不限结束时间");
   const status = getEffectiveWindowStatus(window);
@@ -1379,7 +1365,10 @@ function formatEffectiveWindow(
     : status === "ended"
       ? t("已过生效期")
       : t("生效中");
-  return `${start} - ${end} · ${statusLabel}`;
+  const weekdayLabel = window.weekdays?.length
+    ? ` · ${t("执行日")}：${formatWeekdays(window.weekdays, t)}`
+    : "";
+  return `${start} - ${end} · ${statusLabel}${weekdayLabel}`;
 }
 
 function formatEffectiveWindowDate(value: string): string {
@@ -1413,6 +1402,16 @@ function normalizeWeekdays(values: readonly number[] | undefined): number[] {
   const unique = Array.from(new Set((values ?? []).filter((v) => Number.isInteger(v) && v >= 0 && v <= 6)));
   const sorted = WEEKDAY_VALUES.filter((v) => unique.includes(v));
   return sorted.length > 0 ? sorted : [1];
+}
+
+function normalizeIntervalWeekdays(values: readonly number[] | undefined): number[] {
+  if (!values || values.length === 0) return [...WEEKDAY_VALUES];
+  return normalizeWeekdays(values);
+}
+
+function hasWeekdayFilter(values: readonly number[] | undefined): boolean {
+  const selected = normalizeIntervalWeekdays(values);
+  return selected.length !== WEEKDAY_VALUES.length;
 }
 
 function parseCronWeekdays(value: string): number[] {
@@ -1462,21 +1461,68 @@ interface AutomationTemplate {
   };
 }
 
+const AUTOMATION_TEMPLATE_TONES = {
+  "daily-summary": {
+    icon: BriefcaseBusiness,
+    iconClass: "bg-[#F7F4EE] text-[#8A6A2B]",
+    accentClass: "border-l-[#D8C7A3] hover:border-[#D8C7A3]",
+  },
+  "water-break": {
+    icon: Droplets,
+    iconClass: "bg-[#EEF6F8] text-[#3F7A8A]",
+    accentClass: "border-l-[#B7D5DD] hover:border-[#B7D5DD]",
+  },
+  "morning-start": {
+    icon: Sunrise,
+    iconClass: "bg-[#F8F1ED] text-[#9A604A]",
+    accentClass: "border-l-[#D7B6A8] hover:border-[#D7B6A8]",
+  },
+  "weekly-review": {
+    icon: BellRing,
+    iconClass: "bg-[#F2F0F7] text-[#6A5B8C]",
+    accentClass: "border-l-[#C5BDD8] hover:border-[#C5BDD8]",
+  },
+  "task-tidy": {
+    icon: FolderKanban,
+    iconClass: "bg-[#EFF7F2] text-[#4A7A5F]",
+    accentClass: "border-l-[#BBD8C6] hover:border-[#BBD8C6]",
+  },
+  stretch: {
+    icon: Activity,
+    iconClass: "bg-[#F7F4E8] text-[#7D6A2A]",
+    accentClass: "border-l-[#D6C98E] hover:border-[#D6C98E]",
+  },
+  "stock-watch": {
+    icon: TrendingUp,
+    iconClass: "bg-[#F8EEF0] text-[#8E4D58]",
+    accentClass: "border-l-[#D4B0B6] hover:border-[#D4B0B6]",
+  },
+  "news-digest": {
+    icon: Newspaper,
+    iconClass: "bg-[#EEF2F8] text-[#556F9A]",
+    accentClass: "border-l-[#BAC8DF] hover:border-[#BAC8DF]",
+  },
+} satisfies Record<string, {
+  icon: typeof Clock;
+  iconClass: string;
+  accentClass: string;
+}>;
+
 function getAutomationTemplates(t: ReturnType<typeof useT>): AutomationTemplate[] {
   return [
     {
       id: "daily-summary",
-      name: t("每日总结"),
-      description: t("每天晚上整理今天的进展和明天优先级"),
-      prompt: t("请回顾今天的重要事项，帮我整理一份简短总结，并提醒我明天优先处理的 3 件事。"),
+      name: t("每日工作小结"),
+      description: t("每天晚上回顾工作进展，整理明天优先级"),
+      prompt: t("请帮我回顾今天的工作进展，整理已完成事项、遗留问题，并列出明天优先处理的 3 件事。"),
       schedule: { kind: "recurring", period: "daily", time: "21:30" },
     },
     {
       id: "water-break",
-      name: t("喝水提醒"),
+      name: t("喝水休息提醒"),
       description: t("每隔一段时间提醒补水和短暂休息"),
       prompt: t("提醒我喝水，并用一句轻松的话鼓励我保持状态。"),
-      schedule: { kind: "interval", intervalNum: 2, intervalUnit: "h" },
+      schedule: { kind: "interval", intervalNum: 1, intervalUnit: "h" },
     },
     {
       id: "morning-start",
@@ -1487,21 +1533,21 @@ function getAutomationTemplates(t: ReturnType<typeof useT>): AutomationTemplate[
     },
     {
       id: "weekly-review",
-      name: t("周五复盘"),
+      name: t("周五工作复盘"),
       description: t("每周五下班前回顾本周事项"),
-      prompt: t("帮我做一次本周复盘：总结完成事项、遗留问题和下周建议。"),
+      prompt: t("帮我复盘本周工作：整理已完成事项、遗留问题、下周建议，并列出需要继续跟进的任务。"),
       schedule: { kind: "recurring", period: "weekly", weekday: 5, time: "18:00" },
     },
     {
       id: "task-tidy",
-      name: t("资料整理"),
+      name: t("每日待办整理"),
       description: t("每天提醒整理待办、文档和消息"),
-      prompt: t("提醒我整理最近的待办、文档和消息，把需要跟进的事项列出来。"),
+      prompt: t("提醒我整理今天的待办、文档和消息，归纳需要跟进的事项，并按优先级列出下一步行动。"),
       schedule: { kind: "recurring", period: "daily", time: "10:00" },
     },
     {
       id: "stretch",
-      name: t("活动一下"),
+      name: t("久坐活动提醒"),
       description: t("定时提醒站起来活动，放松肩颈和眼睛"),
       prompt: t("提醒我不要久坐，站起来活动一下，放松肩颈和眼睛。"),
       schedule: { kind: "interval", intervalNum: 1, intervalUnit: "h" },
@@ -1515,9 +1561,9 @@ function getAutomationTemplates(t: ReturnType<typeof useT>): AutomationTemplate[
     },
     {
       id: "news-digest",
-      name: t("AI 新闻推送"),
-      description: t("每天推送关心领域的重要新闻摘要"),
-      prompt: t("提醒我查看今天的重要新闻，按科技、财经和本地资讯各总结 3 条要点。"),
+      name: t("每日 AI 资讯摘要"),
+      description: t("每天整理 AI 领域的重要动态和关键进展"),
+      prompt: t("提醒我查看今天的 AI 资讯，整理 3 条值得关注的动态，并简要说明影响。"),
       schedule: { kind: "recurring", period: "daily", time: "08:30" },
     },
   ];
@@ -1589,6 +1635,7 @@ function AutomationFormModal({
   // 按间隔态
   const [intervalNum, setIntervalNum] = useState(initial?.intervalNum ?? templateSchedule?.intervalNum ?? 1);
   const [intervalUnit, setIntervalUnit] = useState<IntervalUnit>(initial?.intervalUnit ?? templateSchedule?.intervalUnit ?? "h");
+  const [intervalWeekdays, setIntervalWeekdays] = useState(() => normalizeIntervalWeekdays(initialJob?.effective_window?.weekdays ?? WEEKDAY_VALUES));
   // 单次态
   const [onceDate, setOnceDate] = useState(() => {
     if (initial?.onceDate) return initial.onceDate;
@@ -1605,6 +1652,7 @@ function AutomationFormModal({
   const [deliverChatIds, setDeliverChatIds] = useState<Record<string, string>>(initialDeliver.chatIds);
   const [effectiveStartAt, setEffectiveStartAt] = useState(() => normalizeEffectiveWindowInput(initialJob?.effective_window?.start_at ?? ""));
   const [effectiveEndAt, setEffectiveEndAt] = useState(() => normalizeEffectiveWindowInput(initialJob?.effective_window?.end_at ?? ""));
+  const [effectiveWindowEnabled, setEffectiveWindowEnabled] = useState(() => Boolean(initialJob?.effective_window?.start_at || initialJob?.effective_window?.end_at));
   const canEditEffectiveWindow = !initialJob?.script || isLightVelaEffectiveWindowScriptName(initialJob.script);
   const shouldShowEffectiveWindow = kind !== "once";
   /** 已配置的 channel key 集合（weixin/qqbot/feishu/...）；null = 还没拉 */
@@ -1671,7 +1719,11 @@ function AutomationFormModal({
   const handleSubmit = useCallback(async () => {
     if (!canSubmit) return;
     const effectiveWindow = shouldShowEffectiveWindow
-      ? buildEffectiveWindowFromInputs(effectiveStartAt, effectiveEndAt)
+      ? buildEffectiveWindowFromInputs(
+          effectiveWindowEnabled ? effectiveStartAt : "",
+          effectiveWindowEnabled ? effectiveEndAt : "",
+          kind === "interval" ? intervalWeekdays : WEEKDAY_VALUES,
+        )
       : null;
     if (effectiveWindow && isEffectiveWindowRangeInvalid(effectiveWindow)) {
       onError(t("生效结束时间不能早于开始时间"));
@@ -1746,7 +1798,7 @@ function AutomationFormModal({
     } finally {
       setSubmitting(false);
     }
-  }, [botId, canSubmit, mode, initialJob, name, prompt, schedule, scheduleUneditable, originalSchedule, kind, onceDate, initial, scheduleChanged, deliverPlatforms, deliverChatIds, effectiveStartAt, effectiveEndAt, canEditEffectiveWindow, shouldShowEffectiveWindow, onSaved, onError, t]);
+  }, [botId, canSubmit, mode, initialJob, name, prompt, schedule, scheduleUneditable, originalSchedule, kind, onceDate, initial, scheduleChanged, deliverPlatforms, deliverChatIds, effectiveStartAt, effectiveEndAt, effectiveWindowEnabled, intervalWeekdays, canEditEffectiveWindow, shouldShowEffectiveWindow, onSaved, onError, t]);
 
   return createPortal(
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 px-4 py-3" role="dialog" aria-modal="true">
@@ -1820,8 +1872,11 @@ function AutomationFormModal({
               <IntervalPicker
                 num={intervalNum}
                 unit={intervalUnit}
+                weekdays={intervalWeekdays}
+                weekdaysDisabled={!canEditEffectiveWindow}
                 onNum={setIntervalNum}
                 onUnit={setIntervalUnit}
+                onWeekdays={setIntervalWeekdays}
               />
             )}
             {!scheduleUneditable && kind === "once" && <OncePicker value={onceDate} onChange={setOnceDate} />}
@@ -1848,36 +1903,58 @@ function AutomationFormModal({
         {/* 生效时间段 */}
         {shouldShowEffectiveWindow && (
         <div className="mt-4">
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-2">
             <label className="block text-sm font-medium text-black/80">{t("生效时间段")}</label>
-            <EffectiveWindowTooltip
-              message={canEditEffectiveWindow
-                ? t("超出该时间段时，任务仍保留在列表中，但不会唤醒 Agent 执行。")
-                : t("当前任务使用了自定义 pre-run 脚本，暂不支持在这里修改生效时间段。")}
-            />
-            <span className="text-xs font-normal text-black/40">{t("（可选，留空代表一直生效）")}</span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={effectiveWindowEnabled}
+                  disabled={!canEditEffectiveWindow}
+                  onClick={() => {
+                    if (!canEditEffectiveWindow) return;
+                    setEffectiveWindowEnabled((enabled) => !enabled);
+                  }}
+                  style={{ marginLeft: 10 }}
+                  className={`relative ml-4 inline-flex h-5 w-9 items-center rounded-full transition ${
+                effectiveWindowEnabled ? "bg-black" : "bg-black/15"
+              } ${canEditEffectiveWindow ? "" : "cursor-not-allowed opacity-50"}`}
+              aria-label={t("生效时间段")}
+            >
+              <span
+                className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition ${
+                  effectiveWindowEnabled ? "translate-x-4" : "translate-x-0.5"
+                }`}
+              />
+            </button>
+            {!effectiveWindowEnabled && (
+              <span className="text-xs font-normal text-black/40">{t("可选，不配置代表任务一直生效")}</span>
+            )}
+            {effectiveWindowEnabled && (
+              <span className="text-xs font-normal text-black/40">{t("超出生效时间段时，任务不会执行")}</span>
+            )}
           </div>
+          {effectiveWindowEnabled && (
           <div className="mt-1.5 grid grid-cols-1 gap-y-2 sm:grid-cols-[minmax(0,11.25rem)_1.25rem_minmax(0,11.25rem)_auto] sm:items-center sm:gap-x-0">
-            <input
-              type="datetime-local"
-              value={effectiveStartAt}
-              onChange={(e) => setEffectiveStartAt(e.target.value)}
-              disabled={!canEditEffectiveWindow}
-              style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
-              className="min-w-0 rounded-lg border border-black/10 bg-white px-3 py-2 text-sm focus:border-black/30 focus:outline-none disabled:cursor-not-allowed disabled:bg-black/[0.03] disabled:text-black/35 sm:w-full"
-              aria-label={t("生效开始时间")}
-            />
-            <span className="hidden text-center text-sm text-black/35 sm:block">—</span>
-            <input
-              type="datetime-local"
-              value={effectiveEndAt}
-              onChange={(e) => setEffectiveEndAt(e.target.value)}
-              disabled={!canEditEffectiveWindow}
-              style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
-              className="min-w-0 rounded-lg border border-black/10 bg-white px-3 py-2 text-sm focus:border-black/30 focus:outline-none disabled:cursor-not-allowed disabled:bg-black/[0.03] disabled:text-black/35 sm:w-full"
-              aria-label={t("生效结束时间")}
-            />
-            <span className="group relative -ml-1 inline-flex h-10 w-8 items-center justify-center">
+              <input
+                type="datetime-local"
+                value={effectiveStartAt}
+                onChange={(e) => setEffectiveStartAt(e.target.value)}
+                disabled={!canEditEffectiveWindow}
+                style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
+                className="min-w-0 rounded-lg border border-black/10 bg-white px-3 py-2 text-sm focus:border-black/30 focus:outline-none disabled:cursor-not-allowed disabled:bg-black/[0.03] disabled:text-black/35 sm:w-full"
+                aria-label={t("生效开始时间")}
+              />
+              <span className="hidden text-center text-sm text-black/35 sm:block">—</span>
+              <input
+                type="datetime-local"
+                value={effectiveEndAt}
+                onChange={(e) => setEffectiveEndAt(e.target.value)}
+                disabled={!canEditEffectiveWindow}
+                style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
+                className="min-w-0 rounded-lg border border-black/10 bg-white px-3 py-2 text-sm focus:border-black/30 focus:outline-none disabled:cursor-not-allowed disabled:bg-black/[0.03] disabled:text-black/35 sm:w-full"
+                aria-label={t("生效结束时间")}
+              />
+              <span className="group relative -ml-1 inline-flex h-10 w-8 items-center justify-center">
               <button
                 type="button"
                 onClick={() => {
@@ -1890,12 +1967,13 @@ function AutomationFormModal({
               >
                 <Eraser className="h-4 w-4" />
               </button>
-              <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium text-[var(--text-primary)] opacity-0 shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100">
+              <span className="pointer-events-auto absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 select-text whitespace-nowrap rounded-md border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium text-[var(--text-primary)] opacity-0 shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100">
                 {t("清空")}
                 <span className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-[var(--border-subtle)] bg-white" />
               </span>
             </span>
           </div>
+          )}
         </div>
         )}
 
@@ -1969,9 +2047,9 @@ function AutomationFormModal({
                     )}
                     {selected && key === "qqbot" && (
                       <span className="inline-flex items-center text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
-                        {t("如未生效，可在 QQ 对话中发送")}
+                        {t("如未生效，可尝试在 QQ 对话中发送")}
                         <InlineCopyText value="/set-home" />
-                        {t("给 Agent")}
+                        {t("给 QQ 机器人")}
                       </span>
                     )}
                     {selected && key === "feishu" && (
@@ -2029,7 +2107,7 @@ function AutomationFormModal({
           <div aria-hidden="true" style={{ height: 4 }} />
           {deliverPlatforms.length === 0 ? (
             <p className="text-xs text-black/40" style={MODAL_HELP_TEXT_STYLE}>
-              {t("如不选，则只会在后台执行任务，不发通知。")}
+              {t("如不选，智能体只会在后台执行任务，不发通知。")}
             </p>
           ) : null}
         </div>
@@ -2134,7 +2212,7 @@ function RecurringPicker({
           type="button"
           onClick={() => setPeriodPickerOpen((open) => !open)}
           style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
-          className="flex min-h-[42px] w-full items-center justify-between rounded-lg border border-black/10 bg-white px-3 py-2 text-left text-sm focus:border-black/30 focus:outline-none"
+          className="flex min-h-[39px] w-full items-center justify-between rounded-lg border border-black/10 bg-white px-3 py-2 text-left text-sm focus:border-black/30 focus:outline-none"
           aria-haspopup="listbox"
           aria-expanded={periodPickerOpen}
         >
@@ -2376,38 +2454,169 @@ function RecurringPicker({
 function IntervalPicker({
   num,
   unit,
+  weekdays,
+  weekdaysDisabled,
   onNum,
   onUnit,
+  onWeekdays,
 }: {
   num: number;
   unit: "m" | "h" | "d";
+  weekdays: number[];
+  weekdaysDisabled?: boolean;
   onNum: (v: number) => void;
   onUnit: (v: "m" | "h" | "d") => void;
+  onWeekdays: (v: number[]) => void;
 }) {
   const t = useT();
+  const weekdayLabels = getWeekdayLabels(t);
+  const selectedWeekdays = normalizeIntervalWeekdays(weekdays);
+  const [unitPickerOpen, setUnitPickerOpen] = useState(false);
+  const [hoveredInactiveTooltipDay, setHoveredInactiveTooltipDay] = useState<number | null>(null);
+  const [suppressedInactiveTooltipDay, setSuppressedInactiveTooltipDay] = useState<number | null>(null);
+  const unitPickerRef = useRef<HTMLDivElement | null>(null);
+  const unitOptions: Array<{ value: IntervalUnit; label: string }> = [
+    { value: "m", label: t("分钟") },
+    { value: "h", label: t("小时") },
+    { value: "d", label: t("天") },
+  ];
+  const unitLabel = unitOptions.find((option) => option.value === unit)?.label ?? t("小时");
+  useEffect(() => {
+    if (!unitPickerOpen) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (unitPickerRef.current?.contains(target)) return;
+      setUnitPickerOpen(false);
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [unitPickerOpen]);
+  const toggleWeekday = useCallback((day: number) => {
+    if (weekdaysDisabled) return;
+    if (selectedWeekdays.length === 1 && selectedWeekdays[0] === day) return;
+    const isCurrentlySelected = selectedWeekdays.includes(day);
+    const next = selectedWeekdays.includes(day)
+      ? selectedWeekdays.filter((v) => v !== day)
+      : [...selectedWeekdays, day];
+    setSuppressedInactiveTooltipDay(isCurrentlySelected ? day : null);
+    setHoveredInactiveTooltipDay(null);
+    onWeekdays(normalizeIntervalWeekdays(next));
+  }, [onWeekdays, selectedWeekdays, weekdaysDisabled]);
+  const weekdayButtons = (
+    <div
+      className={`ml-1 flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-left text-sm ${
+        weekdaysDisabled ? "opacity-50" : ""
+      }`}
+      style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
+    >
+      {WEEKDAY_VALUES.map((day) => {
+        const checked = selectedWeekdays.includes(day);
+        const isLastSelected = checked && selectedWeekdays.length === 1;
+        const suppressInactiveTooltip = suppressedInactiveTooltipDay === day;
+        const showInactiveTooltip = !checked && !weekdaysDisabled && !suppressInactiveTooltip && hoveredInactiveTooltipDay === day;
+        const inactiveTooltip = t("{{weekday}}不执行", { weekday: weekdayLabels[day] });
+        return (
+          <span
+            key={day}
+            className="group relative inline-flex"
+            onMouseEnter={() => {
+              if (!checked && !weekdaysDisabled && !suppressInactiveTooltip) setHoveredInactiveTooltipDay(day);
+            }}
+            onMouseLeave={() => {
+              if (hoveredInactiveTooltipDay === day) setHoveredInactiveTooltipDay(null);
+              if (suppressedInactiveTooltipDay === day) setSuppressedInactiveTooltipDay(null);
+            }}
+          >
+            <button
+              type="button"
+              disabled={weekdaysDisabled || isLastSelected}
+              onClick={() => toggleWeekday(day)}
+              style={{ fontSize: "13px", lineHeight: "17px" }}
+              className={
+                "group inline-flex h-6 items-center gap-1 rounded-full px-2 text-xs font-normal leading-none transition " +
+                (checked
+                  ? "bg-black text-white"
+                  : "border border-black/10 bg-black/[0.04] text-black/45 hover:bg-black/[0.08] hover:text-black/65") +
+                (isLastSelected ? " cursor-not-allowed" : "")
+              }
+              title={isLastSelected ? t("至少保留 1 天") : undefined}
+            >
+              {weekdayLabels[day]}
+              {checked && selectedWeekdays.length > 1 && !weekdaysDisabled && (
+                <X className="h-2.5 w-0 overflow-hidden text-white/80 opacity-0 transition-all group-hover:-mr-1 group-hover:w-2.5 group-hover:opacity-100 group-focus-visible:-mr-1 group-focus-visible:w-2.5 group-focus-visible:opacity-100" />
+              )}
+            </button>
+            {showInactiveTooltip && (
+              <span
+                className="pointer-events-auto absolute left-1/2 top-[calc(100%+6px)] z-[30] inline-flex -translate-x-1/2 select-text whitespace-nowrap rounded-md border border-[var(--border-subtle)] bg-white px-2 py-1 text-[11px] font-medium leading-none text-[var(--text-primary)] shadow-[0_8px_24px_rgba(15,23,42,0.12)]"
+                role="tooltip"
+              >
+                {inactiveTooltip}
+              </span>
+            )}
+          </span>
+        );
+      })}
+    </div>
+  );
   return (
-    <div className="flex items-center gap-2">
-      <span className="text-sm text-black/60" style={MODAL_COMPACT_CONTROL_TEXT_STYLE}>{t("每")}</span>
-      <input
-        type="number"
-        min={1}
-        value={num}
-        onChange={(e) => onNum(Math.max(1, Number(e.target.value) || 1))}
-        style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
-        className="w-20 rounded-lg border border-black/10 bg-white px-3 py-2 text-sm focus:border-black/30 focus:outline-none"
-      />
-      <div className="relative w-[124px]">
-        <select
-          value={unit}
-          onChange={(e) => onUnit(e.target.value as "m" | "h" | "d")}
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm text-black/60" style={MODAL_COMPACT_CONTROL_TEXT_STYLE}>{t("每")}</span>
+        <input
+          type="number"
+          min={1}
+          value={num}
+          onChange={(e) => onNum(Math.max(1, Number(e.target.value) || 1))}
           style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
-          className="w-full appearance-none rounded-lg border border-black/10 bg-white px-3 py-2 pr-10 text-sm focus:border-black/30 focus:outline-none"
-        >
-          <option value="m">{t("分钟")}</option>
-          <option value="h">{t("小时")}</option>
-          <option value="d">{t("天")}</option>
-        </select>
-        <ChevronDown className="pointer-events-none absolute right-5 top-1/2 h-4 w-4 -translate-y-1/2 text-black/80" />
+          className="h-9 w-16 rounded-lg border border-black/10 bg-white px-3 py-1.5 text-sm focus:border-black/30 focus:outline-none"
+        />
+        <div ref={unitPickerRef} className="relative w-[76px]">
+          <button
+            type="button"
+            onClick={() => setUnitPickerOpen((open) => !open)}
+            style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
+            className="flex min-h-9 w-full items-center justify-between rounded-lg border border-black/10 bg-white px-2.5 py-1.5 text-left text-sm focus:border-black/30 focus:outline-none"
+            aria-haspopup="listbox"
+            aria-expanded={unitPickerOpen}
+          >
+            <span>{unitLabel}</span>
+            <ChevronDown className="h-3.5 w-3.5 text-black/80" />
+          </button>
+          {unitPickerOpen && (
+            <div
+              className="absolute left-0 top-[calc(100%+6px)] z-10 w-[92px] rounded-xl border border-black/10 bg-white p-1.5 shadow-xl"
+              role="listbox"
+            >
+              {unitOptions.map((option) => {
+                const checked = option.value === unit;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => {
+                      onUnit(option.value);
+                      setUnitPickerOpen(false);
+                    }}
+                    style={{ fontSize: "14px", lineHeight: "22px" }}
+                    className={
+                      "flex w-full items-center justify-between rounded-lg px-3 py-2 transition " +
+                      (checked
+                        ? "bg-black text-white"
+                        : "text-black/70 hover:bg-black/[0.04] hover:text-black")
+                    }
+                    role="option"
+                    aria-selected={checked}
+                  >
+                    <span>{option.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+        {weekdayButtons}
       </div>
     </div>
   );

@@ -127,7 +127,7 @@ const RepairToolsIcon = (props: React.SVGProps<SVGSVGElement>) => (
 );
 
 const SETTINGS_ICON_TOOLTIP_CLASS =
-  "pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium leading-relaxed text-[var(--text-primary)] opacity-0 shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100";
+  "pointer-events-auto select-text absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium leading-relaxed text-[var(--text-primary)] opacity-0 shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100";
 
 const SETTINGS_ICON_TOOLTIP_ARROW_CLASS =
   "absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-[var(--border-subtle)] bg-white";
@@ -3885,7 +3885,7 @@ export const OpenClawSettingsPage = () => {
               return (
                 <div className="grid items-start gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
                   <aside className="lg:sticky lg:top-[84px]">
-                    <div className="rounded-lg border border-black/[0.06] bg-white p-3 shadow-[0_8px_28px_rgba(15,23,42,0.04)]">
+                    <div className="rounded-md border border-black/[0.06] bg-white p-3 shadow-[0_8px_28px_rgba(15,23,42,0.04)]">
                       <div
                         role={visibleBots.length > 1 ? "button" : undefined}
                         tabIndex={visibleBots.length > 1 ? 0 : undefined}
@@ -4080,7 +4080,7 @@ export const OpenClawSettingsPage = () => {
 
                     <nav
                       aria-label={t("实例配置导航")}
-                      className="mt-4 rounded-lg border border-black/[0.06] bg-white p-2 shadow-[0_8px_28px_rgba(15,23,42,0.04)]"
+                      className="mt-4 rounded-md border border-black/[0.06] bg-white p-2 shadow-[0_8px_28px_rgba(15,23,42,0.04)]"
                     >
                       {settingsSections.map((section) => {
                         const isActive = section.id === activeSection;

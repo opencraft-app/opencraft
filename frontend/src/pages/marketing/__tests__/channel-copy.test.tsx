@@ -72,6 +72,18 @@ describe("marketing channel copy", () => {
     expect(screen.getByText("现在可以将 Hermes Agent 接入企业微信，在企业微信会话中直接与云端智能伙伴对话。")).toBeInTheDocument();
   });
 
+  it("mentions the recent runs view in the June changelog", () => {
+    render(
+      <MemoryRouter>
+        <ChangelogPage />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText("2026 年 6 月")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "自动任务支持「最近执行」视图" })).toBeInTheDocument();
+    expect(screen.getByText("现在可以在自动任务页面查看最近执行记录，快速确认任务触发时间、执行结果。")).toBeInTheDocument();
+  });
+
   it("describes the April launch with channels, model APIs, and Skill support", () => {
     render(
       <MemoryRouter>

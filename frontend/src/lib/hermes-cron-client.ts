@@ -40,6 +40,7 @@ export interface CronJob {
 export interface CronEffectiveWindow {
   start_at: string | null;
   end_at: string | null;
+  weekdays?: number[] | null;
 }
 
 export interface CronRunRecord {
@@ -610,16 +611,21 @@ function finalizeJob(p: Partial<CronJob>): CronJob {
 export function buildEffectiveWindowScript(args: CronEffectiveWindow): string {
   const startAt = args.start_at ?? "";
   const endAt = args.end_at ?? "";
+  const weekdays = Array.isArray(args.weekdays)
+    ? Array.from(new Set(args.weekdays.filter((v) => Number.isInteger(v) && v >= 0 && v <= 6))).sort((a, b) => a - b)
+    : [];
   return [
     "#!/usr/bin/env python3",
     "# lightvela-effective-window",
     `# start_at=${startAt}`,
     `# end_at=${endAt}`,
+    `# weekdays=${weekdays.join(",")}`,
     "import datetime",
     "import json",
     "",
     `START_AT = ${JSON.stringify(startAt)}`,
     `END_AT = ${JSON.stringify(endAt)}`,
+    `ALLOWED_WEEKDAYS = ${JSON.stringify(weekdays)}`,
     "",
     "def parse(value):",
     "    return datetime.datetime.fromisoformat(value) if value else None",
@@ -632,6 +638,10 @@ export function buildEffectiveWindowScript(args: CronEffectiveWindow): string {
     "    wake = False",
     "if end_at is not None and now > end_at:",
     "    wake = False",
+    "# JavaScript/Hermes cron convention: 0=Sunday, 1=Monday, ... 6=Saturday",
+    "current_weekday = now.isoweekday() % 7",
+    "if ALLOWED_WEEKDAYS and current_weekday not in ALLOWED_WEEKDAYS:",
+    "    wake = False",
     "print(json.dumps({\"wakeAgent\": wake}))",
     "",
   ].join("\n");
@@ -641,10 +651,18 @@ export function parseEffectiveWindowScript(content: string): CronEffectiveWindow
   if (!content.includes("lightvela-effective-window")) return null;
   const startAt = /^# start_at=(.*)$/m.exec(content)?.[1]?.trim() ?? "";
   const endAt = /^# end_at=(.*)$/m.exec(content)?.[1]?.trim() ?? "";
-  if (!startAt && !endAt) return null;
+  const weekdaysRaw = /^# weekdays=(.*)$/m.exec(content)?.[1]?.trim() ?? "";
+  const weekdays = weekdaysRaw
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean)
+    .map((v) => Number(v))
+    .filter((v) => Number.isInteger(v) && v >= 0 && v <= 6);
+  if (!startAt && !endAt && weekdays.length === 0) return null;
   return {
     start_at: startAt || null,
     end_at: endAt || null,
+    ...(weekdays.length > 0 ? { weekdays } : {}),
   };
 }
 
