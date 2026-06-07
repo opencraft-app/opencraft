@@ -130,7 +130,7 @@ function ChangelogContent() {
      不会污染另一侧站点的 bundle。 */
   const launchDesc = isGlobal
     ? t("支持一键创建云端 Hermes，支持接入 WeChat、Telegram、WhatsApp、Discord 通道")
-    : t("支持一键创建云端 Hermes，支持接入 QQ、微信、飞书通道");
+    : t("支持一键创建云端 Hermes，支持快速接入 QQ、微信、飞书通道，支持主流模型 API 接入，支持一键安装 Skill 技能。");
 
   const mayChangelogGroup: ChangelogMonthGroup | null = isGlobal
     ? null
@@ -156,6 +156,11 @@ function ChangelogContent() {
             title: t("Soul 人设能力上线"),
             desc: t("为 Hermes Agent 抽取并保存专属 Soul 人设，一键注入后通过 /new 开启带有新人设的新会话。"),
             visual: "soul",
+          },
+          {
+            title: t("LightVela 支持企业微信聊天通道"),
+            desc: t("现在可以将 Hermes Agent 接入企业微信，在企业微信会话中直接与云端智能伙伴对话。"),
+            visual: "none",
           },
         ],
       };

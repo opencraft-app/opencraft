@@ -116,8 +116,8 @@ function useCnCards(): UseCaseCard[] {
       key: "wecom",
       glow: "#6BB5FF",
       icon: { kind: "img", src: assetUrl("/assets/landing/where-to-use/wecom-logo.png"), alt: "WeCom" },
-      title: t("企业微信（即将支持）"),
-      desc: t("让沟通与工作流深度结合，随时随地开启丝滑协作。"),
+      title: t("企业微信"),
+      desc: t("将 Hermes Agent 接入企业微信会话，让团队沟通与工作流协作更顺畅。"),
     },
   ];
 }
