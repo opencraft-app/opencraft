@@ -246,12 +246,30 @@ describe("effective window script", () => {
     const script = buildEffectiveWindowScript({
       start_at: "2026-06-10T00:00",
       end_at: "2026-06-19T23:59",
+      weekdays: [1, 5, 0],
     });
 
     expect(script).toContain("lightvela-effective-window");
+    expect(script).toContain("# weekdays=0,1,5");
+    expect(script).toContain("current_weekday = now.isoweekday() % 7");
     expect(parseEffectiveWindowScript(script)).toEqual({
       start_at: "2026-06-10T00:00",
       end_at: "2026-06-19T23:59",
+      weekdays: [0, 1, 5],
+    });
+  });
+
+  it("keeps weekday-only LightVela gates editable", () => {
+    const script = buildEffectiveWindowScript({
+      start_at: null,
+      end_at: null,
+      weekdays: [5, 6, 0],
+    });
+
+    expect(parseEffectiveWindowScript(script)).toEqual({
+      start_at: null,
+      end_at: null,
+      weekdays: [0, 5, 6],
     });
   });
 

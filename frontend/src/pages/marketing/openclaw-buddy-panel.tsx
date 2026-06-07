@@ -48,11 +48,11 @@ const PANEL_CARD_STYLE: React.CSSProperties = {
   boxShadow: "0 4px 24px rgba(0,0,0,0.03), 0 1px 2px rgba(0,0,0,0.02)",
 };
 
-const ACTION_TOOLTIP_CLASS = "pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium text-[var(--text-primary)] opacity-0 shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100";
+const ACTION_TOOLTIP_CLASS = "pointer-events-auto select-text absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium text-[var(--text-primary)] opacity-0 shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100";
 
 const ACTION_TOOLTIP_ARROW_CLASS = "absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-[var(--border-subtle)] bg-white";
 
-const UNAPPLIED_TOOLTIP_CLASS = "pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium text-[var(--text-primary)] opacity-0 shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition-opacity duration-150 group-focus-within/unapplied:opacity-100 group-hover/unapplied:opacity-100";
+const UNAPPLIED_TOOLTIP_CLASS = "pointer-events-auto select-text absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium text-[var(--text-primary)] opacity-0 shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition-opacity duration-150 group-focus-within/unapplied:opacity-100 group-hover/unapplied:opacity-100";
 
 /** 抽卡槽位数上限（4 列 × 2 行 = 8 张） */
 const MAX_DRAWS = 8;
@@ -1116,7 +1116,7 @@ function EmptySlot({ onClick }: { onClick: () => void }) {
       </button>
       {/* 悬浮提示：仅当 hover 时浮出，定位在卡片正中（浅色系） */}
       <div
-        className="pointer-events-none absolute left-1/2 top-[35%] -translate-x-1/2 -translate-y-1/2 whitespace-nowrap rounded-md px-3 py-1.5 text-[11px] font-medium opacity-0 transition-opacity duration-150 group-hover:opacity-100"
+        className="pointer-events-auto absolute left-1/2 top-[35%] -translate-x-1/2 -translate-y-1/2 select-text whitespace-nowrap rounded-md px-3 py-1.5 text-[11px] font-medium opacity-0 transition-opacity duration-150 group-hover:opacity-100"
         style={{
           background: "rgba(255,255,255,0.95)",
           color: "rgba(0,0,0,0.75)",

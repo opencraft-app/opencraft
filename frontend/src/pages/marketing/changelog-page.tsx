@@ -166,6 +166,16 @@ function ChangelogContent() {
       };
 
   const changelogGroups: ChangelogMonthGroup[] = [
+    {
+      month: t("2026 年 6 月"),
+      entries: [
+        {
+          title: t("自动任务支持「最近执行」视图"),
+          desc: t("现在可以在自动任务页面查看最近执行记录，快速确认任务触发时间、执行结果。"),
+          visual: "schedule",
+        },
+      ],
+    },
     ...(mayChangelogGroup ? [mayChangelogGroup] : []),
     {
       month: t("2026 年 4 月"),
