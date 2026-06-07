@@ -4,6 +4,7 @@ import {
   buildEffectiveWindowFromInputs,
   buildDeliverString,
   buildScheduleString,
+  formatEffectiveWindow,
   getLastAgentRunForJob,
   getEffectiveWindowStatus,
   isCronJobExpiredBeyondGrace,
@@ -243,6 +244,13 @@ describe("effective window helpers", () => {
       weekdays: [5, 6, 0],
     });
     expect(getEffectiveWindowStatus({ start_at: null, end_at: null, weekdays: [5, 6, 0] }, now)).toBe("active");
+  });
+
+  it("omits open-ended date placeholders for weekday-only labels", () => {
+    const t = ((text: string) => text) as Parameters<typeof formatEffectiveWindow>[1];
+
+    expect(formatEffectiveWindow({ start_at: null, end_at: null, weekdays: [5, 6, 0] }, t))
+      .toBe("生效中 · 执行日：周五、周六、周日");
   });
 
   it("normalizes date-time values from either space or T separators", () => {

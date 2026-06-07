@@ -1352,13 +1352,18 @@ export function getEffectiveWindowStatus(window: CronEffectiveWindow | null, now
   return "active";
 }
 
-function formatEffectiveWindow(
+export function formatEffectiveWindow(
   window: CronEffectiveWindow | null,
   t: ReturnType<typeof useT>,
 ): string {
   if (!window?.start_at && !window?.end_at && !window?.weekdays?.length) return t("始终生效");
-  const start = window.start_at ? formatEffectiveWindowDate(window.start_at) : t("不限开始时间");
-  const end = window.end_at ? formatEffectiveWindowDate(window.end_at) : t("不限结束时间");
+  const dateLabel = window.start_at && window.end_at
+    ? `${formatEffectiveWindowDate(window.start_at)} - ${formatEffectiveWindowDate(window.end_at)}`
+    : window.start_at
+      ? formatEffectiveWindowDate(window.start_at)
+      : window.end_at
+        ? formatEffectiveWindowDate(window.end_at)
+        : null;
   const status = getEffectiveWindowStatus(window);
   const statusLabel = status === "pending"
     ? t("未开始")
@@ -1366,9 +1371,9 @@ function formatEffectiveWindow(
       ? t("已过生效期")
       : t("生效中");
   const weekdayLabel = window.weekdays?.length
-    ? ` · ${t("执行日")}：${formatWeekdays(window.weekdays, t)}`
-    : "";
-  return `${start} - ${end} · ${statusLabel}${weekdayLabel}`;
+    ? `${t("执行日")}：${formatWeekdays(window.weekdays, t)}`
+    : null;
+  return [dateLabel, statusLabel, weekdayLabel].filter(Boolean).join(" · ");
 }
 
 function formatEffectiveWindowDate(value: string): string {
