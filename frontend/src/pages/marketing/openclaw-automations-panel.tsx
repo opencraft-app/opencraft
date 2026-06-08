@@ -963,6 +963,10 @@ export function formatScheduleTooltip(
     return `${t("按间隔")} · ${scheduleLabel}`;
   }
 
+  if (/^(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)$/.test(display)) {
+    return `${t("周期")} · ${scheduleLabel}`;
+  }
+
   return scheduleLabel;
 }
 

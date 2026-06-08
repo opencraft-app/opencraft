@@ -232,15 +232,27 @@ describe("cron date parsing and expiration filtering", () => {
 });
 
 describe("schedule labels", () => {
-  it("prefixes interval schedule hover labels with the schedule mode", () => {
-    const t = ((text: string, vars?: Record<string, unknown>) => {
-      if (!vars) return text;
-      return text.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, key) => String(vars[key] ?? ""));
-    }) as Parameters<typeof formatScheduleTooltip>[1];
+  const t = ((text: string, vars?: Record<string, unknown>) => {
+    if (!vars) return text;
+    return text.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, key) => String(vars[key] ?? ""));
+  }) as Parameters<typeof formatScheduleTooltip>[1];
 
+  it("prefixes interval schedule hover labels with the schedule mode", () => {
     expect(formatScheduleTooltip(makeCronJob({
       schedule: { kind: "interval", expr: "every 1h", display: "every 1h" },
     }), t)).toBe("按间隔 · 每 1 小时");
+  });
+
+  it("prefixes recurring schedule hover labels with the schedule mode", () => {
+    expect(formatScheduleTooltip(makeCronJob({
+      schedule: { kind: "cron", expr: "51 10 * * *", display: "51 10 * * *" },
+    }), t)).toBe("周期 · 每天 10:51");
+  });
+
+  it("keeps one-time schedule hover labels unchanged", () => {
+    expect(formatScheduleTooltip(makeCronJob({
+      schedule: { kind: "once", expr: "once at 2026-05-26 09:00", display: "once at 2026-05-26 09:00" },
+    }), t)).toBe("单次 2026-05-26 09:00");
   });
 });
 
@@ -269,6 +281,9 @@ describe("effective window helpers", () => {
   });
 
   it("splits configured dates and weekdays across tooltip lines", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-08T09:00:00+08:00"));
+
     const t = ((text: string) => text) as Parameters<typeof formatEffectiveWindowTooltipLines>[1];
 
     expect(formatEffectiveWindowTooltipLines({
