@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useRepositories } from "@/contexts/repository-context";
 import { useT } from "@/i18n/t";
+import { DEFAULT_LOCALE } from "@/lib/region";
 import { joinTsshPath, parentTsshPath, TencentTsshFileClient, type TsshFileInfo } from "@/lib/tencent-tssh-file-client";
 import { canReadTsshFile } from "@/lib/tssh-file-permissions";
 
@@ -101,7 +102,7 @@ const formatTime = (timestamp: number) => {
   if (!timestamp) {
     return "-";
   }
-  return new Intl.DateTimeFormat("zh-CN", {
+  return new Intl.DateTimeFormat(DEFAULT_LOCALE, {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
