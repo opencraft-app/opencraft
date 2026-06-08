@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle, Download, Eye, EyeOff, File, FileArchive, FileCode2, FileText, Folder, FolderPlus, Loader2, PencilLine, RefreshCw, Trash2, Undo2, Upload, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -343,37 +343,40 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
   const downloadTooltip = selectedDownloadBlockReason ?? (!selectedFile ? noFileSelectedTitle : undefined);
   const deleteTooltip = !selectedFile ? noFileSelectedTitle : undefined;
 
-  const translateFileManagerError = (operationError: unknown, fallback: string) =>
-    fileManagerErrorMessage(operationError, fallback, {
-      directoryNotEmpty: t("目录非空，无法删除。"),
-      fileChannelNotConnected: t("文件通道未连接，请刷新后重试。"),
-      fileChannelClosed: t("文件通道已关闭，请刷新后重试。"),
-      fileExists: t("文件已存在，请换个名称。"),
-      fileNotFound: t("文件或目录不存在，请刷新后重试。"),
-      invalidArgument: t("文件操作参数无效，请检查后重试。"),
-      isDirectory: t("该路径是目录，不能按文件操作。"),
-      notDirectory: t("路径中包含非目录项，请检查路径。"),
-      operationNotPermitted: t("没有权限执行该文件操作。"),
-      permissionDenied: t("权限不足，无法完成该文件操作。"),
-      requestTimedOut: t("文件操作超时，请稍后重试。"),
-      websocketError: t("连接异常，请刷新后重试。"),
-    });
+  const translateFileManagerError = useCallback(
+    (operationError: unknown, fallback: string) =>
+      fileManagerErrorMessage(operationError, fallback, {
+        directoryNotEmpty: t("目录非空，无法删除。"),
+        fileChannelNotConnected: t("文件通道未连接，请刷新后重试。"),
+        fileChannelClosed: t("文件通道已关闭，请刷新后重试。"),
+        fileExists: t("文件已存在，请换个名称。"),
+        fileNotFound: t("文件或目录不存在，请刷新后重试。"),
+        invalidArgument: t("文件操作参数无效，请检查后重试。"),
+        isDirectory: t("该路径是目录，不能按文件操作。"),
+        notDirectory: t("路径中包含非目录项，请检查路径。"),
+        operationNotPermitted: t("没有权限执行该文件操作。"),
+        permissionDenied: t("权限不足，无法完成该文件操作。"),
+        requestTimedOut: t("文件操作超时，请稍后重试。"),
+        websocketError: t("连接异常，请刷新后重试。"),
+      }),
+    [t],
+  );
 
-  const removeDownloadTriggerIframe = (trigger: DownloadTriggerIframe) => {
+  const removeDownloadTriggerIframe = useCallback((trigger: DownloadTriggerIframe) => {
     window.clearTimeout(trigger.timer);
     trigger.iframe.remove();
     downloadTriggerIframesRef.current.delete(trigger);
-  };
+  }, []);
 
-  const clearDownloadTriggerIframes = () => {
+  const clearDownloadTriggerIframes = useCallback(() => {
     for (const trigger of downloadTriggerIframesRef.current) {
       window.clearTimeout(trigger.timer);
       trigger.iframe.remove();
     }
     downloadTriggerIframesRef.current.clear();
-  };
+  }, []);
 
-  const triggerBrowserDownload = (url: string) => {
+  const triggerBrowserDownload = useCallback((url: string) => {
     const iframe = document.createElement("iframe");
     iframe.src = url;
     iframe.hidden = true;
@@ -387,7 +390,7 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
     };
     downloadTriggerIframesRef.current.add(trigger);
     document.body.appendChild(iframe);
-  };
+  }, [removeDownloadTriggerIframe]);
 
   useEffect(() => {
     return () => {
@@ -395,7 +398,7 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
       clientRef.current?.close();
       clientRef.current = null;
     };
-  }, []);
+  }, [clearDownloadTriggerIframes]);
 
   useEffect(() => {
     clearDownloadTriggerIframes();
@@ -412,7 +415,7 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
     setError(null);
     setProgress(null);
     setStatus("idle");
-  }, [botId]);
+  }, [botId, clearDownloadTriggerIframes]);
 
   useEffect(() => {
     void loadPath(DEFAULT_TAT_FILE_PATH);
@@ -441,7 +444,7 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
     return () => document.removeEventListener("pointerdown", handlePointerDown);
   }, [path, pathEditing]);
 
-  const getClient = async () => {
+  const getClient = useCallback(async () => {
     if (clientRef.current) {
       return clientRef.current;
     }
@@ -464,9 +467,9 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
     clientRef.current = client;
     await client.connect();
     return client;
-  };
+  }, [botId, repositories.bots, t, translateFileManagerError]);
 
-  const assertCanDownloadFile = async (client: TencentTsshFileClient, remotePath: string, listedFile?: TsshFileInfo | null) => {
+  const assertCanDownloadFile = useCallback(async (client: TencentTsshFileClient, remotePath: string, listedFile?: TsshFileInfo | null) => {
     const fileInfo = listedFile ?? (await client.fileInfo(remotePath));
     if (!fileInfo) {
       return;
@@ -477,9 +480,9 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
     if (!canReadTsshFile(fileInfo, DEFAULT_TAT_FILE_PERMISSION_SUBJECT)) {
       throw new Error(t("当前以 {{user}} 用户访问，选中文件没有可读权限。", { user: DEFAULT_TAT_FILE_USER }));
     }
-  };
+  }, [t]);
 
-  const streamFileDownloadRequest = async (request: TatFileDownloadRequest, port: MessagePort) => {
+  const streamFileDownloadRequest = useCallback(async (request: TatFileDownloadRequest, port: MessagePort) => {
     let cancelled = false;
     let sequence = 0;
     let waitingAck: TatFileDownloadAckWaiter | null = null;
@@ -586,7 +589,7 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
       setProgress(null);
       port.close();
     }
-  };
+  }, [assertCanDownloadFile, clearDownloadTriggerIframes, getClient, t, translateFileManagerError]);
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
