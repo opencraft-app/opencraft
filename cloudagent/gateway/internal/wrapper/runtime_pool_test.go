@@ -330,8 +330,10 @@ func TestPrepareWispHostOnlyAcceptsReadyMarkerDespiteCommandError(t *testing.T) 
 		wispPackageURL:    "https://example.invalid/wisp.erofs",
 		wispRootUpperSize: "10G",
 	}
+	var gotEnv map[string]string
 	host := &recordingRuntimeHost{
-		runCommand: func(_ RuntimeHostTarget, _ string, _ map[string]string, _ func(string) error, _ func(string) error) (CommandResult, error) {
+		runCommand: func(_ RuntimeHostTarget, _ string, env map[string]string, _ func(string) error, _ func(string) error) (CommandResult, error) {
+			gotEnv = env
 			return CommandResult{
 				Stdout:   "WISP_HOST_READY install=/tmp/warm/install\n",
 				Stderr:   "TIMELINE warm host ready\n",
@@ -354,6 +356,19 @@ func TestPrepareWispHostOnlyAcceptsReadyMarkerDespiteCommandError(t *testing.T) 
 	}
 	if got != "/tmp/warm/install/bin/wispclient" {
 		t.Fatalf("wispclient path=%q", got)
+	}
+	wantEnv := map[string]string{
+		"JFS_MOUNT_WRITEBACK":                 "1",
+		"JFS_MOUNT_UPLOAD_DELAY":              "10s",
+		"JFS_MOUNT_MAX_UPLOADS":               "20",
+		"JFS_MOUNT_CACHE_SIZE":                "64M",
+		"JFS_MOUNT_MIN_FREE_BYTES":            "200M",
+		"JFS_WRITEBACK_BARRIER_POLL_INTERVAL": "30ms",
+	}
+	for name, want := range wantEnv {
+		if gotEnv[name] != want {
+			t.Fatalf("host-only env %s=%q, want %q", name, gotEnv[name], want)
+		}
 	}
 }
 
