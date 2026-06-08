@@ -192,10 +192,15 @@ func (w *AgentSidecarWorker) prepareWispHostOnly(ctx context.Context, host Runti
 		"SMH_ACCESS_TOKEN":                    "warm-host-only",
 		"JFS_PREFIX":                          "warm-host-only",
 		"ROOT_UPPER_SIZE":                     w.wispRootUpperSize,
+		"JFS_MOUNT_WRITEBACK":                 firstNonEmpty(firstEnv("GATEWAY_WISP_MOUNT_WRITEBACK", "JFS_MOUNT_WRITEBACK"), "1"),
+		"JFS_MOUNT_UPLOAD_DELAY":              firstNonEmpty(firstEnv("GATEWAY_WISP_MOUNT_UPLOAD_DELAY", "JFS_MOUNT_UPLOAD_DELAY"), "10s"),
+		"JFS_MOUNT_MAX_UPLOADS":               firstNonEmpty(firstEnv("GATEWAY_WISP_MOUNT_MAX_UPLOADS", "JFS_MOUNT_MAX_UPLOADS"), "20"),
+		"JFS_MOUNT_CACHE_SIZE":                firstNonEmpty(firstEnv("GATEWAY_WISP_MOUNT_CACHE_SIZE", "JFS_MOUNT_CACHE_SIZE"), "64M"),
+		"JFS_MOUNT_MIN_FREE_BYTES":            firstNonEmpty(firstEnv("GATEWAY_WISP_MOUNT_MIN_FREE_BYTES", "JFS_MOUNT_MIN_FREE_BYTES"), "200M"),
+		"JFS_WRITEBACK_BARRIER_POLL_INTERVAL": firstNonEmpty(firstEnv("GATEWAY_WISP_WRITEBACK_BARRIER_POLL_INTERVAL", "JFS_WRITEBACK_BARRIER_POLL_INTERVAL"), "30ms"),
 		"WISP_PACKAGE_ARCH":                   firstEnv("GATEWAY_WISP_PACKAGE_ARCH", "WISP_PACKAGE_ARCH"),
 		"WISP_USE_HOST_E2FSPROGS":             firstEnv("GATEWAY_WISP_USE_HOST_E2FSPROGS", "WISP_USE_HOST_E2FSPROGS"),
 		"WISP_USE_HOST_CRUN":                  firstEnv("GATEWAY_WISP_USE_HOST_CRUN", "WISP_USE_HOST_CRUN"),
-		"JFS_WRITEBACK_BARRIER_POLL_INTERVAL": "30ms",
 	}
 	result, err := host.RunCommand(ctx, sb, wispOuterPrepareScript(), env, nil, func(text string) error {
 		logRemoteStderr(time.Now(), workerJob{JobID: firstNonEmpty(jobID, "wisp_host_prepare"), ResponseID: sb.ID}, text)
