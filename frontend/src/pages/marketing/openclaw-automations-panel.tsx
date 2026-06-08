@@ -1446,7 +1446,7 @@ export function formatEffectiveWindowTooltipLines(
   const effectivePeriodLabel = dateAndStatusLabel === t("始终生效")
     ? dateAndStatusLabel
     : `${t("生效期")}：${dateAndStatusLabel}`;
-  return [effectivePeriodLabel, weekdayLabel].filter((line): line is string => Boolean(line));
+  return [weekdayLabel, effectivePeriodLabel].filter((line): line is string => Boolean(line));
 }
 
 function getEffectiveWindowLabelParts(
