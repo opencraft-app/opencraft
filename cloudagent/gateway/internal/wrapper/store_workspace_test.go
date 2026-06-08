@@ -151,6 +151,8 @@ func TestStoreWorkspaceAuthoritativeMetadataAndLifecycle(t *testing.T) {
 		WispName:              "wisp-workspace-meta",
 		WispSMHSpaceID:        "space_meta",
 		WispOwnsSMHSpace:      true,
+		WorkspaceWispName:     "workspace-wisp-meta",
+		WorkspaceRuntimeID:    "workspace-runtime-meta",
 		WispPackageURL:        "https://example.test/wisp.tar.gz",
 		WispJFSPrefix:         "cloudagent-workspace",
 		WispRootUpperSize:     "5G",
@@ -174,6 +176,8 @@ func TestStoreWorkspaceAuthoritativeMetadataAndLifecycle(t *testing.T) {
 	if loaded.ProviderWorkspaceID != rec.ProviderWorkspaceID ||
 		loaded.OwnerSessionID != rec.OwnerSessionID ||
 		loaded.WispSMHSpaceID != rec.WispSMHSpaceID ||
+		loaded.WorkspaceWispName != rec.WorkspaceWispName ||
+		loaded.WorkspaceRuntimeID != rec.WorkspaceRuntimeID ||
 		!loaded.WispOwnsSMHSpace ||
 		loaded.CleanupState != rec.CleanupState ||
 		loaded.LastCleanupError != rec.LastCleanupError ||

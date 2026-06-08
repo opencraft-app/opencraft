@@ -103,6 +103,8 @@ func applyWorkspaceRecordToRuntime(runtime ACPSessionRuntime, rec WorkspaceRecor
 	runtime.WispSMHSpaceID = firstNonEmpty(runtime.WispSMHSpaceID, spaceID)
 	runtime.WispName = firstNonEmpty(runtime.WispName, rec.WispName)
 	runtime.WispOwnsSMHSpace = runtime.WispOwnsSMHSpace || rec.WispOwnsSMHSpace
+	runtime.WorkspaceWispName = firstNonEmpty(runtime.WorkspaceWispName, rec.WorkspaceWispName)
+	runtime.WorkspaceRuntimeID = firstNonEmpty(runtime.WorkspaceRuntimeID, rec.WorkspaceRuntimeID)
 	runtime.WispPackageURL = firstNonEmpty(runtime.WispPackageURL, rec.WispPackageURL)
 	runtime.WispJFSPrefix = firstNonEmpty(runtime.WispJFSPrefix, rec.WispJFSPrefix)
 	runtime.WispRootUpperSize = firstNonEmpty(runtime.WispRootUpperSize, rec.WispRootUpperSize)
