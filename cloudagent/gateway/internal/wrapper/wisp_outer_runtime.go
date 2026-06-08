@@ -82,7 +82,7 @@ func (w *AgentSidecarWorker) prepareWispOuterRuntimeWithSpace(ctx context.Contex
 }
 
 func (w *AgentSidecarWorker) resolveWispRuntimeForSpace(ctx context.Context, runtime ACPSessionRuntime, req ACPSessionRuntimeStartRequest, space agentWispSMHSpace, acquireLease bool) (ACPSessionRuntime, error) {
-	runtime.WispName = firstNonEmpty(runtime.WispName, wispNameFromRuntime(req.SessionID))
+	runtime.WispName = firstNonEmpty(runtime.WispName, wispNameFromRuntime(runtimeWorkspaceIdentity(req)))
 	runtime.WispWorkspaceID = firstNonEmpty(runtime.WispWorkspaceID, space.SpaceID)
 	runtime.WispSMHSpaceID = space.SpaceID
 	runtime.WispOwnsSMHSpace = runtime.WispOwnsSMHSpace || space.Owned

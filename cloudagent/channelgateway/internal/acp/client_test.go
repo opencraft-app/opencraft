@@ -77,7 +77,7 @@ func TestClientCapturesPromptAgentMessageChunks(t *testing.T) {
 	if err := client.Initialize(ctx); err != nil {
 		t.Fatalf("initialize: %v", err)
 	}
-	sessionID, err := client.NewSession(ctx, "/workspace")
+	sessionID, err := client.NewSession(ctx, "/workspace", "")
 	if err != nil {
 		t.Fatalf("new session: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestClientCapturesPromptAgentMessageChunksWithArrayContent(t *testing.T) {
 	if err := client.Initialize(ctx); err != nil {
 		t.Fatalf("initialize: %v", err)
 	}
-	sessionID, err := client.NewSession(ctx, "/workspace")
+	sessionID, err := client.NewSession(ctx, "/workspace", "")
 	if err != nil {
 		t.Fatalf("new session: %v", err)
 	}
@@ -327,6 +327,64 @@ func TestClientCloseSessionCallsStandardACPMethod(t *testing.T) {
 	}
 }
 
+func TestClientSendsWorkspaceKeyAsCloudAgentSessionMeta(t *testing.T) {
+	var seenWorkspaceKey string
+	upgrader := websocket.Upgrader{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Errorf("upgrade: %v", err)
+			return
+		}
+		defer conn.Close()
+		for {
+			_, raw, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			var req struct {
+				ID     int64           `json:"id"`
+				Method string          `json:"method"`
+				Params json.RawMessage `json:"params"`
+			}
+			if err := json.Unmarshal(raw, &req); err != nil {
+				t.Errorf("decode request: %v", err)
+				return
+			}
+			switch req.Method {
+			case "initialize":
+				writeJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{}})
+			case "session/new":
+				var params struct {
+					Meta struct {
+						CloudAgent struct {
+							WorkspaceKey string `json:"workspace_key"`
+						} `json:"cloudagent"`
+					} `json:"_meta"`
+				}
+				if err := json.Unmarshal(req.Params, &params); err != nil {
+					t.Errorf("decode session/new params: %v", err)
+					return
+				}
+				seenWorkspaceKey = params.Meta.CloudAgent.WorkspaceKey
+				writeJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{"sessionId": "session-a"}})
+			default:
+				writeJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32601, "message": "not found"}})
+			}
+		}
+	}))
+	defer server.Close()
+	client := NewClient("ws"+server.URL[len("http"):], nil)
+	defer client.Close()
+	ctx := context.Background()
+	if _, err := client.NewSession(ctx, "/workspace", "workspace-stable-a"); err != nil {
+		t.Fatalf("new session: %v", err)
+	}
+	if seenWorkspaceKey != "workspace-stable-a" {
+		t.Fatalf("session/new did not include workspace key, got %q", seenWorkspaceKey)
+	}
+}
+
 func TestClientSerializesConcurrentPrompts(t *testing.T) {
 	var activePrompts atomic.Int64
 	var maxActivePrompts atomic.Int64
@@ -393,7 +451,7 @@ func TestClientSerializesConcurrentPrompts(t *testing.T) {
 	if err := client.Initialize(ctx); err != nil {
 		t.Fatalf("initialize: %v", err)
 	}
-	sessionID, err := client.NewSession(ctx, "/workspace")
+	sessionID, err := client.NewSession(ctx, "/workspace", "")
 	if err != nil {
 		t.Fatalf("new session: %v", err)
 	}
@@ -475,7 +533,7 @@ func TestClientDropsConnectionAfterRPCError(t *testing.T) {
 	if err := client.LoadSession(ctx, "session-bad", "/workspace"); err == nil {
 		t.Fatal("expected load failure")
 	}
-	sessionID, err := client.NewSession(ctx, "/workspace")
+	sessionID, err := client.NewSession(ctx, "/workspace", "")
 	if err != nil {
 		t.Fatalf("new session after load failure: %v", err)
 	}

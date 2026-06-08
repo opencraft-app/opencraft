@@ -262,6 +262,10 @@ func TestStoreConversationAndMessageDedup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get/create conversation: %v", err)
 	}
+	if !strings.HasPrefix(conv.WorkspaceKey, "wk_") {
+		t.Fatalf("new conversation should get stable workspace key, got %#v", conv)
+	}
+	oldWorkspaceKey := conv.WorkspaceKey
 	if err := st.BindACPSession(ctx, conv.ChannelAccountID, conv.SessionKey, "session-a"); err != nil {
 		t.Fatalf("bind session: %v", err)
 	}
@@ -272,7 +276,20 @@ func TestStoreConversationAndMessageDedup(t *testing.T) {
 	if conv.ACPSessionID != "session-a" || conv.ChatType != "group" || conv.ThreadID != "thread-a" {
 		t.Fatalf("unexpected conversation: %#v", conv)
 	}
-	bySession, ok, err := st.FindConversationByACPSession(ctx, "wecom-a", "session-a")
+	if conv.WorkspaceKey != oldWorkspaceKey {
+		t.Fatalf("normal session bind must not rotate workspace key: old=%s conv=%#v", oldWorkspaceKey, conv)
+	}
+	if err := st.BindACPWorkspaceSession(ctx, conv.ChannelAccountID, conv.SessionKey, "session-reset", "wk_reset"); err != nil {
+		t.Fatalf("bind reset session: %v", err)
+	}
+	conv, err = st.GetOrCreateConversation(ctx, conv)
+	if err != nil {
+		t.Fatalf("reload reset conversation: %v", err)
+	}
+	if conv.ACPSessionID != "session-reset" || conv.WorkspaceKey != "wk_reset" || conv.WorkspaceKey == oldWorkspaceKey {
+		t.Fatalf("reset bind should rotate workspace key: %#v", conv)
+	}
+	bySession, ok, err := st.FindConversationByACPSession(ctx, "wecom-a", "session-reset")
 	if err != nil || !ok {
 		t.Fatalf("find conversation by acp session ok=%v err=%v", ok, err)
 	}
@@ -303,5 +320,39 @@ func TestStoreConversationAndMessageDedup(t *testing.T) {
 	})
 	if err != nil || inserted {
 		t.Fatalf("duplicate insert inserted=%v err=%v", inserted, err)
+	}
+}
+
+func TestStoreBackfillsLegacyWorkspaceKeyFromACPSession(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(ctx, t.TempDir()+"/channelgateway.db")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+	now := nowText()
+	_, err = st.db.ExecContext(ctx, `
+INSERT INTO channel_conversations (
+	conversation_id, channel_account_id, channel_type, external_conversation_id,
+	external_user_id, external_thread_id, chat_type, agent_id, acp_session_id, session_key, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"conv-legacy", "wecom-a", "wecom", "chat-a", "user-a", "", "dm", "main", "session_legacy", "session-key-a", now, now)
+	if err != nil {
+		t.Fatalf("insert legacy row: %v", err)
+	}
+	conv, err := st.GetOrCreateConversation(ctx, Conversation{
+		ChannelAccountID:       "wecom-a",
+		ChannelType:            "wecom",
+		ExternalConversationID: "chat-a",
+		ExternalUserID:         "user-a",
+		ChatType:               "dm",
+		AgentID:                "main",
+		SessionKey:             "session-key-a",
+	})
+	if err != nil {
+		t.Fatalf("load legacy conversation: %v", err)
+	}
+	if conv.WorkspaceKey != "session_legacy" {
+		t.Fatalf("legacy workspace key should preserve old ACP-derived Wisp name, got %#v", conv)
 	}
 }
