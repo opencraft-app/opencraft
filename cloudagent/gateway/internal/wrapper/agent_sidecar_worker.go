@@ -1228,7 +1228,7 @@ func (w *AgentSidecarWorker) cleanupPreviousWispRuntimeBeforeMount(ctx context.C
 }
 
 func workspaceIDForRuntime(runtime ACPSessionRuntime, req ACPSessionRuntimeStartRequest) string {
-	return firstNonEmpty(runtime.WorkspaceID, runtime.WispWorkspaceID, runtime.WispSMHSpaceID, defaultWorkspaceID(req))
+	return firstNonEmpty(runtime.WorkspaceID, defaultWorkspaceID(req))
 }
 
 func workspaceRuntimeIDForRuntime(runtime ACPSessionRuntime, req ACPSessionRuntimeStartRequest) string {
@@ -1250,7 +1250,7 @@ func (w *AgentSidecarWorker) prepareInnerWorkspaceWispRuntime(ctx context.Contex
 	}
 	workspaceWisp := runtime
 	workspaceWisp.RuntimeID = workspaceRuntimeID
-	workspaceWisp.WispName = workspaceWispNameForRuntime(runtimeWorkspaceIdentity(req), runtime)
+	workspaceWisp.WispName = firstNonEmpty(runtime.WorkspaceWispName, workspaceWispNameForRuntime(runtimeWorkspaceIdentity(req), runtime))
 	workspaceWisp.WispWorkspaceID = workspaceID
 	workspaceWisp.WispSMHSpaceID = firstNonEmpty(runtime.WispSMHSpaceID, workspaceID)
 	workspaceWisp.WispOwnsSMHSpace = false
@@ -1291,6 +1291,11 @@ func (w *AgentSidecarWorker) attachSessionWorkspaceRuntime(ctx context.Context, 
 	if workspacePrepare == nil {
 		workspacePrepare = w.startWorkspaceRuntimePrepare(ctx, backend, runtime, req, workspaceID, nil, func(string, ...string) {})
 	}
+	preparedWorkspace, err := workspacePrepare.await()
+	if err != nil {
+		return ACPSessionRuntime{}, err
+	}
+	sb := preparedWorkspace.sandbox
 	if w.workspaceService != nil {
 		if err := w.workspaceService.EnsureWorkspace(ctx, WorkspaceRecord{
 			WorkspaceID:           workspaceID,
@@ -1302,6 +1307,8 @@ func (w *AgentSidecarWorker) attachSessionWorkspaceRuntime(ctx context.Context, 
 			WispName:              runtime.WispName,
 			WispSMHSpaceID:        runtime.WispSMHSpaceID,
 			WispOwnsSMHSpace:      runtime.WispOwnsSMHSpace,
+			WorkspaceWispName:     preparedWorkspace.workspaceWispName,
+			WorkspaceRuntimeID:    preparedWorkspace.workspaceRuntimeID,
 			WispPackageURL:        runtime.WispPackageURL,
 			WispJFSPrefix:         workspaceJFSPrefix,
 			WispRootUpperSize:     runtime.WispRootUpperSize,
@@ -1310,15 +1317,10 @@ func (w *AgentSidecarWorker) attachSessionWorkspaceRuntime(ctx context.Context, 
 			OuterCleanupPending:   false,
 			LastOuterCleanupError: "",
 		}); err != nil {
-			workspacePrepare.cancelAndCleanup(backend.host)
+			cleanupPreparedWorkspaceRuntime(backend.host, preparedWorkspace)
 			return ACPSessionRuntime{}, err
 		}
 	}
-	preparedWorkspace, err := workspacePrepare.await()
-	if err != nil {
-		return ACPSessionRuntime{}, err
-	}
-	sb := preparedWorkspace.sandbox
 	payload, err := json.Marshal(map[string]any{
 		"workspace_id":         workspaceID,
 		"workspace_runtime_id": preparedWorkspace.workspaceRuntimeID,
