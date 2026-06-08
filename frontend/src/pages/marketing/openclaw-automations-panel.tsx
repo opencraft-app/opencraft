@@ -1171,9 +1171,9 @@ function NameIdDetailRow({ name, id }: { name: string; id: string }) {
   return (
     <div className="grid gap-2 px-4 py-3 sm:grid-cols-[112px_minmax(0,1fr)] sm:items-start">
       <dt className="text-xs font-medium leading-6 text-black/45">{t("任务名称与ID")}</dt>
-      <dd className="min-w-0 space-y-1 text-sm leading-6 text-black/85 sm:text-right">
-        <div className="break-words">{name}</div>
-        <div className="break-all font-mono text-xs leading-5 text-black/45">{id}</div>
+      <dd className="min-w-0 text-sm text-black/85 sm:text-right">
+        <div className="break-words leading-5">{name}</div>
+        <div className="mt-0.5 break-all font-mono text-xs leading-4 text-black/45">{id}</div>
       </dd>
     </div>
   );
