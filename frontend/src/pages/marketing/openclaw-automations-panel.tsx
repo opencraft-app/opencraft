@@ -763,6 +763,7 @@ function CronJobCard({
   const hasEffectiveWindow = effectiveStatus !== "always";
   const fullName = job.name || t("未命名任务");
   const scheduleLabel = formatScheduleFriendly(job, t);
+  const scheduleTooltipLabel = formatScheduleTooltip(job, t);
   return (
     <div
       className="flex flex-col rounded-md bg-white p-4 transition hover:shadow-md"
@@ -800,7 +801,7 @@ function CronJobCard({
 
       <div className="mt-3 flex items-center justify-between gap-2 border-t border-black/[0.04] pt-2.5">
         <div className="flex min-w-0 items-center gap-1.5">
-          <ImmediateTooltipText label={scheduleLabel} message={scheduleLabel} />
+          <ImmediateTooltipText label={scheduleLabel} message={scheduleTooltipLabel} />
           {hasEffectiveWindow && (
             <EffectiveWindowBadge
               label={t("有效期")}
@@ -949,6 +950,20 @@ function formatScheduleFriendly(
   }
 
   return display || job.schedule.expr || "";
+}
+
+export function formatScheduleTooltip(
+  job: CronJob,
+  t: (s: string, vars?: Record<string, unknown>) => string,
+): string {
+  const scheduleLabel = formatScheduleFriendly(job, t);
+  const display = (job.schedule.display || job.schedule.expr || "").trim().toLowerCase();
+
+  if (/^every\s+\d+\s*[mhd]$/.test(display)) {
+    return `${t("按间隔")} · ${scheduleLabel}`;
+  }
+
+  return scheduleLabel;
 }
 
 export function parseOnceScheduleDate(display: string, nextRunAt: string | null): Date {

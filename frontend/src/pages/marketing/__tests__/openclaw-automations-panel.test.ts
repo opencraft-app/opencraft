@@ -6,6 +6,7 @@ import {
   buildScheduleString,
   formatEffectiveWindow,
   formatEffectiveWindowTooltipLines,
+  formatScheduleTooltip,
   getLastAgentRunForJob,
   getEffectiveWindowStatus,
   isCronJobExpiredBeyondGrace,
@@ -227,6 +228,19 @@ describe("cron date parsing and expiration filtering", () => {
 
     expect(isCronJobExpiredBeyondGrace(makeCronJob({ next_run_at: "2026-05-26T09:56:00+08:00" }))).toBe(false);
     expect(isCronJobExpiredBeyondGrace(makeCronJob({ next_run_at: "2026-05-26T09:54:00+08:00" }))).toBe(true);
+  });
+});
+
+describe("schedule labels", () => {
+  it("prefixes interval schedule hover labels with the schedule mode", () => {
+    const t = ((text: string, vars?: Record<string, unknown>) => {
+      if (!vars) return text;
+      return text.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, key) => String(vars[key] ?? ""));
+    }) as Parameters<typeof formatScheduleTooltip>[1];
+
+    expect(formatScheduleTooltip(makeCronJob({
+      schedule: { kind: "interval", expr: "every 1h", display: "every 1h" },
+    }), t)).toBe("按间隔 · 每 1 小时");
   });
 });
 
