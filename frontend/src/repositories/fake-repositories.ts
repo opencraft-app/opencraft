@@ -30,6 +30,8 @@ const FAKE_RESET_PROVIDER_NAME = "custom";
 const FAKE_RESET_BASE_URL = "https://api.example.invalid";
 const FAKE_RESET_MODEL_ID = "fake-model";
 const FAKE_RESET_API = "chat_completions";
+const FAKE_ACHIEVEMENTS_JSON_START = "__LIGHTVELA_ACHIEVEMENTS_JSON_START__";
+const FAKE_ACHIEVEMENTS_JSON_END = "__LIGHTVELA_ACHIEVEMENTS_JSON_END__";
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -856,6 +858,78 @@ const createBotRepository = (): BotRepository => {
 
     async execDebugCommand(_botId, command) {
       await wait(NETWORK_DELAY_MS);
+      if (command.includes(FAKE_ACHIEVEMENTS_JSON_START)) {
+        return {
+          status: "Succeeded",
+          exitCode: 0,
+          output: [
+            FAKE_ACHIEVEMENTS_JSON_START,
+            JSON.stringify({
+              achievements: [
+                {
+                  id: "let_him_cook",
+                  name: "Let Him Cook",
+                  description: "Let Hermes run a serious autonomous tool chain in one session.",
+                  category: "Agent Autonomy",
+                  state: "unlocked",
+                  unlocked: true,
+                  tier: "Copper",
+                  progress: 240,
+                  progress_pct: 100,
+                  next_tier: "Silver",
+                  next_threshold: 500,
+                  criteria: "Requirement: tool calls in one session. Tier ladder: Copper 200, Silver 500.",
+                  unlocked_at: Math.floor(Date.now() / 1000) - 3600,
+                  evidence: { title: "LightVela settings polish", value: 240 },
+                },
+                {
+                  id: "test_suite_tamer",
+                  name: "Test Suite Tamer",
+                  description: "Run enough verification commands that green text becomes part of the ritual.",
+                  category: "Tool Mastery",
+                  state: "discovered",
+                  unlocked: false,
+                  tier: null,
+                  progress: 42,
+                  progress_pct: 42,
+                  next_tier: "Copper",
+                  next_threshold: 100,
+                  criteria: "Requirement: test/check/verification command mentions. Tier ladder: Copper 100.",
+                },
+                {
+                  id: "port_3000_taken",
+                  name: "???",
+                  description: "Secret achievement: hidden until Hermes detects the first relevant behavior in your session history.",
+                  category: "Debugging Chaos",
+                  state: "secret",
+                  unlocked: false,
+                  tier: null,
+                  progress: 0,
+                  progress_pct: 0,
+                  next_tier: "Copper",
+                  next_threshold: 15,
+                  criteria: "Secret: exact requirement hidden until Hermes sees the first matching signal.",
+                },
+              ],
+              unlocked_count: 1,
+              discovered_count: 1,
+              secret_count: 1,
+              total_count: 3,
+              generated_at: Math.floor(Date.now() / 1000),
+              is_stale: false,
+              error: null,
+              scan_meta: {
+                mode: "fake",
+                sessions_total: 12,
+                sessions_rescanned: 2,
+                sessions_reused: 10,
+                status: { state: "idle", run_count: 1, snapshot_stale: false },
+              },
+            }),
+            FAKE_ACHIEVEMENTS_JSON_END,
+          ].join("\n"),
+        };
+      }
       if (command === "openclaw_config") {
         return {
           status: "Succeeded",

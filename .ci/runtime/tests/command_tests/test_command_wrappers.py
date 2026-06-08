@@ -26,6 +26,15 @@ class CommandWrapperTests(unittest.TestCase):
                 self.assertIn("first_secret_value CLOUDAGENT_AGENT_COS_SECRET_KEY", source)
                 self.assertIn("first_secret_value CLOUDAGENT_AGENT_RELEASE_ED25519_SEED_B64", source)
 
+    def test_wisp_erofs_package_tree_is_readable_by_sandbox_user(self) -> None:
+        source = (REPO_ROOT / "cloudagent/wisp/hack/release/package-tarball.sh").read_text()
+
+        chmod_pos = source.find('chmod -R a+rX "$stage"')
+        erofs_pos = source.find("mkfs.erofs")
+        self.assertNotEqual(chmod_pos, -1, "Wisp EROFS package directories must be world-traversable")
+        self.assertNotEqual(erofs_pos, -1, "Wisp package script must still build EROFS")
+        self.assertLess(chmod_pos, erofs_pos, "Wisp package permissions must be fixed before mkfs.erofs")
+
     def test_materialize_manifest_covers_runtime_python_without_local_secrets(self) -> None:
         manifest_path = RUNTIME_DIR / "materialize-files.txt"
         manifest_entries = {
