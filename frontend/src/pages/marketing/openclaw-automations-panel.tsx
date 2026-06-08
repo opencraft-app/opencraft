@@ -1030,17 +1030,17 @@ function CronJobDetailModal({
 
         <div className="pr-10">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="min-w-0 truncate text-xl font-semibold text-black/90">{name}</h2>
+            <h2 className="min-w-0 truncate text-xl font-semibold text-black/90">{t("自动任务详情")}</h2>
             {paused && (
               <span className="rounded-full bg-black/[0.08] px-2 py-0.5 text-xs text-black/60">
                 {t("已暂停")}
               </span>
             )}
           </div>
-          <p className="mt-1 text-xs text-black/45">{t("自动任务详情")}</p>
         </div>
 
         <dl className="mt-5 overflow-hidden rounded-md border border-black/[0.08] bg-white text-sm divide-y divide-black/[0.06]">
+          <DetailRow label={t("任务名称")} value={name} />
           <DetailRow label={t("任务说明")} value={job.prompt || "—"} pre />
           <DetailRow label={t("执行时间")} value={formatScheduleFriendly(job, t)} />
           <DetailRow
