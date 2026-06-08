@@ -1099,7 +1099,7 @@ function DeliverDetailRow({ deliver }: { deliver: string | undefined }) {
 
 function DetailBulletItem({ children }: { children: React.ReactNode }) {
   return (
-    <span>{children}</span>
+    <div>{children}</div>
   );
 }
 
