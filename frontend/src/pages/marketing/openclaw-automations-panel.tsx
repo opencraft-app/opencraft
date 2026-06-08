@@ -1029,7 +1029,7 @@ function CronJobDetailModal({
           <X className="h-4 w-4" />
         </button>
 
-        <div className="pr-10">
+        <div className="mb-5 pr-10">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="min-w-0 truncate text-xl font-semibold text-black/90">{t("自动任务详情")}</h2>
             {paused && (
@@ -1040,7 +1040,7 @@ function CronJobDetailModal({
           </div>
         </div>
 
-        <dl className="mt-4 overflow-hidden rounded-md border border-black/[0.08] bg-white text-sm divide-y divide-black/[0.06]">
+        <dl className="overflow-hidden rounded-md border border-black/[0.08] bg-white text-sm divide-y divide-black/[0.06]">
           <NameIdDetailRow name={name} id={job.id} />
           <DetailRow label={t("任务说明")} value={job.prompt || "—"} pre />
           <DetailRow label={t("执行时间")} value={formatScheduleTooltip(job, t)} />
