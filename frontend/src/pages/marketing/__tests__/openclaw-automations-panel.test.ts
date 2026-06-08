@@ -5,6 +5,9 @@ import {
   buildDeliverString,
   buildScheduleString,
   formatEffectiveWindow,
+  formatEffectiveWindowPeriod,
+  formatEffectiveWindowTooltipLines,
+  formatScheduleTooltip,
   getLastAgentRunForJob,
   getEffectiveWindowStatus,
   isCronJobExpiredBeyondGrace,
@@ -229,6 +232,31 @@ describe("cron date parsing and expiration filtering", () => {
   });
 });
 
+describe("schedule labels", () => {
+  const t = ((text: string, vars?: Record<string, unknown>) => {
+    if (!vars) return text;
+    return text.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, key) => String(vars[key] ?? ""));
+  }) as Parameters<typeof formatScheduleTooltip>[1];
+
+  it("prefixes interval schedule hover labels with the schedule mode", () => {
+    expect(formatScheduleTooltip(makeCronJob({
+      schedule: { kind: "interval", expr: "every 1h", display: "every 1h" },
+    }), t)).toBe("按间隔 · 每 1 小时");
+  });
+
+  it("prefixes recurring schedule hover labels with the schedule mode", () => {
+    expect(formatScheduleTooltip(makeCronJob({
+      schedule: { kind: "cron", expr: "51 10 * * *", display: "51 10 * * *" },
+    }), t)).toBe("周期 · 每天 10:51");
+  });
+
+  it("keeps one-time schedule hover labels unchanged", () => {
+    expect(formatScheduleTooltip(makeCronJob({
+      schedule: { kind: "once", expr: "once at 2026-05-26 09:00", display: "once at 2026-05-26 09:00" },
+    }), t)).toBe("单次 2026-05-26 09:00");
+  });
+});
+
 describe("effective window helpers", () => {
   const now = new Date(2026, 5, 15, 9, 0).getTime();
 
@@ -251,6 +279,37 @@ describe("effective window helpers", () => {
 
     expect(formatEffectiveWindow({ start_at: null, end_at: null, weekdays: [5, 6, 0] }, t))
       .toBe("生效中 · 执行日：周五、周六、周日");
+  });
+
+  it("formats detail modal effective periods without repeating weekdays", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-08T12:30:00+08:00"));
+
+    const t = ((text: string) => text) as Parameters<typeof formatEffectiveWindowPeriod>[1];
+
+    expect(formatEffectiveWindowPeriod({
+      start_at: "2026-06-08T08:00",
+      end_at: "2026-06-08T11:02",
+      weekdays: [2, 3, 4, 5, 6, 0],
+    }, t)).toBe("2026-06-08 08:00 - 2026-06-08 11:02 · 已过生效期");
+
+    expect(formatEffectiveWindowPeriod(null, t)).toBe("未配置（即始终生效）");
+  });
+
+  it("splits configured dates and weekdays across tooltip lines", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-08T09:00:00+08:00"));
+
+    const t = ((text: string) => text) as Parameters<typeof formatEffectiveWindowTooltipLines>[1];
+
+    expect(formatEffectiveWindowTooltipLines({
+      start_at: "2026-06-08T08:00",
+      end_at: "2026-06-08T11:02",
+      weekdays: [2, 3, 4, 5, 6, 0],
+    }, t)).toEqual([
+      "执行日：周二、周三、周四、周五、周六、周日",
+      "生效期：2026-06-08 08:00 - 2026-06-08 11:02 · 生效中",
+    ]);
   });
 
   it("normalizes date-time values from either space or T separators", () => {
