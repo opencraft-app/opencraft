@@ -851,6 +851,15 @@ esac
 	else
 	  crun_binary="$install/assets/bin/crun/crun-$pkg_arch"
 	  if [[ ! -e "$crun_binary" ]]; then
+	    echo "packaged crun missing diagnostics begin" >&2
+	    echo "package_url=${WISP_PACKAGE_URL:-}" >&2
+	    echo "package_format=$pkg_format install=$install pkg=$pkg" >&2
+	    echo "expected_package_sha256=${WISP_PACKAGE_SHA256:-}" >&2
+	    (sha256sum "$pkg" 2>/dev/null || shasum -a 256 "$pkg" 2>/dev/null || true) >&2
+	    mount | grep -F " $install " >&2 || true
+	    ls -ld "$install" "$install/assets" "$install/assets/bin" "$install/assets/bin/crun" >&2 || true
+	    find "$install" -maxdepth 4 -mindepth 1 2>/dev/null | sort | sed -n '1,80p' >&2 || true
+	    echo "packaged crun missing diagnostics end" >&2
 	    echo "missing packaged crun for arch=$pkg_arch path=$crun_binary" >&2
 	    exit 2
 	  fi

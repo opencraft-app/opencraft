@@ -573,6 +573,9 @@ func TestWispOuterPrepareScriptUsesFlattenedEROFSRootfs(t *testing.T) {
 		`export BLANK_ROOT_UPPER_SPARSE="$blank_root_upper_sparse"`,
 		`export PATH="$install/assets/bin/e2fsprogs/bin:$PATH"`,
 		`WISP_USE_HOST_CRUN=1`,
+		`packaged crun missing diagnostics begin`,
+		`expected_package_sha256=`,
+		`find "$install" -maxdepth 4`,
 		`packaged crun is not executable`,
 		`check permissions or noexec mount options`,
 	} {
