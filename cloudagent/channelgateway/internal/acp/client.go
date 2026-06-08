@@ -92,7 +92,7 @@ func (c *Client) Initialize(ctx context.Context) error {
 	return err
 }
 
-func (c *Client) NewSession(ctx context.Context, cwd string) (string, error) {
+func (c *Client) NewSession(ctx context.Context, cwd, workspaceKey string) (string, error) {
 	conn, err := c.ensureConn(ctx)
 	if err != nil {
 		return "", err
@@ -100,7 +100,15 @@ func (c *Client) NewSession(ctx context.Context, cwd string) (string, error) {
 	if strings.TrimSpace(cwd) == "" {
 		cwd = "/workspace"
 	}
-	raw, err := conn.Call(ctx, "session/new", map[string]any{"cwd": cwd, "mcpServers": []any{}})
+	params := map[string]any{"cwd": cwd, "mcpServers": []any{}}
+	if strings.TrimSpace(workspaceKey) != "" {
+		params["_meta"] = map[string]any{
+			"cloudagent": map[string]any{
+				"workspace_key": strings.TrimSpace(workspaceKey),
+			},
+		}
+	}
+	raw, err := conn.Call(ctx, "session/new", params)
 	if err != nil {
 		c.resetConn(conn)
 		return "", err

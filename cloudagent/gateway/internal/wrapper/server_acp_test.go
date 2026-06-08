@@ -1912,6 +1912,7 @@ func TestACPSessionNewPassesAgentAndWorkspaceVersions(t *testing.T) {
 				"cloudagent": map[string]any{
 					"agent_version":     "builtin.v1",
 					"workspace_version": "builtin.v1",
+					"workspace_key":     "workspace-stable-test",
 				},
 			},
 		},
@@ -1926,8 +1927,23 @@ func TestACPSessionNewPassesAgentAndWorkspaceVersions(t *testing.T) {
 	if start.AgentVersion != "builtin.v1" || start.WorkspaceVersion != "builtin.v1" {
 		t.Fatalf("unexpected version selection: %#v", start)
 	}
+	if start.WorkspaceKey != "workspace-stable-test" {
+		t.Fatalf("session/new must pass workspace key into runtime start, got %#v", start)
+	}
 	if start.OwnerID != "gateway_owner_session_new" {
 		t.Fatalf("session/new must bind runtime start to gateway owner, got %#v", start)
+	}
+	srv.acpGate.mu.Lock()
+	session, ok := srv.acpGate.sessions[starts[0].SessionID]
+	srv.acpGate.mu.Unlock()
+	if !ok {
+		t.Fatalf("session was not persisted")
+	}
+	if session.WorkspaceKey != "workspace-stable-test" {
+		t.Fatalf("session store must retain workspace key, got %#v", session)
+	}
+	if session.Runtime.WispName != wispNameFromRuntime("workspace-stable-test") || session.Runtime.WispWorkspaceID != "space_workspace-stable-test" {
+		t.Fatalf("runtime identity should use workspace key, got %#v", session.Runtime)
 	}
 }
 
@@ -3227,8 +3243,9 @@ func (m *recordingACPRuntimeManager) StartSessionRuntime(ctx context.Context, re
 	wispSpaceID := ""
 	wispOwns := false
 	if outerRuntime == outerRuntimeWisp {
-		wispName = wispNameFromRuntime(req.SessionID)
-		wispSpaceID = "space_" + req.SessionID
+		identity := runtimeWorkspaceIdentity(req)
+		wispName = wispNameFromRuntime(identity)
+		wispSpaceID = "space_" + identity
 		wispOwns = true
 	}
 	return ACPSessionRuntime{
@@ -3589,7 +3606,7 @@ func (m *blockingEnsureACPRuntimeManager) EnsureSessionRuntime(ctx context.Conte
 	runtime.RuntimeID = "rt_ensured"
 	runtime.OuterRuntime = normalizeOuterRuntime(firstNonEmpty(runtime.OuterRuntime, req.OuterRuntime))
 	runtime.RuntimeRecovery = normalizeRuntimeRecovery(firstNonEmpty(runtime.RuntimeRecovery, req.RuntimeRecovery), runtime.OuterRuntime)
-	runtime.WispSMHSpaceID = firstNonEmpty(runtime.WispSMHSpaceID, "space_"+req.SessionID)
+	runtime.WispSMHSpaceID = firstNonEmpty(runtime.WispSMHSpaceID, "space_"+runtimeWorkspaceIdentity(req))
 	return runtime, nil
 }
 

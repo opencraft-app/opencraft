@@ -34,9 +34,10 @@ type fakeACP struct {
 	newDelay      time.Duration
 	newErr        error
 	waitPrompt    bool
+	workspaceKeys []string
 }
 
-func (f *fakeACP) NewSession(ctx context.Context, _ string) (string, error) {
+func (f *fakeACP) NewSession(ctx context.Context, _, workspaceKey string) (string, error) {
 	if f.newDelay > 0 {
 		select {
 		case <-time.After(f.newDelay):
@@ -47,6 +48,7 @@ func (f *fakeACP) NewSession(ctx context.Context, _ string) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.newCalls++
+	f.workspaceKeys = append(f.workspaceKeys, workspaceKey)
 	if f.newErr != nil {
 		return "", f.newErr
 	}
@@ -895,6 +897,7 @@ func TestDispatcherRecreatesSessionWhenExistingACPSessionIsMissing(t *testing.T)
 		ChatType:               string(channel.ChatDM),
 		AgentID:                "main",
 		ACPSessionID:           "session-stale",
+		WorkspaceKey:           "workspace-stable",
 		SessionKey:             sessionKey,
 	}); err != nil {
 		t.Fatalf("seed conversation: %v", err)
@@ -936,6 +939,9 @@ func TestDispatcherRecreatesSessionWhenExistingACPSessionIsMissing(t *testing.T)
 	if conversation.ACPSessionID != "session-new" {
 		t.Fatalf("expected recreated session binding, got %#v", conversation)
 	}
+	if conversation.WorkspaceKey != "workspace-stable" || len(client.workspaceKeys) != 1 || client.workspaceKeys[0] != "workspace-stable" {
+		t.Fatalf("recreated session must preserve workspace key: conv=%#v workspace_keys=%#v", conversation, client.workspaceKeys)
+	}
 }
 
 func TestDispatcherRecreatesAndRetriesWhenRuntimeUnavailable(t *testing.T) {
@@ -963,6 +969,7 @@ func TestDispatcherRecreatesAndRetriesWhenRuntimeUnavailable(t *testing.T) {
 		ChatType:               string(channel.ChatDM),
 		AgentID:                "main",
 		ACPSessionID:           "session-stale",
+		WorkspaceKey:           "workspace-stable",
 		SessionKey:             sessionKey,
 	}); err != nil {
 		t.Fatalf("seed conversation: %v", err)
@@ -1005,6 +1012,9 @@ func TestDispatcherRecreatesAndRetriesWhenRuntimeUnavailable(t *testing.T) {
 	}
 	if conversation.ACPSessionID != "session-new" {
 		t.Fatalf("expected recreated session binding, got %#v", conversation)
+	}
+	if conversation.WorkspaceKey != "workspace-stable" || len(client.workspaceKeys) != 1 || client.workspaceKeys[0] != "workspace-stable" {
+		t.Fatalf("runtime recovery must preserve workspace key: conv=%#v workspace_keys=%#v", conversation, client.workspaceKeys)
 	}
 	if !strings.Contains(logs, "action=session_recreate reason=runtime_unavailable") ||
 		!strings.Contains(logs, "action=session_bound reason=runtime_recreated") {
@@ -1114,6 +1124,7 @@ func TestDispatcherResetCreatesNewSessionAndDoesNotPrompt(t *testing.T) {
 		ChatType:               string(channel.ChatDM),
 		AgentID:                "main",
 		ACPSessionID:           "session-old",
+		WorkspaceKey:           "workspace-old",
 		SessionKey:             sessionKey,
 	}); err != nil {
 		t.Fatalf("seed conversation: %v", err)
@@ -1150,6 +1161,9 @@ func TestDispatcherResetCreatesNewSessionAndDoesNotPrompt(t *testing.T) {
 	}
 	if conversation.ACPSessionID != "session-new" {
 		t.Fatalf("expected reset session binding, got %#v", conversation)
+	}
+	if len(client.workspaceKeys) != 1 || client.workspaceKeys[0] == "" || client.workspaceKeys[0] == "workspace-old" || conversation.WorkspaceKey != client.workspaceKeys[0] {
+		t.Fatalf("reset should rotate workspace key: conv=%#v workspace_keys=%#v", conversation, client.workspaceKeys)
 	}
 	reply := claimOneReply(t, ctx, st, lease)
 	if !strings.Contains(reply.Text, resetSessionReply) {

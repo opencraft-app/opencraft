@@ -396,6 +396,7 @@ func sessionRuntimeStartRequest(session *acpSession) ACPSessionRuntimeStartReque
 		AgentVersion:     runtime.AgentVersion,
 		SidecarArtifact:  runtimeSidecarArtifact(runtime),
 		WorkspaceVersion: runtime.WorkspaceVersion,
+		WorkspaceKey:     session.WorkspaceKey,
 	}
 }
 func runtimeSidecarArtifact(runtime ACPSessionRuntime) agentSidecarArtifact {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -22,14 +23,17 @@ func (s *Store) GetOrCreateConversation(ctx context.Context, conv Conversation) 
 	if conv.ConversationID == "" {
 		conv.ConversationID = "conv_" + randomHex(16)
 	}
+	if strings.TrimSpace(conv.WorkspaceKey) == "" {
+		conv.WorkspaceKey = newWorkspaceKey()
+	}
 	now := nowText()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	query := `
 INSERT INTO channel_conversations (
 	conversation_id, channel_account_id, channel_type, external_conversation_id,
-	external_user_id, external_thread_id, chat_type, agent_id, acp_session_id, session_key, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	external_user_id, external_thread_id, chat_type, agent_id, acp_session_id, workspace_key, session_key, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(channel_account_id, session_key) DO UPDATE SET
 	external_conversation_id = excluded.external_conversation_id,
 	external_user_id = excluded.external_user_id,
@@ -43,8 +47,8 @@ ON CONFLICT(channel_account_id, session_key) DO UPDATE SET
 		query = `
 INSERT INTO channel_conversations (
 	conversation_id, channel_account_id, channel_type, external_conversation_id,
-	external_user_id, external_thread_id, chat_type, agent_id, acp_session_id, session_key, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	external_user_id, external_thread_id, chat_type, agent_id, acp_session_id, workspace_key, session_key, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON DUPLICATE KEY UPDATE
 	external_conversation_id = VALUES(external_conversation_id),
 	external_user_id = VALUES(external_user_id),
@@ -57,11 +61,15 @@ ON DUPLICATE KEY UPDATE
 	}
 	_, err := s.db.ExecContext(ctx, query,
 		conv.ConversationID, conv.ChannelAccountID, conv.ChannelType, conv.ExternalConversationID,
-		conv.ExternalUserID, conv.ThreadID, conv.ChatType, conv.AgentID, conv.ACPSessionID, conv.SessionKey, now, now)
+		conv.ExternalUserID, conv.ThreadID, conv.ChatType, conv.AgentID, conv.ACPSessionID, conv.WorkspaceKey, conv.SessionKey, now, now)
 	if err != nil {
 		return Conversation{}, err
 	}
-	return s.loadConversationBySessionKeyLocked(ctx, conv.ChannelAccountID, conv.SessionKey)
+	stored, err := s.loadConversationBySessionKeyLocked(ctx, conv.ChannelAccountID, conv.SessionKey)
+	if err != nil {
+		return Conversation{}, err
+	}
+	return s.ensureConversationWorkspaceKeyLocked(ctx, stored)
 }
 
 func (s *Store) BindACPSession(ctx context.Context, channelAccountID, sessionKey, acpSessionID string) error {
@@ -81,6 +89,23 @@ WHERE channel_account_id = ? AND session_key = ? AND deleted_at IS NULL`,
 	return err
 }
 
+func (s *Store) BindACPWorkspaceSession(ctx context.Context, channelAccountID, sessionKey, acpSessionID, workspaceKey string) error {
+	if s == nil || s.db == nil {
+		return errors.New("store is nil")
+	}
+	if channelAccountID == "" || sessionKey == "" || acpSessionID == "" || strings.TrimSpace(workspaceKey) == "" {
+		return errors.New("channel account id, session key, acp session id and workspace key are required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, err := s.db.ExecContext(ctx, `
+UPDATE channel_conversations
+SET acp_session_id = ?, workspace_key = ?, runtime_closed_at = NULL, updated_at = ?
+WHERE channel_account_id = ? AND session_key = ? AND deleted_at IS NULL`,
+		acpSessionID, workspaceKey, nowText(), channelAccountID, sessionKey)
+	return err
+}
+
 func (s *Store) LoadConversationBySessionKey(ctx context.Context, channelAccountID, sessionKey string) (Conversation, bool, error) {
 	if s == nil || s.db == nil {
 		return Conversation{}, false, errors.New("store is nil")
@@ -94,6 +119,10 @@ func (s *Store) LoadConversationBySessionKey(ctx context.Context, channelAccount
 	if errors.Is(err, sql.ErrNoRows) || errors.Is(err, errConversationNotStored) {
 		return Conversation{}, false, nil
 	}
+	if err != nil {
+		return Conversation{}, false, err
+	}
+	conv, err = s.ensureConversationWorkspaceKeyLocked(ctx, conv)
 	return conv, err == nil, err
 }
 
@@ -130,7 +159,7 @@ func (s *Store) ListIdleOpenConversations(ctx context.Context, channelAccountID 
 	rows, err := s.db.QueryContext(ctx, `
 SELECT c.conversation_id, c.channel_account_id, c.channel_type, c.external_conversation_id,
 	c.external_user_id, COALESCE(c.external_thread_id, ''), COALESCE(c.chat_type, ''), c.agent_id,
-	c.acp_session_id, c.session_key, c.updated_at
+	c.acp_session_id, COALESCE(c.workspace_key, ''), c.session_key, c.updated_at
 FROM channel_conversations c
 WHERE c.channel_account_id = ?
 	AND c.deleted_at IS NULL
@@ -157,7 +186,7 @@ LIMIT ?`, channelAccountID, cutoffText, limit)
 		if err := rows.Scan(
 			&item.ConversationID, &item.ChannelAccountID, &item.ChannelType, &item.ExternalConversationID,
 			&item.ExternalUserID, &item.ThreadID, &item.ChatType, &item.AgentID,
-			&item.ACPSessionID, &item.SessionKey, &updatedAt,
+			&item.ACPSessionID, &item.WorkspaceKey, &item.SessionKey, &updatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -209,14 +238,14 @@ func (s *Store) FindConversationByACPSession(ctx context.Context, channelAccount
 	err := s.db.QueryRowContext(ctx, `
 SELECT conversation_id, channel_account_id, channel_type, external_conversation_id,
 	external_user_id, COALESCE(external_thread_id, ''), COALESCE(chat_type, ''), agent_id, acp_session_id,
-	session_key, COALESCE(runtime_closed_at, ''), updated_at
+	COALESCE(workspace_key, ''), session_key, COALESCE(runtime_closed_at, ''), updated_at
 FROM channel_conversations
 WHERE channel_account_id = ? AND acp_session_id = ? AND deleted_at IS NULL
 ORDER BY updated_at DESC
 LIMIT 1`,
 		channelAccountID, acpSessionID).Scan(
 		&conv.ConversationID, &conv.ChannelAccountID, &conv.ChannelType, &conv.ExternalConversationID,
-		&conv.ExternalUserID, &conv.ThreadID, &conv.ChatType, &conv.AgentID, &conv.ACPSessionID, &conv.SessionKey,
+		&conv.ExternalUserID, &conv.ThreadID, &conv.ChatType, &conv.AgentID, &conv.ACPSessionID, &conv.WorkspaceKey, &conv.SessionKey,
 		&conv.RuntimeClosedAt, &conv.UpdatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -230,18 +259,46 @@ func (s *Store) loadConversationBySessionKeyLocked(ctx context.Context, channelA
 	err := s.db.QueryRowContext(ctx, `
 SELECT conversation_id, channel_account_id, channel_type, external_conversation_id,
 	external_user_id, COALESCE(external_thread_id, ''), COALESCE(chat_type, ''), agent_id, acp_session_id,
-	session_key, COALESCE(runtime_closed_at, ''), updated_at
+	COALESCE(workspace_key, ''), session_key, COALESCE(runtime_closed_at, ''), updated_at
 FROM channel_conversations
 WHERE channel_account_id = ? AND session_key = ? AND deleted_at IS NULL`,
 		channelAccountID, sessionKey).Scan(
 		&conv.ConversationID, &conv.ChannelAccountID, &conv.ChannelType, &conv.ExternalConversationID,
-		&conv.ExternalUserID, &conv.ThreadID, &conv.ChatType, &conv.AgentID, &conv.ACPSessionID, &conv.SessionKey,
+		&conv.ExternalUserID, &conv.ThreadID, &conv.ChatType, &conv.AgentID, &conv.ACPSessionID, &conv.WorkspaceKey, &conv.SessionKey,
 		&conv.RuntimeClosedAt, &conv.UpdatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Conversation{}, errConversationNotStored
 	}
 	return conv, err
+}
+
+func (s *Store) ensureConversationWorkspaceKeyLocked(ctx context.Context, conv Conversation) (Conversation, error) {
+	if strings.TrimSpace(conv.WorkspaceKey) != "" {
+		return conv, nil
+	}
+	workspaceKey := strings.TrimSpace(conv.ACPSessionID)
+	if workspaceKey == "" {
+		workspaceKey = newWorkspaceKey()
+	}
+	_, err := s.db.ExecContext(ctx, `
+UPDATE channel_conversations
+SET workspace_key = ?, updated_at = ?
+WHERE channel_account_id = ? AND session_key = ? AND deleted_at IS NULL AND workspace_key = ''`,
+		workspaceKey, nowText(), conv.ChannelAccountID, conv.SessionKey)
+	if err != nil {
+		return Conversation{}, err
+	}
+	conv.WorkspaceKey = workspaceKey
+	return conv, nil
+}
+
+func NewWorkspaceKeyForReset() string {
+	return "wk_" + randomHex(16)
+}
+
+func newWorkspaceKey() string {
+	return NewWorkspaceKeyForReset()
 }
 
 var errConversationNotStored = errors.New("conversation was not stored")

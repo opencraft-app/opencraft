@@ -60,6 +60,7 @@ func migrateStore(db *sql.DB) error {
 			scope_project TEXT NOT NULL,
 			scope_sandbox TEXT NOT NULL DEFAULT '',
 			cwd TEXT NOT NULL,
+			workspace_key TEXT NOT NULL DEFAULT '',
 			title TEXT NOT NULL DEFAULT '',
 			model TEXT NOT NULL,
 			state TEXT NOT NULL,
@@ -286,6 +287,7 @@ func migrateStore(db *sql.DB) error {
 		}
 	}
 	for _, stmt := range []string{
+		`ALTER TABLE sessions ADD COLUMN workspace_key TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE session_runtimes ADD COLUMN sandbox_backend TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE session_runtimes ADD COLUMN outer_runtime TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE session_runtimes ADD COLUMN runtime_recovery TEXT NOT NULL DEFAULT ''`,
