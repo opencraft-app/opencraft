@@ -1016,7 +1016,7 @@ function CronJobDetailModal({
       onClick={onClose}
     >
       <div
-        className="relative max-h-[90vh] w-full max-w-[560px] overflow-y-auto rounded-xl bg-white p-5 shadow-2xl"
+        className="relative max-h-[90vh] w-full max-w-[560px] overflow-y-auto rounded-lg bg-white p-5 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <button
@@ -1945,7 +1945,7 @@ function AutomationFormModal({
 
   return createPortal(
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 px-4 py-3" role="dialog" aria-modal="true">
-      <div className="relative max-h-[calc(100vh-24px)] w-full max-w-[635px] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">
+      <div className="relative max-h-[calc(100vh-24px)] w-full max-w-[635px] overflow-y-auto rounded-lg bg-white p-6 shadow-2xl">
         <button
           type="button"
           onClick={onClose}
