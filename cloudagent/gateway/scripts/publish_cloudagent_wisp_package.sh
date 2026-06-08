@@ -68,6 +68,18 @@ validate_wisp_package_artifact() {
         "${WISP_EROFS_IMAGE:-alpine:3.23}" sh -ceu '
           printf "%s\n%s\n" "'"${WISP_EROFS_APK_REPOSITORY:-https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.23}"'/main" "'"${WISP_EROFS_APK_REPOSITORY:-https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.23}"'/community" > /etc/apk/repositories
           apk add --no-cache erofs-utils >/dev/null
+          for path in / /assets /assets/bin /assets/bin/crun /assets/bin/tini /assets/rootfs /assets/rootfs/rootfs; do
+            dump.erofs --path="$path" "/artifact/'"$artifact_base"'" >"/tmp/erofs-path.txt"
+            mode="$(sed -n "s/.*Access: \([0-7][0-7][0-7][0-7]\)\/.*/\1/p" /tmp/erofs-path.txt | head -n 1)"
+            case "$mode" in
+              *[57]) ;;
+              *)
+              cat /tmp/erofs-path.txt >&2
+              echo "Wisp EROFS path is not traversable by sandbox user: $path" >&2
+              exit 1
+              ;;
+            esac
+          done
           fsck.erofs --extract=/extract --force --overwrite "/artifact/'"$artifact_base"'" >/dev/null
         '
       ;;

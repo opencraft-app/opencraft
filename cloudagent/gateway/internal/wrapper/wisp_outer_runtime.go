@@ -119,6 +119,7 @@ func (w *AgentSidecarWorker) prepareWispRuntimeWithSpace(ctx context.Context, ho
 	}
 	env := map[string]string{
 		"WISP_PACKAGE_URL":                    runtime.WispPackageURL,
+		"WISP_PACKAGE_SHA256":                 firstEnv("GATEWAY_WISP_PACKAGE_SHA256", "WISP_PACKAGE_SHA256"),
 		"WISP_PACKAGE_FORMAT":                 firstEnv("GATEWAY_WISP_PACKAGE_FORMAT", "WISP_PACKAGE_FORMAT"),
 		"WISP_INSTALL_DIR":                    runtime.WispInstallDir,
 		"WISP_NAME":                           runtime.WispName,
@@ -183,6 +184,7 @@ func (w *AgentSidecarWorker) prepareWispHostOnly(ctx context.Context, host Runti
 	env := map[string]string{
 		"WISP_HOST_ONLY":                      "1",
 		"WISP_PACKAGE_URL":                    packageURL,
+		"WISP_PACKAGE_SHA256":                 firstEnv("GATEWAY_WISP_PACKAGE_SHA256", "WISP_PACKAGE_SHA256"),
 		"WISP_PACKAGE_FORMAT":                 firstEnv("GATEWAY_WISP_PACKAGE_FORMAT", "WISP_PACKAGE_FORMAT"),
 		"WISP_INSTALL_DIR":                    installDir,
 		"WISP_NAME":                           "warm-host-only",
