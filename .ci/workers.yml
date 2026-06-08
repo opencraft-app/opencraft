@@ -1,0 +1,37 @@
+version: v2.0
+name: 构建 workers
+
+on:
+  push:
+    branches:
+      - master
+      - playground/sandbox-bj-*
+      - playground/sandbox-kr-*
+    paths:
+      - workers/**
+    paths-ignore:
+      - OWNERS
+      - "**/OWNERS"
+  manual: enabled
+
+concurrency:
+  group: mono2-service-release-workers
+  cancel-in-progress: false
+  queue-length: 20
+  queue-timeout-minutes: 480
+
+extends:
+  template: service-release.yml
+  # Refresh compiled Stream pipeline after service-release template changes.
+  parameters:
+    SERVICE: workers
+    BUNDLE: workers
+    DISPLAY_NAME: workers
+    DEFAULT_TARGET_ENV: beijing-sandbox
+    MASTER_BUILD_ENVS: beijing-sandbox
+    MASTER_AUTO_PIN_ENVS: none
+    ENABLE_MASTER_PROD_PROMOTE: false
+    PLAYGROUND_BUILD_ENVS: beijing-sandbox
+    PLAYGROUND_AUTO_PIN_ENVS: none
+    RUNNER_POOL_NAME: cn-pool
+    PRINT_RUNNER_DIAGNOSTICS: true

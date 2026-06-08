@@ -96,6 +96,8 @@ validate_wisp_package_artifact() {
     "bin/wispclient" \
     "assets/bin/crun/crun-$GOARCH" \
     "assets/bin/tini/tini" \
+    "assets/bin/e2fsprogs/bin/mke2fs" \
+    "assets/bin/e2fsprogs/bin/e2fsck" \
     "assets/rootfs/rootfs/.wisp-base-ready"; do
     if [ ! -e "$tmp_dir/$path" ]; then
       printf 'Wisp package missing required path: %s artifact=%s\n' "$path" "$artifact" >&2
@@ -106,7 +108,9 @@ validate_wisp_package_artifact() {
     "bin/wisp" \
     "bin/wispclient" \
     "assets/bin/crun/crun-$GOARCH" \
-    "assets/bin/tini/tini"; do
+    "assets/bin/tini/tini" \
+    "assets/bin/e2fsprogs/bin/mke2fs" \
+    "assets/bin/e2fsprogs/bin/e2fsck"; do
     if [ ! -x "$tmp_dir/$path" ]; then
       ls -l "$tmp_dir/$path" >&2 || true
       printf 'Wisp package path is not executable: %s artifact=%s\n' "$path" "$artifact" >&2

@@ -163,9 +163,11 @@ else
 fi
 
 cp "$crun_source" "$stage/assets/bin/crun/crun-${goarch}"
-if [[ -d "$e2fsprogs_source" ]]; then
-  cp -R "$e2fsprogs_source/." "$stage/assets/bin/e2fsprogs/"
+if [[ ! -x "$e2fsprogs_source/bin/mke2fs" || ! -x "$e2fsprogs_source/bin/e2fsck" ]]; then
+  echo "missing packaged e2fsprogs; expected executable mke2fs/e2fsck under $e2fsprogs_source/bin" >&2
+  exit 2
 fi
+cp -R "$e2fsprogs_source/." "$stage/assets/bin/e2fsprogs/"
 if [[ -f "$tini_source" ]]; then
   cp "$tini_source" "$stage/assets/bin/tini/tini"
 fi
