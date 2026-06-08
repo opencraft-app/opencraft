@@ -111,9 +111,24 @@ func (d *Dispatcher) CloseIdleConversations(ctx context.Context, idleFor time.Du
 	if err != nil {
 		return 0, err
 	}
+	log.Printf("channelgateway runtime_trace account_id=%s agent_id=%s action=session_idle_close_batch_start candidates=%d idle_seconds=%.3f cutoff=%s",
+		logValue(d.account.ChannelAccountID), logValue(d.account.AgentID), len(items), idleFor.Seconds(), logValue(cutoff.Format(time.RFC3339Nano)))
+	for idx, item := range items {
+		idleSeconds := 0.0
+		if !item.UpdatedAt.IsZero() {
+			idleSeconds = time.Since(item.UpdatedAt).Seconds()
+		}
+		log.Printf("channelgateway runtime_trace account_id=%s agent_id=%s action=session_idle_close_candidate index=%d conversation_id=%s session_key=%s acp_session_id=%s idle_seconds=%.3f updated_at=%s",
+			logValue(d.account.ChannelAccountID), logValue(d.account.AgentID), idx,
+			logValue(item.ConversationID), logValue(item.SessionKey), logValue(item.ACPSessionID),
+			idleSeconds, logValue(item.UpdatedAt.UTC().Format(time.RFC3339Nano)))
+	}
 	closed := 0
 	for _, item := range items {
 		if strings.TrimSpace(item.SessionKey) == "" || strings.TrimSpace(item.ACPSessionID) == "" {
+			log.Printf("channelgateway runtime_trace account_id=%s agent_id=%s action=session_idle_close_skip conversation_id=%s session_key=%s acp_session_id=%s reason=missing_session_key_or_acp_session_id",
+				logValue(d.account.ChannelAccountID), logValue(d.account.AgentID),
+				logValue(item.ConversationID), logValue(item.SessionKey), logValue(item.ACPSessionID))
 			continue
 		}
 		sessionLock := d.lockForSessionKey(item.SessionKey)
@@ -121,29 +136,57 @@ func (d *Dispatcher) CloseIdleConversations(ctx context.Context, idleFor time.Du
 		ok, err := d.closeIdleConversationLocked(ctx, item, cutoff)
 		sessionLock.Unlock()
 		if err != nil {
+			log.Printf("channelgateway runtime_trace account_id=%s agent_id=%s action=session_idle_close_batch_abort closed=%d candidate_conversation_id=%s candidate_session_key=%s candidate_acp_session_id=%s error=%s",
+				logValue(d.account.ChannelAccountID), logValue(d.account.AgentID), closed,
+				logValue(item.ConversationID), logValue(item.SessionKey), logValue(item.ACPSessionID), logValue(err.Error()))
 			return closed, err
 		}
 		if ok {
 			closed++
 		}
 	}
+	log.Printf("channelgateway runtime_trace account_id=%s agent_id=%s action=session_idle_close_batch_complete closed=%d candidates=%d",
+		logValue(d.account.ChannelAccountID), logValue(d.account.AgentID), closed, len(items))
 	return closed, nil
 }
 
 func (d *Dispatcher) closeIdleConversationLocked(ctx context.Context, item store.IdleConversation, cutoff time.Time) (bool, error) {
 	current, ok, err := d.store.LoadConversationBySessionKey(ctx, item.ChannelAccountID, item.SessionKey)
 	if err != nil || !ok {
+		if err == nil {
+			log.Printf("channelgateway runtime_trace account_id=%s agent_id=%s action=session_idle_close_skip conversation_id=%s session_key=%s acp_session_id=%s reason=conversation_not_found",
+				logValue(item.ChannelAccountID), logValue(d.account.AgentID),
+				logValue(item.ConversationID), logValue(item.SessionKey), logValue(item.ACPSessionID))
+		}
 		return false, err
 	}
 	if current.ACPSessionID != item.ACPSessionID || strings.TrimSpace(current.RuntimeClosedAt) != "" {
+		log.Printf("channelgateway runtime_trace account_id=%s agent_id=%s action=session_idle_close_skip conversation_id=%s session_key=%s acp_session_id=%s reason=session_binding_changed current_acp_session_id=%s runtime_closed_at=%s",
+			logValue(current.ChannelAccountID), logValue(d.account.AgentID),
+			logValue(current.ConversationID), logValue(current.SessionKey), logValue(item.ACPSessionID),
+			logValue(current.ACPSessionID), logValue(current.RuntimeClosedAt))
 		return false, nil
 	}
 	updatedAt, err := time.Parse(time.RFC3339Nano, current.UpdatedAt)
 	if err != nil || updatedAt.After(cutoff) {
+		reason := "not_idle_enough"
+		if err != nil {
+			reason = "invalid_updated_at"
+		}
+		log.Printf("channelgateway runtime_trace account_id=%s agent_id=%s action=session_idle_close_skip conversation_id=%s session_key=%s acp_session_id=%s reason=%s updated_at=%s cutoff=%s",
+			logValue(current.ChannelAccountID), logValue(d.account.AgentID),
+			logValue(current.ConversationID), logValue(current.SessionKey), logValue(current.ACPSessionID),
+			logValue(reason), logValue(current.UpdatedAt), logValue(cutoff.Format(time.RFC3339Nano)))
 		return false, nil
 	}
 	active, err := d.store.ConversationHasActiveInbound(ctx, current.ChannelAccountID, current.ExternalConversationID)
 	if err != nil || active {
+		if err == nil {
+			log.Printf("channelgateway runtime_trace account_id=%s agent_id=%s action=session_idle_close_skip conversation_id=%s session_key=%s acp_session_id=%s reason=active_inbound external_conversation_id=%s",
+				logValue(current.ChannelAccountID), logValue(d.account.AgentID),
+				logValue(current.ConversationID), logValue(current.SessionKey), logValue(current.ACPSessionID),
+				logValue(current.ExternalConversationID))
+		}
 		return false, err
 	}
 	log.Printf("channelgateway session_trace account_id=%s agent_id=%s conversation_id=%s session_key=%s acp_session_id=%s idle_seconds=%.3f action=session_idle_close_start",
@@ -277,6 +320,9 @@ func (d *Dispatcher) handleInbound(ctx context.Context, msg channel.Message) (re
 			logValue(conversation.SessionKey), logValue(conversation.WorkspaceKey), logValue(sessionID))
 		if err := d.acp.LoadSession(ctx, sessionID, d.cwd); err != nil {
 			if !isMissingACPSessionError(err) {
+				log.Printf("channelgateway session_trace account_id=%s agent_id=%s conversation_id=%s session_key=%s acp_session_id=%s action=load_session_no_recovery stage=load_session recoverable_runtime=%t error=%s",
+					logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(conversation.ConversationID),
+					logValue(conversation.SessionKey), logValue(sessionID), isRecoverableRuntimeError(err), logValue(err.Error()))
 				return d.handleACPError(ctx, msg, conversation, sessionID, CallbackStageLoadSession, err)
 			}
 			rebuiltSessionID, rebuildErr := d.recreateSessionWithSameWorkspace(ctx, msg, conversation, sessionID, "missing_acp_runtime_session")
@@ -290,6 +336,9 @@ func (d *Dispatcher) handleInbound(ctx context.Context, msg channel.Message) (re
 			}
 		} else if err := d.ensureRuntimeReady(ctx, msg, conversation, sessionID); err != nil {
 			if !isMissingACPSessionError(err) {
+				log.Printf("channelgateway session_trace account_id=%s agent_id=%s conversation_id=%s session_key=%s acp_session_id=%s action=load_session_no_recovery stage=ensure_runtime_ready recoverable_runtime=%t error=%s",
+					logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(conversation.ConversationID),
+					logValue(conversation.SessionKey), logValue(sessionID), isRecoverableRuntimeError(err), logValue(err.Error()))
 				return d.handleACPError(ctx, msg, conversation, sessionID, CallbackStageLoadSession, err)
 			}
 			rebuiltSessionID, rebuildErr := d.recreateSessionWithSameWorkspace(ctx, msg, conversation, sessionID, "ensure_ready_missing_acp_runtime_session")
