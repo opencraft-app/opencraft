@@ -8,6 +8,7 @@ const listPathMock = vi.fn<() => Promise<TsshFileInfo[]>>(async () => []);
 const deleteFileMock = vi.fn();
 const createFileMock = vi.fn();
 const originalServiceWorkerDescriptor = Object.getOwnPropertyDescriptor(navigator, "serviceWorker");
+const tsshFileClientInstances: Array<{ close: ReturnType<typeof vi.fn>; connect: ReturnType<typeof vi.fn>; isReady: ReturnType<typeof vi.fn> }> = [];
 
 const installServiceWorkerDownloadMock = () => {
   class TestMessagePort {
@@ -95,14 +96,17 @@ vi.mock("@/lib/tencent-tssh-file-client", async () => {
   return {
     ...actual,
     TencentTsshFileClient: vi.fn().mockImplementation(function () {
-      return {
+      const client = {
         close: vi.fn(),
         connect: vi.fn(async () => undefined),
         createFile: createFileMock,
         deleteFile: deleteFileMock,
+        isReady: vi.fn(() => true),
         listPath: listPathMock,
         uploadFile: uploadFileMock,
       };
+      tsshFileClientInstances.push(client);
+      return client;
     }),
   };
 });
@@ -123,6 +127,7 @@ describe("TatFileManagerPanel upload limits", () => {
     createFileMock.mockResolvedValue(undefined);
     listPathMock.mockReset();
     listPathMock.mockResolvedValue([]);
+    tsshFileClientInstances.length = 0;
   });
 
   afterEach(() => {
@@ -243,12 +248,26 @@ describe("TatFileManagerPanel upload limits", () => {
     expect(pathInput).toHaveValue("/home/agentuser/.hermes");
   });
 
-  it("translates file channel connection errors", async () => {
+  it("reconnects once when the file channel is disconnected", async () => {
+    listPathMock.mockRejectedValueOnce(new Error("file channel is not connected")).mockResolvedValueOnce([]);
+
+    render(<TatFileManagerPanel botId="bot-file-channel-reconnect" />);
+
+    expect(await screen.findByText("当前目录为空。")).toBeInTheDocument();
+    await waitFor(() => expect(listPathMock).toHaveBeenCalledTimes(2));
+    expect(tsshFileClientInstances).toHaveLength(2);
+    expect(tsshFileClientInstances[0]?.close).toHaveBeenCalledOnce();
+    expect(screen.queryByText("文件通道未连接，请刷新后重试。")).not.toBeInTheDocument();
+  });
+
+  it("translates file channel connection errors when reconnect retry fails", async () => {
+    listPathMock.mockRejectedValueOnce(new Error("file channel is not connected"));
     listPathMock.mockRejectedValueOnce(new Error("file channel is not connected"));
 
     render(<TatFileManagerPanel botId="bot-file-channel-error" />);
 
     expect(await screen.findByText("文件通道未连接，请刷新后重试。")).toBeInTheDocument();
+    await waitFor(() => expect(listPathMock).toHaveBeenCalledTimes(2));
     expect(screen.queryByText("file channel is not connected")).not.toBeInTheDocument();
   });
 

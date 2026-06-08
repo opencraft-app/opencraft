@@ -238,6 +238,10 @@ export class TencentTsshFileClient {
     return this.readyPromise;
   }
 
+  isReady() {
+    return this.state === "ready" && this.socket?.readyState === WebSocket.OPEN;
+  }
+
   async listPath(path: string, filter = "*", showHidden = true) {
     await this.connect();
     return this.sendListRequest("PtyListPath", {

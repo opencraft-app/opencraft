@@ -200,6 +200,12 @@ const fileManagerErrorMessage = (error: unknown, fallback: string, translations:
   return message || fallback;
 };
 
+const isRecoverableFileChannelError = (error: unknown) => {
+  const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  const normalized = message.trim().toLowerCase();
+  return normalized === "file channel is not connected" || normalized === "file channel closed" || normalized === "websocket error";
+};
+
 const isTatFileDownloadRequest = (value: unknown): value is TatFileDownloadRequest => {
   if (!value || typeof value !== "object") {
     return false;
@@ -453,9 +459,11 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
   }, [path, pathEditing]);
 
   const getClient = useCallback(async () => {
-    if (clientRef.current) {
+    if (clientRef.current?.isReady()) {
       return clientRef.current;
     }
+    clientRef.current?.close();
+    clientRef.current = null;
 
     setStatus("connecting");
     const bootstrap = await repositories.bots.getTerminalSession(botId);
@@ -476,6 +484,26 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
     await client.connect();
     return client;
   }, [botId, repositories.bots, t, translateFileManagerError]);
+
+  const resetClient = useCallback(() => {
+    clientRef.current?.close();
+    clientRef.current = null;
+  }, []);
+
+  const runWithReconnectedClient = useCallback(async <T,>(
+    operation: (client: TencentTsshFileClient) => Promise<T>,
+    options: { shouldRetry?: () => boolean } = {},
+  ) => {
+    try {
+      return await operation(await getClient());
+    } catch (error) {
+      if (!isRecoverableFileChannelError(error) || options.shouldRetry?.() === false) {
+        throw error;
+      }
+      resetClient();
+      return operation(await getClient());
+    }
+  }, [getClient, resetClient]);
 
   const assertCanDownloadFile = useCallback(async (client: TencentTsshFileClient, remotePath: string, listedFile?: TsshFileInfo | null) => {
     const fileInfo = listedFile ?? (await client.fileInfo(remotePath));
@@ -550,34 +578,38 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
       if (!isManagedPath(request.path)) {
         throw new Error(t("只能访问 {{path}} 目录下的文件和文件夹。", { path: MANAGED_TAT_FILE_ROOT }));
       }
-      const client = await getClient();
-      await assertCanDownloadFile(client, request.path);
-      await client.downloadFileToSink(
-        request.path,
-        {
-          write: async (chunk) => {
-            if (cancelled) {
-              throw new Error("download cancelled");
-            }
-            const ownedChunk = chunk.slice();
-            const buffer = ownedChunk.buffer as ArrayBuffer;
-            const chunkSequence = sequence;
-            sequence += 1;
-            port.postMessage(
-              {
-                type: "tat-file-download-chunk",
-                requestId: request.requestId,
-                sequence: chunkSequence,
-                chunk: buffer,
+      await runWithReconnectedClient(
+        async (client) => {
+          await assertCanDownloadFile(client, request.path);
+          await client.downloadFileToSink(
+            request.path,
+            {
+              write: async (chunk) => {
+                if (cancelled) {
+                  throw new Error("download cancelled");
+                }
+                const ownedChunk = chunk.slice();
+                const buffer = ownedChunk.buffer as ArrayBuffer;
+                const chunkSequence = sequence;
+                sequence += 1;
+                port.postMessage(
+                  {
+                    type: "tat-file-download-chunk",
+                    requestId: request.requestId,
+                    sequence: chunkSequence,
+                    chunk: buffer,
+                  },
+                  [buffer],
+                );
+                await waitForAck(chunkSequence);
               },
-              [buffer],
-            );
-            await waitForAck(chunkSequence);
-          },
+            },
+            (state) => {
+              setProgress(t("已接收 {{size}}", { size: formatBytes(state.receivedBytes) }));
+            },
+          );
         },
-        (state) => {
-          setProgress(t("已接收 {{size}}", { size: formatBytes(state.receivedBytes) }));
-        },
+        { shouldRetry: () => sequence === 0 },
       );
       port.postMessage({
         type: "tat-file-download-done",
@@ -600,7 +632,7 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
       setProgress(null);
       port.close();
     }
-  }, [assertCanDownloadFile, clearDownloadTriggerIframes, getClient, t, translateFileManagerError]);
+  }, [assertCanDownloadFile, clearDownloadTriggerIframes, runWithReconnectedClient, t, translateFileManagerError]);
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -641,8 +673,7 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
     setNotice(null);
     setProgress(null);
     try {
-      const client = await getClient();
-      const entries = await client.listPath(managedPath);
+      const entries = await runWithReconnectedClient((client) => client.listPath(managedPath));
       entries.sort((a, b) => Number(isDirectory(b)) - Number(isDirectory(a)) || a.name.localeCompare(b.name));
       setFiles(entries);
       setPath(managedPath);
@@ -689,8 +720,7 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
     setStatus("working");
     setError(null);
     try {
-      const client = await getClient();
-      await client.createFile(folderPath, { isDir: true, mode: 0o755 });
+      await runWithReconnectedClient((client) => client.createFile(folderPath, { isDir: true, mode: 0o755 }));
       setCreatingFolder(false);
       setNewFolderDraft("");
       setNotice(t("目录已创建。"));
@@ -708,12 +738,11 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
     setStatus("working");
     setError(null);
     try {
-      const client = await getClient();
       const remotePath = managedChildPath(path, selectedFile.name);
       if (!remotePath) {
         throw new Error(t("只能访问 {{path}} 目录下的文件和文件夹。", { path: MANAGED_TAT_FILE_ROOT }));
       }
-      await client.deleteFile(remotePath, isDirectory(selectedFile));
+      await runWithReconnectedClient((client) => client.deleteFile(remotePath, isDirectory(selectedFile)));
       setNotice(t("已删除选中文件。"));
       await loadPath(path);
     } catch (deleteError) {
@@ -737,16 +766,17 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
       if (selectedFile.size > MEMORY_DOWNLOAD_LIMIT_BYTES) {
         throw new Error(t("当前浏览器不支持流式保存，最多只能下载 {{size}} 以内的文件。", { size: formatBytes(MEMORY_DOWNLOAD_LIMIT_BYTES) }));
       }
-      const client = await getClient();
       const remotePath = managedChildPath(path, selectedFile.name);
       if (!remotePath) {
         throw new Error(t("只能访问 {{path}} 目录下的文件和文件夹。", { path: MANAGED_TAT_FILE_ROOT }));
       }
-      await assertCanDownloadFile(client, remotePath, selectedFile);
       const onProgress = (state: { receivedBytes: number }) => {
         setProgress(t("已接收 {{size}}", { size: formatBytes(state.receivedBytes) }));
       };
-      const blob = await client.downloadFile(remotePath, onProgress);
+      const blob = await runWithReconnectedClient(async (client) => {
+        await assertCanDownloadFile(client, remotePath, selectedFile);
+        return client.downloadFile(remotePath, onProgress);
+      });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
@@ -808,14 +838,13 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
     setError(null);
     setProgress(t("准备上传..."));
     try {
-      const client = await getClient();
       const remotePath = managedChildPath(path, file.name);
       if (!remotePath) {
         throw new Error(t("只能访问 {{path}} 目录下的文件和文件夹。", { path: MANAGED_TAT_FILE_ROOT }));
       }
-      await client.uploadFile(remotePath, file, (state) => {
+      await runWithReconnectedClient((client) => client.uploadFile(remotePath, file, (state) => {
         setProgress(t("已上传 {{sent}} / {{total}}", { sent: formatBytes(state.sentBytes), total: formatBytes(state.totalBytes) }));
-      });
+      }));
       setNotice(t("上传完成。"));
       await loadPath(path);
     } catch (uploadError) {
