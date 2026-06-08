@@ -34,6 +34,9 @@ parameters:
   - name: PLAYGROUND_AUTO_PIN_ENVS
     type: string
     default: auto
+  - name: RUNNER_POOL_NAME
+    type: string
+    default: env
   - name: PROD_REVIEWERS
     type: string
     default: '["skipzhang"]'
@@ -59,7 +62,7 @@ stages:
         name: 构建 ${{ parameters.DISPLAY_NAME }} 镜像
         runs-on:
           self-hosted: true
-          pool-name: env
+          pool-name: ${{ parameters.RUNNER_POOL_NAME }}
         env:
           GIT_WOA_PRIVATE_TOKEN: ${{ settings.GIT_WOA_PRIVATE_TOKEN }}
         steps:
