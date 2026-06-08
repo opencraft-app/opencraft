@@ -190,6 +190,11 @@ chmod +x \
   "$stage/bin/"* \
   "$stage/juicefs/hack/"*.sh
 
+# EROFS preserves directory permissions exactly. The package is mounted by
+# root, then consumed by the sandbox user, so every package directory must be
+# traversable without relying on root privileges.
+chmod -R a+rX "$stage"
+
 mkdir -p "$out_dir"
 tar_out=""
 if [[ "$package_tar_gz" == "1" ]]; then
