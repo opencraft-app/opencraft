@@ -970,6 +970,44 @@ export function formatScheduleTooltip(
   return scheduleLabel;
 }
 
+function formatScheduleDetailValue(
+  job: CronJob,
+  t: (s: string, vars?: Record<string, unknown>) => string,
+): React.ReactNode {
+  const display = (job.schedule.display || job.schedule.expr || "").trim().toLowerCase();
+  const weekdays = job.effective_window?.weekdays;
+  const intervalLabel = formatIntervalScheduleLabel(display, t);
+
+  if (intervalLabel && weekdays?.length) {
+    return (
+      <div className="space-y-1">
+        <div>{`${t("按间隔")} · ${intervalLabel}`}</div>
+        <div>{`${t("执行日")}：${formatWeekdays(weekdays, t)}`}</div>
+      </div>
+    );
+  }
+
+  return formatScheduleTooltip(job, t);
+}
+
+function formatIntervalScheduleLabel(
+  display: string,
+  t: (s: string, vars?: Record<string, unknown>) => string,
+): string | null {
+  const intervalMatch = /^every\s+(\d+)\s*([mhd])$/.exec(display);
+  if (!intervalMatch) return null;
+  const n = Number(intervalMatch[1]);
+  const unit = intervalMatch[2];
+  if (unit === "m") {
+    if (n % 1440 === 0) return t("每 {{n}} 天", { n: String(n / 1440) });
+    if (n % 60 === 0) return t("每 {{n}} 小时", { n: String(n / 60) });
+    return t("每 {{n}} 分钟", { n: String(n) });
+  }
+  if (unit === "h") return t("每 {{n}} 小时", { n });
+  if (unit === "d") return t("每 {{n}} 天", { n });
+  return null;
+}
+
 export function parseOnceScheduleDate(display: string, nextRunAt: string | null): Date {
   if (nextRunAt) {
     const d = parseCronDate(nextRunAt);
@@ -1043,7 +1081,7 @@ function CronJobDetailModal({
         <dl className="overflow-hidden rounded-md border border-black/[0.08] bg-white text-sm divide-y divide-black/[0.06]">
           <NameIdDetailRow name={name} id={job.id} />
           <DetailRow label={t("任务说明")} value={job.prompt || "—"} pre />
-          <DetailRow label={t("执行时间")} value={formatScheduleTooltip(job, t)} />
+          <DetailRow label={t("执行时间")} value={formatScheduleDetailValue(job, t)} />
           {lastAgentRun && (
             <DetailRow
               label={t("上次执行")}
@@ -1141,7 +1179,7 @@ function NameIdDetailRow({ name, id }: { name: string; id: string }) {
   );
 }
 
-function DetailRow({ label, value, pre, mono }: { label: string; value: string; pre?: boolean; mono?: boolean }) {
+function DetailRow({ label, value, pre, mono }: { label: string; value: React.ReactNode; pre?: boolean; mono?: boolean }) {
   return (
     <div className="grid gap-2 px-4 py-3 sm:grid-cols-[112px_minmax(0,1fr)] sm:items-start">
       <dt className="text-xs font-medium leading-6 text-black/45">{label}</dt>
