@@ -67,10 +67,19 @@ export interface AchievementSnapshot {
   };
 }
 
+export type AchievementPayloadErrorCode =
+  | "command_failed"
+  | "json_block_missing"
+  | "json_parse_failed"
+  | "payload_invalid";
+
 export class AchievementPayloadError extends Error {
-  constructor(message: string) {
+  readonly code: AchievementPayloadErrorCode;
+
+  constructor(code: AchievementPayloadErrorCode, message: string) {
     super(message);
     this.name = "AchievementPayloadError";
+    this.code = code;
   }
 }
 
@@ -146,7 +155,7 @@ export const parseHermesAchievementsOutput = (output: string): AchievementSnapsh
   const endIndex = output.indexOf(JSON_END);
 
   if (startIndex < 0 || endIndex < 0 || endIndex <= startIndex) {
-    throw new AchievementPayloadError("Hermes achievements JSON block was not found.");
+    throw new AchievementPayloadError("json_block_missing", "Hermes achievements JSON block was not found.");
   }
 
   const jsonText = output.slice(startIndex + JSON_START.length, endIndex).trim();
@@ -154,11 +163,11 @@ export const parseHermesAchievementsOutput = (output: string): AchievementSnapsh
   try {
     parsed = JSON.parse(jsonText);
   } catch (error) {
-    throw new AchievementPayloadError(error instanceof Error ? error.message : "Failed to parse achievements JSON.");
+    throw new AchievementPayloadError("json_parse_failed", error instanceof Error ? error.message : "Failed to parse achievements JSON.");
   }
 
   if (!isRecord(parsed)) {
-    throw new AchievementPayloadError("Hermes achievements payload is not an object.");
+    throw new AchievementPayloadError("payload_invalid", "Hermes achievements payload is not an object.");
   }
 
   const achievements = Array.isArray(parsed.achievements)
@@ -211,7 +220,7 @@ export const fetchHermesAchievements = async (
 ): Promise<AchievementSnapshot> => {
   const result = await bots.execDebugCommand(botId, buildHermesAchievementsCommand(options.forceRescan === true));
   if (!isExecCommandSucceeded(result)) {
-    throw new AchievementPayloadError(`Hermes achievements command failed: ${truncateExecOutput(result.output, result.status)}`);
+    throw new AchievementPayloadError("command_failed", `Hermes achievements command failed: ${truncateExecOutput(result.output, result.status)}`);
   }
   return parseHermesAchievementsOutput(result.output);
 };

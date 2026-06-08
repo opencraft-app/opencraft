@@ -7,8 +7,10 @@ import {
   parseHermesAchievementsOutput,
 } from "@/pages/marketing/openclaw-achievements";
 import {
+  achievementErrorMessage,
   achievementDisplayDescription,
   achievementDisplayName,
+  achievementTimestampLocale,
 } from "@/pages/marketing/openclaw-achievements-panel";
 
 const START = "__LIGHTVELA_ACHIEVEMENTS_JSON_START__";
@@ -102,7 +104,13 @@ describe("openclaw achievements debug exec helpers", () => {
   });
 
   it("throws a typed error when the JSON markers are missing", () => {
-    expect(() => parseHermesAchievementsOutput("{}")).toThrow(AchievementPayloadError);
+    try {
+      parseHermesAchievementsOutput("{}");
+      throw new Error("Expected parseHermesAchievementsOutput to throw");
+    } catch (error) {
+      expect(error).toBeInstanceOf(AchievementPayloadError);
+      expect((error as AchievementPayloadError).code).toBe("json_block_missing");
+    }
   });
 
   it("surfaces debug exec failures before parsing output", async () => {
@@ -110,7 +118,25 @@ describe("openclaw achievements debug exec helpers", () => {
       execDebugCommand: async () => ({ status: "Failed", exitCode: 1, output: "plugin not found" }),
     } as Pick<BotRepository, "execDebugCommand"> as BotRepository;
 
-    await expect(fetchHermesAchievements(bots, "bot-1")).rejects.toThrow("plugin not found");
+    await expect(fetchHermesAchievements(bots, "bot-1")).rejects.toMatchObject({
+      code: "command_failed",
+      message: expect.stringContaining("plugin not found"),
+    });
+  });
+
+  it("maps achievement errors to localized friendly copy", () => {
+    const t = (zh: string) => `i18n:${zh}`;
+
+    expect(achievementErrorMessage({ code: "json_parse_failed" }, t)).toBe("i18n:成就数据解析失败，请稍后重试。");
+    expect(achievementErrorMessage({ code: "command_failed" }, t)).toBe("i18n:成就命令执行失败，请检查 Hermes 服务状态。");
+    expect(achievementErrorMessage({ code: "unknown" }, t)).toBe("i18n:成就数据读取失败");
+  });
+
+  it("derives timestamp locale from the active language", () => {
+    expect(achievementTimestampLocale("zh-CN")).toBe("zh-CN");
+    expect(achievementTimestampLocale("zh-Hans")).toBe("zh-CN");
+    expect(achievementTimestampLocale("en-US")).toBe("en-US");
+    expect(achievementTimestampLocale(undefined)).toBe("en-US");
   });
 
   it("routes known achievement fallback copy through i18n", () => {

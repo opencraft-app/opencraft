@@ -56,10 +56,13 @@ import {
   Workflow,
   type LucideIcon,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { useRepositories } from "@/contexts/repository-context";
-import { t as rawT, useT } from "@/i18n/t";
+import { useT } from "@/i18n/t";
 import {
+  AchievementPayloadError,
+  type AchievementPayloadErrorCode,
   type AchievementSnapshot,
   type AchievementState,
   type HermesAchievement,
@@ -73,6 +76,11 @@ interface AchievementsPanelProps {
   botName: string;
 }
 
+export interface AchievementPanelError {
+  code: AchievementPayloadErrorCode | "unknown";
+  detail?: string;
+}
+
 type Translate = ReturnType<typeof useT>;
 type AchievementCopyTranslator = (t: Translate) => string;
 
@@ -82,6 +90,34 @@ export const achievementDisplayName = (achievement: HermesAchievement, t: Transl
 
 export const achievementDisplayDescription = (achievement: HermesAchievement, t: Translate) => (
   achievementDescriptionTranslations[achievement.id]?.(t) ?? achievement.description
+);
+
+export const achievementErrorMessage = (error: AchievementPanelError, t: Translate) => {
+  switch (error.code) {
+    case "json_block_missing":
+    case "json_parse_failed":
+    case "payload_invalid":
+      return t("成就数据解析失败，请稍后重试。");
+    case "command_failed":
+      return t("成就命令执行失败，请检查 Hermes 服务状态。");
+    case "unknown":
+    default:
+      return t("成就数据读取失败");
+  }
+};
+
+const achievementPanelErrorFromUnknown = (error: unknown): AchievementPanelError => {
+  if (error instanceof AchievementPayloadError) {
+    return { code: error.code, detail: error.message };
+  }
+  if (error instanceof Error) {
+    return { code: "command_failed", detail: error.message };
+  }
+  return { code: "unknown" };
+};
+
+export const achievementTimestampLocale = (language?: string) => (
+  (language || "").toLowerCase().startsWith("zh") ? "zh-CN" : "en-US"
 );
 
 const TIER_ORDER = ["Olympian", "Diamond", "Gold", "Silver", "Copper"];
@@ -341,11 +377,11 @@ const categoryLabel = (category: string, t: ReturnType<typeof useT>) => {
   }
 };
 
-const formatTimestamp = (seconds: number | null | undefined) => {
+export const formatAchievementTimestamp = (seconds: number | null | undefined, locale: string) => {
   if (!seconds) {
     return "";
   }
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat(locale, {
     month: "short",
     day: "numeric",
     hour: "2-digit",
@@ -391,7 +427,7 @@ const progressText = (achievement: HermesAchievement, t: ReturnType<typeof useT>
     return `${progress.toLocaleString()} / ${threshold.toLocaleString()}`;
   }
   if (achievement.tier) {
-    return achievement.tier;
+    return tierLabel(achievement.tier, t);
   }
   return progress.toLocaleString();
 };
@@ -435,10 +471,11 @@ const LoadingGrid = () => (
 
 const AchievementCard = ({ achievement }: { achievement: HermesAchievement }) => {
   const t = useT();
+  const { i18n } = useTranslation();
   const Icon = achievementIcon(achievement);
   const pct = normalizeProgress(achievement);
-  const tier = achievement.tier || achievement.next_tier || "";
-  const unlockedAt = formatTimestamp(achievement.unlocked_at);
+  const tier = achievement.state === "unlocked" ? achievement.tier || "" : "";
+  const unlockedAt = formatAchievementTimestamp(achievement.unlocked_at, achievementTimestampLocale(i18n.language));
   const displayedTier = tier ? tierLabel(tier, t) : "";
   const displayName = achievementDisplayName(achievement, t);
   const displayDescription = achievementDisplayDescription(achievement, t);
@@ -512,12 +549,13 @@ const AchievementCard = ({ achievement }: { achievement: HermesAchievement }) =>
 
 export const AchievementsPanel = ({ botId, botName }: AchievementsPanelProps) => {
   const t = useT();
+  const { i18n } = useTranslation();
   const repositories = useRepositories();
   const botsRepository = repositories.bots;
   const [snapshot, setSnapshot] = useState<AchievementSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<AchievementPanelError | null>(null);
   const [visibility, setVisibility] = useState<VisibilityFilter>("all");
   const [category, setCategory] = useState("all");
 
@@ -536,7 +574,9 @@ export const AchievementsPanel = ({ botId, botName }: AchievementsPanelProps) =>
       const next = await fetchHermesAchievements(botsRepository, botId, { forceRescan });
       setSnapshot(next);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : rawT("成就数据读取失败"));
+      const nextError = achievementPanelErrorFromUnknown(loadError);
+      console.warn("Failed to load Hermes achievements", loadError);
+      setError(nextError);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -553,7 +593,8 @@ export const AchievementsPanel = ({ botId, botName }: AchievementsPanelProps) =>
   const achievements = snapshot?.achievements ?? [];
   const categories = useMemo(() => Array.from(new Set(achievements.map((item) => item.category))).filter(Boolean), [achievements]);
   const topTier = highestTier(achievements);
-  const generatedAt = formatTimestamp(snapshot?.generated_at);
+  const timestampLocale = achievementTimestampLocale(i18n.language);
+  const generatedAt = formatAchievementTimestamp(snapshot?.generated_at, timestampLocale);
   const scanState = snapshot?.scan_meta?.status?.state;
   const scanRunning = scanState === "running" || snapshot?.scan_meta?.mode === "in_progress";
 
@@ -653,7 +694,7 @@ export const AchievementsPanel = ({ botId, botName }: AchievementsPanelProps) =>
             <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0" />
             <div>
               <h3 className="font-semibold">{t("成就数据读取失败")}</h3>
-              <p className="mt-1 leading-6">{error}</p>
+              <p className="mt-1 leading-6">{achievementErrorMessage(error, t)}</p>
               <button
                 type="button"
                 onClick={() => void load(false)}
