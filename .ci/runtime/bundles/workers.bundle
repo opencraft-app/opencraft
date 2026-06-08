@@ -1,0 +1,23 @@
+bundles:
+  workers:
+    owner: workers
+    source: workers
+    db_contract: none
+    reason: Temporal worker release bundle for CVM rescue/export orchestration workers.
+    allowed_paths:
+    - workers/AGENTS.md
+    - workers/Dockerfile
+    - workers/k8s/base
+    - workers/k8s/overlays/beijing-sandbox
+    exit_condition: Can be removed only after workers move to a shared deployable worker package contract.
+    publish_paths:
+    - workers/k8s/base/**
+    - workers/k8s/overlays/{env}/**
+    dockerfile: workers/Dockerfile
+    build_context: workers
+    image_repo:
+      beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/workers
+      beijing-sandbox-2: lightclaw-bj8.tencentcloudcr.com/lightclaw/workers
+      shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/workers
+      sgprod: lightclaw-sgprod.tencentcloudcr.com/lightclaw/workers
+      sandbox-kr-*: lightclaw-kr1.tencentcloudcr.com/lightclaw/workers

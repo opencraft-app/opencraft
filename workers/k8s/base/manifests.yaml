@@ -1,0 +1,120 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: temporal-workers
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: rescue-exporter-worker
+  namespace: temporal-workers
+imagePullSecrets:
+- name: tcr.ipsqcloudregistrykey
+- name: tcr.ipstcr-regcred
+- name: tcr.ipstcr-lightclaw-secret
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rescue-exporter-worker-config
+  namespace: temporal-workers
+data:
+  TEMPORAL_ADDRESS: REPLACE_WORKERS_TEMPORAL_ADDRESS
+  TEMPORAL_NAMESPACE: REPLACE_WORKERS_TEMPORAL_NAMESPACE
+  TEMPORAL_TLS: "true"
+  TEMPORAL_TASK_QUEUE: tencent-cvm-rescue-export
+  WORKERS_HEALTH_ADDR: ":9090"
+  RESCUE_UPLOADER_PATH: /usr/local/bin/rescue-uploader
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rescue-exporter-worker
+  namespace: temporal-workers
+  labels:
+    app: rescue-exporter-worker
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app: rescue-exporter-worker
+  template:
+    metadata:
+      labels:
+        app: rescue-exporter-worker
+    spec:
+      serviceAccountName: rescue-exporter-worker
+      terminationGracePeriodSeconds: 60
+      nodeSelector:
+        pool: REPLACE_WORKERS_NODE_POOL
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app: rescue-exporter-worker
+      containers:
+      - name: rescue-exporter-worker
+        image: REPLACE_WORKERS_IMAGE
+        imagePullPolicy: IfNotPresent
+        command:
+        - /usr/local/bin/rescue-exporter
+        args:
+        - worker
+        envFrom:
+        - configMapRef:
+            name: rescue-exporter-worker-config
+        - secretRef:
+            name: workers-runtime-secrets
+        ports:
+        - name: health
+          containerPort: 9090
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: health
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 2
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: health
+          initialDelaySeconds: 10
+          periodSeconds: 20
+          timeoutSeconds: 2
+          failureThreshold: 3
+        resources:
+          requests:
+            cpu: 50m
+            memory: 96Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rescue-exporter-worker
+  namespace: temporal-workers
+spec:
+  selector:
+    app: rescue-exporter-worker
+  ports:
+  - name: health
+    port: 9090
+    targetPort: health
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: rescue-exporter-worker
+  namespace: temporal-workers
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: rescue-exporter-worker
