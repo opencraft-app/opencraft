@@ -1648,6 +1648,15 @@ function AutomationFormModal({
                     {selected && key === "feishu" && (
                       <span className="text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>{t("支持通过 home 对话或指定 Chat ID 发送通知")}</span>
                     )}
+                    {selected && (key === "telegram" || key === "whatsapp") && (
+                      <span className="inline-flex items-center text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
+                        {t("如未生效，可在")}
+                        {label}
+                        {t("对话中发送")}
+                        <InlineCopyText value="/set-home" />
+                        {t("给机器人")}
+                      </span>
+                    )}
                   </label>
 
                   {selected && key === "feishu" && (
@@ -1701,11 +1710,6 @@ function AutomationFormModal({
           {deliverPlatforms.length === 0 ? (
             <p className="text-xs text-black/40" style={MODAL_HELP_TEXT_STYLE}>
               {t("如不选，则只会在后台执行任务，不发通知。")}
-            </p>
-          ) : null}
-          {isGlobal ? (
-            <p className="mt-1 text-xs text-black/40" style={MODAL_HELP_TEXT_STYLE}>
-              {t("备注：如果连接 Telegram 或 WhatsApp，请在机器人对话中输入 /set-home，即可开启自动通知功能")}
             </p>
           ) : null}
         </div>
