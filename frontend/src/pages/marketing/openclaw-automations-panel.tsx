@@ -868,20 +868,20 @@ function isCronJobPaused(job: CronJob): boolean {
   return !job.enabled || job.state === "paused";
 }
 
-function isCronJobExpired(job: CronJob): boolean {
+function isOnceCronJob(job: CronJob): boolean {
   const kind = job.schedule.kind.toLowerCase();
   const display = (job.schedule.display || job.schedule.expr || "").trim();
-  const isOnce = kind === "once" || display.toLowerCase().startsWith("once");
-  if (!isOnce || !job.next_run_at) return false;
+  return kind === "once" || display.toLowerCase().startsWith("once");
+}
+
+function isCronJobExpired(job: CronJob): boolean {
+  if (!isOnceCronJob(job) || !job.next_run_at) return false;
   const d = parseCronDate(job.next_run_at);
   return !Number.isNaN(d.getTime()) && d.getTime() < Date.now();
 }
 
 export function isCronJobExpiredBeyondGrace(job: CronJob): boolean {
-  const kind = job.schedule.kind.toLowerCase();
-  const display = (job.schedule.display || job.schedule.expr || "").trim();
-  const isOnce = kind === "once" || display.toLowerCase().startsWith("once");
-  if (!isOnce || !job.next_run_at) return false;
+  if (!isOnceCronJob(job) || !job.next_run_at) return false;
   const d = parseCronDate(job.next_run_at);
   return !Number.isNaN(d.getTime()) && Date.now() - d.getTime() > EXPIRED_CRON_JOB_HIDE_AFTER_MS;
 }
@@ -1005,9 +1005,10 @@ function CronJobDetailModal({
   onClose: () => void;
 }) {
   const t = useT();
-  const paused = !job.enabled || job.state === "paused";
+  const paused = isCronJobPaused(job);
   const nextRunAt = getEffectiveWindowStatus(job.effective_window) === "ended" ? null : job.next_run_at;
   const name = job.name || t("未命名任务");
+  const showEffectiveWindow = !isOnceCronJob(job);
   return createPortal(
     <div
       className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 px-4 py-8"
@@ -1052,10 +1053,12 @@ function CronJobDetailModal({
           {nextRunAt && (
             <DetailRow label={t("下次执行")} value={formatTime(nextRunAt)} />
           )}
-          <DetailRow
-            label={t("生效时间段")}
-            value={formatEffectiveWindowPeriod(job.effective_window, t)}
-          />
+          {showEffectiveWindow && (
+            <DetailRow
+              label={t("生效时间段")}
+              value={formatEffectiveWindowPeriod(job.effective_window, t)}
+            />
+          )}
           <DeliverDetailRow deliver={job.deliver} />
         </dl>
       </div>
