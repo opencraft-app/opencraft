@@ -274,11 +274,10 @@ const registerTatServiceWorker = async () => {
   return pingTatFileDownloadServiceWorker(worker);
 };
 
-const fileDownloadUrlFor = (botId: string, path: string, name: string, size: number) => {
+const fileDownloadUrlFor = (botId: string, path: string, name: string) => {
   const params = new URLSearchParams({
     path,
     name,
-    size: String(size),
   });
   return `${FILE_DOWNLOAD_PREFIX}/${encodeURIComponent(botId)}?${params.toString()}`;
 };
@@ -744,7 +743,7 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
         await downloadSelectedWithMemoryFallback();
         return;
       }
-      const downloadUrl = fileDownloadUrlFor(botId, remotePath, selectedFile.name, selectedFile.size);
+      const downloadUrl = fileDownloadUrlFor(botId, remotePath, selectedFile.name);
       triggerBrowserDownload(downloadUrl);
       setNotice(t("下载已开始。"));
     } catch {

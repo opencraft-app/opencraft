@@ -1,6 +1,6 @@
 const PROXY_PREFIX = "/__tat_hermes_proxy/";
 const FILE_DOWNLOAD_PREFIX = "/__tat_file_download/";
-const SERVICE_WORKER_VERSION = "tat-file-download-v5";
+const SERVICE_WORKER_VERSION = "tat-file-download-v6";
 const REQUEST_TIMEOUT_MS = 45_000;
 const PROXY_ACCEPT_TIMEOUT_MS = 1500;
 const PROXY_CHUNK_TIMEOUT_MS = 60_000;
@@ -55,9 +55,7 @@ const parseFileDownloadRequest = (request) => {
   const path = url.searchParams.get("path") || "/";
   const fallbackName = path.split("/").filter(Boolean).at(-1) || "download";
   const name = url.searchParams.get("name") || fallbackName;
-  const sizeText = url.searchParams.get("size") || "";
-  const size = /^\d+$/.test(sizeText) ? Number(sizeText) : null;
-  return { botId, path, name, size };
+  return { botId, path, name };
 };
 
 const encodeContentDispositionFilename = (name) => {
@@ -65,19 +63,14 @@ const encodeContentDispositionFilename = (name) => {
   return `attachment; filename="${fallback}"; filename*=UTF-8''${encodeURIComponent(name)}`;
 };
 
-const makeFileDownloadHeaders = ({ name, size }) => {
-  const headers = new Headers({
+const makeFileDownloadHeaders = ({ name }) =>
+  new Headers({
     "Content-Type": "application/octet-stream",
     "Content-Disposition": encodeContentDispositionFilename(name),
     "Cache-Control": "no-store",
     "X-Content-Type-Options": "nosniff",
     "X-LightVela-TAT-File-Download": "1",
   });
-  if (typeof size === "number" && Number.isFinite(size) && size >= 0) {
-    headers.set("Content-Length", String(size));
-  }
-  return headers;
-};
 
 const fileDownloadErrorResponse = (status, detail) =>
   new Response(detail, {
