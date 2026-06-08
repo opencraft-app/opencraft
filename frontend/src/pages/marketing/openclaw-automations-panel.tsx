@@ -2251,6 +2251,15 @@ function AutomationFormModal({
                     {selected && key === "feishu" && (
                       <span className="text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>{t("支持通过 home 对话或指定 Chat ID 发送通知")}</span>
                     )}
+                    {selected && (key === "telegram" || key === "whatsapp") && (
+                      <span className="inline-flex items-center text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
+                        {t("如未生效，可在")}
+                        {label}
+                        {t("对话中发送")}
+                        <InlineCopyText value="/set-home" />
+                        {t("给机器人")}
+                      </span>
+                    )}
                   </label>
 
                   {selected && key === "feishu" && (
