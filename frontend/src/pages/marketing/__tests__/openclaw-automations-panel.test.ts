@@ -5,6 +5,7 @@ import {
   buildDeliverString,
   buildScheduleString,
   formatEffectiveWindow,
+  formatEffectiveWindowPeriod,
   formatEffectiveWindowTooltipLines,
   formatScheduleTooltip,
   getLastAgentRunForJob,
@@ -278,6 +279,19 @@ describe("effective window helpers", () => {
 
     expect(formatEffectiveWindow({ start_at: null, end_at: null, weekdays: [5, 6, 0] }, t))
       .toBe("生效中 · 执行日：周五、周六、周日");
+  });
+
+  it("formats detail modal effective periods without repeating weekdays", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-08T12:30:00+08:00"));
+
+    const t = ((text: string) => text) as Parameters<typeof formatEffectiveWindowPeriod>[1];
+
+    expect(formatEffectiveWindowPeriod({
+      start_at: "2026-06-08T08:00",
+      end_at: "2026-06-08T11:02",
+      weekdays: [2, 3, 4, 5, 6, 0],
+    }, t)).toBe("2026-06-08 08:00 - 2026-06-08 11:02 · 已过生效期");
   });
 
   it("splits configured dates and weekdays across tooltip lines", () => {

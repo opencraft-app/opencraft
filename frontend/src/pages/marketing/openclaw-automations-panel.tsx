@@ -726,7 +726,7 @@ function RecentCronRunDetailModal({ run, onClose }: { run: CronRunRecord; onClos
           </span>
         </div>
 
-        <dl className="space-y-3 text-sm" style={{ marginTop: 16 }}>
+        <dl className="mt-5 overflow-hidden rounded-md border border-black/[0.08] bg-white text-sm divide-y divide-black/[0.06]">
           <DetailRow label={t("任务说明")} value={run.job_prompt || "—"} pre />
           <DetailRow label={t("执行时间")} value={run.schedule ? formatScheduleFriendly(runToCronJob(run), t) : "—"} />
           <DetailRow label={t("本次执行")} value={formatTime(run.run_at)} />
@@ -1007,6 +1007,7 @@ function CronJobDetailModal({
   const t = useT();
   const paused = !job.enabled || job.state === "paused";
   const nextRunAt = getEffectiveWindowStatus(job.effective_window) === "ended" ? null : job.next_run_at;
+  const name = job.name || t("未命名任务");
   return createPortal(
     <div
       className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 px-4 py-8"
@@ -1015,7 +1016,7 @@ function CronJobDetailModal({
       onClick={onClose}
     >
       <div
-        className="relative max-h-[90vh] w-full max-w-[520px] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl"
+        className="relative max-h-[90vh] w-full max-w-[560px] overflow-y-auto rounded-xl bg-white p-5 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <button
@@ -1027,20 +1028,28 @@ function CronJobDetailModal({
           <X className="h-4 w-4" />
         </button>
 
-        <div className="flex items-center gap-2">
-          <h2 className="text-lg font-semibold text-black/90">{job.name || t("未命名任务")}</h2>
-          {paused && (
-            <span className="rounded-full bg-black/[0.08] px-1.5 py-0.5 text-[10px] text-black/60">
-              {t("已暂停")}
-            </span>
-          )}
+        <div className="pr-10">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="min-w-0 truncate text-xl font-semibold text-black/90">{name}</h2>
+            {paused && (
+              <span className="rounded-full bg-black/[0.08] px-2 py-0.5 text-xs text-black/60">
+                {t("已暂停")}
+              </span>
+            )}
+          </div>
+          <p className="mt-1 text-xs text-black/45">{t("自动任务详情")}</p>
         </div>
 
-        <dl className="space-y-3 text-sm" style={{ marginTop: 16 }}>
+        <dl className="mt-5 overflow-hidden rounded-md border border-black/[0.08] bg-white text-sm divide-y divide-black/[0.06]">
           <DetailRow label={t("任务说明")} value={job.prompt || "—"} pre />
           <DetailRow label={t("执行时间")} value={formatScheduleFriendly(job, t)} />
-          <DetailRow label={t("生效时间段")} value={formatEffectiveWindow(job.effective_window, t)} />
-          {nextRunAt && <DetailRow label={t("下次执行")} value={formatTime(nextRunAt)} />}
+          <DetailRow
+            label={t("生效时间段")}
+            value={formatEffectiveWindowPeriod(job.effective_window, t)}
+          />
+          {nextRunAt && (
+            <DetailRow label={t("下次执行")} value={formatTime(nextRunAt)} />
+          )}
           {lastAgentRun && (
             <DetailRow
               label={t("上次执行")}
@@ -1048,7 +1057,7 @@ function CronJobDetailModal({
             />
           )}
           <DeliverDetailRow deliver={job.deliver} />
-          <DetailRow label={t("任务 ID")} value={job.id} />
+          <DetailRow label={t("任务 ID")} value={job.id} mono />
         </dl>
       </div>
     </div>,
@@ -1061,9 +1070,9 @@ function DeliverDetailRow({ deliver }: { deliver: string | undefined }) {
   const parsed = parseInitialDeliver(deliver || "");
   if (parsed.platforms.length === 0) {
     return (
-      <div>
-        <dt className="text-xs text-black/50">{t("通知方式")}</dt>
-        <dd className="mt-1 text-sm text-black/85 break-words">
+      <div className="grid gap-2 px-4 py-3 sm:grid-cols-[112px_minmax(0,1fr)] sm:items-start">
+        <dt className="text-xs font-medium leading-6 text-black/45">{t("通知方式")}</dt>
+        <dd className="break-words text-sm leading-6 text-black/85 sm:text-right">
           <DetailBulletItem>{formatDeliverFallback(deliver || "", t)}</DetailBulletItem>
         </dd>
       </div>
@@ -1071,9 +1080,9 @@ function DeliverDetailRow({ deliver }: { deliver: string | undefined }) {
   }
 
   return (
-    <div>
-      <dt className="text-xs text-black/50">{t("通知方式")}</dt>
-      <dd className="mt-1 space-y-1.5 text-sm text-black/85 break-words">
+    <div className="grid gap-2 px-4 py-3 sm:grid-cols-[112px_minmax(0,1fr)] sm:items-start">
+      <dt className="text-xs font-medium leading-6 text-black/45">{t("通知方式")}</dt>
+      <dd className="space-y-1.5 break-words text-sm leading-6 text-black/85 sm:text-right">
         {parsed.platforms.map((platform) => {
           const label = getDeliverPlatformLabel(platform, t);
           const chatId = parsed.chatIds[platform];
@@ -1090,10 +1099,7 @@ function DeliverDetailRow({ deliver }: { deliver: string | undefined }) {
 
 function DetailBulletItem({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex items-start gap-2">
-      <span className="mt-[0.55em] h-1.5 w-1.5 shrink-0 rounded-full bg-black/35" aria-hidden="true" />
-      <span>{children}</span>
-    </div>
+    <span>{children}</span>
   );
 }
 
@@ -1120,12 +1126,12 @@ function getDeliverPlatformLabel(platform: string, t: ReturnType<typeof useT>): 
   return platform;
 }
 
-function DetailRow({ label, value, pre }: { label: string; value: string; pre?: boolean }) {
+function DetailRow({ label, value, pre, mono }: { label: string; value: string; pre?: boolean; mono?: boolean }) {
   return (
-    <div>
-      <dt className="text-xs text-black/50">{label}</dt>
+    <div className="grid gap-2 px-4 py-3 sm:grid-cols-[112px_minmax(0,1fr)] sm:items-start">
+      <dt className="text-xs font-medium leading-6 text-black/45">{label}</dt>
       <dd
-        className={`mt-0.5 text-sm text-black/85 ${pre ? "whitespace-pre-wrap break-words" : "break-words"}`}
+        className={`break-words text-sm leading-6 text-black/85 sm:text-right ${pre ? "whitespace-pre-wrap" : ""} ${mono ? "font-mono" : ""}`}
       >
         {value}
       </dd>
@@ -1455,6 +1461,13 @@ export function formatEffectiveWindow(
 ): string {
   const { dateAndStatusLabel, weekdayLabel } = getEffectiveWindowLabelParts(window, t);
   return [dateAndStatusLabel, weekdayLabel].filter((line): line is string => Boolean(line)).join(" · ");
+}
+
+export function formatEffectiveWindowPeriod(
+  window: CronEffectiveWindow | null,
+  t: ReturnType<typeof useT>,
+): string {
+  return getEffectiveWindowLabelParts(window, t).dateAndStatusLabel;
 }
 
 export function formatEffectiveWindowTooltipLines(
