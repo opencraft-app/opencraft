@@ -15,7 +15,7 @@
  */
 
 import { AlertTriangle, Activity, BellRing, BriefcaseBusiness, CalendarRange, ChevronDown, CircleHelp, Clock, Droplets, Eraser, Eye, FolderKanban, LayoutTemplate, Loader2, Newspaper, Pause, Pencil, Play, Plus, RefreshCw, Sunrise, Trash2, TrendingUp, X } from "lucide-react";
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { parseHermesChannelList } from "@tencent/tea-sdk-lightclaw";
 import { useT } from "@/i18n/t";
@@ -75,9 +75,9 @@ function ErrorToast({ message, onClose }: { message: string; onClose: () => void
   );
 }
 
-function EffectiveWindowBadge({ label, message }: { label: string; message: string }) {
+function useHoverTooltipPosition<T extends HTMLElement>() {
   const tooltipId = useId();
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const triggerRef = useRef<T | null>(null);
   const closeTimerRef = useRef<number | null>(null);
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState({ left: 0, top: 0 });
@@ -130,6 +130,50 @@ function EffectiveWindowBadge({ label, message }: { label: string; message: stri
     return () => cancelClose();
   }, [cancelClose]);
 
+  return {
+    tooltipId,
+    triggerRef,
+    open,
+    position,
+    showTooltip,
+    scheduleClose,
+  };
+}
+
+function FloatingTooltip({
+  id,
+  position,
+  children,
+  className = "",
+  onMouseEnter,
+  onMouseLeave,
+}: {
+  id: string;
+  position: { left: number; top: number };
+  children: ReactNode;
+  className?: string;
+  onMouseEnter: () => void;
+  onMouseLeave: () => void;
+}) {
+  return createPortal(
+    <span
+      id={id}
+      className={`pointer-events-auto fixed z-[260] max-w-[min(360px,calc(100vw-32px))] -translate-x-1/2 -translate-y-full select-text rounded-md border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium leading-relaxed text-[var(--text-primary)] shadow-[0_8px_24px_rgba(15,23,42,0.12)] ${className}`}
+      style={{ left: position.left, top: position.top }}
+      role="tooltip"
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+    >
+      {children}
+      <span className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-[var(--border-subtle)] bg-white" />
+    </span>,
+    document.body,
+  );
+}
+
+function EffectiveWindowBadge({ label, messages }: { label: string; messages: string[] }) {
+  const { tooltipId, triggerRef, open, position, showTooltip, scheduleClose } = useHoverTooltipPosition<HTMLButtonElement>();
+
   return (
     <span className="relative inline-flex shrink-0">
       <button
@@ -145,19 +189,55 @@ function EffectiveWindowBadge({ label, message }: { label: string; message: stri
       >
         <CalendarRange className="h-3 w-3" aria-hidden="true" />
       </button>
-      {open && createPortal(
-        <span
+      {open && (
+        <FloatingTooltip
           id={tooltipId}
-          className="pointer-events-auto fixed z-[260] max-w-[min(320px,calc(100vw-32px))] -translate-x-1/2 -translate-y-full select-text whitespace-nowrap rounded-md border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium leading-relaxed text-[var(--text-primary)] shadow-[0_8px_24px_rgba(15,23,42,0.12)]"
-          style={{ left: position.left, top: position.top }}
-          role="tooltip"
+          position={position}
+          className="whitespace-normal text-left"
+          onMouseEnter={showTooltip}
+          onMouseLeave={scheduleClose}
+        >
+          <span className="block space-y-0.5">
+            {messages.map((line, index) => (
+              <span key={`${line}-${index}`} className="block">
+                {line}
+              </span>
+            ))}
+          </span>
+        </FloatingTooltip>
+      )}
+    </span>
+  );
+}
+
+function ImmediateTooltipText({ label, message }: { label: string; message: string }) {
+  const { tooltipId, triggerRef, open, position, showTooltip, scheduleClose } = useHoverTooltipPosition<HTMLSpanElement>();
+
+  return (
+    <span className="relative inline-flex min-w-0">
+      <span
+        ref={triggerRef}
+        className="min-w-0 truncate text-xs text-black/55"
+        aria-label={label}
+        aria-describedby={open ? tooltipId : undefined}
+        tabIndex={0}
+        onMouseEnter={showTooltip}
+        onMouseLeave={scheduleClose}
+        onFocus={showTooltip}
+        onBlur={scheduleClose}
+      >
+        {label}
+      </span>
+      {open && (
+        <FloatingTooltip
+          id={tooltipId}
+          position={position}
+          className="whitespace-nowrap"
           onMouseEnter={showTooltip}
           onMouseLeave={scheduleClose}
         >
           {message}
-          <span className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-[var(--border-subtle)] bg-white" />
-        </span>,
-        document.body,
+        </FloatingTooltip>
       )}
     </span>
   );
@@ -646,7 +726,7 @@ function RecentCronRunDetailModal({ run, onClose }: { run: CronRunRecord; onClos
           </span>
         </div>
 
-        <dl className="space-y-3 text-sm" style={{ marginTop: 16 }}>
+        <dl className="mt-5 overflow-hidden rounded-md border border-black/[0.08] bg-white text-sm divide-y divide-black/[0.06]">
           <DetailRow label={t("任务说明")} value={run.job_prompt || "—"} pre />
           <DetailRow label={t("执行时间")} value={run.schedule ? formatScheduleFriendly(runToCronJob(run), t) : "—"} />
           <DetailRow label={t("本次执行")} value={formatTime(run.run_at)} />
@@ -683,6 +763,7 @@ function CronJobCard({
   const hasEffectiveWindow = effectiveStatus !== "always";
   const fullName = job.name || t("未命名任务");
   const scheduleLabel = formatScheduleFriendly(job, t);
+  const scheduleTooltipLabel = formatScheduleTooltip(job, t);
   return (
     <div
       className="flex flex-col rounded-md bg-white p-4 transition hover:shadow-md"
@@ -720,13 +801,11 @@ function CronJobCard({
 
       <div className="mt-3 flex items-center justify-between gap-2 border-t border-black/[0.04] pt-2.5">
         <div className="flex min-w-0 items-center gap-1.5">
-          <span className="min-w-0 truncate text-xs text-black/55" title={scheduleLabel} aria-label={scheduleLabel}>
-            {scheduleLabel}
-          </span>
+          <ImmediateTooltipText label={scheduleLabel} message={scheduleTooltipLabel} />
           {hasEffectiveWindow && (
             <EffectiveWindowBadge
               label={t("有效期")}
-              message={formatEffectiveWindow(job.effective_window, t)}
+              messages={formatEffectiveWindowTooltipLines(job.effective_window, t)}
             />
           )}
         </div>
@@ -789,20 +868,20 @@ function isCronJobPaused(job: CronJob): boolean {
   return !job.enabled || job.state === "paused";
 }
 
-function isCronJobExpired(job: CronJob): boolean {
+function isOnceCronJob(job: CronJob): boolean {
   const kind = job.schedule.kind.toLowerCase();
   const display = (job.schedule.display || job.schedule.expr || "").trim();
-  const isOnce = kind === "once" || display.toLowerCase().startsWith("once");
-  if (!isOnce || !job.next_run_at) return false;
+  return kind === "once" || display.toLowerCase().startsWith("once");
+}
+
+function isCronJobExpired(job: CronJob): boolean {
+  if (!isOnceCronJob(job) || !job.next_run_at) return false;
   const d = parseCronDate(job.next_run_at);
   return !Number.isNaN(d.getTime()) && d.getTime() < Date.now();
 }
 
 export function isCronJobExpiredBeyondGrace(job: CronJob): boolean {
-  const kind = job.schedule.kind.toLowerCase();
-  const display = (job.schedule.display || job.schedule.expr || "").trim();
-  const isOnce = kind === "once" || display.toLowerCase().startsWith("once");
-  if (!isOnce || !job.next_run_at) return false;
+  if (!isOnceCronJob(job) || !job.next_run_at) return false;
   const d = parseCronDate(job.next_run_at);
   return !Number.isNaN(d.getTime()) && Date.now() - d.getTime() > EXPIRED_CRON_JOB_HIDE_AFTER_MS;
 }
@@ -873,6 +952,62 @@ function formatScheduleFriendly(
   return display || job.schedule.expr || "";
 }
 
+export function formatScheduleTooltip(
+  job: CronJob,
+  t: (s: string, vars?: Record<string, unknown>) => string,
+): string {
+  const scheduleLabel = formatScheduleFriendly(job, t);
+  const display = (job.schedule.display || job.schedule.expr || "").trim().toLowerCase();
+
+  if (/^every\s+\d+\s*[mhd]$/.test(display)) {
+    return `${t("按间隔")} · ${scheduleLabel}`;
+  }
+
+  if (/^(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)$/.test(display)) {
+    return `${t("周期")} · ${scheduleLabel}`;
+  }
+
+  return scheduleLabel;
+}
+
+function formatScheduleDetailValue(
+  job: CronJob,
+  t: (s: string, vars?: Record<string, unknown>) => string,
+): React.ReactNode {
+  const display = (job.schedule.display || job.schedule.expr || "").trim().toLowerCase();
+  const weekdays = job.effective_window?.weekdays;
+  const intervalLabel = formatIntervalScheduleLabel(display, t);
+
+  if (intervalLabel && weekdays?.length) {
+    return (
+      <div className="space-y-1">
+        <div>{`${t("按间隔")} · ${intervalLabel}`}</div>
+        <div>{`${t("执行日")}：${formatWeekdays(weekdays, t)}`}</div>
+      </div>
+    );
+  }
+
+  return formatScheduleTooltip(job, t);
+}
+
+function formatIntervalScheduleLabel(
+  display: string,
+  t: (s: string, vars?: Record<string, unknown>) => string,
+): string | null {
+  const intervalMatch = /^every\s+(\d+)\s*([mhd])$/.exec(display);
+  if (!intervalMatch) return null;
+  const n = Number(intervalMatch[1]);
+  const unit = intervalMatch[2];
+  if (unit === "m") {
+    if (n % 1440 === 0) return t("每 {{n}} 天", { n: String(n / 1440) });
+    if (n % 60 === 0) return t("每 {{n}} 小时", { n: String(n / 60) });
+    return t("每 {{n}} 分钟", { n: String(n) });
+  }
+  if (unit === "h") return t("每 {{n}} 小时", { n });
+  if (unit === "d") return t("每 {{n}} 天", { n });
+  return null;
+}
+
 export function parseOnceScheduleDate(display: string, nextRunAt: string | null): Date {
   if (nextRunAt) {
     const d = parseCronDate(nextRunAt);
@@ -908,8 +1043,10 @@ function CronJobDetailModal({
   onClose: () => void;
 }) {
   const t = useT();
-  const paused = !job.enabled || job.state === "paused";
+  const paused = isCronJobPaused(job);
   const nextRunAt = getEffectiveWindowStatus(job.effective_window) === "ended" ? null : job.next_run_at;
+  const name = job.name || t("未命名任务");
+  const showEffectiveWindow = !isOnceCronJob(job);
   return createPortal(
     <div
       className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 px-4 py-8"
@@ -918,7 +1055,7 @@ function CronJobDetailModal({
       onClick={onClose}
     >
       <div
-        className="relative max-h-[90vh] w-full max-w-[520px] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl"
+        className="relative max-h-[90vh] w-full max-w-[560px] overflow-y-auto rounded-lg bg-white p-5 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <button
@@ -930,28 +1067,37 @@ function CronJobDetailModal({
           <X className="h-4 w-4" />
         </button>
 
-        <div className="flex items-center gap-2">
-          <h2 className="text-lg font-semibold text-black/90">{job.name || t("未命名任务")}</h2>
-          {paused && (
-            <span className="rounded-full bg-black/[0.08] px-1.5 py-0.5 text-[10px] text-black/60">
-              {t("已暂停")}
-            </span>
-          )}
+        <div className="mb-4 pr-10">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="min-w-0 truncate text-xl font-semibold text-black/90">{t("自动任务详情")}</h2>
+            {paused && (
+              <span className="rounded-full bg-black/[0.08] px-2 py-0.5 text-xs text-black/60">
+                {t("已暂停")}
+              </span>
+            )}
+          </div>
         </div>
 
-        <dl className="space-y-3 text-sm" style={{ marginTop: 16 }}>
+        <dl className="overflow-hidden rounded-md border border-black/[0.08] bg-white text-sm divide-y divide-black/[0.06]">
+          <NameIdDetailRow name={name} id={job.id} />
           <DetailRow label={t("任务说明")} value={job.prompt || "—"} pre />
-          <DetailRow label={t("执行时间")} value={formatScheduleFriendly(job, t)} />
-          <DetailRow label={t("生效时间段")} value={formatEffectiveWindow(job.effective_window, t)} />
-          {nextRunAt && <DetailRow label={t("下次执行")} value={formatTime(nextRunAt)} />}
+          <DetailRow label={t("执行时间")} value={formatScheduleDetailValue(job, t)} />
           {lastAgentRun && (
             <DetailRow
               label={t("上次执行")}
               value={formatLastRun(lastAgentRun.run_at, lastAgentRun.status, t)}
             />
           )}
+          {nextRunAt && (
+            <DetailRow label={t("下次执行")} value={formatTime(nextRunAt)} />
+          )}
+          {showEffectiveWindow && (
+            <DetailRow
+              label={t("生效时间段")}
+              value={formatEffectiveWindowPeriod(job.effective_window, t)}
+            />
+          )}
           <DeliverDetailRow deliver={job.deliver} />
-          <DetailRow label={t("任务 ID")} value={job.id} />
         </dl>
       </div>
     </div>,
@@ -964,9 +1110,9 @@ function DeliverDetailRow({ deliver }: { deliver: string | undefined }) {
   const parsed = parseInitialDeliver(deliver || "");
   if (parsed.platforms.length === 0) {
     return (
-      <div>
-        <dt className="text-xs text-black/50">{t("通知方式")}</dt>
-        <dd className="mt-1 text-sm text-black/85 break-words">
+      <div className="grid gap-2 px-4 py-3 sm:grid-cols-[112px_minmax(0,1fr)] sm:items-start">
+        <dt className="text-xs font-medium leading-6 text-black/45">{t("通知方式")}</dt>
+        <dd className="break-words text-sm leading-6 text-black/85 sm:text-right">
           <DetailBulletItem>{formatDeliverFallback(deliver || "", t)}</DetailBulletItem>
         </dd>
       </div>
@@ -974,9 +1120,9 @@ function DeliverDetailRow({ deliver }: { deliver: string | undefined }) {
   }
 
   return (
-    <div>
-      <dt className="text-xs text-black/50">{t("通知方式")}</dt>
-      <dd className="mt-1 space-y-1.5 text-sm text-black/85 break-words">
+    <div className="grid gap-2 px-4 py-3 sm:grid-cols-[112px_minmax(0,1fr)] sm:items-start">
+      <dt className="text-xs font-medium leading-6 text-black/45">{t("通知方式")}</dt>
+      <dd className="space-y-1.5 break-words text-sm leading-6 text-black/85 sm:text-right">
         {parsed.platforms.map((platform) => {
           const label = getDeliverPlatformLabel(platform, t);
           const chatId = parsed.chatIds[platform];
@@ -993,10 +1139,7 @@ function DeliverDetailRow({ deliver }: { deliver: string | undefined }) {
 
 function DetailBulletItem({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex items-start gap-2">
-      <span className="mt-[0.55em] h-1.5 w-1.5 shrink-0 rounded-full bg-black/35" aria-hidden="true" />
-      <span>{children}</span>
-    </div>
+    <div>{children}</div>
   );
 }
 
@@ -1023,12 +1166,25 @@ function getDeliverPlatformLabel(platform: string, t: ReturnType<typeof useT>): 
   return platform;
 }
 
-function DetailRow({ label, value, pre }: { label: string; value: string; pre?: boolean }) {
+function NameIdDetailRow({ name, id }: { name: string; id: string }) {
+  const t = useT();
   return (
-    <div>
-      <dt className="text-xs text-black/50">{label}</dt>
+    <div className="grid gap-2 px-4 py-3 sm:grid-cols-[112px_minmax(0,1fr)] sm:items-start">
+      <dt className="text-xs font-medium leading-6 text-black/45">{t("任务名称与ID")}</dt>
+      <dd className="min-w-0 text-sm text-black/85 sm:text-right">
+        <div className="break-words leading-5">{name}</div>
+        <div className="mt-0.5 break-all font-mono text-xs leading-4 text-black/45">{id}</div>
+      </dd>
+    </div>
+  );
+}
+
+function DetailRow({ label, value, pre, mono }: { label: string; value: React.ReactNode; pre?: boolean; mono?: boolean }) {
+  return (
+    <div className="grid gap-2 px-4 py-3 sm:grid-cols-[112px_minmax(0,1fr)] sm:items-start">
+      <dt className="text-xs font-medium leading-6 text-black/45">{label}</dt>
       <dd
-        className={`mt-0.5 text-sm text-black/85 ${pre ? "whitespace-pre-wrap break-words" : "break-words"}`}
+        className={`break-words text-sm leading-6 text-black/85 sm:text-right ${pre ? "whitespace-pre-wrap" : ""} ${mono ? "font-mono" : ""}`}
       >
         {value}
       </dd>
@@ -1356,7 +1512,41 @@ export function formatEffectiveWindow(
   window: CronEffectiveWindow | null,
   t: ReturnType<typeof useT>,
 ): string {
-  if (!window?.start_at && !window?.end_at && !window?.weekdays?.length) return t("始终生效");
+  const { dateAndStatusLabel, weekdayLabel } = getEffectiveWindowLabelParts(window, t);
+  return [dateAndStatusLabel, weekdayLabel].filter((line): line is string => Boolean(line)).join(" · ");
+}
+
+export function formatEffectiveWindowPeriod(
+  window: CronEffectiveWindow | null,
+  t: ReturnType<typeof useT>,
+): string {
+  if (!window?.start_at && !window?.end_at && !window?.weekdays?.length) {
+    return t("未配置（即始终生效）");
+  }
+  return getEffectiveWindowLabelParts(window, t).dateAndStatusLabel;
+}
+
+export function formatEffectiveWindowTooltipLines(
+  window: CronEffectiveWindow | null,
+  t: ReturnType<typeof useT>,
+): string[] {
+  const { dateAndStatusLabel, weekdayLabel } = getEffectiveWindowLabelParts(window, t);
+  const effectivePeriodLabel = dateAndStatusLabel === t("始终生效")
+    ? dateAndStatusLabel
+    : `${t("生效期")}：${dateAndStatusLabel}`;
+  return [weekdayLabel, effectivePeriodLabel].filter((line): line is string => Boolean(line));
+}
+
+function getEffectiveWindowLabelParts(
+  window: CronEffectiveWindow | null,
+  t: ReturnType<typeof useT>,
+): {
+  dateAndStatusLabel: string;
+  weekdayLabel: string | null;
+} {
+  if (!window?.start_at && !window?.end_at && !window?.weekdays?.length) {
+    return { dateAndStatusLabel: t("始终生效"), weekdayLabel: null };
+  }
   const dateLabel = window.start_at && window.end_at
     ? `${formatEffectiveWindowDate(window.start_at)} - ${formatEffectiveWindowDate(window.end_at)}`
     : window.start_at
@@ -1373,7 +1563,8 @@ export function formatEffectiveWindow(
   const weekdayLabel = window.weekdays?.length
     ? `${t("执行日")}：${formatWeekdays(window.weekdays, t)}`
     : null;
-  return [dateLabel, statusLabel, weekdayLabel].filter(Boolean).join(" · ");
+  const dateAndStatusLabel = [dateLabel, statusLabel].filter(Boolean).join(" · ");
+  return { dateAndStatusLabel, weekdayLabel };
 }
 
 function formatEffectiveWindowDate(value: string): string {
@@ -1807,7 +1998,7 @@ function AutomationFormModal({
 
   return createPortal(
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 px-4 py-3" role="dialog" aria-modal="true">
-      <div className="relative max-h-[calc(100vh-24px)] w-full max-w-[635px] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">
+      <div className="relative max-h-[calc(100vh-24px)] w-full max-w-[635px] overflow-y-auto rounded-lg bg-white p-6 shadow-2xl">
         <button
           type="button"
           onClick={onClose}

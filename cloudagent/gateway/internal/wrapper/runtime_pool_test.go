@@ -326,6 +326,7 @@ func TestWispOuterPrepareScriptSupportsHostOnly(t *testing.T) {
 }
 
 func TestPrepareWispHostOnlyAcceptsReadyMarkerDespiteCommandError(t *testing.T) {
+	t.Setenv("GATEWAY_WISP_PACKAGE_SHA256", "test-wisp-sha256")
 	worker := &AgentSidecarWorker{
 		wispPackageURL:    "https://example.invalid/wisp.erofs",
 		wispRootUpperSize: "10G",
@@ -364,6 +365,7 @@ func TestPrepareWispHostOnlyAcceptsReadyMarkerDespiteCommandError(t *testing.T) 
 		"JFS_MOUNT_CACHE_SIZE":                "64M",
 		"JFS_MOUNT_MIN_FREE_BYTES":            "200M",
 		"JFS_WRITEBACK_BARRIER_POLL_INTERVAL": "30ms",
+		"WISP_PACKAGE_SHA256":                 "test-wisp-sha256",
 	}
 	for name, want := range wantEnv {
 		if gotEnv[name] != want {

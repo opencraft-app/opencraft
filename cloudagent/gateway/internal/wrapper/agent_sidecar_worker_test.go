@@ -563,7 +563,7 @@ func TestWispOuterPrepareScriptUsesFlattenedEROFSRootfs(t *testing.T) {
 	script := wispOuterPrepareScript()
 	for _, want := range []string{
 		`*.erofs) pkg_format="${pkg_format:-erofs}"`,
-		`sudo -n mount -t erofs -o loop,ro "$pkg" "$install"`,
+		`sudo -n mount -t erofs -o loop,ro,exec "$pkg" "$install"`,
 		`LOWER_SYSTEM_BASE: projectRoot + "/assets/rootfs/rootfs"`,
 		`BASE_ROOTFS_DIR: projectRoot + "/assets/rootfs/rootfs"`,
 		`BASE_ROOTFS_IMG: ""`,
@@ -573,6 +573,11 @@ func TestWispOuterPrepareScriptUsesFlattenedEROFSRootfs(t *testing.T) {
 		`export BLANK_ROOT_UPPER_SPARSE="$blank_root_upper_sparse"`,
 		`export PATH="$install/assets/bin/e2fsprogs/bin:$PATH"`,
 		`WISP_USE_HOST_CRUN=1`,
+		`packaged crun missing diagnostics begin`,
+		`expected_package_sha256=`,
+		`find "$install" -maxdepth 4`,
+		`packaged crun is not executable`,
+		`check permissions or noexec mount options`,
 	} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("flattened EROFS prepare script missing %q: %s", want, script)

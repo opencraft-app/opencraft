@@ -119,6 +119,7 @@ func (w *AgentSidecarWorker) prepareWispRuntimeWithSpace(ctx context.Context, ho
 	}
 	env := map[string]string{
 		"WISP_PACKAGE_URL":                    runtime.WispPackageURL,
+		"WISP_PACKAGE_SHA256":                 firstEnv("GATEWAY_WISP_PACKAGE_SHA256", "WISP_PACKAGE_SHA256"),
 		"WISP_PACKAGE_FORMAT":                 firstEnv("GATEWAY_WISP_PACKAGE_FORMAT", "WISP_PACKAGE_FORMAT"),
 		"WISP_INSTALL_DIR":                    runtime.WispInstallDir,
 		"WISP_NAME":                           runtime.WispName,
@@ -183,6 +184,7 @@ func (w *AgentSidecarWorker) prepareWispHostOnly(ctx context.Context, host Runti
 	env := map[string]string{
 		"WISP_HOST_ONLY":                      "1",
 		"WISP_PACKAGE_URL":                    packageURL,
+		"WISP_PACKAGE_SHA256":                 firstEnv("GATEWAY_WISP_PACKAGE_SHA256", "WISP_PACKAGE_SHA256"),
 		"WISP_PACKAGE_FORMAT":                 firstEnv("GATEWAY_WISP_PACKAGE_FORMAT", "WISP_PACKAGE_FORMAT"),
 		"WISP_INSTALL_DIR":                    installDir,
 		"WISP_NAME":                           "warm-host-only",
@@ -810,7 +812,7 @@ esac
     rmdir "$install" 2>/dev/null || true
     mkdir -p "$install"
     step_start wisp_package_mount format=erofs
-    sudo -n mount -t erofs -o loop,ro "$pkg" "$install"
+    sudo -n mount -t erofs -o loop,ro,exec "$pkg" "$install"
     step_done wisp_package_mount format=erofs
   elif [[ "$pkg_format" == "erofs-extract" ]]; then
     rmdir "$install" 2>/dev/null || true
@@ -850,8 +852,23 @@ esac
 	  crun_binary_path="$crun_binary"
 	else
 	  crun_binary="$install/assets/bin/crun/crun-$pkg_arch"
-	  if [[ ! -x "$crun_binary" ]]; then
+	  if [[ ! -e "$crun_binary" ]]; then
+	    echo "packaged crun missing diagnostics begin" >&2
+	    echo "package_url=${WISP_PACKAGE_URL:-}" >&2
+	    echo "package_format=$pkg_format install=$install pkg=$pkg" >&2
+	    echo "expected_package_sha256=${WISP_PACKAGE_SHA256:-}" >&2
+	    (sha256sum "$pkg" 2>/dev/null || shasum -a 256 "$pkg" 2>/dev/null || true) >&2
+	    mount | grep -F " $install " >&2 || true
+	    ls -ld "$install" "$install/assets" "$install/assets/bin" "$install/assets/bin/crun" >&2 || true
+	    find "$install" -maxdepth 4 -mindepth 1 2>/dev/null | sort | sed -n '1,80p' >&2 || true
+	    echo "packaged crun missing diagnostics end" >&2
 	    echo "missing packaged crun for arch=$pkg_arch path=$crun_binary" >&2
+	    exit 2
+	  fi
+	  if [[ ! -x "$crun_binary" ]]; then
+	    ls -ld "$install" "$install/assets" "$install/assets/bin" "$install/assets/bin/crun" "$crun_binary" >&2 || true
+	    mount | grep -F " $install " >&2 || true
+	    echo "packaged crun is not executable for arch=$pkg_arch path=$crun_binary; check permissions or noexec mount options" >&2
 	    exit 2
 	  fi
 	  crun_binary_path="/var/lib/wisp/shared/tools/crun"

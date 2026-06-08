@@ -54,6 +54,68 @@ require_cmd "$COSCMD_BIN"
 require_cmd docker
 require_cmd shasum
 
+validate_wisp_package_artifact() {
+  local artifact="$1"
+  local tmp_dir artifact_dir artifact_base
+  tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/cloudagent-wisp-package-check.XXXXXX")"
+  artifact_dir="$(cd "$(dirname "$artifact")" && pwd)"
+  artifact_base="$(basename "$artifact")"
+  case "$artifact" in
+    *.erofs)
+      docker run --rm --platform "linux/$GOARCH" \
+        -v "$artifact_dir:/artifact:ro" \
+        -v "$tmp_dir:/extract" \
+        "${WISP_EROFS_IMAGE:-alpine:3.23}" sh -ceu '
+          printf "%s\n%s\n" "'"${WISP_EROFS_APK_REPOSITORY:-https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.23}"'/main" "'"${WISP_EROFS_APK_REPOSITORY:-https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.23}"'/community" > /etc/apk/repositories
+          apk add --no-cache erofs-utils >/dev/null
+          for path in / /assets /assets/bin /assets/bin/crun /assets/bin/tini /assets/rootfs /assets/rootfs/rootfs; do
+            dump.erofs --path="$path" "/artifact/'"$artifact_base"'" >"/tmp/erofs-path.txt"
+            mode="$(sed -n "s/.*Access: \([0-7][0-7][0-7][0-7]\)\/.*/\1/p" /tmp/erofs-path.txt | head -n 1)"
+            case "$mode" in
+              *[57]) ;;
+              *)
+              cat /tmp/erofs-path.txt >&2
+              echo "Wisp EROFS path is not traversable by sandbox user: $path" >&2
+              exit 1
+              ;;
+            esac
+          done
+          fsck.erofs --extract=/extract --force --overwrite "/artifact/'"$artifact_base"'" >/dev/null
+        '
+      ;;
+    *.tar.gz|*.tgz)
+      tar -xzf "$artifact" -C "$tmp_dir" --strip-components=1
+      ;;
+    *)
+      printf 'unsupported Wisp artifact extension for validation: %s\n' "$artifact" >&2
+      exit 2
+      ;;
+  esac
+  for path in \
+    "bin/wisp" \
+    "bin/wispclient" \
+    "assets/bin/crun/crun-$GOARCH" \
+    "assets/bin/tini/tini" \
+    "assets/rootfs/rootfs/.wisp-base-ready"; do
+    if [ ! -e "$tmp_dir/$path" ]; then
+      printf 'Wisp package missing required path: %s artifact=%s\n' "$path" "$artifact" >&2
+      exit 1
+    fi
+  done
+  for path in \
+    "bin/wisp" \
+    "bin/wispclient" \
+    "assets/bin/crun/crun-$GOARCH" \
+    "assets/bin/tini/tini"; do
+    if [ ! -x "$tmp_dir/$path" ]; then
+      ls -l "$tmp_dir/$path" >&2 || true
+      printf 'Wisp package path is not executable: %s artifact=%s\n' "$path" "$artifact" >&2
+      exit 1
+    fi
+  done
+  rm -rf "$tmp_dir"
+}
+
 if [ ! -f "$COSCMD_CONFIG" ]; then
   printf 'missing COSCMD_CONFIG file: %s\n' "$COSCMD_CONFIG" >&2
   exit 2
@@ -159,6 +221,8 @@ if [ -z "$artifact" ] || [ ! -f "$artifact" ]; then
   printf 'Wisp package script did not produce a package artifact. output=%s\n' "$package_output" >&2
   exit 1
 fi
+log "validate Wisp package artifact=$artifact"
+validate_wisp_package_artifact "$artifact"
 
 log "publish Wisp package artifact=$artifact"
 publish_output="$(
