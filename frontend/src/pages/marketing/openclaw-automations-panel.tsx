@@ -1039,7 +1039,7 @@ function CronJobDetailModal({
           </div>
         </div>
 
-        <dl className="mt-5 overflow-hidden rounded-md border border-black/[0.08] bg-white text-sm divide-y divide-black/[0.06]">
+        <dl className="mt-7 overflow-hidden rounded-md border border-black/[0.08] bg-white text-sm divide-y divide-black/[0.06]">
           <DetailRow label={t("任务名称")} value={name} />
           <DetailRow label={t("任务说明")} value={job.prompt || "—"} pre />
           <DetailRow label={t("执行时间")} value={formatScheduleFriendly(job, t)} />
