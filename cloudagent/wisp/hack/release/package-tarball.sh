@@ -230,6 +230,7 @@ if [[ "$package_erofs" == "1" ]]; then
     "$erofs_image" sh -ceu '
       printf "%s\n%s\n" "'"$erofs_apk_repository"'/main" "'"$erofs_apk_repository"'/community" > /etc/apk/repositories
       apk add --no-cache erofs-utils >/dev/null
+      chmod -R a+rX "/dist/'"$pkg"'"
       mkfs.erofs -z"$WISP_EROFS_COMPRESSION" "/dist/'"$pkg"'.erofs" "/dist/'"$pkg"'" >/dev/null
     '
 fi
