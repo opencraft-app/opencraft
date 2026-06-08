@@ -356,7 +356,7 @@ type rolloutACPClient struct {
 func (c *rolloutACPClient) Initialize(context.Context) error                           { return nil }
 func (c *rolloutACPClient) SetWorkspaceLifecycleHandler(acp.WorkspaceLifecycleHandler) {}
 func (c *rolloutACPClient) Close() error                                               { return nil }
-func (c *rolloutACPClient) NewSession(context.Context, string) (string, error) {
+func (c *rolloutACPClient) NewSession(context.Context, string, string) (string, error) {
 	if c.sessionID == "" {
 		return "session-rollout", nil
 	}

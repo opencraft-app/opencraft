@@ -34,6 +34,7 @@ import {
   RefreshCw,
   RotateCw,
   Trash2,
+  Trophy,
   UserRound,
   Wand2,
   Wrench,
@@ -84,6 +85,7 @@ import {
   type HermesMemorySnapshot,
 } from "@/pages/marketing/openclaw-memory";
 import { BuddyPanel } from "@/pages/marketing/openclaw-buddy-panel";
+import { AchievementsPanel } from "@/pages/marketing/openclaw-achievements-panel";
 import { AutomationsPanel } from "@/pages/marketing/openclaw-automations-panel";
 import { TatFileManagerPanel } from "@/components/domain/tat-file-manager-panel";
 import { findCompletedCreatingBot, getOpenClawCreateLimitMessage } from "@/pages/marketing/openclaw-create-availability";
@@ -366,9 +368,9 @@ const SettingsNavbar = () => {
   );
 };
 
-/* ─── 实例配置子页面类型（通道 / 模型 / 技能 / 人设 / 自动任务 / 记忆 / 对话，放在单个 bot 内部切换） ─── */
+/* ─── 实例配置子页面类型（通道 / 模型 / 技能 / 人设 / 自动任务 / 记忆 / 成就 / 对话，放在单个 bot 内部切换） ─── */
 
-type SettingsSectionId = "channel" | "model" | "skill" | "buddy" | "automations" | "memory" | "chat" | "files";
+type SettingsSectionId = "channel" | "model" | "skill" | "buddy" | "automations" | "memory" | "achievement" | "chat" | "files";
 
 const SHOW_AGENTCHAT_ENTRY = true;
 
@@ -2803,7 +2805,7 @@ export const OpenClawSettingsPage = () => {
   );
 
 
-  /* 实例内部的子页面切换：通道 / 模型 / 技能 / 人设 / 对话（通道置顶，作为默认进入项） */
+  /* 实例内部的子页面切换：通道 / 模型 / 技能 / 人设 / 成就 / 对话（通道置顶，作为默认进入项） */
   const [activeSection, setActiveSection] = useState<SettingsSectionId>("channel");
 
   /* Tab 切换 */
@@ -3862,6 +3864,7 @@ export const OpenClawSettingsPage = () => {
                   : []),
                 { id: "automations", label: t("自动任务"), icon: <CalendarClock className="h-4 w-4" /> },
                 { id: "memory", label: t("记忆"), icon: <Database className="h-4 w-4" /> },
+                { id: "achievement", label: t("成就"), icon: <Trophy className="h-4 w-4" />, badge: "NEW" },
                 ...(SHOW_AGENTCHAT_ENTRY
                   ? [{ id: "chat" as const, label: t("对话"), icon: <MessageSquare className="h-4 w-4" /> }]
                   : []),
@@ -4151,6 +4154,9 @@ export const OpenClawSettingsPage = () => {
                           )}
                           {activeSection === "buddy" && !isGlobal && (
                             <BuddyPanel botId={activeBot.id} />
+                          )}
+                          {activeSection === "achievement" && (
+                            <AchievementsPanel botId={activeBot.id} botName={activeBot.name} />
                           )}
                           {activeSection === "automations" && (
                             <AutomationsPanel botId={activeBot.id} />

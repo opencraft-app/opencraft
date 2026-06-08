@@ -48,6 +48,7 @@ type acpSession struct {
 	Scope                 Scope
 	Model                 string
 	CWD                   string
+	WorkspaceKey          string
 	CreatedAt             time.Time
 	UpdatedAt             time.Time
 	Closed                bool
@@ -190,6 +191,7 @@ type acpCloudAgentSessionMeta struct {
 	RuntimeRecovery  string                           `json:"runtime_recovery,omitempty"`
 	AgentVersion     string                           `json:"agent_version,omitempty"`
 	WorkspaceVersion string                           `json:"workspace_version,omitempty"`
+	WorkspaceKey     string                           `json:"workspace_key,omitempty"`
 	SidecarURL       string                           `json:"sidecar_url,omitempty"`
 	SidecarSHA256    string                           `json:"sidecar_sha256,omitempty"`
 	SidecarSigURL    string                           `json:"sidecar_sig_url,omitempty"`

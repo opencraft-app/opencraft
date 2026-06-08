@@ -381,7 +381,7 @@ func (c *fakeACPClient) Initialize(ctx context.Context) error {
 }
 func (c *fakeACPClient) SetWorkspaceLifecycleHandler(acp.WorkspaceLifecycleHandler) {}
 func (c *fakeACPClient) Close() error                                               { return nil }
-func (c *fakeACPClient) NewSession(context.Context, string) (string, error) {
+func (c *fakeACPClient) NewSession(context.Context, string, string) (string, error) {
 	return "session-test", nil
 }
 func (c *fakeACPClient) LoadSession(context.Context, string, string) error { return nil }

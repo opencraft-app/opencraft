@@ -167,6 +167,7 @@ func (g *ACPGateway) createSession(ctx context.Context, scope Scope, req acpSess
 		Scope:             scope,
 		Model:             defaultACPModel(),
 		CWD:               defaultSessionCWD(req.CWD),
+		WorkspaceKey:      normalizeACPWorkspaceKey(req.Meta.CloudAgent.WorkspaceKey),
 		CreatedAt:         now,
 		UpdatedAt:         now,
 		State:             acpRuntimeStateStarting,
@@ -185,6 +186,7 @@ func (g *ACPGateway) createSession(ctx context.Context, scope Scope, req acpSess
 		RuntimeRecovery:  strings.TrimSpace(req.Meta.CloudAgent.RuntimeRecovery),
 		AgentVersion:     strings.TrimSpace(req.Meta.CloudAgent.AgentVersion),
 		WorkspaceVersion: strings.TrimSpace(req.Meta.CloudAgent.WorkspaceVersion),
+		WorkspaceKey:     session.WorkspaceKey,
 		SidecarArtifact:  sidecarArtifact,
 	}
 	g.mu.Unlock()
@@ -566,6 +568,27 @@ func defaultSessionCWD(value string) string {
 }
 func sidecarRequestCWD() string {
 	return acpSidecarRequestCWD
+}
+func normalizeACPWorkspaceKey(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	var b strings.Builder
+	for _, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '-' || r == '_' || r == '.':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('-')
+		}
+		if b.Len() >= 96 {
+			break
+		}
+	}
+	return strings.Trim(b.String(), "-_.")
 }
 func sessionTitle(session *acpSession) string {
 	for _, item := range session.History {

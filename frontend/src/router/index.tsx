@@ -49,10 +49,14 @@ export const router = createBrowserRouter([
         index: true,
         element: <LandingPage />,
       },
-      {
-        path: "changelog",
-        element: lazyRoute(ChangelogPage),
-      },
+      ...(!isGlobal
+        ? [
+            {
+              path: "changelog",
+              element: lazyRoute(ChangelogPage),
+            },
+          ]
+        : []),
       {
         path: "about",
         element: lazyRoute(AboutPage),

@@ -29,6 +29,7 @@ type Conversation struct {
 	ThreadID               string
 	AgentID                string
 	ACPSessionID           string
+	WorkspaceKey           string
 	SessionKey             string
 	RuntimeClosedAt        string
 	UpdatedAt              string

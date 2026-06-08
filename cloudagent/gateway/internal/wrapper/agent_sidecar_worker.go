@@ -467,7 +467,11 @@ func runtimeResourceOwnerID(req ACPSessionRuntimeStartRequest) string {
 }
 
 func defaultWorkspaceID(req ACPSessionRuntimeStartRequest) string {
-	return "workspace_" + req.SessionID
+	return "workspace_" + runtimeWorkspaceIdentity(req)
+}
+
+func runtimeWorkspaceIdentity(req ACPSessionRuntimeStartRequest) string {
+	return firstNonEmpty(strings.TrimSpace(req.WorkspaceKey), req.SessionID)
 }
 
 func (w *AgentSidecarWorker) runtimeResourceExpiresAt() time.Time {
@@ -1224,7 +1228,7 @@ func (w *AgentSidecarWorker) cleanupPreviousWispRuntimeBeforeMount(ctx context.C
 }
 
 func workspaceIDForRuntime(runtime ACPSessionRuntime, req ACPSessionRuntimeStartRequest) string {
-	return firstNonEmpty(runtime.WorkspaceID, runtime.WispWorkspaceID, runtime.WispSMHSpaceID, "workspace_"+req.SessionID)
+	return firstNonEmpty(runtime.WorkspaceID, runtime.WispWorkspaceID, runtime.WispSMHSpaceID, defaultWorkspaceID(req))
 }
 
 func workspaceRuntimeIDForRuntime(runtime ACPSessionRuntime, req ACPSessionRuntimeStartRequest) string {
@@ -1246,7 +1250,7 @@ func (w *AgentSidecarWorker) prepareInnerWorkspaceWispRuntime(ctx context.Contex
 	}
 	workspaceWisp := runtime
 	workspaceWisp.RuntimeID = workspaceRuntimeID
-	workspaceWisp.WispName = workspaceWispNameForRuntime(req.SessionID, runtime)
+	workspaceWisp.WispName = workspaceWispNameForRuntime(runtimeWorkspaceIdentity(req), runtime)
 	workspaceWisp.WispWorkspaceID = workspaceID
 	workspaceWisp.WispSMHSpaceID = firstNonEmpty(runtime.WispSMHSpaceID, workspaceID)
 	workspaceWisp.WispOwnsSMHSpace = false
@@ -2361,7 +2365,7 @@ func (w *AgentSidecarWorker) bootSessionDaemon(ctx context.Context, sb RuntimeHo
 	workspace := acpRuntimeCWD
 	memoryDir := path.Join(sessionRoot, "memory")
 	if runtime.isWispOuterRuntime() {
-		memoryDir = path.Join(workspace, ".cloudagent", "sessions", req.SessionID, "hermes")
+		memoryDir = path.Join(workspace, ".cloudagent", "sessions", runtimeWorkspaceIdentity(req), "hermes")
 	}
 	logPath := path.Join(sessionRoot, "daemon.log")
 	pidPath := path.Join(sessionRoot, "daemon.pid")
