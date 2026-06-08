@@ -31,6 +31,7 @@ import {
   Download,
   Plus,
   RefreshCw,
+  RotateCw,
   Trash2,
   Trophy,
   UserRound,
@@ -126,6 +127,21 @@ const RepairToolsIcon = (props: React.SVGProps<SVGSVGElement>) => (
     />
   </svg>
 );
+
+const SETTINGS_ICON_TOOLTIP_CLASS =
+  "pointer-events-auto select-text absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium leading-relaxed text-[var(--text-primary)] opacity-0 shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100";
+
+const SETTINGS_ICON_TOOLTIP_ARROW_CLASS =
+  "absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-[var(--border-subtle)] bg-white";
+
+function SettingsIconTooltip({ label }: { label: string }) {
+  return (
+    <span role="tooltip" className={SETTINGS_ICON_TOOLTIP_CLASS}>
+      {label}
+      <span className={SETTINGS_ICON_TOOLTIP_ARROW_CLASS} />
+    </span>
+  );
+}
 
 type Channel = "wechat" | "qq" | null;
 type ConnectedChannel = Exclude<Channel, null>;
@@ -3161,6 +3177,7 @@ export const OpenClawSettingsPage = () => {
     setResettingAcli(true);
     setAcliResetError(null);
     setAcliResetConsole([`$ ${ACLI_RESET_COMMAND}`]);
+    setShowAcliResetConfirm(false);
     try {
       const result = await execDebugCommandStream(targetBotId, ACLI_RESET_COMMAND, ({ stream, chunk }) => {
         setAcliResetConsole((prev) => [...prev, `[${stream}] ${chunk}`].slice(-80));
@@ -3168,7 +3185,6 @@ export const OpenClawSettingsPage = () => {
       if (!isExecCommandSucceeded(result)) {
         throw new Error(truncateExecOutput(result.output, result.status));
       }
-      setShowAcliResetConfirm(false);
       setAcliResetConsole([]);
       toast.success(t("Agent 重置成功"));
     } catch (err) {
@@ -3689,23 +3705,6 @@ export const OpenClawSettingsPage = () => {
               </span>
               {t("但工作空间、记忆、模型和通道配置、已安装技能将会保留，确认继续？")}
             </p>
-            {acliResetError && (
-              <pre
-                className="whitespace-pre-wrap break-words rounded-md border px-3 py-2 text-xs"
-                style={{
-                  color: "var(--tea-color-text-error-default, #DC2626)",
-                  backgroundColor: "var(--tea-color-text-error-default-alpha4, rgba(220,38,38,0.04))",
-                  borderColor: "var(--tea-color-text-error-default-alpha18, rgba(220,38,38,0.18))",
-                  fontFamily:
-                    "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
-                  maxHeight: "180px",
-                  overflowY: "auto",
-                  marginBottom: "12px",
-                }}
-              >
-                {acliResetError}
-              </pre>
-            )}
             <div className="flex flex-col gap-2">
               <button
                 onClick={() => void handleResetAcli()}
@@ -3844,7 +3843,7 @@ export const OpenClawSettingsPage = () => {
                 memoryV2: false,
                 qqbotplugin: false,
               };
-              const sdkProductConfig: IProductConfig = {
+              const sdkProductConfig: IProductConfig & { acliProduct: "lightvela" } = {
                 ...createLighthouseConfig({
                   agentType: "hermes",
                   supportsTencentCloudApi: false,
@@ -3861,19 +3860,20 @@ export const OpenClawSettingsPage = () => {
                 ...(!isGlobal
                   ? [{ id: "buddy" as const, label: t("人设"), icon: <UserRound className="h-4 w-4" /> }]
                   : []),
-                { id: "automations", label: t("自动任务"), icon: <CalendarClock className="h-4 w-4" />, badge: "NEW" },
-                { id: "memory", label: t("记忆"), icon: <Database className="h-4 w-4" />, badge: "NEW" },
+                { id: "automations", label: t("自动任务"), icon: <CalendarClock className="h-4 w-4" /> },
+                { id: "memory", label: t("记忆"), icon: <Database className="h-4 w-4" /> },
                 { id: "achievement", label: t("成就"), icon: <Trophy className="h-4 w-4" />, badge: "NEW" },
                 ...(SHOW_AGENTCHAT_ENTRY
-                  ? [{ id: "chat" as const, label: t("对话"), icon: <MessageSquare className="h-4 w-4" />, badge: "NEW" }]
+                  ? [{ id: "chat" as const, label: t("对话"), icon: <MessageSquare className="h-4 w-4" /> }]
                   : []),
               ];
-              const isRestartDisabled = isActiveBotRestarting || activeBot.status !== "running";
+              const isRestartDisabled = resettingAcli || isActiveBotRestarting || activeBot.status !== "running";
+              const restartTooltip = resettingAcli ? t("请稍后") : t("重启");
               const hasViewedChannel = viewedChannelBotIds.has(activeBot.id);
               const resetBlockReason = getResetBlockReason(activeBot, resetting, hasViewedChannel);
-              const resetDisabled = resetting || resetBlockReason !== null;
+              const resetDisabled = resettingAcli || resetting || resetBlockReason !== null;
               const resetTooltip =
-                resetBlockReason === RESET_BLOCK_REASON.NOT_RUNNING || resetBlockReason === RESET_BLOCK_REASON.CHANNEL_NOT_VIEWED
+                resettingAcli || resetBlockReason === RESET_BLOCK_REASON.NOT_RUNNING || resetBlockReason === RESET_BLOCK_REASON.CHANNEL_NOT_VIEWED
                   ? t("请稍后")
                   : t("重置配置");
               const acliResetBlockReason = getAcliResetBlockReason(activeBot, resettingAcli);
@@ -3882,11 +3882,13 @@ export const OpenClawSettingsPage = () => {
                 acliResetBlockReason === RESET_BLOCK_REASON.NOT_RUNNING
                   ? t("请稍后")
                   : t("重置Agent");
+              const deleteDisabled = resettingAcli;
+              const deleteTooltip = deleteDisabled ? t("请稍后") : t("删除");
 
               return (
                 <div className="grid items-start gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
                   <aside className="lg:sticky lg:top-[84px]">
-                    <div className="rounded-lg border border-black/[0.06] bg-white p-3 shadow-[0_8px_28px_rgba(15,23,42,0.04)]">
+                    <div className="rounded-md border border-black/[0.06] bg-white p-3 shadow-[0_8px_28px_rgba(15,23,42,0.04)]">
                       <div
                         role={visibleBots.length > 1 ? "button" : undefined}
                         tabIndex={visibleBots.length > 1 ? 0 : undefined}
@@ -3931,10 +3933,11 @@ export const OpenClawSettingsPage = () => {
                               type="button"
                               onClick={(event) => {
                                 event.stopPropagation();
-                                if (!isRestartDisabled) setShowRestartConfirm(true);
+                                if (isRestartDisabled) return;
+                                setShowRestartConfirm(true);
                               }}
                               aria-disabled={isRestartDisabled}
-                              aria-label={t("重启")}
+                              aria-label={restartTooltip}
                               className={cn(
                                 "inline-flex h-8 w-6 flex-shrink-0 items-center justify-center rounded-md transition-colors",
                                 isRestartDisabled
@@ -3942,15 +3945,9 @@ export const OpenClawSettingsPage = () => {
                                   : "text-black/35 hover:bg-black/[0.06] hover:text-black/80",
                               )}
                             >
-                              {isActiveBotRestarting ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                              {isActiveBotRestarting ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCw className="h-4 w-4" />}
                             </button>
-                            <span
-                              role="tooltip"
-                              className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-md bg-black/80 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-sm transition-opacity duration-75 group-focus-within:opacity-100 group-hover:opacity-100"
-                            >
-                              {t("重启")}
-                              <span className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-x-[4px] border-t-[4px] border-x-transparent border-t-black/80" />
-                            </span>
+                            <SettingsIconTooltip label={restartTooltip} />
                           </span>
                           <span className="group relative inline-flex">
                             <button
@@ -3972,13 +3969,7 @@ export const OpenClawSettingsPage = () => {
                             >
                               {resetting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wrench className="h-4 w-4" />}
                             </button>
-                            <span
-                              role="tooltip"
-                              className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-md bg-black/80 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-sm transition-opacity duration-75 group-focus-within:opacity-100 group-hover:opacity-100"
-                            >
-                              {resetTooltip}
-                              <span className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-x-[4px] border-t-[4px] border-x-transparent border-t-black/80" />
-                            </span>
+                            <SettingsIconTooltip label={resetTooltip} />
                           </span>
                           <span className="group relative inline-flex">
                             <button
@@ -4001,34 +3992,29 @@ export const OpenClawSettingsPage = () => {
                             >
                               {resettingAcli ? <Loader2 className="h-4 w-4 animate-spin" /> : <RepairToolsIcon className="h-4 w-4" />}
                             </button>
-                            <span
-                              role="tooltip"
-                              className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-md bg-black/80 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-sm transition-opacity duration-75 group-focus-within:opacity-100 group-hover:opacity-100"
-                            >
-                              {acliResetTooltip}
-                              <span className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-x-[4px] border-t-[4px] border-x-transparent border-t-black/80" />
-                            </span>
+                            <SettingsIconTooltip label={acliResetTooltip} />
                           </span>
                           <span className="group relative inline-flex">
                             <button
                               type="button"
                               onClick={(event) => {
                                 event.stopPropagation();
+                                if (deleteDisabled) return;
                                 setDeleteInput("");
                                 setShowDeleteConfirm(true);
                               }}
-                              aria-label={t("删除")}
-                              className="inline-flex h-8 w-6 flex-shrink-0 items-center justify-center rounded-md text-black/35 transition-colors hover:bg-red-500/10 hover:text-red-500"
+                              aria-disabled={deleteDisabled}
+                              aria-label={deleteTooltip}
+                              className={cn(
+                                "inline-flex h-8 w-6 flex-shrink-0 items-center justify-center rounded-md transition-colors",
+                                deleteDisabled
+                                  ? "cursor-not-allowed text-black/20"
+                                  : "text-black/35 hover:bg-red-500/10 hover:text-red-500",
+                              )}
                             >
                               <Trash2 className="h-4 w-4" />
                             </button>
-                            <span
-                              role="tooltip"
-                              className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-md bg-black/80 px-2 py-1 text-[11px] font-medium text-white opacity-0 shadow-sm transition-opacity duration-75 group-focus-within:opacity-100 group-hover:opacity-100"
-                            >
-                              {t("删除")}
-                              <span className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-x-[4px] border-t-[4px] border-x-transparent border-t-black/80" />
-                            </span>
+                            <SettingsIconTooltip label={deleteTooltip} />
                           </span>
                         </div>
                         {visibleBots.length > 1 && (
@@ -4097,7 +4083,7 @@ export const OpenClawSettingsPage = () => {
 
                     <nav
                       aria-label={t("实例配置导航")}
-                      className="mt-4 rounded-lg border border-black/[0.06] bg-white p-2 shadow-[0_8px_28px_rgba(15,23,42,0.04)]"
+                      className="mt-4 rounded-md border border-black/[0.06] bg-white p-2 shadow-[0_8px_28px_rgba(15,23,42,0.04)]"
                     >
                       {settingsSections.map((section) => {
                         const isActive = section.id === activeSection;

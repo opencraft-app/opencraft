@@ -66,6 +66,8 @@ func run() error {
 			return errors.New("create requires a wisp name")
 		}
 		return client.callAndPrint(ctx, http.MethodPost, "/v1/wisps", map[string]any{"name": args[1]})
+	case "bind-backend":
+		return bindBackend(ctx, client, args[1:])
 	case "bootstrap":
 		if len(args) > 2 {
 			return errors.New("bootstrap accepts at most one optional wisp name")
@@ -123,6 +125,35 @@ func run() error {
 	default:
 		return usage()
 	}
+}
+
+func bindBackend(ctx context.Context, client *remoteClient, args []string) error {
+	fs := flag.NewFlagSet("bind-backend", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	remoteBackend := fs.String("remote-backend", getenv("REMOTE_BACKEND", "smh"), "remote backend")
+	smhLibraryID := fs.String("smh-library-id", getenv("SMH_LIBRARY_ID", ""), "SMH library id")
+	smhAccessDomain := fs.String("smh-access-domain", getenv("SMH_ACCESS_DOMAIN", ""), "SMH access domain")
+	smhSpaceID := fs.String("smh-space-id", getenv("SMH_SPACE_ID", ""), "SMH space id")
+	smhAccessToken := fs.String("smh-access-token", getenv("SMH_ACCESS_TOKEN", ""), "SMH access token")
+	jfsPrefix := fs.String("jfs-prefix", getenv("JFS_PREFIX", ""), "JuiceFS prefix")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	rest := fs.Args()
+	if len(rest) != 1 {
+		return fmt.Errorf("usage: %s bind-backend [flags] <name>", progName())
+	}
+	name := rest[0]
+	body := map[string]any{
+		"name":              name,
+		"remote_backend":    *remoteBackend,
+		"smh_library_id":    *smhLibraryID,
+		"smh_access_domain": *smhAccessDomain,
+		"smh_space_id":      *smhSpaceID,
+		"smh_access_token":  *smhAccessToken,
+		"jfs_prefix":        *jfsPrefix,
+	}
+	return client.callAndPrint(ctx, http.MethodPost, "/v1/wisps/"+url.PathEscape(name)+"/backend", body)
 }
 
 func stopWisp(ctx context.Context, client *remoteClient, args []string) error {
@@ -537,6 +568,7 @@ func usage() error {
 	fmt.Fprintf(os.Stderr, `usage:
   %s [-server http://127.0.0.1:8520] ls
   %s [-server http://127.0.0.1:8520] status <name>
+  %s [-server http://127.0.0.1:8520] bind-backend [flags] <name>
   %s [-server http://127.0.0.1:8520] create <name>
   %s [-server http://127.0.0.1:8520] bootstrap [name]
   %s [-server http://127.0.0.1:8520] start <name>
@@ -547,6 +579,6 @@ func usage() error {
   %s [-server http://127.0.0.1:8520] checkpoint <list|create|get|restore> <name> [checkpoint]
   %s [-server http://127.0.0.1:8520] fs <ls|read|write|mkdir|mv|rm|stat> <name> <path> [args]
   %s [-server http://127.0.0.1:8520] fetch <name> <url> <path> [--sha256 <sha>] [--mode <mode>] [--max-bytes <bytes>]
-`, name, name, name, name, name, name, name, name, name, name, name, name)
+`, name, name, name, name, name, name, name, name, name, name, name, name, name)
 	return errors.New("invalid command")
 }

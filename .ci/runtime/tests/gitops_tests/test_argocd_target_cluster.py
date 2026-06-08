@@ -9,6 +9,7 @@ if str(RUNTIME_DIR) not in sys.path:
     sys.path.insert(0, str(RUNTIME_DIR))
 
 from gitops.argocd_target_cluster import (
+    apply_cluster_scope_options,
     cluster_payload_from_kubeconfig,
     load_yaml_mapping,
     validate_project_manifest,
@@ -55,6 +56,24 @@ class ArgoTargetClusterTests(unittest.TestCase):
         self.assertEqual(tls["caData"], "ca-data")
         self.assertEqual(tls["certData"], "cert-data")
         self.assertEqual(tls["keyData"], "key-data")
+
+    def test_applies_namespace_scoped_cluster_options(self) -> None:
+        payload = {
+            "name": "devcloud-dep",
+            "server": "https://example.invalid",
+            "config": {"tlsClientConfig": {"insecure": False}, "bearerToken": "token"},
+        }
+
+        result = apply_cluster_scope_options(
+            payload,
+            {
+                "namespaces": [" dep "],
+                "clusterResources": False,
+            },
+        )
+
+        self.assertEqual(result["namespaces"], ["dep"])
+        self.assertFalse(result["clusterResources"])
 
     def test_rejects_project_rbac_resources_not_supported_by_argocd(self) -> None:
         project = load_yaml_mapping(Path("argocd/projects/beijing-sandbox-2.yaml"))
