@@ -810,7 +810,7 @@ esac
     rmdir "$install" 2>/dev/null || true
     mkdir -p "$install"
     step_start wisp_package_mount format=erofs
-    sudo -n mount -t erofs -o loop,ro "$pkg" "$install"
+    sudo -n mount -t erofs -o loop,ro,exec "$pkg" "$install"
     step_done wisp_package_mount format=erofs
   elif [[ "$pkg_format" == "erofs-extract" ]]; then
     rmdir "$install" 2>/dev/null || true
@@ -850,8 +850,14 @@ esac
 	  crun_binary_path="$crun_binary"
 	else
 	  crun_binary="$install/assets/bin/crun/crun-$pkg_arch"
-	  if [[ ! -x "$crun_binary" ]]; then
+	  if [[ ! -e "$crun_binary" ]]; then
 	    echo "missing packaged crun for arch=$pkg_arch path=$crun_binary" >&2
+	    exit 2
+	  fi
+	  if [[ ! -x "$crun_binary" ]]; then
+	    ls -ld "$install" "$install/assets" "$install/assets/bin" "$install/assets/bin/crun" "$crun_binary" >&2 || true
+	    mount | grep -F " $install " >&2 || true
+	    echo "packaged crun is not executable for arch=$pkg_arch path=$crun_binary; check permissions or noexec mount options" >&2
 	    exit 2
 	  fi
 	  crun_binary_path="/var/lib/wisp/shared/tools/crun"
