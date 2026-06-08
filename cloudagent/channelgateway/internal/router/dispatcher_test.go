@@ -869,16 +869,9 @@ func TestDispatcherMarksGhostSessionClosedDuringIdleClose(t *testing.T) {
 	if closed != 1 || fake.closeSnapshot() != 1 {
 		t.Fatalf("expected ghost session marked closed, closed=%d closeCalls=%d", closed, fake.closeSnapshot())
 	}
-	conv, err := st.GetOrCreateConversation(ctx, store.Conversation{
-		ChannelAccountID:       "wecom-a",
-		ChannelType:            "wecom",
-		ExternalConversationID: "chat-ghost",
-		ChatType:               string(channel.ChatGroup),
-		AgentID:                "main",
-		SessionKey:             sessionKey,
-	})
-	if err != nil {
-		t.Fatalf("reload conversation: %v", err)
+	conv, ok, err := st.LoadConversationBySessionKey(ctx, "wecom-a", sessionKey)
+	if err != nil || !ok {
+		t.Fatalf("reload conversation: ok=%v err=%v", ok, err)
 	}
 	if conv.RuntimeClosedAt == "" {
 		t.Fatalf("ghost session should be marked runtime closed: %#v", conv)
