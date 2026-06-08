@@ -72,6 +72,16 @@ replacements:
   - source:
       kind: ConfigMap
       name: cloudagent-gateway-platform-values
+      fieldPath: data.CLOUDAGENT_GATEWAY_WISP_PACKAGE_SHA256
+    targets:
+      - select:
+          kind: ConfigMap
+          name: cloudagent-gateway-config
+        fieldPaths:
+          - data.GATEWAY_WISP_PACKAGE_SHA256
+  - source:
+      kind: ConfigMap
+      name: cloudagent-gateway-platform-values
       fieldPath: data.CLOUDAGENT_GATEWAY_AGENT_SIDECAR_URL
     targets:
       - select:

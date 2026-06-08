@@ -85,6 +85,7 @@ nextgen-dashboard/k8s/overlays/*/generated/
 gateway-dashboard/k8s/overlays/*/generated/
 ctl/k8s/overlays/*/generated/
 frontend/k8s/overlays/*/generated/
+workers/k8s/overlays/*/generated/
 deploy/envs/*/platform.env
 deploy/envs/*/*.kustomize.secret.env
 infra_pulumi/.reconcile/

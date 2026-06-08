@@ -68,6 +68,18 @@ validate_wisp_package_artifact() {
         "${WISP_EROFS_IMAGE:-alpine:3.23}" sh -ceu '
           printf "%s\n%s\n" "'"${WISP_EROFS_APK_REPOSITORY:-https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.23}"'/main" "'"${WISP_EROFS_APK_REPOSITORY:-https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.23}"'/community" > /etc/apk/repositories
           apk add --no-cache erofs-utils >/dev/null
+          for path in / /assets /assets/bin /assets/bin/crun /assets/bin/tini /assets/rootfs /assets/rootfs/rootfs; do
+            dump.erofs --path="$path" "/artifact/'"$artifact_base"'" >"/tmp/erofs-path.txt"
+            mode="$(sed -n "s/.*Access: \([0-7][0-7][0-7][0-7]\)\/.*/\1/p" /tmp/erofs-path.txt | head -n 1)"
+            case "$mode" in
+              *[57]) ;;
+              *)
+              cat /tmp/erofs-path.txt >&2
+              echo "Wisp EROFS path is not traversable by sandbox user: $path" >&2
+              exit 1
+              ;;
+            esac
+          done
           fsck.erofs --extract=/extract --force --overwrite "/artifact/'"$artifact_base"'" >/dev/null
         '
       ;;
@@ -84,6 +96,8 @@ validate_wisp_package_artifact() {
     "bin/wispclient" \
     "assets/bin/crun/crun-$GOARCH" \
     "assets/bin/tini/tini" \
+    "assets/bin/e2fsprogs/bin/mke2fs" \
+    "assets/bin/e2fsprogs/bin/e2fsck" \
     "assets/rootfs/rootfs/.wisp-base-ready"; do
     if [ ! -e "$tmp_dir/$path" ]; then
       printf 'Wisp package missing required path: %s artifact=%s\n' "$path" "$artifact" >&2
@@ -94,7 +108,9 @@ validate_wisp_package_artifact() {
     "bin/wisp" \
     "bin/wispclient" \
     "assets/bin/crun/crun-$GOARCH" \
-    "assets/bin/tini/tini"; do
+    "assets/bin/tini/tini" \
+    "assets/bin/e2fsprogs/bin/mke2fs" \
+    "assets/bin/e2fsprogs/bin/e2fsck"; do
     if [ ! -x "$tmp_dir/$path" ]; then
       ls -l "$tmp_dir/$path" >&2 || true
       printf 'Wisp package path is not executable: %s artifact=%s\n' "$path" "$artifact" >&2
