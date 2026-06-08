@@ -2,6 +2,7 @@ package redis
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -414,6 +415,25 @@ func TestWorkspaceLease_AcquireRenewRelease(t *testing.T) {
 	}
 }
 
+func TestWorkspaceLease_KeysShareRedisClusterHashTag(t *testing.T) {
+	store, _ := newTestStore(t)
+
+	keys := store.keyspace.workspaceAcquireLeaseKeys("workspace_abc")
+	leaseKey := keys[0]
+	fenceKey := keys[1]
+	if redisClusterHashTag(leaseKey) == "" {
+		t.Fatalf("lease key missing hash tag: %s", leaseKey)
+	}
+	if redisClusterHashTag(leaseKey) != redisClusterHashTag(fenceKey) {
+		t.Fatalf("workspace lease keys must share a Redis Cluster hash tag: lease=%s fence=%s", leaseKey, fenceKey)
+	}
+
+	escaped := store.keyspace.workspaceLease("workspace_{bad}_id")
+	if strings.Contains(redisClusterHashTag(escaped), "{") || strings.Contains(redisClusterHashTag(escaped), "}") {
+		t.Fatalf("workspace id braces must be escaped inside Redis hash tag: %s", escaped)
+	}
+}
+
 func TestWorkspaceLease_ConcurrentAcquire_SecondFails(t *testing.T) {
 	store, _ := newTestStore(t)
 	ctx := context.Background()
@@ -458,7 +478,7 @@ func TestWorkspaceLease_ExpiredLease_CanBeReacquired(t *testing.T) {
 	}
 
 	// Simulate expiry by backdating expires_at
-	key := "test:ws-lease:ws_1"
+	key := store.keyspace.workspaceLease("ws_1")
 	pastTime := time.Now().UTC().Add(-10 * time.Second).Format(time.RFC3339Nano)
 	mr.HSet(key, "expires_at", pastTime)
 
@@ -476,6 +496,18 @@ func TestWorkspaceLease_ExpiredLease_CanBeReacquired(t *testing.T) {
 	if lease2.FencingToken != 2 {
 		t.Errorf("fencing_token = %d, want 2", lease2.FencingToken)
 	}
+}
+
+func redisClusterHashTag(key string) string {
+	start := strings.IndexByte(key, '{')
+	if start < 0 {
+		return ""
+	}
+	end := strings.IndexByte(key[start+1:], '}')
+	if end < 0 {
+		return ""
+	}
+	return key[start+1 : start+1+end]
 }
 
 func TestWorkspaceLease_Renew_FailsWrongIdentity(t *testing.T) {

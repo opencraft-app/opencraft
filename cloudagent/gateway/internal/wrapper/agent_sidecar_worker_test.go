@@ -106,11 +106,11 @@ func TestParseAgentRunEnvelopeReportsEmptyResultPresence(t *testing.T) {
 
 func TestParseAgentRunErrorEnvelope(t *testing.T) {
 	envelope, ok := parseAgentRunErrorEnvelope(`noise
-WRAPPER_ERROR_JSON={"code":"max_iterations_exceeded","message":"Max iterations exceeded: 12"}`)
+WRAPPER_ERROR_JSON={"code":"max_iterations_exceeded","message":"Max iterations exceeded: 256"}`)
 	if !ok {
 		t.Fatal("expected wrapper error envelope")
 	}
-	if envelope.Code != "max_iterations_exceeded" || envelope.Message != "Max iterations exceeded: 12" {
+	if envelope.Code != "max_iterations_exceeded" || envelope.Message != "Max iterations exceeded: 256" {
 		t.Fatalf("envelope=%+v", envelope)
 	}
 }
@@ -126,7 +126,7 @@ func TestParseAgentRunErrorEnvelopeDefaultsCode(t *testing.T) {
 }
 
 func TestWorkerFailureFromAgentRunErrorMapsMaxIterationsToStop(t *testing.T) {
-	err := workerFailureFromAgentRunError(agentRunErrorEnvelope{Code: "max_iterations_exceeded", Message: "Max iterations exceeded: 12"})
+	err := workerFailureFromAgentRunError(agentRunErrorEnvelope{Code: "max_iterations_exceeded", Message: "Max iterations exceeded: 256"})
 	if got := workerStopReason(err); got != "max_turn_requests" {
 		t.Fatalf("stop reason=%q err=%v", got, err)
 	}
@@ -482,6 +482,59 @@ func TestWispPreMountCleanupMissingOrStoppedSandboxIsNonBlocking(t *testing.T) {
 	}
 }
 
+func TestStaleRuntimeCleanupAuthFailureWithCheckpointSignalBlocksRecreate(t *testing.T) {
+	err := errors.New(`stop wisp outer runtime agent-session_1: checkpoint cut failed: input/output error; ags http 401 op=run_command sandbox_id=outer_1 domain=ap-shanghai.tencentags.com envd_port=49983: map[code:AUTHENTICATION_FAILED message:Authentication failed]`)
+	if isNonBlockingStaleRuntimeCleanupError(err) {
+		t.Fatalf("checkpoint failure must not be hidden by stale auth cleanup matching: %v", err)
+	}
+	if isStaleRuntimeDataPlaneAuthError(err) {
+		t.Fatalf("checkpoint failure must not be treated as pure stale data-plane auth: %v", err)
+	}
+}
+
+func TestCloseSessionRuntimeIgnoresStaleDataPlaneAuthAfterOuterDelete(t *testing.T) {
+	host := &recordingRuntimeHost{
+		runCommand: func(RuntimeHostTarget, string, map[string]string, func(string) error, func(string) error) (CommandResult, error) {
+			return CommandResult{}, errors.New(`ags http 401 op=run_command sandbox_id=outer_1 domain=ap-shanghai.tencentags.com envd_port=49983: map[code:AUTHENTICATION_FAILED message:Authentication failed]`)
+		},
+	}
+	worker, err := NewAgentSidecarWorker(AgentSidecarWorkerConfig{
+		RuntimeHost:          host,
+		OuterTemplateID:      "tmpl_outer",
+		InnerTemplateID:      "tmpl_inner",
+		SidecarURL:           "https://example.invalid/agent-sidecar",
+		TokenHubAPIKey:       "tokenhub",
+		OuterRuntime:         outerRuntimeWisp,
+		WorkspaceService:     nil,
+		WispSMHLibraryID:     "library",
+		WispSMHAccessDomain:  "https://smh.example.invalid",
+		WispSMHLibrarySecret: "secret",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = worker.CloseSessionRuntime(context.Background(), ACPSessionRuntime{
+		RuntimeID:            "rt_1",
+		SandboxBackend:       "ags",
+		OuterRuntime:         outerRuntimeWisp,
+		OuterSandboxID:       "outer_1",
+		OuterSandboxDomain:   "ap-shanghai.tencentags.com",
+		OuterEnvdAccessToken: "expired_envd_token",
+		RemoteBinary:         "/tmp/agent-sidecar",
+		DaemonAddr:           "127.0.0.1:9876",
+		WispName:             "agent-session_1",
+	})
+	if err != nil {
+		t.Fatalf("CloseSessionRuntime should accept stale data-plane auth after control-plane delete: %v", err)
+	}
+	if got := len(host.commands); got != 2 {
+		t.Fatalf("run command calls=%d, want shutdown and wisp stop", got)
+	}
+	if got := strings.Join(host.deleted, ","); got != "outer_1" {
+		t.Fatalf("deleted sandboxes=%q, want outer_1", got)
+	}
+}
+
 func TestStaleRuntimeCleanupCheckpointFailureStillBlocksRecreate(t *testing.T) {
 	err := errors.New(`stop wisp outer runtime agent-session_1: wispclient: http 500: {"error":"juicefs-smount meta-barrier /mnt/cloudagent-wisp: checkpoint cut failed: input/output error"}`)
 	if isNonBlockingStaleRuntimeCleanupError(err) {
@@ -510,7 +563,7 @@ func TestWispOuterPrepareScriptUsesFlattenedEROFSRootfs(t *testing.T) {
 	script := wispOuterPrepareScript()
 	for _, want := range []string{
 		`*.erofs) pkg_format="${pkg_format:-erofs}"`,
-		`sudo -n mount -t erofs -o loop,ro "$pkg" "$install"`,
+		`sudo -n mount -t erofs -o loop,ro,exec "$pkg" "$install"`,
 		`LOWER_SYSTEM_BASE: projectRoot + "/assets/rootfs/rootfs"`,
 		`BASE_ROOTFS_DIR: projectRoot + "/assets/rootfs/rootfs"`,
 		`BASE_ROOTFS_IMG: ""`,
@@ -520,6 +573,11 @@ func TestWispOuterPrepareScriptUsesFlattenedEROFSRootfs(t *testing.T) {
 		`export BLANK_ROOT_UPPER_SPARSE="$blank_root_upper_sparse"`,
 		`export PATH="$install/assets/bin/e2fsprogs/bin:$PATH"`,
 		`WISP_USE_HOST_CRUN=1`,
+		`packaged crun missing diagnostics begin`,
+		`expected_package_sha256=`,
+		`find "$install" -maxdepth 4`,
+		`packaged crun is not executable`,
+		`check permissions or noexec mount options`,
 	} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("flattened EROFS prepare script missing %q: %s", want, script)

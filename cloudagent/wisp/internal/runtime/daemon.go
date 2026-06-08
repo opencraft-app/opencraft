@@ -60,6 +60,16 @@ type runtimeRequest struct {
 	Name string `json:"name"`
 }
 
+type backendBindRequest struct {
+	Name            string `json:"name"`
+	RemoteBackend   string `json:"remote_backend"`
+	SMHLibraryID    string `json:"smh_library_id"`
+	SMHAccessDomain string `json:"smh_access_domain"`
+	SMHSpaceID      string `json:"smh_space_id"`
+	SMHAccessToken  string `json:"smh_access_token"`
+	JFSPrefix       string `json:"jfs_prefix"`
+}
+
 type ContainerRecord struct {
 	Name          string `json:"name"`
 	OverlayConfig string `json:"overlay_config"`
@@ -85,22 +95,25 @@ func (e *apiError) Error() string {
 type Daemon struct {
 	rt *Runtime
 
-	mu          sync.Mutex
-	wispMu      sync.Mutex
-	wispLocks   map[string]*sync.Mutex
-	adminLn     net.Listener
-	adminTCPLn  net.Listener
-	envLn       net.Listener
-	adminServer *http.Server
-	adminTCP    *http.Server
-	envServer   *http.Server
-	lockFile    *os.File
+	mu           sync.Mutex
+	wispMu       sync.Mutex
+	wispLocks    map[string]*sync.Mutex
+	backendMu    sync.RWMutex
+	backendToken map[string]string
+	adminLn      net.Listener
+	adminTCPLn   net.Listener
+	envLn        net.Listener
+	adminServer  *http.Server
+	adminTCP     *http.Server
+	envServer    *http.Server
+	lockFile     *os.File
 }
 
 func NewDaemon(rt *Runtime) *Daemon {
 	return &Daemon{
-		rt:        rt,
-		wispLocks: make(map[string]*sync.Mutex),
+		rt:           rt,
+		wispLocks:    make(map[string]*sync.Mutex),
+		backendToken: make(map[string]string),
 	}
 }
 
@@ -236,6 +249,7 @@ func (d *Daemon) adminMux() http.Handler {
 	mux.HandleFunc("GET /v1/runtime/containers", d.handleAdminListContainers)
 	mux.HandleFunc("POST /v1/runtime/create", d.handleAdminCreate)
 	mux.HandleFunc("GET /v1/runtime/status", d.handleAdminStatus)
+	mux.HandleFunc("POST /v1/runtime/backend", d.handleRuntimeBackendBind)
 	mux.HandleFunc("POST /v1/runtime/bootstrap", d.handleAdminBootstrap)
 	mux.HandleFunc("POST /v1/runtime/start", d.handleAdminStart)
 	mux.HandleFunc("POST /v1/runtime/stop", d.handleAdminStop)
@@ -244,6 +258,7 @@ func (d *Daemon) adminMux() http.Handler {
 	mux.HandleFunc("GET /v1/wisps", d.handleWispsList)
 	mux.HandleFunc("POST /v1/wisps", d.handleWispCreate)
 	mux.HandleFunc("GET /v1/wisps/{wisp}", d.handleWispGet)
+	mux.HandleFunc("POST /v1/wisps/{wisp}/backend", d.handleWispBackendBind)
 	mux.HandleFunc("POST /v1/wisps/{wisp}/start", d.handleWispStart)
 	mux.HandleFunc("POST /v1/wisps/{wisp}/stop", d.handleWispStop)
 	mux.HandleFunc("DELETE /v1/wisps/{wisp}", d.handleWispDestroy)
@@ -385,6 +400,33 @@ func (d *Daemon) handleAdminCreate(w http.ResponseWriter, r *http.Request) {
 		"runtime_root":   rt.cfg.RuntimeRoot,
 		"temp_root":      rt.cfg.TempRoot,
 	})
+}
+
+func (d *Daemon) handleRuntimeBackendBind(w http.ResponseWriter, r *http.Request) {
+	var (
+		name    string
+		reqErr  error
+		started = d.logRequestStart("runtime.backend_bind", "")
+	)
+	defer func() { d.logRequestDone("runtime.backend_bind", name, started, reqErr) }()
+	req, err := decodeBackendBindRequest(r, "")
+	if err != nil {
+		reqErr = err
+		writeError(w, err)
+		return
+	}
+	name = strings.TrimSpace(req.Name)
+	if name == "" {
+		reqErr = badRequest("container name is required", map[string]any{"operation": "bind_backend"})
+		writeError(w, reqErr)
+		return
+	}
+	if err := d.bindWorkspaceBackend(r.Context(), req); err != nil {
+		reqErr = err
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "backend bound", "name": name, "remote_backend": normalizeRemoteBackend(req.RemoteBackend)})
 }
 
 func (d *Daemon) handleAdminBootstrap(w http.ResponseWriter, r *http.Request) {
@@ -678,6 +720,14 @@ func (d *Daemon) runtimeForNameLocked(name string) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
+	if strings.TrimSpace(name) != "" {
+		d.backendMu.RLock()
+		token := d.backendToken[name]
+		d.backendMu.RUnlock()
+		if strings.TrimSpace(token) != "" {
+			cfg.SMHAccessToken = token
+		}
+	}
 	cfg.DaemonLockFile = lockFile
 	return New(cfg), nil
 }
@@ -703,6 +753,84 @@ func decodeRuntimeRequest(r *http.Request) (runtimeRequest, error) {
 		req.Name = name
 	}
 	return req, nil
+}
+
+func decodeBackendBindRequest(r *http.Request, nameFromPath string) (backendBindRequest, error) {
+	defer r.Body.Close()
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		return backendBindRequest{}, badRequest("could not read request body", nil)
+	}
+	if len(bytes.TrimSpace(body)) == 0 {
+		return backendBindRequest{}, badRequest("backend bind request body is required", nil)
+	}
+	var req backendBindRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		return backendBindRequest{}, badRequest("invalid JSON request body", nil)
+	}
+	if strings.TrimSpace(req.Name) == "" {
+		req.Name = strings.TrimSpace(nameFromPath)
+	}
+	req.RemoteBackend = normalizeRemoteBackend(req.RemoteBackend)
+	if req.RemoteBackend == "" {
+		req.RemoteBackend = remoteBackendSMH
+	}
+	if req.RemoteBackend != remoteBackendSMH {
+		return backendBindRequest{}, badRequest("only REMOTE_BACKEND=smh can be bound dynamically", map[string]any{"remote_backend": req.RemoteBackend})
+	}
+	if strings.TrimSpace(req.SMHLibraryID) == "" {
+		return backendBindRequest{}, badRequest("smh_library_id is required", map[string]any{"operation": "bind_backend"})
+	}
+	if strings.TrimSpace(req.SMHAccessDomain) == "" {
+		return backendBindRequest{}, badRequest("smh_access_domain is required", map[string]any{"operation": "bind_backend"})
+	}
+	if strings.TrimSpace(req.SMHSpaceID) == "" {
+		return backendBindRequest{}, badRequest("smh_space_id is required", map[string]any{"operation": "bind_backend"})
+	}
+	return req, nil
+}
+
+func (d *Daemon) bindWorkspaceBackend(ctx context.Context, req backendBindRequest) error {
+	name := strings.TrimSpace(req.Name)
+	unlock := d.lockWisp(name)
+	defer unlock()
+
+	configFile, _ := d.currentConfigPaths()
+	baseCfg, err := config.Load(configFile)
+	if err != nil {
+		return err
+	}
+	if err := config.SetWorkspaceLayout(configFile, baseCfg, name); err != nil {
+		return err
+	}
+	updates := map[string]string{
+		"REMOTE_BACKEND":    remoteBackendSMH,
+		"SMH_ENABLED":       "true",
+		"SMH_LIBRARY_ID":    strings.TrimSpace(req.SMHLibraryID),
+		"SMH_ACCESS_DOMAIN": strings.TrimSpace(req.SMHAccessDomain),
+		"SMH_SPACE_ID":      strings.TrimSpace(req.SMHSpaceID),
+	}
+	if prefix := strings.TrimSpace(req.JFSPrefix); prefix != "" {
+		updates["JFS_PREFIX"] = prefix
+	}
+	for key, value := range updates {
+		if err := config.SetContainerEnvValue(configFile, name, key, value); err != nil {
+			return err
+		}
+	}
+	if token := strings.TrimSpace(req.SMHAccessToken); token != "" {
+		d.backendMu.Lock()
+		d.backendToken[name] = token
+		d.backendMu.Unlock()
+	}
+	_, err = ensureWorkspaceBackendProvisioned(ctx, configFile, config.Config{
+		RemoteBackend:   remoteBackendSMH,
+		SMHLibraryID:    strings.TrimSpace(req.SMHLibraryID),
+		SMHAccessDomain: strings.TrimSpace(req.SMHAccessDomain),
+		SMHSpaceID:      strings.TrimSpace(req.SMHSpaceID),
+		SMHAccessToken:  strings.TrimSpace(req.SMHAccessToken),
+	}, name)
+	return err
 }
 
 type checkpointRequest struct {

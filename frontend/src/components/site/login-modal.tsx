@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useRepositories } from "@/contexts/repository-context";
 import { useSession } from "@/contexts/session-context";
+import { CN_PRIVACY_POLICY_URL } from "@/constants/legal";
 import { useT } from "@/i18n/t";
 import { installShowGitHubLoginHelper, useGitHubLoginVisibility } from "@/lib/github-login-visibility";
 import {
@@ -325,7 +326,7 @@ export const LoginModal = ({ open, onClose, onSuccess, initialError = null }: Lo
                     </Link>
                   ) : (
                     <a
-                      href="https://cloud.tencent.com/document/product/301/11470"
+                      href={CN_PRIVACY_POLICY_URL}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="font-medium hover:underline"

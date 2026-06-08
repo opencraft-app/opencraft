@@ -1905,6 +1905,9 @@ func (r *Runtime) issueSMHScriptToken(ctx context.Context) (string, error) {
 	if token := strings.TrimSpace(os.Getenv("SMH_ACCESS_TOKEN")); token != "" {
 		return token, nil
 	}
+	if token := strings.TrimSpace(r.cfg.SMHAccessToken); token != "" {
+		return token, nil
+	}
 	if strings.TrimSpace(r.cfg.SMHLibrarySecret) == "" {
 		return "", nil
 	}

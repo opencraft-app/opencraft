@@ -41,6 +41,8 @@ type selfCheckSummary struct {
 	LocalRuntimeAllowPaths   bool   `json:"local_runtime_allow_host_paths,omitempty"`
 	TokenHubAPIKeyConfigured bool   `json:"tokenhub_api_key_configured,omitempty"`
 	AGSAPIKeyConfigured      bool   `json:"ags_api_key_configured,omitempty"`
+	RuntimeWarmPoolEnabled   bool   `json:"runtime_warm_pool_enabled,omitempty"`
+	RuntimeWarmPoolShared    bool   `json:"runtime_warm_pool_shared_store_confirmed,omitempty"`
 }
 
 type selfCheckItem struct {
@@ -90,6 +92,9 @@ func (s *Server) handleReadyz(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) readinessFailures() []string {
+	if s.IsDraining() {
+		return []string{"server is draining"}
+	}
 	switch worker := s.worker.(type) {
 	case *AgentSidecarWorker:
 		return worker.readinessFailures()
@@ -135,6 +140,9 @@ func (w *AgentSidecarWorker) readinessFailures() []string {
 			add(strings.TrimSpace(info.Root) != "", "GATEWAY_LOCAL_RUNTIME_ROOT is not configured")
 			add(runtime.GOOS == "linux" || strings.TrimSpace(info.CommandPrefix) != "", "GATEWAY_LOCAL_RUNTIME_COMMAND_PREFIX is required for local_wisp on non-Linux gateway hosts")
 		}
+	}
+	if w.runtimePool != nil {
+		add(envFlagEnabled("GATEWAY_RUNTIME_WARM_POOL_SHARED_STORE_CONFIRMED"), "GATEWAY_RUNTIME_WARM_POOL_SHARED_STORE_CONFIRMED must be true when warm pool is enabled")
 	}
 	return failures
 }
@@ -207,6 +215,8 @@ func (w *AgentSidecarWorker) selfCheckSummary() selfCheckSummary {
 		LocalRuntimeAllowPaths:   localInfo.AllowHostPaths,
 		TokenHubAPIKeyConfigured: w.tokenHubAPIKey != "",
 		AGSAPIKeyConfigured:      agsAPIKeyConfigured,
+		RuntimeWarmPoolEnabled:   w.runtimePool != nil,
+		RuntimeWarmPoolShared:    envFlagEnabled("GATEWAY_RUNTIME_WARM_POOL_SHARED_STORE_CONFIRMED"),
 	}
 }
 
@@ -257,6 +267,9 @@ func (w *AgentSidecarWorker) appendSelfChecks(ctx context.Context, resp *selfChe
 		if w.wispPackageURL != "" {
 			add(headURLCheck(ctx, "wisp.package_url_reachable", w.wispPackageURL, w.client))
 		}
+	}
+	if w.runtimePool != nil {
+		add(requiredCheck("runtime_pool.shared_store", "warm pool worker and gateway share the same durable store", envFlagEnabled("GATEWAY_RUNTIME_WARM_POOL_SHARED_STORE_CONFIRMED")))
 	}
 }
 

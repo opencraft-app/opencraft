@@ -6,6 +6,8 @@ import {
   createCronJob,
   createCronJobWithScriptRollback,
   listCronJobs,
+  listRecentCronRuns,
+  parseCronRunFilesOutput,
   parseEffectiveWindowScript,
   parseCronListOutput,
   shellQuote,
@@ -95,6 +97,121 @@ describe("splitLastRunValue", () => {
   });
 });
 
+describe("parseCronRunFilesOutput", () => {
+  it("maps recent output files to cron job names", () => {
+    const runs = parseCronRunFilesOutput(JSON.stringify([{
+      job_id: "job-1",
+      run_at: "2026-06-06T01:00:00+00:00",
+      output_path: "/home/agentuser/.hermes/cron/output/job-1/2026-06-06T01-00-00.md",
+      mtime_ms: 1780707600000,
+    }]), [{
+      id: "job-1",
+      name: "Morning sync",
+      prompt: "Check overnight alerts.",
+      schedule: { kind: "cron", expr: "0 9 * * *", display: "0 9 * * *" },
+      skills: [],
+      enabled: true,
+      state: "scheduled",
+      deliver: "local",
+      next_run_at: null,
+      last_run_at: "2026-06-06T01:00:00+00:00",
+      last_status: "ok",
+      created_at: null,
+      script: "",
+      effective_window: null,
+    }]);
+
+    expect(runs).toEqual([{
+      id: "job-1:/home/agentuser/.hermes/cron/output/job-1/2026-06-06T01-00-00.md",
+      job_id: "job-1",
+      job_name: "Morning sync",
+      job_prompt: "Check overnight alerts.",
+      schedule: { kind: "cron", expr: "0 9 * * *", display: "0 9 * * *" },
+      deliver: "local",
+      run_at: "2026-06-06T01:00:00+00:00",
+      status: "ok",
+      output_path: "/home/agentuser/.hermes/cron/output/job-1/2026-06-06T01-00-00.md",
+    }]);
+  });
+
+  it("uses historical job metadata for completed one-shot jobs", () => {
+    const runs = parseCronRunFilesOutput(JSON.stringify([{
+      job_id: "once-1",
+      run_at: "2026-06-06T02:20:16+00:00",
+      output_path: "/home/agentuser/.hermes/cron/output/once-1/2026-06-06T02-20-16.md",
+      mtime_ms: 1780712416000,
+      job_name: "One shot reminder",
+      job_prompt: "Remind me once.",
+      job_schedule: "once at 2026-06-06 10:20",
+      job_deliver: "local",
+      job_last_run_at: "2026-06-06T02:20:16+00:00",
+      job_last_status: "ok",
+    }]), []);
+
+    expect(runs[0]).toMatchObject({
+      job_id: "once-1",
+      job_name: "One shot reminder",
+      job_prompt: "Remind me once.",
+      schedule: { kind: "once", expr: "once at 2026-06-06 10:20", display: "once at 2026-06-06 10:20" },
+      deliver: "local",
+      status: "ok",
+    });
+  });
+
+  it("uses output status when a completed one-shot job no longer has last_status", () => {
+    const runs = parseCronRunFilesOutput(JSON.stringify([{
+      job_id: "once-2",
+      run_at: "2026-06-06T04:45:14+00:00",
+      output_path: "/home/agentuser/.hermes/cron/output/once-2/2026-06-06T04-45-14.md",
+      mtime_ms: 1780721114000,
+      job_name: "One shot nap",
+      job_schedule: "once at 2026-06-06 12:45",
+      output_status: "ok",
+    }]), []);
+
+    expect(runs[0]?.status).toBe("ok");
+  });
+
+  it("preserves failed output status for removed one-shot jobs", () => {
+    const runs = parseCronRunFilesOutput(JSON.stringify([{
+      job_id: "once-failed",
+      run_at: "2026-06-06T04:45:14+00:00",
+      output_path: "/home/agentuser/.hermes/cron/output/once-failed/2026-06-06T04-45-14.md",
+      mtime_ms: 1780721114000,
+      output_status: "failed",
+    }]), []);
+
+    expect(runs[0]?.status).toBe("failed");
+  });
+
+  it("filters scheduler attempts skipped before waking the Agent", () => {
+    const runs = parseCronRunFilesOutput(JSON.stringify([
+      {
+        job_id: "skipped-window",
+        run_at: "2026-06-06T14:20:37+00:00",
+        output_path: "/home/agentuser/.hermes/cron/output/skipped-window/2026-06-06T14-20-37.md",
+        mtime_ms: 1780755637000,
+        output_status: "ok",
+        agent_skipped: true,
+      },
+      {
+        job_id: "agent-ran",
+        run_at: "2026-06-06T14:10:37+00:00",
+        output_path: "/home/agentuser/.hermes/cron/output/agent-ran/2026-06-06T14-10-37.md",
+        mtime_ms: 1780755037000,
+        output_status: "ok",
+      },
+    ]), []);
+
+    expect(runs.map((run) => run.job_id)).toEqual(["agent-ran"]);
+  });
+
+  it("returns an empty list for missing or invalid output", () => {
+    expect(parseCronRunFilesOutput("", [])).toEqual([]);
+    expect(parseCronRunFilesOutput("not json", [])).toEqual([]);
+  });
+});
+
 describe("buildCreateCommand", () => {
   it("quotes schedule, prompt, name and deliver target", () => {
     expect(buildCreateCommand({
@@ -129,12 +246,30 @@ describe("effective window script", () => {
     const script = buildEffectiveWindowScript({
       start_at: "2026-06-10T00:00",
       end_at: "2026-06-19T23:59",
+      weekdays: [1, 5, 0],
     });
 
     expect(script).toContain("lightvela-effective-window");
+    expect(script).toContain("# weekdays=0,1,5");
+    expect(script).toContain("current_weekday = now.isoweekday() % 7");
     expect(parseEffectiveWindowScript(script)).toEqual({
       start_at: "2026-06-10T00:00",
       end_at: "2026-06-19T23:59",
+      weekdays: [0, 1, 5],
+    });
+  });
+
+  it("keeps weekday-only LightVela gates editable", () => {
+    const script = buildEffectiveWindowScript({
+      start_at: null,
+      end_at: null,
+      weekdays: [5, 6, 0],
+    });
+
+    expect(parseEffectiveWindowScript(script)).toEqual({
+      start_at: null,
+      end_at: null,
+      weekdays: [0, 5, 6],
     });
   });
 
@@ -150,11 +285,12 @@ describe("effective window script", () => {
     Schedule:  every 5m
     Script:    lightvela-effective-window-job-1.py
 `))
-      .mockResolvedValueOnce(okExec(""))
-      .mockResolvedValueOnce(okExec(buildEffectiveWindowScript({
-        start_at: "2026-06-10T00:00",
-        end_at: "2026-06-19T23:59",
-      })));
+	      .mockResolvedValueOnce(okExec(""))
+	      .mockResolvedValueOnce(okExec(buildEffectiveWindowScript({
+	        start_at: "2026-06-10T00:00",
+	        end_at: "2026-06-19T23:59",
+	      })))
+	      .mockResolvedValueOnce(okExec(""));
     vi.stubGlobal("fetch", fetchMock);
 
     const jobs = await listCronJobs("bot-1");
@@ -163,11 +299,32 @@ describe("effective window script", () => {
       start_at: "2026-06-10T00:00",
       end_at: "2026-06-19T23:59",
     });
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+	    expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 });
 
 describe("createCronJob auth handling", () => {
+  it("loads recent cron output files through debug exec", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(okExec(JSON.stringify([{
+      job_id: "job-1",
+      run_at: "2026-06-06T01:00:00+00:00",
+      output_path: "/home/agentuser/.hermes/cron/output/job-1/2026-06-06T01-00-00.md",
+      mtime_ms: 1780707600000,
+    }])));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const runs = await listRecentCronRuns("bot-1", [], 10);
+
+    expect(runs[0]?.job_id).toBe("job-1");
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as { command: string };
+	    expect(body.command).toContain(".hermes");
+    expect(body.command).toContain("cron");
+	    expect(body.command).toContain("output");
+	    expect(body.command).toContain("lightvela-jobs-meta.json");
+    expect(body.command.toLowerCase()).toContain("wakeagent");
+    expect(body.command).toContain("agent_skipped");
+	  });
+
   it("removes a prepared LightVela script when cron create fails", async () => {
     const script = "lightvela-effective-window-job-1.py";
     const fetchMock = vi.fn()

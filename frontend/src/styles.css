@@ -1005,6 +1005,10 @@ code {
   min-width: 0;
 }
 
+._lh-claw-bot-panel .lh-std-skill-panel__empty {
+  background: #fff;
+}
+
 @media (max-width: 1023px) {
   ._lh-claw-bot-panel ._lh-cards-grid._lh-claw-bot-panel__cards {
     grid-template-columns: 1fr;

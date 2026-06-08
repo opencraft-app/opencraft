@@ -32,6 +32,19 @@ data:
   GATEWAY_WISP_JFS_PREFIX: "cloudagent-devcloud-dep"
   GATEWAY_WISP_ROOT_UPPER_SIZE: "10G"
   GATEWAY_WISP_WORKSPACE_LEASE_TTL_SECONDS: "180"
+  GATEWAY_RUNTIME_WARM_POOL_ENABLED: "true"
+  GATEWAY_RUNTIME_WARM_POOL_SHARED_STORE_CONFIRMED: "true"
+  GATEWAY_RUNTIME_WARM_POOL_DB_DRIVER: "mysql"
+  GATEWAY_RUNTIME_WARM_POOL_DESIRED_READY: "5"
+  GATEWAY_RUNTIME_WARM_POOL_RECHECK_SECONDS: "15"
+  GATEWAY_RUNTIME_WARM_POOL_AGENT_VERSION: "builtin.v1"
+  GATEWAY_RUNTIME_WARM_POOL_WORKSPACE_VERSION: "builtin.v1"
+  GATEWAY_RUNTIME_WARM_POOL_WORKFLOW_ID: "cloudagent-runtime-pool-devcloud-dep-v6"
+  TEMPORAL_ADDRESS: "101.42.133.109:443"
+  TEMPORAL_NAMESPACE: "default"
+  TEMPORAL_TLS: "true"
+  TEMPORAL_TLS_SERVER_NAME: "temporal-frontend.lightclaw.tech"
+  TEMPORAL_TASK_QUEUE: "cloudagent-runtime-pool-devcloud-dep"
   CLOUDAGENT_WEB_SEARCH_PROVIDER: "tencent_wsa"
   TENCENTCLOUD_WSA_ENDPOINT: "https://api.wsa.cloud.tencent.com/SearchPro"
 ---
@@ -104,6 +117,11 @@ spec:
                 secretKeyRef:
                   name: cloudagent-wisp-secrets
                   key: GATEWAY_WISP_SMH_LIBRARY_SECRET
+            - name: GATEWAY_RUNTIME_WARM_POOL_DB_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: cloudagent-runtime-pool-secrets
+                  key: GATEWAY_RUNTIME_WARM_POOL_DB_DSN
           volumeMounts:
             - name: gateway-data
               mountPath: /data
@@ -129,6 +147,79 @@ spec:
             failureThreshold: 24
       volumes:
         - name: gateway-data
+          emptyDir: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloudagent-runtime-pool-worker
+  labels:
+    app.kubernetes.io/name: cloudagent-runtime-pool-worker
+    cloudagent.dev/environment: devcloud-dep
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cloudagent-runtime-pool-worker
+  template:
+    metadata:
+      annotations:
+        cloudagent.dev/redeploy-at: 2026-06-03T00:00:00Z
+      labels:
+        app.kubernetes.io/name: cloudagent-runtime-pool-worker
+        cloudagent.dev/environment: devcloud-dep
+    spec:
+      securityContext:
+        fsGroup: 10001
+      imagePullSecrets:
+        - name: csighub-skipzhang
+        - name: csighub-xinqishang
+      containers:
+        - name: runtime-pool-worker
+          image: csighub.tencentyun.com/skipzhang/cloudagent-gateway:devcloud-dep-bootstrap
+          imagePullPolicy: Always
+          command:
+            - /usr/local/bin/runtime-pool-worker
+          envFrom:
+            - configMapRef:
+                name: cloudagent-gateway-config
+          env:
+            - name: GATEWAY_AGS_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: cloudagent-gateway-runtime-secrets
+                  key: GATEWAY_AGS_API_KEY
+            - name: GATEWAY_TOKENHUB_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: cloudagent-gateway-runtime-secrets
+                  key: GATEWAY_TOKENHUB_API_KEY
+            - name: GATEWAY_TALOS_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: cloudagent-gateway-runtime-secrets
+                  key: GATEWAY_TALOS_API_KEY
+                  optional: true
+            - name: GATEWAY_WISP_SMH_LIBRARY_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: cloudagent-wisp-secrets
+                  key: GATEWAY_WISP_SMH_LIBRARY_SECRET
+            - name: TEMPORAL_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: cloudagent-runtime-pool-secrets
+                  key: TEMPORAL_AUTH_TOKEN
+            - name: GATEWAY_RUNTIME_WARM_POOL_DB_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: cloudagent-runtime-pool-secrets
+                  key: GATEWAY_RUNTIME_WARM_POOL_DB_DSN
+          volumeMounts:
+            - name: runtime-pool-worker-data
+              mountPath: /data
+      volumes:
+        - name: runtime-pool-worker-data
           emptyDir: {}
 ---
 apiVersion: v1

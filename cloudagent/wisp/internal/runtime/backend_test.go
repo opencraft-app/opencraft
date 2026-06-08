@@ -85,6 +85,54 @@ func TestEnsureWorkspaceBackendProvisionedSMHSkipsWhenSpaceExists(t *testing.T) 
 	}
 }
 
+func TestDaemonBackendBindWritesIdentityAndKeepsTokenInMemory(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.jsonnet")
+	content := "{\n  \"WISP_NAME\": \"base\",\n  \"REMOTE_BACKEND\": \"cos\",\n  \"COS_ENABLED\": false\n}\n"
+	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.ConfigFile = configPath
+	d := NewDaemon(New(cfg))
+	err = d.bindWorkspaceBackend(context.Background(), backendBindRequest{
+		Name:            "demo",
+		RemoteBackend:   "smh",
+		SMHLibraryID:    "lib",
+		SMHAccessDomain: "https://example.api.tencentsmh.cn",
+		SMHSpaceID:      "space-existing",
+		SMHAccessToken:  "short-token",
+		JFSPrefix:       "sessions/demo",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	overlay := config.ContainerOverlayPath(configPath, "demo")
+	data, err := os.ReadFile(overlay)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, want := range []string{`"REMOTE_BACKEND": "smh"`, `"SMH_SPACE_ID": "space-existing"`, `"JFS_PREFIX": "sessions/demo"`} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("overlay missing %q: %s", want, text)
+		}
+	}
+	if strings.Contains(text, "short-token") || strings.Contains(text, "SMH_ACCESS_TOKEN") {
+		t.Fatalf("overlay must not persist short-lived token: %s", text)
+	}
+	rt, err := d.runtimeForNameLocked("demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := rt.cfg.SMHAccessToken; got != "short-token" {
+		t.Fatalf("runtime token=%q, want in-memory token", got)
+	}
+}
+
 func TestValidateRemoteBackendConfig(t *testing.T) {
 	tests := []struct {
 		name    string

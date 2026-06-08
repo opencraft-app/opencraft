@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { BEIAN_URL, ICP_LICENSE, shouldShowICP } from "@/constants/legal";
+import { BEIAN_URL, CN_PRIVACY_POLICY_URL, ICP_LICENSE, shouldShowICP } from "@/constants/legal";
 import { useT } from "@/i18n/t";
 import { isGlobal } from "@/lib/region";
 
@@ -48,7 +48,7 @@ export const LegalFooter = ({ icpPlacement = "inline" }: LegalFooterProps) => {
               </Link>
             ) : (
               <a
-                href="https://cloud.tencent.com/document/product/301/11470"
+                href={CN_PRIVACY_POLICY_URL}
                 target="_blank"
                 rel="noopener noreferrer"
                 className={footerLinkClass}

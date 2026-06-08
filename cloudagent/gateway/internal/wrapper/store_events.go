@@ -63,12 +63,13 @@ func (s *Store) saveACPSessionLocked(session *acpSession) error {
 	}
 	_, err := s.db.Exec(`
 INSERT INTO sessions (
-	session_id, scope_tenant, scope_project, scope_sandbox, cwd, title, model, state,
+	session_id, scope_tenant, scope_project, scope_sandbox, cwd, workspace_key, title, model, state,
 	closed, runtime_generation, current_response_id, last_runtime_error, created_at,
 	updated_at, read_only_reason
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(session_id) DO UPDATE SET
 	cwd = excluded.cwd,
+	workspace_key = excluded.workspace_key,
 	title = excluded.title,
 	model = excluded.model,
 	state = excluded.state,
@@ -80,7 +81,7 @@ ON CONFLICT(session_id) DO UPDATE SET
 	read_only_reason = excluded.read_only_reason,
 	deleted_at = NULL`,
 		session.SessionID, session.Scope.TenantID, session.Scope.ProjectID, session.Scope.SandboxScope,
-		session.CWD, sessionTitle(session), session.Model, string(session.State), closed,
+		session.CWD, session.WorkspaceKey, sessionTitle(session), session.Model, string(session.State), closed,
 		session.RuntimeGeneration, session.CurrentResponseID, session.LastRuntimeError,
 		session.CreatedAt.Format(time.RFC3339Nano), session.UpdatedAt.Format(time.RFC3339Nano),
 		session.ReadOnlyReason)
@@ -285,12 +286,12 @@ func (s *Store) loadACPSessionLocked(sessionID string) (*acpSession, bool, error
 	var closed int
 	var createdAt, updatedAt string
 	err := s.db.QueryRow(`
-SELECT session_id, scope_tenant, scope_project, scope_sandbox, cwd, model, state, closed,
+SELECT session_id, scope_tenant, scope_project, scope_sandbox, cwd, COALESCE(workspace_key, ''), model, state, closed,
        runtime_generation, current_response_id, last_runtime_error, created_at, updated_at,
        read_only_reason
 FROM sessions WHERE session_id = ? AND deleted_at IS NULL`, sessionID).Scan(
 		&session.SessionID, &session.Scope.TenantID, &session.Scope.ProjectID, &session.Scope.SandboxScope,
-		&session.CWD, &session.Model, &state, &closed, &session.RuntimeGeneration,
+		&session.CWD, &session.WorkspaceKey, &session.Model, &state, &closed, &session.RuntimeGeneration,
 		&session.CurrentResponseID, &session.LastRuntimeError, &createdAt, &updatedAt,
 		&session.ReadOnlyReason,
 	)

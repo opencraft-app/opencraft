@@ -879,6 +879,8 @@ func TestACPRestartedSessionRecoversFromWorkspaceRecordWhenRuntimeSMHMissing(t *
 		WispName:              "persisted-wisp",
 		WispSMHSpaceID:        spaceID,
 		WispOwnsSMHSpace:      true,
+		WorkspaceWispName:     "persisted-workspace-wisp",
+		WorkspaceRuntimeID:    "persisted-workspace-runtime",
 		WispPackageURL:        "https://example.com/wisp.tgz",
 		WispJFSPrefix:         "jfs-prefix",
 		WispRootUpperSize:     "10G",
@@ -900,6 +902,8 @@ func TestACPRestartedSessionRecoversFromWorkspaceRecordWhenRuntimeSMHMissing(t *
 	persisted.Runtime.WispPackageURL = ""
 	persisted.Runtime.WispJFSPrefix = ""
 	persisted.Runtime.WispRootUpperSize = ""
+	persisted.Runtime.WorkspaceWispName = ""
+	persisted.Runtime.WorkspaceRuntimeID = ""
 	if err := store.SaveACPSession(persisted); err != nil {
 		t.Fatal(err)
 	}
@@ -994,7 +998,7 @@ func TestACPRuntimeEnsureReadyExtensionRecreatesWispRuntime(t *testing.T) {
 }
 
 func TestACPPromptMaxIterationsReturnsStopReason(t *testing.T) {
-	manager := &recordingACPRuntimeManager{promptErr: workerStop("max_iterations_exceeded", "Max iterations exceeded: 12", "max_turn_requests")}
+	manager := &recordingACPRuntimeManager{promptErr: workerStop("max_iterations_exceeded", "Max iterations exceeded: 256", "max_turn_requests")}
 	srv := newACPTestServerWithRuntime(t, manager)
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
@@ -1329,8 +1333,9 @@ func TestACPSessionCloseAndDeleteLifecycle(t *testing.T) {
 
 	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 5, "method": "session/resume", "params": map[string]any{"sessionId": sessionID, "cwd": "/workspace"}})
 	resumeResp := waitForRPCID(t, client, float64(5))
-	resumeResult := resumeResp["result"].(map[string]any)
-	if _, hasSessionID := resumeResult["sessionId"]; hasSessionID || cloudAgentResultMeta(t, resumeResult)["read_only"] != true {
+	resumeErr := resumeResp["error"].(map[string]any)
+	resumeData := resumeErr["data"].(map[string]any)
+	if resumeErr["code"] != float64(-32010) || resumeData["error_code"] != "session_read_only" || resumeData["read_only_reason"] != acpReadOnlyRuntimeNotRecovered {
 		t.Fatalf("unexpected resume response: %#v", resumeResp)
 	}
 
@@ -1911,6 +1916,7 @@ func TestACPSessionNewPassesAgentAndWorkspaceVersions(t *testing.T) {
 				"cloudagent": map[string]any{
 					"agent_version":     "builtin.v1",
 					"workspace_version": "builtin.v1",
+					"workspace_key":     "workspace-stable-test",
 				},
 			},
 		},
@@ -1925,8 +1931,23 @@ func TestACPSessionNewPassesAgentAndWorkspaceVersions(t *testing.T) {
 	if start.AgentVersion != "builtin.v1" || start.WorkspaceVersion != "builtin.v1" {
 		t.Fatalf("unexpected version selection: %#v", start)
 	}
+	if start.WorkspaceKey != "workspace-stable-test" {
+		t.Fatalf("session/new must pass workspace key into runtime start, got %#v", start)
+	}
 	if start.OwnerID != "gateway_owner_session_new" {
 		t.Fatalf("session/new must bind runtime start to gateway owner, got %#v", start)
+	}
+	srv.acpGate.mu.Lock()
+	session, ok := srv.acpGate.sessions[starts[0].SessionID]
+	srv.acpGate.mu.Unlock()
+	if !ok {
+		t.Fatalf("session was not persisted")
+	}
+	if session.WorkspaceKey != "workspace-stable-test" {
+		t.Fatalf("session store must retain workspace key, got %#v", session)
+	}
+	if session.Runtime.WispName != wispNameFromRuntime("workspace-stable-test") || session.Runtime.WispWorkspaceID != "space_workspace-stable-test" {
+		t.Fatalf("runtime identity should use workspace key, got %#v", session.Runtime)
 	}
 }
 
@@ -2004,9 +2025,10 @@ func TestACPLoadDoesNotResumeRuntime(t *testing.T) {
 	}
 	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 6, "method": "session/resume", "params": map[string]any{"sessionId": sessionID}})
 	resumeResp := waitForRPCID(t, client, float64(6))
-	resumeResult := resumeResp["result"].(map[string]any)
-	if cloudAgentResultMeta(t, resumeResult)["read_only"] != true {
-		t.Fatalf("session/resume after close should be read-only, got %#v", resumeResult)
+	resumeErr := resumeResp["error"].(map[string]any)
+	resumeData := resumeErr["data"].(map[string]any)
+	if resumeErr["code"] != float64(-32010) || resumeData["error_code"] != "session_read_only" || resumeData["read_only_reason"] != acpReadOnlyRuntimeNotRecovered {
+		t.Fatalf("session/resume after close should fail read-only, got %#v", resumeResp)
 	}
 	if manager.startCount() != 1 {
 		t.Fatalf("session/resume must not start fresh runtime, got starts=%d", manager.startCount())
@@ -2548,8 +2570,9 @@ func TestACPResumeRetriesDeferredRuntimeCleanup(t *testing.T) {
 	}
 	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 6, "method": "session/resume", "params": map[string]any{"sessionId": sessionID}})
 	secondResumeResp := waitForRPCID(t, client, float64(6))
-	secondResumeResult := secondResumeResp["result"].(map[string]any)
-	if _, hasSessionID := secondResumeResult["sessionId"]; hasSessionID || cloudAgentResultMeta(t, secondResumeResult)["read_only"] != true {
+	secondResumeErr := secondResumeResp["error"].(map[string]any)
+	secondResumeData := secondResumeErr["data"].(map[string]any)
+	if secondResumeErr["code"] != float64(-32010) || secondResumeData["error_code"] != "session_read_only" || secondResumeData["read_only_reason"] != acpReadOnlyRuntimeNotRecovered {
 		t.Fatalf("unexpected resume response: %#v", secondResumeResp)
 	}
 	if manager.startCount() != 1 {
@@ -2624,11 +2647,12 @@ func TestACPCleanupSingleflightAcrossCloseAndResume(t *testing.T) {
 	manager.waitCloseCount(t, 1)
 
 	resumed, err := gateway.resumeSession(scope, session.SessionID, "/workspace")
-	if err != nil {
-		t.Fatal(err)
-	}
 	if resumed.SessionID != session.SessionID {
 		t.Fatalf("unexpected resumed session: %#v", resumed)
+	}
+	var readOnly acpReadOnlyError
+	if !errors.As(err, &readOnly) || readOnly.Reason != acpReadOnlyRuntimeNotRecovered {
+		t.Fatalf("resume during cleanup should fail read-only, got %T %v", err, err)
 	}
 	if !resumed.Closed || resumed.ReadOnlyReason != acpReadOnlyRuntimeNotRecovered {
 		t.Fatalf("resume during cleanup should expose read-only closing state, got %#v", resumed)
@@ -3223,8 +3247,9 @@ func (m *recordingACPRuntimeManager) StartSessionRuntime(ctx context.Context, re
 	wispSpaceID := ""
 	wispOwns := false
 	if outerRuntime == outerRuntimeWisp {
-		wispName = wispNameFromRuntime(req.SessionID)
-		wispSpaceID = "space_" + req.SessionID
+		identity := runtimeWorkspaceIdentity(req)
+		wispName = wispNameFromRuntime(identity)
+		wispSpaceID = "space_" + identity
 		wispOwns = true
 	}
 	return ACPSessionRuntime{
@@ -3585,7 +3610,7 @@ func (m *blockingEnsureACPRuntimeManager) EnsureSessionRuntime(ctx context.Conte
 	runtime.RuntimeID = "rt_ensured"
 	runtime.OuterRuntime = normalizeOuterRuntime(firstNonEmpty(runtime.OuterRuntime, req.OuterRuntime))
 	runtime.RuntimeRecovery = normalizeRuntimeRecovery(firstNonEmpty(runtime.RuntimeRecovery, req.RuntimeRecovery), runtime.OuterRuntime)
-	runtime.WispSMHSpaceID = firstNonEmpty(runtime.WispSMHSpaceID, "space_"+req.SessionID)
+	runtime.WispSMHSpaceID = firstNonEmpty(runtime.WispSMHSpaceID, "space_"+runtimeWorkspaceIdentity(req))
 	return runtime, nil
 }
 
