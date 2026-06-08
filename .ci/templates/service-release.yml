@@ -37,6 +37,9 @@ parameters:
   - name: RUNNER_POOL_NAME
     type: string
     default: env
+  - name: PRINT_RUNNER_DIAGNOSTICS
+    type: boolean
+    default: false
   - name: PROD_REVIEWERS
     type: string
     default: '["skipzhang"]'
@@ -119,6 +122,19 @@ stages:
               echo "MASTER_AUTO_PIN_ENVS=${{ parameters.MASTER_AUTO_PIN_ENVS }}"
               echo "PLAYGROUND_BUILD_ENVS=${{ parameters.PLAYGROUND_BUILD_ENVS }}"
               echo "PLAYGROUND_AUTO_PIN_ENVS=${{ parameters.PLAYGROUND_AUTO_PIN_ENVS }}"
+              echo "RUNNER_POOL_NAME=${{ parameters.RUNNER_POOL_NAME }}"
+              if [[ "${{ parameters.PRINT_RUNNER_DIAGNOSTICS }}" == "true" ]]; then
+                echo "runner diagnostics:"
+                hostname || true
+                hostname -f || true
+                id || true
+                pwd || true
+                command -v docker || true
+                docker version || true
+                docker info || true
+                ls -l /var/run/docker.sock /run/docker.sock 2>/dev/null || true
+                ps -ef | grep -E 'dockerd|containerd' | grep -v grep || true
+              fi
           - id: prepare
             name: 准备 ${{ parameters.DISPLAY_NAME }} 构建标签
             shell: bash

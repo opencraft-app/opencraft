@@ -34,3 +34,4 @@ extends:
     PLAYGROUND_BUILD_ENVS: beijing-sandbox
     PLAYGROUND_AUTO_PIN_ENVS: none
     RUNNER_POOL_NAME: cn-pool
+    PRINT_RUNNER_DIAGNOSTICS: true
