@@ -54,7 +54,9 @@ const SERVICE_WORKER_SCOPE = "/";
 const FILE_DOWNLOAD_PREFIX = "/__tat_file_download";
 const MEMORY_DOWNLOAD_LIMIT_BYTES = 8 * 1024 * 1024;
 const MAX_UPLOAD_FILE_BYTES = 1024 * 1024 * 1024;
+const MAX_DOWNLOAD_FILE_BYTES = 1024 * 1024 * 1024;
 const MAX_UPLOAD_FILE_SIZE_LABEL = "1 GB";
+const MAX_DOWNLOAD_FILE_SIZE_LABEL = "1 GB";
 const DOWNLOAD_TRIGGER_IFRAME_TTL_MS = 6 * 60 * 60 * 1000;
 const DEFAULT_TAT_FILE_PERMISSION_SUBJECT = {
   uid: DEFAULT_TAT_FILE_UID,
@@ -339,9 +341,15 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
     }
     return t("当前以 {{user}} 用户访问，选中文件没有可读权限。", { user: DEFAULT_TAT_FILE_USER });
   }, [selectedFile, t]);
-  const selectedDownloadBlockReason = selectedFile && isDirectory(selectedFile) ? t("不支持下载文件夹") : selectedPermissionBlockReason;
+  const selectedDownloadSizeBlockReason =
+    selectedFile && !isDirectory(selectedFile) && selectedFile.size > MAX_DOWNLOAD_FILE_BYTES
+      ? t("单个文件最大支持下载 {{size}}。", { size: MAX_DOWNLOAD_FILE_SIZE_LABEL })
+      : null;
+  const selectedDownloadBlockReason = selectedFile && isDirectory(selectedFile) ? t("不支持下载文件夹") : selectedDownloadSizeBlockReason ?? selectedPermissionBlockReason;
   const downloadTooltip = selectedDownloadBlockReason ?? (!selectedFile ? noFileSelectedTitle : undefined);
   const deleteTooltip = !selectedFile ? noFileSelectedTitle : undefined;
+  const parentPathBlocked = path === MANAGED_TAT_FILE_ROOT;
+  const parentPathTooltip = parentPathBlocked ? t("不支持返回上一级目录") : t("上级");
 
   const translateFileManagerError = useCallback(
     (operationError: unknown, fallback: string) =>
@@ -476,6 +484,9 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
     }
     if (isDirectory(fileInfo)) {
       throw new Error(t("目录不能直接下载。"));
+    }
+    if (fileInfo.size > MAX_DOWNLOAD_FILE_BYTES) {
+      throw new Error(t("单个文件最大支持下载 {{size}}。", { size: MAX_DOWNLOAD_FILE_SIZE_LABEL }));
     }
     if (!canReadTsshFile(fileInfo, DEFAULT_TAT_FILE_PERMISSION_SUBJECT)) {
       throw new Error(t("当前以 {{user}} 用户访问，选中文件没有可读权限。", { user: DEFAULT_TAT_FILE_USER }));
@@ -883,17 +894,19 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
         </div>
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div ref={pathControlsRef} className="flex w-full min-w-0 flex-col gap-2 sm:flex-row xl:flex-1">
-            <Button
-              type="button"
-              variant="outline"
-              className="h-10 w-10 shrink-0 px-0"
-              onClick={() => void loadPath(parentTsshPath(path))}
-              disabled={busy || path === MANAGED_TAT_FILE_ROOT}
-              aria-label={t("上级")}
-              title={t("上级")}
-            >
-              <Undo2 className="size-5" />
-            </Button>
+            <ActionTooltip label={parentPathTooltip} variant="light">
+              <Button
+                type="button"
+                variant="outline"
+                className="h-10 w-10 shrink-0 px-0"
+                onClick={() => void loadPath(parentTsshPath(path))}
+                disabled={busy || parentPathBlocked}
+                aria-label={t("上级")}
+                title={parentPathTooltip}
+              >
+                <Undo2 className="size-5" />
+              </Button>
+            </ActionTooltip>
             <div className="relative min-w-0 sm:flex-1 xl:flex-none xl:basis-4/5">
               <Input
                 ref={pathInputRef}
