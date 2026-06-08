@@ -1434,14 +1434,31 @@ export function formatEffectiveWindow(
   window: CronEffectiveWindow | null,
   t: ReturnType<typeof useT>,
 ): string {
-  return formatEffectiveWindowTooltipLines(window, t).join(" · ");
+  const { dateAndStatusLabel, weekdayLabel } = getEffectiveWindowLabelParts(window, t);
+  return [dateAndStatusLabel, weekdayLabel].filter((line): line is string => Boolean(line)).join(" · ");
 }
 
 export function formatEffectiveWindowTooltipLines(
   window: CronEffectiveWindow | null,
   t: ReturnType<typeof useT>,
 ): string[] {
-  if (!window?.start_at && !window?.end_at && !window?.weekdays?.length) return [t("始终生效")];
+  const { dateAndStatusLabel, weekdayLabel } = getEffectiveWindowLabelParts(window, t);
+  const effectivePeriodLabel = dateAndStatusLabel === t("始终生效")
+    ? dateAndStatusLabel
+    : `${t("生效期")}：${dateAndStatusLabel}`;
+  return [effectivePeriodLabel, weekdayLabel].filter((line): line is string => Boolean(line));
+}
+
+function getEffectiveWindowLabelParts(
+  window: CronEffectiveWindow | null,
+  t: ReturnType<typeof useT>,
+): {
+  dateAndStatusLabel: string;
+  weekdayLabel: string | null;
+} {
+  if (!window?.start_at && !window?.end_at && !window?.weekdays?.length) {
+    return { dateAndStatusLabel: t("始终生效"), weekdayLabel: null };
+  }
   const dateLabel = window.start_at && window.end_at
     ? `${formatEffectiveWindowDate(window.start_at)} - ${formatEffectiveWindowDate(window.end_at)}`
     : window.start_at
@@ -1459,7 +1476,7 @@ export function formatEffectiveWindowTooltipLines(
     ? `${t("执行日")}：${formatWeekdays(window.weekdays, t)}`
     : null;
   const dateAndStatusLabel = [dateLabel, statusLabel].filter(Boolean).join(" · ");
-  return [dateAndStatusLabel, weekdayLabel].filter((line): line is string => Boolean(line));
+  return { dateAndStatusLabel, weekdayLabel };
 }
 
 function formatEffectiveWindowDate(value: string): string {
