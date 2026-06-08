@@ -27,6 +27,35 @@ export RESCUE_PASSWORD='...'
 
 `TEMPORAL_BEARER_TOKEN` is preferred; `TEMPORAL_AUTH_TOKEN` is accepted as a fallback.
 
+## Temporal Cluster
+
+The currently validated Temporal frontend for this worker is:
+
+```bash
+export TEMPORAL_ADDRESS=temporal-frontend.lightclaw.tech:443
+export TEMPORAL_NAMESPACE=default
+export TEMPORAL_TLS=true
+export TEMPORAL_BEARER_TOKEN='...'
+```
+
+Connection requirements:
+
+- TLS must be enabled.
+- The TLS server name/SNI must be `temporal-frontend.lightclaw.tech`.
+- The gRPC metadata key is lowercase `authorization`.
+- The metadata value is `Bearer <JWT>`.
+- Tokens and Tencent Cloud secrets must not be committed to this repository.
+
+When replacing the Temporal cluster or frontend endpoint, verify the ingress/load balancer as a gRPC endpoint, not as a generic HTTP endpoint. Temporal workers issue long-poll gRPC calls such as `PollWorkflowTaskQueue` and `PollActivityTaskQueue`; these calls can sit idle for about a minute when no task is available. A healthy frontend returns gRPC responses that the SDK retries or repolls normally.
+
+If the worker logs show HTML `502 Bad Gateway` or `504 Gateway Timeout` responses every roughly 60 seconds, the failure is usually in the gateway in front of Temporal, not in the worker workflow code. Check that the new endpoint:
+
+- Preserves HTTP/2 gRPC upstreams.
+- Does not convert failed gRPC polls into HTML error pages.
+- Has request/read/stream idle timeouts above the Temporal long-poll duration; use at least 120 seconds, preferably several minutes.
+- Preserves the `authorization` metadata header.
+- Routes by the same TLS SNI/host that the worker uses.
+
 ## Run Worker
 
 ```bash
