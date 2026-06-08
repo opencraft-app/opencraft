@@ -1,1 +1,1 @@
-workers ci trigger cn-pool diagnostics
+workers ci trigger cn-pool docker preflight

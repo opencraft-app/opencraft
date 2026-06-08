@@ -8,6 +8,7 @@ import argparse
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -106,12 +107,57 @@ def docker_build_command(target: ImageTarget, image: str, platform: str, build_a
     return cmd
 
 
+def env_flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def print_runner_diagnostics() -> None:
+    print("docker runner diagnostics:")
+    print(f"cwd={REPO_ROOT}")
+    print(f"DOCKER_HOST={os.environ.get('DOCKER_HOST', '')}")
+    for cmd in (
+        ["hostname"],
+        ["id"],
+        ["groups"],
+        ["docker", "version"],
+        ["docker", "info"],
+        ["ls", "-l", "/var/run/docker.sock", "/run/docker.sock"],
+        ["sh", "-c", "ps -ef | grep -E 'dockerd|containerd' | grep -v grep || true"],
+    ):
+        print(f"+ {' '.join(cmd)}")
+        try:
+            subprocess.run(cmd, check=False)
+        except FileNotFoundError:
+            print(f"{cmd[0]}: command not found")
+
+
+def docker_daemon_available() -> bool:
+    if shutil.which("docker") is None:
+        return False
+    try:
+        return subprocess.run(
+            ["docker", "info"],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        ).returncode == 0
+    except FileNotFoundError:
+        return False
+
+
 def build_target(target: ImageTarget, tag: str, platform: str, push: bool, build_args: dict[str, str]) -> str:
     image = f"{target.image_repo}:{tag}"
     cmd = docker_build_command(target, image, platform, build_args)
     if build_args:
         rendered_args = " ".join(f"{key}={value}" for key, value in sorted(build_args.items()))
         print(f"docker build args: {rendered_args}")
+    if env_flag("PRINT_RUNNER_DIAGNOSTICS"):
+        print_runner_diagnostics()
+    if not docker_daemon_available():
+        print("docker daemon is unavailable before docker build; see docker runner diagnostics in this step.", file=sys.stderr)
+        if not env_flag("PRINT_RUNNER_DIAGNOSTICS"):
+            print_runner_diagnostics()
+        raise RuntimeError("docker daemon unavailable")
     subprocess.run(cmd, cwd=REPO_ROOT, check=True)
     if push:
         docker_login(target.image_repo)
@@ -137,9 +183,13 @@ def main() -> int:
 
     build_args = resolve_docker_build_args(args.service, args.env)
     built: dict[str, str] = {}
-    for target in targets:
-        image = build_target(target, args.tag, args.platform, args.push, build_args)
-        built[target.image_key or f"{args.service.upper().replace('-', '_')}_IMAGE"] = image
+    try:
+        for target in targets:
+            image = build_target(target, args.tag, args.platform, args.push, build_args)
+            built[target.image_key or f"{args.service.upper().replace('-', '_')}_IMAGE"] = image
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
 
     output = next(iter(built.values())) if len(built) == 1 and not bundle.image_targets else encode_image_payload(built)
     if args.image_output_file:

@@ -219,7 +219,7 @@ stages:
               esac
               echo "BUILD_ENVS=${BUILD_ENVS}"
               echo "AUTO_PIN_ENVS=${AUTO_PIN_ENVS}"
-              BUILD_ONLY=true bash "$REPO_ROOT/.ci/runtime/build_and_promote_to_gitops.sh" "${{ parameters.SERVICE }}" "${{ parameters.BUNDLE }}" "${BUILD_ENVS}" "${AUTO_PIN_ENVS}"
+              PRINT_RUNNER_DIAGNOSTICS="${{ parameters.PRINT_RUNNER_DIAGNOSTICS }}" BUILD_ONLY=true bash "$REPO_ROOT/.ci/runtime/build_and_promote_to_gitops.sh" "${{ parameters.SERVICE }}" "${{ parameters.BUNDLE }}" "${BUILD_ENVS}" "${AUTO_PIN_ENVS}"
           - name: 北京测试 DB 变更检查与 GitOps auto-pin
             shell: bash
             env:
