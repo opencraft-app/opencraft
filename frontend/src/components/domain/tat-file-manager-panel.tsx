@@ -1013,7 +1013,7 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
       {notice ? <div className="rounded-md border border-[color-mix(in_oklab,var(--success)_24%,white)] bg-[color-mix(in_oklab,var(--success)_8%,white)] px-3 py-2 text-sm text-[var(--success)]">{notice}</div> : null}
       {progress ? <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--surface-muted)] px-3 py-2 text-sm text-[var(--text-secondary)]">{progress}</div> : null}
 
-      <div className="overflow-hidden rounded-lg border border-[var(--border-subtle)]">
+      <div className="overflow-hidden rounded-md border border-[var(--border-subtle)]">
         <div className="grid grid-cols-[minmax(0,1fr)_104px_116px] bg-[var(--surface-muted)] px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-[var(--text-tertiary)]">
           <span>{t("名称")}</span>
           <span>{t("大小")}</span>
