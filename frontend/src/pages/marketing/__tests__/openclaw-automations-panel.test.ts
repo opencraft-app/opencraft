@@ -292,6 +292,8 @@ describe("effective window helpers", () => {
       end_at: "2026-06-08T11:02",
       weekdays: [2, 3, 4, 5, 6, 0],
     }, t)).toBe("2026-06-08 08:00 - 2026-06-08 11:02 · 已过生效期");
+
+    expect(formatEffectiveWindowPeriod(null, t)).toBe("未配置（即始终生效）");
   });
 
   it("splits configured dates and weekdays across tooltip lines", () => {

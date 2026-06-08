@@ -1467,6 +1467,9 @@ export function formatEffectiveWindowPeriod(
   window: CronEffectiveWindow | null,
   t: ReturnType<typeof useT>,
 ): string {
+  if (!window?.start_at && !window?.end_at && !window?.weekdays?.length) {
+    return t("未配置（即始终生效）");
+  }
   return getEffectiveWindowLabelParts(window, t).dateAndStatusLabel;
 }
 
