@@ -54,7 +54,9 @@ const SERVICE_WORKER_SCOPE = "/";
 const FILE_DOWNLOAD_PREFIX = "/__tat_file_download";
 const MEMORY_DOWNLOAD_LIMIT_BYTES = 8 * 1024 * 1024;
 const MAX_UPLOAD_FILE_BYTES = 1024 * 1024 * 1024;
+const MAX_DOWNLOAD_FILE_BYTES = 1024 * 1024 * 1024;
 const MAX_UPLOAD_FILE_SIZE_LABEL = "1 GB";
+const MAX_DOWNLOAD_FILE_SIZE_LABEL = "1 GB";
 const DOWNLOAD_TRIGGER_IFRAME_TTL_MS = 6 * 60 * 60 * 1000;
 const DEFAULT_TAT_FILE_PERMISSION_SUBJECT = {
   uid: DEFAULT_TAT_FILE_UID,
@@ -339,7 +341,11 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
     }
     return t("当前以 {{user}} 用户访问，选中文件没有可读权限。", { user: DEFAULT_TAT_FILE_USER });
   }, [selectedFile, t]);
-  const selectedDownloadBlockReason = selectedFile && isDirectory(selectedFile) ? t("不支持下载文件夹") : selectedPermissionBlockReason;
+  const selectedDownloadSizeBlockReason =
+    selectedFile && !isDirectory(selectedFile) && selectedFile.size > MAX_DOWNLOAD_FILE_BYTES
+      ? t("单个文件最大支持下载 {{size}}。", { size: MAX_DOWNLOAD_FILE_SIZE_LABEL })
+      : null;
+  const selectedDownloadBlockReason = selectedFile && isDirectory(selectedFile) ? t("不支持下载文件夹") : selectedDownloadSizeBlockReason ?? selectedPermissionBlockReason;
   const downloadTooltip = selectedDownloadBlockReason ?? (!selectedFile ? noFileSelectedTitle : undefined);
   const deleteTooltip = !selectedFile ? noFileSelectedTitle : undefined;
 
@@ -476,6 +482,9 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
     }
     if (isDirectory(fileInfo)) {
       throw new Error(t("目录不能直接下载。"));
+    }
+    if (fileInfo.size > MAX_DOWNLOAD_FILE_BYTES) {
+      throw new Error(t("单个文件最大支持下载 {{size}}。", { size: MAX_DOWNLOAD_FILE_SIZE_LABEL }));
     }
     if (!canReadTsshFile(fileInfo, DEFAULT_TAT_FILE_PERMISSION_SUBJECT)) {
       throw new Error(t("当前以 {{user}} 用户访问，选中文件没有可读权限。", { user: DEFAULT_TAT_FILE_USER }));

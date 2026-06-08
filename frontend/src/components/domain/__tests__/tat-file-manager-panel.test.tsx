@@ -410,6 +410,29 @@ describe("TatFileManagerPanel upload limits", () => {
     expect(screen.getByText("不支持下载文件夹")).toBeInTheDocument();
   });
 
+  it("disables downloading a file larger than 1 GB", async () => {
+    listPathMock.mockResolvedValueOnce([
+      {
+        type: "-",
+        name: "large.tar",
+        size: 1024 * 1024 * 1024 + 1,
+        modifyTime: 0,
+        accessTime: 0,
+        rights: "-rw-r--r--",
+      },
+    ]);
+
+    render(<TatFileManagerPanel botId="bot-download-limit" />);
+    const downloadButton = await screen.findByRole("button", { name: "下载" });
+    const deleteButton = screen.getByRole("button", { name: "删除" });
+
+    fireEvent.click(await screen.findByText("large.tar"));
+
+    expect(downloadButton).toBeDisabled();
+    expect(deleteButton).toBeEnabled();
+    expect(screen.getByText("单个文件最大支持下载 1 GB。")).toBeInTheDocument();
+  });
+
   it("toggles hidden files from the path controls", async () => {
     listPathMock.mockResolvedValueOnce([
       {
