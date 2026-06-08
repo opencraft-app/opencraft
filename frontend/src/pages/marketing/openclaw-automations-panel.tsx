@@ -1703,6 +1703,11 @@ function AutomationFormModal({
               {t("如不选，则只会在后台执行任务，不发通知。")}
             </p>
           ) : null}
+          {isGlobal ? (
+            <p className="mt-1 text-xs text-black/40" style={MODAL_HELP_TEXT_STYLE}>
+              {t("备注：如果连接 Telegram 或 WhatsApp，请在机器人对话中输入 /set-home，即可开启自动通知功能")}
+            </p>
+          ) : null}
         </div>
 
         {/* 操作 */}
