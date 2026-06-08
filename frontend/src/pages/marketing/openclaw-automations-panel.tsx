@@ -1040,7 +1040,7 @@ function CronJobDetailModal({
         </div>
 
         <dl className="mt-4 overflow-hidden rounded-md border border-black/[0.08] bg-white text-sm divide-y divide-black/[0.06]">
-          <DetailRow label={t("任务名称")} value={name} />
+          <NameIdDetailRow name={name} id={job.id} />
           <DetailRow label={t("任务说明")} value={job.prompt || "—"} pre />
           <DetailRow label={t("执行时间")} value={formatScheduleFriendly(job, t)} />
           {lastAgentRun && (
@@ -1057,7 +1057,6 @@ function CronJobDetailModal({
             value={formatEffectiveWindowPeriod(job.effective_window, t)}
           />
           <DeliverDetailRow deliver={job.deliver} />
-          <DetailRow label={t("任务 ID")} value={job.id} mono />
         </dl>
       </div>
     </div>,
@@ -1124,6 +1123,19 @@ function getDeliverPlatformLabel(platform: string, t: ReturnType<typeof useT>): 
   if (platform === "discord") return "Discord";
   if (platform === "origin") return t("原对话（创建任务的聊天通道）");
   return platform;
+}
+
+function NameIdDetailRow({ name, id }: { name: string; id: string }) {
+  const t = useT();
+  return (
+    <div className="grid gap-2 px-4 py-3 sm:grid-cols-[112px_minmax(0,1fr)] sm:items-start">
+      <dt className="text-xs font-medium leading-6 text-black/45">{t("任务名称与ID")}</dt>
+      <dd className="min-w-0 space-y-1 text-sm leading-6 text-black/85 sm:text-right">
+        <div className="break-words">{name}</div>
+        <div className="break-all font-mono text-xs leading-5 text-black/45">{id}</div>
+      </dd>
+    </div>
+  );
 }
 
 function DetailRow({ label, value, pre, mono }: { label: string; value: string; pre?: boolean; mono?: boolean }) {
