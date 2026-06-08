@@ -5,6 +5,7 @@ import {
   buildDeliverString,
   buildScheduleString,
   formatEffectiveWindow,
+  formatEffectiveWindowTooltipLines,
   getLastAgentRunForJob,
   getEffectiveWindowStatus,
   isCronJobExpiredBeyondGrace,
@@ -251,6 +252,19 @@ describe("effective window helpers", () => {
 
     expect(formatEffectiveWindow({ start_at: null, end_at: null, weekdays: [5, 6, 0] }, t))
       .toBe("生效中 · 执行日：周五、周六、周日");
+  });
+
+  it("splits configured dates and weekdays across tooltip lines", () => {
+    const t = ((text: string) => text) as Parameters<typeof formatEffectiveWindowTooltipLines>[1];
+
+    expect(formatEffectiveWindowTooltipLines({
+      start_at: "2026-06-08T08:00",
+      end_at: "2026-06-08T11:02",
+      weekdays: [2, 3, 4, 5, 6, 0],
+    }, t)).toEqual([
+      "2026-06-08 08:00 - 2026-06-08 11:02 · 生效中",
+      "执行日：周二、周三、周四、周五、周六、周日",
+    ]);
   });
 
   it("normalizes date-time values from either space or T separators", () => {

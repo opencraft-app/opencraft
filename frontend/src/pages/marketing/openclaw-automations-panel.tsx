@@ -15,7 +15,7 @@
  */
 
 import { AlertTriangle, Activity, BellRing, BriefcaseBusiness, CalendarRange, ChevronDown, CircleHelp, Clock, Droplets, Eraser, Eye, FolderKanban, LayoutTemplate, Loader2, Newspaper, Pause, Pencil, Play, Plus, RefreshCw, Sunrise, Trash2, TrendingUp, X } from "lucide-react";
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { parseHermesChannelList } from "@tencent/tea-sdk-lightclaw";
 import { useT } from "@/i18n/t";
@@ -75,9 +75,9 @@ function ErrorToast({ message, onClose }: { message: string; onClose: () => void
   );
 }
 
-function EffectiveWindowBadge({ label, message }: { label: string; message: string }) {
+function useHoverTooltipPosition<T extends HTMLElement>() {
   const tooltipId = useId();
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const triggerRef = useRef<T | null>(null);
   const closeTimerRef = useRef<number | null>(null);
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState({ left: 0, top: 0 });
@@ -130,6 +130,50 @@ function EffectiveWindowBadge({ label, message }: { label: string; message: stri
     return () => cancelClose();
   }, [cancelClose]);
 
+  return {
+    tooltipId,
+    triggerRef,
+    open,
+    position,
+    showTooltip,
+    scheduleClose,
+  };
+}
+
+function FloatingTooltip({
+  id,
+  position,
+  children,
+  className = "",
+  onMouseEnter,
+  onMouseLeave,
+}: {
+  id: string;
+  position: { left: number; top: number };
+  children: ReactNode;
+  className?: string;
+  onMouseEnter: () => void;
+  onMouseLeave: () => void;
+}) {
+  return createPortal(
+    <span
+      id={id}
+      className={`pointer-events-auto fixed z-[260] max-w-[min(360px,calc(100vw-32px))] -translate-x-1/2 -translate-y-full select-text rounded-md border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium leading-relaxed text-[var(--text-primary)] shadow-[0_8px_24px_rgba(15,23,42,0.12)] ${className}`}
+      style={{ left: position.left, top: position.top }}
+      role="tooltip"
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+    >
+      {children}
+      <span className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-[var(--border-subtle)] bg-white" />
+    </span>,
+    document.body,
+  );
+}
+
+function EffectiveWindowBadge({ label, messages }: { label: string; messages: string[] }) {
+  const { tooltipId, triggerRef, open, position, showTooltip, scheduleClose } = useHoverTooltipPosition<HTMLButtonElement>();
+
   return (
     <span className="relative inline-flex shrink-0">
       <button
@@ -145,19 +189,55 @@ function EffectiveWindowBadge({ label, message }: { label: string; message: stri
       >
         <CalendarRange className="h-3 w-3" aria-hidden="true" />
       </button>
-      {open && createPortal(
-        <span
+      {open && (
+        <FloatingTooltip
           id={tooltipId}
-          className="pointer-events-auto fixed z-[260] max-w-[min(320px,calc(100vw-32px))] -translate-x-1/2 -translate-y-full select-text whitespace-nowrap rounded-md border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium leading-relaxed text-[var(--text-primary)] shadow-[0_8px_24px_rgba(15,23,42,0.12)]"
-          style={{ left: position.left, top: position.top }}
-          role="tooltip"
+          position={position}
+          className="whitespace-normal text-left"
+          onMouseEnter={showTooltip}
+          onMouseLeave={scheduleClose}
+        >
+          <span className="block space-y-0.5">
+            {messages.map((line, index) => (
+              <span key={`${line}-${index}`} className="block">
+                {line}
+              </span>
+            ))}
+          </span>
+        </FloatingTooltip>
+      )}
+    </span>
+  );
+}
+
+function ImmediateTooltipText({ label, message }: { label: string; message: string }) {
+  const { tooltipId, triggerRef, open, position, showTooltip, scheduleClose } = useHoverTooltipPosition<HTMLSpanElement>();
+
+  return (
+    <span className="relative inline-flex min-w-0">
+      <span
+        ref={triggerRef}
+        className="min-w-0 truncate text-xs text-black/55"
+        aria-label={label}
+        aria-describedby={open ? tooltipId : undefined}
+        tabIndex={0}
+        onMouseEnter={showTooltip}
+        onMouseLeave={scheduleClose}
+        onFocus={showTooltip}
+        onBlur={scheduleClose}
+      >
+        {label}
+      </span>
+      {open && (
+        <FloatingTooltip
+          id={tooltipId}
+          position={position}
+          className="whitespace-nowrap"
           onMouseEnter={showTooltip}
           onMouseLeave={scheduleClose}
         >
           {message}
-          <span className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-[var(--border-subtle)] bg-white" />
-        </span>,
-        document.body,
+        </FloatingTooltip>
       )}
     </span>
   );
@@ -720,13 +800,11 @@ function CronJobCard({
 
       <div className="mt-3 flex items-center justify-between gap-2 border-t border-black/[0.04] pt-2.5">
         <div className="flex min-w-0 items-center gap-1.5">
-          <span className="min-w-0 truncate text-xs text-black/55" title={scheduleLabel} aria-label={scheduleLabel}>
-            {scheduleLabel}
-          </span>
+          <ImmediateTooltipText label={scheduleLabel} message={scheduleLabel} />
           {hasEffectiveWindow && (
             <EffectiveWindowBadge
               label={t("有效期")}
-              message={formatEffectiveWindow(job.effective_window, t)}
+              messages={formatEffectiveWindowTooltipLines(job.effective_window, t)}
             />
           )}
         </div>
@@ -1356,7 +1434,14 @@ export function formatEffectiveWindow(
   window: CronEffectiveWindow | null,
   t: ReturnType<typeof useT>,
 ): string {
-  if (!window?.start_at && !window?.end_at && !window?.weekdays?.length) return t("始终生效");
+  return formatEffectiveWindowTooltipLines(window, t).join(" · ");
+}
+
+export function formatEffectiveWindowTooltipLines(
+  window: CronEffectiveWindow | null,
+  t: ReturnType<typeof useT>,
+): string[] {
+  if (!window?.start_at && !window?.end_at && !window?.weekdays?.length) return [t("始终生效")];
   const dateLabel = window.start_at && window.end_at
     ? `${formatEffectiveWindowDate(window.start_at)} - ${formatEffectiveWindowDate(window.end_at)}`
     : window.start_at
@@ -1373,7 +1458,8 @@ export function formatEffectiveWindow(
   const weekdayLabel = window.weekdays?.length
     ? `${t("执行日")}：${formatWeekdays(window.weekdays, t)}`
     : null;
-  return [dateLabel, statusLabel, weekdayLabel].filter(Boolean).join(" · ");
+  const dateAndStatusLabel = [dateLabel, statusLabel].filter(Boolean).join(" · ");
+  return [dateAndStatusLabel, weekdayLabel].filter((line): line is string => Boolean(line));
 }
 
 function formatEffectiveWindowDate(value: string): string {
