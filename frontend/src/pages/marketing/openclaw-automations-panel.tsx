@@ -1029,7 +1029,7 @@ function CronJobDetailModal({
           <X className="h-4 w-4" />
         </button>
 
-        <div className="mb-5 pr-10">
+        <div className="mb-4 pr-10">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="min-w-0 truncate text-xl font-semibold text-black/90">{t("自动任务详情")}</h2>
             {paused && (
