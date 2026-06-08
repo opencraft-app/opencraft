@@ -879,6 +879,8 @@ func TestACPRestartedSessionRecoversFromWorkspaceRecordWhenRuntimeSMHMissing(t *
 		WispName:              "persisted-wisp",
 		WispSMHSpaceID:        spaceID,
 		WispOwnsSMHSpace:      true,
+		WorkspaceWispName:     "persisted-workspace-wisp",
+		WorkspaceRuntimeID:    "persisted-workspace-runtime",
 		WispPackageURL:        "https://example.com/wisp.tgz",
 		WispJFSPrefix:         "jfs-prefix",
 		WispRootUpperSize:     "10G",
@@ -900,6 +902,8 @@ func TestACPRestartedSessionRecoversFromWorkspaceRecordWhenRuntimeSMHMissing(t *
 	persisted.Runtime.WispPackageURL = ""
 	persisted.Runtime.WispJFSPrefix = ""
 	persisted.Runtime.WispRootUpperSize = ""
+	persisted.Runtime.WorkspaceWispName = ""
+	persisted.Runtime.WorkspaceRuntimeID = ""
 	if err := store.SaveACPSession(persisted); err != nil {
 		t.Fatal(err)
 	}

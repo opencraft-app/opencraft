@@ -52,6 +52,8 @@ type WorkspaceRecord struct {
 	WispName              string
 	WispSMHSpaceID        string
 	WispOwnsSMHSpace      bool
+	WorkspaceWispName     string
+	WorkspaceRuntimeID    string
 	WispPackageURL        string
 	WispJFSPrefix         string
 	WispRootUpperSize     string

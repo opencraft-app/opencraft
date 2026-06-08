@@ -259,6 +259,17 @@ func TestWorkspaceIDForRuntimePrefersStableSessionWorkspace(t *testing.T) {
 	}
 }
 
+func TestWorkspaceIDForRuntimeDoesNotFallbackToOuterSMHSpace(t *testing.T) {
+	req := ACPSessionRuntimeStartRequest{SessionID: "session_stable", WorkspaceKey: "workspace-stable"}
+	runtime := ACPSessionRuntime{
+		WispWorkspaceID: "outer-space-later",
+		WispSMHSpaceID:  "outer-space-later",
+	}
+	if got := workspaceIDForRuntime(runtime, req); got != "workspace_workspace-stable" {
+		t.Fatalf("workspace id must be derived from stable workspace key, not outer SMH space: %q", got)
+	}
+}
+
 func TestWispOuterRuntimeWrapsCommandWithEnvironment(t *testing.T) {
 	runtime := ACPSessionRuntime{
 		OuterRuntime:   outerRuntimeWisp,
