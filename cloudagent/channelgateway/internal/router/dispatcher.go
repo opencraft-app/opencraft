@@ -193,6 +193,15 @@ func (d *Dispatcher) closeIdleConversationLocked(ctx context.Context, item store
 		logValue(current.ChannelAccountID), logValue(d.account.AgentID), logValue(current.ConversationID),
 		logValue(current.SessionKey), logValue(current.ACPSessionID), time.Since(updatedAt).Seconds())
 	if err := d.acp.CloseSession(ctx, current.ACPSessionID); err != nil {
+		if isMissingACPSessionError(err) {
+			log.Printf("channelgateway session_trace account_id=%s agent_id=%s conversation_id=%s session_key=%s acp_session_id=%s action=session_idle_close_already_closed error=%s",
+				logValue(current.ChannelAccountID), logValue(d.account.AgentID), logValue(current.ConversationID),
+				logValue(current.SessionKey), logValue(current.ACPSessionID), logValue(err.Error()))
+			if markErr := d.store.MarkConversationRuntimeClosed(ctx, current.ChannelAccountID, current.SessionKey, current.ACPSessionID); markErr != nil {
+				return false, markErr
+			}
+			return true, nil
+		}
 		log.Printf("channelgateway session_trace account_id=%s agent_id=%s conversation_id=%s session_key=%s acp_session_id=%s action=session_idle_close_failed error=%s",
 			logValue(current.ChannelAccountID), logValue(d.account.AgentID), logValue(current.ConversationID),
 			logValue(current.SessionKey), logValue(current.ACPSessionID), logValue(err.Error()))
@@ -335,13 +344,17 @@ func (d *Dispatcher) handleInbound(ctx context.Context, msg channel.Message) (re
 				return d.handleACPError(ctx, msg, conversation, sessionID, CallbackStageLoadSession, err)
 			}
 		} else if err := d.ensureRuntimeReady(ctx, msg, conversation, sessionID); err != nil {
-			if !isMissingACPSessionError(err) {
+			if !isMissingACPSessionError(err) && !isRecoverableRuntimeError(err) {
 				log.Printf("channelgateway session_trace account_id=%s agent_id=%s conversation_id=%s session_key=%s acp_session_id=%s action=load_session_no_recovery stage=ensure_runtime_ready recoverable_runtime=%t error=%s",
 					logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(conversation.ConversationID),
 					logValue(conversation.SessionKey), logValue(sessionID), isRecoverableRuntimeError(err), logValue(err.Error()))
 				return d.handleACPError(ctx, msg, conversation, sessionID, CallbackStageLoadSession, err)
 			}
-			rebuiltSessionID, rebuildErr := d.recreateSessionWithSameWorkspace(ctx, msg, conversation, sessionID, "ensure_ready_missing_acp_runtime_session")
+			reason := "ensure_ready_missing_acp_runtime_session"
+			if isRecoverableRuntimeError(err) {
+				reason = "runtime_unavailable"
+			}
+			rebuiltSessionID, rebuildErr := d.recreateSessionWithSameWorkspace(ctx, msg, conversation, sessionID, reason)
 			if rebuildErr != nil {
 				return d.handleACPError(ctx, msg, conversation, sessionID, CallbackStageNewSession, rebuildErr)
 			}

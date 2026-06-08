@@ -28,11 +28,13 @@ type fakeACP struct {
 	ensureCalls   int
 	ensureChanged bool
 	ensureErr     error
+	ensureErrs    []error
 	reply         string
 	loadErr       error
 	promptErrs    []error
 	newDelay      time.Duration
 	newErr        error
+	closeErr      error
 	waitPrompt    bool
 	workspaceKeys []string
 }
@@ -75,13 +77,18 @@ func (f *fakeACP) CloseSession(context.Context, string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.closeCalls++
-	return nil
+	return f.closeErr
 }
 
 func (f *fakeACP) EnsureRuntimeReady(context.Context, string, string) (acp.RuntimeReadyResult, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.ensureCalls++
+	if len(f.ensureErrs) > 0 {
+		err := f.ensureErrs[0]
+		f.ensureErrs = f.ensureErrs[1:]
+		return acp.RuntimeReadyResult{}, err
+	}
 	if f.ensureErr != nil {
 		return acp.RuntimeReadyResult{}, f.ensureErr
 	}
@@ -829,6 +836,108 @@ func TestDispatcherClosesIdleConversationOnce(t *testing.T) {
 	}
 	if conv.RuntimeClosedAt != "" {
 		t.Fatalf("inbound activity should clear runtime closed marker: %#v", conv)
+	}
+}
+
+func TestDispatcherMarksGhostSessionClosedDuringIdleClose(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir()+"/channelgateway.db")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+	account := store.ChannelAccount{ChannelAccountID: "wecom-a", ChannelType: "wecom", AgentID: "main"}
+	sessionKey := "agent:main:wecom:group:chat-ghost"
+	if _, err := st.GetOrCreateConversation(ctx, store.Conversation{
+		ChannelAccountID:       "wecom-a",
+		ChannelType:            "wecom",
+		ExternalConversationID: "chat-ghost",
+		ChatType:               string(channel.ChatGroup),
+		AgentID:                "main",
+		ACPSessionID:           "session-ghost",
+		SessionKey:             sessionKey,
+	}); err != nil {
+		t.Fatalf("seed conversation: %v", err)
+	}
+	fake := &fakeACP{closeErr: errors.New("rpc error -32000: session not found")}
+	dispatcher := NewDispatcher(st, account, fake, "/workspace")
+	time.Sleep(time.Millisecond)
+	closed, err := dispatcher.CloseIdleConversations(ctx, time.Nanosecond, 10)
+	if err != nil {
+		t.Fatalf("ghost session should not abort idle close batch: %v", err)
+	}
+	if closed != 1 || fake.closeSnapshot() != 1 {
+		t.Fatalf("expected ghost session marked closed, closed=%d closeCalls=%d", closed, fake.closeSnapshot())
+	}
+	conv, err := st.GetOrCreateConversation(ctx, store.Conversation{
+		ChannelAccountID:       "wecom-a",
+		ChannelType:            "wecom",
+		ExternalConversationID: "chat-ghost",
+		ChatType:               string(channel.ChatGroup),
+		AgentID:                "main",
+		SessionKey:             sessionKey,
+	})
+	if err != nil {
+		t.Fatalf("reload conversation: %v", err)
+	}
+	if conv.RuntimeClosedAt == "" {
+		t.Fatalf("ghost session should be marked runtime closed: %#v", conv)
+	}
+}
+
+func TestDispatcherRecreatesSessionWhenEnsureReadyReportsRuntimeUnavailableAtLoad(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir()+"/channelgateway.db")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+	account := store.ChannelAccount{ChannelAccountID: "wecom-a", ChannelType: "wecom", AgentID: "main"}
+	seedMsg := channel.Message{
+		ChannelType:            channel.TypeWeCom,
+		ChatType:               channel.ChatDM,
+		ExternalConversationID: "chat-a",
+	}
+	sessionKey := channel.BuildSessionKey("main", seedMsg, true, false)
+	if _, err := st.GetOrCreateConversation(ctx, store.Conversation{
+		ChannelAccountID:       "wecom-a",
+		ChannelType:            "wecom",
+		ExternalConversationID: "chat-a",
+		ChatType:               string(channel.ChatDM),
+		AgentID:                "main",
+		ACPSessionID:           "session-stale",
+		WorkspaceKey:           "workspace-stable",
+		SessionKey:             sessionKey,
+	}); err != nil {
+		t.Fatalf("seed conversation: %v", err)
+	}
+	client := &fakeACP{
+		ensureErrs: []error{errors.New("rpc error -32003: session runtime is unavailable")},
+		reply:      "answer after load recreate",
+		sessionID:  "session-new",
+	}
+	dispatcher := NewDispatcher(st, account, client, "/workspace")
+	logs := captureLogs(t, func() {
+		err = dispatcher.HandleInbound(ctx, channel.Message{
+			ChannelAccountID:       "wecom-a",
+			ChannelType:            channel.TypeWeCom,
+			ExternalMessageID:      "msg-a",
+			ExternalConversationID: "chat-a",
+			ChatType:               channel.ChatDM,
+			Kind:                   channel.MessageText,
+			Text:                   "hello",
+			Raw:                    json.RawMessage(`{"ok":true}`),
+		})
+	})
+	if err != nil {
+		t.Fatalf("handle inbound should recreate after load-phase runtime unavailable: %v", err)
+	}
+	newCalls, loadCalls, promptCalls, _ := client.snapshot()
+	if newCalls != 1 || loadCalls != 1 || promptCalls != 1 {
+		t.Fatalf("unexpected acp calls: new=%d load=%d prompt=%d", newCalls, loadCalls, promptCalls)
+	}
+	if !strings.Contains(logs, "action=session_recreate_same_workspace reason=runtime_unavailable") {
+		t.Fatalf("expected load-phase runtime recovery logs, got:\n%s", logs)
 	}
 }
 
