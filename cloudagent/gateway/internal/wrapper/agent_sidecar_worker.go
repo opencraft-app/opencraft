@@ -984,10 +984,15 @@ func isNonBlockingStaleRuntimeCleanupError(err error) bool {
 	if err == nil {
 		return false
 	}
+	message := strings.ToLower(err.Error())
+	if strings.Contains(message, "shutdown inner workspace runtime") &&
+		!strings.Contains(message, "ags http 404") &&
+		!(strings.Contains(message, "http 404") && strings.Contains(message, "requested resource does not exist")) {
+		return false
+	}
 	if isStaleRuntimeDataPlaneAuthError(err) {
 		return true
 	}
-	message := strings.ToLower(err.Error())
 	if strings.Contains(message, "ags http 404") ||
 		strings.Contains(message, "http 404") && strings.Contains(message, "requested resource does not exist") {
 		return true
@@ -1698,6 +1703,7 @@ func (w *AgentSidecarWorker) CloseSessionRuntime(ctx context.Context, runtime AC
 	var cleanupErr error
 	var gracefulStopErr error
 	innerDeleteFallback := runtime.InnerSandboxID != ""
+	innerWorkspaceStopConfirmed := runtime.InnerSandboxID == ""
 	workspaceWispStopped := false
 	workspaceWispStopRequired := false
 	innerDeletedBySidecar := false
@@ -1721,9 +1727,11 @@ func (w *AgentSidecarWorker) CloseSessionRuntime(ctx context.Context, runtime AC
 				}
 				if event.Event == "workspace_runtime_shutdown_done" {
 					workspaceWispStopped = true
+					innerWorkspaceStopConfirmed = true
 				}
 				if event.Event == "inner_shutdown_done" {
 					innerDeletedBySidecar = true
+					innerWorkspaceStopConfirmed = true
 				}
 			}
 		}
@@ -1734,6 +1742,7 @@ func (w *AgentSidecarWorker) CloseSessionRuntime(ctx context.Context, runtime AC
 		logRuntimeHostEvents(stdoutParser.Finish())
 		if shutdownErr == nil && runtimeHostShutdownErr == nil {
 			innerDeleteFallback = false
+			innerWorkspaceStopConfirmed = true
 		} else {
 			if shutdownErr == nil {
 				shutdownErr = runtimeHostShutdownErr
@@ -1756,6 +1765,7 @@ func (w *AgentSidecarWorker) CloseSessionRuntime(ctx context.Context, runtime AC
 			fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_workspace_wisp_stop_failed runtime_id=%s inner_sandbox_id=%s wisp_name=%s lease_id=%s fence=%d error=%s\n", runtime.RuntimeID, runtime.InnerSandboxID, quoteServerField(runtime.WorkspaceWispName), quoteServerField(runtime.WispLeaseID), runtime.WispLeaseFence, quoteServerField(err.Error()))
 		} else {
 			workspaceWispStopped = true
+			innerWorkspaceStopConfirmed = true
 			fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_workspace_wisp_stop_done runtime_id=%s inner_sandbox_id=%s wisp_name=%s lease_id=%s fence=%d\n", runtime.RuntimeID, runtime.InnerSandboxID, quoteServerField(runtime.WorkspaceWispName), quoteServerField(runtime.WispLeaseID), runtime.WispLeaseFence)
 		}
 		stopCancel()
@@ -1766,7 +1776,7 @@ func (w *AgentSidecarWorker) CloseSessionRuntime(ctx context.Context, runtime AC
 		stopCtx, stopCancel := context.WithTimeout(ctx, envDurationSeconds("GATEWAY_WISP_STOP_TIMEOUT_SECONDS", 60*time.Second))
 		fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_wisp_stop_start runtime_id=%s outer_sandbox_id=%s wisp_name=%s lease_id=%s fence=%d\n", runtime.RuntimeID, runtime.OuterSandboxID, quoteServerField(runtime.WispName), quoteServerField(runtime.WispLeaseID), runtime.WispLeaseFence)
 		if err := w.stopWispOuterRuntime(stopCtx, backend.host, sb, runtime); err != nil {
-			gracefulStopErr = fmt.Errorf("stop wisp outer runtime %s: %w", runtime.WispName, err)
+			gracefulStopErr = errors.Join(gracefulStopErr, fmt.Errorf("stop wisp outer runtime %s: %w", runtime.WispName, err))
 			fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_wisp_stop_failed runtime_id=%s outer_sandbox_id=%s wisp_name=%s lease_id=%s fence=%d error=%s\n", runtime.RuntimeID, runtime.OuterSandboxID, quoteServerField(runtime.WispName), quoteServerField(runtime.WispLeaseID), runtime.WispLeaseFence, quoteServerField(err.Error()))
 		} else {
 			outerWispStopped = true
@@ -1799,7 +1809,7 @@ func (w *AgentSidecarWorker) CloseSessionRuntime(ctx context.Context, runtime AC
 		} else {
 			outerDeleted = true
 		}
-		if outerDeleted && isStaleRuntimeDataPlaneAuthError(gracefulStopErr) {
+		if outerDeleted && innerWorkspaceStopConfirmed && isStaleRuntimeDataPlaneAuthError(gracefulStopErr) {
 			fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_stale_dataplane_auth_deleted runtime_id=%s outer_sandbox_id=%s error=%s\n", runtime.RuntimeID, runtime.OuterSandboxID, quoteServerField(gracefulStopErr.Error()))
 			gracefulStopErr = nil
 		}

@@ -6,14 +6,40 @@ cd "$ROOT_DIR"
 
 # shellcheck disable=SC1091
 . "$ROOT_DIR/scripts/lib/load_env.sh"
+E2E_OUTER_TEMPLATE_OVERRIDE="${OUTER_SANDBOX_TEMPLATE:-}"
+E2E_INNER_TEMPLATE_OVERRIDE="${INNER_SANDBOX_TEMPLATE:-}"
+E2E_AGS_DOMAIN_OVERRIDE="${E2B_DOMAIN:-}"
+E2E_AGS_API_URL_OVERRIDE="${E2B_API_URL:-}"
 load_cloudagent_env "$ROOT_DIR"
+if [ -n "$E2E_OUTER_TEMPLATE_OVERRIDE" ]; then
+  OUTER_SANDBOX_TEMPLATE="$E2E_OUTER_TEMPLATE_OVERRIDE"
+fi
+if [ -n "$E2E_INNER_TEMPLATE_OVERRIDE" ]; then
+  INNER_SANDBOX_TEMPLATE="$E2E_INNER_TEMPLATE_OVERRIDE"
+elif [ -n "$E2E_OUTER_TEMPLATE_OVERRIDE" ]; then
+  INNER_SANDBOX_TEMPLATE="$E2E_OUTER_TEMPLATE_OVERRIDE"
+fi
+if [ -n "$E2E_AGS_DOMAIN_OVERRIDE" ]; then
+  E2B_DOMAIN="$E2E_AGS_DOMAIN_OVERRIDE"
+fi
+if [ -n "$E2E_AGS_API_URL_OVERRIDE" ]; then
+  E2B_API_URL="$E2E_AGS_API_URL_OVERRIDE"
+fi
 
 COSCMD_BIN="${COSCMD_BIN:-coscmd}"
 COSCMD_CONFIG="${COSCMD_CONFIG:-/tmp/cos-agent-sidecar.conf}"
 COS_OBJECT_PREFIX="${COS_OBJECT_PREFIX:-/agent-sidecar/$(date +%Y%m%d)}"
 OUTER_TEMPLATE="${OUTER_SANDBOX_TEMPLATE:-${GATEWAY_AGS_TEMPLATE:-sdt-90h9gdig}}"
 INNER_TEMPLATE="${INNER_SANDBOX_TEMPLATE:-$OUTER_TEMPLATE}"
+export GATEWAY_AGS_TEMPLATE="$OUTER_TEMPLATE"
+export GATEWAY_AGENT_SIDECAR_OUTER_TEMPLATE="$OUTER_TEMPLATE"
+export GATEWAY_AGENT_SIDECAR_INNER_TEMPLATE="$INNER_TEMPLATE"
+export INNER_SANDBOX_TEMPLATE="$INNER_TEMPLATE"
 AGS_DOMAIN="${GATEWAY_AGS_DOMAIN:-${E2B_DOMAIN:-ap-beijing.tencentags.com}}"
+export GATEWAY_AGS_DOMAIN="$AGS_DOMAIN"
+export E2B_DOMAIN="$AGS_DOMAIN"
+export E2B_API_URL="${E2B_API_URL:-https://api.${AGS_DOMAIN}}"
+export GATEWAY_AGS_API_URL="${GATEWAY_AGS_API_URL:-$E2B_API_URL}"
 TOKENHUB_MODEL="${TOKENHUB_MODEL:-minimax-m2.7}"
 API_KEY="${GATEWAY_API_KEY:-acp-session-runtime-smoke}"
 KEEP_SERVER="${KEEP_SERVER:-0}"
@@ -107,8 +133,15 @@ start_gateway() {
   GATEWAY_API_KEY="$API_KEY" \
   E2B_DOMAIN="$AGS_DOMAIN" \
   E2B_API_KEY="$E2B_API_KEY" \
+  E2B_API_URL="${E2B_API_URL:-https://api.${AGS_DOMAIN}}" \
+  GATEWAY_AGS_DOMAIN="$AGS_DOMAIN" \
+  GATEWAY_AGS_API_URL="${GATEWAY_AGS_API_URL:-$E2B_API_URL}" \
   GATEWAY_AGS_TEMPLATE="$OUTER_TEMPLATE" \
+  GATEWAY_AGENT_SIDECAR_OUTER_TEMPLATE="$OUTER_TEMPLATE" \
+  GATEWAY_AGENT_SIDECAR_INNER_TEMPLATE="$INNER_TEMPLATE" \
   INNER_SANDBOX_TEMPLATE="$INNER_TEMPLATE" \
+  GATEWAY_AGENT_OUTER_RUNTIME="${GATEWAY_AGENT_OUTER_RUNTIME:-wisp}" \
+  GATEWAY_WISP_PACKAGE_URL="${GATEWAY_WISP_PACKAGE_URL:-}" \
   TOKENHUB_API_KEY="$TOKENHUB_API_KEY" \
   TOKENHUB_MODEL="$TOKENHUB_MODEL" \
   GATEWAY_AGS_REQUEST_TIMEOUT_SECONDS=300 \
@@ -131,7 +164,11 @@ stop_gateway() {
 
 if [ "$USE_EXISTING_ARTIFACTS" = "1" ]; then
   log "build server/test only and use pre-published sidecar + sandbox-host artifacts"
-  make server test
+  if [ "${ACP_E2E_SKIP_TEST:-0}" = "1" ]; then
+    make server
+  else
+    make server test
+  fi
   PUBLIC_URL="$GATEWAY_AGENT_SIDECAR_URL"
   SIDECAR_SHA="$GATEWAY_AGENT_SIDECAR_SHA256"
   SANDBOX_HOST_URL="$GATEWAY_SANDBOX_HOST_URL"
@@ -165,6 +202,7 @@ else
 fi
 
 PORT="$(pick_port)"
+log "templates outer=${OUTER_TEMPLATE} inner=${INNER_TEMPLATE} ags_domain=${AGS_DOMAIN}"
 log "start wrapper on 127.0.0.1:${PORT}"
 : >"$SERVER_LOG"
 start_gateway
@@ -304,7 +342,14 @@ rpc(7, "session/prompt", {
     "prompt": [{"type": "text", "text": "必须使用 terminal 工具执行 `pwd && ls / | head -20 && ps -ef | head -10`，然后用一句话概括你看到的根目录和进程信息。"}],
 })
 rpc(8, "session/close", {"sessionId": session_id})
-rpc(9, "session/delete", {"sessionId": session_id})
+for attempt in range(1, 4):
+    try:
+        rpc(9, "session/delete", {"sessionId": session_id})
+        break
+    except RuntimeError as exc:
+        if "RequestFrequencyLimitExceeded" not in str(exc) or attempt == 3:
+            raise
+        time.sleep(10 * attempt)
 
 restore_session_id = rpc(10, "session/new", {"cwd": "/workspace"})["sessionId"]
 restore_marker = "cloudagent-restart-restore-" + restore_session_id.replace("_", "-")
