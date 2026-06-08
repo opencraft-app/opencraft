@@ -48,7 +48,7 @@ const DEFAULT_TAT_FILE_GID = 1000;
 const DEFAULT_TAT_FILE_PATH = "/home/agentuser/.hermes";
 const MANAGED_TAT_FILE_ROOT = DEFAULT_TAT_FILE_PATH;
 const SERVICE_WORKER_URL = "/tat-hermes-web-proxy-sw.js";
-const SERVICE_WORKER_VERSION = "tat-file-download-v5";
+const SERVICE_WORKER_VERSION = "tat-file-download-v6";
 const SERVICE_WORKER_SCOPE = "/";
 const FILE_DOWNLOAD_PREFIX = "/__tat_file_download";
 const MEMORY_DOWNLOAD_LIMIT_BYTES = 8 * 1024 * 1024;
@@ -75,6 +75,11 @@ interface TatFileDownloadAckWaiter {
   sequence: number;
   resolve: () => void;
   reject: (error: Error) => void;
+  timer: number;
+}
+
+interface DownloadTriggerIframe {
+  iframe: HTMLIFrameElement;
   timer: number;
 }
 
@@ -282,18 +287,6 @@ const fileDownloadUrlFor = (botId: string, path: string, name: string) => {
   return `${FILE_DOWNLOAD_PREFIX}/${encodeURIComponent(botId)}?${params.toString()}`;
 };
 
-const triggerBrowserDownload = (url: string) => {
-  const iframe = document.createElement("iframe");
-  iframe.src = url;
-  iframe.hidden = true;
-  iframe.style.display = "none";
-  iframe.setAttribute("aria-hidden", "true");
-  document.body.appendChild(iframe);
-  window.setTimeout(() => {
-    iframe.remove();
-  }, DOWNLOAD_TRIGGER_IFRAME_TTL_MS);
-};
-
 const fileIconFor = (file: TsshFileInfo) => {
   if (isDirectory(file)) {
     return <Folder className="size-4 text-[#b7791f]" />;
@@ -319,6 +312,7 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
   const pathInputRef = useRef<HTMLInputElement | null>(null);
   const pathControlsRef = useRef<HTMLDivElement | null>(null);
   const createFolderInputRef = useRef<HTMLInputElement | null>(null);
+  const downloadTriggerIframesRef = useRef<Set<DownloadTriggerIframe>>(new Set());
   const [path, setPath] = useState(DEFAULT_TAT_FILE_PATH);
   const [pathDraft, setPathDraft] = useState(DEFAULT_TAT_FILE_PATH);
   const [pathEditing, setPathEditing] = useState(false);
@@ -364,14 +358,46 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
       websocketError: t("连接异常，请刷新后重试。"),
     });
 
+  const removeDownloadTriggerIframe = (trigger: DownloadTriggerIframe) => {
+    window.clearTimeout(trigger.timer);
+    trigger.iframe.remove();
+    downloadTriggerIframesRef.current.delete(trigger);
+  };
+
+  const clearDownloadTriggerIframes = () => {
+    for (const trigger of downloadTriggerIframesRef.current) {
+      window.clearTimeout(trigger.timer);
+      trigger.iframe.remove();
+    }
+    downloadTriggerIframesRef.current.clear();
+  };
+
+  const triggerBrowserDownload = (url: string) => {
+    const iframe = document.createElement("iframe");
+    iframe.src = url;
+    iframe.hidden = true;
+    iframe.style.display = "none";
+    iframe.setAttribute("aria-hidden", "true");
+    const trigger: DownloadTriggerIframe = {
+      iframe,
+      timer: window.setTimeout(() => {
+        removeDownloadTriggerIframe(trigger);
+      }, DOWNLOAD_TRIGGER_IFRAME_TTL_MS),
+    };
+    downloadTriggerIframesRef.current.add(trigger);
+    document.body.appendChild(iframe);
+  };
+
   useEffect(() => {
     return () => {
+      clearDownloadTriggerIframes();
       clientRef.current?.close();
       clientRef.current = null;
     };
   }, []);
 
   useEffect(() => {
+    clearDownloadTriggerIframes();
     clientRef.current?.close();
     clientRef.current = null;
     setPath(DEFAULT_TAT_FILE_PATH);
@@ -554,6 +580,7 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
       }
     } finally {
       clearTatFileDownloadAckWaiter(waitingAck);
+      clearDownloadTriggerIframes();
       waitingAck = null;
       setProgress(null);
       port.close();

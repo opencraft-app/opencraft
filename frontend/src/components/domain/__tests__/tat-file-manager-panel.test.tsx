@@ -7,6 +7,67 @@ const uploadFileMock = vi.fn();
 const listPathMock = vi.fn<() => Promise<TsshFileInfo[]>>(async () => []);
 const deleteFileMock = vi.fn();
 const createFileMock = vi.fn();
+const originalServiceWorkerDescriptor = Object.getOwnPropertyDescriptor(navigator, "serviceWorker");
+
+const installServiceWorkerDownloadMock = () => {
+  class TestMessagePort {
+    peer: TestMessagePort | null = null;
+    onmessage: ((event: MessageEvent) => void) | null = null;
+
+    postMessage(data: unknown) {
+      this.peer?.onmessage?.({ data } as MessageEvent);
+    }
+
+    close() {
+      this.onmessage = null;
+    }
+  }
+
+  class TestMessageChannel {
+    port1: TestMessagePort;
+    port2: TestMessagePort;
+
+    constructor() {
+      this.port1 = new TestMessagePort();
+      this.port2 = new TestMessagePort();
+      this.port1.peer = this.port2;
+      this.port2.peer = this.port1;
+    }
+  }
+
+  vi.stubGlobal("MessageChannel", TestMessageChannel);
+  const worker = {
+    state: "activated",
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    postMessage: vi.fn((_message: unknown, ports?: unknown[]) => {
+      const port = ports?.[0] as { postMessage?: (data: unknown) => void } | undefined;
+      if (port && typeof port.postMessage === "function") {
+        port.postMessage({
+          type: "TAT_FILE_DOWNLOAD_READY",
+          version: "tat-file-download-v6",
+        });
+      }
+    }),
+  };
+  const registration = {
+    active: worker,
+    installing: null,
+    waiting: null,
+    update: vi.fn(async () => undefined),
+  };
+  const serviceWorker = {
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    register: vi.fn(async () => registration),
+    ready: Promise.resolve(registration),
+  };
+  Object.defineProperty(navigator, "serviceWorker", {
+    configurable: true,
+    value: serviceWorker,
+  });
+  return serviceWorker;
+};
 
 vi.mock("@/contexts/repository-context", () => ({
   useRepositories: () => ({
@@ -66,6 +127,12 @@ describe("TatFileManagerPanel upload limits", () => {
 
   afterEach(() => {
     cleanup();
+    vi.unstubAllGlobals();
+    if (originalServiceWorkerDescriptor) {
+      Object.defineProperty(navigator, "serviceWorker", originalServiceWorkerDescriptor);
+    } else {
+      Reflect.deleteProperty(navigator, "serviceWorker");
+    }
   });
 
   it("blocks uploading a single file larger than 1 GB", async () => {
@@ -291,6 +358,33 @@ describe("TatFileManagerPanel upload limits", () => {
 
     expect(downloadButton).toBeEnabled();
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+  });
+
+  it("removes download trigger iframes when the panel unmounts", async () => {
+    installServiceWorkerDownloadMock();
+    listPathMock.mockResolvedValueOnce([
+      {
+        type: "-",
+        name: "app.log",
+        size: 42,
+        modifyTime: 0,
+        accessTime: 0,
+        rights: "-rw-r--r--",
+      },
+    ]);
+
+    const { unmount } = render(<TatFileManagerPanel botId="bot-download-iframe-cleanup" />);
+    const downloadButton = await screen.findByRole("button", { name: "下载" });
+
+    fireEvent.click(await screen.findByText("app.log"));
+    await waitFor(() => expect(downloadButton).toBeEnabled());
+    fireEvent.click(downloadButton);
+
+    await waitFor(() => expect(document.body.querySelectorAll("iframe")).toHaveLength(1));
+
+    unmount();
+
+    expect(document.body.querySelectorAll("iframe")).toHaveLength(0);
   });
 
   it("disables downloading a selected folder and explains why", async () => {
