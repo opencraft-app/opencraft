@@ -7,6 +7,7 @@ import {
   parseHermesAchievementsOutput,
 } from "@/pages/marketing/openclaw-achievements";
 import {
+  achievementCriteriaText,
   achievementErrorMessage,
   achievementDisplayDescription,
   achievementDisplayName,
@@ -15,6 +16,18 @@ import {
 
 const START = "__LIGHTVELA_ACHIEVEMENTS_JSON_START__";
 const END = "__LIGHTVELA_ACHIEVEMENTS_JSON_END__";
+const testT = (zh: string, options?: Record<string, unknown>) => {
+  if (!options) {
+    return `i18n:${zh}`;
+  }
+  return `i18n:${zh.replace(/\{\{\s*([\w$]+)\s*\}\}/g, (_, key: string) => String(options[key] ?? ""))}`;
+};
+const plainT = (zh: string, options?: Record<string, unknown>) => {
+  if (!options) {
+    return zh;
+  }
+  return zh.replace(/\{\{\s*([\w$]+)\s*\}\}/g, (_, key: string) => String(options[key] ?? ""));
+};
 
 describe("openclaw achievements debug exec helpers", () => {
   it("builds a fixed hermes achievements command without caller input", () => {
@@ -125,11 +138,9 @@ describe("openclaw achievements debug exec helpers", () => {
   });
 
   it("maps achievement errors to localized friendly copy", () => {
-    const t = (zh: string) => `i18n:${zh}`;
-
-    expect(achievementErrorMessage({ code: "json_parse_failed" }, t)).toBe("i18n:成就数据解析失败，请稍后重试。");
-    expect(achievementErrorMessage({ code: "command_failed" }, t)).toBe("i18n:成就命令执行失败，请检查 Hermes 服务状态。");
-    expect(achievementErrorMessage({ code: "unknown" }, t)).toBe("i18n:成就数据读取失败");
+    expect(achievementErrorMessage({ code: "json_parse_failed" }, testT)).toBe("i18n:成就数据解析失败，请稍后重试。");
+    expect(achievementErrorMessage({ code: "command_failed" }, testT)).toBe("i18n:成就命令执行失败，请检查 Hermes 服务状态。");
+    expect(achievementErrorMessage({ code: "unknown" }, testT)).toBe("i18n:成就数据读取失败");
   });
 
   it("derives timestamp locale from the active language", () => {
@@ -152,6 +163,54 @@ describe("openclaw achievements debug exec helpers", () => {
 
     expect(achievementDisplayName(achievement, t)).toBe("i18n:甩手掌柜");
     expect(achievementDisplayDescription(achievement, t)).toBe("i18n:让 Hermes 在一次会话中自主完成一条完整工具链。");
+  });
+
+  it("localizes tiered achievement criteria", () => {
+    const achievement = {
+      id: "autonomous_avalanche",
+      name: "Autonomous Avalanche",
+      description: "Accumulate a lifetime avalanche of Hermes tool calls across sessions.",
+      category: "Agent Autonomy",
+      criteria: "Requirement: lifetime Hermes tool calls. Tier ladder: Copper 1000, Silver 3000, Gold 8000.",
+      state: "discovered",
+      unlocked: false,
+    } as const;
+
+    expect(achievementCriteriaText(achievement, plainT, "zh-CN")).toBe(
+      "计数指标：累计 Hermes 工具调用次数。等级门槛：铜 1000、银 3000、金 8000。",
+    );
+  });
+
+  it("localizes multi-condition achievement criteria", () => {
+    const achievement = {
+      id: "full_send",
+      name: "Full Send",
+      description: "Terminal, files, and web/browser all get involved in one real run.",
+      category: "Agent Autonomy",
+      criteria: "Requirement: terminal calls in one session ≥ 180; file/search/patch calls in one session ≥ 120.",
+      state: "discovered",
+      unlocked: false,
+    } as const;
+
+    expect(achievementCriteriaText(achievement, plainT, "zh-CN")).toBe(
+      "需要同时满足：单次会话中的终端调用次数 不少于 180；单次会话中的文件、搜索或补丁调用次数 不少于 120。",
+    );
+  });
+
+  it("hides secret achievement criteria details before discovery", () => {
+    const achievement = {
+      id: "port_3000_taken",
+      name: "???",
+      description: "Secret achievement: hidden until Hermes detects the first relevant behavior in your session history.",
+      category: "Debugging Chaos",
+      criteria: "Secret: exact requirement hidden until Hermes sees the first matching signal. Keep using Hermes across debugging, tools, memory, skills, plugins, and model workflows to reveal it.",
+      state: "secret",
+      unlocked: false,
+    } as const;
+
+    expect(achievementCriteriaText(achievement, plainT, "zh-CN")).toBe(
+      "隐藏成就的具体条件会在 Hermes 发现相关行为后展示。继续在调试、工具、记忆、技能、插件和模型工作流中使用 Hermes。",
+    );
   });
 
   it("falls back to backend achievement copy for unknown ids", () => {

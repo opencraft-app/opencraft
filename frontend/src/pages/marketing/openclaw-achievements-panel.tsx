@@ -120,6 +120,147 @@ export const achievementTimestampLocale = (language?: string) => (
   (language || "").toLowerCase().startsWith("zh") ? "zh-CN" : "en-US"
 );
 
+const criteriaMetricTranslations: Record<string, AchievementCopyTranslator> = {
+  "tool calls in one session": (t) => t("单次会话中的工具调用次数"),
+  "distinct Hermes tools used in one session": (t) => t("单次会话中使用的不同 Hermes 工具数"),
+  "terminal calls in one session": (t) => t("单次会话中的终端调用次数"),
+  "file/search/patch calls in one session": (t) => t("单次会话中的文件、搜索或补丁调用次数"),
+  "web search/extract or browser calls in one session": (t) => t("单次会话中的网页搜索、提取或浏览器调用次数"),
+  "messages in one session": (t) => t("单次会话中的消息数"),
+  "files touched in one session": (t) => t("单次会话中触达的文件数"),
+  "lifetime delegate_task calls": (t) => t("累计 delegate_task 调用次数"),
+  "lifetime background process operations": (t) => t("累计后台进程操作次数"),
+  "lifetime scheduled-job operations": (t) => t("累计计划任务操作次数"),
+  "error/failed/traceback messages observed": (t) => t("累计观察到的错误、失败或 traceback 消息数"),
+  "traceback or exception mentions": (t) => t("traceback 或异常提及次数"),
+  "log inspections": (t) => t("日志查看次数"),
+  "dev-server port conflict detections": (t) => t("开发服务器端口冲突次数"),
+  "permission-denied errors": (t) => t("权限拒绝错误次数"),
+  "package-install failures": (t) => t("包安装失败次数"),
+  "successful package installs after package work": (t) => t("包相关操作后的成功安装次数"),
+  "restart/reload actions after error clusters": (t) => t("错误集中出现后的重启或重载次数"),
+  "missing auth/config/environment-variable events": (t) => t("认证、配置或环境变量缺失事件数"),
+  "YAML/config parse incidents": (t) => t("YAML 或配置解析问题次数"),
+  "Docker/container-name conflicts": (t) => t("Docker 或容器名称冲突次数"),
+  "frontend/CSS/SVG/React activity mentions": (t) => t("前端、CSS、SVG 或 React 活动提及次数"),
+  "CSS, styling, Tailwind, or className activity": (t) => t("CSS、样式、Tailwind 或 className 活动次数"),
+  "git workflow commands": (t) => t("Git 工作流命令次数"),
+  "tiny typo-style fixes after error clusters": (t) => t("错误集中出现后的细小修复次数"),
+  "Hermes skill mentions or tool use": (t) => t("Hermes 技能提及或工具使用次数"),
+  "skill_manage create/patch/delete operations": (t) => t("skill_manage 创建、修改或删除操作次数"),
+  "memory or Mnemosyne tool events": (t) => t("memory 或 Mnemosyne 工具事件数"),
+  "durable memory writes": (t) => t("长期记忆写入次数"),
+  "context, compression, token, or cache-pressure mentions": (t) => t("上下文、压缩、token 或缓存压力提及次数"),
+  "gateway/API/chat-platform activity": (t) => t("网关、API 或聊天平台活动次数"),
+  "dashboard plugin development or usage signals": (t) => t("Dashboard 插件开发或使用信号次数"),
+  "rollback/checkpoint recovery mentions": (t) => t("回滚或检查点恢复提及次数"),
+  "documentation/README/docs activity": (t) => t("文档、README 或 docs 活动次数"),
+  "model/provider-related activity": (t) => t("模型或供应商相关活动次数"),
+  "OpenRouter mentions": (t) => t("OpenRouter 提及次数"),
+  "Codex mentions": (t) => t("Codex 提及次数"),
+  "prompt-cache/cache-hit mentions": (t) => t("提示词缓存或缓存命中提及次数"),
+  "lifetime web_search/web_extract calls": (t) => t("累计 web_search 或 web_extract 调用次数"),
+  "lifetime web_extract calls": (t) => t("累计 web_extract 调用次数"),
+  "lifetime browser automation calls": (t) => t("累计浏览器自动化调用次数"),
+  "lifetime Hermes tool calls": (t) => t("累计 Hermes 工具调用次数"),
+  "lifetime terminal calls": (t) => t("累计终端调用次数"),
+  "lifetime targeted patch edits": (t) => t("累计精准补丁修改次数"),
+  "lifetime read_file/search_files calls": (t) => t("累计 read_file 或 search_files 调用次数"),
+  "image generation or vision tool calls": (t) => t("图像生成或视觉工具调用次数"),
+  "text-to-speech or voice tool calls": (t) => t("文本转语音或语音工具调用次数"),
+  "distinct model names seen in session metadata": (t) => t("会话元数据中出现的不同模型名称数"),
+  "distinct model providers inferred from session metadata": (t) => t("从会话元数据推断出的不同模型供应商数"),
+  "Claude/Anthropic model mentions": (t) => t("Claude 或 Anthropic 模型提及次数"),
+  "Gemini/Google model mentions": (t) => t("Gemini 或 Google 模型提及次数"),
+  "local/open-weight model mentions": (t) => t("本地或开源权重模型提及次数"),
+  "Hermes sessions whose model metadata is local/open-weight": (t) => t("模型元数据为本地或开源权重的 Hermes 会话数"),
+  "toolset or tool-family mentions": (t) => t("工具集或工具族提及次数"),
+  "configuration/environment/manifest activity": (t) => t("配置、环境或 manifest 活动次数"),
+  "git history operations such as rebase, merge, fetch, push, or tag": (t) => t("rebase、merge、fetch、push 或 tag 等 Git 历史操作次数"),
+  "test/check/verification command mentions": (t) => t("测试、检查或验证命令提及次数"),
+  "screenshot, Playwright, PNG, or vision-inspection activity": (t) => t("截图、Playwright、PNG 或视觉检查活动次数"),
+  "release, version, publish, or git tag events": (t) => t("发布、版本、上线或 Git tag 事件数"),
+  "Hermes sessions": (t) => t("Hermes 会话数"),
+  "sessions started on weekends": (t) => t("周末开始的会话数"),
+  "sessions started late night or before dawn": (t) => t("深夜或凌晨开始的会话数"),
+};
+
+const isChineseCriteriaLocale = (language?: string) => (
+  achievementTimestampLocale(language) === "zh-CN"
+);
+
+const criteriaListSeparator = (language?: string) => (isChineseCriteriaLocale(language) ? "、" : ", ");
+const criteriaRequirementSeparator = (language?: string) => (isChineseCriteriaLocale(language) ? "；" : "; ");
+
+const translateCriteriaMetric = (metric: string, t: Translate) => (
+  criteriaMetricTranslations[metric]?.(t) ?? t("对应的 Hermes 行为次数")
+);
+
+const translateCriteriaTierLadder = (ladder: string, t: Translate, language?: string) => (
+  ladder
+    .split(",")
+    .map((part) => {
+      const match = part.trim().match(/^([A-Za-z]+)\s+([\d,]+)$/);
+      if (!match) {
+        return "";
+      }
+      return `${tierLabel(match[1] ?? "", t)} ${match[2] ?? ""}`.trim();
+    })
+    .filter(Boolean)
+    .join(criteriaListSeparator(language))
+);
+
+const translateCriteriaRequirement = (requirement: string, t: Translate) => {
+  const match = requirement.trim().match(/^(.+?)\s*≥\s*([\d,]+)$/);
+  if (!match) {
+    return translateCriteriaMetric(requirement.trim(), t);
+  }
+  return t("{{metric}} 不少于 {{count}}", {
+    metric: translateCriteriaMetric(match[1] ?? "", t),
+    count: match[2] ?? "",
+  });
+};
+
+export const achievementCriteriaText = (achievement: HermesAchievement, t: Translate, language?: string) => {
+  const criteria = achievement.criteria?.trim();
+  if (!criteria) {
+    return t("当前成就暂未返回计数规则。");
+  }
+  if (criteria.startsWith("Secret: exact requirement hidden")) {
+    return t("隐藏成就的具体条件会在 Hermes 发现相关行为后展示。继续在调试、工具、记忆、技能、插件和模型工作流中使用 Hermes。");
+  }
+
+  const tieredMatch = criteria.match(/^Requirement: (.+)\. Tier ladder: (.+)\.$/);
+  if (tieredMatch) {
+    const metric = translateCriteriaMetric(tieredMatch[1] ?? "", t);
+    const ladder = translateCriteriaTierLadder(tieredMatch[2] ?? "", t, language);
+    return ladder
+      ? t("计数指标：{{metric}}。等级门槛：{{ladder}}。", { metric, ladder })
+      : t("计数指标：{{metric}}。", { metric });
+  }
+
+  const multiRequirementMatch = criteria.match(/^Requirement: (.+)\.$/);
+  if (multiRequirementMatch) {
+    const body = multiRequirementMatch[1] ?? "";
+    if (body === "use Hermes in the matching workflow") {
+      return t("使用 Hermes 完成对应工作流。");
+    }
+    if (body === "complete the matching Hermes behavior") {
+      return t("完成对应的 Hermes 行为后解锁。");
+    }
+    const requirements = body
+      .split(";")
+      .map((part) => translateCriteriaRequirement(part, t))
+      .filter(Boolean)
+      .join(criteriaRequirementSeparator(language));
+    return requirements
+      ? t("需要同时满足：{{requirements}}。", { requirements })
+      : t("完成对应的 Hermes 行为后解锁。");
+  }
+
+  return t("完成对应的 Hermes 行为后解锁。");
+};
+
 const TIER_ORDER = ["Olympian", "Diamond", "Gold", "Silver", "Copper"];
 
 const achievementGridStyle: CSSProperties = {
@@ -459,7 +600,7 @@ const LoadingGrid = () => (
   <div style={achievementGridStyle}>
     {Array.from({ length: 6 }, (_, index) => (
       <div key={index} className="min-h-[220px] rounded-lg border border-black/[0.06] bg-white p-5 shadow-[0_8px_28px_rgba(15,23,42,0.035)]">
-        <div className="h-10 w-10 rounded-md bg-black/[0.05]" />
+        <div className="h-10 w-10 rounded-full bg-black/[0.05]" />
         <div className="mt-5 h-4 w-3/5 rounded bg-black/[0.05]" />
         <div className="mt-3 h-3 w-full rounded bg-black/[0.04]" />
         <div className="mt-2 h-3 w-4/5 rounded bg-black/[0.04]" />
@@ -479,6 +620,8 @@ const AchievementCard = ({ achievement }: { achievement: HermesAchievement }) =>
   const displayedTier = tier ? tierLabel(tier, t) : "";
   const displayName = achievementDisplayName(achievement, t);
   const displayDescription = achievementDisplayDescription(achievement, t);
+  const criteriaText = achievementCriteriaText(achievement, t, i18n.language);
+  const [criteriaOpen, setCriteriaOpen] = useState(false);
 
   return (
     <article
@@ -488,7 +631,7 @@ const AchievementCard = ({ achievement }: { achievement: HermesAchievement }) =>
       )}
     >
       <div className="grid grid-cols-[48px_minmax(0,1fr)] items-center gap-x-3">
-        <span className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-lg border border-black/[0.06] bg-black/[0.03] text-black/70">
+        <span className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full border border-black/[0.06] bg-black/[0.03] text-black/70">
           <Icon className="h-5 w-5" />
         </span>
         <div className="min-w-0">
@@ -525,17 +668,49 @@ const AchievementCard = ({ achievement }: { achievement: HermesAchievement }) =>
         </div>
       </div>
 
-      <details className="mt-4 border-t border-black/[0.06] pt-3 text-xs text-black/50">
-        <summary className="cursor-pointer select-none font-medium text-black/55">{t("计数规则")}</summary>
-        <p className="mt-2 leading-5">
-          {achievement.criteria || t("当前成就暂未返回计数规则。")}
-        </p>
-        {achievement.evidence?.title ? (
-          <p className="mt-2 leading-5">
-            {t("来源会话：{{title}}", { title: achievement.evidence.title })}
-          </p>
-        ) : null}
-      </details>
+      <div className="mt-4 border-t border-black/[0.06] pt-3 text-xs">
+        <button
+          type="button"
+          className="group flex w-full items-center gap-2 rounded-md py-1 text-left outline-none transition-colors hover:bg-black/[0.025] focus-visible:ring-2 focus-visible:ring-black/10"
+          aria-expanded={criteriaOpen}
+          onClick={() => setCriteriaOpen((open) => !open)}
+        >
+          <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-black/[0.035] text-black/45 transition-colors group-hover:bg-black/[0.055] group-hover:text-black/60">
+            <ScrollText className="h-3.5 w-3.5" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block font-medium text-black/58">{t("计数规则")}</span>
+            {!criteriaOpen ? (
+              <span className="mt-0.5 block truncate text-black/35">
+                {criteriaText}
+              </span>
+            ) : null}
+          </span>
+          <ChevronDown
+            className={cn(
+              "h-4 w-4 flex-shrink-0 text-black/35 transition-transform duration-200",
+              criteriaOpen && "rotate-180 text-black/55",
+            )}
+          />
+        </button>
+        <div
+          className={cn(
+            "grid transition-[grid-template-rows,opacity] duration-200 ease-out",
+            criteriaOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
+          )}
+        >
+          <div className="overflow-hidden">
+            <div className="mt-2 pl-8 text-black/50">
+              <p className="leading-5">{criteriaText}</p>
+              {achievement.evidence?.title ? (
+                <p className="mt-2 leading-5">
+                  {t("来源会话：{{title}}", { title: achievement.evidence.title })}
+                </p>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      </div>
 
       {unlockedAt ? (
         <p className="mt-3 flex items-center gap-1.5 text-xs text-black/38">
