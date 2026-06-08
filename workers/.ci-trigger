@@ -1,1 +1,1 @@
-workers ci trigger cn-pool docker preflight
+workers ci trigger cn-pool docker daemon repaired
