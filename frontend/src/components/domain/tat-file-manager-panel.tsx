@@ -348,6 +348,8 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
   const selectedDownloadBlockReason = selectedFile && isDirectory(selectedFile) ? t("不支持下载文件夹") : selectedDownloadSizeBlockReason ?? selectedPermissionBlockReason;
   const downloadTooltip = selectedDownloadBlockReason ?? (!selectedFile ? noFileSelectedTitle : undefined);
   const deleteTooltip = !selectedFile ? noFileSelectedTitle : undefined;
+  const parentPathBlocked = path === MANAGED_TAT_FILE_ROOT;
+  const parentPathTooltip = parentPathBlocked ? t("不支持返回上一级目录") : t("上级");
 
   const translateFileManagerError = useCallback(
     (operationError: unknown, fallback: string) =>
@@ -892,17 +894,19 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
         </div>
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div ref={pathControlsRef} className="flex w-full min-w-0 flex-col gap-2 sm:flex-row xl:flex-1">
-            <Button
-              type="button"
-              variant="outline"
-              className="h-10 w-10 shrink-0 px-0"
-              onClick={() => void loadPath(parentTsshPath(path))}
-              disabled={busy || path === MANAGED_TAT_FILE_ROOT}
-              aria-label={t("上级")}
-              title={t("上级")}
-            >
-              <Undo2 className="size-5" />
-            </Button>
+            <ActionTooltip label={parentPathTooltip} variant="light">
+              <Button
+                type="button"
+                variant="outline"
+                className="h-10 w-10 shrink-0 px-0"
+                onClick={() => void loadPath(parentTsshPath(path))}
+                disabled={busy || parentPathBlocked}
+                aria-label={t("上级")}
+                title={parentPathTooltip}
+              >
+                <Undo2 className="size-5" />
+              </Button>
+            </ActionTooltip>
             <div className="relative min-w-0 sm:flex-1 xl:flex-none xl:basis-4/5">
               <Input
                 ref={pathInputRef}

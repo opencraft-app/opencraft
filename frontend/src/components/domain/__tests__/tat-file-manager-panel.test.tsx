@@ -180,6 +180,7 @@ describe("TatFileManagerPanel upload limits", () => {
     render(<TatFileManagerPanel botId="bot-managed-root" />);
     const pathInput = await screen.findByDisplayValue("/home/agentuser/.hermes");
     expect(screen.getByRole("button", { name: "上级" })).toBeDisabled();
+    expect(screen.getByText("不支持返回上一级目录")).toBeInTheDocument();
     listPathMock.mockClear();
 
     fireEvent.change(pathInput, { target: { value: "/home/agentuser" } });
