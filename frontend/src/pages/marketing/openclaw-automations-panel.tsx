@@ -1047,14 +1047,14 @@ function CronJobDetailModal({
             label={t("生效时间段")}
             value={formatEffectiveWindowPeriod(job.effective_window, t)}
           />
-          {nextRunAt && (
-            <DetailRow label={t("下次执行")} value={formatTime(nextRunAt)} />
-          )}
           {lastAgentRun && (
             <DetailRow
               label={t("上次执行")}
               value={formatLastRun(lastAgentRun.run_at, lastAgentRun.status, t)}
             />
+          )}
+          {nextRunAt && (
+            <DetailRow label={t("下次执行")} value={formatTime(nextRunAt)} />
           )}
           <DeliverDetailRow deliver={job.deliver} />
           <DetailRow label={t("任务 ID")} value={job.id} mono />
