@@ -636,6 +636,9 @@ export function buildEffectiveWindowScript(args: CronLightVelaScriptConfig): str
   return [
     "#!/usr/bin/env python3",
     "# lightvela-effective-window",
+    "# Hermes pre-run gate script. MUST return within ~1s — runs every cron tick",
+    "# (up to once per minute when daily_times is used) and blocks the cron loop.",
+    "# Keep logic O(1): no I/O, no network, no subprocess.",
     `# start_at=${startAt}`,
     `# end_at=${endAt}`,
     `# weekdays=${weekdays.join(",")}`,
