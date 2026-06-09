@@ -58,8 +58,6 @@ func TestExampleConfigLoads(t *testing.T) {
 			wantRoutes[route.ID] = true
 			wantBackend := route.ID
 			switch route.ID {
-			case "jifei-test":
-				wantBackend = "billing-trade-cn-test"
 			case "shadow-account-test":
 				wantBackend = "tcapi-account-cn-test"
 			case "shadow-cam-test":

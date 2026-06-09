@@ -27,6 +27,32 @@ backends:
       headers:
         Host: "trade.itd.com"
 
+  # ===========================================================================
+  # jifei-test backend：lightvela trade → jifei CGW 测试环境出向
+  #
+  # **重要**：clgateway 部署在 TKEx 联调集群，**未注入 polaris-sidecar**，所以
+  # 这条 backend **不能**像 billing-trade-cn-test 那样写 polaris 形式（会触发
+  # `query polaris sidecar: connection refused`），必须用 base_url 直连 IP +
+  # Host header 重写。
+  #
+  # base_url：PDF §国内站测试环境-业务提测 §测试请求示例 中给出的 jifei CGW 测试
+  # 环境直连 IP **9.139.137.40**（同一份 PDF host 列写的是 11.141.38.133，但 curl
+  # 示例与 jifei 实际联调对接均使用 9.139.137.40，以联调实际生效 IP 为准；域名
+  # trade.itd.com 在 clgateway TKEx 集群 CoreDNS 不可解析，实测
+  # `dial tcp: lookup trade.itd.com on 10.0.43.133:53: no such host`）。
+  #
+  # Host header 重写：jifei CGW 侧根据 Host 路由到对应模块，**必须**带 trade.itd.com。
+  # 依赖 v1.7.6 B0 commit 0b60ac3d 的 Header.Set("Host") → req.Host = ... 修复
+  # （master b79013ac 后由 setRequestHeader helper 接管）。
+  # ===========================================================================
+  - alias: jifei-test
+    upstream:
+      base_url: "http://9.139.137.40"
+      timeout: 10s
+      allowed_methods: ["POST"]
+      headers:
+        Host: "trade.itd.com"
+
   - alias: billing-trade-cn-pre
     upstream:
       scheme: http
@@ -121,7 +147,16 @@ backends:
         X-Shadow-Callback-Token: CLOUDLADDER_TENCENT_CALLBACK_TOKEN
 
 auth:
-  enabled: true
+  # **联调期全局禁用 HMAC**（按 .tmp/integration-plan-2026-05-18.md §10 Q-INT-14=a +
+  # P4-followup=a 拍板）。lightvela trade → clgateway → jifei 联调链路本期不签名，
+  # 用 IP 白名单 + VPC 隔离做边界。**prod 切换前必须改回 true** 并完成 trade 端
+  # HMAC 客户端改造（pkg/clientauth 加 SignHTTPRequest helper + jifeiclient.do
+  # 注入 X-CloudLadder-Caller / Timestamp / Signature 3 个 header）。
+  #
+  # 注：master 代码引入了 allow_unauthenticated 白名单机制（精细化签名管控），
+  # 但联调期保持 enabled=false 简化路径，不依赖白名单。后续 prod 切换时再改为
+  # enabled=true + 配置 allow_unauthenticated 列表。
+  enabled: false
   timestamp_skew: 5m
   # 历史 trade/jifei 联调链路还没有接入 HMAC，继续允许无签名访问；
   # shadow → TencentCloud API 隧道不在此列表内，必须使用 shadow caller 签名。
@@ -186,6 +221,22 @@ routes:
         headers:
           X-CloudLadder-Webhook: "mirror-to-staging"
 
+  # ===========================================================================
+  # bj-7 独有：billing-query-via-polaris 路由（payment → IDC billing.service via 北极星）
+  # （cherry-pick 自 c9b75d8a4 v1.7.29，c8a0962a6 merge 时被误删，2026-06-05 恢复）
+  # ===========================================================================
+  - id: billing-query-via-polaris
+    description: "Resolve IDC billing service through Polaris sidecar."
+    callers: ["payment"]
+    condition: 'request.method == "POST"'
+    upstream:
+      scheme: http
+      polaris:
+        service: "billing.service"
+        namespace: "Production"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
   - id: billing-trade-cn-test
     description: "Proxy Tencent billing trade domestic test environment."
     callers: ["payment"]
@@ -193,12 +244,93 @@ routes:
     upstream:
       backend: billing-trade-cn-test
 
+  # ===========================================================================
+  # lightvela trade → jifei CGW 测试环境出向路由（询价 / 下单链路，PDF §国内站
+  # 测试环境-业务提测，bj-7 直连 IP 变体）
+  #
+  # **重要**：clgateway 部署在 TKEx 联调集群，**未注入 polaris-sidecar**，所以
+  # 此路由**禁止**改写成走 polaris 的形式（如 `backend: billing-trade-cn-test`
+  # 会触发 `query polaris sidecar: connection refused`）。必须使用 IP 直连 +
+  # Host header 重写。具体的 IP / Host 配置封装在 `backends:` 段的 `jifei-test`
+  # alias 内（base_url=http://9.139.137.40 + Host: trade.itd.com），路由层只
+  # 引用 alias 即可。
+  #
+  # 历史教训：master 94359403 引入 backends 段后，c9b75d8a4 merge 时把这条路由
+  # "统一"成了 backend: billing-trade-cn-test alias（指向 polaris），导致联调环境
+  # trade 询价链路全部 400（polaris sidecar refused），2026-06-05 切回 IP 直连
+  # 形式（通过专门的 jifei-test backend alias 承载 IP + Host）。
+  # ===========================================================================
   - id: jifei-test
-    description: "Legacy sandbox-bj-7 route alias for Tencent billing trade domestic test environment."
-    callers: ["payment"]
+    description: "lightvela trade → jifei CGW 测试环境出向路由（询价 / 下单链路，bj-7 直连 IP 变体；通过 jifei-test backend alias 走 IP 直连，禁止改成 polaris 形式）"
+    callers: ["lightvela-trade"]
     condition: 'request.method == "POST"'
     upstream:
-      backend: billing-trade-cn-test
+      backend: jifei-test
+
+  # ===========================================================================
+  # lightvela trade → jifei 计费网关（apigateway.billing.*）销毁链路出向路由
+  # （cherry-pick 自 604530a7c，c8a0962a6 merge 时被误删，2026-06-05 恢复）
+  #
+  # 设计稿真源：
+  #   - .tmp/trade-pass-destroy-design.md §2.1 §3.6 §11-G（Q-D-SIG-1~6 全部已拍板）
+  # 协议参考：
+  #   - .tmp/jifei_pdf_txt/计费网关-接入和签名算法.txt §签名算法（HMAC-SHA256 4 步）
+  #   - .tmp/jifei_pdf_txt/计费网关对外协议介绍.txt §地址 §请求协议
+  #   - .tmp/jifei_pdf_txt/【订购关系建设】资源中心对外cgw接口定义.md §1.1（字段集）
+  #
+  # **协议层差异**（与 jifei-test 路由严格区分）：
+  #   - jifei-test：base_url=http://9.139.137.40 + Host: trade.itd.com（IP 直连
+  #     + Host header 重写），承载 getPrice / generateDeals / generateDealsAndPay
+  #     / queryDealStatus 等 "qcloud.price.*" + "qcloud.purchase.*" 等 CGW 业务
+  #     接口，**不签名**，走 IP 白名单（Q47/Q51）。clgateway TKEx 集群无
+  #     polaris-sidecar，禁止改成 backend: billing-trade-cn-test alias 形式。
+  #   - jifei-billing-apigw-test：test.api-gateway.billing.tencentyun.com / 9.139.137.40
+  #     / **强制 HMAC-SHA256 签名**（auth.appid + auth.timestamp + auth.nonce
+  #     + auth.signature 注入到 envelope.interface.auth；签名密钥
+  #     BILLING_APP_ID + BILLING_SECRET_KEY 通过 SSM + sops 注入到 trade env）
+  #     承载 "qcloud.operation.ModifyResourceStatus"（PRE_DESTROY / PRE_ISOLATE 等
+  #     资源状态变更接口；本期销毁链路 PRE_DESTROY 使用）。
+  #
+  # **签名注入位置**（Q-D-SIG-1=B 拍板）：
+  #   trade jifeiclient 在出向请求 envelope marshal 完成后注入 interface.auth 4 字段，
+  #   clgateway 此路由仅做透明 forward_http 转发，**不感知签名 / 不持有密钥**。
+  #
+  # **bj-7 直连 IP 变体**：clgateway 部署在 TKEx 环境（非 K8s 集群），其内置 CoreDNS
+  # 10.0.43.133 不识别 *.tencentyun.com 内网域名，且未注入北极星 sidecar，所以走直连
+  # IP 9.139.137.40（PDF §地址 测试环境直连 VIP）+ Host header 重写
+  # test.api-gateway.billing.tencentyun.com（依赖 v1.7.6 B0 commit 0b60ac3d 的
+  # Header.Set("Host") → req.Host = ... 修复，master b79013ac 后由 setRequestHeader
+  # helper 接管，效果等价）。
+  #
+  # 链路语义（联调期，beijing-sandbox-bj-7 测试集群）：
+  #   trade.lightvela.ModifyResourceStatus
+  #     调 http://clgateway.test.polaris:8095/v1/proxy/jifei-billing-apigw-test/resource-center/interface
+  #     → clgateway 提取 *path = /resource-center/interface
+  #     → joinURL(base_url=http://9.139.137.40, path=/resource-center/interface)
+  #       = http://9.139.137.40/resource-center/interface
+  #     → upstream.headers.Host 重写为 test.api-gateway.billing.tencentyun.com
+  #     → 直连 IP 转发到 jifei 计费网关测试环境
+  #
+  # **moduleName=resource-center**（Q-D-SIG-2 拍板）：URL 中 /{moduleName}/interface 段
+  # 由 jifei 计费侧分配。trade 侧通过 env JIFEI_BILLING_GATEWAY_URL 配置完整 URL（含
+  # /resource-center/interface 后缀），clgateway 仅按 *path 透传，不内嵌 moduleName 假设。
+  # ===========================================================================
+  - id: jifei-billing-apigw-test
+    description: "lightvela trade → jifei 计费网关测试环境出向路由（销毁链路 ModifyResourceStatus 走带签名的计费网关协议，bj-7 直连 IP 变体）"
+    # callers 字段在 auth.enabled=false 时无实际效果；切换 HMAC 后由 auth.callers
+    # 注册的 lightvela-trade 自动生效。
+    callers: ["lightvela-trade"]
+    condition: 'request.method == "POST"'
+    upstream:
+      # base_url：PDF §地址 测试环境直连 VIP 9.139.137.40（域名
+      # test.api-gateway.billing.tencentyun.com 在 clgateway TKEx 集群 CoreDNS 不可解析）。
+      base_url: "http://9.139.137.40"
+      timeout: 10s
+      allowed_methods: ["POST"]
+      headers:
+        # Host header 重写：计费网关侧根据 Host 路由到对应模块，**必须**带这个 Host。
+        # PDF §地址：测试环境域名 = test.api-gateway.billing.tencentyun.com
+        Host: "test.api-gateway.billing.tencentyun.com"
 
   - id: billing-trade-cn-pre
     description: "Proxy Tencent billing trade domestic pre-release environment."
@@ -234,6 +366,54 @@ routes:
     condition: 'request.method == "POST"'
     upstream:
       backend: billing-trade-intl-prod
+
+  # ===========================================================================
+  # bj-7 独有：jifei → clgateway → trade 联调入向回调路由
+  # （cherry-pick 自 c9b75d8a4 v1.7.29，c8a0962a6 merge 时被误删，2026-06-05 恢复；
+  # 2026-05-21 v1.7.28 改造为公网 HTTPS）
+  #
+  # 设计稿真源：.tmp/integration-plan-2026-05-18.md §10 Q-INT-10
+  #
+  # 历史回顾：v1.7.8 B2 起初用 trade ClusterIP 172.18.255.193 直连，因 clgateway
+  # 部署在不同集群（跨 VPC），实测 context deadline exceeded — 这是 BUG-05 暴露的
+  # 跨集群网络限制。BUG-05 修复后切换到公网 HTTPS 通道。
+  #
+  # 链路语义（联调期，beijing-sandbox-bj-7 测试集群）：
+  #   jifei 调 http://clgateway.<env>.polaris:8095/v1/proxy/jifei-callback/trade/jifei/callback
+  #     → clgateway 提取 *path = /trade/jifei/callback
+  #     → joinURL(base_url=https://api-sandbox-bj-7.lightclaw.tech, path=/trade/jifei/callback)
+  #       = https://api-sandbox-bj-7.lightclaw.tech/trade/jifei/callback
+  #     → 公网 HTTPS POST 到 lightclaw-public Ingress（lb-7wwvu33f LB, 443 TLS 入口）
+  #     → Ingress path[3] /trade/jifei/callback (Exact 匹配)
+  #     → trade-nodeport NodePort Service (port 80 → nodePort 31359, selector app=trade)
+  #     → trade Pod containerPort 8080 (httpapi server.go:190 POST /trade/jifei/callback)
+  #     → dispatcher 按 envelope.interface.interfaceName 三段式
+  #     → lightvela.pass.* 9 个真 handler 之一
+  #
+  # 为什么走公网 HTTPS（而非内网）：
+  #   - clgateway 部署在另一个集群，跨 VPC 不可达 sandbox-bj-7 集群内网 ClusterIP
+  #   - 走公网 HTTPS 是 K8s 集群跨 VPC 通信的标准方案
+  #   - lightclaw-public Ingress 已配置 direct-access=true (NodePort 直连模式) +
+  #     HTTPS 443 入口，jifei 回调路径已通过 MR !700 / !701 部署到 sandbox-bj-7
+  #
+  # 关键 Ingress 配置（argocd/services/service-gateway/sandbox-bj-7/kustomization.yaml）：
+  #   path=/trade/jifei/callback, pathType=Exact
+  #   backend: trade-nodeport (NodePort, 区分 trade ClusterIP 主 Service)
+  #
+  # **不重写 Host header**：jifei 调 clgateway 时带的 Host 是 clgateway 入口域名;
+  # 转发出去后 Host 自然是 api-sandbox-bj-7.lightclaw.tech（HTTPS TLS SNI 必须匹配）.
+  # ===========================================================================
+  - id: jifei-callback
+    description: "jifei → clgateway → trade 入向回调统一 endpoint（POST /trade/jifei/callback，dispatcher 路由 9 个 lightvela.pass.* 真 handler）"
+    # callers 字段在 auth.enabled=false 时无实际效果，预留 jifei 占位便于现网切换前
+    # 启用 HMAC（届时需要 jifei 同事侧也持有同一份 caller secret，对 lightvela 侧的
+    # 入向回调请求做签名）。
+    callers: ["jifei"]
+    condition: 'request.method == "POST"'
+    upstream:
+      base_url: "https://api-sandbox-bj-7.lightclaw.tech"
+      timeout: 10s
+      allowed_methods: ["POST"]
 
   - id: tcapi-account-cn-dev
     description: "Signed tunnel for TencentCloud account API domestic dev endpoint."
