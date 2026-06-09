@@ -826,6 +826,32 @@ func TestCreateCheckpointUnsupportedCloneRemovesCandidate(t *testing.T) {
 	}
 }
 
+func TestEnsureJuiceFSCloneSupportedIncludesMountDiagnostics(t *testing.T) {
+	root := t.TempDir()
+	rt := newCheckpointCreateTestRuntime(t, root, "#!/bin/sh\nexit 0\n")
+	mountInfoPath := filepath.Join(root, "overlay-mountinfo")
+	if err := os.WriteFile(mountInfoPath, []byte("1 2 0:1 / / rw - overlay overlay rw\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	previous := runtimeMountInfoPathOverride
+	runtimeMountInfoPathOverride = func() string {
+		return mountInfoPath
+	}
+	t.Cleanup(func() {
+		runtimeMountInfoPathOverride = previous
+	})
+
+	err := rt.ensureJuiceFSCloneSupported(rt.cfg.ActiveImg)
+	if err == nil {
+		t.Fatal("expected non-JuiceFS mount to reject clone")
+	}
+	for _, want := range []string{`observed_mountpoint="/"`, `observed_fs_type="overlay"`, "mountinfo_ok=true"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("expected error to contain %q, got %v", want, err)
+		}
+	}
+}
+
 func TestCreateCheckpointCloneFailureRemovesCandidate(t *testing.T) {
 	root := t.TempDir()
 	rt := newCheckpointCreateTestRuntime(t, root, "#!/bin/sh\nif [ \"$1\" = clone ]; then exit 18; fi\nexit 0\n")
