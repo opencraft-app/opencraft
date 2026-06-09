@@ -545,6 +545,64 @@ func TestClientDropsConnectionAfterRPCError(t *testing.T) {
 	}
 }
 
+func TestClientRetriesLoadSessionAfterTransportClose(t *testing.T) {
+	var connections atomic.Int64
+	var loadCalls atomic.Int64
+	upgrader := websocket.Upgrader{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		connID := connections.Add(1)
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Errorf("upgrade: %v", err)
+			return
+		}
+		defer conn.Close()
+		for {
+			_, raw, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			var req struct {
+				ID     int64  `json:"id"`
+				Method string `json:"method"`
+			}
+			if err := json.Unmarshal(raw, &req); err != nil {
+				t.Errorf("decode request: %v", err)
+				return
+			}
+			switch req.Method {
+			case "initialize":
+				writeJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{}})
+			case "session/load":
+				loadCalls.Add(1)
+				if connID == 1 {
+					_ = conn.Close()
+					return
+				}
+				writeJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{}})
+			default:
+				writeJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32601, "message": "not found"}})
+			}
+		}
+	}))
+	defer server.Close()
+	client := NewClient("ws"+server.URL[len("http"):], nil)
+	defer client.Close()
+	ctx := context.Background()
+	if err := client.Initialize(ctx); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	if err := client.LoadSession(ctx, "session-stale", "/workspace"); err != nil {
+		t.Fatalf("load session should retry after stale transport close: %v", err)
+	}
+	if got := connections.Load(); got != 2 {
+		t.Fatalf("expected one reconnect after stale transport close, got %d connections", got)
+	}
+	if got := loadCalls.Load(); got != 2 {
+		t.Fatalf("expected load retry on fresh connection, got %d calls", got)
+	}
+}
+
 func writeJSON(t *testing.T, conn *websocket.Conn, value any) {
 	t.Helper()
 	if err := conn.WriteJSON(value); err != nil {
