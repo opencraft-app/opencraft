@@ -3239,6 +3239,13 @@ export function buildScheduleString(args: {
   const m = Number(mm);
   if (args.period === "daily") {
     const dailyTimes = normalizeDailyTimes(args.dailyTimes, args.time);
+    // 多时间点（dailyTimes.length > 1）只能让 cron 每分钟唤一次，再由
+    // lightvela-effective-window-*.py 这个 pre-run 脚本里的 ALLOWED_DAILY_TIMES
+    // 按 now.strftime("%H:%M") 精确匹配过滤——cron 表达式本身只能表达
+    // "m h * * *" 这种单维分钟+单维小时，无法表达 "{09:00, 12:30, 18:45}"
+    // 这种任意 H:M 集合（用 "0,30 9,12,18 * * *" 笛卡尔积会触发非期望
+    // 的 09:30 / 12:00 等组合）。所以多时间点必须 cron + 脚本 gate 联动，
+    // 后端不需要任何改动；脚本性能契约见 buildEffectiveWindowScript 头注释。
     if (dailyTimes.length > 1) return "* * * * *";
     return `${m} ${h} * * *`;
   }
