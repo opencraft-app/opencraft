@@ -1,3 +1,4 @@
+// @ts-nocheck — Figma auto-generated; suppress strict TS lints (noUnusedLocals etc.)
 import svgPaths from "./svg-o2t1tyhaml";
 import imgImage from "./a5175bfd71e108a2b044d95a68e5fb36d772554e.png";
 import imgImage614591645 from "./4a9b4cd80a1107ee7e88222497101e087c257080.png";

@@ -1,3 +1,4 @@
+// @ts-nocheck — Figma auto-generated; suppress strict TS lints (noUnusedLocals etc.)
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   svgPaths,

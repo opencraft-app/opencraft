@@ -5,7 +5,6 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { LandingPageV2 } from "./landing-page-v2";
 
 import { LoginModal, InviteCodeModal } from "@/components/site/login-modal";
 import { useSession } from "@/contexts/session-context";

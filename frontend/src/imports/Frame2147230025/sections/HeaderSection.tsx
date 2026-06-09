@@ -1,3 +1,4 @@
+// @ts-nocheck — Figma auto-generated; suppress strict TS lints (noUnusedLocals etc.)
 import { Link, useLocation } from 'react-router-dom';
 import {
   svgPaths,

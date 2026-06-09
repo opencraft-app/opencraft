@@ -1,3 +1,4 @@
+// @ts-nocheck — Figma auto-generated; suppress strict TS lints (noUnusedLocals etc.)
 import { useRef, useState, useCallback } from 'react';
 import { imgHeroBgNew, imgHeroElement01, imgHeroElement02, imgHeroElement03, imgHeroAvatars } from '../assets';
 import '../motion.css';
