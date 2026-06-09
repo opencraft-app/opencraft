@@ -157,6 +157,19 @@ frontend/src/
 
 **FE-AI 标记**（不可遗漏）：Commit `[FE-AI] feat(xxx): ...` · MR 标题 `[FE-AI] feat: xxx` · MR 标签 `FE-AI` · TAPD 需求标签 `FE-AI`。
 
+### `@tencent/tea-sdk-lightclaw` 配置来源
+
+OpenClaw settings 页内嵌的是 `@tencent/tea-sdk-lightclaw`，模型列表、通道列表、OAuth 模型等基础配置默认来自 SDK 的 `createLighthouseConfig(...)` / `productConfig`，不要在 `openclaw-settings-page.tsx` 等宿主页面里临时 patch 或重排这些配置。
+
+遇到“新增 / 调整模型、通道、Coding Plan、后付费 API 列表”等需求时，按这个顺序处理：
+
+1. 先确认 SDK 源码和已发布版本是否已经包含变更（重点查 SDK 的 `src/common/utils/moltbot.ts`、`src/common/config/defaultProductConfig.ts`）。
+2. 如果 SDK 已发布，前端只升级 `@tencent/tea-sdk-lightclaw` 依赖和 `pnpm-lock.yaml`，并移除宿主侧重复配置。
+3. 如果 SDK 未发布，先在 SDK 仓库改配置、构建/发布新版本，再回到本项目升级依赖；不要把 SDK 内部配置复制到 LightVela。
+4. 验证时除了 `pnpm check` / `pnpm i18n:check` / 构建，还要检查 `node_modules/@tencent/tea-sdk-lightclaw/{lib,es}` 产物中的实际配置，确认消费到的新 SDK 生效。
+
+典型反例：为了让 MiniMax M3 出现在 Coding Plan 和后付费 API 列表，直接在宿主侧新增 wrapper 重写 `modelProviders`。正确做法是消费包含该配置的 SDK 版本，例如将 SDK 从 `1.2.2` 升到已发布的 `1.3.0`。
+
 ---
 
 ## 五、代码风格
