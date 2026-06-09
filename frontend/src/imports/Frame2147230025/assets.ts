@@ -62,13 +62,11 @@ export { default as imgVector919 } from "./73139a4b5ed8465c63f2f4c10665c42b78031
 export { default as imgImage4588 } from "./4bc1720f6735994e159ef375639d751c0ac378c1.png";
 export { default as imgImage614591606 } from "./6b40f06e1e593230cf07bd8b88c2acc1fb5dc911.png";
 export { imgImage614591644, imgImage614591646, imgImage1, imgImage2 } from "./svg-2luot";
-export { default as imgHeroBg } from "./hero-bg.png";
 export { default as imgHeroBgNew } from "./hero-bg-new.png";
 export { default as imgHeroElement01 } from "./hero-element-01.png";
 export { default as imgHeroElement02 } from "./hero-element-02.png";
 export { default as imgHeroElement03 } from "./hero-element-03.png";
 export { default as imgHeroAvatars } from "./hero-avatars.png";
 export { default as imgCtaDeco } from "./cta-deco.png";
-export { default as imgCtaFooterCopyright } from "./cta-footer-copyright.png";
 export { default as imgCtaLogo1 } from "./cta-logo1.png";
 export { default as imgCtaLogo2 } from "./cta-logo2.png";
