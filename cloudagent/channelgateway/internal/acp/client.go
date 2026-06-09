@@ -141,10 +141,24 @@ func (c *Client) LoadSession(ctx context.Context, sessionID, cwd string) error {
 	_, err = conn.Call(ctx, "session/load", map[string]any{"sessionId": sessionID, "cwd": cwd})
 	if err == nil {
 		conn.SetLogSID(sessionID)
-	} else {
-		c.resetConn(conn, "session_load_failed")
+		return nil
 	}
-	return err
+	c.resetConn(conn, "session_load_failed")
+	if !isACPTransportError(err) {
+		return err
+	}
+	log.Printf("channelgateway acp_trace action=acp_ws_retry reason=session_load_transport_error session_id=%s error=%s", acpLogValue(sessionID), acpLogValue(err.Error()))
+	conn, retryConnErr := c.ensureConn(ctx)
+	if retryConnErr != nil {
+		return retryConnErr
+	}
+	_, retryErr := conn.Call(ctx, "session/load", map[string]any{"sessionId": sessionID, "cwd": cwd})
+	if retryErr != nil {
+		c.resetConn(conn, "session_load_retry_failed")
+		return retryErr
+	}
+	conn.SetLogSID(sessionID)
+	return nil
 }
 
 func (c *Client) CloseSession(ctx context.Context, sessionID string) error {
@@ -296,6 +310,30 @@ func acpLogValue(value string) string {
 		return value[:160] + "...[truncated]"
 	}
 	return value
+}
+
+func isACPTransportError(err error) bool {
+	if err == nil {
+		return false
+	}
+	text := strings.ToLower(err.Error())
+	for _, marker := range []string{
+		"agent websocket:",
+		"websocket:",
+		"connection closed",
+		"closed network connection",
+		"use of closed network connection",
+		"connection timed out",
+		"i/o timeout",
+		"broken pipe",
+		"connection reset",
+		"unexpected eof",
+	} {
+		if strings.Contains(text, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Client) handleNotification(raw json.RawMessage) error {
