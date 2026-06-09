@@ -543,6 +543,15 @@ func wispStopCommand(runtime ACPSessionRuntime) string {
 		"if [[ -z \"$client\" || ! -x \"$client\" ]]; then echo \"wispclient missing\" >&2; exit 127; fi\n" +
 		"jfs=\"$(dirname \"$client\")/juicefs-smount\"\n" +
 		"if [[ -x \"$jfs\" ]]; then\n" +
+		"  echo \"wisp writeback-cut-barrier diag client=$client jfs=$jfs name=$name server=$server mnt_ns=$(readlink /proc/self/ns/mnt 2>/dev/null || true)\" >&2\n" +
+		"  echo \"wisp writeback-cut-barrier diag statfs /mnt/cloudagent-wisp:\" >&2\n" +
+		"  stat -f -c 'type=%T id=%i namelen=%l bsize=%s' /mnt/cloudagent-wisp 2>&1 | redact_line >&2 || true\n" +
+		"  echo \"wisp writeback-cut-barrier diag findmnt:\" >&2\n" +
+		"  findmnt -T /mnt/cloudagent-wisp -o TARGET,SOURCE,FSTYPE,OPTIONS 2>&1 | redact_line >&2 || true\n" +
+		"  echo \"wisp writeback-cut-barrier diag mount:\" >&2\n" +
+		"  mount | grep -aE 'cloudagent-wisp|juicefs|/mnt/cloudagent-wisp' | redact_line >&2 || true\n" +
+		"  echo \"wisp writeback-cut-barrier diag jfs-version:\" >&2\n" +
+		"  \"$jfs\" version 2>&1 | head -20 | redact_line >&2 || true\n" +
 		"  echo \"wisp checkpoint_start phase=writeback_cut_barrier timeout=$writeback_cut_timeout\" >&2\n" +
 		"  echo \"wisp writeback-cut-barrier start timeout=$writeback_cut_timeout\" >&2\n" +
 		"  barrier_stdout=\"$(mktemp)\"\n" +
