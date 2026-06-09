@@ -15,7 +15,7 @@
  */
 
 import { AlertTriangle, Activity, BellRing, BriefcaseBusiness, CalendarRange, ChevronDown, CircleHelp, Clock, Droplets, Eraser, Eye, FolderKanban, LayoutTemplate, Loader2, Newspaper, Pause, Pencil, Play, Plus, RefreshCw, Sunrise, Trash2, TrendingUp, X } from "lucide-react";
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { parseHermesChannelList } from "@tencent/tea-sdk-lightclaw";
 import { useT } from "@/i18n/t";
@@ -39,6 +39,7 @@ import {
   resumeCronJob,
   type CronEffectiveWindow,
   type CronJob,
+  type CronLightVelaScriptConfig,
   type CronRunRecord,
 } from "@/lib/hermes-cron-client";
 
@@ -694,6 +695,7 @@ function runToCronJob(run: CronRunRecord): CronJob {
     created_at: null,
     script: "",
     effective_window: null,
+    lightvela_schedule: null,
   };
 }
 
@@ -896,6 +898,11 @@ function formatScheduleFriendly(
   job: CronJob,
   t: (s: string, vars?: Record<string, unknown>) => string,
 ): string {
+  if (job.lightvela_schedule?.kind === "daily_times") {
+    const times = normalizeDailyTimes(job.lightvela_schedule.times);
+    return t("每天 {{at}}", { at: times.join("、") });
+  }
+
   const display = (job.schedule.display || job.schedule.expr || "").trim();
   const lower = display.toLowerCase();
 
@@ -958,6 +965,10 @@ export function formatScheduleTooltip(
 ): string {
   const scheduleLabel = formatScheduleFriendly(job, t);
   const display = (job.schedule.display || job.schedule.expr || "").trim().toLowerCase();
+
+  if (job.lightvela_schedule?.kind === "daily_times") {
+    return `${t("周期")} · ${scheduleLabel}`;
+  }
 
   if (/^every\s+\d+\s*[mhd]$/.test(display)) {
     return `${t("按间隔")} · ${scheduleLabel}`;
@@ -1581,6 +1592,9 @@ type IntervalUnit = "m" | "h" | "d";
 
 const WEEKDAY_VALUES = [1, 2, 3, 4, 5, 6, 0] as const;
 const MONTHDAY_VALUES = Array.from({ length: 31 }, (_, i) => i + 1);
+const MAX_DAILY_TIME_POINTS = 12;
+const CLOCK_HOUR_OPTIONS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));
+const CLOCK_MINUTE_OPTIONS = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0"));
 
 function getWeekdayLabels(t: ReturnType<typeof useT>): Record<number, string> {
   return {
@@ -1603,6 +1617,84 @@ function normalizeWeekdays(values: readonly number[] | undefined): number[] {
 function normalizeIntervalWeekdays(values: readonly number[] | undefined): number[] {
   if (!values || values.length === 0) return [...WEEKDAY_VALUES];
   return normalizeWeekdays(values);
+}
+
+function isValidClockTime(value: string): boolean {
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
+}
+
+export function sanitizeClockTimeDraft(value: string): string {
+  return value.replace(/[^\d:]/g, "").slice(0, 5);
+}
+
+function clampClockPart(value: number, max: number): number {
+  return Math.min(Math.max(value, 0), max);
+}
+
+function splitClockTimeDraft(value: string, fallback = "09:00"): { hour: string; minute: string } {
+  const fallbackTime = isValidClockTime(fallback) ? fallback : "09:00";
+  const [fallbackHour = "09", fallbackMinute = "00"] = fallbackTime.split(":");
+  const [rawHour = "", rawMinute = ""] = sanitizeClockTimeDraft(value).split(":");
+  const hourNumber = Number(rawHour);
+  const minuteNumber = Number(rawMinute);
+  return {
+    hour: rawHour.length > 0 && Number.isInteger(hourNumber)
+      ? String(clampClockPart(hourNumber, 23)).padStart(2, "0")
+      : fallbackHour,
+    minute: rawMinute.length > 0 && Number.isInteger(minuteNumber)
+      ? String(clampClockPart(minuteNumber, 59)).padStart(2, "0")
+      : fallbackMinute,
+  };
+}
+
+function normalizeDailyTimes(values: readonly string[] | undefined, fallback = "09:00"): string[] {
+  const source = values && values.length > 0 ? values : [fallback];
+  const normalized = Array.from(new Set(
+    source
+      .map((value) => value.trim())
+      .filter(isValidClockTime),
+  )).sort((a, b) => a.localeCompare(b));
+  if (normalized.length > 0) return normalized.slice(0, MAX_DAILY_TIME_POINTS);
+  return isValidClockTime(fallback) ? [fallback] : ["09:00"];
+}
+
+export function normalizeDailyTimesForForm(values: readonly string[] | undefined, fallback = "09:00"): string[] {
+  const source = values && values.length > 0 ? values : [fallback];
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  for (const rawValue of source) {
+    const value = rawValue.trim();
+    if (!isValidClockTime(value) || seen.has(value)) continue;
+    seen.add(value);
+    normalized.push(value);
+    if (normalized.length >= MAX_DAILY_TIME_POINTS) break;
+  }
+  if (normalized.length > 0) return normalized;
+  return isValidClockTime(fallback) ? [fallback] : ["09:00"];
+}
+
+export function normalizeDailyTimesForEditing(values: readonly string[] | undefined, fallback = "09:00"): string[] {
+  const fallbackTime = isValidClockTime(fallback) ? fallback : "09:00";
+  const source = values && values.length > 0 ? values : [fallbackTime];
+  return source.slice(0, MAX_DAILY_TIME_POINTS).map((rawValue) => {
+    const value = rawValue.trim();
+    if (isValidClockTime(value)) return value;
+    const { hour, minute } = splitClockTimeDraft(value, fallbackTime);
+    return `${hour}:${minute}`;
+  });
+}
+
+function areDailyTimesEqual(a: readonly string[] | null | undefined, b: readonly string[] | null | undefined): boolean {
+  const left = a && a.length > 0 ? normalizeDailyTimes(a) : [];
+  const right = b && b.length > 0 ? normalizeDailyTimes(b) : [];
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function getIntervalMinutes(num: number, unit: IntervalUnit): number {
+  const safeNum = Math.max(1, Math.floor(num) || 1);
+  if (unit === "m") return safeNum;
+  if (unit === "h") return safeNum * 60;
+  return safeNum * 24 * 60;
 }
 
 function hasWeekdayFilter(values: readonly number[] | undefined): boolean {
@@ -1648,6 +1740,7 @@ interface AutomationTemplate {
     kind: FrequencyKind;
     period?: RecurringPeriod;
     time?: string;
+    times?: string[];
     weekday?: number;
     weekdays?: number[];
     monthday?: number;
@@ -1805,19 +1898,31 @@ function AutomationFormModal({
     () => (initialJob?.schedule.expr || initialJob?.schedule.display || "").trim(),
     [initialJob],
   );
-  const initial = useMemo(() => parseInitialSchedule(initialScheduleSource), [initialScheduleSource]);
+  const initial = useMemo(() => {
+    if (initialJob?.lightvela_schedule?.kind === "daily_times") {
+      const times = normalizeDailyTimes(initialJob.lightvela_schedule.times);
+      return { kind: "recurring" as const, period: "daily" as const, time: times[0], times };
+    }
+    return parseInitialSchedule(initialScheduleSource);
+  }, [initialJob, initialScheduleSource]);
   const scheduleUneditable = mode === "edit" && !!initialJob && initial === null && initialScheduleSource.length > 0;
   const defaultScheduleDate = useMemo(() => new Date(Date.now() + 2 * 60_000), []);
+  const defaultTime = useMemo(() => {
+    const d = defaultScheduleDate;
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  }, [defaultScheduleDate]);
   const [kind, setKind] = useState<FrequencyKind>(initial?.kind ?? templateSchedule?.kind ?? "once");
   // 周期态
   const [period, setPeriod] = useState<RecurringPeriod>(initial?.period ?? templateSchedule?.period ?? "daily");
   const [time, setTime] = useState(() => {
     if (initial?.time) return initial.time;
     if (templateSchedule?.time) return templateSchedule.time;
-    // 默认取打开弹窗时的两分钟后（minute 精度，跟 cron 表达式粒度一致）
-    const d = defaultScheduleDate;
-    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    return defaultTime;
   });
+  const [dailyTimes, setDailyTimes] = useState(() => normalizeDailyTimes(
+    initial?.times ?? templateSchedule?.times,
+    initial?.time ?? templateSchedule?.time ?? defaultTime,
+  ));
   const [weekdays, setWeekdays] = useState(() => normalizeWeekdays(
     initial?.weekdays
       ?? templateSchedule?.weekdays
@@ -1895,9 +2000,37 @@ function AutomationFormModal({
     return () => { cancelled = true; };
   }, [botId]);
 
+  const normalizedDailyTimes = useMemo(() => normalizeDailyTimes(dailyTimes, time), [dailyTimes, time]);
+  const dailyTimesForScript = kind === "recurring" && period === "daily" && normalizedDailyTimes.length > 1
+    ? normalizedDailyTimes
+    : null;
+  const intervalMinutes = useMemo(() => getIntervalMinutes(intervalNum, intervalUnit), [intervalNum, intervalUnit]);
+  const weixinBlockedByFrequency = kind === "interval"
+    && intervalMinutes < 15
+    && enabledChannels !== null
+    && enabledChannels.has("weixin");
+
+  useEffect(() => {
+    if (!weixinBlockedByFrequency) return;
+    setDeliverPlatforms((prev) => prev.includes("weixin") ? prev.filter((platform) => platform !== "weixin") : prev);
+    setDeliverChatIds((prev) => {
+      if (!Object.prototype.hasOwnProperty.call(prev, "weixin")) return prev;
+      const { weixin: _removed, ...rest } = prev;
+      return rest;
+    });
+  }, [weixinBlockedByFrequency]);
+
   const schedule = useMemo(() => buildScheduleString({
-    kind, period, time, weekdays, monthdays, intervalNum, intervalUnit, onceDate,
-  }), [kind, period, time, weekdays, monthdays, intervalNum, intervalUnit, onceDate]);
+    kind,
+    period,
+    time: dailyTimesForScript ? normalizedDailyTimes[0] ?? time : time,
+    dailyTimes: dailyTimesForScript ?? undefined,
+    weekdays,
+    monthdays,
+    intervalNum,
+    intervalUnit,
+    onceDate,
+  }), [kind, period, dailyTimesForScript, normalizedDailyTimes, time, weekdays, monthdays, intervalNum, intervalUnit, onceDate]);
   const scheduleChanged = useMemo(() => isScheduleEffectivelyChanged({
     mode,
     scheduleUneditable,
@@ -1925,6 +2058,10 @@ function AutomationFormModal({
       onError(t("生效结束时间不能早于开始时间"));
       return;
     }
+    if (dailyTimesForScript && !canEditEffectiveWindow) {
+      onError(t("当前任务包含自定义脚本，暂不支持在 UI 配置多个时间点"));
+      return;
+    }
     // 单次任务必须晚于当前时间；编辑已过期单次任务但未改时间时不阻断其它字段保存。
     if (shouldRejectPastOnceSchedule({
       mode,
@@ -1942,12 +2079,20 @@ function AutomationFormModal({
     setSubmitting(true);
     try {
       const deliver = buildDeliverString(deliverPlatforms, deliverChatIds);
+      const scriptConfig: CronLightVelaScriptConfig | null = effectiveWindow || dailyTimesForScript
+        ? {
+            start_at: effectiveWindow?.start_at ?? null,
+            end_at: effectiveWindow?.end_at ?? null,
+            ...(effectiveWindow?.weekdays?.length ? { weekdays: effectiveWindow.weekdays } : {}),
+            ...(dailyTimesForScript ? { daily_times: dailyTimesForScript } : {}),
+          }
+        : null;
       if (mode === "create") {
-        const script = effectiveWindow
+        const script = scriptConfig
           ? createEffectiveWindowScriptName(`${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
           : undefined;
-        if (script && effectiveWindow) {
-          await writeEffectiveWindowScript(botId, script, effectiveWindow);
+        if (script && scriptConfig) {
+          await writeEffectiveWindowScript(botId, script, scriptConfig);
         }
         await createCronJobWithScriptRollback(botId, {
           name: name.trim(),
@@ -1967,12 +2112,16 @@ function AutomationFormModal({
         if (canEditEffectiveWindow) {
           const originalWindow = initialJob.effective_window;
           const windowChanged = !areEffectiveWindowsEqual(effectiveWindow, originalWindow);
-          if (windowChanged) {
-            if (effectiveWindow) {
+          const originalDailyTimes = initialJob.lightvela_schedule?.kind === "daily_times"
+            ? initialJob.lightvela_schedule.times
+            : null;
+          const dailyTimesChanged = !areDailyTimesEqual(dailyTimesForScript, originalDailyTimes);
+          if (windowChanged || dailyTimesChanged) {
+            if (scriptConfig) {
               const script = isLightVelaEffectiveWindowScriptName(initialJob.script)
                 ? initialJob.script
                 : createEffectiveWindowScriptName(initialJob.id);
-              await writeEffectiveWindowScript(botId, script, effectiveWindow);
+              await writeEffectiveWindowScript(botId, script, scriptConfig);
               patch.script = script;
             } else if (isLightVelaEffectiveWindowScriptName(initialJob.script)) {
               patch.script = "";
@@ -1994,7 +2143,7 @@ function AutomationFormModal({
     } finally {
       setSubmitting(false);
     }
-  }, [botId, canSubmit, mode, initialJob, name, prompt, schedule, scheduleUneditable, originalSchedule, kind, onceDate, initial, scheduleChanged, deliverPlatforms, deliverChatIds, effectiveStartAt, effectiveEndAt, effectiveWindowEnabled, intervalWeekdays, canEditEffectiveWindow, shouldShowEffectiveWindow, onSaved, onError, t]);
+  }, [botId, canSubmit, mode, initialJob, name, prompt, schedule, scheduleUneditable, originalSchedule, kind, onceDate, initial, scheduleChanged, deliverPlatforms, deliverChatIds, effectiveStartAt, effectiveEndAt, effectiveWindowEnabled, intervalWeekdays, canEditEffectiveWindow, shouldShowEffectiveWindow, dailyTimesForScript, onSaved, onError, t]);
 
   return createPortal(
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 px-4 py-3" role="dialog" aria-modal="true">
@@ -2056,10 +2205,19 @@ function AutomationFormModal({
               <RecurringPicker
                 period={period}
                 time={time}
+                dailyTimes={dailyTimes}
                 weekdays={weekdays}
                 monthdays={monthdays}
-                onPeriod={setPeriod}
+                onPeriod={(nextPeriod) => {
+                  if (nextPeriod === "daily") {
+                    setDailyTimes((values) => normalizeDailyTimes(values, time));
+                  } else {
+                    setTime(normalizedDailyTimes[0] ?? time);
+                  }
+                  setPeriod(nextPeriod);
+                }}
                 onTime={setTime}
+                onDailyTimes={setDailyTimes}
                 onWeekdays={setWeekdays}
                 onMonthdays={setMonthdays}
               />
@@ -2203,19 +2361,21 @@ function AutomationFormModal({
             ).map(({ key, label, comingSoon }) => {
               // comingSoon 通道一律强制为「不可配置」，无论 acli channel status 怎么报
               const configured = !comingSoon && (enabledChannels === null || enabledChannels.has(key));
+              const blockedByFrequency = key === "weixin" && weixinBlockedByFrequency;
               const selected = deliverPlatforms.includes(key);
+              const checkboxDisabled = !configured || blockedByFrequency;
               return (
                 <div key={key}>
                   <label
                     className={
                       "inline-flex items-center gap-1.5 text-sm " +
-                      (configured ? "cursor-pointer text-black/80" : "cursor-not-allowed text-black/30")
+                      (!checkboxDisabled ? "cursor-pointer text-black/80" : "cursor-not-allowed text-black/30")
                     }
                   >
                     <input
                       type="checkbox"
                       checked={selected}
-                      disabled={!configured}
+                      disabled={checkboxDisabled}
                       onChange={() => {
                         setDeliverPlatforms((prev) => {
                           if (!prev.includes(key)) return [...prev, key];
@@ -2236,9 +2396,9 @@ function AutomationFormModal({
                         !configured && <span className="ml-1 text-xs">{t("（未配置）")}</span>
                       )}
                     </span>
-                    {selected && key === "weixin" && (
+                    {blockedByFrequency && (
                       <span className="text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
-                        {t("注意：请避免设置太频繁的提醒，否则可能会被微信限流，无法接收通知")}
+                        {t("微信不建议频繁通知，否则可能会被限流")}
                       </span>
                     )}
                     {selected && key === "qqbot" && (
@@ -2352,19 +2512,23 @@ function AutomationFormModal({
 function RecurringPicker({
   period,
   time,
+  dailyTimes,
   weekdays,
   monthdays,
   onPeriod,
   onTime,
+  onDailyTimes,
   onWeekdays,
   onMonthdays,
 }: {
   period: RecurringPeriod;
   time: string;
+  dailyTimes: string[];
   weekdays: number[];
   monthdays: number[];
   onPeriod: (v: RecurringPeriod) => void;
   onTime: (v: string) => void;
+  onDailyTimes: (v: string[]) => void;
   onWeekdays: (v: number[]) => void;
   onMonthdays: (v: number[]) => void;
 }) {
@@ -2372,9 +2536,11 @@ function RecurringPicker({
   const [periodPickerOpen, setPeriodPickerOpen] = useState(false);
   const [weekdayPickerOpen, setWeekdayPickerOpen] = useState(false);
   const [monthdayPickerOpen, setMonthdayPickerOpen] = useState(false);
+  const [activeDailyTimePickerIndex, setActiveDailyTimePickerIndex] = useState<number | null>(null);
   const periodPickerRef = useRef<HTMLDivElement | null>(null);
   const weekdayPickerRef = useRef<HTMLDivElement | null>(null);
   const monthdayPickerRef = useRef<HTMLDivElement | null>(null);
+  const dailyTimePickerRef = useRef<HTMLSpanElement | null>(null);
   const periodOptions: Array<{ value: RecurringPeriod; label: string }> = [
     { value: "daily", label: t("每天") },
     { value: "weekly", label: t("每周") },
@@ -2382,23 +2548,44 @@ function RecurringPicker({
   ];
   const periodLabel = periodOptions.find((option) => option.value === period)?.label ?? t("每天");
   const weekdayLabels = getWeekdayLabels(t);
+  const editingDailyTimes = normalizeDailyTimesForEditing(dailyTimes, time);
+  const normalizedDailyTimes = normalizeDailyTimesForForm(editingDailyTimes, time);
   const selectedWeekdays = normalizeWeekdays(weekdays);
   const selectedMonthdays = normalizeMonthdays(monthdays);
+  const addDailyTimeTooltip = useHoverTooltipPosition<HTMLSpanElement>();
   useEffect(() => {
-    if (!periodPickerOpen && !weekdayPickerOpen && !monthdayPickerOpen) return;
+    if (!periodPickerOpen && !weekdayPickerOpen && !monthdayPickerOpen && activeDailyTimePickerIndex == null) return;
     const handlePointerDown = (event: PointerEvent) => {
       const target = event.target;
       if (!(target instanceof Node)) return;
       if (periodPickerRef.current?.contains(target)) return;
       if (weekdayPickerRef.current?.contains(target)) return;
       if (monthdayPickerRef.current?.contains(target)) return;
+      if (dailyTimePickerRef.current?.contains(target)) return;
       setPeriodPickerOpen(false);
       setWeekdayPickerOpen(false);
       setMonthdayPickerOpen(false);
+      setActiveDailyTimePickerIndex(null);
     };
     document.addEventListener("pointerdown", handlePointerDown);
     return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, [monthdayPickerOpen, periodPickerOpen, weekdayPickerOpen]);
+  }, [activeDailyTimePickerIndex, monthdayPickerOpen, periodPickerOpen, weekdayPickerOpen]);
+  useEffect(() => {
+    if (period !== "daily") setActiveDailyTimePickerIndex(null);
+  }, [period]);
+  useLayoutEffect(() => {
+    if (activeDailyTimePickerIndex == null) return;
+    const picker = dailyTimePickerRef.current;
+    if (!picker) return;
+    const scrollSelected = (part: "hour" | "minute") => {
+      const selected = picker.querySelector<HTMLElement>(`[data-clock-part="${part}"][data-clock-selected="true"]`);
+      const scrollParent = selected?.parentElement;
+      if (!selected || !scrollParent) return;
+      scrollParent.scrollTop = selected.offsetTop - (scrollParent.clientHeight - selected.offsetHeight) / 2;
+    };
+    scrollSelected("hour");
+    scrollSelected("minute");
+  }, [activeDailyTimePickerIndex, editingDailyTimes, time]);
   const toggleWeekday = useCallback((day: number) => {
     // 至少保留 1 天：取消最后一个选中项时直接忽略，避免 normalizeWeekdays 静默兜底为周一
     if (selectedWeekdays.length === 1 && selectedWeekdays[0] === day) return;
@@ -2415,14 +2602,92 @@ function RecurringPicker({
       : [...selectedMonthdays, day];
     onMonthdays(normalizeMonthdays(next));
   }, [onMonthdays, selectedMonthdays]);
+  const selectDailyTimePart = useCallback((index: number, part: "hour" | "minute", value: string) => {
+    const current = editingDailyTimes[index] ?? time;
+    const { hour, minute } = splitClockTimeDraft(current, time);
+    const nextTime = part === "hour" ? `${value}:${minute}` : `${hour}:${value}`;
+    const next = editingDailyTimes.map((item, itemIndex) => itemIndex === index ? nextTime : item);
+    onDailyTimes(next);
+    if (index === 0) onTime(nextTime);
+  }, [editingDailyTimes, onDailyTimes, onTime, time]);
+  const removeDailyTime = useCallback((index: number) => {
+    const next = editingDailyTimes.filter((_, itemIndex) => itemIndex !== index);
+    const normalized = normalizeDailyTimesForForm(next, time);
+    onDailyTimes(normalized);
+    onTime(normalized[0] ?? time);
+    setActiveDailyTimePickerIndex((current) => {
+      if (current == null) return null;
+      if (current === index) return null;
+      return current > index ? current - 1 : current;
+    });
+  }, [editingDailyTimes, onDailyTimes, onTime, time]);
+  const addDailyTime = useCallback(() => {
+    const existing = new Set(normalizedDailyTimes);
+    const [hh = "9", mm = "0"] = (normalizedDailyTimes[normalizedDailyTimes.length - 1] ?? time).split(":");
+    const baseMinutes = Math.max(0, Math.min(23, Number(hh) || 0)) * 60 + Math.max(0, Math.min(59, Number(mm) || 0));
+    let nextTime = "";
+    for (let step = 60; step <= 24 * 60; step += 60) {
+      const minutes = (baseMinutes + step) % (24 * 60);
+      const candidate = `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+      if (!existing.has(candidate)) {
+        nextTime = candidate;
+        break;
+      }
+    }
+    const normalized = normalizeDailyTimesForForm([...normalizedDailyTimes, nextTime || time], time);
+    onDailyTimes(normalized);
+    onTime(normalized[0] ?? time);
+  }, [normalizedDailyTimes, onDailyTimes, onTime, time]);
+  const isDailyTimeLimitReached = editingDailyTimes.length >= MAX_DAILY_TIME_POINTS;
+  const addDailyTimeButton = (
+    <span
+      ref={addDailyTimeTooltip.triggerRef}
+      className={`inline-flex ${isDailyTimeLimitReached ? "cursor-not-allowed" : ""}`}
+      aria-describedby={isDailyTimeLimitReached && addDailyTimeTooltip.open ? addDailyTimeTooltip.tooltipId : undefined}
+      tabIndex={isDailyTimeLimitReached ? 0 : -1}
+      onMouseEnter={isDailyTimeLimitReached ? addDailyTimeTooltip.showTooltip : undefined}
+      onMouseLeave={isDailyTimeLimitReached ? addDailyTimeTooltip.scheduleClose : undefined}
+      onFocus={isDailyTimeLimitReached ? addDailyTimeTooltip.showTooltip : undefined}
+      onBlur={isDailyTimeLimitReached ? addDailyTimeTooltip.scheduleClose : undefined}
+    >
+      <button
+        type="button"
+        onClick={() => {
+          if (isDailyTimeLimitReached) return;
+          addDailyTime();
+        }}
+        aria-disabled={isDailyTimeLimitReached}
+        className={
+          "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border transition " +
+          (isDailyTimeLimitReached
+            ? "cursor-not-allowed border-black/5 bg-black/[0.03] text-black/25"
+            : "border-black/10 bg-white text-black/65 hover:bg-black/[0.04] hover:text-black/85")
+        }
+        aria-label={isDailyTimeLimitReached ? t("最多支持12个时间点") : t("添加时间")}
+      >
+        <Plus className="h-3 w-3" />
+      </button>
+      {isDailyTimeLimitReached && addDailyTimeTooltip.open && (
+        <FloatingTooltip
+          id={addDailyTimeTooltip.tooltipId}
+          position={addDailyTimeTooltip.position}
+          className="whitespace-nowrap"
+          onMouseEnter={addDailyTimeTooltip.showTooltip}
+          onMouseLeave={addDailyTimeTooltip.scheduleClose}
+        >
+          {t("最多支持12个时间点")}
+        </FloatingTooltip>
+      )}
+    </span>
+  );
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <div ref={periodPickerRef} className="relative w-[112px]">
+      <div ref={periodPickerRef} className="relative w-[100px]">
         <button
           type="button"
           onClick={() => setPeriodPickerOpen((open) => !open)}
           style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
-          className="flex min-h-[39px] w-full items-center justify-between rounded-lg border border-black/10 bg-white px-3 py-2 text-left text-sm focus:border-black/30 focus:outline-none"
+          className="flex h-9 w-full items-center justify-between rounded-lg border border-black/10 bg-white px-3 py-1.5 text-left text-sm focus:border-black/30 focus:outline-none"
           aria-haspopup="listbox"
           aria-expanded={periodPickerOpen}
         >
@@ -2461,6 +2726,103 @@ function RecurringPicker({
           </div>
         )}
       </div>
+      {period === "daily" && (
+        <div className="relative flex w-[400px] max-w-full flex-wrap items-center gap-1">
+          {editingDailyTimes.map((dailyTime, index) => (
+            <Fragment key={index}>
+              <span
+                className="relative inline-flex h-7 w-[90px] shrink-0 items-center rounded-lg border border-black/10 bg-white focus-within:border-black/25"
+                ref={activeDailyTimePickerIndex === index ? dailyTimePickerRef : undefined}
+              >
+                <button
+                  type="button"
+                  onClick={() => setActiveDailyTimePickerIndex((current) => current === index ? null : index)}
+                  style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
+                  className="flex h-full min-w-0 flex-1 items-center px-2 text-left text-sm focus:outline-none"
+                  aria-haspopup="listbox"
+                  aria-expanded={activeDailyTimePickerIndex === index}
+                  aria-label={t("执行时间")}
+                >
+                  <span className="truncate">{dailyTime}</span>
+                </button>
+                {editingDailyTimes.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      removeDailyTime(index);
+                    }}
+                    className="mr-1 inline-flex h-4 w-4 items-center justify-center rounded-full text-black/35 transition hover:bg-black/[0.04] hover:text-black/65"
+                    aria-label={t("移除时间点")}
+                  >
+                    <X className="h-2.5 w-2.5" />
+                  </button>
+                )}
+                {activeDailyTimePickerIndex === index && (() => {
+                  const selected = splitClockTimeDraft(dailyTime, time);
+                  return (
+                    <div className="absolute left-0 top-[calc(100%+6px)] z-30 grid w-[112px] grid-cols-2 gap-0.5 rounded-md border border-black/10 bg-white p-1 shadow-[0_10px_28px_rgba(15,23,42,0.16)]">
+                      <div className="max-h-[224px] overflow-y-auto pr-0.5" role="listbox" aria-label="hour">
+                        {CLOCK_HOUR_OPTIONS.map((hour) => {
+                          const selectedHour = hour === selected.hour;
+                          return (
+                            <button
+                              key={hour}
+                              type="button"
+                              data-clock-part="hour"
+                              data-clock-selected={selectedHour ? "true" : undefined}
+                              onMouseDown={(event) => event.preventDefault()}
+                              onClick={() => selectDailyTimePart(index, "hour", hour)}
+                              className={
+                                "flex h-8 w-full items-center justify-center rounded-md text-sm font-medium transition " +
+                                (selectedHour
+                                  ? "bg-[#2F7BFF] text-white"
+                                  : "text-black/85 hover:bg-black/[0.04]")
+                              }
+                              aria-pressed={selectedHour}
+                              role="option"
+                              aria-selected={selectedHour}
+                            >
+                              {hour}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <div className="max-h-[224px] overflow-y-auto pl-0.5" role="listbox" aria-label="minute">
+                        {CLOCK_MINUTE_OPTIONS.map((minute) => {
+                          const selectedMinute = minute === selected.minute;
+                          return (
+                            <button
+                              key={minute}
+                              type="button"
+                              data-clock-part="minute"
+                              data-clock-selected={selectedMinute ? "true" : undefined}
+                              onMouseDown={(event) => event.preventDefault()}
+                              onClick={() => selectDailyTimePart(index, "minute", minute)}
+                              className={
+                                "flex h-8 w-full items-center justify-center rounded-md text-sm font-medium transition " +
+                                (selectedMinute
+                                  ? "bg-[#2F7BFF] text-white"
+                                  : "text-black/85 hover:bg-black/[0.04]")
+                              }
+                              aria-pressed={selectedMinute}
+                              role="option"
+                              aria-selected={selectedMinute}
+                            >
+                              {minute}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </span>
+            </Fragment>
+          ))}
+          {addDailyTimeButton}
+        </div>
+      )}
       {period === "weekly" && (
         <div ref={weekdayPickerRef} className="relative w-[360px] max-w-full">
           <div
@@ -2650,13 +3012,15 @@ function RecurringPicker({
           )}
         </div>
       )}
-      <input
-        type="time"
-        value={time}
-        onChange={(e) => onTime(e.target.value)}
-        style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
-        className="rounded-lg border border-black/10 bg-white px-3 py-2 text-sm focus:border-black/30 focus:outline-none"
-      />
+      {period !== "daily" && (
+        <input
+          type="time"
+          value={time}
+          onChange={(e) => onTime(e.target.value)}
+          style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
+          className="w-[100px] rounded-lg border border-black/10 bg-white px-3 py-2 text-sm focus:border-black/30 focus:outline-none"
+        />
+      )}
     </div>
   );
 }
@@ -2855,6 +3219,7 @@ export function buildScheduleString(args: {
   kind: FrequencyKind;
   period: RecurringPeriod;
   time: string;
+  dailyTimes?: string[];
   weekdays?: number[];
   weekday?: number;
   monthday?: number;
@@ -2872,7 +3237,18 @@ export function buildScheduleString(args: {
   const [hh = "0", mm = "0"] = args.time.split(":");
   const h = Number(hh);
   const m = Number(mm);
-  if (args.period === "daily") return `${m} ${h} * * *`;
+  if (args.period === "daily") {
+    const dailyTimes = normalizeDailyTimes(args.dailyTimes, args.time);
+    // 多时间点（dailyTimes.length > 1）只能让 cron 每分钟唤一次，再由
+    // lightvela-effective-window-*.py 这个 pre-run 脚本里的 ALLOWED_DAILY_TIMES
+    // 按 now.strftime("%H:%M") 精确匹配过滤——cron 表达式本身只能表达
+    // "m h * * *" 这种单维分钟+单维小时，无法表达 "{09:00, 12:30, 18:45}"
+    // 这种任意 H:M 集合（用 "0,30 9,12,18 * * *" 笛卡尔积会触发非期望
+    // 的 09:30 / 12:00 等组合）。所以多时间点必须 cron + 脚本 gate 联动，
+    // 后端不需要任何改动；脚本性能契约见 buildEffectiveWindowScript 头注释。
+    if (dailyTimes.length > 1) return "* * * * *";
+    return `${m} ${h} * * *`;
+  }
   if (args.period === "weekly") {
     const weekdays = normalizeWeekdays(args.weekdays ?? [args.weekday ?? 1]);
     // cron 输出走升序（0~6），UI 顺序（周一开头）跟 cron 字符串顺序解耦，
@@ -2909,6 +3285,7 @@ export function parseInitialSchedule(display: string): {
   kind: FrequencyKind;
   period?: RecurringPeriod;
   time?: string;
+  times?: string[];
   weekday?: number;
   weekdays?: number[];
   monthday?: number;

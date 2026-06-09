@@ -9,6 +9,7 @@ import {
   listRecentCronRuns,
   parseCronRunFilesOutput,
   parseEffectiveWindowScript,
+  parseLightVelaCronScript,
   parseCronListOutput,
   shellQuote,
   splitLastRunValue,
@@ -119,6 +120,7 @@ describe("parseCronRunFilesOutput", () => {
       created_at: null,
       script: "",
       effective_window: null,
+      lightvela_schedule: null,
     }]);
 
     expect(runs).toEqual([{
@@ -273,6 +275,21 @@ describe("effective window script", () => {
     });
   });
 
+  it("round-trips LightVela daily time metadata", () => {
+    const script = buildEffectiveWindowScript({
+      start_at: null,
+      end_at: null,
+      daily_times: ["12:30", "09:00", "09:00"],
+    });
+
+    expect(script).toContain("# daily_times=09:00,12:30");
+    expect(parseLightVelaCronScript(script)).toEqual({
+      effectiveWindow: null,
+      lightvelaSchedule: { kind: "daily_times", times: ["09:00", "12:30"] },
+    });
+    expect(parseEffectiveWindowScript(script)).toBeNull();
+  });
+
   it("ignores non-LightVela scripts", () => {
     expect(parseEffectiveWindowScript("print('hello')")).toBeNull();
   });
@@ -298,6 +315,32 @@ describe("effective window script", () => {
     expect(jobs[0]?.effective_window).toEqual({
       start_at: "2026-06-10T00:00",
       end_at: "2026-06-19T23:59",
+    });
+	    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  it("hydrates LightVela daily time metadata from the listed pre-run script", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(okExec(`
+  a1b2c3d4e5f6 [active]
+    Name:      多时间点任务
+    Schedule:  * * * * *
+    Script:    lightvela-effective-window-daily.py
+`))
+	      .mockResolvedValueOnce(okExec(""))
+	      .mockResolvedValueOnce(okExec(buildEffectiveWindowScript({
+	        start_at: null,
+	        end_at: null,
+	        daily_times: ["09:00", "12:30"],
+	      })))
+	      .mockResolvedValueOnce(okExec(""));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const jobs = await listCronJobs("bot-1");
+
+    expect(jobs[0]?.lightvela_schedule).toEqual({
+      kind: "daily_times",
+      times: ["09:00", "12:30"],
     });
 	    expect(fetchMock).toHaveBeenCalledTimes(4);
   });

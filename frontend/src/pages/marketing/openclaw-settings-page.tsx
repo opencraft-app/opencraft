@@ -3077,14 +3077,11 @@ export const OpenClawSettingsPage = () => {
   const [showAcliResetConfirm, setShowAcliResetConfirm] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [resettingAcli, setResettingAcli] = useState(false);
-  const [resetError, setResetError] = useState<string | null>(null);
-  const [acliResetError, setAcliResetError] = useState<string | null>(null);
   const [acliResetConsole, setAcliResetConsole] = useState<string[]>([]);
   const acliResetConsoleRef = useRef<HTMLPreElement | null>(null);
   const [viewedChannelBotIds, setViewedChannelBotIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    setAcliResetError(null);
     setAcliResetConsole([]);
   }, [activeBot?.id]);
 
@@ -3101,7 +3098,6 @@ export const OpenClawSettingsPage = () => {
     if (!targetBotId) return;
 
     setResetting(true);
-    setResetError(null);
     try {
       const result = await repositories.bots.resetInstanceConfig(targetBotId);
 
@@ -3164,7 +3160,6 @@ export const OpenClawSettingsPage = () => {
       const message = isResetConfigRouteMissingError(err)
         ? t("当前后端服务暂不支持重置配置，请稍后再试。")
         : err instanceof Error ? err.message : fallbackMessage;
-      setResetError(message);
       toast.error(message);
     } finally {
       setResetting(false);
@@ -3177,7 +3172,6 @@ export const OpenClawSettingsPage = () => {
     if (!targetBotId) return;
 
     setResettingAcli(true);
-    setAcliResetError(null);
     setAcliResetConsole([`$ ${ACLI_RESET_COMMAND}`]);
     setShowAcliResetConfirm(false);
     try {
@@ -3191,7 +3185,6 @@ export const OpenClawSettingsPage = () => {
       toast.success(t("Agent 重置成功"));
     } catch (err) {
       const message = err instanceof Error ? err.message : t("Agent 重置失败，请重试");
-      setAcliResetError(message);
       setAcliResetConsole((prev) => [...prev, `[error] ${message}`].slice(-80));
       toast.error(t("Agent 重置失败，请重试"));
     } finally {
@@ -3636,23 +3629,6 @@ export const OpenClawSettingsPage = () => {
               </span>
               {t("期间 Agent 可能短暂不可用，但工作空间、记忆、通道配置、已安装技能将会保留，确认继续？")}
             </p>
-            {resetError && (
-              <pre
-                className="whitespace-pre-wrap break-words rounded-md border px-3 py-2 text-xs"
-                style={{
-                  color: "var(--tea-color-text-error-default, #DC2626)",
-                  backgroundColor: "var(--tea-color-text-error-default-alpha4, rgba(220,38,38,0.04))",
-                  borderColor: "var(--tea-color-text-error-default-alpha18, rgba(220,38,38,0.18))",
-                  fontFamily:
-                    "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
-                  maxHeight: "180px",
-                  overflowY: "auto",
-                  marginBottom: "12px",
-                }}
-              >
-                {resetError}
-              </pre>
-            )}
             <div className="flex flex-col gap-2">
               <button
                 onClick={() => void handleResetConfig()}
@@ -3958,7 +3934,6 @@ export const OpenClawSettingsPage = () => {
                               onClick={(event) => {
                                 event.stopPropagation();
                                 if (resetDisabled) return;
-                                setResetError(null);
                                 setShowResetConfirm(true);
                               }}
                               aria-disabled={resetDisabled}
@@ -3980,7 +3955,6 @@ export const OpenClawSettingsPage = () => {
                               onClick={(event) => {
                                 event.stopPropagation();
                                 if (getAcliResetClickAction(activeBot, resettingAcli) === "open_confirm") {
-                                  setAcliResetError(null);
                                   setShowAcliResetConfirm(true);
                                 }
                               }}
@@ -4065,11 +4039,6 @@ export const OpenClawSettingsPage = () => {
 
                       {activeBotRestartError && (
                         <p className="mt-2 px-1 text-xs leading-relaxed text-red-500">{activeBotRestartError}</p>
-                      )}
-                      {acliResetError && (
-                        <p className="mt-2 px-1 text-xs leading-relaxed text-red-500">
-                          {t("Agent 重置失败：{{detail}}", { detail: acliResetError })}
-                        </p>
                       )}
 
                       {canCreateBot && (
