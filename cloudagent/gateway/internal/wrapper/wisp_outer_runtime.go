@@ -518,13 +518,11 @@ func wispStopCommand(runtime ACPSessionRuntime) string {
 	} else if strings.TrimSpace(runtime.RemoteBinary) != "" {
 		hostLog = path.Join(path.Dir(runtime.RemoteBinary), "wispclient-daemon.log")
 	}
-	writebackCutTimeout := envDurationSeconds("GATEWAY_WISP_WRITEBACK_CUT_TIMEOUT_SECONDS", 20*time.Second).String()
 	return "set -euo pipefail\n" +
 		"client=" + shellQuote(clientPath) + "\n" +
 		"name=" + shellQuote(runtime.WispName) + "\n" +
 		"server=" + shellQuote(wispAdminAddr(runtime)) + "\n" +
 		"log=" + shellQuote(hostLog) + "\n" +
-		"writeback_cut_timeout=" + shellQuote(writebackCutTimeout) + "\n" +
 		"redact_line() {\n" +
 		"  sed -E \"s/(SMH_ACCESS_TOKEN=)[^[:space:]]+/\\1<redacted>/Ig; s/(access[_-]?token=)[^[:space:]]+/\\1<redacted>/Ig; s/(api[_-]?key=)[^[:space:]]+/\\1<redacted>/Ig; s/(library[_-]?secret=)[^[:space:]]+/\\1<redacted>/Ig; s/(secret[_-]?key=)[^[:space:]]+/\\1<redacted>/Ig\"\n" +
 		"}\n" +
@@ -542,43 +540,23 @@ func wispStopCommand(runtime ACPSessionRuntime) string {
 		"fi\n" +
 		"if [[ -z \"$client\" || ! -x \"$client\" ]]; then echo \"wispclient missing\" >&2; exit 127; fi\n" +
 		"jfs=\"$(dirname \"$client\")/juicefs-smount\"\n" +
+		"echo \"wisp stop_preflight diag client=$client jfs=$jfs name=$name server=$server mnt_ns=$(readlink /proc/self/ns/mnt 2>/dev/null || true)\" >&2\n" +
+		"echo \"wisp stop_preflight diag statfs /mnt/cloudagent-wisp:\" >&2\n" +
+		"stat -f -c 'type=%T id=%i namelen=%l bsize=%s' /mnt/cloudagent-wisp 2>&1 | redact_line >&2 || true\n" +
+		"echo \"wisp stop_preflight diag findmnt:\" >&2\n" +
+		"findmnt -T /mnt/cloudagent-wisp -o TARGET,SOURCE,FSTYPE,OPTIONS 2>&1 | redact_line >&2 || true\n" +
+		"echo \"wisp stop_preflight diag mount:\" >&2\n" +
+		"mount | grep -aE 'cloudagent-wisp|juicefs|/mnt/cloudagent-wisp' | redact_line >&2 || true\n" +
 		"if [[ -x \"$jfs\" ]]; then\n" +
-		"  echo \"wisp writeback-cut-barrier diag client=$client jfs=$jfs name=$name server=$server mnt_ns=$(readlink /proc/self/ns/mnt 2>/dev/null || true)\" >&2\n" +
-		"  echo \"wisp writeback-cut-barrier diag statfs /mnt/cloudagent-wisp:\" >&2\n" +
-		"  stat -f -c 'type=%T id=%i namelen=%l bsize=%s' /mnt/cloudagent-wisp 2>&1 | redact_line >&2 || true\n" +
-		"  echo \"wisp writeback-cut-barrier diag findmnt:\" >&2\n" +
-		"  findmnt -T /mnt/cloudagent-wisp -o TARGET,SOURCE,FSTYPE,OPTIONS 2>&1 | redact_line >&2 || true\n" +
-		"  echo \"wisp writeback-cut-barrier diag mount:\" >&2\n" +
-		"  mount | grep -aE 'cloudagent-wisp|juicefs|/mnt/cloudagent-wisp' | redact_line >&2 || true\n" +
-		"  echo \"wisp writeback-cut-barrier diag jfs-version:\" >&2\n" +
+		"  echo \"wisp stop_preflight diag jfs-version:\" >&2\n" +
 		"  \"$jfs\" version 2>&1 | head -20 | redact_line >&2 || true\n" +
-		"  echo \"wisp checkpoint_start phase=writeback_cut_barrier timeout=$writeback_cut_timeout\" >&2\n" +
-		"  echo \"wisp writeback-cut-barrier start timeout=$writeback_cut_timeout\" >&2\n" +
-		"  barrier_stdout=\"$(mktemp)\"\n" +
-		"  barrier_stderr=\"$(mktemp)\"\n" +
-		"  set +e\n" +
-		"  if command -v sudo >/dev/null 2>&1; then\n" +
-		"    sudo -n \"$jfs\" writeback-cut-barrier /mnt/cloudagent-wisp --timeout \"$writeback_cut_timeout\" --poll-interval 30ms >\"$barrier_stdout\" 2>\"$barrier_stderr\"\n" +
-		"  else\n" +
-		"    \"$jfs\" writeback-cut-barrier /mnt/cloudagent-wisp --timeout \"$writeback_cut_timeout\" --poll-interval 30ms >\"$barrier_stdout\" 2>\"$barrier_stderr\"\n" +
-		"  fi\n" +
-		"  barrier_code=$?\n" +
-		"  set -e\n" +
-		"  cat \"$barrier_stderr\" | redact_line >&2 || true\n" +
-		"  cat \"$barrier_stdout\" | redact_line >&2 || true\n" +
-		"  rm -f \"$barrier_stdout\" \"$barrier_stderr\"\n" +
-		"  if [[ \"$barrier_code\" != 0 ]]; then\n" +
-		"    echo \"wisp writeback-cut-barrier failed exit=$barrier_code\" >&2\n" +
-		"    exit \"$barrier_code\"\n" +
-		"  fi\n" +
-		"  echo \"wisp writeback-cut-barrier done\" >&2\n" +
-		"  echo \"wisp checkpoint_done phase=writeback_cut_barrier\" >&2\n" +
 		"else\n" +
-		"  echo \"wisp writeback-cut-barrier skipped: juicefs-smount missing path=$jfs\" >&2\n" +
+		"  echo \"wisp stop_preflight diag jfs-version: missing path=$jfs\" >&2\n" +
 		"fi\n" +
 		"stop_stdout=\"$(mktemp)\"\n" +
 		"stop_stderr=\"$(mktemp)\"\n" +
 		"trap 'rm -f \"$stop_stdout\" \"$stop_stderr\"' EXIT\n" +
+		"echo \"wisp stop_delegate_start name=$name\" >&2\n" +
 		"echo \"wisp umount_start name=$name\" >&2\n" +
 		"set +e\n" +
 		"\"$client\" -server \"$server\" stop \"$name\" >\"$stop_stdout\" 2>\"$stop_stderr\"\n" +
