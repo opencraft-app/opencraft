@@ -1108,6 +1108,49 @@ func TestLocalRuntimeHostCommandPrefixQuotesRootsWithSpaces(t *testing.T) {
 	}
 }
 
+func TestLocalRuntimeHostCommandPrefixWaitsForSetsidChild(t *testing.T) {
+	root := t.TempDir()
+	fakeBin := filepath.Join(root, "fakebin")
+	if err := os.MkdirAll(fakeBin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fakeSetsid := filepath.Join(fakeBin, "setsid")
+	if err := os.WriteFile(fakeSetsid, []byte(`#!/bin/sh
+set -eu
+if [ "${1:-}" = "--wait" ]; then
+  shift
+  exec "$@"
+fi
+"$@" &
+exit 0
+`), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	host, err := NewLocalRuntimeHost(LocalRuntimeHostConfig{
+		Root:          root,
+		CommandPrefix: `env PATH="` + fakeBin + `:$PATH" /bin/sh -lc`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := host.CreateSandbox(context.Background(), CreateSandboxOptions{TemplateID: "local"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	started := time.Now()
+	result, err := host.RunCommand(context.Background(), target, "sleep 0.2; printf setsid-child-finished", nil, nil, nil)
+	if err != nil {
+		t.Fatalf("run prefixed setsid command: %v stdout=%q stderr=%q", err, result.Stdout, result.Stderr)
+	}
+	if elapsed := time.Since(started); elapsed < 150*time.Millisecond {
+		t.Fatalf("prefixed command returned before setsid child finished: elapsed=%s result=%#v", elapsed, result)
+	}
+	if result.Stdout != "setsid-child-finished" {
+		t.Fatalf("setsid child stdout=%q", result.Stdout)
+	}
+}
+
 func TestLocalRuntimeHostRapidCommandsDoNotReportClosedPipe(t *testing.T) {
 	host, err := NewLocalRuntimeHost(LocalRuntimeHostConfig{Root: t.TempDir()})
 	if err != nil {

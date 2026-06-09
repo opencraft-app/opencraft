@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -168,5 +170,62 @@ func TestRuntimeStatusIncludesRemoteBackend(t *testing.T) {
 	status := rt.runtimeStatus(context.Background())
 	if status.RemoteBackend != "smh" {
 		t.Fatalf("RemoteBackend=%q", status.RemoteBackend)
+	}
+}
+
+func TestWorkspaceLayoutConfigForCreatePreservesBoundBackend(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.jsonnet")
+	if err := os.WriteFile(configPath, []byte(`{
+  WISP_NAME: "default",
+  REMOTE_BACKEND: "cos",
+  COS_ENABLED: false,
+  JFS_ROOT: "/mnt/cloudagent-wisp",
+  TEMP_ROOT: "/tmp/wisp/default",
+  RUNTIME_ROOT: "/var/lib/wisp-runtime/default",
+}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	baseCfg, err := config.Load(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := "agent-session-demo"
+	if err := config.SetWorkspaceLayout(configPath, baseCfg, name); err != nil {
+		t.Fatal(err)
+	}
+	for key, value := range map[string]string{
+		"REMOTE_BACKEND":    "smh",
+		"SMH_ENABLED":       "true",
+		"SMH_LIBRARY_ID":    "lib",
+		"SMH_ACCESS_DOMAIN": "https://example.api.tencentsmh.cn",
+		"SMH_SPACE_ID":      "space-1",
+		"JFS_PREFIX":        "host",
+	} {
+		if err := config.SetContainerEnvValue(configPath, name, key, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	layoutCfg, err := workspaceLayoutConfigForCreate(configPath, baseCfg, name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := config.SetWorkspaceLayout(configPath, layoutCfg, name); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := config.LoadContainer(configPath, name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.RemoteBackend != "smh" || !got.SMHEnabled || got.SMHLibraryID != "lib" || got.SMHSpaceID != "space-1" || got.JFSPrefix != "host" {
+		t.Fatalf("bound backend was not preserved: backend=%q smh=%t library=%q space=%q prefix=%q",
+			got.RemoteBackend, got.SMHEnabled, got.SMHLibraryID, got.SMHSpaceID, got.JFSPrefix)
+	}
+	if got.COSWorkspace != name || got.WispName != name {
+		t.Fatalf("workspace layout was not refreshed: wisp_name=%q cos_workspace=%q", got.WispName, got.COSWorkspace)
 	}
 }

@@ -4038,11 +4038,19 @@ func (r *Runtime) runDetached(ctx context.Context, name string, args ...string) 
 	}
 	defer devNull.Close()
 
+	var stdout, stderr bytes.Buffer
 	cmd.Stdin = devNull
-	cmd.Stdout = devNull
-	cmd.Stderr = devNull
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("%s %s: %w", name, strings.Join(args, " "), err)
+		detail := ""
+		if text := oneLineForLog(stderr.String(), 2048); text != "" {
+			detail += " stderr=" + strconv.Quote(text)
+		}
+		if text := oneLineForLog(stdout.String(), 2048); text != "" {
+			detail += " stdout=" + strconv.Quote(text)
+		}
+		return fmt.Errorf("%s %s: %w%s", name, strings.Join(args, " "), err, detail)
 	}
 	return nil
 }
