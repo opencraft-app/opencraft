@@ -8,3 +8,4 @@
 - 强认证是核心能力；公网入口不能绕过 HMAC/mTLS 直接访问 IDC upstream。
 - 审计日志是核心能力；代理路径必须记录 request id、caller、operation、upstream、status、latency、error 和请求摘要，并通过 stdout/OTLP logs 输出。
 - 异步 webhook 目前是进程内 goroutine，不具备持久化重试；生产化前不要把它当可靠投递队列。
+- CI retrigger 约定：`.ci/cloudladdergateway.yml` 的 `paths` 仅匹配 `cloudladdergateway/**`，需要 retrigger 流水线但又没有真实代码改动时，可对本文件追加注记 commit。
