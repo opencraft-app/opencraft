@@ -206,7 +206,10 @@ func TestWispOuterStopCommandCollectsHostDiagnosticsOnFailure(t *testing.T) {
 		WispName:       "agent-session-1",
 	})
 	for _, want := range []string{
-		"writeback-cut-barrier",
+		"wisp stop_preflight diag client=",
+		"wisp stop_preflight diag statfs /mnt/cloudagent-wisp:",
+		"wisp stop_preflight diag findmnt:",
+		"wisp stop_delegate_start",
 		"wisp stop diagnostics: mount",
 		"wisp stop diagnostics: df",
 		"wisp stop diagnostics: process",
@@ -222,21 +225,23 @@ func TestWispOuterStopCommandCollectsHostDiagnosticsOnFailure(t *testing.T) {
 	if !strings.Contains(command, "cloudagent-wisp") || !strings.Contains(command, "juicefs") || !strings.Contains(command, "smount") {
 		t.Fatalf("stop command should collect Wisp/JuiceFS diagnostics: %s", command)
 	}
+	if strings.Contains(command, "writeback-cut-barrier /mnt/cloudagent-wisp") {
+		t.Fatalf("stop command must not run host-namespace writeback barrier before wispclient stop: %s", command)
+	}
 }
 
-func TestWispWorkspaceStopCommandRunsBarrierBeforeStop(t *testing.T) {
+func TestWispWorkspaceStopCommandDelegatesPersistenceToRuntimeStop(t *testing.T) {
 	command := wispWorkspaceStopCommand(ACPSessionRuntime{
 		WispClientPath: "/tmp/cloudagent-workspace-wisp/install/bin/wispclient",
 		WispInstallDir: "/tmp/cloudagent-workspace-wisp/install",
 		WispName:       "workspace-12345678",
 	})
-	barrierIndex := strings.Index(command, "writeback-cut-barrier")
 	stopIndex := strings.Index(command, "stop \"$name\"")
-	if barrierIndex < 0 || stopIndex < 0 {
-		t.Fatalf("workspace stop command missing barrier or stop: %s", command)
+	if stopIndex < 0 {
+		t.Fatalf("workspace stop command missing wispclient stop: %s", command)
 	}
-	if barrierIndex > stopIndex {
-		t.Fatalf("workspace stop command must run writeback barrier before stop: %s", command)
+	if strings.Contains(command, "writeback-cut-barrier /mnt/cloudagent-wisp") {
+		t.Fatalf("workspace stop command must let runtime stop run barriers in the Wisp namespace: %s", command)
 	}
 	if !strings.Contains(command, "CLOUDAGENT_WISP_STOPPED") {
 		t.Fatalf("workspace stop command missing completion marker: %s", command)
