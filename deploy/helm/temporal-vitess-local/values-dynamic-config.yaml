@@ -1,0 +1,14 @@
+# Optional overlay for Temporal dynamic config (under temporal:).
+# Defaults live in values.yaml; keep this file when you need an env-specific override.
+temporal:
+  server:
+    dynamicConfig:
+      matching.longPollExpirationInterval:
+        - value: 50s
+          constraints: {}
+      matching.numTaskqueueReadPartitions:
+        - value: 5
+          constraints: {}
+      matching.numTaskqueueWritePartitions:
+        - value: 5
+          constraints: {}

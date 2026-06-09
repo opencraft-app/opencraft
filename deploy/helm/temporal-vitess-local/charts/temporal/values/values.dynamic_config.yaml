@@ -1,0 +1,11 @@
+server:
+  dynamicConfig:
+    matching.longPollExpirationInterval:
+    - value: 50s
+      constraints: {}
+    matching.numTaskqueueReadPartitions:
+    - value: 5
+      constraints: {}
+    matching.numTaskqueueWritePartitions:
+    - value: 5
+      constraints: {}
