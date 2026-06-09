@@ -163,3 +163,28 @@
     animation: none !important;
   }
 }
+
+/* ── Hero CTA 按钮 hover 微动效 ──
+ *   缩放 + 阴影 + 轻微提升，用于「立即创建」CTA
+ *   与 .lv-btn-arrow（svg 箭头位移）叠加使用 */
+.lv-btn-cta {
+  transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1),
+              box-shadow 240ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+.lv-btn-cta:hover {
+  transform: translateY(-2px) scale(1.03);
+  box-shadow: 0 12px 28px rgba(26, 26, 26, 0.28);
+}
+.lv-btn-cta:active {
+  transform: translateY(0) scale(0.99);
+  transition-duration: 80ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lv-btn-cta,
+  .lv-btn-cta:hover,
+  .lv-btn-cta:active {
+    transform: none !important;
+    box-shadow: none !important;
+  }
+}

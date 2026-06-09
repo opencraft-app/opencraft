@@ -51,17 +51,35 @@ export const LandingPage = () => {
 
   const openLogin = () => setShowLogin(true);
 
+  /**
+   * 「立即创建」按钮统一处理：
+   * - 未登录 → 弹登录框
+   * - 已登录且已订阅 → 进入 dashboard（无龙虾时自动创建）
+   * - 已登录未订阅 → 跳套餐选择页
+   */
+  const handleCreateClick = useCallback(() => {
+    if (!isAuthenticated) {
+      setShowLogin(true);
+      return;
+    }
+    if (isSubscribed) {
+      navigate(hasBots ? "/dashboard/settings" : "/dashboard/settings?creating=true");
+    } else {
+      navigate("/subscribe");
+    }
+  }, [isAuthenticated, isSubscribed, hasBots, navigate]);
+
   return (
     <div className="w-full bg-white overflow-x-hidden">
       <div className="relative">
-        <HeaderSection />
-        <HeroSection />
+        <HeaderSection onLoginClick={openLogin} onCreateClick={handleCreateClick} />
+        <HeroSection onCreateClick={handleCreateClick} />
       </div>
       <BrandIconsSection />
       <FeatureSection />
       <CardsSection />
       <ProcessSection />
-      <CtaSection />
+      <CtaSection onCreateClick={handleCreateClick} />
       <FooterSection />
 
       <LoginModal

@@ -276,7 +276,7 @@ function Frame31() {
     <div className="bg-[#fff7f8] content-stretch flex gap-[6px] items-center justify-center px-[40px] py-[12px] relative rounded-[16px] shrink-0">
       <div aria-hidden className="absolute border border-[rgba(217,217,217,0)] border-solid inset-0 pointer-events-none rounded-[16px]" />
       <Frame52 />
-      <p className="[word-break:break-word] font-['PingFang_SC:Medium',sans-serif] leading-[24px] not-italic relative shrink-0 text-[16px] text-black whitespace-nowrap">私欲营销</p>
+      <p className="[word-break:break-word] font-['PingFang_SC:Medium',sans-serif] leading-[24px] not-italic relative shrink-0 text-[16px] text-black whitespace-nowrap">私域营销</p>
     </div>
   );
 }
@@ -2645,7 +2645,7 @@ const ROW1 = [
   { img: imgImage4115, label: '定时任务', bg: '#fffaef' },
   { img: imgImage4116, label: '会议纪要', bg: '#f7faff' },
   { img: imgImage4121, label: '新闻推送', bg: '#fffaef' },
-  { img: imgImage4122, label: '私欲营销', bg: '#fff7f8' },
+  { img: imgImage4122, label: '私域营销', bg: '#fff7f8' },
 ];
 
 /* 第二行 tags（向右滚） */

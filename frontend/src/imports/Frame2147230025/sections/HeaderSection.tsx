@@ -1,22 +1,8 @@
+import { Link, useLocation } from 'react-router-dom';
 import {
   svgPaths,
-  imgImage, imgImage614591645, imgImage614591647, imgImage614591648,
-  imgImage4597, imgImage8, imgImage9, imgImage10, imgImage614591630,
-  imgImage614591599, imgImage11, imgImage12, imgImage614591617,
-  imgImage614591621, imgImage614591622, imgImage614591623, imgImage614591620,
-  imgImage614591618, imgImage614591619, imgEllipse1115024, imgEllipse1115029,
-  imgVector7806, imgVector7807, imgVector7808,
-  imgImage4120, imgImage4119, imgImage4118, imgImage4117, imgImage4103,
-  imgImage4042, imgImage4102, imgFrame2147229949, imgImage4316,
-  imgImage4112, imgImage4110, imgImage4111, imgImage4113, imgImage4114,
-  imgImage4115, imgImage4116, imgImage4121, imgImage4122, imgImage4123,
-  imgImage4124, imgImage4125, imgImage4126, imgImage4127, imgImage4128,
-  imgImage4129, imgImage4130, imgRectangle1329139236, imgImage4131,
-  imgImage3, imgEllipse111556, imgEllipse111550, imgImage4,
-  imgRoundedRectangle, imgRoundedRectangle1, imgEllipse111566,
-  imgVector919, imgImage4588, imgImage614591606,
-  imgImage614591644, imgImage614591646, imgImage1, imgImage2
 } from '../assets';
+import '../motion.css';
 
 
 function Group6() {
@@ -58,30 +44,42 @@ export function Frame4() {
 }
 
 
-function Component5() {
+function Component5({ onClick }: { onClick?: () => void }) {
   return (
-    <div className="backdrop-blur-[8.05px] bg-[rgba(245,245,245,0.5)] content-stretch flex gap-[4px] items-center px-[24px] py-[7px] relative rounded-[100px] shrink-0" data-name="Component 53">
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label="登录"
+      className="backdrop-blur-[8.05px] bg-[rgba(245,245,245,0.5)] hover:bg-[rgba(245,245,245,0.85)] hover:-translate-y-[1px] hover:shadow-[0_4px_12px_rgba(0,0,0,0.08)] transition-all duration-200 ease-out content-stretch flex gap-[4px] items-center px-[24px] py-[7px] relative rounded-[100px] shrink-0 cursor-pointer border-0 outline-none"
+      data-name="Component 53"
+    >
       <div aria-hidden className="absolute border border-[#e6e9ef] border-solid inset-0 pointer-events-none rounded-[100px]" />
       <p className="[word-break:break-word] font-['PingFang_SC:Medium',sans-serif] leading-[22px] not-italic relative shrink-0 text-[14px] text-[rgba(0,0,0,0.9)] text-center whitespace-nowrap">登录</p>
-    </div>
+    </button>
   );
 }
 
 
-function Component6() {
+function Component6({ onClick }: { onClick?: () => void }) {
   return (
-    <div className="bg-[#161617] content-stretch flex gap-[8px] items-center justify-center px-[24px] py-[7px] relative rounded-[38px] shrink-0" data-name="Component 53">
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label="立即创建"
+      className="bg-[#161617] hover:bg-[#000] hover:-translate-y-[1px] hover:shadow-[0_8px_20px_rgba(0,0,0,0.25)] transition-all duration-200 ease-out content-stretch flex gap-[8px] items-center justify-center px-[24px] py-[7px] relative rounded-[38px] shrink-0 cursor-pointer border-0 outline-none"
+      data-name="Component 53"
+    >
       <p className="[word-break:break-word] font-['PingFang_SC:Medium',sans-serif] leading-[22px] not-italic relative shrink-0 text-[14px] text-center text-white whitespace-nowrap">立即创建</p>
-    </div>
+    </button>
   );
 }
 
 
-function Frame5() {
+function Frame5({ onLoginClick, onCreateClick }: { onLoginClick?: () => void; onCreateClick?: () => void }) {
   return (
     <div className="content-stretch flex gap-[12px] items-center relative shrink-0">
-      <Component5 />
-      <Component6 />
+      <Component5 onClick={onLoginClick} />
+      <Component6 onClick={onCreateClick} />
     </div>
   );
 }
@@ -107,21 +105,50 @@ function Frame14() {
 }
 
 
-export default function HeaderSection() {
+/** 顶部导航项配置（与现网 lightvela.com 保持一致）
+ * 概览 → /  ·  更新日志 → /changelog  ·  产品文档 → /docs  ·  关于我们 → /about
+ */
+const NAV_LINKS = [
+  { label: '概览', href: '/' },
+  { label: '更新日志', href: '/changelog' },
+  { label: '产品文档', href: '/docs' },
+  { label: '关于我们', href: '/about' },
+];
+
+interface HeaderSectionProps {
+  onLoginClick?: () => void;
+  onCreateClick?: () => void;
+}
+
+export default function HeaderSection({ onLoginClick, onCreateClick }: HeaderSectionProps = {}) {
+  const location = useLocation();
+
   return (
     <header className="w-full absolute top-0 left-0 z-20">
       <div className="w-full flex items-center justify-between px-16 py-3 relative">
         {/* Logo */}
         <Frame4 />
-        {/* 中间导航：绝对居中（仅大屏显示） */}
-        <nav className="hidden lg:flex gap-8 text-[14px] font-['PingFang_SC:Medium',sans-serif] text-[rgba(0,0,0,0.7)] absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-          <span>概览</span>
-          <span>更新日志</span>
-          <span>产品文档</span>
-          <span>养虾博客</span>
+        {/* 中间导航：绝对居中（仅大屏显示）
+            点击跳转对应路由，hover 时轻微上抬 */}
+        <nav className="hidden lg:flex gap-8 absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+          {NAV_LINKS.map((link) => {
+            const active =
+              link.href === '/' ? location.pathname === '/' : location.pathname.startsWith(link.href);
+            return (
+              <Link
+                key={link.href}
+                to={link.href}
+                className={`text-[14px] font-['PingFang_SC:Medium',sans-serif] transition-all duration-200 ease-out hover:-translate-y-[2px] hover:text-black no-underline ${
+                  active ? 'text-black/90 font-semibold' : 'text-[rgba(0,0,0,0.7)]'
+                }`}
+              >
+                {link.label}
+              </Link>
+            );
+          })}
         </nav>
         {/* 右侧按钮 */}
-        <Frame5 />
+        <Frame5 onLoginClick={onLoginClick} onCreateClick={onCreateClick} />
       </div>
     </header>
   );
