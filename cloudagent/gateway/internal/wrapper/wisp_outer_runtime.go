@@ -1103,10 +1103,10 @@ func (w *AgentSidecarWorker) stageSidecarBinaryIntoWisp(ctx context.Context, hos
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("stage sidecar into wisp outer runtime session_runtime=%s outer_sandbox_id=%s: %w", runtime.RuntimeID, sb.ID, err)
+		return fmt.Errorf("stage sidecar into wisp outer runtime session_runtime=%s outer_sandbox_id=%s %s: %w", runtime.RuntimeID, sb.ID, wispCommandFailureDetail(err, result), err)
 	}
 	if result.ExitCode != 0 || !strings.Contains(result.Stdout, "CLOUDAGENT_WISP_SIDECAR_STAGED") {
-		return fmt.Errorf("stage sidecar into wisp outer runtime failed session_runtime=%s outer_sandbox_id=%s exit=%d stdout=%q stderr=%q", runtime.RuntimeID, sb.ID, result.ExitCode, result.Stdout, result.Stderr)
+		return fmt.Errorf("stage sidecar into wisp outer runtime failed session_runtime=%s outer_sandbox_id=%s %s", runtime.RuntimeID, sb.ID, wispCommandFailureDetail(nil, result))
 	}
 	return nil
 }
