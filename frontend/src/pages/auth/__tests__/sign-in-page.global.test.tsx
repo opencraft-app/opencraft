@@ -59,20 +59,21 @@ describe("SignInPage (国际站 isGlobal=true)", () => {
     cleanup();
   });
 
-  it("仅展示 Google 与 GitHub 登录，隐藏 QQ / 微信", () => {
+  it("仅展示 GitHub 登录，隐藏 Google / QQ / 微信", () => {
     render(
       <MemoryRouter>
         <SignInPage />
       </MemoryRouter>,
     );
 
-    expect(screen.getByRole("button", { name: "使用 Google 登录" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "使用 GitHub 登录" })).toBeInTheDocument();
+    /* Google 入口暂时下线（VISIBLE_OAUTH_PROVIDERS 不再包含 google） */
+    expect(screen.queryByRole("button", { name: "使用 Google 登录" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "使用 QQ 登录" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "使用微信登录" })).not.toBeInTheDocument();
   });
 
-  it("点击 Google / GitHub 时跳转到后端下发的 start URL", () => {
+  it("点击 GitHub 时跳转到后端下发的 start URL", () => {
     const redirectSpy = vi.spyOn(oauthModule, "redirectToOAuthStart").mockImplementation(() => undefined);
 
     render(
@@ -81,11 +82,9 @@ describe("SignInPage (国际站 isGlobal=true)", () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "使用 Google 登录" }));
     fireEvent.click(screen.getByRole("button", { name: "使用 GitHub 登录" }));
 
-    expect(redirectSpy).toHaveBeenNthCalledWith(1, oauthStartUrls.google);
-    expect(redirectSpy).toHaveBeenNthCalledWith(2, oauthStartUrls.github);
+    expect(redirectSpy).toHaveBeenNthCalledWith(1, oauthStartUrls.github);
     redirectSpy.mockRestore();
   });
 

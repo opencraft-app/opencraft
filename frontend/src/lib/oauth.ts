@@ -9,12 +9,14 @@ export const WECHAT_MOBILE_BROWSER_PROMPT = "请在微信中打开当前页面�
 /**
  * 当前区域允许展示的 OAuth 登录渠道（编译期常量）。
  * - 国内站：QQ / 微信（GitHub 彩蛋走 useGitHubLoginVisibility 动态开启）
- * - 国际站：Google / GitHub
+ * - 国际站：暂时仅 GitHub（Google 入口在产品上线节奏明确前临时下线，
+ *   后端 oauth google_* 错误码、label、failure / state 文案均保留，
+ *   恢复时只需把 "google" 加回此数组即可）
  *
  * 数组顺序即登录页渲染顺序，修改前请确认设计稿。
  */
 export const VISIBLE_OAUTH_PROVIDERS: readonly OAuthProvider[] = isGlobal
-  ? (["google", "github"] as const)
+  ? (["github"] as const)
   : (["qq", "wechat"] as const);
 
 /** GitHub 彩蛋入口是否允许在国内站通过 show_github_login() 显示 */

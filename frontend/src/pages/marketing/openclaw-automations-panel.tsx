@@ -2192,7 +2192,7 @@ function AutomationFormModal({
                 ? ([
                     { key: "telegram", label: "Telegram", comingSoon: false },
                     { key: "whatsapp", label: "WhatsApp", comingSoon: false },
-                    { key: "discord", label: "Discord", comingSoon: true },
+                    { key: "discord", label: "Discord", comingSoon: false },
                     { key: "weixin", label: "WeChat", comingSoon: false },
                   ] as const)
                 : ([
@@ -2251,9 +2251,9 @@ function AutomationFormModal({
                     {selected && key === "feishu" && (
                       <span className="text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>{t("支持通过 home 对话或指定 Chat ID 发送通知")}</span>
                     )}
-                    {selected && (key === "telegram" || key === "whatsapp") && (
+                    {selected && (key === "telegram" || key === "discord") && (
                       <span className="inline-flex items-center text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
-                        {t("如未生效，可在")}
+                        {t("请先在")}
                         {label}
                         {t("对话中发送")}
                         <InlineCopyText value="/set-home" />
@@ -2314,7 +2314,12 @@ function AutomationFormModal({
             <p className="text-xs text-black/40" style={MODAL_HELP_TEXT_STYLE}>
               {t("如不选，智能体只会在后台执行任务，不发通知。")}
             </p>
-          ) : null}
+          ) : (
+            // 保持容器高度不塌陷：用 nbsp 占位渲染等高空行
+            <p aria-hidden="true" className="text-xs text-black/40" style={MODAL_HELP_TEXT_STYLE}>
+              {"\u00A0"}
+            </p>
+          )}
         </div>
 
         {/* 操作 */}

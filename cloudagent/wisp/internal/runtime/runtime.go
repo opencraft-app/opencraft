@@ -2009,7 +2009,8 @@ func (r *Runtime) EnsureWorkspaceReady(ctx context.Context) error {
 	recoveryDur = time.Since(stepStarted)
 	r.log("ensure_workspace_ready step=done pre_start_recovery container=%s duration=%s", r.cfg.WispName, humanDuration(recoveryDur))
 	stepStarted = time.Now()
-	r.log("ensure_workspace_ready step=start ensure_active_image container=%s active_img=%s size=%s", r.cfg.WispName, r.cfg.ActiveImg, r.cfg.RootUpperSize)
+	r.log("ensure_workspace_ready step=start ensure_active_image container=%s active_img=%s size=%s jfs_root=%s state_root=%s runtime_root=%s active_parent_entries=%s",
+		r.cfg.WispName, r.cfg.ActiveImg, r.cfg.RootUpperSize, r.cfg.JFSRoot, r.cfg.StateRoot, r.cfg.RuntimeRoot, diagnosticDirEntries(filepath.Dir(r.cfg.ActiveImg)))
 	if err := r.traceStep(ctx, "runtime.ensure_active_image", func(ctx context.Context) error {
 		return r.ensureActiveImage(ctx)
 	}); err != nil {
@@ -2326,6 +2327,11 @@ func (r *Runtime) ensureActiveImage(ctx context.Context) error {
 	if _, err := os.Stat(r.cfg.ActiveImg); err == nil {
 		r.log("ensure_active_image existing active_img=%s", r.cfg.ActiveImg)
 		return nil
+	} else {
+		parent := filepath.Dir(r.cfg.ActiveImg)
+		r.log("ensure_active_image missing active_img=%s stat_error=%v parent=%s parent_stat=%s parent_entries=%s jfs_root=%s jfs_root_stat=%s state_root=%s state_root_stat=%s runtime_root=%s",
+			r.cfg.ActiveImg, err, parent, diagnosticStat(parent), diagnosticDirEntries(parent),
+			r.cfg.JFSRoot, diagnosticStat(r.cfg.JFSRoot), r.cfg.StateRoot, diagnosticStat(r.cfg.StateRoot), r.cfg.RuntimeRoot)
 	}
 	startedAt := time.Now()
 	requestedSize := strings.TrimSpace(r.cfg.RootUpperSize)
@@ -3158,8 +3164,12 @@ func (r *Runtime) cleanupRuntimeRoot(ctx context.Context, runtimeRoot string) er
 func (r *Runtime) cleanupWorkspaceState(ctx context.Context) error {
 	var errs []string
 	for _, path := range r.workspaceCleanupPaths() {
+		r.log("cleanup_workspace remove_start path=%s stat=%s entries=%s", path, diagnosticStat(path), diagnosticDirEntries(path))
 		if err := r.removeTreeClean(ctx, path); err != nil {
+			r.log("cleanup_workspace remove_failed path=%s err=%v", path, err)
 			errs = append(errs, err.Error())
+		} else {
+			r.log("cleanup_workspace remove_done path=%s", path)
 		}
 	}
 	if len(errs) > 0 {
@@ -4197,6 +4207,47 @@ func humanOpSummary(op, container string, total time.Duration, steps ...timedSte
 func readFileBestEffort(path string) []byte {
 	data, _ := os.ReadFile(path)
 	return data
+}
+
+func diagnosticStat(path string) string {
+	if strings.TrimSpace(path) == "" {
+		return "empty_path"
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Sprintf("error=%v", err)
+	}
+	return fmt.Sprintf("mode=%s size=%d mod=%s", info.Mode(), info.Size(), info.ModTime().Format(time.RFC3339))
+}
+
+func diagnosticDirEntries(path string) string {
+	if strings.TrimSpace(path) == "" {
+		return "empty_path"
+	}
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return fmt.Sprintf("error=%v", err)
+	}
+	capacity := len(entries)
+	if capacity > 20 {
+		capacity = 20
+	}
+	names := make([]string, 0, capacity)
+	for i, entry := range entries {
+		if i >= 20 {
+			names = append(names, fmt.Sprintf("...(+%d)", len(entries)-i))
+			break
+		}
+		suffix := ""
+		if entry.IsDir() {
+			suffix = "/"
+		}
+		names = append(names, entry.Name()+suffix)
+	}
+	if len(names) == 0 {
+		return "empty"
+	}
+	return strings.Join(names, ",")
 }
 
 func getenv(key, fallback string) string {

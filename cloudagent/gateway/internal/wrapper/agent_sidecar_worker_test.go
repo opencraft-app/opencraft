@@ -344,6 +344,51 @@ func TestKillSessionRuntimeDaemonUsesRuntimeHostProcessController(t *testing.T) 
 	}
 }
 
+func TestStageSidecarBinaryIntoWispIncludesCommandDetailWhenRunCommandFails(t *testing.T) {
+	host := &recordingRuntimeHost{
+		runCommand: func(_ RuntimeHostTarget, _ string, _ map[string]string, _ func(string) error, onStderr func(string) error) (CommandResult, error) {
+			if onStderr != nil {
+				if err := onStderr("TIMELINE sidecar_preflight_start\ncloudagent-runtime: missing loader\n"); err != nil {
+					return CommandResult{}, err
+				}
+			}
+			return CommandResult{
+				ExitCode: 1,
+				Exited:   true,
+				Status:   "exit status 1",
+				Stderr:   "TIMELINE sidecar_preflight_start\ncloudagent-runtime: missing loader\n",
+			}, errors.New("exit status 1")
+		},
+	}
+	worker := &AgentSidecarWorker{}
+	runtime := ACPSessionRuntime{
+		RuntimeID:      "rt_session_stage_detail",
+		WispClientPath: "/opt/wisp/bin/wispclient",
+		WispName:       "workspace-stage-detail",
+		RemoteBinary:   "/tmp/cloudagent-sidecar",
+	}
+
+	err := worker.stageSidecarBinaryIntoWisp(context.Background(), host, RuntimeHostTarget{ID: "outer_stage_detail"}, runtime, agentSidecarArtifact{
+		URL:    "https://example.invalid/cloudagent-sidecar",
+		SHA256: strings.Repeat("a", 64),
+	})
+	if err == nil {
+		t.Fatal("expected stage failure")
+	}
+	got := err.Error()
+	for _, want := range []string{
+		"stage sidecar into wisp outer runtime",
+		"exit status 1",
+		"stderr_tail=",
+		"TIMELINE sidecar_preflight_start",
+		"cloudagent-runtime: missing loader",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("error missing %q:\n%s", want, got)
+		}
+	}
+}
+
 func TestCloseSessionRuntimeDoesNotDoubleStopWorkspaceAfterSidecarShutdown(t *testing.T) {
 	host := &recordingRuntimeHost{
 		runCommand: func(target RuntimeHostTarget, command string, env map[string]string, onStdout func(string) error, onStderr func(string) error) (CommandResult, error) {
