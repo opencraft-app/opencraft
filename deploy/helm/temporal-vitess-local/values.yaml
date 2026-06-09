@@ -143,6 +143,17 @@ temporal:
     ttlSecondsAfterFinished: "2592000"
   server:
     replicaCount: 1
+    # Keep matching long polls below public CLB ~60s idle cutoff for cross-VPC HTTPS/gRPC workers.
+    dynamicConfig:
+      matching.longPollExpirationInterval:
+        - value: 50s
+          constraints: {}
+      matching.numTaskqueueReadPartitions:
+        - value: 5
+          constraints: {}
+      matching.numTaskqueueWritePartitions:
+        - value: 5
+          constraints: {}
     config:
       logLevel: "debug,info"
       namespaces:

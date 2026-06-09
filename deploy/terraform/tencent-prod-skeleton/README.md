@@ -12,6 +12,9 @@ Vitess with external cloud-managed MySQL:
   - `temporal_visibility`
 - A `vt_dba` account and the databases Vitess uses through
   `externalDatastore`.
+- A public Temporal Web UI CLB security group. Use it with qcloud Ingress
+  `security-groups` and `pass-to-target` annotations so backend Pod security
+  groups do not need a public `8080` rule.
 
 The Terraform output `temporal_vitess_helm_values_yaml` is the generated Helm
 overlay that supplies real MySQL endpoints and the managed etcd endpoint.
@@ -64,6 +67,12 @@ Render the generated external endpoint overlay:
 terraform output -raw temporal_vitess_helm_values_yaml > /tmp/values-prod-external-generated.yaml
 ```
 
+Render the CLB security group id for Temporal public Ingress annotations:
+
+```bash
+terraform output -raw temporal_public_clb_security_group_id
+```
+
 Install value-file order:
 
 ```bash
@@ -73,6 +82,7 @@ helm upgrade --install temporal-vitess \
   --create-namespace \
   -f ../../helm/temporal-vitess-local/values.yaml \
   -f ../../helm/temporal-vitess-local/values-sharded-fresh.yaml \
+  -f ../../helm/temporal-vitess-local/values-dynamic-config.yaml \
   -f ../../helm/temporal-vitess-local/values-prod-external-template.yaml \
   -f /tmp/values-prod-external-generated.yaml \
   --timeout 30m
@@ -81,6 +91,17 @@ helm upgrade --install temporal-vitess \
 For Argo CD, commit a real environment overlay with pinned image tags and
 non-secret endpoints, then source `temporal-vitess-external-mysql` from the
 environment SOPS/SSM secret set.
+
+The public Temporal UI and frontend should be exposed through qcloud Ingress
+with:
+
+- `ingress.cloud.tencent.com/direct-access: "true"`
+- `ingress.cloud.tencent.com/pass-to-target: "true"`
+- `ingress.cloud.tencent.com/security-groups: <temporal_public_clb_security_group_id>`
+
+Keep the backend Pod security group VPC-only. Do not add a public `tcp/8080`
+or `tcp/7233` rule to the Pod ENI security group just to make CLB-to-Pod direct
+access work.
 
 ## Production checks before traffic
 

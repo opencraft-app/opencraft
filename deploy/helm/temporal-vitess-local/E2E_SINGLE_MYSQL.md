@@ -66,6 +66,7 @@ helm upgrade --install temporal-vitess \
   --create-namespace \
   -f deploy/helm/temporal-vitess-local/values.yaml \
   -f deploy/helm/temporal-vitess-local/values-sharded-fresh.yaml \
+  -f deploy/helm/temporal-vitess-local/values-dynamic-config.yaml \
   -f /path/to/values-e2e-single-mysql.yaml \
   --timeout 30m
 ```

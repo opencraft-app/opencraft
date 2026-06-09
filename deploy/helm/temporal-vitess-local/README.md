@@ -24,6 +24,11 @@ The vendored Temporal subchart under `charts/temporal/` contains a small
 readiness override hook needed by TKE Serverless. Do not run
 `helm dependency build` unless you intentionally re-apply that patch.
 
+`values.yaml` sets `temporal.server.dynamicConfig.matching.longPollExpirationInterval`
+to `50s` so cross-VPC workers polling through public HTTPS/gRPC ingress stay below
+typical CLB ~60s idle cutoffs. Override per environment with `values-dynamic-config.yaml`
+when needed.
+
 ## External MySQL values
 
 The environment overlay must provide all Vitess keyspaces as external shards:
@@ -96,6 +101,7 @@ helm upgrade --install temporal-vitess \
   --namespace temporal-vitess \
   -f deploy/helm/temporal-vitess-local/values.yaml \
   -f deploy/helm/temporal-vitess-local/values-sharded-fresh.yaml \
+  -f deploy/helm/temporal-vitess-local/values-dynamic-config.yaml \
   -f /path/to/values-env-external.yaml \
   -f deploy/helm/temporal-vitess-local/values-tke-serverless.yaml \
   --timeout 30m
@@ -164,9 +170,96 @@ source:
     valueFiles:
       - values.yaml
       - values-sharded-fresh.yaml
+      - values-dynamic-config.yaml
       - values-env-external.yaml
       - values-tke-serverless.yaml
 ```
+
+## Public Temporal endpoints
+
+Use `values-public-endpoints.yaml` plus the Terraform-generated
+`temporal_vitess_public_helm_values_yaml` output for a from-scratch public
+rebuild. `values-prod-external-template.yaml` remains a copy-and-fill reference
+profile for production sizing and secrets.
+
+The validated Tencent TKE public Temporal endpoint shape is:
+
+- qcloud Ingress on `REPLACE_TEMPORAL_UI_HOST` with TLS certificate id in an
+  Opaque Secret named `temporal-wildcard-lightclaw-cert`.
+- qcloud Ingress on `REPLACE_TEMPORAL_FRONTEND_HOST` for external Temporal
+  workers. This uses HTTPS 443 with HTTP/2 enabled and `forwardType: GRPC` to
+  forward directly to `temporal-frontend:7233`.
+- `ingress.cloud.tencent.com/direct-access: "true"` for CLB-to-Pod direct
+  targets.
+- `ingress.cloud.tencent.com/pass-to-target: "true"` plus a CLB security group
+  id from Terraform. The backend Pod security group stays VPC-only; do not add
+  a public `tcp/8080` or `tcp/7233` rule to the Pod ENI security group.
+- Pin UI and frontend Ingresses to their own existing CLBs with
+  `kubernetes.io/ingress.existLbId`. Do not let the qcloud Ingress controller
+  implicitly choose or reuse a CLB for these two hosts.
+- If the frontend uses a dedicated CLB instead of qcloud Ingress, keep the same
+  model: register Pod ENI IPs directly, attach the Terraform CLB security group,
+  and set `LoadBalancerPassToTarget=true`. Use
+  `deploy/terraform/temporal-vitess-beijing/scripts/reconcile_temporal_frontend_clb.py`
+  as the dry-run-first operational bridge for that path; do not maintain Pod IP
+  attachments by hand.
+- Keep CLB ownership one-to-one: `REPLACE_TEMPORAL_UI_HOST` belongs only to
+  the UI CLB and `REPLACE_TEMPORAL_FRONTEND_HOST` belongs only to the frontend
+  gRPC CLB. If a UI rule appears on the frontend CLB while DNS points to the UI
+  CLB, treat it as stale controller/manual drift and remove it only after the
+  Kubernetes Ingress status confirms the UI Ingress owns the dedicated UI CLB.
+- The UI `TkeServiceConfig` fixes the listener to HTTPS/HTTP forwarding and a
+  `GET /healthz` health check. The frontend `TkeServiceConfig` fixes the
+  listener to HTTPS/GRPC forwarding with TCP health checks. Do not set a custom
+  health check port unless the account supports Tencent CLB L7 custom
+  health-check ports.
+- `temporal-web-proxy` protects the browser UI with Basic Auth and injects the
+  Temporal Bearer token to upstream Temporal UI API requests.
+- When the default Temporal JWT authorizer is enabled, keep
+  `temporal.server.internal-frontend.enabled=true`. The system worker and
+  namespace bootstrap path must use `internal-frontend`; otherwise scanner and
+  namespace setup calls hit the public frontend authorizer without credentials
+  and fail with `Request unauthorized`.
+- `/login` is redirected to `/` because Temporal UI has no OIDC provider in
+  this profile. Without the proxy or OIDC, the UI API returns 403 and the
+  browser lands on a non-existent login route that renders "Uh oh" / 404.
+- `REPLACE_VITESS_UI_HOST` exposes VTAdmin through `vitess-ui-proxy`, not
+  directly through the operator-created VTAdmin Service. The proxy protects both
+  VTAdmin web and `/api/` with Basic Auth, routes web traffic to port `15000`,
+  and routes API traffic to port `15001`. VTAdmin itself remains read-only in
+  this production template.
+- Do not leave old TKE `LoadBalancer` Services such as
+  `temporal-frontend-public`, `temporal-frontend-public-tcp`, or
+  `temporal-web-public-tcpssl` once the dedicated public CLBs are in use. Run
+  `scripts/vitess_cleanup_live_residue.sh` after the endpoint shape is
+  converged.
+
+External workers should connect to `REPLACE_TEMPORAL_FRONTEND_HOST:443` with
+TLS enabled and pass the Temporal JWT as `Authorization: Bearer ...` metadata.
+Do not use h2c or NodePort for the public worker path.
+
+Keep the following values as secrets, not committed plaintext:
+
+- `temporal-jwks/jwks.json`
+- `temporal-ui-proxy-auth/htpasswd`
+- `temporal-ui-proxy-auth/temporalBearerToken`
+- `vitess-ui-proxy-auth/htpasswd`
+
+For an imperative bootstrap, create those Kubernetes Secrets from environment
+variables:
+
+```bash
+NAMESPACE=temporal-vitess \
+TEMPORAL_JWKS_JSON="$(cat /path/to/jwks.json)" \
+TEMPORAL_UI_BASIC_AUTH_HTPASSWD="$(cat /path/to/temporal-ui.htpasswd)" \
+TEMPORAL_UI_TEMPORAL_BEARER_JWT="$(cat /path/to/temporal-ui.jwt)" \
+VITESS_UI_BASIC_AUTH_HTPASSWD="$(cat /path/to/vitess-ui.htpasswd)" \
+deploy/helm/temporal-vitess-local/scripts/create_public_endpoint_secrets.sh
+```
+
+The JWT claim must include namespace permissions compatible with the Temporal
+default claim mapper, for example `default:admin` for the `default` namespace
+and `temporal-system:admin` when the UI needs system namespace visibility.
 
 ## Production notes
 
@@ -178,6 +271,9 @@ source:
   initialized.
 - Keep VSchema/schema Jobs as Argo hooks; do not manage them as TTL-deleted
   ordinary Jobs.
+- Treat [OPERATIONS.md](OPERATIONS.md) as the production-readiness gate for
+  VTGate capacity, CDB/TDSQL-C failover, monitoring, VTAdmin/VTCTLD access
+  control, and routing/VSchema rollback evidence.
 - Use [RESHARDING.md](RESHARDING.md) for 2 -> 4 -> 8 -> 16 shard expansion.
 - CDB/TDSQL-C owns backups, PITR, MySQL failover, and parameter baselines.
 - Validate CDB/TDSQL-C failover recovery through VTGate before production
