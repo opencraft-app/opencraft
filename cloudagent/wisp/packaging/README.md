@@ -146,6 +146,30 @@ tar is available, or when `WISP_PACKAGE_WITH_DOCKER=1` is set,
 `package-tarball.sh` uses sparse-file packaging so prebaked ext4 images stay
 compact.
 
+## Local checkpoint diagnostics
+
+Checkpoint and writeback code uses Linux-only mount namespace and filesystem
+syscalls, so `go test ./internal/runtime` does not run natively on macOS. Use the
+dedicated target before promoting Wisp checkpoint changes:
+
+```bash
+cd cloudagent/wisp
+make test-checkpoint-runtime
+```
+
+The target runs the checkpoint clone/mount diagnostics regression on Linux. On a
+Linux host it runs locally with `sudo -n`; on macOS it prefers `ssh orb` when
+OrbStack is available, then falls back to a Docker Go runner. To force a runner:
+
+```bash
+make test-checkpoint-runtime-orbstack
+make test-checkpoint-runtime-docker
+make test-checkpoint-runtime-compile-linux
+```
+
+`cloudagent/gateway/docker-compose.yml` starts gateway services for local
+integration work, but it does not cover Wisp runtime checkpoint internals.
+
 The default release tags intentionally keep the SMH runtime path and compile out
 unused S3-compatible and COS storage backends. COS is still used as a release
 artifact distribution channel by `publish-cos.sh`; it is not the workspace
