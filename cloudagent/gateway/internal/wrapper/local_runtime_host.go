@@ -377,8 +377,10 @@ func localRuntimeTrackedCommand(command, pidFile, groupFile string, setSid bool)
 	if !setSid {
 		return inner
 	}
-	return "if command -v setsid >/dev/null 2>&1; then exec setsid /bin/sh -lc " + shellQuote(inner) + "; fi\n" +
-		"exec /bin/sh -lc " + shellQuote(inner)
+	return "runner=/bin/sh\n" +
+		"if command -v bash >/dev/null 2>&1; then runner=$(command -v bash); fi\n" +
+		"if command -v setsid >/dev/null 2>&1 && setsid --wait \"$runner\" -lc ':' >/dev/null 2>&1; then exec setsid --wait \"$runner\" -lc " + shellQuote(inner) + "; fi\n" +
+		"exec \"$runner\" -lc " + shellQuote(inner)
 }
 
 func (h *LocalRuntimeHost) cancelTrackedLocalRuntimeCommands(ctx context.Context, target RuntimeHostTarget, handle localRuntimeHostHandle) error {

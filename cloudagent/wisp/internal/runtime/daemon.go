@@ -365,7 +365,13 @@ func (d *Daemon) handleAdminCreate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	if err := config.SetWorkspaceLayout(d.rt.cfg.ConfigFile, baseCfg, name); err != nil {
+	layoutCfg, err := workspaceLayoutConfigForCreate(d.rt.cfg.ConfigFile, baseCfg, name)
+	if err != nil {
+		reqErr = err
+		writeError(w, err)
+		return
+	}
+	if err := config.SetWorkspaceLayout(d.rt.cfg.ConfigFile, layoutCfg, name); err != nil {
 		reqErr = err
 		writeError(w, err)
 		return
@@ -400,6 +406,17 @@ func (d *Daemon) handleAdminCreate(w http.ResponseWriter, r *http.Request) {
 		"runtime_root":   rt.cfg.RuntimeRoot,
 		"temp_root":      rt.cfg.TempRoot,
 	})
+}
+
+func workspaceLayoutConfigForCreate(configFile string, baseCfg config.Config, name string) (config.Config, error) {
+	overlayPath := config.ContainerOverlayPath(configFile, name)
+	if _, err := os.Stat(overlayPath); err != nil {
+		if os.IsNotExist(err) {
+			return baseCfg, nil
+		}
+		return config.Config{}, fmt.Errorf("stat container overlay %s: %w", overlayPath, err)
+	}
+	return config.LoadContainer(configFile, name)
 }
 
 func (d *Daemon) handleRuntimeBackendBind(w http.ResponseWriter, r *http.Request) {

@@ -15,6 +15,18 @@ import (
 	"wisp/internal/config"
 )
 
+func TestRunDetachedIncludesCommandOutputOnFailure(t *testing.T) {
+	rt := New(config.Config{})
+	err := rt.runDetached(context.Background(), "/bin/sh", "-c", "printf detached-out; printf detached-err >&2; exit 7")
+	if err == nil {
+		t.Fatal("expected runDetached failure")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "exit status 7") || !strings.Contains(msg, `stderr="detached-err"`) || !strings.Contains(msg, `stdout="detached-out"`) {
+		t.Fatalf("runDetached error did not include command output: %v", err)
+	}
+}
+
 func TestJuiceFSScriptEnvDoesNotLeakSMHSecret(t *testing.T) {
 	t.Setenv("PATH", "/usr/bin")
 	t.Setenv("UNRELATED_SECRET", "do-not-leak")
