@@ -12,11 +12,14 @@ import {
   getEffectiveWindowStatus,
   isCronJobExpiredBeyondGrace,
   isEffectiveWindowRangeInvalid,
+  normalizeDailyTimesForEditing,
+  normalizeDailyTimesForForm,
   normalizeEffectiveWindowInput,
   parseCronDate,
   parseInitialDeliver,
   parseInitialSchedule,
   parseOnceScheduleDate,
+  sanitizeClockTimeDraft,
   shouldRejectPastOnceSchedule,
 } from "../openclaw-automations-panel";
 import type { CronJob, CronRunRecord } from "@/lib/hermes-cron-client";
@@ -44,6 +47,45 @@ describe("buildScheduleString and parseInitialSchedule", () => {
       period: "daily",
       time: "09:05",
     });
+  });
+
+  it("uses one minute-level cron job for daily schedules with multiple time points", () => {
+    const schedule = buildScheduleString({
+      kind: "recurring",
+      period: "daily",
+      time: "09:00",
+      dailyTimes: ["09:00", "12:30"],
+      weekday: 1,
+      monthday: 1,
+      intervalNum: 1,
+      intervalUnit: "h",
+      onceDate: "",
+    });
+
+    expect(schedule).toBe("* * * * *");
+  });
+
+  it("keeps daily time form edits in input order", () => {
+    expect(normalizeDailyTimesForForm(["01:06", "14:06"], "01:06")).toEqual(["01:06", "14:06"]);
+    expect(normalizeDailyTimesForForm(["14:06", "01:06"], "14:06")).toEqual(["14:06", "01:06"]);
+  });
+
+  it("keeps daily time edits within valid clock bounds", () => {
+    expect(normalizeDailyTimesForEditing(["01:06", "", "14:06"], "01:06")).toEqual(["01:06", "01:06", "14:06"]);
+    expect(normalizeDailyTimesForForm(["01:06", "", "14:06"], "01:06")).toEqual(["01:06", "14:06"]);
+  });
+
+  it("normalizes partial and out-of-range daily time drafts while editing", () => {
+    expect(sanitizeClockTimeDraft("ab12:3x")).toBe("12:3");
+    expect(normalizeDailyTimesForEditing(["01:06", "1", "12:", "12:3", "19:99", "99:99"], "01:06")).toEqual([
+      "01:06",
+      "01:06",
+      "12:06",
+      "12:03",
+      "19:59",
+      "23:59",
+    ]);
+    expect(normalizeDailyTimesForForm(["01:06", "1", "12:", "12:3"], "01:06")).toEqual(["01:06"]);
   });
 
   it("round-trips weekly and monthly schedules", () => {
@@ -250,6 +292,13 @@ describe("schedule labels", () => {
     }), t)).toBe("周期 · 每天 10:51");
   });
 
+  it("formats LightVela daily time metadata as one recurring task label", () => {
+    expect(formatScheduleTooltip(makeCronJob({
+      schedule: { kind: "cron", expr: "* * * * *", display: "* * * * *" },
+      lightvela_schedule: { kind: "daily_times", times: ["09:00", "12:30"] },
+    }), t)).toBe("周期 · 每天 09:00、12:30");
+  });
+
   it("keeps one-time schedule hover labels unchanged", () => {
     expect(formatScheduleTooltip(makeCronJob({
       schedule: { kind: "once", expr: "once at 2026-05-26 09:00", display: "once at 2026-05-26 09:00" },
@@ -434,6 +483,7 @@ function makeCronJob(overrides: Partial<CronJob>): CronJob {
     created_at: null,
     script: "",
     effective_window: null,
+    lightvela_schedule: null,
     ...overrides,
   };
 }

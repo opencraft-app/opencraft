@@ -35,12 +35,22 @@ export interface CronJob {
   created_at: string | null;
   script: string;
   effective_window: CronEffectiveWindow | null;
+  lightvela_schedule: CronLightVelaSchedule | null;
 }
 
 export interface CronEffectiveWindow {
   start_at: string | null;
   end_at: string | null;
   weekdays?: number[] | null;
+}
+
+export interface CronLightVelaSchedule {
+  kind: "daily_times";
+  times: string[];
+}
+
+export interface CronLightVelaScriptConfig extends CronEffectiveWindow {
+  daily_times?: string[] | null;
 }
 
 export interface CronRunRecord {
@@ -605,27 +615,38 @@ function finalizeJob(p: Partial<CronJob>): CronJob {
     created_at: p.created_at || null,
     script: p.script || "",
     effective_window: p.effective_window || null,
+    lightvela_schedule: p.lightvela_schedule || null,
   };
 }
 
-export function buildEffectiveWindowScript(args: CronEffectiveWindow): string {
+function normalizeDailyScriptTimes(values: readonly string[] | null | undefined): string[] {
+  const times = Array.from(new Set((values ?? [])
+    .map((v) => v.trim())
+    .filter((v) => /^([01]\d|2[0-3]):[0-5]\d$/.test(v))));
+  return times.sort((a, b) => a.localeCompare(b));
+}
+
+export function buildEffectiveWindowScript(args: CronLightVelaScriptConfig): string {
   const startAt = args.start_at ?? "";
   const endAt = args.end_at ?? "";
   const weekdays = Array.isArray(args.weekdays)
     ? Array.from(new Set(args.weekdays.filter((v) => Number.isInteger(v) && v >= 0 && v <= 6))).sort((a, b) => a - b)
     : [];
+  const dailyTimes = normalizeDailyScriptTimes(args.daily_times);
   return [
     "#!/usr/bin/env python3",
     "# lightvela-effective-window",
     `# start_at=${startAt}`,
     `# end_at=${endAt}`,
     `# weekdays=${weekdays.join(",")}`,
+    `# daily_times=${dailyTimes.join(",")}`,
     "import datetime",
     "import json",
     "",
     `START_AT = ${JSON.stringify(startAt)}`,
     `END_AT = ${JSON.stringify(endAt)}`,
     `ALLOWED_WEEKDAYS = ${JSON.stringify(weekdays)}`,
+    `ALLOWED_DAILY_TIMES = ${JSON.stringify(dailyTimes)}`,
     "",
     "def parse(value):",
     "    return datetime.datetime.fromisoformat(value) if value else None",
@@ -642,28 +663,48 @@ export function buildEffectiveWindowScript(args: CronEffectiveWindow): string {
     "current_weekday = now.isoweekday() % 7",
     "if ALLOWED_WEEKDAYS and current_weekday not in ALLOWED_WEEKDAYS:",
     "    wake = False",
+    "if ALLOWED_DAILY_TIMES and now.strftime(\"%H:%M\") not in ALLOWED_DAILY_TIMES:",
+    "    wake = False",
     "print(json.dumps({\"wakeAgent\": wake}))",
     "",
   ].join("\n");
 }
 
-export function parseEffectiveWindowScript(content: string): CronEffectiveWindow | null {
-  if (!content.includes("lightvela-effective-window")) return null;
+export function parseLightVelaCronScript(content: string): {
+  effectiveWindow: CronEffectiveWindow | null;
+  lightvelaSchedule: CronLightVelaSchedule | null;
+} {
+  if (!content.includes("lightvela-effective-window")) {
+    return { effectiveWindow: null, lightvelaSchedule: null };
+  }
   const startAt = /^# start_at=(.*)$/m.exec(content)?.[1]?.trim() ?? "";
   const endAt = /^# end_at=(.*)$/m.exec(content)?.[1]?.trim() ?? "";
   const weekdaysRaw = /^# weekdays=(.*)$/m.exec(content)?.[1]?.trim() ?? "";
+  const dailyTimesRaw = /^# daily_times=(.*)$/m.exec(content)?.[1]?.trim() ?? "";
   const weekdays = weekdaysRaw
     .split(",")
     .map((v) => v.trim())
     .filter(Boolean)
     .map((v) => Number(v))
     .filter((v) => Number.isInteger(v) && v >= 0 && v <= 6);
-  if (!startAt && !endAt && weekdays.length === 0) return null;
+  const dailyTimes = normalizeDailyScriptTimes(dailyTimesRaw.split(","));
+  const effectiveWindow = !startAt && !endAt && weekdays.length === 0
+    ? null
+    : {
+        start_at: startAt || null,
+        end_at: endAt || null,
+        ...(weekdays.length > 0 ? { weekdays } : {}),
+      };
   return {
-    start_at: startAt || null,
-    end_at: endAt || null,
-    ...(weekdays.length > 0 ? { weekdays } : {}),
+    effectiveWindow,
+    lightvelaSchedule: dailyTimes.length > 0
+      ? { kind: "daily_times", times: dailyTimes }
+      : null,
   };
+}
+
+export function parseEffectiveWindowScript(content: string): CronEffectiveWindow | null {
+  return parseLightVelaCronScript(content).effectiveWindow;
 }
 
 export function createEffectiveWindowScriptName(seed: string): string {
@@ -679,7 +720,7 @@ function isLightVelaEffectiveWindowScript(script: string): boolean {
 export async function writeEffectiveWindowScript(
   botId: string,
   scriptName: string,
-  window: CronEffectiveWindow,
+  window: CronLightVelaScriptConfig,
 ): Promise<void> {
   if (!isLightVelaEffectiveWindowScript(scriptName)) {
     throw new Error("invalid LightVela effective window script name");
@@ -701,14 +742,20 @@ export async function removeEffectiveWindowScript(botId: string, scriptName: str
   await execCommand(botId, `rm -f ~/.hermes/scripts/${scriptName}`);
 }
 
-async function readEffectiveWindowScripts(botId: string, scriptNames: string[]): Promise<Map<string, CronEffectiveWindow>> {
+async function readEffectiveWindowScripts(botId: string, scriptNames: string[]): Promise<Map<string, {
+  effectiveWindow: CronEffectiveWindow | null;
+  lightvelaSchedule: CronLightVelaSchedule | null;
+}>> {
   const safeNames = scriptNames.filter(isLightVelaEffectiveWindowScript);
-  const result = new Map<string, CronEffectiveWindow>();
+  const result = new Map<string, {
+    effectiveWindow: CronEffectiveWindow | null;
+    lightvelaSchedule: CronLightVelaSchedule | null;
+  }>();
   for (const scriptName of safeNames) {
     try {
       const payload = await execCommand(botId, `cat ~/.hermes/scripts/${scriptName} 2>/dev/null || true`);
-      const parsed = parseEffectiveWindowScript(payload.output || "");
-      if (parsed) result.set(scriptName, parsed);
+      const parsed = parseLightVelaCronScript(payload.output || "");
+      if (parsed.effectiveWindow || parsed.lightvelaSchedule) result.set(scriptName, parsed);
     } catch {
       /* ignore individual script read failures */
     }
@@ -723,10 +770,11 @@ async function hydrateEffectiveWindows(botId: string, jobs: CronJob[]): Promise<
       .filter(isLightVelaEffectiveWindowScript),
   ));
   if (scriptNames.length === 0) return;
-  const windows = await readEffectiveWindowScripts(botId, scriptNames);
+  const metadata = await readEffectiveWindowScripts(botId, scriptNames);
   for (const job of jobs) {
-    const window = windows.get(job.script);
-    if (window) job.effective_window = window;
+    const scriptMetadata = metadata.get(job.script);
+    if (scriptMetadata?.effectiveWindow) job.effective_window = scriptMetadata.effectiveWindow;
+    if (scriptMetadata?.lightvelaSchedule) job.lightvela_schedule = scriptMetadata.lightvelaSchedule;
   }
 }
 
