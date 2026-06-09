@@ -37,6 +37,8 @@ data:
   LIGHTVELA_WECHAT_WEBSITE_REDIRECT_URI: "REPLACE_AUTH_WECHAT_REDIRECT_URI"
   LIGHTVELA_WECHAT_OFFICIAL_ACCOUNT_APP_ID: "REPLACE_AUTH_WECHAT_OFFICIAL_ACCOUNT_APP_ID"
   LIGHTVELA_WECHAT_OFFICIAL_ACCOUNT_REDIRECT_URI: "REPLACE_AUTH_WECHAT_OFFICIAL_ACCOUNT_REDIRECT_URI"
+  LIGHTCLAW_GITHUB_CLIENT_ID: "REPLACE_AUTH_GITHUB_CLIENT_ID"
+  LIGHTCLAW_GITHUB_REDIRECT_URI: "REPLACE_AUTH_GITHUB_REDIRECT_URI"
   MYSQL_HOST: "REPLACE_AUTH_MYSQL_HOST"
   MYSQL_PORT: "REPLACE_AUTH_MYSQL_PORT"
   MYSQL_ROOT_USER: "root"
@@ -128,6 +130,16 @@ spec:
                 secretKeyRef:
                   name: lightclaw-auth-secrets
                   key: LIGHTCLAW_ADMIN_TOKEN
+            - name: LIGHTCLAW_GITHUB_CLIENT_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: lightclaw-auth-config
+                  key: LIGHTCLAW_GITHUB_CLIENT_ID
+            - name: LIGHTCLAW_GITHUB_REDIRECT_URI
+              valueFrom:
+                configMapKeyRef:
+                  name: lightclaw-auth-config
+                  key: LIGHTCLAW_GITHUB_REDIRECT_URI
           ports:
             - name: http
               containerPort: 8081
