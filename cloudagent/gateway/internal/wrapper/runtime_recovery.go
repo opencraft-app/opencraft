@@ -38,6 +38,7 @@ func (g *ACPGateway) recoverPromptRuntime(ctx context.Context, sessionID string,
 		RuntimeRecovery:  staleRuntime.RuntimeRecovery,
 		AgentVersion:     staleRuntime.AgentVersion,
 		WorkspaceVersion: staleRuntime.WorkspaceVersion,
+		WorkspaceKey:     session.WorkspaceKey,
 		SidecarArtifact:  runtimeSidecarArtifact(staleRuntime),
 	}
 	recoveredJob := job
@@ -48,8 +49,21 @@ func (g *ACPGateway) recoverPromptRuntime(ctx context.Context, sessionID string,
 	fmt.Fprintf(os.Stderr, "timeline source=server event=acp_runtime_recover_start session_id=%s old_outer_sandbox_id=%s error=%s\n", sessionID, staleRuntime.OuterSandboxID, quoteServerField(cause.Error()))
 	if staleRuntime.RuntimeID != "" || staleRuntime.OuterSandboxID != "" {
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		_ = g.runtimeManager.CloseSessionRuntime(cleanupCtx, staleRuntime)
+		cleanupErr := g.runtimeManager.CloseSessionRuntime(cleanupCtx, staleRuntime)
 		cancel()
+		if cleanupErr != nil && !isNonBlockingStaleRuntimeCleanupError(cleanupErr) {
+			g.mu.Lock()
+			defer g.mu.Unlock()
+			current, ok := g.sessions[sessionID]
+			if ok && sessionPromptRun(current, run) && current.RuntimeGeneration == generation {
+				current.State = acpRuntimeStateFailed
+				current.LastRuntimeError = cleanupErr.Error()
+				current.UpdatedAt = time.Now().UTC()
+				g.persistSession(current)
+			}
+			fmt.Fprintf(os.Stderr, "timeline source=server event=acp_runtime_recover_failed session_id=%s error=%s\n", sessionID, quoteServerField(cleanupErr.Error()))
+			return recoveredJob, false
+		}
 	}
 	recoveredRuntime, err := g.runtimeManager.EnsureSessionRuntime(ctx, recoverRuntime, startReq)
 	g.mu.Lock()
@@ -396,6 +410,7 @@ func sessionRuntimeStartRequest(session *acpSession) ACPSessionRuntimeStartReque
 		AgentVersion:     runtime.AgentVersion,
 		SidecarArtifact:  runtimeSidecarArtifact(runtime),
 		WorkspaceVersion: runtime.WorkspaceVersion,
+		WorkspaceKey:     session.WorkspaceKey,
 	}
 }
 func runtimeSidecarArtifact(runtime ACPSessionRuntime) agentSidecarArtifact {

@@ -4,6 +4,11 @@ import {
   buildEffectiveWindowFromInputs,
   buildDeliverString,
   buildScheduleString,
+  formatEffectiveWindow,
+  formatEffectiveWindowPeriod,
+  formatEffectiveWindowTooltipLines,
+  formatScheduleTooltip,
+  getLastAgentRunForJob,
   getEffectiveWindowStatus,
   isCronJobExpiredBeyondGrace,
   isEffectiveWindowRangeInvalid,
@@ -14,7 +19,7 @@ import {
   parseOnceScheduleDate,
   shouldRejectPastOnceSchedule,
 } from "../openclaw-automations-panel";
-import type { CronJob } from "@/lib/hermes-cron-client";
+import type { CronJob, CronRunRecord } from "@/lib/hermes-cron-client";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -65,7 +70,7 @@ describe("buildScheduleString and parseInitialSchedule", () => {
       onceDate: "",
     }))).toMatchObject({ kind: "recurring", period: "weekly", time: "09:00", weekday: 3, weekdays: [3] });
 
-    expect(parseInitialSchedule(buildScheduleString({
+    const monthlySchedule = buildScheduleString({
       kind: "recurring",
       period: "monthly",
       time: "07:00",
@@ -74,7 +79,37 @@ describe("buildScheduleString and parseInitialSchedule", () => {
       intervalNum: 1,
       intervalUnit: "h",
       onceDate: "",
-    }))).toMatchObject({ kind: "recurring", period: "monthly", time: "07:00", monthday: 28 });
+    });
+    expect(monthlySchedule).toBe("0 7 28 * *");
+    expect(parseInitialSchedule(monthlySchedule)).toMatchObject({
+      kind: "recurring",
+      period: "monthly",
+      time: "07:00",
+      monthday: 28,
+      monthdays: [28],
+    });
+  });
+
+  it("round-trips monthly schedules with multiple days", () => {
+    const schedule = buildScheduleString({
+      kind: "recurring",
+      period: "monthly",
+      time: "09:00",
+      weekdays: [1],
+      monthdays: [14, 6, 7],
+      intervalNum: 1,
+      intervalUnit: "h",
+      onceDate: "",
+    });
+
+    expect(schedule).toBe("0 9 6,7,14 * *");
+    expect(parseInitialSchedule(schedule)).toMatchObject({
+      kind: "recurring",
+      period: "monthly",
+      time: "09:00",
+      monthday: 6,
+      monthdays: [6, 7, 14],
+    });
   });
 
   it("round-trips interval and once schedules", () => {
@@ -197,12 +232,84 @@ describe("cron date parsing and expiration filtering", () => {
   });
 });
 
+describe("schedule labels", () => {
+  const t = ((text: string, vars?: Record<string, unknown>) => {
+    if (!vars) return text;
+    return text.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, key) => String(vars[key] ?? ""));
+  }) as Parameters<typeof formatScheduleTooltip>[1];
+
+  it("prefixes interval schedule hover labels with the schedule mode", () => {
+    expect(formatScheduleTooltip(makeCronJob({
+      schedule: { kind: "interval", expr: "every 1h", display: "every 1h" },
+    }), t)).toBe("按间隔 · 每 1 小时");
+  });
+
+  it("prefixes recurring schedule hover labels with the schedule mode", () => {
+    expect(formatScheduleTooltip(makeCronJob({
+      schedule: { kind: "cron", expr: "51 10 * * *", display: "51 10 * * *" },
+    }), t)).toBe("周期 · 每天 10:51");
+  });
+
+  it("keeps one-time schedule hover labels unchanged", () => {
+    expect(formatScheduleTooltip(makeCronJob({
+      schedule: { kind: "once", expr: "once at 2026-05-26 09:00", display: "once at 2026-05-26 09:00" },
+    }), t)).toBe("单次 2026-05-26 09:00");
+  });
+});
+
 describe("effective window helpers", () => {
   const now = new Date(2026, 5, 15, 9, 0).getTime();
 
   it("treats an empty effective window as always active", () => {
     expect(buildEffectiveWindowFromInputs("", "")).toBeNull();
     expect(getEffectiveWindowStatus(null, now)).toBe("always");
+  });
+
+  it("builds weekday-only gates for interval schedules", () => {
+    expect(buildEffectiveWindowFromInputs("", "", [5, 6, 0])).toEqual({
+      start_at: null,
+      end_at: null,
+      weekdays: [5, 6, 0],
+    });
+    expect(getEffectiveWindowStatus({ start_at: null, end_at: null, weekdays: [5, 6, 0] }, now)).toBe("active");
+  });
+
+  it("omits open-ended date placeholders for weekday-only labels", () => {
+    const t = ((text: string) => text) as Parameters<typeof formatEffectiveWindow>[1];
+
+    expect(formatEffectiveWindow({ start_at: null, end_at: null, weekdays: [5, 6, 0] }, t))
+      .toBe("生效中 · 执行日：周五、周六、周日");
+  });
+
+  it("formats detail modal effective periods without repeating weekdays", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-08T12:30:00+08:00"));
+
+    const t = ((text: string) => text) as Parameters<typeof formatEffectiveWindowPeriod>[1];
+
+    expect(formatEffectiveWindowPeriod({
+      start_at: "2026-06-08T08:00",
+      end_at: "2026-06-08T11:02",
+      weekdays: [2, 3, 4, 5, 6, 0],
+    }, t)).toBe("2026-06-08 08:00 - 2026-06-08 11:02 · 已过生效期");
+
+    expect(formatEffectiveWindowPeriod(null, t)).toBe("未配置（即始终生效）");
+  });
+
+  it("splits configured dates and weekdays across tooltip lines", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-08T09:00:00+08:00"));
+
+    const t = ((text: string) => text) as Parameters<typeof formatEffectiveWindowTooltipLines>[1];
+
+    expect(formatEffectiveWindowTooltipLines({
+      start_at: "2026-06-08T08:00",
+      end_at: "2026-06-08T11:02",
+      weekdays: [2, 3, 4, 5, 6, 0],
+    }, t)).toEqual([
+      "执行日：周二、周三、周四、周五、周六、周日",
+      "生效期：2026-06-08 08:00 - 2026-06-08 11:02 · 生效中",
+    ]);
   });
 
   it("normalizes date-time values from either space or T separators", () => {
@@ -221,6 +328,33 @@ describe("effective window helpers", () => {
       start_at: "2026-06-20T00:00",
       end_at: "2026-06-10T00:00",
     })).toBe(true);
+  });
+});
+
+describe("getLastAgentRunForJob", () => {
+  it("uses the latest filtered Agent run instead of Hermes last_run_at", () => {
+    const job = makeCronJob({
+      id: "job-1",
+      last_run_at: "2026-06-06T14:20:37+08:00",
+      last_status: "ok",
+    });
+    const olderAgentRun = makeCronRun({
+      job_id: "job-1",
+      run_at: "2026-06-06T12:20:37+08:00",
+    });
+    const latestAgentRun = makeCronRun({
+      job_id: "job-1",
+      run_at: "2026-06-06T13:20:37+08:00",
+    });
+
+    expect(getLastAgentRunForJob(job, [olderAgentRun, latestAgentRun])?.run_at)
+      .toBe("2026-06-06T13:20:37+08:00");
+  });
+
+  it("returns null when no confirmed Agent run is available for the job", () => {
+    expect(getLastAgentRunForJob(makeCronJob({ id: "job-1" }), [
+      makeCronRun({ job_id: "other-job" }),
+    ])).toBeNull();
   });
 });
 
@@ -300,6 +434,21 @@ function makeCronJob(overrides: Partial<CronJob>): CronJob {
     created_at: null,
     script: "",
     effective_window: null,
+    ...overrides,
+  };
+}
+
+function makeCronRun(overrides: Partial<CronRunRecord>): CronRunRecord {
+  return {
+    id: "run-1",
+    job_id: "job-1",
+    job_name: "提醒",
+    job_prompt: "提醒我喝水",
+    schedule: { kind: "cron", expr: "0 9 * * *", display: "0 9 * * *" },
+    deliver: "local",
+    run_at: "2026-06-06T09:00:00+08:00",
+    status: "ok",
+    output_path: "/home/agentuser/.hermes/cron/output/job-1/run.md",
     ...overrides,
   };
 }

@@ -186,6 +186,62 @@ func TestStoreOutboxClaimIsFencedAcrossSharedDBConnections(t *testing.T) {
 	}
 }
 
+func TestStoreInboundClaimIsFencedAcrossSharedDBConnections(t *testing.T) {
+	ctx := context.Background()
+	path := t.TempDir() + "/channelgateway.db"
+	first, err := Open(ctx, path)
+	if err != nil {
+		t.Fatalf("open first store: %v", err)
+	}
+	defer first.Close()
+	second, err := Open(ctx, path)
+	if err != nil {
+		t.Fatalf("open second store: %v", err)
+	}
+	defer second.Close()
+	leaseA, err := first.AcquireChannelLease(ctx, "wecom-a", "owner-a", time.Minute)
+	if err != nil {
+		t.Fatalf("acquire owner-a lease: %v", err)
+	}
+	if _, err := first.InsertInboundMessage(ctx, MessageRecord{
+		ChannelAccountID:       "wecom-a",
+		ChannelType:            "wecom",
+		ExternalMessageID:      "msg-a",
+		ExternalConversationID: "chat-a",
+		Direction:              "inbound",
+		PayloadJSON:            `{"Text":"hello"}`,
+	}); err != nil {
+		t.Fatalf("insert inbound: %v", err)
+	}
+	claimedA, ok, err := first.ClaimInboundMessage(ctx, leaseA, "msg-a", time.Minute)
+	if err != nil || !ok {
+		t.Fatalf("owner-a claim ok=%v err=%v", ok, err)
+	}
+	if _, err := first.db.ExecContext(ctx, `UPDATE channel_messages SET claimed_at = ? WHERE message_id = ?`, time.Now().UTC().Add(-time.Minute).Format(time.RFC3339Nano), claimedA.MessageID); err != nil {
+		t.Fatalf("age inbound claim: %v", err)
+	}
+	if err := first.ReleaseChannelLease(ctx, leaseA); err != nil {
+		t.Fatalf("release owner-a lease: %v", err)
+	}
+	leaseB, err := second.AcquireChannelLease(ctx, "wecom-a", "owner-b", time.Minute)
+	if err != nil {
+		t.Fatalf("acquire owner-b lease: %v", err)
+	}
+	claimedB, ok, err := second.ClaimInboundMessage(ctx, leaseB, "msg-a", time.Nanosecond)
+	if err != nil || !ok {
+		t.Fatalf("owner-b reclaim ok=%v err=%v", ok, err)
+	}
+	if claimedB.MessageID != claimedA.MessageID {
+		t.Fatalf("unexpected reclaimed message: %#v", claimedB)
+	}
+	if err := first.MarkInboundMessageDone(ctx, leaseA, claimedA.MessageID, "session-old"); !errors.Is(err, ErrLeaseHeld) {
+		t.Fatalf("old owner must not finish reclaimed inbound, got %v", err)
+	}
+	if err := second.MarkInboundMessageDone(ctx, leaseB, claimedB.MessageID, "session-new"); err != nil {
+		t.Fatalf("new owner should finish reclaimed inbound: %v", err)
+	}
+}
+
 func TestStoreConversationAndMessageDedup(t *testing.T) {
 	ctx := context.Background()
 	st, err := Open(ctx, t.TempDir()+"/channelgateway.db")
@@ -206,6 +262,10 @@ func TestStoreConversationAndMessageDedup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get/create conversation: %v", err)
 	}
+	if !strings.HasPrefix(conv.WorkspaceKey, "wk_") {
+		t.Fatalf("new conversation should get stable workspace key, got %#v", conv)
+	}
+	oldWorkspaceKey := conv.WorkspaceKey
 	if err := st.BindACPSession(ctx, conv.ChannelAccountID, conv.SessionKey, "session-a"); err != nil {
 		t.Fatalf("bind session: %v", err)
 	}
@@ -215,6 +275,29 @@ func TestStoreConversationAndMessageDedup(t *testing.T) {
 	}
 	if conv.ACPSessionID != "session-a" || conv.ChatType != "group" || conv.ThreadID != "thread-a" {
 		t.Fatalf("unexpected conversation: %#v", conv)
+	}
+	if conv.WorkspaceKey != oldWorkspaceKey {
+		t.Fatalf("normal session bind must not rotate workspace key: old=%s conv=%#v", oldWorkspaceKey, conv)
+	}
+	if err := st.BindACPWorkspaceSession(ctx, conv.ChannelAccountID, conv.SessionKey, "session-reset", "wk_reset"); err != nil {
+		t.Fatalf("bind reset session: %v", err)
+	}
+	conv, err = st.GetOrCreateConversation(ctx, conv)
+	if err != nil {
+		t.Fatalf("reload reset conversation: %v", err)
+	}
+	if conv.ACPSessionID != "session-reset" || conv.WorkspaceKey != "wk_reset" || conv.WorkspaceKey == oldWorkspaceKey {
+		t.Fatalf("reset bind should rotate workspace key: %#v", conv)
+	}
+	bySession, ok, err := st.FindConversationByACPSession(ctx, "wecom-a", "session-reset")
+	if err != nil || !ok {
+		t.Fatalf("find conversation by acp session ok=%v err=%v", ok, err)
+	}
+	if bySession.ConversationID != conv.ConversationID || bySession.ExternalConversationID != "chat-a" {
+		t.Fatalf("unexpected conversation by acp session: %#v", bySession)
+	}
+	if _, ok, err := st.FindConversationByACPSession(ctx, "wecom-a", "session-missing"); err != nil || ok {
+		t.Fatalf("missing acp session should not resolve ok=%v err=%v", ok, err)
 	}
 	inserted, err := st.InsertInboundMessage(ctx, MessageRecord{
 		ChannelAccountID:       "wecom-a",
@@ -237,5 +320,39 @@ func TestStoreConversationAndMessageDedup(t *testing.T) {
 	})
 	if err != nil || inserted {
 		t.Fatalf("duplicate insert inserted=%v err=%v", inserted, err)
+	}
+}
+
+func TestStoreBackfillsLegacyWorkspaceKeyFromACPSession(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(ctx, t.TempDir()+"/channelgateway.db")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+	now := nowText()
+	_, err = st.db.ExecContext(ctx, `
+INSERT INTO channel_conversations (
+	conversation_id, channel_account_id, channel_type, external_conversation_id,
+	external_user_id, external_thread_id, chat_type, agent_id, acp_session_id, session_key, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"conv-legacy", "wecom-a", "wecom", "chat-a", "user-a", "", "dm", "main", "session_legacy", "session-key-a", now, now)
+	if err != nil {
+		t.Fatalf("insert legacy row: %v", err)
+	}
+	conv, err := st.GetOrCreateConversation(ctx, Conversation{
+		ChannelAccountID:       "wecom-a",
+		ChannelType:            "wecom",
+		ExternalConversationID: "chat-a",
+		ExternalUserID:         "user-a",
+		ChatType:               "dm",
+		AgentID:                "main",
+		SessionKey:             "session-key-a",
+	})
+	if err != nil {
+		t.Fatalf("load legacy conversation: %v", err)
+	}
+	if conv.WorkspaceKey != "session_legacy" {
+		t.Fatalf("legacy workspace key should preserve old ACP-derived Wisp name, got %#v", conv)
 	}
 }

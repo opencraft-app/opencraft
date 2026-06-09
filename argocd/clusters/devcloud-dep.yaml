@@ -7,4 +7,7 @@ spec:
   server: https://9.135.130.139
   projectPath: argocd/projects/devcloud-dep.yaml
   kubeconfigHint: .secret/devcloud-dep.conf
+  namespaces:
+    - dep
+  clusterResources: false
   owner: devcloud/dep

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -30,11 +31,17 @@ func (s *Store) EnqueueOutbox(ctx context.Context, rec OutboxRecord) (OutboxReco
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_, err := s.db.ExecContext(ctx, `
+	query := `
 INSERT INTO channel_outbox (
 	outbox_id, channel_account_id, channel_type, external_conversation_id, acp_session_id,
 	payload_json, status, retry_count, next_retry_at, last_error, created_at, updated_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	if s.dialect == dialectSQLite {
+		query = strings.Replace(query, "INSERT INTO", "INSERT OR IGNORE INTO", 1)
+	} else if s.dialect == dialectMySQL {
+		query = strings.Replace(query, "INSERT INTO", "INSERT IGNORE INTO", 1)
+	}
+	_, err := s.db.ExecContext(ctx, query,
 		rec.OutboxID, rec.ChannelAccountID, rec.ChannelType, rec.ExternalConversationID,
 		rec.ACPSessionID, rec.PayloadJSON, rec.Status, rec.RetryCount, nextRetryAt, rec.LastError, now, now)
 	if err != nil {
@@ -119,6 +126,10 @@ func (s *Store) MarkOutboxFailed(ctx context.Context, lease ChannelLease, outbox
 	return s.updateOutbox(ctx, lease, outboxID, "pending", detail, retryAt)
 }
 
+func (s *Store) MarkOutboxAbandoned(ctx context.Context, lease ChannelLease, outboxID, detail string) error {
+	return s.updateOutbox(ctx, lease, outboxID, "failed", detail, time.Time{})
+}
+
 func (s *Store) updateOutbox(ctx context.Context, lease ChannelLease, outboxID, status, detail string, retryAt time.Time) error {
 	if s == nil || s.db == nil || outboxID == "" {
 		return nil
@@ -144,6 +155,22 @@ WHERE outbox_id = ?
 	AND claim_owner_id = ?
 	AND claim_fencing_token = ?
 	AND status = 'sending'`, nowText(), nowText(), outboxID, lease.ChannelAccountID, lease.OwnerID, lease.FencingToken)
+		return requireOutboxUpdate(result, err, outboxID)
+	}
+	if status == "failed" {
+		result, err := s.db.ExecContext(ctx, `
+UPDATE channel_outbox
+SET status = 'failed',
+	updated_at = ?,
+	last_error = ?,
+	claim_owner_id = '',
+	claim_fencing_token = 0,
+	claimed_at = NULL
+WHERE outbox_id = ?
+	AND channel_account_id = ?
+	AND claim_owner_id = ?
+	AND claim_fencing_token = ?
+	AND status = 'sending'`, nowText(), detail, outboxID, lease.ChannelAccountID, lease.OwnerID, lease.FencingToken)
 		return requireOutboxUpdate(result, err, outboxID)
 	}
 	result, err := s.db.ExecContext(ctx, `

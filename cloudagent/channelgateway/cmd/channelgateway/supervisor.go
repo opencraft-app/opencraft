@@ -19,9 +19,14 @@ import (
 	"cloudagent/channelgateway/internal/store"
 )
 
+const inboundRecoveryStaleAfter = 30 * time.Second
+const standbyLeaseRetryAfter = time.Second
+const shutdownWaitTimeout = 20 * time.Second
+
 type acpRuntimeClient interface {
 	router.ACPClient
 	Initialize(context.Context) error
+	SetWorkspaceLifecycleHandler(acp.WorkspaceLifecycleHandler)
 	Close() error
 }
 
@@ -115,6 +120,16 @@ func (s *weComSupervisor) stopAll() {
 	for _, runner := range runners {
 		runner.Stop()
 	}
+	deadline := time.NewTimer(shutdownWaitTimeout)
+	defer deadline.Stop()
+	for _, runner := range runners {
+		select {
+		case <-runner.done:
+		case <-deadline.C:
+			log.Printf("wecom supervisor stopAll timed out waiting for account=%s", runner.account.ChannelAccountID)
+			return
+		}
+	}
 }
 
 type accountRunner struct {
@@ -173,51 +188,172 @@ func (r *accountRunner) run(ctx context.Context) error {
 		r.states.SetError(r.account.ChannelAccountID, err)
 		return err
 	}
-	lease, err := r.store.AcquireChannelLease(ctx, r.account.ChannelAccountID, r.cfg.OwnerID, r.cfg.LeaseTTL)
+	lease, err := r.acquireLeaseWithStandby(ctx)
 	if err != nil {
 		r.states.SetError(r.account.ChannelAccountID, err)
-		if errors.Is(err, store.ErrLeaseHeld) {
-			return nil
-		}
-		var held store.LeaseHeldError
-		if errors.As(err, &held) {
-			return nil
-		}
 		return fmt.Errorf("acquire channel lease: %w", err)
 	}
 	r.states.SetLease(lease)
+	log.Printf("channelgateway runtime_trace account_id=%s owner_id=%s fence=%d action=lease_acquired lease_expires_at=%s",
+		runtimeLogValue(lease.ChannelAccountID), runtimeLogValue(lease.OwnerID), lease.FencingToken, lease.ExpiresAt.Format(time.RFC3339Nano))
 	defer func() {
 		releaseCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := r.store.ReleaseChannelLease(releaseCtx, lease); err != nil {
 			log.Printf("release channel lease account=%s: %v", lease.ChannelAccountID, err)
+		} else {
+			log.Printf("channelgateway runtime_trace account_id=%s owner_id=%s fence=%d action=lease_released",
+				runtimeLogValue(lease.ChannelAccountID), runtimeLogValue(lease.OwnerID), lease.FencingToken)
 		}
 		r.states.ClearLease(r.account.ChannelAccountID)
 	}()
 	acpClient := r.acpFactory(r.cfg, r.account)
 	defer acpClient.Close()
-	if err := acpClient.Initialize(ctx); err != nil {
-		r.states.SetError(r.account.ChannelAccountID, err)
-		return fmt.Errorf("initialize acp: %w", err)
-	}
 	adapter := r.adapterFactory(runtimeCfg)
 	dispatcher := router.NewDispatcherWithOptions(
 		r.store,
 		r.account,
 		acpClient,
 		"/workspace",
-		router.DispatcherOptions{RequestTimeout: r.cfg.RequestTimeout},
+		router.DispatcherOptions{
+			RequestTimeout: r.cfg.RequestTimeout,
+			InboundLease:   lease,
+			InboundStale:   inboundRecoveryStaleAfter,
+		},
 	)
+	acpClient.SetWorkspaceLifecycleHandler(func(event acp.WorkspaceLifecycleEvent) {
+		go func() {
+			lifecycleCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := dispatcher.HandleWorkspaceLifecycle(lifecycleCtx, event); err != nil {
+				log.Printf("channelgateway runtime_trace account_id=%s agent_id=%s acp_session_id=%s lifecycle_id=%s action=workspace_lifecycle_failed error=%s",
+					runtimeLogValue(r.account.ChannelAccountID), runtimeLogValue(r.account.AgentID), runtimeLogValue(event.SessionID),
+					runtimeLogValue(event.LifecycleID), runtimeLogValue(err.Error()))
+			}
+		}()
+	})
+	initTimeout := r.cfg.ACPInitializeTimeout
+	if initTimeout <= 0 {
+		initTimeout = 15 * time.Second
+	}
+	r.states.SetStatus(r.account.ChannelAccountID, "initializing_acp")
+	initStartedAt := time.Now()
+	log.Printf("channelgateway runtime_trace account_id=%s agent_id=%s action=acp_initialize_start timeout_ms=%d",
+		runtimeLogValue(r.account.ChannelAccountID), runtimeLogValue(r.account.AgentID), initTimeout.Milliseconds())
+	initCtx, initCancel := context.WithTimeout(ctx, initTimeout)
+	defer initCancel()
+	if err := acpClient.Initialize(initCtx); err != nil {
+		r.states.SetError(r.account.ChannelAccountID, err)
+		log.Printf("channelgateway runtime_trace account_id=%s agent_id=%s action=acp_initialize_failed duration_ms=%d error=%s",
+			runtimeLogValue(r.account.ChannelAccountID), runtimeLogValue(r.account.AgentID), time.Since(initStartedAt).Milliseconds(), runtimeLogValue(err.Error()))
+		return fmt.Errorf("initialize acp: %w", err)
+	}
+	log.Printf("channelgateway runtime_trace account_id=%s agent_id=%s action=acp_initialize_done duration_ms=%d",
+		runtimeLogValue(r.account.ChannelAccountID), runtimeLogValue(r.account.AgentID), time.Since(initStartedAt).Milliseconds())
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	go r.renewLeaseLoop(runCtx, cancel)
+	go r.inboundRecoveryLoop(runCtx, dispatcher)
 	go r.outboxLoop(runCtx, adapter)
+	go r.sessionIdleCloseLoop(runCtx, dispatcher)
 	r.states.SetStatus(r.account.ChannelAccountID, "running")
+	log.Printf("channelgateway runtime_trace account_id=%s agent_id=%s action=wecom_adapter_start websocket_url=%s",
+		runtimeLogValue(r.account.ChannelAccountID), runtimeLogValue(r.account.AgentID), runtimeLogValue(runtimeCfg.WebSocketURL))
 	err = adapter.Start(runCtx, dispatcher)
 	if err != nil {
 		r.states.SetError(r.account.ChannelAccountID, err)
 	}
+	log.Printf("channelgateway runtime_trace account_id=%s agent_id=%s action=wecom_adapter_stopped error=%s",
+		runtimeLogValue(r.account.ChannelAccountID), runtimeLogValue(r.account.AgentID), runtimeLogValue(errorString(err)))
 	return err
+}
+
+func (r *accountRunner) acquireLeaseWithStandby(ctx context.Context) (store.ChannelLease, error) {
+	standbyLogged := false
+	for {
+		lease, err := r.store.AcquireChannelLease(ctx, r.account.ChannelAccountID, r.cfg.OwnerID, r.cfg.LeaseTTL)
+		if err == nil {
+			return lease, nil
+		}
+		if !isLeaseHeld(err) {
+			return store.ChannelLease{}, err
+		}
+		r.states.SetStandbyLeaseHeld(r.account.ChannelAccountID, err)
+		if !standbyLogged {
+			log.Printf("channelgateway runtime_trace account_id=%s owner_id=%s action=standby_lease_held error=%s",
+				runtimeLogValue(r.account.ChannelAccountID), runtimeLogValue(r.cfg.OwnerID), runtimeLogValue(err.Error()))
+			standbyLogged = true
+		}
+		timer := time.NewTimer(standbyLeaseRetryAfter)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return store.ChannelLease{}, ctx.Err()
+		case <-timer.C:
+		}
+	}
+}
+
+func isLeaseHeld(err error) bool {
+	if errors.Is(err, store.ErrLeaseHeld) {
+		return true
+	}
+	var held store.LeaseHeldError
+	return errors.As(err, &held)
+}
+
+func (r *accountRunner) inboundRecoveryLoop(ctx context.Context, dispatcher *router.Dispatcher) {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for {
+		r.recoverInboundOnce(ctx, dispatcher)
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func (r *accountRunner) recoverInboundOnce(ctx context.Context, dispatcher *router.Dispatcher) {
+	lease := r.states.GetLease(r.account.ChannelAccountID)
+	if lease.ChannelAccountID == "" {
+		return
+	}
+	items, err := r.store.ListRecoverableInboundMessages(ctx, lease, 16, inboundRecoveryStaleAfter)
+	if err != nil {
+		log.Printf("recover inbound account=%s failed: %v", lease.ChannelAccountID, err)
+		return
+	}
+	for _, item := range items {
+		var msg channel.Message
+		if err := json.Unmarshal([]byte(item.PayloadJSON), &msg); err != nil {
+			_ = r.store.MarkInboundMessageFailed(ctx, lease, item.MessageID, item.ACPSessionID, fmt.Sprintf("decode inbound payload: %v", err), time.Now().UTC().Add(time.Minute))
+			continue
+		}
+		if strings.TrimSpace(msg.ChannelAccountID) == "" {
+			msg.ChannelAccountID = item.ChannelAccountID
+		}
+		if msg.ChannelType == "" {
+			msg.ChannelType = channel.Type(item.ChannelType)
+		}
+		if strings.TrimSpace(msg.ExternalMessageID) == "" {
+			msg.ExternalMessageID = item.ExternalMessageID
+		}
+		if strings.TrimSpace(msg.ExternalConversationID) == "" {
+			msg.ExternalConversationID = item.ExternalConversationID
+		}
+		log.Printf("channelgateway runtime_trace account_id=%s agent_id=%s message_id=%s action=inbound_recover_start status=%s retry_count=%d",
+			runtimeLogValue(item.ChannelAccountID), runtimeLogValue(r.account.AgentID), runtimeLogValue(item.ExternalMessageID),
+			runtimeLogValue(item.Status), item.RetryCount)
+		if err := dispatcher.HandleInbound(ctx, msg); err != nil {
+			log.Printf("channelgateway runtime_trace account_id=%s agent_id=%s message_id=%s action=inbound_recover_failed error=%s",
+				runtimeLogValue(item.ChannelAccountID), runtimeLogValue(r.account.AgentID), runtimeLogValue(item.ExternalMessageID), runtimeLogValue(err.Error()))
+			continue
+		}
+		log.Printf("channelgateway runtime_trace account_id=%s agent_id=%s message_id=%s action=inbound_recover_done",
+			runtimeLogValue(item.ChannelAccountID), runtimeLogValue(r.account.AgentID), runtimeLogValue(item.ExternalMessageID))
+	}
 }
 
 func (r *accountRunner) renewLeaseLoop(ctx context.Context, cancel context.CancelFunc) {
@@ -265,6 +401,53 @@ func (r *accountRunner) outboxLoop(ctx context.Context, sender router.OutboxSend
 			}
 		}
 	}
+}
+
+func (r *accountRunner) sessionIdleCloseLoop(ctx context.Context, dispatcher *router.Dispatcher) {
+	idleClose := r.cfg.SessionIdleClose
+	if idleClose <= 0 {
+		return
+	}
+	interval := idleClose / 2
+	if interval < 5*time.Second {
+		interval = 5 * time.Second
+	}
+	if interval > 30*time.Second {
+		interval = 30 * time.Second
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			lease := r.states.GetLease(r.account.ChannelAccountID)
+			if lease.ChannelAccountID == "" {
+				continue
+			}
+			closeCtx, cancel := context.WithTimeout(ctx, r.idleCloseTimeout())
+			closed, err := dispatcher.CloseIdleConversations(closeCtx, idleClose, 16)
+			cancel()
+			if err != nil {
+				log.Printf("channelgateway runtime_trace account_id=%s agent_id=%s action=session_idle_close_failed error=%s",
+					runtimeLogValue(r.account.ChannelAccountID), runtimeLogValue(r.account.AgentID), runtimeLogValue(err.Error()))
+				continue
+			}
+			if closed > 0 {
+				log.Printf("channelgateway runtime_trace account_id=%s agent_id=%s action=session_idle_close_batch_done closed=%d idle_seconds=%.3f",
+					runtimeLogValue(r.account.ChannelAccountID), runtimeLogValue(r.account.AgentID), closed, idleClose.Seconds())
+			}
+		}
+	}
+}
+
+func (r *accountRunner) idleCloseTimeout() time.Duration {
+	timeout := r.cfg.RequestTimeout
+	if timeout <= 0 {
+		timeout = 30 * time.Second
+	}
+	return timeout
 }
 
 func seedWeComAccounts(ctx context.Context, st *store.Store, cfg config.Config) error {
@@ -390,7 +573,9 @@ func (s *channelRuntimeStates) SetLease(lease store.ChannelLease) {
 	s.leases[lease.ChannelAccountID] = lease
 	state := s.states[lease.ChannelAccountID]
 	state.AccountID = lease.ChannelAccountID
-	state.Status = "leased"
+	if state.Status == "" || state.Status == "stopped" || state.Status == "error" {
+		state.Status = "leased"
+	}
 	state.OwnerID = lease.OwnerID
 	state.FencingToken = lease.FencingToken
 	state.LeaseExpiresAt = lease.ExpiresAt.Format(time.RFC3339Nano)
@@ -438,6 +623,21 @@ func (s *channelRuntimeStates) SetError(accountID string, err error) {
 	s.states[accountID] = state
 }
 
+func (s *channelRuntimeStates) SetStandbyLeaseHeld(accountID string, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	state := s.states[accountID]
+	state.AccountID = accountID
+	state.Status = "standby_lease_held"
+	state.OwnerID = ""
+	state.FencingToken = 0
+	state.LeaseExpiresAt = ""
+	if err != nil {
+		state.LastError = err.Error()
+	}
+	s.states[accountID] = state
+}
+
 func (s *channelRuntimeStates) Snapshot() []channelRuntimeState {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -446,4 +646,42 @@ func (s *channelRuntimeStates) Snapshot() []channelRuntimeState {
 		out = append(out, state)
 	}
 	return out
+}
+
+func (s *channelRuntimeStates) HasReadyAccount() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for accountID, state := range s.states {
+		switch state.Status {
+		case "running":
+			lease := s.leases[accountID]
+			if lease.ChannelAccountID != "" && lease.OwnerID != "" && lease.FencingToken > 0 {
+				return true
+			}
+		case "standby_lease_held":
+			return true
+		default:
+			continue
+		}
+	}
+	return false
+}
+
+func runtimeLogValue(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "-"
+	}
+	value = strings.NewReplacer("\n", "\\n", "\r", "\\r", "\t", "\\t").Replace(value)
+	if len(value) > 200 {
+		return value[:200] + "...[truncated]"
+	}
+	return value
+}
+
+func errorString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }

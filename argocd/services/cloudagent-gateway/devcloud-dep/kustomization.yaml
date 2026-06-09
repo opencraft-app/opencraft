@@ -6,6 +6,9 @@ namespace: dep
 resources:
   - gateway.yaml
 
+generators:
+  - ksops-secret-generator.yaml
+
 generatorOptions:
   disableNameSuffixHash: true
 
@@ -25,6 +28,11 @@ replacements:
           name: cloudagent-gateway
         fieldPaths:
           - spec.template.spec.containers.0.image
+      - select:
+          kind: Deployment
+          name: cloudagent-runtime-pool-worker
+        fieldPaths:
+          - spec.template.spec.containers.0.image
   - source:
       kind: ConfigMap
       name: cloudagent-gateway-platform-values
@@ -33,6 +41,11 @@ replacements:
       - select:
           kind: Deployment
           name: cloudagent-gateway
+        fieldPaths:
+          - spec.template.metadata.annotations.[cloudagent.dev/redeploy-at]
+      - select:
+          kind: Deployment
+          name: cloudagent-runtime-pool-worker
         fieldPaths:
           - spec.template.metadata.annotations.[cloudagent.dev/redeploy-at]
   - source:
@@ -56,6 +69,16 @@ replacements:
           name: cloudagent-gateway-config
         fieldPaths:
           - data.GATEWAY_WISP_PACKAGE_URL
+  - source:
+      kind: ConfigMap
+      name: cloudagent-gateway-platform-values
+      fieldPath: data.CLOUDAGENT_GATEWAY_WISP_PACKAGE_SHA256
+    targets:
+      - select:
+          kind: ConfigMap
+          name: cloudagent-gateway-config
+        fieldPaths:
+          - data.GATEWAY_WISP_PACKAGE_SHA256
   - source:
       kind: ConfigMap
       name: cloudagent-gateway-platform-values

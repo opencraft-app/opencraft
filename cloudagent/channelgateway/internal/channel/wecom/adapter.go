@@ -109,20 +109,33 @@ func (a *Adapter) Send(ctx context.Context, reply channel.Reply) (channel.SendRe
 		text = string([]rune(text)[:maxMessageLength])
 	}
 	reqID := a.replyReqID(reply.ExternalMessageID)
+	mode := "proactive"
 	var raw frame
 	var err error
+	startedAt := time.Now()
 	if reqID != "" {
+		mode = "callback"
+		log.Printf("wecom account=%s action=send_start mode=%s external_conversation_id=%s external_message_id=%s req_id=%s text_bytes=%d",
+			logValue(a.cfg.AccountID), mode, logValue(reply.ExternalConversationID), logValue(reply.ExternalMessageID), logValue(reqID), len([]byte(text)))
 		raw, err = a.request(ctx, reqID, respondStreamFrame(reqID, text))
 	} else {
 		reqID = newReqID("send")
+		log.Printf("wecom account=%s action=send_start mode=%s external_conversation_id=%s external_message_id=%s req_id=%s text_bytes=%d",
+			logValue(a.cfg.AccountID), mode, logValue(reply.ExternalConversationID), logValue(reply.ExternalMessageID), logValue(reqID), len([]byte(text)))
 		raw, err = a.request(ctx, reqID, sendMarkdownFrame(reqID, reply.ExternalConversationID, text))
 	}
 	if err != nil {
+		log.Printf("wecom account=%s action=send_failed mode=%s external_conversation_id=%s external_message_id=%s req_id=%s duration_ms=%d error=%s",
+			logValue(a.cfg.AccountID), mode, logValue(reply.ExternalConversationID), logValue(reply.ExternalMessageID), logValue(reqID), time.Since(startedAt).Milliseconds(), logValue(err.Error()))
 		return channel.SendResult{}, err
 	}
 	if raw.ErrCode != 0 {
+		log.Printf("wecom account=%s action=send_rejected mode=%s external_conversation_id=%s external_message_id=%s req_id=%s duration_ms=%d errcode=%d errmsg=%s",
+			logValue(a.cfg.AccountID), mode, logValue(reply.ExternalConversationID), logValue(reply.ExternalMessageID), logValue(reqID), time.Since(startedAt).Milliseconds(), raw.ErrCode, logValue(raw.ErrMsg))
 		return channel.SendResult{}, fmt.Errorf("wecom send failed errcode=%d errmsg=%s", raw.ErrCode, raw.ErrMsg)
 	}
+	log.Printf("wecom account=%s action=send_done mode=%s external_conversation_id=%s external_message_id=%s req_id=%s duration_ms=%d",
+		logValue(a.cfg.AccountID), mode, logValue(reply.ExternalConversationID), logValue(reply.ExternalMessageID), logValue(reqID), time.Since(startedAt).Milliseconds())
 	body, _ := json.Marshal(raw)
 	return channel.SendResult{MessageID: reqID, Raw: body}, nil
 }
@@ -134,10 +147,16 @@ func (a *Adapter) runOnce(ctx context.Context, handler channel.InboundHandler) e
 	}
 	dialCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
+	dialStartedAt := time.Now()
+	log.Printf("wecom account=%s action=dial_start websocket_url=%s", logValue(a.cfg.AccountID), logValue(url))
 	conn, _, err := websocket.DefaultDialer.DialContext(dialCtx, url, http.Header{})
 	if err != nil {
+		log.Printf("wecom account=%s action=dial_failed websocket_url=%s duration_ms=%d error=%s",
+			logValue(a.cfg.AccountID), logValue(url), time.Since(dialStartedAt).Milliseconds(), logValue(err.Error()))
 		return err
 	}
+	log.Printf("wecom account=%s action=dial_done websocket_url=%s duration_ms=%d remote_addr=%s",
+		logValue(a.cfg.AccountID), logValue(url), time.Since(dialStartedAt).Milliseconds(), logValue(conn.RemoteAddr().String()))
 	a.mu.Lock()
 	a.conn = conn
 	a.closed = false
@@ -151,12 +170,20 @@ func (a *Adapter) runOnce(ctx context.Context, handler channel.InboundHandler) e
 		a.mu.Unlock()
 	}()
 	reqID := newReqID(cmdSubscribe)
+	subscribeStartedAt := time.Now()
+	log.Printf("wecom account=%s action=subscribe_start req_id=%s", logValue(a.cfg.AccountID), logValue(reqID))
 	if err := a.writeJSON(conn, subscribeFrame(reqID, a.cfg.BotID, a.cfg.Secret)); err != nil {
+		log.Printf("wecom account=%s action=subscribe_write_failed req_id=%s duration_ms=%d error=%s",
+			logValue(a.cfg.AccountID), logValue(reqID), time.Since(subscribeStartedAt).Milliseconds(), logValue(err.Error()))
 		return err
 	}
 	if err := a.waitHandshake(ctx, reqID); err != nil {
+		log.Printf("wecom account=%s action=subscribe_failed req_id=%s duration_ms=%d error=%s",
+			logValue(a.cfg.AccountID), logValue(reqID), time.Since(subscribeStartedAt).Milliseconds(), logValue(err.Error()))
 		return err
 	}
+	log.Printf("wecom account=%s action=subscribe_done req_id=%s duration_ms=%d handler_workers=%d handler_queue_size=%d",
+		logValue(a.cfg.AccountID), logValue(reqID), time.Since(subscribeStartedAt).Milliseconds(), a.handlerWorkers(), a.handlerQueueSize())
 	tasks := make(chan inboundTask, a.handlerQueueSize())
 	for i := 0; i < a.handlerWorkers(); i++ {
 		go a.handleInboundWorker(ctx, handler, tasks)
@@ -187,15 +214,23 @@ func (a *Adapter) runOnce(ctx context.Context, handler channel.InboundHandler) e
 			continue
 		}
 		if !a.allowMessage(msg) {
+			log.Printf("wecom account=%s action=inbound_denied external_message_id=%s external_conversation_id=%s chat_type=%s",
+				logValue(a.cfg.AccountID), logValue(msg.ExternalMessageID), logValue(msg.ExternalConversationID), logValue(string(msg.ChatType)))
 			continue
 		}
+		log.Printf("wecom account=%s action=inbound_received external_message_id=%s external_conversation_id=%s external_user_id=%s thread_id=%s chat_type=%s kind=%s raw_bytes=%d",
+			logValue(a.cfg.AccountID), logValue(msg.ExternalMessageID), logValue(msg.ExternalConversationID), logValue(msg.ExternalUserID),
+			logValue(msg.ThreadID), logValue(string(msg.ChatType)), logValue(string(msg.Kind)), len(raw))
 		a.rememberReplyReqID(msg.ExternalMessageID, raw)
 		select {
 		case tasks <- inboundTask{ctx: ctx, msg: msg}:
+			log.Printf("wecom account=%s action=inbound_dispatched external_message_id=%s external_conversation_id=%s",
+				logValue(a.cfg.AccountID), logValue(msg.ExternalMessageID), logValue(msg.ExternalConversationID))
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			log.Printf("wecom account=%s inbound queue full; dropping msg_id=%s", a.cfg.AccountID, msg.ExternalMessageID)
+			log.Printf("wecom account=%s action=inbound_queue_full external_message_id=%s external_conversation_id=%s",
+				logValue(a.cfg.AccountID), logValue(msg.ExternalMessageID), logValue(msg.ExternalConversationID))
 		}
 	}
 }
@@ -214,6 +249,17 @@ func (a *Adapter) handleInboundWorker(ctx context.Context, handler channel.Inbou
 			}
 		}
 	}
+}
+
+func logValue(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "-"
+	}
+	if len(value) > 160 {
+		return value[:160] + "...[truncated]"
+	}
+	return value
 }
 
 func (a *Adapter) allowMessage(msg channel.Message) bool {

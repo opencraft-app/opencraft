@@ -57,6 +57,7 @@ type AgentSidecarWorkerConfig struct {
 	WispSMHSpaceID        string
 	WorkspaceService      WorkspaceService
 	WorkspaceLeaseTTL     time.Duration
+	RuntimePool           RuntimePool
 }
 
 type AgentSidecarBackendConfig struct {
@@ -115,6 +116,7 @@ type AgentSidecarWorker struct {
 	wispSMHSpaceID        string
 	workspaceService      WorkspaceService
 	workspaceLeaseTTL     time.Duration
+	runtimePool           RuntimePool
 }
 
 func NewAgentSidecarWorker(cfg AgentSidecarWorkerConfig) (*AgentSidecarWorker, error) {
@@ -227,6 +229,7 @@ func NewAgentSidecarWorker(cfg AgentSidecarWorkerConfig) (*AgentSidecarWorker, e
 		wispSMHSpaceID:        strings.TrimSpace(cfg.WispSMHSpaceID),
 		workspaceService:      cfg.WorkspaceService,
 		workspaceLeaseTTL:     leaseTTL,
+		runtimePool:           cfg.RuntimePool,
 	}, nil
 }
 
@@ -235,13 +238,17 @@ func NewAgentSidecarWorkerFromEnv() (*AgentSidecarWorker, error) {
 }
 
 func NewAgentSidecarWorkerFromEnvWithWorkspaceService(workspaceService WorkspaceService) (*AgentSidecarWorker, error) {
+	return NewAgentSidecarWorkerFromEnvWithServices(workspaceService, nil)
+}
+
+func NewAgentSidecarWorkerFromEnvWithServices(workspaceService WorkspaceService, runtimePool RuntimePool) (*AgentSidecarWorker, error) {
 	runtimeHostName := strings.ToLower(strings.TrimSpace(firstEnv("GATEWAY_RUNTIME_HOST", "CLOUDAGENT_RUNTIME_HOST")))
 	if runtimeHostName == runtimeHostTypeLocalWisp {
 		localHost, err := NewLocalRuntimeHostFromEnv()
 		if err != nil {
 			return nil, err
 		}
-		return NewAgentSidecarWorker(agentSidecarWorkerConfigFromEnv(nil, localHost, runtimeHostTypeLocalWisp, nil, workspaceService))
+		return NewAgentSidecarWorker(agentSidecarWorkerConfigFromEnv(nil, localHost, runtimeHostTypeLocalWisp, nil, workspaceService, runtimePool))
 	}
 	client, err := NewAGSClient(AGSClientConfig{
 		APIKey:         firstEnv("GATEWAY_AGS_API_KEY", "E2B_API_KEY"),
@@ -271,10 +278,10 @@ func NewAgentSidecarWorkerFromEnvWithWorkspaceService(workspaceService Workspace
 			InnerTemplateID: firstNonEmpty(firstEnv("GATEWAY_TALOS_INNER_TEMPLATE", "TALOS_INNER_TEMPLATE"), talosTemplate),
 		})
 	}
-	return NewAgentSidecarWorker(agentSidecarWorkerConfigFromEnv(client, nil, runtimeHostTypeAGS, additionalBackends, workspaceService))
+	return NewAgentSidecarWorker(agentSidecarWorkerConfigFromEnv(client, nil, runtimeHostTypeAGS, additionalBackends, workspaceService, runtimePool))
 }
 
-func agentSidecarWorkerConfigFromEnv(client *AGSClient, runtimeHost RuntimeHost, runtimeHostName string, additionalBackends []AgentSidecarBackendConfig, workspaceService WorkspaceService) AgentSidecarWorkerConfig {
+func agentSidecarWorkerConfigFromEnv(client *AGSClient, runtimeHost RuntimeHost, runtimeHostName string, additionalBackends []AgentSidecarBackendConfig, workspaceService WorkspaceService, runtimePool RuntimePool) AgentSidecarWorkerConfig {
 	outerTemplateID := firstEnv("GATEWAY_AGENT_SIDECAR_OUTER_TEMPLATE", "GATEWAY_AGS_TEMPLATE", "OUTER_SANDBOX_TEMPLATE")
 	if runtimeHostName == runtimeHostTypeLocalWisp && outerTemplateID == "" {
 		outerTemplateID = runtimeHostTypeLocalWisp
@@ -282,6 +289,11 @@ func agentSidecarWorkerConfigFromEnv(client *AGSClient, runtimeHost RuntimeHost,
 	innerTemplateID := firstEnv("GATEWAY_AGENT_SIDECAR_INNER_TEMPLATE", "INNER_SANDBOX_TEMPLATE")
 	if runtimeHostName == runtimeHostTypeLocalWisp && innerTemplateID == "" {
 		innerTemplateID = outerTemplateID
+	}
+	if runtimePool == nil && envFlagEnabled("GATEWAY_RUNTIME_WARM_POOL_ENABLED") {
+		if pool, ok := workspaceService.(RuntimePool); ok {
+			runtimePool = pool
+		}
 	}
 	return AgentSidecarWorkerConfig{
 		Client:                client,
@@ -313,6 +325,7 @@ func agentSidecarWorkerConfigFromEnv(client *AGSClient, runtimeHost RuntimeHost,
 		WispSMHSpaceID:        firstEnv("GATEWAY_WISP_SMH_SPACE_ID", "SMH_SPACE_ID"),
 		WorkspaceService:      workspaceService,
 		WorkspaceLeaseTTL:     time.Duration(envInt("GATEWAY_WISP_WORKSPACE_LEASE_TTL_SECONDS", int(defaultWorkspaceLeaseTTL/time.Second))) * time.Second,
+		RuntimePool:           runtimePool,
 	}
 }
 
@@ -454,7 +467,11 @@ func runtimeResourceOwnerID(req ACPSessionRuntimeStartRequest) string {
 }
 
 func defaultWorkspaceID(req ACPSessionRuntimeStartRequest) string {
-	return "workspace_" + req.SessionID
+	return "workspace_" + runtimeWorkspaceIdentity(req)
+}
+
+func runtimeWorkspaceIdentity(req ACPSessionRuntimeStartRequest) string {
+	return firstNonEmpty(strings.TrimSpace(req.WorkspaceKey), req.SessionID)
 }
 
 func (w *AgentSidecarWorker) runtimeResourceExpiresAt() time.Time {
@@ -690,6 +707,7 @@ func (w *AgentSidecarWorker) StartSessionRuntime(ctx context.Context, req ACPSes
 	if err != nil {
 		return ACPSessionRuntime{}, err
 	}
+	sidecarArtifact = resolvedSidecarArtifact(sidecarArtifact, agentPlugin, w.defaultSidecarArtifact())
 	req.SidecarArtifact = sidecarArtifact
 	workspaceVersion := normalizeRuntimeVersion(req.WorkspaceVersion, defaultWorkspaceVersion)
 	workspaceSpec, err := workspaceRuntimeSpecFor(workspaceVersion)
@@ -730,9 +748,19 @@ func (w *AgentSidecarWorker) StartSessionRuntime(ctx context.Context, req ACPSes
 		SigningKeyID:        sidecarArtifact.SigningKeyID,
 		WorkspaceVersion:    workspaceVersion,
 		WorkspaceTemplateID: backend.innerTemplateID,
+		WispPackageURL:      w.wispPackageURL,
+		WispRootUpperSize:   w.wispRootUpperSize,
+		WispJFSPrefix:       w.wispJFSPrefix,
 		WorkspaceID:         defaultWorkspaceID(req),
 		DaemonAddr:          acpDaemonAddr(req.SessionID),
 		RemoteBinary:        path.Join("/tmp/gateway/sessions", req.SessionID, "hermes-sidecar"),
+	}
+	if claim, ok := w.tryClaimWarmSessionRuntime(ctx, req, backend, runtime, timeline); ok {
+		claimed, err := w.startSessionRuntimeFromWarmClaim(ctx, req, backend, runtime, claim, timeline)
+		if err == nil {
+			return claimed, nil
+		}
+		timeline("acp_runtime_pool_claim_fallback_cold", "item_id="+quoteTimelineField(claim.ItemID), "error="+quoteTimelineField(err.Error()))
 	}
 	workspaceCreate := w.startWorkspaceSandboxCreate(ctx, backend, runtime, req, workspaceIDForRuntime(runtime, req), timeline)
 	timeline("acp_runtime_outer_create_start", "backend="+backend.name, "template="+backend.outerTemplateID, "agent_version="+agentVersion, "workspace_template="+backend.innerTemplateID, "workspace_version="+workspaceVersion)
@@ -957,9 +985,12 @@ func isNonBlockingStaleRuntimeCleanupError(err error) bool {
 		return false
 	}
 	message := strings.ToLower(err.Error())
-	if strings.Contains(message, "ags http 401") &&
-		strings.Contains(message, "op=run_command") &&
-		strings.Contains(message, "authentication_failed") {
+	if strings.Contains(message, "shutdown inner workspace runtime") &&
+		!strings.Contains(message, "ags http 404") &&
+		!(strings.Contains(message, "http 404") && strings.Contains(message, "requested resource does not exist")) {
+		return false
+	}
+	if isStaleRuntimeDataPlaneAuthError(err) {
 		return true
 	}
 	if strings.Contains(message, "ags http 404") ||
@@ -968,6 +999,22 @@ func isNonBlockingStaleRuntimeCleanupError(err error) bool {
 	}
 	return strings.Contains(message, "unsupportedoperation.sandboxinstance") &&
 		strings.Contains(message, "stopped state")
+}
+
+func isStaleRuntimeDataPlaneAuthError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	if strings.Contains(message, "checkpoint") ||
+		strings.Contains(message, "writeback-cut-barrier") ||
+		strings.Contains(message, "metadata-barrier") ||
+		strings.Contains(message, "input/output error") {
+		return false
+	}
+	return strings.Contains(message, "ags http 401") &&
+		strings.Contains(message, "op=run_command") &&
+		strings.Contains(message, "authentication_failed")
 }
 
 func (w *AgentSidecarWorker) restartSessionRuntimeDaemon(ctx context.Context, runtime ACPSessionRuntime, req ACPSessionRuntimeStartRequest) (ACPSessionRuntime, error) {
@@ -1036,7 +1083,33 @@ func (w *AgentSidecarWorker) recreateWispSessionRuntime(ctx context.Context, run
 	if err != nil {
 		return ACPSessionRuntime{}, err
 	}
-	timeline("acp_runtime_restore_outer_create_start", "backend="+backend.name, "template="+backend.outerTemplateID, "smh_space_id="+quoteTimelineField(runtime.WispSMHSpaceID))
+	restored := runtime
+	restored.RuntimeID = newACPSessionRuntimeID(req.SessionID, req.Generation)
+	restored.SandboxBackend = backend.name
+	restored.OuterRuntime = outerRuntimeWisp
+	restored.RuntimeRecovery = normalizeRuntimeRecovery(firstNonEmpty(restored.RuntimeRecovery, req.RuntimeRecovery), outerRuntimeWisp)
+	restored.AgentVersion = agentVersion
+	restored.AgentTemplateID = backend.outerTemplateID
+	restored.SidecarURL = artifact.URL
+	restored.SidecarSHA256 = artifact.SHA256
+	restored.SidecarSigURL = artifact.SigURL
+	restored.SigningKeyID = artifact.SigningKeyID
+	restored.WorkspaceVersion = workspaceVersion
+	restored.WorkspaceTemplateID = backend.innerTemplateID
+	restored.WispPackageURL = firstNonEmpty(restored.WispPackageURL, w.wispPackageURL)
+	restored.WispRootUpperSize = firstNonEmpty(restored.WispRootUpperSize, w.wispRootUpperSize)
+	restored.WispJFSPrefix = firstNonEmpty(restored.WispJFSPrefix, w.wispJFSPrefix)
+	restored.DaemonAddr = acpDaemonAddr(req.SessionID)
+	restored.RemoteBinary = path.Join("/tmp/gateway/sessions", req.SessionID, "hermes-sidecar")
+	if claim, ok := w.tryClaimWarmSessionRuntime(ctx, req, backend, restored, timeline); ok {
+		claimed, err := w.startSessionRuntimeFromWarmClaim(ctx, req, backend, restored, claim, timeline)
+		if err == nil {
+			timeline("acp_runtime_restore_pool_claim_done", "item_id="+quoteTimelineField(claim.ItemID), "outer_sandbox_id="+quoteTimelineField(claim.Host.OuterSandboxID), "inner_sandbox_id="+quoteTimelineField(claim.Host.InnerSandboxID))
+			return claimed, nil
+		}
+		timeline("acp_runtime_restore_pool_claim_fallback_cold", "item_id="+quoteTimelineField(claim.ItemID), "error="+quoteTimelineField(err.Error()))
+	}
+	timeline("acp_runtime_restore_outer_create_start", "backend="+backend.name, "template="+backend.outerTemplateID, "smh_space_id="+quoteTimelineField(restored.WispSMHSpaceID))
 	sb, err := backend.host.CreateSandbox(ctx, CreateSandboxOptions{
 		TemplateID:          backend.outerTemplateID,
 		TimeoutSeconds:      w.sandboxTimeoutSeconds,
@@ -1054,19 +1127,6 @@ func (w *AgentSidecarWorker) recreateWispSessionRuntime(ctx context.Context, run
 		return ACPSessionRuntime{}, err
 	}
 	timeline("acp_runtime_restore_outer_create_done", "sandbox_id="+sb.ID)
-	restored := runtime
-	restored.RuntimeID = newACPSessionRuntimeID(req.SessionID, req.Generation)
-	restored.SandboxBackend = backend.name
-	restored.OuterRuntime = outerRuntimeWisp
-	restored.RuntimeRecovery = normalizeRuntimeRecovery(firstNonEmpty(restored.RuntimeRecovery, req.RuntimeRecovery), outerRuntimeWisp)
-	restored.AgentVersion = agentVersion
-	restored.AgentTemplateID = backend.outerTemplateID
-	restored.SidecarURL = artifact.URL
-	restored.SidecarSHA256 = artifact.SHA256
-	restored.SidecarSigURL = artifact.SigURL
-	restored.SigningKeyID = artifact.SigningKeyID
-	restored.WorkspaceVersion = workspaceVersion
-	restored.WorkspaceTemplateID = backend.innerTemplateID
 	restored.OuterSandboxID = sb.ID
 	restored.OuterSandboxDomain = sb.Domain
 	restored.OuterEnvdAccessToken = sb.EnvdAccessToken
@@ -1075,8 +1135,6 @@ func (w *AgentSidecarWorker) recreateWispSessionRuntime(ctx context.Context, run
 	restored.InnerSandboxDomain = ""
 	restored.InnerEnvdAccessToken = ""
 	restored.SessionProxyID = ""
-	restored.DaemonAddr = acpDaemonAddr(req.SessionID)
-	restored.RemoteBinary = path.Join("/tmp/gateway/sessions", req.SessionID, "hermes-sidecar")
 	token, err := w.issueWispSMHToken(ctx, restored.WispSMHSpaceID, "admin")
 	if err != nil {
 		_ = backend.host.DeleteSandbox(context.Background(), sb.ID)
@@ -1175,7 +1233,7 @@ func (w *AgentSidecarWorker) cleanupPreviousWispRuntimeBeforeMount(ctx context.C
 }
 
 func workspaceIDForRuntime(runtime ACPSessionRuntime, req ACPSessionRuntimeStartRequest) string {
-	return firstNonEmpty(runtime.WorkspaceID, runtime.WispWorkspaceID, runtime.WispSMHSpaceID, "workspace_"+req.SessionID)
+	return firstNonEmpty(runtime.WorkspaceID, defaultWorkspaceID(req))
 }
 
 func workspaceRuntimeIDForRuntime(runtime ACPSessionRuntime, req ACPSessionRuntimeStartRequest) string {
@@ -1197,12 +1255,12 @@ func (w *AgentSidecarWorker) prepareInnerWorkspaceWispRuntime(ctx context.Contex
 	}
 	workspaceWisp := runtime
 	workspaceWisp.RuntimeID = workspaceRuntimeID
-	workspaceWisp.WispName = workspaceWispNameForRuntime(req.SessionID, runtime)
+	workspaceWisp.WispName = firstNonEmpty(runtime.WorkspaceWispName, workspaceWispNameForRuntime(runtimeWorkspaceIdentity(req), runtime))
 	workspaceWisp.WispWorkspaceID = workspaceID
 	workspaceWisp.WispSMHSpaceID = firstNonEmpty(runtime.WispSMHSpaceID, workspaceID)
 	workspaceWisp.WispOwnsSMHSpace = false
 	workspaceWisp.WispJFSPrefix = workspaceWispJFSPrefix(runtime.WispJFSPrefix, workspaceID)
-	workspaceWisp.WispInstallDir = path.Join("/tmp/cloudagent-workspace-wisp", req.SessionID, "install")
+	workspaceWisp.WispInstallDir = firstNonEmpty(wispInstallDirFromClient(runtime.WorkspaceWispClient), path.Join("/tmp/cloudagent-workspace-wisp", req.SessionID, "install"))
 	workspaceWisp.WispClientPath = path.Join(workspaceWisp.WispInstallDir, "bin", "wispclient")
 	prepared, err := w.prepareWispRuntimeWithSpace(ctx, host, sb, workspaceWisp, req, agentWispSMHSpace{
 		SpaceID:     workspaceWisp.WispSMHSpaceID,
@@ -1238,6 +1296,11 @@ func (w *AgentSidecarWorker) attachSessionWorkspaceRuntime(ctx context.Context, 
 	if workspacePrepare == nil {
 		workspacePrepare = w.startWorkspaceRuntimePrepare(ctx, backend, runtime, req, workspaceID, nil, func(string, ...string) {})
 	}
+	preparedWorkspace, err := workspacePrepare.await()
+	if err != nil {
+		return ACPSessionRuntime{}, err
+	}
+	sb := preparedWorkspace.sandbox
 	if w.workspaceService != nil {
 		if err := w.workspaceService.EnsureWorkspace(ctx, WorkspaceRecord{
 			WorkspaceID:           workspaceID,
@@ -1249,6 +1312,8 @@ func (w *AgentSidecarWorker) attachSessionWorkspaceRuntime(ctx context.Context, 
 			WispName:              runtime.WispName,
 			WispSMHSpaceID:        runtime.WispSMHSpaceID,
 			WispOwnsSMHSpace:      runtime.WispOwnsSMHSpace,
+			WorkspaceWispName:     preparedWorkspace.workspaceWispName,
+			WorkspaceRuntimeID:    preparedWorkspace.workspaceRuntimeID,
 			WispPackageURL:        runtime.WispPackageURL,
 			WispJFSPrefix:         workspaceJFSPrefix,
 			WispRootUpperSize:     runtime.WispRootUpperSize,
@@ -1257,15 +1322,10 @@ func (w *AgentSidecarWorker) attachSessionWorkspaceRuntime(ctx context.Context, 
 			OuterCleanupPending:   false,
 			LastOuterCleanupError: "",
 		}); err != nil {
-			workspacePrepare.cancelAndCleanup(backend.host)
+			cleanupPreparedWorkspaceRuntime(backend.host, preparedWorkspace)
 			return ACPSessionRuntime{}, err
 		}
 	}
-	preparedWorkspace, err := workspacePrepare.await()
-	if err != nil {
-		return ACPSessionRuntime{}, err
-	}
-	sb := preparedWorkspace.sandbox
 	payload, err := json.Marshal(map[string]any{
 		"workspace_id":         workspaceID,
 		"workspace_runtime_id": preparedWorkspace.workspaceRuntimeID,
@@ -1643,6 +1703,7 @@ func (w *AgentSidecarWorker) CloseSessionRuntime(ctx context.Context, runtime AC
 	var cleanupErr error
 	var gracefulStopErr error
 	innerDeleteFallback := runtime.InnerSandboxID != ""
+	innerWorkspaceStopConfirmed := runtime.InnerSandboxID == ""
 	workspaceWispStopped := false
 	workspaceWispStopRequired := false
 	innerDeletedBySidecar := false
@@ -1666,9 +1727,11 @@ func (w *AgentSidecarWorker) CloseSessionRuntime(ctx context.Context, runtime AC
 				}
 				if event.Event == "workspace_runtime_shutdown_done" {
 					workspaceWispStopped = true
+					innerWorkspaceStopConfirmed = true
 				}
 				if event.Event == "inner_shutdown_done" {
 					innerDeletedBySidecar = true
+					innerWorkspaceStopConfirmed = true
 				}
 			}
 		}
@@ -1679,6 +1742,7 @@ func (w *AgentSidecarWorker) CloseSessionRuntime(ctx context.Context, runtime AC
 		logRuntimeHostEvents(stdoutParser.Finish())
 		if shutdownErr == nil && runtimeHostShutdownErr == nil {
 			innerDeleteFallback = false
+			innerWorkspaceStopConfirmed = true
 		} else {
 			if shutdownErr == nil {
 				shutdownErr = runtimeHostShutdownErr
@@ -1701,6 +1765,7 @@ func (w *AgentSidecarWorker) CloseSessionRuntime(ctx context.Context, runtime AC
 			fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_workspace_wisp_stop_failed runtime_id=%s inner_sandbox_id=%s wisp_name=%s lease_id=%s fence=%d error=%s\n", runtime.RuntimeID, runtime.InnerSandboxID, quoteServerField(runtime.WorkspaceWispName), quoteServerField(runtime.WispLeaseID), runtime.WispLeaseFence, quoteServerField(err.Error()))
 		} else {
 			workspaceWispStopped = true
+			innerWorkspaceStopConfirmed = true
 			fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_workspace_wisp_stop_done runtime_id=%s inner_sandbox_id=%s wisp_name=%s lease_id=%s fence=%d\n", runtime.RuntimeID, runtime.InnerSandboxID, quoteServerField(runtime.WorkspaceWispName), quoteServerField(runtime.WispLeaseID), runtime.WispLeaseFence)
 		}
 		stopCancel()
@@ -1711,7 +1776,7 @@ func (w *AgentSidecarWorker) CloseSessionRuntime(ctx context.Context, runtime AC
 		stopCtx, stopCancel := context.WithTimeout(ctx, envDurationSeconds("GATEWAY_WISP_STOP_TIMEOUT_SECONDS", 60*time.Second))
 		fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_wisp_stop_start runtime_id=%s outer_sandbox_id=%s wisp_name=%s lease_id=%s fence=%d\n", runtime.RuntimeID, runtime.OuterSandboxID, quoteServerField(runtime.WispName), quoteServerField(runtime.WispLeaseID), runtime.WispLeaseFence)
 		if err := w.stopWispOuterRuntime(stopCtx, backend.host, sb, runtime); err != nil {
-			gracefulStopErr = fmt.Errorf("stop wisp outer runtime %s: %w", runtime.WispName, err)
+			gracefulStopErr = errors.Join(gracefulStopErr, fmt.Errorf("stop wisp outer runtime %s: %w", runtime.WispName, err))
 			fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_wisp_stop_failed runtime_id=%s outer_sandbox_id=%s wisp_name=%s lease_id=%s fence=%d error=%s\n", runtime.RuntimeID, runtime.OuterSandboxID, quoteServerField(runtime.WispName), quoteServerField(runtime.WispLeaseID), runtime.WispLeaseFence, quoteServerField(err.Error()))
 		} else {
 			outerWispStopped = true
@@ -1738,8 +1803,15 @@ func (w *AgentSidecarWorker) CloseSessionRuntime(ctx context.Context, runtime AC
 		fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_wisp_lease_release_blocked runtime_id=%s outer_sandbox_id=%s inner_sandbox_id=%s wisp_name=%s workspace_wisp_name=%s lease_id=%s fence=%d reason=stop_not_confirmed\n", runtime.RuntimeID, runtime.OuterSandboxID, runtime.InnerSandboxID, quoteServerField(runtime.WispName), quoteServerField(runtime.WorkspaceWispName), quoteServerField(runtime.WispLeaseID), runtime.WispLeaseFence)
 	}
 	if runtime.OuterSandboxID != "" {
+		outerDeleted := false
 		if err := backend.host.DeleteSandbox(ctx, runtime.OuterSandboxID); err != nil {
 			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("delete outer sandbox %s: %w", runtime.OuterSandboxID, err))
+		} else {
+			outerDeleted = true
+		}
+		if outerDeleted && innerWorkspaceStopConfirmed && isStaleRuntimeDataPlaneAuthError(gracefulStopErr) {
+			fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_stale_dataplane_auth_deleted runtime_id=%s outer_sandbox_id=%s error=%s\n", runtime.RuntimeID, runtime.OuterSandboxID, quoteServerField(gracefulStopErr.Error()))
+			gracefulStopErr = nil
 		}
 	}
 	if gracefulStopErr != nil {
@@ -2305,7 +2377,7 @@ func (w *AgentSidecarWorker) bootSessionDaemon(ctx context.Context, sb RuntimeHo
 	workspace := acpRuntimeCWD
 	memoryDir := path.Join(sessionRoot, "memory")
 	if runtime.isWispOuterRuntime() {
-		memoryDir = path.Join(workspace, ".cloudagent", "sessions", req.SessionID, "hermes")
+		memoryDir = path.Join(workspace, ".cloudagent", "sessions", runtimeWorkspaceIdentity(req), "hermes")
 	}
 	logPath := path.Join(sessionRoot, "daemon.log")
 	pidPath := path.Join(sessionRoot, "daemon.pid")

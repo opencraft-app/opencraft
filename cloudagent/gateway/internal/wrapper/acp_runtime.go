@@ -83,6 +83,7 @@ type ACPSessionRuntimeStartRequest struct {
 	RuntimeRecovery  string
 	AgentVersion     string
 	WorkspaceVersion string
+	WorkspaceKey     string
 	SidecarArtifact  agentSidecarArtifact
 }
 

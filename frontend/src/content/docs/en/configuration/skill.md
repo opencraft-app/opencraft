@@ -2,22 +2,22 @@
 
 Skills are additional capability packages callable by Hermes. They extend concrete task handling beyond basic conversation, such as automatically organizing to-dos, generating daily reports, browsing web pages, searching news, generating images, and more.
 
-All skills come from [SkillHub](https://skillhub.tencent.com), an independent skill marketplace launched by Tencent.
+All skills come from [ClawHub](https://clawhub.ai/), the skill marketplace shared by OpenClaw and Hermes.
 
 ## This page covers
 
-- Introduction to SkillHub
-    
+- Introduction to ClawHub
+
 - Relationship between Hermes and skills
-    
+
 - Two installation methods: console installation and conversation installation
-    
+
 - Skill usage examples
-    
+
 - Deleting installed skills
-    
+
 - FAQ
-    
+
 
 > 💡 **Skills are optional**
 > 
@@ -32,75 +32,76 @@ If Hermes combined with a large model gives users an intelligent AI assistant, s
 You can think of skills as "applications" for Hermes:
 
 - Basic conversation capability = operating system
-    
+
 - Skills = applications installed on demand
-    
+
 
 Each skill focuses on a single task, for example:
 
 - Browsing web pages and querying information with a browser
-    
+
 - Automatically organizing daily to-dos
-    
+
 - Sending scheduled news briefings
-    
+
 - Generating images from descriptions
-    
+
 - Querying real-time stock and fund information
-    
+
 - Organizing chat records into structured notes
-    
+
 
 Hermes automatically determines whether to call the corresponding skill based on conversation context. Users do not need to specify it.
 
 ---
 
-## SkillHub
+## ClawHub
 
-SkillHub is an independent skill marketplace launched by Tencent:
+ClawHub is the skill marketplace launched by OpenClaw:
 
-🔗 [https://skillhub.tencent.com](https://skillhub.tencent.com)
+🔗 [https://clawhub.ai/](https://clawhub.ai/)
 
 Features:
 
-- Browse listed skills (with category, popularity, and rating filters)
-    
-- View skill descriptions, examples, and author information
-    
-- Record the skill name and install it in the LightVela console or through conversation
-    
+- Browse listed tools / skills
 
-![](../images/20260424-151758-86pi.png)
+- View tool descriptions, usage methods, and related information
 
-> 💡 **Browse in SkillHub first, then install in LightVela**
+- Record the tool name and install or call it by name in the Hermes / OpenClaw conversation environment
+
+![](../images/clawhub-overview-global.png)
+
+> 💡 **Browse in ClawHub first, then install or use in LightVela**
 > 
-> LightVela installs skills by name. You need to confirm the exact target skill name in SkillHub first.
+> LightVela installs skills by name. You need to confirm the exact target skill name in ClawHub first.
 
 ---
 
 ## Method 1: Install through the console panel (coming soon)
 
-The LightVela console provides a visual skill configuration entry in the "Skill" button. You can enter the skill name found in SkillHub and install it quickly.
+The LightVela console provides a visual skill configuration entry in the "Skills" button. You can enter the skill name found in ClawHub and install it quickly.
 
-### 1. Confirm the target skill in SkillHub
+### 1. Confirm the target skill in ClawHub
 
-Visit [https://skillhub.tencent.com](https://skillhub.tencent.com) and browse or search for the skill you need.
+Visit [https://clawhub.ai/](https://clawhub.ai/) to browse or search for the skill you need.
 
-Using email as an example, find the `gmail` skill. It lets Hermes receive, send, and query emails. Record the skill name shown on the skill detail page (`gmail` in this example), which will be used for installation later.
+Using an email scenario as an example, find the `gmail` skill. It lets Hermes receive, send, and query emails. Record the skill name shown on the skill details page (in this case, `gmail`) and use it later to complete installation.
 
-![](../images/20260424-152040-78gn.png)
+![](../images/clawhub-gmail-global.png)
 
 ### 2. Enter the LightVela console
 
-Sign in to LightVela, click "My Hermes" in the upper-right corner to enter the console, and find the "Skill" button.
+Sign in to LightVela, click "My AI Partners" in the upper-right corner to enter the console, and find the "Skills" button.
 
 ### 3. Search and install
 
-Enter the recorded skill name (such as `gmail`) in the search box and click the "**Install Skill**" button.
+Enter the recorded skill name in the search box (such as `gmail`) and click the **Install Skill** button.
 
-![](../images/7-1.png)
+![](../images/clawhub-install-global-en.png)
 
 Wait a moment. After installation succeeds, the skill appears in the "Installed skills" list.
+
+![](../images/clawhub-installed-global-en.png)
 
 
 ### 4. Confirm availability in conversation
@@ -108,11 +109,11 @@ Wait a moment. After installation succeeds, the skill appears in the "Installed 
 Return to a connected channel (WeChat / Telegram / WhatsApp / Discord). First ask Hermes to update its skill list, then check the currently available skills:
 
 ```
-Update your skill list
+Please update your skill list
 ```
 
 ```
-What skills are available now?
+What skills are currently available?
 ```
 
 If the newly installed skill appears in the list, you can start using it in conversation.
@@ -121,51 +122,51 @@ If the newly installed skill appears in the list, you can start using it in conv
 
 ## Method 2: Install directly through conversation
 
-In addition to console panel operations, you can ask Hermes directly in conversation to install a skill. The skill must still be listed on SkillHub.
+In addition to using the console panel, you can also ask Hermes to install a skill directly through conversation. The skill to install still needs to be listed on ClawHub.
 
-### 1. Confirm that a conversation channel is available
+### 1. Confirm the conversation channel is available
 
 First make sure Hermes is connected to at least one channel (WeChat / Telegram / WhatsApp / Discord) and can currently chat normally.
 
 ### 2. Tell Hermes which skill to install
 
-Use the following instruction and replace `[skill name]` with the actual name on SkillHub:
+Use the command below as a reference. Tell Hermes what skill you want to install and replace `[skill name]` with the actual name from ClawHub:
 
 ```
-Help me install a skill from SkillHub. Its name is [skill name]
+Please install a skill from ClawHub. Its name is [skill name]
 ```
 
-For example, install `mcd` (McDonald's assistant):
+For example, to install `mcd` (McDonald's assistant):
 
 ```
-Help me install a skill from SkillHub. Its name is mcd
+Please install a skill from ClawHub. Its name is mcd
 ```
 
-If everything works, Hermes installs it directly and reports the result.
+If everything goes well, Hermes will complete the installation directly and tell you the result.
 
 > ⚠️ **Secondary confirmation for high-risk skills**
 > 
-> If the selected skill is marked as high-risk in SkillHub (it may contain unsafe behavior), Hermes will warn you and request secondary confirmation before installation. Continue only after you fully understand the skill behavior; if unsure, proceed cautiously.
+> If the selected skill is marked as high-risk in ClawHub (it may contain unsafe behavior), Hermes will remind you and request secondary confirmation before installation. Please make sure you fully understand the behavior of the skill before deciding whether to continue. If you are unsure, proceed with caution.
 
-### 3. Verify installation result
+### 3. Verify the installation result
 
-You can ask Hermes to view the skill usage guide to verify successful installation:
+You can ask Hermes to show how to use the skill to verify that installation succeeded:
 
 ```
-Help me check how to use it
+Please show me how to use it
 ```
 
 Or specify the skill name explicitly:
 
 ```
-Help me check how to use mcd
+Please show me how to use mcd
 ```
 
 ---
 
 ## Skill usage examples
 
-Using the `agent-browser` browser operation skill on SkillHub as an example, after installation you can ask Hermes to perform the following tasks.
+Using the `agent-browser` browser-operation skill on ClawHub as an example, after installation you can ask Hermes to perform the following tasks.
 
 > ℹ️ **Note**
 > 
@@ -174,101 +175,101 @@ Using the `agent-browser` browser operation skill on SkillHub as an example, aft
 ### Scenario 1: Browse a web page
 
 ```
-Use the browser to open example.com and summarize what is on the page
+Use the browser to visit Baidu and tell me what is on the page
 ```
 
-Hermes opens the page, reads the content, and returns it in text form.
+Hermes opens the page and returns the content in text form.
 
-### Scenario 2: Search information with the browser
+### Scenario 2: Search information through the browser
 
 ```
-Use the browser to look up today’s top 5 trending news stories
+Use the browser to look up today's top 5 trending news stories
 ```
 
 ### Scenario 3: Multi-step complex task
 
 ```
-Use the browser to search SkillHub and find which email-related skill currently has the most installs
+Use the browser to search ClawHub and find the currently most-installed email skill
 ```
 
-This task includes multiple steps such as opening a web page, waiting for loading, entering content, and clicking buttons. It is relatively complex. Hermes completes the steps and returns the result.
+This task includes multiple steps such as opening a web page, waiting for it to load, entering content, and clicking buttons. It is relatively complex. Hermes completes the steps and returns the result.
 
-![](../images/20260424-152321-dqwa.png)
+![](../images/clawhub-browser-example-global-en.png)
 
 ---
 
 ## Delete installed skills
 
-If there are installed skills you no longer use, you can ask Hermes to delete them through conversation.
+If you no longer use an installed skill, you can ask Hermes to delete it through conversation.
 
 ### 1. View currently installed skills
 
 ```
-Check which skills you currently have installed
+What skills do you currently have installed?
 ```
 
 ### 2. Request deletion of a specific skill
 
-Find the skill you want to delete and send a deletion instruction:
+Find the skill you want to delete and send a deletion command:
 
 ```
 Please delete the email skill
 ```
 
-If everything works, Hermes deletes it and reports the result.
+If everything goes well, Hermes will complete the deletion and tell you the result.
 
 > ℹ️ **Possible secondary confirmation**
 > 
-> Depending on the model used or Hermes personality settings, it may remind you to delete cautiously. Reply with confirmation according to your actual needs.
+> Depending on the model being used or Hermes's personality settings, it may remind you to be careful when deleting. Reply with confirmation according to your actual needs.
 
-### 3. Verify deletion result
+### 3. Verify the deletion result
 
-Check the currently installed skills again and confirm the target skill has been removed:
+Check the currently installed skills again and confirm the target skill has been removed from the list:
 
 ```
-Check again which skills you currently have installed
+Check again what skills you currently have installed
 ```
 
-> ℹ️ **Deletion currently supports conversation only**
+> ℹ️ **Currently only conversation-based deletion is supported**
 > 
-> LightVela uses a cloud-hosted model and does not provide a user-facing file system. Skill deletion is only supported through conversation with Hermes.
+> LightVela uses a cloud-hosted mode and does not provide user-facing file-system operations. Skills can only be deleted through conversation with Hermes.
 
 ---
 
 ## Success state
 
-- The console "Installed skills" list contains the target skill
-    
-- When related needs are raised in conversation, Hermes can correctly identify and call the skill
-    
+- The target skill appears in the "Installed skills" list in the console
+
+- When you make a related request in conversation, Hermes can correctly recognize and call the skill
+
 - The skill can be deleted normally through conversation
-    
+
 
 ---
 
 ## Installation safety tips
 
-> ⚠️ **Security check before installation**
+> ⚠️ **Safety confirmation before installation**
 
 Skills have permission to call Hermes capabilities at runtime and may involve:
 
-- Calling external APIs (consuming corresponding quota)
-    
+- Calling external APIs (consuming the corresponding quota)
+
 - Reading or sending conversation content
-    
+
 - Running scheduled operations
-    
 
-Before installation, confirm that the skill author is trustworthy. Recommended checks:
 
-- Prefer SkillHub officially verified skills
-    
-- Prefer skills with high downloads and good ratings
-    
-- Carefully read permission descriptions in the skill details
-    
+Before installation, confirm that the skill author is trustworthy. We recommend:
+
+- Prefer officially verified skills on ClawHub
+
+- Prefer skills with high downloads and good reviews
+
+- Carefully read the permission description in the skill description
+
 - Stay cautious with skills that have unclear descriptions or unfamiliar authors
-    
+
 
 ---
 
@@ -276,56 +277,56 @@ Before installation, confirm that the skill author is trustworthy. Recommended c
 
 ### Cannot find a skill
 
-**Possible cause**: The name is misspelled, or the skill has been removed from SkillHub.
+**Possible cause**: The name is misspelled, or the skill has been removed from ClawHub.
 
-**Solution**: Go to [SkillHub](https://skillhub.tencent.com) to confirm the exact skill name and current status.
+**Solution**: Go to [ClawHub](https://clawhub.ai/) to confirm the exact skill name and current status.
 
-### Installation succeeds but does not work in conversation
+### Installation succeeds but does not take effect in conversation
 
-**Possible cause**: The model did not recognize that the skill should be used, or the skill list was not refreshed.
+**Possible cause**: The model did not recognize that it should use the skill, or the skill list has not been refreshed.
 
 **Solution**:
 
-1. Send "Update your skill list" in conversation
-    
-2. Use a clearer instruction, such as "Use XX skill to complete YY"
-    
+1. Send "Please update your skill list" in the conversation
 
-### Installation shows "trigger interface rate limited, please try again later"
+2. Use a clearer instruction, such as "Use the XX skill to complete YY"
 
-**Possible cause**: SkillHub enforces API rate limits to protect service stability.
+
+### Installation says "rate limit triggered, please try again later"
+
+**Possible cause**: ClawHub applies API rate limits to protect service stability.
 
 **Solution**: Wait for a while and try again. We recommend avoiding peak hours.
 
-### Skill calls fail repeatedly
+### Skill calls keep failing
 
 **Possible causes**:
 
-- The external service required by the skill is temporarily unavailable
-    
+- External services required by the skill are temporarily unavailable
+
 - The skill version is outdated
-    
-- The corresponding model does not support the capability required by the skill (such as tool calling)
-    
+
+- The corresponding model does not support the capabilities required by the skill, such as tool calling
+
 
 **Solution**:
 
-- Check the skill comments and latest version information in SkillHub
-    
+- Check the skill's comments and latest version information in ClawHub
+
 - Try switching to a model that supports tool calling
-    
+
 - If the issue persists, contact the skill author
-    
+
 
 ### Too many installed skills make Hermes respond slowly
 
-**Possible cause**: More skills increase the Agent's decision-making burden.
+**Possible cause**: More skills increase the decision-making burden of the Agent.
 
-**Solution**: Keep only commonly used skills and delete skills that are no longer needed.
+**Solution**: Keep only commonly used skills and delete those you no longer use.
 
 ### How to develop skills
 
-See SkillHub developer documentation if provided.
+See ClawHub developer documentation (if available).
 
 ---
 
@@ -334,7 +335,7 @@ See SkillHub developer documentation if provided.
 LightVela basic configuration is complete. You can refer to:
 
 - [Configuration Overview](../05-configuration.md)
-    
+
 - [Core Concepts](../04-core-concepts.md)
-    
-- [Quickstart](../02-quickstart.md)
+
+- [Quick Start](../02-quickstart.md)

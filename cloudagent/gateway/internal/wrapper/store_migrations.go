@@ -60,6 +60,7 @@ func migrateStore(db *sql.DB) error {
 			scope_project TEXT NOT NULL,
 			scope_sandbox TEXT NOT NULL DEFAULT '',
 			cwd TEXT NOT NULL,
+			workspace_key TEXT NOT NULL DEFAULT '',
 			title TEXT NOT NULL DEFAULT '',
 			model TEXT NOT NULL,
 			state TEXT NOT NULL,
@@ -181,6 +182,8 @@ func migrateStore(db *sql.DB) error {
 				wisp_name TEXT NOT NULL DEFAULT '',
 				wisp_smh_space_id TEXT NOT NULL DEFAULT '',
 				wisp_owns_smh_space INTEGER NOT NULL DEFAULT 0,
+				workspace_wisp_name TEXT NOT NULL DEFAULT '',
+				workspace_runtime_id TEXT NOT NULL DEFAULT '',
 				wisp_package_url TEXT NOT NULL DEFAULT '',
 				wisp_jfs_prefix TEXT NOT NULL DEFAULT '',
 				wisp_root_upper_size TEXT NOT NULL DEFAULT '',
@@ -259,6 +262,26 @@ func migrateStore(db *sql.DB) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS runtime_resources_state_idx ON runtime_resources(state, expires_at)`,
 		`CREATE INDEX IF NOT EXISTS runtime_resources_owner_idx ON runtime_resources(owner_id, updated_at)`,
+		`CREATE TABLE IF NOT EXISTS warm_runtime_pool_items (
+			item_id TEXT PRIMARY KEY,
+			pool_key TEXT NOT NULL,
+			state TEXT NOT NULL,
+			owner_id TEXT NOT NULL DEFAULT '',
+			session_id TEXT NOT NULL DEFAULT '',
+			generation INTEGER NOT NULL DEFAULT 0,
+			fencing_token INTEGER NOT NULL DEFAULT 0,
+			lease_until TEXT,
+			host_json TEXT NOT NULL DEFAULT '{}',
+			last_error TEXT NOT NULL DEFAULT '',
+			workflow_id TEXT NOT NULL DEFAULT '',
+			run_id TEXT NOT NULL DEFAULT '',
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL,
+			claimed_at TEXT,
+			discarded_at TEXT
+		)`,
+		`CREATE INDEX IF NOT EXISTS warm_runtime_pool_ready_idx ON warm_runtime_pool_items(pool_key, state, updated_at)`,
+		`CREATE INDEX IF NOT EXISTS warm_runtime_pool_owner_idx ON warm_runtime_pool_items(owner_id, state, updated_at)`,
 	}
 	for _, stmt := range statements {
 		if _, err := db.Exec(stmt); err != nil {
@@ -266,6 +289,7 @@ func migrateStore(db *sql.DB) error {
 		}
 	}
 	for _, stmt := range []string{
+		`ALTER TABLE sessions ADD COLUMN workspace_key TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE session_runtimes ADD COLUMN sandbox_backend TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE session_runtimes ADD COLUMN outer_runtime TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE session_runtimes ADD COLUMN runtime_recovery TEXT NOT NULL DEFAULT ''`,
@@ -306,6 +330,8 @@ func migrateStore(db *sql.DB) error {
 		`ALTER TABLE workspaces ADD COLUMN wisp_name TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE workspaces ADD COLUMN wisp_smh_space_id TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE workspaces ADD COLUMN wisp_owns_smh_space INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE workspaces ADD COLUMN workspace_wisp_name TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE workspaces ADD COLUMN workspace_runtime_id TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE workspaces ADD COLUMN wisp_package_url TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE workspaces ADD COLUMN wisp_jfs_prefix TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE workspaces ADD COLUMN wisp_root_upper_size TEXT NOT NULL DEFAULT ''`,

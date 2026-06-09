@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -17,10 +18,11 @@ type Client struct {
 	url     string
 	headers http.Header
 
-	mu       sync.Mutex
-	promptMu sync.Mutex
-	conn     *acpconn.Conn
-	current  *promptCapture
+	mu               sync.Mutex
+	promptMu         sync.Mutex
+	conn             *acpconn.Conn
+	current          *promptCapture
+	lifecycleHandler WorkspaceLifecycleHandler
 }
 
 type PromptResult struct {
@@ -29,6 +31,26 @@ type PromptResult struct {
 	Raw        json.RawMessage
 }
 
+type RuntimeReadyResult struct {
+	Changed bool
+	Raw     json.RawMessage
+}
+
+type WorkspaceLifecycleEvent struct {
+	SessionID   string          `json:"session_id"`
+	Generation  int64           `json:"generation"`
+	Operation   string          `json:"operation"`
+	Phase       string          `json:"phase"`
+	Status      string          `json:"status"`
+	Label       string          `json:"label"`
+	ElapsedMS   int64           `json:"elapsed_ms"`
+	LifecycleID string          `json:"lifecycle_id"`
+	Timestamp   string          `json:"timestamp"`
+	Raw         json.RawMessage `json:"-"`
+}
+
+type WorkspaceLifecycleHandler func(WorkspaceLifecycleEvent)
+
 type promptCapture struct {
 	sessionID string
 	text      strings.Builder
@@ -36,6 +58,12 @@ type promptCapture struct {
 
 func NewClient(url string, headers http.Header) *Client {
 	return &Client{url: strings.TrimSpace(url), headers: headers}
+}
+
+func (c *Client) SetWorkspaceLifecycleHandler(handler WorkspaceLifecycleHandler) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.lifecycleHandler = handler
 }
 
 func (c *Client) Close() error {
@@ -55,7 +83,8 @@ func (c *Client) Initialize(ctx context.Context) error {
 		return err
 	}
 	_, err = conn.Call(ctx, "initialize", map[string]any{
-		"protocolVersion": "0.1.0",
+		"protocolVersion":    1,
+		"clientCapabilities": map[string]any{},
 		"clientInfo": map[string]any{
 			"name":    "cloudagent-channelgateway",
 			"version": "0.1.0",
@@ -64,7 +93,7 @@ func (c *Client) Initialize(ctx context.Context) error {
 	return err
 }
 
-func (c *Client) NewSession(ctx context.Context, cwd string) (string, error) {
+func (c *Client) NewSession(ctx context.Context, cwd, workspaceKey string) (string, error) {
 	conn, err := c.ensureConn(ctx)
 	if err != nil {
 		return "", err
@@ -72,9 +101,17 @@ func (c *Client) NewSession(ctx context.Context, cwd string) (string, error) {
 	if strings.TrimSpace(cwd) == "" {
 		cwd = "/workspace"
 	}
-	raw, err := conn.Call(ctx, "session/new", map[string]any{"cwd": cwd, "mcpServers": []any{}})
+	params := map[string]any{"cwd": cwd, "mcpServers": []any{}}
+	if strings.TrimSpace(workspaceKey) != "" {
+		params["_meta"] = map[string]any{
+			"cloudagent": map[string]any{
+				"workspace_key": strings.TrimSpace(workspaceKey),
+			},
+		}
+	}
+	raw, err := conn.Call(ctx, "session/new", params)
 	if err != nil {
-		c.resetConn(conn)
+		c.resetConn(conn, "session_new_failed")
 		return "", err
 	}
 	var result struct {
@@ -105,9 +142,56 @@ func (c *Client) LoadSession(ctx context.Context, sessionID, cwd string) error {
 	if err == nil {
 		conn.SetLogSID(sessionID)
 	} else {
-		c.resetConn(conn)
+		c.resetConn(conn, "session_load_failed")
 	}
 	return err
+}
+
+func (c *Client) CloseSession(ctx context.Context, sessionID string) error {
+	if strings.TrimSpace(sessionID) == "" {
+		return errors.New("missing session id")
+	}
+	c.promptMu.Lock()
+	defer c.promptMu.Unlock()
+	conn, err := c.ensureConn(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = conn.Call(ctx, "session/close", map[string]any{"sessionId": sessionID})
+	if err != nil {
+		c.resetConn(conn, "session_close_failed session_id="+sessionID)
+		return err
+	}
+	return nil
+}
+
+func (c *Client) EnsureRuntimeReady(ctx context.Context, sessionID, cwd string) (RuntimeReadyResult, error) {
+	if strings.TrimSpace(sessionID) == "" {
+		return RuntimeReadyResult{}, errors.New("missing session id")
+	}
+	conn, err := c.ensureConn(ctx)
+	if err != nil {
+		return RuntimeReadyResult{}, err
+	}
+	params := map[string]any{"session_id": sessionID}
+	if strings.TrimSpace(cwd) != "" {
+		params["cwd"] = cwd
+	}
+	raw, err := conn.Call(ctx, "_cloudagent.runtime.ensure_ready", params)
+	if err != nil {
+		c.resetConn(conn, "runtime_ensure_ready_failed session_id="+sessionID)
+		return RuntimeReadyResult{}, err
+	}
+	var result struct {
+		RuntimeEnsureReady struct {
+			Changed bool `json:"changed"`
+		} `json:"runtime_ensure_ready"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return RuntimeReadyResult{}, fmt.Errorf("decode runtime ensure_ready result: %w", err)
+	}
+	conn.SetLogSID(sessionID)
+	return RuntimeReadyResult{Changed: result.RuntimeEnsureReady.Changed, Raw: append(json.RawMessage(nil), raw...)}, nil
 }
 
 func (c *Client) Prompt(ctx context.Context, sessionID, text string) (PromptResult, error) {
@@ -143,7 +227,7 @@ func (c *Client) Prompt(ctx context.Context, sessionID, text string) (PromptResu
 		}},
 	})
 	if err != nil {
-		c.resetConn(conn)
+		c.resetConn(conn, "session_prompt_failed session_id="+sessionID)
 		return PromptResult{}, err
 	}
 	var result struct {
@@ -165,10 +249,12 @@ func (c *Client) ensureConn(ctx context.Context) (*acpconn.Conn, error) {
 	if c.url == "" {
 		return nil, errors.New("missing ACP url")
 	}
+	log.Printf("channelgateway acp_trace action=acp_ws_dial url=%s", acpLogValue(c.url))
 	dialCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	conn, err := acpconn.ConnectWSWithHeaders(dialCtx, c.url, c.headers)
 	if err != nil {
+		log.Printf("channelgateway acp_trace action=acp_ws_dial_failed url=%s error=%s", acpLogValue(c.url), acpLogValue(err.Error()))
 		return nil, err
 	}
 	conn.SetNotificationHandler(c.handleNotification)
@@ -176,23 +262,40 @@ func (c *Client) ensureConn(ctx context.Context) (*acpconn.Conn, error) {
 	if c.conn == nil {
 		c.conn = conn
 		c.mu.Unlock()
+		log.Printf("channelgateway acp_trace action=acp_ws_connected url=%s", acpLogValue(c.url))
 		return conn, nil
 	}
 	existing := c.conn
 	c.mu.Unlock()
+	log.Printf("channelgateway acp_trace action=acp_ws_dial_race url=%s", acpLogValue(c.url))
 	_ = conn.Close()
 	return existing, nil
 }
 
-func (c *Client) resetConn(conn *acpconn.Conn) {
+func (c *Client) resetConn(conn *acpconn.Conn, reason string) {
+	hadConn := false
 	c.mu.Lock()
 	if c.conn == conn {
 		c.conn = nil
+		hadConn = true
 	}
 	c.mu.Unlock()
+	log.Printf("channelgateway acp_trace action=acp_ws_reset reason=%s cleared_active_conn=%t", acpLogValue(reason), hadConn)
 	if conn != nil {
 		_ = conn.Close()
 	}
+}
+
+func acpLogValue(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "-"
+	}
+	value = strings.NewReplacer("\n", "\\n", "\r", "\\r", "\t", "\\t").Replace(value)
+	if len(value) > 160 {
+		return value[:160] + "...[truncated]"
+	}
+	return value
 }
 
 func (c *Client) handleNotification(raw json.RawMessage) error {
@@ -202,6 +305,9 @@ func (c *Client) handleNotification(raw json.RawMessage) error {
 	}
 	if err := json.Unmarshal(raw, &env); err != nil {
 		return err
+	}
+	if env.Method == "_cloudagent.workspace.lifecycle" {
+		return c.handleWorkspaceLifecycle(env.Params)
 	}
 	if env.Method != "session/update" {
 		return nil
@@ -224,6 +330,21 @@ func (c *Client) handleNotification(raw json.RawMessage) error {
 	defer c.mu.Unlock()
 	if c.current != nil && c.current.sessionID == params.SessionID {
 		_, _ = c.current.text.WriteString(text)
+	}
+	return nil
+}
+
+func (c *Client) handleWorkspaceLifecycle(raw json.RawMessage) error {
+	var event WorkspaceLifecycleEvent
+	if err := json.Unmarshal(raw, &event); err != nil {
+		return err
+	}
+	event.Raw = append(json.RawMessage(nil), raw...)
+	c.mu.Lock()
+	handler := c.lifecycleHandler
+	c.mu.Unlock()
+	if handler != nil {
+		handler(event)
 	}
 	return nil
 }

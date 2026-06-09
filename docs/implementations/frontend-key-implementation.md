@@ -710,6 +710,7 @@ const sdkProductConfig = {
     agentType: "hermes",
     supportsTencentCloudApi: false,
   }),
+  acliProduct: "lightvela", // lightvela 实例无公网 IP, SDK 据此屏蔽元宝通道
   runCommand: commandAdapter.runCommand,
   getInvocationTask: commandAdapter.getInvocationTask,
 };

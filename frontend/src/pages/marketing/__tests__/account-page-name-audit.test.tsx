@@ -162,7 +162,7 @@ describe("AccountPage nickname audit state", () => {
     expect(screen.getByText("上次头像修改未通过审核，当前仍使用原头像。")).toBeInTheDocument();
   });
 
-  it("blocks nickname updates while the UGC system is under maintenance", async () => {
+  it("submits nickname updates to the profile API", async () => {
     renderAccountPage();
 
     await userEvent.click(screen.getByRole("button", { name: "修改昵称" }));
@@ -170,22 +170,18 @@ describe("AccountPage nickname audit state", () => {
     await userEvent.type(screen.getByRole("textbox"), "新昵称");
     await userEvent.click(screen.getByRole("button", { name: "保存昵称" }));
 
-    expect(screen.getByText("UGC 系统维护中，暂时无法提交昵称或头像修改。")).toBeInTheDocument();
-    expect(updateProfile).not.toHaveBeenCalled();
+    expect(updateProfile).toHaveBeenCalledWith({ name: "新昵称" });
   });
 
-  it("blocks avatar uploads while the UGC system is under maintenance", async () => {
+  it("submits avatar uploads to the profile API", async () => {
     const { container } = renderAccountPage();
     const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]');
 
     expect(fileInput).not.toBeNull();
+    const avatarFile = new File(["avatar"], "avatar.png", { type: "image/png" });
 
-    await userEvent.upload(
-      fileInput!,
-      new File(["avatar"], "avatar.png", { type: "image/png" }),
-    );
+    await userEvent.upload(fileInput!, avatarFile);
 
-    expect(screen.getByText("UGC 系统维护中，暂时无法提交昵称或头像修改。")).toBeInTheDocument();
-    expect(uploadAvatar).not.toHaveBeenCalled();
+    expect(uploadAvatar).toHaveBeenCalledWith(avatarFile);
   });
 });

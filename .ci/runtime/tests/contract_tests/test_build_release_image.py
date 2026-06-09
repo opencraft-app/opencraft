@@ -1,5 +1,6 @@
 import sys
 import unittest
+from unittest import mock
 from pathlib import Path
 
 
@@ -9,6 +10,8 @@ if str(RUNTIME_DIR) not in sys.path:
     sys.path.insert(0, str(RUNTIME_DIR))
 
 from contracts.build_release_image import (  # noqa: E402
+    build_target,
+    docker_daemon_available,
     docker_build_command,
     playground_frontend_auth_api_base_url,
     resolve_docker_build_args,
@@ -58,6 +61,27 @@ class BuildReleaseImageTests(unittest.TestCase):
         self.assertIn("--build-arg", command)
         self.assertIn("VITE_AUTH_API_BASE_URL=https://api-sandbox-bj-7.lightclaw.tech", command)
         self.assertEqual(command[-1], "frontend")
+
+    def test_docker_daemon_unavailable_when_binary_missing(self) -> None:
+        with mock.patch("contracts.build_release_image.shutil.which", return_value=None):
+            self.assertFalse(docker_daemon_available())
+
+    def test_build_target_fails_before_build_when_docker_unavailable(self) -> None:
+        target = ImageTarget(
+            name="workers",
+            image_key=None,
+            dockerfile="workers/Dockerfile",
+            build_context="workers",
+            image_repo="registry.example.com/lightclaw/workers",
+        )
+
+        with mock.patch("contracts.build_release_image.docker_daemon_available", return_value=False), \
+            mock.patch("contracts.build_release_image.print_runner_diagnostics"), \
+            mock.patch("contracts.build_release_image.subprocess.run") as run:
+            with self.assertRaisesRegex(RuntimeError, "docker daemon unavailable"):
+                build_target(target, "workers-test", "linux/amd64", True, {})
+
+        run.assert_not_called()
 
 if __name__ == "__main__":
     unittest.main()

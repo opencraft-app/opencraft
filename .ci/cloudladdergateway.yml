@@ -11,6 +11,7 @@ on:
       - argocd/services/cloudladdergateway/**
       - argocd/apps/*/cloudladdergateway.yaml
       - argocd/secrets/*/cloudladdergateway-runtime-secrets.sops.yaml
+      - argocd/secrets/*/cloudladdergateway-callback-secrets.sops.yaml
     paths-ignore:
       - OWNERS
       - "**/OWNERS"
@@ -30,7 +31,7 @@ extends:
     DISPLAY_NAME: cloudladdergateway
     DEFAULT_TARGET_ENV: tkexgz
     MASTER_BUILD_ENVS: tkexgz,tkexsg
-    MASTER_AUTO_PIN_ENVS: none
+    MASTER_AUTO_PIN_ENVS: tkexgz,tkexsg
     ENABLE_MASTER_PROD_PROMOTE: false
     PLAYGROUND_BUILD_ENVS: none
     PLAYGROUND_AUTO_PIN_ENVS: none

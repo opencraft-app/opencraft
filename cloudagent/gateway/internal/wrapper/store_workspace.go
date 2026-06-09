@@ -44,13 +44,14 @@ func (s *Store) EnsureWorkspace(ctx context.Context, rec WorkspaceRecord) error 
 	INSERT INTO workspaces (
 		workspace_id, backend, provider_workspace_id, state, fencing_token,
 		owner_session_id, workspace_version, provider_region, wisp_name, wisp_smh_space_id,
-		wisp_owns_smh_space, wisp_package_url, wisp_jfs_prefix, wisp_root_upper_size,
+		wisp_owns_smh_space, workspace_wisp_name, workspace_runtime_id,
+		wisp_package_url, wisp_jfs_prefix, wisp_root_upper_size,
 		cleanup_state, last_cleanup_error, cleanup_retry_after,
 		delete_state, last_delete_error, delete_retry_after,
 		outer_cleanup_pending, last_outer_cleanup_error,
 		created_at, updated_at
 	)
-	VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	ON CONFLICT(workspace_id) DO UPDATE SET
 		backend = excluded.backend,
 		provider_workspace_id = excluded.provider_workspace_id,
@@ -61,6 +62,8 @@ func (s *Store) EnsureWorkspace(ctx context.Context, rec WorkspaceRecord) error 
 		wisp_name = excluded.wisp_name,
 		wisp_smh_space_id = excluded.wisp_smh_space_id,
 		wisp_owns_smh_space = excluded.wisp_owns_smh_space,
+		workspace_wisp_name = excluded.workspace_wisp_name,
+		workspace_runtime_id = excluded.workspace_runtime_id,
 		wisp_package_url = excluded.wisp_package_url,
 		wisp_jfs_prefix = excluded.wisp_jfs_prefix,
 		wisp_root_upper_size = excluded.wisp_root_upper_size,
@@ -76,7 +79,8 @@ func (s *Store) EnsureWorkspace(ctx context.Context, rec WorkspaceRecord) error 
 		deleted_at = NULL`,
 		rec.WorkspaceID, rec.Backend, rec.ProviderWorkspaceID, rec.State,
 		rec.OwnerSessionID, rec.WorkspaceVersion, rec.ProviderRegion, rec.WispName, rec.WispSMHSpaceID,
-		wispOwnsSMHSpace, rec.WispPackageURL, rec.WispJFSPrefix, rec.WispRootUpperSize,
+		wispOwnsSMHSpace, rec.WorkspaceWispName, rec.WorkspaceRuntimeID,
+		rec.WispPackageURL, rec.WispJFSPrefix, rec.WispRootUpperSize,
 		rec.CleanupState, rec.LastCleanupError, cleanupRetryAfter,
 		rec.DeleteState, rec.LastDeleteError, deleteRetryAfter,
 		outerCleanupPending, rec.LastOuterCleanupError,
@@ -411,7 +415,8 @@ func (s *Store) LoadWorkspace(ctx context.Context, workspaceID string) (Workspac
 	return scanWorkspaceRecord(s.db.QueryRowContext(ctx, `
 	SELECT workspace_id, backend, provider_workspace_id, state,
 	       owner_session_id, workspace_version, provider_region, wisp_name, wisp_smh_space_id,
-	       wisp_owns_smh_space, wisp_package_url, wisp_jfs_prefix, wisp_root_upper_size,
+	       wisp_owns_smh_space, workspace_wisp_name, workspace_runtime_id,
+	       wisp_package_url, wisp_jfs_prefix, wisp_root_upper_size,
 	       cleanup_state, last_cleanup_error, cleanup_retry_after,
 	       delete_state, last_delete_error, delete_retry_after,
 	       outer_cleanup_pending, last_outer_cleanup_error
@@ -427,7 +432,8 @@ func (s *Store) LoadWorkspaceForSession(ctx context.Context, sessionID string) (
 	return scanWorkspaceRecord(s.db.QueryRowContext(ctx, `
 	SELECT workspace_id, backend, provider_workspace_id, state,
 	       owner_session_id, workspace_version, provider_region, wisp_name, wisp_smh_space_id,
-	       wisp_owns_smh_space, wisp_package_url, wisp_jfs_prefix, wisp_root_upper_size,
+	       wisp_owns_smh_space, workspace_wisp_name, workspace_runtime_id,
+	       wisp_package_url, wisp_jfs_prefix, wisp_root_upper_size,
 	       cleanup_state, last_cleanup_error, cleanup_retry_after,
 	       delete_state, last_delete_error, delete_retry_after,
 	       outer_cleanup_pending, last_outer_cleanup_error
@@ -503,7 +509,8 @@ func scanWorkspaceRecord(row *sql.Row) (WorkspaceRecord, bool, error) {
 	err := row.Scan(
 		&rec.WorkspaceID, &rec.Backend, &rec.ProviderWorkspaceID, &rec.State,
 		&rec.OwnerSessionID, &rec.WorkspaceVersion, &rec.ProviderRegion, &rec.WispName, &rec.WispSMHSpaceID,
-		&wispOwns, &rec.WispPackageURL, &rec.WispJFSPrefix, &rec.WispRootUpperSize,
+		&wispOwns, &rec.WorkspaceWispName, &rec.WorkspaceRuntimeID,
+		&rec.WispPackageURL, &rec.WispJFSPrefix, &rec.WispRootUpperSize,
 		&rec.CleanupState, &rec.LastCleanupError, &cleanupRetryAfter,
 		&rec.DeleteState, &rec.LastDeleteError, &deleteRetryAfter,
 		&outerPending, &rec.LastOuterCleanupError,

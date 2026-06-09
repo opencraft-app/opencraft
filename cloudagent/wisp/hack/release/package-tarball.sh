@@ -163,9 +163,11 @@ else
 fi
 
 cp "$crun_source" "$stage/assets/bin/crun/crun-${goarch}"
-if [[ -d "$e2fsprogs_source" ]]; then
-  cp -R "$e2fsprogs_source/." "$stage/assets/bin/e2fsprogs/"
+if [[ ! -x "$e2fsprogs_source/bin/mke2fs" || ! -x "$e2fsprogs_source/bin/e2fsck" ]]; then
+  echo "missing packaged e2fsprogs; expected executable mke2fs/e2fsck under $e2fsprogs_source/bin" >&2
+  exit 2
 fi
+cp -R "$e2fsprogs_source/." "$stage/assets/bin/e2fsprogs/"
 if [[ -f "$tini_source" ]]; then
   cp "$tini_source" "$stage/assets/bin/tini/tini"
 fi
@@ -189,6 +191,11 @@ chmod +x \
   "$stage/scripts/install.sh" \
   "$stage/bin/"* \
   "$stage/juicefs/hack/"*.sh
+
+# EROFS preserves directory permissions exactly. The package is mounted by
+# root, then consumed by the sandbox user, so every package directory must be
+# traversable without relying on root privileges.
+chmod -R a+rX "$stage"
 
 mkdir -p "$out_dir"
 tar_out=""
@@ -225,6 +232,7 @@ if [[ "$package_erofs" == "1" ]]; then
     "$erofs_image" sh -ceu '
       printf "%s\n%s\n" "'"$erofs_apk_repository"'/main" "'"$erofs_apk_repository"'/community" > /etc/apk/repositories
       apk add --no-cache erofs-utils >/dev/null
+      chmod -R a+rX "/dist/'"$pkg"'"
       mkfs.erofs -z"$WISP_EROFS_COMPRESSION" "/dist/'"$pkg"'.erofs" "/dist/'"$pkg"'" >/dev/null
     '
 fi

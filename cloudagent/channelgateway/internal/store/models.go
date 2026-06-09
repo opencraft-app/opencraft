@@ -29,7 +29,10 @@ type Conversation struct {
 	ThreadID               string
 	AgentID                string
 	ACPSessionID           string
+	WorkspaceKey           string
 	SessionKey             string
+	RuntimeClosedAt        string
+	UpdatedAt              string
 }
 
 type MessageRecord struct {
@@ -42,6 +45,11 @@ type MessageRecord struct {
 	Direction              string
 	Status                 string
 	PayloadJSON            string
+	ClaimOwnerID           string
+	ClaimFencingToken      int64
+	RetryCount             int
+	NextRetryAt            time.Time
+	LastError              string
 }
 
 type OutboxRecord struct {

@@ -32,6 +32,25 @@ func TestReadyzAllowsUnauthenticatedProbe(t *testing.T) {
 	}
 }
 
+func TestReadyzFailsWhileServerIsDraining(t *testing.T) {
+	srv, _ := newTestServer(t, FakeWorker{})
+	srv.StartDraining()
+
+	resp := request(t, srv, http.MethodGet, "/readyz", "", "", nil, "")
+
+	if resp.Code != http.StatusServiceUnavailable {
+		t.Fatalf("readyz status=%d body=%s", resp.Code, resp.Body.String())
+	}
+	if body := resp.Body.String(); !strings.Contains(body, "server is draining") {
+		t.Fatalf("readyz body missing draining reason: %s", body)
+	}
+
+	health := request(t, srv, http.MethodGet, "/healthz", "", "", nil, "")
+	if health.Code != http.StatusOK || health.Body.String() != "ok\n" {
+		t.Fatalf("healthz should stay live while draining, status=%d body=%s", health.Code, health.Body.String())
+	}
+}
+
 func TestReadyzAgentSidecarRequiresWispConfig(t *testing.T) {
 	agsClient := &AGSClient{
 		apiKey:         "ags-key",
@@ -69,6 +88,49 @@ func TestReadyzAgentSidecarRequiresWispConfig(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Fatalf("readyz body missing %q: %s", want, body)
 		}
+	}
+}
+
+func TestReadyzRequiresWarmPoolSharedStoreConfirmation(t *testing.T) {
+	t.Setenv("GATEWAY_RUNTIME_WARM_POOL_SHARED_STORE_CONFIRMED", "")
+	agsClient := &AGSClient{
+		apiKey:         "ags-key",
+		apiURL:         "https://api.ap-shanghai.tencentags.com",
+		domain:         "ap-shanghai.tencentags.com",
+		httpClient:     http.DefaultClient,
+		requestTimeout: time.Second,
+	}
+	store, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker, err := NewAgentSidecarWorker(AgentSidecarWorkerConfig{
+		Client:               agsClient,
+		OuterTemplateID:      "outer-template",
+		InnerTemplateID:      "inner-template",
+		SidecarURL:           "https://example.invalid/sidecar",
+		SidecarSHA256:        strings.Repeat("a", 64),
+		TokenHubAPIKey:       "tokenhub-key",
+		OuterRuntime:         outerRuntimeWisp,
+		WispPackageURL:       "https://example.invalid/wisp.tgz",
+		WispSMHLibraryID:     "smh-library",
+		WispSMHAccessDomain:  "https://smh.example.com",
+		WispSMHLibrarySecret: "smh-secret",
+		WorkspaceService:     store,
+		RuntimePool:          store,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv, _ := newTestServer(t, worker)
+
+	resp := request(t, srv, http.MethodGet, "/readyz", "", "", nil, "")
+
+	if resp.Code != http.StatusServiceUnavailable {
+		t.Fatalf("readyz status=%d body=%s", resp.Code, resp.Body.String())
+	}
+	if body := resp.Body.String(); !strings.Contains(body, "GATEWAY_RUNTIME_WARM_POOL_SHARED_STORE_CONFIRMED") {
+		t.Fatalf("readyz body missing warm pool shared store failure: %s", body)
 	}
 }
 

@@ -51,6 +51,150 @@ func TestHealthzReportsCurrentLeaseState(t *testing.T) {
 	}
 }
 
+func TestHealthzPreservesRunnerStatusAcrossLeaseRenewal(t *testing.T) {
+	state := newChannelRuntimeStates()
+	state.SetLease(store.ChannelLease{
+		ChannelAccountID: "wecom-a",
+		OwnerID:          "owner-a",
+		FencingToken:     1,
+		ExpiresAt:        time.Date(2026, 6, 3, 1, 0, 0, 0, time.UTC),
+	})
+	state.SetStatus("wecom-a", "running")
+	state.SetLease(store.ChannelLease{
+		ChannelAccountID: "wecom-a",
+		OwnerID:          "owner-a",
+		FencingToken:     1,
+		ExpiresAt:        time.Date(2026, 6, 3, 1, 1, 0, 0, time.UTC),
+	})
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	rec := httptest.NewRecorder()
+	healthHandler(config.Config{OwnerID: "owner-a"}, state).ServeHTTP(rec, req)
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	accounts := body["wecom_accounts"].([]any)
+	account := accounts[0].(map[string]any)
+	if account["status"] != "running" {
+		t.Fatalf("lease renewal should not clobber runner status: %#v", body)
+	}
+}
+
+func TestReadyzRequiresReadyAccountAndRejectsDraining(t *testing.T) {
+	state := newChannelRuntimeStates()
+	lifecycle := newRuntimeLifecycle()
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+
+	rec := httptest.NewRecorder()
+	readyHandler(config.Config{OwnerID: "owner-a"}, state, lifecycle).ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("readyz without running account code=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	state.SetLease(store.ChannelLease{
+		ChannelAccountID: "wecom-a",
+		OwnerID:          "owner-a",
+		FencingToken:     1,
+		ExpiresAt:        time.Date(2026, 6, 3, 1, 0, 0, 0, time.UTC),
+	})
+	state.SetStatus("wecom-a", "running")
+	rec = httptest.NewRecorder()
+	readyHandler(config.Config{OwnerID: "owner-a"}, state, lifecycle).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("readyz with running account code=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	lifecycle.StartDraining("test")
+	rec = httptest.NewRecorder()
+	readyHandler(config.Config{OwnerID: "owner-a"}, state, lifecycle).ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("readyz while draining code=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "draining") {
+		t.Fatalf("readyz draining body should include reason: %s", rec.Body.String())
+	}
+}
+
+func TestReadyzAcceptsStandbyLeaseHeldAccount(t *testing.T) {
+	state := newChannelRuntimeStates()
+	state.SetStandbyLeaseHeld("wecom-a", store.LeaseHeldError{
+		ChannelAccountID: "wecom-a",
+		OwnerID:          "owner-old",
+		ExpiresAt:        time.Date(2026, 6, 3, 1, 0, 0, 0, time.UTC),
+	})
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	rec := httptest.NewRecorder()
+	readyHandler(config.Config{OwnerID: "owner-new"}, state, newRuntimeLifecycle()).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("standby lease-held pod should be ready for rolling update handoff, code=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "standby_lease_held") {
+		t.Fatalf("readyz should expose standby state: %s", rec.Body.String())
+	}
+}
+
+func TestDrainzRequiresLoopbackAndStartsDraining(t *testing.T) {
+	lifecycle := newRuntimeLifecycle()
+	drained := make(chan string, 1)
+	handler := drainHandler(lifecycle, func(reason string) {
+		drained <- reason
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/drainz", nil)
+	req.RemoteAddr = "127.0.0.1:1234"
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("GET /drainz code=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/drainz", nil)
+	req.RemoteAddr = "10.0.0.1:1234"
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("non-loopback /drainz code=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/drainz", nil)
+	req.RemoteAddr = "127.0.0.1:1234"
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("loopback /drainz code=%d body=%s", rec.Code, rec.Body.String())
+	}
+	select {
+	case reason := <-drained:
+		if reason != "pre_stop" {
+			t.Fatalf("unexpected drain reason: %s", reason)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("drain callback was not called")
+	}
+	draining, reason, startedAt := lifecycle.Draining()
+	if !draining || reason != "pre_stop" || startedAt == "" {
+		t.Fatalf("expected draining lifecycle after /drainz, draining=%v reason=%q started_at=%q body=%s", draining, reason, startedAt, rec.Body.String())
+	}
+}
+
+func TestIsLoopbackRemote(t *testing.T) {
+	cases := []struct {
+		remote string
+		want   bool
+	}{
+		{remote: "127.0.0.1:1234", want: true},
+		{remote: "[::1]:1234", want: true},
+		{remote: "localhost:1234", want: false},
+		{remote: "10.0.0.1:1234", want: false},
+		{remote: "invalid", want: false},
+	}
+	for _, tc := range cases {
+		if got := isLoopbackRemote(tc.remote); got != tc.want {
+			t.Fatalf("isLoopbackRemote(%q) = %v, want %v", tc.remote, got, tc.want)
+		}
+	}
+}
+
 func TestRedactDBTargetMasksCredentials(t *testing.T) {
 	cases := []struct {
 		name      string

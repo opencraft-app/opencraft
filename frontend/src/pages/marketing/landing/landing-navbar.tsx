@@ -49,7 +49,7 @@ function useNavLinks(): NavLink[] {
   const t = useT();
   return [
     { label: t("概览"), href: "/" },
-    { label: t("更新日志"), href: "/changelog" },
+    ...(!isGlobal ? [{ label: t("更新日志"), href: "/changelog" }] : []),
     { label: t("产品文档"), href: "/docs" },
     { label: t("关于我们"), href: "/about" },
     /* 养虾博客：暂未开张，先隐藏入口；博客上线后去掉注释即可 */

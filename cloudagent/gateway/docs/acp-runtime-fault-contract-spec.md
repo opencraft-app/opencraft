@@ -213,6 +213,34 @@ Rules:
 
 ## 9. Close, Resume, Delete Contract
 
+### 9.0 Workspace Pair Identity
+
+In Wisp mode, a CloudAgent workspace is a strong logical pair:
+
+- the outer Wisp runtime that hosts the agent sidecar and runtime store
+- the inner Wisp workspace runtime that hosts `/workspace` tools, file transfer, and command execution
+
+The pair has one stable logical workspace identity. Unless the user explicitly calls `/reset` or `session/delete`, the following values must remain bound to the same logical session across `session/close`, `session/load`, `session/resume`, `_cloudagent.runtime.ensure_ready`, gateway restart, sidecar restart, and sandbox recreation:
+
+- `workspace_key`
+- `WorkspaceRecord.workspace_id`
+- outer Wisp/SMH anchor (`wisp_smh_space_id`)
+- inner Wisp name (`workspace_wisp_name`)
+- inner workspace runtime id (`workspace_runtime_id`)
+
+The inner workspace id must never be re-derived from the resolved outer SMH space as a fallback. The outer SMH space is an implementation detail of the outer runtime host; using it as the inner workspace identity can make transcript/history recover while `/workspace` points at a different filesystem.
+
+When recovery is driven by `WorkspaceRecord`, Gateway must hydrate both outer and inner pair metadata before starting or binding runtime hosts. A recovery that recreates only the outer runtime but rotates the inner workspace identity is not well-done.
+
+Wisp package artifacts are also part of this lifecycle contract. A package is valid only if mounted or extracted package contents expose executable runtime binaries, including:
+
+- `bin/wisp`
+- `bin/wispclient`
+- `assets/bin/crun/crun-$GOARCH`
+- `assets/bin/tini/tini`
+
+For EROFS packages, runtime hosts must mount with executable semantics. A `noexec` EROFS mount is equivalent to an invalid runtime package because sidecar preparation cannot start Wisp or copy `crun` into the shared runtime tools path.
+
 ### 9.1 `session/close`
 
 `session/close` means store/detach, not destroy the logical workspace.
