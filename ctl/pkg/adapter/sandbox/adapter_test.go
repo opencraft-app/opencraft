@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"ctl/pkg/config"
+	pctx "ctl/pkg/context"
 	"go.uber.org/zap"
 )
 
@@ -115,5 +116,58 @@ func TestStartTerminalSessionUsesSandboxTatSessionEndpoint(t *testing.T) {
 	}
 	if session.SessionID != "sess-1" || session.WsURL != "wss://tat.example.test/ws" {
 		t.Fatalf("unexpected session: %+v", session)
+	}
+}
+
+func TestStartTerminalSessionForwardsUserSessionAuth(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer user-session-token" {
+			t.Fatalf("unexpected authorization header: %q", got)
+		}
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(TerminalSession{
+			SandboxID: "sbx-123",
+			SessionID: "sess-1",
+			WsURL:     "wss://tat.example.test/ws",
+		})
+	}))
+	defer server.Close()
+
+	adapter := NewSandboxAdapter(&config.SandboxConfig{
+		BaseURL: server.URL,
+		APIKey:  "test-api-key",
+		Timeout: 1,
+	}, zap.NewNop())
+	ctx := pctx.NewContext(t.Context()).WithSessionAuth("Bearer user-session-token", "")
+	if _, err := adapter.StartTerminalSession(ctx, "sbx-123"); err != nil {
+		t.Fatalf("start terminal session: %v", err)
+	}
+}
+
+func TestStartTerminalSessionForwardsSessionCookieWhenBearerMissing(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Cookie"); got != "lc_session=cookie-token" {
+			t.Fatalf("unexpected cookie header: %q", got)
+		}
+		if got := r.Header.Get("Authorization"); got != "" {
+			t.Fatalf("expected empty authorization header, got %q", got)
+		}
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(TerminalSession{
+			SandboxID: "sbx-123",
+			SessionID: "sess-1",
+			WsURL:     "wss://tat.example.test/ws",
+		})
+	}))
+	defer server.Close()
+
+	adapter := NewSandboxAdapter(&config.SandboxConfig{
+		BaseURL: server.URL,
+		APIKey:  "test-api-key",
+		Timeout: 1,
+	}, zap.NewNop())
+	ctx := pctx.NewContext(t.Context()).WithSessionAuth("", "lc_session=cookie-token")
+	if _, err := adapter.StartTerminalSession(ctx, "sbx-123"); err != nil {
+		t.Fatalf("start terminal session: %v", err)
 	}
 }

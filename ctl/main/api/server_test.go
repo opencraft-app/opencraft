@@ -1477,6 +1477,43 @@ func TestStartTerminalSessionUsesBotScopedRoute(t *testing.T) {
 	}
 }
 
+func TestNewRequestContextCapturesSessionAuthorization(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/v1/instances/ins-1/tat/session", nil)
+	req.Header.Set(headerUserID, "user-1")
+	req.Header.Set("Authorization", "Bearer user-session-token")
+
+	ctx, ok := newRequestContext(req)
+	if !ok {
+		t.Fatal("expected request context")
+	}
+	if ctx.GetUserID() != "user-1" {
+		t.Fatalf("unexpected user id: %s", ctx.GetUserID())
+	}
+	if ctx.GetSessionAuthorization() != "Bearer user-session-token" {
+		t.Fatalf("unexpected authorization: %q", ctx.GetSessionAuthorization())
+	}
+	if ctx.GetSessionCookie() != "" {
+		t.Fatalf("expected empty session cookie, got %q", ctx.GetSessionCookie())
+	}
+}
+
+func TestNewRequestContextCapturesSessionCookie(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/v1/instances/ins-1/tat/session", nil)
+	req.Header.Set(headerUserID, "user-1")
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "cookie-token"})
+
+	ctx, ok := newRequestContext(req)
+	if !ok {
+		t.Fatal("expected request context")
+	}
+	if ctx.GetSessionAuthorization() != "" {
+		t.Fatalf("expected empty authorization, got %q", ctx.GetSessionAuthorization())
+	}
+	if ctx.GetSessionCookie() != "lc_session=cookie-token" {
+		t.Fatalf("unexpected session cookie: %q", ctx.GetSessionCookie())
+	}
+}
+
 func TestExecDebugCommandStreamsSSE(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/v1/instances/ins-1/debug/exec", strings.NewReader(`{"command":"echo hello","run_as_user":"agentuser"}`))
 	req.Header.Set(headerUserID, "user-1")

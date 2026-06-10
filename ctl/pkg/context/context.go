@@ -2,6 +2,7 @@ package context
 
 import (
 	"context"
+	"strings"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -37,6 +38,10 @@ type Context interface {
 
 	SetSqlCommentUserID(userID string)
 	GetSqlCommentUserID() string
+
+	WithSessionAuth(authorization, sessionCookie string) Context
+	GetSessionAuthorization() string
+	GetSessionCookie() string
 }
 
 type defaultContext struct {
@@ -54,6 +59,9 @@ type defaultContext struct {
 
 	action           string
 	sqlCommentUserID string
+
+	sessionAuthorization string
+	sessionCookie        string
 }
 
 type userInfo struct {
@@ -157,18 +165,35 @@ func (c *defaultContext) SetRequestId(requestID string) {
 	}
 }
 
+func (c *defaultContext) WithSessionAuth(authorization, sessionCookie string) Context {
+	cc := c.copy()
+	cc.sessionAuthorization = strings.TrimSpace(authorization)
+	cc.sessionCookie = strings.TrimSpace(sessionCookie)
+	return cc
+}
+
+func (c *defaultContext) GetSessionAuthorization() string {
+	return c.sessionAuthorization
+}
+
+func (c *defaultContext) GetSessionCookie() string {
+	return c.sessionCookie
+}
+
 func (c *defaultContext) copy() *defaultContext {
 	return &defaultContext{
-		Context:          c.Context,
-		account:          c.account,
-		region:           c.region,
-		language:         c.language,
-		requestId:        c.requestId,
-		logger:           c.logger,
-		baseLogger:       c.baseLogger,
-		gormDB:           c.gormDB,
-		action:           c.action,
-		sqlCommentUserID: c.sqlCommentUserID,
+		Context:              c.Context,
+		account:              c.account,
+		region:               c.region,
+		language:             c.language,
+		requestId:            c.requestId,
+		logger:               c.logger,
+		baseLogger:           c.baseLogger,
+		gormDB:               c.gormDB,
+		action:               c.action,
+		sqlCommentUserID:     c.sqlCommentUserID,
+		sessionAuthorization: c.sessionAuthorization,
+		sessionCookie:        c.sessionCookie,
 	}
 }
 

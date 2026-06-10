@@ -36,10 +36,11 @@ import (
 )
 
 const (
-	headerUserID    = "X-User-Id"
-	headerUserIDAlt = "X-Uin"
-	headerRequestID = "X-Request-Id"
-	headerTraceID   = "X-Trace-Id"
+	headerUserID      = "X-User-Id"
+	headerUserIDAlt   = "X-Uin"
+	headerRequestID   = "X-Request-Id"
+	headerTraceID     = "X-Trace-Id"
+	sessionCookieName = "lc_session"
 )
 
 type apiServer struct {
@@ -1124,6 +1125,10 @@ func newRequestContext(r *http.Request) (pctx.Context, bool) {
 	}
 
 	ctx = ctx.WithUserID(userID)
+	authHeader, cookieHeader := extractSessionAuth(r)
+	if authHeader != "" || cookieHeader != "" {
+		ctx = ctx.WithSessionAuth(authHeader, cookieHeader)
+	}
 	ctx.SetSqlCommentUserID(userID)
 	ctx.SetLogger(buildRequestLogger(ctx, r, userID))
 	return ctx, true
@@ -1297,6 +1302,20 @@ func requestUserID(r *http.Request) string {
 		userID = strings.TrimSpace(r.Header.Get(headerUserIDAlt))
 	}
 	return userID
+}
+
+func extractSessionAuth(r *http.Request) (authorization, sessionCookie string) {
+	if r == nil {
+		return "", ""
+	}
+	authHeader := strings.TrimSpace(r.Header.Get("Authorization"))
+	if strings.HasPrefix(strings.ToLower(authHeader), "bearer ") {
+		return authHeader, ""
+	}
+	if cookie, err := r.Cookie(sessionCookieName); err == nil {
+		return "", (&http.Cookie{Name: sessionCookieName, Value: cookie.Value}).String()
+	}
+	return "", ""
 }
 
 func requestContextFromRequest(r *http.Request) (pctx.Context, bool) {
