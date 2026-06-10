@@ -6,6 +6,7 @@ import { useOpenClaw } from "@/contexts/openclaw-context";
 import { useSession } from "@/contexts/session-context";
 import { useT } from "@/i18n/t";
 import { avatarImageUrl } from "@/lib/avatar-image";
+import { AGENTS_HOME_PATH } from "@/router/paths";
 
 export const UserAvatarMenu = () => {
   const { session, signOut } = useSession();
@@ -92,7 +93,7 @@ export const UserAvatarMenu = () => {
             {/* Menu items */}
             <div className="py-1.5">
               <Link
-                to="/agents"
+                to={AGENTS_HOME_PATH}
                 onClick={() => setOpen(false)}
                 className="flex items-center gap-2.5 px-4 py-2.5 text-sm font-normal text-[var(--text-secondary)] transition-all duration-250 hover:bg-[var(--surface-muted)] hover:text-[var(--text-primary)]"
               >

@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 
 import { LegalFooter } from "@/components/site/legal-footer";
 import { useT } from "@/i18n/t";
+import { AGENTS_HOME_PATH, getAgentCreatingPath } from "@/router/paths";
 import { fadeInUp, staggerContainer, titleReveal, viewportConfig } from "./constants";
 
 export function CTAFooterSection({
@@ -27,7 +28,7 @@ export function CTAFooterSection({
     }
     if (isSubscribed) {
       /* 已订阅：直接进入我的龙虾页面（无龙虾时自动创建） */
-    navigate(hasBots ? "/agents" : "/agents?creating=true");
+      navigate(hasBots ? AGENTS_HOME_PATH : getAgentCreatingPath(true));
     } else {
       /* 未订阅：去选套餐 */
       navigate("/subscribe");

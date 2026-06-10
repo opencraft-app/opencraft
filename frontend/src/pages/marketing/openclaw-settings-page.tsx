@@ -61,6 +61,12 @@ import { avatarImageUrl } from "@/lib/avatar-image";
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
 import { readStoredAuthToken } from "@/repositories/http-repositories";
 import {
+  AGENTS_HOME_PATH,
+  AGENT_SECTION_PATH_BY_ID,
+  getAgentSectionFromSlug,
+  type AgentSectionId,
+} from "@/router/paths";
+import {
   ModelPanel,
   ChannelPanel,
   SkillPanel,
@@ -368,43 +374,10 @@ const SettingsNavbar = () => {
   );
 };
 
-/* ─── 实例配置子页面类型（通道 / 模型 / 技能 / 人设 / 自动任务 / 记忆 / 成就 / 对话，放在单个 bot 内部切换） ─── */
-
-type SettingsSectionId = "channel" | "model" | "skill" | "buddy" | "automations" | "memory" | "achievement" | "chat" | "files";
-
 const SHOW_AGENTCHAT_ENTRY = true;
-const AGENTS_HOME_PATH = "/agents";
-const DEFAULT_AGENT_SECTION: SettingsSectionId = "channel";
-const AGENT_SECTION_PATH_BY_ID: Record<SettingsSectionId, string> = {
-  channel: "/agents/channels",
-  model: "/agents/models",
-  skill: "/agents/skills",
-  buddy: "/agents/persona",
-  automations: "/agents/automations",
-  memory: "/agents/memory",
-  achievement: "/agents/achievements",
-  files: "/agents/files",
-  chat: "/agents/chat",
-};
+const DEFAULT_AGENT_SECTION: AgentSectionId = "channel";
 
-const AGENT_SECTION_ID_BY_SLUG: Record<string, SettingsSectionId> = {
-  channels: "channel",
-  models: "model",
-  skills: "skill",
-  persona: "buddy",
-  automations: "automations",
-  memory: "memory",
-  achievements: "achievement",
-  files: "files",
-  chat: "chat",
-};
-
-const getAgentSectionFromSlug = (slug?: string): SettingsSectionId | null => {
-  if (!slug) return null;
-  return AGENT_SECTION_ID_BY_SLUG[slug] ?? null;
-};
-
-const isAgentSectionAvailable = (section: SettingsSectionId | null): section is SettingsSectionId => {
+const isAgentSectionAvailable = (section: AgentSectionId | null): section is AgentSectionId => {
   if (!section) return false;
   if (isGlobal && (section === "buddy" || section === "chat")) return false;
   return true;
@@ -3875,7 +3848,7 @@ export const OpenClawSettingsPage = () => {
                 runCommand: commandAdapter.runCommand,
                 getInvocationTask: commandAdapter.getInvocationTask,
               };
-              const settingsSections: { id: SettingsSectionId; label: string; icon: React.ReactNode; path: string; badge?: string }[] = [
+              const settingsSections: { id: AgentSectionId; label: string; icon: React.ReactNode; path: string; badge?: string }[] = [
                 { id: "channel", label: t("通道"), icon: <MessageCircle className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.channel },
                 { id: "model", label: t("模型"), icon: <BrainCircuit className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.model },
                 { id: "skill", label: t("技能"), icon: <Wand2 className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.skill },

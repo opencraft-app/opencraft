@@ -4,6 +4,7 @@ import { MarketingLayout } from "@/layouts/marketing-layout";
 import { RootLayout } from "@/layouts/root-layout";
 import { LandingPage } from "@/pages/marketing/landing-page";
 import { lazyNamed, lazyRoute } from "@/router/lazy-page";
+import { AGENTS_HOME_PATH } from "@/router/paths";
 import { AppAccessGuard, AuthenticatedGuard, AuthRouteGuard, MarketingAuthGuard, PlanGuard } from "@/router/guards";
 import { isGlobal } from "@/lib/region";
 
@@ -42,7 +43,7 @@ const NotFoundPage = () => (
 
 const RedirectToAgents = () => {
   const location = useLocation();
-  return <Navigate to={{ pathname: "/agents", search: location.search }} replace />;
+  return <Navigate to={{ pathname: AGENTS_HOME_PATH, search: location.search }} replace />;
 };
 
 export const router = createBrowserRouter([
@@ -262,7 +263,7 @@ export const router = createBrowserRouter([
           },
           {
             path: "*",
-            element: <Navigate to="/agents" replace />,
+            element: <Navigate to={AGENTS_HOME_PATH} replace />,
           },
         ],
       },

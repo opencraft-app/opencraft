@@ -2,6 +2,7 @@ import { MemoryRouter } from "react-router-dom";
 import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { MarketingHeaderActions } from "@/components/site/marketing-header-actions";
+import { AGENTS_HOME_PATH } from "@/router/paths";
 
 describe("MarketingHeaderActions", () => {
   it("shows a single primary action for anonymous visitors", () => {
@@ -28,7 +29,7 @@ describe("MarketingHeaderActions", () => {
     );
 
     expect(screen.getByText("海盐小猫")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "进入控制台" })).toHaveAttribute("href", "/agents");
+    expect(screen.getByRole("link", { name: "进入控制台" })).toHaveAttribute("href", AGENTS_HOME_PATH);
     expect(screen.getByRole("button", { name: "退出" })).toBeInTheDocument();
   });
 

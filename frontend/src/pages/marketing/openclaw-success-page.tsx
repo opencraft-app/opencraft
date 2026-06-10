@@ -10,6 +10,7 @@ import { BrandMark } from "@/components/site/brand-mark";
 import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
 import { avatarImageUrl } from "@/lib/avatar-image";
 import { assetUrl } from "@/lib/asset-url";
+import { AGENTS_HOME_PATH } from "@/router/paths";
 
 /* ─── Navbar ─── */
 
@@ -538,7 +539,7 @@ export const OpenClawSuccessPage = () => {
               className="flex w-full flex-col items-center gap-4"
             >
               <Link
-                to="/agents"
+                to={AGENTS_HOME_PATH}
                 className="lw-btn-primary w-full max-w-md justify-center"
               >
                 <Bot className="h-4 w-4" />

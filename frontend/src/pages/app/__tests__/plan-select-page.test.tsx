@@ -71,6 +71,6 @@ describe("PlanSelectPage", () => {
     await waitFor(() => {
       expect(mockSelectPlan).toHaveBeenCalledWith("free");
     });
-    expect(mockNavigate).toHaveBeenCalledWith("/subscribe", { replace: true });
+    expect(mockNavigate).toHaveBeenCalledWith("/dashboard/settings", { replace: true });
   });
 });

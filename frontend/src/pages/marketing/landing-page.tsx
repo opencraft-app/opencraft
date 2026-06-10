@@ -12,6 +12,7 @@ import { LoginModal, InviteCodeModal } from "@/components/site/login-modal";
 import { useSession } from "@/contexts/session-context";
 import { useOpenClaw } from "@/contexts/openclaw-context";
 import { oauthErrorMessage } from "@/lib/oauth";
+import { AGENTS_HOME_PATH, getAgentCreatingPath } from "@/router/paths";
 
 import { LandingNavbar } from "./landing/landing-navbar";
 import { HeroSection } from "./landing/hero-section";
@@ -81,7 +82,7 @@ export const LandingPage = () => {
       <LoginModal open={showLogin} onClose={handleCloseLogin} initialError={loginErrorMessage} onSuccess={() => {
         if (isSubscribed) {
           /* 已订阅：直接进入我的龙虾页面（无龙虾时自动创建） */
-    navigate(hasBots ? "/agents" : "/agents?creating=true");
+          navigate(hasBots ? AGENTS_HOME_PATH : getAgentCreatingPath(true));
         } else {
           /* 未订阅：去选套餐 */
           navigate("/subscribe");

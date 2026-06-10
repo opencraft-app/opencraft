@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { StatePanel } from "@/components/ui/state-panel";
 import { GrammarCanvas, GrammarPageIntro, GrammarSectionCard } from "@/components/site/homepage-grammar";
 import { useRepositories } from "@/contexts/repository-context";
+import { AGENTS_HOME_PATH } from "@/router/paths";
 import { useAsyncResource } from "@/services/use-async-resource";
 
 export const SettingsPage = () => {
@@ -57,10 +58,10 @@ export const SettingsPage = () => {
             actions={(
               <>
                 <Button asChild>
-                  <Link to={id ? `/bots/${id}/terminal` : "/agents"}>打开终端</Link>
+                  <Link to={id ? `/bots/${id}/terminal` : AGENTS_HOME_PATH}>打开终端</Link>
                 </Button>
                 <Button asChild variant="outline">
-                  <Link to={id ? `/bots/${id}/workspace` : "/agents"}>返回工作台</Link>
+                  <Link to={id ? `/bots/${id}/workspace` : AGENTS_HOME_PATH}>返回工作台</Link>
                 </Button>
               </>
             )}

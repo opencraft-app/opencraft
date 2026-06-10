@@ -6,6 +6,7 @@ import { useNavigate } from "react-router-dom";
 import { useT } from "@/i18n/t";
 
 import { assetUrl } from "@/lib/asset-url";
+import { AGENTS_HOME_PATH, getAgentCreatingPath } from "@/router/paths";
 import { fadeInUp, staggerContainer, wordStagger, wordReveal, heroFloatStagger, heroFloatUp, HERO_FLOAT_LOOP_DELAY } from "./constants";
 
 /* 社交证明头像（Figma 导出 104x104 PNG，显示尺寸 40x40，Retina 清晰，总计 ~50KB） */
@@ -84,7 +85,7 @@ export function HeroSection({
     }
     if (isSubscribed) {
       /* 已订阅：直接进入我的龙虾页面（无龙虾时自动创建） */
-    navigate(hasBots ? "/agents" : "/agents?creating=true");
+      navigate(hasBots ? AGENTS_HOME_PATH : getAgentCreatingPath(true));
     } else {
       /* 未订阅：去选套餐 */
       navigate("/subscribe");

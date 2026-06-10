@@ -13,6 +13,7 @@ import { RepositoryError } from "@/repositories/http-repositories";
 import type { Bundle } from "@/domain/types";
 import { useT } from "@/i18n/t";
 import { isGlobal } from "@/lib/region";
+import { AGENTS_HOME_PATH, getAgentCreatingPath } from "@/router/paths";
 
 /* ─── Notion DESIGN.md Tokens ─── */
 
@@ -1260,7 +1261,7 @@ export const SubscribePage = () => {
       setModalStep("closed");
       setSelectedPlan(null);
       /* 3. 跳转到管理页，由管理页轮询真实后端状态，Running 后才交付 */
-      navigate(`/agents?creating=${encodeURIComponent(createdBot.id)}`);
+      navigate(getAgentCreatingPath(createdBot.id));
     } catch (err) {
       const fallbackMsg = err instanceof Error ? err.message : t("创建失败，请稍后重试。");
       const code = err instanceof RepositoryError ? err.code : (err as Error & { code?: string })?.code;
@@ -1375,7 +1376,7 @@ export const SubscribePage = () => {
               {t("当前 {{plan}} 套餐最多可创建 {{max}} 个 Hermes，你已达到上限。", { plan: user.plan.name, max: user.plan.maxBots })}
             </p>
             <Link
-              to="/agents"
+              to={AGENTS_HOME_PATH}
               style={{
                 display: "inline-flex",
                 alignItems: "center",

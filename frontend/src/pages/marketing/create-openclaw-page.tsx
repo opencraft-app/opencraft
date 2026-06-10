@@ -11,6 +11,7 @@ import { useT } from "@/i18n/t";
 import type { SoulTemplate } from "@/repositories/types";
 import { BrandMark } from "@/components/site/brand-mark";
 import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
+import { AGENTS_HOME_PATH } from "@/router/paths";
 
 /* ─── Constants ─── */
 
@@ -153,7 +154,7 @@ export const CreateOpenClawPage = () => {
             <h2 className="mb-4 text-xl font-bold" style={{ color: "#333" }}>{t("已达创建上限")}</h2>
             <p className="mb-10 whitespace-nowrap text-sm leading-relaxed" style={{ color: "#999" }}>{t("当前 {{plan}} 套餐最多可创建 {{max}} 个 Hermes，你已达到上限。", { plan: user.plan.name, max: user.plan.maxBots })}</p>
             <div className="flex gap-3">
-              <Link to="/agents" className="lw-btn-primary">{t("管理我的智能体伙伴")} <ArrowRight className="h-4 w-4" /></Link>
+              <Link to={AGENTS_HOME_PATH} className="lw-btn-primary">{t("管理我的智能体伙伴")} <ArrowRight className="h-4 w-4" /></Link>
             </div>
             <Link to="/" className="lw-back-link mt-6"><ArrowLeft className="h-3.5 w-3.5" /> {t("返回首页")}</Link>
           </motion.div>
