@@ -66,20 +66,20 @@ func (h *Handler) HandleConfirmEmailBind(ctx *gin.Context) {
 				code = "invalid"
 			}
 		}
-		ctx.Redirect(http.StatusFound, h.emailBindRedirectURL("email_bind_error="+code))
+		ctx.Redirect(http.StatusFound, h.emailBindResultRedirectURL(code))
 		return
 	}
 	_ = user
-	ctx.Redirect(http.StatusFound, h.emailBindRedirectURL("email_bound=1"))
+	ctx.Redirect(http.StatusFound, h.emailBindResultRedirectURL("success"))
 }
 
-func (h *Handler) emailBindRedirectURL(query string) string {
+func (h *Handler) emailBindResultRedirectURL(status string) string {
 	base := strings.TrimRight(strings.TrimSpace(h.frontendBaseURL), "/")
 	if base == "" {
 		base = strings.TrimRight(strings.TrimSpace(h.publicBaseURL), "/")
 	}
 	if base == "" {
-		return "/account?" + query
+		return "/auth/email-bind-result?status=" + status
 	}
-	return service.BuildEmailBindRedirectURL(base, query)
+	return service.BuildEmailBindResultRedirectURL(base, status)
 }
