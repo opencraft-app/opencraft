@@ -20,6 +20,13 @@ routes:
     require_realname: true
     auth_strategy: shadow_api_key_or_session
     response_header_timeout: 60s
+  - name: sandbox-legacy
+    prefix: /sandboxes
+    methods: [POST, OPTIONS]
+    upstream: http://sandbox-api.sandbox.svc.cluster.local
+    access: authenticated
+    auth_strategy: session
+    response_header_timeout: 60s
   - name: ctl-me
     prefix: /v1/me
     methods: [GET, OPTIONS]
@@ -110,3 +117,5 @@ routes:
         path: /auth/oauth/github/start
       - method: GET
         path: /auth/oauth/github/callback
+      - method: GET
+        path: /auth/email/bind/confirm

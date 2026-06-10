@@ -588,6 +588,18 @@ func (h *instanceHandler) handleInstance(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		writeSuccess(w, r, http.StatusOK, resp)
+	case len(parts) == 3 && parts[1] == "tat" && parts[2] == "session" && r.Method == http.MethodPost:
+		ctx, ok := newRequestContext(r)
+		if !ok {
+			writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
+			return
+		}
+		resp, err := h.logic.StartTerminalSession(ctx, instanceID)
+		if err != nil {
+			writeHTTPError(w, r, err)
+			return
+		}
+		writeSuccess(w, r, http.StatusOK, resp)
 	case len(parts) == 2 && parts[1] == "chatclaw" && r.Method == http.MethodGet:
 		ctx, ok := newRequestContext(r)
 		if !ok {

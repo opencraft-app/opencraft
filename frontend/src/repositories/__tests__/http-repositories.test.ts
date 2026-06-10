@@ -244,6 +244,49 @@ describe("http repositories auth token bootstrap", () => {
     );
   });
 
+  it("creates terminal sessions through the bot-scoped ctl endpoint", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          code: "OK",
+          message: "success",
+          data: {
+            poolId: "pool-1",
+            sessionId: "sess-1",
+            region: "ap-beijing",
+            instanceId: "i-123",
+            ownerUin: "10001",
+            loginUin: "10002",
+            appId: 123,
+            wsUrl: "wss://tat.example.test/ws",
+            cols: 120,
+            rows: 30,
+            timeoutSeconds: 3600,
+          },
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    const session = await repositories.bots.getTerminalSession("ins-1");
+
+    expect(session.sessionId).toBe("sess-1");
+    expect(session.sandboxId).toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://lightclaw.tech/v1/instances/ins-1/tat/session",
+      expect.objectContaining({
+        method: "POST",
+      }),
+    );
+  });
+
   it("loads dashboard bots from ctl instances", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     const fetchMock = vi.fn().mockResolvedValue(
@@ -403,32 +446,14 @@ describe("http repositories auth token bootstrap", () => {
     );
   });
 
-  it("creates a tat terminal session for a bot via sandbox session bootstrap", async () => {
+  it("creates a tat terminal session for a bot through ctl without exposing sandboxes", async () => {
     writeStoredAuthToken("persisted-bearer-token");
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            code: "OK",
-            message: "success",
-            data: {
-              instance_id: "ins_term123",
-              sandbox_id: "sb_term123",
-              status: "Running",
-              created_at: "2026-03-24T00:00:00Z",
-            },
-          }),
-          {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            sandboxId: "sb_term123",
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          code: "OK",
+          message: "success",
+          data: {
             poolId: "pool-bj8",
             sessionId: "sess-1",
             region: "ap-beijing",
@@ -440,20 +465,20 @@ describe("http repositories auth token bootstrap", () => {
             cols: 120,
             rows: 32,
             timeoutSeconds: 3600,
-          }),
-          {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
           },
-        ),
-      );
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     const repositories = createHttpRepositories("https://lightclaw.tech");
     const session = await repositories.bots.getTerminalSession("ins_term123");
 
     expect(session).toEqual({
-      sandboxId: "sb_term123",
       poolId: "pool-bj8",
       sessionId: "sess-1",
       region: "ap-beijing",
@@ -466,16 +491,10 @@ describe("http repositories auth token bootstrap", () => {
       rows: 32,
       timeoutSeconds: 3600,
     });
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      1,
-      "https://lightclaw.tech/v1/instances/ins_term123",
-      expect.objectContaining({
-        method: "GET",
-      }),
-    );
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      2,
-      "https://lightclaw.tech/sandboxes/sb_term123/tat/session",
+    expect(session.sandboxId).toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://lightclaw.tech/v1/instances/ins_term123/tat/session",
       expect.objectContaining({
         method: "POST",
       }),

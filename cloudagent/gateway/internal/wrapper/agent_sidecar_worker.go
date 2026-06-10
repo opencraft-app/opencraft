@@ -1037,6 +1037,10 @@ func (w *AgentSidecarWorker) restartSessionRuntimeDaemon(ctx context.Context, ru
 	return reattached, nil
 }
 
+func wispPackageURLForRestore(currentURL, recordedURL string) string {
+	return firstNonEmpty(currentURL, recordedURL)
+}
+
 func (w *AgentSidecarWorker) recreateWispSessionRuntime(ctx context.Context, runtime ACPSessionRuntime, req ACPSessionRuntimeStartRequest) (ACPSessionRuntime, error) {
 	start := time.Now()
 	backend, err := w.backendForRuntime(runtime)
@@ -1096,7 +1100,7 @@ func (w *AgentSidecarWorker) recreateWispSessionRuntime(ctx context.Context, run
 	restored.SigningKeyID = artifact.SigningKeyID
 	restored.WorkspaceVersion = workspaceVersion
 	restored.WorkspaceTemplateID = backend.innerTemplateID
-	restored.WispPackageURL = firstNonEmpty(restored.WispPackageURL, w.wispPackageURL)
+	restored.WispPackageURL = wispPackageURLForRestore(w.wispPackageURL, restored.WispPackageURL)
 	restored.WispRootUpperSize = firstNonEmpty(restored.WispRootUpperSize, w.wispRootUpperSize)
 	restored.WispJFSPrefix = firstNonEmpty(restored.WispJFSPrefix, w.wispJFSPrefix)
 	restored.DaemonAddr = acpDaemonAddr(req.SessionID)

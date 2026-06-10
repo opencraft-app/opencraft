@@ -78,7 +78,8 @@ RUN apt-get update \\
   && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \\
     bash ca-certificates curl sudo fuse3 procps util-linux coreutils tar gzip findutils e2fsprogs erofs-utils \\
   && rm -rf /var/lib/apt/lists/*
-RUN mkdir -p /tmp/gateway /tmp/cloudagent-wisp /tmp/cloudagent-workspace-wisp /workspace \\
+RUN ln -sf bash /bin/sh \\
+  && mkdir -p /tmp/gateway /tmp/cloudagent-wisp /tmp/cloudagent-workspace-wisp /workspace \\
   && chmod 1777 /tmp /tmp/gateway
 EOF
 

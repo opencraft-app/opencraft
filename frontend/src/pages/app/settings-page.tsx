@@ -84,7 +84,7 @@ export const SettingsPage = () => {
           >
             <div className="space-y-3 text-sm leading-7" style={{ color: "var(--lw-fg-secondary)" }}>
               <p><strong>Agent ID:</strong> {id ?? "-"}</p>
-              <p>终端页面会根据当前 Agent 关联的 <code>sandbox_id</code> 调用 <code>/sandboxes/:sandboxID/tat/session</code> 创建腾讯云 TAT PTY 会话。</p>
+              <p>终端页面会通过 <code>/v1/instances/:instanceID/tat/session</code> 创建腾讯云 TAT PTY 会话，底层 sandbox 只在服务端解析。</p>
               <p>如果 Agent 还没分配到 sandbox，终端页会直接报清晰错误，而不是静默失败。</p>
             </div>
           </GrammarSectionCard>

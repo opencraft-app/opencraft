@@ -1,335 +1,246 @@
-# 📋 LightClaw Frontend - AI Agent 规范
+# 📋 agent-platform-frontend — AI Agent 指引
 
-> 本文档是 AI 助手在 `frontend/` 子项目中的行为规范和深度上下文。
-> 仓库根目录另有一份 [`../AGENTS.md`](../AGENTS.md)，聚焦 monorepo 级别的流程约定（feai、TAPD、MR 等）；本文件聚焦前端子项目的**规范 + 架构 + 代码细节**。
+> 本文件是 AI 助手在本项目中的**轻量门户**。详细规则按需从 `.workflow/` 与 `.codebuddy/skills/` 加载，**不在本文件展开**。
 >
-> ⚠️ 本文件遵循 CodeBuddy `frontend-ai-dev-tools` 模板 v1.3.0 规范生成，并整合了项目原有的详细架构手册。
+> ⚠️ 由 `frontend-ai-dev-tools` 公共模板生成。项目深度信息（技术栈、目录结构、路由、状态管理、API、公共组件等）由 `/feai-init` 写入 `.workflow/project.yaml` 的 `context:` 段，本文件不重复。
 >
-> 📐 配套规格文档见 [`./openspec/`](./openspec/)（auth / bot / marketing / plan）。
+> 模板版本: v3.1.0 | 生成时间: 2026-06-09
+
+---
+
+## 一、项目概览
+
+| 字段         | 内容                  |
+| ------------ | --------------------- |
+| **项目名**   | agent-platform-frontend      |
+| **仓库**     | wisp/mono2（monorepo · 前端子目录 `frontend/`） |
+| **默认分支** | master（国内站 + 国际站合一，编译期 `isCN`/`isGlobal` 区分） |
+| **TAPD ID**  | 10132091 |
+
+> 💡 技术栈 / UI 组件库 / 路由 / 状态管理 / 测试框架 / 目录结构 / 公共组件 等**项目深度信息**由 `/feai-init` 自动探测后写入 `.workflow/project.yaml` 的 `context:` 段（P0 必读），本文件不再重复维护。
+
+---
+
+## 二、核心铁律（精简版）
+
+> 完整规则见 `.workflow/rules/global.md`（G1–G22）。此处仅列高频触发条款，AI 必须无条件遵守。
+
+1. **OpenSpec 唯一事实来源** — 未读取 `openspec/` 前禁止写业务代码（G1/G2）
+2. **plan.md 门禁** — 编码前 `openspec/plan.md` 必须存在 `- [ ]` 任务（G3）
+3. **Stop-and-Ask** — 测试连续失败 3 次 / 遇未记录边界 → 立即停止询问（G4）
+4. **上下文加载协议** — 行动前必须按 `project.yaml` 的 `context_loading` 完成 P0 加载（G5/G18）
+5. **中文对话** — 所有对话用中文（G6）
+6. **分支管理** — 禁止在 master 直接开发；切分支前若工作区有未提交变更，必须先让用户决定如何处理，禁止自动 stash / commit（G8）
+7. **阶段门禁不可跳过** — 每阶段对照 `.workflow/checklists/gate-*.md` 检查（G10）
+8. **Skill 调用强制** — 标注「调用 skill」处必须真实执行 `use_skill`，禁止口头承认后用自己的知识替代（G12）
+9. **L 级 Leader 禁直写代码** — Leader 只调度审核，发现自己写组件/hooks/页面立即停止（G17）
+10. **禁工具替代工作流** — 禁用 EnterPlanMode；规划产物只写到 `openspec/`，不允许 `.codebuddy/plans/` 或 `docs/plans/`（G19/G21）
+11. **步骤追踪可视化** — 跨阶段流程必须输出 `[STEP N/M] {步骤描述}`，未输出即跳步违规（G20）
+12. **未归档变更优先** — 启动新需求前若存在未归档的旧变更，**必须**先归档（`/feai-archive`）才能开始新流程（G22）
+
+---
+
+## 三、上下文加载协议（P0–P3）
+
+| 级别 | 时机 | 必读文件 |
+|:----:|------|---------|
+| **P0** | 每次响应前**必读** | `.workflow/project.yaml`、`.workflow/rules/global.md`、`openspec/plan.md` |
+| **P1** | 进入开发流程时按需 | `openspec/proposal.md` / `openspec/spec.md` / `openspec/current_state.md` |
+| **P2** | 命中第五章「技能触发关键词」时 | 对应的 `.codebuddy/skills/team-extensions/*.md` |
+| **P3** | 进入对应阶段门禁时 | `.workflow/checklists/gate-*.md` |
+
+> 💡 看到本文件未覆盖的细节（commit 模板、CR 报告格式、E2E 验收场景等），**必须先去 skill 文件加载**，不要凭印象作答。
+
+---
+
+## 四、Harness 工程文件索引
+
+```
+AGENTS.md                          # 项目根 — AI 行为指引（本文件）
+
+.workflow/                         # 工作流核心（IDE 中立，feai install/update 维护）
+├── project.yaml                   # 工作流配置 + 项目上下文（context_loading / multi_agent / forbidden_tools）
+├── agents/                        # 角色定义（default/leader/planner/implementer/developer/reviewer/figma-analyzer）
+├── rules/
+│   └── global.md                  # 工作流铁律 G1–G22（不可删，工作流"宪法"）
+└── checklists/                    # 阶段门禁（gate-planning/implementation/verification/archive）
+
+.codebuddy/                        # AI 工具能力（CodeBuddy/Claude/Cursor 通过软链共用）
+├── skills/
+│   ├── superpowers/               # Superpowers 原生 Skills（14 个）
+│   └── team-extensions/           # 团队扩展 Skills（branch/mr/cr-check/单测/TAPD/FE-AI 跟踪 6 个）
+├── project.local.json             # 本地项目配置（动态、不提交）
+└── mcp.json                       # MCP 服务配置
+
+commands/                          # 命令文件（IDE 中立）
+├── feai-start.md                  # /feai-start
+├── feai-archive.md                # /feai-archive
+├── feai-init.md                   # /feai-init
+└── feai-review.md                 # /feai-review
+
+openspec/                          # 业务规范驱动开发（用户产物）
+├── plan.md                        # 当前迭代执行计划（核心：- [ ] 任务列表）
+├── proposal.md / spec.md          # 需求提案 / 技术规格（M/L 级需求）
+├── current_state.md               # 项目当前状态快照
+├── specs/                         # 功能规范库
+└── changes/archive/               # 历史变更归档
+```
+
+> 💡 三大目录职责边界：`.workflow/` = 工作流核心 ｜ `.codebuddy/` = AI 工具能力 ｜ `openspec/` = 业务产物
+
+---
+
+## 五、技能触发规则
+
+> 普通对话中（非 `/feai-*` 命令模式）AI 也必须在合适的时机加载对应 skill。**先读 skill，再执行操作**。
+
+| 用户意图关键词 | 必须加载的 Skill |
+|--------------|-----------------|
+| 提交代码 / commit / git commit | `.codebuddy/skills/team-extensions/ai-usage-tracking.md`（FE-AI 标记）+ `.workflow/rules/global.md` G14 |
+| 创建分支 / 切分支 / 新建分支 | `.codebuddy/skills/team-extensions/branch-auto-create.md` |
+| 创建 MR / 合并请求 / merge request | `.codebuddy/skills/team-extensions/mr-auto-submit.md` |
+| 代码审查 / CR / review / 检查代码 | `.codebuddy/skills/team-extensions/cr-check.md` |
+| 写单测 / 单元测试 / 测试用例 | `.codebuddy/skills/team-extensions/unit-test-development.md` |
+| 获取需求 / TAPD / 需求详情 | `.codebuddy/skills/team-extensions/tapd-requirement-fetch.md` |
+| FE-AI 标记 / 数据采集 | `.codebuddy/skills/team-extensions/ai-usage-tracking.md` |
+| MR 提了 / 推上去了 / MR 开好了 | `commands/feai-archive.md` — **主动询问**用户是否运行 `/feai-archive` |
+| reviewer 改了 / CR 后改 / 评审意见改完 | `commands/feai-archive.md` — **主动提醒**重新归档 |
+
+执行规则：① 多意图叠加时加载所有匹配 skill ② 无法读取时用本文件作为兜底 ③ 涉及代码开发时优先读 `.workflow/project.yaml`
+
+---
+
+## 六、按需能力（Capability）
+
+> 主干工作流只包含 **OpenSpec + 三阶段门禁**。Figma 像素级还原、E2E 分级测试等场景规则被抽取为**可插拔能力包**，未启用时不存在、不生效。
 >
-> 🧭 改动**导出的**函数/组件/类型前，按根目录 [`../CLAUDE.md`](../CLAUDE.md) 的 GitNexus 要求：先跑 `gitnexus_impact({target: "<symbol>", direction: "upstream"})` 评估影响面；改完提交前再跑 `gitnexus_detect_changes()` 确认范围。仅改 JSX 内闭包函数、单文件内 helper、文案字面量时可跳过。
+> 看到 F1–F14、E2E 两段式流程、`gate-figma-implementer` / `gate-e2e` 等"额外规则"时，**不要当主干默认行为**——它们一定来自某个已启用的 capability。
 
----
+### 6.1 排查路径
 
-## 一、项目概述
-
-| 字段 | 内容 |
+| 步骤 | 看什么 |
 |---|---|
-| 项目名 | LightClaw Frontend（`agent-platform-frontend`） |
-| 技术栈 | React 19（StrictMode + `createRoot`）+ TypeScript 5.9 + Vite 7 |
-| UI / 样式 | `@radix-ui/*` + shadcn 自封装 + `@tencent/tea-sdk-lightclaw`；Tailwind v4 + CVA + `tailwind-merge` |
-| 路由 / 状态 | `react-router-dom` v7（`createBrowserRouter`）；Context + `useReducer`（无 Redux） |
-| HTTP | Repository Pattern 自定义 fetch，统一 `APIEnvelope<T>` |
-| i18n | `react-i18next` + 自研"中文即 key"（`src/i18n/`） |
-| 测试 | Vitest 4 + `@testing-library/react` + jsdom |
-| 包管理 | pnpm（与 `tea-sdk-lightclaw` workspace 联动） |
-| 主干分支 | `master`（国内站 + 国际站代码合一，通过编译期 `isCN`/`isGlobal` 区分） |
-| 国际站域名 | 预览：`https://lightvela-preview-hpthlnbc.edgeone.cool`；API：`https://lightclaw.tech` |
-| TAPD workspace | `10132091` |
-| 发布 | 国内站：Argo CD（`shprod`）；国际站：EdgeOne Pages（`pnpm deploy:eo`） |
+| 1️⃣ | `.workflow/project.yaml` 的 `capabilities.enabled: [...]` |
+| 2️⃣ | `.workflow/project.yaml` 的 `gates.required: [...]`（含 capability 注入） |
+| 3️⃣ | 终端运行 `feai cap status` / `feai cap list` |
+
+### 6.2 能力包清单（v0.17+）
+
+| 能力 ID | 启用后注入 | 主要硬性规则 |
+|--------|----------|-------------|
+| `figma-fidelity` | `figma-fidelity-*.md` 规则 + `gate-figma-implementer` 门禁 | F1 零编造 / 间距 ≤2px / 颜色一致 / Auto Layout 优先 / 截图+MCP 双通道回验 |
+| `e2e-playwright` | `e2e-rules.md` + `gate-e2e` 门禁 | 两段式流程（Planner 写场景 / Reviewer 转代码，Developer 不写 E2E）/ P0/P1/P2 三级 |
+
+### 6.3 e2e-playwright 启用后的特别约束（**极易踩坑**）
+
+- ❌ **禁止**主动安装 `@playwright/test` 等 npm 包
+- ❌ **禁止**修改使用方项目的 `package.json`、自动创建 `playwright.config.ts` / `tests/` / `e2e/` 目录骨架
+- ✅ **只**做规则下发与 Reviewer 阶段的执行约束；Playwright 实际依赖由用户自行决定时机
+
+> 📄 详细命令运行 `feai cap --help`
 
 ---
 
-## 二、常用命令
+## 七、命令速查
 
-```bash
-# 开发
-pnpm dev            # 默认（VITE_REGION 由 .env 决定）
-pnpm dev:cn         # 国内站 / pnpm dev:global  国际站
-pnpm dev:local      # 使用本地 monorepo 版 tea-sdk-lightclaw
+| 命令            | 用途                                                         |
+| --------------- | ------------------------------------------------------------ |
+| `/feai-start`   | 启动开发流程（需求分析 → 开发 → MR）                         |
+| `/feai-archive` | 归档沉淀（MR 提了之后；trigger G22）                         |
+| `/feai-init`    | 项目初始化（生成深度信息：常用命令、目录结构、代码风格等）   |
+| `/feai-review`  | 主动 CR（提交前对本次 git diff 做三级问题检查）              |
 
-# 构建
-pnpm build          # 标准  / pnpm build:cn  / pnpm build:global
+**常用参数**：`--quick` 快速 ｜ `--full` 完整 ｜ `--yes` 信任模式
 
-# 质量门禁（提交前必跑）
-pnpm check          # tsc -b 类型检查（与构建前置检查一致）
-pnpm test           # vitest 单次运行
-pnpm i18n:extract   # 扫描 t() 生成 i18n/generated/*.json
-pnpm i18n:check     # 校验翻译完整性（CI 门禁）
-
-# 部署
-pnpm deploy:eo                                                  # EdgeOne Pages 通用部署脚本（默认推到 lightvela-preview，可通过 EDGEONE_PAGES_PROJECT_NAME / EDGEONE_PAGES_ENV / EDGEONE_PAGES_DIR 覆盖）
-python3 scripts/build-release-image.py --service frontend --env shprod --tag <tag>  # Argo CD（shprod，monorepo 根执行）
-```
-
-> 无独立 Prettier/ESLint 配置，代码质量由 tsconfig strict 保障。
-
-### 分支自动预览（StaticPages，推荐日常使用）
-
-把分支推到 `frontsandbox/<name>`（命中 `frontend/**` 路径），CI 会自动构建国内版 + 国际版并发布到 StaticPages，约 2 分钟可访问。**不需要手工跑构建、不需要 token，是日常评审 / 验证的首选。**
-
-地址规则：
-
-- 国内版：`https://<name>.preview.lightclaw.tech`
-- 国际版：`https://intl-<name>.preview.lightclaw.tech`
-
-`master` 同样走这条链路，固定生成 `https://master.preview.lightclaw.tech` 和 `https://intl-master.preview.lightclaw.tech`。
-
-```bash
-# 推一个本地分支去触发预览
-git push origin HEAD:frontsandbox/docs-smoke-v2-20260511
-# → 2min 后：
-#   https://docs-smoke-v2-20260511.preview.lightclaw.tech         # 国内版
-#   https://intl-docs-smoke-v2-20260511.preview.lightclaw.tech    # 国际版
-```
-
-命名要点：
-
-- `<name>` 建议只用小写字母 / 数字 / `-`；脚本会把 `frontsandbox/Demo_Feature` 规范化为 `demo-feature`
-- 国际版固定加 `intl-` 前缀；分支已经叫 `frontsandbox/intl-foo` 不会变成 `intl-intl-foo`
-- 短时间内访问得到 `502` 通常是 CI 还在跑，等流水线完成再刷
-- **这条链路不代表正式发布**，只是预览；正式发布走 Argo CD（国内）和下面的 EdgeOne Pages（国际）
-
-流水线定义见 [`.ci/frontend-preview.yml`](../.ci/frontend-preview.yml)，完整运维手册和踩坑清单见 [`../codesign/staticpages-preview-operator.md`](../codesign/staticpages-preview-operator.md)。
-
-### 国际站发布预览（EdgeOne Pages）
-
-国际站当前**正式发布通道**是 **EdgeOne Pages**（项目 `lightvela-preview` / ProjectId `pages-fqdz1kdlfvp1` / 域名 `https://lightvela-preview-hpthlnbc.edgeone.cool`）。日常评审用上面的 `frontsandbox/*` 自动预览即可；只有在需要 EdgeOne 域名（例如对外发链接给非内部同事）或验证生产 Pages 项目的发布权限时，才走这条手工链路。从 `master` 拉取，使用 `pnpm build:global` 产出 `dist-global/`：
-
-> ⚠️ **多人共享场景**：默认的 `lightvela-preview` project + production 环境会被多人同时使用，谁后部署谁覆盖。如果只是个人临时验证、且其他人**没有正在依赖**这个预览域名，可以直接走下面的 default 命令；如果在做评审 / 给别人发链接、或者已知有人在依赖，**请新建 dedicated preview project**（例如 `lightvela-preview-<你的名字>`）：把命令里的 `-n lightvela-preview` 换成 `-n lightvela-preview-pablo`，或设 `EDGEONE_PAGES_PROJECT_NAME=<dedicated-name>` 后再跑 `pnpm deploy:eo`。
-
-```bash
-cd frontend
-# 国际站 → dist-global/（EdgeOne 预览）
-rm -rf dist-global                                                # 必做，防止上一分支残留产物
-VITE_AUTH_API_BASE_URL=https://lightclaw.tech pnpm build:global   # 产出 dist-global/
-TOKEN=$(tr -d '[:space:]' < ~/.tencentcloud/edgeone_pages_token)  # 末尾空白会让 CLI 误判 "No API token provided"
-npx --yes edgeone pages deploy dist-global -n lightvela-preview -e production -t "$TOKEN"
-```
-
-- ⚠️ **国内 / 国际产物目录不共用**：国内站 `dist-cn/`（`pnpm build:cn`），国际站 `dist-global/`（`pnpm build:global`）。切分支 / 切区域前务必 `rm -rf dist-cn dist-global` 清旧，避免把另一侧的残留发出去
-- 国际站 API 必须烘焙 `VITE_AUTH_API_BASE_URL=https://lightclaw.tech`，否则预览会请求到错误的后端
-- Token 位置：`~/.tencentcloud/edgeone_pages_token`（0600，仅 pablozhong 授权范围内）
-- `-e production` 是**测试项目自己的 production**，不是线上 `lightvela` 项目
-- CLI 输出的 `EDGEONE_DEPLOY_URL` 带 `eo_token` 和 `eo_time` 两个 query，**必须完整保留**，缺一个就 401
-- 完整流程和权限边界见 [`../codesign/edgeone-preview-operator.md`](../codesign/edgeone-preview-operator.md)
-
-**发布后 bundle 指纹回验**（踩过坑，务必做）：
-
-1. `curl <预览URL>/index.html` 拿到 `/assets/index-<hash>.js`
-2. 本地 `ls dist-global/assets/index-*.js` 核对 hash 一致
-3. 对得上再在浏览器肉眼验证；对不上说明产物目录没覆盖或被缓存，硬刷新 / 重发
-
-**实名墙**：国内站 `/v1/instances/*` 写请求（POST/PUT/PATCH；DELETE 不拦）需要实名账号；未实名账号打开 settings 页时 `POST /v1/instances/{id}/debug/exec` 会在后台静默 403 `realname_required`。国际站 `isGlobal` 不展示实名入口，也不应被该实名墙拦截。
+> 📄 详见 [feai-start.md](commands/feai-start.md) ｜ [feai-archive.md](commands/feai-archive.md) ｜ [feai-init.md](commands/feai-init.md) ｜ [feai-review.md](commands/feai-review.md)
 
 ---
 
-## 三、项目结构（关键目录）
+## 八、不可逆操作必须确认
 
-```
-frontend/src/
-├── main.tsx                    # 入口，首行必须 import @/polyfills/react-dom-compat
-├── polyfills/react-dom-compat.ts   # React 19 对 tea-component 的补丁
-├── app/app.tsx                 # Providers 组合 + RouterProvider
-├── router/{index,guards}.tsx   # 路由表 + Auth/Plan/AppAccess 守卫
-├── layouts/                    # marketing-layout / app-shell-layout
-├── pages/
-│   ├── marketing/              # landing / account / subscribe / openclaw-*
-│   ├── auth/                   # sign-in / invite / oauth
-│   └── app/                    # workspace / settings / terminal
-├── components/{ui,domain,site}/    # 三层组件：原子 / 业务 / 站点
-├── contexts/                   # session / openclaw / repository
-├── repositories/               # types.ts + http-repositories.ts + fake-repositories.ts
-├── domain/                     # types.ts + plan-catalog.ts
-├── services/use-async-resource.ts
-├── i18n/                       # index.ts + t.ts + generated/（勿手改）
-├── lib/                        # auth-api-base / oauth / avatar-image / region
-├── theme/ · assets/ · test/setup.ts · styles.css
-```
+即使 `--yes` 信任模式，以下操作仍**必须先展示内容、征得用户确认**：
 
-路径别名：`@/*` → `src/*`（`tsconfig.app.json`）。
+- `git commit` / `git push` — 展示提交信息
+- 创建 MR — 展示 MR 标题/描述/标签
 
 ---
 
-## 四、核心原则（P0 铁律）
+## 九、项目深度信息（去哪里查）
 
-| 原则 | 说明 |
-|---|---|
-| 🔒 安全第一 | XSS / 注入 / 敏感信息 P0 处理 |
-| 🚫 禁止 `any` | 用 `unknown` 或具体类型（monorepo 铁律） |
-| 📐 i18n 必须 | 用户可见中文**必须**走 `t("...")`，提交前 `pnpm i18n:check` |
-| 🔧 Lint 驱动 | 修改后必跑 `pnpm check` |
-| ✅ 证据优于声明 | "完成"必须有 `pnpm test` / `pnpm check` 证据 |
-| 📂 只改 frontend | 不动 `frontend-ds/`，除非用户明确要求 |
-| 🔐 提交需确认 | 不自作主张 `git commit`/`push`，远端提交后须 `git pull` |
-| 🌏 编译期区域分支 | 用 `isCN` / `isGlobal` 常量，避免运行时判断 |
-| 🧩 数据驱动 UI | landing 卡片、Nav 等用数据数组驱动，便于区域切换 |
+> 本文件定位为**轻量门户**，不再罗列项目深度信息。具体内容请按下表索引：
 
-**FE-AI 标记**（不可遗漏）：Commit `[FE-AI] feat(xxx): ...` · MR 标题 `[FE-AI] feat: xxx` · MR 标签 `FE-AI` · TAPD 需求标签 `FE-AI`。
+| 想了解 | 去哪查 | 维护方 |
+|-------|-------|-------|
+| 技术栈 / 路由 / 状态管理 / API / 公共组件 / 目录结构 | `.workflow/project.yaml` 的 `context:` 段 | `/feai-init` 自动生成，可手工补充 |
+| 常用命令（dev / build / test / lint） | `package.json` 的 `scripts` 段 | 项目自身 |
+| 代码风格（Prettier / ESLint / TS strict） | `.prettierrc` / `.eslintrc*` / `tsconfig.json` | 项目自身 |
+| 路径别名（`@/*` 等） | `tsconfig.json` 的 `paths` 段 | 项目自身 |
+| 各功能模块业务规则 | `openspec/specs/*.md` | `/feai-init` + 用户补充 |
 
----
+### 项目专属补充（package.json / tsconfig 查不到的）
 
-## 五、代码风格
+以下信息项目独有、且无法从配置文件现场查到，**保留在 AGENTS.md**：
 
-- **TS strict**：`strict` + `noUnusedLocals` + `noUnusedParameters` + `noUncheckedIndexedAccess` + `noFallthroughCasesInSwitch`
-- **JSX**：`react-jsx`（无需 `import React`）；**ESM**：`"type": "module"` + `moduleResolution: Bundler`
-- **命名**：组件 `PascalCase.tsx`；Hook `use-*.ts`（kebab 文件名 + camelCase 导出）；常量 `SCREAMING_SNAKE_CASE`；工具/类型 `kebab-case.ts`
-- **样式**：Tailwind utility 优先，配合 `cn()` 与 CVA 多变体
-- **按钮文案字号**：LightVela 项目内按钮文案默认使用 `16px`；可以根据具体设计需求自定义按钮字号，不作为强制限制，但不要无理由随意改动。
-- **Hover 提示默认样式**：icon-only 按钮需要 hover/focus 立即展示文案时，优先使用本项目当前默认 tooltip 样式：触发器外层 `group relative inline-flex`；tooltip 为白底深色字，`absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 whitespace-nowrap rounded-md border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium text-[var(--text-primary)] opacity-0 shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100`，并在底部加白底小箭头 `absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-[var(--border-subtle)] bg-white`。可以按具体设计调整位置或动效，但默认不要回退到浏览器原生 `title` 的延迟提示。
+- **国内/国际站域名**
+  - 国内预览：`https://<branch>.preview.lightclaw.tech`（`frontsandbox/<name>` 分支自动推流）
+  - 国际预览：`https://lightvela-preview-hpthlnbc.edgeone.cool`
+  - 生产 API：`https://lightclaw.tech`
+- **主干分支策略**：`master` 同时承载国内 + 国际站，运行时通过 `src/lib/region.ts` 暴露的 `isCN` / `isGlobal` 编译期常量做差异化（构建时 Tree-shake，未命中分支不会进入产物）。
+- **分支自动预览**：把分支推到 `frontsandbox/<name>`（命中 `frontend/**` 路径），CI 自动构建国内 + 国际双产物并发布到 StaticPages，约 2 分钟可访问，**评审/验证首选**，无需手工跑构建。
+- **发布脚本**
+  - 国际站：`pnpm deploy:eo`（EdgeOne Pages，可通过 `EDGEONE_PAGES_PROJECT_NAME` / `EDGEONE_PAGES_ENV` / `EDGEONE_PAGES_DIR` 覆盖）
+  - 国内站：`python3 scripts/build-release-image.py --service frontend --env shprod --tag <tag>`（monorepo 根执行，走 Argo CD `shprod`）
+- **GitNexus 影响面检查约定**（来自仓库根 `CLAUDE.md`）
+  - 改动**导出的**函数/组件/类型前：`gitnexus_impact({target: "<symbol>", direction: "upstream"})`
+  - 提交前：`gitnexus_detect_changes()` 确认范围
+  - 仅改 JSX 内闭包函数 / 单文件 helper / 文案字面量时**可跳过**
+- **质量门禁（提交前必跑）**：`pnpm check`（tsc -b）+ `pnpm test`（vitest）+ `pnpm i18n:check`（CI 翻译完整性门禁）
 
-> ⚠️ 修改 CSS 前先确认选择器优先级。`.landing-page span` 这类全局选择器会覆盖 Tailwind utility（如 `font-semibold`）。
+### 通用编码原则（与具体项目无关，永久有效）
 
----
+- 🚫 禁止 `any`：使用 `unknown` 或具体类型替代
+- ✅ 复杂逻辑添加 JSDoc 与行内注释
+- ✅ 异步操作必须 `try/catch/finally`，禁止静默失败
+- ✅ 新代码遵循项目现有命名/目录组织（参考相邻文件）
+- ✅ 编码风格以项目自身的 `.eslintrc` / `.prettierrc` / `tsconfig.json` 为准
 
-## 六、测试约定
+### `@tencent/tea-sdk-lightclaw` 配置来源
 
-- 文件命名 `*.test.ts` / `*.test.tsx`，**统一放在被测文件同级的 `__tests__/` 子目录下**（路径形如 `foo/__tests__/foo.test.tsx`）；国际站专属 `*.global.test.tsx`
-- 全局 setup：`src/test/setup.ts`
-- 运行：`pnpm test` / `pnpm test src/path/to/__tests__/file.test.tsx` / `pnpm check`
-- 断言规范：
-  - 禁止形式化断言（`expect(true).toBe(true)`）
-  - Mock 必须符合真实业务场景，禁止 `name: 'test'` 占位
-  - 必须覆盖空值 / 极值 / 异常等边界
-- 区域差异：`vi.mock('@/lib/region')` 或 `vi.stubGlobal` 切换 `isCN`/`isGlobal`
+OpenClaw settings 页内嵌的是 `@tencent/tea-sdk-lightclaw`，模型列表、通道列表、OAuth 模型等基础配置默认来自 SDK 的 `createLighthouseConfig(...)` / `productConfig`，不要在 `openclaw-settings-page.tsx` 等宿主页面里临时 patch 或重排这些配置。
 
----
+遇到“新增 / 调整模型、通道、Coding Plan、后付费 API 列表”等需求时，按这个顺序处理：
 
-## 七、开发流程（feai 工具链）
+1. 先确认 SDK 源码和已发布版本是否已经包含变更（重点查 SDK 的 `src/common/utils/moltbot.ts`、`src/common/config/defaultProductConfig.ts`）。
+2. 如果 SDK 已发布，前端只升级 `@tencent/tea-sdk-lightclaw` 依赖和 `pnpm-lock.yaml`，并移除宿主侧重复配置。
+3. 如果 SDK 未发布，先在 SDK 仓库改配置、构建/发布新版本，再回到本项目升级依赖；不要把 SDK 内部配置复制到 LightVela。
+4. 验证时除了 `pnpm check` / `pnpm i18n:check` / 构建，还要检查 `node_modules/@tencent/tea-sdk-lightclaw/{lib,es}` 产物中的实际配置，确认消费到的新 SDK 生效。
 
-| 命令 | 用途 |
-|---|---|
-| `/feai-start` | 启动开发：需求分析 → 实现 → MR（支持 `--quick` / `--full` / `--yes`） |
-| `/feai-archive` | 归档沉淀到 openspec |
-| `/feai-init` | 项目初始化，生成 AGENTS.md + openspec |
-
-> 在 `frontend/` 目录执行，否则 openspec 会落到 monorepo 根。详细流程见 [`../.codebuddy/commands/feai-*.md`](../.codebuddy/commands/)。
-
-**质量门禁**（提交前）：`pnpm check` → `pnpm test` → `pnpm i18n:check`，涉及多区域可选 `pnpm build:cn` + `pnpm build:global`。
-
-**MCP 服务**：TAPD MCP（workspace `10132091`）+ Gongfeng MCP（分支 / MR / CR）。Token 配置 `~/.codebuddy/mcp.json`。
-
-**不可逆操作**（即使 `--yes` 也需确认）：`git commit` / `git push` / `create_merge_request`。
+典型反例：为了让 MiniMax M3 出现在 Coding Plan 和后付费 API 列表，直接在宿主侧新增 wrapper 重写 `modelProviders`。正确做法是消费包含该配置的 SDK 版本，例如将 SDK 从 `1.2.2` 升到已发布的 `1.3.0`。
 
 ---
 
-## 八、架构速查
+<!--
+模板变量说明（供 init-project.sh 使用）:
 
-### 8.1 启动流程（`main.tsx`）
+| 变量                  | 说明               | 来源                                          |
+| --------------------- | ------------------ | --------------------------------------------- |
+| agent-platform-frontend      | 项目名称           | 自动检测 package.json `name`                  |
+|     | Gongfeng 仓库路径  | 自动检测 git remote                           |
+| （待手动填写到 .codebuddy/project.local.json） | TAPD 项目 ID       | 用户在 project.local.json 中手动填写          |
+| master    | 默认分支           | 自动检测 git symbolic-ref                     |
+| 2026-06-09      | 生成时间           | date '+%Y-%m-%d'                              |
 
-1. **首行** `import '@/polyfills/react-dom-compat'`（必须最早，打补丁 `findDOMNode` / `render` / `unmountComponentAtNode`，否则 tea-component 在 React 19 下报错）
-2. `import '@/styles.css'`
-3. `createRoot(...).render(<StrictMode><App/></StrictMode>)`
-4. `<App/>` 组合：`RepositoryProvider → SessionProvider → OpenClawProvider → ThemeStyleInjector → RouterProvider`
+v3.2.0（移除项目深度字段）：
+- 表格中删除 TECH_STACK / UI_LIB / ROUTER / TEST_FRAMEWORK 4 个字段
+- 这些字段统一交由 `/feai-init` AI 探测后写入 `.workflow/project.yaml` 的 `context:` 段
+- 避免在 install / init-project.sh 阶段询问用户、产生不准确的硬编码值
+- 模板渲染中保留 {{TECH_STACK}} / {{UI_LIB}} / {{ROUTER}} / {{TEST_FRAMEWORK}} 占位符语法的 sed 替换以兼容旧版本
 
-### 8.2 路由（`router/index.tsx` + `router/guards.tsx`）
+v3.1.0 重构说明（breaking change，深度对齐 skillhub/AGENTS.md 极简风格）：
+- 章节数 12 → 9；行数 ~265 → ~120
+- **删除第十章「项目结构」** —— 业务目录与模块组织已在 `.workflow/project.yaml` 的 `context:` 段（P0 必读，AI 一定加载），AGENTS.md 不再重复
+- **合并第九（常用命令）/ 十一（代码风格）/ 十二（路径别名）为新第九章「项目深度信息（去哪里查）」** —— 改为索引型：直接告诉 AI 去 `package.json scripts` / `.prettierrc` / `tsconfig.json paths` 现场查，不再让 `/feai-init` 把这些信息抄一份到 AGENTS.md
+- 「通用编码原则」（禁 any 等永久有效条款）保留在第九章末尾
 
-- **根域**（不套布局）：`/` `LandingPage` · `/changelog` `ChangelogPage`
-- **营销域**（`MarketingAuthGuard`）：`/create-openclaw` · `/subscribe` · `/openclaw/{setup,success,settings}` · `/account{,/orders}`
-- **认证**（`MarketingLayout + AuthRouteGuard`）：`/auth/sign-in` · `/auth/invite`；`/auth/{sign-up,sign-up-code,forgot-password}` 均重定向 `sign-in`
-- **套餐选择**（`PlanGuard`）：`/plans/select`
-- **控制台**（`AppAccessGuard + AppShellLayout`）：`/settings/account` · `/bots/:id/{workspace,settings,terminal}`
-- 兜底：`/*` → `/openclaw/settings`；内部：`/internal/style-lab`；404：`NotFoundPage`
-
-### 8.3 状态管理
-
-- **`SessionProvider`**（`src/contexts/session-context.tsx`）：reducer 管理 `{ authReady, stage, user, currentSubscription, firstBotId, inviteValidation, verificationCooldownUntil }`；LocalStorage `lightclaw-ui-session-v1`（仅 UI 态）；监听 `AUTH_UNAUTHORIZED_EVENT` 自动登出
-- **`OpenClawProvider`**：OpenClaw 配置状态（创建向导 / 当前实例）
-- **`RepositoryProvider`**：依赖注入，运行时选 http/fake repositories，`useRepositories()` 暴露
-
-### 8.4 Repository 层（`src/repositories/`）
-
-- `types.ts` 定义接口，`http-repositories.ts` 生产实现，`fake-repositories.ts` Demo/测试
-- 请求基址：`lib/auth-api-base.ts` 解析（支持烘焙 `VITE_AUTH_API_BASE_URL`）
-- 通用封装 `apiRequest`：鉴权 Cookie / Session Token、`APIEnvelope<T>` 解包（`code`/`message`/`data`）、401 广播 `AUTH_UNAUTHORIZED_EVENT`、错误转 `Error`
-- 三大 Repository：
-  - **`AuthRepository`** — 手机验证码登录、OAuth 启动 URL、Session/Profile、头像压缩上传（200KB）、邀请码、游客登录、登出
-  - **`PlanRepository`** — 订阅 / 套餐预览 / Bundles / Passes
-  - **`BotRepository`** — Bot 全生命周期（创建 / 销毁 / 快照 / 消息）、Terminal 调试、QQ 通道（国内）、微信扫码登录 SSE（国内）、Soul 模板
-
-### 8.5 组件 / Hook / Lib
-
-- **组件三层**：`components/ui/`（原子：button / card / dialog / tabs / input / state-panel…）+ `components/domain/`（业务：plan-card / bot-status-card / audit-log-table…）+ `components/site/`（站点：brand-mark / login-modal / legal-footer…）
-- **Hooks**：`useRepositories` / `useSession` / `useSessionActions` / `useOpenClaw` / `useAsyncResource(fetcher, deps)` / `useGeneratedNickname` / `useT`
-- **`src/lib/`**：`auth-api-base` / `oauth` / `avatar-image`（客户端压缩 200KB 内）/ `region`（`isCN` / `isGlobal`）
-- **`src/domain/types.ts`**：`User` / `Bot` / `Plan` / `Pass` / `Bundle` / `AuditEvent`
-
-### 8.6 区域差异（国内 vs 国际）
-
-国内站与国际站代码同一仓同一分支（`master`），通过编译期常量 `isCN` / `isGlobal` 在同一套代码里选择不同表现。新增区域相关功能时需同时考虑两边的表现。
-
-#### 先判断属于哪类场景，再决定写法
-
-绝大多数功能两站表现一致，只是文案语言不同；**不要**默认就写 `isCN`/`isGlobal` 分支。
-
-| 场景 | 占比 | 正确写法 |
-|---|---|---|
-| **A. 两站表现一致，仅文案语言不同**（默认） | 绝大多数 | 中文字面量包 `t("...")` → `pnpm i18n:extract` 补 `en-US.json` → `pnpm i18n:check`；**不要**写 `isCN`/`isGlobal` 分支 |
-| **B. 两站有功能 / UI / 接口差异** | 少数（OAuth、首页平台卡片、Bot 通道、ICP、实名等） | 用 `isCN`/`isGlobal` 数据驱动切换，下表 + 开发要点适用 |
-
-> 简单口诀：**「能用 `t()` 解决的，绝不上 `isGlobal`」**。把区域分支留给真正功能/数据有差异的场景。
-
-下表仅列**场景 B**（两站存在差异）的对照点：
-
-| 维度 | `isCN`（国内） | `isGlobal`（国际） |
-|---|---|---|
-| 构建 | `pnpm build:cn` → `dist-cn/` | `pnpm build:global` → `dist-global/` |
-| 开发命令 | `pnpm dev:cn` / `pnpm dev:local` | `pnpm dev:global` / `pnpm dev:local:global` |
-| 环境变量 | `VITE_REGION=cn` | `VITE_REGION=global` + `VITE_AUTH_API_BASE_URL=https://lightclaw.tech` |
-| 分支 | `master`（同仓同分支，代码合一） | `master`（同仓同分支，代码合一） |
-| 发布通道 | Argo CD `shprod` | EdgeOne Pages（`pnpm deploy:eo`） |
-| 语言 | 中文 zh-CN | 英文 en-US（`t()` 翻译，必须经 `pnpm i18n:check`） |
-| OAuth | QQ / 微信（含微信扫码登录 SSE） | Google / GitHub |
-| 首页平台卡片 | QQ / 微信 / 飞书 / 钉钉 | Telegram / WhatsApp / Discord / Slack |
-| Bot 通道 | QQ 通道（国内独有）、微信扫码 | Telegram / WhatsApp / Discord / Slack |
-| 法律信息 | 显示 ICP 备案 | 隐藏 ICP，显示 Terms / Privacy |
-| 实名认证 | 写操作受实名墙拦截（`realname_required`） | 不展示实名入口，不应被实名墙拦截 |
-| 测试文件 | `__tests__/*.test.tsx` | 国际站专属：`__tests__/*.global.test.tsx` |
-
-**国际站开发要点**：
-
-- **判定方式**：始终用 `import { isGlobal, isCN } from '@/lib/region'` 做编译期判断；**禁止**用 `process.env`、`window.location`、`navigator.language` 在运行时判定区域
-- **数据驱动 UI**：landing 平台卡片、Nav 入口、OAuth 提供商等区域差异部分**必须**用数组/常量驱动，按 `isGlobal` 切换数据源，而非在 JSX 里写 `{isGlobal && <X/>}{isCN && <Y/>}` 散点判断
-- **i18n 强制**：国际站任何用户可见文案都必须经过 `t()`，新增文案后跑 `pnpm i18n:extract` + 补 `en-US.json` + `pnpm i18n:check`
-- **Repository 屏蔽**：`BotRepository` 中 QQ 通道、微信扫码 SSE 等 API 在 `isGlobal` 下不应被调用；新增国际站独有 API 同理
-- **不引入实名墙**：国际站新增写接口前确认后端没复用国内 `realname_required` 中间件；前端不要展示实名 CTA
-- **测试覆盖**：涉及区域差异的组件用 `vi.mock('@/lib/region')` 切换 `isCN`/`isGlobal` 双跑；纯国际站逻辑写 `*.global.test.tsx`
-- **预览验证**：合 MR 前必须用 `pnpm deploy:eo` 在 EdgeOne 上跑一遍国际站预览，做 bundle 指纹回验
-
----
-
-## 九、i18n 规范（重点）
-
-**工作流**：写 `t("中文")` → `pnpm i18n:extract` → 补 `en-US.json` 英文 → `pnpm i18n:check`。
-⚠️ 禁止手改 `zh-to-key.json`（脚本维护）。
-
-### 新增文案必查清单
-
-所有**用户可见**中文必走 `t()`，不限于以下场景：
-
-- JSX 文本节点：`<div>{t("中文")}</div>`
-- 属性文案：`title` / `alt` / `placeholder` / `aria-label` / `aria-describedby`
-- 弹窗消息：`toast.error(t("保存失败"))` / `window.confirm(t(...))` / `window.alert(t(...))`
-- 异常：`throw new Error(t("验证码已过期"))`（或抛 code，UI 层转译）
-- 动态：`document.title`、条件三元、枚举 label
-- 非 React 模块：`import { t } from "@/i18n/t"` 命令式调用（**禁止** `useT()`，违反 Hook 规则）
-- Mock 数据：真实渲染给用户（如 landing 卡片）必须走 `t()`；**仅**开发/测试桩可豁免
-
-### 反模式（❌ 禁止）
-
-```tsx
-// ❌ 模板字符串拼接中文（extract 扫不到）
-const msg = `共 ${count} 条记录`;
-// ✅ i18next 插值
-const msg = t("共 {{count}} 条记录", { count });
-
-// ❌ 常量对象硬编码中文（不经 t()）
-const STATUS_LABEL = { pending: "待处理", done: "已完成" };
-// ✅ 存中文 key，渲染时 t()
-const STATUS_KEY = { pending: "待处理", done: "已完成" } as const;
-const label = t(STATUS_KEY[status]);
-
-// ❌ 中文拼接作 key
-t("欢迎，" + user.name);
-// ✅ 占位符
-t("欢迎，{{name}}", { name: user.name });
-```
-
----
-
-## 十、参考
-
-- 规格文档：[`./openspec/`](./openspec/) — `config.yaml` + `specs/{auth,bot,marketing,plan}.md` + `changes/`
-- feai 工具链：[lightcloud-fe/ai/frontend-ai-dev-tools](https://git.woa.com/lightcloud-fe/ai/frontend-ai-dev-tools)
-- TAPD workspace：[10132091](https://tapd.woa.com)
-- Gongfeng：[wisp/mono2](https://git.woa.com/wisp/mono2)
+v3.0.0（已被 v3.1.0 取代）：从 15 章精简到 12 章，铁律编号修正为 G1–G22，新增 P0–P3 上下文加载协议。
+-->

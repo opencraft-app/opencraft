@@ -742,15 +742,7 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
     },
 
     async getTerminalSession(botId) {
-      const instance = await requestEnvelope<CtlInstancePayload>(baseUrl, `/v1/instances/${encodeURIComponent(botId)}`, {
-        method: "GET",
-      });
-      const sandboxId = instance.sandbox_id?.trim();
-      if (!sandboxId) {
-        throw new RepositoryError("这个 Bot 还没有绑定沙箱，暂时无法打开终端。", 409, "sandbox_missing");
-      }
-
-      return request<BotTerminalSession>(baseUrl, `/sandboxes/${encodeURIComponent(sandboxId)}/tat/session`, {
+      return requestEnvelope<BotTerminalSession>(baseUrl, `/v1/instances/${encodeURIComponent(botId)}/tat/session`, {
         method: "POST",
       });
     },
@@ -1055,6 +1047,12 @@ const createHttpAuthRepository = (baseUrl: string): AuthRepository => ({
   },
   async verifyRealname(input) {
     return request<RealnameVerifyResult>(baseUrl, "/auth/realname/verify", {
+      method: "POST",
+      body: input,
+    });
+  },
+  async requestEmailBind(input) {
+    return request<{ cooldownSeconds: number }>(baseUrl, "/auth/email/bind/request", {
       method: "POST",
       body: input,
     });

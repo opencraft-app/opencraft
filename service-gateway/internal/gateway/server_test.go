@@ -396,6 +396,71 @@ func TestAuthenticatedRouteUsesSessionCookieWhenBearerMissing(t *testing.T) {
 	}
 }
 
+func TestLegacySandboxTatSessionRouteRemainsAuthenticatedForOldFrontend(t *testing.T) {
+	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cookie, err := r.Cookie("lc_session")
+		if err != nil {
+			t.Fatalf("expected lc_session cookie during introspection: %v", err)
+		}
+		if cookie.Value != "tok-cookie" {
+			t.Fatalf("expected lc_session cookie to be forwarded to auth, got %q", cookie.Value)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"session": map[string]any{
+				"user": map[string]any{
+					"id":    "usr_cookie",
+					"email": "cookie@example.com",
+				},
+			},
+		})
+	}))
+	defer auth.Close()
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("unexpected upstream method: %s", r.Method)
+		}
+		if r.URL.Path != "/sandboxes/sbx-1/tat/session" {
+			t.Fatalf("unexpected upstream path: %s", r.URL.Path)
+		}
+		if got := r.Header.Get("X-User-Id"); got != "usr_cookie" {
+			t.Fatalf("expected injected user id, got %q", got)
+		}
+		if _, err := r.Cookie("lc_session"); err != nil {
+			t.Fatalf("expected lc_session cookie to reach sandbox-api: %v", err)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"sessionId":"sess-1"}`))
+	}))
+	defer upstream.Close()
+
+	handler, err := NewHandler(Config{
+		AuthServiceURL: auth.URL,
+		Routes: []Route{
+			{
+				Name:     "sandbox-legacy",
+				Prefix:   "/sandboxes",
+				Methods:  []string{http.MethodPost, http.MethodOptions},
+				Upstream: upstream.URL,
+				Access:   AccessAuthenticated,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes/sbx-1/tat/session", nil)
+	req.AddCookie(&http.Cookie{Name: "lc_session", Value: "tok-cookie"})
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestInviteRequiredUserCanAccessProtectedBusinessRoutes(t *testing.T) {
 	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

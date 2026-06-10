@@ -15,7 +15,7 @@ import {
   Zap,
 } from "lucide-react";
 import { useEffect, useState, useRef, useMemo } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useSession } from "@/contexts/session-context";
 import { useRepositories } from "@/contexts/repository-context";
 import { useOpenClaw } from "@/contexts/openclaw-context";
@@ -26,7 +26,7 @@ import { LoginModal } from "@/components/site/login-modal";
 import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
 import { useT } from "@/i18n/t";
 import { avatarImageUrl } from "@/lib/avatar-image";
-import { isGlobal } from "@/lib/region";
+import { isCN, isGlobal } from "@/lib/region";
 import { cn } from "@/lib/utils";
 
 /* ─── animation variants ─── */
@@ -692,9 +692,13 @@ const SubscriptionSection = ({
 
 /* ─── Main Account Page ─── */
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export const AccountPage = () => {
   const t = useT();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { auth } = useRepositories();
   const {
     session,
     isAuthenticated,
@@ -726,7 +730,15 @@ export const AccountPage = () => {
   // Verification —— 实名认证：直接以 session 里的 realnameVerified 为准
   const verified = Boolean(user?.realnameVerified);
   const showRealnameSection = !isGlobal;
+  const showEmailBindSection = isCN;
   const [showVerifyModal, setShowVerifyModal] = useState(false);
+
+  // Email bind —— 国内站微信/QQ 登录用户通过 Magic Link 绑定邮箱
+  const [bindEmail, setBindEmail] = useState(user?.email ?? "");
+  const [emailBindSubmitting, setEmailBindSubmitting] = useState(false);
+  const [emailBindError, setEmailBindError] = useState<string | null>(null);
+  const [emailBindSuccess, setEmailBindSuccess] = useState<string | null>(null);
+  const [emailBindCooldown, setEmailBindCooldown] = useState(0);
 
   // 账号 ID 一键复制：copiedUserId 控制「已复制」瞬态提示；ref 挂 setTimeout 以便重复点击时清理旧 timer
   const [copiedUserId, setCopiedUserId] = useState(false);
@@ -757,6 +769,51 @@ export const AccountPage = () => {
   const pendingName = user?.nameAuditStatus === "pending" ? user.pendingName?.trim() ?? "" : "";
   const hasPendingNameAudit = pendingName.length > 0;
   const nameAuditFailed = user?.nameAuditStatus === "failed";
+
+  useEffect(() => {
+    if (emailBindCooldown <= 0) return;
+    const timer = window.setInterval(() => {
+      setEmailBindCooldown((prev) => Math.max(0, prev - 1));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [emailBindCooldown]);
+
+  useEffect(() => {
+    const bound = searchParams.get("email_bound");
+    const bindError = searchParams.get("email_bind_error");
+    if (!bound && !bindError) return;
+
+    const next = new URLSearchParams(searchParams);
+    next.delete("email_bound");
+    next.delete("email_bind_error");
+    setSearchParams(next, { replace: true });
+
+    if (bound === "1") {
+      setEmailBindSuccess(t("邮箱绑定成功。"));
+      setEmailBindError(null);
+      void refreshProfile().catch((err) => {
+        console.warn("Failed to refresh profile after email bind", err);
+      });
+      return;
+    }
+
+    const message = (() => {
+      switch (bindError) {
+        case "expired":
+          return t("绑定链接已过期，请重新发送验证邮件。");
+        case "in_use":
+          return t("该邮箱已被其他账号使用。");
+        case "invalid":
+          return t("绑定链接无效，请重新发送验证邮件。");
+        case "unavailable":
+          return t("邮箱绑定服务暂未开放，请稍后再试。");
+        default:
+          return t("邮箱绑定失败，请稍后重试。");
+      }
+    })();
+    setEmailBindError(message);
+    setEmailBindSuccess(null);
+  }, [refreshProfile, searchParams, setSearchParams, t]);
 
   useEffect(() => {
     if (!hasPendingAvatarAudit && !hasPendingNameAudit) return;
@@ -818,6 +875,49 @@ export const AccountPage = () => {
   // 实名认证成功后关闭弹窗；认证状态由 Modal 内部 refreshProfile 刷新 session 驱动
   const handleVerifySuccess = () => {
     setShowVerifyModal(false);
+  };
+
+  const mapEmailBindError = (err: unknown): string => {
+    if (err instanceof RepositoryError) {
+      switch (err.code) {
+        case "invalid_email":
+          return t("邮箱格式不正确，请检查后重试。");
+        case "email_already_bound":
+          return t("当前账号已绑定邮箱。");
+        case "email_bind_cooldown":
+          return t("发送过于频繁，请稍后再试。");
+        case "email_bind_disabled":
+        case "email_bind_unavailable":
+          return t("邮箱绑定服务暂未开放，请稍后再试。");
+        case "email_send_failed":
+          return t("验证邮件发送失败，请稍后重试。");
+        default:
+          break;
+      }
+      if (err.status === 429) {
+        return t("发送过于频繁，请稍后再试。");
+      }
+      return err.message || t("发送验证邮件失败，请稍后重试。");
+    }
+    return t("网络异常，请稍后再试。");
+  };
+
+  const handleRequestEmailBind = async () => {
+    const trimmed = bindEmail.trim();
+    if (!EMAIL_REGEX.test(trimmed) || emailBindSubmitting || emailBindCooldown > 0) return;
+    setEmailBindSubmitting(true);
+    setEmailBindError(null);
+    setEmailBindSuccess(null);
+    try {
+      const response = await auth.requestEmailBind({ email: trimmed });
+      const seconds = Math.max(0, response.cooldownSeconds ?? 0);
+      setEmailBindCooldown(seconds);
+      setEmailBindSuccess(t("验证邮件已发送，请前往邮箱点击链接完成绑定。"));
+    } catch (err) {
+      setEmailBindError(mapEmailBindError(err));
+    } finally {
+      setEmailBindSubmitting(false);
+    }
   };
 
   const handleSignOut = async () => {
@@ -1162,7 +1262,7 @@ export const AccountPage = () => {
                 </div>
               )}
 
-              {showRealnameSection && (
+              {(showEmailBindSection || showRealnameSection) && (
                 /* Bottom: info rows —— 暂只放出「实名认证」行，「登录账号」行待能区分多渠道登录方式后再恢复 */
                 <div className="flex flex-col gap-12 px-8 pb-8">
                   {/*
@@ -1181,6 +1281,71 @@ export const AccountPage = () => {
                 </div>
                 */}
 
+                  {showEmailBindSection && (
+                    <div className="flex flex-col gap-3">
+                      <div className="flex items-center justify-between gap-4">
+                        <span className="text-sm flex-shrink-0" style={{ color: "rgba(0,0,0,0.5)", lineHeight: "24px" }}>
+                          {t("绑定邮箱")}
+                        </span>
+                        {user?.emailVerified ? (
+                          <div className="flex min-w-0 items-center gap-2">
+                            <span className="truncate text-sm" style={{ color: "rgba(0,0,0,0.9)", maxWidth: 260 }}>
+                              {user.email || t("已绑定")}
+                            </span>
+                            <span className="inline-flex flex-shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium" style={{ background: "rgba(22, 163, 74, 0.1)", color: "var(--color-success)" }}>
+                              {t("已验证")}
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
+                            <input
+                              type="email"
+                              value={bindEmail}
+                              onChange={(e) => setBindEmail(e.target.value)}
+                              placeholder={t("请输入邮箱地址")}
+                              className="lw-input min-w-0 max-w-[280px] flex-1"
+                              autoComplete="email"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => void handleRequestEmailBind()}
+                              disabled={
+                                emailBindSubmitting
+                                || emailBindCooldown > 0
+                                || !EMAIL_REGEX.test(bindEmail.trim())
+                              }
+                              className="inline-flex flex-shrink-0 items-center justify-center gap-1.5 rounded-full bg-black/90 px-4 py-2 text-sm font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {emailBindSubmitting ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : emailBindCooldown > 0 ? (
+                                t("{{seconds}} 秒", { seconds: emailBindCooldown })
+                              ) : (
+                                t("发送验证邮件")
+                              )}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      <p className="m-0 text-xs" style={{ color: "rgba(0,0,0,0.45)", lineHeight: 1.5 }}>
+                        {user?.emailVerified
+                          ? t("该邮箱已验证，可用于接收导出完成通知等重要消息。")
+                          : t("绑定邮箱后可用于接收导出完成通知等重要消息。")}
+                      </p>
+                      {emailBindSuccess && (
+                        <p className="m-0 text-xs" style={{ color: "var(--color-success)", lineHeight: 1.5 }}>
+                          {emailBindSuccess}
+                        </p>
+                      )}
+                      {emailBindError && (
+                        <p className="m-0 text-xs" style={{ color: "#cf3d4c", lineHeight: 1.5 }}>
+                          {emailBindError}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {showRealnameSection && (
                   <div className="flex items-center justify-between">
                     <span className="text-sm" style={{ color: "rgba(0,0,0,0.5)", lineHeight: "24px" }}>{t("实名认证")}</span>
                     {verified ? (
@@ -1211,6 +1376,7 @@ export const AccountPage = () => {
                       </button>
                     )}
                   </div>
+                  )}
                 </div>
               )}
             </motion.div>

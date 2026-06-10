@@ -969,7 +969,8 @@ func (r *Runtime) ensureJuiceFSCloneSupported(target string) error {
 	}
 	mountpoint, fsType, ok := r.mountInfoForPath(target)
 	if !ok || mountpoint != r.cfg.JFSRoot || !isJuiceFSFSType(fsType) {
-		return fmt.Errorf("checkpoint clone requires JuiceFS-backed path under %s: %s", r.cfg.JFSRoot, target)
+		r.logCheckpointCloneMountDiagnostics(target, mountpoint, fsType, ok)
+		return fmt.Errorf("checkpoint clone requires JuiceFS-backed path under %s: %s observed_mountpoint=%q observed_fs_type=%q mountinfo_ok=%t", r.cfg.JFSRoot, target, mountpoint, fsType, ok)
 	}
 	return nil
 }
@@ -3811,19 +3812,33 @@ func runtimeMountInfoPath() string {
 
 var runtimeMountInfoPathOverride func() string
 
+type runtimeMountInfoDetail struct {
+	Mountpoint string
+	FSType     string
+	Source     string
+	Root       string
+	Line       string
+	OK         bool
+}
+
 func (r *Runtime) mountInfoForPath(target string) (string, string, bool) {
+	detail := r.mountInfoDetailForPath(target)
+	return detail.Mountpoint, detail.FSType, detail.OK
+}
+
+func (r *Runtime) mountInfoDetailForPath(target string) runtimeMountInfoDetail {
 	f, err := os.Open(runtimeMountInfoPath())
 	if err != nil {
-		return "", "", false
+		return runtimeMountInfoDetail{}
 	}
 	defer f.Close()
 
 	target = filepath.Clean(target)
-	bestMountpoint := ""
-	bestFSType := ""
+	best := runtimeMountInfoDetail{}
 
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
+		line := scanner.Text()
 		fields := strings.Fields(scanner.Text())
 		if len(fields) < 10 {
 			continue
@@ -3839,23 +3854,91 @@ func (r *Runtime) mountInfoForPath(target string) (string, string, bool) {
 			continue
 		}
 		mountpoint := fields[4]
-		if target != mountpoint && !strings.HasPrefix(target, mountpoint+"/") {
+		if !mountpointCoversPath(mountpoint, target) {
 			continue
 		}
-		if len(mountpoint) < len(bestMountpoint) {
+		if len(mountpoint) < len(best.Mountpoint) {
 			continue
 		}
-		bestMountpoint = mountpoint
-		bestFSType = fields[sep+1]
+		best = runtimeMountInfoDetail{
+			Mountpoint: mountpoint,
+			FSType:     fields[sep+1],
+			Source:     fields[sep+2],
+			Root:       fields[3],
+			Line:       line,
+			OK:         true,
+		}
 	}
-	if bestMountpoint == "" {
-		return "", "", false
-	}
-	return bestMountpoint, bestFSType, true
+	return best
 }
 
 func isJuiceFSFSType(fsType string) bool {
 	return strings.Contains(strings.ToLower(fsType), "juicefs")
+}
+
+func mountpointCoversPath(mountpoint, target string) bool {
+	mountpoint = filepath.Clean(mountpoint)
+	target = filepath.Clean(target)
+	if mountpoint == "/" {
+		return strings.HasPrefix(target, "/")
+	}
+	return target == mountpoint || strings.HasPrefix(target, mountpoint+"/")
+}
+
+func (r *Runtime) logCheckpointCloneMountDiagnostics(target, observedMountpoint, observedFSType string, observedOK bool) {
+	detail := r.mountInfoDetailForPath(target)
+	if detail.OK {
+		observedMountpoint = detail.Mountpoint
+		observedFSType = detail.FSType
+		observedOK = true
+	}
+	mntNS := ""
+	if ns, err := os.Readlink("/proc/self/ns/mnt"); err == nil {
+		mntNS = ns
+	}
+	r.log("checkpoint_mount_diag target=%q jfs_root=%q active_img=%q checkpoints_root=%q jfs_bin=%q mountinfo_path=%q mnt_ns=%q mountinfo_ok=%t observed_mountpoint=%q observed_fs_type=%q observed_source=%q observed_root=%q target_statfs=%q jfs_root_statfs=%q mountinfo_line=%q",
+		target,
+		r.cfg.JFSRoot,
+		r.cfg.ActiveImg,
+		r.cfg.CheckpointsRoot,
+		r.cfg.JFSBin,
+		runtimeMountInfoPath(),
+		mntNS,
+		observedOK,
+		observedMountpoint,
+		observedFSType,
+		detail.Source,
+		detail.Root,
+		statFSForLog(target),
+		statFSForLog(r.cfg.JFSRoot),
+		oneLineForLog(detail.Line, 1200),
+	)
+}
+
+func statFSForLog(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "stat", "-f", "-c", "type=%T id=%i namelen=%l bsize=%s", path).CombinedOutput()
+	text := oneLineForLog(string(out), 600)
+	if err != nil {
+		if text == "" {
+			return err.Error()
+		}
+		return text + " err=" + err.Error()
+	}
+	return text
+}
+
+func oneLineForLog(value string, limit int) string {
+	value = strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(value, "\n", " "), "\r", " "))
+	if limit > 0 && len(value) > limit {
+		return value[:limit] + "...<truncated>"
+	}
+	return value
 }
 
 func isBenignSformatError(err error) bool {
@@ -3955,11 +4038,19 @@ func (r *Runtime) runDetached(ctx context.Context, name string, args ...string) 
 	}
 	defer devNull.Close()
 
+	var stdout, stderr bytes.Buffer
 	cmd.Stdin = devNull
-	cmd.Stdout = devNull
-	cmd.Stderr = devNull
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("%s %s: %w", name, strings.Join(args, " "), err)
+		detail := ""
+		if text := oneLineForLog(stderr.String(), 2048); text != "" {
+			detail += " stderr=" + strconv.Quote(text)
+		}
+		if text := oneLineForLog(stdout.String(), 2048); text != "" {
+			detail += " stdout=" + strconv.Quote(text)
+		}
+		return fmt.Errorf("%s %s: %w%s", name, strings.Join(args, " "), err, detail)
 	}
 	return nil
 }

@@ -67,6 +67,7 @@ func mysqlUserSelectColumns(prefix string, includeAudit bool) string {
 	}
 	columns = append(columns,
 		prefix+"email",
+		prefix+"email_verified",
 		prefix+"phone",
 		prefix+"avatar_object_key",
 		prefix+"avatar_source",
@@ -78,13 +79,14 @@ func mysqlUserSelectColumns(prefix string, includeAudit bool) string {
 	return strings.Join(columns, ",\n\t\t\t")
 }
 
-func mysqlUserScanDest(user *User, includeAudit bool, pendingName *sql.NullString, nameAuditStatus *sql.NullString, pendingAvatarObjectKey *sql.NullString, pendingAvatarSource *sql.NullString, avatarAuditStatus *sql.NullString, emailValue *sql.NullString, phoneValue *sql.NullString, avatarObjectKey *sql.NullString, avatarSource *sql.NullString, realnameVerifiedAt *sql.NullTime) []any {
+func mysqlUserScanDest(user *User, includeAudit bool, pendingName *sql.NullString, nameAuditStatus *sql.NullString, pendingAvatarObjectKey *sql.NullString, pendingAvatarSource *sql.NullString, avatarAuditStatus *sql.NullString, emailValue *sql.NullString, emailVerified *sql.NullBool, phoneValue *sql.NullString, avatarObjectKey *sql.NullString, avatarSource *sql.NullString, realnameVerifiedAt *sql.NullTime) []any {
 	dest := []any{&user.ID, &user.Name}
 	if includeAudit {
 		dest = append(dest, pendingName, nameAuditStatus, pendingAvatarObjectKey, pendingAvatarSource, avatarAuditStatus)
 	}
 	dest = append(dest,
 		emailValue,
+		emailVerified,
 		phoneValue,
 		avatarObjectKey,
 		avatarSource,
@@ -96,8 +98,9 @@ func mysqlUserScanDest(user *User, includeAudit bool, pendingName *sql.NullStrin
 	return dest
 }
 
-func applyMySQLUserFields(user *User, includeAudit bool, pendingName sql.NullString, nameAuditStatus sql.NullString, pendingAvatarObjectKey sql.NullString, pendingAvatarSource sql.NullString, avatarAuditStatus sql.NullString, emailValue sql.NullString, phoneValue sql.NullString, avatarObjectKey sql.NullString, avatarSource sql.NullString, realnameVerifiedAt sql.NullTime) {
+func applyMySQLUserFields(user *User, includeAudit bool, pendingName sql.NullString, nameAuditStatus sql.NullString, pendingAvatarObjectKey sql.NullString, pendingAvatarSource sql.NullString, avatarAuditStatus sql.NullString, emailValue sql.NullString, emailVerified sql.NullBool, phoneValue sql.NullString, avatarObjectKey sql.NullString, avatarSource sql.NullString, realnameVerifiedAt sql.NullTime) {
 	user.Email = emailValue.String
+	user.EmailVerified = emailVerified.Valid && emailVerified.Bool
 	if includeAudit {
 		user.PendingName = pendingName.String
 		user.NameAuditStatus = nameAuditStatus.String
@@ -119,14 +122,15 @@ func (s *MySQLStore) scanUserRow(row sqlScanner) (User, error) {
 	var pendingAvatarSource sql.NullString
 	var avatarAuditStatus sql.NullString
 	var emailValue sql.NullString
+	var emailVerified sql.NullBool
 	var phoneValue sql.NullString
 	var avatarObjectKey sql.NullString
 	var avatarSource sql.NullString
 	var realnameVerifiedAt sql.NullTime
-	if err := row.Scan(mysqlUserScanDest(&user, s.contentAuditEnabled, &pendingName, &nameAuditStatus, &pendingAvatarObjectKey, &pendingAvatarSource, &avatarAuditStatus, &emailValue, &phoneValue, &avatarObjectKey, &avatarSource, &realnameVerifiedAt)...); err != nil {
+	if err := row.Scan(mysqlUserScanDest(&user, s.contentAuditEnabled, &pendingName, &nameAuditStatus, &pendingAvatarObjectKey, &pendingAvatarSource, &avatarAuditStatus, &emailValue, &emailVerified, &phoneValue, &avatarObjectKey, &avatarSource, &realnameVerifiedAt)...); err != nil {
 		return User{}, err
 	}
-	applyMySQLUserFields(&user, s.contentAuditEnabled, pendingName, nameAuditStatus, pendingAvatarObjectKey, pendingAvatarSource, avatarAuditStatus, emailValue, phoneValue, avatarObjectKey, avatarSource, realnameVerifiedAt)
+	applyMySQLUserFields(&user, s.contentAuditEnabled, pendingName, nameAuditStatus, pendingAvatarObjectKey, pendingAvatarSource, avatarAuditStatus, emailValue, emailVerified, phoneValue, avatarObjectKey, avatarSource, realnameVerifiedAt)
 	return user, nil
 }
 
@@ -234,6 +238,7 @@ func (s *MySQLStore) CreatePasswordSession(ctx context.Context, input PasswordSi
 		ID:             userID,
 		Name:           strings.TrimSpace(input.Name),
 		Email:          input.Email,
+		EmailVerified:  true,
 		InviteRequired: false,
 		CreatedAt:      now,
 		UpdatedAt:      now,
@@ -243,12 +248,13 @@ func (s *MySQLStore) CreatePasswordSession(ctx context.Context, input PasswordSi
 			id,
 			name,
 			email,
+			email_verified,
 			phone,
 			invite_required,
 			created_at,
 			updated_at
-		) VALUES (?, ?, ?, NULL, ?, ?, ?)
-	`, user.ID, user.Name, user.Email, false, now, now)
+		) VALUES (?, ?, ?, ?, NULL, ?, ?, ?)
+	`, user.ID, user.Name, user.Email, true, false, now, now)
 	if err != nil {
 		if isMySQLDuplicate(err) {
 			return nil, newError("email_in_use", "该邮箱已注册，请直接登录。", 409)
@@ -293,19 +299,20 @@ func (s *MySQLStore) GetPasswordUser(ctx context.Context, email string) (User, [
 	var pendingAvatarSource sql.NullString
 	var avatarAuditStatus sql.NullString
 	var emailValue sql.NullString
+	var emailVerified sql.NullBool
 	var phoneValue sql.NullString
 	var avatarObjectKey sql.NullString
 	var avatarSource sql.NullString
 	var realnameVerifiedAt sql.NullTime
 	var hash []byte
-	dest := mysqlUserScanDest(&user, s.contentAuditEnabled, &pendingName, &nameAuditStatus, &pendingAvatarObjectKey, &pendingAvatarSource, &avatarAuditStatus, &emailValue, &phoneValue, &avatarObjectKey, &avatarSource, &realnameVerifiedAt)
+	dest := mysqlUserScanDest(&user, s.contentAuditEnabled, &pendingName, &nameAuditStatus, &pendingAvatarObjectKey, &pendingAvatarSource, &avatarAuditStatus, &emailValue, &emailVerified, &phoneValue, &avatarObjectKey, &avatarSource, &realnameVerifiedAt)
 	dest = append(dest, &hash)
 	if err := row.Scan(dest...); errors.Is(err, sql.ErrNoRows) {
 		return User{}, nil, newError("invalid_credentials", "账号或密码不正确。", 401)
 	} else if err != nil {
 		return User{}, nil, fmt.Errorf("query password user: %w", err)
 	}
-	applyMySQLUserFields(&user, s.contentAuditEnabled, pendingName, nameAuditStatus, pendingAvatarObjectKey, pendingAvatarSource, avatarAuditStatus, emailValue, phoneValue, avatarObjectKey, avatarSource, realnameVerifiedAt)
+	applyMySQLUserFields(&user, s.contentAuditEnabled, pendingName, nameAuditStatus, pendingAvatarObjectKey, pendingAvatarSource, avatarAuditStatus, emailValue, emailVerified, phoneValue, avatarObjectKey, avatarSource, realnameVerifiedAt)
 	return user, hash, nil
 }
 
@@ -498,6 +505,7 @@ func (s *MySQLStore) CurrentSession(ctx context.Context, token string, now time.
 	var pendingAvatarSource sql.NullString
 	var avatarAuditStatus sql.NullString
 	var emailValue sql.NullString
+	var emailVerified sql.NullBool
 	var phoneValue sql.NullString
 	var avatarObjectKey sql.NullString
 	var avatarSource sql.NullString
@@ -510,7 +518,7 @@ func (s *MySQLStore) CurrentSession(ctx context.Context, token string, now time.
 		&impersonated,
 		&impersonationReason,
 	}
-	dest = append(dest, mysqlUserScanDest(&user, s.contentAuditEnabled, &pendingName, &nameAuditStatus, &pendingAvatarObjectKey, &pendingAvatarSource, &avatarAuditStatus, &emailValue, &phoneValue, &avatarObjectKey, &avatarSource, &realnameVerifiedAt)...)
+	dest = append(dest, mysqlUserScanDest(&user, s.contentAuditEnabled, &pendingName, &nameAuditStatus, &pendingAvatarObjectKey, &pendingAvatarSource, &avatarAuditStatus, &emailValue, &emailVerified, &phoneValue, &avatarObjectKey, &avatarSource, &realnameVerifiedAt)...)
 	err := row.Scan(dest...)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, newError("unauthorized", "未登录或登录已失效。", 401)
@@ -525,7 +533,7 @@ func (s *MySQLStore) CurrentSession(ctx context.Context, token string, now time.
 		return nil, newError("session_expired", "登录已过期，请重新登录。", 401)
 	}
 
-	applyMySQLUserFields(&user, s.contentAuditEnabled, pendingName, nameAuditStatus, pendingAvatarObjectKey, pendingAvatarSource, avatarAuditStatus, emailValue, phoneValue, avatarObjectKey, avatarSource, realnameVerifiedAt)
+	applyMySQLUserFields(&user, s.contentAuditEnabled, pendingName, nameAuditStatus, pendingAvatarObjectKey, pendingAvatarSource, avatarAuditStatus, emailValue, emailVerified, phoneValue, avatarObjectKey, avatarSource, realnameVerifiedAt)
 	session := &AuthSession{
 		Token:               sessionToken,
 		User:                user,
@@ -1366,14 +1374,15 @@ func (s *MySQLStore) findOrCreatePhoneUserTx(ctx context.Context, tx *sql.Tx, ph
 	var pendingAvatarSource sql.NullString
 	var avatarAuditStatus sql.NullString
 	var emailValue sql.NullString
+	var emailVerified sql.NullBool
 	var phoneValue sql.NullString
 	var realnameVerifiedAt sql.NullTime
 	var avatarObjectKey sql.NullString
 	var avatarSource sql.NullString
-	err := row.Scan(mysqlUserScanDest(&user, s.contentAuditEnabled, &pendingName, &nameAuditStatus, &pendingAvatarObjectKey, &pendingAvatarSource, &avatarAuditStatus, &emailValue, &phoneValue, &avatarObjectKey, &avatarSource, &realnameVerifiedAt)...)
+	err := row.Scan(mysqlUserScanDest(&user, s.contentAuditEnabled, &pendingName, &nameAuditStatus, &pendingAvatarObjectKey, &pendingAvatarSource, &avatarAuditStatus, &emailValue, &emailVerified, &phoneValue, &avatarObjectKey, &avatarSource, &realnameVerifiedAt)...)
 	switch {
 	case err == nil:
-		applyMySQLUserFields(&user, s.contentAuditEnabled, pendingName, nameAuditStatus, pendingAvatarObjectKey, pendingAvatarSource, avatarAuditStatus, emailValue, phoneValue, avatarObjectKey, avatarSource, realnameVerifiedAt)
+		applyMySQLUserFields(&user, s.contentAuditEnabled, pendingName, nameAuditStatus, pendingAvatarObjectKey, pendingAvatarSource, avatarAuditStatus, emailValue, emailVerified, phoneValue, avatarObjectKey, avatarSource, realnameVerifiedAt)
 		if user.InviteRequired {
 			if _, updateErr := tx.ExecContext(ctx, `
 				UPDATE users
@@ -1449,14 +1458,15 @@ func (s *MySQLStore) findOrCreateOAuthUserTx(ctx context.Context, tx *sql.Tx, in
 	var pendingAvatarSource sql.NullString
 	var avatarAuditStatus sql.NullString
 	var emailValue sql.NullString
+	var emailVerified sql.NullBool
 	var phoneValue sql.NullString
 	var avatarObjectKey sql.NullString
 	var avatarSource sql.NullString
 	var realnameVerifiedAt sql.NullTime
-	err := row.Scan(mysqlUserScanDest(&user, s.contentAuditEnabled, &pendingName, &nameAuditStatus, &pendingAvatarObjectKey, &pendingAvatarSource, &avatarAuditStatus, &emailValue, &phoneValue, &avatarObjectKey, &avatarSource, &realnameVerifiedAt)...)
+	err := row.Scan(mysqlUserScanDest(&user, s.contentAuditEnabled, &pendingName, &nameAuditStatus, &pendingAvatarObjectKey, &pendingAvatarSource, &avatarAuditStatus, &emailValue, &emailVerified, &phoneValue, &avatarObjectKey, &avatarSource, &realnameVerifiedAt)...)
 	switch {
 	case err == nil:
-		applyMySQLUserFields(&user, s.contentAuditEnabled, pendingName, nameAuditStatus, pendingAvatarObjectKey, pendingAvatarSource, avatarAuditStatus, emailValue, phoneValue, avatarObjectKey, avatarSource, realnameVerifiedAt)
+		applyMySQLUserFields(&user, s.contentAuditEnabled, pendingName, nameAuditStatus, pendingAvatarObjectKey, pendingAvatarSource, avatarAuditStatus, emailValue, emailVerified, phoneValue, avatarObjectKey, avatarSource, realnameVerifiedAt)
 		if user.InviteRequired {
 			if _, updateErr := tx.ExecContext(ctx, `
 				UPDATE users
@@ -1499,10 +1509,12 @@ func (s *MySQLStore) findOrCreateOAuthUserTx(ctx context.Context, tx *sql.Tx, in
 	if err != nil {
 		return User{}, false, fmt.Errorf("generate oauth user id: %w", err)
 	}
+	oauthEmailVerified := canAutoLinkOAuthEmail(input)
 	user = User{
 		ID:             userID,
 		Name:           input.Name,
 		Email:          input.Email,
+		EmailVerified:  oauthEmailVerified,
 		InviteRequired: false,
 		CreatedAt:      now,
 		UpdatedAt:      now,
@@ -1512,12 +1524,13 @@ func (s *MySQLStore) findOrCreateOAuthUserTx(ctx context.Context, tx *sql.Tx, in
 			id,
 			name,
 			email,
+			email_verified,
 			phone,
 			invite_required,
 			created_at,
 			updated_at
-		) VALUES (?, ?, ?, NULL, ?, ?, ?)
-	`, user.ID, user.Name, nullableString(user.Email), false, now, now); err != nil {
+		) VALUES (?, ?, ?, ?, NULL, ?, ?, ?)
+	`, user.ID, user.Name, nullableString(user.Email), oauthEmailVerified, false, now, now); err != nil {
 		return User{}, false, fmt.Errorf("insert oauth user: %w", err)
 	}
 

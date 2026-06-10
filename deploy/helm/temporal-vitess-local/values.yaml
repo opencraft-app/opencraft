@@ -1,0 +1,225 @@
+nameOverride: ""
+fullnameOverride: ""
+
+vitess:
+  vtgateServiceName: vitess-vtgate-mysql
+  vtctldServiceName: vitess-vtctld
+
+  topologyEtcd:
+    enabled: false
+    serviceName: temporal-vitess-topology-etcd
+    image: bitnami/etcd:3.5.17
+    initPermissionsImage: busybox:1.36
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        memory: 256Mi
+
+  operator:
+    enabled: true
+    image: planetscale/vitess-operator:latest
+    imagePullPolicy: IfNotPresent
+    serviceAccountName: vitess-operator
+    verbosity: 4
+    priorityClasses:
+      create: true
+      use: true
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        memory: 512Mi
+
+  images:
+    vtctld: vitess/lite:latest
+    vtadmin: vitess/vtadmin:latest
+    vtgate: vitess/lite:latest
+    vttablet: vitess/lite:latest
+
+  vschema:
+    enabled: false
+    image: vitess/lite:latest
+    imagePullPolicy: IfNotPresent
+    vtctldServer: vitess-vtctld:15999
+    vtgateHost: vitess-vtgate-mysql
+    vtgatePort: 3306
+    mysqlUser: user
+    sourceKeyspace: temporal
+    shardedKeyspace: temporal_sharded
+    temporalAdminToolsImage: temporalio/admin-tools:1.31.0
+    temporalAdminToolsImagePullPolicy: IfNotPresent
+    temporalSchemaVersion: "1.19"
+    visibilitySchemaVersion: "1.14"
+    waitSeconds: 5
+    backoffLimit: 60
+    activeDeadlineSeconds: 3600
+    ttlSecondsAfterFinished: null
+    argoHooks:
+      enabled: true
+      hook: Sync
+      syncWave: "20"
+      deletePolicy: BeforeHookCreation,HookSucceeded
+    jobAnnotations: {}
+    tables:
+      shardId: []
+      rangeHash: []
+      vindexed: {}
+      reference: []
+
+  cluster:
+    enabled: true
+    name: temporal-vitess
+    cell: zone1
+    configSecretName: temporal-vitess-cluster-config
+    globalLockserver:
+      enabled: false
+      implementation: etcd2
+      address: ""
+      rootPath: /vitess/global
+      etcd:
+        image: bitnami/etcd:3.5.17
+        storage: 10Gi
+        initPermissionsImage: busybox:1.36
+    externalDatastore:
+      user: vt_dba
+      credentialsSecret:
+        create: false
+        name: temporal-vitess-external-mysql
+        key: credentials.json
+        credentials: {}
+
+    vtgate:
+      replicas: 1
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          memory: 256Mi
+    vtctld:
+      replicas: 1
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          memory: 128Mi
+    vtadmin:
+      enabled: true
+      replicas: 1
+      apiResources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          memory: 128Mi
+      webResources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          memory: 128Mi
+    vttablet:
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          memory: 384Mi
+
+    # External MySQL only. Provide keyspaces through an environment overlay or
+    # Terraform output. Each keyspace must define externalShards.
+    keyspaces: []
+
+temporal:
+  enabled: true
+  fullnameOverride: temporal
+  schema:
+    useHelmHooks: false
+    backoffLimit: 60
+    ttlSecondsAfterFinished: "2592000"
+  server:
+    replicaCount: 1
+    # Keep matching long polls below public CLB ~60s idle cutoff for cross-VPC HTTPS/gRPC workers.
+    dynamicConfig:
+      matching.longPollExpirationInterval:
+        - value: 50s
+          constraints: {}
+      matching.numTaskqueueReadPartitions:
+        - value: 5
+          constraints: {}
+      matching.numTaskqueueWritePartitions:
+        - value: 5
+          constraints: {}
+    config:
+      logLevel: "debug,info"
+      namespaces:
+        create: true
+        namespace:
+          - name: default
+            retention: 3d
+      persistence:
+        defaultStore: default
+        visibilityStore: visibility
+        numHistoryShards: 64
+        datastores:
+          default:
+            sql:
+              createDatabase: false
+              manageSchema: true
+              pluginName: mysql8
+              driverName: mysql8
+              databaseName: temporal
+              connectAddr: vitess-vtgate-mysql:3306
+              connectProtocol: tcp
+              user: user
+              password: ""
+              maxConns: 20
+              maxIdleConns: 20
+              maxConnLifetime: 1h
+          visibility:
+            sql:
+              createDatabase: false
+              manageSchema: true
+              pluginName: mysql8
+              driverName: mysql8
+              databaseName: temporal_visibility
+              connectAddr: vitess-vtgate-mysql:3306
+              connectProtocol: tcp
+              user: user
+              password: ""
+              maxConns: 10
+              maxIdleConns: 10
+              maxConnLifetime: 1h
+    additionalInitContainers:
+      - name: wait-for-vtgate
+        image: busybox:1.36
+        command:
+          - sh
+          - -c
+          - |
+            until nc -z vitess-vtgate-mysql 3306; do
+              echo "waiting for Vitess VTGate"
+              sleep 5
+            done
+  admintools:
+    enabled: true
+    additionalInitContainers:
+      - name: wait-for-vtgate
+        image: busybox:1.36
+        command:
+          - sh
+          - -c
+          - |
+            until nc -z vitess-vtgate-mysql 3306; do
+              echo "waiting for Vitess VTGate before Temporal schema"
+              sleep 5
+            done
+  web:
+    enabled: true
+  test:
+    enabled: true
+    resources: {}

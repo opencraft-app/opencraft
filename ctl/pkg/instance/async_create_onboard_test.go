@@ -114,6 +114,9 @@ func (s *createTaskSandboxAdapterStub) Refresh(context.Context, string, int32) e
 func (s *createTaskSandboxAdapterStub) GetLogs(context.Context, string, *psandbox.GetLogsRequest) (*psandbox.SandboxLogs, error) {
 	return nil, nil
 }
+func (s *createTaskSandboxAdapterStub) StartTerminalSession(context.Context, string) (*psandbox.TerminalSession, error) {
+	return nil, nil
+}
 func (s *createTaskSandboxAdapterStub) ExecCommand(context.Context, string, string, int) (*psandbox.ExecCommandResult, error) {
 	return nil, nil
 }

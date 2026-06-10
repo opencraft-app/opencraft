@@ -1,0 +1,97 @@
+{{- if and .Values.temporal.enabled .Values.vitess.cluster.enabled .Values.vitess.vschema.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "temporal-vitess-local.fullname" . }}-sharded-schema-{{ .Release.Revision }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "temporal-vitess-local.labels" . | nindent 4 }}
+  {{- if or .Values.vitess.vschema.argoHooks.enabled .Values.vitess.vschema.jobAnnotations }}
+  annotations:
+    {{- if .Values.vitess.vschema.argoHooks.enabled }}
+    argocd.argoproj.io/hook: {{ .Values.vitess.vschema.argoHooks.hook | quote }}
+    argocd.argoproj.io/hook-delete-policy: {{ .Values.vitess.vschema.argoHooks.deletePolicy | quote }}
+    argocd.argoproj.io/sync-wave: {{ .Values.vitess.vschema.argoHooks.syncWave | quote }}
+    {{- end }}
+    {{- with .Values.vitess.vschema.jobAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- end }}
+spec:
+  backoffLimit: {{ .Values.vitess.vschema.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.vitess.vschema.activeDeadlineSeconds }}
+  {{- with .Values.vitess.vschema.ttlSecondsAfterFinished }}
+  ttlSecondsAfterFinished: {{ .Values.vitess.vschema.ttlSecondsAfterFinished }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        {{- include "temporal-vitess-local.labels" . | nindent 8 }}
+    spec:
+      restartPolicy: OnFailure
+      initContainers:
+        - name: wait-for-temporal-vschema
+          image: {{ .Values.vitess.vschema.image | quote }}
+          imagePullPolicy: {{ .Values.vitess.vschema.imagePullPolicy }}
+          command:
+            - sh
+            - -c
+            - |
+              until /vt/bin/vtctldclient --server={{ .Values.vitess.vschema.vtctldServer }} GetVSchema {{ .Values.vitess.vschema.shardedKeyspace }} | grep -q '"sharded": true'; do
+                echo "waiting for Temporal sharded VSchema"
+                sleep {{ .Values.vitess.vschema.waitSeconds }}
+              done
+        - name: wait-for-sharded-keyspace
+          image: {{ .Values.vitess.vschema.image | quote }}
+          imagePullPolicy: {{ .Values.vitess.vschema.imagePullPolicy }}
+          command:
+            - sh
+            - -c
+            - |
+              until mysql \
+                -h {{ .Values.vitess.vschema.vtgateHost }} \
+                -P {{ .Values.vitess.vschema.vtgatePort }} \
+                -u {{ .Values.vitess.vschema.mysqlUser }} \
+                -D {{ .Values.vitess.vschema.shardedKeyspace }} \
+                -e 'select 1' >/dev/null 2>&1; do
+                echo "waiting for healthy Vitess primary in {{ .Values.vitess.vschema.shardedKeyspace }}"
+                sleep {{ .Values.vitess.vschema.waitSeconds }}
+              done
+      containers:
+        - name: manage-sharded-schema
+          image: {{ .Values.vitess.vschema.temporalAdminToolsImage | quote }}
+          imagePullPolicy: {{ .Values.vitess.vschema.temporalAdminToolsImagePullPolicy }}
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+
+              current_version="$(mysql \
+                -h {{ .Values.vitess.vschema.vtgateHost }} \
+                -P {{ .Values.vitess.vschema.vtgatePort }} \
+                -u {{ .Values.vitess.vschema.mysqlUser }} \
+                -D {{ .Values.vitess.vschema.shardedKeyspace }} \
+                -Nse "select curr_version from schema_version limit 1" 2>/dev/null || true)"
+
+              if [ -z "$current_version" ]; then
+                temporal-sql-tool setup-schema -v 0.0
+              else
+                echo "Temporal schema already initialized in {{ .Values.vitess.vschema.shardedKeyspace }} at version ${current_version}; skipping setup-schema"
+              fi
+
+              temporal-sql-tool update-schema --schema-dir /etc/temporal/schema/mysql/v8/temporal/versioned
+          env:
+            - name: SQL_PLUGIN
+              value: mysql8
+            - name: SQL_HOST
+              value: {{ .Values.vitess.vschema.vtgateHost | quote }}
+            - name: SQL_PORT
+              value: {{ .Values.vitess.vschema.vtgatePort | quote }}
+            - name: SQL_DATABASE
+              value: {{ .Values.vitess.vschema.shardedKeyspace | quote }}
+            - name: SQL_USER
+              value: {{ .Values.vitess.vschema.mysqlUser | quote }}
+            - name: SQL_PASSWORD
+              value: ""
+{{- end }}

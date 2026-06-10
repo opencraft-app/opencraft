@@ -1,0 +1,26 @@
+region      = "ap-beijing"
+name_prefix = "temporal-vitess-prod"
+
+availability_zones = [
+  "ap-beijing-6",
+  "ap-beijing-7",
+]
+
+# Keep the internet API endpoint disabled by default. Add corporate/VPN CIDRs
+# only when an operational access path is required.
+api_server_allowed_cidrs = []
+
+# Inject real secrets with TF_VAR_mysql_root_password and
+# TF_VAR_mysql_vitess_password, or use a local uncommitted terraform.tfvars.
+mysql_root_password   = "REPLACE_ME"
+mysql_vitess_password = "REPLACE_ME"
+
+# Create Tencent Cloud managed etcd separately, then put its client endpoint
+# here. If the service requires mTLS, validate Vitess Operator support for
+# passing client certs before production traffic.
+managed_etcd_address = "REPLACE_WITH_ETCD_HOST_PORT"
+
+# Adjust after capacity planning.
+mysql_cpu            = 4
+mysql_mem_size_mb    = 8000
+mysql_volume_size_gb = 500

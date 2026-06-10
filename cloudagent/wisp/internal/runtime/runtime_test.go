@@ -15,6 +15,18 @@ import (
 	"wisp/internal/config"
 )
 
+func TestRunDetachedIncludesCommandOutputOnFailure(t *testing.T) {
+	rt := New(config.Config{})
+	err := rt.runDetached(context.Background(), "/bin/sh", "-c", "printf detached-out; printf detached-err >&2; exit 7")
+	if err == nil {
+		t.Fatal("expected runDetached failure")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "exit status 7") || !strings.Contains(msg, `stderr="detached-err"`) || !strings.Contains(msg, `stdout="detached-out"`) {
+		t.Fatalf("runDetached error did not include command output: %v", err)
+	}
+}
+
 func TestJuiceFSScriptEnvDoesNotLeakSMHSecret(t *testing.T) {
 	t.Setenv("PATH", "/usr/bin")
 	t.Setenv("UNRELATED_SECRET", "do-not-leak")
@@ -823,6 +835,32 @@ func TestCreateCheckpointUnsupportedCloneRemovesCandidate(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(rt.cfg.CheckpointsRoot, id)); !os.IsNotExist(err) {
 		t.Fatalf("unsupported clone should not leave checkpoint dir, err=%v", err)
+	}
+}
+
+func TestEnsureJuiceFSCloneSupportedIncludesMountDiagnostics(t *testing.T) {
+	root := t.TempDir()
+	rt := newCheckpointCreateTestRuntime(t, root, "#!/bin/sh\nexit 0\n")
+	mountInfoPath := filepath.Join(root, "overlay-mountinfo")
+	if err := os.WriteFile(mountInfoPath, []byte("1 2 0:1 / / rw - overlay overlay rw\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	previous := runtimeMountInfoPathOverride
+	runtimeMountInfoPathOverride = func() string {
+		return mountInfoPath
+	}
+	t.Cleanup(func() {
+		runtimeMountInfoPathOverride = previous
+	})
+
+	err := rt.ensureJuiceFSCloneSupported(rt.cfg.ActiveImg)
+	if err == nil {
+		t.Fatal("expected non-JuiceFS mount to reject clone")
+	}
+	for _, want := range []string{`observed_mountpoint="/"`, `observed_fs_type="overlay"`, "mountinfo_ok=true"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("expected error to contain %q, got %v", want, err)
+		}
 	}
 }
 
