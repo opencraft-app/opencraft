@@ -1,4 +1,4 @@
-import { Navigate, createBrowserRouter } from "react-router-dom";
+import { Navigate, createBrowserRouter, useLocation } from "react-router-dom";
 import { AppShellLayout } from "@/layouts/app-shell-layout";
 import { MarketingLayout } from "@/layouts/marketing-layout";
 import { RootLayout } from "@/layouts/root-layout";
@@ -39,6 +39,11 @@ const NotFoundPage = () => (
     <p className="mt-2 text-[var(--text-secondary)]">你访问的地址不在当前原型路由中。</p>
   </div>
 );
+
+const RedirectToAgents = () => {
+  const location = useLocation();
+  return <Navigate to={{ pathname: "/agents", search: location.search }} replace />;
+};
 
 export const router = createBrowserRouter([
   {
@@ -118,7 +123,11 @@ export const router = createBrowserRouter([
             element: lazyRoute(OpenClawSuccessPage),
           },
           {
-            path: "dashboard/settings",
+            path: "agents",
+            element: lazyRoute(OpenClawSettingsPage),
+          },
+          {
+            path: "agents/:section",
             element: lazyRoute(OpenClawSettingsPage),
           },
           {
@@ -133,11 +142,15 @@ export const router = createBrowserRouter([
             path: "tat/device-bind",
             element: lazyRoute(TATDeviceBindPage),
           },
-          /* ── /dashboard 裸路径兜底：SPA 内部 navigate("/dashboard") 或用户手敲时，
-             统一导向 /dashboard/settings，避免命中外层 NotFound。 ── */
+          /* ── /dashboard 与 /dashboard/settings 已迁移到 /agents。
+             保留客户端兼容跳转，避免老书签/外链 404，并保留 ?creating=... 等查询参数。 ── */
           {
             path: "dashboard",
-            element: <Navigate to="/dashboard/settings" replace />,
+            element: <RedirectToAgents />,
+          },
+          {
+            path: "dashboard/settings",
+            element: <RedirectToAgents />,
           },
           /* ── 老路径兼容：/openclaw/* 与 /create-openclaw 保留客户端重定向，
              避免老书签/外链 404。后续可在稳定一段时间后再删除。 ── */
@@ -155,7 +168,7 @@ export const router = createBrowserRouter([
           },
           {
             path: "openclaw/settings",
-            element: <Navigate to="/dashboard/settings" replace />,
+            element: <RedirectToAgents />,
           },
           {
             path: "console/create",
@@ -171,7 +184,7 @@ export const router = createBrowserRouter([
           },
           {
             path: "console/settings",
-            element: <Navigate to="/dashboard/settings" replace />,
+            element: <RedirectToAgents />,
           },
         ],
       },
@@ -249,7 +262,7 @@ export const router = createBrowserRouter([
           },
           {
             path: "*",
-            element: <Navigate to="/dashboard/settings" replace />,
+            element: <Navigate to="/agents" replace />,
           },
         ],
       },

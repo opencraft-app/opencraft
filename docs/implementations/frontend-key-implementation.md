@@ -89,21 +89,23 @@
 - `/subscribe`：订阅/权益购买与创建实例（`SubscribePage`）
 - `/dashboard/setup`：初始化设置流程（`OpenClawSetupPage`）
 - `/dashboard/success`：创建成功页（`OpenClawSuccessPage`）
-- `/dashboard/settings`：Hermes 管理页（`OpenClawSettingsPage`）
+- `/agents`：Agent 控制台（`OpenClawSettingsPage`，默认通道页）
+- `/agents/:section`：Agent 控制台分区（channels / models / skills / persona / automations / memory / achievements / files / chat）
 - `/account`：账号信息页（`AccountPage`）
 - `/account/orders`：订单/发票页（`AccountOrdersPage`）
-- `/dashboard`：重定向到 `/dashboard/settings`
+- `/dashboard`：重定向到 `/agents`
+- `/dashboard/settings`：重定向到 `/agents`
 
 同时保留老路径兼容重定向：
 
 - `/create-openclaw` -> `/dashboard/create`
 - `/openclaw/setup` -> `/dashboard/setup`
 - `/openclaw/success` -> `/dashboard/success`
-- `/openclaw/settings` -> `/dashboard/settings`
+- `/openclaw/settings` -> `/agents`
 - `/console/create` -> `/dashboard/create`
 - `/console/setup` -> `/dashboard/setup`
 - `/console/success` -> `/dashboard/success`
-- `/console/settings` -> `/dashboard/settings`
+- `/console/settings` -> `/agents`
 
 ### 3.3 认证页
 
@@ -128,7 +130,7 @@ App Shell 路由套 `AppAccessGuard + AppShellLayout`。
 - `/bots/:id/workspace`：Bot 工作空间（`WorkspacePage`）
 - `/bots/:id/settings`：Bot 运行设置（`SettingsPage`）
 - `/bots/:id/terminal`：独立的真实 Web Terminal 页面（`BotTerminalPage`）
-- `*`（catch-all）：重定向到 `/dashboard/settings`
+- `*`（catch-all）：重定向到 `/agents`
 
 ### 3.5 内部路由
 
@@ -466,7 +468,7 @@ HTTP 层统一处理：
 4. 未订阅时先创建权益：`repositories.plans.createPass(bundle_id)` -> `POST /v1/passes`
 5. 如果后端返回 `PASS_ALREADY_EXISTS`，不视为失败，继续创建实例
 6. 创建实例：`addBot()` -> `repositories.bots.createBot()` -> `POST /v1/instances`
-7. 成功后跳转 `/dashboard/settings?creating=true`
+7. 成功后跳转 `/agents?creating=true`
 8. 设置页展示创建 loading 动画，结束后切到最新 Bot
 
 邀请码相关错误会触发 `InviteCodeModal`，激活邀请码后自动继续之前的套餐流程。
@@ -507,9 +509,9 @@ HTTP 层统一处理：
   - 点击打开装饰性出生证明弹窗（桃色背景 #FFD4A8、波浪边框）
   - 从后端 `/borncard` 获取出生序号（"今天出生的第 X 个 Hermes 宝宝"）
   - 通过 `html2canvas` 高 DPI 渲染并下载为 PNG
-- 导航：`"管理我的智能体伙伴"` → `/dashboard/settings`
+- 导航：`"管理我的智能体伙伴"` → `/agents`
 
-### 6.7 Hermes 设置页
+### 6.7 Agent 控制台
 
 页面：`frontend/src/pages/marketing/openclaw-settings-page.tsx`
 

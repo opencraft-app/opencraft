@@ -16,10 +16,10 @@ export const WorkspacePage = () => {
             actions={(
               <>
                 <Button asChild>
-                  <Link to={id ? `/bots/${id}/terminal` : "/dashboard/settings"}>进入终端</Link>
+                  <Link to={id ? `/bots/${id}/terminal` : "/agents"}>进入终端</Link>
                 </Button>
                 <Button asChild variant="outline">
-                  <Link to={id ? `/bots/${id}/settings` : "/dashboard/settings"}>Agent 设置</Link>
+                  <Link to={id ? `/bots/${id}/settings` : "/agents"}>Agent 设置</Link>
                 </Button>
               </>
             )}

@@ -235,10 +235,10 @@ export const BotTerminalPage = () => {
             {error ?? connectionState}
           </span>
           <Button asChild variant="outline" className="h-9 border-white/15 bg-transparent px-3 text-[#f4eadf] hover:bg-white/10 hover:text-white">
-            <Link to={id ? `/bots/${id}/workspace` : "/dashboard/settings"}>返回</Link>
+            <Link to={id ? `/bots/${id}/workspace` : "/agents"}>返回</Link>
           </Button>
           <Button asChild className="h-9 bg-[#f4eadf] px-3 text-[#14100d] hover:bg-white">
-            <Link to={id ? `/bots/${id}/settings` : "/dashboard/settings"}>设置</Link>
+            <Link to={id ? `/bots/${id}/settings` : "/agents"}>设置</Link>
           </Button>
         </div>
       </header>

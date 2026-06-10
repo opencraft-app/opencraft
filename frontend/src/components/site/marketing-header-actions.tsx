@@ -38,7 +38,7 @@ export const MarketingHeaderActions = ({
       </Button>
       {planConfirmed ? (
         <Button asChild size="sm">
-          <Link to="/dashboard/settings">进入控制台</Link>
+          <Link to="/agents">进入控制台</Link>
         </Button>
       ) : location.pathname === "/plans/select" ? null : (
         <Button asChild size="sm">

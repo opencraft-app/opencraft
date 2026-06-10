@@ -57,10 +57,10 @@ export const SettingsPage = () => {
             actions={(
               <>
                 <Button asChild>
-                  <Link to={id ? `/bots/${id}/terminal` : "/dashboard/settings"}>打开终端</Link>
+                  <Link to={id ? `/bots/${id}/terminal` : "/agents"}>打开终端</Link>
                 </Button>
                 <Button asChild variant="outline">
-                  <Link to={id ? `/bots/${id}/workspace` : "/dashboard/settings"}>返回工作台</Link>
+                  <Link to={id ? `/bots/${id}/workspace` : "/agents"}>返回工作台</Link>
                 </Button>
               </>
             )}

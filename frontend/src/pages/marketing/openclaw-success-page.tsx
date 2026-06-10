@@ -538,7 +538,7 @@ export const OpenClawSuccessPage = () => {
               className="flex w-full flex-col items-center gap-4"
             >
               <Link
-                to="/dashboard/settings"
+                to="/agents"
                 className="lw-btn-primary w-full max-w-md justify-center"
               >
                 <Bot className="h-4 w-4" />

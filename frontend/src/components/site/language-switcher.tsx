@@ -169,7 +169,7 @@ export function LanguageSwitcher({
   variant?: "dropdown" | "inline";
   /**
    * 切换后是否强制刷新页面。
-   * 在使用 @tencent/tea-sdk-lightclaw 的页面（目前仅 /dashboard/settings）
+   * 在使用 @tencent/tea-sdk-lightclaw 的页面（目前仅 /agents）
    * 必须传 `true`，否则 SDK 区域的 tea-app i18n 不会跟随切换。
    */
   reloadAfterSwitch?: boolean;

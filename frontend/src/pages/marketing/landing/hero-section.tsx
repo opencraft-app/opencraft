@@ -84,7 +84,7 @@ export function HeroSection({
     }
     if (isSubscribed) {
       /* 已订阅：直接进入我的龙虾页面（无龙虾时自动创建） */
-    navigate(hasBots ? "/dashboard/settings" : "/dashboard/settings?creating=true");
+    navigate(hasBots ? "/agents" : "/agents?creating=true");
     } else {
       /* 未订阅：去选套餐 */
       navigate("/subscribe");

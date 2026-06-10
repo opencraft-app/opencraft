@@ -92,7 +92,7 @@ export const UserAvatarMenu = () => {
             {/* Menu items */}
             <div className="py-1.5">
               <Link
-                to="/dashboard/settings"
+                to="/agents"
                 onClick={() => setOpen(false)}
                 className="flex items-center gap-2.5 px-4 py-2.5 text-sm font-normal text-[var(--text-secondary)] transition-all duration-250 hover:bg-[var(--surface-muted)] hover:text-[var(--text-primary)]"
               >

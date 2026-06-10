@@ -28,7 +28,7 @@ describe("MarketingHeaderActions", () => {
     );
 
     expect(screen.getByText("海盐小猫")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "进入控制台" })).toHaveAttribute("href", "/dashboard/settings");
+    expect(screen.getByRole("link", { name: "进入控制台" })).toHaveAttribute("href", "/agents");
     expect(screen.getByRole("button", { name: "退出" })).toBeInTheDocument();
   });
 
