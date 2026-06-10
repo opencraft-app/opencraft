@@ -13,6 +13,7 @@ import (
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/httpapi"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/logging"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/realname"
+	"github.com/openclaw/openclaw/mono/backend/auth/internal/ses"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/service"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/tat"
 )
@@ -28,6 +29,8 @@ func main() {
 	contentAuditConfig := buildContentAuditConfig(logger)
 	contentAuditClient := buildContentAuditClient(logger, contentAuditConfig)
 	authStore := newStore(contentAuditConfig.Enabled)
+	publicBaseURL := envOrDefault("LIGHTCLAW_PUBLIC_BASE_URL", "https://lightclaw.tech")
+	frontendBaseURL := envOrDefault("LIGHTCLAW_FRONTEND_BASE_URL", publicBaseURL)
 	authService := service.NewWithStore(authStore, service.Options{
 		SessionTTL:         sessionTTL,
 		DefaultSMSCode:     envOrDefault("LIGHTCLAW_DEV_SMS_CODE", ""),
@@ -36,6 +39,14 @@ func main() {
 		ContentAudit:       contentAuditConfig,
 		ContentAuditClient: contentAuditClient,
 		Logger:             logger,
+		EmailBind: service.EmailBindConfig{
+			Enabled:         envOrDefault("LIGHTCLAW_EMAIL_BIND_ENABLED", "false") == "true",
+			TokenTTL:        time.Duration(envInt64OrDefault("LIGHTCLAW_EMAIL_BIND_TOKEN_TTL_SECONDS", 1800)) * time.Second,
+			Cooldown:        time.Duration(envInt64OrDefault("LIGHTCLAW_EMAIL_BIND_COOLDOWN_SECONDS", 60)) * time.Second,
+			PublicBaseURL:   publicBaseURL,
+			FrontendBaseURL: frontendBaseURL,
+			Sender:          buildEmailBindSender(logger),
+		},
 	})
 	avatarStore := buildAvatarStore(logger)
 
@@ -53,7 +64,8 @@ func main() {
 		DeviceBindTokenSecret:     envOrDefault("LIGHTCLAW_DEVICE_BIND_TOKEN_SECRET", ""),
 		DeviceBindTokenTTL:        time.Duration(envInt64OrDefault("LIGHTCLAW_DEVICE_BIND_TOKEN_TTL_SECONDS", 600)) * time.Second,
 		Logger:                    logger,
-		PublicBaseURL:             envOrDefault("LIGHTCLAW_PUBLIC_BASE_URL", "https://lightclaw.tech"),
+		PublicBaseURL:             publicBaseURL,
+		FrontendBaseURL:           frontendBaseURL,
 		AdminToken:                envOrDefault("LIGHTCLAW_ADMIN_TOKEN", ""),
 		E2EAuthEnabled:            envOrDefault("LIGHTVELA_E2E_AUTH_ENABLED", "false") == "true",
 		E2EAuthToken:              envOrDefault("LIGHTVELA_E2E_AUTH_TOKEN", ""),
@@ -359,6 +371,38 @@ func buildRealnameCipher(logger *slog.Logger) service.RealnameCipher {
 	}
 	logger.Info("realname cipher enabled")
 	return cipher
+}
+
+func buildEmailBindSender(logger *slog.Logger) service.EmailSender {
+	secretID := envFirst(
+		"LIGHTCLAW_SES_SECRET_ID",
+		"TENCENTCLOUD_SECRET_ID",
+		"LIGHTCLAW_COS_SECRET_ID",
+	)
+	secretKey := envFirst(
+		"LIGHTCLAW_SES_SECRET_KEY",
+		"TENCENTCLOUD_SECRET_KEY",
+		"LIGHTCLAW_COS_SECRET_KEY",
+	)
+	if secretID == "" || secretKey == "" {
+		logger.Warn("email bind sender falling back to log-only mode due to missing Tencent SES credentials")
+		return &service.LogEmailSender{Logger: logger}
+	}
+
+	client, err := ses.New(ses.Config{
+		SecretID:  secretID,
+		SecretKey: secretKey,
+		Region:    envOrDefault("LIGHTCLAW_SES_REGION", "ap-guangzhou"),
+		Endpoint:  envOrDefault("LIGHTCLAW_SES_ENDPOINT", "ses.tencentcloudapi.com"),
+	})
+	if err != nil {
+		logger.Error("init tencent ses sender failed, falling back to log-only mode", "err", err)
+		return &service.LogEmailSender{Logger: logger}
+	}
+
+	from := envOrDefault("LIGHTCLAW_SES_FROM", "LightVela <noreply@service.lightvela.com>")
+	logger.Info("email bind sender enabled", "region", envOrDefault("LIGHTCLAW_SES_REGION", "ap-guangzhou"), "from", from)
+	return service.NewTencentSESSender(client, from, logger)
 }
 
 func buildAvatarStore(logger *slog.Logger) httpapi.AvatarStore {

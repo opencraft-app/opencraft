@@ -32,6 +32,7 @@ type Options struct {
 	ContentAudit       ContentAuditConfig
 	ContentAuditClient ContentAuditClient
 	Logger             *slog.Logger
+	EmailBind          EmailBindConfig
 }
 
 type Error struct {
@@ -51,6 +52,7 @@ type User struct {
 	PendingName            string
 	NameAuditStatus        string
 	Email                  string
+	EmailVerified          bool
 	Phone                  string
 	AvatarObjectKey        string
 	AvatarSource           string
@@ -227,6 +229,7 @@ type Service struct {
 	contentAudit       ContentAuditConfig
 	contentAuditClient ContentAuditClient
 	logger             *slog.Logger
+	emailBind            EmailBindConfig
 }
 
 type smsChallenge struct {
@@ -282,6 +285,7 @@ func NewWithStore(store Store, opts Options) *Service {
 		contentAudit:       opts.ContentAudit,
 		contentAuditClient: opts.ContentAuditClient,
 		logger:             logger,
+		emailBind:          opts.EmailBind,
 	}
 }
 

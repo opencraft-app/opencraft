@@ -92,3 +92,5 @@ routes:
         path: /auth/oauth/github/start
       - method: GET
         path: /auth/oauth/github/callback
+      - method: GET
+        path: /auth/email/bind/confirm

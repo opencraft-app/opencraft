@@ -33,6 +33,8 @@ export interface User {
   inviteRequired: boolean;
   /** 是否已完成实名认证，后端 /auth/session /auth/profile 下发 */
   realnameVerified?: boolean;
+  /** 邮箱是否已验证（Magic Link 绑定），后端 /auth/session /auth/profile 下发 */
+  emailVerified?: boolean;
   createdAt: string;
 }
 

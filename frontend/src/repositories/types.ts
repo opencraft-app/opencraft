@@ -70,6 +70,8 @@ export interface AuthRepository {
   deleteAccount(): Promise<void>;
   /** 实名认证：POST /auth/realname/verify */
   verifyRealname(input: { name: string; idCard: string }): Promise<RealnameVerifyResult>;
+  /** 邮箱绑定：POST /auth/email/bind/request */
+  requestEmailBind(input: { email: string }): Promise<{ cooldownSeconds: number }>;
   createTatDeviceBind(input: { callbackUrl: string; deviceName?: string }): Promise<TatDeviceBindResult>;
   getOAuthStartUrl(provider: OAuthProvider, options?: OAuthStartOptions): string | null;
   signInAsGuest(): Promise<AuthSessionSnapshot>;

@@ -214,6 +214,38 @@ paths:
           $ref: '#/components/responses/ErrorResponse'
         '401':
           $ref: '#/components/responses/ErrorResponse'
+  /auth/email/bind/request:
+    post:
+      operationId: requestEmailBind
+      summary: Send a magic-link email to bind an address to the current user
+      security:
+        - SessionCookie: []
+        - SessionBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailBindRequest'
+      responses:
+        '200':
+          description: Magic-link email accepted for delivery
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmailBindRequestResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+        '429':
+          $ref: '#/components/responses/ErrorResponse'
+        '502':
+          $ref: '#/components/responses/ErrorResponse'
+        '503':
+          $ref: '#/components/responses/ErrorResponse'
   /auth/realname/verify:
     post:
       operationId: verifyRealname
@@ -313,6 +345,7 @@ components:
         - name
         - inviteRequired
         - realnameVerified
+        - emailVerified
         - createdAt
       properties:
         id:
@@ -331,6 +364,8 @@ components:
             - failed
         email:
           type: string
+        emailVerified:
+          type: boolean
         phone:
           type: string
         avatarUrl:
@@ -444,6 +479,21 @@ components:
       properties:
         email:
           type: string
+    EmailBindRequest:
+      type: object
+      required:
+        - email
+      properties:
+        email:
+          type: string
+          format: email
+    EmailBindRequestResponse:
+      type: object
+      required:
+        - cooldownSeconds
+      properties:
+        cooldownSeconds:
+          type: integer
     SendSmsRequest:
       type: object
       required:
