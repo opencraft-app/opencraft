@@ -30,6 +30,7 @@ type ServerConfig struct {
 	DeviceBindTokenTTL        time.Duration
 	Logger                    *slog.Logger
 	PublicBaseURL             string
+	FrontendBaseURL           string
 	AdminToken                string
 	E2EAuthEnabled            bool
 	E2EAuthToken              string
@@ -48,11 +49,12 @@ func NewRouter(authService *service.Service, config ServerConfig) *gin.Engine {
 		ctx.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
-	handler := NewHandler(authService, config.CookieSecure, config.CookieSameSite, config.SessionTTL, config.QQOAuth, config.GoogleOAuth, config.GitHubOAuth, config.WeChatOAuth, config.PublicBaseURL, config.OAuthReturnToAllowedHosts)
+	handler := NewHandler(authService, config.CookieSecure, config.CookieSameSite, config.SessionTTL, config.QQOAuth, config.GoogleOAuth, config.GitHubOAuth, config.WeChatOAuth, config.PublicBaseURL, config.FrontendBaseURL, config.OAuthReturnToAllowedHosts)
 	handler.avatarStore = config.AvatarStore
 	handler.tatRegisterIssuer = config.TATRegisterIssuer
 	handler.deviceBindTokens = newDeviceBindTokenCodec(config.DeviceBindTokenSecret, config.DeviceBindTokenTTL)
 	registerOAuthRoutes(router, handler)
+	router.GET("/auth/email/bind/confirm", handler.HandleConfirmEmailBind)
 	router.POST("/auth/tat/device-bind", handler.CreateTATDeviceBind)
 	router.POST("/auth/invite/prepare", handler.PrepareInvite)
 	router.GET("/users/:userID/avatar", handler.GetUserAvatar)

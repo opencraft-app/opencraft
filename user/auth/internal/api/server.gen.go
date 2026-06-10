@@ -107,6 +107,16 @@ type AuthSession struct {
 	User         User    `json:"user"`
 }
 
+// EmailBindRequest defines model for EmailBindRequest.
+type EmailBindRequest struct {
+	Email openapi_types.Email `json:"email"`
+}
+
+// EmailBindRequestResponse defines model for EmailBindRequestResponse.
+type EmailBindRequestResponse struct {
+	CooldownSeconds int `json:"cooldownSeconds"`
+}
+
 // ErrorResponse defines model for ErrorResponse.
 type ErrorResponse struct {
 	Code              string `json:"code"`
@@ -195,6 +205,7 @@ type User struct {
 	AvatarUrl         *string                `json:"avatarUrl,omitempty"`
 	CreatedAt         time.Time              `json:"createdAt"`
 	Email             *string                `json:"email,omitempty"`
+	EmailVerified     bool                   `json:"emailVerified"`
 	Id                string                 `json:"id"`
 	InviteRequired    bool                   `json:"inviteRequired"`
 	Name              string                 `json:"name"`
@@ -230,6 +241,9 @@ type UpdateProfileAvatarMultipartBody struct {
 	File openapi_types.File `json:"file"`
 }
 
+// RequestEmailBindJSONRequestBody defines body for RequestEmailBind for application/json ContentType.
+type RequestEmailBindJSONRequestBody = EmailBindRequest
+
 // ActivateInviteCodeJSONRequestBody defines body for ActivateInviteCode for application/json ContentType.
 type ActivateInviteCodeJSONRequestBody = InviteValidationRequest
 
@@ -262,6 +276,9 @@ type VerifySmsCodeJSONRequestBody = VerifySmsRequest
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// Send a magic-link email to bind an address to the current user
+	// (POST /auth/email/bind/request)
+	RequestEmailBind(c *gin.Context)
 	// Activate the current authenticated user with an invite code
 	// (POST /auth/invite/activate)
 	ActivateInviteCode(c *gin.Context)
@@ -314,6 +331,23 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(c *gin.Context)
+
+// RequestEmailBind operation middleware
+func (siw *ServerInterfaceWrapper) RequestEmailBind(c *gin.Context) {
+
+	c.Set(SessionCookieScopes, []string{})
+
+	c.Set(SessionBearerScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.RequestEmailBind(c)
+}
 
 // ActivateInviteCode operation middleware
 func (siw *ServerInterfaceWrapper) ActivateInviteCode(c *gin.Context) {
@@ -556,6 +590,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 		ErrorHandler:       errorHandler,
 	}
 
+	router.POST(options.BaseURL+"/auth/email/bind/request", wrapper.RequestEmailBind)
 	router.POST(options.BaseURL+"/auth/invite/activate", wrapper.ActivateInviteCode)
 	router.POST(options.BaseURL+"/auth/invite/validate", wrapper.ValidateInviteCode)
 	router.POST(options.BaseURL+"/auth/password/forgot", wrapper.ForgotPassword)
@@ -573,6 +608,77 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 }
 
 type ErrorResponseJSONResponse ErrorResponse
+
+type RequestEmailBindRequestObject struct {
+	Body *RequestEmailBindJSONRequestBody
+}
+
+type RequestEmailBindResponseObject interface {
+	VisitRequestEmailBindResponse(w http.ResponseWriter) error
+}
+
+type RequestEmailBind200JSONResponse EmailBindRequestResponse
+
+func (response RequestEmailBind200JSONResponse) VisitRequestEmailBindResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type RequestEmailBind400JSONResponse struct{ ErrorResponseJSONResponse }
+
+func (response RequestEmailBind400JSONResponse) VisitRequestEmailBindResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type RequestEmailBind401JSONResponse ErrorResponse
+
+func (response RequestEmailBind401JSONResponse) VisitRequestEmailBindResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type RequestEmailBind409JSONResponse ErrorResponse
+
+func (response RequestEmailBind409JSONResponse) VisitRequestEmailBindResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type RequestEmailBind429JSONResponse ErrorResponse
+
+func (response RequestEmailBind429JSONResponse) VisitRequestEmailBindResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(429)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type RequestEmailBind502JSONResponse ErrorResponse
+
+func (response RequestEmailBind502JSONResponse) VisitRequestEmailBindResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type RequestEmailBind503JSONResponse ErrorResponse
+
+func (response RequestEmailBind503JSONResponse) VisitRequestEmailBindResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+
+	return json.NewEncoder(w).Encode(response)
+}
 
 type ActivateInviteCodeRequestObject struct {
 	Body *ActivateInviteCodeJSONRequestBody
@@ -1041,6 +1147,9 @@ func (response VerifySmsCode403JSONResponse) VisitVerifySmsCodeResponse(w http.R
 
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
+	// Send a magic-link email to bind an address to the current user
+	// (POST /auth/email/bind/request)
+	RequestEmailBind(ctx context.Context, request RequestEmailBindRequestObject) (RequestEmailBindResponseObject, error)
 	// Activate the current authenticated user with an invite code
 	// (POST /auth/invite/activate)
 	ActivateInviteCode(ctx context.Context, request ActivateInviteCodeRequestObject) (ActivateInviteCodeResponseObject, error)
@@ -1095,6 +1204,39 @@ func NewStrictHandler(ssi StrictServerInterface, middlewares []StrictMiddlewareF
 type strictHandler struct {
 	ssi         StrictServerInterface
 	middlewares []StrictMiddlewareFunc
+}
+
+// RequestEmailBind operation middleware
+func (sh *strictHandler) RequestEmailBind(ctx *gin.Context) {
+	var request RequestEmailBindRequestObject
+
+	var body RequestEmailBindJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.Status(http.StatusBadRequest)
+		ctx.Error(err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.RequestEmailBind(ctx, request.(RequestEmailBindRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RequestEmailBind")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(RequestEmailBindResponseObject); ok {
+		if err := validResponse.VisitRequestEmailBindResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
 }
 
 // ActivateInviteCode operation middleware
@@ -1529,36 +1671,38 @@ func (sh *strictHandler) VerifySmsCode(ctx *gin.Context) {
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
+	"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",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

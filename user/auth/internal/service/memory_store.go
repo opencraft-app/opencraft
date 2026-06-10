@@ -22,6 +22,8 @@ type MemoryStore struct {
 	subscriptions   map[string]PlanSelection
 	passwordHashes  map[string][]byte
 	smsChallenges   map[string]smsChallenge
+	emailBindTokens map[string]memoryEmailBindToken
+	emailBindByToken map[string]string
 	sessions        map[string]sessionRecord
 	invites         map[string]memoryInviteRecord
 	realnames       map[string]UpdateRealnameInput
@@ -55,8 +57,10 @@ func NewMemoryStore(opts StoreOptions) *MemoryStore {
 		oauthUsers:      make(map[string]string),
 		subscriptions:   make(map[string]PlanSelection),
 		passwordHashes:  make(map[string][]byte),
-		smsChallenges:   make(map[string]smsChallenge),
-		sessions:        make(map[string]sessionRecord),
+		smsChallenges:    make(map[string]smsChallenge),
+		emailBindTokens:  make(map[string]memoryEmailBindToken),
+		emailBindByToken: make(map[string]string),
+		sessions:         make(map[string]sessionRecord),
 		invites:         make(map[string]memoryInviteRecord),
 		realnames:       make(map[string]UpdateRealnameInput),
 		realnameHistory: make(map[string][]UpdateRealnameInput),
@@ -116,6 +120,7 @@ func (s *MemoryStore) CreatePasswordSession(_ context.Context, input PasswordSig
 	}
 
 	user := s.newUserLocked(strings.TrimSpace(input.Name), input.Email, "", now)
+	user.EmailVerified = true
 	s.usersByID[user.ID] = user
 	s.passwordHashes[user.ID] = append([]byte(nil), passwordHash...)
 	return s.createSessionLocked(user, now, sessionTTL)

@@ -36,24 +36,26 @@ type Handler struct {
 	tatRegisterIssuer tat.RegisterCodeIssuer
 	deviceBindTokens  *deviceBindTokenCodec
 	publicBaseURL     string
+	frontendBaseURL   string
 }
 
 type invitePrepareRequest struct {
 	Code string `json:"code"`
 }
 
-func NewHandler(authService *service.Service, cookieSecure bool, cookieSameSite http.SameSite, sessionTTL time.Duration, qqConfig *QQOAuthConfig, googleConfig *GoogleOAuthConfig, githubConfig *GitHubOAuthConfig, wechatConfig *WeChatOAuthConfig, publicBaseURL string, oauthReturnToAllowedHosts []string) *Handler {
+func NewHandler(authService *service.Service, cookieSecure bool, cookieSameSite http.SameSite, sessionTTL time.Duration, qqConfig *QQOAuthConfig, googleConfig *GoogleOAuthConfig, githubConfig *GitHubOAuthConfig, wechatConfig *WeChatOAuthConfig, publicBaseURL string, frontendBaseURL string, oauthReturnToAllowedHosts []string) *Handler {
 	return &Handler{
-		service:        authService,
-		cookieSecure:   cookieSecure,
-		cookieSameSite: cookieSameSite,
-		sessionTTL:     sessionTTL,
-		returnToAllow:  buildOAuthReturnToAllowlist(oauthReturnToAllowedHosts),
-		qqOAuth:        newQQOAuth(qqConfig),
-		googleOAuth:    newGoogleOAuth(googleConfig),
-		githubOAuth:    newGitHubOAuth(githubConfig),
-		wechatOAuth:    newWeChatOAuth(wechatConfig),
-		publicBaseURL:  strings.TrimRight(strings.TrimSpace(publicBaseURL), "/"),
+		service:         authService,
+		cookieSecure:    cookieSecure,
+		cookieSameSite:  cookieSameSite,
+		sessionTTL:      sessionTTL,
+		returnToAllow:   buildOAuthReturnToAllowlist(oauthReturnToAllowedHosts),
+		qqOAuth:         newQQOAuth(qqConfig),
+		googleOAuth:     newGoogleOAuth(googleConfig),
+		githubOAuth:     newGitHubOAuth(githubConfig),
+		wechatOAuth:     newWeChatOAuth(wechatConfig),
+		publicBaseURL:   strings.TrimRight(strings.TrimSpace(publicBaseURL), "/"),
+		frontendBaseURL: strings.TrimRight(strings.TrimSpace(frontendBaseURL), "/"),
 	}
 }
 
@@ -637,6 +639,7 @@ func (h *Handler) toAPIUser(ctx context.Context, user service.User) api.User {
 		InviteRequired:   false,
 		Name:             user.Name,
 		RealnameVerified: user.RealnameVerified,
+		EmailVerified:    user.EmailVerified,
 	}
 	if strings.TrimSpace(user.AvatarObjectKey) != "" {
 		if avatarURL := h.publicAvatarURL(user.ID, user.UpdatedAt); avatarURL != "" {
