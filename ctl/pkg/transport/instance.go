@@ -74,6 +74,22 @@ type InstanceConfigResetResponse struct {
 	Config    *InstanceConfigResetProvider `json:"config"`
 }
 
+// TerminalSessionResponse returns a bot-scoped TAT websocket bootstrap.
+// It intentionally omits the underlying sandbox id; callers only need the TAT session fields.
+type TerminalSessionResponse struct {
+	PoolID         string `json:"poolId,omitempty"`
+	SessionID      string `json:"sessionId"`
+	Region         string `json:"region"`
+	InstanceID     string `json:"instanceId"`
+	OwnerUin       string `json:"ownerUin"`
+	LoginUin       string `json:"loginUin"`
+	AppID          int64  `json:"appId"`
+	WsURL          string `json:"wsUrl"`
+	Cols           int    `json:"cols"`
+	Rows           int    `json:"rows"`
+	TimeoutSeconds int    `json:"timeoutSeconds,omitempty"`
+}
+
 // PaginationParams 分页参数
 type PaginationParams struct {
 	// 页码，从 1 开始，默认 1

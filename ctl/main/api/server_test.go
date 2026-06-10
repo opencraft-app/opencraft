@@ -41,6 +41,9 @@ type stubLogic struct {
 	listOperationsErr                      error
 	getLogsResp                            *psandbox.SandboxLogs
 	getLogsErr                             error
+	terminalSessionResp                    *transport.TerminalSessionResponse
+	terminalSessionErr                     error
+	terminalSessionInstanceID              string
 	workspaceResp                          *transport.WorkspaceFilesResponse
 	workspaceErr                           error
 	workspaceFile                          string
@@ -162,6 +165,14 @@ func (s *stubLogic) GetUserUsage(ctx pctx.Context) (*transport.UserUsageResponse
 }
 
 func (s *stubLogic) GetInstance(ctx pctx.Context, instanceID string) (*transport.InstanceResponse, error) {
+	return nil, errors.New("unexpected call")
+}
+
+func (s *stubLogic) StartTerminalSession(ctx pctx.Context, instanceID string) (*transport.TerminalSessionResponse, error) {
+	if s.terminalSessionResp != nil || s.terminalSessionErr != nil {
+		s.terminalSessionInstanceID = instanceID
+		return s.terminalSessionResp, s.terminalSessionErr
+	}
 	return nil, errors.New("unexpected call")
 }
 
@@ -1418,6 +1429,51 @@ func TestExecDebugCommandPassesRunAsUser(t *testing.T) {
 	}
 	if payload.Data.RunAsUser != "agentuser" {
 		t.Fatalf("expected run_as_user in response, got %+v", payload.Data)
+	}
+}
+
+func TestStartTerminalSessionUsesBotScopedRoute(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/v1/instances/ins-1/tat/session", nil)
+	req.Header.Set(headerUserID, "user-1")
+	rec := httptest.NewRecorder()
+
+	handler := &instanceHandler{logic: &stubLogic{
+		terminalSessionResp: &transport.TerminalSessionResponse{
+			PoolID:         "pool-1",
+			SessionID:      "sess-1",
+			Region:         "ap-beijing",
+			InstanceID:     "i-123",
+			OwnerUin:       "10001",
+			LoginUin:       "10002",
+			AppID:          123,
+			WsURL:          "wss://tat.example.test/ws",
+			Cols:           120,
+			Rows:           30,
+			TimeoutSeconds: 3600,
+		},
+	}}
+	newRouter(handler, &bundleHandler{}, &passHandler{}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", rec.Code, rec.Body.String())
+	}
+	stub := handler.logic.(*stubLogic)
+	if stub.terminalSessionInstanceID != "ins-1" {
+		t.Fatalf("unexpected instance id: %s", stub.terminalSessionInstanceID)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	data, ok := raw["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing data: %s", rec.Body.String())
+	}
+	if _, ok := data["sandboxId"]; ok {
+		t.Fatalf("bot-scoped terminal session must not expose sandboxId: %s", rec.Body.String())
+	}
+	if data["sessionId"] != "sess-1" || data["wsUrl"] != "wss://tat.example.test/ws" {
+		t.Fatalf("unexpected terminal session data: %s", rec.Body.String())
 	}
 }
 

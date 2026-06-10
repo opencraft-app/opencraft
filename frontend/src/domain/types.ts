@@ -63,7 +63,7 @@ export interface BotBornCard {
 }
 
 export interface BotTerminalSession {
-  sandboxId: string;
+  sandboxId?: string;
   poolId: string;
   sessionId: string;
   region: string;

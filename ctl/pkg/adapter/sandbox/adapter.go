@@ -55,6 +55,7 @@ type Adapter interface {
 	SetTimeout(ctx context.Context, sandboxID string, timeoutSec int32) error
 	Refresh(ctx context.Context, sandboxID string, durationSec int32) error
 	GetLogs(ctx context.Context, sandboxID string, req *GetLogsRequest) (*SandboxLogs, error)
+	StartTerminalSession(ctx context.Context, sandboxID string) (*TerminalSession, error)
 	ExecCommand(ctx context.Context, sandboxID string, bash string, timeoutSec int) (*ExecCommandResult, error)
 	GetCommandResult(ctx context.Context, sandboxID string, invocationID string) (*ExecCommandResult, error)
 	StartProcessStream(ctx context.Context, sandboxID string, req *ProcessStartRequest, onEvent func(ProcessStreamEvent) error) error
@@ -647,6 +648,17 @@ func (a *SandboxAdapter) GetLogs(ctx context.Context, sandboxID string, req *Get
 
 	resp = new(SandboxLogs)
 	if err = a.doRequest(ctx, "getlogs", http.MethodGet, "/sandboxes/"+url.PathEscape(sandboxID)+"/logs", query, nil, http.StatusOK, resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func (a *SandboxAdapter) StartTerminalSession(ctx context.Context, sandboxID string) (*TerminalSession, error) {
+	if err := validateSandboxID(sandboxID); err != nil {
+		return nil, err
+	}
+	resp := new(TerminalSession)
+	if err := a.doRequest(ctx, "tat_session", http.MethodPost, "/sandboxes/"+url.PathEscape(sandboxID)+"/tat/session", nil, nil, http.StatusOK, resp); err != nil {
 		return nil, err
 	}
 	return resp, nil

@@ -24,18 +24,21 @@ import (
 
 type commandSandboxAdapterStub struct {
 	psandbox.Adapter
-	results        []*psandbox.ExecCommandResult
-	errs           []error
-	calls          []commandSandboxCall
-	processErr     error
-	processEvents  []psandbox.ProcessStreamEvent
-	processErrs    []error
-	processBatches [][]psandbox.ProcessStreamEvent
-	processCalls   []psandbox.ProcessStartRequest
-	processFunc    func(req *psandbox.ProcessStartRequest) []psandbox.ProcessStreamEvent
-	stdinCalls     []commandSandboxStdinCall
-	stdinResult    *psandbox.ExecCommandResult
-	stdinErr       error
+	results         []*psandbox.ExecCommandResult
+	errs            []error
+	terminalSession *psandbox.TerminalSession
+	terminalErr     error
+	terminalCalls   []string
+	calls           []commandSandboxCall
+	processErr      error
+	processEvents   []psandbox.ProcessStreamEvent
+	processErrs     []error
+	processBatches  [][]psandbox.ProcessStreamEvent
+	processCalls    []psandbox.ProcessStartRequest
+	processFunc     func(req *psandbox.ProcessStartRequest) []psandbox.ProcessStreamEvent
+	stdinCalls      []commandSandboxStdinCall
+	stdinResult     *psandbox.ExecCommandResult
+	stdinErr        error
 }
 
 type commandSandboxStdinCall struct {
@@ -69,6 +72,17 @@ func (s *commandSandboxAdapterStub) ExecCommand(_ context.Context, sandboxID, ba
 		return result, nil
 	}
 	return nil, nil
+}
+
+func (s *commandSandboxAdapterStub) StartTerminalSession(_ context.Context, sandboxID string) (*psandbox.TerminalSession, error) {
+	s.terminalCalls = append(s.terminalCalls, sandboxID)
+	if s.terminalErr != nil {
+		return nil, s.terminalErr
+	}
+	if s.terminalSession != nil {
+		return s.terminalSession, nil
+	}
+	return &psandbox.TerminalSession{}, nil
 }
 
 func (s *commandSandboxAdapterStub) StartProcessStream(_ context.Context, _ string, req *psandbox.ProcessStartRequest, onEvent func(psandbox.ProcessStreamEvent) error) error {
@@ -215,6 +229,64 @@ func TestExecDebugCommandRejectsNonZeroExit(t *testing.T) {
 	}
 	if detail.Detail != "status=FAILED exit_code=17 stderr=boom" {
 		t.Fatalf("expected failure detail, got %+v", detail)
+	}
+}
+
+func TestStartTerminalSessionUsesOwnedInstanceSandbox(t *testing.T) {
+	adapter := &commandSandboxAdapterStub{
+		terminalSession: &psandbox.TerminalSession{
+			SandboxID:      "sbx-1",
+			PoolID:         "pool-1",
+			SessionID:      "sess-1",
+			Region:         "ap-beijing",
+			InstanceID:     "i-123",
+			OwnerUin:       "10001",
+			LoginUin:       "10002",
+			AppID:          123,
+			WsURL:          "wss://tat.example.test/ws",
+			Cols:           120,
+			Rows:           30,
+			TimeoutSeconds: 3600,
+		},
+	}
+	logic := &logic{
+		instanceDao: &commandInstanceDaoStub{
+			entity: &modelinstance.Entity{
+				InstanceId: "ins-1",
+				SandboxId:  "sbx-1",
+				Status:     modelinstance.InstanceStatusRunning,
+			},
+		},
+		sandboxAdapter: adapter,
+		logger:         zap.NewNop(),
+	}
+
+	resp, err := logic.StartTerminalSession(pctx.NewContext(nil).WithUserID("user-1"), "ins-1")
+	if err != nil {
+		t.Fatalf("start terminal session: %v", err)
+	}
+	if len(adapter.terminalCalls) != 1 || adapter.terminalCalls[0] != "sbx-1" {
+		t.Fatalf("expected sandbox session call for sbx-1, got %+v", adapter.terminalCalls)
+	}
+	if resp.SessionID != "sess-1" || resp.WsURL != "wss://tat.example.test/ws" {
+		t.Fatalf("unexpected response: %+v", resp)
+	}
+}
+
+func TestStartTerminalSessionDoesNotCallSandboxWhenInstanceLookupFails(t *testing.T) {
+	adapter := &commandSandboxAdapterStub{}
+	logic := &logic{
+		instanceDao:    &commandInstanceDaoStub{err: errcode.ErrInstanceNotFound},
+		sandboxAdapter: adapter,
+		logger:         zap.NewNop(),
+	}
+
+	_, err := logic.StartTerminalSession(pctx.NewContext(nil).WithUserID("other-user"), "ins-1")
+	if !errors.Is(err, errcode.ErrInstanceNotFound) {
+		t.Fatalf("expected instance not found, got %v", err)
+	}
+	if len(adapter.terminalCalls) != 0 {
+		t.Fatalf("sandbox must not be called for inaccessible instance, got %+v", adapter.terminalCalls)
 	}
 }
 
