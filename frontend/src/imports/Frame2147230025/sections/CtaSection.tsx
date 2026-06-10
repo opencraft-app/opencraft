@@ -1,17 +1,9 @@
-// @ts-nocheck — Figma auto-generated; suppress strict TS lints (noUnusedLocals etc.)
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
-  svgPaths,
-  imgImage4, imgImage4588,
-  imgCtaDeco, imgCtaLogo1, imgCtaLogo2,
-} from '../assets';
+  imgCtaDeco } from '../assets';
 import '../motion.css';
 import { useScrollReveal } from '../useScrollReveal';
 import { LandingCtaFooterLinks } from '@/components/site/landing-cta-footer-links';
-
-
-
-
 
 function CreateButton({ onClick }: { onClick?: () => void }) {
   return (
@@ -27,8 +19,7 @@ function CreateButton({ onClick }: { onClick?: () => void }) {
         height: '60px',
         padding: '0 clamp(16px, 4vw, 32px)',
         background: '#1A1A1A',
-        borderRadius: '30px',
-      }}
+        borderRadius: '30px' }}
     >
       <span
         style={{
@@ -37,8 +28,7 @@ function CreateButton({ onClick }: { onClick?: () => void }) {
           fontSize: 'clamp(14px, 2vw, 18px)',
           lineHeight: '24px',
           color: '#fff',
-          whiteSpace: 'nowrap',
-        }}
+          whiteSpace: 'nowrap' }}
       >
         立即创建
       </span>
@@ -51,34 +41,13 @@ function CreateButton({ onClick }: { onClick?: () => void }) {
           position: 'absolute',
           right: '12px',
           top: '50%',
-          transform: 'translateY(-50%)',
-        }}
+          transform: 'translateY(-50%)' }}
       >
         <path d="M18 0C27.9411 0 36 8.05888 36 18C36 27.9411 27.9411 36 18 36C8.05888 36 0 27.9411 0 18C0 8.05888 8.05888 0 18 0ZM16 11C15.4477 11 15 11.4477 15 12C15 12.5523 15.4477 13 16 13H21.5859L11.293 23.293C10.9024 23.6835 10.9024 24.3165 11.293 24.707C11.6835 25.0973 12.3166 25.0975 12.707 24.707L23 14.4141V20C23 20.5523 23.4477 21 24 21C24.5521 20.9998 25 20.5521 25 20V12C25 11.9203 24.9893 11.8429 24.9717 11.7686C24.9668 11.748 24.9622 11.7273 24.9561 11.707C24.9519 11.6934 24.9461 11.6803 24.9414 11.667C24.9149 11.5918 24.8801 11.5186 24.835 11.4502C24.7612 11.3383 24.6652 11.2423 24.5537 11.168C24.5148 11.142 24.474 11.1195 24.4326 11.0996C24.3871 11.0777 24.34 11.0579 24.291 11.043C24.252 11.0311 24.2118 11.0226 24.1719 11.0156C24.1161 11.006 24.0585 11 24 11H16Z" fill="white"/>
       </svg>
     </button>
   );
 }
-
-
-function Ellipse() {
-  return (
-    <div
-      className="absolute pointer-events-none"
-      style={{
-        width: 64,
-        height: 36,
-        right: -80,
-        top: 8,
-        transform: 'rotate(-35.83deg)',
-        borderRadius: '50%',
-        background: 'linear-gradient(90deg, #3503FF 0%, #D587FF 50%, #FFCA80 100%)',
-        opacity: 0.9,
-      }}
-    />
-  );
-}
-
 
 interface MascotGroupProps {
   offsetX: number;
@@ -95,8 +64,7 @@ function MascotGroup({ offsetX, offsetY }: MascotGroupProps) {
         <div
           style={{
             transform: `rotate(12.96deg) translate(${offsetX}px, ${offsetY}px)`,
-            transition: 'transform 200ms ease-out',
-          }}
+            transition: 'transform 200ms ease-out' }}
         >
           <img
             alt=""
@@ -109,7 +77,6 @@ function MascotGroup({ offsetX, offsetY }: MascotGroupProps) {
     </div>
   );
 }
-
 
 function TitleBlock({ offsetX, offsetY }: { offsetX: number; offsetY: number }) {
   return (
@@ -133,7 +100,6 @@ function TitleBlock({ offsetX, offsetY }: { offsetX: number; offsetY: number }) 
   );
 }
 
-
 function LogoGroup() {
   return (
     <div className="mt-8 flex items-center gap-8">
@@ -142,7 +108,6 @@ function LogoGroup() {
     </div>
   );
 }
-
 
 interface CtaSectionProps {
   onCreateClick?: () => void;

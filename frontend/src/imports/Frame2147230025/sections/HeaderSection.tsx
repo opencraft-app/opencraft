@@ -1,10 +1,7 @@
-// @ts-nocheck — Figma auto-generated; suppress strict TS lints (noUnusedLocals etc.)
 import { Link, useLocation } from 'react-router-dom';
 import {
-  svgPaths,
-} from '../assets';
+  svgPaths } from '../assets';
 import '../motion.css';
-
 
 function Group6() {
   return (
@@ -26,7 +23,6 @@ function Group6() {
   );
 }
 
-
 function Frame9() {
   return (
     <div className="h-[26px] relative shrink-0 w-[92.696px]">
@@ -35,7 +31,6 @@ function Frame9() {
   );
 }
 
-
 export function Frame4() {
   return (
     <div className="content-stretch flex items-center relative shrink-0">
@@ -43,7 +38,6 @@ export function Frame4() {
     </div>
   );
 }
-
 
 function Component5({ onClick }: { onClick?: () => void }) {
   return (
@@ -60,7 +54,6 @@ function Component5({ onClick }: { onClick?: () => void }) {
   );
 }
 
-
 function Component6({ onClick }: { onClick?: () => void }) {
   return (
     <button
@@ -75,7 +68,6 @@ function Component6({ onClick }: { onClick?: () => void }) {
   );
 }
 
-
 function Frame5({ onLoginClick, onCreateClick }: { onLoginClick?: () => void; onCreateClick?: () => void }) {
   return (
     <div className="content-stretch flex gap-[12px] items-center relative shrink-0">
@@ -84,27 +76,6 @@ function Frame5({ onLoginClick, onCreateClick }: { onLoginClick?: () => void; on
     </div>
   );
 }
-
-
-function Frame14() {
-  return (
-    <div className="-translate-x-1/2 -translate-y-1/2 [word-break:break-word] absolute content-stretch flex font-['PingFang_SC:Medium',sans-serif] gap-[32px] h-[32px] items-center leading-[0] left-[calc(50%+0.07px)] not-italic text-[14px] text-[rgba(0,0,0,0.7)] top-[calc(50%-1px)] whitespace-nowrap">
-      <div className="flex flex-col justify-center relative shrink-0">
-        <p className="leading-[22px]">概览</p>
-      </div>
-      <div className="flex flex-col justify-center relative shrink-0">
-        <p className="leading-[22px]">更新日志</p>
-      </div>
-      <div className="flex flex-col justify-center relative shrink-0">
-        <p className="leading-[22px]">产品文档</p>
-      </div>
-      <div className="flex flex-col justify-center relative shrink-0">
-        <p className="leading-[22px]">养虾博客</p>
-      </div>
-    </div>
-  );
-}
-
 
 /** 顶部导航项配置（与现网 lightvela.com 保持一致）
  * 概览 → /  ·  更新日志 → /changelog  ·  产品文档 → /docs  ·  关于我们 → /about

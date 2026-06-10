@@ -1,615 +1,17 @@
-// @ts-nocheck — Figma auto-generated; suppress strict TS lints (noUnusedLocals etc.)
 import React from 'react';
 import '../motion.css';
 import { useScrollReveal } from '../useScrollReveal';
 import {
   svgPaths,
   imgImage, imgImage614591645, imgImage614591647, imgImage614591648,
-  imgImage4597, imgImage8, imgImage9, imgImage10, imgImage614591630,
-  imgImage614591599, imgImage11, imgImage12, imgImage614591617,
-  imgImage614591621, imgImage614591622, imgImage614591623, imgImage614591620,
-  imgImage614591618, imgImage614591619, imgEllipse1115024, imgEllipse1115029,
-  imgVector7806, imgVector7807, imgVector7808,
-  imgImage4120, imgImage4119, imgImage4118, imgImage4117, imgImage4103,
-  imgImage4042, imgImage4102, imgFrame2147229949, imgImage4316,
   imgImage4112, imgImage4110, imgImage4111, imgImage4113, imgImage4114,
   imgImage4115, imgImage4116, imgImage4121, imgImage4122, imgImage4123,
   imgImage4124, imgImage4125, imgImage4126, imgImage4127, imgImage4128,
-  imgImage4129, imgImage4130, imgRectangle1329139236, imgImage4131,
+  imgImage4129, imgImage4130, imgImage4131,
   imgImage3, imgEllipse111556, imgEllipse111550, imgImage4,
   imgRoundedRectangle, imgRoundedRectangle1, imgEllipse111566,
-  imgVector919, imgImage4588, imgImage614591606,
-  imgImage614591644, imgImage614591646, imgImage1, imgImage2
+  imgVector919, imgImage1, imgImage2
 } from '../assets';
-
-
-function Group34() {
-  return (
-    <div className="col-1 grid-cols-[max-content] grid-rows-[max-content] inline-grid ml-0 mt-0 place-items-start relative row-1">
-      <div className="bg-black col-1 ml-[4px] mt-0 relative row-1 size-[4px]" />
-      <div className="bg-black col-1 h-[8px] ml-0 mt-0 relative row-1 w-[4px]" />
-    </div>
-  );
-}
-
-
-function Group35() {
-  return (
-    <div className="col-1 grid-cols-[max-content] grid-rows-[max-content] inline-grid ml-[568px] mt-[44px] place-items-start relative row-1">
-      <div className="bg-black col-1 h-[8px] ml-[4px] mt-0 relative row-1 w-[4px]" />
-      <div className="bg-black col-1 ml-0 mt-[4px] relative row-1 size-[4px]" />
-    </div>
-  );
-}
-
-
-function Group75() {
-  return (
-    <div className="col-1 grid-cols-[max-content] grid-rows-[max-content] inline-grid ml-0 mt-0 place-items-start relative row-1">
-      <Group34 />
-      <Group35 />
-    </div>
-  );
-}
-
-
-function Group74() {
-  return (
-    <div className="grid-cols-[max-content] grid-rows-[max-content] inline-grid leading-[0] place-items-start relative shrink-0">
-      <h2
-        className="text-[32px] lw-font-hyruiyisong text-[rgba(0,0,0,0.9)] leading-[48px] text-center"
-        style={{
-          WebkitTextStrokeWidth: '0.6px',
-          WebkitTextStrokeColor: 'var(--color-text-primary, rgba(0, 0, 0, 0.90))',
-        }}
-      >Hermes Agent 云端原生体验</h2>
-      <Group75 />
-    </div>
-  );
-}
-
-
-function Frame84() {
-  return (
-    <div className="flex flex-col items-center gap-[16px] w-[645px]">
-      <h2
-        className="text-[32px] lw-font-hyruiyisong-no45j text-white leading-[48px] text-right w-full"
-        style={{
-          WebkitTextStrokeWidth: '0.6px',
-          WebkitTextStrokeColor: 'rgba(255, 255, 255, 0.9)',
-        }}
-      >Hermes Agent 云端原生体验</h2>
-      <p className="text-[16px] font-['PingFang_SC',sans-serif] text-[rgba(255,255,255,0.5)] leading-6 text-center w-full">随时在线，数据由你掌控</p>
-    </div>
-  );
-}
-
-
-function Frame44() {
-  return (
-    <div className="overflow-clip relative shrink-0 size-[28px]">
-      <div className="absolute left-[0.88px] size-[26.25px] top-[0.88px]" data-name="image 4112">
-        <img alt="" className="absolute inset-0 max-w-none object-bottom pointer-events-none size-full" src={imgImage4112} />
-      </div>
-    </div>
-  );
-}
-
-
-function Frame35() {
-  return (
-    <div className="bg-[#f7faff] content-stretch flex gap-[6px] items-center justify-center px-[40px] py-[12px] relative rounded-[16px] shrink-0">
-      <div aria-hidden className="absolute border border-[rgba(217,217,217,0)] border-solid inset-0 pointer-events-none rounded-[16px]" />
-      <Frame44 />
-      <p className="[word-break:break-word] font-['PingFang_SC:Medium',sans-serif] leading-[24px] not-italic relative shrink-0 text-[16px] text-black whitespace-nowrap">市场营销</p>
-    </div>
-  );
-}
-
-
-function Frame45() {
-  return (
-    <div className="overflow-clip relative shrink-0 size-[28px]">
-      <div className="absolute h-[25.375px] left-[0.88px] top-[0.88px] w-[26.995px]" data-name="image 4110">
-        <img alt="" className="absolute inset-0 max-w-none object-bottom pointer-events-none size-full" src={imgImage4110} />
-      </div>
-    </div>
-  );
-}
-
-
-function Frame29() {
-  return (
-    <div className="bg-[#fffaef] content-stretch flex gap-[6px] items-center justify-center px-[40px] py-[12px] relative rounded-[16px] shrink-0">
-      <div aria-hidden className="absolute border border-[rgba(217,217,217,0)] border-solid inset-0 pointer-events-none rounded-[16px]" />
-      <Frame45 />
-      <p className="[word-break:break-word] font-['PingFang_SC:Medium',sans-serif] leading-[24px] not-italic relative shrink-0 text-[16px] text-black whitespace-nowrap">营养食谱</p>
-    </div>
-  );
-}
-
-
-function Frame46() {
-  return (
-    <div className="overflow-clip relative shrink-0 size-[28px]">
-      <div className="absolute left-[0.88px] size-[26.25px] top-[0.88px]" data-name="image 4111">
-        <img alt="" className="absolute inset-0 max-w-none object-bottom pointer-events-none size-full" src={imgImage4111} />
-      </div>
-    </div>
-  );
-}
-
-
-function Frame34() {
-  return (
-    <div className="bg-[#f7faff] content-stretch flex gap-[6px] items-center justify-center px-[40px] py-[12px] relative rounded-[16px] shrink-0">
-      <div aria-hidden className="absolute border border-[rgba(217,217,217,0)] border-solid inset-0 pointer-events-none rounded-[16px]" />
-      <Frame46 />
-      <p className="[word-break:break-word] font-['PingFang_SC:Medium',sans-serif] leading-[24px] not-italic relative shrink-0 text-[16px] text-black whitespace-nowrap">行业分析</p>
-    </div>
-  );
-}
-
-
-function Frame47() {
-  return (
-    <div className="overflow-clip relative shrink-0 size-[28px]">
-      <div className="absolute left-[0.88px] size-[26.25px] top-[0.88px]" data-name="image 4111">
-        <img alt="" className="absolute inset-0 max-w-none object-bottom pointer-events-none size-full" src={imgImage4113} />
-      </div>
-    </div>
-  );
-}
-
-
-function Frame39() {
-  return (
-    <div className="bg-[#f7faff] content-stretch flex gap-[6px] items-center justify-center px-[40px] py-[12px] relative rounded-[16px] shrink-0">
-      <div aria-hidden className="absolute border border-[rgba(217,217,217,0)] border-solid inset-0 pointer-events-none rounded-[16px]" />
-      <Frame47 />
-      <p className="[word-break:break-word] font-['PingFang_SC:Medium',sans-serif] leading-[24px] not-italic relative shrink-0 text-[16px] text-black whitespace-nowrap">处理邮件</p>
-    </div>
-  );
-}
-
-
-function Frame48() {
-  return (
-    <div className="overflow-clip relative shrink-0 size-[28px]">
-      <div className="absolute left-[0.88px] size-[26.25px] top-[0.88px]" data-name="image 4112">
-        <img alt="" className="absolute inset-0 max-w-none object-bottom pointer-events-none size-full" src={imgImage4114} />
-      </div>
-    </div>
-  );
-}
-
-
-function Frame40() {
-  return (
-    <div className="bg-[#fff7f8] content-stretch flex gap-[6px] items-center justify-center px-[40px] py-[12px] relative rounded-[16px] shrink-0">
-      <div aria-hidden className="absolute border border-[rgba(217,217,217,0)] border-solid inset-0 pointer-events-none rounded-[16px]" />
-      <Frame48 />
-      <p className="[word-break:break-word] font-['PingFang_SC:Medium',sans-serif] leading-[24px] not-italic relative shrink-0 text-[16px] text-black whitespace-nowrap">健康追踪</p>
-    </div>
-  );
-}
-
-
-function Frame49() {
-  return (
-    <div className="overflow-clip relative shrink-0 size-[28px]">
-      <div className="absolute left-[0.88px] size-[26.25px] top-[0.88px]" data-name="image 4111">
-        <img alt="" className="absolute inset-0 max-w-none object-bottom pointer-events-none size-full" src={imgImage4115} />
-      </div>
-    </div>
-  );
-}
-
-
-function Frame36() {
-  return (
-    <div className="bg-[#fffaef] content-stretch flex gap-[6px] items-center justify-center px-[40px] py-[12px] relative rounded-[16px] shrink-0">
-      <div aria-hidden className="absolute border border-[rgba(217,217,217,0)] border-solid inset-0 pointer-events-none rounded-[16px]" />
-      <Frame49 />
-      <p className="[word-break:break-word] font-['PingFang_SC:Medium',sans-serif] leading-[24px] not-italic relative shrink-0 text-[16px] text-black whitespace-nowrap">定时任务</p>
-    </div>
-  );
-}
-
-
-function Frame50() {
-  return (
-    <div className="overflow-clip relative shrink-0 size-[28px]">
-      <div className="absolute left-[0.88px] size-[26.25px] top-[0.88px]" data-name="image 4111">
-        <img alt="" className="absolute inset-0 max-w-none object-bottom pointer-events-none size-full" src={imgImage4116} />
-      </div>
-    </div>
-  );
-}
-
-
-function Frame37() {
-  return (
-    <div className="bg-[#f7faff] content-stretch flex gap-[6px] items-center justify-center px-[40px] py-[12px] relative rounded-[16px] shrink-0">
-      <div aria-hidden className="absolute border border-[rgba(217,217,217,0)] border-solid inset-0 pointer-events-none rounded-[16px]" />
-      <Frame50 />
-      <p className="[word-break:break-word] font-['PingFang_SC:Medium',sans-serif] leading-[24px] not-italic relative shrink-0 text-[16px] text-black whitespace-nowrap">会议纪要</p>
-    </div>
-  );
-}
-
-
-function Frame51() {
-  return (
-    <div className="overflow-clip relative shrink-0 size-[28px]">
-      <div className="absolute left-[0.88px] size-[26.25px] top-[0.88px]" data-name="image 4111">
-        <img alt="" className="absolute inset-0 max-w-none object-bottom pointer-events-none size-full" src={imgImage4121} />
-      </div>
-    </div>
-  );
-}
-
-
-function Frame38() {
-  return (
-    <div className="bg-[#fffaef] content-stretch flex gap-[6px] items-center justify-center px-[40px] py-[12px] relative rounded-[16px] shrink-0">
-      <div aria-hidden className="absolute border border-[rgba(217,217,217,0)] border-solid inset-0 pointer-events-none rounded-[16px]" />
-      <Frame51 />
-      <p className="[word-break:break-word] font-['PingFang_SC:Medium',sans-serif] leading-[24px] not-italic relative shrink-0 text-[16px] text-black whitespace-nowrap">新闻推送</p>
-    </div>
-  );
-}
-
-
-function Frame52() {
-  return (
-    <div className="overflow-clip relative shrink-0 size-[28px]">
-      <div className="absolute left-[0.88px] size-[26.25px] top-[0.88px]" data-name="image 4112">
-        <img alt="" className="absolute inset-0 max-w-none object-bottom pointer-events-none size-full" src={imgImage4122} />
-      </div>
-    </div>
-  );
-}
-
-
-function Frame31() {
-  return (
-    <div className="bg-[#fff7f8] content-stretch flex gap-[6px] items-center justify-center px-[40px] py-[12px] relative rounded-[16px] shrink-0">
-      <div aria-hidden className="absolute border border-[rgba(217,217,217,0)] border-solid inset-0 pointer-events-none rounded-[16px]" />
-      <Frame52 />
-      <p className="[word-break:break-word] font-['PingFang_SC:Medium',sans-serif] leading-[24px] not-italic relative shrink-0 text-[16px] text-black whitespace-nowrap">私域营销</p>
-    </div>
-  );
-}
-
-
-function Frame() {
-  return (
-    <div className="col-1 content-stretch flex gap-[24px] items-center ml-0 mt-[22px] relative row-1">
-      <Frame35 />
-      <Frame29 />
-      <Frame34 />
-      <Frame39 />
-      <Frame40 />
-      <Frame36 />
-      <Frame37 />
-      <Frame38 />
-      <Frame31 />
-    </div>
-  );
-}
-
-
-function Frame53() {
-  return (
-    <div className="overflow-clip relative shrink-0 size-[28px]">
-      <div className="absolute left-[0.88px] size-[26.25px] top-[0.88px]" data-name="image 4112">
-        <img alt="" className="absolute inset-0 max-w-none object-bottom pointer-events-none size-full" src={imgImage4123} />
-      </div>
-    </div>
-  );
-}
-
-
-function Frame41() {
-  return (
-    <div className="bg-[#f7faff] content-stretch flex gap-[6px] items-center justify-center px-[40px] py-[12px] relative rounded-[16px] shrink-0">
-      <div aria-hidden className="absolute border border-[rgba(217,217,217,0)] border-solid inset-0 pointer-events-none rounded-[16px]" />
-      <Frame53 />
-      <p className="[word-break:break-word] font-['PingFang_SC:Medium',sans-serif] leading-[24px] not-italic relative shrink-0 text-[16px] text-black whitespace-nowrap">选品竞品</p>
-    </div>
-  );
-}
-
-
-function Frame54() {
-  return (
-    <div className="overflow-clip relative shrink-0 size-[28px]">
-      <div className="absolute left-[0.88px] size-[26.25px] top-[0.88px]" data-name="image 4112">
-        <img alt="" className="absolute inset-0 max-w-none object-bottom pointer-events-none size-full" src={imgImage4124} />
-      </div>
-    </div>
-  );
-}
-
-
-function Frame42() {
-  return (
-    <div className="bg-[#fffaef] content-stretch flex gap-[6px] items-center justify-center px-[40px] py-[12px] relative rounded-[16px] shrink-0">
-      <div aria-hidden className="absolute border border-[rgba(217,217,217,0)] border-solid inset-0 pointer-events-none rounded-[16px]" />
-      <Frame54 />
-      <p className="[word-break:break-word] font-['PingFang_SC:Medium',sans-serif] leading-[24px] not-italic relative shrink-0 text-[16px] text-black whitespace-nowrap">商品比价</p>
-    </div>
-  );
-}
-
-
-function Frame55() {
-  return (
-    <div className="overflow-clip relative shrink-0 size-[28px]">
-      <div className="absolute left-[0.88px] size-[26.25px] top-[0.88px]" data-name="image 4112">
-        <img alt="" className="absolute inset-0 max-w-none object-bottom pointer-events-none size-full" src={imgImage4125} />
-      </div>
-    </div>
-  );
-}
-
-
-function Frame33() {
-  return (
-    <div className="bg-[#f7faff] content-stretch flex gap-[6px] items-center justify-center px-[40px] py-[12px] relative rounded-[16px] shrink-0">
-      <div aria-hidden className="absolute border border-[rgba(217,217,217,0)] border-solid inset-0 pointer-events-none rounded-[16px]" />
-      <Frame55 />
-      <p className="[word-break:break-word] font-['PingFang_SC:Medium',sans-serif] leading-[24px] not-italic relative shrink-0 text-[16px] text-black whitespace-nowrap">海报创作</p>
-    </div>
-  );
-}
-
-
-function Frame56() {
-  return (
-    <div className="overflow-clip relative shrink-0 size-[28px]">
-      <div className="absolute left-[0.88px] size-[26.25px] top-[0.88px]" data-name="image 4111">
-        <img alt="" className="absolute inset-0 max-w-none object-bottom pointer-events-none size-full" src={imgImage4126} />
-      </div>
-    </div>
-  );
-}
-
-
-function Frame43() {
-  return (
-    <div className="bg-[#fffaef] content-stretch flex gap-[6px] items-center justify-center px-[40px] py-[12px] relative rounded-[16px] shrink-0">
-      <Frame56 />
-      <p className="[word-break:break-word] font-['PingFang_SC:Medium',sans-serif] leading-[24px] not-italic relative shrink-0 text-[16px] text-black whitespace-nowrap">文档总结</p>
-    </div>
-  );
-}
-
-
-function Frame57() {
-  return (
-    <div className="overflow-clip relative shrink-0 size-[28px]">
-      <div className="absolute left-[0.88px] size-[26.25px] top-[0.88px]" data-name="image 4112">
-        <img alt="" className="absolute inset-0 max-w-none object-bottom pointer-events-none size-full" src={imgImage4127} />
-      </div>
-    </div>
-  );
-}
-
-
-function Frame30() {
-  return (
-    <div className="bg-[#fff7f8] content-stretch flex gap-[6px] items-center justify-center px-[40px] py-[12px] relative rounded-[16px] shrink-0">
-      <div aria-hidden className="absolute border border-[rgba(217,217,217,0)] border-solid inset-0 pointer-events-none rounded-[16px]" />
-      <Frame57 />
-      <p className="[word-break:break-word] font-['PingFang_SC:Medium',sans-serif] leading-[24px] not-italic relative shrink-0 text-[16px] text-black whitespace-nowrap">网页游戏</p>
-    </div>
-  );
-}
-
-
-function Frame59() {
-  return (
-    <div className="overflow-clip relative shrink-0 size-[28px]">
-      <div className="absolute left-[0.88px] size-[26.25px] top-[0.88px]" data-name="image 4112">
-        <img alt="" className="absolute inset-0 max-w-none object-bottom pointer-events-none size-full" src={imgImage4128} />
-      </div>
-    </div>
-  );
-}
-
-
-function Frame58() {
-  return (
-    <div className="bg-[#fffaef] content-stretch flex gap-[6px] items-center justify-center px-[40px] py-[12px] relative rounded-[16px] shrink-0">
-      <div aria-hidden className="absolute border border-[rgba(217,217,217,0)] border-solid inset-0 pointer-events-none rounded-[16px]" />
-      <Frame59 />
-      <p className="[word-break:break-word] font-['PingFang_SC:Medium',sans-serif] leading-[24px] not-italic relative shrink-0 text-[16px] text-black whitespace-nowrap">制作PPT</p>
-    </div>
-  );
-}
-
-
-function Frame61() {
-  return (
-    <div className="overflow-clip relative shrink-0 size-[28px]">
-      <div className="absolute left-[0.88px] size-[26.25px] top-[0.88px]" data-name="image 4111">
-        <img alt="" className="absolute inset-0 max-w-none object-bottom pointer-events-none size-full" src={imgImage4129} />
-      </div>
-    </div>
-  );
-}
-
-
-function Frame60() {
-  return (
-    <div className="bg-[#f7faff] col-1 content-stretch flex gap-[6px] items-center justify-center ml-0 mt-0 px-[40px] py-[12px] relative rounded-[16px] row-1">
-      <div aria-hidden className="absolute border border-[rgba(217,217,217,0)] border-solid inset-0 pointer-events-none rounded-[16px]" />
-      <Frame61 />
-      <p className="[word-break:break-word] font-['PingFang_SC:Medium',sans-serif] leading-[24px] not-italic relative shrink-0 text-[16px] text-black whitespace-nowrap">提醒喝水</p>
-    </div>
-  );
-}
-
-
-function MaskGroup3() {
-  return (
-    <div className="absolute contents left-[0.88px] top-[0.88px]" data-name="Mask group">
-      <div className="absolute bg-[red] h-[22.556px] left-[3.11px] mask-alpha mask-intersect mask-no-clip mask-no-repeat mask-position-[-2.234px_-1.457px] mask-size-[26.25px_26.25px] mix-blend-lighten top-[2.33px] w-[24.111px]" style={{ maskImage: `url("${imgRectangle1329139236}")` }} />
-    </div>
-  );
-}
-
-
-function Frame62() {
-  return (
-    <div className="overflow-clip relative shrink-0 size-[28px]">
-      <div className="absolute left-[0.88px] size-[26.25px] top-[0.88px]" data-name="image 4112">
-        <img alt="" className="absolute inset-0 max-w-none object-bottom pointer-events-none size-full" src={imgImage4130} />
-      </div>
-      <MaskGroup3 />
-    </div>
-  );
-}
-
-
-function Frame32() {
-  return (
-    <div className="bg-[#fffaef] col-1 content-stretch flex gap-[6px] items-center justify-center ml-[202px] mt-0 px-[40px] py-[12px] relative rounded-[16px] row-1">
-      <div aria-hidden className="absolute border border-[rgba(217,217,217,0)] border-solid inset-0 pointer-events-none rounded-[16px]" />
-      <Frame62 />
-      <p className="[word-break:break-word] font-['PingFang_SC:Medium',sans-serif] leading-[24px] not-italic relative shrink-0 text-[16px] text-black whitespace-nowrap">智能理财</p>
-    </div>
-  );
-}
-
-
-function Frame64() {
-  return (
-    <div className="overflow-clip relative shrink-0 size-[28px]">
-      <div className="absolute left-[0.88px] size-[26.25px] top-[0.88px]" data-name="image 4112">
-        <img alt="" className="absolute inset-0 max-w-none object-bottom pointer-events-none size-full" src={imgImage4131} />
-      </div>
-    </div>
-  );
-}
-
-
-function Frame63() {
-  return (
-    <div className="bg-[#f7faff] col-1 content-stretch flex gap-[6px] items-center justify-center ml-[404px] mt-0 px-[40px] py-[12px] relative rounded-[16px] row-1">
-      <div aria-hidden className="absolute border border-[rgba(217,217,217,0)] border-solid inset-0 pointer-events-none rounded-[16px]" />
-      <Frame64 />
-      <p className="[word-break:break-word] font-['PingFang_SC:Medium',sans-serif] leading-[24px] not-italic relative shrink-0 text-[16px] text-black whitespace-nowrap">网站开发</p>
-    </div>
-  );
-}
-
-
-function Group18() {
-  return (
-    <div className="grid-cols-[max-content] grid-rows-[max-content] inline-grid leading-[0] place-items-start relative shrink-0">
-      <Frame60 />
-      <Frame32 />
-      <Frame63 />
-    </div>
-  );
-}
-
-
-function Frame1() {
-  return (
-    <div className="col-1 content-stretch flex gap-[24px] items-center ml-[253px] mt-[90px] relative row-1">
-      <Frame41 />
-      <Frame42 />
-      <Frame33 />
-      <Frame43 />
-      <Frame30 />
-      <Frame58 />
-      <Group18 />
-    </div>
-  );
-}
-
-
-function Group36() {
-  return (
-    <div className="grid-cols-[max-content] grid-rows-[max-content] inline-grid leading-[0] place-items-start relative shrink-0">
-      <Frame />
-      <Frame1 />
-      <div className="bg-gradient-to-l col-1 from-[rgba(255,255,255,0)] h-[168px] ml-[38px] mt-0 relative row-1 to-white w-[491px]" />
-      <div className="bg-gradient-to-l col-1 from-white h-[168px] ml-[1402px] mt-0 relative row-1 to-[rgba(255,255,255,0)] w-[556px]" />
-    </div>
-  );
-}
-
-
-function Frame85() {
-  return (
-    <div className="-translate-x-1/2 absolute content-stretch flex flex-col gap-[40px] items-center left-1/2 top-[1397px] w-[2046px]">
-      <Frame84 />
-      <Group36 />
-    </div>
-  );
-}
-
-
-function Container1() {
-  return (
-    <div className="col-1 grid-cols-[max-content] grid-rows-[max-content] inline-grid ml-0 mt-0 place-items-start relative row-1" data-name="Container">
-      <div className="bg-black col-1 ml-[4px] mt-0 relative row-1 size-[4px]" data-name="Line" />
-      <div className="bg-black col-1 h-[8px] ml-0 mt-0 relative row-1 w-[4px]" data-name="Line" />
-    </div>
-  );
-}
-
-
-function Container2() {
-  return (
-    <div className="col-1 grid-cols-[max-content] grid-rows-[max-content] inline-grid ml-[442px] mt-[44px] place-items-start relative row-1" data-name="Container">
-      <div className="bg-black col-1 h-[8px] ml-[4px] mt-0 relative row-1 w-[4px]" data-name="Line" />
-      <div className="bg-black col-1 ml-0 mt-[4px] relative row-1 size-[4px]" data-name="Line" />
-    </div>
-  );
-}
-
-
-function Container() {
-  return (
-    <div className="col-1 grid-cols-[max-content] grid-rows-[max-content] inline-grid ml-0 mt-0 place-items-start relative row-1" data-name="Container">
-      <Container1 />
-      <Container2 />
-    </div>
-  );
-}
-
-
-function Group76() {
-  return (
-    <div className="grid-cols-[max-content] grid-rows-[max-content] inline-grid leading-[0] place-items-start relative shrink-0">
-      <p
-        className="[word-break:break-word] col-1 lw-font-hyruiyisong-no45j leading-[48px] ml-[16px] mt-[2px] not-italic relative row-1 text-[32px] text-[rgba(0,0,0,0.9)] whitespace-nowrap"
-        style={{
-          WebkitTextStrokeWidth: '0.6px',
-          WebkitTextStrokeColor: 'var(--color-text-primary, rgba(0, 0, 0, 0.90))',
-        }}
-      >Hermes Agent 云端原生体验</p>
-      <Container />
-    </div>
-  );
-}
-
-
-function Frame86() {
-  return (
-    <div className="content-stretch flex flex-col gap-[16px] items-center relative shrink-0 w-[450px]">
-      <Group76 />
-      <p className="[word-break:break-word] font-['PingFang_SC:Regular',sans-serif] leading-[24px] min-w-full not-italic relative shrink-0 text-[16px] text-[rgba(0,0,0,0.5)] text-center w-[min-content]">随时在线，数据由你掌控</p>
-    </div>
-  );
-}
-
 
 function Container6() {
   return (
@@ -650,7 +52,6 @@ function Container6() {
   );
 }
 
-
 function Container5() {
   return (
     <div className="absolute h-[328px] left-[7.5px] overflow-clip rounded-[16px] top-[8px] w-[448px]" data-name="Container">
@@ -658,7 +59,6 @@ function Container5() {
     </div>
   );
 }
-
 
 function Image2() {
   return (
@@ -668,7 +68,6 @@ function Image2() {
   );
 }
 
-
 function Text18() {
   return (
     <div className="absolute content-stretch flex flex-col h-[3.025px] items-start left-[12.45px] overflow-clip top-[13.97px] w-[15.728px]" data-name="Text">
@@ -677,11 +76,9 @@ function Text18() {
   );
 }
 
-
 function Text20() {
   return <div className="bg-[#34c759] relative rounded-[2537245.5px] shrink-0 size-[0.907px]" data-name="Text" />;
 }
-
 
 function Text19() {
   return (
@@ -691,7 +88,6 @@ function Text19() {
     </div>
   );
 }
-
 
 function Icon18() {
   return (
@@ -710,7 +106,6 @@ function Icon18() {
   );
 }
 
-
 function Text21() {
   return (
     <div className="absolute content-stretch flex items-center justify-center left-[6.02px] size-[3.025px] top-[29.28px]" data-name="Text">
@@ -719,7 +114,6 @@ function Text21() {
   );
 }
 
-
 function Text22() {
   return (
     <div className="absolute h-[3.403px] left-[10.56px] top-[29.09px] w-[31.456px]" data-name="Text">
@@ -727,7 +121,6 @@ function Text22() {
     </div>
   );
 }
-
 
 function Icon19() {
   return (
@@ -758,7 +151,6 @@ function Icon19() {
   );
 }
 
-
 function Text23() {
   return (
     <div className="relative shrink-0 size-[3.025px]" data-name="Text">
@@ -769,7 +161,6 @@ function Text23() {
   );
 }
 
-
 function Button9() {
   return (
     <div className="absolute content-stretch flex gap-[1.512px] items-center left-[4.21px] px-[1.815px] py-[1.512px] rounded-[1.21px] top-[34.61px] w-[39.623px]" data-name="Button">
@@ -778,7 +169,6 @@ function Button9() {
     </div>
   );
 }
-
 
 function Icon20() {
   return (
@@ -804,7 +194,6 @@ function Icon20() {
   );
 }
 
-
 function Text24() {
   return (
     <div className="relative shrink-0 size-[3.025px]" data-name="Text">
@@ -815,7 +204,6 @@ function Text24() {
   );
 }
 
-
 function Button10() {
   return (
     <div className="absolute content-stretch flex gap-[1.512px] items-center left-[4.21px] px-[1.815px] py-[1.512px] rounded-[2.42px] top-[41.65px] w-[39.623px]" data-name="Button">
@@ -824,7 +212,6 @@ function Button10() {
     </div>
   );
 }
-
 
 function Icon21() {
   return (
@@ -844,7 +231,6 @@ function Icon21() {
   );
 }
 
-
 function Text25() {
   return (
     <div className="relative shrink-0 size-[3.025px]" data-name="Text">
@@ -855,7 +241,6 @@ function Text25() {
   );
 }
 
-
 function Button11() {
   return (
     <div className="absolute content-stretch flex gap-[1.512px] items-center left-[4.21px] px-[1.815px] py-[1.512px] rounded-[2.42px] top-[48.68px] w-[39.623px]" data-name="Button">
@@ -864,7 +249,6 @@ function Button11() {
     </div>
   );
 }
-
 
 function Icon22() {
   return (
@@ -888,7 +272,6 @@ function Icon22() {
   );
 }
 
-
 function Text26() {
   return (
     <div className="relative shrink-0 size-[3.025px]" data-name="Text">
@@ -899,7 +282,6 @@ function Text26() {
   );
 }
 
-
 function Button12() {
   return (
     <div className="absolute content-stretch flex gap-[1.512px] items-center left-[4.21px] px-[1.815px] py-[1.512px] rounded-[2.42px] top-[55.71px] w-[39.623px]" data-name="Button">
@@ -908,7 +290,6 @@ function Button12() {
     </div>
   );
 }
-
 
 function Icon23() {
   return (
@@ -929,7 +310,6 @@ function Icon23() {
   );
 }
 
-
 function Text27() {
   return (
     <div className="relative shrink-0 size-[3.025px]" data-name="Text">
@@ -940,7 +320,6 @@ function Text27() {
   );
 }
 
-
 function Button13() {
   return (
     <div className="absolute content-stretch flex gap-[1.512px] items-center left-[4.21px] px-[1.815px] py-[1.512px] rounded-[2.42px] top-[62.74px] w-[39.623px]" data-name="Button">
@@ -949,7 +328,6 @@ function Button13() {
     </div>
   );
 }
-
 
 function Icon24() {
   return (
@@ -963,7 +341,6 @@ function Icon24() {
   );
 }
 
-
 function Button14() {
   return (
     <div className="absolute bg-white content-stretch flex h-[7.108px] items-center justify-between left-[51.85px] px-[2.571px] py-[1.966px] rounded-[1.21px] top-[62.67px] w-[164.238px]" data-name="Button">
@@ -974,7 +351,6 @@ function Button14() {
   );
 }
 
-
 function Container8() {
   return (
     <div className="absolute contents left-[51.85px] top-[57.68px]" data-name="Container">
@@ -983,7 +359,6 @@ function Container8() {
     </div>
   );
 }
-
 
 function Icon25() {
   return (
@@ -997,7 +372,6 @@ function Icon25() {
   );
 }
 
-
 function Button15() {
   return (
     <div className="absolute bg-white content-stretch flex h-[7.108px] items-center justify-between left-[51.85px] px-[2.571px] py-[1.966px] rounded-[1.21px] top-[78.4px] w-[164.238px]" data-name="Button">
@@ -1008,7 +382,6 @@ function Button15() {
   );
 }
 
-
 function Container9() {
   return (
     <div className="absolute contents left-[51.85px] top-[73.41px]" data-name="Container">
@@ -1017,7 +390,6 @@ function Container9() {
     </div>
   );
 }
-
 
 function PasswordInput1() {
   return (
@@ -1030,7 +402,6 @@ function PasswordInput1() {
   );
 }
 
-
 function Container10() {
   return (
     <div className="absolute contents left-[51.85px] top-[89.13px]" data-name="Container">
@@ -1040,7 +411,6 @@ function Container10() {
     </div>
   );
 }
-
 
 function Button16() {
   return (
@@ -1055,7 +425,6 @@ function Button16() {
   );
 }
 
-
 function ContainerMargin1() {
   return (
     <div className="absolute content-stretch flex h-[6.957px] items-start justify-end left-[52.6px] pt-[1.21px] top-[118.17px] w-[164.238px]" data-name="Container (margin)">
@@ -1063,7 +432,6 @@ function ContainerMargin1() {
     </div>
   );
 }
-
 
 function Container14() {
   return (
@@ -1085,7 +453,6 @@ function Container14() {
   );
 }
 
-
 function Container13() {
   return (
     <div className="h-[3.932px] relative shrink-0 w-[14.019px]" data-name="Container">
@@ -1093,7 +460,6 @@ function Container13() {
     </div>
   );
 }
-
 
 function Container12() {
   return (
@@ -1103,7 +469,6 @@ function Container12() {
   );
 }
 
-
 function Component7() {
   return (
     <div className="backdrop-blur-[1.217px] bg-[rgba(245,245,245,0.5)] content-stretch flex gap-[0.605px] items-center px-[3.63px] py-[1.059px] relative rounded-[15.123px] shrink-0" data-name="Component 53">
@@ -1112,7 +477,6 @@ function Component7() {
     </div>
   );
 }
-
 
 function ImageAvatar1() {
   return (
@@ -1126,7 +490,6 @@ function ImageAvatar1() {
   );
 }
 
-
 function Icon26() {
   return (
     <div className="relative shrink-0 size-[2.117px]" data-name="Icon">
@@ -1139,7 +502,6 @@ function Icon26() {
   );
 }
 
-
 function Button17() {
   return (
     <div className="content-stretch flex gap-[1.21px] h-[5.444px] items-center relative rounded-[2537245.5px] shrink-0 w-[8.771px]" data-name="Button">
@@ -1149,7 +511,6 @@ function Button17() {
   );
 }
 
-
 function Container15() {
   return (
     <div className="content-stretch flex gap-[1.815px] items-center relative shrink-0" data-name="Container">
@@ -1158,7 +519,6 @@ function Container15() {
     </div>
   );
 }
-
 
 function Container16() {
   return (
@@ -1179,7 +539,6 @@ function Container16() {
   );
 }
 
-
 function Container11() {
   return (
     <div className="absolute content-stretch flex items-center justify-between left-[-9.25px] px-[12.099px] py-[1.815px] top-[0.52px] w-[241.971px]" data-name="Container">
@@ -1190,7 +549,6 @@ function Container11() {
     </div>
   );
 }
-
 
 function Component2() {
   return (
@@ -1223,7 +581,6 @@ function Component2() {
   );
 }
 
-
 function Container20() {
   return (
     <div className="absolute h-[2.117px] left-[0.29px] top-[0.15px] w-[1.825px]" data-name="Container">
@@ -1248,7 +605,6 @@ function Container20() {
   );
 }
 
-
 function Icon27() {
   return (
     <div className="overflow-clip relative shrink-0 size-[2.42px]" data-name="Icon">
@@ -1256,7 +612,6 @@ function Icon27() {
     </div>
   );
 }
-
 
 function Container19() {
   return (
@@ -1266,7 +621,6 @@ function Container19() {
     </div>
   );
 }
-
 
 function Icon28() {
   return (
@@ -1285,7 +639,6 @@ function Icon28() {
   );
 }
 
-
 function Container21() {
   return (
     <div className="content-stretch flex gap-[0.907px] items-center relative shrink-0" data-name="Container">
@@ -1294,7 +647,6 @@ function Container21() {
     </div>
   );
 }
-
 
 function Group13() {
   return (
@@ -1308,7 +660,6 @@ function Group13() {
     </div>
   );
 }
-
 
 function Container22() {
   return (
@@ -1330,7 +681,6 @@ function Container22() {
   );
 }
 
-
 function Container18() {
   return (
     <div className="absolute content-stretch flex gap-[10.586px] items-center left-[51.85px] top-[48.75px]" data-name="Container">
@@ -1340,7 +690,6 @@ function Container18() {
     </div>
   );
 }
-
 
 function Container17() {
   return (
@@ -1358,7 +707,6 @@ function Container17() {
   );
 }
 
-
 function MaskGroup4() {
   return (
     <div className="absolute contents left-[-0.15px] top-[-0.15px]" data-name="Mask group">
@@ -1375,7 +723,6 @@ function MaskGroup4() {
   );
 }
 
-
 function Container24() {
   return (
     <div className="absolute h-[1.967px] left-[0.4px] top-[0.27px] w-[1.696px]" data-name="Container">
@@ -1388,7 +735,6 @@ function Container24() {
   );
 }
 
-
 function Icon30() {
   return (
     <div className="overflow-clip relative shrink-0 size-[2.504px]" data-name="Icon">
@@ -1397,7 +743,6 @@ function Icon30() {
   );
 }
 
-
 function Icon29() {
   return (
     <div className="absolute backdrop-blur-[0.448px] bg-white content-stretch flex items-center justify-center left-[2.72px] p-[0.627px] rounded-[5.747px] size-[4.688px] top-[2.87px]" data-name="ICON">
@@ -1405,7 +750,6 @@ function Icon29() {
     </div>
   );
 }
-
 
 function Container26() {
   return (
@@ -1424,7 +768,6 @@ function Container26() {
   );
 }
 
-
 function Container25() {
   return (
     <div className="absolute contents left-[47.73px] top-[9.66px]" data-name="Container">
@@ -1432,7 +775,6 @@ function Container25() {
     </div>
   );
 }
-
 
 function Container29() {
   return (
@@ -1442,7 +784,6 @@ function Container29() {
   );
 }
 
-
 function Container28() {
   return (
     <div className="absolute contents left-[43.66px] top-[9.81px]" data-name="Container">
@@ -1450,7 +791,6 @@ function Container28() {
     </div>
   );
 }
-
 
 function Container27() {
   return (
@@ -1467,7 +807,6 @@ function Container27() {
   );
 }
 
-
 function Container23() {
   return (
     <div className="absolute bg-white border-[#e9ecf1] border-[0.151px] border-solid h-[20.265px] left-[51.54px] overflow-clip rounded-[1.815px] top-[21.38px] w-[53.082px]" data-name="Container">
@@ -1481,7 +820,6 @@ function Container23() {
   );
 }
 
-
 function MaskGroup5() {
   return (
     <div className="absolute contents left-[-0.15px] top-[-0.15px]" data-name="Mask group">
@@ -1491,7 +829,6 @@ function MaskGroup5() {
     </div>
   );
 }
-
 
 function Container31() {
   return (
@@ -1505,7 +842,6 @@ function Container31() {
   );
 }
 
-
 function Icon32() {
   return (
     <div className="overflow-clip relative shrink-0 size-[2.504px]" data-name="Icon">
@@ -1514,7 +850,6 @@ function Icon32() {
   );
 }
 
-
 function Icon31() {
   return (
     <div className="absolute backdrop-blur-[0.448px] bg-white content-stretch flex items-center justify-center left-[2.72px] p-[0.627px] rounded-[5.747px] size-[4.688px] top-[2.87px]" data-name="ICON">
@@ -1522,7 +857,6 @@ function Icon31() {
     </div>
   );
 }
-
 
 function Container33() {
   return (
@@ -1541,7 +875,6 @@ function Container33() {
   );
 }
 
-
 function Container32() {
   return (
     <div className="absolute contents left-[46.98px] top-[9.66px]" data-name="Container">
@@ -1549,7 +882,6 @@ function Container32() {
     </div>
   );
 }
-
 
 function Container36() {
   return (
@@ -1559,7 +891,6 @@ function Container36() {
   );
 }
 
-
 function Container35() {
   return (
     <div className="absolute contents left-[42.91px] top-[9.81px]" data-name="Container">
@@ -1567,7 +898,6 @@ function Container35() {
     </div>
   );
 }
-
 
 function Container34() {
   return (
@@ -1584,7 +914,6 @@ function Container34() {
   );
 }
 
-
 function Container30() {
   return (
     <div className="absolute bg-white border-[#e9ecf1] border-[0.151px] border-solid h-[20.265px] left-[106.29px] overflow-clip rounded-[1.815px] top-[21.38px] w-[53.082px]" data-name="Container">
@@ -1598,7 +927,6 @@ function Container30() {
   );
 }
 
-
 function MaskGroup6() {
   return (
     <div className="absolute contents left-[-0.15px] top-[-0.15px]" data-name="Mask group">
@@ -1608,7 +936,6 @@ function MaskGroup6() {
     </div>
   );
 }
-
 
 function Container38() {
   return (
@@ -1622,7 +949,6 @@ function Container38() {
   );
 }
 
-
 function Icon34() {
   return (
     <div className="overflow-clip relative shrink-0 size-[2.504px]" data-name="Icon">
@@ -1631,7 +957,6 @@ function Icon34() {
   );
 }
 
-
 function Icon33() {
   return (
     <div className="absolute backdrop-blur-[0.448px] bg-white content-stretch flex items-center justify-center left-[2.72px] p-[0.627px] rounded-[5.747px] size-[4.688px] top-[2.87px]" data-name="ICON">
@@ -1639,7 +964,6 @@ function Icon33() {
     </div>
   );
 }
-
 
 function Container40() {
   return (
@@ -1658,7 +982,6 @@ function Container40() {
   );
 }
 
-
 function Container39() {
   return (
     <div className="absolute contents left-[47.24px] top-[9.66px]" data-name="Container">
@@ -1666,7 +989,6 @@ function Container39() {
     </div>
   );
 }
-
 
 function Container43() {
   return (
@@ -1676,7 +998,6 @@ function Container43() {
   );
 }
 
-
 function Container42() {
   return (
     <div className="absolute contents left-[43.17px] top-[9.81px]" data-name="Container">
@@ -1684,7 +1005,6 @@ function Container42() {
     </div>
   );
 }
-
 
 function Container41() {
   return (
@@ -1701,7 +1021,6 @@ function Container41() {
   );
 }
 
-
 function Container37() {
   return (
     <div className="absolute bg-white border-[#e9ecf1] border-[0.151px] border-solid h-[20.265px] left-[161.04px] overflow-clip rounded-[1.815px] top-[21.38px] w-[53.082px]" data-name="Container">
@@ -1714,7 +1033,6 @@ function Container37() {
     </div>
   );
 }
-
 
 function Icon35() {
   return (
@@ -1734,7 +1052,6 @@ function Icon35() {
   );
 }
 
-
 function ButtonApiKey1() {
   return (
     <div className="absolute content-stretch flex flex-col items-start left-[210.79px] p-[0.605px] top-[96px]" data-name="Button - 显示 API Key">
@@ -1742,7 +1059,6 @@ function ButtonApiKey1() {
     </div>
   );
 }
-
 
 function MainContent1() {
   return (
@@ -1795,7 +1111,6 @@ function MainContent1() {
   );
 }
 
-
 function Group() {
   return (
     <div className="absolute contents left-[112px] top-[107px]">
@@ -1804,7 +1119,6 @@ function Group() {
     </div>
   );
 }
-
 
 function Badge() {
   return (
@@ -1843,7 +1157,6 @@ function Badge() {
   );
 }
 
-
 function Container7() {
   return (
     <div className="absolute contents left-[96.1px] top-[93.1px]" data-name="Container">
@@ -1852,7 +1165,6 @@ function Container7() {
     </div>
   );
 }
-
 
 function Container46() {
   return (
@@ -1866,7 +1178,6 @@ function Container46() {
   );
 }
 
-
 function Container45() {
   return (
     <div className="content-stretch flex gap-[8px] items-center relative shrink-0" data-name="Container">
@@ -1876,7 +1187,6 @@ function Container45() {
   );
 }
 
-
 function Container44() {
   return (
     <div className="absolute bg-black content-stretch flex flex-col items-start left-[40px] px-[12px] py-[2px] rounded-[8px] top-[368px]" data-name="Container">
@@ -1884,7 +1194,6 @@ function Container44() {
     </div>
   );
 }
-
 
 function Container47() {
   return (
@@ -1894,7 +1203,6 @@ function Container47() {
     </div>
   );
 }
-
 
 function Container4() {
   return (
@@ -1908,7 +1216,6 @@ function Container4() {
     </div>
   );
 }
-
 
 function Container50() {
   return (
@@ -1949,7 +1256,6 @@ function Container50() {
   );
 }
 
-
 function BadgeContainer() {
   return (
     <div className="absolute h-[25.524px] left-[111.67px] overflow-clip top-[137.33px] w-[28.714px]" data-name="Badge Container">
@@ -1962,7 +1268,6 @@ function BadgeContainer() {
   );
 }
 
-
 function Container51() {
   return (
     <div className="absolute contents left-[105.44px] top-[131.67px]" data-name="Container">
@@ -1971,7 +1276,6 @@ function Container51() {
     </div>
   );
 }
-
 
 function Group7() {
   return (
@@ -1993,7 +1297,6 @@ function Group7() {
   );
 }
 
-
 function Container54() {
   return (
     <div className="h-[10.534px] relative shrink-0 w-[37.557px]" data-name="Container">
@@ -2002,7 +1305,6 @@ function Container54() {
   );
 }
 
-
 function Container53() {
   return (
     <div className="absolute content-stretch flex items-center left-[285.02px] top-[121.84px]" data-name="Container">
@@ -2010,7 +1312,6 @@ function Container53() {
     </div>
   );
 }
-
 
 function Container55() {
   return (
@@ -2026,7 +1327,6 @@ function Container55() {
     </div>
   );
 }
-
 
 function Container52() {
   return (
@@ -2051,7 +1351,6 @@ function Container52() {
   );
 }
 
-
 function Container56() {
   return (
     <div className="absolute h-[5.214px] left-[285.02px] top-[147.84px] w-[5.777px]" data-name="Container">
@@ -2066,7 +1365,6 @@ function Container56() {
     </div>
   );
 }
-
 
 function Group77() {
   return (
@@ -2179,7 +1477,6 @@ function Group77() {
   );
 }
 
-
 function Container49() {
   return (
     <div className="absolute h-[328px] left-[8.5px] overflow-clip rounded-[16px] top-[8px] w-[448px]" data-name="Container">
@@ -2188,7 +1485,6 @@ function Container49() {
     </div>
   );
 }
-
 
 function Container58() {
   return (
@@ -2203,7 +1499,6 @@ function Container58() {
   );
 }
 
-
 function Container57() {
   return (
     <div className="absolute bg-black content-stretch flex flex-col items-start left-[40.39px] px-[12px] py-[2px] rounded-[8px] top-[368px]" data-name="Container">
@@ -2211,7 +1506,6 @@ function Container57() {
     </div>
   );
 }
-
 
 function Container59() {
   return (
@@ -2222,7 +1516,6 @@ function Container59() {
   );
 }
 
-
 function Container48() {
   return (
     <div className="bg-[rgba(242,244,248,0.8)] h-[592px] overflow-clip relative rounded-[24px] shrink-0 w-[464px]" data-name="Container">
@@ -2232,7 +1525,6 @@ function Container48() {
     </div>
   );
 }
-
 
 function Container62() {
   return (
@@ -2265,7 +1557,6 @@ function Container62() {
   );
 }
 
-
 function Container64() {
   return (
     <div className="absolute h-[59.868px] left-[197.72px] top-[149.63px] w-[51.809px]" data-name="Container">
@@ -2296,7 +1587,6 @@ function Container64() {
   );
 }
 
-
 function BadgeContainer1() {
   return (
     <div className="absolute h-[19.444px] left-[96.73px] top-[193.84px] w-[20.81px]" data-name="Badge Container">
@@ -2313,7 +1603,6 @@ function BadgeContainer1() {
   );
 }
 
-
 function Container68() {
   return (
     <div className="absolute contents left-[87px] top-[184.12px]" data-name="Container">
@@ -2323,7 +1612,6 @@ function Container68() {
   );
 }
 
-
 function Container67() {
   return (
     <div className="absolute contents left-[87px] top-[184.12px]" data-name="Container">
@@ -2332,7 +1620,6 @@ function Container67() {
   );
 }
 
-
 function Container66() {
   return (
     <div className="absolute contents left-[87px] top-[184.12px]" data-name="Container">
@@ -2340,7 +1627,6 @@ function Container66() {
     </div>
   );
 }
-
 
 function Container71() {
   return (
@@ -2359,7 +1645,6 @@ function Container71() {
   );
 }
 
-
 function Container70() {
   return (
     <div className="absolute contents left-[321.31px] top-[184.11px]" data-name="Container">
@@ -2369,7 +1654,6 @@ function Container70() {
   );
 }
 
-
 function Container69() {
   return (
     <div className="absolute contents left-[321.31px] top-[184.11px]" data-name="Container">
@@ -2377,7 +1661,6 @@ function Container69() {
     </div>
   );
 }
-
 
 function Container65() {
   return (
@@ -2387,7 +1670,6 @@ function Container65() {
     </div>
   );
 }
-
 
 function Container63() {
   return (
@@ -2412,7 +1694,6 @@ function Container63() {
     </div>
   );
 }
-
 
 function Container61() {
   return (
@@ -2439,7 +1720,6 @@ function Container61() {
   );
 }
 
-
 function Container76() {
   return (
     <div className="absolute h-[11px] left-[1.75px] top-[3px] w-[12.5px]" data-name="Container">
@@ -2454,7 +1734,6 @@ function Container76() {
   );
 }
 
-
 function Container75() {
   return (
     <div className="absolute contents left-[1.75px] top-[3px]" data-name="Container">
@@ -2463,7 +1742,6 @@ function Container75() {
   );
 }
 
-
 function Container74() {
   return (
     <div className="relative shrink-0 size-[16px]" data-name="Container">
@@ -2471,7 +1749,6 @@ function Container74() {
     </div>
   );
 }
-
 
 function Container73() {
   return (
@@ -2482,7 +1759,6 @@ function Container73() {
   );
 }
 
-
 function Container72() {
   return (
     <div className="absolute bg-black content-stretch flex flex-col items-start left-[40.39px] px-[12px] py-[2px] rounded-[6px] top-[368px] w-[151px]" data-name="Container">
@@ -2490,7 +1766,6 @@ function Container72() {
     </div>
   );
 }
-
 
 function Container77() {
   return (
@@ -2501,33 +1776,12 @@ function Container77() {
   );
 }
 
-
 function Container60() {
   return (
     <div className="bg-[rgba(242,244,248,0.8)] h-[592px] overflow-clip relative rounded-[24px] shrink-0 w-[464px]" data-name="Container">
       <Container61 />
       <Container72 />
       <Container77 />
-    </div>
-  );
-}
-
-
-function Container3() {
-  return (
-    <div className="content-stretch flex gap-[24px] items-center relative shrink-0 w-full" data-name="Container">
-      <Container4 />
-      <Container48 />
-      <Container60 />
-    </div>
-  );
-}
-
-function Frame87() {
-  return (
-    <div className="absolute content-stretch flex flex-col gap-[40px] items-center left-[240px] top-[1841px] w-[1440px]">
-      <Frame86 />
-      <Container3 />
     </div>
   );
 }
@@ -2578,8 +1832,7 @@ export function CardsSection() {
               className="text-[32px] lw-font-hyruiyisong text-[rgba(0,0,0,0.9)] leading-[48px] text-center lv-reveal"
               style={{
                 WebkitTextStrokeWidth: '0.6px',
-                WebkitTextStrokeColor: 'var(--color-text-primary, rgba(0, 0, 0, 0.90))',
-              }}
+                WebkitTextStrokeColor: 'var(--color-text-primary, rgba(0, 0, 0, 0.90))' }}
             >
               Hermes Agent 云端原生体验
             </h2>
@@ -2694,8 +1947,7 @@ export default function FeatureSection() {
             className="text-[32px] lw-font-hyruiyisong text-[rgba(0,0,0,0.9)] leading-[48px] text-center lv-reveal"
             style={{
               WebkitTextStrokeWidth: '0.6px',
-              WebkitTextStrokeColor: 'var(--color-text-primary, rgba(0, 0, 0, 0.90))',
-            }}
+              WebkitTextStrokeColor: 'var(--color-text-primary, rgba(0, 0, 0, 0.90))' }}
           >
             你只管开口，远方的智能伙伴替你抵达
           </h2>

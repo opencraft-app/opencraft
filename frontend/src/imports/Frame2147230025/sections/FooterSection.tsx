@@ -1,4 +1,3 @@
-// @ts-nocheck — Figma auto-generated; suppress strict TS lints (noUnusedLocals etc.)
 import { svgPaths } from '../assets';
 
 
