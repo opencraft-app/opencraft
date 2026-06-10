@@ -640,6 +640,17 @@ func TestStaleRuntimeCleanupCheckpointFailureStillBlocksRecreate(t *testing.T) {
 	}
 }
 
+func TestWispRestorePrefersCurrentPackageURL(t *testing.T) {
+	current := "https://example.com/wisp-new.erofs"
+	recorded := "https://example.com/wisp-old.erofs"
+	if got := wispPackageURLForRestore(current, recorded); got != current {
+		t.Fatalf("restore package url=%q, want current %q", got, current)
+	}
+	if got := wispPackageURLForRestore("", recorded); got != recorded {
+		t.Fatalf("restore package url fallback=%q, want recorded %q", got, recorded)
+	}
+}
+
 func TestWispOuterPrepareScriptPropagatesLitestreamTrace(t *testing.T) {
 	script := wispOuterPrepareScript()
 	for _, want := range []string{

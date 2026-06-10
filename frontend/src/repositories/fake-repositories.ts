@@ -380,6 +380,17 @@ export const createFakeRepositories = (): Repositories => {
           requestId: "fake-realname",
         };
       },
+      async requestEmailBind({ email }) {
+        await wait(NETWORK_DELAY_MS);
+        const session = readStoredAuthSession();
+        if (!session) {
+          throw new Error("未登录或登录已失效。");
+        }
+        if (!email.includes("@")) {
+          throw new Error("邮箱格式不正确。");
+        }
+        return { cooldownSeconds: 60 };
+      },
       async createTatDeviceBind({ callbackUrl }) {
         await wait(NETWORK_DELAY_MS);
         const session = readStoredAuthSession();

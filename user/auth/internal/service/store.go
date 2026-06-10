@@ -35,6 +35,8 @@ type Store interface {
 	FindUserByID(ctx context.Context, userID string) (User, error)
 	UpdateRealname(ctx context.Context, token string, input UpdateRealnameInput) error
 	UpdateProfile(ctx context.Context, token string, name string, now time.Time) (User, error)
+	RequestEmailBind(ctx context.Context, token string, email string, tokenHash string, now time.Time, tokenTTL time.Duration, cooldown time.Duration) (time.Duration, error)
+	ConfirmEmailBind(ctx context.Context, tokenHash string, now time.Time) (User, error)
 	QueueNameAudit(ctx context.Context, token string, input CreateNameAuditInput, now time.Time) (User, error)
 	QueueAvatarAudit(ctx context.Context, userID string, input CreateAvatarAuditInput, now time.Time) (User, error)
 	ListPendingContentAuditTasks(ctx context.Context, limit int) ([]ContentAuditTask, error)

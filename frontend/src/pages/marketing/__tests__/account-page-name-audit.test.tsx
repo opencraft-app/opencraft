@@ -19,6 +19,7 @@ vi.mock("@/i18n/t", () => ({
 }));
 
 vi.mock("@/lib/region", () => ({
+  isCN: true,
   isGlobal: false,
 }));
 
@@ -93,6 +94,8 @@ describe("AccountPage nickname audit state", () => {
     currentUser = {
       id: "usr_profile_audit",
       name: "旧昵称",
+      email: "profile-audit@example.com",
+      emailVerified: true,
       inviteRequired: false,
       realnameVerified: true,
       createdAt: "2026-06-01T00:00:00Z",

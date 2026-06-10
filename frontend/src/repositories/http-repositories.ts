@@ -1059,6 +1059,12 @@ const createHttpAuthRepository = (baseUrl: string): AuthRepository => ({
       body: input,
     });
   },
+  async requestEmailBind(input) {
+    return request<{ cooldownSeconds: number }>(baseUrl, "/auth/email/bind/request", {
+      method: "POST",
+      body: input,
+    });
+  },
   async createTatDeviceBind(input): Promise<TatDeviceBindResult> {
     const response = await request<TatDeviceBindPayload>(baseUrl, "/auth/tat/device-bind", {
       method: "POST",
