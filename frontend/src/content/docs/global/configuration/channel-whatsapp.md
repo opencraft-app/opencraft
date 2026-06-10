@@ -118,6 +118,10 @@ WhatsApp 通道采用扫码接入方式，配置方式接近 WeChat，适合快�
 
 ## 下一步
 
-- [配置通道 - Discord](./configuration/channel-discord.md) — 社群运营、开发者社区与兴趣群组互动
+- [配置通道 - Discord](./configuration/channel-discord.md) — 社群运营与开发者社区
+
+- [配置通道 - QQ](./configuration/channel-qq.md) — 手动创建机器人，AppID/AppSecret 接入
+
+- [配置通道 - 企业微信](./configuration/channel-wecom.md) — 企业内部协作与办公场景
 
 - [配置技能](./configuration/skill.md) — 扩展 Hermes 能力

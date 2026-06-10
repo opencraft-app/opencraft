@@ -73,7 +73,7 @@ The three buttons are arranged from left to right. The recommended configuration
 
 **Button provides**: Channel dropdown, "Authorize Access" button, selected channel introduction and "View Details" link, and "Connected channels" list.
 
-For details, see [Configure Channel - WeChat](./configuration/channel-wechat.md) / [Telegram](./configuration/channel-telegram.md) / [WhatsApp](./configuration/channel-whatsapp.md) / [Discord](./configuration/channel-discord.md).
+For details, see [Configure Channel - WeChat](./configuration/channel-wechat.md) / [Telegram](./configuration/channel-telegram.md) / [WhatsApp](./configuration/channel-whatsapp.md) / [Discord](./configuration/channel-discord.md) / [QQ](./configuration/channel-qq.md) / [WeCom](./configuration/channel-wecom.md) / [Lark](./configuration/channel-feishu.md).
 
 ---
 
@@ -145,7 +145,7 @@ Detailed configuration for each module:
 
 - [Configure Models](./configuration/model.md) — Model sources, API Key acquisition, and selection guidance
 
-- [Configure Channel - WeChat](./configuration/channel-wechat.md) / [Telegram](./configuration/channel-telegram.md) / [WhatsApp](./configuration/channel-whatsapp.md) / [Discord](./configuration/channel-discord.md)
+- [Configure Channel - WeChat](./configuration/channel-wechat.md) / [Telegram](./configuration/channel-telegram.md) / [WhatsApp](./configuration/channel-whatsapp.md) / [Discord](./configuration/channel-discord.md) / [QQ](./configuration/channel-qq.md) / [WeCom](./configuration/channel-wecom.md) / [Lark](./configuration/channel-feishu.md)
 
 - [Configure Skills](./configuration/skill.md) — SkillHub usage and skill installation
 

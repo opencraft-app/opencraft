@@ -130,10 +130,10 @@ WeChat 通道采用扫码接入方式，为所有通道中配置最简单的一�
 
 ## 下一步
 
-- [配置通道 - Telegram](./configuration/channel-telegram.md) — 轻量通知与跨端沟通，适合个人或团队消息场景
-    
-- [配置通道 - WhatsApp](./configuration/channel-whatsapp.md) — 国际用户沟通、客户服务与通知提醒场景
-    
-- [配置通道 - Discord](./configuration/channel-discord.md) — 社群运营、开发者社区与兴趣群组互动
-    
+- [配置通道 - Telegram](./configuration/channel-telegram.md) — 轻量通知与跨端沟通
+
+- [配置通道 - WhatsApp](./configuration/channel-whatsapp.md) — 国际用户沟通与客户服务
+
+- [配置通道 - Discord](./configuration/channel-discord.md) — 社群运营与开发者社区
+
 - [配置技能](./configuration/skill.md) — 扩展 Hermes 能力

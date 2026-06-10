@@ -118,6 +118,10 @@ After access succeeds, the WhatsApp bot can receive and reply to basic text mess
 
 ## Next steps
 
-- [Configure Channel - Discord](./configuration/channel-discord.md) — Community operations, developer communities, and interest-group interactions
+- [Configure Channel - Discord](./configuration/channel-discord.md) — Community operations and developer communities
+
+- [Configure Channel - QQ](./configuration/channel-qq.md) — Bot created manually, integrated via AppID/AppSecret
+
+- [Configure Channel - WeCom](./configuration/channel-wecom.md) — Enterprise internal collaboration and office scenarios
 
 - [Configure Skills](./configuration/skill.md) — Extend Hermes capabilities

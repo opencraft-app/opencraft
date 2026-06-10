@@ -133,8 +133,10 @@ Telegram 通道采用 Bot Token 接入方式，适合快速将 Hermes 接入 Tel
 
 ## 下一步
 
-- [配置通道 - WhatsApp](./configuration/channel-whatsapp.md) — 国际用户沟通、客户服务与通知提醒场景
+- [配置通道 - WhatsApp](./configuration/channel-whatsapp.md) — 国际用户沟通与客户服务
 
-- [配置通道 - Discord](./configuration/channel-discord.md) — 社群运营、开发者社区与兴趣群组互动
+- [配置通道 - Discord](./configuration/channel-discord.md) — 社群运营与开发者社区
+
+- [配置通道 - QQ](./configuration/channel-qq.md) — 手动创建机器人，AppID/AppSecret 接入
 
 - [配置技能](./configuration/skill.md) — 扩展 Hermes 能力

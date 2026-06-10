@@ -167,4 +167,10 @@ Discord 通道采用 Bot 授权接入方式，适合将 Hermes 接入 Discord �
 
 ## 下一步
 
+- [配置通道 - QQ](./configuration/channel-qq.md) — 手动创建机器人，AppID/AppSecret 接入
+
+- [配置通道 - 企业微信](./configuration/channel-wecom.md) — 企业内部协作与办公场景
+
+- [配置通道 - 飞书](./configuration/channel-feishu.md) — 办公场景，支持富文本与群聊
+
 - [配置技能](./configuration/skill.md) — 扩展 Hermes 能力

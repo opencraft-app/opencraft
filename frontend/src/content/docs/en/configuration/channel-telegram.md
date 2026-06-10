@@ -133,8 +133,10 @@ After access succeeds, the Telegram bot can receive and reply to basic text mess
 
 ## Next steps
 
-- [Configure Channel - WhatsApp](./configuration/channel-whatsapp.md) — International user communication, customer service, and notification scenarios
+- [Configure Channel - WhatsApp](./configuration/channel-whatsapp.md) — International user communication and customer service
 
-- [Configure Channel - Discord](./configuration/channel-discord.md) — Community operations, developer communities, and interest-group interactions
+- [Configure Channel - Discord](./configuration/channel-discord.md) — Community operations and developer communities
+
+- [Configure Channel - QQ](./configuration/channel-qq.md) — Bot created manually, integrated via AppID/AppSecret
 
 - [Configure Skills](./configuration/skill.md) — Extend Hermes capabilities
