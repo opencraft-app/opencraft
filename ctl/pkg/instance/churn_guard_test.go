@@ -3,7 +3,7 @@ package instance
 import (
 	"context"
 	"errors"
-"strings"
+	"strings"
 	"testing"
 	"time"
 
@@ -500,6 +500,10 @@ func (testSandboxAdapter) Refresh(context.Context, string, int32) error {
 }
 
 func (testSandboxAdapter) GetLogs(context.Context, string, *psandbox.GetLogsRequest) (*psandbox.SandboxLogs, error) {
+	panic("unexpected call")
+}
+
+func (testSandboxAdapter) StartTerminalSession(context.Context, string) (*psandbox.TerminalSession, error) {
 	panic("unexpected call")
 }
 

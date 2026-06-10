@@ -58,6 +58,7 @@ type Logic interface {
 	ListSoulTemplates(ctx pctx.Context) (*transport.ListSoulTemplatesResponse, error)
 	GetUserUsage(ctx pctx.Context) (*transport.UserUsageResponse, error)
 	GetInstance(ctx pctx.Context, instanceID string) (*transport.InstanceResponse, error)
+	StartTerminalSession(ctx pctx.Context, instanceID string) (*transport.TerminalSessionResponse, error)
 	ListInstances(ctx pctx.Context, page, pageSize int) (*transport.ListInstancesResponse, error)
 	DestroyInstance(ctx pctx.Context, instanceID string) (*transport.InstanceResponse, error)
 	PauseInstance(ctx pctx.Context, instanceID string) (*transport.InstanceResponse, error)
@@ -579,6 +580,41 @@ func (l *logic) GetInstance(ctx pctx.Context, instanceID string) (*transport.Ins
 		return nil, err
 	}
 	return toInstanceResponse(entity, true), nil
+}
+
+func (l *logic) StartTerminalSession(ctx pctx.Context, instanceID string) (*transport.TerminalSessionResponse, error) {
+	if ctx == nil || strings.TrimSpace(ctx.GetUserID()) == "" {
+		return nil, errcode.ErrInstanceMissingUserID
+	}
+	if strings.TrimSpace(instanceID) == "" {
+		return nil, errcode.ErrInstanceInvalidParam
+	}
+
+	entity, err := l.instanceDao.GetByInstanceID(ctx, instanceID)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(entity.SandboxId) == "" {
+		return nil, errcode.ErrSandboxNotFound
+	}
+
+	session, err := l.sandboxAdapter.StartTerminalSession(ctx, entity.SandboxId)
+	if err != nil {
+		return nil, err
+	}
+	return &transport.TerminalSessionResponse{
+		PoolID:         session.PoolID,
+		SessionID:      session.SessionID,
+		Region:         session.Region,
+		InstanceID:     session.InstanceID,
+		OwnerUin:       session.OwnerUin,
+		LoginUin:       session.LoginUin,
+		AppID:          session.AppID,
+		WsURL:          session.WsURL,
+		Cols:           session.Cols,
+		Rows:           session.Rows,
+		TimeoutSeconds: session.TimeoutSeconds,
+	}, nil
 }
 
 func (l *logic) ListInstances(ctx pctx.Context, page, pageSize int) (*transport.ListInstancesResponse, error) {

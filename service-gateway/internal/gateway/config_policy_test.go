@@ -32,9 +32,16 @@ func TestDeployConfigsDoNotExposeRetiredPublicRoutes(t *testing.T) {
 				t.Fatalf("load config: %v", err)
 			}
 
+			legacySandboxRouteFound := false
 			for _, route := range cfg.Routes {
 				if route.Prefix == "/sandboxes" {
-					t.Fatalf("retired sandbox proxy route is still configured: %+v", route)
+					legacySandboxRouteFound = true
+					if route.Access != AccessAuthenticated {
+						t.Fatalf("legacy sandbox proxy route must stay authenticated: %+v", route)
+					}
+					if len(route.Methods) != 2 || !containsString(route.Methods, http.MethodPost) || !containsString(route.Methods, http.MethodOptions) {
+						t.Fatalf("legacy sandbox proxy route must stay limited to POST/OPTIONS: %+v", route)
+					}
 				}
 				for _, rule := range route.PublicAllow {
 					if rule.Method != http.MethodPost {
@@ -45,6 +52,18 @@ func TestDeployConfigsDoNotExposeRetiredPublicRoutes(t *testing.T) {
 					}
 				}
 			}
+			if !legacySandboxRouteFound {
+				t.Fatalf("legacy sandbox proxy route is required until old frontend is fully rolled out")
+			}
 		})
 	}
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
