@@ -18,7 +18,7 @@
 | `/dashboard/setup`     | `OpenClawSetupPage`    | OpenClaw 初始化设置 |
 | `/dashboard/success`   | `OpenClawSuccessPage`  | 创建成功落地 |
 | `/agents`              | `OpenClawSettingsPage` | Agent 控制台（默认通道页，业务核心） |
-| `/agents/:section`     | `OpenClawSettingsPage` | Agent 能力分区；支持 channels / models / skills / persona / automations / memory / achievements / files / chat |
+| `/agents/:section`     | `OpenClawSettingsPage` | Agent 能力分区；支持 channels / models / skills / persona / automations / memory / achievements / files / chat；国际站直达 persona / chat 时回到 `/agents` |
 | `/account`             | `AccountPage`          | 个人中心（41KB / 1084 行，含实名认证入口） |
 | `/account/orders`      | `AccountOrdersPage`    | 订单列表（14KB） |
 | `/dashboard`（裸路径） | `<Navigate>`           | 兼容跳 `/agents` |

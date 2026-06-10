@@ -90,7 +90,7 @@
 - `/dashboard/setup`：初始化设置流程（`OpenClawSetupPage`）
 - `/dashboard/success`：创建成功页（`OpenClawSuccessPage`）
 - `/agents`：Agent 控制台（`OpenClawSettingsPage`，默认通道页）
-- `/agents/:section`：Agent 控制台分区（channels / models / skills / persona / automations / memory / achievements / files / chat）
+- `/agents/:section`：Agent 控制台分区（channels / models / skills / persona / automations / memory / achievements / files / chat；国际站直达 persona / chat 时回到 `/agents`）
 - `/account`：账号信息页（`AccountPage`）
 - `/account/orders`：订单/发票页（`AccountOrdersPage`）
 - `/dashboard`：重定向到 `/agents`

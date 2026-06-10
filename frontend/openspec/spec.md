@@ -15,7 +15,7 @@
 | `/agents/memory` | Render memory section |
 | `/agents/achievements` | Render achievements section |
 | `/agents/files` | Render cloud files section |
-| `/agents/chat` | Render AgentChat section |
+| `/agents/chat` | Render AgentChat section on CN; redirect to `/agents` on Global |
 
 Legacy routes redirect to `/agents` while preserving `location.search`.
 
@@ -36,6 +36,8 @@ The page keeps its internal `SettingsSectionId` values where practical, with URL
 | `chat` | `chat` |
 
 `activeSection` is derived from `useParams()` instead of local-only state. Navigation clicks call `navigate(section.path)`.
+
+Invalid section slugs, Global-only blocked sections (`persona`, `chat`), and other unavailable section URLs return a render-time `<Navigate>` to `/agents` so the heavy console UI is not mounted for a soon-to-be-replaced route.
 
 ## Compatibility
 

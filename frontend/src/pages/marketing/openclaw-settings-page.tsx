@@ -42,7 +42,7 @@ import {
 import { QRCodeSVG } from "qrcode.react";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
@@ -402,6 +402,12 @@ const AGENT_SECTION_ID_BY_SLUG: Record<string, SettingsSectionId> = {
 const getAgentSectionFromSlug = (slug?: string): SettingsSectionId | null => {
   if (!slug) return null;
   return AGENT_SECTION_ID_BY_SLUG[slug] ?? null;
+};
+
+const isAgentSectionAvailable = (section: SettingsSectionId | null): section is SettingsSectionId => {
+  if (!section) return false;
+  if (isGlobal && (section === "buddy" || section === "chat")) return false;
+  return true;
 };
 
 /* ─── Section Card Wrapper ─── */
@@ -2839,15 +2845,8 @@ export const OpenClawSettingsPage = () => {
 
   /* 实例内部的子页面切换：由 /agents/<section> URL 驱动，/agents 默认进入通道。 */
   const sectionFromPath = getAgentSectionFromSlug(sectionSlug);
-  const shouldRedirectToAgents = Boolean(
-    sectionSlug && (!sectionFromPath || (sectionFromPath === "buddy" && isGlobal)),
-  );
+  const shouldRedirectToAgents = Boolean(sectionSlug && !isAgentSectionAvailable(sectionFromPath));
   const activeSection = shouldRedirectToAgents ? DEFAULT_AGENT_SECTION : sectionFromPath ?? DEFAULT_AGENT_SECTION;
-
-  useEffect(() => {
-    if (!shouldRedirectToAgents) return;
-    navigate({ pathname: AGENTS_HOME_PATH, search: location.search }, { replace: true });
-  }, [location.search, navigate, shouldRedirectToAgents]);
 
   /* Tab 切换 */
   const [activeTabId, setActiveTabId] = useState((visibleBots[0]?.id ?? requestedCreatingBotId) || "creating");
@@ -3527,6 +3526,10 @@ export const OpenClawSettingsPage = () => {
   };
 
   const avatarUrl = activeBot ? getAvatarForBot(activeBot.id) : "";
+
+  if (shouldRedirectToAgents) {
+    return <Navigate to={{ pathname: AGENTS_HOME_PATH, search: location.search }} replace />;
+  }
 
   return (
     <div className="flex min-h-screen flex-col bg-white" style={{ color: "rgba(0,0,0,0.90)" }}>
