@@ -81,6 +81,13 @@ func TestEmailBindRejectsAlreadyBoundUser(t *testing.T) {
 	}
 }
 
+func TestBuildEmailBindResultRedirectURL(t *testing.T) {
+	got := BuildEmailBindResultRedirectURL("https://lightclaw.tech/", "success")
+	if got != "https://lightclaw.tech/auth/email-bind-result?status=success" {
+		t.Fatalf("unexpected redirect url: %s", got)
+	}
+}
+
 type recordingEmailSender struct {
 	messages []recordedEmailMessage
 }

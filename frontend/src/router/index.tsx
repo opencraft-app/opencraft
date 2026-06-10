@@ -11,6 +11,7 @@ const InvitePage = lazyNamed(() => import("@/pages/auth/invite-page"), "InvitePa
 const SignInPage = lazyNamed(() => import("@/pages/auth/sign-in-page"), "SignInPage");
 const SignUpPage = lazyNamed(() => import("@/pages/auth/sign-up-page"), "SignUpPage");
 const WeChatPayPage = lazyNamed(() => import("@/pages/auth/wechat-pay-page"), "WeChatPayPage");
+const EmailBindResultPage = lazyNamed(() => import("@/pages/auth/email-bind-result-page"), "EmailBindResultPage");
 const AccountProfilePage = lazyNamed(() => import("@/pages/app/account-profile-page"), "AccountProfilePage");
 const BotTerminalPage = lazyNamed(() => import("@/pages/app/bot-terminal-page"), "BotTerminalPage");
 const PlanSelectPage = lazyNamed(() => import("@/pages/app/plan-select-page"), "PlanSelectPage");
@@ -182,6 +183,10 @@ export const router = createBrowserRouter([
       {
         element: <MarketingLayout />,
         children: [
+          {
+            path: "auth/email-bind-result",
+            element: lazyRoute(EmailBindResultPage),
+          },
           {
             element: <AuthRouteGuard />,
             children: [
