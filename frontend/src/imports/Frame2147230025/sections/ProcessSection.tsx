@@ -310,13 +310,13 @@ export default function ProcessSection() {
         <article className="absolute lv-reveal lv-delay-200" style={{ left: p(280), top: p(233.5, H), zIndex: 10 }}>
           <StepBadge label="Step 1" width={90} />
           <h3 className="lw-font-hyruiyisong text-white" style={{ marginTop: '24px', fontSize: 24, lineHeight: '32px', whiteSpace: 'nowrap', width: 256 }}>点击「立即创建」</h3>
-          <p className="font-['PingFang_SC:Regular',sans-serif]" style={{ marginTop: '12px', fontSize: 14, lineHeight: '24px', color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>点一下按钮，免费订阅，就这样</p>
+          <p className="font-['PingFang_SC:Regular',sans-serif]" style={{ marginTop: '12px', fontSize: 14, lineHeight: '24px', color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>选择订阅，点一下按钮，就这样</p>
         </article>
         {/* Step 2: badge y=432.5, title y=489, desc y=532.5 */}
         <article className="absolute lv-reveal lv-delay-400" style={{ left: p(280), top: p(432.5, H), zIndex: 10 }}>
           <StepBadge label="Step 2" width={87} />
           <h3 className="lw-font-hyruiyisong text-white" style={{ marginTop: '24px', fontSize: 24, lineHeight: '32px', whiteSpace: 'nowrap', width: 256 }}>系统自动帮你创建</h3>
-          <p className="font-['PingFang_SC:Regular',sans-serif]" style={{ marginTop: '12px', fontSize: 14, lineHeight: '24px', color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>无需任何配置，等待片刻即可就绪</p>
+          <p className="font-['PingFang_SC:Regular',sans-serif]" style={{ marginTop: '12px', fontSize: 14, lineHeight: '24px', color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>喝口水的功夫，云端 Agent 即创建完成。</p>
         </article>
         {/* Step 3: badge y=611.5, title y=667.5, desc y=713.5 */}
         <article className="absolute lv-reveal lv-delay-600" style={{ left: p(280), top: p(611.5, H), zIndex: 10 }}>
@@ -394,8 +394,8 @@ export default function ProcessSection() {
         {/* 步骤 */}
         <div className="flex flex-col gap-8 lv-reveal lv-delay-200">
           {[
-            { step: 'Step 1', title: '点击「立即创建」', desc: '点一下按钮，免费订阅，就这样' },
-            { step: 'Step 2', title: '系统自动帮你创建', desc: '无需任何配置，等待片刻即可就绪' },
+            { step: 'Step 1', title: '点击「立即创建」', desc: '选择订阅，点一下按钮，就这样' },
+            { step: 'Step 2', title: '系统自动帮你创建', desc: '喝口水的功夫，云端 Agent 即创建完成。' },
             { step: 'Step 3', title: '和智能伙伴开始对话', desc: '创建完成后，绑定聊天通道，即刻开始探索之旅' },
           ].map(({ step, title, desc }) => (
             <article key={step} className="flex flex-col gap-2">

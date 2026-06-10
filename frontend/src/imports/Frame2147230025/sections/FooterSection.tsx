@@ -5,7 +5,15 @@ import { svgPaths } from '../assets';
 function LightVelaLogo() {
   return (
     <div className="h-[26px] relative" style={{ width: 92.7 }}>
-      <svg className="absolute block inset-0 size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 92.3494 21.2447">
+      <svg
+        className="absolute block inset-0 size-full"
+        fill="none"
+        preserveAspectRatio="none"
+        viewBox="0 0 92.3494 21.2447"
+        role="img"
+        aria-label="LightVela"
+      >
+        <title>LightVela</title>
         <g id="Group 2147208795">
           <path d={svgPaths.p28e50e80} fill="var(--fill-0, black)" id="Union" />
           <path d={svgPaths.p8454d00} fill="var(--fill-0, black)" id="Vector" />

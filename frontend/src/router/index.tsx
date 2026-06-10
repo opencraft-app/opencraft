@@ -2,10 +2,11 @@ import { Navigate, createBrowserRouter } from "react-router-dom";
 import { AppShellLayout } from "@/layouts/app-shell-layout";
 import { MarketingLayout } from "@/layouts/marketing-layout";
 import { RootLayout } from "@/layouts/root-layout";
-import { LandingPage } from "@/pages/marketing/landing-page";
 import { lazyNamed, lazyRoute } from "@/router/lazy-page";
 import { AppAccessGuard, AuthenticatedGuard, AuthRouteGuard, MarketingAuthGuard, PlanGuard } from "@/router/guards";
 import { isGlobal } from "@/lib/region";
+
+const LandingPage = lazyNamed(() => import("@/pages/marketing/landing-page"), "LandingPage");
 
 const InvitePage = lazyNamed(() => import("@/pages/auth/invite-page"), "InvitePage");
 const SignInPage = lazyNamed(() => import("@/pages/auth/sign-in-page"), "SignInPage");
@@ -48,7 +49,7 @@ export const router = createBrowserRouter([
     children: [
       {
         index: true,
-        element: <LandingPage />,
+        element: lazyRoute(LandingPage),
       },
       ...(!isGlobal
         ? [

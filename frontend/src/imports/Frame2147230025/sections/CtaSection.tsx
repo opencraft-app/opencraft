@@ -7,6 +7,7 @@ import {
 } from '../assets';
 import '../motion.css';
 import { useScrollReveal } from '../useScrollReveal';
+import { LandingCtaFooterLinks } from '@/components/site/landing-cta-footer-links';
 
 
 
@@ -202,10 +203,8 @@ export default function CtaSection({ onCreateClick }: CtaSectionProps = {}) {
           {/* 左侧 .journey-copy */}
           <div className="flex flex-col lv-reveal">
             <TitleBlock offsetX={offset.x} offsetY={offset.y} />
-            {/* 副文案 */}
-            <p className="mt-6 text-[14px] font-['PingFang_SC:Regular',sans-serif] leading-6 lv-reveal lv-delay-200" style={{ height: '44px', paddingTop: '12px', paddingBottom: '12px', color: '#00000080' }}>
-              隐私政策 · 服务条款 · 加入用户交流群
-            </p>
+            {/* 副文案：隐私政策 / 服务条款 / 加入用户交流群（业务组件，独立维护） */}
+            <LandingCtaFooterLinks />
             <LogoGroup />
           </div>
 

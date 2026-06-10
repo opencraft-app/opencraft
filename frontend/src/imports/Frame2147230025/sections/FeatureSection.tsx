@@ -2706,9 +2706,6 @@ export default function FeatureSection() {
             <rect width="4" height="8" fill="black"/>
           </svg>
         </div>
-        <p className="text-[16px] font-['PingFang_SC:Regular',sans-serif] text-[rgba(0,0,0,0.5)] leading-6 text-center whitespace-nowrap lv-reveal lv-delay-200">
-          我们把 Hermes Agent 搬上云端，让你无需折腾部署，随时唤醒，对话数据永远只属于你。
-        </p>
       </div>
       {/* 跑马灯：全宽，两侧渐变遮罩 */}
       <div className="relative lv-reveal lv-delay-300">
