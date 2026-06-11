@@ -190,6 +190,34 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 with self.subTest(bundle=bundle_name, env=env):
                     require_build_metadata(load_bundle(manifest, bundle_name, env))
 
+    def test_workers_release_bundle_targets_shanghai_worker_cluster(self) -> None:
+        manifest = load_manifest()
+
+        bundle = require_build_metadata(load_bundle(manifest, "workers", "shanghai-workers"))
+
+        self.assertEqual(bundle.image_repo, "lightclaw-shprod.tencentcloudcr.com/lightclaw/workers")
+        self.assertIn("argocd/services/workers/shanghai-workers/**", bundle.publish_paths)
+        self.assertIn("argocd/apps/shanghai-workers/workers.yaml", bundle.publish_paths)
+        self.assertIn("argocd/root/shanghai-workers.yaml", bundle.publish_paths)
+        self.assertIn("argocd/projects/shanghai-workers.yaml", bundle.publish_paths)
+        self.assertIn("argocd/clusters/shanghai-workers.yaml", bundle.publish_paths)
+        self.assertIn("argocd/secrets/shanghai-workers/workers-runtime-secrets.sops.yaml", bundle.publish_paths)
+
+    def test_workers_shanghai_overlay_uses_temporal_worker_deployment(self) -> None:
+        worker_deployment = yaml.safe_load(
+            (REPO_ROOT / "workers/k8s/overlays/shanghai-workers/worker-deployment.yaml").read_text()
+        )
+        connection = yaml.safe_load((REPO_ROOT / "workers/k8s/overlays/shanghai-workers/connection.yaml").read_text())
+        overlay_readme = (REPO_ROOT / "workers/k8s/overlays/shanghai-workers/README.md").read_text()
+
+        self.assertEqual(worker_deployment["apiVersion"], "temporal.io/v1alpha1")
+        self.assertEqual(worker_deployment["kind"], "WorkerDeployment")
+        self.assertEqual(worker_deployment["spec"]["workerOptions"]["connectionRef"]["name"], "lightclaw-temporal")
+        self.assertEqual(worker_deployment["spec"]["rollout"]["strategy"], "AllAtOnce")
+        self.assertEqual(connection["kind"], "Connection")
+        self.assertIn("TEMPORAL_DEPLOYMENT_NAME", overlay_readme)
+        self.assertIn("TEMPORAL_WORKER_BUILD_ID", overlay_readme)
+
     def test_gateway_release_bundles_are_independent(self) -> None:
         manifest = load_manifest()
         service_bundle = require_build_metadata(load_bundle(manifest, "service-gateway", "shprod"))

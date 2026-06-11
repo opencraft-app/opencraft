@@ -468,6 +468,44 @@ class GitOpsKustomizeValidationTests(unittest.TestCase):
             self.assertEqual(exit_code, 0)
             self.assertEqual(args_file.read_text().strip(), "argocd/services/channelgateway/devcloud-dep")
 
+    def test_shanghai_workers_direct_app_validates_render_target(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            self.write_direct_app(repo, "shanghai-workers", "workers")
+
+            args_file = repo / "args.txt"
+            fake_kustomize = repo / "fake-kustomize"
+            fake_kustomize.write_text(
+                textwrap.dedent(
+                    f"""\
+                    #!/usr/bin/env bash
+                    printf '%s\\n' "$2" > {args_file}
+                    cat <<'YAML'
+                    apiVersion: temporal.io/v1alpha1
+                    kind: WorkerDeployment
+                    metadata:
+                      name: rescue-exporter-worker
+                    YAML
+                    """
+                )
+            )
+            fake_kustomize.chmod(0o755)
+
+            exit_code = self.run_main(
+                [
+                    "validate_gitops_kustomize.py",
+                    "--repo-root",
+                    str(repo),
+                    "--env",
+                    "shanghai-workers",
+                    "--kustomize-bin",
+                    str(fake_kustomize),
+                ]
+            )
+
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(args_file.read_text().strip(), "argocd/services/workers/shanghai-workers")
+
     def write_repo(self, repo: Path, env: str = "beijing-sandbox", service: str = "demo") -> Path:
         catalog_root = (
             f"argocd/catalogs/playground/beijing-playground/{env}"

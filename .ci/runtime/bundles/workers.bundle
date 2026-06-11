@@ -9,15 +9,32 @@ bundles:
     - workers/Dockerfile
     - workers/k8s/base
     - workers/k8s/overlays/beijing-sandbox
+    - workers/k8s/overlays/shanghai-workers
+    - argocd/apps/shanghai-workers/workers.yaml
+    - argocd/clusters/shanghai-workers.yaml
+    - argocd/projects/shanghai-workers.yaml
+    - argocd/root/shanghai-workers.yaml
+    - argocd/secrets/shanghai-workers/workers-runtime-secrets.sops.yaml
+    - argocd/services/workers/shanghai-workers
     exit_condition: Can be removed only after workers move to a shared deployable worker package contract.
     publish_paths:
     - workers/k8s/base/**
     - workers/k8s/overlays/{env}/**
+    publish_paths_by_env:
+      shanghai-workers:
+      - argocd/apps/shanghai-workers/workers.yaml
+      - argocd/clusters/shanghai-workers.yaml
+      - argocd/projects/shanghai-workers.yaml
+      - argocd/root/shanghai-workers.yaml
+      - argocd/secrets/shanghai-workers/workers-runtime-secrets.sops.yaml
+      - argocd/services/workers/shanghai-workers/**
+      - workers/k8s/overlays/shanghai-workers/**
     dockerfile: workers/Dockerfile
     build_context: workers
     image_repo:
       beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/workers
       beijing-sandbox-2: lightclaw-bj8.tencentcloudcr.com/lightclaw/workers
+      shanghai-workers: lightclaw-shprod.tencentcloudcr.com/lightclaw/workers
       shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/workers
       sgprod: lightclaw-sgprod.tencentcloudcr.com/lightclaw/workers
       sandbox-kr-*: lightclaw-kr1.tencentcloudcr.com/lightclaw/workers
