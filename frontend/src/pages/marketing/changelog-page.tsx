@@ -9,7 +9,6 @@ import { useState } from "react";
 
 import { LoginModal } from "@/components/site/login-modal";
 import { LegalFooter } from "@/components/site/legal-footer";
-import { useSession } from "@/contexts/session-context";
 import { useT } from "@/i18n/t";
 import { assetUrl } from "@/lib/asset-url";
 import { isGlobal } from "@/lib/region";
@@ -356,14 +355,13 @@ function ChangelogContent() {
 
 export const ChangelogPage = () => {
   const [showLogin, setShowLogin] = useState(false);
-  const { isAuthenticated } = useSession();
 
   return (
     <div
       className="landing-page relative flex min-h-screen flex-col"
       style={{ background: "var(--lw-bg)", color: "var(--lw-fg)" }}
     >
-      <LandingNavbar onLoginClick={() => setShowLogin(true)} isLoggedIn={isAuthenticated} />
+      <LandingNavbar onLoginClick={() => setShowLogin(true)} />
       <main className="z-10 flex-grow pt-[60px]">
         <ChangelogContent />
       </main>

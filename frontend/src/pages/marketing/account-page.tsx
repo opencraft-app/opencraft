@@ -42,10 +42,8 @@ const staggerContainer = {
 /* ─── Navbar ─── */
 
 const AccountNavbar = ({ onLoginClick }: { onLoginClick: () => void }) => {
-  const { isAuthenticated: isLoggedIn } = useSession();
-
   return (
-    <SiteHeader fixed isLoggedIn={isLoggedIn} onLoginClick={onLoginClick} />
+    <SiteHeader fixed onLoginClick={onLoginClick} />
   );
 };
 

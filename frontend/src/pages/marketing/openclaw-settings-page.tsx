@@ -345,12 +345,10 @@ void _staggerContainer;
 /* ─── Navbar ─── */
 
 const SettingsNavbar = () => {
-  const { isAuthenticated: isLoggedIn } = useSession();
   const navigate = useNavigate();
   return (
     <SiteHeader
       fixed
-      isLoggedIn={isLoggedIn}
       onLoginClick={() => navigate("/auth/sign-in")}
       reloadLanguageAfterSwitch
     />
