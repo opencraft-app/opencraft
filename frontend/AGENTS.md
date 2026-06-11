@@ -96,7 +96,7 @@ openspec/                          # 业务规范驱动开发（用户产物）
 
 | 用户意图关键词 | 必须加载的 Skill |
 |--------------|-----------------|
-| 提交代码 / commit / git commit | `.codebuddy/skills/team-extensions/ai-usage-tracking.md`（FE-AI 标记）+ `.workflow/rules/global.md` G14 |
+| 提交代码 / commit / git commit | 遵循根 `AGENTS.md` 的提交与 MR 标题约定；如需 frontend 流程检查，再读取 `.workflow/rules/global.md` G14 |
 | 创建分支 / 切分支 / 新建分支 | `.codebuddy/skills/team-extensions/branch-auto-create.md` |
 | 创建 MR / 合并请求 / merge request | `.codebuddy/skills/team-extensions/mr-auto-submit.md` |
 | 代码审查 / CR / review / 检查代码 | `.codebuddy/skills/team-extensions/cr-check.md` |
