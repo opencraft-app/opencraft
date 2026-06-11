@@ -215,6 +215,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(worker_deployment["spec"]["workerOptions"]["connectionRef"]["name"], "lightclaw-temporal")
         self.assertEqual(worker_deployment["spec"]["rollout"]["strategy"], "AllAtOnce")
         self.assertEqual(connection["kind"], "Connection")
+        self.assertEqual(connection["spec"]["hostPort"], "temporal.lightvela.com:443")
         self.assertIn("TEMPORAL_DEPLOYMENT_NAME", overlay_readme)
         self.assertIn("TEMPORAL_WORKER_BUILD_ID", overlay_readme)
 
