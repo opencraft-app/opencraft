@@ -10,12 +10,16 @@ import type {
   BotRuntime,
   BotVersion,
   Bundle,
+  CreatePassOrderAndPayResult,
+  CreatePassOrderResult,
   CreatePassOrderUrlResult,
   CurrentSubscription,
+  DeletePassResult,
   Deployment,
   InviteCodeValidation,
   KnowledgeSource,
   Pass,
+  PassRenewPrice,
   ToolBinding,
   User,
   WeixinLoginSession,
@@ -1163,12 +1167,44 @@ const createHttpPlanRepository = (baseUrl: string): PlanRepository => ({
       body: { bundle_id: bundleId },
     });
   },
+  async createPassOrder(input) {
+    return requestEnvelope<CreatePassOrderResult>(baseUrl, "/v1/passes/order", {
+      method: "POST",
+      body: input,
+    });
+  },
   async getPassOrderUrl(input, init) {
     return requestEnvelope<CreatePassOrderUrlResult>(baseUrl, "/v1/passes/order-url", {
       method: "POST",
       body: input,
       headers: init?.headers,
     });
+  },
+  async createPassOrderAndPay(input) {
+    return requestEnvelope<CreatePassOrderAndPayResult>(baseUrl, "/v1/passes/order-and-pay", {
+      method: "POST",
+      body: input,
+    });
+  },
+  async getRenewPrice(passId, input) {
+    return requestEnvelope<PassRenewPrice>(
+      baseUrl,
+      `/v1/passes/${encodeURIComponent(passId)}/renew/price`,
+      {
+        method: "POST",
+        body: input,
+      },
+    );
+  },
+  async createRenewOrder(passId, input) {
+    return requestEnvelope<CreatePassOrderResult>(
+      baseUrl,
+      `/v1/passes/${encodeURIComponent(passId)}/renew/order`,
+      {
+        method: "POST",
+        body: input,
+      },
+    );
   },
   async getRenewOrderUrl(passId, input, init) {
     return requestEnvelope<CreatePassOrderUrlResult>(
@@ -1178,6 +1214,25 @@ const createHttpPlanRepository = (baseUrl: string): PlanRepository => ({
         method: "POST",
         body: input,
         headers: init?.headers,
+      },
+    );
+  },
+  async createRenewOrderAndPay(passId, input) {
+    return requestEnvelope<CreatePassOrderAndPayResult>(
+      baseUrl,
+      `/v1/passes/${encodeURIComponent(passId)}/renew/order-and-pay`,
+      {
+        method: "POST",
+        body: input,
+      },
+    );
+  },
+  async deletePass(passId) {
+    return requestEnvelope<DeletePassResult>(
+      baseUrl,
+      `/v1/passes/${encodeURIComponent(passId)}/delete`,
+      {
+        method: "POST",
       },
     );
   },

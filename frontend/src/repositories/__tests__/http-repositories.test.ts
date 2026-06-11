@@ -617,6 +617,137 @@ describe("http repositories auth token bootstrap", () => {
     });
   });
 
+  it("creates pass orders through the paid billing endpoint", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          code: "OK",
+          message: "success",
+          data: {
+            order_id: "order-1",
+            deal_name: "deal-1",
+            total_fee: 4900,
+            currency: "CNY",
+          },
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    const result = await repositories.plans.createPassOrderAndPay({
+      bundle_id: "bundle_launch_01",
+      period: 1,
+      time_unit: "m",
+    });
+
+    expect(result.deal_name).toBe("deal-1");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://lightclaw.tech/v1/passes/order-and-pay",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          bundle_id: "bundle_launch_01",
+          period: 1,
+          time_unit: "m",
+        }),
+      }),
+    );
+  });
+
+  it("uses pass-scoped renew and delete endpoints", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+        JSON.stringify({
+            code: "OK",
+            message: "success",
+            data: {
+              amount: 4900,
+              currency: "CNY",
+              original_amount: 4900,
+              discount_amount: 0,
+            },
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+        JSON.stringify({
+            code: "OK",
+            message: "success",
+            data: {
+              order_id: "renew-order-1",
+              deal_name: "renew-deal-1",
+              total_fee: 4900,
+              currency: "CNY",
+            },
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+        JSON.stringify({
+            code: "OK",
+            message: "success",
+            data: {
+              pass_id: "pass-1",
+              deleted: true,
+            },
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    await repositories.plans.getRenewPrice("pass-1", { period: 1, time_unit: "m" });
+    await repositories.plans.createRenewOrderAndPay("pass-1", { period: 1, time_unit: "m" });
+    await repositories.plans.deletePass("pass-1");
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "https://lightclaw.tech/v1/passes/pass-1/renew/price",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ period: 1, time_unit: "m" }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "https://lightclaw.tech/v1/passes/pass-1/renew/order-and-pay",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ period: 1, time_unit: "m" }),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "https://lightclaw.tech/v1/passes/pass-1/delete",
+      expect.objectContaining({
+        method: "POST",
+      }),
+    );
+  });
+
   it("clears the stored bearer token after sign out", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));

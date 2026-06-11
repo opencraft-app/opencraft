@@ -224,11 +224,24 @@ export type DataMode = "live" | "empty" | "error";
 
 export type BundleState = "ONLINE" | "OFFLINE";
 export type BundleSalesState = "AVAILABLE" | "SOLD_OUT";
-export type BundleTimeUnit = "d" | "m";
+export type BundleTimeUnit = "d" | "m" | "y";
 
 export interface BundleDescriptionEntry {
   Key: string;
   Value: string;
+}
+
+export interface BundlePrice {
+  /** 标价（分） */
+  price: number;
+  /** 成本价（分） */
+  total_cost: number;
+  /** 实付价（分，含折扣） */
+  real_total_cost: number;
+  /** 币种，当前后端固定 CNY */
+  currency: string;
+  /** 折扣率，1 = 不打折 */
+  discount: number;
 }
 
 export interface Bundle {
@@ -239,8 +252,8 @@ export interface Bundle {
   agent_quota: number;
   /** 积分数量（套餐包含多少 AI 积分） */
   credit: number;
-  /** 价格（人民币元），0 表示免费版；后端未返回时前端按免费处理 */
-  price?: number;
+  /** 价格对象；后端询价不可用时返回 null，前端按暂无报价处理 */
+  price?: BundlePrice | null;
   time_span: number;
   time_unit: BundleTimeUnit;
   bundle_sales_available_count: number;
@@ -262,8 +275,17 @@ export interface Pass {
   isolated_time?: string | null;
   deleted_time?: string | null;
   updated_time?: string;
+  agent_quota_total?: number;
+  agent_quota_available?: number;
   credit_total: number;
   credit_available: number;
+}
+
+export interface CreatePassOrderResult {
+  /** jifei 订单号列表；当前单订单场景固定 1 个元素 */
+  deal_names: string[];
+  /** 一次性鉴权 ticket，用于微信中转页无主站 token 场景 */
+  auth_code?: string;
 }
 
 export interface CreatePassOrderUrlInput {
@@ -296,4 +318,27 @@ export interface CreatePassOrderUrlResult {
   uin?: string;
   /** 用户腾讯云 appId。 */
   app_id?: string;
+}
+
+export interface CreatePassOrderAndPayResult {
+  deal_name: string;
+  big_order_id: string;
+}
+
+export interface PassRenewPrice {
+  bundle_id: string;
+  /** 标价（分） */
+  price: number;
+  /** 成本价（分） */
+  total_cost: number;
+  /** 实付价（分） */
+  real_total_cost: number;
+  /** 币种，当前后端固定 CNY */
+  currency: string;
+  /** jifei policyDetail.total 拍平值，100 = 无折扣 */
+  discount: number;
+}
+
+export interface DeletePassResult {
+  deleted: boolean;
 }

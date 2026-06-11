@@ -216,7 +216,7 @@ const FAKE_BUNDLES: Bundle[] = [
     bundle_state: "ONLINE",
     agent_quota: 1,
     credit: 0,
-    price: 0,
+    price: null,
     time_span: 7,
     time_unit: "d",
     bundle_sales_available_count: 99,
@@ -503,6 +503,13 @@ export const createFakeRepositories = (): Repositories => {
         writeStoredPasses([...existing, pass]);
         return pass;
       },
+      async createPassOrder(input) {
+        await wait(NETWORK_DELAY_MS);
+        return {
+          deal_names: [`deal-fake-${input.bundle_id}-${Date.now().toString(36)}`],
+          auth_code: `auth-fake-${Date.now().toString(36)}`,
+        };
+      },
       async getPassOrderUrl(input) {
         await wait(NETWORK_DELAY_MS);
         return {
@@ -514,6 +521,32 @@ export const createFakeRepositories = (): Repositories => {
           need_charge: 1,
           uin: "1000000",
           app_id: "1250000000",
+        };
+      },
+      async createPassOrderAndPay(input) {
+        await wait(NETWORK_DELAY_MS);
+        return {
+          deal_name: `deal-fake-${input.bundle_id}-${Date.now().toString(36)}`,
+          big_order_id: `big-order-fake-${Date.now().toString(36)}`,
+        };
+      },
+      async getRenewPrice(passId) {
+        await wait(NETWORK_DELAY_MS);
+        const pass = readStoredPasses().find((item) => item.pass_id === passId);
+        return {
+          bundle_id: pass?.bundle_id ?? "bundle_launch_01",
+          price: 4900,
+          total_cost: 4900,
+          real_total_cost: 4900,
+          currency: "CNY",
+          discount: 100,
+        };
+      },
+      async createRenewOrder(passId) {
+        await wait(NETWORK_DELAY_MS);
+        return {
+          deal_names: [`deal-renew-fake-${passId}-${Date.now().toString(36)}`],
+          auth_code: `auth-renew-fake-${Date.now().toString(36)}`,
         };
       },
       async getRenewOrderUrl(_passId, input) {
@@ -528,6 +561,25 @@ export const createFakeRepositories = (): Repositories => {
           uin: "1000000",
           app_id: "1250000000",
         };
+      },
+      async createRenewOrderAndPay(passId) {
+        await wait(NETWORK_DELAY_MS);
+        return {
+          deal_name: `deal-renew-fake-${passId}-${Date.now().toString(36)}`,
+          big_order_id: `big-renew-fake-${Date.now().toString(36)}`,
+        };
+      },
+      async deletePass(passId) {
+        await wait(NETWORK_DELAY_MS);
+        const nowString = nowIso();
+        writeStoredPasses(
+          readStoredPasses().map((pass) =>
+            pass.pass_id === passId
+              ? { ...pass, deleted_time: nowString, updated_time: nowString }
+              : pass,
+          ),
+        );
+        return { deleted: true };
       },
       async listMyPasses() {
         await wait(NETWORK_DELAY_MS);
