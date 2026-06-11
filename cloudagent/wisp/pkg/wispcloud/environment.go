@@ -570,7 +570,7 @@ export BLANK_ROOT_UPPER_SPARSE="$install/assets/rootfs/blank-ext4/root-upper-def
 export ADMIN_LISTEN_ADDR="127.0.0.1:8520"
 
 step daemon_start
-sudo -n env \
+nohup sudo -n env \
   WISP_CONFIG="$WISP_CONFIG" \
   REMOTE_BACKEND="$REMOTE_BACKEND" \
   SMH_ENABLED="$SMH_ENABLED" \
@@ -608,7 +608,7 @@ sudo -n env \
   JFS_MOUNT_CACHE_SIZE="$JFS_MOUNT_CACHE_SIZE" \
   JFS_MOUNT_MIN_FREE_BYTES="$JFS_MOUNT_MIN_FREE_BYTES" \
   JFS_WRITEBACK_BARRIER_POLL_INTERVAL="$JFS_WRITEBACK_BARRIER_POLL_INTERVAL" \
-  "$install/bin/wisp" daemon run --config "$WISP_CONFIG" >"$log" 2>&1 &
+  "$install/bin/wisp" daemon run --config "$WISP_CONFIG" >>"$log" 2>&1 </dev/null &
 
 for i in $(seq 1 30); do
   if "$install/bin/wispclient" -server http://127.0.0.1:8520 ls >/dev/null 2>&1; then
