@@ -180,10 +180,15 @@ func TestCreateTATDeviceBindIssuesLoopbackTicket(t *testing.T) {
 	}
 
 	var response struct {
-		Status       string `json:"status"`
-		Ticket       string `json:"ticket"`
-		CallbackURL  string `json:"callback_url"`
-		RedirectURL  string `json:"redirect_url"`
+		Status      string `json:"status"`
+		Ticket      string `json:"ticket"`
+		CallbackURL string `json:"callback_url"`
+		RedirectURL string `json:"redirect_url"`
+		BoundUser   struct {
+			ID        string `json:"id"`
+			Name      string `json:"name"`
+			AvatarURL string `json:"avatar_url"`
+		} `json:"bound_user"`
 		Registration struct {
 			Region            string `json:"region"`
 			RegisterCodeID    string `json:"register_code_id"`
@@ -200,6 +205,9 @@ func TestCreateTATDeviceBindIssuesLoopbackTicket(t *testing.T) {
 	}
 	if response.CallbackURL != "http://127.0.0.1:17631/lightvela/callback" {
 		t.Fatalf("callback_url: got %q", response.CallbackURL)
+	}
+	if response.BoundUser.Name != "Mac Operator" || response.BoundUser.ID == "" {
+		t.Fatalf("bound_user: got %+v", response.BoundUser)
 	}
 	if !strings.Contains(response.RedirectURL, "register_code_id=reg-code-id") || !strings.Contains(response.RedirectURL, "register_code_value=reg-code-value") {
 		t.Fatalf("redirect_url should contain registration code, got %q", response.RedirectURL)
@@ -249,8 +257,19 @@ func TestCreateTATDeviceBindAcceptsDeviceBindToken(t *testing.T) {
 		},
 	}
 	router := newAuthTestRouterWithTATRegisterIssuer(issuer)
+	signUp := performJSONRequest(t, router, http.MethodPost, "/auth/password/sign-up", map[string]any{
+		"name":       "Device Token User",
+		"email":      "device-token-user@example.com",
+		"password":   "password123",
+		"inviteCode": "VALID2026",
+	})
+	var signUpResponse sessionResponseBody
+	decodeJSONResponse(t, signUp, &signUpResponse)
+	if signUpResponse.Session.User == nil || signUpResponse.Session.User.ID == "" {
+		t.Fatalf("expected sign-up user id, got %+v", signUpResponse.Session.User)
+	}
 	codec := newDeviceBindTokenCodec(testDeviceBindSecret, 10*time.Minute)
-	token, _, err := codec.Issue(&service.AuthSession{User: service.User{ID: "device-user-id"}}, "http://127.0.0.1:17631/lightvela/auth-callback?device_nonce=device-nonce")
+	token, _, err := codec.Issue(&service.AuthSession{User: service.User{ID: signUpResponse.Session.User.ID}}, "http://127.0.0.1:17631/lightvela/auth-callback?device_nonce=device-nonce")
 	if err != nil {
 		t.Fatalf("issue device bind token: %v", err)
 	}
@@ -268,8 +287,19 @@ func TestCreateTATDeviceBindAcceptsDeviceBindToken(t *testing.T) {
 	if len(issuer.requests) != 1 {
 		t.Fatalf("expected one TAT register request, got %d", len(issuer.requests))
 	}
-	if !strings.Contains(issuer.requests[0].Description, "device-user-id") {
+	if !strings.Contains(issuer.requests[0].Description, signUpResponse.Session.User.ID) {
 		t.Fatalf("description should include device token user id, got %q", issuer.requests[0].Description)
+	}
+	var response struct {
+		BoundUser struct {
+			ID        string `json:"id"`
+			Name      string `json:"name"`
+			AvatarURL string `json:"avatar_url"`
+		} `json:"bound_user"`
+	}
+	decodeJSONResponse(t, recorder, &response)
+	if response.BoundUser.ID != signUpResponse.Session.User.ID || response.BoundUser.Name != "Device Token User" {
+		t.Fatalf("bound_user: got %+v", response.BoundUser)
 	}
 }
 
