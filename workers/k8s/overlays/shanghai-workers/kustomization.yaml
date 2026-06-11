@@ -1,0 +1,35 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: temporal-workers
+
+resources:
+- namespace.yaml
+- serviceaccount.yaml
+- connection.yaml
+- worker-deployment.yaml
+
+generatorOptions:
+  disableNameSuffixHash: true
+
+configMapGenerator:
+- name: workers-platform-values
+  envs:
+  - generated/platform.env
+
+secretGenerator:
+- name: workers-runtime-secrets
+  envs:
+  - generated/workers-runtime-secrets.env
+
+replacements:
+- source:
+    kind: ConfigMap
+    name: workers-platform-values
+    fieldPath: data.WORKERS_IMAGE
+  targets:
+  - select:
+      kind: WorkerDeployment
+      name: rescue-exporter-worker
+    fieldPaths:
+    - spec.template.spec.containers.[name=rescue-exporter-worker].image

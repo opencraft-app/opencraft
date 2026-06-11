@@ -1,0 +1,71 @@
+apiVersion: temporal.io/v1alpha1
+kind: WorkerDeployment
+metadata:
+  name: rescue-exporter-worker
+  namespace: temporal-workers
+  labels:
+    app: rescue-exporter-worker
+spec:
+  replicas: 1
+  workerOptions:
+    connectionRef:
+      name: lightclaw-temporal
+    temporalNamespace: default
+  rollout:
+    strategy: AllAtOnce
+  sunset:
+    scaledownDelay: 30m
+    deleteDelay: 2h
+  template:
+    metadata:
+      labels:
+        app: rescue-exporter-worker
+    spec:
+      serviceAccountName: rescue-exporter-worker
+      terminationGracePeriodSeconds: 60
+      containers:
+      - name: rescue-exporter-worker
+        image: lightclaw-shprod.tencentcloudcr.com/lightclaw/workers:bootstrap
+        imagePullPolicy: IfNotPresent
+        command:
+        - /usr/local/bin/rescue-exporter
+        args:
+        - worker
+        env:
+        - name: TEMPORAL_TLS
+          value: "true"
+        - name: TEMPORAL_TASK_QUEUE
+          value: tencent-cvm-rescue-export
+        - name: WORKERS_HEALTH_ADDR
+          value: ":9090"
+        - name: RESCUE_UPLOADER_PATH
+          value: /usr/local/bin/rescue-uploader
+        envFrom:
+        - secretRef:
+            name: workers-runtime-secrets
+        ports:
+        - name: health
+          containerPort: 9090
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: health
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 2
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: health
+          initialDelaySeconds: 10
+          periodSeconds: 20
+          timeoutSeconds: 2
+          failureThreshold: 3
+        resources:
+          requests:
+            cpu: 50m
+            memory: 96Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi

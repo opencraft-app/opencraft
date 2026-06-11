@@ -271,6 +271,34 @@ class GitOpsStaticValidationTests(unittest.TestCase):
 
             self.assertEqual(errors, [])
 
+    def test_shanghai_workers_direct_app_passes(self) -> None:
+        with self.repo() as tmp:
+            repo = Path(tmp)
+            (repo / "argocd/apps/shanghai-workers").mkdir(parents=True)
+            (repo / "argocd/services/workers/shanghai-workers").mkdir(parents=True)
+            (repo / "argocd/services/workers/shanghai-workers/kustomization.yaml").write_text(
+                "apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\n"
+            )
+            (repo / "argocd/apps/shanghai-workers/workers.yaml").write_text(
+                textwrap.dedent(
+                    """\
+                    apiVersion: argoproj.io/v1alpha1
+                    kind: Application
+                    spec:
+                      source:
+                        repoURL: git@git.woa.com:wisp/mono2.git
+                        targetRevision: gitops
+                        path: argocd/services/workers/shanghai-workers
+                      destination:
+                        name: shanghai-workers
+                    """
+                )
+            )
+
+            errors = validate(repo, "shanghai-workers", repo / ".ci/runtime/release-bundles.manifest")
+
+            self.assertEqual(errors, [])
+
     def repo(self) -> tempfile.TemporaryDirectory[str]:
         return tempfile.TemporaryDirectory()
 
