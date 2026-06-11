@@ -27,6 +27,7 @@ type tatDeviceBindResponse struct {
 	ExpiresAt        time.Time                 `json:"expires_at"`
 	RegistrationCode string                    `json:"registration_code"`
 	Registration     tatDeviceBindRegistration `json:"registration"`
+	BoundUser        tatDeviceBindBoundUser    `json:"bound_user"`
 }
 
 type tatDeviceBindRegistration struct {
@@ -34,6 +35,12 @@ type tatDeviceBindRegistration struct {
 	RegisterCodeID    string `json:"register_code_id"`
 	RegisterCodeValue string `json:"register_code_value"`
 	RequestID         string `json:"request_id"`
+}
+
+type tatDeviceBindBoundUser struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	AvatarURL string `json:"avatar_url"`
 }
 
 func (h *Handler) CreateTATDeviceBind(ctx *gin.Context) {
@@ -109,6 +116,7 @@ func (h *Handler) CreateTATDeviceBind(ctx *gin.Context) {
 			RegisterCodeValue: registration.RegisterCodeValue,
 			RequestID:         registration.RequestID,
 		},
+		BoundUser: h.tatDeviceBindBoundUser(session.User),
 	})
 }
 
@@ -129,10 +137,25 @@ func (h *Handler) tatDeviceBindSession(ctx *gin.Context) (*service.AuthSession, 
 			Status:  http.StatusUnauthorized,
 		}
 	}
+	user, err := h.service.FindUserByID(ctx.Request.Context(), claims.UserID)
+	if err != nil {
+		return nil, err
+	}
 	return &service.AuthSession{
 		Token: token,
-		User:  service.User{ID: claims.UserID},
+		User:  user,
 	}, nil
+}
+
+func (h *Handler) tatDeviceBindBoundUser(user service.User) tatDeviceBindBoundUser {
+	boundUser := tatDeviceBindBoundUser{
+		ID:   user.ID,
+		Name: user.Name,
+	}
+	if strings.TrimSpace(user.AvatarObjectKey) != "" {
+		boundUser.AvatarURL = h.publicAvatarURL(user.ID, user.UpdatedAt)
+	}
+	return boundUser
 }
 
 func validateLocalTATCallbackURL(rawURL string) (string, error) {
