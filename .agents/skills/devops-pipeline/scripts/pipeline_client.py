@@ -110,7 +110,17 @@ def get_access_token(args_token: Optional[str]) -> str:
     token = args_token or os.environ.get("BK_CI_ACCESS_TOKEN")
     if not token:
         print(
-            "错误：未提供访问令牌。请通过 --access-token 参数或 BK_CI_ACCESS_TOKEN 环境变量设置。",
+            "\n".join(
+                [
+                    "错误：未提供蓝盾访问令牌。",
+                    "请通过 --access-token 参数或 BK_CI_ACCESS_TOKEN 环境变量设置。",
+                    "如果当前没有 token，请使用已登录浏览器打开以下地址获取：",
+                    "  https://devops.woa.com/ms/auth/api/user/bkToken/get",
+                    "拿到 token 后建议仅在当前 shell 会话中使用：",
+                    '  export BK_CI_ACCESS_TOKEN="<your_token>"',
+                    "不要把 token 写入仓库、文档、提交信息或持久日志。",
+                ]
+            ),
             file=sys.stderr,
         )
         sys.exit(1)

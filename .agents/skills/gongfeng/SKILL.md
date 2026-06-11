@@ -25,6 +25,27 @@ mcporter-internal call gongfeng.create_branch project_id="xxx" branch_name="feat
 
 ---
 
+## 访问令牌缺失/过期时的处理
+
+调用工蜂 MCP 前，先用只读接口做一次鉴权探测：
+
+```bash
+mcporter-internal call gongfeng.get_current_user --args '{}'
+```
+
+如果返回 401、unauthorized、token missing、token expired、permission denied 等鉴权错误，不要继续尝试创建 MR、评论、改文件等操作。明确告诉用户：
+
+> 当前工蜂 MCP 没有可用令牌；请提供工蜂个人访问令牌，或授权我用已登录浏览器打开 https://git.woa.com/-/profile/personal_access_tokens 获取/创建令牌。
+
+拿到令牌后的安全规则：
+
+- 只在当前会话或 mcporter-internal 的本地鉴权配置中使用，不要写入仓库、文档、提交信息、脚本参数示例或持久日志。
+- 需要创建 MR、评论、改文件时，令牌应具备 API/仓库读写相关权限；只读查询至少需要读取仓库/用户信息权限。
+- 如果用户不想直接发送令牌，可以让用户在本机完成 mcporter-internal 的工蜂鉴权配置，然后重新运行上面的 `get_current_user` 探测。
+- 没拿到有效令牌前，可以继续做本地 Git/代码分析，但必须说明这不能替代工蜂 API 操作。
+
+---
+
 
 ## 通用说明
 
