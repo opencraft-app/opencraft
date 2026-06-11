@@ -10,6 +10,7 @@ import type {
   BotRuntime,
   BotVersion,
   Bundle,
+  CreatePassOrderUrlResult,
   CurrentSubscription,
   Deployment,
   InviteCodeValidation,
@@ -1161,6 +1162,24 @@ const createHttpPlanRepository = (baseUrl: string): PlanRepository => ({
       method: "POST",
       body: { bundle_id: bundleId },
     });
+  },
+  async getPassOrderUrl(input, init) {
+    return requestEnvelope<CreatePassOrderUrlResult>(baseUrl, "/v1/passes/order-url", {
+      method: "POST",
+      body: input,
+      headers: init?.headers,
+    });
+  },
+  async getRenewOrderUrl(passId, input, init) {
+    return requestEnvelope<CreatePassOrderUrlResult>(
+      baseUrl,
+      `/v1/passes/${encodeURIComponent(passId)}/renew/order-url`,
+      {
+        method: "POST",
+        body: input,
+        headers: init?.headers,
+      },
+    );
   },
   async listMyPasses() {
     const payload = await requestEnvelope<{ passes: Pass[] }>(baseUrl, "/v1/passes", {

@@ -4,6 +4,8 @@ import type {
   AuditEvent,
   BillingSummary,
   Bundle,
+  CreatePassOrderUrlInput,
+  CreatePassOrderUrlResult,
   CurrentSubscription,
   Bot,
   BotBornCard,
@@ -90,6 +92,17 @@ export interface PlanRepository {
   listBundles(): Promise<Bundle[]>;
   /** 购买套餐（POST /v1/passes { bundle_id }） */
   createPass(bundleId: string): Promise<Pass>;
+  /** 拉取新购支付 URL（POST /v1/passes/order-url）。 */
+  getPassOrderUrl(
+    input: CreatePassOrderUrlInput,
+    init?: { headers?: Record<string, string> },
+  ): Promise<CreatePassOrderUrlResult>;
+  /** 拉取续费支付 URL（POST /v1/passes/{pass_id}/renew/order-url）。 */
+  getRenewOrderUrl(
+    passId: string,
+    input: CreatePassOrderUrlInput,
+    init?: { headers?: Record<string, string> },
+  ): Promise<CreatePassOrderUrlResult>;
   /** 查询当前用户的权益列表（GET /v1/passes） */
   listMyPasses(): Promise<Pass[]>;
 }

@@ -503,6 +503,32 @@ export const createFakeRepositories = (): Repositories => {
         writeStoredPasses([...existing, pass]);
         return pass;
       },
+      async getPassOrderUrl(input) {
+        await wait(NETWORK_DELAY_MS);
+        return {
+          deal_name: input.deal_names[0] ?? `deal-fake-${Date.now().toString(36)}`,
+          pay_url: "https://buy.cloud.tencent.com/pay?token=fake",
+          token_id: "fake-token-id",
+          order_id: "fake-order-id",
+          midas_app_id: "fake-midas-app-id",
+          need_charge: 1,
+          uin: "1000000",
+          app_id: "1250000000",
+        };
+      },
+      async getRenewOrderUrl(_passId, input) {
+        await wait(NETWORK_DELAY_MS);
+        return {
+          deal_name: input.deal_names[0] ?? `deal-fake-${Date.now().toString(36)}`,
+          pay_url: "https://buy.cloud.tencent.com/pay?token=fake-renew",
+          token_id: "fake-renew-token-id",
+          order_id: "fake-renew-order-id",
+          midas_app_id: "fake-midas-app-id",
+          need_charge: 1,
+          uin: "1000000",
+          app_id: "1250000000",
+        };
+      },
       async listMyPasses() {
         await wait(NETWORK_DELAY_MS);
         return readStoredPasses();

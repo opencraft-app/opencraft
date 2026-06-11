@@ -265,3 +265,35 @@ export interface Pass {
   credit_total: number;
   credit_available: number;
 }
+
+export interface CreatePassOrderUrlInput {
+  /** 来自 createPassOrder / createRenewOrder 返回的 deal_names */
+  deal_names: string[];
+  /** 支付平台：默认 "pc"；微信内中转页传 "mobile" */
+  platform?: "pc" | "mobile";
+  /** 微信公众号 OAuth 返回的 openid。 */
+  wx_open_id?: string;
+  /** 后端换 openid 时可使用的 OAuth code，预留兼容。 */
+  wx_code?: string;
+  /** 一次性鉴权 ticket，用于中转页无主站 token 场景。 */
+  auth_code?: string;
+}
+
+export interface CreatePassOrderUrlResult {
+  /** jifei 订单号（审计用；通常与入参 deal_names[0] 一致） */
+  deal_name: string;
+  /** jifei 支付页 URL。 */
+  pay_url: string;
+  /** 米大师支付 token，前端调 tcb-jssdk 用。 */
+  token_id?: string | null;
+  /** 米大师订单号，客服排障 / 对账可用。 */
+  order_id?: string | null;
+  /** 米大师商户 appid，前端调 tcb-jssdk 透传。 */
+  midas_app_id?: string | null;
+  /** 1 = 需跳 Midas 支付页；0 = 零元订单已支付成功。 */
+  need_charge: number;
+  /** 用户腾讯云 uin（来自 trade_order）。 */
+  uin?: string;
+  /** 用户腾讯云 appId。 */
+  app_id?: string;
+}
