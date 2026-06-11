@@ -6,4 +6,4 @@ metadata:
 data:
   TRADE_DB: trade_sandbox_bj_7
   CTL_INTERNAL_BASE_URL: http://ctl-api.lightvela-playground-sandbox-bj-7.svc.cluster.local
-  SHADOW_INTERNAL_BASE_URL: http://shadow.lightvela-playground-sandbox-bj-7.svc.cluster.local
+  ACCOUNT_BINDING_INTERNAL_BASE_URL: http://lightclaw-auth.lightvela-playground-sandbox-bj-7.svc.cluster.local

@@ -1,0 +1,89 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ingressproxy-router
+  namespace: sandbox
+spec:
+  template:
+    spec:
+      containers:
+        - name: ingressproxy-router
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ingressproxy-g0
+  namespace: sandbox
+spec:
+  template:
+    spec:
+      containers:
+        - name: ingressproxy-shard
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ingressproxy-g1
+  namespace: sandbox
+spec:
+  template:
+    spec:
+      containers:
+        - name: ingressproxy-shard
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ingressproxy-g2
+  namespace: sandbox
+spec:
+  template:
+    spec:
+      containers:
+        - name: ingressproxy-shard
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ingressproxy-g3
+  namespace: sandbox
+spec:
+  template:
+    spec:
+      containers:
+        - name: ingressproxy-shard
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
