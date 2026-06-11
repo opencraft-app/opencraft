@@ -241,6 +241,114 @@ func TestAgentChatIntrospectPublicRouteBypassesAuth(t *testing.T) {
 	}
 }
 
+func TestOptionalAuthRouteBypassesAuthWhenCredentialsMissing(t *testing.T) {
+	upstreamCalls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		if got := r.Header.Get("X-Lightclaw-User-ID"); got != "" {
+			t.Fatalf("expected no identity header, got %q", got)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer upstream.Close()
+
+	authCalls := 0
+	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authCalls++
+		http.Error(w, "should not be called", http.StatusTeapot)
+	}))
+	defer auth.Close()
+
+	handler, err := NewHandler(Config{
+		AuthServiceURL: auth.URL,
+		Routes: []Route{{
+			Name:     "ctl-passes",
+			Prefix:   "/v1/passes",
+			Upstream: upstream.URL,
+			Access:   AccessAuthenticated,
+			OptionalAuthAllow: []PublicRule{
+				{Method: http.MethodPost, Path: "/v1/passes/order-url"},
+				{Method: http.MethodPost, Path: "/v1/passes/{pass_id}/renew/order-url"},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/passes/pass_123/renew/order-url", strings.NewReader(`{}`))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if upstreamCalls != 1 {
+		t.Fatalf("expected upstream to be called once, got %d", upstreamCalls)
+	}
+	if authCalls != 0 {
+		t.Fatalf("expected auth introspection to be skipped, got %d calls", authCalls)
+	}
+}
+
+func TestOptionalAuthRouteInjectsIdentityWhenCredentialsExist(t *testing.T) {
+	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer tok-123" {
+			t.Fatalf("expected bearer token forwarded to auth service, got %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"session": map[string]any{
+				"user": map[string]any{
+					"id":    "usr_123",
+					"email": "user@example.com",
+				},
+			},
+		})
+	}))
+	defer auth.Close()
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"user_id":    r.Header.Get("X-Lightclaw-User-ID"),
+			"legacy_uid": r.Header.Get("X-User-Id"),
+		})
+	}))
+	defer upstream.Close()
+
+	handler, err := NewHandler(Config{
+		AuthServiceURL: auth.URL,
+		Routes: []Route{{
+			Name:     "ctl-passes",
+			Prefix:   "/v1/passes",
+			Upstream: upstream.URL,
+			Access:   AccessAuthenticated,
+			OptionalAuthAllow: []PublicRule{
+				{Method: http.MethodPost, Path: "/v1/passes/order-url"},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/passes/order-url", strings.NewReader(`{}`))
+	req.Header.Set("Authorization", "Bearer tok-123")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var body map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body["user_id"] != "usr_123" || body["legacy_uid"] != "usr_123" {
+		t.Fatalf("expected injected identity, got %+v", body)
+	}
+}
+
 func TestAuthenticatedRouteRequiresToken(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("upstream should not be called without auth token")
