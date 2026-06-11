@@ -84,7 +84,12 @@ def _named_entry(entries: list[Any], name: str, key: str) -> dict[str, Any]:
     raise ValueError(f"kubeconfig entry {name!r} with key {key!r} not found")
 
 
-def cluster_payload_from_kubeconfig(kubeconfig_path: Path, cluster_name: str, expected_server: str) -> dict[str, Any]:
+def cluster_payload_from_kubeconfig(
+    kubeconfig_path: Path,
+    cluster_name: str,
+    expected_server: str,
+    tls_server_name: str | None = None,
+) -> dict[str, Any]:
     kubeconfig = load_yaml_mapping(kubeconfig_path)
     current_context = str(kubeconfig.get("current-context", "")).strip()
     contexts = kubeconfig.get("contexts") or []
@@ -111,6 +116,8 @@ def cluster_payload_from_kubeconfig(kubeconfig_path: Path, cluster_name: str, ex
         tls_config["certData"] = str(user["client-certificate-data"]).strip()
     if user.get("client-key-data"):
         tls_config["keyData"] = str(user["client-key-data"]).strip()
+    if tls_server_name:
+        tls_config["serverName"] = tls_server_name.strip()
 
     config: dict[str, Any] = {"tlsClientConfig": tls_config}
     if user.get("token"):
@@ -187,8 +194,14 @@ def main() -> int:
     spec = manifest["spec"]
     cluster_name = str(manifest["metadata"]["name"]).strip()
     expected_server = str(spec["server"]).strip()
+    tls_server_name = str(spec.get("tlsServerName", "")).strip() or None
     kubeconfig_path = resolve_kubeconfig_path(repo_root, manifest, args.kubeconfig)
-    cluster_payload = cluster_payload_from_kubeconfig(kubeconfig_path, cluster_name, expected_server)
+    cluster_payload = cluster_payload_from_kubeconfig(
+        kubeconfig_path,
+        cluster_name,
+        expected_server,
+        tls_server_name=tls_server_name,
+    )
     cluster_payload = apply_cluster_scope_options(cluster_payload, spec)
 
     project_path = repo_root / str(spec["projectPath"])
@@ -198,6 +211,8 @@ def main() -> int:
     print("Argo 目标集群接入定义")
     print(f"- cluster: {cluster_name}")
     print(f"- server: {expected_server}")
+    if tls_server_name:
+        print(f"- tlsServerName: {tls_server_name}")
     print(f"- project: {project_path.relative_to(repo_root)}")
     print(f"- kubeconfig: {kubeconfig_path}")
     print(f"- credential: {'token' if cluster_payload['config'].get('bearerToken') else 'client-certificate'}")
