@@ -30,6 +30,7 @@ type Route struct {
 	UpstreamBearerTokenEnv string       `yaml:"upstream_bearer_token_env"`
 	Access                 Access       `yaml:"access"`
 	PublicAllow            []PublicRule `yaml:"public_allow"`
+	OptionalAuthAllow      []PublicRule `yaml:"optional_auth_allow"`
 	RequireRealname        bool         `yaml:"require_realname"`
 	ResponseHeaderTimeout  string       `yaml:"response_header_timeout"`
 }

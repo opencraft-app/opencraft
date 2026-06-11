@@ -361,6 +361,18 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if matched.isOptionalAuthAllowed(r) {
+		session := h.optionalSession(r.Context(), r)
+		if session != nil {
+			injectIdentityHeaders(r.Header, session)
+		}
+		rec := newStatusRecorder(w)
+		matched.proxy.ServeHTTP(rec, r)
+		h.observeRequest(start, matched.route.Name, r, rec.statusCode())
+		h.logRequest(start, matched, session, r, rec.statusCode(), "")
+		return
+	}
+
 	switch matched.route.Access {
 	case AccessPublic:
 		rec := newStatusRecorder(w)
@@ -880,11 +892,54 @@ func isCORSPreflight(r *http.Request) bool {
 
 func (r compiledRoute) isPublicAllowed(req *http.Request) bool {
 	for _, rule := range r.route.PublicAllow {
-		if strings.EqualFold(rule.Method, req.Method) && rule.Path == req.URL.Path {
+		if pathRuleMatches(rule, req) {
 			return true
 		}
 	}
 	return false
+}
+
+func (r compiledRoute) isOptionalAuthAllowed(req *http.Request) bool {
+	for _, rule := range r.route.OptionalAuthAllow {
+		if pathRuleMatches(rule, req) {
+			return true
+		}
+	}
+	return false
+}
+
+func pathRuleMatches(rule PublicRule, req *http.Request) bool {
+	if !strings.EqualFold(rule.Method, req.Method) {
+		return false
+	}
+	return pathMatchesPattern(rule.Path, req.URL.Path)
+}
+
+func pathMatchesPattern(pattern string, path string) bool {
+	if pattern == path {
+		return true
+	}
+	if !strings.Contains(pattern, "{") {
+		return false
+	}
+	patternParts := strings.Split(strings.Trim(pattern, "/"), "/")
+	pathParts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(patternParts) != len(pathParts) {
+		return false
+	}
+	for i := range patternParts {
+		part := patternParts[i]
+		if strings.HasPrefix(part, "{") && strings.HasSuffix(part, "}") {
+			if pathParts[i] == "" {
+				return false
+			}
+			continue
+		}
+		if part != pathParts[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func (h *Handler) introspect(ctx context.Context, original *http.Request) (*sessionEnvelope, error) {
@@ -923,6 +978,18 @@ func (h *Handler) introspect(ctx context.Context, original *http.Request) (*sess
 	}
 
 	return &session, nil
+}
+
+func (h *Handler) optionalSession(ctx context.Context, original *http.Request) *sessionEnvelope {
+	authHeader, cookieHeader := extractAuth(original)
+	if authHeader == "" && cookieHeader == "" {
+		return nil
+	}
+	session, err := h.introspect(ctx, original)
+	if err != nil {
+		return nil
+	}
+	return session
 }
 
 func (h *Handler) currentSubscription(ctx context.Context, original *http.Request, session *sessionEnvelope) (*currentSubscriptionEnvelope, error) {
