@@ -4,7 +4,7 @@ metadata:
   name: lightclaw-temporal
   namespace: temporal-workers
 spec:
-  hostPort: temporal-frontend-sh.lightclaw.tech:443
+  hostPort: temporal.lightvela.com:443
   apiKeySecretRef:
     name: workers-runtime-secrets
     key: TEMPORAL_BEARER_TOKEN

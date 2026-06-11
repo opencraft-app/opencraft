@@ -8,7 +8,7 @@ Temporal official `WorkerDeployment` CRD instead of a plain Kubernetes
 Workers connect to the Shanghai Temporal frontend:
 
 ```bash
-TEMPORAL_ADDRESS=temporal-frontend-sh.lightclaw.tech:443
+TEMPORAL_ADDRESS=temporal.lightvela.com:443
 TEMPORAL_NAMESPACE=default
 TEMPORAL_TLS=true
 ```
