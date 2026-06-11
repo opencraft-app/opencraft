@@ -17,6 +17,21 @@
 | **默认分支** | master（国内站 + 国际站合一，编译期 `isCN`/`isGlobal` 区分） |
 | **TAPD ID**  | 10132091 |
 
+### 本地预览后端选择
+
+本地 `localhost` / `127.0.0.1` 预览可以直接连接真实国际站后端 `https://lightclaw.tech`，无需默认切到 mock。涉及真实实例能力的页面（例如自动任务、用量统计、`debug/exec`、Hermes channel / cron 调试）应优先用真实后端启动：
+
+```bash
+cd frontend
+VITE_AUTH_API_BASE_URL=https://lightclaw.tech pnpm exec vite --mode cn --host 127.0.0.1 --port 5174
+```
+
+只有在做纯静态展示、无需真实登录态 / 实例 / debug 执行能力时，才考虑 `VITE_AUTH_API_BASE_URL=mock`。如果页面出现 `[hermes-cron] auth API base URL not configured`，优先检查当前 Vite 进程是否仍以 mock 环境启动，重启为上面的真实后端命令后再刷新页面验证。
+
+### 前端分支命名
+
+前端代码分支统一挂在 `frontsandbox/` 前缀下，以便触发分支预览环境。例如：`frontsandbox/chat-id-validation-only`。除非用户明确指定其他前缀，前端相关新分支默认使用 `frontsandbox/<short-topic>`。
+
 > 💡 技术栈 / UI 组件库 / 路由 / 状态管理 / 测试框架 / 目录结构 / 公共组件 等**项目深度信息**由 `/feai-init` 自动探测后写入 `.workflow/project.yaml` 的 `context:` 段（P0 必读），本文件不再重复维护。
 
 ---
@@ -30,7 +45,7 @@
 3. **Stop-and-Ask** — 测试连续失败 3 次 / 遇未记录边界 → 立即停止询问（G4）
 4. **上下文加载协议** — 行动前必须按 `project.yaml` 的 `context_loading` 完成 P0 加载（G5/G18）
 5. **中文对话** — 所有对话用中文（G6）
-6. **分支管理** — 禁止在 master 直接开发；切分支前若工作区有未提交变更，必须先让用户决定如何处理，禁止自动 stash / commit（G8）
+6. **分支管理** — 禁止在 master 直接开发；前端代码分支默认使用 `frontsandbox/` 前缀；切分支前若工作区有未提交变更，必须先让用户决定如何处理，禁止自动 stash / commit（G8）
 7. **阶段门禁不可跳过** — 每阶段对照 `.workflow/checklists/gate-*.md` 检查（G10）
 8. **Skill 调用强制** — 标注「调用 skill」处必须真实执行 `use_skill`，禁止口头承认后用自己的知识替代（G12）
 9. **L 级 Leader 禁直写代码** — Leader 只调度审核，发现自己写组件/hooks/页面立即停止（G17）

@@ -53,6 +53,9 @@ const MODAL_CONTROL_TEXT_STYLE: React.CSSProperties = { fontSize: 16, lineHeight
 const MODAL_COMPACT_CONTROL_TEXT_STYLE: React.CSSProperties = { fontSize: 14, lineHeight: "20px" };
 const MODAL_HELP_TEXT_STYLE: React.CSSProperties = { fontSize: 13, lineHeight: "20px" };
 const EXPIRED_CRON_JOB_HIDE_AFTER_MS = 10 * 60 * 1000;
+const CHAT_ID_MAX_LENGTH = 60;
+const CHINESE_TEXT_RE = /[\u3400-\u9fff\uf900-\ufaff]/;
+const CHINESE_TEXT_RE_GLOBAL = /[\u3400-\u9fff\uf900-\ufaff]/g;
 
 /** 顶部红色 toast；与 settings 主页 SkillInstallToast 视觉一致 */
 function ErrorToast({ message, onClose }: { message: string; onClose: () => void }) {
@@ -1958,6 +1961,7 @@ function AutomationFormModal({
   const shouldShowEffectiveWindow = kind !== "once";
   /** 已配置的 channel key 集合（weixin/qqbot/feishu/...）；null = 还没拉 */
   const [enabledChannels, setEnabledChannels] = useState<Set<string> | null>(null);
+  const [chatIdErrors, setChatIdErrors] = useState<Record<string, string>>({});
 
   const [submitting, setSubmitting] = useState(false);
 
@@ -2044,6 +2048,21 @@ function AutomationFormModal({
     && name.trim().length > 0
     && (mode === "edit" || prompt.trim().length > 0)
     && (scheduleUneditable || schedule.length > 0);
+
+  const handleChatIdChange = useCallback((channel: string, value: string) => {
+    const nextValue = value.slice(0, CHAT_ID_MAX_LENGTH);
+    if (CHINESE_TEXT_RE.test(value)) {
+      setChatIdErrors((prev) => ({ ...prev, [channel]: t("Chat ID 不支持输入中文") }));
+      setDeliverChatIds((prev) => ({ ...prev, [channel]: nextValue.replace(CHINESE_TEXT_RE_GLOBAL, "") }));
+      return;
+    }
+    setChatIdErrors((prev) => {
+      if (!Object.prototype.hasOwnProperty.call(prev, channel)) return prev;
+      const { [channel]: _removed, ...rest } = prev;
+      return rest;
+    });
+    setDeliverChatIds((prev) => ({ ...prev, [channel]: nextValue }));
+  }, [t]);
 
   const handleSubmit = useCallback(async () => {
     if (!canSubmit) return;
@@ -2383,6 +2402,10 @@ function AutomationFormModal({
                             const { [key]: _removed, ...rest } = ids;
                             return rest;
                           });
+                          setChatIdErrors((errors) => {
+                            const { [key]: _removed, ...rest } = errors;
+                            return rest;
+                          });
                           return prev.filter((p) => p !== key);
                         });
                       }}
@@ -2429,14 +2452,21 @@ function AutomationFormModal({
                         <input
                           type="text"
                           value={deliverChatIds[key] ?? ""}
-                          onChange={(e) =>
-                            setDeliverChatIds((prev) => ({ ...prev, [key]: e.target.value }))
-                          }
+                          maxLength={CHAT_ID_MAX_LENGTH}
+                          onChange={(e) => handleChatIdChange(key, e.target.value)}
                           placeholder={t("可留空，默认通过 home 对话通知；也可指定 Chat ID 通知")}
                           className="min-w-0 flex-[1.1] rounded-lg border border-black/10 bg-white px-3 py-1.5 text-[12px] placeholder:text-[12px] placeholder:text-black/35 focus:border-black/30 focus:outline-none"
                           style={{ fontSize: 12, lineHeight: "18px" }}
                         />
                       </div>
+                      {chatIdErrors[key] ? (
+                        <div
+                          className="rounded-md border border-red-500/20 bg-red-500/[0.06] px-2.5 py-1.5 text-[12px] text-red-600"
+                          style={{ lineHeight: "18px" }}
+                        >
+                          {chatIdErrors[key]}
+                        </div>
+                      ) : null}
                       <div className="space-y-2 text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
                         <div>
                           <div className="flex items-center gap-1.5">
