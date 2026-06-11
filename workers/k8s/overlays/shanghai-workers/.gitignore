@@ -1,2 +1,2 @@
-generated/platform.env
-generated/workers-runtime-secrets.env
+rescue-exporter/generated/platform.env
+shared/generated/workers-runtime-secrets.env

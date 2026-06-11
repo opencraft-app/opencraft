@@ -194,10 +194,18 @@ class ReleaseBundleContractTests(unittest.TestCase):
         manifest = load_manifest()
 
         bundle = require_build_metadata(load_bundle(manifest, "workers", "shanghai-workers"))
+        workflow = yaml.safe_load((REPO_ROOT / ".ci/workers.yml").read_text())
+        workflow_params = (workflow.get("extends") or {}).get("parameters") or {}
 
         self.assertEqual(bundle.image_repo, "lightclaw-shprod.tencentcloudcr.com/lightclaw/workers")
-        self.assertIn("argocd/services/workers/shanghai-workers/**", bundle.publish_paths)
+        self.assertEqual(workflow_params.get("SERVICE"), "workers")
+        self.assertEqual(workflow_params.get("BUNDLE"), "workers-rescue-exporter")
         self.assertIn("argocd/apps/shanghai-workers/workers.yaml", bundle.publish_paths)
+        self.assertIn("argocd/apps/shanghai-workers/workers-runtime.yaml", bundle.publish_paths)
+        self.assertIn("argocd/apps/shanghai-workers/workers-rescue-exporter.yaml", bundle.publish_paths)
+        self.assertIn("argocd/services/workers/shanghai-workers/**", bundle.publish_paths)
+        self.assertIn("argocd/services/workers-runtime/shanghai-workers/**", bundle.publish_paths)
+        self.assertIn("argocd/services/workers-rescue-exporter/shanghai-workers/**", bundle.publish_paths)
         self.assertIn("argocd/root/shanghai-workers.yaml", bundle.publish_paths)
         self.assertIn("argocd/projects/shanghai-workers.yaml", bundle.publish_paths)
         self.assertIn("argocd/clusters/shanghai-workers.yaml", bundle.publish_paths)
@@ -205,10 +213,14 @@ class ReleaseBundleContractTests(unittest.TestCase):
 
     def test_workers_shanghai_overlay_uses_temporal_worker_deployment(self) -> None:
         worker_deployment = yaml.safe_load(
-            (REPO_ROOT / "workers/k8s/overlays/shanghai-workers/worker-deployment.yaml").read_text()
+            (REPO_ROOT / "workers/k8s/overlays/shanghai-workers/rescue-exporter/worker-deployment.yaml").read_text()
         )
-        connection = yaml.safe_load((REPO_ROOT / "workers/k8s/overlays/shanghai-workers/connection.yaml").read_text())
+        connection = yaml.safe_load(
+            (REPO_ROOT / "workers/k8s/overlays/shanghai-workers/shared/connection.yaml").read_text()
+        )
         overlay_readme = (REPO_ROOT / "workers/k8s/overlays/shanghai-workers/README.md").read_text()
+        runtime_app = yaml.safe_load((REPO_ROOT / "argocd/apps/shanghai-workers/workers-runtime.yaml").read_text())
+        worker_app = yaml.safe_load((REPO_ROOT / "argocd/apps/shanghai-workers/workers-rescue-exporter.yaml").read_text())
 
         self.assertEqual(worker_deployment["apiVersion"], "temporal.io/v1alpha1")
         self.assertEqual(worker_deployment["kind"], "WorkerDeployment")
@@ -216,6 +228,11 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(worker_deployment["spec"]["rollout"]["strategy"], "AllAtOnce")
         self.assertEqual(connection["kind"], "Connection")
         self.assertEqual(connection["spec"]["hostPort"], "temporal.lightvela.com:443")
+        self.assertEqual(runtime_app["spec"]["source"]["path"], "argocd/services/workers-runtime/shanghai-workers")
+        self.assertEqual(
+            worker_app["spec"]["source"]["path"],
+            "argocd/services/workers-rescue-exporter/shanghai-workers",
+        )
         self.assertIn("TEMPORAL_DEPLOYMENT_NAME", overlay_readme)
         self.assertIn("TEMPORAL_WORKER_BUILD_ID", overlay_readme)
 
