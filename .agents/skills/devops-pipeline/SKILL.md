@@ -36,7 +36,7 @@ Stream CI 和蓝盾流水线底层使用同一套构建体系。对工蜂仓库�
 示例：
 
 ```bash
-BK_CI_ACCESS_TOKEN="your_token" python3 .skills/devops-pipeline/scripts/pipeline_client.py status \
+BK_CI_ACCESS_TOKEN="your_token" python3 .agents/skills/devops-pipeline/scripts/pipeline_client.py status \
   --project-id git_1731878 \
   --pipeline-id p-bb05a019f51a4737804d680e74961096 \
   --build-id b-bf8d1c42b1c8426fb2485b88a380ca6c

@@ -195,10 +195,11 @@
 │   └── feai-init.md         # 项目初始化
 └── agents.md                # （历史遗留，与本文件同义）
 
-.skills/                  # 项目内团队共享 Skills（AI 按需读取）
-└── gongfeng/
-    ├── SKILL.md             # 工蜂 MCP / MR / 分支 / 评论操作说明
-    └── DEPENDENCIES.md      # mcporter-internal 依赖说明
+.agents/skills/          # 项目内团队共享 Agent Skills（推荐各类 coding agent 加载）
+├── gongfeng/
+│   ├── SKILL.md             # 工蜂 MCP / MR / 分支 / 评论操作说明
+│   └── DEPENDENCIES.md      # mcporter-internal 依赖说明
+└── ...                      # 其他可复用专项能力
 
 AGENTS.md                 # 本文件（monorepo 全局规范）
 
@@ -278,14 +279,14 @@ codesign/                # EdgeOne / 子账号 / 权限模型 / 测试发布协�
 
 > 💡 具体命令请查看**对应子服务的 `AGENTS.md`** 或该子目录下的 `package.json` / `Makefile`。
 
-### FE-AI 标记（不可遗漏）
+### 提交与 MR 标题约定
 
-| 标记位置 | 格式 | 说明 |
-|----------|------|------|
-| Commit message | `[FE-AI] feat(xxx): ...` | 用于提效数据统计 |
-| MR 标题 | `[FE-AI] feat: xxx` | 用于提效数据统计 |
-| MR 标签 | `FE-AI` | 用于提效数据统计 |
-| TAPD 需求标签 | `FE-AI` | 自动添加，标记 AI 辅助开发 |
+提交信息和 MR 标题尽量使用「中文在前 + 英文补充在后」的形式，便于团队快速理解变更目的，同时保留英文关键词方便检索。
+
+推荐格式：
+
+- Commit message：`调整 Agent Skills 目录 / chore(agents): migrate shared skills`
+- MR 标题：`调整 Agent Skills 目录 / chore: migrate shared skills`
 
 ### 不可逆操作确认
 
@@ -311,7 +312,7 @@ codesign/                # EdgeOne / 子账号 / 权限模型 / 测试发布协�
 ```
 📐 OpenSpec 上下文加载（子服务下沉维护）
         ↓
-📋 获取 TAPD 需求 + 🏷️ 自动添加 FE-AI 标签
+📋 获取 TAPD 需求 / 上下文
         ↓
 🧠 苏格拉底式提问 → 生成需求确认文档
         ↓
@@ -323,9 +324,9 @@ codesign/                # EdgeOne / 子账号 / 权限模型 / 测试发布协�
         ↓
 📝 任务拆分 → 🧪 TDD 开发（推荐） → 💻 代码实现
         ↓
-📦 代码提交 ([FE-AI] 前缀) → 🔗 关联 TAPD
+📦 代码提交 → 🔗 关联 TAPD（如有）
         ↓
-✅ 自检（运行对应子服务 lint/test 确保通过） → 🔍 创建 MR (FE-AI 标签)
+✅ 自检（运行对应子服务 lint/test 确保通过） → 🔍 创建 MR
         ↓
 📐 提示运行 /feai-archive 归档沉淀
 ```
@@ -412,9 +413,15 @@ AI 生成需求确认文档后，用户可能需要进一步澄清或调整需�
 | **TAPD MCP**     | 需求获取、任务管理、分支关联         |
 | **Gongfeng MCP** | 分支管理、MR 创建、文件操作、CR 评审 |
 
-### 工蜂 Skill 读取约定
+### 本地 Agent Skills 读取约定
 
-当任务需要工蜂能力时（包括但不限于分支管理、MR 创建/查询/合并、MR 评论、代码审查、文件操作），AI 必须先读取 `.skills/gongfeng/SKILL.md`，并按其中的工具调用方式执行。
+本仓库的团队共享技能统一放在 `.agents/skills/`。推荐所有 coding agent 在开始任务时先查看该目录，并根据任务类型读取对应的 `SKILL.md`：
+
+- 任务匹配某个本地 skill 时，必须先读取 `.agents/skills/<skill-name>/SKILL.md`，再执行相关操作。
+- skill 内引用的 `references/`、`scripts/`、`DEPENDENCIES.md` 等资源，以该 skill 目录为相对路径解析。
+- `.skills/` 是历史旧目录；新增或迁移的团队共享技能应放入 `.agents/skills/`。
+
+当任务需要工蜂能力时（包括但不限于分支管理、MR 创建/查询/合并、MR 评论、代码审查、文件操作），AI 必须先读取 `.agents/skills/gongfeng/SKILL.md`，并按其中的工具调用方式执行。
 
 ---
 
