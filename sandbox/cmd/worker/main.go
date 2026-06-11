@@ -45,9 +45,13 @@ var (
 
 var (
 	availableStates     = []core.InstanceState{core.StateClean}
-	inflightStates      = []core.InstanceState{core.StateCreating, core.StateResetting, core.StateDeleting}
+	inflightStates      = []core.InstanceState{core.StateCreating, core.StateResetting, core.StateDeleting, core.StatePausing}
 	creatingStaleAfter  = defaultCreatingStaleAfter
 	resettingStaleAfter = defaultResettingStaleAfter
+	// pausingStaleAfter bounds how long an instance may sit in PAUSING before
+	// being failed (the cvm StopInstances path is bounded by ~3min sync polling
+	// inside api-gin handler, so 10min is a generous safety net for stuck rows).
+	pausingStaleAfter = 10 * time.Minute
 	// reinstallVerifyDelay prevents marking CLEAN immediately after a reinstall request returns.
 	// Tests may override this to avoid slow sleeps.
 	reinstallVerifyDelay   = 30 * time.Second
@@ -1291,6 +1295,8 @@ func runCleanupLoop(ctx context.Context, svc *service.Service, cp provider.Cloud
 					{State: core.StateResetting, StaleAfter: resettingStaleAfter, Target: core.StateFailed, Name: "resetting"},
 					// Backward compatibility for old rows persisted as REINSTALLING.
 					{State: core.StateReinstalling, StaleAfter: resettingStaleAfter, Target: core.StateFailed, Name: "reinstalling(legacy)"},
+					// Pausing rows that never reached PAUSED (Q26-D 修订版 + Q32=b).
+					{State: core.StatePausing, StaleAfter: pausingStaleAfter, Target: core.StateFailed, Name: "pausing"},
 				})
 
 				cleanupFailed(ctx, svc, cp, pool)
@@ -1414,6 +1420,7 @@ func checkWaterline(ctx context.Context, svc *service.Service, cp provider.Cloud
 	trackedStates := []core.InstanceState{
 		core.StateClean, core.StateCreating, core.StateDeleting,
 		core.StateDry, core.StateFailed, core.StateResetting, core.StateReinstalling,
+		core.StatePausing, core.StatePaused,
 	}
 	insts, err := svc.ListInstancesByStates(ctx, pool.ID, trackedStates, 0)
 	if err != nil {

@@ -12,12 +12,14 @@ require (
 	github.com/oapi-codegen/runtime v1.1.2
 	github.com/prometheus/client_golang v1.23.2
 	github.com/redis/go-redis/v9 v9.17.3
-	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common v1.3.20
+	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cbs v1.3.96
+	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common v1.3.96
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cvm v1.3.15
 	go.opentelemetry.io/otel v1.38.0
 	go.opentelemetry.io/otel/exporters/stdout/stdouttrace v1.38.0
 	go.opentelemetry.io/otel/sdk v1.38.0
 	google.golang.org/protobuf v1.36.9
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -60,5 +62,4 @@ require (
 	golang.org/x/net v0.48.0 // indirect
 	golang.org/x/sys v0.40.0 // indirect
 	golang.org/x/text v0.33.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

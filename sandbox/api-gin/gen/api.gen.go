@@ -18,6 +18,13 @@ const (
 	Supabase2TeamAuthScopes  = "Supabase2TeamAuth.Scopes"
 )
 
+// Defines values for GetSandboxSnapshotStatusResponseStatus.
+const (
+	Failed     GetSandboxSnapshotStatusResponseStatus = "failed"
+	InProgress GetSandboxSnapshotStatusResponseStatus = "in_progress"
+	Ready      GetSandboxSnapshotStatusResponseStatus = "ready"
+)
+
 // Defines values for LogLevel.
 const (
 	LogLevelDebug LogLevel = "debug"
@@ -34,6 +41,30 @@ const (
 
 // CPUCount CPU cores for the sandbox
 type CPUCount = int32
+
+// CreateSandboxSnapshotRequest defines model for CreateSandboxSnapshotRequest.
+type CreateSandboxSnapshotRequest struct {
+	// InstanceID Logical instance ID owned by ctl (used by sandbox to look up cvm CloudID and call cbs.DescribeDisks).
+	InstanceID string `json:"instanceID"`
+
+	// PassID trade pass ID; embedded into snapshot name ({passID}-{instanceID}).
+	PassID string `json:"passID"`
+
+	// Region Tencent Cloud region of the underlying cvm (e.g. ap-guangzhou).
+	Region string `json:"region"`
+
+	// RetentionSeconds Snapshot retention in seconds; sandbox sets cbs.CreateSnapshot.Deadline = now + retentionSeconds.
+	RetentionSeconds int64 `json:"retentionSeconds"`
+
+	// UserID ctl-side user ID (audit / tagging only).
+	UserID string `json:"userID"`
+}
+
+// CreateSandboxSnapshotResponse defines model for CreateSandboxSnapshotResponse.
+type CreateSandboxSnapshotResponse struct {
+	// SnapshotID Snapshot ID returned by cbs.CreateSnapshot; ctl polls via GET /sandboxes/{sandboxID}/snapshot-status until status=ready.
+	SnapshotID string `json:"snapshotID"`
+}
 
 // DiskSizeMB Disk size for the sandbox in MiB
 type DiskSizeMB = int32
@@ -52,6 +83,18 @@ type Error struct {
 	// Message Error
 	Message string `json:"message"`
 }
+
+// GetSandboxSnapshotStatusResponse defines model for GetSandboxSnapshotStatusResponse.
+type GetSandboxSnapshotStatusResponse struct {
+	// Reason Optional human-readable reason when status=failed.
+	Reason *string `json:"reason,omitempty"`
+
+	// Status Abstract snapshot status; ctl polls until status=ready or status=failed.
+	Status GetSandboxSnapshotStatusResponseStatus `json:"status"`
+}
+
+// GetSandboxSnapshotStatusResponseStatus Abstract snapshot status; ctl polls until status=ready or status=failed.
+type GetSandboxSnapshotStatusResponseStatus string
 
 // ListedSandbox defines model for ListedSandbox.
 type ListedSandbox struct {
@@ -97,7 +140,7 @@ type ListedSandbox struct {
 	State SandboxState `json:"state"`
 
 	// TemplateClassID Logical template class used for sandbox resolution
-	TemplateClassID *string `json:"template_class_id,omitempty"`
+	TemplateClassID *string `json:"templateClassID,omitempty"`
 
 	// TemplateID Identifier of the template from which is the sandbox created
 	TemplateID string `json:"templateID"`
@@ -123,7 +166,7 @@ type NewSandbox struct {
 	Secure *bool `json:"secure,omitempty"`
 
 	// TemplateClassID Optional logical template class identifier. When provided, sandbox resolves eligible pools according to its binding control plane.
-	TemplateClassID *string `json:"template_class_id,omitempty"`
+	TemplateClassID *string `json:"templateClassID,omitempty"`
 
 	// TemplateID Optional pool/template identifier. If omitted, the control plane will retry across available pools.
 	TemplateID *string `json:"templateID,omitempty"`
@@ -173,7 +216,7 @@ type Sandbox struct {
 	SandboxID string `json:"sandboxID"`
 
 	// TemplateClassID Logical template class used for sandbox resolution
-	TemplateClassID *string `json:"template_class_id,omitempty"`
+	TemplateClassID *string `json:"templateClassID,omitempty"`
 
 	// TemplateID Identifier of the template from which is the sandbox created
 	TemplateID string `json:"templateID"`
@@ -229,7 +272,7 @@ type SandboxDetail struct {
 	State SandboxState `json:"state"`
 
 	// TemplateClassID Logical template class used for sandbox resolution
-	TemplateClassID *string `json:"template_class_id,omitempty"`
+	TemplateClassID *string `json:"templateClassID,omitempty"`
 
 	// TemplateID Identifier of the template from which is the sandbox created
 	TemplateID string `json:"templateID"`
@@ -312,6 +355,12 @@ type PostSandboxesSandboxIDRefreshesJSONBody struct {
 	Duration *int `json:"duration,omitempty"`
 }
 
+// GetSandboxesSandboxIDSnapshotStatusParams defines parameters for GetSandboxesSandboxIDSnapshotStatus.
+type GetSandboxesSandboxIDSnapshotStatusParams struct {
+	// SnapshotID SnapshotID returned by POST /sandboxes/{sandboxID}/snapshot
+	SnapshotID string `form:"snapshotID" json:"snapshotID"`
+}
+
 // PostSandboxesSandboxIDTimeoutJSONBody defines parameters for PostSandboxesSandboxIDTimeout.
 type PostSandboxesSandboxIDTimeoutJSONBody struct {
 	// Timeout Timeout in seconds from the current time after which the sandbox should expire
@@ -342,6 +391,9 @@ type PostSandboxesSandboxIDRefreshesJSONRequestBody PostSandboxesSandboxIDRefres
 // PostSandboxesSandboxIDResumeJSONRequestBody defines body for PostSandboxesSandboxIDResume for application/json ContentType.
 type PostSandboxesSandboxIDResumeJSONRequestBody = ResumedSandbox
 
+// PostSandboxesSandboxIDSnapshotJSONRequestBody defines body for PostSandboxesSandboxIDSnapshot for application/json ContentType.
+type PostSandboxesSandboxIDSnapshotJSONRequestBody = CreateSandboxSnapshotRequest
+
 // PostSandboxesSandboxIDTimeoutJSONRequestBody defines body for PostSandboxesSandboxIDTimeout for application/json ContentType.
 type PostSandboxesSandboxIDTimeoutJSONRequestBody PostSandboxesSandboxIDTimeoutJSONBody
 
@@ -371,6 +423,12 @@ type ServerInterface interface {
 
 	// (POST /sandboxes/{sandboxID}/resume)
 	PostSandboxesSandboxIDResume(c *gin.Context, sandboxID SandboxID)
+
+	// (POST /sandboxes/{sandboxID}/snapshot)
+	PostSandboxesSandboxIDSnapshot(c *gin.Context, sandboxID SandboxID)
+
+	// (GET /sandboxes/{sandboxID}/snapshot-status)
+	GetSandboxesSandboxIDSnapshotStatus(c *gin.Context, sandboxID SandboxID, params GetSandboxesSandboxIDSnapshotStatusParams)
 
 	// (POST /sandboxes/{sandboxID}/timeout)
 	PostSandboxesSandboxIDTimeout(c *gin.Context, sandboxID SandboxID)
@@ -638,6 +696,84 @@ func (siw *ServerInterfaceWrapper) PostSandboxesSandboxIDResume(c *gin.Context) 
 	siw.Handler.PostSandboxesSandboxIDResume(c, sandboxID)
 }
 
+// PostSandboxesSandboxIDSnapshot operation middleware
+func (siw *ServerInterfaceWrapper) PostSandboxesSandboxIDSnapshot(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "sandboxID" -------------
+	var sandboxID SandboxID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "sandboxID", c.Param("sandboxID"), &sandboxID, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter sandboxID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(ApiKeyAuthScopes, []string{})
+
+	c.Set(Supabase1TokenAuthScopes, []string{})
+
+	c.Set(Supabase2TeamAuthScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.PostSandboxesSandboxIDSnapshot(c, sandboxID)
+}
+
+// GetSandboxesSandboxIDSnapshotStatus operation middleware
+func (siw *ServerInterfaceWrapper) GetSandboxesSandboxIDSnapshotStatus(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "sandboxID" -------------
+	var sandboxID SandboxID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "sandboxID", c.Param("sandboxID"), &sandboxID, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter sandboxID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(ApiKeyAuthScopes, []string{})
+
+	c.Set(Supabase1TokenAuthScopes, []string{})
+
+	c.Set(Supabase2TeamAuthScopes, []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetSandboxesSandboxIDSnapshotStatusParams
+
+	// ------------- Required query parameter "snapshotID" -------------
+
+	if paramValue := c.Query("snapshotID"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Query argument snapshotID is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	err = runtime.BindQueryParameter("form", true, true, "snapshotID", c.Request.URL.Query(), &params.SnapshotID)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter snapshotID: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetSandboxesSandboxIDSnapshotStatus(c, sandboxID, params)
+}
+
 // PostSandboxesSandboxIDTimeout operation middleware
 func (siw *ServerInterfaceWrapper) PostSandboxesSandboxIDTimeout(c *gin.Context) {
 
@@ -759,6 +895,8 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/sandboxes/:sandboxID/pause", wrapper.PostSandboxesSandboxIDPause)
 	router.POST(options.BaseURL+"/sandboxes/:sandboxID/refreshes", wrapper.PostSandboxesSandboxIDRefreshes)
 	router.POST(options.BaseURL+"/sandboxes/:sandboxID/resume", wrapper.PostSandboxesSandboxIDResume)
+	router.POST(options.BaseURL+"/sandboxes/:sandboxID/snapshot", wrapper.PostSandboxesSandboxIDSnapshot)
+	router.GET(options.BaseURL+"/sandboxes/:sandboxID/snapshot-status", wrapper.GetSandboxesSandboxIDSnapshotStatus)
 	router.POST(options.BaseURL+"/sandboxes/:sandboxID/timeout", wrapper.PostSandboxesSandboxIDTimeout)
 	router.GET(options.BaseURL+"/v2/sandboxes", wrapper.GetV2Sandboxes)
 }

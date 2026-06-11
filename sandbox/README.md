@@ -48,7 +48,7 @@ cp sandbox/secret-templates/local.env.example \
 - `GET /pools`：列出池。
 - `PATCH /pools/{poolID}`：更新池配置（运营侧）。
   - 这些接口保留为服务内部能力说明，不再作为测试环境 pool 镜像 rollout 入口。
-  - 当前测试环境切镜像统一走 [../docs/deploy-guides/sandbox-deploy-guide.md](../docs/deploy-guides/sandbox-deploy-guide.md) 里的 SQL fallback。
+  - 当前测试环境切镜像统一走 [../docs/agent-guides/sandbox-image-rollout-guide.md](../docs/agent-guides/sandbox-image-rollout-guide.md) 里的旁路 pod 脚本。
   - rollout 语义仍然是：只更新目标 pool 的 `base_image`，并只把 `CLEAN` 实例标成 `DRY`；`ALLOCATED` 不受影响。
 - `POST /pools/{poolID}/inventory`：补货 N 台，进入 `CLEAN`（模拟 `Refill`）。
   - Body: `{"count":2}` 或 `{"addresses":["ip1","ip2"]}` 或 `{"cloud_ids":["c1","c2"]}`。传入 `addresses` 或 `cloud_ids` 时数量由数组长度决定，`count` 被忽略；未提供地址时按 `count` 生成内网地址。

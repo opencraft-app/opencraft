@@ -52,13 +52,20 @@ const (
 var allowedTransitions = map[core.InstanceState][]core.InstanceState{
 	core.StateCreating:  {core.StateClean, core.StateFailed},
 	core.StateClean:     {core.StateAllocated, core.StateDeleting, core.StateFailed},
-	core.StateAllocated: {core.StateDry},
+	core.StateAllocated: {core.StateDry, core.StatePausing},
 	// Resetting/reinstall is a worker-only transition. Keep legacy REINSTALLING for old rows.
 	core.StateDry:          {core.StateResetting, core.StateReinstalling},
 	core.StateResetting:    {core.StateClean, core.StateFailed},
 	core.StateReinstalling: {core.StateClean, core.StateFailed},
 	core.StateDeleting:     {core.StateDeleted},
 	core.StateFailed:       {core.StateDeleted},
+	// Pause path (Q26-D 修订版 + Q29=E5 + Q32=b 拍板 2026-05-14)：
+	// 关机语义保留数据，pausing 失败时回滚到 Allocated；paused 终态可被销毁/失败。
+	core.StatePausing: {core.StatePaused, core.StateAllocated, core.StateFailed},
+	// Resume path (R-F 2026-05-15，对偶 trade 续费链路 .tmp/trade-pass-renew-design.md §10 R-F)：
+	// 开机语义恢复数据，paused → resuming → allocated；resuming 失败回滚到 paused 让 ctl 子 task 重投。
+	core.StatePaused:   {core.StateDeleting, core.StateFailed, core.StateResuming},
+	core.StateResuming: {core.StateAllocated, core.StatePaused, core.StateFailed},
 }
 
 // NewService wires a Service with the provided store.
@@ -494,16 +501,141 @@ func (s *Service) AllocateAny(ctx context.Context, maxAttempts int) (core.Pool, 
 	return core.Pool{}, core.Instance{}, core.ErrNoCleanInstance
 }
 
-// Release moves an instance from ALLOCATED to DRY.
+// Release moves an instance back into the DRY state so the reset worker can
+// reinstall it and return it to the CLEAN pool.
+//
+// Accepted transitions:
+//   - ALLOCATED → DRY: normal release path (sandbox deletion on a running pass).
+//   - PAUSED    → DRY: release path for a sandbox that was already isolated via
+//     the trade pass isolation flow (Q26-D 修订版). Without this, deleting an
+//     isolated sandbox would silently fail Release and leak the instance in
+//     PAUSED forever, because the reset worker only sweeps DRY/RESETTING.
+//   - DRY       → DRY: idempotent no-op for retrying callers.
+//
+// Any other source state returns ErrInvalidTransition; in particular CLEAN,
+// CREATING, RESETTING, PAUSING and RESUMING must not be released directly.
 func (s *Service) Release(ctx context.Context, instanceID string) (core.Instance, error) {
 	inst, err := s.store.GetInstance(ctx, instanceID)
 	if err != nil {
 		return core.Instance{}, err
 	}
-	if inst.State != core.StateAllocated {
+	switch inst.State {
+	case core.StateAllocated, core.StatePaused:
+		return s.store.UpdateInstanceState(ctx, instanceID, inst.State, core.StateDry)
+	case core.StateDry:
+		// Idempotent: caller is retrying after a partial failure.
+		return inst, nil
+	default:
 		return core.Instance{}, core.ErrInvalidTransition
 	}
-	return s.store.UpdateInstanceState(ctx, instanceID, core.StateAllocated, core.StateDry)
+}
+
+// Pause moves an instance from ALLOCATED to PAUSING. The caller must follow up
+// with the cloud-side StopInstance call and then either MarkPaused on success
+// or RollbackPausing on failure.
+//
+// Implements Q26-D 修订版 + Q29=E5 拍板（2026-05-14）：trade pass isolation 走
+// "关机保留数据"路径，不再走历史的 ALLOCATED → DRY → RESETTING（释放 + 重装）。
+func (s *Service) Pause(ctx context.Context, instanceID string) (core.Instance, error) {
+	inst, err := s.store.GetInstance(ctx, instanceID)
+	if err != nil {
+		return core.Instance{}, err
+	}
+	switch inst.State {
+	case core.StateAllocated:
+		return s.store.UpdateInstanceState(ctx, instanceID, core.StateAllocated, core.StatePausing)
+	case core.StatePausing, core.StatePaused:
+		// Idempotent: caller is retrying or pause already applied.
+		return inst, nil
+	default:
+		return core.Instance{}, core.ErrInvalidTransition
+	}
+}
+
+// MarkPaused transitions PAUSING to PAUSED after the cloud-side StopInstance
+// call has succeeded. Idempotent for an already-paused instance.
+func (s *Service) MarkPaused(ctx context.Context, instanceID string) (core.Instance, error) {
+	inst, err := s.store.GetInstance(ctx, instanceID)
+	if err != nil {
+		return core.Instance{}, err
+	}
+	switch inst.State {
+	case core.StatePausing:
+		return s.store.UpdateInstanceState(ctx, instanceID, core.StatePausing, core.StatePaused)
+	case core.StatePaused:
+		return inst, nil
+	default:
+		return core.Instance{}, core.ErrInvalidTransition
+	}
+}
+
+// RollbackPausing rolls a PAUSING instance back to ALLOCATED when the cloud-side
+// StopInstance call fails irrecoverably. The caller (handler) is responsible for
+// surfacing the error to the upstream pass isolation flow so it can retry.
+func (s *Service) RollbackPausing(ctx context.Context, instanceID string) (core.Instance, error) {
+	inst, err := s.store.GetInstance(ctx, instanceID)
+	if err != nil {
+		return core.Instance{}, err
+	}
+	if inst.State != core.StatePausing {
+		return core.Instance{}, core.ErrInvalidTransition
+	}
+	return s.store.UpdateInstanceState(ctx, instanceID, core.StatePausing, core.StateAllocated)
+}
+
+// Resume moves an instance from PAUSED to RESUMING. The caller must follow up
+// with a real cloud StartInstance call and then transition RESUMING -> ALLOCATED
+// via MarkResumed (or roll back via RollbackResuming on failure).
+//
+// Implements R-F（2026-05-15，对偶 Pause 侧 Q26-D 修订版）：trade pass renew 走
+// "开机恢复数据"路径，对偶 PAUSED → RESUMING → ALLOCATED；详见
+// .tmp/trade-pass-renew-design.md §10 R-F。
+func (s *Service) Resume(ctx context.Context, instanceID string) (core.Instance, error) {
+	inst, err := s.store.GetInstance(ctx, instanceID)
+	if err != nil {
+		return core.Instance{}, err
+	}
+	switch inst.State {
+	case core.StatePaused:
+		return s.store.UpdateInstanceState(ctx, instanceID, core.StatePaused, core.StateResuming)
+	case core.StateResuming, core.StateAllocated:
+		// Idempotent: caller is retrying or resume already applied.
+		return inst, nil
+	default:
+		return core.Instance{}, core.ErrInvalidTransition
+	}
+}
+
+// MarkResumed transitions RESUMING to ALLOCATED after the cloud-side StartInstance
+// call has succeeded. Idempotent for an already-allocated instance.
+func (s *Service) MarkResumed(ctx context.Context, instanceID string) (core.Instance, error) {
+	inst, err := s.store.GetInstance(ctx, instanceID)
+	if err != nil {
+		return core.Instance{}, err
+	}
+	switch inst.State {
+	case core.StateResuming:
+		return s.store.UpdateInstanceState(ctx, instanceID, core.StateResuming, core.StateAllocated)
+	case core.StateAllocated:
+		return inst, nil
+	default:
+		return core.Instance{}, core.ErrInvalidTransition
+	}
+}
+
+// RollbackResuming rolls a RESUMING instance back to PAUSED when the cloud-side
+// StartInstance call fails irrecoverably. The caller (handler) is responsible
+// for surfacing the error to the upstream pass renew flow so it can retry
+// within the 1h ctl child-task window.
+func (s *Service) RollbackResuming(ctx context.Context, instanceID string) (core.Instance, error) {
+	inst, err := s.store.GetInstance(ctx, instanceID)
+	if err != nil {
+		return core.Instance{}, err
+	}
+	if inst.State != core.StateResuming {
+		return core.Instance{}, core.ErrInvalidTransition
+	}
+	return s.store.UpdateInstanceState(ctx, instanceID, core.StateResuming, core.StatePaused)
 }
 
 // MarkCleanInstancesDry transitions all current CLEAN inventory in a pool to DRY.
