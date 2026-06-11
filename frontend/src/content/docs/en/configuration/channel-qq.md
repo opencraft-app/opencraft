@@ -17,7 +17,7 @@ The QQ channel requires creating a bot on the QQ Open Platform, then filling the
 >
 > -   A QQ account (to act as the bot administrator)
 >
-> -   Complete [model configuration](./model.md) (or use the 100 trial credits included in the Launch plan)
+> -   Complete [model configuration](./configuration/model.md) (or use the 100 trial credits included in the Launch plan)
 >
 
 ---

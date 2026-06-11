@@ -15,7 +15,7 @@ The Discord channel uses Bot authorization access and is suitable for connecting
 >
 > -   A Discord server where you can add bots
 >
-> -   Complete [model configuration](./model.md) (or use the 100 trial credits included in the Launch plan)
+> -   Complete [model configuration](./configuration/model.md) (or use the 100 trial credits included in the Launch plan)
 >
 
 ---

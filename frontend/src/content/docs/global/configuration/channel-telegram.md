@@ -13,7 +13,7 @@ Telegram 通道采用 Bot Token 接入方式，适合快速将 Hermes 接入 Tel
 >
 > -   一台装有 Telegram 的手机
 >
-> -   完成 [模型配置](./model.md)（或使用启航套餐预置的 100 体验积分）
+> -   完成 [模型配置](./configuration/model.md)（或使用启航套餐预置的 100 体验积分）
 >
 
 ---

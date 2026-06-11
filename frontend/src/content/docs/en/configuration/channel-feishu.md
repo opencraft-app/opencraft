@@ -15,7 +15,7 @@ The Lark channel is suited for office scenarios. It supports rich-text messages 
 >
 > -   A phone with Lark installed (or a desktop Lark already signed in)
 >
-> -   Complete [model configuration](./model.md) (or use the 100 trial credits included in the Launch plan)
+> -   Complete [model configuration](./configuration/model.md) (or use the 100 trial credits included in the Launch plan)
 >
 
 ---

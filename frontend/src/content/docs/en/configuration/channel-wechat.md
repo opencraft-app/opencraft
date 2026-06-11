@@ -15,7 +15,7 @@ The WeChat channel uses QR-code access and is the simplest channel to configure.
 > 
 > -   A phone with WeChat installed
 >     
-> -   Complete [model configuration](./model.md) (or use the 100 trial credits included in the Launch plan)
+> -   Complete [model configuration](./configuration/model.md) (or use the 100 trial credits included in the Launch plan)
 >     
 
 ---

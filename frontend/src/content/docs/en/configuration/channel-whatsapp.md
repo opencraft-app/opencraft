@@ -13,7 +13,7 @@ The WhatsApp channel uses QR-code access, similar to WeChat, and is suitable for
 >
 > -   A phone with WhatsApp installed
 >
-> -   Complete [model configuration](./model.md) (or use the 100 trial credits included in the Launch plan)
+> -   Complete [model configuration](./configuration/model.md) (or use the 100 trial credits included in the Launch plan)
 >
 
 ---

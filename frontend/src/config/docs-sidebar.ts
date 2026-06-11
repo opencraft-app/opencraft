@@ -8,7 +8,7 @@
  *   按 AGENTS.md 第 252 行规范，国内 / 国际站 sidebar 用数组/常量驱动，按
  *   `isGlobal` 编译期切换数据源，terser 会消除未选中的一支为死代码。
  *   - 国内站（CN_SIDEBAR）：微信 / 飞书 / QQ
- *   - 国际站（GLOBAL_SIDEBAR）：WeChat / Telegram / WhatsApp / Discord
+ *   - 国际站（GLOBAL_SIDEBAR）：WeChat / Telegram / WhatsApp / Discord / QQ / WeCom / Lark
  */
 
 import { isGlobal } from "@/lib/region";

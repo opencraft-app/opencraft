@@ -15,7 +15,7 @@ Discord 通道采用 Bot 授权接入方式，适合将 Hermes 接入 Discord �
 >
 > -   一个可添加机器人的 Discord 服务器
 >
-> -   完成 [模型配置](./model.md)（或使用启航套餐预置的 100 体验积分）
+> -   完成 [模型配置](./configuration/model.md)（或使用启航套餐预置的 100 体验积分）
 >
 
 ---
