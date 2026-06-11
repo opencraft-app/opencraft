@@ -1813,9 +1813,13 @@ func (w *AgentSidecarWorker) CloseSessionRuntime(ctx context.Context, runtime AC
 		} else {
 			outerDeleted = true
 		}
-		if outerDeleted && innerWorkspaceStopConfirmed && isStaleRuntimeDataPlaneAuthError(gracefulStopErr) {
-			fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_stale_dataplane_auth_deleted runtime_id=%s outer_sandbox_id=%s error=%s\n", runtime.RuntimeID, runtime.OuterSandboxID, quoteServerField(gracefulStopErr.Error()))
-			gracefulStopErr = nil
+		if outerDeleted && isStaleRuntimeDataPlaneAuthError(gracefulStopErr) {
+			if innerWorkspaceStopConfirmed {
+				fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_stale_dataplane_auth_deleted runtime_id=%s outer_sandbox_id=%s error=%s\n", runtime.RuntimeID, runtime.OuterSandboxID, quoteServerField(gracefulStopErr.Error()))
+				gracefulStopErr = nil
+			} else {
+				fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_stale_dataplane_auth_blocked runtime_id=%s outer_sandbox_id=%s inner_sandbox_id=%s workspace_wisp_name=%s reason=workspace_stop_not_confirmed error=%s\n", runtime.RuntimeID, runtime.OuterSandboxID, runtime.InnerSandboxID, quoteServerField(runtime.WorkspaceWispName), quoteServerField(gracefulStopErr.Error()))
+			}
 		}
 	}
 	if gracefulStopErr != nil {
