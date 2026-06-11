@@ -364,7 +364,7 @@ export const ChangelogPage = () => {
       style={{ background: "var(--lw-bg)", color: "var(--lw-fg)" }}
     >
       <LandingNavbar onLoginClick={() => setShowLogin(true)} isLoggedIn={isAuthenticated} />
-      <main className="z-10 flex-grow">
+      <main className="z-10 flex-grow pt-[60px]">
         <ChangelogContent />
       </main>
       <LegalFooter />

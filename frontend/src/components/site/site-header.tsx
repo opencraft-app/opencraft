@@ -20,6 +20,7 @@ interface SiteHeaderProps {
   onLoginClick: () => void;
   className?: string;
   fixed?: boolean;
+  reloadLanguageAfterSwitch?: boolean;
 }
 
 function useIsDesktop(): boolean {
@@ -57,7 +58,13 @@ function isLinkActive(href: string, pathname: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export function SiteHeader({ isLoggedIn, onLoginClick, className, fixed = false }: SiteHeaderProps) {
+export function SiteHeader({
+  isLoggedIn,
+  onLoginClick,
+  className,
+  fixed = false,
+  reloadLanguageAfterSwitch = false,
+}: SiteHeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const location = useLocation();
   const isDesktop = useIsDesktop();
@@ -130,13 +137,13 @@ export function SiteHeader({ isLoggedIn, onLoginClick, className, fixed = false 
             >
               {t("登录")}
             </button>
-            {isGlobal && <LanguageSwitcher />}
+            {isGlobal && <LanguageSwitcher reloadAfterSwitch={reloadLanguageAfterSwitch} />}
           </div>
         )}
 
         {isLoggedIn && (
           <div className={cn("flex shrink-0 items-center gap-3", isDesktop ? "ml-0" : "ml-auto")}>
-            {isGlobal && isDesktop && <LanguageSwitcher />}
+            {isGlobal && isDesktop && <LanguageSwitcher reloadAfterSwitch={reloadLanguageAfterSwitch} />}
             <UserAvatarMenu />
           </div>
         )}
@@ -212,7 +219,7 @@ export function SiteHeader({ isLoggedIn, onLoginClick, className, fixed = false 
 
               {isGlobal && (
                 <div className="border-t border-black/5 pt-3">
-                  <LanguageSwitcher variant="inline" />
+                  <LanguageSwitcher variant="inline" reloadAfterSwitch={reloadLanguageAfterSwitch} />
                 </div>
               )}
             </div>

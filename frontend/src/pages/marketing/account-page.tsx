@@ -20,10 +20,8 @@ import { useSession } from "@/contexts/session-context";
 import { useRepositories } from "@/contexts/repository-context";
 import { useOpenClaw } from "@/contexts/openclaw-context";
 import { RepositoryError } from "@/repositories/http-repositories";
-import { BrandMark } from "@/components/site/brand-mark";
-import { LanguageSwitcher } from "@/components/site/language-switcher";
 import { LoginModal } from "@/components/site/login-modal";
-import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
+import { SiteHeader } from "@/components/site/site-header";
 import { useT } from "@/i18n/t";
 import { avatarImageUrl } from "@/lib/avatar-image";
 import { isCN, isGlobal } from "@/lib/region";
@@ -43,27 +41,11 @@ const staggerContainer = {
 
 /* ─── Navbar ─── */
 
-const AccountNavbar = () => {
+const AccountNavbar = ({ onLoginClick }: { onLoginClick: () => void }) => {
   const { isAuthenticated: isLoggedIn } = useSession();
-  const t = useT();
 
   return (
-    <header className="lw-setup-navbar">
-      <div className="mx-auto flex max-w-[1440px] items-center justify-between px-6 md:px-10 lg:px-[80px]">
-        <BrandMark to="/" />
-        <div className="flex items-center gap-3">
-          {/* 语言切换器：仅国际站展示 */}
-          {isGlobal && <LanguageSwitcher />}
-          <Link
-            to="/"
-            className="inline-flex items-center justify-center h-[36px] px-5 bg-[#F5F5F5] text-black/90 rounded-[100px] border border-[#E6E9EF] shadow-[0_2px_0_rgba(187,187,187,0.05)] hover:bg-black/5 transition-colors font-heading text-sm font-medium"
-          >
-            {t("返回首页")}
-          </Link>
-          {isLoggedIn && <UserAvatarMenu />}
-        </div>
-      </div>
-    </header>
+    <SiteHeader fixed isLoggedIn={isLoggedIn} onLoginClick={onLoginClick} />
   );
 };
 
@@ -946,7 +928,7 @@ export const AccountPage = () => {
   if (authReady && !isAuthenticated) {
     return (
       <div className="landing-page lw-setup-bg relative flex min-h-screen flex-col overflow-hidden" style={{ color: "var(--lw-fg)" }}>
-        <AccountNavbar />
+        <AccountNavbar onLoginClick={() => setShowLoginModal(true)} />
 
         <main className="relative z-10 flex flex-grow items-center justify-center px-6 pb-16 pt-24 md:px-8">
           <motion.div
@@ -1020,7 +1002,7 @@ export const AccountPage = () => {
   if (!authReady) {
     return (
       <div className="landing-page lw-setup-bg relative flex min-h-screen flex-col overflow-hidden" style={{ color: "var(--lw-fg)" }}>
-        <AccountNavbar />
+        <AccountNavbar onLoginClick={() => navigate("/auth/sign-in")} />
         <main className="relative z-10 flex flex-grow items-center justify-center">
           <p className="text-sm" style={{ color: "#bbb" }}>{t("正在恢复会话...")}</p>
         </main>
@@ -1032,7 +1014,7 @@ export const AccountPage = () => {
   /* ── Authenticated view ── */
   return (
     <div className="landing-page lw-setup-bg relative flex min-h-screen flex-col overflow-hidden" style={{ color: "var(--lw-fg)" }}>
-      <AccountNavbar />
+      <AccountNavbar onLoginClick={() => navigate("/auth/sign-in")} />
 
       <main className="relative z-10 flex-grow pb-8 pt-20 md:pt-24">
         <section className="mx-auto px-6 md:px-8" style={{ maxWidth: 800 }}>

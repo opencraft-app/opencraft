@@ -42,7 +42,7 @@ import {
 import { QRCodeSVG } from "qrcode.react";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
@@ -51,11 +51,9 @@ import { assetUrl } from "@/lib/asset-url";
 import { useOpenClaw, type OpenClawBot } from "@/contexts/openclaw-context";
 import { useRepositories } from "@/contexts/repository-context";
 import type { TencentPtyClient, TencentPtyConnectionState } from "@/lib/tencent-pty-client";
-import { BrandMark } from "@/components/site/brand-mark";
-import { LanguageSwitcher } from "@/components/site/language-switcher";
 import { useT, t as rawT } from "@/i18n/t";
 import { isGlobal } from "@/lib/region";
-import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
+import { SiteHeader } from "@/components/site/site-header";
 import { useSession } from "@/contexts/session-context";
 import { avatarImageUrl } from "@/lib/avatar-image";
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
@@ -348,29 +346,14 @@ void _staggerContainer;
 
 const SettingsNavbar = () => {
   const { isAuthenticated: isLoggedIn } = useSession();
-  const t = useT();
+  const navigate = useNavigate();
   return (
-    <header
-      className="lw-fixed-top fixed inset-x-0 z-50 border-b border-black/5 bg-white/90 backdrop-blur-[20px]"
-    >
-      <div className="lw-settings-shell flex h-[60px] items-center justify-between">
-        <BrandMark to="/" />
-        <div className="flex items-center gap-3">
-          {/* 语言切换器：仅国际站展示。
-              ⚠️ settings 页内嵌 @tencent/tea-sdk-lightclaw（基于 tea-app i18n），
-              而 tea-app i18n 是 init-once 设计，运行时无法热切换 lng；
-              因此切换语言后必须刷新页面才能让 SDK 区域同步更新文案。 */}
-          {isGlobal && <LanguageSwitcher reloadAfterSwitch />}
-          <Link
-            to="/"
-            className="inline-flex items-center justify-center h-[36px] px-5 bg-[#F5F5F5] text-black/90 rounded-[100px] border border-[#E6E9EF] shadow-[0_2px_0_rgba(187,187,187,0.05)] hover:bg-black/5 transition-colors font-heading text-sm font-medium"
-          >
-            {t("返回首页")}
-          </Link>
-          {isLoggedIn && <UserAvatarMenu />}
-        </div>
-      </div>
-    </header>
+    <SiteHeader
+      fixed
+      isLoggedIn={isLoggedIn}
+      onLoginClick={() => navigate("/auth/sign-in")}
+      reloadLanguageAfterSwitch
+    />
   );
 };
 
