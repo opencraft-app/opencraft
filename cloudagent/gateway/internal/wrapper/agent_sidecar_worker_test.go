@@ -587,8 +587,8 @@ func TestCloseSessionRuntimeIgnoresStaleDataPlaneAuthAfterOuterDelete(t *testing
 
 func TestCloseSessionRuntimeBlocksStaleAuthWhenInnerWorkspaceStopUnconfirmed(t *testing.T) {
 	host := &recordingRuntimeHost{
-		runCommand: func(RuntimeHostTarget, string, map[string]string, func(string) error, func(string) error) (CommandResult, error) {
-			return CommandResult{}, errors.New(`ags http 401 op=run_command sandbox_id=outer_1 domain=ap-shanghai.tencentags.com envd_port=49983: map[code:AUTHENTICATION_FAILED message:Authentication failed]`)
+		runCommand: func(target RuntimeHostTarget, command string, env map[string]string, onStdout func(string) error, onStderr func(string) error) (CommandResult, error) {
+			return CommandResult{}, fmt.Errorf(`ags http 401 op=run_command sandbox_id=%s domain=ap-shanghai.tencentags.com envd_port=49983: map[code:AUTHENTICATION_FAILED message:Authentication failed]`, target.ID)
 		},
 	}
 	worker, err := NewAgentSidecarWorker(AgentSidecarWorkerConfig{
@@ -611,13 +611,17 @@ func TestCloseSessionRuntimeBlocksStaleAuthWhenInnerWorkspaceStopUnconfirmed(t *
 		SandboxBackend:       "ags",
 		OuterRuntime:         outerRuntimeWisp,
 		OuterSandboxID:       "outer_1",
-		InnerSandboxID:       "inner_1",
 		OuterSandboxDomain:   "ap-shanghai.tencentags.com",
 		OuterEnvdAccessToken: "expired_envd_token",
+		InnerSandboxID:       "inner_1",
+		InnerSandboxDomain:   "ap-shanghai.tencentags.com",
+		InnerEnvdAccessToken: "expired_inner_envd_token",
 		RemoteBinary:         "/tmp/agent-sidecar",
 		DaemonAddr:           "127.0.0.1:9876",
 		WispName:             "agent-session_1",
+		WispClientPath:       "/tmp/cloudagent-wisp/bin/wispclient",
 		WorkspaceWispName:    "workspace-wisp-1",
+		WorkspaceWispClient:  "/tmp/cloudagent-workspace-wisp/bin/wispclient",
 	})
 	if err == nil {
 		t.Fatal("CloseSessionRuntime must block recreate when inner workspace stop is unconfirmed")
@@ -625,11 +629,12 @@ func TestCloseSessionRuntimeBlocksStaleAuthWhenInnerWorkspaceStopUnconfirmed(t *
 	if isNonBlockingStaleRuntimeCleanupError(err) {
 		t.Fatalf("unconfirmed inner workspace stop must not be treated as non-blocking stale cleanup: %v", err)
 	}
-	if !strings.Contains(err.Error(), "shutdown inner workspace runtime") {
-		t.Fatalf("expected inner workspace shutdown failure to be preserved: %v", err)
+	if !strings.Contains(err.Error(), "shutdown inner workspace runtime") ||
+		!strings.Contains(err.Error(), "stop workspace wisp runtime workspace-wisp-1") {
+		t.Fatalf("expected inner workspace stop failures to be preserved: %v", err)
 	}
 	if got := strings.Join(host.deleted, ","); got != "outer_1" {
-		t.Fatalf("deleted sandboxes=%q, want outer_1", got)
+		t.Fatalf("deleted sandboxes=%q, want only outer_1; inner must not be deleted without workspace stop confirmation", got)
 	}
 }
 
