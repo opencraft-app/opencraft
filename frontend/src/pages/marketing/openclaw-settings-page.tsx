@@ -4073,7 +4073,7 @@ export const OpenClawSettingsPage = () => {
                             <span className="flex h-5 w-5 items-center justify-center">{section.icon}</span>
                             <span className="flex-1 text-left text-[15px]">{section.label}</span>
                             {section.badge && (
-                              <span className="rounded-full bg-black/90 px-1.5 py-0.5 text-[9px] font-bold leading-none text-white">
+                              <span className="rounded-full bg-[#f76724] px-1.5 py-0.5 text-[9px] font-bold leading-none text-white">
                                 {section.badge}
                               </span>
                             )}
