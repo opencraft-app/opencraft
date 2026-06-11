@@ -3,7 +3,7 @@
 ## 概述
 
 营销模块覆盖 Lightclaw 的官网体验：**落地页、更新日志、OpenClaw 创建向导、
-订阅支付、账户中心、订单列表、控制台主设置页**。是产品的对外门面和付费转化主阵地。
+订阅支付、账户中心、订单列表、Agent 控制台**。是产品的对外门面和付费转化主阵地。
 
 ## 页面 / 路由
 
@@ -17,10 +17,12 @@
 | `/subscribe`           | `SubscribePage`        | 套餐选择 + 支付下单（50KB / 1446 行） |
 | `/dashboard/setup`     | `OpenClawSetupPage`    | OpenClaw 初始化设置 |
 | `/dashboard/success`   | `OpenClawSuccessPage`  | 创建成功落地 |
-| `/dashboard/settings`  | `OpenClawSettingsPage` | 控制台主设置（125KB / 2929 行，业务核心） |
+| `/agents`              | `OpenClawSettingsPage` | Agent 控制台（默认通道页，业务核心） |
+| `/agents/:section`     | `OpenClawSettingsPage` | Agent 能力分区；支持 channels / models / skills / persona / automations / memory / achievements / files / chat；国际站直达 persona / chat 时回到 `/agents` |
 | `/account`             | `AccountPage`          | 个人中心（41KB / 1084 行，含实名认证入口） |
 | `/account/orders`      | `AccountOrdersPage`    | 订单列表（14KB） |
-| `/dashboard`（裸路径） | `<Navigate>`           | 兜底跳 `/dashboard/settings` |
+| `/dashboard`（裸路径） | `<Navigate>`           | 兼容跳 `/agents` |
+| `/dashboard/settings`  | `<Navigate>`           | 兼容跳 `/agents` |
 
 ### 旧路径兼容重定向（客户端 `<Navigate>`，保留观察窗口期）
 
@@ -30,8 +32,9 @@
 - `/create-openclaw`   → `/dashboard/create`
 - `/openclaw/setup`    → `/dashboard/setup`
 - `/openclaw/success`  → `/dashboard/success`
-- `/openclaw/settings` → `/dashboard/settings`
-- `/console/{create|setup|success|settings}` → `/dashboard/{...}`
+- `/openclaw/settings` → `/agents`
+- `/console/settings` → `/agents`
+- `/console/{create|setup|success}` → `/dashboard/{...}`
 
 稳定一段时间后（预计 1~2 个版本）可集中清理。
 
@@ -57,7 +60,7 @@
 | `/bots/:id/workspace`   | `WorkspacePage`      | `src/pages/app/workspace-page.tsx` |
 | `/bots/:id/settings`    | `SettingsPage`       | `src/pages/app/settings-page.tsx`（调用 `getSettingsSnapshot`） |
 | `/bots/:id/terminal`    | `BotTerminalPage`    | `src/pages/app/bot-terminal-page.tsx` |
-| `/*`（AppShell 内兜底） | `<Navigate>`         | → `/dashboard/settings` |
+| `/*`（AppShell 内兜底） | `<Navigate>`         | → `/agents` |
 
 ### 已登录用户域（`AuthenticatedGuard` + `PlanGuard`）
 
@@ -105,7 +108,7 @@
 - `create-openclaw-page.tsx` — 创建向导（类型选择、基础信息）
 - `openclaw-setup-page.tsx` — 初始化设置（渠道绑定、部署参数）
 - `openclaw-success-page.tsx` — 创建成功后的信息展示
-- `openclaw-settings-page.tsx` — **最大页面（125KB / 2929 行）**，承载：
+- `openclaw-settings-page.tsx` — **最大页面（125KB / 2929 行）**，作为 `/agents` Agent 控制台承载：
   - Bot 基础设置 / 版本管理
   - 通道配置（QQ、微信、企业微信等）
   - 工具（Tools）与知识库绑定

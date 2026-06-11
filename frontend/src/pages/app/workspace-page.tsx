@@ -1,6 +1,7 @@
 import { Link, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { GrammarCanvas, GrammarPageIntro, GrammarSectionCard } from "@/components/site/homepage-grammar";
+import { AGENTS_HOME_PATH } from "@/router/paths";
 
 export const WorkspacePage = () => {
   const { id } = useParams<{ id: string }>();
@@ -16,10 +17,10 @@ export const WorkspacePage = () => {
             actions={(
               <>
                 <Button asChild>
-                  <Link to={id ? `/bots/${id}/terminal` : "/dashboard/settings"}>进入终端</Link>
+                  <Link to={id ? `/bots/${id}/terminal` : AGENTS_HOME_PATH}>进入终端</Link>
                 </Button>
                 <Button asChild variant="outline">
-                  <Link to={id ? `/bots/${id}/settings` : "/dashboard/settings"}>Agent 设置</Link>
+                  <Link to={id ? `/bots/${id}/settings` : AGENTS_HOME_PATH}>Agent 设置</Link>
                 </Button>
               </>
             )}

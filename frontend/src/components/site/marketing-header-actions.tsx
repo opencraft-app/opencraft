@@ -1,6 +1,7 @@
 import { LogOut } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { AGENTS_HOME_PATH } from "@/router/paths";
 
 interface MarketingHeaderActionsProps {
   isAuthenticated: boolean;
@@ -38,7 +39,7 @@ export const MarketingHeaderActions = ({
       </Button>
       {planConfirmed ? (
         <Button asChild size="sm">
-          <Link to="/dashboard/settings">进入控制台</Link>
+          <Link to={AGENTS_HOME_PATH}>进入控制台</Link>
         </Button>
       ) : location.pathname === "/plans/select" ? null : (
         <Button asChild size="sm">
