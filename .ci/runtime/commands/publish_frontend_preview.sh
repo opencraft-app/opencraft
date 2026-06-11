@@ -13,6 +13,9 @@ ci_ensure_pnpm
 FRONTEND_PREVIEW_BRANCH="${FRONTEND_PREVIEW_BRANCH:?FRONTEND_PREVIEW_BRANCH is required}"
 FRONTEND_PREVIEW_SHA="${FRONTEND_PREVIEW_SHA:?FRONTEND_PREVIEW_SHA is required}"
 STATICPAGES_API_URL="${STATICPAGES_API_URL:?STATICPAGES_API_URL is required}"
+FRONTEND_DIR="$REPO_ROOT/frontend"
+FRONTEND_DIST_CN_DIR="$FRONTEND_DIR/dist-cn"
+FRONTEND_DIST_GLOBAL_DIR="$FRONTEND_DIR/dist-global"
 
 resolve_preview_auth_api_base_url() {
   local branch="$1"
@@ -54,8 +57,8 @@ case "$FRONTEND_PREVIEW_BRANCH" in
     ;;
 esac
 
-cd "$REPO_ROOT/frontend"
-rm -rf node_modules dist-cn dist-global
+cd "$FRONTEND_DIR"
+rm -rf node_modules "$FRONTEND_DIST_CN_DIR" "$FRONTEND_DIST_GLOBAL_DIR"
 "$PNPM_BIN" install --frozen-lockfile
 "$PNPM_BIN" exec tsc -b
 
@@ -63,12 +66,12 @@ echo "并发构建 frontend 国内站和国际站产物"
 echo "frontend 分支预览跳过 asset optimize；生产构建链路不受影响"
 (
   export VITE_AUTH_API_BASE_URL="$PREVIEW_CN_AUTH_API_BASE_URL"
-  "$PNPM_BIN" exec vite build --mode cn --outDir dist-cn
+  "$PNPM_BIN" exec vite build --mode cn --outDir "$FRONTEND_DIST_CN_DIR"
 ) &
 build_cn_pid=$!
 (
   export VITE_AUTH_API_BASE_URL="$PREVIEW_INTL_AUTH_API_BASE_URL"
-  "$PNPM_BIN" exec vite build --mode global --outDir dist-global
+  "$PNPM_BIN" exec vite build --mode global --outDir "$FRONTEND_DIST_GLOBAL_DIR"
 ) &
 build_global_pid=$!
 
@@ -93,7 +96,7 @@ else
 fi
 
 echo "frontend 预览产物大小："
-du -sh frontend/dist-cn frontend/dist-global
+du -sh "$FRONTEND_DIST_CN_DIR" "$FRONTEND_DIST_GLOBAL_DIR"
 
 staticpages_upload_timeout_seconds=1800
 staticpages_upload_max_attempts=3
@@ -134,5 +137,5 @@ upload_staticpages_preview() {
   done
 }
 
-upload_staticpages_preview cn frontend/dist-cn
-upload_staticpages_preview intl frontend/dist-global
+upload_staticpages_preview cn "$FRONTEND_DIST_CN_DIR"
+upload_staticpages_preview intl "$FRONTEND_DIST_GLOBAL_DIR"

@@ -459,11 +459,11 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn('export VITE_AUTH_API_BASE_URL="$PREVIEW_INTL_AUTH_API_BASE_URL"', workflow_text)
         self.assertLess(
             workflow_text.index('export VITE_AUTH_API_BASE_URL="$PREVIEW_CN_AUTH_API_BASE_URL"'),
-            workflow_text.index('"$PNPM_BIN" exec vite build --mode cn --outDir dist-cn'),
+            workflow_text.index('"$PNPM_BIN" exec vite build --mode cn --outDir "$FRONTEND_DIST_CN_DIR"'),
         )
         self.assertLess(
             workflow_text.index('export VITE_AUTH_API_BASE_URL="$PREVIEW_INTL_AUTH_API_BASE_URL"'),
-            workflow_text.index('"$PNPM_BIN" exec vite build --mode global --outDir dist-global'),
+            workflow_text.index('"$PNPM_BIN" exec vite build --mode global --outDir "$FRONTEND_DIST_GLOBAL_DIR"'),
         )
 
     def test_frontend_mr_guard_runs_typecheck_and_vite_builds(self) -> None:
