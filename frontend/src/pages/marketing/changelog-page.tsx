@@ -45,8 +45,8 @@ const viewportConfig = { once: true, margin: "-40px" as const };
 type ChangelogEntry = {
   title: string;
   desc?: string;
-  /** 卡片视觉样式：lobster=上线图 / soul=人设能力图 / schedule=自动任务图 / chat=网页对话图 / memory=记忆页图 / none=无图 */
-  visual: "lobster" | "soul" | "schedule" | "chat" | "memory" | "none";
+  /** 卡片视觉样式：lobster=上线图 / cloudStorage=云存储图 / achievements=成就图 / wecom=企业微信图 / soul=人设能力图 / schedule=自动任务图 / chat=网页对话图 / memory=记忆页图 / none=无图 */
+  visual: "lobster" | "cloudStorage" | "achievements" | "wecom" | "soul" | "schedule" | "chat" | "memory" | "none";
 };
 
 type ChangelogMonthGroup = {
@@ -58,13 +58,19 @@ type ChangelogMonthGroup = {
    配图卡片 — 还原 Figma 设计稿中的插图卡片
    ═══════════════════════════════════════════════════════════════ */
 
-function VisualCard({ variant }: { variant: "lobster" | "soul" | "schedule" | "chat" | "memory" }) {
+function VisualCard({ variant }: { variant: "lobster" | "cloudStorage" | "achievements" | "wecom" | "soul" | "schedule" | "chat" | "memory" }) {
   const t = useT();
   /* 国际站（lightvela.com）始终使用英文版截图（含 Telegram/WhatsApp/Discord/Slack 图标），
      即使用户切换为中文，该配图仍保留英文版——避免同一站点出现国内渠道图标的信息错位；
      国内站则始终使用中文版（含 QQ/微信/飞书图标）。 */
   const imgPath =
-    variant === "chat"
+    variant === "cloudStorage"
+      ? "/assets/changelog/lightvela-cloud-storage.png"
+      : variant === "achievements"
+      ? "/assets/changelog/lightvela-achievements.png"
+      : variant === "wecom"
+      ? "/assets/changelog/lightvela-wecom-channel.png"
+      : variant === "chat"
       ? "/assets/changelog/agentchat-web-chat.png"
       : variant === "memory"
       ? "/assets/changelog/hermes-memory.png"
@@ -76,7 +82,13 @@ function VisualCard({ variant }: { variant: "lobster" | "soul" | "schedule" | "c
         ? "/assets/changelog/lightvela-launch-en.png"
         : "/assets/changelog/lightvela-launch.png";
   const altText =
-    variant === "chat"
+    variant === "cloudStorage"
+      ? t("LightVela 支持云存储")
+      : variant === "achievements"
+      ? t("LightVela 支持成就模块")
+      : variant === "wecom"
+      ? t("LightVela 支持企业微信通道")
+      : variant === "chat"
       ? t("LightVela 支持网页内对话")
       : variant === "memory"
       ? t("LightVela支持查看Hermes Agent记忆")
@@ -86,7 +98,13 @@ function VisualCard({ variant }: { variant: "lobster" | "soul" | "schedule" | "c
         ? t("Soul 人设能力上线")
         : t("LightVela内测上线");
   const aspectRatio =
-    variant === "chat"
+    variant === "cloudStorage"
+      ? "2140 / 1532"
+      : variant === "achievements"
+      ? "2140 / 1198"
+      : variant === "wecom"
+      ? "2160 / 844"
+      : variant === "chat"
       ? "1742 / 903"
       : variant === "memory"
       ? "2326 / 1322"
@@ -157,11 +175,6 @@ function ChangelogContent() {
             desc: t("为 Hermes Agent 抽取并保存专属 Soul 人设，一键注入后通过 /new 开启带有新人设的新会话。"),
             visual: "soul",
           },
-          {
-            title: t("LightVela 支持企业微信聊天通道"),
-            desc: t("现在可以将 Hermes Agent 接入企业微信，在企业微信会话中直接与云端智能伙伴对话。"),
-            visual: "none",
-          },
         ],
       };
 
@@ -170,9 +183,19 @@ function ChangelogContent() {
       month: t("2026 年 6 月"),
       entries: [
         {
-          title: t("自动任务支持「最近执行」视图"),
-          desc: t("现在可以在自动任务页面查看最近执行记录，快速确认任务触发时间、执行结果。"),
-          visual: "schedule",
+          title: t("LightVela 支持云存储"),
+          desc: t("现在可以在 LightVela 中查看和管理 Hermes Agent 的云存储文件，上传、下载、整理工作资料更方便。"),
+          visual: "cloudStorage",
+        },
+        {
+          title: t("LightVela 支持成就模块"),
+          desc: t("不断深入使用 Hermes Agent，将会解锁更多新鲜成就，记录你的探索进度。"),
+          visual: "achievements",
+        },
+        {
+          title: t("LightVela 支持企业微信通道"),
+          desc: t("现在可以将 Hermes Agent 接入企业微信，在企业微信会话中直接与云端智能伙伴对话。"),
+          visual: "wecom",
         },
       ],
     },
