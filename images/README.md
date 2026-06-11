@@ -110,7 +110,7 @@ python3 images/build-image.py --runtime hermes --base-image-id img-id352nof --wi
 
 CI 入口：
 
-- `master` 上 `.ci/hermes-image.yml`、`.ci/init.sh` 或 `images/**` 变更会触发 `.ci/hermes-image.yml`
+- `master` 上 `images/**` 变更会触发 `.ci/hermes-image.yml`；如果只改 `.ci/**`，需要手动触发，或同时更新 `images/hermes-image-trigger`
 - CI 使用 `python3 images/build-image.py --runtime hermes --base-image-id img-id352nof --target-regions ap-beijing,ap-shanghai,ap-singapore --with-verify`
 - CI 会在验证日志中打印 Hermes 命令路径、`hermes --version` 输出、解析版本和 `acli` identity runtime 字段
 - CI 会验证 `agentuser` 下 WhatsApp bridge 的 Node 依赖可被 `require.resolve` 找到
