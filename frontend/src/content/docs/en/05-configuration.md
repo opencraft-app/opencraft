@@ -70,10 +70,13 @@ The three buttons are arranged from left to right. The recommended configuration
 | Telegram | Bot Token access | Create a Telegram Bot through BotFather and obtain a Bot Token |
 | WhatsApp | WhatsApp Business API access | Meta developer account, WhatsApp Business Account, and basic Cloud API setup |
 | Discord | Bot Token access | Create an Application in Discord Developer Portal, add a Bot, and invite it to a server |
+| QQ | AppID / AppSecret access | A QQ account; create a bot on the QQ Open Platform and obtain AppID / AppSecret |
+| WeCom | QR-code authorization | A phone with WeCom installed |
+| Lark | QR-code authorization | A phone with Lark installed (or desktop Lark already signed in) |
 
 **Button provides**: Channel dropdown, "Authorize Access" button, selected channel introduction and "View Details" link, and "Connected channels" list.
 
-For details, see [Configure Channel - WeChat](./configuration/channel-wechat.md) / [Telegram](./configuration/channel-telegram.md) / [WhatsApp](./configuration/channel-whatsapp.md) / [Discord](./configuration/channel-discord.md).
+For details, see [Configure Channel - WeChat](./configuration/channel-wechat.md) / [Telegram](./configuration/channel-telegram.md) / [WhatsApp](./configuration/channel-whatsapp.md) / [Discord](./configuration/channel-discord.md) / [QQ](./configuration/channel-qq.md) / [WeCom](./configuration/channel-wecom.md) / [Lark](./configuration/channel-feishu.md).
 
 ---
 
@@ -145,7 +148,7 @@ Detailed configuration for each module:
 
 - [Configure Models](./configuration/model.md) — Model sources, API Key acquisition, and selection guidance
 
-- [Configure Channel - WeChat](./configuration/channel-wechat.md) / [Telegram](./configuration/channel-telegram.md) / [WhatsApp](./configuration/channel-whatsapp.md) / [Discord](./configuration/channel-discord.md)
+- [Configure Channel - WeChat](./configuration/channel-wechat.md) / [Telegram](./configuration/channel-telegram.md) / [WhatsApp](./configuration/channel-whatsapp.md) / [Discord](./configuration/channel-discord.md) / [QQ](./configuration/channel-qq.md) / [WeCom](./configuration/channel-wecom.md) / [Lark](./configuration/channel-feishu.md)
 
 - [Configure Skills](./configuration/skill.md) — SkillHub usage and skill installation
 

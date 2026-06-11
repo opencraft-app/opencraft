@@ -15,7 +15,7 @@ The Discord channel uses Bot authorization access and is suitable for connecting
 >
 > -   A Discord server where you can add bots
 >
-> -   Complete [model configuration](./model.md) (or use the 100 trial credits included in the Launch plan)
+> -   Complete [model configuration](./configuration/model.md) (or use the 100 trial credits included in the Launch plan)
 >
 
 ---
@@ -166,5 +166,11 @@ After access succeeds, the Discord bot can receive and reply to basic text messa
 ---
 
 ## Next steps
+
+- [Configure Channel - QQ](./configuration/channel-qq.md) — Bot created manually, integrated via AppID/AppSecret
+
+- [Configure Channel - WeCom](./configuration/channel-wecom.md) — Enterprise internal collaboration and office scenarios
+
+- [Configure Channel - Lark](./configuration/channel-feishu.md) — Office scenarios with rich text and group chat
 
 - [Configure Skills](./configuration/skill.md) — Extend Hermes capabilities
