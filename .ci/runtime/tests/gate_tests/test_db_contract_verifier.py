@@ -6,16 +6,26 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-RUNTIME_DIR = next(parent for parent in Path(__file__).resolve().parents if parent.name == "runtime" and parent.parent.name == ".ci")
+RUNTIME_DIR = next(
+    parent
+    for parent in Path(__file__).resolve().parents
+    if parent.name == "runtime" and parent.parent.name == ".ci"
+)
 if str(RUNTIME_DIR) not in sys.path:
     sys.path.insert(0, str(RUNTIME_DIR))
 
 from gates.db_contract_verifier import (  # noqa: E402
+    apply_manifest,
+    apply_playground_ctl_runtime_env,
     build_check_script,
     build_job_manifest,
+    kubectl,
     main,
     max_migration_version,
+    resolve_kubeconfig_cluster_name,
+    resolve_catalog_service,
     resolve_runtime_env,
+    resolve_verifier_namespace,
 )
 
 
@@ -306,6 +316,275 @@ class DbContractVerifierTests(unittest.TestCase):
 
         self.assertIn('"secretKeyRef": {"name": "db-contract-ctl-secrets", "key": "CTL_DB_PASSWORD"}', payload)
         self.assertNotIn("test-password", payload)
+
+    def test_playground_target_comes_from_catalog(self) -> None:
+        verifier = {"namespace": "ctl"}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            catalog = repo_root / "argocd/catalogs/playground/beijing-playground/sandbox-bj-7/ctl.yaml"
+            catalog.parent.mkdir(parents=True)
+            catalog.write_text(
+                "\n".join(
+                    [
+                        "service: ctl",
+                        "env: sandbox-bj-7",
+                        "destinationName: beijing-playground",
+                        "playgroundCluster: fallback-cluster",
+                        "namespace: lightvela-playground-sandbox-bj-7",
+                    ]
+                )
+                + "\n"
+            )
+
+            cluster_name = resolve_kubeconfig_cluster_name(repo_root, "sandbox-bj-7", "ctl")
+            namespace = resolve_verifier_namespace(repo_root, "sandbox-bj-7", "ctl", verifier)
+
+        self.assertEqual(cluster_name, "beijing-playground")
+        self.assertEqual(namespace, "lightvela-playground-sandbox-bj-7")
+
+    def test_db_job_service_alias_uses_catalog_service(self) -> None:
+        verifier = {"namespace": "user-auth"}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            catalog = repo_root / "argocd/catalogs/playground/beijing-playground/sandbox-bj-7/lightclaw-auth.yaml"
+            catalog.parent.mkdir(parents=True)
+            catalog.write_text(
+                "\n".join(
+                    [
+                        "service: lightclaw-auth",
+                        "env: sandbox-bj-7",
+                        "destinationName: beijing-playground",
+                        "namespace: lightvela-playground-sandbox-bj-7",
+                    ]
+                )
+                + "\n"
+            )
+
+            catalog_service = resolve_catalog_service("user-auth", {"db_job_service": "lightclaw-auth"})
+            cluster_name = resolve_kubeconfig_cluster_name(repo_root, "sandbox-bj-7", catalog_service)
+            namespace = resolve_verifier_namespace(repo_root, "sandbox-bj-7", catalog_service, verifier)
+
+        self.assertEqual(catalog_service, "lightclaw-auth")
+        self.assertEqual(cluster_name, "beijing-playground")
+        self.assertEqual(namespace, "lightvela-playground-sandbox-bj-7")
+
+    def test_main_uses_catalog_service_for_playground_kubeconfig(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            migrations = repo_root / "user/auth/migrations"
+            migrations.mkdir(parents=True)
+            (migrations / "000011_add_shadowbinding_tables.up.sql").write_text("select 1;\n")
+            catalog = repo_root / "argocd/catalogs/playground/beijing-playground/sandbox-bj-7/lightclaw-auth.yaml"
+            catalog.parent.mkdir(parents=True)
+            catalog.write_text(
+                "\n".join(
+                    [
+                        "service: lightclaw-auth",
+                        "env: sandbox-bj-7",
+                        "destinationName: beijing-playground",
+                        "namespace: lightvela-playground-sandbox-bj-7",
+                    ]
+                )
+                + "\n"
+            )
+            env_file = repo_root / "argocd/services/lightclaw-auth/sandbox-bj-7/auth-platform.env"
+            env_file.parent.mkdir(parents=True)
+            env_file.write_text(
+                "MYSQL_HOST=mysql.lightvela-playground-sandbox-bj-7.svc.cluster.local\n"
+                "MYSQL_PORT=3306\n"
+                "LIGHTCLAW_AUTH_DB=lightclaw_auth_sandbox_bj_7\n"
+                "LIGHTCLAW_AUTH_DB_USER=lightclaw_auth\n"
+                "LIGHTCLAW_AUTH_DB_PASSWORD=secret\n"
+            )
+            bundle = mock.Mock(
+                db_contract={
+                    "mode": "migration",
+                    "db_job_service": "lightclaw-auth",
+                    "expected_migration_source": "user/auth/migrations",
+                    "verifier": {
+                        "namespace": "user-auth",
+                        "service_platform_env_file": "argocd/services/lightclaw-auth/{env}/auth-platform.env",
+                        "database_env": "LIGHTCLAW_AUTH_DB",
+                        "user_env": "LIGHTCLAW_AUTH_DB_USER",
+                        "password_env": "LIGHTCLAW_AUTH_DB_PASSWORD",
+                        "env_from_service_platform": {
+                            "MYSQL_HOST": "MYSQL_HOST",
+                            "MYSQL_PORT": "MYSQL_PORT",
+                            "LIGHTCLAW_AUTH_DB": "LIGHTCLAW_AUTH_DB",
+                            "LIGHTCLAW_AUTH_DB_USER": "LIGHTCLAW_AUTH_DB_USER",
+                            "LIGHTCLAW_AUTH_DB_PASSWORD": "LIGHTCLAW_AUTH_DB_PASSWORD",
+                        },
+                    },
+                }
+            )
+
+            with (
+                mock.patch(
+                    "sys.argv",
+                    [
+                        "verify_db_contract.py",
+                        "--repo-root",
+                        str(repo_root),
+                        "--service",
+                        "user-auth",
+                        "--env",
+                        "sandbox-bj-7",
+                        "--apply",
+                    ],
+                ),
+                mock.patch("gates.db_contract_verifier.load_manifest", return_value={}),
+                mock.patch("gates.db_contract_verifier.load_bundle", return_value=bundle),
+                mock.patch(
+                    "gates.db_contract_verifier.resolve_kubeconfig",
+                    return_value=("/tmp/kubeconfig", None),
+                ) as resolver,
+                mock.patch("gates.db_contract_verifier.apply_manifest"),
+                mock.patch("gates.db_contract_verifier.delete_manifest"),
+            ):
+                self.assertEqual(main(), 0)
+
+        self.assertEqual(resolver.call_args.args[3], "lightclaw-auth")
+
+    def test_playground_ctl_runtime_env_uses_catalog_database_and_runtime_root_secret(self) -> None:
+        secret_json = {
+            "data": {
+                "MYSQL_ROOT_PASSWORD": "cm9vdC1wYXNzd29yZA==",
+            }
+        }
+        env_values = {
+            "MYSQL_HOST": "10.15.224.4",
+            "MYSQL_PORT": "3306",
+            "CTL_DB": "ctl",
+            "CTL_DB_USER": "root",
+        }
+        env_secret_values = {"CTL_DB_PASSWORD": "business-password"}
+
+        with mock.patch(
+            "gates.db_contract_verifier.kubectl",
+            return_value=subprocess.CompletedProcess(args=[], returncode=0, stdout=json.dumps(secret_json), stderr=""),
+        ) as kubectl:
+            apply_playground_ctl_runtime_env(
+                kubeconfig="/tmp/kubeconfig",
+                namespace="lightvela-playground-sandbox-bj-7",
+                env="sandbox-bj-7",
+                service="ctl",
+                env_values=env_values,
+                env_secret_values=env_secret_values,
+            )
+
+        self.assertEqual(env_values["CTL_DB"], "ctl_sandbox_bj_7")
+        self.assertEqual(env_secret_values["CTL_DB_PASSWORD"], "root-password")
+        kubectl.assert_called_once()
+
+    def test_main_overrides_playground_ctl_database_before_rendering_job(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = Path(tmp)
+            catalog = (
+                repo_root
+                / "argocd/catalogs/playground/beijing-playground/sandbox-bj-7/ctl.yaml"
+            )
+            catalog.parent.mkdir(parents=True)
+            catalog.write_text(
+                "\n".join(
+                    [
+                        "service: ctl",
+                        "env: sandbox-bj-7",
+                        "destinationName: beijing-playground",
+                        "namespace: lightvela-playground-sandbox-bj-7",
+                    ]
+                )
+                + "\n"
+            )
+            env_file = repo_root / "argocd/services/ctl/sandbox-bj-7/ctl-platform.env"
+            env_file.parent.mkdir(parents=True)
+            env_file.write_text("CTL_TEST_MYSQL_HOST=mysql.svc.cluster.local\n")
+            bundle = mock.Mock(
+                db_contract={
+                    "mode": "migration",
+                    "expected_migration_source": "ctl/migrations",
+                    "secret_resolvers": {
+                        "ctl_db_password": {
+                            "type": "sops_yaml",
+                            "file": "argocd/secrets/{env}/ctl-runtime-secrets.sops.yaml",
+                            "yaml_path": "stringData.CTL_DB_PASSWORD",
+                        }
+                    },
+                    "verifier": {
+                        "namespace": "ctl",
+                        "image": "mysql:8.0",
+                        "service_platform_env_file": "argocd/services/ctl/{env}/ctl-platform.env",
+                        "static_env": {
+                            "MYSQL_PORT": "3306",
+                            "CTL_DB": "ctl",
+                            "CTL_DB_USER": "root",
+                        },
+                        "env_from_service_platform": {
+                            "MYSQL_HOST": "CTL_TEST_MYSQL_HOST",
+                        },
+                        "env_from_secret_resolver": {
+                            "CTL_DB_PASSWORD": "ctl_db_password",
+                        },
+                        "database_env": "CTL_DB",
+                        "user_env": "CTL_DB_USER",
+                        "password_env": "CTL_DB_PASSWORD",
+                    },
+                }
+            )
+
+            with (
+                mock.patch(
+                    "sys.argv",
+                    [
+                        "verify_db_contract.py",
+                        "--repo-root",
+                        str(repo_root),
+                        "--service",
+                        "ctl",
+                        "--env",
+                        "sandbox-bj-7",
+                    ],
+                ),
+                mock.patch("gates.db_contract_verifier.load_manifest", return_value={}),
+                mock.patch("gates.db_contract_verifier.load_bundle", return_value=bundle),
+                mock.patch(
+                    "gates.db_contract_verifier.resolve_contract_secret_values",
+                    return_value={"ctl_db_password": "root-password"},
+                ),
+                mock.patch(
+                    "gates.db_contract_verifier.build_job_manifest",
+                    return_value={"metadata": {"name": "db-contract-ctl-sandbox-bj-7"}},
+                ) as build_job,
+            ):
+                self.assertEqual(main(), 0)
+
+        self.assertEqual(build_job.call_args.kwargs["env_values"]["CTL_DB"], "ctl_sandbox_bj_7")
+
+    def test_apply_manifest_skips_client_openapi_validation(self) -> None:
+        manifest = {"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "demo"}}
+
+        with mock.patch(
+            "gates.db_contract_verifier.kubectl",
+            return_value=subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
+        ) as kubectl:
+            apply_manifest("/tmp/kubeconfig", manifest)
+
+        self.assertIn("--validate=false", kubectl.call_args.args[1])
+
+    def test_kubectl_retries_transient_eof(self) -> None:
+        transient = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr='Get "https://cluster": EOF')
+        success = subprocess.CompletedProcess(args=[], returncode=0, stdout="ok", stderr="")
+
+        with (
+            mock.patch("gates.db_contract_verifier.subprocess.run", side_effect=[transient, success]) as run,
+            mock.patch("gates.db_contract_verifier.time.sleep") as sleep,
+        ):
+            result = kubectl("/tmp/kubeconfig", ["get", "pods"])
+
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(run.call_count, 2)
+        sleep.assert_called_once_with(3)
 
 
 if __name__ == "__main__":
