@@ -11,6 +11,7 @@ configMapGenerator:
       - trade-platform.env
 resources:
   - trade-migration-job.yaml
+  - trade-nodeport.yaml
 patches:
   - path: delete-shared-namespace.yaml
   - path: delete-shared-serviceaccount.yaml
