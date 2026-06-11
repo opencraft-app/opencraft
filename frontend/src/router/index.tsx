@@ -3,7 +3,7 @@ import { AppShellLayout } from "@/layouts/app-shell-layout";
 import { MarketingLayout } from "@/layouts/marketing-layout";
 import { RootLayout } from "@/layouts/root-layout";
 import { LandingPage } from "@/pages/marketing/landing-page";
-import { lazyNamed, lazyRoute } from "@/router/lazy-page";
+import { lazyNamed, lazyRoute, lazySiteRoute } from "@/router/lazy-page";
 import { AGENTS_HOME_PATH } from "@/router/paths";
 import { AppAccessGuard, AuthenticatedGuard, AuthRouteGuard, MarketingAuthGuard, PlanGuard } from "@/router/guards";
 import { isGlobal } from "@/lib/region";
@@ -60,20 +60,20 @@ export const router = createBrowserRouter([
         ? [
             {
               path: "changelog",
-              element: lazyRoute(ChangelogPage),
+              element: lazySiteRoute(ChangelogPage),
             },
           ]
         : []),
       {
         path: "about",
-        element: lazyRoute(AboutPage),
+        element: lazySiteRoute(AboutPage),
       },
       /* ── 产品文档（LightVela Docs） ──
          /docs             → 重定向到 /docs/overview
          /docs/:slug       → 一级文档，例如 /docs/overview、/docs/faq
          /docs/:cat/:slug  → 二级文档，例如 /docs/configuration/model */
       {
-        element: lazyRoute(DocsLayout),
+        element: lazySiteRoute(DocsLayout),
         children: [
           {
             path: "docs",
@@ -126,19 +126,19 @@ export const router = createBrowserRouter([
           },
           {
             path: "agents",
-            element: lazyRoute(OpenClawSettingsPage),
+            element: lazySiteRoute(OpenClawSettingsPage),
           },
           {
             path: "agents/:section",
-            element: lazyRoute(OpenClawSettingsPage),
+            element: lazySiteRoute(OpenClawSettingsPage),
           },
           {
             path: "account",
-            element: lazyRoute(AccountPage),
+            element: lazySiteRoute(AccountPage),
           },
           {
             path: "account/orders",
-            element: lazyRoute(AccountOrdersPage),
+            element: lazySiteRoute(AccountOrdersPage),
           },
           {
             path: "tat/device-bind",
