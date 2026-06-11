@@ -4,13 +4,8 @@ kind: Kustomization
 namespace: temporal-workers
 
 resources:
-  - namespace.yaml
   - serviceaccount.yaml
-  - connection.yaml
   - worker-deployment.yaml
-
-generators:
-  - ksops-secret-generator.yaml
 
 generatorOptions:
   disableNameSuffixHash: true

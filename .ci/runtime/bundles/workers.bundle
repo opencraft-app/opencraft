@@ -11,11 +11,15 @@ bundles:
     - workers/k8s/overlays/beijing-sandbox
     - workers/k8s/overlays/shanghai-workers
     - argocd/apps/shanghai-workers/workers.yaml
+    - argocd/apps/shanghai-workers/workers-runtime.yaml
+    - argocd/apps/shanghai-workers/workers-rescue-exporter.yaml
     - argocd/clusters/shanghai-workers.yaml
     - argocd/projects/shanghai-workers.yaml
     - argocd/root/shanghai-workers.yaml
     - argocd/secrets/shanghai-workers/workers-runtime-secrets.sops.yaml
     - argocd/services/workers/shanghai-workers
+    - argocd/services/workers-runtime/shanghai-workers
+    - argocd/services/workers-rescue-exporter/shanghai-workers
     exit_condition: Can be removed only after workers move to a shared deployable worker package contract.
     publish_paths:
     - workers/k8s/base/**
@@ -23,11 +27,15 @@ bundles:
     publish_paths_by_env:
       shanghai-workers:
       - argocd/apps/shanghai-workers/workers.yaml
+      - argocd/apps/shanghai-workers/workers-runtime.yaml
+      - argocd/apps/shanghai-workers/workers-rescue-exporter.yaml
       - argocd/clusters/shanghai-workers.yaml
       - argocd/projects/shanghai-workers.yaml
       - argocd/root/shanghai-workers.yaml
       - argocd/secrets/shanghai-workers/workers-runtime-secrets.sops.yaml
       - argocd/services/workers/shanghai-workers/**
+      - argocd/services/workers-runtime/shanghai-workers/**
+      - argocd/services/workers-rescue-exporter/shanghai-workers/**
       - workers/k8s/overlays/shanghai-workers/**
     dockerfile: workers/Dockerfile
     build_context: workers
