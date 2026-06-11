@@ -40,9 +40,11 @@ export const LandingPage = () => {
     setShowLogin(true);
   }, [oauthError, navigate]);
 
-  // 进入落地页时启用 CSS 隔离层；离开（unmount）时自动撤销，
-  // dashboard 等需要 tea 全局样式的页面不受影响。
+  // 进入落地页时启用 CSS 隔离层；离开（unmount）时自动撤销。
+  // 仅生产 build 需要（dev 模式 vite 不预加载 vendor-tea.css，无污染源），
+  // 故用 import.meta.env.PROD 守卫，避免 dev 下 override 误伤导航样式。
   useEffect(() => {
+    if (!import.meta.env.PROD) return;
     document.body.classList.add("lv-landing-active");
     return () => {
       document.body.classList.remove("lv-landing-active");

@@ -37,8 +37,8 @@ body.lv-landing-active {
   line-height: 1.5;
 }
 
-/* 撤销 tea 把所有 <a> 强行染成链接蓝的规则。
- * 让 anchor 颜色继承自就近父级（landing 自定义颜色继续生效）。 */
-body.lv-landing-active a {
-  color: inherit;
-}
+/* 注意：不要在此添加 `a { color: inherit }` 之类规则。
+ * 那会以 (0,1,2) 的 specificity 覆盖 Tailwind 的 text-[rgba(...)] 工具类
+ * (0,1,0)，反而把导航链接等显式着色元素误伤成 inherit。
+ * vendor-tea 的 `a { color: ... }` specificity 仅 (0,0,1)，本就输给
+ * Tailwind 工具类，无需在此对抗。 */
