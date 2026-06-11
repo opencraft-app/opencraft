@@ -1,7 +1,16 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SiteHeader } from "@/components/site/site-header";
+
+let sessionState = {
+  authReady: true,
+  isAuthenticated: false,
+};
+
+vi.mock("@/contexts/session-context", () => ({
+  useSession: () => sessionState,
+}));
 
 vi.mock("@/components/site/user-avatar-menu", () => ({
   UserAvatarMenu: () => <button type="button">avatar menu</button>,
@@ -18,12 +27,19 @@ afterEach(() => {
 });
 
 describe("SiteHeader", () => {
+  beforeEach(() => {
+    sessionState = {
+      authReady: true,
+      isAuthenticated: false,
+    };
+  });
+
   it("shows unified navigation and anonymous actions", () => {
     const onLoginClick = vi.fn();
 
     render(
       <MemoryRouter initialEntries={["/"]}>
-        <SiteHeader isLoggedIn={false} onLoginClick={onLoginClick} />
+        <SiteHeader onLoginClick={onLoginClick} />
       </MemoryRouter>,
     );
 
@@ -38,10 +54,32 @@ describe("SiteHeader", () => {
     expect(onLoginClick).toHaveBeenCalledTimes(2);
   });
 
+  it("keeps auth actions hidden while the session is hydrating", () => {
+    sessionState = {
+      authReady: false,
+      isAuthenticated: false,
+    };
+
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <SiteHeader onLoginClick={vi.fn()} />
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByRole("button", { name: "立即创建" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "登录" })).not.toBeInTheDocument();
+    expect(screen.getByTestId("site-header-auth-loading")).toBeInTheDocument();
+  });
+
   it("shows the avatar menu for signed-in users instead of legacy marketing actions", () => {
+    sessionState = {
+      authReady: true,
+      isAuthenticated: true,
+    };
+
     render(
       <MemoryRouter initialEntries={["/dashboard/settings"]}>
-        <SiteHeader isLoggedIn onLoginClick={vi.fn()} />
+        <SiteHeader onLoginClick={vi.fn()} />
       </MemoryRouter>,
     );
 
@@ -56,7 +94,7 @@ describe("SiteHeader", () => {
 
     render(
       <MemoryRouter initialEntries={["/about"]}>
-        <SiteHeader isLoggedIn={false} onLoginClick={onLoginClick} />
+        <SiteHeader onLoginClick={onLoginClick} />
       </MemoryRouter>,
     );
 

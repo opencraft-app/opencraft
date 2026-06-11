@@ -3,7 +3,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, FileText, Loader2, X } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { useSession } from "@/contexts/session-context";
 import { SiteHeader } from "@/components/site/site-header";
 import { isGlobal } from "@/lib/region";
 
@@ -31,11 +30,10 @@ const mockOrders: OrderItem[] = [
 /* ─── Navbar ─── */
 
 const OrdersNavbar = () => {
-  const { isAuthenticated: isLoggedIn } = useSession();
   const navigate = useNavigate();
 
   return (
-    <SiteHeader fixed isLoggedIn={isLoggedIn} onLoginClick={() => navigate("/auth/sign-in")} />
+    <SiteHeader fixed onLoginClick={() => navigate("/auth/sign-in")} />
   );
 };
 

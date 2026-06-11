@@ -1,7 +1,6 @@
 import { Suspense, lazy, type ComponentType, type ReactElement } from "react";
 import { useNavigate } from "react-router-dom";
 import { SiteHeader } from "@/components/site/site-header";
-import { useSession } from "@/contexts/session-context";
 
 function RouteFallback() {
   return null;
@@ -9,11 +8,10 @@ function RouteFallback() {
 
 function SiteRouteFallback() {
   const navigate = useNavigate();
-  const { isAuthenticated } = useSession();
 
   return (
     <div className="min-h-dvh bg-white text-[var(--text-primary)]" aria-busy="true">
-      <SiteHeader fixed isLoggedIn={isAuthenticated} onLoginClick={() => navigate("/auth/sign-in")} />
+      <SiteHeader fixed onLoginClick={() => navigate("/auth/sign-in")} />
       <main className="pt-[60px]" />
     </div>
   );

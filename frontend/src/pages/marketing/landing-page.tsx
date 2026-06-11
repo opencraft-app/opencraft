@@ -68,7 +68,7 @@ export const LandingPage = () => {
       {/* 鼠标跟随微光层 — 暂时隐藏，等颜色确定后再恢复 */}
       {/* <div className="lw-cursor-glow pointer-events-none fixed inset-0 z-50" aria-hidden /> */}
 
-      <LandingNavbar onLoginClick={openLogin} isLoggedIn={isAuthenticated} />
+      <LandingNavbar onLoginClick={openLogin} />
 
       <main className="z-10 flex-grow">
         <HeroSection onLoginClick={openLogin} isLoggedIn={isAuthenticated} hasBots={hasBots} isSubscribed={isSubscribed} />
