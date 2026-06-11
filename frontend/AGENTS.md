@@ -16,6 +16,7 @@
 | **仓库**     | wisp/mono2（monorepo · 前端子目录 `frontend/`） |
 | **默认分支** | master（国内站 + 国际站合一，编译期 `isCN`/`isGlobal` 区分） |
 | **TAPD ID**  | 10132091 |
+
 ### 本地预览后端选择
 
 本地 `localhost` / `127.0.0.1` 预览可以直接连接真实国际站后端 `https://lightclaw.tech`，无需默认切到 mock。涉及真实实例能力的页面（例如自动任务、用量统计、`debug/exec`、Hermes channel / cron 调试）应优先用真实后端启动：
@@ -25,7 +26,7 @@ cd frontend
 VITE_AUTH_API_BASE_URL=https://lightclaw.tech pnpm exec vite --mode cn --host 127.0.0.1 --port 5174
 ```
 
-只有在做纯静态展示、无需真实登录态 / 实例 / debug 执行能力时，才考虑 `VITE_AUTH_API_BASE_URL=mock`。如果页面出现 `[hermes-cron] auth API base URL not configured`，优先检查当前 Vite 进程是否仍以 mock 环境启动，重启为上面的真实后端命令后再刷新页面。
+只有在做纯静态展示、无需真实登录态 / 实例 / debug 执行能力时，才考虑 `VITE_AUTH_API_BASE_URL=mock`。如果页面出现 `[hermes-cron] auth API base URL not configured`，优先检查当前 Vite 进程是否仍以 mock 环境启动，重启为上面的真实后端命令后再刷新页面验证。
 
 ### 前端分支命名
 
