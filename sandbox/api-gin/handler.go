@@ -27,9 +27,10 @@ type handler struct {
 	cloud     provider.CloudProvider
 	metrics   *observability.APIMetrics
 
-	// cloudPauseResume keeps the new Stop/Start based pause/resume semantics
-	// opt-in. The legacy public ctl pause endpoint historically released the
-	// sandbox to DRY, so default-off avoids changing any existing caller.
+	// cloudPauseResume controls Stop/Start based pause/resume semantics. It
+	// defaults on because billing/pass lifecycle isolation needs real cloud
+	// shutdown; tests and emergency rollback can set it false to restore legacy
+	// release/no-op behavior.
 	cloudPauseResume bool
 }
 

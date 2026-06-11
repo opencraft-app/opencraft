@@ -23,7 +23,7 @@ type Config struct {
 	RedisDB          int           // redis db index
 	RedisRoutePrefix string        // redis key prefix for routes
 	AuthServiceURL   string        // user-auth base url for session introspection
-	CloudPauseResume bool          // when true, pause/resume call cloud Stop/Start instead of legacy release/no-op
+	CloudPauseResume bool          // when true, pause/resume call cloud Stop/Start; defaults on for billing lifecycle isolation
 }
 
 func loadConfig() Config {
@@ -51,7 +51,7 @@ func loadConfig() Config {
 		RedisDB:          redisDB,
 		RedisRoutePrefix: redisPrefix,
 		AuthServiceURL:   getenv("AUTH_SERVICE_URL", "http://lightclaw-auth.user-auth.svc.cluster.local"),
-		CloudPauseResume: getenvBool("SANDBOX_ENABLE_CLOUD_PAUSE_RESUME", false),
+		CloudPauseResume: getenvBool("SANDBOX_ENABLE_CLOUD_PAUSE_RESUME", true),
 	}
 }
 
