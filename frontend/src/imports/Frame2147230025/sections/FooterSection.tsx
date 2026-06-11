@@ -1,3 +1,5 @@
+import { useT } from '@/i18n/t';
+
 function LightVelaLogo() {
   // 高度 26px，宽度按 svg viewBox (131:28) 自适应 ≈ 121.6px。
   // 用 <img> 引用 public/ 下的 SVG 文件，未来替换 logo 只换图不动代码。
@@ -13,6 +15,7 @@ function LightVelaLogo() {
 
 
 export default function FooterSection() {
+  const t = useT();
   return (
     <footer
       className="w-full bg-white mx-auto"
@@ -32,7 +35,7 @@ export default function FooterSection() {
         <p
           className="font-['Noto_Sans_SC:Regular',sans-serif] font-normal leading-[22px] text-[14px] text-[rgba(51,65,85,0.7)] whitespace-nowrap"
         >
-          © 2026 LightVela 版权所有，由腾讯轻量云团队出品
+          {t("© 2026 LightVela 版权所有，由腾讯轻量云团队出品")}
         </p>
       </div>
     </footer>

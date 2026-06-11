@@ -2,6 +2,9 @@ import { Link, useLocation } from 'react-router-dom';
 import {
   svgPaths } from '../assets';
 import '../motion.css';
+import { useT } from '@/i18n/t';
+import { isGlobal } from '@/lib/region';
+import { LanguageSwitcher } from '@/components/site/language-switcher';
 
 function Group6() {
   return (
@@ -40,30 +43,32 @@ export function Frame4() {
 }
 
 function Component5({ onClick }: { onClick?: () => void }) {
+  const t = useT();
   return (
     <button
       type="button"
       onClick={onClick}
-      aria-label="登录"
+      aria-label={t("登录")}
       className="backdrop-blur-[8.05px] bg-[rgba(245,245,245,0.5)] hover:bg-[rgba(245,245,245,0.85)] hover:-translate-y-[1px] hover:shadow-[0_4px_12px_rgba(0,0,0,0.08)] transition-all duration-200 ease-out content-stretch flex gap-[4px] items-center px-[24px] py-[7px] relative rounded-[100px] shrink-0 cursor-pointer border-0 outline-none"
       data-name="Component 53"
     >
       <div aria-hidden className="absolute border border-[#e6e9ef] border-solid inset-0 pointer-events-none rounded-[100px]" />
-      <p className="[word-break:break-word] font-['PingFang_SC:Medium',sans-serif] leading-[22px] not-italic relative shrink-0 text-[14px] text-[rgba(0,0,0,0.9)] text-center whitespace-nowrap">登录</p>
+      <p className="[word-break:break-word] font-['PingFang_SC:Medium',sans-serif] leading-[22px] not-italic relative shrink-0 text-[14px] text-[rgba(0,0,0,0.9)] text-center whitespace-nowrap">{t("登录")}</p>
     </button>
   );
 }
 
 function Component6({ onClick }: { onClick?: () => void }) {
+  const t = useT();
   return (
     <button
       type="button"
       onClick={onClick}
-      aria-label="立即创建"
+      aria-label={t("立即创建")}
       className="bg-[#161617] hover:bg-[#000] hover:-translate-y-[1px] hover:shadow-[0_8px_20px_rgba(0,0,0,0.25)] transition-all duration-200 ease-out content-stretch flex gap-[8px] items-center justify-center px-[24px] py-[7px] relative rounded-[38px] shrink-0 cursor-pointer border-0 outline-none"
       data-name="Component 53"
     >
-      <p className="[word-break:break-word] font-['PingFang_SC:Medium',sans-serif] leading-[22px] not-italic relative shrink-0 text-[14px] text-center text-white whitespace-nowrap">立即创建</p>
+      <p className="[word-break:break-word] font-['PingFang_SC:Medium',sans-serif] leading-[22px] not-italic relative shrink-0 text-[14px] text-center text-white whitespace-nowrap">{t("立即创建")}</p>
     </button>
   );
 }
@@ -73,12 +78,14 @@ function Frame5({ onLoginClick, onCreateClick }: { onLoginClick?: () => void; on
     <div className="content-stretch flex gap-[12px] items-center relative shrink-0">
       <Component5 onClick={onLoginClick} />
       <Component6 onClick={onCreateClick} />
+      {/* 语言切换器：仅国际站展示，与原站点 LandingNavbar 逻辑一致 */}
+      {isGlobal && <LanguageSwitcher />}
     </div>
   );
 }
 
 /** 顶部导航项配置（与现网 lightvela.com 保持一致）
- * 概览 → /  ·  更新日志 → /changelog  ·  产品文档 → /docs  ·  关于我们 → /about
+ * 概览 → /  ·  更新日志 → /changelog（仅国内站）  ·  产品文档 → /docs  ·  关于我们 → /about
  */
 const NAV_LINKS = [
   { label: '概览', href: '/' },
@@ -94,6 +101,7 @@ interface HeaderSectionProps {
 
 export default function HeaderSection({ onLoginClick, onCreateClick }: HeaderSectionProps = {}) {
   const location = useLocation();
+  const t = useT();
 
   return (
     <header className="w-full absolute top-0 left-0 z-20">
@@ -103,7 +111,7 @@ export default function HeaderSection({ onLoginClick, onCreateClick }: HeaderSec
         {/* 中间导航：绝对居中（仅大屏显示）
             点击跳转对应路由，hover 时轻微上抬 */}
         <nav className="hidden lg:flex gap-8 absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-          {NAV_LINKS.map((link) => {
+          {NAV_LINKS.filter((link) => !(isGlobal && link.href === '/changelog')).map((link) => {
             const active =
               link.href === '/' ? location.pathname === '/' : location.pathname.startsWith(link.href);
             return (
@@ -114,7 +122,7 @@ export default function HeaderSection({ onLoginClick, onCreateClick }: HeaderSec
                   active ? 'text-black/90 font-semibold' : 'text-[rgba(0,0,0,0.7)]'
                 }`}
               >
-                {link.label}
+                {t(link.label)}
               </Link>
             );
           })}

@@ -1,6 +1,7 @@
 import React from 'react';
 import '../motion.css';
 import { useScrollReveal } from '../useScrollReveal';
+import { useT } from '@/i18n/t';
 import {
   svgPaths, imgImage614591617,
   imgImage614591621, imgImage614591622, imgImage614591623, imgImage614591620,
@@ -47,6 +48,7 @@ const p = (n: number, base = W) => `${(n / base) * 100}%`;
 
 export default function ProcessSection() {
   const ref = useScrollReveal();
+  const t = useT();
   return (
     <section className="w-full" ref={ref as React.RefObject<HTMLElement>}>
       {/* ── 桌面端：固定高度 824px，内容居中 ── */}
@@ -122,7 +124,7 @@ export default function ProcessSection() {
                 fontSize: '32px',
                 WebkitTextStrokeWidth: '0.6px',
                 WebkitTextStrokeColor: 'rgba(255, 255, 255, 0.9)' }}
-            >探索 LightVela 流程</h2>
+            >{t("探索 LightVela 流程")}</h2>
             {/* 右下角装饰 */}
             <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 8 8" fill="none"
               style={{ position: 'absolute', right: '-16px', bottom: '-2px', transform: 'rotate(180deg)' }}>
@@ -130,26 +132,26 @@ export default function ProcessSection() {
               <rect width="4" height="8" fill="white"/>
             </svg>
           </div>
-          <p className="font-['PingFang_SC:Regular',sans-serif] text-[rgba(255,255,255,0.5)] leading-6 whitespace-nowrap" style={{ fontSize: '16px' }}>我们把 Hermes Agent 搬上云端，让你无需折腾部署，随时唤醒，对话数据永远只属于你。</p>
+          <p className="font-['PingFang_SC:Regular',sans-serif] text-[rgba(255,255,255,0.5)] leading-6 whitespace-nowrap" style={{ fontSize: '16px' }}>{t("我们把 Hermes Agent 搬上云端，让你无需折腾部署，随时唤醒，对话数据永远只属于你。")}</p>
         </div>
         {/* process-grid > steps：左侧步骤列表（绝对定位，精确对齐 Figma 坐标） */}
         {/* Step 1: badge y=233.5, title y=289.5, desc y=333.5 */}
         <article className="absolute lv-reveal lv-delay-200" style={{ left: p(280), top: p(233.5, H), zIndex: 10 }}>
           <StepBadge label="Step 1" width={90} />
-          <h3 className="lw-font-hyruiyisong text-white" style={{ marginTop: '24px', fontSize: 24, lineHeight: '32px', whiteSpace: 'nowrap', width: 256 }}>点击「立即创建」</h3>
-          <p className="font-['PingFang_SC:Regular',sans-serif]" style={{ marginTop: '12px', fontSize: 14, lineHeight: '24px', color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>选择订阅，点一下按钮，就这样</p>
+          <h3 className="lw-font-hyruiyisong text-white" style={{ marginTop: '24px', fontSize: 24, lineHeight: '32px', whiteSpace: 'nowrap', width: 256 }}>{t("点击「立即创建」")}</h3>
+          <p className="font-['PingFang_SC:Regular',sans-serif]" style={{ marginTop: '12px', fontSize: 14, lineHeight: '24px', color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{t("选择订阅，点一下按钮，就这样")}</p>
         </article>
         {/* Step 2: badge y=432.5, title y=489, desc y=532.5 */}
         <article className="absolute lv-reveal lv-delay-400" style={{ left: p(280), top: p(432.5, H), zIndex: 10 }}>
           <StepBadge label="Step 2" width={87} />
-          <h3 className="lw-font-hyruiyisong text-white" style={{ marginTop: '24px', fontSize: 24, lineHeight: '32px', whiteSpace: 'nowrap', width: 256 }}>系统自动帮你创建</h3>
-          <p className="font-['PingFang_SC:Regular',sans-serif]" style={{ marginTop: '12px', fontSize: 14, lineHeight: '24px', color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>喝口水的功夫，云端 Agent 即创建完成。</p>
+          <h3 className="lw-font-hyruiyisong text-white" style={{ marginTop: '24px', fontSize: 24, lineHeight: '32px', whiteSpace: 'nowrap', width: 256 }}>{t("系统自动帮你创建")}</h3>
+          <p className="font-['PingFang_SC:Regular',sans-serif]" style={{ marginTop: '12px', fontSize: 14, lineHeight: '24px', color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{t("喝口水的功夫，云端 Agent 即创建完成。")}</p>
         </article>
         {/* Step 3: badge y=611.5, title y=667.5, desc y=713.5 */}
         <article className="absolute lv-reveal lv-delay-600" style={{ left: p(280), top: p(611.5, H), zIndex: 10 }}>
           <StepBadge label="Step 3" width={90} />
-          <h3 className="lw-font-hyruiyisong text-white" style={{ marginTop: '24px', fontSize: 24, lineHeight: '32px', whiteSpace: 'nowrap', width: 256 }}>和智能伙伴开始对话</h3>
-          <p className="font-['PingFang_SC:Regular',sans-serif]" style={{ marginTop: '12px', fontSize: 14, lineHeight: '24px', color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>创建完成后，绑定聊天通道，即刻开始探索之旅</p>
+          <h3 className="lw-font-hyruiyisong text-white" style={{ marginTop: '24px', fontSize: 24, lineHeight: '32px', whiteSpace: 'nowrap', width: 256 }}>{t("和智能伙伴开始对话")}</h3>
+          <p className="font-['PingFang_SC:Regular',sans-serif]" style={{ marginTop: '12px', fontSize: 14, lineHeight: '24px', color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap' }}>{t("创建完成后，绑定聊天通道，即刻开始探索之旅")}</p>
         </article>
         {/* 渐变虚线（Figma Vector7806/7807/7808）—— x=406.5 起，y=249/448/627 */}
         <div className="absolute" style={{ left: p(406.5), top: p(249, H), width: p(771.5) }}>
@@ -215,8 +217,8 @@ export default function ProcessSection() {
       >
         {/* 标题 */}
         <div className="text-center flex flex-col gap-4 lv-reveal">
-          <h2 className="lw-font-hyruiyisong text-white text-[24px] leading-[36px]">探索 LightVela 流程</h2>
-          <p className="font-['PingFang_SC:Regular',sans-serif] text-[rgba(255,255,255,0.5)] text-[14px] leading-6">我们把 Hermes Agent 搬上云端，让你无需折腾部署，随时唤醒，对话数据永远只属于你。</p>
+          <h2 className="lw-font-hyruiyisong text-white text-[24px] leading-[36px]">{t("探索 LightVela 流程")}</h2>
+          <p className="font-['PingFang_SC:Regular',sans-serif] text-[rgba(255,255,255,0.5)] text-[14px] leading-6">{t("我们把 Hermes Agent 搬上云端，让你无需折腾部署，随时唤醒，对话数据永远只属于你。")}</p>
         </div>
         {/* 步骤 */}
         <div className="flex flex-col gap-8 lv-reveal lv-delay-200">
@@ -227,8 +229,8 @@ export default function ProcessSection() {
           ].map(({ step, title, desc }) => (
             <article key={step} className="flex flex-col gap-2">
               <StepBadge label={step} />
-              <p className="lw-font-hyruiyisong text-white text-[20px] leading-[30px] mt-1">{title}</p>
-              <p className="font-['PingFang_SC:Regular',sans-serif] text-[rgba(255,255,255,0.7)] text-[13px] leading-6">{desc}</p>
+              <p className="lw-font-hyruiyisong text-white text-[20px] leading-[30px] mt-1">{t(title)}</p>
+              <p className="font-['PingFang_SC:Regular',sans-serif] text-[rgba(255,255,255,0.7)] text-[13px] leading-6">{t(desc)}</p>
             </article>
           ))}
         </div>

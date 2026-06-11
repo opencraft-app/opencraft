@@ -17,10 +17,12 @@ import { Link } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { CN_PRIVACY_POLICY_URL } from "@/constants/legal";
 import { isGlobal } from "@/lib/region";
+import { useT } from "@/i18n/t";
 
 const linkClassName = "transition-colors hover:text-black";
 
 export function LandingCtaFooterLinks() {
+  const t = useT();
   const triggerRef = useRef<HTMLSpanElement>(null);
   const [showQR, setShowQR] = useState(false);
   const [anchor, setAnchor] = useState<{ left: number; top: number } | null>(null);
@@ -50,7 +52,7 @@ export function LandingCtaFooterLinks() {
     >
       {isGlobal ? (
         <Link to="/privacy-policy" className={linkClassName}>
-          隐私政策
+          {t("隐私政策")}
         </Link>
       ) : (
         <a
@@ -59,7 +61,7 @@ export function LandingCtaFooterLinks() {
           rel="noopener noreferrer"
           className={linkClassName}
         >
-          隐私政策
+          {t("隐私政策")}
         </a>
       )}
       <span aria-hidden="true">·</span>
@@ -69,8 +71,16 @@ export function LandingCtaFooterLinks() {
         rel="noopener noreferrer"
         className={linkClassName}
       >
-        服务条款
+        {t("服务条款")}
       </a>
+      {isGlobal && (
+        <>
+          <span aria-hidden="true">·</span>
+          <Link to="/open-source-licenses" className={linkClassName}>
+            {t("开源声明")}
+          </Link>
+        </>
+      )}
       <span aria-hidden="true">·</span>
       <span
         ref={triggerRef}
@@ -81,7 +91,7 @@ export function LandingCtaFooterLinks() {
         }}
         onMouseLeave={() => setShowQR(false)}
       >
-        加入用户交流群
+        {t("加入用户交流群")}
       </span>
       {createPortal(
         <AnimatePresence>
@@ -106,12 +116,12 @@ export function LandingCtaFooterLinks() {
                     ? "/assets/landing/about/International-Discord.png"
                     : "/assets/landing/about/community-qr.png"
                 }
-                alt="加入交流群二维码"
+                alt={t("加入交流群二维码")}
                 className="rounded-lg"
                 style={{ width: "168px", height: "168px" }}
               />
               <span className="whitespace-nowrap text-[11px] tracking-wider text-black/50">
-                {isGlobal ? "扫码加入 Discord 交流群" : "扫码加入交流群"}
+                {isGlobal ? t("扫码加入 Discord 交流群") : t("扫码加入交流群")}
               </span>
             </motion.div>
           )}

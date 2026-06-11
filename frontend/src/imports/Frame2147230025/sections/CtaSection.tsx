@@ -4,13 +4,15 @@ import {
 import '../motion.css';
 import { useScrollReveal } from '../useScrollReveal';
 import { LandingCtaFooterLinks } from '@/components/site/landing-cta-footer-links';
+import { useT } from '@/i18n/t';
 
 function CreateButton({ onClick }: { onClick?: () => void }) {
+  const t = useT();
   return (
     <button
       type="button"
       onClick={onClick}
-      aria-label="立即创建"
+      aria-label={t("立即创建")}
       className="relative flex items-center justify-center cursor-pointer shrink-0 lv-btn-arrow lv-btn-cta border-0 outline-none"
       style={{
         minWidth: '200px',
@@ -30,7 +32,7 @@ function CreateButton({ onClick }: { onClick?: () => void }) {
           color: '#fff',
           whiteSpace: 'nowrap' }}
       >
-        立即创建
+        {t("立即创建")}
       </span>
       <svg
         width="36"
@@ -57,8 +59,8 @@ interface MascotGroupProps {
 function MascotGroup({ offsetX, offsetY }: MascotGroupProps) {
   return (
     <div
-      className="absolute pointer-events-none"
-      style={{ right: -70, top: -50, width: 126, height: 118 }}
+      className="relative pointer-events-none shrink-0"
+      style={{ width: 126, height: 118, marginLeft: -4, marginTop: -36 }}
     >
       <div className="flex items-center justify-center w-full h-full">
         <div
@@ -79,22 +81,23 @@ function MascotGroup({ offsetX, offsetY }: MascotGroupProps) {
 }
 
 function TitleBlock({ offsetX, offsetY }: { offsetX: number; offsetY: number }) {
+  const t = useT();
   return (
     <div>
-      {/* 开启旅程 — 带吉祥物装饰 */}
-      <div className="relative inline-block">
-        <h2 className="text-[#1a1a1a] whitespace-nowrap" style={{ fontFamily: "'HYRuiYiSong:45J', sans-serif", fontSize: '48px', lineHeight: '64px', width: '256px', height: '64px' }}>
-          开启旅程
+      {/* 开启旅程 — 带吉祥物装饰（吉祥物在文字右侧，避免遮盖英文标题） */}
+      <div className="relative inline-flex items-center">
+        <h2 className="text-[#1a1a1a] whitespace-nowrap" style={{ fontFamily: "'HYRuiYiSong:45J', sans-serif", fontSize: '48px', lineHeight: '64px', height: '64px' }}>
+          {t("开启旅程")}
         </h2>
         <MascotGroup offsetX={offsetX} offsetY={offsetY} />
       </div>
       {/* 准备好开启 探索之旅 了吗？ */}
       <div className="text-[#1a1a1a] whitespace-nowrap" style={{ fontFamily: "'HYRuiYiSong:45J', sans-serif", fontSize: '48px', lineHeight: '64px', width: '768px', height: '64px' }}>
-        准备好开启
+        {t("准备好开启")}
         <span className="text-transparent bg-clip-text" style={{ backgroundImage: 'linear-gradient(90deg, rgb(53, 3, 255) 0%, rgb(213, 135, 255) 49.519%, rgb(255, 202, 128) 100%)' }}>
-          探索之旅
+          {t("探索之旅")}
         </span>
-        了吗？
+        {t("了吗？")}
       </div>
     </div>
   );
@@ -115,6 +118,7 @@ interface CtaSectionProps {
 
 export default function CtaSection({ onCreateClick }: CtaSectionProps = {}) {
   const ref = useScrollReveal();
+  const t = useT();
   const sectionRef = useRef<HTMLElement>(null);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
 
@@ -175,8 +179,8 @@ export default function CtaSection({ onCreateClick }: CtaSectionProps = {}) {
 
           {/* 右侧 .journey-action */}
           <div className="flex flex-col items-start lg:items-end gap-6 shrink-0 lv-reveal lv-delay-300">
-            <p className="text-[14px] font-['PingFang_SC:Regular',sans-serif] text-[#1a1a1a] leading-6 lg:text-center whitespace-nowrap" style={{ width: '246px' }}>
-              你的 AI 在云端等你，随时随地伴你同行
+            <p className="text-[14px] font-['PingFang_SC:Regular',sans-serif] text-[#1a1a1a] leading-6 lg:text-right" style={{ maxWidth: '260px' }}>
+              {t("你的 AI 在云端等你，随时随地伴你同行")}
             </p>
             <CreateButton onClick={onCreateClick} />
           </div>

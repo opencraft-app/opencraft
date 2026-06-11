@@ -1,4 +1,6 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
+import { t } from '@/i18n/t';
 import '../motion.css';
 import { useScrollReveal } from '../useScrollReveal';
 import {
@@ -84,7 +86,7 @@ function Text19() {
   return (
     <div className="absolute content-stretch flex gap-[0.907px] h-[3.025px] items-center left-[12.45px] pt-[0.605px] top-[17px] w-[15.728px]" data-name="Text">
       <Text20 />
-      <p className="[word-break:break-word] font-['PingFang_SC:Regular',sans-serif] leading-[2.42px] not-italic relative shrink-0 text-[1.815px] text-[rgba(0,0,0,0.45)] whitespace-nowrap">运行中</p>
+      <p className="[word-break:break-word] font-['PingFang_SC:Regular',sans-serif] leading-[2.42px] not-italic relative shrink-0 text-[1.815px] text-[rgba(0,0,0,0.45)] whitespace-nowrap">{t("运行中")}</p>
     </div>
   );
 }
@@ -117,7 +119,7 @@ function Text21() {
 function Text22() {
   return (
     <div className="absolute h-[3.403px] left-[10.56px] top-[29.09px] w-[31.456px]" data-name="Text">
-      <p className="[word-break:break-word] absolute font-['PingFang_SC:Regular',sans-serif] leading-[3.403px] left-0 not-italic text-[2.268px] text-[rgba(0,0,0,0.9)] top-[-0.08px] whitespace-nowrap">通道</p>
+      <p className="[word-break:break-word] absolute font-['PingFang_SC:Regular',sans-serif] leading-[3.403px] left-0 not-italic text-[2.268px] text-[rgba(0,0,0,0.9)] top-[-0.08px] whitespace-nowrap">{t("通道")}</p>
     </div>
   );
 }
@@ -165,7 +167,7 @@ function Button9() {
   return (
     <div className="absolute content-stretch flex gap-[1.512px] items-center left-[4.21px] px-[1.815px] py-[1.512px] rounded-[1.21px] top-[34.61px] w-[39.623px]" data-name="Button">
       <Text23 />
-      <p className="[word-break:break-word] font-['PingFang_SC:Regular',sans-serif] leading-[3.403px] not-italic relative shrink-0 text-[2.268px] text-[rgba(0,0,0,0.9)] whitespace-nowrap">模型</p>
+      <p className="[word-break:break-word] font-['PingFang_SC:Regular',sans-serif] leading-[3.403px] not-italic relative shrink-0 text-[2.268px] text-[rgba(0,0,0,0.9)] whitespace-nowrap">{t("模型")}</p>
     </div>
   );
 }
@@ -208,7 +210,7 @@ function Button10() {
   return (
     <div className="absolute content-stretch flex gap-[1.512px] items-center left-[4.21px] px-[1.815px] py-[1.512px] rounded-[2.42px] top-[41.65px] w-[39.623px]" data-name="Button">
       <Text24 />
-      <p className="[word-break:break-word] font-['PingFang_SC:Regular',sans-serif] leading-[3.403px] not-italic relative shrink-0 text-[2.268px] text-[rgba(0,0,0,0.9)] whitespace-nowrap">技能</p>
+      <p className="[word-break:break-word] font-['PingFang_SC:Regular',sans-serif] leading-[3.403px] not-italic relative shrink-0 text-[2.268px] text-[rgba(0,0,0,0.9)] whitespace-nowrap">{t("技能")}</p>
     </div>
   );
 }
@@ -245,7 +247,7 @@ function Button11() {
   return (
     <div className="absolute content-stretch flex gap-[1.512px] items-center left-[4.21px] px-[1.815px] py-[1.512px] rounded-[2.42px] top-[48.68px] w-[39.623px]" data-name="Button">
       <Text25 />
-      <p className="[word-break:break-word] font-['PingFang_SC:Regular',sans-serif] leading-[3.403px] not-italic relative shrink-0 text-[2.268px] text-[rgba(0,0,0,0.9)] whitespace-nowrap">人设</p>
+      <p className="[word-break:break-word] font-['PingFang_SC:Regular',sans-serif] leading-[3.403px] not-italic relative shrink-0 text-[2.268px] text-[rgba(0,0,0,0.9)] whitespace-nowrap">{t("人设")}</p>
     </div>
   );
 }
@@ -286,7 +288,7 @@ function Button12() {
   return (
     <div className="absolute content-stretch flex gap-[1.512px] items-center left-[4.21px] px-[1.815px] py-[1.512px] rounded-[2.42px] top-[55.71px] w-[39.623px]" data-name="Button">
       <Text26 />
-      <p className="[word-break:break-word] font-['PingFang_SC:Regular',sans-serif] leading-[3.403px] not-italic relative shrink-0 text-[2.268px] text-[rgba(0,0,0,0.9)] whitespace-nowrap">自动任务</p>
+      <p className="[word-break:break-word] font-['PingFang_SC:Regular',sans-serif] leading-[3.403px] not-italic relative shrink-0 text-[2.268px] text-[rgba(0,0,0,0.9)] whitespace-nowrap">{t("自动任务")}</p>
     </div>
   );
 }
@@ -324,7 +326,7 @@ function Button13() {
   return (
     <div className="absolute content-stretch flex gap-[1.512px] items-center left-[4.21px] px-[1.815px] py-[1.512px] rounded-[2.42px] top-[62.74px] w-[39.623px]" data-name="Button">
       <Text27 />
-      <p className="[word-break:break-word] font-['PingFang_SC:Regular',sans-serif] leading-[3.403px] not-italic relative shrink-0 text-[2.268px] text-[rgba(0,0,0,0.9)] whitespace-nowrap">记忆</p>
+      <p className="[word-break:break-word] font-['PingFang_SC:Regular',sans-serif] leading-[3.403px] not-italic relative shrink-0 text-[2.268px] text-[rgba(0,0,0,0.9)] whitespace-nowrap">{t("记忆")}</p>
     </div>
   );
 }
@@ -345,7 +347,7 @@ function Button14() {
   return (
     <div className="absolute bg-white content-stretch flex h-[7.108px] items-center justify-between left-[51.85px] px-[2.571px] py-[1.966px] rounded-[1.21px] top-[62.67px] w-[164.238px]" data-name="Button">
       <div aria-hidden className="absolute border-[#e5e7eb] border-[0.151px] border-solid inset-0 pointer-events-none rounded-[1.21px]" />
-      <p className="[word-break:break-word] font-['PingFang_SC:Regular',sans-serif] leading-[1.97px] not-italic relative shrink-0 text-[#333c4a] text-[1.966px] text-center whitespace-nowrap">腾讯云通用 Token Plan</p>
+      <p className="[word-break:break-word] font-['PingFang_SC:Regular',sans-serif] leading-[1.97px] not-italic relative shrink-0 text-[#333c4a] text-[1.966px] text-center whitespace-nowrap">{t("腾讯云通用 Token Plan")}</p>
       <Icon24 />
     </div>
   );
@@ -354,7 +356,7 @@ function Button14() {
 function Container8() {
   return (
     <div className="absolute contents left-[51.85px] top-[57.68px]" data-name="Container">
-      <p className="-translate-x-1/2 [word-break:break-word] absolute font-['PingFang_SC:Regular',sans-serif] leading-[3.176px] left-[59.5px] not-italic text-[1.815px] text-[rgba(0,0,0,0.7)] text-center top-[57.68px] whitespace-nowrap">Coding Plan 套餐</p>
+      <p className="-translate-x-1/2 [word-break:break-word] absolute font-['PingFang_SC:Regular',sans-serif] leading-[3.176px] left-[59.5px] not-italic text-[1.815px] text-[rgba(0,0,0,0.7)] text-center top-[57.68px] whitespace-nowrap">{t("Coding Plan 套餐")}</p>
       <Button14 />
     </div>
   );
@@ -376,7 +378,7 @@ function Button15() {
   return (
     <div className="absolute bg-white content-stretch flex h-[7.108px] items-center justify-between left-[51.85px] px-[2.571px] py-[1.966px] rounded-[1.21px] top-[78.4px] w-[164.238px]" data-name="Button">
       <div aria-hidden className="absolute border-[#e5e7eb] border-[0.151px] border-solid inset-0 pointer-events-none rounded-[1.21px]" />
-      <p className="[word-break:break-word] font-['PingFang_SC:Regular',sans-serif] leading-[1.97px] not-italic relative shrink-0 text-[#333c4a] text-[1.966px] text-center whitespace-nowrap">自动</p>
+      <p className="[word-break:break-word] font-['PingFang_SC:Regular',sans-serif] leading-[1.97px] not-italic relative shrink-0 text-[#333c4a] text-[1.966px] text-center whitespace-nowrap">{t("自动")}</p>
       <Icon25 />
     </div>
   );
@@ -385,7 +387,7 @@ function Button15() {
 function Container9() {
   return (
     <div className="absolute contents left-[51.85px] top-[73.41px]" data-name="Container">
-      <p className="-translate-x-1/2 [word-break:break-word] absolute font-['PingFang_SC:Regular',sans-serif] leading-[3.176px] left-[53.85px] not-italic text-[1.815px] text-[rgba(0,0,0,0.7)] text-center top-[73.41px] whitespace-nowrap">模型</p>
+      <p className="-translate-x-1/2 [word-break:break-word] absolute font-['PingFang_SC:Regular',sans-serif] leading-[3.176px] left-[53.85px] not-italic text-[1.815px] text-[rgba(0,0,0,0.7)] text-center top-[73.41px] whitespace-nowrap">{t("模型")}</p>
       <Button15 />
     </div>
   );
@@ -395,7 +397,7 @@ function PasswordInput1() {
   return (
     <div className="absolute bg-white h-[7.108px] left-[51.85px] rounded-[1.21px] top-[94.12px] w-[164.238px]" data-name="Password Input">
       <div className="content-stretch flex flex-col items-start justify-center overflow-clip px-[2.571px] py-[1.966px] relative rounded-[inherit] size-full">
-        <p className="[word-break:break-word] font-['PingFang_SC:Regular',sans-serif] leading-[1.97px] not-italic relative shrink-0 text-[#333c4a] text-[1.966px] text-center whitespace-nowrap">请输入 API Key</p>
+        <p className="[word-break:break-word] font-['PingFang_SC:Regular',sans-serif] leading-[1.97px] not-italic relative shrink-0 text-[#333c4a] text-[1.966px] text-center whitespace-nowrap">{t("请输入 API Key")}</p>
       </div>
       <div aria-hidden className="absolute border-[#e5e7eb] border-[0.151px] border-solid inset-0 pointer-events-none rounded-[1.21px]" />
     </div>
@@ -407,7 +409,7 @@ function Container10() {
     <div className="absolute contents left-[51.85px] top-[89.13px]" data-name="Container">
       <p className="-translate-x-1/2 [word-break:break-word] absolute font-['PingFang_SC:Regular',sans-serif] leading-[3.176px] left-[55.35px] not-italic text-[1.815px] text-[rgba(0,0,0,0.7)] text-center top-[89.13px] whitespace-nowrap">API Key</p>
       <PasswordInput1 />
-      <p className="[word-break:break-word] absolute font-['Inter:Regular','Noto_Sans_JP:Regular','Noto_Sans_SC:Regular',sans-serif] font-normal leading-[2.722px] left-[51.85px] not-italic text-[#2563eb] text-[1.815px] top-[103.65px] whitespace-nowrap">获取 API Key</p>
+      <p className="[word-break:break-word] absolute font-['Inter:Regular','Noto_Sans_JP:Regular','Noto_Sans_SC:Regular',sans-serif] font-normal leading-[2.722px] left-[51.85px] not-italic text-[#2563eb] text-[1.815px] top-[103.65px] whitespace-nowrap">{t("获取 API Key")}</p>
     </div>
   );
 }
@@ -418,7 +420,7 @@ function Button16() {
       <div aria-hidden className="absolute border-[#1f2937] border-[0.151px] border-solid inset-0 pointer-events-none rounded-[0.907px]" />
       <div className="flex flex-row items-center justify-center size-full">
         <div className="bg-clip-padding border-0 border-[transparent] border-solid content-stretch flex items-center justify-center px-[2.571px] py-[1.361px] relative size-full">
-          <p className="[word-break:break-word] font-['PingFang_SC:Medium',sans-serif] leading-[2.964px] not-italic relative shrink-0 text-[2.117px] text-center text-white tracking-[-0.0227px] whitespace-nowrap">添加为默认</p>
+          <p className="[word-break:break-word] font-['PingFang_SC:Medium',sans-serif] leading-[2.964px] not-italic relative shrink-0 text-[2.117px] text-center text-white tracking-[-0.0227px] whitespace-nowrap">{t("添加为默认")}</p>
         </div>
       </div>
     </div>
@@ -473,7 +475,7 @@ function Component7() {
   return (
     <div className="backdrop-blur-[1.217px] bg-[rgba(245,245,245,0.5)] content-stretch flex gap-[0.605px] items-center px-[3.63px] py-[1.059px] relative rounded-[15.123px] shrink-0" data-name="Component 53">
       <div aria-hidden className="absolute border-[#e6e9ef] border-[0.151px] border-solid inset-0 pointer-events-none rounded-[15.123px]" />
-      <p className="[word-break:break-word] font-['PingFang_SC:Medium',sans-serif] leading-[normal] not-italic relative shrink-0 text-[2px] text-[rgba(0,0,0,0.9)] text-center whitespace-nowrap">返回首页</p>
+      <p className="[word-break:break-word] font-['PingFang_SC:Medium',sans-serif] leading-[normal] not-italic relative shrink-0 text-[2px] text-[rgba(0,0,0,0.9)] text-center whitespace-nowrap">{t("返回首页")}</p>
     </div>
   );
 }
@@ -524,16 +526,16 @@ function Container16() {
   return (
     <div className="-translate-x-1/2 -translate-y-1/2 [word-break:break-word] absolute content-stretch flex font-['PingFang_SC:Medium',sans-serif] gap-[4.839px] h-[4.839px] items-center leading-[0] left-[calc(50%-0.07px)] not-italic text-[2px] text-[rgba(0,0,0,0.7)] top-[calc(50%-0.16px)] whitespace-nowrap" data-name="Container">
       <div className="flex flex-col justify-center relative shrink-0">
-        <p className="leading-[2px]">概览</p>
+        <p className="leading-[2px]">{t("概览")}</p>
       </div>
       <div className="flex flex-col justify-center relative shrink-0">
-        <p className="leading-[2px]">更新日志</p>
+        <p className="leading-[2px]">{t("更新日志")}</p>
       </div>
       <div className="flex flex-col justify-center relative shrink-0">
-        <p className="leading-[2px]">产品文档</p>
+        <p className="leading-[2px]">{t("产品文档")}</p>
       </div>
       <div className="flex flex-col justify-center relative shrink-0">
-        <p className="leading-[2px]">养虾博客</p>
+        <p className="leading-[2px]">{t("养虾博客")}</p>
       </div>
     </div>
   );
@@ -617,7 +619,7 @@ function Container19() {
   return (
     <div className="content-stretch flex gap-[0.907px] items-center relative shrink-0" data-name="Container">
       <Icon27 />
-      <p className="[word-break:break-word] font-['PingFang_SC:Medium',sans-serif] leading-[2.12px] not-italic relative shrink-0 text-[2.117px] text-black whitespace-nowrap">模型 Coding Plan</p>
+      <p className="[word-break:break-word] font-['PingFang_SC:Medium',sans-serif] leading-[2.12px] not-italic relative shrink-0 text-[2.117px] text-black whitespace-nowrap">{t("模型 Coding Plan")}</p>
     </div>
   );
 }
@@ -643,7 +645,7 @@ function Container21() {
   return (
     <div className="content-stretch flex gap-[0.907px] items-center relative shrink-0" data-name="Container">
       <Icon28 />
-      <p className="[word-break:break-word] font-['PingFang_SC:Light',sans-serif] leading-[2.12px] not-italic relative shrink-0 text-[2.117px] text-black whitespace-nowrap">模型 API</p>
+      <p className="[word-break:break-word] font-['PingFang_SC:Light',sans-serif] leading-[2.12px] not-italic relative shrink-0 text-[2.117px] text-black whitespace-nowrap">{t("模型 API")}</p>
     </div>
   );
 }
@@ -676,7 +678,7 @@ function Container22() {
           </svg>
         </div>
       </div>
-      <p className="[word-break:break-word] font-['PingFang_SC:Light',sans-serif] leading-[2.12px] not-italic relative shrink-0 text-[2.117px] text-black whitespace-nowrap">自定义模型</p>
+      <p className="[word-break:break-word] font-['PingFang_SC:Light',sans-serif] leading-[2.12px] not-italic relative shrink-0 text-[2.117px] text-black whitespace-nowrap">{t("自定义模型")}</p>
     </div>
   );
 }
@@ -812,7 +814,7 @@ function Container23() {
     <div className="absolute bg-white border-[#e9ecf1] border-[0.151px] border-solid h-[20.265px] left-[51.54px] overflow-clip rounded-[1.815px] top-[21.38px] w-[53.082px]" data-name="Container">
       <MaskGroup4 />
       <Icon29 />
-      <p className="[word-break:break-word] absolute font-['PingFang_SC:Medium',sans-serif] leading-[3.63px] left-[3.03px] not-italic overflow-hidden text-[1.815px] text-black text-ellipsis top-[9.52px] whitespace-nowrap">腾讯云通用 Token Plan（个人版）</p>
+      <p className="[word-break:break-word] absolute font-['PingFang_SC:Medium',sans-serif] leading-[3.63px] left-[3.03px] not-italic overflow-hidden text-[1.815px] text-black text-ellipsis top-[9.52px] whitespace-nowrap">{t("腾讯云通用 Token Plan（个人版）")}</p>
       <p className="[word-break:break-word] absolute font-['PingFang_SC:Regular',sans-serif] leading-[3.63px] left-[3.03px] not-italic overflow-hidden text-[1.815px] text-[rgba(0,0,0,0.7)] text-ellipsis top-[13.91px] whitespace-nowrap">API Key: sk-***************</p>
       <Container25 />
       <Container27 />
@@ -919,7 +921,7 @@ function Container30() {
     <div className="absolute bg-white border-[#e9ecf1] border-[0.151px] border-solid h-[20.265px] left-[106.29px] overflow-clip rounded-[1.815px] top-[21.38px] w-[53.082px]" data-name="Container">
       <MaskGroup5 />
       <Icon31 />
-      <p className="[word-break:break-word] absolute font-['PingFang_SC:Medium',sans-serif] leading-[3.63px] left-[3.02px] not-italic overflow-hidden text-[1.815px] text-black text-ellipsis top-[9.52px] whitespace-nowrap">腾讯云 Coding Plan</p>
+      <p className="[word-break:break-word] absolute font-['PingFang_SC:Medium',sans-serif] leading-[3.63px] left-[3.02px] not-italic overflow-hidden text-[1.815px] text-black text-ellipsis top-[9.52px] whitespace-nowrap">{t("腾讯云 Coding Plan")}</p>
       <p className="[word-break:break-word] absolute font-['PingFang_SC:Regular',sans-serif] leading-[3.63px] left-[3.02px] not-italic overflow-hidden text-[1.815px] text-[rgba(0,0,0,0.7)] text-ellipsis top-[13.91px] whitespace-nowrap">API Key: sk-***************</p>
       <Container32 />
       <Container34 />
@@ -1026,7 +1028,7 @@ function Container37() {
     <div className="absolute bg-white border-[#e9ecf1] border-[0.151px] border-solid h-[20.265px] left-[161.04px] overflow-clip rounded-[1.815px] top-[21.38px] w-[53.082px]" data-name="Container">
       <MaskGroup6 />
       <Icon33 />
-      <p className="[word-break:break-word] absolute font-['PingFang_SC:Medium',sans-serif] leading-[3.63px] left-[3.02px] not-italic overflow-hidden text-[1.815px] text-black text-ellipsis top-[9.52px] whitespace-nowrap">腾讯云通用 Token Plan（个人版）</p>
+      <p className="[word-break:break-word] absolute font-['PingFang_SC:Medium',sans-serif] leading-[3.63px] left-[3.02px] not-italic overflow-hidden text-[1.815px] text-black text-ellipsis top-[9.52px] whitespace-nowrap">{t("腾讯云通用 Token Plan（个人版）")}</p>
       <p className="[word-break:break-word] absolute font-['PingFang_SC:Regular',sans-serif] leading-[3.63px] left-[3.02px] not-italic overflow-hidden text-[1.815px] text-[rgba(0,0,0,0.7)] text-ellipsis top-[13.91px] whitespace-nowrap">API Key: sk-***************</p>
       <Container39 />
       <Container41 />
@@ -1100,7 +1102,7 @@ function MainContent1() {
         </div>
       </div>
       <Container11 />
-      <p className="[word-break:break-word] absolute font-['PingFang_SC:Medium',sans-serif] leading-[3.327px] left-[55.02px] not-italic text-[2.117px] text-black top-[15.03px] whitespace-nowrap">已接入模型</p>
+      <p className="[word-break:break-word] absolute font-['PingFang_SC:Medium',sans-serif] leading-[3.327px] left-[55.02px] not-italic text-[2.117px] text-black top-[15.03px] whitespace-nowrap">{t("已接入模型")}</p>
       <Component2 />
       <Container17 />
       <Container23 />
@@ -1182,7 +1184,7 @@ function Container45() {
   return (
     <div className="content-stretch flex gap-[8px] items-center relative shrink-0" data-name="Container">
       <Container46 />
-      <p className="[word-break:break-word] font-['PingFang_SC:Medium',sans-serif] leading-[24px] not-italic relative shrink-0 text-[#f8f9fb] text-[14px] whitespace-nowrap">无忧上手</p>
+      <p className="[word-break:break-word] font-['PingFang_SC:Medium',sans-serif] leading-[24px] not-italic relative shrink-0 text-[#f8f9fb] text-[14px] whitespace-nowrap">{t("无忧上手")}</p>
     </div>
   );
 }
@@ -1198,8 +1200,8 @@ function Container44() {
 function Container47() {
   return (
     <div className="[word-break:break-word] absolute content-stretch flex flex-col gap-[4px] items-start left-[40px] not-italic top-[408px] w-[384.5px]" data-name="Container">
-      <p className="lw-font-hyruiyisong leading-[48px] relative shrink-0 text-[24px] text-[rgba(0,0,0,0.9)] w-full">原版 Hermes Agent，一键即用</p>
-      <p className="font-['PingFang_SC:Regular',sans-serif] leading-[28px] relative shrink-0 text-[16px] text-[rgba(0,0,0,0.5)] w-full">无需自己部署、配置环境、折腾 API Key。我们帮你把原汁原味的 Hermes Agent 搬上云端，打开即是完整体验。</p>
+      <p className="lw-font-hyruiyisong leading-[48px] relative shrink-0 text-[24px] text-[rgba(0,0,0,0.9)] w-full">{t("原版 Hermes Agent，一键即用")}</p>
+      <p className="font-['PingFang_SC:Regular',sans-serif] leading-[28px] relative shrink-0 text-[16px] text-[rgba(0,0,0,0.5)] w-full">{t("无需自己部署、配置环境、折腾 API Key。我们帮你把原汁原味的 Hermes Agent 搬上云端，打开即是完整体验。")}</p>
     </div>
   );
 }
@@ -1494,7 +1496,7 @@ function Container58() {
           <path d={svgPaths.p6a90200} fill="var(--fill-0, #F8F9FB)" id="Subtract" />
         </svg>
       </div>
-      <p className="[word-break:break-word] font-['PingFang_SC:Medium',sans-serif] leading-[24px] not-italic relative shrink-0 text-[#f8f9fb] text-[14px] whitespace-nowrap">7×24H 在线</p>
+      <p className="[word-break:break-word] font-['PingFang_SC:Medium',sans-serif] leading-[24px] not-italic relative shrink-0 text-[#f8f9fb] text-[14px] whitespace-nowrap">{t("7×24H 在线")}</p>
     </div>
   );
 }
@@ -1510,8 +1512,8 @@ function Container57() {
 function Container59() {
   return (
     <div className="[word-break:break-word] absolute content-stretch flex flex-col gap-[4px] items-start left-[40px] not-italic top-[408px] w-[384px]" data-name="Container">
-      <p className="lw-font-hyruiyisong leading-[48px] relative shrink-0 text-[24px] text-[rgba(0,0,0,0.9)] w-full">一随时唤醒， 不消耗你的任何资源</p>
-      <p className="font-['PingFang_SC:Regular',sans-serif] leading-[28px] relative shrink-0 text-[16px] text-[rgba(0,0,0,0.5)] w-full">Hermes Agent 运行在专属云端实例上，不消耗你的本地电量和内存。无论手机端还是电脑端，随时呼唤，秒级响应</p>
+      <p className="lw-font-hyruiyisong leading-[48px] relative shrink-0 text-[24px] text-[rgba(0,0,0,0.9)] w-full">{t("一随时唤醒， 不消耗你的任何资源")}</p>
+      <p className="font-['PingFang_SC:Regular',sans-serif] leading-[28px] relative shrink-0 text-[16px] text-[rgba(0,0,0,0.5)] w-full">{t("Hermes Agent 运行在专属云端实例上，不消耗你的本地电量和内存。无论手机端还是电脑端，随时呼唤，秒级响应")}</p>
     </div>
   );
 }
@@ -1754,7 +1756,7 @@ function Container73() {
   return (
     <div className="content-stretch flex gap-[8px] items-center relative shrink-0" data-name="Container">
       <Container74 />
-      <p className="[word-break:break-word] font-['PingFang_SC:Medium',sans-serif] leading-[24px] not-italic relative shrink-0 text-[#f8f9fb] text-[14px] whitespace-nowrap">数据 100% 归属</p>
+      <p className="[word-break:break-word] font-['PingFang_SC:Medium',sans-serif] leading-[24px] not-italic relative shrink-0 text-[#f8f9fb] text-[14px] whitespace-nowrap">{t("数据 100% 归属")}</p>
     </div>
   );
 }
@@ -1770,8 +1772,8 @@ function Container72() {
 function Container77() {
   return (
     <div className="[word-break:break-word] absolute content-stretch flex flex-col gap-[4px] items-start left-[40px] not-italic top-[408px] w-[384px]" data-name="Container">
-      <p className="lw-font-hyruiyisong leading-[48px] relative shrink-0 text-[24px] text-[rgba(0,0,0,0.9)] w-full">你的对话，只存于专属空间</p>
-      <p className="font-['PingFang_SC:Regular',sans-serif] leading-[28px] relative shrink-0 text-[16px] text-[rgba(0,0,0,0.5)] w-full">你与 Hermes Agent 的所有对话记录均存储在你的专属服务器中，不共享给任何第三方，随时可管理。你说了算。</p>
+      <p className="lw-font-hyruiyisong leading-[48px] relative shrink-0 text-[24px] text-[rgba(0,0,0,0.9)] w-full">{t("你的对话，只存于专属空间")}</p>
+      <p className="font-['PingFang_SC:Regular',sans-serif] leading-[28px] relative shrink-0 text-[16px] text-[rgba(0,0,0,0.5)] w-full">{t("你与 Hermes Agent 的所有对话记录均存储在你的专属服务器中，不共享给任何第三方，随时可管理。你说了算。")}</p>
     </div>
   );
 }
@@ -1815,6 +1817,7 @@ function CardScaleWrapper({ children }: { children: React.ReactNode }) {
 }
 
 export function CardsSection() {
+  useTranslation(); // 订阅语言切换，驱动内部命令式 t() 重渲染
   const ref = useScrollReveal();
   return (
     <section className="w-full py-16" ref={ref as React.RefObject<HTMLElement>}>
@@ -1884,7 +1887,7 @@ function TagPill({ img, label, bg }: { img: string; label: string; bg: string })
       <span className="relative shrink-0 size-[28px] overflow-hidden">
         <img alt="" className="absolute inset-0 max-w-none object-bottom pointer-events-none size-full" src={img} />
       </span>
-      {label}
+      {t(label)}
     </span>
   );
 }
@@ -1921,8 +1924,8 @@ function MarqueeRow({ tags, direction }: { tags: typeof ROW1; direction: 'left' 
   return (
     <div className="overflow-hidden w-full">
       <div className={`flex gap-6 w-max ${direction === 'left' ? 'marquee-left' : 'marquee-right'}`}>
-        {items.map((t, i) => (
-          <TagPill key={i} img={t.img} label={t.label} bg={t.bg} />
+        {items.map((tag, i) => (
+          <TagPill key={i} img={tag.img} label={tag.label} bg={tag.bg} />
         ))}
       </div>
     </div>
@@ -1930,6 +1933,7 @@ function MarqueeRow({ tags, direction }: { tags: typeof ROW1; direction: 'left' 
 }
 
 export default function FeatureSection() {
+  useTranslation(); // 订阅语言切换，驱动内部命令式 t() 重渲染
   const ref = useScrollReveal();
   return (
     <section className="w-full py-16 overflow-hidden" ref={ref as React.RefObject<HTMLElement>}>

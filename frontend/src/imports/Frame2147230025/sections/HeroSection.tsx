@@ -1,6 +1,7 @@
 import { useRef, useState, useCallback } from 'react';
 import { imgHeroBgNew, imgHeroElement01, imgHeroElement02, imgHeroElement03, imgHeroAvatars } from '../assets';
 import '../motion.css';
+import { useT } from '@/i18n/t';
 
 // 设计稿基准尺寸 1894 × 1007（Figma 实际画布）
 
@@ -10,6 +11,7 @@ interface HeroSectionProps {
 }
 
 export default function HeroSection({ onCreateClick }: HeroSectionProps = {}) {
+  const t = useT();
   const sectionRef = useRef<HTMLElement>(null);
   const [spotlight, setSpotlight] = useState<{ x: number; y: number; visible: boolean }>({ x: 0, y: 0, visible: false });
   const [mouse, setMouse] = useState<{ nx: number; ny: number }>({ nx: 0, ny: 0 });
@@ -144,7 +146,7 @@ export default function HeroSection({ onCreateClick }: HeroSectionProps = {}) {
               color: 'rgba(0,0,0,0.9)',
             }}
           >
-            云端托管 Hermes Agent，越聊越懂你的智能伙伴
+            {t("云端托管 Hermes Agent，越聊越懂你的智能伙伴")}
           </p>
         </div>
 
@@ -160,7 +162,7 @@ export default function HeroSection({ onCreateClick }: HeroSectionProps = {}) {
             marginBottom: '88px',
           }}
         >
-          灵感随时发生，思考自由流动
+          {t("灵感随时发生，思考自由流动")}
         </p>
 
         {/* 按钮已移至独立 z-30 层 */}
@@ -175,11 +177,11 @@ export default function HeroSection({ onCreateClick }: HeroSectionProps = {}) {
           fontSize: 'clamp(28px, 4vw, 64px)',
           lineHeight: 1.375,
           marginBottom: '88px',
-        }}>灵感随时发生，思考自由流动</div>
+        }}>{t("灵感随时发生，思考自由流动")}</div>
         <button
           type="button"
           onClick={onCreateClick}
-          aria-label="立即创建"
+          aria-label={t("立即创建")}
           className="pointer-events-auto relative flex items-center justify-center cursor-pointer lv-load-reveal lv-load-d400 lv-btn-arrow lv-btn-cta border-0 outline-none"
           style={{
             minWidth: '200px',
@@ -201,7 +203,7 @@ export default function HeroSection({ onCreateClick }: HeroSectionProps = {}) {
               whiteSpace: 'nowrap',
             }}
           >
-            立即创建
+            {t("立即创建")}
           </span>
           <svg
             width="36"
