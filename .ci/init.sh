@@ -782,7 +782,7 @@ ci_load_registry_password() {
       password_var="${TCR_KR1_PASSWORD:-${TCR_BEIJING_PASSWORD:-}}"
       password_file="$kr1_file"
       ;;
-    shprod)
+    shprod|shanghai-workers)
       password_var="${TCR_SHPROD_PASSWORD:-}"
       password_file="$shprod_file"
       ;;
@@ -872,7 +872,7 @@ ci_set_registry_credentials() {
           source="env:TCR_BEIJING_PASSWORD"
         fi
         ;;
-      shprod)
+      shprod|shanghai-workers)
         if [[ -r "$shprod_file" ]]; then
           source="file:$shprod_file"
         else

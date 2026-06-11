@@ -1043,6 +1043,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
             "beijing-sandbox-2": "TCR_BEIJING_PASSWORD",
             "sandbox-kr-1": "TCR_KR1_PASSWORD",
             "shprod": "TCR_SHPROD_PASSWORD",
+            "shanghai-workers": "TCR_SHPROD_PASSWORD",
             "sgprod": "TCR_SGPROD_PASSWORD",
             "devcloud-dep": "CSIGHUB_PASSWORD",
         }
