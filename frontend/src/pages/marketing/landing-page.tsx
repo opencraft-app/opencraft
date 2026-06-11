@@ -10,6 +10,7 @@ import { LoginModal, InviteCodeModal } from "@/components/site/login-modal";
 import { useSession } from "@/contexts/session-context";
 import { useOpenClaw } from "@/contexts/openclaw-context";
 import { oauthErrorMessage } from "@/lib/oauth";
+import { AGENTS_HOME_PATH, getAgentCreatingPath } from "@/router/paths";
 
 import HeaderSection from "@/imports/Frame2147230025/sections/HeaderSection";
 import HeroSection from "@/imports/Frame2147230025/sections/HeroSection";
@@ -74,7 +75,7 @@ export const LandingPage = () => {
       return;
     }
     if (isSubscribed) {
-      navigate(hasBots ? "/dashboard/settings" : "/dashboard/settings?creating=true");
+      navigate(hasBots ? AGENTS_HOME_PATH : getAgentCreatingPath(true));
     } else {
       navigate("/subscribe");
     }
@@ -99,7 +100,7 @@ export const LandingPage = () => {
         initialError={loginErrorMessage}
         onSuccess={() => {
           if (isSubscribed) {
-            navigate(hasBots ? "/dashboard/settings" : "/dashboard/settings?creating=true");
+            navigate(hasBots ? AGENTS_HOME_PATH : getAgentCreatingPath(true));
           } else {
             navigate("/subscribe");
           }

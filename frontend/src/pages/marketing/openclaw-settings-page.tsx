@@ -42,7 +42,7 @@ import {
 import { QRCodeSVG } from "qrcode.react";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
@@ -60,6 +60,12 @@ import { useSession } from "@/contexts/session-context";
 import { avatarImageUrl } from "@/lib/avatar-image";
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
 import { readStoredAuthToken } from "@/repositories/http-repositories";
+import {
+  AGENTS_HOME_PATH,
+  AGENT_SECTION_PATH_BY_ID,
+  getAgentSectionFromSlug,
+  type AgentSectionId,
+} from "@/router/paths";
 import {
   ModelPanel,
   ChannelPanel,
@@ -368,11 +374,14 @@ const SettingsNavbar = () => {
   );
 };
 
-/* ─── 实例配置子页面类型（通道 / 模型 / 技能 / 人设 / 自动任务 / 记忆 / 成就 / 对话，放在单个 bot 内部切换） ─── */
-
-type SettingsSectionId = "channel" | "model" | "skill" | "buddy" | "automations" | "memory" | "achievement" | "chat" | "files";
-
 const SHOW_AGENTCHAT_ENTRY = true;
+const DEFAULT_AGENT_SECTION: AgentSectionId = "channel";
+
+const isAgentSectionAvailable = (section: AgentSectionId | null): section is AgentSectionId => {
+  if (!section) return false;
+  if (isGlobal && (section === "buddy" || section === "chat")) return false;
+  return true;
+};
 
 /* ─── Section Card Wrapper ─── */
 
@@ -2761,6 +2770,8 @@ const hermesModelCommands = hermesScripts.model;
 export const OpenClawSettingsPage = () => {
   const t = useT();
   const navigate = useNavigate();
+  const location = useLocation();
+  const { section: sectionSlug } = useParams<{ section?: string }>();
   const [searchParams] = useSearchParams();
   const creatingParam = searchParams.get("creating")?.trim() ?? "";
   const requestedCreatingBotId = creatingParam && creatingParam !== "true" ? creatingParam : "";
@@ -2805,8 +2816,10 @@ export const OpenClawSettingsPage = () => {
   );
 
 
-  /* 实例内部的子页面切换：通道 / 模型 / 技能 / 人设 / 成就 / 对话（通道置顶，作为默认进入项） */
-  const [activeSection, setActiveSection] = useState<SettingsSectionId>("channel");
+  /* 实例内部的子页面切换：由 /agents/<section> URL 驱动，/agents 默认进入通道。 */
+  const sectionFromPath = getAgentSectionFromSlug(sectionSlug);
+  const shouldRedirectToAgents = Boolean(sectionSlug && !isAgentSectionAvailable(sectionFromPath));
+  const activeSection = shouldRedirectToAgents ? DEFAULT_AGENT_SECTION : sectionFromPath ?? DEFAULT_AGENT_SECTION;
 
   /* Tab 切换 */
   const [activeTabId, setActiveTabId] = useState((visibleBots[0]?.id ?? requestedCreatingBotId) || "creating");
@@ -3270,13 +3283,13 @@ export const OpenClawSettingsPage = () => {
       setIsCreating(false);
       setCreationError(null);
       setActiveTabId(completedCreatingBot.id);
-      navigate("/dashboard/settings", { replace: true });
+      navigate(AGENTS_HOME_PATH, { replace: true });
       return;
     }
     if (creatingParam === "true" && !requestedCreatingBotId && !provisioningBot && !botsLoading) {
       setIsCreating(false);
       setCreationError(null);
-      navigate("/dashboard/settings", { replace: true });
+      navigate(AGENTS_HOME_PATH, { replace: true });
       return;
     }
     setIsCreating(true);
@@ -3302,7 +3315,7 @@ export const OpenClawSettingsPage = () => {
     setIsCreating(true);
     setCreationError(null);
     setActiveTabId(provisioningBot.id);
-    navigate(`/dashboard/settings?creating=${encodeURIComponent(provisioningBot.id)}`, { replace: true });
+    navigate(`${AGENTS_HOME_PATH}?creating=${encodeURIComponent(provisioningBot.id)}`, { replace: true });
   }, [creatingParam, isCreating, botsLoading, provisioningBot, navigate]);
 
   /*
@@ -3323,14 +3336,14 @@ export const OpenClawSettingsPage = () => {
         setIsCreating(false);
         setCreationError(null);
         setActiveTabId(targetBot.id);
-        navigate("/dashboard/settings", { replace: true });
+        navigate(AGENTS_HOME_PATH, { replace: true });
       }
       return;
     }
     if (!provisioningBot && bots.some((b) => b.status !== "provisioning" && b.status !== "deleting")) {
       setIsCreating(false);
       setCreationError(null);
-      navigate("/dashboard/settings", { replace: true });
+      navigate(AGENTS_HOME_PATH, { replace: true });
     }
   }, [isCreating, creationError, requestedCreatingBotId, bots, provisioningBot, navigate]);
 
@@ -3369,7 +3382,7 @@ export const OpenClawSettingsPage = () => {
           setIsCreating(false);
           setCreationError(null);
           setActiveTabId(targetBotId);
-          navigate("/dashboard/settings", { replace: true });
+          navigate(AGENTS_HOME_PATH, { replace: true });
           await refreshBots();
           return;
         }
@@ -3378,7 +3391,7 @@ export const OpenClawSettingsPage = () => {
           setIsCreating(false);
           setCreationError(null);
           setActiveTabId(targetBotId);
-          navigate("/dashboard/settings", { replace: true });
+          navigate(AGENTS_HOME_PATH, { replace: true });
           await refreshBots();
           return;
         }
@@ -3386,7 +3399,7 @@ export const OpenClawSettingsPage = () => {
         if (targetBot.status === "deleting") {
           setIsCreating(false);
           setCreationError(null);
-          navigate("/dashboard/settings", { replace: true });
+          navigate(AGENTS_HOME_PATH, { replace: true });
           await refreshBots();
           return;
         }
@@ -3395,7 +3408,7 @@ export const OpenClawSettingsPage = () => {
           setIsCreating(false);
           setCreationError(null);
           setActiveTabId(targetBotId);
-          navigate("/dashboard/settings", { replace: true });
+          navigate(AGENTS_HOME_PATH, { replace: true });
           await refreshBots();
           return;
         }
@@ -3463,7 +3476,7 @@ export const OpenClawSettingsPage = () => {
       setShowCreateConfirm(false);
       // 进入页面内 loading 状态，带上新 bot id 供轮询定位
       setIsCreating(true);
-      navigate(`/dashboard/settings?creating=${encodeURIComponent(newBot.id)}`, { replace: true });
+      navigate(`${AGENTS_HOME_PATH}?creating=${encodeURIComponent(newBot.id)}`, { replace: true });
     } catch (err) {
       const raw = err instanceof Error ? err.message : "";
       // 将后端错误映射为用户友好文案
@@ -3486,6 +3499,10 @@ export const OpenClawSettingsPage = () => {
   };
 
   const avatarUrl = activeBot ? getAvatarForBot(activeBot.id) : "";
+
+  if (shouldRedirectToAgents) {
+    return <Navigate to={{ pathname: AGENTS_HOME_PATH, search: location.search }} replace />;
+  }
 
   return (
     <div className="flex min-h-screen flex-col bg-white" style={{ color: "rgba(0,0,0,0.90)" }}>
@@ -3831,19 +3848,19 @@ export const OpenClawSettingsPage = () => {
                 runCommand: commandAdapter.runCommand,
                 getInvocationTask: commandAdapter.getInvocationTask,
               };
-              const settingsSections: { id: SettingsSectionId; label: string; icon: React.ReactNode; badge?: string }[] = [
-                { id: "channel", label: t("通道"), icon: <MessageCircle className="h-4 w-4" /> },
-                { id: "model", label: t("模型"), icon: <BrainCircuit className="h-4 w-4" /> },
-                { id: "skill", label: t("技能"), icon: <Wand2 className="h-4 w-4" /> },
+              const settingsSections: { id: AgentSectionId; label: string; icon: React.ReactNode; path: string; badge?: string }[] = [
+                { id: "channel", label: t("通道"), icon: <MessageCircle className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.channel },
+                { id: "model", label: t("模型"), icon: <BrainCircuit className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.model },
+                { id: "skill", label: t("技能"), icon: <Wand2 className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.skill },
                 ...(!isGlobal
-                  ? [{ id: "buddy" as const, label: t("人设"), icon: <UserRound className="h-4 w-4" /> }]
+                  ? [{ id: "buddy" as const, label: t("人设"), icon: <UserRound className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.buddy }]
                   : []),
-                { id: "automations", label: t("自动任务"), icon: <CalendarClock className="h-4 w-4" /> },
-                { id: "memory", label: t("记忆"), icon: <Database className="h-4 w-4" /> },
-                { id: "achievement", label: t("成就"), icon: <Trophy className="h-4 w-4" />, badge: "NEW" },
-                { id: "files", label: t("云存储"), icon: <Files className="h-4 w-4" />, badge: "NEW" },
+                { id: "automations", label: t("自动任务"), icon: <CalendarClock className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.automations },
+                { id: "memory", label: t("记忆"), icon: <Database className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.memory },
+                { id: "achievement", label: t("成就"), icon: <Trophy className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.achievement, badge: "NEW" },
+                { id: "files", label: t("云存储"), icon: <Files className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.files, badge: "NEW" },
                 ...(SHOW_AGENTCHAT_ENTRY
-                  ? [{ id: "chat" as const, label: t("对话"), icon: <MessageSquare className="h-4 w-4" /> }]
+                  ? [{ id: "chat" as const, label: t("对话"), icon: <MessageSquare className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.chat }]
                   : []),
               ];
               const isRestartDisabled = resettingAcli || isActiveBotRestarting || activeBot.status !== "running";
@@ -4063,7 +4080,7 @@ export const OpenClawSettingsPage = () => {
                           <button
                             key={section.id}
                             type="button"
-                            onClick={() => setActiveSection(section.id)}
+                            onClick={() => navigate({ pathname: section.path, search: location.search })}
                             aria-current={isActive ? "page" : undefined}
                             className={cn(
                               "lw-settings-nav-item flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 font-medium transition-colors",

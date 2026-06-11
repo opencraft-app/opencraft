@@ -716,6 +716,7 @@ func (a *SandboxAdapter) doRequest(
 		if a.apiKey != "" {
 			req.Header.Set("X-API-Key", a.apiKey)
 		}
+		applySandboxSessionAuth(ctx, req, path)
 
 		resp, reqErr := a.httpClient.Do(req)
 		duration := time.Since(start)
@@ -887,6 +888,27 @@ func validateSandboxID(sandboxID string) error {
 		return errcode.ErrSandboxInvalidParam
 	}
 	return nil
+}
+
+type sandboxSessionAuthProvider interface {
+	GetSessionAuthorization() string
+	GetSessionCookie() string
+}
+
+func applySandboxSessionAuth(ctx context.Context, req *http.Request, path string) {
+	if req == nil || !strings.Contains(path, "/tat/") {
+		return
+	}
+	provider, ok := ctx.(sandboxSessionAuthProvider)
+	if !ok {
+		return
+	}
+	if auth := strings.TrimSpace(provider.GetSessionAuthorization()); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
+	if cookie := strings.TrimSpace(provider.GetSessionCookie()); cookie != "" {
+		req.Header.Set("Cookie", cookie)
+	}
 }
 
 // tatShellPrefix 在 TAT 命令前注入环境初始化，确保 nvm/pnpm 安装的工具可用。
