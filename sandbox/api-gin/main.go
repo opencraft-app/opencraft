@@ -37,7 +37,15 @@ func main() {
 		terminals = starter
 	}
 	apiMetrics := observability.NewAPIMetrics(prometheus.NewRegistry())
-	h := &handler{svc: svc, routes: routes, commands: commands, terminals: terminals, metrics: apiMetrics}
+	h := &handler{
+		svc:              svc,
+		routes:           routes,
+		commands:         commands,
+		terminals:        terminals,
+		cloud:            cp,
+		metrics:          apiMetrics,
+		cloudPauseResume: cfg.CloudPauseResume,
+	}
 
 	r := gin.New()
 	r.Use(gin.Recovery(), gin.Logger(), apiMetrics.Middleware())

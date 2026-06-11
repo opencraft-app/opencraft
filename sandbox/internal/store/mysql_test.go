@@ -103,7 +103,7 @@ func TestMySQLStoreTemplateClassRoundTrip(t *testing.T) {
 	}
 
 	rows := sqlmock.NewRows([]string{"id", "name", "description", "workload_type", "region", "default_pool_selection_policy", "resolution_mode", "status", "import_generation", "divergence_message", "created_at", "updated_at"}).
-		AddRow(templateClass.ID, templateClass.Name, templateClass.Description, templateClass.WorkloadType, templateClass.Region, templateClass.DefaultPoolSelectionPolicy, templateClass.ResolutionMode, templateClass.Status, templateClass.ImportGeneration, templateClass.DivergenceMessage, templateClass.CreatedAt, templateClass.UpdatedAt)
+		AddRow(templateClass.ID, templateClass.Name, nil, templateClass.WorkloadType, templateClass.Region, templateClass.DefaultPoolSelectionPolicy, templateClass.ResolutionMode, templateClass.Status, templateClass.ImportGeneration, nil, templateClass.CreatedAt, templateClass.UpdatedAt)
 	mock.ExpectQuery("SELECT id, name, description, workload_type, region, default_pool_selection_policy, resolution_mode, status, import_generation, divergence_message, created_at, updated_at FROM template_classes").
 		WithArgs(templateClass.ID).
 		WillReturnRows(rows)
@@ -113,6 +113,9 @@ func TestMySQLStoreTemplateClassRoundTrip(t *testing.T) {
 	}
 	if got.ID != templateClass.ID || got.ResolutionMode != templateClass.ResolutionMode {
 		t.Fatalf("unexpected template class roundtrip: %+v", got)
+	}
+	if got.Description != "" || got.DivergenceMessage != "" {
+		t.Fatalf("expected nullable text fields to become empty strings, got description=%q divergence=%q", got.Description, got.DivergenceMessage)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("unmet sql expectations: %v", err)
@@ -149,7 +152,7 @@ func TestMySQLStoreSKURoundTrip(t *testing.T) {
 	}
 
 	rows := sqlmock.NewRows([]string{"id", "name", "description", "template_class_id", "base_image", "desired_image_id", "stable_image_id", "instance_type", "network_template_id", "security_group_rule_template_id", "autoscale_policy_id", "default_desired_capacity", "rollout_state", "rollout_cursor_pool_id", "generation", "converged_pool_count", "total_pool_count", "pools_pending_rollout", "last_rollout_started_at", "last_rollout_error", "created_at", "updated_at"}).
-		AddRow(sku.ID, sku.Name, sku.Description, sku.TemplateClassID, sku.BaseImage, sku.DesiredImageID, sku.StableImageID, sku.InstanceType, sku.NetworkTemplateID, sku.SecurityGroupRuleTemplateID, sku.AutoscalePolicyID, sku.DefaultDesiredCapacity, sku.RolloutState, sku.RolloutCursorPoolID, sku.Generation, sku.ConvergedPoolCount, sku.TotalPoolCount, sku.PoolsPendingRollout, nil, sku.LastRolloutError, sku.CreatedAt, sku.UpdatedAt)
+		AddRow(sku.ID, sku.Name, nil, sku.TemplateClassID, sku.BaseImage, sku.DesiredImageID, sku.StableImageID, sku.InstanceType, sku.NetworkTemplateID, sku.SecurityGroupRuleTemplateID, sku.AutoscalePolicyID, sku.DefaultDesiredCapacity, sku.RolloutState, sku.RolloutCursorPoolID, sku.Generation, sku.ConvergedPoolCount, sku.TotalPoolCount, sku.PoolsPendingRollout, nil, nil, sku.CreatedAt, sku.UpdatedAt)
 	mock.ExpectQuery("SELECT id, name, description, template_class_id, base_image, desired_image_id, stable_image_id").
 		WithArgs(sku.ID).
 		WillReturnRows(rows)
@@ -159,6 +162,9 @@ func TestMySQLStoreSKURoundTrip(t *testing.T) {
 	}
 	if got.ID != sku.ID || got.DesiredImageID != sku.DesiredImageID {
 		t.Fatalf("unexpected sku roundtrip: %+v", got)
+	}
+	if got.Description != "" || got.LastRolloutError != "" {
+		t.Fatalf("expected nullable text fields to become empty strings, got description=%q last_rollout_error=%q", got.Description, got.LastRolloutError)
 	}
 }
 

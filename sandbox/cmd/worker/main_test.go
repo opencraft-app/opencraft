@@ -40,6 +40,11 @@ type stubProvider struct {
 	reinstallErr   error
 	reinstallCalls int
 
+	stopErr    error
+	stopCalls  int
+	startErr   error
+	startCalls int
+
 	verifyErrs  []error
 	verifyErr   error
 	verifyCalls int
@@ -103,9 +108,27 @@ func (p *stubProvider) TerminateInstance(ctx context.Context, cloudID string) er
 	return p.nextErr()
 }
 
+func (p *stubProvider) StopInstance(ctx context.Context, cloudID string) error {
+	p.stopCalls++
+	return p.stopErr
+}
+
+func (p *stubProvider) StartInstance(ctx context.Context, cloudID string) error {
+	p.startCalls++
+	return p.startErr
+}
+
 func (p *stubProvider) VerifyInstance(ctx context.Context, address string) error {
 	p.verifyCalls++
 	return p.nextVerifyErr()
+}
+
+func (p *stubProvider) CreateInstanceSnapshot(context.Context, provider.CreateInstanceSnapshotRequest) (string, error) {
+	return "", nil
+}
+
+func (p *stubProvider) DescribeInstanceSnapshot(context.Context, string) (provider.SnapshotStatus, string, error) {
+	return "", "", nil
 }
 
 func (p *stubProvider) ProvisionCapacityBundle(ctx context.Context, req provider.CapacityBundleProvisionRequest) (core.CapacityBundle, error) {
@@ -167,8 +190,24 @@ func (p *liveProvisionOnlyProvider) TerminateInstance(context.Context, string) e
 	return errors.New("not implemented")
 }
 
+func (p *liveProvisionOnlyProvider) StopInstance(context.Context, string) error {
+	return errors.New("not implemented")
+}
+
+func (p *liveProvisionOnlyProvider) StartInstance(context.Context, string) error {
+	return errors.New("not implemented")
+}
+
 func (p *liveProvisionOnlyProvider) VerifyInstance(context.Context, string) error {
 	return errors.New("not implemented")
+}
+
+func (p *liveProvisionOnlyProvider) CreateInstanceSnapshot(context.Context, provider.CreateInstanceSnapshotRequest) (string, error) {
+	return "", errors.New("not implemented")
+}
+
+func (p *liveProvisionOnlyProvider) DescribeInstanceSnapshot(context.Context, string) (provider.SnapshotStatus, string, error) {
+	return "", "", errors.New("not implemented")
 }
 
 func (p *liveProvisionOnlyProvider) ProvisionCapacityBundle(ctx context.Context, req provider.CapacityBundleProvisionRequest) (core.CapacityBundle, error) {
