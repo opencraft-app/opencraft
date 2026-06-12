@@ -95,6 +95,20 @@ func TestBuildEnvdProcessTargetPublicUsesDirectInstanceIP(t *testing.T) {
 	}
 }
 
+func TestStartTerminalSessionParametersUseAgentUser(t *testing.T) {
+	params := startTerminalSessionParameters("ins-test")
+
+	if got := params["InstanceId"]; got != "ins-test" {
+		t.Fatalf("unexpected instance id: %v", got)
+	}
+	if got := params["Username"]; got != defaultTerminalUsername {
+		t.Fatalf("unexpected terminal username: %v", got)
+	}
+	if got := params["WorkingDirectory"]; got != defaultTerminalWorkingDirectory {
+		t.Fatalf("unexpected terminal working directory: %v", got)
+	}
+}
+
 func TestPoolSecurityGroupsReturnsTrimmedValues(t *testing.T) {
 	pool := core.Pool{
 		ID:             "pool-c0",

@@ -40,6 +40,8 @@ const (
 	maxExecTimeoutSec     = 300
 	initialPollInterval   = 500 * time.Millisecond
 	maxPollInterval       = 8 * time.Second
+
+	defaultProcessUser = "agentuser"
 )
 
 // Adapter defines sandbox lifecycle operations exposed to the business layer.
@@ -242,7 +244,7 @@ func (a *SandboxAdapter) newProcessClient(ctx context.Context, sandboxID string,
 		client,
 		baseURL,
 		connect.WithGRPCWeb(),
-		connect.WithInterceptors(&processHeaderInterceptor{sandboxID: sandboxID, user: "root", accessToken: accessToken}),
+		connect.WithInterceptors(&processHeaderInterceptor{sandboxID: sandboxID, user: defaultProcessUser, accessToken: accessToken}),
 	), nil
 }
 
