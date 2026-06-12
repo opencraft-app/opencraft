@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"go.temporal.io/api/serviceerror"
 )
 
 func findCookieByName(t *testing.T, resp *http.Response, name string) *http.Cookie {
@@ -52,10 +54,12 @@ type fakeWorkerActionBackend struct {
 	startWorkflowName string
 	startArgs         []any
 	startRun          workerActionWorkflowRun
+	startErr          error
 	queryWorkflowID   string
 	queryRunID        string
 	queryType         string
 	queryStatus       map[string]any
+	queryErr          error
 	cancelWorkflowID  string
 	cancelRunID       string
 }
@@ -65,6 +69,9 @@ func (f *fakeWorkerActionBackend) StartWorkflow(_ context.Context, taskQueue str
 	f.startWorkflowID = workflowID
 	f.startWorkflowName = workflowName
 	f.startArgs = args
+	if f.startErr != nil {
+		return workerActionWorkflowRun{}, f.startErr
+	}
 	if f.startRun.WorkflowID == "" {
 		f.startRun = workerActionWorkflowRun{WorkflowID: workflowID, RunID: "run-1"}
 	}
@@ -75,6 +82,9 @@ func (f *fakeWorkerActionBackend) QueryWorkflow(_ context.Context, workflowID st
 	f.queryWorkflowID = workflowID
 	f.queryRunID = runID
 	f.queryType = queryType
+	if f.queryErr != nil {
+		return nil, f.queryErr
+	}
 	if f.queryStatus == nil {
 		f.queryStatus = map[string]any{"Phase": "completed"}
 	}
@@ -572,7 +582,7 @@ func TestWorkerActionStartResolvesBotAndStartsRescueExportWorkflow(t *testing.T)
 	if backend.startTaskQueue != "tencent-cvm-rescue-export" || backend.startWorkflowName != workerActionWorkflowName {
 		t.Fatalf("unexpected workflow start: queue=%s workflow=%s", backend.startTaskQueue, backend.startWorkflowName)
 	}
-	if !strings.HasPrefix(backend.startWorkflowID, "worker-action-bot-1-rescue_export-") {
+	if backend.startWorkflowID != "worker-action-bot-1-rescue_export" {
 		t.Fatalf("unexpected workflow id: %s", backend.startWorkflowID)
 	}
 	if len(backend.startArgs) != 2 {
@@ -590,6 +600,74 @@ func TestWorkerActionStartResolvesBotAndStartsRescueExportWorkflow(t *testing.T)
 	}
 	if len(exportReq.RemotePaths) != 1 || exportReq.RemotePaths[0] != "/workspace" || !exportReq.SkipBackup {
 		t.Fatalf("unexpected params: %+v", exportReq)
+	}
+	if !exportReq.Execute || !exportReq.Confirmed {
+		t.Fatalf("expected real export request, got execute=%v confirmed=%v", exportReq.Execute, exportReq.Confirmed)
+	}
+}
+
+func TestWorkerActionStartReturnsConflictWhenExportAlreadyRunning(t *testing.T) {
+	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"session": map[string]any{
+				"user": map[string]any{
+					"id":               "usr_123",
+					"email":            "user@example.com",
+					"realnameVerified": true,
+				},
+			},
+		})
+	}))
+	defer auth.Close()
+	ctl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": "OK",
+			"data": map[string]any{"instance_id": "bot-1", "sandbox_id": "sbx-1", "status": "Running"},
+		})
+	}))
+	defer ctl.Close()
+	sandbox := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"sandboxID": "sbx-1", "cloudID": "ins-abc123", "region": "ap-shanghai"})
+	}))
+	defer sandbox.Close()
+
+	backend := &fakeWorkerActionBackend{startErr: serviceerror.NewWorkflowExecutionAlreadyStarted("already running", "", "run-existing")}
+	handler, err := NewHandler(Config{
+		AuthServiceURL: auth.URL,
+		Routes: []Route{
+			{Name: "ctl", Prefix: "/v1/instances", Upstream: ctl.URL, Access: AccessAuthenticated},
+			{Name: "sandbox", Prefix: "/sandboxes", Upstream: sandbox.URL, Access: AccessAuthenticated},
+		},
+		WorkerActions: WorkerActionsConfig{
+			Enabled:      true,
+			RescueExport: WorkerActionRescueExportConfig{COSUploadBucket: "bucket"},
+		},
+	}, WithWorkerActionBackend(backend))
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/worker-actions", strings.NewReader(`{
+		"bot_id":"bot-1",
+		"action":"rescue_export",
+		"params":{"remote_paths":["/workspace"]}
+	}`))
+	req.Header.Set("Authorization", "Bearer tok-123")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Error string               `json:"error"`
+		Data  workerActionResponse `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.Error != "action_already_running" || body.Data.ActionRunID != "worker-action-bot-1-rescue_export" || body.Data.RunID != "run-existing" || body.Data.Status != "already_running" {
+		t.Fatalf("unexpected conflict body: %+v", body)
 	}
 }
 
@@ -643,6 +721,101 @@ func TestWorkerActionQueryRequiresActionRunForBot(t *testing.T) {
 	}
 	if backend.queryWorkflowID != "" {
 		t.Fatalf("temporal query should not be called, got %s", backend.queryWorkflowID)
+	}
+}
+
+func TestWorkerActionCurrentResolvesBotAndQueriesStableWorkflowID(t *testing.T) {
+	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"session": map[string]any{
+				"user": map[string]any{"id": "usr_123", "email": "user@example.com"},
+			},
+		})
+	}))
+	defer auth.Close()
+	ctl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": "OK",
+			"data": map[string]any{"instance_id": "bot-1", "sandbox_id": "sbx-1", "status": "Running"},
+		})
+	}))
+	defer ctl.Close()
+	sandbox := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"sandboxID": "sbx-1", "cloudID": "ins-abc123", "region": "ap-shanghai"})
+	}))
+	defer sandbox.Close()
+
+	backend := &fakeWorkerActionBackend{queryStatus: map[string]any{
+		"Phase":      "backup",
+		"WorkflowID": "worker-action-bot-1-rescue_export",
+		"Logs":       []map[string]string{{"message": "正在创建备份镜像"}},
+	}}
+	handler, err := NewHandler(Config{
+		AuthServiceURL: auth.URL,
+		Routes: []Route{
+			{Name: "ctl", Prefix: "/v1/instances", Upstream: ctl.URL, Access: AccessAuthenticated},
+			{Name: "sandbox", Prefix: "/sandboxes", Upstream: sandbox.URL, Access: AccessAuthenticated},
+		},
+		WorkerActions: WorkerActionsConfig{Enabled: true},
+	}, WithWorkerActionBackend(backend))
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/worker-actions?bot_id=bot-1&action=rescue_export", nil)
+	req.Header.Set("Authorization", "Bearer tok-123")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if backend.queryWorkflowID != "worker-action-bot-1-rescue_export" || backend.queryRunID != "" || backend.queryType != workerActionStatusQueryName {
+		t.Fatalf("unexpected query call: %+v", backend)
+	}
+}
+
+func TestWorkerActionCurrentReturnsNotFoundWhenNoWorkflowExists(t *testing.T) {
+	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"session": map[string]any{
+				"user": map[string]any{"id": "usr_123", "email": "user@example.com"},
+			},
+		})
+	}))
+	defer auth.Close()
+	ctl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": "OK",
+			"data": map[string]any{"instance_id": "bot-1", "sandbox_id": "sbx-1", "status": "Running"},
+		})
+	}))
+	defer ctl.Close()
+	sandbox := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"sandboxID": "sbx-1", "cloudID": "ins-abc123", "region": "ap-shanghai"})
+	}))
+	defer sandbox.Close()
+
+	backend := &fakeWorkerActionBackend{queryErr: serviceerror.NewNotFound("workflow not found")}
+	handler, err := NewHandler(Config{
+		AuthServiceURL: auth.URL,
+		Routes: []Route{
+			{Name: "ctl", Prefix: "/v1/instances", Upstream: ctl.URL, Access: AccessAuthenticated},
+			{Name: "sandbox", Prefix: "/sandboxes", Upstream: sandbox.URL, Access: AccessAuthenticated},
+		},
+		WorkerActions: WorkerActionsConfig{Enabled: true},
+	}, WithWorkerActionBackend(backend))
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/worker-actions?bot_id=bot-1&action=rescue_export", nil)
+	req.Header.Set("Authorization", "Bearer tok-123")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 

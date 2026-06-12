@@ -597,11 +597,69 @@ describe("http repositories auth token bootstrap", () => {
           bot_id: "ins_export",
           action: "rescue_export",
           params: {
-            remote_paths: ["/home/agentuser/.openclaw/workspace"],
+            remote_paths: ["/home/agentuser/.hermes"],
           },
         }),
       }),
     );
+  });
+
+  it("queries the current rescue export worker action status", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: {
+            WorkflowID: "worker-action-ins_export-rescue_export",
+            RunID: "run-123",
+            Phase: "backup",
+            Error: "",
+            Logs: [
+              { Time: "2026-06-12T12:00:00Z", Phase: "locating", Message: "正在定位实例与云资源。", Level: "info" },
+              { Time: "2026-06-12T12:01:00Z", Phase: "backup", Message: "正在创建系统盘备份镜像。", Level: "info" },
+            ],
+          },
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    const result = await repositories.bots.getRescueExportStatus("ins_export");
+
+    expect(result).toEqual({
+      workflowId: "worker-action-ins_export-rescue_export",
+      runId: "run-123",
+      phase: "backup",
+      error: undefined,
+      dryRun: undefined,
+      logs: [
+        { time: "2026-06-12T12:00:00Z", phase: "locating", message: "正在定位实例与云资源。", level: "info" },
+        { time: "2026-06-12T12:01:00Z", phase: "backup", message: "正在创建系统盘备份镜像。", level: "info" },
+      ],
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://lightclaw.tech/api/worker-actions?bot_id=ins_export&action=rescue_export",
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
+  it("returns null when no rescue export worker action exists", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: "action_not_found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    await expect(repositories.bots.getRescueExportStatus("ins_export")).resolves.toBeNull();
   });
 
   it("destroys bots through ctl instances", async () => {

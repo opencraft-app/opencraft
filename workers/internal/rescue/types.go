@@ -31,6 +31,8 @@ type TencentConfig struct {
 }
 
 type ExportRequest struct {
+	BotID                  string
+	BotName                string
 	InstanceID             string
 	Region                 string
 	NotificationEmail      string
@@ -141,6 +143,13 @@ type ExportResult struct {
 	DryRun                bool
 }
 
+type ExportStatusLog struct {
+	Time    string `json:"time"`
+	Phase   string `json:"phase"`
+	Message string `json:"message"`
+	Level   string `json:"level,omitempty"`
+}
+
 type ExportStatus struct {
 	WorkflowID            string
 	RunID                 string
@@ -160,6 +169,7 @@ type ExportStatus struct {
 	EmailDeliverMessage   string
 	Error                 string
 	DryRun                bool
+	Logs                  []ExportStatusLog
 }
 
 type BackupInfo struct {

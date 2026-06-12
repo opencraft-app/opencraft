@@ -80,25 +80,14 @@ func notificationEmail(req ExportRequest) string {
 }
 
 func buildExportNotificationContent(req ExportRequest, downloadURL string, ttlSeconds int) (subject, html, text string) {
-	ttlLabel := formatDownloadTTLLabel(ttlSeconds)
-	subject = fmt.Sprintf("[LightVela] CVM 救援导出完成 - %s", req.InstanceID)
-	html = fmt.Sprintf(`<html><body style="font-family:sans-serif;line-height:1.5;color:#222">
-<h2>CVM 救援导出已完成</h2>
-<p>实例 <strong>%s</strong>（地域 %s）的数据已成功导出。</p>
-<p><a href="%s">点击下载导出包</a></p>
-<p style="color:#666">下载链接有效期：<strong>%s</strong>。过期后对象将从 COS 自动删除，请及时保存。</p>
-<p style="color:#999;font-size:12px">本邮件由 LightVela rescue-exporter 自动发送，请勿直接回复。</p>
-</body></html>`, req.InstanceID, displayRegion(req), downloadURL, ttlLabel)
-	text = fmt.Sprintf(`CVM 救援导出已完成
-
-实例: %s
-地域: %s
-
-下载链接（%s 内有效）:
-%s
-
-过期后 COS 对象将自动删除，请及时下载保存。`, req.InstanceID, displayRegion(req), ttlLabel, downloadURL)
-	return subject, html, text
+	data := exportSuccessEmailTemplateData{
+		AgentLabel:  exportAgentLabel(req),
+		DownloadURL: downloadURL,
+		TTLLabel:    formatDownloadTTLLabel(ttlSeconds),
+	}
+	return renderRescueTextTemplate("export_success.subject", data),
+		renderRescueHTMLTemplate("export_success.html", data),
+		renderRescueTextTemplate("export_success.txt", data)
 }
 
 func formatDownloadTTLLabel(seconds int) string {
@@ -115,11 +104,14 @@ func formatDownloadTTLLabel(seconds int) string {
 	return fmt.Sprintf("%d 秒", seconds)
 }
 
-func displayRegion(req ExportRequest) string {
-	if strings.TrimSpace(req.Region) != "" {
-		return req.Region
+func exportAgentLabel(req ExportRequest) string {
+	if value := strings.TrimSpace(req.BotName); value != "" {
+		return value
 	}
-	return "（自动探测）"
+	if value := strings.TrimSpace(req.BotID); value != "" {
+		return value
+	}
+	return "当前 Agent"
 }
 
 func deliverExportNotificationEmail(ctx context.Context, cfg TencentConfig, sesCfg SESConfig, toEmail, subject, htmlBody, textBody string, dryRun bool) (EmailNotificationResult, error) {

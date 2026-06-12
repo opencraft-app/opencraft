@@ -1,0 +1,8 @@
+Agent 工作区导出已完成
+
+Agent: {{.AgentLabel}}
+
+下载链接（{{.TTLLabel}} 内有效）:
+{{.DownloadURL}}
+
+过期后临时导出包将自动删除，请及时下载保存。

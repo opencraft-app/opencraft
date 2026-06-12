@@ -277,6 +277,22 @@ export interface WorkerActionStartResult {
   status: string;
 }
 
+export interface WorkerActionStatusLog {
+  time?: string;
+  phase?: string;
+  message: string;
+  level?: string;
+}
+
+export interface WorkerActionStatusResult {
+  workflowId?: string;
+  runId?: string;
+  phase: string;
+  error?: string;
+  dryRun?: boolean;
+  logs: WorkerActionStatusLog[];
+}
+
 export interface BotRepository {
   getDashboardSnapshot(mode?: DataMode): Promise<DashboardSnapshot>;
   createBot(input?: { name?: string; soulTemplateId?: string }): Promise<Bot>;
@@ -299,6 +315,7 @@ export interface BotRepository {
   listSoulTemplates(): Promise<SoulTemplate[]>;
   execDebugCommand(botId: string, command: string): Promise<{ status: string; exitCode: number; output: string }>;
   startRescueExport(botId: string): Promise<WorkerActionStartResult>;
+  getRescueExportStatus(botId: string): Promise<WorkerActionStatusResult | null>;
   /**
    * 重置实例配置（轮换 API Key）。
    *

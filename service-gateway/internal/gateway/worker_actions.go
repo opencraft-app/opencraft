@@ -16,6 +16,8 @@ import (
 	"strings"
 	"time"
 
+	enumspb "go.temporal.io/api/enums/v1"
+	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/sdk/client"
 	sdklog "go.temporal.io/sdk/log"
 )
@@ -93,6 +95,8 @@ type sandboxDetail struct {
 }
 
 type rescueExportStartRequest struct {
+	BotID                  string
+	BotName                string
 	InstanceID             string
 	Region                 string
 	RegionCandidates       []string
@@ -256,6 +260,8 @@ func (h *Handler) serveWorkerActionRoute(start time.Time, w http.ResponseWriter,
 	switch {
 	case r.Method == http.MethodPost && route.actionRunID == "" && !route.cancel:
 		h.workerActions.handleStart(rec, r, session)
+	case r.Method == http.MethodGet && route.actionRunID == "" && !route.cancel:
+		h.workerActions.handleCurrent(rec, r, session)
 	case r.Method == http.MethodGet && route.actionRunID != "" && !route.cancel:
 		h.workerActions.handleQuery(rec, r, session, route.actionRunID)
 	case r.Method == http.MethodPost && route.actionRunID != "" && route.cancel:
@@ -333,6 +339,20 @@ func (s *workerActionService) handleStart(w http.ResponseWriter, r *http.Request
 	workflowID := buildWorkerActionWorkflowID(botID, action)
 	run, err := s.backend.StartWorkflow(r.Context(), s.cfg.Temporal.TaskQueue, workflowID, workerActionWorkflowName, startReq, rescueTencentConfig{RegionCandidates: startReq.RegionCandidates})
 	if err != nil {
+		if started, ok := workflowAlreadyStartedRun(err); ok {
+			writeJSONAny(w, http.StatusConflict, map[string]any{
+				"error": "action_already_running",
+				"data": workerActionResponse{
+					ActionRunID: workflowID,
+					WorkflowID:  workflowID,
+					RunID:       started.RunID,
+					Action:      action,
+					BotID:       botID,
+					Status:      "already_running",
+				},
+			})
+			return
+		}
 		slog.Warn("worker action start workflow failed",
 			"action", action,
 			"bot_id", botID,
@@ -352,6 +372,37 @@ func (s *workerActionService) handleStart(w http.ResponseWriter, r *http.Request
 		BotID:       botID,
 		Status:      "accepted",
 	}})
+}
+
+func (s *workerActionService) handleCurrent(w http.ResponseWriter, r *http.Request, session *sessionEnvelope) {
+	botID := strings.TrimSpace(r.URL.Query().Get("bot_id"))
+	if botID == "" {
+		writeJSONAny(w, http.StatusBadRequest, map[string]string{"error": "bot_id_required"})
+		return
+	}
+	action := strings.TrimSpace(r.URL.Query().Get("action"))
+	if action == "" {
+		action = workerActionRescueExport
+	}
+	if action != workerActionRescueExport {
+		writeJSONAny(w, http.StatusBadRequest, map[string]string{"error": "unsupported_action"})
+		return
+	}
+	if _, err := s.resolveBotTarget(r.Context(), session, botID); err != nil {
+		writeWorkerActionUpstreamError(w, err)
+		return
+	}
+	workflowID := buildWorkerActionWorkflowID(botID, action)
+	status, err := s.backend.QueryWorkflow(r.Context(), workflowID, "", workerActionStatusQueryName)
+	if err != nil {
+		if workflowNotFound(err) {
+			writeJSONAny(w, http.StatusNotFound, map[string]string{"error": "action_not_found"})
+			return
+		}
+		writeJSONAny(w, http.StatusBadGateway, map[string]string{"error": "query_workflow_failed"})
+		return
+	}
+	writeJSONAny(w, http.StatusOK, map[string]any{"data": status})
 }
 
 func (s *workerActionService) handleQuery(w http.ResponseWriter, r *http.Request, session *sessionEnvelope, actionRunID string) {
@@ -479,6 +530,7 @@ func (s *workerActionService) buildRescueExportRequest(raw json.RawMessage, targ
 		return rescueExportStartRequest{}, errors.New("cos_upload_bucket_not_configured")
 	}
 	return rescueExportStartRequest{
+		BotID:                  target.BotID,
 		InstanceID:             target.CloudID,
 		Region:                 target.Region,
 		RegionCandidates:       s.cfg.RescueExport.RegionCandidates,
@@ -523,7 +575,7 @@ func normalizeWorkerActionRemotePaths(paths []string) []string {
 }
 
 func buildWorkerActionWorkflowID(botID string, action string) string {
-	return fmt.Sprintf("worker-action-%s-%s-%d", safeWorkerActionIDPart(botID), safeWorkerActionIDPart(action), time.Now().UnixNano())
+	return fmt.Sprintf("worker-action-%s-%s", safeWorkerActionIDPart(botID), safeWorkerActionIDPart(action))
 }
 
 func workerActionRunBelongsToBot(actionRunID string, botID string) bool {
@@ -561,6 +613,19 @@ func writeWorkerActionUpstreamError(w http.ResponseWriter, err error) {
 	writeJSONAny(w, http.StatusBadGateway, map[string]string{"error": "worker_action_upstream_failed"})
 }
 
+func workflowAlreadyStartedRun(err error) (workerActionWorkflowRun, bool) {
+	var alreadyStarted *serviceerror.WorkflowExecutionAlreadyStarted
+	if !errors.As(err, &alreadyStarted) {
+		return workerActionWorkflowRun{}, false
+	}
+	return workerActionWorkflowRun{RunID: alreadyStarted.RunId}, true
+}
+
+func workflowNotFound(err error) bool {
+	var notFound *serviceerror.NotFound
+	return errors.As(err, &notFound)
+}
+
 func writeJSONAny(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -574,8 +639,11 @@ func (b temporalWorkerActionBackend) StartWorkflow(ctx context.Context, taskQueu
 	}
 	defer tc.Close()
 	run, err := tc.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
-		ID:        workflowID,
-		TaskQueue: strings.TrimSpace(taskQueue),
+		ID:                                       workflowID,
+		TaskQueue:                                strings.TrimSpace(taskQueue),
+		WorkflowIDConflictPolicy:                 enumspb.WORKFLOW_ID_CONFLICT_POLICY_FAIL,
+		WorkflowIDReusePolicy:                    enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE,
+		WorkflowExecutionErrorWhenAlreadyStarted: true,
 	}, workflowName, args...)
 	if err != nil {
 		return workerActionWorkflowRun{}, err
