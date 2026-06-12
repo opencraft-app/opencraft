@@ -119,6 +119,32 @@ func TestValidatedReturnToURLWithConfiguredHTTPOrigin(t *testing.T) {
 	}
 }
 
+func TestValidatedReturnToURLAllowsBrowserExtensionCallback(t *testing.T) {
+	t.Parallel()
+
+	allowed := "https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/lightvela?provider_type=browser_extension&extension_id=abcdefghijklmnopabcdefghijklmnop"
+	if got := validatedReturnToURL(allowed); got != allowed {
+		t.Fatalf("expected chromium extension return_to to be allowed, got %q", got)
+	}
+
+	rejected := []string{
+		"https://chromiumapp.org/lightvela",
+		"https://foo.bar.chromiumapp.org/lightvela",
+		"https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/other",
+		"http://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/lightvela",
+		"https://abc123.chromiumapp.org/lightvela",
+	}
+	for _, raw := range rejected {
+		raw := raw
+		t.Run(raw, func(t *testing.T) {
+			t.Parallel()
+			if got := validatedReturnToURL(raw); got != "" {
+				t.Fatalf("expected chromium extension return_to to be rejected, got %q", got)
+			}
+		})
+	}
+}
+
 func TestAppendSessionTokenToReturnTo(t *testing.T) {
 	t.Parallel()
 
