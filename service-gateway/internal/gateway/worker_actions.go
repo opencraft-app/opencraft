@@ -333,6 +333,14 @@ func (s *workerActionService) handleStart(w http.ResponseWriter, r *http.Request
 	workflowID := buildWorkerActionWorkflowID(botID, action)
 	run, err := s.backend.StartWorkflow(r.Context(), s.cfg.Temporal.TaskQueue, workflowID, workerActionWorkflowName, startReq, rescueTencentConfig{RegionCandidates: startReq.RegionCandidates})
 	if err != nil {
+		slog.Warn("worker action start workflow failed",
+			"action", action,
+			"bot_id", botID,
+			"workflow_id", workflowID,
+			"task_queue", s.cfg.Temporal.TaskQueue,
+			"temporal_address_configured", strings.TrimSpace(s.cfg.Temporal.Address) != "",
+			"error", err,
+		)
 		writeJSONAny(w, http.StatusBadGateway, map[string]string{"error": "start_workflow_failed"})
 		return
 	}

@@ -12,10 +12,10 @@ allowed_origins:
 worker_actions:
   enabled: true
   temporal:
-    address: ""
+    address: temporal.lightvela.com:443
     namespace: default
     tls: true
-    server_name: ""
+    server_name: temporal.lightvela.com
     token_env: TEMPORAL_BEARER_TOKEN
     task_queue: tencent-cvm-rescue-export
     timeout: 10s
