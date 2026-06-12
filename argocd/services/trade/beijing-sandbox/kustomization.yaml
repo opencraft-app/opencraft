@@ -1,13 +1,22 @@
-# trade 北京 sandbox deploy-facing 环境特化（迭代 9B）
+# trade 北京 2 预发布（beijing-sandbox）deploy-facing 环境特化
 #
-# 与 payment/beijing-sandbox 同构:
-#   - components: ../common 注入 image / node_pool / db_host / db_port replacements
-#   - configMapGenerator: trade-platform-values 提供真值
-#   - generators (ksops): 引 ../../../secrets/beijing-sandbox/trade-runtime-secrets.sops.yaml
+# 设计目标：完全按"现网形态"接入；与上海正式（shprod）链路等价；与北京 7 测试
+# 环境（sandbox-bj-7）严格区分（去掉所有联调期测试特化）。
 #
-# 与 payment 不同:
-#   - namespace=trade（独立）
-#   - 不组合 ../profiles/sandbox（无共享 ns 删除需求）
+# 与 payment/beijing-sandbox 的范式差异：
+#   - namespace=trade（独立服务 ns；与 payment user-auth、ctl ctl 同范式）
+#   - 不组合 ../profiles/sandbox（trade ns 在 beijing-sandbox 集群尚不存在，
+#     由 ApplicationSet 直接创建，无共享 ns 删除需求）
+#   - 多一个 patch-account-binding.yaml：注入 ACCOUNT_BINDING_INTERNAL_BASE_URL
+#     到 trade-config（base 未声明该键，trade 通过 envFrom 读，必须 patch）
+#
+# 与 sandbox-bj-7 的范式差异（v1.7.31 北京 2 预发布接入；用户 2026-06-12 拍板）：
+#   - 不带 trade-migration-job.yaml（外部托管 cynosdb 不接 migration job 纪律）
+#   - 不带 trade-nodeport.yaml（北京 2 预发布暂不开 jifei 反向回调直连入口）
+#   - 不带 delete-shared-namespace / delete-shared-serviceaccount patches
+#     （ns 不冲突）
+#   - 不带 patch-playground-db.yaml（DB 名 trade 不带后缀 + 跨 svc URL 走 base
+#     默认；只单独 patch ACCOUNT_BINDING_INTERNAL_BASE_URL）
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: trade
@@ -19,3 +28,5 @@ configMapGenerator:
   - name: trade-platform-values
     envs:
       - trade-platform.env
+patches:
+  - path: patch-account-binding.yaml

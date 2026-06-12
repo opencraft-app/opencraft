@@ -1,0 +1,25 @@
+# trade beijing-sandbox：注入 ACCOUNT_BINDING_INTERNAL_BASE_URL 到 trade-config
+#
+# trade base ConfigMap（trade/k8s/base/manifests.yaml）声明了 CTL_INTERNAL_BASE_URL
+# 与 SHADOW_INTERNAL_BASE_URL 默认值（指向北京 2 预发布同名 ns 的 ctl-api / shadow
+# Service，与现网拓扑一致），但**没有声明 ACCOUNT_BINDING_INTERNAL_BASE_URL**——
+# trade 启动时通过 strings.TrimSpace(os.Getenv("ACCOUNT_BINDING_INTERNAL_BASE_URL"))
+# 读这个值（trade/internal/config/config.go），用于 PlaceOrder*/Quote* 链路里
+# 通过 lightclaw-auth 的 /internal/shadow/binding 反查 externalUserId → uin/appId。
+#
+# 北京 2 预发布拓扑：lightclaw-auth Pod 起在 user-auth ns（与 payment 同 ns），
+# Service 名为 lightclaw-auth（ClusterIP，80/TCP；与 sandbox-bj-7
+# patch-playground-db.yaml 同款，但 ns 是 user-auth 不是 lightvela-playground-...）。
+#
+# 设计参考：
+#   - trade/internal/config/config.go::Load()::AccountBindingInternalBaseURL
+#   - argocd/services/trade/sandbox-bj-7/patch-playground-db.yaml（联调期同字段不同 ns 的对照样本）
+#   - 北京 2 预发布 lightclaw-auth Service 真值：
+#       kubectl --kubeconfig=/data/lightvela-bj-cls-config -n user-auth get svc lightclaw-auth
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trade-config
+  namespace: trade
+data:
+  ACCOUNT_BINDING_INTERNAL_BASE_URL: http://lightclaw-auth.user-auth.svc.cluster.local
