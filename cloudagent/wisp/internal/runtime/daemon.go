@@ -121,6 +121,21 @@ func (d *Daemon) logf(format string, args ...any) {
 	fmt.Printf("[wisp/daemon] "+format+"\n", args...)
 }
 
+func (d *Daemon) logBackendConfig(stage, name string, cfg config.Config) {
+	d.logf("%s name=%s remote_backend=%s cos_enabled=%t smh_enabled=%t smh_library_id=%s smh_space_id=%s jfs_prefix=%s cos_workspace=%s jfs_root=%s",
+		stage,
+		name,
+		normalizeRemoteBackend(cfg.RemoteBackend),
+		cfg.COSEnabled,
+		cfg.SMHEnabled,
+		strings.TrimSpace(cfg.SMHLibraryID),
+		strings.TrimSpace(cfg.SMHSpaceID),
+		strings.TrimSpace(cfg.JFSPrefix),
+		strings.TrimSpace(cfg.COSWorkspace),
+		strings.TrimSpace(cfg.JFSRoot),
+	)
+}
+
 func (d *Daemon) logRequestStart(action, name string) time.Time {
 	started := time.Now()
 	if strings.TrimSpace(name) == "" {
@@ -386,6 +401,7 @@ func (d *Daemon) handleAdminCreate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
+	d.logBackendConfig("admin.create.bound_config", name, baseCfg)
 	rt, err := d.runtimeForNameLocked(name)
 	if err != nil {
 		reqErr = err
@@ -486,21 +502,27 @@ func (d *Daemon) handleAdminBootstrap(w http.ResponseWriter, r *http.Request) {
 }
 
 func (d *Daemon) handleAdminStart(w http.ResponseWriter, r *http.Request) {
+	started := d.logRequestStart("admin.start", "")
+	var reqErr error
+	defer func() { d.logRequestDone("admin.start", "", started, reqErr) }()
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	rt, err := d.runtimeForRequestLocked(r)
 	if err != nil {
+		reqErr = err
 		writeError(w, err)
 		return
 	}
 	d.rt = rt
 	_ = d.closeEnvListenerLocked()
 	if err := d.ensureEnvListenerLocked(); err != nil {
+		reqErr = err
 		writeError(w, err)
 		return
 	}
 	if err := rt.Start(r.Context()); err != nil {
 		_ = d.closeEnvListenerLocked()
+		reqErr = err
 		writeError(w, err)
 		return
 	}
@@ -840,13 +862,17 @@ func (d *Daemon) bindWorkspaceBackend(ctx context.Context, req backendBindReques
 		d.backendToken[name] = token
 		d.backendMu.Unlock()
 	}
-	_, err = ensureWorkspaceBackendProvisioned(ctx, configFile, config.Config{
+	cfg, err := ensureWorkspaceBackendProvisioned(ctx, configFile, config.Config{
 		RemoteBackend:   remoteBackendSMH,
+		SMHEnabled:      true,
 		SMHLibraryID:    strings.TrimSpace(req.SMHLibraryID),
 		SMHAccessDomain: strings.TrimSpace(req.SMHAccessDomain),
 		SMHSpaceID:      strings.TrimSpace(req.SMHSpaceID),
 		SMHAccessToken:  strings.TrimSpace(req.SMHAccessToken),
 	}, name)
+	if err == nil {
+		d.logBackendConfig("wisp.backend_bind.bound_config", name, cfg)
+	}
 	return err
 }
 

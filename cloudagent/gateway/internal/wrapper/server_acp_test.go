@@ -2730,6 +2730,43 @@ func TestACPRuntimeEnsureSingleflight(t *testing.T) {
 	}
 }
 
+func TestACPRuntimeEnsureDoesNotReuseClosedRestorableRuntimeWithoutHostIdentity(t *testing.T) {
+	store, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	gateway := NewACPGateway(store, nil)
+	scope := Scope{TenantID: "tenant-live", ProjectID: "project-live"}
+	session := &acpSession{
+		SessionID:         "session_empty_committed_runtime",
+		Scope:             scope,
+		CWD:               "/workspace",
+		CreatedAt:         time.Now().UTC(),
+		UpdatedAt:         time.Now().UTC(),
+		RuntimeGeneration: 3,
+		Runtime: ACPSessionRuntime{
+			OuterRuntime:     outerRuntimeWisp,
+			RuntimeRecovery:  runtimeRecoveryReattachOrRecreate,
+			WispSMHSpaceID:   "space-empty-host",
+			DaemonAddr:       "http://127.0.0.1:41163",
+			WorkspaceVersion: defaultWorkspaceVersion,
+			AgentVersion:     defaultAgentVersion,
+		},
+	}
+	if err := store.SaveACPSession(session); err != nil {
+		t.Fatal(err)
+	}
+	original := ACPSessionRuntime{
+		OuterRuntime:     outerRuntimeWisp,
+		RuntimeRecovery:  runtimeRecoveryReattachOrRecreate,
+		WorkspaceVersion: defaultWorkspaceVersion,
+		AgentVersion:     defaultAgentVersion,
+	}
+	if runtime, ok := gateway.committedEnsuredRuntime(scope, session.SessionID, session.RuntimeGeneration, original); ok {
+		t.Fatalf("must not reuse restorable runtime without host identity: %#v", runtime)
+	}
+}
+
 func TestACPSessionStatusReportsRuntimeRestoreInFlight(t *testing.T) {
 	manager := newBlockingEnsureACPRuntimeManager()
 	gateway := NewACPGateway(nil, nil)

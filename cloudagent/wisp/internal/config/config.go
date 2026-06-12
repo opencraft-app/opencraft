@@ -1,6 +1,8 @@
 package config
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -425,7 +427,7 @@ func SetWorkspaceLayout(path string, cfg Config, name string) error {
 	updates := map[string]string{
 		"WISP_NAME":             name,
 		"REMOTE_BACKEND":        cfg.RemoteBackend,
-		"COS_WORKSPACE":         name,
+		"COS_WORKSPACE":         RemoteWorkspaceName(name),
 		"STATE_ROOT":            stateRoot,
 		"ACTIVE_ROOT":           filepath.Join(stateRoot, "active"),
 		"ACTIVE_IMG":            filepath.Join(stateRoot, "active", "root-upper.img"),
@@ -510,6 +512,41 @@ func SetWorkspaceLayout(path string, cfg Config, name string) error {
 		}
 	}
 	return nil
+}
+
+func RemoteWorkspaceName(name string) string {
+	raw := strings.ToLower(strings.TrimSpace(name))
+	var b strings.Builder
+	lastHyphen := false
+	for _, r := range raw {
+		allowed := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')
+		if allowed {
+			b.WriteRune(r)
+			lastHyphen = false
+			continue
+		}
+		if !lastHyphen {
+			b.WriteByte('-')
+			lastHyphen = true
+		}
+	}
+	out := strings.Trim(b.String(), "-")
+	if out == "" {
+		out = "wisp"
+	}
+	for len(out) < 3 {
+		out += "-x"
+	}
+	if len(out) <= 63 {
+		return out
+	}
+	sum := sha1.Sum([]byte(raw))
+	suffix := hex.EncodeToString(sum[:])[:10]
+	prefix := strings.Trim(out[:52], "-")
+	if prefix == "" {
+		prefix = "wisp"
+	}
+	return prefix + "-" + suffix
 }
 
 func SetContainerEnvValue(basePath, name, key, value string) error {

@@ -156,7 +156,13 @@ func (d *Daemon) handleWispCreate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	if err := config.SetWorkspaceLayout(configFile, baseCfg, name); err != nil {
+	layoutCfg, err := workspaceLayoutConfigForCreate(configFile, baseCfg, name)
+	if err != nil {
+		reqErr = err
+		writeError(w, err)
+		return
+	}
+	if err := config.SetWorkspaceLayout(configFile, layoutCfg, name); err != nil {
 		reqErr = err
 		writeError(w, err)
 		return
@@ -171,6 +177,7 @@ func (d *Daemon) handleWispCreate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
+	d.logBackendConfig("wisp.create.bound_config", name, baseCfg)
 	rt, err := d.runtimeForNameLocked(name)
 	if err != nil {
 		reqErr = err
@@ -221,10 +228,14 @@ func (d *Daemon) handleWispBackendBind(w http.ResponseWriter, r *http.Request) {
 
 func (d *Daemon) handleWispStart(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("wisp")
+	started := d.logRequestStart("wisp.start", name)
+	var reqErr error
+	defer func() { d.logRequestDone("wisp.start", name, started, reqErr) }()
 	unlock := d.lockWisp(name)
 	defer unlock()
 	rt, err := d.runtimeForWispLocked(name)
 	if err != nil {
+		reqErr = err
 		writeError(w, err)
 		return
 	}
@@ -233,6 +244,7 @@ func (d *Daemon) handleWispStart(w http.ResponseWriter, r *http.Request) {
 	_ = d.closeEnvListenerLocked()
 	if err := d.ensureEnvListenerLocked(); err != nil {
 		d.mu.Unlock()
+		reqErr = err
 		writeError(w, err)
 		return
 	}
@@ -241,6 +253,7 @@ func (d *Daemon) handleWispStart(w http.ResponseWriter, r *http.Request) {
 		d.mu.Lock()
 		_ = d.closeEnvListenerLocked()
 		d.mu.Unlock()
+		reqErr = err
 		writeError(w, err)
 		return
 	}
@@ -526,16 +539,20 @@ func (d *Daemon) handleWispFilesystemWrite(w http.ResponseWriter, r *http.Reques
 		writeError(w, badRequest("filesystem encoding must be utf-8 or base64", nil))
 		return
 	}
+	contentBytes := []byte(req.Content)
 	if req.Encoding == "base64" {
-		if _, err := base64.StdEncoding.DecodeString(req.Content); err != nil {
+		decoded, err := base64.StdEncoding.DecodeString(req.Content)
+		if err != nil {
 			writeError(w, badRequest("filesystem content is not valid base64", nil))
 			return
 		}
+		contentBytes = decoded
 	}
 	if err := invokeFilesystemAgent(r.Context(), rt, "write", req, nil); err != nil {
 		writeError(w, err)
 		return
 	}
+	rt.logFilesystemWriteCommitted("fs.write", req.Path, len(contentBytes), fmt.Sprintf("%x", sha256.Sum256(contentBytes)))
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "written": true, "path": req.Path})
 }
 
@@ -590,6 +607,7 @@ func (d *Daemon) handleWispFilesystemFetch(w http.ResponseWriter, r *http.Reques
 		writeError(w, &apiError{Status: http.StatusBadGateway, Code: "filesystem_fetch_write_failed", Message: msg})
 		return
 	}
+	rt.logFilesystemWriteCommitted("fs.fetch.write_raw", req.Path, len(content.Bytes), content.SHA256)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":      true,
 		"fetched": true,

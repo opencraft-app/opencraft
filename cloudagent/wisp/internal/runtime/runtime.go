@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -268,6 +269,7 @@ func (r *Runtime) Start(ctx context.Context) error {
 	startedAt := time.Now()
 	var recoveryDur, bootstrapReadyDur, mountDur, startContainerDur, cgroupDur time.Duration
 	stepStarted := time.Now()
+	r.log("start step=start pre_start_recovery container=%s", r.cfg.WispName)
 	if err := r.traceStep(ctx, "runtime.pre_start_recovery", func(ctx context.Context) error {
 		return r.preStartRecovery(ctx)
 	}); err != nil {
@@ -275,6 +277,7 @@ func (r *Runtime) Start(ctx context.Context) error {
 		return err
 	}
 	recoveryDur = time.Since(stepStarted)
+	r.log("start step=done pre_start_recovery container=%s duration=%s", r.cfg.WispName, humanDuration(recoveryDur))
 	stepStarted = time.Now()
 	r.log("start step=start require_bootstrap_ready container=%s", r.cfg.WispName)
 	if err := r.traceStep(ctx, "runtime.require_bootstrap_ready", func(context.Context) error {
@@ -286,6 +289,7 @@ func (r *Runtime) Start(ctx context.Context) error {
 	bootstrapReadyDur = time.Since(stepStarted)
 	r.log("start step=done require_bootstrap_ready container=%s duration=%s", r.cfg.WispName, humanDuration(bootstrapReadyDur))
 	stepStarted = time.Now()
+	r.log("start step=start mount container=%s active_img=%s rootfs=%s", r.cfg.WispName, r.cfg.ActiveImg, r.cfg.RootFSMount)
 	if err := r.traceStep(ctx, "runtime.mount", func(ctx context.Context) error {
 		return r.mountRuntime(ctx)
 	}); err != nil {
@@ -293,7 +297,9 @@ func (r *Runtime) Start(ctx context.Context) error {
 		return err
 	}
 	mountDur = time.Since(stepStarted)
+	r.log("start step=done mount container=%s duration=%s", r.cfg.WispName, humanDuration(mountDur))
 	stepStarted = time.Now()
+	r.log("start step=start start_container container=%s container_id=%s crun=%s", r.cfg.WispName, r.cfg.ContainerID, r.cfg.CrunBinaryPath)
 	if err := r.traceStep(ctx, "runtime.start_container", func(ctx context.Context) error {
 		return r.startContainer(ctx)
 	}); err != nil {
@@ -301,7 +307,9 @@ func (r *Runtime) Start(ctx context.Context) error {
 		return err
 	}
 	startContainerDur = time.Since(stepStarted)
+	r.log("start step=done start_container container=%s duration=%s", r.cfg.WispName, humanDuration(startContainerDur))
 	stepStarted = time.Now()
+	r.log("start step=start apply_outer_cgroup_policy container=%s", r.cfg.WispName)
 	if err := r.traceStep(ctx, "runtime.apply_outer_cgroup_policy", func(ctx context.Context) error {
 		return r.applyOuterCgroupPolicy(ctx)
 	}); err != nil {
@@ -309,6 +317,7 @@ func (r *Runtime) Start(ctx context.Context) error {
 		return err
 	}
 	cgroupDur = time.Since(stepStarted)
+	r.log("start step=done apply_outer_cgroup_policy container=%s duration=%s", r.cfg.WispName, humanDuration(cgroupDur))
 
 	r.log("Mounted rootfs at %s", r.cfg.RootFSMount)
 	if dev, _ := os.ReadFile(r.cfg.LoopDeviceFile); len(dev) > 0 {
@@ -337,11 +346,14 @@ func (r *Runtime) StopWithOptions(ctx context.Context, opts StopOptions) error {
 	ctx, span := r.startSpan(ctx, "runtime.stop")
 	defer span.End()
 	startedAt := time.Now()
-	var stopContainerDur, checkpointDur, maintenanceDur, resetDur time.Duration
+	var stopContainerDur, checkpointDur, maintenanceDur, resetDur, promoteDur time.Duration
+	var checkpoint CheckpointMetadata
+	checkpointCreated := false
 	if err := requireRoot(); err != nil {
 		recordSpanErr(span, err)
 		return err
 	}
+	r.logStopState(ctx, "before_stop_container", "")
 	stepStarted := time.Now()
 	if err := r.traceStep(ctx, "runtime.stop_container", func(ctx context.Context) error {
 		return r.stopContainer(ctx)
@@ -350,12 +362,15 @@ func (r *Runtime) StopWithOptions(ctx context.Context, opts StopOptions) error {
 		return err
 	}
 	stopContainerDur = time.Since(stepStarted)
+	r.logStopState(ctx, "after_stop_container", "")
 	stepStarted = time.Now()
 	if opts.Force {
 		r.log("runtime.stop force=true skip_checkpoint=true container=%s", r.cfg.WispName)
 	} else {
 		if err := r.traceStep(ctx, "runtime.create_stop_checkpoint", func(ctx context.Context) error {
-			_, err := r.createSystemCheckpoint(ctx, checkpointTriggerGracefulStop)
+			var err error
+			checkpoint, err = r.createSystemCheckpoint(ctx, checkpointTriggerGracefulStop)
+			checkpointCreated = err == nil
 			return err
 		}); err != nil {
 			recordSpanErr(span, err)
@@ -363,6 +378,7 @@ func (r *Runtime) StopWithOptions(ctx context.Context, opts StopOptions) error {
 		}
 	}
 	checkpointDur = time.Since(stepStarted)
+	r.logStopState(ctx, "after_checkpoint", checkpoint.ID)
 	if !opts.Force {
 		stepStarted = time.Now()
 		if err := r.traceStep(ctx, "runtime.litestream_maintenance", func(ctx context.Context) error {
@@ -381,16 +397,98 @@ func (r *Runtime) StopWithOptions(ctx context.Context, opts StopOptions) error {
 		return err
 	}
 	resetDur = time.Since(stepStarted)
+	r.logStopState(ctx, "after_reset_runtime", checkpoint.ID)
+	if checkpointCreated {
+		stepStarted = time.Now()
+		if err := r.traceStep(ctx, "runtime.promote_stop_checkpoint", func(ctx context.Context) error {
+			return r.promoteCheckpointToActive(ctx, checkpoint.ID)
+		}); err != nil {
+			recordSpanErr(span, err)
+			return err
+		}
+		promoteDur = time.Since(stepStarted)
+		r.logStopState(ctx, "after_promote_checkpoint", checkpoint.ID)
+	}
 	r.log("Runtime stopped.")
-	r.log("SUMMARY stop container=%s total=%s force=%t stop_container=%s checkpoint=%s litestream_maintenance=%s reset_runtime=%s",
-		r.cfg.WispName, humanDuration(time.Since(startedAt)), opts.Force, humanDuration(stopContainerDur), humanDuration(checkpointDur), humanDuration(maintenanceDur), humanDuration(resetDur))
+	r.log("SUMMARY stop container=%s total=%s force=%t stop_container=%s checkpoint=%s litestream_maintenance=%s reset_runtime=%s promote_checkpoint=%s checkpoint_id=%s",
+		r.cfg.WispName, humanDuration(time.Since(startedAt)), opts.Force, humanDuration(stopContainerDur), humanDuration(checkpointDur), humanDuration(maintenanceDur), humanDuration(resetDur), humanDuration(promoteDur), checkpoint.ID)
 	r.log("%s", humanOpSummary("stop", r.cfg.WispName, time.Since(startedAt),
 		timedStep{name: "stop_container", dur: stopContainerDur},
 		timedStep{name: "checkpoint", dur: checkpointDur},
 		timedStep{name: "litestream_maintenance", dur: maintenanceDur},
 		timedStep{name: "reset_runtime", dur: resetDur},
+		timedStep{name: "promote_checkpoint", dur: promoteDur},
 	))
 	return nil
+}
+
+func (r *Runtime) logStopState(ctx context.Context, phase, checkpointID string) {
+	loopDev := strings.TrimSpace(string(readFileBestEffort(r.cfg.LoopDeviceFile)))
+	loopAttached := false
+	if loopDev != "" {
+		loopAttached = r.loopDeviceAttached(loopDev)
+	}
+	containerState := "unknown"
+	if strings.TrimSpace(r.cfg.CrunBinaryPath) == "" || strings.TrimSpace(r.cfg.CrunStateRoot) == "" || strings.TrimSpace(r.cfg.ContainerID) == "" {
+		containerState = "skipped"
+	} else if exists, err := r.containerExists(ctx); err != nil {
+		containerState = "error:" + err.Error()
+	} else if exists {
+		containerState = "exists"
+	} else {
+		containerState = "absent"
+	}
+	checkpointStat := "not_requested"
+	if checkpointID != "" {
+		checkpointStat = r.imageFingerprintForLog(filepath.Join(r.cfg.CheckpointsRoot, checkpointID, "root-upper.img"))
+	}
+	r.log("runtime.stop_state phase=%s container=%s container_state=%s active_img=%s active_fingerprint=%s checkpoint=%s checkpoint_fingerprint=%s loop_dev=%s loop_attached=%t mounts=%s",
+		phase,
+		r.cfg.WispName,
+		containerState,
+		r.cfg.ActiveImg,
+		r.imageFingerprintForLog(r.cfg.ActiveImg),
+		checkpointID,
+		checkpointStat,
+		loopDev,
+		loopAttached,
+		r.runtimeMountStateForLog(ctx),
+	)
+}
+
+func (r *Runtime) runtimeMountStateForLog(ctx context.Context) string {
+	paths := []struct {
+		name string
+		path string
+	}{
+		{name: "jfs_root", path: r.cfg.JFSRoot},
+		{name: "runtime_root", path: r.cfg.RuntimeRoot},
+		{name: "upper_mount", path: r.cfg.UpperImageMount},
+	}
+	if strings.TrimSpace(r.cfg.RuntimeRoot) != "" {
+		paths = append(paths,
+			struct {
+				name string
+				path string
+			}{name: "rootfs", path: filepath.Join(r.cfg.RuntimeRoot, "rootfs")},
+			struct {
+				name string
+				path string
+			}{name: "bundle_rootfs", path: filepath.Join(r.cfg.RuntimeRoot, "bundle", "rootfs")},
+			struct {
+				name string
+				path string
+			}{name: "upper_active_mount", path: filepath.Join(r.cfg.RuntimeRoot, "rootfs", ".wisp", "checkpoints", "active")},
+		)
+	}
+	var parts []string
+	for _, item := range paths {
+		if strings.TrimSpace(item.path) == "" {
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s:%t", item.name, r.isMountpoint(ctx, item.path)))
+	}
+	return strings.Join(parts, ",")
 }
 
 func (r *Runtime) Destroy(ctx context.Context) error {
@@ -526,6 +624,20 @@ func (r *Runtime) ExecCommand(ctx context.Context, argv []string, stdin []byte) 
 	return result, err
 }
 
+func (r *Runtime) logFilesystemWriteCommitted(source, path string, bytesWritten int, contentSHA256 string) {
+	r.log("filesystem_write_committed source=%s container=%s path=%s bytes=%d content_sha256=%s active_img=%s active_fingerprint=%s loop_dev=%s mounts=%s",
+		source,
+		r.cfg.WispName,
+		path,
+		bytesWritten,
+		strings.ToLower(strings.TrimSpace(contentSHA256)),
+		r.cfg.ActiveImg,
+		r.imageFingerprintForLog(r.cfg.ActiveImg),
+		strings.TrimSpace(string(readFileBestEffort(r.cfg.LoopDeviceFile))),
+		r.runtimeMountStateForLog(context.Background()),
+	)
+}
+
 func (r *Runtime) Status(ctx context.Context, w io.Writer) error {
 	loopDev := strings.TrimSpace(string(readFileBestEffort(r.cfg.LoopDeviceFile)))
 
@@ -648,20 +760,37 @@ func (r *Runtime) createCheckpoint(ctx context.Context, checkpointID, class, tri
 	meta := checkpointMetadataFromID(checkpointID, r.cfg.ActiveImg)
 	meta.Class = class
 	meta.Trigger = trigger
+	r.log("create_checkpoint source_stat checkpoint=%s phase=before_sync active_img=%s active_fingerprint=%s", checkpointID, r.cfg.ActiveImg, r.imageFingerprintForLog(r.cfg.ActiveImg))
 	if err := r.syncCheckpointSource(ctx); err != nil {
 		_ = os.RemoveAll(checkpointDir)
 		return CheckpointMetadata{}, err
 	}
+	r.log("create_checkpoint source_stat checkpoint=%s phase=after_sync active_img=%s active_fingerprint=%s", checkpointID, r.cfg.ActiveImg, r.imageFingerprintForLog(r.cfg.ActiveImg))
 	// file-barrier is the source-data fence: it makes ACTIVE_IMG clone-visible
 	// to JuiceFS after the host-side loop/backing flush chain completes.
 	if err := r.run(ctx, r.cfg.JFSBin, "file-barrier", r.cfg.ActiveImg); err != nil {
 		_ = os.RemoveAll(checkpointDir)
 		return CheckpointMetadata{}, fmt.Errorf("juicefs file-barrier %s: %w", r.cfg.ActiveImg, err)
 	}
+	r.log("create_checkpoint source_stat checkpoint=%s phase=after_file_barrier active_img=%s active_fingerprint=%s", checkpointID, r.cfg.ActiveImg, r.imageFingerprintForLog(r.cfg.ActiveImg))
+	r.log("create_checkpoint clone_start checkpoint=%s active_img=%s checkpoint_img=%s active_fingerprint=%s checkpoint_fingerprint=%s",
+		checkpointID,
+		r.cfg.ActiveImg,
+		checkpointImg,
+		r.imageFingerprintForLog(r.cfg.ActiveImg),
+		r.imageFingerprintForLog(checkpointImg),
+	)
 	if err := r.run(ctx, r.cfg.JFSBin, "clone", r.cfg.ActiveImg, checkpointImg); err != nil {
 		_ = os.RemoveAll(checkpointDir)
 		return CheckpointMetadata{}, err
 	}
+	r.log("create_checkpoint clone_done checkpoint=%s active_img=%s checkpoint_img=%s active_fingerprint=%s checkpoint_fingerprint=%s",
+		checkpointID,
+		r.cfg.ActiveImg,
+		checkpointImg,
+		r.imageFingerprintForLog(r.cfg.ActiveImg),
+		r.imageFingerprintForLog(checkpointImg),
+	)
 	if err := r.fenceClonedImage(ctx, "create_checkpoint", checkpointImg); err != nil {
 		return CheckpointMetadata{}, err
 	}
@@ -717,7 +846,26 @@ func (r *Runtime) syncCheckpointSource(ctx context.Context) error {
 		}
 		r.log("sync_checkpoint_source loop_flush_done container=%s loop_dev=%s duration=%s", r.cfg.WispName, dev, humanDuration(time.Since(stepStarted)))
 	}
+	if err := r.fsyncActiveImageBackingFile(ctx, "sync_checkpoint_source"); err != nil {
+		return err
+	}
 	r.log("sync_checkpoint_source done container=%s duration=%s", r.cfg.WispName, humanDuration(time.Since(startedAt)))
+	return nil
+}
+
+func (r *Runtime) fsyncActiveImageBackingFile(ctx context.Context, operation string) error {
+	_ = ctx
+	startedAt := time.Now()
+	r.log("%s active_fsync_start active_img=%s active_fingerprint=%s", operation, r.cfg.ActiveImg, r.imageFingerprintForLog(r.cfg.ActiveImg))
+	f, err := os.OpenFile(r.cfg.ActiveImg, os.O_RDONLY, 0)
+	if err != nil {
+		return fmt.Errorf("%s open active image for fsync %s: %w", operation, r.cfg.ActiveImg, err)
+	}
+	defer f.Close()
+	if err := f.Sync(); err != nil {
+		return fmt.Errorf("%s fsync active image %s: %w", operation, r.cfg.ActiveImg, err)
+	}
+	r.log("%s active_fsync_done active_img=%s duration=%s active_fingerprint=%s", operation, r.cfg.ActiveImg, humanDuration(time.Since(startedAt)), r.imageFingerprintForLog(r.cfg.ActiveImg))
 	return nil
 }
 
@@ -837,29 +985,153 @@ func (r *Runtime) RestoreCheckpoint(ctx context.Context, checkpointID string) er
 	if info.Size() <= 0 {
 		return fmt.Errorf("checkpoint not found: %s", checkpointID)
 	}
+	r.log("restore_checkpoint start checkpoint=%s checkpoint_img=%s checkpoint_fingerprint=%s active_img=%s active_before=%s",
+		checkpointID,
+		checkpointImg,
+		r.imageFingerprintForLog(checkpointImg),
+		r.cfg.ActiveImg,
+		r.imageFingerprintForLog(r.cfg.ActiveImg),
+	)
 	if err := r.stopContainer(ctx); err != nil {
 		return err
 	}
 	if err := r.resetRuntime(ctx); err != nil {
 		return err
 	}
+	r.log("restore_checkpoint after_reset checkpoint=%s active_img=%s active_fingerprint=%s checkpoint_fingerprint=%s",
+		checkpointID,
+		r.cfg.ActiveImg,
+		r.imageFingerprintForLog(r.cfg.ActiveImg),
+		r.imageFingerprintForLog(checkpointImg),
+	)
 	if err := r.ensureJuiceFSCloneSupported(checkpointImg); err != nil {
 		return err
 	}
 	if err := os.Remove(r.cfg.ActiveImg); err != nil && !os.IsNotExist(err) {
 		return err
 	}
+	r.log("restore_checkpoint clone_start checkpoint=%s checkpoint_img=%s active_img=%s checkpoint_fingerprint=%s active_fingerprint=%s",
+		checkpointID,
+		checkpointImg,
+		r.cfg.ActiveImg,
+		r.imageFingerprintForLog(checkpointImg),
+		r.imageFingerprintForLog(r.cfg.ActiveImg),
+	)
 	if err := r.run(ctx, r.cfg.JFSBin, "clone", checkpointImg, r.cfg.ActiveImg); err != nil {
 		return err
 	}
+	r.log("restore_checkpoint clone_done checkpoint=%s checkpoint_img=%s active_img=%s checkpoint_fingerprint=%s active_fingerprint=%s",
+		checkpointID,
+		checkpointImg,
+		r.cfg.ActiveImg,
+		r.imageFingerprintForLog(checkpointImg),
+		r.imageFingerprintForLog(r.cfg.ActiveImg),
+	)
 	if err := r.fenceClonedImage(ctx, "restore_checkpoint", r.cfg.ActiveImg); err != nil {
 		return err
 	}
+	r.log("restore_checkpoint fenced checkpoint=%s active_img=%s active_fingerprint=%s", checkpointID, r.cfg.ActiveImg, r.imageFingerprintForLog(r.cfg.ActiveImg))
 	if ok, reason := r.activeImageValid(ctx); !ok {
+		r.log("restore_checkpoint active_invalid checkpoint=%s active_img=%s active_fingerprint=%s reason=%s", checkpointID, r.cfg.ActiveImg, r.imageFingerprintForLog(r.cfg.ActiveImg), reason)
 		return fmt.Errorf("restored active image invalid checkpoint=%s active_img=%s reason=%s", checkpointID, r.cfg.ActiveImg, reason)
 	}
+	r.log("restore_checkpoint active_valid checkpoint=%s active_img=%s active_fingerprint=%s", checkpointID, r.cfg.ActiveImg, r.imageFingerprintForLog(r.cfg.ActiveImg))
 	r.log("Restored active image from checkpoint: %s", checkpointID)
 	return nil
+}
+
+func (r *Runtime) promoteCheckpointToActive(ctx context.Context, checkpointID string) error {
+	checkpointID = strings.TrimSpace(checkpointID)
+	if checkpointID == "" {
+		return errors.New("checkpoint id is required")
+	}
+	if strings.Contains(checkpointID, "/") || checkpointID == "." || checkpointID == ".." {
+		return fmt.Errorf("invalid checkpoint id: %q", checkpointID)
+	}
+	checkpointImg := filepath.Join(r.cfg.CheckpointsRoot, checkpointID, "root-upper.img")
+	if _, err := os.Stat(checkpointImg); err != nil {
+		return fmt.Errorf("checkpoint image not found: %s: %w", checkpointImg, err)
+	}
+	if err := r.ensureJuiceFSCloneSupported(checkpointImg); err != nil {
+		return err
+	}
+	r.log("stop_checkpoint_promote start checkpoint=%s checkpoint_img=%s active_img=%s active_before=%s checkpoint_fingerprint=%s",
+		checkpointID,
+		checkpointImg,
+		r.cfg.ActiveImg,
+		r.imageFingerprintForLog(r.cfg.ActiveImg),
+		r.imageFingerprintForLog(checkpointImg),
+	)
+	if err := os.Remove(r.cfg.ActiveImg); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove active image before checkpoint promote: %w", err)
+	}
+	if err := r.run(ctx, r.cfg.JFSBin, "clone", checkpointImg, r.cfg.ActiveImg); err != nil {
+		return fmt.Errorf("clone checkpoint to active image: %w", err)
+	}
+	if err := r.fenceClonedImage(ctx, "stop_checkpoint_promote", r.cfg.ActiveImg); err != nil {
+		return err
+	}
+	r.log("stop_checkpoint_promote done checkpoint=%s active_img=%s active_after=%s", checkpointID, r.cfg.ActiveImg, r.imageFingerprintForLog(r.cfg.ActiveImg))
+	return nil
+}
+
+func (r *Runtime) imageStatForLog(path string) string {
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Sprintf("stat_error=%q", err.Error())
+	}
+	return fmt.Sprintf("size=%d mode=%s mod=%s", info.Size(), info.Mode().String(), info.ModTime().UTC().Format(time.RFC3339Nano))
+}
+
+func (r *Runtime) imageFingerprintForLog(path string) string {
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Sprintf("stat_error=%q", err.Error())
+	}
+	size := info.Size()
+	if size <= 0 {
+		return fmt.Sprintf("size=%d mode=%s mod=%s sample_sha256=empty", size, info.Mode().String(), info.ModTime().UTC().Format(time.RFC3339Nano))
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return fmt.Sprintf("size=%d mode=%s mod=%s open_error=%q", size, info.Mode().String(), info.ModTime().UTC().Format(time.RFC3339Nano), err.Error())
+	}
+	defer f.Close()
+	const sampleSize int64 = 1 << 20
+	offsets := []int64{0}
+	if size > sampleSize*2 {
+		mid := size / 2
+		if mid > sampleSize/2 {
+			mid -= sampleSize / 2
+		}
+		offsets = append(offsets, mid)
+	}
+	if size > sampleSize {
+		offsets = append(offsets, size-sampleSize)
+	}
+	h := sha256.New()
+	buf := make([]byte, sampleSize)
+	var sampled int64
+	for _, off := range offsets {
+		remaining := size - off
+		if remaining <= 0 {
+			continue
+		}
+		n := sampleSize
+		if remaining < n {
+			n = remaining
+		}
+		read, err := f.ReadAt(buf[:n], off)
+		if read > 0 {
+			_, _ = h.Write([]byte(fmt.Sprintf("@%d:%d:", off, read)))
+			_, _ = h.Write(buf[:read])
+			sampled += int64(read)
+		}
+		if err != nil && !errors.Is(err, io.EOF) {
+			return fmt.Sprintf("size=%d mode=%s mod=%s sample_error=%q sampled=%d", size, info.Mode().String(), info.ModTime().UTC().Format(time.RFC3339Nano), err.Error(), sampled)
+		}
+	}
+	return fmt.Sprintf("size=%d mode=%s mod=%s sampled=%d sample_sha256=%x", size, info.Mode().String(), info.ModTime().UTC().Format(time.RFC3339Nano), sampled, h.Sum(nil))
 }
 
 func (r *Runtime) ListCheckpoints(ctx context.Context) ([]CheckpointMetadata, error) {
@@ -1182,7 +1454,7 @@ func (r *Runtime) preStartRecovery(ctx context.Context) error {
 	}
 	activeOK, activeReason := r.activeImageValid(ctx)
 	if activeOK {
-		r.log("pre_start_recovery skip active_img=%s reason=active_valid", r.cfg.ActiveImg)
+		r.log("pre_start_recovery skip active_img=%s active_fingerprint=%s reason=active_valid", r.cfg.ActiveImg, r.imageFingerprintForLog(r.cfg.ActiveImg))
 		return nil
 	}
 	checkpoint, ok, err := r.latestCheckpoint(ctx)
@@ -1190,10 +1462,24 @@ func (r *Runtime) preStartRecovery(ctx context.Context) error {
 		return err
 	}
 	if !ok {
-		r.log("pre_start_recovery skip active_ok=%t active_reason=%s reason=no_checkpoint", activeOK, activeReason)
+		r.log("pre_start_recovery skip active_img=%s active_fingerprint=%s active_ok=%t active_reason=%s reason=no_checkpoint",
+			r.cfg.ActiveImg,
+			r.imageFingerprintForLog(r.cfg.ActiveImg),
+			activeOK,
+			activeReason,
+		)
 		return nil
 	}
-	r.log("pre_start_recovery restore checkpoint=%s active_ok=%t active_reason=%s", checkpoint.ID, activeOK, activeReason)
+	checkpointImg := filepath.Join(r.cfg.CheckpointsRoot, checkpoint.ID, "root-upper.img")
+	r.log("pre_start_recovery restore checkpoint=%s checkpoint_img=%s checkpoint_fingerprint=%s active_img=%s active_fingerprint=%s active_ok=%t active_reason=%s",
+		checkpoint.ID,
+		checkpointImg,
+		r.imageFingerprintForLog(checkpointImg),
+		r.cfg.ActiveImg,
+		r.imageFingerprintForLog(r.cfg.ActiveImg),
+		activeOK,
+		activeReason,
+	)
 	return r.RestoreCheckpoint(ctx, checkpoint.ID)
 }
 
@@ -1224,18 +1510,33 @@ func (r *Runtime) activeImageValid(ctx context.Context) (bool, string) {
 	}
 	startedAt := time.Now()
 	cmd := exec.CommandContext(ctx, "e2fsck", "-n", r.cfg.ActiveImg)
+	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	cmd.Stdout = io.Discard
+	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
 		msg := strings.TrimSpace(stderr.String())
+		stdoutText := oneLineForLog(stdout.String(), 1200)
 		if msg == "" {
 			msg = err.Error()
 		}
-		r.log("active_image_valid e2fsck_done active_img=%s ok=false duration=%s reason=%s", r.cfg.ActiveImg, humanDuration(time.Since(startedAt)), msg)
+		r.log("active_image_valid e2fsck_done active_img=%s active_fingerprint=%s ok=false duration=%s reason=%s stdout=%q stderr=%q",
+			r.cfg.ActiveImg,
+			r.imageFingerprintForLog(r.cfg.ActiveImg),
+			humanDuration(time.Since(startedAt)),
+			oneLineForLog(msg, 1200),
+			stdoutText,
+			oneLineForLog(stderr.String(), 1200),
+		)
 		return false, "e2fsck_failed:" + msg
 	}
-	r.log("active_image_valid e2fsck_done active_img=%s ok=true duration=%s", r.cfg.ActiveImg, humanDuration(time.Since(startedAt)))
+	r.log("active_image_valid e2fsck_done active_img=%s active_fingerprint=%s ok=true duration=%s stdout=%q stderr=%q",
+		r.cfg.ActiveImg,
+		r.imageFingerprintForLog(r.cfg.ActiveImg),
+		humanDuration(time.Since(startedAt)),
+		oneLineForLog(stdout.String(), 1200),
+		oneLineForLog(stderr.String(), 1200),
+	)
 	return true, "e2fsck_ok"
 }
 
@@ -1325,7 +1626,17 @@ func (r *Runtime) ensureDirPath(ctx context.Context, dir string) error {
 
 func (r *Runtime) ensureCOSRootMounted(ctx context.Context) error {
 	if !r.remoteBackendRequiresMount() {
-		r.log("ensure_cos_root skip cos_enabled=false")
+		mountpoint, fsType, ok := r.mountInfoForPath(r.cfg.JFSRoot)
+		r.log("ensure_cos_root skip remote_backend=%s cos_enabled=%t smh_enabled=%t workspace=%s target=%s observed_mountpoint=%s observed_fs_type=%s mountinfo_ok=%t",
+			normalizeRemoteBackend(r.cfg.RemoteBackend),
+			r.cfg.COSEnabled,
+			r.cfg.SMHEnabled,
+			strings.TrimSpace(r.cfg.COSWorkspace),
+			r.cfg.JFSRoot,
+			mountpoint,
+			fsType,
+			ok,
+		)
 		return nil
 	}
 	if mountpoint, fsType, ok := r.mountInfoForPath(r.cfg.JFSRoot); ok && mountpoint == r.cfg.JFSRoot && isJuiceFSFSType(fsType) {
@@ -2326,7 +2637,7 @@ func (r *Runtime) populateSystemOverlay(ctx context.Context) error {
 
 func (r *Runtime) ensureActiveImage(ctx context.Context) error {
 	if _, err := os.Stat(r.cfg.ActiveImg); err == nil {
-		r.log("ensure_active_image existing active_img=%s", r.cfg.ActiveImg)
+		r.log("ensure_active_image existing active_img=%s active_fingerprint=%s", r.cfg.ActiveImg, r.imageFingerprintForLog(r.cfg.ActiveImg))
 		return nil
 	} else {
 		parent := filepath.Dir(r.cfg.ActiveImg)
@@ -2873,49 +3184,63 @@ func (r *Runtime) mountUpperImage(ctx context.Context, dev string) error {
 func (r *Runtime) startContainer(ctx context.Context) error {
 	ctx, span := r.startSpan(ctx, "runtime.start_container_inner")
 	defer span.End()
+	r.log("start_container step=start configure_outer_cgroup container=%s", r.cfg.WispName)
 	if err := r.configureOuterCgroup(); err != nil {
 		recordSpanErr(span, err)
 		return err
 	}
+	r.log("start_container step=done configure_outer_cgroup container=%s", r.cfg.WispName)
+	r.log("start_container step=start container_exists container=%s container_id=%s crun_root=%s", r.cfg.WispName, r.cfg.ContainerID, r.cfg.CrunStateRoot)
 	exists, err := r.containerExists(ctx)
 	if err != nil {
 		recordSpanErr(span, err)
 		return err
 	}
+	r.log("start_container step=done container_exists container=%s exists=%t", r.cfg.WispName, exists)
 	if exists {
+		r.log("start_container step=start assign_existing_container container=%s", r.cfg.WispName)
 		if err := r.traceStep(ctx, "runtime.start.assign_existing_container", func(ctx context.Context) error {
 			return r.assignContainerToOuterCgroup(ctx)
 		}); err != nil {
 			recordSpanErr(span, err)
 			return err
 		}
+		r.log("start_container step=done assign_existing_container container=%s", r.cfg.WispName)
 		r.log("crun container already running: %s", r.cfg.ContainerID)
 		return nil
 	}
+	r.log("start_container step=start prepare_bundle container=%s bundle=%s", r.cfg.WispName, r.cfg.CrunBundleRoot)
 	if err := r.traceStep(ctx, "runtime.start.prepare_bundle", func(context.Context) error {
 		return r.prepareCrunBundle()
 	}); err != nil {
 		recordSpanErr(span, err)
 		return err
 	}
+	r.log("start_container step=done prepare_bundle container=%s", r.cfg.WispName)
+	r.log("start_container step=start write_oci_config container=%s", r.cfg.WispName)
 	if err := r.traceStep(ctx, "runtime.start.write_oci_config", func(context.Context) error {
 		return r.writeOCIConfig()
 	}); err != nil {
 		recordSpanErr(span, err)
 		return err
 	}
+	r.log("start_container step=done write_oci_config container=%s", r.cfg.WispName)
+	r.log("start_container step=start crun_run container=%s container_id=%s pid_file=%s", r.cfg.WispName, r.cfg.ContainerID, r.cfg.PIDFile)
 	if err := r.traceStep(ctx, "runtime.start.crun_run", func(ctx context.Context) error {
 		return r.runDetached(ctx, r.cfg.CrunBinaryPath, "--root", r.cfg.CrunStateRoot, "--cgroup-manager", "cgroupfs", "run", "-d", "--bundle", r.cfg.CrunBundleRoot, "--pid-file", r.cfg.PIDFile, r.cfg.ContainerID)
 	}); err != nil {
 		recordSpanErr(span, err)
 		return err
 	}
+	r.log("start_container step=done crun_run container=%s", r.cfg.WispName)
+	r.log("start_container step=start assign_new_container container=%s", r.cfg.WispName)
 	if err := r.traceStep(ctx, "runtime.start.assign_new_container", func(ctx context.Context) error {
 		return r.assignContainerToOuterCgroup(ctx)
 	}); err != nil {
 		recordSpanErr(span, err)
 		return err
 	}
+	r.log("start_container step=done assign_new_container container=%s", r.cfg.WispName)
 	return nil
 }
 
@@ -4038,16 +4363,32 @@ func (r *Runtime) runDetached(ctx context.Context, name string, args ...string) 
 	}
 	defer devNull.Close()
 
-	var stdout, stderr bytes.Buffer
+	stdoutFile, err := os.CreateTemp("", "wisp-detached-stdout-*")
+	if err != nil {
+		return fmt.Errorf("create detached stdout file: %w", err)
+	}
+	defer os.Remove(stdoutFile.Name())
+	defer stdoutFile.Close()
+	stderrFile, err := os.CreateTemp("", "wisp-detached-stderr-*")
+	if err != nil {
+		return fmt.Errorf("create detached stderr file: %w", err)
+	}
+	defer os.Remove(stderrFile.Name())
+	defer stderrFile.Close()
+
 	cmd.Stdin = devNull
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	cmd.Stdout = stdoutFile
+	cmd.Stderr = stderrFile
 	if err := cmd.Run(); err != nil {
 		detail := ""
-		if text := oneLineForLog(stderr.String(), 2048); text != "" {
+		_ = stdoutFile.Close()
+		_ = stderrFile.Close()
+		stderr, _ := os.ReadFile(stderrFile.Name())
+		stdout, _ := os.ReadFile(stdoutFile.Name())
+		if text := oneLineForLog(string(stderr), 2048); text != "" {
 			detail += " stderr=" + strconv.Quote(text)
 		}
-		if text := oneLineForLog(stdout.String(), 2048); text != "" {
+		if text := oneLineForLog(string(stdout), 2048); text != "" {
 			detail += " stdout=" + strconv.Quote(text)
 		}
 		return fmt.Errorf("%s %s: %w%s", name, strings.Join(args, " "), err, detail)

@@ -420,12 +420,14 @@ start_gateway
 
 python3 - "$PORT" "$API_KEY" "$WORK_DIR/acp-restore.json" "$SESSION_ID" "$WORK_DIR/acp.json" <<'PY'
 import base64
+import http.client
 import json
 import os
 import socket
 import struct
 import sys
 import time
+import urllib.parse
 
 port = int(sys.argv[1])
 api_key = sys.argv[2]
@@ -542,6 +544,36 @@ def streamed_text_from(start_index):
             parts.append(content["text"])
     return "".join(parts)
 
+def workspace_download(path):
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=180)
+    try:
+        url = "/v1/acp/sessions/" + urllib.parse.quote(session_id, safe="") + "/envd/files?path=" + urllib.parse.quote(path, safe="/")
+        conn.request("GET", url, headers={"Authorization": "Bearer " + api_key})
+        resp = conn.getresponse()
+        body = resp.read()
+        if resp.status != 200:
+            raise RuntimeError(f"workspace download {path} status={resp.status} body={body.decode(errors='replace')}")
+        return body.decode()
+    finally:
+        conn.close()
+
+def workspace_upload(path, content):
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=180)
+    try:
+        url = "/v1/acp/sessions/" + urllib.parse.quote(session_id, safe="") + "/envd/files?path=" + urllib.parse.quote(path, safe="/")
+        body = content.encode()
+        conn.request("POST", url, body=body, headers={
+            "Authorization": "Bearer " + api_key,
+            "Content-Type": "application/octet-stream",
+            "Content-Length": str(len(body)),
+        })
+        resp = conn.getresponse()
+        payload = resp.read()
+        if resp.status != 200:
+            raise RuntimeError(f"workspace upload {path} status={resp.status} body={payload.decode(errors='replace')}")
+    finally:
+        conn.close()
+
 rpc(1, "initialize", {})
 loaded = rpc(2, "session/load", {"sessionId": session_id, "cwd": "/workspace"})
 loaded_cloud = (loaded.get("_meta") or {}).get("cloudagent") or {}
@@ -590,15 +622,9 @@ if prompt.get("stopReason") not in (None, "", "end_turn", "stop"):
     raise RuntimeError(f"unexpected prompt result after restore: {prompt}")
 if restore_marker not in streamed_text():
     raise RuntimeError(f"restored prompt did not recover runtime transcript marker: want={restore_marker} got={streamed_text()!r}")
-workspace_read_start = len(updates)
-workspace_read = rpc(5, "session/prompt", {
-    "sessionId": session_id,
-    "prompt": [{"type": "text", "text": "必须使用 terminal 工具执行 `cat /workspace/acp-wisp-restore-probe.txt`。不要解释，只输出命令结果。"}],
-})
-if workspace_read.get("stopReason") not in (None, "", "end_turn", "stop"):
-    raise RuntimeError(f"unexpected workspace read prompt after restore: {workspace_read}")
-if workspace_marker not in streamed_text_from(workspace_read_start):
-    raise RuntimeError(f"restored workspace did not preserve probe file: want={workspace_marker} got={streamed_text_from(workspace_read_start)!r}")
+workspace_content = workspace_download("/workspace/acp-wisp-restore-probe.txt")
+if workspace_content.strip() != workspace_marker:
+    raise RuntimeError(f"restored checkpoint did not preserve first confirmed workspace write exactly: want={workspace_marker!r} content={workspace_content!r}")
 after_prompt_status = rpc(6, "_cloudagent.session.status", {"session_id": session_id})
 after_prompt_sandbox = after_prompt_status.get("sandbox", {})
 new_outer_sandbox_id = after_prompt_sandbox.get("outer_sandbox_id") or ""
@@ -619,15 +645,10 @@ if after_prompt_sandbox.get("wisp_smh_space_id") != old_wisp_space_id:
     raise RuntimeError(f"prompt restore changed workspace id: before={old_wisp_space_id} after={after_prompt_sandbox.get('wisp_smh_space_id')}")
 
 overwrite_marker = "cloudagent-workspace-overwrite-" + session_id.replace("_", "-")
-overwrite_start = len(updates)
-overwrite = rpc(7, "session/prompt", {
-    "sessionId": session_id,
-    "prompt": [{"type": "text", "text": "必须使用 terminal 工具执行 `printf '" + overwrite_marker + "\\n' > /workspace/acp-wisp-restore-probe.txt && cat /workspace/acp-wisp-restore-probe.txt`。不要解释，只输出命令结果。"}],
-})
-if overwrite.get("stopReason") not in (None, "", "end_turn", "stop"):
-    raise RuntimeError(f"unexpected workspace overwrite prompt result: {overwrite}")
-if overwrite_marker not in streamed_text_from(overwrite_start):
-    raise RuntimeError(f"workspace overwrite did not echo marker: want={overwrite_marker} got={streamed_text_from(overwrite_start)!r}")
+workspace_upload("/workspace/acp-wisp-restore-probe.txt", overwrite_marker + "\n")
+overwrite_content = workspace_download("/workspace/acp-wisp-restore-probe.txt")
+if overwrite_content.strip() != overwrite_marker:
+    raise RuntimeError(f"workspace overwrite did not confirm the new contents exactly: want={overwrite_marker!r} content={overwrite_content!r}")
 rpc(8, "session/close", {"sessionId": session_id})
 after_second_close_status = rpc(9, "_cloudagent.session.status", {"session_id": session_id})
 after_second_close_sandbox = after_second_close_status.get("sandbox", {})
@@ -647,15 +668,14 @@ if after_second_load_sandbox.get("outer_sandbox_id"):
     raise RuntimeError(f"second session/load should not eagerly recreate outer sandbox: {after_second_load_status}")
 if after_second_load_sandbox.get("wisp_smh_space_id") != old_wisp_space_id:
     raise RuntimeError(f"second load changed workspace id: before={old_wisp_space_id} after={after_second_load_sandbox.get('wisp_smh_space_id')}")
-second_read_start = len(updates)
-second_read = rpc(12, "session/prompt", {
-    "sessionId": session_id,
-    "prompt": [{"type": "text", "text": "必须使用 terminal 工具执行 `cat /workspace/acp-wisp-restore-probe.txt`。不要解释，只输出命令结果。"}],
-})
-if second_read.get("stopReason") not in (None, "", "end_turn", "stop"):
-    raise RuntimeError(f"unexpected workspace second read prompt after restore: {second_read}")
-if overwrite_marker not in streamed_text_from(second_read_start):
-    raise RuntimeError(f"second restored workspace did not preserve overwritten probe file: want={overwrite_marker} got={streamed_text_from(second_read_start)!r}")
+second_ensure_ready = rpc(12, "_cloudagent.runtime.ensure_ready", {"session_id": session_id, "cwd": "/workspace"})
+if second_ensure_ready.get("ok") is not True or second_ensure_ready.get("read_only") or second_ensure_ready.get("state") != "ready":
+    raise RuntimeError(f"second ensure_ready did not restore a writable runtime: {second_ensure_ready}")
+second_read_content = workspace_download("/workspace/acp-wisp-restore-probe.txt")
+if second_read_content.strip() != overwrite_marker:
+    raise RuntimeError(f"second restored checkpoint did not contain the last confirmed overwrite exactly: want={overwrite_marker!r} content={second_read_content!r}")
+if workspace_marker in second_read_content:
+    raise RuntimeError(f"second restored checkpoint read stale pre-overwrite contents: old={workspace_marker!r} content={second_read_content!r}")
 after_second_prompt_status = rpc(13, "_cloudagent.session.status", {"session_id": session_id})
 after_second_prompt_sandbox = after_second_prompt_status.get("sandbox", {})
 second_outer_sandbox_id = after_second_prompt_sandbox.get("outer_sandbox_id") or ""
@@ -701,10 +721,11 @@ with open(out_path, "w", encoding="utf-8") as f:
         "updates": updates,
         "load": loaded,
         "prompt": prompt,
-        "workspace_read": workspace_read,
-        "overwrite": overwrite,
+        "workspace_content": workspace_content,
+        "overwrite_content": overwrite_content,
         "loaded_again": loaded_again,
-        "second_read": second_read,
+        "second_ensure_ready": second_ensure_ready,
+        "second_read_content": second_read_content,
         "cleanup_error": cleanup_error,
     }, f, ensure_ascii=False, indent=2)
 print(json.dumps({"session_id": session_id, "old_outer_sandbox_id": old_outer_sandbox_id, "new_outer_sandbox_id": new_outer_sandbox_id, "second_outer_sandbox_id": second_outer_sandbox_id, "old_inner_sandbox_id": old_inner_sandbox_id, "new_inner_sandbox_id": new_inner_sandbox_id, "old_wisp_space_id": old_wisp_space_id, "updates": len(updates)}, ensure_ascii=False))
@@ -738,6 +759,8 @@ require_log 'event=acp_runtime_restore_wisp_prepare_done'
 require_log 'event=acp_runtime_restore_daemon_done'
 require_log 'event=acp_runtime_wisp_stop_start'
 require_log_regex 'event=acp_runtime_wisp_stop_(done|failed)'
+require_log 'sync_checkpoint_source active_fsync_done'
+require_log 'create_checkpoint source_stat'
 require_log 'wisp_package_mount_start format=erofs'
 require_log 'wisp_package_mount_done'
 if ! grep -q 'workspace_runtime_shutdown_done' "$SERVER_LOG" &&

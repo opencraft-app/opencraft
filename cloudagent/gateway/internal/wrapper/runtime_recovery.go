@@ -337,10 +337,19 @@ func (g *ACPGateway) committedEnsuredRuntime(scope Scope, sessionID string, gene
 	if !runtimeNeedsCleanup(session.Runtime) || !runtimeEnsureChanged(session.Runtime, original) {
 		return ACPSessionRuntime{}, false
 	}
+	if !runtimeHasHostIdentity(session.Runtime) {
+		fmt.Fprintf(os.Stderr, "timeline source=server event=acp_runtime_ensure_committed_skip_empty session_id=%s generation=%d outer_runtime=%s wisp_workspace_id=%s\n", sessionID, generation, session.Runtime.OuterRuntime, session.Runtime.WispWorkspaceID)
+		return ACPSessionRuntime{}, false
+	}
 	if session.ReadOnlyReason != "" || session.LastRuntimeError != "" {
 		return ACPSessionRuntime{}, false
 	}
 	return session.Runtime, true
+}
+
+func runtimeHasHostIdentity(runtime ACPSessionRuntime) bool {
+	return strings.TrimSpace(runtime.RuntimeID) != "" ||
+		strings.TrimSpace(runtime.OuterSandboxID) != ""
 }
 
 func runtimeEnsureChanged(next, original ACPSessionRuntime) bool {
