@@ -35,6 +35,8 @@ import type {
   Repositories,
   SettingsSnapshot,
   TatDeviceBindResult,
+  WorkerActionStatusLog,
+  WorkerActionStatusResult,
   WorkspaceSnapshot,
 } from "@/repositories/types";
 
@@ -133,11 +135,13 @@ interface WorkerActionStartPayload {
   status: string;
 }
 
+type WorkerActionStatusPayload = Record<string, unknown>;
+
 const AUTH_TOKEN_STORAGE_KEY = "lightclaw-auth-token-v1";
 const OAUTH_SESSION_TOKEN_FRAGMENT_KEY = "session_token";
 const HTTP_BOT_DRAFTS_STORAGE_KEY = "lightclaw-http-bot-drafts-v1";
 const DEFAULT_INSTANCE_TIMEOUT_SECONDS = 60 * 60;
-const DEFAULT_RESCUE_EXPORT_REMOTE_PATH = "/home/agentuser/.openclaw/workspace";
+const DEFAULT_RESCUE_EXPORT_REMOTE_PATH = "/home/agentuser/.hermes";
 export const AUTH_UNAUTHORIZED_EVENT = "lightclaw:auth-unauthorized";
 
 class RepositoryError extends Error {
@@ -386,6 +390,64 @@ const requestEnvelope = async <T>(
 ): Promise<T> => {
   const payload = await request<APIEnvelope<T>>(baseUrl, path, init);
   return payload.data;
+};
+
+const stringField = (payload: Record<string, unknown>, ...keys: string[]) => {
+  for (const key of keys) {
+    const value = payload[key];
+    if (typeof value === "string" && value.trim() !== "") {
+      return value;
+    }
+  }
+  return undefined;
+};
+
+const booleanField = (payload: Record<string, unknown>, ...keys: string[]) => {
+  for (const key of keys) {
+    const value = payload[key];
+    if (typeof value === "boolean") {
+      return value;
+    }
+  }
+  return undefined;
+};
+
+const normalizeWorkerActionLogs = (value: unknown): WorkerActionStatusLog[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const logs: WorkerActionStatusLog[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+    const payload = item as Record<string, unknown>;
+    const message = stringField(payload, "message", "Message");
+    if (!message) {
+      continue;
+    }
+    logs.push({
+      time: stringField(payload, "time", "Time"),
+      phase: stringField(payload, "phase", "Phase"),
+      message,
+      level: stringField(payload, "level", "Level"),
+    });
+  }
+  return logs;
+};
+
+const normalizeWorkerActionStatus = (payload: WorkerActionStatusPayload): WorkerActionStatusResult => {
+  const phase = stringField(payload, "phase", "Phase") ?? "unknown";
+  const error = stringField(payload, "error", "Error");
+  const logs = normalizeWorkerActionLogs(payload.logs ?? payload.Logs);
+  return {
+    workflowId: stringField(payload, "workflow_id", "workflowId", "WorkflowID"),
+    runId: stringField(payload, "run_id", "runId", "RunID"),
+    phase,
+    error,
+    dryRun: booleanField(payload, "dry_run", "dryRun", "DryRun"),
+    logs,
+  };
 };
 
 const requestMultipart = async <T>(
@@ -970,6 +1032,22 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
         botId: payload.bot_id,
         status: payload.status,
       };
+    },
+
+    async getRescueExportStatus(botId: string) {
+      try {
+        const payload = await requestEnvelope<WorkerActionStatusPayload>(
+          baseUrl,
+          `/api/worker-actions?bot_id=${encodeURIComponent(botId)}&action=rescue_export`,
+          { method: "GET" },
+        );
+        return normalizeWorkerActionStatus(payload);
+      } catch (err) {
+        if (err instanceof RepositoryError && err.status === 404 && err.code === "action_not_found") {
+          return null;
+        }
+        throw err;
+      }
     },
 
     async resetInstanceConfig(botId: string) {

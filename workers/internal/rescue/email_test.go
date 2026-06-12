@@ -22,14 +22,24 @@ func TestSESRequestDateFromMessageID(t *testing.T) {
 }
 
 func TestBuildExportNotificationContentIncludesDownloadLink(t *testing.T) {
-	req := ExportRequest{InstanceID: "ins-test", Region: "ap-beijing"}
+	req := ExportRequest{BotID: "bot-test", BotName: "我的 Agent", InstanceID: "ins-test", Region: "ap-beijing"}
 	subject, html, text := buildExportNotificationContent(req, "https://example.com/download", 28800)
 	if subject == "" {
 		t.Fatal("expected subject")
 	}
 	for _, body := range []string{html, text} {
-		if !strings.Contains(body, "ins-test") || !strings.Contains(body, "https://example.com/download") || !strings.Contains(body, "8 小时") {
+		if !strings.Contains(body, "我的 Agent") || !strings.Contains(body, "https://example.com/download") || !strings.Contains(body, "8 小时") {
 			t.Fatalf("unexpected body: %s", body)
+		}
+		for _, hidden := range []string{"ins-test", "ap-beijing", "CVM", "COS"} {
+			if strings.Contains(body, hidden) {
+				t.Fatalf("body leaks infrastructure detail %q: %s", hidden, body)
+			}
+		}
+	}
+	for _, hidden := range []string{"ins-test", "ap-beijing", "CVM"} {
+		if strings.Contains(subject, hidden) {
+			t.Fatalf("subject leaks infrastructure detail %q: %s", hidden, subject)
 		}
 	}
 }

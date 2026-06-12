@@ -21,28 +21,35 @@ func TestFailureNotificationRecipientsDedupeAndFallback(t *testing.T) {
 	}
 }
 
-func TestBuildFailureNotificationContentIncludesError(t *testing.T) {
+func TestBuildFailureNotificationContentIsProductized(t *testing.T) {
 	notification := FailureNotification{
 		WorkflowID: "wf-test",
 		RunID:      "run-test",
 		Request: ExportRequest{
+			BotID:       "bot-test",
+			BotName:     "我的 Agent",
 			InstanceID:  "ins-test",
-			RemotePaths: []string{"/home/agentuser/.openclaw/workspace"},
+			Region:      "ap-beijing",
+			RemotePaths: []string{"/home/agentuser/.hermes"},
 		},
 		Status: ExportStatus{Phase: PhaseFailed},
-		Error:  "DescribeInstances failed",
+		Error:  "activity error (type: EnsureBackup, scheduledEventID: 11, startedEventID: 12, identity: worker@): cvm.tencentcloudapi.com CreateImage failed: ResourceUnavailable.SnapshotCreating: Disk(disk-hqe03fm1) is creating snapshot, please retry it later (type: TencentAPIError, retryable: true)",
 	}
 
 	subject, htmlBody, textBody := buildFailureNotificationContent(notification)
 	for _, value := range []string{subject, htmlBody, textBody} {
-		if !strings.Contains(value, "ins-test") {
-			t.Fatalf("content missing instance: %q", value)
+		if !strings.Contains(value, "我的 Agent") {
+			t.Fatalf("content missing agent label: %q", value)
 		}
 	}
-	if !strings.Contains(textBody, "DescribeInstances failed") {
-		t.Fatalf("text body missing error: %s", textBody)
+	if !strings.Contains(textBody, "磁盘快照正在创建") || !strings.Contains(htmlBody, "磁盘快照正在创建") {
+		t.Fatalf("content missing productized reason: text=%s html=%s", textBody, htmlBody)
 	}
-	if !strings.Contains(htmlBody, "DescribeInstances failed") {
-		t.Fatalf("html body missing error: %s", htmlBody)
+	for _, body := range []string{subject, htmlBody, textBody} {
+		for _, hidden := range []string{"ins-test", "ap-beijing", "wf-test", "run-test", "activity error", "scheduledEventID", "identity", "cvm.tencentcloudapi.com", "TencentAPIError", "retryable"} {
+			if strings.Contains(body, hidden) {
+				t.Fatalf("content leaks %q: %s", hidden, body)
+			}
+		}
 	}
 }

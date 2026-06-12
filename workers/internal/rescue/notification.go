@@ -3,8 +3,6 @@ package rescue
 import (
 	"context"
 	"encoding/base64"
-	"fmt"
-	"html"
 	"net/mail"
 	"os"
 	"strings"
@@ -98,56 +96,63 @@ func failureNotificationRecipients(req ExportRequest) []string {
 func buildFailureNotificationContent(notification FailureNotification) (subject string, htmlBody string, textBody string) {
 	req := notification.Request
 	status := notification.Status
-	phase := status.Phase
-	if phase == "" {
-		phase = PhaseFailed
-	}
 	errText := strings.TrimSpace(notification.Error)
 	if errText == "" {
 		errText = strings.TrimSpace(status.Error)
 	}
-	subject = fmt.Sprintf("[LightVela] Rescue export failed: %s", req.InstanceID)
-	lines := []string{
-		"Rescue export failed.",
-		"",
-		"Instance: " + req.InstanceID,
-		"Region: " + firstNonEmpty(status.Instance.Region, req.Region),
-		"Phase: " + phase,
-		"Workflow ID: " + notification.WorkflowID,
-		"Run ID: " + notification.RunID,
-		"Remote paths: " + strings.Join(req.RemotePaths, ", "),
-		"Error: " + errText,
+	reason := productFailureReason(errText)
+	agentLabel := exportAgentLabel(req)
+	remotePaths := strings.Join(req.RemotePaths, ", ")
+	if strings.TrimSpace(remotePaths) == "" {
+		remotePaths = "/home/agentuser/.hermes"
 	}
-	textBody = strings.Join(lines, "\n")
-	htmlBody = fmt.Sprintf(`<html><body style="font-family:sans-serif;line-height:1.6;color:#333">
-<p>Rescue export failed.</p>
-<table cellpadding="6" cellspacing="0" style="border-collapse:collapse">
-<tr><td><b>Instance</b></td><td>%s</td></tr>
-<tr><td><b>Region</b></td><td>%s</td></tr>
-<tr><td><b>Phase</b></td><td>%s</td></tr>
-<tr><td><b>Workflow ID</b></td><td>%s</td></tr>
-<tr><td><b>Run ID</b></td><td>%s</td></tr>
-<tr><td><b>Remote paths</b></td><td>%s</td></tr>
-</table>
-<p><b>Error</b></p>
-<pre style="white-space:pre-wrap;background:#f6f7f8;padding:12px;border-radius:6px">%s</pre>
-</body></html>`,
-		html.EscapeString(req.InstanceID),
-		html.EscapeString(firstNonEmpty(status.Instance.Region, req.Region)),
-		html.EscapeString(phase),
-		html.EscapeString(notification.WorkflowID),
-		html.EscapeString(notification.RunID),
-		html.EscapeString(strings.Join(req.RemotePaths, ", ")),
-		html.EscapeString(errText),
-	)
-	return subject, htmlBody, textBody
+	data := exportFailureEmailTemplateData{
+		AgentLabel:  agentLabel,
+		RemotePaths: remotePaths,
+		Reason:      reason,
+	}
+	return renderRescueTextTemplate("export_failure.subject", data),
+		renderRescueHTMLTemplate("export_failure.html", data),
+		renderRescueTextTemplate("export_failure.txt", data)
 }
 
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return strings.TrimSpace(value)
+func productFailureReason(errText string) string {
+	cleaned := strings.TrimSpace(errText)
+	if cleaned == "" {
+		return "导出过程中遇到异常，请稍后重试。"
+	}
+	switch {
+	case strings.Contains(cleaned, "ResourceUnavailable.SnapshotCreating"):
+		return "磁盘快照正在创建，当前无法创建备份镜像。请等待当前快照完成后再重试。"
+	case strings.Contains(cleaned, "Request unauthorized"), strings.Contains(cleaned, "PermissionDenied"):
+		return "导出服务鉴权未通过，请稍后重试；如果仍然失败，请联系支持处理。"
+	case strings.Contains(cleaned, "AuthFailure"), strings.Contains(cleaned, "UnauthorizedOperation"):
+		return "云账号权限暂时不可用，请联系支持确认云资源授权。"
+	case strings.Contains(cleaned, "ResourceNotFound"):
+		return "未找到需要导出的运行环境，请确认 Agent 状态后重试。"
+	}
+	cleaned = stripBeforeLastMarker(cleaned, "): ")
+	cleaned = stripBeforeLastMarker(cleaned, "] ")
+	for _, marker := range []string{" (type:", ", retryable:", " scheduledEventID:", " startedEventID:", " identity:"} {
+		if index := strings.Index(cleaned, marker); index >= 0 {
+			cleaned = strings.TrimSpace(cleaned[:index])
 		}
 	}
-	return ""
+	cleaned = strings.ReplaceAll(cleaned, "cvm.tencentcloudapi.com", "云服务")
+	cleaned = strings.TrimSpace(cleaned)
+	if cleaned == "" {
+		return "导出过程中遇到异常，请稍后重试。"
+	}
+	if len([]rune(cleaned)) > 140 {
+		runes := []rune(cleaned)
+		cleaned = string(runes[:140]) + "..."
+	}
+	return cleaned
+}
+
+func stripBeforeLastMarker(value string, marker string) string {
+	if index := strings.LastIndex(value, marker); index >= 0 {
+		return strings.TrimSpace(value[index+len(marker):])
+	}
+	return value
 }

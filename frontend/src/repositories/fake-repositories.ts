@@ -1170,7 +1170,7 @@ const createBotRepository = (): BotRepository => {
       if (!bot) {
         throw new Error("Bot 不存在，请先创建。");
       }
-      const actionRunId = `worker-action-${bot.id}-rescue_export-${Date.now()}`;
+      const actionRunId = `worker-action-${bot.id}-rescue_export`;
       return {
         actionRunId,
         workflowId: actionRunId,
@@ -1178,6 +1178,24 @@ const createBotRepository = (): BotRepository => {
         action: "rescue_export",
         botId: bot.id,
         status: "accepted",
+      };
+    },
+
+    async getRescueExportStatus(botId) {
+      await wait(NETWORK_DELAY_MS);
+      const bot = botStore.get(botId);
+      if (!bot) {
+        throw new Error("Bot 不存在，请先创建。");
+      }
+      return {
+        workflowId: `worker-action-${bot.id}-rescue_export`,
+        runId: "run_fake",
+        phase: "completed",
+        logs: [
+          { time: new Date(Date.now() - 90000).toISOString(), phase: "locating", message: "正在定位 Agent 运行环境。", level: "info" },
+          { time: new Date(Date.now() - 45000).toISOString(), phase: "copy_archive", message: "正在上传导出包。", level: "info" },
+          { time: new Date().toISOString(), phase: "completed", message: "导出完成，结果已发送到绑定邮箱。", level: "success" },
+        ],
       };
     },
 
