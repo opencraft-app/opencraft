@@ -626,6 +626,29 @@ func (Activities) ExitRescueMode(ctx context.Context, req ExportRequest, cfg Ten
 	return true, nil
 }
 
+func (Activities) SendExportNotificationEmail(ctx context.Context, req ExportRequest, downloadURL string, ttlSeconds int) (EmailNotificationResult, error) {
+	toEmail := notificationEmail(req)
+	logActivity(ctx, "sending export notification email", "instance_id", req.InstanceID, "to", toEmail, "ttl_seconds", ttlSeconds)
+	subject, htmlBody, textBody := buildExportNotificationContent(req, downloadURL, ttlSeconds)
+	result, err := deliverExportNotificationEmail(ctx, TencentConfig{}, LoadSESConfig(), toEmail, subject, htmlBody, textBody, !req.Execute)
+	if err != nil {
+		return EmailNotificationResult{}, err
+	}
+	logActivity(ctx, "export notification email sent", "instance_id", req.InstanceID, "to", toEmail, "message_id", result.MessageID, "dry_run", result.DryRun)
+	return result, nil
+}
+
+func (Activities) ConfirmExportNotificationDelivered(ctx context.Context, req ExportRequest, sent EmailNotificationResult) (EmailNotificationResult, error) {
+	logActivity(ctx, "confirming export notification delivery", "instance_id", req.InstanceID, "to", sent.ToEmail, "message_id", sent.MessageID)
+	result, err := confirmExportNotificationDelivered(ctx, TencentConfig{}, LoadSESConfig(), sent, !req.Execute)
+	if err != nil {
+		return EmailNotificationResult{}, err
+	}
+	logActivity(ctx, "export notification delivery confirmed", "instance_id", req.InstanceID, "to", result.ToEmail, "message_id", result.MessageID,
+		"deliver_status", result.DeliverStatus, "delivered", result.EmailDelivered)
+	return result, nil
+}
+
 func (Activities) DeleteCOSObject(ctx context.Context, req COSDeleteRequest, cfg TencentConfig) (COSDeleteResult, error) {
 	logActivity(ctx, "deleting COS rescue object", "instance_id", req.InstanceID, "object_key", req.ObjectKey, "object_url", req.ObjectURL)
 	result, err := DeleteCOSObject(ctx, cfg, req, false)

@@ -71,6 +71,8 @@ func toSandboxDetail(inst core.Instance, pool core.Pool, sb core.Sandbox) api.Sa
 		TemplateID:           pool.ID,
 		TemplateClassID:      resolution.TemplateClassID,
 		SandboxID:            sb.ID,
+		CloudID:              stringPtr(inst.CloudID),
+		Region:               stringPtr(sb.Region),
 		Alias:                nil,
 		ClientID:             pool.Name,
 		StartedAt:            sb.CreatedAt,

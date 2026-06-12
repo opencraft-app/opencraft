@@ -124,10 +124,20 @@ interface CtlBotBornCardPayload {
   born_number_for_china: number;
 }
 
+interface WorkerActionStartPayload {
+  action_run_id: string;
+  workflow_id: string;
+  run_id?: string;
+  action: string;
+  bot_id: string;
+  status: string;
+}
+
 const AUTH_TOKEN_STORAGE_KEY = "lightclaw-auth-token-v1";
 const OAUTH_SESSION_TOKEN_FRAGMENT_KEY = "session_token";
 const HTTP_BOT_DRAFTS_STORAGE_KEY = "lightclaw-http-bot-drafts-v1";
 const DEFAULT_INSTANCE_TIMEOUT_SECONDS = 60 * 60;
+const DEFAULT_RESCUE_EXPORT_REMOTE_PATH = "/home/agentuser/.openclaw/workspace";
 export const AUTH_UNAUTHORIZED_EVENT = "lightclaw:auth-unauthorized";
 
 class RepositoryError extends Error {
@@ -938,6 +948,27 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
         status: data?.status ?? "",
         exitCode: data?.exit_code ?? -1,
         output: data?.output ?? "",
+      };
+    },
+
+    async startRescueExport(botId: string) {
+      const payload = await requestEnvelope<WorkerActionStartPayload>(baseUrl, "/api/worker-actions", {
+        method: "POST",
+        body: {
+          bot_id: botId,
+          action: "rescue_export",
+          params: {
+            remote_paths: [DEFAULT_RESCUE_EXPORT_REMOTE_PATH],
+          },
+        },
+      });
+      return {
+        actionRunId: payload.action_run_id,
+        workflowId: payload.workflow_id,
+        runId: payload.run_id,
+        action: payload.action,
+        botId: payload.bot_id,
+        status: payload.status,
       };
     },
 

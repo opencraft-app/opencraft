@@ -1029,6 +1029,23 @@ const createBotRepository = (): BotRepository => {
       return { status: "Succeeded", exitCode: 0, output: "" };
     },
 
+    async startRescueExport(botId) {
+      await wait(NETWORK_DELAY_MS);
+      const bot = botStore.get(botId);
+      if (!bot) {
+        throw new Error("Bot 不存在，请先创建。");
+      }
+      const actionRunId = `worker-action-${bot.id}-rescue_export-${Date.now()}`;
+      return {
+        actionRunId,
+        workflowId: actionRunId,
+        runId: `run_${Date.now()}`,
+        action: "rescue_export",
+        botId: bot.id,
+        status: "accepted",
+      };
+    },
+
     async resetInstanceConfig(_botId) {
       await wait(NETWORK_DELAY_MS);
       const fakeKey = `sk-fake-${Math.random().toString(36).slice(2, 10)}`;
