@@ -1,6 +1,7 @@
 package rescue
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/mock"
@@ -17,6 +18,7 @@ func TestExportWorkflowCancelAfterEnterStillExitsRescue(t *testing.T) {
 	env.RegisterActivityWithOptions(acts.EnterRescueMode, ActivityOptions("EnterRescueMode"))
 	env.RegisterActivityWithOptions(acts.ExitRescueMode, ActivityOptions("ExitRescueMode"))
 	env.RegisterActivityWithOptions(acts.WaitInstanceRunning, ActivityOptions("WaitInstanceRunning"))
+	env.RegisterActivityWithOptions(acts.SendFailureNotification, ActivityOptions("SendFailureNotification"))
 
 	req := ExportRequest{
 		InstanceID:             "ins-test",
@@ -47,6 +49,41 @@ func TestExportWorkflowCancelAfterEnterStillExitsRescue(t *testing.T) {
 	}
 	if env.GetWorkflowError() == nil {
 		t.Fatal("workflow should report cancellation after cleanup")
+	}
+	env.AssertExpectations(t)
+}
+
+func TestExportWorkflowFailureSendsNotification(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(ExportWorkflow)
+	acts := Activities{}
+	env.RegisterActivityWithOptions(acts.LocateInstance, ActivityOptions("LocateInstance"))
+	env.RegisterActivityWithOptions(acts.SendFailureNotification, ActivityOptions("SendFailureNotification"))
+
+	req := ExportRequest{
+		InstanceID:        "ins-test",
+		Region:            "ap-beijing",
+		Execute:           true,
+		NotificationEmail: "user@example.com",
+	}
+	cfg := TencentConfig{}
+	locateErr := errors.New("locate failed")
+
+	env.OnActivity("LocateInstance", mock.Anything, req, cfg).Return(InstanceInfo{}, locateErr).Once()
+	env.OnActivity("SendFailureNotification", mock.Anything, mock.MatchedBy(func(notification FailureNotification) bool {
+		return notification.Request.InstanceID == req.InstanceID &&
+			notification.Request.NotificationEmail == req.NotificationEmail &&
+			notification.Error != ""
+	}), cfg).Return(FailureNotificationResult{Sent: true, Recipients: []string{req.NotificationEmail}}, nil).Once()
+
+	env.ExecuteWorkflow(ExportWorkflow, req, cfg)
+
+	if !env.IsWorkflowCompleted() {
+		t.Fatal("workflow did not complete")
+	}
+	if env.GetWorkflowError() == nil {
+		t.Fatal("workflow should fail")
 	}
 	env.AssertExpectations(t)
 }

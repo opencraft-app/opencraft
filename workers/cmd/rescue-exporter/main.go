@@ -132,6 +132,7 @@ func runWorker(argv []string) error {
 	w.RegisterActivityWithOptions(acts.DeleteCOSObject, rescue.ActivityOptions("DeleteCOSObject"))
 	w.RegisterActivityWithOptions(acts.SendExportNotificationEmail, rescue.ActivityOptions("SendExportNotificationEmail"))
 	w.RegisterActivityWithOptions(acts.ConfirmExportNotificationDelivered, rescue.ActivityOptions("ConfirmExportNotificationDelivered"))
+	w.RegisterActivityWithOptions(acts.SendFailureNotification, rescue.ActivityOptions("SendFailureNotification"))
 
 	if *healthAddr != "" {
 		stopHealth := startHealthServer(*healthAddr)

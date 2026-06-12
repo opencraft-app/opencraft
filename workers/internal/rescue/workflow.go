@@ -18,6 +18,9 @@ func ExportWorkflow(ctx workflow.Context, req ExportRequest, cfg TencentConfig) 
 	}
 	finish := func(err error) (ExportResult, error) {
 		completeWorkflowStatus(ctx, req, status, result, err)
+		if err != nil {
+			notifyExportFailure(ctx, req, cfg, status, err)
+		}
 		return result, err
 	}
 
@@ -256,6 +259,28 @@ func maybeSendExportNotification(ctx workflow.Context, req ExportRequest, cfg Te
 		delivered.MessageID = emailResult.MessageID
 	}
 	return delivered, nil
+}
+
+func notifyExportFailure(ctx workflow.Context, req ExportRequest, cfg TencentConfig, status *ExportStatus, workflowErr error) {
+	notifyCtx := cleanupActivityContext(ctx, workflow.ActivityOptions{
+		StartToCloseTimeout: 30 * time.Second,
+		RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 1},
+	})
+	notification := FailureNotification{
+		WorkflowID: workflow.GetInfo(ctx).WorkflowExecution.ID,
+		RunID:      workflow.GetInfo(ctx).WorkflowExecution.RunID,
+		Request:    req,
+		Status:     *status,
+		Error:      workflowErr.Error(),
+	}
+	var sent FailureNotificationResult
+	if err := workflow.ExecuteActivity(notifyCtx, "SendFailureNotification", notification, cfg).Get(notifyCtx, &sent); err != nil {
+		workflow.GetLogger(ctx).Warn("failed to send rescue export failure notification", "error", err, "instance_id", req.InstanceID)
+		return
+	}
+	if sent.Sent {
+		workflow.GetLogger(ctx).Info("rescue export failure notification sent", "instance_id", req.InstanceID, "recipients", sent.Recipients)
+	}
 }
 
 func cleanupActivityContext(ctx workflow.Context, options workflow.ActivityOptions) workflow.Context {
