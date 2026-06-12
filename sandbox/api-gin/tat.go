@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -90,6 +91,8 @@ func (h *handler) postSandboxTATSession(c *gin.Context) {
 
 	session, err := h.terminals.StartTerminalSession(c.Request.Context(), sb.Region, inst.CloudID)
 	if err != nil {
+		log.Printf("[api] tat session start failed sandbox=%s pool=%s instance=%s cloud=%s region=%s err=%v",
+			sb.ID, pool.ID, inst.ID, inst.CloudID, sb.Region, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

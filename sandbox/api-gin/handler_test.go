@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -1027,6 +1028,48 @@ func TestPostSandboxTATSessionReturnsTerminalBootstrap(t *testing.T) {
 	}
 	if got := resp["workingDirectory"]; got != "/home/agentuser" {
 		t.Fatalf("expected workingDirectory /home/agentuser, got %v", got)
+	}
+}
+
+func TestPostSandboxTATSessionLogsProviderFailureContext(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	var logs bytes.Buffer
+	prevLogOutput := log.Writer()
+	log.SetOutput(&logs)
+	defer log.SetOutput(prevLogOutput)
+
+	svc := service.NewService(store.NewMemoryStore())
+	pool, _, sb := createAllocatedSandbox(t, svc)
+	authServer := newAuthIntrospectionServer(t)
+	defer authServer.Close()
+	commands := &stubCommandRunner{
+		sessionErr: errors.New("tat start session denied"),
+	}
+
+	router := newHandlerTestRouterWithAuth(&handler{svc: svc, terminals: commands}, authServer.URL)
+
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes/"+sb.ID+"/tat/session", nil)
+	req.Header.Set("Authorization", "Bearer session-good")
+	rr := httptest.NewRecorder()
+
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	logText := logs.String()
+	for _, want := range []string{
+		"[api] tat session start failed",
+		"sandbox=" + sb.ID,
+		"pool=" + pool.ID,
+		"region=ap-beijing",
+		"cloud=ins-test-1",
+		"err=tat start session denied",
+	} {
+		if !strings.Contains(logText, want) {
+			t.Fatalf("expected log to contain %q, got %s", want, logText)
+		}
 	}
 }
 
