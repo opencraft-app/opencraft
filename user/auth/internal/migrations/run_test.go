@@ -43,8 +43,9 @@ func TestEmbeddedMigrationsAreContiguousAndPaired(t *testing.T) {
 		t.Fatalf("read embedded migrations: %v", err)
 	}
 
-	re := regexp.MustCompile(`^(\d+)_.+\.(up|down)\.sql$`)
+	re := regexp.MustCompile(`^(\d+)_(.+)\.(up|down)\.sql$`)
 	seen := make(map[int]map[string]bool)
+	stemByVersion := make(map[int]string)
 	var versions []int
 
 	for _, entry := range entries {
@@ -56,11 +57,22 @@ func TestEmbeddedMigrationsAreContiguousAndPaired(t *testing.T) {
 		if err != nil {
 			t.Fatalf("parse migration version for %s: %v", entry.Name(), err)
 		}
+		stem := matches[2]
+		if existingStem, exists := stemByVersion[version]; exists && existingStem != stem {
+			t.Fatalf(
+				"duplicate migration version %06d: %q and %q; renumber one branch before merge",
+				version,
+				existingStem,
+				stem,
+			)
+		}
+		stemByVersion[version] = stem
+
 		if seen[version] == nil {
 			seen[version] = make(map[string]bool)
 			versions = append(versions, version)
 		}
-		seen[version][matches[2]] = true
+		seen[version][matches[3]] = true
 	}
 
 	slices.Sort(versions)

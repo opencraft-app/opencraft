@@ -55,6 +55,66 @@ func (e InviteValidationState) Valid() bool {
 	}
 }
 
+// Defines values for RealnamePhoneVerifyResponseRealnameSyncStatus.
+const (
+	RealnamePhoneVerifyResponseRealnameSyncStatusFailed    RealnamePhoneVerifyResponseRealnameSyncStatus = "failed"
+	RealnamePhoneVerifyResponseRealnameSyncStatusPending   RealnamePhoneVerifyResponseRealnameSyncStatus = "pending"
+	RealnamePhoneVerifyResponseRealnameSyncStatusSucceeded RealnamePhoneVerifyResponseRealnameSyncStatus = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the RealnamePhoneVerifyResponseRealnameSyncStatus enum.
+func (e RealnamePhoneVerifyResponseRealnameSyncStatus) Valid() bool {
+	switch e {
+	case RealnamePhoneVerifyResponseRealnameSyncStatusFailed:
+		return true
+	case RealnamePhoneVerifyResponseRealnameSyncStatusPending:
+		return true
+	case RealnamePhoneVerifyResponseRealnameSyncStatusSucceeded:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RealnameSyncRetryResponseRealnameSyncStatus.
+const (
+	RealnameSyncRetryResponseRealnameSyncStatusFailed    RealnameSyncRetryResponseRealnameSyncStatus = "failed"
+	RealnameSyncRetryResponseRealnameSyncStatusPending   RealnameSyncRetryResponseRealnameSyncStatus = "pending"
+	RealnameSyncRetryResponseRealnameSyncStatusSucceeded RealnameSyncRetryResponseRealnameSyncStatus = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the RealnameSyncRetryResponseRealnameSyncStatus enum.
+func (e RealnameSyncRetryResponseRealnameSyncStatus) Valid() bool {
+	switch e {
+	case RealnameSyncRetryResponseRealnameSyncStatusFailed:
+		return true
+	case RealnameSyncRetryResponseRealnameSyncStatusPending:
+		return true
+	case RealnameSyncRetryResponseRealnameSyncStatusSucceeded:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ShadowBindingBasicAuthStatus.
+const (
+	ShadowBindingBasicAuthStatusFailed    ShadowBindingBasicAuthStatus = "failed"
+	ShadowBindingBasicAuthStatusSucceeded ShadowBindingBasicAuthStatus = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the ShadowBindingBasicAuthStatus enum.
+func (e ShadowBindingBasicAuthStatus) Valid() bool {
+	switch e {
+	case ShadowBindingBasicAuthStatusFailed:
+		return true
+	case ShadowBindingBasicAuthStatusSucceeded:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for UserAvatarAuditStatus.
 const (
 	UserAvatarAuditStatusFailed  UserAvatarAuditStatus = "failed"
@@ -91,6 +151,27 @@ func (e UserNameAuditStatus) Valid() bool {
 	case UserNameAuditStatusPassed:
 		return true
 	case UserNameAuditStatusPending:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for UserRealnameSyncStatus.
+const (
+	UserRealnameSyncStatusFailed    UserRealnameSyncStatus = "failed"
+	UserRealnameSyncStatusPending   UserRealnameSyncStatus = "pending"
+	UserRealnameSyncStatusSucceeded UserRealnameSyncStatus = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the UserRealnameSyncStatus enum.
+func (e UserRealnameSyncStatus) Valid() bool {
+	switch e {
+	case UserRealnameSyncStatusFailed:
+		return true
+	case UserRealnameSyncStatusPending:
+		return true
+	case UserRealnameSyncStatusSucceeded:
 		return true
 	default:
 		return false
@@ -163,6 +244,33 @@ type ProfileResponse struct {
 	User User `json:"user"`
 }
 
+// RealnamePhoneVerifyRequest defines model for RealnamePhoneVerifyRequest.
+type RealnamePhoneVerifyRequest struct {
+	Code string `json:"code"`
+}
+
+// RealnamePhoneVerifyResponse defines model for RealnamePhoneVerifyResponse.
+type RealnamePhoneVerifyResponse struct {
+	Ok                  bool                                           `json:"ok"`
+	RealnameLevel       string                                         `json:"realnameLevel"`
+	RealnameSyncStatus  *RealnamePhoneVerifyResponseRealnameSyncStatus `json:"realnameSyncStatus,omitempty"`
+	ShadowBindingStatus string                                         `json:"shadowBindingStatus"`
+}
+
+// RealnamePhoneVerifyResponseRealnameSyncStatus defines model for RealnamePhoneVerifyResponse.RealnameSyncStatus.
+type RealnamePhoneVerifyResponseRealnameSyncStatus string
+
+// RealnameSyncRetryResponse defines model for RealnameSyncRetryResponse.
+type RealnameSyncRetryResponse struct {
+	Ok                  bool                                        `json:"ok"`
+	RealnameSyncStatus  RealnameSyncRetryResponseRealnameSyncStatus `json:"realnameSyncStatus"`
+	ShadowBindingStatus string                                      `json:"shadowBindingStatus"`
+	User                User                                        `json:"user"`
+}
+
+// RealnameSyncRetryResponseRealnameSyncStatus defines model for RealnameSyncRetryResponse.RealnameSyncStatus.
+type RealnameSyncRetryResponseRealnameSyncStatus string
+
 // RealnameVerifyRequest defines model for RealnameVerifyRequest.
 type RealnameVerifyRequest struct {
 	IdCard string `json:"idCard"`
@@ -174,8 +282,16 @@ type RealnameVerifyResponse struct {
 	IdCardMasked string `json:"idCardMasked"`
 	NameMasked   string `json:"nameMasked"`
 	Ok           bool   `json:"ok"`
-	RequestId    string `json:"requestId"`
-	Verified     bool   `json:"verified"`
+
+	// PhoneVerificationRequired Whether the client must complete the phone SMS step after ID card verification.
+	PhoneVerificationRequired bool `json:"phoneVerificationRequired"`
+
+	// PhoneVerificationSkipped True when the backend completed phone verification using the current SMS login session.
+	PhoneVerificationSkipped *bool   `json:"phoneVerificationSkipped,omitempty"`
+	RealnameLevel            *string `json:"realnameLevel,omitempty"`
+	RequestId                string  `json:"requestId"`
+	ShadowBindingStatus      *string `json:"shadowBindingStatus,omitempty"`
+	Verified                 bool    `json:"verified"`
 }
 
 // SendSmsRequest defines model for SendSmsRequest.
@@ -191,6 +307,32 @@ type SendSmsResponse struct {
 // SessionResponse defines model for SessionResponse.
 type SessionResponse struct {
 	Session AuthSession `json:"session"`
+}
+
+// ShadowBinding defines model for ShadowBinding.
+type ShadowBinding struct {
+	AppId                     *int64                        `json:"appId,omitempty"`
+	BasicAuthLastErrorCode    *string                       `json:"basicAuthLastErrorCode,omitempty"`
+	BasicAuthLastErrorMessage *string                       `json:"basicAuthLastErrorMessage,omitempty"`
+	BasicAuthStatus           *ShadowBindingBasicAuthStatus `json:"basicAuthStatus,omitempty"`
+	BasicAuthSyncedAt         *time.Time                    `json:"basicAuthSyncedAt,omitempty"`
+	CreatedAt                 *time.Time                    `json:"createdAt,omitempty"`
+	LastErrorCode             *string                       `json:"lastErrorCode,omitempty"`
+	LastErrorMessage          *string                       `json:"lastErrorMessage,omitempty"`
+	OwnerUin                  *int64                        `json:"ownerUin,omitempty"`
+	ShadowUserName            *string                       `json:"shadowUserName,omitempty"`
+	Status                    string                        `json:"status"`
+	Uin                       *int64                        `json:"uin,omitempty"`
+	UpdatedAt                 *time.Time                    `json:"updatedAt,omitempty"`
+	UserId                    *string                       `json:"userId,omitempty"`
+}
+
+// ShadowBindingBasicAuthStatus defines model for ShadowBinding.BasicAuthStatus.
+type ShadowBindingBasicAuthStatus string
+
+// ShadowBindingResponse defines model for ShadowBindingResponse.
+type ShadowBindingResponse struct {
+	Binding ShadowBinding `json:"binding"`
 }
 
 // UpdateProfileRequest defines model for UpdateProfileRequest.
@@ -217,9 +359,13 @@ type User struct {
 	PendingAvatarUrl *string `json:"pendingAvatarUrl,omitempty"`
 
 	// PendingName Pending nickname waiting for content safety approval.
-	PendingName      *string `json:"pendingName,omitempty"`
-	Phone            *string `json:"phone,omitempty"`
-	RealnameVerified bool    `json:"realnameVerified"`
+	PendingName   *string `json:"pendingName,omitempty"`
+	Phone         *string `json:"phone,omitempty"`
+	RealnameLevel *string `json:"realnameLevel,omitempty"`
+
+	// RealnameSyncStatus Status of syncing the verified real-name identity to the account system.
+	RealnameSyncStatus *UserRealnameSyncStatus `json:"realnameSyncStatus,omitempty"`
+	RealnameVerified   bool                    `json:"realnameVerified"`
 }
 
 // UserAvatarAuditStatus Avatar content safety status.
@@ -227,6 +373,9 @@ type UserAvatarAuditStatus string
 
 // UserNameAuditStatus Nickname content safety status.
 type UserNameAuditStatus string
+
+// UserRealnameSyncStatus Status of syncing the verified real-name identity to the account system.
+type UserRealnameSyncStatus string
 
 // VerifySmsRequest defines model for VerifySmsRequest.
 type VerifySmsRequest struct {
@@ -268,6 +417,9 @@ type UpdateProfileAvatarMultipartRequestBody UpdateProfileAvatarMultipartBody
 // VerifyRealnameJSONRequestBody defines body for VerifyRealname for application/json ContentType.
 type VerifyRealnameJSONRequestBody = RealnameVerifyRequest
 
+// VerifyRealnamePhoneJSONRequestBody defines body for VerifyRealnamePhone for application/json ContentType.
+type VerifyRealnamePhoneJSONRequestBody = RealnamePhoneVerifyRequest
+
 // SendSmsCodeJSONRequestBody defines body for SendSmsCode for application/json ContentType.
 type SendSmsCodeJSONRequestBody = SendSmsRequest
 
@@ -306,15 +458,27 @@ type ServerInterface interface {
 	// Upload and replace the current user's avatar
 	// (PUT /auth/profile/avatar)
 	UpdateProfileAvatar(c *gin.Context)
+	// Retry syncing current user's verified real-name identity to the account system
+	// (POST /auth/realname/sync/retry)
+	RetryRealnameSync(c *gin.Context)
 	// Verify current user's real-name identity
 	// (POST /auth/realname/verify)
 	VerifyRealname(c *gin.Context)
+	// Verify current user's phone as the third real-name factor
+	// (POST /auth/realname/verify-phone)
+	VerifyRealnamePhone(c *gin.Context)
 	// Delete the current session
 	// (DELETE /auth/session)
 	SignOut(c *gin.Context)
 	// Get the current session
 	// (GET /auth/session)
 	GetCurrentSession(c *gin.Context)
+	// Get current user's Lightvela shadow binding status
+	// (GET /auth/shadow/binding)
+	GetShadowBinding(c *gin.Context)
+	// Retry current user's failed Lightvela shadow binding
+	// (POST /auth/shadow/binding/retry)
+	RetryShadowBinding(c *gin.Context)
 	// Send an SMS verification code
 	// (POST /auth/sms/send)
 	SendSmsCode(c *gin.Context)
@@ -486,6 +650,23 @@ func (siw *ServerInterfaceWrapper) UpdateProfileAvatar(c *gin.Context) {
 	siw.Handler.UpdateProfileAvatar(c)
 }
 
+// RetryRealnameSync operation middleware
+func (siw *ServerInterfaceWrapper) RetryRealnameSync(c *gin.Context) {
+
+	c.Set(SessionCookieScopes, []string{})
+
+	c.Set(SessionBearerScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.RetryRealnameSync(c)
+}
+
 // VerifyRealname operation middleware
 func (siw *ServerInterfaceWrapper) VerifyRealname(c *gin.Context) {
 
@@ -501,6 +682,23 @@ func (siw *ServerInterfaceWrapper) VerifyRealname(c *gin.Context) {
 	}
 
 	siw.Handler.VerifyRealname(c)
+}
+
+// VerifyRealnamePhone operation middleware
+func (siw *ServerInterfaceWrapper) VerifyRealnamePhone(c *gin.Context) {
+
+	c.Set(SessionCookieScopes, []string{})
+
+	c.Set(SessionBearerScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.VerifyRealnamePhone(c)
 }
 
 // SignOut operation middleware
@@ -535,6 +733,40 @@ func (siw *ServerInterfaceWrapper) GetCurrentSession(c *gin.Context) {
 	}
 
 	siw.Handler.GetCurrentSession(c)
+}
+
+// GetShadowBinding operation middleware
+func (siw *ServerInterfaceWrapper) GetShadowBinding(c *gin.Context) {
+
+	c.Set(SessionCookieScopes, []string{})
+
+	c.Set(SessionBearerScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetShadowBinding(c)
+}
+
+// RetryShadowBinding operation middleware
+func (siw *ServerInterfaceWrapper) RetryShadowBinding(c *gin.Context) {
+
+	c.Set(SessionCookieScopes, []string{})
+
+	c.Set(SessionBearerScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.RetryShadowBinding(c)
 }
 
 // SendSmsCode operation middleware
@@ -600,9 +832,13 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.PUT(options.BaseURL+"/auth/profile", wrapper.UpdateProfile)
 	router.GET(options.BaseURL+"/auth/profile/avatar", wrapper.GetProfileAvatar)
 	router.PUT(options.BaseURL+"/auth/profile/avatar", wrapper.UpdateProfileAvatar)
+	router.POST(options.BaseURL+"/auth/realname/sync/retry", wrapper.RetryRealnameSync)
 	router.POST(options.BaseURL+"/auth/realname/verify", wrapper.VerifyRealname)
+	router.POST(options.BaseURL+"/auth/realname/verify-phone", wrapper.VerifyRealnamePhone)
 	router.DELETE(options.BaseURL+"/auth/session", wrapper.SignOut)
 	router.GET(options.BaseURL+"/auth/session", wrapper.GetCurrentSession)
+	router.GET(options.BaseURL+"/auth/shadow/binding", wrapper.GetShadowBinding)
+	router.POST(options.BaseURL+"/auth/shadow/binding/retry", wrapper.RetryShadowBinding)
 	router.POST(options.BaseURL+"/auth/sms/send", wrapper.SendSmsCode)
 	router.POST(options.BaseURL+"/auth/sms/verify", wrapper.VerifySmsCode)
 }
@@ -964,6 +1200,67 @@ func (response UpdateProfileAvatar503JSONResponse) VisitUpdateProfileAvatarRespo
 	return json.NewEncoder(w).Encode(response)
 }
 
+type RetryRealnameSyncRequestObject struct {
+}
+
+type RetryRealnameSyncResponseObject interface {
+	VisitRetryRealnameSyncResponse(w http.ResponseWriter) error
+}
+
+type RetryRealnameSync200JSONResponse RealnameSyncRetryResponse
+
+func (response RetryRealnameSync200JSONResponse) VisitRetryRealnameSyncResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type RetryRealnameSync400JSONResponse struct{ ErrorResponseJSONResponse }
+
+func (response RetryRealnameSync400JSONResponse) VisitRetryRealnameSyncResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type RetryRealnameSync401JSONResponse ErrorResponse
+
+func (response RetryRealnameSync401JSONResponse) VisitRetryRealnameSyncResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type RetryRealnameSync403JSONResponse ErrorResponse
+
+func (response RetryRealnameSync403JSONResponse) VisitRetryRealnameSyncResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type RetryRealnameSync502JSONResponse ErrorResponse
+
+func (response RetryRealnameSync502JSONResponse) VisitRetryRealnameSyncResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(502)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type RetryRealnameSync503JSONResponse ErrorResponse
+
+func (response RetryRealnameSync503JSONResponse) VisitRetryRealnameSyncResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
 type VerifyRealnameRequestObject struct {
 	Body *VerifyRealnameJSONRequestBody
 }
@@ -1017,6 +1314,50 @@ func (response VerifyRealname503JSONResponse) VisitVerifyRealnameResponse(w http
 	return json.NewEncoder(w).Encode(response)
 }
 
+type VerifyRealnamePhoneRequestObject struct {
+	Body *VerifyRealnamePhoneJSONRequestBody
+}
+
+type VerifyRealnamePhoneResponseObject interface {
+	VisitVerifyRealnamePhoneResponse(w http.ResponseWriter) error
+}
+
+type VerifyRealnamePhone200JSONResponse RealnamePhoneVerifyResponse
+
+func (response VerifyRealnamePhone200JSONResponse) VisitVerifyRealnamePhoneResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type VerifyRealnamePhone400JSONResponse struct{ ErrorResponseJSONResponse }
+
+func (response VerifyRealnamePhone400JSONResponse) VisitVerifyRealnamePhoneResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type VerifyRealnamePhone401JSONResponse ErrorResponse
+
+func (response VerifyRealnamePhone401JSONResponse) VisitVerifyRealnamePhoneResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type VerifyRealnamePhone403JSONResponse ErrorResponse
+
+func (response VerifyRealnamePhone403JSONResponse) VisitVerifyRealnamePhoneResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
 type SignOutRequestObject struct {
 }
 
@@ -1051,6 +1392,56 @@ func (response GetCurrentSession200JSONResponse) VisitGetCurrentSessionResponse(
 type GetCurrentSession401JSONResponse struct{ ErrorResponseJSONResponse }
 
 func (response GetCurrentSession401JSONResponse) VisitGetCurrentSessionResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetShadowBindingRequestObject struct {
+}
+
+type GetShadowBindingResponseObject interface {
+	VisitGetShadowBindingResponse(w http.ResponseWriter) error
+}
+
+type GetShadowBinding200JSONResponse ShadowBindingResponse
+
+func (response GetShadowBinding200JSONResponse) VisitGetShadowBindingResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetShadowBinding401JSONResponse struct{ ErrorResponseJSONResponse }
+
+func (response GetShadowBinding401JSONResponse) VisitGetShadowBindingResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type RetryShadowBindingRequestObject struct {
+}
+
+type RetryShadowBindingResponseObject interface {
+	VisitRetryShadowBindingResponse(w http.ResponseWriter) error
+}
+
+type RetryShadowBinding200JSONResponse ShadowBindingResponse
+
+func (response RetryShadowBinding200JSONResponse) VisitRetryShadowBindingResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type RetryShadowBinding401JSONResponse struct{ ErrorResponseJSONResponse }
+
+func (response RetryShadowBinding401JSONResponse) VisitRetryShadowBindingResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(401)
 
@@ -1177,15 +1568,27 @@ type StrictServerInterface interface {
 	// Upload and replace the current user's avatar
 	// (PUT /auth/profile/avatar)
 	UpdateProfileAvatar(ctx context.Context, request UpdateProfileAvatarRequestObject) (UpdateProfileAvatarResponseObject, error)
+	// Retry syncing current user's verified real-name identity to the account system
+	// (POST /auth/realname/sync/retry)
+	RetryRealnameSync(ctx context.Context, request RetryRealnameSyncRequestObject) (RetryRealnameSyncResponseObject, error)
 	// Verify current user's real-name identity
 	// (POST /auth/realname/verify)
 	VerifyRealname(ctx context.Context, request VerifyRealnameRequestObject) (VerifyRealnameResponseObject, error)
+	// Verify current user's phone as the third real-name factor
+	// (POST /auth/realname/verify-phone)
+	VerifyRealnamePhone(ctx context.Context, request VerifyRealnamePhoneRequestObject) (VerifyRealnamePhoneResponseObject, error)
 	// Delete the current session
 	// (DELETE /auth/session)
 	SignOut(ctx context.Context, request SignOutRequestObject) (SignOutResponseObject, error)
 	// Get the current session
 	// (GET /auth/session)
 	GetCurrentSession(ctx context.Context, request GetCurrentSessionRequestObject) (GetCurrentSessionResponseObject, error)
+	// Get current user's Lightvela shadow binding status
+	// (GET /auth/shadow/binding)
+	GetShadowBinding(ctx context.Context, request GetShadowBindingRequestObject) (GetShadowBindingResponseObject, error)
+	// Retry current user's failed Lightvela shadow binding
+	// (POST /auth/shadow/binding/retry)
+	RetryShadowBinding(ctx context.Context, request RetryShadowBindingRequestObject) (RetryShadowBindingResponseObject, error)
 	// Send an SMS verification code
 	// (POST /auth/sms/send)
 	SendSmsCode(ctx context.Context, request SendSmsCodeRequestObject) (SendSmsCodeResponseObject, error)
@@ -1519,6 +1922,31 @@ func (sh *strictHandler) UpdateProfileAvatar(ctx *gin.Context) {
 	}
 }
 
+// RetryRealnameSync operation middleware
+func (sh *strictHandler) RetryRealnameSync(ctx *gin.Context) {
+	var request RetryRealnameSyncRequestObject
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.RetryRealnameSync(ctx, request.(RetryRealnameSyncRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RetryRealnameSync")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(RetryRealnameSyncResponseObject); ok {
+		if err := validResponse.VisitRetryRealnameSyncResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // VerifyRealname operation middleware
 func (sh *strictHandler) VerifyRealname(ctx *gin.Context) {
 	var request VerifyRealnameRequestObject
@@ -1545,6 +1973,39 @@ func (sh *strictHandler) VerifyRealname(ctx *gin.Context) {
 		ctx.Status(http.StatusInternalServerError)
 	} else if validResponse, ok := response.(VerifyRealnameResponseObject); ok {
 		if err := validResponse.VisitVerifyRealnameResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// VerifyRealnamePhone operation middleware
+func (sh *strictHandler) VerifyRealnamePhone(ctx *gin.Context) {
+	var request VerifyRealnamePhoneRequestObject
+
+	var body VerifyRealnamePhoneJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.Status(http.StatusBadRequest)
+		ctx.Error(err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.VerifyRealnamePhone(ctx, request.(VerifyRealnamePhoneRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "VerifyRealnamePhone")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(VerifyRealnamePhoneResponseObject); ok {
+		if err := validResponse.VisitVerifyRealnamePhoneResponse(ctx.Writer); err != nil {
 			ctx.Error(err)
 		}
 	} else if response != nil {
@@ -1595,6 +2056,56 @@ func (sh *strictHandler) GetCurrentSession(ctx *gin.Context) {
 		ctx.Status(http.StatusInternalServerError)
 	} else if validResponse, ok := response.(GetCurrentSessionResponseObject); ok {
 		if err := validResponse.VisitGetCurrentSessionResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetShadowBinding operation middleware
+func (sh *strictHandler) GetShadowBinding(ctx *gin.Context) {
+	var request GetShadowBindingRequestObject
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.GetShadowBinding(ctx, request.(GetShadowBindingRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetShadowBinding")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(GetShadowBindingResponseObject); ok {
+		if err := validResponse.VisitGetShadowBindingResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RetryShadowBinding operation middleware
+func (sh *strictHandler) RetryShadowBinding(ctx *gin.Context) {
+	var request RetryShadowBindingRequestObject
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.RetryShadowBinding(ctx, request.(RetryShadowBindingRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RetryShadowBinding")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(RetryShadowBindingResponseObject); ok {
+		if err := validResponse.VisitRetryShadowBindingResponse(ctx.Writer); err != nil {
 			ctx.Error(err)
 		}
 	} else if response != nil {
@@ -1671,38 +2182,47 @@ func (sh *strictHandler) VerifySmsCode(ctx *gin.Context) {
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
+	"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",
+	"P7wJNg+b/wUAAP//4MrZ2Nk9AAA=",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

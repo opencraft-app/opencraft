@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -73,13 +74,14 @@ func mysqlUserSelectColumns(prefix string, includeAudit bool) string {
 		prefix+"avatar_source",
 		prefix+"invite_required",
 		prefix+"realname_verified_at",
+		prefix+"realname_level",
 		prefix+"created_at",
 		prefix+"updated_at",
 	)
 	return strings.Join(columns, ",\n\t\t\t")
 }
 
-func mysqlUserScanDest(user *User, includeAudit bool, pendingName *sql.NullString, nameAuditStatus *sql.NullString, pendingAvatarObjectKey *sql.NullString, pendingAvatarSource *sql.NullString, avatarAuditStatus *sql.NullString, emailValue *sql.NullString, emailVerified *sql.NullBool, phoneValue *sql.NullString, avatarObjectKey *sql.NullString, avatarSource *sql.NullString, realnameVerifiedAt *sql.NullTime) []any {
+func mysqlUserScanDest(user *User, includeAudit bool, pendingName *sql.NullString, nameAuditStatus *sql.NullString, pendingAvatarObjectKey *sql.NullString, pendingAvatarSource *sql.NullString, avatarAuditStatus *sql.NullString, emailValue *sql.NullString, emailVerified *sql.NullBool, phoneValue *sql.NullString, avatarObjectKey *sql.NullString, avatarSource *sql.NullString, realnameVerifiedAt *sql.NullTime, realnameLevel *sql.NullString) []any {
 	dest := []any{&user.ID, &user.Name}
 	if includeAudit {
 		dest = append(dest, pendingName, nameAuditStatus, pendingAvatarObjectKey, pendingAvatarSource, avatarAuditStatus)
@@ -92,13 +94,14 @@ func mysqlUserScanDest(user *User, includeAudit bool, pendingName *sql.NullStrin
 		avatarSource,
 		&user.InviteRequired,
 		realnameVerifiedAt,
+		realnameLevel,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 	)
 	return dest
 }
 
-func applyMySQLUserFields(user *User, includeAudit bool, pendingName sql.NullString, nameAuditStatus sql.NullString, pendingAvatarObjectKey sql.NullString, pendingAvatarSource sql.NullString, avatarAuditStatus sql.NullString, emailValue sql.NullString, emailVerified sql.NullBool, phoneValue sql.NullString, avatarObjectKey sql.NullString, avatarSource sql.NullString, realnameVerifiedAt sql.NullTime) {
+func applyMySQLUserFields(user *User, includeAudit bool, pendingName sql.NullString, nameAuditStatus sql.NullString, pendingAvatarObjectKey sql.NullString, pendingAvatarSource sql.NullString, avatarAuditStatus sql.NullString, emailValue sql.NullString, emailVerified sql.NullBool, phoneValue sql.NullString, avatarObjectKey sql.NullString, avatarSource sql.NullString, realnameVerifiedAt sql.NullTime, realnameLevel sql.NullString) {
 	user.Email = emailValue.String
 	user.EmailVerified = emailVerified.Valid && emailVerified.Bool
 	if includeAudit {
@@ -111,7 +114,8 @@ func applyMySQLUserFields(user *User, includeAudit bool, pendingName sql.NullStr
 	user.Phone = phoneValue.String
 	user.AvatarObjectKey = avatarObjectKey.String
 	user.AvatarSource = avatarSource.String
-	user.RealnameVerified = realnameVerifiedAt.Valid
+	user.RealnameVerified = realnameVerifiedAt.Valid || isAtLeastRealnameLevel(realnameLevel.String, RealnameLevelIDCard2FA)
+	user.RealnameLevel = normalizeRealnameLevel(realnameLevel.String, user.RealnameVerified)
 }
 
 func (s *MySQLStore) scanUserRow(row sqlScanner) (User, error) {
@@ -127,10 +131,11 @@ func (s *MySQLStore) scanUserRow(row sqlScanner) (User, error) {
 	var avatarObjectKey sql.NullString
 	var avatarSource sql.NullString
 	var realnameVerifiedAt sql.NullTime
-	if err := row.Scan(mysqlUserScanDest(&user, s.contentAuditEnabled, &pendingName, &nameAuditStatus, &pendingAvatarObjectKey, &pendingAvatarSource, &avatarAuditStatus, &emailValue, &emailVerified, &phoneValue, &avatarObjectKey, &avatarSource, &realnameVerifiedAt)...); err != nil {
+	var realnameLevel sql.NullString
+	if err := row.Scan(mysqlUserScanDest(&user, s.contentAuditEnabled, &pendingName, &nameAuditStatus, &pendingAvatarObjectKey, &pendingAvatarSource, &avatarAuditStatus, &emailValue, &emailVerified, &phoneValue, &avatarObjectKey, &avatarSource, &realnameVerifiedAt, &realnameLevel)...); err != nil {
 		return User{}, err
 	}
-	applyMySQLUserFields(&user, s.contentAuditEnabled, pendingName, nameAuditStatus, pendingAvatarObjectKey, pendingAvatarSource, avatarAuditStatus, emailValue, emailVerified, phoneValue, avatarObjectKey, avatarSource, realnameVerifiedAt)
+	applyMySQLUserFields(&user, s.contentAuditEnabled, pendingName, nameAuditStatus, pendingAvatarObjectKey, pendingAvatarSource, avatarAuditStatus, emailValue, emailVerified, phoneValue, avatarObjectKey, avatarSource, realnameVerifiedAt, realnameLevel)
 	return user, nil
 }
 
@@ -205,6 +210,10 @@ func (s *MySQLStore) CompleteSMSVerification(ctx context.Context, input VerifySM
 	}
 	defer rollback(tx)
 
+	if err := consumeSMSChallengeTx(ctx, tx, input.Phone, input.Code, now); err != nil {
+		return nil, err
+	}
+
 	user, created, err := s.findOrCreatePhoneUserTx(ctx, tx, input.Phone, strings.TrimSpace(input.Name), now)
 	if err != nil {
 		return nil, err
@@ -212,7 +221,7 @@ func (s *MySQLStore) CompleteSMSVerification(ctx context.Context, input VerifySM
 	if created {
 		user.InviteRequired = false
 	}
-	session, err := createSessionTx(ctx, tx, user, now, sessionTTL)
+	session, err := createSessionTx(ctx, tx, user, now, sessionTTL, AuthMethodSMS)
 	if err != nil {
 		return nil, err
 	}
@@ -221,6 +230,172 @@ func (s *MySQLStore) CompleteSMSVerification(ctx context.Context, input VerifySM
 		return nil, fmt.Errorf("commit sms verification: %w", err)
 	}
 	return session, nil
+}
+
+func (s *MySQLStore) VerifyCurrentUserPhoneChallenge(ctx context.Context, token string, code string, now time.Time) (User, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return User{}, fmt.Errorf("begin tx: %w", err)
+	}
+	defer rollback(tx)
+
+	user, err := s.validateCurrentUserPhoneChallengeTx(ctx, tx, token, code, now)
+	if err != nil {
+		return User{}, err
+	}
+	if err := consumeSMSChallengeTx(ctx, tx, user.Phone, code, now); err != nil {
+		return User{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE users
+		SET realname_level = ?, updated_at = ?
+		WHERE id = ?
+	`, RealnameLevelPhone3FA, now, user.ID); err != nil {
+		return User{}, fmt.Errorf("update realname level: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return User{}, fmt.Errorf("commit phone realname verification: %w", err)
+	}
+	user.RealnameLevel = RealnameLevelPhone3FA
+	user.RealnameVerified = true
+	return user, nil
+}
+
+func (s *MySQLStore) MarkCurrentUserPhoneRealnameVerified(ctx context.Context, token string, now time.Time) (User, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return User{}, fmt.Errorf("begin tx: %w", err)
+	}
+	defer rollback(tx)
+	user, err := s.currentUserWithPhoneRealnamePrerequisitesTx(ctx, tx, token, now)
+	if err != nil {
+		return User{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE users
+		SET realname_verified_at = ?, realname_level = ?, updated_at = ?
+		WHERE id = ?
+	`, now, RealnameLevelPhone3FA, now, user.ID); err != nil {
+		return User{}, fmt.Errorf("update realname level: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return User{}, fmt.Errorf("commit phone realname verification: %w", err)
+	}
+	user.RealnameLevel = RealnameLevelPhone3FA
+	user.RealnameVerified = true
+	user.UpdatedAt = now
+	return user, nil
+}
+
+func (s *MySQLStore) ValidateCurrentUserPhoneChallenge(ctx context.Context, token string, code string, now time.Time) (User, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return User{}, fmt.Errorf("begin tx: %w", err)
+	}
+	defer rollback(tx)
+	user, err := s.validateCurrentUserPhoneChallengeTx(ctx, tx, token, code, now)
+	if err != nil {
+		return User{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return User{}, fmt.Errorf("commit phone realname precheck: %w", err)
+	}
+	return user, nil
+}
+
+func (s *MySQLStore) ValidatePhoneChange(ctx context.Context, token string, newPhone string, code string, now time.Time) (User, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return User{}, fmt.Errorf("begin tx: %w", err)
+	}
+	defer rollback(tx)
+	user, err := s.validatePhoneChangeTx(ctx, tx, token, newPhone, code, now)
+	if err != nil {
+		return User{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return User{}, fmt.Errorf("commit phone change precheck: %w", err)
+	}
+	return user, nil
+}
+
+func (s *MySQLStore) ValidatePhoneChangeTarget(ctx context.Context, token string, newPhone string, now time.Time) (User, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return User{}, fmt.Errorf("begin tx: %w", err)
+	}
+	defer rollback(tx)
+	user, err := s.validatePhoneChangeTargetTx(ctx, tx, token, newPhone, now)
+	if err != nil {
+		return User{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return User{}, fmt.Errorf("commit phone change target validation: %w", err)
+	}
+	return user, nil
+}
+
+func (s *MySQLStore) UpdateCurrentUserPhone(ctx context.Context, token string, newPhone string, now time.Time) (User, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return User{}, fmt.Errorf("begin tx: %w", err)
+	}
+	defer rollback(tx)
+	user, err := s.validatePhoneChangeTargetTx(ctx, tx, token, newPhone, now)
+	if err != nil {
+		return User{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE users
+		SET phone = ?, updated_at = ?
+		WHERE id = ?
+	`, newPhone, now, user.ID); err != nil {
+		if isMySQLDuplicate(err) {
+			return User{}, newError("phone_in_use", "该手机号已绑定其他账号。", http.StatusConflict)
+		}
+		return User{}, fmt.Errorf("update user phone: %w", err)
+	}
+	user, err = s.loadUserByIDTx(ctx, tx, user.ID)
+	if err != nil {
+		return User{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return User{}, fmt.Errorf("commit external phone change: %w", err)
+	}
+	return user, nil
+}
+
+func (s *MySQLStore) CompletePhoneChange(ctx context.Context, token string, newPhone string, code string, now time.Time) (User, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return User{}, fmt.Errorf("begin tx: %w", err)
+	}
+	defer rollback(tx)
+	user, err := s.validatePhoneChangeTx(ctx, tx, token, newPhone, code, now)
+	if err != nil {
+		return User{}, err
+	}
+	if err := consumeSMSChallengeTx(ctx, tx, newPhone, code, now); err != nil {
+		return User{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE users
+		SET phone = ?, updated_at = ?
+		WHERE id = ?
+	`, newPhone, now, user.ID); err != nil {
+		if isMySQLDuplicate(err) {
+			return User{}, newError("phone_in_use", "该手机号已绑定其他账号。", http.StatusConflict)
+		}
+		return User{}, fmt.Errorf("update user phone: %w", err)
+	}
+	user, err = s.loadUserByIDTx(ctx, tx, user.ID)
+	if err != nil {
+		return User{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return User{}, fmt.Errorf("commit phone change: %w", err)
+	}
+	return user, nil
 }
 
 func (s *MySQLStore) CreatePasswordSession(ctx context.Context, input PasswordSignUpInput, passwordHash []byte, now time.Time, sessionTTL time.Duration) (*AuthSession, error) {
@@ -272,7 +447,7 @@ func (s *MySQLStore) CreatePasswordSession(ctx context.Context, input PasswordSi
 	`, user.ID, passwordHash, now, now); err != nil {
 		return nil, fmt.Errorf("insert password credential: %w", err)
 	}
-	session, err := createSessionTx(ctx, tx, user, now, sessionTTL)
+	session, err := createSessionTx(ctx, tx, user, now, sessionTTL, AuthMethodPassword)
 	if err != nil {
 		return nil, err
 	}
@@ -304,15 +479,16 @@ func (s *MySQLStore) GetPasswordUser(ctx context.Context, email string) (User, [
 	var avatarObjectKey sql.NullString
 	var avatarSource sql.NullString
 	var realnameVerifiedAt sql.NullTime
+	var realnameLevel sql.NullString
 	var hash []byte
-	dest := mysqlUserScanDest(&user, s.contentAuditEnabled, &pendingName, &nameAuditStatus, &pendingAvatarObjectKey, &pendingAvatarSource, &avatarAuditStatus, &emailValue, &emailVerified, &phoneValue, &avatarObjectKey, &avatarSource, &realnameVerifiedAt)
+	dest := mysqlUserScanDest(&user, s.contentAuditEnabled, &pendingName, &nameAuditStatus, &pendingAvatarObjectKey, &pendingAvatarSource, &avatarAuditStatus, &emailValue, &emailVerified, &phoneValue, &avatarObjectKey, &avatarSource, &realnameVerifiedAt, &realnameLevel)
 	dest = append(dest, &hash)
 	if err := row.Scan(dest...); errors.Is(err, sql.ErrNoRows) {
 		return User{}, nil, newError("invalid_credentials", "账号或密码不正确。", 401)
 	} else if err != nil {
 		return User{}, nil, fmt.Errorf("query password user: %w", err)
 	}
-	applyMySQLUserFields(&user, s.contentAuditEnabled, pendingName, nameAuditStatus, pendingAvatarObjectKey, pendingAvatarSource, avatarAuditStatus, emailValue, emailVerified, phoneValue, avatarObjectKey, avatarSource, realnameVerifiedAt)
+	applyMySQLUserFields(&user, s.contentAuditEnabled, pendingName, nameAuditStatus, pendingAvatarObjectKey, pendingAvatarSource, avatarAuditStatus, emailValue, emailVerified, phoneValue, avatarObjectKey, avatarSource, realnameVerifiedAt, realnameLevel)
 	return user, hash, nil
 }
 
@@ -331,7 +507,7 @@ func (s *MySQLStore) CreateOAuthSession(ctx context.Context, input OAuthSignInIn
 		user.InviteRequired = false
 	}
 
-	session, err := createSessionTx(ctx, tx, user, now, sessionTTL)
+	session, err := createSessionTx(ctx, tx, user, now, sessionTTL, AuthMethodOAuth)
 	if err != nil {
 		return nil, err
 	}
@@ -435,7 +611,7 @@ func (s *MySQLStore) BindOAuthSession(ctx context.Context, token string, input O
 		return nil, fmt.Errorf("query oauth identity: %w", err)
 	}
 
-	session, err := createSessionTx(ctx, tx, user, now, sessionTTL)
+	session, err := createSessionTx(ctx, tx, user, now, sessionTTL, AuthMethodOAuth)
 	if err != nil {
 		return nil, err
 	}
@@ -452,7 +628,7 @@ func (s *MySQLStore) CreateSession(ctx context.Context, user User, now time.Time
 	}
 	defer rollback(tx)
 
-	session, err := createSessionTx(ctx, tx, user, now, sessionTTL)
+	session, err := createSessionTx(ctx, tx, user, now, sessionTTL, AuthMethodUnknown)
 	if err != nil {
 		return nil, err
 	}
@@ -487,6 +663,7 @@ func (s *MySQLStore) CurrentSession(ctx context.Context, token string, now time.
 			s.expires_at,
 			s.impersonated,
 			s.impersonation_reason,
+			s.auth_method,
 			%s
 		FROM auth_sessions s
 		INNER JOIN users u ON u.id = s.user_id
@@ -498,6 +675,7 @@ func (s *MySQLStore) CurrentSession(ctx context.Context, token string, now time.
 	var expiresAt time.Time
 	var impersonated bool
 	var impersonationReason sql.NullString
+	var authMethod sql.NullString
 	var user User
 	var pendingName sql.NullString
 	var nameAuditStatus sql.NullString
@@ -510,6 +688,7 @@ func (s *MySQLStore) CurrentSession(ctx context.Context, token string, now time.
 	var avatarObjectKey sql.NullString
 	var avatarSource sql.NullString
 	var realnameVerifiedAt sql.NullTime
+	var realnameLevel sql.NullString
 
 	dest := []any{
 		&sessionToken,
@@ -517,8 +696,9 @@ func (s *MySQLStore) CurrentSession(ctx context.Context, token string, now time.
 		&expiresAt,
 		&impersonated,
 		&impersonationReason,
+		&authMethod,
 	}
-	dest = append(dest, mysqlUserScanDest(&user, s.contentAuditEnabled, &pendingName, &nameAuditStatus, &pendingAvatarObjectKey, &pendingAvatarSource, &avatarAuditStatus, &emailValue, &emailVerified, &phoneValue, &avatarObjectKey, &avatarSource, &realnameVerifiedAt)...)
+	dest = append(dest, mysqlUserScanDest(&user, s.contentAuditEnabled, &pendingName, &nameAuditStatus, &pendingAvatarObjectKey, &pendingAvatarSource, &avatarAuditStatus, &emailValue, &emailVerified, &phoneValue, &avatarObjectKey, &avatarSource, &realnameVerifiedAt, &realnameLevel)...)
 	err := row.Scan(dest...)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, newError("unauthorized", "未登录或登录已失效。", 401)
@@ -533,7 +713,11 @@ func (s *MySQLStore) CurrentSession(ctx context.Context, token string, now time.
 		return nil, newError("session_expired", "登录已过期，请重新登录。", 401)
 	}
 
-	applyMySQLUserFields(&user, s.contentAuditEnabled, pendingName, nameAuditStatus, pendingAvatarObjectKey, pendingAvatarSource, avatarAuditStatus, emailValue, emailVerified, phoneValue, avatarObjectKey, avatarSource, realnameVerifiedAt)
+	applyMySQLUserFields(&user, s.contentAuditEnabled, pendingName, nameAuditStatus, pendingAvatarObjectKey, pendingAvatarSource, avatarAuditStatus, emailValue, emailVerified, phoneValue, avatarObjectKey, avatarSource, realnameVerifiedAt, realnameLevel)
+	resolvedAuthMethod := AuthMethodUnknown
+	if authMethod.Valid && strings.TrimSpace(authMethod.String) != "" {
+		resolvedAuthMethod = strings.TrimSpace(authMethod.String)
+	}
 	session := &AuthSession{
 		Token:               sessionToken,
 		User:                user,
@@ -541,6 +725,7 @@ func (s *MySQLStore) CurrentSession(ctx context.Context, token string, now time.
 		ExpiresAt:           expiresAt,
 		Impersonated:        impersonated,
 		ImpersonationReason: impersonationReason.String,
+		AuthMethod:          resolvedAuthMethod,
 	}
 	return session, nil
 }
@@ -605,9 +790,10 @@ func (s *MySQLStore) UpdateRealname(ctx context.Context, token string, input Upd
 			realname_id_card_ciphertext = ?,
 			realname_name_masked = ?,
 			realname_id_card_masked = ?,
+			realname_level = ?,
 			updated_at = ?
 		WHERE id = ?
-	`, input.VerifiedAt, input.Provider, input.Result, nullableString(input.RequestID), input.NameCiphertext, input.IDCardCiphertext, input.NameMasked, input.IDCardMasked, input.VerifiedAt, userID); err != nil {
+	`, input.VerifiedAt, input.Provider, input.Result, nullableString(input.RequestID), input.NameCiphertext, input.IDCardCiphertext, input.NameMasked, input.IDCardMasked, RealnameLevelIDCard2FA, input.VerifiedAt, userID); err != nil {
 		return fmt.Errorf("update realname: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `
@@ -630,6 +816,42 @@ func (s *MySQLStore) UpdateRealname(ctx context.Context, token string, input Upd
 		return fmt.Errorf("commit realname update: %w", err)
 	}
 	return nil
+}
+
+func (s *MySQLStore) GetUserRealname(ctx context.Context, userID string) (StoredRealname, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return StoredRealname{}, fmt.Errorf("begin tx: %w", err)
+	}
+	defer rollback(tx)
+
+	var nameCiphertext sql.NullString
+	var idCardCiphertext sql.NullString
+	err = tx.QueryRowContext(ctx, `
+		SELECT
+			realname_name_ciphertext,
+			realname_id_card_ciphertext
+		FROM users
+		WHERE id = ?
+		FOR UPDATE
+	`, strings.TrimSpace(userID)).Scan(&nameCiphertext, &idCardCiphertext)
+	if errors.Is(err, sql.ErrNoRows) {
+		return StoredRealname{}, newError("realname_not_found", "用户尚未完成实名认证。", http.StatusNotFound)
+	}
+	if err != nil {
+		return StoredRealname{}, fmt.Errorf("query user realname: %w", err)
+	}
+	if !nameCiphertext.Valid || strings.TrimSpace(nameCiphertext.String) == "" || !idCardCiphertext.Valid || strings.TrimSpace(idCardCiphertext.String) == "" {
+		return StoredRealname{}, newError("realname_incomplete", "实名认证信息不完整。", http.StatusConflict)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return StoredRealname{}, fmt.Errorf("commit get user realname: %w", err)
+	}
+	return StoredRealname{
+		NameCiphertext:   nameCiphertext.String,
+		IDCardCiphertext: idCardCiphertext.String,
+	}, nil
 }
 
 func (s *MySQLStore) UpdateProfile(ctx context.Context, token string, name string, now time.Time) (User, error) {
@@ -1358,6 +1580,129 @@ func (s *MySQLStore) consumeInviteTx(ctx context.Context, tx *sql.Tx, code strin
 	return nil
 }
 
+func consumeSMSChallengeTx(ctx context.Context, tx *sql.Tx, phone string, code string, now time.Time) error {
+	row := tx.QueryRowContext(ctx, `
+		SELECT code, expires_at, remaining_retries
+		FROM sms_challenges
+		WHERE phone = ?
+		FOR UPDATE
+	`, phone)
+	var expected string
+	var expiresAt time.Time
+	var remainingRetries int
+	if err := row.Scan(&expected, &expiresAt, &remainingRetries); errors.Is(err, sql.ErrNoRows) {
+		return newError("sms_code_not_found", "请先获取验证码。", 400)
+	} else if err != nil {
+		return fmt.Errorf("query sms challenge: %w", err)
+	}
+	if !expiresAt.After(now) {
+		_, _ = tx.ExecContext(ctx, `DELETE FROM sms_challenges WHERE phone = ?`, phone)
+		return newError("sms_code_expired", "验证码已过期，请重新获取。", 400)
+	}
+	if strings.TrimSpace(code) == "" || expected != strings.TrimSpace(code) {
+		remainingRetries--
+		if remainingRetries <= 0 {
+			_, _ = tx.ExecContext(ctx, `DELETE FROM sms_challenges WHERE phone = ?`, phone)
+		} else {
+			_, _ = tx.ExecContext(ctx, `UPDATE sms_challenges SET remaining_retries = ?, updated_at = ? WHERE phone = ?`, remainingRetries, now, phone)
+		}
+		return newError("invalid_sms_code", "验证码不正确。", 400)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM sms_challenges WHERE phone = ?`, phone); err != nil {
+		return fmt.Errorf("consume sms challenge: %w", err)
+	}
+	return nil
+}
+
+func (s *MySQLStore) validateCurrentUserPhoneChallengeTx(ctx context.Context, tx *sql.Tx, token string, code string, now time.Time) (User, error) {
+	user, err := s.currentUserWithPhoneRealnamePrerequisitesTx(ctx, tx, token, now)
+	if err != nil {
+		return User{}, err
+	}
+	if err := validateSMSChallengeTx(ctx, tx, user.Phone, code, now); err != nil {
+		return User{}, err
+	}
+	return user, nil
+}
+
+func (s *MySQLStore) currentUserWithPhoneRealnamePrerequisitesTx(ctx context.Context, tx *sql.Tx, token string, now time.Time) (User, error) {
+	userID, err := currentSessionUserIDTx(ctx, tx, strings.TrimSpace(token), now)
+	if err != nil {
+		return User{}, err
+	}
+	user, err := s.loadUserByIDTx(ctx, tx, userID)
+	if err != nil {
+		return User{}, err
+	}
+	if user.Phone == "" {
+		return User{}, newError("phone_required", "当前账号未绑定手机号。", 400)
+	}
+	if !isAtLeastRealnameLevel(user.RealnameLevel, RealnameLevelIDCard2FA) && !user.RealnameVerified {
+		return User{}, newError("realname_required", "请先完成实名认证。", 403)
+	}
+	return user, nil
+}
+
+func (s *MySQLStore) validatePhoneChangeTargetTx(ctx context.Context, tx *sql.Tx, token string, newPhone string, now time.Time) (User, error) {
+	userID, err := currentSessionUserIDTx(ctx, tx, strings.TrimSpace(token), now)
+	if err != nil {
+		return User{}, err
+	}
+	user, err := s.loadUserByIDTx(ctx, tx, userID)
+	if err != nil {
+		return User{}, err
+	}
+	row := tx.QueryRowContext(ctx, `
+		SELECT id
+		FROM users
+		WHERE phone = ?
+		FOR UPDATE
+	`, newPhone)
+	var existingUserID string
+	if err := row.Scan(&existingUserID); err == nil {
+		if existingUserID != user.ID {
+			return User{}, newError("phone_in_use", "该手机号已绑定其他账号。", http.StatusConflict)
+		}
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return User{}, fmt.Errorf("query phone owner: %w", err)
+	}
+	return user, nil
+}
+
+func (s *MySQLStore) validatePhoneChangeTx(ctx context.Context, tx *sql.Tx, token string, newPhone string, code string, now time.Time) (User, error) {
+	user, err := s.validatePhoneChangeTargetTx(ctx, tx, token, newPhone, now)
+	if err != nil {
+		return User{}, err
+	}
+	if err := validateSMSChallengeTx(ctx, tx, newPhone, code, now); err != nil {
+		return User{}, err
+	}
+	return user, nil
+}
+
+func validateSMSChallengeTx(ctx context.Context, tx *sql.Tx, phone string, code string, now time.Time) error {
+	row := tx.QueryRowContext(ctx, `
+		SELECT code, expires_at
+		FROM sms_challenges
+		WHERE phone = ?
+	`, phone)
+	var expected string
+	var expiresAt time.Time
+	if err := row.Scan(&expected, &expiresAt); errors.Is(err, sql.ErrNoRows) {
+		return newError("sms_code_not_found", "请先获取验证码。", 400)
+	} else if err != nil {
+		return fmt.Errorf("query sms challenge: %w", err)
+	}
+	if !expiresAt.After(now) {
+		_, _ = tx.ExecContext(ctx, `DELETE FROM sms_challenges WHERE phone = ?`, phone)
+		return newError("sms_code_expired", "验证码已过期，请重新获取。", 400)
+	}
+	if strings.TrimSpace(code) == "" || expected != strings.TrimSpace(code) {
+		return newError("invalid_sms_code", "验证码不正确。", 400)
+	}
+	return nil
+}
+
 func (s *MySQLStore) findOrCreatePhoneUserTx(ctx context.Context, tx *sql.Tx, phone string, name string, now time.Time) (User, bool, error) {
 	row := tx.QueryRowContext(ctx, fmt.Sprintf(`
 		SELECT
@@ -1377,12 +1722,13 @@ func (s *MySQLStore) findOrCreatePhoneUserTx(ctx context.Context, tx *sql.Tx, ph
 	var emailVerified sql.NullBool
 	var phoneValue sql.NullString
 	var realnameVerifiedAt sql.NullTime
+	var realnameLevel sql.NullString
 	var avatarObjectKey sql.NullString
 	var avatarSource sql.NullString
-	err := row.Scan(mysqlUserScanDest(&user, s.contentAuditEnabled, &pendingName, &nameAuditStatus, &pendingAvatarObjectKey, &pendingAvatarSource, &avatarAuditStatus, &emailValue, &emailVerified, &phoneValue, &avatarObjectKey, &avatarSource, &realnameVerifiedAt)...)
+	err := row.Scan(mysqlUserScanDest(&user, s.contentAuditEnabled, &pendingName, &nameAuditStatus, &pendingAvatarObjectKey, &pendingAvatarSource, &avatarAuditStatus, &emailValue, &emailVerified, &phoneValue, &avatarObjectKey, &avatarSource, &realnameVerifiedAt, &realnameLevel)...)
 	switch {
 	case err == nil:
-		applyMySQLUserFields(&user, s.contentAuditEnabled, pendingName, nameAuditStatus, pendingAvatarObjectKey, pendingAvatarSource, avatarAuditStatus, emailValue, emailVerified, phoneValue, avatarObjectKey, avatarSource, realnameVerifiedAt)
+		applyMySQLUserFields(&user, s.contentAuditEnabled, pendingName, nameAuditStatus, pendingAvatarObjectKey, pendingAvatarSource, avatarAuditStatus, emailValue, emailVerified, phoneValue, avatarObjectKey, avatarSource, realnameVerifiedAt, realnameLevel)
 		if user.InviteRequired {
 			if _, updateErr := tx.ExecContext(ctx, `
 				UPDATE users
@@ -1463,10 +1809,11 @@ func (s *MySQLStore) findOrCreateOAuthUserTx(ctx context.Context, tx *sql.Tx, in
 	var avatarObjectKey sql.NullString
 	var avatarSource sql.NullString
 	var realnameVerifiedAt sql.NullTime
-	err := row.Scan(mysqlUserScanDest(&user, s.contentAuditEnabled, &pendingName, &nameAuditStatus, &pendingAvatarObjectKey, &pendingAvatarSource, &avatarAuditStatus, &emailValue, &emailVerified, &phoneValue, &avatarObjectKey, &avatarSource, &realnameVerifiedAt)...)
+	var realnameLevel sql.NullString
+	err := row.Scan(mysqlUserScanDest(&user, s.contentAuditEnabled, &pendingName, &nameAuditStatus, &pendingAvatarObjectKey, &pendingAvatarSource, &avatarAuditStatus, &emailValue, &emailVerified, &phoneValue, &avatarObjectKey, &avatarSource, &realnameVerifiedAt, &realnameLevel)...)
 	switch {
 	case err == nil:
-		applyMySQLUserFields(&user, s.contentAuditEnabled, pendingName, nameAuditStatus, pendingAvatarObjectKey, pendingAvatarSource, avatarAuditStatus, emailValue, emailVerified, phoneValue, avatarObjectKey, avatarSource, realnameVerifiedAt)
+		applyMySQLUserFields(&user, s.contentAuditEnabled, pendingName, nameAuditStatus, pendingAvatarObjectKey, pendingAvatarSource, avatarAuditStatus, emailValue, emailVerified, phoneValue, avatarObjectKey, avatarSource, realnameVerifiedAt, realnameLevel)
 		if user.InviteRequired {
 			if _, updateErr := tx.ExecContext(ctx, `
 				UPDATE users
@@ -1509,12 +1856,10 @@ func (s *MySQLStore) findOrCreateOAuthUserTx(ctx context.Context, tx *sql.Tx, in
 	if err != nil {
 		return User{}, false, fmt.Errorf("generate oauth user id: %w", err)
 	}
-	oauthEmailVerified := canAutoLinkOAuthEmail(input)
 	user = User{
 		ID:             userID,
 		Name:           input.Name,
 		Email:          input.Email,
-		EmailVerified:  oauthEmailVerified,
 		InviteRequired: false,
 		CreatedAt:      now,
 		UpdatedAt:      now,
@@ -1524,13 +1869,12 @@ func (s *MySQLStore) findOrCreateOAuthUserTx(ctx context.Context, tx *sql.Tx, in
 			id,
 			name,
 			email,
-			email_verified,
 			phone,
 			invite_required,
 			created_at,
 			updated_at
-		) VALUES (?, ?, ?, ?, NULL, ?, ?, ?)
-	`, user.ID, user.Name, nullableString(user.Email), oauthEmailVerified, false, now, now); err != nil {
+		) VALUES (?, ?, ?, NULL, ?, ?, ?)
+	`, user.ID, user.Name, nullableString(user.Email), false, now, now); err != nil {
 		return User{}, false, fmt.Errorf("insert oauth user: %w", err)
 	}
 
@@ -1568,32 +1912,37 @@ func insertOAuthIdentityTx(ctx context.Context, tx *sql.Tx, userID string, input
 	return nil
 }
 
-func createSessionTx(ctx context.Context, tx *sql.Tx, user User, now time.Time, sessionTTL time.Duration) (*AuthSession, error) {
-	return createSessionWithMetadataTx(ctx, tx, user, now, sessionTTL, false, "")
+func createSessionTx(ctx context.Context, tx *sql.Tx, user User, now time.Time, sessionTTL time.Duration, authMethod string) (*AuthSession, error) {
+	return createSessionWithMetadataTx(ctx, tx, user, now, sessionTTL, false, "", authMethod)
 }
 
 func createImpersonationSessionTx(ctx context.Context, tx *sql.Tx, user User, reason string, now time.Time, sessionTTL time.Duration) (*AuthSession, error) {
-	return createSessionWithMetadataTx(ctx, tx, user, now, sessionTTL, true, strings.TrimSpace(reason))
+	return createSessionWithMetadataTx(ctx, tx, user, now, sessionTTL, true, strings.TrimSpace(reason), AuthMethodImpersonation)
 }
 
-func createSessionWithMetadataTx(ctx context.Context, tx *sql.Tx, user User, now time.Time, sessionTTL time.Duration, impersonated bool, reason string) (*AuthSession, error) {
+func createSessionWithMetadataTx(ctx context.Context, tx *sql.Tx, user User, now time.Time, sessionTTL time.Duration, impersonated bool, reason string, authMethod string) (*AuthSession, error) {
 	token, err := newOpaqueToken()
 	if err != nil {
 		return nil, fmt.Errorf("create session token: %w", err)
 	}
 	expiresAt := now.Add(sessionTTL)
+	normalizedAuthMethod := strings.TrimSpace(authMethod)
+	if normalizedAuthMethod == "" {
+		normalizedAuthMethod = AuthMethodUnknown
+	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO auth_sessions (
 			token,
 			user_id,
 			impersonated,
 			impersonation_reason,
+			auth_method,
 			authenticated_at,
 			expires_at,
 			created_at,
 			updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-	`, token, user.ID, impersonated, nullableString(strings.TrimSpace(reason)), now, expiresAt, now, now); err != nil {
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, token, user.ID, impersonated, nullableString(strings.TrimSpace(reason)), normalizedAuthMethod, now, expiresAt, now, now); err != nil {
 		return nil, fmt.Errorf("insert auth session: %w", err)
 	}
 
@@ -1604,6 +1953,7 @@ func createSessionWithMetadataTx(ctx context.Context, tx *sql.Tx, user User, now
 		ExpiresAt:           expiresAt,
 		Impersonated:        impersonated,
 		ImpersonationReason: strings.TrimSpace(reason),
+		AuthMethod:          normalizedAuthMethod,
 	}, nil
 }
 
@@ -1739,6 +2089,7 @@ func findUserByEmailTx(ctx context.Context, tx *sql.Tx, email string) (User, boo
 			avatar_source,
 			invite_required,
 			realname_verified_at,
+			realname_level,
 			created_at,
 			updated_at
 		FROM users
@@ -1752,6 +2103,7 @@ func findUserByEmailTx(ctx context.Context, tx *sql.Tx, email string) (User, boo
 	var avatarObjectKey sql.NullString
 	var avatarSource sql.NullString
 	var realnameVerifiedAt sql.NullTime
+	var realnameLevel sql.NullString
 	if err := row.Scan(
 		&user.ID,
 		&user.Name,
@@ -1761,6 +2113,7 @@ func findUserByEmailTx(ctx context.Context, tx *sql.Tx, email string) (User, boo
 		&avatarSource,
 		&user.InviteRequired,
 		&realnameVerifiedAt,
+		&realnameLevel,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 	); errors.Is(err, sql.ErrNoRows) {
@@ -1773,7 +2126,8 @@ func findUserByEmailTx(ctx context.Context, tx *sql.Tx, email string) (User, boo
 	user.Phone = phoneValue.String
 	user.AvatarObjectKey = avatarObjectKey.String
 	user.AvatarSource = avatarSource.String
-	user.RealnameVerified = realnameVerifiedAt.Valid
+	user.RealnameVerified = realnameVerifiedAt.Valid || isAtLeastRealnameLevel(realnameLevel.String, RealnameLevelIDCard2FA)
+	user.RealnameLevel = normalizeRealnameLevel(realnameLevel.String, user.RealnameVerified)
 	return user, true, nil
 }
 
@@ -1835,4 +2189,11 @@ func normalizeMySQLDSN(dsn string) (string, error) {
 	}
 	cfg.Params["time_zone"] = "'+00:00'"
 	return cfg.FormatDSN(), nil
+}
+
+func (s *MySQLStore) DB() *sql.DB {
+	if s == nil {
+		return nil
+	}
+	return s.db
 }

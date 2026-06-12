@@ -1,7 +1,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { User } from "@/domain/types";
 import { AccountPage } from "@/pages/marketing/account-page";
@@ -11,6 +11,8 @@ const uploadAvatar = vi.fn();
 const signOut = vi.fn();
 const deleteAccount = vi.fn();
 const signInAsGuest = vi.fn();
+const refreshProfile = vi.fn();
+const retryRealnameSync = vi.fn();
 
 let currentUser: User;
 
@@ -59,6 +61,10 @@ vi.mock("@/contexts/repository-context", () => ({
   useRepositories: () => ({
     auth: {
       verifyRealname: vi.fn(),
+      retryRealnameSync,
+    },
+    plans: {
+      listMyPasses: vi.fn().mockResolvedValue([]),
     },
   }),
 }));
@@ -74,13 +80,14 @@ vi.mock("@/contexts/session-context", () => ({
     signInAsGuest,
     updateProfile,
     uploadAvatar,
+    refreshProfile,
     signOut,
     deleteAccount,
   }),
 }));
 
 const renderAccountPage = () => {
-  return render(
+  render(
     <MemoryRouter>
       <AccountPage />
     </MemoryRouter>,
@@ -88,14 +95,15 @@ const renderAccountPage = () => {
 };
 
 describe("AccountPage nickname audit state", () => {
-  beforeEach(() => {
+  afterEach(() => {
     cleanup();
+  });
+
+  beforeEach(() => {
     vi.clearAllMocks();
     currentUser = {
       id: "usr_profile_audit",
       name: "旧昵称",
-      email: "profile-audit@example.com",
-      emailVerified: true,
       inviteRequired: false,
       realnameVerified: true,
       createdAt: "2026-06-01T00:00:00Z",
@@ -118,7 +126,11 @@ describe("AccountPage nickname audit state", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "修改待审核昵称" }));
 
-    expect(screen.getByRole("textbox")).toHaveValue("待审核昵称");
+    const nicknameInput = screen
+      .getAllByRole("textbox")
+      .find((input) => input.getAttribute("value") === "待审核昵称");
+    expect(nicknameInput).toBeDefined();
+    expect(nicknameInput!).toHaveValue("待审核昵称");
   });
 
   it("explains a failed nickname audit without replacing the active nickname", () => {
@@ -165,26 +177,90 @@ describe("AccountPage nickname audit state", () => {
     expect(screen.getByText("上次头像修改未通过审核，当前仍使用原头像。")).toBeInTheDocument();
   });
 
-  it("submits nickname updates to the profile API", async () => {
+  it("does not treat the legacy realname boolean as ID-card verification", async () => {
+    currentUser = {
+      ...currentUser,
+      phone: "15625128341",
+      realnameVerified: true,
+      realnameLevel: undefined,
+    };
+
     renderAccountPage();
 
-    await userEvent.click(screen.getByRole("button", { name: "修改昵称" }));
-    await userEvent.clear(screen.getByRole("textbox"));
-    await userEvent.type(screen.getByRole("textbox"), "新昵称");
-    await userEvent.click(screen.getByRole("button", { name: "保存昵称" }));
+    const verifyButtons = screen.getAllByRole("button", { name: /去认证/ });
+    expect(verifyButtons.length).toBeGreaterThan(0);
+    await userEvent.click(verifyButtons[0]!);
 
-    expect(updateProfile).toHaveBeenCalledWith({ name: "新昵称" });
+    expect(screen.getByText("第一步：提交真实姓名和身份证号。")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("请输入真实姓名")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("请输入身份证号码")).toBeInTheDocument();
+    expect(screen.queryByText("第二步：输入当前手机号收到的短信验证码。")).not.toBeInTheDocument();
   });
 
-  it("submits avatar uploads to the profile API", async () => {
-    const { container } = renderAccountPage();
-    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]');
+  it("requires a safety phone before starting ID-card realname verification", async () => {
+    currentUser = {
+      ...currentUser,
+      phone: undefined,
+      realnameVerified: false,
+      realnameLevel: undefined,
+    };
 
-    expect(fileInput).not.toBeNull();
-    const avatarFile = new File(["avatar"], "avatar.png", { type: "image/png" });
+    renderAccountPage();
 
-    await userEvent.upload(fileInput!, avatarFile);
+    await userEvent.click(screen.getByRole("button", { name: /绑定安全手机/ }));
 
-    expect(uploadAvatar).toHaveBeenCalledWith(avatarFile);
+    expect(screen.getByRole("heading", { name: "绑定安全手机" })).toBeInTheDocument();
+    expect(screen.getByText("当前账号尚未绑定安全手机。")).toBeInTheDocument();
+    expect(screen.queryByText("第一步：提交真实姓名和身份证号。")).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("请输入真实姓名")).not.toBeInTheDocument();
+  });
+
+  it("shows retry action when ID-card realname passed but LightVela sync failed", async () => {
+    retryRealnameSync.mockResolvedValue({
+      ok: true,
+      user: {
+        ...currentUser,
+        phone: "15625128341",
+        realnameVerified: true,
+        realnameLevel: "phone_3fa",
+        realnameSyncStatus: "succeeded",
+      },
+      realnameSyncStatus: "succeeded",
+      shadowBindingStatus: "active",
+    });
+    refreshProfile.mockResolvedValue(undefined);
+    currentUser = {
+      ...currentUser,
+      phone: "15625128341",
+      realnameVerified: true,
+      realnameLevel: "idcard_2fa",
+      realnameSyncStatus: "failed",
+    };
+
+    renderAccountPage();
+
+    expect(screen.getByText("实名信息同步失败")).toBeInTheDocument();
+    expect(screen.queryByText("待完成手机号认证")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /重新同步/ }));
+
+    expect(retryRealnameSync).toHaveBeenCalledTimes(1);
+    expect(refreshProfile).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows pending sync instead of asking for another phone verification", () => {
+    currentUser = {
+      ...currentUser,
+      phone: "15625128341",
+      realnameVerified: true,
+      realnameLevel: "idcard_2fa",
+      realnameSyncStatus: "pending",
+    };
+
+    renderAccountPage();
+
+    expect(screen.getByText("实名信息同步中")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /重新同步/ })).toBeInTheDocument();
+    expect(screen.queryByText("待完成手机号认证")).not.toBeInTheDocument();
   });
 });

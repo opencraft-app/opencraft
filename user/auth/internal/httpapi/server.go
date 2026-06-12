@@ -16,25 +16,27 @@ import (
 )
 
 type ServerConfig struct {
-	CookieSecure              bool
-	CookieSameSite            http.SameSite
-	SessionTTL                time.Duration
-	OAuthReturnToAllowedHosts []string
-	QQOAuth                   *QQOAuthConfig
-	GoogleOAuth               *GoogleOAuthConfig
-	GitHubOAuth               *GitHubOAuthConfig
-	WeChatOAuth               *WeChatOAuthConfig
-	AvatarStore               AvatarStore
-	TATRegisterIssuer         tat.RegisterCodeIssuer
-	DeviceBindTokenSecret     string
-	DeviceBindTokenTTL        time.Duration
-	Logger                    *slog.Logger
-	PublicBaseURL             string
-	FrontendBaseURL           string
-	AdminToken                string
-	E2EAuthEnabled            bool
-	E2EAuthToken              string
-	E2ESessionTTL             time.Duration
+	CookieSecure               bool
+	CookieSameSite             http.SameSite
+	SessionTTL                 time.Duration
+	OAuthReturnToAllowedHosts  []string
+	QQOAuth                    *QQOAuthConfig
+	GoogleOAuth                *GoogleOAuthConfig
+	GitHubOAuth                *GitHubOAuthConfig
+	WeChatOAuth                *WeChatOAuthConfig
+	AvatarStore                AvatarStore
+	TATRegisterIssuer          tat.RegisterCodeIssuer
+	DeviceBindTokenSecret      string
+	DeviceBindTokenTTL         time.Duration
+	Logger                     *slog.Logger
+	PublicBaseURL              string
+	FrontendBaseURL            string
+	AdminToken                 string
+	E2EAuthEnabled             bool
+	E2EAuthToken               string
+	E2ESessionTTL              time.Duration
+	ShadowBindingInternalToken string
+	ShadowTencentCallbackToken string
 }
 
 func NewRouter(authService *service.Service, config ServerConfig) *gin.Engine {
@@ -49,7 +51,8 @@ func NewRouter(authService *service.Service, config ServerConfig) *gin.Engine {
 		ctx.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
-	handler := NewHandler(authService, config.CookieSecure, config.CookieSameSite, config.SessionTTL, config.QQOAuth, config.GoogleOAuth, config.GitHubOAuth, config.WeChatOAuth, config.PublicBaseURL, config.FrontendBaseURL, config.OAuthReturnToAllowedHosts)
+	handler := NewHandler(authService, config.CookieSecure, config.CookieSameSite, config.SessionTTL, config.QQOAuth, config.GoogleOAuth, config.GitHubOAuth, config.WeChatOAuth, config.PublicBaseURL, config.OAuthReturnToAllowedHosts)
+	handler.frontendBaseURL = strings.TrimRight(strings.TrimSpace(config.FrontendBaseURL), "/")
 	handler.avatarStore = config.AvatarStore
 	handler.tatRegisterIssuer = config.TATRegisterIssuer
 	handler.deviceBindTokens = newDeviceBindTokenCodec(config.DeviceBindTokenSecret, config.DeviceBindTokenTTL)
@@ -57,9 +60,14 @@ func NewRouter(authService *service.Service, config ServerConfig) *gin.Engine {
 	router.GET("/auth/email/bind/confirm", handler.HandleConfirmEmailBind)
 	router.POST("/auth/tat/device-bind", handler.CreateTATDeviceBind)
 	router.POST("/auth/invite/prepare", handler.PrepareInvite)
+	router.POST("/v1/shadow/binding/send-sms", handler.SendShadowBindingSMS)
+	router.POST("/v1/shadow/binding/verify-phone", handler.VerifyShadowBindingPhone)
+	router.POST("/auth/profile/phone/send", handler.SendPhoneChangeSMS)
+	router.POST("/auth/profile/phone/verify", handler.VerifyPhoneChange)
 	router.GET("/users/:userID/avatar", handler.GetUserAvatar)
 	router.POST("/contentaudit/callback", handler.ContentAuditCallback)
 	router.DELETE("/auth/profile", handler.DeleteProfile)
+	registerInternalShadowRoutes(router, authService, config)
 	api.RegisterHandlers(router, api.NewStrictHandler(handler, nil))
 
 	if strings.TrimSpace(config.AdminToken) != "" {

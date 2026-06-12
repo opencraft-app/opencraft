@@ -16,6 +16,7 @@ import type {
   BotTerminalSession,
   BotRuntime,
   BotVersion,
+  BundleTimeUnit,
   DataMode,
   Deployment,
   InviteCodeValidation,
@@ -41,6 +42,28 @@ export interface RealnameVerifyResult {
   nameMasked: string;
   idCardMasked: string;
   requestId: string;
+  phoneVerificationRequired: boolean;
+  phoneVerificationSkipped?: boolean;
+  realnameLevel?: string;
+  shadowBindingStatus?: string;
+}
+
+export interface RealnamePhoneVerifyResult {
+  ok: boolean;
+  realnameLevel: string;
+  realnameSyncStatus?: "pending" | "failed" | "succeeded";
+  shadowBindingStatus: string;
+}
+
+export interface RealnameSyncRetryResult {
+  ok: boolean;
+  user: User;
+  realnameSyncStatus: "pending" | "failed" | "succeeded";
+  shadowBindingStatus: string;
+}
+
+export interface SendSmsCodeResult {
+  cooldownSeconds: number;
 }
 
 export interface TatDeviceBindResult {
@@ -76,6 +99,11 @@ export interface AuthRepository {
   deleteAccount(): Promise<void>;
   /** 实名认证：POST /auth/realname/verify */
   verifyRealname(input: { name: string; idCard: string }): Promise<RealnameVerifyResult>;
+  sendSmsCode(input: { phone: string }): Promise<SendSmsCodeResult>;
+  verifyRealnamePhone(input: { code: string }): Promise<RealnamePhoneVerifyResult>;
+  retryRealnameSync(): Promise<RealnameSyncRetryResult>;
+  sendPhoneChangeCode(input: { phone: string }): Promise<SendSmsCodeResult>;
+  verifyPhoneChange(input: { phone: string; code: string }): Promise<User>;
   /** 邮箱绑定：POST /auth/email/bind/request */
   requestEmailBind(input: { email: string }): Promise<{ cooldownSeconds: number }>;
   createTatDeviceBind(input: { callbackUrl: string; deviceName?: string }): Promise<TatDeviceBindResult>;
@@ -92,32 +120,89 @@ export interface PlanRepository {
     confirmationNeeded: boolean;
   }>;
   updateSubscription(tier: PlanTier): Promise<CurrentSubscription | null>;
-  /** 查询上线套餐（GET /v1/bundles） */
-  listBundles(): Promise<Bundle[]>;
-  /** 购买套餐（POST /v1/passes { bundle_id }） */
+  /**
+   * 查询上线套餐（GET /v1/bundles）
+   *
+   * - 不传 query：仅返回 bundle 元数据（price 为 null）；适合未登录访客 / 历史调用
+   * - 传 query：附带询价参数，已登录用户会拿到 BundlePrice 嵌套对象
+   * - 与联调文档 codesign/ctl-frontend-billing-api.md §1.1 对齐
+   */
+  listBundles(query?: { time_span?: number; time_unit?: BundleTimeUnit }): Promise<Bundle[]>;
+  getCreatePrerequisites(): Promise<{
+    site_kind: string;
+    shadow_account_enabled: boolean;
+    shadow_bound: boolean;
+  }>;
+  sendShadowBindingSms(input: { country_code: string; phone_number: string; lang?: string }): Promise<void>;
+  verifyShadowBindingPhone(input: { country_code: string; phone_number: string; phone_verify_code: string }): Promise<void>;
+  /**
+   * 创建试用 Pass（POST /v1/passes）— 国际站继续使用，国内站走 createPassOrder
+   *
+   * ⚠️ 此入口为「试用 pass」，由 ctl 内部规则决定是否允许，不走 jifei 计费。
+   * 国内站新购请使用 createPassOrder，详见联调文档 §5.2。
+   */
   createPass(bundleId: string): Promise<Pass>;
-  /** 国内站新购下单（POST /v1/passes/order）。 */
-  createPassOrder(input: { bundle_id: string; period: number; time_unit: string }): Promise<CreatePassOrderResult>;
-  /** 拉取新购支付 URL（POST /v1/passes/order-url）。 */
+  /**
+   * 国内站新购下单（POST /v1/passes/order）— 联调文档 §2.1（v1.7.31 拆分）
+   *
+   * 仅返 { deal_names }；拿到后需再调 getPassOrderUrl 拉支付 URL（§2.2）。
+   * 拆分动机：前端需在拉支付 URL 前注入额外参数（如微信 wx_open_id、platform=mobile）。
+   */
+  createPassOrder(input: { bundle_id: string; period: number; time_unit: BundleTimeUnit }): Promise<CreatePassOrderResult>;
+  /**
+   * 拉取新购支付 URL（POST /v1/passes/order-url）— 联调文档 §2.2（v1.7.31 + CodeBuddy AuthCode）
+   *
+   * 调用模式：
+   *   PC 端：    `{ deal_names, platform: "pc" }`（依赖主站 Bearer）
+   *   中转页：   `{ deal_names, platform: "mobile", wx_code, auth_code }`
+   *               （**无主站 token**，靠 auth_code 鉴权）
+   *
+   * @param init.headers 可选：代质调用场景传入自定义 header（保留重建 Authorization 能力）。
+   */
   getPassOrderUrl(
     input: CreatePassOrderUrlInput,
     init?: { headers?: Record<string, string> },
   ): Promise<CreatePassOrderUrlResult>;
-  /** 国内站新购下单+支付一体化（联调测试用）。 */
-  createPassOrderAndPay(input: { bundle_id: string; period: number; time_unit: string }): Promise<CreatePassOrderAndPayResult>;
-  /** 续费询价（POST /v1/passes/{pass_id}/renew/price）。 */
-  getRenewPrice(passId: string, input: { period: number; time_unit: string }): Promise<PassRenewPrice>;
-  /** 续费下单（POST /v1/passes/{pass_id}/renew/order）。 */
-  createRenewOrder(passId: string, input: { period: number; time_unit: string }): Promise<CreatePassOrderResult>;
-  /** 拉取续费支付 URL（POST /v1/passes/{pass_id}/renew/order-url）。 */
+  /**
+   * 国内站新购下单+支付一体化（POST /v1/passes/order-and-pay）— 联调文档 §2.2
+   *
+   * ⚠️ 仅联调测试用，现网禁止暴露给真实用户。
+   */
+  createPassOrderAndPay(input: { bundle_id: string; period: number; time_unit: BundleTimeUnit }): Promise<CreatePassOrderAndPayResult>;
+  /**
+   * 续费询价（POST /v1/passes/{pass_id}/renew/price）— 联调文档 §3.1
+   *
+   * 询价无副作用，仅返回价格用于前端展示。前端确认后再调 createRenewOrder 走真实下单。
+   */
+  getRenewPrice(passId: string, input: { period: number; time_unit: BundleTimeUnit }): Promise<PassRenewPrice>;
+  /**
+   * 续费下单（POST /v1/passes/{pass_id}/renew/order）— 联调文档 §3.2（v1.7.31 拆分）
+   *
+   * 仅返 { deal_names }；拿到后需再调 getRenewOrderUrl 拉支付 URL（§3.3）。
+   */
+  createRenewOrder(passId: string, input: { period: number; time_unit: BundleTimeUnit }): Promise<CreatePassOrderResult>;
+  /**
+   * 拉取续费支付 URL（POST /v1/passes/{pass_id}/renew/order-url）— 联调文档 §3.3（v1.7.31 + CodeBuddy AuthCode）
+   *
+   * 调用模式与 getPassOrderUrl 一致：PC 端 Bearer / 中转页 auth_code。
+   * @param init.headers 可选：代质调用场景传入自定义 header。
+   */
   getRenewOrderUrl(
     passId: string,
     input: CreatePassOrderUrlInput,
     init?: { headers?: Record<string, string> },
   ): Promise<CreatePassOrderUrlResult>;
-  /** 续费下单+支付一体化（联调测试用）。 */
-  createRenewOrderAndPay(passId: string, input: { period: number; time_unit: string }): Promise<CreatePassOrderAndPayResult>;
-  /** 销毁 pass（POST /v1/passes/{pass_id}/delete）。 */
+  /**
+   * 续费下单+支付一体化（POST /v1/passes/{pass_id}/renew/order-and-pay）— 联调文档 §3.3
+   *
+   * ⚠️ 仅联调测试用。
+   */
+  createRenewOrderAndPay(passId: string, input: { period: number; time_unit: BundleTimeUnit }): Promise<CreatePassOrderAndPayResult>;
+  /**
+   * 销毁 pass（POST /v1/passes/{pass_id}/delete）— 联调文档 §4.1
+   *
+   * 前置条件：pass 状态必须是 isolated。同步成功后前端需轮询 listMyPasses 直到 pass 消失。
+   */
   deletePass(passId: string): Promise<DeletePassResult>;
   /** 查询当前用户的权益列表（GET /v1/passes） */
   listMyPasses(): Promise<Pass[]>;

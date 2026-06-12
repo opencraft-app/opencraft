@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -43,19 +44,39 @@ type invitePrepareRequest struct {
 	Code string `json:"code"`
 }
 
-func NewHandler(authService *service.Service, cookieSecure bool, cookieSameSite http.SameSite, sessionTTL time.Duration, qqConfig *QQOAuthConfig, googleConfig *GoogleOAuthConfig, githubConfig *GitHubOAuthConfig, wechatConfig *WeChatOAuthConfig, publicBaseURL string, frontendBaseURL string, oauthReturnToAllowedHosts []string) *Handler {
+type shadowBindingVerifyPhoneRequest struct {
+	CountryCode     string `json:"country_code"`
+	PhoneNumber     string `json:"phone_number"`
+	PhoneVerifyCode string `json:"phone_verify_code"`
+}
+
+type shadowBindingSendSMSRequest struct {
+	CountryCode string `json:"country_code"`
+	PhoneNumber string `json:"phone_number"`
+	Lang        string `json:"lang"`
+}
+
+type phoneChangeSendRequest struct {
+	Phone string `json:"phone"`
+}
+
+type phoneChangeVerifyRequest struct {
+	Phone string `json:"phone"`
+	Code  string `json:"code"`
+}
+
+func NewHandler(authService *service.Service, cookieSecure bool, cookieSameSite http.SameSite, sessionTTL time.Duration, qqConfig *QQOAuthConfig, googleConfig *GoogleOAuthConfig, githubConfig *GitHubOAuthConfig, wechatConfig *WeChatOAuthConfig, publicBaseURL string, oauthReturnToAllowedHosts []string) *Handler {
 	return &Handler{
-		service:         authService,
-		cookieSecure:    cookieSecure,
-		cookieSameSite:  cookieSameSite,
-		sessionTTL:      sessionTTL,
-		returnToAllow:   buildOAuthReturnToAllowlist(oauthReturnToAllowedHosts),
-		qqOAuth:         newQQOAuth(qqConfig),
-		googleOAuth:     newGoogleOAuth(googleConfig),
-		githubOAuth:     newGitHubOAuth(githubConfig),
-		wechatOAuth:     newWeChatOAuth(wechatConfig),
-		publicBaseURL:   strings.TrimRight(strings.TrimSpace(publicBaseURL), "/"),
-		frontendBaseURL: strings.TrimRight(strings.TrimSpace(frontendBaseURL), "/"),
+		service:        authService,
+		cookieSecure:   cookieSecure,
+		cookieSameSite: cookieSameSite,
+		sessionTTL:     sessionTTL,
+		returnToAllow:  buildOAuthReturnToAllowlist(oauthReturnToAllowedHosts),
+		qqOAuth:        newQQOAuth(qqConfig),
+		googleOAuth:    newGoogleOAuth(googleConfig),
+		githubOAuth:    newGitHubOAuth(githubConfig),
+		wechatOAuth:    newWeChatOAuth(wechatConfig),
+		publicBaseURL:  strings.TrimRight(strings.TrimSpace(publicBaseURL), "/"),
 	}
 }
 
@@ -201,9 +222,16 @@ func (h *Handler) VerifyRealname(ctx context.Context, request api.VerifyRealname
 		})}, nil
 	}
 
+	clientIP, clientUA := "", ""
+	if gctx := ginContext(ctx); gctx != nil {
+		clientIP = gctx.ClientIP()
+		clientUA = gctx.Request.UserAgent()
+	}
 	result, err := h.service.VerifyRealname(ctx, tokenFromContext(ctx), service.RealnameVerifyInput{
-		Name:   request.Body.Name,
-		IDCard: request.Body.IdCard,
+		Name:     request.Body.Name,
+		IDCard:   request.Body.IdCard,
+		ClientIP: clientIP,
+		ClientUA: clientUA,
 	})
 	if err != nil {
 		body, status := toErrorBody(err)
@@ -223,11 +251,15 @@ func (h *Handler) VerifyRealname(ctx context.Context, request api.VerifyRealname
 	}
 
 	return api.VerifyRealname200JSONResponse(api.RealnameVerifyResponse{
-		Ok:           result.OK,
-		Verified:     result.Verified,
-		NameMasked:   result.NameMasked,
-		IdCardMasked: result.IDCardMasked,
-		RequestId:    result.RequestID,
+		Ok:                        result.OK,
+		Verified:                  result.Verified,
+		NameMasked:                result.NameMasked,
+		IdCardMasked:              result.IDCardMasked,
+		RequestId:                 result.RequestID,
+		PhoneVerificationRequired: result.PhoneVerificationRequired,
+		PhoneVerificationSkipped:  ptrBool(result.PhoneVerificationSkipped),
+		RealnameLevel:             ptrString(result.RealnameLevel),
+		ShadowBindingStatus:       ptrString(result.ShadowBindingStatus),
 	}), nil
 }
 
@@ -237,6 +269,191 @@ type profileResponse struct {
 
 type updateProfileRequest struct {
 	Name string `json:"name"`
+}
+
+func (h *Handler) VerifyRealnamePhone(ctx context.Context, request api.VerifyRealnamePhoneRequestObject) (api.VerifyRealnamePhoneResponseObject, error) {
+	if request.Body == nil {
+		return api.VerifyRealnamePhone400JSONResponse{ErrorResponseJSONResponse: api.ErrorResponseJSONResponse(api.ErrorResponse{Code: "invalid_request", Message: "请求格式不正确。"})}, nil
+	}
+	clientIP, clientUA := "", ""
+	if gctx := ginContext(ctx); gctx != nil {
+		clientIP = gctx.ClientIP()
+		clientUA = gctx.Request.UserAgent()
+	}
+	result, err := h.service.VerifyRealnamePhone(ctx, tokenFromContext(ctx), service.RealnamePhoneVerifyInput{Code: request.Body.Code, ClientIP: clientIP, ClientUA: clientUA})
+	if err != nil {
+		body, status := toErrorBody(err)
+		if status >= http.StatusInternalServerError {
+			return nil, err
+		}
+		switch status {
+		case http.StatusUnauthorized:
+			return api.VerifyRealnamePhone401JSONResponse(body), nil
+		case http.StatusForbidden:
+			return api.VerifyRealnamePhone403JSONResponse(body), nil
+		default:
+			return api.VerifyRealnamePhone400JSONResponse{ErrorResponseJSONResponse: api.ErrorResponseJSONResponse(body)}, nil
+		}
+	}
+	response := api.RealnamePhoneVerifyResponse{
+		Ok:                  result.OK,
+		RealnameLevel:       result.RealnameLevel,
+		ShadowBindingStatus: result.ShadowBindingStatus,
+	}
+	if strings.TrimSpace(result.RealnameSyncStatus) != "" {
+		status := api.RealnamePhoneVerifyResponseRealnameSyncStatus(result.RealnameSyncStatus)
+		response.RealnameSyncStatus = &status
+	}
+	return api.VerifyRealnamePhone200JSONResponse(response), nil
+}
+
+func (h *Handler) SendShadowBindingSMS(ctx *gin.Context) {
+	var request shadowBindingSendSMSRequest
+	if err := json.NewDecoder(ctx.Request.Body).Decode(&request); err != nil {
+		ctx.JSON(http.StatusBadRequest, api.ErrorResponse{Code: "invalid_request", Message: "请求格式不正确。"})
+		return
+	}
+
+	cooldown, err := h.service.SendShadowBindingCode(ctx, request.PhoneNumber, ctx.ClientIP())
+	if err != nil {
+		body, status := toErrorBody(err)
+		ctx.JSON(status, body)
+		return
+	}
+	seconds := int(cooldown.Round(time.Second) / time.Second)
+	if seconds < 0 {
+		seconds = 0
+	}
+	ctx.JSON(http.StatusOK, map[string]any{"cooldown_seconds": seconds})
+}
+
+func (h *Handler) VerifyShadowBindingPhone(ctx *gin.Context) {
+	var request shadowBindingVerifyPhoneRequest
+	if err := json.NewDecoder(ctx.Request.Body).Decode(&request); err != nil {
+		ctx.JSON(http.StatusBadRequest, api.ErrorResponse{Code: "invalid_request", Message: "请求格式不正确。"})
+		return
+	}
+
+	result, err := h.service.VerifyRealnamePhone(ctx, tokenFromContext(ctx), service.RealnamePhoneVerifyInput{
+		Code:     request.PhoneVerifyCode,
+		ClientIP: ctx.ClientIP(),
+		ClientUA: ctx.Request.UserAgent(),
+	})
+	if err != nil {
+		body, status := toErrorBody(err)
+		ctx.JSON(status, body)
+		return
+	}
+
+	response := map[string]any{
+		"ok":                    result.OK,
+		"realname_level":        result.RealnameLevel,
+		"shadow_binding_status": result.ShadowBindingStatus,
+	}
+	if binding, err := h.service.CurrentShadowBinding(ctx, tokenFromContext(ctx)); err == nil {
+		response["user_id"] = binding.UserID
+		response["shadow_user_name"] = binding.ShadowUserName
+		response["uin"] = binding.Uin
+		response["owner_uin"] = binding.OwnerUin
+		response["appid"] = binding.AppID
+	}
+	ctx.JSON(http.StatusOK, response)
+}
+
+func (h *Handler) SendPhoneChangeSMS(ctx *gin.Context) {
+	var request phoneChangeSendRequest
+	if err := json.NewDecoder(ctx.Request.Body).Decode(&request); err != nil {
+		ctx.JSON(http.StatusBadRequest, api.ErrorResponse{Code: "invalid_request", Message: "请求格式不正确。"})
+		return
+	}
+	cooldown, err := h.service.SendPhoneChangeCode(ctx, tokenFromContext(ctx), request.Phone, ctx.ClientIP())
+	if err != nil {
+		body, status := toErrorBody(err)
+		ctx.JSON(status, body)
+		return
+	}
+	seconds := int(cooldown.Round(time.Second) / time.Second)
+	if seconds < 0 {
+		seconds = 0
+	}
+	ctx.JSON(http.StatusOK, api.SendSmsResponse{CooldownSeconds: seconds})
+}
+
+func (h *Handler) VerifyPhoneChange(ctx *gin.Context) {
+	var request phoneChangeVerifyRequest
+	if err := json.NewDecoder(ctx.Request.Body).Decode(&request); err != nil {
+		ctx.JSON(http.StatusBadRequest, api.ErrorResponse{Code: "invalid_request", Message: "请求格式不正确。"})
+		return
+	}
+	result, err := h.service.VerifyPhoneChange(ctx, tokenFromContext(ctx), service.PhoneChangeVerifyInput{
+		Phone:    request.Phone,
+		Code:     request.Code,
+		ClientIP: ctx.ClientIP(),
+		ClientUA: ctx.Request.UserAgent(),
+	})
+	if err != nil {
+		body, status := toErrorBody(err)
+		ctx.JSON(status, body)
+		return
+	}
+	ctx.JSON(http.StatusOK, profileResponse{User: h.toAPIUser(ctx, result.User)})
+}
+
+func (h *Handler) GetShadowBinding(ctx context.Context, _ api.GetShadowBindingRequestObject) (api.GetShadowBindingResponseObject, error) {
+	binding, err := h.service.CurrentShadowBinding(ctx, tokenFromContext(ctx))
+	if err != nil {
+		body, status := toErrorBody(err)
+		if status >= http.StatusInternalServerError {
+			return nil, err
+		}
+		return api.GetShadowBinding401JSONResponse{ErrorResponseJSONResponse: api.ErrorResponseJSONResponse(body)}, nil
+	}
+	return api.GetShadowBinding200JSONResponse(api.ShadowBindingResponse{Binding: toAPIShadowBinding(binding)}), nil
+}
+
+func (h *Handler) RetryShadowBinding(ctx context.Context, _ api.RetryShadowBindingRequestObject) (api.RetryShadowBindingResponseObject, error) {
+	binding, err := h.service.RetryShadowBinding(ctx, tokenFromContext(ctx))
+	if err != nil {
+		body, status := toErrorBody(err)
+		if status >= http.StatusInternalServerError {
+			return nil, err
+		}
+		return api.RetryShadowBinding401JSONResponse{ErrorResponseJSONResponse: api.ErrorResponseJSONResponse(body)}, nil
+	}
+	return api.RetryShadowBinding200JSONResponse(api.ShadowBindingResponse{Binding: toAPIShadowBinding(binding)}), nil
+}
+
+func (h *Handler) RetryRealnameSync(ctx context.Context, _ api.RetryRealnameSyncRequestObject) (api.RetryRealnameSyncResponseObject, error) {
+	clientIP, clientUA := "", ""
+	if gctx := ginContext(ctx); gctx != nil {
+		clientIP = gctx.ClientIP()
+		clientUA = gctx.Request.UserAgent()
+	}
+	result, err := h.service.RetryRealnameSync(ctx, tokenFromContext(ctx), clientIP, clientUA)
+	if err != nil {
+		body, status := toErrorBody(err)
+		if status >= http.StatusInternalServerError {
+			return nil, err
+		}
+		switch status {
+		case http.StatusUnauthorized:
+			return api.RetryRealnameSync401JSONResponse(body), nil
+		case http.StatusForbidden:
+			return api.RetryRealnameSync403JSONResponse(body), nil
+		case http.StatusBadGateway:
+			return api.RetryRealnameSync502JSONResponse(body), nil
+		case http.StatusServiceUnavailable:
+			return api.RetryRealnameSync503JSONResponse(body), nil
+		default:
+			return api.RetryRealnameSync400JSONResponse{ErrorResponseJSONResponse: api.ErrorResponseJSONResponse(body)}, nil
+		}
+	}
+	return api.RetryRealnameSync200JSONResponse(api.RealnameSyncRetryResponse{
+		Ok:                  result.OK,
+		User:                h.toAPIUser(ctx, result.User),
+		RealnameSyncStatus:  api.RealnameSyncRetryResponseRealnameSyncStatus(result.RealnameSyncStatus),
+		ShadowBindingStatus: result.ShadowBindingStatus,
+	}), nil
 }
 
 func (h *Handler) GetProfile(ctx context.Context, _ api.GetProfileRequestObject) (api.GetProfileResponseObject, error) {
@@ -393,12 +610,7 @@ func (h *Handler) UpdateProfileAvatar(ctx context.Context, request api.UpdatePro
 		}
 		return api.UpdateProfileAvatar401JSONResponse(body), nil
 	}
-	avatarAuditEnabled := h.service.AvatarAuditEnabled()
-	storeAvatar := h.avatarStore.StoreAvatar
-	if avatarAuditEnabled {
-		storeAvatar = h.avatarStore.StorePendingAvatar
-	}
-	objectKey, err := storeAvatar(ctx, session.User.ID, content)
+	objectKey, err := h.avatarStore.StoreAvatar(ctx, session.User.ID, content)
 	if err != nil {
 		logger.Error("profile avatar store failed", "user_id", session.User.ID, "err", err)
 		if errors.Is(err, avatar.ErrAvatarTooLarge) {
@@ -410,11 +622,10 @@ func (h *Handler) UpdateProfileAvatar(ctx context.Context, request api.UpdatePro
 		return nil, &service.Error{Code: "avatar_store_failed", Message: "头像保存失败。", Status: http.StatusInternalServerError}
 	}
 	var user service.User
-	if avatarAuditEnabled {
+	if h.service.AvatarAuditEnabled() {
 		auditURL, signErr := h.avatarStore.SignedAvatarURL(ctx, objectKey)
 		if signErr != nil || strings.TrimSpace(auditURL) == "" {
 			logger.Error("profile avatar sign for audit failed", "user_id", session.User.ID, "object_key", objectKey, "err", signErr)
-			_ = h.avatarStore.DeleteAvatar(ctx, objectKey)
 			return nil, &service.Error{Code: "avatar_unavailable", Message: "头像暂时不可访问。", Status: http.StatusInternalServerError}
 		}
 		user, err = h.service.QueueAvatarAudit(ctx, session.User.ID, objectKey, "upload", auditURL)
@@ -423,9 +634,6 @@ func (h *Handler) UpdateProfileAvatar(ctx context.Context, request api.UpdatePro
 	}
 	if err != nil {
 		logger.Error("profile avatar persist failed", "user_id", session.User.ID, "object_key", objectKey, "err", err)
-		if avatarAuditEnabled {
-			_ = h.avatarStore.DeleteAvatar(ctx, objectKey)
-		}
 		body, status := toErrorBody(err)
 		if status >= http.StatusInternalServerError {
 			return nil, &service.Error{Code: "avatar_store_failed", Message: "头像保存失败。", Status: http.StatusInternalServerError}
@@ -641,6 +849,13 @@ func (h *Handler) toAPIUser(ctx context.Context, user service.User) api.User {
 		RealnameVerified: user.RealnameVerified,
 		EmailVerified:    user.EmailVerified,
 	}
+	if strings.TrimSpace(user.RealnameLevel) != "" {
+		response.RealnameLevel = &user.RealnameLevel
+	}
+	if strings.TrimSpace(user.RealnameSyncStatus) != "" {
+		status := api.UserRealnameSyncStatus(user.RealnameSyncStatus)
+		response.RealnameSyncStatus = &status
+	}
 	if strings.TrimSpace(user.AvatarObjectKey) != "" {
 		if avatarURL := h.publicAvatarURL(user.ID, user.UpdatedAt); avatarURL != "" {
 			response.AvatarUrl = &avatarURL
@@ -683,6 +898,51 @@ func (h *Handler) publicAvatarURL(userID string, updatedAt time.Time) string {
 	return url
 }
 
+func toAPIShadowBinding(binding service.ShadowBindingResult) api.ShadowBinding {
+	out := api.ShadowBinding{Status: binding.Status}
+	if binding.UserID != "" {
+		out.UserId = &binding.UserID
+	}
+	if binding.ShadowUserName != "" {
+		out.ShadowUserName = &binding.ShadowUserName
+	}
+	if binding.Uin != 0 {
+		out.Uin = &binding.Uin
+	}
+	if binding.OwnerUin != 0 {
+		out.OwnerUin = &binding.OwnerUin
+	}
+	if binding.AppID != 0 {
+		out.AppId = &binding.AppID
+	}
+	if binding.LastErrorCode != "" {
+		out.LastErrorCode = &binding.LastErrorCode
+	}
+	if binding.LastErrorMessage != "" {
+		out.LastErrorMessage = &binding.LastErrorMessage
+	}
+	if binding.BasicAuthStatus != "" {
+		status := api.ShadowBindingBasicAuthStatus(binding.BasicAuthStatus)
+		out.BasicAuthStatus = &status
+	}
+	if binding.BasicAuthSyncedAt != nil {
+		out.BasicAuthSyncedAt = binding.BasicAuthSyncedAt
+	}
+	if binding.BasicAuthLastErrorCode != "" {
+		out.BasicAuthLastErrorCode = &binding.BasicAuthLastErrorCode
+	}
+	if binding.BasicAuthLastErrorMessage != "" {
+		out.BasicAuthLastErrorMessage = &binding.BasicAuthLastErrorMessage
+	}
+	if !binding.CreatedAt.IsZero() {
+		out.CreatedAt = &binding.CreatedAt
+	}
+	if !binding.UpdatedAt.IsZero() {
+		out.UpdatedAt = &binding.UpdatedAt
+	}
+	return out
+}
+
 func toAPIInviteValidation(validation service.InviteValidation) api.InviteValidation {
 	return api.InviteValidation{
 		Code:    validation.Code,
@@ -719,6 +979,21 @@ func optionalStringValue(value *string) string {
 		return ""
 	}
 	return *value
+}
+
+func ptrBool(value bool) *bool {
+	if !value {
+		return nil
+	}
+	return &value
+}
+
+func ptrString(value string) *string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
 }
 
 func normalizeInviteCookieValue(value string) string {
