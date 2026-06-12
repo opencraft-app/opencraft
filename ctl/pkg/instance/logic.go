@@ -614,6 +614,8 @@ func (l *logic) StartTerminalSession(ctx pctx.Context, instanceID string) (*tran
 		Cols:           session.Cols,
 		Rows:           session.Rows,
 		TimeoutSeconds: session.TimeoutSeconds,
+		Username:       session.Username,
+		WorkingDir:     session.WorkingDir,
 	}, nil
 }
 

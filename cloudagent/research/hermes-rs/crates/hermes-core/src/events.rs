@@ -19,6 +19,11 @@ pub struct RuntimeHostEvent {
     pub workspace_root: Option<String>,
     pub template: Option<String>,
     pub error: Option<String>,
+    pub exit_code: Option<i32>,
+    pub stdout_bytes: Option<usize>,
+    pub stderr_bytes: Option<usize>,
+    pub stdout_tail: Option<String>,
+    pub stderr_tail: Option<String>,
 }
 
 /// Events emitted by the agent runtime.

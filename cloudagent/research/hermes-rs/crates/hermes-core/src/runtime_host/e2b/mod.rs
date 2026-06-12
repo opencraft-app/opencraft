@@ -118,6 +118,15 @@ pub struct CommandResult {
     pub status: String,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct WorkspaceRuntimeShutdownReport {
+    pub exit_code: i32,
+    pub stdout_bytes: usize,
+    pub stderr_bytes: usize,
+    pub stdout_tail: String,
+    pub stderr_tail: String,
+}
+
 #[derive(Debug)]
 pub struct SessionSandbox {
     workspace_root: String,
@@ -599,7 +608,7 @@ impl SessionSandbox {
     }
 
     pub async fn shutdown(&self) -> Result<()> {
-        self.shutdown_workspace_runtime().await?;
+        let _ = self.shutdown_workspace_runtime().await?;
         self.delete_sandbox().await
     }
 
@@ -616,14 +625,16 @@ impl SessionSandbox {
         }
     }
 
-    pub async fn shutdown_workspace_runtime(&self) -> Result<()> {
+    pub async fn shutdown_workspace_runtime(
+        &self,
+    ) -> Result<Option<WorkspaceRuntimeShutdownReport>> {
         let Some(command) = self
             .shutdown_command
             .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
         else {
-            return Ok(());
+            return Ok(None);
         };
         let inner = self.inner.lock().await;
         info!(event = "workspace_runtime_shutdown_start", sandbox_id = %inner.sandbox.sandbox_id);
@@ -633,8 +644,17 @@ impl SessionSandbox {
             .await
         {
             Ok(result) if result.exit_code == 0 => {
-                info!(event = "workspace_runtime_shutdown_done", sandbox_id = %inner.sandbox.sandbox_id);
-                Ok(())
+                let report = workspace_shutdown_report(&result);
+                info!(
+                    event = "workspace_runtime_shutdown_done",
+                    sandbox_id = %inner.sandbox.sandbox_id,
+                    exit_code = report.exit_code,
+                    stdout_bytes = report.stdout_bytes,
+                    stderr_bytes = report.stderr_bytes,
+                    stdout_tail = %report.stdout_tail,
+                    stderr_tail = %report.stderr_tail
+                );
+                Ok(Some(report))
             }
             Ok(result) => {
                 let error = Error::Agent(format!(
@@ -849,6 +869,27 @@ impl WorkspaceRuntime for SessionSandbox {
     async fn native_call(&self, method: &str, params: Value) -> Result<Value> {
         SessionSandbox::native_call(self, method, params).await
     }
+}
+
+fn workspace_shutdown_report(result: &CommandResult) -> WorkspaceRuntimeShutdownReport {
+    WorkspaceRuntimeShutdownReport {
+        exit_code: result.exit_code,
+        stdout_bytes: result.stdout.len(),
+        stderr_bytes: result.stderr.len(),
+        stdout_tail: text_tail(&result.stdout, 2048),
+        stderr_tail: text_tail(&result.stderr, 4096),
+    }
+}
+
+fn text_tail(value: &str, max_bytes: usize) -> String {
+    if value.len() <= max_bytes {
+        return value.to_string();
+    }
+    let mut start = value.len().saturating_sub(max_bytes);
+    while start < value.len() && !value.is_char_boundary(start) {
+        start += 1;
+    }
+    format!("...[truncated]\n{}", &value[start..])
 }
 
 pub fn session_id() -> String {

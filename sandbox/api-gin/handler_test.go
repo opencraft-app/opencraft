@@ -980,6 +980,8 @@ func TestPostSandboxTATSessionReturnsTerminalBootstrap(t *testing.T) {
 			Cols:           120,
 			Rows:           32,
 			TimeoutSeconds: 3600,
+			Username:       "agentuser",
+			WorkingDir:     "/home/agentuser",
 		},
 	}
 
@@ -1019,6 +1021,12 @@ func TestPostSandboxTATSessionReturnsTerminalBootstrap(t *testing.T) {
 	}
 	if got := resp["timeoutSeconds"]; got != float64(3600) {
 		t.Fatalf("expected timeoutSeconds 3600, got %v", got)
+	}
+	if got := resp["username"]; got != "agentuser" {
+		t.Fatalf("expected username agentuser, got %v", got)
+	}
+	if got := resp["workingDirectory"]; got != "/home/agentuser" {
+		t.Fatalf("expected workingDirectory /home/agentuser, got %v", got)
 	}
 }
 

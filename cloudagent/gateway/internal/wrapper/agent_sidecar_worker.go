@@ -516,7 +516,13 @@ func (w *AgentSidecarWorker) startWorkspaceSandboxCreate(ctx context.Context, ba
 	ch := make(chan workspaceSandboxCreateResult, 1)
 	go func() {
 		templateID := firstNonEmpty(runtime.WorkspaceTemplateID, backend.innerTemplateID)
-		timeline("acp_runtime_workspace_create_start", "backend="+backend.name, "template="+templateID, "workspace_id="+quoteTimelineField(workspaceID))
+		timeline("acp_runtime_workspace_create_start",
+			"backend="+backend.name,
+			"template="+templateID,
+			"target=inner",
+			"runtime_id="+quoteTimelineField(runtime.RuntimeID),
+			"workspace_id="+quoteTimelineField(workspaceID),
+		)
 		sb, err := backend.host.CreateSandbox(createCtx, CreateSandboxOptions{
 			TemplateID:          templateID,
 			TimeoutSeconds:      w.sandboxTimeoutSeconds,
@@ -543,7 +549,14 @@ func (w *AgentSidecarWorker) startWorkspaceSandboxCreate(ctx context.Context, ba
 			ch <- workspaceSandboxCreateResult{err: err}
 			return
 		}
-		timeline("acp_runtime_workspace_create_done", "sandbox_id="+sb.ID, "workspace_id="+quoteTimelineField(workspaceID))
+		timeline("acp_runtime_workspace_create_done",
+			"target=inner",
+			"runtime_id="+quoteTimelineField(runtime.RuntimeID),
+			"sandbox_id="+sb.ID,
+			"domain="+quoteTimelineField(sb.Domain),
+			"token_set="+strconvBool(strings.TrimSpace(sb.EnvdAccessToken) != ""),
+			"workspace_id="+quoteTimelineField(workspaceID),
+		)
 		ch <- workspaceSandboxCreateResult{sandbox: sb}
 	}()
 	return &workspaceSandboxCreate{cancel: cancel, result: ch}
@@ -915,6 +928,7 @@ func (w *AgentSidecarWorker) RefreshSessionRuntime(ctx context.Context, runtime 
 	if runtime.OuterSandboxID != "" {
 		fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_refresh_outer_start session_id=%s outer_sandbox_id=%s timeout_seconds=%d\n", sessionID, runtime.OuterSandboxID, timeoutSeconds)
 		if err := backend.host.RefreshSandboxTimeout(ctx, runtime.OuterSandboxID, timeoutSeconds); err != nil {
+			fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_refresh_outer_failed session_id=%s outer_sandbox_id=%s timeout_seconds=%d error=%s\n", sessionID, runtime.OuterSandboxID, timeoutSeconds, quoteTimelineField(err.Error()))
 			refreshErr = errors.Join(refreshErr, fmt.Errorf("refresh outer sandbox %s: %w", runtime.OuterSandboxID, err))
 		} else {
 			fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_refresh_outer_done session_id=%s outer_sandbox_id=%s timeout_seconds=%d\n", sessionID, runtime.OuterSandboxID, timeoutSeconds)
@@ -923,6 +937,7 @@ func (w *AgentSidecarWorker) RefreshSessionRuntime(ctx context.Context, runtime 
 	if runtime.InnerSandboxID != "" {
 		fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_refresh_inner_start session_id=%s outer_sandbox_id=%s inner_sandbox_id=%s timeout_seconds=%d\n", sessionID, runtime.OuterSandboxID, runtime.InnerSandboxID, timeoutSeconds)
 		if err := backend.host.RefreshSandboxTimeout(ctx, runtime.InnerSandboxID, timeoutSeconds); err != nil {
+			fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_refresh_inner_failed session_id=%s outer_sandbox_id=%s inner_sandbox_id=%s timeout_seconds=%d error=%s\n", sessionID, runtime.OuterSandboxID, runtime.InnerSandboxID, timeoutSeconds, quoteTimelineField(err.Error()))
 			refreshErr = errors.Join(refreshErr, fmt.Errorf("refresh inner sandbox %s: %w", runtime.InnerSandboxID, err))
 		} else {
 			fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_refresh_inner_done session_id=%s outer_sandbox_id=%s inner_sandbox_id=%s timeout_seconds=%d\n", sessionID, runtime.OuterSandboxID, runtime.InnerSandboxID, timeoutSeconds)
@@ -1041,6 +1056,34 @@ func wispPackageURLForRestore(currentURL, recordedURL string) string {
 	return firstNonEmpty(currentURL, recordedURL)
 }
 
+func logRuntimeWorkspacePairEvent(event, phase string, req ACPSessionRuntimeStartRequest, runtime ACPSessionRuntime) {
+	fmt.Fprintf(os.Stderr,
+		"timeline source=go event=%s phase=%s session_id=%s generation=%d runtime_id=%s workspace_runtime_id=%s workspace_id=%s wisp_workspace_id=%s smh_space_id=%s outer_wisp_name=%s inner_wisp_name=%s outer_sandbox_id=%s inner_sandbox_id=%s outer_domain=%s inner_domain=%s lease_id=%s fence=%d lease_until=%s daemon_addr_set=%t outer_token_set=%t inner_token_set=%t attach_state=%s\n",
+		event,
+		quoteTimelineField(phase),
+		req.SessionID,
+		req.Generation,
+		quoteTimelineField(runtime.RuntimeID),
+		quoteTimelineField(runtime.WorkspaceRuntimeID),
+		quoteTimelineField(runtime.WorkspaceID),
+		quoteTimelineField(runtime.WispWorkspaceID),
+		quoteTimelineField(runtime.WispSMHSpaceID),
+		quoteTimelineField(runtime.WispName),
+		quoteTimelineField(runtime.WorkspaceWispName),
+		quoteTimelineField(runtime.OuterSandboxID),
+		quoteTimelineField(runtime.InnerSandboxID),
+		quoteTimelineField(runtime.OuterSandboxDomain),
+		quoteTimelineField(runtime.InnerSandboxDomain),
+		quoteTimelineField(runtime.WispLeaseID),
+		runtime.WispLeaseFence,
+		quoteTimelineField(formatOptionalTime(runtime.WispLeaseUntil)),
+		strings.TrimSpace(runtime.DaemonAddr) != "",
+		strings.TrimSpace(runtime.OuterEnvdAccessToken) != "",
+		strings.TrimSpace(runtime.InnerEnvdAccessToken) != "",
+		quoteTimelineField(runtime.WorkspaceAttachState),
+	)
+}
+
 func (w *AgentSidecarWorker) recreateWispSessionRuntime(ctx context.Context, runtime ACPSessionRuntime, req ACPSessionRuntimeStartRequest) (ACPSessionRuntime, error) {
 	start := time.Now()
 	backend, err := w.backendForRuntime(runtime)
@@ -1083,10 +1126,12 @@ func (w *AgentSidecarWorker) recreateWispSessionRuntime(ctx context.Context, run
 		all = append(all, fields...)
 		fmt.Fprintln(os.Stderr, strings.Join(all, " "))
 	}
+	logRuntimeWorkspacePairEvent("acp_runtime_workspace_pair", "restore_input", req, runtime)
 	runtime, err = w.cleanupPreviousWispRuntimeBeforeMount(ctx, runtime, req, timeline)
 	if err != nil {
 		return ACPSessionRuntime{}, err
 	}
+	logRuntimeWorkspacePairEvent("acp_runtime_workspace_pair", "restore_after_premount_cleanup", req, runtime)
 	restored := runtime
 	restored.RuntimeID = newACPSessionRuntimeID(req.SessionID, req.Generation)
 	restored.SandboxBackend = backend.name
@@ -1105,9 +1150,11 @@ func (w *AgentSidecarWorker) recreateWispSessionRuntime(ctx context.Context, run
 	restored.WispJFSPrefix = firstNonEmpty(restored.WispJFSPrefix, w.wispJFSPrefix)
 	restored.DaemonAddr = acpDaemonAddr(req.SessionID)
 	restored.RemoteBinary = path.Join("/tmp/gateway/sessions", req.SessionID, "hermes-sidecar")
+	logRuntimeWorkspacePairEvent("acp_runtime_workspace_pair", "restore_rebased_runtime", req, restored)
 	if claim, ok := w.tryClaimWarmSessionRuntime(ctx, req, backend, restored, timeline); ok {
 		claimed, err := w.startSessionRuntimeFromWarmClaim(ctx, req, backend, restored, claim, timeline)
 		if err == nil {
+			logRuntimeWorkspacePairEvent("acp_runtime_workspace_pair", "restore_pool_claim_bound", req, claimed)
 			timeline("acp_runtime_restore_pool_claim_done", "item_id="+quoteTimelineField(claim.ItemID), "outer_sandbox_id="+quoteTimelineField(claim.Host.OuterSandboxID), "inner_sandbox_id="+quoteTimelineField(claim.Host.InnerSandboxID))
 			return claimed, nil
 		}
@@ -1150,6 +1197,7 @@ func (w *AgentSidecarWorker) recreateWispSessionRuntime(ctx context.Context, run
 		_ = backend.host.DeleteSandbox(context.Background(), sb.ID)
 		return ACPSessionRuntime{}, err
 	}
+	logRuntimeWorkspacePairEvent("acp_runtime_workspace_pair", "restore_resolved_outer_wisp", req, restored)
 	workspacePrepare := w.startWorkspaceRuntimePrepare(ctx, backend, restored, req, workspaceIDForRuntime(restored, req), nil, timeline)
 	timeline("acp_runtime_restore_wisp_prepare_start", "wisp_name="+quoteTimelineField(restored.WispName))
 	prepared, err := w.prepareWispRuntimeWithSpace(ctx, backend.host, sb, restored, req, space, "outer", false)
@@ -1166,6 +1214,7 @@ func (w *AgentSidecarWorker) recreateWispSessionRuntime(ctx context.Context, run
 	}
 	restored = prepared
 	timeline("acp_runtime_restore_wisp_prepare_done", "wisp_name="+quoteTimelineField(restored.WispName), "smh_space_id="+quoteTimelineField(restored.WispSMHSpaceID))
+	logRuntimeWorkspacePairEvent("acp_runtime_workspace_pair", "restore_outer_wisp_ready", req, restored)
 	hasHermesState := w.wispHermesBootstrapManifestValid(ctx, backend.host, sb, restored, req)
 	if err := w.bootSessionDaemon(ctx, sb, restored, req); err != nil {
 		timeline("acp_runtime_restore_daemon_failed", "error="+quoteTimelineField(err.Error()))
@@ -1193,6 +1242,7 @@ func (w *AgentSidecarWorker) recreateWispSessionRuntime(ctx context.Context, run
 	}
 	restored = attached
 	timeline("acp_runtime_restore_workspace_bind_done", "workspace_id="+quoteTimelineField(restored.WorkspaceID), "workspace_runtime_id="+quoteTimelineField(restored.WorkspaceRuntimeID), "inner_sandbox_id="+quoteTimelineField(restored.InnerSandboxID))
+	logRuntimeWorkspacePairEvent("acp_runtime_workspace_pair", "restore_workspace_bound", req, restored)
 	return restored, nil
 }
 
@@ -1266,6 +1316,23 @@ func (w *AgentSidecarWorker) prepareInnerWorkspaceWispRuntime(ctx context.Contex
 	workspaceWisp.WispJFSPrefix = workspaceWispJFSPrefix(runtime.WispJFSPrefix, workspaceID)
 	workspaceWisp.WispInstallDir = firstNonEmpty(wispInstallDirFromClient(runtime.WorkspaceWispClient), path.Join("/tmp/cloudagent-workspace-wisp", req.SessionID, "install"))
 	workspaceWisp.WispClientPath = path.Join(workspaceWisp.WispInstallDir, "bin", "wispclient")
+	logRuntimeWorkspacePairEvent("acp_runtime_workspace_pair", "inner_prepare_input", req, ACPSessionRuntime{
+		RuntimeID:          runtime.RuntimeID,
+		WorkspaceRuntimeID: workspaceRuntimeID,
+		WorkspaceID:        workspaceID,
+		WispWorkspaceID:    runtime.WispWorkspaceID,
+		WispSMHSpaceID:     workspaceWisp.WispSMHSpaceID,
+		WispName:           runtime.WispName,
+		WorkspaceWispName:  workspaceWisp.WispName,
+		OuterSandboxID:     runtime.OuterSandboxID,
+		InnerSandboxID:     sb.ID,
+		OuterSandboxDomain: runtime.OuterSandboxDomain,
+		InnerSandboxDomain: sb.Domain,
+		WispLeaseID:        runtime.WispLeaseID,
+		WispLeaseFence:     runtime.WispLeaseFence,
+		WispLeaseUntil:     runtime.WispLeaseUntil,
+		DaemonAddr:         runtime.DaemonAddr,
+	})
 	prepared, err := w.prepareWispRuntimeWithSpace(ctx, host, sb, workspaceWisp, req, agentWispSMHSpace{
 		SpaceID:     workspaceWisp.WispSMHSpaceID,
 		AccessToken: token,
@@ -1295,6 +1362,7 @@ func (w *AgentSidecarWorker) attachSessionWorkspaceRuntime(ctx context.Context, 
 	if runtime.InnerSandboxID != "" && runtime.WorkspaceAttachState == "bound" {
 		return runtime, nil
 	}
+	logRuntimeWorkspacePairEvent("acp_runtime_workspace_pair", "workspace_bind_start", req, runtime)
 	workspaceID := workspaceIDForRuntime(runtime, req)
 	workspaceJFSPrefix := workspaceWispJFSPrefix(runtime.WispJFSPrefix, workspaceID)
 	if workspacePrepare == nil {
@@ -1366,6 +1434,8 @@ func (w *AgentSidecarWorker) attachSessionWorkspaceRuntime(ctx context.Context, 
 	runtime.InnerSandboxID = sb.ID
 	runtime.InnerSandboxDomain = sb.Domain
 	runtime.InnerEnvdAccessToken = sb.EnvdAccessToken
+	fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_workspace_bind_identity session_id=%s generation=%d runtime_id=%s workspace_runtime_id=%s workspace_id=%s target=inner inner_sandbox_id=%s inner_domain=%s token_set=%t workspace_wisp_name=%s attach_state=%s\n", req.SessionID, req.Generation, runtime.RuntimeID, runtime.WorkspaceRuntimeID, quoteTimelineField(runtime.WorkspaceID), runtime.InnerSandboxID, quoteTimelineField(runtime.InnerSandboxDomain), strings.TrimSpace(runtime.InnerEnvdAccessToken) != "", quoteTimelineField(runtime.WorkspaceWispName), quoteTimelineField(runtime.WorkspaceAttachState))
+	logRuntimeWorkspacePairEvent("acp_runtime_workspace_pair", "workspace_bind_done", req, runtime)
 	return runtime, nil
 }
 
@@ -1420,8 +1490,11 @@ func (w *AgentSidecarWorker) runACPSessionPrompt(ctx context.Context, job worker
 	emitStdoutEvents := func(events []sidecarStdoutEvent) error {
 		for _, event := range events {
 			if event.Type == "runtime_host" {
-				fmt.Fprintf(os.Stderr, "timeline source=go t=%.3fs event=runtime_host_event mode=acp_session_runtime session_id=%s generation=%d outer_sandbox_id=%s job_id=%s runtime_event=%s sandbox_id=%s\n", time.Since(start).Seconds(), job.ACPSessionID, job.ACPSessionGeneration, runtime.OuterSandboxID, job.JobID, event.Event, event.SandboxID)
+				fmt.Fprintf(os.Stderr, "timeline source=go t=%.3fs event=runtime_host_event mode=acp_session_runtime session_id=%s generation=%d outer_sandbox_id=%s job_id=%s runtime_event=%s sandbox_id=%s%s\n", time.Since(start).Seconds(), job.ACPSessionID, job.ACPSessionGeneration, runtime.OuterSandboxID, job.JobID, event.Event, event.SandboxID, sidecarRuntimeHostEventFields(event))
 				continue
+			}
+			if event.Type == "tool_call" || event.Type == "tool_call_update" {
+				fmt.Fprintf(os.Stderr, "timeline source=go t=%.3fs event=acp_runtime_tool_event mode=acp_session_runtime session_id=%s generation=%d runtime_id=%s outer_sandbox_id=%s inner_sandbox_id=%s job_id=%s event_type=%s%s\n", time.Since(start).Seconds(), job.ACPSessionID, job.ACPSessionGeneration, runtime.RuntimeID, runtime.OuterSandboxID, runtime.InnerSandboxID, job.JobID, event.Type, sidecarToolEventFields(event))
 			}
 			workerEvent, textDelta := workerEventFromSidecarEvent(job.JobID, atomic.AddInt64(&eventSeq, 1), event)
 			if workerEvent.Kind == "" {
@@ -1713,6 +1786,16 @@ func (w *AgentSidecarWorker) CloseSessionRuntime(ctx context.Context, runtime AC
 	innerDeletedBySidecar := false
 	outerWispStopRequired := false
 	outerWispStopped := false
+	probeSandbox := func(target string, phase string, sandboxID string) {
+		if strings.TrimSpace(sandboxID) == "" {
+			return
+		}
+		probeCtx, probeCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer probeCancel()
+		logRuntimeHostSandboxProbe(probeCtx, backend.host, runtime, target, phase, sandboxID)
+	}
+	probeSandbox("outer", "close_start", runtime.OuterSandboxID)
+	probeSandbox("inner", "close_start", runtime.InnerSandboxID)
 	if runtime.OuterSandboxID != "" && runtime.RemoteBinary != "" && runtime.DaemonAddr != "" {
 		sb := runtimeOuterSandbox(runtime)
 		shutdownCtx, shutdownCancel := context.WithTimeout(ctx, envDurationSeconds("GATEWAY_SIDECAR_SHUTDOWN_TIMEOUT_SECONDS", 45*time.Second))
@@ -1724,7 +1807,7 @@ func (w *AgentSidecarWorker) CloseSessionRuntime(ctx context.Context, runtime AC
 				if event.Type != "runtime_host" {
 					continue
 				}
-				fmt.Fprintf(os.Stderr, "timeline source=go t=%.3fs event=runtime_host_event mode=acp_session_runtime runtime_id=%s outer_sandbox_id=%s runtime_event=%s sandbox_id=%s\n", time.Since(start).Seconds(), runtime.RuntimeID, runtime.OuterSandboxID, event.Event, event.SandboxID)
+				fmt.Fprintf(os.Stderr, "timeline source=go t=%.3fs event=runtime_host_event mode=acp_session_runtime runtime_id=%s outer_sandbox_id=%s runtime_event=%s sandbox_id=%s%s\n", time.Since(start).Seconds(), runtime.RuntimeID, runtime.OuterSandboxID, event.Event, event.SandboxID, sidecarRuntimeHostEventFields(event))
 				if event.Event == "inner_shutdown_failed" || event.Event == "workspace_runtime_shutdown_failed" {
 					runtimeHostShutdownErr = fmt.Errorf("runtime host %s sandbox_id=%s error=%s", event.Event, event.SandboxID, event.Error)
 					continue
@@ -1763,14 +1846,17 @@ func (w *AgentSidecarWorker) CloseSessionRuntime(ctx context.Context, runtime AC
 		workspaceWispStopRequired = true
 		sb := runtimeInnerSandbox(runtime)
 		stopCtx, stopCancel := context.WithTimeout(ctx, envDurationSeconds("GATEWAY_WISP_STOP_TIMEOUT_SECONDS", 60*time.Second))
-		fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_workspace_wisp_stop_start runtime_id=%s inner_sandbox_id=%s wisp_name=%s lease_id=%s fence=%d\n", runtime.RuntimeID, runtime.InnerSandboxID, quoteServerField(runtime.WorkspaceWispName), quoteServerField(runtime.WispLeaseID), runtime.WispLeaseFence)
+		probeSandbox("inner", "workspace_wisp_stop_before", runtime.InnerSandboxID)
+		fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_workspace_wisp_stop_start target=inner runtime_id=%s workspace_runtime_id=%s inner_sandbox_id=%s wisp_name=%s lease_id=%s fence=%d\n", runtime.RuntimeID, runtime.WorkspaceRuntimeID, runtime.InnerSandboxID, quoteServerField(runtime.WorkspaceWispName), quoteServerField(runtime.WispLeaseID), runtime.WispLeaseFence)
 		if err := w.stopWispWorkspaceRuntime(stopCtx, backend.host, sb, runtime); err != nil {
 			gracefulStopErr = errors.Join(gracefulStopErr, fmt.Errorf("stop workspace wisp runtime %s: %w", runtime.WorkspaceWispName, err))
-			fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_workspace_wisp_stop_failed runtime_id=%s inner_sandbox_id=%s wisp_name=%s lease_id=%s fence=%d error=%s\n", runtime.RuntimeID, runtime.InnerSandboxID, quoteServerField(runtime.WorkspaceWispName), quoteServerField(runtime.WispLeaseID), runtime.WispLeaseFence, quoteServerField(err.Error()))
+			fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_workspace_wisp_stop_failed target=inner runtime_id=%s workspace_runtime_id=%s inner_sandbox_id=%s wisp_name=%s lease_id=%s fence=%d error=%s\n", runtime.RuntimeID, runtime.WorkspaceRuntimeID, runtime.InnerSandboxID, quoteServerField(runtime.WorkspaceWispName), quoteServerField(runtime.WispLeaseID), runtime.WispLeaseFence, quoteServerField(err.Error()))
+			probeSandbox("inner", "workspace_wisp_stop_failed", runtime.InnerSandboxID)
 		} else {
 			workspaceWispStopped = true
 			innerWorkspaceStopConfirmed = true
-			fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_workspace_wisp_stop_done runtime_id=%s inner_sandbox_id=%s wisp_name=%s lease_id=%s fence=%d\n", runtime.RuntimeID, runtime.InnerSandboxID, quoteServerField(runtime.WorkspaceWispName), quoteServerField(runtime.WispLeaseID), runtime.WispLeaseFence)
+			fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_workspace_wisp_stop_done target=inner runtime_id=%s workspace_runtime_id=%s inner_sandbox_id=%s wisp_name=%s lease_id=%s fence=%d\n", runtime.RuntimeID, runtime.WorkspaceRuntimeID, runtime.InnerSandboxID, quoteServerField(runtime.WorkspaceWispName), quoteServerField(runtime.WispLeaseID), runtime.WispLeaseFence)
+			probeSandbox("inner", "workspace_wisp_stop_done", runtime.InnerSandboxID)
 		}
 		stopCancel()
 	}
@@ -1778,23 +1864,34 @@ func (w *AgentSidecarWorker) CloseSessionRuntime(ctx context.Context, runtime AC
 		outerWispStopRequired = true
 		sb := runtimeOuterSandbox(runtime)
 		stopCtx, stopCancel := context.WithTimeout(ctx, envDurationSeconds("GATEWAY_WISP_STOP_TIMEOUT_SECONDS", 60*time.Second))
-		fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_wisp_stop_start runtime_id=%s outer_sandbox_id=%s wisp_name=%s lease_id=%s fence=%d\n", runtime.RuntimeID, runtime.OuterSandboxID, quoteServerField(runtime.WispName), quoteServerField(runtime.WispLeaseID), runtime.WispLeaseFence)
+		probeSandbox("outer", "outer_wisp_stop_before", runtime.OuterSandboxID)
+		fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_wisp_stop_start target=outer runtime_id=%s outer_sandbox_id=%s wisp_name=%s lease_id=%s fence=%d\n", runtime.RuntimeID, runtime.OuterSandboxID, quoteServerField(runtime.WispName), quoteServerField(runtime.WispLeaseID), runtime.WispLeaseFence)
 		if err := w.stopWispOuterRuntime(stopCtx, backend.host, sb, runtime); err != nil {
 			gracefulStopErr = errors.Join(gracefulStopErr, fmt.Errorf("stop wisp outer runtime %s: %w", runtime.WispName, err))
-			fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_wisp_stop_failed runtime_id=%s outer_sandbox_id=%s wisp_name=%s lease_id=%s fence=%d error=%s\n", runtime.RuntimeID, runtime.OuterSandboxID, quoteServerField(runtime.WispName), quoteServerField(runtime.WispLeaseID), runtime.WispLeaseFence, quoteServerField(err.Error()))
+			fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_wisp_stop_failed target=outer runtime_id=%s outer_sandbox_id=%s wisp_name=%s lease_id=%s fence=%d error=%s\n", runtime.RuntimeID, runtime.OuterSandboxID, quoteServerField(runtime.WispName), quoteServerField(runtime.WispLeaseID), runtime.WispLeaseFence, quoteServerField(err.Error()))
+			probeSandbox("outer", "outer_wisp_stop_failed", runtime.OuterSandboxID)
 		} else {
 			outerWispStopped = true
-			fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_wisp_stop_done runtime_id=%s outer_sandbox_id=%s wisp_name=%s lease_id=%s fence=%d\n", runtime.RuntimeID, runtime.OuterSandboxID, quoteServerField(runtime.WispName), quoteServerField(runtime.WispLeaseID), runtime.WispLeaseFence)
+			fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_wisp_stop_done target=outer runtime_id=%s outer_sandbox_id=%s wisp_name=%s lease_id=%s fence=%d\n", runtime.RuntimeID, runtime.OuterSandboxID, quoteServerField(runtime.WispName), quoteServerField(runtime.WispLeaseID), runtime.WispLeaseFence)
+			probeSandbox("outer", "outer_wisp_stop_done", runtime.OuterSandboxID)
 		}
 		stopCancel()
 	}
 	if innerDeleteFallback {
+		probeSandbox("inner", "inner_delete_before", runtime.InnerSandboxID)
 		if err := backend.host.DeleteSandbox(ctx, runtime.InnerSandboxID); err != nil {
 			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("delete inner sandbox %s: %w", runtime.InnerSandboxID, err))
+			fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_inner_delete_failed target=inner runtime_id=%s workspace_runtime_id=%s inner_sandbox_id=%s error=%s\n", runtime.RuntimeID, runtime.WorkspaceRuntimeID, runtime.InnerSandboxID, quoteTimelineField(err.Error()))
+		} else {
+			fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_inner_delete_done target=inner runtime_id=%s workspace_runtime_id=%s inner_sandbox_id=%s\n", runtime.RuntimeID, runtime.WorkspaceRuntimeID, runtime.InnerSandboxID)
 		}
 	} else if workspaceWispStopped && !innerDeletedBySidecar {
+		probeSandbox("inner", "stopped_workspace_inner_delete_before", runtime.InnerSandboxID)
 		if err := backend.host.DeleteSandbox(ctx, runtime.InnerSandboxID); err != nil {
 			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("delete stopped workspace sandbox %s: %w", runtime.InnerSandboxID, err))
+			fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_inner_delete_failed target=inner runtime_id=%s workspace_runtime_id=%s inner_sandbox_id=%s error=%s\n", runtime.RuntimeID, runtime.WorkspaceRuntimeID, runtime.InnerSandboxID, quoteTimelineField(err.Error()))
+		} else {
+			fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_inner_delete_done target=inner runtime_id=%s workspace_runtime_id=%s inner_sandbox_id=%s\n", runtime.RuntimeID, runtime.WorkspaceRuntimeID, runtime.InnerSandboxID)
 		}
 	}
 	if runtime.WispLeaseID != "" && shouldReleaseWispLeaseAfterClose(outerWispStopRequired, outerWispStopped, workspaceWispStopRequired, workspaceWispStopped) {
@@ -1808,10 +1905,13 @@ func (w *AgentSidecarWorker) CloseSessionRuntime(ctx context.Context, runtime AC
 	}
 	if runtime.OuterSandboxID != "" {
 		outerDeleted := false
+		probeSandbox("outer", "outer_delete_before", runtime.OuterSandboxID)
 		if err := backend.host.DeleteSandbox(ctx, runtime.OuterSandboxID); err != nil {
 			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("delete outer sandbox %s: %w", runtime.OuterSandboxID, err))
+			fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_outer_delete_failed target=outer runtime_id=%s outer_sandbox_id=%s error=%s\n", runtime.RuntimeID, runtime.OuterSandboxID, quoteTimelineField(err.Error()))
 		} else {
 			outerDeleted = true
+			fmt.Fprintf(os.Stderr, "timeline source=go event=acp_runtime_outer_delete_done target=outer runtime_id=%s outer_sandbox_id=%s\n", runtime.RuntimeID, runtime.OuterSandboxID)
 		}
 		if outerDeleted && isStaleRuntimeDataPlaneAuthError(gracefulStopErr) {
 			if innerWorkspaceStopConfirmed {
@@ -1954,7 +2054,7 @@ func (w *AgentSidecarWorker) KillSessionRuntimeInner(ctx context.Context, runtim
 			if event.Type != "runtime_host" {
 				continue
 			}
-			fmt.Fprintf(os.Stderr, "timeline source=go t=%.3fs event=runtime_host_event mode=acp_session_runtime_fault runtime_id=%s outer_sandbox_id=%s runtime_event=%s sandbox_id=%s\n", time.Since(start).Seconds(), runtime.RuntimeID, runtime.OuterSandboxID, event.Event, event.SandboxID)
+			fmt.Fprintf(os.Stderr, "timeline source=go t=%.3fs event=runtime_host_event mode=acp_session_runtime_fault runtime_id=%s outer_sandbox_id=%s runtime_event=%s sandbox_id=%s%s\n", time.Since(start).Seconds(), runtime.RuntimeID, runtime.OuterSandboxID, event.Event, event.SandboxID, sidecarRuntimeHostEventFields(event))
 		}
 	}
 	_, err = w.runOuterCommand(ctx, backend.host, sb, runtime, command, nil, func(text string) error {

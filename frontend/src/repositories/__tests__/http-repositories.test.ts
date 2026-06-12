@@ -263,6 +263,8 @@ describe("http repositories auth token bootstrap", () => {
             cols: 120,
             rows: 30,
             timeoutSeconds: 3600,
+            username: "agentuser",
+            workingDirectory: "/home/agentuser",
           },
         }),
         {
@@ -277,6 +279,8 @@ describe("http repositories auth token bootstrap", () => {
     const session = await repositories.bots.getTerminalSession("ins-1");
 
     expect(session.sessionId).toBe("sess-1");
+    expect(session.username).toBe("agentuser");
+    expect(session.workingDirectory).toBe("/home/agentuser");
     expect(session.sandboxId).toBeUndefined();
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledWith(
@@ -465,6 +469,8 @@ describe("http repositories auth token bootstrap", () => {
             cols: 120,
             rows: 32,
             timeoutSeconds: 3600,
+            username: "agentuser",
+            workingDirectory: "/home/agentuser",
           },
         }),
         {
@@ -490,6 +496,8 @@ describe("http repositories auth token bootstrap", () => {
       cols: 120,
       rows: 32,
       timeoutSeconds: 3600,
+      username: "agentuser",
+      workingDirectory: "/home/agentuser",
     });
     expect(session.sandboxId).toBeUndefined();
     expect(fetchMock).toHaveBeenCalledTimes(1);

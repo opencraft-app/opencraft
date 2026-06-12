@@ -200,17 +200,19 @@ func waitHealth(ctx context.Context, verifyURL, hostOverride string, wantUp bool
 const waitDownProbeInterval = 2 * time.Second
 
 const (
-	rateLimitCode       = "RequestLimitExceeded"
-	rateLimitBackoffMin = 200 * time.Millisecond
-	rateLimitBackoffMax = 5 * time.Second
-	accountService      = "account"
-	accountVersion      = "2018-12-25"
-	accountEndpoint     = "account.tencentcloudapi.com"
-	accountRegion       = "ap-guangzhou"
-	tatService          = "tat"
-	tatVersion          = "2020-10-28"
-	defaultTerminalCols = 120
-	defaultTerminalRows = 32
+	rateLimitCode                   = "RequestLimitExceeded"
+	rateLimitBackoffMin             = 200 * time.Millisecond
+	rateLimitBackoffMax             = 5 * time.Second
+	accountService                  = "account"
+	accountVersion                  = "2018-12-25"
+	accountEndpoint                 = "account.tencentcloudapi.com"
+	accountRegion                   = "ap-guangzhou"
+	tatService                      = "tat"
+	tatVersion                      = "2020-10-28"
+	defaultTerminalCols             = 120
+	defaultTerminalRows             = 32
+	defaultTerminalUsername         = "agentuser"
+	defaultTerminalWorkingDirectory = "/home/agentuser"
 )
 
 const DefaultTerminalTimeoutSeconds = 3600
@@ -1713,6 +1715,8 @@ func (p *TencentCloudProvider) StartTerminalSession(ctx context.Context, region,
 		Cols:           defaultTerminalCols,
 		Rows:           defaultTerminalRows,
 		TimeoutSeconds: p.cfg.TerminalTimeoutSeconds,
+		Username:       defaultTerminalUsername,
+		WorkingDir:     defaultTerminalWorkingDirectory,
 	}, nil
 }
 

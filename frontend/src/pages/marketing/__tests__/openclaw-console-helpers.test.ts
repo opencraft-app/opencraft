@@ -10,6 +10,7 @@ describe("installOpenClawConsoleHelpers", () => {
       console: Console & Record<string, unknown>;
       help?: unknown;
       terminal?: unknown;
+      show?: unknown;
     } = {
       console: { info, warn, log } as unknown as Console & Record<string, unknown>,
     };
@@ -83,5 +84,28 @@ describe("installOpenClawConsoleHelpers", () => {
 
     expect("help" in host).toBe(false);
     expect("terminal" in host).toBe(false);
+  });
+
+  it("registers show() when a hidden tools reveal callback is provided", () => {
+    const { host, info } = makeHost();
+    const onShowHiddenTools = vi.fn();
+
+    const cleanup = installOpenClawConsoleHelpers({
+      host,
+      getTerminalPath: () => "/bots/bot_export/terminal",
+      onShowHiddenTools,
+    });
+
+    const commands = (host.help as (() => unknown))();
+    const shown = (host.show as (() => boolean))();
+
+    expect(commands).toContainEqual({ name: "show()", description: "显示当前 bot 的隐藏工具入口" });
+    expect(shown).toBe(true);
+    expect(onShowHiddenTools).toHaveBeenCalledTimes(1);
+    expect(info).toHaveBeenCalledWith("隐藏工具入口已显示。");
+
+    cleanup();
+
+    expect("show" in host).toBe(false);
   });
 });

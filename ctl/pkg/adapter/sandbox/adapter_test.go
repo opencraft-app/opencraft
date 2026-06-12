@@ -101,6 +101,8 @@ func TestStartTerminalSessionUsesSandboxTatSessionEndpoint(t *testing.T) {
 			Cols:           120,
 			Rows:           30,
 			TimeoutSeconds: 3600,
+			Username:       "agentuser",
+			WorkingDir:     "/home/agentuser",
 		})
 	}))
 	defer server.Close()
@@ -116,6 +118,9 @@ func TestStartTerminalSessionUsesSandboxTatSessionEndpoint(t *testing.T) {
 	}
 	if session.SessionID != "sess-1" || session.WsURL != "wss://tat.example.test/ws" {
 		t.Fatalf("unexpected session: %+v", session)
+	}
+	if session.Username != "agentuser" || session.WorkingDir != "/home/agentuser" {
+		t.Fatalf("unexpected terminal identity: %+v", session)
 	}
 }
 

@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-const defaultWispPackageURL = "https://cloudagent-sidecar-shanghai-1388575217.cos.ap-shanghai.myqcloud.com/workspace/20260528/wisp-linux-amd64-20260528T061826Z-8ceda87c563b.erofs"
+const defaultWispPackageURL = "https://cloudagent-sidecar-shanghai-1388575217.cos.ap-shanghai.myqcloud.com/workspace/releases/wisp-linux-amd64-20260612T025943Z-3f949bac72a5.erofs"
 
 type WispEnvironmentSDK struct {
 	ags        *AGSClient

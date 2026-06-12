@@ -124,6 +124,8 @@ type TerminalSession struct {
 	Cols           int    `json:"cols"`
 	Rows           int    `json:"rows"`
 	TimeoutSeconds int    `json:"timeoutSeconds,omitempty"`
+	Username       string `json:"username,omitempty"`
+	WorkingDir     string `json:"workingDirectory,omitempty"`
 }
 
 // ExecCommandResult is the business-layer abstraction of a command execution result.
