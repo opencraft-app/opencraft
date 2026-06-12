@@ -123,6 +123,27 @@ describe("validateHermesMemoryLimit", () => {
       reason: "too_large",
     });
   });
+
+  it("uses existing memory characters as the dynamic lower bound", () => {
+    expect(validateHermesMemoryLimit("memory", "1199", 1200)).toEqual({
+      ok: false,
+      reason: "too_small",
+      min: 1200,
+      max: HERMES_MEMORY_CHAR_LIMIT_MAX,
+    });
+    expect(validateHermesMemoryLimit("memory", "1200", 1200)).toEqual({
+      ok: true,
+      value: 1200,
+      min: 1200,
+      max: HERMES_MEMORY_CHAR_LIMIT_MAX,
+    });
+    expect(validateHermesMemoryLimit("user", "899", 900)).toMatchObject({
+      ok: false,
+      reason: "too_small",
+      min: 900,
+      max: HERMES_USER_CHAR_LIMIT_MAX,
+    });
+  });
 });
 
 describe("buildHermesMemoryLimitCommand", () => {
@@ -134,6 +155,7 @@ describe("buildHermesMemoryLimitCommand", () => {
   it("throws before building invalid commands", () => {
     expect(() => buildHermesMemoryLimitCommand("memory", 4001)).toThrow("invalid Hermes memory limit");
     expect(() => buildHermesMemoryLimitCommand("user", 3001)).toThrow("invalid Hermes memory limit");
+    expect(() => buildHermesMemoryLimitCommand("memory", 999, 1000)).toThrow("invalid Hermes memory limit");
   });
 });
 

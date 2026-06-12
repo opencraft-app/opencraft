@@ -28,6 +28,7 @@ status: active
 
 - Agent 记忆上限范围为 500-4000。
 - 用户画像上限范围为 500-3000。
+- 实际可填下限还必须不低于当前文件已有字符数。
 - 保存命令分别为：
   - `hermes config set memory.memory_char_limit <value>`
   - `hermes config set memory.user_char_limit <value>`

@@ -62,15 +62,20 @@ export function buildHermesMemoryReadCommand(): string {
   return `python3 - <<'PY'\n${PYTHON_MEMORY_READER}\nPY`;
 }
 
-export function getHermesMemoryLimitBounds(target: HermesMemoryLimitTarget): { min: number; max: number } {
+function normalizeExistingChars(existingChars: number): number {
+  return Number.isFinite(existingChars) && existingChars > 0 ? Math.ceil(existingChars) : 0;
+}
+
+export function getHermesMemoryLimitBounds(target: HermesMemoryLimitTarget, existingChars = 0): { min: number; max: number } {
+  const contentMin = normalizeExistingChars(existingChars);
   return {
-    min: HERMES_MEMORY_LIMIT_MIN,
+    min: Math.max(HERMES_MEMORY_LIMIT_MIN, contentMin),
     max: target === "memory" ? HERMES_MEMORY_CHAR_LIMIT_MAX : HERMES_USER_CHAR_LIMIT_MAX,
   };
 }
 
-export function validateHermesMemoryLimit(target: HermesMemoryLimitTarget, input: string): HermesMemoryLimitValidation {
-  const { min, max } = getHermesMemoryLimitBounds(target);
+export function validateHermesMemoryLimit(target: HermesMemoryLimitTarget, input: string, existingChars = 0): HermesMemoryLimitValidation {
+  const { min, max } = getHermesMemoryLimitBounds(target, existingChars);
   const trimmed = input.trim();
   if (!trimmed) {
     return { ok: false, reason: "empty", min, max };
@@ -93,8 +98,8 @@ export function validateHermesMemoryLimit(target: HermesMemoryLimitTarget, input
   return { ok: true, value, min, max };
 }
 
-export function buildHermesMemoryLimitCommand(target: HermesMemoryLimitTarget, value: number): string {
-  const validation = validateHermesMemoryLimit(target, String(value));
+export function buildHermesMemoryLimitCommand(target: HermesMemoryLimitTarget, value: number, existingChars = 0): string {
+  const validation = validateHermesMemoryLimit(target, String(value), existingChars);
   if (!validation.ok) {
     throw new Error("invalid Hermes memory limit");
   }

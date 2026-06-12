@@ -435,15 +435,15 @@ const MemoryLimitCard = ({
   limit: number;
   isSaving: boolean;
   saveError: string | null;
-  onSaveLimit: (target: HermesMemoryLimitTarget, value: number) => Promise<boolean>;
+  onSaveLimit: (target: HermesMemoryLimitTarget, value: number, existingChars: number) => Promise<boolean>;
   t: (zh: string, options?: Record<string, unknown>) => string;
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [draftLimit, setDraftLimit] = useState(String(limit));
   const [touched, setTouched] = useState(false);
   const percent = getMemoryUsagePercent(used, limit);
-  const bounds = getHermesMemoryLimitBounds(target);
-  const validation = validateHermesMemoryLimit(target, draftLimit);
+  const bounds = getHermesMemoryLimitBounds(target, used);
+  const validation = validateHermesMemoryLimit(target, draftLimit, used);
   const validationMessage = touched ? getMemoryLimitValidationMessage(validation, t) : null;
   const displayError = validationMessage || (isEditing ? saveError : null);
 
@@ -463,7 +463,7 @@ const MemoryLimitCard = ({
   const handleSave = async () => {
     setTouched(true);
     if (!validation.ok) return;
-    const saved = await onSaveLimit(target, validation.value);
+    const saved = await onSaveLimit(target, validation.value, used);
     if (saved) {
       setIsEditing(false);
     }
@@ -609,7 +609,7 @@ const MemoryPanel = ({
   activeTab: MemoryTabId;
   onTabChange: (tab: MemoryTabId) => void;
   onRefresh: () => void;
-  onSaveLimit: (target: HermesMemoryLimitTarget, value: number) => Promise<boolean>;
+  onSaveLimit: (target: HermesMemoryLimitTarget, value: number, existingChars: number) => Promise<boolean>;
   savingLimitTarget: HermesMemoryLimitTarget | null;
   limitSaveError: { target: HermesMemoryLimitTarget; message: string } | null;
   t: (zh: string, options?: Record<string, unknown>) => string;
@@ -3133,7 +3133,7 @@ export const OpenClawSettingsPage = () => {
     }
   }, [activeBotId, activeBotStatus, repositories]);
 
-  const saveHermesMemoryLimit = useCallback(async (target: HermesMemoryLimitTarget, value: number) => {
+  const saveHermesMemoryLimit = useCallback(async (target: HermesMemoryLimitTarget, value: number, existingChars: number) => {
     if (!activeBotId) {
       setMemoryLimitSaveError({ target, message: rawT("未找到当前 Hermes 实例。") });
       return false;
@@ -3147,7 +3147,7 @@ export const OpenClawSettingsPage = () => {
     setSavingMemoryLimitTarget(target);
     setMemoryLimitSaveError(null);
     try {
-      const command = buildHermesMemoryLimitCommand(target, value);
+      const command = buildHermesMemoryLimitCommand(target, value, existingChars);
       const result = await repositories.bots.execDebugCommand(activeBotId, command);
       if (!isExecCommandSucceeded(result)) {
         throw new Error(
