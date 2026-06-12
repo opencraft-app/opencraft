@@ -15,6 +15,7 @@ import {
   CalendarClock,
   ChevronDown,
   Check,
+  Globe2,
   MessageCircle,
   MessageSquare,
   Loader2,
@@ -92,6 +93,7 @@ import { BuddyPanel } from "@/pages/marketing/openclaw-buddy-panel";
 import { AchievementsPanel } from "@/pages/marketing/openclaw-achievements-panel";
 import { AutomationsPanel } from "@/pages/marketing/openclaw-automations-panel";
 import { TatFileManagerPanel } from "@/components/domain/tat-file-manager-panel";
+import { TatHermesWebPanel } from "@/components/domain/tat-hermes-web-panel";
 import { findCompletedCreatingBot, getOpenClawCreateLimitMessage } from "@/pages/marketing/openclaw-create-availability";
 import {
   getRestartBlockReason,
@@ -4065,6 +4067,20 @@ export const OpenClawSettingsPage = () => {
                           </button>
                           <button
                             type="button"
+                            onClick={() => navigate({ pathname: AGENT_SECTION_PATH_BY_ID.browser, search: location.search })}
+                            aria-current={activeSection === "browser" ? "page" : undefined}
+                            className={cn(
+                              "lw-settings-nav-item flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 font-medium transition-colors",
+                              activeSection === "browser"
+                                ? "bg-black/[0.06] text-black/90"
+                                : "text-black/55 hover:bg-black/[0.035] hover:text-black/85",
+                            )}
+                          >
+                            <span className="flex h-5 w-5 items-center justify-center"><Globe2 className="h-4 w-4" /></span>
+                            <span className="flex-1 text-left text-[15px]">{t("浏览器")}</span>
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => {
                               if (exportDisabled) return;
                               void handleExportWorkspace();
@@ -4208,6 +4224,9 @@ export const OpenClawSettingsPage = () => {
                           )}
                           {activeSection === "files" && (
                             <TatFileManagerPanel botId={activeBot.id} />
+                          )}
+                          {activeSection === "browser" && (
+                            <TatHermesWebPanel botId={activeBot.id} />
                           )}
                           {activeSection === "terminal" && (
                             <TerminalPanel botId={activeBot.id} botName={activeBot.name} />
