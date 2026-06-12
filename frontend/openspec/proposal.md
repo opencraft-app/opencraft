@@ -1,45 +1,34 @@
-# Issue: Agent Console canonical path
+---
+title: 支持调整 Hermes 记忆字符上限
+issue: wisp/mono2#69
+status: active
+---
 
-## Background
+# 支持调整 Hermes 记忆字符上限
 
-`/dashboard/settings` is still the canonical entry for the LightVela Agent console. The page now carries much more than settings: channel connection, model management, skills, persona, automations, memory, achievements, cloud files, and AgentChat. Keeping the main entry under `settings` makes navigation look verbose and semantically narrow.
+## 背景
 
-## Goal
+当前 OpenClaw 设置页的「记忆」面板已经能读取 Hermes 实例中的 `.hermes/config.yaml`
+以及 `MEMORY.md` / `USER.md` 内容，并展示两类文件的字符占用与上限。但用户无法在控制台
+内调整上限，只能进入实例手动执行命令。
 
-Make `/agents` the canonical Agent console path and give each first-level console section its own URL.
+## 目标
 
-## Scope
+- 在「记忆」面板内分别支持调整 `MEMORY.md` 与 `USER.md` 的字符上限。
+- 通过现有 `debug/exec` 通道注入 Hermes CLI 命令，不新增后端接口。
+- 前端提供清晰的范围校验和保存反馈，成功写入配置并重启 Hermes 网关后刷新当前记忆快照。
 
-- Add `/agents` and section URLs:
-  - `/agents/channels`
-  - `/agents/models`
-  - `/agents/skills`
-  - `/agents/persona`
-  - `/agents/automations`
-  - `/agents/memory`
-  - `/agents/achievements`
-  - `/agents/files`
-  - `/agents/chat`
-- Keep legacy paths as compatibility redirects:
-  - `/dashboard` -> `/agents`
-  - `/dashboard/settings` -> `/agents`
-  - `/openclaw/settings` -> `/agents`
-  - `/console/settings` -> `/agents`
-- Preserve query strings such as `?creating=<botId>` when redirecting from legacy paths.
-- Drive the active console section from the URL so refresh, copy link, and direct navigation work.
-- Update internal links and OpenSpec docs to use `/agents` as the primary entry.
+## 非目标
 
-## Non-goals
+- 不编辑 `MEMORY.md` / `USER.md` 内容本身。
+- 不新增后端 API。
+- 不改 Hermes CLI 行为。
 
-- Do not introduce `/agents/:agentId/...` in this iteration. The existing in-page Agent switcher remains the selected-Agent mechanism.
-- Do not split `openclaw-settings-page.tsx` into submodules.
-- Do not redesign the visual layout beyond the URL and navigation behavior needed for this IA change.
+## 验收
 
-## Acceptance Criteria
-
-- Visiting `/agents` opens the Agent console and defaults to the channels section.
-- Visiting `/agents/models` opens the same console with the model section selected.
-- Clicking each left navigation item updates the browser URL to the matching `/agents/<section>` path.
-- Legacy `/dashboard/settings?creating=xxx` redirects to `/agents?creating=xxx`.
-- Existing entry points such as "进入控制台" and "管理我的智能体伙伴" point to `/agents`.
-- Unknown section paths fall back to `/agents` instead of showing a broken empty state.
+- Agent 记忆上限范围为 500-4000。
+- 用户画像上限范围为 500-3000。
+- 保存命令分别为：
+  - `hermes config set memory.memory_char_limit <value>`
+  - `hermes config set memory.user_char_limit <value>`
+- 配置命令或网关重启命令失败时展示摘要错误，成功后自动刷新并提示修改成功。

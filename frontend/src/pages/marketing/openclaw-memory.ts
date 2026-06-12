@@ -1,5 +1,14 @@
 export const DEFAULT_MEMORY_CHAR_LIMIT = 2200;
 export const DEFAULT_USER_CHAR_LIMIT = 1375;
+export const HERMES_MEMORY_LIMIT_MIN = 500;
+export const HERMES_MEMORY_CHAR_LIMIT_MAX = 4000;
+export const HERMES_USER_CHAR_LIMIT_MAX = 3000;
+
+export type HermesMemoryLimitTarget = "memory" | "user";
+
+export type HermesMemoryLimitValidation =
+  | { ok: true; value: number; min: number; max: number }
+  | { ok: false; reason: "empty" | "integer" | "too_small" | "too_large"; min: number; max: number };
 
 export interface HermesMemorySnapshot {
   memoryCharLimit: number;
@@ -51,6 +60,47 @@ print(json.dumps({
 
 export function buildHermesMemoryReadCommand(): string {
   return `python3 - <<'PY'\n${PYTHON_MEMORY_READER}\nPY`;
+}
+
+export function getHermesMemoryLimitBounds(target: HermesMemoryLimitTarget): { min: number; max: number } {
+  return {
+    min: HERMES_MEMORY_LIMIT_MIN,
+    max: target === "memory" ? HERMES_MEMORY_CHAR_LIMIT_MAX : HERMES_USER_CHAR_LIMIT_MAX,
+  };
+}
+
+export function validateHermesMemoryLimit(target: HermesMemoryLimitTarget, input: string): HermesMemoryLimitValidation {
+  const { min, max } = getHermesMemoryLimitBounds(target);
+  const trimmed = input.trim();
+  if (!trimmed) {
+    return { ok: false, reason: "empty", min, max };
+  }
+  if (!/^\d+$/.test(trimmed)) {
+    return { ok: false, reason: "integer", min, max };
+  }
+
+  const value = Number(trimmed);
+  if (!Number.isSafeInteger(value)) {
+    return { ok: false, reason: "integer", min, max };
+  }
+  if (value < min) {
+    return { ok: false, reason: "too_small", min, max };
+  }
+  if (value > max) {
+    return { ok: false, reason: "too_large", min, max };
+  }
+
+  return { ok: true, value, min, max };
+}
+
+export function buildHermesMemoryLimitCommand(target: HermesMemoryLimitTarget, value: number): string {
+  const validation = validateHermesMemoryLimit(target, String(value));
+  if (!validation.ok) {
+    throw new Error("invalid Hermes memory limit");
+  }
+
+  const key = target === "memory" ? "memory.memory_char_limit" : "memory.user_char_limit";
+  return `hermes config set ${key} ${validation.value}`;
 }
 
 function parseJsonObject(output: string): Record<string, unknown> {

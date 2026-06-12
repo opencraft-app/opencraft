@@ -3,11 +3,16 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_MEMORY_CHAR_LIMIT,
   DEFAULT_USER_CHAR_LIMIT,
+  HERMES_MEMORY_CHAR_LIMIT_MAX,
+  HERMES_MEMORY_LIMIT_MIN,
+  HERMES_USER_CHAR_LIMIT_MAX,
+  buildHermesMemoryLimitCommand,
   buildHermesMemoryReadCommand,
   getMemoryUsagePercent,
   parseHermesMemorySnapshot,
   splitHermesMemoryEntries,
   toSingleLineMemoryEntry,
+  validateHermesMemoryLimit,
 } from "../openclaw-memory";
 
 describe("buildHermesMemoryReadCommand", () => {
@@ -77,6 +82,58 @@ describe("parseHermesMemorySnapshot", () => {
 
   it("throws for non-json output", () => {
     expect(() => parseHermesMemorySnapshot("Traceback: python3 not found")).toThrow("memory payload is not valid JSON");
+  });
+});
+
+describe("validateHermesMemoryLimit", () => {
+  it("accepts target-specific boundary values", () => {
+    expect(validateHermesMemoryLimit("memory", String(HERMES_MEMORY_LIMIT_MIN))).toEqual({
+      ok: true,
+      value: HERMES_MEMORY_LIMIT_MIN,
+      min: HERMES_MEMORY_LIMIT_MIN,
+      max: HERMES_MEMORY_CHAR_LIMIT_MAX,
+    });
+    expect(validateHermesMemoryLimit("memory", String(HERMES_MEMORY_CHAR_LIMIT_MAX))).toEqual({
+      ok: true,
+      value: HERMES_MEMORY_CHAR_LIMIT_MAX,
+      min: HERMES_MEMORY_LIMIT_MIN,
+      max: HERMES_MEMORY_CHAR_LIMIT_MAX,
+    });
+    expect(validateHermesMemoryLimit("user", String(HERMES_USER_CHAR_LIMIT_MAX))).toEqual({
+      ok: true,
+      value: HERMES_USER_CHAR_LIMIT_MAX,
+      min: HERMES_MEMORY_LIMIT_MIN,
+      max: HERMES_USER_CHAR_LIMIT_MAX,
+    });
+  });
+
+  it("rejects empty, non-integer, and out-of-range values", () => {
+    expect(validateHermesMemoryLimit("memory", "").ok).toBe(false);
+    expect(validateHermesMemoryLimit("memory", "1200.5").ok).toBe(false);
+    expect(validateHermesMemoryLimit("memory", String(HERMES_MEMORY_LIMIT_MIN - 1))).toMatchObject({
+      ok: false,
+      reason: "too_small",
+    });
+    expect(validateHermesMemoryLimit("memory", String(HERMES_MEMORY_CHAR_LIMIT_MAX + 1))).toMatchObject({
+      ok: false,
+      reason: "too_large",
+    });
+    expect(validateHermesMemoryLimit("user", String(HERMES_USER_CHAR_LIMIT_MAX + 1))).toMatchObject({
+      ok: false,
+      reason: "too_large",
+    });
+  });
+});
+
+describe("buildHermesMemoryLimitCommand", () => {
+  it("builds target-specific Hermes config commands", () => {
+    expect(buildHermesMemoryLimitCommand("memory", 4000)).toBe("hermes config set memory.memory_char_limit 4000");
+    expect(buildHermesMemoryLimitCommand("user", 3000)).toBe("hermes config set memory.user_char_limit 3000");
+  });
+
+  it("throws before building invalid commands", () => {
+    expect(() => buildHermesMemoryLimitCommand("memory", 4001)).toThrow("invalid Hermes memory limit");
+    expect(() => buildHermesMemoryLimitCommand("user", 3001)).toThrow("invalid Hermes memory limit");
   });
 });
 
