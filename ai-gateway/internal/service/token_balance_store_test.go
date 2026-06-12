@@ -3,9 +3,11 @@ package service
 import (
 	"context"
 	"testing"
+	"time"
 
 	"git.woa.com/wisp/mono/ai-gateway/internal/model"
 	"git.woa.com/wisp/mono/ai-gateway/internal/pkg/redisclient"
+	"git.woa.com/wisp/mono/ai-gateway/internal/repository"
 	"github.com/alicebob/miniredis/v2"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
@@ -51,6 +53,18 @@ func (m *tokenBalanceStoreMockSubRepo) CountActive() (int64, error) { return 0, 
 func (m *tokenBalanceStoreMockSubRepo) ListExpiredUserIDs() ([]uuid.UUID, error) { return nil, nil }
 
 func (m *tokenBalanceStoreMockSubRepo) SumActiveTokenBalance() (int64, error) { return 0, nil }
+
+func (m *tokenBalanceStoreMockSubRepo) ListRefreshCandidates(limit int) ([]repository.SubscriptionRefreshCandidate, error) {
+	return nil, nil
+}
+
+func (m *tokenBalanceStoreMockSubRepo) RefreshByIDs(items []repository.SubscriptionRefreshItem) (int64, error) {
+	return 0, nil
+}
+
+func (m *tokenBalanceStoreMockSubRepo) ExtendActivePeriodEnd(userID uuid.UUID, newPeriodEnd time.Time) (int64, *model.Subscription, error) {
+	return 0, nil, nil
+}
 
 func (m *tokenBalanceStoreMockSubRepo) DB() *gorm.DB { return nil }
 

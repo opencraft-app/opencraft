@@ -108,6 +108,15 @@ func (m *proxyUsageSinkSubRepo) CountActive() (int64, error)              { retu
 func (m *proxyUsageSinkSubRepo) SumActiveTokenBalance() (int64, error)    { return 0, nil }
 func (m *proxyUsageSinkSubRepo) ListExpiredUserIDs() ([]uuid.UUID, error) { return nil, nil }
 func (m *proxyUsageSinkSubRepo) Update(*model.Subscription) error         { return nil }
+func (m *proxyUsageSinkSubRepo) ListRefreshCandidates(limit int) ([]repository.SubscriptionRefreshCandidate, error) {
+	return nil, nil
+}
+func (m *proxyUsageSinkSubRepo) RefreshByIDs(items []repository.SubscriptionRefreshItem) (int64, error) {
+	return 0, nil
+}
+func (m *proxyUsageSinkSubRepo) ExtendActivePeriodEnd(userID uuid.UUID, newPeriodEnd time.Time) (int64, *model.Subscription, error) {
+	return 0, nil, nil
+}
 func (m *proxyUsageSinkSubRepo) DB() *gorm.DB                             { return nil }
 
 type proxyUsageSinkTokenBalanceOps struct{ subRepo *proxyUsageSinkSubRepo }

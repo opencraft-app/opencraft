@@ -160,3 +160,18 @@ func (t *TokenBalanceStore) SyncFromDB(ctx context.Context, subID uuid.UUID) err
 	slog.Debug("订阅余额同步到 Redis", "sub_id", subID, "balance", sub.TokenBalance)
 	return nil
 }
+
+// InvalidateRedisCache 删除指定订阅在 Redis 中的余额 key 和 init 标志。
+//
+// 月度刷新 scheduler 直接 UPDATE DB.token_balance 后，必须调用此方法让 Redis
+// 在下次扣减时按需从 DB 重读最新余额；否则 init key 仍存在 → ensureInitialized
+// 直接走 Redis 旧值 → 月度刷新被覆盖回旧值（详见
+// .tmp/aigateway-monthly-token-refresh-design.md §3.5）。
+//
+// nil redis 时直接返回 nil（测试场景或 Redis 未配置）。
+func (t *TokenBalanceStore) InvalidateRedisCache(ctx context.Context, subID uuid.UUID) error {
+	if t.redis == nil {
+		return nil
+	}
+	return t.redis.DelTokenBalance(ctx, subID.String())
+}

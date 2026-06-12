@@ -323,6 +323,18 @@ func (r *memSubRepo) ExpireOverdue() (int64, error) {
 	return 0, nil
 }
 
+func (r *memSubRepo) ListRefreshCandidates(limit int) ([]repository.SubscriptionRefreshCandidate, error) {
+	return nil, nil
+}
+
+func (r *memSubRepo) RefreshByIDs(items []repository.SubscriptionRefreshItem) (int64, error) {
+	return 0, nil
+}
+
+func (r *memSubRepo) ExtendActivePeriodEnd(userID uuid.UUID, newPeriodEnd time.Time) (int64, *model.Subscription, error) {
+	return 0, nil, nil
+}
+
 func (r *memSubRepo) CancelByUserID(userID uuid.UUID) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

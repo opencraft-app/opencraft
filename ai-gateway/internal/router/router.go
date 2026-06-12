@@ -68,6 +68,7 @@ func Setup(cfg *config.Config, db *gorm.DB, redisClient *redisclient.Client,
 	subSvc := service.NewSubscriptionService(subRepo, planRepo, keySvc)
 	providerSvc := service.NewProviderService(providerRepo, modelMappingRepo, encryptionKey)
 	tokenBalanceStore := service.NewTokenBalanceStore(redisClient, subRepo)
+	subSvc.SetTokenBalanceStore(tokenBalanceStore)
 	billingSvc := service.NewBillingService(
 		tokenBalanceStore,
 		providerRepo, usageRepo, cfg.Billing.DefaultReservationTokens)
@@ -287,6 +288,7 @@ func Setup(cfg *config.Config, db *gorm.DB, redisClient *redisclient.Client,
 			internal.POST("/users/ensure", internalHandler.EnsureUser)
 			internal.GET("/plans/:id", internalHandler.GetPlan)
 			internal.POST("/subscriptions/apply", internalHandler.ApplySubscription)
+			internal.POST("/subscriptions/extend", internalHandler.ExtendSubscription)
 			internal.POST("/subscriptions/cancel", internalHandler.CancelSubscription)
 			internal.GET("/users/:user_id/subscriptions", internalHandler.GetUserActiveSubscription)
 		}

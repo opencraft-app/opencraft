@@ -19,6 +19,8 @@ import (
 	aimigrations "git.woa.com/wisp/mono/ai-gateway/migrations"
 )
 
+const latestKnownSchemaVersion int64 = 5
+
 func main() {
 	dsn := strings.TrimSpace(os.Getenv("AI_GATEWAY_MIGRATE_DSN"))
 	if dsn == "" {
@@ -34,8 +36,7 @@ func main() {
 	}
 	defer db.Close()
 
-	// 自动兼容旧迁移系统：如果 schema_migrations 不存在但旧表存在，
-	// 从旧表推算已执行的最大版本号并写入 schema_migrations，避免重复执行。
+	// 自动兼容旧迁移系统和早期 playground 初始化出来的半迁移状态。
 	if err := bootstrapIfNeeded(db); err != nil {
 		log.Fatalf("bootstrap schema_migrations: %v", err)
 	}
@@ -67,20 +68,18 @@ func main() {
 }
 
 // bootstrapIfNeeded 检测迁移系统状态并自动处理新旧衔接：
-//   - schema_migrations 已存在且有记录 → 无需处理，golang-migrate 正常接管
-//   - schema_migrations 已存在但为空 + schema_migration_files 存在（旧系统） → 推算版本并写入
+//   - schema_migrations 已存在且干净 → 无需处理，golang-migrate 正常接管
+//   - schema_migrations 已存在但 dirty → 仅在业务表指纹明确领先时修复
 //   - schema_migrations 不存在 + schema_migration_files 存在（旧系统） → 推算版本并写入
-//   - 两张表都不存在（全新环境） → 不做任何操作，golang-migrate 从 1 开始执行
+//   - 两张迁移表都不存在但业务 schema 已存在 → 通过保守指纹补写版本
+//   - 全新环境 → 不做任何操作，golang-migrate 从 1 开始执行
 func bootstrapIfNeeded(db *sql.DB) error {
-	hasSchemaMigrations := tableExists(db, "schema_migrations")
-	if hasSchemaMigrations && schemaMigrationsHasRows(db) {
-		log.Printf("schema_migrations table exists, skipping bootstrap")
-		return nil
+	if tableExists(db, "schema_migrations") {
+		return reconcileSchemaMigrations(db)
 	}
 
 	if !tableExists(db, "schema_migration_files") {
-		log.Printf("fresh environment detected, golang-migrate will run all migrations from scratch")
-		return nil
+		return bootstrapFromSchemaFingerprint(db)
 	}
 
 	// 旧系统存在：从 schema_migration_files 推算已执行的最大版本号
@@ -95,24 +94,118 @@ func bootstrapIfNeeded(db *sql.DB) error {
 
 	log.Printf("legacy migration system detected (schema_migration_files), bootstrapping schema_migrations at version %d", version)
 
-	if !hasSchemaMigrations {
-		_, err = db.Exec(`
-			CREATE TABLE schema_migrations (
-				version bigint NOT NULL,
-				dirty   tinyint(1) NOT NULL,
-				PRIMARY KEY (version)
-			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`)
-		if err != nil {
-			return fmt.Errorf("create schema_migrations: %w", err)
-		}
+	if err := createSchemaMigrations(db); err != nil {
+		return err
 	}
-
-	_, err = db.Exec("INSERT INTO schema_migrations (version, dirty) VALUES (?, 0)", version)
-	if err != nil {
-		return fmt.Errorf("insert bootstrap version: %w", err)
+	if err := replaceMigrationState(db, version, false); err != nil {
+		return err
 	}
 
 	log.Printf("bootstrap complete: schema_migrations initialized at version %d", version)
+	return nil
+}
+
+func reconcileSchemaMigrations(db *sql.DB) error {
+	version, dirty, ok, err := currentMigrationState(db)
+	if err != nil {
+		return fmt.Errorf("read schema_migrations: %w", err)
+	}
+	if ok && !dirty {
+		log.Printf("schema_migrations table exists at clean version %d, skipping bootstrap", version)
+		return nil
+	}
+
+	inferredVersion, err := inferExistingSchemaVersion(db)
+	if err != nil {
+		return err
+	}
+	if inferredVersion == 0 {
+		if ok {
+			return fmt.Errorf("schema_migrations is dirty at version %d but no ai-gateway schema fingerprint was detected", version)
+		}
+		log.Printf("schema_migrations table exists but has no rows and no schema fingerprint, golang-migrate will run from scratch")
+		return nil
+	}
+	if ok && inferredVersion <= version {
+		return fmt.Errorf(
+			"schema_migrations is dirty at version %d but schema fingerprint only proves version %d; repair manually",
+			version,
+			inferredVersion,
+		)
+	}
+
+	if ok {
+		log.Printf("schema_migrations dirty at version %d; schema fingerprint proves version %d, clearing dirty state", version, inferredVersion)
+	} else {
+		log.Printf("schema_migrations table exists without a row; schema fingerprint proves version %d, inserting clean state", inferredVersion)
+	}
+	if err := replaceMigrationState(db, inferredVersion, false); err != nil {
+		return err
+	}
+	return nil
+}
+
+func currentMigrationState(db *sql.DB) (int64, bool, bool, error) {
+	var version int64
+	var dirty bool
+	err := db.QueryRow("SELECT version, dirty FROM schema_migrations ORDER BY version DESC LIMIT 1").Scan(&version, &dirty)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, false, false, nil
+	}
+	if err != nil {
+		return 0, false, false, err
+	}
+	return version, dirty, true, nil
+}
+
+func bootstrapFromSchemaFingerprint(db *sql.DB) error {
+	version, err := inferExistingSchemaVersion(db)
+	if err != nil {
+		return err
+	}
+	if version == 0 {
+		log.Printf("fresh environment detected, golang-migrate will run all migrations from scratch")
+		return nil
+	}
+	log.Printf("existing ai-gateway schema detected without migration metadata, bootstrapping schema_migrations at version %d", version)
+	if err := createSchemaMigrations(db); err != nil {
+		return err
+	}
+	if err := replaceMigrationState(db, version, false); err != nil {
+		return err
+	}
+	return nil
+}
+
+func createSchemaMigrations(db *sql.DB) error {
+	_, err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS schema_migrations (
+			version bigint NOT NULL,
+			dirty   tinyint(1) NOT NULL,
+			PRIMARY KEY (version)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`)
+	if err != nil {
+		return fmt.Errorf("create schema_migrations: %w", err)
+	}
+	return nil
+}
+
+func replaceMigrationState(db *sql.DB, version int64, dirty bool) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin migration state update: %w", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec("DELETE FROM schema_migrations"); err != nil {
+		return fmt.Errorf("clear schema_migrations: %w", err)
+	}
+	if _, err := tx.Exec("INSERT INTO schema_migrations (version, dirty) VALUES (?, ?)", version, dirty); err != nil {
+		return fmt.Errorf("insert bootstrap version: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit migration state update: %w", err)
+	}
 	return nil
 }
 
@@ -149,14 +242,91 @@ func maxVersionFromLegacyTable(db *sql.DB) (int64, error) {
 }
 
 func tableExists(db *sql.DB, name string) bool {
-	var n string
-	err := db.QueryRow("SHOW TABLES LIKE ?", name).Scan(&n)
-	return err == nil
+	var count int
+	err := db.QueryRow(
+		"SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?",
+		name,
+	).Scan(&count)
+	return err == nil && count > 0
 }
 
-func schemaMigrationsHasRows(db *sql.DB) bool {
+type schemaFacts struct {
+	tables  map[string]bool
+	columns map[string]map[string]bool
+}
+
+var aiGatewayCoreTables = []string{
+	"admin_audit_logs",
+	"api_keys",
+	"model_mappings",
+	"plans",
+	"providers",
+	"runtime_configs",
+	"subscriptions",
+	"usage_logs",
+	"users",
+}
+
+func inferExistingSchemaVersion(db *sql.DB) (int64, error) {
+	facts := schemaFacts{
+		tables:  make(map[string]bool),
+		columns: make(map[string]map[string]bool),
+	}
+	for _, table := range append(append([]string{}, aiGatewayCoreTables...), "response_cache") {
+		facts.tables[table] = tableExists(db, table)
+	}
+	facts.columns["providers"] = map[string]bool{
+		"model_discovery_protocol": columnExists(db, "providers", "model_discovery_protocol"),
+	}
+	facts.columns["subscriptions"] = map[string]bool{
+		"last_refreshed_at": columnExists(db, "subscriptions", "last_refreshed_at"),
+	}
+	return inferSchemaVersionFromFacts(facts)
+}
+
+func inferSchemaVersionFromFacts(facts schemaFacts) (int64, error) {
+	var presentCoreTables int
+	var missingCoreTables []string
+	for _, table := range aiGatewayCoreTables {
+		if facts.tables[table] {
+			presentCoreTables++
+			continue
+		}
+		missingCoreTables = append(missingCoreTables, table)
+	}
+	if presentCoreTables == 0 {
+		return 0, nil
+	}
+	if len(missingCoreTables) > 0 {
+		return 0, fmt.Errorf("partial ai-gateway schema detected, missing core tables: %s", strings.Join(missingCoreTables, ", "))
+	}
+
+	version := int64(1)
+	if !facts.tables["response_cache"] {
+		version = 3
+	}
+	if facts.columns["providers"]["model_discovery_protocol"] {
+		if facts.tables["response_cache"] {
+			return 0, fmt.Errorf("inconsistent ai-gateway schema fingerprint: providers.model_discovery_protocol exists but response_cache still exists")
+		}
+		version = 4
+	}
+	if facts.columns["subscriptions"]["last_refreshed_at"] {
+		if facts.tables["response_cache"] || !facts.columns["providers"]["model_discovery_protocol"] {
+			return 0, fmt.Errorf("inconsistent ai-gateway schema fingerprint: subscriptions.last_refreshed_at exists but earlier migrations are missing")
+		}
+		version = latestKnownSchemaVersion
+	}
+	return version, nil
+}
+
+func columnExists(db *sql.DB, tableName string, columnName string) bool {
 	var count int
-	err := db.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&count)
+	err := db.QueryRow(
+		"SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?",
+		tableName,
+		columnName,
+	).Scan(&count)
 	return err == nil && count > 0
 }
 
