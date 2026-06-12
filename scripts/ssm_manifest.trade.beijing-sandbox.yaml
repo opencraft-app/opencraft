@@ -1,4 +1,4 @@
-# SSM manifest for trade · beijing-sandbox（迭代 9C）
+# SSM manifest for trade · beijing-sandbox（v1.7.31 北京 2 预发布接入，现网计费形态）
 #
 # 用途: 由 scripts/export_ssm_to_sops.py 读 Tencent Cloud SSM secret
 #       并加密落到 argocd/secrets/beijing-sandbox/trade-runtime-secrets.sops.yaml
@@ -10,9 +10,17 @@
 #      Region: ap-beijing
 #      SecretString (JSON): {
 #        "TRADE_DB_PASSWORD": "<新建 trade DB user 后的密码>",
-#        "LIGHTCLAW_INTERNAL_SERVICE_TOKEN": "<复用 ctl/payment 相同的 token>",
-#        "TRADE_TENCENT_BILLING_SIGNATURE_KEY": "<jifei 同事提供;9B 期不连 jifei 可暂填占位字符串如 'placeholder-not-used'>"
+#        "LIGHTCLAW_INTERNAL_SERVICE_TOKEN": "<复用 beijing-sandbox 内 ctl/payment runtime-secrets 同名键真值>",
+#        "TRADE_TENCENT_BILLING_SIGNATURE_KEY": "<jifei 同事提供; 用户 2026-06-12 拍板: 与 sandbox-bj-7 测试环境共用同一组真值>",
+#        "JIFEI_BILLING_APP_ID": "<销毁链路 HMAC-SHA256 签名 appid; 与 sandbox-bj-7 共用; 取自 argocd/secrets/sandbox-bj-7/trade-runtime-secrets.sops.yaml sops decrypt 后的明文>",
+#        "JIFEI_BILLING_APP_SECRET": "<销毁链路 HMAC-SHA256 签名 secret; 与 sandbox-bj-7 共用; 取自同上文件>"
 #      }
+#
+#      注: 5 个键全部是现网计费形态必需键（去掉 sandbox-bj-7 的 9B 联调期占位
+#      模式）。其中 JIFEI_BILLING_APP_ID / JIFEI_BILLING_APP_SECRET 是销毁链路
+#      ModifyResourceStatus 的 HMAC-SHA256 签名密钥（Q-D-SIG-1~6 设计），由
+#      trade jifeiclient 在 envelope.interface.auth 4 字段注入；clgateway 不持
+#      有签名密钥（透明 forward_http 转发）。
 #
 #   2. 本地执行（需 age 私钥能 decrypt argocd/secrets/.sops.yaml）:
 #      python3 scripts/export_ssm_to_sops.py \
