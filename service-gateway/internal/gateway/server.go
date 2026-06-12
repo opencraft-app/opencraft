@@ -80,6 +80,8 @@ type Handler struct {
 	adminBridgeSecure      bool
 	adminBridgeConfigured  bool
 	realnameWallEnabled    bool
+	workerActions          *workerActionService
+	workerActionBackend    workerActionBackend
 }
 
 type accessLogSink interface {
@@ -139,6 +141,12 @@ func WithAdminBridgeCookie(cfg AdminBridgeCookieConfig) Option {
 		if cfg.Secure {
 			h.adminBridgeSecure = true
 		}
+	}
+}
+
+func WithWorkerActionBackend(backend workerActionBackend) Option {
+	return func(h *Handler) {
+		h.workerActionBackend = backend
 	}
 }
 
@@ -220,6 +228,9 @@ func NewHandler(cfg Config, opts ...Option) (http.Handler, error) {
 	}
 	for _, opt := range opts {
 		opt(handler)
+	}
+	if err := handler.configureWorkerActions(cfg.WorkerActions); err != nil {
+		return nil, err
 	}
 	if requiresAdminAccess(routes) {
 		if handler.adminUsername == "" || handler.adminPassword == "" {
@@ -321,6 +332,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		rec := newStatusRecorder(w)
 		writeJSON(rec, http.StatusOK, map[string]string{"status": "ok"})
 		h.observeRequest(start, "healthz", r, rec.statusCode())
+		return
+	}
+
+	if h.isWorkerActionPath(r.URL.Path) {
+		h.serveWorkerActionRoute(start, w, r)
 		return
 	}
 

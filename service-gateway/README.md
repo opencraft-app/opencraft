@@ -10,6 +10,7 @@ Responsibilities:
 - session introspection via `user-auth`
 - inject `X-Lightclaw-User-ID` and `X-Lightclaw-User-Email`
 - inject compatibility headers `X-User-Id` and `X-Uin` for legacy upstreams such as `ctl`
+- own the public worker action API and keep Temporal credentials private
 
 The first version is intentionally small:
 - no Envoy
@@ -56,6 +57,13 @@ Routing gotchas:
 - 现场典型症状是：直连 `ctl-api` 返回 `200`，但 `https://lightclaw.tech/v1/instances/...` 返回 `500`
 - 遇到这种分叉时，先看 `service-gateway` access log 是否记录了该请求，以及它当前配置的 `ctl` upstream 是否仍指向旧 namespace
 - 2026-03-26 实测踩坑：`service-gateway` 仍指向 `http://ctl-api.lightclaw.svc.cluster.local`，而测试环境真实 `ctl` 已迁到 `http://ctl-api.ctl.svc.cluster.local`；结果是公网 `/channels/config` 直接 `500 CHANNEL_CONFIG_FAILED`，但直连测试环境 `ctl-api` 正常
+
+Worker actions:
+- public entrypoints are `POST /api/worker-actions`, `GET /api/worker-actions/{action_run_id}?bot_id=...`, and `POST /api/worker-actions/{action_run_id}/cancel?bot_id=...`
+- the first action is `rescue_export`
+- `service-gateway` resolves bot ownership through ctl `/v1/instances/{bot_id}`, then resolves `cloudID/region` through sandbox before starting Temporal
+- bots never receive Temporal tokens; runtime must provide `WORKER_ACTION_TEMPORAL_ADDRESS`, `TEMPORAL_BEARER_TOKEN`, and `WORKER_ACTION_RESCUE_EXPORT_COS_UPLOAD_BUCKET`
+- set `WORKER_ACTION_TEMPORAL_SERVER_NAME` when the Temporal endpoint needs a TLS SNI override
 
 Validation rule:
 - 修改 `service-gateway` 的 `ctl` 路由后，至少做两组验证：

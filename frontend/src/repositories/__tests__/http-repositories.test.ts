@@ -548,6 +548,54 @@ describe("http repositories auth token bootstrap", () => {
     );
   });
 
+  it("starts a rescue export worker action for a bot", async () => {
+    writeStoredAuthToken("persisted-bearer-token");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: {
+            action_run_id: "worker-action-ins_export-rescue_export-123",
+            workflow_id: "worker-action-ins_export-rescue_export-123",
+            run_id: "run-123",
+            action: "rescue_export",
+            bot_id: "ins_export",
+            status: "accepted",
+          },
+        }),
+        {
+          status: 202,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    const result = await repositories.bots.startRescueExport("ins_export");
+
+    expect(result).toEqual({
+      actionRunId: "worker-action-ins_export-rescue_export-123",
+      workflowId: "worker-action-ins_export-rescue_export-123",
+      runId: "run-123",
+      action: "rescue_export",
+      botId: "ins_export",
+      status: "accepted",
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://lightclaw.tech/api/worker-actions",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          bot_id: "ins_export",
+          action: "rescue_export",
+          params: {
+            remote_paths: ["/home/agentuser/.openclaw/workspace"],
+          },
+        }),
+      }),
+    );
+  });
+
   it("destroys bots through ctl instances", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     const fetchMock = vi.fn().mockResolvedValue(

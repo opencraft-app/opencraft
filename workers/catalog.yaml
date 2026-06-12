@@ -1,0 +1,39 @@
+apiVersion: lightclaw.io/v1alpha1
+kind: WorkersCatalog
+metadata:
+  name: workers
+spec:
+  image:
+    bundle: workers
+    key: WORKERS_IMAGE
+    dockerfile: workers/Dockerfile
+    buildContext: workers
+  environments:
+    shanghai-workers:
+      namespace: temporal-workers
+      runtime:
+        serviceId: workers-runtime
+        appName: workers-runtime-shanghai-workers
+        appPath: argocd/services/workers-runtime/shanghai-workers
+        sourceOverlay: workers/k8s/overlays/shanghai-workers/shared
+        temporalConnection:
+          name: lightclaw-temporal
+          hostPort: temporal.lightvela.com:443
+          secretName: workers-runtime-secrets
+          tokenKey: TEMPORAL_BEARER_TOKEN
+      workers:
+        rescue-exporter:
+          serviceId: workers-rescue-exporter
+          appName: workers-rescue-exporter-shanghai-workers
+          appPath: argocd/services/workers-rescue-exporter/shanghai-workers
+          sourceOverlay: workers/k8s/overlays/shanghai-workers/rescue-exporter
+          workerDeploymentName: rescue-exporter-worker
+          containerName: rescue-exporter-worker
+          serviceAccountName: rescue-exporter-worker
+          command:
+            - /usr/local/bin/rescue-exporter
+          args:
+            - worker
+          temporalNamespace: default
+          taskQueue: tencent-cvm-rescue-export
+          imagePullSecret: tcr-lightclaw-shprod

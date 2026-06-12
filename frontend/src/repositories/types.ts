@@ -183,6 +183,15 @@ export interface BotInstanceConfigResetResult {
   config: BotInstanceConfig;
 }
 
+export interface WorkerActionStartResult {
+  actionRunId: string;
+  workflowId: string;
+  runId?: string;
+  action: string;
+  botId: string;
+  status: string;
+}
+
 export interface BotRepository {
   getDashboardSnapshot(mode?: DataMode): Promise<DashboardSnapshot>;
   createBot(input?: { name?: string; soulTemplateId?: string }): Promise<Bot>;
@@ -204,6 +213,7 @@ export interface BotRepository {
   subscribeWeixinLoginSessionEvents(botId: string, sessionId: string, signal?: AbortSignal): AsyncIterable<{ event: string; data: unknown }>;
   listSoulTemplates(): Promise<SoulTemplate[]>;
   execDebugCommand(botId: string, command: string): Promise<{ status: string; exitCode: number; output: string }>;
+  startRescueExport(botId: string): Promise<WorkerActionStartResult>;
   /**
    * 重置实例配置（轮换 API Key）。
    *

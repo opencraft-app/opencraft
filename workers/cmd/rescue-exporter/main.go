@@ -130,6 +130,8 @@ func runWorker(argv []string) error {
 	w.RegisterActivityWithOptions(acts.CleanupRemoteArchive, rescue.ActivityOptions("CleanupRemoteArchive"))
 	w.RegisterActivityWithOptions(acts.ExitRescueMode, rescue.ActivityOptions("ExitRescueMode"))
 	w.RegisterActivityWithOptions(acts.DeleteCOSObject, rescue.ActivityOptions("DeleteCOSObject"))
+	w.RegisterActivityWithOptions(acts.SendExportNotificationEmail, rescue.ActivityOptions("SendExportNotificationEmail"))
+	w.RegisterActivityWithOptions(acts.ConfirmExportNotificationDelivered, rescue.ActivityOptions("ConfirmExportNotificationDelivered"))
 
 	if *healthAddr != "" {
 		stopHealth := startHealthServer(*healthAddr)
@@ -365,6 +367,7 @@ func addStartFlags(fs *flag.FlagSet) (*rescue.ExportRequest, *rescue.TencentConf
 	fs.IntVar(&req.COSUploadURLTTLSeconds, "cos-upload-url-ttl-seconds", req.COSUploadURLTTLSeconds, "TTL for signed COS upload URL")
 	fs.BoolVar(&req.KeepRemoteArchive, "keep-remote-archive", false, "Do not delete the temporary archive from rescue OS")
 	fs.BoolVar(&req.DisableCOSAutoDelete, "disable-cos-auto-delete", false, "Do not schedule automatic COS object deletion after signed URL TTL")
+	fs.StringVar(&req.NotificationEmail, "notification-email", "", "Email address to notify when export succeeds with COS download link")
 	fs.IntVar(&req.WaitTimeoutSeconds, "wait-timeout-seconds", req.WaitTimeoutSeconds, "Timeout for rescue boot wait")
 	fs.IntVar(&req.CommandTimeoutSeconds, "command-timeout-seconds", req.CommandTimeoutSeconds, "Timeout for SSH/scp commands")
 	fs.BoolVar(&req.Execute, "execute", false, "Actually enter rescue mode and copy data. Default is dry-run")

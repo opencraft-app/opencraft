@@ -357,6 +357,12 @@ components:
         sandboxID:
           type: string
           description: Identifier of the sandbox
+        cloudID:
+          type: string
+          description: Tencent Cloud CVM instance ID backing this sandbox
+        region:
+          type: string
+          description: Tencent Cloud region of the backing instance
         clientID:
           type: string
           deprecated: true

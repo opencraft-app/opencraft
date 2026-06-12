@@ -6,6 +6,7 @@ bundles:
     reason: Temporal worker release bundle for CVM rescue/export orchestration workers.
     allowed_paths:
     - workers/AGENTS.md
+    - workers/catalog.yaml
     - workers/Dockerfile
     - workers/k8s/base
     - workers/k8s/overlays/beijing-sandbox

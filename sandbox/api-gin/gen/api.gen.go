@@ -231,6 +231,9 @@ type SandboxDetail struct {
 	// Deprecated:
 	ClientID string `json:"clientID"`
 
+	// CloudID Tencent Cloud CVM instance ID backing this sandbox
+	CloudID *string `json:"cloudID,omitempty"`
+
 	// CpuCount CPU cores for the sandbox
 	CpuCount CPUCount `json:"cpuCount"`
 
@@ -252,6 +255,9 @@ type SandboxDetail struct {
 	// MemoryMB Memory for the sandbox in MiB
 	MemoryMB MemoryMB         `json:"memoryMB"`
 	Metadata *SandboxMetadata `json:"metadata,omitempty"`
+
+	// Region Tencent Cloud region of the backing instance
+	Region *string `json:"region,omitempty"`
 
 	// ResolutionDivergence Divergence note when legacy and sandbox bindings disagree
 	ResolutionDivergence *string `json:"resolutionDivergence,omitempty"`

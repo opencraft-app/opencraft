@@ -9,22 +9,24 @@ import (
 const ExportStatusQuery = "status"
 
 const (
-	PhaseLocating         = "locating"
-	PhaseBackup           = "backup"
-	PhaseEnterRescue      = "enter_rescue"
-	PhaseWaitRescue       = "wait_rescue"
-	PhaseWaitRemoteAccess = "wait_remote_access"
-	PhasePrepareArchive   = "prepare_archive"
-	PhaseStartTAT         = "start_tat"
-	PhaseWaitTAT          = "wait_tat"
-	PhaseFinalizeArchive  = "finalize_archive"
-	PhaseCopyArchive      = "copy_archive"
-	PhaseScheduleDelete   = "schedule_delete"
-	PhaseCleanupRemote    = "cleanup_remote"
-	PhaseExitRescue       = "exit_rescue"
-	PhaseWaitRunning      = "wait_running"
-	PhaseCompleted        = "completed"
-	PhaseFailed           = "failed"
+	PhaseLocating             = "locating"
+	PhaseBackup               = "backup"
+	PhaseEnterRescue          = "enter_rescue"
+	PhaseWaitRescue           = "wait_rescue"
+	PhaseWaitRemoteAccess     = "wait_remote_access"
+	PhasePrepareArchive       = "prepare_archive"
+	PhaseStartTAT             = "start_tat"
+	PhaseWaitTAT              = "wait_tat"
+	PhaseFinalizeArchive      = "finalize_archive"
+	PhaseCopyArchive          = "copy_archive"
+	PhaseScheduleDelete       = "schedule_delete"
+	PhaseNotifyEmail          = "notify_email"
+	PhaseConfirmEmailDelivery = "confirm_email_delivery"
+	PhaseCleanupRemote        = "cleanup_remote"
+	PhaseExitRescue           = "exit_rescue"
+	PhaseWaitRunning          = "wait_running"
+	PhaseCompleted            = "completed"
+	PhaseFailed               = "failed"
 )
 
 const (
@@ -84,6 +86,11 @@ func completeWorkflowStatus(ctx workflow.Context, req ExportRequest, status *Exp
 	status.ExitedRescue = result.ExitedRescue
 	status.COSDeleteWorkflowID = result.COSDeleteWorkflowID
 	status.COSDeleteAfterSeconds = result.COSDeleteAfterSeconds
+	status.NotificationEmail = result.NotificationEmail
+	status.EmailMessageID = result.EmailMessageID
+	status.EmailDelivered = result.EmailDelivered
+	status.EmailDeliverStatus = result.EmailDeliverStatus
+	status.EmailDeliverMessage = result.EmailDeliverMessage
 	status.DryRun = result.DryRun
 	if err != nil {
 		status.Phase = PhaseFailed

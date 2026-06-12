@@ -200,6 +200,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(bundle.image_repo, "lightclaw-shprod.tencentcloudcr.com/lightclaw/workers")
         self.assertEqual(workflow_params.get("SERVICE"), "workers")
         self.assertEqual(workflow_params.get("BUNDLE"), "workers-rescue-exporter")
+        self.assertIn("workers/catalog.yaml", bundle.allowed_paths)
         self.assertIn("argocd/apps/shanghai-workers/workers.yaml", bundle.publish_paths)
         self.assertIn("argocd/apps/shanghai-workers/workers-runtime.yaml", bundle.publish_paths)
         self.assertIn("argocd/apps/shanghai-workers/workers-rescue-exporter.yaml", bundle.publish_paths)
@@ -235,6 +236,75 @@ class ReleaseBundleContractTests(unittest.TestCase):
         )
         self.assertIn("TEMPORAL_DEPLOYMENT_NAME", overlay_readme)
         self.assertIn("TEMPORAL_WORKER_BUILD_ID", overlay_readme)
+
+    def test_workers_catalog_matches_shanghai_deploy_units(self) -> None:
+        catalog = yaml.safe_load((REPO_ROOT / "workers/catalog.yaml").read_text())
+        spec = catalog["spec"]
+        env = spec["environments"]["shanghai-workers"]
+        runtime = env["runtime"]
+        worker = env["workers"]["rescue-exporter"]
+
+        self.assertEqual(spec["image"]["bundle"], "workers")
+        self.assertEqual(spec["image"]["key"], "WORKERS_IMAGE")
+        self.assertEqual(env["namespace"], "temporal-workers")
+        self.assertTrue((REPO_ROOT / runtime["sourceOverlay"]).is_dir())
+        self.assertTrue((REPO_ROOT / worker["sourceOverlay"]).is_dir())
+        self.assertTrue((REPO_ROOT / runtime["appPath"]).is_dir())
+        self.assertTrue((REPO_ROOT / worker["appPath"]).is_dir())
+
+        workflow = yaml.safe_load((REPO_ROOT / ".ci/workers.yml").read_text())
+        workflow_params = (workflow.get("extends") or {}).get("parameters") or {}
+        self.assertEqual(workflow_params.get("SERVICE"), spec["image"]["bundle"])
+        self.assertEqual(workflow_params.get("BUNDLE"), worker["serviceId"])
+
+        runtime_app = yaml.safe_load((REPO_ROOT / "argocd/apps/shanghai-workers/workers-runtime.yaml").read_text())
+        runtime_kustomization = yaml.safe_load((REPO_ROOT / runtime["appPath"] / "kustomization.yaml").read_text())
+        connection = yaml.safe_load((REPO_ROOT / runtime["appPath"] / "connection.yaml").read_text())
+
+        self.assertEqual(runtime_app["metadata"]["name"], runtime["appName"])
+        self.assertEqual(runtime_app["spec"]["source"]["path"], runtime["appPath"])
+        self.assertEqual(runtime_kustomization["namespace"], env["namespace"])
+        self.assertEqual(connection["metadata"]["name"], runtime["temporalConnection"]["name"])
+        self.assertEqual(connection["spec"]["hostPort"], runtime["temporalConnection"]["hostPort"])
+        self.assertEqual(
+            connection["spec"]["apiKeySecretRef"]["name"],
+            runtime["temporalConnection"]["secretName"],
+        )
+        self.assertEqual(
+            connection["spec"]["apiKeySecretRef"]["key"],
+            runtime["temporalConnection"]["tokenKey"],
+        )
+
+        worker_app = yaml.safe_load((REPO_ROOT / "argocd/apps/shanghai-workers/workers-rescue-exporter.yaml").read_text())
+        worker_kustomization = yaml.safe_load((REPO_ROOT / worker["appPath"] / "kustomization.yaml").read_text())
+        worker_deployment = yaml.safe_load((REPO_ROOT / worker["appPath"] / "worker-deployment.yaml").read_text())
+        service_account = yaml.safe_load((REPO_ROOT / worker["appPath"] / "serviceaccount.yaml").read_text())
+        platform_env = (REPO_ROOT / worker["appPath"] / "workers-platform.env").read_text()
+
+        self.assertEqual(worker_app["metadata"]["name"], worker["appName"])
+        self.assertEqual(worker_app["spec"]["source"]["path"], worker["appPath"])
+        self.assertEqual(worker_kustomization["namespace"], env["namespace"])
+        self.assertEqual(worker_deployment["metadata"]["name"], worker["workerDeploymentName"])
+        self.assertEqual(worker_deployment["spec"]["workerOptions"]["temporalNamespace"], worker["temporalNamespace"])
+        self.assertEqual(
+            worker_deployment["spec"]["workerOptions"]["connectionRef"]["name"],
+            runtime["temporalConnection"]["name"],
+        )
+        container = worker_deployment["spec"]["template"]["spec"]["containers"][0]
+        self.assertEqual(container["name"], worker["containerName"])
+        self.assertEqual(container["command"], worker["command"])
+        self.assertEqual(container["args"], worker["args"])
+        self.assertIn(
+            {"name": "TEMPORAL_TASK_QUEUE", "value": worker["taskQueue"]},
+            container["env"],
+        )
+        self.assertEqual(
+            worker_deployment["spec"]["template"]["spec"]["serviceAccountName"],
+            worker["serviceAccountName"],
+        )
+        self.assertEqual(service_account["metadata"]["name"], worker["serviceAccountName"])
+        self.assertEqual(service_account["imagePullSecrets"][0]["name"], worker["imagePullSecret"])
+        self.assertIn(f"{spec['image']['key']}=", platform_env)
 
     def test_gateway_release_bundles_are_independent(self) -> None:
         manifest = load_manifest()
