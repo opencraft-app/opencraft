@@ -4,11 +4,14 @@ import {
   DEFAULT_MEMORY_CHAR_LIMIT,
   DEFAULT_USER_CHAR_LIMIT,
   HERMES_MEMORY_CHAR_LIMIT_MAX,
+  HERMES_MEMORY_LIMIT_SAFE_BUFFER,
   HERMES_MEMORY_LIMIT_MIN,
   HERMES_USER_CHAR_LIMIT_MAX,
   buildHermesMemoryLimitCommand,
   buildHermesMemoryReadCommand,
+  getHermesMemoryLimitBounds,
   getMemoryUsagePercent,
+  isHermesMemoryLimitNearUsage,
   parseHermesMemorySnapshot,
   splitHermesMemoryEntries,
   toSingleLineMemoryEntry,
@@ -144,6 +147,12 @@ describe("validateHermesMemoryLimit", () => {
       max: HERMES_USER_CHAR_LIMIT_MAX,
     });
   });
+
+  it("ignores invalid existing character counts when deriving bounds", () => {
+    expect(getHermesMemoryLimitBounds("memory", Number.NaN).min).toBe(HERMES_MEMORY_LIMIT_MIN);
+    expect(getHermesMemoryLimitBounds("memory", Number.POSITIVE_INFINITY).min).toBe(HERMES_MEMORY_LIMIT_MIN);
+    expect(getHermesMemoryLimitBounds("user", -1).min).toBe(HERMES_MEMORY_LIMIT_MIN);
+  });
 });
 
 describe("buildHermesMemoryLimitCommand", () => {
@@ -156,6 +165,18 @@ describe("buildHermesMemoryLimitCommand", () => {
     expect(() => buildHermesMemoryLimitCommand("memory", 4001)).toThrow("invalid Hermes memory limit");
     expect(() => buildHermesMemoryLimitCommand("user", 3001)).toThrow("invalid Hermes memory limit");
     expect(() => buildHermesMemoryLimitCommand("memory", 999, 1000)).toThrow("invalid Hermes memory limit");
+  });
+});
+
+describe("isHermesMemoryLimitNearUsage", () => {
+  it("warns when lowering the limit too close to current usage", () => {
+    expect(isHermesMemoryLimitNearUsage(1199, 1000, 2200)).toBe(true);
+    expect(isHermesMemoryLimitNearUsage(1000 + HERMES_MEMORY_LIMIT_SAFE_BUFFER, 1000, 2200)).toBe(false);
+  });
+
+  it("does not warn when increasing the limit or passing invalid values", () => {
+    expect(isHermesMemoryLimitNearUsage(2500, 1000, 2200)).toBe(false);
+    expect(isHermesMemoryLimitNearUsage(Number.NaN, 1000, 2200)).toBe(false);
   });
 });
 

@@ -3,6 +3,7 @@ export const DEFAULT_USER_CHAR_LIMIT = 1375;
 export const HERMES_MEMORY_LIMIT_MIN = 500;
 export const HERMES_MEMORY_CHAR_LIMIT_MAX = 4000;
 export const HERMES_USER_CHAR_LIMIT_MAX = 3000;
+export const HERMES_MEMORY_LIMIT_SAFE_BUFFER = 200;
 
 export type HermesMemoryLimitTarget = "memory" | "user";
 
@@ -106,6 +107,11 @@ export function buildHermesMemoryLimitCommand(target: HermesMemoryLimitTarget, v
 
   const key = target === "memory" ? "memory.memory_char_limit" : "memory.user_char_limit";
   return `hermes config set ${key} ${validation.value}`;
+}
+
+export function isHermesMemoryLimitNearUsage(value: number, used: number, currentLimit: number): boolean {
+  if (!Number.isFinite(value) || !Number.isFinite(used) || !Number.isFinite(currentLimit)) return false;
+  return value < currentLimit && value - used < HERMES_MEMORY_LIMIT_SAFE_BUFFER;
 }
 
 function parseJsonObject(output: string): Record<string, unknown> {
