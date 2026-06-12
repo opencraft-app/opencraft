@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -15,6 +15,31 @@ const refreshProfile = vi.fn();
 const retryRealnameSync = vi.fn();
 
 let currentUser: User;
+const ACCOUNT_REALNAME_VISIBILITY_STORAGE_KEY = "lw-account-realname-visible";
+
+const createMemoryStorage = (): Storage => {
+  const entries = new Map<string, string>();
+
+  return {
+    get length() {
+      return entries.size;
+    },
+    clear: () => entries.clear(),
+    getItem: (key: string) => entries.get(key) ?? null,
+    key: (index: number) => Array.from(entries.keys())[index] ?? null,
+    removeItem: (key: string) => entries.delete(key),
+    setItem: (key: string, value: string) => entries.set(key, value),
+  };
+};
+
+const revealAccountRealnameSection = () => {
+  const host = window as Window & { show?: unknown };
+  expect(host.show).toEqual(expect.any(Function));
+
+  act(() => {
+    (host.show as () => boolean)();
+  });
+};
 
 vi.mock("@/i18n/t", () => ({
   useT: () => (text: string) => text,
@@ -97,6 +122,7 @@ const renderAccountPage = () => {
 describe("AccountPage nickname audit state", () => {
   afterEach(() => {
     cleanup();
+    vi.unstubAllGlobals();
   });
 
   beforeEach(() => {
@@ -108,6 +134,42 @@ describe("AccountPage nickname audit state", () => {
       realnameVerified: true,
       createdAt: "2026-06-01T00:00:00Z",
     };
+    vi.stubGlobal("localStorage", createMemoryStorage());
+  });
+
+  it("keeps the domestic realname and safety phone rows hidden until show() is called", () => {
+    currentUser = {
+      ...currentUser,
+      phone: "15625128341",
+      realnameVerified: true,
+      realnameLevel: "phone_3fa",
+    };
+
+    renderAccountPage();
+
+    expect(screen.queryByText("安全手机")).not.toBeInTheDocument();
+    expect(screen.queryByText("实名认证")).not.toBeInTheDocument();
+
+    revealAccountRealnameSection();
+
+    expect(screen.getByText("安全手机")).toBeInTheDocument();
+    expect(screen.getByText("实名认证")).toBeInTheDocument();
+    expect(window.localStorage.getItem(ACCOUNT_REALNAME_VISIBILITY_STORAGE_KEY)).toBe("1");
+  });
+
+  it("keeps the realname rows visible after show() has been persisted", () => {
+    window.localStorage.setItem(ACCOUNT_REALNAME_VISIBILITY_STORAGE_KEY, "1");
+    currentUser = {
+      ...currentUser,
+      phone: "15625128341",
+      realnameVerified: true,
+      realnameLevel: "phone_3fa",
+    };
+
+    renderAccountPage();
+
+    expect(screen.getByText("安全手机")).toBeInTheDocument();
+    expect(screen.getByText("实名认证")).toBeInTheDocument();
   });
 
   it("shows the pending nickname privately while keeping the active nickname explicit", async () => {
@@ -186,6 +248,7 @@ describe("AccountPage nickname audit state", () => {
     };
 
     renderAccountPage();
+    revealAccountRealnameSection();
 
     const verifyButtons = screen.getAllByRole("button", { name: /去认证/ });
     expect(verifyButtons.length).toBeGreaterThan(0);
@@ -206,6 +269,7 @@ describe("AccountPage nickname audit state", () => {
     };
 
     renderAccountPage();
+    revealAccountRealnameSection();
 
     await userEvent.click(screen.getByRole("button", { name: /绑定安全手机/ }));
 
@@ -238,6 +302,7 @@ describe("AccountPage nickname audit state", () => {
     };
 
     renderAccountPage();
+    revealAccountRealnameSection();
 
     expect(screen.getByText("实名信息同步失败")).toBeInTheDocument();
     expect(screen.queryByText("待完成手机号认证")).not.toBeInTheDocument();
@@ -258,6 +323,7 @@ describe("AccountPage nickname audit state", () => {
     };
 
     renderAccountPage();
+    revealAccountRealnameSection();
 
     expect(screen.getByText("实名信息同步中")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /重新同步/ })).toBeInTheDocument();
