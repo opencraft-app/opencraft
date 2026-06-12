@@ -82,11 +82,17 @@ import { createLightVelaCommandExecutor } from "@/pages/marketing/openclaw-comma
 import { installOpenClawConsoleHelpers } from "@/pages/marketing/openclaw-console-helpers";
 import {
   buildHermesMemoryReadCommand,
+  buildHermesMemoryLimitCommand,
+  getHermesMemoryLimitBounds,
   getMemoryUsagePercent,
+  isHermesMemoryLimitNearUsage,
   parseHermesMemorySnapshot,
   splitHermesMemoryEntries,
   toSingleLineMemoryEntry,
+  validateHermesMemoryLimit,
   type HermesMemorySnapshot,
+  type HermesMemoryLimitTarget,
+  type HermesMemoryLimitValidation,
 } from "@/pages/marketing/openclaw-memory";
 import { BuddyPanel } from "@/pages/marketing/openclaw-buddy-panel";
 import { AchievementsPanel } from "@/pages/marketing/openclaw-achievements-panel";
@@ -393,20 +399,86 @@ export const _SectionCard = ({ title, icon, headerRight, children }: { title: st
   );
 }
 
+function getMemoryLimitValidationMessage(
+  validation: HermesMemoryLimitValidation,
+  t: (zh: string, options?: Record<string, unknown>) => string,
+): string | null {
+  if (validation.ok) return null;
+
+  switch (validation.reason) {
+    case "empty":
+      return t("请输入范围在 {{min}}-{{max}} 的数字", { min: validation.min, max: validation.max });
+    case "integer":
+      return t("请输入整数。");
+    case "too_small":
+      return t("最小不能低于 {{min}} 字符。", { min: validation.min });
+    case "too_large":
+      return t("最大不能超过 {{max}} 字符。", { max: validation.max });
+  }
+
+  return null;
+}
+
 const MemoryLimitCard = ({
+  target,
   title,
   description,
   used,
   limit,
+  isSaving,
+  saveError,
+  onSaveLimit,
+  onDraftChange,
   t,
 }: {
+  target: HermesMemoryLimitTarget;
   title: string;
   description: string;
   used: number;
   limit: number;
+  isSaving: boolean;
+  saveError: string | null;
+  onSaveLimit: (target: HermesMemoryLimitTarget, value: number, existingChars: number) => Promise<boolean>;
+  onDraftChange: (target: HermesMemoryLimitTarget) => void;
   t: (zh: string, options?: Record<string, unknown>) => string;
 }) => {
+  const [isEditing, setIsEditing] = useState(false);
+  const [draftLimit, setDraftLimit] = useState(String(limit));
+  const [touched, setTouched] = useState(false);
   const percent = getMemoryUsagePercent(used, limit);
+  const bounds = getHermesMemoryLimitBounds(target, used);
+  const validation = validateHermesMemoryLimit(target, draftLimit, used);
+  const validationMessage = touched ? getMemoryLimitValidationMessage(validation, t) : null;
+  const displayError = validationMessage || (isEditing ? saveError : null);
+  const shouldWarnNearUsage = validation.ok && isHermesMemoryLimitNearUsage(validation.value, used, limit);
+  const helperTone = displayError ? "text-red-600" : shouldWarnNearUsage ? "text-amber-600" : "text-black/40";
+  const helperMessage = displayError
+    || (shouldWarnNearUsage
+      ? t("新上限接近当前用量，后续记忆可能无法继续写入或触发自动淘汰。")
+      : t("可设置范围：{{min}}-{{max}} 字符。保存后会重启 Hermes 网关，可能短暂中断会话。", { min: bounds.min, max: bounds.max }));
+
+  useEffect(() => {
+    if (!isEditing) {
+      setDraftLimit(String(limit));
+      setTouched(false);
+    }
+  }, [isEditing, limit]);
+
+  const handleCancel = () => {
+    setIsEditing(false);
+    setDraftLimit(String(limit));
+    setTouched(false);
+  };
+
+  const handleSave = async () => {
+    setTouched(true);
+    if (!validation.ok) return;
+    const saved = await onSaveLimit(target, validation.value, used);
+    if (saved) {
+      setIsEditing(false);
+    }
+  };
+
   return (
     <div className="rounded-lg border border-black/[0.06] bg-white p-4 shadow-[0_8px_28px_rgba(15,23,42,0.04)]">
       <div className="flex items-start justify-between gap-3">
@@ -414,15 +486,80 @@ const MemoryLimitCard = ({
           <p className="text-sm font-semibold text-black/85">{title}</p>
           <p className="mt-1 max-w-[28rem] text-xs leading-relaxed text-black/45">{description}</p>
         </div>
-        <span className="rounded-full bg-black/[0.05] px-2 py-1 text-xs font-medium text-black/60">
+        <span className="shrink-0 rounded-full bg-black/[0.05] px-2 py-1 text-xs font-medium text-black/60">
           {percent}%
         </span>
       </div>
-      <div className="mt-4 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+      <div className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-2">
         <span className="text-2xl font-semibold tabular-nums text-black/90">{used}</span>
-        <span className="pb-1 text-sm tabular-nums text-black/45">/ {limit} {t("字符")}</span>
-        <span className="text-xs text-black/45">{t("当前占用 / 字符限额")}</span>
+        <span className="text-sm tabular-nums text-black/45">/</span>
+        {isEditing ? (
+          <input
+            type="number"
+            min={bounds.min}
+            max={bounds.max}
+            step={1}
+            value={draftLimit}
+            onBlur={() => setTouched(true)}
+            onWheel={(event) => event.currentTarget.blur()}
+            onChange={(event) => {
+              setDraftLimit(event.target.value);
+              setTouched(true);
+              onDraftChange(target);
+            }}
+            disabled={isSaving}
+            className="h-9 w-28 rounded-md border border-black/[0.10] bg-white px-3 text-sm tabular-nums text-black/85 outline-none transition-colors focus:border-black/30 disabled:cursor-not-allowed disabled:opacity-60"
+          />
+        ) : (
+          <span className="text-sm tabular-nums text-black/45">{limit}</span>
+        )}
+        <span className="text-sm text-black/45">{t("字符")}</span>
+        {!isEditing && <span className="text-xs text-black/45">{t("当前占用 / 字符限额")}</span>}
+        {!isEditing ? (
+          <button
+            type="button"
+            onClick={() => {
+              setDraftLimit(String(limit));
+              setTouched(false);
+              setIsEditing(true);
+            }}
+            className="ml-1 inline-flex h-7 items-center rounded-md border border-black/[0.10] bg-white px-2.5 text-xs font-medium text-black/55 transition-colors hover:border-black/[0.18] hover:bg-black/[0.04] hover:text-black/80"
+          >
+            {t("修改")}
+          </button>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={isSaving || !validation.ok}
+              className={cn(
+                "ml-1 inline-flex h-8 items-center gap-1.5 rounded-md bg-black px-3 text-xs font-medium text-white transition-colors hover:bg-black/85",
+                (isSaving || !validation.ok) && "cursor-not-allowed opacity-45",
+              )}
+            >
+              {isSaving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              {isSaving ? t("保存中...") : t("保存")}
+            </button>
+            <button
+              type="button"
+              onClick={handleCancel}
+              disabled={isSaving}
+              className={cn(
+                "inline-flex h-8 items-center rounded-md border border-black/[0.08] bg-white px-3 text-xs font-medium text-black/55 transition-colors hover:bg-black/[0.04] hover:text-black/75",
+                isSaving && "cursor-not-allowed opacity-45",
+              )}
+            >
+              {t("取消")}
+            </button>
+          </>
+        )}
       </div>
+      {isEditing && (
+        <p className={cn("mt-3 text-xs leading-relaxed", helperTone)}>
+          {helperMessage}
+        </p>
+      )}
       <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-black/[0.06]">
         <div
           className="h-full rounded-full bg-black/80 transition-[width]"
@@ -473,6 +610,10 @@ const MemoryPanel = ({
   activeTab,
   onTabChange,
   onRefresh,
+  onSaveLimit,
+  onDraftChange,
+  savingLimitTarget,
+  limitSaveError,
   t,
 }: {
   status: MemoryLoadStatus;
@@ -481,6 +622,10 @@ const MemoryPanel = ({
   activeTab: MemoryTabId;
   onTabChange: (tab: MemoryTabId) => void;
   onRefresh: () => void;
+  onSaveLimit: (target: HermesMemoryLimitTarget, value: number, existingChars: number) => Promise<boolean>;
+  onDraftChange: (target: HermesMemoryLimitTarget) => void;
+  savingLimitTarget: HermesMemoryLimitTarget | null;
+  limitSaveError: { target: HermesMemoryLimitTarget; message: string } | null;
   t: (zh: string, options?: Record<string, unknown>) => string;
 }) => {
   const memoryEntries = splitHermesMemoryEntries(snapshot?.memoryText ?? "");
@@ -526,17 +671,27 @@ const MemoryPanel = ({
         <>
           <div className="grid gap-3 md:grid-cols-2">
             <MemoryLimitCard
+              target="memory"
               title={t("记忆统计")}
               description={t("MEMORY.md：帮 Agent 长期记住项目背景、运行环境和常用约定。")}
               used={snapshot.memoryChars}
               limit={snapshot.memoryCharLimit}
+              isSaving={savingLimitTarget === "memory"}
+              saveError={limitSaveError?.target === "memory" ? limitSaveError.message : null}
+              onSaveLimit={onSaveLimit}
+              onDraftChange={onDraftChange}
               t={t}
             />
             <MemoryLimitCard
+              target="user"
               title={t("用户画像统计")}
               description={t("USER.md：帮 Agent 长期记住你的偏好、使用习惯和沟通方式。")}
               used={snapshot.userChars}
               limit={snapshot.userCharLimit}
+              isSaving={savingLimitTarget === "user"}
+              saveError={limitSaveError?.target === "user" ? limitSaveError.message : null}
+              onSaveLimit={onSaveLimit}
+              onDraftChange={onDraftChange}
               t={t}
             />
           </div>
@@ -2919,9 +3074,11 @@ export const OpenClawSettingsPage = () => {
   const [memorySnapshot, setMemorySnapshot] = useState<HermesMemorySnapshot | null>(null);
   const [memoryError, setMemoryError] = useState<string | null>(null);
   const [activeMemoryTab, setActiveMemoryTab] = useState<MemoryTabId>("memory");
+  const [savingMemoryLimitTarget, setSavingMemoryLimitTarget] = useState<HermesMemoryLimitTarget | null>(null);
+  const [memoryLimitSaveError, setMemoryLimitSaveError] = useState<{ target: HermesMemoryLimitTarget; message: string } | null>(null);
   const memoryRequestIdRef = useRef(0);
 
-  const loadHermesMemory = useCallback(async () => {
+  const loadHermesMemory = useCallback(async (options?: { clearSnapshot?: boolean }): Promise<HermesMemorySnapshot | null> => {
     const requestId = memoryRequestIdRef.current + 1;
     memoryRequestIdRef.current = requestId;
 
@@ -2929,22 +3086,24 @@ export const OpenClawSettingsPage = () => {
       setMemorySnapshot(null);
       setMemoryStatus("error");
       setMemoryError(rawT("未找到当前 Hermes 实例。"));
-      return;
+      return null;
     }
 
     if (activeBotStatus !== "running") {
       setMemorySnapshot(null);
       setMemoryStatus("error");
       setMemoryError(rawT("实例运行后才能读取记忆。"));
-      return;
+      return null;
     }
 
-    setMemorySnapshot(null);
+    if (options?.clearSnapshot !== false) {
+      setMemorySnapshot(null);
+    }
     setMemoryStatus("loading");
     setMemoryError(null);
     try {
       const result = await repositories.bots.execDebugCommand(activeBotId, buildHermesMemoryReadCommand());
-      if (memoryRequestIdRef.current !== requestId) return;
+      if (memoryRequestIdRef.current !== requestId) return null;
       if (!isExecCommandSucceeded(result)) {
         throw new Error(
           rawT("记忆读取命令执行失败：{{detail}}", {
@@ -2952,14 +3111,80 @@ export const OpenClawSettingsPage = () => {
           }),
         );
       }
-      setMemorySnapshot(parseHermesMemorySnapshot(result.output));
+      const snapshot = parseHermesMemorySnapshot(result.output);
+      setMemorySnapshot(snapshot);
       setMemoryStatus("ready");
+      return snapshot;
     } catch (err) {
-      if (memoryRequestIdRef.current !== requestId) return;
+      if (memoryRequestIdRef.current !== requestId) return null;
       setMemoryStatus("error");
       setMemoryError(err instanceof Error ? err.message : rawT("记忆读取失败，请稍后重试。"));
+      return null;
     }
   }, [activeBotId, activeBotStatus, repositories]);
+
+  const clearHermesMemoryLimitSaveError = useCallback((target: HermesMemoryLimitTarget) => {
+    setMemoryLimitSaveError((prev) => prev?.target === target ? null : prev);
+  }, []);
+
+  const getSnapshotLimitValue = useCallback((snapshot: HermesMemorySnapshot, target: HermesMemoryLimitTarget) => (
+    target === "memory" ? snapshot.memoryCharLimit : snapshot.userCharLimit
+  ), []);
+
+  const saveHermesMemoryLimit = useCallback(async (target: HermesMemoryLimitTarget, value: number, existingChars: number) => {
+    if (!activeBotId) {
+      setMemoryLimitSaveError({ target, message: rawT("未找到当前 Hermes 实例。") });
+      return false;
+    }
+
+    if (activeBotStatus !== "running") {
+      setMemoryLimitSaveError({ target, message: rawT("实例运行后才能调整记忆上限。") });
+      return false;
+    }
+
+    setSavingMemoryLimitTarget(target);
+    setMemoryLimitSaveError(null);
+    try {
+      const command = buildHermesMemoryLimitCommand(target, value, existingChars);
+      const result = await repositories.bots.execDebugCommand(activeBotId, command);
+      if (!isExecCommandSucceeded(result)) {
+        throw new Error(
+          rawT("记忆上限调整失败：{{detail}}", {
+            detail: truncateExecOutput(result.output, result.status),
+          }),
+        );
+      }
+
+      const restartResult = await repositories.bots.execDebugCommand(activeBotId, hermesGatewayCommands.getRestartCommand());
+      const restartError = buildRestartErrorMessage(restartResult);
+      if (restartError) {
+        await loadHermesMemory({ clearSnapshot: false });
+        setMemoryLimitSaveError({
+          target,
+          message: rawT("配置已保存，但 Hermes 网关重启失败。请到「设置 → 重启网关」手动重启，或稍后重试。"),
+        });
+        return false;
+      }
+
+      const snapshot = await loadHermesMemory({ clearSnapshot: false });
+      if (!snapshot || getSnapshotLimitValue(snapshot, target) !== value) {
+        setMemoryLimitSaveError({
+          target,
+          message: rawT("配置命令已执行，但回读未生效，请刷新后重试。"),
+        });
+        return false;
+      }
+
+      toast.success(rawT("修改成功，Hermes 网关已重启。"));
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : rawT("记忆上限调整失败，请稍后重试。");
+      setMemoryLimitSaveError({ target, message });
+      return false;
+    } finally {
+      setSavingMemoryLimitTarget(null);
+    }
+  }, [activeBotId, activeBotStatus, getSnapshotLimitValue, loadHermesMemory, repositories]);
 
   useEffect(() => {
     if (activeSection !== "memory") return;
@@ -4207,6 +4432,10 @@ export const OpenClawSettingsPage = () => {
                               activeTab={activeMemoryTab}
                               onTabChange={setActiveMemoryTab}
                               onRefresh={loadHermesMemory}
+                              onSaveLimit={saveHermesMemoryLimit}
+                              onDraftChange={clearHermesMemoryLimitSaveError}
+                              savingLimitTarget={savingMemoryLimitTarget}
+                              limitSaveError={memoryLimitSaveError}
                               t={t}
                             />
                           )}

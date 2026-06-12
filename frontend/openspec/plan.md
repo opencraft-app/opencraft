@@ -1,18 +1,7 @@
-# Plan: Hidden Hermes WebUI Browser
+# 当前执行计划
 
-## Acceptance
-
-Restore the TAT-backed Hermes WebUI browser panel on the Agent console while keeping it hidden by default. Running `show()` in the browser console reveals the WebUI/browser entry alongside the other hidden tools.
-
-## Tasks
-
-- [x] Developer: restore WebUI proxy panel and proxy helpers from the previous TAT WebUI implementation.
-  - Files: `frontend/src/components/domain/*`, `frontend/src/lib/*`
-  - Verify: targeted WebUI proxy tests pass.
-
-- [x] Developer: wire `/agents/browser` into Agent console navigation as a hidden tool.
-  - Files: `frontend/src/router/paths.ts`, `frontend/src/pages/marketing/openclaw-settings-page.tsx`
-  - Verify: default navigation does not show WebUI; `show()` reveals the browser entry.
-
-- [x] Reviewer: run targeted checks.
-  - Commands: WebUI/component tests, `pnpm i18n:check`, and `pnpm check` where feasible.
+- [x] 在 `openclaw-memory.ts` 增加字符上限常量、范围校验和 `hermes config set` 命令构造。
+- [x] 在记忆面板统计卡内加入轻量编辑交互、保存中状态和错误提示。
+- [x] 保存时通过 `execDebugCommand` 执行配置命令，成功后刷新快照。
+- [x] 补充 `openclaw-memory.test.ts` 覆盖校验与命令构造。
+- [x] 运行定向测试、`pnpm check`、`pnpm i18n:check`。

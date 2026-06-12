@@ -1,3 +1,5 @@
+import { isExecCommandSucceeded } from "@/pages/marketing/openclaw-reset-config";
+
 /**
  * 重启 Gateway 相关的纯逻辑函数。
  *
@@ -57,9 +59,9 @@ export function getActiveBotRestartError(
  * 如果命令成功返回 null，否则返回错误消息字符串。
  */
 export function buildRestartErrorMessage(
-  result: { status: string; output?: string },
+  result: { status: string; exitCode: number; output?: string },
 ): string | null {
-  if (result.status === "SUCCESS") return null;
+  if (isExecCommandSucceeded(result)) return null;
   return "重启失败：" + (result.output || "未知错误");
 }
 

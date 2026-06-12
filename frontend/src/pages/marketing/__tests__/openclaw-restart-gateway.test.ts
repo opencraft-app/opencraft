@@ -91,19 +91,29 @@ describe("getActiveBotRestartError", () => {
 
 describe("buildRestartErrorMessage", () => {
   it("returns null on SUCCESS", () => {
-    expect(buildRestartErrorMessage({ status: "SUCCESS", output: "ok" })).toBeNull();
+    expect(buildRestartErrorMessage({ status: "SUCCESS", exitCode: 0, output: "ok" })).toBeNull();
+  });
+
+  it("returns null on Succeeded with exit code 0", () => {
+    expect(buildRestartErrorMessage({ status: "Succeeded", exitCode: 0, output: "ok" })).toBeNull();
+  });
+
+  it("returns error when status succeeds but exit code is non-zero", () => {
+    expect(buildRestartErrorMessage({ status: "SUCCESS", exitCode: 1, output: "restart failed" })).toBe(
+      "重启失败：restart failed",
+    );
   });
 
   it("returns error with output on failure", () => {
-    expect(buildRestartErrorMessage({ status: "FAILED", output: "signal 9" })).toBe("重启失败：signal 9");
+    expect(buildRestartErrorMessage({ status: "FAILED", exitCode: 1, output: "signal 9" })).toBe("重启失败：signal 9");
   });
 
   it("uses fallback message when output is empty", () => {
-    expect(buildRestartErrorMessage({ status: "FAILED", output: "" })).toBe("重启失败：未知错误");
+    expect(buildRestartErrorMessage({ status: "FAILED", exitCode: 1, output: "" })).toBe("重启失败：未知错误");
   });
 
   it("uses fallback message when output is undefined", () => {
-    expect(buildRestartErrorMessage({ status: "TIMEOUT" })).toBe("重启失败：未知错误");
+    expect(buildRestartErrorMessage({ status: "TIMEOUT", exitCode: 124 })).toBe("重启失败：未知错误");
   });
 });
 
