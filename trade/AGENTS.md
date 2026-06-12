@@ -25,6 +25,19 @@
 | `POST /internal/trade/orders` | jifei 下单（两步式中第 1 步） | `external_user_id` + `bundle_id` + `period` + `time_unit` + `pay_mode` | `deal_name` + `big_order_id` | Bearer |
 | `POST /internal/trade/orders/place-and-pay` | jifei 下单+支付一体化（**迭代 8B-1.5 联调测试用**） | 同上 | 同上（`pay_url` / `expire_at` 永空） | Bearer |
 | `POST /internal/trade/orders/{dealName}/pay-url` | 生成支付 url | path: `dealName` | `pay_url` + `expire_at` | Bearer |
+| `POST /internal/trade/orders/{dealName}/query-status` | 订单状态反查（v1.7.32 引入：B1 本地终态短路 + B2/B3 jifei.getDealsByKeyIndex 反查，详见 .tmp/ctl-order-status-query-design.md） | path: `dealName` + body: `external_user_id` + `skip_jifei` | `status` + `source` + `local_status` + `order_type` + `big_order_id` + `upstream_err` | Bearer |
+
+### jifei 入向回调路由（被 jifei 调用）
+
+| InterfaceName | 用途 | 入参核心字段 | 出参核心字段 | handler 落点 |
+|---|---|---|---|---|
+| `lightvela.pass.checkCreate` | jifei 下单前校验互斥占用 | `appId` + `uin` + `subProductCode` + `goodsDetail` | `returnCode` (0/4xxxxx/600xxx) | `internal/logic/checkcreate/` |
+| `lightvela.pass.createResource` | jifei 支付成功后通知 trade 发货 | `appId` + `uin` + `dealName` + `bigOrderId` + `resInfos[]` | `resourceId[]` 数组 | `internal/logic/createresource/` |
+| `lightvela.pass.getAllAppIds` | 反查同步：按 `bundle_ids`（可空）+ 分页拉去重 app_id 列表 | `payMode` + `productCode` + `subProductCode?` + `pageNo` + `pageSize` (≤20000) | `appIds[]` + `total` | `internal/logic/resourcequery/getallappids.go` |
+| `lightvela.pass.getUserResources` | 反查同步：按 `(uin, appId)` + 分页拉 pass 列表 | `uin` + `appId` + `payMode` + `subProductCode?` + `pageNo` + `pageSize` (≤1000) | `resources[]` + `total` | `internal/logic/resourcequery/getuserresources.go` |
+| `lightvela.pass.queryResource` | 反查同步：按 `(appId, resourceIds[])` 反查 pass | `appId` + `resourceIds[]` (1~100) | `resources[]` + `total = 命中数` | `internal/logic/resourcequery/queryresource.go` |
+
+> 反查三件套统一挂在 `POST /trade/jifei/callback`，由 dispatcher 按 `interfaceName` 三段式 `lightvela.<sub_product>.<interface>` 路由（Q60）。设计稿 `/root/project/mono/.tmp/trade-resource-query-design.md`。
 
 ### 关键设计要点（迭代 8 系列）
 
@@ -32,7 +45,10 @@
 - **jifei 一体化接口 `qcloud.Deal.generateDealsAndPay`**（迭代 8B-1.5）：协议字段以 PDF §1 为准（PascalCase + `AppID:int` + `AutoVoucher:*int` 三态指针），**不参考 shadow 仓的两步式 `generateDeals + payDealsNew`** —— shadow 走的是"已有大订单后补支付"通道，与本期"下单并支付一体化"是 jifei 协议中的两个不同接口。落点：`trade/internal/jifeiclient/generatedealsandpay.go` + `trade/internal/logic/placeorder/service.go::PlaceOrderAndPay`。
 - **GeneratePayURL mock 兜底**（迭代 8B-1.5）：`POST /internal/trade/orders/{dealName}/pay-url` 在 jifei "生成支付 url" SDK 接入完成前，缓存未命中时直接返 `https://buy.cloud.tencent.com/lighthouse/mock?dealName=<dealName>&token=mock`，便于 ctl/pass 联调；不再返 `ErrPayURLUnavailable`。
 - **PlaceOrderAndPay 与 PlaceOrder 的状态机差异**：PlaceOrder 落 trade_order `status='pending_pay'`（等待用户跳支付页）；PlaceOrderAndPay 落 `status='paid_pending_provision'`（一次调用即支付完成、等待 jifei createResource 回调发货）。
-- **fixedRegionID=47 / fixedZoneID=470004 / scenePurchase**：Lighthouse SaaS 场景下 jifei 协议入参兜底常量，不暴露给 ctl。
+- **region / zone 常量统一收敛到 `internal/region` 包**（迭代 11C-1）：Lighthouse SaaS 场景 jifei 协议入参兜底常量，唯一 source-of-truth 是 `trade/internal/region/region.go`，导出 `LighthouseRegionID = 1`（广州）/ `LighthouseZoneID = 100001`（广州一区）/ `LighthouseRegionName = "广州"`。**4 处业务包**（`internal/jifei/adapter.go` / `internal/logic/inquiry/service.go` / `internal/logic/placeorder/service.go` / `internal/logic/resourcequery/install.go`）一律 `import` 引用，编译期保障一致性。Q41 修订（2026-05-11）后 trade 不再做 region 入参匹配，jifei 出向请求 / 反查响应统一固定回填广州；不要在 region 包内做多区域路由，未来真要支持多区域再演进为 region resolver。
+- **`region.Resolve` 双参数与运行时 region override**（2026-06-12 北京 2 预发布接入）：`region.Resolve(siteKind, regionOverride)` 返回 `LighthouseRegion` 三元组，`regionOverride` 是腾讯云 region 字面量（已注册：`ap-guangzhou` / `ap-beijing` / `ap-singapore`，唯一表在 `region.regionTable`）；非空且命中时优先于 SiteKind 兜底。由 env `LIGHTVELA_TRADE_REGION` 注入（`config.RegionOverride`），未注册字面量在 `config.Load` 期 fail-fast。该字段与 SiteKind 同路径贯穿到 7 处下游 Deps（placeorder / inquiry / internalapi / destroyresource / isolateresource / queryflow / resourcequery），在 `New()` / `Install()` 装配期调 `region.Resolve` 解析一次后缓存，运行时零开销。**使用场景**：“国内站身份 cn + region 字段北京”这种 site/region 解耦的部署（北京 2 预发布 = `LIGHTVELA_SITE_KIND=cn` + `LIGHTVELA_TRADE_REGION=ap-beijing` → 8/800001/北京）。新增 region 只需在 `regionTable` 加一行，调用方零感知。
+- **资源反查接口三件套**（迭代 11A→11C，jifei 入向回调）：trade 实现 `lightvela.pass.{getAllAppIds, getUserResources, queryResource}` 三个 jifei 协议反查接口，挂在 `POST /trade/jifei/callback` 同一个 endpoint 下按 interfaceName 三段式路由。落点 `internal/logic/resourcequery/`（install / mapper / getallappids / getuserresources / queryresource，与 `checkcreate` / `createresource` 并列；**不**放在 `internal/httpapi/jifei/` 下，那里只承载协议框架代码 — Q19 拍板）。数据反查链路 trade → ctl 内部 RPC（`ctlclient.ListPassAppIDs` / `ListPassesByAppID` / `ListPassesByResourceIDs`）+ trade 本地 `BundleStore` 反查 bundle 定义拼装 goodsDetail。三层超时预算：jifei 协议 3s → handler 2.5s（`HandlerTimeout`）→ trade→ctl 1.5s（`CTLCallTimeout`）。**关键 PDF 协议差异**：getAllAppIds / getUserResources 缺省 `payMode=0` 短路返空（PDF §1.1）；queryResource 缺省 `payMode=0` 按 1 处理走正常逻辑（PDF §2.2）。设计稿 `/root/project/mono/.tmp/trade-resource-query-design.md` §3.2 / §3.3 / §11 Q1~Q20。
+- **BundleStore 批量反查**（迭代 11C-3）：`store.BundleDefinitionStore.GetBundleDefinitionsByIDs(ctx, ids []string) (map[string]*BundleDefinition, error)` 一条 SQL `WHERE bundle_id IN (?,...)` 参数化绑定批量反查；**bundle 不存在时不在结果 map 中**（与单条 `GetBundleDefinitionByID` 返 `ErrBundleDefinitionNotFound` 的语义等价 — 调用方按 `m[id] == nil` 走 graceful-degrade）。当前仅 resourcequery handler 使用（消除 page_size 默认 1000 时的 N+1）；其余 5 处生产代码（placeorder ×2 / inquiry ×1 / checkcreate ×1 / jifei.adapter ×2）保留单条 `GetBundleDefinitionByID` 不动。
 
 ## 发布模型
 
@@ -80,5 +96,20 @@ trade-migrate  # 读 TRADE_MYSQL_DSN 环境变量
 - [x] **迭代 8B** — shadow client integration（`internal/shadowclient` 反查 binding，trade 是 shadow 的唯一调用方，Q12 / Q30 拍板）
 - [x] **迭代 8B-1.5** — jifei 一体化下单+支付（`POST /internal/trade/orders/place-and-pay`）+ GeneratePayURL mock 兜底（联调测试链路用，配合 ctl `CreatePassOrderAndPay` 触发 jifei 计费回调全链路 e2e）
 - [ ] **迭代 8C** — DescribeBundles 询价集成 + ctl/pass CreatePass 入口对接（部分由 ctl billing-integration 分支已实现，trade 侧待联调收尾）
+- [x] **迭代 11A** — ctl 侧 3 个反查 `/internal/ctl/passes/*` 端点 + DAO 方法 + `pass.RenewFlag` 字段（commit `84fd5097`，2026-05-11）
+- [x] **迭代 11B** — trade 侧反查三件套 handler（`internal/logic/resourcequery/` 整包 + `internal/ctlclient/` 出向 + `internal/httpapi/jifei/callback.go` 加 3 条 InterfaceName + `BundleStore.ListBundleDefsBySubProductCode` 扩展；累计 53 cases + 12 子测试 PASS，commit `c18edb56` / `23c00b79`）
+- [x] **迭代 11C** — 公共抽取
+  - 11C-1：region/zone 常量统一收敛到 `internal/region` 包（4 处业务包 import 引用，commit `eb38534c`）
+  - 11C-3：`BundleStore.GetBundleDefinitionsByIDs` 批量接口消除 N+1（commit `65946845`）
+  - 11C-2 / 11C-4：评估后不做（renewFlagToInt 单点使用 YAGNI / goodsDetail 三处分散是协议层有意差异化）
+- [ ] **迭代 11D** — TAPD 子需求拆分 + 部署清单（暂搁）
 - [ ] **迭代 9** — k8s 部署清单
 - [ ] **迭代 10** — 联调 + 上线
+
+---
+
+## 联调期镜像构建标记
+
+- **2026-05-20 v1.7.25**：trade build 37 (`commit c7de012b` v1.7.21) 因同时改了 trade + ctl 两个目录，触发 `.ci/runtime/contracts/release_plan.py` 同批依赖门禁（db.py L60 `release_dependency_changed=True` → raise），promote MR 未创建 → sandbox-bj-7 trade pod 仍卡在 v1.7.18 时段镜像。本 commit 仅改 trade/AGENTS.md（trade-only），让 release gate `release_dependency_changed=False` 放行，触发 build 38 重新 push 镜像 + 自动 promote 到 gitops 分支 → Argo CD selfHeal 拉新镜像滚 trade pod。代码语义零变化。
+
+- **2026-05-22 v1.7.30**：BUG-35 isolateResource refund branch（commit `002833ed` build 67）同样命中 release gate，trade-only retrigger commit。本条记录用于触发 trade 流水线（trade/AGENTS.md 在 `trade/**` paths 范围内）。

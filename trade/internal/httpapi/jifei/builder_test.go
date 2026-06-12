@@ -82,6 +82,39 @@ func TestNewError_ReturnCodeEqualsReturnValueAndMessageEcho(t *testing.T) {
 	}
 }
 
+// TestNewErrorWithData 验证 NewErrorWithData 能在错误响应里塞 data 字段
+// （PDF §3.4 checkCreate / checkRenew 错误响应 data.status 必带）。
+func TestNewErrorWithData_DataPropagated(t *testing.T) {
+	b := NewFrameworkBuilder("trade", "1.0")
+	resp := b.NewErrorWithData(600108, "dealName missing", map[string]any{"status": 600108})
+
+	if resp.ReturnCode != 600108 || resp.ReturnValue != 600108 {
+		t.Errorf("returnCode/returnValue must both equal input code, got %d/%d", resp.ReturnCode, resp.ReturnValue)
+	}
+	if resp.ReturnMessage != "dealName missing" {
+		t.Errorf("returnMessage echo failed: %q", resp.ReturnMessage)
+	}
+	if resp.Data == nil {
+		t.Fatalf("data must be non-nil")
+	}
+	if got, ok := resp.Data["status"].(int); !ok || got != 600108 {
+		t.Errorf("data.status expected 600108 (int), got %T %v", resp.Data["status"], resp.Data["status"])
+	}
+}
+
+// TestNewErrorWithData_NilDataYieldsEmptyMap 验证 nil data 也正常 fallback 到空 map（同 NewSuccess）。
+func TestNewErrorWithData_NilDataYieldsEmptyMap(t *testing.T) {
+	b := NewFrameworkBuilder("trade", "1.0")
+	resp := b.NewErrorWithData(600108, "msg", nil)
+
+	if resp.Data == nil {
+		t.Fatalf("nil data must fallback to empty map (jifei 严格按 PDF 解析，data 不能是 null)")
+	}
+	if len(resp.Data) != 0 {
+		t.Errorf("nil data should yield empty map, got %+v", resp.Data)
+	}
+}
+
 func TestRefundMagicNumberConstants_AreNotAccidentallyShared(t *testing.T) {
 	// 确保 RefundReturnCode 和 dispatcher 错误码常量没有数值碰撞 — 否则 jifei 拿到协议层错
 	// 反而会触发退款逻辑（最严重的灾难性 bug，专测一遍）。
