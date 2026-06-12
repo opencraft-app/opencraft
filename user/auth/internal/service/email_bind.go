@@ -13,18 +13,18 @@ import (
 )
 
 const (
-	emailBindTokenBytes      = 32
-	defaultEmailBindTTL      = 30 * time.Minute
+	emailBindTokenBytes   = 32
+	defaultEmailBindTTL   = 30 * time.Minute
 	defaultEmailBindCooldown = time.Minute
 )
 
 type EmailBindConfig struct {
-	Enabled         bool
-	TokenTTL        time.Duration
-	Cooldown        time.Duration
-	PublicBaseURL   string
+	Enabled       bool
+	TokenTTL      time.Duration
+	Cooldown      time.Duration
+	PublicBaseURL string
 	FrontendBaseURL string
-	Sender          EmailSender
+	Sender        EmailSender
 }
 
 func (s *Service) RequestEmailBind(ctx context.Context, sessionToken string, email string) (time.Duration, error) {
@@ -129,17 +129,20 @@ func buildEmailBindConfirmURL(publicBaseURL string, rawToken string) (string, er
 	return parsed.String(), nil
 }
 
-func BuildEmailBindResultRedirectURL(frontendBaseURL string, status string) string {
+func BuildEmailBindRedirectURL(frontendBaseURL string, queryKey string) string {
 	base := strings.TrimRight(strings.TrimSpace(frontendBaseURL), "/")
 	if base == "" {
 		base = "/"
 	}
-	parsed, err := url.Parse(base + "/auth/email-bind-result")
+	parsed, err := url.Parse(base + "/account")
 	if err != nil {
-		return base + "/auth/email-bind-result?status=" + url.QueryEscape(status)
+		return base + "/account?" + queryKey
 	}
 	query := parsed.Query()
-	query.Set("status", strings.TrimSpace(status))
+	parts := strings.SplitN(queryKey, "=", 2)
+	if len(parts) == 2 {
+		query.Set(parts[0], parts[1])
+	}
 	parsed.RawQuery = query.Encode()
 	return parsed.String()
 }

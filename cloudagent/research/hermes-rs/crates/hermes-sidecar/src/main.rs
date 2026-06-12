@@ -608,6 +608,11 @@ mod tests {
                 workspace_root: Some("/workspace/session_1".to_string()),
                 template: None,
                 error: None,
+                exit_code: None,
+                stdout_bytes: None,
+                stderr_bytes: None,
+                stdout_tail: None,
+                stderr_tail: None,
             },
             PromptResponseLine::OutputTextDelta {
                 delta: "llo".to_string(),
@@ -663,6 +668,11 @@ mod tests {
                     workspace_root: Some("/workspace/session_1".to_string()),
                     template: None,
                     error: None,
+                    exit_code: None,
+                    stdout_bytes: None,
+                    stderr_bytes: None,
+                    stdout_tail: None,
+                    stderr_tail: None,
                 },
                 PromptResponseLine::OutputTextDelta {
                     delta: "llo".to_string()

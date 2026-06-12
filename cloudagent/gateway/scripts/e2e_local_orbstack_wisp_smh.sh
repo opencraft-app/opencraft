@@ -62,7 +62,7 @@ fi
 export GATEWAY_WISP_SMH_LIBRARY_ID="${GATEWAY_WISP_SMH_LIBRARY_ID:-${SMH_LIBRARY_ID:-smh37laghvp09llc}}"
 export GATEWAY_WISP_SMH_ACCESS_DOMAIN="${GATEWAY_WISP_SMH_ACCESS_DOMAIN:-${SMH_ACCESS_DOMAIN:-https://smh37laghvp09llc.ap-shanghai.api.tencentsmh.cn}}"
 export GATEWAY_WISP_SMH_LIBRARY_SECRET="${GATEWAY_WISP_SMH_LIBRARY_SECRET:-${SMH_LIBRARY_SECRET:-}}"
-export GATEWAY_WISP_PACKAGE_URL="${GATEWAY_WISP_PACKAGE_URL:-${WISP_PACKAGE_URL:-https://cloudagent-sidecar-shanghai-1388575217.cos.ap-shanghai.myqcloud.com/workspace/20260528/wisp-linux-amd64-20260528T061826Z-8ceda87c563b.erofs}}"
+export GATEWAY_WISP_PACKAGE_URL="${GATEWAY_WISP_PACKAGE_URL:-${WISP_PACKAGE_URL:-https://cloudagent-sidecar-shanghai-1388575217.cos.ap-shanghai.myqcloud.com/workspace/releases/wisp-linux-amd64-20260612T025943Z-3f949bac72a5.erofs}}"
 export GATEWAY_WISP_PACKAGE_FORMAT="${GATEWAY_WISP_PACKAGE_FORMAT:-erofs-extract}"
 export GATEWAY_WISP_PACKAGE_ARCH="${GATEWAY_WISP_PACKAGE_ARCH:-amd64}"
 export GATEWAY_LOCAL_WISP_SHARED_DAEMON=1

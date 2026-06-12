@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/openclaw/openclaw/mono/backend/auth/internal/dbconfig"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/logging"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/migrations"
 )
@@ -16,10 +17,7 @@ func main() {
 	})
 	slog.SetDefault(logger)
 
-	dsn := strings.TrimSpace(os.Getenv("LIGHTCLAW_MYSQL_DSN"))
-	if dsn == "" {
-		dsn = strings.TrimSpace(os.Getenv("MYSQL_DSN"))
-	}
+	dsn := dbconfig.ResolveMySQLDSN()
 	if dsn == "" {
 		slog.Error("missing MySQL DSN")
 		os.Exit(1)

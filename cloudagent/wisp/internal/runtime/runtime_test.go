@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"wisp/internal/config"
 )
@@ -24,6 +25,16 @@ func TestRunDetachedIncludesCommandOutputOnFailure(t *testing.T) {
 	msg := err.Error()
 	if !strings.Contains(msg, "exit status 7") || !strings.Contains(msg, `stderr="detached-err"`) || !strings.Contains(msg, `stdout="detached-out"`) {
 		t.Fatalf("runDetached error did not include command output: %v", err)
+	}
+}
+
+func TestRunDetachedDoesNotWaitForInheritedChildOutputFDs(t *testing.T) {
+	rt := New(config.Config{})
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+	err := rt.runDetached(ctx, "/bin/sh", "-c", "sh -c 'sleep 1' & exit 0")
+	if err != nil {
+		t.Fatalf("runDetached should not wait for detached child output fds: %v", err)
 	}
 }
 
@@ -1011,6 +1022,111 @@ exit 0
 		calls[2] != "writeback-cut-barrier --timeout 120s --poll-interval 30ms "+jfsRoot ||
 		calls[3] != "meta-barrier "+jfsRoot {
 		t.Fatalf("unexpected restore barrier order: %q", calls)
+	}
+}
+
+func TestPromoteCheckpointToActiveReplacesStaleActiveImage(t *testing.T) {
+	root := t.TempDir()
+	jfsRoot := filepath.Join(root, "jfs")
+	stateRoot := filepath.Join(jfsRoot, "wisp", "default")
+	activeImg := filepath.Join(stateRoot, "active", "root-upper.img")
+	checkpointID := "system-graceful-stop-20260527T010000.000000000Z"
+	checkpointDir := filepath.Join(stateRoot, "checkpoints", checkpointID)
+	binDir := filepath.Join(root, "bin")
+	for _, dir := range []string{filepath.Dir(activeImg), checkpointDir, binDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(activeImg, []byte("stale-active"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(checkpointDir, "root-upper.img"), []byte("latest-checkpoint"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	jfsBin := filepath.Join(binDir, "juicefs")
+	if err := os.WriteFile(jfsBin, []byte(`#!/bin/sh
+if [ "$1" = "clone" ]; then
+  cp "$2" "$3"
+fi
+exit 0
+`), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	rt := New(config.Config{
+		ActiveImg:       activeImg,
+		CheckpointsRoot: filepath.Join(stateRoot, "checkpoints"),
+		JFSBin:          jfsBin,
+		JFSRoot:         jfsRoot,
+	})
+	writeFakeJuiceFSMountInfo(t, root, jfsRoot)
+	if err := rt.promoteCheckpointToActive(context.Background(), checkpointID); err != nil {
+		t.Fatalf("promoteCheckpointToActive: %v", err)
+	}
+	raw, err := os.ReadFile(activeImg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != "latest-checkpoint" {
+		t.Fatalf("active image = %q, want latest checkpoint", string(raw))
+	}
+}
+
+func TestRuntimeMountStateForLogSkipsEmptyDerivedRuntimeRoot(t *testing.T) {
+	rt := New(config.Config{
+		JFSRoot:         "/mnt/wisp",
+		RuntimeRoot:     "",
+		UpperImageMount: "/mnt/wisp/runtime/root-upper-rw",
+	})
+	got := rt.runtimeMountStateForLog(context.Background())
+	for _, want := range []string{"jfs_root:", "upper_mount:"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("mount state missing %q: %s", want, got)
+		}
+	}
+	for _, unwanted := range []string{"rootfs:", "bundle_rootfs:", "upper_active_mount:"} {
+		if strings.Contains(got, unwanted) {
+			t.Fatalf("mount state should skip %q without RuntimeRoot: %s", unwanted, got)
+		}
+	}
+}
+
+func TestImageFingerprintForLogChangesWhenSampledContentChanges(t *testing.T) {
+	root := t.TempDir()
+	img := filepath.Join(root, "root-upper.img")
+	if err := os.WriteFile(img, []byte("before"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rt := New(config.Config{})
+	before := rt.imageFingerprintForLog(img)
+	if err := os.WriteFile(img, []byte("after"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	after := rt.imageFingerprintForLog(img)
+	if before == after {
+		t.Fatalf("fingerprint did not change: %s", before)
+	}
+	for _, want := range []string{"sampled=", "sample_sha256="} {
+		if !strings.Contains(after, want) {
+			t.Fatalf("fingerprint missing %q: %s", want, after)
+		}
+	}
+}
+
+func TestFsyncActiveImageBackingFile(t *testing.T) {
+	root := t.TempDir()
+	img := filepath.Join(root, "root-upper.img")
+	if err := os.WriteFile(img, []byte("active"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rt := New(config.Config{ActiveImg: img})
+	if err := rt.fsyncActiveImageBackingFile(context.Background(), "test"); err != nil {
+		t.Fatalf("fsyncActiveImageBackingFile: %v", err)
+	}
+	rt = New(config.Config{ActiveImg: filepath.Join(root, "missing.img")})
+	err := rt.fsyncActiveImageBackingFile(context.Background(), "test")
+	if err == nil || !strings.Contains(err.Error(), "open active image for fsync") {
+		t.Fatalf("fsyncActiveImageBackingFile missing err=%v", err)
 	}
 }
 

@@ -1,3 +1,3 @@
 lightclaw-auth release trigger
-updated_at=2026-05-08T02:25:00Z
-reason=retry lightclaw-auth release after latest GitOps gate output and promote branch lease fixes
+updated_at=2026-05-13T10:46:00Z
+reason=retry sandbox-bj-7 auth after DB readiness kubectl handles transient EOF

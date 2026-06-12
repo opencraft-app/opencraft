@@ -366,7 +366,7 @@ const DEFAULT_AGENT_SECTION: AgentSectionId = "channel";
 
 const isAgentSectionAvailable = (section: AgentSectionId | null): section is AgentSectionId => {
   if (!section) return false;
-  if (isGlobal && (section === "buddy" || section === "chat")) return false;
+  if (isGlobal && section === "buddy") return false;
   return true;
 };
 
@@ -1526,9 +1526,9 @@ const mapPtyState = (state: TencentPtyConnectionState): ConnectionState => {
   }
 };
 
-/* ─── Terminal Modal ─── */
+/* ─── Terminal Panel ─── */
 
-const TerminalModal = ({ botId, botName, onClose }: { botId: string; botName: string; onClose: () => void }) => {
+const TerminalPanel = ({ botId, botName }: { botId: string; botName: string }) => {
   const t = useT();
   const repositories = useRepositories();
   const terminalContainerRef = useRef<HTMLDivElement | null>(null);
@@ -1696,23 +1696,10 @@ const TerminalModal = ({ botId, botName, onClose }: { botId: string; botName: st
   };
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ backgroundColor: "rgba(0,0,0,0.7)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}
-      onClick={onClose}
+    <div
+      className="flex min-h-[clamp(520px,calc(100vh-220px),860px)] w-full flex-col overflow-hidden rounded-lg border shadow-[0_8px_28px_rgba(15,23,42,0.06)]"
+      style={{ background: "#0f0b09", borderColor: "rgba(255,255,255,0.1)" }}
     >
-      <motion.div
-        initial={{ opacity: 0, y: 30, scale: 0.95 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: 30, scale: 0.95 }}
-        transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
-        className="relative mx-4 flex w-full flex-col overflow-hidden rounded-[1.75rem] border shadow-2xl"
-        style={{ maxWidth: 900, maxHeight: "85vh", background: "#0f0b09", borderColor: "rgba(255,255,255,0.1)" }}
-        onClick={(e) => e.stopPropagation()}
-      >
         {/* Header */}
         <div
           className="flex items-center justify-between border-b px-5 py-3"
@@ -1731,13 +1718,6 @@ const TerminalModal = ({ botId, botName, onClose }: { botId: string; botName: st
               {stateLabel[connectionState]}
             </span>
           </div>
-          <button
-            onClick={onClose}
-            className="flex h-7 w-7 items-center justify-center rounded-lg transition-colors hover:bg-[rgba(255,255,255,0.1)] text-[var(--text-tertiary)]"
-            title={t("关闭终端")}
-          >
-            <X className="h-4 w-4" />
-          </button>
         </div>
 
         {/* Terminal */}
@@ -1750,11 +1730,10 @@ const TerminalModal = ({ botId, botName, onClose }: { botId: string; botName: st
           <div
             ref={terminalContainerRef}
             className="rounded-xl border p-2"
-            style={{ borderColor: "rgba(255,255,255,0.08)", background: "#16110d", minHeight: "28rem" }}
+            style={{ borderColor: "rgba(255,255,255,0.08)", background: "#16110d", minHeight: "30rem", height: "calc(100vh - 300px)" }}
           />
         </div>
-      </motion.div>
-    </motion.div>
+    </div>
   );
 };
 
@@ -3432,13 +3411,12 @@ export const OpenClawSettingsPage = () => {
   /* 出生证明 */
   const [showBirthCert, setShowBirthCert] = useState(false);
 
-  /* Terminal 弹窗 */
-  const [showTerminal, setShowTerminal] = useState(false);
-
   /* ── 重启 Gateway ── */
   // restartingBotIds: 正在重启的 bot ID 集合，支持多 bot 并行重启
   const [showRestartConfirm, setShowRestartConfirm] = useState(false);
   const [restartingBotIds, setRestartingBotIds] = useState<Set<string>>(new Set());
+  const [showHiddenAgentTools, setShowHiddenAgentTools] = useState(false);
+  const [exportingBotIds, setExportingBotIds] = useState<Set<string>>(new Set());
   // 错误按 bot 维度存储，多 bot 并行失败时各自保留错误信息
   const [restartErrors, setRestartErrors] = useState<RestartErrors>(new Map());
 
@@ -3471,15 +3449,40 @@ export const OpenClawSettingsPage = () => {
     }
   };
 
+  const handleExportWorkspace = async () => {
+    if (!activeBot || activeBot.status !== "running" || exportingBotIds.has(activeBot.id)) return;
+    const targetBotId = activeBot.id;
+    setExportingBotIds((prev) => new Set(prev).add(targetBotId));
+    try {
+      const result = await repositories.bots.startRescueExport(targetBotId);
+      toast.success(t("导出任务已发起，完成后会发送到绑定邮箱。任务 ID: {{id}}", { id: result.actionRunId }));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "";
+      toast.error(
+        message.includes("cos_upload_bucket_not_configured")
+          ? t("导出存储桶未配置，请稍后再试。")
+          : message || t("导出任务发起失败"),
+      );
+    } finally {
+      setExportingBotIds((prev) => {
+        const next = new Set(prev);
+        next.delete(targetBotId);
+        return next;
+      });
+    }
+  };
+
   // 当前 tab 的 bot 是否正在重启
   const isActiveBotRestarting = computeIsActiveBotRestarting(activeBot, restartingBotIds);
+  const isActiveBotExporting = activeBot ? exportingBotIds.has(activeBot.id) : false;
   // 当前 tab 是否展示错误
   const activeBotRestartError = getActiveBotRestartError(activeBot, restartErrors);
 
   useEffect(() => {
     return installOpenClawConsoleHelpers({
-      host: window as Window & { help?: unknown; terminal?: unknown; console: Console },
-      getTerminalPath: () => (activeBot ? `/bots/${activeBot.id}/terminal` : null),
+      host: window as Window & { help?: unknown; terminal?: unknown; show?: unknown; console: Console },
+      getTerminalPath: () => (activeBot ? AGENT_SECTION_PATH_BY_ID.terminal : null),
+      onShowHiddenTools: () => setShowHiddenAgentTools(true),
     });
   }, [activeBot]);
 
@@ -3994,18 +3997,6 @@ export const OpenClawSettingsPage = () => {
         <BirthCertificateModal bot={activeBot} onClose={() => setShowBirthCert(false)} />
       )}
 
-      {/* Terminal Modal */}
-      <AnimatePresence>
-        {showTerminal && activeBot && (
-          <TerminalModal
-            key={activeBot.id}
-            botId={activeBot.id}
-            botName={activeBot.name}
-            onClose={() => setShowTerminal(false)}
-          />
-        )}
-      </AnimatePresence>
-
       <main className="lw-app-top-pad flex-grow bg-[#F7F8FA] pb-12">
         <section className="lw-settings-shell">
           {/* ── Loading 状态 ── */}
@@ -4071,6 +4062,8 @@ export const OpenClawSettingsPage = () => {
               ];
               const isRestartDisabled = resettingAcli || isActiveBotRestarting || activeBot.status !== "running";
               const restartTooltip = resettingAcli ? t("请稍后") : t("重启");
+              const exportDisabled = resettingAcli || isActiveBotExporting || activeBot.status !== "running";
+              const exportTooltip = isActiveBotExporting ? t("导出中...") : exportDisabled ? t("请稍后") : t("导出工作区");
               const hasViewedChannel = viewedChannelBotIds.has(activeBot.id);
               const resetBlockReason = getResetBlockReason(activeBot, resetting, hasViewedChannel);
               const resetDisabled = resettingAcli || resetting || resetBlockReason !== null;
@@ -4280,6 +4273,43 @@ export const OpenClawSettingsPage = () => {
                       aria-label={t("实例配置导航")}
                       className="mt-4 rounded-md border border-black/[0.06] bg-white p-2 shadow-[0_8px_28px_rgba(15,23,42,0.04)]"
                     >
+                      {showHiddenAgentTools ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => navigate({ pathname: AGENT_SECTION_PATH_BY_ID.terminal, search: location.search })}
+                            aria-current={activeSection === "terminal" ? "page" : undefined}
+                            className={cn(
+                              "lw-settings-nav-item flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 font-medium transition-colors",
+                              activeSection === "terminal"
+                                ? "bg-black/[0.06] text-black/90"
+                                : "text-black/55 hover:bg-black/[0.035] hover:text-black/85",
+                            )}
+                          >
+                            <span className="flex h-5 w-5 items-center justify-center"><TerminalSquare className="h-4 w-4" /></span>
+                            <span className="flex-1 text-left text-[15px]">{t("终端")}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (exportDisabled) return;
+                              void handleExportWorkspace();
+                            }}
+                            disabled={exportDisabled}
+                            className={cn(
+                              "lw-settings-nav-item flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 font-medium transition-colors",
+                              exportDisabled
+                                ? "cursor-not-allowed text-black/25"
+                                : "text-black/55 hover:bg-black/[0.035] hover:text-black/85",
+                            )}
+                          >
+                            <span className="flex h-5 w-5 items-center justify-center">
+                              {isActiveBotExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                            </span>
+                            <span className="flex-1 text-left text-[15px]">{exportTooltip}</span>
+                          </button>
+                        </>
+                      ) : null}
                       {settingsSections.map((section) => {
                         const isActive = section.id === activeSection;
                         return (
@@ -4411,6 +4441,9 @@ export const OpenClawSettingsPage = () => {
                           )}
                           {activeSection === "files" && (
                             <TatFileManagerPanel botId={activeBot.id} />
+                          )}
+                          {activeSection === "terminal" && (
+                            <TerminalPanel botId={activeBot.id} botName={activeBot.name} />
                           )}
                         </div>
                       </motion.div>

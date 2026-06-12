@@ -161,6 +161,9 @@ func validatedReturnToURLWithAllowlist(rawURL string, allowlist oauthReturnToAll
 	if isDeviceBindReturnTo(parsed.String()) {
 		return parsed.String()
 	}
+	if isBrowserExtensionOAuthReturnTo(parsed) {
+		return parsed.String()
+	}
 	if !isAllowedReturnToScheme(parsed.Scheme, parsed.Hostname(), parsed, allowlist) {
 		return ""
 	}
@@ -198,6 +201,32 @@ func isAllowedReturnToHost(host string, allowlist oauthReturnToAllowlist) bool {
 		}
 	}
 	return false
+}
+
+func isBrowserExtensionOAuthReturnTo(parsed *url.URL) bool {
+	if parsed == nil {
+		return false
+	}
+	if !strings.EqualFold(parsed.Scheme, "https") {
+		return false
+	}
+	if parsed.Path != "/lightvela" {
+		return false
+	}
+	host := strings.ToLower(strings.TrimSpace(parsed.Hostname()))
+	if !strings.HasSuffix(host, ".chromiumapp.org") {
+		return false
+	}
+	extensionID := strings.TrimSuffix(host, ".chromiumapp.org")
+	if extensionID == "" || strings.Contains(extensionID, ".") {
+		return false
+	}
+	for _, ch := range extensionID {
+		if ch < 'a' || ch > 'z' {
+			return false
+		}
+	}
+	return true
 }
 
 func isAllowedReturnToScheme(scheme string, host string, parsed *url.URL, allowlist oauthReturnToAllowlist) bool {

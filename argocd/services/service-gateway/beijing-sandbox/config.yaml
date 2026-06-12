@@ -4,15 +4,15 @@ allowed_origins:
 worker_actions:
   enabled: true
   temporal:
-    address: ""
+    address: temporal.lightvela.com:443
     namespace: default
     tls: true
-    server_name: ""
+    server_name: temporal.lightvela.com
     token_env: TEMPORAL_BEARER_TOKEN
     task_queue: tencent-cvm-rescue-export
     timeout: 10s
   rescue_export:
-    cos_upload_bucket: ""
+    cos_upload_bucket: https://lightclawuser-1388575217.cos.ap-beijing.myqcloud.com
     cos_upload_region: ap-beijing
     cos_upload_key_prefix: rescue-exports
     cos_upload_url_ttl_seconds: 28800

@@ -81,6 +81,7 @@ func NewLocalRuntimeHost(cfg LocalRuntimeHostConfig) (*LocalRuntimeHost, error) 
 }
 
 var _ RuntimeHost = (*LocalRuntimeHost)(nil)
+var _ RuntimeHostSandboxProber = (*LocalRuntimeHost)(nil)
 
 func (h *LocalRuntimeHost) Info() LocalRuntimeHostInfo {
 	if h == nil {
@@ -209,6 +210,42 @@ func (h *LocalRuntimeHost) RefreshSandboxTimeout(ctx context.Context, id string,
 	}
 	handle.ExpiresAt = time.Now().UTC().Add(time.Duration(timeoutSeconds) * time.Second)
 	return h.writeHandleLocked(handle)
+}
+
+func (h *LocalRuntimeHost) ProbeSandbox(ctx context.Context, id string) (RuntimeHostSandboxProbe, error) {
+	probe := RuntimeHostSandboxProbe{
+		SandboxID: strings.TrimSpace(id),
+		Domain:    runtimeHostTypeLocalWisp,
+		CheckedAt: time.Now().UTC(),
+	}
+	if h == nil || probe.SandboxID == "" {
+		probe.Status = "empty_id"
+		return probe, nil
+	}
+	id, err := validateLocalRuntimeID(probe.SandboxID)
+	if err != nil {
+		return probe, err
+	}
+	if err := ctx.Err(); err != nil {
+		return probe, err
+	}
+	handle, err := h.readHandle(id)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			probe.SandboxID = id
+			probe.Exists = false
+			probe.Status = "not_found"
+			return probe, nil
+		}
+		return probe, err
+	}
+	probe.SandboxID = handle.ID
+	probe.Exists = true
+	probe.Status = "exists"
+	if !handle.ExpiresAt.IsZero() {
+		probe.Detail = "expires_at=" + handle.ExpiresAt.Format(time.RFC3339Nano)
+	}
+	return probe, nil
 }
 
 func (h *LocalRuntimeHost) RunCommand(ctx context.Context, target RuntimeHostTarget, command string, env map[string]string, onStdout func(string) error, onStderr func(string) error) (CommandResult, error) {
