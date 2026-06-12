@@ -66,6 +66,7 @@ type ExportRequest struct {
 	COSUploadURLTTLSeconds int
 	KeepRemoteArchive      bool
 	DisableCOSAutoDelete   bool
+	NotificationEmails     []string
 	SearchAttributes       []string
 	Execute                bool
 	Confirmed              bool
