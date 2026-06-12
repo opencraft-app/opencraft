@@ -454,7 +454,7 @@ const MemoryLimitCard = ({
   const helperMessage = displayError
     || (shouldWarnNearUsage
       ? t("新上限接近当前用量，后续记忆可能无法继续写入或触发自动淘汰。")
-      : t("可设置范围：{{min}}-{{max}} 字符", { min: bounds.min, max: bounds.max }));
+      : t("可设置范围：{{min}}-{{max}} 字符。保存后会重启 Hermes 网关，可能短暂中断会话。", { min: bounds.min, max: bounds.max }));
 
   useEffect(() => {
     if (!isEditing) {
@@ -3170,7 +3170,7 @@ export const OpenClawSettingsPage = () => {
         await loadHermesMemory({ clearSnapshot: false });
         setMemoryLimitSaveError({
           target,
-          message: rawT("配置已保存，但 Hermes 网关重启失败，请稍后重试或手动重启。"),
+          message: rawT("配置已保存，但 Hermes 网关重启失败。请到「设置 → 重启网关」手动重启，或稍后重试。"),
         });
         return false;
       }
