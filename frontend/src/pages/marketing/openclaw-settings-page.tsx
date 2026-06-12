@@ -360,7 +360,7 @@ const DEFAULT_AGENT_SECTION: AgentSectionId = "channel";
 
 const isAgentSectionAvailable = (section: AgentSectionId | null): section is AgentSectionId => {
   if (!section) return false;
-  if (isGlobal && (section === "buddy" || section === "chat")) return false;
+  if (isGlobal && section === "buddy") return false;
   return true;
 };
 
