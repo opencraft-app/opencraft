@@ -274,6 +274,64 @@ func TestCreateTATDeviceBindAcceptsDeviceBindToken(t *testing.T) {
 	}
 }
 
+func TestCreateTATDeviceBindAcceptsBrowserExtensionCallback(t *testing.T) {
+	t.Parallel()
+
+	issuer := &httpStubTATRegisterIssuer{
+		result: tat.RegisterCode{
+			Region:             "ap-shanghai",
+			RegisterCodeID:     "browser-reg-id",
+			RegisterCodeValue:  "browser-reg-value",
+			RequestID:          "browser-request-id",
+			EffectiveTimeHours: 24,
+		},
+	}
+	router := newAuthTestRouterWithTATRegisterIssuer(issuer)
+	signUp := performJSONRequest(t, router, http.MethodPost, "/auth/password/sign-up", map[string]any{
+		"name":       "Browser Node User",
+		"email":      "browser-node-user@example.com",
+		"password":   "password123",
+		"inviteCode": "VALID2026",
+	})
+	var signUpResponse sessionResponseBody
+	decodeJSONResponse(t, signUp, &signUpResponse)
+	codec := newDeviceBindTokenCodec(testDeviceBindSecret, 10*time.Minute)
+	callbackURL := "https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/lightvela?provider_type=browser_extension&extension_id=abcdefghijklmnopabcdefghijklmnop"
+	token, _, err := codec.Issue(&service.AuthSession{User: service.User{ID: signUpResponse.Session.User.ID}}, callbackURL)
+	if err != nil {
+		t.Fatalf("issue device bind token: %v", err)
+	}
+
+	recorder := performJSONRequestWithHeaders(t, router, http.MethodPost, "/auth/tat/device-bind", map[string]any{
+		"callback_url": callbackURL,
+		"device_name":  "Chrome Extension abcdefghijklmnopabcdefghijklmnop",
+	}, map[string]string{
+		"Authorization": "Bearer " + token,
+	})
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var response struct {
+		CallbackURL  string `json:"callback_url"`
+		RedirectURL  string `json:"redirect_url"`
+		Registration struct {
+			RegisterCodeID    string `json:"register_code_id"`
+			RegisterCodeValue string `json:"register_code_value"`
+		} `json:"registration"`
+	}
+	decodeJSONResponse(t, recorder, &response)
+	if response.CallbackURL != callbackURL {
+		t.Fatalf("callback_url: got %q", response.CallbackURL)
+	}
+	if response.Registration.RegisterCodeID != "browser-reg-id" || response.Registration.RegisterCodeValue != "browser-reg-value" {
+		t.Fatalf("registration: got %+v", response.Registration)
+	}
+	if !strings.Contains(response.RedirectURL, "registration_code=browser-reg-value") {
+		t.Fatalf("redirect_url should contain registration code, got %q", response.RedirectURL)
+	}
+}
+
 func TestCreateTATDeviceBindRejectsExternalCallback(t *testing.T) {
 	t.Parallel()
 

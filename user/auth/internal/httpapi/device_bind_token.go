@@ -140,9 +140,39 @@ func isDeviceBindReturnTo(returnTo string) bool {
 	if err != nil {
 		return false
 	}
+	return isLoopbackDeviceBindReturnTo(parsed) || isBrowserExtensionDeviceBindReturnTo(parsed)
+}
+
+func isLoopbackDeviceBindReturnTo(parsed *url.URL) bool {
+	if parsed == nil {
+		return false
+	}
 	return strings.EqualFold(parsed.Scheme, "http") &&
 		isLoopbackHost(parsed.Hostname()) &&
 		(parsed.Path == "/lightvela/callback" || parsed.Path == "/lightvela/auth-callback")
+}
+
+func isBrowserExtensionDeviceBindReturnTo(parsed *url.URL) bool {
+	if parsed == nil {
+		return false
+	}
+	if !strings.EqualFold(parsed.Scheme, "https") || parsed.Path != "/lightvela" {
+		return false
+	}
+	host := strings.ToLower(strings.TrimSpace(parsed.Hostname()))
+	if !strings.HasSuffix(host, ".chromiumapp.org") {
+		return false
+	}
+	extensionID := strings.TrimSuffix(host, ".chromiumapp.org")
+	if extensionID == "" || strings.Contains(extensionID, ".") {
+		return false
+	}
+	for _, ch := range extensionID {
+		if ch < 'a' || ch > 'z' {
+			return false
+		}
+	}
+	return true
 }
 
 func appendDeviceBindTokenToReturnTo(rawURL string, token string, expiresAt time.Time) string {
