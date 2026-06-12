@@ -1068,8 +1068,26 @@ func (r *Runtime) promoteCheckpointToActive(ctx context.Context, checkpointID st
 	if err := r.run(ctx, r.cfg.JFSBin, "clone", checkpointImg, r.cfg.ActiveImg); err != nil {
 		return fmt.Errorf("clone checkpoint to active image: %w", err)
 	}
-	if err := r.fenceClonedImage(ctx, "stop_checkpoint_promote", r.cfg.ActiveImg); err != nil {
-		return err
+	// Stop creates the checkpoint as the durable commit point and already
+	// fences the cloned checkpoint image. Promoting it back to active only
+	// refreshes the next-boot cache, so avoid a second writeback cut barrier
+	// on the same mounted JuiceFS tree.
+	if r.remoteBackendRequiresMount() {
+		if strings.TrimSpace(r.cfg.JFSBin) == "" {
+			return errors.New("stop checkpoint promote fence requires JFS_BIN")
+		}
+		started := time.Now()
+		r.log("stop_checkpoint_promote active_file_barrier_start image=%s", r.cfg.ActiveImg)
+		if err := r.run(ctx, r.cfg.JFSBin, "file-barrier", r.cfg.ActiveImg); err != nil {
+			return fmt.Errorf("stop checkpoint promote juicefs file-barrier %s: %w", r.cfg.ActiveImg, err)
+		}
+		r.log("stop_checkpoint_promote active_file_barrier_done image=%s duration=%s", r.cfg.ActiveImg, humanDuration(time.Since(started)))
+		started = time.Now()
+		r.log("stop_checkpoint_promote meta_barrier_start jfs_root=%s", r.cfg.JFSRoot)
+		if err := r.runMetaBarrier(ctx); err != nil {
+			return fmt.Errorf("stop checkpoint promote meta barrier: %w", err)
+		}
+		r.log("stop_checkpoint_promote meta_barrier_done jfs_root=%s duration=%s", r.cfg.JFSRoot, humanDuration(time.Since(started)))
 	}
 	r.log("stop_checkpoint_promote done checkpoint=%s active_img=%s active_after=%s", checkpointID, r.cfg.ActiveImg, r.imageFingerprintForLog(r.cfg.ActiveImg))
 	return nil

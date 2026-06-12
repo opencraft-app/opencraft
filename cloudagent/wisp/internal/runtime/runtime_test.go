@@ -1044,8 +1044,11 @@ func TestPromoteCheckpointToActiveReplacesStaleActiveImage(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(checkpointDir, "root-upper.img"), []byte("latest-checkpoint"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	callsPath := filepath.Join(root, "jfs-calls")
+	t.Setenv("JFS_CALL_LOG", callsPath)
 	jfsBin := filepath.Join(binDir, "juicefs")
 	if err := os.WriteFile(jfsBin, []byte(`#!/bin/sh
+echo "$@" >> "$JFS_CALL_LOG"
 if [ "$1" = "clone" ]; then
   cp "$2" "$3"
 fi
@@ -1069,6 +1072,18 @@ exit 0
 	}
 	if string(raw) != "latest-checkpoint" {
 		t.Fatalf("active image = %q, want latest checkpoint", string(raw))
+	}
+	rawCalls, err := os.ReadFile(callsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := strings.Split(strings.TrimSpace(string(rawCalls)), "\n")
+	checkpointImg := filepath.Join(checkpointDir, "root-upper.img")
+	if len(calls) != 3 ||
+		calls[0] != "clone "+checkpointImg+" "+activeImg ||
+		calls[1] != "file-barrier "+activeImg ||
+		calls[2] != "meta-barrier "+jfsRoot {
+		t.Fatalf("unexpected promote barrier order: %q", calls)
 	}
 }
 
