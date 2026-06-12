@@ -1450,6 +1450,8 @@ func TestStartTerminalSessionUsesBotScopedRoute(t *testing.T) {
 			Cols:           120,
 			Rows:           30,
 			TimeoutSeconds: 3600,
+			Username:       "agentuser",
+			WorkingDir:     "/home/agentuser",
 		},
 	}}
 	newRouter(handler, &bundleHandler{}, &passHandler{}).ServeHTTP(rec, req)
@@ -1474,6 +1476,9 @@ func TestStartTerminalSessionUsesBotScopedRoute(t *testing.T) {
 	}
 	if data["sessionId"] != "sess-1" || data["wsUrl"] != "wss://tat.example.test/ws" {
 		t.Fatalf("unexpected terminal session data: %s", rec.Body.String())
+	}
+	if data["username"] != "agentuser" || data["workingDirectory"] != "/home/agentuser" {
+		t.Fatalf("unexpected terminal identity data: %s", rec.Body.String())
 	}
 }
 

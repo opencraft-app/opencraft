@@ -247,6 +247,8 @@ func TestStartTerminalSessionUsesOwnedInstanceSandbox(t *testing.T) {
 			Cols:           120,
 			Rows:           30,
 			TimeoutSeconds: 3600,
+			Username:       "agentuser",
+			WorkingDir:     "/home/agentuser",
 		},
 	}
 	logic := &logic{
@@ -270,6 +272,9 @@ func TestStartTerminalSessionUsesOwnedInstanceSandbox(t *testing.T) {
 	}
 	if resp.SessionID != "sess-1" || resp.WsURL != "wss://tat.example.test/ws" {
 		t.Fatalf("unexpected response: %+v", resp)
+	}
+	if resp.Username != "agentuser" || resp.WorkingDir != "/home/agentuser" {
+		t.Fatalf("unexpected terminal identity: %+v", resp)
 	}
 }
 
