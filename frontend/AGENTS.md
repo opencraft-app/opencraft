@@ -1,6 +1,6 @@
 # 📋 agent-platform-frontend — AI Agent 指引
 
-> 本文件是 AI 助手在本项目中的**轻量门户**。本项目位于 monorepo 的 `frontend/` 子目录，工作流核心在仓库根目录维护：`../.workflow/`、`../.codebuddy/`、`../.agents/skills/`。
+> 本文件是 AI 助手在本项目中的**轻量门户**。本项目位于 monorepo 的 `frontend/` 子目录，工作流核心在仓库根目录维护：`../.workflow/`、`../.codebuddy/`、`../.codebuddy/skills/`。
 >
 > ⚠️ 由 `frontend-ai-dev-tools` 公共模板生成后按 `wisp/mono2` 实际目录修正。项目深度信息（技术栈、目录结构、路由、状态管理、API、公共组件等）以 `openspec/config.yaml` 的 `context:` 段为准；`../.workflow/project.yaml` 只做软引用。
 >
