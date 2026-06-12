@@ -1678,9 +1678,7 @@ func (p *TencentCloudProvider) StartTerminalSession(ctx context.Context, region,
 
 	req := tchttp.NewCommonRequest(tatService, tatVersion, "StartSession")
 	req.SetContext(ctx)
-	if err := req.SetActionParameters(map[string]interface{}{
-		"InstanceId": instanceID,
-	}); err != nil {
+	if err := req.SetActionParameters(startTerminalSessionParameters(instanceID)); err != nil {
 		return TerminalSession{}, err
 	}
 
@@ -1718,6 +1716,14 @@ func (p *TencentCloudProvider) StartTerminalSession(ctx context.Context, region,
 		Username:       defaultTerminalUsername,
 		WorkingDir:     defaultTerminalWorkingDirectory,
 	}, nil
+}
+
+func startTerminalSessionParameters(instanceID string) map[string]interface{} {
+	return map[string]interface{}{
+		"InstanceId":       instanceID,
+		"Username":         defaultTerminalUsername,
+		"WorkingDirectory": defaultTerminalWorkingDirectory,
+	}
 }
 
 func (p *TencentCloudProvider) GetCommandInvocation(ctx context.Context, region, invocationID, instanceID string) (CommandResult, error) {
