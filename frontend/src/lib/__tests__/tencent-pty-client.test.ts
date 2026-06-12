@@ -94,7 +94,7 @@ describe("TencentPtyClient", () => {
         Cols: 120,
         Rows: 40,
         MaxIdleTime: 3600,
-        Username: "agentuser",
+        UserName: "agentuser",
         WorkingDirectory: "/home/agentuser",
       },
     });
@@ -121,7 +121,7 @@ describe("TencentPtyClient", () => {
       Type: "PtyStart",
       Data: {
         MaxIdleTime: 1800,
-        Username: "deploy",
+        UserName: "deploy",
         WorkingDirectory: "/srv/app",
       },
     });
