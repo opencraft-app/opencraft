@@ -3214,6 +3214,8 @@ export const OpenClawSettingsPage = () => {
   // restartingBotIds: 正在重启的 bot ID 集合，支持多 bot 并行重启
   const [showRestartConfirm, setShowRestartConfirm] = useState(false);
   const [restartingBotIds, setRestartingBotIds] = useState<Set<string>>(new Set());
+  const [showHiddenAgentTools, setShowHiddenAgentTools] = useState(false);
+  const [exportingBotIds, setExportingBotIds] = useState<Set<string>>(new Set());
   // 错误按 bot 维度存储，多 bot 并行失败时各自保留错误信息
   const [restartErrors, setRestartErrors] = useState<RestartErrors>(new Map());
 
@@ -3246,15 +3248,35 @@ export const OpenClawSettingsPage = () => {
     }
   };
 
+  const handleExportWorkspace = async () => {
+    if (!activeBot || activeBot.status !== "running" || exportingBotIds.has(activeBot.id)) return;
+    const targetBotId = activeBot.id;
+    setExportingBotIds((prev) => new Set(prev).add(targetBotId));
+    try {
+      const result = await repositories.bots.startRescueExport(targetBotId);
+      toast.success(t("导出任务已发起，完成后会发送到绑定邮箱。任务 ID: {{id}}", { id: result.actionRunId }));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("导出任务发起失败"));
+    } finally {
+      setExportingBotIds((prev) => {
+        const next = new Set(prev);
+        next.delete(targetBotId);
+        return next;
+      });
+    }
+  };
+
   // 当前 tab 的 bot 是否正在重启
   const isActiveBotRestarting = computeIsActiveBotRestarting(activeBot, restartingBotIds);
+  const isActiveBotExporting = activeBot ? exportingBotIds.has(activeBot.id) : false;
   // 当前 tab 是否展示错误
   const activeBotRestartError = getActiveBotRestartError(activeBot, restartErrors);
 
   useEffect(() => {
     return installOpenClawConsoleHelpers({
-      host: window as Window & { help?: unknown; terminal?: unknown; console: Console },
+      host: window as Window & { help?: unknown; terminal?: unknown; show?: unknown; console: Console },
       getTerminalPath: () => (activeBot ? `/bots/${activeBot.id}/terminal` : null),
+      onShowHiddenTools: () => setShowHiddenAgentTools(true),
     });
   }, [activeBot]);
 
@@ -3846,6 +3868,8 @@ export const OpenClawSettingsPage = () => {
               ];
               const isRestartDisabled = resettingAcli || isActiveBotRestarting || activeBot.status !== "running";
               const restartTooltip = resettingAcli ? t("请稍后") : t("重启");
+              const exportDisabled = resettingAcli || isActiveBotExporting || activeBot.status !== "running";
+              const exportTooltip = isActiveBotExporting ? t("导出中...") : exportDisabled ? t("请稍后") : t("导出工作区");
               const hasViewedChannel = viewedChannelBotIds.has(activeBot.id);
               const resetBlockReason = getResetBlockReason(activeBot, resetting, hasViewedChannel);
               const resetDisabled = resettingAcli || resetting || resetBlockReason !== null;
@@ -4055,6 +4079,37 @@ export const OpenClawSettingsPage = () => {
                       aria-label={t("实例配置导航")}
                       className="mt-4 rounded-md border border-black/[0.06] bg-white p-2 shadow-[0_8px_28px_rgba(15,23,42,0.04)]"
                     >
+                      {showHiddenAgentTools ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setShowTerminal(true)}
+                            className="lw-settings-nav-item flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 font-medium text-black/55 transition-colors hover:bg-black/[0.035] hover:text-black/85"
+                          >
+                            <span className="flex h-5 w-5 items-center justify-center"><TerminalSquare className="h-4 w-4" /></span>
+                            <span className="flex-1 text-left text-[15px]">{t("终端")}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (exportDisabled) return;
+                              void handleExportWorkspace();
+                            }}
+                            disabled={exportDisabled}
+                            className={cn(
+                              "lw-settings-nav-item flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 font-medium transition-colors",
+                              exportDisabled
+                                ? "cursor-not-allowed text-black/25"
+                                : "text-black/55 hover:bg-black/[0.035] hover:text-black/85",
+                            )}
+                          >
+                            <span className="flex h-5 w-5 items-center justify-center">
+                              {isActiveBotExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                            </span>
+                            <span className="flex-1 text-left text-[15px]">{exportTooltip}</span>
+                          </button>
+                        </>
+                      ) : null}
                       {settingsSections.map((section) => {
                         const isActive = section.id === activeSection;
                         return (
