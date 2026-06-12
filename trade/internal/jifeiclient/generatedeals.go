@@ -15,60 +15,80 @@ func errInvalidArg(msg string) error {
 
 // GenerateDealsRequest 是 jifei CGW `qcloud.Deal.generateDeals` 下单接口入参（para 内层）。
 //
-// **设计自决 Q67（2026-05-08 迭代 3 落地时）**：
-// 设计稿 §3.5.5 只对 getPrice 给出完整字段集；generateDeals 下单方向只在 §4.2.1 / Step T3 /
-// Q47 / Q48 / Q42 等条目散点提到约束，没有独立的协议小节。本字段集以 PDF 第 8 页 PascalCase
-// 字段名 + Lightclaw 必需字段集为权威：
+// **协议字段名规范（v1.7.19 B14 协议校准，PDF §4.1 / §4.2 实测）**：
+//   - 字段全部 **camelCase**（PDF §4.1 字段表 + §4.2 示例严格一致；历史 v1.7.5~v1.7.18
+//     PascalCase 是 AI 误判，联调实测 jifei 返 returnCode=100001 后翻 PDF 校准）
+//   - 数组名 **`goods`**（PDF §4.1 line "para.goods Array"），不是 `goodsInfos`
 //
-//   - PascalCase 命名（与 getPrice 询价的 camelCase 风格不一致由本 client 适配层吸收 — 业务层
-//     / ctl / 前端不感知）
-//   - 仅传协议必需字段：OwnerUin / Uin / GoodsInfos[]，不传 TagList / VoucherIDs / AgentPay（Q48）
-//   - 不传 Currency 字段（Q42：jifei 按 ProductCode = p_lighthouse 自动推导默认币种 CNY）
-//   - 不传 GoodsAlias（Q46：协议层非必填）
-//   - 不传 auth.signature（Q47 不签名）
-//   - PayMode 来自 trade_order.pay_mode 显式透传（Q42）
+// **Lightclaw 字段集约束**（最小化协议表面 Q47 / Q48 / Q42 / Q46）：
+//   - 协议必需：ownerUin / uin / appId / goods[]
+//   - 不传：tagList / voucherIds / agentPay / currency (Q46 / Q48 / Q42)
+//   - 不传：auth.signature (Q47 不签名)
+//   - payMode 来自 trade_order.pay_mode 显式透传 (Q42)
 //
-// 如果 PDF 后续投放修订要求新增必填字段，按"最小化协议表面"原则补充到本结构 + Q67 / Q68
-// 决策记录里。
+// **AppID 字段补齐（v1.7.28 BUG-05 修复，TC1.2.1 联调暴露）**：
+//   - PDF §4.1 明确 `para.appId Integer 是`（必填）
+//   - v1.7.19 协议校准时只补了 GenerateDealsAndPayRequest.AppID，本 struct 漏配
+//   - 实测 jifei 返 100001 "param error[check appId not match uin 700000164995]" — jifei
+//     在请求里没看到 appId，按默认空值 (0) 与该 uin 的实际 appId 校验失败
+//   - 与 GenerateDealsAndPayRequest.AppID 同范式：int64 + omitempty（空 0 时不传字段，
+//     允许 jifei 从 ownerUin 反查；trade 调用方应该总是传非零值，从 shadowclient 拿）
 type GenerateDealsRequest struct {
-	OwnerUin   string           `json:"OwnerUin"`
-	Uin        string           `json:"Uin"`
-	GoodsInfos []GoodsInfo      `json:"GoodsInfos"`
+	OwnerUin string      `json:"ownerUin"`
+	Uin      string      `json:"uin"`
+	AppID    int64       `json:"appId,omitempty"`
+	Goods    []GoodsInfo `json:"goods"`
 }
 
-// GoodsInfo 是 GenerateDealsRequest.GoodsInfos 单条记录。
+// GoodsInfo 是 GenerateDealsRequest.Goods / GenerateDealsAndPayRequest.Goods 单条记录。
 //
-// 字段集与询价 ResInfo 类似但 PascalCase；GoodsDetail 仍是 map[string]interface{}，
-// 由 jifei 适配层从 trade_bundle_definition.sv_list 展平 + product_info 透传后填入。
+// 字段集与询价 ResInfo 一致（询价 ResInfo / 下单 GoodsInfo 在 PDF 都是 camelCase）；
+// GoodsDetail 仍是 map[string]interface{}，由 jifei 适配层从 trade_bundle_definition.sv_list
+// 展平 + product_info 透传后填入。
+//
+// Q71 拍板（2026-05-13）：GoodsCategoryID 类型从 string 改 int64，与 jifei PDF §4.1
+// `"goodsCategoryId": 100019`（无引号 int）一致。GoodsDetail map 内的 pid / sv_* 字段
+// 也是 int64 由 trade 适配层直接透传，不 stringify。
+//
+// ProjectID（v1.7.19 B14 新增）：PDF §4.1 标 "是" 必填（"没有项目概念则传 0"），
+// Lightclaw 没有项目概念，trade 适配层固定传 0。
 type GoodsInfo struct {
-	GoodsCategoryID string                 `json:"GoodsCategoryId"`
-	RegionID        int                    `json:"RegionId,omitempty"`
-	ZoneID          int                    `json:"ZoneId,omitempty"`
-	GoodsNum        int                    `json:"GoodsNum"`
-	PayMode         int                    `json:"PayMode"`
-	GoodsDetail     map[string]interface{} `json:"GoodsDetail,omitempty"`
-	// 注：不持有 TagList / VoucherIDs / AgentPay / GoodsAlias / Currency 字段（Q46 / Q48 / Q42 收敛）。
+	GoodsCategoryID int64                  `json:"goodsCategoryId"`
+	RegionID        int                    `json:"regionId,omitempty"`
+	ZoneID          int                    `json:"zoneId,omitempty"`
+	GoodsNum        int                    `json:"goodsNum"`
+	PayMode         int                    `json:"payMode"`
+	ProjectID       int                    `json:"projectId"`
+	GoodsDetail     map[string]interface{} `json:"goodsDetail,omitempty"`
+	// 注：不持有 tagList / voucherIds / agentPay / goodsAlias / currency 字段（Q46 / Q48 / Q42 收敛）。
 }
 
-// GenerateDealsResponse 是 CGW returnValue 反序列化目标。
+// GenerateDealsResponse 是 CGW envelope.data 反序列化目标。
 //
-// PDF 第 8 页约定 generateDeals 响应结构：
+// **响应字段集（v1.7.28 BUG-11 修订 2026-05-21，PDF §5.1 / §5.2 实测）**：
 //
-//	{
-//	  BigDealId:  "<jifei 大订单号>",
-//	  DealNames:  ["<子订单 1>", "<子订单 2>", ...],
-//	  PriceInfos: [{ ... }, { ... }, ...]
-//	}
+// PDF §5.2 generateDeals 响应明示 `bigDealId String` (**单数 string**) +
+// `dealNames Array` (复数数组)。jifei 实测 2026-05-21 04:11:59 返回 body：
+//   "data": {
+//     "dealNames": ["20260521995022860913841"],     // 复数数组
+//     "bigDealId": "20260521995022860913831"        // 单数 string
+//   }
 //
-// Lightclaw 本期单次下单 GoodsInfos 长度 = 1（一笔下单一个 pass，与 Q41 协同 GoodsNum=1），
-// 所以 DealNames 数组通常只含 1 条 — 但 client 不强约束数组长度，由调用方按业务语义提取。
+// **历史回归 (v1.7.19 B14 → BUG-11)**：v1.7.19 commit 当时把 BigDealID string
+// 改成 BigDealIDs []string + json:"bigDealIds"，注释写"历史 BigDealID string 是
+// 误判"。但 PDF §5.2 + 实测都是 string 单数 — v1.7.19 校准方向反了，导致 trade
+// 解析 jifei 响应时拿不到 bigDealId（unmarshal 静默成空数组）→ adapter 判定
+// "BigDealIDs=[] DealNames=[...]" 走 ErrJifeiResponseInvalid 路径返 502.
 //
-// PriceInfos 价格字段（Q50）一律不持久化 — 留作 ELK 日志审计兜底；client 提供 PriceInfos
-// 字段供调用方透传日志，但业务层 trade_order 表不存。
+// **注意 generateDealsAndPay 不同**：PDF generateDealsAndPay 响应是 `bigDealIds Array`
+// (复数数组，因为支持多商品下单)，generatedealsandpay.go 的 BigDealIDs []string 是对的。
+//
+// Lightclaw 本期单次下单 goods 长度 = 1，dealNames 数组通常只含 1 条；BigDealID 也
+// 只有 1 个。
 type GenerateDealsResponse struct {
-	BigDealID  string                   `json:"BigDealId"`
-	DealNames  []string                 `json:"DealNames"`
-	PriceInfos []map[string]interface{} `json:"PriceInfos,omitempty"`
+	DealNames  []string                 `json:"dealNames"`
+	BigDealID  string                   `json:"bigDealId"`
+	PriceInfos []map[string]interface{} `json:"priceInfos,omitempty"`
 }
 
 // GenerateDeals 调用 jifei CGW `qcloud.Deal.generateDeals` 下单接口。

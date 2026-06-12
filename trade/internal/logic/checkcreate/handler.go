@@ -67,29 +67,41 @@ const HandlerTimeout = 3 * time.Second
 
 // Deps 是 handler 的依赖集合，由调用方在 server 装配阶段注入。
 type Deps struct {
-	OrderStore  store.OrderStore             // §5.2 #3/#4 trade_order 反查
-	BundleStore store.BundleDefinitionStore  // §5.2 #4 Q54 sv_* / pid 5维对账（trade_bundle_definition 真源）
-	CTLClient   ctlclient.Client             // §5.2 #2 GetBundleByID + §5.2 #5 ListPassesByUser
-	Builder     *jifei.FrameworkBuilder      // 构造 jifei framework 双层出参
+	OrderStore  store.OrderStore            // 暂保留依赖位（v1.7.28 BUG-07 移除 trade_order 反查后不消费；兼容 server 装配）
+	BundleStore store.BundleDefinitionStore // §5.2 #4 Q54 sv_* / pid 5维对账（trade_bundle_definition 真源）
+	CTLClient   ctlclient.Client            // §5.2 #2 GetBundleByID + §5.2 #5 ListPassesByUser（v1.7.28 BUG-24 恢复互斥占用反查）
+	Builder     *jifei.FrameworkBuilder     // 构造 jifei framework 双层出参
 }
 
 // callbackPara 是 jifei `lightvela.pass.checkCreate` 回调的 interface.para 业务字段集。
 //
-// 与设计稿 §5.1 草案字段集对齐（dealName / appId / uin / subProductCode / bundleId / goodsNum /
-// goodsDetail），由 dispatcher 传过来的 para 是 framework 内层的 raw JSON。
+// 与 PDF §2.2 协议字段对齐（v1.7.28 BUG-07 修订 2026-05-21）：
+//   - jifei checkCreate **不发 dealName / tranId**（PDF §1.1 明示 "检查时请求参数不包含
+//     tranId 或者 dealName，因为订单可能尚未生成"），原 v1.7.x 设计稿"靠 dealName 反查
+//     trade_order"路径取消。
+//   - jifei 协议层无 bundleId 字段（这是 trade 业务层概念）；trade 出向 generateDeals 时
+//     把 bundleId 塞进 goodsDetail 透传（PDF §2.2 "goodsDetail 中字段都是透传"），handler
+//     从 GoodsDetail["bundleId"] 取出反查 trade_bundle_definition。
 //
-// 字段类型说明：
-//   - GoodsNum / PayMode：jifei 协议层的整数（PDF 第 6 页示例）；payMode 在 PDF 协议层
-//     当前未在 checkCreate para 顶层显式列出，从 goodsDetail 取（Q54 含义"询价参数"）。
-//   - GoodsDetail：jifei 协议层完整 goodsDetail map，包含 pid / timeSpan / timeUnit / goodsNum / sv_*。
+// 字段类型说明（每个字段都标注 PDF 协议类型，铁律见 jifei/envelope.go 包注释）：
+//   - AppID: PDF "long"（int）— 云平台应用 ID；jifei 实测发 number。**v1.7.28 BUG-06
+//     同模式修复 (2026-05-21)**：原定义 string，与 PDF 不符且会触发 unmarshal err。
+//   - Uin: PDF "string"（quoted）— 资源实际拥有者主账号。
+//   - OperateUin: PDF "string"（quoted）— 订单实际操作者。
+//   - Region / ZoneID / PayMode: PDF "int"。
+//   - SubProductCode / ProductCode: PDF "string"（para 顶层 + goodsDetail 内都有，jifei 重复发）。
+//   - GoodsDetail: jifei 协议层完整 goodsDetail map，含 trade 出向时塞的 bundleId 字段。
 type callbackPara struct {
-	DealName       string                 `json:"dealName"`
-	AppID          string                 `json:"appId"`
-	Uin            string                 `json:"uin"`
-	SubProductCode string                 `json:"subProductCode"`
-	BundleID       string                 `json:"bundleId"`
-	GoodsNum       int                    `json:"goodsNum"`
-	GoodsDetail    map[string]interface{} `json:"goodsDetail"`
+	AppID          int64                  `json:"appId"`          // PDF: long (number)
+	Uin            string                 `json:"uin"`            // PDF: string (quoted)
+	OperateUin     string                 `json:"operateUin"`     // PDF: string (quoted)
+	Region         int                    `json:"region"`         // PDF: int
+	ZoneID         int                    `json:"zoneId"`         // PDF: int
+	PayMode        int                    `json:"payMode"`        // PDF: int (0/1)
+	ProductCode    string                 `json:"productCode"`    // PDF: string (optional)
+	SubProductCode string                 `json:"subProductCode"` // PDF: string
+	ProjectID      int                    `json:"projectId"`      // PDF: long (number, 默认 0)
+	GoodsDetail    map[string]interface{} `json:"goodsDetail"`    // PDF: object
 }
 
 // Install 把 checkCreate 真 handler 注册到 dispatcher，替代 InstallStubHandlers 里的 stub。
@@ -102,6 +114,13 @@ func Install(d *jifei.Dispatcher, deps Deps) {
 
 // makeHandler 构造闭包 handler；导出便于单元测试直接构造 handler 而不必走 dispatcher。
 func makeHandler(deps Deps) jifei.Handler {
+	// errFramework 是 NewErrorWithData 的本地包装，统一在 data 内塞 PDF §3.4 要求的
+	// status 字段（=本次 returnCode）。这样 jifei 前台错误码映射能拿到 trade 业务错码。
+	// PDF §3.1：失败时 data.status 必带；§3.4：returnCode 非 0 时 status 错误码也会生效。
+	errFramework := func(code int, message string) jifei.Framework {
+		return deps.Builder.NewErrorWithData(code, message, map[string]any{"status": code})
+	}
+
 	return func(ctx context.Context, paraRaw json.RawMessage) (jifei.Framework, error) {
 		// (0) 总超时兜底（Q59）。
 		ctx, cancel := context.WithTimeout(ctx, HandlerTimeout)
@@ -110,173 +129,211 @@ func makeHandler(deps Deps) jifei.Handler {
 		// (1) 解码 para
 		var para callbackPara
 		if err := json.Unmarshal(paraRaw, &para); err != nil {
-			return deps.Builder.NewError(ReturnCodeInvalidPara, fmt.Sprintf("invalid para json: %v", err)), nil
+			return errFramework(ReturnCodeInvalidPara, fmt.Sprintf("invalid para json: %v", err)), nil
 		}
 		if err := validatePara(&para); err != nil {
-			return deps.Builder.NewError(ReturnCodeInvalidPara, err.Error()), nil
+			return errFramework(ReturnCodeInvalidPara, err.Error()), nil
 		}
 
-		// (2) §5.2 #3/#4 trade_order 反查（同时为后续两项校验提供数据源）。
-		order, err := deps.OrderStore.GetOrderByDealName(ctx, para.DealName)
-		if err != nil {
-			if errors.Is(err, store.ErrTradeOrderNotFound) {
-				return deps.Builder.NewError(
-					ReturnCodeOrderNotFound,
-					fmt.Sprintf("trade_order not found for dealName=%s", para.DealName),
-				), nil
-			}
-			return deps.Builder.NewError(
-				ReturnCodeUpstreamUnavailable,
-				fmt.Sprintf("get trade_order failed: %v", err),
+		// v1.7.28 BUG-07：从 jifei goodsDetail 取 bundleId（trade 出向 placeorder 时塞进去的，
+		// PDF §2.2 "goodsDetail 中字段都是透传"，jifei 原样回传）。
+		//
+		// 协议背景：PDF §1.1 明示 "检查时请求参数不包含 tranId 或者 dealName，因为订单可能尚未生成"，
+		// 即 checkCreate 阶段 jifei 不发 dealName，原 §5.2 设计稿"靠 dealName 反查 trade_order"路径
+		// 不可行（trade_order 在 generateDeals 同步链路里也还未落库）。改用 goodsDetail 透传 bundleId
+		// 让 trade 直接反查 trade_bundle_definition 完成 5 维对账。
+		bundleID, ok := goodsDetailStringField(para.GoodsDetail, "bundleId")
+		if !ok || bundleID == "" {
+			return errFramework(
+				ReturnCodeInvalidPara,
+				"goodsDetail.bundleId is required (trade out-bound 透传字段; v1.7.28 BUG-07)",
 			), nil
 		}
 
-		// (3) §5.2 #2 bundle 存在 + 在线 + 未售罄（反向调 ctl/bundle）。
-		bundle, err := deps.CTLClient.GetBundleByID(ctx, para.BundleID)
+		// (2) §5.2 #2 bundle 存在 + 在线 + 未售罄（反向调 ctl/bundle）。
+		bundle, err := deps.CTLClient.GetBundleByID(ctx, bundleID)
 		if err != nil {
 			if errors.Is(err, ctlclient.ErrNotFound) {
-				return deps.Builder.NewError(
+				return errFramework(
 					ReturnCodeBundleNotFound,
-					fmt.Sprintf("bundle not found: bundleId=%s", para.BundleID),
+					fmt.Sprintf("bundle not found: bundleId=%s", bundleID),
 				), nil
 			}
-			return deps.Builder.NewError(
+			return errFramework(
 				ReturnCodeUpstreamUnavailable,
 				fmt.Sprintf("get bundle failed: %v", err),
 			), nil
 		}
 		if bundle.BundleState != "ONLINE" {
-			return deps.Builder.NewError(
+			return errFramework(
 				ReturnCodeBundleOffline,
-				fmt.Sprintf("bundle state=%s (expected ONLINE): bundleId=%s", bundle.BundleState, para.BundleID),
+				fmt.Sprintf("bundle state=%s (expected ONLINE): bundleId=%s", bundle.BundleState, bundleID),
 			), nil
 		}
 		if bundle.BundleSalesState != "AVAILABLE" {
-			return deps.Builder.NewError(
+			return errFramework(
 				ReturnCodeBundleSoldOut,
-				fmt.Sprintf("bundle sales_state=%s (expected AVAILABLE): bundleId=%s", bundle.BundleSalesState, para.BundleID),
+				fmt.Sprintf("bundle sales_state=%s (expected AVAILABLE): bundleId=%s", bundle.BundleSalesState, bundleID),
 			), nil
 		}
 
-		// (4) §5.2 #4 Q54 5 维对账（pid + sv_* + timeSpan + timeUnit + goodsNum）。
-		//     pid + sv_* 真源是 trade_bundle_definition；timeSpan / timeUnit / goodsNum 真源是 trade_order。
-		bundleDef, err := deps.BundleStore.GetBundleDefinitionByID(ctx, para.BundleID)
+		// (3) §5.2 #4 5 维对账（pid + sv_* + timeSpan + timeUnit + goodsNum）。
+		//     pid + sv_* 真源是 trade_bundle_definition；timeSpan / timeUnit / goodsNum 真源
+		//     现在没有 trade_order 反查，仅做合法性校验（>0 / 在合法集合内）。
+		bundleDef, err := deps.BundleStore.GetBundleDefinitionByID(ctx, bundleID)
 		if err != nil {
 			if errors.Is(err, store.ErrBundleDefinitionNotFound) {
-				return deps.Builder.NewError(
+				return errFramework(
 					ReturnCodeBundleNotFound,
-					fmt.Sprintf("trade_bundle_definition not found: bundleId=%s", para.BundleID),
+					fmt.Sprintf("trade_bundle_definition not found: bundleId=%s", bundleID),
 				), nil
 			}
-			return deps.Builder.NewError(
+			return errFramework(
 				ReturnCodeUpstreamUnavailable,
 				fmt.Sprintf("get bundle_definition failed: %v", err),
 			), nil
 		}
-		if msg := verifyGoodsDetail(para.GoodsDetail, bundleDef, order); msg != "" {
-			return deps.Builder.NewError(ReturnCodeBusinessParamMismatch, msg), nil
+		if msg := verifyGoodsDetail(para.GoodsDetail, bundleDef); msg != "" {
+			return errFramework(ReturnCodeBusinessParamMismatch, msg), nil
 		}
 
-		// (5) §5.2 #3 pay_mode 与 trade_order 落库一致。
-		//     payMode 字段在 jifei goodsDetail 中（与询价 / 下单的 payMode 一致约定）。
-		payModeFromPara, payModeProvided := goodsDetailIntField(para.GoodsDetail, "payMode")
-		// 兼容某些 jifei 版本把 payMode 平铺在 para 顶层（看 PDF 不同页示例不一致），
-		// 当 goodsDetail 中没有 payMode 时不要立刻报错 — 可能由 trade_order 的 PayMode 兜底校验，
-		// 但严格按 §5.2 #3 字面"jifei 回调入参的 payMode 与 trade_order 落库 payMode 一致"，
-		// 找不到入参 payMode 应明确报错（缺字段也算字段不一致）。
-		if !payModeProvided {
-			return deps.Builder.NewError(
-				ReturnCodeBusinessParamMismatch,
-				"payMode missing in goodsDetail (required by §5.2 #3)",
-			), nil
+		// (4) §5.2 #3 pay_mode 合法性（0=后付费 / 1=预付费）。
+		//     原 §5.2 #3 是"jifei 入参 payMode 与 trade_order 落库 payMode 一致"，但 v1.7.28 BUG-07
+		//     时段 trade_order 还未落库（generateDeals 同步链路里 jifei 立即触发 checkCreate），
+		//     无法做对账，仅做合法值范围校验。后续若改 placeorder 把 trade_order pre-insert（v2.x），
+		//     再恢复对账分支。
+		//     payMode 在 jifei 协议层既出现在 para 顶层也出现在 goodsDetail（实测 jifei 两处都发），
+		//     优先取 goodsDetail，回退到顶层。
+		payMode, payModeOK := goodsDetailIntField(para.GoodsDetail, "payMode")
+		if !payModeOK {
+			payMode = para.PayMode
+			payModeOK = para.PayMode != 0 // 0 后付费, 1 预付费, 0 也合法 — 这里仅检查存在性
 		}
-		if payModeFromPara != order.PayMode {
-			return deps.Builder.NewError(
+		_ = payModeOK // 暂不强制必填，jifei 不一定每次都带
+		if payMode != 0 && payMode != 1 {
+			return errFramework(
 				ReturnCodeBusinessParamMismatch,
-				fmt.Sprintf("payMode mismatch: jifei=%d, trade_order=%d", payModeFromPara, order.PayMode),
+				fmt.Sprintf("payMode invalid: expected 0 or 1, got %d", payMode),
 			), nil
 		}
 
-		// (6) §5.2 #5 quota / 互斥占用（Q66 修订 + Q69：列表非空即互斥）。
-		//     用 trade_order.ExternalUserID 作为查询主体（与下单时记录一致）。
-		passes, err := deps.CTLClient.ListPassesByUser(ctx, order.ExternalUserID)
+		// (5) §5.2 #5 quota / 互斥占用（Q66 修订 + Q69 列表非空即互斥）。
+		//
+		// v1.7.28 BUG-24 修复（2026-05-28）：从 jifei goodsDetail 透传字段 externalUserId 取 user_id。
+		//
+		// 协议背景：v1.7.28 BUG-22 commit a63ba845 已经验证 trade 出向 placeorder 时把 externalUserId
+		// 塞进 goodsDetail（PDF §2.2 "goodsDetail 中字段都是透传"），jifei 在所有同步链路回调里原样回推；
+		// 因此 checkCreate handler 直接消费 goodsDetail.externalUserId，**无需** shadow 反查
+		// (uin, appId) → externalUserId（这是原 v1.7.28 BUG-07 期间注释里错误的事实判断，被本次修复纠正）。
+		//
+		// 错误码语义（Q56 严格对齐）：
+		//   - 用户已有 pass：返 ReturnCodeQuotaOccupied=600106（B 类业务错码，**非**退款魔法值 352014）；
+		//     设计稿 builder.go:18 明确 "checkCreate 不是业务层永久错，**不返** 352014（避免误退款）"。
+		//     jifei 拿到非零 returnCode 重试若干次后放弃，相当于"拒绝下单"。
+		//   - ctl 5xx / 网络错：返 ReturnCodeUpstreamUnavailable=600107（B 类链路异常）。
+		//   - goodsDetail 缺 externalUserId：返 ReturnCodeInvalidPara=600108（trade 出向链路异常，理应必塞）。
+		externalUserID, ok := goodsDetailStringField(para.GoodsDetail, "externalUserId")
+		if !ok || externalUserID == "" {
+			return errFramework(
+				ReturnCodeInvalidPara,
+				"goodsDetail.externalUserId is required (trade out-bound 透传字段; v1.7.28 BUG-24)",
+			), nil
+		}
+		passes, err := deps.CTLClient.ListPassesByUser(ctx, externalUserID)
 		if err != nil {
-			return deps.Builder.NewError(
+			return errFramework(
 				ReturnCodeUpstreamUnavailable,
-				fmt.Sprintf("list passes failed: %v", err),
+				fmt.Sprintf("list passes by user failed: externalUserId=%s, err=%v", externalUserID, err),
 			), nil
 		}
 		if len(passes) > 0 {
-			return deps.Builder.NewError(
+			return errFramework(
 				ReturnCodeQuotaOccupied,
-				fmt.Sprintf("user already has %d pass(es), mutex blocked", len(passes)),
+				fmt.Sprintf("user already holds %d active pass(es): externalUserId=%s",
+					len(passes), externalUserID),
 			), nil
 		}
 
-		// (7) 全部校验通过。data 字段按 PDF 协议层 checkCreate 出参约定填空对象（jifei 不取业务字段）。
-		return deps.Builder.NewSuccess(map[string]any{}), nil
+		// (6) 全部校验通过。
+		// data 字段按 PDF §3.1 协议层 checkCreate 出参约定填 `{"status": 0}`
+		// (0=可购买；缺失 status 字段 jifei 会判定为协议不合规拒绝下单)。
+		return deps.Builder.NewSuccess(map[string]any{"status": 0}), nil
 	}
 }
 
 // validatePara 做基本必填字段校验；返非 nil 错误时 handler 会用 ReturnCodeInvalidPara 包装。
+//
+// v1.7.28 BUG-07 修订：删除 dealName / bundleId 顶层必填校验。
+//   - dealName: PDF §1.1 明示 checkCreate 阶段 jifei 不发；
+//   - bundleId: jifei 协议层无此字段，由 trade 出向时塞进 goodsDetail 透传，handler 内部
+//     用 goodsDetailStringField 取，不在顶层。
 func validatePara(p *callbackPara) error {
-	if p.DealName == "" {
-		return errors.New("dealName is required")
+	if p.AppID == 0 {
+		return errors.New("appId is required")
 	}
-	if p.BundleID == "" {
-		return errors.New("bundleId is required")
+	if p.Uin == "" {
+		return errors.New("uin is required")
 	}
 	if p.GoodsDetail == nil {
 		return errors.New("goodsDetail is required")
 	}
-	if p.GoodsNum <= 0 {
-		return errors.New("goodsNum must be > 0")
-	}
 	return nil
 }
 
-// verifyGoodsDetail 实现 Q54 5 维对账：pid + sv_* + timeSpan + timeUnit + goodsNum。
+// verifyGoodsDetail 校验 jifei 回调入参 goodsDetail 与 trade_bundle_definition 一致。
+//
+// v1.7.28 BUG-07 修订：原 5 维对账（pid + sv_* + timeSpan + timeUnit + goodsNum）的真源
+// 拆分原本是 (pid + sv_* → trade_bundle_definition；timeSpan/timeUnit/goodsNum → trade_order)。
+// 由于 jifei 在 generateDeals 同步链路里立即触发 checkCreate 回调，trade_order 还未落库，
+// 取消 trade_order 对账分支，仅保留：
+//   - pid: 与 trade_bundle_definition.Pid 一致（防止 jifei 串号 / 篡改商品配置）
+//   - sv_*: 与 trade_bundle_definition.SVList 一致（同上）
+//   - timeSpan/timeUnit/goodsNum: 仅做合法范围校验（>0 / 在合法集合内）
 //
 // 真源拆解：
-//   - pid → trade_bundle_definition.Pid
-//   - sv_*（如 sv_cpu / sv_mem）→ trade_bundle_definition.SVList（运营录入 key 不带 sv_ 前缀；
-//     对账时按"goodsDetail 中所有 sv_<key> 必须等于 SVList[key] 的字符串值"）
-//   - timeSpan / timeUnit / goodsNum → trade_order（下单时落库的快照）
+//   - pid → trade_bundle_definition.Pid（int64，Q71 拍板 2026-05-13）
+//   - sv_*（如 sv_lighthouse_lv_compute_xxx）→ trade_bundle_definition.SVList（int64 值，Q71）
+//     2026-05-13 起契约变更：运营录入 key **必须**已带 sv_ 前缀；值是 int 直接比较数值，
+//     与 jifei 协议层一致（PDF §4.4 line 30/38 "sv_cvm_cpu_s1": 1）。
 //
 // 任一不一致返非空 message；全部一致返 ""。
-func verifyGoodsDetail(goodsDetail map[string]interface{}, def *store.BundleDefinition, order *store.TradeOrder) string {
-	// pid
-	pid, ok := goodsDetailStringField(goodsDetail, "pid")
+func verifyGoodsDetail(goodsDetail map[string]interface{}, def *store.BundleDefinition) string {
+	// pid（int64 数值比较）
+	pid, ok := goodsDetailInt64Field(goodsDetail, "pid")
 	if !ok || pid != def.Pid {
-		return fmt.Sprintf("pid mismatch: jifei=%q, bundle_definition=%q", pid, def.Pid)
+		return fmt.Sprintf("pid mismatch: jifei=%d, bundle_definition=%d", pid, def.Pid)
 	}
 
-	// timeSpan（Period）
+	// timeSpan: 合法范围校验（>0）
 	timeSpan, ok := goodsDetailIntField(goodsDetail, "timeSpan")
-	if !ok || timeSpan != order.Period {
-		return fmt.Sprintf("timeSpan mismatch: jifei=%d, trade_order.period=%d", timeSpan, order.Period)
+	if !ok || timeSpan <= 0 {
+		return fmt.Sprintf("timeSpan invalid: expected > 0, got %d", timeSpan)
 	}
 
-	// timeUnit
+	// timeUnit: 合法集合校验（y/m/d/h/M/s/p）
 	timeUnit, ok := goodsDetailStringField(goodsDetail, "timeUnit")
-	if !ok || timeUnit != order.TimeUnit {
-		return fmt.Sprintf("timeUnit mismatch: jifei=%q, trade_order.time_unit=%q", timeUnit, order.TimeUnit)
+	if !ok {
+		return "timeUnit missing in goodsDetail"
+	}
+	switch timeUnit {
+	case "y", "m", "d", "h", "M", "s", "p":
+		// PDF §2.2 timeUnit 合法集合
+	default:
+		return fmt.Sprintf("timeUnit invalid: expected y/m/d/h/M/s/p, got %q", timeUnit)
 	}
 
-	// goodsNum
+	// goodsNum: 合法范围校验（>0）
 	goodsNum, ok := goodsDetailIntField(goodsDetail, "goodsNum")
-	if !ok || goodsNum != order.GoodsNum {
-		return fmt.Sprintf("goodsNum mismatch: jifei=%d, trade_order.goods_num=%d", goodsNum, order.GoodsNum)
+	if !ok || goodsNum <= 0 {
+		return fmt.Sprintf("goodsNum invalid: expected > 0, got %d", goodsNum)
 	}
 
-	// sv_*：遍历 SVList，每个 key 对应 jifei 入参中的 sv_<key>，值字符串相等。
+	// sv_*：遍历 SVList（int64 值），按 int64 数值比较 jifei 入参 — Q71 推翻 Q66。
 	for key, expected := range def.SVList {
-		jifeiKey := "sv_" + key
-		expectedStr := fmt.Sprintf("%v", expected)
-		got, ok := goodsDetailStringField(goodsDetail, jifeiKey)
-		if !ok || got != expectedStr {
-			return fmt.Sprintf("sv field mismatch: jifei[%s]=%q, bundle_definition.sv_list[%s]=%q",
-				jifeiKey, got, key, expectedStr)
+		got, ok := goodsDetailInt64Field(goodsDetail, key)
+		if !ok || got != expected {
+			return fmt.Sprintf("sv field mismatch: jifei[%s]=%d, bundle_definition.sv_list[%s]=%d",
+				key, got, key, expected)
 		}
 	}
 
@@ -321,6 +378,36 @@ func goodsDetailIntField(m map[string]interface{}, key string) (int, bool) {
 		return int(t), true
 	case string:
 		n, err := strconv.Atoi(t)
+		if err != nil {
+			return 0, false
+		}
+		return n, true
+	default:
+		return 0, false
+	}
+}
+
+// goodsDetailInt64Field 从 goodsDetail map 取 int64 字段（用于 pid / sv_* 这种需要保留 BIGINT 精度的字段）。
+//
+// JSON unmarshal 数字默认走 float64，float64 尾数精度只有 ~52 bit，对于 jifei pid（最多 10 位左右）
+// 完全够用；但保留 string / int / int64 兼容性以应对协议层若启用 json.Number 或上游主动传字符串的场景。
+//
+// Q71 拍板（2026-05-13）：jifei 协议层 pid / sv_* 都是 int（PDF §4.4 / §4.4.1.1.2），
+// trade 侧统一用 int64 与 jifei 协议保持一致，verifyGoodsDetail 直接按数值比较，不再 stringify。
+func goodsDetailInt64Field(m map[string]interface{}, key string) (int64, bool) {
+	v, ok := m[key]
+	if !ok || v == nil {
+		return 0, false
+	}
+	switch t := v.(type) {
+	case float64:
+		return int64(t), true
+	case int:
+		return int64(t), true
+	case int64:
+		return t, true
+	case string:
+		n, err := strconv.ParseInt(t, 10, 64)
 		if err != nil {
 			return 0, false
 		}

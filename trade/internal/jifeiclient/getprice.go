@@ -1,6 +1,56 @@
 package jifeiclient
 
-import "context"
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+)
+
+// flexString 是 jifei CGW 价格字段的容忍解码类型 (v1.7.17 B12)。
+//
+// 背景：jifei CGW 询价 / 下单接口对金额字段（price / totalCost / realTotalCost
+// 等）的回包类型不稳定 — 实测 sandbox-bj-7 询价响应同一字段：
+//   - 设计稿 / PDF §4.4 标记为 string
+//   - 实际 jifei 沙箱回包是裸数字 (e.g. `"price": 4900`)
+//
+// 为了同时容忍数字和字符串，并且保持业务层 InquiryItem.Price string 字段不变，
+// 这里定义 flexString 作为底层 string，实现 UnmarshalJSON 时数字裸值原样保留
+// 数字字面量字符串（如 `4900` → "4900"，`100.00` → "100.00"），字符串值剥引号。
+//
+// 调用方（adapter / logic 层）赋值给 string 类型业务字段时显式 string(d.Price)
+// 转换即可。
+type flexString string
+
+// UnmarshalJSON 同时接受 JSON string、JSON number、JSON null。
+//
+// null → 空字符串；数字保留原始字面量（例如 4900 不会变成 "4.900000e+03"）。
+func (f *flexString) UnmarshalJSON(b []byte) error {
+	bs := bytes.TrimSpace(b)
+	if len(bs) == 0 || bytes.Equal(bs, []byte("null")) {
+		*f = ""
+		return nil
+	}
+	if bs[0] == '"' {
+		var s string
+		if err := json.Unmarshal(bs, &s); err != nil {
+			return fmt.Errorf("flexString: unmarshal string: %w", err)
+		}
+		*f = flexString(s)
+		return nil
+	}
+	// 数字 / 布尔 / 其它裸值 — 保留原始字面量
+	*f = flexString(bs)
+	return nil
+}
+
+// MarshalJSON 始终把 flexString 序列化为 JSON 字符串。
+//
+// 这样 envelopeForSuccess 等测试 helper 仍然能用 GetPriceData{Price: "100.00"}
+// 形态构造响应包，反序列化端拿到 "100.00" 字符串，业务层 InquiryItem.Price 透传无损。
+func (f flexString) MarshalJSON() ([]byte, error) {
+	return json.Marshal(string(f))
+}
 
 // GetPriceRequest 是 jifei CGW `qcloud.price.getPrice` 询价接口入参（para 内层）。
 //
@@ -19,15 +69,18 @@ type GetPriceRequest struct {
 }
 
 // GetPriceItem 是 GetPriceRequest.ResInfo 数组的单条记录（一个 bundle 询价单元）。
+//
+// Q71 拍板（2026-05-13）：GoodsCategoryID 类型从 string 改 int64，与 jifei PDF
+// §4.1 line 14 `"goodsCategoryId": 100019`（无引号 int）严格对齐。
 type GetPriceItem struct {
-	GoodsCategoryID string                 `json:"goodsCategoryId"`
+	GoodsCategoryID int64                  `json:"goodsCategoryId"`
 	Currency        string                 `json:"currency,omitempty"`
 	RegionID        int                    `json:"regionId,omitempty"`
 	ZoneID          int                    `json:"zoneId,omitempty"`
 	GoodsNum        int                    `json:"goodsNum"`
 	PayMode         int                    `json:"payMode"`
 	Action          string                 `json:"action"`                // "purchase" / "renew" / "modify"，本期仅 purchase
-	GoodsDetail     map[string]interface{} `json:"goodsDetail,omitempty"` // 含 productCode / subProductCode / pid / timeSpan / timeUnit / sv_* 展平后字段
+	GoodsDetail     map[string]interface{} `json:"goodsDetail,omitempty"` // 含 productCode / subProductCode / pid (int) / timeSpan / timeUnit / sv_* (int) 等字段
 }
 
 // GetPriceResponse 是 CGW returnValue 反序列化目标。
@@ -42,20 +95,23 @@ type GetPriceResponse struct {
 // 其余字段（highPrecisionPrice / policy / partDetail / timeUnit / timeSpan 等）由 client
 // 透传后由调用方 / ELK 日志兜底（与 Q50 不持久化原则一致）。
 type GetPriceData struct {
-	Price              string                 `json:"price"`
-	TotalCost          string                 `json:"totalCost"`
-	RealTotalCost      string                 `json:"realTotalCost"`
+	Price              flexString             `json:"price"`
+	TotalCost          flexString             `json:"totalCost"`
+	RealTotalCost      flexString             `json:"realTotalCost"`
 	Currency           string                 `json:"currency"`
 	TimeUnit           string                 `json:"timeUnit,omitempty"`
 	TimeSpan           int                    `json:"timeSpan,omitempty"`
 	GoodsNum           int                    `json:"goodsNum,omitempty"`
 	ProductCode        string                 `json:"productCode,omitempty"`
 	SubProductCode     string                 `json:"subProductCode,omitempty"`
-	Pid                string                 `json:"pid,omitempty"`
-	Policy             int                    `json:"policy,omitempty"`
+	Pid                int64                  `json:"pid,omitempty"`    // Q71：PDF §4.4 pid 是 int
+	Policy             float64                `json:"policy,omitempty"` // jifei 实测返回 0.01 浮点（折扣率 1.0=不打折 / 0.01=1 折），不能用 int；本字段仅 ELK 兜底，业务层不消费
 	PolicyDetail       *PolicyDetail          `json:"policyDetail,omitempty"`
 	HighPrecisionPrice map[string]interface{} `json:"highPrecisionPrice,omitempty"`
-	PartDetail         []map[string]interface{} `json:"partDetail,omitempty"`
+	// PartDetail jifei 沙箱实测回包是 object（如 `{"discount": ...}`），但 PDF
+	// §4.4 / 设计稿标 array。为兼容两种形态保留为 RawMessage（业务层不消费此字段，
+	// 仅 ELK 日志兜底，与 Q50 不持久化原则一致）。v1.7.18 B13.
+	PartDetail json.RawMessage `json:"partDetail,omitempty"`
 }
 
 // PolicyDetail 是 GetPriceData.policyDetail 嵌套结构。
@@ -78,9 +134,13 @@ func (c *client) GetPrice(ctx context.Context, req *GetPriceRequest) (*GetPriceR
 	if req == nil {
 		return nil, errInvalidArg("GetPrice: nil request")
 	}
-	out := &GetPriceResponse{}
-	if err := c.do(ctx, InterfaceNameGetPrice, ComponentNamePrice, req, out); err != nil {
+	// v1.7.16 B11: jifei 响应 envelope.data 是 GetPriceData 数组 (顶层就是 [{...}, ...]),
+	// 不是对象包装 {data: [...]}. do() 直接把 envelope.data raw bytes unmarshal 到
+	// outResp, 所以这里给 do() 一个数组指针, 然后 wrap 回 GetPriceResponse 给调用方
+	// (保持 GetPrice 公开 API 形态不变).
+	var data []GetPriceData
+	if err := c.do(ctx, InterfaceNameGetPrice, ComponentNamePrice, req, &data); err != nil {
 		return nil, err
 	}
-	return out, nil
+	return &GetPriceResponse{Data: data}, nil
 }

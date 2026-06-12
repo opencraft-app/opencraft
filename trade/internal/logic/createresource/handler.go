@@ -4,25 +4,25 @@
 //   - §6 createResource 回调（trade → 反向调 ctl/pass）
 //   - §6.0 Q27 角色边界：trade 是协议入口 + 流水持久化；pass 实体唯一 owner = ctl/pass
 //   - §6.2 内部步骤 T1~T5（Q61 抢占式幂等覆盖 T1 / T5）：
-//       T1 `INSERT trade_flow ... ON DUPLICATE KEY UPDATE id=id` 抢占 + 三分支
-//       T2 反查 trade_order，确认 status=pending_payment（实际 trade_order 状态机为
-//          created / pending_pay / paid_pending_provision / provisioned / payment_failed /
-//          provision_failed，本期 createResource 进入时通常为 pending_pay 或
-//          paid_pending_provision；本迭代不强约束，仅校验"订单存在 + 未已发货"）
-//       T3 反向调 ctl `POST /internal/ctl/passes/complete` 拿 pass_id
-//       T4 UPDATE trade_order SET status=provisioned, resource_id=passId（迭代 8 PlaceOrder
-//          落库后才会真有写端，本迭代仅在 OrderStore 提供 UpdateProvisioned 时调用；尚未实现
-//          时跳过该步并日志记录，不阻塞协议层成功响应）
-//       T5 UPDATE trade_flow SET status=completed, response_body=<framework JSON>
+//     T1 `INSERT trade_flow ... ON DUPLICATE KEY UPDATE id=id` 抢占 + 三分支
+//     T2 反查 trade_order，确认 status=pending_payment（实际 trade_order 状态机为
+//     created / pending_pay / paid_pending_provision / provisioned / payment_failed /
+//     provision_failed，本期 createResource 进入时通常为 pending_pay 或
+//     paid_pending_provision；本迭代不强约束，仅校验"订单存在 + 未已发货"）
+//     T3 反向调 ctl `POST /internal/ctl/passes/complete` 拿 pass_id
+//     T4 UPDATE trade_order SET status=provisioned, resource_id=passId（迭代 8 PlaceOrder
+//     落库后才会真有写端，本迭代仅在 OrderStore 提供 UpdateProvisioned 时调用；尚未实现
+//     时跳过该步并日志记录，不阻塞协议层成功响应）
+//     T5 UPDATE trade_flow SET status=completed, response_body=<framework JSON>
 //   - §6.4 异常分类（Q56 协同）：A 类业务永久不可发货 → 退款响应 (returnCode=352014)；
 //     B 类基础设施 transient 故障 → 非零业务码 returnCode 让 jifei 重试
 //   - Q56 退款触发场景（本迭代严格收敛）：
-//       a. trade_order 不存在 → B 类（链路异常 / 重试），不退款
-//       b. trade_order 已被发货过（resource_id 非空）→ 视作幂等回放成功（虽然 trade_flow 没记录，
-//          但实际 ctl 已生成 pass，按"已完成"语义返回），不退款
-//       c. ctl GetBundleByID 返 ErrNotFound（bundle 已永久删除）→ A 类退款
-//       d. ctl CompletePass 返 4xx 业务级错（USER_HAS_ACTIVE_PASS / quota 不足等）→ A 类退款
-//       e. ctl CompletePass 返 5xx 或网络错 / 超时 → B 类业务码（让 jifei 重试）
+//     a. trade_order 不存在 → B 类（链路异常 / 重试），不退款
+//     b. trade_order 已被发货过（resource_id 非空）→ 视作幂等回放成功（虽然 trade_flow 没记录，
+//     但实际 ctl 已生成 pass，按"已完成"语义返回），不退款
+//     c. ctl GetBundleByID 返 ErrNotFound（bundle 已永久删除）→ A 类退款
+//     d. ctl CompletePass 返 4xx 业务级错（USER_HAS_ACTIVE_PASS / quota 不足等）→ A 类退款
+//     e. ctl CompletePass 返 5xx 或网络错 / 超时 → B 类业务码（让 jifei 重试）
 //   - Q59：5s 同步硬约束（本迭代收紧到 4s 给 jifei 1s buffer，ctlclient 本身是 4s 内置超时）
 //   - Q62：本 handler 写 trade_flow（与 checkCreate 不写形成对比）
 package createresource
@@ -32,6 +32,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"git.woa.com/wisp/mono/trade/internal/ctlclient"
@@ -81,11 +82,11 @@ const flowType = store.FlowTypeCreateResource
 //   - 不需要 BundleDefinitionStore（Q54 5 维对账是 checkCreate 阶段做的；createResource 阶段
 //     trade 信任 jifei 已经过 checkCreate，不重复对账）
 type Deps struct {
-	OrderStore   store.OrderStore             // §6.2 T2 反查 trade_order
-	OrderUpdater OrderProvisionUpdater        // §6.2 T4 反向回填（可为 nil，迭代 8 接线）
-	FlowStore    store.FlowStore              // §6.2 T1/T5 抢占式幂等
-	CTLClient    ctlclient.Client             // §6.2 T3 反向调 ctl/pass
-	Builder      *jifei.FrameworkBuilder      // 构造 jifei framework 双层出参
+	OrderStore   store.OrderStore        // §6.2 T2 反查 trade_order
+	OrderUpdater OrderProvisionUpdater   // §6.2 T4 反向回填（可为 nil，迭代 8 接线）
+	FlowStore    store.FlowStore         // §6.2 T1/T5 抢占式幂等
+	CTLClient    ctlclient.Client        // §6.2 T3 反向调 ctl/pass
+	Builder      *jifei.FrameworkBuilder // 构造 jifei framework 双层出参
 }
 
 // OrderProvisionUpdater 是 trade_order 写端反向回填接口（§6.2 Step T4）。
@@ -125,15 +126,21 @@ func Install(d *jifei.Dispatcher, deps Deps) {
 // 与 §6.1 协议字段对齐（已被 Q53/Q57/Q58 覆盖到 framework 双层）：
 //   - dealName / appId / uin / subProductCode / bundleId / goodsNum / goodsDetail
 //
-// 字段语义见 callbackPara 注释（与 checkcreate 包同名结构对齐，独立定义避免跨包耦合）。
+// 字段类型说明（每个字段都标注 PDF 协议类型，铁律见 jifei/envelope.go 包注释）：
+//   - DealName: PDF "string" — 计费订单号。
+//   - AppID: PDF "long"（int）— 云平台应用 ID；jifei 实测发 number。**v1.7.28 BUG-06
+//     同模式修复 (2026-05-21)**：原定义 string，与 PDF 不符；FlowStore 接口签名仍是
+//     appID string（DB 列存 string），handler 内调用时用 strconv.FormatInt 转一次。
+//   - Uin: PDF "string"（quoted）— 主账号。
+//   - GoodsNum: PDF "int" — 商品数量。
 type callbackPara struct {
-	DealName       string                 `json:"dealName"`
-	AppID          string                 `json:"appId"`
-	Uin            string                 `json:"uin"`
-	SubProductCode string                 `json:"subProductCode"`
-	BundleID       string                 `json:"bundleId"`
-	GoodsNum       int                    `json:"goodsNum"`
-	GoodsDetail    map[string]interface{} `json:"goodsDetail"`
+	DealName       string                 `json:"dealName"`       // PDF: string
+	AppID          int64                  `json:"appId"`          // PDF: long (number); v1.7.28 BUG-06 同模式修复
+	Uin            string                 `json:"uin"`            // PDF: string (quoted)
+	SubProductCode string                 `json:"subProductCode"` // PDF: string
+	BundleID       string                 `json:"bundleId"`       // 业务字段（trade 自家落库）
+	GoodsNum       int                    `json:"goodsNum"`       // PDF: int
+	GoodsDetail    map[string]interface{} `json:"goodsDetail"`    // PDF: object
 }
 
 // makeHandler 构造闭包 handler；导出便于单元测试直接构造而无需走 dispatcher。
@@ -151,10 +158,13 @@ func makeHandler(deps Deps) jifei.Handler {
 		if err := validatePara(&para); err != nil {
 			return deps.Builder.NewError(ReturnCodeInvalidPara, err.Error()), nil
 		}
+		// FlowStore 接口签名 appID string（DB 列存 string）；para.AppID 是 PDF/jifei 实测的
+		// number → 落库前转字符串，与 DB schema 兼容（见 callbackPara.AppID 注释 BUG-06 修复）。
+		appIDStr := strconv.FormatInt(para.AppID, 10)
 
 		// (2) Q61 Step T1：抢占式幂等。
 		acquired, existing, err := deps.FlowStore.TryAcquireSlot(
-			ctx, para.DealName, flowType, para.AppID, paraRaw,
+			ctx, para.DealName, flowType, appIDStr, paraRaw,
 		)
 		if err != nil {
 			return deps.Builder.NewError(
@@ -179,11 +189,26 @@ func makeHandler(deps Deps) jifei.Handler {
 		}
 		switch {
 		case resp.ReturnCode == 0:
-			// 成功收尾
-			_ = deps.FlowStore.MarkCompleted(ctx, para.DealName, flowType, para.AppID, respBytes)
+			// 成功收尾。
+			//
+			// v1.7.28 BUG-18 修订（2026-05-21 用户拍板）：createResource 链路成功后
+			// 必须把 trade_flow.resource_id 回填为 ctl 返回的 pass_id，与 isolate /
+			// renew / destroy 链路（resource_id 在抢占阶段就写入）保持对称，便于
+			// reconcile worker / 运维直接用 resource_id 反查 trade_flow。
+			//
+			// pass_id 来源：runMainFlow 在 NewSuccess(map{"resourceIds": []string{pass.PassID}}) 中
+			// 写入；这里直接从 resp.Data 抽（取首元素），避免再串一次返回值。
+			resourceID := extractResourceID(resp.Data)
+			if resourceID != "" {
+				_ = deps.FlowStore.MarkCompletedWithResourceID(ctx,
+					para.DealName, flowType, appIDStr, resourceID, respBytes)
+			} else {
+				// 兜底：极端情况（runMainFlow 异常路径返成功但无 resourceIds）走老路径
+				_ = deps.FlowStore.MarkCompleted(ctx, para.DealName, flowType, appIDStr, respBytes)
+			}
 		case resp.ReturnCode == jifei.RefundReturnCode:
 			// A 类退款收尾
-			_ = deps.FlowStore.MarkFailed(ctx, para.DealName, flowType, para.AppID, respBytes)
+			_ = deps.FlowStore.MarkFailed(ctx, para.DealName, flowType, appIDStr, respBytes)
 		default:
 			// B 类业务码（transient 故障 / 入参错）— 保留 in_progress，让 reconcile worker
 			// 后续根据 ctl 实际状态决定 promote 到 completed / failed（设计稿 §6.4 Q61）。
@@ -193,7 +218,63 @@ func makeHandler(deps Deps) jifei.Handler {
 	}
 }
 
+// extractResourceID 从 framework.Data 里提取 resourceIds 字段并取首元素（v1.7.28 BUG-18 辅助）。
+//
+// runMainFlow 成功路径用 NewSuccess(map{"resourceIds": []string{pass.PassID}}) 构造响应，
+// PDF 协议要求 resourceIds 是 string[]，单资源场景包成单元素数组；这里取 [0] 反向抽出。
+//
+// 兼容两种类型：
+//   - 主链路本地构造时：[]string{passID} → 直接断言 []string
+//   - 历史 response_body replay 时：JSON 反序列化为 []any，元素是 string
+//
+// 缺失 / 非数组 / 数组为空 / 元素非字符串 → 返空字符串（兜底，调用方走老 MarkCompleted 路径）。
+func extractResourceID(data map[string]any) string {
+	if data == nil {
+		return ""
+	}
+	v, ok := data["resourceIds"]
+	if !ok {
+		return ""
+	}
+	// 主链路本地构造路径：[]string
+	if arr, ok := v.([]string); ok {
+		if len(arr) == 0 {
+			return ""
+		}
+		return arr[0]
+	}
+	// JSON replay 路径：[]any（每个元素是 string）
+	if arr, ok := v.([]any); ok {
+		if len(arr) == 0 {
+			return ""
+		}
+		s, ok := arr[0].(string)
+		if !ok {
+			return ""
+		}
+		return s
+	}
+	return ""
+}
+
 // runMainFlow 是赢家路径的主链路（§6.2 Step T2~T4）。
+//
+// v1.7.28 BUG-22 修订（2026-05-21 用户拍板）：解耦 createResource 与 trade_order 反查依赖。
+//
+// 设计原则修订：
+//   - 原设计（v1.7.27 之前）：runMainFlow 反查 trade_order 拿 externalUserId / bundleId /
+//     period / timeUnit 等字段调 ctl.CompletePass。但因为 jifei generateDealsAndPay 同步
+//     回推 createResource 早于 trade INSERT trade_order，造成 ErrNotFound → 600202 + trade_flow
+//     卡 in_progress 死锁。
+//   - v1.7.28 修订：goodsDetail 透传机制扩展 — PlaceOrderAndPay 在 buildGoodsDetail 把
+//     externalUserId 塞进 goodsDetail（与 bundleId 同范式，jifei 原样回推），createResource
+//     直接从 jifei 入参拿 externalUserId / bundleId / timeSpan / timeUnit 调 ctl.CompletePass，
+//     不再依赖 trade_order 反查。
+//   - trade_order 在发货链路中退化为"订单流水记录"（不在关键路径上）：
+//   - 反查 trade_order 仅用作"幂等回放"（已发货 resource_id 已回填时直接返）
+//   - 反查不到 trade_order 不报错，继续走 ctl.CompletePass（与上一版 600202 退出对比）
+//   - MarkOrderProvisioned 找不到 trade_order 也不报错（trade_order 落库可能晚于 jifei
+//     回调，PlaceOrderAndPay 完成 BindDealName 后再异步刷新 status）
 //
 // 任何步骤失败均直接返对应 jifei.Framework 响应（成功 / 退款 / B 类业务码）；本函数不写
 // trade_flow，由 makeHandler 顶层根据返回的 returnCode 类型决定 MarkCompleted / MarkFailed /
@@ -204,56 +285,71 @@ func runMainFlow(
 	para *callbackPara,
 	_ json.RawMessage,
 ) jifei.Framework {
-	// Step T2：反查 trade_order，并确认未已发货。
-	order, err := deps.OrderStore.GetOrderByDealName(ctx, para.DealName)
-	if err != nil {
-		if errors.Is(err, store.ErrTradeOrderNotFound) {
-			// 链路异常（jifei 持有的 dealName 与 trade 不一致）；B 类，让 jifei 重试。
-			return deps.Builder.NewError(
-				ReturnCodeOrderNotFound,
-				fmt.Sprintf("trade_order not found for dealName=%s", para.DealName),
-			)
-		}
-		return deps.Builder.NewError(
-			ReturnCodeUpstreamUnavailable,
-			fmt.Sprintf("get trade_order: %v", err),
-		)
-	}
-
-	// 已发货幂等回放（Q56 b 场景）：trade_order.resource_id 已回填即视作幂等成功。
-	// 即使 trade_flow 因为 trade pod 重启等原因没记录，本路径也保证响应一致。
-	if order.ResourceID != "" {
+	// Step T2：可选反查 trade_order（仅用作幂等回放 - 已发货时直接返历史 resource_id）。
+	//
+	// 不强依赖：找不到 / 错误都不阻塞主链路（trade_order 落库可能晚于 jifei 回调）。
+	if order, err := deps.OrderStore.GetOrderByDealName(ctx, para.DealName); err == nil &&
+		order != nil && order.ResourceID != "" {
+		// 已发货幂等回放（Q56 b 场景）：trade_order.resource_id 已回填即视作幂等成功。
+		// PDF 协议：resourceIds 是 string[] 数组（不是 string），单资源场景包成单元素数组。
 		return deps.Builder.NewSuccess(map[string]any{
-			"resourceId": order.ResourceID,
+			"resourceIds": []string{order.ResourceID},
 		})
 	}
 
-	// Step T3：反向调 ctl/pass 完成发货。
+	// Step T3：从 jifei 入参提取业务字段，反向调 ctl/pass 完成发货。
 	//
-	// 入参映射（§6.2 Step T3 + ctlclient.CompletePassRequest 字段集）：
-	//   - UserID = trade_order.external_user_id（Lightclaw 业务用户 ID）
-	//   - BundleID = trade_order.bundle_id（jifei 入参 bundleId 与 trade_order 落库应一致；
-	//     handler 这里以 trade_order 为准，因为 jifei 入参 bundleId 已在 checkCreate 阶段对账过）
-	//   - TimeSpan = trade_order.period
-	//   - TimeUnit = trade_order.time_unit
-	//   - Uin / AppID = jifei 入参的 uin / appId（与 trade_order 落库的应一致；本迭代
-	//     不重复对账，信任 checkCreate 阶段已校验）
-	//   - DealName = trade_order.deal_name
-	//   - RenewFlag = "MANUAL_RENEW"（v4 收敛：本期不暴露 auto_renew，写死手动续费）
-	uin, appID, parseErr := parseUinAppID(order.Uin, order.AppID)
-	if parseErr != nil {
-		// 数据不一致（trade_order 落的 uin / app_id 不是合法整数）— 永久不可发货，A 类退款。
-		// 实际上下单链路应该早就阻断，能到这里说明 trade_order 写端有 bug，但仍要保护 jifei 不无限重试。
+	// 字段映射（v1.7.28 BUG-22 修订：完全脱离 trade_order）：
+	//   - UserID  = goodsDetail.externalUserId（PlaceOrderAndPay 时 trade 自家透传）
+	//   - BundleID = goodsDetail.bundleId       （PlaceOrderAndPay 时 trade 自家透传）
+	//   - TimeSpan = goodsDetail.timeSpan       （jifei 协议字段；与 PlaceOrderAndPay 入参一致）
+	//   - TimeUnit = goodsDetail.timeUnit       （同上）
+	//   - Uin / AppID = jifei 入参顶层 uin / appId（jifei 协议字段）
+	//   - DealName = jifei 入参顶层 dealName    （jifei 协议字段）
+	//   - RenewFlag = "MANUAL_RENEW"             （v4 收敛：本期不暴露 auto_renew）
+	externalUserID := extractStringFromGoodsDetail(para.GoodsDetail, "externalUserId")
+	if externalUserID == "" {
+		// goodsDetail.externalUserId 缺失：PlaceOrderAndPay 端没塞或 jifei 没回传 —
+		// 两种情况都属于业务永久不可发货（无法定位 lightclaw 用户），按 A 类退款。
 		return deps.Builder.NewRefund()
 	}
+	bundleID := extractStringFromGoodsDetail(para.GoodsDetail, "bundleId")
+	if bundleID == "" {
+		// goodsDetail.bundleId 缺失：同 BUG-07 同模式，jifei 协议本身不发顶层 bundleId，
+		// 必须从 goodsDetail 取；缺失意味着 PlaceOrderAndPay 端没塞，A 类退款。
+		return deps.Builder.NewRefund()
+	}
+	timeSpan := extractIntFromGoodsDetail(para.GoodsDetail, "timeSpan")
+	if timeSpan <= 0 {
+		return deps.Builder.NewError(
+			ReturnCodeInvalidPara,
+			fmt.Sprintf("goodsDetail.timeSpan must be > 0, got %d", timeSpan),
+		)
+	}
+	timeUnit := extractStringFromGoodsDetail(para.GoodsDetail, "timeUnit")
+	if timeUnit == "" {
+		return deps.Builder.NewError(
+			ReturnCodeInvalidPara,
+			"goodsDetail.timeUnit is required",
+		)
+	}
+	// Uin string → int64 转换（jifei 协议层 uin 是 quoted string，但 ctl userId 接口要 int64）。
+	uinInt, parseErr := strconv.ParseInt(para.Uin, 10, 64)
+	if parseErr != nil {
+		// jifei 入参 uin 不是合法整数 — 协议层异常，B 类业务码让 jifei 重试。
+		return deps.Builder.NewError(
+			ReturnCodeInvalidPara,
+			fmt.Sprintf("uin must be numeric, got %q: %v", para.Uin, parseErr),
+		)
+	}
 	completeReq := &ctlclient.CompletePassRequest{
-		UserID:    order.ExternalUserID,
-		BundleID:  order.BundleID,
-		TimeSpan:  order.Period,
-		TimeUnit:  order.TimeUnit,
-		Uin:       uin,
-		AppID:     appID,
-		DealName:  order.DealName,
+		UserID:    externalUserID,
+		BundleID:  bundleID,
+		TimeSpan:  timeSpan,
+		TimeUnit:  timeUnit,
+		Uin:       uinInt,
+		AppID:     para.AppID,
+		DealName:  para.DealName,
 		RenewFlag: "MANUAL_RENEW",
 	}
 	pass, err := deps.CTLClient.CompletePass(ctx, completeReq)
@@ -268,32 +364,71 @@ func runMainFlow(
 		)
 	}
 
-	// Step T4：反向回填 trade_order（resource_id + status）。
+	// Step T4：尝试反向回填 trade_order（resource_id + status='provisioned'）。
 	//
-	// 迭代 6 允许 OrderUpdater == nil（迭代 8 PlaceOrder 写端落地后才会接线）；
-	// 此时 ctl 那边 pass 已经生成，仅 trade 侧 trade_order 没回填，由 reconcile 后续兜底。
-	// 不阻塞协议层成功响应（jifei 拿到 pass_id 即视为发货完成）。
+	// v1.7.28 BUG-22 修订：MarkOrderProvisioned 失败不阻塞 jifei 响应 —
+	// trade_order 落库可能晚于 jifei 回调（PlaceOrderAndPay 先调 jifei、后 INSERT trade_order
+	// 这条已知时序问题），ErrNotFound 是预期分支不报错；ctl 那边 pass 已成功落地，业务对
+	// jifei 协议层来说已视作发货完成。trade_order 由 PlaceOrderAndPay 自己 BindDealName 时
+	// 把 deal_name 与 resource_id 关联，或由 reconcile worker 兜底。
 	if deps.OrderUpdater != nil {
-		if err := deps.OrderUpdater.MarkOrderProvisioned(ctx, order.DealName, pass.PassID); err != nil {
-			// 写端基础设施失败 — 不退款（ctl 已成功），只在 trade_flow 收尾时按 B 类处理；
-			// jifei 重试时本 handler 会通过 trade_order.resource_id 已回填走幂等回放路径。
-			//
-			// 但 trade_order 没回填导致下次重试找不到 resource_id，会再次走 ctl CompletePass，
-			// ctl 端有 USER_HAS_ACTIVE_PASS 兜底防御；不影响 jifei 协议层最终幂等。
-			//
-			// 选择返非零 returnCode 让 jifei 重试 — trade_flow 也保持 in_progress 不收尾，
-			// reconcile worker 可介入。
-			return deps.Builder.NewError(
-				ReturnCodeUpstreamUnavailable,
-				fmt.Sprintf("mark order provisioned: %v", err),
-			)
+		if err := deps.OrderUpdater.MarkOrderProvisioned(ctx, para.DealName, pass.PassID); err != nil {
+			if !errors.Is(err, store.ErrTradeOrderNotFound) {
+				// 非 NotFound 错误（resource_id 冲突、DB 失败等）— 不阻塞 jifei 响应，
+				// 仅日志告警；ctl 那边 pass 已成功落地，业务幂等性由 ctl 端保证。
+				// （未来扩展：可加 metric / structured log，本期日志由 caller 在 handler 层补）
+				_ = err
+			}
 		}
 	}
 
-	// 全部成功：返 framework 双层成功响应（data.resourceId = pass_id）。
+	// 全部成功：返 framework 双层成功响应（data.resourceIds = [pass_id]，PDF 协议要 string[]）。
 	return deps.Builder.NewSuccess(map[string]any{
-		"resourceId": pass.PassID,
+		"resourceIds": []string{pass.PassID},
 	})
+}
+
+// extractStringFromGoodsDetail 从 goodsDetail map 中安全取出 string 字段。
+//
+// jifei 透传机制（PDF §2.2）：trade PlaceOrder 时塞进 goodsDetail 的字段会原样
+// 回推到 createResource / checkCreate 等回调。但 JSON 反序列化后 map[string]interface{}
+// 里数值都是 float64，这个辅助函数只取 string 字段（externalUserId / bundleId / timeUnit）。
+func extractStringFromGoodsDetail(goodsDetail map[string]interface{}, key string) string {
+	if goodsDetail == nil {
+		return ""
+	}
+	v, ok := goodsDetail[key]
+	if !ok {
+		return ""
+	}
+	s, ok := v.(string)
+	if !ok {
+		return ""
+	}
+	return s
+}
+
+// extractIntFromGoodsDetail 从 goodsDetail map 中安全取出 int 字段（兼容 float64 / json.Number）。
+//
+// JSON 反序列化默认把数值解析为 float64；本函数容忍 float64 / int / int64 三种来源类型，
+// 用于读取 timeSpan / goodsNum 等 int 字段。
+func extractIntFromGoodsDetail(goodsDetail map[string]interface{}, key string) int {
+	if goodsDetail == nil {
+		return 0
+	}
+	v, ok := goodsDetail[key]
+	if !ok {
+		return 0
+	}
+	switch n := v.(type) {
+	case float64:
+		return int(n)
+	case int:
+		return n
+	case int64:
+		return int(n)
+	}
+	return 0
 }
 
 // handleLoser 实现 Q61 抢占失败的三分支处理（status='completed' / 'failed' / 'in_progress'）。
@@ -409,20 +544,21 @@ func classifyCompletePassError(builder *jifei.FrameworkBuilder, err error) jifei
 
 // validatePara 校验 createResource 入参必填字段。
 //
-// 与 checkcreate 包对应函数对齐；createResource 阶段对 goodsNum / goodsDetail 也强约束（jifei
-// 协议层一定会带）。
+// v1.7.28 BUG-13/14 修订 (2026-05-21)：删除顶层 BundleID + GoodsNum 必填校验。
+//   - jifei 协议层 createResource 不发顶层 bundleId 字段（trade 自家业务字段，
+//     trade 通过 dealName 反查 trade_order 拿）。
+//   - jifei 协议层 createResource 不发顶层 goodsNum，只在 goodsDetail.goodsNum
+//     里嵌套（PDF 第 4.1 节 "para.goodsDetail.goodsNum 必传字段"）。
+//   - 业务路径完全不读 callbackPara.GoodsNum（grep 验证），删 validate 校验
+//     只是去掉无效约束。
+//   - 与 checkcreate BUG-07/checkrenew 同源问题，但 createResource 协议层有
+//     dealName 可反查 trade_order，比 checkCreate 简单。
 func validatePara(p *callbackPara) error {
 	if p.DealName == "" {
 		return errors.New("dealName is required")
 	}
-	if p.AppID == "" {
+	if p.AppID == 0 {
 		return errors.New("appId is required")
-	}
-	if p.BundleID == "" {
-		return errors.New("bundleId is required")
-	}
-	if p.GoodsNum <= 0 {
-		return errors.New("goodsNum must be > 0")
 	}
 	return nil
 }

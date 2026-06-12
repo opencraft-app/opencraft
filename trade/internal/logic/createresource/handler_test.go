@@ -45,17 +45,27 @@ func (f *fakeOrderUpdater) MarkOrderProvisioned(_ context.Context, dealName, pas
 type fakeFlowStore struct {
 	mu sync.Mutex
 
-	tryAcquireFunc      func(ctx context.Context, dealName, flowType, appID string, body []byte) (bool, *store.Flow, error)
-	markCompletedCalls  []markCall
-	markFailedCalls     []markCall
-	markCompletedErr    error
-	markFailedErr       error
+	tryAcquireFunc                   func(ctx context.Context, dealName, flowType, appID string, body []byte) (bool, *store.Flow, error)
+	markCompletedCalls               []markCall
+	markCompletedWithResourceIDCalls []markWithResourceIDCall
+	markFailedCalls                  []markCall
+	markCompletedErr                 error
+	markFailedErr                    error
 }
 
 type markCall struct {
 	dealName     string
 	flowType     string
 	appID        string
+	responseBody []byte
+}
+
+// markWithResourceIDCall 是 v1.7.28 BUG-18 新增 MarkCompletedWithResourceID 的调用记录。
+type markWithResourceIDCall struct {
+	dealName     string
+	flowType     string
+	appID        string
+	resourceID   string
 	responseBody []byte
 }
 
@@ -66,6 +76,18 @@ func (f *fakeFlowStore) TryAcquireSlot(ctx context.Context, dealName, flowType, 
 func (f *fakeFlowStore) MarkCompleted(_ context.Context, dealName, flowType, appID string, responseBody []byte) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.markCompletedCalls = append(f.markCompletedCalls, markCall{dealName, flowType, appID, append([]byte(nil), responseBody...)})
+	return f.markCompletedErr
+}
+
+// MarkCompletedWithResourceID 是 v1.7.28 BUG-18 新方法的 fake；
+// 同时把调用追加到 markCompletedCalls（按业务等价语义），方便老断言继续生效。
+func (f *fakeFlowStore) MarkCompletedWithResourceID(_ context.Context, dealName, flowType, appID, resourceID string, responseBody []byte) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.markCompletedWithResourceIDCalls = append(f.markCompletedWithResourceIDCalls,
+		markWithResourceIDCall{dealName, flowType, appID, resourceID, append([]byte(nil), responseBody...)})
+	// 业务上等价于"成功收尾 + 带 resource_id"，老断言（按 markCompletedCalls 计数）也按"完成"统计。
 	f.markCompletedCalls = append(f.markCompletedCalls, markCall{dealName, flowType, appID, append([]byte(nil), responseBody...)})
 	return f.markCompletedErr
 }
@@ -85,6 +107,23 @@ func (f *fakeFlowStore) ListInProgressBefore(_ context.Context, _ time.Time, _ i
 	return nil, nil
 }
 
+// Sub-4 新增方法 — createResource 测试不行使 isolate 链路。
+func (f *fakeFlowStore) TryAcquireSlotForIsolate(_ context.Context, _, _, _, _ string, _ []byte, _ *string) (bool, *store.Flow, error) {
+	return false, nil, errors.New("TryAcquireSlotForIsolate not used in createResource tests")
+}
+func (f *fakeFlowStore) MarkCompletedByID(_ context.Context, _ int64, _ []byte) error {
+	return errors.New("MarkCompletedByID not used in createResource tests")
+}
+func (f *fakeFlowStore) MarkFailedByID(_ context.Context, _ int64, _ []byte) error {
+	return errors.New("MarkFailedByID not used in createResource tests")
+}
+func (f *fakeFlowStore) DeleteByID(_ context.Context, _ int64) error {
+	return errors.New("DeleteByID not used in createResource tests")
+}
+func (f *fakeFlowStore) GetByID(_ context.Context, _ int64) (*store.Flow, error) {
+	return nil, store.ErrFlowNotFound
+}
+
 type fakeCTLClient struct {
 	getBundleFunc    func(ctx context.Context, bundleID string) (*ctlclient.BundleDetail, error)
 	listPassesFunc   func(ctx context.Context, externalUserID string) ([]*ctlclient.PassDetail, error)
@@ -99,6 +138,27 @@ func (f *fakeCTLClient) ListPassesByUser(ctx context.Context, externalUserID str
 }
 func (f *fakeCTLClient) CompletePass(ctx context.Context, req *ctlclient.CompletePassRequest) (*ctlclient.PassDetail, error) {
 	return f.completePassFunc(ctx, req)
+}
+func (f *fakeCTLClient) ListPassAppIDs(_ context.Context, _ []string, _, _ int) ([]int64, int64, error) {
+	return nil, 0, errors.New("ListPassAppIDs not used in createResource")
+}
+func (f *fakeCTLClient) ListPassesByAppID(_ context.Context, _ int64, _ []string, _, _ int) ([]*ctlclient.PassDetail, int64, error) {
+	return nil, 0, errors.New("ListPassesByAppID not used in createResource")
+}
+func (f *fakeCTLClient) ListPassesByResourceIDs(_ context.Context, _ int64, _ []string) ([]*ctlclient.PassDetail, error) {
+	return nil, errors.New("ListPassesByResourceIDs not used in createResource")
+}
+
+func (f *fakeCTLClient) IsolatePass(_ context.Context, _ string, _ *ctlclient.IsolatePassRequest) (*ctlclient.IsolatePassResponse, error) {
+	return nil, errors.New("IsolatePass not used in createResource tests")
+}
+
+func (f *fakeCTLClient) RenewPass(_ context.Context, _ string, _ *ctlclient.RenewPassRequest) (*ctlclient.RenewPassResponse, error) {
+	return nil, errors.New("RenewPass not used in createResource tests")
+}
+
+func (f *fakeCTLClient) DestroyPass(_ context.Context, _ string, _ *ctlclient.DestroyPassRequest) (*ctlclient.DestroyPassResponse, error) {
+	return nil, errors.New("DestroyPass not used in createResource tests")
 }
 
 // ===== helpers ===============================================================
@@ -128,7 +188,7 @@ func defaultOrder() *store.TradeOrder {
 func defaultPara() callbackPara {
 	return callbackPara{
 		DealName: "deal-001",
-		AppID:    "12345678",
+		AppID:    12345678,
 		Uin:      "100012345678",
 		BundleID: "bundle_linux_small_01",
 		GoodsNum: 1,
@@ -137,6 +197,12 @@ func defaultPara() callbackPara {
 			"timeSpan": float64(1),
 			"timeUnit": "m",
 			"goodsNum": float64(1),
+			// v1.7.28 BUG-22：handler 新设计从 goodsDetail 取 externalUserId / bundleId
+			// 调 ctl.CompletePass，与 placeorder/service.go::buildGoodsDetail 透传契约对齐。
+			// 与 defaultOrder().ExternalUserID 保持一致（"user-001"）便于历史 happy path
+			// 断言路径稳定（虽然 handler 已不再读 trade_order.ExternalUserID）。
+			"externalUserId": "user-001",
+			"bundleId":       "bundle_linux_small_01",
 		},
 	}
 }
@@ -260,8 +326,8 @@ func TestHandler_AcquireWins_HappyPath_ReturnsSuccessAndMarksCompleted(t *testin
 	if resp.ReturnCode != 0 {
 		t.Fatalf("expected success returnCode=0, got %d msg=%q", resp.ReturnCode, resp.ReturnMessage)
 	}
-	if got := resp.Data["resourceId"]; got != "pass-abc-123" {
-		t.Errorf("data.resourceId mismatch: %v", got)
+	if gotIDs, _ := resp.Data["resourceIds"].([]string); len(gotIDs) != 1 || gotIDs[0] != "pass-abc-123" {
+		t.Errorf("data.resourceIds mismatch: %v", resp.Data["resourceIds"])
 	}
 	if resp.ReturnCode != resp.ReturnValue {
 		t.Errorf("Q58 invariant broken: %d != %d", resp.ReturnCode, resp.ReturnValue)
@@ -284,8 +350,14 @@ func TestHandler_AcquireWins_HappyPath_ReturnsSuccessAndMarksCompleted(t *testin
 	if err := json.Unmarshal(flow.markCompletedCalls[0].responseBody, &replayed); err != nil {
 		t.Fatalf("response_body unmarshal: %v", err)
 	}
-	if replayed.ReturnCode != resp.ReturnCode || replayed.Data["resourceId"] != resp.Data["resourceId"] {
-		t.Errorf("response_body must equal jifei response: replayed=%+v resp=%+v", replayed, resp)
+	if replayed.ReturnCode != resp.ReturnCode {
+		t.Errorf("response_body returnCode mismatch: replayed=%d resp=%d", replayed.ReturnCode, resp.ReturnCode)
+	}
+	// resourceIds 是 []string、replay 后是 []any，转 JSON 后比较足计。
+	gotJSON, _ := json.Marshal(replayed.Data["resourceIds"])
+	wantJSON, _ := json.Marshal(resp.Data["resourceIds"])
+	if string(gotJSON) != string(wantJSON) {
+		t.Errorf("response_body resourceIds mismatch: replayed=%s resp=%s", gotJSON, wantJSON)
 	}
 }
 
@@ -408,8 +480,13 @@ func TestHandler_CTLNetworkError_ReturnsBClass(t *testing.T) {
 }
 
 // ===== trade_order 反查异常 ===================================================
+//
+// v1.7.28 BUG-22 修订：trade_order 反查不命中不再阻塞主链路（createResource 已通过
+// jifei goodsDetail 透传机制脱离 trade_order 反查依赖）。本测试验证：
+//   - GetOrderByDealName 返 ErrNotFound 时，handler 继续走 ctl.CompletePass
+//   - ctl 成功时返 returnCode=0 + data.resourceIds（不再返 600202 也不返退款 352014）
 
-func TestHandler_OrderNotFound_ReturnsBClass_FlowKeptInProgress(t *testing.T) {
+func TestHandler_OrderNotFound_NoLongerBlocksMainFlow(t *testing.T) {
 	flow := &fakeFlowStore{
 		tryAcquireFunc: func(_ context.Context, _, _, _ string, _ []byte) (bool, *store.Flow, error) {
 			return true, nil, nil
@@ -420,13 +497,22 @@ func TestHandler_OrderNotFound_ReturnsBClass_FlowKeptInProgress(t *testing.T) {
 			return nil, store.ErrTradeOrderNotFound
 		},
 	}
-	deps := newDeps(order, flow, &fakeCTLClient{}, nil)
+	ctl := &fakeCTLClient{
+		completePassFunc: func(_ context.Context, _ *ctlclient.CompletePassRequest) (*ctlclient.PassDetail, error) {
+			return &ctlclient.PassDetail{PassID: "pass-success-001"}, nil
+		},
+	}
+	deps := newDeps(order, flow, ctl, nil)
 	resp, _ := makeHandler(deps)(context.Background(), paraJSON(t, defaultPara()))
-	if resp.ReturnCode != ReturnCodeOrderNotFound {
-		t.Errorf("expected ReturnCodeOrderNotFound=%d, got %d", ReturnCodeOrderNotFound, resp.ReturnCode)
+	if resp.ReturnCode != 0 {
+		t.Errorf("expected returnCode=0 (handler should bypass trade_order ErrNotFound), got %d msg=%q",
+			resp.ReturnCode, resp.ReturnMessage)
 	}
 	if resp.ReturnCode == jifei.RefundReturnCode {
-		t.Errorf("OrderNotFound should NOT trigger refund (it's a state-inconsistency, not permanent business error)")
+		t.Errorf("OrderNotFound should NOT trigger refund")
+	}
+	if ids, _ := resp.Data["resourceIds"].([]string); len(ids) != 1 || ids[0] != "pass-success-001" {
+		t.Errorf("expected resourceIds=[pass-success-001] from ctl, got %v", resp.Data["resourceIds"])
 	}
 }
 
@@ -457,15 +543,15 @@ func TestHandler_OrderAlreadyProvisioned_ReturnsSuccessReplay(t *testing.T) {
 	if resp.ReturnCode != 0 {
 		t.Errorf("expected success replay returnCode=0, got %d", resp.ReturnCode)
 	}
-	if resp.Data["resourceId"] != "pass-already-001" {
-		t.Errorf("expected replayed resourceId, got %v", resp.Data["resourceId"])
+	if ids, _ := resp.Data["resourceIds"].([]string); len(ids) != 1 || ids[0] != "pass-already-001" {
+		t.Errorf("expected replayed resourceIds=[pass-already-001], got %v", resp.Data["resourceIds"])
 	}
 }
 
 // ===== Q61 输家三分支处理 ====================================================
 
 func TestHandler_AcquireLoses_StatusCompleted_ReplaysSuccess(t *testing.T) {
-	successBody := `{"returnCode":0,"returnValue":0,"componentName":"trade","version":"1.0","timestamp":1234,"returnMessage":"ok","data":{"resourceId":"pass-replay-001"}}`
+	successBody := `{"returnCode":0,"returnValue":0,"componentName":"trade","version":"1.0","timestamp":1234,"returnMessage":"ok","data":{"resourceIds":["pass-replay-001"]}}`
 	flow := &fakeFlowStore{
 		tryAcquireFunc: func(_ context.Context, _, _, _ string, _ []byte) (bool, *store.Flow, error) {
 			return false, &store.Flow{
@@ -492,8 +578,12 @@ func TestHandler_AcquireLoses_StatusCompleted_ReplaysSuccess(t *testing.T) {
 	if resp.ReturnCode != 0 {
 		t.Errorf("loser-completed replay should yield returnCode=0, got %d", resp.ReturnCode)
 	}
-	if resp.Data["resourceId"] != "pass-replay-001" {
-		t.Errorf("replayed data.resourceId mismatch: %v", resp.Data["resourceId"])
+	// replay 路径：responseBody 反序列化后 resourceIds 是 []any，首元素是 string。
+	ids, _ := resp.Data["resourceIds"].([]any)
+	if len(ids) != 1 {
+		t.Errorf("replayed resourceIds expected 1 element, got %v", resp.Data["resourceIds"])
+	} else if s, _ := ids[0].(string); s != "pass-replay-001" {
+		t.Errorf("replayed data.resourceIds[0] mismatch: %v", resp.Data["resourceIds"])
 	}
 }
 
@@ -605,7 +695,12 @@ func TestHandler_NilOrderUpdater_StillSucceeds(t *testing.T) {
 	}
 }
 
-func TestHandler_OrderUpdaterFails_ReturnsBClass(t *testing.T) {
+// TestHandler_OrderUpdaterFails_NoLongerBlocks
+//
+// v1.7.28 BUG-22 修订：trade_order 退化为"订单流水记录"，MarkOrderProvisioned 失败不再
+// 阻塞 jifei 响应（ctl 那边 pass 已成功落地，业务对 jifei 协议层来说已视作发货完成）。
+// 老测试期望 ReturnCodeUpstreamUnavailable 改为期望 returnCode=0。
+func TestHandler_OrderUpdaterFails_NoLongerBlocks(t *testing.T) {
 	flow := &fakeFlowStore{
 		tryAcquireFunc: func(_ context.Context, _, _, _ string, _ []byte) (bool, *store.Flow, error) {
 			return true, nil, nil
@@ -622,11 +717,12 @@ func TestHandler_OrderUpdaterFails_ReturnsBClass(t *testing.T) {
 	updater := &fakeOrderUpdater{markErr: errors.New("db deadlock")}
 	deps := newDeps(order, flow, ctl, updater)
 	resp, _ := makeHandler(deps)(context.Background(), paraJSON(t, defaultPara()))
-	if resp.ReturnCode != ReturnCodeUpstreamUnavailable {
-		t.Errorf("expected ReturnCodeUpstreamUnavailable on updater fail, got %d", resp.ReturnCode)
+	if resp.ReturnCode != 0 {
+		t.Errorf("expected returnCode=0 (BUG-22: updater fail no longer blocks), got %d msg=%q",
+			resp.ReturnCode, resp.ReturnMessage)
 	}
-	if resp.ReturnCode == jifei.RefundReturnCode {
-		t.Errorf("OrderUpdater fail must NOT trigger refund (ctl already created pass)")
+	if ids, _ := resp.Data["resourceIds"].([]string); len(ids) != 1 || ids[0] != "pass-001" {
+		t.Errorf("expected resourceIds=[pass-001] from ctl despite updater fail, got %v", resp.Data["resourceIds"])
 	}
 }
 
@@ -655,21 +751,33 @@ func TestHandler_CTLReturnsEmptyPassID_ReturnsBClass(t *testing.T) {
 
 // ===== 数据不一致：trade_order.uin / app_id 非数字 → 退款保护 ==================
 
-func TestHandler_OrderUinNotNumeric_ReturnsRefund(t *testing.T) {
-	bad := defaultOrder()
-	bad.Uin = "not-a-number"
+// TestHandler_JifeiUinNotNumeric_ReturnsBClass
+//
+// v1.7.28 BUG-22 修订：handler 不再读 trade_order.Uin，改读 jifei 入参 para.Uin
+// （字符串）。测试 jifei 入参 uin 非数字时，handler 返 ReturnCodeInvalidPara（B 类）
+// 而不是退款（旧设计认为 trade_order.Uin 非数字是 trade 写端 bug → A 类退款；
+// 新设计 jifei 入参 uin 非数字是 jifei 协议层异常 → B 类让 jifei 重试）。
+func TestHandler_JifeiUinNotNumeric_ReturnsBClass(t *testing.T) {
+	badPara := defaultPara()
+	badPara.Uin = "not-a-number"
 	flow := &fakeFlowStore{
 		tryAcquireFunc: func(_ context.Context, _, _, _ string, _ []byte) (bool, *store.Flow, error) {
 			return true, nil, nil
 		},
 	}
 	order := &fakeOrderStore{
-		getFunc: func(_ context.Context, _ string) (*store.TradeOrder, error) { return bad, nil },
+		getFunc: func(_ context.Context, _ string) (*store.TradeOrder, error) {
+			return nil, store.ErrTradeOrderNotFound
+		},
 	}
 	deps := newDeps(order, flow, &fakeCTLClient{}, nil)
-	resp, _ := makeHandler(deps)(context.Background(), paraJSON(t, defaultPara()))
-	if resp.ReturnCode != jifei.RefundReturnCode {
-		t.Errorf("malformed uin (永久不可发货) should refund, got %d", resp.ReturnCode)
+	resp, _ := makeHandler(deps)(context.Background(), paraJSON(t, badPara))
+	if resp.ReturnCode == jifei.RefundReturnCode {
+		t.Errorf("non-numeric jifei uin should NOT trigger refund (it's protocol-level err); got refund magic")
+	}
+	if resp.ReturnCode != ReturnCodeInvalidPara {
+		t.Errorf("expected ReturnCodeInvalidPara=%d on non-numeric uin, got %d msg=%q",
+			ReturnCodeInvalidPara, resp.ReturnCode, resp.ReturnMessage)
 	}
 }
 
@@ -748,16 +856,22 @@ func TestInstall_RoutesCreateResourceToRealHandler(t *testing.T) {
 			return nil, store.ErrTradeOrderNotFound
 		},
 	}
+	// v1.7.28 BUG-22 修订：handler 不再依赖 trade_order 反查，order_not_found 不再
+	// 返 600202；改为继续走主链路 — 这里 body 没塞 goodsDetail.externalUserId/bundleId，
+	// 触发 A 类退款（externalUserId 缺失）。本测试只验证路由命中（resp.ReturnCode 非
+	// "interfaceName 未注册"的失败码），不再断言具体业务码。
 	Install(d, Deps{
 		OrderStore: order,
 		FlowStore:  flow,
 		CTLClient:  &fakeCTLClient{},
 		Builder:    builder,
 	})
-	body := []byte(`{"interface":{"interfaceName":"lightvela.pass.createResource","para":{"dealName":"x","appId":"1","bundleId":"b","goodsNum":1}}}`)
+	body := []byte(`{"interface":{"interfaceName":"lightvela.pass.createResource","para":{"dealName":"x","appId":1,"bundleId":"b","goodsNum":1}}}`)
 	resp := d.Dispatch(context.Background(), body)
-	if resp.ReturnCode != ReturnCodeOrderNotFound {
-		t.Errorf("real handler should route and return business code 600202, got %d msg=%q", resp.ReturnCode, resp.ReturnMessage)
+	// 路由命中的标志：returnCode 不是 dispatcher 的"interfaceName 未注册"码（jifei.ReturnCodeUnknownInterface
+	// 之类），而是真 handler 内部产生的码（如 ReturnCodeInvalidPara/UpstreamUnavailable/RefundReturnCode 等）。
+	if resp.ReturnCode == 0 {
+		t.Errorf("real handler should reject this incomplete para, got success returnCode=0 msg=%q", resp.ReturnMessage)
 	}
 }
 
@@ -769,10 +883,10 @@ func TestInstall_RoutesCreateResourceToRealHandler(t *testing.T) {
 func TestHandler_ConcurrentAcquire_OnlyOneWinnerCallsCTL(t *testing.T) {
 	const N = 20
 	var (
-		acquireMu      sync.Mutex
-		acquired       bool
-		ctlCalls       int32
-		ctlMu          sync.Mutex
+		acquireMu sync.Mutex
+		acquired  bool
+		ctlCalls  int32
+		ctlMu     sync.Mutex
 	)
 	flow := &fakeFlowStore{
 		tryAcquireFunc: func(_ context.Context, _, _, _ string, _ []byte) (bool, *store.Flow, error) {
@@ -855,7 +969,13 @@ func TestHandler_Q56_RefundOnlyOnAClass(t *testing.T) {
 					&fakeFlowStore{tryAcquireFunc: func(_ context.Context, _, _, _ string, _ []byte) (bool, *store.Flow, error) {
 						return true, nil, nil
 					}},
-					&fakeCTLClient{}, nil,
+					&fakeCTLClient{
+						// v1.7.28 BUG-22 修订：order not found 不再阻塞主链路，handler 继续走 ctl；
+						// 这里 mock ctl 5xx 模拟"上游不可用"路径，验证整体 returnCode 不是 refund magic。
+						completePassFunc: func(_ context.Context, _ *ctlclient.CompletePassRequest) (*ctlclient.PassDetail, error) {
+							return nil, &ctlclient.Error{HTTPStatus: 500}
+						},
+					}, nil,
 				)
 			},
 		},
