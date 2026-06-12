@@ -69,11 +69,11 @@ import {
   ChannelPanel,
   SkillPanel,
   createLighthouseConfig,
-  createLightClawScripts,
   type IInstanceInfo,
   type IFeatureFlags,
   type IProductConfig,
 } from "@tencent/tea-sdk-lightclaw";
+import { createLightClawScripts } from "@tencent/tea-sdk-lightclaw/scripts";
 import {
   createMonoDebugExecAdapter,
   LIGHTVELA_SKIP_HERMES_PROVIDER_LIST_COMMAND,
@@ -4213,7 +4213,7 @@ export const OpenClawSettingsPage = () => {
                       ? "bg-black/90 hover:opacity-90"
                       : "cursor-not-allowed bg-black/30",
                   )}
-                  style={{marginTop: 20}}
+                  style={{ marginTop: 20 }}
                 >
                   {canCreateBot ? t("立即创建") : t("暂不可创建")}
                 </button>

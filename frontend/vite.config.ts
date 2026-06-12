@@ -505,8 +505,14 @@ export default defineConfig(({ mode }) => {
         },
         // dev:local 模式：指向 SDK 本地源码，改代码即时 HMR。
         // npm 包模式：不需要 alias，Vite 通过 package.json exports 自动解析。
+        // 注意：alias 顺序很关键 —— 子路径必须排在主入口 alias 之前，
+        // 因为 Vite alias 是前缀匹配，主入口写在前面会拦截子路径请求。
         ...(USE_LOCAL_SDK
           ? [
+            {
+              find: "@tencent/tea-sdk-lightclaw/scripts",
+              replacement: path.join(LOCAL_SDK_ROOT, "src/scripts/index.ts"),
+            },
             {
               find: "@tencent/tea-sdk-lightclaw/styles",
               replacement: LOCAL_SDK_STYLES_ENTRY,
