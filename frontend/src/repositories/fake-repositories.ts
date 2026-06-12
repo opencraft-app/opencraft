@@ -852,6 +852,8 @@ const createBotRepository = (): BotRepository => {
         cols: 120,
         rows: 32,
         timeoutSeconds: 3600,
+        username: "agentuser",
+        workingDirectory: "/home/agentuser",
       };
     },
 

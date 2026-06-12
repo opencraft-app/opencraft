@@ -58,6 +58,8 @@ type tatSessionResponse struct {
 	Cols           int    `json:"cols"`
 	Rows           int    `json:"rows"`
 	TimeoutSeconds int    `json:"timeoutSeconds"`
+	Username       string `json:"username,omitempty"`
+	WorkingDir     string `json:"workingDirectory,omitempty"`
 }
 
 func registerTATRoutes(r gin.IRouter, h *handler) {
@@ -114,6 +116,8 @@ func (h *handler) postSandboxTATSession(c *gin.Context) {
 		Cols:           session.Cols,
 		Rows:           session.Rows,
 		TimeoutSeconds: session.TimeoutSeconds,
+		Username:       session.Username,
+		WorkingDir:     session.WorkingDir,
 	})
 }
 
