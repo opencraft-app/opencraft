@@ -152,7 +152,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--kubectl-retries",
         type=int,
-        default=1,
+        default=5,
         help="Retry count for kubectl calls against transiently unstable API servers.",
     )
     parser.add_argument("--output-json", default="", help="Optional path to write execution summary JSON")
@@ -225,6 +225,48 @@ def load_service_platform_env(spec: dict[str, Any], env_name: str, deploy_root: 
     return load_env_file(path)
 
 
+def load_playground_catalog_value(deploy_root: Path, env_name: str, service: str, key: str) -> str:
+    path = (
+        deploy_root
+        / "argocd"
+        / "catalogs"
+        / "playground"
+        / "beijing-playground"
+        / env_name
+        / f"{service}.yaml"
+    )
+    if not path.is_file():
+        return ""
+    for raw in path.read_text().splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or ":" not in line:
+            continue
+        candidate, value = line.split(":", 1)
+        if candidate.strip() != key:
+            continue
+        value = value.strip()
+        if "#" in value:
+            value = value.split("#", 1)[0].strip()
+        return value.strip("\"'")
+    return ""
+
+
+def resolve_kubeconfig_cluster_name(platform_env: dict[str, str], deploy_root: Path, env_name: str, service: str) -> str:
+    destination_name = load_playground_catalog_value(deploy_root, env_name, service, "destinationName")
+    if destination_name:
+        return destination_name
+    playground_cluster = load_playground_catalog_value(deploy_root, env_name, service, "playgroundCluster")
+    if playground_cluster:
+        return playground_cluster
+    return env_name or platform_env.get("PULUMI_ENV_NAME", "").strip()
+
+
+def resolve_job_namespace(deploy_root: Path, env_name: str, service: str, explicit_namespace: str) -> str:
+    if explicit_namespace:
+        return explicit_namespace
+    return load_playground_catalog_value(deploy_root, env_name, service, "namespace")
+
+
 def git_output(args: list[str]) -> str:
     result = subprocess.run(["git", *args], cwd=REPO_ROOT, capture_output=True, text=True)
     if result.returncode != 0:
@@ -295,6 +337,24 @@ def kubectl_command(cmd: list[str]) -> list[str]:
     return cmd
 
 
+def is_transient_kubectl_message(output: str) -> bool:
+    transient_markers = (
+        ": EOF",
+        "Unable to connect to the server: EOF",
+        "Client.Timeout",
+        "connection reset by peer",
+        "net/http: TLS handshake timeout",
+        "i/o timeout",
+        "unexpected EOF",
+    )
+    return any(marker in output for marker in transient_markers)
+
+
+def is_transient_kubectl_error(result: subprocess.CompletedProcess[str]) -> bool:
+    output = "\n".join(part for part in (result.stdout, result.stderr) if part)
+    return is_transient_kubectl_message(output)
+
+
 def kubectl_run(cmd: list[str], *, input_text: str | None = None, retries: int = 1) -> subprocess.CompletedProcess[str]:
     attempts = max(1, retries)
     kubectl_cmd = kubectl_command(cmd)
@@ -326,6 +386,14 @@ def kubectl_json(kubeconfig: str, namespace: str, kind: str, name: str, *, retri
     if result.returncode != 0:
         raise RuntimeError(f"kubectl get {kind}/{name} failed\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}")
     return json.loads(result.stdout)
+
+
+def kubectl_secret_value(kubeconfig: str, namespace: str, secret_name: str, key: str, *, retries: int = 1) -> str:
+    secret = kubectl_json(kubeconfig, namespace, "secret", secret_name, retries=retries)
+    encoded = str(secret.get("data", {}).get(key, "")).strip()
+    if not encoded:
+        return ""
+    return base64.b64decode(encoded).decode()
 
 
 def first_container_image(deploy: dict[str, Any]) -> str:
@@ -392,6 +460,7 @@ def build_ctl_dynamic_resources(
     platform_env: dict[str, str],
     service_platform_env: dict[str, str],
     db_contract: dict[str, Any],
+    kubeconfig: str = "",
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     mysql_host = service_platform_env.get("CTL_TEST_MYSQL_HOST", "").strip()
     resolved_secrets = resolve_contract_secret_values(deploy_root, env_name, db_contract)
@@ -399,7 +468,12 @@ def build_ctl_dynamic_resources(
     mysql_password = platform_env.get("CTL_TEST_MYSQL_PASSWORD", "").strip() or runtime_secret_value(
         "CTL_TEST_MYSQL_PASSWORD", env_name
     )
-    if resolver_name:
+    if kubeconfig and namespace.startswith("lightvela-playground-"):
+        mysql_password = (
+            kubectl_secret_value(kubeconfig, namespace, "playground-runtime-secrets", "MYSQL_ROOT_PASSWORD").strip()
+            or mysql_password
+        )
+    elif resolver_name:
         mysql_password = resolved_secrets.get(resolver_name, "").strip() or mysql_password
     if not mysql_host:
         raise ValueError("missing CTL_TEST_MYSQL_HOST in ctl platform env")
@@ -558,7 +632,7 @@ def build_job_manifest(
 
 def apply_manifest(kubeconfig: str, manifest: dict[str, Any], *, retries: int = 1) -> None:
     result = kubectl_run(
-        ["kubectl", "--kubeconfig", kubeconfig, "apply", "-f", "-"],
+        ["kubectl", "--kubeconfig", kubeconfig, "apply", "--validate=false", "-f", "-"],
         input_text=json.dumps(manifest),
         retries=retries,
     )
@@ -573,7 +647,14 @@ def get_job_status(kubeconfig: str, namespace: str, name: str, *, retries: int =
 def wait_for_job(kubeconfig: str, namespace: str, name: str, timeout_seconds: int, *, retries: int = 1) -> str:
     deadline = time.time() + timeout_seconds
     while time.time() < deadline:
-        job = get_job_status(kubeconfig, namespace, name, retries=retries)
+        try:
+            job = get_job_status(kubeconfig, namespace, name, retries=retries)
+        except RuntimeError as exc:
+            if not is_transient_kubectl_message(str(exc)):
+                raise
+            print(f"warning: transient kubectl get job/{name} failed; retrying until timeout", file=sys.stderr)
+            time.sleep(5)
+            continue
         status = job.get("status") or {}
         if status.get("succeeded", 0) > 0:
             return "succeeded"
@@ -660,13 +741,14 @@ def main() -> int:
     dynamic: dict[str, Any] = {}
     try:
         spec = copy.deepcopy(SERVICE_SPECS[key])
-        namespace_override = args.namespace.strip()
+        namespace_override = resolve_job_namespace(deploy_root, args.env, args.service, args.namespace.strip())
         if namespace_override:
             spec["namespace"] = namespace_override
         require_repo_payload_revision(spec, args.revision)
         service_platform_env = load_service_platform_env(spec, args.env, deploy_root)
         if args.apply or not (args.image_override.strip() or spec.get("image") or spec.get("image_env_key")):
-            kubeconfig, temp_path = resolve_kubeconfig(platform_env, args.kubeconfig_b64_env, args.env)
+            cluster_name = resolve_kubeconfig_cluster_name(platform_env, deploy_root, args.env, args.service)
+            kubeconfig, temp_path = resolve_kubeconfig(platform_env, args.kubeconfig_b64_env, cluster_name)
         image = resolve_job_image(args, spec, kubeconfig, service_platform_env)
         job_name = generate_job_name(args.service, args.operation)
         extra_resources: list[dict[str, Any]] = []
@@ -679,6 +761,7 @@ def main() -> int:
                 platform_env,
                 service_platform_env,
                 db_contract,
+                kubeconfig,
             )
         manifest = build_job_manifest(
             args.service, args.operation, args.revision, requested_by, spec, image, job_name=job_name, dynamic=dynamic

@@ -1,10 +1,19 @@
 # syntax=docker/dockerfile:1.7
 FROM golang:1.24-bullseye AS builder
-WORKDIR /app
+WORKDIR /src
 ENV GOTOOLCHAIN=auto
-COPY go.mod go.sum ./
+
+COPY shared/cloudladdertransport/go.mod shared/cloudladdertransport/go.mod
+COPY user/auth/go.mod user/auth/go.sum user/auth/
+
+WORKDIR /src/user/auth
 RUN go mod download
-COPY . .
+
+WORKDIR /src
+COPY shared/cloudladdertransport shared/cloudladdertransport
+COPY user/auth user/auth
+
+WORKDIR /src/user/auth
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/lightclaw-auth ./cmd/lightclaw-auth
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/lightclaw-auth-content-audit-worker ./cmd/lightclaw-auth-content-audit-worker
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /out/lightclaw-auth-migrate ./cmd/lightclaw-auth-migrate

@@ -1,7 +1,20 @@
 import { Suspense, lazy, type ComponentType, type ReactElement } from "react";
+import { useNavigate } from "react-router-dom";
+import { SiteHeader } from "@/components/site/site-header";
 
 function RouteFallback() {
   return null;
+}
+
+function SiteRouteFallback() {
+  const navigate = useNavigate();
+
+  return (
+    <div className="min-h-dvh bg-white text-[var(--text-primary)]" aria-busy="true">
+      <SiteHeader fixed onLoginClick={() => navigate("/auth/sign-in")} />
+      <main className="pt-[60px]" />
+    </div>
+  );
 }
 
 export function lazyNamed<T extends string>(
@@ -14,10 +27,17 @@ export function lazyNamed<T extends string>(
   });
 }
 
-export function lazyRoute(Component: ComponentType): ReactElement {
+export function lazyRoute(
+  Component: ComponentType,
+  { fallback = <RouteFallback /> }: { fallback?: ReactElement } = {},
+): ReactElement {
   return (
-    <Suspense fallback={<RouteFallback />}>
+    <Suspense fallback={fallback}>
       <Component />
     </Suspense>
   );
+}
+
+export function lazySiteRoute(Component: ComponentType): ReactElement {
+  return lazyRoute(Component, { fallback: <SiteRouteFallback /> });
 }

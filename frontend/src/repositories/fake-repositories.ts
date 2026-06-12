@@ -216,7 +216,7 @@ const FAKE_BUNDLES: Bundle[] = [
     bundle_state: "ONLINE",
     agent_quota: 1,
     credit: 0,
-    price: 0,
+    price: null,
     time_span: 7,
     time_unit: "d",
     bundle_sales_available_count: 99,
@@ -502,6 +502,84 @@ export const createFakeRepositories = (): Repositories => {
         };
         writeStoredPasses([...existing, pass]);
         return pass;
+      },
+      async createPassOrder(input) {
+        await wait(NETWORK_DELAY_MS);
+        return {
+          deal_names: [`deal-fake-${input.bundle_id}-${Date.now().toString(36)}`],
+          auth_code: `auth-fake-${Date.now().toString(36)}`,
+        };
+      },
+      async getPassOrderUrl(input) {
+        await wait(NETWORK_DELAY_MS);
+        return {
+          deal_name: input.deal_names[0] ?? `deal-fake-${Date.now().toString(36)}`,
+          pay_url: "https://buy.cloud.tencent.com/pay?token=fake",
+          token_id: "fake-token-id",
+          order_id: "fake-order-id",
+          midas_app_id: "fake-midas-app-id",
+          need_charge: 1,
+          uin: "1000000",
+          app_id: "1250000000",
+        };
+      },
+      async createPassOrderAndPay(input) {
+        await wait(NETWORK_DELAY_MS);
+        return {
+          deal_name: `deal-fake-${input.bundle_id}-${Date.now().toString(36)}`,
+          big_order_id: `big-order-fake-${Date.now().toString(36)}`,
+        };
+      },
+      async getRenewPrice(passId) {
+        await wait(NETWORK_DELAY_MS);
+        const pass = readStoredPasses().find((item) => item.pass_id === passId);
+        return {
+          bundle_id: pass?.bundle_id ?? "bundle_launch_01",
+          price: 4900,
+          total_cost: 4900,
+          real_total_cost: 4900,
+          currency: "CNY",
+          discount: 100,
+        };
+      },
+      async createRenewOrder(passId) {
+        await wait(NETWORK_DELAY_MS);
+        return {
+          deal_names: [`deal-renew-fake-${passId}-${Date.now().toString(36)}`],
+          auth_code: `auth-renew-fake-${Date.now().toString(36)}`,
+        };
+      },
+      async getRenewOrderUrl(_passId, input) {
+        await wait(NETWORK_DELAY_MS);
+        return {
+          deal_name: input.deal_names[0] ?? `deal-fake-${Date.now().toString(36)}`,
+          pay_url: "https://buy.cloud.tencent.com/pay?token=fake-renew",
+          token_id: "fake-renew-token-id",
+          order_id: "fake-renew-order-id",
+          midas_app_id: "fake-midas-app-id",
+          need_charge: 1,
+          uin: "1000000",
+          app_id: "1250000000",
+        };
+      },
+      async createRenewOrderAndPay(passId) {
+        await wait(NETWORK_DELAY_MS);
+        return {
+          deal_name: `deal-renew-fake-${passId}-${Date.now().toString(36)}`,
+          big_order_id: `big-renew-fake-${Date.now().toString(36)}`,
+        };
+      },
+      async deletePass(passId) {
+        await wait(NETWORK_DELAY_MS);
+        const nowString = nowIso();
+        writeStoredPasses(
+          readStoredPasses().map((pass) =>
+            pass.pass_id === passId
+              ? { ...pass, deleted_time: nowString, updated_time: nowString }
+              : pass,
+          ),
+        );
+        return { deleted: true };
       },
       async listMyPasses() {
         await wait(NETWORK_DELAY_MS);
@@ -949,6 +1027,23 @@ const createBotRepository = (): BotRepository => {
         };
       }
       return { status: "Succeeded", exitCode: 0, output: "" };
+    },
+
+    async startRescueExport(botId) {
+      await wait(NETWORK_DELAY_MS);
+      const bot = botStore.get(botId);
+      if (!bot) {
+        throw new Error("Bot 不存在，请先创建。");
+      }
+      const actionRunId = `worker-action-${bot.id}-rescue_export-${Date.now()}`;
+      return {
+        actionRunId,
+        workflowId: actionRunId,
+        runId: `run_${Date.now()}`,
+        action: "rescue_export",
+        botId: bot.id,
+        status: "accepted",
+      };
     },
 
     async resetInstanceConfig(_botId) {

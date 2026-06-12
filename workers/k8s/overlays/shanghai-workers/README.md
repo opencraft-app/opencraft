@@ -8,7 +8,7 @@ Temporal official `WorkerDeployment` CRD instead of a plain Kubernetes
 Workers connect to the Shanghai Temporal frontend:
 
 ```bash
-TEMPORAL_ADDRESS=temporal-frontend-sh.lightclaw.tech:443
+TEMPORAL_ADDRESS=temporal.lightvela.com:443
 TEMPORAL_NAMESPACE=default
 TEMPORAL_TLS=true
 ```
@@ -38,13 +38,24 @@ the pod template; the controller derives them from the `WorkerDeployment`.
 ## Release Flow
 
 CI builds the `workers` image for `shanghai-workers` with the shprod TCR
-repository, then auto-pins `argocd/services/workers/shanghai-workers/workers-platform.env`.
-The GitOps view is mirrored under `argocd/services/workers/shanghai-workers/`.
+repository, then auto-pins
+`argocd/services/workers-rescue-exporter/shanghai-workers/workers-platform.env`.
+Shared runtime resources are deployed by
+`argocd/services/workers-runtime/shanghai-workers/`, while each concrete worker
+gets its own deploy service and Argo app.
 
 Manual image pin, if needed:
 
 ```bash
 WORKERS_IMAGE=lightclaw-shprod.tencentcloudcr.com/lightclaw/workers:<tag>
+```
+
+For local source-overlay rendering, copy the example env files into their
+ignored runtime locations:
+
+```bash
+cp rescue-exporter/generated/platform.env.example rescue-exporter/generated/platform.env
+cp shared/generated/workers-runtime-secrets.env.example shared/generated/workers-runtime-secrets.env
 ```
 
 ## Verify

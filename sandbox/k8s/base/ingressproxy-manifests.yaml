@@ -51,8 +51,12 @@ spec:
               value: "true"
             - name: INGRESSPROXY_SHARD_COUNT
               value: "4"
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
             - name: INGRESSPROXY_SHARD_SERVICE_TEMPLATE
-              value: "http://ingressproxy-g%d.sandbox.svc.cluster.local"
+              value: "http://ingressproxy-g%d.$(POD_NAMESPACE).svc.cluster.local"
           ports:
             - name: http
               containerPort: 8084

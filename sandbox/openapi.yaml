@@ -357,6 +357,12 @@ components:
         sandboxID:
           type: string
           description: Identifier of the sandbox
+        cloudID:
+          type: string
+          description: Tencent Cloud CVM instance ID backing this sandbox
+        region:
+          type: string
+          description: Tencent Cloud region of the backing instance
         clientID:
           type: string
           deprecated: true
@@ -506,6 +512,66 @@ components:
           type: boolean
           deprecated: true
           description: Automatically pauses the sandbox after the timeout
+
+    # trade pass destroy flow request body (sec5.2 of .tmp/trade-pass-destroy-design.md).
+    # passID / userID / region 用于 sandbox 拼快照名 + 审计；
+    # retentionSeconds 由 ctl 配置统一传入（Q7 ✅ 拍板：默认 90 天 = 2160h），
+    # sandbox 据此计算 cbs.CreateSnapshot.Deadline = now + retentionSeconds。
+    # 注：sandbox 实际调 cbs 用的是 sandbox 服务自身配置的腾讯云 AK/SK，
+    # 资源 owner uin/appID 由该 AK/SK 在腾讯云侧自动决定，无需 ctl 透传。
+    CreateSandboxSnapshotRequest:
+      type: object
+      required:
+        - instanceID
+        - passID
+        - userID
+        - region
+        - retentionSeconds
+      properties:
+        instanceID:
+          type: string
+          description: Logical instance ID owned by ctl (used by sandbox to look up cvm CloudID and call cbs.DescribeDisks).
+        passID:
+          type: string
+          description: trade pass ID; embedded into snapshot name ({passID}-{instanceID}).
+        userID:
+          type: string
+          description: ctl-side user ID (audit / tagging only).
+        region:
+          type: string
+          description: Tencent Cloud region of the underlying cvm (e.g. ap-guangzhou).
+        retentionSeconds:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Snapshot retention in seconds; sandbox sets cbs.CreateSnapshot.Deadline = now + retentionSeconds.
+
+    CreateSandboxSnapshotResponse:
+      type: object
+      required:
+        - snapshotID
+      properties:
+        snapshotID:
+          type: string
+          description: Snapshot ID returned by cbs.CreateSnapshot; ctl polls via GET /sandboxes/{sandboxID}/snapshot-status until status=ready.
+
+    # SnapshotState abstraction returned by GET /sandboxes/{sandboxID}/snapshot-status.
+    # Mapping (Q9 拍板):
+    #   - in_progress: cbs SnapshotState ∈ {CREATING}
+    #   - ready:       cbs SnapshotState = NORMAL (final, snapshot persisted)
+    #   - failed:      cbs SnapshotState ∈ {ERROR, ROLLBACKING_FAILED, ...} (final)
+    GetSandboxSnapshotStatusResponse:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum: [in_progress, ready, failed]
+          description: Abstract snapshot status; ctl polls until status=ready or status=failed.
+        reason:
+          type: string
+          description: Optional human-readable reason when status=failed.
 
     TeamMetric:
       description: Team metric with timestamp
@@ -1619,6 +1685,72 @@ paths:
           $ref: "#/components/responses/401"
         "404":
           $ref: "#/components/responses/404"
+
+  # trade pass destroy flow (Q4 / Q9 / Q25 ✅ 拍板, see .tmp/trade-pass-destroy-design.md sec5.2):
+  # ctl 销毁子 task 阶段 1 调本端点发起系统盘快照创建。
+  # sandbox 内部时序固化为：① cbs.DescribeDisks 反查系统盘 ID（Q25） → ② cbs.CreateSnapshot 一次（Q9 单系统盘单快照） → ③ 返回 snapshotID。
+  /sandboxes/{sandboxID}/snapshot:
+    post:
+      description: Create a CBS snapshot of the sandbox underlying instance system disk (trade pass destroy flow).
+      tags: [sandboxes]
+      security:
+        - ApiKeyAuth: []
+        - Supabase1TokenAuth: []
+          Supabase2TeamAuth: []
+      parameters:
+        - $ref: "#/components/parameters/sandboxID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSandboxSnapshotRequest"
+      responses:
+        "200":
+          description: Snapshot creation accepted; returned snapshotID is async-tracking and must be polled via GET /sandboxes/{sandboxID}/snapshot-status until ready.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateSandboxSnapshotResponse"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "500":
+          $ref: "#/components/responses/500"
+
+  # trade pass destroy flow (Q4 / Q9 / Q25 ✅ 拍板, see .tmp/trade-pass-destroy-design.md sec5.2):
+  # ctl 销毁子 task 阶段 2 轮询此端点直到 status=ready；底层走 cbs.DescribeSnapshots，
+  # SnapshotState 状态机抽象为：CREATING→in_progress / NORMAL→ready / ERROR→failed。
+  /sandboxes/{sandboxID}/snapshot-status:
+    get:
+      description: Poll status of an in-progress sandbox snapshot.
+      tags: [sandboxes]
+      security:
+        - ApiKeyAuth: []
+        - Supabase1TokenAuth: []
+          Supabase2TeamAuth: []
+      parameters:
+        - $ref: "#/components/parameters/sandboxID"
+        - in: query
+          name: snapshotID
+          required: true
+          schema:
+            type: string
+          description: SnapshotID returned by POST /sandboxes/{sandboxID}/snapshot
+      responses:
+        "200":
+          description: Current snapshot status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetSandboxSnapshotStatusResponse"
+        "404":
+          $ref: "#/components/responses/404"
+        "401":
+          $ref: "#/components/responses/401"
+        "500":
+          $ref: "#/components/responses/500"
 
   /v2/templates:
     post:

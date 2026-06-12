@@ -33,6 +33,8 @@ type TencentConfig struct {
 type ExportRequest struct {
 	InstanceID             string
 	Region                 string
+	NotificationEmail      string
+	NotifyEmail            string
 	RescueUsername         string
 	RescuePasswordEnv      string
 	StopType               string
@@ -130,6 +132,11 @@ type ExportResult struct {
 	ExitedRescue          bool
 	COSDeleteWorkflowID   string
 	COSDeleteAfterSeconds int
+	NotificationEmail     string
+	EmailMessageID        string
+	EmailDelivered        bool
+	EmailDeliverStatus    int
+	EmailDeliverMessage   string
 	DryRun                bool
 }
 
@@ -145,6 +152,11 @@ type ExportStatus struct {
 	ExitedRescue          bool
 	COSDeleteWorkflowID   string
 	COSDeleteAfterSeconds int
+	NotificationEmail     string
+	EmailMessageID        string
+	EmailDelivered        bool
+	EmailDeliverStatus    int
+	EmailDeliverMessage   string
 	Error                 string
 	DryRun                bool
 }

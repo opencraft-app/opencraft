@@ -224,11 +224,24 @@ export type DataMode = "live" | "empty" | "error";
 
 export type BundleState = "ONLINE" | "OFFLINE";
 export type BundleSalesState = "AVAILABLE" | "SOLD_OUT";
-export type BundleTimeUnit = "d" | "m";
+export type BundleTimeUnit = "d" | "m" | "y";
 
 export interface BundleDescriptionEntry {
   Key: string;
   Value: string;
+}
+
+export interface BundlePrice {
+  /** 标价（分） */
+  price: number;
+  /** 成本价（分） */
+  total_cost: number;
+  /** 实付价（分，含折扣） */
+  real_total_cost: number;
+  /** 币种，当前后端固定 CNY */
+  currency: string;
+  /** 折扣率，1 = 不打折 */
+  discount: number;
 }
 
 export interface Bundle {
@@ -239,8 +252,8 @@ export interface Bundle {
   agent_quota: number;
   /** 积分数量（套餐包含多少 AI 积分） */
   credit: number;
-  /** 价格（人民币元），0 表示免费版；后端未返回时前端按免费处理 */
-  price?: number;
+  /** 价格对象；后端询价不可用时返回 null，前端按暂无报价处理 */
+  price?: BundlePrice | null;
   time_span: number;
   time_unit: BundleTimeUnit;
   bundle_sales_available_count: number;
@@ -262,6 +275,70 @@ export interface Pass {
   isolated_time?: string | null;
   deleted_time?: string | null;
   updated_time?: string;
+  agent_quota_total?: number;
+  agent_quota_available?: number;
   credit_total: number;
   credit_available: number;
+}
+
+export interface CreatePassOrderResult {
+  /** jifei 订单号列表；当前单订单场景固定 1 个元素 */
+  deal_names: string[];
+  /** 一次性鉴权 ticket，用于微信中转页无主站 token 场景 */
+  auth_code?: string;
+}
+
+export interface CreatePassOrderUrlInput {
+  /** 来自 createPassOrder / createRenewOrder 返回的 deal_names */
+  deal_names: string[];
+  /** 支付平台：默认 "pc"；微信内中转页传 "mobile" */
+  platform?: "pc" | "mobile";
+  /** 微信公众号 OAuth 返回的 openid。 */
+  wx_open_id?: string;
+  /** 后端换 openid 时可使用的 OAuth code，预留兼容。 */
+  wx_code?: string;
+  /** 一次性鉴权 ticket，用于中转页无主站 token 场景。 */
+  auth_code?: string;
+}
+
+export interface CreatePassOrderUrlResult {
+  /** jifei 订单号（审计用；通常与入参 deal_names[0] 一致） */
+  deal_name: string;
+  /** jifei 支付页 URL。 */
+  pay_url: string;
+  /** 米大师支付 token，前端调 tcb-jssdk 用。 */
+  token_id?: string | null;
+  /** 米大师订单号，客服排障 / 对账可用。 */
+  order_id?: string | null;
+  /** 米大师商户 appid，前端调 tcb-jssdk 透传。 */
+  midas_app_id?: string | null;
+  /** 1 = 需跳 Midas 支付页；0 = 零元订单已支付成功。 */
+  need_charge: number;
+  /** 用户腾讯云 uin（来自 trade_order）。 */
+  uin?: string;
+  /** 用户腾讯云 appId。 */
+  app_id?: string;
+}
+
+export interface CreatePassOrderAndPayResult {
+  deal_name: string;
+  big_order_id: string;
+}
+
+export interface PassRenewPrice {
+  bundle_id: string;
+  /** 标价（分） */
+  price: number;
+  /** 成本价（分） */
+  total_cost: number;
+  /** 实付价（分） */
+  real_total_cost: number;
+  /** 币种，当前后端固定 CNY */
+  currency: string;
+  /** jifei policyDetail.total 拍平值，100 = 无折扣 */
+  discount: number;
+}
+
+export interface DeletePassResult {
+  deleted: boolean;
 }

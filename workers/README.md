@@ -2,6 +2,10 @@
 
 Go Temporal worker/client for Tencent CVM rescue-mode export.
 
+`workers/catalog.yaml` records the shared workers image contract, runtime app,
+and concrete worker deploy units. CI contract tests keep that catalog aligned
+with Argo and `WorkerDeployment` manifests.
+
 The workflow creates a CVM image backup unless skipped, enters rescue mode, waits for the instance and TAT/SSH to become reachable, read-only mounts candidate disks such as `/dev/vda*`, streams selected paths into a gzip archive, uploads it to an existing COS bucket through signed URLs, and attempts `ExitRescueMode` after rescue may have been entered. Cleanup uses Temporal compensation activities so cancellation can still drive the instance back out of rescue mode. After the signed download URL TTL expires, a detached Temporal child workflow deletes the exported COS object.
 
 Secrets are intentionally not stored in this repo or passed as Temporal workflow arguments. The worker process reads Tencent credentials and rescue passwords from its own environment.
@@ -106,5 +110,6 @@ export RESCUE_SSH_PASSWORD="$RESCUE_PASSWORD"
 - Backup defaults to a CVM image before entering rescue mode. Use `--skip-backup` only when a fresh backup already exists.
 - The mount is read-only and the workflow attempts `ExitRescueMode` after export or cancellation once rescue may have been entered.
 - COS archive objects are automatically deleted after `--cos-upload-url-ttl-seconds` seconds, defaulting to 28800 seconds. Use `--disable-cos-auto-delete` only for debugging or retention exceptions.
+- `NotifyEmail` / `NotificationEmail` may be supplied by ctl from the authenticated user's bound email. When a COS download URL is available, the workflow sends a Tencent SES notification and polls delivery status before completing.
 - Use `rescue-exporter cancel --workflow-id <id>` to stop through Temporal and allow cleanup compensation. `terminate` is a last-resort Temporal operation and can bypass workflow cleanup.
 - Temporal token is read only from `TEMPORAL_BEARER_TOKEN` or `TEMPORAL_AUTH_TOKEN`; raw Tencent secrets and rescue passwords are not accepted as workflow parameters.

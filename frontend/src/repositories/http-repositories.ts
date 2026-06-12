@@ -10,11 +10,16 @@ import type {
   BotRuntime,
   BotVersion,
   Bundle,
+  CreatePassOrderAndPayResult,
+  CreatePassOrderResult,
+  CreatePassOrderUrlResult,
   CurrentSubscription,
+  DeletePassResult,
   Deployment,
   InviteCodeValidation,
   KnowledgeSource,
   Pass,
+  PassRenewPrice,
   ToolBinding,
   User,
   WeixinLoginSession,
@@ -119,10 +124,20 @@ interface CtlBotBornCardPayload {
   born_number_for_china: number;
 }
 
+interface WorkerActionStartPayload {
+  action_run_id: string;
+  workflow_id: string;
+  run_id?: string;
+  action: string;
+  bot_id: string;
+  status: string;
+}
+
 const AUTH_TOKEN_STORAGE_KEY = "lightclaw-auth-token-v1";
 const OAUTH_SESSION_TOKEN_FRAGMENT_KEY = "session_token";
 const HTTP_BOT_DRAFTS_STORAGE_KEY = "lightclaw-http-bot-drafts-v1";
 const DEFAULT_INSTANCE_TIMEOUT_SECONDS = 60 * 60;
+const DEFAULT_RESCUE_EXPORT_REMOTE_PATH = "/home/agentuser/.openclaw/workspace";
 export const AUTH_UNAUTHORIZED_EVENT = "lightclaw:auth-unauthorized";
 
 class RepositoryError extends Error {
@@ -936,6 +951,27 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
       };
     },
 
+    async startRescueExport(botId: string) {
+      const payload = await requestEnvelope<WorkerActionStartPayload>(baseUrl, "/api/worker-actions", {
+        method: "POST",
+        body: {
+          bot_id: botId,
+          action: "rescue_export",
+          params: {
+            remote_paths: [DEFAULT_RESCUE_EXPORT_REMOTE_PATH],
+          },
+        },
+      });
+      return {
+        actionRunId: payload.action_run_id,
+        workflowId: payload.workflow_id,
+        runId: payload.run_id,
+        action: payload.action,
+        botId: payload.bot_id,
+        status: payload.status,
+      };
+    },
+
     async resetInstanceConfig(botId: string) {
       const payload = await requestEnvelope<{
         key_id: string;
@@ -1161,6 +1197,75 @@ const createHttpPlanRepository = (baseUrl: string): PlanRepository => ({
       method: "POST",
       body: { bundle_id: bundleId },
     });
+  },
+  async createPassOrder(input) {
+    return requestEnvelope<CreatePassOrderResult>(baseUrl, "/v1/passes/order", {
+      method: "POST",
+      body: input,
+    });
+  },
+  async getPassOrderUrl(input, init) {
+    return requestEnvelope<CreatePassOrderUrlResult>(baseUrl, "/v1/passes/order-url", {
+      method: "POST",
+      body: input,
+      headers: init?.headers,
+    });
+  },
+  async createPassOrderAndPay(input) {
+    return requestEnvelope<CreatePassOrderAndPayResult>(baseUrl, "/v1/passes/order-and-pay", {
+      method: "POST",
+      body: input,
+    });
+  },
+  async getRenewPrice(passId, input) {
+    return requestEnvelope<PassRenewPrice>(
+      baseUrl,
+      `/v1/passes/${encodeURIComponent(passId)}/renew/price`,
+      {
+        method: "POST",
+        body: input,
+      },
+    );
+  },
+  async createRenewOrder(passId, input) {
+    return requestEnvelope<CreatePassOrderResult>(
+      baseUrl,
+      `/v1/passes/${encodeURIComponent(passId)}/renew/order`,
+      {
+        method: "POST",
+        body: input,
+      },
+    );
+  },
+  async getRenewOrderUrl(passId, input, init) {
+    return requestEnvelope<CreatePassOrderUrlResult>(
+      baseUrl,
+      `/v1/passes/${encodeURIComponent(passId)}/renew/order-url`,
+      {
+        method: "POST",
+        body: input,
+        headers: init?.headers,
+      },
+    );
+  },
+  async createRenewOrderAndPay(passId, input) {
+    return requestEnvelope<CreatePassOrderAndPayResult>(
+      baseUrl,
+      `/v1/passes/${encodeURIComponent(passId)}/renew/order-and-pay`,
+      {
+        method: "POST",
+        body: input,
+      },
+    );
+  },
+  async deletePass(passId) {
+    return requestEnvelope<DeletePassResult>(
+      baseUrl,
+      `/v1/passes/${encodeURIComponent(passId)}/delete`,
+      {
+        method: "POST",
+      },
+    );
   },
   async listMyPasses() {
     const payload = await requestEnvelope<{ passes: Pass[] }>(baseUrl, "/v1/passes", {

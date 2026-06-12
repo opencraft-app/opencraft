@@ -96,7 +96,7 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
       { slug: "configuration/channel-wecom", title: "企业微信", titleEn: "WeCom", indent: true },
       { slug: "configuration/channel-feishu", title: "飞书", titleEn: "Lark", indent: true },
       { slug: "configuration/skill", title: "配置技能", titleEn: "Configure Skills" },
-      { slug: "configuration/automation", title: "自动任务", titleEn: "Automated Tasks" },
+      { slug: "configuration/automation", title: "自动任务", titleEn: "Automations" },
       { slug: "configuration/agent-chat", title: "对话", titleEn: "Chat" },
     ],
   },

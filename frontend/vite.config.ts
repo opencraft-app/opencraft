@@ -385,6 +385,13 @@ function manualChunks(id: string) {
   if (id.includes("framer-motion")) return "vendor-motion";
   if (id.includes("@xterm/")) return "vendor-terminal";
   if (
+    id.includes("@tencent/tcb-jssdk")
+    || id.includes("@tencent+i18n")
+    || id.includes("@tencent/i18n")
+  ) {
+    return "vendor-wxpay";
+  }
+  if (
     id.includes("react-markdown")
     || id.includes("react-syntax-highlighter")
     || id.includes("remark-")

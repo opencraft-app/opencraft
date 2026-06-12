@@ -142,6 +142,102 @@ func TestInvalidReleaseTransition(t *testing.T) {
 	}
 }
 
+// TestReleasePausedToDry ensures Release accepts PAUSED → DRY so the trade pass
+// destroy flow can release an isolated sandbox back into the reset pool. Without
+// this transition, DeleteSandboxesSandboxID would leak the instance in PAUSED
+// forever (the reset worker only sweeps DRY/RESETTING).
+func TestReleasePausedToDry(t *testing.T) {
+	ctx := context.Background()
+	svc := NewService(store.NewMemoryStore())
+	verifyOK := func(context.Context, string) error { return nil }
+	pool, err := svc.CreatePool(ctx, "paused-release", "", "img-test", 0, testVpcID, testSubnetID, testZone, testSecurityGroups)
+	if err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+	if _, err := svc.RefillVerified(ctx, pool.ID, 1, nil, nil, verifyOK); err != nil {
+		t.Fatalf("refill: %v", err)
+	}
+	alloc, err := svc.Allocate(ctx, pool.ID)
+	if err != nil {
+		t.Fatalf("allocate: %v", err)
+	}
+	if _, err := svc.Pause(ctx, alloc.ID); err != nil {
+		t.Fatalf("pause: %v", err)
+	}
+	paused, err := svc.MarkPaused(ctx, alloc.ID)
+	if err != nil {
+		t.Fatalf("mark paused: %v", err)
+	}
+	if paused.State != core.StatePaused {
+		t.Fatalf("expected PAUSED before release, got %s", paused.State)
+	}
+
+	released, err := svc.Release(ctx, alloc.ID)
+	if err != nil {
+		t.Fatalf("release from paused: %v", err)
+	}
+	if released.State != core.StateDry {
+		t.Fatalf("expected DRY after release from paused, got %s", released.State)
+	}
+}
+
+// TestReleaseDryIdempotent ensures Release on a DRY instance is a no-op so
+// callers retrying a partially-failed sandbox delete do not see spurious
+// invalid-transition errors.
+func TestReleaseDryIdempotent(t *testing.T) {
+	ctx := context.Background()
+	svc := NewService(store.NewMemoryStore())
+	verifyOK := func(context.Context, string) error { return nil }
+	pool, err := svc.CreatePool(ctx, "dry-release", "", "img-test", 0, testVpcID, testSubnetID, testZone, testSecurityGroups)
+	if err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+	if _, err := svc.RefillVerified(ctx, pool.ID, 1, nil, nil, verifyOK); err != nil {
+		t.Fatalf("refill: %v", err)
+	}
+	alloc, err := svc.Allocate(ctx, pool.ID)
+	if err != nil {
+		t.Fatalf("allocate: %v", err)
+	}
+	if _, err := svc.Release(ctx, alloc.ID); err != nil {
+		t.Fatalf("first release: %v", err)
+	}
+	got, err := svc.Release(ctx, alloc.ID)
+	if err != nil {
+		t.Fatalf("second release on DRY should be idempotent, got %v", err)
+	}
+	if got.State != core.StateDry {
+		t.Fatalf("expected DRY after idempotent release, got %s", got.State)
+	}
+}
+
+// TestReleasePausingRejected ensures Release does not skip over the in-flight
+// PAUSING state. PAUSING is a transient cloud-side stop window and must never
+// be released directly; the caller has to settle into PAUSED (or roll back to
+// ALLOCATED) first.
+func TestReleasePausingRejected(t *testing.T) {
+	ctx := context.Background()
+	svc := NewService(store.NewMemoryStore())
+	verifyOK := func(context.Context, string) error { return nil }
+	pool, err := svc.CreatePool(ctx, "pausing-release", "", "img-test", 0, testVpcID, testSubnetID, testZone, testSecurityGroups)
+	if err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+	if _, err := svc.RefillVerified(ctx, pool.ID, 1, nil, nil, verifyOK); err != nil {
+		t.Fatalf("refill: %v", err)
+	}
+	alloc, err := svc.Allocate(ctx, pool.ID)
+	if err != nil {
+		t.Fatalf("allocate: %v", err)
+	}
+	if _, err := svc.Pause(ctx, alloc.ID); err != nil {
+		t.Fatalf("pause: %v", err)
+	}
+	if _, err := svc.Release(ctx, alloc.ID); !errors.Is(err, core.ErrInvalidTransition) {
+		t.Fatalf("expected ErrInvalidTransition releasing PAUSING, got %v", err)
+	}
+}
+
 func TestAdvanceStateInvalidTransition(t *testing.T) {
 	ctx := context.Background()
 	svc := NewService(store.NewMemoryStore())
@@ -1273,5 +1369,200 @@ func TestEnsurePoolForCapacityBundleRejectsReservationConflict(t *testing.T) {
 
 	if _, _, err := svc.EnsurePoolForCapacityBundle(ctx, binding, sku, "bundle-a"); err == nil {
 		t.Fatalf("expected reservation conflict to fail")
+	}
+}
+
+// resumePathSetup pushes a freshly allocated instance through the pause path so
+// resume-side tests start from PAUSED. Returns (svc, instanceID).
+func resumePathSetup(t *testing.T) (*Service, string) {
+	t.Helper()
+	ctx := context.Background()
+	svc := NewService(store.NewMemoryStore())
+	verifyOK := func(context.Context, string) error { return nil }
+	pool, err := svc.CreatePool(ctx, "renew-test", "", "img-test", 0, "vpc-r", "subnet-r", "ap-beijing-1", []string{"sg-r"})
+	if err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+	if _, err := svc.RefillVerified(ctx, pool.ID, 1, []string{"10.0.0.50"}, []string{"ins-renew-1"}, verifyOK); err != nil {
+		t.Fatalf("refill: %v", err)
+	}
+	inst, err := svc.Allocate(ctx, pool.ID)
+	if err != nil {
+		t.Fatalf("allocate: %v", err)
+	}
+	if _, err := svc.Pause(ctx, inst.ID); err != nil {
+		t.Fatalf("pause: %v", err)
+	}
+	if _, err := svc.MarkPaused(ctx, inst.ID); err != nil {
+		t.Fatalf("mark paused: %v", err)
+	}
+	got, err := svc.GetInstance(ctx, inst.ID)
+	if err != nil {
+		t.Fatalf("get instance: %v", err)
+	}
+	if got.State != core.StatePaused {
+		t.Fatalf("expected PAUSED, got %s", got.State)
+	}
+	return svc, inst.ID
+}
+
+// TestResumeFromPaused asserts the PAUSED → RESUMING transition (R-F).
+func TestResumeFromPaused(t *testing.T) {
+	svc, instID := resumePathSetup(t)
+	ctx := context.Background()
+
+	got, err := svc.Resume(ctx, instID)
+	if err != nil {
+		t.Fatalf("Resume: %v", err)
+	}
+	if got.State != core.StateResuming {
+		t.Fatalf("expected RESUMING after Resume, got %s", got.State)
+	}
+}
+
+// TestResumeIdempotentFromResuming asserts that calling Resume on a RESUMING
+// instance returns the current instance unchanged (no double transition).
+func TestResumeIdempotentFromResuming(t *testing.T) {
+	svc, instID := resumePathSetup(t)
+	ctx := context.Background()
+	if _, err := svc.Resume(ctx, instID); err != nil {
+		t.Fatalf("first Resume: %v", err)
+	}
+	// Second call must be a no-op.
+	got, err := svc.Resume(ctx, instID)
+	if err != nil {
+		t.Fatalf("idempotent Resume: %v", err)
+	}
+	if got.State != core.StateResuming {
+		t.Fatalf("expected RESUMING preserved, got %s", got.State)
+	}
+}
+
+// TestResumeIdempotentFromAllocated asserts that calling Resume on an
+// already-allocated instance returns it unchanged (mirrors ctl's
+// expectedResumeConflictMessages tolerance).
+func TestResumeIdempotentFromAllocated(t *testing.T) {
+	svc, instID := resumePathSetup(t)
+	ctx := context.Background()
+	if _, err := svc.Resume(ctx, instID); err != nil {
+		t.Fatalf("first Resume: %v", err)
+	}
+	if _, err := svc.MarkResumed(ctx, instID); err != nil {
+		t.Fatalf("MarkResumed: %v", err)
+	}
+	got, err := svc.Resume(ctx, instID)
+	if err != nil {
+		t.Fatalf("Resume on ALLOCATED: %v", err)
+	}
+	if got.State != core.StateAllocated {
+		t.Fatalf("expected ALLOCATED preserved, got %s", got.State)
+	}
+}
+
+// TestResumeRejectsNonPausedNonAllocated asserts that calling Resume on a DRY
+// (or any other non-{PAUSED, RESUMING, ALLOCATED}) instance returns
+// ErrInvalidTransition without state mutation.
+func TestResumeRejectsNonPausedNonAllocated(t *testing.T) {
+	ctx := context.Background()
+	svc := NewService(store.NewMemoryStore())
+	verifyOK := func(context.Context, string) error { return nil }
+	pool, err := svc.CreatePool(ctx, "p", "", "img-test", 0, "vpc", "subnet", "zone", []string{"sg"})
+	if err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+	if _, err := svc.RefillVerified(ctx, pool.ID, 1, []string{"10.0.0.60"}, []string{"ins-dry-1"}, verifyOK); err != nil {
+		t.Fatalf("refill: %v", err)
+	}
+	inst, err := svc.Allocate(ctx, pool.ID)
+	if err != nil {
+		t.Fatalf("allocate: %v", err)
+	}
+	if _, err := svc.Release(ctx, inst.ID); err != nil {
+		t.Fatalf("release to DRY: %v", err)
+	}
+	if _, err := svc.Resume(ctx, inst.ID); err != core.ErrInvalidTransition {
+		t.Fatalf("expected ErrInvalidTransition, got %v", err)
+	}
+}
+
+// TestMarkResumedFromResuming asserts the RESUMING → ALLOCATED transition (R-F).
+func TestMarkResumedFromResuming(t *testing.T) {
+	svc, instID := resumePathSetup(t)
+	ctx := context.Background()
+	if _, err := svc.Resume(ctx, instID); err != nil {
+		t.Fatalf("Resume: %v", err)
+	}
+	got, err := svc.MarkResumed(ctx, instID)
+	if err != nil {
+		t.Fatalf("MarkResumed: %v", err)
+	}
+	if got.State != core.StateAllocated {
+		t.Fatalf("expected ALLOCATED after MarkResumed, got %s", got.State)
+	}
+}
+
+// TestMarkResumedIdempotentFromAllocated asserts that calling MarkResumed on
+// an already-allocated instance is a no-op (matches Pause-side MarkPaused range).
+func TestMarkResumedIdempotentFromAllocated(t *testing.T) {
+	svc, instID := resumePathSetup(t)
+	ctx := context.Background()
+	if _, err := svc.Resume(ctx, instID); err != nil {
+		t.Fatalf("Resume: %v", err)
+	}
+	if _, err := svc.MarkResumed(ctx, instID); err != nil {
+		t.Fatalf("first MarkResumed: %v", err)
+	}
+	got, err := svc.MarkResumed(ctx, instID)
+	if err != nil {
+		t.Fatalf("idempotent MarkResumed: %v", err)
+	}
+	if got.State != core.StateAllocated {
+		t.Fatalf("expected ALLOCATED preserved, got %s", got.State)
+	}
+}
+
+// TestMarkResumedRejectsFromPaused asserts that calling MarkResumed on a still
+// PAUSED instance (without going through Resume first) returns
+// ErrInvalidTransition. This guards against handler-layer bugs that would
+// short-circuit the PAUSED → RESUMING CAS.
+func TestMarkResumedRejectsFromPaused(t *testing.T) {
+	svc, instID := resumePathSetup(t)
+	ctx := context.Background()
+	if _, err := svc.MarkResumed(ctx, instID); err != core.ErrInvalidTransition {
+		t.Fatalf("expected ErrInvalidTransition, got %v", err)
+	}
+}
+
+// TestRollbackResumingFromResuming asserts the RESUMING → PAUSED rollback
+// transition used when cp.StartInstance fails (R-F + Q4).
+func TestRollbackResumingFromResuming(t *testing.T) {
+	svc, instID := resumePathSetup(t)
+	ctx := context.Background()
+	if _, err := svc.Resume(ctx, instID); err != nil {
+		t.Fatalf("Resume: %v", err)
+	}
+	got, err := svc.RollbackResuming(ctx, instID)
+	if err != nil {
+		t.Fatalf("RollbackResuming: %v", err)
+	}
+	if got.State != core.StatePaused {
+		t.Fatalf("expected PAUSED after rollback, got %s", got.State)
+	}
+}
+
+// TestRollbackResumingRejectsFromAllocated asserts that calling
+// RollbackResuming on an already-allocated instance is rejected with
+// ErrInvalidTransition (would otherwise silently revert a successful resume).
+func TestRollbackResumingRejectsFromAllocated(t *testing.T) {
+	svc, instID := resumePathSetup(t)
+	ctx := context.Background()
+	if _, err := svc.Resume(ctx, instID); err != nil {
+		t.Fatalf("Resume: %v", err)
+	}
+	if _, err := svc.MarkResumed(ctx, instID); err != nil {
+		t.Fatalf("MarkResumed: %v", err)
+	}
+	if _, err := svc.RollbackResuming(ctx, instID); err != core.ErrInvalidTransition {
+		t.Fatalf("expected ErrInvalidTransition, got %v", err)
 	}
 }

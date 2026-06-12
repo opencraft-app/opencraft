@@ -153,7 +153,7 @@ func TestRouterHandlerRoutesBySandboxShard(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "http://router.local/health", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://router.local/proxy", nil)
 	req.Host = "49983-sandbox-a.e2b.app"
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)

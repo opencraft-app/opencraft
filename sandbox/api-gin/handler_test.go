@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -318,7 +319,7 @@ func TestPostSandboxesWithTemplateClassIDUsesSandboxBindings(t *testing.T) {
 
 	router := newHandlerTestRouter(&handler{svc: svc})
 
-	req := httptest.NewRequest(http.MethodPost, "/sandboxes", bytes.NewBufferString(`{"template_class_id":"openclaw-default"}`))
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes", bytes.NewBufferString(`{"templateClassID":"openclaw-default"}`))
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
 
@@ -340,6 +341,64 @@ func TestPostSandboxesWithTemplateClassIDUsesSandboxBindings(t *testing.T) {
 	}
 	if resp.ResolutionSource == nil || *resp.ResolutionSource != "sandbox_binding" {
 		t.Fatalf("expected sandbox_binding resolution source, got %+v", resp.ResolutionSource)
+	}
+}
+
+func TestPostSandboxesAcceptsSnakeCaseTemplateClassID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	ctx := context.Background()
+	svc := service.NewService(store.NewMemoryStore())
+	verifyOK := func(context.Context, string) error { return nil }
+
+	legacyPool, err := svc.CreatePool(ctx, "legacy", "", "img-legacy", 0, handlerTestVpcID, handlerTestSubnetID, handlerTestZone, handlerTestSecurityGroups)
+	if err != nil {
+		t.Fatalf("create legacy pool: %v", err)
+	}
+	boundPool, err := svc.CreatePool(ctx, "bound", "", "img-bound", 0, handlerTestVpcID, handlerTestSubnetID, handlerTestZone, handlerTestSecurityGroups)
+	if err != nil {
+		t.Fatalf("create bound pool: %v", err)
+	}
+	if _, err := svc.RefillVerified(ctx, boundPool.ID, 1, []string{"10.0.0.13"}, []string{"cloud-4"}, verifyOK); err != nil {
+		t.Fatalf("refill bound pool: %v", err)
+	}
+	if _, err := svc.UpsertTemplateClass(ctx, core.TemplateClass{
+		ID:             "openclaw-default",
+		Name:           "OpenClaw Default",
+		ResolutionMode: core.ResolutionModeSandboxPrimary,
+	}); err != nil {
+		t.Fatalf("upsert template class: %v", err)
+	}
+	if _, err := svc.UpsertTemplatePoolBinding(ctx, core.TemplatePoolBinding{
+		TemplateClassID: "openclaw-default",
+		PoolID:          boundPool.ID,
+		Priority:        1,
+		AdmissionState:  core.BindingAdmissionStateActive,
+	}); err != nil {
+		t.Fatalf("upsert template binding: %v", err)
+	}
+
+	router := newHandlerTestRouter(&handler{svc: svc})
+
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes", bytes.NewBufferString(`{"template_class_id":"openclaw-default","templateID":"`+legacyPool.ID+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp api.Sandbox
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.TemplateID != boundPool.ID {
+		t.Fatalf("expected snake-case template class to resolve bound pool %s, got %s", boundPool.ID, resp.TemplateID)
+	}
+	if resp.TemplateClassID == nil || *resp.TemplateClassID != "openclaw-default" {
+		t.Fatalf("expected templateClassID openclaw-default, got %+v", resp.TemplateClassID)
 	}
 }
 
@@ -432,7 +491,7 @@ func TestPostSandboxesWithSKUIDRestrictsAllocationToRequestedSKU(t *testing.T) {
 
 	router := newHandlerTestRouter(&handler{svc: svc})
 
-	req := httptest.NewRequest(http.MethodPost, "/sandboxes", bytes.NewBufferString(`{"template_class_id":"hermes","sku_id":"sku-hermes-2c4g"}`))
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes", bytes.NewBufferString(`{"templateClassID":"hermes","sku_id":"sku-hermes-2c4g"}`))
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
 
@@ -492,7 +551,7 @@ func TestPostSandboxesShadowModeReturnsResolutionDivergence(t *testing.T) {
 	}
 
 	router := newHandlerTestRouter(&handler{svc: svc})
-	req := httptest.NewRequest(http.MethodPost, "/sandboxes", bytes.NewBufferString(`{"template_class_id":"openclaw-shadow","templateID":"`+legacyPool.ID+`"}`))
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes", bytes.NewBufferString(`{"templateClassID":"openclaw-shadow","templateID":"`+legacyPool.ID+`"}`))
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
 
@@ -1137,5 +1196,372 @@ func TestInternalTemplateClassResolveRouteReturnsActivePools(t *testing.T) {
 	}
 	if len(resp.Pools) != 1 || resp.Pools[0].ID != pool.ID {
 		t.Fatalf("expected resolved pool %s, got %+v", pool.ID, resp.Pools)
+	}
+}
+
+// stubPauseProvider is a CloudProvider that records StopInstance / StartInstance
+// calls and lets tests script their return values. It satisfies the full
+// CloudProvider interface for use as handler.cloud in pause-path tests.
+type stubPauseProvider struct {
+	stopCalls  int
+	stopWith   []string
+	stopErr    error
+	startCalls int
+	startWith  []string
+	startErr   error
+}
+
+func (p *stubPauseProvider) CreateInstance(context.Context, core.Pool) (string, string, error) {
+	return "", "", nil
+}
+func (p *stubPauseProvider) ReinstallInstance(context.Context, string, string) error {
+	return nil
+}
+func (p *stubPauseProvider) DescribeInstance(context.Context, string) (string, error) {
+	return "", nil
+}
+func (p *stubPauseProvider) TerminateInstance(context.Context, string) error { return nil }
+func (p *stubPauseProvider) VerifyInstance(context.Context, string) error    { return nil }
+func (p *stubPauseProvider) StopInstance(_ context.Context, cloudID string) error {
+	p.stopCalls++
+	p.stopWith = append(p.stopWith, cloudID)
+	return p.stopErr
+}
+func (p *stubPauseProvider) StartInstance(_ context.Context, cloudID string) error {
+	p.startCalls++
+	p.startWith = append(p.startWith, cloudID)
+	return p.startErr
+}
+func (p *stubPauseProvider) CreateInstanceSnapshot(context.Context, provider.CreateInstanceSnapshotRequest) (string, error) {
+	return "", errors.New("stubPauseProvider: CreateInstanceSnapshot not configured")
+}
+func (p *stubPauseProvider) DescribeInstanceSnapshot(context.Context, string) (provider.SnapshotStatus, string, error) {
+	return "", "", errors.New("stubPauseProvider: DescribeInstanceSnapshot not configured")
+}
+
+func TestPostSandboxesSandboxIDPauseUsesLegacyReleaseWhenCloudPauseResumeDisabled(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := service.NewService(store.NewMemoryStore())
+	_, inst, sb := createAllocatedSandbox(t, svc)
+	cp := &stubPauseProvider{}
+	router := newHandlerTestRouter(&handler{svc: svc, cloud: cp})
+
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes/"+sb.ID+"/pause", nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if cp.stopCalls != 0 {
+		t.Fatalf("legacy pause must not call StopInstance, got %d calls", cp.stopCalls)
+	}
+	got, err := svc.GetInstance(context.Background(), inst.ID)
+	if err != nil {
+		t.Fatalf("get instance: %v", err)
+	}
+	if got.State != core.StateDry {
+		t.Fatalf("expected legacy pause to release instance to DRY, got %s", got.State)
+	}
+}
+
+func TestPostSandboxesSandboxIDResumeUsesLegacyNoopWhenCloudPauseResumeDisabled(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := service.NewService(store.NewMemoryStore())
+	_, inst, sb := createAllocatedSandbox(t, svc)
+	if _, err := svc.Release(context.Background(), inst.ID); err != nil {
+		t.Fatalf("release to DRY: %v", err)
+	}
+	cp := &stubPauseProvider{}
+	router := newHandlerTestRouter(&handler{svc: svc, cloud: cp})
+
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes/"+sb.ID+"/resume", nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if cp.startCalls != 0 {
+		t.Fatalf("legacy resume must not call StartInstance, got %d calls", cp.startCalls)
+	}
+	got, err := svc.GetInstance(context.Background(), inst.ID)
+	if err != nil {
+		t.Fatalf("get instance: %v", err)
+	}
+	if got.State != core.StateDry {
+		t.Fatalf("expected legacy resume to leave instance in DRY, got %s", got.State)
+	}
+}
+
+// TestPostSandboxesSandboxIDPauseHappyPath asserts that the new pause handler
+// (Q26-D 修订版 + Q29=E5) drives ALLOCATED → PAUSING → PAUSED via cp.StopInstance,
+// instead of the legacy ALLOCATED → DRY release path.
+func TestPostSandboxesSandboxIDPauseHappyPath(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := service.NewService(store.NewMemoryStore())
+	_, inst, sb := createAllocatedSandbox(t, svc)
+	cp := &stubPauseProvider{}
+	router := newHandlerTestRouter(&handler{svc: svc, cloud: cp, cloudPauseResume: true})
+
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes/"+sb.ID+"/pause", nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if cp.stopCalls != 1 {
+		t.Fatalf("expected exactly 1 StopInstance call, got %d", cp.stopCalls)
+	}
+	if len(cp.stopWith) != 1 || cp.stopWith[0] != inst.CloudID {
+		t.Fatalf("expected StopInstance(%q), got %v", inst.CloudID, cp.stopWith)
+	}
+	got, err := svc.GetInstance(context.Background(), inst.ID)
+	if err != nil {
+		t.Fatalf("get instance: %v", err)
+	}
+	if got.State != core.StatePaused {
+		t.Fatalf("expected instance state PAUSED after pause, got %s", got.State)
+	}
+}
+
+// TestPostSandboxesSandboxIDPauseRollsBackOnStopFailure asserts that when
+// cp.StopInstance fails, the handler rolls PAUSING back to ALLOCATED so the
+// upstream ctl child-task (Q22-I-D / Q36=a) can retry within the 1h window.
+func TestPostSandboxesSandboxIDPauseRollsBackOnStopFailure(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := service.NewService(store.NewMemoryStore())
+	_, inst, sb := createAllocatedSandbox(t, svc)
+	cp := &stubPauseProvider{stopErr: errors.New("cvm StopInstances rate limited")}
+	router := newHandlerTestRouter(&handler{svc: svc, cloud: cp, cloudPauseResume: true})
+
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes/"+sb.ID+"/pause", nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	got, err := svc.GetInstance(context.Background(), inst.ID)
+	if err != nil {
+		t.Fatalf("get instance: %v", err)
+	}
+	if got.State != core.StateAllocated {
+		t.Fatalf("expected instance rolled back to ALLOCATED, got %s", got.State)
+	}
+}
+
+// TestPostSandboxesSandboxIDPauseIdempotent asserts that calling pause a second
+// time on an already-paused sandbox returns 204 without invoking cp.StopInstance.
+func TestPostSandboxesSandboxIDPauseIdempotent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := service.NewService(store.NewMemoryStore())
+	_, inst, sb := createAllocatedSandbox(t, svc)
+	cp := &stubPauseProvider{}
+	router := newHandlerTestRouter(&handler{svc: svc, cloud: cp, cloudPauseResume: true})
+
+	// First call: ALLOCATED → PAUSED.
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes/"+sb.ID+"/pause", nil)
+	router.ServeHTTP(httptest.NewRecorder(), req)
+	if cp.stopCalls != 1 {
+		t.Fatalf("first pause: expected 1 StopInstance, got %d", cp.stopCalls)
+	}
+	got, _ := svc.GetInstance(context.Background(), inst.ID)
+	if got.State != core.StatePaused {
+		t.Fatalf("first pause: expected PAUSED, got %s", got.State)
+	}
+
+	// Second call must be no-op and 204.
+	req2 := httptest.NewRequest(http.MethodPost, "/sandboxes/"+sb.ID+"/pause", nil)
+	rr2 := httptest.NewRecorder()
+	router.ServeHTTP(rr2, req2)
+	if rr2.Code != http.StatusNoContent {
+		t.Fatalf("second pause: expected 204, got %d body=%s", rr2.Code, rr2.Body.String())
+	}
+	if cp.stopCalls != 1 {
+		t.Fatalf("second pause: expected no extra StopInstance, got total %d", cp.stopCalls)
+	}
+}
+
+// createPausedSandbox is a helper that builds a freshly allocated sandbox and
+// drives it through the pause path so subsequent resume tests start from
+// PAUSED state. It returns the same triple as createAllocatedSandbox plus the
+// stub provider used during the pause (so tests may inspect call counts).
+func createPausedSandbox(t *testing.T, svc *service.Service) (core.Pool, core.Instance, core.Sandbox) {
+	t.Helper()
+	pool, inst, sb := createAllocatedSandbox(t, svc)
+	cp := &stubPauseProvider{}
+	router := newHandlerTestRouter(&handler{svc: svc, cloud: cp, cloudPauseResume: true})
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes/"+sb.ID+"/pause", nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("pre-pause failed: code=%d body=%s", rr.Code, rr.Body.String())
+	}
+	got, err := svc.GetInstance(context.Background(), inst.ID)
+	if err != nil {
+		t.Fatalf("get instance after pause: %v", err)
+	}
+	if got.State != core.StatePaused {
+		t.Fatalf("expected PAUSED after pre-pause, got %s", got.State)
+	}
+	return pool, got, sb
+}
+
+// TestPostSandboxesSandboxIDResumeHappyPath asserts that the new resume handler
+// (R-F 2026-05-15) drives PAUSED → RESUMING → ALLOCATED via cp.StartInstance,
+// instead of the legacy noop that only returned 201 without touching CVM.
+//
+// Protocol contract (different from Pause's 204 No Content): resume returns
+// 201 Created + Sandbox JSON body, matching ctl/pkg/instance/logic.go's
+// resumeSandbox expectation.
+func TestPostSandboxesSandboxIDResumeHappyPath(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := service.NewService(store.NewMemoryStore())
+	_, inst, sb := createPausedSandbox(t, svc)
+	cp := &stubPauseProvider{}
+	router := newHandlerTestRouter(&handler{svc: svc, cloud: cp, cloudPauseResume: true})
+
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes/"+sb.ID+"/resume", nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if cp.startCalls != 1 {
+		t.Fatalf("expected exactly 1 StartInstance call, got %d", cp.startCalls)
+	}
+	if len(cp.startWith) != 1 || cp.startWith[0] != inst.CloudID {
+		t.Fatalf("expected StartInstance(%q), got %v", inst.CloudID, cp.startWith)
+	}
+	got, err := svc.GetInstance(context.Background(), inst.ID)
+	if err != nil {
+		t.Fatalf("get instance: %v", err)
+	}
+	if got.State != core.StateAllocated {
+		t.Fatalf("expected instance state ALLOCATED after resume, got %s", got.State)
+	}
+}
+
+// TestPostSandboxesSandboxIDResumeRollsBackOnStartFailure asserts that when
+// cp.StartInstance fails, the handler rolls RESUMING back to PAUSED so the
+// upstream ctl child-task (R-D / RenewPassTask) can retry within the 1h window.
+func TestPostSandboxesSandboxIDResumeRollsBackOnStartFailure(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := service.NewService(store.NewMemoryStore())
+	_, inst, sb := createPausedSandbox(t, svc)
+	cp := &stubPauseProvider{startErr: errors.New("cvm StartInstances rate limited")}
+	router := newHandlerTestRouter(&handler{svc: svc, cloud: cp, cloudPauseResume: true})
+
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes/"+sb.ID+"/resume", nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	got, err := svc.GetInstance(context.Background(), inst.ID)
+	if err != nil {
+		t.Fatalf("get instance: %v", err)
+	}
+	if got.State != core.StatePaused {
+		t.Fatalf("expected instance rolled back to PAUSED, got %s", got.State)
+	}
+}
+
+// TestPostSandboxesSandboxIDResumeIdempotent asserts that calling resume on an
+// already-allocated sandbox returns 201 + body without invoking cp.StartInstance.
+// This matches ctl's expectedResumeConflictMessages tolerance for "already running".
+func TestPostSandboxesSandboxIDResumeIdempotent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := service.NewService(store.NewMemoryStore())
+	_, inst, sb := createPausedSandbox(t, svc)
+	cp := &stubPauseProvider{}
+	router := newHandlerTestRouter(&handler{svc: svc, cloud: cp, cloudPauseResume: true})
+
+	// First call: PAUSED → ALLOCATED.
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes/"+sb.ID+"/resume", nil)
+	router.ServeHTTP(httptest.NewRecorder(), req)
+	if cp.startCalls != 1 {
+		t.Fatalf("first resume: expected 1 StartInstance, got %d", cp.startCalls)
+	}
+	got, _ := svc.GetInstance(context.Background(), inst.ID)
+	if got.State != core.StateAllocated {
+		t.Fatalf("first resume: expected ALLOCATED, got %s", got.State)
+	}
+
+	// Second call must be no-op and 201.
+	req2 := httptest.NewRequest(http.MethodPost, "/sandboxes/"+sb.ID+"/resume", nil)
+	rr2 := httptest.NewRecorder()
+	router.ServeHTTP(rr2, req2)
+	if rr2.Code != http.StatusCreated {
+		t.Fatalf("second resume: expected 201, got %d body=%s", rr2.Code, rr2.Body.String())
+	}
+	if cp.startCalls != 1 {
+		t.Fatalf("second resume: expected no extra StartInstance, got total %d", cp.startCalls)
+	}
+}
+
+// TestPostSandboxesSandboxIDResumeNotPaused asserts that calling resume on a
+// sandbox in DRY state (or any non-{PAUSED, RESUMING, ALLOCATED} state) is
+// rejected with 409, avoiding accidental cp.StartInstance pollution.
+func TestPostSandboxesSandboxIDResumeNotPaused(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := service.NewService(store.NewMemoryStore())
+	_, inst, sb := createAllocatedSandbox(t, svc)
+	// Push the instance to DRY (release path), which is neither PAUSED nor
+	// ALLOCATED, so resume must reject with 409.
+	if _, err := svc.Release(context.Background(), inst.ID); err != nil {
+		t.Fatalf("release to DRY: %v", err)
+	}
+	got, _ := svc.GetInstance(context.Background(), inst.ID)
+	if got.State != core.StateDry {
+		t.Fatalf("expected DRY before resume, got %s", got.State)
+	}
+
+	cp := &stubPauseProvider{}
+	router := newHandlerTestRouter(&handler{svc: svc, cloud: cp, cloudPauseResume: true})
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes/"+sb.ID+"/resume", nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if cp.startCalls != 0 {
+		t.Fatalf("expected 0 StartInstance calls on conflict, got %d", cp.startCalls)
+	}
+}
+
+// TestDeleteSandboxesSandboxIDReleasesPausedInstance asserts that deleting a
+// sandbox whose underlying instance is in PAUSED (i.e. the trade pass
+// destroy-after-isolation path) successfully drives the instance to DRY so the
+// reset worker can sweep it back into the CLEAN pool. Prior to the Release
+// transition fix, Release would silently fail and leak the instance in PAUSED
+// forever (orphans visible in pool-bj8 联调环境验证).
+func TestDeleteSandboxesSandboxIDReleasesPausedInstance(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := service.NewService(store.NewMemoryStore())
+	_, inst, sb := createPausedSandbox(t, svc)
+
+	router := newHandlerTestRouter(&handler{svc: svc})
+	req := httptest.NewRequest(http.MethodDelete, "/sandboxes/"+sb.ID, nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	got, err := svc.GetInstance(context.Background(), inst.ID)
+	if err != nil {
+		t.Fatalf("get instance: %v", err)
+	}
+	if got.State != core.StateDry {
+		t.Fatalf("expected instance state DRY after deleting paused sandbox, got %s", got.State)
+	}
+	if _, err := svc.GetSandbox(context.Background(), sb.ID); err != core.ErrSandboxNotFound {
+		t.Fatalf("expected sandbox row deleted, got err=%v", err)
 	}
 }

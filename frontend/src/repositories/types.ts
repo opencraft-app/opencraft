@@ -4,7 +4,12 @@ import type {
   AuditEvent,
   BillingSummary,
   Bundle,
+  CreatePassOrderAndPayResult,
+  CreatePassOrderResult,
+  CreatePassOrderUrlInput,
+  CreatePassOrderUrlResult,
   CurrentSubscription,
+  DeletePassResult,
   Bot,
   BotBornCard,
   BotChannelConfigResult,
@@ -16,6 +21,7 @@ import type {
   InviteCodeValidation,
   KnowledgeSource,
   Pass,
+  PassRenewPrice,
   PlanOption,
   PlanTier,
   ToolBinding,
@@ -90,6 +96,29 @@ export interface PlanRepository {
   listBundles(): Promise<Bundle[]>;
   /** 购买套餐（POST /v1/passes { bundle_id }） */
   createPass(bundleId: string): Promise<Pass>;
+  /** 国内站新购下单（POST /v1/passes/order）。 */
+  createPassOrder(input: { bundle_id: string; period: number; time_unit: string }): Promise<CreatePassOrderResult>;
+  /** 拉取新购支付 URL（POST /v1/passes/order-url）。 */
+  getPassOrderUrl(
+    input: CreatePassOrderUrlInput,
+    init?: { headers?: Record<string, string> },
+  ): Promise<CreatePassOrderUrlResult>;
+  /** 国内站新购下单+支付一体化（联调测试用）。 */
+  createPassOrderAndPay(input: { bundle_id: string; period: number; time_unit: string }): Promise<CreatePassOrderAndPayResult>;
+  /** 续费询价（POST /v1/passes/{pass_id}/renew/price）。 */
+  getRenewPrice(passId: string, input: { period: number; time_unit: string }): Promise<PassRenewPrice>;
+  /** 续费下单（POST /v1/passes/{pass_id}/renew/order）。 */
+  createRenewOrder(passId: string, input: { period: number; time_unit: string }): Promise<CreatePassOrderResult>;
+  /** 拉取续费支付 URL（POST /v1/passes/{pass_id}/renew/order-url）。 */
+  getRenewOrderUrl(
+    passId: string,
+    input: CreatePassOrderUrlInput,
+    init?: { headers?: Record<string, string> },
+  ): Promise<CreatePassOrderUrlResult>;
+  /** 续费下单+支付一体化（联调测试用）。 */
+  createRenewOrderAndPay(passId: string, input: { period: number; time_unit: string }): Promise<CreatePassOrderAndPayResult>;
+  /** 销毁 pass（POST /v1/passes/{pass_id}/delete）。 */
+  deletePass(passId: string): Promise<DeletePassResult>;
   /** 查询当前用户的权益列表（GET /v1/passes） */
   listMyPasses(): Promise<Pass[]>;
 }
@@ -154,6 +183,15 @@ export interface BotInstanceConfigResetResult {
   config: BotInstanceConfig;
 }
 
+export interface WorkerActionStartResult {
+  actionRunId: string;
+  workflowId: string;
+  runId?: string;
+  action: string;
+  botId: string;
+  status: string;
+}
+
 export interface BotRepository {
   getDashboardSnapshot(mode?: DataMode): Promise<DashboardSnapshot>;
   createBot(input?: { name?: string; soulTemplateId?: string }): Promise<Bot>;
@@ -175,6 +213,7 @@ export interface BotRepository {
   subscribeWeixinLoginSessionEvents(botId: string, sessionId: string, signal?: AbortSignal): AsyncIterable<{ event: string; data: unknown }>;
   listSoulTemplates(): Promise<SoulTemplate[]>;
   execDebugCommand(botId: string, command: string): Promise<{ status: string; exitCode: number; output: string }>;
+  startRescueExport(botId: string): Promise<WorkerActionStartResult>;
   /**
    * 重置实例配置（轮换 API Key）。
    *

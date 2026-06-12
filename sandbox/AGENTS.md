@@ -43,9 +43,9 @@ go test ./...
 - 正式发布目标只认 `Argo CD`
 - `sandbox/scripts/deploy-k8s.sh` 已移除；当前只建立了后续纳管所需的 skeleton / source-facing 边界
 - 默认池配置统一走 `sandbox/config/default-pools.tsv` + `ENV=<env> bash sandbox/scripts/sync-default-pools.sh --base-image <img-id>`；不要再通过 K8s 发布链或全局安全组环境变量隐式 seed
-- 切 pool 镜像统一走 `.codebuddy/skills/sandbox-ops` 的 MySQL fallback，不再使用 `sandbox/scripts/update-image.sh`
+- 切 pool 镜像优先走 `sandbox/scripts/rollout-pool-image-via-pod.sh`：脚本会在目标集群内拉起一次性旁路 pod，通过 `sandbox-api` 的 `/internal/pools` API 更新 `base_image`，不做本地端口转发，也不直连 MySQL
 - pool rollout 前先 `source deploy/envs/beijing-sandbox/platform.env`，并显式使用 `KUBECONFIG="${DEPLOY_KUBECONFIG}"`；不要依赖 shell 里残留的 `KUBECONFIG`
-- 默认先切 `pool-c2~pool-c5`；如果用户明确要求全量切换，再一次性覆盖 `pool-bj8,pool-c0,pool-c1,pool-c2,pool-c3,pool-c4,pool-c5`
+- 默认切 CTL 在用池 `pool-c0~pool-c5`；如果用户明确要求全量切换，再使用 `--all` 覆盖 `/internal/pools` 返回的所有 pool
 - 不要通过直改数据库修改 `base_image`
 
 ### Kustomize 发布标准
@@ -92,3 +92,5 @@ go test ./...
 - 采用 Markdown，标题简短，段落不冗余；示例代码使用 fenced code block 并提供上下文注释。
 - 中文为主，保留关键字段/常量的英文原样，避免翻译导致歧义。
 - 避免大段粘贴日志或生成冗长解释，优先给出最小可复现命令。
+
+<!-- ci-retrigger: 2026-06-04 republish sandbox/k8s/base to gitops to restore POD_NAMESPACE-aware ingressproxy shard routing for sandbox-bj-7 (overwritten by 1c0bbf021 promote) -->

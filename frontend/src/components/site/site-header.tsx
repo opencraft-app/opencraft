@@ -5,6 +5,7 @@ import { Link, useLocation } from "react-router-dom";
 import { BrandMark } from "@/components/site/brand-mark";
 import { LanguageSwitcher } from "@/components/site/language-switcher";
 import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
+import { useSession } from "@/contexts/session-context";
 import { useT } from "@/i18n/t";
 import { isGlobal } from "@/lib/region";
 import { cn } from "@/lib/utils";
@@ -16,7 +17,6 @@ type NavLink = {
 };
 
 interface SiteHeaderProps {
-  isLoggedIn: boolean;
   onLoginClick: () => void;
   className?: string;
   fixed?: boolean;
@@ -59,17 +59,19 @@ function isLinkActive(href: string, pathname: string): boolean {
 }
 
 export function SiteHeader({
-  isLoggedIn,
   onLoginClick,
   className,
   fixed = false,
   reloadLanguageAfterSwitch = false,
 }: SiteHeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const { authReady, isAuthenticated } = useSession();
   const location = useLocation();
   const isDesktop = useIsDesktop();
   const t = useT();
   const navLinks = useNavLinks();
+  const authLoading = !authReady;
+  const isLoggedIn = authReady && isAuthenticated;
 
   useEffect(() => {
     setMenuOpen(false);
@@ -121,7 +123,19 @@ export function SiteHeader({
           })}
         </nav>
 
-        {!isLoggedIn && (
+        {authLoading && (
+          <div
+            data-testid="site-header-auth-loading"
+            className="hidden shrink-0 items-center gap-3 md:flex"
+            aria-hidden="true"
+          >
+            <span className="h-[36px] w-[96px] rounded-[100px] bg-black/[0.06]" />
+            <span className="h-[36px] w-[64px] rounded-[100px] bg-black/[0.04]" />
+            {isGlobal && <span className="h-[36px] w-[70px] rounded-[100px] bg-black/[0.04]" />}
+          </div>
+        )}
+
+        {!authLoading && !isLoggedIn && (
           <div className="hidden shrink-0 items-center gap-3 md:flex">
             <button
               type="button"
@@ -141,7 +155,7 @@ export function SiteHeader({
           </div>
         )}
 
-        {isLoggedIn && (
+        {!authLoading && isLoggedIn && (
           <div className={cn("flex shrink-0 items-center gap-3", isDesktop ? "ml-0" : "ml-auto")}>
             {isGlobal && isDesktop && <LanguageSwitcher reloadAfterSwitch={reloadLanguageAfterSwitch} />}
             <UserAvatarMenu />
@@ -149,7 +163,7 @@ export function SiteHeader({
         )}
 
         <div className={cn("flex items-center gap-2 md:hidden", isLoggedIn ? "" : "ml-auto")}>
-          {!isLoggedIn && (
+          {!authLoading && !isLoggedIn && (
             <button
               type="button"
               onClick={onLoginClick}
@@ -200,7 +214,7 @@ export function SiteHeader({
                 );
               })}
 
-              {!isLoggedIn && (
+              {!authLoading && !isLoggedIn && (
                 <div className="border-t border-black/5 pt-3">
                   <button
                     type="button"

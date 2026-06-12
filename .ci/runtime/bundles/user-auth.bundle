@@ -57,7 +57,7 @@ bundles:
       - user/auth/k8s/overlays/beijing-sandbox-2/**
       - user/auth/k8s/overlays/beijing-sandbox/**
     dockerfile: user/auth/Dockerfile
-    build_context: user/auth
+    build_context: .
     image_repo:
       beijing-sandbox: lightclaw-bj8.tencentcloudcr.com/lightclaw/lightclaw-auth
       shprod: lightclaw-shprod.tencentcloudcr.com/lightclaw/lightclaw-auth

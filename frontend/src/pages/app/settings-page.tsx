@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { MessageCircleMore } from "lucide-react";
+import { Download, MessageCircleMore } from "lucide-react";
 import { ConfigSection } from "@/components/domain/config-section";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,9 +21,12 @@ export const SettingsPage = () => {
   const [qqAccount, setQqAccount] = useState("");
   const [channelSaving, setChannelSaving] = useState(false);
   const [channelNotice, setChannelNotice] = useState<string | null>(null);
+  const [exportStarting, setExportStarting] = useState(false);
+  const [exportNotice, setExportNotice] = useState<string | null>(null);
 
   useEffect(() => {
     setChannelNotice(null);
+    setExportNotice(null);
   }, [botId]);
 
   const saveQQChannel = async () => {
@@ -44,6 +47,23 @@ export const SettingsPage = () => {
       setChannelNotice(error instanceof Error ? error.message : "QQ channel 配置失败");
     } finally {
       setChannelSaving(false);
+    }
+  };
+
+  const startWorkspaceExport = async () => {
+    if (!botId) {
+      return;
+    }
+
+    setExportStarting(true);
+    setExportNotice(null);
+    try {
+      const result = await repositories.bots.startRescueExport(botId);
+      setExportNotice(`导出任务已发起，完成后会发送到绑定邮箱。任务 ID: ${result.actionRunId}`);
+    } catch (error) {
+      setExportNotice(error instanceof Error ? error.message : "导出任务发起失败");
+    } finally {
+      setExportStarting(false);
     }
   };
 
@@ -91,52 +111,67 @@ export const SettingsPage = () => {
           </GrammarSectionCard>
 
           {snapshot.data ? (
-            <ConfigSection
-              title="QQ Channel"
-              description="把 Agent 接到 QQ 机器人通道。前端会把 App ID 和 App Secret 组装成 ctl 需要的 token。"
-              icon={<MessageCircleMore className="size-4 text-[var(--brand-600)]" />}
-            >
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="qq-app-id">QQ App ID</Label>
-                  <Input
-                    id="qq-app-id"
-                    value={qqAppId}
-                    onChange={(event) => setQqAppId(event.target.value)}
-                    placeholder="请输入 QQ 机器人的 App ID"
-                  />
+            <>
+              <ConfigSection
+                title="工作区导出"
+                description="导出当前 Agent 的 OpenClaw 工作区，任务完成后会把下载链接发送到账号绑定邮箱。"
+                icon={<Download className="size-4 text-[var(--brand-600)]" />}
+              >
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button onClick={startWorkspaceExport} disabled={exportStarting || !botId}>
+                    {exportStarting ? "发起中..." : "导出工作区"}
+                  </Button>
+                  {exportNotice ? <p className="max-w-3xl text-sm leading-6 text-[var(--lw-fg-secondary)]">{exportNotice}</p> : null}
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="qq-app-secret">QQ App Secret</Label>
-                  <Input
-                    id="qq-app-secret"
-                    type="password"
-                    value={qqAppSecret}
-                    onChange={(event) => setQqAppSecret(event.target.value)}
-                    placeholder="请输入 QQ 机器人的 App Secret"
-                  />
-                </div>
-                <div className="space-y-2 sm:col-span-2">
-                  <Label htmlFor="qq-account">QQ Account（可选）</Label>
-                  <Input
-                    id="qq-account"
-                    value={qqAccount}
-                    onChange={(event) => setQqAccount(event.target.value)}
-                    placeholder="同通道多账号时可填写 agent1 之类的标识"
-                  />
-                </div>
-              </div>
+              </ConfigSection>
 
-              <div className="mt-4 flex flex-wrap items-center gap-3">
-                <Button onClick={saveQQChannel} disabled={channelSaving || !qqAppId.trim() || !qqAppSecret.trim()}>
-                  {channelSaving ? "配置中..." : "保存 QQ Channel"}
-                </Button>
-                <Button asChild variant="outline">
-                  <a href="https://q.qq.com/qqbot/openclaw/login.html" target="_blank" rel="noreferrer">查看 QQ 开放平台</a>
-                </Button>
-                {channelNotice ? <p className="text-sm text-[var(--lw-fg-secondary)]">{channelNotice}</p> : null}
-              </div>
-            </ConfigSection>
+              <ConfigSection
+                title="QQ Channel"
+                description="把 Agent 接到 QQ 机器人通道。前端会把 App ID 和 App Secret 组装成 ctl 需要的 token。"
+                icon={<MessageCircleMore className="size-4 text-[var(--brand-600)]" />}
+              >
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="qq-app-id">QQ App ID</Label>
+                    <Input
+                      id="qq-app-id"
+                      value={qqAppId}
+                      onChange={(event) => setQqAppId(event.target.value)}
+                      placeholder="请输入 QQ 机器人的 App ID"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="qq-app-secret">QQ App Secret</Label>
+                    <Input
+                      id="qq-app-secret"
+                      type="password"
+                      value={qqAppSecret}
+                      onChange={(event) => setQqAppSecret(event.target.value)}
+                      placeholder="请输入 QQ 机器人的 App Secret"
+                    />
+                  </div>
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label htmlFor="qq-account">QQ Account（可选）</Label>
+                    <Input
+                      id="qq-account"
+                      value={qqAccount}
+                      onChange={(event) => setQqAccount(event.target.value)}
+                      placeholder="同通道多账号时可填写 agent1 之类的标识"
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-4 flex flex-wrap items-center gap-3">
+                  <Button onClick={saveQQChannel} disabled={channelSaving || !qqAppId.trim() || !qqAppSecret.trim()}>
+                    {channelSaving ? "配置中..." : "保存 QQ Channel"}
+                  </Button>
+                  <Button asChild variant="outline">
+                    <a href="https://q.qq.com/qqbot/openclaw/login.html" target="_blank" rel="noreferrer">查看 QQ 开放平台</a>
+                  </Button>
+                  {channelNotice ? <p className="text-sm text-[var(--lw-fg-secondary)]">{channelNotice}</p> : null}
+                </div>
+              </ConfigSection>
+            </>
           ) : null}
         </div>
       </GrammarCanvas>

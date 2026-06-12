@@ -28,4 +28,29 @@ describe("lazy route helpers", () => {
     });
     expect(await screen.findByText("Deferred page loaded")).toBeInTheDocument();
   });
+
+  it("renders custom route fallback while the page chunk is pending", async () => {
+    function DeferredPage() {
+      return <div>Custom fallback page loaded</div>;
+    }
+
+    let resolveModule!: (module: { DeferredPage: typeof DeferredPage }) => void;
+    const modulePromise = new Promise<{ DeferredPage: typeof DeferredPage }>((resolve) => {
+      resolveModule = resolve;
+    });
+
+    const LazyPage = lazyNamed(
+      async () => modulePromise,
+      "DeferredPage",
+    );
+
+    render(lazyRoute(LazyPage, { fallback: <div>Route fallback visible</div> }));
+
+    expect(screen.getByText("Route fallback visible")).toBeInTheDocument();
+    await act(async () => {
+      resolveModule({ DeferredPage });
+      await modulePromise;
+    });
+    expect(await screen.findByText("Custom fallback page loaded")).toBeInTheDocument();
+  });
 });

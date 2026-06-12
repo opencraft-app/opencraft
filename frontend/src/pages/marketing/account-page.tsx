@@ -14,17 +14,23 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { useEffect, useState, useRef, useMemo } from "react";
+import { useCallback, useEffect, useState, useRef, useMemo } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useSession } from "@/contexts/session-context";
 import { useRepositories } from "@/contexts/repository-context";
+import { usePaidBillingEnabled } from "@/contexts/runtime-config-context";
 import { useOpenClaw } from "@/contexts/openclaw-context";
 import { RepositoryError } from "@/repositories/http-repositories";
+import type { BundleTimeUnit, Pass, PassRenewPrice } from "@/domain/types";
 import { LoginModal } from "@/components/site/login-modal";
 import { SiteHeader } from "@/components/site/site-header";
 import { useT } from "@/i18n/t";
 import { avatarImageUrl } from "@/lib/avatar-image";
 import { isCN, isGlobal } from "@/lib/region";
+import { canDeletePass, canRenewPass, centsToYuan, formatDuration, formatYuan, getPassStatus, isPaidBillingEnabled } from "@/lib/billing-flow";
+import { getBillingErrorCode, resolveBillingErrorMessage } from "@/lib/billing-error";
+import { buildPayPlan } from "@/lib/wx-pay";
+import { QRCodeSVG } from "qrcode.react";
 import { cn } from "@/lib/utils";
 
 /* ─── animation variants ─── */
@@ -42,10 +48,8 @@ const staggerContainer = {
 /* ─── Navbar ─── */
 
 const AccountNavbar = ({ onLoginClick }: { onLoginClick: () => void }) => {
-  const { isAuthenticated: isLoggedIn } = useSession();
-
   return (
-    <SiteHeader fixed isLoggedIn={isLoggedIn} onLoginClick={onLoginClick} />
+    <SiteHeader fixed onLoginClick={onLoginClick} />
   );
 };
 
@@ -473,23 +477,584 @@ const DeleteAccountModal = ({
 
 /* ─── Subscription Section ─── */
 
+const RenewPassModal = ({
+  pass,
+  onClose,
+  onSuccess,
+  t,
+}: {
+  pass: Pass;
+  onClose: () => void;
+  onSuccess: () => void;
+  t: (zh: string, opts?: Record<string, unknown>) => string;
+}) => {
+  const { plans } = useRepositories();
+  /* 默认选中 1 个月，与 RENEW_PRESETS[0] 保持一致；直接写字面量避免索引型推断雷区 */
+  const [selected, setSelected] = useState<{ period: number; time_unit: BundleTimeUnit }>({
+    period: 1,
+    time_unit: "m",
+  });
+  const [priceInfo, setPriceInfo] = useState<PassRenewPrice | null>(null);
+  const [pricing, setPricing] = useState(false);
+  const [priceError, setPriceError] = useState<string | null>(null);
+
+  const [step, setStep] = useState<"confirm" | "paying">("confirm");
+  /* 付费上下文：v1.7.31 起统一走 bridge 中转页，仅保留 deal_names + bridgeUrl */
+  const [payContext, setPayContext] = useState<{
+    dealNames: string[];
+    bridgeUrl: string;
+  } | null>(null);
+
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  /* 询价：周期变化即重新询价 */
+  useEffect(() => {
+    if (step !== "confirm") return;
+    let cancelled = false;
+    setPricing(true);
+    setPriceError(null);
+    void (async () => {
+      try {
+        const result = await plans.getRenewPrice(pass.pass_id, selected);
+        if (cancelled) return;
+        setPriceInfo(result);
+      } catch (err) {
+        if (cancelled) return;
+        setPriceInfo(null);
+        setPriceError(resolveBillingErrorMessage(err, t("询价失败，可直接下单或稍后重试")));
+      } finally {
+        if (!cancelled) setPricing(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [pass.pass_id, plans, selected, step, t]);
+
+  /* v1.7.30 后端联调文档明确「前端不需要轮询支付状态」——
+     原轮询 listMyPasses + 补 expired_time 逻辑已删除，改为 SDK callback / 手动确认刷一次。 */
+
+  /** SDK / 手动确认后走该函数：刷新外层页面状态、并判定续费是否生效 */
+  const finalizeRenewSuccess = useCallback(async () => {
+    /* 后端文档推荐刷列表拿新 expired_time，这里仅做一次刷新，不再轮询 */
+    onSuccess();
+  }, [onSuccess]);
+
+  /** 用户点「我已完成支付」→ 直接转交给 finalizeRenewSuccess，跳出轮询中 */
+  const handleManualConfirm = useCallback(() => {
+    void finalizeRenewSuccess();
+  }, [finalizeRenewSuccess]);
+
+  /* v1.7.31 起统一二维码 bridge，原 handleReopenPayUrl + payContextRef 已删除（无 pay_url 可重新打开） */
+
+  /* paying 阶段轮询：代替原 SDK callback。轮询 listMyPasses 检测同 pass_id 的 expired_time 被推后、
+     由外层 onSuccess() 接棒 finalize。超时不主动报错，用户仍可点「我已完成支付」。 */
+  useEffect(() => {
+    if (step !== "paying") return;
+    let cancelled = false;
+    const startedAt = Date.now();
+    const startExpired = pass.expired_time ? new Date(pass.expired_time).getTime() : 0;
+    const timer = window.setInterval(async () => {
+      if (cancelled) return;
+      try {
+        const list = await plans.listMyPasses();
+        const updated = list.find((p) => p.pass_id === pass.pass_id);
+        if (updated && updated.expired_time && new Date(updated.expired_time).getTime() > startExpired) {
+          window.clearInterval(timer);
+          if (!cancelled) await finalizeRenewSuccess();
+          return;
+        }
+      } catch (err) {
+        console.warn("[account] poll renew status failed", err);
+      }
+      if (Date.now() - startedAt > 180_000) {
+        window.clearInterval(timer);
+      }
+    }, 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [step, pass.pass_id, pass.expired_time, plans, finalizeRenewSuccess]);
+
+  const handleSubmit = useCallback(async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      /* 阶段一：续费下单拿 deal_names + auth_code（CodeBuddy AuthCode 模型） */
+      const order = await plans.createRenewOrder(pass.pass_id, selected);
+
+      /* 把 deal_name + auth_code + passId + bundleName 编进二维码 URL；
+         中转页根据 passId 非空走 renew/order-url 路径，再调 wxSign。
+         PC 端不再调 getRenewOrderUrl —— 因为 jifei pay_url 生成时绑定 wx_open_id，
+         必须等到中转页拿到 wx_code 后才能拉。零元订单由中转页直接显示「已完成」。 */
+      const payPlan = buildPayPlan({
+        dealName: order.deal_names[0] ?? "",
+        authCode: order.auth_code,
+        passId: pass.pass_id,
+        bundleName: pass.bundle_name,
+      });
+      /* bridge：渲染中转页二维码，上方轮询 useEffect 检测 expired_time 推后即触发 onSuccess */
+      setPayContext({ dealNames: order.deal_names, bridgeUrl: payPlan.bridgeUrl });
+      setStep("paying");
+    } catch (err) {
+      const code = getBillingErrorCode(err);
+      const fallbackMsg = err instanceof Error ? err.message : t("下单失败，请稍后重试。");
+      console.error("[account] create renew order failed", err instanceof RepositoryError
+        ? { status: err.status, code: err.code, message: err.message }
+        : err);
+      setSubmitError(`${code ? `[${code}] ` : ""}${resolveBillingErrorMessage(err, fallbackMsg)}`);
+    } finally {
+      setSubmitting(false);
+    }
+  }, [submitting, plans, pass.pass_id, pass.bundle_name, selected, t]);
+
+  /* 原「手动确认」/「重新打开 pay_url」逻辑已在 useEffect 上方声明 */
+
+  const realTotalYuan = priceInfo ? centsToYuan(priceInfo.real_total_cost) : null;
+  const originalTotalYuan = priceInfo ? centsToYuan(priceInfo.total_cost) : null;
+  const hasDiscount = priceInfo != null && originalTotalYuan != null && realTotalYuan != null
+    && originalTotalYuan > realTotalYuan + 0.001;
+
+  return (
+    <motion.div
+      className="fixed inset-0 z-[100] flex items-center justify-center"
+      style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(4px)" }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.2 }}
+      onClick={onClose}
+    >
+      <motion.div
+        className="relative mx-4 w-full max-w-[460px] overflow-hidden rounded-2xl bg-white"
+        style={{ boxShadow: "0 20px 60px -10px rgba(0,0,0,0.2)" }}
+        initial={{ opacity: 0, scale: 0.96, y: 10 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.96, y: 10 }}
+        transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          onClick={onClose}
+          className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-[rgba(0,0,0,0.04)]"
+          style={{ color: "rgba(0,0,0,0.5)" }}
+          aria-label={t("关闭")}
+        >
+          <X className="h-4 w-4" />
+        </button>
+
+        <div className="px-7 pb-6 pt-7">
+          <h3 className="m-0 text-[18px] font-bold tracking-[-0.25px]" style={{ color: "#333" }}>
+            {step === "confirm" ? t("续费套餐") : t("请完成支付")}
+          </h3>
+          <p className="text-sm" style={{ margin: "6px 0 20px 0", color: "#999" }}>
+            {pass.bundle_name}
+          </p>
+
+          {step === "confirm" ? (
+            <>
+              {/* 周期选择 */}
+              <div className="mb-5">
+                <p className="mb-2 text-sm font-semibold" style={{ color: "#333" }}>{t("续费时长")}</p>
+                <div className="flex flex-wrap gap-2">
+                  {RENEW_PRESETS.map((preset) => {
+                    const active = selected.period === preset.period && selected.time_unit === preset.time_unit;
+                    return (
+                      <button
+                        key={`${preset.period}-${preset.time_unit}`}
+                        type="button"
+                        onClick={() => setSelected({ period: preset.period, time_unit: preset.time_unit })}
+                        className="rounded-full border px-4 py-1.5 text-sm font-medium transition-colors"
+                        style={{
+                          borderColor: active ? "#202020" : "rgba(0,0,0,0.1)",
+                          background: active ? "#202020" : "white",
+                          color: active ? "white" : "#333",
+                        }}
+                      >
+                        {t(preset.label)}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 价格展示 */}
+              <div
+                className="mb-5 rounded-xl p-4"
+                style={{ background: "#F9F8F7", border: "1px solid #E6E9EF" }}
+              >
+                <div className="mb-1 flex items-center justify-between text-xs" style={{ color: "#999" }}>
+                  <span>{t("续费时长")}</span>
+                  <span>{formatDuration(selected.period, selected.time_unit)}</span>
+                </div>
+                <div className="flex items-end justify-between">
+                  <span className="text-sm font-semibold" style={{ color: "#333" }}>{t("应付金额")}</span>
+                  <div className="text-right">
+                    {pricing ? (
+                      <span className="inline-flex items-center gap-1 text-sm" style={{ color: "#999" }}>
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        {t("询价中...")}
+                      </span>
+                    ) : realTotalYuan != null ? (
+                      <>
+                        <p className="m-0 text-xl font-bold tracking-tight" style={{ color: "var(--lw-accent)" }}>
+                          {formatYuan(realTotalYuan, priceInfo?.currency ?? "CNY")}
+                        </p>
+                        {hasDiscount && originalTotalYuan != null && (
+                          <p className="m-0 text-xs line-through" style={{ color: "#bbb" }}>
+                            {formatYuan(originalTotalYuan, priceInfo?.currency ?? "CNY")}
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-sm" style={{ color: "#999" }}>{t("暂无报价")}</span>
+                    )}
+                  </div>
+                </div>
+                {priceError && (
+                  <p className="m-0 mt-2 text-xs" style={{ color: "#C67B1E" }}>{priceError}</p>
+                )}
+              </div>
+
+              {submitError && (
+                <p className="mb-3 text-sm" style={{ color: "#cf3d4c" }}>{submitError}</p>
+              )}
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  disabled={submitting}
+                  className="flex-1 rounded-lg border px-4 py-2.5 text-sm font-semibold transition-colors hover:bg-[rgba(0,0,0,0.03)] disabled:opacity-50"
+                  style={{ borderColor: "rgba(0,0,0,0.1)", color: "#333" }}
+                >
+                  {t("取消")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleSubmit()}
+                  disabled={submitting || pricing || realTotalYuan == null}
+                  className="flex flex-1 items-center justify-center gap-1.5 rounded-lg px-4 py-2.5 text-sm font-semibold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                  style={{ background: "#202020" }}
+                >
+                  {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {submitting ? t("正在生成订单...") : t("前往支付")}
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              {/* paying 面板：v1.7.31 起统一渲染中转页二维码 */}
+              <div
+                className="mb-5 flex flex-col items-center gap-3 rounded-xl p-4"
+                style={{ background: "#F9F8F7" }}
+              >
+                <p className="m-0 text-sm" style={{ color: "#333" }}>
+                  {t("请使用微信扫描下方二维码完成支付")}
+                </p>
+                {payContext?.bridgeUrl ? (
+                  <QRCodeSVG value={payContext.bridgeUrl} size={180} level="M" includeMargin={false} />
+                ) : (
+                  <Loader2 className="h-5 w-5 animate-spin" style={{ color: "var(--lw-accent)" }} />
+                )}
+              </div>
+
+              {submitError && (
+                <p className="mb-3 text-sm" style={{ color: "#cf3d4c" }}>{submitError}</p>
+              )}
+
+              <div className="flex flex-row gap-3">
+                {/* 左「刷新」：重新下单生成新二维码。复用 handleSubmit 走与首次下单一致逻辑。 */}
+                <button
+                  type="button"
+                  onClick={() => void handleSubmit()}
+                  disabled={submitting}
+                  className="flex-1 rounded-lg border px-4 py-2.5 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+                  style={{ borderColor: "var(--lw-accent)", color: "var(--lw-accent)", background: "#fff" }}
+                >
+                  {submitting ? t("刷新中...") : t("刷新")}
+                </button>
+                {/* 右「完成」：语义同原「我已完成支付」，主动接棒 finalize，成功后关闭 */}
+                <button
+                  type="button"
+                  onClick={handleManualConfirm}
+                  className="flex flex-1 items-center justify-center gap-1.5 rounded-lg px-4 py-2.5 text-sm font-semibold text-white transition-colors"
+                  style={{ background: "#202020" }}
+                >
+                  {t("完成")}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+};
+
+/* ─── Pass Delete Modal ─── */
+
+/**
+ * Pass 销毁弹窗 —— 联调文档 §4.1
+ *
+ * 流程：
+ *   1. 二次确认 → 调 deletePass 同步返回 deleted=true
+ *   2. 启动轮询：每 3s 拉 listMyPasses，直到目标 pass 从列表消失或被打上 deleted_time
+ *   3. 2 分钟超时 → 提示用户稍后刷新
+ *
+ * 注意：与账号注销 DeleteAccountModal 区分 —— 这里仅销毁单个 pass，账号本体不受影响
+ */
+const PassDeleteModal = ({
+  pass,
+  onClose,
+  onSuccess,
+  t,
+}: {
+  pass: Pass;
+  onClose: () => void;
+  onSuccess: () => void;
+  t: (zh: string, opts?: Record<string, unknown>) => string;
+}) => {
+  const { plans } = useRepositories();
+  const [step, setStep] = useState<"confirm" | "polling">("confirm");
+  const [submitting, setSubmitting] = useState(false);
+  const [pollStartedAt, setPollStartedAt] = useState<number | null>(null);
+  const [errMsg, setErrMsg] = useState<string | null>(null);
+
+  /* 销毁后的轮询：等 pass 从列表消失 */
+  useEffect(() => {
+    if (step !== "polling" || pollStartedAt == null) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const tick = async () => {
+      if (cancelled) return;
+      if (Date.now() - pollStartedAt > DELETE_POLL_TIMEOUT_MS) {
+        setErrMsg(t("销毁请求已提交，但状态确认超时。请稍后刷新页面查看结果。"));
+        setStep("confirm");
+        return;
+      }
+      try {
+        const list = await plans.listMyPasses();
+        if (cancelled) return;
+        const stillThere = list.find((p) => p.pass_id === pass.pass_id);
+        const finalized = !stillThere || Boolean(stillThere.deleted_time);
+        if (finalized) {
+          onSuccess();
+          return;
+        }
+      } catch (err) {
+        console.warn("[account] poll delete pass status failed", err);
+      }
+      if (!cancelled) {
+        timer = setTimeout(tick, DELETE_POLL_INTERVAL_MS);
+      }
+    };
+
+    timer = setTimeout(tick, DELETE_POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [step, pollStartedAt, pass.pass_id, plans, onSuccess, t]);
+
+  const handleConfirm = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    setErrMsg(null);
+    try {
+      const result = await plans.deletePass(pass.pass_id);
+      if (!result.deleted) {
+        setErrMsg(t("销毁请求未确认，请稍后重试。"));
+        return;
+      }
+      setPollStartedAt(Date.now());
+      setStep("polling");
+    } catch (err) {
+      const fallbackMsg = err instanceof Error ? err.message : t("销毁失败，请稍后重试。");
+      console.error("[account] delete pass failed", err instanceof RepositoryError
+        ? { status: err.status, code: err.code, message: err.message }
+        : err);
+      setErrMsg(resolveBillingErrorMessage(err, fallbackMsg));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <motion.div
+      className="fixed inset-0 z-[100] flex items-center justify-center"
+      style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(4px)" }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.2 }}
+      onClick={step === "confirm" ? onClose : undefined}
+    >
+      <motion.div
+        className="relative mx-4 w-full max-w-[420px] overflow-hidden rounded-2xl bg-white"
+        style={{ boxShadow: "0 20px 60px -10px rgba(0,0,0,0.2)" }}
+        initial={{ opacity: 0, scale: 0.96, y: 10 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.96, y: 10 }}
+        transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-7 pb-6 pt-7">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-full"
+              style={{ background: "rgba(207,61,76,0.08)" }}
+            >
+              <Trash2 className="h-[18px] w-[18px]" style={{ color: "#cf3d4c" }} />
+            </div>
+            <h3 className="m-0 text-[16px] font-bold tracking-[-0.25px]" style={{ color: "#333" }}>
+              {t("销毁套餐")}
+            </h3>
+          </div>
+          <p className="text-sm leading-relaxed" style={{ margin: "12px 0 8px 0", color: "#666" }}>
+            {t("销毁套餐 {{name}} 后，该套餐对应的 Agent 资源、积分与订单关联将被清除，且无法恢复。", { name: pass.bundle_name })}
+          </p>
+          <p className="text-xs" style={{ margin: "0 0 24px 0", color: "#999" }}>
+            {t("销毁完成后，您可以重新购买新的套餐。")}
+          </p>
+
+          {errMsg && (
+            <p className="mb-3 text-sm" style={{ color: "#cf3d4c" }}>{errMsg}</p>
+          )}
+
+          {step === "polling" ? (
+            <div
+              className="flex items-center gap-3 rounded-xl p-3"
+              style={{ background: "#F9F8F7" }}
+            >
+              <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" style={{ color: "var(--lw-accent)" }} />
+              <p className="m-0 text-sm" style={{ color: "#333" }}>
+                {t("正在销毁套餐，请稍候...")}
+              </p>
+            </div>
+          ) : (
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={submitting}
+                className="flex-1 rounded-lg border px-4 py-2.5 text-sm font-semibold transition-colors hover:bg-[rgba(0,0,0,0.03)] disabled:opacity-50"
+                style={{ borderColor: "rgba(0,0,0,0.1)", color: "#333" }}
+              >
+                {t("取消")}
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleConfirm()}
+                disabled={submitting}
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-lg px-4 py-2.5 text-sm font-semibold text-white transition-colors disabled:opacity-50"
+                style={{ background: "#cf3d4c" }}
+              >
+                {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+                {submitting ? t("处理中...") : t("确认销毁")}
+              </button>
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+};
+
+/* ─── Subscription Section ─── */
+
+/**
+ * 询价选项——联调文档 §3 说明起始仅提供「月15/30/180/365」几个限定组合。
+ * 主动按「1 / 3 / 6 / 12 个月」展示，发请求时仅发 period+time_unit。
+ */
+const RENEW_PRESETS: ReadonlyArray<{ period: number; time_unit: BundleTimeUnit; label: string }> = [
+  { period: 1, time_unit: "m", label: "1个月" },
+  { period: 3, time_unit: "m", label: "3个月" },
+  { period: 6, time_unit: "m", label: "6个月" },
+  { period: 12, time_unit: "m", label: "1年" },
+];
+
+/** 中转页轮询的超时 / 间隔在 useEffect 中内联使用，不再需要独立常量。原 MIDAS_PAY_RENEW_TARGET_ID 已与 wxSign 拆离，不再需要。 */
+
+/** 销毁轮询：联调文档 §4.1 说明销毁是异步，需等 pass 从列表消失 */
+const DELETE_POLL_INTERVAL_MS = 3_000;
+const DELETE_POLL_TIMEOUT_MS = 2 * 60 * 1_000;
+
 const SubscriptionSection = ({
   subscription,
   pass,
 }: {
   subscription: { code?: string; status?: string; currentPeriodStart?: string; currentPeriodEnd?: string } | null | undefined;
-  pass: import("@/domain/types").Pass | null;
+  pass: Pass | null;
 }) => {
   const t = useT();
-  const { user } = useOpenClaw();
+  const { refreshPasses, user } = useOpenClaw();
+  const { plans } = useRepositories();
   const plan = user.plan;
+  const paidBillingEnabled = usePaidBillingEnabled();
+
+  /**
+   * 只读 fallback pass — 国内站场景：activePass 为 null 但用户仍有 expired/isolated pass 需要续费或销毁。
+   * 仅在国内站且未多貌 activePass 时拉一次，避免与 openclaw-context.refreshPasses 重复干活。
+   */
+  const [fallbackPass, setFallbackPass] = useState<Pass | null>(null);
+
+  /** 续费 / 销毁弹窗状态 */
+  const [renewModalOpen, setRenewModalOpen] = useState(false);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+
+  useEffect(() => {
+    if (!isPaidBillingEnabled(paidBillingEnabled)) return;
+    if (pass) {
+      setFallbackPass(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const list = await plans.listMyPasses();
+        if (cancelled) return;
+        /* 取首个未销毁的 pass；isolated/expired 都会在这里被包含。
+           互斥占用规则保证不会同时出现多个未销毁 pass。 */
+        const first = list.find((p) => !p.deleted_time) ?? null;
+        setFallbackPass(first);
+      } catch (err) {
+        console.warn("[account] fetch fallback pass failed", err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [paidBillingEnabled, pass, plans]);
+
+  /** 可操作的 pass：优先 active，其次 fallback */
+  const operablePass = pass ?? fallbackPass;
+  const passStatus = operablePass ? getPassStatus(operablePass) : null;
+  const canRenew = isPaidBillingEnabled(paidBillingEnabled) && operablePass != null && canRenewPass(operablePass);
+  const canDelete = isPaidBillingEnabled(paidBillingEnabled) && operablePass != null && canDeletePass(operablePass);
+
+  const handleRenewSuccess = useCallback(async () => {
+    setRenewModalOpen(false);
+    await refreshPasses();
+    setFallbackPass(null);
+  }, [refreshPasses]);
+
+  const handleDeleteSuccess = useCallback(async () => {
+    setDeleteModalOpen(false);
+    await refreshPasses();
+    setFallbackPass(null);
+  }, [refreshPasses]);
 
   /**
    * 活跃权益的认定：
-   * 1. 优先用 /v1/passes 返回的 activePass
-   * 2. 回落到旧的 subscription
+   * 1. 有 activePass 〔主路径〕
+   * 2. 有 fallbackPass 〔过期 / 隔离期，仍需展示以供续费 / 销毁〕
+   * 3. 后退到旧的 subscription
    */
-  const hasActive = Boolean(pass) || Boolean(subscription);
+  const hasActive = Boolean(pass) || Boolean(fallbackPass) || Boolean(subscription);
 
   /**
    * 所有 Hook 必须在任何 early return 之前调用，以保证每次渲染 Hook 数量恒定。
@@ -497,9 +1062,11 @@ const SubscriptionSection = ({
    */
   const validityInfo = useMemo(() => {
     const now = new Date();
-    if (pass) {
-      const start = new Date(pass.created_time);
-      const end = new Date(pass.expired_time);
+    /* 优先从 operablePass（activePass / fallbackPass）取有效期，其次才是 subscription / 试用默认 */
+    const sourcePass = operablePass;
+    if (sourcePass) {
+      const start = new Date(sourcePass.created_time);
+      const end = new Date(sourcePass.expired_time);
       const remainDays = Math.max(0, Math.ceil((end.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
       return {
         startDate: start.toLocaleDateString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" }),
@@ -527,15 +1094,15 @@ const SubscriptionSection = ({
       remainDays: plan.trialDays,
       expired: false,
     };
-  }, [pass, subscription, plan.trialDays]);
+  }, [operablePass, subscription, plan.trialDays]);
 
-  // 积分：统一从 activePass 取（credit_total / credit_available），没有 pass 时为 0
-  const creditsTotal = pass ? pass.credit_total : 0;
-  const creditsUsed = pass ? Math.max(0, pass.credit_total - pass.credit_available) : 0;
+  // 积分：统一从 operablePass 取（credit_total / credit_available），没有 pass 时为 0
+  const creditsTotal = operablePass ? operablePass.credit_total : 0;
+  const creditsUsed = operablePass ? Math.max(0, operablePass.credit_total - operablePass.credit_available) : 0;
   const usedPercent = creditsTotal > 0 ? Math.min(100, Math.round((creditsUsed / creditsTotal) * 100)) : 0;
 
   // 展示用的套餐名称
-  const displayName = pass?.bundle_name ?? subscription?.code ?? plan.name;
+  const displayName = operablePass?.bundle_name ?? subscription?.code ?? plan.name;
 
   /* ── 未订阅：缺省引导状态 ── */
   if (!hasActive) {
@@ -626,8 +1193,22 @@ const SubscriptionSection = ({
             <span
               className="inline-flex items-center gap-1 px-2.5 py-0.5 text-xs font-bold"
               style={{
-                background: validityInfo.expired ? "rgba(207,61,76,0.08)" : validityInfo.remainDays <= 2 ? "rgba(198,123,30,0.08)" : "rgba(20,122,86,0.08)",
-                color: validityInfo.expired ? "#cf3d4c" : validityInfo.remainDays <= 2 ? "#C67B1E" : "#147A56",
+                background:
+                  passStatus === "isolated"
+                    ? "rgba(198,123,30,0.12)"
+                    : passStatus === "expired" || validityInfo.expired
+                      ? "rgba(207,61,76,0.08)"
+                      : validityInfo.remainDays <= 2
+                        ? "rgba(198,123,30,0.08)"
+                        : "rgba(20,122,86,0.08)",
+                color:
+                  passStatus === "isolated"
+                    ? "#C67B1E"
+                    : passStatus === "expired" || validityInfo.expired
+                      ? "#cf3d4c"
+                      : validityInfo.remainDays <= 2
+                        ? "#C67B1E"
+                        : "#147A56",
                 borderRadius: "6px",
               }}
             >
@@ -667,7 +1248,70 @@ const SubscriptionSection = ({
             </div>
           </>
         )}
+
+        {/* 续费 / 销毁按钮区：仅国内站 + 可操作 pass 时展示 */}
+        {(canRenew || canDelete) && operablePass && (
+          <>
+            <div style={{ height: 1, background: "rgba(0,0,0,0.06)" }} />
+            <div className="flex flex-wrap items-center gap-3">
+              {canRenew && (
+                <button
+                  type="button"
+                  onClick={() => setRenewModalOpen(true)}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-full px-5 py-2.5 text-sm font-semibold text-white transition-all hover:-translate-y-[1px] hover:shadow-[0_4px_12px_rgba(0,0,0,0.15)]"
+                  style={{ background: "#202020" }}
+                >
+                  <Zap className="h-4 w-4" />
+                  {passStatus === "active" ? t("立即续费") : t("恢复使用")}
+                </button>
+              )}
+              {canDelete && (
+                <button
+                  type="button"
+                  onClick={() => setDeleteModalOpen(true)}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-full border bg-white px-5 py-2.5 text-sm font-semibold transition-colors hover:bg-[rgba(207,61,76,0.04)]"
+                  style={{ borderColor: "rgba(207,61,76,0.3)", color: "#cf3d4c" }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  {t("销毁套餐")}
+                </button>
+              )}
+              {passStatus === "isolated" && (
+                <p className="basis-full text-xs" style={{ color: "#C67B1E" }}>
+                  {t("套餐已进入隔离期，可选择续费恢复使用或销毁当前套餐。销毁后可重新购买。")}
+                </p>
+              )}
+              {passStatus === "expired" && (
+                <p className="basis-full text-xs" style={{ color: "#cf3d4c" }}>
+                  {t("套餐已过期，请及时续费以免进入隔离期。")}
+                </p>
+              )}
+            </div>
+          </>
+        )}
       </div>
+
+      {/* 续费 / 销毁弹窗 — 仅国内站有机会被触发（operablePass != null 且 isPaidBillingEnabled） */}
+      <AnimatePresence>
+        {renewModalOpen && operablePass && (
+          <RenewPassModal
+            key="renew"
+            pass={operablePass}
+            onClose={() => setRenewModalOpen(false)}
+            onSuccess={() => void handleRenewSuccess()}
+            t={t}
+          />
+        )}
+        {deleteModalOpen && operablePass && (
+          <PassDeleteModal
+            key="delete-pass"
+            pass={operablePass}
+            onClose={() => setDeleteModalOpen(false)}
+            onSuccess={() => void handleDeleteSuccess()}
+            t={t}
+          />
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 };

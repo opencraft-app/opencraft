@@ -38,7 +38,7 @@ func main() {
 	metricsAddr := getenv("PROXY_METRICS_ADDR", ":9094")
 	shardCount := getenvInt("INGRESSPROXY_SHARD_COUNT", 4)
 	enableIPBackdoor := getenvBool("PROXY_ENABLE_IP_BACKDOOR", false)
-	serviceTemplate := getenv("INGRESSPROXY_SHARD_SERVICE_TEMPLATE", "http://ingressproxy-g%d.sandbox.svc.cluster.local")
+	serviceTemplate := resolveShardServiceTemplate()
 	proxyMetrics := observability.NewIngressProxyMetrics(prometheus.NewRegistry())
 	layerMetrics := proxyMetrics.Layer("router")
 	pool := ingressproxy.NewProxyPool(ingressproxy.ProxyPoolOptions{Observer: layerMetrics})
@@ -150,6 +150,15 @@ func getenv(k, def string) string {
 		return v
 	}
 	return def
+}
+
+func resolveShardServiceTemplate() string {
+	namespace := strings.TrimSpace(os.Getenv("POD_NAMESPACE"))
+	if namespace == "" {
+		namespace = "sandbox"
+	}
+	template := getenv("INGRESSPROXY_SHARD_SERVICE_TEMPLATE", fmt.Sprintf("http://ingressproxy-g%%d.%s.svc.cluster.local", namespace))
+	return strings.ReplaceAll(template, "$(POD_NAMESPACE)", namespace)
 }
 
 func getenvInt(k string, def int) int {

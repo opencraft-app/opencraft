@@ -31,8 +31,24 @@ func (p *stubProvisionProvider) TerminateInstance(context.Context, string) error
 	return nil
 }
 
+func (p *stubProvisionProvider) StopInstance(context.Context, string) error {
+	return nil
+}
+
+func (p *stubProvisionProvider) StartInstance(context.Context, string) error {
+	return nil
+}
+
 func (p *stubProvisionProvider) VerifyInstance(context.Context, string) error {
 	return nil
+}
+
+func (p *stubProvisionProvider) CreateInstanceSnapshot(context.Context, provider.CreateInstanceSnapshotRequest) (string, error) {
+	return "", nil
+}
+
+func (p *stubProvisionProvider) DescribeInstanceSnapshot(context.Context, string) (provider.SnapshotStatus, string, error) {
+	return "", "", nil
 }
 
 func (p *stubProvisionProvider) ProvisionCapacityBundle(ctx context.Context, req provider.CapacityBundleProvisionRequest) (core.CapacityBundle, error) {
