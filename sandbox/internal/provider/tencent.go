@@ -1720,9 +1720,7 @@ func (p *TencentCloudProvider) StartTerminalSession(ctx context.Context, region,
 
 func startTerminalSessionParameters(instanceID string) map[string]interface{} {
 	return map[string]interface{}{
-		"InstanceId":       instanceID,
-		"Username":         defaultTerminalUsername,
-		"WorkingDirectory": defaultTerminalWorkingDirectory,
+		"InstanceId": instanceID,
 	}
 }
 
