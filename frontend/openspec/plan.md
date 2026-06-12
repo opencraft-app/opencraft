@@ -1,27 +1,18 @@
-# Plan: Agent Console canonical path
+# Plan: Hidden Hermes WebUI Browser
 
 ## Acceptance
 
-`/agents` becomes the canonical Agent console entry, section navigation has stable URLs, and legacy `/dashboard/settings` links continue to work through redirects.
+Restore the TAT-backed Hermes WebUI browser panel on the Agent console while keeping it hidden by default. Running `show()` in the browser console reveals the WebUI/browser entry alongside the other hidden tools.
 
 ## Tasks
 
-- [x] Developer: update route definitions and legacy redirects.
-  - Files: `frontend/src/router/index.tsx`
-  - Verify: `/agents`, `/agents/models`, and legacy paths resolve to the Agent console.
+- [x] Developer: restore WebUI proxy panel and proxy helpers from the previous TAT WebUI implementation.
+  - Files: `frontend/src/components/domain/*`, `frontend/src/lib/*`
+  - Verify: targeted WebUI proxy tests pass.
 
-- [x] Developer: make the Agent console section state URL-driven.
-  - Files: `frontend/src/pages/marketing/openclaw-settings-page.tsx`
-  - Verify: clicking nav items updates URL; direct `/agents/<section>` selects the right section.
-
-- [x] Developer: update first-party entry links to `/agents`.
-  - Files: `frontend/src/**`
-  - Verify: grep no primary product entry still points to `/dashboard/settings` except compatibility redirects/tests that intentionally cover old paths.
-
-- [x] Developer: update OpenSpec and implementation docs for the new canonical path.
-  - Files: `frontend/openspec/specs/marketing.md`, `frontend/openspec/config.yaml`, `docs/implementations/frontend-key-implementation.md`
-  - Verify: docs identify `/agents` as canonical and `/dashboard/settings` as legacy compatibility.
+- [x] Developer: wire `/agents/browser` into Agent console navigation as a hidden tool.
+  - Files: `frontend/src/router/paths.ts`, `frontend/src/pages/marketing/openclaw-settings-page.tsx`
+  - Verify: default navigation does not show WebUI; `show()` reveals the browser entry.
 
 - [x] Reviewer: run targeted checks.
-  - Commands: `pnpm check`, relevant tests for updated route/link expectations, `pnpm i18n:check` if text extraction changes.
-  - Verify: `pnpm check`, `pnpm i18n:check`, `marketing-header-actions.test.tsx`, and local Vite route smoke checks passed. `plan-select-page.test.tsx` currently hangs as a single-file Vitest run; exact blocker documented in the final handoff.
+  - Commands: WebUI/component tests, `pnpm i18n:check`, and `pnpm check` where feasible.
