@@ -67,13 +67,16 @@ wss://lightclaw.pages.dev/  ws://127.0.0.1:5173
 
 ## 三、远程域名 HMR 配置
 
-> ✅ **当前项目已配置完成，无需调整。** `frontend/.env.local` 已设置远程 HMR 指向 `lightvela.tencent.com`（国内正式域反代联调），且该域名已在 `vite.config.ts` 默认放行列表内。用现有域名联调时本节可直接跳过；只有**切换到新域名**时才需按下面步骤改 `.env.local`。
+> ⚠️ **`.env.local` 不进 git，每位开发者需自行创建。** 该文件按设计仅本地生效、不纳入版本控制（见下文「仅影响本地 dev，不进构建产物」），所以新克隆 `mono2` 后本地不会有它——若不手动创建并配置远程 HMR，用线上域名联调时 HMR 会一直尝试直连 `localhost:5173` 而连不上。推荐配置：远程 HMR 指向 `lightvela.tencent.com`（国内正式域反代联调），该域名已在 `vite.config.ts` 默认放行列表内，按下面步骤创建 `.env.local` 即可；换其它域名时同样在此调整。
 
 当通过线上域名（而非 `localhost`）访问本地服务时，Vite 默认的 HMR 直连 `localhost:5173` 会失败，需要显式告诉 Vite 用外部域名建立 HMR WebSocket。
 
-在 `mono2/frontend` 下新建/编辑 `.env.local`（仅影响本地 dev，不进构建产物），按需配置以 `VITE_DEV_` 开头的变量：
+当通过线上域名（而非 `localhost`）访问本地服务时，Vite 默认的 HMR 直连 `localhost:5173` 会失败，需要显式告诉 Vite 用外部域名建立 HMR WebSocket。
+
+在 `mono2/frontend` 下新建 `.env.local`（仅影响本地 dev，不进构建产物、不入 git），把下面这份示例整段复制进去即可——默认按推荐域名 `lightvela.tencent.com` 配好，开箱即用：
 
 ```bash
+# frontend/.env.local
 # 放行额外的访问域名（逗号分隔；.xxx 前缀表示泛匹配所有子域）
 VITE_DEV_ALLOWED_HOSTS=lightclaw.pages.dev,.pages.dev
 
@@ -83,7 +86,9 @@ VITE_DEV_HMR_PROTOCOL=wss
 VITE_DEV_HMR_CLIENT_PORT=443
 ```
 
-> [`vite.config.ts`](../../frontend/vite.config.ts) 已内置放行 `lightclaw.pages.dev` / `.pages.dev` / `lightvela.tencent.com` / `lightclaw.site` 等常用域名；只有调试上述列表之外的域名时才需要追加 `VITE_DEV_ALLOWED_HOSTS`。
+> 三个 `VITE_DEV_HMR_*` 变量的含义：`HOST` = HMR WebSocket 要连的域名（而非默认 `localhost`）；`PROTOCOL=wss` = https 页面必须用加密 ws；`CLIENT_PORT=443` = 浏览器端连接的端口（对齐 whistle 监听的 443，而非 dev server 本地的 5173）。dev server 自身仍监听本地 `5173`，这几行只改「浏览器里那段 HMR 客户端脚本」的连接目标。
+
+> [`vite.config.ts`](../../frontend/vite.config.ts) 已内置放行 Cloudflare Pages 与 lightvela / lightclaw 系列常用域名，完整列表见 `vite.config.ts`；只有调试列表之外的域名时才需要追加 `VITE_DEV_ALLOWED_HOSTS`。
 
 ## 四、后端 API 域名映射
 
@@ -102,7 +107,7 @@ VITE_DEV_HMR_CLIENT_PORT=443
 | `lightclaw.site` / `www.lightclaw.site` | `https://api.lightclaw.site` |
 | `lightvela.tencent.com` / `www.lightvela.tencent.com` | `https://api.lightvela.com` |
 
-> ⚠️ **尚未配置的域名**：`lightvela.ai`、`lightvela.com` 目前**不在**映射表内。虽然 `vite.config.ts` 的 `defaultAllowedHosts` 已放行这两个域名（dev server 层允许访问），但 `auth-api-base.ts` 没有为它们映射后端地址——用这类域名访问时，若未显式设置 `VITE_AUTH_API_BASE_URL`，`resolveConfiguredAuthApiBaseUrl()` 会返回 `null`，认证类请求将无可用基地址。
+> ⚠️ **尚未配置的域名**：`lightvela.ai` 目前**不在**映射表内（`lightvela.tencent.com` 已映射到后端 `https://api.lightvela.com`）。虽然 `vite.config.ts` 的 `defaultAllowedHosts` 已放行该域名（dev server 层允许访问），但 `auth-api-base.ts` 没有为它映射后端地址——用这类域名访问时，若未显式设置 `VITE_AUTH_API_BASE_URL`，`resolveConfiguredAuthApiBaseUrl()` 会返回 `null`，认证类请求将无可用基地址。
 
 临时联调可在 `.env.local` 设置环境变量绕过映射表：
 
