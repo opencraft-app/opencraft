@@ -2733,7 +2733,7 @@ const getBotStatusLabel = (status: OpenClawBot["status"]) => {
 
 /* ─── Main Settings Page ─── */
 
-const lightVelaHermesScripts = createLightClawScripts({ regionShortName: "gz", agentType: "hermes" });
+const lightVelaHermesScripts = createLightClawScripts();
 const channelOnlyHermesScripts = {
   ...lightVelaHermesScripts,
   hermes: {
