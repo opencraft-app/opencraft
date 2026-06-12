@@ -71,8 +71,6 @@ wss://lightclaw.pages.dev/  ws://127.0.0.1:5173
 
 当通过线上域名（而非 `localhost`）访问本地服务时，Vite 默认的 HMR 直连 `localhost:5173` 会失败，需要显式告诉 Vite 用外部域名建立 HMR WebSocket。
 
-当通过线上域名（而非 `localhost`）访问本地服务时，Vite 默认的 HMR 直连 `localhost:5173` 会失败，需要显式告诉 Vite 用外部域名建立 HMR WebSocket。
-
 在 `mono2/frontend` 下新建 `.env.local`（仅影响本地 dev，不进构建产物、不入 git），把下面这份示例整段复制进去即可——默认按推荐域名 `lightvela.tencent.com` 配好，开箱即用：
 
 ```bash
