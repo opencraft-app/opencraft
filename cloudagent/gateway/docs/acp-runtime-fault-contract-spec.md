@@ -261,8 +261,23 @@ Expected behavior in Wisp mode:
 
 File persistence guarantee:
 
+- Checkpoint is the durable commit point. A successful Wisp close/checkpoint is the moment CloudAgent may claim workspace writes are durable.
+- `active/root-upper.img` is a boot cache derived from the latest checkpoint after close. It may be promoted from the checkpoint to speed the next boot, but it is not the authoritative persistence contract by itself.
 - Files written through workspace tools before graceful `session/close` must be visible after `session/resume`.
+- If a file is overwritten, then the next successful `session/close` must checkpoint the overwritten contents. A later restore must read the last confirmed write, not an earlier checkpoint or stale active image.
 - This is the primary file persistence contract.
+
+Required close/checkpoint ordering:
+
+1. Stop or quiesce the runtime target that can mutate the active image.
+2. Flush the mounted upper filesystem.
+3. Flush the loop device.
+4. `fsync` the active backing image.
+5. Clone/create the checkpoint from the active backing image.
+6. Run the file/writeback barrier and metadata barrier.
+7. Promote the checkpoint back to `active/root-upper.img` only as a boot cache for the next start.
+
+A close is not well-done if any step that proves the checkpoint durable fails. In that case the session must not be projected as `stored_restorable`.
 
 ### 9.2 `session/resume`
 

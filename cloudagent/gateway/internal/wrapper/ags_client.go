@@ -54,6 +54,18 @@ type AGSSandbox struct {
 	Domain             string
 }
 
+type agsSandboxStatusResponse struct {
+	TemplateID         string `json:"templateID"`
+	SandboxID          string `json:"sandboxID"`
+	EnvdVersion        string `json:"envdVersion"`
+	Alias              string `json:"alias"`
+	Domain             string `json:"domain"`
+	Status             string `json:"status"`
+	State              string `json:"state"`
+	EnvdAccessToken    string `json:"envdAccessToken"`
+	TrafficAccessToken string `json:"trafficAccessToken"`
+}
+
 type CreateSandboxOptions struct {
 	TemplateID          string
 	TimeoutSeconds      int
@@ -189,6 +201,50 @@ func (c *AGSClient) RefreshSandboxTimeout(ctx context.Context, sandboxID string,
 	body := map[string]any{"timeout": timeoutSeconds}
 	op := fmt.Sprintf("refresh_sandbox sandbox_id=%s timeout=%d domain=%s api_url=%s", sandboxID, timeoutSeconds, c.domain, c.apiURL)
 	return c.doJSON(ctx, http.MethodPost, c.apiURL+"/sandboxes/"+url.PathEscape(sandboxID)+"/timeout", body, nil, op)
+}
+
+func (c *AGSClient) ProbeSandbox(ctx context.Context, sandboxID string) (RuntimeHostSandboxProbe, error) {
+	probe := RuntimeHostSandboxProbe{
+		SandboxID: strings.TrimSpace(sandboxID),
+		Domain:    c.domain,
+		CheckedAt: time.Now().UTC(),
+	}
+	if probe.SandboxID == "" {
+		probe.Status = "empty_id"
+		return probe, nil
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.apiURL+"/sandboxes/"+url.PathEscape(probe.SandboxID), nil)
+	if err != nil {
+		return probe, err
+	}
+	c.applyControlAuth(req)
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return probe, fmt.Errorf("ags probe_sandbox transport sandbox_id=%s domain=%s api_url=%s: %w", probe.SandboxID, c.domain, c.apiURL, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		probe.Exists = false
+		probe.Status = "not_found"
+		return probe, nil
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return probe, decodeHTTPError(resp, fmt.Sprintf("probe_sandbox sandbox_id=%s domain=%s api_url=%s", probe.SandboxID, c.domain, c.apiURL))
+	}
+	var out agsSandboxStatusResponse
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil && !errors.Is(err, io.EOF) {
+		return probe, fmt.Errorf("decode probe_sandbox sandbox_id=%s: %w", probe.SandboxID, err)
+	}
+	probe.Exists = true
+	probe.Status = firstNonEmpty(out.Status, out.State, "exists")
+	probe.Domain = firstNonEmpty(out.Domain, c.domain)
+	if out.SandboxID != "" {
+		probe.SandboxID = out.SandboxID
+	}
+	if out.TemplateID != "" || out.EnvdVersion != "" || out.Alias != "" {
+		probe.Detail = fmt.Sprintf("template_id=%s envd_version=%s alias=%s", out.TemplateID, out.EnvdVersion, out.Alias)
+	}
+	return probe, nil
 }
 
 func isIdempotentDeleteSandboxError(err error) bool {

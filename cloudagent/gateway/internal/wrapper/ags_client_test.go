@@ -270,6 +270,70 @@ func TestAGSClientRefreshSandboxTimeoutUsesE2BShape(t *testing.T) {
 	}
 }
 
+func TestAGSClientProbeSandboxUsesControlPlaneGet(t *testing.T) {
+	var gotPath string
+	var gotAPIKey string
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotAPIKey = r.Header.Get("X-API-Key")
+		if r.Method != http.MethodGet {
+			t.Fatalf("method=%s", r.Method)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"sandboxID":   "sb_probe",
+			"templateID":  "tmpl_probe",
+			"envdVersion": "0.2.10",
+			"status":      "RUNNING",
+			"domain":      "mock.example",
+		})
+	}))
+	defer api.Close()
+
+	client, err := NewAGSClient(AGSClientConfig{
+		Domain:     "ap-beijing.tencentags.com",
+		APIURL:     api.URL,
+		APIKey:     "key",
+		HTTPClient: api.Client(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	probe, err := client.ProbeSandbox(context.Background(), "sb_probe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotPath != "/sandboxes/sb_probe" || gotAPIKey != "key" {
+		t.Fatalf("unexpected probe request path=%s api_key=%q", gotPath, gotAPIKey)
+	}
+	if !probe.Exists || probe.Status != "RUNNING" || probe.Domain != "mock.example" || !strings.Contains(probe.Detail, "tmpl_probe") {
+		t.Fatalf("unexpected probe: %+v", probe)
+	}
+}
+
+func TestAGSClientProbeSandboxNotFoundIsDiagnosticNotError(t *testing.T) {
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer api.Close()
+
+	client, err := NewAGSClient(AGSClientConfig{
+		Domain:     "ap-beijing.tencentags.com",
+		APIURL:     api.URL,
+		APIKey:     "key",
+		HTTPClient: api.Client(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	probe, err := client.ProbeSandbox(context.Background(), "sb_missing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if probe.Exists || probe.Status != "not_found" {
+		t.Fatalf("unexpected missing probe: %+v", probe)
+	}
+}
+
 func TestAGSClientAuthErrorIncludesOperationContext(t *testing.T) {
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)

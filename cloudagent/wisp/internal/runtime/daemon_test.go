@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -227,5 +228,52 @@ func TestWorkspaceLayoutConfigForCreatePreservesBoundBackend(t *testing.T) {
 	}
 	if got.COSWorkspace != name || got.WispName != name {
 		t.Fatalf("workspace layout was not refreshed: wisp_name=%q cos_workspace=%q", got.WispName, got.COSWorkspace)
+	}
+}
+
+func TestHandleWispCreatePreservesBoundBackendOverlay(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.jsonnet")
+	if err := os.WriteFile(configPath, []byte(`{
+  WISP_NAME: "default",
+  REMOTE_BACKEND: "cos",
+  COS_ENABLED: false,
+  JFS_ROOT: "/mnt/cloudagent-wisp",
+  TEMP_ROOT: "/tmp/wisp/default",
+  RUNTIME_ROOT: "/var/lib/wisp-runtime/default",
+}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.ConfigFile = configPath
+	d := NewDaemon(New(cfg))
+	name := "agent-session-demo"
+	if err := d.bindWorkspaceBackend(context.Background(), backendBindRequest{
+		Name:            name,
+		RemoteBackend:   "smh",
+		SMHLibraryID:    "lib",
+		SMHAccessDomain: "https://example.api.tencentsmh.cn",
+		SMHSpaceID:      "space-1",
+		JFSPrefix:       "host",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/wisps", strings.NewReader(`{"name":"`+name+`"}`))
+	rec := httptest.NewRecorder()
+	d.handleWispCreate(rec, req)
+
+	got, err := config.LoadContainer(configPath, name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.RemoteBackend != "smh" || !got.SMHEnabled || got.SMHLibraryID != "lib" || got.SMHSpaceID != "space-1" || got.JFSPrefix != "host" {
+		t.Fatalf("wisp.create overwrote bound backend: status=%d backend=%q smh=%t library=%q space=%q prefix=%q body=%s",
+			rec.Code, got.RemoteBackend, got.SMHEnabled, got.SMHLibraryID, got.SMHSpaceID, got.JFSPrefix, rec.Body.String())
 	}
 }

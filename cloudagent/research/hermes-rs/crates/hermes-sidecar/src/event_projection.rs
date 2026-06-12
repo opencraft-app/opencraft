@@ -10,6 +10,11 @@ pub(crate) fn runtime_host_prompt_line(event: RuntimeHostEvent) -> PromptRespons
         workspace_root: event.workspace_root,
         template: event.template,
         error: event.error,
+        exit_code: event.exit_code,
+        stdout_bytes: event.stdout_bytes,
+        stderr_bytes: event.stderr_bytes,
+        stdout_tail: event.stdout_tail,
+        stderr_tail: event.stderr_tail,
     }
 }
 

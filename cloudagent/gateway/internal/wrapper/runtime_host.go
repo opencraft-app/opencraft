@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 )
 
 const (
@@ -130,6 +131,19 @@ type RuntimeHostEnv struct {
 	EnvdUser string
 }
 
+type RuntimeHostSandboxProbe struct {
+	SandboxID string
+	Exists    bool
+	Status    string
+	Domain    string
+	CheckedAt time.Time
+	Detail    string
+}
+
+type RuntimeHostSandboxProber interface {
+	ProbeSandbox(context.Context, string) (RuntimeHostSandboxProbe, error)
+}
+
 type AGSRuntimeHost struct {
 	client *AGSClient
 }
@@ -173,6 +187,10 @@ func (h *AGSRuntimeHost) RuntimeHostEnv() RuntimeHostEnv {
 		return RuntimeHostEnv{}
 	}
 	return h.client.RuntimeHostEnv()
+}
+
+func (h *AGSRuntimeHost) ProbeSandbox(ctx context.Context, id string) (RuntimeHostSandboxProbe, error) {
+	return h.client.ProbeSandbox(ctx, id)
 }
 
 func (c *AGSClient) RuntimeHostEnv() RuntimeHostEnv {
