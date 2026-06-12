@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"sort"
 	"strings"
 	"sync"
@@ -22,14 +23,14 @@ type MemoryStore struct {
 	subscriptions   map[string]PlanSelection
 	passwordHashes  map[string][]byte
 	smsChallenges   map[string]smsChallenge
-	emailBindTokens map[string]memoryEmailBindToken
-	emailBindByToken map[string]string
 	sessions        map[string]sessionRecord
 	invites         map[string]memoryInviteRecord
 	realnames       map[string]UpdateRealnameInput
 	realnameHistory map[string][]UpdateRealnameInput
 	nextAuditTaskID int64
-	auditTasks      map[int64]*ContentAuditTask
+	auditTasks       map[int64]*ContentAuditTask
+	emailBindTokens  map[string]memoryEmailBindToken
+	emailBindByToken map[string]string
 }
 
 type memoryInviteRecord struct {
@@ -57,14 +58,14 @@ func NewMemoryStore(opts StoreOptions) *MemoryStore {
 		oauthUsers:      make(map[string]string),
 		subscriptions:   make(map[string]PlanSelection),
 		passwordHashes:  make(map[string][]byte),
-		smsChallenges:    make(map[string]smsChallenge),
-		emailBindTokens:  make(map[string]memoryEmailBindToken),
-		emailBindByToken: make(map[string]string),
-		sessions:         make(map[string]sessionRecord),
+		smsChallenges:   make(map[string]smsChallenge),
+		sessions:        make(map[string]sessionRecord),
 		invites:         make(map[string]memoryInviteRecord),
 		realnames:       make(map[string]UpdateRealnameInput),
 		realnameHistory: make(map[string][]UpdateRealnameInput),
-		auditTasks:      make(map[int64]*ContentAuditTask),
+		auditTasks:       make(map[int64]*ContentAuditTask),
+		emailBindTokens:  make(map[string]memoryEmailBindToken),
+		emailBindByToken: make(map[string]string),
 	}
 	if opts.SeedDefaultInvites {
 		store.seedDefaultInvites()
@@ -105,11 +106,99 @@ func (s *MemoryStore) SendVerificationCode(_ context.Context, phone string, code
 func (s *MemoryStore) CompleteSMSVerification(_ context.Context, input VerifySMSInput, now time.Time, sessionTTL time.Duration) (*AuthSession, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.consumeSMSChallengeLocked(input.Phone, input.Code, now); err != nil {
+		return nil, err
+	}
 	user, created := s.findOrCreatePhoneUserLocked(input.Phone, strings.TrimSpace(input.Name), now)
 	if created {
 		s.usersByID[user.ID] = user
 	}
-	return s.createSessionLocked(user, now, sessionTTL)
+	return s.createSessionLocked(user, now, sessionTTL, AuthMethodSMS)
+}
+
+func (s *MemoryStore) VerifyCurrentUserPhoneChallenge(_ context.Context, token string, code string, now time.Time) (User, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	user, err := s.validateCurrentUserPhoneChallengeLocked(token, code, now)
+	if err != nil {
+		return User{}, err
+	}
+	if err := s.consumeSMSChallengeLocked(user.Phone, code, now); err != nil {
+		return User{}, err
+	}
+	user.RealnameLevel = RealnameLevelPhone3FA
+	user.RealnameVerified = true
+	s.usersByID[user.ID] = user
+	return user, nil
+}
+
+func (s *MemoryStore) MarkCurrentUserPhoneRealnameVerified(_ context.Context, token string, now time.Time) (User, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	user, err := s.currentUserWithPhoneRealnamePrerequisitesLocked(token, now)
+	if err != nil {
+		return User{}, err
+	}
+	user.RealnameLevel = RealnameLevelPhone3FA
+	user.RealnameVerified = true
+	user.UpdatedAt = now
+	s.usersByID[user.ID] = user
+	return user, nil
+}
+
+func (s *MemoryStore) ValidateCurrentUserPhoneChallenge(_ context.Context, token string, code string, now time.Time) (User, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.validateCurrentUserPhoneChallengeLocked(token, code, now)
+}
+
+func (s *MemoryStore) ValidatePhoneChange(_ context.Context, token string, newPhone string, code string, now time.Time) (User, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.validatePhoneChangeLocked(token, newPhone, code, now)
+}
+
+func (s *MemoryStore) ValidatePhoneChangeTarget(_ context.Context, token string, newPhone string, now time.Time) (User, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.validatePhoneChangeTargetLocked(token, newPhone, now)
+}
+
+func (s *MemoryStore) UpdateCurrentUserPhone(_ context.Context, token string, newPhone string, now time.Time) (User, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	user, err := s.validatePhoneChangeTargetLocked(token, newPhone, now)
+	if err != nil {
+		return User{}, err
+	}
+	if user.Phone != "" {
+		delete(s.usersByPhone, user.Phone)
+	}
+	user.Phone = newPhone
+	user.UpdatedAt = now
+	s.usersByID[user.ID] = user
+	s.usersByPhone[newPhone] = user.ID
+	return user, nil
+}
+
+func (s *MemoryStore) CompletePhoneChange(_ context.Context, token string, newPhone string, code string, now time.Time) (User, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	user, err := s.validatePhoneChangeLocked(token, newPhone, code, now)
+	if err != nil {
+		return User{}, err
+	}
+	if err := s.consumeSMSChallengeLocked(newPhone, code, now); err != nil {
+		return User{}, err
+	}
+	if user.Phone != "" {
+		delete(s.usersByPhone, user.Phone)
+	}
+	user.Phone = newPhone
+	user.UpdatedAt = now
+	s.usersByID[user.ID] = user
+	s.usersByPhone[newPhone] = user.ID
+	return user, nil
 }
 
 func (s *MemoryStore) CreatePasswordSession(_ context.Context, input PasswordSignUpInput, passwordHash []byte, now time.Time, sessionTTL time.Duration) (*AuthSession, error) {
@@ -123,7 +212,7 @@ func (s *MemoryStore) CreatePasswordSession(_ context.Context, input PasswordSig
 	user.EmailVerified = true
 	s.usersByID[user.ID] = user
 	s.passwordHashes[user.ID] = append([]byte(nil), passwordHash...)
-	return s.createSessionLocked(user, now, sessionTTL)
+	return s.createSessionLocked(user, now, sessionTTL, AuthMethodPassword)
 }
 
 func (s *MemoryStore) GetPasswordUser(_ context.Context, email string) (User, []byte, error) {
@@ -148,7 +237,7 @@ func (s *MemoryStore) CreateOAuthSession(_ context.Context, input OAuthSignInInp
 		if !ok {
 			delete(s.oauthUsers, key)
 		} else {
-			return s.createSessionLocked(user, now, sessionTTL)
+			return s.createSessionLocked(user, now, sessionTTL, AuthMethodOAuth)
 		}
 	}
 
@@ -159,7 +248,7 @@ func (s *MemoryStore) CreateOAuthSession(_ context.Context, input OAuthSignInInp
 				delete(s.usersByEmail, input.Email)
 			} else if canAutoLinkOAuthEmail(input) {
 				s.oauthUsers[key] = user.ID
-				return s.createSessionLocked(user, now, sessionTTL)
+				return s.createSessionLocked(user, now, sessionTTL, AuthMethodOAuth)
 			} else {
 				return nil, newError("oauth_email_conflict", "第三方账号邮箱已被使用，请先使用已有方式登录后再绑定。", 409)
 			}
@@ -168,7 +257,7 @@ func (s *MemoryStore) CreateOAuthSession(_ context.Context, input OAuthSignInInp
 
 	user := s.newUserWithInviteRequirementLocked(input.Name, input.Email, "", false, now)
 	s.oauthUsers[key] = user.ID
-	return s.createSessionLocked(user, now, sessionTTL)
+	return s.createSessionLocked(user, now, sessionTTL, AuthMethodOAuth)
 }
 
 func (s *MemoryStore) ActivateInviteForCurrentUser(_ context.Context, token string, code string, now time.Time) (User, error) {
@@ -210,21 +299,21 @@ func (s *MemoryStore) BindOAuthSession(_ context.Context, token string, input OA
 		return nil, newError("oauth_identity_conflict", "第三方账号绑定冲突，请稍后重试。", 409)
 	}
 	s.oauthUsers[key] = user.ID
-	return s.createSessionLocked(user, now, sessionTTL)
+	return s.createSessionLocked(user, now, sessionTTL, AuthMethodOAuth)
 }
 
 func (s *MemoryStore) CreateSession(_ context.Context, user User, now time.Time, sessionTTL time.Duration) (*AuthSession, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	return s.createSessionLocked(user, now, sessionTTL)
+	return s.createSessionLocked(user, now, sessionTTL, AuthMethodUnknown)
 }
 
 func (s *MemoryStore) CreateImpersonationSession(_ context.Context, user User, reason string, now time.Time, sessionTTL time.Duration) (*AuthSession, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	return s.createSessionWithMetadataLocked(user, now, sessionTTL, true, strings.TrimSpace(reason))
+	return s.createSessionWithMetadataLocked(user, now, sessionTTL, true, strings.TrimSpace(reason), AuthMethodImpersonation)
 }
 
 func (s *MemoryStore) CurrentSession(_ context.Context, token string, now time.Time) (*AuthSession, error) {
@@ -273,10 +362,28 @@ func (s *MemoryStore) UpdateRealname(_ context.Context, token string, input Upda
 		return newError("unauthorized", "未登录或登录已失效。", 401)
 	}
 	user.RealnameVerified = true
+	user.RealnameLevel = RealnameLevelIDCard2FA
 	s.usersByID[user.ID] = user
 	s.realnames[user.ID] = input
 	s.realnameHistory[user.ID] = append(s.realnameHistory[user.ID], input)
 	return nil
+}
+
+func (s *MemoryStore) GetUserRealname(_ context.Context, userID string) (StoredRealname, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	realname, exists := s.realnames[strings.TrimSpace(userID)]
+	if !exists {
+		return StoredRealname{}, newError("realname_not_found", "用户尚未完成实名认证。", http.StatusNotFound)
+	}
+	if strings.TrimSpace(realname.NameCiphertext) == "" || strings.TrimSpace(realname.IDCardCiphertext) == "" {
+		return StoredRealname{}, newError("realname_incomplete", "实名认证信息不完整。", http.StatusConflict)
+	}
+	return StoredRealname{
+		NameCiphertext:   realname.NameCiphertext,
+		IDCardCiphertext: realname.IDCardCiphertext,
+	}, nil
 }
 
 func (s *MemoryStore) UpdateProfile(_ context.Context, token string, name string, now time.Time) (User, error) {
@@ -850,17 +957,22 @@ func (s *MemoryStore) getSessionLocked(token string, now time.Time) (*AuthSessio
 		ExpiresAt:           record.ExpiresAt,
 		Impersonated:        record.Impersonated,
 		ImpersonationReason: record.ImpersonationReason,
+		AuthMethod:          record.AuthMethod,
 	}, nil
 }
 
-func (s *MemoryStore) createSessionLocked(user User, now time.Time, sessionTTL time.Duration) (*AuthSession, error) {
-	return s.createSessionWithMetadataLocked(user, now, sessionTTL, false, "")
+func (s *MemoryStore) createSessionLocked(user User, now time.Time, sessionTTL time.Duration, authMethod string) (*AuthSession, error) {
+	return s.createSessionWithMetadataLocked(user, now, sessionTTL, false, "", authMethod)
 }
 
-func (s *MemoryStore) createSessionWithMetadataLocked(user User, now time.Time, sessionTTL time.Duration, impersonated bool, reason string) (*AuthSession, error) {
+func (s *MemoryStore) createSessionWithMetadataLocked(user User, now time.Time, sessionTTL time.Duration, impersonated bool, reason string, authMethod string) (*AuthSession, error) {
 	token, err := newOpaqueToken()
 	if err != nil {
 		return nil, fmt.Errorf("create session token: %w", err)
+	}
+	normalizedAuthMethod := strings.TrimSpace(authMethod)
+	if normalizedAuthMethod == "" {
+		normalizedAuthMethod = AuthMethodUnknown
 	}
 
 	record := sessionRecord{
@@ -870,6 +982,7 @@ func (s *MemoryStore) createSessionWithMetadataLocked(user User, now time.Time, 
 		ExpiresAt:           now.Add(sessionTTL),
 		Impersonated:        impersonated,
 		ImpersonationReason: strings.TrimSpace(reason),
+		AuthMethod:          normalizedAuthMethod,
 	}
 	s.sessions[token] = record
 
@@ -880,6 +993,7 @@ func (s *MemoryStore) createSessionWithMetadataLocked(user User, now time.Time, 
 		ExpiresAt:           record.ExpiresAt,
 		Impersonated:        impersonated,
 		ImpersonationReason: record.ImpersonationReason,
+		AuthMethod:          normalizedAuthMethod,
 	}, nil
 }
 
@@ -889,6 +1003,98 @@ func (s *MemoryStore) currentPlanSelectionLocked(userID string) *PlanSelection {
 		return nil
 	}
 	return clonePlan(&plan)
+}
+
+func (s *MemoryStore) consumeSMSChallengeLocked(phone string, code string, now time.Time) error {
+	challenge, exists := s.smsChallenges[phone]
+	if !exists {
+		return newError("sms_code_not_found", "请先获取验证码。", 400)
+	}
+	if !challenge.ExpiresAt.After(now) {
+		delete(s.smsChallenges, phone)
+		return newError("sms_code_expired", "验证码已过期，请重新获取。", 400)
+	}
+	if strings.TrimSpace(code) == "" || challenge.Code != strings.TrimSpace(code) {
+		challenge.RemainingRetries--
+		if challenge.RemainingRetries <= 0 {
+			delete(s.smsChallenges, phone)
+		} else {
+			s.smsChallenges[phone] = challenge
+		}
+		return newError("invalid_sms_code", "验证码不正确。", 400)
+	}
+	delete(s.smsChallenges, phone)
+	return nil
+}
+
+func (s *MemoryStore) validateCurrentUserPhoneChallengeLocked(token string, code string, now time.Time) (User, error) {
+	user, err := s.currentUserWithPhoneRealnamePrerequisitesLocked(token, now)
+	if err != nil {
+		return User{}, err
+	}
+	if err := s.validateSMSChallengeLocked(user.Phone, code, now); err != nil {
+		return User{}, err
+	}
+	return user, nil
+}
+
+func (s *MemoryStore) currentUserWithPhoneRealnamePrerequisitesLocked(token string, now time.Time) (User, error) {
+	record, err := s.getSessionRecordLocked(token, now)
+	if err != nil {
+		return User{}, err
+	}
+	user, exists := s.usersByID[record.UserID]
+	if !exists {
+		return User{}, newError("unauthorized", "未登录或登录已失效。", 401)
+	}
+	if user.Phone == "" {
+		return User{}, newError("phone_required", "当前账号未绑定手机号。", 400)
+	}
+	if !isAtLeastRealnameLevel(user.RealnameLevel, RealnameLevelIDCard2FA) && !user.RealnameVerified {
+		return User{}, newError("realname_required", "请先完成实名认证。", 403)
+	}
+	return user, nil
+}
+
+func (s *MemoryStore) validateSMSChallengeLocked(phone string, code string, now time.Time) error {
+	challenge, exists := s.smsChallenges[phone]
+	if !exists {
+		return newError("sms_code_not_found", "请先获取验证码。", 400)
+	}
+	if !challenge.ExpiresAt.After(now) {
+		delete(s.smsChallenges, phone)
+		return newError("sms_code_expired", "验证码已过期，请重新获取。", 400)
+	}
+	if strings.TrimSpace(code) == "" || challenge.Code != strings.TrimSpace(code) {
+		return newError("invalid_sms_code", "验证码不正确。", 400)
+	}
+	return nil
+}
+
+func (s *MemoryStore) validatePhoneChangeTargetLocked(token string, newPhone string, now time.Time) (User, error) {
+	record, err := s.getSessionRecordLocked(token, now)
+	if err != nil {
+		return User{}, err
+	}
+	user, exists := s.usersByID[record.UserID]
+	if !exists {
+		return User{}, newError("unauthorized", "未登录或登录已失效。", 401)
+	}
+	if existingUserID, exists := s.usersByPhone[newPhone]; exists && existingUserID != user.ID {
+		return User{}, newError("phone_in_use", "该手机号已绑定其他账号。", http.StatusConflict)
+	}
+	return user, nil
+}
+
+func (s *MemoryStore) validatePhoneChangeLocked(token string, newPhone string, code string, now time.Time) (User, error) {
+	user, err := s.validatePhoneChangeTargetLocked(token, newPhone, now)
+	if err != nil {
+		return User{}, err
+	}
+	if err := s.validateSMSChallengeLocked(newPhone, code, now); err != nil {
+		return User{}, err
+	}
+	return user, nil
 }
 
 func (s *MemoryStore) findOrCreatePhoneUserLocked(phone string, name string, now time.Time) (User, bool) {
@@ -920,6 +1126,7 @@ func (s *MemoryStore) newUserWithInviteRequirementLocked(name string, email stri
 		Email:          email,
 		Phone:          phone,
 		InviteRequired: inviteRequired,
+		RealnameLevel:  RealnameLevelNone,
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}

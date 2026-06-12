@@ -275,6 +275,88 @@ paths:
           $ref: '#/components/responses/ErrorResponse'
         '503':
           $ref: '#/components/responses/ErrorResponse'
+  /auth/realname/verify-phone:
+    post:
+      operationId: verifyRealnamePhone
+      summary: Verify current user's phone as the third real-name factor
+      security:
+        - SessionCookie: []
+        - SessionBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RealnamePhoneVerifyRequest'
+      responses:
+        '200':
+          description: Phone verification succeeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RealnamePhoneVerifyResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '403':
+          $ref: '#/components/responses/ErrorResponse'
+  /auth/realname/sync/retry:
+    post:
+      operationId: retryRealnameSync
+      summary: Retry syncing current user's verified real-name identity to the account system
+      security:
+        - SessionCookie: []
+        - SessionBearer: []
+      responses:
+        '200':
+          description: Real-name sync retry succeeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RealnameSyncRetryResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '403':
+          $ref: '#/components/responses/ErrorResponse'
+        '502':
+          $ref: '#/components/responses/ErrorResponse'
+        '503':
+          $ref: '#/components/responses/ErrorResponse'
+  /auth/shadow/binding:
+    get:
+      operationId: getShadowBinding
+      summary: Get current user's Lightvela shadow binding status
+      security:
+        - SessionCookie: []
+        - SessionBearer: []
+      responses:
+        '200':
+          description: Current binding status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShadowBindingResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+  /auth/shadow/binding/retry:
+    post:
+      operationId: retryShadowBinding
+      summary: Retry current user's failed Lightvela shadow binding
+      security:
+        - SessionCookie: []
+        - SessionBearer: []
+      responses:
+        '200':
+          description: Current binding status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShadowBindingResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
   /auth/profile/avatar:
     get:
       operationId: getProfileAvatar
@@ -384,6 +466,15 @@ components:
           type: boolean
         realnameVerified:
           type: boolean
+        realnameLevel:
+          type: string
+        realnameSyncStatus:
+          type: string
+          description: Status of syncing the verified real-name identity to the account system.
+          enum:
+            - pending
+            - failed
+            - succeeded
         createdAt:
           type: string
           format: date-time
@@ -405,6 +496,7 @@ components:
         - nameMasked
         - idCardMasked
         - requestId
+        - phoneVerificationRequired
       properties:
         ok:
           type: boolean
@@ -416,6 +508,111 @@ components:
           type: string
         requestId:
           type: string
+        phoneVerificationRequired:
+          type: boolean
+          description: Whether the client must complete the phone SMS step after ID card verification.
+        phoneVerificationSkipped:
+          type: boolean
+          description: True when the backend completed phone verification using the current SMS login session.
+        realnameLevel:
+          type: string
+        shadowBindingStatus:
+          type: string
+    RealnamePhoneVerifyRequest:
+      type: object
+      required:
+        - code
+      properties:
+        code:
+          type: string
+    RealnamePhoneVerifyResponse:
+      type: object
+      required:
+        - ok
+        - realnameLevel
+        - shadowBindingStatus
+      properties:
+        ok:
+          type: boolean
+        realnameLevel:
+          type: string
+        realnameSyncStatus:
+          type: string
+          enum:
+            - pending
+            - failed
+            - succeeded
+        shadowBindingStatus:
+          type: string
+    RealnameSyncRetryResponse:
+      type: object
+      required:
+        - ok
+        - user
+        - realnameSyncStatus
+        - shadowBindingStatus
+      properties:
+        ok:
+          type: boolean
+        user:
+          $ref: '#/components/schemas/User'
+        realnameSyncStatus:
+          type: string
+          enum:
+            - pending
+            - failed
+            - succeeded
+        shadowBindingStatus:
+          type: string
+    ShadowBinding:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+        userId:
+          type: string
+        shadowUserName:
+          type: string
+        uin:
+          type: integer
+          format: int64
+        ownerUin:
+          type: integer
+          format: int64
+        appId:
+          type: integer
+          format: int64
+        lastErrorCode:
+          type: string
+        lastErrorMessage:
+          type: string
+        basicAuthStatus:
+          type: string
+          enum:
+            - failed
+            - succeeded
+        basicAuthSyncedAt:
+          type: string
+          format: date-time
+        basicAuthLastErrorCode:
+          type: string
+        basicAuthLastErrorMessage:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ShadowBindingResponse:
+      type: object
+      required:
+        - binding
+      properties:
+        binding:
+          $ref: '#/components/schemas/ShadowBinding'
     AuthSession:
       type: object
       required:

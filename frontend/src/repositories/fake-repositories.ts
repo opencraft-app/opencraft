@@ -6,8 +6,14 @@ import type {
   BotRuntime,
   BotVersion,
   Bundle,
+  BundlePrice,
+  CreatePassOrderAndPayResult,
+  CreatePassOrderResult,
+  CreatePassOrderUrlResult,
   CurrentSubscription,
+  DeletePassResult,
   Pass,
+  PassRenewPrice,
   ToolBinding,
   User,
   WorkspaceMessage,
@@ -30,8 +36,6 @@ const FAKE_RESET_PROVIDER_NAME = "custom";
 const FAKE_RESET_BASE_URL = "https://api.example.invalid";
 const FAKE_RESET_MODEL_ID = "fake-model";
 const FAKE_RESET_API = "chat_completions";
-const FAKE_ACHIEVEMENTS_JSON_START = "__LIGHTVELA_ACHIEVEMENTS_JSON_START__";
-const FAKE_ACHIEVEMENTS_JSON_END = "__LIGHTVELA_ACHIEVEMENTS_JSON_END__";
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -206,6 +210,20 @@ const assertMode = async (mode: "live" | "empty" | "error" = "live") => {
 
 /* ─── 套餐/权益 mock 数据 ─── */
 
+/**
+ * mock 价格构造器。入参以「元」为单位以方便编辑，内部转为「分」以与后端询价接口保持一致。
+ */
+const buildFakePrice = (yuan: number): BundlePrice => {
+  const cents = Math.round(yuan * 100);
+  return {
+    price: cents,
+    total_cost: cents,
+    real_total_cost: cents,
+    currency: "CNY",
+    discount: 1.0,
+  };
+};
+
 const FAKE_BUNDLES: Bundle[] = [
   {
     bundle_id: "bundle_free_7d",
@@ -216,9 +234,30 @@ const FAKE_BUNDLES: Bundle[] = [
     bundle_state: "ONLINE",
     agent_quota: 1,
     credit: 0,
+    // 免费试用套餐，price = null 表示不走付费架构
     price: null,
     time_span: 7,
     time_unit: "d",
+    bundle_sales_available_count: 99,
+    bundle_sales_total_count: 100,
+    bundle_sales_state: "AVAILABLE",
+    created_time: "2026-04-18T18:52:37Z",
+    updated_time: "2026-04-18T18:54:31Z",
+  },
+  {
+    bundle_id: "bundle_launch_01",
+    bundle_name: "启航 Launch",
+    description: [
+      { Key: "Agent", Value: "1个" },
+      { Key: "独立环境", Value: "" },
+      { Key: "7×24小时在线", Value: "" },
+    ],
+    bundle_state: "ONLINE",
+    agent_quota: 1,
+    credit: 100,
+    price: buildFakePrice(49.0),
+    time_span: 1,
+    time_unit: "m",
     bundle_sales_available_count: 99,
     bundle_sales_total_count: 100,
     bundle_sales_state: "AVAILABLE",
@@ -364,13 +403,18 @@ export const createFakeRepositories = (): Repositories => {
         // 前端假实现：不接触真实证件库，直接视为认证通过；
         // nameMasked 规则与后端一致：首字符 + 其后全部 *
         const masked = name.length > 0 ? `${name[0]}${"*".repeat(Math.max(0, name.length - 1))}` : "";
+        const phoneVerifiedInSession = Boolean(session.user.phone?.trim());
+        const nextRealnameLevel = phoneVerifiedInSession ? "phone_3fa" : "idcard_2fa";
+        const nextRealnameSyncStatus = phoneVerifiedInSession ? "succeeded" : "pending";
         const next = {
           ...session,
           user: {
             ...session.user,
-            realnameVerified: true,
+            realnameVerified: phoneVerifiedInSession,
+            realnameLevel: nextRealnameLevel,
+            realnameSyncStatus: nextRealnameSyncStatus,
           },
-        };
+        } satisfies AuthSessionSnapshot;
         writeStoredAuthSession(next);
         return {
           ok: true,
@@ -378,10 +422,86 @@ export const createFakeRepositories = (): Repositories => {
           nameMasked: masked,
           idCardMasked: idCard ? `${idCard.slice(0, 4)}********${idCard.slice(-4)}` : "",
           requestId: "fake-realname",
+          phoneVerificationRequired: !phoneVerifiedInSession,
+          phoneVerificationSkipped: phoneVerifiedInSession,
+          realnameLevel: nextRealnameLevel,
+          shadowBindingStatus: phoneVerifiedInSession ? "active" : undefined,
         };
       },
-      async requestEmailBind({ email }) {
+      async sendSmsCode() {
+        await wait(NETWORK_DELAY_MS / 2);
+        return { cooldownSeconds: 60 };
+      },
+      async verifyRealnamePhone() {
         await wait(NETWORK_DELAY_MS);
+        const session = readStoredAuthSession();
+        if (!session) {
+          throw new Error("未登录或登录已失效。");
+        }
+        writeStoredAuthSession({
+          ...session,
+          user: {
+            ...session.user,
+            realnameVerified: true,
+            realnameLevel: "phone_3fa",
+            realnameSyncStatus: "succeeded",
+          },
+        });
+        return {
+          ok: true,
+          realnameLevel: "phone_3fa",
+          realnameSyncStatus: "succeeded",
+          shadowBindingStatus: "active",
+        };
+      },
+      async retryRealnameSync() {
+        await wait(NETWORK_DELAY_MS);
+        const session = readStoredAuthSession();
+        if (!session) {
+          throw new Error("未登录或登录已失效。");
+        }
+        const next = {
+          ...session,
+          user: {
+            ...session.user,
+            realnameVerified: true,
+            realnameLevel: "phone_3fa",
+            realnameSyncStatus: "succeeded" as const,
+          },
+        };
+        writeStoredAuthSession(next);
+        return {
+          ok: true,
+          user: next.user,
+          realnameSyncStatus: "succeeded" as const,
+          shadowBindingStatus: "active",
+        };
+      },
+      async sendPhoneChangeCode() {
+        await wait(NETWORK_DELAY_MS / 2);
+        return { cooldownSeconds: 60 };
+      },
+      async verifyPhoneChange({ phone }) {
+        await wait(NETWORK_DELAY_MS);
+        const session = readStoredAuthSession();
+        if (!session) {
+          throw new Error("未登录或登录已失效。");
+        }
+        if (!isValidChinaMainlandPhone(phone)) {
+          throw new Error("手机号格式不正确。");
+        }
+        const next = {
+          ...session,
+          user: {
+            ...session.user,
+            phone: normalizePhone(phone),
+          },
+        };
+        writeStoredAuthSession(next);
+        return next.user;
+      },
+      async requestEmailBind({ email }) {
+        await wait(NETWORK_DELAY_MS / 2);
         const session = readStoredAuthSession();
         if (!session) {
           throw new Error("未登录或登录已失效。");
@@ -467,8 +587,9 @@ export const createFakeRepositories = (): Repositories => {
         }
         return currentSubscription;
       },
-      async listBundles() {
+      async listBundles(_query) {
         await wait(NETWORK_DELAY_MS);
+        // mock 不区分是否传 query；实际后端会根据 query 返回不同价格
         return FAKE_BUNDLES.filter((b) => b.bundle_state === "ONLINE");
       },
       async createPass(bundleId) {
@@ -497,88 +618,172 @@ export const createFakeRepositories = (): Repositories => {
           isolated_time: null,
           deleted_time: null,
           updated_time: nowString,
+          agent_quota_total: bundle.agent_quota,
+          agent_quota_available: bundle.agent_quota,
           credit_total: bundle.credit,
           credit_available: bundle.credit,
         };
         writeStoredPasses([...existing, pass]);
         return pass;
       },
-      async createPassOrder(input) {
+      async getCreatePrerequisites() {
         await wait(NETWORK_DELAY_MS);
         return {
-          deal_names: [`deal-fake-${input.bundle_id}-${Date.now().toString(36)}`],
-          auth_code: `auth-fake-${Date.now().toString(36)}`,
+          site_kind: "cn",
+          shadow_account_enabled: false,
+          shadow_bound: false,
         };
       },
-      async getPassOrderUrl(input) {
+      async sendShadowBindingSms(_input) {
         await wait(NETWORK_DELAY_MS);
+      },
+      async verifyShadowBindingPhone(_input) {
+        await wait(NETWORK_DELAY_MS);
+      },
+      async createPassOrder(input): Promise<CreatePassOrderResult> {
+        // mock 代替联调文档 §2.1（v1.7.31 + CodeBuddy AuthCode）：伪造 deal_names 与 auth_code。
+        await wait(NETWORK_DELAY_MS);
+        const bundle = FAKE_BUNDLES.find((b) => b.bundle_id === input.bundle_id);
+        if (!bundle) {
+          const err = new Error("套餐已下架") as Error & { code?: string };
+          err.code = "BUNDLE_NOT_FOUND";
+          throw err;
+        }
+        const existing = readStoredPasses();
+        if (existing.some((p) => !p.deleted_time && new Date(p.expired_time).getTime() > Date.now())) {
+          const err = new Error("您已有有效套餐，无法重复购买") as Error & { code?: string };
+          err.code = "PASS_ALREADY_EXISTS";
+          throw err;
+        }
+        const dealName = `mock-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        // CodeBuddy 同款一次性 auth_code，mock 下是随机 UUID；实际后端由
+        // POST /billing/saas/generate-authcode 或在下单接口内部生成
+        const authCode = `mock-ac-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+        return { deal_names: [dealName], auth_code: authCode };
+      },
+      async getPassOrderUrl(input, _init): Promise<CreatePassOrderUrlResult> {
+        // mock 代替联调文档 §2.2（v1.7.31 + CodeBuddy AuthCode）：
+        //   PC 端：    input 只带 deal_names + platform: "pc"
+        //   中转页：   input 额外带 wx_code + auth_code（二选一）或 wx_open_id
+        // _init.headers 在 fake 模式下不需验证
+        await wait(NETWORK_DELAY_MS);
+        const dealName = input.deal_names[0] ?? `mock-${Date.now()}`;
+        const tokenId = `E-${Date.now()}${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
         return {
-          deal_name: input.deal_names[0] ?? `deal-fake-${Date.now().toString(36)}`,
-          pay_url: "https://buy.cloud.tencent.com/pay?token=fake",
-          token_id: "fake-token-id",
-          order_id: "fake-order-id",
-          midas_app_id: "fake-midas-app-id",
+          deal_name: dealName,
+          // mock pay_url 指向 about:blank，联调时会被真实后端返回的 jifei 收银台 URL 覆盖
+          pay_url: `about:blank#mock-pay-${dealName}`,
+          token_id: tokenId,
+          order_id: `${Date.now()}${Math.floor(Math.random() * 100000)}`,
+          midas_app_id: "1450008583",
           need_charge: 1,
-          uin: "1000000",
-          app_id: "1250000000",
+          uin: "700000164995",
+          app_id: "251202221",
         };
       },
-      async createPassOrderAndPay(input) {
+      async createPassOrderAndPay(input): Promise<CreatePassOrderAndPayResult> {
+        // mock 代替联调文档 §2.2：一体化下单+支付，不返 pay_url
         await wait(NETWORK_DELAY_MS);
+        const bundle = FAKE_BUNDLES.find((b) => b.bundle_id === input.bundle_id);
+        if (!bundle) {
+          const err = new Error("套餐已下架") as Error & { code?: string };
+          err.code = "BUNDLE_NOT_FOUND";
+          throw err;
+        }
         return {
-          deal_name: `deal-fake-${input.bundle_id}-${Date.now().toString(36)}`,
-          big_order_id: `big-order-fake-${Date.now().toString(36)}`,
+          deal_name: `mock-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          big_order_id: `${Date.now()}`,
         };
       },
-      async getRenewPrice(passId) {
+      async getRenewPrice(passId, input): Promise<PassRenewPrice> {
+        // mock 代替联调文档 §3.1：返回分为单位的价格
         await wait(NETWORK_DELAY_MS);
-        const pass = readStoredPasses().find((item) => item.pass_id === passId);
+        const passes = readStoredPasses();
+        const pass = passes.find((p) => p.pass_id === passId);
+        if (!pass) {
+          const err = new Error("pass not owned by user") as Error & { code?: string };
+          err.code = "PASS_NOT_FOUND";
+          throw err;
+        }
+        const bundle = FAKE_BUNDLES.find((b) => b.bundle_id === pass.bundle_id);
+        // bundle.price.real_total_cost 已是分，直接乘有效期倍数即可
+        const baseCents = bundle?.price?.real_total_cost ?? 0;
+        const cents = Math.round(baseCents * input.period);
         return {
-          bundle_id: pass?.bundle_id ?? "bundle_launch_01",
-          price: 4900,
-          total_cost: 4900,
-          real_total_cost: 4900,
+          bundle_id: pass.bundle_id,
+          price: cents,
+          total_cost: cents,
+          real_total_cost: cents,
           currency: "CNY",
           discount: 100,
         };
       },
-      async createRenewOrder(passId) {
+      async createRenewOrder(passId, _input): Promise<CreatePassOrderResult> {
+        // mock 代替联调文档 §3.2（v1.7.31 + CodeBuddy AuthCode）：续费下单同时生成 auth_code
         await wait(NETWORK_DELAY_MS);
-        return {
-          deal_names: [`deal-renew-fake-${passId}-${Date.now().toString(36)}`],
-          auth_code: `auth-renew-fake-${Date.now().toString(36)}`,
-        };
+        const passes = readStoredPasses();
+        if (!passes.some((p) => p.pass_id === passId)) {
+          const err = new Error("pass not owned by user") as Error & { code?: string };
+          err.code = "PASS_NOT_FOUND";
+          throw err;
+        }
+        const dealName = `mock-renew-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const authCode = `mock-ac-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+        return { deal_names: [dealName], auth_code: authCode };
       },
-      async getRenewOrderUrl(_passId, input) {
+      async getRenewOrderUrl(passId, input, _init): Promise<CreatePassOrderUrlResult> {
+        // mock 代替联调文档 §3.3（v1.7.31 新增）：拿完整支付信息
         await wait(NETWORK_DELAY_MS);
+        const passes = readStoredPasses();
+        if (!passes.some((p) => p.pass_id === passId)) {
+          const err = new Error("pass not owned by user") as Error & { code?: string };
+          err.code = "PASS_NOT_FOUND";
+          throw err;
+        }
+        const dealName = input.deal_names[0] ?? `mock-renew-${Date.now()}`;
+        const tokenId = `E-${Date.now()}${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
         return {
-          deal_name: input.deal_names[0] ?? `deal-fake-${Date.now().toString(36)}`,
-          pay_url: "https://buy.cloud.tencent.com/pay?token=fake-renew",
-          token_id: "fake-renew-token-id",
-          order_id: "fake-renew-order-id",
-          midas_app_id: "fake-midas-app-id",
+          deal_name: dealName,
+          pay_url: `about:blank#mock-pay-${dealName}`,
+          token_id: tokenId,
+          order_id: `${Date.now()}${Math.floor(Math.random() * 100000)}`,
+          midas_app_id: "1450008583",
           need_charge: 1,
-          uin: "1000000",
-          app_id: "1250000000",
+          uin: "700000164995",
+          app_id: "251202221",
         };
       },
-      async createRenewOrderAndPay(passId) {
+      async createRenewOrderAndPay(passId, _input): Promise<CreatePassOrderAndPayResult> {
+        // mock 代替联调文档 §3.3：续费下单+支付（仅联调）
         await wait(NETWORK_DELAY_MS);
+        const passes = readStoredPasses();
+        if (!passes.some((p) => p.pass_id === passId)) {
+          const err = new Error("pass not owned by user") as Error & { code?: string };
+          err.code = "PASS_NOT_FOUND";
+          throw err;
+        }
         return {
-          deal_name: `deal-renew-fake-${passId}-${Date.now().toString(36)}`,
-          big_order_id: `big-renew-fake-${Date.now().toString(36)}`,
+          deal_name: `mock-renew-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          big_order_id: `${Date.now()}`,
         };
       },
-      async deletePass(passId) {
+      async deletePass(passId): Promise<DeletePassResult> {
+        // mock 代替联调文档 §4.1：销毁 pass
         await wait(NETWORK_DELAY_MS);
-        const nowString = nowIso();
-        writeStoredPasses(
-          readStoredPasses().map((pass) =>
-            pass.pass_id === passId
-              ? { ...pass, deleted_time: nowString, updated_time: nowString }
-              : pass,
-          ),
-        );
+        const passes = readStoredPasses();
+        const target = passes.find((p) => p.pass_id === passId);
+        if (!target) {
+          const err = new Error("pass not found") as Error & { code?: string };
+          err.code = "PASS_NOT_FOUND";
+          throw err;
+        }
+        if (!target.isolated_time) {
+          const err = new Error("pass not isolated") as Error & { code?: string };
+          err.code = "PASS_NOT_ISOLATED";
+          throw err;
+        }
+        // mock 同步将 pass 从存储中移除（真实后端是异步任务，需轮询）
+        writeStoredPasses(passes.filter((p) => p.pass_id !== passId));
         return { deleted: true };
       },
       async listMyPasses() {
@@ -949,78 +1154,6 @@ const createBotRepository = (): BotRepository => {
 
     async execDebugCommand(_botId, command) {
       await wait(NETWORK_DELAY_MS);
-      if (command.includes(FAKE_ACHIEVEMENTS_JSON_START)) {
-        return {
-          status: "Succeeded",
-          exitCode: 0,
-          output: [
-            FAKE_ACHIEVEMENTS_JSON_START,
-            JSON.stringify({
-              achievements: [
-                {
-                  id: "let_him_cook",
-                  name: "Let Him Cook",
-                  description: "Let Hermes run a serious autonomous tool chain in one session.",
-                  category: "Agent Autonomy",
-                  state: "unlocked",
-                  unlocked: true,
-                  tier: "Copper",
-                  progress: 240,
-                  progress_pct: 100,
-                  next_tier: "Silver",
-                  next_threshold: 500,
-                  criteria: "Requirement: tool calls in one session. Tier ladder: Copper 200, Silver 500.",
-                  unlocked_at: Math.floor(Date.now() / 1000) - 3600,
-                  evidence: { title: "LightVela settings polish", value: 240 },
-                },
-                {
-                  id: "test_suite_tamer",
-                  name: "Test Suite Tamer",
-                  description: "Run enough verification commands that green text becomes part of the ritual.",
-                  category: "Tool Mastery",
-                  state: "discovered",
-                  unlocked: false,
-                  tier: null,
-                  progress: 42,
-                  progress_pct: 42,
-                  next_tier: "Copper",
-                  next_threshold: 100,
-                  criteria: "Requirement: test/check/verification command mentions. Tier ladder: Copper 100.",
-                },
-                {
-                  id: "port_3000_taken",
-                  name: "???",
-                  description: "Secret achievement: hidden until Hermes detects the first relevant behavior in your session history.",
-                  category: "Debugging Chaos",
-                  state: "secret",
-                  unlocked: false,
-                  tier: null,
-                  progress: 0,
-                  progress_pct: 0,
-                  next_tier: "Copper",
-                  next_threshold: 15,
-                  criteria: "Secret: exact requirement hidden until Hermes sees the first matching signal.",
-                },
-              ],
-              unlocked_count: 1,
-              discovered_count: 1,
-              secret_count: 1,
-              total_count: 3,
-              generated_at: Math.floor(Date.now() / 1000),
-              is_stale: false,
-              error: null,
-              scan_meta: {
-                mode: "fake",
-                sessions_total: 12,
-                sessions_rescanned: 2,
-                sessions_reused: 10,
-                status: { state: "idle", run_count: 1, snapshot_stale: false },
-              },
-            }),
-            FAKE_ACHIEVEMENTS_JSON_END,
-          ].join("\n"),
-        };
-      }
       if (command === "openclaw_config") {
         return {
           status: "Succeeded",

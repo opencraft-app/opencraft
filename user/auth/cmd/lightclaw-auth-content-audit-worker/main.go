@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/contentaudit"
+	"github.com/openclaw/openclaw/mono/backend/auth/internal/dbconfig"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/logging"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/service"
 )
@@ -79,10 +80,7 @@ func buildContentAuditClient(cfg service.ContentAuditConfig) (*contentaudit.Clie
 var errMissingContentAuditConfig = errors.New("CONTENT_AUDIT_ENDPOINT, CONTENT_AUDIT_PRODUCT_ID and CONTENT_AUDIT_USER_SID are required when CONTENT_AUDIT_ENABLED=true")
 
 func newStore(requireMySQL bool) service.Store {
-	dsn := strings.TrimSpace(os.Getenv("LIGHTCLAW_MYSQL_DSN"))
-	if dsn == "" {
-		dsn = strings.TrimSpace(os.Getenv("MYSQL_DSN"))
-	}
+	dsn := dbconfig.ResolveMySQLDSN()
 	if dsn == "" {
 		if requireMySQL {
 			slog.Error("missing MySQL DSN for enabled content audit worker")

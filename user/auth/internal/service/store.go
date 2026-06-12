@@ -23,6 +23,13 @@ type Store interface {
 	ValidateInvite(ctx context.Context, code string) (InviteValidation, error)
 	SendVerificationCode(ctx context.Context, phone string, code string, now time.Time, ttl time.Duration, cooldown time.Duration) (time.Duration, error)
 	CompleteSMSVerification(ctx context.Context, input VerifySMSInput, now time.Time, sessionTTL time.Duration) (*AuthSession, error)
+	ValidateCurrentUserPhoneChallenge(ctx context.Context, token string, code string, now time.Time) (User, error)
+	VerifyCurrentUserPhoneChallenge(ctx context.Context, token string, code string, now time.Time) (User, error)
+	MarkCurrentUserPhoneRealnameVerified(ctx context.Context, token string, now time.Time) (User, error)
+	ValidatePhoneChangeTarget(ctx context.Context, token string, newPhone string, now time.Time) (User, error)
+	ValidatePhoneChange(ctx context.Context, token string, newPhone string, code string, now time.Time) (User, error)
+	UpdateCurrentUserPhone(ctx context.Context, token string, newPhone string, now time.Time) (User, error)
+	CompletePhoneChange(ctx context.Context, token string, newPhone string, code string, now time.Time) (User, error)
 	CreatePasswordSession(ctx context.Context, input PasswordSignUpInput, passwordHash []byte, now time.Time, sessionTTL time.Duration) (*AuthSession, error)
 	CreateOAuthSession(ctx context.Context, input OAuthSignInInput, now time.Time, sessionTTL time.Duration) (*AuthSession, error)
 	ActivateInviteForCurrentUser(ctx context.Context, token string, code string, now time.Time) (User, error)
@@ -34,9 +41,8 @@ type Store interface {
 	CurrentProfile(ctx context.Context, token string, now time.Time) (User, error)
 	FindUserByID(ctx context.Context, userID string) (User, error)
 	UpdateRealname(ctx context.Context, token string, input UpdateRealnameInput) error
+	GetUserRealname(ctx context.Context, userID string) (StoredRealname, error)
 	UpdateProfile(ctx context.Context, token string, name string, now time.Time) (User, error)
-	RequestEmailBind(ctx context.Context, token string, email string, tokenHash string, now time.Time, tokenTTL time.Duration, cooldown time.Duration) (time.Duration, error)
-	ConfirmEmailBind(ctx context.Context, tokenHash string, now time.Time) (User, error)
 	QueueNameAudit(ctx context.Context, token string, input CreateNameAuditInput, now time.Time) (User, error)
 	QueueAvatarAudit(ctx context.Context, userID string, input CreateAvatarAuditInput, now time.Time) (User, error)
 	ListPendingContentAuditTasks(ctx context.Context, limit int) ([]ContentAuditTask, error)
@@ -59,6 +65,8 @@ type Store interface {
 	ListAdminInvites(ctx context.Context, search string, state string, limit int) ([]AdminInvite, error)
 	CreateAdminInvite(ctx context.Context, code string, message string, now time.Time) (*AdminInvite, error)
 	DisableAdminInvite(ctx context.Context, code string, now time.Time) error
+	RequestEmailBind(ctx context.Context, token string, email string, tokenHash string, now time.Time, tokenTTL time.Duration, cooldown time.Duration) (time.Duration, error)
+	ConfirmEmailBind(ctx context.Context, tokenHash string, now time.Time) (User, error)
 }
 
 type CreateNameAuditInput struct {

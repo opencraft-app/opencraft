@@ -224,14 +224,7 @@ func (h *Handler) handleQQOAuthCallbackAfterState(ctx *gin.Context, code string,
 		"user_id", session.User.ID,
 	)
 	h.clearInviteTicketCookie(ctx)
-	if h.avatarStore != nil && strings.TrimSpace(identity.AvatarURL) != "" && strings.TrimSpace(session.User.AvatarSource) != "upload" {
-		objectKey, syncErr := h.avatarStore.SyncRemoteAvatar(requestCtx, session.User.ID, identity.AvatarURL)
-		if syncErr != nil {
-			logger.Warn("qq oauth avatar sync failed", "user_id", session.User.ID, "err", syncErr)
-		} else if _, persistErr := h.service.SetUserAvatar(requestCtx, session.User.ID, objectKey, "oauth_qq"); persistErr != nil {
-			logger.Warn("qq oauth avatar persist failed", "user_id", session.User.ID, "err", persistErr)
-		}
-	}
+	h.syncOAuthAvatar(requestCtx, logger, "qq", session.User.ID, identity.AvatarURL, session.User.AvatarSource)
 	h.setSessionCookie(ctx, session.Token)
 	redirectURL := h.oauthSuccessRedirectURL(ctx, returnTo, h.qqOAuth.successFrontendURL(ctx.Request, "/", session.Token), session)
 	ctx.Redirect(http.StatusTemporaryRedirect, redirectURL)
