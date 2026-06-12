@@ -1770,7 +1770,27 @@ const SubscriptionSection = ({
 /* ─── Main Account Page ─── */
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const ACCOUNT_REALNAME_VISIBILITY_STORAGE_KEY = "lw-account-realname-visible";
 type RealnameSyncStatus = "pending" | "failed" | "succeeded";
+type AccountConsoleHost = Window & { console: Console; show?: unknown };
+
+const readAccountRealnameVisibility = () => {
+  if (typeof window === "undefined") return false;
+
+  try {
+    return window.localStorage.getItem(ACCOUNT_REALNAME_VISIBILITY_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+};
+
+const persistAccountRealnameVisibility = () => {
+  try {
+    window.localStorage.setItem(ACCOUNT_REALNAME_VISIBILITY_STORAGE_KEY, "1");
+  } catch {
+    // localStorage can be blocked in privacy modes; the current page state still reveals the section.
+  }
+};
 
 export const AccountPage = () => {
   const t = useT();
@@ -1825,7 +1845,8 @@ export const AccountPage = () => {
         : idCardVerified
           ? t("待完成手机号认证")
           : "";
-  const showRealnameSection = !isGlobal;
+  const [showAccountRealnameSection, setShowAccountRealnameSection] = useState(readAccountRealnameVisibility);
+  const showRealnameSection = !isGlobal && showAccountRealnameSection;
   const showEmailBindSection = isCN;
   const [showVerifyModal, setShowVerifyModal] = useState(false);
   const [showChangePhoneModal, setShowChangePhoneModal] = useState(false);
@@ -1842,6 +1863,29 @@ export const AccountPage = () => {
   // 账号 ID 一键复制：copiedUserId 控制「已复制」瞬态提示；ref 挂 setTimeout 以便重复点击时清理旧 timer
   const [copiedUserId, setCopiedUserId] = useState(false);
   const copyResetTimer = useRef<number | null>(null);
+  useEffect(() => {
+    if (isGlobal || typeof window === "undefined") return undefined;
+
+    const host = window as AccountConsoleHost;
+    const originalShow = host.show;
+    const consoleRef = host.console;
+
+    host.show = () => {
+      setShowAccountRealnameSection(true);
+      persistAccountRealnameVisibility();
+      consoleRef.info("账号实名入口已显示。");
+      return true;
+    };
+
+    return () => {
+      if (originalShow === undefined) {
+        delete host.show;
+      } else {
+        host.show = originalShow;
+      }
+    };
+  }, []);
+
   const handleCopyUserId = async () => {
     if (!user?.id) return;
     try {
