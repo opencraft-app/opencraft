@@ -15,7 +15,7 @@ const refreshProfile = vi.fn();
 const retryRealnameSync = vi.fn();
 
 let currentUser: User;
-const ACCOUNT_REALNAME_VISIBILITY_STORAGE_KEY = "lw-account-realname-visible";
+const ACCOUNT_SAFETY_PHONE_VISIBILITY_STORAGE_KEY = "lw-account-safety-phone-visible";
 
 const createMemoryStorage = (): Storage => {
   const entries = new Map<string, string>();
@@ -32,7 +32,7 @@ const createMemoryStorage = (): Storage => {
   };
 };
 
-const revealAccountRealnameSection = () => {
+const revealAccountSafetyPhoneSection = () => {
   const host = window as Window & { show?: unknown };
   expect(host.show).toEqual(expect.any(Function));
 
@@ -137,7 +137,7 @@ describe("AccountPage nickname audit state", () => {
     vi.stubGlobal("localStorage", createMemoryStorage());
   });
 
-  it("keeps the domestic realname and safety phone rows hidden until show() is called", () => {
+  it("keeps domestic realname visible while hiding the safety phone row until show() is called", () => {
     currentUser = {
       ...currentUser,
       phone: "15625128341",
@@ -148,17 +148,17 @@ describe("AccountPage nickname audit state", () => {
     renderAccountPage();
 
     expect(screen.queryByText("安全手机")).not.toBeInTheDocument();
-    expect(screen.queryByText("实名认证")).not.toBeInTheDocument();
+    expect(screen.getByText("实名认证")).toBeInTheDocument();
 
-    revealAccountRealnameSection();
+    revealAccountSafetyPhoneSection();
 
     expect(screen.getByText("安全手机")).toBeInTheDocument();
     expect(screen.getByText("实名认证")).toBeInTheDocument();
-    expect(window.localStorage.getItem(ACCOUNT_REALNAME_VISIBILITY_STORAGE_KEY)).toBe("1");
+    expect(window.localStorage.getItem(ACCOUNT_SAFETY_PHONE_VISIBILITY_STORAGE_KEY)).toBe("1");
   });
 
-  it("keeps the realname rows visible after show() has been persisted", () => {
-    window.localStorage.setItem(ACCOUNT_REALNAME_VISIBILITY_STORAGE_KEY, "1");
+  it("keeps the safety phone row visible after show() has been persisted", () => {
+    window.localStorage.setItem(ACCOUNT_SAFETY_PHONE_VISIBILITY_STORAGE_KEY, "1");
     currentUser = {
       ...currentUser,
       phone: "15625128341",
@@ -248,7 +248,6 @@ describe("AccountPage nickname audit state", () => {
     };
 
     renderAccountPage();
-    revealAccountRealnameSection();
 
     const verifyButtons = screen.getAllByRole("button", { name: /去认证/ });
     expect(verifyButtons.length).toBeGreaterThan(0);
@@ -269,7 +268,6 @@ describe("AccountPage nickname audit state", () => {
     };
 
     renderAccountPage();
-    revealAccountRealnameSection();
 
     await userEvent.click(screen.getByRole("button", { name: /绑定安全手机/ }));
 
@@ -302,7 +300,6 @@ describe("AccountPage nickname audit state", () => {
     };
 
     renderAccountPage();
-    revealAccountRealnameSection();
 
     expect(screen.getByText("实名信息同步失败")).toBeInTheDocument();
     expect(screen.queryByText("待完成手机号认证")).not.toBeInTheDocument();
@@ -323,7 +320,6 @@ describe("AccountPage nickname audit state", () => {
     };
 
     renderAccountPage();
-    revealAccountRealnameSection();
 
     expect(screen.getByText("实名信息同步中")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /重新同步/ })).toBeInTheDocument();

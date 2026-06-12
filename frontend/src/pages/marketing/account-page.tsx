@@ -1770,23 +1770,23 @@ const SubscriptionSection = ({
 /* ─── Main Account Page ─── */
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const ACCOUNT_REALNAME_VISIBILITY_STORAGE_KEY = "lw-account-realname-visible";
+const ACCOUNT_SAFETY_PHONE_VISIBILITY_STORAGE_KEY = "lw-account-safety-phone-visible";
 type RealnameSyncStatus = "pending" | "failed" | "succeeded";
 type AccountConsoleHost = Window & { console: Console; show?: unknown };
 
-const readAccountRealnameVisibility = () => {
+const readAccountSafetyPhoneVisibility = () => {
   if (typeof window === "undefined") return false;
 
   try {
-    return window.localStorage.getItem(ACCOUNT_REALNAME_VISIBILITY_STORAGE_KEY) === "1";
+    return window.localStorage.getItem(ACCOUNT_SAFETY_PHONE_VISIBILITY_STORAGE_KEY) === "1";
   } catch {
     return false;
   }
 };
 
-const persistAccountRealnameVisibility = () => {
+const persistAccountSafetyPhoneVisibility = () => {
   try {
-    window.localStorage.setItem(ACCOUNT_REALNAME_VISIBILITY_STORAGE_KEY, "1");
+    window.localStorage.setItem(ACCOUNT_SAFETY_PHONE_VISIBILITY_STORAGE_KEY, "1");
   } catch {
     // localStorage can be blocked in privacy modes; the current page state still reveals the section.
   }
@@ -1845,8 +1845,9 @@ export const AccountPage = () => {
         : idCardVerified
           ? t("待完成手机号认证")
           : "";
-  const [showAccountRealnameSection, setShowAccountRealnameSection] = useState(readAccountRealnameVisibility);
-  const showRealnameSection = !isGlobal && showAccountRealnameSection;
+  const [showAccountSafetyPhoneSection, setShowAccountSafetyPhoneSection] = useState(readAccountSafetyPhoneVisibility);
+  const showRealnameSection = !isGlobal;
+  const showSafetyPhoneSection = !isGlobal && showAccountSafetyPhoneSection;
   const showEmailBindSection = isCN;
   const [showVerifyModal, setShowVerifyModal] = useState(false);
   const [showChangePhoneModal, setShowChangePhoneModal] = useState(false);
@@ -1871,9 +1872,9 @@ export const AccountPage = () => {
     const consoleRef = host.console;
 
     host.show = () => {
-      setShowAccountRealnameSection(true);
-      persistAccountRealnameVisibility();
-      consoleRef.info("账号实名入口已显示。");
+      setShowAccountSafetyPhoneSection(true);
+      persistAccountSafetyPhoneVisibility();
+      consoleRef.info("账号安全手机入口已显示。");
       return true;
     };
 
@@ -2521,26 +2522,27 @@ export const AccountPage = () => {
                     </div>
                   )}
 
-                  {showRealnameSection && (
-                  <>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm" style={{ color: "rgba(0,0,0,0.5)", lineHeight: "24px" }}>{t("安全手机")}</span>
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm" style={{ color: user?.phone ? "rgba(0,0,0,0.9)" : "rgba(0,0,0,0.5)" }}>
-                        {user?.phone || t("未绑定")}
-                      </span>
-                      <button
-                        onClick={() => setShowChangePhoneModal(true)}
-                        className="flex items-center gap-1 text-sm transition-colors hover:opacity-80"
-                        style={{ color: "var(--lw-accent)" }}
-                      >
-                        {user?.phone ? t("修改") : t("绑定")}
-                        <ChevronRight className="h-4 w-4" />
-                      </button>
+                  {showSafetyPhoneSection && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm" style={{ color: "rgba(0,0,0,0.5)", lineHeight: "24px" }}>{t("安全手机")}</span>
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm" style={{ color: user?.phone ? "rgba(0,0,0,0.9)" : "rgba(0,0,0,0.5)" }}>
+                          {user?.phone || t("未绑定")}
+                        </span>
+                        <button
+                          onClick={() => setShowChangePhoneModal(true)}
+                          className="flex items-center gap-1 text-sm transition-colors hover:opacity-80"
+                          style={{ color: "var(--lw-accent)" }}
+                        >
+                          {user?.phone ? t("修改") : t("绑定")}
+                          <ChevronRight className="h-4 w-4" />
+                        </button>
+                      </div>
                     </div>
-                  </div>
+                  )}
 
-                  <div className="flex items-center justify-between">
+                  {showRealnameSection && (
+                    <div className="flex items-center justify-between">
                     <span className="text-sm" style={{ color: "rgba(0,0,0,0.5)", lineHeight: "24px" }}>{t("实名认证")}</span>
                     {verified ? (
                       <div className="flex items-center gap-3">
@@ -2591,7 +2593,6 @@ export const AccountPage = () => {
                       </div>
                     )}
                   </div>
-                  </>
                   )}
                 </div>
               )}
