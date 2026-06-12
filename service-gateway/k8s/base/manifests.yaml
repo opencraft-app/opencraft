@@ -218,6 +218,16 @@ spec:
                 secretKeyRef:
                   name: service-gateway-runtime-secrets
                   key: SERVICE_GATEWAY_ADMIN_BASIC_AUTH_PASSWORD
+            - name: TEMPORAL_BEARER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: service-gateway-runtime-secrets
+                  key: TEMPORAL_BEARER_TOKEN
+                  optional: true
+            - name: WORKER_ACTION_TEMPORAL_ADDRESS
+              value: temporal.lightvela.com:443
+            - name: WORKER_ACTION_TEMPORAL_SERVER_NAME
+              value: temporal.lightvela.com
           volumeMounts:
             - name: config
               mountPath: /etc/service-gateway/config.yaml
