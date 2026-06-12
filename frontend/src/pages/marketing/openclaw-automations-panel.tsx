@@ -17,7 +17,7 @@
 import { AlertTriangle, Activity, BellRing, BriefcaseBusiness, CalendarRange, ChevronDown, CircleHelp, Clock, Droplets, Eraser, Eye, FolderKanban, LayoutTemplate, Loader2, Newspaper, Pause, Pencil, Play, Plus, RefreshCw, Sunrise, Trash2, TrendingUp, X } from "lucide-react";
 import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { parseHermesChannelList } from "@tencent/tea-sdk-lightclaw";
+import { parseHermesChannelList } from "@tencent/tea-sdk-lightclaw/scripts";
 import { useT } from "@/i18n/t";
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
 import { isGlobal } from "@/lib/region";
@@ -1928,13 +1928,13 @@ function AutomationFormModal({
   ));
   const [weekdays, setWeekdays] = useState(() => normalizeWeekdays(
     initial?.weekdays
-      ?? templateSchedule?.weekdays
-      ?? [initial?.weekday ?? templateSchedule?.weekday ?? 1],
+    ?? templateSchedule?.weekdays
+    ?? [initial?.weekday ?? templateSchedule?.weekday ?? 1],
   ));
   const [monthdays, setMonthdays] = useState(() => normalizeMonthdays(
     initial?.monthdays
-      ?? templateSchedule?.monthdays
-      ?? [initial?.monthday ?? templateSchedule?.monthday ?? 1],
+    ?? templateSchedule?.monthdays
+    ?? [initial?.monthday ?? templateSchedule?.monthday ?? 1],
   ));
   // 按间隔态
   const [intervalNum, setIntervalNum] = useState(initial?.intervalNum ?? templateSchedule?.intervalNum ?? 1);
@@ -2068,10 +2068,10 @@ function AutomationFormModal({
     if (!canSubmit) return;
     const effectiveWindow = shouldShowEffectiveWindow
       ? buildEffectiveWindowFromInputs(
-          effectiveWindowEnabled ? effectiveStartAt : "",
-          effectiveWindowEnabled ? effectiveEndAt : "",
-          kind === "interval" ? intervalWeekdays : WEEKDAY_VALUES,
-        )
+        effectiveWindowEnabled ? effectiveStartAt : "",
+        effectiveWindowEnabled ? effectiveEndAt : "",
+        kind === "interval" ? intervalWeekdays : WEEKDAY_VALUES,
+      )
       : null;
     if (effectiveWindow && isEffectiveWindowRangeInvalid(effectiveWindow)) {
       onError(t("生效结束时间不能早于开始时间"));
@@ -2100,11 +2100,11 @@ function AutomationFormModal({
       const deliver = buildDeliverString(deliverPlatforms, deliverChatIds);
       const scriptConfig: CronLightVelaScriptConfig | null = effectiveWindow || dailyTimesForScript
         ? {
-            start_at: effectiveWindow?.start_at ?? null,
-            end_at: effectiveWindow?.end_at ?? null,
-            ...(effectiveWindow?.weekdays?.length ? { weekdays: effectiveWindow.weekdays } : {}),
-            ...(dailyTimesForScript ? { daily_times: dailyTimesForScript } : {}),
-          }
+          start_at: effectiveWindow?.start_at ?? null,
+          end_at: effectiveWindow?.end_at ?? null,
+          ...(effectiveWindow?.weekdays?.length ? { weekdays: effectiveWindow.weekdays } : {}),
+          ...(dailyTimesForScript ? { daily_times: dailyTimesForScript } : {}),
+        }
         : null;
       if (mode === "create") {
         const script = scriptConfig
@@ -2207,9 +2207,8 @@ function AutomationFormModal({
                 }}
                 disabled={scheduleUneditable}
                 style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
-                className={`rounded-md px-3 py-1 text-sm font-medium transition ${
-                  kind === k ? "bg-white text-black/90 shadow-sm" : "text-black/50 hover:text-black/80"
-                } ${scheduleUneditable ? "cursor-not-allowed opacity-60" : ""}`}
+                className={`rounded-md px-3 py-1 text-sm font-medium transition ${kind === k ? "bg-white text-black/90 shadow-sm" : "text-black/50 hover:text-black/80"
+                  } ${scheduleUneditable ? "cursor-not-allowed opacity-60" : ""}`}
               >
                 {k === "recurring" ? t("周期") : k === "interval" ? t("按间隔") : t("单次")}
               </button>
@@ -2275,79 +2274,77 @@ function AutomationFormModal({
 
         {/* 生效时间段 */}
         {shouldShowEffectiveWindow && (
-        <div className="mt-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <label className="block text-sm font-medium text-black/80">{t("生效时间段")}</label>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={effectiveWindowEnabled}
-                  disabled={!canEditEffectiveWindow}
-                  onClick={() => {
-                    if (!canEditEffectiveWindow) return;
-                    setEffectiveWindowEnabled((enabled) => !enabled);
-                  }}
-                  style={{ marginLeft: 10 }}
-                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition ${
-                effectiveWindowEnabled ? "bg-black" : "bg-black/15"
-              } ${canEditEffectiveWindow ? "" : "cursor-not-allowed opacity-50"}`}
-              aria-label={t("生效时间段")}
-            >
-              <span
-                className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition ${
-                  effectiveWindowEnabled ? "translate-x-4" : "translate-x-0.5"
-                }`}
-              />
-            </button>
-            {!effectiveWindowEnabled && (
-              <span className="text-xs font-normal text-black/40">{t("可选，不配置代表任务一直生效")}</span>
-            )}
-            {effectiveWindowEnabled && (
-              <span className="text-xs font-normal text-black/40">{t("超出生效时间段时，任务不会执行")}</span>
-            )}
-          </div>
-          {effectiveWindowEnabled && (
-          <div className="mt-1.5 grid grid-cols-1 gap-y-2 sm:grid-cols-[minmax(0,11.25rem)_1.25rem_minmax(0,11.25rem)_auto] sm:items-center sm:gap-x-0">
-              <input
-                type="datetime-local"
-                value={effectiveStartAt}
-                onChange={(e) => setEffectiveStartAt(e.target.value)}
-                disabled={!canEditEffectiveWindow}
-                style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
-                className="min-w-0 rounded-lg border border-black/10 bg-white px-3 py-2 text-sm focus:border-black/30 focus:outline-none disabled:cursor-not-allowed disabled:bg-black/[0.03] disabled:text-black/35 sm:w-full"
-                aria-label={t("生效开始时间")}
-              />
-              <span className="hidden text-center text-sm text-black/35 sm:block">—</span>
-              <input
-                type="datetime-local"
-                value={effectiveEndAt}
-                onChange={(e) => setEffectiveEndAt(e.target.value)}
-                disabled={!canEditEffectiveWindow}
-                style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
-                className="min-w-0 rounded-lg border border-black/10 bg-white px-3 py-2 text-sm focus:border-black/30 focus:outline-none disabled:cursor-not-allowed disabled:bg-black/[0.03] disabled:text-black/35 sm:w-full"
-                aria-label={t("生效结束时间")}
-              />
-              <span className="group relative -ml-1 inline-flex h-10 w-8 items-center justify-center">
+          <div className="mt-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="block text-sm font-medium text-black/80">{t("生效时间段")}</label>
               <button
                 type="button"
+                role="switch"
+                aria-checked={effectiveWindowEnabled}
+                disabled={!canEditEffectiveWindow}
                 onClick={() => {
-                  setEffectiveStartAt("");
-                  setEffectiveEndAt("");
+                  if (!canEditEffectiveWindow) return;
+                  setEffectiveWindowEnabled((enabled) => !enabled);
                 }}
-                disabled={!canEditEffectiveWindow || (!effectiveStartAt && !effectiveEndAt)}
-                className="inline-flex h-10 w-8 items-center justify-center text-black/50 transition hover:text-black/80 disabled:cursor-not-allowed disabled:opacity-35"
-                aria-label={t("清空")}
+                style={{ marginLeft: 10 }}
+                className={`relative inline-flex h-5 w-9 items-center rounded-full transition ${effectiveWindowEnabled ? "bg-black" : "bg-black/15"
+                  } ${canEditEffectiveWindow ? "" : "cursor-not-allowed opacity-50"}`}
+                aria-label={t("生效时间段")}
               >
-                <Eraser className="h-4 w-4" />
+                <span
+                  className={`inline-block h-4 w-4 rounded-full bg-white shadow-sm transition ${effectiveWindowEnabled ? "translate-x-4" : "translate-x-0.5"
+                    }`}
+                />
               </button>
-              <span className="pointer-events-auto absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 select-text whitespace-nowrap rounded-md border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium text-[var(--text-primary)] opacity-0 shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100">
-                {t("清空")}
-                <span className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-[var(--border-subtle)] bg-white" />
-              </span>
-            </span>
+              {!effectiveWindowEnabled && (
+                <span className="text-xs font-normal text-black/40">{t("可选，不配置代表任务一直生效")}</span>
+              )}
+              {effectiveWindowEnabled && (
+                <span className="text-xs font-normal text-black/40">{t("超出生效时间段时，任务不会执行")}</span>
+              )}
+            </div>
+            {effectiveWindowEnabled && (
+              <div className="mt-1.5 grid grid-cols-1 gap-y-2 sm:grid-cols-[minmax(0,11.25rem)_1.25rem_minmax(0,11.25rem)_auto] sm:items-center sm:gap-x-0">
+                <input
+                  type="datetime-local"
+                  value={effectiveStartAt}
+                  onChange={(e) => setEffectiveStartAt(e.target.value)}
+                  disabled={!canEditEffectiveWindow}
+                  style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
+                  className="min-w-0 rounded-lg border border-black/10 bg-white px-3 py-2 text-sm focus:border-black/30 focus:outline-none disabled:cursor-not-allowed disabled:bg-black/[0.03] disabled:text-black/35 sm:w-full"
+                  aria-label={t("生效开始时间")}
+                />
+                <span className="hidden text-center text-sm text-black/35 sm:block">—</span>
+                <input
+                  type="datetime-local"
+                  value={effectiveEndAt}
+                  onChange={(e) => setEffectiveEndAt(e.target.value)}
+                  disabled={!canEditEffectiveWindow}
+                  style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
+                  className="min-w-0 rounded-lg border border-black/10 bg-white px-3 py-2 text-sm focus:border-black/30 focus:outline-none disabled:cursor-not-allowed disabled:bg-black/[0.03] disabled:text-black/35 sm:w-full"
+                  aria-label={t("生效结束时间")}
+                />
+                <span className="group relative -ml-1 inline-flex h-10 w-8 items-center justify-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEffectiveStartAt("");
+                      setEffectiveEndAt("");
+                    }}
+                    disabled={!canEditEffectiveWindow || (!effectiveStartAt && !effectiveEndAt)}
+                    className="inline-flex h-10 w-8 items-center justify-center text-black/50 transition hover:text-black/80 disabled:cursor-not-allowed disabled:opacity-35"
+                    aria-label={t("清空")}
+                  >
+                    <Eraser className="h-4 w-4" />
+                  </button>
+                  <span className="pointer-events-auto absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 select-text whitespace-nowrap rounded-md border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium text-[var(--text-primary)] opacity-0 shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100">
+                    {t("清空")}
+                    <span className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-[var(--border-subtle)] bg-white" />
+                  </span>
+                </span>
+              </div>
+            )}
           </div>
-          )}
-        </div>
         )}
 
         {/* 通知方式（多选；不勾任何 = 仅本地写日志）
@@ -2367,16 +2364,16 @@ function AutomationFormModal({
             {(
               isGlobal
                 ? ([
-                    { key: "telegram", label: "Telegram", comingSoon: false },
-                    { key: "whatsapp", label: "WhatsApp", comingSoon: false },
-                    { key: "discord", label: "Discord", comingSoon: false },
-                    { key: "weixin", label: "WeChat", comingSoon: false },
-                  ] as const)
+                  { key: "telegram", label: "Telegram", comingSoon: false },
+                  { key: "whatsapp", label: "WhatsApp", comingSoon: false },
+                  { key: "discord", label: "Discord", comingSoon: false },
+                  { key: "weixin", label: "WeChat", comingSoon: false },
+                ] as const)
                 : ([
-                    { key: "weixin", label: t("微信"), comingSoon: false },
-                    { key: "qqbot", label: "QQ", comingSoon: false },
-                    { key: "feishu", label: t("飞书"), comingSoon: false },
-                  ] as const)
+                  { key: "weixin", label: t("微信"), comingSoon: false },
+                  { key: "qqbot", label: "QQ", comingSoon: false },
+                  { key: "feishu", label: t("飞书"), comingSoon: false },
+                ] as const)
             ).map(({ key, label, comingSoon }) => {
               // comingSoon 通道一律强制为「不可配置」，无论 acli channel status 怎么报
               const configured = !comingSoon && (enabledChannels === null || enabledChannels.has(key));
@@ -2930,9 +2927,8 @@ function RecurringPicker({
                     title={isLastSelected ? t("至少保留 1 天") : undefined}
                   >
                     <span>{weekdayLabels[day]}</span>
-                    <span className={`inline-flex h-4 w-4 items-center justify-center rounded border ${
-                      checked ? "border-black bg-black" : "border-black/20 bg-white"
-                    }`}>
+                    <span className={`inline-flex h-4 w-4 items-center justify-center rounded border ${checked ? "border-black bg-black" : "border-black/20 bg-white"
+                      }`}>
                       {checked && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
                     </span>
                   </button>
@@ -3109,9 +3105,8 @@ function IntervalPicker({
   }, [onWeekdays, selectedWeekdays, weekdaysDisabled]);
   const weekdayButtons = (
     <div
-      className={`ml-1 flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-left text-sm ${
-        weekdaysDisabled ? "opacity-50" : ""
-      }`}
+      className={`ml-1 flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-left text-sm ${weekdaysDisabled ? "opacity-50" : ""
+        }`}
       style={MODAL_COMPACT_CONTROL_TEXT_STYLE}
     >
       {WEEKDAY_VALUES.map((day) => {

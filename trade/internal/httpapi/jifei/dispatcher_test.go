@@ -39,7 +39,7 @@ func TestDispatcher_RouteCheckCreate_HitsRegisteredHandler(t *testing.T) {
 	d.Register(InterfaceNameCheckCreate, recordingHandler(rec))
 
 	body := []byte(`{
-        "eventId": "evt-1", "componentName": "trade", "seqId": "seq-aaa", "spanId": "span-bbb",
+        "eventId": 1, "componentName": "trade", "seqId": "seq-aaa", "spanId": "span-bbb",
         "interface": {"interfaceName": "lightvela.pass.checkCreate", "para": {"appId": 1}}
     }`)
 	resp := d.Dispatch(context.Background(), body)

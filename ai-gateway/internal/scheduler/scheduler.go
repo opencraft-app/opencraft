@@ -42,6 +42,10 @@ func (s *Scheduler) Start() {
 	// Expire overdue subscriptions every 5 minutes
 	s.runPeriodic(ctx, "expire-subscriptions", 5*time.Minute, s.expireOverdueSubscriptions)
 
+	// Refresh monthly token balances every 1 hour (b3 same-day-of-month anchor;
+	// see .tmp/aigateway-monthly-token-refresh-design.md §3.4 / §3.2).
+	s.runPeriodic(ctx, "refresh-token-balances", 1*time.Hour, s.refreshTokenBalances)
+
 	// Health check for registry providers
 	if s.healthChecker != nil && s.registryCfg != nil {
 		interval := time.Duration(s.registryCfg.HealthCheckIntervalS) * time.Second
@@ -93,5 +97,17 @@ func (s *Scheduler) expireOverdueSubscriptions() {
 	}
 	if count > 0 {
 		slog.Info("expired overdue subscriptions", "count", count)
+	}
+}
+
+// refreshTokenBalances triggers monthly token balance refresh per b3 same-day-of-month.
+func (s *Scheduler) refreshTokenBalances() {
+	count, err := s.subSvc.RefreshDueBalances(context.Background())
+	if err != nil {
+		slog.Error("failed to refresh token balances", "error", err)
+		return
+	}
+	if count > 0 {
+		slog.Info("refreshed token balances", "count", count)
 	}
 }

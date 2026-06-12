@@ -13,19 +13,22 @@ import (
 )
 
 // envelopeForSuccess 是测试 helper：构造 returnCode=0 的成功 CGW envelope。
+//
+// v1.7.15 B10 起业务数据载荷在顶层 Data 字段（与 returnValue 平级）。
+// 入参 returnValue 命名沿用历史（实际是业务 payload 不是数字标志位）。
 func envelopeForSuccess(t *testing.T, returnValue any) []byte {
 	t.Helper()
-	rv, err := json.Marshal(returnValue)
+	dataRaw, err := json.Marshal(returnValue)
 	if err != nil {
-		t.Fatalf("marshal returnValue: %v", err)
+		t.Fatalf("marshal data: %v", err)
 	}
 	rcZero := 0
 	env := envelope{
-		Version:       CGWVersion,
-		EventID:       "test-event-id",
+		Version:       json.RawMessage(`"1.0"`),
+		EventID:       12345,
 		ReturnCode:    &rcZero,
 		ReturnMessage: "success",
-		ReturnValue:   rv,
+		Data:          dataRaw,
 	}
 	b, err := json.Marshal(env)
 	if err != nil {
@@ -38,8 +41,8 @@ func envelopeForSuccess(t *testing.T, returnValue any) []byte {
 func envelopeForError(t *testing.T, code int, msg string) []byte {
 	t.Helper()
 	env := envelope{
-		Version:       CGWVersion,
-		EventID:       "test-event-id",
+		Version:       json.RawMessage(`"1.0"`),
+		EventID:       12345,
 		ReturnCode:    &code,
 		ReturnMessage: msg,
 	}
@@ -50,9 +53,9 @@ func envelopeForError(t *testing.T, code int, msg string) []byte {
 	return b
 }
 
-// fixedEventIDProvider 返回确定性 eventId，用于断言 framework 字段一致性。
-func fixedEventIDProvider() string {
-	return "deadbeef00000000deadbeef00000000"
+// fixedEventIDProvider 返回确定性 eventId（v1.7.4 起 int64），用于断言 framework 字段一致性。
+func fixedEventIDProvider() int64 {
+	return 0xdeadbeef
 }
 
 // fixedNowProvider 返回确定性时间戳。
@@ -72,10 +75,10 @@ func TestGetPrice_Success(t *testing.T) {
 		seenUserID     string
 		seenInterface  string
 		seenComponent  string
-		seenVersion    string
-		seenEventID    string
-		seenTimestamp  string
-		seenSeqID      string
+		seenCaller     string // v1.7.4 新增 — 验证 caller 字段
+		seenVersion    json.RawMessage
+		seenEventID    int64
+		seenTimestamp  int64
 		seenParaOwner  string
 		seenResInfoLen int
 	)
@@ -92,9 +95,9 @@ func TestGetPrice_Success(t *testing.T) {
 		}
 		seenVersion = env.Version
 		seenComponent = env.ComponentName
+		seenCaller = env.Caller
 		seenEventID = env.EventID
 		seenTimestamp = env.Timestamp
-		seenSeqID = env.SeqID
 		if env.Interface != nil {
 			seenInterface = env.Interface.InterfaceName
 			var para GetPriceRequest
@@ -107,15 +110,13 @@ func TestGetPrice_Success(t *testing.T) {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(envelopeForSuccess(t, GetPriceResponse{
-			Data: []GetPriceData{
-				{
-					Price:         "100.00",
-					TotalCost:     "100.00",
-					RealTotalCost: "80.00",
-					Currency:      "CNY",
-					PolicyDetail:  &PolicyDetail{Total: 0.8, User: 0.9, Common: 1.0},
-				},
+		_, _ = w.Write(envelopeForSuccess(t, []GetPriceData{
+			{
+				Price:         "100.00",
+				TotalCost:     "100.00",
+				RealTotalCost: "80.00",
+				Currency:      "CNY",
+				PolicyDetail:  &PolicyDetail{Total: 0.8, User: 0.9, Common: 1.0},
 			},
 		}))
 	}))
@@ -131,7 +132,7 @@ func TestGetPrice_Success(t *testing.T) {
 		Uin:      "100012345678",
 		ResInfo: []GetPriceItem{
 			{
-				GoodsCategoryID: "100059",
+				GoodsCategoryID: 100059,
 				Currency:        "CNY",
 				GoodsNum:        1,
 				PayMode:         1,
@@ -139,7 +140,7 @@ func TestGetPrice_Success(t *testing.T) {
 				GoodsDetail: map[string]interface{}{
 					"productCode":    "p_lighthouse",
 					"subProductCode": "sp_lighthouse_bundle_linux_small",
-					"pid":            "1234",
+					"pid":            1234,
 					"timeSpan":       1,
 					"timeUnit":       "m",
 					"sv_key1":        "v1",
@@ -166,28 +167,28 @@ func TestGetPrice_Success(t *testing.T) {
 	if seenMethod != http.MethodPost {
 		t.Errorf("HTTP method: got %s want POST", seenMethod)
 	}
-	if seenHost != CGWHostHeader {
-		t.Errorf("Host header: got %q want %q", seenHost, CGWHostHeader)
-	}
+	// v1.7.4 起 client 不再主动注入 Host header（由 clgateway upstream 段重写，Q-INT-11=b）；
+	// httptest server 拿到的 Host 是 server.URL 的本地 host:port，不再是 trade.itd.com。
+	_ = seenHost
 	if seenUserID != "trade-service-uin-100012345678" {
 		t.Errorf("x-qcloud-user-id: got %q", seenUserID)
 	}
-	if seenVersion != CGWVersion {
-		t.Errorf("envelope.version: got %q want %q", seenVersion, CGWVersion)
+	if string(seenVersion) != `"1.0"` {
+		t.Errorf("envelope.version (raw JSON): got %q want %q", string(seenVersion), `"1.0"`)
 	}
-	if seenComponent != ComponentNamePrice {
-		t.Errorf("envelope.componentName: got %q want %q", seenComponent, ComponentNamePrice)
+	if seenComponent != CGWComponentNameLightvela {
+		t.Errorf("envelope.componentName: got %q want %q", seenComponent, CGWComponentNameLightvela)
+	}
+	if seenCaller != CGWComponentNameLightvela {
+		t.Errorf("envelope.caller: got %q want %q", seenCaller, CGWComponentNameLightvela)
 	}
 	if seenInterface != InterfaceNameGetPrice {
 		t.Errorf("envelope.interface.interfaceName: got %q want %q", seenInterface, InterfaceNameGetPrice)
 	}
 	if seenEventID != fixedEventIDProvider() {
-		t.Errorf("envelope.eventId: got %q want fixed", seenEventID)
+		t.Errorf("envelope.eventId: got %d want fixed", seenEventID)
 	}
-	if seenSeqID != fixedEventIDProvider() {
-		t.Errorf("envelope.seqId: got %q want fixed", seenSeqID)
-	}
-	if seenTimestamp == "" {
+	if seenTimestamp == 0 {
 		t.Errorf("envelope.timestamp empty")
 	}
 	if seenParaOwner != "100012345678" {
@@ -206,7 +207,7 @@ func TestGetPrice_NoSignatureField(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		bodyStr = string(body)
-		_, _ = w.Write(envelopeForSuccess(t, GetPriceResponse{Data: []GetPriceData{}}))
+		_, _ = w.Write(envelopeForSuccess(t, []GetPriceData{}))
 	}))
 	defer server.Close()
 
@@ -240,7 +241,7 @@ func TestGetPrice_OmitsQ48Fields(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		bodyStr = string(body)
-		_, _ = w.Write(envelopeForSuccess(t, GetPriceResponse{Data: []GetPriceData{}}))
+		_, _ = w.Write(envelopeForSuccess(t, []GetPriceData{}))
 	}))
 	defer server.Close()
 
@@ -349,7 +350,7 @@ func TestGetPrice_InvalidEnvelopeBadJSON(t *testing.T) {
 func TestGetPrice_ContextCancelStopsRequest(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(200 * time.Millisecond)
-		_, _ = w.Write(envelopeForSuccess(t, GetPriceResponse{Data: []GetPriceData{}}))
+		_, _ = w.Write(envelopeForSuccess(t, []GetPriceData{}))
 	}))
 	defer server.Close()
 
@@ -381,7 +382,7 @@ func TestGenerateDeals_Success(t *testing.T) {
 		seenComponent  string
 		seenParaOwner  string
 		seenGoodsLen   int
-		seenCategoryID string
+		seenCategoryID int64 // Q71：jifei wire 层 GoodsCategoryID 改 int64
 		seenPayMode    int
 		bodyStr        string
 	)
@@ -402,10 +403,10 @@ func TestGenerateDeals_Success(t *testing.T) {
 				t.Fatalf("unmarshal para: %v", err)
 			}
 			seenParaOwner = para.OwnerUin
-			seenGoodsLen = len(para.GoodsInfos)
+			seenGoodsLen = len(para.Goods)
 			if seenGoodsLen > 0 {
-				seenCategoryID = para.GoodsInfos[0].GoodsCategoryID
-				seenPayMode = para.GoodsInfos[0].PayMode
+				seenCategoryID = para.Goods[0].GoodsCategoryID
+				seenPayMode = para.Goods[0].PayMode
 			}
 		}
 
@@ -423,9 +424,9 @@ func TestGenerateDeals_Success(t *testing.T) {
 	resp, err := cli.GenerateDeals(context.Background(), &GenerateDealsRequest{
 		OwnerUin: "100012345678",
 		Uin:      "100012345678",
-		GoodsInfos: []GoodsInfo{
+		Goods: []GoodsInfo{
 			{
-				GoodsCategoryID: "100059",
+				GoodsCategoryID: 100059,
 				RegionID:        47,
 				ZoneID:          470004,
 				GoodsNum:        1,
@@ -433,7 +434,7 @@ func TestGenerateDeals_Success(t *testing.T) {
 				GoodsDetail: map[string]interface{}{
 					"productCode":    "p_lighthouse",
 					"subProductCode": "sp_lighthouse_bundle_linux_small",
-					"pid":            "1234",
+					"pid":            1234,
 					"timeSpan":       1,
 					"timeUnit":       "m",
 				},
@@ -453,8 +454,8 @@ func TestGenerateDeals_Success(t *testing.T) {
 	if seenInterface != InterfaceNameGenerateDeals {
 		t.Errorf("interfaceName: got %q want %q", seenInterface, InterfaceNameGenerateDeals)
 	}
-	if seenComponent != ComponentNameDeal {
-		t.Errorf("componentName: got %q want %q", seenComponent, ComponentNameDeal)
+	if seenComponent != CGWComponentNameLightvela {
+		t.Errorf("componentName: got %q want %q", seenComponent, CGWComponentNameLightvela)
 	}
 	if seenParaOwner != "100012345678" {
 		t.Errorf("OwnerUin: got %q", seenParaOwner)
@@ -462,8 +463,8 @@ func TestGenerateDeals_Success(t *testing.T) {
 	if seenGoodsLen != 1 {
 		t.Errorf("GoodsInfos len: got %d", seenGoodsLen)
 	}
-	if seenCategoryID != "100059" {
-		t.Errorf("GoodsCategoryId: got %q", seenCategoryID)
+	if seenCategoryID != 100059 {
+		t.Errorf("GoodsCategoryId: got %d", seenCategoryID)
 	}
 	if seenPayMode != 1 {
 		t.Errorf("PayMode: got %d", seenPayMode)
@@ -487,7 +488,7 @@ func TestGenerateDeals_BusinessError(t *testing.T) {
 	cli := New(server.URL, "trade-uin")
 	_, err := cli.GenerateDeals(context.Background(), &GenerateDealsRequest{
 		OwnerUin: "1", Uin: "1",
-		GoodsInfos: []GoodsInfo{{GoodsCategoryID: "100059", GoodsNum: 1, PayMode: 1}},
+		Goods: []GoodsInfo{{GoodsCategoryID: 100059, GoodsNum: 1, PayMode: 1}},
 	})
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -560,15 +561,142 @@ func TestNew_CustomHTTPClient(t *testing.T) {
 	}
 }
 
-// TestCryptoRandHex 验证默认 eventId 生成器产出非空 32 字符串。
-func TestCryptoRandHex(t *testing.T) {
-	got := cryptoRandHex()
-	if got == "" {
-		t.Error("cryptoRandHex returned empty")
+// TestRandomEventIDInt64 验证默认 eventId 生成器产出 [1, 2^31) 范围正整数。
+//
+// 跑 100 次，预期：(a) 全部 > 0；(b) 全部 < 2^31（避开 jifei 网关层 int32 解析边界）；
+// (c) 出现至少 50 个不同值（粗略验证随机性）。
+func TestRandomEventIDInt64(t *testing.T) {
+	const N = 100
+	seen := make(map[int64]bool, N)
+	for i := 0; i < N; i++ {
+		got := randomEventIDInt64()
+		if got <= 0 {
+			t.Fatalf("randomEventIDInt64 returned non-positive: %d", got)
+		}
+		if got >= 1<<31 {
+			t.Fatalf("randomEventIDInt64 out of int32 range: %d", got)
+		}
+		seen[got] = true
 	}
-	// 16 byte 编码后是 32 字符；fallback 路径以 "ts-" 开头变长，两者都接受。
-	if !strings.HasPrefix(got, "ts-") && len(got) != 32 {
-		t.Errorf("cryptoRandHex unexpected length: %d %q", len(got), got)
+	if len(seen) < N/2 {
+		t.Errorf("randomEventIDInt64 randomness too low: %d unique in %d trials", len(seen), N)
+	}
+}
+
+// TestEmptyXQCloudUserID_DoesNotSendHeader 验证 v1.7.4 协议校准：
+// xQCloudUserID == "" 时（现网场景）client 跳过 x-qcloud-user-id header 注入。
+//
+// 设计动机：PDF §公共参数 `x-qcloud-user-id` 仅测试环境带（测试 uin 如 700000164995）；
+// 现网由部署侧出口 IP 鉴权，不需要带这个 header。
+func TestEmptyXQCloudUserID_DoesNotSendHeader(t *testing.T) {
+	var (
+		seenUserIDPresent bool
+		seenUserIDValue   string
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, seenUserIDPresent = r.Header[CGWUserIDHeader]
+		seenUserIDValue = r.Header.Get(CGWUserIDHeader)
+		_, _ = w.Write(envelopeForSuccess(t, []GetPriceData{}))
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, "") // 现网场景：xQCloudUserID 空
+	_, err := cli.GetPrice(context.Background(), &GetPriceRequest{
+		OwnerUin: "1", Uin: "1",
+		ResInfo: []GetPriceItem{{Action: "purchase", GoodsNum: 1, PayMode: 1}},
+	})
+	if err != nil {
+		t.Fatalf("GetPrice: %v", err)
+	}
+	if seenUserIDPresent {
+		t.Errorf("v1.7.4: empty xQCloudUserID must not send %s header (got value %q)",
+			CGWUserIDHeader, seenUserIDValue)
+	}
+}
+
+// TestNonEmptyXQCloudUserID_SendsTestUin 验证 v1.7.4 协议校准：
+// xQCloudUserID 非空时（测试场景）client 注入 x-qcloud-user-id header = 测试 uin。
+func TestNonEmptyXQCloudUserID_SendsTestUin(t *testing.T) {
+	const testUin = "700000164995" // PDF §国内站测试环境 配套测试 uin
+	var seenUserIDValue string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenUserIDValue = r.Header.Get(CGWUserIDHeader)
+		_, _ = w.Write(envelopeForSuccess(t, []GetPriceData{}))
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, testUin)
+	_, err := cli.GetPrice(context.Background(), &GetPriceRequest{
+		OwnerUin: "1", Uin: "1",
+		ResInfo: []GetPriceItem{{Action: "purchase", GoodsNum: 1, PayMode: 1}},
+	})
+	if err != nil {
+		t.Fatalf("GetPrice: %v", err)
+	}
+	if seenUserIDValue != testUin {
+		t.Errorf("v1.7.4: xQCloudUserID = %q, expected header value %q, got %q",
+			testUin, testUin, seenUserIDValue)
+	}
+}
+
+// TestEnvelopeOmitsSeqID 验证 v1.7.4 协议校准：
+// 出向 envelope **不再包含** seqId 字段（PDF §公共参数 注释 "业务调用计费时不用传递"）。
+func TestEnvelopeOmitsSeqID(t *testing.T) {
+	var bodyStr string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		bodyStr = string(body)
+		_, _ = w.Write(envelopeForSuccess(t, []GetPriceData{}))
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, "trade-uin")
+	_, err := cli.GetPrice(context.Background(), &GetPriceRequest{
+		OwnerUin: "1", Uin: "1",
+		ResInfo: []GetPriceItem{{Action: "purchase", GoodsNum: 1, PayMode: 1}},
+	})
+	if err != nil {
+		t.Fatalf("GetPrice: %v", err)
+	}
+	if strings.Contains(bodyStr, `"seqId"`) {
+		t.Errorf("v1.7.4 violated: request body contains \"seqId\" field:\n%s", bodyStr)
+	}
+}
+
+// TestEnvelopeCallerEqualsComponentName 验证 v1.7.4 协议校准：
+// 出向 envelope.caller 与 envelope.componentName 同值（PDF §公共参数 caller / componentName
+// 描述完全相同，但都是必填字段，jifei 协议不合并）。
+func TestEnvelopeCallerEqualsComponentName(t *testing.T) {
+	var seenCaller, seenComponent string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var env envelope
+		if err := json.Unmarshal(body, &env); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		seenCaller = env.Caller
+		seenComponent = env.ComponentName
+		_, _ = w.Write(envelopeForSuccess(t, []GetPriceData{}))
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, "trade-uin")
+	_, err := cli.GetPrice(context.Background(), &GetPriceRequest{
+		OwnerUin: "1", Uin: "1",
+		ResInfo: []GetPriceItem{{Action: "purchase", GoodsNum: 1, PayMode: 1}},
+	})
+	if err != nil {
+		t.Fatalf("GetPrice: %v", err)
+	}
+	if seenCaller == "" {
+		t.Error("v1.7.4: envelope.caller is empty (PDF requires non-empty)")
+	}
+	if seenCaller != seenComponent {
+		t.Errorf("v1.7.4: caller (%q) must equal componentName (%q)", seenCaller, seenComponent)
+	}
+	if seenCaller != CGWComponentNameLightvela {
+		t.Errorf("v1.7.4: caller = %q, expected %q (lightvela 业务约定)",
+			seenCaller, CGWComponentNameLightvela)
 	}
 }
 
@@ -633,9 +761,9 @@ func TestGenerateDealsAndPay_Success(t *testing.T) {
 		Uin:         "100012345678",
 		AppID:       1300012345,
 		AutoVoucher: &autoVoucher,
-		GoodsInfos: []GoodsInfo{
+		Goods: []GoodsInfo{
 			{
-				GoodsCategoryID: "100018",
+				GoodsCategoryID: 100018,
 				RegionID:        8,
 				GoodsNum:        1,
 				PayMode:         1,
@@ -652,8 +780,8 @@ func TestGenerateDealsAndPay_Success(t *testing.T) {
 	if seenInterface != InterfaceNameGenerateDealsAndPay {
 		t.Errorf("interfaceName: got %q want %q", seenInterface, InterfaceNameGenerateDealsAndPay)
 	}
-	if seenComponent != ComponentNameDeal {
-		t.Errorf("componentName: got %q want %q", seenComponent, ComponentNameDeal)
+	if seenComponent != CGWComponentNameLightvela {
+		t.Errorf("componentName: got %q want %q", seenComponent, CGWComponentNameLightvela)
 	}
 	if seenPara.OwnerUin != "100012345678" || seenPara.Uin != "100012345678" {
 		t.Errorf("para owner/uin: %+v", seenPara)
@@ -664,11 +792,11 @@ func TestGenerateDealsAndPay_Success(t *testing.T) {
 	if seenPara.AutoVoucher == nil || *seenPara.AutoVoucher != 1 {
 		t.Errorf("para AutoVoucher = %v, want *1", seenPara.AutoVoucher)
 	}
-	if len(seenPara.GoodsInfos) != 1 {
-		t.Fatalf("para GoodsInfos len = %d", len(seenPara.GoodsInfos))
+	if len(seenPara.Goods) != 1 {
+		t.Fatalf("para GoodsInfos len = %d", len(seenPara.Goods))
 	}
-	if seenPara.GoodsInfos[0].GoodsCategoryID != "100018" {
-		t.Errorf("GoodsCategoryID: %q", seenPara.GoodsInfos[0].GoodsCategoryID)
+	if seenPara.Goods[0].GoodsCategoryID != 100018 {
+		t.Errorf("GoodsCategoryID: %d", seenPara.Goods[0].GoodsCategoryID)
 	}
 	if len(resp.DealNames) != 1 || resp.DealNames[0] != "20260509000000001-001" {
 		t.Errorf("response DealNames: %v", resp.DealNames)
@@ -703,7 +831,7 @@ func TestGenerateDealsAndPay_AutoVoucherOmittedWhenNil(t *testing.T) {
 	_, err := cli.GenerateDealsAndPay(context.Background(), &GenerateDealsAndPayRequest{
 		OwnerUin: "1", Uin: "1",
 		// AutoVoucher 故意不传
-		GoodsInfos: []GoodsInfo{{GoodsCategoryID: "100018", GoodsNum: 1, PayMode: 1}},
+		Goods: []GoodsInfo{{GoodsCategoryID: 100018, GoodsNum: 1, PayMode: 1}},
 	})
 	if err != nil {
 		t.Fatalf("GenerateDealsAndPay: %v", err)
@@ -724,7 +852,7 @@ func TestGenerateDealsAndPay_BusinessError(t *testing.T) {
 	cli := New(server.URL, "trade-uin")
 	_, err := cli.GenerateDealsAndPay(context.Background(), &GenerateDealsAndPayRequest{
 		OwnerUin: "1", Uin: "1",
-		GoodsInfos: []GoodsInfo{{GoodsCategoryID: "100018", GoodsNum: 1, PayMode: 1}},
+		Goods: []GoodsInfo{{GoodsCategoryID: 100018, GoodsNum: 1, PayMode: 1}},
 	})
 	if err == nil {
 		t.Fatal("expected error")
@@ -754,8 +882,8 @@ func TestGenerateDealsAndPay_NilRequest(t *testing.T) {
 func TestGenerateDealsAndPay_MissingOwnerUin(t *testing.T) {
 	cli := New("http://unused", "trade-uin")
 	_, err := cli.GenerateDealsAndPay(context.Background(), &GenerateDealsAndPayRequest{
-		Uin:        "1",
-		GoodsInfos: []GoodsInfo{{GoodsCategoryID: "100018", GoodsNum: 1, PayMode: 1}},
+		Uin:   "1",
+		Goods: []GoodsInfo{{GoodsCategoryID: 100018, GoodsNum: 1, PayMode: 1}},
 	})
 	if err == nil || !strings.Contains(err.Error(), "OwnerUin") {
 		t.Errorf("err = %v, want 'OwnerUin' substring", err)
@@ -768,8 +896,8 @@ func TestGenerateDealsAndPay_EmptyGoodsInfos(t *testing.T) {
 	_, err := cli.GenerateDealsAndPay(context.Background(), &GenerateDealsAndPayRequest{
 		OwnerUin: "1", Uin: "1",
 	})
-	if err == nil || !strings.Contains(err.Error(), "GoodsInfos") {
-		t.Errorf("err = %v, want 'GoodsInfos' substring", err)
+	if err == nil || !strings.Contains(err.Error(), "Goods") {
+		t.Errorf("err = %v, want 'Goods' substring", err)
 	}
 }
 
@@ -787,6 +915,8 @@ func TestGetMidasEarmarking_Success(t *testing.T) {
 		seenComponent string
 		seenPara      GetMidasEarmarkingRequest
 	)
+	tokenID := "E-260522160125881056"
+	outTradeNo := "20260522995022875780461"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		var env envelope
@@ -803,6 +933,10 @@ func TestGetMidasEarmarking_Success(t *testing.T) {
 			URL:        "https://buy.cloud.tencent.com/midas/cashier?token=xyz",
 			AppID:      "1000029101",
 			NeedCharge: 1,
+			TokenID:    &tokenID,
+			OutTradeNo: &outTradeNo,
+			DealNames:  []string{"20260509000000001-001"},
+			BigDealIDs: []string{"20260509000000001"},
 		}))
 	}))
 	defer server.Close()
@@ -822,8 +956,8 @@ func TestGetMidasEarmarking_Success(t *testing.T) {
 	if seenInterface != InterfaceNameGetMidasEarmarking {
 		t.Errorf("interfaceName: got %q want %q", seenInterface, InterfaceNameGetMidasEarmarking)
 	}
-	if seenComponent != ComponentNameMidasCenter {
-		t.Errorf("componentName: got %q want %q", seenComponent, ComponentNameMidasCenter)
+	if seenComponent != CGWComponentNameLightvela {
+		t.Errorf("componentName: got %q want %q", seenComponent, CGWComponentNameLightvela)
 	}
 	if seenPara.OwnerUin != "100012345678" || seenPara.Uin != "100012345678" {
 		t.Errorf("para owner/uin: %+v", seenPara)
@@ -842,6 +976,161 @@ func TestGetMidasEarmarking_Success(t *testing.T) {
 	}
 	if resp.NeedCharge != 1 {
 		t.Errorf("response NeedCharge: %d", resp.NeedCharge)
+	}
+	// 协议外字段（PDF 未列、实测稳定返）：要求按指针返回，便于业务层区分 "jifei 未返" vs "jifei 返空串"
+	if resp.TokenID == nil || *resp.TokenID != tokenID {
+		t.Errorf("response TokenID: got %v, want %q", resp.TokenID, tokenID)
+	}
+	if resp.OutTradeNo == nil || *resp.OutTradeNo != outTradeNo {
+		t.Errorf("response OutTradeNo: got %v, want %q", resp.OutTradeNo, outTradeNo)
+	}
+	if len(resp.DealNames) != 1 || resp.DealNames[0] != "20260509000000001-001" {
+		t.Errorf("response DealNames: %v", resp.DealNames)
+	}
+	if len(resp.BigDealIDs) != 1 || resp.BigDealIDs[0] != "20260509000000001" {
+		t.Errorf("response BigDealIDs: %v", resp.BigDealIDs)
+	}
+}
+
+// TestGetMidasEarmarking_RealProductionPayload 用一份 2026-05-23 北京 trade 联调环境
+// (`/data/lightvela-bj-trade-cls-config`) 实测捕获的真实回包做 fixture，验证 jifei 协议外
+// 字段（tokenId / outTradeNo / dealNames / bigDealIds / dealDeliverResults）能正确解析。
+//
+// 真实日志条目：trade-5dfdfdd467-4hgfs `[jifei-in] interface=qcloud.margin.getMidasEarmarking
+// eventId=1783588984 ... status=200 body=...`（uin 已脱敏为 700000164995 占位 — 实际就是
+// 联调用户 uin，不视为敏感信息）。
+//
+// 此用例的目的是 future-proof：如果将来有人按 PDF 协议把"未列字段"删了，本用例会立即挂掉。
+func TestGetMidasEarmarking_RealProductionPayload(t *testing.T) {
+	// 实测 jifei `data` 字段原文（见上方注释来源），保持原样以便断言字段映射准确。
+	const realData = `{
+		"appid": "1450008583",
+		"url": "/v1/r/1450008583/qz_goods_info?transaction_id=E-260522160125881056&token_id=E-260522160125881056&pf=midas_group_pay-1000-html5-1000&out_trade_no=20260522995022875780461&deploy_env=stable",
+		"tokenId": "E-260522160125881056",
+		"billId": "20260522995022875780461",
+		"outTradeNo": "20260522995022875780461",
+		"needCharge": 1,
+		"dealNames": ["20260522995022875821661"],
+		"dealDeliverResults": {
+			"20260522995022875821661": {"state":"1","resourceId":null}
+		},
+		"bigDealIds": ["20260522995022875821651"]
+	}`
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rcZero := 0
+		env := envelope{
+			Version:       json.RawMessage(`"1.0"`),
+			EventID:       1783588984,
+			ReturnCode:    &rcZero,
+			ReturnMessage: "ok",
+			Data:          json.RawMessage(realData),
+		}
+		b, _ := json.Marshal(env)
+		_, _ = w.Write(b)
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, "trade-uin")
+	resp, err := cli.GetMidasEarmarking(context.Background(), &GetMidasEarmarkingRequest{
+		OwnerUin:  "700000164995",
+		Uin:       "700000164995",
+		DealNames: []string{"20260522995022875821661"},
+	})
+	if err != nil {
+		t.Fatalf("GetMidasEarmarking: %v", err)
+	}
+
+	// PDF 协议字段
+	if resp.AppID != "1450008583" {
+		t.Errorf("AppID: %q", resp.AppID)
+	}
+	if !strings.Contains(resp.URL, "transaction_id=E-260522160125881056") {
+		t.Errorf("URL: %q", resp.URL)
+	}
+	if resp.BillID != "20260522995022875780461" {
+		t.Errorf("BillID: %q", resp.BillID)
+	}
+	if resp.NeedCharge != 1 {
+		t.Errorf("NeedCharge: %d", resp.NeedCharge)
+	}
+
+	// 协议外字段（关键点）
+	if resp.TokenID == nil || *resp.TokenID != "E-260522160125881056" {
+		t.Errorf("TokenID: %v", resp.TokenID)
+	}
+	if resp.OutTradeNo == nil || *resp.OutTradeNo != "20260522995022875780461" {
+		t.Errorf("OutTradeNo: %v", resp.OutTradeNo)
+	}
+	if len(resp.DealNames) != 1 || resp.DealNames[0] != "20260522995022875821661" {
+		t.Errorf("DealNames: %v", resp.DealNames)
+	}
+	if len(resp.BigDealIDs) != 1 || resp.BigDealIDs[0] != "20260522995022875821651" {
+		t.Errorf("BigDealIDs: %v", resp.BigDealIDs)
+	}
+	if len(resp.DealDeliverResults) != 1 {
+		t.Errorf("DealDeliverResults len: %d", len(resp.DealDeliverResults))
+	}
+	if got, ok := resp.DealDeliverResults["20260522995022875821661"]; !ok {
+		t.Errorf("DealDeliverResults missing key for dealName")
+	} else {
+		if got.State != "1" {
+			t.Errorf("DealDeliverResults.State: %q", got.State)
+		}
+		if got.ResourceID != nil {
+			t.Errorf("DealDeliverResults.ResourceID: want nil, got %v", got.ResourceID)
+		}
+	}
+}
+
+// TestGetMidasEarmarking_OptionalFieldsMissing 验证 D3 兜底契约：当 jifei 回包没有
+// PDF 协议外字段时（例如未来灰度变更或非 pc 通道回包），业务层应拿到 nil / 零长切片，
+// 而不是把 ""/0 误当作有效值。
+func TestGetMidasEarmarking_OptionalFieldsMissing(t *testing.T) {
+	// 仅返 PDF 协议规定的 4 个字段
+	const minimalData = `{
+		"billId": "bill-only",
+		"url": "https://buy.cloud.tencent.com/midas/minimal",
+		"appid": "1000029101",
+		"needCharge": 0
+	}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rcZero := 0
+		env := envelope{
+			Version:       json.RawMessage(`"1.0"`),
+			EventID:       1,
+			ReturnCode:    &rcZero,
+			ReturnMessage: "ok",
+			Data:          json.RawMessage(minimalData),
+		}
+		b, _ := json.Marshal(env)
+		_, _ = w.Write(b)
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, "trade-uin")
+	resp, err := cli.GetMidasEarmarking(context.Background(), &GetMidasEarmarkingRequest{
+		OwnerUin:  "1",
+		Uin:       "1",
+		DealNames: []string{"deal-1"},
+	})
+	if err != nil {
+		t.Fatalf("GetMidasEarmarking: %v", err)
+	}
+	if resp.TokenID != nil {
+		t.Errorf("TokenID: want nil, got %v", *resp.TokenID)
+	}
+	if resp.OutTradeNo != nil {
+		t.Errorf("OutTradeNo: want nil, got %v", *resp.OutTradeNo)
+	}
+	if len(resp.DealNames) != 0 {
+		t.Errorf("DealNames: want empty, got %v", resp.DealNames)
+	}
+	if len(resp.BigDealIDs) != 0 {
+		t.Errorf("BigDealIDs: want empty, got %v", resp.BigDealIDs)
+	}
+	if len(resp.DealDeliverResults) != 0 {
+		t.Errorf("DealDeliverResults: want empty, got %v", resp.DealDeliverResults)
 	}
 }
 
@@ -932,5 +1221,101 @@ func TestGetMidasEarmarking_DealNamesContainsEmpty(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "DealNames[1]") {
 		t.Errorf("err = %v, want 'DealNames[1]' substring (empty element)", err)
+	}
+}
+
+// TestTransactionIDHeader_Injected 验证 v1.7.28 BUG-05 排障引入的 transaction_id 链路追踪 header：
+// 每次出向请求注入 X-QCloud-Transaction-ID (32 字符 hex) + X-QCloud-Component-ID = "lightclaw.trade"。
+func TestTransactionIDHeader_Injected(t *testing.T) {
+	var (
+		seenTransactionID string
+		seenComponentID   string
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenTransactionID = r.Header.Get(CGWTransactionIDHeader)
+		seenComponentID = r.Header.Get(CGWComponentIDHeader)
+		_, _ = w.Write(envelopeForSuccess(t, []GetPriceData{}))
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, "")
+	_, err := cli.GetPrice(context.Background(), &GetPriceRequest{
+		OwnerUin: "1", Uin: "1",
+		ResInfo: []GetPriceItem{{Action: "purchase", GoodsNum: 1, PayMode: 1}},
+	})
+	if err != nil {
+		t.Fatalf("GetPrice: %v", err)
+	}
+	if len(seenTransactionID) != 32 {
+		t.Errorf("v1.7.28 transaction_id header: len = %d, want 32 (hex of 16 bytes)", len(seenTransactionID))
+	}
+	// 校验 hex 格式（仅 [0-9a-f]）
+	for _, c := range seenTransactionID {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+			t.Errorf("v1.7.28 transaction_id %q contains non-hex char %q", seenTransactionID, c)
+			break
+		}
+	}
+	if seenComponentID != CGWComponentIDValue {
+		t.Errorf("v1.7.28 component_id header: got %q, want %q", seenComponentID, CGWComponentIDValue)
+	}
+}
+
+// TestTransactionIDHeader_UniquePerRequest 验证每次请求生成新 transaction_id (避免静态值导致
+// jifei 侧链路追踪误聚合不同请求)。
+func TestTransactionIDHeader_UniquePerRequest(t *testing.T) {
+	seen := make(map[string]struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen[r.Header.Get(CGWTransactionIDHeader)] = struct{}{}
+		_, _ = w.Write(envelopeForSuccess(t, []GetPriceData{}))
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, "")
+	for i := 0; i < 10; i++ {
+		_, err := cli.GetPrice(context.Background(), &GetPriceRequest{
+			OwnerUin: "1", Uin: "1",
+			ResInfo: []GetPriceItem{{Action: "purchase", GoodsNum: 1, PayMode: 1}},
+		})
+		if err != nil {
+			t.Fatalf("GetPrice iteration %d: %v", i, err)
+		}
+	}
+	if len(seen) != 10 {
+		t.Errorf("v1.7.28 transaction_id should be unique per request: got %d unique values across 10 requests, want 10", len(seen))
+	}
+}
+
+// TestCGWErrorIncludesTransactionID 验证 jifei 返 returnCode != 0 时 CGWError.TransactionID
+// 被填充, 上层日志能拿到 transaction_id 报给 jifei 同事追查。
+func TestCGWErrorIncludesTransactionID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 返业务错误 returnCode=700002 模拟 BUG-05 场景
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"version":"1.0","returnCode":700002,"returnMessage":"rc check failed"}`))
+	}))
+	defer server.Close()
+
+	cli := New(server.URL, "")
+	_, err := cli.GetPrice(context.Background(), &GetPriceRequest{
+		OwnerUin: "1", Uin: "1",
+		ResInfo: []GetPriceItem{{Action: "purchase", GoodsNum: 1, PayMode: 1}},
+	})
+	if err == nil {
+		t.Fatalf("expected CGWError returnCode=700002, got nil")
+	}
+	var cgwErr *CGWError
+	if !errors.As(err, &cgwErr) {
+		t.Fatalf("expected *CGWError, got %T: %v", err, err)
+	}
+	if cgwErr.ReturnCode != 700002 {
+		t.Errorf("ReturnCode = %d, want 700002", cgwErr.ReturnCode)
+	}
+	if len(cgwErr.TransactionID) != 32 {
+		t.Errorf("v1.7.28 CGWError.TransactionID len = %d, want 32", len(cgwErr.TransactionID))
+	}
+	// Error() 输出应含 transactionId
+	if !strings.Contains(err.Error(), "transactionId="+cgwErr.TransactionID) {
+		t.Errorf("Error() should contain transactionId=<value>, got %q", err.Error())
 	}
 }

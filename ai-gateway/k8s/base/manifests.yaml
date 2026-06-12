@@ -24,7 +24,7 @@ data:
   MYSQL_ROOT_USER: "root"
   AI_GATEWAY_DB: "ai_gateway"
   AI_GATEWAY_DB_USER: "ai_gateway"
-  AI_GATEWAY_EXPECTED_SCHEMA_VERSION: "4"
+  AI_GATEWAY_EXPECTED_SCHEMA_VERSION: "5"
   REDIS_ADDR: "REPLACE_AI_GATEWAY_REDIS_ADDR"
 ---
 apiVersion: networking.k8s.io/v1
@@ -34,7 +34,6 @@ metadata:
   namespace: ai-gateway
   annotations:
     kubernetes.io/ingress.class: qcloud
-    kubernetes.io/ingress.existLbId: REPLACE_AI_GATEWAY_MODEL_INTERNAL_LB_ID
     ingress.cloud.tencent.com/modification-protection: "false"
     ingress.cloud.tencent.com/direct-access: "true"
 spec:
@@ -110,7 +109,8 @@ spec:
                 --port="${MYSQL_PORT}" \
                 --user="${AI_GATEWAY_DB_USER}" \
                 --password="${AI_GATEWAY_DB_PASSWORD}" \
-                -Nse "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA='${AI_GATEWAY_DB}' AND TABLE_NAME IN ('users','providers','schema_migrations')" | grep -qx '3'; do
+                --database="${AI_GATEWAY_DB}" \
+                -Nse "SELECT COUNT(*) FROM schema_migrations WHERE dirty=0 AND version >= ${AI_GATEWAY_EXPECTED_SCHEMA_VERSION}" | grep -qx '1'; do
                 echo "waiting for ai-gateway schema"
                 sleep 3
               done

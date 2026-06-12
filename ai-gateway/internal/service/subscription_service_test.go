@@ -109,7 +109,7 @@ func TestSubscribe_NilPeriodStart(t *testing.T) {
 	svc := NewSubscriptionService(subRepo, planRepo, nil)
 
 	before := time.Now()
-	sub, err := svc.Subscribe(uuid.New(), planID, nil)
+	sub, err := svc.Subscribe(uuid.New(), planID, nil, 0, "")
 	after := time.Now()
 
 	if err != nil {
@@ -138,7 +138,7 @@ func TestSubscribe_CustomPeriodStart(t *testing.T) {
 	svc := NewSubscriptionService(subRepo, planRepo, nil)
 
 	customStart := time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC)
-	sub, err := svc.Subscribe(uuid.New(), planID, &customStart)
+	sub, err := svc.Subscribe(uuid.New(), planID, &customStart, 0, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -174,7 +174,7 @@ func TestSubscriptionService_Subscribe(t *testing.T) {
 	svc := NewSubscriptionService(subRepo, planRepo, nil)
 
 	userID := uuid.New()
-	sub, err := svc.Subscribe(userID, planID, nil)
+	sub, err := svc.Subscribe(userID, planID, nil, 0, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -185,8 +185,16 @@ func TestSubscriptionService_Subscribe(t *testing.T) {
 	if sub.PlanID != planID {
 		t.Error("wrong plan ID")
 	}
-	if sub.TokenBalance != 3000000 {
-		t.Errorf("expected token balance 3000000, got %d", sub.TokenBalance)
+	// v0.2.4 月度刷新模型：初始 token 仅发一个月份额（plan.MonthlyTokens），
+	// 后续按月由 scheduler.RefreshDueBalances 在每个 b3 同号日刷新。
+	if sub.TokenBalance != 1000000 {
+		t.Errorf("expected token balance 1000000 (single-month quota), got %d", sub.TokenBalance)
+	}
+	if sub.LastRefreshedAt == nil {
+		t.Errorf("expected LastRefreshedAt to be set on Subscribe, got nil")
+	} else if !sub.LastRefreshedAt.Equal(sub.PeriodStart.UTC()) {
+		t.Errorf("expected LastRefreshedAt to equal PeriodStart UTC, got LastRefreshedAt=%v PeriodStart=%v",
+			*sub.LastRefreshedAt, sub.PeriodStart.UTC())
 	}
 	if sub.Status != model.SubscriptionStatusActive {
 		t.Errorf("expected active status, got %s", sub.Status)
@@ -212,13 +220,13 @@ func TestSubscriptionService_Subscribe_CancelsExisting(t *testing.T) {
 	userID := uuid.New()
 
 	// Create first subscription
-	sub1, err := svc.Subscribe(userID, planID, nil)
+	sub1, err := svc.Subscribe(userID, planID, nil, 0, "")
 	if err != nil {
 		t.Fatalf("first subscribe: %v", err)
 	}
 
 	// Create second subscription — should cancel first
-	sub2, err := svc.Subscribe(userID, planID, nil)
+	sub2, err := svc.Subscribe(userID, planID, nil, 0, "")
 	if err != nil {
 		t.Fatalf("second subscribe: %v", err)
 	}
@@ -239,7 +247,7 @@ func TestSubscriptionService_Subscribe_PlanNotFound(t *testing.T) {
 
 	svc := NewSubscriptionService(subRepo, planRepo, nil)
 
-	_, err := svc.Subscribe(uuid.New(), uuid.New(), nil)
+	_, err := svc.Subscribe(uuid.New(), uuid.New(), nil, 0, "")
 	if err == nil {
 		t.Error("expected error for non-existent plan")
 	}

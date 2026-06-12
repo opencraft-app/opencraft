@@ -23,6 +23,17 @@ spec:
       jqPathExpressions:
         - '.metadata.annotations."kubectl.kubernetes.io/last-applied-configuration"'
         - .spec.template.metadata.creationTimestamp
+    - group: platform.stke
+      kind: StatefulSetPlus
+      name: lightvela-proxy-staging
+      namespace: ns-prjqt8dd-867795-production
+      jsonPointers:
+        - /metadata/annotations/kubectl.kubernetes.io~1last-applied-configuration
+        - /metadata/annotations/tkex-samename-count
+        - /spec/template/metadata/creationTimestamp
+      jqPathExpressions:
+        - '.metadata.annotations."kubectl.kubernetes.io/last-applied-configuration"'
+        - .spec.template.metadata.creationTimestamp
     - group: extensions
       kind: Ingress
       name: vela-proxy-ingress-prod
@@ -35,6 +46,16 @@ spec:
     - group: extensions
       kind: Ingress
       name: vela-proxy-ingress-testing
+      namespace: ns-prjqt8dd-867795-production
+      jsonPointers:
+        - /metadata/annotations/ingress.cloud.tencent.com~1client-token
+        - /metadata/annotations/ingress.cloud.tencent.com~1status.conditions
+        - /metadata/annotations/kubernetes.io~1ingress.qcloud-loadbalance-id
+        - /metadata/annotations/kubectl.kubernetes.io~1last-applied-configuration
+        - /metadata/finalizers
+    - group: extensions
+      kind: Ingress
+      name: vela-proxy-ingress-staging
       namespace: ns-prjqt8dd-867795-production
       jsonPointers:
         - /metadata/annotations/ingress.cloud.tencent.com~1client-token
@@ -59,6 +80,15 @@ spec:
         - /metadata/annotations/service.cloud.tencent.com~1sync-begin-time
         - /metadata/annotations/service.cloud.tencent.com~1sync-end-time
     - kind: Service
+      name: lightvela-proxy-service-staging
+      namespace: ns-prjqt8dd-867795-production
+      jsonPointers:
+        - /spec/clusterIP
+        - /spec/clusterIPs
+        - /metadata/annotations/kubectl.kubernetes.io~1last-applied-configuration
+        - /metadata/annotations/service.cloud.tencent.com~1sync-begin-time
+        - /metadata/annotations/service.cloud.tencent.com~1sync-end-time
+    - kind: Service
       name: lightvela-proxy-inner-service-prod
       namespace: ns-prjqt8dd-867795-production
       jsonPointers:
@@ -68,6 +98,14 @@ spec:
         - /metadata/annotations/service.cloud.tencent.com~1sync-end-time
     - kind: Service
       name: lightvela-proxy-inner-service-testing
+      namespace: ns-prjqt8dd-867795-production
+      jsonPointers:
+        - /metadata/annotations/kubectl.kubernetes.io~1last-applied-configuration
+        - /metadata/annotations/polaris.tkex.cloud.tencentyun.com~1token
+        - /metadata/annotations/service.cloud.tencent.com~1sync-begin-time
+        - /metadata/annotations/service.cloud.tencent.com~1sync-end-time
+    - kind: Service
+      name: lightvela-proxy-inner-service-staging
       namespace: ns-prjqt8dd-867795-production
       jsonPointers:
         - /metadata/annotations/kubectl.kubernetes.io~1last-applied-configuration

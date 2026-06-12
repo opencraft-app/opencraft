@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 )
 
 // trade_order 写端 DAO（迭代 8）。
@@ -25,9 +24,15 @@ import (
 
 // CreateOrderInput 是 CreateOrder 的入参。
 //
-// 字段语义见 trade_order 表注释（migration 0001）。
+// 字段语义见 trade_order 表注释（migration 0001 / 0003）。
 // goods_detail 字段：业务层传 map[string]interface{}（jifei 协议层 goodsDetail 透传快照），
 // DAO 层负责序列化为 JSON 字符串落库；空 map 落 NULL。
+//
+// OrderType（migration 0003 新增列；R-A 落地）：订单生命周期类型。
+//   - 取值集：OrderTypeCreate("create") / OrderTypeRenew("renew") / 预留 "refund"
+//   - 入参为空字符串 → DAO 默认填 OrderTypeCreate（兼容历史 PlaceOrder / PlaceOrderAndPay 调用方
+//     不需修改即可继续工作；DB schema 也是 NOT NULL DEFAULT 'create'，双层默认）
+//   - PlaceRenewOrder（R-C 续费下单入口）必须显式传 OrderTypeRenew，否则会被默认覆盖为 'create'
 type CreateOrderInput struct {
 	BigOrderID     string
 	DealName       string
@@ -36,6 +41,7 @@ type CreateOrderInput struct {
 	AppID          string
 	SubProductCode string
 	BundleID       string
+	OrderType      string // R-C 新增：'create' / 'renew' / 预留 'refund'；空 → 默认 OrderTypeCreate
 	Period         int
 	TimeUnit       string
 	GoodsNum       int
@@ -45,7 +51,14 @@ type CreateOrderInput struct {
 	PayURL         string
 	Status         string // 通常为 "created" 或 "pending_pay"
 	ResourceType   string // 默认 "pass"
-	ExpireTime     time.Time
+	// ResourceID（R-C-5 续费场景必填；新购 INSERT 时留空，由 createResource 收尾 MarkOrderProvisioned 反向回填）：
+	//   - OrderType='create'：留空字符串 → INSERT 落 NULL（与 trade_order.resource_id DEFAULT NULL 一致）
+	//   - OrderType='renew'：必填 = pass_id；renewresource handler 的 trade_order 维度交叉校验依赖此字段
+	//     （参见 trade/internal/logic/renewresource/handler.go § ResourceID 漂移检测：
+	//      jifei 回调入参 resourceId 与 trade_order.resource_id 不一致时 A 类退款）
+	ResourceID string
+	// v1.7.28 BUG-12 修复 (2026-05-21)：删除 ExpireTime 字段（trade 业务层从未拥有
+	// "订单何时失效"的真源；列从 schema 删了，见 migration 0004）。
 }
 
 // ErrTradeOrderDuplicate 是按 deal_name UNIQUE 约束冲突的哨兵错误。
@@ -107,6 +120,27 @@ type OrderWriter interface {
 	// 幂等性：jifei "getMidasEarmarking" 在同一 dealName 上多次调用应返回同一 URL，
 	// 重复写库为 no-op-ish（payURL 字段不变，updated_time 刷新）。
 	UpdatePayURL(ctx context.Context, dealName, payURL string) error
+
+	// MarkOrderCancelled 把 trade_order 由中态推进到 cancelled 终态（v1.7.32 引入）。
+	//
+	// 调用场景：orderstatus.QueryStatus 反查 jifei.getDealsByKeyIndex 发现订单状态为
+	// canceled / overdue / delete 时，同进程同事务调本方法抨进本地状态。
+	//
+	// SQL 语义（CAS WHERE 限定中态）：
+	//
+	//   UPDATE trade_order
+	//      SET status = 'cancelled', updated_time = NOW()
+	//    WHERE deal_name = ?
+	//      AND status IN ('created', 'pending_pay', 'paid_pending_provision')
+	//
+	// 幂等 / 状态机不可逆语义（B6 不变量）：
+	//   - rows affected == 0 是合法路径（已是本地终态 / 记录不存在）→ 返 nil、不报错
+	//   - 仅在底层 SQL execution error 时 → wrap raw error
+	//
+	// 设计理据：B6 保证本地终态不可覆盖（已 provisioned 的订单不会被 jifei 后势反查抨回 cancelled）；
+	// 记录不存在是调用方与本方法的间接并发事件（请求 A 查不到他请求 B 后中途被 DELETE），统一返成功
+	// 避免调用方错误重试。
+	MarkOrderCancelled(ctx context.Context, dealName string) error
 }
 
 // ErrTradeOrderResourceIDConflict 表示 trade_order 已被另一个不同 resource_id 占用。
@@ -119,18 +153,31 @@ var ErrTradeOrderResourceIDConflict = errors.New("trade_order: resource_id confl
 var _ OrderWriter = (*MySQLStore)(nil)
 
 // CreateOrder 实现 OrderWriter。
+//
+// v1.7.28 BUG-22 修订（2026-05-21）：去掉原 R-C Q15=a "deal_name 三态强约束" 的
+// `panic`。新设计下 PlaceOrderAndPay 在调用 jifei generateDealsAndPay 成功**之后**
+// 才 INSERT trade_order（同步链路 + 一次到位 dealName/bigOrderId/status='paid_pending_provision'），
+// trade_order 退化为"订单流水记录"用途，不在发货关键路径上。createResource handler
+// 已通过 jifei goodsDetail 透传机制（externalUserId / bundleId）完全脱离 trade_order
+// 反查依赖。
+//
+// 本期 deal_name 在 INSERT 路径上仍然非空（PlaceOrderAndPay 拿到 jifei 响应后才插），
+// 但保留 in.DealName 空字符串 → 落 NULL 的 DAO 兼容（历史 panic 改为接受），让未来
+// 其它写入路径有空间扩展（如 reconcile worker 兜底插占位行）。
 func (s *MySQLStore) CreateOrder(ctx context.Context, in CreateOrderInput) error {
 	if s == nil || s.db == nil {
 		return fmt.Errorf("trade_order: store is nil")
-	}
-	if in.DealName == "" {
-		return fmt.Errorf("trade_order: deal_name is required")
 	}
 	if in.Status == "" {
 		return fmt.Errorf("trade_order: status is required")
 	}
 	if in.ResourceType == "" {
 		in.ResourceType = "pass"
+	}
+	if in.OrderType == "" {
+		// R-C Q7=a：order_type 默认 'create'，与 migration 0003 DB DEFAULT 双层一致；
+		// PlaceRenewOrder 必须显式传 OrderTypeRenew 才能写入续费订单。
+		in.OrderType = OrderTypeCreate
 	}
 	if in.GoodsNum == 0 {
 		in.GoodsNum = 1
@@ -145,24 +192,35 @@ func (s *MySQLStore) CreateOrder(ctx context.Context, in CreateOrderInput) error
 		goodsDetailArg = string(raw)
 	}
 
+	// R-C Q7=a：INSERT 列清单显式包含 order_type；migration 0003 已在 bundle_id 后插列，
+	// 这里 SQL 顺序与 GetOrderByDealName SELECT 子句保持一致。
+	// R-C-5 (2026-05-15)：INSERT 列加 resource_id（续费订单 INSERT 时必填 = pass_id；
+	//   新购订单留空字符串 → INSERT 时绑定 nil 落 NULL，与 trade_order.resource_id DEFAULT NULL 一致；
+	//   createResource 收尾仍走 MarkOrderProvisioned UPDATE 写回）。
 	const q = `
 		INSERT INTO trade_order (
 			big_order_id, deal_name, external_user_id, uin, app_id,
-			sub_product_code, bundle_id, period, time_unit, goods_num,
+			sub_product_code, bundle_id, order_type, period, time_unit, goods_num,
 			region_id, pay_mode, goods_detail, pay_url, status,
-			resource_type, expire_time, created_time, updated_time
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+			resource_type, resource_id, created_time, updated_time
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
 	`
 	var payURLArg interface{}
 	if in.PayURL != "" {
 		payURLArg = in.PayURL
 	}
+	// resource_id：续费订单 INSERT 时必填 pass_id；新购订单留空字符串 → 绑定 nil 让列落 NULL，
+	// 不要绑定空字符串（会导致 idx_resource (resource_type, resource_id) 索引出现假命中）。
+	var resourceIDArg interface{}
+	if in.ResourceID != "" {
+		resourceIDArg = in.ResourceID
+	}
 
 	if _, err := s.db.ExecContext(ctx, q,
 		in.BigOrderID, in.DealName, in.ExternalUserID, in.Uin, in.AppID,
-		in.SubProductCode, in.BundleID, in.Period, in.TimeUnit, in.GoodsNum,
+		in.SubProductCode, in.BundleID, in.OrderType, in.Period, in.TimeUnit, in.GoodsNum,
 		in.RegionID, in.PayMode, goodsDetailArg, payURLArg, in.Status,
-		in.ResourceType, in.ExpireTime,
+		in.ResourceType, resourceIDArg,
 	); err != nil {
 		// MySQL UNIQUE 冲突 errno=1062；驱动层不暴露常量，按 message 子串匹配兜底
 		if isMySQLDuplicateError(err) {
@@ -255,6 +313,44 @@ func (s *MySQLStore) UpdatePayURL(ctx context.Context, dealName, payURL string) 
 		return fmt.Errorf("%w: dealName=%s (update pay_url affected 0 rows)",
 			ErrTradeOrderNotFound, dealName)
 	}
+	return nil
+}
+
+// MarkOrderCancelled 实现 OrderWriter（v1.7.32 引入）。
+//
+// 设计稿：.tmp/ctl-order-status-query-design.md §1 不变量 B2 + B6 与 §5.3。
+//
+// SQL CAS 语义（WHERE 限定中态、只让状态机单向进入 cancelled）：
+//
+//	UPDATE trade_order
+//	   SET status = 'cancelled', updated_time = NOW()
+//	 WHERE deal_name = ?
+//	   AND status IN ('created', 'pending_pay', 'paid_pending_provision')
+//
+// 幂等 / 状态机不可逆：
+//   - rows affected == 0：合法路径（记录不存在 或 已是 provisioned/payment_failed/provision_failed/cancelled 本地终态）→ 返 nil
+//   - 仅在底层 SQL execution 错误时返 wrap error
+//
+// 与 MarkOrderProvisioned 不同：后者会返 ErrTradeOrderNotFound / ErrTradeOrderResourceIDConflict 让上层
+// 走 B 类重试；本函数是“仅中态可推进”语义，完全幂等，不区分“不存在”与“已终态”。
+func (s *MySQLStore) MarkOrderCancelled(ctx context.Context, dealName string) error {
+	if s == nil || s.db == nil {
+		return fmt.Errorf("trade_order: store is nil")
+	}
+	if dealName == "" {
+		return fmt.Errorf("trade_order: deal_name is required")
+	}
+
+	const q = `
+		UPDATE trade_order
+		   SET status = 'cancelled', updated_time = NOW()
+		 WHERE deal_name = ?
+		   AND status IN ('created', 'pending_pay', 'paid_pending_provision')
+	`
+	if _, err := s.db.ExecContext(ctx, q, dealName); err != nil {
+		return fmt.Errorf("trade_order: mark cancelled dealName=%s: %w", dealName, err)
+	}
+	// rows affected == 0 不报错：记录不存在 / 已是本地终态 都是幂等路径。
 	return nil
 }
 

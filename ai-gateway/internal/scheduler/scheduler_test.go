@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"git.woa.com/wisp/mono/ai-gateway/internal/model"
+	"git.woa.com/wisp/mono/ai-gateway/internal/repository"
 	"git.woa.com/wisp/mono/ai-gateway/internal/service"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -29,6 +30,15 @@ func (m *mockSubRepo) CancelByUserID(uid uuid.UUID) error                 { retu
 func (m *mockSubRepo) Update(sub *model.Subscription) error               { return nil }
 func (m *mockSubRepo) CountActive() (int64, error)                        { return 0, nil }
 func (m *mockSubRepo) SumActiveTokenBalance() (int64, error)              { return 0, nil }
+func (m *mockSubRepo) ListRefreshCandidates(limit int) ([]repository.SubscriptionRefreshCandidate, error) {
+	return nil, nil
+}
+func (m *mockSubRepo) RefreshByIDs(items []repository.SubscriptionRefreshItem) (int64, error) {
+	return 0, nil
+}
+func (m *mockSubRepo) ExtendActivePeriodEnd(userID uuid.UUID, newPeriodEnd time.Time) (int64, *model.Subscription, error) {
+	return 0, nil, nil
+}
 
 func (m *mockSubRepo) ExpireOverdue() (int64, error) {
 	m.expireCalled.Add(1)

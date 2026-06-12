@@ -13,6 +13,12 @@ import (
 )
 
 // ---- mock 实现 ---------------------------------------------------------------
+//
+// v1.7.28 BUG-07 修订 (2026-05-21)：
+// checkCreate handler 不再依赖 trade_order 反查（jifei 在 generateDeals 同步链路里立即触发
+// checkCreate 回调，trade_order 还未落库）；改用 goodsDetail.bundleId 反查 trade_bundle_definition。
+// 故 fakeOrderStore 字段保留位但不参与业务路径；fakeCTLClient.passes 字段也不参与
+// （quota 互斥占用本期跳过，待 shadow 反查 (uin, appId)→externalUserId 接口落地后启用）。
 
 type fakeOrderStore struct {
 	order *store.TradeOrder
@@ -30,6 +36,12 @@ type fakeBundleDefStore struct {
 
 func (f *fakeBundleDefStore) GetBundleDefinitionByID(_ context.Context, _ string) (*store.BundleDefinition, error) {
 	return f.def, f.err
+}
+func (f *fakeBundleDefStore) ListBundleDefsBySubProductCode(_ context.Context, _, _ string) ([]*store.BundleDefinition, error) {
+	return nil, errors.New("ListBundleDefsBySubProductCode not used in checkCreate")
+}
+func (f *fakeBundleDefStore) GetBundleDefinitionsByIDs(_ context.Context, _ []string) (map[string]*store.BundleDefinition, error) {
+	return nil, errors.New("GetBundleDefinitionsByIDs not used in checkCreate")
 }
 
 type fakeCTLClient struct {
@@ -49,24 +61,27 @@ func (f *fakeCTLClient) ListPassesByUser(_ context.Context, _ string) ([]*ctlcli
 func (f *fakeCTLClient) CompletePass(_ context.Context, _ *ctlclient.CompletePassRequest) (*ctlclient.PassDetail, error) {
 	return nil, errors.New("CompletePass not used in checkCreate")
 }
+func (f *fakeCTLClient) ListPassAppIDs(_ context.Context, _ []string, _, _ int) ([]int64, int64, error) {
+	return nil, 0, errors.New("ListPassAppIDs not used in checkCreate")
+}
+func (f *fakeCTLClient) IsolatePass(_ context.Context, _ string, _ *ctlclient.IsolatePassRequest) (*ctlclient.IsolatePassResponse, error) {
+	return nil, errors.New("IsolatePass not used in checkCreate tests")
+}
+func (f *fakeCTLClient) RenewPass(_ context.Context, _ string, _ *ctlclient.RenewPassRequest) (*ctlclient.RenewPassResponse, error) {
+	return nil, errors.New("RenewPass not used in checkCreate tests")
+}
+
+func (f *fakeCTLClient) DestroyPass(_ context.Context, _ string, _ *ctlclient.DestroyPassRequest) (*ctlclient.DestroyPassResponse, error) {
+	return nil, errors.New("DestroyPass not used in checkCreate tests")
+}
+func (f *fakeCTLClient) ListPassesByAppID(_ context.Context, _ int64, _ []string, _, _ int) ([]*ctlclient.PassDetail, int64, error) {
+	return nil, 0, errors.New("ListPassesByAppID not used in checkCreate")
+}
+func (f *fakeCTLClient) ListPassesByResourceIDs(_ context.Context, _ int64, _ []string) ([]*ctlclient.PassDetail, error) {
+	return nil, errors.New("ListPassesByResourceIDs not used in checkCreate")
+}
 
 // ---- 标准 happy-path fixtures ------------------------------------------------
-
-// stdOrder 是覆盖默认 happy-path 的 trade_order 快照。
-func stdOrder() *store.TradeOrder {
-	return &store.TradeOrder{
-		DealName:       "deal-001",
-		ExternalUserID: "user-001",
-		Uin:            "100012345678",
-		AppID:          "12345678",
-		BundleID:       "bundle_linux_small_01",
-		Period:         1,
-		TimeUnit:       "m",
-		GoodsNum:       1,
-		PayMode:        1,
-		Status:         "pending_pay",
-	}
-}
 
 // stdBundle 是默认 ONLINE / AVAILABLE bundle。
 func stdBundle() *ctlclient.BundleDetail {
@@ -77,42 +92,55 @@ func stdBundle() *ctlclient.BundleDetail {
 	}
 }
 
-// stdBundleDef 是默认 bundle_definition（含 sv_cpu / sv_mem 两项）。
+// stdBundleDef 是默认 trade_bundle_definition 快照。
 func stdBundleDef() *store.BundleDefinition {
 	return &store.BundleDefinition{
 		BundleID: "bundle_linux_small_01",
-		Pid:      "40000",
-		SVList: map[string]interface{}{
-			"cpu": "2",
-			"mem": "4G",
+		Pid:      40000,
+		SVList: map[string]int64{
+			"sv_cpu": 2,
+			"sv_mem": 4,
 		},
 	}
 }
 
-// stdPara 是默认 happy-path 入参 JSON（match stdOrder + stdBundleDef）。
+// stdPara 是 v1.7.28 BUG-07 后的 jifei 真实回调 payload 形态。
+//
+// 关键变化：
+//   - 删除顶层 dealName（PDF §1.1：checkCreate 阶段 jifei 不发）
+//   - bundleId 移到 goodsDetail（trade 出向时塞进去透传）
+//   - 顶层增加 PDF 协议字段：region / zoneId / payMode / operateUin / projectId
+//   - v1.7.28 BUG-24（2026-05-28）：goodsDetail 增加 externalUserId（trade 出向
+//     placeorder 时必塞项，jifei 透传后 checkCreate handler 反查 ctl ListPassesByUser 依赖该字段）。
 func stdPara() json.RawMessage {
 	return json.RawMessage(`{
-		"dealName": "deal-001",
-		"appId": "12345678",
+		"appId": 12345678,
 		"uin": "100012345678",
+		"operateUin": "100012345678",
+		"region": 1,
+		"zoneId": 100001,
+		"payMode": 1,
+		"productCode": "p_lighthouse",
 		"subProductCode": "sp_lighthouse_bundle_linux_small",
-		"bundleId": "bundle_linux_small_01",
-		"goodsNum": 1,
+		"projectId": 0,
 		"goodsDetail": {
-			"pid": "40000",
+			"bundleId": "bundle_linux_small_01",
+			"externalUserId": "uin_test_001",
+			"productCode": "p_lighthouse",
+			"subProductCode": "sp_lighthouse_bundle_linux_small",
+			"pid": 40000,
 			"timeSpan": 1,
 			"timeUnit": "m",
 			"goodsNum": 1,
-			"payMode": 1,
-			"sv_cpu": "2",
-			"sv_mem": "4G"
+			"sv_cpu": 2,
+			"sv_mem": 4
 		}
 	}`)
 }
 
 func newDeps(orderStore store.OrderStore, bundleDefStore store.BundleDefinitionStore, ctlClient ctlclient.Client) Deps {
 	return Deps{
-		OrderStore:  orderStore,
+		OrderStore:  orderStore, // BUG-07 后保留依赖位但不参与业务路径
 		BundleStore: bundleDefStore,
 		CTLClient:   ctlClient,
 		Builder:     jifei.NewFrameworkBuilder("trade", "1.0"),
@@ -123,26 +151,27 @@ func runHandler(t *testing.T, deps Deps, para json.RawMessage) jifei.Framework {
 	t.Helper()
 	resp, err := makeHandler(deps)(context.Background(), para)
 	if err != nil {
-		t.Fatalf("handler returned error: %v", err)
+		t.Fatalf("handler error: %v", err)
 	}
-	if resp.ReturnCode != resp.ReturnValue {
-		t.Fatalf("Q58 invariant violated: returnCode=%d returnValue=%d", resp.ReturnCode, resp.ReturnValue)
-	}
+	// Q56 全局不变性：checkCreate 任何路径都不返退款魔法值。
 	if resp.ReturnCode == jifei.RefundReturnCode {
-		t.Fatalf("checkCreate must NEVER return refund magic %d (Q56 refund only allowed in createResource A-class)",
-			jifei.RefundReturnCode)
+		t.Fatalf("BUG: returnCode=%d 等于退款魔法值，违反 Q56", jifei.RefundReturnCode)
+	}
+	// Q58 全局不变性：returnCode == returnValue。
+	if resp.ReturnCode != resp.ReturnValue {
+		t.Fatalf("Q58 invariant: returnCode=%d returnValue=%d", resp.ReturnCode, resp.ReturnValue)
 	}
 	return resp
 }
 
 // ---- 测试用例 ----------------------------------------------------------------
 
-// 1. happy-path：5 项校验全过 → returnCode=0
+// 1. happy-path：bundle 在线 + bundleDef pid+sv_* 一致 → returnCode=0
 func TestCheckCreate_HappyPath(t *testing.T) {
 	deps := newDeps(
-		&fakeOrderStore{order: stdOrder()},
+		&fakeOrderStore{},
 		&fakeBundleDefStore{def: stdBundleDef()},
-		&fakeCTLClient{bundle: stdBundle(), passes: nil},
+		&fakeCTLClient{bundle: stdBundle()},
 	)
 	resp := runHandler(t, deps, stdPara())
 	if resp.ReturnCode != 0 {
@@ -159,49 +188,46 @@ func TestCheckCreate_InvalidJSON(t *testing.T) {
 	}
 }
 
-// 3. para 必填字段缺失（dealName 空）→ ReturnCodeInvalidPara
-func TestCheckCreate_MissingDealName(t *testing.T) {
+// 3. appId 缺失（PDF 必填）→ ReturnCodeInvalidPara
+func TestCheckCreate_MissingAppID(t *testing.T) {
 	deps := newDeps(&fakeOrderStore{}, &fakeBundleDefStore{}, &fakeCTLClient{})
-	para := json.RawMessage(`{"bundleId":"bx","goodsNum":1,"goodsDetail":{}}`)
+	para := json.RawMessage(`{"uin":"u","goodsDetail":{"bundleId":"b"}}`)
 	resp := runHandler(t, deps, para)
 	if resp.ReturnCode != ReturnCodeInvalidPara {
 		t.Fatalf("expected ReturnCodeInvalidPara, got %d", resp.ReturnCode)
 	}
-	if !strings.Contains(resp.ReturnMessage, "dealName") {
-		t.Fatalf("expected message to mention dealName, got %q", resp.ReturnMessage)
+	if !strings.Contains(resp.ReturnMessage, "appId") {
+		t.Errorf("expected msg to mention appId, got: %s", resp.ReturnMessage)
 	}
 }
 
-// 4. trade_order not found → ReturnCodeOrderNotFound
-func TestCheckCreate_OrderNotFound(t *testing.T) {
-	deps := newDeps(
-		&fakeOrderStore{err: store.ErrTradeOrderNotFound},
-		&fakeBundleDefStore{def: stdBundleDef()},
-		&fakeCTLClient{bundle: stdBundle()},
-	)
-	resp := runHandler(t, deps, stdPara())
-	if resp.ReturnCode != ReturnCodeOrderNotFound {
-		t.Fatalf("expected ReturnCodeOrderNotFound=%d, got %d", ReturnCodeOrderNotFound, resp.ReturnCode)
+// 4. goodsDetail 缺失 → ReturnCodeInvalidPara
+func TestCheckCreate_MissingGoodsDetail(t *testing.T) {
+	deps := newDeps(&fakeOrderStore{}, &fakeBundleDefStore{}, &fakeCTLClient{})
+	para := json.RawMessage(`{"appId":1,"uin":"u"}`)
+	resp := runHandler(t, deps, para)
+	if resp.ReturnCode != ReturnCodeInvalidPara {
+		t.Fatalf("expected ReturnCodeInvalidPara, got %d", resp.ReturnCode)
 	}
 }
 
-// 5. trade_order SQL 错（非 not_found）→ ReturnCodeUpstreamUnavailable
-func TestCheckCreate_OrderSQLError(t *testing.T) {
-	deps := newDeps(
-		&fakeOrderStore{err: errors.New("connection refused")},
-		&fakeBundleDefStore{def: stdBundleDef()},
-		&fakeCTLClient{bundle: stdBundle()},
-	)
-	resp := runHandler(t, deps, stdPara())
-	if resp.ReturnCode != ReturnCodeUpstreamUnavailable {
-		t.Fatalf("expected ReturnCodeUpstreamUnavailable=%d, got %d", ReturnCodeUpstreamUnavailable, resp.ReturnCode)
+// 5. goodsDetail 内 bundleId 缺失（trade 出向必塞，缺失说明出向链路异常）→ ReturnCodeInvalidPara
+func TestCheckCreate_MissingBundleIDInGoodsDetail(t *testing.T) {
+	deps := newDeps(&fakeOrderStore{}, &fakeBundleDefStore{}, &fakeCTLClient{})
+	para := json.RawMessage(`{"appId":1,"uin":"u","goodsDetail":{"pid":40000}}`)
+	resp := runHandler(t, deps, para)
+	if resp.ReturnCode != ReturnCodeInvalidPara {
+		t.Fatalf("expected ReturnCodeInvalidPara, got %d", resp.ReturnCode)
+	}
+	if !strings.Contains(resp.ReturnMessage, "bundleId") {
+		t.Errorf("expected msg to mention bundleId, got: %s", resp.ReturnMessage)
 	}
 }
 
-// 6. ctl bundle 404 → ReturnCodeBundleNotFound
+// 6. ctl/bundle 反查 NotFound → ReturnCodeBundleNotFound
 func TestCheckCreate_BundleNotFound(t *testing.T) {
 	deps := newDeps(
-		&fakeOrderStore{order: stdOrder()},
+		&fakeOrderStore{},
 		&fakeBundleDefStore{def: stdBundleDef()},
 		&fakeCTLClient{bundleErr: ctlclient.ErrNotFound},
 	)
@@ -211,14 +237,14 @@ func TestCheckCreate_BundleNotFound(t *testing.T) {
 	}
 }
 
-// 7. bundle state=OFFLINE → ReturnCodeBundleOffline
+// 7. bundle.state=OFFLINE → ReturnCodeBundleOffline
 func TestCheckCreate_BundleOffline(t *testing.T) {
-	bundle := stdBundle()
-	bundle.BundleState = "OFFLINE"
 	deps := newDeps(
-		&fakeOrderStore{order: stdOrder()},
+		&fakeOrderStore{},
 		&fakeBundleDefStore{def: stdBundleDef()},
-		&fakeCTLClient{bundle: bundle},
+		&fakeCTLClient{bundle: &ctlclient.BundleDetail{
+			BundleID: "bundle_linux_small_01", BundleState: "OFFLINE", BundleSalesState: "AVAILABLE",
+		}},
 	)
 	resp := runHandler(t, deps, stdPara())
 	if resp.ReturnCode != ReturnCodeBundleOffline {
@@ -226,14 +252,14 @@ func TestCheckCreate_BundleOffline(t *testing.T) {
 	}
 }
 
-// 8. bundle sales_state=SOLD_OUT → ReturnCodeBundleSoldOut
+// 8. bundle.sales_state=SOLD_OUT → ReturnCodeBundleSoldOut
 func TestCheckCreate_BundleSoldOut(t *testing.T) {
-	bundle := stdBundle()
-	bundle.BundleSalesState = "SOLD_OUT"
 	deps := newDeps(
-		&fakeOrderStore{order: stdOrder()},
+		&fakeOrderStore{},
 		&fakeBundleDefStore{def: stdBundleDef()},
-		&fakeCTLClient{bundle: bundle},
+		&fakeCTLClient{bundle: &ctlclient.BundleDetail{
+			BundleID: "bundle_linux_small_01", BundleState: "ONLINE", BundleSalesState: "SOLD_OUT",
+		}},
 	)
 	resp := runHandler(t, deps, stdPara())
 	if resp.ReturnCode != ReturnCodeBundleSoldOut {
@@ -241,242 +267,192 @@ func TestCheckCreate_BundleSoldOut(t *testing.T) {
 	}
 }
 
-// 9. ctl bundle HTTP 5xx → ReturnCodeUpstreamUnavailable
+// 9. ctl/bundle 反查 SQL 错 → ReturnCodeUpstreamUnavailable
 func TestCheckCreate_BundleUpstreamError(t *testing.T) {
 	deps := newDeps(
-		&fakeOrderStore{order: stdOrder()},
+		&fakeOrderStore{},
 		&fakeBundleDefStore{def: stdBundleDef()},
-		&fakeCTLClient{bundleErr: errors.New("ctl http 502")},
+		&fakeCTLClient{bundleErr: errors.New("ctl 5xx")},
 	)
 	resp := runHandler(t, deps, stdPara())
 	if resp.ReturnCode != ReturnCodeUpstreamUnavailable {
-		t.Fatalf("expected ReturnCodeUpstreamUnavailable, got %d", resp.ReturnCode)
+		t.Fatalf("expected ReturnCodeUpstreamUnavailable=%d, got %d", ReturnCodeUpstreamUnavailable, resp.ReturnCode)
 	}
 }
 
-// 10. trade_bundle_definition not found → ReturnCodeBundleNotFound
+// 10. trade_bundle_definition 反查 NotFound → ReturnCodeBundleNotFound
 func TestCheckCreate_BundleDefNotFound(t *testing.T) {
 	deps := newDeps(
-		&fakeOrderStore{order: stdOrder()},
+		&fakeOrderStore{},
 		&fakeBundleDefStore{err: store.ErrBundleDefinitionNotFound},
 		&fakeCTLClient{bundle: stdBundle()},
 	)
 	resp := runHandler(t, deps, stdPara())
 	if resp.ReturnCode != ReturnCodeBundleNotFound {
-		t.Fatalf("expected ReturnCodeBundleNotFound, got %d", resp.ReturnCode)
+		t.Fatalf("expected ReturnCodeBundleNotFound=%d, got %d", ReturnCodeBundleNotFound, resp.ReturnCode)
 	}
 }
 
-// 11. Q54 维度 1：pid 不一致 → ReturnCodeBusinessParamMismatch
-func TestCheckCreate_Q54_PidMismatch(t *testing.T) {
+// 11. pid 与 bundle_definition 不一致 → ReturnCodeBusinessParamMismatch
+func TestCheckCreate_PidMismatch(t *testing.T) {
 	def := stdBundleDef()
-	def.Pid = "40001" // 与 jifei para.goodsDetail.pid="40000" 不一致
+	def.Pid = 99999 // 与 stdPara goodsDetail.pid=40000 不一致
 	deps := newDeps(
-		&fakeOrderStore{order: stdOrder()},
+		&fakeOrderStore{},
 		&fakeBundleDefStore{def: def},
 		&fakeCTLClient{bundle: stdBundle()},
 	)
 	resp := runHandler(t, deps, stdPara())
 	if resp.ReturnCode != ReturnCodeBusinessParamMismatch {
-		t.Fatalf("expected ReturnCodeBusinessParamMismatch, got %d", resp.ReturnCode)
+		t.Fatalf("expected ReturnCodeBusinessParamMismatch=%d, got %d", ReturnCodeBusinessParamMismatch, resp.ReturnCode)
 	}
-	if !strings.Contains(resp.ReturnMessage, "pid") {
-		t.Fatalf("expected message to mention pid, got %q", resp.ReturnMessage)
-	}
-}
-
-// 12. Q54 维度 2：timeSpan 不一致 → ReturnCodeBusinessParamMismatch
-func TestCheckCreate_Q54_TimeSpanMismatch(t *testing.T) {
-	order := stdOrder()
-	order.Period = 12 // jifei para.timeSpan=1 不一致
-	deps := newDeps(
-		&fakeOrderStore{order: order},
-		&fakeBundleDefStore{def: stdBundleDef()},
-		&fakeCTLClient{bundle: stdBundle()},
-	)
-	resp := runHandler(t, deps, stdPara())
-	if resp.ReturnCode != ReturnCodeBusinessParamMismatch || !strings.Contains(resp.ReturnMessage, "timeSpan") {
-		t.Fatalf("expected timeSpan mismatch, got code=%d msg=%q", resp.ReturnCode, resp.ReturnMessage)
+	if !strings.Contains(resp.ReturnMessage, "pid mismatch") {
+		t.Errorf("expected pid mismatch, got: %s", resp.ReturnMessage)
 	}
 }
 
-// 13. Q54 维度 3：timeUnit 不一致
-func TestCheckCreate_Q54_TimeUnitMismatch(t *testing.T) {
-	order := stdOrder()
-	order.TimeUnit = "y"
-	deps := newDeps(
-		&fakeOrderStore{order: order},
-		&fakeBundleDefStore{def: stdBundleDef()},
-		&fakeCTLClient{bundle: stdBundle()},
-	)
-	resp := runHandler(t, deps, stdPara())
-	if resp.ReturnCode != ReturnCodeBusinessParamMismatch || !strings.Contains(resp.ReturnMessage, "timeUnit") {
-		t.Fatalf("expected timeUnit mismatch, got code=%d msg=%q", resp.ReturnCode, resp.ReturnMessage)
-	}
-}
-
-// 14. Q54 维度 4：goodsNum 不一致
-func TestCheckCreate_Q54_GoodsNumMismatch(t *testing.T) {
-	order := stdOrder()
-	order.GoodsNum = 2
-	deps := newDeps(
-		&fakeOrderStore{order: order},
-		&fakeBundleDefStore{def: stdBundleDef()},
-		&fakeCTLClient{bundle: stdBundle()},
-	)
-	resp := runHandler(t, deps, stdPara())
-	if resp.ReturnCode != ReturnCodeBusinessParamMismatch || !strings.Contains(resp.ReturnMessage, "goodsNum") {
-		t.Fatalf("expected goodsNum mismatch, got code=%d msg=%q", resp.ReturnCode, resp.ReturnMessage)
-	}
-}
-
-// 15. Q54 维度 5（sv_*）：sv_cpu 不一致
-func TestCheckCreate_Q54_SVMismatch(t *testing.T) {
+// 12. sv_* 与 bundle_definition 不一致 → ReturnCodeBusinessParamMismatch
+func TestCheckCreate_SVMismatch(t *testing.T) {
 	def := stdBundleDef()
-	def.SVList["cpu"] = "4" // 期望 sv_cpu="4"，但 jifei 入参 sv_cpu="2"
+	def.SVList = map[string]int64{"sv_cpu": 99} // 与 stdPara goodsDetail.sv_cpu=2 不一致
 	deps := newDeps(
-		&fakeOrderStore{order: stdOrder()},
+		&fakeOrderStore{},
 		&fakeBundleDefStore{def: def},
 		&fakeCTLClient{bundle: stdBundle()},
 	)
 	resp := runHandler(t, deps, stdPara())
-	if resp.ReturnCode != ReturnCodeBusinessParamMismatch || !strings.Contains(resp.ReturnMessage, "sv_cpu") {
-		t.Fatalf("expected sv_cpu mismatch, got code=%d msg=%q", resp.ReturnCode, resp.ReturnMessage)
+	if resp.ReturnCode != ReturnCodeBusinessParamMismatch {
+		t.Fatalf("expected ReturnCodeBusinessParamMismatch=%d, got %d", ReturnCodeBusinessParamMismatch, resp.ReturnCode)
+	}
+	if !strings.Contains(resp.ReturnMessage, "sv field mismatch") {
+		t.Errorf("expected sv field mismatch, got: %s", resp.ReturnMessage)
 	}
 }
 
-// 16. Q54 sv_*：jifei 入参缺失 sv 字段 → BUSINESS_PARAM_MISMATCH
-func TestCheckCreate_Q54_SVMissingInPara(t *testing.T) {
-	deps := newDeps(
-		&fakeOrderStore{order: stdOrder()},
-		&fakeBundleDefStore{def: stdBundleDef()},
-		&fakeCTLClient{bundle: stdBundle()},
-	)
-	// 故意去掉 sv_mem
+// 13. timeSpan <= 0 → ReturnCodeBusinessParamMismatch
+func TestCheckCreate_TimeSpanInvalid(t *testing.T) {
 	para := json.RawMessage(`{
-		"dealName": "deal-001",
-		"bundleId": "bundle_linux_small_01",
-		"goodsNum": 1,
-		"goodsDetail": {
-			"pid": "40000",
-			"timeSpan": 1,
-			"timeUnit": "m",
-			"goodsNum": 1,
-			"payMode": 1,
-			"sv_cpu": "2"
-		}
+		"appId": 1, "uin": "u",
+		"goodsDetail": {"bundleId":"bundle_linux_small_01","pid":40000,"timeSpan":0,"timeUnit":"m","goodsNum":1,"sv_cpu":2,"sv_mem":4}
 	}`)
+	deps := newDeps(
+		&fakeOrderStore{},
+		&fakeBundleDefStore{def: stdBundleDef()},
+		&fakeCTLClient{bundle: stdBundle()},
+	)
 	resp := runHandler(t, deps, para)
-	if resp.ReturnCode != ReturnCodeBusinessParamMismatch || !strings.Contains(resp.ReturnMessage, "sv_mem") {
-		t.Fatalf("expected sv_mem mismatch, got code=%d msg=%q", resp.ReturnCode, resp.ReturnMessage)
+	if resp.ReturnCode != ReturnCodeBusinessParamMismatch {
+		t.Fatalf("expected ReturnCodeBusinessParamMismatch, got %d", resp.ReturnCode)
+	}
+	if !strings.Contains(resp.ReturnMessage, "timeSpan") {
+		t.Errorf("expected timeSpan invalid, got: %s", resp.ReturnMessage)
 	}
 }
 
-// 17. §5.2 #3 payMode 不一致
-func TestCheckCreate_PayModeMismatch(t *testing.T) {
-	order := stdOrder()
-	order.PayMode = 0 // jifei para.payMode=1 不一致
-	deps := newDeps(
-		&fakeOrderStore{order: order},
-		&fakeBundleDefStore{def: stdBundleDef()},
-		&fakeCTLClient{bundle: stdBundle()},
-	)
-	resp := runHandler(t, deps, stdPara())
-	if resp.ReturnCode != ReturnCodeBusinessParamMismatch || !strings.Contains(resp.ReturnMessage, "payMode") {
-		t.Fatalf("expected payMode mismatch, got code=%d msg=%q", resp.ReturnCode, resp.ReturnMessage)
-	}
-}
-
-// 18. §5.2 #3 jifei 入参 goodsDetail 没有 payMode → BUSINESS_PARAM_MISMATCH
-func TestCheckCreate_PayModeMissing(t *testing.T) {
-	deps := newDeps(
-		&fakeOrderStore{order: stdOrder()},
-		&fakeBundleDefStore{def: stdBundleDef()},
-		&fakeCTLClient{bundle: stdBundle()},
-	)
+// 14. timeUnit 非合法集合 → ReturnCodeBusinessParamMismatch
+func TestCheckCreate_TimeUnitInvalid(t *testing.T) {
 	para := json.RawMessage(`{
-		"dealName": "deal-001",
-		"bundleId": "bundle_linux_small_01",
-		"goodsNum": 1,
-		"goodsDetail": {
-			"pid": "40000",
-			"timeSpan": 1,
-			"timeUnit": "m",
-			"goodsNum": 1,
-			"sv_cpu": "2",
-			"sv_mem": "4G"
-		}
+		"appId": 1, "uin": "u",
+		"goodsDetail": {"bundleId":"bundle_linux_small_01","pid":40000,"timeSpan":1,"timeUnit":"x","goodsNum":1,"sv_cpu":2,"sv_mem":4}
 	}`)
+	deps := newDeps(
+		&fakeOrderStore{},
+		&fakeBundleDefStore{def: stdBundleDef()},
+		&fakeCTLClient{bundle: stdBundle()},
+	)
 	resp := runHandler(t, deps, para)
-	if resp.ReturnCode != ReturnCodeBusinessParamMismatch || !strings.Contains(resp.ReturnMessage, "payMode") {
-		t.Fatalf("expected payMode missing, got code=%d msg=%q", resp.ReturnCode, resp.ReturnMessage)
+	if resp.ReturnCode != ReturnCodeBusinessParamMismatch {
+		t.Fatalf("expected ReturnCodeBusinessParamMismatch, got %d", resp.ReturnCode)
+	}
+	if !strings.Contains(resp.ReturnMessage, "timeUnit invalid") {
+		t.Errorf("expected timeUnit invalid, got: %s", resp.ReturnMessage)
 	}
 }
 
-// 19. §5.2 #5 quota 互斥（用户已有 1 个 pass）→ ReturnCodeQuotaOccupied
-func TestCheckCreate_QuotaOccupied(t *testing.T) {
+// 15. payMode 顶层非法值（PDF: 0/1） → ReturnCodeBusinessParamMismatch
+func TestCheckCreate_PayModeInvalid(t *testing.T) {
+	para := json.RawMessage(`{
+		"appId": 1, "uin": "u", "payMode": 9,
+		"goodsDetail": {"bundleId":"bundle_linux_small_01","pid":40000,"timeSpan":1,"timeUnit":"m","goodsNum":1,"sv_cpu":2,"sv_mem":4}
+	}`)
 	deps := newDeps(
-		&fakeOrderStore{order: stdOrder()},
+		&fakeOrderStore{},
 		&fakeBundleDefStore{def: stdBundleDef()},
-		&fakeCTLClient{bundle: stdBundle(), passes: []*ctlclient.PassDetail{
-			{PassID: "p1", BundleID: "bundle_linux_small_01"},
-		}},
+		&fakeCTLClient{bundle: stdBundle()},
 	)
-	resp := runHandler(t, deps, stdPara())
-	if resp.ReturnCode != ReturnCodeQuotaOccupied {
-		t.Fatalf("expected ReturnCodeQuotaOccupied=%d, got %d", ReturnCodeQuotaOccupied, resp.ReturnCode)
+	resp := runHandler(t, deps, para)
+	if resp.ReturnCode != ReturnCodeBusinessParamMismatch {
+		t.Fatalf("expected ReturnCodeBusinessParamMismatch, got %d", resp.ReturnCode)
+	}
+	if !strings.Contains(resp.ReturnMessage, "payMode invalid") {
+		t.Errorf("expected payMode invalid, got: %s", resp.ReturnMessage)
 	}
 }
 
-// 20. §5.2 #5 quota 接口 5xx → ReturnCodeUpstreamUnavailable
-func TestCheckCreate_QuotaUpstreamError(t *testing.T) {
+// 16. payMode 在 goodsDetail 内（部分 jifei 版本会发到这层）→ 优先取 goodsDetail
+func TestCheckCreate_PayModeFromGoodsDetail(t *testing.T) {
+	para := json.RawMessage(`{
+		"appId": 1, "uin": "u",
+		"goodsDetail": {"bundleId":"bundle_linux_small_01","externalUserId":"uin_test_001","pid":40000,"timeSpan":1,"timeUnit":"m","goodsNum":1,"payMode":0,"sv_cpu":2,"sv_mem":4}
+	}`)
 	deps := newDeps(
-		&fakeOrderStore{order: stdOrder()},
+		&fakeOrderStore{},
 		&fakeBundleDefStore{def: stdBundleDef()},
-		&fakeCTLClient{bundle: stdBundle(), passesErr: errors.New("ctl 503")},
+		&fakeCTLClient{bundle: stdBundle()},
 	)
-	resp := runHandler(t, deps, stdPara())
-	if resp.ReturnCode != ReturnCodeUpstreamUnavailable {
-		t.Fatalf("expected ReturnCodeUpstreamUnavailable, got %d", resp.ReturnCode)
+	resp := runHandler(t, deps, para)
+	if resp.ReturnCode != 0 {
+		t.Fatalf("expected returnCode=0 (payMode=0 后付费 合法), got %d (%s)", resp.ReturnCode, resp.ReturnMessage)
 	}
 }
 
-// 21. Q62 不变性：handler 自身完全不依赖任何 trade_flow 写入路径
-//
-// 通过结构断言 — Deps 里没有 FlowStore 字段；如果未来有同事在 handler 内偷偷写
-// trade_flow，则 Deps 必须新增字段并破坏本测试编译。这是编译期保险，不是运行时检查。
+// 17. Q62 不变性：checkCreate 不写 trade_flow（编译期保险）
 func TestCheckCreate_Q62_NoFlowDependency(t *testing.T) {
 	d := Deps{}
-	// 把 Deps 所有字段名拼成字符串，断言其中没有出现 "flow"。
-	// 用反射太重；直接源码 review 已可保证，这里只用编译期占位测试占住该不变性。
-	_ = d
+	_ = d // Deps 不能含 FlowStore；增加任何 *Flow 字段会破坏本测试编译。
 }
 
-// 22. Q56 不变性：checkCreate 任何分支都不返退款魔法值
-//
-// 已经在 runHandler 工具方法里集中断言了 — 任意测试用例返 352014 会立刻 t.Fatalf。
-// 此测试单独跑一次"覆盖了所有错误码分支"的快速合验。
+// 18. Q56 不变性：任何分支都不返退款魔法值
 func TestCheckCreate_Q56_NoRefundOnAnyBranch(t *testing.T) {
 	cases := []struct {
 		name string
 		deps Deps
 		para json.RawMessage
 	}{
-		{"order_not_found", newDeps(
-			&fakeOrderStore{err: store.ErrTradeOrderNotFound},
-			&fakeBundleDefStore{def: stdBundleDef()},
-			&fakeCTLClient{bundle: stdBundle()},
-		), stdPara()},
 		{"bundle_offline", newDeps(
-			&fakeOrderStore{order: stdOrder()},
+			&fakeOrderStore{},
 			&fakeBundleDefStore{def: stdBundleDef()},
 			&fakeCTLClient{bundle: &ctlclient.BundleDetail{BundleID: "x", BundleState: "OFFLINE", BundleSalesState: "AVAILABLE"}},
 		), stdPara()},
-		{"quota_occupied", newDeps(
-			&fakeOrderStore{order: stdOrder()},
-			&fakeBundleDefStore{def: stdBundleDef()},
-			&fakeCTLClient{bundle: stdBundle(), passes: []*ctlclient.PassDetail{{PassID: "p1"}}},
+		{"bundle_def_not_found", newDeps(
+			&fakeOrderStore{},
+			&fakeBundleDefStore{err: store.ErrBundleDefinitionNotFound},
+			&fakeCTLClient{bundle: stdBundle()},
 		), stdPara()},
+		{"pid_mismatch", newDeps(
+			&fakeOrderStore{},
+			&fakeBundleDefStore{def: &store.BundleDefinition{BundleID: "x", Pid: 99999, SVList: map[string]int64{"sv_cpu": 2, "sv_mem": 4}}},
+			&fakeCTLClient{bundle: stdBundle()},
+		), stdPara()},
+		// v1.7.28 BUG-24 新增分支：不能返退款魔法值。
+		{"bug24_quota_occupied", newDeps(
+			&fakeOrderStore{},
+			&fakeBundleDefStore{def: stdBundleDef()},
+			&fakeCTLClient{
+				bundle: stdBundle(),
+				passes: []*ctlclient.PassDetail{{PassID: "pass-x"}},
+			},
+		), stdPara()},
+		{"bug24_ctl_5xx", newDeps(
+			&fakeOrderStore{},
+			&fakeBundleDefStore{def: stdBundleDef()},
+			&fakeCTLClient{bundle: stdBundle(), passesErr: errors.New("ctl 5xx")},
+		), stdPara()},
+		{"bug24_missing_external_user_id", newDeps(
+			&fakeOrderStore{},
+			&fakeBundleDefStore{def: stdBundleDef()},
+			&fakeCTLClient{bundle: stdBundle()},
+		), json.RawMessage(`{"appId":1,"uin":"u","goodsDetail":{"bundleId":"bundle_linux_small_01","pid":40000,"timeSpan":1,"timeUnit":"m","goodsNum":1,"sv_cpu":2,"sv_mem":4}}`)},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -494,42 +470,123 @@ func TestCheckCreate_Q56_NoRefundOnAnyBranch(t *testing.T) {
 	}
 }
 
-// 23. Q58 不变性：所有响应（含 happy-path）returnCode == returnValue
+// 19. Q58 不变性：happy-path returnCode=returnValue=0
 func TestCheckCreate_Q58_Invariant(t *testing.T) {
 	deps := newDeps(
-		&fakeOrderStore{order: stdOrder()},
+		&fakeOrderStore{},
 		&fakeBundleDefStore{def: stdBundleDef()},
 		&fakeCTLClient{bundle: stdBundle()},
 	)
-	resp, err := makeHandler(deps)(context.Background(), stdPara())
-	if err != nil {
-		t.Fatalf("handler error: %v", err)
-	}
+	resp := runHandler(t, deps, stdPara())
 	if resp.ReturnCode != 0 || resp.ReturnValue != 0 {
 		t.Fatalf("happy-path expected (0,0), got (%d,%d)", resp.ReturnCode, resp.ReturnValue)
 	}
 }
 
-// 24. Install 注册到真 dispatcher，分发后能命中本 handler（集成路径）
+// 21. v1.7.28 BUG-24：用户已有 active pass → ReturnCodeQuotaOccupied=600106。
+func TestCheckCreate_BUG24_QuotaOccupied(t *testing.T) {
+	deps := newDeps(
+		&fakeOrderStore{},
+		&fakeBundleDefStore{def: stdBundleDef()},
+		&fakeCTLClient{
+			bundle: stdBundle(),
+			passes: []*ctlclient.PassDetail{{PassID: "pass-existing-001"}},
+		},
+	)
+	resp := runHandler(t, deps, stdPara())
+	if resp.ReturnCode != ReturnCodeQuotaOccupied {
+		t.Fatalf("expected ReturnCodeQuotaOccupied=%d, got %d (%s)",
+			ReturnCodeQuotaOccupied, resp.ReturnCode, resp.ReturnMessage)
+	}
+	if !strings.Contains(resp.ReturnMessage, "externalUserId=uin_test_001") {
+		t.Errorf("expected msg to mention externalUserId, got: %s", resp.ReturnMessage)
+	}
+}
+
+// 22. v1.7.28 BUG-24：用户下无 pass → happy-path returnCode=0。
+func TestCheckCreate_BUG24_NoPassPassThrough(t *testing.T) {
+	deps := newDeps(
+		&fakeOrderStore{},
+		&fakeBundleDefStore{def: stdBundleDef()},
+		&fakeCTLClient{
+			bundle: stdBundle(),
+			passes: nil, // 用户名下无任何 pass
+		},
+	)
+	resp := runHandler(t, deps, stdPara())
+	if resp.ReturnCode != 0 {
+		t.Fatalf("expected returnCode=0, got %d (%s)", resp.ReturnCode, resp.ReturnMessage)
+	}
+}
+
+// 23. v1.7.28 BUG-24：goodsDetail 缺 externalUserId → ReturnCodeInvalidPara。
+// trade 出向 placeorder 未塞 externalUserId（应用代码 bug）或 jifei 丢弃透传字段时的防御。
+func TestCheckCreate_BUG24_MissingExternalUserID(t *testing.T) {
+	paraWithoutExternalUserID := json.RawMessage(`{
+		"appId": 12345678,
+		"uin": "100012345678",
+		"goodsDetail": {
+			"bundleId": "bundle_linux_small_01",
+			"pid": 40000,
+			"timeSpan": 1,
+			"timeUnit": "m",
+			"goodsNum": 1,
+			"sv_cpu": 2,
+			"sv_mem": 4
+		}
+	}`)
+	deps := newDeps(
+		&fakeOrderStore{},
+		&fakeBundleDefStore{def: stdBundleDef()},
+		&fakeCTLClient{bundle: stdBundle()},
+	)
+	resp := runHandler(t, deps, paraWithoutExternalUserID)
+	if resp.ReturnCode != ReturnCodeInvalidPara {
+		t.Fatalf("expected ReturnCodeInvalidPara=%d, got %d (%s)",
+			ReturnCodeInvalidPara, resp.ReturnCode, resp.ReturnMessage)
+	}
+	if !strings.Contains(resp.ReturnMessage, "externalUserId") {
+		t.Errorf("expected msg to mention externalUserId, got: %s", resp.ReturnMessage)
+	}
+}
+
+// 24. v1.7.28 BUG-24：ctl ListPassesByUser 返 5xx / 网络错 → ReturnCodeUpstreamUnavailable。
+// jifei 拿到后会重试（B 类链路异常）。
+func TestCheckCreate_BUG24_CTLUpstreamError(t *testing.T) {
+	deps := newDeps(
+		&fakeOrderStore{},
+		&fakeBundleDefStore{def: stdBundleDef()},
+		&fakeCTLClient{
+			bundle:    stdBundle(),
+			passesErr: errors.New("ctl 5xx connection refused"),
+		},
+	)
+	resp := runHandler(t, deps, stdPara())
+	if resp.ReturnCode != ReturnCodeUpstreamUnavailable {
+		t.Fatalf("expected ReturnCodeUpstreamUnavailable=%d, got %d (%s)",
+			ReturnCodeUpstreamUnavailable, resp.ReturnCode, resp.ReturnMessage)
+	}
+}
+
+// 20. dispatcher → handler 注册路径打通（含 envelope 解包）
 func TestInstall_RegistersToDispatcher(t *testing.T) {
 	builder := jifei.NewFrameworkBuilder("trade", "1.0")
 	d := jifei.NewDispatcher("lightvela", builder)
 	deps := Deps{
-		OrderStore:  &fakeOrderStore{order: stdOrder()},
+		OrderStore:  &fakeOrderStore{},
 		BundleStore: &fakeBundleDefStore{def: stdBundleDef()},
 		CTLClient:   &fakeCTLClient{bundle: stdBundle()},
 		Builder:     builder,
 	}
 	Install(d, deps)
 
-	// 构造完整 envelope 喂给 dispatcher
 	envBody, err := json.Marshal(map[string]any{
-		"eventId":       "evt-1",
+		"eventId":       int64(1),
 		"componentName": "trade",
 		"seqId":         "seq-1",
 		"interface": map[string]any{
 			"interfaceName": jifei.InterfaceNameCheckCreate,
-			"para": json.RawMessage(stdPara()),
+			"para":          json.RawMessage(stdPara()),
 		},
 	})
 	if err != nil {

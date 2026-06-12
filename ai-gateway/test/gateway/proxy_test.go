@@ -458,6 +458,15 @@ func (m *proxyMockSubRepo) CancelByUserID(userID uuid.UUID) error    { return ni
 func (m *proxyMockSubRepo) Update(sub *model.Subscription) error     { return nil }
 func (m *proxyMockSubRepo) CountActive() (int64, error)              { return 0, nil }
 func (m *proxyMockSubRepo) SumActiveTokenBalance() (int64, error)    { return 0, nil }
+func (m *proxyMockSubRepo) ListRefreshCandidates(limit int) ([]repository.SubscriptionRefreshCandidate, error) {
+	return nil, nil
+}
+func (m *proxyMockSubRepo) RefreshByIDs(items []repository.SubscriptionRefreshItem) (int64, error) {
+	return 0, nil
+}
+func (m *proxyMockSubRepo) ExtendActivePeriodEnd(userID uuid.UUID, newPeriodEnd time.Time) (int64, *model.Subscription, error) {
+	return 0, nil, nil
+}
 
 func (m *proxyMockSubRepo) DB() *gorm.DB { return nil }
 

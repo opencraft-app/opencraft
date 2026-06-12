@@ -33,36 +33,73 @@ type GetMidasEarmarkingRequest struct {
 	OwnerUin  string   `json:"ownerUin"`
 	Uin       string   `json:"uin"`
 	DealNames []string `json:"dealNames"`
-	// 注：本期不持有 VoucherIds / Platform / WxOpenID / WxAppID / ContractOrder / Channel /
-	// RemitpayPayerName 字段（Q-PAY-4 + Q48 收敛"最小协议表面"）。
+	// v1.7.31 接口拆分新增：可选字段，空值时不序列化（omitempty），兼容现有行为。
+	Platform string `json:"platform,omitempty"` // "pc" / "mobile"，默认 pc
+	WxOpenID string `json:"wxOpenId,omitempty"` // 微信场景必填
+	WxAppID  string `json:"wxAppId,omitempty"`  // 微信场景必填
 }
 
 // GetMidasEarmarkingResponse 是 CGW returnValue 反序列化目标。
 //
-// **字段集（PDF 第 4 页）**：
+// **字段集来源说明**：
 //
-//	名称                       类型    说明
-//	billId                    string  支付流水号
-//	url                       string  支付链接（Lightclaw 取此字段返给前端）
-//	appid                     string  米大师 appid（前端 SDK 跳转用）
-//	needCharge                int     0=零元订单已支付成功 / 1=需跳 Midas 充值（Q-PAY-3：直接返 url）
-//	wxInfo.wxSign             string  channel=wechatClawbot 时返；本期不感知
-//	remitPayInfo.bankAccount  string  channel=remitpay 时返；本期不感知
-//	remitPayInfo.bankName     string  channel=remitpay 时返；本期不感知
-//	remitPayInfo.payeeAccountName  string  同上
-//	remitPayInfo.payerName    string  同上
+//  1. PDF 协议（`.tmp/jifei_pdf_txt/专款专用获取支付参数+-+qcloud.margin.getMidasEarmarking.md`
+//     2026-05-11 投放）列出的字段：
+//
+//     名称                       类型    说明
+//     billId                    string  支付流水号
+//     url                       string  支付链接（Lightclaw 取此字段返给前端）
+//     appid                     string  米大师 appid（前端 SDK 跳转用）
+//     needCharge                int     0=零元订单已支付成功 / 1=需跳 Midas 充值（Q-PAY-3：直接返 url）
+//     wxInfo.wxSign             string  channel=wechatClawbot 时返；本期不感知
+//     remitPayInfo.*            *       channel=remitpay 时返；本期不感知
+//
+// 2. **PDF 协议未列、但 jifei 实测稳定返回的字段（2026-05-23 联调期实测确认）**：
+//
+//	名称                       类型      说明
+//	tokenId                   string    米大师支付 token；前端跳转 Midas SDK 用，与 url 内 query
+//	                                    `token_id` 同值；本字段 PDF 第 4 页未列出
+//	outTradeNo                string    米大师订单号；与 BillID 同值（PDF 第 4 页未列出，
+//	                                    但 jifei 实际同时返这两个字段）
+//	dealNames                 []string  原样回显入参 dealNames，本期 1 元素切片
+//	bigDealIds                []string  对应大订单号集合（= trade_order.big_order_id）
+//	dealDeliverResults        json      子订单发货状态明细，本期不感知，仅留 ELK 日志兜底
+//
+// **D3 兜底策略（2026-05-23 拍板）**：以上 5 个字段虽然实测稳定返，但属于"PDF 协议外契约"，
+// jifei 后续可能在某些回包路径（错误回包 / channel=remitPay 通道 / 灰度变更）下不返。
+// 业务层使用指针类型反序列化，缺失即 nil，JSON 序列化时 omitempty 输出为 null，前端兜底
+// 处理。**禁止把这些字段值写死成 ""/0**，避免误把 jifei 实际未返的字段当成"已返空值"。
 //
 // **Lightclaw 本期映射**：
 //   - URL 字段直接返给业务层（→ trade_order.pay_url 缓存 + 透传给 ctl）
-//   - BillID / AppID / NeedCharge 留作 ELK 日志审计兜底（Q-PAY-1 b 拍板：不落 trade_order 列）
+//   - BillID / AppID / NeedCharge / TokenID / OutTradeNo 透传给前端做 Midas SDK 跳转
+//   - DealNames / BigDealIDs / DealDeliverResults 仅留 ELK 日志兜底，不透前端（D6）
 //   - WxInfo / RemitPayInfo 不感知（本期不传 channel = remitPay / wechatClawbot）
 type GetMidasEarmarkingResponse struct {
 	BillID     string `json:"billId"`
 	URL        string `json:"url"`
 	AppID      string `json:"appid"`
 	NeedCharge int    `json:"needCharge"`
+
+	// 以下字段 PDF 协议未列，但 jifei 联调实测稳定返（2026-05-23 验证）；指针类型支持
+	// "协议未返回 → nil → JSON null" 兜底（详见上方"D3 兜底策略"段）。
+	TokenID            *string                      `json:"tokenId,omitempty"`
+	OutTradeNo         *string                      `json:"outTradeNo,omitempty"`
+	DealNames          []string                     `json:"dealNames,omitempty"`
+	BigDealIDs         []string                     `json:"bigDealIds,omitempty"`
+	DealDeliverResults map[string]DealDeliverResult `json:"dealDeliverResults,omitempty"`
+
 	// WxInfo / RemitPayInfo 故意不持有：本期不传 channel = remitPay / wechatClawbot；
 	// 联调期若发现 jifei 对 Lightclaw uin 默认走非 pc 通道再补字段。
+}
+
+// DealDeliverResult 是 jifei `dealDeliverResults` map 的 value 字段集（PDF 协议未列出，
+// 实测形态 `{"state":"1","resourceId":null}`，2026-05-23 联调验证）。
+//
+// 仅做 ELK 日志兜底用，**不透传给前端**（D6）；本期业务层不消费 state / ResourceID。
+type DealDeliverResult struct {
+	State      string  `json:"state"`
+	ResourceID *string `json:"resourceId"`
 }
 
 // GetMidasEarmarking 调用 jifei CGW `qcloud.margin.getMidasEarmarking` 获取支付参数接口。

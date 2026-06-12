@@ -1,25 +1,24 @@
-// Package shadowclient 封装 trade → shadow 的内部反向调用。
+// Package shadowclient 封装 trade → account-binding resolver 的内部反向调用。
 //
 // 设计稿对齐（trade-purchase-flow-design.md §3.5.5 / Q12 / Q30 / Q42）：
 //   - jifei 协议层鉴权用的是 (uin, app_id) 这一对腾讯云"实体身份"
 //   - lightclaw 业务层 user_id 是脱敏的 externalUserId
-//   - shadow 维护 externalUserId ↔ (uin, owner_uin, app_id) 的绑定关系
+//   - lightclaw-auth shadowbinding 维护 externalUserId ↔ (uin, owner_uin, app_id) 的绑定关系
 //
 // trade 用法：
 //   - 询价 (inquiry.Service.Quote) / 下单 (placeorder.Service.PlaceOrder) 在 ctl
-//     入参未显式提供 uin / app_id 时，调本 client 反查 shadow 拿到这一对身份；
+//     入参未显式提供 uin / app_id 时，调本 client 反查 account binding 拿到这一对身份；
 //   - ctl 在 8B-2 改造完成后会逐步迁移为 "只传 externalUserId"，trade 内部强制
 //     用 shadowclient 反查（不再接受 ctl 端透传 uin/appId）。
 //
-// 协议层（待 shadow 团队补充正式契约 — billing-integration §11 Q-CGW-02）：
+// 协议层：
 //   - 鉴权：Authorization: Bearer <internalServiceToken>
-//     与 ctl ↔ shadow / ctl ↔ ai-gateway 现有内部服务间 token 同源
+//     与 ctl ↔ ai-gateway 现有内部服务间 token 同源
 //   - 反查端点：GET /internal/shadow/binding?external_user_id=<userID>
 //     返回 {user_id, uin, owner_uin, app_id, ...}
 //
-// 注意：截至 2026-05-09，shadow 仓尚未暴露此 internal endpoint，
-// 本 client 先按预期协议落地（接口稳定 + 单测覆盖），shadow 端正式上线后
-// trade 仅需调整 cfg.ShadowInternalBaseURL 即可联调，无需改 trade 代码。
+// 注意：包名和 endpoint 保留 shadow 兼容命名，但服务端实现已经内化到 lightclaw-auth。
+// trade 仅需调整 cfg.AccountBindingInternalBaseURL 即可切换后端，无需改 trade 调用代码。
 package shadowclient
 
 import (
@@ -35,19 +34,19 @@ import (
 	"time"
 )
 
-// Client 是 shadow 内部反向调用契约。
+// Client 是 account-binding 内部反向调用契约。
 //
 // 抽象成 interface 便于上层 service / handler 注入 mock 做单元测试，
 // 也允许后续替换 HTTP → tRPC / connect-go 实现而不破坏调用方。
 type Client interface {
 	// GetBindingByExternalUserID 调 GET /internal/shadow/binding?external_user_id=xxx
 	//
-	// 返回 shadow 维护的 externalUserId → (uin / owner_uin / app_id) 绑定。
+	// 返回 externalUserId → (uin / owner_uin / app_id) 绑定。
 	// 没有绑定时返回 ErrBindingNotFound（不是 5xx）。
 	GetBindingByExternalUserID(ctx context.Context, externalUserID string) (*Binding, error)
 }
 
-// Binding 镜像 shadow internal binding 反查响应。
+// Binding 镜像 internal shadowbinding 反查响应。
 //
 // 字段语义：
 //   - UserID：业务层 externalUserId（与请求入参一致，回显方便审计）
@@ -55,7 +54,7 @@ type Client interface {
 //   - OwnerUin：jifei 协议层 ownerUin（多数场景与 Uin 相同；预留分账场景）
 //   - AppID：jifei 协议层 appId（string 形态）
 //
-// 注意：shadow 内部 storage.Binding 的 Uin / OwnerUin / AppID 是 int64；
+// 注意：历史 shadow 内部 storage.Binding 的 Uin / OwnerUin / AppID 是 int64；
 // trade 内部统一 string 形态（与 jifei goodsDetail map / trade_order 列对齐），
 // 故本 client 在反序列化层做一次 int64 → string 转换。
 type Binding struct {
@@ -65,17 +64,17 @@ type Binding struct {
 	AppID    string `json:"app_id"`
 }
 
-// ErrBindingNotFound 在 shadow 返回 404（externalUserId 未绑定）时返回。
+// ErrBindingNotFound 在 resolver 返回 404（externalUserId 未绑定）时返回。
 //
 // trade 业务层应将其映射为"用户未绑定云账号，引导前往实名 / 绑定"流程，
 // 不应作为 5xx 上报。
 var ErrBindingNotFound = errors.New("shadowclient: binding not found")
 
-// ErrUnauthorized 在 shadow 返回 401 时返回，通常意味着 internalServiceToken
-// 与 shadow 配置不一致 — 属于配置错而非业务错。
+// ErrUnauthorized 在 resolver 返回 401 时返回，通常意味着 internalServiceToken
+// 与服务端配置不一致 — 属于配置错而非业务错。
 var ErrUnauthorized = errors.New("shadowclient: unauthorized")
 
-// Error 是 shadow HTTP 错误响应的强类型化封装，用于 4xx/5xx 排障。
+// Error 是 resolver HTTP 错误响应的强类型化封装，用于 4xx/5xx 排障。
 type Error struct {
 	HTTPStatus int    // 上游 HTTP status
 	Code       string // shadow errcode（如 "BINDING_NOT_FOUND"）
@@ -91,7 +90,7 @@ func (e *Error) Error() string {
 		e.HTTPStatus, e.Code, e.Message, e.RequestID)
 }
 
-// envelope 反序列化 shadow 的标准响应框架（与 ctl 同款 {code, message, request_id, data}）。
+// envelope 反序列化 resolver 的标准响应框架（与 ctl 同款 {code, message, request_id, data}）。
 type envelope struct {
 	Code      string          `json:"code"`
 	Message   string          `json:"message"`
@@ -99,7 +98,7 @@ type envelope struct {
 	Data      json.RawMessage `json:"data,omitempty"`
 }
 
-// rawBinding 是 shadow internal endpoint 实际返回的 binding 形态（int64 字段）。
+// rawBinding 是 internal endpoint 实际返回的 binding 形态（int64 字段）。
 //
 // 兼容两种返回形态：
 //  1. shadow 直接返 storage.Binding（int64 字段）— 走 numeric → string 转换
@@ -131,8 +130,8 @@ type Options struct {
 // New 构造 shadowclient.Client。
 //
 // 必填参数：
-//   - baseURL：shadow 内部接入地址，如 http://shadow.lightclaw-svc.svc.cluster.local:8080
-//   - internalServiceToken：与 shadow 内部服务间互信 token（与 ctlclient 同源）
+//   - baseURL：account-binding resolver 内部接入地址，当前由 lightclaw-auth 提供
+//   - internalServiceToken：内部服务间互信 token（与 ctlclient 同源）
 //
 // 空 baseURL 不在 New 期 panic（保持与 ctlclient 一致行为）；调用时由 do() 报错。
 func New(baseURL, internalServiceToken string, opts ...Options) Client {
@@ -248,4 +247,3 @@ func truncate(b []byte, n int) string {
 	}
 	return string(b[:n]) + "...(truncated)"
 }
-

@@ -53,9 +53,50 @@ data:
   # JIFEI_CGW_X_QCLOUD_USER_ID（v1.7.4 D9 新增）：仅测试环境带（测试 uin 如 700000164995），
   # 现网为空字符串（部署侧出口 IP 鉴权，jifeiclient 跳过 header 注入）。
   JIFEI_CGW_X_QCLOUD_USER_ID: ""
+  # JIFEI_BILLING_APIGW_URL（销毁链路 Q-D-SIG-1~6 新增）：jifei 计费网关 ModifyResourceStatus
+  # 入口 URL（HMAC-SHA256 签名分支，与 JIFEI_CGW_GATEWAY_URL 的 jifei-test 路由严格区分）。
+  # base 留空字符串占位；真实值由 deploy-facing common Component 从
+  # trade-platform-values configmap 通过 replacements 注入。
+  # 该 key 必须显式存在（即使空串），否则 kustomize replacement 找不到 target field 报错。
+  JIFEI_BILLING_APIGW_URL: ""
+  # TRADE_SHADOW_MOCK_ENABLED（v1.7.28 BUG-02 修复 / 新增）：仅联调测试环境启用
+  # （"true"/"1"/"yes"/"on"，大小写不敏感），现网必须为 "false"/"0"/空字符串。
+  # 启用后 trade 启动时改注入 mockShadowClient（cmd/trade/shadow_mock.go），任意
+  # externalUserId 都映射到固定 mock binding {Uin:"700000164995", AppID:"251202221"}，
+  # 跳过 shadow HTTP 调用。base 留空字符串占位；overlay 通过 replacements 注入真值。
+  TRADE_SHADOW_MOCK_ENABLED: ""
   TRADE_JIFEI_COMPONENT_NAME: "trade"
   TRADE_JIFEI_PROTOCOL_VERSION: "1.0"
   TRADE_JIFEI_OUR_INTERFACE_PREFIX: "lightvela"
+
+  # --- v1.7.x 国际站接入：站点标识 ---
+  # LIGHTVELA_SITE_KIND（trade-international-site-design v1.1 §3.1 A1 / B1）：
+  #   - "cn"   → 国内站（缺省 / 兼容现有部署）；trade 出向 jifei envelope.resInfo
+  #     使用广州 region (1/100001) + currency=CNY；envelope.interface.extraPara
+  #     不写 site/language（omitempty 跳过）。
+  #   - "intl" → 国际站；trade 出向使用新加坡 region (9/900001) + currency=USD；
+  #     extraPara 写 site="2" language="en"（PDF 协议字面量映射，B-PROTO-5）。
+  #   - 其他值（含空字符串、bogus、"sg"、"kr" 等）→ 由 config.normalizeSiteKind
+  #     兜底为 "cn"，与 ctl/shadow/sandbox 的 env 缺省一致行为对齐。
+  #
+  # 真实取值由 deploy-facing common Component 通过 replacements 从
+  # trade-platform-values configmap (trade-platform.env) 注入：
+  #   - 北京 sandbox-bj-7 / 上海 shprod 等国内集群 → "cn"
+  #   - 新加坡 / 国际站集群 sgprod                  → "intl"
+  LIGHTVELA_SITE_KIND: "REPLACE_TRADE_SITE_KIND"
+
+  # --- 2026-06-12 北京 2 预发布接入：region 字段 override ---
+  # LIGHTVELA_TRADE_REGION：trade 出向 jifei 协议的 region 字面量运行时 override。
+  #   - 取值为腾讯云 region API 字面量（kebab-case 全小写），已注册：
+  #     · "ap-guangzhou" → 1 / 100001 / "广州"
+  #     · "ap-beijing"   → 8 / 800001 / "北京"（北京 2 预发布使用）
+  #     · "ap-singapore" → 9 / 900001 / "Singapore"
+  #   - 留空字符串 → 按 LIGHTVELA_SITE_KIND 兜底（cn → 广州 / intl → 新加坡）。
+  #   - 未注册字面量（例："ap-tokyo" / "bj" 拼写错误）→ trade 启动 fail-fast。
+  # 本字段与 LIGHTVELA_SITE_KIND 解耦：可以“国内站身份 cn + region 字段北京”（北京 2 预发布场景）。
+  # 真实取值由 deploy-facing common Component 通过 replacements 从 trade-platform-values
+  # configmap (trade-platform.env) 注入：overlay 未配时保持空字符串。
+  LIGHTVELA_TRADE_REGION: ""
 
   # --- DB ---
   # MYSQL_HOST / MYSQL_PORT 由 deploy-facing common Component 用 replacements

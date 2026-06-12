@@ -15,6 +15,7 @@ import {
   CalendarClock,
   ChevronDown,
   Check,
+  Globe2,
   MessageCircle,
   MessageSquare,
   Loader2,
@@ -69,11 +70,11 @@ import {
   ChannelPanel,
   SkillPanel,
   createLighthouseConfig,
-  createLightClawScripts,
   type IInstanceInfo,
   type IFeatureFlags,
   type IProductConfig,
 } from "@tencent/tea-sdk-lightclaw";
+import { createLightClawScripts } from "@tencent/tea-sdk-lightclaw/scripts";
 import {
   createMonoDebugExecAdapter,
   LIGHTVELA_SKIP_HERMES_PROVIDER_LIST_COMMAND,
@@ -98,6 +99,7 @@ import { BuddyPanel } from "@/pages/marketing/openclaw-buddy-panel";
 import { AchievementsPanel } from "@/pages/marketing/openclaw-achievements-panel";
 import { AutomationsPanel } from "@/pages/marketing/openclaw-automations-panel";
 import { TatFileManagerPanel } from "@/components/domain/tat-file-manager-panel";
+import { TatHermesWebPanel } from "@/components/domain/tat-hermes-web-panel";
 import { findCompletedCreatingBot, getOpenClawCreateLimitMessage } from "@/pages/marketing/openclaw-create-availability";
 import {
   getRestartBlockReason,
@@ -1700,39 +1702,39 @@ const TerminalPanel = ({ botId, botName }: { botId: string; botName: string }) =
       className="flex min-h-[clamp(520px,calc(100vh-220px),860px)] w-full flex-col overflow-hidden rounded-lg border shadow-[0_8px_28px_rgba(15,23,42,0.06)]"
       style={{ background: "#0f0b09", borderColor: "rgba(255,255,255,0.1)" }}
     >
-        {/* Header */}
-        <div
-          className="flex items-center justify-between border-b px-5 py-3"
-          style={{ borderColor: "rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)" }}
-        >
-          <div className="flex items-center gap-3">
-            <TerminalSquare className="h-4 w-4" style={{ color: "#f8e6d8" }} />
-            <span className="text-sm font-semibold" style={{ color: "#f8e6d8" }}>
-              {botName}
-            </span>
-            <span
-              className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-bold"
-              style={{ background: `${stateColor[connectionState]}18`, color: stateColor[connectionState] }}
-            >
-              <span className="h-1.5 w-1.5 rounded-full" style={{ background: stateColor[connectionState] }} />
-              {stateLabel[connectionState]}
-            </span>
-          </div>
+      {/* Header */}
+      <div
+        className="flex items-center justify-between border-b px-5 py-3"
+        style={{ borderColor: "rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)" }}
+      >
+        <div className="flex items-center gap-3">
+          <TerminalSquare className="h-4 w-4" style={{ color: "#f8e6d8" }} />
+          <span className="text-sm font-semibold" style={{ color: "#f8e6d8" }}>
+            {botName}
+          </span>
+          <span
+            className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-bold"
+            style={{ background: `${stateColor[connectionState]}18`, color: stateColor[connectionState] }}
+          >
+            <span className="h-1.5 w-1.5 rounded-full" style={{ background: stateColor[connectionState] }} />
+            {stateLabel[connectionState]}
+          </span>
         </div>
+      </div>
 
-        {/* Terminal */}
-        <div className="flex-1 overflow-hidden p-3">
-          {error && connectionState === "error" && (
-            <p className="mb-2 rounded-full px-3 py-1.5 text-xs font-medium" style={{ background: "rgba(207,61,76,0.15)", color: "#ff7f50" }}>
-              {error}
-            </p>
-          )}
-          <div
-            ref={terminalContainerRef}
-            className="rounded-xl border p-2"
-            style={{ borderColor: "rgba(255,255,255,0.08)", background: "#16110d", minHeight: "30rem", height: "calc(100vh - 300px)" }}
-          />
-        </div>
+      {/* Terminal */}
+      <div className="flex-1 overflow-hidden p-3">
+        {error && connectionState === "error" && (
+          <p className="mb-2 rounded-full px-3 py-1.5 text-xs font-medium" style={{ background: "rgba(207,61,76,0.15)", color: "#ff7f50" }}>
+            {error}
+          </p>
+        )}
+        <div
+          ref={terminalContainerRef}
+          className="rounded-xl border p-2"
+          style={{ borderColor: "rgba(255,255,255,0.08)", background: "#16110d", minHeight: "30rem", height: "calc(100vh - 300px)" }}
+        />
+      </div>
     </div>
   );
 };
@@ -2867,7 +2869,7 @@ const getBotStatusLabel = (status: OpenClawBot["status"]) => {
 
 /* ─── Main Settings Page ─── */
 
-const lightVelaHermesScripts = createLightClawScripts({ regionShortName: "gz", agentType: "hermes" });
+const lightVelaHermesScripts = createLightClawScripts();
 const channelOnlyHermesScripts = {
   ...lightVelaHermesScripts,
   hermes: {
@@ -4019,7 +4021,6 @@ export const OpenClawSettingsPage = () => {
                 InstanceId: activeBot.id,
                 RegionId: 1,
               };
-              const sdkRegionShortName = "gz";
               const sdkFeatureFlags: IFeatureFlags = {
                 gateway: true,
                 channel: true,
@@ -4291,6 +4292,20 @@ export const OpenClawSettingsPage = () => {
                           </button>
                           <button
                             type="button"
+                            onClick={() => navigate({ pathname: AGENT_SECTION_PATH_BY_ID.browser, search: location.search })}
+                            aria-current={activeSection === "browser" ? "page" : undefined}
+                            className={cn(
+                              "lw-settings-nav-item flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 font-medium transition-colors",
+                              activeSection === "browser"
+                                ? "bg-black/[0.06] text-black/90"
+                                : "text-black/55 hover:bg-black/[0.035] hover:text-black/85",
+                            )}
+                          >
+                            <span className="flex h-5 w-5 items-center justify-center"><Globe2 className="h-4 w-4" /></span>
+                            <span className="flex-1 text-left text-[15px]">{t("浏览器")}</span>
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => {
                               if (exportDisabled) return;
                               void handleExportWorkspace();
@@ -4352,7 +4367,6 @@ export const OpenClawSettingsPage = () => {
                           {activeSection === "channel" && (
                             <ChannelPanel
                               instance={sdkInstance}
-                              regionShortName={sdkRegionShortName}
                               scriptCommands={channelOnlyHermesScripts}
                               featureFlags={sdkFeatureFlags}
                               productConfig={sdkProductConfig}
@@ -4361,7 +4375,6 @@ export const OpenClawSettingsPage = () => {
                           {activeSection === "model" && (
                             <ModelPanel
                               instance={sdkInstance}
-                              regionShortName={sdkRegionShortName}
                               featureFlags={sdkFeatureFlags}
                               productConfig={sdkProductConfig}
                             />
@@ -4369,7 +4382,6 @@ export const OpenClawSettingsPage = () => {
                           {activeSection === "skill" && (
                             <SkillPanel
                               instance={sdkInstance}
-                              regionShortName={sdkRegionShortName}
                               featureFlags={sdkFeatureFlags}
                               productConfig={sdkProductConfig}
                             />
@@ -4442,6 +4454,9 @@ export const OpenClawSettingsPage = () => {
                           {activeSection === "files" && (
                             <TatFileManagerPanel botId={activeBot.id} />
                           )}
+                          {activeSection === "browser" && (
+                            <TatHermesWebPanel botId={activeBot.id} />
+                          )}
                           {activeSection === "terminal" && (
                             <TerminalPanel botId={activeBot.id} botName={activeBot.name} />
                           )}
@@ -4473,7 +4488,7 @@ export const OpenClawSettingsPage = () => {
                       ? "bg-black/90 hover:opacity-90"
                       : "cursor-not-allowed bg-black/30",
                   )}
-                  style={{marginTop: 20}}
+                  style={{ marginTop: 20 }}
                 >
                   {canCreateBot ? t("立即创建") : t("暂不可创建")}
                 </button>

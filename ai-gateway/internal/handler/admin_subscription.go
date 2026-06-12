@@ -18,6 +18,11 @@ type subscribeRequest struct {
 	PlanID string `json:"plan_id" binding:"required"`
 	// PeriodStart 可选，RFC3339 格式。nil 时使用当前时间作为订阅起始时间。
 	PeriodStart *time.Time `json:"period_start"`
+	// PeriodValue / PeriodUnit (v0.2.4 bundle ↔ plan decoupling, optional):
+	// 当 admin 想以非 plan 默认时长开通订阅（如运营临时给客户开 6 个月而 plan
+	// 配的是 3 个月）时填入；不填走 plan 默认（Q10=j1 兜底）。
+	PeriodValue int    `json:"period_value,omitempty"`
+	PeriodUnit  string `json:"period_unit,omitempty"`
 }
 
 // SubscribeUser handles POST /api/admin/users/:user_id/subscriptions
@@ -60,7 +65,7 @@ func (h *AdminHandler) SubscribeUser(c *gin.Context) {
 		}
 	}
 
-	sub, err := h.subSvc.Subscribe(user.ID, planID, req.PeriodStart)
+	sub, err := h.subSvc.Subscribe(user.ID, planID, req.PeriodStart, req.PeriodValue, req.PeriodUnit)
 	if err != nil {
 		if errors.Is(err, model.ErrPlanNotFound) {
 			response.ErrNotFound(c, "Plan not found")

@@ -37,16 +37,6 @@ replacements:
 - source:
     kind: ConfigMap
     name: ai-gateway-platform-values
-    fieldPath: data.AI_GATEWAY_MODEL_INTERNAL_LB_ID
-  targets:
-  - select:
-      kind: Ingress
-      name: gateway-model-internal
-    fieldPaths:
-    - metadata.annotations.[kubernetes.io/ingress.existLbId]
-- source:
-    kind: ConfigMap
-    name: ai-gateway-platform-values
     fieldPath: data.AI_GATEWAY_NODE_POOL
   targets:
   - select:
