@@ -36,6 +36,8 @@ func TestACPProtocolInitializeAdvertisesCloudAgentExtensionNotifications(t *test
 	assertStringSetContains(t, notifications, cloudAgentTurnStatusMethod)
 	methods := cloudAgent["methods"].([]any)
 	assertStringSetContains(t, methods, cloudAgentSessionStatusMethod)
+	assertStringSetContains(t, methods, cloudAgentRunCreateMethod)
+	assertStringSetContains(t, methods, cloudAgentRunWaitMethod)
 	assertStringSetContains(t, methods, cloudAgentRuntimeEnsureReadyMethod)
 	assertStringSetNotContains(t, methods, cloudAgentRuntimeKillDaemonMethod)
 	assertStringSetNotContains(t, methods, cloudAgentRuntimeKillOuterMethod)
@@ -132,6 +134,36 @@ func TestACPProtocolCloudAgentExtensionRequestsBindOnlySnakeCase(t *testing.T) {
 	if ensureReq.SessionID != "" {
 		t.Fatalf("ensure_ready extension must not bind camelCase sessionId: %#v", ensureReq)
 	}
+
+	var runCreateReq acpCloudAgentRunCreateRequest
+	if err := json.Unmarshal([]byte(`{"session_id":"session_snake","prompt":[{"type":"text","text":"hi"}]}`), &runCreateReq); err != nil {
+		t.Fatal(err)
+	}
+	if runCreateReq.SessionID != "session_snake" || len(runCreateReq.Prompt) != 1 {
+		t.Fatalf("run.create extension should bind snake_case fields: %#v", runCreateReq)
+	}
+	runCreateReq = acpCloudAgentRunCreateRequest{}
+	if err := json.Unmarshal([]byte(`{"sessionId":"session_camel","prompt":[{"type":"text","text":"hi"}]}`), &runCreateReq); err != nil {
+		t.Fatal(err)
+	}
+	if runCreateReq.SessionID != "" {
+		t.Fatalf("run.create extension must not bind camelCase sessionId: %#v", runCreateReq)
+	}
+
+	var runWaitReq acpCloudAgentRunWaitRequest
+	if err := json.Unmarshal([]byte(`{"session_id":"session_snake","run_id":"job_1"}`), &runWaitReq); err != nil {
+		t.Fatal(err)
+	}
+	if runWaitReq.SessionID != "session_snake" || runWaitReq.RunID != "job_1" {
+		t.Fatalf("run.wait extension should bind snake_case fields: %#v", runWaitReq)
+	}
+	runWaitReq = acpCloudAgentRunWaitRequest{}
+	if err := json.Unmarshal([]byte(`{"sessionId":"session_camel","runId":"job_1"}`), &runWaitReq); err != nil {
+		t.Fatal(err)
+	}
+	if runWaitReq.SessionID != "" || runWaitReq.RunID != "" {
+		t.Fatalf("run.wait extension must not bind camelCase fields: %#v", runWaitReq)
+	}
 }
 
 func TestACPProtocolPromptResultUsesStandardStopReasonOnly(t *testing.T) {
@@ -142,6 +174,50 @@ func TestACPProtocolPromptResultUsesStandardStopReasonOnly(t *testing.T) {
 	}
 	if _, ok := result["stop_reason"]; ok {
 		t.Fatalf("prompt result must not emit stop_reason alias: %#v", result)
+	}
+}
+
+func TestACPProtocolCloudAgentRunCreateAndWait(t *testing.T) {
+	srv, _ := newTestServer(t, FakeWorker{OutputText: "run answer"})
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+
+	client := dialACPWS(t, "ws"+trimHTTPPrefix(ts.URL)+"/acp", map[string]string{"Authorization": "Bearer test-key"})
+	defer client.close()
+	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{}})
+	waitForRPCID(t, client, float64(1))
+	client.writeJSON(t, map[string]any{"jsonrpc": "2.0", "id": 2, "method": "session/new", "params": map[string]any{"cwd": "/workspace"}})
+	sessionID := waitForRPCID(t, client, float64(2))["result"].(map[string]any)["sessionId"].(string)
+
+	client.writeJSON(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      3,
+		"method":  cloudAgentRunCreateMethod,
+		"params": map[string]any{
+			"session_id": sessionID,
+			"prompt":     []any{map[string]any{"type": "text", "text": "run via extension"}},
+		},
+	})
+	createResp := waitForRPCID(t, client, float64(3))
+	createRun := createResp["result"].(map[string]any)["run"].(map[string]any)
+	runID, _ := createRun["run_id"].(string)
+	if runID == "" || createRun["session_id"] != sessionID || createRun["status"] != "running" {
+		t.Fatalf("unexpected run.create result: %#v", createResp)
+	}
+
+	client.writeJSON(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      4,
+		"method":  cloudAgentRunWaitMethod,
+		"params":  map[string]any{"session_id": sessionID, "run_id": runID},
+	})
+	waitResp := waitForRPCID(t, client, float64(4))
+	waitRun := waitResp["result"].(map[string]any)["run"].(map[string]any)
+	if waitRun["run_id"] != runID || waitRun["session_id"] != sessionID || waitRun["status"] != "completed" {
+		t.Fatalf("unexpected run.wait result: %#v", waitResp)
+	}
+	if waitRun["stop_reason"] != "end_turn" || waitRun["output_text"] != "run answer" {
+		t.Fatalf("run.wait should expose final stop reason and output text: %#v", waitResp)
 	}
 }
 
