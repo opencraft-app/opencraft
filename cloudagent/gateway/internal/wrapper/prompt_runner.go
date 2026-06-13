@@ -13,23 +13,28 @@ import (
 )
 
 func (g *ACPGateway) startPrompt(ws *WSConn, id json.RawMessage, session *acpSession, req acpPromptRequest, appEnvelope bool) error {
+	_, err := g.startPromptRun(ws, id, session, req, appEnvelope)
+	return err
+}
+
+func (g *ACPGateway) startPromptRun(ws *WSConn, id json.RawMessage, session *acpSession, req acpPromptRequest, appEnvelope bool) (string, error) {
 	instruction, userText, inputFiles, err := g.buildPromptInstruction(session.Scope, req.Prompt)
 	if err != nil {
-		return err
+		return "", err
 	}
 	trimmed := strings.TrimSpace(instruction)
 	if trimmed == "" {
-		return fmt.Errorf("prompt must contain text or supported resources")
+		return "", fmt.Errorf("prompt must contain text or supported resources")
 	}
 	inboxMode, err := normalizeACPInboxMode(req.Meta.CloudAgent.InboxMode)
 	if err != nil {
-		return err
+		return "", err
 	}
 	jobID := "job_" + randomHex(12)
 	responseID := "resp_" + randomHex(18)
 	ownership, err := g.acquireRuntimeOwnership(context.Background(), session.SessionID, session.RuntimeGeneration, jobID, "prompt")
 	if err != nil {
-		return err
+		return "", err
 	}
 	releaseOwnership := true
 	stopPreflightHeartbeat := g.startRuntimeOwnershipHeartbeat(context.Background(), ownership, nil)
@@ -40,27 +45,29 @@ func (g *ACPGateway) startPrompt(ws *WSConn, id json.RawMessage, session *acpSes
 		}
 	}()
 	if err := g.preflightPromptRuntime(session.Scope, session.SessionID); err != nil {
-		return err
+		return "", err
 	}
 	if err := g.validatePromptSessionRunLease(session.Scope, session.SessionID); err != nil {
-		return err
+		return "", err
 	}
 	if err := g.refreshPromptRuntimeIfIdle(session.Scope, session.SessionID); err != nil {
-		return err
+		return "", err
 	}
 	if !g.runtimeOwnershipHeld(ownership) {
-		return RuntimeOwnershipHeldError{SessionID: session.SessionID, Generation: session.RuntimeGeneration, RunID: jobID, OwnerID: g.ownerID, Operation: "prompt"}
+		return "", RuntimeOwnershipHeldError{SessionID: session.SessionID, Generation: session.RuntimeGeneration, RunID: jobID, OwnerID: g.ownerID, Operation: "prompt"}
 	}
 	promptCtx, cancel := context.WithCancel(context.Background())
 	run, promptJob, err := g.beginPrompt(session.Scope, session.SessionID, cancel, req.CWD, inboxMode, trimmed, userText, jobID, responseID, inputFiles, ownership)
 	if err != nil {
 		cancel()
-		return err
+		return "", err
 	}
-	run.setResponseTarget(ws, id, appEnvelope)
+	if ws != nil && len(id) > 0 {
+		run.setResponseTarget(ws, id, appEnvelope)
+	}
 	releaseOwnership = false
 	go g.runPromptAsync(promptCtx, ws, id, session.SessionID, promptJob, run, appEnvelope)
-	return nil
+	return jobID, nil
 }
 func (g *ACPGateway) runPromptAsync(ctx context.Context, ws *WSConn, id json.RawMessage, sessionID string, job workerJob, run *acpPromptRun, appEnvelope bool) {
 	start := time.Now()
@@ -128,29 +135,35 @@ func (g *ACPGateway) runPromptAsync(ctx context.Context, ws *WSConn, id json.Raw
 		if reason := run.stopReason(); reason != "" {
 			g.broadcastPromptTerminalUpdate(job.Scope, sessionID, run, reason, "")
 			_ = g.finishInterruptedPrompt(ws, id, appEnvelope, sessionID, run, reason)
+			run.complete(reason, reason, "", "")
 			return
 		}
 		g.broadcastPromptTerminalUpdate(job.Scope, sessionID, run, "failed", err.Error())
 		_ = g.finishFailedPrompt(ws, id, appEnvelope, sessionID, run, err)
+		run.complete("failed", "failed", "", err.Error())
 		return
 	}
 	if reason := run.stopReason(); reason != "" {
 		g.broadcastPromptTerminalUpdate(job.Scope, sessionID, run, reason, "")
 		_ = g.finishInterruptedPrompt(ws, id, appEnvelope, sessionID, run, reason)
+		run.complete(reason, reason, "", "")
 		return
 	}
 	if !g.runtimeOwnershipHeld(run.Ownership) {
 		g.broadcastPromptTerminalUpdate(job.Scope, sessionID, run, "ownership_lost", "")
 		_ = g.finishInterruptedPrompt(ws, id, appEnvelope, sessionID, run, "ownership_lost")
+		run.complete("ownership_lost", "ownership_lost", "", "")
 		return
 	}
 	if err := g.finishSuccessfulPrompt(sessionID, run, job.ResponseID, result, result.RuntimeUpdate); err != nil {
 		if targetWS, targetID, targetEnvelope, ok := run.responseTarget(); ok {
 			_ = g.writeResponse(targetWS, targetEnvelope, mustJSONRPCError(targetID, -32000, err.Error()))
 		}
+		run.complete("failed", "failed", "", err.Error())
 		return
 	}
 	g.broadcastPromptTerminalUpdate(job.Scope, sessionID, run, "completed", "")
+	run.complete("completed", "end_turn", result.OutputText, "")
 	if targetWS, targetID, targetEnvelope, ok := run.responseTarget(); ok {
 		_ = g.writeResponse(targetWS, targetEnvelope, mustJSONRPCResult(targetID, acpPromptResult{StopReason: "end_turn"}))
 	}
@@ -373,6 +386,12 @@ func ensurePromptRuns(session *acpSession) map[string]*acpPromptRun {
 	}
 	return session.PromptRuns
 }
+func ensureCompletedPromptRuns(session *acpSession) map[string]*acpPromptRun {
+	if session.CompletedPromptRuns == nil {
+		session.CompletedPromptRuns = make(map[string]*acpPromptRun)
+	}
+	return session.CompletedPromptRuns
+}
 func sessionPromptRun(session *acpSession, run *acpPromptRun) bool {
 	if session == nil || run == nil || session.PromptRuns == nil {
 		return false
@@ -388,6 +407,22 @@ func removeSessionPromptRun(session *acpSession, run *acpPromptRun) bool {
 	}
 	delete(session.PromptRuns, run.JobID)
 	return true
+}
+func rememberCompletedPromptRun(session *acpSession, run *acpPromptRun) {
+	if session == nil || run == nil || run.JobID == "" {
+		return
+	}
+	completed := ensureCompletedPromptRuns(session)
+	completed[run.JobID] = run
+	if len(completed) <= 32 {
+		return
+	}
+	for jobID := range completed {
+		if jobID != run.JobID {
+			delete(completed, jobID)
+			return
+		}
+	}
 }
 func normalizeACPInboxMode(value string) (string, error) {
 	mode := strings.ToLower(strings.TrimSpace(value))
@@ -475,6 +510,7 @@ func (g *ACPGateway) beginPrompt(scope Scope, sessionID string, cancel context.C
 		HistoryLenBefore:   len(session.History),
 		Cancel:             cancel,
 		Ownership:          ownership,
+		Done:               make(chan struct{}),
 	}
 	ensurePromptRuns(session)[jobID] = run
 	session.State = acpRuntimeStatePrompting
@@ -553,6 +589,7 @@ func (g *ACPGateway) finishSuccessfulPrompt(sessionID string, run *acpPromptRun,
 		session.Runtime.InnerEnvdAccessToken = update.InnerEnvdAccessToken
 	}
 	removeSessionPromptRun(session, run)
+	rememberCompletedPromptRun(session, run)
 	if !sessionHasPromptRuns(session) {
 		session.State = acpRuntimeStateReady
 	}
@@ -588,6 +625,7 @@ func (g *ACPGateway) finishInterruptedPrompt(ws *WSConn, id json.RawMessage, app
 	g.mu.Lock()
 	if session, ok := g.sessions[sessionID]; ok && sessionPromptRun(session, run) && session.RuntimeGeneration == run.Generation {
 		removeSessionPromptRun(session, run)
+		rememberCompletedPromptRun(session, run)
 		session.CurrentResponseID = ""
 		if !sessionHasPromptRuns(session) && session.State == acpRuntimeStatePrompting {
 			session.State = acpRuntimeStateReady
@@ -618,6 +656,7 @@ func (g *ACPGateway) finishFailedPrompt(ws *WSConn, id json.RawMessage, appEnvel
 		g.mu.Lock()
 		if session, ok := g.sessions[sessionID]; ok && sessionPromptRun(session, run) && session.RuntimeGeneration == run.Generation {
 			removeSessionPromptRun(session, run)
+			rememberCompletedPromptRun(session, run)
 			session.State = acpRuntimeStateReady
 			session.LastRuntimeError = err.Error()
 			session.UpdatedAt = time.Now().UTC()
@@ -643,6 +682,7 @@ func (g *ACPGateway) finishFailedPrompt(ws *WSConn, id json.RawMessage, appEnvel
 	g.mu.Lock()
 	if session, ok := g.sessions[sessionID]; ok && sessionPromptRun(session, run) && session.RuntimeGeneration == run.Generation {
 		removeSessionPromptRun(session, run)
+		rememberCompletedPromptRun(session, run)
 		if sessionHasPromptRuns(session) {
 			session.State = acpRuntimeStatePrompting
 		} else {
@@ -715,6 +755,31 @@ func (r *acpPromptRun) markResponded() bool {
 	}
 	r.Responded = true
 	return true
+}
+func (r *acpPromptRun) complete(status, stopReason, outputText, errorMessage string) {
+	r.mu.Lock()
+	if r.Completed {
+		r.mu.Unlock()
+		return
+	}
+	r.Completed = true
+	r.Completion = acpPromptRunCompletion{
+		Status:      status,
+		StopReason:  stopReason,
+		OutputText:  outputText,
+		Error:       errorMessage,
+		CompletedAt: time.Now().UTC(),
+	}
+	done := r.Done
+	r.mu.Unlock()
+	if done != nil {
+		close(done)
+	}
+}
+func (r *acpPromptRun) completionSnapshot() (acpPromptRunCompletion, bool, <-chan struct{}) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.Completion, r.Completed, r.Done
 }
 func (g *ACPGateway) holdPromptInterruptResponse(scope Scope, sessionID string) *acpPromptRun {
 	g.mu.Lock()

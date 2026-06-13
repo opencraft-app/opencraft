@@ -3,6 +3,7 @@ package router
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -933,10 +934,12 @@ func newStatefulFakeACPServerWithLoadError(t *testing.T, sessionID string, sessi
 						"changed": false,
 					},
 				}})
-			case "session/prompt":
+			case "_cloudagent.run.create":
 				if promptCalls != nil {
 					promptCalls.Add(1)
 				}
+				writeRouterJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{"run": map[string]any{"run_id": "run-replacement", "session_id": sessionID, "status": "running"}}})
+			case "_cloudagent.run.wait":
 				writeRouterJSON(t, conn, map[string]any{
 					"jsonrpc": "2.0",
 					"method":  "session/update",
@@ -948,7 +951,10 @@ func newStatefulFakeACPServerWithLoadError(t *testing.T, sessionID string, sessi
 						},
 					},
 				})
-				writeRouterJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{"stopReason": "end_turn"}})
+				writeRouterJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{"run": map[string]any{"run_id": "run-replacement", "session_id": sessionID, "status": "completed", "stop_reason": "end_turn", "output_text": "replacement workspace reply"}}})
+			case "session/prompt":
+				t.Errorf("ChannelGateway should use CloudAgent run extensions, not legacy session/prompt")
+				writeRouterJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32601, "message": "legacy session/prompt disabled"}})
 			default:
 				writeRouterJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32601, "message": "not found"}})
 			}
@@ -1000,10 +1006,12 @@ func newStatefulFakeACPServerWithEnsure(t *testing.T, sessionID string, sessionN
 						"changed": ensureChanged,
 					},
 				}})
-			case "session/prompt":
+			case "_cloudagent.run.create":
 				if promptCalls != nil {
 					promptCalls.Add(1)
 				}
+				writeRouterJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{"run": map[string]any{"run_id": fmt.Sprintf("run-%d", req.ID), "session_id": sessionID, "status": "running"}}})
+			case "_cloudagent.run.wait":
 				if promptOverride != nil {
 					promptOverride(conn, req.ID)
 					continue
@@ -1019,7 +1027,10 @@ func newStatefulFakeACPServerWithEnsure(t *testing.T, sessionID string, sessionN
 						},
 					},
 				})
-				writeRouterJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{"stopReason": "end_turn"}})
+				writeRouterJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{"run": map[string]any{"run_id": "run-stateful", "session_id": sessionID, "status": "completed", "stop_reason": "end_turn", "output_text": "agent reply"}}})
+			case "session/prompt":
+				t.Errorf("ChannelGateway should use CloudAgent run extensions, not legacy session/prompt")
+				writeRouterJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32601, "message": "legacy session/prompt disabled"}})
 			default:
 				writeRouterJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32601, "message": "not found"}})
 			}
@@ -1065,10 +1076,10 @@ func newFakeACPServerWithPromptCounter(t *testing.T, sessionID, reply string, pr
 						"changed": false,
 					},
 				}})
-			case "session/prompt":
+			case "_cloudagent.run.create":
 				promptCalls.Add(1)
 				var params struct {
-					SessionID string `json:"sessionId"`
+					SessionID string `json:"session_id"`
 					Prompt    []struct {
 						Type string `json:"type"`
 						Text string `json:"text"`
@@ -1082,6 +1093,8 @@ func newFakeACPServerWithPromptCounter(t *testing.T, sessionID, reply string, pr
 					t.Errorf("unexpected prompt params: %#v", params)
 					return
 				}
+				writeRouterJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{"run": map[string]any{"run_id": "run-simple", "session_id": sessionID, "status": "running"}}})
+			case "_cloudagent.run.wait":
 				writeRouterJSON(t, conn, map[string]any{
 					"jsonrpc": "2.0",
 					"method":  "session/update",
@@ -1093,7 +1106,10 @@ func newFakeACPServerWithPromptCounter(t *testing.T, sessionID, reply string, pr
 						},
 					},
 				})
-				writeRouterJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{"stopReason": "end_turn"}})
+				writeRouterJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{"run": map[string]any{"run_id": "run-simple", "session_id": sessionID, "status": "completed", "stop_reason": "end_turn", "output_text": reply}}})
+			case "session/prompt":
+				t.Errorf("ChannelGateway should use CloudAgent run extensions, not legacy session/prompt")
+				writeRouterJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32601, "message": "legacy session/prompt disabled"}})
 			default:
 				writeRouterJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32601, "message": "not found"}})
 			}

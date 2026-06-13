@@ -34,6 +34,7 @@ type fakeACP struct {
 	promptErrs    []error
 	newDelay      time.Duration
 	newErr        error
+	promptDelay   time.Duration
 	closeErr      error
 	waitPrompt    bool
 	workspaceKeys []string
@@ -104,6 +105,13 @@ func (f *fakeACP) Prompt(ctx context.Context, _ string, text string) (acp.Prompt
 	if waitPrompt {
 		<-ctx.Done()
 		return acp.PromptResult{}, ctx.Err()
+	}
+	if f.promptDelay > 0 {
+		select {
+		case <-time.After(f.promptDelay):
+		case <-ctx.Done():
+			return acp.PromptResult{}, ctx.Err()
+		}
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -1175,7 +1183,7 @@ func TestDispatcherEnqueuesFallbackWhenPromptFails(t *testing.T) {
 	}
 }
 
-func TestDispatcherRequestTimeoutEnqueuesFallback(t *testing.T) {
+func TestDispatcherRequestTimeoutAppliesToSessionSetup(t *testing.T) {
 	ctx := context.Background()
 	st, err := store.Open(ctx, t.TempDir()+"/channelgateway.db")
 	if err != nil {
@@ -1187,7 +1195,7 @@ func TestDispatcherRequestTimeoutEnqueuesFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("acquire lease: %v", err)
 	}
-	client := &fakeACP{sessionID: "session-a", waitPrompt: true}
+	client := &fakeACP{sessionID: "session-a", newDelay: 5 * time.Second}
 	dispatcher := NewDispatcherWithOptions(st, account, client, "/workspace",
 		DispatcherOptions{RequestTimeout: 100 * time.Millisecond},
 	)
@@ -1207,6 +1215,48 @@ func TestDispatcherRequestTimeoutEnqueuesFallback(t *testing.T) {
 	reply := claimOneReply(t, context.Background(), st, lease)
 	if !strings.Contains(reply.Text, runtimeRecoveryFailedReply) {
 		t.Fatalf("expected timeout fallback reply, got %#v", reply)
+	}
+}
+
+func TestDispatcherRequestTimeoutDoesNotCancelLongPrompt(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir()+"/channelgateway.db")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+	account := store.ChannelAccount{ChannelAccountID: "wecom-a", ChannelType: "wecom", AgentID: "main"}
+	lease, err := st.AcquireChannelLease(ctx, "wecom-a", "owner-a", time.Minute)
+	if err != nil {
+		t.Fatalf("acquire lease: %v", err)
+	}
+	client := &fakeACP{sessionID: "session-a", promptDelay: 250 * time.Millisecond, reply: "sleep done"}
+	dispatcher := NewDispatcherWithOptions(st, account, client, "/workspace",
+		DispatcherOptions{RequestTimeout: 50 * time.Millisecond},
+	)
+	startedAt := time.Now()
+	err = dispatcher.HandleInbound(ctx, channel.Message{
+		ChannelAccountID:       "wecom-a",
+		ChannelType:            channel.TypeWeCom,
+		ExternalMessageID:      "msg-long-prompt",
+		ExternalConversationID: "chat-a",
+		ChatType:               channel.ChatDM,
+		Kind:                   channel.MessageText,
+		Text:                   "sleep 70",
+		Raw:                    json.RawMessage(`{"ok":true}`),
+	})
+	if err != nil {
+		t.Fatalf("long prompt should complete despite request timeout: %v", err)
+	}
+	if elapsed := time.Since(startedAt); elapsed < 200*time.Millisecond {
+		t.Fatalf("dispatcher returned before prompt completed: elapsed=%s", elapsed)
+	}
+	reply := claimOneReply(t, context.Background(), st, lease)
+	if strings.Contains(reply.Text, runtimeRecoveryFailedReply) {
+		t.Fatalf("long prompt should not enqueue recovery fallback, got %#v", reply)
+	}
+	if reply.Text != "sleep done" {
+		t.Fatalf("expected prompt reply, got %#v", reply)
 	}
 }
 
