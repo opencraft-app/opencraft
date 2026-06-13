@@ -6,6 +6,13 @@ import (
 )
 
 func migrateStore(db *sql.DB) error {
+	return migrateStoreForDialect(db, storeDialectSQLite)
+}
+
+func migrateStoreForDialect(db *sql.DB, dialect string) error {
+	if dialect == storeDialectMySQL {
+		return migrateStoreMySQL(db)
+	}
 	statements := []string{
 		`CREATE TABLE IF NOT EXISTS files (
 			id TEXT PRIMARY KEY,

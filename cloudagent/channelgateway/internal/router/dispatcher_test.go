@@ -978,7 +978,7 @@ func TestDispatcherDoesNotCloseConversationWithActiveInbound(t *testing.T) {
 	}
 }
 
-func TestDispatcherRecreatesSessionWhenExistingACPSessionIsMissing(t *testing.T) {
+func TestDispatcherPreservesBindingWhenExistingACPSessionIsMissing(t *testing.T) {
 	ctx := context.Background()
 	st, err := store.Open(ctx, t.TempDir()+"/channelgateway.db")
 	if err != nil {
@@ -986,6 +986,10 @@ func TestDispatcherRecreatesSessionWhenExistingACPSessionIsMissing(t *testing.T)
 	}
 	defer st.Close()
 	account := store.ChannelAccount{ChannelAccountID: "wecom-a", ChannelType: "wecom", AgentID: "main"}
+	lease, err := st.AcquireChannelLease(ctx, "wecom-a", "owner-a", time.Minute)
+	if err != nil {
+		t.Fatalf("acquire lease: %v", err)
+	}
 	seedMsg := channel.Message{
 		ChannelType:            channel.TypeWeCom,
 		ChatType:               channel.ChatDM,
@@ -1021,11 +1025,15 @@ func TestDispatcherRecreatesSessionWhenExistingACPSessionIsMissing(t *testing.T)
 		Raw:                    json.RawMessage(`{"ok":true}`),
 	})
 	if err != nil {
-		t.Fatalf("handle inbound should recreate missing session: %v", err)
+		t.Fatalf("handle inbound should enqueue missing-session fallback: %v", err)
 	}
 	newCalls, loadCalls, promptCalls, lastPrompt := client.snapshot()
-	if newCalls != 1 || loadCalls != 1 || promptCalls != 1 || lastPrompt != "hello" {
+	if newCalls != 0 || loadCalls != 1 || promptCalls != 0 || lastPrompt != "" {
 		t.Fatalf("unexpected acp calls: new=%d load=%d prompt=%d last=%q", newCalls, loadCalls, promptCalls, lastPrompt)
+	}
+	reply := claimOneReply(t, ctx, st, lease)
+	if !strings.Contains(reply.Text, runtimeRecoveryFailedReply) || !strings.Contains(reply.Text, "/reset") {
+		t.Fatalf("expected recovery fallback reply, got %#v", reply)
 	}
 	conversation, err := st.GetOrCreateConversation(ctx, store.Conversation{
 		ChannelAccountID:       "wecom-a",
@@ -1038,11 +1046,11 @@ func TestDispatcherRecreatesSessionWhenExistingACPSessionIsMissing(t *testing.T)
 	if err != nil {
 		t.Fatalf("reload conversation: %v", err)
 	}
-	if conversation.ACPSessionID != "session-new" {
-		t.Fatalf("expected recreated session binding, got %#v", conversation)
+	if conversation.ACPSessionID != "session-stale" {
+		t.Fatalf("missing ACP session must preserve existing session binding, got %#v", conversation)
 	}
-	if conversation.WorkspaceKey != "workspace-stable" || len(client.workspaceKeys) != 1 || client.workspaceKeys[0] != "workspace-stable" {
-		t.Fatalf("recreated session must preserve workspace key: conv=%#v workspace_keys=%#v", conversation, client.workspaceKeys)
+	if conversation.WorkspaceKey != "workspace-stable" || len(client.workspaceKeys) != 0 {
+		t.Fatalf("missing ACP session must not rotate workspace key: conv=%#v workspace_keys=%#v", conversation, client.workspaceKeys)
 	}
 }
 

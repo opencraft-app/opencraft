@@ -42,6 +42,77 @@ func (s *Store) AcquireRuntimeOwnership(ctx context.Context, req RuntimeOwnershi
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.isMySQL() {
+		tx, err := s.db.BeginTx(ctx, nil)
+		if err != nil {
+			return RuntimeOwnershipLease{}, err
+		}
+		defer tx.Rollback()
+		var current RuntimeOwnershipLease
+		var currentState string
+		var currentExpires string
+		err = tx.QueryRowContext(ctx, `
+SELECT session_id, generation, run_id, owner_id, operation, fencing_token, state, expires_at
+FROM runtime_ownerships
+WHERE session_id = ?
+FOR UPDATE`, req.SessionID).Scan(&current.SessionID, &current.Generation, &current.RunID, &current.OwnerID, &current.Operation, &current.FencingToken, &currentState, &currentExpires)
+		allow := false
+		nextFence := int64(1)
+		if errors.Is(err, sql.ErrNoRows) {
+			allow = true
+		} else if err != nil {
+			return RuntimeOwnershipLease{}, err
+		} else {
+			nextFence = current.FencingToken + 1
+			allow = currentState != "active" || currentExpires <= nowText || (current.OwnerID == req.OwnerID && req.AllowSameOwner)
+		}
+		if !allow {
+			if currentExpires != "" {
+				if parsed, parseErr := time.Parse(time.RFC3339Nano, currentExpires); parseErr == nil {
+					current.ExpiresAt = parsed
+				}
+			}
+			_ = tx.Commit()
+			return RuntimeOwnershipLease{}, RuntimeOwnershipHeldError{
+				SessionID:  current.SessionID,
+				Generation: current.Generation,
+				RunID:      current.RunID,
+				OwnerID:    current.OwnerID,
+				Operation:  current.Operation,
+				ExpiresAt:  current.ExpiresAt,
+			}
+		}
+		if _, err := tx.ExecContext(ctx, `
+INSERT INTO runtime_ownerships (
+	session_id, generation, run_id, owner_id, operation, fencing_token, state,
+	expires_at, heartbeat_at, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)
+ON DUPLICATE KEY UPDATE
+	generation = VALUES(generation),
+	run_id = VALUES(run_id),
+	owner_id = VALUES(owner_id),
+	operation = VALUES(operation),
+	fencing_token = VALUES(fencing_token),
+	state = 'active',
+	expires_at = VALUES(expires_at),
+	heartbeat_at = VALUES(heartbeat_at),
+	updated_at = VALUES(updated_at)`,
+			req.SessionID, req.Generation, req.RunID, req.OwnerID, req.Operation, nextFence,
+			expiresText, nowText, nowText, nowText); err != nil {
+			return RuntimeOwnershipLease{}, err
+		}
+		if err := tx.Commit(); err != nil {
+			return RuntimeOwnershipLease{}, err
+		}
+		lease, ok, err := s.loadRuntimeOwnershipLocked(ctx, req.SessionID)
+		if err != nil {
+			return RuntimeOwnershipLease{}, err
+		}
+		if !ok {
+			return RuntimeOwnershipLease{}, fmt.Errorf("runtime ownership %s was not stored", req.SessionID)
+		}
+		return lease, nil
+	}
 	result, err := s.db.ExecContext(ctx, `
 INSERT INTO runtime_ownerships (
 	session_id, generation, run_id, owner_id, operation, fencing_token, state,

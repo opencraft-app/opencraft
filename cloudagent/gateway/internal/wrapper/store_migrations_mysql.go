@@ -1,0 +1,324 @@
+package wrapper
+
+import (
+	"database/sql"
+	"fmt"
+	"strings"
+)
+
+func migrateStoreMySQL(db *sql.DB) error {
+	statements := []string{
+		`CREATE TABLE IF NOT EXISTS files (
+			id VARCHAR(191) PRIMARY KEY,
+			scope_tenant VARCHAR(191) NOT NULL,
+			scope_project VARCHAR(191) NOT NULL,
+			scope_sandbox VARCHAR(191) NOT NULL DEFAULT '',
+			kind VARCHAR(64) NOT NULL,
+			purpose VARCHAR(64) NOT NULL,
+			filename VARCHAR(1024) NOT NULL,
+			content_type VARCHAR(255) NOT NULL,
+			bytes BIGINT NOT NULL,
+			sha256 VARCHAR(128) NOT NULL,
+			storage_uri VARCHAR(1024) NOT NULL,
+			source_response_id VARCHAR(191) NOT NULL DEFAULT '',
+			created_at BIGINT NOT NULL,
+			expires_at VARCHAR(64) NOT NULL,
+			deleted_at VARCHAR(64) NULL,
+			KEY files_scope_idx (scope_tenant, scope_project, scope_sandbox)
+		)`,
+		`CREATE TABLE IF NOT EXISTS responses (
+			id VARCHAR(191) PRIMARY KEY,
+			scope_tenant VARCHAR(191) NOT NULL,
+			scope_project VARCHAR(191) NOT NULL,
+			scope_sandbox VARCHAR(191) NOT NULL DEFAULT '',
+			model VARCHAR(191) NOT NULL,
+			status VARCHAR(64) NOT NULL,
+			output_text LONGTEXT NULL,
+			output_json LONGTEXT NULL,
+			artifact_file_ids_json LONGTEXT NULL,
+			created_at BIGINT NOT NULL,
+			updated_at BIGINT NOT NULL,
+			error_code VARCHAR(191) NULL,
+			error_message TEXT NULL,
+			KEY responses_scope_idx (scope_tenant, scope_project, scope_sandbox)
+		)`,
+		`CREATE TABLE IF NOT EXISTS audit_events (
+			id BIGINT PRIMARY KEY AUTO_INCREMENT,
+			type VARCHAR(191) NOT NULL,
+			subject_id VARCHAR(191) NOT NULL DEFAULT '',
+			response_id VARCHAR(191) NOT NULL DEFAULT '',
+			file_id VARCHAR(191) NOT NULL DEFAULT '',
+			scope_tenant VARCHAR(191) NOT NULL,
+			scope_project VARCHAR(191) NOT NULL,
+			scope_sandbox VARCHAR(191) NOT NULL DEFAULT '',
+			created_at VARCHAR(64) NOT NULL,
+			detail TEXT NOT NULL,
+			KEY audit_response_idx (response_id, id)
+		)`,
+		`CREATE TABLE IF NOT EXISTS sessions (
+			session_id VARCHAR(191) PRIMARY KEY,
+			scope_tenant VARCHAR(191) NOT NULL,
+			scope_project VARCHAR(191) NOT NULL,
+			scope_sandbox VARCHAR(191) NOT NULL DEFAULT '',
+			cwd VARCHAR(1024) NOT NULL,
+			workspace_key VARCHAR(191) NOT NULL DEFAULT '',
+			title VARCHAR(512) NOT NULL DEFAULT '',
+			model VARCHAR(191) NOT NULL,
+			state VARCHAR(64) NOT NULL,
+			closed INT NOT NULL DEFAULT 0,
+			runtime_generation BIGINT NOT NULL,
+			current_response_id VARCHAR(191) NOT NULL DEFAULT '',
+			last_runtime_error TEXT NOT NULL,
+			created_at VARCHAR(64) NOT NULL,
+			updated_at VARCHAR(64) NOT NULL,
+			read_only_reason VARCHAR(191) NOT NULL DEFAULT '',
+			deleted_at VARCHAR(64) NULL,
+			KEY sessions_scope_idx (scope_tenant, scope_project, scope_sandbox, updated_at)
+		)`,
+		`CREATE TABLE IF NOT EXISTS turns (
+			id VARCHAR(191) PRIMARY KEY,
+			session_id VARCHAR(191) NOT NULL,
+			turn_index BIGINT NOT NULL,
+			status VARCHAR(64) NOT NULL,
+			created_at VARCHAR(64) NOT NULL,
+			updated_at VARCHAR(64) NOT NULL,
+			UNIQUE KEY turns_session_turn_uq (session_id, turn_index),
+			KEY turns_session_idx (session_id, turn_index)
+		)`,
+		`CREATE TABLE IF NOT EXISTS messages (
+			id VARCHAR(191) PRIMARY KEY,
+			turn_id VARCHAR(191) NOT NULL,
+			session_id VARCHAR(191) NOT NULL,
+			role VARCHAR(64) NOT NULL,
+			status VARCHAR(64) NOT NULL,
+			message_index BIGINT NOT NULL,
+			response_id VARCHAR(191) NOT NULL DEFAULT '',
+			created_at VARCHAR(64) NOT NULL,
+			updated_at VARCHAR(64) NOT NULL,
+			UNIQUE KEY messages_turn_role_uq (turn_id, role),
+			UNIQUE KEY messages_turn_index_uq (turn_id, message_index),
+			KEY messages_session_idx (session_id, turn_id, message_index)
+		)`,
+		`CREATE TABLE IF NOT EXISTS message_blocks (
+			id VARCHAR(191) PRIMARY KEY,
+			message_id VARCHAR(191) NOT NULL,
+			turn_id VARCHAR(191) NOT NULL,
+			session_id VARCHAR(191) NOT NULL,
+			block_index BIGINT NOT NULL,
+			type VARCHAR(64) NOT NULL,
+			status VARCHAR(64) NOT NULL,
+			tool_call_id VARCHAR(191) NOT NULL DEFAULT '',
+			tool_call_key VARCHAR(191) GENERATED ALWAYS AS (CASE WHEN tool_call_id <> '' THEN tool_call_id ELSE NULL END) STORED,
+			response_id VARCHAR(191) NOT NULL DEFAULT '',
+			payload_json LONGTEXT NOT NULL,
+			created_at VARCHAR(64) NOT NULL,
+			updated_at VARCHAR(64) NOT NULL,
+			UNIQUE KEY message_blocks_index_uq (message_id, block_index),
+			UNIQUE KEY message_blocks_tool_idx (message_id, tool_call_key),
+			KEY message_blocks_replay_idx (session_id, turn_id, block_index)
+		)`,
+		`CREATE TABLE IF NOT EXISTS session_files (
+			session_id VARCHAR(191) NOT NULL,
+			event_id BIGINT NOT NULL,
+			file_id VARCHAR(191) NOT NULL,
+			staged_rel_path VARCHAR(1024) NOT NULL,
+			display_name VARCHAR(1024) NOT NULL,
+			mime_type VARCHAR(255) NOT NULL,
+			bytes BIGINT NOT NULL,
+			purpose VARCHAR(64) NOT NULL,
+			PRIMARY KEY(session_id, event_id, file_id),
+			KEY session_files_file_idx (file_id)
+		)`,
+		`CREATE TABLE IF NOT EXISTS session_runtimes (
+			session_id VARCHAR(191) NOT NULL,
+			generation BIGINT NOT NULL,
+			sandbox_backend VARCHAR(64) NOT NULL DEFAULT '',
+			outer_runtime VARCHAR(64) NOT NULL DEFAULT '',
+			runtime_recovery VARCHAR(64) NOT NULL DEFAULT '',
+			agent_version VARCHAR(191) NOT NULL DEFAULT '',
+			agent_template_id VARCHAR(191) NOT NULL DEFAULT '',
+			sidecar_url TEXT NOT NULL,
+			sidecar_sha256 VARCHAR(128) NOT NULL DEFAULT '',
+			sidecar_sig_url TEXT NOT NULL,
+			signing_key_id VARCHAR(191) NOT NULL DEFAULT '',
+			workspace_version VARCHAR(191) NOT NULL DEFAULT '',
+			workspace_template_id VARCHAR(191) NOT NULL DEFAULT '',
+			runtime_id VARCHAR(191) NOT NULL DEFAULT '',
+			outer_sandbox_id VARCHAR(191) NOT NULL DEFAULT '',
+			outer_sandbox_domain VARCHAR(255) NOT NULL DEFAULT '',
+			outer_envd_access_token TEXT NOT NULL,
+			outer_traffic_token TEXT NOT NULL,
+			daemon_addr VARCHAR(255) NOT NULL DEFAULT '',
+			remote_binary TEXT NOT NULL,
+			inner_sandbox_id VARCHAR(191) NOT NULL DEFAULT '',
+			inner_sandbox_domain VARCHAR(255) NOT NULL DEFAULT '',
+			inner_envd_access_token TEXT NOT NULL,
+			session_proxy_id VARCHAR(191) NOT NULL DEFAULT '',
+			wisp_name VARCHAR(191) NOT NULL DEFAULT '',
+			wisp_workspace_id VARCHAR(191) NOT NULL DEFAULT '',
+			wisp_smh_space_id VARCHAR(191) NOT NULL DEFAULT '',
+			wisp_owns_smh_space INT NOT NULL DEFAULT 0,
+			wisp_package_url TEXT NOT NULL,
+			wisp_install_dir TEXT NOT NULL,
+			wisp_client_path TEXT NOT NULL,
+			wisp_jfs_prefix VARCHAR(255) NOT NULL DEFAULT '',
+			wisp_root_upper_size VARCHAR(64) NOT NULL DEFAULT '',
+			wisp_lease_id VARCHAR(191) NOT NULL DEFAULT '',
+			wisp_lease_fence BIGINT NOT NULL DEFAULT 0,
+			wisp_lease_until VARCHAR(64) NULL,
+			workspace_id VARCHAR(191) NOT NULL DEFAULT '',
+			workspace_runtime_id VARCHAR(191) NOT NULL DEFAULT '',
+			workspace_wisp_name VARCHAR(191) NOT NULL DEFAULT '',
+			workspace_wisp_client TEXT NOT NULL,
+			workspace_lease_id VARCHAR(191) NOT NULL DEFAULT '',
+			workspace_fence BIGINT NOT NULL DEFAULT 0,
+			workspace_lease_until VARCHAR(64) NULL,
+			workspace_attach_state VARCHAR(64) NOT NULL DEFAULT '',
+			health_state VARCHAR(64) NOT NULL DEFAULT '',
+			last_health_at VARCHAR(64) NULL,
+			cleanup_state VARCHAR(64) NOT NULL DEFAULT '',
+			last_cleanup_error TEXT NOT NULL,
+			PRIMARY KEY(session_id, generation)
+		)`,
+		`CREATE TABLE IF NOT EXISTS workspaces (
+			workspace_id VARCHAR(191) PRIMARY KEY,
+			backend VARCHAR(64) NOT NULL,
+			provider_workspace_id VARCHAR(191) NOT NULL,
+			state VARCHAR(64) NOT NULL,
+			fencing_token BIGINT NOT NULL DEFAULT 0,
+			owner_session_id VARCHAR(191) NOT NULL DEFAULT '',
+			workspace_version VARCHAR(191) NOT NULL DEFAULT '',
+			provider_region VARCHAR(64) NOT NULL DEFAULT '',
+			wisp_name VARCHAR(191) NOT NULL DEFAULT '',
+			wisp_smh_space_id VARCHAR(191) NOT NULL DEFAULT '',
+			wisp_owns_smh_space INT NOT NULL DEFAULT 0,
+			workspace_wisp_name VARCHAR(191) NOT NULL DEFAULT '',
+			workspace_runtime_id VARCHAR(191) NOT NULL DEFAULT '',
+			wisp_package_url TEXT NULL,
+			wisp_jfs_prefix VARCHAR(255) NOT NULL DEFAULT '',
+			wisp_root_upper_size VARCHAR(64) NOT NULL DEFAULT '',
+			cleanup_state VARCHAR(64) NOT NULL DEFAULT '',
+			last_cleanup_error TEXT NULL,
+			cleanup_retry_after VARCHAR(64) NULL,
+			delete_state VARCHAR(64) NOT NULL DEFAULT '',
+			last_delete_error TEXT NULL,
+			delete_retry_after VARCHAR(64) NULL,
+			outer_cleanup_pending INT NOT NULL DEFAULT 0,
+			last_outer_cleanup_error TEXT NULL,
+			created_at VARCHAR(64) NOT NULL,
+			updated_at VARCHAR(64) NOT NULL,
+			deleted_at VARCHAR(64) NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS workspace_runtimes (
+			runtime_id VARCHAR(191) PRIMARY KEY,
+			workspace_id VARCHAR(191) NOT NULL,
+			provider VARCHAR(64) NOT NULL,
+			state VARCHAR(64) NOT NULL,
+			lease_id VARCHAR(191) NOT NULL DEFAULT '',
+			fencing_token BIGINT NOT NULL DEFAULT 0,
+			created_at VARCHAR(64) NOT NULL,
+			updated_at VARCHAR(64) NOT NULL,
+			released_at VARCHAR(64) NULL,
+			KEY workspace_runtimes_workspace_idx (workspace_id, updated_at)
+		)`,
+		`CREATE TABLE IF NOT EXISTS workspace_leases (
+			workspace_id VARCHAR(191) PRIMARY KEY,
+			lease_id VARCHAR(191) NOT NULL,
+			runtime_id VARCHAR(191) NOT NULL,
+			fencing_token BIGINT NOT NULL,
+			state VARCHAR(64) NOT NULL,
+			expires_at VARCHAR(64) NOT NULL,
+			heartbeat_at VARCHAR(64) NOT NULL,
+			created_at VARCHAR(64) NOT NULL,
+			updated_at VARCHAR(64) NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS runtime_locks (
+			lock_key VARCHAR(191) PRIMARY KEY,
+			holder_id VARCHAR(191) NOT NULL,
+			expires_at VARCHAR(64) NOT NULL,
+			acquired_at VARCHAR(64) NOT NULL,
+			updated_at VARCHAR(64) NOT NULL,
+			KEY runtime_locks_expires_idx (expires_at)
+		)`,
+		`CREATE TABLE IF NOT EXISTS runtime_ownerships (
+			session_id VARCHAR(191) PRIMARY KEY,
+			generation BIGINT NOT NULL,
+			run_id VARCHAR(191) NOT NULL,
+			owner_id VARCHAR(191) NOT NULL,
+			operation VARCHAR(64) NOT NULL,
+			fencing_token BIGINT NOT NULL,
+			state VARCHAR(64) NOT NULL,
+			expires_at VARCHAR(64) NOT NULL,
+			heartbeat_at VARCHAR(64) NOT NULL,
+			created_at VARCHAR(64) NOT NULL,
+			updated_at VARCHAR(64) NOT NULL,
+			KEY runtime_ownerships_owner_idx (owner_id, updated_at),
+			KEY runtime_ownerships_expires_idx (expires_at)
+		)`,
+		`CREATE TABLE IF NOT EXISTS runtime_resources (
+			session_id VARCHAR(191) NOT NULL,
+			generation BIGINT NOT NULL,
+			runtime_id VARCHAR(191) NOT NULL DEFAULT '',
+			owner_id VARCHAR(191) NOT NULL DEFAULT '',
+			sandbox_backend VARCHAR(64) NOT NULL DEFAULT '',
+			state VARCHAR(64) NOT NULL,
+			outer_sandbox_id VARCHAR(191) NOT NULL DEFAULT '',
+			inner_sandbox_id VARCHAR(191) NOT NULL DEFAULT '',
+			last_error TEXT NOT NULL,
+			expires_at VARCHAR(64) NULL,
+			created_at VARCHAR(64) NOT NULL,
+			updated_at VARCHAR(64) NOT NULL,
+			PRIMARY KEY(session_id, generation),
+			KEY runtime_resources_state_idx (state, expires_at),
+			KEY runtime_resources_owner_idx (owner_id, updated_at)
+		)`,
+		`CREATE TABLE IF NOT EXISTS warm_runtime_pool_items (
+			item_id VARCHAR(191) PRIMARY KEY,
+			pool_key VARCHAR(191) NOT NULL,
+			state VARCHAR(64) NOT NULL,
+			owner_id VARCHAR(191) NOT NULL DEFAULT '',
+			session_id VARCHAR(191) NOT NULL DEFAULT '',
+			generation BIGINT NOT NULL DEFAULT 0,
+			fencing_token BIGINT NOT NULL DEFAULT 0,
+			lease_until VARCHAR(64) NULL,
+			host_json LONGTEXT NOT NULL,
+			last_error TEXT NOT NULL,
+			workflow_id VARCHAR(191) NOT NULL DEFAULT '',
+			run_id VARCHAR(191) NOT NULL DEFAULT '',
+			created_at VARCHAR(64) NOT NULL,
+			updated_at VARCHAR(64) NOT NULL,
+			claimed_at VARCHAR(64) NULL,
+			discarded_at VARCHAR(64) NULL,
+			KEY warm_runtime_pool_ready_idx (pool_key, state, updated_at),
+			KEY warm_runtime_pool_owner_idx (owner_id, state, updated_at)
+		)`,
+	}
+	for _, stmt := range statements {
+		if _, err := db.Exec(stmt); err != nil {
+			return fmt.Errorf("mysql migrate statement %q: %w", stmtName(stmt), err)
+		}
+	}
+	for _, stmt := range []string{
+		`ALTER TABLE session_runtimes ADD COLUMN workspace_id VARCHAR(191) NOT NULL DEFAULT ''`,
+		`ALTER TABLE session_runtimes ADD COLUMN workspace_runtime_id VARCHAR(191) NOT NULL DEFAULT ''`,
+		`ALTER TABLE session_runtimes ADD COLUMN workspace_wisp_name VARCHAR(191) NOT NULL DEFAULT ''`,
+		`ALTER TABLE session_runtimes ADD COLUMN workspace_wisp_client VARCHAR(1024) NOT NULL DEFAULT ''`,
+		`ALTER TABLE session_runtimes ADD COLUMN workspace_lease_id VARCHAR(191) NOT NULL DEFAULT ''`,
+		`ALTER TABLE session_runtimes ADD COLUMN workspace_fence BIGINT NOT NULL DEFAULT 0`,
+		`ALTER TABLE session_runtimes ADD COLUMN workspace_lease_until VARCHAR(64) NULL`,
+		`ALTER TABLE session_runtimes ADD COLUMN workspace_attach_state VARCHAR(64) NOT NULL DEFAULT ''`,
+	} {
+		if _, err := db.Exec(stmt); err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
+			return err
+		}
+	}
+	return nil
+}
+
+func stmtName(stmt string) string {
+	fields := strings.Fields(stmt)
+	if len(fields) >= 6 {
+		return strings.Join(fields[:6], " ")
+	}
+	return strings.Join(fields, " ")
+}

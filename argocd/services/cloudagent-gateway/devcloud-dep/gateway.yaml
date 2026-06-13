@@ -35,6 +35,7 @@ data:
   GATEWAY_WISP_WORKSPACE_LEASE_TTL_SECONDS: "180"
   GATEWAY_RUNTIME_WARM_POOL_ENABLED: "true"
   GATEWAY_RUNTIME_WARM_POOL_SHARED_STORE_CONFIRMED: "true"
+  GATEWAY_DB_DRIVER: "mysql"
   GATEWAY_RUNTIME_WARM_POOL_DB_DRIVER: "mysql"
   GATEWAY_RUNTIME_WARM_POOL_DESIRED_READY: "5"
   GATEWAY_RUNTIME_WARM_POOL_RECHECK_SECONDS: "15"
@@ -119,6 +120,11 @@ spec:
                   name: cloudagent-wisp-secrets
                   key: GATEWAY_WISP_SMH_LIBRARY_SECRET
             - name: GATEWAY_RUNTIME_WARM_POOL_DB_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: cloudagent-runtime-pool-secrets
+                  key: GATEWAY_RUNTIME_WARM_POOL_DB_DSN
+            - name: GATEWAY_DB_DSN
               valueFrom:
                 secretKeyRef:
                   name: cloudagent-runtime-pool-secrets
@@ -212,6 +218,11 @@ spec:
                   name: cloudagent-runtime-pool-secrets
                   key: TEMPORAL_AUTH_TOKEN
             - name: GATEWAY_RUNTIME_WARM_POOL_DB_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: cloudagent-runtime-pool-secrets
+                  key: GATEWAY_RUNTIME_WARM_POOL_DB_DSN
+            - name: GATEWAY_DB_DSN
               valueFrom:
                 secretKeyRef:
                   name: cloudagent-runtime-pool-secrets
