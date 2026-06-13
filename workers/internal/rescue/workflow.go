@@ -34,17 +34,6 @@ func ExportWorkflow(ctx workflow.Context, req ExportRequest, cfg TencentConfig) 
 	}
 	result.Instance = instance
 	status.Instance = instance
-	updateWorkflowPhase(ctx, req, status, PhaseBackup)
-
-	backupCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
-		StartToCloseTimeout: 50 * time.Minute,
-		HeartbeatTimeout:    30 * time.Second,
-		RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 1},
-	})
-	if err := workflow.ExecuteActivity(backupCtx, "EnsureBackup", req, cfg, instance.Region).Get(backupCtx, &result.Backup); err != nil {
-		return finish(err)
-	}
-	status.Backup = result.Backup
 
 	if instance.State == "RESCUE_MODE" && req.ReenterRescue {
 		updateWorkflowPhase(ctx, req, status, PhaseExitRescue)

@@ -67,7 +67,6 @@ type workerActionCancelRequest struct {
 
 type rescueExportActionParams struct {
 	RemotePaths []string `json:"remote_paths"`
-	SkipBackup  bool     `json:"skip_backup,omitempty"`
 }
 
 type workerActionResponse struct {
@@ -105,7 +104,6 @@ type rescueExportStartRequest struct {
 	RescueUsername         string
 	RescuePasswordEnv      string
 	StopType               string
-	SkipBackup             bool
 	DeviceGlobs            []string
 	RemotePaths            []string
 	MountRoot              string
@@ -539,7 +537,6 @@ func (s *workerActionService) buildRescueExportRequest(raw json.RawMessage, targ
 		RescueUsername:         "root",
 		RescuePasswordEnv:      "RESCUE_PASSWORD",
 		StopType:               "SOFT_FIRST",
-		SkipBackup:             params.SkipBackup,
 		DeviceGlobs:            []string{"/dev/vda*", "/dev/vdb*"},
 		RemotePaths:            remotePaths,
 		MountRoot:              "/mnt/rescue-root",

@@ -33,7 +33,7 @@ func TestBuildFailureNotificationContentIsProductized(t *testing.T) {
 			RemotePaths: []string{"/home/agentuser/.hermes"},
 		},
 		Status: ExportStatus{Phase: PhaseFailed},
-		Error:  "activity error (type: EnsureBackup, scheduledEventID: 11, startedEventID: 12, identity: worker@): cvm.tencentcloudapi.com CreateImage failed: ResourceUnavailable.SnapshotCreating: Disk(disk-hqe03fm1) is creating snapshot, please retry it later (type: TencentAPIError, retryable: true)",
+		Error:  "activity error (type: EnterRescueMode, scheduledEventID: 11, startedEventID: 12, identity: worker@): cvm.tencentcloudapi.com EnterRescueMode failed: UnauthorizedOperation: not allowed (type: TencentAPIError, retryable: false)",
 	}
 
 	subject, htmlBody, textBody := buildFailureNotificationContent(notification)
@@ -42,7 +42,7 @@ func TestBuildFailureNotificationContentIsProductized(t *testing.T) {
 			t.Fatalf("content missing agent label: %q", value)
 		}
 	}
-	if !strings.Contains(textBody, "磁盘快照正在创建") || !strings.Contains(htmlBody, "磁盘快照正在创建") {
+	if !strings.Contains(textBody, "云账号权限暂时不可用") || !strings.Contains(htmlBody, "云账号权限暂时不可用") {
 		t.Fatalf("content missing productized reason: text=%s html=%s", textBody, htmlBody)
 	}
 	for _, body := range []string{subject, htmlBody, textBody} {

@@ -62,20 +62,6 @@ func (Activities) EnterRescueMode(ctx context.Context, req ExportRequest, cfg Te
 	return nil
 }
 
-func (Activities) EnsureBackup(ctx context.Context, req ExportRequest, cfg TencentConfig, region string) (BackupInfo, error) {
-	logActivity(ctx, "ensuring pre-rescue backup", "instance_id", req.InstanceID, "region", region, "skip_backup", req.SkipBackup)
-	client, err := NewTencentClient(cfg, region)
-	if err != nil {
-		return BackupInfo{}, temporalActivityError(err)
-	}
-	backup, err := EnsureCVMImageBackup(ctx, client, req)
-	if err != nil {
-		return BackupInfo{}, temporalActivityError(err)
-	}
-	logActivity(ctx, "pre-rescue backup complete", "instance_id", req.InstanceID, "region", region, "mode", backup.Mode, "image_id", backup.ID, "state", backup.State)
-	return backup, nil
-}
-
 func (Activities) WaitRescueRunning(ctx context.Context, req ExportRequest, cfg TencentConfig, region string) (string, error) {
 	if !req.Execute {
 		fmt.Printf("[dry-run] would wait for %s RUNNING after rescue mode\n", req.InstanceID)

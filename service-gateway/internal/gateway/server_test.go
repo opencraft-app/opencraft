@@ -570,7 +570,7 @@ func TestWorkerActionStartResolvesBotAndStartsRescueExportWorkflow(t *testing.T)
 	req := httptest.NewRequest(http.MethodPost, "/api/worker-actions", strings.NewReader(`{
 		"bot_id":"bot-1",
 		"action":"rescue_export",
-		"params":{"remote_paths":["/workspace","/workspace"],"skip_backup":true}
+		"params":{"remote_paths":["/workspace","/workspace"]}
 	}`))
 	req.Header.Set("Authorization", "Bearer tok-123")
 	rec := httptest.NewRecorder()
@@ -598,7 +598,7 @@ func TestWorkerActionStartResolvesBotAndStartsRescueExportWorkflow(t *testing.T)
 	if exportReq.NotificationEmail != "user@example.com" || exportReq.COSUploadBucket == "" || exportReq.COSUploadURLTTLSeconds != 123 {
 		t.Fatalf("unexpected export request notification/COS fields: %+v", exportReq)
 	}
-	if len(exportReq.RemotePaths) != 1 || exportReq.RemotePaths[0] != "/workspace" || !exportReq.SkipBackup {
+	if len(exportReq.RemotePaths) != 1 || exportReq.RemotePaths[0] != "/workspace" {
 		t.Fatalf("unexpected params: %+v", exportReq)
 	}
 	if !exportReq.Execute || !exportReq.Confirmed {
@@ -746,9 +746,9 @@ func TestWorkerActionCurrentResolvesBotAndQueriesStableWorkflowID(t *testing.T) 
 	defer sandbox.Close()
 
 	backend := &fakeWorkerActionBackend{queryStatus: map[string]any{
-		"Phase":      "backup",
+		"Phase":      "enter_rescue",
 		"WorkflowID": "worker-action-bot-1-rescue_export",
-		"Logs":       []map[string]string{{"message": "正在创建备份镜像"}},
+		"Logs":       []map[string]string{{"message": "正在准备导出环境"}},
 	}}
 	handler, err := NewHandler(Config{
 		AuthServiceURL: auth.URL,
