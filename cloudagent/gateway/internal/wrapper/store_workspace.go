@@ -40,7 +40,7 @@ func (s *Store) EnsureWorkspace(ctx context.Context, rec WorkspaceRecord) error 
 	now := time.Now().UTC()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_, err := s.db.ExecContext(ctx, `
+	query := `
 	INSERT INTO workspaces (
 		workspace_id, backend, provider_workspace_id, state, fencing_token,
 		owner_session_id, workspace_version, provider_region, wisp_name, wisp_smh_space_id,
@@ -76,7 +76,47 @@ func (s *Store) EnsureWorkspace(ctx context.Context, rec WorkspaceRecord) error 
 		outer_cleanup_pending = excluded.outer_cleanup_pending,
 		last_outer_cleanup_error = excluded.last_outer_cleanup_error,
 		updated_at = excluded.updated_at,
-		deleted_at = NULL`,
+		deleted_at = NULL`
+	if s.isMySQL() {
+		query = `
+	INSERT INTO workspaces (
+		workspace_id, backend, provider_workspace_id, state, fencing_token,
+		owner_session_id, workspace_version, provider_region, wisp_name, wisp_smh_space_id,
+		wisp_owns_smh_space, workspace_wisp_name, workspace_runtime_id,
+		wisp_package_url, wisp_jfs_prefix, wisp_root_upper_size,
+		cleanup_state, last_cleanup_error, cleanup_retry_after,
+		delete_state, last_delete_error, delete_retry_after,
+		outer_cleanup_pending, last_outer_cleanup_error,
+		created_at, updated_at
+	)
+	VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	ON DUPLICATE KEY UPDATE
+		backend = VALUES(backend),
+		provider_workspace_id = VALUES(provider_workspace_id),
+		state = VALUES(state),
+		owner_session_id = VALUES(owner_session_id),
+		workspace_version = VALUES(workspace_version),
+		provider_region = VALUES(provider_region),
+		wisp_name = VALUES(wisp_name),
+		wisp_smh_space_id = VALUES(wisp_smh_space_id),
+		wisp_owns_smh_space = VALUES(wisp_owns_smh_space),
+		workspace_wisp_name = VALUES(workspace_wisp_name),
+		workspace_runtime_id = VALUES(workspace_runtime_id),
+		wisp_package_url = VALUES(wisp_package_url),
+		wisp_jfs_prefix = VALUES(wisp_jfs_prefix),
+		wisp_root_upper_size = VALUES(wisp_root_upper_size),
+		cleanup_state = VALUES(cleanup_state),
+		last_cleanup_error = VALUES(last_cleanup_error),
+		cleanup_retry_after = VALUES(cleanup_retry_after),
+		delete_state = VALUES(delete_state),
+		last_delete_error = VALUES(last_delete_error),
+		delete_retry_after = VALUES(delete_retry_after),
+		outer_cleanup_pending = VALUES(outer_cleanup_pending),
+		last_outer_cleanup_error = VALUES(last_outer_cleanup_error),
+		updated_at = VALUES(updated_at),
+		deleted_at = NULL`
+	}
+	_, err := s.db.ExecContext(ctx, query,
 		rec.WorkspaceID, rec.Backend, rec.ProviderWorkspaceID, rec.State,
 		rec.OwnerSessionID, rec.WorkspaceVersion, rec.ProviderRegion, rec.WispName, rec.WispSMHSpaceID,
 		wispOwnsSMHSpace, rec.WorkspaceWispName, rec.WorkspaceRuntimeID,
@@ -114,7 +154,7 @@ func (s *Store) AcquireLease(ctx context.Context, req WorkspaceLeaseRequest) (Wo
 		return WorkspaceLease{}, err
 	}
 	defer tx.Rollback()
-	if err := ensureWorkspaceExistsTx(ctx, tx, req.WorkspaceID, now); err != nil {
+	if err := ensureWorkspaceExistsTx(ctx, tx, req.WorkspaceID, now, s.isMySQL()); err != nil {
 		return WorkspaceLease{}, err
 	}
 	current, ok, err := loadWorkspaceLeaseTx(ctx, tx, req.WorkspaceID)
@@ -154,7 +194,7 @@ func (s *Store) AcquireLease(ctx context.Context, req WorkspaceLeaseRequest) (Wo
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
-	if _, err := tx.ExecContext(ctx, `
+	runtimeQuery := `
 INSERT INTO workspace_runtimes (runtime_id, workspace_id, provider, state, lease_id, fencing_token, created_at, updated_at)
 VALUES (?, ?, ?, 'active', ?, ?, ?, ?)
 ON CONFLICT(runtime_id) DO UPDATE SET
@@ -164,11 +204,25 @@ ON CONFLICT(runtime_id) DO UPDATE SET
 	lease_id = excluded.lease_id,
 	fencing_token = excluded.fencing_token,
 	updated_at = excluded.updated_at,
-	released_at = NULL`,
+	released_at = NULL`
+	if s.isMySQL() {
+		runtimeQuery = `
+INSERT INTO workspace_runtimes (runtime_id, workspace_id, provider, state, lease_id, fencing_token, created_at, updated_at)
+VALUES (?, ?, ?, 'active', ?, ?, ?, ?)
+ON DUPLICATE KEY UPDATE
+	workspace_id = VALUES(workspace_id),
+	provider = VALUES(provider),
+	state = 'active',
+	lease_id = VALUES(lease_id),
+	fencing_token = VALUES(fencing_token),
+	updated_at = VALUES(updated_at),
+	released_at = NULL`
+	}
+	if _, err := tx.ExecContext(ctx, runtimeQuery,
 		req.RuntimeID, req.WorkspaceID, req.Provider, lease.LeaseID, lease.FencingToken, now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano)); err != nil {
 		return WorkspaceLease{}, err
 	}
-	if _, err := tx.ExecContext(ctx, `
+	leaseQuery := `
 INSERT INTO workspace_leases (workspace_id, lease_id, runtime_id, fencing_token, state, expires_at, heartbeat_at, created_at, updated_at)
 VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?)
 ON CONFLICT(workspace_id) DO UPDATE SET
@@ -179,7 +233,22 @@ ON CONFLICT(workspace_id) DO UPDATE SET
 	expires_at = excluded.expires_at,
 	heartbeat_at = excluded.heartbeat_at,
 	created_at = excluded.created_at,
-	updated_at = excluded.updated_at`,
+	updated_at = excluded.updated_at`
+	if s.isMySQL() {
+		leaseQuery = `
+INSERT INTO workspace_leases (workspace_id, lease_id, runtime_id, fencing_token, state, expires_at, heartbeat_at, created_at, updated_at)
+VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?)
+ON DUPLICATE KEY UPDATE
+	lease_id = VALUES(lease_id),
+	runtime_id = VALUES(runtime_id),
+	fencing_token = VALUES(fencing_token),
+	state = 'active',
+	expires_at = VALUES(expires_at),
+	heartbeat_at = VALUES(heartbeat_at),
+	created_at = VALUES(created_at),
+	updated_at = VALUES(updated_at)`
+	}
+	if _, err := tx.ExecContext(ctx, leaseQuery,
 		lease.WorkspaceID, lease.LeaseID, lease.RuntimeID, lease.FencingToken,
 		lease.ExpiresAt.Format(time.RFC3339Nano), lease.HeartbeatAt.Format(time.RFC3339Nano), lease.CreatedAt.Format(time.RFC3339Nano), lease.UpdatedAt.Format(time.RFC3339Nano)); err != nil {
 		return WorkspaceLease{}, err
@@ -310,7 +379,7 @@ func (s *Store) UpsertRuntimeResource(ctx context.Context, rec RuntimeResourceRe
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_, err := s.db.ExecContext(ctx, `
+	query := `
 INSERT INTO runtime_resources (
 	session_id, generation, runtime_id, owner_id, sandbox_backend, state,
 	outer_sandbox_id, inner_sandbox_id, last_error, expires_at, created_at, updated_at
@@ -325,7 +394,26 @@ ON CONFLICT(session_id, generation) DO UPDATE SET
 	inner_sandbox_id = COALESCE(NULLIF(excluded.inner_sandbox_id, ''), runtime_resources.inner_sandbox_id),
 	last_error = excluded.last_error,
 	expires_at = COALESCE(NULLIF(excluded.expires_at, ''), runtime_resources.expires_at),
-	updated_at = excluded.updated_at`,
+	updated_at = excluded.updated_at`
+	if s.isMySQL() {
+		query = `
+INSERT INTO runtime_resources (
+	session_id, generation, runtime_id, owner_id, sandbox_backend, state,
+	outer_sandbox_id, inner_sandbox_id, last_error, expires_at, created_at, updated_at
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON DUPLICATE KEY UPDATE
+	runtime_id = COALESCE(NULLIF(VALUES(runtime_id), ''), runtime_resources.runtime_id),
+	owner_id = COALESCE(NULLIF(VALUES(owner_id), ''), runtime_resources.owner_id),
+	sandbox_backend = COALESCE(NULLIF(VALUES(sandbox_backend), ''), runtime_resources.sandbox_backend),
+	state = VALUES(state),
+	outer_sandbox_id = COALESCE(NULLIF(VALUES(outer_sandbox_id), ''), runtime_resources.outer_sandbox_id),
+	inner_sandbox_id = COALESCE(NULLIF(VALUES(inner_sandbox_id), ''), runtime_resources.inner_sandbox_id),
+	last_error = VALUES(last_error),
+	expires_at = COALESCE(NULLIF(VALUES(expires_at), ''), runtime_resources.expires_at),
+	updated_at = VALUES(updated_at)`
+	}
+	_, err := s.db.ExecContext(ctx, query,
 		rec.SessionID, rec.Generation, rec.RuntimeID, rec.OwnerID, rec.SandboxBackend, rec.State,
 		rec.OuterSandboxID, rec.InnerSandboxID, rec.LastError, formatOptionalWorkspaceTime(rec.ExpiresAt),
 		createdAt.Format(time.RFC3339Nano), updatedAt.Format(time.RFC3339Nano))
@@ -416,10 +504,10 @@ func (s *Store) LoadWorkspace(ctx context.Context, workspaceID string) (Workspac
 	SELECT workspace_id, backend, provider_workspace_id, state,
 	       owner_session_id, workspace_version, provider_region, wisp_name, wisp_smh_space_id,
 	       wisp_owns_smh_space, workspace_wisp_name, workspace_runtime_id,
-	       wisp_package_url, wisp_jfs_prefix, wisp_root_upper_size,
-	       cleanup_state, last_cleanup_error, cleanup_retry_after,
-	       delete_state, last_delete_error, delete_retry_after,
-	       outer_cleanup_pending, last_outer_cleanup_error
+	       COALESCE(wisp_package_url, ''), wisp_jfs_prefix, wisp_root_upper_size,
+	       cleanup_state, COALESCE(last_cleanup_error, ''), cleanup_retry_after,
+	       delete_state, COALESCE(last_delete_error, ''), delete_retry_after,
+	       outer_cleanup_pending, COALESCE(last_outer_cleanup_error, '')
 	FROM workspaces WHERE workspace_id = ?`, workspaceID))
 }
 
@@ -433,10 +521,10 @@ func (s *Store) LoadWorkspaceForSession(ctx context.Context, sessionID string) (
 	SELECT workspace_id, backend, provider_workspace_id, state,
 	       owner_session_id, workspace_version, provider_region, wisp_name, wisp_smh_space_id,
 	       wisp_owns_smh_space, workspace_wisp_name, workspace_runtime_id,
-	       wisp_package_url, wisp_jfs_prefix, wisp_root_upper_size,
-	       cleanup_state, last_cleanup_error, cleanup_retry_after,
-	       delete_state, last_delete_error, delete_retry_after,
-	       outer_cleanup_pending, last_outer_cleanup_error
+	       COALESCE(wisp_package_url, ''), wisp_jfs_prefix, wisp_root_upper_size,
+	       cleanup_state, COALESCE(last_cleanup_error, ''), cleanup_retry_after,
+	       delete_state, COALESCE(last_delete_error, ''), delete_retry_after,
+	       outer_cleanup_pending, COALESCE(last_outer_cleanup_error, '')
 	FROM workspaces
 	WHERE owner_session_id = ? AND deleted_at IS NULL
 	ORDER BY updated_at DESC
@@ -473,13 +561,22 @@ func (s *Store) UpdateWorkspaceLifecycle(ctx context.Context, workspaceID, state
 	return err
 }
 
-func ensureWorkspaceExistsTx(ctx context.Context, tx *sql.Tx, workspaceID string, now time.Time) error {
-	_, err := tx.ExecContext(ctx, `
+func ensureWorkspaceExistsTx(ctx context.Context, tx *sql.Tx, workspaceID string, now time.Time, mysql bool) error {
+	query := `
 	INSERT INTO workspaces (workspace_id, backend, provider_workspace_id, state, fencing_token, created_at, updated_at)
 	VALUES (?, 'workspace', ?, 'active', 0, ?, ?)
 ON CONFLICT(workspace_id) DO UPDATE SET
 	updated_at = excluded.updated_at,
-	deleted_at = NULL`,
+	deleted_at = NULL`
+	if mysql {
+		query = `
+	INSERT INTO workspaces (workspace_id, backend, provider_workspace_id, state, fencing_token, created_at, updated_at)
+	VALUES (?, 'workspace', ?, 'active', 0, ?, ?)
+ON DUPLICATE KEY UPDATE
+	updated_at = VALUES(updated_at),
+	deleted_at = NULL`
+	}
+	_, err := tx.ExecContext(ctx, query,
 		workspaceID, workspaceID, now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano))
 	return err
 }

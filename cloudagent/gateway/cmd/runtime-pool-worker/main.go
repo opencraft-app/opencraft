@@ -19,7 +19,7 @@ func main() {
 	if dataDir == "" {
 		dataDir = filepath.Join(os.TempDir(), "gateway-data")
 	}
-	store, err := wrapper.NewStore(dataDir)
+	store, err := wrapper.NewStoreFromEnv(dataDir)
 	if err != nil {
 		log.Fatalf("init store: %v", err)
 	}

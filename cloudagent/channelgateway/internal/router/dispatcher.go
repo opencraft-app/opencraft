@@ -334,17 +334,18 @@ func (d *Dispatcher) handleInbound(ctx context.Context, msg channel.Message) (re
 					logValue(conversation.SessionKey), logValue(sessionID), isRecoverableRuntimeError(err), logValue(err.Error()))
 				return d.handleACPError(ctx, msg, conversation, sessionID, CallbackStageLoadSession, err)
 			}
-			rebuiltSessionID, rebuildErr := d.recreateSessionWithSameWorkspace(ctx, msg, conversation, sessionID, "missing_acp_runtime_session")
-			if rebuildErr != nil {
-				return d.handleACPError(ctx, msg, conversation, sessionID, CallbackStageNewSession, rebuildErr)
-			}
-			sessionID = rebuiltSessionID
-			conversation.ACPSessionID = rebuiltSessionID
-			if err := d.ensureRuntimeReady(ctx, msg, conversation, sessionID); err != nil {
+			log.Printf("channelgateway session_trace account_id=%s agent_id=%s conversation_id=%s session_key=%s workspace_key=%s acp_session_id=%s action=load_session_missing_preserve_binding error=%s",
+				logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(conversation.ConversationID),
+				logValue(conversation.SessionKey), logValue(conversation.WorkspaceKey), logValue(sessionID), logValue(err.Error()))
+			return d.handleACPError(ctx, msg, conversation, sessionID, CallbackStageLoadSession, err)
+		} else if err := d.ensureRuntimeReady(ctx, msg, conversation, sessionID); err != nil {
+			if isMissingACPSessionError(err) {
+				log.Printf("channelgateway session_trace account_id=%s agent_id=%s conversation_id=%s session_key=%s workspace_key=%s acp_session_id=%s action=ensure_ready_missing_preserve_binding error=%s",
+					logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(conversation.ConversationID),
+					logValue(conversation.SessionKey), logValue(conversation.WorkspaceKey), logValue(sessionID), logValue(err.Error()))
 				return d.handleACPError(ctx, msg, conversation, sessionID, CallbackStageLoadSession, err)
 			}
-		} else if err := d.ensureRuntimeReady(ctx, msg, conversation, sessionID); err != nil {
-			if !isMissingACPSessionError(err) && !isRecoverableRuntimeError(err) {
+			if !isRecoverableRuntimeError(err) {
 				log.Printf("channelgateway session_trace account_id=%s agent_id=%s conversation_id=%s session_key=%s acp_session_id=%s action=load_session_no_recovery stage=ensure_runtime_ready recoverable_runtime=%t error=%s",
 					logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(conversation.ConversationID),
 					logValue(conversation.SessionKey), logValue(sessionID), isRecoverableRuntimeError(err), logValue(err.Error()))

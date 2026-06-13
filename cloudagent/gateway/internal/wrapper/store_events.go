@@ -61,7 +61,7 @@ func (s *Store) saveACPSessionLocked(session *acpSession) error {
 	if session.Closed {
 		closed = 1
 	}
-	_, err := s.db.Exec(`
+	query := `
 INSERT INTO sessions (
 	session_id, scope_tenant, scope_project, scope_sandbox, cwd, workspace_key, title, model, state,
 	closed, runtime_generation, current_response_id, last_runtime_error, created_at,
@@ -79,7 +79,29 @@ ON CONFLICT(session_id) DO UPDATE SET
 	last_runtime_error = excluded.last_runtime_error,
 	updated_at = excluded.updated_at,
 	read_only_reason = excluded.read_only_reason,
-	deleted_at = NULL`,
+	deleted_at = NULL`
+	if s.isMySQL() {
+		query = `
+INSERT INTO sessions (
+	session_id, scope_tenant, scope_project, scope_sandbox, cwd, workspace_key, title, model, state,
+	closed, runtime_generation, current_response_id, last_runtime_error, created_at,
+	updated_at, read_only_reason
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON DUPLICATE KEY UPDATE
+	cwd = VALUES(cwd),
+	workspace_key = VALUES(workspace_key),
+	title = VALUES(title),
+	model = VALUES(model),
+	state = VALUES(state),
+	closed = VALUES(closed),
+	runtime_generation = VALUES(runtime_generation),
+	current_response_id = VALUES(current_response_id),
+	last_runtime_error = VALUES(last_runtime_error),
+	updated_at = VALUES(updated_at),
+	read_only_reason = VALUES(read_only_reason),
+	deleted_at = NULL`
+	}
+	_, err := s.db.Exec(query,
 		session.SessionID, session.Scope.TenantID, session.Scope.ProjectID, session.Scope.SandboxScope,
 		session.CWD, session.WorkspaceKey, sessionTitle(session), session.Model, string(session.State), closed,
 		session.RuntimeGeneration, session.CurrentResponseID, session.LastRuntimeError,
@@ -108,7 +130,7 @@ func (s *Store) saveACPRuntimeLocked(session *acpSession) error {
 	if !runtime.WorkspaceLeaseUntil.IsZero() {
 		workspaceLeaseUntil = runtime.WorkspaceLeaseUntil.Format(time.RFC3339Nano)
 	}
-	_, err := s.db.Exec(`
+	query := `
 	INSERT INTO session_runtimes (
 		session_id, generation, sandbox_backend, outer_runtime, runtime_recovery, agent_version, agent_template_id,
 		sidecar_url, sidecar_sha256, sidecar_sig_url, signing_key_id,
@@ -166,7 +188,69 @@ func (s *Store) saveACPRuntimeLocked(session *acpSession) error {
 	workspace_attach_state = excluded.workspace_attach_state,
 	health_state = excluded.health_state,
 	cleanup_state = excluded.cleanup_state,
-	last_cleanup_error = excluded.last_cleanup_error`,
+	last_cleanup_error = excluded.last_cleanup_error`
+	if s.isMySQL() {
+		query = `
+	INSERT INTO session_runtimes (
+		session_id, generation, sandbox_backend, outer_runtime, runtime_recovery, agent_version, agent_template_id,
+		sidecar_url, sidecar_sha256, sidecar_sig_url, signing_key_id,
+		workspace_version, workspace_template_id, runtime_id, outer_sandbox_id, outer_sandbox_domain,
+	outer_envd_access_token, outer_traffic_token, daemon_addr, remote_binary,
+	inner_sandbox_id, inner_sandbox_domain, inner_envd_access_token, session_proxy_id,
+	wisp_name, wisp_workspace_id, wisp_smh_space_id, wisp_owns_smh_space,
+	wisp_package_url, wisp_install_dir, wisp_client_path, wisp_jfs_prefix, wisp_root_upper_size,
+	wisp_lease_id, wisp_lease_fence, wisp_lease_until,
+	workspace_id, workspace_runtime_id, workspace_wisp_name, workspace_wisp_client, workspace_lease_id, workspace_fence, workspace_lease_until,
+	workspace_attach_state, health_state, cleanup_state, last_cleanup_error
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	ON DUPLICATE KEY UPDATE
+		sandbox_backend = VALUES(sandbox_backend),
+		outer_runtime = VALUES(outer_runtime),
+		runtime_recovery = VALUES(runtime_recovery),
+		agent_version = VALUES(agent_version),
+		agent_template_id = VALUES(agent_template_id),
+		sidecar_url = VALUES(sidecar_url),
+		sidecar_sha256 = VALUES(sidecar_sha256),
+		sidecar_sig_url = VALUES(sidecar_sig_url),
+		signing_key_id = VALUES(signing_key_id),
+		workspace_version = VALUES(workspace_version),
+	workspace_template_id = VALUES(workspace_template_id),
+	runtime_id = VALUES(runtime_id),
+	outer_sandbox_id = VALUES(outer_sandbox_id),
+	outer_sandbox_domain = VALUES(outer_sandbox_domain),
+	outer_envd_access_token = VALUES(outer_envd_access_token),
+	outer_traffic_token = VALUES(outer_traffic_token),
+	daemon_addr = VALUES(daemon_addr),
+	remote_binary = VALUES(remote_binary),
+	inner_sandbox_id = VALUES(inner_sandbox_id),
+	inner_sandbox_domain = VALUES(inner_sandbox_domain),
+	inner_envd_access_token = VALUES(inner_envd_access_token),
+	session_proxy_id = VALUES(session_proxy_id),
+	wisp_name = VALUES(wisp_name),
+	wisp_workspace_id = VALUES(wisp_workspace_id),
+	wisp_smh_space_id = VALUES(wisp_smh_space_id),
+	wisp_owns_smh_space = VALUES(wisp_owns_smh_space),
+	wisp_package_url = VALUES(wisp_package_url),
+	wisp_install_dir = VALUES(wisp_install_dir),
+	wisp_client_path = VALUES(wisp_client_path),
+	wisp_jfs_prefix = VALUES(wisp_jfs_prefix),
+	wisp_root_upper_size = VALUES(wisp_root_upper_size),
+	wisp_lease_id = VALUES(wisp_lease_id),
+	wisp_lease_fence = VALUES(wisp_lease_fence),
+	wisp_lease_until = VALUES(wisp_lease_until),
+	workspace_id = VALUES(workspace_id),
+	workspace_runtime_id = VALUES(workspace_runtime_id),
+	workspace_wisp_name = VALUES(workspace_wisp_name),
+	workspace_wisp_client = VALUES(workspace_wisp_client),
+	workspace_lease_id = VALUES(workspace_lease_id),
+	workspace_fence = VALUES(workspace_fence),
+	workspace_lease_until = VALUES(workspace_lease_until),
+	workspace_attach_state = VALUES(workspace_attach_state),
+	health_state = VALUES(health_state),
+	cleanup_state = VALUES(cleanup_state),
+	last_cleanup_error = VALUES(last_cleanup_error)`
+	}
+	_, err := s.db.Exec(query,
 		session.SessionID, session.RuntimeGeneration, runtime.SandboxBackend, runtime.OuterRuntime, runtime.RuntimeRecovery,
 		runtime.AgentVersion, runtime.AgentTemplateID, runtime.SidecarURL, runtime.SidecarSHA256, runtime.SidecarSigURL, runtime.SigningKeyID,
 		runtime.WorkspaceVersion, runtime.WorkspaceTemplateID,
@@ -530,7 +614,11 @@ func (s *Store) BeginACPPromptTurn(sessionID, responseID, userText string, input
 			return acpPromptTurnRecord{}, err
 		}
 		for _, file := range inputFiles {
-			if _, err := tx.Exec(`INSERT OR REPLACE INTO session_files (session_id, event_id, file_id, staged_rel_path, display_name, mime_type, bytes, purpose) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			query := `INSERT OR REPLACE INTO session_files (session_id, event_id, file_id, staged_rel_path, display_name, mime_type, bytes, purpose) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+			if s.isMySQL() {
+				query = `REPLACE INTO session_files (session_id, event_id, file_id, staged_rel_path, display_name, mime_type, bytes, purpose) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+			}
+			if _, err := tx.Exec(query,
 				sessionID, 0, file.FileID, strings.TrimPrefix(file.WorkspacePath, "./"), file.Filename, file.ContentType, file.Bytes, "input"); err != nil {
 				return acpPromptTurnRecord{}, err
 			}
