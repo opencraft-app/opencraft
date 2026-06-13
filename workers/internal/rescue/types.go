@@ -40,10 +40,7 @@ type ExportRequest struct {
 	RescueUsername         string
 	RescuePasswordEnv      string
 	StopType               string
-	SkipBackup             bool
 	ReenterRescue          bool
-	BackupName             string
-	ForcePoweroffForImage  bool
 	DeviceGlobs            []string
 	RemotePaths            []string
 	MountRoot              string
@@ -129,7 +126,6 @@ type SCPResult struct {
 
 type ExportResult struct {
 	Instance              InstanceInfo
-	Backup                BackupInfo
 	Archive               PreparedArchive
 	SCP                   SCPResult
 	ExitedRescue          bool
@@ -155,7 +151,6 @@ type ExportStatus struct {
 	RunID                 string
 	Phase                 string
 	Instance              InstanceInfo
-	Backup                BackupInfo
 	Archive               PreparedArchive
 	SCP                   SCPResult
 	TATCommand            TATCommandResult
@@ -170,14 +165,6 @@ type ExportStatus struct {
 	Error                 string
 	DryRun                bool
 	Logs                  []ExportStatusLog
-}
-
-type BackupInfo struct {
-	Mode   string
-	ID     string
-	Name   string
-	State  string
-	DryRun bool
 }
 
 type COSDeleteRequest struct {

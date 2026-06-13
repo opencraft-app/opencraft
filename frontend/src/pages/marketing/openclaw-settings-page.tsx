@@ -3779,8 +3779,6 @@ export const OpenClawSettingsPage = () => {
         return t("发起中");
       case "locating":
         return t("定位资源");
-      case "backup":
-        return t("备份中");
       case "enter_rescue":
       case "wait_rescue":
       case "wait_remote_access":

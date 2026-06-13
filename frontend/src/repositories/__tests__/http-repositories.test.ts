@@ -612,11 +612,11 @@ describe("http repositories auth token bootstrap", () => {
           data: {
             WorkflowID: "worker-action-ins_export-rescue_export",
             RunID: "run-123",
-            Phase: "backup",
+            Phase: "enter_rescue",
             Error: "",
             Logs: [
               { Time: "2026-06-12T12:00:00Z", Phase: "locating", Message: "正在定位实例与云资源。", Level: "info" },
-              { Time: "2026-06-12T12:01:00Z", Phase: "backup", Message: "正在创建系统盘备份镜像。", Level: "info" },
+              { Time: "2026-06-12T12:01:00Z", Phase: "enter_rescue", Message: "正在准备导出环境。", Level: "info" },
             ],
           },
         }),
@@ -634,12 +634,12 @@ describe("http repositories auth token bootstrap", () => {
     expect(result).toEqual({
       workflowId: "worker-action-ins_export-rescue_export",
       runId: "run-123",
-      phase: "backup",
+      phase: "enter_rescue",
       error: undefined,
       dryRun: undefined,
       logs: [
         { time: "2026-06-12T12:00:00Z", phase: "locating", message: "正在定位实例与云资源。", level: "info" },
-        { time: "2026-06-12T12:01:00Z", phase: "backup", message: "正在创建系统盘备份镜像。", level: "info" },
+        { time: "2026-06-12T12:01:00Z", phase: "enter_rescue", message: "正在准备导出环境。", level: "info" },
       ],
     });
     expect(fetchMock).toHaveBeenCalledWith(

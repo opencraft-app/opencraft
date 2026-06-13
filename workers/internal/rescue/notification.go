@@ -123,7 +123,7 @@ func productFailureReason(errText string) string {
 	}
 	switch {
 	case strings.Contains(cleaned, "ResourceUnavailable.SnapshotCreating"):
-		return "磁盘快照正在创建，当前无法创建备份镜像。请等待当前快照完成后再重试。"
+		return "云盘快照正在处理中，当前无法完成导出准备。请等待快照任务完成后再重试。"
 	case strings.Contains(cleaned, "Request unauthorized"), strings.Contains(cleaned, "PermissionDenied"):
 		return "导出服务鉴权未通过，请稍后重试；如果仍然失败，请联系支持处理。"
 	case strings.Contains(cleaned, "AuthFailure"), strings.Contains(cleaned, "UnauthorizedOperation"):

@@ -14,7 +14,6 @@ func TestExportWorkflowCancelAfterEnterStillExitsRescue(t *testing.T) {
 	env.RegisterWorkflow(ExportWorkflow)
 	acts := Activities{}
 	env.RegisterActivityWithOptions(acts.LocateInstance, ActivityOptions("LocateInstance"))
-	env.RegisterActivityWithOptions(acts.EnsureBackup, ActivityOptions("EnsureBackup"))
 	env.RegisterActivityWithOptions(acts.EnterRescueMode, ActivityOptions("EnterRescueMode"))
 	env.RegisterActivityWithOptions(acts.ExitRescueMode, ActivityOptions("ExitRescueMode"))
 	env.RegisterActivityWithOptions(acts.WaitInstanceRunning, ActivityOptions("WaitInstanceRunning"))
@@ -23,7 +22,6 @@ func TestExportWorkflowCancelAfterEnterStillExitsRescue(t *testing.T) {
 	req := ExportRequest{
 		InstanceID:             "ins-test",
 		Execute:                true,
-		SkipBackup:             true,
 		CommandTransport:       "tat",
 		WaitTimeoutSeconds:     30,
 		CommandTimeoutSeconds:  30,
@@ -35,7 +33,6 @@ func TestExportWorkflowCancelAfterEnterStillExitsRescue(t *testing.T) {
 	instance := InstanceInfo{InstanceID: req.InstanceID, Region: "ap-beijing", State: "RUNNING"}
 
 	env.OnActivity("LocateInstance", mock.Anything, req, cfg).Return(instance, nil).Once()
-	env.OnActivity("EnsureBackup", mock.Anything, req, cfg, instance.Region).Return(BackupInfo{Mode: "skipped"}, nil).Once()
 	env.OnActivity("EnterRescueMode", mock.Anything, req, cfg, instance.Region).Run(func(mock.Arguments) {
 		env.CancelWorkflow()
 	}).Return(nil).Once()
@@ -70,7 +67,7 @@ func TestExportWorkflowFailureSendsNotification(t *testing.T) {
 	cfg := TencentConfig{}
 	locateErr := errors.New("locate failed")
 
-	env.OnActivity("LocateInstance", mock.Anything, req, cfg).Return(InstanceInfo{}, locateErr).Once()
+	env.OnActivity("LocateInstance", mock.Anything, req, cfg).Return(InstanceInfo{}, locateErr).Times(3)
 	env.OnActivity("SendFailureNotification", mock.Anything, mock.MatchedBy(func(notification FailureNotification) bool {
 		return notification.Request.InstanceID == req.InstanceID &&
 			notification.Request.NotificationEmail == req.NotificationEmail &&
@@ -95,7 +92,6 @@ func TestExportWorkflowSchedulesCOSAutoDeleteChild(t *testing.T) {
 	env.RegisterWorkflow(DeleteCOSObjectWorkflow)
 	acts := Activities{}
 	env.RegisterActivityWithOptions(acts.LocateInstance, ActivityOptions("LocateInstance"))
-	env.RegisterActivityWithOptions(acts.EnsureBackup, ActivityOptions("EnsureBackup"))
 	env.RegisterActivityWithOptions(acts.EnterRescueMode, ActivityOptions("EnterRescueMode"))
 	env.RegisterActivityWithOptions(acts.WaitRescueRunning, ActivityOptions("WaitRescueRunning"))
 	env.RegisterActivityWithOptions(acts.WaitRescueTAT, ActivityOptions("WaitRescueTAT"))
@@ -113,7 +109,6 @@ func TestExportWorkflowSchedulesCOSAutoDeleteChild(t *testing.T) {
 		InstanceID:             "ins-test",
 		Execute:                true,
 		NotificationEmail:      "owner@example.com",
-		SkipBackup:             true,
 		CommandTransport:       "tat",
 		WaitTimeoutSeconds:     30,
 		CommandTimeoutSeconds:  30,
@@ -153,7 +148,6 @@ func TestExportWorkflowSchedulesCOSAutoDeleteChild(t *testing.T) {
 	}
 
 	env.OnActivity("LocateInstance", mock.Anything, req, cfg).Return(instance, nil).Once()
-	env.OnActivity("EnsureBackup", mock.Anything, req, cfg, instance.Region).Return(BackupInfo{Mode: "skipped"}, nil).Once()
 	env.OnActivity("EnterRescueMode", mock.Anything, req, cfg, instance.Region).Return(nil).Once()
 	env.OnActivity("WaitRescueRunning", mock.Anything, req, cfg, instance.Region).Return("RESCUE_MODE", nil).Once()
 	env.OnActivity("WaitRescueTAT", mock.Anything, req, cfg, instance.Region).Return(nil).Once()

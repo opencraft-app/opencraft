@@ -11,7 +11,6 @@ const ExportStatusQuery = "status"
 
 const (
 	PhaseLocating             = "locating"
-	PhaseBackup               = "backup"
 	PhaseEnterRescue          = "enter_rescue"
 	PhaseWaitRescue           = "wait_rescue"
 	PhaseWaitRemoteAccess     = "wait_remote_access"
@@ -84,7 +83,6 @@ func updateWorkflowPhase(ctx workflow.Context, req ExportRequest, status *Export
 
 func completeWorkflowStatus(ctx workflow.Context, req ExportRequest, status *ExportStatus, result ExportResult, err error) {
 	status.Instance = result.Instance
-	status.Backup = result.Backup
 	status.Archive = result.Archive
 	status.SCP = result.SCP
 	status.ExitedRescue = result.ExitedRescue
@@ -167,8 +165,6 @@ func phaseStatusMessage(phase string, dryRun bool) string {
 	switch phase {
 	case PhaseLocating:
 		return "正在定位 Agent 运行环境。"
-	case PhaseBackup:
-		return "正在创建导出前备份。"
 	case PhaseEnterRescue:
 		return "正在准备导出环境。"
 	case PhaseWaitRescue:
