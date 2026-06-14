@@ -34,6 +34,10 @@ export const LOGS_SINCE_OPTIONS: Array<{ value: LogsSinceOption; label: string }
 const DEFAULT_LOGS_SINCE: LogsSinceOption = "1h";
 
 export function buildLogsCommand(since: LogsSinceOption): string {
+  return `hermes logs --since ${since} --limit 200`;
+}
+
+export function buildLogsExportCommand(since: LogsSinceOption): string {
   return `hermes logs --since ${since}`;
 }
 
@@ -129,6 +133,7 @@ export function AgentDiagnosticsPanel({
 }) {
   const t = useT();
   const [logsSince, setLogsSince] = useState<LogsSinceOption>(DEFAULT_LOGS_SINCE);
+  const [exportingLogs, setExportingLogs] = useState(false);
   const commands = useMemo(() => getAgentDiagnosticCommands(logsSince), [logsSince]);
   const [states, setStates] = useState<Record<DiagnosticCommandId, DiagnosticCardState>>({
     logs: DEFAULT_CARD_STATE,
@@ -177,6 +182,22 @@ export function AgentDiagnosticsPanel({
     [botId, execDebugCommand, t],
   );
 
+  const exportLogs = useCallback(async () => {
+    setExportingLogs(true);
+    try {
+      const result = await execDebugCommand(botId, buildLogsExportCommand(logsSince));
+      if (!isDiagnosticCommandSucceeded(result)) {
+        toast.error(t("获取最近日志失败"));
+        return;
+      }
+      downloadDiagnosticLogs(normalizeDiagnosticOutput(result.output, result.status), logsSince);
+    } catch {
+      toast.error(t("获取最近日志失败"));
+    } finally {
+      setExportingLogs(false);
+    }
+  }, [botId, execDebugCommand, logsSince, t]);
+
   const handleLogsSinceChange = useCallback((next: LogsSinceOption) => {
     setLogsSince(next);
   }, []);
@@ -199,7 +220,7 @@ export function AgentDiagnosticsPanel({
           />
           <MaintenanceActionCard
             icon={<RotateCcw className="h-3.5 w-3.5" />}
-            title={t("重置 Agent")}
+            title={t("重装 Agent（保留数据）")}
             description={t("执行 Hermes Agent 后台重置流程")}
             action={resetAgentAction}
             loadingLabel={t("重置中...")}
@@ -213,6 +234,8 @@ export function AgentDiagnosticsPanel({
             item={item}
             state={states[item.id]}
             onRefresh={() => void runCommand(item)}
+            onExport={item.id === "logs" ? () => void exportLogs() : undefined}
+            isExporting={item.id === "logs" ? exportingLogs : false}
             logsSince={item.id === "logs" ? logsSince : undefined}
             onLogsSinceChange={item.id === "logs" ? handleLogsSinceChange : undefined}
           />
@@ -226,12 +249,16 @@ function DiagnosticCard({
   item,
   state,
   onRefresh,
+  onExport,
+  isExporting,
   logsSince,
   onLogsSinceChange,
 }: {
   item: AgentDiagnosticCommand;
   state: DiagnosticCardState;
   onRefresh: () => void;
+  onExport?: () => void;
+  isExporting?: boolean;
   logsSince?: LogsSinceOption;
   onLogsSinceChange?: (value: LogsSinceOption) => void;
 }) {
@@ -258,16 +285,16 @@ function DiagnosticCard({
           {item.id === "logs" && (
             <button
               type="button"
-              onClick={() => downloadDiagnosticLogs(state.rawOutput || state.output, logsSince ?? "1h")}
-              disabled={isLoading || !(state.rawOutput || state.output)}
+              onClick={onExport}
+              disabled={isLoading || isExporting}
               className={cn(
                 "inline-flex h-7 flex-shrink-0 items-center justify-center gap-1 rounded-full px-2 text-xs font-medium text-black/50 transition-colors",
-                isLoading || !(state.rawOutput || state.output)
+                isLoading || isExporting
                   ? "cursor-not-allowed opacity-45"
                   : "hover:bg-black/[0.04] hover:text-black/80",
               )}
             >
-              <Download className="h-3.5 w-3.5" />
+              {isExporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
               {t("导出")}
             </button>
           )}
@@ -316,6 +343,9 @@ function DiagnosticCard({
           </button>
         </div>
       </div>
+      {item.id === "logs" && (
+        <p className="mt-2 text-xs leading-5 text-black/40">{t("仅展示最近 200 条，完整日志可执行导出操作")}</p>
+      )}
 
       <div className="mt-4 min-h-0 flex-1 rounded-md border border-black/[0.06] bg-black/[0.025]">
         {state.status === "idle" ? (

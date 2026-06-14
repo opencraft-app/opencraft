@@ -3989,7 +3989,7 @@ export const OpenClawSettingsPage = () => {
               <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "var(--tea-color-warning-default-alpha10, rgba(245,158,11,0.10))" }}>
                 <RepairToolsIcon className="h-5 w-5" style={{ color: "var(--tea-color-warning-default, #F59E0B)" }} />
               </div>
-              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("重置 Agent")}</h3>
+              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("重装 Agent（保留数据）")}</h3>
             </div>
             <p style={{ color: "var(--tea-color-text-secondary, #666)", fontSize: "14px", lineHeight: 1.6, marginBottom: "20px" }}>
               {t("将执行 Hermes Agent 后台重置流程，")}
@@ -4259,8 +4259,8 @@ export const OpenClawSettingsPage = () => {
                   : []),
                 { id: "automations", label: t("自动任务"), icon: <CalendarClock className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.automations },
                 { id: "memory", label: t("记忆"), icon: <Database className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.memory },
-                { id: "achievement", label: t("成就"), icon: <Trophy className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.achievement, badge: "NEW" },
-                { id: "files", label: t("云存储"), icon: <Files className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.files, badge: "NEW" },
+                { id: "achievement", label: t("成就"), icon: <Trophy className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.achievement },
+                { id: "files", label: t("云存储"), icon: <Files className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.files },
                 ...(SHOW_AGENTCHAT_ENTRY
                   ? [{ id: "chat" as const, label: t("对话"), icon: <MessageSquare className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.chat }]
                   : []),
@@ -4280,7 +4280,7 @@ export const OpenClawSettingsPage = () => {
               const acliResetTooltip =
                 acliResetBlockReason === RESET_BLOCK_REASON.NOT_RUNNING
                   ? t("请稍后")
-                  : t("重置 Agent");
+                  : t("重装 Agent（保留数据）");
               const deleteDisabled = resettingAcli;
               const deleteTooltip = deleteDisabled ? t("请稍后") : t("删除");
 

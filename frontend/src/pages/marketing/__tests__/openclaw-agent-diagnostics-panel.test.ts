@@ -4,6 +4,7 @@ import {
   AGENT_DIAGNOSTIC_COMMANDS,
   buildDiagnosticLogsFileName,
   buildLogsCommand,
+  buildLogsExportCommand,
   getAgentDiagnosticCommands,
   getDiagnosticRunStatus,
   normalizeDiagnosticOutput,
@@ -12,15 +13,19 @@ import {
 describe("agent diagnostics commands", () => {
   it("runs the expected Hermes diagnostic commands", () => {
     expect(AGENT_DIAGNOSTIC_COMMANDS.map((item) => item.command)).toEqual([
-      "hermes logs --since 1h",
+      "hermes logs --since 1h --limit 200",
     ]);
   });
 
   it("builds logs commands for the selected time window", () => {
-    expect(buildLogsCommand("6h")).toBe("hermes logs --since 6h");
+    expect(buildLogsCommand("6h")).toBe("hermes logs --since 6h --limit 200");
     expect(getAgentDiagnosticCommands("24h").map((item) => item.command)).toEqual([
-      "hermes logs --since 24h",
+      "hermes logs --since 24h --limit 200",
     ]);
+  });
+
+  it("builds unbounded logs export commands", () => {
+    expect(buildLogsExportCommand("24h")).toBe("hermes logs --since 24h");
   });
 
   it("builds stable logs download filenames", () => {
