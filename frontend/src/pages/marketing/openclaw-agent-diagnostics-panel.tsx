@@ -1,11 +1,11 @@
-import { ChevronDown, ClipboardList, Download, FileText, Loader2, Stethoscope } from "lucide-react";
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, ClipboardList, Download, FileText, Loader2, RotateCcw, Wrench } from "lucide-react";
+import { type ReactNode, type RefObject, useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { useT } from "@/i18n/t";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 
-type DiagnosticCommandId = "doctor" | "logs";
+type DiagnosticCommandId = "logs";
 type DiagnosticRunStatus = "idle" | "loading" | "success" | "error";
 
 export interface DebugCommandResult {
@@ -32,7 +32,6 @@ export const LOGS_SINCE_OPTIONS: Array<{ value: LogsSinceOption; label: string }
 ];
 
 const DEFAULT_LOGS_SINCE: LogsSinceOption = "1h";
-const DOCTOR_COMMAND = "hermes doctor --fix";
 
 export function buildLogsCommand(since: LogsSinceOption): string {
   return `hermes logs --since ${since}`;
@@ -41,10 +40,6 @@ export function buildLogsCommand(since: LogsSinceOption): string {
 export function getAgentDiagnosticCommands(logsSince: LogsSinceOption): AgentDiagnosticCommand[] {
   return [
     {
-      id: "doctor",
-      command: DOCTOR_COMMAND,
-    },
-    {
       id: "logs",
       command: buildLogsCommand(logsSince),
     },
@@ -52,6 +47,13 @@ export function getAgentDiagnosticCommands(logsSince: LogsSinceOption): AgentDia
 }
 
 export const AGENT_DIAGNOSTIC_COMMANDS: AgentDiagnosticCommand[] = getAgentDiagnosticCommands(DEFAULT_LOGS_SINCE);
+
+export interface DiagnosticsMaintenanceAction {
+  disabled: boolean;
+  loading: boolean;
+  tooltip: string;
+  onExecute: () => void;
+}
 
 export function buildDiagnosticLogsFileName(since: LogsSinceOption, date = new Date()): string {
   const pad = (value: number) => value.toString().padStart(2, "0");
@@ -113,15 +115,22 @@ const DEFAULT_CARD_STATE: DiagnosticCardState = {
 export function AgentDiagnosticsPanel({
   botId,
   execDebugCommand,
+  resetConfigAction,
+  resetAgentAction,
+  resetAgentConsole,
+  resetAgentConsoleRef,
 }: {
   botId: string;
   execDebugCommand: ExecDebugCommand;
+  resetConfigAction: DiagnosticsMaintenanceAction;
+  resetAgentAction: DiagnosticsMaintenanceAction;
+  resetAgentConsole: string[];
+  resetAgentConsoleRef: RefObject<HTMLPreElement | null>;
 }) {
   const t = useT();
   const [logsSince, setLogsSince] = useState<LogsSinceOption>(DEFAULT_LOGS_SINCE);
   const commands = useMemo(() => getAgentDiagnosticCommands(logsSince), [logsSince]);
   const [states, setStates] = useState<Record<DiagnosticCommandId, DiagnosticCardState>>({
-    doctor: DEFAULT_CARD_STATE,
     logs: DEFAULT_CARD_STATE,
   });
 
@@ -135,7 +144,6 @@ export function AgentDiagnosticsPanel({
         },
       }));
 
-      const title = getCommandTitle(item.id, t);
       try {
         const result = await execDebugCommand(botId, item.command);
         const nextStatus = getDiagnosticRunStatus(result);
@@ -149,9 +157,9 @@ export function AgentDiagnosticsPanel({
           },
         }));
         if (nextStatus === "success") {
-          toast.success(`${title}：${t("正常")}`);
+          toast.success(t("获取最近日志成功"));
         } else {
-          toast.error(`${title}：${t("获取失败")}`);
+          toast.error(t("获取最近日志失败"));
         }
       } catch (error) {
         const output = error instanceof Error ? error.message : t("命令执行失败");
@@ -163,7 +171,7 @@ export function AgentDiagnosticsPanel({
             rawOutput: output,
           },
         }));
-        toast.error(`${title}：${t("获取失败")}`);
+        toast.error(t("获取最近日志失败"));
       }
     },
     [botId, execDebugCommand, t],
@@ -177,10 +185,28 @@ export function AgentDiagnosticsPanel({
     <div className="space-y-4">
       <div>
         <h2 className="text-xl font-semibold text-black/90">{t("诊断中心")}</h2>
-        <p className="mt-1 text-sm leading-6 text-black/50">{t("通过 Hermes doctor 和 logs 快速检查智能体运行状态")}</p>
+        <p className="mt-1 text-sm leading-6 text-black/50">{t("查看 Hermes Agent 日志，并集中执行重置相关维护操作")}</p>
       </div>
 
       <div className="grid gap-4">
+        <div className="grid gap-3 md:grid-cols-2">
+          <MaintenanceActionCard
+            icon={<Wrench className="h-3.5 w-3.5" />}
+            title={t("重置模型配置")}
+            description={t("初始化 Hermes Agent 的模型配置，适合修复模型配置")}
+            action={resetConfigAction}
+            loadingLabel={t("恢复中...")}
+          />
+          <MaintenanceActionCard
+            icon={<RotateCcw className="h-3.5 w-3.5" />}
+            title={t("重置 Agent")}
+            description={t("执行 Hermes Agent 后台重置流程")}
+            action={resetAgentAction}
+            loadingLabel={t("重置中...")}
+            consoleLines={resetAgentConsole}
+            consoleRef={resetAgentConsoleRef}
+          />
+        </div>
         {commands.map((item) => (
           <DiagnosticCard
             key={item.id}
@@ -210,15 +236,13 @@ function DiagnosticCard({
   onLogsSinceChange?: (value: LogsSinceOption) => void;
 }) {
   const t = useT();
-  const Icon = item.id === "doctor" ? Stethoscope : FileText;
+  const Icon = FileText;
   const isLoading = state.status === "loading";
-  const title = getCommandTitle(item.id, t);
-  const description = getCommandDescription(item.id, t);
+  const title = getCommandTitle(t);
+  const description = getCommandDescription(t);
   const displayOutput =
     isLoading && !state.output
-      ? item.id === "doctor"
-        ? t("正在执行 hermes doctor --fix，命令完成后会显示完整输出。")
-        : t("正在获取日志，命令完成后会显示完整输出。")
+      ? t("正在获取日志，命令完成后会显示完整输出。")
       : state.output;
 
   return (
@@ -283,7 +307,7 @@ function DiagnosticCard({
             onClick={onRefresh}
             disabled={isLoading}
             className={cn(
-              "inline-flex h-8 flex-shrink-0 items-center justify-center gap-1.5 rounded-full bg-black px-4 text-sm font-semibold text-white shadow-sm transition-colors",
+              "inline-flex h-7 flex-shrink-0 items-center justify-center gap-1 rounded-full bg-black px-3.5 text-sm font-semibold text-white shadow-sm transition-colors",
               isLoading ? "cursor-wait opacity-60" : "hover:bg-black/85 active:bg-black/95",
             )}
           >
@@ -308,14 +332,70 @@ function DiagnosticCard({
   );
 }
 
-function getCommandTitle(id: DiagnosticCommandId, t: ReturnType<typeof useT>): string {
-  if (id === "doctor") return t("一键修复");
+function getCommandTitle(t: ReturnType<typeof useT>): string {
   return t("最近日志");
 }
 
-function getCommandDescription(id: DiagnosticCommandId, t: ReturnType<typeof useT>): string {
-  if (id === "doctor") return t("执行 hermes doctor 命令，系统将会自动检测问题并尝试修复。");
+function getCommandDescription(t: ReturnType<typeof useT>): string {
   return t("查看 Hermes Agent 最近日志，辅助定位问题");
+}
+
+function MaintenanceActionCard({
+  icon,
+  title,
+  description,
+  action,
+  loadingLabel,
+  consoleLines,
+  consoleRef,
+}: {
+  icon: ReactNode;
+  title: string;
+  description: string;
+  action: DiagnosticsMaintenanceAction;
+  loadingLabel: string;
+  consoleLines?: string[];
+  consoleRef?: RefObject<HTMLPreElement | null>;
+}) {
+  const t = useT();
+  return (
+    <article className="rounded-lg border border-black/[0.08] bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.035)]">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-black/[0.04] text-black/65">
+              {icon}
+            </span>
+            <h3 className="truncate text-base font-semibold text-black/90">{title}</h3>
+          </div>
+          <p className="mt-2 text-xs leading-5 text-black/50">{description}</p>
+          {action.disabled && !action.loading && (
+            <p className="mt-2 text-xs text-black/40">{action.tooltip}</p>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={action.onExecute}
+          disabled={action.disabled}
+          className={cn(
+            "inline-flex h-7 flex-shrink-0 items-center justify-center gap-1 rounded-full bg-black px-3 text-sm font-semibold text-white shadow-sm transition-colors",
+            action.disabled ? "cursor-not-allowed opacity-50" : "hover:bg-black/85 active:bg-black/95",
+          )}
+        >
+          {action.loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+          {action.loading ? loadingLabel : t("执行")}
+        </button>
+      </div>
+      {consoleLines && consoleLines.length > 0 && (
+        <pre
+          ref={consoleRef}
+          className="mt-3 max-h-36 overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-black/[0.08] bg-[#111827] px-3 py-2.5 text-[11px] leading-relaxed text-[#d1d5db]"
+        >
+          {consoleLines.join("\n")}
+        </pre>
+      )}
+    </article>
+  );
 }
 
 /* 诊断输出区 + 手绘滚动条

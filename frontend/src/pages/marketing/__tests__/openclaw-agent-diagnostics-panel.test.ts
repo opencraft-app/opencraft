@@ -12,7 +12,6 @@ import {
 describe("agent diagnostics commands", () => {
   it("runs the expected Hermes diagnostic commands", () => {
     expect(AGENT_DIAGNOSTIC_COMMANDS.map((item) => item.command)).toEqual([
-      "hermes doctor --fix",
       "hermes logs --since 1h",
     ]);
   });
@@ -20,7 +19,6 @@ describe("agent diagnostics commands", () => {
   it("builds logs commands for the selected time window", () => {
     expect(buildLogsCommand("6h")).toBe("hermes logs --since 6h");
     expect(getAgentDiagnosticCommands("24h").map((item) => item.command)).toEqual([
-      "hermes doctor --fix",
       "hermes logs --since 24h",
     ]);
   });

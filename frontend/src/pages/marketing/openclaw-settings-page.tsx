@@ -115,7 +115,6 @@ import {
 import {
   getResetBlockReason,
   getAcliResetBlockReason,
-  getAcliResetClickAction,
   hermesModelName,
   hermesSwitchModelFullId,
   isExecCommandSucceeded,
@@ -3278,8 +3277,6 @@ export const OpenClawSettingsPage = () => {
   const [resettingAcli, setResettingAcli] = useState(false);
   const [acliResetConsole, setAcliResetConsole] = useState<string[]>([]);
   const acliResetConsoleRef = useRef<HTMLPreElement | null>(null);
-  const [viewedChannelBotIds, setViewedChannelBotIds] = useState<Set<string>>(new Set());
-
   useEffect(() => {
     setAcliResetConsole([]);
   }, [activeBot?.id]);
@@ -3291,8 +3288,7 @@ export const OpenClawSettingsPage = () => {
   }, [acliResetConsole]);
 
   const handleResetConfig = async () => {
-    const hasViewedChannel = activeBot ? viewedChannelBotIds.has(activeBot.id) : false;
-    if (getResetBlockReason(activeBot, resetting, hasViewedChannel)) return;
+    if (getResetBlockReason(activeBot, resetting, true)) return;
     const targetBotId = activeBot?.id;
     if (!targetBotId) return;
 
@@ -3390,21 +3386,6 @@ export const OpenClawSettingsPage = () => {
       setResettingAcli(false);
     }
   };
-
-  const CHANNEL_TAB_BOOTSTRAP_GRACE_MS = 3000;
-  useEffect(() => {
-    if (activeSection !== "channel" || !activeBot) return;
-    const botId = activeBot.id;
-    const timer = window.setTimeout(() => {
-      setViewedChannelBotIds((prev) => {
-        if (prev.has(botId)) return prev;
-        const next = new Set(prev);
-        next.add(botId);
-        return next;
-      });
-    }, CHANNEL_TAB_BOOTSTRAP_GRACE_MS);
-    return () => window.clearTimeout(timer);
-  }, [activeSection, activeBot?.id]);
 
   /* 通道弹窗 */
   const [showChannelModal, setShowChannelModal] = useState(false);
@@ -3954,10 +3935,10 @@ export const OpenClawSettingsPage = () => {
               <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "var(--tea-color-warning-default-alpha10, rgba(245,158,11,0.10))" }}>
                 <Wrench className="h-5 w-5" style={{ color: "var(--tea-color-warning-default, #F59E0B)" }} />
               </div>
-              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("重置 Hermes Agent 配置")}</h3>
+              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("重置模型配置")}</h3>
             </div>
             <p style={{ color: "var(--tea-color-text-secondary, #666)", fontSize: "14px", lineHeight: 1.6, marginBottom: "20px" }}>
-              {t("将重置 Hermes Agent的配置文件，")}
+              {t("将初始化 Hermes Agent 的模型配置，")}
               <span className="font-semibold" style={{ color: "var(--tea-color-warning-default, #F59E0B)" }}>
                 {t("模型相关配置不会保留。")}
               </span>
@@ -4008,7 +3989,7 @@ export const OpenClawSettingsPage = () => {
               <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "var(--tea-color-warning-default-alpha10, rgba(245,158,11,0.10))" }}>
                 <RepairToolsIcon className="h-5 w-5" style={{ color: "var(--tea-color-warning-default, #F59E0B)" }} />
               </div>
-              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("重置 Hermes Agent")}</h3>
+              <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("重置 Agent")}</h3>
             </div>
             <p style={{ color: "var(--tea-color-text-secondary, #666)", fontSize: "14px", lineHeight: 1.6, marginBottom: "20px" }}>
               {t("将执行 Hermes Agent 后台重置流程，")}
@@ -4277,30 +4258,29 @@ export const OpenClawSettingsPage = () => {
                   ? [{ id: "buddy" as const, label: t("人设"), icon: <UserRound className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.buddy }]
                   : []),
                 { id: "automations", label: t("自动任务"), icon: <CalendarClock className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.automations },
-                { id: "diagnostics", label: t("诊断中心"), icon: <Stethoscope className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.diagnostics, badge: "NEW" },
                 { id: "memory", label: t("记忆"), icon: <Database className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.memory },
                 { id: "achievement", label: t("成就"), icon: <Trophy className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.achievement, badge: "NEW" },
                 { id: "files", label: t("云存储"), icon: <Files className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.files, badge: "NEW" },
                 ...(SHOW_AGENTCHAT_ENTRY
                   ? [{ id: "chat" as const, label: t("对话"), icon: <MessageSquare className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.chat }]
                   : []),
+                { id: "diagnostics", label: t("诊断中心"), icon: <Stethoscope className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.diagnostics, badge: "NEW" },
               ];
               const isRestartDisabled = resettingAcli || isActiveBotRestarting || activeBot.status !== "running";
               const restartTooltip = resettingAcli ? t("请稍后") : t("重启");
               const exportTooltip = isActiveBotExporting ? t("导出中...") : t("导出工作区");
-              const hasViewedChannel = viewedChannelBotIds.has(activeBot.id);
-              const resetBlockReason = getResetBlockReason(activeBot, resetting, hasViewedChannel);
+              const resetBlockReason = getResetBlockReason(activeBot, resetting, true);
               const resetDisabled = resettingAcli || resetting || resetBlockReason !== null;
               const resetTooltip =
-                resettingAcli || resetBlockReason === RESET_BLOCK_REASON.NOT_RUNNING || resetBlockReason === RESET_BLOCK_REASON.CHANNEL_NOT_VIEWED
+                resettingAcli || resetBlockReason === RESET_BLOCK_REASON.NOT_RUNNING
                   ? t("请稍后")
-                  : t("重置配置");
+                  : t("重置模型配置");
               const acliResetBlockReason = getAcliResetBlockReason(activeBot, resettingAcli);
               const acliResetDisabled = resettingAcli || acliResetBlockReason !== null;
               const acliResetTooltip =
                 acliResetBlockReason === RESET_BLOCK_REASON.NOT_RUNNING
                   ? t("请稍后")
-                  : t("重置Agent");
+                  : t("重置 Agent");
               const deleteDisabled = resettingAcli;
               const deleteTooltip = deleteDisabled ? t("请稍后") : t("删除");
 
@@ -4373,49 +4353,6 @@ export const OpenClawSettingsPage = () => {
                               type="button"
                               onClick={(event) => {
                                 event.stopPropagation();
-                                if (resetDisabled) return;
-                                setShowResetConfirm(true);
-                              }}
-                              aria-disabled={resetDisabled}
-                              aria-label={resetTooltip}
-                              className={cn(
-                                "inline-flex h-8 w-6 flex-shrink-0 items-center justify-center rounded-md transition-colors",
-                                resetDisabled
-                                  ? "cursor-not-allowed text-black/20"
-                                  : "text-black/35 hover:bg-amber-500/10 hover:text-amber-600",
-                              )}
-                            >
-                              {resetting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wrench className="h-4 w-4" />}
-                            </button>
-                            <SettingsIconTooltip label={resetTooltip} />
-                          </span>
-                          <span className="group relative inline-flex">
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                if (getAcliResetClickAction(activeBot, resettingAcli) === "open_confirm") {
-                                  setShowAcliResetConfirm(true);
-                                }
-                              }}
-                              aria-disabled={acliResetDisabled}
-                              aria-label={acliResetTooltip}
-                              className={cn(
-                                "inline-flex h-8 w-6 flex-shrink-0 items-center justify-center rounded-md transition-colors",
-                                acliResetDisabled
-                                  ? "cursor-not-allowed text-black/20"
-                                  : "text-black/35 hover:bg-black/[0.06] hover:text-black/80",
-                              )}
-                            >
-                              {resettingAcli ? <Loader2 className="h-4 w-4 animate-spin" /> : <RepairToolsIcon className="h-4 w-4" />}
-                            </button>
-                            <SettingsIconTooltip label={acliResetTooltip} />
-                          </span>
-                          <span className="group relative inline-flex">
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
                                 if (deleteDisabled) return;
                                 setDeleteInput("");
                                 setShowDeleteConfirm(true);
@@ -4440,15 +4377,6 @@ export const OpenClawSettingsPage = () => {
                           />
                         )}
                       </div>
-                      {acliResetConsole.length > 0 && (
-                        <pre
-                          ref={acliResetConsoleRef}
-                          className="mt-2 max-h-36 overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-black/[0.08] bg-[#111827] px-2.5 py-2 text-[11px] leading-relaxed text-[#d1d5db]"
-                        >
-                          {acliResetConsole.join("\n")}
-                        </pre>
-                      )}
-
                       {visibleBots.length > 1 && isAgentMenuOpen && (
                         <div className="mt-1 rounded-md bg-black/[0.025] p-1">
                           {visibleBots.map((bot) => {
@@ -4615,7 +4543,30 @@ export const OpenClawSettingsPage = () => {
                             <AutomationsPanel botId={activeBot.id} />
                           )}
                           {activeSection === "diagnostics" && (
-                            <AgentDiagnosticsPanel botId={activeBot.id} execDebugCommand={repositories.bots.execDebugCommand} />
+                            <AgentDiagnosticsPanel
+                              botId={activeBot.id}
+                              execDebugCommand={repositories.bots.execDebugCommand}
+                              resetConfigAction={{
+                                disabled: resetDisabled,
+                                loading: resetting,
+                                tooltip: resetTooltip,
+                                onExecute: () => {
+                                  if (resetDisabled) return;
+                                  setShowResetConfirm(true);
+                                },
+                              }}
+                              resetAgentAction={{
+                                disabled: acliResetDisabled,
+                                loading: resettingAcli,
+                                tooltip: acliResetTooltip,
+                                onExecute: () => {
+                                  if (acliResetDisabled) return;
+                                  setShowAcliResetConfirm(true);
+                                },
+                              }}
+                              resetAgentConsole={acliResetConsole}
+                              resetAgentConsoleRef={acliResetConsoleRef}
+                            />
                           )}
                           {activeSection === "chat" && (
                             <div className="h-[clamp(516px,calc(100vh-220px),960px)] overflow-hidden rounded-lg border border-black/[0.08] bg-white [&>*]:h-full">
