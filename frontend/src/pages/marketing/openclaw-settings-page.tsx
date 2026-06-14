@@ -3992,7 +3992,7 @@ export const OpenClawSettingsPage = () => {
               <h3 className="text-lg font-bold" style={{ color: "var(--lw-fg)" }}>{t("重装 Agent（保留数据）")}</h3>
             </div>
             <p style={{ color: "var(--tea-color-text-secondary, #666)", fontSize: "14px", lineHeight: 1.6, marginBottom: "20px" }}>
-              {t("将执行 Hermes Agent 后台重置流程，")}
+              {t("将执行 Hermes Agent 后台重装流程，")}
               <span className="font-semibold" style={{ color: "var(--tea-color-warning-default, #F59E0B)" }}>
                 {t("期间 Agent 会有数分钟不可用。")}
               </span>
@@ -4010,7 +4010,7 @@ export const OpenClawSettingsPage = () => {
                 }}
               >
                 {resettingAcli && <Loader2 className="h-4 w-4 animate-spin" />}
-                {resettingAcli ? t("重置中...") : t("确认重置")}
+                {resettingAcli ? t("重置中...") : t("确认重装")}
               </button>
               <button
                 onClick={() => setShowAcliResetConfirm(false)}

@@ -1,5 +1,5 @@
 import { ChevronDown, ClipboardList, Download, FileText, Loader2, RotateCcw, Wrench } from "lucide-react";
-import { type ReactNode, type RefObject, useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, type RefObject, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { useT } from "@/i18n/t";
 import { toast } from "@/lib/toast";
@@ -22,6 +22,7 @@ export interface AgentDiagnosticCommand {
 }
 
 export type LogsSinceOption = "1h" | "3h" | "6h" | "12h" | "24h";
+export type LogsLimitOption = "100" | "200" | "500" | "1000";
 
 export const LOGS_SINCE_OPTIONS: Array<{ value: LogsSinceOption; label: string }> = [
   { value: "1h", label: "1 小时" },
@@ -31,26 +32,34 @@ export const LOGS_SINCE_OPTIONS: Array<{ value: LogsSinceOption; label: string }
   { value: "24h", label: "24 小时" },
 ];
 
-const DEFAULT_LOGS_SINCE: LogsSinceOption = "1h";
+export const LOGS_LIMIT_OPTIONS: Array<{ value: LogsLimitOption; label: string }> = [
+  { value: "100", label: "100条" },
+  { value: "200", label: "200条" },
+  { value: "500", label: "500条" },
+  { value: "1000", label: "1000条" },
+];
 
-export function buildLogsCommand(since: LogsSinceOption): string {
-  return `hermes logs --since ${since} --limit 200`;
+const DEFAULT_LOGS_SINCE: LogsSinceOption = "1h";
+const DEFAULT_LOGS_LIMIT: LogsLimitOption = "100";
+
+export function buildLogsCommand(since: LogsSinceOption, limit: LogsLimitOption = DEFAULT_LOGS_LIMIT): string {
+  return `hermes logs --since ${since} --limit ${limit}`;
 }
 
 export function buildLogsExportCommand(since: LogsSinceOption): string {
   return `hermes logs --since ${since}`;
 }
 
-export function getAgentDiagnosticCommands(logsSince: LogsSinceOption): AgentDiagnosticCommand[] {
+export function getAgentDiagnosticCommands(logsSince: LogsSinceOption, logsLimit: LogsLimitOption = DEFAULT_LOGS_LIMIT): AgentDiagnosticCommand[] {
   return [
     {
       id: "logs",
-      command: buildLogsCommand(logsSince),
+      command: buildLogsCommand(logsSince, logsLimit),
     },
   ];
 }
 
-export const AGENT_DIAGNOSTIC_COMMANDS: AgentDiagnosticCommand[] = getAgentDiagnosticCommands(DEFAULT_LOGS_SINCE);
+export const AGENT_DIAGNOSTIC_COMMANDS: AgentDiagnosticCommand[] = getAgentDiagnosticCommands(DEFAULT_LOGS_SINCE, DEFAULT_LOGS_LIMIT);
 
 export interface DiagnosticsMaintenanceAction {
   disabled: boolean;
@@ -133,8 +142,9 @@ export function AgentDiagnosticsPanel({
 }) {
   const t = useT();
   const [logsSince, setLogsSince] = useState<LogsSinceOption>(DEFAULT_LOGS_SINCE);
+  const [logsLimit, setLogsLimit] = useState<LogsLimitOption>(DEFAULT_LOGS_LIMIT);
   const [exportingLogs, setExportingLogs] = useState(false);
-  const commands = useMemo(() => getAgentDiagnosticCommands(logsSince), [logsSince]);
+  const commands = useMemo(() => getAgentDiagnosticCommands(logsSince, logsLimit), [logsLimit, logsSince]);
   const [states, setStates] = useState<Record<DiagnosticCommandId, DiagnosticCardState>>({
     logs: DEFAULT_CARD_STATE,
   });
@@ -202,6 +212,10 @@ export function AgentDiagnosticsPanel({
     setLogsSince(next);
   }, []);
 
+  const handleLogsLimitChange = useCallback((next: LogsLimitOption) => {
+    setLogsLimit(next);
+  }, []);
+
   return (
     <div className="space-y-4">
       <div>
@@ -212,16 +226,16 @@ export function AgentDiagnosticsPanel({
       <div className="grid gap-4">
         <div className="grid gap-3 md:grid-cols-2">
           <MaintenanceActionCard
-            icon={<Wrench className="h-3.5 w-3.5" />}
+            icon={<Wrench className="h-3 w-3" />}
             title={t("重置模型配置")}
             description={t("初始化 Hermes Agent 的模型配置，适合修复模型配置")}
             action={resetConfigAction}
             loadingLabel={t("恢复中...")}
           />
           <MaintenanceActionCard
-            icon={<RotateCcw className="h-3.5 w-3.5" />}
+            icon={<RotateCcw className="h-3 w-3" />}
             title={t("重装 Agent（保留数据）")}
-            description={t("执行 Hermes Agent 后台重置流程")}
+            description={t("执行 Hermes Agent 后台重装流程，数据将会保留，适合修复疑难问题")}
             action={resetAgentAction}
             loadingLabel={t("重置中...")}
             consoleLines={resetAgentConsole}
@@ -238,6 +252,8 @@ export function AgentDiagnosticsPanel({
             isExporting={item.id === "logs" ? exportingLogs : false}
             logsSince={item.id === "logs" ? logsSince : undefined}
             onLogsSinceChange={item.id === "logs" ? handleLogsSinceChange : undefined}
+            logsLimit={item.id === "logs" ? logsLimit : undefined}
+            onLogsLimitChange={item.id === "logs" ? handleLogsLimitChange : undefined}
           />
         ))}
       </div>
@@ -253,6 +269,8 @@ function DiagnosticCard({
   isExporting,
   logsSince,
   onLogsSinceChange,
+  logsLimit,
+  onLogsLimitChange,
 }: {
   item: AgentDiagnosticCommand;
   state: DiagnosticCardState;
@@ -261,6 +279,8 @@ function DiagnosticCard({
   isExporting?: boolean;
   logsSince?: LogsSinceOption;
   onLogsSinceChange?: (value: LogsSinceOption) => void;
+  logsLimit?: LogsLimitOption;
+  onLogsLimitChange?: (value: LogsLimitOption) => void;
 }) {
   const t = useT();
   const Icon = FileText;
@@ -277,8 +297,8 @@ function DiagnosticCard({
       <div>
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
-            <span className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-black/[0.04] text-black/65">
-              <Icon className="h-4 w-4" />
+            <span className="inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-black/[0.04] text-black/65">
+              <Icon className="h-3.5 w-3.5" />
             </span>
             <h3 className="truncate text-base font-semibold text-black/90">{title}</h3>
           </div>
@@ -299,35 +319,34 @@ function DiagnosticCard({
             </button>
           )}
         </div>
-        <p className="mt-2 text-sm leading-6 text-black/50">{description}</p>
+        <p className="mt-2 text-xs leading-5 text-black/50">{description}</p>
       </div>
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md bg-black/[0.035] px-3 py-2">
         <code className="truncate font-mono text-xs text-black/55">{item.command}</code>
         <div className="flex flex-shrink-0 items-center gap-2">
           {item.id === "logs" && logsSince && onLogsSinceChange && (
-            <div className="relative">
-              <select
-                value={logsSince}
-                disabled={isLoading}
-                onChange={(event) => onLogsSinceChange(event.target.value as LogsSinceOption)}
-                className={cn(
-                  "h-7 appearance-none rounded-full border border-black/[0.08] bg-white pl-3 pr-6 text-xs font-medium text-black/60 outline-none transition-colors",
-                  isLoading ? "cursor-wait opacity-60" : "hover:border-black/15 hover:text-black/80",
-                )}
-                aria-label={t("选择日志时间段")}
-              >
-                {LOGS_SINCE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown
-                aria-hidden
-                className="pointer-events-none absolute right-1.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-black/45"
-              />
-            </div>
+            <LogsSelectMenu
+              value={logsSince}
+              options={LOGS_SINCE_OPTIONS}
+              disabled={isLoading}
+              ariaLabel={t("选择日志时间段")}
+              widthClassName="w-[92px]"
+              onChange={onLogsSinceChange}
+            />
+          )}
+          {item.id === "logs" && logsLimit && onLogsLimitChange && (
+            <LogsSelectMenu
+              value={logsLimit}
+              options={LOGS_LIMIT_OPTIONS}
+              disabled={isLoading}
+              ariaLabel={t("选择最近日志展示的最大条数")}
+              widthClassName="w-[92px]"
+              header={t("最近日志展示的最大条数")}
+              hint={t("查看完整日志请执行导出操作")}
+              menuWidthClassName="w-[220px]"
+              onChange={onLogsLimitChange}
+            />
           )}
           <button
             type="button"
@@ -339,19 +358,30 @@ function DiagnosticCard({
             )}
           >
             {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-            {t("执行")}
+            {item.id === "logs" ? t("查询") : t("执行")}
           </button>
         </div>
       </div>
-      {item.id === "logs" && (
-        <p className="mt-2 text-xs leading-5 text-black/40">{t("仅展示最近 200 条，完整日志可执行导出操作")}</p>
-      )}
 
       <div className="mt-4 min-h-0 flex-1 rounded-md border border-black/[0.06] bg-black/[0.025]">
         {state.status === "idle" ? (
           <div className="flex h-full min-h-[190px] items-center justify-center p-5 text-center text-sm text-black/40">
             <ClipboardList className="mr-2 h-4 w-4" />
-            {item.id === "logs" ? t("点击执行获取最近日志") : t("点击执行获取诊断结果")}
+            {item.id === "logs" ? (
+              <span>
+                {t("点击")}
+                <button
+                  type="button"
+                  onClick={onRefresh}
+                  className="mx-0.5 rounded px-0.5 font-medium text-black/55 underline decoration-black/20 underline-offset-2 transition-colors hover:text-black/80 hover:decoration-black/45"
+                >
+                  {t("查询")}
+                </button>
+                {t("最近日志")}
+              </span>
+            ) : (
+              t("点击执行获取诊断结果")
+            )}
           </div>
         ) : (
           <DiagnosticOutput text={displayOutput} />
@@ -362,12 +392,112 @@ function DiagnosticCard({
   );
 }
 
+function LogsSelectMenu<TValue extends string>({
+  value,
+  options,
+  disabled,
+  ariaLabel,
+  widthClassName,
+  menuWidthClassName = "w-[132px]",
+  header,
+  hint,
+  onChange,
+}: {
+  value: TValue;
+  options: Array<{ value: TValue; label: string }>;
+  disabled: boolean;
+  ariaLabel: string;
+  widthClassName: string;
+  menuWidthClassName?: string;
+  header?: string;
+  hint?: string;
+  onChange: (value: TValue) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const selectedLabel = options.find((option) => option.value === value)?.label ?? "";
+
+  useEffect(() => {
+    if (!open) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (menuRef.current?.contains(target)) return;
+      setOpen(false);
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [open]);
+
+  return (
+    <div ref={menuRef} className={cn("relative", widthClassName)}>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setOpen((current) => !current)}
+        className={cn(
+          "flex h-7 w-full items-center justify-between rounded-full border border-black/[0.08] bg-white pl-3 pr-2 text-left text-xs font-medium text-black/60 shadow-sm outline-none transition-colors",
+          disabled ? "cursor-wait opacity-60" : "hover:border-black/15 hover:text-black/80 focus:border-black/20",
+        )}
+        aria-label={ariaLabel}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        <span className="truncate">{selectedLabel}</span>
+        <ChevronDown className={cn("h-3.5 w-3.5 flex-shrink-0 text-black/45 transition-transform", open && "rotate-180")} />
+      </button>
+      {open && !disabled && (
+        <div
+          className={cn(
+            "absolute left-0 top-[calc(100%+6px)] z-30 rounded-xl border border-black/10 bg-white p-1.5 shadow-xl",
+            menuWidthClassName,
+          )}
+          role="listbox"
+          aria-label={ariaLabel}
+        >
+          {header && (
+            <div className="px-3 py-1.5 text-xs font-medium leading-5 text-black/40">
+              {header}
+            </div>
+          )}
+          {hint && (
+            <div className="px-3 pb-1.5 text-[11px] font-medium leading-4 text-black/35">
+              {hint}
+            </div>
+          )}
+          {options.map((option) => {
+            const checked = option.value === value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => {
+                  onChange(option.value);
+                  setOpen(false);
+                }}
+                className={cn(
+                  "flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium leading-[22px] transition",
+                  checked ? "bg-black text-white" : "text-black/70 hover:bg-black/[0.04] hover:text-black",
+                )}
+                role="option"
+                aria-selected={checked}
+              >
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function getCommandTitle(t: ReturnType<typeof useT>): string {
   return t("最近日志");
 }
 
 function getCommandDescription(t: ReturnType<typeof useT>): string {
-  return t("查看 Hermes Agent 最近日志，辅助定位问题");
+  return t("查询或导出 Hermes Agent 最近日志，辅助定位问题");
 }
 
 function MaintenanceActionCard({
@@ -393,7 +523,7 @@ function MaintenanceActionCard({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <span className="inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-black/[0.04] text-black/65">
+            <span className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-black/[0.04] text-black/65">
               {icon}
             </span>
             <h3 className="truncate text-base font-semibold text-black/90">{title}</h3>
