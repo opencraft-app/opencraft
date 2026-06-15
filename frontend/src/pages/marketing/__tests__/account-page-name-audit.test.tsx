@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -15,6 +15,7 @@ const refreshProfile = vi.fn();
 const retryRealnameSync = vi.fn();
 
 let currentUser: User;
+let realnamePhoneVerificationEnabled = false;
 const ACCOUNT_SAFETY_PHONE_VISIBILITY_STORAGE_KEY = "lw-account-safety-phone-visible";
 
 const createMemoryStorage = (): Storage => {
@@ -32,17 +33,13 @@ const createMemoryStorage = (): Storage => {
   };
 };
 
-const revealAccountSafetyPhoneSection = () => {
-  const host = window as Window & { show?: unknown };
-  expect(host.show).toEqual(expect.any(Function));
-
-  act(() => {
-    (host.show as () => boolean)();
-  });
-};
-
 vi.mock("@/i18n/t", () => ({
   useT: () => (text: string) => text,
+}));
+
+vi.mock("@/contexts/runtime-config-context", () => ({
+  usePaidBillingEnabled: () => false,
+  useRealnamePhoneVerificationEnabled: () => realnamePhoneVerificationEnabled,
 }));
 
 vi.mock("@/lib/region", () => ({
@@ -135,14 +132,15 @@ describe("AccountPage nickname audit state", () => {
       createdAt: "2026-06-01T00:00:00Z",
     };
     vi.stubGlobal("localStorage", createMemoryStorage());
+    realnamePhoneVerificationEnabled = false;
   });
 
-  it("keeps domestic realname visible while hiding the safety phone row until show() is called", () => {
+  it("uses pure realname by default without exposing any phone concept", async () => {
     currentUser = {
       ...currentUser,
       phone: "15625128341",
-      realnameVerified: true,
-      realnameLevel: "phone_3fa",
+      realnameVerified: false,
+      realnameLevel: undefined,
     };
 
     renderAccountPage();
@@ -150,14 +148,45 @@ describe("AccountPage nickname audit state", () => {
     expect(screen.queryByText("安全手机")).not.toBeInTheDocument();
     expect(screen.getByText("实名认证")).toBeInTheDocument();
 
-    revealAccountSafetyPhoneSection();
+    await userEvent.click(screen.getByRole("button", { name: /去认证/ }));
 
-    expect(screen.getByText("安全手机")).toBeInTheDocument();
-    expect(screen.getByText("实名认证")).toBeInTheDocument();
-    expect(window.localStorage.getItem(ACCOUNT_SAFETY_PHONE_VISIBILITY_STORAGE_KEY)).toBe("1");
+    expect(screen.getByText("当前未认证，请完善信息并提交认证。")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("请输入真实姓名")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("请输入身份证号码")).toBeInTheDocument();
+    expect(screen.queryByText(/手机/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/验证码/)).not.toBeInTheDocument();
   });
 
-  it("keeps the safety phone row visible after show() has been persisted", () => {
+  it("does not expose the internal account id on the account page", () => {
+    currentUser = {
+      ...currentUser,
+      id: "shadow_user_internal_id",
+    };
+
+    renderAccountPage();
+
+    expect(screen.queryByText("账号 ID")).not.toBeInTheDocument();
+    expect(screen.queryByText("shadow_user_internal_id")).not.toBeInTheDocument();
+  });
+
+  it("does not mention shadow account internals in the pure realname modal", async () => {
+    currentUser = {
+      ...currentUser,
+      phone: undefined,
+      realnameVerified: false,
+      realnameLevel: undefined,
+    };
+
+    renderAccountPage();
+
+    await userEvent.click(screen.getByRole("button", { name: /去认证/ }));
+
+    expect(screen.queryByText(/影子账号/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/SaaS/)).not.toBeInTheDocument();
+  });
+
+  it("keeps the safety phone row visible after show() has been persisted when the phone flag is enabled", () => {
+    realnamePhoneVerificationEnabled = true;
     window.localStorage.setItem(ACCOUNT_SAFETY_PHONE_VISIBILITY_STORAGE_KEY, "1");
     currentUser = {
       ...currentUser,
@@ -239,7 +268,23 @@ describe("AccountPage nickname audit state", () => {
     expect(screen.getByText("上次头像修改未通过审核，当前仍使用原头像。")).toBeInTheDocument();
   });
 
-  it("does not treat the legacy realname boolean as ID-card verification", async () => {
+  it("treats the legacy realname boolean as verified in pure realname mode", () => {
+    currentUser = {
+      ...currentUser,
+      phone: "15625128341",
+      realnameVerified: true,
+      realnameLevel: undefined,
+    };
+
+    renderAccountPage();
+
+    expect(screen.getByText("已认证")).toBeInTheDocument();
+    expect(screen.queryByText("待完成手机号认证")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /绑定安全手机/ })).not.toBeInTheDocument();
+  });
+
+  it("does not treat the legacy realname boolean as ID-card verification when the phone flag is enabled", async () => {
+    realnamePhoneVerificationEnabled = true;
     currentUser = {
       ...currentUser,
       phone: "15625128341",
@@ -260,6 +305,7 @@ describe("AccountPage nickname audit state", () => {
   });
 
   it("requires a safety phone before starting ID-card realname verification", async () => {
+    realnamePhoneVerificationEnabled = true;
     currentUser = {
       ...currentUser,
       phone: undefined,
@@ -278,6 +324,7 @@ describe("AccountPage nickname audit state", () => {
   });
 
   it("shows retry action when ID-card realname passed but LightVela sync failed", async () => {
+    realnamePhoneVerificationEnabled = true;
     retryRealnameSync.mockResolvedValue({
       ok: true,
       user: {
@@ -311,6 +358,7 @@ describe("AccountPage nickname audit state", () => {
   });
 
   it("shows pending sync instead of asking for another phone verification", () => {
+    realnamePhoneVerificationEnabled = true;
     currentUser = {
       ...currentUser,
       phone: "15625128341",

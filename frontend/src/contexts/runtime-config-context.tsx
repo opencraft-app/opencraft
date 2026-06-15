@@ -12,6 +12,7 @@ import { isCN } from "@/lib/region";
 
 export interface RuntimeFeatureFlags {
   paidBillingEnabled: boolean;
+  realnamePhoneVerificationEnabled: boolean;
 }
 
 export interface RuntimeConfig {
@@ -28,10 +29,12 @@ interface RuntimeConfigState {
 const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
   features: {
     paidBillingEnabled: false,
+    realnamePhoneVerificationEnabled: false,
   },
 };
 
 const PAID_BILLING_OVERRIDE_STORAGE_KEY = "lightclaw:features.paidBillingEnabled";
+const REALNAME_PHONE_VERIFICATION_OVERRIDE_STORAGE_KEY = "lightclaw:features.realnamePhoneVerificationEnabled";
 
 const RuntimeConfigContext = createContext<RuntimeConfigState>({
   config: DEFAULT_RUNTIME_CONFIG,
@@ -52,14 +55,16 @@ const normalizeRuntimeConfig = (payload: unknown): RuntimeConfig => {
     features: {
       paidBillingEnabled:
         (features as { paidBillingEnabled?: unknown }).paidBillingEnabled === true,
+      realnamePhoneVerificationEnabled:
+        (features as { realnamePhoneVerificationEnabled?: unknown }).realnamePhoneVerificationEnabled === true,
     },
   };
 };
 
-const readPaidBillingOverride = (): boolean | null => {
+const readBooleanOverride = (storageKey: string): boolean | null => {
   if (typeof window === "undefined") return null;
   try {
-    const value = window.localStorage.getItem(PAID_BILLING_OVERRIDE_STORAGE_KEY)?.trim().toLowerCase();
+    const value = window.localStorage.getItem(storageKey)?.trim().toLowerCase();
     if (!value) return null;
     if (value === "true" || value === "1" || value === "on") return true;
     if (value === "false" || value === "0" || value === "off") return false;
@@ -70,13 +75,16 @@ const readPaidBillingOverride = (): boolean | null => {
 };
 
 const applyRuntimeOverrides = (config: RuntimeConfig): RuntimeConfig => {
-  const paidBillingOverride = readPaidBillingOverride();
-  if (paidBillingOverride == null) return config;
+  const paidBillingOverride = readBooleanOverride(PAID_BILLING_OVERRIDE_STORAGE_KEY);
+  const realnamePhoneVerificationOverride = readBooleanOverride(REALNAME_PHONE_VERIFICATION_OVERRIDE_STORAGE_KEY);
+  if (paidBillingOverride == null && realnamePhoneVerificationOverride == null) return config;
   return {
     ...config,
     features: {
       ...config.features,
-      paidBillingEnabled: paidBillingOverride,
+      paidBillingEnabled: paidBillingOverride ?? config.features.paidBillingEnabled,
+      realnamePhoneVerificationEnabled:
+        realnamePhoneVerificationOverride ?? config.features.realnamePhoneVerificationEnabled,
     },
   };
 };
@@ -130,15 +138,25 @@ export const useRuntimeConfig = () => useContext(RuntimeConfigContext);
 const resolvePaidBillingEnabled = (config: RuntimeConfig, cn: boolean): boolean =>
   cn && config.features.paidBillingEnabled === true;
 
+const resolveRealnamePhoneVerificationEnabled = (config: RuntimeConfig, cn: boolean): boolean =>
+  cn && config.features.realnamePhoneVerificationEnabled === true;
+
 export const usePaidBillingEnabled = (): boolean => {
   const { config } = useRuntimeConfig();
   return resolvePaidBillingEnabled(config, isCN);
 };
 
+export const useRealnamePhoneVerificationEnabled = (): boolean => {
+  const { config } = useRuntimeConfig();
+  return resolveRealnamePhoneVerificationEnabled(config, isCN);
+};
+
 export const __runtimeConfigTestHooks = {
   DEFAULT_RUNTIME_CONFIG,
   PAID_BILLING_OVERRIDE_STORAGE_KEY,
+  REALNAME_PHONE_VERIFICATION_OVERRIDE_STORAGE_KEY,
   applyRuntimeOverrides,
   normalizeRuntimeConfig,
   resolvePaidBillingEnabled,
+  resolveRealnamePhoneVerificationEnabled,
 };
