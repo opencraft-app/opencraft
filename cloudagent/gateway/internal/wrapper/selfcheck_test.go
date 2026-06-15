@@ -148,6 +148,10 @@ func TestSelfCheckFakeWorkerPasses(t *testing.T) {
 	if !out.OK || out.Object != "cloudagent.selfcheck" || out.Summary.WorkerKind != "fake" {
 		t.Fatalf("unexpected selfcheck response=%+v", out)
 	}
+	if !out.Summary.CloudAgentRunProtocol {
+		t.Fatalf("selfcheck summary must expose CloudAgent run protocol capability: %+v", out.Summary)
+	}
+	assertSelfCheckItem(t, out.Checks, "cloudagent.run_protocol", "pass", 0)
 }
 
 func TestSelfCheckAgentSidecarReportsArtifactReachability(t *testing.T) {
@@ -198,6 +202,10 @@ func TestSelfCheckAgentSidecarReportsArtifactReachability(t *testing.T) {
 	if out.OK || out.Status != "failed" || out.Summary.OuterRuntime != outerRuntimeWisp {
 		t.Fatalf("unexpected selfcheck response=%+v", out)
 	}
+	if !out.Summary.CloudAgentRunProtocol {
+		t.Fatalf("selfcheck summary must expose CloudAgent run protocol capability: %+v", out.Summary)
+	}
+	assertSelfCheckItem(t, out.Checks, "cloudagent.run_protocol", "pass", 0)
 	assertSelfCheckItem(t, out.Checks, "agent.sidecar_url_reachable", "fail", http.StatusForbidden)
 	assertSelfCheckItem(t, out.Checks, "agent.sidecar_sig_url_reachable", "pass", http.StatusOK)
 	assertSelfCheckItem(t, out.Checks, "wisp.package_url_reachable", "pass", http.StatusOK)
@@ -255,6 +263,9 @@ func TestSelfCheckLocalRuntimeHostReportsLocalBackend(t *testing.T) {
 	if !out.OK || out.Summary.RuntimeHost != runtimeHostTypeLocalWisp {
 		t.Fatalf("unexpected selfcheck response=%+v", out)
 	}
+	if !out.Summary.CloudAgentRunProtocol {
+		t.Fatalf("selfcheck summary must expose CloudAgent run protocol capability: %+v", out.Summary)
+	}
 	if out.Summary.AGSAPIKeyConfigured {
 		t.Fatalf("local_wisp selfcheck must not require AGS credentials: %+v", out.Summary)
 	}
@@ -262,6 +273,7 @@ func TestSelfCheckLocalRuntimeHostReportsLocalBackend(t *testing.T) {
 		t.Fatalf("local runtime summary missing expected fields: %+v", out.Summary)
 	}
 	assertSelfCheckItem(t, out.Checks, "runtime_host.local_wisp", "pass", 0)
+	assertSelfCheckItem(t, out.Checks, "cloudagent.run_protocol", "pass", 0)
 	assertSelfCheckItem(t, out.Checks, "runtime_host.local_wisp.root_writable", "pass", 0)
 	assertSelfCheckItem(t, out.Checks, "runtime_host.local_wisp.command_prefix", "pass", 0)
 }

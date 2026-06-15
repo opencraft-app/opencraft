@@ -132,6 +132,19 @@ type ACPSessionRuntimeStatusSnapshot struct {
 	RunLedgerTail     []ACPSessionRuntimeRunRecord   `json:"run_ledger_tail,omitempty"`
 }
 
+type ACPSessionRuntimeRunResult struct {
+	RunID        string
+	Status       string
+	StopReason   string
+	ErrorMessage string
+	OutputText   string
+}
+
+type ACPSessionRuntimeRunEvent struct {
+	Seq   int64
+	Event workerEvent
+}
+
 type ACPSessionRuntimeEnsureRequest struct {
 	SessionID  string
 	Scope      Scope
@@ -157,6 +170,11 @@ type ACPSessionRuntimeManager interface {
 	CancelSessionRuntime(context.Context, ACPSessionRuntime, string, string) error
 	CloseSessionRuntime(context.Context, ACPSessionRuntime) error
 	DeleteSessionRuntime(context.Context, ACPSessionRuntime) error
+}
+
+type ACPSessionRuntimeRunReader interface {
+	SessionRuntimeRunResult(context.Context, ACPSessionRuntime, string, string) (ACPSessionRuntimeRunResult, error)
+	SessionRuntimeRunEvents(context.Context, ACPSessionRuntime, string, string, int64) ([]ACPSessionRuntimeRunEvent, error)
 }
 
 type ACPSessionRuntimeFaultInjector interface {

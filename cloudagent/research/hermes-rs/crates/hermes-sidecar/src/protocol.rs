@@ -32,6 +32,33 @@ pub(crate) struct RuntimeInputRequest {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
+pub(crate) struct RuntimeRunSubmitRequest {
+    pub(crate) session_id: String,
+    pub(crate) run_id: String,
+    #[serde(default)]
+    pub(crate) inbox_mode: Option<String>,
+    #[serde(default)]
+    pub(crate) blocks: Vec<RuntimeInputBlock>,
+    #[serde(default)]
+    pub(crate) cwd: Option<String>,
+    #[serde(default)]
+    pub(crate) history: Vec<RuntimeInputHistoryEntry>,
+}
+
+impl RuntimeRunSubmitRequest {
+    pub(crate) fn into_runtime_input(self) -> RuntimeInputRequest {
+        RuntimeInputRequest {
+            session_id: self.session_id,
+            input_id: Some(self.run_id),
+            inbox_mode: self.inbox_mode,
+            blocks: self.blocks,
+            cwd: self.cwd,
+            history: self.history,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub(crate) enum RuntimeInputBlock {
     Text { text: String },
@@ -271,6 +298,68 @@ pub(crate) enum PromptResponseLine {
         code: Option<String>,
         error: String,
     },
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum RuntimeRunStatus {
+    Running,
+    Completed,
+    Failed,
+    Cancelled,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub(crate) struct RuntimeRunStatusResponse {
+    pub(crate) ok: bool,
+    pub(crate) run_id: String,
+    pub(crate) session_id: String,
+    pub(crate) status: RuntimeRunStatus,
+    pub(crate) event_count: u64,
+    pub(crate) result_readable: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) error: Option<String>,
+    pub(crate) created_at_unix_ms: u128,
+    pub(crate) updated_at_unix_ms: u128,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub(crate) struct RuntimeRunSubmitResponse {
+    pub(crate) ok: bool,
+    pub(crate) accepted: bool,
+    pub(crate) run: RuntimeRunStatusResponse,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub(crate) struct RuntimeRunEventRecord {
+    pub(crate) run_id: String,
+    pub(crate) seq: u64,
+    pub(crate) created_at_unix_ms: u128,
+    pub(crate) line: PromptResponseLine,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub(crate) struct RuntimeRunEventsResponse {
+    pub(crate) ok: bool,
+    pub(crate) run_id: String,
+    pub(crate) events: Vec<RuntimeRunEventRecord>,
+    pub(crate) status: RuntimeRunStatus,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub(crate) struct RuntimeRunResultResponse {
+    pub(crate) ok: bool,
+    pub(crate) run_id: String,
+    pub(crate) status: RuntimeRunStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) output_text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) inner_sandbox_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) inner_sandbox_domain: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) error: Option<String>,
 }
 
 #[derive(Debug)]

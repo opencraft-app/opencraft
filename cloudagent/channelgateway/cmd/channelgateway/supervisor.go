@@ -531,7 +531,22 @@ func weComConfigForAccount(account store.ChannelAccount) (wecom.Config, error) {
 }
 
 func newAccountACPClient(cfg config.Config, account store.ChannelAccount) acpRuntimeClient {
+	if strings.EqualFold(strings.TrimSpace(cfg.RuntimeProtocol), "cloudagent") {
+		return acp.NewCloudAgentClient(normalizeCloudAgentURL(cfg.ACPURL), acpHeadersForAccount(cfg, account))
+	}
 	return acp.NewClient(normalizeACPURL(cfg.ACPURL), acpHeadersForAccount(cfg, account))
+}
+
+func normalizeCloudAgentURL(raw string) string {
+	value := strings.TrimSpace(raw)
+	if strings.HasPrefix(value, "ws://") {
+		value = "http://" + strings.TrimPrefix(value, "ws://")
+	}
+	if strings.HasPrefix(value, "wss://") {
+		value = "https://" + strings.TrimPrefix(value, "wss://")
+	}
+	value = strings.TrimSuffix(value, "/acp")
+	return strings.TrimRight(value, "/")
 }
 
 func acpHeadersForAccount(cfg config.Config, account store.ChannelAccount) http.Header {

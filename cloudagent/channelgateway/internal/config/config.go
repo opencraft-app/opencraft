@@ -13,6 +13,7 @@ type Config struct {
 	DBPath               string
 	DBDriver             string
 	ACPURL               string
+	RuntimeProtocol      string
 	ACPAuthorization     string
 	TenantID             string
 	ProjectID            string
@@ -65,6 +66,7 @@ func LoadFromEnv() Config {
 		DBPath:               env("CHANNELGATEWAY_DB_PATH", "channelgateway.db"),
 		DBDriver:             env("CHANNELGATEWAY_DB_DRIVER", ""),
 		ACPURL:               env("CHANNELGATEWAY_ACP_URL", "ws://127.0.0.1:18094/acp"),
+		RuntimeProtocol:      strings.ToLower(env("CHANNELGATEWAY_RUNTIME_PROTOCOL", "acp")),
 		ACPAuthorization:     env("CHANNELGATEWAY_ACP_AUTHORIZATION", ""),
 		TenantID:             env("CHANNELGATEWAY_TENANT_ID", "default"),
 		ProjectID:            env("CHANNELGATEWAY_PROJECT_ID", "default"),

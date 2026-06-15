@@ -3252,6 +3252,7 @@ type recordingACPRuntimeManager struct {
 	starts              []ACPSessionRuntimeStartRequest
 	workerJobs          []workerJob
 	cancels             []ACPSessionRuntime
+	cancelRunIDs        []string
 	refreshes           []ACPSessionRuntime
 	closes              []ACPSessionRuntime
 	deletes             []ACPSessionRuntime
@@ -3266,6 +3267,9 @@ type recordingACPRuntimeManager struct {
 	closeDelay          time.Duration
 	status              ACPSessionRuntimeStatusSnapshot
 	statusErr           error
+	runResult           ACPSessionRuntimeRunResult
+	runEvents           []ACPSessionRuntimeRunEvent
+	runReadErr          error
 	startErr            error
 	afterFirstEvent     chan struct{}
 	continueEvents      chan struct{}
@@ -3359,6 +3363,38 @@ func (m *recordingACPRuntimeManager) SessionRuntimeStatus(ctx context.Context, r
 	return status, nil
 }
 
+func (m *recordingACPRuntimeManager) SessionRuntimeRunResult(ctx context.Context, runtime ACPSessionRuntime, sessionID, runID string) (ACPSessionRuntimeRunResult, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.runReadErr != nil {
+		return ACPSessionRuntimeRunResult{}, m.runReadErr
+	}
+	result := m.runResult
+	if result.RunID == "" {
+		result.RunID = runID
+	}
+	return result, nil
+}
+
+func (m *recordingACPRuntimeManager) SessionRuntimeRunEvents(ctx context.Context, runtime ACPSessionRuntime, sessionID, runID string, afterSeq int64) ([]ACPSessionRuntimeRunEvent, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.runReadErr != nil {
+		return nil, m.runReadErr
+	}
+	var events []ACPSessionRuntimeRunEvent
+	for _, event := range m.runEvents {
+		if event.Seq <= afterSeq {
+			continue
+		}
+		if event.Event.JobID == "" {
+			event.Event.JobID = runID
+		}
+		events = append(events, event)
+	}
+	return events, nil
+}
+
 func (m *recordingACPRuntimeManager) RefreshSessionRuntime(ctx context.Context, runtime ACPSessionRuntime, sessionID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -3448,6 +3484,7 @@ func (m *recordingACPRuntimeManager) CancelSessionRuntime(ctx context.Context, r
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.cancels = append(m.cancels, runtime)
+	m.cancelRunIDs = append(m.cancelRunIDs, jobID)
 	return nil
 }
 

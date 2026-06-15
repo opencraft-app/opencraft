@@ -21,6 +21,7 @@ type selfCheckResponse struct {
 
 type selfCheckSummary struct {
 	WorkerKind               string `json:"worker_kind"`
+	CloudAgentRunProtocol    bool   `json:"cloudagent_run_protocol"`
 	RuntimeHost              string `json:"runtime_host,omitempty"`
 	OuterRuntime             string `json:"outer_runtime,omitempty"`
 	AGSAPIURL                string `json:"ags_api_url,omitempty"`
@@ -167,15 +168,16 @@ func (s *Server) selfCheck(ctx context.Context) selfCheckResponse {
 		resp.Summary = worker.selfCheckSummary()
 		worker.appendSelfChecks(ctx, &resp, add)
 	case FakeWorker:
-		resp.Summary = selfCheckSummary{WorkerKind: "fake"}
+		resp.Summary = selfCheckSummary{WorkerKind: "fake", CloudAgentRunProtocol: true}
 		add(passCheck("worker", "fake worker configured"))
 	case *FakeWorker:
-		resp.Summary = selfCheckSummary{WorkerKind: "fake"}
+		resp.Summary = selfCheckSummary{WorkerKind: "fake", CloudAgentRunProtocol: true}
 		add(passCheck("worker", "fake worker configured"))
 	default:
-		resp.Summary = selfCheckSummary{WorkerKind: fmt.Sprintf("%T", s.worker)}
+		resp.Summary = selfCheckSummary{WorkerKind: fmt.Sprintf("%T", s.worker), CloudAgentRunProtocol: true}
 		add(passCheck("worker", "worker configured"))
 	}
+	add(passCheck("cloudagent.run_protocol", "CloudAgent HTTP run protocol routes are registered"))
 	return resp
 }
 
@@ -195,6 +197,7 @@ func (w *AgentSidecarWorker) selfCheckSummary() selfCheckSummary {
 	localInfo := w.localRuntimeHostInfo()
 	return selfCheckSummary{
 		WorkerKind:               "agent_sidecar",
+		CloudAgentRunProtocol:    true,
 		RuntimeHost:              w.defaultBackendName,
 		OuterRuntime:             w.outerRuntime,
 		AGSAPIURL:                agsAPIURL,

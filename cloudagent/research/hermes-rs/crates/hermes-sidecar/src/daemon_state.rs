@@ -20,6 +20,7 @@ use crate::config_bootstrap::{build_agent, load_runtime_env, session_paths};
 use crate::daemon_events::ActivePromptRegistry;
 use crate::event_projection::runtime_host_line_from_agent_event;
 use crate::protocol::*;
+use crate::run_store::RunStore;
 use crate::session_api::{
     build_session_prompt, ensure_session_id_matches, next_input_id, parse_inbox_mode,
     resolve_session_cwd, runtime_input_blocks_to_text, visible_output_text,
@@ -40,6 +41,7 @@ pub(crate) struct DaemonState {
     pub(crate) workspace_root: PathBuf,
     agent: AgentRuntime,
     serial: Mutex<SessionState>,
+    run_store: RunStore,
     stage_files: Mutex<StageFilesState>,
     active_prompts: ActivePromptRegistry,
     event_task: Mutex<Option<JoinHandle<()>>>,
@@ -87,6 +89,7 @@ impl DaemonState {
         .await?
         .with_store(RuntimeStore::new(paths.memory_root.join("runtime-store")));
         let load = agent.restore_from_store().await?;
+        let run_store = RunStore::new(paths.memory_root.join("runtime-runs"))?;
 
         Ok(Self {
             session_id: session_id.to_string(),
@@ -98,12 +101,115 @@ impl DaemonState {
                 behavior_versions: BehaviorVersions::default(),
                 runtime_store_load: format!("{:?}", load),
             }),
+            run_store,
             stage_files: Mutex::new(StageFilesState::default()),
             active_prompts,
             event_task: Mutex::new(Some(event_task)),
             shutdown: Notify::new(),
             shutdown_requested: AtomicBool::new(false),
         })
+    }
+
+    pub(crate) async fn submit_run(
+        self: std::sync::Arc<Self>,
+        request: RuntimeRunSubmitRequest,
+    ) -> Result<RuntimeRunSubmitResponse> {
+        ensure_session_id_matches(&self.session_id, &request.session_id)?;
+        let run_id = request.run_id.clone();
+        let response = self
+            .run_store
+            .start_run(&request.session_id, &run_id)
+            .await?;
+        if !response.accepted {
+            return Ok(response);
+        }
+
+        let state = self.clone();
+        tokio::spawn(async move {
+            let (line_tx, mut line_rx) = mpsc::channel(128);
+            let store = state.run_store.clone();
+            let recorder_run_id = run_id.clone();
+            let recorder = tokio::spawn(async move {
+                while let Some(line) = line_rx.recv().await {
+                    if let Err(error) = store.append_event(&recorder_run_id, line).await {
+                        timeline(
+                            "run_store_append_failed",
+                            [
+                                ("run_id", recorder_run_id.clone()),
+                                ("error", error.to_string()),
+                            ],
+                        );
+                    }
+                }
+            });
+
+            let outcome = state
+                .session_input_streaming(request.into_runtime_input(), line_tx)
+                .await;
+            match outcome {
+                Ok(outcome) => {
+                    if let Err(error) = state.run_store.complete_run(&run_id, outcome).await {
+                        timeline(
+                            "run_store_complete_failed",
+                            [("run_id", run_id.clone()), ("error", error.to_string())],
+                        );
+                    }
+                }
+                Err(error) => {
+                    let message = error.to_string();
+                    let code = crate::client::classify_error_code(&message);
+                    if let Err(store_error) = state
+                        .run_store
+                        .fail_run(&run_id, code, message.clone())
+                        .await
+                    {
+                        timeline(
+                            "run_store_fail_failed",
+                            [
+                                ("run_id", run_id.clone()),
+                                ("error", store_error.to_string()),
+                            ],
+                        );
+                    }
+                }
+            }
+            let _ = recorder.await;
+        });
+
+        Ok(response)
+    }
+
+    pub(crate) async fn run_status(&self, run_id: &str) -> Option<RuntimeRunStatusResponse> {
+        self.run_store.status(run_id).await
+    }
+
+    pub(crate) async fn run_events_since(
+        &self,
+        run_id: &str,
+        after_seq: u64,
+    ) -> Result<RuntimeRunEventsResponse> {
+        self.run_store.events_since(run_id, after_seq).await
+    }
+
+    pub(crate) async fn subscribe_run(
+        &self,
+        run_id: &str,
+    ) -> Result<tokio::sync::broadcast::Receiver<RuntimeRunEventRecord>> {
+        self.run_store.subscribe(run_id).await
+    }
+
+    pub(crate) async fn run_result(&self, run_id: &str) -> Option<RuntimeRunResultResponse> {
+        self.run_store.result(run_id).await
+    }
+
+    pub(crate) async fn cancel_run(&self, run_id: &str) -> Result<RuntimeAbortResponse> {
+        self.session_abort(RuntimeAbortRequest {
+            session_id: self.session_id.clone(),
+            run_id: Some(run_id.to_string()),
+            clear_pending: false,
+            reason: Some("runtime run cancel".to_string()),
+        })
+        .await
     }
 
     pub(crate) async fn session_create(

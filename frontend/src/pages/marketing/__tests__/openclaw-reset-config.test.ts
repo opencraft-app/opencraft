@@ -16,44 +16,31 @@ import {
 const bot = (id: string, status: ResettableBot["status"] = "running"): ResettableBot => ({ id, status });
 
 describe("getResetBlockReason", () => {
-  it("allows reset when running, not already resetting, and channel was viewed", () => {
-    expect(getResetBlockReason(bot("a"), false, true)).toBeNull();
+  it("allows reset when running and not already resetting", () => {
+    expect(getResetBlockReason(bot("a"), false)).toBeNull();
   });
 
   it("blocks when no active bot", () => {
-    expect(getResetBlockReason(undefined, false, true)).toBe("no_active_bot");
+    expect(getResetBlockReason(undefined, false)).toBe("no_active_bot");
   });
 
   it("blocks when reset is already in progress (debounce)", () => {
-    expect(getResetBlockReason(bot("a"), true, true)).toBe("already_resetting");
+    expect(getResetBlockReason(bot("a"), true)).toBe("already_resetting");
   });
 
   it("blocks when bot is not running", () => {
     /* 与同 page 的"重启 Gateway"按钮保持一致——非 running 时下发 acli
      * 命令必然失败，此时启动 reset 会让 ctl 数据库 key 已 rotate 但
      * 实例没拿到，体验差。 */
-    expect(getResetBlockReason(bot("a", "paused"), false, true)).toBe("not_running");
-    expect(getResetBlockReason(bot("a", "provisioning"), false, true)).toBe("not_running");
-    expect(getResetBlockReason(bot("a", "failed"), false, true)).toBe("not_running");
-    expect(getResetBlockReason(bot("a", "deleting"), false, true)).toBe("not_running");
-    expect(getResetBlockReason(bot("a", "draft"), false, true)).toBe("not_running");
-  });
-
-  it("blocks when channel tab has not been viewed yet", () => {
-    /* 通道 tab 在 mount 时会触发 SDK bootstrap → acli self-update，让存量
-     * 实例升级到支持 `acli backend reset-config` 子命令的版本。
-     * 没访问过通道 tab 直接点重置可能命中"unknown command"失败。 */
-    expect(getResetBlockReason(bot("a"), false, false)).toBe("channel_not_viewed");
+    expect(getResetBlockReason(bot("a", "paused"), false)).toBe("not_running");
+    expect(getResetBlockReason(bot("a", "provisioning"), false)).toBe("not_running");
+    expect(getResetBlockReason(bot("a", "failed"), false)).toBe("not_running");
+    expect(getResetBlockReason(bot("a", "deleting"), false)).toBe("not_running");
+    expect(getResetBlockReason(bot("a", "draft"), false)).toBe("not_running");
   });
 
   it("prefers no_active_bot over other reasons", () => {
-    expect(getResetBlockReason(undefined, true, false)).toBe("no_active_bot");
-  });
-
-  it("prefers not_running over channel_not_viewed", () => {
-    /* 优先级：no_active_bot > already_resetting > not_running > channel_not_viewed
-     * 让用户看到最根本的阻塞原因。 */
-    expect(getResetBlockReason(bot("a", "paused"), false, false)).toBe("not_running");
+    expect(getResetBlockReason(undefined, true)).toBe("no_active_bot");
   });
 });
 

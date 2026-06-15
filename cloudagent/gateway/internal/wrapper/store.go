@@ -24,11 +24,12 @@ const (
 )
 
 type Store struct {
-	mu                  sync.Mutex
-	root                string
-	db                  *sql.DB
-	dialect             string
-	failArtifactPersist bool
+	mu                        sync.Mutex
+	root                      string
+	db                        *sql.DB
+	dialect                   string
+	failArtifactPersist       bool
+	failCloudAgentEventAppend bool
 }
 
 func NewStore(root string) (*Store, error) {
@@ -125,6 +126,12 @@ func (s *Store) SetFailArtifactPersist(value bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.failArtifactPersist = value
+}
+
+func (s *Store) SetFailCloudAgentEventAppend(value bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.failCloudAgentEventAppend = value
 }
 
 func (s *Store) PutFile(scope Scope, filename, purpose, contentType, kind, sourceResponseID string, content []byte) (FileRecord, error) {

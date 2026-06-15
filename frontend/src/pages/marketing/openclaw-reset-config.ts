@@ -25,18 +25,11 @@ export interface ResettableBot {
  *  - 不能正在重置（防抖）
  *  - 必须 running：reset API 本身只 rotate ctl 数据库里的 key，但后续 acli
  *    命令必须在 sandbox 上执行才能下发新 config，非 running 时下发必然失败
- *  - 必须先访问过"通道"tab：reset 流程依赖 `acli backend reset-config`，这是
- *    较新的 acli 子命令；存量实例的 acli 二进制不一定支持。SDK 的 ChannelPanel
- *    在 mount 时会触发 bootstrap → `acli self-update`，自动把实例上的 acli
- *    升到最新版。因此把"打开过通道 tab"作为 reset 的前置条件，让 self-update
- *    有机会先于 reset 执行。默认 section 已是 channel，正常用户毫无感知；
- *    只有 deep-link / 手动切到其他 tab 后立刻点重置的边角路径会被拦下。
  */
 export const RESET_BLOCK_REASON = {
   NO_ACTIVE_BOT: "no_active_bot",
   ALREADY_RESETTING: "already_resetting",
   NOT_RUNNING: "not_running",
-  CHANNEL_NOT_VIEWED: "channel_not_viewed",
 } as const;
 
 export type ResetBlockReason = (typeof RESET_BLOCK_REASON)[keyof typeof RESET_BLOCK_REASON];
@@ -46,12 +39,10 @@ export const ACLI_RESET_COMMAND = "acli backend upgrade-start --blueprint-id lhb
 export function getResetBlockReason(
   activeBot: ResettableBot | undefined,
   resetting: boolean,
-  hasViewedChannel: boolean,
 ): ResetBlockReason | null {
   if (!activeBot) return "no_active_bot";
   if (resetting) return "already_resetting";
   if (activeBot.status !== "running") return "not_running";
-  if (!hasViewedChannel) return "channel_not_viewed";
   return null;
 }
 

@@ -108,6 +108,13 @@ func (g *ACPGateway) runPromptAsync(ctx context.Context, ws *WSConn, id json.Raw
 					eventSeq = seq
 				}
 				attachACPEventIdentity(update, run.TurnID, run.AssistantMessageID, blockID, eventSeq)
+				raw, err := json.Marshal(update)
+				if err != nil {
+					return err
+				}
+				if err := g.store.AppendCloudAgentRunEvent(run.JobID, cloudAgentRunEventKind(raw), raw); err != nil {
+					return err
+				}
 			}
 		}
 		seq := atomic.AddInt64(&streamSeq, 1)
@@ -513,6 +520,20 @@ func (g *ACPGateway) beginPrompt(scope Scope, sessionID string, cancel context.C
 		Done:               make(chan struct{}),
 	}
 	ensurePromptRuns(session)[jobID] = run
+	if g.store != nil {
+		if err := g.store.CreateCloudAgentRun(cloudAgentRunRecord{
+			RunID:      jobID,
+			SessionID:  session.SessionID,
+			TurnID:     run.TurnID,
+			ResponseID: responseID,
+			Status:     "running",
+		}); err != nil {
+			return nil, workerJob{}, err
+		}
+		if err := g.store.SeedCloudAgentRunEventsFromTurn(jobID); err != nil {
+			return nil, workerJob{}, err
+		}
+	}
 	session.State = acpRuntimeStatePrompting
 	session.CurrentResponseID = responseID
 	session.UpdatedAt = time.Now().UTC()
@@ -602,7 +623,24 @@ func (g *ACPGateway) finishSuccessfulPrompt(sessionID string, run *acpPromptRun,
 				"messageId":     run.AssistantMessageID,
 				"content":       map[string]any{"text": result.OutputText},
 			}
-			if _, _, err := g.store.UpsertACPAssistantBlock(session.SessionID, run.TurnID, run.AssistantMessageID, responseID, "text", "", payload); err != nil {
+			blockID, storedUpdate, err := g.store.UpsertACPAssistantBlock(session.SessionID, run.TurnID, run.AssistantMessageID, responseID, "text", "", payload)
+			if err != nil {
+				return err
+			}
+			if storedUpdate != nil {
+				copyAssistantBlockIdentity(payload, storedUpdate)
+				attachCloudAgentAccumulatedText(payload, nestedContentText(storedUpdate))
+			}
+			var eventSeq int64
+			if seq, err := g.store.ACPBlockSequence(session.SessionID, blockID); err == nil {
+				eventSeq = seq
+			}
+			attachACPEventIdentity(payload, run.TurnID, run.AssistantMessageID, blockID, eventSeq)
+			raw, err := json.Marshal(payload)
+			if err != nil {
+				return err
+			}
+			if err := g.store.AppendCloudAgentRunEvent(run.JobID, cloudAgentRunEventKind(raw), raw); err != nil {
 				return err
 			}
 		}
@@ -619,6 +657,11 @@ func (g *ACPGateway) finishSuccessfulPrompt(sessionID string, run *acpPromptRun,
 		session.History = append(session.History, acpHistoryEntry{Role: "assistant", Text: result.OutputText, At: session.UpdatedAt, ResponseID: responseID, MessageID: messageID, BlockID: blockID})
 	}
 	g.persistSession(session)
+	if g.store != nil {
+		if err := g.store.UpdateCloudAgentRun(run.JobID, "completed", "end_turn", "", result.OutputText); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 func (g *ACPGateway) finishInterruptedPrompt(ws *WSConn, id json.RawMessage, appEnvelope bool, sessionID string, run *acpPromptRun, reason string) error {
@@ -639,6 +682,12 @@ func (g *ACPGateway) finishInterruptedPrompt(ws *WSConn, id json.RawMessage, app
 			}
 		}
 		g.persistSession(session)
+		if g.store != nil && run.TurnID != "" && run.AssistantMessageID != "" {
+			if err := g.store.UpdateCloudAgentRun(run.JobID, "cancelled", reason, "", ""); err != nil {
+				g.mu.Unlock()
+				return err
+			}
+		}
 	}
 	g.mu.Unlock()
 	if !run.markResponded() {
@@ -668,6 +717,12 @@ func (g *ACPGateway) finishFailedPrompt(ws *WSConn, id json.RawMessage, appEnvel
 				}
 			}
 			g.persistSession(session)
+			if g.store != nil && run.TurnID != "" && run.AssistantMessageID != "" {
+				if updateErr := g.store.UpdateCloudAgentRun(run.JobID, "completed", stopReason, err.Error(), ""); updateErr != nil {
+					g.mu.Unlock()
+					return updateErr
+				}
+			}
 		}
 		g.mu.Unlock()
 		if !run.markResponded() {
@@ -698,6 +753,12 @@ func (g *ACPGateway) finishFailedPrompt(ws *WSConn, id json.RawMessage, appEnvel
 			}
 		}
 		g.persistSession(session)
+		if g.store != nil && run.TurnID != "" && run.AssistantMessageID != "" {
+			if updateErr := g.store.UpdateCloudAgentRun(run.JobID, "failed", "failed", err.Error(), ""); updateErr != nil {
+				g.mu.Unlock()
+				return updateErr
+			}
+		}
 	}
 	g.mu.Unlock()
 	targetWS, targetID, targetEnvelope, ok := run.responseTarget()

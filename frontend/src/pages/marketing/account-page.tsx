@@ -4,7 +4,6 @@ import {
   Camera,
   Check,
   ChevronRight,
-  Copy,
   CreditCard,
   Loader2,
   Pencil,
@@ -19,7 +18,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useSession } from "@/contexts/session-context";
 import { useRepositories } from "@/contexts/repository-context";
 import { useOpenClaw } from "@/contexts/openclaw-context";
-import { usePaidBillingEnabled } from "@/contexts/runtime-config-context";
+import { usePaidBillingEnabled, useRealnamePhoneVerificationEnabled } from "@/contexts/runtime-config-context";
 import { RepositoryError } from "@/repositories/http-repositories";
 import type { BundleTimeUnit, Pass, PassRenewPrice } from "@/domain/types";
 import { BrandMark } from "@/components/site/brand-mark";
@@ -107,6 +106,7 @@ const VerifyIdentityModal = ({
   onClose,
   onSuccess,
   verified,
+  phoneVerificationEnabled,
   realnameLevel,
   phone,
 }: {
@@ -114,6 +114,7 @@ const VerifyIdentityModal = ({
   /** 调用方负责刷新 session 并关闭弹窗 */
   onSuccess: () => void;
   verified: boolean;
+  phoneVerificationEnabled: boolean;
   realnameLevel?: string;
   phone?: string;
 }) => {
@@ -121,8 +122,9 @@ const VerifyIdentityModal = ({
   const { auth } = useRepositories();
   const { refreshProfile } = useSession();
   const normalizedPhone = phone?.trim() ?? "";
-  const hasIdCardVerified = verified || realnameLevel === "idcard_2fa" || realnameLevel === "phone_3fa";
-  const [step, setStep] = useState<"identity" | "phone">(verified ? "identity" : hasIdCardVerified ? "phone" : "identity");
+  const hasIdCardVerified = phoneVerificationEnabled
+    && (verified || realnameLevel === "idcard_2fa" || realnameLevel === "phone_3fa");
+  const [step, setStep] = useState<"identity" | "phone">(hasIdCardVerified ? "phone" : "identity");
   const [realName, setRealName] = useState("");
   const [idNumber, setIdNumber] = useState("");
   const [smsCode, setSmsCode] = useState("");
@@ -212,7 +214,7 @@ const VerifyIdentityModal = ({
         } catch (refreshErr) {
           console.warn("Failed to refresh profile after ID card realname verify", refreshErr);
         }
-        if (!result.phoneVerificationRequired) {
+        if (!phoneVerificationEnabled || !result.phoneVerificationRequired) {
           onSuccess();
           return;
         }
@@ -287,8 +289,8 @@ const VerifyIdentityModal = ({
                 }}
               >
                 {verified
-                  ? t("重新完成三要素实名，通过核验后将更新当前实名信息。")
-                  : t("请先完成姓名、身份证号和手机号三要素认证。")}
+                  ? t("重新提交真实姓名和身份证号，通过核验后将更新当前实名信息。")
+                  : t("完成实名认证后可以发布技能和参与更多社区活动")}
               </p>
             </div>
             <button
@@ -327,9 +329,11 @@ const VerifyIdentityModal = ({
               }}
             >
               {verified
-                ? t("当前账号已完成三要素实名。修改后会覆盖当前实名信息，后台保留变更记录。")
+                ? t("当前账号已完成实名。修改后会覆盖当前实名信息，后台保留变更记录。")
                 : step === "identity"
-                  ? t("第一步：提交真实姓名和身份证号。")
+                  ? phoneVerificationEnabled
+                    ? t("第一步：提交真实姓名和身份证号。")
+                    : t("当前未认证，请完善信息并提交认证。")
                   : t("第二步：输入当前手机号收到的短信验证码。")}
             </span>
           </div>
@@ -565,7 +569,7 @@ const VerifyIdentityModal = ({
                 {step === "phone" ? t("认证中...") : verified ? t("更新中...") : t("提交中...")}
               </>
             ) : (
-              step === "phone" ? t("完成三要素认证") : t("下一步")
+              step === "phone" ? t("完成三要素认证") : verified ? t("更新认证") : t("提交认证")
             )}
           </button>
           <p
@@ -578,7 +582,9 @@ const VerifyIdentityModal = ({
               color: "rgba(0,0,0,0.3)",
             }}
           >
-            {t("你的姓名、身份证号和手机号将加密传输并存储，平台仅保留脱敏信息用于展示。认证信息不会用于其他用途。")}
+            {phoneVerificationEnabled
+              ? t("你的姓名、身份证号和手机号将加密传输并存储，平台仅保留脱敏信息用于展示。认证信息不会用于其他用途。")
+              : t("你的姓名和身份证号将加密传输并存储，平台仅保留脱敏信息用于展示。认证信息不会用于其他用途。")}
           </p>
         </div>
       </motion.div>
@@ -631,7 +637,7 @@ const ChangePhoneModal = ({
           return t("验证码不正确，请检查后重试。");
         case "shadow_binding_failed":
         case "shadow_binding_incomplete":
-          return t("影子账号安全手机同步失败，请稍后重试。");
+          return t("安全手机同步失败，请稍后重试。");
         case "unauthorized":
           return t("登录已失效，请重新登录后再试。");
         default:
@@ -706,7 +712,7 @@ const ChangePhoneModal = ({
                 {currentPhone ? t("修改安全手机") : t("绑定安全手机")}
               </h3>
               <p className="m-0" style={{ fontFamily: "PingFang SC", fontWeight: 400, fontSize: 14, lineHeight: "22px", color: "rgba(0,0,0,0.9)" }}>
-                {t("安全手机会同步到 SaaS 影子账号，用于后续计费、支付和账号安全校验。")}
+                {t("安全手机用于后续计费、支付和账号安全校验。")}
               </p>
             </div>
             <button
@@ -830,7 +836,7 @@ const ChangePhoneModal = ({
             )}
           </button>
           <p className="m-0 text-center" style={{ fontFamily: "PingFang SC", fontWeight: 400, fontSize: 12, lineHeight: "24px", color: "rgba(0,0,0,0.3)" }}>
-            {t("验证码通过后才会同步影子账号并更新本地手机号；同步失败时不会修改当前账号手机号。")}
+            {t("验证码通过后会更新安全手机；同步失败时不会修改当前账号手机号。")}
           </p>
         </div>
       </motion.div>
@@ -1824,16 +1830,17 @@ export const AccountPage = () => {
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [guestLoading, setGuestLoading] = useState(false);
   const [guestError, setGuestError] = useState<string | null>(null);
+  const realnamePhoneVerificationEnabled = useRealnamePhoneVerificationEnabled();
 
-  // Verification —— 三要素实名完成才视为账号实名完成；idcard_2fa 只表示已过姓名+身份证实名。
-  // Do not infer idcard_2fa from the legacy boolean: phone-bound users can have
-  // realnameVerified-like historical state without actually passing ID-card realname.
-  const verified = user?.realnameLevel === "phone_3fa";
-  const idCardVerified = user?.realnameLevel === "idcard_2fa" || user?.realnameLevel === "phone_3fa";
+  const verified = realnamePhoneVerificationEnabled
+    ? user?.realnameLevel === "phone_3fa"
+    : Boolean(user?.realnameVerified);
+  const idCardVerified = realnamePhoneVerificationEnabled
+    && (user?.realnameLevel === "idcard_2fa" || user?.realnameLevel === "phone_3fa");
   const realnameSyncStatus = user?.realnameSyncStatus as RealnameSyncStatus | undefined;
   const hasSafetyPhone = Boolean(user?.phone?.trim());
   const idCardSyncStatus = idCardVerified && !verified ? realnameSyncStatus : undefined;
-  const realnameSyncNeedsRetry = hasSafetyPhone && idCardVerified && !verified && (
+  const realnameSyncNeedsRetry = realnamePhoneVerificationEnabled && hasSafetyPhone && idCardVerified && !verified && (
     idCardSyncStatus === "failed" || idCardSyncStatus === "pending"
   );
   const realnameStatusLabel = verified
@@ -1847,7 +1854,7 @@ export const AccountPage = () => {
           : "";
   const [showAccountSafetyPhoneSection, setShowAccountSafetyPhoneSection] = useState(readAccountSafetyPhoneVisibility);
   const showRealnameSection = !isGlobal;
-  const showSafetyPhoneSection = !isGlobal && showAccountSafetyPhoneSection;
+  const showSafetyPhoneSection = realnamePhoneVerificationEnabled && !isGlobal && showAccountSafetyPhoneSection;
   const showEmailBindSection = isCN;
   const [showVerifyModal, setShowVerifyModal] = useState(false);
   const [showChangePhoneModal, setShowChangePhoneModal] = useState(false);
@@ -1861,9 +1868,6 @@ export const AccountPage = () => {
   const [emailBindSuccess, setEmailBindSuccess] = useState<string | null>(null);
   const [emailBindCooldown, setEmailBindCooldown] = useState(0);
 
-  // 账号 ID 一键复制：copiedUserId 控制「已复制」瞬态提示；ref 挂 setTimeout 以便重复点击时清理旧 timer
-  const [copiedUserId, setCopiedUserId] = useState(false);
-  const copyResetTimer = useRef<number | null>(null);
   useEffect(() => {
     if (isGlobal || typeof window === "undefined") return undefined;
 
@@ -1886,20 +1890,6 @@ export const AccountPage = () => {
       }
     };
   }, []);
-
-  const handleCopyUserId = async () => {
-    if (!user?.id) return;
-    try {
-      await navigator.clipboard.writeText(user.id);
-      setCopiedUserId(true);
-      if (copyResetTimer.current) {
-        window.clearTimeout(copyResetTimer.current);
-      }
-      copyResetTimer.current = window.setTimeout(() => setCopiedUserId(false), 1500);
-    } catch {
-      /* 浏览器不支持 clipboard API 或拒绝授权，用户可手选文本复制，此处静默 */
-    }
-  };
 
   // Delete account
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -2022,7 +2012,7 @@ export const AccountPage = () => {
   };
 
   const handleOpenVerifyModal = () => {
-    if (!user?.phone) {
+    if (realnamePhoneVerificationEnabled && !user?.phone) {
       setShowChangePhoneModal(true);
       return;
     }
@@ -2427,34 +2417,6 @@ export const AccountPage = () => {
                 </div>
               </div>
 
-              {user?.id && (
-                /* 账号 ID 行 —— 国内国际站都展示，独立于实名认证区 */
-                <div className="flex flex-col gap-12 px-8 py-8">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm" style={{ color: "rgba(0,0,0,0.5)", lineHeight: "24px" }}>{t("账号 ID")}</span>
-                    <div className="flex min-w-0 items-center gap-2">
-                      <span
-                        className="truncate text-sm"
-                        style={{ color: "rgba(0,0,0,0.9)", fontFamily: "JetBrains Mono, monospace", maxWidth: 260 }}
-                        title={user.id}
-                      >
-                        {user.id}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => void handleCopyUserId()}
-                        className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg transition-colors hover:bg-[rgba(0,0,0,0.04)]"
-                        aria-label={t("复制")}
-                        title={copiedUserId ? t("已复制") : t("复制")}
-                        style={{ color: copiedUserId ? "var(--color-success)" : "var(--text-tertiary)" }}
-                      >
-                        {copiedUserId ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-
               {(showEmailBindSection || showRealnameSection) && (
                 /* Bottom: info rows —— 安全手机 / 实名认证 / 绑定邮箱 */
                 <div className="flex flex-col gap-12 px-8 pb-8">
@@ -2563,7 +2525,7 @@ export const AccountPage = () => {
                       </div>
                     ) : (
                       <div className="flex items-center gap-3">
-                        {(idCardVerified || realnameSyncError) && (
+                        {realnamePhoneVerificationEnabled && (idCardVerified || realnameSyncError) && (
                           <div className="flex flex-col items-end gap-1">
                             {realnameStatusLabel && (
                               <span
@@ -2587,7 +2549,13 @@ export const AccountPage = () => {
                           style={{ color: "var(--lw-accent)" }}
                         >
                           {realnameSyncRetrying && <Loader2 className="h-4 w-4 animate-spin" />}
-                          {!hasSafetyPhone ? t("绑定安全手机") : realnameSyncNeedsRetry ? t("重新同步") : idCardVerified ? t("继续认证") : t("去认证")}
+                          {realnamePhoneVerificationEnabled && !hasSafetyPhone
+                            ? t("绑定安全手机")
+                            : realnameSyncNeedsRetry
+                              ? t("重新同步")
+                              : realnamePhoneVerificationEnabled && idCardVerified
+                                ? t("继续认证")
+                                : t("去认证")}
                           {!realnameSyncRetrying && <ChevronRight className="h-4 w-4" />}
                         </button>
                       </div>
@@ -2631,11 +2599,12 @@ export const AccountPage = () => {
             onClose={() => setShowVerifyModal(false)}
             onSuccess={handleVerifySuccess}
             verified={verified}
+            phoneVerificationEnabled={realnamePhoneVerificationEnabled}
             realnameLevel={user?.realnameLevel}
             phone={user?.phone}
           />
         )}
-        {showRealnameSection && showChangePhoneModal && (
+        {showRealnameSection && realnamePhoneVerificationEnabled && showChangePhoneModal && (
           <ChangePhoneModal
             key="change-phone"
             currentPhone={user?.phone}

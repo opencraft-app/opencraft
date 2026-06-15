@@ -122,6 +122,32 @@ func migrateStoreForDialect(db *sql.DB, dialect string) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS message_blocks_replay_idx ON message_blocks(session_id, turn_id, block_index)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS message_blocks_tool_idx ON message_blocks(message_id, tool_call_id) WHERE tool_call_id <> ''`,
+		`CREATE TABLE IF NOT EXISTS cloudagent_runs (
+			run_id TEXT PRIMARY KEY,
+			session_id TEXT NOT NULL,
+			turn_id TEXT NOT NULL DEFAULT '',
+			response_id TEXT NOT NULL DEFAULT '',
+			status TEXT NOT NULL,
+			stop_reason TEXT NOT NULL DEFAULT '',
+			error_message TEXT NOT NULL DEFAULT '',
+			output_text TEXT NOT NULL DEFAULT '',
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL,
+			completed_at TEXT
+		)`,
+		`CREATE INDEX IF NOT EXISTS cloudagent_runs_session_idx ON cloudagent_runs(session_id, updated_at)`,
+		`CREATE INDEX IF NOT EXISTS cloudagent_runs_turn_idx ON cloudagent_runs(turn_id)`,
+		`CREATE TABLE IF NOT EXISTS cloudagent_run_events (
+			run_id TEXT NOT NULL,
+			seq INTEGER NOT NULL,
+			session_id TEXT NOT NULL,
+			turn_id TEXT NOT NULL DEFAULT '',
+			kind TEXT NOT NULL DEFAULT '',
+			event_json TEXT NOT NULL,
+			created_at TEXT NOT NULL,
+			PRIMARY KEY(run_id, seq)
+		)`,
+		`CREATE INDEX IF NOT EXISTS cloudagent_run_events_session_idx ON cloudagent_run_events(session_id, run_id, seq)`,
 		`CREATE TABLE IF NOT EXISTS session_files (
 			session_id TEXT NOT NULL,
 			event_id INTEGER NOT NULL,
