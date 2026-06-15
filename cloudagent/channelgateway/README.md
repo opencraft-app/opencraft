@@ -1,12 +1,13 @@
 # CloudAgent Channel Gateway
 
-`channelgateway` bridges external chat channels to CloudAgent ACP.
+`channelgateway` bridges external chat channels to CloudAgent runtime APIs.
 
 Current shape:
 
 - channel adapter: WeCom AI Bot WebSocket
 - session truth: SQLite store with embedded Go migrations
-- runtime target: CloudAgent ACP over WebSocket
+- runtime target: CloudAgent HTTP run protocol, with ACP WebSocket kept as a
+  compatibility fallback
 - ownership: one channel account connection is held by one process lease owner
 - multi-tenant runner model: every active `channel_accounts` row gets an independent lease, WeCom WSS adapter, ACP client, dispatcher, and outbox pump
 - release entry: `.ci/channelgateway.yml` extends the shared service-release template
@@ -28,6 +29,7 @@ Useful environment:
 CHANNELGATEWAY_DB_PATH=channelgateway.db
 CHANNELGATEWAY_DB_DRIVER=sqlite
 CHANNELGATEWAY_ACP_URL=ws://127.0.0.1:18094/acp
+CHANNELGATEWAY_RUNTIME_PROTOCOL=acp
 CHANNELGATEWAY_ACP_AUTHORIZATION="Bearer ..."
 CHANNELGATEWAY_TENANT_ID=default
 CHANNELGATEWAY_PROJECT_ID=default
@@ -55,6 +57,18 @@ CHANNELGATEWAY_DB_PATH='user:password@tcp(mysql-host:3306)/channelgateway?charse
 
 `CHANNELGATEWAY_DB_PATH` also accepts `mysql://user:password@host:3306/db`
 URLs and converts them to the Go MySQL driver DSN internally.
+
+For durable channel traffic, use CloudAgent HTTP run protocol instead of ACP
+WebSocket:
+
+```bash
+CHANNELGATEWAY_ACP_URL=http://127.0.0.1:18094
+CHANNELGATEWAY_RUNTIME_PROTOCOL=cloudagent
+```
+
+Devcloud uses the same mode with the in-cluster CloudAgent gateway service.
+The protocol contract and live verification commands are documented in
+[`cloudagent-http-run-protocol.md`](../gateway/docs/cloudagent-http-run-protocol.md).
 
 For local or CI bootstrap, multiple WeCom accounts can be seeded with snake_case
 JSON. This is a bootstrap surface; production should treat the database account
@@ -132,7 +146,7 @@ GOWORK=off go run ./cmd/wecom-handshake-check --url wss://example.internal/ws
 Inbound message flow:
 
 ```text
-WeCom callback -> durable inbound job -> conversation/session_key -> ACP session/new or load -> session/prompt -> durable outbox -> WeCom send
+WeCom callback -> durable inbound job -> conversation/session_key -> CloudAgent session -> CloudAgent run -> durable outbox -> WeCom send
 ```
 
 Database migrations live under `internal/store/migrations` and run at process start.
