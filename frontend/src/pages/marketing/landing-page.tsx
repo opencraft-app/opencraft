@@ -20,8 +20,9 @@ import ProcessSection from "@/imports/Frame2147230025/sections/ProcessSection";
 import CtaSection from "@/imports/Frame2147230025/sections/CtaSection";
 import FooterSection from "@/imports/Frame2147230025/sections/FooterSection";
 
-// 仅在落地页激活时撤销 vendor-tea.css 对 body/a 的全局污染（详见 CSS 注释）。
-import "./landing-page-overrides.css";
+// 落地页全局样式隔离层：始终生效，用「无层 + !important」锁定首页字体/链接等
+// 关键样式，免疫 tea 多包注入的无层全局 reset（详见 CSS 注释）。
+import "./landing-page-isolation.css";
 
 export const LandingPage = () => {
   const location = useLocation();
@@ -39,17 +40,6 @@ export const LandingPage = () => {
     if (!oauthError) return;
     setShowLogin(true);
   }, [oauthError, navigate]);
-
-  // 进入落地页时启用 CSS 隔离层；离开（unmount）时自动撤销。
-  // 仅生产 build 需要（dev 模式 vite 不预加载 vendor-tea.css，无污染源），
-  // 故用 import.meta.env.PROD 守卫，避免 dev 下 override 误伤导航样式。
-  useEffect(() => {
-    if (!import.meta.env.PROD) return;
-    document.body.classList.add("lv-landing-active");
-    return () => {
-      document.body.classList.remove("lv-landing-active");
-    };
-  }, []);
 
   const handleCloseLogin = () => {
     setShowLogin(false);
@@ -84,7 +74,7 @@ export const LandingPage = () => {
   }, [isAuthenticated, isSubscribed, hasBots, navigate]);
 
   return (
-    <div className="w-full bg-white overflow-x-hidden">
+    <div className="lw-landing-root w-full bg-white overflow-x-hidden">
       <div className="relative">
         <HeaderSection onLoginClick={openLogin} onCreateClick={handleCreateClick} />
         <HeroSection onCreateClick={handleCreateClick} />

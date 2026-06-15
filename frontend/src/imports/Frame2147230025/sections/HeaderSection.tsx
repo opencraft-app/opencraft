@@ -53,7 +53,7 @@ function Component5({ onClick }: { onClick?: () => void }) {
       data-name="Component 53"
     >
       <div aria-hidden className="absolute border border-[#e6e9ef] border-solid inset-0 pointer-events-none rounded-[100px]" />
-      <p className="[word-break:break-word] font-['PingFang_SC:Medium',sans-serif] leading-[22px] not-italic relative shrink-0 text-[14px] text-[rgba(0,0,0,0.9)] text-center whitespace-nowrap">{t("登录")}</p>
+      <p className="lw-nav-login-text [word-break:break-word] font-['PingFang_SC:Medium',sans-serif] leading-[22px] not-italic relative shrink-0 text-[14px] text-[rgba(0,0,0,0.9)] text-center whitespace-nowrap">{t("登录")}</p>
     </button>
   );
 }
@@ -68,7 +68,7 @@ function Component6({ onClick }: { onClick?: () => void }) {
       className="bg-[#161617] hover:bg-[#000] hover:-translate-y-[1px] hover:shadow-[0_8px_20px_rgba(0,0,0,0.25)] transition-all duration-200 ease-out content-stretch flex gap-[8px] items-center justify-center px-[24px] py-[7px] relative rounded-[38px] shrink-0 cursor-pointer border-0 outline-none"
       data-name="Component 53"
     >
-      <p className="[word-break:break-word] font-['PingFang_SC:Medium',sans-serif] leading-[22px] not-italic relative shrink-0 text-[14px] text-center text-white whitespace-nowrap">{t("立即创建")}</p>
+      <p className="lw-nav-create-text [word-break:break-word] font-['PingFang_SC:Medium',sans-serif] leading-[22px] not-italic relative shrink-0 text-[14px] text-center text-white whitespace-nowrap">{t("立即创建")}</p>
     </button>
   );
 }
@@ -76,8 +76,8 @@ function Component6({ onClick }: { onClick?: () => void }) {
 function Frame5({ onLoginClick, onCreateClick }: { onLoginClick?: () => void; onCreateClick?: () => void }) {
   return (
     <div className="content-stretch flex gap-[12px] items-center relative shrink-0">
-      <Component5 onClick={onLoginClick} />
       <Component6 onClick={onCreateClick} />
+      <Component5 onClick={onLoginClick} />
       {/* 语言切换器：仅国际站展示，与原站点 LandingNavbar 逻辑一致 */}
       {isGlobal && <LanguageSwitcher />}
     </div>
@@ -104,7 +104,7 @@ export default function HeaderSection({ onLoginClick, onCreateClick }: HeaderSec
   const t = useT();
 
   return (
-    <header className="w-full absolute top-0 left-0 z-20">
+    <header className="lw-landing-header w-full absolute top-0 left-0 z-20">
       <div className="w-full flex items-center justify-between px-16 py-3 relative">
         {/* Logo */}
         <Frame4 />
@@ -118,8 +118,8 @@ export default function HeaderSection({ onLoginClick, onCreateClick }: HeaderSec
               <Link
                 key={link.href}
                 to={link.href}
-                className={`text-[14px] font-['PingFang_SC:Medium',sans-serif] transition-all duration-200 ease-out hover:-translate-y-[2px] hover:text-black no-underline ${
-                  active ? 'text-black/90 font-semibold' : 'text-[rgba(0,0,0,0.7)]'
+                className={`lw-nav-link text-[14px] font-['PingFang_SC:Medium',sans-serif] transition-all duration-200 ease-out hover:-translate-y-[2px] hover:text-black no-underline ${
+                  active ? 'lw-nav-link--active text-black/90 font-semibold' : 'text-[rgba(0,0,0,0.7)]'
                 }`}
               >
                 {t(link.label)}

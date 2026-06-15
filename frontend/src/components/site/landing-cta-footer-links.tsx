@@ -73,6 +73,7 @@ export function LandingCtaFooterLinks() {
       >
         {t("服务条款")}
       </a>
+      {/* 国际站：开源声明（现网 footer 有，国内站无）。 */}
       {isGlobal && (
         <>
           <span aria-hidden="true">·</span>
@@ -81,6 +82,8 @@ export function LandingCtaFooterLinks() {
           </Link>
         </>
       )}
+      {/* 加入用户交流群：hover 显示二维码（国内微信群 / 国际 Discord）。
+          现网两站 footer 均有此入口（国际站 hover 引导进入 Discord）。 */}
       <span aria-hidden="true">·</span>
       <span
         ref={triggerRef}
@@ -91,7 +94,7 @@ export function LandingCtaFooterLinks() {
         }}
         onMouseLeave={() => setShowQR(false)}
       >
-        {t("加入用户交流群")}
+        {t("加入交流群")}
       </span>
       {createPortal(
         <AnimatePresence>

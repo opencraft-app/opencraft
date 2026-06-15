@@ -1837,7 +1837,7 @@ export function CardsSection() {
                 WebkitTextStrokeWidth: '0.6px',
                 WebkitTextStrokeColor: 'var(--color-text-primary, rgba(0, 0, 0, 0.90))' }}
             >
-              Hermes Agent 云端原生体验
+              {t("Hermes Agent 云端原生体验")}
             </h2>
             {/* 右下角装饰 */}
             <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 8 8" fill="none"
@@ -1847,7 +1847,7 @@ export function CardsSection() {
             </svg>
           </div>
           <p className="text-[16px] font-['PingFang_SC:Regular',sans-serif] text-[rgba(0,0,0,0.5)] leading-6 text-center whitespace-nowrap lv-reveal lv-delay-200">
-            随时在线，数据由你掌控
+            {t("随时在线，数据由你掌控")}
           </p>
         </div>
         {/* 3列卡片：桌面3列，小屏1列（无2列过渡）间距 gap-6 对齐参考 */}
@@ -1935,6 +1935,16 @@ function MarqueeRow({ tags, direction }: { tags: typeof ROW1; direction: 'left' 
 export default function FeatureSection() {
   useTranslation(); // 订阅语言切换，驱动内部命令式 t() 重渲染
   const ref = useScrollReveal();
+  // i18n 提取锚点：跑马灯标签经 TagPill 的 t(label) 动态取词，i18n:extract 无法
+  // 静态识别动态 key（也可能被 prune 脚本误删现有翻译）。这里以字面量显式列出
+  // 全部标签，确保它们稳定进入字典并保留对应英文翻译。
+  const _tagI18nAnchor = [
+    t("市场营销"), t("营养食谱"), t("行业分析"), t("处理邮件"), t("健康追踪"),
+    t("定时任务"), t("会议纪要"), t("新闻推送"), t("私域营销"),
+    t("选品竞品"), t("商品比价"), t("海报创作"), t("文档总结"), t("网页游戏"),
+    t("制作PPT"), t("提醒喝水"), t("智能理财"), t("网站开发"),
+  ];
+  void _tagI18nAnchor;
   return (
     <section className="w-full py-16 overflow-hidden" ref={ref as React.RefObject<HTMLElement>}>
       <style dangerouslySetInnerHTML={{ __html: marqueeStyle }} />
@@ -1953,7 +1963,7 @@ export default function FeatureSection() {
               WebkitTextStrokeWidth: '0.6px',
               WebkitTextStrokeColor: 'var(--color-text-primary, rgba(0, 0, 0, 0.90))' }}
           >
-            你只管开口，远方的智能伙伴替你抵达
+            {t("你只管开口，远方的智能伙伴替你抵达")}
           </h2>
           {/* 右下角装饰 */}
           <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 8 8" fill="none"
