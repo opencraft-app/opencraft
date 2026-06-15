@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { executeBuildReleaseArtifacts } from "./build-release-artifacts.mjs";
+import { executeBuildReleaseArtifacts, runFrontendArtifactBuildCommand } from "./build-release-artifacts.mjs";
 
 const baseEnv = {
   FRONTEND_ARTIFACT_MODE: "required",
@@ -9,6 +9,24 @@ const baseEnv = {
 };
 
 describe("build release artifacts", () => {
+  it("runs static site generation after Vite build and asset optimization", async () => {
+    const calls: string[] = [];
+
+    await runFrontendArtifactBuildCommand("build:cn", {
+      FRONTEND_BUILD_OUTPUT_DIR: "/tmp/frontend-artifact-builds/cn",
+      NODE_BIN: "node-bin",
+      PNPM_BIN: "pnpm-bin",
+    }, async (command: string, args: string[]) => {
+      calls.push(`${command} ${args.join(" ")}`);
+    });
+
+    expect(calls).toEqual([
+      "pnpm-bin exec vite build --mode cn --outDir /tmp/frontend-artifact-builds/cn",
+      "node-bin scripts/optimize-static-assets.mjs /tmp/frontend-artifact-builds/cn",
+      "node-bin scripts/generate-static-site.mjs --region cn --dist /tmp/frontend-artifact-builds/cn",
+    ]);
+  });
+
   it("selects from FRONTEND_ARTIFACT_MATRIX and archives without deploying", async () => {
     const calls: string[] = [];
 

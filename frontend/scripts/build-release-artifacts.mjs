@@ -100,14 +100,15 @@ export async function runFrontendArtifactTypecheck(env = process.env) {
   await runCommand(pnpmBin(env), ["run", "check"], env);
 }
 
-export async function runFrontendArtifactBuildCommand(scriptName, env = process.env) {
+export async function runFrontendArtifactBuildCommand(scriptName, env = process.env, runner = runCommand) {
   const outputDir = env.FRONTEND_BUILD_OUTPUT_DIR?.trim();
   if (!outputDir) {
     throw new Error("FRONTEND_BUILD_OUTPUT_DIR is required for frontend artifact builds");
   }
   const mode = modeForBuildCommand(scriptName);
-  await runCommand(pnpmBin(env), ["exec", "vite", "build", "--mode", mode, "--outDir", outputDir], env);
-  await runCommand(nodeBin(env), ["scripts/optimize-static-assets.mjs", outputDir], env);
+  await runner(pnpmBin(env), ["exec", "vite", "build", "--mode", mode, "--outDir", outputDir], env);
+  await runner(nodeBin(env), ["scripts/optimize-static-assets.mjs", outputDir], env);
+  await runner(nodeBin(env), ["scripts/generate-static-site.mjs", "--region", mode, "--dist", outputDir], env);
 }
 
 async function runWithConcurrency(items, concurrency, task) {
