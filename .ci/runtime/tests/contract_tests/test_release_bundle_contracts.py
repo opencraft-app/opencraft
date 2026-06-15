@@ -627,7 +627,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(template_stages[4].get("if"), "${{ variables.MIGRATION_DECISION }} == run_migration")
         self.assertNotIn("${{ci.actor}}", template_text)
         self.assertNotIn("${{ ci.actor }}", template_text)
-        self.assertIn('reviewers: [ "skipzhang" ]', template_text)
+        self.assertIn('reviewers: [ "skipzhang", "xinqishang" ]', template_text)
         self.assertIn("请先检查上一阶段 dry-run 日志中的执行计划", template_text)
         self.assertEqual(template_text.count("run_prod_db_migration.py"), 2)
         self.assertIn("SKIP_IF_NO_MIGRATION_CHANGE", template_text)
@@ -940,7 +940,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         second_approval_reviews = (((second_approval_stage.get("check-in") or {}).get("reviews") or {}).get("flows") or [])[0]
         self.assertEqual(second_approval_reviews.get("name"), "二次确认生产镜像升级")
         template_parameters = {parameter.get("name"): parameter for parameter in template.get("parameters") or []}
-        self.assertEqual(template_parameters.get("PROD_REVIEWERS", {}).get("default"), '["skipzhang"]')
+        self.assertEqual(template_parameters.get("PROD_REVIEWERS", {}).get("default"), '["skipzhang", "xinqishang"]')
         self.assertEqual(entry_reviews.get("reviewers"), "${{ parameters.PROD_REVIEWERS }}")
         self.assertEqual(second_approval_reviews.get("reviewers"), "${{ parameters.PROD_REVIEWERS }}")
         self.assertIn("reviewers: ${{ parameters.PROD_REVIEWERS }}", template_text)
