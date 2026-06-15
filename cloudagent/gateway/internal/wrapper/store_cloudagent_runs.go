@@ -303,10 +303,16 @@ func (s *Store) importCloudAgentRunEventLocked(event cloudAgentRunEvent) error {
 	if s.failCloudAgentEventAppend {
 		return errors.New("cloudagent run event append disabled by test hook")
 	}
-	res, err := s.db.Exec(`
+	insertSQL := `
 INSERT INTO cloudagent_run_events (run_id, seq, session_id, turn_id, kind, event_json, created_at)
 VALUES (?, ?, ?, ?, ?, ?, ?)
-ON CONFLICT(run_id, seq) DO NOTHING`,
+ON CONFLICT(run_id, seq) DO NOTHING`
+	if s.dialect == storeDialectMySQL {
+		insertSQL = `
+INSERT IGNORE INTO cloudagent_run_events (run_id, seq, session_id, turn_id, kind, event_json, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?)`
+	}
+	res, err := s.db.Exec(insertSQL,
 		event.RunID, event.Seq, event.SessionID, event.TurnID, event.Kind,
 		string(event.Event), event.CreatedAt.Format(time.RFC3339Nano))
 	if err != nil {
