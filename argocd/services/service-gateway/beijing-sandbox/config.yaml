@@ -98,6 +98,11 @@ routes:
     methods: [POST, OPTIONS]
     upstream: http://lightclaw-auth.user-auth.svc.cluster.local
     access: public
+  - name: trade-jifei-callback
+    prefix: /trade/jifei/callback
+    methods: [POST, OPTIONS]
+    upstream: http://trade.trade.svc.cluster.local
+    access: public
   - name: auth
     prefix: /auth
     methods: [GET, POST, PUT, DELETE, OPTIONS]
