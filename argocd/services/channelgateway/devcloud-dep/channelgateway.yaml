@@ -7,7 +7,8 @@ metadata:
     cloudagent.dev/environment: devcloud-dep
 data:
   CHANNELGATEWAY_DB_DRIVER: "mysql"
-  CHANNELGATEWAY_ACP_URL: "ws://cloudagent-gateway.dep.svc.cluster.local/acp"
+  CHANNELGATEWAY_ACP_URL: "http://cloudagent-gateway.dep.svc.cluster.local"
+  CHANNELGATEWAY_RUNTIME_PROTOCOL: "cloudagent"
   CHANNELGATEWAY_TENANT_ID: "tenant-devcloud-dep"
   CHANNELGATEWAY_PROJECT_ID: "project-devcloud-dep"
   CHANNELGATEWAY_OWNER_ID: "channelgateway-devcloud-dep"
