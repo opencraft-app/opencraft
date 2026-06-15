@@ -62,6 +62,8 @@ const DOCS = {
 const SPA_REWRITES = [
   "/agents",
   "/agents/*",
+  "/account",
+  "/account/*",
   "/bots/*",
   "/settings/*",
   "/auth/*",
@@ -405,10 +407,22 @@ function renderHead({ route, site, siteUrl, canonicalPath, description, indexabl
   ].join("");
 }
 
+function extractViteAssetTags(template) {
+  const headMatch = template.match(/<head>([\s\S]*?)<\/head>/i);
+  const templateHead = headMatch?.[1] ?? "";
+  const tags = [];
+  const assetTagPattern = /<(?:script|link)\b[^>]+(?:src|href)=["']\/assets\/[^"']+["'][^>]*(?:><\/script>|>)/gi;
+  for (const match of templateHead.matchAll(assetTagPattern)) {
+    tags.push(match[0]);
+  }
+  return tags.join("");
+}
+
 function wrapPage({ template, site, head, body }) {
+  const assetTags = extractViteAssetTags(template);
   return template
     .replace(/<html[^>]*>/i, `<html lang="${site.lang}">`)
-    .replace(/<head>[\s\S]*?<\/head>/i, `<head>${head}</head>`)
+    .replace(/<head>[\s\S]*?<\/head>/i, `<head>${head}${assetTags}</head>`)
     .replace(/<div id="root">[\s\S]*?<\/div>/i, `<div id="root">${body}</div>`);
 }
 
