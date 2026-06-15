@@ -3,6 +3,9 @@
 This document records the durable HTTP run protocol used by channel adapters
 that must survive transport disconnects and long-running prompts.
 
+For caller-facing setup and curl examples, see
+[`cloudagent-http-run-integration.md`](cloudagent-http-run-integration.md).
+
 ## Purpose
 
 ACP WebSocket remains the interactive client protocol. Channel adapters such as
@@ -119,4 +122,3 @@ Rules:
 5. Run `TestCloudAgentClientLiveHTTPRunProtocol` against the devcloud LB.
 6. If live e2e fails with a SQL dialect error, fix the store code and redeploy
    before switching channel traffic.
-
