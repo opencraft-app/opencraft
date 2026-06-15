@@ -1,6 +1,7 @@
 package rescue
 
 import (
+	"strings"
 	"time"
 
 	enumspb "go.temporal.io/api/enums/v1"
@@ -17,6 +18,9 @@ func ExportWorkflow(ctx workflow.Context, req ExportRequest, cfg TencentConfig) 
 	}
 	finish := func(err error) (ExportResult, error) {
 		completeWorkflowStatus(ctx, req, status, result, err)
+		if err != nil {
+			notifyExportFailure(ctx, req, cfg, status, err)
+		}
 		return result, err
 	}
 
@@ -30,17 +34,6 @@ func ExportWorkflow(ctx workflow.Context, req ExportRequest, cfg TencentConfig) 
 	}
 	result.Instance = instance
 	status.Instance = instance
-	updateWorkflowPhase(ctx, req, status, PhaseBackup)
-
-	backupCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
-		StartToCloseTimeout: 50 * time.Minute,
-		HeartbeatTimeout:    30 * time.Second,
-		RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 1},
-	})
-	if err := workflow.ExecuteActivity(backupCtx, "EnsureBackup", req, cfg, instance.Region).Get(backupCtx, &result.Backup); err != nil {
-		return finish(err)
-	}
-	status.Backup = result.Backup
 
 	if instance.State == "RESCUE_MODE" && req.ReenterRescue {
 		updateWorkflowPhase(ctx, req, status, PhaseExitRescue)
@@ -149,6 +142,22 @@ func ExportWorkflow(ctx workflow.Context, req ExportRequest, cfg TencentConfig) 
 			updateDeleteVisibility(ctx, req, status, result.COSDeleteWorkflowID, result.COSDeleteAfterSeconds)
 		}
 	}
+	if workflowErr == nil {
+		if emailResult, err := maybeSendExportNotification(ctx, req, cfg, status, &result); err != nil {
+			workflowErr = err
+		} else if emailResult.MessageID != "" {
+			result.NotificationEmail = emailResult.ToEmail
+			result.EmailMessageID = emailResult.MessageID
+			result.EmailDelivered = emailResult.EmailDelivered
+			result.EmailDeliverStatus = emailResult.DeliverStatus
+			result.EmailDeliverMessage = emailResult.DeliverMessage
+			status.NotificationEmail = emailResult.ToEmail
+			status.EmailMessageID = emailResult.MessageID
+			status.EmailDelivered = emailResult.EmailDelivered
+			status.EmailDeliverStatus = emailResult.DeliverStatus
+			status.EmailDeliverMessage = emailResult.DeliverMessage
+		}
+	}
 	if result.Archive.RemotePath != "" {
 		updateWorkflowPhase(ctx, req, status, PhaseCleanupRemote)
 		cleanupCtx := cleanupActivityContext(ctx, workflow.ActivityOptions{
@@ -196,6 +205,71 @@ func ExportWorkflow(ctx workflow.Context, req ExportRequest, cfg TencentConfig) 
 		}
 	}
 	return finish(workflowErr)
+}
+
+func maybeSendExportNotification(ctx workflow.Context, req ExportRequest, cfg TencentConfig, status *ExportStatus, result *ExportResult) (EmailNotificationResult, error) {
+	empty := EmailNotificationResult{}
+	toEmail := notificationEmail(req)
+	if toEmail == "" {
+		return empty, nil
+	}
+	downloadURL := strings.TrimSpace(result.Archive.DownloadURL)
+	if downloadURL == "" {
+		downloadURL = strings.TrimSpace(result.SCP.OutputURL)
+	}
+	if downloadURL == "" {
+		workflow.GetLogger(ctx).Warn("notification email requested but no download URL is available", "instance_id", req.InstanceID, "to", toEmail)
+		return empty, nil
+	}
+	updateWorkflowPhase(ctx, req, status, PhaseNotifyEmail)
+	notifyCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		StartToCloseTimeout: 2 * time.Minute,
+		RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 3},
+	})
+	var emailResult EmailNotificationResult
+	if err := workflow.ExecuteActivity(notifyCtx, "SendExportNotificationEmail", req, downloadURL, cosURLTTLSeconds(req)).Get(notifyCtx, &emailResult); err != nil {
+		return empty, err
+	}
+	if strings.TrimSpace(emailResult.MessageID) == "" {
+		return emailResult, nil
+	}
+	updateWorkflowPhase(ctx, req, status, PhaseConfirmEmailDelivery)
+	confirmCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		StartToCloseTimeout: 12 * time.Minute,
+		HeartbeatTimeout:    30 * time.Second,
+		RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 1},
+	})
+	var delivered EmailNotificationResult
+	if err := workflow.ExecuteActivity(confirmCtx, "ConfirmExportNotificationDelivered", req, emailResult).Get(confirmCtx, &delivered); err != nil {
+		return empty, err
+	}
+	delivered.ToEmail = emailResult.ToEmail
+	if delivered.MessageID == "" {
+		delivered.MessageID = emailResult.MessageID
+	}
+	return delivered, nil
+}
+
+func notifyExportFailure(ctx workflow.Context, req ExportRequest, cfg TencentConfig, status *ExportStatus, workflowErr error) {
+	notifyCtx := cleanupActivityContext(ctx, workflow.ActivityOptions{
+		StartToCloseTimeout: 30 * time.Second,
+		RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 1},
+	})
+	notification := FailureNotification{
+		WorkflowID: workflow.GetInfo(ctx).WorkflowExecution.ID,
+		RunID:      workflow.GetInfo(ctx).WorkflowExecution.RunID,
+		Request:    req,
+		Status:     *status,
+		Error:      workflowErr.Error(),
+	}
+	var sent FailureNotificationResult
+	if err := workflow.ExecuteActivity(notifyCtx, "SendFailureNotification", notification, cfg).Get(notifyCtx, &sent); err != nil {
+		workflow.GetLogger(ctx).Warn("failed to send rescue export failure notification", "error", err, "instance_id", req.InstanceID)
+		return
+	}
+	if sent.Sent {
+		workflow.GetLogger(ctx).Info("rescue export failure notification sent", "instance_id", req.InstanceID, "recipients", sent.Recipients)
+	}
 }
 
 func cleanupActivityContext(ctx workflow.Context, options workflow.ActivityOptions) workflow.Context {

@@ -90,6 +90,100 @@ func TestClientCapturesPromptAgentMessageChunks(t *testing.T) {
 	}
 }
 
+func TestClientUsesCloudAgentRunPromptWhenAvailable(t *testing.T) {
+	var runCreateCalls atomic.Int64
+	var runWaitCalls atomic.Int64
+	var legacyPromptCalls atomic.Int64
+	upgrader := websocket.Upgrader{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Errorf("upgrade: %v", err)
+			return
+		}
+		defer conn.Close()
+		for {
+			_, raw, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			var req struct {
+				ID     int64           `json:"id"`
+				Method string          `json:"method"`
+				Params json.RawMessage `json:"params"`
+			}
+			if err := json.Unmarshal(raw, &req); err != nil {
+				t.Errorf("decode request: %v", err)
+				return
+			}
+			switch req.Method {
+			case "initialize":
+				writeJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{}})
+			case "session/new":
+				writeJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{"sessionId": "session-a"}})
+			case "_cloudagent.run.create":
+				runCreateCalls.Add(1)
+				var params struct {
+					SessionID string `json:"session_id"`
+					Prompt    []struct {
+						Type string `json:"type"`
+						Text string `json:"text"`
+					} `json:"prompt"`
+				}
+				if err := json.Unmarshal(req.Params, &params); err != nil {
+					t.Errorf("decode run.create params: %v", err)
+					return
+				}
+				if params.SessionID != "session-a" || len(params.Prompt) != 1 || params.Prompt[0].Text != "hi" {
+					t.Errorf("unexpected run.create params: %#v", params)
+					return
+				}
+				writeJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{"run": map[string]any{"run_id": "run-a", "session_id": "session-a", "status": "running"}}})
+			case "_cloudagent.run.wait":
+				runWaitCalls.Add(1)
+				writeJSON(t, conn, map[string]any{
+					"jsonrpc": "2.0",
+					"method":  "session/update",
+					"params": map[string]any{
+						"sessionId": "session-a",
+						"update": map[string]any{
+							"sessionUpdate": "agent_message_chunk",
+							"content":       map[string]any{"text": "streamed"},
+						},
+					},
+				})
+				writeJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{"run": map[string]any{"run_id": "run-a", "session_id": "session-a", "status": "completed", "stop_reason": "end_turn", "output_text": "final text"}}})
+			case "session/prompt":
+				legacyPromptCalls.Add(1)
+				writeJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32601, "message": "legacy disabled"}})
+			default:
+				writeJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32601, "message": "not found"}})
+			}
+		}
+	}))
+	defer server.Close()
+	client := NewClient("ws"+server.URL[len("http"):], nil)
+	defer client.Close()
+	ctx := context.Background()
+	if err := client.Initialize(ctx); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	sessionID, err := client.NewSession(ctx, "/workspace", "")
+	if err != nil {
+		t.Fatalf("new session: %v", err)
+	}
+	result, err := client.Prompt(ctx, sessionID, "hi")
+	if err != nil {
+		t.Fatalf("prompt: %v", err)
+	}
+	if result.StopReason != "end_turn" || result.Text != "final text" {
+		t.Fatalf("unexpected prompt result: %#v", result)
+	}
+	if runCreateCalls.Load() != 1 || runWaitCalls.Load() != 1 || legacyPromptCalls.Load() != 0 {
+		t.Fatalf("unexpected method calls: create=%d wait=%d legacy=%d", runCreateCalls.Load(), runWaitCalls.Load(), legacyPromptCalls.Load())
+	}
+}
+
 func TestClientCapturesPromptAgentMessageChunksWithArrayContent(t *testing.T) {
 	upgrader := websocket.Upgrader{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -7,7 +7,9 @@ export type AgentSectionId =
   | "memory"
   | "achievement"
   | "chat"
-  | "files";
+  | "files"
+  | "browser"
+  | "terminal";
 
 export const AGENTS_HOME_PATH = "/agents";
 
@@ -20,7 +22,9 @@ export const AGENT_SECTION_PATH_BY_ID: Record<AgentSectionId, string> = {
   memory: `${AGENTS_HOME_PATH}/memory`,
   achievement: `${AGENTS_HOME_PATH}/achievements`,
   files: `${AGENTS_HOME_PATH}/files`,
+  browser: `${AGENTS_HOME_PATH}/browser`,
   chat: `${AGENTS_HOME_PATH}/chat`,
+  terminal: `${AGENTS_HOME_PATH}/terminal`,
 };
 
 export const AGENT_SECTION_ID_BY_SLUG: Record<string, AgentSectionId> = {
@@ -32,7 +36,9 @@ export const AGENT_SECTION_ID_BY_SLUG: Record<string, AgentSectionId> = {
   memory: "memory",
   achievements: "achievement",
   files: "files",
+  browser: "browser",
   chat: "chat",
+  terminal: "terminal",
 };
 
 export const getAgentSectionFromSlug = (slug?: string): AgentSectionId | null => {

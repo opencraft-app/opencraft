@@ -10,20 +10,50 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
+	_ "github.com/go-sql-driver/mysql"
 	_ "modernc.org/sqlite"
+)
+
+const (
+	storeDialectSQLite = "sqlite"
+	storeDialectMySQL  = "mysql"
 )
 
 type Store struct {
 	mu                  sync.Mutex
 	root                string
 	db                  *sql.DB
+	dialect             string
 	failArtifactPersist bool
 }
 
 func NewStore(root string) (*Store, error) {
+	return NewStoreWithConfig(StoreConfig{Root: root})
+}
+
+type StoreConfig struct {
+	Root   string
+	Driver string
+	DSN    string
+}
+
+func NewStoreFromEnv(root string) (*Store, error) {
+	return NewStoreWithConfig(StoreConfig{
+		Root:   root,
+		Driver: os.Getenv("GATEWAY_DB_DRIVER"),
+		DSN:    firstNonEmptyStoreEnv(os.Getenv("GATEWAY_DB_DSN"), os.Getenv("GATEWAY_DB_PATH")),
+	})
+}
+
+func NewStoreWithConfig(cfg StoreConfig) (*Store, error) {
+	root := cfg.Root
+	if root == "" {
+		root = filepath.Join(os.TempDir(), "gateway-data")
+	}
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return nil, err
 	}
@@ -31,21 +61,64 @@ func NewStore(root string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Join(root, "objects"), 0o700); err != nil {
 		return nil, err
 	}
-	db, err := sql.Open("sqlite", filepath.Join(root, "wrapper.db"))
+
+	driver := strings.ToLower(strings.TrimSpace(cfg.Driver))
+	if driver == "" {
+		driver = storeDialectSQLite
+	}
+	var db *sql.DB
+	var err error
+	switch driver {
+	case storeDialectSQLite, "sqlite3":
+		driver = storeDialectSQLite
+		db, err = sql.Open("sqlite", filepath.Join(root, "wrapper.db"))
+	case storeDialectMySQL:
+		dsn := strings.TrimSpace(cfg.DSN)
+		if dsn == "" {
+			return nil, errors.New("GATEWAY_DB_DSN is required when GATEWAY_DB_DRIVER=mysql")
+		}
+		if strings.HasPrefix(dsn, "mysql://") {
+			if converted, convertErr := mysqlURLToDSN(dsn); convertErr == nil {
+				dsn = converted
+			}
+		}
+		db, err = sql.Open("mysql", dsn)
+	default:
+		return nil, fmt.Errorf("unsupported gateway store driver %q", cfg.Driver)
+	}
 	if err != nil {
 		return nil, err
 	}
-	db.SetMaxOpenConns(1)
-	if _, err := db.Exec("PRAGMA busy_timeout = 5000"); err != nil {
-		_ = db.Close()
-		return nil, err
+	if driver == storeDialectSQLite {
+		db.SetMaxOpenConns(1)
+		if _, err := db.Exec("PRAGMA busy_timeout = 5000"); err != nil {
+			_ = db.Close()
+			return nil, err
+		}
+	} else {
+		db.SetMaxOpenConns(20)
+		db.SetMaxIdleConns(5)
+		db.SetConnMaxLifetime(30 * time.Minute)
 	}
-	if err := migrateStore(db); err != nil {
+	if err := migrateStoreForDialect(db, driver); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
 	_ = os.Chmod(filepath.Join(root, "wrapper.db"), 0o600)
-	return &Store{root: root, db: db}, nil
+	return &Store{root: root, db: db, dialect: driver}, nil
+}
+
+func firstNonEmptyStoreEnv(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func (s *Store) isMySQL() bool {
+	return s != nil && s.dialect == storeDialectMySQL
 }
 
 func (s *Store) SetFailArtifactPersist(value bool) {

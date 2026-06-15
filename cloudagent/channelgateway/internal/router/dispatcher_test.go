@@ -34,6 +34,7 @@ type fakeACP struct {
 	promptErrs    []error
 	newDelay      time.Duration
 	newErr        error
+	promptDelay   time.Duration
 	closeErr      error
 	waitPrompt    bool
 	workspaceKeys []string
@@ -104,6 +105,13 @@ func (f *fakeACP) Prompt(ctx context.Context, _ string, text string) (acp.Prompt
 	if waitPrompt {
 		<-ctx.Done()
 		return acp.PromptResult{}, ctx.Err()
+	}
+	if f.promptDelay > 0 {
+		select {
+		case <-time.After(f.promptDelay):
+		case <-ctx.Done():
+			return acp.PromptResult{}, ctx.Err()
+		}
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -978,7 +986,7 @@ func TestDispatcherDoesNotCloseConversationWithActiveInbound(t *testing.T) {
 	}
 }
 
-func TestDispatcherRecreatesSessionWhenExistingACPSessionIsMissing(t *testing.T) {
+func TestDispatcherPreservesBindingWhenExistingACPSessionIsMissing(t *testing.T) {
 	ctx := context.Background()
 	st, err := store.Open(ctx, t.TempDir()+"/channelgateway.db")
 	if err != nil {
@@ -986,6 +994,10 @@ func TestDispatcherRecreatesSessionWhenExistingACPSessionIsMissing(t *testing.T)
 	}
 	defer st.Close()
 	account := store.ChannelAccount{ChannelAccountID: "wecom-a", ChannelType: "wecom", AgentID: "main"}
+	lease, err := st.AcquireChannelLease(ctx, "wecom-a", "owner-a", time.Minute)
+	if err != nil {
+		t.Fatalf("acquire lease: %v", err)
+	}
 	seedMsg := channel.Message{
 		ChannelType:            channel.TypeWeCom,
 		ChatType:               channel.ChatDM,
@@ -1021,11 +1033,15 @@ func TestDispatcherRecreatesSessionWhenExistingACPSessionIsMissing(t *testing.T)
 		Raw:                    json.RawMessage(`{"ok":true}`),
 	})
 	if err != nil {
-		t.Fatalf("handle inbound should recreate missing session: %v", err)
+		t.Fatalf("handle inbound should enqueue missing-session fallback: %v", err)
 	}
 	newCalls, loadCalls, promptCalls, lastPrompt := client.snapshot()
-	if newCalls != 1 || loadCalls != 1 || promptCalls != 1 || lastPrompt != "hello" {
+	if newCalls != 0 || loadCalls != 1 || promptCalls != 0 || lastPrompt != "" {
 		t.Fatalf("unexpected acp calls: new=%d load=%d prompt=%d last=%q", newCalls, loadCalls, promptCalls, lastPrompt)
+	}
+	reply := claimOneReply(t, ctx, st, lease)
+	if !strings.Contains(reply.Text, runtimeRecoveryFailedReply) || !strings.Contains(reply.Text, "/reset") {
+		t.Fatalf("expected recovery fallback reply, got %#v", reply)
 	}
 	conversation, err := st.GetOrCreateConversation(ctx, store.Conversation{
 		ChannelAccountID:       "wecom-a",
@@ -1038,11 +1054,11 @@ func TestDispatcherRecreatesSessionWhenExistingACPSessionIsMissing(t *testing.T)
 	if err != nil {
 		t.Fatalf("reload conversation: %v", err)
 	}
-	if conversation.ACPSessionID != "session-new" {
-		t.Fatalf("expected recreated session binding, got %#v", conversation)
+	if conversation.ACPSessionID != "session-stale" {
+		t.Fatalf("missing ACP session must preserve existing session binding, got %#v", conversation)
 	}
-	if conversation.WorkspaceKey != "workspace-stable" || len(client.workspaceKeys) != 1 || client.workspaceKeys[0] != "workspace-stable" {
-		t.Fatalf("recreated session must preserve workspace key: conv=%#v workspace_keys=%#v", conversation, client.workspaceKeys)
+	if conversation.WorkspaceKey != "workspace-stable" || len(client.workspaceKeys) != 0 {
+		t.Fatalf("missing ACP session must not rotate workspace key: conv=%#v workspace_keys=%#v", conversation, client.workspaceKeys)
 	}
 }
 
@@ -1167,7 +1183,7 @@ func TestDispatcherEnqueuesFallbackWhenPromptFails(t *testing.T) {
 	}
 }
 
-func TestDispatcherRequestTimeoutEnqueuesFallback(t *testing.T) {
+func TestDispatcherRequestTimeoutAppliesToSessionSetup(t *testing.T) {
 	ctx := context.Background()
 	st, err := store.Open(ctx, t.TempDir()+"/channelgateway.db")
 	if err != nil {
@@ -1179,7 +1195,7 @@ func TestDispatcherRequestTimeoutEnqueuesFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("acquire lease: %v", err)
 	}
-	client := &fakeACP{sessionID: "session-a", waitPrompt: true}
+	client := &fakeACP{sessionID: "session-a", newDelay: 5 * time.Second}
 	dispatcher := NewDispatcherWithOptions(st, account, client, "/workspace",
 		DispatcherOptions{RequestTimeout: 100 * time.Millisecond},
 	)
@@ -1199,6 +1215,48 @@ func TestDispatcherRequestTimeoutEnqueuesFallback(t *testing.T) {
 	reply := claimOneReply(t, context.Background(), st, lease)
 	if !strings.Contains(reply.Text, runtimeRecoveryFailedReply) {
 		t.Fatalf("expected timeout fallback reply, got %#v", reply)
+	}
+}
+
+func TestDispatcherRequestTimeoutDoesNotCancelLongPrompt(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(ctx, t.TempDir()+"/channelgateway.db")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+	account := store.ChannelAccount{ChannelAccountID: "wecom-a", ChannelType: "wecom", AgentID: "main"}
+	lease, err := st.AcquireChannelLease(ctx, "wecom-a", "owner-a", time.Minute)
+	if err != nil {
+		t.Fatalf("acquire lease: %v", err)
+	}
+	client := &fakeACP{sessionID: "session-a", promptDelay: 250 * time.Millisecond, reply: "sleep done"}
+	dispatcher := NewDispatcherWithOptions(st, account, client, "/workspace",
+		DispatcherOptions{RequestTimeout: 50 * time.Millisecond},
+	)
+	startedAt := time.Now()
+	err = dispatcher.HandleInbound(ctx, channel.Message{
+		ChannelAccountID:       "wecom-a",
+		ChannelType:            channel.TypeWeCom,
+		ExternalMessageID:      "msg-long-prompt",
+		ExternalConversationID: "chat-a",
+		ChatType:               channel.ChatDM,
+		Kind:                   channel.MessageText,
+		Text:                   "sleep 70",
+		Raw:                    json.RawMessage(`{"ok":true}`),
+	})
+	if err != nil {
+		t.Fatalf("long prompt should complete despite request timeout: %v", err)
+	}
+	if elapsed := time.Since(startedAt); elapsed < 200*time.Millisecond {
+		t.Fatalf("dispatcher returned before prompt completed: elapsed=%s", elapsed)
+	}
+	reply := claimOneReply(t, context.Background(), st, lease)
+	if strings.Contains(reply.Text, runtimeRecoveryFailedReply) {
+		t.Fatalf("long prompt should not enqueue recovery fallback, got %#v", reply)
+	}
+	if reply.Text != "sleep done" {
+		t.Fatalf("expected prompt reply, got %#v", reply)
 	}
 }
 

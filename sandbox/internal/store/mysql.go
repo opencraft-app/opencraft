@@ -117,10 +117,10 @@ func (s *MySQLStore) CreatePool(ctx context.Context, pool core.Pool) (core.Pool,
 			id, name, description, base_image, desired_capacity, instance_type, status, pause_reason,
 			consecutive_refill_failures, last_refill_error_code, last_refill_error, vpc_id, subnet_id, zone,
 			security_groups, template_class_id, sku_id, capacity_state, max_capacity, capacity_bundle_id,
-			autoscale_generation, last_autoscale_action, last_health_transition_at, created_at
+			autoscale_generation, last_autoscale_action, last_health_transition_at, system_disk_size, created_at
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, pool.ID, pool.Name, pool.Description, pool.BaseImage, pool.DesiredCap, pool.InstanceType, pool.Status, pool.PauseReason, pool.ConsecutiveRefillFailures, pool.LastRefillErrorCode, pool.LastRefillError, pool.VpcID, pool.SubnetID, pool.Zone, encodeSecurityGroups(pool.SecurityGroups), pool.TemplateClassID, pool.SKUID, pool.CapacityState, pool.MaxCapacity, pool.CapacityBundleID, pool.AutoscaleGeneration, pool.LastAutoscaleAction, pool.LastHealthTransition, pool.CreatedAt)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, pool.ID, pool.Name, pool.Description, pool.BaseImage, pool.DesiredCap, pool.InstanceType, pool.Status, pool.PauseReason, pool.ConsecutiveRefillFailures, pool.LastRefillErrorCode, pool.LastRefillError, pool.VpcID, pool.SubnetID, pool.Zone, encodeSecurityGroups(pool.SecurityGroups), pool.TemplateClassID, pool.SKUID, pool.CapacityState, pool.MaxCapacity, pool.CapacityBundleID, pool.AutoscaleGeneration, pool.LastAutoscaleAction, pool.LastHealthTransition, pool.SystemDiskSize, pool.CreatedAt)
 	s.logf("CreatePool id=%s name=%s err=%v", pool.ID, pool.Name, err)
 	return pool, err
 }
@@ -135,10 +135,10 @@ func (s *MySQLStore) GetPool(ctx context.Context, id string) (core.Pool, error) 
 		lastHealthTransition sql.NullTime
 	)
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, name, description, base_image, desired_capacity, instance_type, status, pause_reason, consecutive_refill_failures, last_refill_error_code, last_refill_error, vpc_id, subnet_id, zone, security_groups, template_class_id, sku_id, capacity_state, max_capacity, capacity_bundle_id, autoscale_generation, last_autoscale_action, last_health_transition_at, created_at
+		SELECT id, name, description, base_image, desired_capacity, instance_type, status, pause_reason, consecutive_refill_failures, last_refill_error_code, last_refill_error, vpc_id, subnet_id, zone, security_groups, template_class_id, sku_id, capacity_state, max_capacity, capacity_bundle_id, autoscale_generation, last_autoscale_action, last_health_transition_at, system_disk_size, created_at
 		FROM pools
 		WHERE id = ?
-	`, id).Scan(&p.ID, &p.Name, &p.Description, &p.BaseImage, &p.DesiredCap, &p.InstanceType, &p.Status, &pauseReason, &p.ConsecutiveRefillFailures, &lastRefillErrCode, &lastRefillErr, &p.VpcID, &p.SubnetID, &p.Zone, &sgStr, &p.TemplateClassID, &p.SKUID, &p.CapacityState, &p.MaxCapacity, &p.CapacityBundleID, &p.AutoscaleGeneration, &p.LastAutoscaleAction, &lastHealthTransition, &p.CreatedAt)
+	`, id).Scan(&p.ID, &p.Name, &p.Description, &p.BaseImage, &p.DesiredCap, &p.InstanceType, &p.Status, &pauseReason, &p.ConsecutiveRefillFailures, &lastRefillErrCode, &lastRefillErr, &p.VpcID, &p.SubnetID, &p.Zone, &sgStr, &p.TemplateClassID, &p.SKUID, &p.CapacityState, &p.MaxCapacity, &p.CapacityBundleID, &p.AutoscaleGeneration, &p.LastAutoscaleAction, &lastHealthTransition, &p.SystemDiskSize, &p.CreatedAt)
 	s.logf("GetPool id=%s err=%v", id, err)
 	if errors.Is(err, sql.ErrNoRows) {
 		return core.Pool{}, core.ErrPoolNotFound
@@ -156,7 +156,7 @@ func (s *MySQLStore) GetPool(ctx context.Context, id string) (core.Pool, error) 
 
 func (s *MySQLStore) ListPools(ctx context.Context) ([]core.Pool, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, name, description, base_image, desired_capacity, instance_type, status, pause_reason, consecutive_refill_failures, last_refill_error_code, last_refill_error, vpc_id, subnet_id, zone, security_groups, template_class_id, sku_id, capacity_state, max_capacity, capacity_bundle_id, autoscale_generation, last_autoscale_action, last_health_transition_at, created_at
+		SELECT id, name, description, base_image, desired_capacity, instance_type, status, pause_reason, consecutive_refill_failures, last_refill_error_code, last_refill_error, vpc_id, subnet_id, zone, security_groups, template_class_id, sku_id, capacity_state, max_capacity, capacity_bundle_id, autoscale_generation, last_autoscale_action, last_health_transition_at, system_disk_size, created_at
 		FROM pools
 		ORDER BY created_at ASC
 	`)
@@ -174,7 +174,7 @@ func (s *MySQLStore) ListPools(ctx context.Context) ([]core.Pool, error) {
 			lastRefillErr        sql.NullString
 			lastHealthTransition sql.NullTime
 		)
-		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.BaseImage, &p.DesiredCap, &p.InstanceType, &p.Status, &pauseReason, &p.ConsecutiveRefillFailures, &lastRefillErrCode, &lastRefillErr, &p.VpcID, &p.SubnetID, &p.Zone, &sgStr, &p.TemplateClassID, &p.SKUID, &p.CapacityState, &p.MaxCapacity, &p.CapacityBundleID, &p.AutoscaleGeneration, &p.LastAutoscaleAction, &lastHealthTransition, &p.CreatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.BaseImage, &p.DesiredCap, &p.InstanceType, &p.Status, &pauseReason, &p.ConsecutiveRefillFailures, &lastRefillErrCode, &lastRefillErr, &p.VpcID, &p.SubnetID, &p.Zone, &sgStr, &p.TemplateClassID, &p.SKUID, &p.CapacityState, &p.MaxCapacity, &p.CapacityBundleID, &p.AutoscaleGeneration, &p.LastAutoscaleAction, &lastHealthTransition, &p.SystemDiskSize, &p.CreatedAt); err != nil {
 			return nil, err
 		}
 		p.PauseReason = nullStringValue(pauseReason)
@@ -196,9 +196,9 @@ func (s *MySQLStore) UpdatePool(ctx context.Context, pool core.Pool) (core.Pool,
 			name = ?, description = ?, base_image = ?, desired_capacity = ?, instance_type = ?, status = ?, pause_reason = ?,
 			consecutive_refill_failures = ?, last_refill_error_code = ?, last_refill_error = ?, vpc_id = ?, subnet_id = ?,
 			zone = ?, security_groups = ?, template_class_id = ?, capacity_state = ?, max_capacity = ?, capacity_bundle_id = ?,
-			sku_id = ?, autoscale_generation = ?, last_autoscale_action = ?, last_health_transition_at = ?
+			sku_id = ?, autoscale_generation = ?, last_autoscale_action = ?, last_health_transition_at = ?, system_disk_size = ?
 		WHERE id = ?
-	`, pool.Name, pool.Description, pool.BaseImage, pool.DesiredCap, pool.InstanceType, pool.Status, pool.PauseReason, pool.ConsecutiveRefillFailures, pool.LastRefillErrorCode, pool.LastRefillError, pool.VpcID, pool.SubnetID, pool.Zone, encodeSecurityGroups(pool.SecurityGroups), pool.TemplateClassID, pool.CapacityState, pool.MaxCapacity, pool.CapacityBundleID, pool.SKUID, pool.AutoscaleGeneration, pool.LastAutoscaleAction, pool.LastHealthTransition, pool.ID)
+	`, pool.Name, pool.Description, pool.BaseImage, pool.DesiredCap, pool.InstanceType, pool.Status, pool.PauseReason, pool.ConsecutiveRefillFailures, pool.LastRefillErrorCode, pool.LastRefillError, pool.VpcID, pool.SubnetID, pool.Zone, encodeSecurityGroups(pool.SecurityGroups), pool.TemplateClassID, pool.CapacityState, pool.MaxCapacity, pool.CapacityBundleID, pool.SKUID, pool.AutoscaleGeneration, pool.LastAutoscaleAction, pool.LastHealthTransition, pool.SystemDiskSize, pool.ID)
 	return pool, err
 }
 
@@ -561,14 +561,17 @@ func (s *MySQLStore) UpsertTemplateClass(ctx context.Context, templateClass core
 
 func (s *MySQLStore) GetTemplateClass(ctx context.Context, id string) (core.TemplateClass, error) {
 	var templateClass core.TemplateClass
+	var description, divergenceMessage sql.NullString
 	err := s.db.QueryRowContext(ctx, `
 		SELECT id, name, description, workload_type, region, default_pool_selection_policy, resolution_mode, status, import_generation, divergence_message, created_at, updated_at
 		FROM template_classes
 		WHERE id = ?
-	`, id).Scan(&templateClass.ID, &templateClass.Name, &templateClass.Description, &templateClass.WorkloadType, &templateClass.Region, &templateClass.DefaultPoolSelectionPolicy, &templateClass.ResolutionMode, &templateClass.Status, &templateClass.ImportGeneration, &templateClass.DivergenceMessage, &templateClass.CreatedAt, &templateClass.UpdatedAt)
+	`, id).Scan(&templateClass.ID, &templateClass.Name, &description, &templateClass.WorkloadType, &templateClass.Region, &templateClass.DefaultPoolSelectionPolicy, &templateClass.ResolutionMode, &templateClass.Status, &templateClass.ImportGeneration, &divergenceMessage, &templateClass.CreatedAt, &templateClass.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return core.TemplateClass{}, core.ErrTemplateClassNotFound
 	}
+	templateClass.Description = nullStringValue(description)
+	templateClass.DivergenceMessage = nullStringValue(divergenceMessage)
 	return templateClass, err
 }
 
@@ -585,9 +588,12 @@ func (s *MySQLStore) ListTemplateClasses(ctx context.Context) ([]core.TemplateCl
 	var items []core.TemplateClass
 	for rows.Next() {
 		var templateClass core.TemplateClass
-		if err := rows.Scan(&templateClass.ID, &templateClass.Name, &templateClass.Description, &templateClass.WorkloadType, &templateClass.Region, &templateClass.DefaultPoolSelectionPolicy, &templateClass.ResolutionMode, &templateClass.Status, &templateClass.ImportGeneration, &templateClass.DivergenceMessage, &templateClass.CreatedAt, &templateClass.UpdatedAt); err != nil {
+		var description, divergenceMessage sql.NullString
+		if err := rows.Scan(&templateClass.ID, &templateClass.Name, &description, &templateClass.WorkloadType, &templateClass.Region, &templateClass.DefaultPoolSelectionPolicy, &templateClass.ResolutionMode, &templateClass.Status, &templateClass.ImportGeneration, &divergenceMessage, &templateClass.CreatedAt, &templateClass.UpdatedAt); err != nil {
 			return nil, err
 		}
+		templateClass.Description = nullStringValue(description)
+		templateClass.DivergenceMessage = nullStringValue(divergenceMessage)
 		items = append(items, templateClass)
 	}
 	return items, rows.Err()
@@ -631,6 +637,7 @@ func (s *MySQLStore) UpsertSKU(ctx context.Context, sku core.SKU) (core.SKU, err
 func (s *MySQLStore) GetSKU(ctx context.Context, id string) (core.SKU, error) {
 	var sku core.SKU
 	var lastRolloutStartedAt sql.NullTime
+	var description, lastRolloutError sql.NullString
 	err := s.db.QueryRowContext(ctx, `
 		SELECT id, name, description, template_class_id, base_image, desired_image_id, stable_image_id,
 			instance_type, network_template_id, security_group_rule_template_id, autoscale_policy_id,
@@ -639,10 +646,12 @@ func (s *MySQLStore) GetSKU(ctx context.Context, id string) (core.SKU, error) {
 			last_rollout_error, created_at, updated_at
 		FROM skus
 		WHERE id = ?
-	`, id).Scan(&sku.ID, &sku.Name, &sku.Description, &sku.TemplateClassID, &sku.BaseImage, &sku.DesiredImageID, &sku.StableImageID, &sku.InstanceType, &sku.NetworkTemplateID, &sku.SecurityGroupRuleTemplateID, &sku.AutoscalePolicyID, &sku.DefaultDesiredCapacity, &sku.RolloutState, &sku.RolloutCursorPoolID, &sku.Generation, &sku.ConvergedPoolCount, &sku.TotalPoolCount, &sku.PoolsPendingRollout, &lastRolloutStartedAt, &sku.LastRolloutError, &sku.CreatedAt, &sku.UpdatedAt)
+	`, id).Scan(&sku.ID, &sku.Name, &description, &sku.TemplateClassID, &sku.BaseImage, &sku.DesiredImageID, &sku.StableImageID, &sku.InstanceType, &sku.NetworkTemplateID, &sku.SecurityGroupRuleTemplateID, &sku.AutoscalePolicyID, &sku.DefaultDesiredCapacity, &sku.RolloutState, &sku.RolloutCursorPoolID, &sku.Generation, &sku.ConvergedPoolCount, &sku.TotalPoolCount, &sku.PoolsPendingRollout, &lastRolloutStartedAt, &lastRolloutError, &sku.CreatedAt, &sku.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return core.SKU{}, core.ErrSKUNotFound
 	}
+	sku.Description = nullStringValue(description)
+	sku.LastRolloutError = nullStringValue(lastRolloutError)
 	if lastRolloutStartedAt.Valid {
 		ts := lastRolloutStartedAt.Time
 		sku.LastRolloutStartedAt = &ts
@@ -668,9 +677,12 @@ func (s *MySQLStore) ListSKUs(ctx context.Context) ([]core.SKU, error) {
 	for rows.Next() {
 		var sku core.SKU
 		var lastRolloutStartedAt sql.NullTime
-		if err := rows.Scan(&sku.ID, &sku.Name, &sku.Description, &sku.TemplateClassID, &sku.BaseImage, &sku.DesiredImageID, &sku.StableImageID, &sku.InstanceType, &sku.NetworkTemplateID, &sku.SecurityGroupRuleTemplateID, &sku.AutoscalePolicyID, &sku.DefaultDesiredCapacity, &sku.RolloutState, &sku.RolloutCursorPoolID, &sku.Generation, &sku.ConvergedPoolCount, &sku.TotalPoolCount, &sku.PoolsPendingRollout, &lastRolloutStartedAt, &sku.LastRolloutError, &sku.CreatedAt, &sku.UpdatedAt); err != nil {
+		var description, lastRolloutError sql.NullString
+		if err := rows.Scan(&sku.ID, &sku.Name, &description, &sku.TemplateClassID, &sku.BaseImage, &sku.DesiredImageID, &sku.StableImageID, &sku.InstanceType, &sku.NetworkTemplateID, &sku.SecurityGroupRuleTemplateID, &sku.AutoscalePolicyID, &sku.DefaultDesiredCapacity, &sku.RolloutState, &sku.RolloutCursorPoolID, &sku.Generation, &sku.ConvergedPoolCount, &sku.TotalPoolCount, &sku.PoolsPendingRollout, &lastRolloutStartedAt, &lastRolloutError, &sku.CreatedAt, &sku.UpdatedAt); err != nil {
 			return nil, err
 		}
+		sku.Description = nullStringValue(description)
+		sku.LastRolloutError = nullStringValue(lastRolloutError)
 		if lastRolloutStartedAt.Valid {
 			ts := lastRolloutStartedAt.Time
 			sku.LastRolloutStartedAt = &ts
@@ -1057,11 +1069,11 @@ func (s *MySQLStore) TryStartPoolSGShardRecovery(ctx context.Context, poolID str
 		lastHealthTransition sql.NullTime
 	)
 	err = tx.QueryRowContext(ctx, `
-		SELECT id, name, description, base_image, desired_capacity, instance_type, status, pause_reason, consecutive_refill_failures, last_refill_error_code, last_refill_error, vpc_id, subnet_id, zone, security_groups, template_class_id, sku_id, capacity_state, max_capacity, capacity_bundle_id, autoscale_generation, last_autoscale_action, last_health_transition_at, created_at
+		SELECT id, name, description, base_image, desired_capacity, instance_type, status, pause_reason, consecutive_refill_failures, last_refill_error_code, last_refill_error, vpc_id, subnet_id, zone, security_groups, template_class_id, sku_id, capacity_state, max_capacity, capacity_bundle_id, autoscale_generation, last_autoscale_action, last_health_transition_at, system_disk_size, created_at
 		FROM pools
 		WHERE id = ?
 		FOR UPDATE
-	`, poolID).Scan(&p.ID, &p.Name, &p.Description, &p.BaseImage, &p.DesiredCap, &p.InstanceType, &p.Status, &pauseReason, &p.ConsecutiveRefillFailures, &lastRefillErrCode, &lastRefillErr, &p.VpcID, &p.SubnetID, &p.Zone, &sgStr, &p.TemplateClassID, &p.SKUID, &p.CapacityState, &p.MaxCapacity, &p.CapacityBundleID, &p.AutoscaleGeneration, &p.LastAutoscaleAction, &lastHealthTransition, &p.CreatedAt)
+	`, poolID).Scan(&p.ID, &p.Name, &p.Description, &p.BaseImage, &p.DesiredCap, &p.InstanceType, &p.Status, &pauseReason, &p.ConsecutiveRefillFailures, &lastRefillErrCode, &lastRefillErr, &p.VpcID, &p.SubnetID, &p.Zone, &sgStr, &p.TemplateClassID, &p.SKUID, &p.CapacityState, &p.MaxCapacity, &p.CapacityBundleID, &p.AutoscaleGeneration, &p.LastAutoscaleAction, &lastHealthTransition, &p.SystemDiskSize, &p.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return core.Pool{}, false, core.ErrPoolNotFound
 	}

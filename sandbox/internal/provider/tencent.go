@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	cbs "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cbs/v20170312"
 	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common"
 	tcerrors "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/errors"
 	tchttp "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common/http"
@@ -34,6 +35,7 @@ type TencentConfig struct {
 	Endpoint               string
 	VPCEndpoint            string
 	TATEndpoint            string
+	CBSEndpoint            string // optional, defaults to cbs.tencentcloudapi.com (D-4.2b: trade pass destroy snapshot flow)
 	Region                 string
 	InstanceType           string
 	KeyPairID              string
@@ -100,9 +102,10 @@ func NewTencentCloudProviderFromEnv() (*TencentCloudProvider, error) {
 
 // TencentCloudProvider implements CloudProvider with Tencent Cloud SDK.
 type TencentCloudProvider struct {
-	client *cvm.Client
-	cred   *common.Credential
-	cfg    TencentConfig
+	client    *cvm.Client
+	cbsClient *cbs.Client
+	cred      *common.Credential
+	cfg       TencentConfig
 }
 
 const (
@@ -197,17 +200,19 @@ func waitHealth(ctx context.Context, verifyURL, hostOverride string, wantUp bool
 const waitDownProbeInterval = 2 * time.Second
 
 const (
-	rateLimitCode       = "RequestLimitExceeded"
-	rateLimitBackoffMin = 200 * time.Millisecond
-	rateLimitBackoffMax = 5 * time.Second
-	accountService      = "account"
-	accountVersion      = "2018-12-25"
-	accountEndpoint     = "account.tencentcloudapi.com"
-	accountRegion       = "ap-guangzhou"
-	tatService          = "tat"
-	tatVersion          = "2020-10-28"
-	defaultTerminalCols = 120
-	defaultTerminalRows = 32
+	rateLimitCode                   = "RequestLimitExceeded"
+	rateLimitBackoffMin             = 200 * time.Millisecond
+	rateLimitBackoffMax             = 5 * time.Second
+	accountService                  = "account"
+	accountVersion                  = "2018-12-25"
+	accountEndpoint                 = "account.tencentcloudapi.com"
+	accountRegion                   = "ap-guangzhou"
+	tatService                      = "tat"
+	tatVersion                      = "2020-10-28"
+	defaultTerminalCols             = 120
+	defaultTerminalRows             = 32
+	defaultTerminalUsername         = "agentuser"
+	defaultTerminalWorkingDirectory = "/home/agentuser"
 )
 
 const DefaultTerminalTimeoutSeconds = 3600
@@ -297,7 +302,24 @@ func NewTencentCloudProvider(cfg TencentConfig) (*TencentCloudProvider, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &TencentCloudProvider{client: client, cred: cred, cfg: cfg}, nil
+
+	// Build a separate cbs client for trade pass destroy snapshot flow (D-4.2b).
+	// We deliberately use a fresh ClientProfile so cbs's HttpProfile.Endpoint can be
+	// overridden independently of cvm's (e.g. internal vs external endpoints).
+	cbsHTTPProfile := profile.NewHttpProfile()
+	if cfg.CBSEndpoint != "" {
+		cbsHTTPProfile.Endpoint = cfg.CBSEndpoint
+	} else {
+		cbsHTTPProfile.Endpoint = "cbs.tencentcloudapi.com"
+	}
+	cbsClientProfile := profile.NewClientProfile()
+	cbsClientProfile.HttpProfile = cbsHTTPProfile
+	cbsCli, err := cbs.NewClient(cred, cfg.Region, cbsClientProfile)
+	if err != nil {
+		return nil, fmt.Errorf("init cbs client: %w", err)
+	}
+
+	return &TencentCloudProvider{client: client, cbsClient: cbsCli, cred: cred, cfg: cfg}, nil
 }
 
 func (p *TencentCloudProvider) CreateInstance(ctx context.Context, pool core.Pool) (string, string, error) {
@@ -327,6 +349,14 @@ func (p *TencentCloudProvider) CreateInstance(ctx context.Context, pool core.Poo
 		SecurityService: &cvm.RunSecurityServiceEnabled{
 			Enabled: common.BoolPtr(false),
 		},
+	}
+	// SystemDisk 大小由 pool 自描述（设计稿 .tmp/bundle-instance-spec-design.md §10 Q11=a）。
+	// pool.SystemDiskSize > 0 时显式下发 SystemDisk.DiskSize；0 时不设，走腾讯云默认 50G
+	// （与现网行为兼容，Q-COMPAT 兼容期 fallback）。
+	if pool.SystemDiskSize > 0 {
+		req.SystemDisk = &cvm.SystemDisk{
+			DiskSize: common.Int64Ptr(int64(pool.SystemDiskSize)),
+		}
 	}
 	publicIP := p.cfg.AddressType == "public"
 	assignPublicEgress := publicIP || p.cfg.PublicEgressMbps > 0
@@ -527,6 +557,349 @@ func (p *TencentCloudProvider) TerminateInstance(ctx context.Context, cloudID st
 		case <-time.After(3 * time.Second):
 		}
 	}
+}
+
+// StopInstance shuts down the instance with StoppedMode=STOP_CHARGING so that
+// CPU/memory billing is released while system disk and data remain intact.
+// Used by trade pass isolation flow (Q26-D 修订版 / Q33=a 拍板 2026-05-14 22:37).
+func (p *TencentCloudProvider) StopInstance(ctx context.Context, cloudID string) error {
+	req := cvm.NewStopInstancesRequest()
+	req.InstanceIds = []*string{common.StringPtr(cloudID)}
+	req.StoppedMode = common.StringPtr("STOP_CHARGING")
+	req.SetContext(ctx)
+	deadline := time.Now().Add(120 * time.Second)
+	for {
+		err := retryRateLimit(ctx, "StopInstances", func() error {
+			_, e := p.client.StopInstances(req)
+			return e
+		})
+		if err == nil {
+			break
+		}
+		if sdk, ok := err.(*tcerrors.TencentCloudSDKError); ok {
+			if sdk.Code == "InvalidInstanceId.NotFound" {
+				return fmt.Errorf("stop %s: instance not found: %w", cloudID, err)
+			}
+			// Already stopped is success-equivalent.
+			if sdk.Code == "UnsupportedOperation.InstanceStateStopped" ||
+				sdk.Code == "InvalidInstanceState.Stopped" {
+				return nil
+			}
+			if sdk.Code == "OperationDenied.InstanceOperationInProgress" {
+				if time.Now().After(deadline) {
+					return fmt.Errorf("stop %s timeout while waiting for pending operation: %w", cloudID, err)
+				}
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-time.After(5 * time.Second):
+				}
+				continue
+			}
+		}
+		return err
+	}
+	// Confirm by polling status until STOPPED.
+	statusReq := cvm.NewDescribeInstancesStatusRequest()
+	statusReq.InstanceIds = []*string{common.StringPtr(cloudID)}
+	statusReq.SetContext(ctx)
+	pollDeadline := time.Now().Add(180 * time.Second)
+	for {
+		var resp *cvm.DescribeInstancesStatusResponse
+		err := retryRateLimit(ctx, "DescribeInstancesStatus", func() error {
+			r, e := p.client.DescribeInstancesStatus(statusReq)
+			if e != nil {
+				return e
+			}
+			resp = r
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+		if len(resp.Response.InstanceStatusSet) == 0 {
+			return fmt.Errorf("stop %s: instance disappeared during stop polling", cloudID)
+		}
+		state := *resp.Response.InstanceStatusSet[0].InstanceState
+		if strings.EqualFold(state, "STOPPED") {
+			return nil
+		}
+		if time.Now().After(pollDeadline) {
+			return fmt.Errorf("stop %s timeout; last state=%s", cloudID, state)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(3 * time.Second):
+		}
+	}
+}
+
+// StartInstance boots a previously stopped instance back to RUNNING.
+// Reserved for renewal/restore flows that follow trade pass isolation.
+func (p *TencentCloudProvider) StartInstance(ctx context.Context, cloudID string) error {
+	req := cvm.NewStartInstancesRequest()
+	req.InstanceIds = []*string{common.StringPtr(cloudID)}
+	req.SetContext(ctx)
+	deadline := time.Now().Add(120 * time.Second)
+	for {
+		err := retryRateLimit(ctx, "StartInstances", func() error {
+			_, e := p.client.StartInstances(req)
+			return e
+		})
+		if err == nil {
+			break
+		}
+		if sdk, ok := err.(*tcerrors.TencentCloudSDKError); ok {
+			if sdk.Code == "InvalidInstanceId.NotFound" {
+				return fmt.Errorf("start %s: instance not found: %w", cloudID, err)
+			}
+			// Already running is success-equivalent.
+			if sdk.Code == "UnsupportedOperation.InstanceStateRunning" ||
+				sdk.Code == "InvalidInstanceState.Running" {
+				return nil
+			}
+			if sdk.Code == "OperationDenied.InstanceOperationInProgress" {
+				if time.Now().After(deadline) {
+					return fmt.Errorf("start %s timeout while waiting for pending operation: %w", cloudID, err)
+				}
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-time.After(5 * time.Second):
+				}
+				continue
+			}
+		}
+		return err
+	}
+	// Confirm by polling status until RUNNING.
+	statusReq := cvm.NewDescribeInstancesStatusRequest()
+	statusReq.InstanceIds = []*string{common.StringPtr(cloudID)}
+	statusReq.SetContext(ctx)
+	pollDeadline := time.Now().Add(180 * time.Second)
+	for {
+		var resp *cvm.DescribeInstancesStatusResponse
+		err := retryRateLimit(ctx, "DescribeInstancesStatus", func() error {
+			r, e := p.client.DescribeInstancesStatus(statusReq)
+			if e != nil {
+				return e
+			}
+			resp = r
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+		if len(resp.Response.InstanceStatusSet) == 0 {
+			return fmt.Errorf("start %s: instance disappeared during start polling", cloudID)
+		}
+		state := *resp.Response.InstanceStatusSet[0].InstanceState
+		if strings.EqualFold(state, "RUNNING") {
+			return nil
+		}
+		if time.Now().After(pollDeadline) {
+			return fmt.Errorf("start %s timeout; last state=%s", cloudID, state)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(3 * time.Second):
+		}
+	}
+}
+
+// CreateInstanceSnapshot creates a CBS snapshot of the instance system disk.
+//
+// Q4 / Q9 / Q25 ✅ 拍板 (.tmp/trade-pass-destroy-design.md sec5.2):
+//  1. cbs.DescribeDisks(Filters=[instance-id=<cloudID>, disk-usage=SYSTEM_DISK], Limit=1)
+//  2. If empty disk set → return ErrInstanceNoSystemDisk so ctl can skip stages 1+2.
+//  3. cbs.CreateSnapshot(DiskId, SnapshotName, Deadline=req.Deadline.RFC3339, DiskUsage=SYSTEM_DISK)
+//  4. Return resulting SnapshotId.
+//
+// retryRateLimit reuses the cvm-side rate-limit/backoff wrapper; cbs SDK shares
+// the tcerrors model so 429-class codes propagate identically.
+func (p *TencentCloudProvider) CreateInstanceSnapshot(ctx context.Context, req CreateInstanceSnapshotRequest) (string, error) {
+	cloudID := strings.TrimSpace(req.CloudID)
+	if cloudID == "" {
+		return "", errors.New("CreateInstanceSnapshot: CloudID is required")
+	}
+	if req.Deadline.IsZero() {
+		return "", errors.New("CreateInstanceSnapshot: Deadline is required")
+	}
+	if p.cbsClient == nil {
+		return "", errors.New("CreateInstanceSnapshot: cbs client not initialized")
+	}
+
+	// Step 1: cbs.DescribeDisks 反查系统盘 ID.
+	descReq := cbs.NewDescribeDisksRequest()
+	descReq.Filters = []*cbs.Filter{
+		{Name: common.StringPtr("instance-id"), Values: []*string{common.StringPtr(cloudID)}},
+		{Name: common.StringPtr("disk-usage"), Values: []*string{common.StringPtr("SYSTEM_DISK")}},
+	}
+	descReq.Limit = common.Uint64Ptr(1)
+	descReq.SetContext(ctx)
+
+	var descResp *cbs.DescribeDisksResponse
+	if err := retryRateLimit(ctx, "cbs:DescribeDisks", func() error {
+		r, e := p.cbsClient.DescribeDisksWithContext(ctx, descReq)
+		if e != nil {
+			return e
+		}
+		descResp = r
+		return nil
+	}); err != nil {
+		return "", fmt.Errorf("cbs DescribeDisks for instance %s: %w", cloudID, err)
+	}
+
+	if descResp == nil || descResp.Response == nil || len(descResp.Response.DiskSet) == 0 {
+		// Q10 联动：no system disk → ctl child-task skips stages 1+2.
+		return "", ErrInstanceNoSystemDisk
+	}
+	disk := descResp.Response.DiskSet[0]
+	if disk == nil || disk.DiskId == nil || strings.TrimSpace(*disk.DiskId) == "" {
+		return "", fmt.Errorf("cbs DescribeDisks for instance %s: returned disk has empty DiskId", cloudID)
+	}
+	diskID := *disk.DiskId
+
+	// Step 2: cbs.CreateSnapshot.
+	// 命名格式（用户拍板 2026-05-25）: {PassID}-{InstanceID(safeNamePart, 24)}
+	// PassID 由 trade 生成（形如 pass-xxxxxxxx），原样保留仅做非法字符替换；
+	// InstanceID 由 ctl 生成（形如 ins-<32 hex>），截断到 24 字符防止超 cbs 60 字符限制。
+	snapName := fmt.Sprintf("%s-%s",
+		sanitizeNamePart(req.PassID), safeNamePart(req.InstanceID))
+
+	createReq := cbs.NewCreateSnapshotRequest()
+	createReq.DiskId = common.StringPtr(diskID)
+	createReq.SnapshotName = common.StringPtr(snapName)
+	// cbs Deadline expects RFC3339 ("2006-01-02T15:04:05Z").
+	createReq.Deadline = common.StringPtr(req.Deadline.UTC().Format(time.RFC3339))
+	createReq.DiskUsage = common.StringPtr("SYSTEM_DISK")
+	createReq.SetContext(ctx)
+
+	// ClientToken 幂等保护（用户拍板 2026-05-25）：
+	// 取值 {PassID}-{InstanceID}，长度 ≈ 50 字符（PassID ~13 + "-" + InstanceID 36），< 64 字符上限。
+	// 配合 ctl 子 task markRetryable 重投：子 task 多次重试 / payload.SnapshotID 写回前的窗口期 race /
+	// 父 task 重派失败子 task —— 都用同一个 ClientToken，cbs 后端去重，永远只创建 1 个 snapshot 资源。
+	// InstanceID 在 ctl 全局唯一不复用（实例销毁本质是重装），跨用户 / 跨重装场景天然不冲突。
+	// 注：cbs SDK Go 结构体未暴露 ClientToken 字段（公开 API 文档未透出，但联调实测幂等生效），
+	// 通过 GetParams() 直接塞 K-V，SDK 序列化时一并上行。
+	createReq.GetParams()["ClientToken"] = req.PassID + "-" + req.InstanceID
+
+	var createResp *cbs.CreateSnapshotResponse
+	if err := retryRateLimit(ctx, "cbs:CreateSnapshot", func() error {
+		r, e := p.cbsClient.CreateSnapshotWithContext(ctx, createReq)
+		if e != nil {
+			return e
+		}
+		createResp = r
+		return nil
+	}); err != nil {
+		return "", fmt.Errorf("cbs CreateSnapshot for disk %s: %w", diskID, err)
+	}
+
+	if createResp == nil || createResp.Response == nil || createResp.Response.SnapshotId == nil ||
+		strings.TrimSpace(*createResp.Response.SnapshotId) == "" {
+		return "", fmt.Errorf("cbs CreateSnapshot for disk %s: empty SnapshotId in response", diskID)
+	}
+	return *createResp.Response.SnapshotId, nil
+}
+
+// DescribeInstanceSnapshot polls cbs.DescribeSnapshots and maps SnapshotState to
+// the abstract SnapshotStatus exposed to ctl.
+//
+// State mapping (Q9 ✅ 拍板):
+//   - NORMAL                                              → SnapshotStatusReady
+//   - CREATING                                            → SnapshotStatusInProgress
+//   - ERROR / ROLLBACKING_FAILED / TORECYCLE / anything else terminal → SnapshotStatusFailed
+//   - empty result set                                    → ErrSnapshotNotFound
+func (p *TencentCloudProvider) DescribeInstanceSnapshot(ctx context.Context, snapshotID string) (SnapshotStatus, string, error) {
+	id := strings.TrimSpace(snapshotID)
+	if id == "" {
+		return "", "", errors.New("DescribeInstanceSnapshot: snapshotID is required")
+	}
+	if p.cbsClient == nil {
+		return "", "", errors.New("DescribeInstanceSnapshot: cbs client not initialized")
+	}
+
+	req := cbs.NewDescribeSnapshotsRequest()
+	req.SnapshotIds = []*string{common.StringPtr(id)}
+	req.SetContext(ctx)
+
+	var resp *cbs.DescribeSnapshotsResponse
+	if err := retryRateLimit(ctx, "cbs:DescribeSnapshots", func() error {
+		r, e := p.cbsClient.DescribeSnapshotsWithContext(ctx, req)
+		if e != nil {
+			return e
+		}
+		resp = r
+		return nil
+	}); err != nil {
+		return "", "", fmt.Errorf("cbs DescribeSnapshots for %s: %w", id, err)
+	}
+	if resp == nil || resp.Response == nil || len(resp.Response.SnapshotSet) == 0 {
+		return "", "", ErrSnapshotNotFound
+	}
+	snap := resp.Response.SnapshotSet[0]
+	if snap == nil || snap.SnapshotState == nil {
+		return "", "", fmt.Errorf("cbs DescribeSnapshots for %s: missing SnapshotState", id)
+	}
+	state := strings.ToUpper(strings.TrimSpace(*snap.SnapshotState))
+	switch state {
+	case "NORMAL":
+		return SnapshotStatusReady, "", nil
+	case "CREATING":
+		return SnapshotStatusInProgress, "", nil
+	default:
+		// All other terminal cbs states (ERROR / ROLLBACKING_FAILED / TORECYCLE / ...)
+		// are reported as failed; the caller (ctl) treats failed as terminal and lets
+		// the parent task re-dispatch a new child task per Q16 拍板.
+		return SnapshotStatusFailed, "cbs SnapshotState=" + state, nil
+	}
+}
+
+// safeNamePart sanitizes user-provided ID fragments for use in cbs SnapshotName
+// (cbs limits to [A-Za-z0-9_-], 1..60 chars). Anything outside the allowed set
+// is replaced by '_'; the result is capped to 24 chars so the composite name
+// stays under cbs's limit.
+func safeNamePart(in string) string {
+	in = strings.TrimSpace(in)
+	if in == "" {
+		return "unknown"
+	}
+	const maxFrag = 24
+	if len(in) > maxFrag {
+		in = in[:maxFrag]
+	}
+	return sanitizeChars(in)
+}
+
+// sanitizeNamePart 与 safeNamePart 行为一致，但**不截断**。
+// 用于 PassID 等本身长度可控（trade pass id ≤ ~14 字符）且用户明确要求保留全字符的字段。
+func sanitizeNamePart(in string) string {
+	in = strings.TrimSpace(in)
+	if in == "" {
+		return "unknown"
+	}
+	return sanitizeChars(in)
+}
+
+// sanitizeChars 把 in 中除 [A-Za-z0-9_-] 以外的字节替换为 '_'。
+func sanitizeChars(in string) string {
+	b := make([]byte, 0, len(in))
+	for i := 0; i < len(in); i++ {
+		c := in[i]
+		switch {
+		case c >= 'A' && c <= 'Z',
+			c >= 'a' && c <= 'z',
+			c >= '0' && c <= '9',
+			c == '-', c == '_':
+			b = append(b, c)
+		default:
+			b = append(b, '_')
+		}
+	}
+	return string(b)
 }
 
 func (p *TencentCloudProvider) waitForAddress(ctx context.Context, instanceID string, timeout time.Duration) (string, error) {
@@ -1305,9 +1678,7 @@ func (p *TencentCloudProvider) StartTerminalSession(ctx context.Context, region,
 
 	req := tchttp.NewCommonRequest(tatService, tatVersion, "StartSession")
 	req.SetContext(ctx)
-	if err := req.SetActionParameters(map[string]interface{}{
-		"InstanceId": instanceID,
-	}); err != nil {
+	if err := req.SetActionParameters(startTerminalSessionParameters(instanceID)); err != nil {
 		return TerminalSession{}, err
 	}
 
@@ -1342,7 +1713,15 @@ func (p *TencentCloudProvider) StartTerminalSession(ctx context.Context, region,
 		Cols:           defaultTerminalCols,
 		Rows:           defaultTerminalRows,
 		TimeoutSeconds: p.cfg.TerminalTimeoutSeconds,
+		Username:       defaultTerminalUsername,
+		WorkingDir:     defaultTerminalWorkingDirectory,
 	}, nil
+}
+
+func startTerminalSessionParameters(instanceID string) map[string]interface{} {
+	return map[string]interface{}{
+		"InstanceId": instanceID,
+	}
 }
 
 func (p *TencentCloudProvider) GetCommandInvocation(ctx context.Context, region, invocationID, instanceID string) (CommandResult, error) {

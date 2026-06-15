@@ -9,7 +9,6 @@ import { motion, AnimatePresence } from "framer-motion";
 
 import { LoginModal } from "@/components/site/login-modal";
 import { LegalFooter } from "@/components/site/legal-footer";
-import { useSession } from "@/contexts/session-context";
 import { useT, t as rawT } from "@/i18n/t";
 import { isGlobal } from "@/lib/region";
 
@@ -554,7 +553,6 @@ function HighlightSection() {
    ═══════════════════════════════════════════════════════════════ */
 
 export const AboutPage = () => {
-  const { isAuthenticated } = useSession();
   const [showLogin, setShowLogin] = useState(false);
 
   return (
@@ -562,7 +560,7 @@ export const AboutPage = () => {
       className="landing-page relative flex min-h-screen flex-col"
       style={{ background: "#ffffff", color: "#1a1a1a", overflowX: "hidden" }}
     >
-      <LandingNavbar onLoginClick={() => setShowLogin(true)} isLoggedIn={isAuthenticated} />
+      <LandingNavbar onLoginClick={() => setShowLogin(true)} />
 
       <main className="z-10 flex-grow pt-[60px]">
         {/* 首屏 Hero */}

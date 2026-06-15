@@ -1,19 +1,27 @@
 import { LegalFooter } from "@/components/site/legal-footer";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, ArrowRight, Check, User, Monitor, Clock, HardDrive, Settings, Zap, Sparkles, X, RefreshCw, Loader2, Wifi } from "lucide-react";
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { ArrowLeft, ArrowRight, Check, User, Monitor, Clock, HardDrive, Settings, Zap, Sparkles, X, Loader2, Wifi } from "lucide-react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { QRCodeSVG } from "qrcode.react";
 import { useOpenClaw } from "@/contexts/openclaw-context";
 import { useSession } from "@/contexts/session-context";
 import { useRepositories } from "@/contexts/repository-context";
+import { usePaidBillingEnabled } from "@/contexts/runtime-config-context";
 import { BrandMark } from "@/components/site/brand-mark";
 import { InviteCodeModal } from "@/components/site/login-modal";
 import { RepositoryError } from "@/repositories/http-repositories";
 import type { Bundle } from "@/domain/types";
 import { useT } from "@/i18n/t";
 import { isGlobal } from "@/lib/region";
-import { AGENTS_HOME_PATH, getAgentCreatingPath } from "@/router/paths";
+import { isPaidBillingEnabled, formatYuan, centsToYuan } from "@/lib/billing-flow";
+import {
+  resolveBillingErrorMessage,
+  getBillingErrorCode,
+  isPassConflictError,
+  isPassRequiresRenewError,
+} from "@/lib/billing-error";
+import { buildPayPlan } from "@/lib/wx-pay";
+import { QRCodeSVG } from "qrcode.react";
 
 /* ─── Notion DESIGN.md Tokens ─── */
 
@@ -83,6 +91,8 @@ interface PlanInfo {
   maxBots: number;
   /* 售罄：按钮禁用，展示「当日名额已满 / 明天再试」 */
   soldOut?: boolean;
+  /* 暂无报价：按钮禁用，价格位显示占位「—」，features 正常显示，不走「当日名额已满」兜底 */
+  priceUnavailable?: boolean;
   /* 未上线占位：按钮禁用，展示「即将上线 / 敬请期待」，保留正常价格 */
   comingSoon?: boolean;
   /* 免费套餐：跳过支付弹窗，直接创建 */
@@ -147,7 +157,7 @@ const __markBundleBackendStringsForI18n = (t: (zh: string, opts?: Record<string,
   void t("7*24小时在线");
 };
 
-const mapBundleToPlan = (bundle: Bundle, index: number, t: (zh: string, opts?: Record<string, unknown>) => string): PlanInfo => {
+const mapBundleToPlan = (bundle: Bundle, index: number, t: (zh: string, opts?: Record<string, unknown>) => string, paidBillingEnabled: boolean): PlanInfo => {
   /* 静态标记，运行时一次性调用以让字典加载后端下发中文的翻译 */
   __markBundleBackendStringsForI18n(t);
   const features: PlanFeature[] = [];
@@ -211,10 +221,39 @@ const mapBundleToPlan = (bundle: Bundle, index: number, t: (zh: string, opts?: R
     features.push({ icon: iconMap.settings, label: t("极简配置面板"), hasCheck: true });
   }
 
-  /* 内测期间：无论后端是否返回 price，前端统一当免费版展示，价格右侧用 promoTag 标出"限时免费"。
-     credit 是积分数量，与价格无关；price 字段待后续订阅变现时再恢复取用。 */
-  const isFree = true;
+  /**
+   * 价格 / 促销标签 / 是否跳过支付，按站点分流：
+   *   - paidBillingEnabled=true：消费后端真实价格 bundle.price.real_total_cost；
+   *     无价（trade 故障 / 未登录）时禁用按钮、不展示促销徽章
+   *   - paidBillingEnabled=false：保持「限时免费」内测策略 — 价格写死¥49 仅作锚点，
+   *     按 skipPayment=true 走免费 createPass 路径
+   */
   const soldOut = bundle.bundle_sales_state === "SOLD_OUT";
+  const paid = isPaidBillingEnabled(paidBillingEnabled);
+  /** 国内站要展示的真实金额（元）；后端 bundle.price.real_total_cost 单位是分，
+   *  展示前需调 centsToYuan 转为元；后端 price 为 null 时返回 null 并标记为「暂无报价」禁用 */
+  const realPriceYuan =
+    paid && bundle.price ? centsToYuan(bundle.price.real_total_cost) : null;
+  const priceUnavailable = paid && !bundle.price && !soldOut;
+
+  let price = "";
+  let promoTag: string | undefined;
+  if (paid) {
+    price = realPriceYuan != null ? formatYuan(realPriceYuan, bundle.price?.currency ?? "CNY") : "";
+    /* 国内站不再展示"限时免费"标签 */
+    promoTag = undefined;
+  } else {
+    /* 国际站：保持当前限时免费视觉 */
+    price = isGlobal ? "$7.5" : "¥49";
+    promoTag = soldOut ? undefined : t("限时免费");
+  }
+
+  /** 国内站价格不可用时按「暂无报价」展示禁用 CTA，避免点击后报错 */
+  const ctaLabel = soldOut
+    ? t("已售罄")
+    : priceUnavailable
+      ? t("暂无报价")
+      : t("立即开通");
 
   return {
     id: bundle.bundle_id,
@@ -223,21 +262,41 @@ const mapBundleToPlan = (bundle: Bundle, index: number, t: (zh: string, opts?: R
     name: t(bundle.bundle_name),
     badge: soldOut ? t("已售罄") : undefined,
     badgeStyle: soldOut ? "tag" : undefined,
-    price: isGlobal ? "$7.5" : "¥49",
+    price,
     priceUnit: isGlobal ? "/ month" : t("/ 月"),
     /* 国际站中英文都展示促销标签：英文为 Limited free，中文为限时免费；国内站保持原有中文标签。 */
-    promoTag: soldOut ? undefined : t("限时免费"),
+    promoTag,
     description: t("尝鲜体验，从一个 Agent 开始"),
     features,
-    ctaLabel: soldOut ? t("已售罄") : t("立即开通"),
+    ctaLabel,
     ctaStyle: index === 0 ? "primary" : "outline",
     featured: index === 0,
     maxBots: bundle.agent_quota || 1,
+    /* 真实售罄走 soldOut；询价缺失走 priceUnavailable，二者互斥 */
     soldOut,
-    skipPayment: isFree,
+    priceUnavailable,
+    /* 国际站继续走免费试用；国内站走付费下单 */
+    skipPayment: !paid,
     availableCount: bundle.bundle_sales_available_count,
     totalCount: bundle.bundle_sales_total_count,
-    raw: bundle,
+    /**
+     * TODO(temp-bypass, 联调期): 后端 /v1/bundles 列表当前未下发 time_span / time_unit，
+     * 导致 createPassOrder 的 body 缺少 period / time_unit 字段，被后端 prepareCreatePassOrder
+     * 校验 `period <= 0` 挡掉，返回 400 PASS_INVALID_PARAM。
+     *
+     * 这里前端临时按"月付"兜底，**仅用于联调跑通整条支付链路**。
+     *
+     * ⚠️ 风险：一旦后端未来上线季付/年付套餐而仍未下发 time_span/time_unit，
+     *     这里会按 1 个月下单但发放更长周期权益，导致财务对账事故。
+     *
+     * 正确做法：推后端在 bundle 配置里加 time_span / time_unit 字段并由 /v1/bundles 透出。
+     * 后端补完字段后，**必须删除以下兜底，恢复 `raw: bundle`**。
+     */
+    raw: {
+      ...bundle,
+      time_span: bundle.time_span ?? 1,
+      time_unit: bundle.time_unit ?? "m",
+    },
   };
 };
 
@@ -251,7 +310,7 @@ const makePlaceholderBundle = (id: string, name: string, agentQuota: number): Bu
   bundle_state: "OFFLINE",
   agent_quota: agentQuota,
   credit: 0,
-  price: 0,
+  price: null,
   time_span: 1,
   time_unit: "m",
   bundle_sales_available_count: 0,
@@ -336,10 +395,8 @@ const PLACEHOLDER_PLAN_DEFS: PlaceholderPlanDef[] = [
 /**
  * i18n 静态标记块：占位套餐的中文字面量定义在 PLACEHOLDER_PLAN_DEFS 数据里，
  * extract 脚本只能扫到 `t("...")` 字面量调用，无法跟踪 `t(def.name)` 这种动态参数。
- * 因此在这里把所有占位套餐里出现过的中文，以一次性 `t("...")` 调用的形式声明出来，
- * 既不影响运行时（这次调用结果被丢弃），又能保证 i18n-extract 把它们收录进字典。
  *
- * ⚠️ 修改 PLACEHOLDER_PLAN_DEFS 时请同步更新此处。
+ * 修改 PLACEHOLDER_PLAN_DEFS 时请同步更新此处。
  */
 const __markPlaceholderPlansForI18n = (t: (zh: string, opts?: Record<string, unknown>) => string): void => {
   void t("免费试用 7天");
@@ -356,7 +413,6 @@ const __markPlaceholderPlansForI18n = (t: (zh: string, opts?: Record<string, unk
 
 /** 将纯数据占位套餐转为带 JSX + i18n 的 PlanInfo */
 const buildPlaceholderPlans = (t: (zh: string, opts?: Record<string, unknown>) => string): PlanInfo[] => {
-  /* 静态标记，运行时一次性调用以让字典加载它们的翻译 */
   __markPlaceholderPlansForI18n(t);
   return PLACEHOLDER_PLAN_DEFS.map((def) => ({
     id: def.id,
@@ -379,30 +435,10 @@ const buildPlaceholderPlans = (t: (zh: string, opts?: Record<string, unknown>) =
 };
 
 /**
- * 后端错误码 → 用户提示文案映射（与 frontend-bundle-pass-integration.md 对齐）
+ * 实名校验错误码兜底文案 — 计费侧错误码统一走 lib/billing-error 的 resolveBillingErrorMessage
  */
-const mapPassErrorToMessage = (code: string | undefined, fallback: string, t: (zh: string) => string): string => {
-  switch (code) {
-    case "PASS_INVALID_PARAM":
-      return t("请选择套餐");
-    case "BUNDLE_NOT_FOUND":
-      return t("套餐已下架");
-    case "PASS_BUNDLE_OFFLINE":
-      return t("该套餐已下线");
-    case "PASS_BUNDLE_SOLD_OUT":
-      return t("该套餐暂时售罄");
-    case "BUNDLE_SALES_QUOTA_EMPTY":
-      return t("今日名额已抢完，明天再试");
-    case "PASS_ALREADY_EXISTS":
-      return t("您已拥有权益，无需重复购买");
-    case "PASS_QUOTA_EXCEEDED":
-      return t("当前使用量超出该套餐限额");
-    case "realname_required":
-      return isGlobal ? t("创建失败，请稍后重试。") : t("请先完成实名认证后再开通套餐。");
-    default:
-      return fallback;
-  }
-};
+const resolveRealnameErrorMessage = (t: (zh: string) => string): string =>
+  isGlobal ? t("创建失败，请稍后重试。") : t("请先完成实名认证后再开通套餐。");
 
 /* ─── Notion-style Navbar ─── */
 
@@ -473,8 +509,9 @@ const PlanCard = ({
   const isFeatured = plan.featured;
   const isSoldOut = plan.soldOut === true;
   const isComingSoon = plan.comingSoon === true;
-  /* 售罄 / 未上线套餐：按钮永远禁用 */
-  const disabled = isSoldOut || isComingSoon || subscribing || quotaWouldExceed;
+  const isPriceUnavailable = plan.priceUnavailable === true;
+  /* 售罄 / 未上线 / 暂无报价：按钮永远禁用 */
+  const disabled = isSoldOut || isComingSoon || isPriceUnavailable || subscribing || quotaWouldExceed;
 
   return (
     <motion.div
@@ -600,6 +637,34 @@ const PlanCard = ({
               }}
             >
               {t("已售罄")}
+            </span>
+          </div>
+        ) : isPriceUnavailable ? (
+          /* 暂无报价：用低调的灰色提示文字替代价格，撑住版式高度，避免大字号 "—" 造成视觉粗黑横线 */
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              marginBottom: 8,
+              minHeight: 48,
+            }}
+          >
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                fontSize: 14,
+                fontWeight: 500,
+                lineHeight: 1.43,
+                color: colors.warmGray500,
+                background: "rgba(0,0,0,0.04)",
+                border: `1px solid ${colors.border}`,
+                borderRadius: 6,
+                padding: "6px 12px",
+              }}
+            >
+              {t("价格更新中")}
             </span>
           </div>
         ) : plan.price ? (
@@ -1033,21 +1098,33 @@ const ConfirmOrderModal = ({
   );
 };
 
-/* ─── WeChat QR Code Modal ─── */
+/* ─── Payment Pending Modal ─── */
 
-const WechatQRModal = ({
-  onClose,
-  onComplete,
-  submitting,
+/**
+ * 付费进行中弹窗——取代原来的 mock 微信二维码。该弹窗同时覆盖两个状态：
+ *   - paying ：已跳转新窗口，后台轮询 listMyPasses 中
+ *   - polling：用户点击「我已完成支付」，立即询问一次
+ *
+ * 表现上这两个状态只在 spinner / 文案上轻微区分，避免闪烁。
+ */
+const PaymentPendingModal = ({
+  bridgeUrl,
+  onCancel,
+  onManualConfirm,
+  onRefresh,
+  refreshing,
+  t,
 }: {
-  onClose: () => void;
-  onComplete: () => void;
-  submitting: boolean;
+  /** 中转页绝对 URL，用作 QRCode value */
+  bridgeUrl: string;
+  onCancel: () => void;
+  onManualConfirm: () => void;
+  /** 「刷新」按钮：重新生成二维码（重新下单换新 auth_code） */
+  onRefresh: () => void;
+  /** 刷新进行中（重新下单的网络往返期间），用于禁用按钮防止重复请求 */
+  refreshing: boolean;
+  t: (zh: string, opts?: Record<string, unknown>) => string;
 }) => {
-  const t = useT();
-  const [refreshKey, setRefreshKey] = useState(0);
-  const mockQrValue = `https://lightclaw.tech/pay/mock?t=${Date.now()}&k=${refreshKey}`;
-
   return (
     <motion.div
       style={modalOverlayStyle}
@@ -1055,10 +1132,10 @@ const WechatQRModal = ({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.2 }}
-      onClick={onClose}
+      onClick={onCancel}
     >
       <motion.div
-        style={{ ...modalPanelStyle, maxWidth: 400 }}
+        style={{ ...modalPanelStyle, maxWidth: 440 }}
         initial={{ opacity: 0, scale: 0.95, y: 12 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 12 }}
@@ -1067,73 +1144,69 @@ const WechatQRModal = ({
       >
         <button
           style={modalCloseStyle}
-          onClick={onClose}
+          onClick={onCancel}
+          aria-label={t("关闭")}
           onMouseEnter={(e) => { e.currentTarget.style.background = colors.warmWhite; e.currentTarget.style.color = colors.primary; }}
           onMouseLeave={(e) => { e.currentTarget.style.background = "none"; e.currentTarget.style.color = colors.warmGray300; }}
         >
           <X style={{ width: 18, height: 18 }} />
         </button>
 
-        <div style={{ padding: "28px 28px 24px", textAlign: "center" }}>
-          <h3 style={{ fontSize: 18, fontWeight: 700, color: colors.black, margin: "0 0 24px", letterSpacing: "-0.25px", textAlign: "left" }}>
-            {t("微信支付")}
+        <div style={{ padding: "28px 28px 24px" }}>
+          <h3 style={{ fontSize: 18, fontWeight: 700, color: colors.black, margin: "0 0 6px", letterSpacing: "-0.25px" }}>
+            {t("请完成支付")}
           </h3>
-
-          <div
-            style={{
-              display: "inline-flex",
-              padding: 16,
-              borderRadius: 12,
-              border: `1px solid ${colors.border}`,
-              background: colors.white,
-              marginBottom: 20,
-            }}
-          >
-            <QRCodeSVG
-              value={mockQrValue}
-              size={200}
-              level="M"
-              bgColor="#ffffff"
-              fgColor="#000000"
-              style={{ display: "block" }}
-            />
-          </div>
-
-          <p style={{ fontSize: 14, fontWeight: 500, color: colors.black, margin: "0 0 4px" }}>
-            {t("请使用微信扫描二维码完成支付")}
-          </p>
-          <p style={{ fontSize: 13, color: colors.warmGray300, margin: "0 0 24px" }}>
-            {t("扫码后请在手机上完成操作")}
+          <p style={{ fontSize: 13, color: colors.warmGray500, margin: "0 0 24px" }}>
+            {t("请使用微信扫描下方二维码，授权后即可在微信内完成签约")}
           </p>
 
-          <div style={{ display: "flex", gap: 12 }}>
-            <button
-              onClick={() => setRefreshKey((k) => k + 1)}
-              disabled={submitting}
+          {/* bridge 模式：渲染中转页 URL 的二维码，用户在微信扫码后由中转页负责走 OAuth + wxSign */}
+          {bridgeUrl && (
+            <div
               style={{
-                flex: 1,
                 display: "flex",
-                alignItems: "center",
                 justifyContent: "center",
-                gap: 6,
-                padding: "12px 16px",
-                borderRadius: 8,
-                border: `1px solid ${colors.border}`,
-                background: colors.white,
-                color: colors.black,
-                fontSize: 15,
-                fontWeight: 600,
-                cursor: submitting ? "not-allowed" : "pointer",
-                opacity: submitting ? 0.5 : 1,
-                transition: "all 0.15s",
+                alignItems: "center",
+                marginBottom: 20,
+                padding: 16,
+                borderRadius: 12,
+                background: colors.warmWhite,
               }}
             >
-              <RefreshCw style={{ width: 15, height: 15 }} />
-              {t("刷新")}
+              <QRCodeSVG value={bridgeUrl} size={180} level="M" includeMargin={false} />
+            </div>
+          )}
+
+          {/* 底部按钮区：左「刷新」（描边白底，重新生成二维码）+ 右「完成」（实色，等价于「我已完成支付」） */}
+          <div style={{ display: "flex", flexDirection: "row", gap: 12 }}>
+            <button
+              onClick={onRefresh}
+              disabled={refreshing}
+              style={{
+                flex: 1,
+                padding: "12px 16px",
+                borderRadius: 8,
+                border: `1px solid ${colors.primary}`,
+                background: colors.white,
+                color: colors.primary,
+                fontSize: 15,
+                fontWeight: 600,
+                cursor: refreshing ? "not-allowed" : "pointer",
+                opacity: refreshing ? 0.6 : 1,
+                transition: "background 0.15s, color 0.15s",
+              }}
+              onMouseEnter={(e) => {
+                if (refreshing) return;
+                e.currentTarget.style.background = colors.warmWhite;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = colors.white;
+              }}
+            >
+              {refreshing ? t("刷新中...") : t("刷新")}
             </button>
             <button
-              onClick={onComplete}
-              disabled={submitting}
+              onClick={onManualConfirm}
               style={{
                 flex: 1,
                 padding: "12px 16px",
@@ -1143,12 +1216,13 @@ const WechatQRModal = ({
                 color: colors.white,
                 fontSize: 15,
                 fontWeight: 600,
-                cursor: submitting ? "not-allowed" : "pointer",
-                opacity: submitting ? 0.7 : 1,
-                transition: "all 0.15s",
+                cursor: "pointer",
+                transition: "background 0.15s",
               }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = colors.primaryHover; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = colors.primary; }}
             >
-              {submitting ? t("处理中...") : t("完成")}
+              {t("完成")}
             </button>
           </div>
         </div>
@@ -1159,11 +1233,25 @@ const WechatQRModal = ({
 
 /* ─── Subscribe Page ─── */
 
-type ModalStep = "closed" | "confirm" | "qrcode";
+/**
+ * 弹窗状态机：
+ *   - closed   ：无弹窗
+ *   - confirm  ：订单确认弹窗（仅国内站付费链路）
+ *   - paying   ：已通过 tcb-jssdk 拉起 Midas 收银台（页内二维码 / 兜底新窗口），等待用户支付完成
+ *
+ * 注：v1.7.30 后端联调文档明确「前端不需要轮询支付状态」——
+ * SDK 自身会通过 callback 通知支付完成；用户使用兜底入口时手动点「我已完成支付」即可。
+ */
+type ModalStep = "closed" | "confirm" | "paying";
+
 type SubscribeError = {
-  code?: string;
+  code?: string | null;
   message: string;
 };
+
+/** v1.7.30 后端允许轮询 listMyPasses 检测支付是否完成，间隔 / 超时控制 */
+const PAY_POLL_INTERVAL_MS = 3000;
+const PAY_POLL_TIMEOUT_MS = 180_000;
 
 export const SubscribePage = () => {
   const t = useT();
@@ -1178,12 +1266,13 @@ export const SubscribePage = () => {
   /* 邀请码守卫：未激活邀请码时拦截「立即开通」，弹窗输入后自动继续 */
   const [showInviteCode, setShowInviteCode] = useState(false);
   const [pendingPlan, setPendingPlan] = useState<PlanInfo | null>(null);
-
   /* 从后端加载的套餐列表 */
   const [bundles, setBundles] = useState<Bundle[] | null>(null);
   const [bundlesLoading, setBundlesLoading] = useState(false);
   const [bundlesError, setBundlesError] = useState<string | null>(null);
 
+  const paidBillingEnabled = usePaidBillingEnabled();
+  const paidBillingActive = isPaidBillingEnabled(paidBillingEnabled);
   const quotaExceeded = bots.length >= user.plan.maxBots;
 
   /* 进入订阅页即触发登录态 */
@@ -1223,74 +1312,234 @@ export const SubscribePage = () => {
   /* 映射成 PlanInfo，保留原 bundle 用于后续时用 bundle_id 调购买 */
   const planList = useMemo<PlanInfo[]>(() => {
     if (!bundles) return [];
-    const fromBackend = bundles.map((b, idx) => mapBundleToPlan(b, idx, t));
-    /* 后端目前只上线了免费版，前端补两张「敬请期待」的占位卡，保持三列栅格 */
-    return [...fromBackend, ...buildPlaceholderPlans(t)];
-  }, [bundles, t]);
+    const fromBackend = bundles.map((b, idx) => mapBundleToPlan(b, idx, t, paidBillingActive));
+    /* 付费开关关闭时保持 master 当前展示：后端套餐 + 两张敬请期待占位卡。 */
+    return paidBillingActive ? fromBackend : [...fromBackend, ...buildPlaceholderPlans(t)];
+  }, [bundles, paidBillingActive, t]);
 
-  /* 执行真正的购买权益 + 创建实例流程 */
+  /* 付费过程上下文：仅在国内站走付费链路时使用。
+     v1.7.31 起统一走 bridge 中转页二维码方案；不再保留 fallback 新窗口模式。
+     保存当前订单 deal_names + 已选套餐 + 二维码 URL，供 PaymentPendingModal 渲染 QRCode。 */
+  const [paymentContext, setPaymentContext] = useState<{
+    plan: PlanInfo;
+    dealNames: string[];
+    bridgeUrl: string;
+  } | null>(null);
+
+  /* 引用快照供 useCallback 中读取最新 paymentContext，避免重复触发依赖 */
+  const paymentContextRef = useRef(paymentContext);
+  paymentContextRef.current = paymentContext;
+
+  /* isSubscribed / finalizeBot 的 ref 镜像 — 给付费轮询 effect 用：
+     setInterval 闭包必须读最新值才能正确判断「是否已拿到 active pass」；
+     而 effect 又不能把它们放进依赖数组，否则会因 isSubscribed 翻转 / finalizeBot 重建
+     反复销毁重建 timer，浪费请求 + 错过窗口 */
+  const isSubscribedRef = useRef(isSubscribed);
+  isSubscribedRef.current = isSubscribed;
+
+  /* 重复使用的收尾逻辑：addBot + subscribe + navigate 。
+     供两个链路（免费试用 / 付费下单后）复用 */
+  const finalizeBot = useCallback(async (plan: PlanInfo) => {
+    const createdBot = await addBot({
+      name: "我的Hermes",
+      personality: "默认设定",
+      personalityEmoji: "✨",
+      intro: "",
+      soulTemplateId: undefined,
+      status: "running",
+    });
+    subscribe();
+    setModalStep("closed");
+    setSelectedPlan(null);
+    setPaymentContext(null);
+    navigate(`/dashboard/settings?creating=${encodeURIComponent(createdBot.id)}&plan=${encodeURIComponent(plan.id)}`);
+  }, [addBot, subscribe, navigate]);
+
+  /**
+   * 免费试用链路 — 仅国际站 / 存在老 pass 的内测场景。
+   * 逻辑保持 P3 之前的原状：POST /v1/passes 走免费试用，PASS_ALREADY_EXISTS 不作错误
+   */
+  const startTrialPass = useCallback(async (plan: PlanInfo) => {
+    if (!isSubscribed) {
+      try {
+        await repositories.plans.createPass(plan.raw.bundle_id);
+        await refreshPasses();
+      } catch (passErr) {
+        if (!isPassConflictError(getBillingErrorCode(passErr))) {
+          throw passErr;
+        }
+        await refreshPasses();
+      }
+    }
+    await finalizeBot(plan);
+  }, [isSubscribed, repositories.plans, refreshPasses, finalizeBot]);
+
+  /**
+   * 付费下单链路 — 仅国内站。CodeBuddy AuthCode 安全模型：
+   *
+   *   阶段一（PC 端）：调 createPassOrder 拿 { deal_names, auth_code }
+   *   阶段二（中转页）：buildPayPlan 直接用 dealName + authCode 编二维码；
+   *                     用户扫码后中转页用 wx_code + auth_code 调 getPassOrderUrl
+   *                     拿 pay_url，再调 wxSign 拉起委托划扣。
+   *
+   * **PC 端不再调 getPassOrderUrl** —— 因为 jifei pay_url 生成时绑定 wx_open_id，
+   * PC 端没有 wx_open_id，提前调只能拿到错误的 url（与 CodeBuddy 一致）。
+   *
+   * 零元订单（need_charge === 0）改由中转页判定：中转页拿到 getPassOrderUrl 响应后
+   * 走「已完成」分支，PC 端继续轮询 listMyPasses 接棒 finalize。
+   *
+   * 安全：二维码里**只有 deal_name + auth_code + expires_at**，无 Bearer token、无 pay_url；
+   * auth_code 是一次性 ticket（TTL ≤10 分钟），截图泄漏的最坏后果是替受害者发起一次支付。
+   *
+   * 注意：如果用户已拥有 active pass（互斥占用规则），trade 会返回 PASS_ALREADY_EXISTS，
+   * 此时跳过下单、直接走 finalizeBot（与免费链路一致）。
+   */
+  const startPaidPassOrder = useCallback(async (plan: PlanInfo) => {
+    if (isSubscribed) {
+      /* 已有有效 pass，直接创建实例即可 */
+      await finalizeBot(plan);
+      return;
+    }
+    /* 阶段一：下单拿 deal_names + auth_code */
+    const order = await repositories.plans.createPassOrder({
+      bundle_id: plan.raw.bundle_id,
+      period: plan.raw.time_span,
+      time_unit: plan.raw.time_unit,
+    });
+
+    /* 把 deal_name + auth_code + bundleName 编进二维码 URL；
+       中转页拿到后用 wx_code + auth_code 调 getPassOrderUrl 拉 pay_url */
+    const payPlan = buildPayPlan({
+      dealName: order.deal_names[0] ?? "",
+      authCode: order.auth_code,
+      bundleName: plan.raw.bundle_name,
+    });
+
+    /* bridge：渲染二维码，用户微信扫码 → 中转页支付，PC 端轮询 listMyPasses 接棒 finalize */
+    setPaymentContext({ plan, dealNames: order.deal_names, bridgeUrl: payPlan.bridgeUrl });
+    setSelectedPlan(plan);
+    setModalStep("paying");
+  }, [isSubscribed, repositories.plans, finalizeBot]);
+
+  /* finalizeBot 的 ref 镜像 — 见 isSubscribedRef 的注释，目的相同：
+     轮询 effect 内的 setInterval 闭包要拿最新 finalizeBot，又不能依赖它（会反复重建）。
+     注意：必须放在 finalizeBot 声明之后，用一个独立 effect 来同步。 */
+  const finalizeBotRef = useRef(finalizeBot);
+  useEffect(() => {
+    finalizeBotRef.current = finalizeBot;
+  }, [finalizeBot]);
+
+  /* paying 阶段轮询 listMyPasses：代替 SDK callback。
+     轮询到有效 active pass 后自动 finalizeBot 接棒（用户无需再点「我已完成支付」）；
+     超时（PAY_POLL_TIMEOUT_MS）不主动报错，用户仍可手动点「我已完成支付」兜底。 */
+  useEffect(() => {
+    if (modalStep !== "paying") return;
+    const ctx = paymentContext;
+    if (!ctx) return;
+    let cancelled = false;
+    let finalizing = false;
+    const startedAt = Date.now();
+    const timer = window.setInterval(async () => {
+      if (cancelled || finalizing) return;
+      try {
+        await refreshPasses();
+      } catch (err) {
+        console.warn("[subscribe] poll refreshPasses failed", err);
+      }
+      if (cancelled) return;
+      /* 命中有效 pass：停轮询 + 主动 finalize，承接 PC 端创建实例 + 跳管理页 */
+      if (isSubscribedRef.current) {
+        finalizing = true;
+        window.clearInterval(timer);
+        try {
+          await finalizeBotRef.current(ctx.plan);
+        } catch (err) {
+          if (!cancelled) {
+            const fallbackMsg = err instanceof Error ? err.message : t("创建实例失败，请稍后重试。");
+            console.error("[subscribe] poll finalize failed", err);
+            setError({ code: getBillingErrorCode(err), message: resolveBillingErrorMessage(err, fallbackMsg) });
+            setModalStep("closed");
+            setSelectedPlan(null);
+            setPaymentContext(null);
+          }
+        }
+        return;
+      }
+      if (Date.now() - startedAt > PAY_POLL_TIMEOUT_MS) {
+        window.clearInterval(timer);
+      }
+    }, PAY_POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [modalStep, paymentContext, refreshPasses, t]);
+  /**
+   * 总调度 — 根据站点路由到免费试用或付费下单，并统一出错处理
+   */
   const executeCreateBot = useCallback(async (plan: PlanInfo) => {
     setSubscribingPlanId(plan.id);
     setError(null);
     try {
-      /* 1. 未订阅时先在后端创建权益（POST /v1/passes）；已有活跃权益则跳过 */
-      if (!isSubscribed) {
-        try {
-          await repositories.plans.createPass(plan.raw.bundle_id);
-          /* 同步一下 context 的 pass 缓存 */
-          await refreshPasses();
-        } catch (passErr) {
-          /* PASS_ALREADY_EXISTS 不当做错误，直接进入创建 Agent 流程 */
-          const code = (passErr as RepositoryError).code;
-          if (code !== "PASS_ALREADY_EXISTS") {
-            throw passErr;
-          }
-          await refreshPasses();
-        }
+      if (paidBillingActive && !plan.skipPayment) {
+        /* 付费链路：startPaidPassOrder 只展示二维码并把弹窗切到 paying；
+           真正的 addBot + 跳转由两条接棒路径承接：
+             ① paying 阶段轮询到 active pass → 自动 finalizeBot
+             ② 用户点「我已完成支付」 → handleManualConfirm → finalizeBot
+           因此这里**不能**再继续往下做 addBot/navigate，否则用户还没付钱实例就建了 */
+        await startPaidPassOrder(plan);
+      } else {
+        /* 免费链路：startTrialPass 内部已 await finalizeBot，addBot + 跳转一气呵成 */
+        await startTrialPass(plan);
       }
-      /* 2. 调用后端创建实例资源 */
-      const createdBot = await addBot({
-        name: t("我的Hermes"),
-        personality: t("默认设定"),
-        personalityEmoji: "✨",
-        intro: "",
-        soulTemplateId: undefined,
-        status: "running",
-      });
-      subscribe();
-      setModalStep("closed");
-      setSelectedPlan(null);
-      /* 3. 跳转到管理页，由管理页轮询真实后端状态，Running 后才交付 */
-      navigate(getAgentCreatingPath(createdBot.id));
     } catch (err) {
+      const code = getBillingErrorCode(err);
       const fallbackMsg = err instanceof Error ? err.message : t("创建失败，请稍后重试。");
-      const code = err instanceof RepositoryError ? err.code : (err as Error & { code?: string })?.code;
       console.error("[subscribe] create bot failed", err instanceof RepositoryError
         ? { status: err.status, code: err.code, message: err.message }
         : err);
-      /* 兼容：后端若以「邀请码」相关错误拒绝创建，自动弹出邀请码弹窗，激活后继续订阅 */
+      /* 特例 1：后端以「邀请码」拒绝创建 → 拉起邀请码弹窗，激活后代为重试 */
       const isInviteError = /invite|邀请码/i.test(fallbackMsg) || /invite/i.test(code ?? "");
       if (isInviteError) {
         setPendingPlan(plan);
         setShowInviteCode(true);
         setModalStep("closed");
         setSelectedPlan(null);
-      } else {
-        setError({ code, message: mapPassErrorToMessage(code, fallbackMsg, t) });
+        setPaymentContext(null);
+        return;
+      }
+      /* 特例 2：实名报错 → 专项文案，让错误展示处给超链接 */
+      if (code === "realname_required") {
+        setError({ code, message: resolveRealnameErrorMessage(t) });
         setModalStep("closed");
         setSelectedPlan(null);
+        setPaymentContext(null);
+        return;
       }
+      /* 特例 3：需要走续费路径（expired/isolated） → 引导到账号页 */
+      if (isPassRequiresRenewError(code)) {
+        setError({ code, message: t("您的套餐已过期或进入隔离期，请前往「我的账号」续费。") });
+        setModalStep("closed");
+        setSelectedPlan(null);
+        setPaymentContext(null);
+        return;
+      }
+      /* 其他错误：走统一映射 */
+      setError({ code, message: resolveBillingErrorMessage(err, fallbackMsg) });
+      setModalStep("closed");
+      setSelectedPlan(null);
+      setPaymentContext(null);
     } finally {
       setSubscribingPlanId(null);
     }
-  }, [isSubscribed, repositories.plans, refreshPasses, addBot, subscribe, navigate]);
+  }, [paidBillingActive, startPaidPassOrder, startTrialPass, t]);
 
   const handleSubscribe = useCallback((planId: string) => {
     const plan = planList.find((p) => p.id === planId);
     if (!plan) return;
 
-    /* 售罄 / 未上线套餐按钮已 disabled，这里再加一层保护 */
-    if (plan.soldOut || plan.comingSoon) return;
+    /* 售罄 / 未上线 / 暂无报价 套餐按钮已 disabled，这里再加一层保护 */
+    if (plan.soldOut || plan.comingSoon || plan.priceUnavailable) return;
 
     /* 检查龙虾个数是否已达该套餐上限 */
     if (bots.length >= plan.maxBots) {
@@ -1340,16 +1589,61 @@ export const SubscribePage = () => {
   const handleCloseModal = useCallback(() => {
     setModalStep("closed");
     setSelectedPlan(null);
+    setPaymentContext(null);
   }, []);
 
+  /**
+   * 「确认订单」点「支付」 → 发起 createPassOrder 跳转 jifei（走付费链路主入口）
+   */
   const handlePay = useCallback(() => {
-    setModalStep("qrcode");
-  }, []);
-
-  const handleComplete = useCallback(async () => {
     if (!selectedPlan) return;
-    await executeCreateBot(selectedPlan);
+    void executeCreateBot(selectedPlan);
   }, [selectedPlan, executeCreateBot]);
+
+  /**
+   * 用户在「付费进行中」弹窗点「我已完成支付」 → 直接刷新 pass 列表 + finalize。
+   * 仅在 fallback 模式（新窗口拉起、SDK 不可用）会出现此按钮；SDK 模式由 callback 驱动。
+   * 后端 v1.7.30 明确「前端不需要轮询支付状态」，只要刷一次 pass 即可。
+   */
+  const handleManualConfirm = useCallback(async () => {
+    const ctx = paymentContextRef.current;
+    if (!ctx) return;
+    try {
+      await refreshPasses();
+      await finalizeBot(ctx.plan);
+    } catch (err) {
+      const fallbackMsg = err instanceof Error ? err.message : t("创建实例失败，请稍后重试。");
+      console.error("[subscribe] manual confirm finalize failed", err);
+      setError({ code: getBillingErrorCode(err), message: resolveBillingErrorMessage(err, fallbackMsg) });
+      setModalStep("closed");
+      setSelectedPlan(null);
+      setPaymentContext(null);
+    }
+  }, [refreshPasses, finalizeBot, t]);
+
+  /* 「刷新」按钮：重新下单生成一份新的 deal_name + auth_code，重新生成二维码。
+     主要场景：二维码接近/已过期、后台 auth_code 已被 Consume、用户重新扫码。
+     复用 startPaidPassOrder 以保证与首次下单逻辑一致。 */
+  const [paymentRefreshing, setPaymentRefreshing] = useState(false);
+  const handleRefreshPayment = useCallback(async () => {
+    const ctx = paymentContextRef.current;
+    if (!ctx || paymentRefreshing) return;
+    setPaymentRefreshing(true);
+    try {
+      await startPaidPassOrder(ctx.plan);
+    } catch (err) {
+      const fallbackMsg = err instanceof Error ? err.message : t("刷新二维码失败，请稍后重试。");
+      console.error("[subscribe] refresh payment failed", err);
+      setError({ code: getBillingErrorCode(err), message: resolveBillingErrorMessage(err, fallbackMsg) });
+    } finally {
+      setPaymentRefreshing(false);
+    }
+  }, [paymentRefreshing, startPaidPassOrder, t]);
+
+  /* v1.7.31 起统一二维码 bridge 模式，不再保留 fallback / 重新打开支付页 — 原 handleReopenPayUrl 已删除 */
+
+  /* v1.7.30 后端联调文档明确「前端不需要轮询支付状态」——
+     原轮询 listMyPasses 的 useEffect 已删除，SDK callback / 用户手动确认均会走 finalizeBot 接棒。 */
 
   if (quotaExceeded) {
     return (
@@ -1376,7 +1670,7 @@ export const SubscribePage = () => {
               {t("当前 {{plan}} 套餐最多可创建 {{max}} 个 Hermes，你已达到上限。", { plan: user.plan.name, max: user.plan.maxBots })}
             </p>
             <Link
-              to={AGENTS_HOME_PATH}
+              to="/dashboard/settings"
               style={{
                 display: "inline-flex",
                 alignItems: "center",
@@ -1576,12 +1870,15 @@ export const SubscribePage = () => {
             onPay={handlePay}
           />
         )}
-        {modalStep === "qrcode" && (
-          <WechatQRModal
-            key="qrcode"
-            onClose={handleCloseModal}
-            onComplete={() => void handleComplete()}
-            submitting={subscribingPlanId !== null}
+        {modalStep === "paying" && paymentContext && (
+          <PaymentPendingModal
+            key="paying"
+            bridgeUrl={paymentContext.bridgeUrl}
+            onCancel={handleCloseModal}
+            onManualConfirm={handleManualConfirm}
+            onRefresh={() => void handleRefreshPayment()}
+            refreshing={paymentRefreshing}
+            t={t}
           />
         )}
       </AnimatePresence>

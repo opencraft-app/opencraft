@@ -1,27 +1,7 @@
-# Plan: Agent Console canonical path
+# 当前执行计划
 
-## Acceptance
-
-`/agents` becomes the canonical Agent console entry, section navigation has stable URLs, and legacy `/dashboard/settings` links continue to work through redirects.
-
-## Tasks
-
-- [x] Developer: update route definitions and legacy redirects.
-  - Files: `frontend/src/router/index.tsx`
-  - Verify: `/agents`, `/agents/models`, and legacy paths resolve to the Agent console.
-
-- [x] Developer: make the Agent console section state URL-driven.
-  - Files: `frontend/src/pages/marketing/openclaw-settings-page.tsx`
-  - Verify: clicking nav items updates URL; direct `/agents/<section>` selects the right section.
-
-- [x] Developer: update first-party entry links to `/agents`.
-  - Files: `frontend/src/**`
-  - Verify: grep no primary product entry still points to `/dashboard/settings` except compatibility redirects/tests that intentionally cover old paths.
-
-- [x] Developer: update OpenSpec and implementation docs for the new canonical path.
-  - Files: `frontend/openspec/specs/marketing.md`, `frontend/openspec/config.yaml`, `docs/implementations/frontend-key-implementation.md`
-  - Verify: docs identify `/agents` as canonical and `/dashboard/settings` as legacy compatibility.
-
-- [x] Reviewer: run targeted checks.
-  - Commands: `pnpm check`, relevant tests for updated route/link expectations, `pnpm i18n:check` if text extraction changes.
-  - Verify: `pnpm check`, `pnpm i18n:check`, `marketing-header-actions.test.tsx`, and local Vite route smoke checks passed. `plan-select-page.test.tsx` currently hangs as a single-file Vitest run; exact blocker documented in the final handoff.
+- [x] 在 `openclaw-memory.ts` 增加字符上限常量、范围校验和 `hermes config set` 命令构造。
+- [x] 在记忆面板统计卡内加入轻量编辑交互、保存中状态和错误提示。
+- [x] 保存时通过 `execDebugCommand` 执行配置命令，成功后刷新快照。
+- [x] 补充 `openclaw-memory.test.ts` 覆盖校验与命令构造。
+- [x] 运行定向测试、`pnpm check`、`pnpm i18n:check`。

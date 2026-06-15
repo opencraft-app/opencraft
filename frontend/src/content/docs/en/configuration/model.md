@@ -199,11 +199,17 @@ When this happens, check the model configuration again.
 ## Next steps
 
 - [Configure Channel - WeChat](./configuration/channel-wechat.md)
-    
+
 - [Configure Channel - Telegram](./configuration/channel-telegram.md)
-    
+
 - [Configure Channel - WhatsApp](./configuration/channel-whatsapp.md)
-    
+
 - [Configure Channel - Discord](./configuration/channel-discord.md)
-    
+
+- [Configure Channel - QQ](./configuration/channel-qq.md)
+
+- [Configure Channel - WeCom](./configuration/channel-wecom.md)
+
+- [Configure Channel - Lark](./configuration/channel-feishu.md)
+
 - [Configure Skills](./configuration/skill.md)

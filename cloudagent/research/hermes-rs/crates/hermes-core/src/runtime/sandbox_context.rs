@@ -159,38 +159,48 @@ impl AgentExecutor {
                 }))
                 .await;
             }
-            if let Err(error) = sandbox.shutdown_workspace_runtime().await {
-                if has_workspace_shutdown {
+            let shutdown_report = match sandbox.shutdown_workspace_runtime().await {
+                Ok(report) => report,
+                Err(error) => {
+                    if has_workspace_shutdown {
+                        self.emit(AgentEvent::RuntimeHost(RuntimeHostEvent {
+                            event: "workspace_runtime_shutdown_failed".to_string(),
+                            session_id: Some(self.session_id.clone()),
+                            sandbox_id: Some(sandbox_id.clone()),
+                            workspace_root: Some(workspace_root.clone()),
+                            error: Some(error.to_string()),
+                            ..RuntimeHostEvent::default()
+                        }))
+                        .await;
+                    }
                     self.emit(AgentEvent::RuntimeHost(RuntimeHostEvent {
-                        event: "workspace_runtime_shutdown_failed".to_string(),
+                        event: "inner_shutdown_failed".to_string(),
                         session_id: Some(self.session_id.clone()),
-                        sandbox_id: Some(sandbox_id.clone()),
-                        workspace_root: Some(workspace_root.clone()),
+                        sandbox_id: Some(sandbox_id),
+                        workspace_root: Some(workspace_root),
                         error: Some(error.to_string()),
                         ..RuntimeHostEvent::default()
                     }))
                     .await;
+                    return;
                 }
-                self.emit(AgentEvent::RuntimeHost(RuntimeHostEvent {
-                    event: "inner_shutdown_failed".to_string(),
-                    session_id: Some(self.session_id.clone()),
-                    sandbox_id: Some(sandbox_id),
-                    workspace_root: Some(workspace_root),
-                    error: Some(error.to_string()),
-                    ..RuntimeHostEvent::default()
-                }))
-                .await;
-                return;
-            }
+            };
             if has_workspace_shutdown {
-                self.emit(AgentEvent::RuntimeHost(RuntimeHostEvent {
+                let mut event = RuntimeHostEvent {
                     event: "workspace_runtime_shutdown_done".to_string(),
                     session_id: Some(self.session_id.clone()),
                     sandbox_id: Some(sandbox_id.clone()),
                     workspace_root: Some(workspace_root.clone()),
                     ..RuntimeHostEvent::default()
-                }))
-                .await;
+                };
+                if let Some(report) = shutdown_report {
+                    event.exit_code = Some(report.exit_code);
+                    event.stdout_bytes = Some(report.stdout_bytes);
+                    event.stderr_bytes = Some(report.stderr_bytes);
+                    event.stdout_tail = Some(report.stdout_tail);
+                    event.stderr_tail = Some(report.stderr_tail);
+                }
+                self.emit(AgentEvent::RuntimeHost(event)).await;
             }
             match sandbox.delete_sandbox().await {
                 Ok(_) => {

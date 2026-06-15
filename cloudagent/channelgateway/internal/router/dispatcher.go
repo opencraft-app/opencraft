@@ -91,11 +91,6 @@ func NewDispatcherWithOptions(st SessionStore, account store.ChannelAccount, cli
 }
 
 func (d *Dispatcher) HandleInbound(ctx context.Context, msg channel.Message) error {
-	if d != nil && d.timeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, d.timeout)
-		defer cancel()
-	}
 	return d.handleInbound(ctx, msg)
 }
 
@@ -221,6 +216,8 @@ func (d *Dispatcher) handleInbound(ctx context.Context, msg channel.Message) (re
 	if d == nil || d.store == nil || d.acp == nil {
 		return errors.New("dispatcher is not configured")
 	}
+	setupCtx, setupCancel := d.requestContext(ctx)
+	defer setupCancel()
 	if strings.TrimSpace(msg.ChannelAccountID) == "" {
 		msg.ChannelAccountID = d.account.ChannelAccountID
 	}
@@ -234,7 +231,7 @@ func (d *Dispatcher) handleInbound(ctx context.Context, msg channel.Message) (re
 	if err != nil {
 		return err
 	}
-	inserted, err := d.store.InsertInboundMessage(ctx, store.MessageRecord{
+	inserted, err := d.store.InsertInboundMessage(setupCtx, store.MessageRecord{
 		ChannelAccountID:       msg.ChannelAccountID,
 		ChannelType:            string(msg.ChannelType),
 		ExternalMessageID:      msg.ExternalMessageID,
@@ -247,7 +244,7 @@ func (d *Dispatcher) handleInbound(ctx context.Context, msg channel.Message) (re
 		return err
 	}
 	inboundLease := d.inboundLeaseFor(msg.ChannelAccountID)
-	inbound, claimed, err := d.store.ClaimInboundMessage(ctx, inboundLease, msg.ExternalMessageID, d.inboundStale)
+	inbound, claimed, err := d.store.ClaimInboundMessage(setupCtx, inboundLease, msg.ExternalMessageID, d.inboundStale)
 	if err != nil {
 		return err
 	}
@@ -291,7 +288,7 @@ func (d *Dispatcher) handleInbound(ctx context.Context, msg channel.Message) (re
 	sessionLock := d.lockForSessionKey(sessionKey)
 	sessionLock.Lock()
 	defer sessionLock.Unlock()
-	conversation, err := d.store.GetOrCreateConversation(ctx, store.Conversation{
+	conversation, err := d.store.GetOrCreateConversation(setupCtx, store.Conversation{
 		ChannelAccountID:       msg.ChannelAccountID,
 		ChannelType:            string(msg.ChannelType),
 		ExternalConversationID: msg.ExternalConversationID,
@@ -305,18 +302,18 @@ func (d *Dispatcher) handleInbound(ctx context.Context, msg channel.Message) (re
 		return err
 	}
 	if command, ok := d.callbacksOrDefault().HandleCommand(msg.Text); ok {
-		return d.handleCommand(ctx, msg, conversation, command)
+		return d.handleCommand(setupCtx, msg, conversation, command)
 	}
 	sessionID = conversation.ACPSessionID
 	if sessionID == "" {
 		log.Printf("channelgateway session_trace account_id=%s agent_id=%s conversation_id=%s session_key=%s workspace_key=%s action=session_new reason=missing_acp_session",
 			logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(conversation.ConversationID), logValue(conversation.SessionKey),
 			logValue(conversation.WorkspaceKey))
-		sessionID, err = d.acp.NewSession(ctx, d.cwd, conversation.WorkspaceKey)
+		sessionID, err = d.acp.NewSession(setupCtx, d.cwd, conversation.WorkspaceKey)
 		if err != nil {
-			return d.handleACPError(ctx, msg, conversation, "", CallbackStageNewSession, err)
+			return d.handleACPError(setupCtx, msg, conversation, "", CallbackStageNewSession, err)
 		}
-		if err := d.store.BindACPSession(ctx, conversation.ChannelAccountID, conversation.SessionKey, sessionID); err != nil {
+		if err := d.store.BindACPSession(setupCtx, conversation.ChannelAccountID, conversation.SessionKey, sessionID); err != nil {
 			return err
 		}
 		conversation.ACPSessionID = sessionID
@@ -327,41 +324,42 @@ func (d *Dispatcher) handleInbound(ctx context.Context, msg channel.Message) (re
 		log.Printf("channelgateway session_trace account_id=%s agent_id=%s conversation_id=%s session_key=%s workspace_key=%s acp_session_id=%s action=session_load",
 			logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(conversation.ConversationID),
 			logValue(conversation.SessionKey), logValue(conversation.WorkspaceKey), logValue(sessionID))
-		if err := d.acp.LoadSession(ctx, sessionID, d.cwd); err != nil {
+		if err := d.acp.LoadSession(setupCtx, sessionID, d.cwd); err != nil {
 			if !isMissingACPSessionError(err) {
 				log.Printf("channelgateway session_trace account_id=%s agent_id=%s conversation_id=%s session_key=%s acp_session_id=%s action=load_session_no_recovery stage=load_session recoverable_runtime=%t error=%s",
 					logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(conversation.ConversationID),
 					logValue(conversation.SessionKey), logValue(sessionID), isRecoverableRuntimeError(err), logValue(err.Error()))
-				return d.handleACPError(ctx, msg, conversation, sessionID, CallbackStageLoadSession, err)
+				return d.handleACPError(setupCtx, msg, conversation, sessionID, CallbackStageLoadSession, err)
 			}
-			rebuiltSessionID, rebuildErr := d.recreateSessionWithSameWorkspace(ctx, msg, conversation, sessionID, "missing_acp_runtime_session")
-			if rebuildErr != nil {
-				return d.handleACPError(ctx, msg, conversation, sessionID, CallbackStageNewSession, rebuildErr)
+			log.Printf("channelgateway session_trace account_id=%s agent_id=%s conversation_id=%s session_key=%s workspace_key=%s acp_session_id=%s action=load_session_missing_preserve_binding error=%s",
+				logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(conversation.ConversationID),
+				logValue(conversation.SessionKey), logValue(conversation.WorkspaceKey), logValue(sessionID), logValue(err.Error()))
+			return d.handleACPError(setupCtx, msg, conversation, sessionID, CallbackStageLoadSession, err)
+		} else if err := d.ensureRuntimeReady(setupCtx, msg, conversation, sessionID); err != nil {
+			if isMissingACPSessionError(err) {
+				log.Printf("channelgateway session_trace account_id=%s agent_id=%s conversation_id=%s session_key=%s workspace_key=%s acp_session_id=%s action=ensure_ready_missing_preserve_binding error=%s",
+					logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(conversation.ConversationID),
+					logValue(conversation.SessionKey), logValue(conversation.WorkspaceKey), logValue(sessionID), logValue(err.Error()))
+				return d.handleACPError(setupCtx, msg, conversation, sessionID, CallbackStageLoadSession, err)
 			}
-			sessionID = rebuiltSessionID
-			conversation.ACPSessionID = rebuiltSessionID
-			if err := d.ensureRuntimeReady(ctx, msg, conversation, sessionID); err != nil {
-				return d.handleACPError(ctx, msg, conversation, sessionID, CallbackStageLoadSession, err)
-			}
-		} else if err := d.ensureRuntimeReady(ctx, msg, conversation, sessionID); err != nil {
-			if !isMissingACPSessionError(err) && !isRecoverableRuntimeError(err) {
+			if !isRecoverableRuntimeError(err) {
 				log.Printf("channelgateway session_trace account_id=%s agent_id=%s conversation_id=%s session_key=%s acp_session_id=%s action=load_session_no_recovery stage=ensure_runtime_ready recoverable_runtime=%t error=%s",
 					logValue(msg.ChannelAccountID), logValue(d.account.AgentID), logValue(conversation.ConversationID),
 					logValue(conversation.SessionKey), logValue(sessionID), isRecoverableRuntimeError(err), logValue(err.Error()))
-				return d.handleACPError(ctx, msg, conversation, sessionID, CallbackStageLoadSession, err)
+				return d.handleACPError(setupCtx, msg, conversation, sessionID, CallbackStageLoadSession, err)
 			}
 			reason := "ensure_ready_missing_acp_runtime_session"
 			if isRecoverableRuntimeError(err) {
 				reason = "runtime_unavailable"
 			}
-			rebuiltSessionID, rebuildErr := d.recreateSessionWithSameWorkspace(ctx, msg, conversation, sessionID, reason)
+			rebuiltSessionID, rebuildErr := d.recreateSessionWithSameWorkspace(setupCtx, msg, conversation, sessionID, reason)
 			if rebuildErr != nil {
-				return d.handleACPError(ctx, msg, conversation, sessionID, CallbackStageNewSession, rebuildErr)
+				return d.handleACPError(setupCtx, msg, conversation, sessionID, CallbackStageNewSession, rebuildErr)
 			}
 			sessionID = rebuiltSessionID
 			conversation.ACPSessionID = rebuiltSessionID
-			if err := d.ensureRuntimeReady(ctx, msg, conversation, sessionID); err != nil {
-				return d.handleACPError(ctx, msg, conversation, sessionID, CallbackStageLoadSession, err)
+			if err := d.ensureRuntimeReady(setupCtx, msg, conversation, sessionID); err != nil {
+				return d.handleACPError(setupCtx, msg, conversation, sessionID, CallbackStageLoadSession, err)
 			}
 		}
 	}
@@ -401,6 +399,13 @@ func (d *Dispatcher) handleInbound(ctx context.Context, msg channel.Message) (re
 		logValue(conversation.ConversationID), logValue(conversation.SessionKey), logValue(sessionID),
 		logValue(outbox.OutboxID), time.Since(startedAt).Milliseconds())
 	return nil
+}
+
+func (d *Dispatcher) requestContext(parent context.Context) (context.Context, context.CancelFunc) {
+	if d != nil && d.timeout > 0 {
+		return context.WithTimeout(parent, d.timeout)
+	}
+	return parent, func() {}
 }
 
 func (d *Dispatcher) callbacksOrDefault() ChannelCallbacks {

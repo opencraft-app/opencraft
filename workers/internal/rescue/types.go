@@ -31,15 +31,16 @@ type TencentConfig struct {
 }
 
 type ExportRequest struct {
+	BotID                  string
+	BotName                string
 	InstanceID             string
 	Region                 string
+	NotificationEmail      string
+	NotifyEmail            string
 	RescueUsername         string
 	RescuePasswordEnv      string
 	StopType               string
-	SkipBackup             bool
 	ReenterRescue          bool
-	BackupName             string
-	ForcePoweroffForImage  bool
 	DeviceGlobs            []string
 	RemotePaths            []string
 	MountRoot              string
@@ -64,6 +65,7 @@ type ExportRequest struct {
 	COSUploadURLTTLSeconds int
 	KeepRemoteArchive      bool
 	DisableCOSAutoDelete   bool
+	NotificationEmails     []string
 	SearchAttributes       []string
 	Execute                bool
 	Confirmed              bool
@@ -124,13 +126,24 @@ type SCPResult struct {
 
 type ExportResult struct {
 	Instance              InstanceInfo
-	Backup                BackupInfo
 	Archive               PreparedArchive
 	SCP                   SCPResult
 	ExitedRescue          bool
 	COSDeleteWorkflowID   string
 	COSDeleteAfterSeconds int
+	NotificationEmail     string
+	EmailMessageID        string
+	EmailDelivered        bool
+	EmailDeliverStatus    int
+	EmailDeliverMessage   string
 	DryRun                bool
+}
+
+type ExportStatusLog struct {
+	Time    string `json:"time"`
+	Phase   string `json:"phase"`
+	Message string `json:"message"`
+	Level   string `json:"level,omitempty"`
 }
 
 type ExportStatus struct {
@@ -138,23 +151,20 @@ type ExportStatus struct {
 	RunID                 string
 	Phase                 string
 	Instance              InstanceInfo
-	Backup                BackupInfo
 	Archive               PreparedArchive
 	SCP                   SCPResult
 	TATCommand            TATCommandResult
 	ExitedRescue          bool
 	COSDeleteWorkflowID   string
 	COSDeleteAfterSeconds int
+	NotificationEmail     string
+	EmailMessageID        string
+	EmailDelivered        bool
+	EmailDeliverStatus    int
+	EmailDeliverMessage   string
 	Error                 string
 	DryRun                bool
-}
-
-type BackupInfo struct {
-	Mode   string
-	ID     string
-	Name   string
-	State  string
-	DryRun bool
+	Logs                  []ExportStatusLog
 }
 
 type COSDeleteRequest struct {

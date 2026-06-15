@@ -58,6 +58,90 @@ class RunGitopsDbJobTests(unittest.TestCase):
                     allow_ci_default_file=False,
                 )
 
+    def test_playground_kubeconfig_uses_catalog_destination_name(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            catalog = Path(tmp) / "argocd/catalogs/playground/beijing-playground/sandbox-bj-7/ctl.yaml"
+            catalog.parent.mkdir(parents=True)
+            catalog.write_text(
+                "\n".join(
+                    [
+                        "service: ctl",
+                        "env: sandbox-bj-7",
+                        "destinationName: beijing-playground",
+                        "playgroundCluster: fallback-cluster",
+                        "namespace: lightvela-playground-sandbox-bj-7",
+                    ]
+                )
+                + "\n"
+            )
+
+            cluster_name = db_job.resolve_kubeconfig_cluster_name(
+                {"PULUMI_ENV_NAME": "sandbox-bj-7"},
+                Path(tmp),
+                "sandbox-bj-7",
+                "ctl",
+                )
+
+            namespace = db_job.resolve_job_namespace(Path(tmp), "sandbox-bj-7", "ctl", "")
+
+        self.assertEqual(cluster_name, "beijing-playground")
+        self.assertEqual(namespace, "lightvela-playground-sandbox-bj-7")
+        with mock.patch.dict(os.environ, {}, clear=True):
+            with self.assertRaisesRegex(ValueError, "/etc/lightclaw-ci/kubeconfig_beijing_playground"):
+                db_job.resolve_kubeconfig(
+                    {"PULUMI_ENV_NAME": "sandbox-bj-7"},
+                    "DB_JOB_KUBECONFIG_B64",
+                    cluster_name,
+                    allow_ci_default_file=False,
+                )
+
+    def test_main_uses_playground_catalog_cluster_for_kubeconfig(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            deploy_root = Path(tmp)
+            catalog = deploy_root / "argocd/catalogs/playground/beijing-playground/sandbox-bj-7/lightclaw-auth.yaml"
+            catalog.parent.mkdir(parents=True)
+            catalog.write_text(
+                "\n".join(
+                    [
+                        "service: lightclaw-auth",
+                        "env: sandbox-bj-7",
+                        "destinationName: beijing-playground",
+                        "namespace: lightvela-playground-sandbox-bj-7",
+                    ]
+                )
+                + "\n"
+            )
+            env_file = deploy_root / "argocd/services/lightclaw-auth/sandbox-bj-7/auth-platform.env"
+            env_file.parent.mkdir(parents=True)
+            env_file.write_text("AUTH_IMAGE=example.com/auth:release\n")
+
+            argv = [
+                "run_gitops_db_job.py",
+                "--deploy-root",
+                str(deploy_root),
+                "--service",
+                "lightclaw-auth",
+                "--operation",
+                "migration",
+                "--env",
+                "sandbox-bj-7",
+                "--revision",
+                "abc123",
+                "--apply",
+                "--image-override",
+                "example.com/auth:override",
+            ]
+            with (
+                mock.patch.object(sys, "argv", argv),
+                mock.patch.object(db_job, "resolve_kubeconfig", return_value=("/tmp/kubeconfig", None)) as resolver,
+                mock.patch.object(db_job, "apply_manifest"),
+                mock.patch.object(db_job, "kubectl_delete"),
+            ):
+                exit_code = db_job.main()
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(resolver.call_args.args[2], "beijing-playground")
+
     def test_ctl_migration_uses_fixed_migrate_image_even_with_release_image_override(self) -> None:
         image = db_job.resolve_job_image(
             SimpleNamespace(image_override="example.com/ctl:release"),
@@ -133,6 +217,60 @@ class RunGitopsDbJobTests(unittest.TestCase):
 
         self.assertEqual(command.count("--request-timeout=10s"), 1)
         self.assertNotIn("--request-timeout=60s", command)
+
+    def test_parse_args_defaults_kubectl_retries_for_unstable_api_server(self) -> None:
+        argv = [
+            "run_gitops_db_job.py",
+            "--service",
+            "lightclaw-auth",
+            "--operation",
+            "migration",
+            "--env",
+            "sandbox-bj-7",
+            "--revision",
+            "abc123",
+        ]
+
+        with mock.patch.object(sys, "argv", argv):
+            args = db_job.parse_args()
+
+        self.assertEqual(args.kubectl_retries, 5)
+
+    def test_wait_for_job_retries_transient_get_eof_until_success(self) -> None:
+        with (
+            mock.patch.object(
+                db_job,
+                "get_job_status",
+                side_effect=[
+                    RuntimeError('kubectl get job/demo failed\nstderr:\nUnable to connect to the server: EOF'),
+                    {"status": {"succeeded": 1}},
+                ],
+            ) as get_status,
+            mock.patch.object(db_job.time, "sleep") as sleep,
+        ):
+            result = db_job.wait_for_job("/tmp/kubeconfig", "demo-ns", "demo", 60, retries=5)
+
+        self.assertEqual(result, "succeeded")
+        self.assertEqual(get_status.call_count, 2)
+        sleep.assert_called_once_with(5)
+
+    def test_wait_for_job_preserves_non_transient_get_failure(self) -> None:
+        with mock.patch.object(
+            db_job,
+            "get_job_status",
+            side_effect=RuntimeError("kubectl get job/demo failed\nstderr:\nError from server (Forbidden)"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "Forbidden"):
+                db_job.wait_for_job("/tmp/kubeconfig", "demo-ns", "demo", 60, retries=5)
+
+    def test_apply_manifest_skips_client_openapi_validation(self) -> None:
+        with mock.patch.object(db_job, "kubectl_run") as run:
+            run.return_value = SimpleNamespace(returncode=0, stdout="", stderr="")
+
+            db_job.apply_manifest("/tmp/kubeconfig", {"kind": "List"})
+
+        command = run.call_args.args[0]
+        self.assertIn("--validate=false", command)
 
     def test_ctl_dynamic_resources_use_temporary_secret_refs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -251,6 +389,45 @@ class RunGitopsDbJobTests(unittest.TestCase):
         self.assertEqual(resources[1]["metadata"]["namespace"], "lightvela-playground-sandbox-kr-1")
         self.assertIn("/ctl_sandbox_kr_1?multiStatements=true", resources[0]["stringData"]["CTL_MIGRATE_DSN"])
         self.assertEqual(dynamic["initContainers"][0]["env"][3]["value"], "ctl_sandbox_kr_1")
+
+    def test_ctl_playground_job_reads_mysql_root_from_runtime_secret(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            migrations = Path(tmp) / "ctl" / "migrations"
+            migrations.mkdir(parents=True)
+            (migrations / "000001_init.up.sql").write_text("select 1;\n")
+            with mock.patch.object(db_job, "REPO_ROOT", Path(tmp)), \
+                mock.patch.object(
+                    db_job,
+                    "resolve_contract_secret_values",
+                    return_value={"ctl_db_password": "business-password"},
+                ), \
+                mock.patch.object(db_job, "kubectl_secret_value", return_value="root-password"), \
+                mock.patch.object(
+                    db_job,
+                    "build_configmap_manifest",
+                    return_value={
+                        "apiVersion": "v1",
+                        "kind": "ConfigMap",
+                        "metadata": {
+                            "name": "gitops-ctl-migration-test-migrations",
+                            "namespace": "lightvela-playground-sandbox-bj-7",
+                        },
+                    },
+                ):
+                _, resources = db_job.build_ctl_dynamic_resources(
+                    "gitops-ctl-migration-test",
+                    "lightvela-playground-sandbox-bj-7",
+                    "sandbox-bj-7",
+                    Path("/tmp/gitops"),
+                    {},
+                    {"CTL_TEST_MYSQL_HOST": "mysql.lightvela-playground-sandbox-bj-7.svc.cluster.local"},
+                    {"db_job_secret_resolver": "ctl_db_password"},
+                    "/tmp/kubeconfig",
+                )
+
+        self.assertEqual(resources[0]["stringData"]["MYSQL_ROOT_PASSWORD"], "root-password")
+        self.assertIn("root-password@", resources[0]["stringData"]["CTL_MIGRATE_DSN"])
+        self.assertNotIn("business-password", resources[0]["stringData"]["CTL_MIGRATE_DSN"])
 
 
 if __name__ == "__main__":

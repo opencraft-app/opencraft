@@ -323,3 +323,314 @@ func TestNew_CustomHTTPClient(t *testing.T) {
 		t.Fatalf("custom http client not adopted")
 	}
 }
+
+// ============================================================================
+// R-C RenewPass 测试（设计稿 .tmp/trade-pass-renew-design.md §4.3 / §5.2 + R-D 待落地 ctl endpoint）
+// ============================================================================
+
+func TestRenewPass_Success(t *testing.T) {
+	wantPassID := "pass-renew-1"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+		if got, want := r.URL.Path, "/internal/ctl/passes/"+wantPassID+"/renew"; got != want {
+			t.Errorf("path mismatch: got %q want %q", got, want)
+		}
+		// 反序列化请求体校验透传
+		raw, _ := io.ReadAll(r.Body)
+		var got RenewPassRequest
+		if err := json.Unmarshal(raw, &got); err != nil {
+			t.Fatalf("decode req body: %v", err)
+		}
+		if got.TimeSpan != 1 || got.TimeUnit != "y" || got.DealName != "deal-r-c-renew-1" || got.FlowID != 1234 {
+			t.Errorf("req body mismatch: %+v", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(envelopeForSuccess(t, &RenewPassResponse{
+			PassID: wantPassID,
+			TaskID: "task-renew-aaa",
+		}))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "secret-xyz")
+	got, err := c.RenewPass(context.Background(), wantPassID, &RenewPassRequest{
+		TimeSpan: 1,
+		TimeUnit: "y", // Q19=b 全链路放开 m/d/y
+		DealName: "deal-r-c-renew-1",
+		FlowID:   1234,
+	})
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if got.PassID != wantPassID || got.TaskID != "task-renew-aaa" {
+		t.Fatalf("response mismatch: %+v", got)
+	}
+}
+
+func TestRenewPass_EmptyPassIDClientSide(t *testing.T) {
+	c := New("http://does-not-matter", "secret-xyz")
+	_, err := c.RenewPass(context.Background(), "  ", &RenewPassRequest{TimeSpan: 1, TimeUnit: "m", DealName: "d"})
+	if err == nil || !strings.Contains(err.Error(), "passID is required") {
+		t.Fatalf("expected passID required err, got %v", err)
+	}
+}
+
+// TestRenewPass_NilRequestSafe 验证 req == nil 时方法不 panic（兜底空 RenewPassRequest{}）。
+// 真实路径上 trade renewresource handler 必传非 nil req；这里只是防御。
+func TestRenewPass_NilRequestSafe(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 空 body 解析为 RenewPassRequest 零值，不报错
+		raw, _ := io.ReadAll(r.Body)
+		var got RenewPassRequest
+		if len(raw) > 0 {
+			if err := json.Unmarshal(raw, &got); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+		}
+		// 零值 TimeSpan/TimeUnit/DealName/FlowID 都应是默认值
+		if got.TimeSpan != 0 || got.TimeUnit != "" || got.DealName != "" || got.FlowID != 0 {
+			t.Errorf("expected zero RenewPassRequest, got %+v", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(envelopeForSuccess(t, &RenewPassResponse{PassID: "pass-x", TaskID: "task-x"}))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "secret-xyz")
+	got, err := c.RenewPass(context.Background(), "pass-x", nil)
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if got.PassID != "pass-x" {
+		t.Fatalf("response mismatch: %+v", got)
+	}
+}
+
+func TestRenewPass_NotFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write(envelopeForError(t, ErrCodePassNotFound, "pass not found", "req-rn-1"))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "secret-xyz")
+	_, err := c.RenewPass(context.Background(), "pass-missing", &RenewPassRequest{
+		TimeSpan: 1, TimeUnit: "m", DealName: "d",
+	})
+	if err == nil {
+		t.Fatalf("expected err, got nil")
+	}
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected errors.Is ErrNotFound, got %v", err)
+	}
+}
+
+func TestRenewPass_BusinessErrorRenewing(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write(envelopeForError(t, ErrCodePassRenewing, "pass already renewing", "req-rn-2"))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "secret-xyz")
+	_, err := c.RenewPass(context.Background(), "pass-1", &RenewPassRequest{
+		TimeSpan: 1, TimeUnit: "m", DealName: "d",
+	})
+	if err == nil {
+		t.Fatalf("expected err, got nil")
+	}
+	var ctlErr *Error
+	if !errors.As(err, &ctlErr) {
+		t.Fatalf("expected errors.As *Error, got %v", err)
+	}
+	if ctlErr.HTTPStatus != http.StatusForbidden {
+		t.Errorf("HTTPStatus mismatch: %d", ctlErr.HTTPStatus)
+	}
+	if ctlErr.Code != ErrCodePassRenewing {
+		t.Errorf("Code mismatch: %q", ctlErr.Code)
+	}
+}
+
+func TestRenewPass_NotImplemented(t *testing.T) {
+	// cvm-kind 异步路径占位返 501（与 ctl/pkg/errcode/pass.go R-B 已加 ErrPassRenewNotImplemented 对偶）
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotImplemented)
+		_, _ = w.Write(envelopeForError(t, ErrCodePassRenewNotImplement,
+			"cvm-kind async renew not yet implemented", "req-rn-3"))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "secret-xyz")
+	_, err := c.RenewPass(context.Background(), "pass-cvm-1", &RenewPassRequest{
+		TimeSpan: 1, TimeUnit: "m", DealName: "d",
+	})
+	if err == nil {
+		t.Fatalf("expected err, got nil")
+	}
+	var ctlErr *Error
+	if !errors.As(err, &ctlErr) {
+		t.Fatalf("expected errors.As *Error, got %v", err)
+	}
+	if ctlErr.HTTPStatus != http.StatusNotImplemented {
+		t.Errorf("HTTPStatus mismatch: %d", ctlErr.HTTPStatus)
+	}
+	if ctlErr.Code != ErrCodePassRenewNotImplement {
+		t.Errorf("Code mismatch: %q", ctlErr.Code)
+	}
+}
+
+// ============================================================================
+// D-5b DestroyPass 测试（设计稿 .tmp/trade-pass-destroy-design.md §3.5 / §4.5.2 / §4.5.3）
+// ============================================================================
+
+func TestDestroyPass_Success(t *testing.T) {
+	wantPassID := "pass-destroy-1"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+		if got, want := r.URL.Path, "/internal/ctl/passes/"+wantPassID+"/destroy"; got != want {
+			t.Errorf("path mismatch: got %q want %q", got, want)
+		}
+		raw, _ := io.ReadAll(r.Body)
+		var got DestroyPassRequest
+		if err := json.Unmarshal(raw, &got); err != nil {
+			t.Fatalf("decode req body: %v", err)
+		}
+		if got.FlowID != 9001 {
+			t.Errorf("FlowID mismatch: %d", got.FlowID)
+		}
+		if got.DestroyReason != "biz" {
+			t.Errorf("DestroyReason mismatch: %q (Q24 透传)", got.DestroyReason)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(envelopeForSuccess(t, &DestroyPassResponse{
+			PassID: wantPassID,
+			TaskID: "task-destroy-aaa",
+		}))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "secret-xyz")
+	got, err := c.DestroyPass(context.Background(), wantPassID, &DestroyPassRequest{
+		FlowID:        9001,
+		DestroyReason: "biz",
+	})
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if got.PassID != wantPassID || got.TaskID != "task-destroy-aaa" {
+		t.Fatalf("response mismatch: %+v", got)
+	}
+}
+
+func TestDestroyPass_EmptyPassIDClientSide(t *testing.T) {
+	c := New("http://does-not-matter", "secret-xyz")
+	_, err := c.DestroyPass(context.Background(), "  ", &DestroyPassRequest{FlowID: 1, DestroyReason: "biz"})
+	if err == nil || !strings.Contains(err.Error(), "passID is required") {
+		t.Fatalf("expected passID required err, got %v", err)
+	}
+}
+
+// TestDestroyPass_NilRequestSafe 验证 req == nil 时方法不 panic（兜底空 DestroyPassRequest{}）。
+func TestDestroyPass_NilRequestSafe(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		var got DestroyPassRequest
+		if len(raw) > 0 {
+			if err := json.Unmarshal(raw, &got); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+		}
+		if got.FlowID != 0 || got.DestroyReason != "" {
+			t.Errorf("expected zero DestroyPassRequest, got %+v", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(envelopeForSuccess(t, &DestroyPassResponse{PassID: "p-x", TaskID: "t-x"}))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "secret-xyz")
+	if _, err := c.DestroyPass(context.Background(), "p-x", nil); err != nil {
+		t.Fatalf("nil req should be safe, got err: %v", err)
+	}
+}
+
+// TestDestroyPass_NotFound_TypedErrNotFound 验证 ctl 返 404 时 ErrNotFound（与 IsolatePass 同范式）。
+func TestDestroyPass_NotFound_TypedErrNotFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write(envelopeForError(t, ErrCodePassNotFound, "pass not found", "req-d-1"))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "secret-xyz")
+	_, err := c.DestroyPass(context.Background(), "p-1", &DestroyPassRequest{FlowID: 1})
+	if err == nil {
+		t.Fatalf("expected error, got nil")
+	}
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected errors.Is ErrNotFound, got %v", err)
+	}
+}
+
+// TestDestroyPass_Terminating_TypedError 验证 ctl 返 403 PASS_TERMINATING 时返 *Error
+// 且 Code == ErrCodePassTerminating（trade handler 据此走 600402 让 jifei 重试）。
+func TestDestroyPass_Terminating_TypedError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write(envelopeForError(t, ErrCodePassTerminating, "pass already terminating", "req-d-2"))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "secret-xyz")
+	_, err := c.DestroyPass(context.Background(), "p-2", &DestroyPassRequest{FlowID: 1})
+	if err == nil {
+		t.Fatalf("expected error, got nil")
+	}
+	var ctlErr *Error
+	if !errors.As(err, &ctlErr) {
+		t.Fatalf("expected errors.As *Error, got %v", err)
+	}
+	if ctlErr.HTTPStatus != http.StatusForbidden {
+		t.Errorf("HTTPStatus mismatch: %d", ctlErr.HTTPStatus)
+	}
+	if ctlErr.Code != ErrCodePassTerminating {
+		t.Errorf("Code mismatch: %q", ctlErr.Code)
+	}
+}
+
+// TestDestroyPass_InvalidParam_TypedError 验证 ctl 返 400 PASS_INVALID_PARAM
+// （pass status 不在 {deleting, isolated} 集合）→ *Error.Code 类型化判定。
+func TestDestroyPass_InvalidParam_TypedError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write(envelopeForError(t, ErrCodePassInvalidParam,
+			"pass status \"active\" not eligible for destroy", "req-d-3"))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "secret-xyz")
+	_, err := c.DestroyPass(context.Background(), "p-3", &DestroyPassRequest{FlowID: 1})
+	if err == nil {
+		t.Fatalf("expected error, got nil")
+	}
+	var ctlErr *Error
+	if !errors.As(err, &ctlErr) {
+		t.Fatalf("expected errors.As *Error, got %v", err)
+	}
+	if ctlErr.HTTPStatus != http.StatusBadRequest {
+		t.Errorf("HTTPStatus mismatch: %d", ctlErr.HTTPStatus)
+	}
+	if ctlErr.Code != ErrCodePassInvalidParam {
+		t.Errorf("Code mismatch: %q", ctlErr.Code)
+	}
+}

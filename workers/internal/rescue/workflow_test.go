@@ -1,6 +1,7 @@
 package rescue
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/mock"
@@ -13,15 +14,14 @@ func TestExportWorkflowCancelAfterEnterStillExitsRescue(t *testing.T) {
 	env.RegisterWorkflow(ExportWorkflow)
 	acts := Activities{}
 	env.RegisterActivityWithOptions(acts.LocateInstance, ActivityOptions("LocateInstance"))
-	env.RegisterActivityWithOptions(acts.EnsureBackup, ActivityOptions("EnsureBackup"))
 	env.RegisterActivityWithOptions(acts.EnterRescueMode, ActivityOptions("EnterRescueMode"))
 	env.RegisterActivityWithOptions(acts.ExitRescueMode, ActivityOptions("ExitRescueMode"))
 	env.RegisterActivityWithOptions(acts.WaitInstanceRunning, ActivityOptions("WaitInstanceRunning"))
+	env.RegisterActivityWithOptions(acts.SendFailureNotification, ActivityOptions("SendFailureNotification"))
 
 	req := ExportRequest{
 		InstanceID:             "ins-test",
 		Execute:                true,
-		SkipBackup:             true,
 		CommandTransport:       "tat",
 		WaitTimeoutSeconds:     30,
 		CommandTimeoutSeconds:  30,
@@ -33,7 +33,6 @@ func TestExportWorkflowCancelAfterEnterStillExitsRescue(t *testing.T) {
 	instance := InstanceInfo{InstanceID: req.InstanceID, Region: "ap-beijing", State: "RUNNING"}
 
 	env.OnActivity("LocateInstance", mock.Anything, req, cfg).Return(instance, nil).Once()
-	env.OnActivity("EnsureBackup", mock.Anything, req, cfg, instance.Region).Return(BackupInfo{Mode: "skipped"}, nil).Once()
 	env.OnActivity("EnterRescueMode", mock.Anything, req, cfg, instance.Region).Run(func(mock.Arguments) {
 		env.CancelWorkflow()
 	}).Return(nil).Once()
@@ -51,6 +50,41 @@ func TestExportWorkflowCancelAfterEnterStillExitsRescue(t *testing.T) {
 	env.AssertExpectations(t)
 }
 
+func TestExportWorkflowFailureSendsNotification(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(ExportWorkflow)
+	acts := Activities{}
+	env.RegisterActivityWithOptions(acts.LocateInstance, ActivityOptions("LocateInstance"))
+	env.RegisterActivityWithOptions(acts.SendFailureNotification, ActivityOptions("SendFailureNotification"))
+
+	req := ExportRequest{
+		InstanceID:        "ins-test",
+		Region:            "ap-beijing",
+		Execute:           true,
+		NotificationEmail: "user@example.com",
+	}
+	cfg := TencentConfig{}
+	locateErr := errors.New("locate failed")
+
+	env.OnActivity("LocateInstance", mock.Anything, req, cfg).Return(InstanceInfo{}, locateErr).Times(3)
+	env.OnActivity("SendFailureNotification", mock.Anything, mock.MatchedBy(func(notification FailureNotification) bool {
+		return notification.Request.InstanceID == req.InstanceID &&
+			notification.Request.NotificationEmail == req.NotificationEmail &&
+			notification.Error != ""
+	}), cfg).Return(FailureNotificationResult{Sent: true, Recipients: []string{req.NotificationEmail}}, nil).Once()
+
+	env.ExecuteWorkflow(ExportWorkflow, req, cfg)
+
+	if !env.IsWorkflowCompleted() {
+		t.Fatal("workflow did not complete")
+	}
+	if env.GetWorkflowError() == nil {
+		t.Fatal("workflow should fail")
+	}
+	env.AssertExpectations(t)
+}
+
 func TestExportWorkflowSchedulesCOSAutoDeleteChild(t *testing.T) {
 	var suite testsuite.WorkflowTestSuite
 	env := suite.NewTestWorkflowEnvironment()
@@ -58,7 +92,6 @@ func TestExportWorkflowSchedulesCOSAutoDeleteChild(t *testing.T) {
 	env.RegisterWorkflow(DeleteCOSObjectWorkflow)
 	acts := Activities{}
 	env.RegisterActivityWithOptions(acts.LocateInstance, ActivityOptions("LocateInstance"))
-	env.RegisterActivityWithOptions(acts.EnsureBackup, ActivityOptions("EnsureBackup"))
 	env.RegisterActivityWithOptions(acts.EnterRescueMode, ActivityOptions("EnterRescueMode"))
 	env.RegisterActivityWithOptions(acts.WaitRescueRunning, ActivityOptions("WaitRescueRunning"))
 	env.RegisterActivityWithOptions(acts.WaitRescueTAT, ActivityOptions("WaitRescueTAT"))
@@ -67,13 +100,15 @@ func TestExportWorkflowSchedulesCOSAutoDeleteChild(t *testing.T) {
 	env.RegisterActivityWithOptions(acts.WaitTATCommand, ActivityOptions("WaitTATCommand"))
 	env.RegisterActivityWithOptions(acts.FinalizeArchiveOverTAT, ActivityOptions("FinalizeArchiveOverTAT"))
 	env.RegisterActivityWithOptions(acts.SCPArchive, ActivityOptions("SCPArchive"))
+	env.RegisterActivityWithOptions(acts.SendExportNotificationEmail, ActivityOptions("SendExportNotificationEmail"))
+	env.RegisterActivityWithOptions(acts.ConfirmExportNotificationDelivered, ActivityOptions("ConfirmExportNotificationDelivered"))
 	env.RegisterActivityWithOptions(acts.ExitRescueMode, ActivityOptions("ExitRescueMode"))
 	env.RegisterActivityWithOptions(acts.WaitInstanceRunning, ActivityOptions("WaitInstanceRunning"))
 
 	req := ExportRequest{
 		InstanceID:             "ins-test",
 		Execute:                true,
-		SkipBackup:             true,
+		NotificationEmail:      "owner@example.com",
 		CommandTransport:       "tat",
 		WaitTimeoutSeconds:     30,
 		CommandTimeoutSeconds:  30,
@@ -104,9 +139,15 @@ func TestExportWorkflowSchedulesCOSAutoDeleteChild(t *testing.T) {
 		Bucket:      prepared.Bucket,
 	}
 	scp := SCPResult{LocalPath: archive.ObjectURL, OutputURL: archive.DownloadURL}
+	emailSent := EmailNotificationResult{MessageID: "20260612-test-message-id", ToEmail: req.NotificationEmail}
+	emailDelivered := EmailNotificationResult{
+		MessageID:      emailSent.MessageID,
+		ToEmail:        req.NotificationEmail,
+		DeliverStatus:  sesDeliverStatusSuccess,
+		EmailDelivered: true,
+	}
 
 	env.OnActivity("LocateInstance", mock.Anything, req, cfg).Return(instance, nil).Once()
-	env.OnActivity("EnsureBackup", mock.Anything, req, cfg, instance.Region).Return(BackupInfo{Mode: "skipped"}, nil).Once()
 	env.OnActivity("EnterRescueMode", mock.Anything, req, cfg, instance.Region).Return(nil).Once()
 	env.OnActivity("WaitRescueRunning", mock.Anything, req, cfg, instance.Region).Return("RESCUE_MODE", nil).Once()
 	env.OnActivity("WaitRescueTAT", mock.Anything, req, cfg, instance.Region).Return(nil).Once()
@@ -121,6 +162,8 @@ func TestExportWorkflowSchedulesCOSAutoDeleteChild(t *testing.T) {
 			deleteReq.DelaySeconds == req.COSUploadURLTTLSeconds &&
 			deleteReq.WorkflowID == "default-test-workflow-id-cos-delete"
 	}), cfg).Return(COSDeleteResult{ObjectKey: archive.ObjectKey, ObjectURL: archive.ObjectURL, Deleted: true}, nil).Once()
+	env.OnActivity("SendExportNotificationEmail", mock.Anything, req, archive.DownloadURL, req.COSUploadURLTTLSeconds).Return(emailSent, nil).Once()
+	env.OnActivity("ConfirmExportNotificationDelivered", mock.Anything, req, emailSent).Return(emailDelivered, nil).Once()
 	env.OnActivity("ExitRescueMode", mock.Anything, req, cfg, instance.Region).Return(true, nil).Once()
 	env.OnActivity("WaitInstanceRunning", mock.Anything, req, cfg, instance.Region).Return("RUNNING", nil).Once()
 
@@ -142,6 +185,9 @@ func TestExportWorkflowSchedulesCOSAutoDeleteChild(t *testing.T) {
 	if result.COSDeleteAfterSeconds != req.COSUploadURLTTLSeconds {
 		t.Fatalf("unexpected delete delay: %d", result.COSDeleteAfterSeconds)
 	}
+	if result.NotificationEmail != req.NotificationEmail || result.EmailMessageID != emailSent.MessageID || !result.EmailDelivered {
+		t.Fatalf("unexpected email result: %+v", result)
+	}
 	encodedStatus, err := env.QueryWorkflow(ExportStatusQuery)
 	if err != nil {
 		t.Fatal(err)
@@ -161,6 +207,9 @@ func TestExportWorkflowSchedulesCOSAutoDeleteChild(t *testing.T) {
 	}
 	if status.TATCommand.InvocationID != submitted.InvocationID {
 		t.Fatalf("unexpected status TAT invocation id: %s", status.TATCommand.InvocationID)
+	}
+	if status.NotificationEmail != req.NotificationEmail || status.EmailMessageID != emailSent.MessageID || !status.EmailDelivered {
+		t.Fatalf("unexpected status email fields: %+v", status)
 	}
 	env.AssertExpectations(t)
 }

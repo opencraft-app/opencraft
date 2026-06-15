@@ -56,7 +56,7 @@
 5. `deploy/envs/<env>/platform.env` 是生成物，来自 `infra_pulumi sync/up`，不手改
 6. 服务私有密钥放 `.secret/<service>/test.env`
 7. 公共发布行为优先改：
-   - [kustomize-deploy-common.sh](/Users/skipzhang/code/mono/scripts/lib/kustomize-deploy-common.sh)
+   - [`scripts/lib/kustomize-deploy-common.sh`](scripts/lib/kustomize-deploy-common.sh)
    不要每个服务各改一遍
 
 ## Agent 发布约定
@@ -66,9 +66,9 @@
 ### 1. 当前发布真源
 
 - WOA 远端是：
-  - `origin git@git.woa.com:wisp/mono.git`
+  - `origin git@git.woa.com:wisp/mono2.git`
 - 当前 GitOps 真源远端是：
-  - `target git@git.woa.com:wisp/mono2.git`
+  - `origin git@git.woa.com:wisp/mono2.git`
 - 历史 deploy-only 远端已废弃，不再作为正式发布目标
 - 默认推送分支：
   - `master`
@@ -76,14 +76,8 @@
 
 ```bash
 git add <scoped paths>
-git commit -m "<lore intent line>"
+git commit -m "<中文说明 / English summary>"
 git push origin master
-```
-
-正式发布额外动作：
-
-```bash
-git push target master
 ```
 
 约束：
@@ -94,8 +88,7 @@ git push target master
 
 当前口径：
 
-- `origin`：日常代码协作主远端
-- `target`：北京 / 上海当前 Argo 实际监听的 GitOps 真源
+- `origin`：日常代码协作主远端，也是北京 / 上海当前 GitOps 真源仓库
 
 不要默认把“push 到 WOA”当成“发布已经完成”。
 
@@ -170,11 +163,9 @@ https://intl-codex-staticpages-smoke.preview.lightclaw.tech/
 
 1. 构建并推镜像
 2. 更新 `argocd/services/<service>/<env>/` 下的 deploy-facing 文件
-3. 提交代码
-4. `git push origin master`
-5. `git push target master`
-6. 让 Argo 自动收敛或显式 sync
-7. 验证 live app 的：
+3. 提交到 GitOps 发布分支 `gitops`
+4. 让 Argo 自动收敛或显式 sync
+5. 验证 live app 的：
    - `repoURL`
    - `targetRevision`
    - `revision`
@@ -184,7 +175,7 @@ https://intl-codex-staticpages-smoke.preview.lightclaw.tech/
 当前北京 / 上海 live app 已统一切到：
 
 - `git@git.woa.com:wisp/mono2.git`
-- `master`
+- `gitops`
 
 最常见的正式发版动作示例：
 
@@ -192,9 +183,8 @@ https://intl-codex-staticpages-smoke.preview.lightclaw.tech/
 python3 .ci/runtime/commands/build_release_image.py --service sandbox --env shprod --tag <tag>
 # 更新 argocd/services/sandbox/shprod/sandbox-platform.env
 git add argocd/services/sandbox/shprod/sandbox-platform.env
-git commit -m "<lore message>"
-git push origin master
-git push target master
+git commit -m "<中文说明 / English summary>"
+git push origin HEAD:gitops
 ```
 
 说明：
@@ -389,22 +379,21 @@ tccli tke DescribeClusterEndpoints --region "$TENCENT_REGION" --ClusterId "$TKE_
 如果目标是“把某个服务发到某个环境”，优先按这个顺序：
 
 ```bash
-cd /Users/skipzhang/code/mono/infra_pulumi
+cd infra_pulumi
 GOWORK=off go run ./cmd/infractl up --stack <env>
 
-cd /Users/skipzhang/code/mono
+cd ..
 python3 .ci/runtime/commands/build_release_image.py --service <service> --env <env> --tag <tag>
 # 更新 argocd/services/<service>/<env>/*
 git add <scoped paths>
-git commit -m "<lore message>"
-git push origin master
-git push target master
+git commit -m "<中文说明 / English summary>"
+git push origin HEAD:gitops
 ```
 
 如果本机没有 `platform.env`，不要手抄，直接：
 
 ```bash
-cd /Users/skipzhang/code/mono/infra_pulumi
+cd infra_pulumi
 GOWORK=off go run ./cmd/infractl sync --stack <env>
 ```
 
@@ -425,7 +414,7 @@ GOWORK=off go run ./cmd/infractl sync --stack <env>
 - `sandbox`、`ctl`、`user/auth`、`payment`、`subscription`、`service-gateway`、`admin-gateway`、`gateway-dashboard`、`ai-gateway`、`frontend` 的北京 / 上海主链都已经迁到这套模式。
 - `frontend` 的正式构建仍按 `cd frontend && pnpm install && pnpm build` 执行，再更新 GitOps pin。
 - 各服务的 `deploy-k8s.sh` 现在共用：
-  - [kustomize-deploy-common.sh](/Users/skipzhang/code/mono/scripts/lib/kustomize-deploy-common.sh)
+  - [kustomize-deploy-common.sh](scripts/lib/kustomize-deploy-common.sh)
   里面统一收敛了命令检查、overlay 检查、`EOF -> --validate=false` 回退、监控 CRD 缺失兼容等行为。
 - 不建议把所有服务压成一个超大总脚本；推荐形态是：
   - 每个服务保留自己的 `deploy-k8s.sh`
@@ -633,77 +622,77 @@ ccr.ccs.tencentyun.com/clawhub/<service>:<tag>
 
 ### 1. 用户侧
 
-- [frontend](/Users/skipzhang/code/mono/frontend)
+- [frontend](frontend)
   - 面向用户的 Web 前端
   - 当前承载营销页、登录入口、计划选择、Dashboard 外壳
-- [user/auth](/Users/skipzhang/code/mono/user/auth)
+- [user/auth](user/auth)
   - 用户、登录、QQ OAuth、session、subscription
   - 其他服务可通过 `/auth/session` 做 token introspection
 
 ### 2. 服务侧
 
-- [service-gateway](/Users/skipzhang/code/mono/service-gateway)
+- [service-gateway](service-gateway)
   - 对外统一 API 入口
   - 负责路径转发、白名单、鉴权透传、用户上下文注入
-- [sandbox](/Users/skipzhang/code/mono/sandbox)
+- [sandbox](sandbox)
   - 沙箱资源池系统
   - 负责 pool、inventory、预创建 CVM、分配、回收、重装、clientproxy、worker
   - 当前也已经接入 Prometheus 业务指标
 
 ### 3. 运维侧
 
-- [nextgen-dashboard](/Users/skipzhang/code/mono/nextgen-dashboard)
+- [nextgen-dashboard](nextgen-dashboard)
   - `/admin` 对应的 shell-first 管理台
   - Go 托管静态前端，浏览器里是终端
-- [gateway-dashboard](/Users/skipzhang/code/mono/gateway-dashboard)
+- [gateway-dashboard](gateway-dashboard)
   - 当前主线管理后台
   - 负责 auth users、providers/routing、sandbox pools、ctl bots 等后台管理页
-- [nextgen-dashboard-client](/Users/skipzhang/code/mono/nextgen-dashboard-client)
+- [nextgen-dashboard-client](nextgen-dashboard-client)
   - 本地终端客户端
   - 通过 websocket + Basic Auth 连接 `nextgen-dashboard`
 
 ### 4. 基础设施
 
-- [infra_pulumi](/Users/skipzhang/code/mono/infra_pulumi)
+- [infra_pulumi](infra_pulumi)
   - 腾讯云基础设施、TKE、数据库、监控的当前控制面
-- [beijing-sandbox env docs](/Users/skipzhang/code/mono/infra_pulumi/envs/tencentcloud/beijing-sandbox/AGENTS.md)
+- [beijing-sandbox env docs](infra_pulumi/envs/tencentcloud/beijing-sandbox/AGENTS.md)
   - 北京测试环境的环境级文档入口
 - 北京测试环境已经购买托管 Grafana，可通过腾讯云 OAuth 登录：
   - 控制台入口：`https://console.cloud.tencent.com/monitor/grafana`
-  - 环境文档： [README.md](/Users/skipzhang/code/mono/infra_pulumi/observability/beijing-sandbox/README.md)
+  - 环境文档： [README.md](infra_pulumi/observability/beijing-sandbox/README.md)
 
 ## 顶层目录说明
 
-- [AGENTS.md](/Users/skipzhang/code/mono/AGENTS.md)
+- [AGENTS.md](AGENTS.md)
   - 仓库级协作规则，重点约束 migration 和 schema 变更
-- [docs](/Users/skipzhang/code/mono/docs)
+- [docs](docs)
   - 设计文档、开发说明、计划文档
-- [infra_pulumi](/Users/skipzhang/code/mono/infra_pulumi)
+- [infra_pulumi](infra_pulumi)
   - 当前云资源控制面和 observability 资产
-- [deploy](/Users/skipzhang/code/mono/deploy)
+- [deploy](deploy)
   - 环境部署事实目录，承接 `infra_pulumi` 回写的 `platform.env`
-- [sandbox](/Users/skipzhang/code/mono/sandbox)
+- [sandbox](sandbox)
   - 沙箱池系统主仓
-- [user](/Users/skipzhang/code/mono/user)
+- [user](user)
   - 用户域，目前核心是 `user/auth`
-- [frontend](/Users/skipzhang/code/mono/frontend)
+- [frontend](frontend)
   - 用户前台 Web 项目
-- [service-gateway](/Users/skipzhang/code/mono/service-gateway)
+- [service-gateway](service-gateway)
   - 公网服务网关
-- [nextgen-dashboard](/Users/skipzhang/code/mono/nextgen-dashboard)
+- [nextgen-dashboard](nextgen-dashboard)
   - 浏览器终端式管理台
-- [nextgen-dashboard-client](/Users/skipzhang/code/mono/nextgen-dashboard-client)
+- [nextgen-dashboard-client](nextgen-dashboard-client)
   - 管理台的本地客户端
-- [images](/Users/skipzhang/code/mono/images)
+- [images](images)
   - 镜像辅助内容、envd daemon 源码、agent/helper、小工具镜像
-- [ctl](/Users/skipzhang/code/mono/ctl)
+- [ctl](ctl)
   - 当前 Lightclaw 主链路的一部分
   - 负责实例资源、bot 归属事实等控制面能力
-- [ai-gateway](/Users/skipzhang/code/mono/ai-gateway)
+- [ai-gateway](ai-gateway)
   - 独立 AI 网关方向服务
-- [gateway-dashboard](/Users/skipzhang/code/mono/gateway-dashboard)
+- [gateway-dashboard](gateway-dashboard)
   - 当前后台主线，不再是旧原型
-- [_bmad](/Users/skipzhang/code/mono/_bmad) / [_bmad-output](/Users/skipzhang/code/mono/_bmad-output)
+- [_bmad](_bmad) / [_bmad-output](_bmad-output)
   - 规划、分析、backlog、实现产物，不是运行时服务
 
 ## 怎么理解这个仓库
@@ -724,7 +713,7 @@ ccr.ccs.tencentyun.com/clawhub/<service>:<tag>
 所以这个仓库不是“一个应用”，而是一个以 `Lightclaw` 为中心的小型平台仓库。
 # 测试环境 user-assets 桶
 
-资源由 [infra_pulumi](/Users/skipzhang/code/mono/infra_pulumi) 纳管：
+资源由 [infra_pulumi](infra_pulumi) 纳管：
 
 - COS 桶：`lightclawuser-1388575217`
 - 桶地址：`lightclawuser-1388575217.cos.ap-beijing.myqcloud.com`

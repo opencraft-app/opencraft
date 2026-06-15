@@ -15,7 +15,7 @@ The WeChat channel uses QR-code access and is the simplest channel to configure.
 > 
 > -   A phone with WeChat installed
 >     
-> -   Complete [model configuration](./model.md) (or use the 100 trial credits included in the Launch plan)
+> -   Complete [model configuration](./configuration/model.md) (or use the 100 trial credits included in the Launch plan)
 >     
 
 ---
@@ -130,10 +130,10 @@ After access succeeds, the WeChat bot can receive and reply to basic text messag
 
 ## Next steps
 
-- [Configure Channel - Telegram](./configuration/channel-telegram.md) — Lightweight notifications and cross-device communication, suitable for personal or team messaging
-    
-- [Configure Channel - WhatsApp](./configuration/channel-whatsapp.md) — International user communication, customer service, and notification scenarios
-    
-- [Configure Channel - Discord](./configuration/channel-discord.md) — Community operations, developer communities, and interest-group interactions
-    
+- [Configure Channel - Telegram](./configuration/channel-telegram.md) — Lightweight notifications and cross-platform communication
+
+- [Configure Channel - WhatsApp](./configuration/channel-whatsapp.md) — International user communication and customer service
+
+- [Configure Channel - Discord](./configuration/channel-discord.md) — Community operations and developer communities
+
 - [Configure Skills](./configuration/skill.md) — Extend Hermes capabilities

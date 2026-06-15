@@ -56,6 +56,7 @@ type acpSession struct {
 	RuntimeGeneration     int64
 	Runtime               ACPSessionRuntime
 	PromptRuns            map[string]*acpPromptRun
+	CompletedPromptRuns   map[string]*acpPromptRun
 	LastRuntimeActivityAt time.Time
 	RuntimeVerified       bool
 	LastRuntimeError      string
@@ -82,6 +83,17 @@ type acpPromptRun struct {
 	Responded          bool
 	InterruptReady     chan struct{}
 	Ownership          RuntimeOwnershipLease
+	Done               chan struct{}
+	Completed          bool
+	Completion         acpPromptRunCompletion
+}
+
+type acpPromptRunCompletion struct {
+	Status      string
+	StopReason  string
+	OutputText  string
+	Error       string
+	CompletedAt time.Time
 }
 
 type acpSessionSubscriber struct {
@@ -163,6 +175,18 @@ type acpPromptRequest struct {
 	Prompt    []acpPromptBlock `json:"prompt"`
 	CWD       string           `json:"cwd,omitempty"`
 	Meta      acpPromptMeta    `json:"_meta,omitempty"`
+}
+
+type acpCloudAgentRunCreateRequest struct {
+	SessionID string           `json:"session_id"`
+	Prompt    []acpPromptBlock `json:"prompt"`
+	CWD       string           `json:"cwd,omitempty"`
+	Meta      acpPromptMeta    `json:"_meta,omitempty"`
+}
+
+type acpCloudAgentRunWaitRequest struct {
+	SessionID string `json:"session_id"`
+	RunID     string `json:"run_id"`
 }
 
 type acpPromptMeta struct {
@@ -414,6 +438,8 @@ func (g *ACPGateway) handleRequest(ctx context.Context, ws *WSConn, scope Scope,
 	case "initialize":
 		methods := []string{
 			cloudAgentSessionStatusMethod,
+			cloudAgentRunCreateMethod,
+			cloudAgentRunWaitMethod,
 			cloudAgentRuntimeEnsureReadyMethod,
 		}
 		if acpFaultInjectionEnabled() {
@@ -532,6 +558,28 @@ func (g *ACPGateway) handleRequest(ctx context.Context, ws *WSConn, scope Scope,
 			return err
 		}
 		return g.writeResponse(ws, appEnvelope, mustJSONRPCResult(msg.ID, status))
+	case cloudAgentRunCreateMethod:
+		var req acpCloudAgentRunCreateRequest
+		if err := decodeJSONRPCParams(msg.Params, &req); err != nil {
+			return err
+		}
+		g.subscribeSession(scope, req.SessionID, ws, appEnvelope)
+		result, err := g.cloudAgentRunCreate(scope, req)
+		if err != nil {
+			return err
+		}
+		return g.writeResponse(ws, appEnvelope, mustJSONRPCResult(msg.ID, result))
+	case cloudAgentRunWaitMethod:
+		var req acpCloudAgentRunWaitRequest
+		if err := decodeJSONRPCParams(msg.Params, &req); err != nil {
+			return err
+		}
+		g.subscribeSession(scope, req.SessionID, ws, appEnvelope)
+		result, err := g.cloudAgentRunWait(ctx, scope, req)
+		if err != nil {
+			return err
+		}
+		return g.writeResponse(ws, appEnvelope, mustJSONRPCResult(msg.ID, result))
 	case cloudAgentRuntimeEnsureReadyMethod:
 		var req acpCloudAgentRuntimeEnsureReadyRequest
 		if err := decodeJSONRPCParams(msg.Params, &req); err != nil {

@@ -14,12 +14,12 @@ import (
 func TestApplyProcessHeadersIncludesAccessTokenWhenPresent(t *testing.T) {
 	headers := make(http.Header)
 
-	applyProcessHeaders(headers, "sbx-123", "root", "envd-token")
+	applyProcessHeaders(headers, "sbx-123", defaultProcessUser, "envd-token")
 
 	if got := headers.Get("Host"); got != "49983-sbx-123-00000000.e2b.app" {
 		t.Fatalf("unexpected host header: %s", got)
 	}
-	if got := headers.Get("Authorization"); got != "Basic cm9vdDo=" {
+	if got := headers.Get("Authorization"); got != "Basic YWdlbnR1c2VyOg==" {
 		t.Fatalf("unexpected authorization header: %s", got)
 	}
 	if got := headers.Get("X-Access-Token"); got != "envd-token" {
@@ -30,7 +30,7 @@ func TestApplyProcessHeadersIncludesAccessTokenWhenPresent(t *testing.T) {
 func TestApplyProcessHeadersOmitsEmptyAccessToken(t *testing.T) {
 	headers := make(http.Header)
 
-	applyProcessHeaders(headers, "sbx-123", "root", "")
+	applyProcessHeaders(headers, "sbx-123", defaultProcessUser, "")
 
 	if got := headers.Get("X-Access-Token"); got != "" {
 		t.Fatalf("expected empty access token header, got %s", got)
@@ -101,6 +101,8 @@ func TestStartTerminalSessionUsesSandboxTatSessionEndpoint(t *testing.T) {
 			Cols:           120,
 			Rows:           30,
 			TimeoutSeconds: 3600,
+			Username:       "agentuser",
+			WorkingDir:     "/home/agentuser",
 		})
 	}))
 	defer server.Close()
@@ -116,6 +118,9 @@ func TestStartTerminalSessionUsesSandboxTatSessionEndpoint(t *testing.T) {
 	}
 	if session.SessionID != "sess-1" || session.WsURL != "wss://tat.example.test/ws" {
 		t.Fatalf("unexpected session: %+v", session)
+	}
+	if session.Username != "agentuser" || session.WorkingDir != "/home/agentuser" {
+		t.Fatalf("unexpected terminal identity: %+v", session)
 	}
 }
 

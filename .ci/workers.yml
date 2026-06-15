@@ -25,11 +25,11 @@ extends:
   # Refresh compiled Stream pipeline after service-release template changes.
   parameters:
     SERVICE: workers
-    BUNDLE: workers
+    BUNDLE: workers-rescue-exporter
     DISPLAY_NAME: workers
     DEFAULT_TARGET_ENV: beijing-sandbox
-    MASTER_BUILD_ENVS: beijing-sandbox
-    MASTER_AUTO_PIN_ENVS: none
+    MASTER_BUILD_ENVS: beijing-sandbox,shanghai-workers
+    MASTER_AUTO_PIN_ENVS: shanghai-workers
     ENABLE_MASTER_PROD_PROMOTE: false
     PLAYGROUND_BUILD_ENVS: beijing-sandbox
     PLAYGROUND_AUTO_PIN_ENVS: none

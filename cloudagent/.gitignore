@@ -20,6 +20,8 @@ dist/
 build/
 !gateway/build/
 !gateway/build/**
+!sandbox-host/build/
+!sandbox-host/build/**
 cargo-vendor/
 *.log
 

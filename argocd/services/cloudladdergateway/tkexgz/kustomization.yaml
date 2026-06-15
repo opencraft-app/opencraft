@@ -3,10 +3,13 @@ kind: Kustomization
 resources:
 - service.yaml
 - service-testing.yaml
+- service-staging.yaml
 - ingress.yaml
 - ingress-testing.yaml
+- ingress-staging.yaml
 - statefulsetplus.yaml
 - statefulsetplus-testing.yaml
+- statefulsetplus-staging.yaml
 generators:
 - ksops-secret-generator.yaml
 - ksops-callback-secret-generator.yaml
@@ -19,6 +22,9 @@ configMapGenerator:
 - name: cloudladdergateway-platform-testing-values
   envs:
   - cloudladdergateway-platform-testing.env
+- name: cloudladdergateway-platform-staging-values
+  envs:
+  - cloudladdergateway-platform-staging.env
 replacements:
 - source:
     kind: ConfigMap
@@ -42,6 +48,16 @@ replacements:
     - spec.template.spec.containers.0.image
 - source:
     kind: ConfigMap
+    name: cloudladdergateway-platform-staging-values
+    fieldPath: data.CLOUDLADDERGATEWAY_IMAGE
+  targets:
+  - select:
+      kind: StatefulSetPlus
+      name: lightvela-proxy-staging
+    fieldPaths:
+    - spec.template.spec.containers.0.image
+- source:
+    kind: ConfigMap
     name: cloudladdergateway-platform-values
     fieldPath: data.CLOUDLADDERGATEWAY_DEPLOYED_AT
   targets:
@@ -58,5 +74,15 @@ replacements:
   - select:
       kind: StatefulSetPlus
       name: lightvela-proxy-testing
+    fieldPaths:
+    - spec.template.metadata.annotations.[cloudladdergateway.lightvela.com/redeploy-at]
+- source:
+    kind: ConfigMap
+    name: cloudladdergateway-platform-staging-values
+    fieldPath: data.CLOUDLADDERGATEWAY_DEPLOYED_AT
+  targets:
+  - select:
+      kind: StatefulSetPlus
+      name: lightvela-proxy-staging
     fieldPaths:
     - spec.template.metadata.annotations.[cloudladdergateway.lightvela.com/redeploy-at]

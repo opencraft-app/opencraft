@@ -29,6 +29,8 @@ bundles:
       explicit imported package path.
     publish_paths:
     - argocd/services/ai-gateway/{env}/**
+    - argocd/services/ai-gateway/common/**
+    - argocd/services/ai-gateway/profiles/sandbox/**
     - argocd/apps/{env}/ai-gateway.yaml
     - argocd/secrets/{env}/ai-gateway-runtime-secrets.sops.yaml
     - ai-gateway/k8s/base/**

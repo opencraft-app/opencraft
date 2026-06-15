@@ -88,6 +88,8 @@ type TerminalSessionResponse struct {
 	Cols           int    `json:"cols"`
 	Rows           int    `json:"rows"`
 	TimeoutSeconds int    `json:"timeoutSeconds,omitempty"`
+	Username       string `json:"username,omitempty"`
+	WorkingDir     string `json:"workingDirectory,omitempty"`
 }
 
 // PaginationParams 分页参数

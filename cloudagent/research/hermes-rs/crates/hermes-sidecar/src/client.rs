@@ -720,6 +720,11 @@ fn print_prompt_response_line(line: &str, saw_result: &mut bool) -> Result<()> {
             workspace_root,
             template,
             error,
+            exit_code,
+            stdout_bytes,
+            stderr_bytes,
+            stdout_tail,
+            stderr_tail,
         } => {
             let mut stdout = io::stdout().lock();
             writeln!(
@@ -733,6 +738,11 @@ fn print_prompt_response_line(line: &str, saw_result: &mut bool) -> Result<()> {
                     "workspace_root": workspace_root,
                     "template": template,
                     "error": error,
+                    "exit_code": exit_code,
+                    "stdout_bytes": stdout_bytes,
+                    "stderr_bytes": stderr_bytes,
+                    "stdout_tail": stdout_tail,
+                    "stderr_tail": stderr_tail,
                 })
             )?;
             stdout.flush()?;

@@ -8,7 +8,7 @@
  *   按 AGENTS.md 第 252 行规范，国内 / 国际站 sidebar 用数组/常量驱动，按
  *   `isGlobal` 编译期切换数据源，terser 会消除未选中的一支为死代码。
  *   - 国内站（CN_SIDEBAR）：微信 / 飞书 / QQ
- *   - 国际站（GLOBAL_SIDEBAR）：WeChat / Telegram / WhatsApp / Discord
+ *   - 国际站（GLOBAL_SIDEBAR）：WeChat / Telegram / WhatsApp / Discord / QQ / WeCom / Lark
  */
 
 import { isGlobal } from "@/lib/region";
@@ -92,8 +92,11 @@ const GLOBAL_SIDEBAR: DocGroup[] = [
       { slug: "configuration/channel-telegram", title: "Telegram", indent: true },
       { slug: "configuration/channel-whatsapp", title: "WhatsApp", indent: true },
       { slug: "configuration/channel-discord", title: "Discord", indent: true },
+      { slug: "configuration/channel-qq", title: "QQ", indent: true },
+      { slug: "configuration/channel-wecom", title: "企业微信", titleEn: "WeCom", indent: true },
+      { slug: "configuration/channel-feishu", title: "飞书", titleEn: "Lark", indent: true },
       { slug: "configuration/skill", title: "配置技能", titleEn: "Configure Skills" },
-      { slug: "configuration/automation", title: "自动任务", titleEn: "Automated Tasks" },
+      { slug: "configuration/automation", title: "自动任务", titleEn: "Automations" },
       { slug: "configuration/agent-chat", title: "对话", titleEn: "Chat" },
     ],
   },
@@ -142,6 +145,9 @@ const GLOBAL_SLUG_TO_FILE: Record<string, string> = {
   "configuration/channel-telegram": "configuration/channel-telegram.md",
   "configuration/channel-whatsapp": "configuration/channel-whatsapp.md",
   "configuration/channel-discord": "configuration/channel-discord.md",
+  "configuration/channel-qq": "configuration/channel-qq.md",
+  "configuration/channel-feishu": "configuration/channel-feishu.md",
+  "configuration/channel-wecom": "configuration/channel-wecom.md",
   "configuration/skill": "configuration/skill.md",
   "configuration/automation": "configuration/automation.md",
   "configuration/agent-chat": "configuration/agent-chat.md",

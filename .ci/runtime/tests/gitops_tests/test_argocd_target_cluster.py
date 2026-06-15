@@ -57,6 +57,43 @@ class ArgoTargetClusterTests(unittest.TestCase):
         self.assertEqual(tls["certData"], "cert-data")
         self.assertEqual(tls["keyData"], "key-data")
 
+    def test_builds_cluster_payload_with_tls_server_name_override(self) -> None:
+        with TemporaryDirectory() as tmp:
+            kubeconfig = Path(tmp) / "kubeconfig"
+            kubeconfig.write_text(
+                textwrap.dedent(
+                    """
+                    apiVersion: v1
+                    current-context: cls-56a1mbml
+                    clusters:
+                      - name: cls-56a1mbml
+                        cluster:
+                          server: https://212.64.118.50:443
+                          certificate-authority-data: ca-data
+                    contexts:
+                      - name: cls-56a1mbml
+                        context:
+                          cluster: cls-56a1mbml
+                          user: ci-user
+                    users:
+                      - name: ci-user
+                        user:
+                          client-certificate-data: cert-data
+                          client-key-data: key-data
+                    """
+                )
+            )
+
+            payload = cluster_payload_from_kubeconfig(
+                kubeconfig,
+                "shanghai-workers",
+                "https://212.64.118.50:443",
+                tls_server_name="cls-56a1mbml.ccs.tencent-cloud.com",
+            )
+
+        tls = payload["config"]["tlsClientConfig"]
+        self.assertEqual(tls["serverName"], "cls-56a1mbml.ccs.tencent-cloud.com")
+
     def test_applies_namespace_scoped_cluster_options(self) -> None:
         payload = {
             "name": "devcloud-dep",

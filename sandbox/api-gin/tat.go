@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -58,6 +59,8 @@ type tatSessionResponse struct {
 	Cols           int    `json:"cols"`
 	Rows           int    `json:"rows"`
 	TimeoutSeconds int    `json:"timeoutSeconds"`
+	Username       string `json:"username,omitempty"`
+	WorkingDir     string `json:"workingDirectory,omitempty"`
 }
 
 func registerTATRoutes(r gin.IRouter, h *handler) {
@@ -88,6 +91,8 @@ func (h *handler) postSandboxTATSession(c *gin.Context) {
 
 	session, err := h.terminals.StartTerminalSession(c.Request.Context(), sb.Region, inst.CloudID)
 	if err != nil {
+		log.Printf("[api] tat session start failed sandbox=%s pool=%s instance=%s cloud=%s region=%s err=%v",
+			sb.ID, pool.ID, inst.ID, inst.CloudID, sb.Region, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -114,6 +119,8 @@ func (h *handler) postSandboxTATSession(c *gin.Context) {
 		Cols:           session.Cols,
 		Rows:           session.Rows,
 		TimeoutSeconds: session.TimeoutSeconds,
+		Username:       session.Username,
+		WorkingDir:     session.WorkingDir,
 	})
 }
 

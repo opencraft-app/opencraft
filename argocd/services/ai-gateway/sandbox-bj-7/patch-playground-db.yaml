@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ai-gateway-runtime-config
+  namespace: ai-gateway
+data:
+  AI_GATEWAY_DB: ai_gateway_sandbox_bj_7

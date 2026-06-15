@@ -3,6 +3,7 @@ package router
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -211,6 +212,127 @@ func TestProtocolE2EConversationReusesACPSessionOnSecondMessage(t *testing.T) {
 	}
 	if got := promptCalls.Load(); got != 2 {
 		t.Fatalf("expected two prompts, got %d", got)
+	}
+	cancel()
+	_ = <-startErr
+}
+
+func TestProtocolE2ELoadMissingPreservesConversationWorkspaceBinding(t *testing.T) {
+	var sessionNewCalls atomic.Int64
+	var sessionLoadCalls atomic.Int64
+	var promptCalls atomic.Int64
+	acpServer := newStatefulFakeACPServerWithLoadError(t, "session-replacement", &sessionNewCalls, &sessionLoadCalls, &promptCalls, "session not found")
+	defer acpServer.Close()
+	st, err := store.Open(context.Background(), t.TempDir()+"/channelgateway.db")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+	lease, err := st.AcquireChannelLease(context.Background(), "wecom-a", "owner-a", time.Minute)
+	if err != nil {
+		t.Fatalf("acquire lease: %v", err)
+	}
+	seedMsg := channel.Message{
+		ChannelType:            channel.TypeWeCom,
+		ChatType:               channel.ChatDM,
+		ExternalConversationID: "chat-preserve",
+		ExternalUserID:         "user-e2e",
+	}
+	sessionKey := channel.BuildSessionKey("main", seedMsg, true, false)
+	if _, err := st.GetOrCreateConversation(context.Background(), store.Conversation{
+		ChannelAccountID:       "wecom-a",
+		ChannelType:            "wecom",
+		ExternalConversationID: "chat-preserve",
+		ExternalUserID:         "user-e2e",
+		ChatType:               string(channel.ChatDM),
+		AgentID:                "main",
+		ACPSessionID:           "session-stale",
+		WorkspaceKey:           "workspace-stable-e2e",
+		SessionKey:             sessionKey,
+	}); err != nil {
+		t.Fatalf("seed conversation: %v", err)
+	}
+
+	wecomReady := make(chan struct{})
+	replySeen := make(chan struct {
+		cmd   string
+		reqID string
+		text  string
+	}, 1)
+	wecomServer := newRouterWeComServer(t, func(t *testing.T, conn *websocket.Conn) {
+		expectRouterSubscribe(t, conn)
+		close(wecomReady)
+		writeRouterJSON(t, conn, map[string]any{
+			"cmd":     "aibot_msg_callback",
+			"headers": map[string]any{"req_id": "callback-preserve"},
+			"body": map[string]any{
+				"msgid":   "msg-preserve",
+				"chatid":  "chat-preserve",
+				"msgtype": "text",
+				"from":    map[string]any{"userid": "user-e2e"},
+				"text":    map[string]any{"content": "文件还在吗"},
+			},
+		})
+		frame := readRouterFrame(t, conn)
+		body := decodeRouterBody(t, frame)
+		stream := body["stream"].(map[string]any)
+		text, _ := stream["content"].(string)
+		replySeen <- struct {
+			cmd   string
+			reqID string
+			text  string
+		}{cmd: frame.Cmd, reqID: frame.Headers.ReqID, text: text}
+		writeRouterJSON(t, conn, map[string]any{"headers": map[string]any{"req_id": "callback-preserve"}, "errcode": 0})
+	})
+	defer wecomServer.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	acpClient := acp.NewClient("ws"+acpServer.URL[len("http"):], nil)
+	defer acpClient.Close()
+	if err := acpClient.Initialize(ctx); err != nil {
+		t.Fatalf("initialize acp: %v", err)
+	}
+	adapter := wecom.NewAdapter(wecom.Config{AccountID: "wecom-a", BotID: "bot", Secret: "secret", WebSocketURL: "ws" + wecomServer.URL[len("http"):]})
+	dispatcher := NewDispatcher(st, store.ChannelAccount{ChannelAccountID: "wecom-a", ChannelType: "wecom", AgentID: "main"}, acpClient, "/workspace")
+	startErr := make(chan error, 1)
+	go func() { startErr <- adapter.Start(ctx, dispatcher) }()
+	waitRouterClosed(t, wecomReady, "wecom subscribe")
+	drainUntil(t, ctx, st, lease, adapter, 1)
+	var reply struct {
+		cmd   string
+		reqID string
+		text  string
+	}
+	select {
+	case reply = <-replySeen:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for restore-failure reply")
+	}
+	if reply.cmd != "aibot_respond_msg" || reply.reqID != "callback-preserve" {
+		t.Fatalf("expected restore-failure respond frame, got cmd=%q req_id=%q text=%q", reply.cmd, reply.reqID, reply.text)
+	}
+	if !strings.Contains(reply.text, runtimeRecoveryFailedReply) || !strings.Contains(reply.text, "/reset") {
+		t.Fatalf("unexpected restore-failure fallback reply text: %q", reply.text)
+	}
+	if got := sessionNewCalls.Load(); got != 0 {
+		t.Fatalf("missing ACP runtime session must not create a replacement session; got session/new calls=%d", got)
+	}
+	if got := sessionLoadCalls.Load(); got != 1 {
+		t.Fatalf("existing ACP session should be loaded once, got %d", got)
+	}
+	if got := promptCalls.Load(); got != 0 {
+		t.Fatalf("missing ACP runtime session must not prompt on a replacement runtime, got %d", got)
+	}
+	conversation, ok, err := st.LoadConversationBySessionKey(ctx, "wecom-a", sessionKey)
+	if err != nil {
+		t.Fatalf("reload conversation: %v", err)
+	}
+	if !ok {
+		t.Fatal("conversation missing after restore failure")
+	}
+	if conversation.ACPSessionID != "session-stale" || conversation.WorkspaceKey != "workspace-stable-e2e" {
+		t.Fatalf("restore failure must preserve ACP session and workspace binding, got %#v", conversation)
 	}
 	cancel()
 	_ = <-startErr
@@ -769,6 +891,77 @@ func newStatefulFakeACPServer(t *testing.T, sessionID string, sessionNewCalls, s
 	return newStatefulFakeACPServerWithEnsure(t, sessionID, sessionNewCalls, sessionLoadCalls, promptCalls, false, promptOverride)
 }
 
+func newStatefulFakeACPServerWithLoadError(t *testing.T, sessionID string, sessionNewCalls, sessionLoadCalls, promptCalls *atomic.Int64, loadMessage string) *httptest.Server {
+	t.Helper()
+	upgrader := websocket.Upgrader{}
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Errorf("upgrade acp: %v", err)
+			return
+		}
+		defer conn.Close()
+		for {
+			_, raw, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			var req struct {
+				ID     int64  `json:"id"`
+				Method string `json:"method"`
+			}
+			if err := json.Unmarshal(raw, &req); err != nil {
+				t.Errorf("decode acp request: %v", err)
+				return
+			}
+			switch req.Method {
+			case "initialize":
+				writeRouterJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{}})
+			case "session/new":
+				if sessionNewCalls != nil {
+					sessionNewCalls.Add(1)
+				}
+				writeRouterJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{"sessionId": sessionID}})
+			case "session/load":
+				if sessionLoadCalls != nil {
+					sessionLoadCalls.Add(1)
+				}
+				writeRouterJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32000, "message": loadMessage}})
+			case "_cloudagent.runtime.ensure_ready":
+				writeRouterJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{
+					"ok": true,
+					"runtime_ensure_ready": map[string]any{
+						"changed": false,
+					},
+				}})
+			case "_cloudagent.run.create":
+				if promptCalls != nil {
+					promptCalls.Add(1)
+				}
+				writeRouterJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{"run": map[string]any{"run_id": "run-replacement", "session_id": sessionID, "status": "running"}}})
+			case "_cloudagent.run.wait":
+				writeRouterJSON(t, conn, map[string]any{
+					"jsonrpc": "2.0",
+					"method":  "session/update",
+					"params": map[string]any{
+						"sessionId": sessionID,
+						"update": map[string]any{
+							"sessionUpdate": "agent_message_chunk",
+							"content":       map[string]any{"text": "replacement workspace reply"},
+						},
+					},
+				})
+				writeRouterJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{"run": map[string]any{"run_id": "run-replacement", "session_id": sessionID, "status": "completed", "stop_reason": "end_turn", "output_text": "replacement workspace reply"}}})
+			case "session/prompt":
+				t.Errorf("ChannelGateway should use CloudAgent run extensions, not legacy session/prompt")
+				writeRouterJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32601, "message": "legacy session/prompt disabled"}})
+			default:
+				writeRouterJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32601, "message": "not found"}})
+			}
+		}
+	}))
+}
+
 func newStatefulFakeACPServerWithEnsure(t *testing.T, sessionID string, sessionNewCalls, sessionLoadCalls, promptCalls *atomic.Int64, ensureChanged bool, promptOverride func(*websocket.Conn, int64)) *httptest.Server {
 	t.Helper()
 	upgrader := websocket.Upgrader{}
@@ -813,10 +1006,12 @@ func newStatefulFakeACPServerWithEnsure(t *testing.T, sessionID string, sessionN
 						"changed": ensureChanged,
 					},
 				}})
-			case "session/prompt":
+			case "_cloudagent.run.create":
 				if promptCalls != nil {
 					promptCalls.Add(1)
 				}
+				writeRouterJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{"run": map[string]any{"run_id": fmt.Sprintf("run-%d", req.ID), "session_id": sessionID, "status": "running"}}})
+			case "_cloudagent.run.wait":
 				if promptOverride != nil {
 					promptOverride(conn, req.ID)
 					continue
@@ -832,7 +1027,10 @@ func newStatefulFakeACPServerWithEnsure(t *testing.T, sessionID string, sessionN
 						},
 					},
 				})
-				writeRouterJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{"stopReason": "end_turn"}})
+				writeRouterJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{"run": map[string]any{"run_id": "run-stateful", "session_id": sessionID, "status": "completed", "stop_reason": "end_turn", "output_text": "agent reply"}}})
+			case "session/prompt":
+				t.Errorf("ChannelGateway should use CloudAgent run extensions, not legacy session/prompt")
+				writeRouterJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32601, "message": "legacy session/prompt disabled"}})
 			default:
 				writeRouterJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32601, "message": "not found"}})
 			}
@@ -878,10 +1076,10 @@ func newFakeACPServerWithPromptCounter(t *testing.T, sessionID, reply string, pr
 						"changed": false,
 					},
 				}})
-			case "session/prompt":
+			case "_cloudagent.run.create":
 				promptCalls.Add(1)
 				var params struct {
-					SessionID string `json:"sessionId"`
+					SessionID string `json:"session_id"`
 					Prompt    []struct {
 						Type string `json:"type"`
 						Text string `json:"text"`
@@ -895,6 +1093,8 @@ func newFakeACPServerWithPromptCounter(t *testing.T, sessionID, reply string, pr
 					t.Errorf("unexpected prompt params: %#v", params)
 					return
 				}
+				writeRouterJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{"run": map[string]any{"run_id": "run-simple", "session_id": sessionID, "status": "running"}}})
+			case "_cloudagent.run.wait":
 				writeRouterJSON(t, conn, map[string]any{
 					"jsonrpc": "2.0",
 					"method":  "session/update",
@@ -906,7 +1106,10 @@ func newFakeACPServerWithPromptCounter(t *testing.T, sessionID, reply string, pr
 						},
 					},
 				})
-				writeRouterJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{"stopReason": "end_turn"}})
+				writeRouterJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{"run": map[string]any{"run_id": "run-simple", "session_id": sessionID, "status": "completed", "stop_reason": "end_turn", "output_text": reply}}})
+			case "session/prompt":
+				t.Errorf("ChannelGateway should use CloudAgent run extensions, not legacy session/prompt")
+				writeRouterJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32601, "message": "legacy session/prompt disabled"}})
 			default:
 				writeRouterJSON(t, conn, map[string]any{"jsonrpc": "2.0", "id": req.ID, "error": map[string]any{"code": -32601, "message": "not found"}})
 			}

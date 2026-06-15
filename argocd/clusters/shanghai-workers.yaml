@@ -1,0 +1,11 @@
+apiVersion: lightclaw.dev/v1alpha1
+kind: ArgoTargetCluster
+metadata:
+  name: shanghai-workers
+spec:
+  description: Dedicated Shanghai TKE cluster for Temporal Worker Controller and rescue-exporter workers.
+  server: https://212.64.118.50:443
+  tlsServerName: cls-56a1mbml.ccs.tencent-cloud.com
+  projectPath: argocd/projects/shanghai-workers.yaml
+  kubeconfigHint: .secret/cls-56a1mbml-config
+  owner: deploy/terraform/temporal-worker-controller-tke

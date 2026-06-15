@@ -95,6 +95,20 @@ func TestBuildEnvdProcessTargetPublicUsesDirectInstanceIP(t *testing.T) {
 	}
 }
 
+func TestStartTerminalSessionParametersOnlyIncludeInstanceID(t *testing.T) {
+	params := startTerminalSessionParameters("ins-test")
+
+	if got := params["InstanceId"]; got != "ins-test" {
+		t.Fatalf("unexpected instance id: %v", got)
+	}
+	if _, ok := params["Username"]; ok {
+		t.Fatalf("StartSession should not include unsupported Username parameter: %v", params)
+	}
+	if _, ok := params["WorkingDirectory"]; ok {
+		t.Fatalf("StartSession should not include unsupported WorkingDirectory parameter: %v", params)
+	}
+}
+
 func TestPoolSecurityGroupsReturnsTrimmedValues(t *testing.T) {
 	pool := core.Pool{
 		ID:             "pool-c0",

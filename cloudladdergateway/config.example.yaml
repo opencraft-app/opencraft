@@ -53,6 +53,69 @@ backends:
       headers:
         Host: "trade.itd.com"
 
+  # ===========================================================================
+  # jifei-prod backend：lightvela trade → jifei CGW 现网出向
+  # （v1.7.31 新增，2026-06-12 北京 2 预发布 trade 接入现网计费 + 未来 shprod 共用）
+  #
+  # **设计取舍**（与 jifei-test 严格区分）：
+  #   - jifei-test：内网域名 trade.itd.com 在 TKEx CoreDNS 不可解析 → 必须 IP
+  #     直连 9.139.137.40 + Host header 重写。
+  #   - jifei-prod：公网域名 trade.tencentyun.com 在 TKEx CoreDNS 公网 DNS 可
+  #     解析（11.187.170.119 / 11.187.188.7，2026-06-12 本地 nslookup 验证），
+  #     且 PDF §地址 国内现网 明确「不推荐域名方式访问，推荐使用北极星」+「现网
+  #     不要配置VIP访问」——本 clgateway TKEx 集群无 polaris-sidecar 跑不了北极
+  #     星，所以走 PDF 兜底允许的「域名 + Host header 透传」方式。
+  #
+  # 协议层语义：与 jifei-test 完全相同（不签名、走 IP/uin 白名单）；jifei 后台
+  # 按 envelope 内 ownerUin/loginUin 自动判断国内/国际站路由（v1.0 设计稿
+  # B-DEPLOY-3 派生约束 2）。trade 端鉴权由 envelope.ownerUin（真实影子账号 uin）
+  # 提供，X-Qcloud-User-Id header 不再注入（trade-platform.env::JIFEI_CGW_X_QCLOUD_USER_ID=""）。
+  #
+  # PDF 真源：.tmp/jifei_pdf_txt/交易环境&公共参数.md §国内现网环境
+  #   url = http://trade.tencentyun.com/interfaces/interface.php
+  #   host = trade.tencentyun.com
+  #   北极星 = Production/1333953:131072
+  # ===========================================================================
+  - alias: jifei-prod
+    upstream:
+      base_url: "http://trade.tencentyun.com"
+      timeout: 10s
+      allowed_methods: ["POST"]
+      headers:
+        # Host header 与 base_url 的域名一致，显式重写以保证 jifei CGW 侧按 Host
+        # 路由到对应模块（PDF §地址 现网域名 = trade.tencentyun.com）。
+        Host: "trade.tencentyun.com"
+
+  # ===========================================================================
+  # jifei-billing-apigw-prod backend：lightvela trade → jifei 计费网关现网出向
+  # （销毁链路 ModifyResourceStatus / PRE_DESTROY / PRE_ISOLATE 等带 HMAC-SHA256
+  # 签名的 qcloud.operation.* 接口现网通道，v1.7.31 新增）
+  #
+  # 与 jifei-billing-apigw-test 完全对偶：协议层 HMAC-SHA256 签名仍由 trade
+  # jifeiclient 在 envelope.interface.auth 4 字段注入（Q-D-SIG-1=B 拍板），
+  # clgateway 仅做透明 forward_http 转发，不感知签名 / 不持有密钥；签名密钥
+  # JIFEI_BILLING_APP_ID / JIFEI_BILLING_APP_SECRET 由 trade pod 通过 SSM + sops
+  # 注入 trade-runtime-secrets。**用户 2026-06-12 拍板：jifei 现网计费签名密钥
+  # 与测试环境共用同一组真值**——所以 beijing-sandbox / sandbox-bj-7 的
+  # trade-runtime-secrets 里 JIFEI_BILLING_APP_ID/SECRET 字面量相同。
+  #
+  # PDF 真源：.tmp/jifei_pdf_txt/计费网关对外协议介绍.txt §国内现网环境（控制台）
+  #   url = http://apigateway.billing.tencentyun.com/{moduleName}/interface
+  #   vip = 9.223.99.242（PDF："现网不要配置vip访问"——禁止用 VIP，必须走 L5/
+  #         北极星/域名）
+  #   host = apigateway.billing.tencentyun.com
+  #   北极星 = Production/2141825:65536
+  # ===========================================================================
+  - alias: jifei-billing-apigw-prod
+    upstream:
+      base_url: "http://apigateway.billing.tencentyun.com"
+      timeout: 10s
+      allowed_methods: ["POST"]
+      headers:
+        # Host header 重写：jifei 计费网关侧按 Host 路由到对应模块；PDF §地址
+        # 现网域名 = apigateway.billing.tencentyun.com。
+        Host: "apigateway.billing.tencentyun.com"
+
   - alias: billing-trade-cn-pre
     upstream:
       scheme: http
@@ -331,6 +394,38 @@ routes:
         # Host header 重写：计费网关侧根据 Host 路由到对应模块，**必须**带这个 Host。
         # PDF §地址：测试环境域名 = test.api-gateway.billing.tencentyun.com
         Host: "test.api-gateway.billing.tencentyun.com"
+
+  # ===========================================================================
+  # lightvela trade → jifei CGW 现网出向路由（询价 / 下单 / 支付链路，v1.7.31 新增）
+  # 北京 2 预发布（beijing-sandbox）+ 未来 shprod 共用此路由；与 jifei-test 严格
+  # 区分——本路由只承载现网 jifei 出向，trade-platform.env 中只有「连接现网计费」
+  # 的环境（beijing-sandbox / shprod）才会把 JIFEI_CGW_GATEWAY_URL 指向
+  # http://<lightvela-proxy-prod-LB>/v1/proxy/jifei-prod/interfaces/interface.php
+  # 走过来；sandbox-bj-7 / sandbox-bj-* / sandbox-kr-1 等联调环境继续走
+  # jifei-test。
+  # ===========================================================================
+  - id: jifei-prod
+    description: "lightvela trade → jifei CGW 现网出向路由（询价 / 下单 / 支付，beijing-sandbox / shprod 共用，与 jifei-test 严格区分；走 trade.tencentyun.com 域名 + Host header 透传，现网 PDF 推荐方式）"
+    callers: ["lightvela-trade"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: jifei-prod
+
+  # ===========================================================================
+  # lightvela trade → jifei 计费网关现网出向路由（销毁链路 ModifyResourceStatus
+  # 带 HMAC-SHA256 签名的 qcloud.operation.* 接口，v1.7.31 新增）
+  #
+  # 与 jifei-billing-apigw-test 完全对偶；协议层签名仍由 trade jifeiclient 注入
+  # （Q-D-SIG-1=B 拍板，clgateway 透明转发不感知签名）。**moduleName=resource-center**
+  # （Q-D-SIG-2 拍板）由 trade 在 JIFEI_BILLING_APIGW_URL 中显式带 path 段
+  # /resource-center/interface 透传，clgateway 仅按 *path 拼到 base_url 后部。
+  # ===========================================================================
+  - id: jifei-billing-apigw-prod
+    description: "lightvela trade → jifei 计费网关现网出向路由（销毁链路 ModifyResourceStatus 走带签名的计费网关协议，与 jifei-billing-apigw-test 严格区分）"
+    callers: ["lightvela-trade"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: jifei-billing-apigw-prod
 
   - id: billing-trade-cn-pre
     description: "Proxy Tencent billing trade domestic pre-release environment."

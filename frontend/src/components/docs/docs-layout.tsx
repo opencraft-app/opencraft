@@ -15,18 +15,13 @@ import { Outlet } from "react-router-dom";
 import { LandingNavbar } from "@/pages/marketing/landing/landing-navbar";
 import { LegalFooter } from "@/components/site/legal-footer";
 import { LoginModal } from "@/components/site/login-modal";
-import { useSession } from "@/contexts/session-context";
 
 export function DocsLayout() {
-  const { isAuthenticated } = useSession();
   const [showLogin, setShowLogin] = useState(false);
 
   return (
     <div className="flex min-h-dvh flex-col bg-white text-[var(--text-primary)]">
-      <LandingNavbar
-        onLoginClick={() => setShowLogin(true)}
-        isLoggedIn={isAuthenticated}
-      />
+      <LandingNavbar onLoginClick={() => setShowLogin(true)} />
 
       {/* LandingNavbar 为 fixed（h-[60px]），此处留出占位避免被遮挡 */}
       <div className="pt-[60px]">

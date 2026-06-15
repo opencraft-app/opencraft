@@ -272,6 +272,18 @@ func (m *adminMockSubRepo) CountActive() (int64, error) {
 
 func (m *adminMockSubRepo) DB() *gorm.DB { return nil }
 
+func (m *adminMockSubRepo) ListRefreshCandidates(limit int) ([]repository.SubscriptionRefreshCandidate, error) {
+	return nil, nil
+}
+
+func (m *adminMockSubRepo) RefreshByIDs(items []repository.SubscriptionRefreshItem) (int64, error) {
+	return 0, nil
+}
+
+func (m *adminMockSubRepo) ExtendActivePeriodEnd(userID uuid.UUID, newPeriodEnd time.Time) (int64, *model.Subscription, error) {
+	return 0, nil, nil
+}
+
 type adminMockProvRepo struct {
 	providers []model.Provider
 }

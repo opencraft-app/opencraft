@@ -52,6 +52,34 @@ func (s *Store) tryAcquireRuntimeEnsureLock(ctx context.Context, key, holderID s
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.isMySQL() {
+		tx, err := s.db.BeginTx(ctx, nil)
+		if err != nil {
+			return false, err
+		}
+		defer tx.Rollback()
+		var currentHolder string
+		var currentExpires string
+		err = tx.QueryRowContext(ctx, `SELECT holder_id, expires_at FROM runtime_locks WHERE lock_key = ? FOR UPDATE`, key).Scan(&currentHolder, &currentExpires)
+		if errors.Is(err, sql.ErrNoRows) {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO runtime_locks (lock_key, holder_id, expires_at, acquired_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+				key, holderID, expiresText, nowText, nowText); err != nil {
+				return false, err
+			}
+			return true, tx.Commit()
+		}
+		if err != nil {
+			return false, err
+		}
+		if currentExpires > nowText && currentHolder != holderID {
+			return false, tx.Commit()
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE runtime_locks SET holder_id = ?, expires_at = ?, acquired_at = ?, updated_at = ? WHERE lock_key = ?`,
+			holderID, expiresText, nowText, nowText, key); err != nil {
+			return false, err
+		}
+		return true, tx.Commit()
+	}
 	result, err := s.db.ExecContext(ctx, `
 INSERT INTO runtime_locks (lock_key, holder_id, expires_at, acquired_at, updated_at)
 VALUES (?, ?, ?, ?, ?)

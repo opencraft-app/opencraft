@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/google/uuid"
 
 	"cvm-mock-e2b/internal/blueprint"
 	"cvm-mock-e2b/internal/core"
@@ -19,7 +22,80 @@ type CloudProvider interface {
 	DescribeInstance(ctx context.Context, cloudID string) (status string, err error)
 	TerminateInstance(ctx context.Context, cloudID string) error
 	VerifyInstance(ctx context.Context, address string) error
+	// StopInstance shuts down the instance while preserving system disk data.
+	// Used by trade pass isolation flow (Q26-D 修订版 / Q33=a 拍板 2026-05-14 22:37).
+	// On Tencent Cloud this maps to StopInstances with StoppedMode=STOP_CHARGING
+	// to release CPU/memory billing while keeping disks intact.
+	StopInstance(ctx context.Context, cloudID string) error
+	// StartInstance boots a previously stopped instance back to RUNNING.
+	// Reserved for renewal/restore flows that follow trade pass isolation.
+	StartInstance(ctx context.Context, cloudID string) error
+
+	// CreateInstanceSnapshot creates a CBS snapshot of the instance system disk.
+	// Used by trade pass destroy flow (Q4 / Q9 / Q25 ✅ 拍板, see .tmp/trade-pass-destroy-design.md sec5.2).
+	//
+	// Implementation contract (Q25 ✅ 拍板):
+	//   1. Look up the system disk ID via cbs.DescribeDisks with filters
+	//      (instance-id=<cloudID>, disk-usage=SYSTEM_DISK), Limit=1.
+	//   2. If DescribeDisks returns empty → return ErrInstanceNoSystemDisk
+	//      (ctl child-task will skip snapshot stages 1+2 per Q10 联动).
+	//   3. Otherwise call cbs.CreateSnapshot with DiskId, SnapshotName, Deadline,
+	//      DiskUsage=SYSTEM_DISK and return the resulting SnapshotId.
+	//
+	// Idempotency (Q4-b 拍板): no provider-side dedupe key; ctl gates duplicate
+	// calls via payload.SnapshotID nil-check.
+	CreateInstanceSnapshot(ctx context.Context, req CreateInstanceSnapshotRequest) (snapshotID string, err error)
+
+	// DescribeInstanceSnapshot polls the status of a snapshot previously created
+	// via CreateInstanceSnapshot. Maps cbs SnapshotState into the abstract status.
+	//
+	// State mapping (Q9 ✅ 拍板, see .tmp/trade-pass-destroy-design.md sec5.2):
+	//   - cbs SnapshotState=NORMAL                            → SnapshotStatusReady
+	//   - cbs SnapshotState ∈ {ERROR, ROLLBACKING_FAILED, ...} → SnapshotStatusFailed
+	//   - cbs SnapshotState=CREATING                          → SnapshotStatusInProgress
+	DescribeInstanceSnapshot(ctx context.Context, snapshotID string) (SnapshotStatus, string, error)
 }
+
+// CreateInstanceSnapshotRequest is the input for CloudProvider.CreateInstanceSnapshot.
+//
+// Field semantics (sec5.2 of .tmp/trade-pass-destroy-design.md):
+//   - CloudID: cvm InstanceId (e.g. ins-xxx) used as filter for cbs.DescribeDisks.
+//   - PassID / InstanceID / UserID: only used for snapshot naming + audit tags.
+//   - Deadline: passed verbatim to cbs.CreateSnapshot.Deadline (RFC3339).
+//     Caller (sandbox handler) is responsible for now+retentionSeconds calculation;
+//     CloudProvider keeps no clock awareness so it stays unit-test friendly.
+//
+// Resource owner uin/appID 不再透传：sandbox 调 cbs SDK 用的是 sandbox 服务自身
+// 配置的腾讯云 AK/SK，资源 owner 由该 AK/SK 自动决定，无需 ctl 传入。
+type CreateInstanceSnapshotRequest struct {
+	CloudID    string    // cvm InstanceId (ins-xxx); MUST be non-empty.
+	PassID     string    // trade pass id (used in snapshot name).
+	InstanceID string    // ctl-side instance id (used in snapshot name).
+	UserID     string    // ctl-side user id (audit / tagging).
+	Deadline   time.Time // snapshot expiration; cbs Deadline = this value (RFC3339 on the wire).
+}
+
+// SnapshotStatus is the abstract status returned by DescribeInstanceSnapshot.
+type SnapshotStatus string
+
+const (
+	// SnapshotStatusInProgress: cbs snapshot is still being created (CREATING).
+	SnapshotStatusInProgress SnapshotStatus = "in_progress"
+	// SnapshotStatusReady: cbs snapshot reached terminal state NORMAL (success).
+	SnapshotStatusReady SnapshotStatus = "ready"
+	// SnapshotStatusFailed: cbs snapshot reached a terminal failure state (ERROR / ROLLBACKING_FAILED / ...).
+	SnapshotStatusFailed SnapshotStatus = "failed"
+)
+
+// ErrInstanceNoSystemDisk is returned by CloudProvider.CreateInstanceSnapshot when
+// cbs.DescribeDisks returns an empty disk set for the target instance. Per Q25 + Q10
+// 拍板, ctl child-task should skip snapshot stages 1+2 and proceed directly to stage 3
+// (sandbox.DeleteSandbox).
+var ErrInstanceNoSystemDisk = errors.New("provider: instance has no system disk; snapshot skipped")
+
+// ErrSnapshotNotFound is returned by CloudProvider.DescribeInstanceSnapshot when
+// cbs.DescribeSnapshots returns an empty result for the queried snapshot id.
+var ErrSnapshotNotFound = errors.New("provider: snapshot not found")
 
 type CapacityBundleProvisionRequest struct {
 	TemplateClassID        string
@@ -171,6 +247,8 @@ type TerminalSession struct {
 	Cols           int    `json:"cols"`
 	Rows           int    `json:"rows"`
 	TimeoutSeconds int    `json:"timeoutSeconds"`
+	Username       string `json:"username,omitempty"`
+	WorkingDir     string `json:"workingDirectory,omitempty"`
 }
 
 // TerminalSessionStarter is an optional capability for cloud providers that can
@@ -199,10 +277,19 @@ func BestEffortHupEnvd(ctx context.Context, cp CloudProvider, address string) er
 }
 
 // MockCloudProvider simulates a provider with sleeps.
-type MockCloudProvider struct{}
+//
+// For trade pass destroy flow (D-4.2b), MockCloudProvider keeps an in-memory
+// map of "fake snapshots" keyed by snapshot id; each CreateInstanceSnapshot call
+// returns a generated id and is observable via DescribeInstanceSnapshot. To keep
+// the mock behavior deterministic and free from sleeps, the snapshot enters
+// SnapshotStatusReady immediately on creation.
+type MockCloudProvider struct {
+	snapMu    sync.Mutex
+	snapshots map[string]SnapshotStatus
+}
 
 func NewMockCloudProvider() *MockCloudProvider {
-	return &MockCloudProvider{}
+	return &MockCloudProvider{snapshots: make(map[string]SnapshotStatus)}
 }
 
 func (m *MockCloudProvider) CreateInstance(_ context.Context, pool core.Pool) (string, string, error) {
@@ -233,6 +320,55 @@ func (m *MockCloudProvider) TerminateInstance(ctx context.Context, cloudID strin
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+func (m *MockCloudProvider) StopInstance(ctx context.Context, cloudID string) error {
+	// Simulate cvm StopInstances latency.
+	select {
+	case <-time.After(150 * time.Millisecond):
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (m *MockCloudProvider) StartInstance(ctx context.Context, cloudID string) error {
+	// Simulate cvm StartInstances latency.
+	select {
+	case <-time.After(150 * time.Millisecond):
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// CreateInstanceSnapshot mock: deterministically generate a snapshot id and mark
+// it as ready immediately. Special-case empty CloudID → ErrInstanceNoSystemDisk
+// so unit tests of the Q10/Q25 联动分支 can exercise the no-disk path.
+func (m *MockCloudProvider) CreateInstanceSnapshot(_ context.Context, req CreateInstanceSnapshotRequest) (string, error) {
+	if strings.TrimSpace(req.CloudID) == "" {
+		return "", ErrInstanceNoSystemDisk
+	}
+	id := "snap-mock-" + uuid.New().String()
+	m.snapMu.Lock()
+	defer m.snapMu.Unlock()
+	if m.snapshots == nil {
+		m.snapshots = make(map[string]SnapshotStatus)
+	}
+	m.snapshots[id] = SnapshotStatusReady
+	return id, nil
+}
+
+// DescribeInstanceSnapshot mock: lookup the in-memory map; unknown id maps to
+// ErrSnapshotNotFound. The returned reason string is empty for ready snapshots.
+func (m *MockCloudProvider) DescribeInstanceSnapshot(_ context.Context, snapshotID string) (SnapshotStatus, string, error) {
+	m.snapMu.Lock()
+	defer m.snapMu.Unlock()
+	status, ok := m.snapshots[snapshotID]
+	if !ok {
+		return "", "", ErrSnapshotNotFound
+	}
+	return status, "", nil
 }
 
 func (m *MockCloudProvider) VerifyInstance(_ context.Context, _ string) error {

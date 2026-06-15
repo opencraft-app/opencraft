@@ -169,7 +169,64 @@ def resolve_runtime_env(
     return env_values, node_selector, env_secret_values
 
 
-def resolve_kubeconfig(repo_root: Path, env: str, b64_env_name: str) -> tuple[str, Path | None]:
+def load_playground_catalog_value(repo_root: Path, env: str, service: str, key: str) -> str:
+    path = (
+        repo_root
+        / "argocd"
+        / "catalogs"
+        / "playground"
+        / "beijing-playground"
+        / env
+        / f"{service}.yaml"
+    )
+    if not path.is_file():
+        return ""
+    for raw in path.read_text().splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or ":" not in line:
+            continue
+        candidate, value = line.split(":", 1)
+        if candidate.strip() != key:
+            continue
+        value = value.strip()
+        if "#" in value:
+            value = value.split("#", 1)[0].strip()
+        return value.strip("\"'")
+    return ""
+
+
+def resolve_kubeconfig_cluster_name(repo_root: Path, env: str, service: str) -> str:
+    destination_name = load_playground_catalog_value(repo_root, env, service, "destinationName")
+    if destination_name:
+        return destination_name
+    playground_cluster = load_playground_catalog_value(repo_root, env, service, "playgroundCluster")
+    if playground_cluster:
+        return playground_cluster
+    return env
+
+
+def resolve_catalog_service(service: str, db_contract: Mapping[str, Any]) -> str:
+    return str(db_contract.get("db_job_service") or service).strip() or service
+
+
+def resolve_verifier_namespace(repo_root: Path, env: str, service: str, verifier: Mapping[str, Any]) -> str:
+    catalog_namespace = load_playground_catalog_value(repo_root, env, service, "namespace")
+    if catalog_namespace:
+        return catalog_namespace
+    return str(verifier["namespace"])
+
+
+def default_ctl_database(env: str) -> str:
+    if re.fullmatch(r"sandbox-(bj|kr)-\d+", env):
+        return f"ctl_{env.replace('-', '_')}"
+    return "ctl"
+
+
+def is_playground_namespace(namespace: str) -> bool:
+    return namespace.startswith("lightvela-playground-")
+
+
+def resolve_kubeconfig(repo_root: Path, env: str, b64_env_name: str, service: str = "") -> tuple[str, Path | None]:
     import os
 
     b64 = os.environ.get(b64_env_name, "").strip()
@@ -187,20 +244,60 @@ def resolve_kubeconfig(repo_root: Path, env: str, b64_env_name: str) -> tuple[st
             raise FileNotFoundError(f"missing DB_JOB_KUBECONFIG_FILE: {resolved}")
         return str(resolved), None
 
-    ci_file = Path("/etc/lightclaw-ci") / f"kubeconfig_{env.replace('-', '_')}"
+    cluster_name = resolve_kubeconfig_cluster_name(repo_root, env, service)
+    ci_file = Path("/etc/lightclaw-ci") / f"kubeconfig_{cluster_name.replace('-', '_')}"
     if ci_file.is_file():
         return str(ci_file), None
 
     platform_env = load_env_file(repo_root / "deploy" / "envs" / env / "platform.env")
     kubeconfig = platform_env.get("DEPLOY_KUBECONFIG", "").strip()
     if not kubeconfig:
-        raise ValueError("DEPLOY_KUBECONFIG missing in platform.env and no kubeconfig b64 env provided")
+        raise ValueError(
+            "DEPLOY_KUBECONFIG missing in platform.env and no kubeconfig b64 env provided"
+            f", or provide /etc/lightclaw-ci/kubeconfig_{cluster_name.replace('-', '_')}"
+        )
     resolved = Path(kubeconfig)
     if not resolved.is_absolute():
         resolved = repo_root / resolved
     if not resolved.is_file():
         raise FileNotFoundError(f"missing kubeconfig file: {resolved}")
     return str(resolved), None
+
+
+def kubectl_secret_value(kubeconfig: str, namespace: str, secret_name: str, key: str) -> str:
+    result = kubectl(kubeconfig, ["-n", namespace, "get", "secret", secret_name, "-o", "json"])
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"kubectl get secret/{secret_name} failed\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+        )
+    encoded = str((json.loads(result.stdout).get("data") or {}).get(key, "")).strip()
+    if not encoded:
+        return ""
+    return base64.b64decode(encoded).decode()
+
+
+def apply_playground_ctl_runtime_env(
+    *,
+    kubeconfig: str,
+    namespace: str,
+    env: str,
+    service: str,
+    env_values: dict[str, str],
+    env_secret_values: dict[str, str],
+) -> None:
+    if service != "ctl" or not is_playground_namespace(namespace):
+        return
+    env_values["CTL_DB"] = default_ctl_database(env)
+    if not kubeconfig:
+        return
+    root_password = kubectl_secret_value(
+        kubeconfig,
+        namespace,
+        "playground-runtime-secrets",
+        "MYSQL_ROOT_PASSWORD",
+    ).strip()
+    if root_password:
+        env_secret_values["CTL_DB_PASSWORD"] = root_password
 
 
 def max_migration_version(repo_root: Path, source: str) -> int:
@@ -233,13 +330,16 @@ def build_check_script(verifier: dict[str, Any], expected_version: int) -> str:
         "}",
         f"db=\"$(value {shell_single_quote(database_env)})\"",
         f"user=\"$(value {shell_single_quote(user_env)})\"",
-        f"password=\"$(value {shell_single_quote(password_env)})\"",
+        f"password=\"$(value {shell_single_quote(password_env)})\"",  # pragma: allowlist secret -- shell variable reference, not a literal secret
         'test -n "${MYSQL_HOST:-}"',
         'test -n "${MYSQL_PORT:-}"',
         'test -n "$db"',
         'test -n "$user"',
         'test -n "$password"',
-        'mysql_query() { mysql --host="${MYSQL_HOST}" --port="${MYSQL_PORT}" --user="$user" --password="$password" "$db" -Nse "$1"; }',
+        (
+            'mysql_query() { mysql --host="${MYSQL_HOST}" --port="${MYSQL_PORT}" '
+            '--user="$user" --password="$password" "$db" -Nse "$1"; }'  # pragma: allowlist secret -- shell variable reference, not a literal secret
+        ),
         'dirty_count="$(mysql_query "SELECT COUNT(*) FROM schema_migrations WHERE dirty = 1")"',
         'test "$dirty_count" = "0"',
     ]
@@ -337,16 +437,38 @@ def build_job_manifest(
 
 
 def kubectl(kubeconfig: str, args: list[str], *, input_text: str | None = None) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["kubectl", "--kubeconfig", kubeconfig, *args],
-        input=input_text,
-        capture_output=True,
-        text=True,
+    command = ["kubectl", "--kubeconfig", kubeconfig, *args]
+    result: subprocess.CompletedProcess[str] | None = None
+    for attempt in range(3):
+        result = subprocess.run(
+            command,
+            input=input_text,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0 or not is_transient_kubectl_error(result):
+            return result
+        if attempt < 2:
+            time.sleep(3)
+    assert result is not None
+    return result
+
+
+def is_transient_kubectl_error(result: subprocess.CompletedProcess[str]) -> bool:
+    output = "\n".join(part for part in (result.stdout, result.stderr) if part)
+    transient_markers = (
+        ": EOF",
+        "Client.Timeout",
+        "connection reset by peer",
+        "net/http: TLS handshake timeout",
+        "i/o timeout",
+        "unexpected EOF",
     )
+    return any(marker in output for marker in transient_markers)
 
 
 def apply_manifest(kubeconfig: str, manifest: dict[str, Any]) -> None:
-    result = kubectl(kubeconfig, ["apply", "-f", "-"], input_text=json.dumps(manifest))
+    result = kubectl(kubeconfig, ["apply", "--validate=false", "-f", "-"], input_text=json.dumps(manifest))
     if result.returncode != 0:
         raise RuntimeError(f"kubectl apply failed\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}")
 
@@ -386,12 +508,17 @@ def collect_job_logs(kubeconfig: str, namespace: str, name: str, secret_values: 
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Verify a service DB contract with a read-only Kubernetes Job.")
+    parser = argparse.ArgumentParser(
+        description="Verify a service DB contract with a read-only Kubernetes Job."
+    )
     parser.add_argument("--repo-root", default=".")
     parser.add_argument(
         "--deploy-root",
         default="",
-        help="Deploy-facing GitOps checkout root used for argocd/services and deploy/envs files. Defaults to repo root.",
+        help=(
+            "Deploy-facing GitOps checkout root used for argocd/services and deploy/envs files. "
+            "Defaults to repo root."
+        ),
     )
     parser.add_argument("--bundle-manifest", default=str(DEFAULT_MANIFEST_PATH))
     parser.add_argument("--service", required=True)
@@ -416,6 +543,7 @@ def main() -> int:
     args = build_parser().parse_args()
     repo_root = Path(args.repo_root).resolve()
     deploy_root = Path(args.deploy_root).resolve() if args.deploy_root.strip() else repo_root
+    temp_path: Path | None = None
     manifest = load_manifest(Path(args.bundle_manifest).resolve())
     bundle = load_bundle(manifest, args.service, args.env)
     contract = bundle.db_contract
@@ -424,16 +552,36 @@ def main() -> int:
         write_summary(args.output_json, summary)
         print(json.dumps(summary, ensure_ascii=False, indent=2))
         return 0
-    verifier = contract.get("verifier") or {}
+    verifier = dict(contract.get("verifier") or {})
     if not verifier:
         raise ValueError(f"bundle {args.service} does not define db_contract.verifier")
+    catalog_service = resolve_catalog_service(args.service, contract)
+    verifier["namespace"] = resolve_verifier_namespace(repo_root, args.env, catalog_service, verifier)
     expected_version = max_migration_version(repo_root, str(contract.get("expected_migration_source") or ""))
     env_values, node_selector, env_secret_values = resolve_runtime_env(deploy_root, args.env, verifier, contract)
+    kubeconfig = ""
+    if args.apply:
+        kubeconfig, temp_path = resolve_kubeconfig(
+            deploy_root,
+            args.env,
+            args.kubeconfig_b64_env,
+            catalog_service,
+        )
+    apply_playground_ctl_runtime_env(
+        kubeconfig=kubeconfig,
+        namespace=verifier["namespace"],
+        env=args.env,
+        service=args.service,
+        env_values=env_values,
+        env_secret_values=env_secret_values,
+    )
     secret_name = ""
     env_secret_refs: dict[str, tuple[str, str]] = {}
     secret_manifest: dict[str, Any] | None = None
     if env_secret_values:
-        secret_name = f"db-contract-{args.service.replace('_', '-').replace('/', '-')}-{args.env}-{int(time.time())}-secrets"
+        secret_name = (
+            f"db-contract-{args.service.replace('_', '-').replace('/', '-')}-{args.env}-{int(time.time())}-secrets"
+        )
         secret_manifest = build_secret_manifest(
             verifier["namespace"],
             secret_name,
@@ -469,14 +617,17 @@ def main() -> int:
         "auxiliary_resources": [secret_name] if secret_name else [],
         "status": "rendered",
     }
-    temp_path: Path | None = None
     try:
         if args.apply:
-            kubeconfig, temp_path = resolve_kubeconfig(deploy_root, args.env, args.kubeconfig_b64_env)
             apply_manifest(kubeconfig, apply_manifest_doc)
             summary["status"] = "applied"
             if args.wait:
-                status = wait_for_job(kubeconfig, verifier["namespace"], manifest_doc["metadata"]["name"], args.timeout_seconds)
+                status = wait_for_job(
+                    kubeconfig,
+                    verifier["namespace"],
+                    manifest_doc["metadata"]["name"],
+                    args.timeout_seconds,
+                )
                 summary["status"] = status
                 if status != "succeeded":
                     logs = collect_job_logs(

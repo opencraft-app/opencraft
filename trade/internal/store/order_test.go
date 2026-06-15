@@ -25,14 +25,15 @@ func TestDecodeTradeOrder_HappyPath(t *testing.T) {
 		RegionID:       47,
 		PayMode:        1,
 		GoodsDetailRaw: sql.NullString{
-			String: `{"pid":"40000","timeSpan":1,"timeUnit":"m","goodsNum":1,"sv_cpu":"2","sv_mem":"4G"}`,
+			// Q71（2026-05-13）：jifei 协议层 pid/sv_* 是裸数字（PDF §4.4 / §4.4.1.1.2），
+			// trade_order.goods_detail 列存的是 jifei 入参快照，跟齐 int 化。
+			String: `{"pid":40000,"timeSpan":1,"timeUnit":"m","goodsNum":1,"sv_cpu":2,"sv_mem":4}`,
 			Valid:  true,
 		},
 		PayURL:       sql.NullString{String: "https://buy.example/pay/abc", Valid: true},
 		Status:       "pending_pay",
 		ResourceType: "pass",
 		ResourceID:   sql.NullString{Valid: false},
-		ExpireTime:   now.Add(30 * time.Minute),
 		CreatedTime:  now,
 		UpdatedTime:  now,
 	}
@@ -49,10 +50,11 @@ func TestDecodeTradeOrder_HappyPath(t *testing.T) {
 	if got.ResourceID != "" {
 		t.Fatalf("expected empty ResourceID for null column, got %q", got.ResourceID)
 	}
-	if got.GoodsDetail["pid"] != "40000" {
+	// Q71：JSON unmarshal 默认数字走 float64；pid / sv_* 在 trade_order 快照中也是裸数字。
+	if v, ok := got.GoodsDetail["pid"].(float64); !ok || v != 40000 {
 		t.Fatalf("goods_detail pid mismatch: %+v", got.GoodsDetail)
 	}
-	if got.GoodsDetail["sv_cpu"] != "2" {
+	if v, ok := got.GoodsDetail["sv_cpu"].(float64); !ok || v != 2 {
 		t.Fatalf("goods_detail sv_cpu mismatch: %+v", got.GoodsDetail)
 	}
 	// timeSpan / goodsNum 在 JSON 里是 number，反序列化到 interface{} 是 float64

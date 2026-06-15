@@ -4,11 +4,12 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
+	"cvm-mock-e2b/internal/runtimecfg"
 	"cvm-mock-e2b/internal/service"
 	"cvm-mock-e2b/internal/store"
-	"cvm-mock-e2b/internal/runtimecfg"
 )
 
 // Config holds runtime configuration for the gin API adapter.
@@ -22,6 +23,7 @@ type Config struct {
 	RedisDB          int           // redis db index
 	RedisRoutePrefix string        // redis key prefix for routes
 	AuthServiceURL   string        // user-auth base url for session introspection
+	CloudPauseResume bool          // when true, pause/resume call cloud Stop/Start; defaults on for billing lifecycle isolation
 }
 
 func loadConfig() Config {
@@ -49,6 +51,7 @@ func loadConfig() Config {
 		RedisDB:          redisDB,
 		RedisRoutePrefix: redisPrefix,
 		AuthServiceURL:   getenv("AUTH_SERVICE_URL", "http://lightclaw-auth.user-auth.svc.cluster.local"),
+		CloudPauseResume: getenvBool("SANDBOX_ENABLE_CLOUD_PAUSE_RESUME", true),
 	}
 }
 
@@ -81,4 +84,19 @@ func getenvInt(k string, def int) int {
 		}
 	}
 	return def
+}
+
+func getenvBool(k string, def bool) bool {
+	v := strings.TrimSpace(os.Getenv(k))
+	if v == "" {
+		return def
+	}
+	switch strings.ToLower(v) {
+	case "1", "true", "t", "yes", "y", "on":
+		return true
+	case "0", "false", "f", "no", "n", "off":
+		return false
+	default:
+		return def
+	}
 }

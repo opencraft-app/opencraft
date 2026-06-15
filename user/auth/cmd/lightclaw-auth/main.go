@@ -10,11 +10,13 @@ import (
 
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/avatar"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/contentaudit"
+	"github.com/openclaw/openclaw/mono/backend/auth/internal/dbconfig"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/httpapi"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/logging"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/realname"
-	"github.com/openclaw/openclaw/mono/backend/auth/internal/ses"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/service"
+	"github.com/openclaw/openclaw/mono/backend/auth/internal/ses"
+	"github.com/openclaw/openclaw/mono/backend/auth/internal/shadowbinding"
 	"github.com/openclaw/openclaw/mono/backend/auth/internal/tat"
 )
 
@@ -28,17 +30,19 @@ func main() {
 	sessionTTL := 30 * 24 * time.Hour
 	contentAuditConfig := buildContentAuditConfig(logger)
 	contentAuditClient := buildContentAuditClient(logger, contentAuditConfig)
-	authStore := newStore(contentAuditConfig.Enabled)
+	stores := newStores(contentAuditConfig.Enabled)
+	shadowBinding := buildShadowBindingService(stores.shadow, logger)
 	publicBaseURL := envOrDefault("LIGHTCLAW_PUBLIC_BASE_URL", "https://lightclaw.tech")
 	frontendBaseURL := envOrDefault("LIGHTCLAW_FRONTEND_BASE_URL", publicBaseURL)
-	authService := service.NewWithStore(authStore, service.Options{
-		SessionTTL:         sessionTTL,
-		DefaultSMSCode:     envOrDefault("LIGHTCLAW_DEV_SMS_CODE", ""),
-		RealnameVerifier:   buildRealnameVerifier(logger),
-		RealnameCipher:     buildRealnameCipher(logger),
-		ContentAudit:       contentAuditConfig,
-		ContentAuditClient: contentAuditClient,
-		Logger:             logger,
+	authService := service.NewWithStore(stores.auth, service.Options{
+		SessionTTL:                 sessionTTL,
+		DefaultSMSCode:             envOrDefault("LIGHTCLAW_DEV_SMS_CODE", ""),
+		RealnameVerifier:           buildRealnameVerifier(logger),
+		RealnameCipher:             buildRealnameCipher(logger),
+		ContentAudit:               contentAuditConfig,
+		ContentAuditClient:         contentAuditClient,
+		ShadowBinding:              shadowBinding,
+		ShadowBasicAuthSyncEnabled: envOrDefault("SHADOW_BASIC_AUTH_SYNC_ENABLED", "false") == "true",
 		EmailBind: service.EmailBindConfig{
 			Enabled:         envOrDefault("LIGHTCLAW_EMAIL_BIND_ENABLED", "false") == "true",
 			TokenTTL:        time.Duration(envInt64OrDefault("LIGHTCLAW_EMAIL_BIND_TOKEN_TTL_SECONDS", 1800)) * time.Second,
@@ -51,24 +55,26 @@ func main() {
 	avatarStore := buildAvatarStore(logger)
 
 	router := httpapi.NewRouter(authService, httpapi.ServerConfig{
-		CookieSecure:              envOrDefault("LIGHTCLAW_COOKIE_SECURE", "false") == "true",
-		CookieSameSite:            parseSameSite(envOrDefault("LIGHTCLAW_COOKIE_SAME_SITE", "lax")),
-		SessionTTL:                sessionTTL,
-		OAuthReturnToAllowedHosts: parseCSVEnv("LIGHTCLAW_OAUTH_RETURN_TO_ALLOWED_HOSTS"),
-		QQOAuth:                   buildQQOAuthConfig(),
-		GoogleOAuth:               buildGoogleOAuthConfig(),
-		GitHubOAuth:               buildGitHubOAuthConfig(),
-		WeChatOAuth:               buildWeChatOAuthConfig(),
-		AvatarStore:               avatarStore,
-		TATRegisterIssuer:         buildTATRegisterIssuer(logger),
-		DeviceBindTokenSecret:     envOrDefault("LIGHTCLAW_DEVICE_BIND_TOKEN_SECRET", ""),
-		DeviceBindTokenTTL:        time.Duration(envInt64OrDefault("LIGHTCLAW_DEVICE_BIND_TOKEN_TTL_SECONDS", 600)) * time.Second,
-		Logger:                    logger,
-		PublicBaseURL:             publicBaseURL,
-		FrontendBaseURL:           frontendBaseURL,
-		AdminToken:                envOrDefault("LIGHTCLAW_ADMIN_TOKEN", ""),
-		E2EAuthEnabled:            envOrDefault("LIGHTVELA_E2E_AUTH_ENABLED", "false") == "true",
-		E2EAuthToken:              envOrDefault("LIGHTVELA_E2E_AUTH_TOKEN", ""),
+		CookieSecure:               envOrDefault("LIGHTCLAW_COOKIE_SECURE", "false") == "true",
+		CookieSameSite:             parseSameSite(envOrDefault("LIGHTCLAW_COOKIE_SAME_SITE", "lax")),
+		SessionTTL:                 sessionTTL,
+		OAuthReturnToAllowedHosts:  parseCSVEnv("LIGHTCLAW_OAUTH_RETURN_TO_ALLOWED_HOSTS"),
+		QQOAuth:                    buildQQOAuthConfig(),
+		GoogleOAuth:                buildGoogleOAuthConfig(),
+		GitHubOAuth:                buildGitHubOAuthConfig(),
+		WeChatOAuth:                buildWeChatOAuthConfig(),
+		AvatarStore:                avatarStore,
+		TATRegisterIssuer:          buildTATRegisterIssuer(logger),
+		DeviceBindTokenSecret:      envOrDefault("LIGHTCLAW_DEVICE_BIND_TOKEN_SECRET", ""),
+		DeviceBindTokenTTL:         time.Duration(envInt64OrDefault("LIGHTCLAW_DEVICE_BIND_TOKEN_TTL_SECONDS", 600)) * time.Second,
+		Logger:                     logger,
+		PublicBaseURL:              publicBaseURL,
+		FrontendBaseURL:            frontendBaseURL,
+		AdminToken:                 envOrDefault("LIGHTCLAW_ADMIN_TOKEN", ""),
+		E2EAuthEnabled:             envOrDefault("LIGHTVELA_E2E_AUTH_ENABLED", "false") == "true",
+		E2EAuthToken:               envOrDefault("LIGHTVELA_E2E_AUTH_TOKEN", ""),
+		ShadowBindingInternalToken: envOrDefault("SHADOW_BINDING_INTERNAL_TOKEN", ""),
+		ShadowTencentCallbackToken: envOrDefault("SHADOW_TENCENT_CALLBACK_TOKEN", envOrDefault("SHADOW_CALLBACK_TOKEN", "")),
 	})
 
 	address := envOrDefault("LIGHTCLAW_AUTH_ADDR", ":8081")
@@ -142,18 +148,23 @@ func buildContentAuditClient(logger *slog.Logger, cfg service.ContentAuditConfig
 	return client
 }
 
-func newStore(contentAuditEnabled bool) service.Store {
-	dsn := strings.TrimSpace(os.Getenv("LIGHTCLAW_MYSQL_DSN"))
-	if dsn == "" {
-		dsn = strings.TrimSpace(os.Getenv("MYSQL_DSN"))
-	}
+type stores struct {
+	auth   service.Store
+	shadow shadowbinding.Store
+}
+
+func newStores(contentAuditEnabled bool) stores {
+	dsn := dbconfig.ResolveMySQLDSN()
 	if dsn == "" {
 		slog.Info("lightclaw auth using in-memory store")
-		return service.NewMemoryStore(service.StoreOptions{
-			SeedDefaultInvites:  true,
-			SeedDemoUser:        envOrDefault("LIGHTCLAW_SEED_DEMO_USER", "false") == "true",
-			ContentAuditEnabled: contentAuditEnabled,
-		})
+		return stores{
+			auth: service.NewMemoryStore(service.StoreOptions{
+				SeedDefaultInvites:  true,
+				SeedDemoUser:        envOrDefault("LIGHTCLAW_SEED_DEMO_USER", "false") == "true",
+				ContentAuditEnabled: contentAuditEnabled,
+			}),
+			shadow: shadowbinding.NewMemoryStore(),
+		}
 	}
 
 	store, err := service.NewMySQLStore(dsn, service.StoreOptions{
@@ -166,7 +177,7 @@ func newStore(contentAuditEnabled bool) service.Store {
 		os.Exit(1)
 	}
 	slog.Info("lightclaw auth using MySQL store")
-	return store
+	return stores{auth: store, shadow: shadowbinding.NewMySQLStore(store.DB())}
 }
 
 func envOrDefault(key string, fallback string) string {
@@ -224,9 +235,66 @@ func parseSameSite(value string) http.SameSite {
 	}
 }
 
+func buildShadowBindingService(store shadowbinding.Store, logger *slog.Logger) *shadowbinding.Service {
+	if envOrDefault("SHADOW_BINDING_ENABLED", "false") != "true" {
+		return nil
+	}
+	if store == nil {
+		logger.Warn("shadow binding disabled due to missing store")
+		return nil
+	}
+	var client shadowbinding.TencentCloudClient
+	tencentClient, err := shadowbinding.NewTencentCloudSDKClient(shadowbinding.TencentCloudConfig{
+		SecretID:        envOrDefault("SHADOW_SECRET_ID", ""),
+		SecretKey:       envOrDefault("SHADOW_SECRET_KEY", ""),
+		Region:          envOrDefault("SHADOW_REGION", "ap-guangzhou"),
+		AccountEndpoint: envOrDefault("SHADOW_ACCOUNT_ENDPOINT", "account.tencentcloudapi.com"),
+		CAMEndpoint:     envOrDefault("SHADOW_CAM_ENDPOINT", "cam.tencentcloudapi.com"),
+		STSEndpoint:     envOrDefault("SHADOW_STS_ENDPOINT", "sts.tencentcloudapi.com"),
+		Platform:        envOrDefault("SHADOW_PLATFORM", "lightvela"),
+		RequestTimeout:  parseDurationEnv("SHADOW_REQUEST_TIMEOUT", 10*time.Second),
+		CloudLadder: shadowbinding.CloudLadderConfig{
+			Enabled:        envOrDefault("SHADOW_CLOUDLADDER_ENABLED", "false") == "true",
+			GatewayBaseURL: envOrDefault("SHADOW_CLOUDLADDER_GATEWAY_BASE_URL", ""),
+			RouteID:        envOrDefault("SHADOW_CLOUDLADDER_ROUTE_ID", "tcapi-account-cn-dev"),
+			CAMRouteID:     envOrDefault("SHADOW_CLOUDLADDER_CAM_ROUTE_ID", envOrDefault("SHADOW_CLOUDLADDER_ROUTE_ID", "tcapi-account-cn-dev")),
+			STSRouteID:     envOrDefault("SHADOW_CLOUDLADDER_STS_ROUTE_ID", envOrDefault("SHADOW_CLOUDLADDER_ROUTE_ID", "tcapi-account-cn-dev")),
+			Caller:         envOrDefault("SHADOW_CLOUDLADDER_CALLER", "shadow"),
+			Secret:         envOrDefault("SHADOW_CLOUDLADDER_HMAC_SECRET", envOrDefault("CLOUDLADDER_SHADOW_HMAC_SECRET", "")),
+		},
+	})
+	if err != nil {
+		logger.Warn("shadow binding enabled with unavailable TencentCloud client", "err", err)
+		client = shadowbinding.NewUnavailableClient(err.Error())
+	} else {
+		client = tencentClient
+	}
+	return shadowbinding.New(store, client, shadowbinding.Options{
+		Enabled:     true,
+		AuthCodeTTL: parseDurationEnv("SHADOW_AUTH_CODE_TTL", 10*time.Minute),
+	})
+}
+
+func parseDurationEnv(key string, fallback time.Duration) time.Duration {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback
+	}
+	value, err := time.ParseDuration(raw)
+	if err != nil || value <= 0 {
+		slog.Warn("invalid duration env, using fallback", "key", key, "value", raw, "fallback", fallback.String())
+		return fallback
+	}
+	return value
+}
+
 func oauthBaseURLs() (string, string) {
 	return envOrDefault("LIGHTCLAW_FRONTEND_BASE_URL", "https://lightclaw.pages.dev"),
 		envOrDefault("LIGHTCLAW_PUBLIC_BASE_URL", "https://lightclaw.tech")
+}
+
+func oauthCallbackURL(publicBaseURL string, path string) string {
+	return strings.TrimRight(strings.TrimSpace(publicBaseURL), "/") + path
 }
 
 func buildQQOAuthConfig() *httpapi.QQOAuthConfig {
@@ -255,7 +323,7 @@ func buildWeChatOAuthConfig() *httpapi.WeChatOAuthConfig {
 	}
 
 	officialAccountAppID := envFirst("LIGHTVELA_WECHAT_OFFICIAL_ACCOUNT_APP_ID")
-	officialAccountAppSecret := envFirst("LIGHTVELA_WECHAT_OFFICIAL_ACCOUNT_APP_SECRET")
+	officialAccountAppSecret := envFirst("LIGHTVELA_WECHAT_OFFICIAL_ACCOUNT_APP_SECRET", "LIGHTCLAW_WECHAT_APP_SECRET")
 	officialAccountRedirectURI := envFirst("LIGHTVELA_WECHAT_OFFICIAL_ACCOUNT_REDIRECT_URI")
 	if officialAccountRedirectURI == "" {
 		officialAccountRedirectURI = websiteRedirectURI
@@ -303,13 +371,14 @@ func buildGitHubOAuthConfig() *httpapi.GitHubOAuthConfig {
 	if clientID == "" || clientSecret == "" {
 		return nil
 	}
+	frontendBaseURL, publicBaseURL := oauthBaseURLs()
 
 	return &httpapi.GitHubOAuthConfig{
 		ClientID:        clientID,
 		ClientSecret:    clientSecret,
-		RedirectURI:     envOrDefault("LIGHTCLAW_GITHUB_REDIRECT_URI", "https://lightclaw.tech/auth/oauth/github/callback"),
-		FrontendBaseURL: envOrDefault("LIGHTCLAW_FRONTEND_BASE_URL", "https://lightclaw.pages.dev"),
-		PublicBaseURL:   envOrDefault("LIGHTCLAW_PUBLIC_BASE_URL", "https://lightclaw.tech"),
+		RedirectURI:     envOrDefault("LIGHTCLAW_GITHUB_REDIRECT_URI", oauthCallbackURL(publicBaseURL, "/auth/oauth/github/callback")),
+		FrontendBaseURL: frontendBaseURL,
+		PublicBaseURL:   publicBaseURL,
 	}
 }
 

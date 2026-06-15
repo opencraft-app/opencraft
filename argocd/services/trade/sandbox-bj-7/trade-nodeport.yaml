@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: trade-nodeport
+  namespace: lightvela-playground-sandbox-bj-7
+  labels:
+    app: trade
+    lightclaw.dev/service: trade
+    lightclaw.dev/role: jifei-callback-ingress-backend
+  annotations:
+    # v1.7.28 BUG-05 排障引入: lightclaw-public Ingress (direct-access=true 直连模式)
+    # 后端要求 NodePort Service. trade 主 Service (name=trade) 是 ClusterIP, 用作 ctl
+    # 内部 RPC 入口 (ctl-api → trade.lightvela-playground-sandbox-bj-7.svc.cluster.local),
+    # 不希望改它 type 增加内网攻击面.
+    #
+    # 本 Service 是 trade 公网 ingress 后端专用入口:
+    #   - selector=app=trade 共用 trade pod endpoints (与主 Service 同 endpoints)
+    #   - type=NodePort 满足 lightclaw-public Ingress direct-access 转发要求 (与
+    #     service-gateway-ingress 同范式, 后者也是 NodePort 用作 lightclaw-public 后端)
+    #   - 名字 -nodeport 后缀明示用途, 与 trade 主 Service 解耦
+    description: "trade NodePort Service (jifei 回调公网入口后端, 与 ClusterIP trade 解耦)"
+spec:
+  type: NodePort
+  selector:
+    app: trade
+  ports:
+    - name: http
+      port: 80
+      targetPort: http  # trade pod containerPort=8080 (与 trade 主 Service 一致)
+      protocol: TCP
+      # nodePort 留空让 TKE 自动分配 30000-32767 端口 (与 service-gateway-ingress
+      # nodePort=31108 同范式; argocd sync 时 TKE 分配后写回 spec.ports[0].nodePort)

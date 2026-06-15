@@ -229,8 +229,10 @@ func (r *mockPlanRepo) DB() *gorm.DB { return nil }
 // --- mockSubscriptionRepo ---
 
 type mockSubscriptionRepo struct {
-	mu   sync.Mutex
-	subs map[uuid.UUID]*model.Subscription
+	mu          sync.Mutex
+	subs        map[uuid.UUID]*model.Subscription
+	plans       map[uuid.UUID]*model.Plan // optional; populated when tests need ListRefreshCandidates
+	nowOverride time.Time                 // for ListRefreshCandidates determinism in tests
 }
 
 func newMockSubscriptionRepo() *mockSubscriptionRepo {
@@ -381,6 +383,92 @@ func (r *mockSubscriptionRepo) Update(sub *model.Subscription) error {
 }
 
 func (r *mockSubscriptionRepo) DB() *gorm.DB { return nil }
+
+func (r *mockSubscriptionRepo) ListRefreshCandidates(limit int) ([]repository.SubscriptionRefreshCandidate, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	now := r.nowOverride
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	cutoff := now.Add(-28 * 24 * time.Hour)
+	out := make([]repository.SubscriptionRefreshCandidate, 0)
+	for _, s := range r.subs {
+		if s.Status != model.SubscriptionStatusActive {
+			continue
+		}
+		if !s.PeriodEnd.After(now) {
+			continue
+		}
+		anchor := s.PeriodStart
+		if s.LastRefreshedAt != nil {
+			anchor = *s.LastRefreshedAt
+		}
+		if anchor.After(cutoff) {
+			continue
+		}
+		var monthlyTokens int64
+		if r.plans != nil {
+			if plan, ok := r.plans[s.PlanID]; ok && plan != nil {
+				monthlyTokens = plan.MonthlyTokens
+			}
+		}
+		if monthlyTokens <= 0 {
+			continue
+		}
+		out = append(out, repository.SubscriptionRefreshCandidate{
+			ID:              s.ID,
+			LastRefreshedAt: anchor,
+			PeriodEnd:       s.PeriodEnd,
+			MonthlyTokens:   monthlyTokens,
+		})
+		if limit > 0 && len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
+}
+
+func (r *mockSubscriptionRepo) RefreshByIDs(items []repository.SubscriptionRefreshItem) (int64, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var affected int64
+	for _, it := range items {
+		s, ok := r.subs[it.ID]
+		if !ok || s.Status != model.SubscriptionStatusActive {
+			continue
+		}
+		s.TokenBalance = it.NewTokenBalance
+		anchor := it.NewRefreshedAt.UTC()
+		s.LastRefreshedAt = &anchor
+		affected++
+	}
+	return affected, nil
+}
+
+func (r *mockSubscriptionRepo) ExtendActivePeriodEnd(userID uuid.UUID, newPeriodEnd time.Time) (int64, *model.Subscription, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	newUTC := newPeriodEnd.UTC()
+	var affected int64
+	var sub *model.Subscription
+	for _, s := range r.subs {
+		if s.UserID == userID && s.Status == model.SubscriptionStatusActive {
+			sub = s
+			// 对齐语义（2026-05-24 用户拍板）：等值即 no-op，不等则强制覆盖
+			// （含向后延期 + 向前缩短两种方向）。与 subscriptionRepo 真实实现保持一致。
+			if !s.PeriodEnd.Equal(newUTC) {
+				s.PeriodEnd = newUTC
+				affected++
+			}
+			break
+		}
+	}
+	if sub == nil {
+		return 0, nil, model.ErrSubscriptionNotFound
+	}
+	return affected, sub, nil
+}
 
 // --- mockProviderRepo ---
 

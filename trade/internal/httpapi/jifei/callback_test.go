@@ -52,7 +52,7 @@ func postCallback(t *testing.T, e *gin.Engine, body string) (*httptest.ResponseR
 func TestCallbackHandler_HappyPath_StubCheckCreate_HTTP200_NonZeroReturnCode(t *testing.T) {
 	e := newCallbackEngine(t)
 	body := `{
-        "eventId": "evt-1", "componentName": "trade",
+        "eventId": 1, "componentName": "trade",
         "seqId": "seq-x", "spanId": "span-x",
         "interface": {"interfaceName": "lightvela.pass.checkCreate", "para": {"appId": 100}}
     }`
@@ -128,7 +128,7 @@ func TestCallbackHandler_BodyShape_PassesPDFFrameworkCurlExample(t *testing.T) {
 	// 用近似 PDF 第 5 页 curl 示例的入参格式跑一遍，断言 dispatcher 解包成功。
 	e := newCallbackEngine(t)
 	body := `{
-        "eventId": "1234567",
+        "eventId": 1234567,
         "componentName": "trade",
         "seqId": "abcdef",
         "spanId": "12345",

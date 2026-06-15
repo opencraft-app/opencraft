@@ -44,7 +44,7 @@ func main() {
 	if addr == "" {
 		addr = ":8080"
 	}
-	store, err := wrapper.NewStore(dataDir)
+	store, err := wrapper.NewStoreFromEnv(dataDir)
 	if err != nil {
 		log.Fatalf("init store: %v", err)
 	}
@@ -98,13 +98,14 @@ func main() {
 		})
 		log.Printf("store: using Redis (%s) for distributed locks and leases", redisLockStore)
 	} else {
-		log.Printf("store: using SQLite for all storage (GATEWAY_REDIS_ADDR not configured)")
+		log.Printf("store: using gateway DB driver=%s for durable storage (GATEWAY_REDIS_ADDR not configured)", envDefault("GATEWAY_DB_DRIVER", "sqlite"))
 	}
 
 	telemetry.Info(context.Background(), telemetry.Logger("cloudagent/gateway/cmd/server"), "gateway.listening",
 		otellog.String("addr", addr),
 		otellog.String("data_dir", dataDir),
 		otellog.String("worker_mode", os.Getenv("GATEWAY_WORKER_MODE")),
+		otellog.String("db_driver", envDefault("GATEWAY_DB_DRIVER", "sqlite")),
 		otellog.String("redis_addr", os.Getenv("GATEWAY_REDIS_ADDR")),
 	)
 	httpServer := &http.Server{

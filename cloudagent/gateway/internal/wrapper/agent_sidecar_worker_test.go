@@ -2,6 +2,7 @@ package wrapper
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -64,6 +65,34 @@ func TestSidecarStdoutParserHandlesReasoningAndToolEvents(t *testing.T) {
 	}
 	if string(workerEvent.ToolRawOutput) != `{"stdout":"/workspace\n"}` || workerEvent.ToolContent != "ok" {
 		t.Fatalf("worker detail=%+v raw=%s", workerEvent, string(workerEvent.ToolRawOutput))
+	}
+}
+
+func TestSidecarToolEventFieldsSummarizesAndRedactsPayloads(t *testing.T) {
+	fields := sidecarToolEventFields(sidecarStdoutEvent{
+		Type:       "tool_call_update",
+		ToolCallID: "call_1",
+		Name:       "terminal",
+		Status:     "completed",
+		RawInput:   json.RawMessage(`{"command":"echo ok","api_key":"secret"}`),
+		RawOutput:  json.RawMessage(`{"stdout":"ok\n","access_token":"secret"}`),
+		Content:    "ok\n",
+	})
+	for _, want := range []string{
+		`tool_call_id="call_1"`,
+		`tool_name="terminal"`,
+		`tool_status="completed"`,
+		`raw_input_bytes=40`,
+		`raw_output_bytes=41`,
+		`content_bytes=3`,
+		`\u003credacted\u003e`,
+	} {
+		if !strings.Contains(fields, want) {
+			t.Fatalf("tool event fields missing %q: %s", want, fields)
+		}
+	}
+	if strings.Contains(fields, "secret") {
+		t.Fatalf("tool event fields leaked secret: %s", fields)
 	}
 }
 
@@ -216,6 +245,18 @@ func TestWispOuterStopCommandCollectsHostDiagnosticsOnFailure(t *testing.T) {
 		"tail_safe_log",
 		"tail_juicefs_log",
 		"juicefs-assertmount.log",
+		"wisp stop_daemon_log:",
+		"filesystem_write_committed",
+		"restore_checkpoint",
+		"runtime.stop_state",
+		"runtime.promote_stop_checkpoint",
+		"create_checkpoint source_stat",
+		"create_checkpoint clone_start",
+		"create_checkpoint clone_done",
+		"active_fsync_(start|done)",
+		"stop_checkpoint_promote",
+		"reset_runtime",
+		"SUMMARY stop",
 		"redact_line",
 	} {
 		if !strings.Contains(command, want) {
@@ -446,14 +487,75 @@ func TestCloseSessionRuntimeDoesNotDoubleStopWorkspaceAfterSidecarShutdown(t *te
 	}
 }
 
+func TestStopWispWorkspaceRuntimeRetriesTransientRunCommandNotFoundWhenProbeStillRunning(t *testing.T) {
+	attempts := 0
+	host := &recordingRuntimeHost{
+		runCommand: func(target RuntimeHostTarget, command string, env map[string]string, onStdout func(string) error, onStderr func(string) error) (CommandResult, error) {
+			attempts++
+			if attempts == 1 {
+				return CommandResult{}, fmt.Errorf("ags http 404 op=run_command sandbox_id=%s domain=ap-beijing.tencentags.com envd_port=49983: The requested resource does not exist", target.ID)
+			}
+			return CommandResult{ExitCode: 0, Exited: true, Status: "exited", Stdout: "CLOUDAGENT_WISP_STOPPED\n"}, nil
+		},
+		probeSandbox: func(id string) (RuntimeHostSandboxProbe, error) {
+			return RuntimeHostSandboxProbe{SandboxID: id, Exists: true, Status: "running"}, nil
+		},
+	}
+	worker := &AgentSidecarWorker{}
+	runtime := ACPSessionRuntime{
+		RuntimeID:           "rt_1",
+		OuterRuntime:        outerRuntimeWisp,
+		WorkspaceRuntimeID:  "workspace_rt_1",
+		WorkspaceWispName:   "workspace-wisp-1",
+		WorkspaceWispClient: "/tmp/cloudagent-workspace-wisp/install/bin/wispclient",
+	}
+	err := worker.stopWispWorkspaceRuntime(context.Background(), host, RuntimeHostTarget{ID: "inner_1"}, runtime)
+	if err != nil {
+		t.Fatalf("stopWispWorkspaceRuntime returned error: %v", err)
+	}
+	if attempts != 2 {
+		t.Fatalf("run command attempts=%d, want 2", attempts)
+	}
+}
+
+func TestStopWispWorkspaceRuntimeDoesNotRetryRunCommandNotFoundWhenProbeMissing(t *testing.T) {
+	attempts := 0
+	host := &recordingRuntimeHost{
+		runCommand: func(target RuntimeHostTarget, command string, env map[string]string, onStdout func(string) error, onStderr func(string) error) (CommandResult, error) {
+			attempts++
+			return CommandResult{}, fmt.Errorf("ags http 404 op=run_command sandbox_id=%s domain=ap-beijing.tencentags.com envd_port=49983: The requested resource does not exist", target.ID)
+		},
+		probeSandbox: func(id string) (RuntimeHostSandboxProbe, error) {
+			return RuntimeHostSandboxProbe{SandboxID: id, Exists: false, Status: "not_found"}, nil
+		},
+	}
+	worker := &AgentSidecarWorker{}
+	runtime := ACPSessionRuntime{
+		RuntimeID:           "rt_1",
+		OuterRuntime:        outerRuntimeWisp,
+		WorkspaceRuntimeID:  "workspace_rt_1",
+		WorkspaceWispName:   "workspace-wisp-1",
+		WorkspaceWispClient: "/tmp/cloudagent-workspace-wisp/install/bin/wispclient",
+	}
+	err := worker.stopWispWorkspaceRuntime(context.Background(), host, RuntimeHostTarget{ID: "inner_1"}, runtime)
+	if err == nil {
+		t.Fatal("stopWispWorkspaceRuntime should fail when probe also reports missing sandbox")
+	}
+	if attempts != 1 {
+		t.Fatalf("run command attempts=%d, want 1", attempts)
+	}
+}
+
 type recordingRuntimeHost struct {
-	commands   []string
-	targets    []string
-	deleted    []string
-	runCommand func(RuntimeHostTarget, string, map[string]string, func(string) error, func(string) error) (CommandResult, error)
+	commands     []string
+	targets      []string
+	deleted      []string
+	runCommand   func(RuntimeHostTarget, string, map[string]string, func(string) error, func(string) error) (CommandResult, error)
+	probeSandbox func(string) (RuntimeHostSandboxProbe, error)
 }
 
 var _ RuntimeHost = (*recordingRuntimeHost)(nil)
+var _ RuntimeHostSandboxProber = (*recordingRuntimeHost)(nil)
 
 func (h *recordingRuntimeHost) CreateSandbox(context.Context, CreateSandboxOptions) (RuntimeHostTarget, error) {
 	return RuntimeHostTarget{}, fmt.Errorf("CreateSandbox is not implemented in recordingRuntimeHost")
@@ -487,6 +589,13 @@ func (h *recordingRuntimeHost) DownloadFile(context.Context, RuntimeHostTarget, 
 
 func (h *recordingRuntimeHost) RuntimeHostEnv() RuntimeHostEnv {
 	return RuntimeHostEnv{}
+}
+
+func (h *recordingRuntimeHost) ProbeSandbox(_ context.Context, id string) (RuntimeHostSandboxProbe, error) {
+	if h.probeSandbox != nil {
+		return h.probeSandbox(id)
+	}
+	return RuntimeHostSandboxProbe{SandboxID: id, Status: "unsupported"}, nil
 }
 
 type processControlRuntimeHost struct {
@@ -587,8 +696,8 @@ func TestCloseSessionRuntimeIgnoresStaleDataPlaneAuthAfterOuterDelete(t *testing
 
 func TestCloseSessionRuntimeBlocksStaleAuthWhenInnerWorkspaceStopUnconfirmed(t *testing.T) {
 	host := &recordingRuntimeHost{
-		runCommand: func(RuntimeHostTarget, string, map[string]string, func(string) error, func(string) error) (CommandResult, error) {
-			return CommandResult{}, errors.New(`ags http 401 op=run_command sandbox_id=outer_1 domain=ap-shanghai.tencentags.com envd_port=49983: map[code:AUTHENTICATION_FAILED message:Authentication failed]`)
+		runCommand: func(target RuntimeHostTarget, command string, env map[string]string, onStdout func(string) error, onStderr func(string) error) (CommandResult, error) {
+			return CommandResult{}, fmt.Errorf(`ags http 401 op=run_command sandbox_id=%s domain=ap-shanghai.tencentags.com envd_port=49983: map[code:AUTHENTICATION_FAILED message:Authentication failed]`, target.ID)
 		},
 	}
 	worker, err := NewAgentSidecarWorker(AgentSidecarWorkerConfig{
@@ -611,13 +720,17 @@ func TestCloseSessionRuntimeBlocksStaleAuthWhenInnerWorkspaceStopUnconfirmed(t *
 		SandboxBackend:       "ags",
 		OuterRuntime:         outerRuntimeWisp,
 		OuterSandboxID:       "outer_1",
-		InnerSandboxID:       "inner_1",
 		OuterSandboxDomain:   "ap-shanghai.tencentags.com",
 		OuterEnvdAccessToken: "expired_envd_token",
+		InnerSandboxID:       "inner_1",
+		InnerSandboxDomain:   "ap-shanghai.tencentags.com",
+		InnerEnvdAccessToken: "expired_inner_envd_token",
 		RemoteBinary:         "/tmp/agent-sidecar",
 		DaemonAddr:           "127.0.0.1:9876",
 		WispName:             "agent-session_1",
+		WispClientPath:       "/tmp/cloudagent-wisp/bin/wispclient",
 		WorkspaceWispName:    "workspace-wisp-1",
+		WorkspaceWispClient:  "/tmp/cloudagent-workspace-wisp/bin/wispclient",
 	})
 	if err == nil {
 		t.Fatal("CloseSessionRuntime must block recreate when inner workspace stop is unconfirmed")
@@ -625,11 +738,12 @@ func TestCloseSessionRuntimeBlocksStaleAuthWhenInnerWorkspaceStopUnconfirmed(t *
 	if isNonBlockingStaleRuntimeCleanupError(err) {
 		t.Fatalf("unconfirmed inner workspace stop must not be treated as non-blocking stale cleanup: %v", err)
 	}
-	if !strings.Contains(err.Error(), "shutdown inner workspace runtime") {
-		t.Fatalf("expected inner workspace shutdown failure to be preserved: %v", err)
+	if !strings.Contains(err.Error(), "shutdown inner workspace runtime") ||
+		!strings.Contains(err.Error(), "stop workspace wisp runtime workspace-wisp-1") {
+		t.Fatalf("expected inner workspace stop failures to be preserved: %v", err)
 	}
 	if got := strings.Join(host.deleted, ","); got != "outer_1" {
-		t.Fatalf("deleted sandboxes=%q, want outer_1", got)
+		t.Fatalf("deleted sandboxes=%q, want only outer_1; inner must not be deleted without workspace stop confirmation", got)
 	}
 }
 

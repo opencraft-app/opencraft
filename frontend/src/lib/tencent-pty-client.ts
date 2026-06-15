@@ -261,7 +261,7 @@ export class TencentPtyClient {
         Cols: this.dimensions.cols,
         Rows: this.dimensions.rows,
         MaxIdleTime: this.bootstrap.timeoutSeconds ?? DEFAULT_TAT_TERMINAL_TIMEOUT_SECONDS,
-        Username: this.bootstrap.username?.trim() || DEFAULT_TAT_TERMINAL_USERNAME,
+        UserName: this.bootstrap.username?.trim() || DEFAULT_TAT_TERMINAL_USERNAME,
         WorkingDirectory: this.bootstrap.workingDirectory?.trim() || DEFAULT_TAT_TERMINAL_WORKING_DIRECTORY,
       },
     });

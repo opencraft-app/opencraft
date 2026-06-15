@@ -259,6 +259,12 @@ func (s *Service) ensureSubscription(
 		PeriodStart:  pass.CreatedTime.UTC(),
 		PeriodEnd:    pass.ExpiredTime.UTC(),
 	}
+	// 月度刷新模型（v0.2.4）：active 订阅必须有 LastRefreshedAt，否则 scheduler
+	// 永远拉不到（COALESCE 兜底为 period_start，但显式写入更直观且测试更稳定）。
+	if desiredStatus == model.SubscriptionStatusActive {
+		anchor := pass.CreatedTime.UTC()
+		sub.LastRefreshedAt = &anchor
+	}
 	if dryRun {
 		if sub.ID == uuid.Nil {
 			sub.ID = uuid.New()
@@ -287,12 +293,21 @@ func hasMatchingSubscription(existing []model.Subscription, planID uuid.UUID, st
 	})
 }
 
+// calcTokenBalance returns the initial token balance for a backfilled subscription.
+//
+// v0.2.4 月度刷新模型：返回单月配额（plan.MonthlyTokens），不再按 PeriodValue
+// 折算总额。后续按月配额由 scheduler 的 RefreshDueBalances 在每个 b3 同号日刷新。
+//
+// "unlimited" 套餐（MonthlyTokens <= 0）返回 0，与 service.CalcInitialTokenBalance
+// 行为一致。"days" / "months" 单位差异在月度模型下已无意义（PeriodEnd 由
+// pass.ExpiredTime 直接给定，token_balance 不依赖 PeriodValue）。
 func calcTokenBalance(plan *model.Plan) (int64, error) {
+	if plan.MonthlyTokens <= 0 {
+		return 0, nil
+	}
 	switch plan.PeriodUnit {
-	case "days":
-		return plan.MonthlyTokens * int64(plan.PeriodValue) / 30, nil
-	case "months":
-		return plan.MonthlyTokens * int64(plan.PeriodValue), nil
+	case "days", "months":
+		return plan.MonthlyTokens, nil
 	default:
 		return 0, fmt.Errorf("unsupported period_unit: %q", plan.PeriodUnit)
 	}

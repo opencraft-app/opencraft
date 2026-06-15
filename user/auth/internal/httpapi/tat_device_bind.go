@@ -142,19 +142,22 @@ func validateLocalTATCallbackURL(rawURL string) (string, error) {
 	}
 
 	parsed, err := url.Parse(trimmed)
-	if err != nil || parsed.Scheme != "http" || parsed.Host == "" {
-		return "", &apiErrorMessage{"回跳地址必须是本机 HTTP 地址。"}
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "", &apiErrorMessage{"回跳地址必须是本机 HTTP 地址或浏览器扩展回跳地址。"}
 	}
 	if parsed.User != nil || parsed.Opaque != "" {
 		return "", &apiErrorMessage{"回跳地址格式不正确。"}
 	}
-	if !isLoopbackHost(parsed.Hostname()) {
-		return "", &apiErrorMessage{"回跳地址只允许 localhost、127.0.0.1 或 ::1。"}
+	if isLoopbackDeviceBindReturnTo(parsed) {
+		if parsed.Path != "/lightvela/callback" {
+			return "", &apiErrorMessage{"本机回跳路径必须是 /lightvela/callback。"}
+		}
+		return parsed.String(), nil
 	}
-	if parsed.Path != "/lightvela/callback" {
-		return "", &apiErrorMessage{"回跳路径必须是 /lightvela/callback。"}
+	if isBrowserExtensionDeviceBindReturnTo(parsed) {
+		return parsed.String(), nil
 	}
-	return parsed.String(), nil
+	return "", &apiErrorMessage{"回跳地址只允许 localhost、127.0.0.1、::1 或 Chrome 扩展回跳地址。"}
 }
 
 func appendDeviceBindRegistration(callbackURL string, registration tat.RegisterCode) string {

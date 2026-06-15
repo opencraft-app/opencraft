@@ -15,6 +15,7 @@ import {
   CalendarClock,
   ChevronDown,
   Check,
+  Globe2,
   MessageCircle,
   MessageSquare,
   Loader2,
@@ -42,7 +43,7 @@ import {
 import { QRCodeSVG } from "qrcode.react";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
@@ -51,11 +52,9 @@ import { assetUrl } from "@/lib/asset-url";
 import { useOpenClaw, type OpenClawBot } from "@/contexts/openclaw-context";
 import { useRepositories } from "@/contexts/repository-context";
 import type { TencentPtyClient, TencentPtyConnectionState } from "@/lib/tencent-pty-client";
-import { BrandMark } from "@/components/site/brand-mark";
-import { LanguageSwitcher } from "@/components/site/language-switcher";
 import { useT, t as rawT } from "@/i18n/t";
 import { isGlobal } from "@/lib/region";
-import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
+import { SiteHeader } from "@/components/site/site-header";
 import { useSession } from "@/contexts/session-context";
 import { avatarImageUrl } from "@/lib/avatar-image";
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
@@ -66,34 +65,41 @@ import {
   getAgentSectionFromSlug,
   type AgentSectionId,
 } from "@/router/paths";
+import type { WorkerActionStatusResult } from "@/repositories/types";
 import {
   ModelPanel,
   ChannelPanel,
   SkillPanel,
   createLighthouseConfig,
-  createLightClawScripts,
   type IInstanceInfo,
   type IFeatureFlags,
   type IProductConfig,
 } from "@tencent/tea-sdk-lightclaw";
+import { createLightClawScripts } from "@tencent/tea-sdk-lightclaw/scripts";
 import {
   createMonoDebugExecAdapter,
-  LIGHTVELA_SKIP_HERMES_PROVIDER_LIST_COMMAND,
 } from "@/pages/marketing/openclaw-tat-adapter";
 import { createLightVelaCommandExecutor } from "@/pages/marketing/openclaw-command-executor";
 import { installOpenClawConsoleHelpers } from "@/pages/marketing/openclaw-console-helpers";
 import {
   buildHermesMemoryReadCommand,
+  buildHermesMemoryLimitCommand,
+  getHermesMemoryLimitBounds,
   getMemoryUsagePercent,
+  isHermesMemoryLimitNearUsage,
   parseHermesMemorySnapshot,
   splitHermesMemoryEntries,
   toSingleLineMemoryEntry,
+  validateHermesMemoryLimit,
   type HermesMemorySnapshot,
+  type HermesMemoryLimitTarget,
+  type HermesMemoryLimitValidation,
 } from "@/pages/marketing/openclaw-memory";
 import { BuddyPanel } from "@/pages/marketing/openclaw-buddy-panel";
 import { AchievementsPanel } from "@/pages/marketing/openclaw-achievements-panel";
 import { AutomationsPanel } from "@/pages/marketing/openclaw-automations-panel";
 import { TatFileManagerPanel } from "@/components/domain/tat-file-manager-panel";
+import { TatHermesWebPanel } from "@/components/domain/tat-hermes-web-panel";
 import { findCompletedCreatingBot, getOpenClawCreateLimitMessage } from "@/pages/marketing/openclaw-create-availability";
 import {
   getRestartBlockReason,
@@ -347,30 +353,13 @@ void _staggerContainer;
 /* ─── Navbar ─── */
 
 const SettingsNavbar = () => {
-  const { isAuthenticated: isLoggedIn } = useSession();
-  const t = useT();
+  const navigate = useNavigate();
   return (
-    <header
-      className="lw-fixed-top fixed inset-x-0 z-50 border-b border-black/5 bg-white/90 backdrop-blur-[20px]"
-    >
-      <div className="lw-settings-shell flex h-[60px] items-center justify-between">
-        <BrandMark to="/" />
-        <div className="flex items-center gap-3">
-          {/* 语言切换器：仅国际站展示。
-              ⚠️ settings 页内嵌 @tencent/tea-sdk-lightclaw（基于 tea-app i18n），
-              而 tea-app i18n 是 init-once 设计，运行时无法热切换 lng；
-              因此切换语言后必须刷新页面才能让 SDK 区域同步更新文案。 */}
-          {isGlobal && <LanguageSwitcher reloadAfterSwitch />}
-          <Link
-            to="/"
-            className="inline-flex items-center justify-center h-[36px] px-5 bg-[#F5F5F5] text-black/90 rounded-[100px] border border-[#E6E9EF] shadow-[0_2px_0_rgba(187,187,187,0.05)] hover:bg-black/5 transition-colors font-heading text-sm font-medium"
-          >
-            {t("返回首页")}
-          </Link>
-          {isLoggedIn && <UserAvatarMenu />}
-        </div>
-      </div>
-    </header>
+    <SiteHeader
+      fixed
+      onLoginClick={() => navigate("/auth/sign-in")}
+      reloadLanguageAfterSwitch
+    />
   );
 };
 
@@ -379,7 +368,7 @@ const DEFAULT_AGENT_SECTION: AgentSectionId = "channel";
 
 const isAgentSectionAvailable = (section: AgentSectionId | null): section is AgentSectionId => {
   if (!section) return false;
-  if (isGlobal && (section === "buddy" || section === "chat")) return false;
+  if (isGlobal && section === "buddy") return false;
   return true;
 };
 
@@ -411,20 +400,86 @@ export const _SectionCard = ({ title, icon, headerRight, children }: { title: st
   );
 }
 
+function getMemoryLimitValidationMessage(
+  validation: HermesMemoryLimitValidation,
+  t: (zh: string, options?: Record<string, unknown>) => string,
+): string | null {
+  if (validation.ok) return null;
+
+  switch (validation.reason) {
+    case "empty":
+      return t("请输入范围在 {{min}}-{{max}} 的数字", { min: validation.min, max: validation.max });
+    case "integer":
+      return t("请输入整数。");
+    case "too_small":
+      return t("最小不能低于 {{min}} 字符。", { min: validation.min });
+    case "too_large":
+      return t("最大不能超过 {{max}} 字符。", { max: validation.max });
+  }
+
+  return null;
+}
+
 const MemoryLimitCard = ({
+  target,
   title,
   description,
   used,
   limit,
+  isSaving,
+  saveError,
+  onSaveLimit,
+  onDraftChange,
   t,
 }: {
+  target: HermesMemoryLimitTarget;
   title: string;
   description: string;
   used: number;
   limit: number;
+  isSaving: boolean;
+  saveError: string | null;
+  onSaveLimit: (target: HermesMemoryLimitTarget, value: number, existingChars: number) => Promise<boolean>;
+  onDraftChange: (target: HermesMemoryLimitTarget) => void;
   t: (zh: string, options?: Record<string, unknown>) => string;
 }) => {
+  const [isEditing, setIsEditing] = useState(false);
+  const [draftLimit, setDraftLimit] = useState(String(limit));
+  const [touched, setTouched] = useState(false);
   const percent = getMemoryUsagePercent(used, limit);
+  const bounds = getHermesMemoryLimitBounds(target, used);
+  const validation = validateHermesMemoryLimit(target, draftLimit, used);
+  const validationMessage = touched ? getMemoryLimitValidationMessage(validation, t) : null;
+  const displayError = validationMessage || (isEditing ? saveError : null);
+  const shouldWarnNearUsage = validation.ok && isHermesMemoryLimitNearUsage(validation.value, used, limit);
+  const helperTone = displayError ? "text-red-600" : shouldWarnNearUsage ? "text-amber-600" : "text-black/40";
+  const helperMessage = displayError
+    || (shouldWarnNearUsage
+      ? t("新上限接近当前用量，后续记忆可能无法继续写入或触发自动淘汰。")
+      : t("可设置范围：{{min}}-{{max}} 字符。保存后会重启 Hermes 网关，可能短暂中断会话。", { min: bounds.min, max: bounds.max }));
+
+  useEffect(() => {
+    if (!isEditing) {
+      setDraftLimit(String(limit));
+      setTouched(false);
+    }
+  }, [isEditing, limit]);
+
+  const handleCancel = () => {
+    setIsEditing(false);
+    setDraftLimit(String(limit));
+    setTouched(false);
+  };
+
+  const handleSave = async () => {
+    setTouched(true);
+    if (!validation.ok) return;
+    const saved = await onSaveLimit(target, validation.value, used);
+    if (saved) {
+      setIsEditing(false);
+    }
+  };
+
   return (
     <div className="rounded-lg border border-black/[0.06] bg-white p-4 shadow-[0_8px_28px_rgba(15,23,42,0.04)]">
       <div className="flex items-start justify-between gap-3">
@@ -432,15 +487,80 @@ const MemoryLimitCard = ({
           <p className="text-sm font-semibold text-black/85">{title}</p>
           <p className="mt-1 max-w-[28rem] text-xs leading-relaxed text-black/45">{description}</p>
         </div>
-        <span className="rounded-full bg-black/[0.05] px-2 py-1 text-xs font-medium text-black/60">
+        <span className="shrink-0 rounded-full bg-black/[0.05] px-2 py-1 text-xs font-medium text-black/60">
           {percent}%
         </span>
       </div>
-      <div className="mt-4 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+      <div className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-2">
         <span className="text-2xl font-semibold tabular-nums text-black/90">{used}</span>
-        <span className="pb-1 text-sm tabular-nums text-black/45">/ {limit} {t("字符")}</span>
-        <span className="text-xs text-black/45">{t("当前占用 / 字符限额")}</span>
+        <span className="text-sm tabular-nums text-black/45">/</span>
+        {isEditing ? (
+          <input
+            type="number"
+            min={bounds.min}
+            max={bounds.max}
+            step={1}
+            value={draftLimit}
+            onBlur={() => setTouched(true)}
+            onWheel={(event) => event.currentTarget.blur()}
+            onChange={(event) => {
+              setDraftLimit(event.target.value);
+              setTouched(true);
+              onDraftChange(target);
+            }}
+            disabled={isSaving}
+            className="h-9 w-28 rounded-md border border-black/[0.10] bg-white px-3 text-sm tabular-nums text-black/85 outline-none transition-colors focus:border-black/30 disabled:cursor-not-allowed disabled:opacity-60"
+          />
+        ) : (
+          <span className="text-sm tabular-nums text-black/45">{limit}</span>
+        )}
+        <span className="text-sm text-black/45">{t("字符")}</span>
+        {!isEditing && <span className="text-xs text-black/45">{t("当前占用 / 字符限额")}</span>}
+        {!isEditing ? (
+          <button
+            type="button"
+            onClick={() => {
+              setDraftLimit(String(limit));
+              setTouched(false);
+              setIsEditing(true);
+            }}
+            className="ml-1 inline-flex h-7 items-center rounded-md border border-black/[0.10] bg-white px-2.5 text-xs font-medium text-black/55 transition-colors hover:border-black/[0.18] hover:bg-black/[0.04] hover:text-black/80"
+          >
+            {t("修改")}
+          </button>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={isSaving || !validation.ok}
+              className={cn(
+                "ml-1 inline-flex h-8 items-center gap-1.5 rounded-md bg-black px-3 text-xs font-medium text-white transition-colors hover:bg-black/85",
+                (isSaving || !validation.ok) && "cursor-not-allowed opacity-45",
+              )}
+            >
+              {isSaving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              {isSaving ? t("保存中...") : t("保存")}
+            </button>
+            <button
+              type="button"
+              onClick={handleCancel}
+              disabled={isSaving}
+              className={cn(
+                "inline-flex h-8 items-center rounded-md border border-black/[0.08] bg-white px-3 text-xs font-medium text-black/55 transition-colors hover:bg-black/[0.04] hover:text-black/75",
+                isSaving && "cursor-not-allowed opacity-45",
+              )}
+            >
+              {t("取消")}
+            </button>
+          </>
+        )}
       </div>
+      {isEditing && (
+        <p className={cn("mt-3 text-xs leading-relaxed", helperTone)}>
+          {helperMessage}
+        </p>
+      )}
       <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-black/[0.06]">
         <div
           className="h-full rounded-full bg-black/80 transition-[width]"
@@ -491,6 +611,10 @@ const MemoryPanel = ({
   activeTab,
   onTabChange,
   onRefresh,
+  onSaveLimit,
+  onDraftChange,
+  savingLimitTarget,
+  limitSaveError,
   t,
 }: {
   status: MemoryLoadStatus;
@@ -499,6 +623,10 @@ const MemoryPanel = ({
   activeTab: MemoryTabId;
   onTabChange: (tab: MemoryTabId) => void;
   onRefresh: () => void;
+  onSaveLimit: (target: HermesMemoryLimitTarget, value: number, existingChars: number) => Promise<boolean>;
+  onDraftChange: (target: HermesMemoryLimitTarget) => void;
+  savingLimitTarget: HermesMemoryLimitTarget | null;
+  limitSaveError: { target: HermesMemoryLimitTarget; message: string } | null;
   t: (zh: string, options?: Record<string, unknown>) => string;
 }) => {
   const memoryEntries = splitHermesMemoryEntries(snapshot?.memoryText ?? "");
@@ -544,17 +672,27 @@ const MemoryPanel = ({
         <>
           <div className="grid gap-3 md:grid-cols-2">
             <MemoryLimitCard
+              target="memory"
               title={t("记忆统计")}
               description={t("MEMORY.md：帮 Agent 长期记住项目背景、运行环境和常用约定。")}
               used={snapshot.memoryChars}
               limit={snapshot.memoryCharLimit}
+              isSaving={savingLimitTarget === "memory"}
+              saveError={limitSaveError?.target === "memory" ? limitSaveError.message : null}
+              onSaveLimit={onSaveLimit}
+              onDraftChange={onDraftChange}
               t={t}
             />
             <MemoryLimitCard
+              target="user"
               title={t("用户画像统计")}
               description={t("USER.md：帮 Agent 长期记住你的偏好、使用习惯和沟通方式。")}
               used={snapshot.userChars}
               limit={snapshot.userCharLimit}
+              isSaving={savingLimitTarget === "user"}
+              saveError={limitSaveError?.target === "user" ? limitSaveError.message : null}
+              onSaveLimit={onSaveLimit}
+              onDraftChange={onDraftChange}
               t={t}
             />
           </div>
@@ -1390,9 +1528,9 @@ const mapPtyState = (state: TencentPtyConnectionState): ConnectionState => {
   }
 };
 
-/* ─── Terminal Modal ─── */
+/* ─── Terminal Panel ─── */
 
-const TerminalModal = ({ botId, botName, onClose }: { botId: string; botName: string; onClose: () => void }) => {
+const TerminalPanel = ({ botId, botName }: { botId: string; botName: string }) => {
   const t = useT();
   const repositories = useRepositories();
   const terminalContainerRef = useRef<HTMLDivElement | null>(null);
@@ -1560,65 +1698,44 @@ const TerminalModal = ({ botId, botName, onClose }: { botId: string; botName: st
   };
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ backgroundColor: "rgba(0,0,0,0.7)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)" }}
-      onClick={onClose}
+    <div
+      className="flex min-h-[clamp(520px,calc(100vh-220px),860px)] w-full flex-col overflow-hidden rounded-lg border shadow-[0_8px_28px_rgba(15,23,42,0.06)]"
+      style={{ background: "#0f0b09", borderColor: "rgba(255,255,255,0.1)" }}
     >
-      <motion.div
-        initial={{ opacity: 0, y: 30, scale: 0.95 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: 30, scale: 0.95 }}
-        transition={{ duration: 0.3, ease: [0.25, 0.1, 0.25, 1] }}
-        className="relative mx-4 flex w-full flex-col overflow-hidden rounded-[1.75rem] border shadow-2xl"
-        style={{ maxWidth: 900, maxHeight: "85vh", background: "#0f0b09", borderColor: "rgba(255,255,255,0.1)" }}
-        onClick={(e) => e.stopPropagation()}
+      {/* Header */}
+      <div
+        className="flex items-center justify-between border-b px-5 py-3"
+        style={{ borderColor: "rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)" }}
       >
-        {/* Header */}
-        <div
-          className="flex items-center justify-between border-b px-5 py-3"
-          style={{ borderColor: "rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)" }}
-        >
-          <div className="flex items-center gap-3">
-            <TerminalSquare className="h-4 w-4" style={{ color: "#f8e6d8" }} />
-            <span className="text-sm font-semibold" style={{ color: "#f8e6d8" }}>
-              {botName}
-            </span>
-            <span
-              className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-bold"
-              style={{ background: `${stateColor[connectionState]}18`, color: stateColor[connectionState] }}
-            >
-              <span className="h-1.5 w-1.5 rounded-full" style={{ background: stateColor[connectionState] }} />
-              {stateLabel[connectionState]}
-            </span>
-          </div>
-          <button
-            onClick={onClose}
-            className="flex h-7 w-7 items-center justify-center rounded-lg transition-colors hover:bg-[rgba(255,255,255,0.1)] text-[var(--text-tertiary)]"
-            title={t("关闭终端")}
+        <div className="flex items-center gap-3">
+          <TerminalSquare className="h-4 w-4" style={{ color: "#f8e6d8" }} />
+          <span className="text-sm font-semibold" style={{ color: "#f8e6d8" }}>
+            {botName}
+          </span>
+          <span
+            className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-bold"
+            style={{ background: `${stateColor[connectionState]}18`, color: stateColor[connectionState] }}
           >
-            <X className="h-4 w-4" />
-          </button>
+            <span className="h-1.5 w-1.5 rounded-full" style={{ background: stateColor[connectionState] }} />
+            {stateLabel[connectionState]}
+          </span>
         </div>
+      </div>
 
-        {/* Terminal */}
-        <div className="flex-1 overflow-hidden p-3">
-          {error && connectionState === "error" && (
-            <p className="mb-2 rounded-full px-3 py-1.5 text-xs font-medium" style={{ background: "rgba(207,61,76,0.15)", color: "#ff7f50" }}>
-              {error}
-            </p>
-          )}
-          <div
-            ref={terminalContainerRef}
-            className="rounded-xl border p-2"
-            style={{ borderColor: "rgba(255,255,255,0.08)", background: "#16110d", minHeight: "28rem" }}
-          />
-        </div>
-      </motion.div>
-    </motion.div>
+      {/* Terminal */}
+      <div className="flex-1 overflow-hidden p-3">
+        {error && connectionState === "error" && (
+          <p className="mb-2 rounded-full px-3 py-1.5 text-xs font-medium" style={{ background: "rgba(207,61,76,0.15)", color: "#ff7f50" }}>
+            {error}
+          </p>
+        )}
+        <div
+          ref={terminalContainerRef}
+          className="rounded-xl border p-2"
+          style={{ borderColor: "rgba(255,255,255,0.08)", background: "#16110d", minHeight: "30rem", height: "calc(100vh - 300px)" }}
+        />
+      </div>
+    </div>
   );
 };
 
@@ -2752,20 +2869,17 @@ const getBotStatusLabel = (status: OpenClawBot["status"]) => {
 
 /* ─── Main Settings Page ─── */
 
-const lightVelaHermesScripts = createLightClawScripts({ regionShortName: "gz", agentType: "hermes" });
-const channelOnlyHermesScripts = {
-  ...lightVelaHermesScripts,
-  hermes: {
-    ...lightVelaHermesScripts.hermes,
-    model: {
-      ...lightVelaHermesScripts.hermes.model,
-      getListCommand: () => LIGHTVELA_SKIP_HERMES_PROVIDER_LIST_COMMAND,
-    },
-  },
-};
+const lightVelaHermesScripts = createLightClawScripts();
 const hermesScripts = lightVelaHermesScripts.hermes;
 const hermesGatewayCommands = hermesScripts.gateway;
 const hermesModelCommands = hermesScripts.model;
+const RESCUE_EXPORT_POLL_INTERVAL_MS = 5000;
+const RESCUE_EXPORT_TERMINAL_PHASES = new Set(["completed", "failed"]);
+
+const isRescueExportRunning = (status: WorkerActionStatusResult | null | undefined) => {
+  if (!status) return false;
+  return !RESCUE_EXPORT_TERMINAL_PHASES.has(status.phase);
+};
 
 export const OpenClawSettingsPage = () => {
   const t = useT();
@@ -2968,9 +3082,11 @@ export const OpenClawSettingsPage = () => {
   const [memorySnapshot, setMemorySnapshot] = useState<HermesMemorySnapshot | null>(null);
   const [memoryError, setMemoryError] = useState<string | null>(null);
   const [activeMemoryTab, setActiveMemoryTab] = useState<MemoryTabId>("memory");
+  const [savingMemoryLimitTarget, setSavingMemoryLimitTarget] = useState<HermesMemoryLimitTarget | null>(null);
+  const [memoryLimitSaveError, setMemoryLimitSaveError] = useState<{ target: HermesMemoryLimitTarget; message: string } | null>(null);
   const memoryRequestIdRef = useRef(0);
 
-  const loadHermesMemory = useCallback(async () => {
+  const loadHermesMemory = useCallback(async (options?: { clearSnapshot?: boolean }): Promise<HermesMemorySnapshot | null> => {
     const requestId = memoryRequestIdRef.current + 1;
     memoryRequestIdRef.current = requestId;
 
@@ -2978,22 +3094,24 @@ export const OpenClawSettingsPage = () => {
       setMemorySnapshot(null);
       setMemoryStatus("error");
       setMemoryError(rawT("未找到当前 Hermes 实例。"));
-      return;
+      return null;
     }
 
     if (activeBotStatus !== "running") {
       setMemorySnapshot(null);
       setMemoryStatus("error");
       setMemoryError(rawT("实例运行后才能读取记忆。"));
-      return;
+      return null;
     }
 
-    setMemorySnapshot(null);
+    if (options?.clearSnapshot !== false) {
+      setMemorySnapshot(null);
+    }
     setMemoryStatus("loading");
     setMemoryError(null);
     try {
       const result = await repositories.bots.execDebugCommand(activeBotId, buildHermesMemoryReadCommand());
-      if (memoryRequestIdRef.current !== requestId) return;
+      if (memoryRequestIdRef.current !== requestId) return null;
       if (!isExecCommandSucceeded(result)) {
         throw new Error(
           rawT("记忆读取命令执行失败：{{detail}}", {
@@ -3001,14 +3119,80 @@ export const OpenClawSettingsPage = () => {
           }),
         );
       }
-      setMemorySnapshot(parseHermesMemorySnapshot(result.output));
+      const snapshot = parseHermesMemorySnapshot(result.output);
+      setMemorySnapshot(snapshot);
       setMemoryStatus("ready");
+      return snapshot;
     } catch (err) {
-      if (memoryRequestIdRef.current !== requestId) return;
+      if (memoryRequestIdRef.current !== requestId) return null;
       setMemoryStatus("error");
       setMemoryError(err instanceof Error ? err.message : rawT("记忆读取失败，请稍后重试。"));
+      return null;
     }
   }, [activeBotId, activeBotStatus, repositories]);
+
+  const clearHermesMemoryLimitSaveError = useCallback((target: HermesMemoryLimitTarget) => {
+    setMemoryLimitSaveError((prev) => prev?.target === target ? null : prev);
+  }, []);
+
+  const getSnapshotLimitValue = useCallback((snapshot: HermesMemorySnapshot, target: HermesMemoryLimitTarget) => (
+    target === "memory" ? snapshot.memoryCharLimit : snapshot.userCharLimit
+  ), []);
+
+  const saveHermesMemoryLimit = useCallback(async (target: HermesMemoryLimitTarget, value: number, existingChars: number) => {
+    if (!activeBotId) {
+      setMemoryLimitSaveError({ target, message: rawT("未找到当前 Hermes 实例。") });
+      return false;
+    }
+
+    if (activeBotStatus !== "running") {
+      setMemoryLimitSaveError({ target, message: rawT("实例运行后才能调整记忆上限。") });
+      return false;
+    }
+
+    setSavingMemoryLimitTarget(target);
+    setMemoryLimitSaveError(null);
+    try {
+      const command = buildHermesMemoryLimitCommand(target, value, existingChars);
+      const result = await repositories.bots.execDebugCommand(activeBotId, command);
+      if (!isExecCommandSucceeded(result)) {
+        throw new Error(
+          rawT("记忆上限调整失败：{{detail}}", {
+            detail: truncateExecOutput(result.output, result.status),
+          }),
+        );
+      }
+
+      const restartResult = await repositories.bots.execDebugCommand(activeBotId, hermesGatewayCommands.getRestartCommand());
+      const restartError = buildRestartErrorMessage(restartResult);
+      if (restartError) {
+        await loadHermesMemory({ clearSnapshot: false });
+        setMemoryLimitSaveError({
+          target,
+          message: rawT("配置已保存，但 Hermes 网关重启失败。请到「设置 → 重启网关」手动重启，或稍后重试。"),
+        });
+        return false;
+      }
+
+      const snapshot = await loadHermesMemory({ clearSnapshot: false });
+      if (!snapshot || getSnapshotLimitValue(snapshot, target) !== value) {
+        setMemoryLimitSaveError({
+          target,
+          message: rawT("配置命令已执行，但回读未生效，请刷新后重试。"),
+        });
+        return false;
+      }
+
+      toast.success(rawT("修改成功，Hermes 网关已重启。"));
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : rawT("记忆上限调整失败，请稍后重试。");
+      setMemoryLimitSaveError({ target, message });
+      return false;
+    } finally {
+      setSavingMemoryLimitTarget(null);
+    }
+  }, [activeBotId, activeBotStatus, getSnapshotLimitValue, loadHermesMemory, repositories]);
 
   useEffect(() => {
     if (activeSection !== "memory") return;
@@ -3226,13 +3410,16 @@ export const OpenClawSettingsPage = () => {
   /* 出生证明 */
   const [showBirthCert, setShowBirthCert] = useState(false);
 
-  /* Terminal 弹窗 */
-  const [showTerminal, setShowTerminal] = useState(false);
-
   /* ── 重启 Gateway ── */
   // restartingBotIds: 正在重启的 bot ID 集合，支持多 bot 并行重启
   const [showRestartConfirm, setShowRestartConfirm] = useState(false);
   const [restartingBotIds, setRestartingBotIds] = useState<Set<string>>(new Set());
+  const [showHiddenAgentTools, setShowHiddenAgentTools] = useState(false);
+  const [showExportPanel, setShowExportPanel] = useState(false);
+  const [exportingBotIds, setExportingBotIds] = useState<Set<string>>(new Set());
+  const [exportStatusByBotId, setExportStatusByBotId] = useState<Record<string, WorkerActionStatusResult | null>>({});
+  const [exportStatusLoadingBotIds, setExportStatusLoadingBotIds] = useState<Set<string>>(new Set());
+  const [exportStatusErrors, setExportStatusErrors] = useState<Record<string, string | null>>({});
   // 错误按 bot 维度存储，多 bot 并行失败时各自保留错误信息
   const [restartErrors, setRestartErrors] = useState<RestartErrors>(new Map());
 
@@ -3265,15 +3452,102 @@ export const OpenClawSettingsPage = () => {
     }
   };
 
+  const loadRescueExportStatus = useCallback(async (botId: string) => {
+    setExportStatusLoadingBotIds((prev) => new Set(prev).add(botId));
+    try {
+      const status = await repositories.bots.getRescueExportStatus(botId);
+      setExportStatusByBotId((prev) => ({ ...prev, [botId]: status }));
+      setExportStatusErrors((prev) => ({ ...prev, [botId]: null }));
+      return status;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : t("导出状态查询失败");
+      setExportStatusErrors((prev) => ({ ...prev, [botId]: message }));
+      throw err;
+    } finally {
+      setExportStatusLoadingBotIds((prev) => {
+        const next = new Set(prev);
+        next.delete(botId);
+        return next;
+      });
+    }
+  }, [repositories.bots, t]);
+
+  const handleOpenExportPanel = () => {
+    if (!activeBot) return;
+    setShowExportPanel(true);
+    void loadRescueExportStatus(activeBot.id).catch(() => undefined);
+  };
+
+  const handleExportWorkspace = async () => {
+    if (!activeBot || activeBot.status !== "running" || exportingBotIds.has(activeBot.id)) return;
+    const targetBotId = activeBot.id;
+    setShowExportPanel(true);
+    setExportingBotIds((prev) => new Set(prev).add(targetBotId));
+    setExportStatusByBotId((prev) => ({
+      ...prev,
+      [targetBotId]: {
+        phase: "starting",
+        logs: [{ time: new Date().toISOString(), phase: "starting", message: t("正在发起工作区导出任务。"), level: "info" }],
+      },
+    }));
+    try {
+      await repositories.bots.startRescueExport(targetBotId);
+      toast.success(t("导出任务已发起，完成后会发送到绑定邮箱。"));
+      await loadRescueExportStatus(targetBotId).catch(() => undefined);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "";
+      if (message.includes("action_already_running")) {
+        toast.success(t("已有导出任务正在执行，已为你加载当前进度。"));
+        await loadRescueExportStatus(targetBotId).catch(() => undefined);
+        return;
+      }
+      const friendlyMessage = message.includes("cos_upload_bucket_not_configured")
+        ? t("导出存储桶未配置，请稍后再试。")
+        : message || t("导出任务发起失败");
+      setExportStatusByBotId((prev) => ({
+        ...prev,
+        [targetBotId]: {
+          phase: "failed",
+          error: friendlyMessage,
+          logs: [
+            { time: new Date().toISOString(), phase: "failed", message: friendlyMessage, level: "error" },
+          ],
+        },
+      }));
+      toast.error(
+        friendlyMessage,
+      );
+    } finally {
+      setExportingBotIds((prev) => {
+        const next = new Set(prev);
+        next.delete(targetBotId);
+        return next;
+      });
+    }
+  };
+
   // 当前 tab 的 bot 是否正在重启
   const isActiveBotRestarting = computeIsActiveBotRestarting(activeBot, restartingBotIds);
+  const isActiveBotExporting = activeBot ? exportingBotIds.has(activeBot.id) : false;
+  const activeExportStatus = activeBot ? exportStatusByBotId[activeBot.id] ?? null : null;
+  const isActiveExportStatusLoading = activeBot ? exportStatusLoadingBotIds.has(activeBot.id) : false;
+  const activeExportStatusError = activeBot ? exportStatusErrors[activeBot.id] ?? null : null;
   // 当前 tab 是否展示错误
   const activeBotRestartError = getActiveBotRestartError(activeBot, restartErrors);
 
   useEffect(() => {
+    if (!showExportPanel || !activeBot?.id || !isRescueExportRunning(activeExportStatus)) return;
+    const timer = window.setInterval(() => {
+      void loadRescueExportStatus(activeBot.id).catch(() => undefined);
+    }, RESCUE_EXPORT_POLL_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, [showExportPanel, activeBot?.id, activeExportStatus?.phase, loadRescueExportStatus]);
+
+  useEffect(() => {
     return installOpenClawConsoleHelpers({
-      host: window as Window & { help?: unknown; terminal?: unknown; console: Console },
-      getTerminalPath: () => (activeBot ? `/bots/${activeBot.id}/terminal` : null),
+      host: window as Window & { help?: unknown; terminal?: unknown; show?: unknown; console: Console },
+      getTerminalPath: () => (activeBot ? AGENT_SECTION_PATH_BY_ID.terminal : null),
+      onShowHiddenTools: () => setShowHiddenAgentTools(true),
     });
   }, [activeBot]);
 
@@ -3499,6 +3773,47 @@ export const OpenClawSettingsPage = () => {
   };
 
   const avatarUrl = activeBot ? getAvatarForBot(activeBot.id) : "";
+  const exportPhaseLabel = (phase?: string) => {
+    switch (phase) {
+      case "starting":
+        return t("发起中");
+      case "locating":
+        return t("定位资源");
+      case "enter_rescue":
+      case "wait_rescue":
+      case "wait_remote_access":
+        return t("准备导出环境");
+      case "prepare_archive":
+      case "start_tat":
+      case "wait_tat":
+      case "finalize_archive":
+        return t("打包中");
+      case "copy_archive":
+        return t("上传中");
+      case "notify_email":
+      case "confirm_email_delivery":
+        return t("发送邮件");
+      case "cleanup_remote":
+      case "exit_rescue":
+      case "wait_running":
+        return t("恢复环境");
+      case "completed":
+        return t("已完成");
+      case "failed":
+        return t("未完成");
+      default:
+        return t("暂无任务");
+    }
+  };
+  const exportPanelLogs = activeExportStatus?.logs ?? [];
+  const exportPanelPhase = activeExportStatus?.phase;
+  const canStartExportFromPanel = Boolean(activeBot && activeBot.status === "running" && !resettingAcli && !isActiveBotExporting && !isRescueExportRunning(activeExportStatus));
+  const formatExportLogTime = (value?: string) => {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  };
 
   if (shouldRedirectToAgents) {
     return <Navigate to={{ pathname: AGENTS_HOME_PATH, search: location.search }} replace />;
@@ -3788,17 +4103,122 @@ export const OpenClawSettingsPage = () => {
         <BirthCertificateModal bot={activeBot} onClose={() => setShowBirthCert(false)} />
       )}
 
-      {/* Terminal Modal */}
-      <AnimatePresence>
-        {showTerminal && activeBot && (
-          <TerminalModal
-            key={activeBot.id}
-            botId={activeBot.id}
-            botName={activeBot.name}
-            onClose={() => setShowTerminal(false)}
-          />
-        )}
-      </AnimatePresence>
+      {showExportPanel && activeBot && createPortal(
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 px-4 backdrop-blur-sm"
+          onClick={() => setShowExportPanel(false)}
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 16, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            className="w-full max-w-[560px] rounded-md border border-black/[0.08] bg-white shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-black/[0.06] px-5 py-4">
+              <div className="min-w-0">
+                <h3 className="text-[17px] font-semibold text-black/90">{t("工作区导出")}</h3>
+                <p className="mt-1 truncate text-xs text-black/45" title={activeBot.name}>
+                  {activeBot.name} · /home/agentuser/.hermes
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowExportPanel(false)}
+                className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md text-black/45 transition-colors hover:bg-black/[0.05] hover:text-black/80"
+                aria-label={t("关闭")}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="px-5 py-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-black/[0.06] bg-black/[0.02] px-3 py-3">
+                <div className="flex items-center gap-2">
+                  <span className={cn(
+                    "inline-flex h-2.5 w-2.5 rounded-full",
+                    exportPanelPhase === "completed"
+                      ? "bg-emerald-500"
+                      : exportPanelPhase === "failed"
+                        ? "bg-red-500"
+                        : activeExportStatus
+                          ? "bg-amber-500"
+                          : "bg-black/20",
+                  )} />
+                  <span className="text-sm font-medium text-black/80">{exportPhaseLabel(exportPanelPhase)}</span>
+                  {(isActiveBotExporting || isActiveExportStatusLoading || isRescueExportRunning(activeExportStatus)) && (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-black/35" />
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void loadRescueExportStatus(activeBot.id).catch(() => undefined)}
+                    disabled={isActiveExportStatusLoading}
+                    className="inline-flex h-8 items-center gap-1.5 rounded-md border border-black/[0.08] bg-white px-2.5 text-xs font-medium text-black/65 transition-colors hover:bg-black/[0.035] disabled:cursor-not-allowed disabled:text-black/25"
+                  >
+                    <RefreshCw className={cn("h-3.5 w-3.5", isActiveExportStatusLoading && "animate-spin")} />
+                    {t("刷新")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleExportWorkspace()}
+                    disabled={!canStartExportFromPanel}
+                    className="inline-flex h-8 items-center gap-1.5 rounded-md bg-black/90 px-3 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:bg-black/20"
+                  >
+                    {isActiveBotExporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                    {isActiveBotExporting ? t("发起中") : t("开始导出")}
+                  </button>
+                </div>
+              </div>
+
+              {activeExportStatusError && (
+                <div className="mt-3 flex gap-2 rounded-md border border-red-500/15 bg-red-500/[0.04] px-3 py-2 text-xs leading-relaxed text-red-600">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+                  <span>{activeExportStatusError}</span>
+                </div>
+              )}
+
+              {activeExportStatus?.error && !activeExportStatusError && (
+                <div className="mt-3 flex gap-2 rounded-md border border-red-500/15 bg-red-500/[0.04] px-3 py-2 text-xs leading-relaxed text-red-600">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+                  <span>{activeExportStatus.error}</span>
+                </div>
+              )}
+
+              <div className="mt-4 max-h-[320px] overflow-y-auto pr-1">
+                {exportPanelLogs.length === 0 ? (
+                  <div className="rounded-md border border-dashed border-black/[0.12] px-4 py-8 text-center text-sm text-black/45">
+                    {isActiveExportStatusLoading ? t("正在读取导出状态...") : t("暂无导出记录")}
+                  </div>
+                ) : (
+                  <ol className="space-y-0">
+                    {exportPanelLogs.map((log, index) => {
+                      const isLast = index === exportPanelLogs.length - 1;
+                      const tone = log.level === "error" ? "bg-red-500" : log.level === "success" ? "bg-emerald-500" : "bg-black/35";
+                      return (
+                        <li key={`${log.time ?? "log"}-${index}`} className="grid grid-cols-[72px_16px_minmax(0,1fr)] gap-3">
+                          <div className="pt-0.5 text-right text-[11px] text-black/35">
+                            {formatExportLogTime(log.time)}
+                          </div>
+                          <div className="relative flex justify-center">
+                            <span className={cn("mt-1.5 h-2.5 w-2.5 rounded-full", tone)} />
+                            {!isLast && <span className="absolute top-5 bottom-0 w-px bg-black/[0.08]" />}
+                          </div>
+                          <div className="pb-4">
+                            <p className="text-sm leading-relaxed text-black/78">{log.message}</p>
+                            {log.phase && <p className="mt-0.5 text-[11px] text-black/35">{exportPhaseLabel(log.phase)}</p>}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        </div>,
+        document.body,
+      )}
 
       <main className="lw-app-top-pad flex-grow bg-[#F7F8FA] pb-12">
         <section className="lw-settings-shell">
@@ -3822,7 +4242,6 @@ export const OpenClawSettingsPage = () => {
                 InstanceId: activeBot.id,
                 RegionId: 1,
               };
-              const sdkRegionShortName = "gz";
               const sdkFeatureFlags: IFeatureFlags = {
                 gateway: true,
                 channel: true,
@@ -3865,6 +4284,7 @@ export const OpenClawSettingsPage = () => {
               ];
               const isRestartDisabled = resettingAcli || isActiveBotRestarting || activeBot.status !== "running";
               const restartTooltip = resettingAcli ? t("请稍后") : t("重启");
+              const exportTooltip = isActiveBotExporting ? t("导出中...") : t("导出工作区");
               const hasViewedChannel = viewedChannelBotIds.has(activeBot.id);
               const resetBlockReason = getResetBlockReason(activeBot, resetting, hasViewedChannel);
               const resetDisabled = resettingAcli || resetting || resetBlockReason !== null;
@@ -4074,6 +4494,54 @@ export const OpenClawSettingsPage = () => {
                       aria-label={t("实例配置导航")}
                       className="mt-4 rounded-md border border-black/[0.06] bg-white p-2 shadow-[0_8px_28px_rgba(15,23,42,0.04)]"
                     >
+                      {showHiddenAgentTools ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => navigate({ pathname: AGENT_SECTION_PATH_BY_ID.terminal, search: location.search })}
+                            aria-current={activeSection === "terminal" ? "page" : undefined}
+                            className={cn(
+                              "lw-settings-nav-item flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 font-medium transition-colors",
+                              activeSection === "terminal"
+                                ? "bg-black/[0.06] text-black/90"
+                                : "text-black/55 hover:bg-black/[0.035] hover:text-black/85",
+                            )}
+                          >
+                            <span className="flex h-5 w-5 items-center justify-center"><TerminalSquare className="h-4 w-4" /></span>
+                            <span className="flex-1 text-left text-[15px]">{t("终端")}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => navigate({ pathname: AGENT_SECTION_PATH_BY_ID.browser, search: location.search })}
+                            aria-current={activeSection === "browser" ? "page" : undefined}
+                            className={cn(
+                              "lw-settings-nav-item flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 font-medium transition-colors",
+                              activeSection === "browser"
+                                ? "bg-black/[0.06] text-black/90"
+                                : "text-black/55 hover:bg-black/[0.035] hover:text-black/85",
+                            )}
+                          >
+                            <span className="flex h-5 w-5 items-center justify-center"><Globe2 className="h-4 w-4" /></span>
+                            <span className="flex-1 text-left text-[15px]">{t("浏览器")}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!activeBot) return;
+                              handleOpenExportPanel();
+                            }}
+                            className={cn(
+                              "lw-settings-nav-item flex w-full items-center gap-2.5 rounded-md px-3 py-2.5 font-medium transition-colors",
+                              "text-black/55 hover:bg-black/[0.035] hover:text-black/85",
+                            )}
+                          >
+                            <span className="flex h-5 w-5 items-center justify-center">
+                              {isActiveBotExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                            </span>
+                            <span className="flex-1 text-left text-[15px]">{exportTooltip}</span>
+                          </button>
+                        </>
+                      ) : null}
                       {settingsSections.map((section) => {
                         const isActive = section.id === activeSection;
                         return (
@@ -4092,7 +4560,7 @@ export const OpenClawSettingsPage = () => {
                             <span className="flex h-5 w-5 items-center justify-center">{section.icon}</span>
                             <span className="flex-1 text-left text-[15px]">{section.label}</span>
                             {section.badge && (
-                              <span className="rounded-full bg-black/90 px-1.5 py-0.5 text-[9px] font-bold leading-none text-white">
+                              <span className="rounded-full bg-[#f76724] px-1.5 py-0.5 text-[9px] font-bold leading-none text-white">
                                 {section.badge}
                               </span>
                             )}
@@ -4116,8 +4584,6 @@ export const OpenClawSettingsPage = () => {
                           {activeSection === "channel" && (
                             <ChannelPanel
                               instance={sdkInstance}
-                              regionShortName={sdkRegionShortName}
-                              scriptCommands={channelOnlyHermesScripts}
                               featureFlags={sdkFeatureFlags}
                               productConfig={sdkProductConfig}
                             />
@@ -4125,7 +4591,6 @@ export const OpenClawSettingsPage = () => {
                           {activeSection === "model" && (
                             <ModelPanel
                               instance={sdkInstance}
-                              regionShortName={sdkRegionShortName}
                               featureFlags={sdkFeatureFlags}
                               productConfig={sdkProductConfig}
                             />
@@ -4133,7 +4598,6 @@ export const OpenClawSettingsPage = () => {
                           {activeSection === "skill" && (
                             <SkillPanel
                               instance={sdkInstance}
-                              regionShortName={sdkRegionShortName}
                               featureFlags={sdkFeatureFlags}
                               productConfig={sdkProductConfig}
                             />
@@ -4196,11 +4660,21 @@ export const OpenClawSettingsPage = () => {
                               activeTab={activeMemoryTab}
                               onTabChange={setActiveMemoryTab}
                               onRefresh={loadHermesMemory}
+                              onSaveLimit={saveHermesMemoryLimit}
+                              onDraftChange={clearHermesMemoryLimitSaveError}
+                              savingLimitTarget={savingMemoryLimitTarget}
+                              limitSaveError={memoryLimitSaveError}
                               t={t}
                             />
                           )}
                           {activeSection === "files" && (
                             <TatFileManagerPanel botId={activeBot.id} />
+                          )}
+                          {activeSection === "browser" && (
+                            <TatHermesWebPanel botId={activeBot.id} />
+                          )}
+                          {activeSection === "terminal" && (
+                            <TerminalPanel botId={activeBot.id} botName={activeBot.name} />
                           )}
                         </div>
                       </motion.div>
@@ -4230,7 +4704,7 @@ export const OpenClawSettingsPage = () => {
                       ? "bg-black/90 hover:opacity-90"
                       : "cursor-not-allowed bg-black/30",
                   )}
-                  style={{marginTop: 20}}
+                  style={{ marginTop: 20 }}
                 >
                   {canCreateBot ? t("立即创建") : t("暂不可创建")}
                 </button>

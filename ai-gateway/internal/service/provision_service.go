@@ -73,7 +73,7 @@ func (s *ProvisionService) subscribeAndMaybeGenKey(user *model.User, planID stri
 		return nil, nil, nil, fmt.Errorf("get plan: %w", err)
 	}
 
-	sub, err := s.subSvc.Subscribe(user.ID, plan.ID, periodStart)
+	sub, err := s.subSvc.Subscribe(user.ID, plan.ID, periodStart, 0, "")
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("subscribe: %w", err)
 	}

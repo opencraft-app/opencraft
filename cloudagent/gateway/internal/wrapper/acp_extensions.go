@@ -2,6 +2,8 @@ package wrapper
 
 const (
 	cloudAgentSessionStatusMethod      = "_cloudagent.session.status"
+	cloudAgentRunCreateMethod          = "_cloudagent.run.create"
+	cloudAgentRunWaitMethod            = "_cloudagent.run.wait"
 	cloudAgentRuntimeEnsureReadyMethod = "_cloudagent.runtime.ensure_ready"
 	cloudAgentRuntimeKillDaemonMethod  = "_cloudagent.runtime.kill_daemon"
 	cloudAgentRuntimeKillOuterMethod   = "_cloudagent.runtime.kill_outer"

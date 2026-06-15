@@ -38,3 +38,21 @@ func (c *AESGCMRealnameCipher) Encrypt(plaintext string) (string, error) {
 	sealed := c.aead.Seal(nonce, nonce, []byte(plaintext), nil)
 	return base64.StdEncoding.EncodeToString(sealed), nil
 }
+
+func (c *AESGCMRealnameCipher) Decrypt(ciphertext string) (string, error) {
+	sealed, err := base64.StdEncoding.DecodeString(strings.TrimSpace(ciphertext))
+	if err != nil {
+		return "", fmt.Errorf("decode realname ciphertext: %w", err)
+	}
+	nonceSize := c.aead.NonceSize()
+	if len(sealed) < nonceSize {
+		return "", fmt.Errorf("realname ciphertext is too short")
+	}
+	nonce := sealed[:nonceSize]
+	payload := sealed[nonceSize:]
+	plaintext, err := c.aead.Open(nil, nonce, payload, nil)
+	if err != nil {
+		return "", fmt.Errorf("open realname ciphertext: %w", err)
+	}
+	return string(plaintext), nil
+}

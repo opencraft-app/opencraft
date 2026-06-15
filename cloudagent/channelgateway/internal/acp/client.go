@@ -31,6 +31,28 @@ type PromptResult struct {
 	Raw        json.RawMessage
 }
 
+type runCreateResult struct {
+	Run struct {
+		RunID     string `json:"run_id"`
+		SessionID string `json:"session_id"`
+		Status    string `json:"status"`
+	} `json:"run"`
+}
+
+type runWaitResult struct {
+	Run struct {
+		RunID      string `json:"run_id"`
+		SessionID  string `json:"session_id"`
+		Status     string `json:"status"`
+		StopReason string `json:"stop_reason"`
+		OutputText string `json:"output_text"`
+		Error      struct {
+			Message string `json:"message"`
+			Code    string `json:"code"`
+		} `json:"error"`
+	} `json:"run"`
+}
+
 type RuntimeReadyResult struct {
 	Changed bool
 	Raw     json.RawMessage
@@ -209,9 +231,90 @@ func (c *Client) EnsureRuntimeReady(ctx context.Context, sessionID, cwd string) 
 }
 
 func (c *Client) Prompt(ctx context.Context, sessionID, text string) (PromptResult, error) {
+	result, err := c.RunPrompt(ctx, sessionID, text)
+	if err == nil || !isMethodNotFoundError(err) {
+		return result, err
+	}
+	log.Printf("channelgateway acp_trace action=acp_run_fallback reason=method_not_found session_id=%s error=%s", acpLogValue(sessionID), acpLogValue(err.Error()))
+	return c.promptLegacy(ctx, sessionID, text)
+}
+
+func (c *Client) RunPrompt(ctx context.Context, sessionID, text string) (PromptResult, error) {
 	if strings.TrimSpace(sessionID) == "" {
 		return PromptResult{}, errors.New("missing session id")
 	}
+	conn, err := c.ensureConn(ctx)
+	if err != nil {
+		return PromptResult{}, err
+	}
+	c.promptMu.Lock()
+	defer c.promptMu.Unlock()
+	capture := &promptCapture{sessionID: sessionID}
+	c.mu.Lock()
+	if c.current != nil {
+		c.mu.Unlock()
+		return PromptResult{}, errors.New("acp prompt already in flight on this client")
+	}
+	c.current = capture
+	c.mu.Unlock()
+	defer func() {
+		c.mu.Lock()
+		if c.current == capture {
+			c.current = nil
+		}
+		c.mu.Unlock()
+	}()
+	createRaw, err := conn.Call(ctx, "_cloudagent.run.create", map[string]any{
+		"session_id": sessionID,
+		"prompt": []map[string]any{{
+			"type": "text",
+			"text": text,
+		}},
+	})
+	if err != nil {
+		if !isMethodNotFoundError(err) {
+			c.resetConn(conn, "run_create_failed session_id="+sessionID)
+		}
+		return PromptResult{}, err
+	}
+	var create runCreateResult
+	if err := json.Unmarshal(createRaw, &create); err != nil {
+		return PromptResult{}, fmt.Errorf("decode run create result: %w", err)
+	}
+	if create.Run.RunID == "" {
+		return PromptResult{}, errors.New("run/create result missing run_id")
+	}
+	waitRaw, err := conn.Call(ctx, "_cloudagent.run.wait", map[string]any{
+		"session_id": sessionID,
+		"run_id":     create.Run.RunID,
+	})
+	if err != nil {
+		c.resetConn(conn, "run_wait_failed session_id="+sessionID+" run_id="+create.Run.RunID)
+		return PromptResult{}, err
+	}
+	var wait runWaitResult
+	if err := json.Unmarshal(waitRaw, &wait); err != nil {
+		return PromptResult{}, fmt.Errorf("decode run wait result: %w", err)
+	}
+	if strings.EqualFold(wait.Run.Status, "failed") {
+		msg := strings.TrimSpace(wait.Run.Error.Message)
+		if msg == "" {
+			msg = "run failed"
+		}
+		return PromptResult{}, errors.New(msg)
+	}
+	reply := strings.TrimSpace(wait.Run.OutputText)
+	if reply == "" {
+		reply = strings.TrimSpace(capture.text.String())
+	}
+	stopReason := strings.TrimSpace(wait.Run.StopReason)
+	if stopReason == "" {
+		stopReason = "end_turn"
+	}
+	return PromptResult{StopReason: stopReason, Text: reply, Raw: waitRaw}, nil
+}
+
+func (c *Client) promptLegacy(ctx context.Context, sessionID, text string) (PromptResult, error) {
 	conn, err := c.ensureConn(ctx)
 	if err != nil {
 		return PromptResult{}, err
@@ -334,6 +437,14 @@ func isACPTransportError(err error) bool {
 		}
 	}
 	return false
+}
+
+func isMethodNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+	text := strings.ToLower(err.Error())
+	return strings.Contains(text, "method not found") || strings.Contains(text, "not found") && strings.Contains(text, "-32601")
 }
 
 func (c *Client) handleNotification(raw json.RawMessage) error {

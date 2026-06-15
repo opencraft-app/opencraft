@@ -1,10 +1,12 @@
-import { Outlet } from "react-router-dom";
-import { ImpersonationBanner } from "@/components/site/impersonation-banner";
+import { Outlet, useNavigate } from "react-router-dom";
+import { SiteHeader } from "@/components/site/site-header";
 
 export const AppShellLayout = () => {
+  const navigate = useNavigate();
+
   return (
     <div className="flex min-h-dvh flex-col bg-white text-[var(--text-primary)]">
-      <ImpersonationBanner />
+      <SiteHeader onLoginClick={() => navigate("/auth/sign-in")} />
       <main className="flex-1">
         <Outlet />
       </main>

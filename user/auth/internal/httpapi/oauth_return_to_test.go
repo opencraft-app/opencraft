@@ -119,6 +119,32 @@ func TestValidatedReturnToURLWithConfiguredHTTPOrigin(t *testing.T) {
 	}
 }
 
+func TestValidatedReturnToURLAllowsBrowserExtensionCallback(t *testing.T) {
+	t.Parallel()
+
+	allowed := "https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/lightvela?provider_type=browser_extension&extension_id=abcdefghijklmnopabcdefghijklmnop"
+	if got := validatedReturnToURL(allowed); got != allowed {
+		t.Fatalf("expected chromium extension return_to to be allowed, got %q", got)
+	}
+
+	rejected := []string{
+		"https://chromiumapp.org/lightvela",
+		"https://foo.bar.chromiumapp.org/lightvela",
+		"https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/other",
+		"http://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/lightvela",
+		"https://abc123.chromiumapp.org/lightvela",
+	}
+	for _, raw := range rejected {
+		raw := raw
+		t.Run(raw, func(t *testing.T) {
+			t.Parallel()
+			if got := validatedReturnToURL(raw); got != "" {
+				t.Fatalf("expected chromium extension return_to to be rejected, got %q", got)
+			}
+		})
+	}
+}
+
 func TestAppendSessionTokenToReturnTo(t *testing.T) {
 	t.Parallel()
 
@@ -140,12 +166,19 @@ func TestOAuthSuccessRedirectForDeviceBindUsesShortToken(t *testing.T) {
 		t.Run(returnTo, func(t *testing.T) {
 			t.Parallel()
 
-			assertOAuthDeviceBindRedirectUsesShortToken(t, returnTo)
+			assertOAuthDeviceBindRedirectUsesShortToken(t, returnTo, "nonce-123")
 		})
 	}
 }
 
-func assertOAuthDeviceBindRedirectUsesShortToken(t *testing.T, returnTo string) {
+func TestOAuthSuccessRedirectForBrowserExtensionUsesShortToken(t *testing.T) {
+	t.Parallel()
+
+	returnTo := "https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/lightvela?provider_type=browser_extension&extension_id=abcdefghijklmnopabcdefghijklmnop"
+	assertOAuthDeviceBindRedirectUsesShortToken(t, returnTo, "")
+}
+
+func assertOAuthDeviceBindRedirectUsesShortToken(t *testing.T, returnTo string, expectedNonce string) {
 	t.Helper()
 
 	codec := newDeviceBindTokenCodec("device-bind-secret", 10*time.Minute)
@@ -175,7 +208,7 @@ func assertOAuthDeviceBindRedirectUsesShortToken(t *testing.T, returnTo string) 
 	if err != nil {
 		t.Fatalf("verify device token: %v", err)
 	}
-	if claims.UserID != "user-123" || claims.DeviceNonce != "nonce-123" || claims.Scope != deviceBindTokenScope {
+	if claims.UserID != "user-123" || claims.DeviceNonce != expectedNonce || claims.Scope != deviceBindTokenScope {
 		t.Fatalf("claims = %+v", claims)
 	}
 }

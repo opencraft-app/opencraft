@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
@@ -34,7 +35,7 @@ func TestSetSessionCookieUsesConfiguredCrossSiteAttributes(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
-	handler := NewHandler(nil, true, http.SameSiteNoneMode, 30*24*time.Hour, nil, nil, nil, nil, "https://lightclaw.tech", "https://lightvela.com", nil)
+	handler := NewHandler(nil, true, http.SameSiteNoneMode, 30*24*time.Hour, nil, nil, nil, nil, "https://lightclaw.tech", nil)
 
 	handler.setSessionCookie(ctx, "token-123")
 
@@ -273,6 +274,64 @@ func TestCreateTATDeviceBindAcceptsDeviceBindToken(t *testing.T) {
 	}
 }
 
+func TestCreateTATDeviceBindAcceptsBrowserExtensionCallback(t *testing.T) {
+	t.Parallel()
+
+	issuer := &httpStubTATRegisterIssuer{
+		result: tat.RegisterCode{
+			Region:             "ap-shanghai",
+			RegisterCodeID:     "browser-reg-id",
+			RegisterCodeValue:  "browser-reg-value",
+			RequestID:          "browser-request-id",
+			EffectiveTimeHours: 24,
+		},
+	}
+	router := newAuthTestRouterWithTATRegisterIssuer(issuer)
+	signUp := performJSONRequest(t, router, http.MethodPost, "/auth/password/sign-up", map[string]any{
+		"name":       "Browser Node User",
+		"email":      "browser-node-user@example.com",
+		"password":   "password123",
+		"inviteCode": "VALID2026",
+	})
+	var signUpResponse sessionResponseBody
+	decodeJSONResponse(t, signUp, &signUpResponse)
+	codec := newDeviceBindTokenCodec(testDeviceBindSecret, 10*time.Minute)
+	callbackURL := "https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/lightvela?provider_type=browser_extension&extension_id=abcdefghijklmnopabcdefghijklmnop"
+	token, _, err := codec.Issue(&service.AuthSession{User: service.User{ID: signUpResponse.Session.User.ID}}, callbackURL)
+	if err != nil {
+		t.Fatalf("issue device bind token: %v", err)
+	}
+
+	recorder := performJSONRequestWithHeaders(t, router, http.MethodPost, "/auth/tat/device-bind", map[string]any{
+		"callback_url": callbackURL,
+		"device_name":  "Chrome Extension abcdefghijklmnopabcdefghijklmnop",
+	}, map[string]string{
+		"Authorization": "Bearer " + token,
+	})
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var response struct {
+		CallbackURL  string `json:"callback_url"`
+		RedirectURL  string `json:"redirect_url"`
+		Registration struct {
+			RegisterCodeID    string `json:"register_code_id"`
+			RegisterCodeValue string `json:"register_code_value"`
+		} `json:"registration"`
+	}
+	decodeJSONResponse(t, recorder, &response)
+	if response.CallbackURL != callbackURL {
+		t.Fatalf("callback_url: got %q", response.CallbackURL)
+	}
+	if response.Registration.RegisterCodeID != "browser-reg-id" || response.Registration.RegisterCodeValue != "browser-reg-value" {
+		t.Fatalf("registration: got %+v", response.Registration)
+	}
+	if !strings.Contains(response.RedirectURL, "registration_code=browser-reg-value") {
+		t.Fatalf("redirect_url should contain registration code, got %q", response.RedirectURL)
+	}
+}
+
 func TestCreateTATDeviceBindRejectsExternalCallback(t *testing.T) {
 	t.Parallel()
 
@@ -350,6 +409,36 @@ func TestVerifyRealnameSuccessUpdatesSessionBooleanOnly(t *testing.T) {
 	}
 }
 
+func TestPhoneChangeRoutesUpdateCurrentUserPhone(t *testing.T) {
+	router, svc := newAuthTestRouterWithService()
+	oldPhone := "13800138000"
+	newPhone := "13900139000"
+
+	sendLogin := performJSONRequest(t, router, http.MethodPost, "/auth/sms/send", map[string]any{"phone": oldPhone})
+	if sendLogin.Code != http.StatusOK {
+		t.Fatalf("send login sms failed: %d %s", sendLogin.Code, sendLogin.Body.String())
+	}
+	loginCode := mustHTTPCurrentSMSCode(t, svc, oldPhone)
+	login := performJSONRequest(t, router, http.MethodPost, "/auth/sms/verify", map[string]any{"name": "换绑用户", "phone": oldPhone, "code": loginCode})
+	if login.Code != http.StatusOK {
+		t.Fatalf("login sms verify failed: %d %s", login.Code, login.Body.String())
+	}
+	sessionCookie := findSetCookie(t, login, sessionCookieName)
+
+	sendChange := performJSONRequest(t, router, http.MethodPost, "/auth/profile/phone/send", map[string]any{"phone": newPhone}, sessionCookie)
+	if sendChange.Code != http.StatusOK {
+		t.Fatalf("send phone change sms failed: %d %s", sendChange.Code, sendChange.Body.String())
+	}
+	changeCode := mustHTTPCurrentSMSCode(t, svc, newPhone)
+	changed := performJSONRequest(t, router, http.MethodPost, "/auth/profile/phone/verify", map[string]any{"phone": newPhone, "code": changeCode}, sessionCookie)
+	if changed.Code != http.StatusOK {
+		t.Fatalf("verify phone change failed: %d %s", changed.Code, changed.Body.String())
+	}
+	if !stringsContainsAll(changed.Body.String(), `"phone":"`+newPhone+`"`) {
+		t.Fatalf("expected changed profile to include new phone, got %s", changed.Body.String())
+	}
+}
+
 func TestGetCurrentSessionReturnsSignedAvatarURL(t *testing.T) {
 	t.Parallel()
 
@@ -385,6 +474,33 @@ func TestGetCurrentSessionReturnsSignedAvatarURL(t *testing.T) {
 	wantAvatarURL := publicAvatarURLForTest(signUpBody.Session.User.ID)
 	if response.Session.User == nil || response.Session.User.AvatarURL != wantAvatarURL {
 		t.Fatalf("expected fixed avatar path on current session, got %+v", response.Session.User)
+	}
+}
+
+func TestSyncOAuthAvatarUsesShortTimeout(t *testing.T) {
+	t.Parallel()
+
+	store := service.NewMemoryStore(service.StoreOptions{
+		Now:                fixedHTTPTestNow,
+		SeedDefaultInvites: true,
+	})
+	svc := service.NewWithStore(store, service.Options{
+		Now:        fixedHTTPTestNow,
+		SessionTTL: 30 * 24 * time.Hour,
+	})
+	avatarStore := &stubAvatarStore{}
+	handler := NewHandler(svc, true, http.SameSiteNoneMode, 30*24*time.Hour, nil, nil, nil, nil, "https://lightclaw.tech", nil)
+	handler.avatarStore = avatarStore
+
+	start := time.Now()
+	handler.syncOAuthAvatar(context.Background(), nil, "github", "usr_avatar_timeout", "https://avatars.example.com/u/1", "")
+
+	if !avatarStore.lastRemoteHasDeadline {
+		t.Fatal("expected avatar sync context to have a deadline")
+	}
+	deadlineWindow := avatarStore.lastRemoteDeadline.Sub(start)
+	if deadlineWindow <= 0 || deadlineWindow > oauthAvatarSyncTimeout+200*time.Millisecond {
+		t.Fatalf("avatar sync deadline = %s, want <= %s", deadlineWindow, oauthAvatarSyncTimeout)
 	}
 }
 
@@ -650,12 +766,6 @@ func TestPutProfileAvatarQueuesAuditWhenEnabled(t *testing.T) {
 	recorder := performMultipartAvatarUploadRequest(t, router, "/auth/profile/avatar", sessionCookie, testPNGBytes(t))
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("expected 200 from avatar upload, got %d: %s", recorder.Code, recorder.Body.String())
-	}
-	if avatarStore.lastPendingUserID == "" {
-		t.Fatal("expected audit-enabled upload to store a pending avatar object")
-	}
-	if avatarStore.lastUploadedUserID != "" {
-		t.Fatalf("audit-enabled upload must not overwrite current avatar object, got current upload for %q", avatarStore.lastUploadedUserID)
 	}
 
 	var response profileResponseBody
@@ -1513,6 +1623,15 @@ func newAuthTestRouterWithTATRegisterIssuer(issuer tat.RegisterCodeIssuer) *gin.
 }
 
 func newAuthTestRouterWithOptions(avatarStore AvatarStore, adminToken string) *gin.Engine {
+	router, _ := newAuthTestRouterWithOptionsAndService(avatarStore, adminToken)
+	return router
+}
+
+func newAuthTestRouterWithService() (*gin.Engine, *service.Service) {
+	return newAuthTestRouterWithOptionsAndService(nil, "")
+}
+
+func newAuthTestRouterWithOptionsAndService(avatarStore AvatarStore, adminToken string) (*gin.Engine, *service.Service) {
 	gin.SetMode(gin.TestMode)
 	store := service.NewMemoryStore(service.StoreOptions{
 		Now:                fixedHTTPTestNow,
@@ -1529,7 +1648,7 @@ func newAuthTestRouterWithOptions(avatarStore AvatarStore, adminToken string) *g
 		AvatarStore:    avatarStore,
 		PublicBaseURL:  "https://lightclaw.tech",
 		AdminToken:     defaultTestAdminToken(adminToken),
-	})
+	}), svc
 }
 
 func newAuthTestRouterWithRealname() *gin.Engine {
@@ -1721,14 +1840,15 @@ func testPNGBytes(t *testing.T) []byte {
 }
 
 type stubAvatarStore struct {
-	objectKey            string
-	signedURL            string
-	storeErr             error
-	lastUploadedUserID   string
-	lastPendingUserID    string
-	lastRemoteUserID     string
-	lastRemoteURL        string
-	lastDeletedObjectKey string
+	objectKey             string
+	signedURL             string
+	storeErr              error
+	lastUploadedUserID    string
+	lastRemoteUserID      string
+	lastRemoteURL         string
+	lastRemoteDeadline    time.Time
+	lastRemoteHasDeadline bool
+	lastDeletedObjectKey  string
 }
 
 type httpStubRealnameVerifier struct{}
@@ -1741,6 +1861,13 @@ type httpStubRealnameCipher struct{}
 
 func (httpStubRealnameCipher) Encrypt(plaintext string) (string, error) {
 	return "enc(" + plaintext + ")", nil
+}
+
+func (httpStubRealnameCipher) Decrypt(ciphertext string) (string, error) {
+	if strings.HasPrefix(ciphertext, "enc(") && strings.HasSuffix(ciphertext, ")") {
+		return strings.TrimSuffix(strings.TrimPrefix(ciphertext, "enc("), ")"), nil
+	}
+	return "", fmt.Errorf("decrypt error")
 }
 
 type httpStubTATRegisterIssuer struct {
@@ -1777,20 +1904,10 @@ func (s *stubAvatarStore) StoreAvatar(_ context.Context, userID string, _ []byte
 	return s.objectKey, nil
 }
 
-func (s *stubAvatarStore) StorePendingAvatar(_ context.Context, userID string, _ []byte) (string, error) {
-	if s.storeErr != nil {
-		return "", s.storeErr
-	}
-	s.lastPendingUserID = userID
-	if s.objectKey == "" {
-		s.objectKey = "avatars/" + userID + "/pending/test.jpg"
-	}
-	return s.objectKey, nil
-}
-
-func (s *stubAvatarStore) SyncRemoteAvatar(_ context.Context, userID string, remoteURL string) (string, error) {
+func (s *stubAvatarStore) SyncRemoteAvatar(ctx context.Context, userID string, remoteURL string) (string, error) {
 	s.lastRemoteUserID = userID
 	s.lastRemoteURL = remoteURL
+	s.lastRemoteDeadline, s.lastRemoteHasDeadline = ctx.Deadline()
 	if s.objectKey == "" {
 		s.objectKey = "avatars/" + userID + "/current.jpg"
 	}

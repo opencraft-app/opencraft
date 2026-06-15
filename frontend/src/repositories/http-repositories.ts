@@ -10,11 +10,16 @@ import type {
   BotRuntime,
   BotVersion,
   Bundle,
+  CreatePassOrderAndPayResult,
+  CreatePassOrderResult,
+  CreatePassOrderUrlResult,
   CurrentSubscription,
+  DeletePassResult,
   Deployment,
   InviteCodeValidation,
   KnowledgeSource,
   Pass,
+  PassRenewPrice,
   ToolBinding,
   User,
   WeixinLoginSession,
@@ -30,6 +35,8 @@ import type {
   Repositories,
   SettingsSnapshot,
   TatDeviceBindResult,
+  WorkerActionStatusLog,
+  WorkerActionStatusResult,
   WorkspaceSnapshot,
 } from "@/repositories/types";
 
@@ -119,10 +126,22 @@ interface CtlBotBornCardPayload {
   born_number_for_china: number;
 }
 
+interface WorkerActionStartPayload {
+  action_run_id: string;
+  workflow_id: string;
+  run_id?: string;
+  action: string;
+  bot_id: string;
+  status: string;
+}
+
+type WorkerActionStatusPayload = Record<string, unknown>;
+
 const AUTH_TOKEN_STORAGE_KEY = "lightclaw-auth-token-v1";
 const OAUTH_SESSION_TOKEN_FRAGMENT_KEY = "session_token";
 const HTTP_BOT_DRAFTS_STORAGE_KEY = "lightclaw-http-bot-drafts-v1";
 const DEFAULT_INSTANCE_TIMEOUT_SECONDS = 60 * 60;
+const DEFAULT_RESCUE_EXPORT_REMOTE_PATH = "/home/agentuser/.hermes";
 export const AUTH_UNAUTHORIZED_EVENT = "lightclaw:auth-unauthorized";
 
 class RepositoryError extends Error {
@@ -371,6 +390,64 @@ const requestEnvelope = async <T>(
 ): Promise<T> => {
   const payload = await request<APIEnvelope<T>>(baseUrl, path, init);
   return payload.data;
+};
+
+const stringField = (payload: Record<string, unknown>, ...keys: string[]) => {
+  for (const key of keys) {
+    const value = payload[key];
+    if (typeof value === "string" && value.trim() !== "") {
+      return value;
+    }
+  }
+  return undefined;
+};
+
+const booleanField = (payload: Record<string, unknown>, ...keys: string[]) => {
+  for (const key of keys) {
+    const value = payload[key];
+    if (typeof value === "boolean") {
+      return value;
+    }
+  }
+  return undefined;
+};
+
+const normalizeWorkerActionLogs = (value: unknown): WorkerActionStatusLog[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const logs: WorkerActionStatusLog[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+    const payload = item as Record<string, unknown>;
+    const message = stringField(payload, "message", "Message");
+    if (!message) {
+      continue;
+    }
+    logs.push({
+      time: stringField(payload, "time", "Time"),
+      phase: stringField(payload, "phase", "Phase"),
+      message,
+      level: stringField(payload, "level", "Level"),
+    });
+  }
+  return logs;
+};
+
+const normalizeWorkerActionStatus = (payload: WorkerActionStatusPayload): WorkerActionStatusResult => {
+  const phase = stringField(payload, "phase", "Phase") ?? "unknown";
+  const error = stringField(payload, "error", "Error");
+  const logs = normalizeWorkerActionLogs(payload.logs ?? payload.Logs);
+  return {
+    workflowId: stringField(payload, "workflow_id", "workflowId", "WorkflowID"),
+    runId: stringField(payload, "run_id", "runId", "RunID"),
+    phase,
+    error,
+    dryRun: booleanField(payload, "dry_run", "dryRun", "DryRun"),
+    logs,
+  };
 };
 
 const requestMultipart = async <T>(
@@ -936,6 +1013,43 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
       };
     },
 
+    async startRescueExport(botId: string) {
+      const payload = await requestEnvelope<WorkerActionStartPayload>(baseUrl, "/api/worker-actions", {
+        method: "POST",
+        body: {
+          bot_id: botId,
+          action: "rescue_export",
+          params: {
+            remote_paths: [DEFAULT_RESCUE_EXPORT_REMOTE_PATH],
+          },
+        },
+      });
+      return {
+        actionRunId: payload.action_run_id,
+        workflowId: payload.workflow_id,
+        runId: payload.run_id,
+        action: payload.action,
+        botId: payload.bot_id,
+        status: payload.status,
+      };
+    },
+
+    async getRescueExportStatus(botId: string) {
+      try {
+        const payload = await requestEnvelope<WorkerActionStatusPayload>(
+          baseUrl,
+          `/api/worker-actions?bot_id=${encodeURIComponent(botId)}&action=rescue_export`,
+          { method: "GET" },
+        );
+        return normalizeWorkerActionStatus(payload);
+      } catch (err) {
+        if (err instanceof RepositoryError && err.status === 404 && err.code === "action_not_found") {
+          return null;
+        }
+        throw err;
+      }
+    },
+
     async resetInstanceConfig(botId: string) {
       const payload = await requestEnvelope<{
         key_id: string;
@@ -1051,6 +1165,36 @@ const createHttpAuthRepository = (baseUrl: string): AuthRepository => ({
       body: input,
     });
   },
+  async sendSmsCode(input) {
+    return request(baseUrl, "/auth/sms/send", {
+      method: "POST",
+      body: input,
+    });
+  },
+  async verifyRealnamePhone(input) {
+    return request(baseUrl, "/auth/realname/verify-phone", {
+      method: "POST",
+      body: input,
+    });
+  },
+  async retryRealnameSync() {
+    return request(baseUrl, "/auth/realname/sync/retry", {
+      method: "POST",
+    });
+  },
+  async sendPhoneChangeCode(input) {
+    return request(baseUrl, "/auth/profile/phone/send", {
+      method: "POST",
+      body: input,
+    });
+  },
+  async verifyPhoneChange(input) {
+    const response = await request<{ user: User }>(baseUrl, "/auth/profile/phone/verify", {
+      method: "POST",
+      body: input,
+    });
+    return response.user;
+  },
   async requestEmailBind(input) {
     return request<{ cooldownSeconds: number }>(baseUrl, "/auth/email/bind/request", {
       method: "POST",
@@ -1150,16 +1294,105 @@ const createHttpPlanRepository = (baseUrl: string): PlanRepository => ({
       subscription: payload.subscription ?? null,
     });
   },
-  async listBundles() {
-    const payload = await requestEnvelope<{ bundles: Bundle[] }>(baseUrl, "/v1/bundles", {
+  async listBundles(query) {
+    // 联调文档 §1.1：传 time_span / time_unit 携带询价参数；不传则降级到无价格模式
+    const search = new URLSearchParams();
+    if (query?.time_span !== undefined) {
+      search.set("time_span", String(query.time_span));
+    }
+    if (query?.time_unit !== undefined) {
+      search.set("time_unit", query.time_unit);
+    }
+    const path = search.toString() ? `/v1/bundles?${search.toString()}` : "/v1/bundles";
+    const payload = await requestEnvelope<{ bundles: Bundle[] }>(baseUrl, path, {
       method: "GET",
     });
     return payload.bundles ?? [];
   },
   async createPass(bundleId) {
+    // 联调文档 §5.2：试用入口（国际站使用，国内站走 createPassOrder）
     return requestEnvelope<Pass>(baseUrl, "/v1/passes", {
       method: "POST",
       body: { bundle_id: bundleId },
+    });
+  },
+  async getCreatePrerequisites() {
+    return requestEnvelope<{ site_kind: string; shadow_account_enabled: boolean; shadow_bound: boolean }>(
+      baseUrl,
+      "/v1/instances/create-prerequisites",
+      { method: "GET" },
+    );
+  },
+  async sendShadowBindingSms(input) {
+    await request(baseUrl, "/v1/shadow/binding/send-sms", {
+      method: "POST",
+      body: input,
+    });
+  },
+  async verifyShadowBindingPhone(input) {
+    await request(baseUrl, "/v1/shadow/binding/verify-phone", {
+      method: "POST",
+      body: input,
+    });
+  },
+  async createPassOrder(input) {
+    // 联调文档 §2.1（v1.7.31 拆分）：纯下单仅拿 { deal_names }，拉支付 URL 走 getPassOrderUrl
+    return requestEnvelope<CreatePassOrderResult>(baseUrl, "/v1/passes/order", {
+      method: "POST",
+      body: input,
+    });
+  },
+  async getPassOrderUrl(input, init) {
+    // 联调文档 §2.2（v1.7.31 + CodeBuddy AuthCode）：
+    //   PC 端：   body 只带 deal_names + platform: "pc"，request 函数自动补 Bearer 鉴权
+    //   中转页：  body 额外带 wx_code + auth_code；本地无 token 时 request 会跳过 Authorization（见 line 318-321）
+    //                后端检测到 auth_code 后绕过 Bearer 鉴权、用 auth_code 反查 user_id。
+    return requestEnvelope<CreatePassOrderUrlResult>(baseUrl, "/v1/passes/order-url", {
+      method: "POST",
+      body: input,
+      headers: init?.headers,
+    });
+  },
+  async createPassOrderAndPay(input) {
+    // 联调文档 §2.2：仅联调测试用，现网禁止暴露给真实用户
+    return requestEnvelope<CreatePassOrderAndPayResult>(baseUrl, "/v1/passes/order-and-pay", {
+      method: "POST",
+      body: input,
+    });
+  },
+  async getRenewPrice(passId, input) {
+    // 联调文档 §3.1：续费询价 — 单位是分（cents）
+    return requestEnvelope<PassRenewPrice>(baseUrl, `/v1/passes/${encodeURIComponent(passId)}/renew/price`, {
+      method: "POST",
+      body: input,
+    });
+  },
+  async createRenewOrder(passId, input) {
+    // 联调文档 §3.2（v1.7.31 拆分）：续费纯下单仅拿 { deal_names }
+    return requestEnvelope<CreatePassOrderResult>(baseUrl, `/v1/passes/${encodeURIComponent(passId)}/renew/order`, {
+      method: "POST",
+      body: input,
+    });
+  },
+  async getRenewOrderUrl(passId, input, init) {
+    // 联调文档 §3.3（v1.7.31 + CodeBuddy AuthCode）：调用模式同 getPassOrderUrl。
+    return requestEnvelope<CreatePassOrderUrlResult>(baseUrl, `/v1/passes/${encodeURIComponent(passId)}/renew/order-url`, {
+      method: "POST",
+      body: input,
+      headers: init?.headers,
+    });
+  },
+  async createRenewOrderAndPay(passId, input) {
+    // 联调文档 §3.3：续费下单+支付一体化（仅联调）
+    return requestEnvelope<CreatePassOrderAndPayResult>(baseUrl, `/v1/passes/${encodeURIComponent(passId)}/renew/order-and-pay`, {
+      method: "POST",
+      body: input,
+    });
+  },
+  async deletePass(passId) {
+    // 联调文档 §4.1：销毁 pass — 仅 isolated 状态可调，前端需轮询 listMyPasses 确认
+    return requestEnvelope<DeletePassResult>(baseUrl, `/v1/passes/${encodeURIComponent(passId)}/delete`, {
+      method: "POST",
     });
   },
   async listMyPasses() {

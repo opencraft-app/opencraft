@@ -2,10 +2,8 @@ import { LegalFooter } from "@/components/site/legal-footer";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft, FileText, Loader2, X } from "lucide-react";
 import { useState } from "react";
-import { Link } from "react-router-dom";
-import { useSession } from "@/contexts/session-context";
-import { BrandMark } from "@/components/site/brand-mark";
-import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
+import { Link, useNavigate } from "react-router-dom";
+import { SiteHeader } from "@/components/site/site-header";
 import { isGlobal } from "@/lib/region";
 
 /* ─── Mock Order Data ─── */
@@ -32,29 +30,10 @@ const mockOrders: OrderItem[] = [
 /* ─── Navbar ─── */
 
 const OrdersNavbar = () => {
-  const { isAuthenticated: isLoggedIn } = useSession();
+  const navigate = useNavigate();
 
   return (
-    <header className="lw-setup-navbar">
-      <div className="mx-auto flex max-w-[1440px] items-center justify-between px-6 md:px-10 lg:px-[80px]">
-        <BrandMark to="/" />
-        {isLoggedIn ? (
-          <UserAvatarMenu />
-        ) : (
-          <Link
-            to="/"
-            className="rounded-full px-5 py-2 text-sm font-medium transition-all duration-300 hover:-translate-y-0.5"
-            style={{
-              background: "#fff",
-              color: "#555",
-              boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
-            }}
-          >
-            返回首页
-          </Link>
-        )}
-      </div>
-    </header>
+    <SiteHeader fixed onLoginClick={() => navigate("/auth/sign-in")} />
   );
 };
 

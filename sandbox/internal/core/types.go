@@ -35,6 +35,17 @@ const (
 	StateDeleting     InstanceState = "DELETING"
 	StateFailed       InstanceState = "FAILED"
 	StateDeleted      InstanceState = "DELETED"
+	// StatePausing / StatePaused implement Q26-D 修订版 + Q29=E5 + Q32=b 拍板（2026-05-14）：
+	// trade pass isolation 走"关机保留数据"路径，而不是历史的"释放 + 重装"。
+	// 状态机增量：StateAllocated → StatePausing → StatePaused（→ StateDeleting → StateDeleted）。
+	StatePausing InstanceState = "PAUSING"
+	StatePaused  InstanceState = "PAUSED"
+
+	// StateResuming implements R-F（2026-05-15，对偶 R-A trade 续费链路）：
+	// trade pass renew 走"开机恢复数据"路径，对偶 Pause 侧 PAUSED → RESUMING → ALLOCATED。
+	// 失败回滚 RESUMING → PAUSED 让 ctl 子 task 重投。详见
+	// .tmp/trade-pass-renew-design.md §10 R-F。
+	StateResuming InstanceState = "RESUMING"
 
 	PoolStatusActive PoolStatus = "active"
 	PoolStatusPaused PoolStatus = "paused"
@@ -122,7 +133,11 @@ type Pool struct {
 	AutoscaleGeneration  int64             `json:"autoscale_generation,omitempty"`
 	LastAutoscaleAction  string            `json:"last_autoscale_action,omitempty"`
 	LastHealthTransition *time.Time        `json:"last_health_transition_at,omitempty"`
-	CreatedAt            time.Time         `json:"created_at"`
+	// SystemDiskSize 系统盘大小（GB）。设计稿 .tmp/bundle-instance-spec-design.md §10 Q11=a：
+	// >0 时 tencent.go::CreateInstance 在 RunInstances 请求中设
+	// req.SystemDisk = &cvm.SystemDisk{DiskSize: int64(SystemDiskSize)}；0 时走腾讯云默认 50G。
+	SystemDiskSize int       `json:"system_disk_size,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 type TemplateClass struct {

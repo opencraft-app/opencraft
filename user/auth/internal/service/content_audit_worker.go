@@ -121,68 +121,26 @@ func (w *ContentAuditWorker) RunOnce(ctx context.Context, batchSize int) error {
 }
 
 func (w *ContentAuditWorker) submitTask(ctx context.Context, task ContentAuditTask) error {
-	result, err := submitContentAuditTask(ctx, w.client, w.now, w.logger, "async-worker", task)
+	result, err := submitContentAuditTask(ctx, w.client, w.now, task)
 	if err != nil {
 		return err
 	}
 	return w.applySubmitResult(ctx, task, result)
 }
 
-func submitContentAuditTask(ctx context.Context, client ContentAuditClient, now func() time.Time, logger *slog.Logger, mode string, task ContentAuditTask) (contentAuditSubmitResult, error) {
-	if logger == nil {
-		logger = slog.Default()
-	}
-	requestID := contentAuditTaskRequestID(task)
-	mediaType := strings.TrimSpace(task.MediaType)
+func submitContentAuditTask(ctx context.Context, client ContentAuditClient, now func() time.Time, task ContentAuditTask) (contentAuditSubmitResult, error) {
 	if task.MediaType == contentauditMediaTypeImage || task.BizType == contentauditBizTypeUserAvatar {
-		mediaType = contentauditMediaTypeImage
-	} else if mediaType == "" {
-		mediaType = contentauditMediaTypeText
+		return submitImageContentAuditTask(ctx, client, now, task)
 	}
-	logAttrs := []any{
-		"mode", strings.TrimSpace(mode),
-		"task_id", task.ID,
-		"biz_type", strings.TrimSpace(task.BizType),
-		"biz_detail", strings.TrimSpace(task.BizDetail),
-		"biz_id", strings.TrimSpace(task.BizID),
-		"media_type", mediaType,
-		"request_id", requestID,
-		"product_id", strings.TrimSpace(task.ProductID),
-		"sid", strings.TrimSpace(task.SID),
-	}
-	if mediaType == contentauditMediaTypeImage {
-		logAttrs = append(logAttrs, "content_url_present", strings.TrimSpace(task.ContentURL) != "")
-	}
-	logger.Info("content audit submit started", logAttrs...)
-
-	var (
-		result contentAuditSubmitResult
-		err    error
-	)
-	if mediaType == contentauditMediaTypeImage {
-		result, err = submitImageContentAuditTask(ctx, client, now, task, requestID)
-	} else {
-		result, err = submitTextContentAuditTask(ctx, client, now, task, requestID)
-	}
-	if err != nil {
-		logger.Warn("content audit submit failed", append(logAttrs, "err", err)...)
-		return contentAuditSubmitResult{}, err
-	}
-	logger.Info("content audit submit completed", append(
-		logAttrs,
-		"decision", string(result.Decision),
-		"result_code", result.ResultCode,
-		"result_type", result.ResultType,
-		"result_msg", strings.TrimSpace(result.ResultMsg),
-	)...)
-	return result, nil
+	return submitTextContentAuditTask(ctx, client, now, task)
 }
 
-func submitTextContentAuditTask(ctx context.Context, client ContentAuditClient, now func() time.Time, task ContentAuditTask, requestID string) (contentAuditSubmitResult, error) {
+func submitTextContentAuditTask(ctx context.Context, client ContentAuditClient, now func() time.Time, task ContentAuditTask) (contentAuditSubmitResult, error) {
 	contentText := strings.TrimSpace(task.ContentText)
 	if contentText == "" {
 		return contentAuditSubmitResult{}, fmt.Errorf("content audit task %d has empty content", task.ID)
 	}
+	requestID := contentAuditTaskRequestID(task)
 	encoded := base64.StdEncoding.EncodeToString([]byte(contentText))
 	req := contentaudit.CreateTextTaskRequest{
 		ProductID: task.ProductID,
@@ -211,11 +169,12 @@ func submitTextContentAuditTask(ctx context.Context, client ContentAuditClient, 
 	return classifyContentAuditSubmitResponse(requestID, resp), nil
 }
 
-func submitImageContentAuditTask(ctx context.Context, client ContentAuditClient, now func() time.Time, task ContentAuditTask, requestID string) (contentAuditSubmitResult, error) {
+func submitImageContentAuditTask(ctx context.Context, client ContentAuditClient, now func() time.Time, task ContentAuditTask) (contentAuditSubmitResult, error) {
 	contentURL := strings.TrimSpace(task.ContentURL)
 	if contentURL == "" {
 		return contentAuditSubmitResult{}, fmt.Errorf("content audit task %d has empty image url", task.ID)
 	}
+	requestID := contentAuditTaskRequestID(task)
 	req := contentaudit.CreateImageTaskRequest{
 		ProductID: task.ProductID,
 		SID:       task.SID,

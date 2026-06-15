@@ -80,6 +80,12 @@ func (b *FrameworkBuilder) NewRefund() Framework {
 //
 // 注意：调用方禁止传 0 或 352014（这两个值有专用语义，应改用 NewSuccess / NewRefund）；
 // 本函数不做强校验，但要求文档约束 + 调用点 review 把控。
+//
+// **data 字段语义**：本函数返回的 `data` 默认是空对象 `{}`，适用于 PDF 协议层不强求
+// data 字段的接口（如 createResource / isolateResource / destroyResource 等）。
+// **如果接口 PDF 协议要求 data 内含特定字段**（如 checkCreate / checkRenew 的
+// `data.status` 字段，PDF §3.1 要求 `0=可购买 / 非 0=不可购买`），调用方须改用
+// NewErrorWithData 显式传入 data。
 func (b *FrameworkBuilder) NewError(code int, message string) Framework {
 	return Framework{
 		ReturnCode:    code,
@@ -89,6 +95,31 @@ func (b *FrameworkBuilder) NewError(code int, message string) Framework {
 		Timestamp:     nowUnixMillisFn(),
 		ReturnMessage: message,
 		Data:          map[string]any{},
+	}
+}
+
+// NewErrorWithData 与 NewError 一致，但允许调用方显式传入业务 data 字段集合。
+//
+// **使用场景**：PDF 协议层要求 data 内必带特定字段的接口
+// 在失败响应中也必须填该字段。例如：
+//   - checkCreate / checkRenew PDF §3.1：成功 `data: {"status": 0}` / 失败
+//     `data: {"status": <非 0 错误码>}` —— 即使 returnCode 非 0，data.status 也必须存在
+//     （PDF §3.4 错误码示例：returnCode/returnValue 非 0 时 data.status 错误码也会生效，
+//     jifei 前台映射 status 到用户可见的错误提示）
+//
+// **不适用场景**：PDF 协议层 data 字段无强制内容的接口（createResource / isolateResource
+// 等），继续用 NewError 即可（默认空 data）。
+//
+// data 为 nil 时填空对象 `{}`（与 NewSuccess 一致，jifei 严格按 PDF 解析，data 不能是 null）。
+func (b *FrameworkBuilder) NewErrorWithData(code int, message string, data map[string]any) Framework {
+	return Framework{
+		ReturnCode:    code,
+		ReturnValue:   code,
+		ComponentName: b.ComponentName,
+		Version:       b.Version,
+		Timestamp:     nowUnixMillisFn(),
+		ReturnMessage: message,
+		Data:          ensureNonNilData(data),
 	}
 }
 

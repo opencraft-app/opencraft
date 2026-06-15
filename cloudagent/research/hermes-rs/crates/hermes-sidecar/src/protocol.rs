@@ -247,6 +247,16 @@ pub(crate) enum PromptResponseLine {
         template: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         error: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        exit_code: Option<i32>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        stdout_bytes: Option<usize>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        stderr_bytes: Option<usize>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        stdout_tail: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        stderr_tail: Option<String>,
     },
     Result {
         output_text: String,

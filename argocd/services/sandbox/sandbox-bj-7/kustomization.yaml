@@ -1,0 +1,33 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: lightvela-playground-sandbox-bj-7
+components:
+- ../common
+generators:
+- ksops-secret-generator.yaml
+configMapGenerator:
+- name: sandbox-platform-values
+  envs:
+  - sandbox-platform.env
+patches:
+- path: delete-shared-namespace.yaml
+- path: delete-shared-serviceaccount.yaml
+- path: delete-migration-job.yaml
+- path: delete-logconfig.yaml
+- path: delete-servicemonitor.yaml
+- path: delete-podmonitor.yaml
+- path: patch-playground-db-redis.yaml
+- path: patch-playground-scale-down.yaml
+- path: patch-playground-resources.yaml
+- target:
+    kind: Ingress
+    name: sandbox-ingressproxy-public
+  patch: |-
+    - op: remove
+      path: /spec/tls
+- target:
+    kind: TkeServiceConfig
+    name: sandbox-ingressproxy-public-config
+  patch: |-
+    - op: remove
+      path: /spec/loadBalancer/l7Listeners/1

@@ -270,3 +270,18 @@ func TestSetWorkspaceLayoutPersistsBackendIdentity(t *testing.T) {
 		}
 	}
 }
+
+func TestRemoteWorkspaceNameIsJuiceFSVolumeSafe(t *testing.T) {
+	if got := RemoteWorkspaceName("agent-session_8afcd83c5ea5877548494ae41805d0bf"); got != "agent-session-8afcd83c5ea5877548494ae41805d0bf" {
+		t.Fatalf("RemoteWorkspaceName underscore=%q", got)
+	}
+	long := RemoteWorkspaceName("agent-session_" + strings.Repeat("abcdef", 20))
+	if len(long) > 63 {
+		t.Fatalf("RemoteWorkspaceName too long: len=%d value=%q", len(long), long)
+	}
+	for _, r := range long {
+		if !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-') {
+			t.Fatalf("RemoteWorkspaceName contains invalid rune %q in %q", r, long)
+		}
+	}
+}

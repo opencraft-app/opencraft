@@ -101,5 +101,89 @@ replacements:
           name: trade-config
         fieldPaths:
           - data.JIFEI_CGW_X_QCLOUD_USER_ID
+  # ===========================================================================
+  # Q-D-SIG-1~6 销毁链路 jifei 计费网关出向地址（HMAC-SHA256 签名分支）
+  # 设计稿真源：.tmp/trade-pass-destroy-design.md §3.6 §11-G
+  # 协议参考：  .tmp/jifei_pdf_txt/计费网关-接入和签名算法.txt §地址 / §签名算法
+  #
+  # 与 JIFEI_CGW_GATEWAY_URL 的 jifei-test 路由严格区分：
+  #   - jifei-test：询价/下单/支付（不签名）
+  #   - jifei-billing-apigw-test：ModifyResourceStatus（HMAC-SHA256 签名）
+  # 密钥侧 JIFEI_BILLING_APP_ID / JIFEI_BILLING_APP_SECRET 走 SSM + sops 注入
+  # （在 trade-runtime-secrets Secret，envFrom 自动注入到 Pod env，不需要本 component 处理）。
+  # ===========================================================================
+  - source:
+      kind: ConfigMap
+      name: trade-platform-values
+      fieldPath: data.JIFEI_BILLING_APIGW_URL
+    targets:
+      - select:
+          kind: ConfigMap
+          name: trade-config
+        fieldPaths:
+          - data.JIFEI_BILLING_APIGW_URL
+  # TRADE_SHADOW_MOCK_ENABLED (v1.7.28 BUG-02 修复):
+  #   仅联调测试环境启用 ("true" / "1" / "yes" / "on"); 现网部署必须为 "false" / "0" / 空字符串
+  #   启用后 trade 启动时改注入 mockShadowClient (cmd/trade/shadow_mock.go), 任意 externalUserId
+  #   都映射到固定 mock binding {Uin:"700000164995", AppID:"251202221"}, 跳过 shadow HTTP 调用
+  #   背景: sandbox-bj-7 等联调环境 shadow 服务未部署, ctl b03226d6 Q30 alignment 后又把
+  #   shadow 反查职责完全交给 trade, 必须有 fallback。详见 BUG-01 BLOCKER 衍生 BUG-02。
+  - source:
+      kind: ConfigMap
+      name: trade-platform-values
+      fieldPath: data.TRADE_SHADOW_MOCK_ENABLED
+    targets:
+      - select:
+          kind: ConfigMap
+          name: trade-config
+        fieldPaths:
+          - data.TRADE_SHADOW_MOCK_ENABLED
+  # ===========================================================================
+  # LIGHTVELA_SITE_KIND (v1.7.x 国际站接入 B3):
+  #   trade 内部部署站点语义字面量, 与 ctl/shadow/sandbox 的 LIGHTVELA_SITE_KIND env
+  #   同源同语义。取值:
+  #     - "cn"   = 国内站 (sandbox-bj-7 / shprod 等; 出向 jifei region=广州 1/100001
+  #                + currency=CNY; envelope.extraPara 不写 site/language)
+  #     - "intl" = 国际站 (sgprod / 海外集群; 出向 jifei region=新加坡 9/900001
+  #                + currency=USD; envelope.extraPara 写 site="2" language="en")
+  #   设计稿: .tmp/trade-international-site-design.md v1.1 §3.1 A1/B1/B3
+  #
+  # 各引用本 component 的环境必须在 trade-platform.env 里声明 TRADE_SITE_KIND
+  # (即使是 "cn" 默认值), 否则 kustomize build 会因找不到 replacement source 字段而失败。
+  # ===========================================================================
+  - source:
+      kind: ConfigMap
+      name: trade-platform-values
+      fieldPath: data.TRADE_SITE_KIND
+    targets:
+      - select:
+          kind: ConfigMap
+          name: trade-config
+        fieldPaths:
+          - data.LIGHTVELA_SITE_KIND
+  # ===========================================================================
+  # LIGHTVELA_TRADE_REGION (v1.7.x 北京 2 预发布接入):
+  #   trade 出向 jifei 协议的 region 字面量运行时 override, 与 LIGHTVELA_SITE_KIND
+  #   解耦。取值为腾讯云 region API 字面量 (kebab-case), 已注册:
+  #     - "ap-guangzhou" -> 1 / 100001 / 广州 (国内站默认)
+  #     - "ap-beijing"   -> 8 / 800001 / 北京 (北京 2 预发布场景: cn 身份 + 北京 region)
+  #     - "ap-singapore" -> 9 / 900001 / Singapore (国际站默认)
+  #     - 空字符串 -> 按 LIGHTVELA_SITE_KIND 兜底 (cn -> 广州 / intl -> 新加坡)
+  #     - 未注册字面量 -> trade 启动 fail-fast
+  #   设计稿: 北京 2 预发布接入 — region 字段 override
+  #
+  # 各引用本 component 的环境必须在 trade-platform.env 里声明 LIGHTVELA_TRADE_REGION
+  # (即使是空字符串 ""), 否则 kustomize build 会因找不到 replacement source 字段而失败。
+  # ===========================================================================
+  - source:
+      kind: ConfigMap
+      name: trade-platform-values
+      fieldPath: data.LIGHTVELA_TRADE_REGION
+    targets:
+      - select:
+          kind: ConfigMap
+          name: trade-config
+        fieldPaths:
+          - data.LIGHTVELA_TRADE_REGION
 resources:
   - ../../../../trade/k8s/base
