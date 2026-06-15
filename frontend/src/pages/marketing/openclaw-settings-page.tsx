@@ -44,18 +44,20 @@ import {
 import { QRCodeSVG } from "qrcode.react";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { cn } from "@/lib/utils";
 import { assetUrl } from "@/lib/asset-url";
+import { BrandMark } from "@/components/site/brand-mark";
+import { LanguageSwitcher } from "@/components/site/language-switcher";
+import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
 import { useOpenClaw, type OpenClawBot } from "@/contexts/openclaw-context";
 import { useRepositories } from "@/contexts/repository-context";
 import type { TencentPtyClient, TencentPtyConnectionState } from "@/lib/tencent-pty-client";
 import { useT, t as rawT } from "@/i18n/t";
 import { isGlobal } from "@/lib/region";
-import { SiteHeader } from "@/components/site/site-header";
 import { useSession } from "@/contexts/session-context";
 import { avatarImageUrl } from "@/lib/avatar-image";
 import { resolveConfiguredAuthApiBaseUrl } from "@/lib/auth-api-base";
@@ -354,13 +356,29 @@ void _staggerContainer;
 /* ─── Navbar ─── */
 
 const SettingsNavbar = () => {
-  const navigate = useNavigate();
+  const { isAuthenticated: isLoggedIn } = useSession();
+  const t = useT();
   return (
-    <SiteHeader
-      fixed
-      onLoginClick={() => navigate("/auth/sign-in")}
-      reloadLanguageAfterSwitch
-    />
+    <header
+      className="lw-fixed-top fixed inset-x-0 z-50 border-b border-black/5 bg-white/90 backdrop-blur-[20px]"
+    >
+      <div className="lw-settings-shell flex h-[60px] items-center justify-between">
+        <BrandMark to="/" />
+        <div className="flex items-center gap-3">
+          {/* 语言切换器：仅国际站展示。
+              settings 页内嵌 @tencent/tea-sdk-lightclaw（基于 tea-app i18n），
+              tea-app i18n 是 init-once 设计，切换语言后刷新页面才能让 SDK 区域同步。 */}
+          {isGlobal && <LanguageSwitcher reloadAfterSwitch />}
+          <Link
+            to="/"
+            className="inline-flex h-[36px] items-center justify-center rounded-[100px] border border-[#E6E9EF] bg-[#F5F5F5] px-5 font-heading text-sm font-medium text-black/90 shadow-[0_2px_0_rgba(187,187,187,0.05)] transition-colors hover:bg-black/5"
+          >
+            {t("返回首页")}
+          </Link>
+          {isLoggedIn && <UserAvatarMenu />}
+        </div>
+      </div>
+    </header>
   );
 };
 
