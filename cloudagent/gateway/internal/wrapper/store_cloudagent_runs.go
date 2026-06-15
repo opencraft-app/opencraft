@@ -45,6 +45,25 @@ func (s *Store) CreateCloudAgentRun(run cloudAgentRunRecord) error {
 	if run.Status == "" {
 		run.Status = "running"
 	}
+	if s.dialect == storeDialectMySQL {
+		_, err := s.db.Exec(`
+INSERT INTO cloudagent_runs (run_id, session_id, turn_id, response_id, status, stop_reason, error_message, output_text, created_at, updated_at, completed_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON DUPLICATE KEY UPDATE
+	session_id = VALUES(session_id),
+	turn_id = VALUES(turn_id),
+	response_id = VALUES(response_id),
+	status = VALUES(status),
+	stop_reason = VALUES(stop_reason),
+	error_message = VALUES(error_message),
+	output_text = VALUES(output_text),
+	updated_at = VALUES(updated_at),
+	completed_at = VALUES(completed_at)`,
+			run.RunID, run.SessionID, run.TurnID, run.ResponseID, run.Status, run.StopReason,
+			run.ErrorMessage, run.OutputText, run.CreatedAt.Format(time.RFC3339Nano),
+			run.UpdatedAt.Format(time.RFC3339Nano), formatOptionalRunTime(run.CompletedAt))
+		return err
+	}
 	_, err := s.db.Exec(`
 INSERT INTO cloudagent_runs (run_id, session_id, turn_id, response_id, status, stop_reason, error_message, output_text, created_at, updated_at, completed_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -90,9 +109,10 @@ func (s *Store) TryReserveCloudAgentRun(scope Scope, runID, sessionID string) (c
 		UpdatedAt: now,
 	}
 	_, err := s.db.Exec(`
-INSERT INTO cloudagent_runs (run_id, session_id, status, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?)`,
-		run.RunID, run.SessionID, run.Status, run.CreatedAt.Format(time.RFC3339Nano), run.UpdatedAt.Format(time.RFC3339Nano))
+INSERT INTO cloudagent_runs (run_id, session_id, turn_id, response_id, status, stop_reason, error_message, output_text, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		run.RunID, run.SessionID, run.TurnID, run.ResponseID, run.Status, run.StopReason, run.ErrorMessage, run.OutputText,
+		run.CreatedAt.Format(time.RFC3339Nano), run.UpdatedAt.Format(time.RFC3339Nano))
 	if err != nil {
 		if existing, loadErr := s.loadCloudAgentRunLocked(runID); loadErr == nil {
 			return existing, true, nil
