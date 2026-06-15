@@ -25,9 +25,23 @@ describe("mountApp", () => {
     vi.clearAllMocks();
   });
 
-  it("hydrates when the root already contains static HTML", () => {
+  it("creates a new root for generated SEO HTML that is not React-hydratable", () => {
     const root = document.createElement("div");
     root.id = "root";
+    root.innerHTML = "<main>static</main>";
+
+    mountApp(root);
+
+    expect(mocks.createRoot).toHaveBeenCalledTimes(1);
+    expect(mocks.createRoot).toHaveBeenCalledWith(root);
+    expect(mocks.render).toHaveBeenCalledTimes(1);
+    expect(mocks.hydrateRoot).not.toHaveBeenCalled();
+  });
+
+  it("hydrates only when the root explicitly opts into hydration", () => {
+    const root = document.createElement("div");
+    root.id = "root";
+    root.dataset.hydrateRoot = "true";
     root.innerHTML = "<main>static</main>";
 
     mountApp(root);

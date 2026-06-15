@@ -10,7 +10,7 @@ const app = (
 );
 
 export function mountApp(rootElement: HTMLElement) {
-  if (rootElement.innerHTML.trim()) {
+  if (rootElement.dataset.hydrateRoot === "true") {
     hydrateRoot(rootElement, app);
     return;
   }

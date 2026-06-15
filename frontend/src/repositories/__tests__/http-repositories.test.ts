@@ -1056,19 +1056,19 @@ describe("http repositories auth token bootstrap", () => {
 
   it("uses the lightvela auth backend on the lightvela domain even without an explicit env var", () => {
     vi.stubEnv("VITE_AUTH_API_BASE_URL", "");
-    stubHostname("lightvela.tencent.com");
+    stubHostname("lightvela.com");
 
     const repositories = createRepositories();
 
     expectOAuthStartURL(
       repositories.auth.getOAuthStartUrl("qq"),
       "https://api.lightvela.com/auth/oauth/qq/start",
-      "https://lightvela.tencent.com/auth/sign-in",
+      "https://lightvela.com/auth/sign-in",
     );
     expectOAuthStartURL(
       repositories.auth.getOAuthStartUrl("wechat"),
       "https://api.lightvela.com/auth/oauth/wechat/start",
-      "https://lightvela.tencent.com/auth/sign-in",
+      "https://lightvela.com/auth/sign-in",
     );
   });
 });

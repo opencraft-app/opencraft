@@ -1,9 +1,10 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, extname, join, relative, resolve } from "node:path";
+import { dirname, extname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const defaultFrontendRoot = resolve(scriptDir, "..");
+const STATIC_RENDER_ASSET_EXTENSIONS = new Set([".gif", ".jpg", ".jpeg", ".png", ".svg", ".webp"]);
 
 const SITE = {
   cn: {
@@ -376,6 +377,25 @@ function renderJsonLd(value) {
   return `<script type="application/ld+json">${JSON.stringify(value)}</script>`;
 }
 
+function renderStaticSiteCriticalStyle() {
+  return [
+    "<style data-static-site-critical>",
+    "body{margin:0;background:#fff;color:#171717;font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif;}",
+    ".static-site-header{border-bottom:1px solid rgba(0,0,0,.08);background:#fff;}",
+    ".static-site-header nav{box-sizing:border-box;min-height:60px;max-width:1440px;margin:0 auto;padding:0 80px;display:flex;align-items:center;gap:24px;}",
+    ".static-site-header a{color:#171717;text-decoration:none;font-size:14px;}",
+    ".static-site-header .brand{margin-right:auto;font-weight:700;font-size:22px;}",
+    "main{max-width:960px;margin:0 auto;padding:88px 24px 64px;line-height:1.75;}",
+    "article>header{margin-bottom:32px;}",
+    "h1{margin:0 0 16px;font-size:48px;line-height:1.15;}",
+    "h2{margin:32px 0 12px;font-size:24px;line-height:1.35;}",
+    "p{margin:0 0 12px;}",
+    ".static-site-footer{border-top:1px solid rgba(0,0,0,.08);padding:24px;text-align:center;color:rgba(0,0,0,.6);font-size:13px;}",
+    "@media(max-width:768px){.static-site-header nav{padding:0 24px;gap:14px;flex-wrap:wrap}.static-site-header .brand{width:100%;margin:12px 0 0}main{padding-top:48px}h1{font-size:36px}}",
+    "</style>",
+  ].join("");
+}
+
 function renderHead({ route, site, siteUrl, canonicalPath, description, indexable, jsonLd }) {
   const title = routeTitle(route, site);
   const canonical = absoluteUrl(siteUrl, canonicalPath);
@@ -403,6 +423,7 @@ function renderHead({ route, site, siteUrl, canonicalPath, description, indexabl
     `<meta name="twitter:image" content="${image}">`,
     "<link rel=\"preload\" as=\"font\" type=\"font/woff2\" href=\"/fonts/chuangji-hei.woff2\" crossorigin>",
     "<link href=\"https://cdn.jsdelivr.net/npm/cn-fontsource-yozai-bold/font.css\" rel=\"stylesheet\">",
+    renderStaticSiteCriticalStyle(),
     ...jsonLd.map(renderJsonLd),
   ].join("");
 }
@@ -586,13 +607,63 @@ function jsonLdForRoute({ route, region, siteUrl, canonicalPath, description }) 
   ];
 }
 
-function renderRoute({ template, route, region, siteUrl, indexable, frontendRoot, availableImages }) {
+function rewriteStaticRenderAssetUrls({ html, frontendRoot, distDir }) {
+  return html.replace(/\/src\/[^"'()\s>]+\.[a-z0-9]+/gi, (assetUrl) => {
+    const ext = extname(assetUrl).toLowerCase();
+    if (!STATIC_RENDER_ASSET_EXTENSIONS.has(ext)) return assetUrl;
+
+    const relativeSource = assetUrl.replace(/^\/+/, "");
+    const sourcePath = join(frontendRoot, relativeSource);
+    if (!existsSync(sourcePath)) return assetUrl;
+
+    const targetRelative = join("assets", "static-render", relativeSource.replace(/^src[\\/]/, ""));
+    const targetPath = join(distDir, targetRelative);
+    mkdirSync(dirname(targetPath), { recursive: true });
+    copyFileSync(sourcePath, targetPath);
+    return `/${targetRelative.split(sep).join("/")}`;
+  });
+}
+
+async function createReactStaticRenderer({ frontendRoot, distDir, region }) {
+  const entry = join(frontendRoot, "src", "static", "render-static-route.tsx");
+  if (!existsSync(entry)) return null;
+
+  const { createServer } = await import("vite");
+  const configPath = join(frontendRoot, "vite.config.ts");
+  const server = await createServer({
+    root: frontendRoot,
+    mode: region,
+    configFile: existsSync(configPath) ? configPath : false,
+    logLevel: "error",
+    appType: "custom",
+    optimizeDeps: { entries: [], noDiscovery: true },
+    server: { middlewareMode: true },
+  });
+  const module = await server.ssrLoadModule("/src/static/render-static-route.tsx");
+  if (typeof module.renderStaticRoute !== "function") {
+    await server.close();
+    throw new Error(`static route renderer must export renderStaticRoute(): ${entry}`);
+  }
+  return {
+    render: (input) => module.renderStaticRoute(input),
+    distDir,
+    close: () => server.close(),
+  };
+}
+
+async function renderRoute({ template, route, region, siteUrl, indexable, frontendRoot, availableImages, staticRenderer }) {
   const site = SITE[region];
   let body = "";
   let description = route.description || site.description;
   let canonicalPath = route.path;
 
-  if (route.kind === "home") body = renderHome(region);
+  if (route.kind === "home") {
+    body = staticRenderer
+      ? await staticRenderer.render({ route, region, siteUrl })
+      : "";
+    if (body) body = rewriteStaticRenderAssetUrls({ html: body, frontendRoot, distDir: staticRenderer.distDir });
+    if (!body) body = renderHome(region);
+  }
   if (route.kind === "about") body = renderAbout(region);
   if (route.kind === "changelog") body = renderChangelog(region);
   if (route.kind === "docs-index") {
@@ -690,17 +761,23 @@ export async function buildStaticSite({ frontendRoot = defaultFrontendRoot, dist
   const routes = resolveStaticRoutes(region);
 
   const availableImages = copyDocsImages(frontendRoot, distDir);
-  for (const route of routes) {
-    const html = renderRoute({
-      template,
-      route,
-      region,
-      siteUrl: normalizedSiteUrl,
-      indexable,
-      frontendRoot,
-      availableImages,
-    });
-    writeRouteHtml({ distDir, route, html });
+  const staticRenderer = await createReactStaticRenderer({ frontendRoot, distDir, region });
+  try {
+    for (const route of routes) {
+      const html = await renderRoute({
+        template,
+        route,
+        region,
+        siteUrl: normalizedSiteUrl,
+        indexable,
+        frontendRoot,
+        availableImages,
+        staticRenderer,
+      });
+      writeRouteHtml({ distDir, route, html });
+    }
+  } finally {
+    await staticRenderer?.close();
   }
   writeSitemap({ distDir, routes, region, siteUrl: normalizedSiteUrl });
   writeRobots({ distDir, siteUrl: normalizedSiteUrl, indexable });
