@@ -2,12 +2,25 @@ bundles:
   trade:
     owner: trade
     source: trade
-    db_contract: none
+    db_contract:
+      mode: migration
+      db_job_service: trade
+      migration_operation: migration
+      migration_paths:
+      - trade/migrations/**
+      expected_migration_source: trade/migrations
+      verifier:
+        namespace: trade
+        configmap: trade-config
+        secret: trade-runtime-secrets
+        database_env: TRADE_DB
+        user_env: TRADE_DB_USER
+        password_env: TRADE_DB_PASSWORD
     release_dependencies:
     - ctl
     - shadow
-    reason: Trade service billing integration bundle for building Beijing sandbox
-      images before the GitOps rollout is enabled.
+    reason: Trade service formal release bundle for Argo-managed rollout and DB
+      job contract; mirrors payment bundle for golang-migrate iofs migrations.
     allowed_paths:
     - trade/k8s/base
     - trade/Dockerfile
