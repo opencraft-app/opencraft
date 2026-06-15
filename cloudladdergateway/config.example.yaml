@@ -53,69 +53,6 @@ backends:
       headers:
         Host: "trade.itd.com"
 
-  # ===========================================================================
-  # jifei-prod backend：lightvela trade → jifei CGW 现网出向
-  # （v1.7.31 新增，2026-06-12 北京 2 预发布 trade 接入现网计费 + 未来 shprod 共用）
-  #
-  # **设计取舍**（与 jifei-test 严格区分）：
-  #   - jifei-test：内网域名 trade.itd.com 在 TKEx CoreDNS 不可解析 → 必须 IP
-  #     直连 9.139.137.40 + Host header 重写。
-  #   - jifei-prod：公网域名 trade.tencentyun.com 在 TKEx CoreDNS 公网 DNS 可
-  #     解析（11.187.170.119 / 11.187.188.7，2026-06-12 本地 nslookup 验证），
-  #     且 PDF §地址 国内现网 明确「不推荐域名方式访问，推荐使用北极星」+「现网
-  #     不要配置VIP访问」——本 clgateway TKEx 集群无 polaris-sidecar 跑不了北极
-  #     星，所以走 PDF 兜底允许的「域名 + Host header 透传」方式。
-  #
-  # 协议层语义：与 jifei-test 完全相同（不签名、走 IP/uin 白名单）；jifei 后台
-  # 按 envelope 内 ownerUin/loginUin 自动判断国内/国际站路由（v1.0 设计稿
-  # B-DEPLOY-3 派生约束 2）。trade 端鉴权由 envelope.ownerUin（真实影子账号 uin）
-  # 提供，X-Qcloud-User-Id header 不再注入（trade-platform.env::JIFEI_CGW_X_QCLOUD_USER_ID=""）。
-  #
-  # PDF 真源：.tmp/jifei_pdf_txt/交易环境&公共参数.md §国内现网环境
-  #   url = http://trade.tencentyun.com/interfaces/interface.php
-  #   host = trade.tencentyun.com
-  #   北极星 = Production/1333953:131072
-  # ===========================================================================
-  - alias: jifei-prod
-    upstream:
-      base_url: "http://trade.tencentyun.com"
-      timeout: 10s
-      allowed_methods: ["POST"]
-      headers:
-        # Host header 与 base_url 的域名一致，显式重写以保证 jifei CGW 侧按 Host
-        # 路由到对应模块（PDF §地址 现网域名 = trade.tencentyun.com）。
-        Host: "trade.tencentyun.com"
-
-  # ===========================================================================
-  # jifei-billing-apigw-prod backend：lightvela trade → jifei 计费网关现网出向
-  # （销毁链路 ModifyResourceStatus / PRE_DESTROY / PRE_ISOLATE 等带 HMAC-SHA256
-  # 签名的 qcloud.operation.* 接口现网通道，v1.7.31 新增）
-  #
-  # 与 jifei-billing-apigw-test 完全对偶：协议层 HMAC-SHA256 签名仍由 trade
-  # jifeiclient 在 envelope.interface.auth 4 字段注入（Q-D-SIG-1=B 拍板），
-  # clgateway 仅做透明 forward_http 转发，不感知签名 / 不持有密钥；签名密钥
-  # JIFEI_BILLING_APP_ID / JIFEI_BILLING_APP_SECRET 由 trade pod 通过 SSM + sops
-  # 注入 trade-runtime-secrets。**用户 2026-06-12 拍板：jifei 现网计费签名密钥
-  # 与测试环境共用同一组真值**——所以 beijing-sandbox / sandbox-bj-7 的
-  # trade-runtime-secrets 里 JIFEI_BILLING_APP_ID/SECRET 字面量相同。
-  #
-  # PDF 真源：.tmp/jifei_pdf_txt/计费网关对外协议介绍.txt §国内现网环境（控制台）
-  #   url = http://apigateway.billing.tencentyun.com/{moduleName}/interface
-  #   vip = 9.223.99.242（PDF："现网不要配置vip访问"——禁止用 VIP，必须走 L5/
-  #         北极星/域名）
-  #   host = apigateway.billing.tencentyun.com
-  #   北极星 = Production/2141825:65536
-  # ===========================================================================
-  - alias: jifei-billing-apigw-prod
-    upstream:
-      base_url: "http://apigateway.billing.tencentyun.com"
-      timeout: 10s
-      allowed_methods: ["POST"]
-      headers:
-        # Host header 重写：jifei 计费网关侧按 Host 路由到对应模块；PDF §地址
-        # 现网域名 = apigateway.billing.tencentyun.com。
-        Host: "apigateway.billing.tencentyun.com"
-
   - alias: billing-trade-cn-pre
     upstream:
       scheme: http
@@ -395,38 +332,6 @@ routes:
         # PDF §地址：测试环境域名 = test.api-gateway.billing.tencentyun.com
         Host: "test.api-gateway.billing.tencentyun.com"
 
-  # ===========================================================================
-  # lightvela trade → jifei CGW 现网出向路由（询价 / 下单 / 支付链路，v1.7.31 新增）
-  # 北京 2 预发布（beijing-sandbox）+ 未来 shprod 共用此路由；与 jifei-test 严格
-  # 区分——本路由只承载现网 jifei 出向，trade-platform.env 中只有「连接现网计费」
-  # 的环境（beijing-sandbox / shprod）才会把 JIFEI_CGW_GATEWAY_URL 指向
-  # http://<lightvela-proxy-prod-LB>/v1/proxy/jifei-prod/interfaces/interface.php
-  # 走过来；sandbox-bj-7 / sandbox-bj-* / sandbox-kr-1 等联调环境继续走
-  # jifei-test。
-  # ===========================================================================
-  - id: jifei-prod
-    description: "lightvela trade → jifei CGW 现网出向路由（询价 / 下单 / 支付，beijing-sandbox / shprod 共用，与 jifei-test 严格区分；走 trade.tencentyun.com 域名 + Host header 透传，现网 PDF 推荐方式）"
-    callers: ["lightvela-trade"]
-    condition: 'request.method == "POST"'
-    upstream:
-      backend: jifei-prod
-
-  # ===========================================================================
-  # lightvela trade → jifei 计费网关现网出向路由（销毁链路 ModifyResourceStatus
-  # 带 HMAC-SHA256 签名的 qcloud.operation.* 接口，v1.7.31 新增）
-  #
-  # 与 jifei-billing-apigw-test 完全对偶；协议层签名仍由 trade jifeiclient 注入
-  # （Q-D-SIG-1=B 拍板，clgateway 透明转发不感知签名）。**moduleName=resource-center**
-  # （Q-D-SIG-2 拍板）由 trade 在 JIFEI_BILLING_APIGW_URL 中显式带 path 段
-  # /resource-center/interface 透传，clgateway 仅按 *path 拼到 base_url 后部。
-  # ===========================================================================
-  - id: jifei-billing-apigw-prod
-    description: "lightvela trade → jifei 计费网关现网出向路由（销毁链路 ModifyResourceStatus 走带签名的计费网关协议，与 jifei-billing-apigw-test 严格区分）"
-    callers: ["lightvela-trade"]
-    condition: 'request.method == "POST"'
-    upstream:
-      backend: jifei-billing-apigw-prod
-
   - id: billing-trade-cn-pre
     description: "Proxy Tencent billing trade domestic pre-release environment."
     callers: ["payment"]
@@ -463,40 +368,48 @@ routes:
       backend: billing-trade-intl-prod
 
   # ===========================================================================
-  # bj-7 独有：jifei → clgateway → trade 联调入向回调路由
-  # （cherry-pick 自 c9b75d8a4 v1.7.29，c8a0962a6 merge 时被误删，2026-06-05 恢复；
-  # 2026-05-21 v1.7.28 改造为公网 HTTPS）
+  # jifei → clgateway → trade 入向回调统一路由
+  # （2026-06-15：从 sandbox-bj-7 联调形态切换为 beijing-sandbox 北京 2 预发布形态。
+  # tkexgz / tkexsg 现网 clgateway 不再回调 sandbox-bj-7，sandbox-bj-7 联调期已结束。）
   #
   # 设计稿真源：.tmp/integration-plan-2026-05-18.md §10 Q-INT-10
   #
-  # 历史回顾：v1.7.8 B2 起初用 trade ClusterIP 172.18.255.193 直连，因 clgateway
-  # 部署在不同集群（跨 VPC），实测 context deadline exceeded — 这是 BUG-05 暴露的
-  # 跨集群网络限制。BUG-05 修复后切换到公网 HTTPS 通道。
+  # 历史回顾（保留供溯源）：
+  #   - v1.7.8 B2 起初用 trade ClusterIP 直连，因 clgateway 跨 VPC 不可达，触发
+  #     BUG-05 跨集群网络限制；v1.7.28 起改造为公网 HTTPS 通道。
+  #   - sandbox-bj-7 阶段 base_url 为 https://api-sandbox-bj-7.lightclaw.tech，
+  #     ingress 通过 trade-nodeport NodePort Service 直连 trade Pod。
   #
-  # 链路语义（联调期，beijing-sandbox-bj-7 测试集群）：
+  # 链路语义（北京 2 预发布 beijing-sandbox，2026-06-15 起）：
   #   jifei 调 http://clgateway.<env>.polaris:8095/v1/proxy/jifei-callback/trade/jifei/callback
   #     → clgateway 提取 *path = /trade/jifei/callback
-  #     → joinURL(base_url=https://api-sandbox-bj-7.lightclaw.tech, path=/trade/jifei/callback)
-  #       = https://api-sandbox-bj-7.lightclaw.tech/trade/jifei/callback
-  #     → 公网 HTTPS POST 到 lightclaw-public Ingress（lb-7wwvu33f LB, 443 TLS 入口）
-  #     → Ingress path[3] /trade/jifei/callback (Exact 匹配)
-  #     → trade-nodeport NodePort Service (port 80 → nodePort 31359, selector app=trade)
-  #     → trade Pod containerPort 8080 (httpapi server.go:190 POST /trade/jifei/callback)
+  #     → joinURL(base_url=https://lightclaw.tech, path=/trade/jifei/callback)
+  #       = https://lightclaw.tech/trade/jifei/callback
+  #     → 公网 HTTPS POST 到 lightclaw-public Ingress（北京 2 预发布主域 LB, 443 TLS 入口）
+  #     → Ingress / catchall → service-gateway-ingress NodePort（lightclaw-gateway ns）
+  #     → service-gateway Pod 按 routes 配置 path-prefix 匹配 trade-jifei-callback
+  #       (argocd/services/service-gateway/beijing-sandbox/config.yaml: prefix=/trade/jifei/callback,
+  #        access=public, methods=[POST,OPTIONS], upstream=http://trade.trade.svc.cluster.local)
+  #     → 反代到 trade.trade.svc.cluster.local:80（跨 ns ClusterIP DNS）
+  #     → trade Pod containerPort 8080 (httpapi server.go POST /trade/jifei/callback)
   #     → dispatcher 按 envelope.interface.interfaceName 三段式
   #     → lightvela.pass.* 9 个真 handler 之一
   #
   # 为什么走公网 HTTPS（而非内网）：
-  #   - clgateway 部署在另一个集群，跨 VPC 不可达 sandbox-bj-7 集群内网 ClusterIP
+  #   - clgateway 部署在另一个集群（tkexgz 广州 / tkexsg 新加坡），跨 VPC 不可
+  #     达 beijing-sandbox 集群内网 ClusterIP
   #   - 走公网 HTTPS 是 K8s 集群跨 VPC 通信的标准方案
-  #   - lightclaw-public Ingress 已配置 direct-access=true (NodePort 直连模式) +
-  #     HTTPS 443 入口，jifei 回调路径已通过 MR !700 / !701 部署到 sandbox-bj-7
+  #   - lightclaw.tech 主域 ingress 已 443 启用，/ catchall 已反代到 service-gateway
   #
-  # 关键 Ingress 配置（argocd/services/service-gateway/sandbox-bj-7/kustomization.yaml）：
-  #   path=/trade/jifei/callback, pathType=Exact
-  #   backend: trade-nodeport (NodePort, 区分 trade ClusterIP 主 Service)
+  # 与 sandbox-bj-7 联调形态的两个关键差异：
+  #   1) base_url 从 https://api-sandbox-bj-7.lightclaw.tech 切到 https://lightclaw.tech
+  #      （主域 path 模式，与 service-gateway routes 同款 path-prefix 反代）
+  #   2) 不再走 trade-nodeport NodePort 直连 trade Pod，而是 lightclaw-public 主域
+  #      ingress / catchall → service-gateway → trade.trade.svc ClusterIP，更对齐
+  #      未来 shprod 现网形态（trade 不暴露 NodePort，统一走 service-gateway 反代）
   #
   # **不重写 Host header**：jifei 调 clgateway 时带的 Host 是 clgateway 入口域名;
-  # 转发出去后 Host 自然是 api-sandbox-bj-7.lightclaw.tech（HTTPS TLS SNI 必须匹配）.
+  # 转发出去后 Host 自然是 lightclaw.tech（HTTPS TLS SNI 必须匹配）.
   # ===========================================================================
   - id: jifei-callback
     description: "jifei → clgateway → trade 入向回调统一 endpoint（POST /trade/jifei/callback，dispatcher 路由 9 个 lightvela.pass.* 真 handler）"
@@ -506,7 +419,7 @@ routes:
     callers: ["jifei"]
     condition: 'request.method == "POST"'
     upstream:
-      base_url: "https://api-sandbox-bj-7.lightclaw.tech"
+      base_url: "https://lightclaw.tech"
       timeout: 10s
       allowed_methods: ["POST"]
 
