@@ -5,6 +5,8 @@ import '../motion.css';
 import { useT } from '@/i18n/t';
 import { isGlobal } from '@/lib/region';
 import { LanguageSwitcher } from '@/components/site/language-switcher';
+import { UserAvatarMenu } from '@/components/site/user-avatar-menu';
+import { useSession } from '@/contexts/session-context';
 
 function Group6() {
   return (
@@ -73,7 +75,49 @@ function Component6({ onClick }: { onClick?: () => void }) {
   );
 }
 
-function Frame5({ onLoginClick, onCreateClick }: { onLoginClick?: () => void; onCreateClick?: () => void }) {
+function HeaderAuthSkeleton() {
+  return (
+    <div
+      aria-hidden
+      className="content-stretch flex gap-[12px] items-center relative shrink-0"
+      data-testid="landing-header-auth-loading"
+    >
+      <span className="h-[36px] w-[104px] rounded-[100px] bg-black/[0.06]" />
+      <span className="h-[36px] w-[72px] rounded-[100px] bg-black/[0.04]" />
+      {isGlobal && <span className="h-[36px] w-[70px] rounded-[100px] bg-black/[0.04]" />}
+    </div>
+  );
+}
+
+type HeaderAuthSnapshot = {
+  authReady: boolean;
+  isAuthenticated: boolean;
+};
+
+function Frame5({
+  onLoginClick,
+  onCreateClick,
+  authSnapshot,
+}: {
+  onLoginClick?: () => void;
+  onCreateClick?: () => void;
+  authSnapshot: HeaderAuthSnapshot;
+}) {
+  const { authReady, isAuthenticated } = authSnapshot;
+
+  if (!authReady) {
+    return <HeaderAuthSkeleton />;
+  }
+
+  if (isAuthenticated) {
+    return (
+      <div className="content-stretch flex gap-[12px] items-center relative shrink-0">
+        {isGlobal && <LanguageSwitcher />}
+        <UserAvatarMenu />
+      </div>
+    );
+  }
+
   return (
     <div className="content-stretch flex gap-[12px] items-center relative shrink-0">
       <Component6 onClick={onCreateClick} />
@@ -97,9 +141,14 @@ const NAV_LINKS = [
 interface HeaderSectionProps {
   onLoginClick?: () => void;
   onCreateClick?: () => void;
+  authSnapshot?: HeaderAuthSnapshot;
 }
 
-export default function HeaderSection({ onLoginClick, onCreateClick }: HeaderSectionProps = {}) {
+interface HeaderSectionContentProps extends HeaderSectionProps {
+  authSnapshot: HeaderAuthSnapshot;
+}
+
+export function HeaderSectionContent({ onLoginClick, onCreateClick, authSnapshot }: HeaderSectionContentProps) {
   const location = useLocation();
   const t = useT();
 
@@ -128,8 +177,20 @@ export default function HeaderSection({ onLoginClick, onCreateClick }: HeaderSec
           })}
         </nav>
         {/* 右侧按钮 */}
-        <Frame5 onLoginClick={onLoginClick} onCreateClick={onCreateClick} />
+        <Frame5 onLoginClick={onLoginClick} onCreateClick={onCreateClick} authSnapshot={authSnapshot} />
       </div>
     </header>
+  );
+}
+
+export default function HeaderSection({ onLoginClick, onCreateClick, authSnapshot }: HeaderSectionProps = {}) {
+  const liveSession = useSession();
+
+  return (
+    <HeaderSectionContent
+      onLoginClick={onLoginClick}
+      onCreateClick={onCreateClick}
+      authSnapshot={authSnapshot ?? liveSession}
+    />
   );
 }

@@ -1,4 +1,6 @@
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+// @vitest-environment node
+
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
@@ -8,10 +10,20 @@ import {
   resolveStaticRoutes,
 } from "./generate-static-site.mjs";
 
-const createFixture = () => {
+const createFixture = ({ withStaticRenderer = false } = {}) => {
   const root = mkdtempSync(join(tmpdir(), "static-site-"));
   const frontendRoot = join(root, "frontend");
   const distDir = join(root, "dist");
+  if (withStaticRenderer) {
+    mkdirSync(join(frontendRoot, "src", "static"), { recursive: true });
+    writeFileSync(join(frontendRoot, "src", "static", "logo.png"), "fake image");
+    writeFileSync(join(frontendRoot, "src", "static", "render-static-route.tsx"), [
+      "export function renderStaticRoute({ route }) {",
+      "  if (route.kind !== 'home') return null;",
+      "  return '<main data-react-prerendered=\"home\"><h1>React home</h1><img src=\"/src/static/logo.png\"></main>';",
+      "}",
+    ].join("\n"));
+  }
   mkdirSync(join(frontendRoot, "src", "content", "docs", "configuration"), { recursive: true });
   mkdirSync(join(frontendRoot, "src", "content", "docs", "global", "configuration"), { recursive: true });
   mkdirSync(join(frontendRoot, "src", "content", "docs", "en", "configuration"), { recursive: true });
@@ -81,6 +93,7 @@ describe("generate-static-site", () => {
       const docsHtml = readFileSync(join(distDir, "docs", "overview", "index.html"), "utf8");
       expect(docsHtml).toContain("<article");
       expect(docsHtml).toContain("LightVela 是什么");
+      expect(docsHtml).toContain("data-static-site-critical");
       expect(docsHtml).toContain("<script type=\"module\" crossorigin src=\"/assets/index-test.js\"></script>");
       expect(docsHtml).toContain("<link rel=\"stylesheet\" crossorigin href=\"/assets/index.css\">");
       expect(docsHtml).toContain("aria-label=\"文档导航\"");
@@ -104,6 +117,28 @@ describe("generate-static-site", () => {
       expect(edgeone.rewrites).toContainEqual({ source: "/account", destination: "/index.html" });
       expect(edgeone.rewrites).toContainEqual({ source: "/account/*", destination: "/index.html" });
       expect(edgeone.rewrites).not.toContainEqual({ source: "/*", destination: "/index.html" });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("uses the React static renderer for the home page when available", async () => {
+    const { root, frontendRoot, distDir } = createFixture({ withStaticRenderer: true });
+    try {
+      await buildStaticSite({
+        frontendRoot,
+        distDir,
+        region: "cn",
+        siteUrl: "https://lightvela.cn",
+        indexable: true,
+      });
+
+      const homeHtml = readFileSync(join(distDir, "index.html"), "utf8");
+      expect(homeHtml).toContain("data-react-prerendered=\"home\"");
+      expect(homeHtml).toContain("<h1>React home</h1>");
+      expect(homeHtml).toContain("/assets/static-render/static/logo.png");
+      expect(existsSync(join(distDir, "assets", "static-render", "static", "logo.png"))).toBe(true);
+      expect(homeHtml).not.toContain("能帮我做什么");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

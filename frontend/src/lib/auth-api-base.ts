@@ -31,7 +31,12 @@ export const resolveConfiguredAuthApiBaseUrl = () => {
     if (hostname === "lightclaw.site" || hostname === "www.lightclaw.site") {
       return "https://api.lightclaw.site";
     }
-    if (hostname === "lightvela.tencent.com" || hostname === "www.lightvela.tencent.com") {
+    if (
+      hostname === "lightvela.com"
+      || hostname === "www.lightvela.com"
+      || hostname === "lightvela.tencent.com"
+      || hostname === "www.lightvela.tencent.com"
+    ) {
       return "https://api.lightvela.com";
     }
   }
