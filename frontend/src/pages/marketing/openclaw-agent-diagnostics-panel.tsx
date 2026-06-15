@@ -23,13 +23,23 @@ export interface AgentDiagnosticCommand {
 
 export type LogsSinceOption = "1h" | "3h" | "6h" | "12h" | "24h";
 
-export const LOGS_SINCE_OPTIONS: Array<{ value: LogsSinceOption; label: string }> = [
-  { value: "1h", label: "1 小时" },
-  { value: "3h", label: "3 小时" },
-  { value: "6h", label: "6 小时" },
-  { value: "12h", label: "12 小时" },
-  { value: "24h", label: "24 小时" },
-];
+export const LOGS_SINCE_VALUES: LogsSinceOption[] = ["1h", "3h", "6h", "12h", "24h"];
+
+// label 走 t() 而非硬编码，避免国际站漏翻（模块级常量内无法调 hook，故在组件内本地化）
+function getLogsSinceLabel(value: LogsSinceOption, t: ReturnType<typeof useT>): string {
+  switch (value) {
+    case "1h":
+      return t("1 小时");
+    case "3h":
+      return t("3 小时");
+    case "6h":
+      return t("6 小时");
+    case "12h":
+      return t("12 小时");
+    case "24h":
+      return t("24 小时");
+  }
+}
 
 const DEFAULT_LOGS_SINCE: LogsSinceOption = "1h";
 
@@ -308,7 +318,7 @@ function DiagnosticCard({
           {item.id === "logs" && logsSince && onLogsSinceChange && (
             <LogsSelectMenu
               value={logsSince}
-              options={LOGS_SINCE_OPTIONS}
+              options={LOGS_SINCE_VALUES.map((value) => ({ value, label: getLogsSinceLabel(value, t) }))}
               disabled={isLoading}
               ariaLabel={t("选择日志时间段")}
               widthClassName="w-[92px]"
