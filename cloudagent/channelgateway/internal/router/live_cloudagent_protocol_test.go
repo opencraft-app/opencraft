@@ -2,8 +2,6 @@ package router
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -67,16 +65,11 @@ func TestProtocolE2ELiveCloudAgentHTTPDispatcher(t *testing.T) {
 	if err := dispatcher.HandleInbound(ctx, firstMsg); err != nil {
 		t.Fatalf("duplicate live dispatcher message failed: %v", err)
 	}
-	firstReply := claimOneLiveReply(t, ctx, st, lease)
+	firstOutbox, firstReply := claimOneLiveReply(t, ctx, st, lease)
 	if !strings.Contains(firstReply.Text, firstMarker) {
 		t.Fatalf("first live dispatcher reply did not contain marker %q: %q", firstMarker, firstReply.Text)
 	}
-	if err := st.MarkOutboxSent(ctx, lease, "out_reply_"+stableHex(strings.Join([]string{
-		accountID,
-		string(channel.TypeWeCom),
-		firstMsg.ExternalMessageID,
-		"reply",
-	}, ":"), 32)); err != nil {
+	if err := st.MarkOutboxSent(ctx, lease, firstOutbox.OutboxID); err != nil {
 		t.Fatalf("mark first live outbox sent: %v", err)
 	}
 
@@ -102,7 +95,7 @@ func TestProtocolE2ELiveCloudAgentHTTPDispatcher(t *testing.T) {
 	if err := dispatcher.HandleInbound(ctx, secondMsg); err != nil {
 		t.Fatalf("second live dispatcher message failed: %v", err)
 	}
-	secondReply := claimOneLiveReply(t, ctx, st, lease)
+	_, secondReply := claimOneLiveReply(t, ctx, st, lease)
 	if !strings.Contains(secondReply.Text, secondMarker) {
 		t.Fatalf("second live dispatcher reply did not contain marker %q: %q", secondMarker, secondReply.Text)
 	}
@@ -154,7 +147,7 @@ func liveDispatcherMessage(accountID, suffix, messageID, text string) channel.Me
 	}
 }
 
-func claimOneLiveReply(t *testing.T, ctx context.Context, st *store.Store, lease store.ChannelLease) channel.Reply {
+func claimOneLiveReply(t *testing.T, ctx context.Context, st *store.Store, lease store.ChannelLease) (store.OutboxRecord, channel.Reply) {
 	t.Helper()
 	deadline := time.Now().Add(30 * time.Second)
 	for {
@@ -167,7 +160,7 @@ func claimOneLiveReply(t *testing.T, ctx context.Context, st *store.Store, lease
 			if err := json.Unmarshal([]byte(claimed[0].PayloadJSON), &reply); err != nil {
 				t.Fatalf("decode live outbox reply: %v payload=%s", err, claimed[0].PayloadJSON)
 			}
-			return reply
+			return claimed[0], reply
 		}
 		if len(claimed) > 1 {
 			t.Fatalf("expected one live outbox reply, got %#v", claimed)
@@ -215,13 +208,4 @@ func firstLiveEnvValue(keys ...string) string {
 		}
 	}
 	return ""
-}
-
-func stableHex(value string, length int) string {
-	sum := sha256.Sum256([]byte(value))
-	encoded := hex.EncodeToString(sum[:])
-	if length > 0 && length < len(encoded) {
-		return encoded[:length]
-	}
-	return encoded
 }
