@@ -3288,7 +3288,7 @@ export const OpenClawSettingsPage = () => {
   }, [acliResetConsole]);
 
   const handleResetConfig = async () => {
-    if (getResetBlockReason(activeBot, resetting, true)) return;
+    if (getResetBlockReason(activeBot, resetting)) return;
     const targetBotId = activeBot?.id;
     if (!targetBotId) return;
 
@@ -4269,7 +4269,7 @@ export const OpenClawSettingsPage = () => {
               const isRestartDisabled = resettingAcli || isActiveBotRestarting || activeBot.status !== "running";
               const restartTooltip = resettingAcli ? t("请稍后") : t("重启");
               const exportTooltip = isActiveBotExporting ? t("导出中...") : t("导出工作区");
-              const resetBlockReason = getResetBlockReason(activeBot, resetting, true);
+              const resetBlockReason = getResetBlockReason(activeBot, resetting);
               const resetDisabled = resettingAcli || resetting || resetBlockReason !== null;
               const resetTooltip =
                 resettingAcli || resetBlockReason === RESET_BLOCK_REASON.NOT_RUNNING
