@@ -22,6 +22,7 @@ mod daemon_state;
 mod event_projection;
 mod http;
 mod protocol;
+mod run_store;
 mod session_api;
 mod stage_files;
 mod telemetry;
@@ -199,6 +200,100 @@ mod tests {
                     );
                 }
                 other => panic!("expected client session-input command, got {:?}", other),
+            },
+            other => panic!("expected client mode, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_client_run_protocol_subcommands() {
+        let submit = vec![
+            "hermes-sidecar".to_string(),
+            "client".to_string(),
+            "--addr".to_string(),
+            "http://127.0.0.1:49999".to_string(),
+            "run-submit".to_string(),
+            "--session-id".to_string(),
+            "session_123".to_string(),
+            "--run-id".to_string(),
+            "job_1".to_string(),
+            "--inbox-mode".to_string(),
+            "follow_up".to_string(),
+            "--text-b64".to_string(),
+            STANDARD.encode("hello"),
+            "--cwd-b64".to_string(),
+            STANDARD.encode("/workspace"),
+            "--history-b64".to_string(),
+            STANDARD.encode(r#"[{"role":"assistant","text":"previous"}]"#),
+        ];
+        match parse_command_mode(&submit).unwrap() {
+            CommandMode::Client(client) => match client.command {
+                ClientCommand::RunSubmit {
+                    session_id,
+                    run_id,
+                    inbox_mode,
+                    text_b64,
+                    cwd_b64,
+                    history_b64,
+                } => {
+                    assert_eq!(session_id, "session_123");
+                    assert_eq!(run_id, "job_1");
+                    assert_eq!(inbox_mode, "follow_up");
+                    assert_eq!(text_b64, STANDARD.encode("hello"));
+                    assert_eq!(cwd_b64, Some(STANDARD.encode("/workspace")));
+                    assert_eq!(
+                        history_b64,
+                        Some(STANDARD.encode(r#"[{"role":"assistant","text":"previous"}]"#))
+                    );
+                }
+                other => panic!("expected client run-submit command, got {:?}", other),
+            },
+            other => panic!("expected client mode, got {:?}", other),
+        }
+
+        let events = vec![
+            "hermes-sidecar".to_string(),
+            "client".to_string(),
+            "--addr".to_string(),
+            "http://127.0.0.1:49999".to_string(),
+            "run-events".to_string(),
+            "--run-id".to_string(),
+            "job_1".to_string(),
+            "--after-seq".to_string(),
+            "42".to_string(),
+            "--stream".to_string(),
+        ];
+        match parse_command_mode(&events).unwrap() {
+            CommandMode::Client(client) => match client.command {
+                ClientCommand::RunEvents {
+                    run_id,
+                    after_seq,
+                    stream,
+                } => {
+                    assert_eq!(run_id, "job_1");
+                    assert_eq!(after_seq, 42);
+                    assert!(stream);
+                }
+                other => panic!("expected client run-events command, got {:?}", other),
+            },
+            other => panic!("expected client mode, got {:?}", other),
+        }
+
+        let status = vec![
+            "hermes-sidecar".to_string(),
+            "client".to_string(),
+            "--addr".to_string(),
+            "http://127.0.0.1:49999".to_string(),
+            "run-status".to_string(),
+            "--run-id".to_string(),
+            "job_1".to_string(),
+        ];
+        match parse_command_mode(&status).unwrap() {
+            CommandMode::Client(client) => match client.command {
+                ClientCommand::RunStatus { run_id } => {
+                    assert_eq!(run_id, "job_1");
+                }
+                other => panic!("expected client run-status command, got {:?}", other),
             },
             other => panic!("expected client mode, got {:?}", other),
         }

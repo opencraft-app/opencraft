@@ -3,6 +3,8 @@ use serde_json::Value;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
+use serde::Serialize;
+
 use crate::protocol::{HttpRequest, HttpResponse, PromptResponseLine};
 
 const MAX_HTTP_HEADER_BYTES: usize = 64 * 1024;
@@ -115,6 +117,22 @@ pub(crate) async fn write_prompt_response_line(
         .flush()
         .await
         .context("failed to flush prompt response line")
+}
+
+pub(crate) async fn write_json_line<T: Serialize>(stream: &mut TcpStream, line: &T) -> Result<()> {
+    let serialized = serde_json::to_string(line).context("failed to serialize response line")?;
+    stream
+        .write_all(serialized.as_bytes())
+        .await
+        .context("failed to write response line")?;
+    stream
+        .write_all(b"\n")
+        .await
+        .context("failed to write response newline")?;
+    stream
+        .flush()
+        .await
+        .context("failed to flush response line")
 }
 
 pub(crate) fn prompt_response_lines_body(lines: &[PromptResponseLine]) -> Vec<u8> {

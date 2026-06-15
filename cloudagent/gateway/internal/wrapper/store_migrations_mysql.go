@@ -117,6 +117,32 @@ func migrateStoreMySQL(db *sql.DB) error {
 			UNIQUE KEY message_blocks_tool_idx (message_id, tool_call_key),
 			KEY message_blocks_replay_idx (session_id, turn_id, block_index)
 		)`,
+		`CREATE TABLE IF NOT EXISTS cloudagent_runs (
+			run_id VARCHAR(191) PRIMARY KEY,
+			session_id VARCHAR(191) NOT NULL,
+			turn_id VARCHAR(191) NOT NULL DEFAULT '',
+			response_id VARCHAR(191) NOT NULL DEFAULT '',
+			status VARCHAR(64) NOT NULL,
+			stop_reason VARCHAR(64) NOT NULL DEFAULT '',
+			error_message TEXT NOT NULL,
+			output_text LONGTEXT NOT NULL,
+			created_at VARCHAR(64) NOT NULL,
+			updated_at VARCHAR(64) NOT NULL,
+			completed_at VARCHAR(64) NULL,
+			KEY cloudagent_runs_session_idx (session_id, updated_at),
+			KEY cloudagent_runs_turn_idx (turn_id)
+		)`,
+		`CREATE TABLE IF NOT EXISTS cloudagent_run_events (
+			run_id VARCHAR(191) NOT NULL,
+			seq BIGINT NOT NULL,
+			session_id VARCHAR(191) NOT NULL,
+			turn_id VARCHAR(191) NOT NULL DEFAULT '',
+			kind VARCHAR(64) NOT NULL DEFAULT '',
+			event_json LONGTEXT NOT NULL,
+			created_at VARCHAR(64) NOT NULL,
+			PRIMARY KEY(run_id, seq),
+			KEY cloudagent_run_events_session_idx (session_id, run_id, seq)
+		)`,
 		`CREATE TABLE IF NOT EXISTS session_files (
 			session_id VARCHAR(191) NOT NULL,
 			event_id BIGINT NOT NULL,

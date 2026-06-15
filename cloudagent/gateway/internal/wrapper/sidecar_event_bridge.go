@@ -9,6 +9,7 @@ import (
 
 type sidecarStdoutEvent struct {
 	Type        string          `json:"type"`
+	RunSeq      int64           `json:"run_seq"`
 	Event       string          `json:"event"`
 	Delta       string          `json:"delta"`
 	ToolCallID  string          `json:"tool_call_id"`

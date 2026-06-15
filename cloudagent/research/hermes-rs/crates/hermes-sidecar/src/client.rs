@@ -9,7 +9,8 @@ use tokio::net::TcpStream;
 
 use crate::protocol::{
     EnsureInnerRequest, PromptResponseLine, RuntimeAbortRequest, RuntimeInputBlock,
-    RuntimeInputRequest, SessionCreateRequest, StageFilesManifest, WorkspaceBindRequest,
+    RuntimeInputRequest, RuntimeRunEventRecord, RuntimeRunEventsResponse, RuntimeRunResultResponse,
+    RuntimeRunSubmitRequest, SessionCreateRequest, StageFilesManifest, WorkspaceBindRequest,
     WorkspaceFileDownloadRequest, WorkspaceFileUploadRequest,
 };
 use crate::timeline;
@@ -49,6 +50,29 @@ pub(crate) enum ClientCommand {
     SessionStatus,
     SessionTranscript,
     SessionRunLedger,
+    RunSubmit {
+        session_id: String,
+        run_id: String,
+        inbox_mode: String,
+        text_b64: String,
+        cwd_b64: Option<String>,
+        history_b64: Option<String>,
+    },
+    RunEvents {
+        run_id: String,
+        after_seq: u64,
+        stream: bool,
+    },
+    RunStatus {
+        run_id: String,
+    },
+    RunResult {
+        run_id: String,
+    },
+    RunCancel {
+        session_id: String,
+        run_id: String,
+    },
     StageFiles {
         manifest_b64: String,
     },
@@ -180,6 +204,78 @@ pub(crate) async fn run_client(args: ClientArgs) -> Result<()> {
                 println!("{}", response.body.trim());
             }
         }
+        ClientCommand::RunSubmit {
+            session_id,
+            run_id,
+            inbox_mode,
+            text_b64,
+            cwd_b64,
+            history_b64,
+        } => {
+            let request = RuntimeRunSubmitRequest {
+                session_id,
+                run_id,
+                inbox_mode: Some(inbox_mode),
+                blocks: vec![RuntimeInputBlock::Text {
+                    text: decode_required_b64(&text_b64)
+                        .context("failed to decode client run submit text")?,
+                }],
+                cwd: cwd_b64.as_deref().and_then(decode_inline_b64),
+                history: history_b64
+                    .as_deref()
+                    .map(decode_json_b64)
+                    .transpose()
+                    .context("failed to decode client run submit history")?
+                    .unwrap_or_default(),
+            };
+            let response = http_request_json(&args.addr, "POST", "/runs", &request).await?;
+            ensure_http_ok(&response, "/runs")?;
+            if !response.body.trim().is_empty() {
+                println!("{}", response.body.trim());
+            }
+        }
+        ClientCommand::RunEvents {
+            run_id,
+            after_seq,
+            stream,
+        } => {
+            stream_runtime_run_events(&args.addr, &run_id, after_seq, stream).await?;
+        }
+        ClientCommand::RunStatus { run_id } => {
+            let path = format!("/runs/{}", run_id);
+            let response = http_request(&args.addr, "GET", &path, None).await?;
+            ensure_http_ok(&response, &path)?;
+            if !response.body.trim().is_empty() {
+                println!("{}", response.body.trim());
+            }
+        }
+        ClientCommand::RunResult { run_id } => {
+            let path = format!("/runs/{}/result", run_id);
+            let response = http_request(&args.addr, "GET", &path, None).await?;
+            ensure_http_ok(&response, &path)?;
+            let result: RuntimeRunResultResponse = serde_json::from_str(&response.body)
+                .context("failed to decode run result response")?;
+            print_run_result_response(result)?;
+        }
+        ClientCommand::RunCancel { session_id, run_id } => {
+            let request = RuntimeAbortRequest {
+                session_id,
+                run_id: Some(run_id.clone()),
+                clear_pending: false,
+                reason: Some("run cancel".to_string()),
+            };
+            let response = http_request_json(
+                &args.addr,
+                "POST",
+                &format!("/runs/{}/cancel", run_id),
+                &request,
+            )
+            .await?;
+            ensure_http_ok(&response, "/runs/{run_id}/cancel")?;
+            if !response.body.trim().is_empty() {
+                println!("{}", response.body.trim());
+            }
+        }
         ClientCommand::StageFiles { manifest_b64 } => {
             let request: StageFilesManifest = decode_json_b64(&manifest_b64)
                 .context("failed to decode client stage-files manifest")?;
@@ -306,6 +402,11 @@ pub(crate) fn parse_client_args(args: &[String]) -> Result<ClientArgs> {
             | "session-status"
             | "session-transcript"
             | "session-run-ledger"
+            | "run-submit"
+            | "run-events"
+            | "run-status"
+            | "run-result"
+            | "run-cancel"
             | "stage-files"
             | "workspace-file-upload"
             | "workspace-file-download"
@@ -334,6 +435,11 @@ pub(crate) fn parse_client_args(args: &[String]) -> Result<ClientArgs> {
         "session-status" => ClientCommand::SessionStatus,
         "session-transcript" => ClientCommand::SessionTranscript,
         "session-run-ledger" => ClientCommand::SessionRunLedger,
+        "run-submit" => parse_client_run_submit_args(&args[start..])?,
+        "run-events" => parse_client_run_events_args(&args[start..])?,
+        "run-status" => parse_client_run_status_args(&args[start..])?,
+        "run-result" => parse_client_run_result_args(&args[start..])?,
+        "run-cancel" => parse_client_run_cancel_args(&args[start..])?,
         "workspace-bind" => parse_client_workspace_bind_args(&args[start..])?,
         "workspace-file-upload" => parse_client_workspace_file_upload_args(&args[start..])?,
         "workspace-file-download" => parse_client_workspace_file_download_args(&args[start..])?,
@@ -473,6 +579,96 @@ async fn stream_runtime_input_response_lines(
     request: &RuntimeInputRequest,
 ) -> Result<()> {
     stream_response_lines(addr, "/session/input/stream", request).await
+}
+
+async fn stream_runtime_run_events(
+    addr: &str,
+    run_id: &str,
+    after_seq: u64,
+    stream_events: bool,
+) -> Result<()> {
+    let mut path = format!("/runs/{}/events?after_seq={}", run_id, after_seq);
+    if stream_events {
+        path.push_str("&stream=true");
+    } else {
+        let response = http_request(addr, "GET", &path, None).await?;
+        ensure_http_ok(&response, &path)?;
+        let events: RuntimeRunEventsResponse =
+            serde_json::from_str(&response.body).context("failed to decode run events response")?;
+        let mut saw_terminal = false;
+        for event in events.events {
+            print_prompt_response_line_with_seq(&event.line, Some(event.seq), &mut saw_terminal)?;
+        }
+        return Ok(());
+    }
+    let authority = parse_http_authority(addr)?;
+    let mut stream = TcpStream::connect(&authority)
+        .await
+        .with_context(|| format!("failed to connect to daemon '{}'", authority))?;
+    write_daemon_request(&mut stream, &authority, "GET", &path, "").await?;
+
+    let mut buffer = Vec::new();
+    let mut chunk = [0u8; 4096];
+    let header_end = loop {
+        if let Some(position) = find_bytes(&buffer, b"\r\n\r\n") {
+            break position;
+        }
+        let count = stream
+            .read(&mut chunk)
+            .await
+            .context("failed to read daemon run events response headers")?;
+        if count == 0 {
+            bail!("unexpected EOF while reading daemon run events response headers");
+        }
+        buffer.extend_from_slice(&chunk[..count]);
+        if buffer.len() > MAX_HTTP_HEADER_BYTES {
+            bail!(
+                "HTTP response headers exceed {} bytes",
+                MAX_HTTP_HEADER_BYTES
+            );
+        }
+    };
+
+    let header_text = std::str::from_utf8(&buffer[..header_end])
+        .context("HTTP response headers are not UTF-8")?;
+    let status = parse_response_status(header_text)?;
+    let body_offset = header_end + 4;
+    let mut pending = buffer[body_offset..].to_vec();
+    if status != 200 {
+        stream
+            .read_to_end(&mut pending)
+            .await
+            .context("failed to read daemon run events error body")?;
+        bail!(
+            "daemon {} failed: HTTP {}: {}",
+            path,
+            status,
+            String::from_utf8_lossy(&pending).trim()
+        );
+    }
+
+    let mut saw_terminal = false;
+    process_run_event_record_bytes(&mut pending, &mut saw_terminal)?;
+    loop {
+        let count = stream
+            .read(&mut chunk)
+            .await
+            .context("failed to read daemon run events body")?;
+        if count == 0 {
+            break;
+        }
+        pending.extend_from_slice(&chunk[..count]);
+        process_run_event_record_bytes(&mut pending, &mut saw_terminal)?;
+    }
+    if !pending.iter().all(|byte| byte.is_ascii_whitespace()) {
+        let line = String::from_utf8(std::mem::take(&mut pending))
+            .context("daemon run event line is not UTF-8")?;
+        print_run_event_record(line.trim_end(), &mut saw_terminal)?;
+    }
+    if stream_events && !saw_terminal {
+        bail!("daemon run event stream ended before a terminal event")
+    }
+    Ok(())
 }
 
 async fn stream_response_lines<T: Serialize>(addr: &str, path: &str, request: &T) -> Result<()> {
@@ -641,19 +837,50 @@ fn process_prompt_response_bytes(pending: &mut Vec<u8>, saw_result: &mut bool) -
     Ok(())
 }
 
+fn process_run_event_record_bytes(pending: &mut Vec<u8>, saw_terminal: &mut bool) -> Result<()> {
+    while let Some(position) = pending.iter().position(|byte| *byte == b'\n') {
+        let line_bytes: Vec<u8> = pending.drain(..=position).collect();
+        let line = String::from_utf8(line_bytes).context("daemon run event line is not UTF-8")?;
+        let line = line.trim_end();
+        if !line.trim().is_empty() {
+            print_run_event_record(line, saw_terminal)?;
+        }
+    }
+    Ok(())
+}
+
+fn print_run_event_record(line: &str, saw_terminal: &mut bool) -> Result<()> {
+    let record: RuntimeRunEventRecord = serde_json::from_str(line)
+        .with_context(|| format!("failed to parse daemon run event '{}'", line))?;
+    print_prompt_response_line_with_seq(&record.line, Some(record.seq), saw_terminal)
+}
+
 fn print_prompt_response_line(line: &str, saw_result: &mut bool) -> Result<()> {
     match serde_json::from_str::<PromptResponseLine>(line)
         .with_context(|| format!("failed to parse daemon line '{}'", line))?
     {
+        parsed => print_prompt_response_line_with_seq(&parsed, None, saw_result),
+    }
+}
+
+fn print_prompt_response_line_with_seq(
+    line: &PromptResponseLine,
+    run_seq: Option<u64>,
+    saw_result: &mut bool,
+) -> Result<()> {
+    match line {
         PromptResponseLine::OutputTextDelta { delta } => {
             let mut stdout = io::stdout().lock();
             writeln!(
                 stdout,
                 "WRAPPER_EVENT_JSON={}",
-                json!({
+                wrapper_json_with_seq(
+                    json!({
                     "type": "output_text_delta",
                     "delta": delta,
-                })
+                    }),
+                    run_seq,
+                )
             )?;
             stdout.flush()?;
         }
@@ -662,10 +889,13 @@ fn print_prompt_response_line(line: &str, saw_result: &mut bool) -> Result<()> {
             writeln!(
                 stdout,
                 "WRAPPER_EVENT_JSON={}",
-                json!({
+                wrapper_json_with_seq(
+                    json!({
                     "type": "reasoning_delta",
                     "delta": delta,
-                })
+                    }),
+                    run_seq,
+                )
             )?;
             stdout.flush()?;
         }
@@ -679,13 +909,16 @@ fn print_prompt_response_line(line: &str, saw_result: &mut bool) -> Result<()> {
             writeln!(
                 stdout,
                 "WRAPPER_EVENT_JSON={}",
-                json!({
+                wrapper_json_with_seq(
+                    json!({
                     "type": "tool_call",
                     "tool_call_id": tool_call_id,
                     "name": name,
                     "status": status,
                     "raw_input": raw_input,
-                })
+                    }),
+                    run_seq,
+                )
             )?;
             stdout.flush()?;
         }
@@ -701,7 +934,8 @@ fn print_prompt_response_line(line: &str, saw_result: &mut bool) -> Result<()> {
             writeln!(
                 stdout,
                 "WRAPPER_EVENT_JSON={}",
-                json!({
+                wrapper_json_with_seq(
+                    json!({
                     "type": "tool_call_update",
                     "tool_call_id": tool_call_id,
                     "name": name,
@@ -709,7 +943,9 @@ fn print_prompt_response_line(line: &str, saw_result: &mut bool) -> Result<()> {
                     "error": error,
                     "raw_output": raw_output,
                     "content": content,
-                })
+                    }),
+                    run_seq,
+                )
             )?;
             stdout.flush()?;
         }
@@ -730,7 +966,8 @@ fn print_prompt_response_line(line: &str, saw_result: &mut bool) -> Result<()> {
             writeln!(
                 stdout,
                 "WRAPPER_EVENT_JSON={}",
-                json!({
+                wrapper_json_with_seq(
+                    json!({
                     "type": "runtime_host",
                     "event": event,
                     "session_id": session_id,
@@ -743,7 +980,9 @@ fn print_prompt_response_line(line: &str, saw_result: &mut bool) -> Result<()> {
                     "stderr_bytes": stderr_bytes,
                     "stdout_tail": stdout_tail,
                     "stderr_tail": stderr_tail,
-                })
+                    }),
+                    run_seq,
+                )
             )?;
             stdout.flush()?;
         }
@@ -757,12 +996,15 @@ fn print_prompt_response_line(line: &str, saw_result: &mut bool) -> Result<()> {
             writeln!(
                 stdout,
                 "WRAPPER_RESULT_JSON={}",
-                json!({
+                wrapper_json_with_seq(
+                    json!({
                     "output_text": output_text,
                     "inner_sandbox_id": inner_sandbox_id,
                     "inner_sandbox_domain": inner_sandbox_domain,
                     "inner_envd_access_token": inner_envd_access_token,
-                })
+                    }),
+                    run_seq,
+                )
             )?;
             stdout.flush()?;
             *saw_result = true;
@@ -772,16 +1014,57 @@ fn print_prompt_response_line(line: &str, saw_result: &mut bool) -> Result<()> {
             writeln!(
                 stdout,
                 "WRAPPER_ERROR_JSON={}",
-                json!({
-                    "code": code.unwrap_or_else(|| classify_error_code(&error).to_string()),
+                wrapper_json_with_seq(
+                    json!({
+                    "code": code
+                        .clone()
+                        .unwrap_or_else(|| classify_error_code(error).to_string()),
                     "message": error,
-                })
+                    }),
+                    run_seq,
+                )
             )?;
             stdout.flush()?;
             *saw_result = true;
         }
     }
     Ok(())
+}
+
+fn print_run_result_response(result: RuntimeRunResultResponse) -> Result<()> {
+    let mut stdout = io::stdout().lock();
+    if let Some(error) = result.error {
+        writeln!(
+            stdout,
+            "WRAPPER_ERROR_JSON={}",
+            json!({
+                "code": classify_error_code(&error),
+                "message": error,
+            })
+        )?;
+    } else {
+        writeln!(
+            stdout,
+            "WRAPPER_RESULT_JSON={}",
+            json!({
+                "output_text": result.output_text.unwrap_or_default(),
+                "inner_sandbox_id": result.inner_sandbox_id,
+                "inner_sandbox_domain": result.inner_sandbox_domain,
+                "inner_envd_access_token": null,
+            })
+        )?;
+    }
+    stdout.flush()?;
+    Ok(())
+}
+
+fn wrapper_json_with_seq(mut value: serde_json::Value, run_seq: Option<u64>) -> serde_json::Value {
+    if let Some(seq) = run_seq {
+        if let Some(object) = value.as_object_mut() {
+            object.insert("run_seq".to_string(), json!(seq));
+        }
+    }
+    value
 }
 
 fn parse_client_session_create_args(args: &[String]) -> Result<ClientCommand> {
@@ -857,6 +1140,134 @@ fn parse_client_session_input_args(args: &[String]) -> Result<ClientCommand> {
         text_b64: text_b64.context("--text-b64 is required for client session-input")?,
         cwd_b64,
         history_b64,
+    })
+}
+
+fn parse_client_run_submit_args(args: &[String]) -> Result<ClientCommand> {
+    let mut session_id = None;
+    let mut run_id = None;
+    let mut inbox_mode = Some("prompt".to_string());
+    let mut text_b64 = None;
+    let mut cwd_b64 = None;
+    let mut history_b64 = None;
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--session-id" => {
+                session_id = Some(take_flag_value(args, &mut index, "--session-id")?);
+            }
+            "--run-id" => {
+                run_id = Some(take_flag_value(args, &mut index, "--run-id")?);
+            }
+            "--inbox-mode" => {
+                inbox_mode = Some(take_flag_value(args, &mut index, "--inbox-mode")?);
+            }
+            "--text-b64" => {
+                text_b64 = Some(take_flag_value(args, &mut index, "--text-b64")?);
+            }
+            "--cwd-b64" => {
+                cwd_b64 = Some(take_flag_value(args, &mut index, "--cwd-b64")?);
+            }
+            "--history-b64" => {
+                history_b64 = Some(take_flag_value(args, &mut index, "--history-b64")?);
+            }
+            other => bail!("unexpected run-submit argument '{}'", other),
+        }
+        index += 1;
+    }
+
+    Ok(ClientCommand::RunSubmit {
+        session_id: session_id.context("--session-id is required for client run-submit")?,
+        run_id: run_id.context("--run-id is required for client run-submit")?,
+        inbox_mode: inbox_mode.unwrap_or_else(|| "prompt".to_string()),
+        text_b64: text_b64.context("--text-b64 is required for client run-submit")?,
+        cwd_b64,
+        history_b64,
+    })
+}
+
+fn parse_client_run_events_args(args: &[String]) -> Result<ClientCommand> {
+    let mut run_id = None;
+    let mut after_seq = 0u64;
+    let mut stream = false;
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--run-id" => {
+                run_id = Some(take_flag_value(args, &mut index, "--run-id")?);
+            }
+            "--after-seq" => {
+                after_seq = take_flag_value(args, &mut index, "--after-seq")?
+                    .parse()
+                    .context("--after-seq must be an unsigned integer")?;
+            }
+            "--stream" => {
+                stream = true;
+            }
+            other => bail!("unexpected run-events argument '{}'", other),
+        }
+        index += 1;
+    }
+    Ok(ClientCommand::RunEvents {
+        run_id: run_id.context("--run-id is required for client run-events")?,
+        after_seq,
+        stream,
+    })
+}
+
+fn parse_client_run_status_args(args: &[String]) -> Result<ClientCommand> {
+    let mut run_id = None;
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--run-id" => {
+                run_id = Some(take_flag_value(args, &mut index, "--run-id")?);
+            }
+            other => bail!("unexpected run-status argument '{}'", other),
+        }
+        index += 1;
+    }
+    Ok(ClientCommand::RunStatus {
+        run_id: run_id.context("--run-id is required for client run-status")?,
+    })
+}
+
+fn parse_client_run_result_args(args: &[String]) -> Result<ClientCommand> {
+    let mut run_id = None;
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--run-id" => {
+                run_id = Some(take_flag_value(args, &mut index, "--run-id")?);
+            }
+            other => bail!("unexpected run-result argument '{}'", other),
+        }
+        index += 1;
+    }
+    Ok(ClientCommand::RunResult {
+        run_id: run_id.context("--run-id is required for client run-result")?,
+    })
+}
+
+fn parse_client_run_cancel_args(args: &[String]) -> Result<ClientCommand> {
+    let mut session_id = None;
+    let mut run_id = None;
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--session-id" => {
+                session_id = Some(take_flag_value(args, &mut index, "--session-id")?);
+            }
+            "--run-id" => {
+                run_id = Some(take_flag_value(args, &mut index, "--run-id")?);
+            }
+            other => bail!("unexpected run-cancel argument '{}'", other),
+        }
+        index += 1;
+    }
+    Ok(ClientCommand::RunCancel {
+        session_id: session_id.context("--session-id is required for client run-cancel")?,
+        run_id: run_id.context("--run-id is required for client run-cancel")?,
     })
 }
 
