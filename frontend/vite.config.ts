@@ -569,6 +569,54 @@ export default defineConfig(({ mode }) => {
       ...(allowedHosts.length > 0 ? { allowedHosts } : {}),
       ...(hmr ? { hmr } : {}),
       proxy: {
+        "/auth/oauth": {
+          target: "https://lightclaw.tech",
+          changeOrigin: true,
+        },
+        "/auth/session": {
+          target: "https://lightclaw.tech",
+          changeOrigin: true,
+        },
+        "/auth/profile": {
+          target: "https://lightclaw.tech",
+          changeOrigin: true,
+        },
+        "/auth/sms": {
+          target: "https://lightclaw.tech",
+          changeOrigin: true,
+        },
+        "/auth/invite": {
+          target: "https://lightclaw.tech",
+          changeOrigin: true,
+        },
+        "/auth/realname": {
+          target: "https://lightclaw.tech",
+          changeOrigin: true,
+        },
+        "/auth/tat": {
+          target: "https://lightclaw.tech",
+          changeOrigin: true,
+        },
+        "/auth/guest": {
+          target: "https://lightclaw.tech",
+          changeOrigin: true,
+        },
+        "/subscriptions": {
+          target: "https://lightclaw.tech",
+          changeOrigin: true,
+        },
+        "/users": {
+          target: "https://lightclaw.tech",
+          changeOrigin: true,
+        },
+        "/v1": {
+          target: "https://lightclaw.tech",
+          changeOrigin: true,
+        },
+        "/sandboxes": {
+          target: "https://lightclaw.tech",
+          changeOrigin: true,
+        },
         "/__skillhub": {
           target: "https://lightmake.cloud",
           changeOrigin: true,
