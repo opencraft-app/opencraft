@@ -66,9 +66,95 @@ CHANNELGATEWAY_ACP_URL=http://127.0.0.1:18094
 CHANNELGATEWAY_RUNTIME_PROTOCOL=cloudagent
 ```
 
+In this mode `CHANNELGATEWAY_ACP_URL` is a legacy variable name: it is treated
+as the CloudAgent HTTP base URL. Do not append `/acp`.
+
+The CloudAgent HTTP run protocol is not WebSocket and not SSE. It uses ordinary
+HTTP JSON for session/run/result APIs, plus newline-delimited JSON streaming for
+run events:
+
+```text
+GET  /v1/cloudagent/capabilities
+POST /v1/cloudagent/sessions
+GET  /v1/cloudagent/sessions/{session_id}
+POST /v1/cloudagent/sessions/{session_id}/runs
+GET  /v1/cloudagent/runs/{run_id}
+GET  /v1/cloudagent/runs/{run_id}/events?after_seq=N
+GET  /v1/cloudagent/runs/{run_id}/events?after_seq=N&stream=true
+GET  /v1/cloudagent/runs/{run_id}/result
+POST /v1/cloudagent/runs/{run_id}/cancel
+```
+
+All requests must include either `Authorization: Bearer ...` or both
+`X-Tenant-ID` and `X-Project-ID`. Devcloud test values:
+
+```bash
+export CLOUDAGENT_BASE_URL=http://21.6.84.6
+export CLOUDAGENT_TENANT_ID=tenant-devcloud-dep
+export CLOUDAGENT_PROJECT_ID=project-devcloud-dep
+```
+
+Capability check:
+
+```bash
+curl -sS \
+  -H "X-Tenant-ID: $CLOUDAGENT_TENANT_ID" \
+  -H "X-Project-ID: $CLOUDAGENT_PROJECT_ID" \
+  "$CLOUDAGENT_BASE_URL/v1/cloudagent/capabilities"
+```
+
+The response must advertise `protocol: "cloudagent.run"` and
+`run_protocol: true`.
+
+Minimal HTTP run flow:
+
+```bash
+SESSION_ID=$(
+  curl -sS \
+    -H "Content-Type: application/json" \
+    -H "X-Tenant-ID: $CLOUDAGENT_TENANT_ID" \
+    -H "X-Project-ID: $CLOUDAGENT_PROJECT_ID" \
+    -d '{"cwd":"/workspace","agent_version":"builtin.v1","workspace_version":"builtin.v1"}' \
+    "$CLOUDAGENT_BASE_URL/v1/cloudagent/sessions" |
+  python3 -c 'import json,sys; print(json.load(sys.stdin)["session_id"])'
+)
+
+RUN_ID="job_channel_example_$(date +%s)"
+
+curl -sS \
+  -H "Content-Type: application/json" \
+  -H "X-Tenant-ID: $CLOUDAGENT_TENANT_ID" \
+  -H "X-Project-ID: $CLOUDAGENT_PROJECT_ID" \
+  -d "{\"run_id\":\"$RUN_ID\",\"text\":\"Please reply CLOUDAGENT_RUN_OK only.\",\"cwd\":\"/workspace\",\"inbox_mode\":\"prompt\"}" \
+  "$CLOUDAGENT_BASE_URL/v1/cloudagent/sessions/$SESSION_ID/runs"
+
+curl -N -sS \
+  -H "X-Tenant-ID: $CLOUDAGENT_TENANT_ID" \
+  -H "X-Project-ID: $CLOUDAGENT_PROJECT_ID" \
+  "$CLOUDAGENT_BASE_URL/v1/cloudagent/runs/$RUN_ID/events?after_seq=0&stream=true"
+
+curl -sS \
+  -H "X-Tenant-ID: $CLOUDAGENT_TENANT_ID" \
+  -H "X-Project-ID: $CLOUDAGENT_PROJECT_ID" \
+  "$CLOUDAGENT_BASE_URL/v1/cloudagent/runs/$RUN_ID/result"
+```
+
+Streaming response frames use `Content-Type: application/x-ndjson`; each line is
+one JSON frame:
+
+```json
+{"type":"event","event":{"seq":1,"run_id":"job_channel_example","kind":"message_delta","event":{}}}
+{"type":"heartbeat","after_seq":1}
+{"type":"run","run":{"run_id":"job_channel_example","status":"completed","stop_reason":"end_turn","output_text":"CLOUDAGENT_RUN_OK"}}
+```
+
+Persist the largest observed `seq` and reconnect with
+`after_seq=<last_seq>` after any timeout, restart, or network disconnect. The
+run continues even if the observer stream disconnects.
+
 Devcloud uses the same mode with the in-cluster CloudAgent gateway service.
-The protocol contract and live verification commands are documented in
-[`cloudagent-http-run-protocol.md`](../gateway/docs/cloudagent-http-run-protocol.md).
+Full integration details and live verification commands are documented in
+[`cloudagent-http-run-integration.md`](../gateway/docs/cloudagent-http-run-integration.md).
 
 For local or CI bootstrap, multiple WeCom accounts can be seeded with snake_case
 JSON. This is a bootstrap surface; production should treat the database account
