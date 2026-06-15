@@ -103,15 +103,6 @@ function TitleBlock({ offsetX, offsetY }: { offsetX: number; offsetY: number }) 
   );
 }
 
-function LogoGroup() {
-  return (
-    <div className="mt-8 flex items-center gap-8">
-      <img alt="Hermes Agent" src="/hermes_logo.png" className="h-6 w-auto" />
-      <img alt="OpenClaw" src="/lightclaw-logo.png" className="h-6 w-auto" />
-    </div>
-  );
-}
-
 interface CtaSectionProps {
   onCreateClick?: () => void;
 }
@@ -174,7 +165,6 @@ export default function CtaSection({ onCreateClick }: CtaSectionProps = {}) {
             <TitleBlock offsetX={offset.x} offsetY={offset.y} />
             {/* 副文案：隐私政策 / 服务条款 / 加入用户交流群（业务组件，独立维护） */}
             <LandingCtaFooterLinks />
-            <LogoGroup />
           </div>
 
           {/* 右侧 .journey-action */}

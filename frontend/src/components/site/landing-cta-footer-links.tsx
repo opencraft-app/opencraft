@@ -9,12 +9,9 @@
  *      - 服务条款：腾讯云协议外链
  *      - 加入用户交流群：hover 显示二维码（国内 community-qr / 国际 Discord）
  *
- * 二维码弹层用 React Portal 挂到 document.body，避免被父级 overflow-hidden 裁剪。
+ * 二维码弹层挂在触发文本下，使用 group-hover 让它固定在文字上方居中。
  */
-import { useCallback, useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
-import { AnimatePresence, motion } from "framer-motion";
 import { CN_PRIVACY_POLICY_URL } from "@/constants/legal";
 import { isGlobal } from "@/lib/region";
 import { useT } from "@/i18n/t";
@@ -23,28 +20,6 @@ const linkClassName = "transition-colors hover:text-black";
 
 export function LandingCtaFooterLinks() {
   const t = useT();
-  const triggerRef = useRef<HTMLSpanElement>(null);
-  const [showQR, setShowQR] = useState(false);
-  const [anchor, setAnchor] = useState<{ left: number; top: number } | null>(null);
-
-  const updateAnchor = useCallback(() => {
-    const el = triggerRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    setAnchor({ left: rect.left + rect.width / 2, top: rect.top });
-  }, []);
-
-  useEffect(() => {
-    if (!showQR) return;
-    updateAnchor();
-    window.addEventListener("scroll", updateAnchor, true);
-    window.addEventListener("resize", updateAnchor);
-    return () => {
-      window.removeEventListener("scroll", updateAnchor, true);
-      window.removeEventListener("resize", updateAnchor);
-    };
-  }, [showQR, updateAnchor]);
-
   return (
     <p
       className="mt-6 text-[14px] font-['PingFang_SC:Regular',sans-serif] leading-6 lv-reveal lv-delay-200 flex items-center gap-x-2"
@@ -86,51 +61,24 @@ export function LandingCtaFooterLinks() {
           现网两站 footer 均有此入口（国际站 hover 引导进入 Discord）。 */}
       <span aria-hidden="true">·</span>
       <span
-        ref={triggerRef}
-        className={`relative cursor-pointer ${linkClassName}`}
-        onMouseEnter={() => {
-          updateAnchor();
-          setShowQR(true);
-        }}
-        onMouseLeave={() => setShowQR(false)}
+        className={`group relative cursor-pointer ${linkClassName}`}
       >
         {t("加入交流群")}
+        <span className="pointer-events-none absolute left-1/2 top-0 z-[9999] flex w-[200px] -translate-x-1/2 -translate-y-[calc(100%+12px)] flex-col items-center gap-2 rounded-xl bg-white p-4 opacity-0 shadow-lg transition-all duration-200 ease-out group-hover:pointer-events-auto group-hover:-translate-y-[calc(100%+16px)] group-hover:opacity-100">
+          <img
+            src={
+              isGlobal
+                ? "/assets/landing/about/International-Discord.png"
+                : "/assets/landing/about/community-qr.png"
+            }
+            alt={t("加入交流群二维码")}
+            className="h-[168px] w-[168px] rounded-lg"
+          />
+          <span className="whitespace-nowrap text-[11px] tracking-wider text-black/50">
+            {isGlobal ? t("扫码加入 Discord 交流群") : t("扫码加入交流群")}
+          </span>
+        </span>
       </span>
-      {createPortal(
-        <AnimatePresence>
-          {showQR && anchor && (
-            <motion.div
-              initial={{ opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 4 }}
-              transition={{ duration: 0.2, ease: "easeOut" }}
-              className="fixed flex flex-col items-center gap-2 rounded-xl bg-white p-4 shadow-lg pointer-events-none"
-              style={{
-                left: anchor.left,
-                top: anchor.top,
-                transform: "translate(-50%, calc(-100% - 12px))",
-                width: "200px",
-                zIndex: 9999,
-              }}
-            >
-              <img
-                src={
-                  isGlobal
-                    ? "/assets/landing/about/International-Discord.png"
-                    : "/assets/landing/about/community-qr.png"
-                }
-                alt={t("加入交流群二维码")}
-                className="rounded-lg"
-                style={{ width: "168px", height: "168px" }}
-              />
-              <span className="whitespace-nowrap text-[11px] tracking-wider text-black/50">
-                {isGlobal ? t("扫码加入 Discord 交流群") : t("扫码加入交流群")}
-              </span>
-            </motion.div>
-          )}
-        </AnimatePresence>,
-        document.body,
-      )}
     </p>
   );
 }

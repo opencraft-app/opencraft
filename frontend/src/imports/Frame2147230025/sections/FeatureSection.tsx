@@ -1197,12 +1197,50 @@ function Container44() {
   );
 }
 
+function FeatureCardCopy({
+  title,
+  body,
+  width = 384,
+}: {
+  title: string;
+  body: string;
+  width?: number;
+}) {
+  const { i18n } = useTranslation();
+  const isEnglish = i18n.language.toLowerCase().startsWith('en');
+  return (
+    <div
+      className="[word-break:break-word] absolute content-stretch flex flex-col items-start left-[40px] not-italic"
+      data-name="Container"
+      style={{
+        top: isEnglish ? 398 : 408,
+        width,
+        gap: isEnglish ? 2 : 4,
+      }}
+    >
+      <p
+        className="lw-font-hyruiyisong relative shrink-0 text-[24px] text-[rgba(0,0,0,0.9)] w-full"
+        style={{ lineHeight: isEnglish ? '34px' : '48px' }}
+      >
+        {t(title)}
+      </p>
+      <p
+        className="font-['PingFang_SC:Regular',sans-serif] relative shrink-0 text-[16px] text-[rgba(0,0,0,0.5)] w-full"
+        style={{ lineHeight: isEnglish ? '24px' : '28px' }}
+      >
+        {t(body)}
+      </p>
+    </div>
+  );
+}
+
 function Container47() {
   return (
-    <div className="[word-break:break-word] absolute content-stretch flex flex-col gap-[4px] items-start left-[40px] not-italic top-[408px] w-[384.5px]" data-name="Container">
-      <p className="lw-font-hyruiyisong leading-[48px] relative shrink-0 text-[24px] text-[rgba(0,0,0,0.9)] w-full">{t("原版 Hermes Agent，一键即用")}</p>
-      <p className="font-['PingFang_SC:Regular',sans-serif] leading-[28px] relative shrink-0 text-[16px] text-[rgba(0,0,0,0.5)] w-full">{t("无需自己部署、配置环境、折腾 API Key。我们帮你把原汁原味的 Hermes Agent 搬上云端，打开即是完整体验。")}</p>
-    </div>
+    <FeatureCardCopy
+      title="原版 Hermes Agent，一键即用"
+      body="无需自己部署、配置环境、折腾 API Key。我们帮你把原汁原味的 Hermes Agent 搬上云端，打开即是完整体验。"
+      width={384.5}
+    />
   );
 }
 
@@ -1511,10 +1549,10 @@ function Container57() {
 
 function Container59() {
   return (
-    <div className="[word-break:break-word] absolute content-stretch flex flex-col gap-[4px] items-start left-[40px] not-italic top-[408px] w-[384px]" data-name="Container">
-      <p className="lw-font-hyruiyisong leading-[48px] relative shrink-0 text-[24px] text-[rgba(0,0,0,0.9)] w-full">{t("一随时唤醒， 不消耗你的任何资源")}</p>
-      <p className="font-['PingFang_SC:Regular',sans-serif] leading-[28px] relative shrink-0 text-[16px] text-[rgba(0,0,0,0.5)] w-full">{t("Hermes Agent 运行在专属云端实例上，不消耗你的本地电量和内存。无论手机端还是电脑端，随时呼唤，秒级响应")}</p>
-    </div>
+    <FeatureCardCopy
+      title="一随时唤醒， 不消耗你的任何资源"
+      body="Hermes Agent 运行在专属云端实例上，不消耗你的本地电量和内存。无论手机端还是电脑端，随时呼唤，秒级响应"
+    />
   );
 }
 
@@ -1771,10 +1809,10 @@ function Container72() {
 
 function Container77() {
   return (
-    <div className="[word-break:break-word] absolute content-stretch flex flex-col gap-[4px] items-start left-[40px] not-italic top-[408px] w-[384px]" data-name="Container">
-      <p className="lw-font-hyruiyisong leading-[48px] relative shrink-0 text-[24px] text-[rgba(0,0,0,0.9)] w-full">{t("你的对话，只存于专属空间")}</p>
-      <p className="font-['PingFang_SC:Regular',sans-serif] leading-[28px] relative shrink-0 text-[16px] text-[rgba(0,0,0,0.5)] w-full">{t("你与 Hermes Agent 的所有对话记录均存储在你的专属服务器中，不共享给任何第三方，随时可管理。你说了算。")}</p>
-    </div>
+    <FeatureCardCopy
+      title="你的对话，只存于专属空间"
+      body="你与 Hermes Agent 的所有对话记录均存储在你的专属服务器中，不共享给任何第三方，随时可管理。你说了算。"
+    />
   );
 }
 
@@ -1819,6 +1857,15 @@ function CardScaleWrapper({ children }: { children: React.ReactNode }) {
 export function CardsSection() {
   useTranslation(); // 订阅语言切换，驱动内部命令式 t() 重渲染
   const ref = useScrollReveal();
+  const _cardI18nAnchor = [
+    t("原版 Hermes Agent，一键即用"),
+    t("无需自己部署、配置环境、折腾 API Key。我们帮你把原汁原味的 Hermes Agent 搬上云端，打开即是完整体验。"),
+    t("一随时唤醒， 不消耗你的任何资源"),
+    t("Hermes Agent 运行在专属云端实例上，不消耗你的本地电量和内存。无论手机端还是电脑端，随时呼唤，秒级响应"),
+    t("你的对话，只存于专属空间"),
+    t("你与 Hermes Agent 的所有对话记录均存储在你的专属服务器中，不共享给任何第三方，随时可管理。你说了算。"),
+  ];
+  void _cardI18nAnchor;
   return (
     <section className="w-full py-16" ref={ref as React.RefObject<HTMLElement>}>
       <div className="mx-auto px-16" style={{ width: 'min(1440px, calc(100vw - 128px))' }}>
