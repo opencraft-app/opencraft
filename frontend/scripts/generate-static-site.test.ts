@@ -20,8 +20,16 @@ const createFixture = () => {
   writeFileSync(join(distDir, "index.html"), [
     "<!doctype html>",
     "<html lang=\"zh-CN\">",
-    "<head><meta charset=\"UTF-8\"><title>old</title></head>",
-    "<body><div id=\"root\"></div><script type=\"module\" src=\"/assets/index.js\"></script></body>",
+    [
+      "<head>",
+      "<meta charset=\"UTF-8\">",
+      "<title>old</title>",
+      "<link rel=\"modulepreload\" crossorigin href=\"/assets/vendor-framework.js\">",
+      "<link rel=\"stylesheet\" crossorigin href=\"/assets/index.css\">",
+      "<script type=\"module\" crossorigin src=\"/assets/index-test.js\"></script>",
+      "</head>",
+    ].join(""),
+    "<body><div id=\"root\"></div></body>",
     "</html>",
   ].join(""));
   writeFileSync(join(frontendRoot, "src", "content", "docs", "01-overview.md"), [
@@ -73,6 +81,8 @@ describe("generate-static-site", () => {
       const docsHtml = readFileSync(join(distDir, "docs", "overview", "index.html"), "utf8");
       expect(docsHtml).toContain("<article");
       expect(docsHtml).toContain("LightVela 是什么");
+      expect(docsHtml).toContain("<script type=\"module\" crossorigin src=\"/assets/index-test.js\"></script>");
+      expect(docsHtml).toContain("<link rel=\"stylesheet\" crossorigin href=\"/assets/index.css\">");
       expect(docsHtml).toContain("aria-label=\"文档导航\"");
       expect(docsHtml).toContain("aria-label=\"本文目录\"");
       expect(docsHtml).toContain("\"@type\":\"TechArticle\"");
@@ -91,6 +101,8 @@ describe("generate-static-site", () => {
 
       const edgeone = JSON.parse(readFileSync(join(distDir, "edgeone.json"), "utf8"));
       expect(edgeone.rewrites).toContainEqual({ source: "/agents/*", destination: "/index.html" });
+      expect(edgeone.rewrites).toContainEqual({ source: "/account", destination: "/index.html" });
+      expect(edgeone.rewrites).toContainEqual({ source: "/account/*", destination: "/index.html" });
       expect(edgeone.rewrites).not.toContainEqual({ source: "/*", destination: "/index.html" });
     } finally {
       rmSync(root, { recursive: true, force: true });
