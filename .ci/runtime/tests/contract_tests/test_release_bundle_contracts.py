@@ -721,7 +721,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
             expected_service="trade",
             expected_pin_targets="trade",
             expected_master_build_envs="beijing-sandbox",
-            expected_master_auto_pin_envs="none",
+            expected_master_auto_pin_envs="beijing-sandbox",
             expected_playground_build_envs="auto",
             expected_playground_auto_pin_envs="auto",
         )
