@@ -1,8 +1,6 @@
 /**
  * LightVela 官网落地页
- * 参考设计哲学：「冰火实验室」— 新瑞士主义 × 有机科技感
- * 叙事主线：它是什么 → 能帮我做什么 → 在哪用 → 难不难 → 靠谱吗 → 我要试试
- * Hero 区域采用元素居中结构
+ * UI 实现：feature/iztzhou-lightvela（Figma 导出）
  */
 
 import { useState, useEffect, useMemo, useCallback } from "react";
@@ -14,13 +12,18 @@ import { useOpenClaw } from "@/contexts/openclaw-context";
 import { oauthErrorMessage } from "@/lib/oauth";
 import { AGENTS_HOME_PATH, getAgentCreatingPath } from "@/router/paths";
 
-import { LandingNavbar } from "./landing/landing-navbar";
-import { HeroSection } from "./landing/hero-section";
-import { WhereToUseSection } from "./landing/where-to-use-section";
-import { WhatItDoesSection } from "./landing/what-it-does-section";
-import { HowEasySection } from "./landing/how-easy-section";
-import { WhyTrustSection } from "./landing/why-trust-section";
-import { CTAFooterSection } from "./landing/cta-footer-section";
+import HeaderSection from "@/imports/Frame2147230025/sections/HeaderSection";
+import HeroSection from "@/imports/Frame2147230025/sections/HeroSection";
+import BrandIconsSection from "@/imports/Frame2147230025/sections/BrandIconsSection";
+import FeatureSection, { CardsSection } from "@/imports/Frame2147230025/sections/FeatureSection";
+import ProcessSection from "@/imports/Frame2147230025/sections/ProcessSection";
+import CtaSection from "@/imports/Frame2147230025/sections/CtaSection";
+import FooterSection from "@/imports/Frame2147230025/sections/FooterSection";
+
+// 落地页全局样式隔离层：始终生效，用「无层 + !important」锁定首页字体/链接等
+// 关键样式，免疫 tea 多包注入的无层全局 reset（详见 CSS 注释）。
+import "./landing-page-isolation.css";
+
 export const LandingPage = () => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -52,43 +55,54 @@ export const LandingPage = () => {
 
   const openLogin = () => setShowLogin(true);
 
-  /* ── 全局鼠标跟随微光 ── */
-  const handleGlobalMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    const el = e.currentTarget;
-    el.style.setProperty("--mouse-x", `${e.clientX}px`);
-    el.style.setProperty("--mouse-y", `${e.clientY}px`);
-  }, []);
+  /**
+   * 「立即创建」按钮统一处理：
+   * - 未登录 → 弹登录框
+   * - 已登录且已订阅 → 进入 dashboard（无龙虾时自动创建）
+   * - 已登录未订阅 → 跳套餐选择页
+   */
+  const handleCreateClick = useCallback(() => {
+    if (!isAuthenticated) {
+      setShowLogin(true);
+      return;
+    }
+    if (isSubscribed) {
+      navigate(hasBots ? AGENTS_HOME_PATH : getAgentCreatingPath(true));
+    } else {
+      navigate("/subscribe");
+    }
+  }, [isAuthenticated, isSubscribed, hasBots, navigate]);
 
   return (
-    <div
-      className="landing-page relative flex min-h-screen flex-col"
-      style={{ background: "var(--lw-bg)", color: "var(--lw-fg)" }}
-      onMouseMove={handleGlobalMouseMove}
-    >
-      {/* 鼠标跟随微光层 — 暂时隐藏，等颜色确定后再恢复 */}
-      {/* <div className="lw-cursor-glow pointer-events-none fixed inset-0 z-50" aria-hidden /> */}
+    <div className="lw-landing-root w-full bg-white overflow-x-hidden">
+      <div className="relative">
+        <HeaderSection onLoginClick={openLogin} onCreateClick={handleCreateClick} />
+        <HeroSection onCreateClick={handleCreateClick} />
+      </div>
+      <BrandIconsSection />
+      <FeatureSection />
+      <CardsSection />
+      <ProcessSection />
+      <CtaSection onCreateClick={handleCreateClick} />
+      <FooterSection />
 
-      <LandingNavbar onLoginClick={openLogin} />
-
-      <main className="z-10 flex-grow">
-        <HeroSection onLoginClick={openLogin} isLoggedIn={isAuthenticated} hasBots={hasBots} isSubscribed={isSubscribed} />
-        <WhereToUseSection />
-        <WhatItDoesSection />
-        <HowEasySection />
-        <WhyTrustSection />
-        <CTAFooterSection onLoginClick={openLogin} isLoggedIn={isAuthenticated} hasBots={hasBots} isSubscribed={isSubscribed} />
-      </main>
-
-      <LoginModal open={showLogin} onClose={handleCloseLogin} initialError={loginErrorMessage} onSuccess={() => {
-        if (isSubscribed) {
-          /* 已订阅：直接进入我的龙虾页面（无龙虾时自动创建） */
-          navigate(hasBots ? AGENTS_HOME_PATH : getAgentCreatingPath(true));
-        } else {
-          /* 未订阅：去选套餐 */
-          navigate("/subscribe");
-        }
-      }} />
-      <InviteCodeModal open={showInviteCode} onClose={() => setShowInviteCode(false)} onSuccess={handleInviteSuccess} />
+      <LoginModal
+        open={showLogin}
+        onClose={handleCloseLogin}
+        initialError={loginErrorMessage}
+        onSuccess={() => {
+          if (isSubscribed) {
+            navigate(hasBots ? AGENTS_HOME_PATH : getAgentCreatingPath(true));
+          } else {
+            navigate("/subscribe");
+          }
+        }}
+      />
+      <InviteCodeModal
+        open={showInviteCode}
+        onClose={() => setShowInviteCode(false)}
+        onSuccess={handleInviteSuccess}
+      />
     </div>
   );
 };

@@ -1,0 +1,190 @@
+/* ─── LightVela Motion Layer ─── */
+/* prefers-reduced-motion: 全部关闭循环动画，保留基础 reveal */
+
+/* ── Page-load Blur Fade Up (CSS animation, no JS needed) ── */
+@keyframes lv-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0px);
+  }
+}
+
+.lv-load-reveal {
+  opacity: 0;
+  will-change: transform, opacity, filter;
+  animation: lv-fade-up 700ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+.lv-load-reveal.lv-load-d100 { animation-delay: 100ms; }
+.lv-load-reveal.lv-load-d200 { animation-delay: 200ms; }
+.lv-load-reveal.lv-load-d300 { animation-delay: 300ms; }
+.lv-load-reveal.lv-load-d400 { animation-delay: 400ms; }
+.lv-load-reveal.lv-load-d500 { animation-delay: 500ms; }
+.lv-load-reveal.lv-load-d600 { animation-delay: 600ms; }
+
+/* ── Keyframes ── */
+@keyframes lv-float {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-6px); }
+}
+@keyframes lv-float-sm {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-4px); }
+}
+@keyframes lv-breathe {
+  0%, 100% { opacity: 0.35; }
+  50%       { opacity: 0.55; }
+}
+@keyframes lv-orbit-slow {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+@keyframes lv-gradient-shift {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+@keyframes lv-glow-pulse {
+  0%, 100% { opacity: 0.3; filter: blur(40px); }
+  50%       { opacity: 0.5; filter: blur(48px); }
+}
+
+/* ── Utility classes ── */
+.lv-float       { animation: lv-float    8s cubic-bezier(0.45, 0, 0.55, 1) infinite; }
+.lv-float-sm    { animation: lv-float-sm 10s cubic-bezier(0.45, 0, 0.55, 1) infinite; }
+.lv-breathe     { animation: lv-breathe  6s ease-in-out infinite; }
+.lv-orbit-slow  { animation: lv-orbit-slow 60s linear infinite; transform-origin: center; }
+.lv-glow-pulse  { animation: lv-glow-pulse 8s ease-in-out infinite; }
+
+/* ── Hover utils ── */
+.lv-hover-lift {
+  transition: transform 400ms cubic-bezier(0.22, 1, 0.36, 1),
+              box-shadow 400ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.lv-hover-lift:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.08);
+}
+.lv-hover-lift-sm {
+  transition: transform 300ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.lv-hover-lift-sm:hover {
+  transform: translateY(-2px);
+}
+.lv-hover-card {
+  transition: transform 400ms cubic-bezier(0.22, 1, 0.36, 1),
+              box-shadow 400ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.lv-hover-card:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 16px 40px rgba(16, 24, 40, 0.10);
+}
+
+/* ── Reveal base (JS sets .lv-revealed) ── */
+.lv-reveal {
+  opacity: 0;
+  transform: translateY(12px);
+  filter: blur(8px);
+  will-change: transform, opacity, filter;
+  transition: opacity 560ms cubic-bezier(0.22, 1, 0.36, 1),
+              transform 560ms cubic-bezier(0.22, 1, 0.36, 1),
+              filter 560ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.lv-reveal.lv-revealed {
+  opacity: 1;
+  transform: translateY(0);
+  filter: blur(0px);
+}
+.lv-reveal-up {
+  opacity: 0;
+  transform: translateY(24px);
+  filter: blur(10px);
+  will-change: transform, opacity, filter;
+  transition: opacity 680ms cubic-bezier(0.22, 1, 0.36, 1),
+              transform 680ms cubic-bezier(0.22, 1, 0.36, 1),
+              filter 680ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.lv-reveal-up.lv-revealed {
+  opacity: 1;
+  transform: translateY(0);
+  filter: blur(0px);
+}
+
+/* ── Stagger delays ── */
+.lv-delay-100 { transition-delay: 80ms; }
+.lv-delay-200 { transition-delay: 150ms; }
+.lv-delay-300 { transition-delay: 220ms; }
+.lv-delay-400 { transition-delay: 300ms; }
+.lv-delay-500 { transition-delay: 380ms; }
+.lv-delay-600 { transition-delay: 460ms; }
+.lv-delay-700 { transition-delay: 540ms; }
+.lv-delay-800 { transition-delay: 620ms; }
+
+/* ── CTA gradient text shift ── */
+.lv-gradient-shift {
+  background-size: 200% 200%;
+  animation: lv-gradient-shift 8s ease infinite;
+}
+
+/* ── Arrow hover ── */
+.lv-btn-arrow svg {
+  transition: transform 300ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.lv-btn-arrow:hover svg {
+  transform: translate(2px, -2px);
+}
+.lv-btn-shadow {
+  transition: box-shadow 300ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.lv-btn-shadow:hover {
+  box-shadow: 0 8px 20px rgba(26, 26, 26, 0.25);
+}
+
+/* ── prefers-reduced-motion ── */
+@media (prefers-reduced-motion: reduce) {
+  .lv-float, .lv-float-sm, .lv-breathe,
+  .lv-orbit-slow, .lv-glow-pulse, .lv-gradient-shift {
+    animation: none !important;
+  }
+  .lv-reveal, .lv-reveal-up {
+    opacity: 1 !important;
+    transform: none !important;
+    filter: none !important;
+    transition: none !important;
+  }
+  .lv-load-reveal {
+    opacity: 1 !important;
+    filter: none !important;
+    animation: none !important;
+  }
+}
+
+/* ── Hero CTA 按钮 hover 微动效 ──
+ *   缩放 + 阴影 + 轻微提升，用于「立即创建」CTA
+ *   与 .lv-btn-arrow（svg 箭头位移）叠加使用 */
+.lv-btn-cta {
+  transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1),
+              box-shadow 240ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+.lv-btn-cta:hover {
+  transform: translateY(-2px) scale(1.03);
+  box-shadow: 0 12px 28px rgba(26, 26, 26, 0.28);
+}
+.lv-btn-cta:active {
+  transform: translateY(0) scale(0.99);
+  transition-duration: 80ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lv-btn-cta,
+  .lv-btn-cta:hover,
+  .lv-btn-cta:active {
+    transform: none !important;
+    box-shadow: none !important;
+  }
+}
