@@ -22,7 +22,6 @@ export interface AgentDiagnosticCommand {
 }
 
 export type LogsSinceOption = "1h" | "3h" | "6h" | "12h" | "24h";
-export type LogsLimitOption = "100" | "200" | "500" | "1000";
 
 export const LOGS_SINCE_OPTIONS: Array<{ value: LogsSinceOption; label: string }> = [
   { value: "1h", label: "1 小时" },
@@ -32,34 +31,26 @@ export const LOGS_SINCE_OPTIONS: Array<{ value: LogsSinceOption; label: string }
   { value: "24h", label: "24 小时" },
 ];
 
-export const LOGS_LIMIT_OPTIONS: Array<{ value: LogsLimitOption; label: string }> = [
-  { value: "100", label: "100条" },
-  { value: "200", label: "200条" },
-  { value: "500", label: "500条" },
-  { value: "1000", label: "1000条" },
-];
-
 const DEFAULT_LOGS_SINCE: LogsSinceOption = "1h";
-const DEFAULT_LOGS_LIMIT: LogsLimitOption = "100";
 
-export function buildLogsCommand(since: LogsSinceOption, limit: LogsLimitOption = DEFAULT_LOGS_LIMIT): string {
-  return `hermes logs --since ${since} --limit ${limit}`;
+export function buildLogsCommand(since: LogsSinceOption): string {
+  return `hermes logs --since ${since}`;
 }
 
 export function buildLogsExportCommand(since: LogsSinceOption): string {
   return `hermes logs --since ${since}`;
 }
 
-export function getAgentDiagnosticCommands(logsSince: LogsSinceOption, logsLimit: LogsLimitOption = DEFAULT_LOGS_LIMIT): AgentDiagnosticCommand[] {
+export function getAgentDiagnosticCommands(logsSince: LogsSinceOption): AgentDiagnosticCommand[] {
   return [
     {
       id: "logs",
-      command: buildLogsCommand(logsSince, logsLimit),
+      command: buildLogsCommand(logsSince),
     },
   ];
 }
 
-export const AGENT_DIAGNOSTIC_COMMANDS: AgentDiagnosticCommand[] = getAgentDiagnosticCommands(DEFAULT_LOGS_SINCE, DEFAULT_LOGS_LIMIT);
+export const AGENT_DIAGNOSTIC_COMMANDS: AgentDiagnosticCommand[] = getAgentDiagnosticCommands(DEFAULT_LOGS_SINCE);
 
 export interface DiagnosticsMaintenanceAction {
   disabled: boolean;
@@ -142,9 +133,8 @@ export function AgentDiagnosticsPanel({
 }) {
   const t = useT();
   const [logsSince, setLogsSince] = useState<LogsSinceOption>(DEFAULT_LOGS_SINCE);
-  const [logsLimit, setLogsLimit] = useState<LogsLimitOption>(DEFAULT_LOGS_LIMIT);
   const [exportingLogs, setExportingLogs] = useState(false);
-  const commands = useMemo(() => getAgentDiagnosticCommands(logsSince, logsLimit), [logsLimit, logsSince]);
+  const commands = useMemo(() => getAgentDiagnosticCommands(logsSince), [logsSince]);
   const [states, setStates] = useState<Record<DiagnosticCommandId, DiagnosticCardState>>({
     logs: DEFAULT_CARD_STATE,
   });
@@ -212,15 +202,11 @@ export function AgentDiagnosticsPanel({
     setLogsSince(next);
   }, []);
 
-  const handleLogsLimitChange = useCallback((next: LogsLimitOption) => {
-    setLogsLimit(next);
-  }, []);
-
   return (
     <div className="space-y-4">
       <div>
         <h2 className="text-xl font-semibold text-black/90">{t("诊断中心")}</h2>
-        <p className="mt-1 text-sm leading-6 text-black/50">{t("查看 Hermes Agent 日志，并集中执行重置相关维护操作")}</p>
+        <p className="mt-1 text-sm leading-6 text-black/50">{t("查看 Hermes Agent 日志，并集中执行相关维护操作")}</p>
       </div>
 
       <div className="grid gap-4">
@@ -252,8 +238,6 @@ export function AgentDiagnosticsPanel({
             isExporting={item.id === "logs" ? exportingLogs : false}
             logsSince={item.id === "logs" ? logsSince : undefined}
             onLogsSinceChange={item.id === "logs" ? handleLogsSinceChange : undefined}
-            logsLimit={item.id === "logs" ? logsLimit : undefined}
-            onLogsLimitChange={item.id === "logs" ? handleLogsLimitChange : undefined}
           />
         ))}
       </div>
@@ -269,8 +253,6 @@ function DiagnosticCard({
   isExporting,
   logsSince,
   onLogsSinceChange,
-  logsLimit,
-  onLogsLimitChange,
 }: {
   item: AgentDiagnosticCommand;
   state: DiagnosticCardState;
@@ -279,8 +261,6 @@ function DiagnosticCard({
   isExporting?: boolean;
   logsSince?: LogsSinceOption;
   onLogsSinceChange?: (value: LogsSinceOption) => void;
-  logsLimit?: LogsLimitOption;
-  onLogsLimitChange?: (value: LogsLimitOption) => void;
 }) {
   const t = useT();
   const Icon = FileText;
@@ -289,11 +269,11 @@ function DiagnosticCard({
   const description = getCommandDescription(t);
   const displayOutput =
     isLoading && !state.output
-      ? t("正在获取日志，命令完成后会显示完整输出。")
+      ? t("查询中...")
       : state.output;
 
   return (
-    <article className="flex min-h-[360px] flex-col rounded-lg border border-black/[0.08] bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
+    <article className="flex min-h-[360px] w-full min-w-0 max-w-full flex-col rounded-lg border border-black/[0.08] bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
       <div>
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
@@ -322,8 +302,8 @@ function DiagnosticCard({
         <p className="mt-2 text-xs leading-5 text-black/50">{description}</p>
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md bg-black/[0.035] px-3 py-2">
-        <code className="truncate font-mono text-xs text-black/55">{item.command}</code>
+      <div className="mt-4 flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-md bg-black/[0.035] px-3 py-2">
+        <code className="min-w-0 flex-1 truncate font-mono text-xs text-black/55">{item.command}</code>
         <div className="flex flex-shrink-0 items-center gap-2">
           {item.id === "logs" && logsSince && onLogsSinceChange && (
             <LogsSelectMenu
@@ -333,19 +313,6 @@ function DiagnosticCard({
               ariaLabel={t("选择日志时间段")}
               widthClassName="w-[92px]"
               onChange={onLogsSinceChange}
-            />
-          )}
-          {item.id === "logs" && logsLimit && onLogsLimitChange && (
-            <LogsSelectMenu
-              value={logsLimit}
-              options={LOGS_LIMIT_OPTIONS}
-              disabled={isLoading}
-              ariaLabel={t("选择最近日志展示的最大条数")}
-              widthClassName="w-[92px]"
-              header={t("最近日志展示的最大条数")}
-              hint={t("查看完整日志请执行导出操作")}
-              menuWidthClassName="w-[220px]"
-              onChange={onLogsLimitChange}
             />
           )}
           <button
@@ -363,24 +330,31 @@ function DiagnosticCard({
         </div>
       </div>
 
-      <div className="mt-4 min-h-0 flex-1 rounded-md border border-black/[0.06] bg-black/[0.025]">
+      <div className="mt-4 min-h-0 min-w-0 flex-1 overflow-hidden rounded-md border border-black/[0.06] bg-black/[0.025]">
         {state.status === "idle" ? (
-          <div className="flex h-full min-h-[190px] items-center justify-center p-5 text-center text-sm text-black/40">
-            <ClipboardList className="mr-2 h-4 w-4" />
-            {item.id === "logs" ? (
-              <span>
-                {t("点击")}
-                <button
-                  type="button"
-                  onClick={onRefresh}
-                  className="mx-0.5 rounded px-0.5 font-medium text-black/55 underline decoration-black/20 underline-offset-2 transition-colors hover:text-black/80 hover:decoration-black/45"
-                >
-                  {t("查询")}
-                </button>
-                {t("最近日志")}
-              </span>
-            ) : (
-              t("点击执行获取诊断结果")
+          <div className="flex h-full min-h-[190px] flex-col items-center justify-center p-5 text-center text-sm text-black/40">
+            <div className="flex items-center justify-center">
+              <ClipboardList className="mr-2 h-4 w-4" />
+              {item.id === "logs" ? (
+                <span>
+                  {t("点击")}
+                  <button
+                    type="button"
+                    onClick={onRefresh}
+                    className="mx-0.5 rounded px-0.5 font-medium text-black/55 underline decoration-black/20 underline-offset-2 transition-colors hover:text-black/80 hover:decoration-black/45"
+                  >
+                    {t("查询")}
+                  </button>
+                  {t("最近日志")}
+                </span>
+              ) : (
+                t("点击执行获取诊断结果")
+              )}
+            </div>
+            {item.id === "logs" && (
+              <p className="mt-2 text-xs leading-5 text-black/35">
+                {t("提示：仅展示最近 50 条日志，查看完整日志请直接导出")}
+              </p>
             )}
           </div>
         ) : (
@@ -460,11 +434,6 @@ function LogsSelectMenu<TValue extends string>({
               {header}
             </div>
           )}
-          {hint && (
-            <div className="px-3 pb-1.5 text-[11px] font-medium leading-4 text-black/35">
-              {hint}
-            </div>
-          )}
           {options.map((option) => {
             const checked = option.value === value;
             return (
@@ -486,6 +455,11 @@ function LogsSelectMenu<TValue extends string>({
               </button>
             );
           })}
+          {hint && (
+            <div className="px-3 pt-1.5 pb-1 text-[11px] font-medium leading-4 text-black/35">
+              {hint}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -599,12 +573,12 @@ function DiagnosticOutput({ text }: { text: string }) {
   }, [text, recompute]);
 
   return (
-    <div className="relative">
+    <div className="relative min-w-0 max-w-full overflow-hidden">
       <pre
         ref={preRef}
         onScroll={recompute}
         style={{ scrollbarWidth: "none" }}
-        className="lw-diagnostic-output-native max-h-[230px] overflow-y-scroll whitespace-pre-wrap break-words p-4 pr-5 font-mono text-xs leading-5 text-black/70"
+        className="lw-diagnostic-output-native block max-h-[230px] w-full max-w-full overflow-y-scroll whitespace-pre-wrap break-all p-4 pr-5 font-mono text-xs leading-5 text-black/70"
       >
         {text}
       </pre>

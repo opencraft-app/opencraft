@@ -13,18 +13,14 @@ import {
 describe("agent diagnostics commands", () => {
   it("runs the expected Hermes diagnostic commands", () => {
     expect(AGENT_DIAGNOSTIC_COMMANDS.map((item) => item.command)).toEqual([
-      "hermes logs --since 1h --limit 100",
+      "hermes logs --since 1h",
     ]);
   });
 
-  it("builds logs commands for the selected time window", () => {
-    expect(buildLogsCommand("6h")).toBe("hermes logs --since 6h --limit 100");
-    expect(buildLogsCommand("6h", "1000")).toBe("hermes logs --since 6h --limit 1000");
+  it("builds logs commands for the selected time window without unsupported limit args", () => {
+    expect(buildLogsCommand("6h")).toBe("hermes logs --since 6h");
     expect(getAgentDiagnosticCommands("24h").map((item) => item.command)).toEqual([
-      "hermes logs --since 24h --limit 100",
-    ]);
-    expect(getAgentDiagnosticCommands("24h", "500").map((item) => item.command)).toEqual([
-      "hermes logs --since 24h --limit 500",
+      "hermes logs --since 24h",
     ]);
   });
 
