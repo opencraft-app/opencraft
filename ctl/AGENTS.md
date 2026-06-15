@@ -84,3 +84,5 @@
 | `ctl/pkg/transport/pass.go` | `CreatePassOrderRequest` / `CreatePassOrderResult` / `CreatePassOrderAndPayResult` |
 | `ctl/main/api/pass_handler.go` | `handleAdminPassesOrder` / `handleUserPassesOrder` / `handleAdminPassesOrderAndPay` / `handleUserPassesOrderAndPay` |
 | `ctl/main/api/server.go` | mux 注册 + `normalizePath` 静态白名单（避免高基数 metric 标签） |
+
+<!-- ci-retrigger: master ctl pipeline @ 2026-06-15 18:25 +0800 -->
