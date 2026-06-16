@@ -104,21 +104,26 @@ Expected fields:
 4. Read the final durable result.
 5. If the observer disconnects, resume from the last committed `after_seq`.
 
-## Stable Endpoints
+## Generated API Reference
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/v1/cloudagent/capabilities` | Probe protocol support. |
-| `GET` | `/v1/cloudagent/sessions` | List caller-scoped sessions. |
-| `POST` | `/v1/cloudagent/sessions` | Create a session. |
-| `GET` | `/v1/cloudagent/sessions/{session_id}` | Load a session. |
-| `POST` | `/v1/cloudagent/sessions/{session_id}/runs` | Submit a durable run. |
-| `GET` | `/v1/cloudagent/runs` | List caller-scoped runs. |
-| `GET` | `/v1/cloudagent/runs/{run_id}` | Read run status. |
-| `GET` | `/v1/cloudagent/runs/{run_id}/events?after_seq=N` | Replay events. |
-| `GET` | `/v1/cloudagent/runs/{run_id}/events?after_seq=N&stream=true` | Stream NDJSON events. |
-| `GET` | `/v1/cloudagent/runs/{run_id}/result` | Read durable result. |
-| `POST` | `/v1/cloudagent/runs/{run_id}/cancel` | Cancel a run. |
+The API reference is rendered by Scalar from the generated OpenAPI schema. Use:
+
+```text
+/docs/cloudagent/api
+```
+
+The direct Scalar reference is also available at:
+
+```text
+/reference/cloudagent
+```
+
+The component-level generator writes the schema by running Go code from
+`cloudagent/gateway/internal/wrapper/cloudagent_run_spec.go`:
+
+```text
+docs-site/openapi/cloudagent.json
+```
 
 ## Create Session
 
@@ -162,7 +167,7 @@ curl -sS \
   -H "X-Project-ID: $CLOUDAGENT_PROJECT_ID" \
   -d '{
     "run_id": "'$RUN_ID'",
-    "input": "你好",
+    "text": "你好",
     "cwd": "/workspace"
   }' \
   "$CLOUDAGENT_BASE_URL/v1/cloudagent/sessions/$SESSION_ID/runs"

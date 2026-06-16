@@ -7,8 +7,14 @@ DOCS_SITE_DIR="${MONO2_DOCS_ROOT:-$ROOT_DIR/docs-site}"
 OUT_DIR="$DOCS_SITE_DIR/content/docs/cloudagent"
 OUT_FILE="$OUT_DIR/generated-index.mdx"
 TMP_FILE="$OUT_FILE.tmp"
+OPENAPI_DIR="$DOCS_SITE_DIR/openapi"
+OPENAPI_FILE="$OPENAPI_DIR/cloudagent.json"
+FRAGMENT_DIR="$DOCS_SITE_DIR/generated/docs-index"
+FRAGMENT_FILE="$FRAGMENT_DIR/cloudagent.json"
 
 mkdir -p "$OUT_DIR"
+mkdir -p "$OPENAPI_DIR"
+mkdir -p "$FRAGMENT_DIR"
 
 {
   printf '%s\n' '---'
@@ -54,3 +60,42 @@ mkdir -p "$OUT_DIR"
 
 mv "$TMP_FILE" "$OUT_FILE"
 echo "[makedocs] wrote ${OUT_FILE#$ROOT_DIR/}"
+
+TMP_OPENAPI_FILE="$OPENAPI_FILE.tmp"
+(
+  cd "$COMPONENT_DIR/gateway"
+  go run ./cmd/cloudagent-openapi
+) > "$TMP_OPENAPI_FILE"
+mv "$TMP_OPENAPI_FILE" "$OPENAPI_FILE"
+
+echo "[makedocs] wrote ${OPENAPI_FILE#$ROOT_DIR/}"
+
+cat > "$FRAGMENT_FILE.tmp" <<'JSON'
+{
+  "object": "mono2.docs.fragment",
+  "version": "v1",
+  "component": "cloudagent",
+  "owner": "cloudagent",
+  "source_path": "cloudagent/makedocs.sh",
+  "generated": [
+    {
+      "kind": "mdx",
+      "path": "docs-site/content/docs/cloudagent/generated-index.mdx",
+      "url": "/docs/cloudagent/generated-index"
+    },
+    {
+      "kind": "openapi",
+      "path": "docs-site/openapi/cloudagent.json",
+      "url": "/openapi/cloudagent"
+    },
+    {
+      "kind": "api_reference",
+      "path": "docs-site/content/docs/cloudagent/api.mdx",
+      "url": "/docs/cloudagent/api",
+      "viewer_url": "/reference/cloudagent"
+    }
+  ]
+}
+JSON
+mv "$FRAGMENT_FILE.tmp" "$FRAGMENT_FILE"
+echo "[makedocs] wrote ${FRAGMENT_FILE#$ROOT_DIR/}"

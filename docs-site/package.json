@@ -13,6 +13,7 @@
     "typecheck": "fumadocs-mdx && tsc --noEmit"
   },
   "dependencies": {
+    "@scalar/nextjs-api-reference": "^0.11.3",
     "@types/mdx": "^2.0.13",
     "fumadocs-core": "^16.10.3",
     "fumadocs-mdx": "^15.0.12",

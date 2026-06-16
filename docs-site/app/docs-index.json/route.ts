@@ -1,3 +1,4 @@
+import fragments from '@/generated/docs-index.fragments.json';
 import { source } from '@/lib/source';
 
 export const revalidate = false;
@@ -19,7 +20,8 @@ export function GET() {
   return Response.json({
     object: 'mono2.docs.index',
     version: 'v1',
-    generated_from: 'docs-site/content/docs',
+    generated_from: ['docs-site/content/docs', 'docs-site/generated/docs-index.fragments.json'],
     data,
+    fragments: fragments.fragments,
   });
 }

@@ -1,0 +1,32 @@
+{
+  "object": "mono2.docs.fragments",
+  "version": "v1",
+  "generated_from": "makedocs.sh",
+  "fragments": [
+    {
+      "object": "mono2.docs.fragment",
+      "version": "v1",
+      "component": "cloudagent",
+      "owner": "cloudagent",
+      "source_path": "cloudagent/makedocs.sh",
+      "generated": [
+        {
+          "kind": "mdx",
+          "path": "docs-site/content/docs/cloudagent/generated-index.mdx",
+          "url": "/docs/cloudagent/generated-index"
+        },
+        {
+          "kind": "openapi",
+          "path": "docs-site/openapi/cloudagent.json",
+          "url": "/openapi/cloudagent"
+        },
+        {
+          "kind": "api_reference",
+          "path": "docs-site/content/docs/cloudagent/api.mdx",
+          "url": "/docs/cloudagent/api",
+          "viewer_url": "/reference/cloudagent"
+        }
+      ]
+    }
+  ]
+}

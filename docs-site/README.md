@@ -39,7 +39,30 @@ From the repository root, run the divided generation flow:
 | `/llms.txt` | Compact AI index generated from the Fumadocs page tree. |
 | `/llms-full.txt` | Full text export of curated docs. |
 | `/docs-index.json` | Machine-readable docs index. |
-| `/cloudagent-endpoints.json` | Minimal CloudAgent HTTP Run endpoint manifest. |
+| `/cloudagent-endpoints.json` | Compact endpoint inventory derived from the CloudAgent OpenAPI schema. |
+
+## Generated API Docs
+
+CloudAgent OpenAPI is generated from the Go protocol spec:
+
+```text
+cloudagent/gateway/internal/wrapper/cloudagent_run_spec.go
+```
+
+Run the divided docs generator from the repository root:
+
+```text
+./makedocs.sh
+```
+
+It writes:
+
+```text
+docs-site/openapi/cloudagent.json
+```
+
+Fumadocs provides the mono2-wide shell. Scalar renders the interactive API
+reference at `/reference/cloudagent`, embedded by `/docs/cloudagent/api`.
 
 ## Content Policy
 

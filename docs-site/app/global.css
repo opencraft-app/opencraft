@@ -3,5 +3,138 @@
 @import 'fumadocs-ui/css/preset.css';
 
 :root {
-  color-scheme: light dark;
+  color-scheme: dark;
+  --color-fd-background: #020806;
+  --color-fd-foreground: #d7ffe8;
+  --color-fd-muted: #07120e;
+  --color-fd-muted-foreground: #82a995;
+  --color-fd-popover: #04110c;
+  --color-fd-popover-foreground: #d7ffe8;
+  --color-fd-card: #06130e;
+  --color-fd-card-foreground: #d7ffe8;
+  --color-fd-border: #1f5138;
+  --color-fd-primary: #45ff99;
+  --color-fd-primary-foreground: #020806;
+  --color-fd-secondary: #0b1d15;
+  --color-fd-secondary-foreground: #baf7d2;
+  --color-fd-accent: #123823;
+  --color-fd-accent-foreground: #9dffbe;
+  --color-fd-ring: #39ff88;
+  --color-fd-overlay: #00140ecc;
+}
+
+.dark {
+  --color-fd-background: #020806;
+  --color-fd-foreground: #d7ffe8;
+  --color-fd-muted: #07120e;
+  --color-fd-muted-foreground: #82a995;
+  --color-fd-popover: #04110c;
+  --color-fd-popover-foreground: #d7ffe8;
+  --color-fd-card: #06130e;
+  --color-fd-card-foreground: #d7ffe8;
+  --color-fd-border: #1f5138;
+  --color-fd-primary: #45ff99;
+  --color-fd-primary-foreground: #020806;
+  --color-fd-secondary: #0b1d15;
+  --color-fd-secondary-foreground: #baf7d2;
+  --color-fd-accent: #123823;
+  --color-fd-accent-foreground: #9dffbe;
+  --color-fd-ring: #39ff88;
+  --color-fd-overlay: #00140ecc;
+}
+
+html {
+  background:
+    radial-gradient(circle at 20% -10%, rgb(54 255 140 / 12%), transparent 34rem),
+    radial-gradient(circle at 110% 10%, rgb(0 195 255 / 10%), transparent 30rem),
+    #020806;
+}
+
+body {
+  min-height: 100vh;
+  background:
+    linear-gradient(rgb(69 255 153 / 4%) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(69 255 153 / 3%) 1px, transparent 1px),
+    transparent;
+  background-size: 28px 28px;
+  font-feature-settings:
+    "cv02" 1,
+    "cv03" 1,
+    "cv04" 1;
+}
+
+body::before {
+  pointer-events: none;
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgb(255 255 255 / 3%),
+    rgb(255 255 255 / 3%) 1px,
+    transparent 1px,
+    transparent 4px
+  );
+  mix-blend-mode: overlay;
+}
+
+#nd-sidebar,
+#nd-subnav,
+[data-toc-popover] header {
+  background: rgb(2 8 6 / 86%);
+  border-color: rgb(69 255 153 / 18%);
+  box-shadow: inset -1px 0 0 rgb(69 255 153 / 7%);
+}
+
+#nd-page h1,
+#nd-page h2,
+#nd-page h3 {
+  letter-spacing: 0;
+  text-shadow: 0 0 18px rgb(69 255 153 / 12%);
+}
+
+#nd-page h1::before {
+  content: "$ ";
+  color: #45ff99;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
+#nd-page pre,
+#nd-page code:not(pre code) {
+  border-color: rgb(69 255 153 / 24%);
+}
+
+#nd-page pre {
+  background:
+    linear-gradient(180deg, rgb(9 27 18 / 96%), rgb(2 8 6 / 96%)) !important;
+  border: 1px solid rgb(69 255 153 / 22%);
+  box-shadow:
+    0 0 0 1px rgb(69 255 153 / 5%),
+    0 18px 44px rgb(0 0 0 / 32%),
+    inset 0 1px 0 rgb(255 255 255 / 4%);
+}
+
+#nd-page code:not(pre code) {
+  background: rgb(5 22 14 / 86%);
+  color: #9dffbe;
+}
+
+#nd-page table {
+  overflow: hidden;
+  border: 1px solid rgb(69 255 153 / 18%);
+  box-shadow: 0 12px 36px rgb(0 0 0 / 24%);
+}
+
+#nd-page thead {
+  background: rgb(10 40 24 / 88%);
+  color: #c8ffdc;
+}
+
+#nd-page tbody tr {
+  background: rgb(2 8 6 / 42%);
+}
+
+#nd-page tbody tr:nth-child(even) {
+  background: rgb(8 28 18 / 46%);
 }

@@ -1,6 +1,6 @@
 ---
 title: CloudAgent Endpoint Manifest
-description: Minimal machine-readable manifest for CloudAgent HTTP Run API endpoints.
+description: Machine-readable endpoint inventory derived from the CloudAgent OpenAPI schema.
 owner: cloudagent
 status: active
 last_reviewed: "2026-06-16"
@@ -8,24 +8,24 @@ tags:
   - cloudagent
   - api
   - manifest
-source_path: docs-site/lib/cloudagent-endpoints.ts
+source_path: docs-site/openapi/cloudagent.json
 ---
 
-The docs site exposes a minimal CloudAgent endpoint manifest at:
+The docs site exposes a CloudAgent endpoint manifest at:
 
 ```text
 /cloudagent-endpoints.json
 ```
 
-This is not a full OpenAPI contract yet. It is a stable v1 inventory for AI
-agents, tests, and integration clients that need to discover the durable run
-surface without scraping prose.
+This manifest is derived from the generated OpenAPI schema. It is a compact
+inventory for AI agents, tests, and integration clients that need endpoint
+discovery without scraping rendered prose.
 
 ## Shape
 
 ```ts
 type CloudAgentEndpoint = {
-  method: 'GET' | 'POST';
+  method: string;
   path: string;
   purpose: string;
   auth: 'scope';
@@ -36,6 +36,10 @@ type CloudAgentEndpoint = {
 
 ## Contract
 
-- The manifest is generated from `docs-site/lib/cloudagent-endpoints.ts`.
-- Endpoint prose links back to `cloudagent/gateway/docs/cloudagent-http-run-integration.md`.
-- Future full OpenAPI output should be generated from route/schema truth, not maintained as a second hand-written source of truth.
+- The manifest is generated from `docs-site/openapi/cloudagent.json`.
+- `docs-site/openapi/cloudagent.json` is generated from Go code in
+  `cloudagent/gateway/internal/wrapper/cloudagent_run_spec.go`.
+- The full reference is rendered by Scalar at `/reference/cloudagent` and
+  embedded in `/docs/cloudagent/api`.
+- Do not maintain a second endpoint table by hand; update the Go protocol spec
+  and rerun `./makedocs.sh`.
