@@ -44,9 +44,26 @@ Capabilities must return:
 {
   "object": "cloudagent.capabilities",
   "protocol": "cloudagent.run",
-  "run_protocol": true
+  "run_protocol": true,
+  "features": ["idempotency_key", "server_generated_run_id"]
 }
 ```
+
+## Run Identity
+
+The submit retry key and the run resource id are different:
+
+- callers send `Idempotency-Key` to deduplicate retries for the same session and
+  request body;
+- the gateway returns a server-generated `run_id`;
+- all observation APIs use that returned `run_id`;
+- legacy JSON body field `run_id` is accepted as an idempotency key, not as the
+  durable resource id.
+
+The idempotency scope is `(tenant, project, session_id, idempotency_key)`.
+The same key may be reused in a different session and will create a distinct
+server run. Reusing the same key in the same session with a different request
+body is rejected.
 
 ## ChannelGateway Configuration
 

@@ -120,6 +120,9 @@ func migrateStoreMySQL(db *sql.DB) error {
 		`CREATE TABLE IF NOT EXISTS cloudagent_runs (
 			run_id VARCHAR(191) PRIMARY KEY,
 			session_id VARCHAR(191) NOT NULL,
+			idempotency_key VARCHAR(256) NOT NULL DEFAULT '',
+			request_fingerprint VARCHAR(128) NOT NULL DEFAULT '',
+			idempotency_key_uq VARCHAR(256) GENERATED ALWAYS AS (CASE WHEN idempotency_key <> '' THEN idempotency_key ELSE NULL END) STORED,
 			turn_id VARCHAR(191) NOT NULL DEFAULT '',
 			response_id VARCHAR(191) NOT NULL DEFAULT '',
 			status VARCHAR(64) NOT NULL,
@@ -129,6 +132,7 @@ func migrateStoreMySQL(db *sql.DB) error {
 			created_at VARCHAR(64) NOT NULL,
 			updated_at VARCHAR(64) NOT NULL,
 			completed_at VARCHAR(64) NULL,
+			UNIQUE KEY cloudagent_runs_idempotency_uq (session_id, idempotency_key_uq),
 			KEY cloudagent_runs_session_idx (session_id, updated_at),
 			KEY cloudagent_runs_turn_idx (turn_id)
 		)`,
@@ -325,6 +329,10 @@ func migrateStoreMySQL(db *sql.DB) error {
 		}
 	}
 	for _, stmt := range []string{
+		`ALTER TABLE cloudagent_runs ADD COLUMN idempotency_key VARCHAR(256) NOT NULL DEFAULT ''`,
+		`ALTER TABLE cloudagent_runs ADD COLUMN request_fingerprint VARCHAR(128) NOT NULL DEFAULT ''`,
+		`ALTER TABLE cloudagent_runs ADD COLUMN idempotency_key_uq VARCHAR(256) GENERATED ALWAYS AS (CASE WHEN idempotency_key <> '' THEN idempotency_key ELSE NULL END) STORED`,
+		`ALTER TABLE cloudagent_runs ADD UNIQUE KEY cloudagent_runs_idempotency_uq (session_id, idempotency_key_uq)`,
 		`ALTER TABLE session_runtimes ADD COLUMN workspace_id VARCHAR(191) NOT NULL DEFAULT ''`,
 		`ALTER TABLE session_runtimes ADD COLUMN workspace_runtime_id VARCHAR(191) NOT NULL DEFAULT ''`,
 		`ALTER TABLE session_runtimes ADD COLUMN workspace_wisp_name VARCHAR(191) NOT NULL DEFAULT ''`,
@@ -334,8 +342,11 @@ func migrateStoreMySQL(db *sql.DB) error {
 		`ALTER TABLE session_runtimes ADD COLUMN workspace_lease_until VARCHAR(64) NULL`,
 		`ALTER TABLE session_runtimes ADD COLUMN workspace_attach_state VARCHAR(64) NOT NULL DEFAULT ''`,
 	} {
-		if _, err := db.Exec(stmt); err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column") {
-			return err
+		if _, err := db.Exec(stmt); err != nil {
+			lower := strings.ToLower(err.Error())
+			if !strings.Contains(lower, "duplicate column") && !strings.Contains(lower, "duplicate key") {
+				return err
+			}
 		}
 	}
 	return nil

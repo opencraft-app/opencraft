@@ -2,6 +2,8 @@ package wrapper
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,19 +28,21 @@ type cloudAgentCreateSessionRequest struct {
 }
 
 type cloudAgentSubmitRunRequest struct {
-	RunID     string `json:"run_id,omitempty"`
-	Text      string `json:"text"`
-	CWD       string `json:"cwd,omitempty"`
-	InboxMode string `json:"inbox_mode,omitempty"`
+	RunID          string `json:"run_id,omitempty"`
+	IdempotencyKey string `json:"idempotency_key,omitempty"`
+	Text           string `json:"text"`
+	CWD            string `json:"cwd,omitempty"`
+	InboxMode      string `json:"inbox_mode,omitempty"`
 }
 
 type cloudAgentRunResponse struct {
-	RunID      string `json:"run_id"`
-	SessionID  string `json:"session_id"`
-	Status     string `json:"status"`
-	StopReason string `json:"stop_reason,omitempty"`
-	Error      string `json:"error,omitempty"`
-	OutputText string `json:"output_text,omitempty"`
+	RunID          string `json:"run_id"`
+	SessionID      string `json:"session_id"`
+	IdempotencyKey string `json:"idempotency_key,omitempty"`
+	Status         string `json:"status"`
+	StopReason     string `json:"stop_reason,omitempty"`
+	Error          string `json:"error,omitempty"`
+	OutputText     string `json:"output_text,omitempty"`
 }
 
 var cloudAgentRunStreamHeartbeatInterval = 20 * time.Second
@@ -210,6 +214,7 @@ func (s *Server) handleCloudAgentSubmitRun(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "invalid_json", err.Error())
 		return
 	}
+	req.IdempotencyKey = cloudAgentRequestIdempotencyKey(r, req)
 	runID, err := s.acpGate.startCloudAgentRun(r.Context(), scope, sessionID, req)
 	if err != nil {
 		serverTimeline(start, "cloudagent_run_submit_failed", "session_id="+sessionID, "error="+quoteServerField(err.Error()))
@@ -352,10 +357,14 @@ func (g *ACPGateway) startCloudAgentRun(ctx context.Context, scope Scope, sessio
 	if err != nil {
 		return "", err
 	}
-	runID := strings.TrimSpace(req.RunID)
-	if runID == "" {
-		runID = "job_" + randomHex(12)
+	idempotencyKey := strings.TrimSpace(req.IdempotencyKey)
+	if idempotencyKey != "" {
+		if err := validateCloudAgentIdempotencyKey(idempotencyKey); err != nil {
+			return "", err
+		}
 	}
+	requestFingerprint := cloudAgentRunRequestFingerprint(req)
+	runID := "job_" + randomHex(12)
 	if err := validateCloudAgentRunID(runID); err != nil {
 		return "", err
 	}
@@ -364,17 +373,18 @@ func (g *ACPGateway) startCloudAgentRun(ctx context.Context, scope Scope, sessio
 		return "", err
 	}
 	precheckedUnstartedRun := false
-	if req.RunID != "" && g.store != nil {
-		existing, err := g.store.LoadCloudAgentRun(scope, runID)
+	if idempotencyKey != "" && g.store != nil {
+		existing, err := g.store.LoadCloudAgentRunByIdempotencyKey(scope, session.SessionID, idempotencyKey)
 		if err == nil {
-			if existing.SessionID != session.SessionID {
-				return "", fmt.Errorf("run id belongs to another session")
+			if existing.RequestFingerprint != "" && existing.RequestFingerprint != requestFingerprint {
+				return "", fmt.Errorf("idempotency key reused with a different request body")
 			}
 			if !cloudAgentRunNeedsDispatch(existing) {
 				return existing.RunID, nil
 			}
+			runID = existing.RunID
 			precheckedUnstartedRun = true
-			serverTimeline(time.Now(), "cloudagent_run_resume_unstarted", "session_id="+session.SessionID, "run_id="+runID)
+			serverTimeline(time.Now(), "cloudagent_run_resume_unstarted", "session_id="+session.SessionID, "run_id="+existing.RunID)
 		} else if !isCloudAgentRunNotFound(err) {
 			return "", err
 		}
@@ -388,24 +398,32 @@ func (g *ACPGateway) startCloudAgentRun(ctx context.Context, scope Scope, sessio
 			return "", fmt.Errorf("session runtime is unavailable: %s", firstNonEmpty(session.LastRuntimeError, session.ReadOnlyReason))
 		}
 	}
-	if req.RunID != "" && g.store != nil {
-		existing, existed, err := g.store.TryReserveCloudAgentRun(scope, runID, session.SessionID)
+	if idempotencyKey != "" && g.store != nil {
+		existing, existed, err := g.store.TryReserveCloudAgentRun(scope, runID, session.SessionID, idempotencyKey, requestFingerprint)
 		if err != nil {
 			return "", err
 		}
 		if existed {
+			if existing.RequestFingerprint != "" && existing.RequestFingerprint != requestFingerprint {
+				return "", fmt.Errorf("idempotency key reused with a different request body")
+			}
 			if !cloudAgentRunNeedsDispatch(existing) {
 				return existing.RunID, nil
 			}
+			runID = existing.RunID
 			if !precheckedUnstartedRun {
 				serverTimeline(time.Now(), "cloudagent_run_resume_unstarted", "session_id="+session.SessionID, "run_id="+runID)
 			}
+		}
+	} else if g.store != nil {
+		if err := g.store.CreateCloudAgentRun(cloudAgentRunRecord{RunID: runID, SessionID: session.SessionID, Status: "running"}); err != nil {
+			return "", err
 		}
 	}
 	responseID := "resp_" + randomHex(18)
 	ownership, err := g.acquireRuntimeOwnership(context.Background(), session.SessionID, session.RuntimeGeneration, runID, "cloudagent_run")
 	if err != nil {
-		if req.RunID != "" && g.store != nil {
+		if g.store != nil {
 			if !errors.Is(err, ErrRuntimeOwnershipHeld) {
 				_ = g.store.UpdateCloudAgentRun(runID, "failed", "failed", err.Error(), "")
 			}
@@ -421,26 +439,26 @@ func (g *ACPGateway) startCloudAgentRun(ctx context.Context, scope Scope, sessio
 		}
 	}()
 	if err := g.preflightPromptRuntime(session.Scope, session.SessionID); err != nil {
-		if req.RunID != "" && g.store != nil {
+		if g.store != nil {
 			_ = g.store.UpdateCloudAgentRun(runID, "failed", "failed", err.Error(), "")
 		}
 		return "", err
 	}
 	if err := g.validatePromptSessionRunLease(session.Scope, session.SessionID); err != nil {
-		if req.RunID != "" && g.store != nil {
+		if g.store != nil {
 			_ = g.store.UpdateCloudAgentRun(runID, "failed", "failed", err.Error(), "")
 		}
 		return "", err
 	}
 	if err := g.refreshPromptRuntimeIfIdle(session.Scope, session.SessionID); err != nil {
-		if req.RunID != "" && g.store != nil {
+		if g.store != nil {
 			_ = g.store.UpdateCloudAgentRun(runID, "failed", "failed", err.Error(), "")
 		}
 		return "", err
 	}
 	if !g.runtimeOwnershipHeld(ownership) {
 		err := RuntimeOwnershipHeldError{SessionID: session.SessionID, Generation: session.RuntimeGeneration, RunID: runID, OwnerID: g.ownerID, Operation: "cloudagent_run"}
-		if req.RunID != "" && g.store != nil {
+		if g.store != nil {
 			_ = g.store.UpdateCloudAgentRun(runID, "failed", "failed", err.Error(), "")
 		}
 		return "", err
@@ -449,7 +467,7 @@ func (g *ACPGateway) startCloudAgentRun(ctx context.Context, scope Scope, sessio
 	run, promptJob, err := g.beginPrompt(session.Scope, session.SessionID, cancel, req.CWD, inboxMode, text, text, runID, responseID, nil, ownership)
 	if err != nil {
 		cancel()
-		if req.RunID != "" && g.store != nil {
+		if g.store != nil {
 			_ = g.store.UpdateCloudAgentRun(runID, "failed", "failed", err.Error(), "")
 		}
 		return "", err
@@ -666,12 +684,13 @@ func cloudAgentCreateSessionACPRequest(req cloudAgentCreateSessionRequest) acpSe
 
 func cloudAgentRunRecordResponse(run cloudAgentRunRecord) cloudAgentRunResponse {
 	return cloudAgentRunResponse{
-		RunID:      run.RunID,
-		SessionID:  run.SessionID,
-		Status:     run.Status,
-		StopReason: run.StopReason,
-		Error:      run.ErrorMessage,
-		OutputText: run.OutputText,
+		RunID:          run.RunID,
+		SessionID:      run.SessionID,
+		IdempotencyKey: run.IdempotencyKey,
+		Status:         run.Status,
+		StopReason:     run.StopReason,
+		Error:          run.ErrorMessage,
+		OutputText:     run.OutputText,
 	}
 }
 
@@ -718,6 +737,47 @@ func validateCloudAgentRunID(runID string) error {
 		return fmt.Errorf("run_id contains unsupported characters")
 	}
 	return nil
+}
+
+func validateCloudAgentIdempotencyKey(key string) error {
+	if strings.TrimSpace(key) == "" {
+		return fmt.Errorf("idempotency_key is required")
+	}
+	if len(key) > 256 {
+		return fmt.Errorf("idempotency_key is too long")
+	}
+	for _, ch := range key {
+		if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_' || ch == '-' {
+			continue
+		}
+		return fmt.Errorf("idempotency_key contains unsupported characters")
+	}
+	return nil
+}
+
+func cloudAgentRequestIdempotencyKey(r *http.Request, req cloudAgentSubmitRunRequest) string {
+	if key := strings.TrimSpace(r.Header.Get("Idempotency-Key")); key != "" {
+		return key
+	}
+	if key := strings.TrimSpace(req.IdempotencyKey); key != "" {
+		return key
+	}
+	return strings.TrimSpace(req.RunID)
+}
+
+func cloudAgentRunRequestFingerprint(req cloudAgentSubmitRunRequest) string {
+	payload := struct {
+		Text      string `json:"text"`
+		CWD       string `json:"cwd,omitempty"`
+		InboxMode string `json:"inbox_mode,omitempty"`
+	}{
+		Text:      strings.TrimSpace(req.Text),
+		CWD:       strings.TrimSpace(req.CWD),
+		InboxMode: strings.TrimSpace(req.InboxMode),
+	}
+	raw, _ := json.Marshal(payload)
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
 }
 
 func cloudAgentRunNeedsDispatch(run cloudAgentRunRecord) bool {

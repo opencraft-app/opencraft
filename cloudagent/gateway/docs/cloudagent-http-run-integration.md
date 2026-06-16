@@ -74,7 +74,8 @@ Expected fields:
     "session_list",
     "run_submit",
     "run_list",
-    "idempotent_run_id",
+    "idempotency_key",
+    "server_generated_run_id",
     "after_seq_replay",
     "ndjson_event_stream",
     "durable_result",
@@ -86,7 +87,7 @@ Expected fields:
 ## Basic Flow
 
 1. Create or load a session.
-2. Submit a run with a caller-generated `run_id`.
+2. Submit a run with a caller-generated `Idempotency-Key`.
 3. Read events using `after_seq`.
 4. Read the final durable result.
 5. If the observer disconnects, resume from the last committed `after_seq`.
@@ -191,7 +192,7 @@ tenant/project scopes.
 Generate a stable idempotency key per inbound channel message:
 
 ```bash
-export RUN_ID="job_channel_${MESSAGE_ID}"
+export IDEMPOTENCY_KEY="job_channel_${MESSAGE_ID}"
 ```
 
 Submit:
@@ -199,10 +200,10 @@ Submit:
 ```bash
 curl -sS \
   -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $IDEMPOTENCY_KEY" \
   -H "X-Tenant-ID: $CLOUDAGENT_TENANT_ID" \
   -H "X-Project-ID: $CLOUDAGENT_PROJECT_ID" \
   -d "{
-    \"run_id\": \"$RUN_ID\",
     \"text\": \"请只回复 CLOUDAGENT_RUN_OK\",
     \"cwd\": \"/workspace\",
     \"inbox_mode\": \"prompt\"
@@ -214,15 +215,18 @@ Response:
 
 ```json
 {
-  "run_id": "job_channel_msg_123",
+  "run_id": "job_server_generated_123",
   "session_id": "session_xxx",
+  "idempotency_key": "job_channel_msg_123",
   "status": "running"
 }
 ```
 
-`run_id` is idempotent within the caller scope. If the same `run_id` is retried,
-the server returns or resumes the same durable run. If the same `run_id` belongs
-to a different session, the request is rejected.
+`Idempotency-Key` is idempotent within `(tenant, project, session_id)`. If the
+same key and request body are retried, the server returns or resumes the same
+durable run. The returned `run_id` is server-generated and must be used for
+events, result, status, and cancel. Legacy body field `run_id` is accepted as an
+idempotency key for older callers, not as a caller-chosen resource id.
 
 `inbox_mode` values:
 
