@@ -98,6 +98,11 @@ const outputPathForRoute = (distDir, path) => path === "/"
   ? join(distDir, "index.html")
   : join(distDir, ...path.replace(/^\/+/, "").split("/"), "index.html");
 
+const appShellPathFromRewrite = (source) => {
+  const normalized = source.replace(/\/\*$/, "").replace(/\/+$/, "") || "/";
+  return normalized === "/" ? null : normalized;
+};
+
 const plainText = (markdown) => markdown
   .replace(/```[\s\S]*?```/g, " ")
   .replace(/!\[[^\]]*]\([^)]+\)/g, " ")
@@ -385,13 +390,13 @@ function renderStaticSiteCriticalStyle() {
     ".static-site-header nav{box-sizing:border-box;min-height:60px;max-width:1440px;margin:0 auto;padding:0 80px;display:flex;align-items:center;gap:24px;}",
     ".static-site-header a{color:#171717;text-decoration:none;font-size:14px;}",
     ".static-site-header .brand{margin-right:auto;font-weight:700;font-size:22px;}",
-    "main{max-width:960px;margin:0 auto;padding:88px 24px 64px;line-height:1.75;}",
-    "article>header{margin-bottom:32px;}",
-    "h1{margin:0 0 16px;font-size:48px;line-height:1.15;}",
-    "h2{margin:32px 0 12px;font-size:24px;line-height:1.35;}",
-    "p{margin:0 0 12px;}",
+    ":where(.static-site-main,.static-docs-page){max-width:960px;margin:0 auto;padding:88px 24px 64px;line-height:1.75;}",
+    ":where(.static-site-main,.static-docs-page) article>header{margin-bottom:32px;}",
+    ":where(.static-site-main,.static-docs-page) h1{margin:0 0 16px;font-size:48px;line-height:1.15;}",
+    ":where(.static-site-main,.static-docs-page) h2{margin:32px 0 12px;font-size:24px;line-height:1.35;}",
+    ":where(.static-site-main,.static-docs-page) p,.static-site-footer p{margin:0 0 12px;}",
     ".static-site-footer{border-top:1px solid rgba(0,0,0,.08);padding:24px;text-align:center;color:rgba(0,0,0,.6);font-size:13px;}",
-    "@media(max-width:768px){.static-site-header nav{padding:0 24px;gap:14px;flex-wrap:wrap}.static-site-header .brand{width:100%;margin:12px 0 0}main{padding-top:48px}h1{font-size:36px}}",
+    "@media(max-width:768px){.static-site-header nav{padding:0 24px;gap:14px;flex-wrap:wrap}.static-site-header .brand{width:100%;margin:12px 0 0}:where(.static-site-main,.static-docs-page){padding-top:48px}:where(.static-site-main,.static-docs-page) h1{font-size:36px}}",
     "</style>",
   ].join("");
 }
@@ -447,6 +452,23 @@ function wrapPage({ template, site, head, body }) {
     .replace(/<div id="root">[\s\S]*?<\/div>/i, `<div id="root">${body}</div>`);
 }
 
+function renderAppShell(template, site) {
+  const assetTags = extractViteAssetTags(template);
+  const head = [
+    "<meta charset=\"UTF-8\">",
+    "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">",
+    `<title>${site.name}</title>`,
+    "<meta name=\"robots\" content=\"noindex,nofollow\">",
+    "<link rel=\"icon\" type=\"image/jpeg\" href=\"/lightvela-logo.jpg\">",
+    assetTags,
+  ].join("");
+  const body = "<div class=\"flex min-h-dvh items-center justify-center bg-white px-4 text-sm text-[var(--text-secondary)]\">正在恢复会话...</div>";
+  return template
+    .replace(/<html[^>]*>/i, `<html lang="${site.lang}">`)
+    .replace(/<head>[\s\S]*?<\/head>/i, `<head>${head}</head>`)
+    .replace(/<div id="root">[\s\S]*?<\/div>/i, `<div id="root">${body}</div>`);
+}
+
 function renderSiteNav(region) {
   const items = [
     ["/", region === "global" ? "Overview" : "概览"],
@@ -464,7 +486,7 @@ function renderFooter(region) {
 function renderHome(region) {
   return [
     renderSiteNav(region),
-    "<main>",
+    "<main class=\"static-site-main\">",
     "<article>",
     `<header><h1>${region === "global" ? "LightVela" : "LightVela"}</h1><p>${escapeHtml(SITE[region].description)}</p></header>`,
     `<section><h2>${region === "global" ? "What it does" : "能帮我做什么"}</h2><p>${region === "global" ? "Host a dedicated Hermes Agent in the cloud, connect models, channels, skills, and memory, then keep it online around the clock." : "在云端托管专属 Hermes Agent，连接模型、通道、技能与记忆，让它 7×24 小时在线。"}</p></section>`,
@@ -478,7 +500,7 @@ function renderHome(region) {
 function renderAbout(region) {
   return [
     renderSiteNav(region),
-    "<main>",
+    "<main class=\"static-site-main\">",
     "<article>",
     `<header><h1>${region === "global" ? "About LightVela" : "关于 LightVela"}</h1><p>${region === "global" ? "Every digital soul deserves to be gently lit." : "每一个数字灵魂，值得被温柔点亮。"}</p></header>`,
     `<section><h2>${region === "global" ? "Our story" : "我们的故事"}</h2><p>${region === "global" ? "LightVela brings the cloud Agent experience to more people through a managed, approachable product." : "LightVela 由腾讯轻量云团队出品，将 AI Agent 的完整能力搬上云端，降低配置门槛，让更多人持续、稳定、无门槛地使用 AI 服务。"}</p></section>`,
@@ -492,7 +514,7 @@ function renderAbout(region) {
 function renderChangelog(region) {
   return [
     renderSiteNav(region),
-    "<main>",
+    "<main class=\"static-site-main\">",
     "<article>",
     "<header><h1>更新日志</h1><p>记录每一个版本的成长，持续迭代，只为给你更好的体验。</p></header>",
     "<section><h2>2026 年 6 月</h2><ul><li>LightVela 支持云存储</li><li>LightVela 支持成就模块</li><li>LightVela 支持企业微信通道</li></ul></section>",
@@ -717,8 +739,25 @@ function writeRobots({ distDir, siteUrl, indexable }) {
 
 function writeEdgeOneConfig(distDir) {
   writeFileSync(join(distDir, "edgeone.json"), `${JSON.stringify({
-    rewrites: SPA_REWRITES.map((source) => ({ source, destination: "/index.html" })),
+    rewrites: SPA_REWRITES.map((source) => ({ source, destination: "/app.html" })),
   }, null, 2)}\n`);
+}
+
+function writeCloudflareRedirects(distDir) {
+  const redirects = SPA_REWRITES
+    .filter((source) => source.endsWith("/*"))
+    .map((source) => `${source} ${source.replace(/\/\*$/, "")}/ 200`);
+  writeFileSync(join(distDir, "_redirects"), `${redirects.join("\n")}\n`);
+}
+
+function writeAppShellFiles({ distDir, appHtml }) {
+  writeFileSync(join(distDir, "app.html"), appHtml);
+  const appShellPaths = [...new Set(SPA_REWRITES.map(appShellPathFromRewrite).filter(Boolean))];
+  for (const path of appShellPaths) {
+    const target = outputPathForRoute(distDir, path);
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, appHtml);
+  }
 }
 
 function resolveIndexable(env, siteUrl) {
@@ -760,6 +799,8 @@ export async function buildStaticSite({ frontendRoot = defaultFrontendRoot, dist
   const template = readExistingIndex(distDir);
   const routes = resolveStaticRoutes(region);
 
+  writeAppShellFiles({ distDir, appHtml: renderAppShell(template, SITE[region]) });
+
   const availableImages = copyDocsImages(frontendRoot, distDir);
   const staticRenderer = await createReactStaticRenderer({ frontendRoot, distDir, region });
   try {
@@ -782,6 +823,7 @@ export async function buildStaticSite({ frontendRoot = defaultFrontendRoot, dist
   writeSitemap({ distDir, routes, region, siteUrl: normalizedSiteUrl });
   writeRobots({ distDir, siteUrl: normalizedSiteUrl, indexable });
   writeEdgeOneConfig(distDir);
+  writeCloudflareRedirects(distDir);
   return { routes };
 }
 

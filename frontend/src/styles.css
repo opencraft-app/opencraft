@@ -79,20 +79,14 @@ html.lw-settings-scrollbar-stable {
 }
 
 .lw-settings-shell {
-  width: min(1760px, calc(100vw - 48px));
+  width: min(1440px, calc(100vw - 48px));
   margin-left: auto;
   margin-right: auto;
 }
 
 @media (min-width: 768px) {
   .lw-settings-shell {
-    width: min(1760px, calc(100vw - 80px));
-  }
-}
-
-@media (min-width: 1280px) {
-  .lw-settings-shell {
-    width: min(1760px, calc(100vw - 96px));
+    width: min(1440px, calc(100vw - 160px));
   }
 }
 

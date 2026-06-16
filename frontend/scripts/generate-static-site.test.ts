@@ -94,6 +94,9 @@ describe("generate-static-site", () => {
       expect(docsHtml).toContain("<article");
       expect(docsHtml).toContain("LightVela 是什么");
       expect(docsHtml).toContain("data-static-site-critical");
+      expect(docsHtml).toContain(":where(.static-site-main,.static-docs-page)");
+      expect(docsHtml).not.toMatch(/(?:^|[{}])main\{/);
+      expect(docsHtml).not.toMatch(/(?:^|[{}])h1\{/);
       expect(docsHtml).toContain("<script type=\"module\" crossorigin src=\"/assets/index-test.js\"></script>");
       expect(docsHtml).toContain("<link rel=\"stylesheet\" crossorigin href=\"/assets/index.css\">");
       expect(docsHtml).toContain("aria-label=\"文档导航\"");
@@ -104,6 +107,17 @@ describe("generate-static-site", () => {
       const docsIndexHtml = readFileSync(join(distDir, "docs", "index.html"), "utf8");
       expect(docsIndexHtml).toContain("<link rel=\"canonical\" href=\"https://lightvela.cn/docs/overview\"");
 
+      const appHtml = readFileSync(join(distDir, "app.html"), "utf8");
+      expect(appHtml).toContain("<meta name=\"robots\" content=\"noindex,nofollow\"");
+      expect(appHtml).toContain("正在恢复会话...");
+      expect(appHtml).toContain("<script type=\"module\" crossorigin src=\"/assets/index-test.js\"></script>");
+      expect(appHtml).not.toContain("data-static-site-critical");
+      expect(appHtml).not.toContain("能帮我做什么");
+
+      const agentsHtml = readFileSync(join(distDir, "agents", "index.html"), "utf8");
+      expect(agentsHtml).toContain("正在恢复会话...");
+      expect(agentsHtml).not.toContain("能帮我做什么");
+
       const sitemap = readFileSync(join(distDir, "sitemap.xml"), "utf8");
       expect(sitemap).toContain("<loc>https://lightvela.cn/docs/configuration/model</loc>");
       expect(sitemap).not.toContain("/agents");
@@ -113,10 +127,16 @@ describe("generate-static-site", () => {
       expect(robots).toContain("Sitemap: https://lightvela.cn/sitemap.xml");
 
       const edgeone = JSON.parse(readFileSync(join(distDir, "edgeone.json"), "utf8"));
-      expect(edgeone.rewrites).toContainEqual({ source: "/agents/*", destination: "/index.html" });
-      expect(edgeone.rewrites).toContainEqual({ source: "/account", destination: "/index.html" });
-      expect(edgeone.rewrites).toContainEqual({ source: "/account/*", destination: "/index.html" });
+      expect(edgeone.rewrites).toContainEqual({ source: "/agents/*", destination: "/app.html" });
+      expect(edgeone.rewrites).toContainEqual({ source: "/account", destination: "/app.html" });
+      expect(edgeone.rewrites).toContainEqual({ source: "/account/*", destination: "/app.html" });
       expect(edgeone.rewrites).not.toContainEqual({ source: "/*", destination: "/index.html" });
+
+      const redirects = readFileSync(join(distDir, "_redirects"), "utf8");
+      expect(redirects).toContain("/agents/* /agents/ 200");
+      expect(redirects).toContain("/account/* /account/ 200");
+      expect(redirects).not.toContain("/app.html");
+      expect(redirects.split("\n")).not.toContain("/* /agents 200");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
