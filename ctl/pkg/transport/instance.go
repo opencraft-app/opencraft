@@ -15,6 +15,12 @@ type CreateInstanceRequest struct {
 	SoulTemplateID string `json:"soul_template_id,omitempty" example:"gentle"`
 }
 
+type CreatePrerequisitesResponse struct {
+	SiteKind             string `json:"site_kind"`
+	ShadowAccountEnabled bool   `json:"shadow_account_enabled"`
+	ShadowBound          bool   `json:"shadow_bound"`
+}
+
 // UpdateInstanceRequest 更新实例请求
 type UpdateInstanceRequest struct {
 	// 用户可见名称
