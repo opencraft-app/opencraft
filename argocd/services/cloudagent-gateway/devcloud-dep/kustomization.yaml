@@ -51,6 +51,16 @@ replacements:
   - source:
       kind: ConfigMap
       name: cloudagent-gateway-platform-values
+      fieldPath: data.CLOUDAGENT_GATEWAY_INTERNAL_SUBNET_ID
+    targets:
+      - select:
+          kind: Service
+          name: cloudagent-gateway
+        fieldPaths:
+          - metadata.annotations.[service.kubernetes.io/qcloud-loadbalancer-internal-subnetid]
+  - source:
+      kind: ConfigMap
+      name: cloudagent-gateway-platform-values
       fieldPath: data.CLOUDAGENT_GATEWAY_AGS_TEMPLATE
     targets:
       - select:
