@@ -5,6 +5,7 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { loadEnv, type PluginOption } from "vite";
 import { defineConfig } from "vitest/config";
+import { getSeoMeta } from "./src/lib/seo-data";
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -422,6 +423,82 @@ function manualChunks(id: string) {
   return undefined;
 }
 
+function escapeHtmlAttribute(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function normalizeSeoRequestPath(requestPath: string): string {
+  const pathname = requestPath.startsWith("http")
+    ? new URL(requestPath).pathname
+    : new URL(requestPath, "http://localhost").pathname;
+  return pathname === "/index.html" ? "/" : pathname;
+}
+
+function replaceOrInsertMeta(html: string, name: string, content: string): string {
+  const tag = `<meta name="${name}" content="${escapeHtmlAttribute(content)}" />`;
+  const pattern = new RegExp(`<meta\\s+name=["']${name}["'][^>]*>`, "i");
+
+  if (pattern.test(html)) {
+    return html.replace(pattern, tag);
+  }
+
+  return html.replace(/(\s*<title>)/i, `    ${tag}\n$1`);
+}
+
+function applySeoToHtml(html: string, requestPath: string): string {
+  const meta = getSeoMeta(normalizeSeoRequestPath(requestPath));
+  const htmlWithTitle = html.replace(/<title>.*?<\/title>/i, `<title>${escapeHtmlAttribute(meta.title)}</title>`);
+  const htmlWithDescription = replaceOrInsertMeta(htmlWithTitle, "description", meta.description);
+  return replaceOrInsertMeta(htmlWithDescription, "keywords", meta.keywords);
+}
+
+function seoHtmlPlugin(): PluginOption {
+  return {
+    name: "lightvela-seo-html",
+    enforce: "pre",
+    configureServer(server) {
+      server.middlewares.use(async (req, res, next) => {
+        const method = req.method ?? "GET";
+        const url = req.url?.split("?")[0] ?? "/";
+        const acceptsHtml = req.headers.accept?.includes("text/html") ?? false;
+
+        if (
+          !["GET", "HEAD"].includes(method)
+          || !acceptsHtml
+          || url.startsWith("/@")
+          || url.startsWith("/src/")
+          || url.startsWith("/node_modules/")
+          || url.startsWith("/assets/")
+          || path.extname(url)
+        ) {
+          next();
+          return;
+        }
+
+        try {
+          const template = await fs.promises.readFile(path.join(rootDir, "index.html"), "utf8");
+          const html = await server.transformIndexHtml(url, template);
+          res.statusCode = 200;
+          res.setHeader("Content-Type", "text/html");
+          res.end(html);
+        } catch (error) {
+          next(error);
+        }
+      });
+    },
+    transformIndexHtml: {
+      order: "pre",
+      handler(html, ctx) {
+        return applySeoToHtml(html, ctx.path);
+      },
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => {
   /* 读取 .env / .env.local / .env.development 里以 VITE_DEV_ 开头的变量
    * 这样 dev server 的网络配置可以针对不同开发者/不同调试方式灵活切换，
@@ -476,6 +553,7 @@ export default defineConfig(({ mode }) => {
       sdkI18nPlugin(),
       reactDomFindDOMNodeVitePlugin(),
       reactDomPolyfillBuildPlugin(),
+      seoHtmlPlugin(),
     ] as unknown as PluginOption[],
     resolve: {
       // Deduplicate React so the locally-linked SDK shares the host app's copy
