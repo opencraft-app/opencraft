@@ -19,10 +19,6 @@ body {
   backdrop-filter: blur(14px);
 }
 
-#nd-page iframe {
-  color-scheme: dark;
-}
-
 #nd-page table {
   overflow: hidden;
 }

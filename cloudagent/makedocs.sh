@@ -97,9 +97,8 @@ cat > "$FRAGMENT_FILE.tmp" <<'JSON'
     },
     {
       "kind": "api_reference",
-      "path": "docs-site/content/docs/cloudagent/api.mdx",
-      "url": "/docs/cloudagent/api",
-      "viewer_url": "/reference/cloudagent"
+      "path": "docs-site/app/reference/cloudagent/route.ts",
+      "url": "/reference/cloudagent"
     }
   ]
 }

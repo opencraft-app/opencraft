@@ -85,9 +85,10 @@ docs-site/openapi/cloudagent.json
 ```
 
 Fumadocs provides the mono2-wide shell. Scalar renders the interactive API
-reference at `/reference/cloudagent`, embedded by `/docs/cloudagent/api`.
+reference at `/reference/cloudagent`, and the docs sidebar links directly to
+that native route.
 
-Fumadocs 提供 mono2-wide 文档外壳。Scalar 在 `/reference/cloudagent` 渲染交互式 API 参考，并被 `/docs/cloudagent/api` 嵌入。
+Fumadocs 提供 mono2-wide 文档外壳。Scalar 在 `/reference/cloudagent` 渲染交互式 API 参考，文档侧边栏直接链接到这个原生 route。
 
 ## Content Policy / 内容策略
 

@@ -44,13 +44,13 @@ type CloudAgentEndpoint = {
 - The manifest is generated from `docs-site/openapi/cloudagent.json`.
 - `docs-site/openapi/cloudagent.json` is generated from Go code in
   `cloudagent/gateway/internal/wrapper/cloudagent_run_spec.go`.
-- The full reference is rendered by Scalar at `/reference/cloudagent` and
-  embedded in `/docs/cloudagent/api`.
+- The full reference is rendered by Scalar at `/reference/cloudagent`; the docs
+  sidebar links to that native route.
 - Do not maintain a second endpoint table by hand; update the Go protocol spec
   and rerun `./makedocs.sh`.
 
 - manifest 由 `docs-site/openapi/cloudagent.json` 生成。
 - `docs-site/openapi/cloudagent.json` 由
   `cloudagent/gateway/internal/wrapper/cloudagent_run_spec.go` 中的 Go 代码生成。
-- 完整参考由 Scalar 在 `/reference/cloudagent` 渲染，并嵌入 `/docs/cloudagent/api`。
+- 完整参考由 Scalar 在 `/reference/cloudagent` 渲染；文档侧边栏直接链接到这个原生 route。
 - 不要手写维护第二份 endpoint 表；需要变更时更新 Go 协议 spec，然后重新运行 `./makedocs.sh`。

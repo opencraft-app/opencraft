@@ -1,4 +1,10 @@
 {
   "title": "CloudAgent",
-  "pages": ["index", "http-run-api", "api", "endpoint-manifest", "generated-index"]
+  "pages": [
+    "index",
+    "http-run-api",
+    "[API Reference / API 参考](/reference/cloudagent)",
+    "endpoint-manifest",
+    "generated-index"
+  ]
 }
