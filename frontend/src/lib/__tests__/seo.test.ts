@@ -28,7 +28,7 @@ describe("seo meta", () => {
   it("renders English titles and suffix for the global region", () => {
     const globalSuffix = "LightVela · Your Personal Cloud AI Agent";
     expect(getSeoMeta("/", "global").title).toBe("LightVela | Your Personal Cloud AI Agent");
-    expect(getSeoMeta("/about", "global").title).toBe(`About | ${globalSuffix}`);
+    expect(getSeoMeta("/about", "global").title).toBe(`About LightVela | ${globalSuffix}`);
     expect(getSeoMeta("/docs/overview", "global").title).toBe(`What is LightVela | ${globalSuffix}`);
     expect(getSeoMeta("/agents/memory", "global").title).toBe(`Memory | ${globalSuffix}`);
     expect(getSeoMeta("/bots/bot-1/terminal", "global").title).toBe(`Terminal | ${globalSuffix}`);

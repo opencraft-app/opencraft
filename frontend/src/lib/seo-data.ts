@@ -110,7 +110,7 @@ const STATIC_PAGE_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> = 
     "/internal/style-lab": "设计系统",
   },
   global: {
-    "/about": "About",
+    "/about": "About LightVela",
     "/changelog": "Changelog",
     "/privacy-policy": "Privacy Policy",
     "/cookie-policy": "Cookie Policy",

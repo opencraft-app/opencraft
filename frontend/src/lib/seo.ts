@@ -16,11 +16,18 @@ function upsertMetaTag(name: string, content: string): void {
     document.head.appendChild(meta);
   }
 
-  meta.setAttribute("content", content);
+  // 内容未变化时跳过写入，避免每次路由切换都触发不必要的 DOM 写。
+  if (meta.getAttribute("content") !== content) {
+    meta.setAttribute("content", content);
+  }
 }
 
 export function applySeoMeta(meta: SeoMeta): void {
-  document.title = meta.title;
+  // 仅在实际变化时写 DOM：单次路由切换最多 1 次 title + 2 次 meta，
+  // 且重复值（如多个 layout 共享同一 meta）不会产生冗余写入。
+  if (document.title !== meta.title) {
+    document.title = meta.title;
+  }
   upsertMetaTag("description", meta.description);
   upsertMetaTag("keywords", meta.keywords);
 }

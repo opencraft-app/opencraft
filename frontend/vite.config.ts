@@ -5,7 +5,7 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { loadEnv, type PluginOption } from "vite";
 import { defineConfig } from "vitest/config";
-import { getSeoMeta } from "./src/lib/seo-data";
+import { applySeoToHtml } from "./src/lib/seo-html";
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -421,39 +421,6 @@ function manualChunks(id: string) {
   // 自动处理跨 chunk 引用。
 
   return undefined;
-}
-
-function escapeHtmlAttribute(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/"/g, "&quot;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
-
-function normalizeSeoRequestPath(requestPath: string): string {
-  const pathname = requestPath.startsWith("http")
-    ? new URL(requestPath).pathname
-    : new URL(requestPath, "http://localhost").pathname;
-  return pathname === "/index.html" ? "/" : pathname;
-}
-
-function replaceOrInsertMeta(html: string, name: string, content: string): string {
-  const tag = `<meta name="${name}" content="${escapeHtmlAttribute(content)}" />`;
-  const pattern = new RegExp(`<meta\\s+name=["']${name}["'][^>]*>`, "i");
-
-  if (pattern.test(html)) {
-    return html.replace(pattern, tag);
-  }
-
-  return html.replace(/(\s*<title>)/i, `    ${tag}\n$1`);
-}
-
-function applySeoToHtml(html: string, requestPath: string, region: "cn" | "global"): string {
-  const meta = getSeoMeta(normalizeSeoRequestPath(requestPath), region);
-  const htmlWithTitle = html.replace(/<title>.*?<\/title>/i, `<title>${escapeHtmlAttribute(meta.title)}</title>`);
-  const htmlWithDescription = replaceOrInsertMeta(htmlWithTitle, "description", meta.description);
-  return replaceOrInsertMeta(htmlWithDescription, "keywords", meta.keywords);
 }
 
 function seoHtmlPlugin(region: "cn" | "global"): PluginOption {
