@@ -5,7 +5,7 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { loadEnv, type PluginOption } from "vite";
 import { defineConfig } from "vitest/config";
-import { applySeoToHtml } from "./src/lib/seo-html";
+import { applyFullSeoToHtml } from "./src/lib/seo-html";
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -467,7 +467,13 @@ function seoHtmlPlugin(region: "cn" | "global"): PluginOption {
     transformIndexHtml: {
       order: "pre",
       handler(html, ctx) {
-        return applySeoToHtml(html, ctx.path, region);
+        // dev 环境使用请求 host 拼 canonical / og:url，避免硬编码 production
+        // origin（lightvela.com / lightvela.ai）出现在本地调试 HTML 里。
+        const host = (ctx.originalUrl && ctx.server?.config?.server?.host) || undefined;
+        const reqHost = (ctx as { req?: { headers?: { host?: string } } }).req?.headers?.host;
+        const proto = "http";
+        const siteUrl = reqHost ? `${proto}://${reqHost}` : host ? `${proto}://${host}` : undefined;
+        return applyFullSeoToHtml(html, ctx.path, region, { siteUrl });
       },
     },
   };

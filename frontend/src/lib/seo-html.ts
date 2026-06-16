@@ -8,7 +8,13 @@
  * 抽离到独立模块的好处：逻辑可被单元测试覆盖（转义 / `$` 元字符注入回归），
  * 不再内联在 vite.config 中无人守护。
  */
-import { getSeoMeta, type SeoRegion } from "./seo-data";
+import {
+  getFullSeoMeta,
+  getSeoMeta,
+  type FullSeoMeta,
+  type FullSeoMetaOptions,
+  type SeoRegion,
+} from "./seo-data";
 
 /**
  * 字符级转义：用函数式 replacement 一次性替换，
@@ -60,7 +66,7 @@ export function replaceOrInsertMeta(html: string, name: string, content: string)
     return html.replace(pattern, () => tag);
   }
 
-  return html.replace(/(\s*<title>)/i, (match) => `    ${tag}\n${match}`);
+  return insertBeforeTitle(html, tag);
 }
 
 export function applySeoToHtml(html: string, requestPath: string, region: SeoRegion): string {
@@ -70,4 +76,111 @@ export function applySeoToHtml(html: string, requestPath: string, region: SeoReg
   const htmlWithTitle = html.replace(/<title>.*?<\/title>/i, () => titleTag);
   const htmlWithDescription = replaceOrInsertMeta(htmlWithTitle, "description", meta.description);
   return replaceOrInsertMeta(htmlWithDescription, "keywords", meta.keywords);
+}
+
+/**
+ * 在 `<title>` 之前插入新 tag。
+ *
+ * 之前的实现用 `(\s*<title>)` 贪婪吞掉前导空白后再拼回，会导致：
+ *   1) 多次插入累积出大量空行（每次拼一个 `\n`，N 次 fallback 就有 N 个空行）；
+ *   2) 当 `<title>` 在 vite dev 注入 `<script>` 后被顶到 head 末尾时，前导空白
+ *      序列里夹了脚本内容，整段被吞回会破坏布局。
+ *
+ * 这里改成"非贪婪、零宽前瞻定位 `<title>`"，仅在 `<title>` 前插入一行，
+ * 保留原 head 既有缩进/换行不变。replacement 用函数式形式，规避 `$` 注入。
+ */
+function insertBeforeTitle(html: string, tag: string): string {
+  if (/<title>/i.test(html)) {
+    return html.replace(/(?=<title>)/i, () => `${tag}\n    `);
+  }
+  // 兜底：没有 <title>，则在 <head> 之后插
+  return html.replace(/<head>/i, (m) => `${m}\n    ${tag}`);
+}
+
+/**
+ * 通用 head 标签写入：先尝试按选择器匹配替换，匹配不到则在 `<title>` 之前插入。
+ * 用函数式 replacement 防止 content 含 `$` 元字符被解释为替换模式（CR2 同源风险）。
+ */
+function upsertHeadTag(html: string, matcher: RegExp, tag: string): string {
+  if (matcher.test(html)) {
+    return html.replace(matcher, () => tag);
+  }
+  return insertBeforeTitle(html, tag);
+}
+
+function setMetaProperty(html: string, property: string, content: string): string {
+  const tag = `<meta property="${property}" content="${escapeHtmlAttribute(content)}" />`;
+  const matcher = new RegExp(`<meta\\s+property=["']${property}["'][^>]*>`, "i");
+  return upsertHeadTag(html, matcher, tag);
+}
+
+function setMetaName(html: string, name: string, content: string): string {
+  const tag = `<meta name="${name}" content="${escapeHtmlAttribute(content)}" />`;
+  const matcher = new RegExp(`<meta\\s+name=["']${name}["'][^>]*>`, "i");
+  return upsertHeadTag(html, matcher, tag);
+}
+
+function setLink(html: string, rel: string, href: string): string {
+  const tag = `<link rel="${rel}" href="${escapeHtmlAttribute(href)}" />`;
+  const matcher = new RegExp(`<link\\s+rel=["']${rel}["'][^>]*>`, "i");
+  return upsertHeadTag(html, matcher, tag);
+}
+
+function setHtmlLang(html: string, lang: string): string {
+  return html.replace(
+    /<html\b([^>]*)>/i,
+    (_match, attrs: string) => {
+      const attrsWithoutLang = attrs.replace(/\s+lang=(["'])[^"']*\1/i, "");
+      return `<html${attrsWithoutLang} lang="${escapeHtmlAttribute(lang)}">`;
+    },
+  );
+}
+
+/**
+ * 完整 SEO 注入：title/description/keywords + canonical + robots + OG + Twitter + `<html lang>`。
+ * 用于 dev 中间件，使开发态首屏 HTML 与 prerender 产物字段对齐。
+ */
+export function applyFullSeoToHtml(
+  html: string,
+  requestPath: string,
+  region: SeoRegion,
+  options: FullSeoMetaOptions = {},
+): string {
+  const meta: FullSeoMeta = getFullSeoMeta(normalizeSeoRequestPath(requestPath), region, options);
+
+  let next = html;
+  next = setHtmlLang(next, meta.htmlLang);
+
+  // <title> 文本内容（不转引号）
+  const titleTag = `<title>${escapeHtmlText(meta.title)}</title>`;
+  if (/<title>.*?<\/title>/i.test(next)) {
+    next = next.replace(/<title>.*?<\/title>/i, () => titleTag);
+  } else {
+    next = next.replace(/<head>/i, (m) => `${m}\n    ${titleTag}`);
+  }
+
+  // 基础 meta
+  next = replaceOrInsertMeta(next, "description", meta.description);
+  next = replaceOrInsertMeta(next, "keywords", meta.keywords);
+  next = setMetaName(next, "robots", meta.robots);
+
+  // canonical
+  next = setLink(next, "canonical", meta.canonical);
+
+  // Open Graph
+  next = setMetaProperty(next, "og:locale", meta.ogLocale);
+  next = setMetaProperty(next, "og:type", meta.ogType);
+  next = setMetaProperty(next, "og:site_name", meta.ogSiteName);
+  next = setMetaProperty(next, "og:title", meta.ogTitle);
+  next = setMetaProperty(next, "og:description", meta.ogDescription);
+  next = setMetaProperty(next, "og:url", meta.ogUrl);
+  next = setMetaProperty(next, "og:image", meta.ogImage);
+
+  // Twitter Card
+  next = setMetaName(next, "twitter:card", meta.twitterCard);
+  next = setMetaName(next, "twitter:title", meta.twitterTitle);
+  next = setMetaName(next, "twitter:description", meta.twitterDescription);
+  next = setMetaName(next, "twitter:image", meta.twitterImage);
+
+  return next;
 }

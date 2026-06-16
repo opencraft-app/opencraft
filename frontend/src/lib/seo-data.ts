@@ -6,6 +6,84 @@ export interface SeoMeta {
   keywords: string;
 }
 
+/**
+ * 完整 SEO 元数据：覆盖 title/description/keywords 之外的全部 head 字段，
+ * 与 prerender（generate-static-site.mjs）输出保持一致，使 dev 中间件、
+ * 客户端运行时同步、prerender 三个消费方共用同一份数据契约。
+ *
+ * 字段含义：
+ *   - htmlLang：用于 `<html lang>`，影响搜索引擎语种判定 / 屏幕阅读器朗读语言。
+ *   - canonical：完整 URL（含 origin），防止 query / 大小写 / 末尾斜杠造成的重复内容收录。
+ *   - robots：`indexable=false` 时输出 `noindex,nofollow`，用于 /auth、/account 等私域路径。
+ *   - og*：Open Graph 元数据（微信、Facebook、LinkedIn 等社交平台分享卡）。
+ *   - twitterCard：Twitter Card 类型，固定 `summary_large_image`。
+ *   - ogImage：分享卡缩略图绝对 URL（必须是绝对地址，社交爬虫不解析相对路径）。
+ */
+export interface FullSeoMeta extends SeoMeta {
+  htmlLang: string;
+  canonical: string;
+  robots: "index,follow" | "noindex,nofollow";
+  ogTitle: string;
+  ogDescription: string;
+  ogUrl: string;
+  ogImage: string;
+  ogLocale: string;
+  ogSiteName: string;
+  ogType: "website";
+  twitterCard: "summary_large_image";
+  twitterTitle: string;
+  twitterDescription: string;
+  twitterImage: string;
+}
+
+export interface FullSeoMetaOptions {
+  /** 站点 origin（不含末尾 `/`），如 `https://lightvela.com`。 */
+  siteUrl?: string;
+  /** 是否允许搜索引擎收录；默认 true。私域路径（/auth/*、/account/*）应传 false。 */
+  indexable?: boolean;
+  /** 分享卡缩略图相对路径，默认 `/lightvela-logo.jpg`。 */
+  ogImagePath?: string;
+}
+
+/**
+ * 站点级常量：lang / locale / siteName / titleSuffix / 默认 origin / 默认分享图。
+ * 与 generate-static-site.mjs 的 `SITE` 保持一致；脚本是纯 .mjs，
+ * 无法直接 import 本 TS 文件，因此那一侧维护一份镜像副本，
+ * 并由 `__tests__/seo-site-mirror.test.ts` 守护两边一致性。
+ */
+const SITE_BY_REGION = {
+  cn: {
+    htmlLang: "zh-CN",
+    locale: "zh_CN",
+    siteName: "LightVela",
+    defaultUrl: "https://lightvela.com",
+  },
+  global: {
+    htmlLang: "en-US",
+    locale: "en_US",
+    siteName: "LightVela",
+    defaultUrl: "https://lightvela.ai",
+  },
+} as const;
+
+/** 私域路径：默认 `noindex,nofollow`。匹配采用前缀匹配。 */
+const NON_INDEXABLE_PREFIXES = [
+  "/auth/",
+  "/account",
+  "/dashboard",
+  "/settings",
+  "/tat/",
+  "/internal/",
+  "/console",
+  "/openclaw",
+  "/subscribe",
+  "/plans/",
+  "/agents",
+  "/bots/",
+];
+
+const DEFAULT_OG_IMAGE_PATH = "/lightvela-logo.jpg";
+
 /* ──────────────────────────────────────────────────────────────
  * 区域差异（国内 cn / 国际 global）
  * ──────────────────────────────────────────────────────────────
@@ -34,7 +112,7 @@ const SEO_TITLE_SUFFIX_BY_REGION: Record<SeoRegion, string> = {
 const SEO_DESCRIPTION_BY_REGION: Record<SeoRegion, string> = {
   cn: "LightVela 是腾讯轻量云团队推出的云端 Agent 托管产品，致力于让每个人都能拥有一个真正属于自己的 AI 伙伴——不是每次打开都要重新自我介绍的工具，而是认识你、记得你、越聊越懂你的长期存在。",
   global:
-    "LightVela is a cloud-hosted AI Agent product from Tencent Cloud Lightweight team, giving everyone a personal AI companion that remembers you and grows with you over time — always online in the cloud.",
+    "LightVela is a cloud Agent hosting product from the Tencent Lighthouse team. It is designed to let everyone own an AI companion that truly belongs to them—not a tool that asks you to introduce yourself every time, but a long-term presence that knows you, remembers you, and understands you better over time.",
 };
 
 const SEO_KEYWORDS_BY_REGION: Record<SeoRegion, string> = {
@@ -82,6 +160,99 @@ const SEO_KEYWORDS_BY_REGION: Record<SeoRegion, string> = {
     "Discord bot",
     "personal agent",
   ].join(", "),
+};
+
+/**
+ * 页面级 description 覆盖表：仅列出需要"按页面内容定制 description"的路径。
+ *
+ * 设计原则：
+ *   - 命中表中路径 → 使用页面级 description（更贴合页面主题，搜索引擎摘要更精准）
+ *   - 未命中 → 回退到 SEO_DESCRIPTION_BY_REGION（全站默认）
+ *   - keywords 不分页面，全站统一（SEO_KEYWORDS_BY_REGION）
+ *
+ * 与 prerender 的关系：
+ *   - prerender (`generate-static-site.mjs`) 对 docs 页会自动从 markdown 截取
+ *     description；本表则提供"运行时（dev 中间件 / 客户端 SPA 切路由）"的精炼
+ *     版本。两者不要求 byte-equal，但都应保持主题一致、长度合理（~ 120-180 字）。
+ *   - prerender 的 `/about` 当前用全站默认 description，本表给它一份更"关于"
+ *     味道的定制文案，运行时会展示这一份。
+ *
+ * 字段长度约束：建议 120-180 字（中文）/ 140-180 chars（英文），太短信息量不
+ * 足，太长会被搜索引擎截断。
+ */
+const PAGE_DESCRIPTIONS_BY_REGION: Record<SeoRegion, Record<string, string>> = {
+  cn: {
+    "/about":
+      "LightVela 由腾讯轻量云团队打造，源于对「AI 该长成什么样」的反复思考——我们相信 AI 不应只是冷冰冰的工具，而应是认识你、记得你、越聊越懂你的长期伙伴。",
+
+    // 文档首页与综述页
+    "/docs":
+      "LightVela 产品文档：包含快速开始、核心概念、模型 / 通道 / 技能配置指南，以及常见问题 FAQ。",
+    "/docs/overview":
+      "LightVela 是腾讯轻量云团队推出的云端 Agent 托管产品，主打 Hermes Agent，让每个人都能拥有真正属于自己、长期在线、越聊越懂你的 AI 伙伴。",
+    "/docs/quickstart":
+      "5 分钟从登录、实名认证、开通启航套餐、创建 Hermes 实例到接入微信通道，完成第一次 AI 对话的完整教程。",
+    "/docs/account":
+      "了解 LightVela 的账号体系、登录方式（QQ / 微信）、实名认证流程、账号信息页结构，以及退出登录与注销说明。",
+    "/docs/core-concepts":
+      "LightVela 的四大核心概念：Hermes、模型、通道、技能。本页解释四者关系，以及一次完整 AI 对话的内部流程。",
+    "/docs/configuration":
+      "Hermes 管理台配置总览：模型 / 通道 / 技能三大配置卡片的功能与入口，以及切换模型、接入多个通道、重建 Hermes 等常用操作。",
+    "/docs/configuration/model":
+      "为 Hermes 配置大语言模型：Coding Plan / API / 自定义模型三种方式的差异，API Key 获取，支持的模型列表与选型建议。",
+    "/docs/configuration/channel-wechat":
+      "微信通道接入指南：在 LightVela 生成二维码 → 手机微信扫码授权 → 在微信中与 Hermes 对话。所有通道中配置最简单的一种。",
+    "/docs/configuration/channel-feishu":
+      "飞书通道接入指南：扫码授权方式接入，适用于办公场景，支持富文本消息与群聊 @机器人。",
+    "/docs/configuration/channel-qq":
+      "QQ 通道接入指南：在 QQ 开放平台创建机器人、获取 AppID 与 AppSecret、填入 LightVela 完成接入，约 5–10 分钟。",
+    "/docs/configuration/skill":
+      "为 Hermes 配置技能（Skills）：基于腾讯 SkillHub 的可调用能力包，覆盖待办整理、日报、网页浏览、新闻搜索、图像生成等，支持管理台与对话两种安装方式。",
+    "/docs/faq":
+      "LightVela 使用过程中的常见问题汇总：账号登录、实名认证、套餐积分、模型与通道配置、对话与记忆机制等。",
+  },
+  global: {
+    "/about":
+      "Built by the Tencent Lighthouse team, LightVela was born from a question: what should AI become? We believe AI should not be just a cold tool, but a long-term presence that knows you, remembers you, and grows with you.",
+
+    // Docs index & overview
+    "/docs":
+      "LightVela product documentation: quickstart, core concepts, model / channel / skill configuration guides, and FAQ.",
+    "/docs/overview":
+      "LightVela is a cloud Agent hosting product from the Tencent Lighthouse team, built around Hermes Agent — a personal AI companion that stays online 24/7, knows you, remembers you, and understands you better over time.",
+    "/docs/quickstart":
+      "A 5-minute walkthrough: sign in, complete identity verification, activate the starter plan, create your Hermes instance, connect a channel (WeChat / Telegram / WhatsApp / Discord) and have your first AI conversation.",
+    "/docs/core-concepts":
+      "LightVela's four core concepts: Hermes, Models, Channels, and Skills. This page explains how they relate and what happens inside a single conversation.",
+    "/docs/configuration":
+      "Overview of the Hermes admin console: the three configuration cards (Models / Channels / Skills), their entry points, and common operations like switching models, connecting multiple channels, and rebuilding Hermes.",
+    "/docs/configuration/model":
+      "Configure a large language model for Hermes: differences between Coding Plan / API / Custom Model, how to obtain API keys, the list of supported models, and selection guidance.",
+    "/docs/configuration/channel-wechat":
+      "WeChat channel setup guide: generate a QR code in LightVela, scan it with WeChat to authorize, and start chatting with Hermes — the simplest channel to onboard.",
+    "/docs/configuration/channel-telegram":
+      "Telegram channel setup guide: create a Telegram bot via BotFather, paste the token into LightVela, and start chatting with Hermes inside Telegram.",
+    "/docs/configuration/channel-whatsapp":
+      "WhatsApp channel setup guide: connect Hermes to WhatsApp, complete authorization, and start a conversation through your WhatsApp account.",
+    "/docs/configuration/channel-discord":
+      "Discord channel setup guide: register a bot in the Discord Developer Portal, paste the token into LightVela, invite the bot to your server, and chat with Hermes.",
+    "/docs/configuration/channel-qq":
+      "QQ channel setup guide: register a bot on the QQ Open Platform, obtain AppID and AppSecret, fill them into LightVela — total time around 5–10 minutes.",
+    "/docs/configuration/channel-wecom":
+      "WeCom (Enterprise WeChat) channel setup guide: configure a WeCom application, fill in the credentials in LightVela, and connect Hermes to your WeCom workspace.",
+    "/docs/configuration/channel-feishu":
+      "Lark (Feishu) channel setup guide: scan-to-authorize onboarding for office scenarios, with rich-text messages and group @mentions of the bot.",
+    "/docs/configuration/skill":
+      "Configure Skills for Hermes: callable capability packs from Tencent SkillHub, covering to-do management, daily reports, web browsing, news search, image generation and more — installable from the admin console or directly inside chat.",
+    "/docs/configuration/automation":
+      "Set up Hermes automations: schedule recurring tasks (reminders, daily reports, news tracking, content publishing) by time or trigger, with templates and lifecycle management.",
+    "/docs/configuration/agent-chat":
+      "Talk to Hermes in the Chat page: long-term memory accumulation, MEMORY.md / USER.md split, and how Hermes evolves with every conversation.",
+    "/docs/faq":
+      "Common questions about using LightVela: sign-in, identity verification, plan credits, model and channel configuration, conversation and memory mechanics.",
+    "/docs/faq/using-lightvela-safely":
+      "Safety guidance for using LightVela: avoid sharing passwords, secrets, or sensitive personal / financial / medical / business data with the AI; redact when in doubt.",
+  },
 };
 
 const STATIC_PAGE_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> = {
@@ -300,11 +471,87 @@ export function getSeoMeta(pathname: string, region?: SeoRegion): SeoMeta {
         getAppPageTitle(normalizedPathname, r) ??
         NOT_FOUND_TITLE_BY_REGION[r];
 
+  // description 优先取页面级覆盖，缺失才回退到全站默认。
+  // keywords 不分页面，全站统一（按 SEO 规范，keywords 字段权重已极低，
+  // 不值得为每页维护一份，集中维护一套即可）。
+  const pageDescription = PAGE_DESCRIPTIONS_BY_REGION[r][normalizedPathname];
+
   return {
     title: pageTitle
       ? `${pageTitle} | ${SEO_TITLE_SUFFIX_BY_REGION[r]}`
       : DEFAULT_SEO_TITLE_BY_REGION[r],
-    description: SEO_DESCRIPTION_BY_REGION[r],
+    description: pageDescription ?? SEO_DESCRIPTION_BY_REGION[r],
     keywords: SEO_KEYWORDS_BY_REGION[r],
+  };
+}
+
+/** 获取 region 站点级常量（lang/locale/siteName/defaultUrl）。 */
+export function getSiteConfig(region?: SeoRegion): {
+  htmlLang: string;
+  locale: string;
+  siteName: string;
+  defaultUrl: string;
+} {
+  return SITE_BY_REGION[normalizeRegion(region)];
+}
+
+function trimTrailingSlash(value: string): string {
+  return value.replace(/\/+$/, "");
+}
+
+function joinUrl(origin: string, path: string): string {
+  const o = trimTrailingSlash(origin);
+  if (path === "/" || path === "") return o || "/";
+  return `${o}${path.startsWith("/") ? "" : "/"}${path}`;
+}
+
+/** 路径是否默认应被搜索引擎索引。 */
+export function isPathIndexable(pathname: string): boolean {
+  const p = normalizePathname(pathname);
+  return !NON_INDEXABLE_PREFIXES.some(
+    (prefix) => p === trimTrailingSlash(prefix) || p.startsWith(prefix),
+  );
+}
+
+/**
+ * 完整 SEO 元数据：包含 OG / Twitter / canonical / robots / `<html lang>`。
+ *
+ * 设计意图：dev 中间件、客户端运行时同步、prerender 三处共用此函数，避免字段
+ * 在不同管线之间漂移。prerender 脚本是纯 .mjs，无法 import 本 TS 文件，故
+ * 通过 __tests__/seo-site-mirror.test.ts 守护两边镜像数据一致。
+ *
+ * 安全：函数内部只做拼接，不做 HTML 转义。属性值的 `&` / `"` / `<` / `>` 转义
+ * 由消费方（seo-html.ts、prerender renderHead）负责，避免双重转义。
+ */
+export function getFullSeoMeta(
+  pathname: string,
+  region?: SeoRegion,
+  options: FullSeoMetaOptions = {},
+): FullSeoMeta {
+  const r = normalizeRegion(region);
+  const site = SITE_BY_REGION[r];
+  const base = getSeoMeta(pathname, r);
+  const normalizedPathname = normalizePathname(pathname);
+  const siteUrl = trimTrailingSlash(options.siteUrl ?? site.defaultUrl);
+  const canonical = joinUrl(siteUrl, normalizedPathname);
+  const indexable = options.indexable ?? isPathIndexable(normalizedPathname);
+  const ogImage = joinUrl(siteUrl, options.ogImagePath ?? DEFAULT_OG_IMAGE_PATH);
+
+  return {
+    ...base,
+    htmlLang: site.htmlLang,
+    canonical,
+    robots: indexable ? "index,follow" : "noindex,nofollow",
+    ogTitle: base.title,
+    ogDescription: base.description,
+    ogUrl: canonical,
+    ogImage,
+    ogLocale: site.locale,
+    ogSiteName: site.siteName,
+    ogType: "website",
+    twitterCard: "summary_large_image",
+    twitterTitle: base.title,
+    twitterDescription: base.description,
+    twitterImage: ogImage,
   };
 }

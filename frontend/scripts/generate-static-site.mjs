@@ -21,7 +21,7 @@ const SITE = {
     name: "LightVela",
     defaultUrl: "https://lightvela.ai",
     titleSuffix: "LightVela · Your Personal Cloud AI Agent",
-    description: "LightVela is a cloud-hosted AI Agent product from Tencent Cloud Lightweight team, giving everyone a personal AI companion that remembers you and grows with you over time — always online in the cloud.",
+    description: "LightVela is a cloud Agent hosting product from the Tencent Lighthouse team. It is designed to let everyone own an AI companion that truly belongs to them—not a tool that asks you to introduce yourself every time, but a long-term presence that knows you, remembers you, and understands you better over time.",
   },
 };
 
