@@ -22,6 +22,10 @@ type Dao interface {
 	GetByID(ctx pctx.Context, id int64) (*Entity, error)
 	ExistsBySandboxID(ctx pctx.Context, sandboxID string) (bool, error)
 	ListByUserID(ctx pctx.Context, userID string, page, pageSize int) ([]Entity, int64, error)
+	// ListAllByUserIDForIsolate 反查指定 user_id 下处于非终态（非 Deleted/Failed）的全部 instance。
+	// 用于 trade-pass-isolate 父 task IsolatePass 派发子任务时枚举受影响实例（设计稿 §10 Q22-I-E）。
+	// 不分页（用户单 pass 的并发实例量级有限）；不带 ctx-userID 维度（系统侧调用，user_id 由父 task payload 给定）。
+	ListAllByUserIDForIsolate(userID string) ([]*Entity, error)
 	UpdateDisplayName(ctx pctx.Context, id int64, displayName string) error
 	UpdateStatus(ctx pctx.Context, id int64, newStatus string) error
 	TransitionStatus(ctx pctx.Context, id int64, fromStatuses []string, newStatus string) error
@@ -126,6 +130,23 @@ func (d *dao) ListByUserID(ctx pctx.Context, userID string, page, pageSize int) 
 	}
 
 	return entities, total, nil
+}
+
+// ListAllByUserIDForIsolate 详见 Dao 接口注释（trade-pass-isolate §10 Q22-I-E）
+func (d *dao) ListAllByUserIDForIsolate(userID string) ([]*Entity, error) {
+	if userID == "" {
+		return nil, errors.New("userID is required")
+	}
+	var entities []*Entity
+	if err := resource.GormDB.
+		Table(TableName).
+		Where(ColumnUserID+" = ?", userID).
+		Where(ColumnStatus+" NOT IN ?", []string{InstanceStatusDeleted, InstanceStatusFailed}).
+		Order(ColumnID + " ASC").
+		Find(&entities).Error; err != nil {
+		return nil, fmt.Errorf("ListAllByUserIDForIsolate: %w", err)
+	}
+	return entities, nil
 }
 
 func (d *dao) UpdateStatus(ctx pctx.Context, id int64, newStatus string) error {
