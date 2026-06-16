@@ -107,6 +107,63 @@ type InstanceAPIConfig struct {
 	PressureTTLSec            int      `toml:"pressure_snapshot_ttl_seconds"`
 	PressureCleanRatio        float64  `toml:"pressure_clean_ratio_threshold"`
 	PressureMinClean          int      `toml:"pressure_min_clean_floor"`
+
+	// SpecPools 实例规格 → 候选池子段（设计稿 §3.3 Q2=a 双轨）。
+	//
+	// 取值优先级：
+	//   1. bundle.instance_spec_id 命中 SpecPools[i].SpecID → 用 SpecPools[i] 候选池
+	//   2. bundle.instance_spec_id 为空（兼容期）         → fallback 到全局
+	//      DefaultTemplateID + CandidateTemplateIDs
+	//   3. bundle.instance_spec_id 命中 instancespec 字典但 SpecPools 缺配 → CreateInstance
+	//      直接 fail（设计稿 §10 Q7=a；避免悄悄落到错规格的资金风险）
+	//
+	// 配置示例（server_conf.toml）：
+	//   [[api.instance.spec_pools]]
+	//   spec_id                = "spec-2c4g50g"
+	//   default_template_id    = "pool-bj-2c4g50g-default"
+	//   candidate_template_ids = ["pool-bj-2c4g50g-default", "pool-bj-2c4g50g-backup"]
+	SpecPools []SpecPoolConfig `toml:"spec_pools"`
+}
+
+// SpecPoolConfig 单个实例规格对应的候选池配置（设计稿 §3.3 Q2=a）。
+//
+// TemplateClassID 用于隔离多规格池路由（设计稿 §13.2 R1f 池落差教训）：当同一 sandbox
+// 部署里既有 2C4G50G 池又有 4C8G80G 池时，必须让两规格走**不同的 template_class**，
+// 否则 sandbox `sandbox_primary` 模式会按 template_pool_bindings.priority 自主选池，
+// ctl 传入的 templateID 形同虚设、用户可能跨规格漂移（资金风险）。空字符串表示
+// 复用全局 InstanceAPIConfig.DefaultTemplateClassID（兼容期 / 单规格部署）。
+//
+// SKUID 用于隔离多规格 sku 路由（与 TemplateClassID 对称）：sandbox
+// `selectTemplateSKUBindingsForAllocation` 会校验 `sku.template_class_id ==
+// requested.templateClassID`，否则返 ErrSKUNotFound。当同一 sandbox 部署同时存在
+// 2C4G 与 4C8G 两个 sku 时，每个 spec 必须显式声明自己的 sku_id，否则 ctl 全局
+// DefaultSKUID 与某一规格不匹配会让对应链路整条建实例 fail。空字符串表示 fallback
+// 到全局 InstanceAPIConfig.DefaultSKUID（兼容期 / 单 sku 部署）。
+type SpecPoolConfig struct {
+	SpecID               string   `toml:"spec_id"`
+	TemplateClassID      string   `toml:"template_class_id"`
+	SKUID                string   `toml:"sku_id"`
+	DefaultTemplateID    string   `toml:"default_template_id"`
+	CandidateTemplateIDs []string `toml:"candidate_template_ids"`
+}
+
+// SpecPoolFor 按 spec_id 查 per-spec 候选池配置。
+//
+// 返回 (cfg, true) 表示命中显式配置；返回 (zeroValue, false) 表示未命中（调用方应根据
+// 设计稿 §10 Q7=a 直接 fail，而非 fallback 到全局，避免规格漂移）。
+//
+// specID 为空时（兼容期）返回 (zeroValue, false)，调用方应改走全局
+// DefaultTemplateID + CandidateTemplateIDs（设计稿 §4.3）。
+func (c *InstanceAPIConfig) SpecPoolFor(specID string) (SpecPoolConfig, bool) {
+	if c == nil || specID == "" {
+		return SpecPoolConfig{}, false
+	}
+	for _, sp := range c.SpecPools {
+		if sp.SpecID == specID {
+			return sp, true
+		}
+	}
+	return SpecPoolConfig{}, false
 }
 
 func (c *InstanceAPIConfig) IsChurnGuardEnabled() bool {
@@ -164,11 +221,22 @@ type BundleConfig struct {
 	CreditTokenRatio int64 `toml:"credit_token_ratio"` // credit → token 的转换倍率，1 credit = N token
 }
 
+// AuthCodeConfig CodeBuddy AuthCode 模式中转页鉴权 ticket 配置（v1.7.32 引入）
+//
+// 设计稿：.tmp/ctl-authcode-codebuddy-design.md §5 配置项设计
+//
+// 字段语义：
+//   - TTLSeconds：ticket 在 Redis 的有效期（秒）；<=0 时 authcode.New 走 600s 兜底
+type AuthCodeConfig struct {
+	TTLSeconds int `toml:"ttl_seconds"` // ticket 有效期，默认 600 (10 min)
+}
+
 // ShadowConfig shadow 服务适配器配置
 type ShadowConfig struct {
 	BaseURL string `toml:"base_url"` // shadow 服务内部地址
 	Token   string `toml:"token"`    // 内部 API 认证 token
 	Timeout int    `toml:"timeout"`  // 请求超时（秒），默认 10
+	Enabled bool   `toml:"enabled"`  // 是否要求用户已绑定 shadow account
 }
 
 // TradeConfig trade 服务适配器配置（billing-integration B2 新增）
@@ -344,10 +412,20 @@ type GlobalConfig struct {
 		BlockBypassAndService  bool            `toml:"block_bypass_and_service"`
 		UseRandomMachineId     bool            `toml:"use_random_machine_id"`
 		AccountArea            AccountAreaType `toml:"account_area"`
+
+		// SnapshotRetentionSeconds 是 trade-pass-destroy 销毁链路 cbs snapshot 的有效期（秒）。
+		// Q7 ✅ 拍板（设计稿 .tmp/trade-pass-destroy-design.md §11-A）：
+		//   - 默认 90 天（3 个月）— 由 ctl 内部 snapshotRetentionSeconds() 兜底，<=0 走默认值
+		//   - 配置后由父 task 派子 task 时透传；子 task 调 sandbox.CreateSnapshot 入参 + 入 ctl snapshot 表 expire_time
+		//   - 后期可能修改，写到配置文件方便不发版调
+		SnapshotRetentionSeconds int `toml:"snapshot_retention_seconds"`
 	} `toml:"misc"`
 
 	GlobalQuotaConfig *GlobalQuotaConfig `toml:"global_quota"`
 
 	Bundle    *BundleConfig    `toml:"bundle"`
 	AgentChat *AgentChatConfig `toml:"agentchat"`
+
+	// AuthCodeConfig CodeBuddy AuthCode 模式中转页鉴权 ticket 配置。
+	AuthCodeConfig *AuthCodeConfig `toml:"auth_code"`
 }

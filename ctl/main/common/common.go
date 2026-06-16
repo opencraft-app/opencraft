@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/pprof"
+	"time"
 
 	"go.uber.org/zap"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	adapterFactory "ctl/pkg/adapter/factory"
+	"ctl/pkg/authcode"
 	"ctl/pkg/config"
 	"ctl/pkg/logic/app"
 	"ctl/pkg/resource"
@@ -48,6 +50,15 @@ func InitCommon() error {
 	}
 
 	resource.InitRedis(config.ServerConf.RedisConfig)
+
+	// v1.7.32：注入 authcode 全局 Store（CodeBuddy AuthCode 模式，
+	// 设计稿 .tmp/ctl-authcode-codebuddy-design.md）。未配置时 ttl=0
+	// 走 authcode.DefaultTTL 兜底（600s）。
+	authCodeTTL := time.Duration(0)
+	if config.ServerConf.AuthCodeConfig != nil {
+		authCodeTTL = time.Duration(config.ServerConf.AuthCodeConfig.TTLSeconds) * time.Second
+	}
+	authcode.Init(resource.RedisMainClient, authCodeTTL)
 
 	resource.SandboxAdapter = adapterFactory.DefaultAdapterFactory.SandboxAdapter()
 
