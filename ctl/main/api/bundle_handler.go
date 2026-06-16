@@ -11,6 +11,7 @@ import (
 	tradeadapter "ctl/pkg/adapter/trade"
 	"ctl/pkg/errcode"
 	bundlelogic "ctl/pkg/logic/bundle"
+	"ctl/pkg/model/instancespec"
 	"ctl/pkg/resource"
 	"ctl/pkg/transport"
 
@@ -28,6 +29,21 @@ type bundleHandler struct {
 	// 不阻断 bundle 列表展示，与 8C 落地前的兼容行为保持一致。
 	tradeAdapter tradeadapter.Adapter
 }
+
+// 询价透传给 trade 的 jifei 业务常量（v1.7.28 BUG-03 修复）：
+//
+// 与 ctl/pkg/logic/pass/logic.go 中 lighthousePassPayMode / lighthousePassGoodsNum
+// 同源；都是 Q41 / Q42 拍板的 Lighthouse Pass 业务常量（pid 1059119 + sv 1059121
+// 在 jifei 沙箱仅配置了 payMode=1 预付费月价）。本期 ctl 询价 / 下单两条链路必须
+// 显式传这两个值，不依赖 trade 兜底（trade.inquiry.Service.Quote 当前透传不兜底，
+// 见 BUG-03 root cause 五层定位）。
+//
+// 后续如需把这两个常量提升到 ctl 全局共享层，可考虑导出到 ctl/pkg/logic/pass
+// 包或新建 ctl/pkg/billing/constants 包；本期最小变更范围保持本地声明。
+const (
+	bundlesQuotePayMode  = 1 // jifei payMode：1=预付费（与 pass.lighthousePassPayMode 同源）
+	bundlesQuoteGoodsNum = 1 // jifei goodsNum：本期固定单件（与 pass.lighthousePassGoodsNum 同源）
+)
 
 // handleAdminBundles 处理后台管理接口 /admin/api/ctl/bundles
 func (h *bundleHandler) handleAdminBundles(w http.ResponseWriter, r *http.Request) {
@@ -110,6 +126,7 @@ func (h *bundleHandler) importBundle(w http.ResponseWriter, r *http.Request) {
 		req.TimeSpan,
 		req.TimeUnit,
 		req.AiGatewayPlanID,
+		req.InstanceSpecID,
 		req.StaticSoldOut,
 		req.BundleSalesAvailCount,
 		req.BundleSalesTotalCount,
@@ -154,6 +171,7 @@ func (h *bundleHandler) modifyBundles(w http.ResponseWriter, r *http.Request) {
 		TimeSpan:              req.TimeSpan,
 		TimeUnit:              req.TimeUnit,
 		AiGatewayPlanID:       req.AiGatewayPlanID,
+		InstanceSpecID:        req.InstanceSpecID,
 		StaticSoldOut:         req.StaticSoldOut,
 		BundleSalesAvailCount: req.BundleSalesAvailCount,
 		BundleSalesTotalCount: req.BundleSalesTotalCount,
@@ -258,7 +276,12 @@ func (h *bundleHandler) fetchBundleQuotes(
 		BundleIDs:      bundleIDs,
 		Period:         timeSpan,
 		TimeUnit:       timeUnit,
-		// GoodsNum / PayMode / RegionID 由 trade 侧使用兜底默认值，不在 user-facing 透传。
+		// GoodsNum / PayMode 显式传 Q41/Q42 业务常量（v1.7.28 BUG-03 修复 — 历史注释
+		// 说"由 trade 侧兜底"但 trade.inquiry.Service.Quote L213 实际透传不兜底，
+		// 不传则 jifei 收到 payMode=0 后付费导致 sv 1059121 no price found 371009）。
+		// RegionID 仍由 trade 内部固定（Q41 修订 2026-05-11）。
+		PayMode:  bundlesQuotePayMode,
+		GoodsNum: bundlesQuoteGoodsNum,
 	}
 	resp, err := h.tradeAdapter.InquiryBatch(ctx, req)
 	if err != nil {
@@ -284,10 +307,15 @@ func (h *bundleHandler) fetchBundleQuotes(
 	return out
 }
 
-// detailToAdminResponse 将 BundleDetail 转换为管理端响应
+// detailToAdminResponse 将 BundleDetail 转换为管理端响应。
+//
+// admin DTO 暴露完整规格信息（设计稿 Q5=b）：
+//   - instance_spec_id（运营内部 ID）
+//   - instance_spec_display（运营展示名，如 "4案8G 80G系统盘"）
+//   - cpu / memory / system_disk_size（3 个量化字段）
 func detailToAdminResponse(d *bundlelogic.BundleDetail) *transport.BundleResponse {
 	staticSoldOut := d.StaticSoldOut
-	return &transport.BundleResponse{
+	resp := &transport.BundleResponse{
 		BundleID:              d.BundleID,
 		BundleName:            d.BundleName,
 		Description:           parseJSONDescription(d.Description),
@@ -297,6 +325,7 @@ func detailToAdminResponse(d *bundlelogic.BundleDetail) *transport.BundleRespons
 		TimeSpan:              d.TimeSpan,
 		TimeUnit:              d.TimeUnit,
 		AiGatewayPlanID:       d.AiGatewayPlanID,
+		InstanceSpecID:        d.InstanceSpecID,
 		StaticSoldOut:         &staticSoldOut,
 		BundleSalesAvailCount: d.BundleSalesAvailCount,
 		BundleSalesTotalCount: d.BundleSalesTotalCount,
@@ -304,11 +333,20 @@ func detailToAdminResponse(d *bundlelogic.BundleDetail) *transport.BundleRespons
 		CreatedTime:           d.CreatedTime,
 		UpdatedTime:           d.UpdatedTime,
 	}
+	if spec, ok := instancespec.ResolveByID(d.InstanceSpecID); ok {
+		resp.InstanceSpecDisplay = spec.DisplayName
+		resp.CPU = spec.CPU
+		resp.Memory = spec.Memory
+		resp.SystemDiskSize = spec.SystemDiskSize
+	}
+	return resp
 }
 
 // detailToUserResponse 将 BundleDetail 转换为用户端响应（仅暴露用户可见字段）。
 // quote 来自 trade `/internal/trade/inquiry/batch` 询价回填（迭代 8C），可为 nil；
 // nil 时 Price 字段保持 nil，前端按"暂无报价"分支展示（Q-CGW-01 降级语义）。
+//
+// 设计稿 Q-FRONT-1=b：user-facing 结构化暴露 cpu / memory / system_disk_size 3 个量化字段。
 func detailToUserResponse(d *bundlelogic.BundleDetail, quote *tradeadapter.BundleQuote) *transport.UserBundleResponse {
 	resp := &transport.UserBundleResponse{
 		BundleID:         d.BundleID,
@@ -319,6 +357,11 @@ func detailToUserResponse(d *bundlelogic.BundleDetail, quote *tradeadapter.Bundl
 		Credit:           d.Credit,
 		BundleSalesState: d.BundleSalesState,
 		Price:            nil,
+	}
+	if spec, ok := instancespec.ResolveByID(d.InstanceSpecID); ok {
+		resp.CPU = spec.CPU
+		resp.Memory = spec.Memory
+		resp.SystemDiskSize = spec.SystemDiskSize
 	}
 	if quote != nil {
 		resp.Price = bundleQuoteToPrice(quote)
@@ -352,8 +395,12 @@ func bundleQuoteToPrice(q *tradeadapter.BundleQuote) *transport.BundlePrice {
 // detailToInternalResponse 将 BundleDetail 转换为内部 RPC 响应（trade.checkCreate 用）。
 // 严格剥离 ai_gateway_plans / ai_gateway_plan_id / sub_product_code / time_span / time_unit
 // （Q33 / Q25 / Q37 拍板，2026-05-08 v3 校正）。
+//
+// 例外（bundle-instance-spec-design.md v9 / Q-FRONT-1 补充拍板）：
+//   - 补上 cpu / memory / system_disk_size 三字段（user-facing / internal-facing / admin
+//     三处出参一律暴露）；仍不含 instance_spec_id。
 func detailToInternalResponse(d *bundlelogic.BundleDetail) *transport.InternalBundleDetail {
-	return &transport.InternalBundleDetail{
+	resp := &transport.InternalBundleDetail{
 		BundleID:              d.BundleID,
 		BundleName:            d.BundleName,
 		BundleState:           d.BundleState,
@@ -363,6 +410,12 @@ func detailToInternalResponse(d *bundlelogic.BundleDetail) *transport.InternalBu
 		BundleSalesTotalCount: d.BundleSalesTotalCount,
 		BundleSalesState:      d.BundleSalesState,
 	}
+	if spec, ok := instancespec.ResolveByID(d.InstanceSpecID); ok {
+		resp.CPU = spec.CPU
+		resp.Memory = spec.Memory
+		resp.SystemDiskSize = spec.SystemDiskSize
+	}
+	return resp
 }
 
 // parseJSONDescription 尝试将 description JSON 字符串解析为结构化数据
@@ -375,4 +428,32 @@ func parseJSONDescription(desc string) interface{} {
 		return desc // 解析失败则返回原始字符串
 	}
 	return parsed
+}
+
+// handleAdminInstanceSpecs 处理 GET /admin/api/ctl/instance-specs（设计稿 §10 Q8=a）。
+//
+// 只读返回 ctl 本地 instancespec.KnownSpecs 字典中的全部规格（spec_id + display_name +
+// cpu + memory + system_disk_size），供运营 bundle 编辑页 spec 下拉框使用。无 CRUD —
+// 新增 / 下线规格走代码常量字典发版（Q1=a 拍板）。
+func (h *bundleHandler) handleAdminInstanceSpecs(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		writeHTTPError(w, r, errcode.ErrMethodNotAllowed)
+		return
+	}
+
+	specs := instancespec.ListAll()
+	resp := &transport.ListInstanceSpecsResponse{
+		Specs: make([]*transport.InstanceSpecResponse, 0, len(specs)),
+	}
+	for _, s := range specs {
+		resp.Specs = append(resp.Specs, &transport.InstanceSpecResponse{
+			SpecID:         s.SpecID,
+			DisplayName:    s.DisplayName,
+			CPU:            s.CPU,
+			Memory:         s.Memory,
+			SystemDiskSize: s.SystemDiskSize,
+		})
+	}
+	writeSuccess(w, r, http.StatusOK, resp)
 }

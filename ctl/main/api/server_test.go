@@ -19,6 +19,7 @@ import (
 	logfields "ctl/pkg/log"
 	"ctl/pkg/resource"
 	"ctl/pkg/transport"
+
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
 )
@@ -27,6 +28,8 @@ type stubLogic struct {
 	createResp                             *transport.InstanceResponse
 	createErr                              error
 	createReq                              *transport.CreateInstanceRequest
+	createPrerequisitesResp                *transport.CreatePrerequisitesResponse
+	createPrerequisitesErr                 error
 	updateResp                             *transport.InstanceResponse
 	updateErr                              error
 	updateReq                              *transport.UpdateInstanceRequest
@@ -129,6 +132,13 @@ func (s *stubLogic) CreateInstance(ctx pctx.Context, req *transport.CreateInstan
 		s.createReq = &cloned
 	}
 	return s.createResp, s.createErr
+}
+
+func (s *stubLogic) GetCreatePrerequisites(ctx pctx.Context) (*transport.CreatePrerequisitesResponse, error) {
+	if s.createPrerequisitesResp != nil || s.createPrerequisitesErr != nil {
+		return s.createPrerequisitesResp, s.createPrerequisitesErr
+	}
+	return nil, errors.New("unexpected call")
 }
 
 func (s *stubLogic) UpdateInstance(ctx pctx.Context, instanceID string, req *transport.UpdateInstanceRequest) (*transport.InstanceResponse, error) {

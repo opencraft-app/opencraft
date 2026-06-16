@@ -849,11 +849,18 @@ func (a *integrationAiGatewayAdapter) GetPlan(_ context.Context, planID string) 
 	return &paigateway.Plan{ID: planID, IsActive: true}, nil
 }
 
-func (a *integrationAiGatewayAdapter) ApplySubscription(_ context.Context, userID string, planID string) (*paigateway.Subscription, error) {
+func (a *integrationAiGatewayAdapter) ApplySubscription(_ context.Context, req *paigateway.ApplySubscriptionRequest) (*paigateway.Subscription, error) {
 	a.mu.Lock()
 	a.applySubscriptionCalls++
 	a.mu.Unlock()
-	return &paigateway.Subscription{UserID: userID, PlanID: planID, Status: "active"}, nil
+	return &paigateway.Subscription{UserID: req.UserID, PlanID: req.PlanID, Status: "active"}, nil
+}
+
+func (a *integrationAiGatewayAdapter) ExtendSubscription(_ context.Context, req *paigateway.ExtendSubscriptionRequest) (*paigateway.ExtendSubscriptionResponse, error) {
+	return &paigateway.ExtendSubscriptionResponse{
+		Subscription: &paigateway.Subscription{UserID: req.UserID, Status: "active"},
+		Updated:      true,
+	}, nil
 }
 
 func (a *integrationAiGatewayAdapter) CancelSubscription(_ context.Context, _ string) error {
@@ -1099,12 +1106,366 @@ func TestCompletePassAPIIntegrationInternalBearerEnforced(t *testing.T) {
 func TestCompletePassAPIIntegrationUnknownSubpathReturns404(t *testing.T) {
 	h := newAPIIntegrationHarness(t)
 
-	// 验证 handleInternalPasses 对未知 subpath（renew / isolate 等未实现接口）返回 404
+	// 验证 handleInternalPasses 对未知单段 subpath 返回 404。
+	// 注意：renew / isolate / destroy 已落地，但走的是双段路径
+	// /internal/ctl/passes/{pass_id}/{action}（v3.9 路径范式校准）；
+	// 此处单段 /internal/ctl/passes/renew 仍是非法入口，应返 404。
 	resp := h.request(t, http.MethodPost, "/internal/ctl/passes/renew", map[string]any{
 		"pass_id": "pass-test",
 	}, nil)
 	if resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("expected 404 for unimplemented subpath, got %d body=%s",
+		t.Fatalf("expected 404 for unimplemented single-segment subpath, got %d body=%s",
 			resp.StatusCode, readBody(t, resp))
+	}
+}
+
+// =============================================================================
+// 资源反查接口三件套 internal API（B11A 反查链路 — trade.jifei resourcequery）
+//
+// 接口清单（与设计稿 .tmp/trade-resource-query-design.md §4.1 对齐）：
+//   - GET  /internal/ctl/passes/app-ids        → trade.getAllAppIds
+//   - GET  /internal/ctl/passes/by-app         → trade.getUserResources
+//   - POST /internal/ctl/passes/by-resource-ids → trade.queryResource
+//
+// 共用约束：
+//   - 鉴权：CTL_INTERNAL_TOKEN bearer（与 complete 接口同链路）
+//   - 透传字段：PassResponse.RenewFlag（§11 Q10 拍板，新增字段）
+//   - DELETE 语义：物理删除（§11 Q9）；DAO 不查 deleted_time 字段
+// =============================================================================
+
+// seedPassesForResourceQuery 通过 /internal/ctl/passes/complete 链路播种若干 pass
+// 返回每个 bundleID 对应的 PassResponse（用于断言 pass_id / renew_flag 等字段）
+//
+// 注意：CompletePass 内部约束「同一 userID 只能持 1 个 active pass」（PASS_ALREADY_EXISTS），
+// 所以每个 bundle 必须用独立的 userID。这里基于 bundleID 派生确保唯一。
+func seedPassesForResourceQuery(t *testing.T, h *apiIntegrationHarness,
+	uin, appID int64, bundleIDs []string) []transport.PassResponse {
+	t.Helper()
+
+	results := make([]transport.PassResponse, 0, len(bundleIDs))
+	for i, bundleID := range bundleIDs {
+		seedBundleForPass(t, bundleID, 0, "")
+
+		// 每个 bundle 单独 user，避免触发 PASS_ALREADY_EXISTS
+		// 所有 pass 共享同一 (uin, appID)，反查接口按 app_id 维度聚合，不受 user_id 影响
+		userID := fmt.Sprintf("usr_resource_query_%s", bundleID)
+		body := completePassReqDefaults(userID, bundleID)
+		body["uin"] = uin
+		body["app_id"] = appID
+		body["deal_name"] = fmt.Sprintf("deal-resource-query-%d", i)
+
+		resp := h.request(t, http.MethodPost, "/internal/ctl/passes/complete", body,
+			map[string]string{headerUserID: userID})
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("seed pass %s failed: status=%d body=%s",
+				bundleID, resp.StatusCode, readBody(t, resp))
+		}
+		envelope := decodeSuccessEnvelope[transport.PassResponse](t, resp)
+		results = append(results, envelope.Data)
+	}
+	return results
+}
+
+func TestInternalPassesAppIDsHappyPath(t *testing.T) {
+	h := newAPIIntegrationHarness(t)
+	const appID = int64(20000111)
+	const uin = int64(10000111)
+	bundleIDs := []string{"bundle_appids_a", "bundle_appids_b"}
+	seedPassesForResourceQuery(t, h, uin, appID, bundleIDs)
+
+	// 不带 bundle_ids 过滤 → 全平台 distinct app_id 列表（应包含本期种入的 appID）
+	resp := h.request(t, http.MethodGet,
+		"/internal/ctl/passes/app-ids?page_no=0&page_size=100", nil, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", resp.StatusCode, readBody(t, resp))
+	}
+	envelope := decodeSuccessEnvelope[transport.ListPassAppIDsResponse](t, resp)
+	if envelope.Data.AppIDs == nil {
+		t.Fatal("expected non-nil app_ids array (must serialize as []int64{})")
+	}
+	if envelope.Data.Total < 1 {
+		t.Fatalf("expected total >= 1, got %d", envelope.Data.Total)
+	}
+	found := false
+	for _, id := range envelope.Data.AppIDs {
+		if id == appID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected appID %d in result, got %+v", appID, envelope.Data.AppIDs)
+	}
+}
+
+func TestInternalPassesAppIDsWithBundleFilter(t *testing.T) {
+	h := newAPIIntegrationHarness(t)
+	const appA = int64(20000211)
+	const appB = int64(20000212)
+	const uin = int64(10000211)
+	seedPassesForResourceQuery(t, h, uin, appA, []string{"bundle_filt_a"})
+	// 第二个 app 必须用不同 userID — 同一 user 只能持有 1 个活跃 pass × bundle 唯一
+	// 这里用 query string 过滤层面验证：bundle_filt_a 对应 appA，不会带出 appB 的 bundle
+	seedPassesForResourceQuery(t, h, uin, appB, []string{"bundle_filt_b"})
+
+	// 用 bundle_ids=bundle_filt_a 过滤 → 应只返回 appA
+	resp := h.request(t, http.MethodGet,
+		"/internal/ctl/passes/app-ids?bundle_ids=bundle_filt_a&page_no=0&page_size=100",
+		nil, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", resp.StatusCode, readBody(t, resp))
+	}
+	envelope := decodeSuccessEnvelope[transport.ListPassAppIDsResponse](t, resp)
+	if envelope.Data.Total != 1 || len(envelope.Data.AppIDs) != 1 {
+		t.Fatalf("expected total=1 with single appA, got total=%d ids=%+v",
+			envelope.Data.Total, envelope.Data.AppIDs)
+	}
+	if envelope.Data.AppIDs[0] != appA {
+		t.Fatalf("expected appID %d, got %d", appA, envelope.Data.AppIDs[0])
+	}
+}
+
+func TestInternalPassesAppIDsValidation(t *testing.T) {
+	h := newAPIIntegrationHarness(t)
+
+	// 缺 page_no → 400
+	resp := h.request(t, http.MethodGet,
+		"/internal/ctl/passes/app-ids?page_size=100", nil, nil)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 for missing page_no, got %d body=%s",
+			resp.StatusCode, readBody(t, resp))
+	}
+
+	// page_size 超上限 20000 → 400
+	resp = h.request(t, http.MethodGet,
+		"/internal/ctl/passes/app-ids?page_no=0&page_size=20001", nil, nil)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 for page_size > 20000, got %d body=%s",
+			resp.StatusCode, readBody(t, resp))
+	}
+
+	// POST → 405（only GET allowed）
+	resp = h.request(t, http.MethodPost,
+		"/internal/ctl/passes/app-ids", map[string]any{"page_no": 0, "page_size": 100}, nil)
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405 for POST, got %d body=%s",
+			resp.StatusCode, readBody(t, resp))
+	}
+}
+
+func TestInternalPassesByAppHappyPath(t *testing.T) {
+	h := newAPIIntegrationHarness(t)
+	const appID = int64(20000311)
+	const uin = int64(10000311)
+	bundleIDs := []string{"bundle_byapp_a", "bundle_byapp_b"}
+	seeded := seedPassesForResourceQuery(t, h, uin, appID, bundleIDs)
+
+	resp := h.request(t, http.MethodGet,
+		fmt.Sprintf("/internal/ctl/passes/by-app?app_id=%d&page_no=0&page_size=100", appID),
+		nil, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", resp.StatusCode, readBody(t, resp))
+	}
+	envelope := decodeSuccessEnvelope[transport.ListPassesWithTotalResponse](t, resp)
+	if envelope.Data.Total != int64(len(bundleIDs)) {
+		t.Fatalf("expected total=%d, got %d", len(bundleIDs), envelope.Data.Total)
+	}
+	if len(envelope.Data.Passes) != len(bundleIDs) {
+		t.Fatalf("expected %d passes, got %d", len(bundleIDs), len(envelope.Data.Passes))
+	}
+	// 验证 §11 Q10 拍板的 RenewFlag 字段透传
+	for _, pass := range envelope.Data.Passes {
+		if pass.RenewFlag == "" {
+			t.Errorf("expected non-empty renew_flag, got pass=%+v", pass)
+		}
+	}
+	// 验证返回的 pass_id 集合 ⊇ seeded pass_ids
+	seededIDs := map[string]bool{}
+	for _, s := range seeded {
+		seededIDs[s.PassID] = true
+	}
+	for _, pass := range envelope.Data.Passes {
+		if !seededIDs[pass.PassID] {
+			t.Errorf("unexpected pass_id %s in response (not in seeded set)", pass.PassID)
+		}
+	}
+}
+
+func TestInternalPassesByAppValidation(t *testing.T) {
+	h := newAPIIntegrationHarness(t)
+
+	// 缺 app_id → 400
+	resp := h.request(t, http.MethodGet,
+		"/internal/ctl/passes/by-app?page_no=0&page_size=100", nil, nil)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 for missing app_id, got %d body=%s",
+			resp.StatusCode, readBody(t, resp))
+	}
+
+	// app_id <= 0 → 400
+	resp = h.request(t, http.MethodGet,
+		"/internal/ctl/passes/by-app?app_id=0&page_no=0&page_size=100", nil, nil)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 for app_id=0, got %d body=%s",
+			resp.StatusCode, readBody(t, resp))
+	}
+
+	// page_size 超上限 1000 → 400
+	resp = h.request(t, http.MethodGet,
+		"/internal/ctl/passes/by-app?app_id=1&page_no=0&page_size=1001", nil, nil)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 for page_size > 1000, got %d body=%s",
+			resp.StatusCode, readBody(t, resp))
+	}
+
+	// app_id 不存在 → 200 + 空集（不应 404，jifei 协议要求空集而非错误）
+	resp = h.request(t, http.MethodGet,
+		"/internal/ctl/passes/by-app?app_id=99999999&page_no=0&page_size=100", nil, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 for non-existent app_id, got %d body=%s",
+			resp.StatusCode, readBody(t, resp))
+	}
+	envelope := decodeSuccessEnvelope[transport.ListPassesWithTotalResponse](t, resp)
+	if envelope.Data.Total != 0 || len(envelope.Data.Passes) != 0 {
+		t.Fatalf("expected empty result for non-existent app_id, got %+v", envelope.Data)
+	}
+}
+
+func TestInternalPassesByResourceIDsHappyPath(t *testing.T) {
+	h := newAPIIntegrationHarness(t)
+	const appID = int64(20000411)
+	const uin = int64(10000411)
+	bundleIDs := []string{"bundle_byres_a", "bundle_byres_b"}
+	seeded := seedPassesForResourceQuery(t, h, uin, appID, bundleIDs)
+
+	passIDs := make([]string, 0, len(seeded))
+	for _, s := range seeded {
+		passIDs = append(passIDs, s.PassID)
+	}
+
+	resp := h.request(t, http.MethodPost, "/internal/ctl/passes/by-resource-ids",
+		map[string]any{
+			"app_id":   appID,
+			"pass_ids": passIDs,
+		}, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", resp.StatusCode, readBody(t, resp))
+	}
+	envelope := decodeSuccessEnvelope[transport.ListPassesWithTotalResponse](t, resp)
+	if envelope.Data.Total != int64(len(passIDs)) {
+		t.Fatalf("expected total=%d, got %d", len(passIDs), envelope.Data.Total)
+	}
+	got := map[string]bool{}
+	for _, pass := range envelope.Data.Passes {
+		got[pass.PassID] = true
+		if pass.RenewFlag == "" {
+			t.Errorf("expected non-empty renew_flag, got pass=%+v", pass)
+		}
+	}
+	for _, want := range passIDs {
+		if !got[want] {
+			t.Errorf("expected pass_id %s in response, got %+v", want, got)
+		}
+	}
+}
+
+func TestInternalPassesByResourceIDsValidation(t *testing.T) {
+	h := newAPIIntegrationHarness(t)
+
+	// pass_ids 为空 → 400
+	resp := h.request(t, http.MethodPost, "/internal/ctl/passes/by-resource-ids",
+		map[string]any{"app_id": int64(123), "pass_ids": []string{}}, nil)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 for empty pass_ids, got %d body=%s",
+			resp.StatusCode, readBody(t, resp))
+	}
+
+	// app_id <= 0 → 400
+	resp = h.request(t, http.MethodPost, "/internal/ctl/passes/by-resource-ids",
+		map[string]any{"app_id": 0, "pass_ids": []string{"pass-a"}}, nil)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 for app_id<=0, got %d body=%s",
+			resp.StatusCode, readBody(t, resp))
+	}
+
+	// pass_ids > 100 → 400（jifei 协议 §4.1.3 上限 100）
+	overflow := make([]string, 101)
+	for i := range overflow {
+		overflow[i] = fmt.Sprintf("pass-%d", i)
+	}
+	resp = h.request(t, http.MethodPost, "/internal/ctl/passes/by-resource-ids",
+		map[string]any{"app_id": int64(1), "pass_ids": overflow}, nil)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected 400 for pass_ids > 100, got %d body=%s",
+			resp.StatusCode, readBody(t, resp))
+	}
+
+	// GET → 405（only POST allowed）
+	resp = h.request(t, http.MethodGet,
+		"/internal/ctl/passes/by-resource-ids?app_id=1&pass_ids=p1", nil, nil)
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405 for GET, got %d body=%s",
+			resp.StatusCode, readBody(t, resp))
+	}
+
+	// 不存在的 pass_ids → 200 + 空集
+	resp = h.request(t, http.MethodPost, "/internal/ctl/passes/by-resource-ids",
+		map[string]any{"app_id": int64(99999999), "pass_ids": []string{"pass-not-exist"}}, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 for non-existent pass_ids, got %d body=%s",
+			resp.StatusCode, readBody(t, resp))
+	}
+	envelope := decodeSuccessEnvelope[transport.ListPassesWithTotalResponse](t, resp)
+	if envelope.Data.Total != 0 || len(envelope.Data.Passes) != 0 {
+		t.Fatalf("expected empty result for non-existent pass_ids, got %+v", envelope.Data)
+	}
+}
+
+func TestInternalPassesResourceQueryRequiresBearer(t *testing.T) {
+	// 显式启用 internal token 鉴权
+	t.Setenv("CTL_INTERNAL_TOKEN", "test-internal-token-for-resource-query")
+	h := newAPIIntegrationHarness(t)
+
+	endpoints := []struct {
+		name   string
+		method string
+		path   string
+		body   any
+	}{
+		{"app-ids", http.MethodGet,
+			"/internal/ctl/passes/app-ids?page_no=0&page_size=10", nil},
+		{"by-app", http.MethodGet,
+			"/internal/ctl/passes/by-app?app_id=1&page_no=0&page_size=10", nil},
+		{"by-resource-ids", http.MethodPost,
+			"/internal/ctl/passes/by-resource-ids",
+			map[string]any{"app_id": int64(1), "pass_ids": []string{"p1"}}},
+	}
+
+	for _, ep := range endpoints {
+		// Case 1: 不带 Authorization → 401
+		respNoAuth := h.request(t, ep.method, ep.path, ep.body, nil)
+		if respNoAuth.StatusCode != http.StatusUnauthorized {
+			t.Errorf("[%s] expected 401 without bearer, got %d body=%s",
+				ep.name, respNoAuth.StatusCode, readBody(t, respNoAuth))
+		}
+
+		// Case 2: 错误 token → 401
+		respBadAuth := h.request(t, ep.method, ep.path, ep.body, map[string]string{
+			"Authorization": "Bearer wrong-token",
+		})
+		if respBadAuth.StatusCode != http.StatusUnauthorized {
+			t.Errorf("[%s] expected 401 with bad token, got %d body=%s",
+				ep.name, respBadAuth.StatusCode, readBody(t, respBadAuth))
+		}
+
+		// Case 3: 正确 token → 非 401（200/400 都 OK，只是验鉴权链路）
+		respOK := h.request(t, ep.method, ep.path, ep.body, map[string]string{
+			"Authorization": "Bearer test-internal-token-for-resource-query",
+		})
+		if respOK.StatusCode == http.StatusUnauthorized {
+			t.Errorf("[%s] expected non-401 with correct bearer, got %d body=%s",
+				ep.name, respOK.StatusCode, readBody(t, respOK))
+		}
+		_ = readBody(t, respOK)
 	}
 }
