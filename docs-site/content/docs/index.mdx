@@ -1,6 +1,6 @@
 ---
-title: mono2 Docs
-description: AI-friendly documentation portal for mono2 services and protocols.
+title: mono2 Docs / mono2 文档
+description: AI-friendly bilingual documentation portal for mono2 services and protocols. 面向人类和 AI 的 mono2 双语文档入口。
 owner: platform
 status: active
 last_reviewed: "2026-06-16"
@@ -8,35 +8,46 @@ tags:
   - mono2
   - docs
   - ai
+  - bilingual
 source_path: docs-site/content/docs/index.mdx
 ---
 
 This documentation site is the root portal for mono2.
 
+这里是 mono2 的根文档入口，面向人类工程师、集成方和 AI coding agent。
+
 The first curated section is CloudAgent because it already has a durable HTTP
 run protocol, runtime lifecycle notes, and integration docs that need stable
 human and AI entrypoints.
 
-## AI Entry Points
+当前优先整理 CloudAgent：它已经有持久化 HTTP Run 协议、runtime 生命周期说明和接入文档，需要稳定的中英双语入口。
 
-| Endpoint | Purpose |
+## AI Entry Points / AI 入口
+
+| Endpoint | Purpose / 用途 |
 | --- | --- |
-| `/llms.txt` | Compact AI index for crawlers and coding agents. |
-| `/llms-full.txt` | Full text export of the curated docs. |
-| `/docs-index.json` | Machine-readable page index. |
-| `/cloudagent-endpoints.json` | Compact endpoint inventory derived from the CloudAgent OpenAPI schema. |
+| `/llms.txt` | Compact AI index for crawlers and coding agents. / 给爬虫和 coding agent 使用的精简索引。 |
+| `/llms-full.txt` | Full text export of the curated docs. / 已整理文档的全文导出。 |
+| `/docs-index.json` | Machine-readable page index. / 机器可读页面索引。 |
+| `/cloudagent-endpoints.json` | Compact endpoint inventory derived from the CloudAgent OpenAPI schema. / 从 CloudAgent OpenAPI 派生的紧凑端点清单。 |
 
-## Generation Contract
+## Generation Contract / 生成契约
 
 The repository root exposes `./makedocs.sh`. Each component can own a local
 `makedocs.sh` that exports deterministic docs fragments into this portal.
+
+仓库根目录提供 `./makedocs.sh`。每个组件目录可以拥有自己的 `makedocs.sh`，把确定性的文档片段导出到这个门户。
 
 This keeps the docs site generic while allowing each directory to document
 itself without requiring a central generator to understand all subsystem
 details.
 
-## Source Policy
+这样根文档站保持通用，每个目录负责解释自己，避免中央生成器必须理解所有子系统细节。
+
+## Source Policy / 来源策略
 
 The docs-site keeps source MDX readable and stable. Pages should include
 frontmatter with owner, status, last review date, tags, and source path so AI
 systems can reason about freshness and ownership.
+
+文档源文件保持为可读、稳定的 MDX。页面必须在 frontmatter 中记录 owner、status、last review date、tags 和 source path，方便 AI 判断新鲜度和归属。

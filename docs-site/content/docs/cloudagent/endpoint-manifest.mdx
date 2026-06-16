@@ -1,6 +1,6 @@
 ---
-title: CloudAgent Endpoint Manifest
-description: Machine-readable endpoint inventory derived from the CloudAgent OpenAPI schema.
+title: CloudAgent Endpoint Manifest / CloudAgent 端点清单
+description: Machine-readable endpoint inventory derived from the CloudAgent OpenAPI schema. 从 CloudAgent OpenAPI schema 派生的机器可读端点清单。
 owner: cloudagent
 status: active
 last_reviewed: "2026-06-16"
@@ -8,10 +8,13 @@ tags:
   - cloudagent
   - api
   - manifest
+  - bilingual
 source_path: docs-site/openapi/cloudagent.json
 ---
 
 The docs site exposes a CloudAgent endpoint manifest at:
+
+文档站点在以下地址暴露 CloudAgent endpoint manifest：
 
 ```text
 /cloudagent-endpoints.json
@@ -21,7 +24,9 @@ This manifest is derived from the generated OpenAPI schema. It is a compact
 inventory for AI agents, tests, and integration clients that need endpoint
 discovery without scraping rendered prose.
 
-## Shape
+该清单从生成的 OpenAPI schema 派生。它为 AI Agent、测试和集成客户端提供紧凑的 endpoint inventory，避免它们抓取渲染后的页面正文。
+
+## Shape / 结构
 
 ```ts
 type CloudAgentEndpoint = {
@@ -34,7 +39,7 @@ type CloudAgentEndpoint = {
 };
 ```
 
-## Contract
+## Contract / 契约
 
 - The manifest is generated from `docs-site/openapi/cloudagent.json`.
 - `docs-site/openapi/cloudagent.json` is generated from Go code in
@@ -43,3 +48,9 @@ type CloudAgentEndpoint = {
   embedded in `/docs/cloudagent/api`.
 - Do not maintain a second endpoint table by hand; update the Go protocol spec
   and rerun `./makedocs.sh`.
+
+- manifest 由 `docs-site/openapi/cloudagent.json` 生成。
+- `docs-site/openapi/cloudagent.json` 由
+  `cloudagent/gateway/internal/wrapper/cloudagent_run_spec.go` 中的 Go 代码生成。
+- 完整参考由 Scalar 在 `/reference/cloudagent` 渲染，并嵌入 `/docs/cloudagent/api`。
+- 不要手写维护第二份 endpoint 表；需要变更时更新 Go 协议 spec，然后重新运行 `./makedocs.sh`。

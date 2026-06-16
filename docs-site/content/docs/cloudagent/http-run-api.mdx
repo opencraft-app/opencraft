@@ -1,6 +1,6 @@
 ---
 title: CloudAgent HTTP Run API
-description: Durable CloudAgent HTTP protocol for sessions, runs, replay, and results.
+description: Durable CloudAgent HTTP protocol for sessions, runs, replay, and results. 用于会话、运行、回放与结果读取的 CloudAgent 持久化 HTTP 协议。
 owner: cloudagent
 status: active
 last_reviewed: "2026-06-16"
@@ -9,6 +9,7 @@ tags:
   - http-run
   - durable-runs
   - channelgateway
+  - bilingual
 source_path: cloudagent/gateway/docs/cloudagent-http-run-integration.md
 ---
 
@@ -16,35 +17,43 @@ The CloudAgent HTTP Run API is for channel gateways, backend services, and test
 clients that need to call CloudAgent without holding a long-lived ACP
 WebSocket.
 
+CloudAgent HTTP Run API 面向渠道网关、后端服务和测试客户端。它们可以调用 CloudAgent，而不需要持有长生命周期 ACP WebSocket。
+
 Use this API for durable channel traffic. Do not multiplex many channel
 conversations over one ACP WebSocket.
 
-## Base URL
+持久渠道流量应该使用这套 API。不要把多个渠道会话复用到同一条 ACP WebSocket 上。
+
+## Base URL / 基础地址
 
 Use the CloudAgent gateway HTTP base URL. Do not append `/acp`.
 
-Devcloud internal endpoint:
+使用 CloudAgent gateway 的 HTTP 基础地址，不要追加 `/acp`。
+
+Devcloud internal endpoint / Devcloud 内网入口：
 
 ```text
 http://21.6.84.6
 ```
 
-In-cluster endpoint:
+In-cluster endpoint / 集群内入口：
 
 ```text
 http://cloudagent-gateway.dep.svc.cluster.local
 ```
 
-## Authentication And Scope
+## Authentication And Scope / 鉴权与作用域
 
 Every request must identify the caller scope by either:
 
+每个请求必须通过以下任一方式标识调用方作用域：
+
 | Method | Headers |
 | --- | --- |
-| Bearer token | `Authorization: Bearer <token>` |
-| Tenant/project scope | `X-Tenant-ID` and `X-Project-ID` |
+| Bearer token / Bearer 令牌 | `Authorization: Bearer <token>` |
+| Tenant/project scope / 租户项目作用域 | `X-Tenant-ID` and `X-Project-ID` |
 
-Devcloud test scope:
+Devcloud test scope / Devcloud 测试作用域：
 
 ```bash
 export CLOUDAGENT_BASE_URL=http://21.6.84.6
@@ -52,7 +61,7 @@ export CLOUDAGENT_TENANT_ID=tenant-devcloud-dep
 export CLOUDAGENT_PROJECT_ID=project-devcloud-dep
 ```
 
-Common error if scope is missing:
+Common error if scope is missing / 缺少作用域时的常见错误：
 
 ```json
 {
@@ -64,7 +73,7 @@ Common error if scope is missing:
 }
 ```
 
-## Capability Probe
+## Capability Probe / 能力探测
 
 ```bash
 curl -sS \
@@ -73,7 +82,7 @@ curl -sS \
   "$CLOUDAGENT_BASE_URL/v1/cloudagent/capabilities"
 ```
 
-Expected fields:
+Expected fields / 预期字段：
 
 ```json
 {
@@ -96,7 +105,7 @@ Expected fields:
 }
 ```
 
-## Basic Flow
+## Basic Flow / 基本流程
 
 1. Create or load a session.
 2. Submit a run with a caller-generated `run_id`.
@@ -104,15 +113,25 @@ Expected fields:
 4. Read the final durable result.
 5. If the observer disconnects, resume from the last committed `after_seq`.
 
-## Generated API Reference
+1. 创建或加载会话。
+2. 使用调用方生成的 `run_id` 提交运行。
+3. 使用 `after_seq` 读取事件。
+4. 读取最终持久化结果。
+5. 如果观察方断开连接，从最后确认的 `after_seq` 继续读取。
+
+## Generated API Reference / 生成式 API 参考
 
 The API reference is rendered by Scalar from the generated OpenAPI schema. Use:
+
+API 参考由 Scalar 基于生成的 OpenAPI schema 渲染，入口是：
 
 ```text
 /docs/cloudagent/api
 ```
 
 The direct Scalar reference is also available at:
+
+Scalar 原始参考页也可以直接访问：
 
 ```text
 /reference/cloudagent
@@ -121,11 +140,13 @@ The direct Scalar reference is also available at:
 The component-level generator writes the schema by running Go code from
 `cloudagent/gateway/internal/wrapper/cloudagent_run_spec.go`:
 
+组件级生成器会运行 `cloudagent/gateway/internal/wrapper/cloudagent_run_spec.go` 中的 Go 代码，写出 schema：
+
 ```text
 docs-site/openapi/cloudagent.json
 ```
 
-## Create Session
+## Create Session / 创建会话
 
 ```bash
 curl -sS \
@@ -140,7 +161,7 @@ curl -sS \
   "$CLOUDAGENT_BASE_URL/v1/cloudagent/sessions"
 ```
 
-Response:
+Response / 响应：
 
 ```json
 {
@@ -150,15 +171,17 @@ Response:
 }
 ```
 
-## Submit Run
+## Submit Run / 提交运行
 
 Generate a stable idempotency key per inbound channel message:
+
+为每条入站渠道消息生成稳定的幂等 key：
 
 ```bash
 export RUN_ID="job_channel_${MESSAGE_ID}"
 ```
 
-Submit:
+Submit / 提交：
 
 ```bash
 curl -sS \
@@ -173,9 +196,11 @@ curl -sS \
   "$CLOUDAGENT_BASE_URL/v1/cloudagent/sessions/$SESSION_ID/runs"
 ```
 
-## Event Replay And Stream
+## Event Replay And Stream / 事件回放与流式读取
 
 Replay committed events:
+
+回放已提交事件：
 
 ```bash
 curl -sS \
@@ -186,6 +211,8 @@ curl -sS \
 
 Stream new events as newline-delimited JSON:
 
+以 newline-delimited JSON 方式读取新增事件：
+
 ```bash
 curl -N \
   -H "X-Tenant-ID: $CLOUDAGENT_TENANT_ID" \
@@ -194,3 +221,5 @@ curl -N \
 ```
 
 The stream is HTTP NDJSON. It is not WebSocket and not Server-Sent Events.
+
+该流是 HTTP NDJSON，不是 WebSocket，也不是 Server-Sent Events。

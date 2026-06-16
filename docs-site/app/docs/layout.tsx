@@ -7,7 +7,7 @@ export default function Layout({ children }: { children: ReactNode }) {
     <DocsLayout
       tree={source.pageTree}
       nav={{
-        title: 'mono2 Docs',
+        title: 'mono2 Docs / 文档',
       }}
     >
       {children}

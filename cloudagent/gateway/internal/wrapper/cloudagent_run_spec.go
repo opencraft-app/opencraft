@@ -41,70 +41,70 @@ func CloudAgentRunSpec() CloudAgentRunProtocolSpec {
 				Path:        "/v1/cloudagent/capabilities",
 				OperationID: "getCloudAgentCapabilities",
 				Summary:     "Get CloudAgent capabilities",
-				Description: "Probe CloudAgent HTTP Run protocol support and feature flags.",
+				Description: "Probe CloudAgent HTTP Run protocol support and feature flags. 探测 CloudAgent HTTP Run 协议支持和功能开关。",
 			},
 			{
 				Method:      "GET",
 				Path:        "/v1/cloudagent/sessions",
 				OperationID: "listCloudAgentSessions",
 				Summary:     "List CloudAgent sessions",
-				Description: "List caller-scoped CloudAgent sessions.",
+				Description: "List caller-scoped CloudAgent sessions. 列出调用方作用域内的 CloudAgent 会话。",
 			},
 			{
 				Method:      "POST",
 				Path:        "/v1/cloudagent/sessions",
 				OperationID: "createCloudAgentSession",
 				Summary:     "Create CloudAgent session",
-				Description: "Create a CloudAgent session in the caller scope.",
+				Description: "Create a CloudAgent session in the caller scope. 在调用方作用域内创建 CloudAgent 会话。",
 			},
 			{
 				Method:      "GET",
 				Path:        "/v1/cloudagent/sessions/{session_id}",
 				OperationID: "loadCloudAgentSession",
 				Summary:     "Load CloudAgent session",
-				Description: "Load a caller-scoped CloudAgent session.",
+				Description: "Load a caller-scoped CloudAgent session. 加载调用方作用域内的 CloudAgent 会话。",
 			},
 			{
 				Method:      "POST",
 				Path:        "/v1/cloudagent/sessions/{session_id}/runs",
 				OperationID: "submitCloudAgentRun",
 				Summary:     "Submit CloudAgent run",
-				Description: "Submit an idempotent durable run to a CloudAgent session.",
+				Description: "Submit an idempotent durable run to a CloudAgent session. 向 CloudAgent 会话提交幂等的持久化运行。",
 			},
 			{
 				Method:      "GET",
 				Path:        "/v1/cloudagent/runs",
 				OperationID: "listCloudAgentRuns",
 				Summary:     "List CloudAgent runs",
-				Description: "List caller-scoped durable runs, optionally filtered by session.",
+				Description: "List caller-scoped durable runs, optionally filtered by session. 列出调用方作用域内的持久化运行，可按会话过滤。",
 			},
 			{
 				Method:      "GET",
 				Path:        "/v1/cloudagent/runs/{run_id}",
 				OperationID: "getCloudAgentRun",
 				Summary:     "Get CloudAgent run",
-				Description: "Read durable run status.",
+				Description: "Read durable run status. 读取持久化运行状态。",
 			},
 			{
 				Method:      "GET",
 				Path:        "/v1/cloudagent/runs/{run_id}/events",
 				OperationID: "getCloudAgentRunEvents",
 				Summary:     "Replay or stream CloudAgent run events",
-				Description: "Replay run events after a committed sequence number. When `stream=true`, responses are newline-delimited JSON.",
+				Description: "Replay run events after a committed sequence number. When `stream=true`, responses are newline-delimited JSON. 在已提交序号之后回放运行事件；`stream=true` 时响应为 NDJSON。",
 			},
 			{
 				Method:      "GET",
 				Path:        "/v1/cloudagent/runs/{run_id}/result",
 				OperationID: "getCloudAgentRunResult",
 				Summary:     "Get CloudAgent run result",
-				Description: "Read the final durable run result.",
+				Description: "Read the final durable run result. 读取最终持久化运行结果。",
 			},
 			{
 				Method:      "POST",
 				Path:        "/v1/cloudagent/runs/{run_id}/cancel",
 				OperationID: "cancelCloudAgentRun",
 				Summary:     "Cancel CloudAgent run",
-				Description: "Request cancellation for a durable run.",
+				Description: "Request cancellation for a durable run. 请求取消持久化运行。",
 			},
 		},
 	}
@@ -141,11 +141,11 @@ func CloudAgentOpenAPISpec() map[string]any {
 		"info": map[string]any{
 			"title":       "CloudAgent HTTP Run API",
 			"version":     spec.Version,
-			"description": "Durable CloudAgent HTTP protocol for sessions, runs, replay, and results.",
+			"description": "Durable CloudAgent HTTP protocol for sessions, runs, replay, and results. 用于会话、运行、回放和结果读取的 CloudAgent 持久化 HTTP 协议。",
 		},
 		"servers": []any{
-			map[string]any{"url": "http://21.6.84.6", "description": "Devcloud internal endpoint"},
-			map[string]any{"url": "http://cloudagent-gateway.dep.svc.cluster.local", "description": "Devcloud in-cluster endpoint"},
+			map[string]any{"url": "http://21.6.84.6", "description": "Devcloud internal endpoint / Devcloud 内网入口"},
+			map[string]any{"url": "http://cloudagent-gateway.dep.svc.cluster.local", "description": "Devcloud in-cluster endpoint / Devcloud 集群内入口"},
 		},
 		"security": []any{
 			map[string]any{"bearerAuth": []any{}},
@@ -234,24 +234,24 @@ func cloudAgentOpenAPIParameters(path string, operationID string) []any {
 
 func cloudAgentOpenAPIResponses(operationID string) map[string]any {
 	schema := "#/components/schemas/Run"
-	description := "CloudAgent response."
+	description := "CloudAgent response. CloudAgent 响应。"
 	switch operationID {
 	case "getCloudAgentCapabilities":
 		schema = "#/components/schemas/Capabilities"
-		description = "CloudAgent capability metadata."
+		description = "CloudAgent capability metadata. CloudAgent 能力元数据。"
 	case "listCloudAgentSessions":
 		schema = "#/components/schemas/SessionList"
-		description = "Caller-scoped session list."
+		description = "Caller-scoped session list. 调用方作用域内的会话列表。"
 	case "createCloudAgentSession", "loadCloudAgentSession":
 		schema = "#/components/schemas/Session"
-		description = "CloudAgent session."
+		description = "CloudAgent session. CloudAgent 会话。"
 	case "listCloudAgentRuns":
 		schema = "#/components/schemas/RunList"
-		description = "Caller-scoped run list."
+		description = "Caller-scoped run list. 调用方作用域内的运行列表。"
 	case "getCloudAgentRunEvents":
 		return map[string]any{
 			"200": map[string]any{
-				"description": "Run events as JSON or NDJSON depending on `stream`.",
+				"description": "Run events as JSON or NDJSON depending on `stream`. 根据 `stream` 返回 JSON 或 NDJSON 运行事件。",
 				"content": map[string]any{
 					"application/json":     map[string]any{"schema": map[string]any{"$ref": "#/components/schemas/EventList"}},
 					"application/x-ndjson": map[string]any{"schema": map[string]any{"$ref": "#/components/schemas/RunEvent"}},
@@ -260,10 +260,10 @@ func cloudAgentOpenAPIResponses(operationID string) map[string]any {
 		}
 	case "getCloudAgentRunResult":
 		schema = "#/components/schemas/RunResult"
-		description = "Final durable run result."
+		description = "Final durable run result. 最终持久化运行结果。"
 	case "cancelCloudAgentRun":
 		schema = "#/components/schemas/CancelRunResponse"
-		description = "Cancellation request result."
+		description = "Cancellation request result. 取消请求结果。"
 	}
 	return map[string]any{
 		"200": map[string]any{

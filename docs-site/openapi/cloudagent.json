@@ -285,7 +285,7 @@
     }
   },
   "info": {
-    "description": "Durable CloudAgent HTTP protocol for sessions, runs, replay, and results.",
+    "description": "Durable CloudAgent HTTP protocol for sessions, runs, replay, and results. 用于会话、运行、回放和结果读取的 CloudAgent 持久化 HTTP 协议。",
     "title": "CloudAgent HTTP Run API",
     "version": "v1"
   },
@@ -293,7 +293,7 @@
   "paths": {
     "/v1/cloudagent/capabilities": {
       "get": {
-        "description": "Probe CloudAgent HTTP Run protocol support and feature flags.",
+        "description": "Probe CloudAgent HTTP Run protocol support and feature flags. 探测 CloudAgent HTTP Run 协议支持和功能开关。",
         "operationId": "getCloudAgentCapabilities",
         "responses": {
           "200": {
@@ -304,7 +304,7 @@
                 }
               }
             },
-            "description": "CloudAgent capability metadata."
+            "description": "CloudAgent capability metadata. CloudAgent 能力元数据。"
           }
         },
         "summary": "Get CloudAgent capabilities",
@@ -315,7 +315,7 @@
     },
     "/v1/cloudagent/runs": {
       "get": {
-        "description": "List caller-scoped durable runs, optionally filtered by session.",
+        "description": "List caller-scoped durable runs, optionally filtered by session. 列出调用方作用域内的持久化运行，可按会话过滤。",
         "operationId": "listCloudAgentRuns",
         "parameters": [
           {
@@ -347,7 +347,7 @@
                 }
               }
             },
-            "description": "Caller-scoped run list."
+            "description": "Caller-scoped run list. 调用方作用域内的运行列表。"
           }
         },
         "summary": "List CloudAgent runs",
@@ -358,7 +358,7 @@
     },
     "/v1/cloudagent/runs/{run_id}": {
       "get": {
-        "description": "Read durable run status.",
+        "description": "Read durable run status. 读取持久化运行状态。",
         "operationId": "getCloudAgentRun",
         "parameters": [
           {
@@ -374,7 +374,7 @@
                 }
               }
             },
-            "description": "CloudAgent response."
+            "description": "CloudAgent response. CloudAgent 响应。"
           }
         },
         "summary": "Get CloudAgent run",
@@ -385,7 +385,7 @@
     },
     "/v1/cloudagent/runs/{run_id}/cancel": {
       "post": {
-        "description": "Request cancellation for a durable run.",
+        "description": "Request cancellation for a durable run. 请求取消持久化运行。",
         "operationId": "cancelCloudAgentRun",
         "parameters": [
           {
@@ -401,7 +401,7 @@
                 }
               }
             },
-            "description": "Cancellation request result."
+            "description": "Cancellation request result. 取消请求结果。"
           }
         },
         "summary": "Cancel CloudAgent run",
@@ -412,7 +412,7 @@
     },
     "/v1/cloudagent/runs/{run_id}/events": {
       "get": {
-        "description": "Replay run events after a committed sequence number. When `stream=true`, responses are newline-delimited JSON.",
+        "description": "Replay run events after a committed sequence number. When `stream=true`, responses are newline-delimited JSON. 在已提交序号之后回放运行事件；`stream=true` 时响应为 NDJSON。",
         "operationId": "getCloudAgentRunEvents",
         "parameters": [
           {
@@ -452,7 +452,7 @@
                 }
               }
             },
-            "description": "Run events as JSON or NDJSON depending on `stream`."
+            "description": "Run events as JSON or NDJSON depending on `stream`. 根据 `stream` 返回 JSON 或 NDJSON 运行事件。"
           }
         },
         "summary": "Replay or stream CloudAgent run events",
@@ -463,7 +463,7 @@
     },
     "/v1/cloudagent/runs/{run_id}/result": {
       "get": {
-        "description": "Read the final durable run result.",
+        "description": "Read the final durable run result. 读取最终持久化运行结果。",
         "operationId": "getCloudAgentRunResult",
         "parameters": [
           {
@@ -479,7 +479,7 @@
                 }
               }
             },
-            "description": "Final durable run result."
+            "description": "Final durable run result. 最终持久化运行结果。"
           }
         },
         "summary": "Get CloudAgent run result",
@@ -490,7 +490,7 @@
     },
     "/v1/cloudagent/sessions": {
       "get": {
-        "description": "List caller-scoped CloudAgent sessions.",
+        "description": "List caller-scoped CloudAgent sessions. 列出调用方作用域内的 CloudAgent 会话。",
         "operationId": "listCloudAgentSessions",
         "parameters": [
           {
@@ -514,7 +514,7 @@
                 }
               }
             },
-            "description": "Caller-scoped session list."
+            "description": "Caller-scoped session list. 调用方作用域内的会话列表。"
           }
         },
         "summary": "List CloudAgent sessions",
@@ -523,7 +523,7 @@
         ]
       },
       "post": {
-        "description": "Create a CloudAgent session in the caller scope.",
+        "description": "Create a CloudAgent session in the caller scope. 在调用方作用域内创建 CloudAgent 会话。",
         "operationId": "createCloudAgentSession",
         "requestBody": {
           "content": {
@@ -544,7 +544,7 @@
                 }
               }
             },
-            "description": "CloudAgent session."
+            "description": "CloudAgent session. CloudAgent 会话。"
           }
         },
         "summary": "Create CloudAgent session",
@@ -555,7 +555,7 @@
     },
     "/v1/cloudagent/sessions/{session_id}": {
       "get": {
-        "description": "Load a caller-scoped CloudAgent session.",
+        "description": "Load a caller-scoped CloudAgent session. 加载调用方作用域内的 CloudAgent 会话。",
         "operationId": "loadCloudAgentSession",
         "parameters": [
           {
@@ -580,7 +580,7 @@
                 }
               }
             },
-            "description": "CloudAgent session."
+            "description": "CloudAgent session. CloudAgent 会话。"
           }
         },
         "summary": "Load CloudAgent session",
@@ -591,7 +591,7 @@
     },
     "/v1/cloudagent/sessions/{session_id}/runs": {
       "post": {
-        "description": "Submit an idempotent durable run to a CloudAgent session.",
+        "description": "Submit an idempotent durable run to a CloudAgent session. 向 CloudAgent 会话提交幂等的持久化运行。",
         "operationId": "submitCloudAgentRun",
         "parameters": [
           {
@@ -617,7 +617,7 @@
                 }
               }
             },
-            "description": "CloudAgent response."
+            "description": "CloudAgent response. CloudAgent 响应。"
           }
         },
         "summary": "Submit CloudAgent run",
@@ -637,11 +637,11 @@
   ],
   "servers": [
     {
-      "description": "Devcloud internal endpoint",
+      "description": "Devcloud internal endpoint / Devcloud 内网入口",
       "url": "http://21.6.84.6"
     },
     {
-      "description": "Devcloud in-cluster endpoint",
+      "description": "Devcloud in-cluster endpoint / Devcloud 集群内入口",
       "url": "http://cloudagent-gateway.dep.svc.cluster.local"
     }
   ]

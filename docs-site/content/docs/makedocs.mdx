@@ -1,6 +1,6 @@
 ---
-title: makedocs.sh Contract
-description: Divide-and-conquer documentation generation contract for mono2 directories.
+title: makedocs.sh Contract / makedocs.sh 契约
+description: Divide-and-conquer bilingual documentation generation contract for mono2 directories. mono2 目录级分治文档生成契约。
 owner: platform
 status: active
 last_reviewed: "2026-06-16"
@@ -9,47 +9,71 @@ tags:
   - docs
   - makedocs
   - ai
+  - bilingual
 source_path: docs-site/content/docs/makedocs.mdx
 ---
 
 `makedocs.sh` is the mono2 documentation generation contract.
 
+`makedocs.sh` 是 mono2 的文档生成契约。
+
 Each directory may own a local `makedocs.sh` that understands only that
 directory. The root script orchestrates those component scripts and then asks
 the docs site to render and validate the portal.
 
-## Why
+每个目录可以拥有自己的 `makedocs.sh`，只理解本目录的事实。根脚本负责调度这些组件脚本，再让文档站点渲染并校验整个门户。
+
+## Why / 为什么
 
 The docs portal should not need to understand every subsystem. CloudAgent,
 Wisp, ChannelGateway, frontend services, and future components can each export
 their own AI-friendly documentation fragments.
 
-## Root Behavior
+文档门户不应该理解每个子系统的内部细节。CloudAgent、Wisp、ChannelGateway、前端服务以及未来组件，都可以导出自己面向 AI 友好的文档片段。
+
+## Root Behavior / 根目录行为
 
 The root `./makedocs.sh`:
 
-1. sets `MONO2_DOCS_ROOT` to the root `docs-site`;
-2. calls component-level `makedocs.sh` scripts;
-3. runs `docs-site/makedocs.sh` to build the site.
+根目录 `./makedocs.sh` 会：
 
-## Component Behavior
+1. set `MONO2_DOCS_ROOT` to the root `docs-site`;
+2. call component-level `makedocs.sh` scripts;
+3. run `docs-site/makedocs.sh` to build the site.
+
+1. 将 `MONO2_DOCS_ROOT` 设置为根 `docs-site`；
+2. 调用组件级 `makedocs.sh`；
+3. 运行 `docs-site/makedocs.sh` 构建站点。
+
+## Component Behavior / 组件行为
 
 A component `makedocs.sh` should:
+
+组件级 `makedocs.sh` 应该：
 
 - read only its own directory unless explicitly configured otherwise;
 - write generated docs into `$MONO2_DOCS_ROOT/content/docs/<section>`;
 - make output deterministic so generated files are reviewable;
 - avoid requiring production credentials.
 
-## Current Component
+- 默认只读取自己的目录，除非显式配置允许跨目录读取；
+- 将生成文档写入 `$MONO2_DOCS_ROOT/content/docs/<section>`；
+- 保持输出确定性，方便代码审查；
+- 避免依赖生产凭据。
+
+## Current Component / 当前组件
 
 CloudAgent currently generates:
+
+CloudAgent 当前生成：
 
 ```text
 docs-site/content/docs/cloudagent/generated-index.mdx
 ```
 
 from:
+
+来源是：
 
 ```text
 cloudagent/gateway/docs/*.md
