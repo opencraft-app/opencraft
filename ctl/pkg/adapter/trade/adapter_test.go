@@ -56,6 +56,7 @@ func TestPlaceOrder_Success(t *testing.T) {
 
 	adp := newTestAdapter(t, server.URL, "internal-token")
 
+	// Q41 修订 2026-05-11：region/zone 完全收敛到 trade 内部，ctl 端入参不再透传
 	result, err := adp.PlaceOrder(context.Background(), &PlaceOrderRequest{
 		ExternalUserID: "usr_test",
 		BundleID:       "bundle_basic_monthly",
@@ -63,7 +64,6 @@ func TestPlaceOrder_Success(t *testing.T) {
 		TimeUnit:       "m",
 		GoodsNum:       1,
 		PayMode:        1,
-		RegionID:       47,
 	})
 	if err != nil {
 		t.Fatalf("PlaceOrder: %v", err)
@@ -82,7 +82,7 @@ func TestPlaceOrder_Success(t *testing.T) {
 		t.Fatalf("expected application/json content-type, got %q", gotCT)
 	}
 	if gotReq.ExternalUserID != "usr_test" || gotReq.BundleID != "bundle_basic_monthly" ||
-		gotReq.Period != 1 || gotReq.TimeUnit != "m" || gotReq.RegionID != 47 {
+		gotReq.Period != 1 || gotReq.TimeUnit != "m" {
 		t.Fatalf("unexpected request body: %+v", gotReq)
 	}
 	if result == nil || result.DealName != "DEAL-2026-001" || result.BigOrderID != "BIG-2026-001" {
@@ -132,6 +132,7 @@ func TestPlaceOrderAndPay_Success(t *testing.T) {
 
 	adp := newTestAdapter(t, server.URL, "internal-token")
 
+	// Q41 修订 2026-05-11：region/zone 完全收敛到 trade 内部，ctl 端入参不再透传
 	result, err := adp.PlaceOrderAndPay(context.Background(), &PlaceOrderRequest{
 		ExternalUserID: "usr_test",
 		BundleID:       "bundle_basic_monthly",
@@ -139,7 +140,6 @@ func TestPlaceOrderAndPay_Success(t *testing.T) {
 		TimeUnit:       "m",
 		GoodsNum:       1,
 		PayMode:        1,
-		RegionID:       47,
 	})
 	if err != nil {
 		t.Fatalf("PlaceOrderAndPay: %v", err)
@@ -297,7 +297,7 @@ func TestGeneratePayURL_Success(t *testing.T) {
 
 	adp := newTestAdapter(t, server.URL, "internal-token")
 
-	result, err := adp.GeneratePayURL(context.Background(), "DEAL-2026-001")
+	result, err := adp.GeneratePayURL(context.Background(), "DEAL-2026-001", nil)
 	if err != nil {
 		t.Fatalf("GeneratePayURL: %v", err)
 	}
@@ -319,7 +319,7 @@ func TestGeneratePayURL_Success(t *testing.T) {
 func TestGeneratePayURL_DealNameRequired(t *testing.T) {
 	adp := newTestAdapter(t, "http://example.invalid", "")
 	for _, dealName := range []string{"", "   "} {
-		_, err := adp.GeneratePayURL(context.Background(), dealName)
+		_, err := adp.GeneratePayURL(context.Background(), dealName, nil)
 		if err == nil || !strings.Contains(err.Error(), "dealName is required") {
 			t.Fatalf("expected dealName required error for %q, got %v", dealName, err)
 		}
@@ -328,7 +328,7 @@ func TestGeneratePayURL_DealNameRequired(t *testing.T) {
 
 func TestGeneratePayURL_BaseURLMissing(t *testing.T) {
 	adp := NewTradeAdapter(&Config{}, nil)
-	_, err := adp.GeneratePayURL(context.Background(), "DEAL-X")
+	_, err := adp.GeneratePayURL(context.Background(), "DEAL-X", nil)
 	if err == nil || !strings.Contains(err.Error(), "base_url not configured") {
 		t.Fatalf("expected base_url error, got %v", err)
 	}
@@ -351,7 +351,7 @@ func TestGeneratePayURL_PathEscaped(t *testing.T) {
 
 	adp := newTestAdapter(t, server.URL, "tok")
 
-	_, err := adp.GeneratePayURL(context.Background(), "deal/with/slash")
+	_, err := adp.GeneratePayURL(context.Background(), "deal/with/slash", nil)
 	if err != nil {
 		t.Fatalf("GeneratePayURL: %v", err)
 	}
@@ -372,7 +372,7 @@ func TestGeneratePayURL_TokenOptional(t *testing.T) {
 
 	adp := newTestAdapter(t, server.URL, "")
 
-	_, err := adp.GeneratePayURL(context.Background(), "DEAL-X")
+	_, err := adp.GeneratePayURL(context.Background(), "DEAL-X", nil)
 	if err != nil {
 		t.Fatalf("GeneratePayURL: %v", err)
 	}
@@ -415,27 +415,19 @@ func TestInquiryBatch_Success(t *testing.T) {
 			Prices: []*BundleQuote{
 				{
 					BundleID:      "bundle_basic_monthly",
-					BundleName:    "基础版月卡",
 					Price:         "9.90",
 					TotalCost:     "9.90",
 					RealTotalCost: "9.90",
 					Currency:      "CNY",
 					Discount:      1.0,
-					TimeSpan:      1,
-					TimeUnit:      "m",
-					GoodsNum:      1,
 				},
 				{
 					BundleID:      "bundle_pro_yearly",
-					BundleName:    "专业版年卡",
 					Price:         "999.00",
 					TotalCost:     "999.00",
 					RealTotalCost: "899.10",
 					Currency:      "CNY",
 					Discount:      0.9,
-					TimeSpan:      1,
-					TimeUnit:      "y",
-					GoodsNum:      1,
 				},
 			},
 		})
@@ -444,6 +436,7 @@ func TestInquiryBatch_Success(t *testing.T) {
 
 	adp := newTestAdapter(t, server.URL, "internal-token")
 
+	// Q41 修订 2026-05-11：region/zone 完全收敛到 trade 内部，ctl 端入参不再透传
 	result, err := adp.InquiryBatch(context.Background(), &InquiryBatchRequest{
 		ExternalUserID: "usr_test",
 		BundleIDs:      []string{"bundle_basic_monthly", "bundle_pro_yearly"},
@@ -451,7 +444,6 @@ func TestInquiryBatch_Success(t *testing.T) {
 		TimeUnit:       "m",
 		GoodsNum:       1,
 		PayMode:        1,
-		RegionID:       47,
 	})
 	if err != nil {
 		t.Fatalf("InquiryBatch: %v", err)
@@ -472,7 +464,7 @@ func TestInquiryBatch_Success(t *testing.T) {
 	if len(gotReq.BundleIDs) != 2 || gotReq.BundleIDs[0] != "bundle_basic_monthly" {
 		t.Fatalf("unexpected request body: %+v", gotReq)
 	}
-	if gotReq.Period != 1 || gotReq.TimeUnit != "m" || gotReq.RegionID != 47 || gotReq.PayMode != 1 || gotReq.GoodsNum != 1 {
+	if gotReq.Period != 1 || gotReq.TimeUnit != "m" || gotReq.PayMode != 1 || gotReq.GoodsNum != 1 {
 		t.Fatalf("unexpected request defaults: %+v", gotReq)
 	}
 	if result == nil || len(result.Prices) != 2 {
@@ -568,5 +560,489 @@ func TestInquiryBatch_TokenOptional(t *testing.T) {
 	}
 	if gotAuth != "" {
 		t.Fatalf("expected no auth header when token empty, got %q", gotAuth)
+	}
+}
+
+// === CompleteFlow 测试：trade-pass-isolate §10 Q22-I-E 端到端闭环 ===
+
+func TestCompleteFlow_Success(t *testing.T) {
+	var (
+		gotMethod string
+		gotPath   string
+		gotAuth   string
+		gotCT     string
+		gotReq    CompleteFlowRequest
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		gotAuth = r.Header.Get("Authorization")
+		gotCT = r.Header.Get("Content-Type")
+		if err := json.NewDecoder(r.Body).Decode(&gotReq); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		w.WriteHeader(http.StatusOK)
+		// trade 侧返回空 body，adapter 应该容忍
+	}))
+	defer server.Close()
+
+	adp := newTestAdapter(t, server.URL, "internal-token")
+
+	if err := adp.CompleteFlow(context.Background(), 4242, "completed", ""); err != nil {
+		t.Fatalf("CompleteFlow: %v", err)
+	}
+
+	if gotMethod != http.MethodPost {
+		t.Fatalf("expected POST, got %s", gotMethod)
+	}
+	if gotPath != "/internal/trade/flows/4242/complete" {
+		t.Fatalf("unexpected path: %s", gotPath)
+	}
+	if gotAuth != "Bearer internal-token" {
+		t.Fatalf("expected bearer header, got %q", gotAuth)
+	}
+	if gotCT != "application/json" {
+		t.Fatalf("expected json content-type, got %q", gotCT)
+	}
+	if gotReq.Result != "completed" {
+		t.Fatalf("expected result=completed, got %q", gotReq.Result)
+	}
+	if gotReq.Message != "" {
+		t.Fatalf("expected empty message, got %q", gotReq.Message)
+	}
+}
+
+func TestCompleteFlow_FailedWithMessage(t *testing.T) {
+	var gotReq CompleteFlowRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&gotReq)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	adp := newTestAdapter(t, server.URL, "tok")
+	if err := adp.CompleteFlow(context.Background(), 99, "failed", "child task timeout"); err != nil {
+		t.Fatalf("CompleteFlow: %v", err)
+	}
+	if gotReq.Result != "failed" || gotReq.Message != "child task timeout" {
+		t.Fatalf("unexpected req: %+v", gotReq)
+	}
+}
+
+func TestCompleteFlow_RejectsInvalidArgs(t *testing.T) {
+	adp := newTestAdapter(t, "http://unused", "tok")
+
+	// flowID == 0 直接报错（不发请求）
+	if err := adp.CompleteFlow(context.Background(), 0, "completed", ""); err == nil {
+		t.Fatal("expected error for flowID=0")
+	}
+	// 负数同样拦截
+	if err := adp.CompleteFlow(context.Background(), -1, "completed", ""); err == nil {
+		t.Fatal("expected error for flowID<0")
+	}
+	// 空 result 报错
+	if err := adp.CompleteFlow(context.Background(), 1, "  ", ""); err == nil {
+		t.Fatal("expected error for empty result")
+	}
+}
+
+func TestCompleteFlow_BaseURLNotConfigured(t *testing.T) {
+	adp := NewTradeAdapter(&Config{Token: "tok"}, nil)
+	err := adp.CompleteFlow(context.Background(), 1, "completed", "")
+	if err == nil || !strings.Contains(err.Error(), "base_url not configured") {
+		t.Fatalf("expected base_url error, got %v", err)
+	}
+}
+
+func TestCompleteFlow_TradeError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(errorResponse{Code: "FlowNotFound", Message: "flow_id=999 not found"})
+	}))
+	defer server.Close()
+
+	adp := newTestAdapter(t, server.URL, "tok")
+	err := adp.CompleteFlow(context.Background(), 999, "completed", "")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	var tradeErr *Error
+	if !errors.As(err, &tradeErr) {
+		t.Fatalf("expected *trade.Error, got %T: %v", err, err)
+	}
+	if tradeErr.Status != http.StatusNotFound || tradeErr.Code != "FlowNotFound" {
+		t.Fatalf("unexpected error: %+v", tradeErr)
+	}
+	if !strings.Contains(tradeErr.Endpoint, "/internal/trade/flows/999/complete") {
+		t.Fatalf("unexpected endpoint: %q", tradeErr.Endpoint)
+	}
+}
+
+// ============================================================================
+// PlaceRenewOrder tests (R-D-5)
+//
+// 设计稿：.tmp/trade-pass-renew-design.md §3.3 / §4.4 / R-D-5
+// ============================================================================
+
+func TestPlaceRenewOrder_Success(t *testing.T) {
+	var (
+		gotMethod string
+		gotPath   string
+		gotAuth   string
+		gotCT     string
+		gotReq    PlaceRenewOrderRequest
+	)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		gotAuth = r.Header.Get("Authorization")
+		gotCT = r.Header.Get("Content-Type")
+		if err := json.NewDecoder(r.Body).Decode(&gotReq); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(PlaceOrderResult{
+			DealName:   "DEAL-RENEW-001",
+			BigOrderID: "BIG-RENEW-001",
+		})
+	}))
+	defer server.Close()
+
+	adp := newTestAdapter(t, server.URL, "internal-token")
+	result, err := adp.PlaceRenewOrder(context.Background(), &PlaceRenewOrderRequest{
+		ExternalUserID: "usr_test",
+		BundleID:       "bundle_basic_monthly",
+		ResourceID:     "lhpass-r1",
+		Period:         1,
+		TimeUnit:       "m",
+		GoodsNum:       1,
+		PayMode:        1,
+	})
+	if err != nil {
+		t.Fatalf("PlaceRenewOrder: %v", err)
+	}
+
+	if gotMethod != http.MethodPost {
+		t.Fatalf("expected POST, got %s", gotMethod)
+	}
+	if gotPath != "/internal/trade/orders/renew" {
+		t.Fatalf("unexpected path: %s", gotPath)
+	}
+	if gotAuth != "Bearer internal-token" {
+		t.Fatalf("expected bearer header, got %q", gotAuth)
+	}
+	if gotCT != "application/json" {
+		t.Fatalf("expected application/json content-type, got %q", gotCT)
+	}
+	// R-D-5 关键不变量：ResourceID 必须透传到 trade
+	if gotReq.ExternalUserID != "usr_test" || gotReq.BundleID != "bundle_basic_monthly" ||
+		gotReq.ResourceID != "lhpass-r1" || gotReq.Period != 1 || gotReq.TimeUnit != "m" {
+		t.Fatalf("unexpected request body: %+v", gotReq)
+	}
+	if result.DealName != "DEAL-RENEW-001" || result.BigOrderID != "BIG-RENEW-001" {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+}
+
+func TestPlaceRenewOrder_NilRequest(t *testing.T) {
+	adp := newTestAdapter(t, "http://example.invalid", "")
+	_, err := adp.PlaceRenewOrder(context.Background(), nil)
+	if err == nil || !strings.Contains(err.Error(), "request is nil") {
+		t.Fatalf("expected nil request error, got %v", err)
+	}
+}
+
+func TestPlaceRenewOrder_BaseURLMissing(t *testing.T) {
+	adp := NewTradeAdapter(&Config{}, nil)
+	_, err := adp.PlaceRenewOrder(context.Background(), &PlaceRenewOrderRequest{ExternalUserID: "x"})
+	if err == nil || !strings.Contains(err.Error(), "base_url not configured") {
+		t.Fatalf("expected base_url error, got %v", err)
+	}
+}
+
+func TestPlaceRenewOrder_4xxDecodedAsError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"code":    "BundleOffline",
+			"message": "bundle is offline",
+		})
+	}))
+	defer server.Close()
+
+	adp := newTestAdapter(t, server.URL, "tok")
+	_, err := adp.PlaceRenewOrder(context.Background(), &PlaceRenewOrderRequest{
+		ExternalUserID: "usr_test",
+		BundleID:       "bundle_x",
+		ResourceID:     "lhpass-r1",
+	})
+	var tradeErr *Error
+	if !errors.As(err, &tradeErr) {
+		t.Fatalf("expected *trade.Error, got %T: %v", err, err)
+	}
+	if tradeErr.Status != http.StatusConflict || tradeErr.Code != "BundleOffline" {
+		t.Fatalf("unexpected error: %+v", tradeErr)
+	}
+}
+
+// ============================================================================
+// PlaceRenewOrderAndPay tests (R-D-7b)
+//
+// 设计稿：.tmp/trade-pass-renew-design.md §3.3 / §4.4 / R-D-7
+// ============================================================================
+
+func TestPlaceRenewOrderAndPay_Success(t *testing.T) {
+	var (
+		gotMethod string
+		gotPath   string
+		gotAuth   string
+		gotReq    PlaceRenewOrderRequest
+	)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		gotAuth = r.Header.Get("Authorization")
+		if err := json.NewDecoder(r.Body).Decode(&gotReq); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(PlaceOrderResult{
+			DealName:   "DEAL-RENEW-PAY-001",
+			BigOrderID: "BIG-RENEW-PAY-001",
+		})
+	}))
+	defer server.Close()
+
+	adp := newTestAdapter(t, server.URL, "internal-token")
+	result, err := adp.PlaceRenewOrderAndPay(context.Background(), &PlaceRenewOrderRequest{
+		ExternalUserID: "usr_test",
+		BundleID:       "bundle_basic_monthly",
+		ResourceID:     "lhpass-r1",
+		Period:         1,
+		TimeUnit:       "m",
+		GoodsNum:       1,
+		PayMode:        1,
+	})
+	if err != nil {
+		t.Fatalf("PlaceRenewOrderAndPay: %v", err)
+	}
+
+	if gotMethod != http.MethodPost {
+		t.Fatalf("expected POST, got %s", gotMethod)
+	}
+	if gotPath != "/internal/trade/orders/renew/place-and-pay" {
+		t.Fatalf("unexpected path: %s", gotPath)
+	}
+	if gotAuth != "Bearer internal-token" {
+		t.Fatalf("expected bearer header, got %q", gotAuth)
+	}
+	// R-D-7b 关键不变量：ResourceID 必须透传到 trade（与 PlaceRenewOrder 一致）
+	if gotReq.ResourceID != "lhpass-r1" {
+		t.Fatalf("ResourceID mismatch: %+v", gotReq)
+	}
+	if result.DealName != "DEAL-RENEW-PAY-001" || result.BigOrderID != "BIG-RENEW-PAY-001" {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+}
+
+func TestPlaceRenewOrderAndPay_NilRequest(t *testing.T) {
+	adp := newTestAdapter(t, "http://example.invalid", "")
+	_, err := adp.PlaceRenewOrderAndPay(context.Background(), nil)
+	if err == nil || !strings.Contains(err.Error(), "request is nil") {
+		t.Fatalf("expected nil request error, got %v", err)
+	}
+}
+
+func TestPlaceRenewOrderAndPay_BaseURLMissing(t *testing.T) {
+	adp := NewTradeAdapter(&Config{}, nil)
+	_, err := adp.PlaceRenewOrderAndPay(context.Background(), &PlaceRenewOrderRequest{ExternalUserID: "x"})
+	if err == nil || !strings.Contains(err.Error(), "base_url not configured") {
+		t.Fatalf("expected base_url error, got %v", err)
+	}
+}
+
+func TestPlaceRenewOrderAndPay_4xxDecodedAsError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"code":    "InvalidRequest",
+			"message": "resource_id is required for renew",
+		})
+	}))
+	defer server.Close()
+
+	adp := newTestAdapter(t, server.URL, "tok")
+	_, err := adp.PlaceRenewOrderAndPay(context.Background(), &PlaceRenewOrderRequest{
+		ExternalUserID: "usr_test",
+		BundleID:       "bundle_x",
+		// 缺 ResourceID
+	})
+	var tradeErr *Error
+	if !errors.As(err, &tradeErr) {
+		t.Fatalf("expected *trade.Error, got %T: %v", err, err)
+	}
+	if tradeErr.Status != http.StatusBadRequest || tradeErr.Code != "InvalidRequest" {
+		t.Fatalf("unexpected error: %+v", tradeErr)
+	}
+}
+
+// ============================================================================
+// DeleteResource 测试（trade-pass-destroy §3.5 / §4.5.3 / §11-A Q1/Q2/Q26/Q27）
+//
+// 对应 ctl → trade 出向调用：POST /internal/trade/resources/{resourceID}/delete
+// 入参 DTO 仅 3 字段（UIN/AppID/BundleID），SubProductCode 由 trade 反查（Q27）
+// ============================================================================
+
+func TestDeleteResource_Success(t *testing.T) {
+	var (
+		gotMethod string
+		gotPath   string
+		gotAuth   string
+		gotCT     string
+		gotReq    DeleteResourceRequest
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		gotAuth = r.Header.Get("Authorization")
+		gotCT = r.Header.Get("Content-Type")
+		if err := json.NewDecoder(r.Body).Decode(&gotReq); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(DeleteResourceResult{ReferenceID: "REF-DEL-001"})
+	}))
+	defer server.Close()
+
+	adp := newTestAdapter(t, server.URL, "internal-token")
+	result, err := adp.DeleteResource(context.Background(), "lhpass-d1", &DeleteResourceRequest{
+		UIN:      "1234567890",
+		AppID:    251000001,
+		BundleID: "bundle_basic_monthly",
+	})
+	if err != nil {
+		t.Fatalf("DeleteResource: %v", err)
+	}
+
+	if gotMethod != http.MethodPost {
+		t.Fatalf("expected POST, got %s", gotMethod)
+	}
+	if gotPath != "/internal/trade/resources/lhpass-d1/delete" {
+		t.Fatalf("unexpected path: %s", gotPath)
+	}
+	if gotAuth != "Bearer internal-token" {
+		t.Fatalf("expected bearer header, got %q", gotAuth)
+	}
+	if gotCT != "application/json" {
+		t.Fatalf("expected application/json content-type, got %q", gotCT)
+	}
+	// Q27 关键不变量：DTO 仅 3 字段，不包含 SubProductCode
+	if gotReq.UIN != "1234567890" || gotReq.AppID != 251000001 || gotReq.BundleID != "bundle_basic_monthly" {
+		t.Fatalf("unexpected request body: %+v", gotReq)
+	}
+	if result == nil || result.ReferenceID != "REF-DEL-001" {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+}
+
+func TestDeleteResource_ResourceIDPathEscaped(t *testing.T) {
+	// resourceID 含 "/" 等特殊字符时必须 PathEscape，与 GeneratePayURL 同范式
+	var gotRawPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotRawPath = r.URL.EscapedPath()
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(DeleteResourceResult{ReferenceID: "OK"})
+	}))
+	defer server.Close()
+	adp := newTestAdapter(t, server.URL, "tok")
+	_, err := adp.DeleteResource(context.Background(), "lh/pass d1", &DeleteResourceRequest{
+		UIN: "1", AppID: 1, BundleID: "b",
+	})
+	if err != nil {
+		t.Fatalf("DeleteResource: %v", err)
+	}
+	if !strings.Contains(gotRawPath, "lh%2Fpass%20d1") {
+		t.Fatalf("expected path-escaped resourceID in %q", gotRawPath)
+	}
+}
+
+func TestDeleteResource_BaseURLMissing(t *testing.T) {
+	adp := NewTradeAdapter(&Config{}, nil)
+	_, err := adp.DeleteResource(context.Background(), "lhpass-d1", &DeleteResourceRequest{UIN: "1"})
+	if err == nil || !strings.Contains(err.Error(), "base_url not configured") {
+		t.Fatalf("expected base_url error, got %v", err)
+	}
+}
+
+func TestDeleteResource_RejectsInvalidArgs(t *testing.T) {
+	adp := newTestAdapter(t, "http://unused", "tok")
+	// resourceID 必填
+	if _, err := adp.DeleteResource(context.Background(), "", &DeleteResourceRequest{UIN: "1"}); err == nil ||
+		!strings.Contains(err.Error(), "resourceID is required") {
+		t.Fatalf("expected resourceID required error, got %v", err)
+	}
+	if _, err := adp.DeleteResource(context.Background(), "   ", &DeleteResourceRequest{UIN: "1"}); err == nil ||
+		!strings.Contains(err.Error(), "resourceID is required") {
+		t.Fatalf("expected resourceID required error (whitespace), got %v", err)
+	}
+	// req 必填
+	if _, err := adp.DeleteResource(context.Background(), "lhpass-d1", nil); err == nil ||
+		!strings.Contains(err.Error(), "request is nil") {
+		t.Fatalf("expected nil request error, got %v", err)
+	}
+}
+
+func TestDeleteResource_4xxDecodedAsError(t *testing.T) {
+	// trade 端可能返 404 PASS_NOT_FOUND / 409 PASS_BUNDLE_OFFLINE 等业务错误
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"code":    "PassNotFound",
+			"message": "pass lhpass-d1 not found in trade",
+		})
+	}))
+	defer server.Close()
+	adp := newTestAdapter(t, server.URL, "tok")
+	_, err := adp.DeleteResource(context.Background(), "lhpass-d1", &DeleteResourceRequest{
+		UIN: "1", AppID: 1, BundleID: "b",
+	})
+	if err == nil {
+		t.Fatalf("expected non-nil error")
+	}
+	var tradeErr *Error
+	if !errors.As(err, &tradeErr) {
+		t.Fatalf("expected *trade.Error, got %T: %v", err, err)
+	}
+	if tradeErr.Status != http.StatusNotFound || tradeErr.Code != "PassNotFound" {
+		t.Fatalf("unexpected error: %+v", tradeErr)
+	}
+}
+
+func TestDeleteResource_5xxFallbackToHTTPCode(t *testing.T) {
+	// 5xx 且无 JSON body：Code 应回退为 HTTP500（与 PlaceOrder_5xxFallbackToHTTPCode 同范式）
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("upstream service unavailable"))
+	}))
+	defer server.Close()
+	adp := newTestAdapter(t, server.URL, "tok")
+	_, err := adp.DeleteResource(context.Background(), "lhpass-d1", &DeleteResourceRequest{
+		UIN: "1", AppID: 1, BundleID: "b",
+	})
+	if err == nil {
+		t.Fatalf("expected non-nil error")
+	}
+	var tradeErr *Error
+	if !errors.As(err, &tradeErr) {
+		t.Fatalf("expected *trade.Error, got %T: %v", err, err)
+	}
+	if tradeErr.Status != http.StatusInternalServerError {
+		t.Fatalf("unexpected status: %d", tradeErr.Status)
 	}
 }

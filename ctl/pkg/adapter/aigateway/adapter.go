@@ -33,7 +33,13 @@ type Adapter interface {
 	GetPlan(ctx context.Context, planID string) (*Plan, error)
 	// ApplySubscription 调用 AI-Gateway Internal API 为用户开通订阅
 	// 幂等：重复调用会取消旧订阅并创建新订阅
-	ApplySubscription(ctx context.Context, userID string, planID string) (*Subscription, error)
+	// R-MR-3 改造：req.PeriodValue/PeriodUnit 透传购买时长（Q9=i1 ai-gateway 真源）；
+	// 未传时 ai-gateway 回退到 plan.PeriodValue/PeriodUnit 兜底（Q10=j1）。
+	ApplySubscription(ctx context.Context, req *ApplySubscriptionRequest) (*Subscription, error)
+	// ExtendSubscription R-MR-4 续费链路：CAS 推进当前 user active 订阅的 PeriodEnd。
+	// 幂等：重复调用同一 NewPeriodEnd 返回 updated=false 不报错；不动 token_balance
+	// （月度刷新 scheduler 自然按月回血）。
+	ExtendSubscription(ctx context.Context, req *ExtendSubscriptionRequest) (*ExtendSubscriptionResponse, error)
 	// CancelSubscription 调用 AI-Gateway Internal API 取消用户当前订阅
 	CancelSubscription(ctx context.Context, userID string) error
 	// GetActiveSubscription 调用 AI-Gateway Internal API 查询用户当前活跃订阅
@@ -341,6 +347,15 @@ var ErrAiGatewayPlanNotFound = fmt.Errorf("ai-gateway plan not found")
 // ErrAiGatewaySubscriptionNotFound 订阅不存在
 var ErrAiGatewaySubscriptionNotFound = fmt.Errorf("ai-gateway active subscription not found")
 
+// ErrAiGatewayRouteNotFound ai-gateway 路由不存在（gin 默认 404，返 'page not found' 纯文本）。
+//
+// 区分业务 404（用户/订阅不存在—ai-gateway 返 OpenAI 风格 JSON 含 error.code）与
+// 路由 404（ai-gateway 镜像未升级 / 路由未注册，gin 其他默认文本）的哨兵：
+//   - 业务 404 返 ErrAiGatewayPlanNotFound，caller 限定场景（如 ExtendSubscription）可选择降级 nil；
+//   - 路由 404 返 ErrAiGatewayRouteNotFound，caller 严格当一般错误处理以告警 + 重试，
+//     避免被"误吞"为"用户未订阅跳过"背面遮蔽挑处 ai-gateway 部署倒退。
+var ErrAiGatewayRouteNotFound = fmt.Errorf("ai-gateway route not found (likely deployment lag)")
+
 // GetPlan 调用 GET /api/internal/plans/:id
 func (a *AiGatewayAdapter) GetPlan(ctx context.Context, planID string) (*Plan, error) {
 	if a.baseURL == "" {
@@ -395,20 +410,26 @@ func (a *AiGatewayAdapter) GetPlan(ctx context.Context, planID string) (*Plan, e
 }
 
 // ApplySubscription 调用 POST /api/internal/subscriptions/apply
-func (a *AiGatewayAdapter) ApplySubscription(ctx context.Context, userID string, planID string) (*Subscription, error) {
+//
+// R-MR-3 改造：req.PeriodValue/PeriodUnit 透传购买时长；ai-gateway 内部按
+// (NOW + period) 算 PeriodEnd（Q9=i1 真源）；未传时回退 plan 兜底（Q10=j1）。
+func (a *AiGatewayAdapter) ApplySubscription(ctx context.Context, req *ApplySubscriptionRequest) (*Subscription, error) {
 	if a.baseURL == "" {
 		return nil, fmt.Errorf("ai-gateway base_url not configured")
 	}
 	if a.internalToken == "" {
 		return nil, fmt.Errorf("ai-gateway internal_service_token not configured")
 	}
-	userID = strings.TrimSpace(userID)
-	planID = strings.TrimSpace(planID)
-	if userID == "" || planID == "" {
+	if req == nil {
+		return nil, fmt.Errorf("ai-gateway apply-subscription req is nil")
+	}
+	req.UserID = strings.TrimSpace(req.UserID)
+	req.PlanID = strings.TrimSpace(req.PlanID)
+	if req.UserID == "" || req.PlanID == "" {
 		return nil, fmt.Errorf("ai-gateway user_id and plan_id are required")
 	}
 
-	reqBody, err := json.Marshal(&ApplySubscriptionRequest{UserID: userID, PlanID: planID})
+	reqBody, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("marshal apply-subscription request: %w", err)
 	}
@@ -590,6 +611,116 @@ func decodeSubscription(body []byte) (*Subscription, error) {
 		return nil, err
 	}
 	return &s, nil
+}
+
+// ExtendSubscription 调用 POST /api/internal/subscriptions/extend (R-MR-4)
+//
+// 用于 ctl renewPassTask 收尾：把 pass.expired_time 镜像到 ai-gateway。
+// 幂等：重复调用同一 NewPeriodEnd 返回 updated=false（CAS 在 ai-gateway 端实现）。
+// 不动 token_balance：月度刷新 scheduler 自然按月回血，无需 R-D 链路操心 token。
+func (a *AiGatewayAdapter) ExtendSubscription(ctx context.Context, req *ExtendSubscriptionRequest) (*ExtendSubscriptionResponse, error) {
+	if a.baseURL == "" {
+		return nil, fmt.Errorf("ai-gateway base_url not configured")
+	}
+	if a.internalToken == "" {
+		return nil, fmt.Errorf("ai-gateway internal_service_token not configured")
+	}
+	if req == nil {
+		return nil, fmt.Errorf("ai-gateway extend-subscription req is nil")
+	}
+	req.UserID = strings.TrimSpace(req.UserID)
+	if req.UserID == "" {
+		return nil, fmt.Errorf("ai-gateway user_id is required")
+	}
+	if req.NewPeriodEnd.IsZero() {
+		return nil, fmt.Errorf("ai-gateway new_period_end is required")
+	}
+
+	reqBody, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("marshal extend-subscription request: %w", err)
+	}
+
+	reqURL := a.baseURL + "/api/internal/subscriptions/extend"
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(reqBody))
+	if err != nil {
+		return nil, fmt.Errorf("create extend-subscription request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Accept", "application/json")
+	a.applyInternalAuth(httpReq)
+
+	start := time.Now()
+	resp, err := a.httpClient.Do(httpReq)
+	duration := time.Since(start)
+	if err != nil {
+		a.logger.Warn("ai-gateway extend-subscription request failed",
+			zap.String("url", reqURL), zap.Duration("duration", duration), zap.Error(err))
+		return nil, fmt.Errorf("extend-subscription request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read extend-subscription response: %w", err)
+	}
+
+	a.logger.Info("ai-gateway extend-subscription response",
+		zap.String("url", reqURL), zap.Int("status", resp.StatusCode), zap.Duration("duration", duration))
+
+	if resp.StatusCode == http.StatusNotFound {
+		// 区分业务 404 vs 路由 404（2026-05-24 精细化）：
+		//   - 业务 404（user not found / active subscription not found）→
+		//     ai-gateway 返 OpenAI 风格 JSON {error: {code, message, type}}，
+		//     同于原语义返 ErrAiGatewayPlanNotFound，caller（如 renew helper）可选择降级 nil。
+		//   - 路由 404（gin 默认 "404 page not found\n" 纯文本）→ ai-gateway 镜像过旧
+		//     未含 R-MR-4 路由注册，返 ErrAiGatewayRouteNotFound 让 caller 严格报错（避免被
+		//     误吞为"用户未订阅跳过"背面遮蔽部署问题）。
+		if isAiGatewayBusinessErrorBody(respBody) {
+			return nil, ErrAiGatewayPlanNotFound
+		}
+		a.logger.Warn("ai-gateway extend-subscription returned route 404 (likely deployment lag)",
+			zap.String("url", reqURL), zap.String("body", string(respBody)))
+		return nil, ErrAiGatewayRouteNotFound
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("extend-subscription returned status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	return decodeExtendSubscription(respBody)
+}
+
+// decodeExtendSubscription 解析 extend response body（支持 apiResponse 包装）
+func decodeExtendSubscription(body []byte) (*ExtendSubscriptionResponse, error) {
+	var wrapped apiResponse
+	if err := json.Unmarshal(body, &wrapped); err == nil && len(wrapped.Data) > 0 {
+		var r ExtendSubscriptionResponse
+		if err := json.Unmarshal(wrapped.Data, &r); err == nil {
+			return &r, nil
+		}
+	}
+	var r ExtendSubscriptionResponse
+	if err := json.Unmarshal(body, &r); err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
+// isAiGatewayBusinessErrorBody 判别 body 是否 ai-gateway 业务错误 JSON（OpenAI 风格
+// {error: {code, message, type}}）。路由 404（gin 默认 "404 page not found\n" 纯文本）
+// 不能解析为该结构，返 false。采用严格判别：必须同时含 error.code 与 error.message 才
+// 认为是业务错误（避免可能的路由 404 正好被偶然解析为空 JSON 有個误判）。
+func isAiGatewayBusinessErrorBody(body []byte) bool {
+	var parsed struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return false
+	}
+	return parsed.Error.Code != "" && parsed.Error.Message != ""
 }
 
 var _ Adapter = (*AiGatewayAdapter)(nil)

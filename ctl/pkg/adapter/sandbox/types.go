@@ -197,3 +197,51 @@ type PoolInstance struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
+
+// === trade-pass-destroy 设计稿落地（§5.2 sandbox snapshot 端点 DTO）===
+// 设计稿：.tmp/trade-pass-destroy-design.md §5.2 / §11-A Q4 / Q4-b / Q9 / Q9-fix / Q25
+//
+// 销毁链路 ctl → sandbox 的两个新增端点 DTO：
+//   - POST /sandboxes/{sandboxID}/snapshot           → CreateSnapshotRequest / CreateSnapshotResponse
+//   - GET  /sandboxes/{sandboxID}/snapshot-status    → GetSnapshotStatusResponse
+//
+// 单实例单系统盘单快照模型（Q9）：sandbox 端内部 DescribeDisks 反查 SystemDiskId 后调
+// cbs.CreateSnapshot；ctl 不感知系统盘维度，只拿到一个 snapshotID。
+
+// CreateSnapshotRequest 销毁子 task 阶段 1 调 sandbox `POST /sandboxes/{sandboxID}/snapshot` 入参
+//
+// 字段含义：
+//   - InstanceID：与 sandboxID 等价的业务实例标识（Q9-fix：snapshot 表唯一键含 instance_id）
+//   - PassID：用于 sandbox 拼快照名 `{passID}-{instanceID}`
+//   - UserID：审计回写 + ctl snapshot 表镜像
+//   - Region：Q21 拍板，本期 ctl 取 config.ServerConf.MiscConfig.Region
+//   - RetentionSeconds：Q7 拍板，由 ctl 配置 [snapshot] retention 转秒数传入；sandbox 透传给 cbs Deadline
+//
+// 注：原协议曾有 Uin / AppID 字段（资源 owner 的腾讯云 UIN/AppID），2026-05-25 拍板移除：
+// sandbox 调 cbs 用的是 sandbox 服务自身配置的腾讯云 AK/SK，资源 owner 由该 AK/SK 自动决定，
+// 与 ctl 业务侧 uin（uin_jifei_05 → 700000164995）不是同一概念，原透传无任何下游消费。
+type CreateSnapshotRequest struct {
+	InstanceID       string `json:"instanceID"`
+	PassID           string `json:"passID"`
+	UserID           string `json:"userID"`
+	Region           string `json:"region"`
+	RetentionSeconds int64  `json:"retentionSeconds"`
+}
+
+// CreateSnapshotResponse 销毁子 task 阶段 1 sandbox 返回
+//
+// SnapshotID 为 cbs 真实 snapshot id（如 `snap-xxxxxxxx`），ctl 据此入 snapshot 表 + 后续轮询。
+type CreateSnapshotResponse struct {
+	SnapshotID string `json:"snapshotID"`
+}
+
+// GetSnapshotStatusResponse 销毁子 task 阶段 2 调 sandbox `GET .../snapshot-status?snapshotID=...` 返回
+//
+// Status 取值（已抽象，不暴露 cbs 原生枚举给 ctl，与 ctl snapshot.Entity.SnapshotState 字段值对齐）：
+//   - "ready"        → cbs NORMAL（快照已就绪可用）
+//   - "in_progress"  → cbs CREATING / CREATING_PERCENT
+//   - "failed"       → cbs ERROR（Reason 字段附原因；ctl 子 task 据此走终态失败分支）
+type GetSnapshotStatusResponse struct {
+	Status string `json:"status"`
+	Reason string `json:"reason,omitempty"`
+}
