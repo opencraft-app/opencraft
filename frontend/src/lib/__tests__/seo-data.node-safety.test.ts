@@ -50,7 +50,9 @@ describe("vite.config top-level imports must stay node-loadable", () => {
       });
 
       it("only imports node-resolvable relative/bare modules", () => {
-        const importPaths = [...source.matchAll(/\bfrom\s+["']([^"']+)["']/g)].map((m) => m[1]);
+        const importPaths = [...source.matchAll(/\bfrom\s+["']([^"']+)["']/g)]
+          .map((m) => m[1])
+          .filter((p): p is string => typeof p === "string");
         for (const importPath of importPaths) {
           const isRelative = importPath.startsWith("./") || importPath.startsWith("../");
           const isBare = !importPath.startsWith("@/") && !importPath.startsWith("/");

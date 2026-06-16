@@ -3,7 +3,6 @@ import { useLocation } from "react-router-dom";
 import { isGlobal } from "@/lib/region";
 import {
   getFullSeoMeta,
-  getSeoMeta,
   isPathIndexable,
   type FullSeoMeta,
   type SeoMeta,
